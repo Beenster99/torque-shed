@@ -14,9 +14,9 @@ var _label: Label3D
 var _last := PackedFloat32Array()
 
 
-func setup(info: Dictionary) -> void:
-	player_name = info.get("name", "Rider")
-	_build = BikeBuild.new(info.get("build", {}))
+func setup(rider_name: String, build: BikeBuild, paint: Color) -> void:
+	player_name = rider_name
+	_build = build
 	sync_to_physics = false
 	collision_layer = 2
 	collision_mask = 0
@@ -24,7 +24,7 @@ func setup(info: Dictionary) -> void:
 		child.free()
 	model = BikeModel.new()
 	add_child(model)
-	model.build_from(_build, info.get("color", Color(0.8, 0.1, 0.1)))
+	model.build_from(_build, paint)
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(0.4, 1.1, _build.wheelbase + 0.5)
 	var cs := CollisionShape3D.new()
@@ -42,6 +42,7 @@ func setup(info: Dictionary) -> void:
 	add_child(_label)
 	audio = EngineAudio.new()
 	audio.cylinders = _build.cylinders
+	audio.loudness = _build.exhaust_loudness
 	audio.volume_db = -6.0
 	add_child(audio)
 

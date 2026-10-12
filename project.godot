@@ -11,8 +11,8 @@ config_version=5
 [application]
 
 config/name="Torque Shed"
-config/description="Build motorbikes part by part, then ride them with friends."
-config/version="0.1.0"
+config/description="Restore motorbikes part by part with friends, then ride them."
+config/version="0.2.0"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 
@@ -21,6 +21,8 @@ config/features=PackedStringArray("4.6", "Forward Plus")
 PartsDB="*res://scripts/parts_db.gd"
 Settings="*res://scripts/settings.gd"
 Net="*res://scripts/net.gd"
+Controls="*res://scripts/controls.gd"
+Shed="*res://scripts/shed_state.gd"
 
 [display]
 

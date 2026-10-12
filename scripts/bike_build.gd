@@ -1,6 +1,7 @@
 class_name BikeBuild
 extends RefCounted
-## A bike as a set of chosen parts, plus every stat the physics and garage derive from them.
+## A bike as a set of chosen parts in some condition, plus every stat the physics and the
+## garage dashboards derive from them. Rust, dirt and wear on a part sap its performance.
 
 const RIDER_MASS := 75.0
 const FIXED_MASS := 48.0      # tank and fuel, seat, battery, electrics, bodywork, fluids
@@ -8,6 +9,8 @@ const AIR_DENSITY := 1.2
 const DRIVETRAIN_EFFICIENCY := 0.92
 
 var parts: Dictionary          # slot -> part id
+var condition: Dictionary      # slot -> {rust, dirt, wear}, each 0 (as new) .. 1 (ruined)
+var health := {}               # slot -> 0..1
 
 # Chassis
 var bike_mass := 0.0           # kg, without rider
@@ -45,20 +48,44 @@ var peak_torque_rpm := 7000.0
 var redline := 9500.0
 var idle_rpm := 1300.0
 var engine_color := Color(0.2, 0.2, 0.2)
+var torque_mult := 1.0         # intake, exhaust and engine condition combined
+var exhaust_loudness := 1.0
 
 # Drivetrain
 var primary := 2.9
 var gear_ratios: Array = []
 var final_drive := 3.5
+var shift_time := 0.12
+var drivetrain_efficiency := DRIVETRAIN_EFFICIENCY
 
 # Brakes
 var front_brake_torque := 1500.0
 var rear_brake_torque := 550.0
 
 
-func _init(build: Dictionary = {}) -> void:
+func _init(build: Dictionary = {}, part_condition: Dictionary = {}) -> void:
 	parts = PartsDB.sanitize_build(build)
+	condition = part_condition
 	_compute()
+
+
+## How healthy a part is from its condition: worn internals hurt most, then rust, then grime.
+static func part_health(cond: Dictionary) -> float:
+	var h := 1.0 - 0.6 * float(cond.get("wear", 0.0)) - 0.35 * float(cond.get("rust", 0.0)) \
+		- 0.12 * float(cond.get("dirt", 0.0))
+	return clampf(h, 0.15, 1.0)
+
+
+func _cond(slot: String, key: String) -> float:
+	return float(condition.get(slot, {}).get(key, 0.0))
+
+
+## Average health of all the parts, as a 0..1 rating.
+func overall_health() -> float:
+	var total := 0.0
+	for slot in PartsDB.SLOTS:
+		total += float(health.get(slot, 1.0))
+	return total / PartsDB.SLOTS.size()
 
 
 func _compute() -> void:
@@ -68,7 +95,12 @@ func _compute() -> void:
 	var wheels := PartsDB.get_part(parts["wheels"])
 	var engine := PartsDB.get_part(parts["engine"])
 	var gearbox := PartsDB.get_part(parts["gearbox"])
-	var sprocket := PartsDB.get_part(parts["sprocket"])
+	var sprocket := PartsDB.get_part(parts["final_drive"])
+	var brakes := PartsDB.get_part(parts["brakes"])
+	var intake := PartsDB.get_part(parts["intake"])
+	var exhaust := PartsDB.get_part(parts["exhaust"])
+	for slot in PartsDB.SLOTS:
+		health[slot] = part_health(condition.get(slot, {}))
 
 	bike_mass = FIXED_MASS
 	for slot in parts:
@@ -83,18 +115,21 @@ func _compute() -> void:
 	cda = frame["cda"]
 
 	front_travel = fork["travel"]
-	front_spring = fork["spring"]
-	front_damping = fork["damping"]
+	front_spring = fork["spring"] * lerpf(0.85, 1.0, health["fork"])
+	front_damping = fork["damping"] * lerpf(0.45, 1.0, health["fork"])
 	fork_length = fork["length"]
 	rear_travel = shock["travel"]
-	rear_spring = shock["spring"]
-	rear_damping = shock["damping"]
+	rear_spring = shock["spring"] * lerpf(0.85, 1.0, health["shock"])
+	rear_damping = shock["damping"] * lerpf(0.45, 1.0, health["shock"])
 
 	front_radius = wheels["front_radius"]
 	rear_radius = wheels["rear_radius"]
 	tyre_width = wheels["width"]
 	tyre_style = wheels["style"]
-	grip = wheels["grip"]
+	grip = {}
+	var grip_scale := lerpf(0.7, 1.0, health["wheels"])
+	for surf in wheels["grip"]:
+		grip[surf] = float(wheels["grip"][surf]) * grip_scale
 	var wheel_mass: float = wheels["mass"] * 0.5
 	front_inertia = 0.8 * wheel_mass * front_radius * front_radius
 	rear_inertia = 0.8 * wheel_mass * rear_radius * rear_radius + 0.15  # plus spinning drivetrain
@@ -102,14 +137,27 @@ func _compute() -> void:
 	cylinders = int(engine["cylinders"])
 	displacement = engine["displacement"]
 	peak_torque = displacement * float(engine["torque_per_cc"])
-	peak_torque_rpm = engine["peak_torque_rpm"]
+	peak_torque_rpm = float(engine["peak_torque_rpm"]) * float(intake["peak_shift"])
 	redline = engine["redline"]
 	idle_rpm = engine["idle_rpm"]
 	engine_color = _color(engine["color"])
+	# Clogged filters and rotten pipes rob power; so does a tired engine.
+	var intake_flow := 1.0 - 0.2 * clampf(_cond("intake", "dirt") * float(intake["dirt_sensitivity"]), 0.0, 1.0)
+	torque_mult = float(intake["torque_mult"]) * intake_flow * lerpf(0.85, 1.0, health["intake"])
+	torque_mult *= float(exhaust["torque_mult"]) * (1.0 - 0.15 * _cond("exhaust", "rust")) * lerpf(0.9, 1.0, health["exhaust"])
+	torque_mult *= lerpf(0.55, 1.0, health["engine"])
+	peak_torque *= torque_mult
+	exhaust_loudness = float(exhaust["loudness"])
 
 	primary = gearbox["primary"]
 	gear_ratios = gearbox["ratios"]
 	final_drive = float(sprocket["rear"]) / float(sprocket["front"])
+	shift_time = float(gearbox.get("shift_time", 0.12))
+	drivetrain_efficiency = DRIVETRAIN_EFFICIENCY * lerpf(0.8, 1.0, health["gearbox"]) * lerpf(0.88, 1.0, health["final_drive"])
+
+	var brake_health: float = lerpf(0.5, 1.0, health["brakes"])
+	front_brake_torque = float(brakes["front_torque"]) * brake_health
+	rear_brake_torque = float(brakes["rear_torque"]) * brake_health
 
 
 func _color(values: Array) -> Color:
@@ -167,7 +215,7 @@ func top_speed_estimate() -> float:
 		var rpm := idle_rpm * 2.0
 		while rpm <= redline:
 			var v := rpm / ratio * TAU / 60.0 * rear_radius
-			var drive := engine_torque(rpm) * ratio * DRIVETRAIN_EFFICIENCY / rear_radius
+			var drive := engine_torque(rpm) * ratio * drivetrain_efficiency / rear_radius
 			var resist := 0.5 * AIR_DENSITY * cda * v * v + 0.015 * total_mass * 9.81
 			if drive >= resist:
 				best = maxf(best, v)
@@ -181,3 +229,16 @@ func hp() -> float:
 
 func to_dict() -> Dictionary:
 	return parts.duplicate()
+
+
+## Headline numbers for dashboards and part comparisons.
+func summary() -> Dictionary:
+	return {
+		"hp": hp(),
+		"torque": peak_torque,
+		"top_kmh": top_speed_estimate() * 3.6,
+		"mass": bike_mass,
+		"health": overall_health(),
+		"brake": front_brake_torque + rear_brake_torque,
+		"grip": float(grip.get("tarmac", 1.0)),
+	}

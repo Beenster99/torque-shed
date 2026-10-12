@@ -55,7 +55,7 @@ var _rider_shape_index := -1
 var _ragdoll: RigidBody3D
 
 
-func setup(new_build: BikeBuild) -> void:
+func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	build = new_build
 	mass = build.total_mass
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
@@ -72,7 +72,7 @@ func setup(new_build: BikeBuild) -> void:
 	linear_damp = 0.0
 	angular_damp = 0.05
 	collision_layer = 2
-	collision_mask = 1 | 2
+	collision_mask = 1 | 2 | 4   # world, other bikes, parked bikes in the shed
 
 	for child in get_children():
 		if child is CollisionShape3D or child is BikeModel:
@@ -102,7 +102,7 @@ func setup(new_build: BikeBuild) -> void:
 
 	model = BikeModel.new()
 	add_child(model)
-	model.build_from(build)
+	model.build_from(build, paint)
 
 	if not body_shape_entered.is_connected(_on_body_shape_entered):
 		body_shape_entered.connect(_on_body_shape_entered)
@@ -254,6 +254,10 @@ func _update_engine(delta: float) -> void:
 	var tc_target := 1.0
 	if assist > 0.05 and spin_ratio > 0.12 and rear["contact"]:
 		tc_target = clampf(1.0 - (spin_ratio - 0.12) * 4.0 * assist, 0.15, 1.0)
+	# With assist on, the rider also eases off when the front wheel climbs too high.
+	var wheelie := rad_to_deg(pitch_angle)
+	if assist > 0.05 and not wheels[0]["contact"] and wheelie > 6.0:
+		tc_target = minf(tc_target, clampf(1.0 - (wheelie - 6.0) / 10.0 * (0.5 + assist), 0.0, 1.0))
 	_traction = lerpf(_traction, tc_target, 1.0 - exp(-25.0 * delta))
 	var torque := build.engine_torque(rpm) * throttle * _traction
 	if rpm >= build.redline:
@@ -263,7 +267,7 @@ func _update_engine(delta: float) -> void:
 		torque -= (1.0 - throttle) * build.peak_torque * 0.25 * clampf(rpm / build.redline, 0.0, 1.0)
 	if shifting:
 		torque = 0.0
-	rear["drive_torque"] = torque * ratio * BikeBuild.DRIVETRAIN_EFFICIENCY
+	rear["drive_torque"] = torque * ratio * build.drivetrain_efficiency
 	rpm = clampf(rpm, build.idle_rpm * 0.9, build.redline * 1.02)
 
 	_since_shift += delta
@@ -281,7 +285,7 @@ func _update_engine(delta: float) -> void:
 func shift_up() -> void:
 	if gear < build.gear_count():
 		gear += 1
-		_shift_timer = 0.12
+		_shift_timer = build.shift_time
 		_since_shift = 0.0
 		gear_changed.emit(gear)
 
@@ -289,7 +293,7 @@ func shift_up() -> void:
 func shift_down() -> void:
 	if gear > 1:
 		gear -= 1
-		_shift_timer = 0.1
+		_shift_timer = build.shift_time
 		_since_shift = 0.0
 		gear_changed.emit(gear)
 

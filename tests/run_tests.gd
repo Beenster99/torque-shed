@@ -10,6 +10,13 @@ var verbose := OS.get_cmdline_user_args().has("--verbose")
 
 func _ready() -> void:
 	await get_tree().process_frame
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--only="):
+			# Run a single test method, e.g. --only=_test_acceleration
+			await call(a.trim_prefix("--only="))
+			print("\n%d checks, %d failed" % [checks, failures])
+			get_tree().quit(1 if failures > 0 else 0)
+			return
 	await _run_all()
 	print("\n%d checks, %d failed" % [checks, failures])
 	get_tree().quit(1 if failures > 0 else 0)
@@ -36,6 +43,8 @@ func _run_all() -> void:
 	await _test_all_builds_ride()
 	await _test_crash_and_respawn()
 	await _test_sim_mode()
+	print("The shed")
+	_test_shed_rules()
 	print("World")
 	await _test_world()
 	print("Game session")
@@ -43,9 +52,9 @@ func _run_all() -> void:
 
 
 func _test_catalogue() -> void:
-	check(PartsDB.parts.size() == 15, "catalogue has 15 parts (got %d)" % PartsDB.parts.size())
+	check(PartsDB.parts.size() == 50, "catalogue has 50 parts (got %d)" % PartsDB.parts.size())
 	for slot in PartsDB.SLOTS:
-		check(PartsDB.by_slot[slot].size() >= 2, "slot %s has at least two parts" % slot)
+		check(PartsDB.by_slot[slot].size() >= 5, "slot %s has at least five variants" % slot)
 	var b := BikeBuild.new()
 	check(b.bike_mass > 120.0 and b.bike_mass < 230.0, "default bike mass is plausible (%.0f kg)" % b.bike_mass)
 	check(b.hp() > 40.0 and b.hp() < 120.0, "default bike power is plausible (%.0f hp)" % b.hp())
@@ -56,6 +65,19 @@ func _test_catalogue() -> void:
 		"unknown or wrong-slot parts fall back to defaults")
 	var curve := b.dyno_curve()
 	check(curve.size() > 10 and curve[0]["torque"] > 0.0, "dyno curve has data")
+	# Condition matters.
+	var rusty := BikeBuild.new({}, {"engine": {"rust": 0.8, "dirt": 0.9, "wear": 0.8}})
+	check(rusty.hp() < b.hp() * 0.85, "a worn, rusty engine makes less power (%.0f vs %.0f hp)" % [rusty.hp(), b.hp()])
+	var clogged := BikeBuild.new({"intake": "pod_filters"}, {"intake": {"dirt": 1.0}})
+	var clean := BikeBuild.new({"intake": "pod_filters"})
+	check(clogged.peak_torque < clean.peak_torque * 0.85, "a clogged pod filter chokes the engine")
+	var tired := BikeBuild.new({}, {"brakes": {"wear": 1.0, "rust": 1.0}})
+	check(tired.front_brake_torque < b.front_brake_torque * 0.75, "worn brakes stop less well")
+	var faster := BikeBuild.new({"exhaust": "titanium_race", "intake": "race_carbs"})
+	check(faster.hp() > b.hp() * 1.1, "race intake and exhaust add power (%.0f hp)" % faster.hp())
+	check(PartsDB.dependents("engine").has("intake") and PartsDB.dependents("engine").has("exhaust"),
+		"intake and exhaust must come off before the engine")
+	check(PartsDB.dependents("wheels").has("brakes"), "brakes must come off before the wheels")
 
 
 ## Spawns a bike on flat ground, runs `seconds` of physics calling `drive(bike, t)` each step,
@@ -169,7 +191,7 @@ func _test_low_speed() -> void:
 
 func _test_all_builds_ride() -> void:
 	var combos := [
-		{"frame": "alu_twin_spar", "wheels": "slick_17", "engine": "single_450", "gearbox": "six_close", "sprocket": "tall_15_42"},
+		{"frame": "alu_twin_spar", "wheels": "slick_17", "engine": "single_450", "gearbox": "six_close", "final_drive": "tall_15_42"},
 		{"fork": "long_travel_mx", "shock": "mono_shock_mx", "wheels": "knobbly_21_18", "engine": "single_450"},
 		{"frame": "alu_twin_spar", "fork": "long_travel_mx", "shock": "mono_shock_mx", "wheels": "knobbly_21_18", "engine": "twin_700", "gearbox": "six_close"},
 	]
@@ -210,19 +232,115 @@ func _test_sim_mode() -> void:
 	await _done(r)
 
 
+func _test_shed_rules() -> void:
+	Shed.start_new("Tester", 7)
+	var me := Shed.me()
+	check(Shed.bikes.size() == 3, "the shed opens with three project bikes")
+	var ranger := _bike_named("Rusty Ranger")
+	var barn := _bike_named("Barn Find")
+	var faithful := _bike_named("Old Faithful")
+	check(Shed.missing_slots(barn).size() == 3, "the barn find arrives with parts on the bench")
+	check(Shed.is_complete(faithful) and not Shed.is_complete(barn), "complete bikes are rideable, stripped ones aren't")
+	check(Shed.check(me, {"a": "remove", "bike": ranger, "slot": "engine"}) != "", "a bolted engine can't be pulled out")
+	Shed.request({"a": "unbolt", "bike": ranger, "slot": "engine"})
+	check(Shed.check(me, {"a": "remove", "bike": ranger, "slot": "engine"}).contains("first"),
+		"the engine can't come out with the intake and exhaust on")
+	Shed.request({"a": "unbolt", "bike": ranger, "slot": "exhaust"})
+	Shed.request({"a": "remove", "bike": ranger, "slot": "exhaust"})
+	var pipe := Shed.held_by(me)
+	check(pipe != 0 and Shed.item_on(ranger, "exhaust") == 0, "an unbolted exhaust comes off into your hands")
+	check(Shed.check(me, {"a": "shelf_take", "part": "slip_on"}) != "", "you can't carry two parts at once")
+	check(Shed.check(me, {"a": "mount", "bike": ranger}) != "", "a bike with no exhaust can't be ridden")
+	Shed.request({"a": "place", "spot": "washer"})
+	var dirt_before: float = Shed.items[pipe]["dirt"]
+	Shed._process(2.0)
+	check(Shed.items[pipe]["dirt"] < dirt_before, "the parts washer cleans what's in it")
+	check(Shed.check(me, {"a": "repair", "item": pipe}) != "", "repairs need the repair bench")
+	Shed.request({"a": "take", "spot": "washer"})
+	Shed.request({"a": "place", "spot": "repair"})
+	Shed.request({"a": "repair", "item": pipe})
+	check(Shed.items[pipe]["rust"] == 0.0 and Shed.items[pipe]["wear"] == 0.0, "the repair bench restores rust and wear")
+	Shed.request({"a": "clean", "item": pipe})
+	Shed.request({"a": "take", "spot": "repair"})
+	Shed.request({"a": "install", "bike": ranger})
+	check(Shed.item_on(ranger, "exhaust") == pipe and not Shed.is_bolted(ranger, "exhaust"), "a part goes back on loose")
+	Shed.request({"a": "bolt", "bike": ranger, "slot": "exhaust"})
+	Shed.request({"a": "bolt", "bike": ranger, "slot": "engine"})
+	check(Shed.is_complete(ranger), "bolting everything up makes the bike rideable")
+	var now := Shed.build_of(ranger).summary()
+	var was: Dictionary = Shed.bikes[ranger]["delivered"]
+	check(now["health"] > was["health"], "restoring a part raises the bike's condition (%.0f%% vs %.0f%%)" % [now["health"] * 100, was["health"] * 100])
+	# Fitting a new part from the shelf, with the right mounting order.
+	Shed.request({"a": "shelf_take", "part": "twin_disc_sport"})
+	check(Shed.check(me, {"a": "install", "bike": barn}).contains("wheels"), "brakes need the wheels on first")
+	Shed.request({"a": "bin"})
+	check(Shed.held_by(me) == 0, "the scrap bin takes parts")
+	var before := Shed.bikes.size()
+	Shed.request({"a": "order"})
+	check(Shed.bikes.size() == before + 1, "ordering a project bike delivers one to the free bay")
+	check(Shed.check(me, {"a": "order"}) != "", "you can't order when every bay is full")
+	Shed.stop()
+
+
+func _bike_named(n: String) -> int:
+	for id in Shed.bikes:
+		if Shed.bikes[id]["name"] == n:
+			return id
+	return 0
+
+
 func _test_session() -> void:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
 	main._start_session()
-	check(main.bike != null and main.in_session, "solo session spawns the rider's bike")
-	Input.action_press("throttle", 0.6)
-	for i in 240:
+	check(main.walker != null and main.in_session, "a solo session puts you in the shed on foot")
+	check(main.workshop.bike_views.size() == 3, "the three project bikes are parked in their bays")
+	var start: Vector3 = main.walker.global_position
+	Input.action_press("move_forward")
+	for i in 60:
 		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(main.walker.global_position.distance_to(start) > 1.0, "WASD walks you around (%.1f m)" % main.walker.global_position.distance_to(start))
+	# Look at the Rusty Ranger's exhaust from beside it and unbolt it with the wrench.
+	var ranger := _bike_named("Rusty Ranger")
+	var view: Node3D = main.workshop.bike_views[ranger]
+	var model: BikeModel = view.get_child(0)
+	var aim: Vector3 = model.global_transform * model.slot_bounds("exhaust").get_center()
+	var stand: Vector3 = aim + Vector3(1.4, 0.0, 0.0)
+	stand.y = 0.0
+	main.walker.place(Transform3D(Basis(), stand))
+	main.walker.rotation.y = PI * 0.5
+	var eye: Vector3 = stand + Vector3.UP * Walker.EYE
+	main.walker._look(0.0, -atan2(eye.y - aim.y, Vector2(eye.x - aim.x, eye.z - aim.z).length()))
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.walker.target.get("kind", "") == "part", "the crosshair finds the bike's parts (%s)" % str(main.walker.target))
+	var slot: String = main.walker.target.get("slot", "")
+	main.walker.set_tool("wrench")
+	Input.action_press("act")
+	for i in 300:
+		await get_tree().physics_frame
+		if slot != "" and not Shed.is_bolted(ranger, slot):
+			break
+	Input.action_release("act")
+	check(slot != "" and not Shed.is_bolted(ranger, slot), "holding the wrench on a part unbolts it (%s)" % slot)
+	# Ride the finished sport bike out of the roller door.
+	var faithful := _bike_named("Old Faithful")
+	main._try_mount(faithful)
+	await get_tree().physics_frame
+	check(main.bike != null and main.riding_id == faithful, "F on a finished bike gets you on it")
+	check(not main.workshop.bike_views.has(faithful), "the parked copy disappears while you ride")
+	for i in 120:
+		await get_tree().physics_frame
+	Input.action_press("throttle", 0.35)
+	for i in 600:
+		await get_tree().physics_frame
+		if main.bike.global_position.z > Workshop.CENTER.z + Workshop.HALF.y + 4.0:
+			break
 	Input.action_release("throttle")
-	check(main.bike.speed > 5.0, "keyboard throttle drives the bike (%.1f m/s)" % main.bike.speed)
-	main._open_garage()
-	check(not main.garage.visible, "garage refuses to open while moving")
+	check(not main.bike.is_crashed and main.bike.global_position.z > Workshop.CENTER.z + Workshop.HALF.y + 4.0,
+		"the bike rides out through the roller door (z %.1f)" % main.bike.global_position.z)
 	Input.action_press("front_brake")
 	Input.action_press("rear_brake")
 	for i in 600:
@@ -231,16 +349,10 @@ func _test_session() -> void:
 			break
 	Input.action_release("front_brake")
 	Input.action_release("rear_brake")
-	main._open_garage()
-	check(main.garage.visible, "garage opens when stopped")
-	var new_build := {"engine": "single_450", "wheels": "knobbly_21_18", "fork": "long_travel_mx", "shock": "mono_shock_mx"}
-	main._on_build_applied(new_build)
+	main._get_off()
 	await get_tree().physics_frame
-	check(main.bike.build.parts["engine"] == "single_450" and not main.garage.visible,
-		"applying a garage build swaps the bike's parts")
-	for i in 120:
-		await get_tree().physics_frame
-	check(not main.bike.is_crashed, "rebuilt bike lands safely")
+	check(main.bike == null and Shed.bikes[faithful]["rider"] == 0, "F when stopped gets you off")
+	check(main.workshop.bike_views.has(faithful), "the bike stays parked where you left it")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

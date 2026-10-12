@@ -1,6 +1,7 @@
 extends Node
 ## Multiplayer session over ENet. One player hosts (the server is also a player), others join by IP.
-## Each player simulates their own bike and streams its state; the server relays to everyone.
+## Each player simulates themselves (on foot or riding) and streams their state; the server
+## relays it to everyone. The shed itself is kept in step by the Shed autoload.
 
 signal player_joined(id: int, info: Dictionary)
 signal player_updated(id: int, info: Dictionary)
@@ -13,7 +14,7 @@ signal disconnected
 const PORT := 24680
 const MAX_PLAYERS := 8
 
-var players := {}      # remote peer id -> info Dictionary {name, build, color}
+var players := {}      # remote peer id -> info Dictionary {name, color}
 var local_info := {}
 
 
@@ -121,7 +122,6 @@ func _register(info: Dictionary) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	var clean := {
 		"name": str(info.get("name", "Rider")).left(24),
-		"build": PartsDB.sanitize_build(info.get("build", {})),
 		"color": info.get("color", Color(0.8, 0.1, 0.1)),
 	}
 	var is_new := not players.has(id)

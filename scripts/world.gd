@@ -1,7 +1,7 @@
 class_name World
 extends Node3D
 ## The test map: rolling hills, a 1 km riding loop of tarmac and dirt, and the Build Yard
-## with its garage, drag strip, skid pad and jump ramps. Generated from a seed so every
+## with the shed, drag strip, skid pad and jump ramps. Generated from a seed so every
 ## player in a session gets the same map.
 
 const MAP_HALF := 400.0
@@ -20,6 +20,7 @@ var _road_grid := {}     # Vector2i cell -> Array of road sample indices
 var _rng := RandomNumberGenerator.new()
 var _sun: DirectionalLight3D
 var _env: WorldEnvironment
+var workshop: Workshop
 
 
 func generate(seed_value := 1) -> void:
@@ -523,54 +524,9 @@ func _checker(pos: Vector3) -> Node3D:
 
 
 func _build_garage() -> void:
-	var shed := Node3D.new()
-	shed.name = "Garage"
-	shed.position = Vector3(0.0, 0.0, 70.0)
-	add_child(shed)
-	var wall := StandardMaterial3D.new()
-	wall.albedo_color = Color(0.55, 0.2, 0.15)
-	wall.roughness = 0.8
-	wall.albedo_texture = _noise_texture(0.3, Color(0.85, 0.85, 0.85), Color(1.05, 1.05, 1.05))
-	var roof := StandardMaterial3D.new()
-	roof.albedo_color = Color(0.32, 0.34, 0.36)
-	roof.metallic = 0.6
-	roof.roughness = 0.45
-	var wood := StandardMaterial3D.new()
-	wood.albedo_color = Color(0.45, 0.3, 0.18)
-	wood.roughness = 0.7
-	var steel := StandardMaterial3D.new()
-	steel.albedo_color = Color(0.25, 0.27, 0.3)
-	steel.metallic = 0.8
-	steel.roughness = 0.35
-	# Walls: back, sides; open front facing the yard (+Z).
-	_solid(shed, Vector3(0.0, 2.5, -6.0), Vector3(22.0, 5.0, 0.4), wall)
-	_solid(shed, Vector3(-11.0, 2.5, 0.0), Vector3(0.4, 5.0, 12.0), wall)
-	_solid(shed, Vector3(11.0, 2.5, 0.0), Vector3(0.4, 5.0, 12.0), wall)
-	var roof_mi := _solid(shed, Vector3(0.0, 5.3, 0.4), Vector3(23.0, 0.25, 13.6), roof)
-	roof_mi.rotation.x = 0.06
-	# Workbenches and a tool wall.
-	_solid(shed, Vector3(-6.0, 0.5, -5.0), Vector3(6.0, 1.0, 1.2), wood)
-	_solid(shed, Vector3(6.0, 0.5, -5.0), Vector3(6.0, 1.0, 1.2), wood)
-	_solid(shed, Vector3(0.0, 2.4, -5.75), Vector3(8.0, 1.6, 0.1), steel)
-	for i in 8:
-		_solid(shed, Vector3(-3.2 + i * 0.9, 2.5, -5.62), Vector3(0.08, 0.7 + (i % 3) * 0.15, 0.06), wood if i % 2 else roof)
-	# Dyno rollers on the floor.
-	_solid(shed, Vector3(0.0, 0.08, -1.0), Vector3(1.4, 0.16, 2.6), steel)
-	var sign := Label3D.new()
-	sign.text = "TORQUE SHED"
-	sign.font_size = 160
-	sign.outline_size = 24
-	sign.modulate = Color(1.0, 0.85, 0.35)
-	sign.position = Vector3(0.0, 4.6, 6.4)
-	sign.pixel_size = 0.01
-	shed.add_child(sign)
-	var lamp := OmniLight3D.new()
-	lamp.position = Vector3(0.0, 4.2, -1.0)
-	lamp.light_color = Color(1.0, 0.82, 0.6)
-	lamp.light_energy = 2.5
-	lamp.omni_range = 14.0
-	lamp.shadow_enabled = true
-	shed.add_child(lamp)
+	workshop = Workshop.new()
+	add_child(workshop)
+	workshop.build()
 
 
 func _solid(parent: Node3D, center: Vector3, size: Vector3, mat: Material) -> StaticBody3D:

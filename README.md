@@ -1,12 +1,27 @@
 # Torque Shed
 
-A multiplayer motorbike building and riding game: build bikes and engines part by part, then ride them with friends.
+A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-This is the first playable milestone, **Garage to trail**: a test map with a Build Yard and a 1 km loop of tarmac and dirt, 15 swappable parts, a dyno, blueprints, and 2 to 8 players riding together.
+Current milestone, **The Shed**: a first-person workshop with four bike bays, a workbench, parts washer, repair bench, a rack of 50 new parts (10 slots, 5 variants each), wall dashboards for every bike and the crew, and the riding map outside. Skills, XP and money come later.
 
 ## Playing
 
-Download `TorqueShed.exe` from the latest successful **CI** run (the `TorqueShed-windows` artifact) and run it. No install is needed.
+Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
+
+### In the shed
+
+| Action | Keyboard and mouse | Gamepad |
+| --- | --- | --- |
+| Walk / look | W A S D / mouse | Left stick / right stick |
+| Run | Shift | Left stick click |
+| Pick a tool (hands, wrench, brush, grinder) | 1-4, Q / E, mouse wheel | LB / RB |
+| Work on what you're looking at | Hold left mouse | Hold RT or A |
+| Get on a finished bike | F | Y |
+| Menu | Esc | Start |
+
+Look at any part to see its condition, rust, dirt and wear. With your **hands** you take parts off (once unbolted and once the parts mounted on them are off), carry them, fit them, put them on a bench, and take new ones from the rack. The **wrench** bolts and unbolts. The **brush** scrubs off dirt; the parts washer does it on its own. The **grinder and welder** restores rust and wear, on the repair bench. Hold a part while looking at a bike to see how fitting it would change power, top speed and weight. A bike can be ridden once every slot is filled and bolted up. Order more project bikes from the Esc menu.
+
+### Riding
 
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
@@ -17,37 +32,33 @@ Download `TorqueShed.exe` from the latest successful **CI** run (the `TorqueShed
 | Weight back (wheelie) / forward | Shift / Ctrl | LB / RB |
 | Shift up / down | E / Q | A / X |
 | Toggle auto-shift | T | |
-| Reset bike | R | Y |
-| Garage (when stopped) | G | Back |
+| Reset after a crash | R | View |
 | Camera | C | Right stick click |
-| Menu | Esc | Start |
+| Get off (when stopped) | F | Y |
 
-You steer by leaning: the rider counter-steers for you, like on a real bike. The **rider assist** slider in the menu goes from 0 (full sim) to 1 (most help with balance and wheelspin).
+You steer by leaning: the rider counter-steers for you, like on a real bike. The **rider assist** setting goes from 0 (full sim) to 1 (most help with balance, wheelspin and wheelies). The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
 
-### Multiplayer
+### Co-op
 
-One player picks **Host a game**; the others enter the host's IP address and pick **Join**. The game uses UDP port **24680**.
+One player picks **Host a co-op shed**; the others enter the host's IP address and pick **Join**. The game uses UDP port **24680**. The host's shed is the shared one: everyone works on the same bikes.
 
-- Same network: use the host's local address, which the pause menu shows.
+- Same network: use the host's local address, which the Esc menu shows.
 - Over the internet: the host forwards UDP port 24680 on their router to their PC, and friends join with the host's public IP. (Steam invites are planned for later.)
-
-## The garage
-
-Stop the bike and press **G**. Pick a frame, fork, shock, wheels and tyres, engine, gearbox and final drive. The spec sheet and dyno graph update as you go. **Build it and ride** swaps the bike in place. Save builds as blueprints and load them later.
-
-Parts live in `data/parts.json`. Every number there (mass, travel, spring rate, displacement, gear ratios, tyre grip per surface) feeds the physics directly.
 
 ## How it works
 
 | File | What it does |
 | --- | --- |
-| `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyre model, engine, clutch and gearbox, and a rider who balances by counter-steering |
-| `scripts/bike_build.gd` | Turns a parts list into stats: mass, geometry, torque curve, gearing, top speed |
-| `scripts/bike_model.gd` | Builds the visible bike and rider from the chosen parts |
-| `scripts/world.gd` | Generates the map: terrain, road loop, Build Yard, garage, trees |
-| `scripts/net.gd` | ENet multiplayer: host or join, player info, state streaming |
-| `scripts/remote_bike.gd` | Other players' bikes, interpolated from their streamed state |
-| `scripts/garage_ui.gd`, `dyno_graph.gd`, `hud.gd`, `main_menu.gd` | Interface |
+| `data/parts.json` | Every part and its numbers, which feed the physics directly |
+| `scripts/shed_state.gd` | The shared shed: bikes, parts, who holds what. The host checks and applies every action |
+| `scripts/workshop.gd` | Builds the shed, its stations and dashboards, and draws parked bikes and loose parts |
+| `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
+| `scripts/bike_build.gd` | Turns parts and their condition into stats: mass, torque curve, grip, brakes, top speed |
+| `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime |
+| `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |
+| `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
+| `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
+| `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |
 
 Built with [Godot 4.6](https://godotengine.org) and Jolt physics.
 
