@@ -97,7 +97,7 @@ func _build_environment() -> void:
 	env.sdfgi_use_occlusion = true
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.7, 0.77, 0.86)
-	env.fog_density = 0.0012
+	env.fog_density = 0.0007
 	env.fog_aerial_perspective = 0.6
 	env.fog_sky_affect = 0.25
 	env.volumetric_fog_enabled = Settings.high_quality
@@ -414,6 +414,7 @@ func _build_terrain() -> void:
 	var mesh := st.commit()
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
+	mat.vertex_color_is_srgb = true
 	mat.roughness = 0.95
 	mat.albedo_texture = _noise_texture(0.05, Color(0.72, 0.72, 0.72), Color(1.12, 1.12, 1.12))
 	mat.uv1_scale = Vector3(1.0, 1.0, 1.0)
@@ -425,7 +426,7 @@ func _build_terrain() -> void:
 
 func _build_yard() -> void:
 	var concrete := StandardMaterial3D.new()
-	concrete.albedo_color = Color(0.56, 0.56, 0.54)
+	concrete.albedo_color = Color(0.36, 0.36, 0.35)
 	concrete.roughness = 0.88
 	concrete.albedo_texture = _noise_texture(0.15, Color(0.82, 0.82, 0.82), Color(1.08, 1.08, 1.08))
 	concrete.uv1_scale = Vector3(12.0, 12.0, 12.0)

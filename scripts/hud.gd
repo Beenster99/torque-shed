@@ -11,7 +11,7 @@ var _message_timer := 0.0
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_message = UITheme.title("", 40, Color(1, 0.85, 0.7))
 	_message.set_anchors_preset(Control.PRESET_CENTER_TOP)

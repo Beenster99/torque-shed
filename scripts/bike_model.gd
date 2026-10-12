@@ -22,6 +22,7 @@ var _pivot := Vector3.ZERO
 func build_from(build: BikeBuild, paint_color := paint) -> void:
 	_build = build
 	paint = paint_color
+	jacket = paint.darkened(0.45)
 	for child in get_children():
 		child.free()
 
