@@ -1,0 +1,154 @@
+{
+	"frame": {
+		"steel_cradle": {
+			"name": "Steel cradle frame",
+			"description": "Forgiving all-rounder. Heavy but tough.",
+			"mass": 16.0,
+			"wheelbase": 1.44,
+			"com_height": 0.62,
+			"rake_deg": 27.0,
+			"seat_height": 0.84,
+			"color": [0.12, 0.12, 0.13],
+			"cda": 0.58
+		},
+		"alu_twin_spar": {
+			"name": "Aluminium twin-spar frame",
+			"description": "Light and stiff with sharp, quick steering.",
+			"mass": 10.5,
+			"wheelbase": 1.40,
+			"com_height": 0.66,
+			"rake_deg": 24.0,
+			"seat_height": 0.86,
+			"color": [0.72, 0.73, 0.75],
+			"cda": 0.52
+		}
+	},
+	"fork": {
+		"telescopic_road": {
+			"name": "Telescopic road fork",
+			"description": "130 mm travel, firm for tarmac.",
+			"mass": 9.0,
+			"travel": 0.13,
+			"spring": 30000.0,
+			"damping": 2600.0,
+			"length": 0.74
+		},
+		"long_travel_mx": {
+			"name": "Long-travel MX fork",
+			"description": "290 mm travel, soaks up jumps and rough dirt.",
+			"mass": 10.5,
+			"travel": 0.29,
+			"spring": 14000.0,
+			"damping": 1700.0,
+			"length": 0.95
+		}
+	},
+	"shock": {
+		"twin_shock": {
+			"name": "Twin shocks",
+			"description": "110 mm travel, classic and simple.",
+			"mass": 4.0,
+			"travel": 0.11,
+			"spring": 36000.0,
+			"damping": 2900.0
+		},
+		"mono_shock_mx": {
+			"name": "Linkage mono-shock",
+			"description": "300 mm travel with progressive damping.",
+			"mass": 5.0,
+			"travel": 0.30,
+			"spring": 16000.0,
+			"damping": 1900.0
+		}
+	},
+	"wheels": {
+		"road_17": {
+			"name": "17\" cast road wheels",
+			"description": "Sport road tyres. Great on tarmac, nervous on dirt.",
+			"mass": 22.0,
+			"front_radius": 0.30,
+			"rear_radius": 0.31,
+			"width": 0.16,
+			"style": "road",
+			"grip": {"tarmac": 1.15, "dirt": 0.62, "grass": 0.5}
+		},
+		"knobbly_21_18": {
+			"name": "21\"/18\" spoked knobblies",
+			"description": "Off-road tyres. Bite in dirt, squirm on tarmac.",
+			"mass": 20.0,
+			"front_radius": 0.35,
+			"rear_radius": 0.33,
+			"width": 0.12,
+			"style": "offroad",
+			"grip": {"tarmac": 0.9, "dirt": 0.95, "grass": 0.82}
+		},
+		"slick_17": {
+			"name": "17\" race slicks",
+			"description": "Maximum tarmac grip. Useless off-road.",
+			"mass": 21.0,
+			"front_radius": 0.30,
+			"rear_radius": 0.31,
+			"width": 0.19,
+			"style": "slick",
+			"grip": {"tarmac": 1.32, "dirt": 0.45, "grass": 0.35}
+		}
+	},
+	"engine": {
+		"single_450": {
+			"name": "450cc single",
+			"description": "Light, punchy, revs hard.",
+			"mass": 29.0,
+			"cylinders": 1,
+			"displacement": 450.0,
+			"torque_per_cc": 0.105,
+			"peak_torque_rpm": 8000.0,
+			"redline": 11000.0,
+			"idle_rpm": 1500.0,
+			"color": [0.55, 0.56, 0.58]
+		},
+		"twin_700": {
+			"name": "700cc parallel twin",
+			"description": "Broad torque and a lovely growl.",
+			"mass": 52.0,
+			"cylinders": 2,
+			"displacement": 700.0,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 7000.0,
+			"redline": 9500.0,
+			"idle_rpm": 1300.0,
+			"color": [0.18, 0.18, 0.2]
+		}
+	},
+	"gearbox": {
+		"five_wide": {
+			"name": "5-speed wide-ratio",
+			"description": "Big gaps, strong pull in every gear.",
+			"mass": 7.0,
+			"primary": 2.1,
+			"ratios": [2.8, 1.9, 1.45, 1.17, 0.96]
+		},
+		"six_close": {
+			"name": "6-speed close-ratio",
+			"description": "Keeps the engine on the boil.",
+			"mass": 8.0,
+			"primary": 1.9,
+			"ratios": [2.6, 1.95, 1.6, 1.36, 1.19, 1.06]
+		}
+	},
+	"sprocket": {
+		"short_14_50": {
+			"name": "Short gearing (14/50)",
+			"description": "Hard acceleration, lower top speed.",
+			"mass": 1.5,
+			"front": 14.0,
+			"rear": 50.0
+		},
+		"tall_15_42": {
+			"name": "Tall gearing (15/42)",
+			"description": "Higher top speed, softer launch.",
+			"mass": 1.3,
+			"front": 15.0,
+			"rear": 42.0
+		}
+	}
+}
