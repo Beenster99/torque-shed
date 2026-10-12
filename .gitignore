@@ -1,0 +1,7 @@
+# Godot
+.godot/
+*.import.tmp
+export/
+build/
+*.translation
+mono_crash.*
