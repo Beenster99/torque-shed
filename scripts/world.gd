@@ -98,7 +98,7 @@ func _build_environment() -> void:
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.7, 0.77, 0.86)
 	env.fog_density = 0.0007
-	env.fog_aerial_perspective = 0.6
+	env.fog_aerial_perspective = 0.3
 	env.fog_sky_affect = 0.25
 	env.volumetric_fog_enabled = Settings.high_quality
 	env.volumetric_fog_density = 0.006
@@ -370,7 +370,7 @@ func _build_terrain() -> void:
 	var grass_a := Color(0.24, 0.36, 0.13)
 	var grass_b := Color(0.36, 0.42, 0.18)
 	var dirt := Color(0.36, 0.27, 0.17)
-	var rock := Color(0.4, 0.39, 0.36)
+	var rock := Color(0.3, 0.28, 0.25)
 	for zi in size:
 		for xi in size:
 			var x := -MAP_HALF + xi * spacing
@@ -426,8 +426,8 @@ func _build_terrain() -> void:
 
 func _build_yard() -> void:
 	var concrete := StandardMaterial3D.new()
-	concrete.albedo_color = Color(0.36, 0.36, 0.35)
-	concrete.roughness = 0.88
+	concrete.albedo_color = Color(0.38, 0.36, 0.33)
+	concrete.roughness = 0.97
 	concrete.albedo_texture = _noise_texture(0.15, Color(0.82, 0.82, 0.82), Color(1.08, 1.08, 1.08))
 	concrete.uv1_scale = Vector3(12.0, 12.0, 12.0)
 	var body := StaticBody3D.new()
