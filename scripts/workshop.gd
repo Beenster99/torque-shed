@@ -62,8 +62,8 @@ func build() -> void:
 	_build_shelves()
 	_build_tool_wall()
 	_build_lights()
-	_crew_screen = Dashboard.new("crew", 3.2)
-	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.12, 3.2, -3.0)
+	_crew_screen = Dashboard.new("crew", 4.0)
+	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.12, 2.9, -3.0)
 	_crew_screen.rotation.y = PI * 0.5
 	add_child(_crew_screen)
 
@@ -423,8 +423,8 @@ func _build_shell() -> void:
 func _build_bays() -> void:
 	for bay in BAY_COUNT:
 		var xf := bay_transform(bay)
-		var screen := Dashboard.new("bike", 2.3)
-		screen.position = Vector3(xf.origin.x, 3.1, CENTER.z - HALF.y + 0.12)
+		var screen := Dashboard.new("bike", 3.2)
+		screen.position = Vector3(xf.origin.x, 2.75, CENTER.z - HALF.y + 0.12)
 		add_child(screen)
 		_bay_screens.append(screen)
 

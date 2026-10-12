@@ -20,7 +20,7 @@ func _init(page_kind := "bike", width := 2.0) -> void:
 	kind = page_kind
 	_viewport = SubViewport.new()
 	_viewport.size = PX
-	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	_viewport.transparent_bg = false
 	add_child(_viewport)
 	_page = Control.new()
@@ -62,7 +62,6 @@ func _init(page_kind := "bike", width := 2.0) -> void:
 func show_data(new_data: Dictionary) -> void:
 	data = new_data
 	_page.queue_redraw()
-	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 func _draw_page() -> void:
