@@ -2,7 +2,7 @@
 
 A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 33 parts from 27 kinds (side and centre stands and the headlight are optional), at least 5 of each and 15 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Skills, XP and money come later.
+Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 38 parts from 32 kinds (stands, headlight, horn, ECU, panniers, top box and fog lights are optional), at least 5 of each and 15 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Skills, XP and money come later.
 
 ### What a bike is made of
 
@@ -11,7 +11,9 @@ Current milestone, **The Shed**: a snug first-person workshop with four bike bay
 | Chassis | Frame, front fork, rear suspension (type, travel, bump and rebound damping, adjustability) |
 | Wheels | Front and rear wheel (spoked, wire, cast, carbon; 17" to 21"), front and rear tyre (type, compound, width) |
 | Brakes, front and rear | Disc (type, diameter), caliper (pistons), pads (compound), master cylinder (axial or radial) |
-| Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens) |
+| Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens), horn (10 types, from a disc horn to a train horn or a musical one), fog lights |
+| Electronics | ECU (stock, remap, ABS, sport with traction control, race with all of it): more power and revs, and rider aids for ABS, traction control, stability and anti-wheelie |
+| Luggage | Panniers and top boxes; they add drag |
 | Stands | Side stand (length, lean), centre stand (lift). Without either, a bike left anywhere but a paddock stand falls over |
 | Fluids | Petrol in the tank, oil in the engine, brake fluid in each master cylinder. Each has 3 grades and ages with use |
 | Engine, built on the stand | Block (single, twin, parallel twin, V-twin, boxer, two-stroke or inline four; 50 to 1200 cc), cylinder head, fuel system, air filter, oil filter, spark plugs, cooling, gearbox |
@@ -30,9 +32,13 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Walk / look | W A S D / mouse | Left stick / right stick |
 | Run | Shift | Left stick click |
 | Crouch (low parts such as stands, oil filter and chain need it) | C or Ctrl | Right stick click |
-| Pick a tool (hands, wrench, brush, grinder, spray can, pressure washer) | 1-6, Q / E, mouse wheel | LB / RB |
+| Pick a tool (hands, wrench, brush, grinder, spray can, pressure washer, spray gun, stopwatch) | 1-8, Q / E, mouse wheel | LB / RB |
 | Work on what you're looking at, or put a held part down anywhere | Hold left mouse | Hold RT or A |
-| Spray can colour / finish | R or right mouse / T or middle mouse | X / B |
+| Spray colour / finish (can or gun) | R or right mouse / T | X / B |
+| Ping what you're looking at for the crew | G or middle mouse | D-pad right |
+| Stopwatch start / stop (lap or reset: right mouse with the stopwatch out) | P | D-pad left |
+| Name the bike you're looking at | N | |
+| Roller door, shed lights (switches by the door) | F | Y |
 | Drain a fluid (holding a drain pan, empty can or bleed bottle); with the wrench at a chain, set its tension | Hold R or right mouse | Hold X |
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
 | Use the parts computer, switch the radio on or off | F | Y |
@@ -51,6 +57,12 @@ Chains stretch and lose their lube as you ride, faster off-road: crouch by the c
 
 Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (free for now), equipment or a new project bike. Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (8 to 20 places), parts washers (1 to 4 parts, some faster), repair machines (1 to 4 parts at once, some faster), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and wall TVs that show whoever is out riding live, or the crew board. Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters and TVs hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
 
+The **parts computer** is split into three aisles, **Shed**, **Bike** and **Outdoors**, and has a search box that finds any part or piece of kit by name, kind or spec.
+
+The **paint booth** (three sizes, 2 to 6 hooks) is for proper paint jobs: hang parts on its hooks and sweep the **spray gun** over them. The gun's wide, even fan coats every part it passes, and a booth adds a better finish. With the can or the gun, the wet paint shows on the part as you go, so you can see the patches you've missed, and too much in one place runs. Fluid containers are see-through or have a sight strip, so you can see how full they are.
+
+**Ping** (G or middle mouse) outlines whatever you're pointing at, with your name and what it is, for everyone in the shed. The **stopwatch** is for timing whatever runs you dream up; it keeps running while you ride. Press N while looking at a bike to give it a name. The roller door and the shed lights have switches beside the door. A day and night cycle runs outside; its speed (or a fixed time of day) is in the Esc menu.
+
 The **radio** on the shelf above the workbench streams internet radio stations (SomaFM and Radio Paradise). Everyone in the shed hears the same station; each player's PC streams it, so it needs an internet connection. The Esc menu has volume sliders for sound effects and the radio. Stations live in `data/radio.json`.
 
 ### Riding
@@ -67,9 +79,13 @@ The **radio** on the shelf above the workbench streams internet radio stations (
 | Toggle auto-shift | T | |
 | Reset after a crash | R | View |
 | Camera (chase, first person) | C | Right stick click |
+| Horn | H | D-pad down |
+| Paddle backwards with your feet (when stopped) | Hold S | Hold left trigger |
+| Burnout | Hold S, then throttle | Left then right trigger |
+| Ping / stopwatch | G or middle mouse / P | D-pad right / left |
 | Get off (when stopped) | F | Y |
 
-You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear, so hold F next to a bike to wheel it about on foot. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
+You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The engine sound now follows the engine: cylinders, capacity, the exhaust and the gearbox's whine. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
 
 Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
 
