@@ -78,6 +78,8 @@ func _run_all() -> void:
 	await _test_tool_art()
 	print("Saving and loading")
 	await _test_save_load()
+	print("Whiteboard")
+	await _test_whiteboard()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -2125,3 +2127,141 @@ func _test_save_load() -> void:
 	Settings.time_of_day = kept[0]
 	Settings.day_night_cycle = kept[1]
 	Settings.day_length = kept[2]
+
+
+func _test_whiteboard() -> void:
+	Shed.start_new("Tester", 9)
+	var me := Shed.me()
+	check(Shed.board.has("marks") and Shed.board["marks"].is_empty(), "the whiteboard starts clean")
+	# A blue line drawn in two goes, as it goes out while you draw, then finished.
+	var line := PackedVector2Array()
+	for i in 11:
+		line.append(Vector2(100.0 + i * 20.0, 100.0))
+	Shed.board_request({"a": "board_draw", "id": 101, "c": 1, "w": 6.0, "from": 0, "pts": line.slice(0, 5)})
+	var marks: Array = Shed.board["marks"]
+	check(marks.size() == 1 and marks[0]["by"] == "Tester" and int(marks[0]["peer"]) == me, "a stroke goes into the shed state with its author")
+	Shed.board_request({"a": "board_draw", "id": 101, "c": 1, "w": 6.0, "from": 5, "pts": line.slice(5)})
+	check((marks[0]["pts"] as PackedVector2Array).size() == 11, "more of the stroke adds on to it (%d points)" % (marks[0]["pts"] as PackedVector2Array).size())
+	Shed.board_request({"a": "board_draw", "id": 101, "c": 1, "w": 6.0, "from": 0, "pts": BoardData.simplify(line), "done": true})
+	check((marks[0]["pts"] as PackedVector2Array).size() == 2, "the finished straight line is simplified to its two ends")
+	check(BoardData.ink_at(Shed.board, Vector2(210, 101)) == 1 and BoardData.ink_at(Shed.board, Vector2(210, 140)) == -1,
+		"the line is blue ink along where it was drawn")
+	# Rub all of it out and it's gone from the board, eraser and all.
+	Shed.board_request({"a": "board_draw", "id": 102, "c": BoardData.ERASER, "from": 0, "done": true,
+		"pts": PackedVector2Array([Vector2(80, 100), Vector2(330, 100)])})
+	check(BoardData.ink_at(Shed.board, Vector2(210, 100)) == -1, "the eraser rubs the ink out")
+	check(Shed.board["marks"].is_empty(), "a mark rubbed out completely is dropped, with the eraser that rubbed it")
+	# Rub out half of a line: the rest stays.
+	Shed.board_request({"a": "board_draw", "id": 103, "c": 2, "w": 11.0, "from": 0, "done": true,
+		"pts": PackedVector2Array([Vector2(100, 300), Vector2(500, 300)])})
+	Shed.board_request({"a": "board_draw", "id": 104, "c": BoardData.ERASER, "from": 0, "done": true,
+		"pts": PackedVector2Array([Vector2(90, 300), Vector2(260, 300)])})
+	check(BoardData.ink_at(Shed.board, Vector2(150, 300)) == -1 and BoardData.ink_at(Shed.board, Vector2(400, 300)) == 2,
+		"rubbing out half a line leaves the other half")
+	check(Shed.board["marks"].size() == 2, "a half rubbed out line and its eraser stay")
+	# Typed text, for lists.
+	Shed.board_request({"a": "board_text", "id": 105, "c": 3, "s": 38, "at": Vector2(600, 80), "text": "  1. Fit the new chain  "})
+	var text: Dictionary = Shed.board["marks"][-1]
+	check(text.get("text", "") == "1. Fit the new chain" and text["by"] == "Tester" and text["at"] == Vector2(600, 80),
+		"a line of text is stored where it was put, by who wrote it")
+	check(BoardData.ink_at(Shed.board, Vector2(620, 100)) == 3, "the text shows in its colour")
+	Shed.board_request({"a": "board_text", "id": 106, "c": 0, "at": Vector2(600, 80), "text": "   "})
+	check(BoardData.find(Shed.board, 106) < 0, "blank text isn't put up")
+	# Somebody else's marks: they can't add to yours, and undo only takes back your own.
+	Shed._apply(77, {"a": "board_draw", "id": 105, "c": 0, "w": 3.0, "from": 0, "pts": PackedVector2Array([Vector2(1, 1)])})
+	Shed._apply(77, {"a": "board_draw", "id": 201, "c": 4, "w": 3.0, "from": 0, "done": true,
+		"pts": PackedVector2Array([Vector2(700, 500), Vector2(800, 520)])})
+	check(BoardData.find(Shed.board, 201) >= 0 and Shed.board["marks"][-1]["by"] == "Someone", "another player's stroke goes up as theirs")
+	check(not Shed.board["marks"][BoardData.find(Shed.board, 105)].has("pts"), "nobody can draw onto someone else's mark")
+	Shed.board_request({"a": "board_undo"})
+	check(BoardData.find(Shed.board, 105) < 0 and BoardData.find(Shed.board, 201) >= 0, "undo takes back your own last mark, not theirs")
+	# The board goes out whole in the snapshot that players joining (and saves) get, but not in
+	# the regular syncs.
+	var snap: Dictionary = bytes_to_var(var_to_bytes(Shed._snapshot()))
+	check(not Shed._snapshot(false).has("board"), "the regular syncs leave the board out")
+	var count: int = Shed.board["marks"].size()
+	Shed._sync(Shed._snapshot(false))
+	check(Shed.board["marks"].size() == count, "a regular sync keeps the board as it is")
+	Shed.board = BoardData.empty()
+	Shed._sync(snap)
+	check(Shed.board["marks"].size() == count and BoardData.ink_at(Shed.board, Vector2(400, 300)) == 2,
+		"the snapshot round trip brings every mark back (%d)" % Shed.board["marks"].size())
+	# Bad requests are ignored or tidied up.
+	Shed.board_request({"a": "board_draw", "id": 300, "c": 0, "pts": PackedVector2Array()})
+	Shed.board_request({"a": "board_draw", "id": 0, "c": 0, "pts": PackedVector2Array([Vector2(5, 5)])})
+	check(BoardData.find(Shed.board, 300) < 0 and Shed.board["marks"].size() == count, "empty or unnamed strokes are ignored")
+	Shed.board_request({"a": "board_draw", "id": 301, "c": 99, "w": 999.0, "from": 0, "pts": PackedVector2Array([Vector2(-50, 9000)])})
+	var odd: Dictionary = Shed.board["marks"][-1]
+	check(int(odd["c"]) < BoardData.COLORS.size() and float(odd["w"]) <= 40.0 and (odd["pts"] as PackedVector2Array)[0] == Vector2(0, 600),
+		"colours, widths and points are kept on the board")
+	# It can't fill up for ever: the oldest marks go first.
+	for i in BoardData.MAX_MARKS + 20:
+		Shed.board_request({"a": "board_draw", "id": 1000 + i, "c": i % 6, "w": 3.0, "from": 0, "done": true,
+			"pts": PackedVector2Array([Vector2(i % 1200, 50), Vector2(i % 1200, 60)])})
+	check(Shed.board["marks"].size() <= BoardData.MAX_MARKS and BoardData.find(Shed.board, 1000 + BoardData.MAX_MARKS + 19) >= 0,
+		"a full board drops its oldest marks (%d)" % Shed.board["marks"].size())
+	# Clean the whole board.
+	Shed.board_request({"a": "board_clear"})
+	check(Shed.board["marks"].is_empty(), "wiping the board cleans it all off")
+	# On the wall in the real game: walk up to it, look at it and draw with the mouse.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var board: Whiteboard = get_tree().get_first_node_in_group("whiteboard")
+	check(board != null, "the whiteboard hangs in the shed")
+	var face: Vector3 = board.global_position
+	w.place(Transform3D(Basis(), Vector3(face.x, 0.0, face.z - 1.4)))
+	w.rotation.y = PI
+	w._pitch = 0.0
+	w._look(0.0, -atan2(Walker.EYE - face.y, 1.4))
+	for i in 5:
+		await get_tree().physics_frame
+	check(w.target.get("kind", "") == "board", "the crosshair finds the whiteboard (%s)" % str(w.target))
+	check(w.info.begins_with("Whiteboard") and w.plan.is_empty(), "the side panel says how to use it")
+	check(board.aim(w).distance_to(BoardData.PX * 0.5) < 30.0, "looking at the middle aims at the middle of the board (%s)" % str(board.aim(w)))
+	_press("tool_3")
+	_press("tool_next")
+	await get_tree().process_frame
+	check(board.pen == 2 and board.width == 2, "number keys pick the colour and scroll the thickness (%s)" % board.pen_text())
+	check(w.tool == "hands", "the number keys don't change tool at the board")
+	Input.action_press("act")
+	for i in 30:
+		w._look(0.01, 0.002)
+		await get_tree().process_frame
+	Input.action_release("act")
+	await get_tree().process_frame
+	marks = Shed.board["marks"]
+	check(marks.size() == 1 and int(marks[0]["c"]) == 2 and (marks[0]["pts"] as PackedVector2Array).size() >= 2,
+		"holding the mouse at the board draws a red line where you look (%d marks)" % marks.size())
+	await get_tree().process_frame
+	check(board._nodes.size() == 1 and board._nodes.values()[0] is Line2D, "the line is drawn on the board")
+	_press("board_undo")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(Shed.board["marks"].is_empty() and board._nodes.is_empty(), "Z takes it back off")
+	_press("board_text")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(main.label_dialog.visible, "T opens a box to type in")
+	main.label_dialog._edit.text = "Order brake pads"
+	main.label_dialog._save()
+	main.label_dialog._edit.text = "Bleed the brakes"
+	main.label_dialog._save()
+	main.label_dialog._save()
+	var texts: Array = Shed.board["marks"].filter(func(m): return m.has("text"))
+	check(texts.size() == 2 and texts[1]["at"].y > texts[0]["at"].y and not main.label_dialog.visible,
+		"Enter puts each line up under the last, and an empty line closes the box")
+	for i in 3:
+		await get_tree().physics_frame
+	Input.action_press("board_wipe")
+	for i in 400:
+		await get_tree().process_frame
+		if Shed.board["marks"].is_empty():
+			break
+	Input.action_release("board_wipe")
+	check(Shed.board["marks"].is_empty(), "holding X wipes the whole board")
+	main._end_session()
+	main.queue_free()
+	await get_tree().process_frame

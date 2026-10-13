@@ -47,6 +47,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Unpack a delivery box; take hold of or let go of equipment (posters and TVs hang on the wall you look at) | F | Y |
 | Sit on a seat (tap), or move it (hold) | F | Y |
 | Change radio station | Hold left mouse on the radio | Hold RT or A |
+| Whiteboard: draw / rub out; pen colour, eraser, thickness; text; undo; wipe it all | Hold left / right mouse; 1-6, 7, wheel; T; Z; hold X | Hold RT / LT; B colour; LB / RB thickness; D-pad left undo |
 | Menu | Esc | Start |
 
 **Building from scratch**: hold a frame and look at an empty bay floor (bay 4 is free in a new shed), then hold the work button to stand the frame up in the bay. Fit the fork, wheels, engine and the rest onto it from there. Taking the bare frame off again frees the bay.
@@ -64,6 +65,8 @@ The **parts computer** is split into three aisles, **Shed**, **Bike** and **Outd
 The **paint booth** (three sizes, 2 to 6 hooks) is for proper paint jobs: hang parts on its hooks and sweep the **spray gun** over them. The gun's wide, even fan coats every part it passes, and a booth adds a better finish. With the can or the gun, the wet paint shows on the part as you go, so you can see the patches you've missed, and too much in one place runs. Fluid containers are see-through or have a sight strip, so you can see how full they are.
 
 **Ping** (G or middle mouse) outlines whatever you're pointing at, with your name and what it is, for everyone in the shed. The **stopwatch** is for timing whatever runs you dream up; it keeps running while you ride. Press N while looking at a bike to give it a name. The roller door and the shed lights have switches beside the door. A day and night cycle runs outside; its speed (or a fixed time of day) is in the Esc menu.
+
+The **whiteboard** on the front wall, left of the roller door, is for the crew's plans and lists. Walk up and look at it: hold left mouse to draw where you're looking and right mouse to rub out; 1–6 pick the pen colour (black, blue, red, green, orange, purple), 7 the eraser, and the scroll wheel the thickness (fine, medium, thick, marker). T types a line of text at the crosshair (Enter starts the next line under it), Z or Ctrl+Z undoes your own last mark, and holding X wipes the whole board. Everyone sees it as it's drawn, and it's kept with the shed.
 
 The **radio** on the shelf above the workbench streams internet radio stations (SomaFM and Radio Paradise). Everyone in the shed hears the same station; each player's PC streams it, so it needs an internet connection. The Esc menu has volume sliders for sound effects and the radio. Stations live in `data/radio.json`.
 
@@ -112,6 +115,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/shed_state.gd` | The shared shed: bikes, parts, who holds what. The host checks and applies every action |
 | `scripts/workshop.gd` | Builds the shed, its stations and dashboards, and draws parked bikes and loose parts |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
+| `scripts/whiteboard.gd`, `board_data.gd` | The shared whiteboard: drawing on it, and its marks kept in the shed state |
 | `scripts/bike_build.gd` | Turns parts and their condition into stats: mass, torque curve, grip, brakes, top speed |
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime |
 | `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |

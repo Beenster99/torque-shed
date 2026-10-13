@@ -93,6 +93,10 @@ func build() -> void:
 	_build_booth_room()
 	_build_lights()
 	_build_door_and_switches()
+	var board := Whiteboard.new()
+	board.position = Whiteboard.MOUNT
+	board.rotation.y = Whiteboard.FACING
+	add_child(board)
 	_crew_screen = Dashboard.new("crew", 3.0)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
 	_crew_screen.rotation.y = PI * 0.5
