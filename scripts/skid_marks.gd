@@ -66,7 +66,7 @@ func mark(key: String, at: Vector3, normal: Vector3, width: float, strength: flo
 	var xf := Transform3D(b, (from + at) * 0.5 + normal * 0.012)
 	multimesh.set_instance_transform(_next, xf)
 	var rubber := Color(0.05, 0.05, 0.05) if surface == "tarmac" else Color(0.22, 0.16, 0.1)
-	rubber.a = clampf(0.25 + strength * 0.6, 0.0, 0.85)
+	rubber.a = clampf(0.45 + strength * 0.5, 0.0, 0.92)
 	multimesh.set_instance_color(_next, rubber)
 	_next = (_next + 1) % MAX_MARKS
 	multimesh.visible_instance_count = maxi(multimesh.visible_instance_count, mini(_next if _next > 0 else MAX_MARKS, MAX_MARKS))
