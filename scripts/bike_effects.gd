@@ -86,6 +86,7 @@ func setup(exhaust: Vector3, rear_contact: Vector3, lamp: Vector3, lumens: float
 		_beam.spot_range = 18.0 + lumens / 100.0
 		_beam.spot_angle = 24.0
 		_beam.light_energy = lumens / 450.0
+		_beam.set_meta("day_energy", _beam.light_energy)
 		_beam.light_color = Color(1.0, 0.92, 0.78) if lumens < 2000.0 else Color(0.92, 0.96, 1.0)
 		_beam.shadow_enabled = false
 		add_child(_beam)
@@ -290,6 +291,10 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 	_grit.emitting = _dust.emitting and kick * dusty > 0.35
 	if _beam:
 		_beam.visible = engine_on
+		# The eye adjusts at night: the same lamp throws a much brighter pool on the road.
+		var dark := World.darkness()
+		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * dark)
+		_beam.spot_angle = lerpf(24.0, 30.0, dark)
 		_lamp_glow.visible = engine_on
 
 
