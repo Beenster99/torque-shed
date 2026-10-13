@@ -9,6 +9,7 @@ var _message: Label
 var _message_timer := 0.0
 var _info: Label
 var _prompt: Label
+var _top_kmh := 0.0
 
 
 func _ready() -> void:
@@ -109,26 +110,36 @@ func _draw_toolbar() -> void:
 		if active:
 			draw_rect(r, UITheme.ACCENT, false, 2.0)
 		draw_string(font, r.position + Vector2(8, 18), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.5))
-		var label: String = {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder"}[t]
+		var label: String = {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder", "spray": "Spray can"}[t]
 		draw_string(font, r.position + Vector2(0, 34), label, HORIZONTAL_ALIGNMENT_CENTER, w, 16, Color.WHITE if active else Color(1, 1, 1, 0.65))
 	var held := Shed.held_by(Shed.me())
 	if held != 0:
 		draw_string(font, Vector2(0, y - 10), "Carrying: " + Shed.item_title(held), HORIZONTAL_ALIGNMENT_CENTER, size.x, 17, UITheme.ACCENT)
 
 
+## The speedo shows what the bike's dashboard can: an old analogue clock gives you only speed,
+## a race logger adds revs, gear, a shift light and your top speed.
 func _draw_speedo() -> void:
 	if bike.build == null:
 		return
+	var features: Array = bike.build.dash_features
 	var font := get_theme_default_font()
 	var r := Rect2(size.x - 250, size.y - 120, 226, 96)
 	draw_rect(r, Color(0.03, 0.03, 0.04, 0.6))
 	var kmh := roundi(absf(bike.speed) * 3.6)
+	_top_kmh = maxf(_top_kmh, absf(bike.speed) * 3.6)
 	draw_string(font, r.position + Vector2(12, 58), "%d" % kmh, HORIZONTAL_ALIGNMENT_LEFT, -1, 50, Color.WHITE)
 	draw_string(font, r.position + Vector2(120, 34), "km/h", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.6))
-	draw_string(font, r.position + Vector2(120, 60), "GEAR %d" % bike.gear, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UITheme.ACCENT)
+	if features.has("gear"):
+		draw_string(font, r.position + Vector2(120, 60), "GEAR %d" % bike.gear, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UITheme.ACCENT)
+	if features.has("top_speed"):
+		draw_string(font, r.position + Vector2(170, 34), "TOP %d" % roundi(_top_kmh), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
 	var frac := clampf(bike.rpm / bike.build.redline, 0.0, 1.0)
-	draw_rect(Rect2(r.position + Vector2(12, 74), Vector2(202, 8)), Color(1, 1, 1, 0.12))
-	var col := UITheme.ACCENT if frac < 0.92 else Color(1, 0.2, 0.15)
-	draw_rect(Rect2(r.position + Vector2(12, 74), Vector2(202 * frac, 8)), col)
+	if features.has("rpm"):
+		draw_rect(Rect2(r.position + Vector2(12, 74), Vector2(202, 8)), Color(1, 1, 1, 0.12))
+		var col := UITheme.ACCENT if frac < 0.92 else Color(1, 0.2, 0.15)
+		draw_rect(Rect2(r.position + Vector2(12, 74), Vector2(202 * frac, 8)), col)
+	if features.has("shift_light") and frac > 0.88:
+		draw_circle(r.position + Vector2(206, 18), 8.0, Color(1, 0.15, 0.1) if frac > 0.94 else Color(1, 0.85, 0.1))
 	if absf(bike.speed) < 2.0 and not bike.is_crashed:
 		draw_string(font, Vector2(0, size.y - 40), "Press F (or Y) to get off", HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.7))

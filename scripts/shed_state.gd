@@ -7,17 +7,24 @@ extends Node
 signal changed
 signal feedback(text: String, ok: bool)
 
-const SPOTS: Array[String] = ["bench_0", "bench_1", "bench_2", "bench_3", "bench_4", "bench_5", "washer", "repair"]
+const SPOTS: Array[String] = ["bench_0", "bench_1", "bench_2", "bench_3", "delivery_0", "delivery_1", "delivery_2",
+	"delivery_3", "engine_stand", "washer", "repair"]
 const PAINTS := [Color(0.78, 0.09, 0.08), Color(0.1, 0.35, 0.8), Color(0.95, 0.6, 0.05), Color(0.1, 0.6, 0.3),
-	Color(0.55, 0.15, 0.7), Color(0.9, 0.9, 0.9), Color(0.1, 0.1, 0.1), Color(0.0, 0.6, 0.7)]
+	Color(0.55, 0.15, 0.7), Color(0.9, 0.9, 0.9), Color(0.06, 0.06, 0.06), Color(0.0, 0.6, 0.7),
+	Color(0.72, 0.73, 0.75), Color(0.8, 0.62, 0.2)]
+const PAINT_NAMES := ["red", "blue", "orange", "green", "purple", "white", "black", "teal", "silver", "gold"]
 const BIKE_NAMES := ["Barn Find", "Rusty Ranger", "Basket Case", "Old Faithful", "The Widowmaker", "Rattler",
 	"Hedge Hopper", "Midnight Special", "Scrapyard Dog", "Grandad's Pride", "Mud Puppy", "Iron Maiden"]
 const WASH_RATE := 0.18        # dirt removed per second in the parts washer
 const SYNC_INTERVAL := 0.1
+const MAX_PAINT_RUST := 0.2
 
-var bikes := {}     # bike id -> {id, name, paint, slots{slot: item id or 0}, bolted{slot: bool}, rider, xf, delivered}
-var items := {}     # item id -> {id, part, slot, rust, dirt, wear, at ("bike" | "held" | "spot"), ref}
-var crew := {}      # peer id -> {name, tool, activity, riding, fitted, removed, cleaned, repaired, km, top_kmh}
+## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered}
+var bikes := {}
+## item id -> {id, part, kind, rust, dirt, wear, color, at ("bike" | "engine" | "held" | "spot"), ref}.
+## Engine blocks also carry slots{} and bolted{} for the parts fitted to them.
+var items := {}
+var crew := {}      # peer id -> {name, tool, activity, riding, fitted, removed, cleaned, repaired, painted, km, top_kmh}
 var active := false
 
 var _next_id := 1
@@ -52,21 +59,42 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	_rng.seed = seed_value if seed_value != 0 else int(Time.get_unix_time_from_system())
 	active = true
 	_add_crew(me(), player_name)
-	_new_bike({"frame": "steel_backbone", "fork": "enduro_usd", "shock": "enduro_mono", "wheels": "knobbly_21_18",
-		"brakes": "wave_disc_mx", "engine": "single_450", "intake": "stock_airbox", "exhaust": "stock_muffler",
-		"gearbox": "six_wide_enduro", "final_drive": "mx_13_52"}, 0, "Rusty Ranger", 0.75)
+	_new_bike({"frame": "steel_backbone", "fork": "enduro_usd", "shock": "enduro_mono", "front_wheel": "spoked_21",
+		"rear_wheel": "spoked_18", "front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx", "front_disc": "wave_270",
+		"rear_disc": "wave_270", "front_caliper": "twin_piston", "rear_caliper": "single_piston", "front_pads": "sintered",
+		"rear_pads": "sintered", "front_master": "axial_12", "rear_master": "axial_14", "tank": "enduro_12",
+		"saddle": "enduro_seat", "handlebars": "mx_tall", "dashboard": "lcd_basic", "engine": "single_450",
+		"exhaust": "stock_muffler", "final_drive": "mx_13_52", "head": "four_valve", "fuel": "flat_slide_carbs",
+		"air_filter": "foam_filter", "oil_filter": "paper_oil", "spark_plugs": "copper_plugs", "cooling": "single_radiator",
+		"gearbox": "six_wide_enduro"}, 0, "Rusty Ranger", 0.75, PAINTS[2])
 	var cafe := _new_bike({"frame": "steel_cradle", "fork": "classic_conventional", "shock": "twin_shock",
-		"wheels": "road_17", "brakes": "drum_brakes", "engine": "twin_700", "intake": "stock_airbox",
-		"exhaust": "stock_muffler", "gearbox": "four_vintage", "final_drive": "stock_15_45"}, 1, "Barn Find", 0.6)
-	# The barn find arrives half stripped: its exhaust, brakes and wheels are on the bench.
-	for slot in ["exhaust", "brakes", "wheels"]:
-		var item_id: int = bikes[cafe]["slots"][slot]
-		bikes[cafe]["slots"][slot] = 0
-		bikes[cafe]["bolted"][slot] = false
-		_move(item_id, "spot", _free_spot_from(0))
-	_new_bike({"frame": "alu_twin_spar", "fork": "usd_sport", "shock": "sport_mono", "wheels": "road_17",
-		"brakes": "twin_disc_sport", "engine": "four_1000", "intake": "fuel_injection", "exhaust": "slip_on",
-		"gearbox": "six_close", "final_drive": "stock_15_45"}, 2, "Old Faithful", 0.35)
+		"front_wheel": "wire_19_chrome", "rear_wheel": "spoked_18", "front_tyre": "vintage_ribbed", "rear_tyre": "vintage_ribbed",
+		"front_disc": "drilled_280", "rear_disc": "solid_240", "front_caliper": "twin_piston", "rear_caliper": "single_piston",
+		"front_pads": "organic", "rear_pads": "organic", "front_master": "axial_14", "rear_master": "axial_14",
+		"tank": "cafe_15", "saddle": "cafe_hump", "handlebars": "clip_ons", "dashboard": "analog_speedo",
+		"engine": "twin_700", "exhaust": "stock_muffler", "final_drive": "stock_15_45", "head": "two_valve_stock",
+		"fuel": "twin_carbs", "air_filter": "paper_airbox", "oil_filter": "centrifugal_oil", "spark_plugs": "vintage_plugs",
+		"cooling": "air_fins", "gearbox": "four_vintage"}, 1, "Barn Find", 0.6, PAINTS[0])
+	# The barn find arrives half stripped: exhaust, final drive and tyres are on the bench, the
+	# engine is on the stand, and its spark plugs and air filter were lost in the barn.
+	var bench := 0
+	for slot in ["exhaust", "final_drive", "front_tyre", "rear_tyre"]:
+		_detach(cafe, slot, "spot", "bench_%d" % bench)
+		bench += 1
+	var block := _detach(cafe, "engine", "spot", "engine_stand")
+	for slot in ["spark_plugs", "air_filter"]:
+		var gone: int = items[block]["slots"][slot]
+		items[block]["slots"][slot] = 0
+		items[block]["bolted"][slot] = false
+		items.erase(gone)
+	_new_bike({"frame": "alu_twin_spar", "fork": "usd_sport", "shock": "sport_mono", "front_wheel": "cast_17",
+		"rear_wheel": "cast_17", "front_tyre": "sport_road", "rear_tyre": "sport_road", "front_disc": "floating_310",
+		"rear_disc": "solid_240", "front_caliper": "four_piston_radial", "rear_caliper": "twin_piston",
+		"front_pads": "sintered", "rear_pads": "semi_metallic", "front_master": "radial_19x20", "rear_master": "axial_14",
+		"tank": "sport_17", "saddle": "sport_solo", "handlebars": "clip_ons", "dashboard": "tft_colour",
+		"engine": "four_1000", "exhaust": "slip_on", "final_drive": "stock_15_45", "head": "four_valve",
+		"fuel": "throttle_bodies", "air_filter": "paper_airbox", "oil_filter": "high_flow_oil", "spark_plugs": "iridium_plugs",
+		"cooling": "single_radiator", "gearbox": "six_close"}, 2, "Old Faithful", 0.35, PAINTS[1])
 	_mark_dirty()
 	changed.emit()
 
@@ -88,14 +116,52 @@ func stop() -> void:
 
 # ---------------------------------------------------------------------------- queries
 
-func item_on(bike_id: int, slot: String) -> int:
+## The thing a slot belongs to: the bike itself, or for engine slots the engine block in it.
+## Pass `engine_id` for an engine that isn't in a bike (on the stand). Empty when there's none.
+func host_of(bike_id: int, slot: String, engine_id := 0) -> Dictionary:
+	if engine_id != 0:
+		return items.get(engine_id, {}) if is_engine(engine_id) else {}
 	if not bikes.has(bike_id):
-		return 0
-	return int(bikes[bike_id]["slots"].get(slot, 0))
+		return {}
+	if PartsDB.is_engine_slot(slot):
+		var block := int(bikes[bike_id]["slots"].get("engine", 0))
+		return items.get(block, {})
+	return bikes[bike_id]
+
+
+func is_engine(item_id: int) -> bool:
+	return items.has(item_id) and items[item_id]["kind"] == "engine"
+
+
+func item_on(bike_id: int, slot: String) -> int:
+	return int(host_of(bike_id, slot).get("slots", {}).get(slot, 0))
 
 
 func is_bolted(bike_id: int, slot: String) -> bool:
-	return bikes.has(bike_id) and bool(bikes[bike_id]["bolted"].get(slot, false))
+	return bool(host_of(bike_id, slot).get("bolted", {}).get(slot, false))
+
+
+func engine_item(engine_id: int, slot: String) -> int:
+	return int(host_of(0, slot, engine_id).get("slots", {}).get(slot, 0))
+
+
+func engine_bolted(engine_id: int, slot: String) -> bool:
+	return bool(host_of(0, slot, engine_id).get("bolted", {}).get(slot, false))
+
+
+## Item fitted at a target: {bike, slot} or {engine, slot}.
+func item_at_target(t: Dictionary) -> int:
+	var slot := str(t.get("slot", ""))
+	if int(t.get("engine", 0)) != 0:
+		return engine_item(int(t["engine"]), slot)
+	return item_on(int(t.get("bike", 0)), slot)
+
+
+func bolted_at_target(t: Dictionary) -> bool:
+	var slot := str(t.get("slot", ""))
+	if int(t.get("engine", 0)) != 0:
+		return engine_bolted(int(t["engine"]), slot)
+	return is_bolted(int(t.get("bike", 0)), slot)
 
 
 func held_by(peer: int) -> int:
@@ -119,11 +185,16 @@ func riding(peer: int) -> int:
 	return 0
 
 
+## Empty slots, including the engine's own when an engine is fitted.
 func missing_slots(bike_id: int) -> Array:
 	var out := []
-	for slot in PartsDB.SLOTS:
+	for slot in PartsDB.BIKE_SLOTS:
 		if item_on(bike_id, slot) == 0:
 			out.append(slot)
+	if item_on(bike_id, "engine") != 0:
+		for slot in PartsDB.ENGINE_SLOTS:
+			if item_on(bike_id, slot) == 0:
+				out.append(slot)
 	return out
 
 
@@ -135,29 +206,56 @@ func loose_slots(bike_id: int) -> Array:
 	return out
 
 
+func engine_missing(engine_id: int) -> Array:
+	var out := []
+	for slot in PartsDB.ENGINE_SLOTS:
+		if engine_item(engine_id, slot) == 0:
+			out.append(slot)
+	return out
+
+
 func is_complete(bike_id: int) -> bool:
 	return bikes.has(bike_id) and missing_slots(bike_id).is_empty() and loose_slots(bike_id).is_empty()
 
 
 func condition_of(item: Dictionary) -> Dictionary:
-	return {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"]}
+	return {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"]}
 
 
 ## The bike's build from the parts on it. Missing parts fall back to what it was delivered
-## with, so the numbers stay comparable. `swap` puts a loose item in its slot for previews.
-func build_of(bike_id: int, swap := 0) -> BikeBuild:
+## with, so the numbers stay comparable. `swap` puts a loose item in `swap_slot` for previews.
+func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 	var bike: Dictionary = bikes[bike_id]
 	var parts: Dictionary = bike["original"].duplicate()
-	var cond := {}
+	var cond: Dictionary = bike.get("original_cond", {}).duplicate()
 	for slot in PartsDB.SLOTS:
 		var item_id := item_on(bike_id, slot)
 		if item_id != 0:
 			parts[slot] = items[item_id]["part"]
 			cond[slot] = condition_of(items[item_id])
-	if swap != 0 and items.has(swap):
+	if swap != 0 and items.has(swap) and swap_slot != "":
 		var it: Dictionary = items[swap]
-		parts[it["slot"]] = it["part"]
-		cond[it["slot"]] = condition_of(it)
+		parts[swap_slot] = it["part"]
+		cond[swap_slot] = condition_of(it)
+		if is_engine(swap):
+			for slot in PartsDB.ENGINE_SLOTS:
+				var sub := engine_item(swap, slot)
+				if sub != 0:
+					parts[slot] = items[sub]["part"]
+					cond[slot] = condition_of(items[sub])
+	return BikeBuild.new(parts, cond)
+
+
+## A stock bike built around an engine on the stand, so its numbers can be compared.
+func engine_build(engine_id: int, swap := 0, swap_slot := "") -> BikeBuild:
+	var asm := engine_assembly(engine_id)
+	var parts: Dictionary = PartsDB.DEFAULT_BUILD.duplicate()
+	var cond: Dictionary = asm["cond"]
+	for slot in asm["parts"]:
+		parts[slot] = asm["parts"][slot]
+	if swap != 0 and items.has(swap) and swap_slot != "":
+		parts[swap_slot] = items[swap]["part"]
+		cond[swap_slot] = condition_of(items[swap])
 	return BikeBuild.new(parts, cond)
 
 
@@ -168,17 +266,48 @@ func fitted_map(bike_id: int) -> Dictionary:
 	return out
 
 
+## An engine and what's fitted to it, for drawing it on its own: {parts, fitted, cond}.
+func engine_assembly(engine_id: int) -> Dictionary:
+	var it: Dictionary = items[engine_id]
+	var parts := {"engine": it["part"]}
+	var fitted := {"engine": true}
+	var cond := {"engine": condition_of(it)}
+	for slot in PartsDB.ENGINE_SLOTS:
+		var sub := engine_item(engine_id, slot)
+		fitted[slot] = sub != 0
+		if sub != 0:
+			parts[slot] = items[sub]["part"]
+			cond[slot] = condition_of(items[sub])
+	return {"parts": parts, "fitted": fitted, "cond": cond}
+
+
 func item_title(item_id: int) -> String:
 	if not items.has(item_id):
 		return ""
-	var it: Dictionary = items[item_id]
-	return PartsDB.part_name(it["part"])
+	return PartsDB.part_name(items[item_id]["part"])
+
+
+func paint_name(c: Color) -> String:
+	return PAINT_NAMES[paint_index(c)]
+
+
+## The palette colour closest to `c`.
+func paint_index(c: Color) -> int:
+	var best := 0
+	var best_d := INF
+	for i in PAINTS.size():
+		var p: Color = PAINTS[i]
+		var d := Vector3(p.r - c.r, p.g - c.g, p.b - c.b).length_squared()
+		if d < best_d:
+			best_d = d
+			best = i
+	return best
 
 
 func condition_text(item: Dictionary) -> String:
-	return "Condition %d%%   Rust %d%%   Dirt %d%%   Wear %d%%" % [
+	return "Condition %d%%   Rust %d%%   Dirt %d%%   Wear %d%%   %s" % [
 		roundi(BikeBuild.part_health(condition_of(item)) * 100.0), roundi(item["rust"] * 100.0),
-		roundi(item["dirt"] * 100.0), roundi(item["wear"] * 100.0)]
+		roundi(item["dirt"] * 100.0), roundi(item["wear"] * 100.0), paint_name(item["color"]).capitalize()]
 
 
 func free_bay(bay_count: int) -> int:
@@ -192,43 +321,119 @@ func free_bay(bay_count: int) -> int:
 	return -1
 
 
+func free_delivery_spot() -> String:
+	for i in 4:
+		if item_at_spot("delivery_%d" % i) == 0:
+			return "delivery_%d" % i
+	return ""
+
+
+## Where a held part would go on a target, or why it can't: {slot} or {error}.
+## Prefers the slot being looked at, then the same side (front or rear), then any free slot.
+func install_slot(action: Dictionary, item_id: int) -> Dictionary:
+	if not items.has(item_id):
+		return {"error": "You're not holding a part."}
+	var k: String = items[item_id]["kind"]
+	var candidates := PartsDB.slots_for_kind(k)
+	var engine_id := int(action.get("engine", 0))
+	var bike_id := int(action.get("bike", 0))
+	var on_engine := PartsDB.is_engine_slot(candidates[0])
+	if engine_id != 0 and not on_engine:
+		return {"error": "That doesn't go on an engine."}
+	var host := host_of(bike_id, candidates[0], engine_id)
+	if host.is_empty():
+		return {"error": "Fit an engine first." if on_engine else "That bike has gone."}
+	var looked := str(action.get("slot", ""))
+	var side := "front_" if looked.begins_with("front_") else ("rear_" if looked.begins_with("rear_") else "")
+	candidates.sort_custom(func(a, b): return _slot_rank(a, looked, side) < _slot_rank(b, looked, side))
+	var missing_mount := ""
+	for slot in candidates:
+		if int(host["slots"].get(slot, 0)) != 0:
+			continue
+		var ok := true
+		for m in PartsDB.MOUNTS[slot]:
+			if m == "engine" and on_engine:
+				continue
+			if int(host["slots"].get(m, 0)) == 0:
+				ok = false
+				if missing_mount == "":
+					missing_mount = m
+		if ok:
+			return {"slot": slot}
+	if missing_mount != "":
+		return {"error": "Fit the %s first." % PartsDB.slot_name(missing_mount).to_lower()}
+	return {"error": "There's already a %s fitted." % PartsDB.KIND_NAMES[k].to_lower()}
+
+
+func _slot_rank(slot: String, looked: String, side: String) -> int:
+	if slot == looked:
+		return 0
+	if side != "" and slot.begins_with(side):
+		return 1
+	return 2
+
+
+## Engine work needs the engine on the stand, except for service parts in the frame.
+func _engine_access(action: Dictionary, slot: String) -> String:
+	if not PartsDB.is_engine_slot(slot):
+		return ""
+	var engine_id := int(action.get("engine", 0))
+	if engine_id == 0:
+		if PartsDB.SERVICE_SLOTS.has(slot):
+			return ""
+		return "Take the engine out and put it on the engine stand to get at the %s." % PartsDB.slot_name(slot).to_lower()
+	var block: Dictionary = items[engine_id]
+	if not (block["at"] == "spot" and block["ref"] == "engine_stand"):
+		return "Put the engine on the engine stand first."
+	return ""
+
+
 ## Why `peer` can't do `action` right now, or "" when they can.
 func check(peer: int, action: Dictionary) -> String:
 	var a := str(action.get("a", ""))
 	var held := held_by(peer)
 	var bike_id := int(action.get("bike", 0))
+	var engine_id := int(action.get("engine", 0))
 	var slot := str(action.get("slot", ""))
 	if a in ["unbolt", "bolt", "remove", "install", "mount"]:
-		if not bikes.has(bike_id):
+		if engine_id != 0:
+			if not is_engine(engine_id):
+				return "That engine has gone."
+		elif not bikes.has(bike_id):
 			return "That bike has gone."
-		if bikes[bike_id]["rider"] != 0:
+		elif bikes[bike_id]["rider"] != 0:
 			return "Someone is riding that bike."
 	match a:
 		"unbolt", "bolt", "remove":
-			var item_id := item_on(bike_id, slot)
+			var host := host_of(bike_id, slot, engine_id)
+			var item_id := int(host.get("slots", {}).get(slot, 0))
 			if item_id == 0:
 				return "That part isn't fitted."
-			if a == "unbolt" and not is_bolted(bike_id, slot):
+			var bolted := bool(host["bolted"].get(slot, false))
+			if a == "unbolt" and not bolted:
 				return "It's already unbolted."
-			if a == "bolt" and is_bolted(bike_id, slot):
+			if a == "bolt" and bolted:
 				return "It's already bolted up."
 			if a == "remove":
+				var access := _engine_access(action, slot)
+				if access != "":
+					return access
 				if held != 0:
 					return "Your hands are full."
-				if is_bolted(bike_id, slot):
+				if bolted:
 					return "Unbolt it with the wrench first."
 				for dep in PartsDB.dependents(slot):
-					if item_on(bike_id, dep) != 0:
-						return "Take the %s off first." % PartsDB.SLOT_NAMES[dep].to_lower()
+					if int(host["slots"].get(dep, 0)) != 0:
+						return "Take the %s off first." % PartsDB.slot_name(dep).to_lower()
 		"install":
 			if held == 0:
 				return "You're not holding a part."
-			var s: String = items[held]["slot"]
-			if item_on(bike_id, s) != 0:
-				return "There's already a %s fitted." % PartsDB.SLOT_NAMES[s].to_lower()
-			for m in PartsDB.MOUNTS[s]:
-				if item_on(bike_id, m) == 0:
-					return "Fit the %s first." % PartsDB.SLOT_NAMES[m].to_lower()
+			var where := install_slot(action, held)
+			if where.has("error"):
+				return where["error"]
+			var access := _engine_access(action, where["slot"])
+			if access != "":
+				return access
 		"take":
 			if held != 0:
 				return "Your hands are full."
@@ -237,19 +442,22 @@ func check(peer: int, action: Dictionary) -> String:
 		"place":
 			if held == 0:
 				return "You're not holding a part."
-			if not SPOTS.has(str(action.get("spot", ""))):
+			var spot := str(action.get("spot", ""))
+			if not SPOTS.has(spot):
 				return "You can't put it there."
-			if item_at_spot(str(action.get("spot", ""))) != 0:
+			if item_at_spot(spot) != 0:
 				return "That spot is taken."
-		"shelf_take":
-			if held != 0:
-				return "Your hands are full."
+			if spot == "engine_stand" and not is_engine(held):
+				return "Only an engine goes on the engine stand."
+		"order_part":
 			if PartsDB.get_part(str(action.get("part", ""))).is_empty():
 				return "Unknown part."
+			if free_delivery_spot() == "":
+				return "The delivery pallets are full. Clear one first."
 		"bin":
 			if held == 0:
 				return "You're not holding a part."
-		"clean", "repair":
+		"clean", "repair", "paint":
 			var item_id := int(action.get("item", 0))
 			if not items.has(item_id):
 				return "That part has gone."
@@ -263,6 +471,8 @@ func check(peer: int, action: Dictionary) -> String:
 					return "Put the part on the repair bench first."
 				if it["rust"] < 0.02 and it["wear"] < 0.02:
 					return "It's already in top condition."
+			if a == "paint" and it["rust"] > MAX_PAINT_RUST:
+				return "Too rusty to paint. Grind it back on the repair bench first."
 		"mount":
 			if riding(peer) != 0:
 				return "You're already riding."
@@ -270,10 +480,10 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Put the part down first."
 			var missing := missing_slots(bike_id)
 			if not missing.is_empty():
-				return "Missing: %s." % ", ".join(missing.map(func(m): return PartsDB.SLOT_NAMES[m].to_lower()))
+				return "Missing: %s." % _slot_list(missing)
 			var loose := loose_slots(bike_id)
 			if not loose.is_empty():
-				return "Not bolted up: %s." % ", ".join(loose.map(func(m): return PartsDB.SLOT_NAMES[m].to_lower()))
+				return "Not bolted up: %s." % _slot_list(loose)
 		"dismount":
 			if not bikes.has(bike_id) or bikes[bike_id]["rider"] != peer:
 				return "You're not riding that bike."
@@ -285,6 +495,13 @@ func check(peer: int, action: Dictionary) -> String:
 		_:
 			return "Unknown action."
 	return ""
+
+
+func _slot_list(slots: Array) -> String:
+	var names: Array = slots.slice(0, 4).map(func(m): return PartsDB.slot_name(m).to_lower())
+	if slots.size() > 4:
+		names.append("and %d more" % (slots.size() - 4))
+	return ", ".join(names)
 
 
 # ---------------------------------------------------------------------------- changes
@@ -310,48 +527,59 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	var a := str(action["a"])
 	var bike_id := int(action.get("bike", 0))
+	var engine_id := int(action.get("engine", 0))
 	var slot := str(action.get("slot", ""))
 	var c: Dictionary = crew.get(peer, {})
 	var text := ""
 	match a:
 		"unbolt":
-			bikes[bike_id]["bolted"][slot] = false
-			text = "%s unbolted" % PartsDB.SLOT_NAMES[slot]
+			host_of(bike_id, slot, engine_id)["bolted"][slot] = false
+			text = "%s unbolted" % PartsDB.slot_name(slot)
 		"bolt":
-			bikes[bike_id]["bolted"][slot] = true
-			text = "%s bolted up" % PartsDB.SLOT_NAMES[slot]
-			if is_complete(bike_id):
+			host_of(bike_id, slot, engine_id)["bolted"][slot] = true
+			text = "%s bolted up" % PartsDB.slot_name(slot)
+			if engine_id == 0 and is_complete(bike_id):
 				text += ". The bike is ready to ride!"
+			elif engine_id != 0 and engine_missing(engine_id).is_empty():
+				text += ". The engine is complete."
 		"remove":
-			var item_id := item_on(bike_id, slot)
-			bikes[bike_id]["slots"][slot] = 0
-			bikes[bike_id]["bolted"][slot] = false
+			var host := host_of(bike_id, slot, engine_id)
+			var item_id := int(host["slots"][slot])
+			host["slots"][slot] = 0
+			host["bolted"][slot] = false
 			_move(item_id, "held", peer)
 			_bump(c, "removed")
 			text = "Removed the %s" % PartsDB.part_name(items[item_id]["part"])
 		"install":
 			var item_id := held_by(peer)
-			var s: String = items[item_id]["slot"]
-			bikes[bike_id]["slots"][s] = item_id
-			bikes[bike_id]["bolted"][s] = false
-			_move(item_id, "bike", bike_id)
+			var s: String = install_slot(action, item_id)["slot"]
+			var host := host_of(bike_id, s, engine_id)
+			host["slots"][s] = item_id
+			host["bolted"][s] = false
+			_move(item_id, "engine" if PartsDB.is_engine_slot(s) else "bike", int(host["id"]))
 			_bump(c, "fitted")
-			text = "Fitted the %s. Bolt it up with the wrench." % PartsDB.part_name(items[item_id]["part"])
+			text = "Fitted the %s as the %s. Bolt it up with the wrench." % [PartsDB.part_name(items[item_id]["part"]),
+				PartsDB.slot_name(s).to_lower()]
 		"take":
 			_move(item_at_spot(str(action["spot"])), "held", peer)
 		"place":
 			var item_id := held_by(peer)
 			_move(item_id, "spot", str(action["spot"]))
-			if action["spot"] == "washer":
-				text = "Into the parts washer"
-		"shelf_take":
-			var item_id := _new_item(str(action["part"]), 0.0, 0.0, 0.0)
-			_move(item_id, "held", peer)
-			text = "Picked up a new %s" % PartsDB.part_name(str(action["part"]))
+			match str(action["spot"]):
+				"washer":
+					text = "Into the parts washer"
+				"engine_stand":
+					text = "Engine on the stand. Strip it down or build it up."
+		"order_part":
+			var part_id := str(action["part"])
+			var spot := free_delivery_spot()
+			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
+			_move(item_id, "spot", spot)
+			text = "Ordered a %s. It's on delivery pallet %d." % [PartsDB.part_name(part_id), int(spot.trim_prefix("delivery_")) + 1]
 		"bin":
 			var item_id := held_by(peer)
 			text = "Binned the %s" % PartsDB.part_name(items[item_id]["part"])
-			items.erase(item_id)
+			_erase_item(item_id)
 		"clean":
 			items[int(action["item"])]["dirt"] = 0.0
 			_bump(c, "cleaned")
@@ -362,6 +590,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 			it["wear"] = 0.0
 			_bump(c, "repaired")
 			text = "Restored the %s" % item_title(int(action["item"]))
+		"paint":
+			var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
+			items[int(action["item"])]["color"] = PAINTS[idx]
+			_bump(c, "painted")
+			text = "Sprayed the %s %s" % [item_title(int(action["item"])), PAINT_NAMES[idx]]
 		"mount":
 			bikes[bike_id]["rider"] = peer
 			c["riding"] = bike_id
@@ -406,48 +639,89 @@ func _move(item_id: int, at: String, ref) -> void:
 	items[item_id]["ref"] = ref
 
 
-func _free_spot_from(start: int) -> String:
-	for i in range(start, SPOTS.size()):
-		if SPOTS[i].begins_with("bench") and item_at_spot(SPOTS[i]) == 0:
-			return SPOTS[i]
+## Takes a part off a bike (whatever is mounted on it stays put) and puts it somewhere.
+func _detach(bike_id: int, slot: String, at: String, ref) -> int:
+	var item_id: int = bikes[bike_id]["slots"][slot]
+	bikes[bike_id]["slots"][slot] = 0
+	bikes[bike_id]["bolted"][slot] = false
+	_move(item_id, at, ref)
+	return item_id
+
+
+func _erase_item(item_id: int) -> void:
+	if is_engine(item_id):
+		for slot in PartsDB.ENGINE_SLOTS:
+			var sub := engine_item(item_id, slot)
+			if sub != 0:
+				items.erase(sub)
+	items.erase(item_id)
+
+
+func _free_spot() -> String:
+	for spot in SPOTS:
+		if (spot.begins_with("bench") or spot.begins_with("delivery")) and item_at_spot(spot) == 0:
+			return spot
 	return "bench_0"
 
 
-func _new_item(part: String, rust: float, dirt: float, wear: float) -> int:
+func _new_item(part: String, rust: float, dirt: float, wear: float, color = null) -> int:
 	var id := _next_id
 	_next_id += 1
-	items[id] = {"id": id, "part": part, "slot": PartsDB.slot_of(part), "rust": rust, "dirt": dirt, "wear": wear,
-		"at": "spot", "ref": ""}
+	var k := PartsDB.kind_of(part)
+	items[id] = {"id": id, "part": part, "kind": k, "rust": rust, "dirt": dirt, "wear": wear,
+		"color": PartsDB.default_color(part) if color == null else color, "at": "spot", "ref": ""}
+	if k == "engine":
+		items[id]["slots"] = {}
+		items[id]["bolted"] = {}
 	return id
 
 
+func _aged_item(part: String, age: float, color = null) -> int:
+	var rust := clampf(age * _rng.randf_range(0.4, 1.2), 0.0, 1.0)
+	var dirt := clampf(age * _rng.randf_range(0.8, 1.4), 0.0, 1.0)
+	var wear := clampf(age * _rng.randf_range(0.2, 1.0), 0.0, 1.0)
+	return _new_item(part, rust, dirt, wear, color)
+
+
 ## Adds a bike to a bay. `age` 0..1 sets how rusty, dirty and worn its parts are.
-func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float) -> int:
+func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint = null) -> int:
 	var id := _next_id
 	_next_id += 1
 	parts = PartsDB.sanitize_build(parts)
-	var bike := {"id": id, "name": bike_name, "paint": PAINTS[_rng.randi() % PAINTS.size()], "slots": {}, "bolted": {},
+	var paint_color: Color = PAINTS[_rng.randi() % PAINTS.size()] if paint == null else paint
+	var bike := {"id": id, "name": bike_name, "paint": paint_color, "slots": {}, "bolted": {},
 		"rider": 0, "bay": bay, "xf": Workshop.bay_transform(bay), "original": parts.duplicate()}
 	bikes[id] = bike
 	var cond := {}
-	for slot in PartsDB.SLOTS:
-		var rust := clampf(age * _rng.randf_range(0.4, 1.2), 0.0, 1.0)
-		var dirt := clampf(age * _rng.randf_range(0.8, 1.4), 0.0, 1.0)
-		var wear := clampf(age * _rng.randf_range(0.2, 1.0), 0.0, 1.0)
-		var item_id := _new_item(parts[slot], rust, dirt, wear)
+	for slot in PartsDB.BIKE_SLOTS:
+		var item_id := _aged_item(parts[slot], age, paint_color if slot == "tank" else null)
 		_move(item_id, "bike", id)
 		bike["slots"][slot] = item_id
 		bike["bolted"][slot] = true
-		cond[slot] = {"rust": rust, "dirt": dirt, "wear": wear}
+		cond[slot] = condition_of(items[item_id])
+	var block: Dictionary = items[bike["slots"]["engine"]]
+	for slot in PartsDB.ENGINE_SLOTS:
+		var item_id := _aged_item(parts[slot], age)
+		_move(item_id, "engine", block["id"])
+		block["slots"][slot] = item_id
+		block["bolted"][slot] = true
+		cond[slot] = condition_of(items[item_id])
+	bike["original_cond"] = cond
 	bike["delivered"] = BikeBuild.new(parts, cond).summary()
 	return id
 
 
 func _random_bike(bay: int) -> int:
 	var parts := {}
+	var pick := {}
 	for slot in PartsDB.SLOTS:
-		var options: Array = PartsDB.by_slot[slot]
-		parts[slot] = options[_rng.randi() % options.size()]
+		var k: String = PartsDB.SLOT_KIND[slot]
+		# A random bike wears a matching pair of tyres; everything else is picked per slot.
+		var key: String = k if k == "tyre" else slot
+		if not pick.has(key):
+			var options: Array = PartsDB.by_kind[k]
+			pick[key] = options[_rng.randi() % options.size()]
+		parts[slot] = pick[key]
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
 	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9))
 
@@ -457,7 +731,7 @@ func _add_crew(peer: int, player_name: String) -> void:
 		crew[peer]["name"] = player_name
 		return
 	crew[peer] = {"name": player_name, "tool": "hands", "activity": "", "riding": 0, "fitted": 0, "removed": 0,
-		"cleaned": 0, "repaired": 0, "km": 0.0, "top_kmh": 0.0, "kmh": 0.0, "slot": crew.size()}
+		"cleaned": 0, "repaired": 0, "painted": 0, "km": 0.0, "top_kmh": 0.0, "kmh": 0.0, "slot": crew.size()}
 
 
 func _on_player_joined(id: int, info: Dictionary) -> void:
@@ -474,7 +748,7 @@ func _on_player_left(id: int) -> void:
 		return
 	var held := held_by(id)
 	if held != 0:
-		_move(held, "spot", _free_spot_from(0))
+		_move(held, "spot", _free_spot())
 	var bike_id := riding(id)
 	if bike_id != 0:
 		bikes[bike_id]["rider"] = 0

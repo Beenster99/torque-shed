@@ -14,7 +14,8 @@
 				0.13
 			],
 			"cda": 0.58,
-			"style": "cradle"
+			"style": "cradle",
+			"type": "Steel cradle"
 		},
 		"steel_backbone": {
 			"name": "Steel backbone frame",
@@ -30,7 +31,8 @@
 				0.06
 			],
 			"cda": 0.6,
-			"style": "backbone"
+			"style": "backbone",
+			"type": "Steel backbone"
 		},
 		"chromoly_trellis": {
 			"name": "Chromoly trellis frame",
@@ -46,7 +48,8 @@
 				0.05
 			],
 			"cda": 0.55,
-			"style": "trellis"
+			"style": "trellis",
+			"type": "Chromoly trellis"
 		},
 		"alu_twin_spar": {
 			"name": "Aluminium twin-spar frame",
@@ -62,7 +65,8 @@
 				0.75
 			],
 			"cda": 0.52,
-			"style": "spar"
+			"style": "spar",
+			"type": "Twin spar"
 		},
 		"carbon_monocoque": {
 			"name": "Carbon monocoque frame",
@@ -78,224 +82,971 @@
 				0.06
 			],
 			"cda": 0.48,
-			"style": "spar"
+			"style": "spar",
+			"type": "Carbon monocoque"
 		}
 	},
 	"fork": {
+		"girder_vintage": {
+			"name": "Vintage girder fork",
+			"description": "Pre-war linkage fork. Short travel, lots of character.",
+			"mass": 11.0,
+			"type": "Girder",
+			"travel": 0.09,
+			"spring": 32000.0,
+			"bump": 1500.0,
+			"rebound": 2200.0,
+			"adjust": 0,
+			"adjust_name": "None",
+			"length": 0.72,
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"style": "girder"
+		},
 		"classic_conventional": {
 			"name": "Classic conventional fork",
 			"description": "140 mm, soft and simple. Dives under braking.",
 			"mass": 9.5,
+			"type": "Conventional telescopic",
 			"travel": 0.14,
 			"spring": 24000.0,
-			"damping": 1900.0,
-			"length": 0.76
+			"bump": 1500.0,
+			"rebound": 2300.0,
+			"adjust": 0,
+			"adjust_name": "None",
+			"length": 0.76,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			],
+			"style": "conventional"
 		},
 		"telescopic_road": {
 			"name": "Telescopic road fork",
-			"description": "130 mm travel, firm for tarmac.",
+			"description": "130 mm, firm for tarmac, preload caps on top.",
 			"mass": 9.0,
+			"type": "Conventional telescopic",
 			"travel": 0.13,
 			"spring": 30000.0,
-			"damping": 2600.0,
-			"length": 0.74
+			"bump": 2100.0,
+			"rebound": 3100.0,
+			"adjust": 1,
+			"adjust_name": "Preload",
+			"length": 0.74,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			],
+			"style": "conventional"
 		},
 		"usd_sport": {
 			"name": "Upside-down sport fork",
-			"description": "120 mm, stiff and precise with adjustable damping.",
+			"description": "120 mm, stiff and precise, fully adjustable.",
 			"mass": 8.5,
+			"type": "Upside-down",
 			"travel": 0.12,
 			"spring": 34000.0,
-			"damping": 3200.0,
-			"length": 0.72
+			"bump": 2700.0,
+			"rebound": 3800.0,
+			"adjust": 4,
+			"adjust_name": "3-way (preload, bump, rebound)",
+			"length": 0.72,
+			"color": [
+				0.8,
+				0.62,
+				0.18
+			],
+			"style": "usd"
 		},
 		"enduro_usd": {
 			"name": "Enduro USD fork",
 			"description": "270 mm, plush in the rough but steady on the road.",
 			"mass": 10.0,
+			"type": "Upside-down",
 			"travel": 0.27,
 			"spring": 16500.0,
-			"damping": 2000.0,
-			"length": 0.92
+			"bump": 1600.0,
+			"rebound": 2500.0,
+			"adjust": 3,
+			"adjust_name": "2-way (preload, rebound)",
+			"length": 0.92,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"style": "usd"
 		},
 		"long_travel_mx": {
 			"name": "Long-travel MX fork",
-			"description": "290 mm travel, soaks up jumps and rough dirt.",
+			"description": "300 mm air fork. Soaks up jumps and rough dirt.",
 			"mass": 10.5,
-			"travel": 0.29,
+			"type": "Upside-down air",
+			"travel": 0.3,
 			"spring": 14000.0,
-			"damping": 1700.0,
-			"length": 0.95
+			"bump": 1350.0,
+			"rebound": 2100.0,
+			"adjust": 4,
+			"adjust_name": "3-way (preload, bump, rebound)",
+			"length": 0.96,
+			"color": [
+				0.15,
+				0.3,
+				0.75
+			],
+			"style": "usd"
 		}
 	},
 	"shock": {
 		"twin_shock": {
 			"name": "Twin shocks",
-			"description": "110 mm travel, classic and simple.",
+			"description": "110 mm, classic and simple.",
 			"mass": 4.0,
+			"type": "Twin shock",
 			"travel": 0.11,
 			"spring": 36000.0,
-			"damping": 2900.0,
-			"layout": "twin"
+			"bump": 2300.0,
+			"rebound": 3500.0,
+			"adjust": 1,
+			"adjust_name": "Preload",
+			"layout": "twin",
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
 		},
 		"twin_shock_gas": {
 			"name": "Gas-charged twin shocks",
-			"description": "120 mm with remote reservoirs. Better control.",
+			"description": "120 mm with piggyback reservoirs. Better control.",
 			"mass": 4.5,
+			"type": "Twin shock, gas",
 			"travel": 0.12,
 			"spring": 34000.0,
-			"damping": 3300.0,
-			"layout": "twin"
+			"bump": 2700.0,
+			"rebound": 3900.0,
+			"adjust": 3,
+			"adjust_name": "2-way (preload, rebound)",
+			"layout": "twin",
+			"color": [
+				0.85,
+				0.15,
+				0.1
+			]
 		},
 		"sport_mono": {
 			"name": "Sport mono-shock",
-			"description": "130 mm, firm and adjustable for fast road work.",
+			"description": "130 mm, firm and fully adjustable for fast road work.",
 			"mass": 4.2,
+			"type": "Mono-shock",
 			"travel": 0.13,
 			"spring": 38000.0,
-			"damping": 3500.0,
-			"layout": "mono"
+			"bump": 2900.0,
+			"rebound": 4100.0,
+			"adjust": 4,
+			"adjust_name": "3-way (preload, bump, rebound)",
+			"layout": "mono",
+			"color": [
+				0.85,
+				0.12,
+				0.1
+			]
 		},
 		"enduro_mono": {
 			"name": "Enduro mono-shock",
 			"description": "280 mm, balanced for trails and tarmac.",
 			"mass": 4.8,
+			"type": "Mono-shock",
 			"travel": 0.28,
 			"spring": 17500.0,
-			"damping": 2100.0,
-			"layout": "mono"
+			"bump": 1700.0,
+			"rebound": 2500.0,
+			"adjust": 2,
+			"adjust_name": "Preload and rebound",
+			"layout": "mono",
+			"color": [
+				0.15,
+				0.35,
+				0.8
+			]
 		},
 		"mono_shock_mx": {
-			"name": "Linkage mono-shock",
-			"description": "300 mm travel with progressive damping.",
+			"name": "Linkage MX mono-shock",
+			"description": "300 mm with progressive linkage.",
 			"mass": 5.0,
+			"type": "Linkage mono-shock",
 			"travel": 0.3,
 			"spring": 16000.0,
-			"damping": 1900.0,
-			"layout": "mono"
+			"bump": 1500.0,
+			"rebound": 2300.0,
+			"adjust": 4,
+			"adjust_name": "3-way (preload, bump, rebound)",
+			"layout": "mono",
+			"color": [
+				0.95,
+				0.75,
+				0.1
+			]
 		}
 	},
-	"wheels": {
-		"road_17": {
-			"name": "17\" cast road wheels",
-			"description": "Sport road tyres. Great on tarmac, nervous on dirt.",
-			"mass": 22.0,
-			"front_radius": 0.3,
-			"rear_radius": 0.31,
-			"width": 0.16,
-			"style": "road",
-			"grip": {
-				"tarmac": 1.15,
-				"dirt": 0.62,
-				"grass": 0.5
-			}
+	"wheel": {
+		"spoked_21": {
+			"name": "21\" spoked wheel",
+			"description": "Tall, narrow and tough. Made for the front of a dirt bike.",
+			"mass": 5.5,
+			"type": "Spoked",
+			"style": "spoked",
+			"diameter": 21,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			]
+		},
+		"spoked_18": {
+			"name": "18\" spoked wheel",
+			"description": "Classic laced rim for trail and vintage bikes.",
+			"mass": 6.5,
+			"type": "Spoked",
+			"style": "spoked",
+			"diameter": 18,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			]
+		},
+		"wire_19_chrome": {
+			"name": "19\" chrome wire wheel",
+			"description": "Show-chrome rim and stainless spokes.",
+			"mass": 7.0,
+			"type": "Spoked",
+			"style": "wire",
+			"diameter": 19,
+			"color": [
+				0.9,
+				0.9,
+				0.92
+			]
+		},
+		"cast_17": {
+			"name": "17\" cast wheel",
+			"description": "Five-spoke cast alloy. Stiff and tubeless.",
+			"mass": 6.0,
+			"type": "Cast alloy",
+			"style": "cast",
+			"diameter": 17,
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
 		},
 		"supermoto_17": {
-			"name": "Supermoto 17\" alloys",
-			"description": "Light alloys with sticky road rubber. Loves tight corners.",
-			"mass": 18.0,
-			"front_radius": 0.3,
-			"rear_radius": 0.3,
-			"width": 0.15,
+			"name": "17\" supermoto wheel",
+			"description": "Wide laced alloy rim for sticky road rubber.",
+			"mass": 5.0,
+			"type": "Spoked alloy",
+			"style": "spoked",
+			"diameter": 17,
+			"color": [
+				0.85,
+				0.65,
+				0.15
+			]
+		},
+		"carbon_17": {
+			"name": "17\" carbon wheel",
+			"description": "Featherweight race wheel. Steering feels instant.",
+			"mass": 3.2,
+			"type": "Carbon fibre",
+			"style": "carbon",
+			"diameter": 17,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		}
+	},
+	"tyre": {
+		"vintage_ribbed": {
+			"name": "Vintage ribbed tyre",
+			"description": "Hard old-school rubber. Looks right, grips so-so.",
+			"mass": 4.5,
+			"type": "Road, bias ply",
+			"compound": "Hard",
+			"width": 130,
+			"aspect": 0.8,
 			"style": "road",
 			"grip": {
-				"tarmac": 1.22,
+				"tarmac": 0.95,
+				"dirt": 0.6,
+				"grass": 0.5
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"touring_road": {
+			"name": "Touring road tyre",
+			"description": "Long-lasting dual compound for all weathers.",
+			"mass": 5.5,
+			"type": "Road radial",
+			"compound": "Dual",
+			"width": 160,
+			"aspect": 0.6,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.1,
 				"dirt": 0.6,
 				"grass": 0.48
-			}
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
 		},
-		"dual_sport_21_18": {
-			"name": "21\"/18\" dual-sport",
-			"description": "Spoked wheels with 50/50 tyres. Decent everywhere.",
-			"mass": 21.0,
-			"front_radius": 0.35,
-			"rear_radius": 0.33,
-			"width": 0.12,
+		"sport_road": {
+			"name": "Sport road tyre",
+			"description": "Soft edges, warms up quickly.",
+			"mass": 5.0,
+			"type": "Road radial",
+			"compound": "Soft",
+			"width": 180,
+			"aspect": 0.55,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.2,
+				"dirt": 0.58,
+				"grass": 0.45
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"dual_sport": {
+			"name": "Dual-sport tyre",
+			"description": "Chunky blocks that still work on tarmac.",
+			"mass": 5.5,
+			"type": "Adventure",
+			"compound": "Medium",
+			"width": 130,
+			"aspect": 0.85,
 			"style": "offroad",
 			"grip": {
 				"tarmac": 1.0,
 				"dirt": 0.85,
 				"grass": 0.72
-			}
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
 		},
-		"knobbly_21_18": {
-			"name": "21\"/18\" spoked knobblies",
-			"description": "Off-road tyres. Bite in dirt, squirm on tarmac.",
-			"mass": 20.0,
-			"front_radius": 0.35,
-			"rear_radius": 0.33,
-			"width": 0.12,
+		"knobbly_mx": {
+			"name": "Knobbly MX tyre",
+			"description": "Tall knobs that dig into dirt and grass.",
+			"mass": 5.0,
+			"type": "Off-road knobbly",
+			"compound": "Soft",
+			"width": 120,
+			"aspect": 0.9,
 			"style": "offroad",
 			"grip": {
-				"tarmac": 0.9,
-				"dirt": 0.95,
-				"grass": 0.82
-			}
+				"tarmac": 0.88,
+				"dirt": 0.96,
+				"grass": 0.84
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
 		},
-		"slick_17": {
-			"name": "17\" race slicks",
-			"description": "Maximum tarmac grip. Useless off-road.",
-			"mass": 21.0,
-			"front_radius": 0.3,
-			"rear_radius": 0.31,
-			"width": 0.19,
+		"race_slick": {
+			"name": "Race slick",
+			"description": "No tread at all. Phenomenal on tarmac, lethal on dirt.",
+			"mass": 4.8,
+			"type": "Slick",
+			"compound": "Super soft",
+			"width": 190,
+			"aspect": 0.55,
 			"style": "slick",
 			"grip": {
 				"tarmac": 1.32,
 				"dirt": 0.45,
 				"grass": 0.35
-			}
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
 		}
 	},
-	"brakes": {
-		"drum_brakes": {
-			"name": "Drum brakes",
-			"description": "Vintage single-leading-shoe drums. Plan your stops.",
-			"mass": 6.0,
-			"front_torque": 750.0,
-			"rear_torque": 380.0,
-			"style": "drum"
+	"disc": {
+		"solid_240": {
+			"name": "240 mm solid disc",
+			"description": "Small plain steel disc. Fine for a rear wheel.",
+			"mass": 0.9,
+			"type": "Solid",
+			"diameter": 240,
+			"style": "round",
+			"color": [
+				0.7,
+				0.71,
+				0.73
+			]
 		},
-		"single_disc": {
-			"name": "Single disc, twin-piston",
-			"description": "One front disc. Honest everyday stopping.",
-			"mass": 4.5,
-			"front_torque": 1250.0,
-			"rear_torque": 500.0,
-			"style": "disc"
+		"drilled_280": {
+			"name": "280 mm drilled disc",
+			"description": "Cross-drilled to shed heat and water.",
+			"mass": 1.1,
+			"type": "Drilled",
+			"diameter": 280,
+			"style": "drilled",
+			"color": [
+				0.7,
+				0.71,
+				0.73
+			]
 		},
-		"wave_disc_mx": {
-			"name": "Wave discs (MX)",
-			"description": "Light petal discs that shrug off mud.",
+		"wave_270": {
+			"name": "270 mm wave disc",
+			"description": "Petal edge sheds mud. Light.",
+			"mass": 0.95,
+			"type": "Wave (petal)",
+			"diameter": 270,
+			"style": "wave",
+			"color": [
+				0.7,
+				0.71,
+				0.73
+			]
+		},
+		"floating_310": {
+			"name": "310 mm floating disc",
+			"description": "Steel rotor on an alloy carrier. Never warps.",
+			"mass": 1.3,
+			"type": "Floating",
+			"diameter": 310,
+			"style": "floating",
+			"color": [
+				0.7,
+				0.71,
+				0.73
+			]
+		},
+		"floating_330_race": {
+			"name": "330 mm race floating disc",
+			"description": "Huge rotor for huge stopping power.",
+			"mass": 1.4,
+			"type": "Floating",
+			"diameter": 330,
+			"style": "floating",
+			"color": [
+				0.7,
+				0.71,
+				0.73
+			]
+		}
+	},
+	"caliper": {
+		"single_piston": {
+			"name": "Single-piston sliding caliper",
+			"description": "Basic and cheap. Needs a firm squeeze.",
+			"mass": 0.9,
+			"pistons": 1,
+			"force": 0.6,
+			"type": "Sliding",
+			"color": [
+				0.15,
+				0.15,
+				0.16
+			]
+		},
+		"twin_piston": {
+			"name": "Twin-piston sliding caliper",
+			"description": "The everyday workhorse.",
+			"mass": 0.9,
+			"pistons": 2,
+			"force": 0.78,
+			"type": "Sliding",
+			"color": [
+				0.6,
+				0.61,
+				0.63
+			]
+		},
+		"four_piston_axial": {
+			"name": "Four-piston axial caliper",
+			"description": "Opposed pistons, bolted on the side.",
+			"mass": 1.0,
+			"pistons": 4,
+			"force": 0.92,
+			"type": "Axial",
+			"color": [
+				0.15,
+				0.15,
+				0.16
+			]
+		},
+		"four_piston_radial": {
+			"name": "Four-piston radial caliper",
+			"description": "Stiff radial mounting for sharp feel.",
+			"mass": 0.95,
+			"pistons": 4,
+			"force": 1.02,
+			"type": "Radial",
+			"color": [
+				0.8,
+				0.62,
+				0.18
+			]
+		},
+		"six_piston_race": {
+			"name": "Six-piston race caliper",
+			"description": "Billet monoblock. Bites like a dog.",
+			"mass": 1.0,
+			"pistons": 6,
+			"force": 1.12,
+			"type": "Radial monoblock",
+			"color": [
+				0.75,
+				0.1,
+				0.08
+			]
+		}
+	},
+	"pads": {
+		"organic": {
+			"name": "Organic pads",
+			"description": "Quiet and kind to discs, fade when hot.",
+			"mass": 0.15,
+			"mu": 0.35,
+			"type": "Organic",
+			"color": [
+				0.35,
+				0.3,
+				0.25
+			]
+		},
+		"semi_metallic": {
+			"name": "Semi-metallic pads",
+			"description": "A good all-round compromise.",
+			"mass": 0.15,
+			"mu": 0.4,
+			"type": "Semi-metallic",
+			"color": [
+				0.4,
+				0.4,
+				0.42
+			]
+		},
+		"sintered": {
+			"name": "Sintered pads",
+			"description": "Strong bite in the wet and the mud.",
+			"mass": 0.15,
+			"mu": 0.45,
+			"type": "Sintered",
+			"color": [
+				0.55,
+				0.45,
+				0.3
+			]
+		},
+		"ceramic": {
+			"name": "Ceramic pads",
+			"description": "Smooth, consistent and long-lasting.",
+			"mass": 0.15,
+			"mu": 0.42,
+			"type": "Ceramic",
+			"color": [
+				0.8,
+				0.8,
+				0.78
+			]
+		},
+		"carbon_race": {
+			"name": "Carbon race pads",
+			"description": "Huge friction once they are warm.",
+			"mass": 0.15,
+			"mu": 0.5,
+			"type": "Carbon-ceramic",
+			"color": [
+				0.1,
+				0.1,
+				0.1
+			]
+		}
+	},
+	"master": {
+		"axial_14": {
+			"name": "14 mm axial master cylinder",
+			"description": "Stock part with a round reservoir.",
+			"mass": 0.45,
+			"ratio": 0.85,
+			"type": "Axial",
+			"color": [
+				0.1,
+				0.1,
+				0.1
+			]
+		},
+		"axial_12": {
+			"name": "12 mm axial master cylinder",
+			"description": "Smaller piston, more leverage, softer feel.",
+			"mass": 0.45,
+			"ratio": 0.92,
+			"type": "Axial",
+			"color": [
+				0.6,
+				0.61,
+				0.63
+			]
+		},
+		"radial_19x20": {
+			"name": "19x20 radial master cylinder",
+			"description": "Progressive sport feel.",
+			"mass": 0.5,
+			"ratio": 1.0,
+			"type": "Radial",
+			"color": [
+				0.15,
+				0.15,
+				0.16
+			]
+		},
+		"radial_19x18": {
+			"name": "19x18 radial master cylinder",
+			"description": "Sharp, powerful, adjustable ratio.",
+			"mass": 0.5,
+			"ratio": 1.06,
+			"type": "Radial",
+			"color": [
+				0.8,
+				0.62,
+				0.18
+			]
+		},
+		"race_radial": {
+			"name": "Race radial master cylinder",
+			"description": "Billet body with a remote adjuster.",
+			"mass": 0.48,
+			"ratio": 1.12,
+			"type": "Radial race",
+			"color": [
+				0.75,
+				0.1,
+				0.08
+			]
+		}
+	},
+	"tank": {
+		"peanut_9": {
+			"name": "Peanut tank, 9 L",
+			"description": "Tiny, slim and very bobber.",
+			"mass": 2.5,
+			"capacity": 9,
+			"style": "peanut",
+			"color": [
+				0.1,
+				0.1,
+				0.1
+			]
+		},
+		"enduro_12": {
+			"name": "Enduro tank, 12 L",
+			"description": "Narrow plastic tank with radiator shrouds.",
+			"mass": 2.0,
+			"capacity": 12,
+			"style": "enduro",
+			"color": [
+				0.95,
+				0.95,
+				0.95
+			]
+		},
+		"cafe_15": {
+			"name": "Caf\u00e9 racer tank, 15 L",
+			"description": "Long teardrop with knee dents.",
+			"mass": 4.0,
+			"capacity": 15,
+			"style": "cafe",
+			"color": [
+				0.75,
+				0.1,
+				0.08
+			]
+		},
+		"sport_17": {
+			"name": "Sport tank, 17 L",
+			"description": "Angular, tucks you in.",
 			"mass": 3.5,
-			"front_torque": 1350.0,
-			"rear_torque": 620.0,
-			"style": "wave"
+			"capacity": 17,
+			"style": "sport",
+			"color": [
+				0.1,
+				0.3,
+				0.75
+			]
 		},
-		"twin_disc_sport": {
-			"name": "Twin discs, four-piston",
-			"description": "Strong, progressive two-finger braking.",
+		"touring_23": {
+			"name": "Touring tank, 23 L",
+			"description": "Big and broad. Goes forever between fills.",
 			"mass": 5.5,
-			"front_torque": 1800.0,
-			"rear_torque": 560.0,
-			"style": "twin"
+			"capacity": 23,
+			"style": "touring",
+			"color": [
+				0.2,
+				0.2,
+				0.22
+			]
+		}
+	},
+	"saddle": {
+		"flat_bench": {
+			"name": "Flat bench seat",
+			"description": "Long, flat and room for two.",
+			"mass": 2.5,
+			"style": "bench",
+			"height": 0.0,
+			"comfort": 0.7,
+			"color": [
+				0.08,
+				0.06,
+				0.05
+			]
 		},
-		"radial_race": {
-			"name": "Radial race calipers",
-			"description": "Huge bite. Grab it too hard and you'll stoppie.",
-			"mass": 5.0,
-			"front_torque": 2150.0,
-			"rear_torque": 600.0,
-			"style": "twin"
+		"cafe_hump": {
+			"name": "Caf\u00e9 hump seat",
+			"description": "Solo seat with a rear cowl.",
+			"mass": 2.0,
+			"style": "cafe",
+			"height": -0.02,
+			"comfort": 0.5,
+			"color": [
+				0.25,
+				0.12,
+				0.06
+			]
+		},
+		"enduro_seat": {
+			"name": "Enduro seat",
+			"description": "Tall, narrow and grippy for standing up.",
+			"mass": 1.6,
+			"style": "enduro",
+			"height": 0.05,
+			"comfort": 0.45,
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"sport_solo": {
+			"name": "Sport solo seat",
+			"description": "Thin pad with a pillion cowl.",
+			"mass": 1.4,
+			"style": "sport",
+			"height": 0.02,
+			"comfort": 0.4,
+			"color": [
+				0.05,
+				0.05,
+				0.06
+			]
+		},
+		"touring_comfort": {
+			"name": "Touring comfort seat",
+			"description": "Deep stepped seat with a backrest.",
+			"mass": 4.0,
+			"style": "touring",
+			"height": 0.01,
+			"comfort": 1.0,
+			"color": [
+				0.12,
+				0.08,
+				0.05
+			]
+		}
+	},
+	"handlebars": {
+		"clip_ons": {
+			"name": "Clip-ons",
+			"description": "Low and narrow, clamped to the fork legs.",
+			"mass": 1.2,
+			"style": "Clip-ons",
+			"width": 600,
+			"rise": -0.1,
+			"cda": -0.04,
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"flat_bar": {
+			"name": "Flat bar",
+			"description": "Straight 720 mm bar. Neutral.",
+			"mass": 1.4,
+			"style": "Flat",
+			"width": 720,
+			"rise": 0.08,
+			"cda": 0.0,
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"drag_bar": {
+			"name": "Drag bar",
+			"description": "Low, straight and a little stretched.",
+			"mass": 1.3,
+			"style": "Drag",
+			"width": 680,
+			"rise": 0.02,
+			"cda": -0.01,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"mx_tall": {
+			"name": "MX tall bar",
+			"description": "800 mm with a cross brace. Loads of leverage.",
+			"mass": 1.5,
+			"style": "MX braced",
+			"width": 800,
+			"rise": 0.14,
+			"cda": 0.02,
+			"color": [
+				0.8,
+				0.62,
+				0.18
+			]
+		},
+		"ape_hangers": {
+			"name": "Ape hangers",
+			"description": "Hands up high. Comfortable until you go fast.",
+			"mass": 1.8,
+			"style": "Ape hanger",
+			"width": 760,
+			"rise": 0.36,
+			"cda": 0.06,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		}
+	},
+	"dashboard": {
+		"analog_speedo": {
+			"name": "Analogue speedo",
+			"description": "Single round speedo. Just your speed.",
+			"mass": 0.5,
+			"style": "analog",
+			"features": [
+				"speed"
+			],
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"twin_clocks": {
+			"name": "Twin clocks",
+			"description": "Speedo and rev counter side by side.",
+			"mass": 0.8,
+			"style": "twin",
+			"features": [
+				"speed",
+				"rpm"
+			],
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"lcd_basic": {
+			"name": "LCD dash",
+			"description": "Speed, revs and a gear readout.",
+			"mass": 0.4,
+			"style": "lcd",
+			"features": [
+				"speed",
+				"rpm",
+				"gear"
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"tft_colour": {
+			"name": "Colour TFT dash",
+			"description": "Full colour with a shift light.",
+			"mass": 0.6,
+			"style": "tft",
+			"features": [
+				"speed",
+				"rpm",
+				"gear",
+				"shift_light"
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"race_logger": {
+			"name": "Race data logger",
+			"description": "Shift light, gear, revs and a top-speed log.",
+			"mass": 0.5,
+			"style": "race",
+			"features": [
+				"speed",
+				"rpm",
+				"gear",
+				"shift_light",
+				"top_speed"
+			],
+			"color": [
+				0.15,
+				0.15,
+				0.16
+			]
 		}
 	},
 	"engine": {
 		"single_250": {
-			"name": "250cc single",
-			"description": "Tiny, light and screams to 13,000 rpm.",
-			"mass": 22.0,
+			"name": "250 cc single",
+			"description": "Revvy little thumper. Light and frugal.",
+			"mass": 15.0,
+			"layout": "single",
 			"cylinders": 1,
 			"displacement": 250.0,
+			"bore": 76.0,
+			"stroke": 55.0,
 			"torque_per_cc": 0.1,
 			"peak_torque_rpm": 9500.0,
 			"redline": 13000.0,
@@ -304,14 +1055,18 @@
 				0.62,
 				0.63,
 				0.65
-			]
+			],
+			"type": "Single"
 		},
 		"single_450": {
-			"name": "450cc single",
-			"description": "Light, punchy, revs hard.",
-			"mass": 29.0,
+			"name": "450 cc single",
+			"description": "Punchy dirt-bike motor.",
+			"mass": 20.0,
+			"layout": "single",
 			"cylinders": 1,
 			"displacement": 450.0,
+			"bore": 95.0,
+			"stroke": 63.4,
 			"torque_per_cc": 0.105,
 			"peak_torque_rpm": 8000.0,
 			"redline": 11000.0,
@@ -320,14 +1075,18 @@
 				0.55,
 				0.56,
 				0.58
-			]
+			],
+			"type": "Single"
 		},
 		"twin_700": {
-			"name": "700cc parallel twin",
-			"description": "Broad torque and a lovely growl.",
-			"mass": 52.0,
+			"name": "700 cc parallel twin",
+			"description": "Torquey all-rounder.",
+			"mass": 36.0,
+			"layout": "parallel",
 			"cylinders": 2,
 			"displacement": 700.0,
+			"bore": 80.0,
+			"stroke": 69.6,
 			"torque_per_cc": 0.1,
 			"peak_torque_rpm": 7000.0,
 			"redline": 9500.0,
@@ -336,14 +1095,38 @@
 				0.18,
 				0.18,
 				0.2
-			]
+			],
+			"type": "Parallel twin"
+		},
+		"vtwin_900": {
+			"name": "900 cc V-twin",
+			"description": "Big lazy torque and a lumpy idle.",
+			"mass": 42.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 900.0,
+			"bore": 92.0,
+			"stroke": 67.7,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 6200.0,
+			"redline": 8800.0,
+			"idle_rpm": 1100.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
 		},
 		"triple_850": {
-			"name": "850cc triple",
-			"description": "Torquey low down, howls up top.",
-			"mass": 60.0,
+			"name": "850 cc inline triple",
+			"description": "Smooth with a howl at the top.",
+			"mass": 42.0,
+			"layout": "triple",
 			"cylinders": 3,
 			"displacement": 850.0,
+			"bore": 78.0,
+			"stroke": 59.0,
 			"torque_per_cc": 0.102,
 			"peak_torque_rpm": 7500.0,
 			"redline": 10500.0,
@@ -352,14 +1135,18 @@
 				0.25,
 				0.26,
 				0.28
-			]
+			],
+			"type": "Inline triple"
 		},
 		"four_1000": {
-			"name": "1000cc inline four",
-			"description": "Silky and brutally fast. Heavy in the hands.",
-			"mass": 68.0,
+			"name": "1000 cc inline four",
+			"description": "Screaming superbike motor.",
+			"mass": 46.0,
+			"layout": "inline",
 			"cylinders": 4,
 			"displacement": 1000.0,
+			"bore": 76.0,
+			"stroke": 55.1,
 			"torque_per_cc": 0.105,
 			"peak_torque_rpm": 9500.0,
 			"redline": 13500.0,
@@ -368,91 +1155,425 @@
 				0.1,
 				0.1,
 				0.11
+			],
+			"type": "Inline four"
+		}
+	},
+	"head": {
+		"two_valve_stock": {
+			"name": "Two-valve stock head",
+			"description": "Simple pushrod-era head. Easy on fuel.",
+			"mass_per_cyl": 2.6,
+			"valves": 2,
+			"cam": "Mild",
+			"compression": 9.0,
+			"torque_mult": 0.95,
+			"peak_shift": 0.95,
+			"redline_add": -500.0,
+			"heat": 0.85,
+			"color": [
+				0.7,
+				0.71,
+				0.72
+			]
+		},
+		"four_valve": {
+			"name": "Four-valve head",
+			"description": "Twin overhead cams, breathes well.",
+			"mass_per_cyl": 2.8,
+			"valves": 4,
+			"cam": "Standard",
+			"compression": 11.0,
+			"torque_mult": 1.0,
+			"peak_shift": 1.0,
+			"redline_add": 0.0,
+			"heat": 1.0,
+			"color": [
+				0.25,
+				0.26,
+				0.28
+			]
+		},
+		"big_valve_ported": {
+			"name": "Big-valve ported head",
+			"description": "Hand-ported with oversize valves.",
+			"mass_per_cyl": 2.8,
+			"valves": 4,
+			"cam": "Standard",
+			"compression": 11.5,
+			"torque_mult": 1.05,
+			"peak_shift": 1.04,
+			"redline_add": 300.0,
+			"heat": 1.1,
+			"color": [
+				0.7,
+				0.71,
+				0.72
+			]
+		},
+		"hot_cam": {
+			"name": "Hot cam head",
+			"description": "Lumpy cams. Weak low down, flies up top.",
+			"mass_per_cyl": 2.8,
+			"valves": 4,
+			"cam": "Hot",
+			"compression": 12.0,
+			"torque_mult": 1.08,
+			"peak_shift": 1.12,
+			"redline_add": 800.0,
+			"heat": 1.2,
+			"color": [
+				0.75,
+				0.1,
+				0.08
+			]
+		},
+		"race_high_comp": {
+			"name": "High-compression race head",
+			"description": "13.5:1 and race cams. Needs serious cooling.",
+			"mass_per_cyl": 2.7,
+			"valves": 4,
+			"cam": "Race",
+			"compression": 13.5,
+			"torque_mult": 1.14,
+			"peak_shift": 1.1,
+			"redline_add": 1000.0,
+			"heat": 1.45,
+			"color": [
+				0.1,
+				0.1,
+				0.11
 			]
 		}
 	},
-	"intake": {
-		"stock_airbox": {
-			"name": "Stock airbox",
-			"description": "Quiet, clean air. The baseline.",
-			"mass": 2.5,
+	"fuel": {
+		"single_carb": {
+			"name": "Single carburettor",
+			"description": "One carb feeding everything. Fine for a small single.",
+			"mass": 1.0,
+			"type": "Carburettor",
+			"flow": 500.0,
 			"torque_mult": 1.0,
 			"peak_shift": 1.0,
-			"dirt_sensitivity": 0.6
+			"color": [
+				0.7,
+				0.71,
+				0.72
+			],
+			"style": "carb"
+		},
+		"twin_carbs": {
+			"name": "Twin carburettors",
+			"description": "A pair of round-slide carbs.",
+			"mass": 2.0,
+			"type": "Carburettors",
+			"flow": 900.0,
+			"torque_mult": 1.02,
+			"peak_shift": 1.0,
+			"color": [
+				0.7,
+				0.71,
+				0.72
+			],
+			"style": "carbs"
+		},
+		"flat_slide_carbs": {
+			"name": "Flat-slide carburettors",
+			"description": "Sharp throttle and big top end.",
+			"mass": 2.6,
+			"type": "Flat-slide carburettors",
+			"flow": 1100.0,
+			"torque_mult": 1.06,
+			"peak_shift": 1.03,
+			"color": [
+				0.15,
+				0.15,
+				0.16
+			],
+			"style": "carbs"
+		},
+		"throttle_bodies": {
+			"name": "Fuel injection",
+			"description": "Throttle bodies and an ECU. Clean and smooth.",
+			"mass": 3.0,
+			"type": "Fuel injection",
+			"flow": 1200.0,
+			"torque_mult": 1.04,
+			"peak_shift": 1.0,
+			"color": [
+				0.15,
+				0.15,
+				0.16
+			],
+			"style": "fi"
+		},
+		"race_injection": {
+			"name": "Race fuel injection",
+			"description": "Big bore throttle bodies, stacked injectors.",
+			"mass": 3.2,
+			"type": "Fuel injection, race",
+			"flow": 1450.0,
+			"torque_mult": 1.08,
+			"peak_shift": 1.02,
+			"color": [
+				0.75,
+				0.1,
+				0.08
+			],
+			"style": "fi"
+		}
+	},
+	"air_filter": {
+		"paper_airbox": {
+			"name": "Paper filter in airbox",
+			"description": "Quiet and well protected.",
+			"mass": 2.5,
+			"flow": 1.0,
+			"dirt_sensitivity": 0.6,
+			"style": "airbox",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"foam_filter": {
+			"name": "Oiled foam filter",
+			"description": "Washable. Loves dust.",
+			"mass": 2.0,
+			"flow": 1.02,
+			"dirt_sensitivity": 0.5,
+			"style": "airbox",
+			"color": [
+				0.95,
+				0.55,
+				0.1
+			]
+		},
+		"cotton_gauze": {
+			"name": "Cotton gauze filter",
+			"description": "High-flow cone, lifetime element.",
+			"mass": 1.2,
+			"flow": 1.04,
+			"dirt_sensitivity": 1.2,
+			"style": "cone",
+			"color": [
+				0.75,
+				0.08,
+				0.08
+			]
 		},
 		"pod_filters": {
 			"name": "Pod filters",
-			"description": "Breathes better, clogs faster.",
-			"mass": 1.2,
-			"torque_mult": 1.03,
-			"peak_shift": 1.02,
-			"dirt_sensitivity": 1.4
+			"description": "One little pod per carb.",
+			"mass": 1.0,
+			"flow": 1.05,
+			"dirt_sensitivity": 1.4,
+			"style": "pods",
+			"color": [
+				0.75,
+				0.08,
+				0.08
+			]
 		},
 		"velocity_stacks": {
 			"name": "Velocity stacks",
-			"description": "Top-end rush at the cost of low-down pull.",
-			"mass": 1.0,
-			"torque_mult": 1.05,
-			"peak_shift": 1.08,
-			"dirt_sensitivity": 1.6
-		},
-		"race_carbs": {
-			"name": "Flat-slide race carbs",
-			"description": "Sharp throttle and more power everywhere.",
-			"mass": 3.0,
-			"torque_mult": 1.08,
-			"peak_shift": 1.03,
-			"dirt_sensitivity": 1.2
-		},
-		"fuel_injection": {
-			"name": "Fuel injection kit",
-			"description": "Smooth, efficient and less bothered by grime.",
-			"mass": 3.2,
-			"torque_mult": 1.06,
-			"peak_shift": 1.0,
-			"dirt_sensitivity": 0.4
+			"description": "Bare trumpets. All flow, no filtering.",
+			"mass": 0.8,
+			"flow": 1.08,
+			"dirt_sensitivity": 2.0,
+			"style": "stacks",
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
 		}
 	},
-	"exhaust": {
-		"stock_muffler": {
-			"name": "Stock muffler",
-			"description": "Quiet and heavy. Neighbour friendly.",
-			"mass": 9.0,
+	"oil_filter": {
+		"paper_oil": {
+			"name": "Paper oil filter",
+			"description": "Standard spin-on cartridge.",
+			"mass": 0.3,
+			"protection": 0.75,
+			"color": [
+				0.1,
+				0.1,
+				0.1
+			]
+		},
+		"high_flow_oil": {
+			"name": "High-flow oil filter",
+			"description": "Flows more when cold.",
+			"mass": 0.3,
+			"protection": 0.8,
+			"color": [
+				0.1,
+				0.3,
+				0.75
+			]
+		},
+		"magnetic_oil": {
+			"name": "Magnetic oil filter",
+			"description": "Catches metal swarf too.",
+			"mass": 0.35,
+			"protection": 0.9,
+			"color": [
+				0.85,
+				0.12,
+				0.1
+			]
+		},
+		"steel_mesh_oil": {
+			"name": "Stainless mesh oil filter",
+			"description": "Reusable race filter.",
+			"mass": 0.4,
+			"protection": 0.95,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"centrifugal_oil": {
+			"name": "Centrifugal oil spinner",
+			"description": "Vintage slinger. Better than nothing.",
+			"mass": 0.5,
+			"protection": 0.6,
+			"color": [
+				0.6,
+				0.61,
+				0.63
+			]
+		}
+	},
+	"spark_plugs": {
+		"copper_plugs": {
+			"name": "Copper spark plugs",
+			"description": "Cheap, hot spark, short life.",
+			"mass": 0.1,
 			"torque_mult": 1.0,
-			"loudness": 0.6,
-			"style": "stock"
+			"life": 0.6,
+			"color": [
+				0.95,
+				0.95,
+				0.92
+			]
 		},
-		"slip_on": {
-			"name": "Slip-on silencer",
-			"description": "A little more bark and a little more go.",
-			"mass": 7.0,
+		"platinum_plugs": {
+			"name": "Platinum spark plugs",
+			"description": "Long-lasting and steady.",
+			"mass": 0.1,
+			"torque_mult": 1.01,
+			"life": 0.85,
+			"color": [
+				0.95,
+				0.95,
+				0.92
+			]
+		},
+		"iridium_plugs": {
+			"name": "Iridium spark plugs",
+			"description": "Fine-wire tip for a crisp spark.",
+			"mass": 0.1,
 			"torque_mult": 1.02,
-			"loudness": 0.8,
-			"style": "slip"
+			"life": 1.0,
+			"color": [
+				0.95,
+				0.95,
+				0.92
+			]
 		},
-		"straight_pipe": {
-			"name": "Straight pipe",
-			"description": "Loud. Very loud. Slightly faster.",
-			"mass": 4.5,
-			"torque_mult": 1.04,
-			"loudness": 1.3,
-			"style": "straight"
+		"racing_iridium": {
+			"name": "Racing iridium plugs",
+			"description": "Colder heat range for high compression.",
+			"mass": 0.1,
+			"torque_mult": 1.03,
+			"life": 0.9,
+			"color": [
+				0.95,
+				0.95,
+				0.92
+			]
 		},
-		"full_system": {
-			"name": "Full stainless system",
-			"description": "Tuned headers all the way back.",
-			"mass": 6.0,
-			"torque_mult": 1.06,
-			"loudness": 1.0,
-			"style": "full"
+		"vintage_plugs": {
+			"name": "Vintage spark plugs",
+			"description": "Big hex and fat threads.",
+			"mass": 0.1,
+			"torque_mult": 0.98,
+			"life": 0.5,
+			"color": [
+				0.85,
+				0.85,
+				0.8
+			]
+		}
+	},
+	"cooling": {
+		"air_fins": {
+			"name": "Air-cooling fins",
+			"description": "Deep finned barrels. Nothing to leak.",
+			"mass": 1.5,
+			"type": "Air",
+			"capacity": 0.8,
+			"style": "fins",
+			"color": [
+				0.6,
+				0.61,
+				0.63
+			]
 		},
-		"titanium_race": {
-			"name": "Titanium race system",
-			"description": "Featherweight and fast. Fragile when rusty.",
+		"oil_cooler": {
+			"name": "Oil cooler",
+			"description": "Fins plus a small oil radiator.",
+			"mass": 2.0,
+			"type": "Air and oil",
+			"capacity": 1.0,
+			"style": "oil",
+			"color": [
+				0.1,
+				0.1,
+				0.1
+			]
+		},
+		"single_radiator": {
+			"name": "Single radiator",
+			"description": "Liquid cooled with one core.",
+			"mass": 3.0,
+			"type": "Liquid",
+			"capacity": 1.3,
+			"style": "radiator",
+			"color": [
+				0.1,
+				0.1,
+				0.1
+			]
+		},
+		"twin_radiators": {
+			"name": "Twin radiators",
+			"description": "Two cores either side, like a motocrosser.",
 			"mass": 3.5,
-			"torque_mult": 1.08,
-			"loudness": 1.15,
-			"style": "full"
+			"type": "Liquid",
+			"capacity": 1.7,
+			"style": "twin",
+			"color": [
+				0.15,
+				0.15,
+				0.16
+			]
+		},
+		"race_radiator": {
+			"name": "Race radiator",
+			"description": "Huge curved core with an oil cooler.",
+			"mass": 4.0,
+			"type": "Liquid, race",
+			"capacity": 2.1,
+			"style": "race",
+			"color": [
+				0.7,
+				0.71,
+				0.72
+			]
 		}
 	},
 	"gearbox": {
@@ -467,7 +1588,13 @@
 				1.25,
 				1.0
 			],
-			"shift_time": 0.2
+			"shift_time": 0.2,
+			"type": "Four-speed vintage",
+			"color": [
+				0.3,
+				0.31,
+				0.33
+			]
 		},
 		"five_wide": {
 			"name": "5-speed wide-ratio",
@@ -481,7 +1608,13 @@
 				1.17,
 				0.96
 			],
-			"shift_time": 0.12
+			"shift_time": 0.12,
+			"type": "Five-speed wide ratio",
+			"color": [
+				0.3,
+				0.31,
+				0.33
+			]
 		},
 		"six_wide_enduro": {
 			"name": "6-speed wide enduro",
@@ -496,7 +1629,13 @@
 				1.08,
 				0.92
 			],
-			"shift_time": 0.12
+			"shift_time": 0.12,
+			"type": "Six-speed enduro",
+			"color": [
+				0.3,
+				0.31,
+				0.33
+			]
 		},
 		"six_close": {
 			"name": "6-speed close-ratio",
@@ -511,7 +1650,13 @@
 				1.19,
 				1.06
 			],
-			"shift_time": 0.1
+			"shift_time": 0.1,
+			"type": "Six-speed close ratio",
+			"color": [
+				0.3,
+				0.31,
+				0.33
+			]
 		},
 		"six_race_quickshift": {
 			"name": "6-speed race with quickshifter",
@@ -526,7 +1671,80 @@
 				1.17,
 				1.05
 			],
-			"shift_time": 0.04
+			"shift_time": 0.04,
+			"type": "Six-speed with quickshifter",
+			"color": [
+				0.3,
+				0.31,
+				0.33
+			]
+		}
+	},
+	"exhaust": {
+		"stock_muffler": {
+			"name": "Stock muffler",
+			"description": "Quiet and heavy. Neighbour friendly.",
+			"mass": 9.0,
+			"torque_mult": 1.0,
+			"loudness": 0.6,
+			"style": "stock",
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"slip_on": {
+			"name": "Slip-on silencer",
+			"description": "A little more bark and a little more go.",
+			"mass": 7.0,
+			"torque_mult": 1.02,
+			"loudness": 0.8,
+			"style": "slip",
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
+		},
+		"straight_pipe": {
+			"name": "Straight pipe",
+			"description": "Loud. Very loud. Slightly faster.",
+			"mass": 4.5,
+			"torque_mult": 1.04,
+			"loudness": 1.3,
+			"style": "straight",
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"full_system": {
+			"name": "Full stainless system",
+			"description": "Tuned headers all the way back.",
+			"mass": 6.0,
+			"torque_mult": 1.06,
+			"loudness": 1.0,
+			"style": "full",
+			"color": [
+				0.75,
+				0.73,
+				0.68
+			]
+		},
+		"titanium_race": {
+			"name": "Titanium race system",
+			"description": "Featherweight and fast. Fragile when rusty.",
+			"mass": 3.5,
+			"torque_mult": 1.08,
+			"loudness": 1.15,
+			"style": "full",
+			"color": [
+				0.55,
+				0.55,
+				0.75
+			]
 		}
 	},
 	"final_drive": {
@@ -535,35 +1753,65 @@
 			"description": "Explosive launches, low top speed.",
 			"mass": 1.6,
 			"front": 13.0,
-			"rear": 52.0
+			"rear": 52.0,
+			"type": "Chain, 13/52 sprockets",
+			"color": [
+				0.55,
+				0.56,
+				0.6
+			]
 		},
 		"short_14_50": {
 			"name": "Short gearing (14/50)",
 			"description": "Hard acceleration, lower top speed.",
 			"mass": 1.5,
 			"front": 14.0,
-			"rear": 50.0
+			"rear": 50.0,
+			"type": "Chain, 14/50 sprockets",
+			"color": [
+				0.55,
+				0.56,
+				0.6
+			]
 		},
 		"stock_15_45": {
 			"name": "Stock gearing (15/45)",
 			"description": "The sensible middle ground.",
 			"mass": 1.4,
 			"front": 15.0,
-			"rear": 45.0
+			"rear": 45.0,
+			"type": "Chain, 15/45 sprockets",
+			"color": [
+				0.55,
+				0.56,
+				0.6
+			]
 		},
 		"tall_15_42": {
 			"name": "Tall gearing (15/42)",
 			"description": "Higher top speed, softer launch.",
 			"mass": 1.3,
 			"front": 15.0,
-			"rear": 42.0
+			"rear": 42.0,
+			"type": "Chain, 15/42 sprockets",
+			"color": [
+				0.55,
+				0.56,
+				0.6
+			]
 		},
 		"top_speed_16_40": {
 			"name": "Top-speed gearing (16/40)",
 			"description": "For the drag strip and long straights.",
 			"mass": 1.3,
 			"front": 16.0,
-			"rear": 40.0
+			"rear": 40.0,
+			"type": "Chain, 16/40 sprockets",
+			"color": [
+				0.55,
+				0.56,
+				0.6
+			]
 		}
 	}
 }

@@ -13,6 +13,7 @@ var riding_id := 0
 var camera: ChaseCamera
 var hud: HUD
 var menu: MainMenu
+var computer: PartsComputer
 var audio: EngineAudio
 var remotes := {}     # peer id -> RemotePlayer
 var in_session := false
@@ -37,6 +38,10 @@ func _ready() -> void:
 	hud = HUD.new()
 	hud.visible = false
 	ui.add_child(hud)
+	computer = PartsComputer.new()
+	computer.visible = false
+	ui.add_child(computer)
+	computer.closed.connect(func(): _capture_mouse(true))
 	menu = MainMenu.new()
 	ui.add_child(menu)
 	menu.ride_solo.connect(func(): _start_session())
@@ -107,6 +112,7 @@ func _start_session() -> void:
 	world.add_child(walker)
 	walker.place(Workshop.walker_spawn(Net.local_slot()))
 	walker.mount_requested.connect(_try_mount)
+	walker.computer_requested.connect(_open_computer)
 	walker.camera.current = true
 	hud.walker = walker
 	hud.visible = true
@@ -126,6 +132,7 @@ func _leave() -> void:
 
 func _end_session() -> void:
 	in_session = false
+	computer.visible = false
 	_stop_riding()
 	for id in remotes.keys():
 		remotes[id].queue_free()
@@ -144,6 +151,11 @@ func _end_session() -> void:
 func _capture_mouse(on: bool) -> void:
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if on else Input.MOUSE_MODE_VISIBLE
+
+
+func _open_computer() -> void:
+	computer.open()
+	_capture_mouse(false)
 
 
 func _close_menu() -> void:
@@ -241,14 +253,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not in_session:
 		return
 	if event.is_action_pressed("menu"):
-		if menu.visible:
+		if computer.visible:
+			computer.close_computer()
+		elif menu.visible:
 			_close_menu()
 		else:
 			menu.show_pause()
 			_capture_mouse(false)
 		get_viewport().set_input_as_handled()
 		return
-	if menu.visible or bike == null:
+	if menu.visible or computer.visible or bike == null:
 		return
 	if event.is_action_pressed("interact"):
 		_get_off()
@@ -269,7 +283,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
-	var active := not menu.visible
+	var active := not menu.visible and not computer.visible
 	if walker:
 		walker.controls_enabled = active
 	if bike:

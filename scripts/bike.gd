@@ -80,9 +80,9 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 
 	wheels = [
 		_make_wheel(true, Vector3(0.0, build.front_travel, -wb * 0.5), build.front_radius,
-			build.front_travel, build.front_spring, build.front_damping, build.front_inertia),
+			build.front_travel, build.front_spring, build.front_bump, build.front_rebound, build.front_inertia),
 		_make_wheel(false, Vector3(0.0, build.rear_travel, wb * 0.5), build.rear_radius,
-			build.rear_travel, build.rear_spring, build.rear_damping, build.rear_inertia),
+			build.rear_travel, build.rear_spring, build.rear_bump, build.rear_rebound, build.rear_inertia),
 	]
 	gear = 1
 	rpm = build.idle_rpm
@@ -109,10 +109,10 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 
 
 func _make_wheel(is_front: bool, mount: Vector3, radius: float, travel: float, spring: float,
-		damping: float, wheel_inertia: float) -> Dictionary:
+		bump: float, rebound: float, wheel_inertia: float) -> Dictionary:
 	return {
 		"is_front": is_front, "mount": mount, "radius": radius, "travel": travel,
-		"spring": spring, "damping": damping, "inertia": wheel_inertia,
+		"spring": spring, "bump": bump, "rebound": rebound, "inertia": wheel_inertia,
 		"omega": 0.0, "spin": 0.0, "compression": 0.0, "contact": false, "load": 0.0,
 		"drive_torque": 0.0, "brake_torque": 0.0, "slip": 0.0, "surface": "tarmac",
 	}
@@ -229,7 +229,7 @@ func _update_steering(delta: float) -> void:
 		var err := target - lean_angle
 		cmd = steer_eq - 0.22 * gain * err + 0.06 * gain * lean_rate
 	cmd = clampf(cmd, -_max_steer(), _max_steer())
-	steer = move_toward(steer, cmd, 4.0 * delta)
+	steer = move_toward(steer, cmd, build.steer_rate * delta)
 
 
 func _update_engine(delta: float) -> void:
@@ -327,7 +327,9 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var comp_vel: float = (comp - w["compression"]) / delta
 	w["compression"] = comp
 	var n: Vector3 = hit["normal"]
-	var fz: float = w["spring"] * comp + w["damping"] * comp_vel
+	# Bump damping resists the wheel coming up, rebound damping resists it going back down.
+	var damping: float = w["bump"] if comp_vel > 0.0 else w["rebound"]
+	var fz: float = w["spring"] * comp + damping * comp_vel
 	if raw_comp > travel:
 		fz += (raw_comp - travel) * 250000.0  # bump stop
 	fz = clampf(fz, 0.0, mass * G * 8.0)
@@ -352,7 +354,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var v_contact := linear_velocity + angular_velocity.cross(arm)
 	var v_long := v_contact.dot(long_dir)
 	var v_lat := v_contact.dot(lat_dir)
-	var mu: float = float(build.grip.get(surf, 0.7))
+	var mu: float = float((build.grip_front if w["is_front"] else build.grip_rear).get(surf, 0.7))
 	var f_max := mu * fz
 
 	# Longitudinal: implicit wheel spin update so stiff tyres stay stable.

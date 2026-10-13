@@ -84,7 +84,7 @@ func _draw_crew(font: Font) -> void:
 	if players.is_empty():
 		_text(font, Vector2(24, 140), "Nobody here yet.", 30, DIM)
 		return
-	var cols := ["", "Doing", "Fitted", "Removed", "Cleaned", "Restored", "km", "Top km/h"]
+	var cols := ["", "Doing", "Fitted", "Painted", "Cleaned", "Restored", "km", "Top km/h"]
 	var xs := [24, 230, 560, 650, 750, 850, 945, 1000]
 	for i in cols.size():
 		if i >= 2:
@@ -97,7 +97,7 @@ func _draw_crew(font: Font) -> void:
 		_page.draw_rect(Rect2(14, y - 34, 8, 52), p.get("color", Color.WHITE))
 		_text(font, Vector2(34, y), str(p["name"]).left(14), 28)
 		_text(font, Vector2(xs[1], y), str(p.get("doing", "")).left(30), 20, Color(1, 0.8, 0.55))
-		var nums := [p.get("fitted", 0), p.get("removed", 0), p.get("cleaned", 0), p.get("repaired", 0),
+		var nums := [p.get("fitted", 0), p.get("painted", 0), p.get("cleaned", 0), p.get("repaired", 0),
 			"%.1f" % float(p.get("km", 0.0)), "%d" % roundi(float(p.get("top_kmh", 0.0)))]
 		for i in nums.size():
 			_text(font, Vector2(xs[i + 2] - 40, y), str(nums[i]), 24, Color.WHITE, 90, HORIZONTAL_ALIGNMENT_RIGHT)
@@ -125,9 +125,9 @@ func _draw_bike(font: Font) -> void:
 		["Brakes", "brake", "Nm", "%.0f", true],
 		["Condition", "health", "%", "%.0f", true],
 	]
-	_text(font, Vector2(330, 108), "NOW", 18, DIM, 120, HORIZONTAL_ALIGNMENT_RIGHT)
-	_text(font, Vector2(470, 108), "DELIVERED", 18, DIM, 140, HORIZONTAL_ALIGNMENT_RIGHT)
-	var y := 152.0
+	_text(font, Vector2(220, 108), "NOW", 16, DIM, 120, HORIZONTAL_ALIGNMENT_RIGHT)
+	_text(font, Vector2(340, 108), "DELIVERED", 16, DIM, 110, HORIZONTAL_ALIGNMENT_RIGHT)
+	var y := 150.0
 	for r in rows:
 		var key: String = r[1]
 		var scale := 100.0 if key == "health" else 1.0
@@ -135,24 +135,31 @@ func _draw_bike(font: Font) -> void:
 		var v_was := float(was.get(key, 0.0)) * scale
 		var diff := v_now - v_was
 		var better: bool = diff > 0.0 if r[4] else diff < 0.0
-		_text(font, Vector2(24, y), r[0], 28, DIM)
-		_text(font, Vector2(330, y), (r[3] % v_now) + " " + r[2], 30, Color.WHITE, 120, HORIZONTAL_ALIGNMENT_RIGHT)
-		_text(font, Vector2(470, y), (r[3] % v_was), 26, DIM, 140, HORIZONTAL_ALIGNMENT_RIGHT)
+		_text(font, Vector2(24, y), r[0], 24, DIM)
+		_text(font, Vector2(220, y), (r[3] % v_now) + " " + r[2], 26, Color.WHITE, 120, HORIZONTAL_ALIGNMENT_RIGHT)
+		_text(font, Vector2(340, y), (r[3] % v_was), 22, DIM, 110, HORIZONTAL_ALIGNMENT_RIGHT)
 		if absf(diff) >= 0.5:
-			_text(font, Vector2(620, y), ("+" if diff > 0 else "") + (r[3] % diff), 26, GOOD if better else BAD)
-		y += 50.0
-	# Part list with condition bars.
+			_text(font, Vector2(462, y), ("+" if diff > 0 else "") + (r[3] % diff), 20, GOOD if better else BAD)
+		y += 44.0
+	# What doesn't suit: fuel starvation, overheating, worn plugs.
+	for note in data.get("notes", []):
+		_text(font, Vector2(24, y + 6), str(note).left(46), 17, Color(1.0, 0.75, 0.3))
+		y += 26.0
+		if y > PX.y - 10:
+			break
+	# Part list with condition bars, in two columns.
 	var parts: Array = data.get("parts", [])
-	var px := 760.0
-	var py := 100.0
-	for p in parts:
-		_text(font, Vector2(px, py + 16), str(p["name"]).left(12), 16, Color.WHITE if p["fitted"] else BAD)
+	var rows_per_col := 15
+	for i in parts.size():
+		var p: Dictionary = parts[i]
+		var px := 560.0 + (i / rows_per_col) * 232.0
+		var py := 88.0 + (i % rows_per_col) * 31.0
+		_text(font, Vector2(px, py + 14), str(p["name"]).left(19), 14, Color.WHITE if p["fitted"] else BAD)
 		if p["fitted"]:
 			var h := float(p["health"])
-			_page.draw_rect(Rect2(px + 120, py + 3, 120, 14), Color(1, 1, 1, 0.1))
-			_page.draw_rect(Rect2(px + 120, py + 3, 120 * h, 14), GOOD.lerp(BAD, 1.0 - h) if h < 0.95 else GOOD)
+			_page.draw_rect(Rect2(px + 150, py + 3, 70, 12), Color(1, 1, 1, 0.1))
+			_page.draw_rect(Rect2(px + 150, py + 3, 70 * h, 12), GOOD.lerp(BAD, 1.0 - h) if h < 0.95 else GOOD)
 			if not p["bolted"]:
-				_text(font, Vector2(px + 120, py + 16), "LOOSE", 14, Color(1, 0.85, 0.3))
+				_text(font, Vector2(px + 152, py + 26), "LOOSE", 11, Color(1, 0.85, 0.3))
 		else:
-			_text(font, Vector2(px + 120, py + 16), "MISSING", 14, BAD)
-		py += 44.0
+			_text(font, Vector2(px + 150, py + 14), "MISSING", 12, BAD)

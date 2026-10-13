@@ -2,7 +2,20 @@
 
 A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-Current milestone, **The Shed**: a first-person workshop with four bike bays, a workbench, parts washer, repair bench, a rack of 50 new parts (10 slots, 5 variants each), wall dashboards for every bike and the crew, and the riding map outside. Skills, XP and money come later.
+Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, an engine stand, a parts computer with delivery pallets, a parts washer, a repair bench, wall dashboards for every bike and the crew, and the riding map outside. Bikes are made of 29 parts from 23 kinds (119 parts in all, at least 5 of each), and every part has its own colour, rust, dirt and wear. Skills, XP and money come later.
+
+### What a bike is made of
+
+| Area | Parts |
+| --- | --- |
+| Chassis | Frame, front fork, rear suspension (type, travel, bump and rebound damping, adjustability) |
+| Wheels | Front and rear wheel (spoked, wire, cast, carbon; 17" to 21"), front and rear tyre (type, compound, width) |
+| Brakes, front and rear | Disc (type, diameter), caliper (pistons), pads (compound), master cylinder (axial or radial) |
+| Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard |
+| Engine, built on the stand | Block (single to inline four, 250 to 1000 cc), cylinder head, fuel system, air filter, oil filter, spark plugs, cooling, gearbox |
+| Drivetrain | Exhaust, final drive |
+
+Engine parts have to suit each other: one carb can't feed a big four, a race head needs a radiator, worn plugs misfire and a poor oil filter lets a tired engine wear faster. The bay screens list anything that doesn't suit.
 
 ## Playing
 
@@ -14,12 +27,14 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | --- | --- | --- |
 | Walk / look | W A S D / mouse | Left stick / right stick |
 | Run | Shift | Left stick click |
-| Pick a tool (hands, wrench, brush, grinder) | 1-4, Q / E, mouse wheel | LB / RB |
+| Pick a tool (hands, wrench, brush, grinder, spray can) | 1-5, Q / E, mouse wheel | LB / RB |
 | Work on what you're looking at | Hold left mouse | Hold RT or A |
-| Get on a finished bike | F | Y |
+| Get on a finished bike, use the parts computer | F | Y |
 | Menu | Esc | Start |
 
-Look at any part to see its condition, rust, dirt and wear. With your **hands** you take parts off (once unbolted and once the parts mounted on them are off), carry them, fit them, put them on a bench, and take new ones from the rack. The **wrench** bolts and unbolts. The **brush** scrubs off dirt; the parts washer does it on its own. The **grinder and welder** restores rust and wear, on the repair bench. Hold a part while looking at a bike to see how fitting it would change power, top speed and weight. A bike can be ridden once every slot is filled and bolted up. Order more project bikes from the Esc menu.
+Look at any part to see its spec, condition, rust, dirt, wear and colour. With your **hands** you take parts off (once unbolted and once the parts mounted on them are off), carry them, fit them and put them down on the bench, the engine stand or a pallet. The **wrench** bolts and unbolts. The **brush** scrubs off dirt; the parts washer does it on its own. The **grinder and welder** restores rust and wear, on the repair bench. The **spray can** paints a part the next colour each time; it has to be free of rust first. Hold a part while looking at a bike or engine to see how fitting it would change power, top speed, weight and braking.
+
+Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (free for now) or a new project bike; orders arrive on the delivery pallets by the door. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
 
 ### Riding
 

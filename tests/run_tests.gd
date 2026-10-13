@@ -43,6 +43,8 @@ func _run_all() -> void:
 	await _test_all_builds_ride()
 	await _test_crash_and_respawn()
 	await _test_sim_mode()
+	print("Models")
+	_test_models()
 	print("The shed")
 	_test_shed_rules()
 	print("World")
@@ -51,33 +53,99 @@ func _run_all() -> void:
 	await _test_session()
 
 
+const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
+const MX := {"fork": "long_travel_mx", "shock": "mono_shock_mx", "front_wheel": "spoked_21", "rear_wheel": "spoked_18",
+	"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
+
+
+func _merge(a: Dictionary, b: Dictionary) -> Dictionary:
+	var out := a.duplicate()
+	out.merge(b, true)
+	return out
+
+
 func _test_catalogue() -> void:
-	check(PartsDB.parts.size() == 50, "catalogue has 50 parts (got %d)" % PartsDB.parts.size())
-	for slot in PartsDB.SLOTS:
-		check(PartsDB.by_slot[slot].size() >= 5, "slot %s has at least five variants" % slot)
+	check(PartsDB.KINDS.size() == 23 and PartsDB.parts.size() >= 115, "catalogue has 23 kinds of part (%d parts)" % PartsDB.parts.size())
+	for k in PartsDB.KINDS:
+		check(PartsDB.by_kind[k].size() >= 5, "%s has at least five variants (%d)" % [k, PartsDB.by_kind[k].size()])
+	var no_colour := []
+	for id in PartsDB.parts:
+		if not PartsDB.parts[id].has("color"):
+			no_colour.append(id)
+	check(no_colour.is_empty(), "every part has a colour %s" % str(no_colour))
+	check(PartsDB.SLOTS.size() == 29, "a bike has 29 slots, 7 of them on the engine")
 	var b := BikeBuild.new()
 	check(b.bike_mass > 120.0 and b.bike_mass < 230.0, "default bike mass is plausible (%.0f kg)" % b.bike_mass)
 	check(b.hp() > 40.0 and b.hp() < 120.0, "default bike power is plausible (%.0f hp)" % b.hp())
+	check(b.notes.is_empty(), "the default bike's parts suit each other %s" % str(b.notes))
 	var top := b.top_speed_estimate() * 3.6
 	check(top > 120.0 and top < 260.0, "default top speed estimate is plausible (%.0f km/h)" % top)
+	check(absf(b.front_radius - 0.3) < 0.03 and absf(b.rear_radius - 0.31) < 0.03,
+		"17\" wheels with road tyres make a 0.3 m wheel (%.3f / %.3f)" % [b.front_radius, b.rear_radius])
 	var bad := PartsDB.sanitize_build({"engine": "nope", "frame": "long_travel_mx"})
 	check(bad["engine"] == PartsDB.DEFAULT_BUILD["engine"] and bad["frame"] == PartsDB.DEFAULT_BUILD["frame"],
-		"unknown or wrong-slot parts fall back to defaults")
+		"unknown or wrong-kind parts fall back to defaults")
 	var curve := b.dyno_curve()
 	check(curve.size() > 10 and curve[0]["torque"] > 0.0, "dyno curve has data")
 	# Condition matters.
 	var rusty := BikeBuild.new({}, {"engine": {"rust": 0.8, "dirt": 0.9, "wear": 0.8}})
 	check(rusty.hp() < b.hp() * 0.85, "a worn, rusty engine makes less power (%.0f vs %.0f hp)" % [rusty.hp(), b.hp()])
-	var clogged := BikeBuild.new({"intake": "pod_filters"}, {"intake": {"dirt": 1.0}})
-	var clean := BikeBuild.new({"intake": "pod_filters"})
+	var clogged := BikeBuild.new({"air_filter": "pod_filters"}, {"air_filter": {"dirt": 1.0}})
+	var clean := BikeBuild.new({"air_filter": "pod_filters"})
 	check(clogged.peak_torque < clean.peak_torque * 0.85, "a clogged pod filter chokes the engine")
-	var tired := BikeBuild.new({}, {"brakes": {"wear": 1.0, "rust": 1.0}})
-	check(tired.front_brake_torque < b.front_brake_torque * 0.75, "worn brakes stop less well")
-	var faster := BikeBuild.new({"exhaust": "titanium_race", "intake": "race_carbs"})
-	check(faster.hp() > b.hp() * 1.1, "race intake and exhaust add power (%.0f hp)" % faster.hp())
-	check(PartsDB.dependents("engine").has("intake") and PartsDB.dependents("engine").has("exhaust"),
-		"intake and exhaust must come off before the engine")
-	check(PartsDB.dependents("wheels").has("brakes"), "brakes must come off before the wheels")
+	var plugs := BikeBuild.new({}, {"spark_plugs": {"wear": 1.0}})
+	check(plugs.peak_torque < b.peak_torque * 0.85 and plugs.notes.size() == 1, "worn spark plugs misfire")
+	var tired := BikeBuild.new({}, {"front_pads": {"wear": 1.0, "rust": 1.0}, "front_disc": {"wear": 1.0}})
+	check(tired.front_brake_torque < b.front_brake_torque * 0.8, "worn pads and discs stop less well")
+	var race_brakes := BikeBuild.new({"front_disc": "floating_330_race", "front_caliper": "six_piston_race",
+		"front_pads": "carbon_race", "front_master": "race_radial"})
+	check(race_brakes.front_brake_torque > b.front_brake_torque * 1.5, "race brake parts bite much harder (%.0f vs %.0f Nm)" % [
+		race_brakes.front_brake_torque, b.front_brake_torque])
+	var faster := BikeBuild.new({"exhaust": "titanium_race", "air_filter": "velocity_stacks", "head": "big_valve_ported",
+		"fuel": "flat_slide_carbs"})
+	check(faster.hp() > b.hp() * 1.1, "tuned head, carbs, stacks and exhaust add power (%.0f hp)" % faster.hp())
+	# Engine parts have to suit each other.
+	var starved := BikeBuild.new({"engine": "four_1000", "fuel": "single_carb", "cooling": "twin_radiators"})
+	var fed := BikeBuild.new({"engine": "four_1000", "fuel": "throttle_bodies", "cooling": "twin_radiators"})
+	check(starved.hp() < fed.hp() * 0.9 and str(starved.notes).contains("starved"), "one carb can't feed a 1000 cc four")
+	var hot := BikeBuild.new({"engine": "four_1000", "head": "race_high_comp", "fuel": "race_injection", "cooling": "air_fins"})
+	var cool := BikeBuild.new({"engine": "four_1000", "head": "race_high_comp", "fuel": "race_injection", "cooling": "race_radiator"})
+	check(hot.hp() < cool.hp() and str(hot.notes).contains("hot"), "a race head needs a radiator, not fins")
+	# Chassis parts.
+	check(BikeBuild.new({"handlebars": "mx_tall"}).steer_rate > BikeBuild.new({"handlebars": "clip_ons"}).steer_rate,
+		"wide bars steer quicker than clip-ons")
+	check(BikeBuild.new({"tank": "touring_23"}).bike_mass > BikeBuild.new({"tank": "peanut_9"}).bike_mass + 5.0,
+		"a big tank carries more fuel weight")
+	check(b.front_rebound > b.front_bump and b.rear_rebound > b.rear_bump, "suspension has separate bump and rebound damping")
+	check(BikeBuild.new({"dashboard": "analog_speedo"}).dash_features == ["speed"]
+		and BikeBuild.new({"dashboard": "race_logger"}).dash_features.has("shift_light"), "the dashboard decides what the speedo shows")
+	check(PartsDB.dependents("engine").has("exhaust") and PartsDB.dependents("engine").has("final_drive")
+		and not PartsDB.dependents("engine").has("head"), "exhaust and chain come off before the engine; its head goes with it")
+	check(PartsDB.dependents("front_wheel").has("front_tyre") and PartsDB.dependents("front_disc").has("front_caliper")
+		and PartsDB.dependents("front_caliper").has("front_pads"), "tyres, discs, calipers and pads come off in order")
+	check(PartsDB.dependents("head").has("spark_plugs") and PartsDB.dependents("fuel").has("air_filter"),
+		"plugs and carbs come off the head, the filter off the carbs")
+
+
+## Every part can be drawn on its own and on a bike.
+func _test_models() -> void:
+	var bad := []
+	for id in PartsDB.parts:
+		var d := BikeModel.part_display(id, {"rust": 0.5, "dirt": 0.5, "wear": 0.2, "color": Color(0.2, 0.4, 0.9)})
+		var size: Vector3 = d.get_meta("size")
+		if size.length() < 0.02:
+			bad.append(id)
+		d.free()
+	check(bad.is_empty(), "every part has a model of its own %s" % str(bad))
+	var count := 0
+	for k in ["engine", "head", "fuel", "air_filter", "cooling", "handlebars", "dashboard", "tank", "saddle", "fork"]:
+		for id in PartsDB.by_kind[k]:
+			var m := BikeModel.new()
+			m.build_from(BikeBuild.new({PartsDB.slots_for_kind(k)[0]: id}))
+			m.build_pickers({"bike": 1})
+			count += m.get_child_count()
+			m.free()
+	check(count > 0, "whole bikes build with every engine and body variant")
 
 
 ## Spawns a bike on flat ground, runs `seconds` of physics calling `drive(bike, t)` each step,
@@ -191,21 +259,24 @@ func _test_low_speed() -> void:
 
 func _test_all_builds_ride() -> void:
 	var combos := [
-		{"frame": "alu_twin_spar", "wheels": "slick_17", "engine": "single_450", "gearbox": "six_close", "final_drive": "tall_15_42"},
-		{"fork": "long_travel_mx", "shock": "mono_shock_mx", "wheels": "knobbly_21_18", "engine": "single_450"},
-		{"frame": "alu_twin_spar", "fork": "long_travel_mx", "shock": "mono_shock_mx", "wheels": "knobbly_21_18", "engine": "twin_700", "gearbox": "six_close"},
+		_merge(SLICK, {"frame": "alu_twin_spar", "engine": "single_450", "gearbox": "six_close", "final_drive": "tall_15_42"}),
+		_merge(MX, {"engine": "single_450"}),
+		_merge(MX, {"frame": "alu_twin_spar", "engine": "twin_700", "gearbox": "six_close"}),
+		{"engine": "vtwin_900", "fork": "girder_vintage", "handlebars": "ape_hangers", "front_wheel": "wire_19_chrome",
+			"front_tyre": "vintage_ribbed", "rear_tyre": "vintage_ribbed", "cooling": "air_fins", "head": "two_valve_stock"},
 	]
 	for c in combos:
 		var r := await ride(c, 9.0, func(b, t):
 			b.throttle = 0.8
 			b.lean_input = 0.5 if t > 5.0 else 0.0)
-		var name := "%s/%s/%s" % [PartsDB.sanitize_build(c)["frame"], PartsDB.sanitize_build(c)["wheels"], PartsDB.sanitize_build(c)["engine"]]
+		var full := PartsDB.sanitize_build(c)
+		var name := "%s/%s/%s/%s" % [full["frame"], full["fork"], full["rear_tyre"], full["engine"]]
 		check(not r["crashed"] and r["max_speed"] > 15.0, "%s rides and turns (%.0f m/s)" % [name, r["max_speed"]])
 		await _done(r)
 	var dirt_drive := func(b, t):
 		b.throttle = 0.7
 		b.lean_input = 0.4 if t > 4.0 else 0.0
-	var dirt := await ride({"fork": "long_travel_mx", "shock": "mono_shock_mx", "wheels": "knobbly_21_18"}, 8.0, dirt_drive, "dirt")
+	var dirt := await ride(MX, 8.0, dirt_drive, "dirt")
 	check(not dirt["crashed"], "knobbly tyres ride and turn on dirt")
 	await _done(dirt)
 
@@ -239,30 +310,45 @@ func _test_shed_rules() -> void:
 	var ranger := _bike_named("Rusty Ranger")
 	var barn := _bike_named("Barn Find")
 	var faithful := _bike_named("Old Faithful")
-	check(Shed.missing_slots(barn).size() == 3, "the barn find arrives with parts on the bench")
+	var colours := {}
+	for id in Shed.items:
+		colours[Shed.items[id]["color"]] = true
+	check(colours.size() > 8, "parts come in their own colours (%d different)" % colours.size())
+	check(Shed.missing_slots(barn).size() == 5, "the barn find arrives stripped, its engine out (%s)" % str(Shed.missing_slots(barn)))
+	var block := Shed.item_at_spot("engine_stand")
+	check(Shed.is_engine(block) and Shed.engine_missing(block) == ["air_filter", "spark_plugs"],
+		"its engine is on the stand, missing plugs and air filter (%s)" % str(Shed.engine_missing(block) if block else []))
 	check(Shed.is_complete(faithful) and not Shed.is_complete(barn), "complete bikes are rideable, stripped ones aren't")
 	check(Shed.check(me, {"a": "remove", "bike": ranger, "slot": "engine"}) != "", "a bolted engine can't be pulled out")
 	Shed.request({"a": "unbolt", "bike": ranger, "slot": "engine"})
 	check(Shed.check(me, {"a": "remove", "bike": ranger, "slot": "engine"}).contains("first"),
-		"the engine can't come out with the intake and exhaust on")
+		"the engine can't come out with the exhaust and chain on")
+	check(Shed.check(me, {"a": "unbolt", "bike": ranger, "slot": "spark_plugs"}) == "", "plugs can be serviced in the frame")
+	Shed.request({"a": "unbolt", "bike": ranger, "slot": "head"})
+	check(Shed.check(me, {"a": "remove", "bike": ranger, "slot": "head"}).contains("engine stand"),
+		"the cylinder head needs the engine on the stand")
+	Shed.request({"a": "bolt", "bike": ranger, "slot": "head"})
 	Shed.request({"a": "unbolt", "bike": ranger, "slot": "exhaust"})
 	Shed.request({"a": "remove", "bike": ranger, "slot": "exhaust"})
 	var pipe := Shed.held_by(me)
 	check(pipe != 0 and Shed.item_on(ranger, "exhaust") == 0, "an unbolted exhaust comes off into your hands")
-	check(Shed.check(me, {"a": "shelf_take", "part": "slip_on"}) != "", "you can't carry two parts at once")
+	check(Shed.check(me, {"a": "take", "spot": "bench_0"}) != "", "you can't carry two parts at once")
 	check(Shed.check(me, {"a": "mount", "bike": ranger}) != "", "a bike with no exhaust can't be ridden")
 	Shed.request({"a": "place", "spot": "washer"})
 	var dirt_before: float = Shed.items[pipe]["dirt"]
 	Shed._process(2.0)
 	check(Shed.items[pipe]["dirt"] < dirt_before, "the parts washer cleans what's in it")
 	check(Shed.check(me, {"a": "repair", "item": pipe}) != "", "repairs need the repair bench")
+	check(Shed.check(me, {"a": "paint", "item": pipe, "color": 3}).contains("rust"), "rusty parts can't be painted")
 	Shed.request({"a": "take", "spot": "washer"})
 	Shed.request({"a": "place", "spot": "repair"})
 	Shed.request({"a": "repair", "item": pipe})
 	check(Shed.items[pipe]["rust"] == 0.0 and Shed.items[pipe]["wear"] == 0.0, "the repair bench restores rust and wear")
+	Shed.request({"a": "paint", "item": pipe, "color": 3})
+	check(Shed.items[pipe]["color"] == Shed.PAINTS[3], "the spray can paints a restored part")
 	Shed.request({"a": "clean", "item": pipe})
 	Shed.request({"a": "take", "spot": "repair"})
-	Shed.request({"a": "install", "bike": ranger})
+	Shed.request({"a": "install", "bike": ranger, "slot": "frame"})
 	check(Shed.item_on(ranger, "exhaust") == pipe and not Shed.is_bolted(ranger, "exhaust"), "a part goes back on loose")
 	Shed.request({"a": "bolt", "bike": ranger, "slot": "exhaust"})
 	Shed.request({"a": "bolt", "bike": ranger, "slot": "engine"})
@@ -270,11 +356,56 @@ func _test_shed_rules() -> void:
 	var now := Shed.build_of(ranger).summary()
 	var was: Dictionary = Shed.bikes[ranger]["delivered"]
 	check(now["health"] > was["health"], "restoring a part raises the bike's condition (%.0f%% vs %.0f%%)" % [now["health"] * 100, was["health"] * 100])
-	# Fitting a new part from the shelf, with the right mounting order.
-	Shed.request({"a": "shelf_take", "part": "twin_disc_sport"})
-	check(Shed.check(me, {"a": "install", "bike": barn}).contains("wheels"), "brakes need the wheels on first")
+
+	# Building up the barn find's engine on the stand with parts from the computer.
+	check(Shed.check(me, {"a": "order_part", "part": "spark_plugs"}) != "", "you can only order real parts")
+	Shed.request({"a": "order_part", "part": "iridium_plugs"})
+	var plugs := Shed.item_at_spot("delivery_0")
+	check(plugs != 0 and Shed.items[plugs]["wear"] == 0.0, "an ordered part arrives new on a delivery pallet")
+	Shed.request({"a": "order_part", "part": "cotton_gauze"})
+	Shed.request({"a": "take", "spot": "delivery_1"})
+	check(Shed.check(me, {"a": "install", "engine": block, "slot": "head"}) == "", "the air filter fits the engine on the stand")
+	check(Shed.check(me, {"a": "install", "bike": barn, "slot": "frame"}).contains("engine first"),
+		"engine parts need an engine in the bike")
+	Shed.request({"a": "install", "engine": block, "slot": "head"})
+	check(Shed.engine_item(block, "air_filter") != 0, "the air filter goes on the carbs")
+	Shed.request({"a": "take", "spot": "delivery_0"})
+	Shed.request({"a": "install", "engine": block, "slot": "head"})
+	for slot in ["air_filter", "spark_plugs"]:
+		Shed.request({"a": "bolt", "engine": block, "slot": slot})
+	check(Shed.engine_missing(block).is_empty() and Shed.engine_bolted(block, "spark_plugs"), "the engine is complete on the stand")
+	Shed.request({"a": "unbolt", "engine": block, "slot": "spark_plugs"})
+	Shed.request({"a": "remove", "engine": block, "slot": "spark_plugs"})
+	check(Shed.held_by(me) == plugs, "parts come off the engine on the stand")
+	Shed.request({"a": "install", "engine": block, "slot": "spark_plugs"})
+	Shed.request({"a": "bolt", "engine": block, "slot": "spark_plugs"})
+	Shed.request({"a": "take", "spot": "engine_stand"})
+	check(Shed.held_by(me) == block and Shed.engine_item(block, "head") != 0, "the engine comes off the stand with its parts")
+	Shed.request({"a": "install", "bike": barn, "slot": "frame"})
+	check(Shed.item_on(barn, "engine") == block and Shed.item_on(barn, "spark_plugs") == plugs, "the built engine goes into the frame")
+	Shed.request({"a": "bolt", "bike": barn, "slot": "engine"})
+	# The bench has the exhaust, chain and both tyres.
+	for spot in ["bench_0", "bench_1", "bench_2", "bench_3"]:
+		var item := Shed.item_at_spot(spot)
+		var k: String = Shed.items[item]["kind"]
+		Shed.request({"a": "take", "spot": spot})
+		Shed.request({"a": "install", "bike": barn, "slot": "rear_tyre" if k == "tyre" else "frame"})
+	check(Shed.item_on(barn, "front_tyre") != 0 and Shed.item_on(barn, "rear_tyre") != 0, "a tyre fills whichever wheel is bare")
+	for slot in Shed.loose_slots(barn):
+		Shed.request({"a": "bolt", "bike": barn, "slot": slot})
+	check(Shed.is_complete(barn), "the barn find is rebuilt and ready to ride (%s)" % str(Shed.missing_slots(barn) + Shed.loose_slots(barn)))
+
+	# Mounting order on the chassis.
+	Shed.request({"a": "order_part", "part": "carbon_race"})
+	Shed.request({"a": "take", "spot": "delivery_0"})
+	check(Shed.check(me, {"a": "install", "bike": barn, "slot": "front_pads"}).contains("already"), "a full bike has no room for more pads")
+	Shed.request({"a": "unbolt", "bike": barn, "slot": "front_pads"})
+	check(Shed.install_slot({"bike": barn, "slot": "front_caliper"}, Shed.held_by(me)).get("error", "") != "", "pads need their old ones out first")
 	Shed.request({"a": "bin"})
 	check(Shed.held_by(me) == 0, "the scrap bin takes parts")
+	for i in 4:
+		Shed.request({"a": "order_part", "part": "flat_bar"})
+	check(Shed.check(me, {"a": "order_part", "part": "flat_bar"}).contains("full"), "you can't order with every pallet full")
 	var before := Shed.bikes.size()
 	Shed.request({"a": "order"})
 	check(Shed.bikes.size() == before + 1, "ordering a project bike delivers one to the free bay")

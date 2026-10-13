@@ -60,7 +60,7 @@ func _setup_inputs() -> void:
 	_bind("act", [], [JOY_BUTTON_A], [MOUSE_BUTTON_LEFT])
 	_bind("tool_next", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [MOUSE_BUTTON_WHEEL_DOWN])
 	_bind("tool_prev", [KEY_Q], [JOY_BUTTON_LEFT_SHOULDER], [MOUSE_BUTTON_WHEEL_UP])
-	for i in 4:
+	for i in 5:
 		_bind("tool_%d" % (i + 1), [KEY_1 + i], [])
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])

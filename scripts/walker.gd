@@ -5,9 +5,11 @@ extends CharacterBody3D
 ## through the Shed state so everyone in the session sees the same bikes.
 
 signal mount_requested(bike_id: int)
+signal computer_requested
 
-const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair"]
-const TOOL_NAMES := {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder and welder"}
+const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair", "spray"]
+const TOOL_NAMES := {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder and welder",
+	"spray": "Spray can"}
 const EYE := 1.62
 const WALK := 3.2
 const RUN := 5.5
@@ -18,7 +20,7 @@ const PAD_LOOK := 2.6
 var camera: Camera3D
 var tool := "hands"
 var controls_enabled := true
-var target := {}            # what the crosshair is on: {kind, bike, slot, spot, part, item}
+var target := {}            # what the crosshair is on: {kind, bike, engine, slot, spot}
 var plan := {}              # what the action button would do: {action, time, verb, blocked}
 var info := ""              # description of the target for the HUD
 var progress := 0.0         # 0..1 of the current hold-to-work action
@@ -79,8 +81,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("tool_prev"):
 		_cycle_tool(-1)
 	elif event.is_action_pressed("interact"):
-		if target.get("kind", "") == "part":
+		if target.get("kind", "") == "part" and int(target.get("bike", 0)) != 0:
 			mount_requested.emit(int(target["bike"]))
+		elif target.get("kind", "") == "pc":
+			computer_requested.emit()
 	else:
 		for i in TOOLS.size():
 			if event.is_action_pressed("tool_%d" % (i + 1)):
@@ -149,10 +153,12 @@ func _update_target() -> void:
 		var c: Object = hit["collider"]
 		if c.has_meta("bike") and Shed.bikes.has(int(c.get_meta("bike"))):
 			t = {"kind": "part", "bike": int(c.get_meta("bike")), "slot": str(c.get_meta("slot"))}
+		elif c.has_meta("engine") and Shed.is_engine(int(c.get_meta("engine"))):
+			t = {"kind": "part", "engine": int(c.get_meta("engine")), "slot": str(c.get_meta("slot"))}
 		elif c.has_meta("spot"):
 			t = {"kind": "spot", "spot": str(c.get_meta("spot"))}
-		elif c.has_meta("shelf"):
-			t = {"kind": "shelf", "part": str(c.get_meta("shelf"))}
+		elif c.has_meta("pc"):
+			t = {"kind": "pc"}
 		elif c.has_meta("bin"):
 			t = {"kind": "bin"}
 	target = t
@@ -161,15 +167,30 @@ func _update_target() -> void:
 	_highlight()
 
 
+## The bike or engine a part target belongs to, as action fields.
+func _where() -> Dictionary:
+	if int(target.get("engine", 0)) != 0:
+		return {"engine": int(target["engine"]), "slot": str(target["slot"])}
+	return {"bike": int(target.get("bike", 0)), "slot": str(target.get("slot", ""))}
+
+
+## The item the crosshair is on: a fitted part, or whatever sits on a spot.
+func target_item() -> int:
+	match str(target.get("kind", "")):
+		"part":
+			return Shed.item_at_target(target)
+		"spot":
+			return Shed.item_at_spot(str(target["spot"]))
+	return 0
+
+
 func _make_plan() -> Dictionary:
 	var me := Shed.me()
 	var held := Shed.held_by(me)
 	var kind := str(target.get("kind", ""))
 	if kind == "":
 		return {}
-	var bike_id := int(target.get("bike", 0))
-	var slot := str(target.get("slot", ""))
-	var spot_item := Shed.item_at_spot(str(target.get("spot", ""))) if kind == "spot" else 0
+	var item_id := target_item()
 	var p := {}
 	match tool:
 		"hands":
@@ -177,38 +198,46 @@ func _make_plan() -> Dictionary:
 				var held_name := Shed.item_title(held)
 				match kind:
 					"part":
-						p = {"action": {"a": "install", "bike": bike_id}, "time": 1.2, "verb": "fit the " + held_name}
+						var a := _where()
+						a["a"] = "install"
+						p = {"action": a, "time": 1.2, "verb": "fit the " + held_name}
 					"spot":
 						p = {"action": {"a": "place", "spot": target["spot"]}, "time": 0.25, "verb": "put it down"}
-					"bin", "shelf":
+					"bin":
 						p = {"action": {"a": "bin"}, "time": 0.4, "verb": "scrap the " + held_name}
 			else:
 				match kind:
 					"part":
-						p = {"action": {"a": "remove", "bike": bike_id, "slot": slot}, "time": 1.0, "verb": "take it off"}
+						var a := _where()
+						a["a"] = "remove"
+						p = {"action": a, "time": 1.0, "verb": "take it off"}
 					"spot":
-						if spot_item != 0:
+						if item_id != 0:
 							p = {"action": {"a": "take", "spot": target["spot"]}, "time": 0.25, "verb": "pick it up"}
-					"shelf":
-						p = {"action": {"a": "shelf_take", "part": target["part"]}, "time": 0.5, "verb": "take a new one"}
+					"pc":
+						p = {"action": {"a": "computer"}, "time": 0.15, "verb": "use the parts computer"}
 		"wrench":
 			if kind == "part":
-				var bolted := Shed.is_bolted(bike_id, slot)
-				p = {"action": {"a": "unbolt" if bolted else "bolt", "bike": bike_id, "slot": slot}, "time": 1.6,
-					"verb": "unbolt it" if bolted else "bolt it up"}
+				var a := _where()
+				var bolted := Shed.bolted_at_target(target)
+				a["a"] = "unbolt" if bolted else "bolt"
+				p = {"action": a, "time": 1.6, "verb": "unbolt it" if bolted else "bolt it up"}
 		"brush":
-			var item_id := Shed.item_on(bike_id, slot) if kind == "part" else spot_item
 			if item_id != 0:
 				p = {"action": {"a": "clean", "item": item_id}, "time": 1.0 + 3.0 * float(Shed.items[item_id]["dirt"]), "verb": "scrub it clean"}
 		"repair":
-			var item_id := Shed.item_on(bike_id, slot) if kind == "part" else spot_item
 			if item_id != 0:
 				var it: Dictionary = Shed.items[item_id]
 				p = {"action": {"a": "repair", "item": item_id}, "time": 2.0 + 4.0 * (float(it["rust"]) + float(it["wear"])),
 					"verb": "grind off the rust and rebuild it"}
+		"spray":
+			if item_id != 0:
+				var next := (Shed.paint_index(Shed.items[item_id]["color"]) + 1) % Shed.PAINTS.size()
+				p = {"action": {"a": "paint", "item": item_id, "color": next}, "time": 1.5,
+					"verb": "spray it %s" % Shed.PAINT_NAMES[next]}
 	if p.is_empty():
 		return {}
-	p["blocked"] = Shed.check(me, p["action"])
+	p["blocked"] = "" if p["action"]["a"] == "computer" else Shed.check(me, p["action"])
 	return p
 
 
@@ -217,55 +246,78 @@ func _describe() -> String:
 	var lines := []
 	match kind:
 		"part":
-			var bike_id := int(target["bike"])
 			var slot := str(target["slot"])
-			var item_id := Shed.item_on(bike_id, slot)
-			var bike: Dictionary = Shed.bikes[bike_id]
+			var item_id := target_item()
+			var engine_id := int(target.get("engine", 0))
+			var owner := "the engine on the stand" if engine_id != 0 else str(Shed.bikes[target["bike"]]["name"])
 			if item_id != 0:
 				var it: Dictionary = Shed.items[item_id]
 				lines.append(PartsDB.part_name(it["part"]))
-				lines.append("%s on %s  ·  %s" % [PartsDB.SLOT_NAMES[slot], bike["name"], "bolted" if Shed.is_bolted(bike_id, slot) else "LOOSE"])
+				lines.append("%s on %s  ·  %s" % [PartsDB.slot_name(slot), owner, "bolted" if Shed.bolted_at_target(target) else "LOOSE"])
+				lines.append(PartsDB.spec_line(it["part"]))
 				lines.append(Shed.condition_text(it))
 			var held := Shed.held_by(Shed.me())
 			if held != 0 and tool == "hands":
-				lines.append(_preview(bike_id, held))
-			var ride := Shed.check(Shed.me(), {"a": "mount", "bike": bike_id})
-			lines.append("F: ride %s" % bike["name"] if ride == "" else "Can't ride yet. " + ride)
+				lines.append(_preview(held))
+			if engine_id != 0:
+				var missing := Shed.engine_missing(engine_id)
+				lines.append("Engine complete." if missing.is_empty() else "Engine needs: %s" % ", ".join(missing.map(func(m): return PartsDB.slot_name(m).to_lower())))
+			else:
+				var bike_id := int(target["bike"])
+				for note in Shed.build_of(bike_id).notes:
+					lines.append("! " + note)
+				var ride := Shed.check(Shed.me(), {"a": "mount", "bike": bike_id})
+				lines.append("F: ride %s" % Shed.bikes[bike_id]["name"] if ride == "" else "Can't ride yet. " + ride)
 		"spot":
-			var item_id := Shed.item_at_spot(str(target["spot"]))
-			var where: String = {"washer": "Parts washer", "repair": "Repair bench"}.get(target["spot"], "Workbench")
+			var spot := str(target["spot"])
+			var item_id := Shed.item_at_spot(spot)
+			var where: String = {"washer": "Parts washer", "repair": "Repair bench", "engine_stand": "Engine stand"}.get(spot,
+				"Delivery pallet" if spot.begins_with("delivery") else "Workbench")
 			if item_id != 0:
 				var it: Dictionary = Shed.items[item_id]
 				lines.append(PartsDB.part_name(it["part"]))
-				lines.append("%s  ·  %s" % [where, PartsDB.SLOT_NAMES[it["slot"]]])
+				lines.append("%s  ·  %s" % [where, PartsDB.KIND_NAMES[it["kind"]]])
+				lines.append(PartsDB.spec_line(it["part"]))
 				lines.append(Shed.condition_text(it))
-				if target["spot"] == "washer" and float(it["dirt"]) > 0.0:
+				if spot == "washer" and float(it["dirt"]) > 0.0:
 					lines.append("Washing... %d%% dirt left" % roundi(float(it["dirt"]) * 100.0))
 			else:
 				lines.append(where)
-				if target["spot"] == "washer":
-					lines.append("Leave a dirty part in here and it comes out clean.")
-				elif target["spot"] == "repair":
-					lines.append("Put a part here and use the grinder and welder to restore it.")
-		"shelf":
-			var part := PartsDB.get_part(str(target["part"]))
-			lines.append("New: " + str(part["name"]))
-			lines.append(str(part.get("description", "")))
-			lines.append("%s  ·  %.1f kg" % [PartsDB.SLOT_NAMES[part["slot"]], float(part.get("mass", 0.0))])
+				match spot:
+					"washer":
+						lines.append("Leave a dirty part in here and it comes out clean.")
+					"repair":
+						lines.append("Put a part here and use the grinder and welder to restore it.")
+					"engine_stand":
+						lines.append("Bolt an engine on here to strip it or build it up.")
+		"pc":
+			lines.append("Parts computer")
+			lines.append("Order any part. It turns up on the delivery pallets.")
 		"bin":
 			lines.append("Scrap bin")
 			lines.append("Drop parts you don't want in here.")
 	return "\n".join(lines)
 
 
-## How fitting `item_id` would change the bike's numbers.
-func _preview(bike_id: int, item_id: int) -> String:
-	var slot: String = Shed.items[item_id]["slot"]
-	var before := Shed.build_of(bike_id).summary()
-	var after := Shed.build_of(bike_id, item_id).summary()
-	var verb := "Swap in" if Shed.item_on(bike_id, slot) != 0 else "Fit"
-	return "%s: %d → %d hp   %d → %d km/h   %d → %d kg" % [verb, roundi(before["hp"]), roundi(after["hp"]),
-		roundi(before["top_kmh"]), roundi(after["top_kmh"]), roundi(before["mass"]), roundi(after["mass"])]
+## How fitting `item_id` at the target would change the numbers.
+func _preview(item_id: int) -> String:
+	var action := _where()
+	var where := Shed.install_slot(action, item_id)
+	if where.has("error"):
+		return where["error"]
+	var slot: String = where["slot"]
+	var before: Dictionary
+	var after: Dictionary
+	if action.has("engine"):
+		before = Shed.engine_build(int(action["engine"])).summary()
+		after = Shed.engine_build(int(action["engine"]), item_id, slot).summary()
+	else:
+		before = Shed.build_of(int(action["bike"])).summary()
+		after = Shed.build_of(int(action["bike"]), item_id, slot).summary()
+	var verb := "Fit as %s" % PartsDB.slot_name(slot).to_lower()
+	return "%s: %d → %d hp   %d → %d km/h   %d → %d kg   brakes %d → %d" % [verb, roundi(before["hp"]), roundi(after["hp"]),
+		roundi(before["top_kmh"]), roundi(after["top_kmh"]), roundi(before["mass"]), roundi(after["mass"]),
+		roundi(before["brake"]), roundi(after["brake"])]
 
 
 func _highlight() -> void:
@@ -273,8 +325,8 @@ func _highlight() -> void:
 	var slot := ""
 	if target.get("kind", "") == "part":
 		var view: Node = get_tree().get_first_node_in_group("workshop")
-		if view and view.bike_views.has(target["bike"]):
-			model = view.bike_views[target["bike"]].get_child(0) as BikeModel
+		if view:
+			model = view.model_for(target)
 			slot = target["slot"]
 	if _highlighted and is_instance_valid(_highlighted) and _highlighted != model:
 		_highlighted.highlight("")
@@ -308,7 +360,10 @@ func _update_work(delta: float) -> void:
 	_hold += delta
 	progress = clampf(_hold / float(plan["time"]), 0.0, 1.0)
 	if progress >= 1.0:
-		Shed.request(plan["action"])
+		if plan["action"]["a"] == "computer":
+			computer_requested.emit()
+		else:
+			Shed.request(plan["action"])
 		_hold = 0.0
 		progress = 0.0
 		_need_release = true
@@ -319,15 +374,16 @@ func _activity_text() -> String:
 	var a: Dictionary = plan["action"]
 	var what := ""
 	if target.get("kind", "") == "part":
-		what = "the %s on %s" % [PartsDB.SLOT_NAMES[target["slot"]].to_lower(), Shed.bikes[target["bike"]]["name"]]
+		var owner := "the engine" if int(target.get("engine", 0)) != 0 else str(Shed.bikes[target["bike"]]["name"])
+		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
-		"clean": "Cleaning", "repair": "Restoring", "shelf_take": "Fetching a new part", "take": "Picking up a part",
-		"place": "Putting down a part", "bin": "Scrapping a part"}
+		"clean": "Cleaning", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
+		"place": "Putting down a part", "bin": "Scrapping a part", "computer": "Browsing the parts computer"}
 	var verb: String = verbs.get(a["a"], "Working on")
-	if a["a"] in ["clean", "repair"] and what == "":
+	if a["a"] in ["clean", "repair", "paint"] and what == "":
 		what = "the " + Shed.item_title(int(a["item"]))
 	if a["a"] == "install":
-		what = Shed.bikes[target["bike"]]["name"]
+		what = "the engine" if int(target.get("engine", 0)) != 0 else str(Shed.bikes[target["bike"]]["name"])
 	return ("%s %s" % [verb, what]).strip_edges()
 
 
@@ -346,7 +402,7 @@ func _update_held_view() -> void:
 	var sig := ""
 	if held != 0:
 		var it: Dictionary = Shed.items[held]
-		sig = "%d:%s:%.1f:%.1f:%.1f" % [held, it["part"], it["rust"], it["dirt"], it["wear"]]
+		sig = "%d:%s:%.1f:%.1f:%.1f:%s" % [held, it["part"], it["rust"], it["dirt"], it["wear"], it["color"]]
 		if tool != "hands":
 			tool = "hands"
 			_set_tool_view()
@@ -360,8 +416,7 @@ func _update_held_view() -> void:
 		_tool_view.visible = held == 0
 	if held == 0:
 		return
-	var it: Dictionary = Shed.items[held]
-	_held_view = BikeModel.part_display(it["part"], Shed.condition_of(it))
+	_held_view = BikeModel.item_display(held)
 	var size: Vector3 = _held_view.get_meta("size", Vector3.ONE)
 	var s := clampf(0.55 / maxf(size.x, maxf(size.y, size.z)), 0.2, 1.0)
 	_held_view.scale = Vector3.ONE * s
@@ -405,6 +460,13 @@ static func make_tool_mesh(which: String) -> Node3D:
 			body.roughness = 0.4
 			parts = [[Vector3(0, -0.04, 0), Vector3(0.05, 0.2, 0.05), body], [Vector3(0, 0.08, 0.03), Vector3(0.06, 0.05, 0.06), body],
 				[Vector3(0, 0.08, 0.07), Vector3(0.11, 0.11, 0.008), steel]]
+		"spray":
+			var can := StandardMaterial3D.new()
+			can.albedo_color = Color(0.9, 0.75, 0.1)
+			can.metallic = 0.6
+			can.roughness = 0.3
+			parts = [[Vector3(0, -0.02, 0), Vector3(0.06, 0.18, 0.06), can], [Vector3(0, 0.09, 0), Vector3(0.03, 0.04, 0.03), steel],
+				[Vector3(0, 0.12, -0.01), Vector3(0.02, 0.02, 0.03), grip]]
 		_:
 			pass  # bare hands: nothing to draw
 	for p in parts:

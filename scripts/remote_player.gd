@@ -160,8 +160,7 @@ func _process(_delta: float) -> void:
 	for c in _hand.get_children():
 		c.queue_free()
 	if held != 0:
-		var it: Dictionary = Shed.items[held]
-		var part := BikeModel.part_display(it["part"], Shed.condition_of(it))
+		var part := BikeModel.item_display(held)
 		var size: Vector3 = part.get_meta("size", Vector3.ONE)
 		part.scale = Vector3.ONE * clampf(0.6 / maxf(size.x, maxf(size.y, size.z)), 0.2, 1.0)
 		part.position = Vector3(-0.28, -0.1, -0.1)
