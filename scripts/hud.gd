@@ -108,6 +108,27 @@ func _draw() -> void:
 	elif walker:
 		_draw_crosshair()
 		_draw_toolbar()
+	if walker and (walker.stopwatch.showing() or (bike == null and walker.tool == "watch")):
+		_draw_stopwatch()
+
+
+## The stopwatch readout, top left, with the last few laps. It stays up while you ride.
+func _draw_stopwatch() -> void:
+	var font := get_theme_default_font()
+	var sw := walker.stopwatch
+	var r := Rect2(24, 24, 230, 70 + 22 * sw.laps.size())
+	draw_rect(r, Color(0.03, 0.03, 0.04, 0.65))
+	draw_rect(Rect2(r.position, Vector2(3, r.size.y)), UITheme.ACCENT if sw.running else Color(1, 1, 1, 0.4))
+	draw_string(font, r.position + Vector2(14, 20), "STOPWATCH" + ("" if sw.running else "  (stopped)"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+		Color(1, 1, 1, 0.6))
+	draw_string(font, r.position + Vector2(14, 56), Stopwatch.format(sw.elapsed()), HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color.WHITE)
+	for i in sw.laps.size():
+		draw_string(font, r.position + Vector2(14, 82 + 22 * i), "Lap %d   %s" % [i + 1, Stopwatch.format(sw.laps[i])],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UITheme.ACCENT)
+	if bike == null and walker.tool == "watch":
+		var pad := Controls.device() >= 0 and Controls.active_device >= 0
+		var hint := "RT: start / stop   LT: lap / reset" if pad else "Left mouse: start / stop   Right mouse: lap / reset   P: start / stop anywhere"
+		draw_string(font, Vector2(r.position.x, r.end.y + 20), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.6))
 
 
 func _draw_crosshair() -> void:
@@ -123,7 +144,7 @@ func _draw_crosshair() -> void:
 func _draw_toolbar() -> void:
 	var font := get_theme_default_font()
 	var n := Walker.TOOLS.size()
-	var w := 120.0
+	var w := minf(120.0, (size.x - 40.0) / n - 8.0)
 	var x0 := size.x * 0.5 - n * (w + 8.0) * 0.5
 	var y := size.y - 70.0
 	for i in n:
@@ -135,9 +156,9 @@ func _draw_toolbar() -> void:
 			draw_rect(r, UITheme.ACCENT, false, 2.0)
 		draw_string(font, r.position + Vector2(8, 18), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.5))
 		var label: String = {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder", "spray": "Spray can",
-			"lance": "Pressure washer"}[t]
+			"lance": "Pressure wash", "gun": "Spray gun", "watch": "Stopwatch"}.get(t, t)
 		draw_string(font, r.position + Vector2(0, 34), label, HORIZONTAL_ALIGNMENT_CENTER, w, 16, Color.WHITE if active else Color(1, 1, 1, 0.65))
-	if walker.tool == "spray":
+	if walker.tool in ["spray", "gun"]:
 		_draw_spray_picker(font, y)
 	var held := Shed.held_by(Shed.me())
 	if held != 0:
@@ -153,7 +174,8 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 	var x0 := size.x * 0.5 - total * 0.5
 	var y := toolbar_y - 120.0
 	draw_rect(Rect2(x0 - 14, y - 32, total + 28, 104), Color(0.05, 0.06, 0.08, 0.7))
-	draw_string(font, Vector2(x0, y - 12), "SPRAY CAN  ·  %s" % walker.spray_text().to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UITheme.ACCENT)
+	draw_string(font, Vector2(x0, y - 12), "%s  ·  %s" % ["SPRAY GUN (PAINT BOOTH)" if walker.tool == "gun" else "SPRAY CAN",
+		walker.spray_text().to_upper()], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UITheme.ACCENT)
 	for i in n:
 		var r := Rect2(x0 + i * (sw + gap), y, sw, sw)
 		if i == walker.spray_color:
@@ -173,7 +195,7 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 		draw_string(font, r.position + Vector2(8, 17), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE if on else Color(1, 1, 1, 0.6))
 		fx += w + 6.0
 	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	var hint := "X: colour   B: finish" if pad else "R or right mouse: colour   T or middle mouse: finish"
+	var hint := "X: colour   B: finish" if pad else "R or right mouse: colour   T: finish"
 	draw_string(font, Vector2(x0, y + 90), hint, HORIZONTAL_ALIGNMENT_LEFT, total, 14, Color(1, 1, 1, 0.6))
 
 
@@ -212,6 +234,6 @@ func _draw_speedo() -> void:
 	if not bike.engine_on and not bike.is_crashed:
 		hint = "Starting..." if bike.is_starting() else "Engine off: press I (or D-pad up) to start it"
 	elif absf(bike.speed) < 2.0 and not bike.is_crashed:
-		hint = "F (or Y): get off   ·   I: engine off"
+		hint = "F (or Y): get off   ·   I: engine off   ·   hold S: paddle back   ·   S + throttle: burnout"
 	if hint != "":
 		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))

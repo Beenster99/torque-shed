@@ -5,3 +5,4 @@ export/
 build/
 *.translation
 mono_crash.*
+.claude/worktrees/

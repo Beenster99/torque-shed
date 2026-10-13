@@ -76,6 +76,7 @@ func _ready() -> void:
 	Net.disconnected.connect(func(): _end_session(); menu.show_title("The host closed the shed."))
 	Shed.changed.connect(_on_shed_changed)
 	Shed.feedback.connect(func(text, ok): hud.flash(text, 2.5 if ok else 2.0, not ok))
+	Shed.pinged.connect(_on_ping)
 	menu.show_title()
 
 
@@ -142,6 +143,9 @@ func _start_session() -> void:
 	walker.computer_requested.connect(_open_computer)
 	walker.label_requested.connect(func(id):
 		label_dialog.open(id)
+		_capture_mouse(false))
+	walker.rename_requested.connect(func(id):
+		label_dialog.open_bike(id)
 		_capture_mouse(false))
 	walker.camera.current = true
 	hud.walker = walker
@@ -219,6 +223,7 @@ func _start_riding(bike_id: int) -> void:
 	var data: Dictionary = Shed.bikes[bike_id]
 	riding_id = bike_id
 	bike = Bike.new()
+	bike.rider_color = _paint()
 	bike.setup(Shed.build_of(bike_id), data["paint"])
 	world.add_child(bike)
 	var xf: Transform3D = data["xf"]
@@ -236,6 +241,8 @@ func _start_riding(bike_id: int) -> void:
 	audio.cylinders = bike.build.cylinders
 	audio.layout = bike.build.layout
 	audio.loudness = bike.build.exhaust_loudness
+	audio.displacement = bike.build.displacement
+	audio.whine = bike.build.gear_whine
 	bike.add_child(audio)
 	bike.gear_changed.connect(func(_g): Sfx.play_at("gear", bike.global_position, -6.0, bike))
 	camera.target = bike
@@ -349,6 +356,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		bike.shift_up()
 	elif event.is_action_pressed("shift_down"):
 		bike.shift_down()
+	elif event.is_action_pressed("ping"):
+		PingMarker.ping_from(camera, [bike.get_rid()])
+	elif event.is_action_pressed("stopwatch") and walker:
+		walker.stopwatch.start_stop()
+		Sfx.play_at("beep", camera.global_position, -6.0)
 	elif event.is_action_pressed("toggle_auto_shift"):
 		Settings.auto_shift = not Settings.auto_shift
 		hud.flash("Auto-shift %s" % ("on" if Settings.auto_shift else "off"), 1.5)
@@ -376,7 +388,9 @@ func _physics_process(delta: float) -> void:
 			bike.rear_brake = 1.0
 		bike.auto_shift = Settings.auto_shift
 		bike.assist = Settings.assist
+		bike.horn = active and Input.is_action_pressed("horn")
 		audio.rpm = bike.rpm
+		audio.gear = bike.gear
 		audio.throttle = bike.sound_load()
 		audio.running = bike.engine_on
 		var km := absf(bike.speed) * delta / 1000.0
@@ -475,6 +489,18 @@ func _on_player_left(id: int) -> void:
 		hud.flash("%s left" % remotes[id].player_name, 2.5)
 		remotes[id].queue_free()
 		remotes.erase(id)
+
+
+## Someone pinged something: show it in their colour, round the thing if it's here.
+func _on_ping(peer: int, d: Dictionary) -> void:
+	if not in_session:
+		return
+	var color := _paint()
+	if peer != Shed.me() and remotes.has(peer):
+		color = remotes[peer].color
+	PingMarker.show_ping(world, d, color)
+	if peer != Shed.me():
+		hud.flash("%s pinged %s" % [d.get("name", "Someone"), str(d.get("what", "something")).to_lower()], 2.0)
 
 
 func _on_state(id: int, state: PackedFloat32Array) -> void:

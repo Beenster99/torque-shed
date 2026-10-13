@@ -5,12 +5,12 @@ extends Node
 ## sliders control.
 
 const RATE := 22050
-const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour", "screech"]
+const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour", "screech", "door"]
 ## Which loop each kind of work makes while you hold the button.
 const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray",
 	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray"}
 ## Which loop a tool makes in someone else's hands while they work.
-const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet"}
+const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet", "gun": "spray"}
 ## The one-shot when a job is done.
 const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "install": "clunk", "take": "pickup",
 	"place": "clunk", "drop": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink"}
@@ -122,6 +122,12 @@ func _make(sound: String) -> AudioStreamWAV:
 			data = _screech()
 		"gear":
 			data = _gear()
+		"ping":
+			data = _chime()
+		"door":
+			data = _door()
+		"beep":
+			data = _beep()
 		_:
 			data.resize(RATE / 10)
 	var wav := AudioStreamWAV.new()
@@ -335,4 +341,40 @@ func _gear() -> PackedFloat32Array:
 	var ring := _ring([1250.0, 2100.0], 0.12, 0.25)
 	for i in mini(d.size(), ring.size()):
 		d[i] += ring[i]
+	return d
+
+
+## A bright two-note chime: someone pinged something for the crew to look at.
+func _chime() -> PackedFloat32Array:
+	var d := _samples(0.7)
+	for i in d.size():
+		var t := float(i) / RATE
+		var s := sin(TAU * 988.0 * t) * exp(-t * 7.0) * (1.0 if t < 0.12 else 0.4)
+		if t >= 0.12:
+			var u := t - 0.12
+			s += sin(TAU * 1480.0 * u) * exp(-u * 6.0) + sin(TAU * 2960.0 * u) * exp(-u * 12.0) * 0.25
+		d[i] = s * 0.35
+	return d
+
+
+## The roller door's motor and the slats rattling up or down.
+func _door() -> PackedFloat32Array:
+	var d := _samples(2.6)
+	var lp := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		var env := clampf(t / 0.15, 0.0, 1.0) * clampf((2.6 - t) / 0.3, 0.0, 1.0)
+		var motor := sin(TAU * 95.0 * t) * 0.3 + sin(TAU * 190.0 * t) * 0.15
+		lp += (_rng.randf_range(-1.0, 1.0) - lp) * 0.3
+		var rattle := lp * (0.5 + 0.5 * sin(TAU * 14.0 * t)) * 0.6
+		d[i] = (motor + rattle) * env * 0.5
+	return d
+
+
+## The stopwatch's beep.
+func _beep() -> PackedFloat32Array:
+	var d := _samples(0.09)
+	for i in d.size():
+		var t := float(i) / RATE
+		d[i] = (1.0 if fmod(t * 2600.0, 1.0) < 0.5 else -1.0) * 0.18 * clampf((0.09 - t) / 0.01, 0.0, 1.0)
 	return d

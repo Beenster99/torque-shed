@@ -3015,7 +3015,8 @@
 				0.3,
 				0.31,
 				0.33
-			]
+			],
+			"whine": 0.6
 		},
 		"five_wide": {
 			"name": "5-speed wide-ratio",
@@ -3035,7 +3036,8 @@
 				0.3,
 				0.31,
 				0.33
-			]
+			],
+			"whine": 0.25
 		},
 		"six_wide_enduro": {
 			"name": "6-speed wide enduro",
@@ -3056,7 +3058,8 @@
 				0.3,
 				0.31,
 				0.33
-			]
+			],
+			"whine": 0.3
 		},
 		"six_close": {
 			"name": "6-speed close-ratio",
@@ -3077,7 +3080,8 @@
 				0.3,
 				0.31,
 				0.33
-			]
+			],
+			"whine": 0.35
 		},
 		"six_race_quickshift": {
 			"name": "6-speed race with quickshifter",
@@ -3098,7 +3102,8 @@
 				0.3,
 				0.31,
 				0.33
-			]
+			],
+			"whine": 0.8
 		}
 	},
 	"exhaust": {
@@ -3563,6 +3568,507 @@
 				0.06
 			],
 			"lightweight": true
+		}
+	},
+	"horn": {
+		"disc_horn": {
+			"name": "Stock disc horn",
+			"description": "The little round horn every bike leaves the factory with. A polite meep.",
+			"mass": 0.3,
+			"type": "Electric disc",
+			"style": "disc",
+			"tones": [
+				420
+			],
+			"loudness": 0.55,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"twin_tone": {
+			"name": "Twin-tone horns",
+			"description": "A high and a low disc wired together. Proper car-horn chord.",
+			"mass": 0.6,
+			"type": "Electric disc, twin",
+			"style": "disc",
+			"tones": [
+				410,
+				520
+			],
+			"loudness": 0.7,
+			"color": [
+				0.1,
+				0.1,
+				0.1
+			]
+		},
+		"snail_horn": {
+			"name": "Snail horns",
+			"description": "Spiral trumpets in a pair. Loud, clear and a bit European.",
+			"mass": 0.7,
+			"type": "Electric trumpet",
+			"style": "snail",
+			"tones": [
+				480,
+				600
+			],
+			"loudness": 0.8,
+			"color": [
+				0.75,
+				0.08,
+				0.06
+			]
+		},
+		"air_horn": {
+			"name": "Compressed air horn",
+			"description": "Twin chrome trumpets and a tiny compressor. Makes car drivers jump.",
+			"mass": 1.2,
+			"type": "Air, twin trumpet",
+			"style": "air",
+			"tones": [
+				300,
+				375
+			],
+			"loudness": 1.0,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"train_horn": {
+			"name": "Freight train horn",
+			"description": "Three trumpets tuned to a train chord. Completely unnecessary.",
+			"mass": 1.9,
+			"type": "Air, triple trumpet",
+			"style": "air",
+			"tones": [
+				220,
+				277,
+				330
+			],
+			"loudness": 1.2,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"klaxon": {
+			"name": "Vintage klaxon",
+			"description": "The old mechanical AOOGA. Hand-polished brass bell.",
+			"mass": 0.9,
+			"type": "Mechanical klaxon",
+			"style": "klaxon",
+			"tones": [
+				260
+			],
+			"loudness": 0.85,
+			"color": [
+				0.78,
+				0.6,
+				0.25
+			]
+		},
+		"bulb_horn": {
+			"name": "Rubber bulb horn",
+			"description": "Squeeze it. Honk. A clown car classic.",
+			"mass": 0.25,
+			"type": "Bulb",
+			"style": "bulb",
+			"tones": [
+				350
+			],
+			"loudness": 0.45,
+			"color": [
+				0.85,
+				0.1,
+				0.08
+			],
+			"lightweight": true
+		},
+		"scooter_beep": {
+			"name": "Scooter beeper",
+			"description": "A thin electronic beep-beep, like a moped in a hurry.",
+			"mass": 0.15,
+			"type": "Electronic",
+			"style": "beep",
+			"tones": [
+				1250
+			],
+			"loudness": 0.4,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"lightweight": true
+		},
+		"musical_horn": {
+			"name": "La Cucaracha musical horn",
+			"description": "Five trumpets that play the tune. Every shed needs one.",
+			"mass": 1.6,
+			"type": "Air, musical",
+			"style": "melody",
+			"tones": [
+				392,
+				392,
+				392,
+				523,
+				659
+			],
+			"loudness": 0.9,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"goose_horn": {
+			"name": "Goose honker",
+			"description": "A wheezy reed horn that sounds exactly like an angry goose.",
+			"mass": 0.4,
+			"type": "Reed",
+			"style": "goose",
+			"tones": [
+				330
+			],
+			"loudness": 0.6,
+			"color": [
+				0.95,
+				0.95,
+				0.92
+			]
+		}
+	},
+	"ecu": {
+		"stock_ecu": {
+			"name": "Stock ECU",
+			"description": "Basic engine control: fuel and ignition maps, nothing else. No rider aids.",
+			"mass": 0.4,
+			"type": "Engine control only",
+			"features": [],
+			"power": 1.0,
+			"rev_add": 0,
+			"aid_level": 0.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			]
+		},
+		"remap_ecu": {
+			"name": "Performance remap ECU",
+			"description": "Hotter maps and a higher rev limit. More power, still no aids.",
+			"mass": 0.4,
+			"type": "Remapped",
+			"features": [
+				"remap"
+			],
+			"power": 1.06,
+			"rev_add": 400,
+			"aid_level": 0.0,
+			"color": [
+				0.75,
+				0.1,
+				0.08
+			]
+		},
+		"abs_ecu": {
+			"name": "ABS controller",
+			"description": "Adds anti-lock brakes front and rear. Stamp on the brakes without locking a wheel.",
+			"mass": 0.9,
+			"type": "ABS",
+			"features": [
+				"abs"
+			],
+			"power": 1.0,
+			"rev_add": 0,
+			"aid_level": 0.6,
+			"color": [
+				0.15,
+				0.15,
+				0.17
+			]
+		},
+		"sport_ecu": {
+			"name": "Sport ride-by-wire ECU",
+			"description": "Traction control, ABS and anti-wheelie in one box. Set up for fast road riding.",
+			"mass": 0.8,
+			"type": "Traction, ABS, anti-wheelie",
+			"features": [
+				"traction",
+				"abs",
+				"anti_wheelie"
+			],
+			"power": 1.03,
+			"rev_add": 200,
+			"aid_level": 0.7,
+			"color": [
+				0.1,
+				0.25,
+				0.6
+			]
+		},
+		"race_ecu": {
+			"name": "Race ECU with IMU",
+			"description": "Lean-sensitive traction control, cornering ABS, wheelie and stability control. Lets the rider push but catches the big mistakes.",
+			"mass": 0.6,
+			"type": "Full IMU suite",
+			"features": [
+				"traction",
+				"abs",
+				"anti_wheelie",
+				"stability"
+			],
+			"power": 1.05,
+			"rev_add": 500,
+			"aid_level": 0.9,
+			"color": [
+				0.9,
+				0.75,
+				0.1
+			],
+			"lightweight": true
+		}
+	},
+	"panniers": {
+		"canvas_throwover": {
+			"name": "Canvas throw-over panniers",
+			"description": "Waxed canvas bags slung over the seat. Cheap and cheerful.",
+			"mass": 2.5,
+			"type": "Soft, throw-over",
+			"style": "soft",
+			"litres": 36,
+			"cda": 0.02,
+			"color": [
+				0.32,
+				0.3,
+				0.2
+			]
+		},
+		"leather_saddlebags": {
+			"name": "Leather saddlebags",
+			"description": "Studded leather bags with buckles. Pure cruiser.",
+			"mass": 4.0,
+			"type": "Soft, leather",
+			"style": "leather",
+			"litres": 30,
+			"cda": 0.025,
+			"color": [
+				0.25,
+				0.13,
+				0.06
+			]
+		},
+		"adventure_soft": {
+			"name": "Adventure soft bags",
+			"description": "Tough nylon dry bags on a rack. Crash-proof and waterproof.",
+			"mass": 3.2,
+			"type": "Soft, roll-top",
+			"style": "roll",
+			"litres": 50,
+			"cda": 0.03,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			]
+		},
+		"plastic_cases": {
+			"name": "Hard plastic cases",
+			"description": "Lockable side cases, colour-matched lids. Swallow a helmet each.",
+			"mass": 6.5,
+			"type": "Hard, plastic",
+			"style": "hard",
+			"litres": 66,
+			"cda": 0.04,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"aluminium_boxes": {
+			"name": "Aluminium adventure boxes",
+			"description": "Square riveted alloy boxes for crossing continents. Dent, don't break.",
+			"mass": 8.5,
+			"type": "Hard, aluminium",
+			"style": "alloy",
+			"litres": 82,
+			"cda": 0.05,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			]
+		}
+	},
+	"top_box": {
+		"top_box_30": {
+			"name": "30 L top box",
+			"description": "Small plastic box on a rack. Fits a lid and lunch.",
+			"mass": 3.0,
+			"type": "Hard, plastic",
+			"style": "small",
+			"litres": 30,
+			"cda": 0.015,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"top_box_45": {
+			"name": "45 L top box",
+			"description": "Takes two full-face helmets, with a backrest pad for the pillion.",
+			"mass": 4.5,
+			"type": "Hard, plastic",
+			"style": "large",
+			"litres": 45,
+			"cda": 0.025,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"alloy_top_box": {
+			"name": "Aluminium top case",
+			"description": "Riveted alloy box to match the adventure panniers.",
+			"mass": 5.0,
+			"type": "Hard, aluminium",
+			"style": "alloy",
+			"litres": 38,
+			"cda": 0.025,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			]
+		},
+		"wooden_crate": {
+			"name": "Rack-mounted crate",
+			"description": "An old wooden crate bolted to a rack. Hipster delivery rider chic.",
+			"mass": 3.5,
+			"type": "Wooden",
+			"style": "crate",
+			"litres": 35,
+			"cda": 0.03,
+			"color": [
+				0.55,
+				0.38,
+				0.2
+			]
+		},
+		"leather_trunk": {
+			"name": "Leather tour trunk",
+			"description": "A stitched leather trunk on a chrome rack. Old-school touring.",
+			"mass": 4.0,
+			"type": "Leather",
+			"style": "trunk",
+			"litres": 28,
+			"cda": 0.02,
+			"color": [
+				0.28,
+				0.14,
+				0.07
+			]
+		}
+	},
+	"fog_lights": {
+		"halogen_spots": {
+			"name": "Round halogen spotlights",
+			"description": "A pair of small chrome spots on the crash bars.",
+			"mass": 1.1,
+			"type": "Halogen, pair",
+			"style": "round",
+			"lumens": 900,
+			"beam": [
+				1.0,
+				0.92,
+				0.78
+			],
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"led_pods": {
+			"name": "LED cube pods",
+			"description": "Square LED pods. Turn the night white.",
+			"mass": 0.6,
+			"type": "LED, pair",
+			"style": "cube",
+			"lumens": 2400,
+			"beam": [
+				0.93,
+				0.97,
+				1.0
+			],
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			],
+			"lightweight": true
+		},
+		"rally_lamps": {
+			"name": "Rally lamps",
+			"description": "Big round lamps with stone guards, Dakar style.",
+			"mass": 1.8,
+			"type": "Halogen, rally",
+			"style": "rally",
+			"lumens": 2000,
+			"beam": [
+				1.0,
+				0.9,
+				0.75
+			],
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
+		},
+		"amber_fogs": {
+			"name": "Amber fog lights",
+			"description": "Yellow lenses that cut through mist and look the part.",
+			"mass": 1.0,
+			"type": "Halogen, amber",
+			"style": "round",
+			"lumens": 700,
+			"beam": [
+				1.0,
+				0.75,
+				0.3
+			],
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
+		},
+		"light_bar": {
+			"name": "LED light bar",
+			"description": "A slim bar of LEDs across the forks. Enormous throw.",
+			"mass": 1.3,
+			"type": "LED bar",
+			"style": "bar",
+			"lumens": 3500,
+			"beam": [
+				0.93,
+				0.97,
+				1.0
+			],
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
 		}
 	},
 	"petrol": {

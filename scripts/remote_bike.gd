@@ -13,9 +13,11 @@ var _snapshots: Array = []   # [{t, state}]
 var _label: Label3D
 var _last := PackedFloat32Array()
 var _effects: BikeEffects
+var _horn: HornAudio
+var _fog: Array = []
 
 
-func setup(rider_name: String, build: BikeBuild, paint: Color) -> void:
+func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Color(0, 0, 0, 0)) -> void:
 	add_to_group("ridden_bike")   # shed TVs follow whoever is out riding
 	player_name = rider_name
 	_build = build
@@ -25,8 +27,14 @@ func setup(rider_name: String, build: BikeBuild, paint: Color) -> void:
 	for child in get_children():
 		child.free()
 	model = BikeModel.new()
+	model.rider_color = rider_color
 	add_child(model)
 	model.build_from(_build, paint)
+	_fog = Bike.make_fog_lights(self, model, _build)
+	_horn = HornAudio.new()
+	_horn.setup_from(_build)
+	_horn.position = model.lamp_position()
+	add_child(_horn)
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(0.4, 1.1, _build.wheelbase + 0.5)
 	var cs := CollisionShape3D.new()
@@ -46,6 +54,8 @@ func setup(rider_name: String, build: BikeBuild, paint: Color) -> void:
 	audio.cylinders = _build.cylinders
 	audio.layout = _build.layout
 	audio.loudness = _build.exhaust_loudness
+	audio.displacement = _build.displacement
+	audio.whine = _build.gear_whine
 	audio.volume_db = -6.0
 	add_child(audio)
 	_effects = BikeEffects.new()
@@ -91,6 +101,13 @@ func _physics_process(delta: float) -> void:
 	var v := Vector3(sb[7], sb[8], sb[9])
 	_effects.update(delta, v.length(), sb[16], running, _build.overall_health(), "", true, 0.0)
 	_effects.set_screech(sb[20] if sb.size() > 20 else 0.0)
+	_horn.pressed = sb.size() > 21 and sb[21] > 0.5
+	if sb.size() > 22:
+		audio.gear = int(sb[22])
+	if sb.size() > 23 and _effects.has_method("set_tyre_smoke"):
+		_effects.call("set_tyre_smoke", sb[23], Vector3(0.0, -_build.rear_radius, _build.wheelbase * 0.5))
+	for l in _fog:
+		l.visible = running
 
 
 func current_speed() -> float:

@@ -26,6 +26,10 @@ const WHEELIE_PITCH := deg_to_rad(28.0)   # where the rider tries to hold a whee
 const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down
 const AIR_REV_PITCH := 7.0        # pitch acceleration (rad/s^2) from blipping the rear wheel in the air
 const SKID_SLIP := 0.2            # tyre slip above which it screeches and marks the road
+const FRONT_LOCK_SLIP := 0.1      # the rider (or ABS) eases the brake before a wheel slips more than this
+const PADDLE_SPEED := 1.1         # walking pace when the rider paddles backwards with their feet
+const PADDLE_HOLD := 0.45         # hold the front brake this long at a standstill to start paddling back
+const BURNOUT_SPEED := 2.5        # below this, front brake plus throttle lights up the back tyre
 
 var build: BikeBuild
 
@@ -66,6 +70,13 @@ var _ragdoll: RigidBody3D
 var _starting := 0.0
 var _shift_from_rpm := 0.0
 var skid := 0.0            # 0..1, how hard the tyres are squealing on tarmac, set by the effects
+var horn := false          # horn button held
+var rider_color := Color(0, 0, 0, 0)   # the rider's own colours; clear uses the bike's paint
+var burnout := 0.0         # 0..1, how hard the back tyre is spinning on the spot
+var paddling := false      # walking the bike backwards with the rider's feet
+var horn_audio: HornAudio
+var _stopped_brake := 0.0  # how long the front brake has been held at a standstill
+var _fog: Array = []
 
 
 func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
@@ -115,8 +126,18 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 		_add_shape(bumper, w["mount"])
 
 	model = BikeModel.new()
+	model.rider_color = rider_color
 	add_child(model)
 	model.build_from(build, paint)
+	for l in _fog:
+		l.free()
+	_fog = make_fog_lights(self, model, build)
+	if horn_audio:
+		horn_audio.free()
+	horn_audio = HornAudio.new()
+	horn_audio.setup_from(build)
+	horn_audio.position = model.lamp_position()
+	add_child(horn_audio)
 	fuel_litres = build.fuel_litres
 	if effects:
 		effects.free()
@@ -215,6 +236,11 @@ func _physics_process(delta: float) -> void:
 			rpm = build.idle_rpm * 1.3
 			engine_changed.emit(true, "")
 
+	if horn_audio:
+		horn_audio.pressed = horn and controls_enabled and not is_crashed
+	for l in _fog:
+		l.visible = engine_on
+
 	if is_crashed:
 		throttle = 0.0
 		_crash_timer += delta
@@ -230,6 +256,7 @@ func _physics_process(delta: float) -> void:
 	var shift := body_shift * 0.13
 	center_of_mass = _base_com + Vector3(0.0, 0.0, -shift)
 
+	_update_feet(delta)
 	_update_steering(delta)
 	_update_engine(delta)
 	var rear_grip := rear_brake
@@ -245,13 +272,16 @@ func _physics_process(delta: float) -> void:
 		var over := -pitch_angle - STOPPIE_PITCH
 		var falling := -angular_velocity.dot(global_transform.basis.x)
 		front_grip *= clampf(1.0 - (over * 5.0 + falling * 0.8) * lerpf(0.45, 1.0, assist), 0.0, 1.0)
+	if paddling:
+		front_grip = 0.0
 	wheels[0]["brake_torque"] = front_grip * build.front_brake_torque
-	wheels[1]["brake_torque"] = rear_grip * build.rear_brake_torque
+	wheels[1]["brake_torque"] = 0.0 if burnout > 0.0 else rear_grip * build.rear_brake_torque
 	for w in wheels:
 		_wheel_forces(w, delta, space)
 	surface = wheels[1]["surface"] if wheels[1]["contact"] else wheels[0]["surface"]
 	_apply_aero()
 	_apply_rider_balance()
+	_apply_feet()
 	_check_crash()
 
 	if model:
@@ -260,6 +290,8 @@ func _physics_process(delta: float) -> void:
 		effects.update(delta, speed, throttle, engine_on, build.overall_health(), surface,
 			wheels[1]["contact"], wheels[1]["slip"])
 		effects.update_skids(self)
+		if effects.has_method("set_tyre_smoke"):
+			effects.call("set_tyre_smoke", burnout, Vector3(0.0, -build.rear_radius, build.wheelbase * 0.5))
 
 
 func _measure_attitude() -> void:
@@ -292,6 +324,7 @@ func _update_steering(delta: float) -> void:
 	var target := _target_lean()
 	var cmd: float
 	if v < 2.0:
+		# Feet down at walking pace: the bars just point where the rider steers them.
 		cmd = lean_input * _max_steer()
 	else:
 		var steer_eq := atan(build.wheelbase * G * tan(lean_angle) / (v * v))
@@ -326,8 +359,10 @@ func _update_engine(delta: float) -> void:
 	var v_ground := maxf(absf(speed), 1.0)
 	var spin_ratio: float = (rear["omega"] * build.rear_radius - v_ground) / v_ground
 	var tc_target := 1.0
-	if assist > 0.05 and spin_ratio > 0.12 and rear["contact"]:
-		tc_target = clampf(1.0 - (spin_ratio - 0.12) * 4.0 * assist, 0.15, 1.0)
+	var tc := maxf(assist, build.ecu_aid if build.has_aid("traction") else 0.0)
+	var tc_from := 0.08 if build.has_aid("traction") else 0.12
+	if tc > 0.05 and spin_ratio > tc_from and rear["contact"] and burnout <= 0.0:
+		tc_target = clampf(1.0 - (spin_ratio - tc_from) * 4.0 * tc, 0.15, 1.0)
 	# In a wheelie the rider feathers the throttle to hold the front up at the balance angle
 	# rather than looping it; more assist, steadier hands.
 	if not wheels[0]["contact"] and rear["contact"] and pitch_angle > deg_to_rad(4.0):
@@ -335,6 +370,10 @@ func _update_engine(delta: float) -> void:
 		var rising := angular_velocity.dot(global_transform.basis.x)
 		var hands := lerpf(0.45, 1.0, assist)
 		tc_target = minf(tc_target, clampf(1.0 - (over * 8.0 + rising * 1.2) * hands, 0.0, 1.0))
+	if build.has_aid("anti_wheelie") and pitch_angle > deg_to_rad(2.0):
+		# The ECU's anti-wheelie trims the power to keep the front wheel skimming the road.
+		var cap := deg_to_rad(lerpf(20.0, 4.0, build.ecu_aid))
+		tc_target = minf(tc_target, clampf(1.0 - (pitch_angle - cap) * 12.0, 0.05, 1.0))
 	_traction = lerpf(_traction, tc_target, 1.0 - exp(-25.0 * delta))
 	var torque := build.engine_torque(rpm) * throttle * _traction
 	if rpm >= build.redline:
@@ -395,9 +434,51 @@ func shift_down() -> void:
 ## The wheelie angle the rider aims for: with their weight back, the balance angle (higher the
 ## further back); otherwise they keep the front wheel near the ground.
 func wheelie_target() -> float:
-	if body_shift > -0.25:
-		return deg_to_rad(6.0)
-	return WHEELIE_PITCH + deg_to_rad(10.0) * clampf((-body_shift - 0.25) / 0.75, 0.0, 1.0)
+	var t := deg_to_rad(6.0)
+	if body_shift <= -0.25:
+		t = WHEELIE_PITCH + deg_to_rad(10.0) * clampf((-body_shift - 0.25) / 0.75, 0.0, 1.0)
+	if build and build.has_aid("anti_wheelie"):
+		t = minf(t, deg_to_rad(lerpf(20.0, 4.0, build.ecu_aid)))
+	return t
+
+
+## Burnouts and paddling. Front brake and throttle at a standstill spin the back tyre up in a
+## cloud of smoke; holding the front brake at a standstill with the throttle shut lets the
+## rider walk the bike backwards with their feet, steering with the bars.
+func _update_feet(delta: float) -> void:
+	var still := absf(speed) < 0.4
+	var on_ground: bool = wheels[0]["contact"] and wheels[1]["contact"]
+	if paddling:
+		if front_brake < 0.3 or throttle > 0.1 or not on_ground:
+			paddling = false
+	elif still and on_ground and front_brake > 0.5 and throttle < 0.05:
+		_stopped_brake += delta
+		if _stopped_brake >= PADDLE_HOLD:
+			paddling = true
+	else:
+		_stopped_brake = 0.0
+	if paddling:
+		_stopped_brake = 0.0
+	var lit := engine_on and on_ground and front_brake > 0.5 and throttle > 0.35 and absf(speed) < BURNOUT_SPEED \
+		and pitch_angle < deg_to_rad(8.0)
+	var spin_v: float = wheels[1]["omega"] * build.rear_radius - speed
+	var target := clampf(spin_v / 12.0, 0.0, 1.0) * throttle if lit else 0.0
+	burnout = move_toward(burnout, target, delta * 3.0)
+	if lit and burnout < 0.05:
+		burnout = 0.05   # it has to start somewhere
+
+
+## The rider's feet: holding the bike still against a burnout, or walking it backwards.
+func _apply_feet() -> void:
+	var fwd := -global_transform.basis.z
+	var flat := Vector3(fwd.x, 0.0, fwd.z).normalized()
+	if burnout > 0.0:
+		# The front brake and the rider's legs hold it on the spot while the back tyre spins.
+		var v := linear_velocity.dot(flat)
+		apply_central_force(-flat * v * mass * 6.0)
+	elif paddling:
+		var v := linear_velocity.dot(flat)
+		apply_central_force(flat * (-PADDLE_SPEED - v) * mass * 2.5)
 
 
 ## How much revs the engine note should carry: the throttle, except while the clutch is in for a shift.
@@ -492,6 +573,19 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		fy *= scale
 		omega_new = omega - fx * radius * delta / inertia_w
 		slip_ratio = clampf((total - f_max) / f_max, 0.0, 1.0)
+	if burnout > 0.0 and not w["is_front"]:
+		# Lit up: the tyre spins free against the road, smoking, while the feet hold the bike.
+		if total > f_max:
+			omega_new = omega - fx * (1.0 - 0.4 * burnout) * radius * delta / inertia_w
+		fx *= 1.0 - 0.85 * burnout
+		slip_ratio = maxf(slip_ratio, burnout)
+	if (w["is_front"] or build.has_aid("abs")) and v_long > 1.0 and w["brake_torque"] > 0.0 \
+			and omega_new * radius < v_long * (1.0 - FRONT_LOCK_SLIP):
+		# The rider feels the front tyre and holds it at the edge of grip instead of locking it;
+		# ABS does the same for the back. Peak grip, no slide, no skid.
+		omega_new = v_long * (1.0 - FRONT_LOCK_SLIP) / radius
+		fx = -signf(v_long) * sqrt(maxf(f_max * f_max - fy * fy, 0.0))
+		slip_ratio = 0.0
 	w["slip"] = slip_ratio
 	w["omega"] = omega_new
 	w["spin"] = fmod(w["spin"] + omega_new * delta, TAU)
@@ -515,6 +609,10 @@ func _apply_rider_balance() -> void:
 		strength = 1.0
 	var err := _target_lean() - lean_angle
 	var tau := (22.0 * err - 4.0 * lean_rate) * mass * strength
+	if build.has_aid("stability") and any_contact:
+		# Stability control calms a tank-slapper or a twitchy slide.
+		tau -= lean_rate * mass * 3.0 * build.ecu_aid
+		apply_torque(-b.y * angular_velocity.dot(b.y) * mass * 0.8 * build.ecu_aid)
 	if not any_contact:
 		tau *= 0.4
 	apply_torque(fwd_flat * tau)
@@ -588,4 +686,26 @@ func get_net_state() -> PackedFloat32Array:
 		p.x, p.y, p.z, q.x, q.y, q.z, q.w, v.x, v.y, v.z,
 		steer, wheels[0]["spin"], wheels[1]["spin"], wheels[0]["compression"], wheels[1]["compression"],
 		rpm, sound_load(), 1.0 if is_crashed else 0.0, body_shift, 1.0 if engine_on else 0.0, skid,
+		1.0 if (horn_audio and horn_audio.pressed) else 0.0, float(gear), burnout,
 	])
+
+
+## Fog lamp beams for a bike's fog lights, children of `parent`, off until the engine runs.
+static func make_fog_lights(parent: Node3D, bike_model: BikeModel, b: BikeBuild) -> Array:
+	var out := []
+	if b.fog_lumens <= 0.0:
+		return out
+	var spots := bike_model.fog_positions()
+	for at in spots:
+		var l := SpotLight3D.new()
+		l.position = at
+		l.rotation.x = deg_to_rad(-7.0)
+		l.spot_range = 12.0 + b.fog_lumens / 160.0
+		l.spot_angle = 38.0 if spots.size() > 1 else 30.0
+		l.light_energy = b.fog_lumens / 600.0 / spots.size()
+		l.light_color = b.fog_color
+		l.shadow_enabled = false
+		l.visible = false
+		parent.add_child(l)
+		out.append(l)
+	return out

@@ -8,10 +8,11 @@ extends CharacterBody3D
 signal mount_requested(bike_id: int)
 signal computer_requested
 signal label_requested(furniture_id: int)
+signal rename_requested(bike_id: int)
 
-const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair", "spray", "lance"]
+const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair", "spray", "lance", "gun", "watch"]
 const TOOL_NAMES := {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder and welder",
-	"spray": "Spray can", "lance": "Pressure washer"}
+	"spray": "Spray can", "lance": "Pressure washer", "gun": "Spray gun", "watch": "Stopwatch"}
 const EYE := 1.62
 const CROUCH_EYE := 0.95
 const WALK := 3.2
@@ -23,11 +24,15 @@ const JET_REACH := 0.3       # the pressure washer cleans every part this close 
 const REACH := 2.6
 const BRUSH_REACH := 0.35    # the brush cleans every part this close to where it touches
 const MOUSE_SENS := 0.0025
-const SPRAY_RADIUS := 0.08   # how wide the spray lands, in metres; skill will widen it later
+const SPRAY_RADIUS := 0.1   # how wide the spray lands, in metres; skill will widen it later
 const COVER_CELL := 0.06     # parts are sprayed a patch this size at a time
 const COVER_RATE := 10.0     # coats a second where the spray is pointed
 const COVER_DONE := 0.9      # this much of the part covered and the job's done
 const RUN_LEVEL := 4.0       # a patch sprayed this many coats over runs (paint) or flings off (lube)
+const GUN_RADIUS := 0.13     # the spray gun's fan is wider and lays an even coat across it
+const GUN_RATE := 7.0
+const GUN_RUN_LEVEL := 5.5
+const PING_REACH := 60.0
 const PAD_LOOK := 2.6
 
 var camera: Camera3D
@@ -65,7 +70,10 @@ var _seat_spot := Vector3.ZERO
 var _active_plan := {}
 var spray_skill := 1.0       # widens the spray; XP will raise it in a later milestone
 var coverage := 0.0          # how much of the part being sprayed is covered, 0..1
-var _cover := {}             # the spray job under way: {key, plan, item, points, cells, live}
+var _cover := {}             # the spray job under way: {key, plan, item, points, cells, live, splats}
+var _covers := {}            # every part with a spray job on it, by job key, so you can go back to one
+var _mist: CPUParticles3D
+var stopwatch := Stopwatch.new()
 var _jet: CPUParticles3D
 
 
@@ -115,12 +123,26 @@ func _unhandled_input(event: InputEvent) -> void:
 		_cycle_tool(1)
 	elif event.is_action_pressed("tool_prev"):
 		_cycle_tool(-1)
-	elif tool == "spray" and event.is_action_pressed("spray_colour"):
+	elif tool in ["spray", "gun"] and event.is_action_pressed("spray_colour"):
 		spray_color = (spray_color + 1) % Shed.PAINTS.size()
 		_spray_changed()
-	elif tool == "spray" and event.is_action_pressed("spray_finish"):
+	elif tool in ["spray", "gun"] and event.is_action_pressed("spray_finish"):
 		spray_finish = (spray_finish + 1) % Shed.FINISHES.size()
 		_spray_changed()
+	elif event.is_action_pressed("ping"):
+		get_viewport().set_input_as_handled()
+		ping()
+	elif event.is_action_pressed("stopwatch") or (tool == "watch" and event.is_action_pressed("act")):
+		get_viewport().set_input_as_handled()
+		stopwatch.start_stop()
+		Sfx.play_at("beep", camera.global_position, -6.0)
+	elif tool == "watch" and event.is_action_pressed("alt_act"):
+		get_viewport().set_input_as_handled()
+		stopwatch.lap_or_reset()
+		Sfx.play_at("beep", camera.global_position, -9.0)
+	elif event.is_action_pressed("rename") and target.get("kind", "") == "part" and int(target.get("bike", 0)) != 0:
+		get_viewport().set_input_as_handled()
+		rename_requested.emit(int(target["bike"]))
 	elif event.is_action_pressed("crouch"):
 		set_crouched(not crouched)
 	elif event.is_action_released("interact") and _f_seat != 0:
@@ -178,6 +200,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif target.get("kind", "") == "radio":
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "radio", "on": not Shed.radio["on"]})
+		elif target.get("kind", "") == "door":
+			get_viewport().set_input_as_handled()
+			Shed.request({"a": "door", "open": not Shed.door_open})
+			Sfx.play_at("switch", camera.global_position, -6.0)
+		elif target.get("kind", "") == "lights":
+			get_viewport().set_input_as_handled()
+			Shed.request({"a": "lights", "on": not Shed.lights_on})
+			Sfx.play_at("switch", camera.global_position, -4.0)
 	else:
 		for i in TOOLS.size():
 			if event.is_action_pressed("tool_%d" % (i + 1)):
@@ -339,6 +369,7 @@ func _physics_process(delta: float) -> void:
 	_update_work(delta)
 	_update_held_view()
 	_update_jet()
+	_update_mist()
 
 
 # ---------------------------------------------------------------------------- targeting
@@ -364,6 +395,10 @@ func _update_target() -> void:
 			t = {"kind": "bin"}
 		elif c.has_meta("radio"):
 			t = {"kind": "radio"}
+		elif c.has_meta("door_switch"):
+			t = {"kind": "door"}
+		elif c.has_meta("light_switch"):
+			t = {"kind": "lights"}
 		elif c.has_meta("furniture") and Shed.furniture.has(int(c.get_meta("furniture"))):
 			t = {"kind": "furniture", "furniture": int(c.get_meta("furniture"))}
 		elif c.has_meta("label") and Shed.furniture.has(int(c.get_meta("label"))):
@@ -542,7 +577,7 @@ func _make_plan() -> Dictionary:
 	var p := {}
 	if kind == "label":
 		return {"action": {"a": "write_label"}, "time": 0.15, "verb": "write a label for these shelves", "blocked": ""}
-	if kind == "furniture":
+	if kind in ["furniture", "door", "lights"]:
 		return {}
 	if kind == "radio":
 		if Shed.stations.is_empty():
@@ -644,6 +679,10 @@ func _make_plan() -> Dictionary:
 			if item_id != 0:
 				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": Shed.FINISHES[spray_finish]},
 					"time": 1.5, "coverage": true, "verb": "spray it %s: sweep over all of it, evenly" % spray_text().to_lower()}
+		"gun":
+			if item_id != 0:
+				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": Shed.FINISHES[spray_finish], "gun": true},
+					"time": 1.5, "coverage": true, "verb": "spray %s: go along the parts in steady passes" % spray_text().to_lower()}
 		"lance":
 			if target.has("at"):
 				var near := [] if item_id == 0 else [item_id]
@@ -731,6 +770,7 @@ func _describe() -> String:
 				var bike_id := int(target["bike"])
 				for note in Shed.build_of(bike_id).notes:
 					lines.append("! " + note)
+				lines.append("N: give it a name")
 				var ride := Shed.check(Shed.me(), {"a": "mount", "bike": bike_id})
 				lines.append("F: ride %s" % Shed.bikes[bike_id]["name"] if ride == "" else "Can't ride yet. " + ride)
 				var wheel := Shed.check(Shed.me(), {"a": "grab_bike", "bike": bike_id})
@@ -806,6 +846,12 @@ func _describe() -> String:
 					lines.append("F: move it somewhere else")
 			if kind == "label":
 				lines.append("Hold %s on the label to write on it" % ("RT" if Controls.active_device >= 0 else "left mouse"))
+		"door":
+			lines.append("Roller door")
+			lines.append("F: %s" % ("close it" if Shed.door_open else "open it"))
+		"lights":
+			lines.append("Shed lights")
+			lines.append("F: switch them %s" % ("off" if Shed.lights_on else "on"))
 		"pc":
 			lines.append("Parts computer")
 			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")
@@ -930,53 +976,111 @@ func _update_work(delta: float) -> void:
 
 
 ## One frame of spraying: whatever patches of the part are under the spray get another coat.
+## With the spray gun in a paint booth, the fan coats every part hanging there that it passes.
 func _coverage_step(delta: float, plan_now: Dictionary) -> void:
 	var a: Dictionary = plan_now["action"]
 	var item := int(a["item"])
-	var key := str(a.get("a", "")) + ":" + str(item) + ":" + str(a.get("color", "")) + str(a.get("finish", ""))
+	var gun := bool(a.get("gun", false))
+	var key := _cover_key(a)
 	if _cover.get("key", "") != key:
-		_cover = _start_cover(item, key, plan_now)
+		_cover = _covers.get(key, {})
 		if _cover.is_empty():
-			return
+			_cover = _start_cover(item, key, plan_now)
+			if _cover.is_empty():
+				return
+			_covers[key] = _cover
 	if not _cover["live"]:
 		_cover["live"] = true
 		_active_plan = plan_now
 		_send_status(_activity_text())
 		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get(str(a["a"]), "spray"))
-	var view: Node = get_tree().get_first_node_in_group("workshop")
-	var frame: Dictionary = view.item_frame(item) if view else {}
-	if not frame.is_empty() and target_item() == item and target.has("at"):
-		var xf: Transform3D = frame["xf"]
-		var local: Vector3 = xf.affine_inverse() * (target["at"] as Vector3)
-		# The spray is a cone along the line of sight: it lands in a round patch across that line,
-		# so a face at a slant gets a longer splash.
-		var along: Vector3 = (xf.basis.inverse() * -camera.global_transform.basis.z).normalized()
-		var reach := SPRAY_RADIUS * spray_skill
-		var points: PackedVector3Array = _cover["points"]
-		var cells: PackedFloat32Array = _cover["cells"]
-		for i in points.size():
-			var v := points[i] - local
-			var depth := v.dot(along)
-			if absf(depth) > 0.25:
-				continue
-			var d := (v - along * depth).length()
-			if d < reach:
-				cells[i] += delta * COVER_RATE * (1.0 - 0.5 * d / reach)
-		_cover["cells"] = cells
-	var stats := cover_stats()
-	coverage = stats["covered"]
-	progress = clampf(coverage / COVER_DONE, 0.0, 1.0)
-	if coverage >= COVER_DONE:
-		var done := (plan_now["action"] as Dictionary).duplicate()
-		done["quality"] = clampf(stats["covered"] * (1.0 - stats["over"] * 0.6), 0.0, 1.0)
-		done["waste"] = stats["over"]
-		Shed.request(done)
-		Sfx.set_loop(_work_sound, "")
-		_send_status("")
-		_cover = {}
-		coverage = 0.0
-		progress = 0.0
-		_need_release = true
+	var jobs: Array = [_cover]
+	if gun:
+		# Every other part on the booth's hooks gets its own job, so one pass can coat them all.
+		var it: Dictionary = Shed.items.get(item, {})
+		if not it.is_empty() and it["at"] == "spot":
+			var booth := Shed.furniture_of_spot(str(it["ref"]))
+			if not booth.is_empty():
+				for spot in Shed.furniture_spots(int(booth["id"])):
+					var other := Shed.item_at_spot(spot)
+					if other == 0 or other == item or Shed.items[other].get("boxed", false):
+						continue
+					var oa := a.duplicate()
+					oa["item"] = other
+					var ok := _cover_key(oa)
+					if not _covers.has(ok):
+						var op := plan_now.duplicate()
+						op["action"] = oa
+						var job := _start_cover(other, ok, op)
+						if job.is_empty():
+							continue
+						_covers[ok] = job
+					jobs.append(_covers[ok])
+	if target.has("at"):
+		var reach := (GUN_RADIUS if gun else SPRAY_RADIUS) * spray_skill
+		var rate := GUN_RATE if gun else COVER_RATE
+		var falloff := 0.15 if gun else 0.5
+		var hit_at: Vector3 = target["at"]
+		var view_dir := -camera.global_transform.basis.z
+		# The crosshair may only be on a part's rough grab box: find where the spray meets its surface.
+		var sq := PhysicsRayQueryParameters3D.create(camera.global_position, camera.global_position + view_dir * 6.0,
+			1 | 4 | BikeModel.SPRAY_LAYER)
+		sq.exclude = [get_rid()]
+		var surf := get_world_3d().direct_space_state.intersect_ray(sq)
+		if not surf.is_empty():
+			hit_at = surf["position"]
+		for job in jobs:
+			var xf: Transform3D = job["xf"]
+			var local: Vector3 = xf.affine_inverse() * hit_at
+			# The spray is a cone along the line of sight: it lands in a round patch across that line,
+			# so a face at a slant gets a longer splash.
+			var along: Vector3 = (xf.basis.inverse() * view_dir).normalized()
+			var points: PackedVector3Array = job["points"]
+			var cells: PackedFloat32Array = job["cells"]
+			var splats: PaintSplats = job.get("splats", null)
+			for i in points.size():
+				var v := points[i] - local
+				var depth := v.dot(along)
+				if absf(depth) > 0.25:
+					continue
+				var d := (v - along * depth).length()
+				if d < reach:
+					cells[i] += delta * rate * (1.0 - falloff * d / reach)
+					if is_instance_valid(splats):
+						splats.set_coats(i, cells[i] * (RUN_LEVEL / (GUN_RUN_LEVEL if gun else RUN_LEVEL)))
+			job["cells"] = cells
+	for job in jobs:
+		var stats := _job_stats(job)
+		if job["key"] == _cover.get("key", ""):
+			coverage = stats["covered"]
+			progress = clampf(coverage / COVER_DONE, 0.0, 1.0)
+		if stats["covered"] >= COVER_DONE:
+			var done := (job["plan"]["action"] as Dictionary).duplicate()
+			done["quality"] = clampf(stats["covered"] * (1.0 - stats["over"] * 0.6), 0.0, 1.0)
+			done["waste"] = stats["over"]
+			Shed.request(done)
+			if is_instance_valid(job.get("splats", null)):
+				job["splats"].finish_job()
+			_covers.erase(job["key"])
+			if job["key"] == _cover.get("key", ""):
+				Sfx.set_loop(_work_sound, "")
+				_send_status("")
+				_cover = {}
+				coverage = 0.0
+				progress = 0.0
+				_need_release = true
+
+
+## Middle mouse: point something out to the crew.
+func ping() -> void:
+	var what := PingMarker.ping_from(camera, [get_rid()], PING_REACH)
+	if what == "":
+		Shed.feedback.emit("Nothing there to ping.", false)
+
+
+func _cover_key(a: Dictionary) -> String:
+	return str(a.get("a", "")) + ":" + str(int(a["item"])) + ":" + str(a.get("color", "")) + str(a.get("finish", "")) \
+		+ (":gun" if a.get("gun", false) else "")
 
 
 ## A fresh spray job on `item`: the bits of it you can see from where you stand, found by
@@ -990,28 +1094,41 @@ func _start_cover(item: int, key: String, plan_now: Dictionary) -> Dictionary:
 	var xf: Transform3D = frame["xf"]
 	var eye := camera.global_position
 	var space := get_world_3d().direct_space_state
-	var seen := {}
 	var points := PackedVector3Array()
+	var normals := PackedVector3Array()
 	const N := 9
-	for i in N:
-		for j in N:
-			for k in N:
-				var at := xf * (box.position + box.size * Vector3((i + 0.5) / N, (j + 0.5) / N, (k + 0.5) / N))
-				var q := PhysicsRayQueryParameters3D.create(eye, eye + (at - eye) * 1.5, 1 | 4 | Workshop.INTERACT_LAYER)
-				q.exclude = [get_rid()]
-				var hit := space.intersect_ray(q)
-				if hit.is_empty() or _item_hit(hit["collider"]) != item:
-					continue
-				var local: Vector3 = xf.affine_inverse() * (hit["position"] as Vector3)
-				var cell := Vector3i((local / (COVER_CELL * 0.7)).floor())
-				if not seen.has(cell):
-					seen[cell] = true
-					points.append(local)
+	# First against the part's own shapes; a part with only a rough box round it falls back to that.
+	for mask in [1 | 4 | BikeModel.SPRAY_LAYER, 1 | 4 | Workshop.INTERACT_LAYER]:
+		var seen := {}
+		for i in N:
+			for j in N:
+				for k in N:
+					var at := xf * (box.position + box.size * Vector3((i + 0.5) / N, (j + 0.5) / N, (k + 0.5) / N))
+					var q := PhysicsRayQueryParameters3D.create(eye, eye + (at - eye) * 1.5, mask)
+					q.exclude = [get_rid()]
+					var hit := space.intersect_ray(q)
+					if hit.is_empty() or _item_hit(hit["collider"]) != item:
+						continue
+					var local: Vector3 = xf.affine_inverse() * (hit["position"] as Vector3)
+					var cell := Vector3i((local / (COVER_CELL * 0.7)).floor())
+					if not seen.has(cell):
+						seen[cell] = true
+						points.append(local)
+						normals.append((xf.basis.inverse() * (hit["normal"] as Vector3)).normalized())
+		if not points.is_empty():
+			break
 	if points.is_empty():
 		return {}
 	var cells := PackedFloat32Array()
 	cells.resize(points.size())
-	return {"key": key, "plan": plan_now, "item": item, "points": points, "cells": cells, "live": false}
+	var a: Dictionary = plan_now["action"]
+	var splats := PaintSplats.new()
+	var paint: Color = Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)] if a["a"] == "paint" \
+		else Color(0.22, 0.17, 0.1, 0.8)
+	splats.setup(xf, points, normals, COVER_CELL, paint, str(a.get("finish", "gloss")))
+	get_parent().add_child(splats)
+	return {"key": key, "plan": plan_now, "item": item, "points": points, "cells": cells, "live": false, "xf": xf,
+		"splats": splats}
 
 
 ## The part a ray hit, the same way the crosshair reads it.
@@ -1031,15 +1148,20 @@ func _item_hit(c: Object) -> int:
 
 ## How the spray job is going: {covered, over} as fractions of the part's patches.
 func cover_stats() -> Dictionary:
-	if _cover.is_empty():
+	return _job_stats(_cover)
+
+
+func _job_stats(job: Dictionary) -> Dictionary:
+	if job.is_empty():
 		return {"covered": 0.0, "over": 0.0}
-	var cells: PackedFloat32Array = _cover["cells"]
+	var cells: PackedFloat32Array = job["cells"]
+	var runs := GUN_RUN_LEVEL if job["plan"]["action"].get("gun", false) else RUN_LEVEL
 	var covered := 0
 	var over := 0
 	for c in cells:
-		if c >= 1.0:
+		if c >= 0.8:   # wet paint flows out to fill a thin patch
 			covered += 1
-		if c >= RUN_LEVEL:
+		if c >= runs:
 			over += 1
 	return {"covered": float(covered) / cells.size(), "over": float(over) / cells.size()}
 
@@ -1084,7 +1206,8 @@ func _update_held_view() -> void:
 	var sig := ""
 	if held != 0:
 		var it: Dictionary = Shed.items[held]
-		sig = "%d:%s:%.1f:%.1f:%.1f:%s:%s" % [held, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", "")]
+		sig = "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s" % [held, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
+			"%.2f" % float(it["fluid"]["litres"]) if it.has("fluid") else ""]
 		if tool != "hands":
 			tool = "hands"
 			_set_tool_view()
@@ -1148,6 +1271,72 @@ static func make_jet() -> CPUParticles3D:
 	quad.material = m
 	jet.mesh = quad
 	return jet
+
+
+## The fine cloud of paint (or lube) coming off the nozzle while you spray.
+static func make_mist() -> CPUParticles3D:
+	var mist := CPUParticles3D.new()
+	mist.amount = 90
+	mist.lifetime = 0.7
+	mist.emitting = false
+	mist.local_coords = false
+	mist.direction = Vector3(0.0, 0.0, -1.0)
+	mist.spread = 11.0
+	mist.initial_velocity_min = 2.2
+	mist.initial_velocity_max = 3.6
+	mist.damping_min = 3.0
+	mist.damping_max = 5.0
+	mist.gravity = Vector3(0.0, -0.25, 0.0)
+	mist.scale_amount_min = 0.025
+	mist.scale_amount_max = 0.06
+	var grow := Curve.new()
+	grow.max_value = 4.0
+	grow.add_point(Vector2(0.0, 0.6))
+	grow.add_point(Vector2(1.0, 4.0))
+	mist.scale_amount_curve = grow
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 0.55))
+	fade.set_color(1, Color(1, 1, 1, 0.0))
+	mist.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.0, 1.0)
+	var m := StandardMaterial3D.new()
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.billboard_keep_scale = true
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.vertex_color_use_as_albedo = true
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(0.5, 0.0)
+	tex.width = 32
+	tex.height = 32
+	m.albedo_texture = tex
+	quad.material = m
+	mist.mesh = quad
+	return mist
+
+
+func _update_mist() -> void:
+	var on := not _cover.is_empty() and bool(_cover.get("live", false)) and _acting()
+	if _mist == null:
+		if not on:
+			return
+		_mist = make_mist()
+		_mist.position = Vector3(0.2, -0.2, -0.55)
+		camera.add_child(_mist)
+	if on:
+		var a: Dictionary = _cover["plan"]["action"]
+		var c: Color = Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)] if a["a"] == "paint" else Color(0.45, 0.35, 0.2)
+		_mist.color = c
+		_mist.spread = 7.0 if a.get("gun", false) else 11.0
+		_mist.amount = 90
+	_mist.emitting = on
 
 
 func _update_jet() -> void:

@@ -35,6 +35,15 @@ var steer_rate := 4.0          # how quickly the bars turn, rad/s; wider bars gi
 var fuel_capacity := 15.0
 var dash_features: Array = ["speed"]
 var headlight_lumens := 0.0    # 0 with no headlight fitted
+var fog_lumens := 0.0          # 0 with no fog lights
+var fog_color := Color(1.0, 0.92, 0.78)
+var horn_tones: Array = []     # frequencies of the horn, empty with none fitted
+var horn_style := ""
+var horn_loudness := 0.0
+var ecu_features: Array = []   # rider aids the ECU gives: traction, abs, anti_wheelie, stability
+var ecu_aid := 0.0             # how firmly those aids step in, 0..1
+var luggage_litres := 0.0
+var gear_whine := 0.3          # how loudly the gearbox sings
 var has_side_stand := false
 var has_centre_stand := false
 var centre_lift := 0.04
@@ -185,10 +194,22 @@ func _compute() -> void:
 	com_height = frame["com_height"]
 	rake_deg = frame["rake_deg"]
 	seat_height = float(frame["seat_height"]) + float(saddle["height"])
-	cda = float(frame["cda"]) + float(bars["cda"])
+	cda = float(frame["cda"]) + float(bars["cda"]) + float(part("panniers").get("cda", 0.0)) + float(part("top_box").get("cda", 0.0))
+	luggage_litres = float(part("panniers").get("litres", 0.0)) + float(part("top_box").get("litres", 0.0))
 	steer_rate = 4.0 * float(bars["width"]) / 720.0
 	dash_features = part("dashboard")["features"]
 	headlight_lumens = float(part("headlight").get("lumens", 0.0)) * lerpf(0.6, 1.0, health.get("headlight", 1.0))
+	var fog := part("fog_lights")
+	fog_lumens = float(fog.get("lumens", 0.0)) * lerpf(0.6, 1.0, health.get("fog_lights", 1.0))
+	if fog.has("beam"):
+		fog_color = _color(fog["beam"])
+	var horn := part("horn")
+	horn_tones = horn.get("tones", [])
+	horn_style = str(horn.get("style", ""))
+	horn_loudness = float(horn.get("loudness", 0.0)) * lerpf(0.5, 1.0, health.get("horn", 1.0))
+	var ecu := part("ecu")
+	ecu_features = ecu.get("features", []).filter(func(f): return f != "remap")
+	ecu_aid = float(ecu.get("aid_level", 0.0)) * lerpf(0.5, 1.0, health.get("ecu", 1.0))
 	has_side_stand = has_part("side_stand")
 	has_centre_stand = has_part("centre_stand")
 	centre_lift = float(part("centre_stand").get("lift", 0.04))
@@ -213,6 +234,7 @@ func _compute() -> void:
 	gear_ratios = gearbox["ratios"]
 	final_drive = float(sprocket["rear"]) / float(sprocket["front"])
 	shift_time = float(gearbox.get("shift_time", 0.12))
+	gear_whine = float(gearbox.get("whine", 0.3))
 	drivetrain_efficiency = DRIVETRAIN_EFFICIENCY * lerpf(0.8, 1.0, health["gearbox"]) * lerpf(0.88, 1.0, health["final_drive"])
 	_compute_chain()
 
@@ -237,6 +259,11 @@ func _compute_chain() -> void:
 
 
 ## Power per kilo with the rider on: the number weight-saving parts improve.
+## Whether the ECU gives this rider aid: "traction", "abs", "anti_wheelie" or "stability".
+func has_aid(aid: String) -> bool:
+	return ecu_features.has(aid)
+
+
 func power_to_weight() -> float:
 	return hp() / maxf(total_mass, 1.0)
 
@@ -279,10 +306,11 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	displacement = block["displacement"]
 	peak_torque = displacement * float(block["torque_per_cc"])
 	peak_torque_rpm = float(block["peak_torque_rpm"]) * float(head["peak_shift"]) * float(fuel["peak_shift"])
-	redline = float(block["redline"]) + float(head["redline_add"])
+	var ecu := part("ecu")
+	redline = float(block["redline"]) + float(head["redline_add"]) + float(ecu.get("rev_add", 0.0))
 	idle_rpm = block["idle_rpm"]
 
-	torque_mult = float(head["torque_mult"]) * lerpf(0.75, 1.0, health["head"])
+	torque_mult = float(head["torque_mult"]) * lerpf(0.75, 1.0, health["head"]) * float(ecu.get("power", 1.0))
 	# The fuel system has to keep up with the engine, or it runs lean and gutless.
 	var demand := displacement * float(head["peak_shift"])
 	var flow := float(fuel["flow"]) * lerpf(0.8, 1.0, health["fuel"])

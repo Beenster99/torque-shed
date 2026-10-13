@@ -1,11 +1,13 @@
 class_name LabelDialog
 extends Control
-## A small box for writing on a shelving unit's label plate.
+## A small box for writing on a shelving unit's label plate, or naming a bike.
 
 signal closed
 
 var furniture_id := 0
+var bike_id := 0
 var _edit: LineEdit
+var _title: Label
 
 
 func _ready() -> void:
@@ -21,7 +23,8 @@ func _ready() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
 	panel.add_child(col)
-	col.add_child(UITheme.title("SHELF LABEL", 24))
+	_title = UITheme.title("SHELF LABEL", 24)
+	col.add_child(_title)
 	_edit = LineEdit.new()
 	_edit.max_length = 24
 	_edit.placeholder_text = "Brakes, engine spares, Barn Find..."
@@ -41,7 +44,26 @@ func _ready() -> void:
 
 func open(id: int) -> void:
 	furniture_id = id
+	bike_id = 0
+	_title.text = "SHELF LABEL"
+	_edit.max_length = 24
+	_edit.placeholder_text = "Brakes, engine spares, Barn Find..."
 	_edit.text = str(Shed.furniture.get(id, {}).get("label", ""))
+	_show()
+
+
+## Name a bike: it shows on the bay screen, the wall dashboards and the crew board.
+func open_bike(id: int) -> void:
+	bike_id = id
+	furniture_id = 0
+	_title.text = "NAME THIS BIKE"
+	_edit.max_length = 28
+	_edit.placeholder_text = "Old Faithful, The Beast, Project X..."
+	_edit.text = str(Shed.bikes.get(id, {}).get("name", ""))
+	_show()
+
+
+func _show() -> void:
 	visible = true
 	_edit.grab_focus()
 	_edit.select_all()
@@ -53,7 +75,10 @@ func close_dialog() -> void:
 
 
 func _save() -> void:
-	Shed.request({"a": "label", "furniture": furniture_id, "text": _edit.text})
+	if bike_id != 0:
+		Shed.request({"a": "rename_bike", "bike": bike_id, "name": _edit.text})
+	else:
+		Shed.request({"a": "label", "furniture": furniture_id, "text": _edit.text})
 	close_dialog()
 
 

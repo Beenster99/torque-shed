@@ -115,7 +115,7 @@ func _start_riding(bike_id: int) -> void:
 	riding_bike = bike_id
 	bike = RemoteBike.new()
 	add_child(bike)
-	bike.setup(player_name, Shed.build_of(bike_id), Shed.bikes[bike_id]["paint"])
+	bike.setup(player_name, Shed.build_of(bike_id), Shed.bikes[bike_id]["paint"], color)
 	_figure.visible = false
 	_figure.process_mode = Node.PROCESS_MODE_DISABLED
 	_snapshots.clear()

@@ -61,6 +61,8 @@ func _setup_inputs() -> void:
 	_bind("camera", [KEY_C], [JOY_BUTTON_RIGHT_STICK])
 	_bind("toggle_auto_shift", [KEY_T], [])
 	_bind("ignition", [KEY_I], [JOY_BUTTON_DPAD_UP])
+	_bind("horn", [KEY_H], [JOY_BUTTON_DPAD_DOWN])
+	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])
 	# On foot in the shed
 	_bind("move_forward", [KEY_W, KEY_UP], [])
 	_bind("move_back", [KEY_S, KEY_DOWN], [])
@@ -70,10 +72,13 @@ func _setup_inputs() -> void:
 	_bind("act", [], [JOY_BUTTON_A], [MOUSE_BUTTON_LEFT])
 	_bind("tool_next", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [MOUSE_BUTTON_WHEEL_DOWN])
 	_bind("tool_prev", [KEY_Q], [JOY_BUTTON_LEFT_SHOULDER], [MOUSE_BUTTON_WHEEL_UP])
-	for i in 6:
+	for i in 8:
 		_bind("tool_%d" % (i + 1), [KEY_1 + i], [])
 	_bind("spray_colour", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
-	_bind("spray_finish", [KEY_T], [JOY_BUTTON_B], [MOUSE_BUTTON_MIDDLE])
+	_bind("spray_finish", [KEY_T], [JOY_BUTTON_B])
+	# Point at something and ping it for the crew to see.
+	_bind("ping", [KEY_G], [JOY_BUTTON_DPAD_RIGHT], [MOUSE_BUTTON_MIDDLE])
+	_bind("rename", [KEY_N], [])
 	# The second work button: drains fluids into a held container.
 	_bind("alt_act", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	_bind("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])

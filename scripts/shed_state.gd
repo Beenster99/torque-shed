@@ -6,6 +6,8 @@ extends Node
 
 signal changed
 signal feedback(text: String, ok: bool)
+## Someone pointed at something for the crew: {at, what, item, furniture, name}.
+signal pinged(peer: int, ping: Dictionary)
 
 ## The fixed workbench along the wall. Equipment adds its own places: engine stands
 ## ("stand_<id>") and the rest "<prefix>_<id>_<n>" (see Equipment.SPOT_PREFIX).
@@ -35,7 +37,8 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"shock": 0.8, "final_drive": 1.0, "exhaust": 0.8, "engine": 0.6, "front_disc": 0.8, "rear_disc": 0.8,
 	"front_caliper": 0.8, "rear_caliper": 0.8, "front_pads": 0.6, "rear_pads": 0.6, "frame": 0.5, "side_stand": 0.9,
 	"centre_stand": 0.9, "cooling": 0.6, "oil_filter": 0.6, "air_filter": 0.5, "gearbox": 0.5, "rear_master": 0.5,
-	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15}
+	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
+	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6}
 ## Litres a second poured from a container, or drained out of a bike.
 const POUR_RATE := {"petrol": 2.0, "oil": 0.8, "brake_fluid": 0.15}
 const SYNC_INTERVAL := 0.1
@@ -57,6 +60,8 @@ var crew := {}      # peer id -> {name, tool, activity, riding, fitted, removed,
 var active := false
 ## The shed radio everyone hears: on or off, and which of `stations` it's tuned to.
 var radio := {"on": false, "station": 0}
+var door_open := true     # the roller door
+var lights_on := true     # the shed's strip lights
 var stations: Array = []    # [{name, genre, url}] from data/radio.json
 
 var _next_id := 1
@@ -92,6 +97,8 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	bikes.clear()
 	furniture.clear()
 	radio = {"on": false, "station": 0}
+	door_open = true
+	lights_on = true
 	items.clear()
 	crew.clear()
 	_next_id = 1
@@ -926,6 +933,13 @@ func check(peer: int, action: Dictionary) -> String:
 			var f: Dictionary = furniture.get(int(action.get("furniture", 0)), {})
 			if f.is_empty() or f["kind"] != "shelf":
 				return "Only shelves take labels."
+		"rename_bike":
+			if not bikes.has(bike_id):
+				return "That bike's gone."
+			if str(action.get("name", "")).strip_edges() == "":
+				return "Give it a name."
+		"door", "lights":
+			pass
 		"bin":
 			if held == 0:
 				return "You're not holding a part."
@@ -995,6 +1009,8 @@ func check(peer: int, action: Dictionary) -> String:
 					return "Put the part on a repair machine first."
 				if it["rust"] < 0.02 and it["wear"] < 0.02:
 					return "It's already in top condition."
+			if a == "paint" and action.get("gun", false) and not (it["at"] == "spot" and spot_role(str(it["ref"])) == "booth"):
+				return "The spray gun runs off the paint booth's air line. Hang the part in a booth."
 			if a == "paint" and it["rust"] > MAX_PAINT_RUST:
 				return "Too rusty to paint. Grind it back on the repair bench first."
 			if a == "paint" and it.get("finish", "") == str(action.get("finish", "gloss")) \
@@ -1119,6 +1135,16 @@ func _request(action: Dictionary) -> void:
 
 
 func _apply(peer: int, action: Dictionary) -> void:
+	if str(action.get("a", "")) == "ping":
+		# A ping changes nothing in the shed: it just goes out to everyone.
+		var at = action.get("at", Vector3.ZERO)
+		var d := {"at": at if at is Vector3 else Vector3.ZERO, "what": str(action.get("what", "")).left(60),
+			"item": int(action.get("item", 0)), "furniture": int(action.get("furniture", 0)),
+			"name": str(crew.get(peer, {}).get("name", "Someone"))}
+		pinged.emit(peer, d)
+		if Net.is_online():
+			_ping.rpc(peer, d)
+		return
 	var why := check(peer, action)
 	if why != "":
 		_tell(peer, why, false)
@@ -1211,6 +1237,15 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"release":
 			furniture[int(action["furniture"])]["xf"] = action["xf"]
 			furniture[int(action["furniture"])]["mover"] = 0
+		"rename_bike":
+			bikes[bike_id]["name"] = str(action["name"]).strip_edges().left(28)
+			text = "Named it %s" % bikes[bike_id]["name"]
+		"door":
+			door_open = bool(action.get("open", not door_open))
+			text = "Roller door %s" % ("going up" if door_open else "coming down")
+		"lights":
+			lights_on = bool(action.get("on", not lights_on))
+			text = "Lights %s" % ("on" if lights_on else "off")
 		"label":
 			furniture[int(action["furniture"])]["label"] = str(action.get("text", "")).strip_edges().left(24)
 			text = "Labelled the shelves \"%s\"" % furniture[int(action["furniture"])]["label"]
@@ -1272,6 +1307,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 			it["finish"] = finish
 			var q := clampf(float(action.get("quality", 1.0)), 0.0, 1.0)
 			var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
+			if it["at"] == "spot" and spot_role(str(it["ref"])) == "booth":
+				# No dust settling in the wet paint: a booth gives a cleaner finish.
+				var booth := furniture_of_spot(str(it["ref"]))
+				q = minf(1.0, q + float(Equipment.get_model(str(booth["model"])).get("finish", 0.05)))
 			it["paint_quality"] = q
 			it["paint_runs"] = runs
 			_bump(c, "painted")
@@ -1442,6 +1481,11 @@ func _tell(peer: int, text: String, ok: bool) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _feedback(text: String, ok: bool) -> void:
 	feedback.emit(text, ok)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _ping(peer: int, d: Dictionary) -> void:
+	pinged.emit(peer, d)
 
 
 func _bump(c: Dictionary, key: String) -> void:
@@ -1643,7 +1687,8 @@ func _mark_dirty() -> void:
 
 
 func _snapshot() -> Dictionary:
-	return {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id}
+	return {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
+		"door": door_open, "lights": lights_on}
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1653,6 +1698,8 @@ func _sync(state: Dictionary) -> void:
 	crew = state.get("crew", {})
 	furniture = state.get("furniture", {})
 	radio = state.get("radio", radio)
+	door_open = bool(state.get("door", true))
+	lights_on = bool(state.get("lights", true))
 	_next_id = int(state.get("next", 1))
 	active = true
 	changed.emit()

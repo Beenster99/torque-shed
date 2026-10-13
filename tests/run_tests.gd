@@ -54,6 +54,10 @@ func _run_all() -> void:
 	_test_round5_shed()
 	_test_round5_models()
 	await _test_round5_riding()
+	print("Round 6: horns, ECU, luggage, shop, booth, burnouts")
+	_test_round6_parts()
+	_test_round6_shed()
+	await _test_round6_riding()
 	print("Sound and radio")
 	_test_sounds()
 	_test_mp3_decoder()
@@ -78,7 +82,7 @@ func _merge(a: Dictionary, b: Dictionary) -> Dictionary:
 
 
 func _test_catalogue() -> void:
-	check(PartsDB.KINDS.size() == 27 and PartsDB.parts.size() >= 170, "catalogue has 27 kinds of part (%d parts)" % PartsDB.parts.size())
+	check(PartsDB.KINDS.size() == 32 and PartsDB.parts.size() >= 170, "catalogue has 32 kinds of part (%d parts)" % PartsDB.parts.size())
 	for k in PartsDB.KINDS:
 		check(PartsDB.by_kind[k].size() >= 5, "%s has at least five variants (%d)" % [k, PartsDB.by_kind[k].size()])
 	var no_colour := []
@@ -86,7 +90,7 @@ func _test_catalogue() -> void:
 		if not PartsDB.parts[id].has("color"):
 			no_colour.append(id)
 	check(no_colour.is_empty(), "every part has a colour %s" % str(no_colour))
-	check(PartsDB.SLOTS.size() == 33, "a bike has 33 slots, 7 of them on the engine")
+	check(PartsDB.SLOTS.size() == 38, "a bike has 38 slots, 7 of them on the engine")
 	var b := BikeBuild.new()
 	check(b.bike_mass > 120.0 and b.bike_mass < 230.0, "default bike mass is plausible (%.0f kg)" % b.bike_mass)
 	check(b.hp() > 40.0 and b.hp() < 120.0, "default bike power is plausible (%.0f hp)" % b.hp())
@@ -1393,7 +1397,7 @@ func _test_round5_riding() -> void:
 	await _done(r)
 	# A stoppie: hard on the front brake from speed lifts the back without throwing you over the bars.
 	var stoppie := [false]
-	r = await ride({"engine": "four_1000", "front_caliper": "four_piston_radial", "front_pads": "sintered"}, 9.0, func(b, t):
+	r = await ride({"engine": "four_1000", "front_caliper": "four_piston_radial", "front_pads": "sintered"}, 10.0, func(b, t):
 		if t < 5.0:
 			b.throttle = 0.8
 		else:
@@ -1403,7 +1407,7 @@ func _test_round5_riding() -> void:
 			if not b.wheels[1]["contact"] and b.wheels[0]["contact"]:
 				stoppie[0] = true)
 	check(not r["crashed"], "stamping on the front brake doesn't throw you over the bars")
-	check(absf(r["bike"].speed) < 2.0, "and still stops the bike")
+	check(absf(r["bike"].speed) < 2.0, "and still stops the bike (%.1f m/s)" % r["bike"].speed)
 	await _done(r)
 	# Skids: lock the back wheel at speed and it screeches and leaves a black line.
 	var marks_before := SkidMarks.shared(get_tree()).count()
@@ -1620,3 +1624,164 @@ func _test_world() -> void:
 	check(bike.surface == "dirt", "the far side of the loop is dirt (on %s)" % bike.surface)
 	world.queue_free()
 	await get_tree().physics_frame
+
+
+func _test_round6_parts() -> void:
+	for k in ["horn", "ecu", "panniers", "top_box", "fog_lights"]:
+		check(PartsDB.by_kind[k].size() >= (10 if k == "horn" else 5), "the shop has %d %s" % [PartsDB.by_kind[k].size(), k])
+		for id in PartsDB.by_kind[k]:
+			if PartsDB.spec_line(id) == "":
+				check(false, "%s has a spec line" % id)
+	# Old bikes, saved before these parts existed, come with the stock horn and none of the extras.
+	var old := BikeBuild.new({"engine": "twin_700"})
+	check(old.parts["horn"] == "disc_horn" and old.parts["ecu"] == "none" and old.parts["panniers"] == "none",
+		"a bike from before gets a stock horn and no ECU or luggage")
+	check(not old.horn_tones.is_empty() and old.ecu_features.is_empty() and old.fog_lumens == 0.0, "so it can hoot but has no rider aids or fog lights")
+	var loaded := BikeBuild.new({"engine": "twin_700", "panniers": "aluminium_boxes", "top_box": "top_box_45", "fog_lights": "rally_lamps",
+		"ecu": "race_ecu", "horn": "musical_horn"})
+	check(loaded.cda > old.cda and loaded.bike_mass > old.bike_mass and loaded.luggage_litres > 100.0,
+		"luggage adds drag, weight and %d litres of space" % roundi(loaded.luggage_litres))
+	check(loaded.fog_lumens > 1000.0 and loaded.has_aid("traction") and loaded.has_aid("abs") and loaded.has_aid("anti_wheelie"),
+		"fog lamps light up and the race ECU brings traction control, ABS and anti-wheelie")
+	check(loaded.peak_torque > old.peak_torque and loaded.redline > old.redline, "and a sharper map")
+	check(loaded.horn_tones.size() == 5 and loaded.horn_style == "melody", "the musical horn has its five trumpets")
+	# Every new part draws on the bike.
+	var model := BikeModel.new()
+	add_child(model)
+	model.build_from(loaded)
+	for slot in ["horn", "ecu", "panniers", "top_box", "fog_lights"]:
+		check(model.slot_bounds(slot).size.length() > 0.02, "the %s is drawn on the bike" % slot)
+	check(model.fog_positions().size() == 2, "rally lamps sit either side of the fork")
+	model.queue_free()
+	# The shop: three aisles and a search box.
+	check(PartsComputer.section_of("eq:ramp") == "outdoors" and PartsComputer.section_of("eq:booth") == "shed"
+		and PartsComputer.section_of("horn") == "bike" and PartsComputer.section_of("petrol") == "bike", "the shop is split into shed, bike and outdoors")
+	var horns := PartsComputer.search("horn")
+	check(horns.size() >= 10, "searching 'horn' finds every horn (%d)" % horns.size())
+	var vtwins := PartsComputer.search("v-twin 1200")
+	check(vtwins.size() >= 1 and str(vtwins[0]["id"]) == "vtwin_1200", "searching by words finds the 1200 V-twin")
+	check(PartsComputer.search("zzzz nothing").is_empty(), "a search for nothing finds nothing")
+	var pc := PartsComputer.new()
+	add_child(pc)
+	pc._search.text = "booth"
+	pc._refresh_list()
+	check(pc._kind == "eq:booth", "picking a search result shows its aisle and kind")
+	pc.queue_free()
+	# Fluid containers show how full they are.
+	var full := BikeModel.fluid_display("semi_10w40", 1.0)
+	var half := BikeModel.fluid_display("semi_10w40", 0.5)
+	check(full.get_child_count() > 3 and half.get_child_count() > 3, "a bottle has the liquid inside it, at its level")
+	full.free()
+	half.free()
+	check(Stopwatch.format(62.37) == "1:02.37" and Stopwatch.format(9.5) == "9.50", "the stopwatch reads minutes, seconds and hundredths")
+	var sw := Stopwatch.new()
+	sw.start_stop()
+	sw.lap_or_reset()
+	sw.start_stop()
+	check(not sw.running and sw.laps.size() == 1 and sw.showing(), "it starts, laps and stops")
+	sw.lap_or_reset()
+	check(not sw.showing(), "and resets to zero")
+
+
+func _test_round6_shed() -> void:
+	Shed.start_new("Tester", 6)
+	var me := Shed.me()
+	var bike: int = Shed.bikes.keys()[0]
+	Shed.request({"a": "rename_bike", "bike": bike, "name": "  The Beast  "})
+	check(str(Shed.bikes[bike]["name"]) == "The Beast", "bikes can be named")
+	check(Shed.check(me, {"a": "rename_bike", "bike": bike, "name": "   "}) != "", "but not with nothing")
+	Shed.request({"a": "door", "open": false})
+	Shed.request({"a": "lights", "on": false})
+	check(not Shed.door_open and not Shed.lights_on, "the roller door comes down and the lights go off")
+	check(Shed._snapshot()["door"] == false and Shed._snapshot()["lights"] == false, "and everyone in the shed sees it")
+	Shed.request({"a": "door", "open": true})
+	Shed.request({"a": "lights", "on": true})
+	# A ping goes out to everyone with what it was.
+	var got := []
+	var on_ping := func(peer, d): got.append([peer, d])
+	Shed.pinged.connect(on_ping)
+	Shed.request({"a": "ping", "at": Vector3(1, 2, 3), "what": "Front brake caliper", "item": 0})
+	Shed.pinged.disconnect(on_ping)
+	check(got.size() == 1 and got[0][1]["what"] == "Front brake caliper" and got[0][1]["name"] == "Tester", "a ping is sent round with who and what")
+	# The paint booth: parts hang on its hooks and the spray gun only works there.
+	Shed.request({"a": "order_furniture", "model": "booth_standard"})
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == "booth_standard":
+			booth = id
+	check(booth != 0 and Shed.furniture_spots(booth).size() == 4, "a paint booth has four hooks")
+	var tank := Shed._new_item("cafe_15", 0.0, 0.0, 0.0)
+	Shed.items[tank]["at"] = "floor"
+	Shed.items[tank]["ref"] = Transform3D(Basis(), Workshop.CENTER)
+	var paint := {"a": "paint", "item": tank, "color": 3, "finish": "gloss", "gun": true, "quality": 0.8}
+	check(Shed.check(me, paint).contains("booth"), "the spray gun needs the part hung in the booth")
+	Shed.request({"a": "take", "item": tank})
+	var hook: String = Shed.furniture_spots(booth)[0]
+	Shed.request({"a": "place", "spot": hook})
+	check(Shed.item_at_spot(hook) == tank and Shed.spot_role(hook) == "booth", "the tank hangs on a hook")
+	check(Shed.check(me, paint) == "", "and can be sprayed there")
+	Shed.request(paint)
+	check(float(Shed.items[tank]["paint_quality"]) > 0.8, "the booth gives a cleaner finish than the gun alone (%.2f)" % float(Shed.items[tank]["paint_quality"]))
+
+
+func _test_round6_riding() -> void:
+	# Burnout: front brake on, throttle pinned, standing still. The back tyre spins and smokes.
+	var spun := [0.0, 0.0]
+	var r := await ride({"engine": "twin_700"}, 4.0, func(b, t):
+		b.front_brake = 1.0
+		b.throttle = 1.0 if t > 0.5 else 0.0
+		if t > 2.0:
+			spun[0] = maxf(spun[0], b.wheels[1]["omega"] * b.build.rear_radius - absf(b.speed))
+			spun[1] = maxf(spun[1], b.burnout))
+	var bike: Bike = r["bike"]
+	check(not r["crashed"] and absf(bike.speed) < 1.5, "a burnout holds the bike on the spot (%.1f m/s)" % bike.speed)
+	check(spun[0] > 6.0 and spun[1] > 0.5, "while the back tyre spins up (%.1f m/s faster than the bike, burnout %.2f)" % spun)
+	check(bike.wheels[1]["slip"] > Bike.SKID_SLIP, "and it squeals and marks the road")
+	await _done(r)
+	# The front brake slows the wheel hard but never locks it.
+	var worst := [1.0]
+	r = await ride({}, 9.0, func(b, t):
+		if t < 6.0:
+			b.throttle = 1.0
+		else:
+			b.throttle = 0.0
+			b.front_brake = 1.0
+			if b.speed > 4.0 and b.wheels[0]["contact"]:
+				worst[0] = minf(worst[0], b.wheels[0]["omega"] * b.build.front_radius / b.speed))
+	check(worst[0] > 0.8, "the front wheel keeps turning under full front brake (%.0f%% of road speed at worst)" % (worst[0] * 100.0))
+	check(absf(r["bike"].speed) < 3.0, "and still pulls the bike up (%.1f m/s)" % r["bike"].speed)
+	await _done(r)
+	# Paddling backwards: stopped, hold the front brake and the rider walks it back.
+	r = await ride({}, 4.0, func(b, t):
+		b.front_brake = 1.0 if t > 0.3 else 0.0
+		b.lean_input = 0.6 if t > 2.0 else 0.0)
+	bike = r["bike"]
+	check(bike.paddling and bike.speed < -0.5, "holding the front brake at a standstill paddles it backwards (%.1f m/s)" % bike.speed)
+	check(not r["crashed"] and absf(rad_to_deg(bike.steer)) > 5.0, "steering with the bars as it goes")
+	await _done(r)
+	# Anti-wheelie: weight back and full gas on a big four with the race ECU keeps the front down.
+	var pitch := [0.0]
+	r = await ride({"engine": "four_1000", "ecu": "race_ecu"}, 7.0, func(b, t):
+		b.body_shift = -1.0
+		b.throttle = 1.0 if t > 0.5 else 0.0
+		pitch[0] = maxf(pitch[0], rad_to_deg(b.pitch_angle)))
+	check(not r["crashed"] and pitch[0] < 15.0, "the ECU's anti-wheelie keeps it near level (%.0f deg)" % pitch[0])
+	await _done(r)
+	# The horn sounds while held, and goes out to the other players.
+	r = await ride({"horn": "air_horn"}, 0.5, func(b, _t): b.horn = true)
+	bike = r["bike"]
+	check(bike.horn_audio.pressed and bike.horn_audio.has_horn(), "the horn sounds while the button's held")
+	var st := bike.get_net_state()
+	check(st.size() >= 24 and st[21] > 0.5, "and the other players hear it")
+	await _done(r)
+	# Engine notes: a little 50 and a big 1200 are synthesised differently.
+	var small := EngineAudio.new()
+	small.displacement = 50.0
+	var big := EngineAudio.new()
+	big.displacement = 1200.0
+	add_child(small)
+	add_child(big)
+	await get_tree().process_frame
+	check(is_instance_valid(small) and is_instance_valid(big), "engine notes run for any size of engine")
+	small.queue_free()
+	big.queue_free()

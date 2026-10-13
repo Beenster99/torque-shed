@@ -7,20 +7,20 @@ extends RefCounted
 ## Each model has a kind, a footprint `size` (width, height, depth in metres) and, for the ones
 ## that hold parts, a number of places. Compact models are for a shed that's filling up.
 
-const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "bench", "poster", "seat", "tv",
+const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "bench", "booth", "poster", "seat", "tv",
 	"ramp", "obstacle", "barrier", "marker"]
 const KIND_NAMES := {"stand": "Engine stands", "shelf": "Shelving", "washer": "Parts washers",
-	"repair": "Repair machines", "bench": "Workbenches", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs",
+	"repair": "Repair machines", "bench": "Workbenches", "booth": "Paint booths", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs",
 	"ramp": "Jump ramps", "obstacle": "Things to jump", "barrier": "Walls and fences", "marker": "Cones, posts and flags"}
 ## Kinds that live outside in the yard, to ride over, round and through.
 const YARD_KINDS: Array[String] = ["ramp", "obstacle", "barrier", "marker"]
 ## Kinds that hang on a wall rather than stand on the floor.
 const WALL_KINDS: Array[String] = ["poster", "tv"]
 ## What the places on each kind are called in spot names: "<prefix>_<furniture id>_<n>".
-const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb"}
+const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb", "booth": "booth"}
 ## The model each kind defaults to (and what an order without a model gets).
 const DEFAULT := {"stand": "engine_stand", "shelf": "shelf_standard", "washer": "washer_standard",
-	"repair": "repair_standard", "bench": "bench_standard", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_43",
+	"repair": "repair_standard", "bench": "bench_standard", "booth": "booth_standard", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_43",
 	"ramp": "ramp_medium", "obstacle": "barrels", "barrier": "wall_concrete", "marker": "cone"}
 
 const MODELS := {
@@ -77,6 +77,14 @@ const MODELS := {
 		"places": 4, "desc": "Room to lay out a whole top end. Four places."},
 	"bench_pro": {"kind": "bench", "name": "Pro workstation", "size": Vector3(2.4, 0.95, 0.8),
 		"places": 4, "desc": "Drawers, pegboard and a stainless top. Four places, and it looks the business."},
+
+	# Paint booths: parts hang from hooks on a rail, to be sprayed all over with the spray gun.
+	"booth_compact": {"kind": "booth", "name": "Pop-up spray tent", "compact": true, "size": Vector3(1.6, 2.2, 1.4),
+		"places": 2, "finish": 0.04, "desc": "A folding tent with an extractor fan. Two hooks: room for a tank and a mudguard."},
+	"booth_standard": {"kind": "booth", "name": "Paint booth", "size": Vector3(2.6, 2.4, 1.8), "places": 4, "finish": 0.08,
+		"desc": "Lit, filtered spray booth with four hooks on a rail. Hang the parts and go along them with the spray gun."},
+	"booth_pro": {"kind": "booth", "name": "Downdraft spray booth", "size": Vector3(3.4, 2.5, 2.2), "places": 6, "finish": 0.12,
+		"desc": "Pro booth: air pulled down through a floor grate so no dust lands in the paint. Six hooks."},
 
 	# Posters: art drawn on the paper.
 	"poster_tt": {"kind": "poster", "name": "Island TT 1967 poster", "size": Vector3(0.6, 0.85, 0.01),
@@ -212,6 +220,9 @@ static func spec_line(id: String) -> String:
 			bits.append("Speed x%.1f" % float(m["speed"]))
 		"bench":
 			bits.append("%d places on top" % places(id))
+		"booth":
+			bits.append("%d hooks" % places(id))
+			bits.append("Spray gun finish +%d%%" % roundi(float(m["finish"]) * 100.0))
 		"seat":
 			bits.append("F: sit down  ·  hold F: move it")
 		"tv":
@@ -247,6 +258,11 @@ static func local_place(model_id: String, n: int) -> Transform3D:
 			var pitch := (size.y - 0.15) / float(levels)
 			var col_w := size.x / float(cols)
 			return Transform3D(Basis(), Vector3(-size.x * 0.5 + col_w * (0.5 + n % cols), 0.08 + (n / cols) * pitch, 0.0))
+		"booth":
+			# Hooks along the rail, the parts hanging at chest height in the middle of the booth.
+			var count := maxi(1, places(model_id))
+			var w := size.x - 0.5
+			return Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-w * 0.5 + w * (0.5 + n) / float(count), 0.85, -0.1))
 		"washer", "repair", "bench":
 			var count := maxi(1, places(model_id))
 			var top := work_height(model_id)

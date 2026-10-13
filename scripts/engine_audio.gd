@@ -10,6 +10,9 @@ var cylinders := 2
 var layout := "parallel"     # firing order shapes the beat: a V-twin lopes, a four screams
 var loudness := 1.0         # exhaust: stock muffler 0.6 .. straight pipe 1.3
 var running := true
+var displacement := 700.0   # cc: big pistons thud low, little ones buzz
+var gear := 1
+var whine := 0.3            # gearbox whine: a straight-cut race box sings, a road box hums
 var _level := 1.0           # fades the note in and out as the engine starts and stops
 
 var _playback: AudioStreamGeneratorPlayback
@@ -18,6 +21,11 @@ var _since := 1.0           # time since the last cylinder fired, in average fir
 var _sub := 0.0
 var _y := 0.0
 var _rng := RandomNumberGenerator.new()
+var _r1 := 0.0              # the exhaust's body resonance (a two-pole resonator)
+var _r2 := 0.0
+var _whine_phase := 0.0
+var _last_throttle := 0.0
+var _pop := 0.0             # crackle on the overrun when the throttle snaps shut
 
 
 func _ready() -> void:
@@ -44,6 +52,26 @@ func _process(_delta: float) -> void:
 	var gap_step := step * fires.size()
 	var load := 0.35 + 0.65 * throttle
 	var cutoff := clampf(0.08 + rpm / 22000.0 + throttle * 0.15 + (loudness - 0.8) * 0.12, 0.05, 0.9)
+	var per_cyl := displacement / maxf(cylinders, 1)
+	# Big cylinders: long, deep pulses and a low body resonance. Small ones: short and buzzy.
+	var sharp := clampf(sqrt(250.0 / maxf(per_cyl, 20.0)), 0.6, 1.9) * 6.0
+	var res_hz := clampf(1800.0 / sqrt(maxf(per_cyl, 20.0) / 25.0), 220.0, 2200.0) * (1.25 if layout == "2stroke" else 1.0)
+	if layout == "2stroke":
+		# The expansion chamber comes on song in the powerband and the note hardens.
+		res_hz *= lerpf(0.8, 1.3, clampf(rpm / 9000.0, 0.0, 1.0))
+	var w := TAU * res_hz / MIX_RATE
+	var r := 0.985
+	var a1 := 2.0 * r * cos(w)
+	var a2 := r * r
+	var res_mix := clampf(0.18 + 0.12 * loudness, 0.15, 0.4)
+	# Gear whine rises with road speed, a different pitch in each gear, loudest off the throttle.
+	var whine_hz := rpm / 60.0 * 21.0 * (1.0 + gear * 0.06)
+	var whine_amp := whine * (0.015 + 0.04 * (1.0 - throttle)) * clampf(rpm / 6000.0, 0.0, 1.0)
+	var whine_step := TAU * whine_hz / MIX_RATE
+	# Snap the throttle shut at high revs and a loud pipe pops and crackles.
+	if _last_throttle - throttle > 0.3 and rpm > 4500.0:
+		_pop = clampf(loudness - 0.5, 0.0, 1.0)
+	_last_throttle = throttle
 	var buf := PackedVector2Array()
 	buf.resize(frames)
 	var target := 1.0 if running else 0.0
@@ -57,14 +85,22 @@ func _process(_delta: float) -> void:
 			if (was < f and _phase >= f) or (_phase < was and (f > was or f <= _phase)):
 				_since = 0.0
 				_sub = _rng.randf_range(0.85, 1.15)  # combustion varies a little each stroke
+				if _pop > 0.02 and _rng.randf() < 0.35:
+					_sub += _rng.randf_range(1.5, 3.0) * _pop
 		_since += gap_step
 		var p := maxf(1.0 - _since, 0.0)
-		var pulse := p * p * p * p * p * p * 2.2 * _sub - 0.3
+		var pulse := pow(p, sharp) * 2.2 * _sub - 0.3
 		var buzz := (fmod(_since, 1.0) * 2.0 - 1.0) * 0.25
 		var noise := _rng.randf_range(-1.0, 1.0) * (0.12 * throttle + (0.1 if layout == "2stroke" else 0.0))
 		var s := (pulse + buzz + noise) * load
 		_y += (s - _y) * cutoff
-		buf[i] = Vector2(_y, _y) * 0.3 * loudness * _level
+		var ring := a1 * _r1 - a2 * _r2 + s * (1.0 - r) * 2.0
+		_r2 = _r1
+		_r1 = ring
+		_whine_phase = fmod(_whine_phase + whine_step, TAU)
+		var out := _y * (1.0 - res_mix) + ring * res_mix * 3.0 + sin(_whine_phase) * whine_amp * (1.0 if running else 0.0)
+		buf[i] = Vector2(out, out) * 0.3 * loudness * _level
+	_pop = maxf(_pop - frames / MIX_RATE * 1.2, 0.0)
 	_playback.push_buffer(buf)
 
 

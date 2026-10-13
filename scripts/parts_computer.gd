@@ -14,6 +14,12 @@ var _status: Label
 var _order: Button
 var _kind := "frame"
 var _part := ""
+var _section := "bike"
+var _search: LineEdit
+var _section_btns := {}
+
+## The shop's three aisles, so nobody scrolls through everything.
+const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors"}
 
 
 func _ready() -> void:
@@ -49,6 +55,27 @@ func _ready() -> void:
 	root.add_child(head)
 	root.add_child(UITheme.label("Pick a kind of part, then a model. Orders arrive in boxes outside the roller door.", 15, Color(1, 1, 1, 0.6)))
 
+	var aisles := HBoxContainer.new()
+	aisles.add_theme_constant_override("separation", 8)
+	for sec in SECTIONS:
+		var sb := Button.new()
+		sb.text = SECTIONS[sec]
+		sb.toggle_mode = true
+		sb.custom_minimum_size = Vector2(130, 40)
+		sb.pressed.connect(_show_section.bind(sec))
+		aisles.add_child(sb)
+		_section_btns[sec] = sb
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	aisles.add_child(gap)
+	_search = LineEdit.new()
+	_search.placeholder_text = "Search the shop..."
+	_search.custom_minimum_size = Vector2(360, 40)
+	_search.clear_button_enabled = true
+	_search.text_changed.connect(func(_t): _refresh_list())
+	aisles.add_child(_search)
+	root.add_child(aisles)
+
 	var cols := HBoxContainer.new()
 	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cols.add_theme_constant_override("separation", 14)
@@ -81,27 +108,112 @@ func _ready() -> void:
 			Shed.request({"a": "order_part", "part": _part}))
 	detail.add_child(_order)
 
+	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
+	_show_section(_section)
+
+
+## Which aisle a kind is sold in.
+static func section_of(k: String) -> String:
+	if k.begins_with("eq:"):
+		return "outdoors" if Equipment.YARD_KINDS.has(k.trim_prefix("eq:")) else "shed"
+	return "bike"
+
+
+## Every kind the shop sells, in shop order.
+static func all_kinds() -> Array:
 	var kinds: Array = []
 	for k in Equipment.KINDS:
 		kinds.append("eq:" + k)
 	kinds.append_array(PartsDB.FLUID_KINDS)
 	kinds.append_array(PartsDB.KINDS)
-	for k in kinds:
+	return kinds
+
+
+static func kind_title(k: String) -> String:
+	if k.begins_with("eq:"):
+		return Equipment.KIND_NAMES[k.trim_prefix("eq:")]
+	return ("Fluids: " if PartsDB.FLUID_KINDS.has(k) else "") + str(PartsDB.KIND_NAMES[k])
+
+
+func _show_section(sec: String) -> void:
+	_section = sec
+	for key in _section_btns:
+		_section_btns[key].button_pressed = key == sec
+	for c in _kinds.get_children():
+		c.queue_free()
+	var first := ""
+	for k in all_kinds():
+		if section_of(k) != sec:
+			continue
+		if first == "":
+			first = k
 		var b := Button.new()
-		if k.begins_with("eq:"):
-			var ek: String = k.trim_prefix("eq:")
-			b.text = ("Yard: " if Equipment.YARD_KINDS.has(ek) else ("Decor: " if ek in ["poster", "seat", "tv"] else "Shed: ")) + Equipment.KIND_NAMES[ek]
-		else:
-			b.text = PartsDB.KIND_NAMES[k]
-		if PartsDB.FLUID_KINDS.has(k):
-			b.text = "Fluids: " + b.text
+		b.text = kind_title(k)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
 		b.pressed.connect(_show_kind.bind(k))
 		b.set_meta("kind", k)
 		_kinds.add_child(b)
-	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
-	_show_kind(_kind)
+	if _search:
+		_search.text = ""
+	_show_kind(_kind if section_of(_kind) == sec else first)
+
+
+func _refresh_list() -> void:
+	var q := _search.text.strip_edges().to_lower()
+	if q == "":
+		_show_kind(_kind)
+		return
+	for c in _variants.get_children():
+		c.queue_free()
+	var found := search(q)
+	_variants.add_child(UITheme.label("%d FOUND" % found.size(), 14, UITheme.ACCENT))
+	for hit in found.slice(0, 80):
+		var b := Button.new()
+		b.text = "%s  ·  %s" % [hit["name"], kind_title(hit["kind"])]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.toggle_mode = true
+		b.set_meta("part", hit["id"])
+		b.pressed.connect(_pick_found.bind(hit["kind"], hit["id"]))
+		_variants.add_child(b)
+	if not found.is_empty():
+		_pick_found(found[0]["kind"], found[0]["id"])
+
+
+func _pick_found(k: String, id: String) -> void:
+	_kind = k
+	for b in _kinds.get_children():
+		b.button_pressed = b.get_meta("kind") == k
+	_show_part(id)
+
+
+## Everything in the shop whose name, kind or description matches every word typed.
+static func search(q: String) -> Array:
+	var words := q.to_lower().split(" ", false)
+	var out: Array = []
+	for k in all_kinds():
+		var ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
+		for id in ids:
+			var name := ""
+			var text := ""
+			if k.begins_with("eq:"):
+				var m := Equipment.get_model(id)
+				name = str(m["name"])
+				text = str(m.get("desc", ""))
+			else:
+				var p := PartsDB.get_part(id)
+				name = PartsDB.part_name(id)
+				text = str(p.get("description", "")) + " " + str(p.get("type", ""))
+			var hay := (name + " " + kind_title(k) + " " + text + " " + str(id)).to_lower()
+			var all_in := true
+			for w in words:
+				if not hay.contains(w):
+					all_in = false
+					break
+			if all_in:
+				out.append({"kind": k, "id": id, "name": name, "title": name.to_lower().contains(words[0]) if words.size() > 0 else false})
+	out.sort_custom(func(a, b): return a["title"] and not b["title"])
+	return out
 
 
 func _column(parent: Control, width: float) -> VBoxContainer:
@@ -131,6 +243,8 @@ func close_computer() -> void:
 
 func _show_kind(k: String) -> void:
 	_kind = k
+	if _search and _search.text != "":
+		_search.text = ""
 	for b in _kinds.get_children():
 		b.button_pressed = b.get_meta("kind") == k
 	for c in _variants.get_children():

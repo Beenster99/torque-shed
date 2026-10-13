@@ -35,6 +35,14 @@ var _mats := {}
 var radio: ShedRadio
 ## The live riding picture every wall TV shows: one camera chasing whoever is out riding.
 var tv_feed: SubViewport
+var door_open_amount := 1.0   # the roller door: 0 down, 1 rolled up
+var _door_panel: MeshInstance3D
+var _door_shape: CollisionShape3D
+var _door_sound: AudioStreamPlayer3D
+var _shed_lights: Array[Light3D] = []
+var _fixture_mats: Array[StandardMaterial3D] = []
+var _probe: ReflectionProbe
+var _lights_shown := true
 var _tv_camera: Camera3D
 var _tv_target: Node3D
 
@@ -78,6 +86,7 @@ func build() -> void:
 	_build_radio()
 	_build_wash_bay()
 	_build_lights()
+	_build_door_and_switches()
 	_crew_screen = Dashboard.new("crew", 3.0)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
 	_crew_screen.rotation.y = PI * 0.5
@@ -132,6 +141,9 @@ func sync_state() -> void:
 				# Parts on a stand or shelf ride along with it when it's moved.
 				display.transform = Shed.local_spot_transform(spot)
 				furniture_nodes[int(f["id"])].add_child(display)
+			if Shed.spot_role(spot) == "booth" and display.has_meta("model"):
+				# Hung in the paint booth: fitted shapes, so the spray lands on the part itself.
+				(display.get_meta("model") as BikeModel).build_pickers({"spot": spot}, {}, BikeModel.SPRAY_LAYER)
 			if Shed.is_stand_spot(spot) and Shed.is_engine(item_id) and not Shed.items[item_id].get("boxed", false):
 				# Parts on the engine can be worked on right there; the block itself is picked up.
 				var model: BikeModel = display.get_meta("model")
@@ -287,6 +299,9 @@ func _sync_floor() -> void:
 		cs.shape = shape
 		body.add_child(cs)
 		display.add_child(body)
+		if display.has_meta("model") and not Shed.items[id].get("boxed", false):
+			# Fitted shapes as well as the box round it, so spray lands on the part itself.
+			(display.get_meta("model") as BikeModel).build_pickers({"item": id}, {}, BikeModel.SPRAY_LAYER)
 		_floor_nodes[id] = display
 
 
@@ -332,6 +347,13 @@ func item_frame(item_id: int) -> Dictionary:
 		"floor":
 			if _floor_nodes.has(item_id):
 				return _node_frame(_floor_nodes[item_id])
+	return {}
+
+
+## {xf, box} round a piece of equipment, for pings.
+func furniture_frame(id: int) -> Dictionary:
+	if furniture_nodes.has(id):
+		return _node_frame(furniture_nodes[id])
 	return {}
 
 
@@ -467,6 +489,9 @@ func _paddock_stand(parent: Node3D, build: BikeBuild) -> void:
 
 func _process(delta: float) -> void:
 	_update_tv_feed(delta)
+	_update_door(delta)
+	if _lights_shown != Shed.lights_on:
+		set_lights(Shed.lights_on)
 	_dash_timer -= delta
 	if _dash_timer > 0.0:
 		return
@@ -923,6 +948,78 @@ func _build_wash_bay() -> void:
 	add_child(light)
 
 
+## The roller door that comes down over the opening, and the switches inside beside it: one for
+## the door, one for the lights.
+func _build_door_and_switches() -> void:
+	var c := CENTER
+	var hz := HALF.y
+	_door_panel = MeshInstance3D.new()
+	var slats := BoxMesh.new()
+	slats.size = Vector3(DOOR_HALF * 2.0, 1.0, 0.05)
+	_door_panel.mesh = slats
+	var steel: StandardMaterial3D = _material(Color(0.62, 0.64, 0.66), 0.7, 0.45, _noise(0.3, 0.92, 1.05), 1.0)
+	steel.uv1_scale = Vector3(1.0, 12.0, 1.0)
+	_door_panel.material_override = steel
+	add_child(_door_panel)
+	var body := StaticBody3D.new()
+	body.set_meta("surface", "tarmac")
+	body.position = c + Vector3(0.0, DOOR_HEIGHT * 0.5, hz + 0.15)
+	_door_shape = CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(DOOR_HALF * 2.0, DOOR_HEIGHT, 0.12)
+	_door_shape.shape = shape
+	body.add_child(_door_shape)
+	add_child(body)
+	_door_sound = Sfx.make_loop_player(self)
+	_door_sound.position = c + Vector3(0.0, DOOR_HEIGHT + 0.3, hz - 0.3)
+	# Switch boxes on the wall to the right of the door, inside.
+	var at := c + Vector3(DOOR_HALF + 0.55, 1.35, hz - 0.03)
+	_deco(self, at, Vector3(0.14, 0.24, 0.05), _mats["yellow"])
+	_deco(self, at + Vector3(0.0, 0.05, -0.03), Vector3(0.05, 0.05, 0.02), _material(Color(0.1, 0.6, 0.15), 0.0, 0.4))
+	_deco(self, at + Vector3(0.0, -0.05, -0.03), Vector3(0.05, 0.05, 0.02), _mats["red"])
+	_poster("DOOR", at + Vector3(0.0, 0.2, -0.026), PI, Vector2(0.16, 0.06))
+	_target(at, Vector3(0.2, 0.3, 0.12), {"door_switch": true})
+	var ls := at + Vector3(0.38, 0.0, 0.0)
+	_deco(self, ls, Vector3(0.1, 0.14, 0.03), _material(Color(0.92, 0.92, 0.9), 0.0, 0.5))
+	var rocker := _deco(self, ls + Vector3(0.0, 0.0, -0.02), Vector3(0.04, 0.07, 0.015), _material(Color(0.85, 0.85, 0.82), 0.0, 0.5))
+	rocker.name = "LightRocker"
+	_poster("LIGHTS", ls + Vector3(0.0, 0.13, -0.018), PI, Vector2(0.16, 0.06))
+	_target(ls, Vector3(0.16, 0.2, 0.1), {"light_switch": true})
+	_update_door(0.0)
+
+
+func _update_door(delta: float) -> void:
+	if _door_panel == null:
+		return
+	var want := 1.0 if Shed.door_open else 0.0
+	var was := door_open_amount
+	door_open_amount = move_toward(door_open_amount, want, delta / 2.5)
+	var moving := not is_equal_approx(was, door_open_amount)
+	if _door_sound:
+		Sfx.set_loop(_door_sound, "door" if moving else "")
+	var down := 1.0 - door_open_amount
+	_door_panel.visible = down > 0.01
+	var h := maxf(down * DOOR_HEIGHT, 0.01)
+	_door_panel.scale = Vector3(1.0, h, 1.0)
+	_door_panel.position = CENTER + Vector3(0.0, DOOR_HEIGHT - h * 0.5, HALF.y + 0.15)
+	# Bikes and people get through once it's most of the way up.
+	_door_shape.disabled = door_open_amount > 0.75
+
+
+## Shed lights on or off (the switch by the door).
+func set_lights(on: bool) -> void:
+	_lights_shown = on
+	for l in _shed_lights:
+		l.visible = on
+	for m in _fixture_mats:
+		m.emission_energy_multiplier = 4.0 if on else 0.0
+	if _probe:
+		_probe.ambient_color_energy = 0.45 if on else 0.08
+	var rocker := get_node_or_null("LightRocker")
+	if rocker:
+		rocker.rotation.x = 0.0 if on else 0.5
+
+
 func _build_lights() -> void:
 	var fixture := _material(Color(1.0, 0.97, 0.9), 0.0, 0.5)
 	fixture.emission_enabled = true
@@ -940,6 +1037,7 @@ func _build_lights() -> void:
 		spot.light_color = Color(1.0, 0.95, 0.88)
 		spot.shadow_enabled = true
 		add_child(spot)
+		_shed_lights.append(spot)
 	for p in [Vector3(-4.2, 0.0, 1.5), Vector3(4.2, 0.0, 1.5), Vector3(0.0, 0.0, 3.5)]:
 		_deco(self, CENTER + p + Vector3(0.0, HEIGHT - 0.35, 0.0), Vector3(0.2, 0.05, 1.3), fixture)
 		var omni := OmniLight3D.new()
@@ -949,6 +1047,7 @@ func _build_lights() -> void:
 		omni.light_color = Color(1.0, 0.93, 0.82)
 		omni.shadow_enabled = p.x == 0.0
 		add_child(omni)
+		_shed_lights.append(omni)
 	# Indoors the sky shouldn't light everything blue: a probe gives the shed warm ambient light.
 	var probe := ReflectionProbe.new()
 	probe.position = CENTER + Vector3(0.0, HEIGHT * 0.5, 0.0)
@@ -960,3 +1059,5 @@ func _build_lights() -> void:
 	probe.ambient_color_energy = 0.45
 	probe.update_mode = ReflectionProbe.UPDATE_ONCE
 	add_child(probe)
+	_probe = probe
+	_fixture_mats.append(fixture)
