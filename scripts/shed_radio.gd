@@ -51,7 +51,7 @@ func _ready() -> void:
 	_display.pixel_size = 0.0022
 	_display.outline_size = 6
 	_display.modulate = Color(1.0, 0.85, 0.55)
-	_display.position = Vector3(0.0, 0.36, 0.05)
+	_display.position = Vector3(0.0, 0.5, 0.05)
 	_display.width = 420.0
 	_display.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	add_child(_display)
@@ -119,7 +119,10 @@ func now_playing() -> String:
 
 
 func _refresh_display() -> void:
-	_display.text = "" if not is_on() else now_playing()
+	# The label above the radio keeps it short: station, then the song or the signal.
+	var lines := now_playing().split("\n")
+	_display.text = "" if not is_on() else str(Shed.stations[Shed.radio["station"]]["name"]) + \
+		("\n" + lines[1] if lines.size() > 1 else "")
 	_dial_light.visible = is_on()
 	_dial_light.position.x = 0.05 + 0.14 * (float(Shed.radio["station"]) / maxf(1.0, Shed.stations.size() - 1.0))
 	# No signal: let the static through instead of silence.

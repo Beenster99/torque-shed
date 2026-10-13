@@ -362,7 +362,7 @@ func _test_shed_rules() -> void:
 	BikeModel._apply_finish(chrome, Shed.PAINTS[0], "chrome")
 	var matte := StandardMaterial3D.new()
 	BikeModel._apply_finish(matte, Shed.PAINTS[0], "matte")
-	check(chrome.metallic > 0.9 and chrome.roughness < 0.1 and matte.roughness > 0.8, "chrome is a mirror and matte is flat")
+	check(chrome.metallic > 0.9 and chrome.roughness < 0.15 and matte.roughness > 0.8, "chrome is a mirror and matte is flat")
 	Shed.request({"a": "clean", "item": pipe})
 	Shed.request({"a": "take", "spot": "repair"})
 	Shed.request({"a": "install", "bike": ranger, "slot": "frame"})

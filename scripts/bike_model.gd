@@ -991,8 +991,8 @@ static func _apply_finish(m: StandardMaterial3D, color: Color, finish: String) -
 			m.albedo_color = color.lightened(0.08)
 		"chrome":
 			m.metallic = 1.0
-			m.roughness = 0.04
-			m.albedo_color = color.lerp(Color(0.95, 0.95, 0.97), 0.55)
+			m.roughness = 0.1
+			m.albedo_color = color.lerp(Color(0.97, 0.97, 0.99), 0.7)
 		"patina":
 			m.metallic = 0.15
 			m.roughness = 0.78
