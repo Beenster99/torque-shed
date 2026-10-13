@@ -7,6 +7,7 @@ extends CharacterBody3D
 
 signal mount_requested(bike_id: int)
 signal computer_requested
+signal tuning_requested
 signal label_requested(furniture_id: int)
 signal rename_requested(bike_id: int)
 
@@ -197,6 +198,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif target.get("kind", "") == "pc":
 			get_viewport().set_input_as_handled()
 			computer_requested.emit()
+		elif target.get("kind", "") == "dyno":
+			get_viewport().set_input_as_handled()
+			tuning_requested.emit()
 		elif target.get("kind", "") == "radio":
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "radio", "on": not Shed.radio["on"]})
@@ -393,6 +397,8 @@ func _update_target() -> void:
 			t = {"kind": "spot", "spot": str(c.get_meta("spot"))}
 		elif c.has_meta("pc"):
 			t = {"kind": "pc"}
+		elif c.has_meta("dyno"):
+			t = {"kind": "dyno"}
 		elif c.has_meta("bin"):
 			t = {"kind": "bin"}
 		elif c.has_meta("radio"):
@@ -642,6 +648,8 @@ func _make_plan() -> Dictionary:
 						p = {"action": {"a": "take", "item": item_id}, "time": 0.25, "verb": "pick it up"}
 					"pc":
 						p = {"action": {"a": "computer"}, "time": 0.15, "verb": "use the parts computer"}
+					"dyno":
+						p = {"action": {"a": "tuning"}, "time": 0.15, "verb": "use the dyno desk"}
 		"wrench":
 			if kind == "part":
 				var a := _where()
@@ -697,7 +705,7 @@ func _make_plan() -> Dictionary:
 					p = {"action": {"a": "wash", "items": near, "at": target["at"]}, "time": 0.2, "verb": "blast the muck off"}
 	if p.is_empty():
 		return {}
-	p["blocked"] = "" if p["action"]["a"] in ["computer", "write_label"] else Shed.check(me, p["action"])
+	p["blocked"] = "" if p["action"]["a"] in ["computer", "tuning", "write_label"] else Shed.check(me, p["action"])
 	return p
 
 
@@ -857,6 +865,10 @@ func _describe() -> String:
 		"pc":
 			lines.append("Parts computer")
 			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")
+		"dyno":
+			lines.append("Dyno desk")
+			var on := Shed.dyno_bike()
+			lines.append("F: tune %s and run the dyno" % (Shed.bikes[on]["name"] if on != 0 else "a bike"))
 		"bin":
 			lines.append("Scrap bin")
 			lines.append("Drop parts you don't want in here.")
@@ -958,6 +970,8 @@ func _update_work(delta: float) -> void:
 	if progress >= 1.0:
 		if a_now == "computer":
 			computer_requested.emit()
+		elif a_now == "tuning":
+			tuning_requested.emit()
 		elif a_now == "write_label":
 			label_requested.emit(int(target.get("furniture", 0)))
 		else:
@@ -1176,7 +1190,7 @@ func _activity_text() -> String:
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
 		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
-		"place": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer",
+		"place": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on"}
 	var verb: String = verbs.get(a["a"], "Working on")

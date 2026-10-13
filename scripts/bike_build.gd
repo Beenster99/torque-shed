@@ -6,6 +6,9 @@ extends RefCounted
 ## Fluids count too: the petrol in the tank, the oil in the engine and the brake fluid in each
 ## master cylinder, how much there is and how old it is. A part's condition can carry its
 ## "fluid" as {type, litres, age}; without one the bike is taken as freshly serviced.
+## A tune (see TUNE_LIMITS) adjusts it in the dyno room: fuel map, ignition, rev limiter,
+## suspension clickers, tyre pressures and gearing. Parts drilled and trimmed for lightness
+## carry "lightened" in their condition.
 
 const RIDER_MASS := 75.0
 const FIXED_MASS := 39.0      # battery, wiring, lights, bodywork, fluids
@@ -17,9 +20,30 @@ const IDLE_FUEL_PER_LITRE := 0.9   # litres an hour
 const AIR_DENSITY := 1.2
 const DRIVETRAIN_EFFICIENCY := 0.92
 const ROLLING := 0.015
+## Every tuning setting and its widest range, [min, max]. A setting missing from a tune is left
+## stock. The ECU narrows the map and ignition and caps the limiter (see tune_range), and the
+## suspension clickers only work on parts with that adjuster (see tune_block).
+const TUNE_LIMITS := {
+	"map": [-1.0, 1.0],            # fuel map: lean (economy) .. rich (low-down power)
+	"ignition": [-1.0, 1.0],       # retarded .. advanced (power, until it pinks)
+	"limiter": [-2500.0, 1000.0],  # rpm moved from the stock redline
+	"f_preload": [-1.0, 1.0], "f_bump": [-1.0, 1.0], "f_rebound": [-1.0, 1.0],
+	"r_preload": [-1.0, 1.0], "r_bump": [-1.0, 1.0], "r_rebound": [-1.0, 1.0],
+	"psi_f": [0.6, 3.2], "psi_r": [0.6, 3.2],   # tyre pressures, bar
+	"sprocket_f": [12.0, 18.0], "sprocket_r": [36.0, 56.0],
+	"spread": [-1.0, 1.0],         # cassette gearboxes: closer .. wider ratios
+	"chain": [10.0, 70.0],         # chain slack, mm (kept on the chain itself)
+}
+## The pressures each style of tyre works best at, front and rear, in bar.
+const PSI_BEST := {"road": [2.3, 2.5], "offroad": [1.0, 1.0], "slick": [2.1, 1.8]}
+## How much drilling and trimming takes off each kind of part, as a fraction of its mass.
+const LIGHTEN := {"frame": 0.08, "fork": 0.06, "shock": 0.06, "wheel": 0.12, "disc": 0.15, "saddle": 0.25,
+	"handlebars": 0.15, "exhaust": 0.15, "final_drive": 0.3, "gearbox": 0.06, "side_stand": 0.3, "centre_stand": 0.3}
+const OCTANE := {"unleaded_95": 95.0, "super_98": 98.0, "race_fuel": 102.0}
 
 var parts: Dictionary          # slot -> part id
 var condition: Dictionary      # slot -> {rust, dirt, wear, color}, each 0 (as new) .. 1 (ruined)
+var tune := {}                 # the tune asked for: setting -> value (see TUNE_LIMITS)
 var health := {}               # slot -> 0..1
 var notes: Array[String] = []  # problems with how the parts suit each other
 
@@ -97,6 +121,12 @@ var torque_mult := 1.0         # every engine part and its condition combined
 var exhaust_loudness := 1.0
 var engine_heat := 0.7
 var cooling_capacity := 1.0
+var stock_redline := 9500.0    # where the limiter sits before it's moved
+var tune_low := 0.0            # a rich map fattens the torque below the peak, a lean one thins it
+var tune_high := 0.0           # ignition advance sharpens the top end
+var engine_stress := 1.0       # how hard the tune works the engine: multiplies its wear
+var rolling := ROLLING         # rolling resistance; soft tyres drag
+var tyre_wear := {"front": 1.0, "rear": 1.0}   # how fast each tyre wears at its pressure
 
 # Drivetrain
 var primary := 2.9
@@ -112,9 +142,10 @@ var front_brake_torque := 1500.0
 var rear_brake_torque := 550.0
 
 
-func _init(build: Dictionary = {}, part_condition: Dictionary = {}) -> void:
+func _init(build: Dictionary = {}, part_condition: Dictionary = {}, tune_settings: Dictionary = {}) -> void:
 	parts = PartsDB.sanitize_build(build)
 	condition = part_condition
+	tune = tune_settings
 	_compute()
 
 
@@ -186,8 +217,7 @@ func _compute() -> void:
 	oil_protection = float(oil_part.get("protection", 0.8)) * lerpf(1.0, 0.55, oil_age)
 	bike_mass = FIXED_MASS + fuel_litres * FUEL_DENSITY + oil_litres * OIL_DENSITY
 	for slot in parts:
-		var p := part(slot)
-		bike_mass += float(p.get("mass", float(p.get("mass_per_cyl", 0.0)) * cylinders))
+		bike_mass += _part_mass(slot)
 	total_mass = bike_mass + RIDER_MASS
 
 	wheelbase = frame["wheelbase"]
@@ -223,6 +253,13 @@ func _compute() -> void:
 	rear_spring = shock["spring"] * lerpf(0.85, 1.0, health["shock"])
 	rear_bump = shock["bump"] * lerpf(0.45, 1.0, health["shock"])
 	rear_rebound = shock["rebound"] * lerpf(0.45, 1.0, health["shock"])
+	# The clickers: preload firms the spring up, bump and rebound the damping.
+	front_spring *= 1.0 + 0.18 * tune_value("f_preload")
+	front_bump *= 1.0 + 0.45 * tune_value("f_bump")
+	front_rebound *= 1.0 + 0.45 * tune_value("f_rebound")
+	rear_spring *= 1.0 + 0.18 * tune_value("r_preload")
+	rear_bump *= 1.0 + 0.45 * tune_value("r_bump")
+	rear_rebound *= 1.0 + 0.45 * tune_value("r_rebound")
 
 	_compute_wheels()
 	_compute_engine(block, head)
@@ -231,8 +268,8 @@ func _compute() -> void:
 	var gearbox := part("gearbox")
 	var sprocket := part("final_drive")
 	primary = gearbox["primary"]
-	gear_ratios = gearbox["ratios"]
-	final_drive = float(sprocket["rear"]) / float(sprocket["front"])
+	gear_ratios = _spread(gearbox["ratios"], tune_value("spread"))
+	final_drive = tune_value("sprocket_r") / tune_value("sprocket_f")
 	shift_time = float(gearbox.get("shift_time", 0.12))
 	gear_whine = float(gearbox.get("whine", 0.3))
 	drivetrain_efficiency = DRIVETRAIN_EFFICIENCY * lerpf(0.8, 1.0, health["gearbox"]) * lerpf(0.88, 1.0, health["final_drive"])
@@ -289,8 +326,22 @@ func _compute_wheels() -> void:
 		grip_front[surf] = float(tf["grip"][surf]) * scale_f
 		grip_rear[surf] = float(tr["grip"][surf]) * scale_r
 		grip[surf] = (grip_front[surf] + grip_rear[surf]) * 0.5
-	var mass_f := float(wf["mass"]) + float(tf["mass"])
-	var mass_r := float(wr["mass"]) + float(tr["mass"])
+	# Tyre pressures: off the tyre's best, it grips less on tarmac. A little soft finds more
+	# grip in the dirt, but squirms, drags and wears.
+	var dev_f := pressure_offset("front")
+	var dev_r := pressure_offset("rear")
+	for surf in grip_rear:
+		grip_front[surf] *= _pressure_grip(dev_f, surf)
+		grip_rear[surf] *= _pressure_grip(dev_r, surf)
+		grip[surf] = (grip_front[surf] + grip_rear[surf]) * 0.5
+	rolling = ROLLING * (clampf(1.0 - 0.9 * dev_f, 0.6, 2.5) + clampf(1.0 - 0.9 * dev_r, 0.6, 2.5)) * 0.5
+	tyre_wear = {"front": 1.0 + 2.5 * absf(dev_f), "rear": 1.0 + 2.5 * absf(dev_r)}
+	if minf(dev_f, dev_r) < -0.3:
+		notes.append("The tyres are soft: they'll squirm, drag and wear out fast.")
+	elif maxf(dev_f, dev_r) > 0.3:
+		notes.append("The tyres are rock hard: less grip, and they skip over bumps.")
+	var mass_f := _part_mass("front_wheel") + float(tf["mass"])
+	var mass_r := _part_mass("rear_wheel") + float(tr["mass"])
 	front_inertia = 0.8 * mass_f * front_radius * front_radius
 	rear_inertia = 0.8 * mass_r * rear_radius * rear_radius + 0.15  # plus spinning drivetrain
 
@@ -307,7 +358,8 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	peak_torque = displacement * float(block["torque_per_cc"])
 	peak_torque_rpm = float(block["peak_torque_rpm"]) * float(head["peak_shift"]) * float(fuel["peak_shift"])
 	var ecu := part("ecu")
-	redline = float(block["redline"]) + float(head["redline_add"]) + float(ecu.get("rev_add", 0.0))
+	stock_redline = float(block["redline"]) + float(head["redline_add"]) + float(ecu.get("rev_add", 0.0))
+	redline = stock_redline + tune_value("limiter")
 	idle_rpm = block["idle_rpm"]
 
 	torque_mult = float(head["torque_mult"]) * lerpf(0.75, 1.0, health["head"]) * float(ecu.get("power", 1.0))
@@ -333,7 +385,8 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	var block_health: float = 1.0 - (1.0 - float(health["engine"])) * (1.4 - 0.5 * protection)
 	torque_mult *= lerpf(0.55, 1.0, clampf(block_health, 0.0, 1.0))
 	# Hot heads need cooling to match.
-	engine_heat = displacement / 1000.0 * float(head["heat"])
+	var lean := maxf(-tune_value("map"), 0.0)
+	engine_heat = displacement / 1000.0 * float(head["heat"]) * (1.0 + 0.15 * lean + 0.06 * maxf(tune_value("ignition"), 0.0))
 	cooling_capacity = float(cooling["capacity"]) * lerpf(0.6, 1.0, health["cooling"])
 	if engine_heat > cooling_capacity:
 		torque_mult *= maxf(0.8, 1.0 - (engine_heat - cooling_capacity) * 0.4)
@@ -345,6 +398,7 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	torque_mult *= float(petrol.get("power", 1.0)) * lerpf(1.0, 0.82, fuel_age)
 	if fuel_age > 0.5 and fuel_litres > 0.0:
 		notes.append("The petrol has gone stale. Drain the tank and fill it fresh.")
+	_tune_engine()
 	# Low or old oil: more friction now, and the engine wears out fast when ridden.
 	var oil_level := oil_litres / maxf(oil_capacity, 0.1)
 	torque_mult *= 2.0 - float(PartsDB.get_part(oil_type).get("friction", 1.0))
@@ -358,6 +412,8 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	# How far a litre goes: the petrol, the plugs, the filter and how healthy the engine is.
 	economy_mult = float(petrol.get("economy", 1.0)) * lerpf(0.82, 1.0, plug_health) * (1.0 - 0.15 * clog) \
 		* lerpf(0.85, 1.0, clampf(block_health, 0.0, 1.0)) * lerpf(0.9, 1.0, health["fuel"])
+	# Lean is thrifty, rich is thirsty; a touch of advance burns it more completely.
+	economy_mult *= (1.0 - 0.14 * tune_value("map")) * (1.0 + 0.04 * tune_value("ignition"))
 
 
 func _side_brake(side: String) -> float:
@@ -405,7 +461,12 @@ func engine_torque(rpm: float) -> float:
 		return 0.0
 	var x := (rpm - peak_torque_rpm) / peak_torque_rpm
 	var shape := 1.0 - 0.7 * x * x
-	return peak_torque * clampf(shape, 0.3, 1.0)
+	var t := peak_torque * clampf(shape, 0.3, 1.0)
+	if x < 0.0:
+		t *= 1.0 + tune_low * minf(-x * 2.0, 1.0)
+	else:
+		t *= 1.0 + tune_high * minf(x * 2.0, 1.0)
+	return t
 
 
 func engine_power_kw(rpm: float) -> float:
@@ -441,7 +502,7 @@ func top_speed_estimate() -> float:
 		while rpm <= redline:
 			var v := rpm / ratio * TAU / 60.0 * rear_radius
 			var drive := engine_torque(rpm) * ratio * drivetrain_efficiency / rear_radius
-			var resist := 0.5 * AIR_DENSITY * cda * v * v + ROLLING * total_mass * 9.81
+			var resist := 0.5 * AIR_DENSITY * cda * v * v + rolling * total_mass * 9.81
 			if drive >= resist:
 				best = maxf(best, v)
 			rpm += 50.0
@@ -457,7 +518,7 @@ func fuel_rate(kw: float, rpm: float) -> float:
 ## Kilometres per litre at a steady 90 km/h, for comparing bikes.
 func cruise_economy() -> float:
 	var v := 25.0
-	var kw := (0.5 * AIR_DENSITY * cda * v * v * v + ROLLING * total_mass * 9.81 * v) / drivetrain_efficiency / 1000.0
+	var kw := (0.5 * AIR_DENSITY * cda * v * v * v + rolling * total_mass * 9.81 * v) / drivetrain_efficiency / 1000.0
 	var rpm := v / rear_radius * overall_ratio(gear_count()) * 60.0 / TAU
 	return 90.0 / fuel_rate(kw, rpm)
 
@@ -488,3 +549,197 @@ func summary() -> Dictionary:
 		"economy": cruise_economy(),
 		"pw": power_to_weight(),
 	}
+
+
+# ---------------------------------------------------------------------------- tuning
+
+## A part's mass, less what drilling and trimming took off it.
+func _part_mass(slot: String) -> float:
+	var p := part(slot)
+	var m := float(p.get("mass", float(p.get("mass_per_cyl", 0.0)) * cylinders))
+	if condition.get(slot, {}).get("lightened", false):
+		m *= 1.0 - lighten_cut(str(parts[slot]))
+	return m
+
+
+## The fraction of a part's mass lightening it takes off: 0 for parts already built light or
+## with nothing to trim.
+static func lighten_cut(part_id: String) -> float:
+	if PartsDB.is_lightweight(part_id):
+		return 0.0
+	return float(LIGHTEN.get(PartsDB.kind_of(part_id), 0.0))
+
+
+## Why a setting can't be changed on this bike's parts, or "" when it can.
+func tune_block(key: String) -> String:
+	if not TUNE_LIMITS.has(key):
+		return "There's nothing like that to adjust."
+	if key.ends_with("_preload") or key.ends_with("_bump") or key.ends_with("_rebound"):
+		var p := part("fork" if key.begins_with("f_") else "shock")
+		var what := key.get_slice("_", 1)
+		var need := 1 if what == "preload" else (2 if what == "rebound" else 4)
+		if int(p.get("adjust", 0)) < need:
+			return "The %s has no %s adjuster." % [str(p.get("name", "suspension")).to_lower(), what]
+	elif key == "spread" and not part("gearbox").get("cassette", false):
+		return "Only a cassette gearbox lets you respace the ratios."
+	return ""
+
+
+## How far the ECU lets the fuel map and ignition move either way: a little with none fitted
+## (jets and the ignition plate), all the way with a remap or race ECU.
+func ecu_reach() -> float:
+	return float(part("ecu").get("tune_range", 0.25)) if has_part("ecu") else 0.25
+
+
+## The range a setting can take on this bike.
+func tune_range(key: String) -> Vector2:
+	var lim: Array = TUNE_LIMITS.get(key, [0.0, 0.0])
+	var r := Vector2(float(lim[0]), float(lim[1]))
+	if key in ["map", "ignition"]:
+		r = Vector2(-ecu_reach(), ecu_reach())
+	elif key == "limiter":
+		r.y = float(part("ecu").get("limiter_add", 0.0)) if has_part("ecu") else 0.0
+	return r
+
+
+## A setting as it comes from the factory.
+func tune_default(key: String) -> float:
+	match key:
+		"psi_f", "psi_r":
+			var tyre := part("front_tyre" if key == "psi_f" else "rear_tyre")
+			var best: Array = PSI_BEST.get(str(tyre.get("style", "road")), PSI_BEST["road"])
+			return float(best[0 if key == "psi_f" else 1])
+		"sprocket_f":
+			return float(part("final_drive").get("front", 15.0))
+		"sprocket_r":
+			return float(part("final_drive").get("rear", 45.0))
+		"chain":
+			return 30.0
+	return 0.0
+
+
+## A setting as it's applied: the tune's value kept within what the parts allow, or stock.
+func tune_value(key: String) -> float:
+	if not tune.has(key) or tune_block(key) != "":
+		return tune_default(key)
+	var r := tune_range(key)
+	return clampf(float(tune[key]), r.x, r.y)
+
+
+## How far a tyre is off its best pressure, as a fraction: -0.2 is 20% soft.
+func pressure_offset(side: String) -> float:
+	var key := "psi_f" if side == "front" else "psi_r"
+	var best := tune_default(key)
+	return (tune_value(key) - best) / best
+
+
+func _pressure_grip(dev: float, surf: String) -> float:
+	if surf == "tarmac":
+		return 1.0 - 0.5 * dev * dev - 0.12 * maxf(dev, 0.0)
+	return 1.0 + 0.15 * clampf(-dev, 0.0, 0.4) - 0.5 * dev * dev
+
+
+## Ratios respaced about top gear: closer (spread < 0) or wider (> 0).
+func _spread(ratios: Array, spread: float) -> Array:
+	if spread == 0.0 or ratios.is_empty():
+		return ratios
+	var top := float(ratios[-1])
+	var out := []
+	for r in ratios:
+		out.append(top * pow(float(r) / top, 1.0 + 0.3 * spread))
+	return out
+
+
+## How much advance the petrol takes before the engine pinks.
+func knock_margin() -> float:
+	return 0.45 + (float(OCTANE.get(fuel_type, 95.0)) - 95.0) * 0.12
+
+
+## The fuel map and ignition: a little rich and advanced makes the most power, lean saves
+## petrol but runs hot, and too much advance for the petrol pinks and hurts the engine.
+func _tune_engine() -> void:
+	var m := tune_value("map")
+	var a := tune_value("ignition")
+	var knock := maxf(0.0, a - knock_margin())
+	torque_mult *= (1.0 + 0.04 * m - 0.055 * m * m) * (1.0 + 0.045 * a - 0.02 * a * a) * (1.0 - 0.15 * knock)
+	tune_low = 0.05 * m
+	tune_high = 0.03 * a
+	var over := maxf(tune_value("limiter"), 0.0)
+	engine_stress = 1.0 + 1.2 * maxf(-m, 0.0) + 0.5 * maxf(a, 0.0) + 3.0 * knock + over / 1000.0
+	if knock > 0.0:
+		notes.append("Pinking: too much ignition advance for this petrol. Back it off or use higher octane.")
+	if m < -0.5:
+		notes.append("Running lean: thrifty, but hot and hard on the engine.")
+	if over > 0.0:
+		notes.append("The rev limiter is raised: more revs, more wear.")
+
+
+## Top speed in each gear at the rev limiter, km/h.
+func gear_speeds() -> Array:
+	var out := []
+	for g in range(1, gear_count() + 1):
+		out.append(redline / overall_ratio(g) * TAU / 60.0 * rear_radius * 3.6)
+	return out
+
+
+## Seconds from a standstill to 100 km/h flat out with clean shifts, held back by traction,
+## wheelies, drag and shift time. -1 when the bike can't get there.
+func zero_to_100() -> float:
+	var v := 0.0
+	var t := 0.0
+	var gear := 1
+	var dt := 0.01
+	var mu := float(grip_rear.get("tarmac", 1.0))
+	var max_a := minf(mu * 9.81 * 0.75, 9.81 * wheelbase * 0.55 / com_height)
+	while v < 100.0 / 3.6:
+		if t > 40.0:
+			return -1.0
+		var ratio := overall_ratio(gear)
+		var rpm := v / rear_radius * ratio * 60.0 / TAU
+		if rpm >= redline * 0.98 and gear < gear_count():
+			gear += 1
+			t += shift_time
+			continue
+		rpm = maxf(rpm, peak_torque_rpm * 0.75)   # slipping the clutch off the line
+		var drive := engine_torque(rpm) * ratio * drivetrain_efficiency / rear_radius
+		var resist := 0.5 * AIR_DENSITY * cda * v * v + rolling * total_mass * 9.81
+		var acc := minf(drive / total_mass, max_a) - resist / total_mass
+		if acc <= 0.0:
+			return -1.0
+		v += acc * dt
+		t += dt
+	return t
+
+
+## A rolling-road run: power and torque at the rear wheel from just off idle to the limiter,
+## the speed in each gear and the headline numbers.
+func dyno_run(samples := 48) -> Dictionary:
+	var lo := maxf(idle_rpm * 1.5, redline * 0.2)
+	var rpm := []
+	var nm := []
+	var hp_at := []
+	for i in samples + 1:
+		var r := lerpf(lo, redline, float(i) / samples)
+		var tq := engine_torque(r) * drivetrain_efficiency
+		rpm.append(snappedf(r, 1.0))
+		nm.append(snappedf(tq, 0.01))
+		hp_at.append(snappedf(tq * r * TAU / 60.0 / 1000.0 * 1.341, 0.01))
+	var best_hp := 0.0
+	var best_hp_rpm := 0.0
+	var best_nm := 0.0
+	var best_nm_rpm := 0.0
+	var r := lo
+	while r <= redline:
+		var tq := engine_torque(r) * drivetrain_efficiency
+		var p := tq * r * TAU / 60.0 / 1000.0 * 1.341
+		if p > best_hp:
+			best_hp = p
+			best_hp_rpm = r
+		if tq > best_nm:
+			best_nm = tq
+			best_nm_rpm = r
+		r += 25.0
+	return {"rpm": rpm, "nm": nm, "hp": hp_at, "peak_hp": best_hp, "peak_hp_rpm": best_hp_rpm, "peak_nm": best_nm,
+		"peak_nm_rpm": best_nm_rpm, "redline": redline, "top_kmh": top_speed_estimate() * 3.6, "gears": gear_speeds(),
+		"mass": bike_mass, "hp_per_tonne": best_hp / maxf(total_mass, 1.0) * 1000.0, "zero_100": zero_to_100(),
+		"crank_hp": hp(), "economy": cruise_economy()}

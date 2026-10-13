@@ -2,8 +2,9 @@ class_name Workshop
 extends Node3D
 ## The shed: a snug workshop with a roller door onto the Build Yard. Inside are four bike bays
 ## with paddock stands and a screen above each, a workbench, an engine stand, a parts computer
-## with delivery pallets, a parts washer, a repair bench, a bin and the crew board. It also
-## draws every parked bike and every loose part from the shared Shed state.
+## with delivery pallets, a parts washer, a repair bench, a bin and the crew board, and through
+## the back wall the dyno room (DynoRoom). It also draws every parked bike and every loose
+## part from the shared Shed state.
 
 const CENTER := Vector3(0.0, 0.0, 65.0)
 const HALF := Vector2(6.5, 5.5)           # interior half size in x and z
@@ -33,6 +34,7 @@ var _dash_timer := 0.0
 var _dash_dirty := true
 var _mats := {}
 var radio: ShedRadio
+var dyno_room: DynoRoom     # the tuning room through the back wall
 ## The live riding picture every wall TV shows: one camera chasing whoever is out riding.
 var tv_feed: SubViewport
 var door_open_amount := 1.0   # the roller door: 0 down, 1 rolled up
@@ -87,6 +89,9 @@ func build() -> void:
 	_build_wash_bay()
 	_build_lights()
 	_build_door_and_switches()
+	dyno_room = DynoRoom.new()
+	add_child(dyno_room)
+	dyno_room.build(self)
 	_crew_screen = Dashboard.new("crew", 3.0)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
 	_crew_screen.rotation.y = PI * 0.5
@@ -742,21 +747,28 @@ func _build_shell() -> void:
 	# Floor: a polished epoxy slab sitting on the yard concrete, with bay markings.
 	var floor_mi := _deco(self, c + Vector3(0.0, 0.004, 0.0), Vector3(hx * 2.0, 0.008, hz * 2.0), _mats["floor"])
 	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Walls: back, sides, and the front wall either side of the roller door.
+	# Walls: back (with the doorway to the dyno room), sides, and the front wall either side of
+	# the roller door.
+	var back_w := hx + t - DynoRoom.DOOR_HALF
 	var walls := [
-		[c + Vector3(0.0, HEIGHT * 0.5, -hz - t * 0.5), Vector3(hx * 2.0 + t * 2.0, HEIGHT, t)],
+		[c + Vector3(0.0, (HEIGHT + DynoRoom.DOOR_HEIGHT) * 0.5, -hz - t * 0.5), Vector3(DynoRoom.DOOR_HALF * 2.0, HEIGHT - DynoRoom.DOOR_HEIGHT, t)],
 		[c + Vector3(-hx - t * 0.5, HEIGHT * 0.5, 0.0), Vector3(t, HEIGHT, hz * 2.0)],
 		[c + Vector3(hx + t * 0.5, HEIGHT * 0.5, 0.0), Vector3(t, HEIGHT, hz * 2.0)],
 	]
 	var side_w := hx - DOOR_HALF
 	for side in [-1.0, 1.0]:
 		walls.append([c + Vector3(side * (DOOR_HALF + side_w * 0.5), HEIGHT * 0.5, hz + t * 0.5), Vector3(side_w + t, HEIGHT, t)])
+		walls.append([c + Vector3(side * (DynoRoom.DOOR_HALF + back_w * 0.5), HEIGHT * 0.5, -hz - t * 0.5), Vector3(back_w, HEIGHT, t)])
 	walls.append([c + Vector3(0.0, (HEIGHT + DOOR_HEIGHT) * 0.5, hz + t * 0.5), Vector3(DOOR_HALF * 2.0, HEIGHT - DOOR_HEIGHT, t)])
 	for w in walls:
 		_solid(w[0], w[1], _mats["cladding"])
-	# Inside faces: painted plaster upper, dark lower band.
-	_deco(self, c + Vector3(0.0, HEIGHT * 0.5 + 0.6, -hz + 0.01), Vector3(hx * 2.0, HEIGHT - 1.2, 0.02), _mats["wall_in"])
-	_deco(self, c + Vector3(0.0, 0.6, -hz + 0.01), Vector3(hx * 2.0, 1.2, 0.02), _mats["wall_low"])
+	# Inside faces: painted plaster upper, dark lower band; the back wall's round the doorway.
+	var in_w := hx - DynoRoom.DOOR_HALF
+	for side in [-1.0, 1.0]:
+		var x: float = side * (DynoRoom.DOOR_HALF + in_w * 0.5)
+		_deco(self, c + Vector3(x, HEIGHT * 0.5 + 0.6, -hz + 0.01), Vector3(in_w, HEIGHT - 1.2, 0.02), _mats["wall_in"])
+		_deco(self, c + Vector3(x, 0.6, -hz + 0.01), Vector3(in_w, 1.2, 0.02), _mats["wall_low"])
+	_deco(self, c + Vector3(0.0, (HEIGHT + DynoRoom.DOOR_HEIGHT) * 0.5, -hz + 0.01), Vector3(DynoRoom.DOOR_HALF * 2.0, HEIGHT - DynoRoom.DOOR_HEIGHT, 0.02), _mats["wall_in"])
 	for side in [-1.0, 1.0]:
 		_deco(self, c + Vector3(side * (hx - 0.01), HEIGHT * 0.5 + 0.6, 0.0), Vector3(0.02, HEIGHT - 1.2, hz * 2.0), _mats["wall_in"])
 		_deco(self, c + Vector3(side * (hx - 0.01), 0.6, 0.0), Vector3(0.02, 1.2, hz * 2.0), _mats["wall_low"])
@@ -802,8 +814,10 @@ func _build_shell() -> void:
 func _build_bays() -> void:
 	for bay in BAY_COUNT:
 		var xf := bay_transform(bay)
-		var screen := Dashboard.new("bike", 2.6)
-		screen.position = Vector3(xf.origin.x, 2.45, CENTER.z - HALF.y + 0.1)
+		# The middle two are narrower and nudged out to clear the dyno room doorway between them.
+		var inner := absf(xf.origin.x - CENTER.x) < 2.0
+		var screen := Dashboard.new("bike", 1.9 if inner else 2.6)
+		screen.position = Vector3(xf.origin.x + signf(xf.origin.x - CENTER.x) * (0.5 if inner else 0.0), 2.45, CENTER.z - HALF.y + 0.1)
 		add_child(screen)
 		_bay_screens.append(screen)
 

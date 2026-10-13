@@ -41,7 +41,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Roller door, shed lights (switches by the door) | F | Y |
 | Drain a fluid (holding a drain pan, empty can or bleed bottle); with the wrench at a chain, set its tension | Hold R or right mouse | Hold X |
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
-| Use the parts computer, switch the radio on or off | F | Y |
+| Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
 | Unpack a delivery box; take hold of or let go of equipment (posters and TVs hang on the wall you look at) | F | Y |
 | Sit on a seat (tap), or move it (hold) | F | Y |
 | Change radio station | Hold left mouse on the radio | Hold RT or A |
@@ -64,6 +64,20 @@ The **paint booth** (three sizes, 2 to 6 hooks) is for proper paint jobs: hang p
 **Ping** (G or middle mouse) outlines whatever you're pointing at, with your name and what it is, for everyone in the shed. The **stopwatch** is for timing whatever runs you dream up; it keeps running while you ride. Press N while looking at a bike to give it a name. The roller door and the shed lights have switches beside the door. A day and night cycle runs outside; its speed (or a fixed time of day) is in the Esc menu.
 
 The **radio** on the shelf above the workbench streams internet radio stations (SomaFM and Radio Paradise). Everyone in the shed hears the same station; each player's PC streams it, so it needs an internet connection. The Esc menu has volume sliders for sound effects and the radio. Stations live in `data/radio.json`.
+
+### The dyno room
+
+Through the doorway in the back wall, between bays 2 and 3, is the **dyno room**: a rolling road set into the floor with a drum under the rear wheel, a clamp for the front, strap-down posts, a big cooling fan, the dyno desk and a wall screen. Wheel a bike in (hold F on it) and let go of it near the drum: it snaps onto the rig and is strapped down. Wheel it off again the same way.
+
+Press F at the **dyno desk** to tune the bike on the rig, or any bike within about 10 m. Every change goes through the host, so the whole crew sees the same tune, and riding uses it too:
+
+- **Engine**: fuel map (lean saves petrol but runs hot and wears the engine; a little rich makes the most power and fattens the low end), ignition timing (advance adds power until the petrol pinks: higher octane takes more) and the rev limiter. With no ECU the map and timing only move a little; a remap or race ECU opens them right up and lets the limiter go higher.
+- **Suspension**: preload, compression and rebound, front and rear, only where the fork or shock has that adjuster.
+- **Tyres and chain**: pressures (off a tyre's best pressure it grips less; soft tyres drag and wear faster, though a knobbly a touch soft finds more grip in the dirt) and chain slack.
+- **Gearing**: front and rear sprocket teeth, and with a cassette gearbox (the close-ratio and race boxes) the spacing of the ratios.
+- **Weight**: drill and trim parts (frame, wheels, discs, sprockets, seat, bars, exhaust and more) to save weight. Each part can be done once; it costs it some condition and it wears a little faster after.
+
+**Run the dyno** and the bike revs up through the gears on the drum, then sweeps one gear to the limiter. The desk and the wall screen plot power and torque at the rear wheel against rpm, the speed in each gear, and the peak power and torque, top speed, power to weight and a 0-100 km/h estimate. The previous run stays on the graph, dashed, with the change in each number, so you can see what a change did.
 
 ### Riding
 
@@ -110,7 +124,8 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/shed_state.gd` | The shared shed: bikes, parts, who holds what. The host checks and applies every action |
 | `scripts/workshop.gd` | Builds the shed, its stations and dashboards, and draws parked bikes and loose parts |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
-| `scripts/bike_build.gd` | Turns parts and their condition into stats: mass, torque curve, grip, brakes, top speed |
+| `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
+| `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime |
 | `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |

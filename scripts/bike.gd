@@ -553,7 +553,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var k := LONG_STIFFNESS * fz / maxf(absf(v_long), 3.0)
 	var omega_new := (inertia_w * omega + k * radius * v_long * delta) / (inertia_w + k * radius * radius * delta)
 	var fx := k * (omega_new * radius - v_long)
-	fx -= signf(v_long) * ROLLING_RESISTANCE * fz
+	fx -= signf(v_long) * build.rolling * fz
 
 	# Lateral: slip-angle curve, limited so it can't overshoot at low speed.
 	var alpha := atan2(v_lat, maxf(absf(v_long), 2.5))
