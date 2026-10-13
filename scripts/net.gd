@@ -11,6 +11,8 @@ signal connected
 signal connection_failed(reason: String)
 signal disconnected
 signal internet_status_changed
+## The host's clock (hours, and hours per second it runs at), for Daylight on clients.
+signal time_received(hours: float, rate: float)
 
 ## Whether friends outside your network can reach your shed: "" (not hosting), "checking",
 ## "open" (the router opened the port for us via UPnP) or "closed" (it has to be forwarded by hand).
@@ -246,6 +248,12 @@ func send_state(state: PackedFloat32Array) -> void:
 		_state.rpc(state)
 
 
+## Host only: tell everyone the time of day.
+func send_time(hours: float, rate: float) -> void:
+	if is_host() and not players.is_empty():
+		_time.rpc(hours, rate)
+
+
 func _on_peer_connected(id: int) -> void:
 	_register.rpc_id(id, local_info)
 
@@ -283,3 +291,8 @@ func _register(info: Dictionary) -> void:
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _state(state: PackedFloat32Array) -> void:
 	state_received.emit(multiplayer.get_remote_sender_id(), state)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _time(hours: float, rate: float) -> void:
+	time_received.emit(hours, rate)
