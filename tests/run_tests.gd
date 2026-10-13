@@ -319,7 +319,8 @@ func _test_shed_rules() -> void:
 		colours[Shed.items[id]["color"]] = true
 	check(colours.size() > 8, "parts come in their own colours (%d different)" % colours.size())
 	check(Shed.missing_slots(barn).size() == 5, "the barn find arrives stripped, its engine out (%s)" % str(Shed.missing_slots(barn)))
-	var block := Shed.item_at_spot("engine_stand")
+	var stand_spot: String = Shed.stand_spots()[0]
+	var block := Shed.item_at_spot(stand_spot)
 	check(Shed.is_engine(block) and Shed.engine_missing(block) == ["air_filter", "spark_plugs"],
 		"its engine is on the stand, missing plugs and air filter (%s)" % str(Shed.engine_missing(block) if block else []))
 	check(Shed.is_complete(faithful) and not Shed.is_complete(barn), "complete bikes are rideable, stripped ones aren't")
@@ -376,17 +377,24 @@ func _test_shed_rules() -> void:
 
 	# Building up the barn find's engine on the stand with parts from the computer.
 	check(Shed.check(me, {"a": "order_part", "part": "spark_plugs"}) != "", "you can only order real parts")
-	Shed.request({"a": "order_part", "part": "iridium_plugs"})
-	var plugs := Shed.item_at_spot("delivery_0")
-	check(plugs != 0 and Shed.items[plugs]["wear"] == 0.0, "an ordered part arrives new on a delivery pallet")
-	Shed.request({"a": "order_part", "part": "cotton_gauze"})
-	Shed.request({"a": "take", "spot": "delivery_1"})
+	var plugs := _order("iridium_plugs")
+	var box_at: Transform3D = Shed.items[plugs]["ref"]
+	check(Shed.items[plugs]["boxed"] and Shed.items[plugs]["at"] == "floor" and box_at.origin.z > Workshop.CENTER.z + Workshop.HALF.y,
+		"an ordered part arrives boxed, outside the roller door")
+	Shed.request({"a": "take", "item": plugs})
+	check(Shed.check(me, {"a": "install", "engine": block, "slot": "head"}).contains("Unpack"), "a part has to be unpacked before it fits")
+	Shed.request({"a": "drop", "xf": box_at})
+	Shed.request({"a": "unpack", "item": plugs})
+	check(not Shed.items[plugs]["boxed"] and Shed.items[plugs]["wear"] == 0.0, "unpacking the box leaves a brand new part")
+	var filter := _order("cotton_gauze")
+	Shed.request({"a": "unpack", "item": filter})
+	Shed.request({"a": "take", "item": filter})
 	check(Shed.check(me, {"a": "install", "engine": block, "slot": "head"}) == "", "the air filter fits the engine on the stand")
 	check(Shed.check(me, {"a": "install", "bike": barn, "slot": "frame"}).contains("engine first"),
 		"engine parts need an engine in the bike")
 	Shed.request({"a": "install", "engine": block, "slot": "head"})
 	check(Shed.engine_item(block, "air_filter") != 0, "the air filter goes on the carbs")
-	Shed.request({"a": "take", "spot": "delivery_0"})
+	Shed.request({"a": "take", "item": plugs})
 	Shed.request({"a": "install", "engine": block, "slot": "head"})
 	for slot in ["air_filter", "spark_plugs"]:
 		Shed.request({"a": "bolt", "engine": block, "slot": slot})
@@ -396,7 +404,7 @@ func _test_shed_rules() -> void:
 	check(Shed.held_by(me) == plugs, "parts come off the engine on the stand")
 	Shed.request({"a": "install", "engine": block, "slot": "spark_plugs"})
 	Shed.request({"a": "bolt", "engine": block, "slot": "spark_plugs"})
-	Shed.request({"a": "take", "spot": "engine_stand"})
+	Shed.request({"a": "take", "spot": stand_spot})
 	check(Shed.held_by(me) == block and Shed.engine_item(block, "head") != 0, "the engine comes off the stand with its parts")
 	Shed.request({"a": "install", "bike": barn, "slot": "frame"})
 	check(Shed.item_on(barn, "engine") == block and Shed.item_on(barn, "spark_plugs") == plugs, "the built engine goes into the frame")
@@ -413,21 +421,61 @@ func _test_shed_rules() -> void:
 	check(Shed.is_complete(barn), "the barn find is rebuilt and ready to ride (%s)" % str(Shed.missing_slots(barn) + Shed.loose_slots(barn)))
 
 	# Mounting order on the chassis.
-	Shed.request({"a": "order_part", "part": "carbon_race"})
-	Shed.request({"a": "take", "spot": "delivery_0"})
+	var pads := _order("carbon_race")
+	Shed.request({"a": "unpack", "item": pads})
+	Shed.request({"a": "take", "item": pads})
 	check(Shed.check(me, {"a": "install", "bike": barn, "slot": "front_pads"}).contains("already"), "a full bike has no room for more pads")
 	Shed.request({"a": "unbolt", "bike": barn, "slot": "front_pads"})
 	check(Shed.install_slot({"bike": barn, "slot": "front_caliper"}, Shed.held_by(me)).get("error", "") != "", "pads need their old ones out first")
 	Shed.request({"a": "bin"})
 	check(Shed.held_by(me) == 0, "the scrap bin takes parts")
-	for i in 4:
+	# Equipment: a second engine stand and a shelving unit, pushed into place.
+	Shed.request({"a": "order_furniture", "kind": "stand"})
+	Shed.request({"a": "order_furniture", "kind": "shelf"})
+	check(Shed.stand_spots().size() == 2, "a second engine stand can be ordered")
+	var shelf := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "shelf":
+			shelf = id
+	check(shelf != 0 and Shed.all_spots().size() == Shed.SPOTS.size() + 2 + Shed.SHELF_SLOTS, "a shelving unit adds six places to put things")
+	Shed.request({"a": "grab", "furniture": shelf})
+	check(Shed.moving(me) == shelf and Shed.check(me, {"a": "mount", "bike": faithful}) != "", "you push one thing at a time and can't ride off with it")
+	var wall := Transform3D(Basis(), Workshop.CENTER + Vector3(-2.0, 0.0, 4.6))
+	Shed.request({"a": "release", "furniture": shelf, "xf": wall})
+	check(Shed.moving(me) == 0 and Shed.furniture[shelf]["xf"] == wall, "letting go leaves it where you pushed it")
+	var stock := _order("flat_bar")
+	Shed.request({"a": "take", "item": stock})
+	Shed.request({"a": "place", "spot": "shelf_%d_3" % shelf})
+	check(Shed.items[stock]["boxed"] and Shed.items[stock]["ref"] == "shelf_%d_3" % shelf, "boxed stock goes on the shelves")
+	check(Shed.spot_transform("shelf_%d_3" % shelf).origin.distance_to(wall.origin) < 2.0, "shelf places move with the shelf")
+	Shed.request({"a": "label", "furniture": shelf, "text": "Handlebars"})
+	check(Shed.furniture_name(Shed.furniture[shelf]) == "Shelving: Handlebars", "shelves take a label")
+	check(Shed.check(me, {"a": "place", "spot": "stand_%d" % shelf}) != "", "a shelf isn't an engine stand")
+	for i in 12:
 		Shed.request({"a": "order_part", "part": "flat_bar"})
-	check(Shed.check(me, {"a": "order_part", "part": "flat_bar"}).contains("full"), "you can't order with every pallet full")
+	check(Shed.check(me, {"a": "order_part", "part": "flat_bar"}).contains("full"), "you can't order with the delivery area full")
+	# The brush scrubs a whole cluster of parts.
+	var dirty: Array = []
+	for id in Shed.items:
+		if Shed.items[id]["at"] == "bike" and Shed.items[id]["dirt"] > 0.1:
+			dirty.append(id)
+	Shed.request({"a": "clean_many", "items": dirty.slice(0, 3)})
+	check(dirty.slice(0, 3).all(func(id): return Shed.items[id]["dirt"] == 0.0), "the brush cleans several parts at once")
 	var before := Shed.bikes.size()
 	Shed.request({"a": "order"})
 	check(Shed.bikes.size() == before + 1, "ordering a project bike delivers one to the free bay")
 	check(Shed.check(me, {"a": "order"}) != "", "you can't order when every bay is full")
 	Shed.stop()
+
+
+## Orders a part and returns its box, waiting outside.
+func _order(part: String) -> int:
+	Shed.request({"a": "order_part", "part": part})
+	var newest := 0
+	for id in Shed.items:
+		if Shed.items[id]["part"] == part and Shed.items[id].get("boxed", false):
+			newest = maxi(newest, id)
+	return newest
 
 
 func _bike_named(n: String) -> int:
@@ -612,12 +660,20 @@ func _test_session() -> void:
 	# Ride the finished sport bike out of the roller door.
 	# Put a part down on the open floor, then pick it back up off the floor.
 	main.walker.set_tool("hands")
-	Shed.request({"a": "order_part", "part": "iridium_plugs"})
-	var plugs := 0
-	for id in Shed.items:
-		if Shed.items[id]["part"] == "iridium_plugs" and Shed.items[id]["at"] == "spot":
-			plugs = id
-	Shed.request({"a": "take", "spot": Shed.items[plugs]["ref"]})
+	var plugs := _order("iridium_plugs")
+	# Walk out to the box by the door and press F on it to unpack it.
+	var box_at: Vector3 = Shed.items[plugs]["ref"].origin
+	main.walker.place(Transform3D(Basis(), box_at + Vector3(0.0, 0.0, 1.0)))
+	main.walker.rotation.y = 0.0
+	main.walker._pitch = 0.0
+	main.walker._look(0.0, -atan2(Walker.EYE - 0.1, 1.0))
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.walker.target.get("item", 0) == plugs, "the crosshair finds the delivery box outside (%s)" % str(main.walker.target))
+	_press("interact")
+	await get_tree().physics_frame
+	check(not Shed.items[plugs]["boxed"], "F on a delivery box unpacks it")
+	Shed.request({"a": "take", "item": plugs})
 	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 1.0)))
 	main.walker._look(0.0, -0.9)
 	for i in 5:
@@ -632,8 +688,8 @@ func _test_session() -> void:
 	await _hold_act(main)
 	check(Shed.held_by(Shed.me()) == plugs, "the part is picked back up off the floor")
 	# Build the stripped engine on the stand back up: aim at the block and fit the plugs.
-	var block: int = Shed.item_at_spot("engine_stand")
-	var stand_at: Vector3 = Workshop.spot_transform("engine_stand").origin
+	var block: int = Shed.item_at_spot(Shed.stand_spots()[0])
+	var stand_at: Vector3 = Shed.spot_transform(Shed.stand_spots()[0]).origin
 	main.walker.place(Transform3D(Basis(), Vector3(stand_at.x - 1.4, 0.0, stand_at.z)))
 	main.walker.rotation.y = -PI * 0.5
 	main.walker._pitch = 0.0
@@ -643,6 +699,21 @@ func _test_session() -> void:
 	check(main.walker.plan.get("action", {}).get("a", "") == "install", "holding plugs at the engine on the stand offers to fit them (%s)" % str(main.walker.plan))
 	await _hold_act(main)
 	check(Shed.engine_item(block, "spark_plugs") == plugs, "the plugs go back on the engine on the stand")
+	# F on the stand grabs it; walk it backwards across the floor and let go.
+	var stand_id: int = Shed.furniture_of_spot(Shed.stand_spots()[0])["id"]
+	var stand_from: Vector3 = Shed.furniture[stand_id]["xf"].origin
+	_press("interact")
+	await get_tree().physics_frame
+	check(Shed.moving(Shed.me()) == stand_id, "F on the engine stand takes hold of it")
+	Input.action_press("move_back")
+	for i in 60:
+		await get_tree().physics_frame
+	Input.action_release("move_back")
+	_press("interact")
+	await get_tree().physics_frame
+	var moved: float = Shed.furniture[stand_id]["xf"].origin.distance_to(stand_from)
+	check(Shed.moving(Shed.me()) == 0 and moved > 0.8, "the stand rolls with you and stays where you let go (%.1f m)" % moved)
+	check(Shed.spot_transform(Shed.stand_spots()[0]).origin.distance_to(stand_from) > 0.8, "the engine travels on the stand")
 	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 1.0)))
 	main.walker._pitch = 0.0
 	main.walker._look(0.0, 0.0)

@@ -15,7 +15,8 @@ W A S D / left stick: walk      Shift: run      Mouse / right stick: look
 1-5, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can)
 Hold left mouse / RT / A: work on what you're looking at, or put a held part down anywhere
 Spray can: R / right mouse / X picks the colour, T / middle mouse / B the finish
-F / Y: get on a finished bike, use the parts computer, switch the radio on or off
+F / Y: get on a finished bike, use the parts computer, switch the radio on or off,
+  unpack a delivery box, take hold of an engine stand or shelving unit (F again lets go)
 Radio: hold left mouse / RT / A on it to change station
 
 RIDING

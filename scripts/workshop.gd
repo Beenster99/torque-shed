@@ -17,6 +17,8 @@ var bike_views := {}       # bike id -> Node3D holding a BikeModel
 var _view_sigs := {}
 var _spot_nodes := {}      # spot -> Node3D
 var _spot_sigs := {}
+var furniture_nodes := {} # furniture id -> Node3D (engine stands and shelving units)
+var _furniture_sigs := {}
 var _floor_nodes := {}     # item id -> Node3D for parts put down anywhere
 var _floor_sigs := {}
 var _bay_screens: Array[Dashboard] = []
@@ -64,9 +66,8 @@ func build() -> void:
 	_build_shell()
 	_build_bays()
 	_build_bench()
-	_build_engine_stand()
 	_build_computer()
-	_build_delivery()
+	_build_delivery_area()
 	_build_washer()
 	_build_repair_bench()
 	_build_bin()
@@ -99,7 +100,14 @@ func sync_state() -> void:
 		if bike_views.has(id):
 			bike_views[id].free()
 		bike_views[id] = _make_bike_view(id)
-	for spot in Shed.SPOTS:
+	_sync_furniture()
+	var spots := Shed.all_spots()
+	for spot in _spot_nodes.keys():
+		if not spots.has(spot):
+			_spot_nodes[spot].queue_free()
+			_spot_nodes.erase(spot)
+			_spot_sigs.erase(spot)
+	for spot in spots:
 		var item_id := Shed.item_at_spot(spot)
 		var sig := "" if item_id == 0 else _item_signature(item_id)
 		if _spot_sigs.get(spot, "") == sig:
@@ -110,18 +118,104 @@ func sync_state() -> void:
 			_spot_nodes.erase(spot)
 		if item_id != 0:
 			var display := BikeModel.item_display(item_id)
-			display.transform = spot_transform(spot)
-			add_child(display)
-			if spot == "engine_stand":
+			var f := Shed.furniture_of_spot(spot)
+			if f.is_empty():
+				display.transform = spot_transform(spot)
+				add_child(display)
+			else:
+				# Parts on a stand or shelf ride along with it when it's moved.
+				display.transform = Shed.local_spot_transform(spot)
+				furniture_nodes[int(f["id"])].add_child(display)
+			if Shed.is_stand_spot(spot) and Shed.is_engine(item_id) and not Shed.items[item_id].get("boxed", false):
 				# Parts on the engine can be worked on right there; the block itself is picked up.
 				var model: BikeModel = display.get_meta("model")
-				model.build_pickers({"engine": item_id}, {"engine": {"spot": "engine_stand"}})
+				model.build_pickers({"engine": item_id}, {"engine": {"spot": spot}})
 			_spot_nodes[spot] = display
 	_sync_floor()
 	radio.sync()
 	var washing := Shed.item_at_spot("washer")
 	Sfx.set_loop(_washer_sound, "washer" if washing != 0 and float(Shed.items[washing]["dirt"]) > 0.0 else "")
 	_dash_dirty = true
+
+
+# ---------------------------------------------------------------------------- furniture
+
+## Draws engine stands and shelving units where they stand. One being pushed by this player
+## follows them directly (see preview_furniture), so it doesn't lag behind.
+func _sync_furniture() -> void:
+	for id in furniture_nodes.keys():
+		if not Shed.furniture.has(id):
+			furniture_nodes[id].queue_free()
+			furniture_nodes.erase(id)
+			_furniture_sigs.erase(id)
+	for id in Shed.furniture:
+		var f: Dictionary = Shed.furniture[id]
+		if not furniture_nodes.has(id):
+			furniture_nodes[id] = _make_stand(id) if f["kind"] == "stand" else _make_shelf(id)
+		var node: Node3D = furniture_nodes[id]
+		if f["mover"] != Shed.me() or f["mover"] == 0:
+			node.transform = f["xf"]
+		var label: Label3D = node.get_node_or_null("Label")
+		if label:
+			label.text = str(f.get("label", ""))
+
+
+func preview_furniture(id: int, xf: Transform3D) -> void:
+	if furniture_nodes.has(id):
+		furniture_nodes[id].transform = xf
+
+
+## A red engine stand on castors: a column with a turning head that the block bolts to.
+func _make_stand(id: int) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Stand%d" % id
+	add_child(root)
+	var red: Material = _mats["red"]
+	_deco(root, Vector3(0.0, 0.05, 0.0), Vector3(0.7, 0.06, 0.08), red)
+	_deco(root, Vector3(0.25, 0.05, 0.0), Vector3(0.08, 0.06, 0.8), red)
+	_deco(root, Vector3(0.25, 0.32, 0.0), Vector3(0.09, 0.56, 0.09), red)
+	_deco(root, Vector3(0.12, 0.58, 0.0), Vector3(0.26, 0.06, 0.06), _mats["steel"])
+	_deco(root, Vector3(0.0, 0.58, 0.0), Vector3(0.04, 0.24, 0.24), _mats["steel"])
+	_deco(root, Vector3(0.25, 0.75, 0.0), Vector3(0.04, 0.04, 0.5), _mats["steel"]).name = "Handle"
+	for p in [Vector3(-0.32, 0.03, 0.0), Vector3(0.25, 0.03, -0.37), Vector3(0.25, 0.03, 0.37)]:
+		_deco(root, p, Vector3(0.06, 0.06, 0.06), _mats["dark"]).name = "Caster"
+	_blocker(Vector3(0.0, 0.3, 0.0), Vector3(0.7, 0.6, 0.8), root)
+	_target(Vector3(0.25, 0.4, 0.0), Vector3(0.2, 0.8, 0.9), {"furniture": id}, root)
+	_target(Vector3(0.0, 0.62 + 0.18, 0.0), Vector3(0.7, 0.35, 0.7), {"spot": "stand_%d" % id}, root)
+	return root
+
+
+## A steel shelving unit: three shelves, two places on each, and a label plate on top.
+func _make_shelf(id: int) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Shelf%d" % id
+	add_child(root)
+	var frame: Material = _material(Color(0.2, 0.32, 0.5), 0.6, 0.45)
+	var board: Material = _material(Color(0.62, 0.6, 0.56), 0.5, 0.55)
+	for x in [-0.58, 0.58]:
+		for z in [-0.22, 0.22]:
+			_deco(root, Vector3(x, 0.92, z), Vector3(0.04, 1.84, 0.04), frame)
+	for level in 4:
+		var y := 0.06 + level * 0.6
+		_deco(root, Vector3(0.0, y, 0.0), Vector3(1.2, 0.03, 0.48), board)
+	_blocker(Vector3(0.0, 0.92, 0.0), Vector3(1.2, 1.84, 0.48), root)
+	for n in Shed.SHELF_SLOTS:
+		var spot := "shelf_%d_%d" % [id, n]
+		var at := Shed.local_spot_transform(spot).origin
+		_target(at + Vector3(0.0, 0.26, 0.03), Vector3(0.56, 0.5, 0.5), {"spot": spot}, root)
+	var plate := _deco(root, Vector3(0.0, 1.72, 0.25), Vector3(0.7, 0.14, 0.01), _material(Color(0.88, 0.86, 0.8), 0.0, 0.8))
+	plate.name = "Plate"
+	_target(Vector3(0.0, 1.72, 0.25), Vector3(0.74, 0.18, 0.06), {"label": id}, root)
+	_target(Vector3(0.0, 1.9, 0.0), Vector3(1.24, 0.12, 0.52), {"furniture": id}, root)
+	var label := Label3D.new()
+	label.name = "Label"
+	label.font_size = 36
+	label.pixel_size = 0.002
+	label.modulate = Color(0.12, 0.1, 0.1)
+	label.outline_size = 0
+	label.position = Vector3(0.0, 1.72, 0.257)
+	root.add_child(label)
+	return root
 
 
 ## Parts put down anywhere, each with a box around it to aim at and pick it up by.
@@ -161,13 +255,54 @@ func _sync_floor() -> void:
 
 ## The model a part target is drawn on: a parked bike, or the engine on the stand.
 func model_for(target: Dictionary) -> BikeModel:
-	if int(target.get("engine", 0)) != 0:
-		if _spot_nodes.has("engine_stand"):
-			return _spot_nodes["engine_stand"].get_meta("model")
+	var engine := int(target.get("engine", 0))
+	if engine != 0:
+		var spot := str(Shed.items.get(engine, {}).get("ref", ""))
+		if _spot_nodes.has(spot):
+			return _spot_nodes[spot].get_meta("model", null)
 		return null
 	if bike_views.has(target.get("bike", 0)):
 		return bike_views[target["bike"]].get_child(0) as BikeModel
 	return null
+
+
+## Every part within `radius` of a point: fitted to parked bikes, on the engine stand, on the
+## work spots or put down anywhere. Used by the brush to scrub everything it touches.
+func items_near(at: Vector3, radius: float) -> Array:
+	var out := []
+	for id in bike_views:
+		var model: BikeModel = bike_views[id].get_child(0)
+		for slot in PartsDB.SLOTS:
+			var item := Shed.item_at_target({"bike": id, "slot": slot})
+			if item != 0 and _near(model, model.slot_bounds(slot), at, radius):
+				out.append(item)
+	for spot in _spot_nodes:
+		var node: Node3D = _spot_nodes[spot]
+		var item := Shed.item_at_spot(spot)
+		var model: BikeModel = node.get_meta("model", null)
+		if Shed.is_engine(item) and model:
+			for slot in PartsDB.ENGINE_SLOTS:
+				var sub := Shed.engine_item(item, slot)
+				if sub != 0 and _near(model, model.slot_bounds(slot), at, radius):
+					out.append(sub)
+			if _near(model, model.slot_bounds("engine"), at, radius):
+				out.append(item)
+		elif item != 0 and node.global_position.distance_to(at) < radius + 0.3:
+			out.append(item)
+	for id in _floor_nodes:
+		var node: Node3D = _floor_nodes[id]
+		var size: Vector3 = node.get_meta("size", Vector3.ONE * 0.3)
+		if (node.global_position + Vector3.UP * size.y * 0.5).distance_to(at) < radius + size.length() * 0.5:
+			out.append(id)
+	return out
+
+
+func _near(model: BikeModel, box: AABB, at: Vector3, radius: float) -> bool:
+	if box.size == Vector3.ZERO:
+		return false
+	var local := model.global_transform.affine_inverse() * at
+	var closest := local.clamp(box.position, box.end)
+	return closest.distance_to(local) < radius
 
 
 func _item_signature(item_id: int) -> String:
@@ -395,7 +530,7 @@ func _deco(parent: Node3D, center: Vector3, size: Vector3, mat: Material) -> Mes
 
 
 ## Invisible collision, so players can't walk through furniture made of loose meshes.
-func _blocker(center: Vector3, size: Vector3) -> void:
+func _blocker(center: Vector3, size: Vector3, parent: Node3D = self) -> void:
 	var body := StaticBody3D.new()
 	body.position = center
 	var shape := BoxShape3D.new()
@@ -403,11 +538,11 @@ func _blocker(center: Vector3, size: Vector3) -> void:
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
 	body.add_child(cs)
-	add_child(body)
+	parent.add_child(body)
 
 
 ## An invisible click target for the player's hands and tools.
-func _target(center: Vector3, size: Vector3, meta: Dictionary) -> StaticBody3D:
+func _target(center: Vector3, size: Vector3, meta: Dictionary, parent: Node3D = self) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.collision_layer = INTERACT_LAYER
 	body.collision_mask = 0
@@ -419,8 +554,28 @@ func _target(center: Vector3, size: Vector3, meta: Dictionary) -> StaticBody3D:
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
 	body.add_child(cs)
-	add_child(body)
+	parent.add_child(body)
 	return body
+
+
+## A small printed sign pinned to the wall behind a work area, instead of big floating letters.
+func _poster(text: String, pos: Vector3, rot_y: float, size := Vector2(0.56, 0.2)) -> void:
+	var paper := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = size
+	paper.mesh = quad
+	paper.material_override = _material(Color(0.86, 0.82, 0.7), 0.0, 0.9)
+	paper.position = pos
+	paper.rotation.y = rot_y
+	add_child(paper)
+	var ink := Label3D.new()
+	ink.text = text
+	ink.font_size = 40
+	ink.pixel_size = 0.0018
+	ink.modulate = Color(0.15, 0.12, 0.1)
+	ink.outline_size = 0
+	ink.position = Vector3(0.0, 0.0, 0.004)
+	paper.add_child(ink)
 
 
 func _label(text: String, pos: Vector3, rot_y: float, size := 32, color := Color(1, 1, 1)) -> Label3D:
@@ -524,25 +679,7 @@ func _build_bench() -> void:
 		var spot := "bench_%d" % i
 		var xf := spot_transform(spot)
 		_target(xf.origin + Vector3(0.0, 0.25, 0.0), Vector3(0.95, 0.5, 1.15), {"spot": spot})
-	_label("WORKBENCH", Vector3(x + 0.47, 1.25, mid), PI * 0.5, 32, Color(1, 0.8, 0.5))
-
-
-## A red engine stand: a column with a turning head that the block bolts to.
-func _build_engine_stand() -> void:
-	var xf := spot_transform("engine_stand")
-	var base := Vector3(xf.origin.x, 0.0, xf.origin.z)
-	var red: Material = _mats["red"]
-	_deco(self, base + Vector3(0.0, 0.05, 0.0), Vector3(0.7, 0.06, 0.08), red)
-	_deco(self, base + Vector3(0.25, 0.05, 0.0), Vector3(0.08, 0.06, 0.8), red)
-	_deco(self, base + Vector3(0.25, 0.32, 0.0), Vector3(0.09, 0.56, 0.09), red)
-	_deco(self, base + Vector3(0.12, 0.58, 0.0), Vector3(0.26, 0.06, 0.06), _mats["steel"])
-	_deco(self, base + Vector3(0.0, 0.58, 0.0), Vector3(0.04, 0.24, 0.24), _mats["steel"])
-	for z in [-0.35, 0.35]:
-		var caster := _deco(self, base + Vector3(0.25, 0.03, z), Vector3(0.06, 0.06, 0.06), _mats["dark"])
-		caster.name = "Caster"
-	_blocker(base + Vector3(0.0, 0.3, 0.0), Vector3(0.7, 0.6, 0.8))
-	_target(base + Vector3(0.0, 0.62, 0.0), Vector3(0.7, 0.35, 0.7), {"spot": "engine_stand"})
-	_label("ENGINE STAND", Vector3(CENTER.x + HALF.x - 0.03, 1.35, base.z), -PI * 0.5, 32, Color(1, 0.8, 0.5))
+	_poster("WORKBENCH", Vector3(CENTER.x - HALF.x + 0.012, 1.32, spot_transform("bench_3").origin.z + 0.2), PI * 0.5)
 
 
 ## The parts computer, Car Dealer Simulator style: order anything, it arrives on a pallet.
@@ -565,15 +702,18 @@ func _build_computer() -> void:
 	_target(pos + Vector3(0.0, 1.0, 0.0), Vector3(0.8, 0.6, 1.3), {"pc": true})
 
 
-func _build_delivery() -> void:
-	for i in 4:
-		var xf := spot_transform("delivery_%d" % i)
-		var base := Vector3(xf.origin.x, 0.0, xf.origin.z)
-		_solid(base + Vector3(0.0, 0.07, 0.0), Vector3(1.0, 0.14, 0.9), _mats["wood"])
-		for z in [-0.3, 0.0, 0.3]:
-			_deco(self, base + Vector3(0.0, 0.145, z), Vector3(1.0, 0.01, 0.14), _mats["box"])
-		_target(base + Vector3(0.0, 0.35, 0.0), Vector3(1.0, 0.5, 0.9), {"spot": "delivery_%d" % i})
-	_label("DELIVERIES", CENTER + Vector3(-HALF.x + 0.03, 1.4, 4.3), PI * 0.5, 40, Color(1, 0.85, 0.35))
+## Deliveries are left outside, to the side of the roller door: a painted bay on the yard.
+func _build_delivery_area() -> void:
+	var paint := _material(Color(0.85, 0.7, 0.2), 0.0, 0.8)
+	var c := CENTER + Vector3(3.2 + 1.5 * 0.85, 0.0, HALF.y + 1.3 + 0.9)
+	var w := 4.0 * 0.85 + 0.4
+	var d := 3.0 * 0.9 + 0.4
+	for side in [-1.0, 1.0]:
+		_deco(self, c + Vector3(side * w * 0.5, 0.005, 0.0), Vector3(0.08, 0.01, d), paint)
+		_deco(self, c + Vector3(0.0, 0.005, side * d * 0.5), Vector3(w, 0.01, 0.08), paint)
+	var mark := _label("DELIVERIES", c + Vector3(0.0, 0.012, d * 0.5 + 0.35), 0.0, 48, Color(0.85, 0.7, 0.2, 0.8))
+	mark.rotation = Vector3(-PI * 0.5, PI, 0.0)
+	mark.outline_size = 0
 
 
 func _build_washer() -> void:
@@ -593,7 +733,7 @@ func _build_washer() -> void:
 	tap.rotation.x = -0.6
 	add_child(tap)
 	_target(xf.origin + Vector3(0.0, 0.2, 0.0), Vector3(1.3, 0.6, 0.9), {"spot": "washer"})
-	_label("PARTS WASHER", base + Vector3(0.0, 1.7, 0.38), PI, 32, Color(0.7, 0.9, 1.0))
+	_poster("PARTS WASHER", base + Vector3(0.0, 1.6, 0.385), PI)
 	_washer_sound = Sfx.make_loop_player(self)
 	_washer_sound.position = base + Vector3(0.0, 0.8, 0.0)
 	_washer_sound.volume_db = -8.0
@@ -619,7 +759,7 @@ func _build_repair_bench() -> void:
 		wheel.rotation.z = PI * 0.5
 		add_child(wheel)
 	_target(xf.origin + Vector3(0.0, 0.25, 0.0), Vector3(1.8, 0.5, 0.9), {"spot": "repair"})
-	_label("REPAIR BENCH", base + Vector3(0.0, 1.35, 0.4), PI, 32, Color(1, 0.8, 0.5))
+	_poster("REPAIR BENCH", Vector3(base.x, 1.4, CENTER.z + HALF.y - 0.012), PI)
 
 
 func _build_bin() -> void:
@@ -627,7 +767,7 @@ func _build_bin() -> void:
 	_solid(pos + Vector3(0.0, 0.45, 0.0), Vector3(0.9, 0.9, 0.8), _mats["dark"])
 	_deco(self, pos + Vector3(0.0, 0.91, 0.0), Vector3(0.8, 0.02, 0.7), _material(Color(0.12, 0.1, 0.08), 0.4, 0.8))
 	_target(pos + Vector3(0.0, 0.75, 0.0), Vector3(1.0, 0.7, 0.9), {"bin": true})
-	_label("SCRAP", pos + Vector3(0.0, 0.65, -0.41), PI, 40, Color(1, 0.6, 0.4))
+	_poster("SCRAP", Vector3(pos.x, 1.3, CENTER.z + HALF.y - 0.012), PI, Vector2(0.36, 0.2))
 
 
 ## A pegboard of hand tools above the engine stand.

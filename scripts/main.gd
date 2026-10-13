@@ -15,6 +15,7 @@ var camera: ChaseCamera
 var hud: HUD
 var menu: MainMenu
 var computer: PartsComputer
+var label_dialog: LabelDialog
 var audio: EngineAudio
 var remotes := {}     # peer id -> RemotePlayer
 var in_session := false
@@ -44,6 +45,10 @@ func _ready() -> void:
 	computer.visible = false
 	ui.add_child(computer)
 	computer.closed.connect(func(): _capture_mouse(true))
+	label_dialog = LabelDialog.new()
+	label_dialog.visible = false
+	ui.add_child(label_dialog)
+	label_dialog.closed.connect(func(): _capture_mouse(true))
 	menu = MainMenu.new()
 	ui.add_child(menu)
 	menu.ride_solo.connect(func(): _start_session())
@@ -115,6 +120,9 @@ func _start_session() -> void:
 	walker.place(Workshop.walker_spawn(Net.local_slot()))
 	walker.mount_requested.connect(_try_mount)
 	walker.computer_requested.connect(_open_computer)
+	walker.label_requested.connect(func(id):
+		label_dialog.open(id)
+		_capture_mouse(false))
 	walker.camera.current = true
 	hud.walker = walker
 	hud.visible = true
@@ -135,6 +143,7 @@ func _leave() -> void:
 func _end_session() -> void:
 	in_session = false
 	computer.visible = false
+	label_dialog.visible = false
 	_stop_riding()
 	for id in remotes.keys():
 		remotes[id].queue_free()
@@ -256,7 +265,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not in_session:
 		return
 	if event.is_action_pressed("menu"):
-		if computer.visible:
+		if label_dialog.visible:
+			label_dialog.close_dialog()
+		elif computer.visible:
 			computer.close_computer()
 		elif menu.visible:
 			_close_menu()
@@ -265,7 +276,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_capture_mouse(false)
 		get_viewport().set_input_as_handled()
 		return
-	if menu.visible or computer.visible or bike == null:
+	if menu.visible or computer.visible or label_dialog.visible or bike == null:
 		return
 	if event.is_action_pressed("interact"):
 		if Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
@@ -287,7 +298,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
-	var active := not menu.visible and not computer.visible
+	var active := not menu.visible and not computer.visible and not label_dialog.visible
 	if walker:
 		walker.controls_enabled = active
 	if bike:

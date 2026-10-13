@@ -7,7 +7,7 @@ extends Node
 const RATE := 22050
 const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static"]
 ## Which loop each kind of work makes while you hold the button.
-const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "repair": "grinder", "paint": "spray"}
+const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray"}
 ## Which loop a tool makes in someone else's hands while they work.
 const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray"}
 ## The one-shot when a job is done.

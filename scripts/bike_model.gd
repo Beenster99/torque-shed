@@ -10,6 +10,8 @@ const PICK_LAYER := 4
 static var _rust_masks := {}     # rust level (1..10) -> NoiseTexture2D mask
 static var _rust_albedo: NoiseTexture2D
 static var _patina_albedo: NoiseTexture2D
+static var _part_sizes := {}      # part id -> bounding size, for sizing delivery boxes
+static var _cardboard: StandardMaterial3D
 static var _highlight_mat: StandardMaterial3D
 
 var paint := Color(0.78, 0.09, 0.08)
@@ -903,6 +905,8 @@ static func part_display(part_id: String, cond: Dictionary) -> Node3D:
 ## carbs and so on).
 static func item_display(item_id: int) -> Node3D:
 	var it: Dictionary = Shed.items[item_id]
+	if it.get("boxed", false):
+		return box_display(str(it["part"]))
 	if Shed.is_engine(item_id):
 		var asm := Shed.engine_assembly(item_id)
 		var shown := {}
@@ -911,6 +915,48 @@ static func item_display(item_id: int) -> Node3D:
 				shown[slot] = asm["parts"][slot]
 		return assembly_display(shown, asm["cond"])
 	return part_display(it["part"], Shed.condition_of(it))
+
+
+## A new part still in its cardboard box, sized to fit it, with the part's name on the lid.
+static func box_display(part_id: String) -> Node3D:
+	if not _part_sizes.has(part_id):
+		var probe := part_display(part_id, {})
+		_part_sizes[part_id] = probe.get_meta("size", Vector3.ONE * 0.3)
+		probe.free()
+	var size: Vector3 = (_part_sizes[part_id] as Vector3).max(Vector3(0.15, 0.1, 0.15)) + Vector3(0.06, 0.05, 0.06)
+	if _cardboard == null:
+		_cardboard = StandardMaterial3D.new()
+		_cardboard.albedo_color = Color(0.66, 0.5, 0.32)
+		_cardboard.roughness = 0.95
+	var root := Node3D.new()
+	var box := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	box.mesh = mesh
+	box.material_override = _cardboard
+	box.position.y = size.y * 0.5
+	root.add_child(box)
+	var tape := MeshInstance3D.new()
+	var strip := BoxMesh.new()
+	strip.size = Vector3(0.06, 0.004, size.z + 0.004)
+	tape.mesh = strip
+	var tape_mat := StandardMaterial3D.new()
+	tape_mat.albedo_color = Color(0.8, 0.72, 0.5)
+	tape_mat.roughness = 0.4
+	tape.material_override = tape_mat
+	tape.position.y = size.y + 0.001
+	root.add_child(tape)
+	var name_tag := Label3D.new()
+	name_tag.text = PartsDB.part_name(part_id)
+	name_tag.font_size = 32
+	name_tag.pixel_size = clampf(size.x / 900.0, 0.0006, 0.0016)
+	name_tag.modulate = Color(0.12, 0.1, 0.08)
+	name_tag.outline_size = 0
+	name_tag.rotation.x = -PI * 0.5
+	name_tag.position = Vector3(0.0, size.y + 0.003, 0.0)
+	root.add_child(name_tag)
+	root.set_meta("size", size)
+	return root
 
 
 func clear_pickers() -> void:

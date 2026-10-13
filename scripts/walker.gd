@@ -6,6 +6,7 @@ extends CharacterBody3D
 
 signal mount_requested(bike_id: int)
 signal computer_requested
+signal label_requested(furniture_id: int)
 
 const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair", "spray"]
 const TOOL_NAMES := {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder and welder",
@@ -14,6 +15,7 @@ const EYE := 1.62
 const WALK := 3.2
 const RUN := 5.5
 const REACH := 2.6
+const BRUSH_REACH := 0.35    # the brush cleans every part this close to where it touches
 const MOUSE_SENS := 0.0025
 const PAD_LOOK := 2.6
 
@@ -38,6 +40,7 @@ var _last_status := ""
 var _highlighted: BikeModel
 var _work_sound: AudioStreamPlayer3D
 var _stride := 0.0
+var _push_timer := 0.0
 
 
 func _ready() -> void:
@@ -93,8 +96,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		spray_finish = (spray_finish + 1) % Shed.FINISHES.size()
 		_spray_changed()
 	elif event.is_action_pressed("interact"):
+		var box := _target_box()
+		var pushed := Shed.moving(Shed.me())
+		var furniture := _target_furniture()
 		# Mark the press handled before mounting, or the same F reaches main and gets you off again.
-		if target.get("kind", "") == "part" and int(target.get("bike", 0)) != 0:
+		if pushed != 0:
+			get_viewport().set_input_as_handled()
+			Shed.request({"a": "release", "furniture": pushed, "xf": _push_transform(pushed)})
+		elif box != 0:
+			get_viewport().set_input_as_handled()
+			Shed.request({"a": "unpack", "item": box})
+			Sfx.play_at("pickup", camera.global_position - camera.global_transform.basis.z, -4.0)
+		elif furniture != 0:
+			get_viewport().set_input_as_handled()
+			Shed.request({"a": "grab", "furniture": furniture})
+		elif target.get("kind", "") == "part" and int(target.get("bike", 0)) != 0:
 			get_viewport().set_input_as_handled()
 			mount_requested.emit(int(target["bike"]))
 		elif target.get("kind", "") == "pc":
@@ -170,7 +186,11 @@ func _physics_process(delta: float) -> void:
 			Sfx.play_at("step", global_position, -14.0)
 	if global_position.y < -20.0:
 		place(Workshop.walker_spawn(0))
-	_update_target()
+	var pushed := Shed.moving(Shed.me())
+	if pushed != 0:
+		_push(pushed, delta)
+	else:
+		_update_target()
 	_update_work(delta)
 	_update_held_view()
 
@@ -198,16 +218,74 @@ func _update_target() -> void:
 			t = {"kind": "bin"}
 		elif c.has_meta("radio"):
 			t = {"kind": "radio"}
+		elif c.has_meta("furniture") and Shed.furniture.has(int(c.get_meta("furniture"))):
+			t = {"kind": "furniture", "furniture": int(c.get_meta("furniture"))}
+		elif c.has_meta("label") and Shed.furniture.has(int(c.get_meta("label"))):
+			t = {"kind": "label", "furniture": int(c.get_meta("label"))}
 		elif c.has_meta("item") and Shed.items.has(int(c.get_meta("item"))):
 			t = {"kind": "item", "item": int(c.get_meta("item"))}
 		elif Shed.held_by(Shed.me()) != 0 and (c is CollisionObject3D) and (c as CollisionObject3D).collision_layer & 1:
 			t = {"kind": "surface"}
+		if not t.is_empty():
+			t["at"] = hit["position"]
 		# Anything flat enough can take a part put down on it, whatever the crosshair is on.
 		if not t.is_empty() and (hit["normal"] as Vector3).y > 0.6:
 			t["drop"] = Transform3D(Basis(Vector3.UP, rotation.y), hit["position"])
 	target = t
 	plan = _make_plan()
 	info = _describe()
+	_highlight()
+
+
+# ---------------------------------------------------------------------------- moving furniture
+
+## A boxed part under the crosshair, which F unpacks.
+func _target_box() -> int:
+	var item := target_item()
+	if item != 0 and Shed.items[item].get("boxed", false) and target.get("kind", "") in ["item", "spot"]:
+		return item
+	return 0
+
+
+## The engine stand or shelving unit under the crosshair, which F grabs to push around.
+func _target_furniture() -> int:
+	match str(target.get("kind", "")):
+		"furniture", "label":
+			return int(target["furniture"])
+		"spot":
+			var f := Shed.furniture_of_spot(str(target["spot"]))
+			if not f.is_empty():
+				return int(f["id"])
+	return 0
+
+
+## Where the stand or shelf being pushed sits: in front of you, square to you.
+func _push_transform(id: int) -> Transform3D:
+	var dist := 1.05 if Shed.furniture[id]["kind"] == "stand" else 1.0
+	var fwd := -transform.basis.z
+	var at := global_position + Vector3(fwd.x, 0.0, fwd.z).normalized() * dist
+	at.y = global_position.y
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * 2.0, 1)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit and (hit["normal"] as Vector3).y > 0.8:
+		at.y = (hit["position"] as Vector3).y
+	return Transform3D(Basis(Vector3.UP, rotation.y), at)
+
+
+func _push(id: int, delta: float) -> void:
+	var xf := _push_transform(id)
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	if view:
+		view.preview_furniture(id, xf)
+	_push_timer += delta
+	if _push_timer > 0.1:
+		_push_timer = 0.0
+		Shed.request({"a": "move_furniture", "furniture": id, "xf": xf})
+	target = {}
+	plan = {}
+	info = "Pushing the %s\nWalk to move it and turn to face it the way you want.\nF: let go here" % \
+		Shed.furniture_name(Shed.furniture[id]).to_lower()
 	_highlight()
 
 
@@ -238,6 +316,10 @@ func _make_plan() -> Dictionary:
 		return {}
 	var item_id := target_item()
 	var p := {}
+	if kind == "label":
+		return {"action": {"a": "write_label"}, "time": 0.15, "verb": "write a label for these shelves", "blocked": ""}
+	if kind == "furniture":
+		return {}
 	if kind == "radio":
 		if Shed.stations.is_empty():
 			return {}
@@ -292,8 +374,20 @@ func _make_plan() -> Dictionary:
 				a["a"] = "unbolt" if bolted else "bolt"
 				p = {"action": a, "time": 1.6, "verb": "unbolt it" if bolted else "bolt it up"}
 		"brush":
-			if item_id != 0:
-				p = {"action": {"a": "clean", "item": item_id}, "time": 1.0 + 3.0 * float(Shed.items[item_id]["dirt"]), "verb": "scrub it clean"}
+			if item_id != 0 or target.has("at"):
+				# The brush scrubs everything around where it lands, not just one part.
+				var near := [] if item_id == 0 else [item_id]
+				var view: Node = get_tree().get_first_node_in_group("workshop")
+				if view and target.has("at"):
+					for id in view.items_near(target["at"], BRUSH_REACH):
+						if not near.has(id) and Shed.items.has(id) and float(Shed.items[id]["dirt"]) >= 0.02:
+							near.append(id)
+				var dirt := 0.0
+				for id in near:
+					dirt += float(Shed.items[id]["dirt"])
+				if not near.is_empty():
+					p = {"action": {"a": "clean_many", "items": near}, "time": 1.0 + minf(2.5 * dirt, 5.0),
+						"verb": "scrub it clean" if near.size() == 1 else "scrub %d parts clean" % near.size()}
 		"repair":
 			if item_id != 0:
 				var it: Dictionary = Shed.items[item_id]
@@ -305,7 +399,7 @@ func _make_plan() -> Dictionary:
 					"time": 1.5, "verb": "spray it %s" % spray_text().to_lower()}
 	if p.is_empty():
 		return {}
-	p["blocked"] = "" if p["action"]["a"] == "computer" else Shed.check(me, p["action"])
+	p["blocked"] = "" if p["action"]["a"] in ["computer", "write_label"] else Shed.check(me, p["action"])
 	return p
 
 
@@ -339,15 +433,18 @@ func _describe() -> String:
 		"spot":
 			var spot := str(target["spot"])
 			var item_id := Shed.item_at_spot(spot)
-			var where: String = {"washer": "Parts washer", "repair": "Repair bench", "engine_stand": "Engine stand"}.get(spot,
-				"Delivery pallet" if spot.begins_with("delivery") else "Workbench")
+			var f := Shed.furniture_of_spot(spot)
+			var where: String = {"washer": "Parts washer", "repair": "Repair bench"}.get(spot,
+				"Workbench" if f.is_empty() else Shed.furniture_name(f))
 			if item_id != 0:
 				var it: Dictionary = Shed.items[item_id]
 				lines.append(PartsDB.part_name(it["part"]))
 				lines.append("%s  ·  %s" % [where, PartsDB.KIND_NAMES[it["kind"]]])
 				lines.append(PartsDB.spec_line(it["part"]))
 				lines.append(Shed.condition_text(it))
-				if Shed.is_engine(item_id) and spot == "engine_stand":
+				if it.get("boxed", false):
+					lines.append("F: unpack it")
+				if Shed.is_engine(item_id) and Shed.is_stand_spot(spot) and not it.get("boxed", false):
 					var missing := Shed.engine_missing(item_id)
 					lines.append("Engine complete." if missing.is_empty() else "Engine needs: %s" % ", ".join(missing.map(func(m): return PartsDB.slot_name(m).to_lower())))
 				var held := Shed.held_by(Shed.me())
@@ -362,23 +459,36 @@ func _describe() -> String:
 						lines.append("Leave a dirty part in here and it comes out clean.")
 					"repair":
 						lines.append("Put a part here and use the grinder and welder to restore it.")
-					"engine_stand":
-						lines.append("Bolt an engine on here to strip it or build it up.")
+					_:
+						if Shed.is_stand_spot(spot):
+							lines.append("Bolt an engine on here to strip it or build it up.")
+						elif not f.is_empty():
+							lines.append("Store parts and boxed stock here.")
+				if not f.is_empty():
+					lines.append("F: push it somewhere else")
 		"item":
 			var it: Dictionary = Shed.items[int(target["item"])]
 			lines.append(PartsDB.part_name(it["part"]))
 			lines.append("Put down here  ·  %s" % PartsDB.KIND_NAMES[it["kind"]])
 			lines.append(PartsDB.spec_line(it["part"]))
 			lines.append(Shed.condition_text(it))
+			if it.get("boxed", false):
+				lines.append("F: unpack it")
 		"radio":
 			lines.append("Shed radio (everyone hears it)")
 			var view: Node = get_tree().get_first_node_in_group("workshop")
 			if view and view.radio:
 				lines.append(view.radio.now_playing())
 			lines.append("F: switch %s" % ("off" if Shed.radio["on"] else "on"))
+		"furniture", "label":
+			var f: Dictionary = Shed.furniture[int(target["furniture"])]
+			lines.append(Shed.furniture_name(f))
+			lines.append("F: push it somewhere else")
+			if kind == "label":
+				lines.append("Hold %s on the label to write on it" % ("RT" if Controls.active_device >= 0 else "left mouse"))
 		"pc":
 			lines.append("Parts computer")
-			lines.append("Order any part. It turns up on the delivery pallets.")
+			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")
 		"bin":
 			lines.append("Scrap bin")
 			lines.append("Drop parts you don't want in here.")
@@ -452,6 +562,8 @@ func _update_work(delta: float) -> void:
 	if progress >= 1.0:
 		if plan["action"]["a"] == "computer":
 			computer_requested.emit()
+		elif plan["action"]["a"] == "write_label":
+			label_requested.emit(int(target.get("furniture", 0)))
 		else:
 			Shed.request(plan["action"])
 			var done: String = Sfx.DONE_SOUNDS.get(plan["action"]["a"], "")
@@ -471,9 +583,11 @@ func _activity_text() -> String:
 		var owner := "the engine" if int(target.get("engine", 0)) != 0 else str(Shed.bikes[target["bike"]]["name"])
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
-		"clean": "Cleaning", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
+		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
 		"place": "Putting down a part", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer"}
 	var verb: String = verbs.get(a["a"], "Working on")
+	if a["a"] == "clean_many" and what == "":
+		what = "%d parts" % a["items"].size()
 	if a["a"] in ["clean", "repair", "paint"] and what == "":
 		what = "the " + Shed.item_title(int(a["item"]))
 	if a["a"] == "install":

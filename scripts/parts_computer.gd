@@ -1,9 +1,14 @@
 class_name PartsComputer
 extends Control
-## The shed's parts computer: browse every part by kind, read its spec and order it. Orders
-## land on the delivery pallets by the door. Parts are free until money arrives.
+## The shed's parts computer: browse every part by kind, read its spec and order it, or order
+## equipment for the shed. Deliveries are left outside the roller door. Free until money arrives.
 
 signal closed
+
+const EQUIPMENT := {
+	"stand": {"name": "Engine stand", "desc": "A wheeled stand to strip and build an engine on. Get more than one and you can build engines while the bikes are being worked on.", "spec": "Holds one engine  ·  push it anywhere with F"},
+	"shelf": {"name": "Shelving unit", "desc": "Steel shelving for parts and boxed stock, with a label plate on top so everyone knows what goes where.", "spec": "Three shelves, six places  ·  push it anywhere with F"},
+}
 
 var _kinds: VBoxContainer
 var _variants: VBoxContainer
@@ -47,7 +52,7 @@ func _ready() -> void:
 	close.pressed.connect(close_computer)
 	head.add_child(close)
 	root.add_child(head)
-	root.add_child(UITheme.label("Pick a kind of part, then a model. Orders arrive on the delivery pallets by the door.", 15, Color(1, 1, 1, 0.6)))
+	root.add_child(UITheme.label("Pick a kind of part, then a model. Orders arrive in boxes outside the roller door.", 15, Color(1, 1, 1, 0.6)))
 
 	var cols := HBoxContainer.new()
 	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -74,12 +79,18 @@ func _ready() -> void:
 	_order = Button.new()
 	_order.text = "Order it (free for now)"
 	_order.custom_minimum_size = Vector2(0, 48)
-	_order.pressed.connect(func(): Shed.request({"a": "order_part", "part": _part}))
+	_order.pressed.connect(func():
+		if _kind == "equipment":
+			Shed.request({"a": "order_furniture", "kind": _part})
+		else:
+			Shed.request({"a": "order_part", "part": _part}))
 	detail.add_child(_order)
 
-	for k in PartsDB.KINDS:
+	var kinds: Array = ["equipment"]
+	kinds.append_array(PartsDB.KINDS)
+	for k in kinds:
 		var b := Button.new()
-		b.text = PartsDB.KIND_NAMES[k]
+		b.text = "Shed equipment" if k == "equipment" else PartsDB.KIND_NAMES[k]
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
 		b.pressed.connect(_show_kind.bind(k))
@@ -103,8 +114,8 @@ func _column(parent: Control, width: float) -> VBoxContainer:
 
 func open() -> void:
 	visible = true
-	_status.text = "Free delivery pallet: %s" % ("none, clear one first" if Shed.free_delivery_spot() == "" else "yes")
-	var first: Button = _kinds.get_child(PartsDB.KINDS.find(_kind))
+	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.free_delivery_xf() == null else "yes")
+	var first: Button = _kinds.get_child(PartsDB.KINDS.find(_kind) + 1 if _kind != "equipment" else 0)
 	first.grab_focus()
 
 
@@ -119,10 +130,10 @@ func _show_kind(k: String) -> void:
 		b.button_pressed = b.get_meta("kind") == k
 	for c in _variants.get_children():
 		c.queue_free()
-	var ids: Array = PartsDB.by_kind[k]
+	var ids: Array = EQUIPMENT.keys() if k == "equipment" else PartsDB.by_kind[k]
 	for id in ids:
 		var b := Button.new()
-		b.text = PartsDB.part_name(id)
+		b.text = EQUIPMENT[id]["name"] if k == "equipment" else PartsDB.part_name(id)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
 		b.set_meta("part", id)
@@ -137,6 +148,11 @@ func _show_part(id: String) -> void:
 	for b in _variants.get_children():
 		if b.has_meta("part"):
 			b.button_pressed = b.get_meta("part") == id
+	if _kind == "equipment":
+		_title.text = EQUIPMENT[id]["name"]
+		_desc.text = EQUIPMENT[id]["desc"]
+		_spec.text = EQUIPMENT[id]["spec"]
+		return
 	var p := PartsDB.get_part(id)
 	_title.text = str(p["name"])
 	_desc.text = str(p.get("description", ""))

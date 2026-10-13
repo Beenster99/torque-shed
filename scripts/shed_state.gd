@@ -7,8 +7,11 @@ extends Node
 signal changed
 signal feedback(text: String, ok: bool)
 
-const SPOTS: Array[String] = ["bench_0", "bench_1", "bench_2", "bench_3", "delivery_0", "delivery_1", "delivery_2",
-	"delivery_3", "engine_stand", "washer", "repair"]
+## Fixed work spots. Engine stands ("stand_<id>") and shelves ("shelf_<id>_<n>") add their own.
+const SPOTS: Array[String] = ["bench_0", "bench_1", "bench_2", "bench_3", "washer", "repair"]
+const SHELF_SLOTS := 6          # two places on each of a shelving unit's three shelves
+const DELIVERY_ROWS := 3
+const DELIVERY_COLS := 4
 const PAINTS := [Color(0.78, 0.09, 0.08), Color(0.1, 0.35, 0.8), Color(0.95, 0.6, 0.05), Color(0.1, 0.6, 0.3),
 	Color(0.55, 0.15, 0.7), Color(0.9, 0.9, 0.9), Color(0.06, 0.06, 0.06), Color(0.0, 0.6, 0.7),
 	Color(0.72, 0.73, 0.75), Color(0.8, 0.62, 0.2), Color(0.95, 0.85, 0.1), Color(0.95, 0.4, 0.6),
@@ -27,10 +30,12 @@ const MAX_PAINT_RUST := 0.2
 
 ## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered}
 var bikes := {}
-## item id -> {id, part, kind, rust, dirt, wear, color, finish, at, ref}, where
+## item id -> {id, part, kind, rust, dirt, wear, color, finish, boxed, at, ref}, where
 ## at is "bike", "engine", "held", "spot" or "floor" (ref is then the Transform3D it was put down at).
 ## Engine blocks also carry slots{} and bolted{} for the parts fitted to them.
 var items := {}
+## furniture id -> {id, kind ("stand" | "shelf"), xf, label, mover (peer pushing it, or 0)}
+var furniture := {}
 var crew := {}      # peer id -> {name, tool, activity, riding, fitted, removed, cleaned, repaired, painted, km, top_kmh}
 var active := false
 ## The shed radio everyone hears: on or off, and which of `stations` it's tuned to.
@@ -68,6 +73,7 @@ func me() -> int:
 ## joiners receive the host's shed instead.
 func start_new(player_name: String, seed_value := 0) -> void:
 	bikes.clear()
+	furniture.clear()
 	radio = {"on": false, "station": 0}
 	items.clear()
 	crew.clear()
@@ -97,7 +103,8 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	for slot in ["exhaust", "final_drive", "front_tyre", "rear_tyre"]:
 		_detach(cafe, slot, "spot", "bench_%d" % bench)
 		bench += 1
-	var block := _detach(cafe, "engine", "spot", "engine_stand")
+	var stand := _new_furniture("stand", Transform3D(Basis(), Workshop.CENTER + Vector3(Workshop.HALF.x - 0.9, 0.0, -0.4)))
+	var block := _detach(cafe, "engine", "spot", "stand_%d" % stand)
 	for slot in ["spark_plugs", "air_filter"]:
 		var gone: int = items[block]["slots"][slot]
 		items[block]["slots"][slot] = 0
@@ -117,6 +124,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 
 func join_remote() -> void:
 	bikes.clear()
+	furniture.clear()
 	radio = {"on": false, "station": 0}
 	items.clear()
 	crew.clear()
@@ -124,6 +132,7 @@ func join_remote() -> void:
 
 
 func stop() -> void:
+	furniture.clear()
 	radio = {"on": false, "station": 0}
 	active = false
 	bikes.clear()
@@ -345,6 +354,8 @@ func paint_index(c: Color) -> int:
 
 
 func condition_text(item: Dictionary) -> String:
+	if item.get("boxed", false):
+		return "Brand new, still in its box"
 	return "Condition %d%%   Rust %d%%   Dirt %d%%   Wear %d%%   %s" % [
 		roundi(BikeBuild.part_health(condition_of(item)) * 100.0), roundi(item["rust"] * 100.0),
 		roundi(item["dirt"] * 100.0), roundi(item["wear"] * 100.0), paint_text(item)]
@@ -361,11 +372,102 @@ func free_bay(bay_count: int) -> int:
 	return -1
 
 
-func free_delivery_spot() -> String:
-	for i in 4:
-		if item_at_spot("delivery_%d" % i) == 0:
-			return "delivery_%d" % i
-	return ""
+## Where the next delivery is left outside the roller door, beside the drive so bikes can still
+## get out. Returns null when the delivery area is full.
+func free_delivery_xf():
+	for row in DELIVERY_ROWS:
+		for col in DELIVERY_COLS:
+			var at := Workshop.CENTER + Vector3(3.2 + col * 0.85, 0.0, Workshop.HALF.y + 1.3 + row * 0.9)
+			if _clear_at(at, 0.5):
+				return Transform3D(Basis(Vector3.UP, PI), at)
+	return null
+
+
+## Nothing put down or parked within `radius` of `at` on the ground.
+func _clear_at(at: Vector3, radius: float) -> bool:
+	for id in items:
+		if items[id]["at"] == "floor" and Vector2(items[id]["ref"].origin.x - at.x, items[id]["ref"].origin.z - at.z).length() < radius:
+			return false
+	for id in furniture:
+		if Vector2(furniture[id]["xf"].origin.x - at.x, furniture[id]["xf"].origin.z - at.z).length() < radius + 0.4:
+			return false
+	return true
+
+
+# ---------------------------------------------------------------------------- spots and furniture
+
+func is_spot(spot: String) -> bool:
+	if SPOTS.has(spot):
+		return true
+	var f := furniture_of_spot(spot)
+	if f.is_empty():
+		return false
+	return f["kind"] == "stand" or int(spot.get_slice("_", 2)) < SHELF_SLOTS
+
+
+func is_stand_spot(spot: String) -> bool:
+	return spot.begins_with("stand_")
+
+
+## The engine stand or shelving unit a spot belongs to, or {}.
+func furniture_of_spot(spot: String) -> Dictionary:
+	if not (spot.begins_with("stand_") or spot.begins_with("shelf_")):
+		return {}
+	var f: Dictionary = furniture.get(int(spot.get_slice("_", 1)), {})
+	if f.is_empty() or (f["kind"] == "stand") != spot.begins_with("stand_"):
+		return {}
+	return f
+
+
+## Every spot that exists right now, fixed ones first.
+func all_spots() -> Array:
+	var out: Array = SPOTS.duplicate()
+	for id in furniture:
+		if furniture[id]["kind"] == "stand":
+			out.append("stand_%d" % id)
+		else:
+			for n in SHELF_SLOTS:
+				out.append("shelf_%d_%d" % [id, n])
+	return out
+
+
+func stand_spots() -> Array:
+	return all_spots().filter(func(s): return is_stand_spot(s))
+
+
+## Where a part on a spot sits in the world. Stands and shelves carry theirs with them.
+func spot_transform(spot: String) -> Transform3D:
+	var f := furniture_of_spot(spot)
+	if f.is_empty():
+		return Workshop.spot_transform(spot)
+	return (f["xf"] as Transform3D) * local_spot_transform(spot)
+
+
+static func local_spot_transform(spot: String) -> Transform3D:
+	if spot.begins_with("stand_"):
+		return Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(0.0, 0.72, 0.0))
+	var n := int(spot.get_slice("_", 2))
+	return Transform3D(Basis(), Vector3(-0.28 + (n % 2) * 0.56, 0.08 + (n / 2) * 0.6, 0.0))
+
+
+func furniture_name(f: Dictionary) -> String:
+	if f["kind"] == "stand":
+		return "Engine stand"
+	return "Shelving: " + str(f["label"]) if str(f.get("label", "")) != "" else "Shelving unit"
+
+
+func _new_furniture(kind: String, xf: Transform3D) -> int:
+	var id := _next_id
+	_next_id += 1
+	furniture[id] = {"id": id, "kind": kind, "xf": xf, "label": "", "mover": 0}
+	return id
+
+
+func moving(peer: int) -> int:
+	for id in furniture:
+		if furniture[id]["mover"] == peer:
+			return id
+	return 0
 
 
 ## Where a held part would go on a target, or why it can't: {slot} or {error}.
@@ -423,7 +525,7 @@ func _engine_access(action: Dictionary, slot: String) -> String:
 			return ""
 		return "Take the engine out and put it on the engine stand to get at the %s." % PartsDB.slot_name(slot).to_lower()
 	var block: Dictionary = items[engine_id]
-	if not (block["at"] == "spot" and block["ref"] == "engine_stand"):
+	if not (block["at"] == "spot" and is_stand_spot(str(block["ref"]))):
 		return "Put the engine on the engine stand first."
 	return ""
 
@@ -468,6 +570,8 @@ func check(peer: int, action: Dictionary) -> String:
 		"install":
 			if held == 0:
 				return "You're not holding a part."
+			if items[held].get("boxed", false):
+				return "Unpack it first."
 			var where := install_slot(action, held)
 			if where.has("error"):
 				return where["error"]
@@ -494,12 +598,14 @@ func check(peer: int, action: Dictionary) -> String:
 			if held == 0:
 				return "You're not holding a part."
 			var spot := str(action.get("spot", ""))
-			if not SPOTS.has(spot):
+			if not is_spot(spot):
 				return "You can't put it there."
 			if item_at_spot(spot) != 0:
 				return "That spot is taken."
-			if spot == "engine_stand" and not is_engine(held):
+			if is_stand_spot(spot) and (not is_engine(held) or items[held].get("boxed", false)):
 				return "Only an engine goes on the engine stand."
+			if spot in ["washer", "repair"] and items[held].get("boxed", false):
+				return "Unpack it first."
 		"radio":
 			var st := int(action.get("station", radio["station"]))
 			if st < 0 or st >= stations.size():
@@ -507,11 +613,50 @@ func check(peer: int, action: Dictionary) -> String:
 		"order_part":
 			if PartsDB.get_part(str(action.get("part", ""))).is_empty():
 				return "Unknown part."
-			if free_delivery_spot() == "":
-				return "The delivery pallets are full. Clear one first."
+			if free_delivery_xf() == null:
+				return "The delivery area outside is full. Bring some boxes in first."
+		"order_furniture":
+			if not str(action.get("kind", "")) in ["stand", "shelf"]:
+				return "Unknown equipment."
+			if free_delivery_xf() == null:
+				return "The delivery area outside is full. Bring some boxes in first."
+		"unpack":
+			var box := int(action.get("item", 0))
+			if not items.has(box) or not items[box].get("boxed", false):
+				return "Nothing to unpack."
+			if items[box]["at"] == "held":
+				return "Put it down first."
+		"grab":
+			var f: Dictionary = furniture.get(int(action.get("furniture", 0)), {})
+			if f.is_empty():
+				return "That has gone."
+			if f["mover"] != 0 and f["mover"] != peer:
+				return "Someone else is moving that."
+			if held != 0:
+				return "Put the part down first."
+			if moving(peer) != 0:
+				return "You're already moving something."
+		"move_furniture", "release":
+			var f: Dictionary = furniture.get(int(action.get("furniture", 0)), {})
+			if f.is_empty() or f["mover"] != peer:
+				return "You're not moving that."
+			if not (action.get("xf") is Transform3D):
+				return "You can't put it there."
+		"label":
+			var f: Dictionary = furniture.get(int(action.get("furniture", 0)), {})
+			if f.is_empty() or f["kind"] != "shelf":
+				return "Only shelves take labels."
 		"bin":
 			if held == 0:
 				return "You're not holding a part."
+		"clean_many":
+			var dirty := 0
+			for id in action.get("items", []):
+				if items.has(int(id)) and items[int(id)]["at"] != "held" and items[int(id)]["dirt"] >= 0.02 \
+						and not items[int(id)].get("boxed", false):
+					dirty += 1
+			if dirty == 0:
+				return "It's already clean."
 		"clean", "repair", "paint":
 			var item_id := int(action.get("item", 0))
 			if not items.has(item_id):
@@ -519,6 +664,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var it: Dictionary = items[item_id]
 			if it["at"] == "held":
 				return "Put it down first."
+			if it.get("boxed", false):
+				return "Unpack it first."
 			if a == "clean" and it["dirt"] < 0.02:
 				return "It's already clean."
 			if a == "repair":
@@ -536,6 +683,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "You're already riding."
 			if held != 0:
 				return "Put the part down first."
+			if moving(peer) != 0:
+				return "Let go of what you're pushing first."
 			var missing := missing_slots(bike_id)
 			if not missing.is_empty():
 				return "Missing: %s." % _slot_list(missing)
@@ -628,21 +777,48 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"place":
 			var item_id := held_by(peer)
 			_move(item_id, "spot", str(action["spot"]))
-			match str(action["spot"]):
-				"washer":
-					text = "Into the parts washer"
-				"engine_stand":
-					text = "Engine on the stand. Strip it down or build it up."
+			if is_stand_spot(str(action["spot"])):
+				text = "Engine on the stand. Strip it down or build it up."
+			elif str(action["spot"]) == "washer":
+				text = "Into the parts washer"
 		"order_part":
 			var part_id := str(action["part"])
-			var spot := free_delivery_spot()
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
-			_move(item_id, "spot", spot)
-			text = "Ordered a %s. It's on delivery pallet %d." % [PartsDB.part_name(part_id), int(spot.trim_prefix("delivery_")) + 1]
+			items[item_id]["boxed"] = true
+			_move(item_id, "floor", free_delivery_xf())
+			text = "Ordered a %s. The box is outside by the roller door." % PartsDB.part_name(part_id)
+		"order_furniture":
+			var kind := str(action["kind"])
+			_new_furniture(kind, free_delivery_xf())
+			text = "Ordered %s. It's outside by the roller door: press F on it to push it in." % \
+				("an engine stand" if kind == "stand" else "a shelving unit")
+		"unpack":
+			items[int(action["item"])]["boxed"] = false
+			text = "Unpacked the %s" % item_title(int(action["item"]))
+		"grab":
+			furniture[int(action["furniture"])]["mover"] = peer
+		"move_furniture":
+			furniture[int(action["furniture"])]["xf"] = action["xf"]
+		"release":
+			furniture[int(action["furniture"])]["xf"] = action["xf"]
+			furniture[int(action["furniture"])]["mover"] = 0
+		"label":
+			furniture[int(action["furniture"])]["label"] = str(action.get("text", "")).strip_edges().left(24)
+			text = "Labelled the shelves \"%s\"" % furniture[int(action["furniture"])]["label"]
 		"bin":
 			var item_id := held_by(peer)
 			text = "Binned the %s" % PartsDB.part_name(items[item_id]["part"])
 			_erase_item(item_id)
+		"clean_many":
+			var n := 0
+			for id in action["items"]:
+				if items.has(int(id)) and items[int(id)]["at"] != "held" and items[int(id)]["dirt"] >= 0.02 \
+						and not items[int(id)].get("boxed", false):
+					items[int(id)]["dirt"] = 0.0
+					n += 1
+			_bump(c, "cleaned")
+			c["cleaned"] = int(c["cleaned"]) + n - 1
+			text = "Scrubbed %d part%s clean" % [n, "" if n == 1 else "s"]
 		"clean":
 			items[int(action["item"])]["dirt"] = 0.0
 			_bump(c, "cleaned")
@@ -730,7 +906,7 @@ func _erase_item(item_id: int) -> void:
 
 func _free_spot() -> String:
 	for spot in SPOTS:
-		if (spot.begins_with("bench") or spot.begins_with("delivery")) and item_at_spot(spot) == 0:
+		if spot.begins_with("bench") and item_at_spot(spot) == 0:
 			return spot
 	return "bench_0"
 
@@ -740,7 +916,7 @@ func _new_item(part: String, rust: float, dirt: float, wear: float, color = null
 	_next_id += 1
 	var k := PartsDB.kind_of(part)
 	items[id] = {"id": id, "part": part, "kind": k, "rust": rust, "dirt": dirt, "wear": wear,
-		"color": PartsDB.default_color(part) if color == null else color, "finish": "", "at": "spot", "ref": ""}
+		"color": PartsDB.default_color(part) if color == null else color, "finish": "", "boxed": false, "at": "spot", "ref": ""}
 	if k == "engine":
 		items[id]["slots"] = {}
 		items[id]["bolted"] = {}
@@ -823,6 +999,9 @@ func _on_player_left(id: int) -> void:
 	var bike_id := riding(id)
 	if bike_id != 0:
 		bikes[bike_id]["rider"] = 0
+	var pushing := moving(id)
+	if pushing != 0:
+		furniture[pushing]["mover"] = 0
 	crew.erase(id)
 	_mark_dirty()
 	changed.emit()
@@ -835,7 +1014,7 @@ func _mark_dirty() -> void:
 
 
 func _snapshot() -> Dictionary:
-	return {"bikes": bikes, "items": items, "crew": crew, "radio": radio, "next": _next_id}
+	return {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id}
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -843,6 +1022,7 @@ func _sync(state: Dictionary) -> void:
 	bikes = state.get("bikes", {})
 	items = state.get("items", {})
 	crew = state.get("crew", {})
+	furniture = state.get("furniture", {})
 	radio = state.get("radio", radio)
 	_next_id = int(state.get("next", 1))
 	active = true

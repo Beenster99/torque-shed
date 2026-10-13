@@ -27,7 +27,7 @@ func _ready() -> void:
 	var sport: BikeModel = main.workshop.bike_views[faithful_id].get_child(0)
 	var wheel: Vector3 = sport.global_transform * sport.slot_bounds("front_disc").get_center()
 	await _look_from(wheel + Vector3(1.2, -wheel.y, -0.6), wheel + Vector3(0.0, 0.1, 0.0), "04_brakes_and_wheel")
-	var stand: Vector3 = Workshop.spot_transform("engine_stand").origin
+	var stand: Vector3 = Shed.spot_transform(Shed.stand_spots()[0]).origin
 	await _look_from(stand + Vector3(-1.6, -stand.y, 0.5), stand + Vector3(0.0, 0.1, 0.0), "05_engine_stand")
 	await _look_from(c + Vector3(-3.6, 0.0, 0.6), c + Vector3(-6.5, 1.5, 0.6), "06_workbench_and_crew_board")
 	await _look_from(c + Vector3(-1.6, 0.0, -0.6), c + Vector3(-1.6, 2.3, -5.5), "07_bay_dashboard")
@@ -56,6 +56,25 @@ func _ready() -> void:
 	var radio_at: Vector3 = main.workshop.radio.global_position
 	main.walker.set_tool("hands")
 	await _look_from(radio_at + Vector3(1.5, -radio_at.y, 0.0), radio_at + Vector3(0.0, 0.15, 0.0), "16_shed_radio")
+	# Deliveries waiting outside, and a labelled shelving unit with stock on it.
+	for part in ["sport_road", "iridium_plugs", "usd_sport"]:
+		Shed.request({"a": "order_part", "part": part})
+	Shed.request({"a": "order_furniture", "kind": "shelf"})
+	var shelf := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "shelf":
+			shelf = id
+	Shed.request({"a": "grab", "furniture": shelf})
+	Shed.request({"a": "release", "furniture": shelf, "xf": Transform3D(Basis(Vector3.UP, PI), c + Vector3(-4.8, 0.0, 5.15))})
+	await _look_from(c + Vector3(4.0, 0.0, 10.5), c + Vector3(4.5, 0.2, 7.0), "17_deliveries_outside")
+	var n := 0
+	for id in Shed.items.keys():
+		if Shed.items[id].get("boxed", false) and n < 2:
+			Shed.request({"a": "take", "item": id})
+			Shed.request({"a": "place", "spot": "shelf_%d_%d" % [shelf, n * 3]})
+			n += 1
+	Shed.request({"a": "label", "furniture": shelf, "text": "Tyres and plugs"})
+	await _look_from(c + Vector3(-4.8, 0.0, 2.9), c + Vector3(-4.8, 1.0, 5.15), "18_labelled_shelf")
 	var faithful := _bike_named("Old Faithful")
 	main._try_mount(faithful)
 	await _frames(30)

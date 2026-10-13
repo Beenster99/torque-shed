@@ -1,12 +1,14 @@
 class_name HUD
 extends Control
-## Kept small on purpose: a crosshair with what you're looking at, a work progress ring and the
-## tool bar when on foot; a compact speedo when riding. Everything else lives in the Esc menu.
+## Kept small on purpose: a crosshair and work progress ring, a side panel describing what you're
+## looking at, and the tool bar when on foot; a compact speedo when riding. Everything else lives in the Esc menu.
 
 var walker: Walker
 var bike: Bike
 var _message: Label
 var _message_timer := 0.0
+var _panel: PanelContainer
+var _title: Label
 var _info: Label
 var _prompt: Label
 var _top_kmh := 0.0
@@ -24,24 +26,34 @@ func _ready() -> void:
 	_message.add_theme_constant_override("outline_size", 8)
 	_message.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	add_child(_message)
-	_info = UITheme.label("", 17, Color(1, 1, 1, 0.92))
-	_info.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_info.offset_left = 40
-	_info.offset_right = 560
-	_info.offset_top = 30
-	_info.offset_bottom = 200
-	_info.add_theme_constant_override("outline_size", 6)
-	_info.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
-	add_child(_info)
-	_prompt = UITheme.label("", 18, UITheme.ACCENT)
-	_prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_prompt.offset_left = 40
-	_prompt.offset_right = 600
-	_prompt.offset_top = -12
-	_prompt.offset_bottom = 20
-	_prompt.add_theme_constant_override("outline_size", 6)
-	_prompt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
-	add_child(_prompt)
+	# What you're looking at goes in a panel at the side, out of the way of the crosshair.
+	_panel = PanelContainer.new()
+	_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
+	_panel.offset_left = -430
+	_panel.offset_right = -24
+	_panel.offset_top = -170
+	_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.05, 0.07, 0.72)
+	style.border_color = Color(UITheme.ACCENT, 0.5)
+	style.border_width_left = 3
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(14)
+	_panel.add_theme_stylebox_override("panel", style)
+	add_child(_panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 6)
+	_panel.add_child(col)
+	_title = UITheme.title("", 21, Color.WHITE)
+	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(_title)
+	_info = UITheme.label("", 15, Color(1, 1, 1, 0.85))
+	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(_info)
+	_prompt = UITheme.label("", 17, UITheme.ACCENT)
+	_prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(_prompt)
 
 
 func flash(text: String, seconds := 2.5, bad := false) -> void:
@@ -55,10 +67,12 @@ func _process(delta: float) -> void:
 	if _message_timer <= 0.0 and _message.text != "":
 		_message.text = ""
 	var on_foot := walker != null and bike == null
-	_info.visible = on_foot
-	_prompt.visible = on_foot
+	_panel.visible = on_foot and (walker.info != "" or not walker.plan.is_empty())
 	if on_foot:
-		_info.text = walker.info
+		var lines := walker.info.split("\n")
+		_title.text = lines[0]
+		_info.text = "\n".join(lines.slice(1))
+		_info.visible = _info.text != ""
 		var plan := walker.plan
 		if plan.is_empty():
 			_prompt.text = ""
