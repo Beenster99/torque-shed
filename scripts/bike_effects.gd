@@ -336,7 +336,7 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 		var night := World.darkness()
 		var high := beam_mode == 2
 		var lumens: float = _beam.get_meta("lumens")
-		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night) * (2.2 if high else 1.0)
+		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night) * (3.0 if high else 1.2)
 		_beam.spot_angle = 17.0 if high else lerpf(26.0, 32.0, night)
 		_beam.spot_range = (55.0 + lumens / 40.0) if high else (24.0 + lumens / 100.0)
 		_beam.rotation.x = deg_to_rad(-1.2 if high else -5.0)
