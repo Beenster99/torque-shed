@@ -87,10 +87,13 @@ func _ready() -> void:
 	detail.add_child(_order)
 
 	var kinds: Array = ["equipment"]
+	kinds.append_array(PartsDB.FLUID_KINDS)
 	kinds.append_array(PartsDB.KINDS)
 	for k in kinds:
 		var b := Button.new()
 		b.text = "Shed equipment" if k == "equipment" else PartsDB.KIND_NAMES[k]
+		if PartsDB.FLUID_KINDS.has(k):
+			b.text = "Fluids: " + b.text
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
 		b.pressed.connect(_show_kind.bind(k))
@@ -115,8 +118,9 @@ func _column(parent: Control, width: float) -> VBoxContainer:
 func open() -> void:
 	visible = true
 	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.free_delivery_xf() == null else "yes")
-	var first: Button = _kinds.get_child(PartsDB.KINDS.find(_kind) + 1 if _kind != "equipment" else 0)
-	first.grab_focus()
+	for b in _kinds.get_children():
+		if b.get_meta("kind") == _kind:
+			b.grab_focus()
 
 
 func close_computer() -> void:
@@ -156,6 +160,13 @@ func _show_part(id: String) -> void:
 	var p := PartsDB.get_part(id)
 	_title.text = str(p["name"])
 	_desc.text = str(p.get("description", ""))
+	if PartsDB.FLUID_KINDS.has(_kind):
+		var into: String = {"petrol": "the fuel tank", "oil": "the engine", "brake_fluid": "the front and rear brake master cylinders"}[_kind]
+		var how := "Hold it and aim at %s: left mouse pours it in, right mouse drains into it." % into
+		if p.get("empty", false):
+			how = "Hold it and aim at %s, then hold right mouse to drain into it. Tip it out in the scrap bin." % into
+		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\n" + how + "\nDelivered outside, no box to unpack."
+		return
 	var fits := PartsDB.slots_for_kind(_kind).map(func(s): return PartsDB.slot_name(s).to_lower())
 	_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nFits: " + ", ".join(fits)
 

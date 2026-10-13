@@ -43,10 +43,12 @@ func _run_all() -> void:
 	await _test_all_builds_ride()
 	await _test_crash_and_respawn()
 	await _test_sim_mode()
+	await _test_engine_and_effects()
 	print("Models")
 	_test_models()
 	print("The shed")
 	_test_shed_rules()
+	_test_garage_life()
 	print("Sound and radio")
 	_test_sounds()
 	_test_mp3_decoder()
@@ -69,7 +71,7 @@ func _merge(a: Dictionary, b: Dictionary) -> Dictionary:
 
 
 func _test_catalogue() -> void:
-	check(PartsDB.KINDS.size() == 23 and PartsDB.parts.size() >= 115, "catalogue has 23 kinds of part (%d parts)" % PartsDB.parts.size())
+	check(PartsDB.KINDS.size() == 26 and PartsDB.parts.size() >= 130, "catalogue has 26 kinds of part (%d parts)" % PartsDB.parts.size())
 	for k in PartsDB.KINDS:
 		check(PartsDB.by_kind[k].size() >= 5, "%s has at least five variants (%d)" % [k, PartsDB.by_kind[k].size()])
 	var no_colour := []
@@ -77,7 +79,7 @@ func _test_catalogue() -> void:
 		if not PartsDB.parts[id].has("color"):
 			no_colour.append(id)
 	check(no_colour.is_empty(), "every part has a colour %s" % str(no_colour))
-	check(PartsDB.SLOTS.size() == 29, "a bike has 29 slots, 7 of them on the engine")
+	check(PartsDB.SLOTS.size() == 32, "a bike has 32 slots, 7 of them on the engine")
 	var b := BikeBuild.new()
 	check(b.bike_mass > 120.0 and b.bike_mass < 230.0, "default bike mass is plausible (%.0f kg)" % b.bike_mass)
 	check(b.hp() > 40.0 and b.hp() < 120.0, "default bike power is plausible (%.0f hp)" % b.hp())
@@ -414,10 +416,10 @@ func _test_shed_rules() -> void:
 		var item := Shed.item_at_spot(spot)
 		var k: String = Shed.items[item]["kind"]
 		Shed.request({"a": "take", "spot": spot})
-		Shed.request({"a": "install", "bike": barn, "slot": "rear_tyre" if k == "tyre" else "frame"})
+		Shed.request({"a": "install", "bike": barn, "slot": "rear_tyre" if k == "tyre" else "frame", "crouched": true})
 	check(Shed.item_on(barn, "front_tyre") != 0 and Shed.item_on(barn, "rear_tyre") != 0, "a tyre fills whichever wheel is bare")
 	for slot in Shed.loose_slots(barn):
-		Shed.request({"a": "bolt", "bike": barn, "slot": slot})
+		Shed.request({"a": "bolt", "bike": barn, "slot": slot, "crouched": true})
 	check(Shed.is_complete(barn), "the barn find is rebuilt and ready to ride (%s)" % str(Shed.missing_slots(barn) + Shed.loose_slots(barn)))
 
 	# Mounting order on the chassis.
@@ -476,6 +478,180 @@ func _order(part: String) -> int:
 		if Shed.items[id]["part"] == part and Shed.items[id].get("boxed", false):
 			newest = maxi(newest, id)
 	return newest
+
+
+## Riding round 3: stands, headlights, fluids, wheeling bikes, the wash bay and units.
+func _test_garage_life() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var barn := _bike_named("Barn Find")
+	var faithful := _bike_named("Old Faithful")
+	# Optional parts.
+	check(PartsDB.by_kind["side_stand"].size() >= 5 and PartsDB.by_kind["centre_stand"].size() >= 5
+		and PartsDB.by_kind["headlight"].size() >= 5, "side stands, centre stands and headlights come in five or more variants")
+	check(Shed.item_on(faithful, "side_stand") != 0 and Shed.item_on(faithful, "headlight") != 0 and Shed.item_on(faithful, "centre_stand") == 0,
+		"a stock bike has a side stand and a headlight but no centre stand")
+	check(PartsDB.dependents("fork").has("headlight") and PartsDB.dependents("frame").has("side_stand"), "the headlight hangs off the fork, the stands off the frame")
+	check(BikeBuild.new({"headlight": "led_projector"}).headlight_lumens > BikeBuild.new({"headlight": "round_7"}).headlight_lumens,
+		"an LED projector is brighter than a halogen lamp")
+	check(not Shed.missing_slots(faithful).has("centre_stand"), "a bike rides without the optional parts")
+	check(Shed.check(me, {"a": "unbolt", "bike": faithful, "slot": "side_stand"}).contains("Crouch")
+		and Shed.check(me, {"a": "unbolt", "bike": faithful, "slot": "side_stand", "crouched": true}) == "",
+		"low parts need you to crouch down to reach them")
+	# Fluids.
+	var tank: int = Shed.item_on(barn, "tank")
+	var fuel: Dictionary = Shed.items[tank]["fluid"]
+	check(fuel["litres"] < 8.0 and fuel["age"] > 0.4, "the barn find has a little stale petrol in it (%.1f L, age %.2f)" % [fuel["litres"], fuel["age"]])
+	check(Shed.fluid_text(Shed.items[tank]).contains("stale"), "the info panel says the petrol is stale")
+	Shed.request({"a": "order_part", "part": "empty_jerry_can"})
+	var empty := _newest("empty_jerry_can")
+	check(empty != 0 and not Shed.items[empty]["boxed"] and Shed.items[empty]["fluid"]["litres"] == 0.0, "an empty jerry can arrives unboxed and empty")
+	Shed.request({"a": "take", "item": empty})
+	Shed.request({"a": "drain", "item": tank})
+	check(Shed.items[tank]["fluid"]["litres"] == 0.0 and Shed.items[empty]["fluid"]["litres"] > 0.0, "draining the tank fills the empty can")
+	check(Shed.check(me, {"a": "pour", "item": Shed.item_on(barn, "front_master")}).contains("brake fluid"), "petrol doesn't go in the brakes")
+	Shed.request({"a": "tip"})
+	check(Shed.items[empty]["fluid"]["litres"] == 0.0, "the scrap bin takes old fluid")
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER)})
+	Shed.request({"a": "order_part", "part": "super_98"})
+	var petrol := _newest("super_98")
+	Shed.request({"a": "take", "item": petrol})
+	Shed.request({"a": "pour", "item": tank})
+	check(absf(Shed.items[tank]["fluid"]["litres"] - 5.0) < 0.01 and Shed.items[tank]["fluid"]["type"] == "super_98"
+		and Shed.items[tank]["fluid"]["age"] == 0.0, "pouring a can of super fills the tank with fresh fuel")
+	check(Shed.items[petrol]["fluid"]["litres"] == 0.0 and Shed.check(me, {"a": "pour", "item": tank}).contains("empty"), "the can is empty afterwards")
+	Shed.request({"a": "bin"})
+	# Oil: draining needs a pan, crouching, and an engine; low oil hurts.
+	var ranger := _bike_named("Rusty Ranger")
+	var block: int = Shed.item_on(ranger, "engine")
+	var full_hp := BikeBuild.new({"engine": "single_450"}).hp()
+	Shed.request({"a": "order_part", "part": "drain_pan"})
+	var pan := _newest("drain_pan")
+	Shed.request({"a": "take", "item": pan})
+	check(Shed.check(me, {"a": "drain", "item": block}).contains("Crouch"), "you crouch to get at the drain plug")
+	Shed.request({"a": "drain", "item": block, "crouched": true})
+	check(Shed.items[block]["fluid"]["litres"] == 0.0, "the old oil drains into the pan")
+	var dry := Shed.build_of(ranger)
+	check(str(dry.notes).contains("No oil") and dry.hp() < full_hp, "an engine with no oil is flagged and down on power")
+	var wear_before := float(Shed.items[block]["wear"])
+	Shed.bikes[ranger]["rider"] = me
+	Shed.crew[me]["riding"] = ranger
+	Shed.request({"a": "ride", "km": 1.0, "dirt_km": 1.0, "fuel": 0.3})
+	check(Shed.items[block]["wear"] > wear_before + 0.01, "riding with no oil wears the engine out fast")
+	var tyre: int = Shed.item_on(ranger, "rear_tyre")
+	var dash: int = Shed.item_on(ranger, "dashboard")
+	Shed.items[tyre]["dirt"] = 0.0
+	Shed.items[dash]["dirt"] = 0.0
+	Shed.request({"a": "ride", "km": 1.0, "dirt_km": 1.0, "fuel": 0.3})
+	check(Shed.items[tyre]["dirt"] > 0.2 and Shed.items[dash]["dirt"] < Shed.items[tyre]["dirt"] * 0.5,
+		"riding the dirt plasters the tyres and barely touches the clocks (%.2f / %.2f)" % [Shed.items[tyre]["dirt"], Shed.items[dash]["dirt"]])
+	Shed.bikes[ranger]["rider"] = 0
+	Shed.crew[me]["riding"] = 0
+	Shed.request({"a": "tip"})
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER)})
+	Shed.request({"a": "order_part", "part": "synthetic_5w40"})
+	var oil := _newest("synthetic_5w40")
+	Shed.request({"a": "take", "item": oil})
+	Shed.request({"a": "pour", "item": block})
+	var cap := PartsDB.fluid_capacity("single_450")
+	check(absf(Shed.items[block]["fluid"]["litres"] - minf(cap, 4.0)) < 0.01 and Shed.build_of(ranger).oil_age == 0.0,
+		"fresh synthetic oil goes in (%.1f of %.1f L)" % [Shed.items[block]["fluid"]["litres"], cap])
+	Shed.request({"a": "bin"})
+	# Brakes need fluid.
+	var good := BikeBuild.new()
+	var dry_brakes := BikeBuild.new({}, {"front_master": {"fluid": {"type": "dot4", "litres": 0.05, "age": 0.0}}})
+	check(dry_brakes.front_brake_torque < good.front_brake_torque * 0.6 and str(dry_brakes.notes).contains("spongy"),
+		"low brake fluid makes a spongy front brake")
+	# Petrol and economy.
+	var econ := good.cruise_economy()
+	check(econ > 12.0 and econ < 40.0, "the default bike does a plausible %.1f km per litre at 90 km/h" % econ)
+	var stale := BikeBuild.new({}, {"tank": {"fluid": {"type": "unleaded_95", "litres": 5.0, "age": 1.0}}})
+	check(stale.hp() < good.hp() * 0.9, "stale petrol saps power")
+	check(BikeBuild.new({}, {"tank": {"fluid": {"type": "race_fuel", "litres": 5.0, "age": 0.0}}}).hp() > good.hp(), "race fuel adds power")
+	check(BikeBuild.new({"engine": "four_1000"}).cruise_economy() < BikeBuild.new({"engine": "single_250"}).cruise_economy(),
+		"a big four drinks more than a small single")
+	# Wheeling a bike about and its stands.
+	check(Shed.check(me, {"a": "grab_bike", "bike": barn}).contains("wheels"), "a bike without tyres can't be wheeled")
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	check(Shed.pushing_bike(me) == faithful and Shed.check(me, {"a": "mount", "bike": faithful}) != "", "you take hold of a bike to wheel it")
+	var yard := Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 9.0))
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": yard})
+	check(Shed.bikes[faithful]["stand"] == "side" and Shed.bikes[faithful]["xf"] == yard, "let go, it rests on its side stand")
+	Shed.request({"a": "set_stand", "bike": faithful, "stand": "centre"})
+	check(Shed.bikes[faithful]["stand"] == "side", "no centre stand fitted, so it stays on the side stand")
+	# Take the side stand off: let go of it now and it falls over.
+	Shed.request({"a": "unbolt", "bike": faithful, "slot": "side_stand", "crouched": true})
+	Shed.request({"a": "remove", "bike": faithful, "slot": "side_stand", "crouched": true})
+	var side := Shed.held_by(me)
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER)})
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": yard})
+	check(Shed.bikes[faithful]["stand"] == "down", "a bike with no stand falls over when you let go")
+	Shed.request({"a": "order_part", "part": "lever_centre"})
+	var centre := _newest("lever_centre")
+	Shed.request({"a": "unpack", "item": centre})
+	Shed.request({"a": "take", "item": centre})
+	Shed.request({"a": "install", "bike": faithful, "slot": "centre_stand", "crouched": true})
+	Shed.request({"a": "bolt", "bike": faithful, "slot": "centre_stand", "crouched": true})
+	Shed.request({"a": "set_stand", "bike": faithful, "stand": "centre"})
+	check(Shed.bikes[faithful]["stand"] == "centre", "a fitted centre stand holds the bike up")
+	Shed.request({"a": "take", "item": side})
+	Shed.request({"a": "install", "bike": faithful, "slot": "side_stand", "crouched": true})
+	Shed.request({"a": "bolt", "bike": faithful, "slot": "side_stand", "crouched": true})
+	# Back into its bay: it goes onto the paddock stand.
+	var bay_xf: Transform3D = Workshop.bay_transform(Shed.bikes[faithful]["bay"])
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": bay_xf.translated(Vector3(0.4, 0.0, 0.3))})
+	check(Shed.on_paddock(faithful) and Shed.bikes[faithful]["xf"].origin.distance_to(bay_xf.origin) < 0.01,
+		"let go in a bay and it snaps onto the paddock stand")
+	# The wash bay.
+	var muddy: Array = []
+	for slot in ["front_tyre", "rear_tyre", "fork"]:
+		var id := Shed.item_on(faithful, slot)
+		Shed.items[id]["dirt"] = 0.8
+		muddy.append(id)
+	check(Shed.check(me, {"a": "wash", "items": muddy, "at": Workshop.CENTER}).contains("hose"), "the hose only reaches around the wash bay")
+	for i in 5:
+		Shed.request({"a": "wash", "items": muddy, "at": Workshop.WASH_CENTER})
+	check(muddy.all(func(id): return Shed.items[id]["dirt"] < 0.5), "the pressure washer blasts the muck off")
+	# Units.
+	Settings.units = "imperial"
+	var mph := Units.speed_value(100.0 / 3.6)
+	var lb := Units.mass(100.0)
+	var mpg := Units.economy(20.0)
+	Settings.units = "metric"
+	check(mph == 62 and lb == "220 lb" and mpg == "56 mpg" and Units.economy(20.0) == "5.0 L/100 km" and Units.kmh(100.0) == "100 km/h",
+		"units switch between metric and imperial (%d mph, %s, %s)" % [mph, lb, mpg])
+	Shed.stop()
+
+
+func _newest(part: String) -> int:
+	var newest := 0
+	for id in Shed.items:
+		if Shed.items[id]["part"] == part:
+			newest = maxi(newest, id)
+	return newest
+
+
+## The engine needs starting, burns petrol and stalls when it runs dry; smoke, dust and the headlight.
+func _test_engine_and_effects() -> void:
+	var r := await ride({}, 0.5, func(b, _t): b.engine_on = false; b.throttle = 1.0)
+	var bike: Bike = r["bike"]
+	check(bike.speed < 0.2 and not bike.effects.smoke_emitting(), "with the engine off there's no drive and no smoke")
+	check(bike.start_engine() == "", "the starter cranks")
+	for i in 120:
+		await get_tree().physics_frame
+	check(bike.engine_on and bike.effects.smoke_emitting() and bike.effects.light_on(), "it fires: exhaust smoke and the headlight come on")
+	bike.fuel_litres = 0.002
+	bike.throttle = 1.0
+	for i in 240:
+		await get_tree().physics_frame
+	check(not bike.engine_on and bike.fuel_litres == 0.0 and bike.fuel_used > 0.0, "running out of petrol stalls the engine")
+	check(bike.start_engine().contains("petrol"), "it won't start with an empty tank")
+	await _done(r)
+	var d := await ride({"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}, 4.0, func(b, _t): b.throttle = 0.6, "dirt")
+	check(d["bike"].effects.dust_emitting(), "riding on dirt kicks up dust")
+	await _done(d)
 
 
 func _bike_named(n: String) -> int:
@@ -589,7 +765,7 @@ func _test_radio_stream() -> void:
 
 ## Stands the walker beside a bike slot and points the crosshair at it.
 func _aim_at(main: Node, bike_id: int, slot: String) -> void:
-	var model: BikeModel = main.workshop.bike_views[bike_id].get_child(0)
+	var model: BikeModel = main.workshop.bike_model(bike_id)
 	var aim: Vector3 = model.global_transform * model.slot_bounds(slot).get_center()
 	var stand: Vector3 = aim + Vector3(1.4, 0.0, 0.0)
 	stand.y = 0.0
@@ -637,7 +813,7 @@ func _test_session() -> void:
 	# Look at the Rusty Ranger's exhaust from beside it and unbolt it with the wrench.
 	var ranger := _bike_named("Rusty Ranger")
 	var view: Node3D = main.workshop.bike_views[ranger]
-	var model: BikeModel = view.get_child(0)
+	var model: BikeModel = main.workshop.bike_model(ranger)
 	var aim: Vector3 = model.global_transform * model.slot_bounds("exhaust").get_center()
 	var stand: Vector3 = aim + Vector3(1.4, 0.0, 0.0)
 	stand.y = 0.0
@@ -729,8 +905,30 @@ func _test_session() -> void:
 	await get_tree().physics_frame
 	check(main.bike != null, "a second F straight away doesn't throw you off")
 	check(not main.workshop.bike_views.has(faithful), "the parked copy disappears while you ride")
+	check(not main.bike.engine_on, "you get on with the engine off")
+	var fuel_at_start: float = Shed.items[Shed.item_on(faithful, "tank")]["fluid"]["litres"]
+	Input.action_press("throttle", 0.5)
+	for i in 30:
+		await get_tree().physics_frame
+	Input.action_release("throttle")
+	check(main.bike.speed < 0.2, "with the engine off the throttle does nothing")
+	_press("ignition")
 	for i in 120:
 		await get_tree().physics_frame
+	check(main.bike.engine_on and main.bike.rpm > 500.0, "I starts the engine (%.0f rpm)" % main.bike.rpm)
+	_press("camera")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var rider_eye: Vector3 = main.bike.model.global_transform * main.bike.model.eye_transform().origin
+	check(main.camera.mode == ChaseCamera.Mode.HELMET and main.camera.global_position.distance_to(rider_eye) < 0.05
+		and not main.camera.get_cull_mask_value(BikeModel.HELMET_LAYER), "C switches to first person, from the rider's eyes inside the helmet")
+	var grips: Vector3 = main.camera.to_local(main.bike.model.global_transform * (main.bike.model._head + main.bike.model._grip_l))
+	var dash: Vector3 = main.camera.to_local(main.bike.model.global_transform * (main.bike.model._head + Vector3(0.0, 0.1, -0.06)))
+	check(main.camera.is_position_in_frustum(main.camera.to_global(grips)) and main.camera.is_position_in_frustum(main.camera.to_global(dash)),
+		"the first-person view shows the hands on the bars and the clocks (grips %s, dash %s)" % [grips, dash])
+	check(main._dash != null and main._dash.text.contains(Units.speed_unit()), "the clocks show speed and fuel (%s)" % main._dash.text.replace("\n", " / "))
+	_press("camera")
+	await get_tree().physics_frame
 	Input.action_press("throttle", 0.35)
 	for i in 600:
 		await get_tree().physics_frame
@@ -751,6 +949,60 @@ func _test_session() -> void:
 	await get_tree().physics_frame
 	check(main.bike == null and Shed.bikes[faithful]["rider"] == 0, "F when stopped gets you off")
 	check(main.workshop.bike_views.has(faithful), "the bike stays parked where you left it")
+	check(Shed.bikes[faithful]["stand"] == "side", "getting off puts it on its side stand")
+	check(Shed.items[Shed.item_on(faithful, "tank")]["fluid"]["litres"] < fuel_at_start, "the ride used some petrol")
+	# Crouch down, then stand back up.
+	_press("crouch")
+	for i in 40:
+		await get_tree().physics_frame
+	check(main.walker.crouched and main.walker.camera.position.y < 1.0, "C crouches you down (eye at %.2f m)" % main.walker.camera.position.y)
+	_press("crouch")
+	for i in 40:
+		await get_tree().physics_frame
+	check(not main.walker.crouched and main.walker.camera.position.y > 1.5, "C again stands you up")
+	# Hold F on the parked bike to take hold of it, wheel it backwards, and let go.
+	await _aim_at(main, faithful, "tank")
+	var parked_at: Vector3 = Shed.bikes[faithful]["xf"].origin
+	var down := InputEventAction.new()
+	down.action = "interact"
+	down.pressed = true
+	get_viewport().push_input(down)
+	for i in 60:
+		await get_tree().physics_frame
+	var up := InputEventAction.new()
+	up.action = "interact"
+	up.pressed = false
+	get_viewport().push_input(up)
+	await get_tree().physics_frame
+	check(Shed.pushing_bike(Shed.me()) == faithful and main.bike == null, "holding F on a bike takes hold of it instead of getting on")
+	Input.action_press("move_back")
+	for i in 90:
+		await get_tree().physics_frame
+	Input.action_release("move_back")
+	_press("interact")
+	await get_tree().physics_frame
+	var wheeled: float = Shed.bikes[faithful]["xf"].origin.distance_to(parked_at)
+	check(Shed.pushing_bike(Shed.me()) == 0 and wheeled > 1.0 and Shed.bikes[faithful]["stand"] == "side",
+		"you can pull it backwards, and let go it goes back on its stand (%.1f m)" % wheeled)
+	# Into the wash bay with it, and blast the mud off with the pressure washer.
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(), Workshop.WASH_CENTER)})
+	for washed in ["front_tyre", "front_wheel", "fork"]:
+		Shed.items[Shed.item_on(faithful, washed)]["dirt"] = 0.9
+	Shed.changed.emit()
+	await get_tree().physics_frame
+	await _aim_at(main, faithful, "front_tyre")
+	main.walker.set_tool("lance")
+	await get_tree().physics_frame
+	check(main.walker.plan.get("action", {}).get("a", "") == "wash" and main.walker.plan["blocked"] == "",
+		"the pressure washer is ready in the wash bay (%s / %s)" % [str(main.walker.plan.get("blocked", main.walker.plan)), str(main.walker.target)])
+	Input.action_press("act")
+	for i in 180:
+		await get_tree().physics_frame
+	Input.action_release("act")
+	var tyre_dirt: float = Shed.items[Shed.item_on(faithful, "front_tyre")]["dirt"]
+	check(tyre_dirt < 0.5, "holding the trigger keeps the jet going and washes the tyre (%.2f dirt left)" % tyre_dirt)
+	main.walker.set_tool("hands")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

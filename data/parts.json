@@ -780,7 +780,7 @@
 			]
 		},
 		"cafe_15": {
-			"name": "Caf\u00e9 racer tank, 15 L",
+			"name": "Café racer tank, 15 L",
 			"description": "Long teardrop with knee dents.",
 			"mass": 4.0,
 			"capacity": 15,
@@ -831,7 +831,7 @@
 			]
 		},
 		"cafe_hump": {
-			"name": "Caf\u00e9 hump seat",
+			"name": "Café hump seat",
 			"description": "Solo seat with a rear cowl.",
 			"mass": 2.0,
 			"style": "cafe",
@@ -1811,6 +1811,438 @@
 				0.55,
 				0.56,
 				0.6
+			]
+		}
+	},
+	"side_stand": {
+		"stamped_side": {
+			"name": "Stamped steel side stand",
+			"description": "The stock kickstand. Does the job.",
+			"mass": 1.2,
+			"type": "Stamped steel",
+			"length": 0.3,
+			"lean": 12.0,
+			"auto_retract": false,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"forged_side": {
+			"name": "Forged side stand",
+			"description": "Thick forged leg with a wide foot that won't sink into grass.",
+			"mass": 1.6,
+			"type": "Forged steel",
+			"length": 0.31,
+			"lean": 11.0,
+			"auto_retract": false,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			]
+		},
+		"spring_side": {
+			"name": "Self-retracting side stand",
+			"description": "Springs up the moment the bike's weight comes off it.",
+			"mass": 1.3,
+			"type": "Sprung steel",
+			"length": 0.3,
+			"lean": 12.0,
+			"auto_retract": true,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			]
+		},
+		"alloy_race_side": {
+			"name": "Alloy race side stand",
+			"description": "Light billet leg for a bike that's all about weight.",
+			"mass": 0.6,
+			"type": "Billet alloy",
+			"length": 0.29,
+			"lean": 14.0,
+			"auto_retract": true,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			]
+		},
+		"chrome_custom_side": {
+			"name": "Chrome custom side stand",
+			"description": "Long, curved and shiny. Leans the bike right over, chopper style.",
+			"mass": 1.5,
+			"type": "Chromed steel",
+			"length": 0.34,
+			"lean": 16.0,
+			"auto_retract": false,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		}
+	},
+	"centre_stand": {
+		"basic_centre": {
+			"name": "Basic centre stand",
+			"description": "Holds the bike upright with the back wheel off the ground.",
+			"mass": 3.5,
+			"type": "Steel tube",
+			"lift": 0.04,
+			"effort": 1.0,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"heavy_centre": {
+			"name": "Heavy-duty centre stand",
+			"description": "Braced legs for big tourers and loaded bikes.",
+			"mass": 5.0,
+			"type": "Braced steel",
+			"lift": 0.05,
+			"effort": 1.1,
+			"color": [
+				0.1,
+				0.1,
+				0.1
+			]
+		},
+		"lever_centre": {
+			"name": "Easy-lift centre stand",
+			"description": "A long lever foot so anyone can heave the bike up.",
+			"mass": 4.0,
+			"type": "Steel with lift lever",
+			"lift": 0.04,
+			"effort": 0.6,
+			"color": [
+				0.12,
+				0.12,
+				0.14
+			]
+		},
+		"alloy_centre": {
+			"name": "Alloy centre stand",
+			"description": "Light alloy legs. Saves weight, still lifts the wheel.",
+			"mass": 2.2,
+			"type": "Alloy",
+			"lift": 0.035,
+			"effort": 0.9,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			]
+		},
+		"chrome_centre": {
+			"name": "Chrome centre stand",
+			"description": "Classic chrome legs for a show bike.",
+			"mass": 3.8,
+			"type": "Chromed steel",
+			"lift": 0.04,
+			"effort": 1.0,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		}
+	},
+	"headlight": {
+		"round_7": {
+			"name": "7\" round halogen headlight",
+			"description": "The classic round lamp. Warm and dim by modern standards.",
+			"mass": 1.4,
+			"type": "Halogen",
+			"style": "round",
+			"size": 0.09,
+			"lumens": 1000,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"bates_cafe": {
+			"name": "Bates-style café lamp",
+			"description": "Small chrome bucket lamp for a café racer.",
+			"mass": 0.9,
+			"type": "Halogen",
+			"style": "bucket",
+			"size": 0.07,
+			"lumens": 800,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"twin_round": {
+			"name": "Twin round headlights",
+			"description": "A pair of small round lamps side by side.",
+			"mass": 1.8,
+			"type": "Halogen, twin",
+			"style": "twin",
+			"size": 0.06,
+			"lumens": 1600,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"rect_enduro": {
+			"name": "Enduro number-plate light",
+			"description": "Rectangular lamp in a plastic plate. Shrugs off roost.",
+			"mass": 0.8,
+			"type": "Halogen",
+			"style": "plate",
+			"size": 0.08,
+			"lumens": 900,
+			"color": [
+				0.9,
+				0.9,
+				0.88
+			]
+		},
+		"led_projector": {
+			"name": "LED projector headlight",
+			"description": "Modern projector lens with a crisp white beam.",
+			"mass": 1.0,
+			"type": "LED",
+			"style": "projector",
+			"size": 0.08,
+			"lumens": 3000,
+			"color": [
+				0.05,
+				0.05,
+				0.06
+			]
+		}
+	},
+	"petrol": {
+		"unleaded_95": {
+			"name": "Unleaded petrol (95)",
+			"description": "Pump fuel in a 5 litre jerry can.",
+			"container": "Jerry can",
+			"litres": 5.0,
+			"power": 1.0,
+			"economy": 1.0,
+			"color": [
+				0.75,
+				0.12,
+				0.08
+			],
+			"liquid": [
+				0.85,
+				0.75,
+				0.3
+			]
+		},
+		"super_98": {
+			"name": "Super unleaded (98)",
+			"description": "Higher octane. A touch more power and a little further per tank.",
+			"container": "Jerry can",
+			"litres": 5.0,
+			"power": 1.03,
+			"economy": 1.04,
+			"color": [
+				0.1,
+				0.35,
+				0.15
+			],
+			"liquid": [
+				0.8,
+				0.7,
+				0.35
+			]
+		},
+		"race_fuel": {
+			"name": "Race fuel (102)",
+			"description": "Leaded race fuel. Strong but thirsty.",
+			"container": "Race fuel drum",
+			"litres": 5.0,
+			"power": 1.07,
+			"economy": 0.92,
+			"color": [
+				0.1,
+				0.25,
+				0.75
+			],
+			"liquid": [
+				0.3,
+				0.45,
+				0.9
+			]
+		},
+		"empty_jerry_can": {
+			"name": "Empty jerry can",
+			"description": "For draining a tank. Holds 10 litres.",
+			"container": "Jerry can",
+			"litres": 10.0,
+			"empty": true,
+			"power": 1.0,
+			"economy": 1.0,
+			"color": [
+				0.55,
+				0.55,
+				0.5
+			],
+			"liquid": [
+				0.85,
+				0.75,
+				0.3
+			]
+		}
+	},
+	"oil": {
+		"mineral_20w50": {
+			"name": "Mineral oil 20W-50",
+			"description": "Thick old-school oil, 4 litres. Fine for classics.",
+			"container": "Oil bottle",
+			"litres": 4.0,
+			"protection": 0.75,
+			"friction": 1.0,
+			"color": [
+				0.85,
+				0.7,
+				0.1
+			],
+			"liquid": [
+				0.55,
+				0.4,
+				0.1
+			]
+		},
+		"semi_10w40": {
+			"name": "Semi-synthetic 10W-40",
+			"description": "The all-rounder, 4 litres.",
+			"container": "Oil bottle",
+			"litres": 4.0,
+			"protection": 0.88,
+			"friction": 0.985,
+			"color": [
+				0.15,
+				0.15,
+				0.6
+			],
+			"liquid": [
+				0.6,
+				0.45,
+				0.12
+			]
+		},
+		"synthetic_5w40": {
+			"name": "Fully synthetic 5W-40",
+			"description": "Best protection and the least friction, 4 litres.",
+			"container": "Oil bottle",
+			"litres": 4.0,
+			"protection": 1.0,
+			"friction": 0.97,
+			"color": [
+				0.08,
+				0.08,
+				0.08
+			],
+			"liquid": [
+				0.65,
+				0.5,
+				0.15
+			]
+		},
+		"drain_pan": {
+			"name": "Oil drain pan",
+			"description": "Slide it under the engine to drain old oil. Holds 6 litres.",
+			"container": "Drain pan",
+			"litres": 6.0,
+			"empty": true,
+			"protection": 0.75,
+			"friction": 1.0,
+			"color": [
+				0.1,
+				0.1,
+				0.1
+			],
+			"liquid": [
+				0.15,
+				0.1,
+				0.05
+			]
+		}
+	},
+	"brake_fluid": {
+		"dot3": {
+			"name": "DOT 3 brake fluid",
+			"description": "Basic fluid, half a litre. Boils early under hard braking.",
+			"container": "Bottle",
+			"litres": 0.5,
+			"brake": 0.96,
+			"color": [
+				0.9,
+				0.9,
+				0.85
+			],
+			"liquid": [
+				0.85,
+				0.75,
+				0.4
+			]
+		},
+		"dot4": {
+			"name": "DOT 4 brake fluid",
+			"description": "The usual choice, half a litre.",
+			"container": "Bottle",
+			"litres": 0.5,
+			"brake": 1.0,
+			"color": [
+				0.9,
+				0.85,
+				0.2
+			],
+			"liquid": [
+				0.85,
+				0.7,
+				0.35
+			]
+		},
+		"dot51": {
+			"name": "DOT 5.1 brake fluid",
+			"description": "High boiling point, half a litre. Firmest lever.",
+			"container": "Bottle",
+			"litres": 0.5,
+			"brake": 1.03,
+			"color": [
+				0.15,
+				0.4,
+				0.8
+			],
+			"liquid": [
+				0.8,
+				0.7,
+				0.4
+			]
+		},
+		"bleed_bottle": {
+			"name": "Brake bleed bottle",
+			"description": "Catches old fluid when you bleed the brakes. Holds 1 litre.",
+			"container": "Bleed bottle",
+			"litres": 1.0,
+			"empty": true,
+			"brake": 0.96,
+			"color": [
+				0.85,
+				0.88,
+				0.9
+			],
+			"liquid": [
+				0.5,
+				0.4,
+				0.25
 			]
 		}
 	}

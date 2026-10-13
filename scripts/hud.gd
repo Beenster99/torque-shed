@@ -12,6 +12,8 @@ var _title: Label
 var _info: Label
 var _prompt: Label
 var _top_kmh := 0.0
+var trip_km := 0.0         # this ride, for the economy readout
+var trip_fuel := 0.0       # litres burnt this ride
 
 
 func _ready() -> void:
@@ -67,21 +69,25 @@ func _process(delta: float) -> void:
 	if _message_timer <= 0.0 and _message.text != "":
 		_message.text = ""
 	var on_foot := walker != null and bike == null
-	_panel.visible = on_foot and (walker.info != "" or not walker.plan.is_empty())
+	_panel.visible = on_foot and (walker.info != "" or not walker.plan.is_empty() or walker.crouched)
 	if on_foot:
 		var lines := walker.info.split("\n")
 		_title.text = lines[0]
 		_info.text = "\n".join(lines.slice(1))
 		_info.visible = _info.text != ""
 		var plan := walker.plan
-		if plan.is_empty():
-			_prompt.text = ""
-		elif plan["blocked"] != "":
-			_prompt.add_theme_color_override("font_color", Color(1, 0.5, 0.4))
-			_prompt.text = plan["blocked"]
-		else:
-			_prompt.add_theme_color_override("font_color", UITheme.ACCENT)
-			_prompt.text = "Hold %s to %s" % [_act_key(), plan["verb"]]
+		var prompts := []
+		var blocked := false
+		if not plan.is_empty():
+			blocked = plan["blocked"] != ""
+			prompts.append(plan["blocked"] if blocked else "Hold %s to %s" % [_act_key(), plan["verb"]])
+		var alt := walker.alt_plan
+		if not alt.is_empty() and alt["blocked"] == "":
+			prompts.append("Hold %s to %s" % [_alt_key(), alt["verb"]])
+		if walker.crouched:
+			prompts.append("Crouching (C to stand up)")
+		_prompt.add_theme_color_override("font_color", Color(1, 0.5, 0.4) if blocked and prompts.size() == 1 else UITheme.ACCENT)
+		_prompt.text = "\n".join(prompts)
 	if bike and bike.is_crashed:
 		_message.text = "Crashed! Press R to get back on"
 		_message_timer = 0.1
@@ -90,6 +96,10 @@ func _process(delta: float) -> void:
 
 func _act_key() -> String:
 	return "RT" if Controls.device() >= 0 and Controls.active_device >= 0 else "left mouse"
+
+
+func _alt_key() -> String:
+	return "LT" if Controls.device() >= 0 and Controls.active_device >= 0 else "right mouse"
 
 
 func _draw() -> void:
@@ -124,7 +134,8 @@ func _draw_toolbar() -> void:
 		if active:
 			draw_rect(r, UITheme.ACCENT, false, 2.0)
 		draw_string(font, r.position + Vector2(8, 18), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.5))
-		var label: String = {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder", "spray": "Spray can"}[t]
+		var label: String = {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder", "spray": "Spray can",
+			"lance": "Pressure washer"}[t]
 		draw_string(font, r.position + Vector2(0, 34), label, HORIZONTAL_ALIGNMENT_CENTER, w, 16, Color.WHITE if active else Color(1, 1, 1, 0.65))
 	if walker.tool == "spray":
 		_draw_spray_picker(font, y)
@@ -173,16 +184,15 @@ func _draw_speedo() -> void:
 		return
 	var features: Array = bike.build.dash_features
 	var font := get_theme_default_font()
-	var r := Rect2(size.x - 250, size.y - 120, 226, 96)
+	var r := Rect2(size.x - 250, size.y - 172, 226, 148)
 	draw_rect(r, Color(0.03, 0.03, 0.04, 0.6))
-	var kmh := roundi(absf(bike.speed) * 3.6)
 	_top_kmh = maxf(_top_kmh, absf(bike.speed) * 3.6)
-	draw_string(font, r.position + Vector2(12, 58), "%d" % kmh, HORIZONTAL_ALIGNMENT_LEFT, -1, 50, Color.WHITE)
-	draw_string(font, r.position + Vector2(120, 34), "km/h", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.6))
+	draw_string(font, r.position + Vector2(12, 58), "%d" % Units.speed_value(bike.speed), HORIZONTAL_ALIGNMENT_LEFT, -1, 50, Color.WHITE)
+	draw_string(font, r.position + Vector2(120, 34), Units.speed_unit(), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.6))
 	if features.has("gear"):
 		draw_string(font, r.position + Vector2(120, 60), "GEAR %d" % bike.gear, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UITheme.ACCENT)
 	if features.has("top_speed"):
-		draw_string(font, r.position + Vector2(170, 34), "TOP %d" % roundi(_top_kmh), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
+		draw_string(font, r.position + Vector2(170, 34), "TOP %d" % Units.speed_value(_top_kmh / 3.6), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
 	var frac := clampf(bike.rpm / bike.build.redline, 0.0, 1.0)
 	if features.has("rpm"):
 		draw_rect(Rect2(r.position + Vector2(12, 74), Vector2(202, 8)), Color(1, 1, 1, 0.12))
@@ -190,5 +200,18 @@ func _draw_speedo() -> void:
 		draw_rect(Rect2(r.position + Vector2(12, 74), Vector2(202 * frac, 8)), col)
 	if features.has("shift_light") and frac > 0.88:
 		draw_circle(r.position + Vector2(206, 18), 8.0, Color(1, 0.15, 0.1) if frac > 0.94 else Color(1, 0.85, 0.1))
-	if absf(bike.speed) < 2.0 and not bike.is_crashed:
-		draw_string(font, Vector2(0, size.y - 40), "Press F (or Y) to get off", HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.7))
+	# Fuel gauge and how far this ride's petrol has gone.
+	var fuel := clampf(bike.fuel_litres / maxf(bike.build.fuel_capacity, 0.1), 0.0, 1.0)
+	draw_string(font, r.position + Vector2(12, 106), "FUEL", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.6))
+	draw_rect(Rect2(r.position + Vector2(52, 96), Vector2(162, 10)), Color(1, 1, 1, 0.12))
+	draw_rect(Rect2(r.position + Vector2(52, 96), Vector2(162 * fuel, 10)), Color(1, 0.3, 0.2) if fuel < 0.15 else Color(0.9, 0.85, 0.3))
+	var used := trip_fuel + bike.fuel_used
+	var economy := Units.economy(trip_km / used) if used > 0.01 and trip_km > 0.05 else "-- " + Units.economy_unit()
+	draw_string(font, r.position + Vector2(12, 130), "%.1f L  ·  %s" % [bike.fuel_litres, economy], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.8))
+	var hint := ""
+	if not bike.engine_on and not bike.is_crashed:
+		hint = "Starting..." if bike.is_starting() else "Engine off: press I (or D-pad up) to start it"
+	elif absf(bike.speed) < 2.0 and not bike.is_crashed:
+		hint = "F (or Y): get off   ·   I: engine off"
+	if hint != "":
+		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))

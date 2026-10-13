@@ -24,6 +24,12 @@ var _stats_timer := 0.0
 var _ride_km := 0.0
 var _ride_top := 0.0
 var _mounted_at := 0
+var _dirt_km := 0.0
+var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
+var _ride_view := ChaseCamera.Mode.CHASE
+var _dash: Label3D
+## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
+const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7}
 
 
 func _ready() -> void:
@@ -204,19 +210,37 @@ func _start_riding(bike_id: int) -> void:
 	var xf: Transform3D = data["xf"]
 	bike.place(xf.origin, xf.basis.get_euler().y)
 	bike.crashed.connect(func(): hud.flash("Crashed!", 1.5, true))
+	# You get on with the engine off and start it yourself.
+	bike.engine_on = false
+	bike.rpm = 0.0
+	bike.engine_changed.connect(func(running, reason):
+		if running:
+			hud.flash("Engine running", 1.2)
+		elif reason != "":
+			hud.flash(reason, 3.0, true))
 	audio = EngineAudio.new()
 	audio.cylinders = bike.build.cylinders
 	audio.loudness = bike.build.exhaust_loudness
 	bike.add_child(audio)
 	camera.target = bike
-	camera.mode = ChaseCamera.Mode.CHASE
+	camera.set_mode(_ride_view)
 	camera.snap()
 	camera.current = true
 	hud.bike = bike
 	_set_walker_active(false)
 	_ride_km = 0.0
 	_ride_top = 0.0
+	_dirt_km = 0.0
+	_ride_dirt = 0.0
+	hud.trip_km = 0.0
+	hud.trip_fuel = 0.0
+	_dash = bike.model.dash_readout()
 	_mounted_at = Time.get_ticks_msec()
+	var build := bike.build
+	if build.fuel_litres <= 0.0:
+		hud.flash("The tank is empty. Fill it from a can of petrol before you ride.", 4.0, true)
+	elif not build.notes.is_empty():
+		hud.flash(build.notes[0], 3.0, true)
 
 
 func _get_off() -> void:
@@ -237,8 +261,24 @@ func _get_off() -> void:
 		ground = hit["position"]
 	var right := Basis(Vector3.UP, heading) * Vector3.RIGHT
 	walker.place(Transform3D(Basis(Vector3.UP, heading), ground - right * 0.9))
+	_send_ride_stats()
 	Shed.request({"a": "dismount", "bike": riding_id, "xf": Transform3D(Basis(Vector3.UP, heading), ground)})
 	_stop_riding()
+
+
+## Starts or stops the engine on the key.
+func _ignition() -> void:
+	if bike.engine_on or bike.is_starting():
+		bike.stop_engine()
+		hud.flash("Engine off", 1.2)
+		Sfx.play_at("switch", bike.global_position, -6.0)
+		return
+	var why := bike.start_engine()
+	if why != "":
+		hud.flash(why, 2.0, true)
+		Sfx.play_at("switch", bike.global_position, -6.0)
+		return
+	Sfx.play_at("starter", bike.global_position + Vector3.UP * 0.4, -2.0)
 
 
 func _stop_riding() -> void:
@@ -286,6 +326,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		bike.respawn()
 	elif event.is_action_pressed("camera"):
 		camera.cycle_mode()
+		_ride_view = camera.mode
+	elif event.is_action_pressed("ignition"):
+		_ignition()
 	elif event.is_action_pressed("shift_up"):
 		bike.shift_up()
 	elif event.is_action_pressed("shift_down"):
@@ -319,20 +362,57 @@ func _physics_process(delta: float) -> void:
 		bike.assist = Settings.assist
 		audio.rpm = bike.rpm
 		audio.throttle = bike.throttle
-		_ride_km += absf(bike.speed) * delta / 1000.0
+		audio.running = bike.engine_on
+		var km := absf(bike.speed) * delta / 1000.0
+		_ride_km += km
+		hud.trip_km += km
 		_ride_top = maxf(_ride_top, absf(bike.speed) * 3.6)
+		if bike.wheels[1]["contact"] or bike.wheels[0]["contact"]:
+			# Loose ground and wheelspin throw muck all over the bike.
+			var muck := km * float(SURFACE_DIRT.get(bike.surface, 0.3)) * (1.0 + float(bike.wheels[1]["slip"]))
+			_dirt_km += muck
+			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
+			bike.model.set_grime(clampf(_ride_dirt, 0.0, 0.85))
+		_update_dash()
 		_stats_timer += delta
 		if _stats_timer >= 1.0:
 			_stats_timer = 0.0
-			Shed.request({"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6})
-			_ride_km = 0.0
+			_send_ride_stats()
 	_send_timer += delta
 	if _send_timer >= 1.0 / 30.0:
 		_send_timer = 0.0
 		Net.send_state(_net_state())
 
 
-## [0, x, y, z, yaw, pitch] on foot, or [1, bike id, bike state...] riding.
+## Tells the shed how far the bike went, how muddy it got and how much petrol it burnt.
+func _send_ride_stats() -> void:
+	if bike == null:
+		return
+	hud.trip_fuel += bike.fuel_used
+	Shed.request({"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
+		"dirt_km": _dirt_km, "fuel": bike.fuel_used})
+	bike.fuel_used = 0.0
+	_ride_km = 0.0
+	_dirt_km = 0.0
+
+
+## The rider's view of the clocks: speed, gear and a fuel gauge.
+func _update_dash() -> void:
+	if _dash == null:
+		return
+	var b := bike.build
+	var fuel := clampf(bike.fuel_litres / maxf(b.fuel_capacity, 0.1), 0.0, 1.0)
+	var bars := roundi(fuel * 8.0)
+	var gauge := "F " + "|".repeat(bars) + ".".repeat(8 - bars) + " E"
+	if not bike.engine_on:
+		_dash.text = "%d %s\n%s" % [Units.speed_value(bike.speed), Units.speed_unit(), "STARTING" if bike.is_starting() else "ENGINE OFF"]
+	else:
+		_dash.text = "%d %s   %s\n%s" % [Units.speed_value(bike.speed), Units.speed_unit(),
+			"G%d" % bike.gear if b.dash_features.has("gear") else "", gauge]
+	_dash.modulate = Color(1.0, 0.45, 0.3) if fuel < 0.15 else Color(0.75, 1.0, 0.85)
+
+
+## [0, x, y, z, yaw, pitch, crouched] on foot, or [1, bike id, bike state...] riding.
 func _net_state() -> PackedFloat32Array:
 	if bike:
 		var s := PackedFloat32Array([1.0, float(riding_id)])
@@ -340,7 +420,7 @@ func _net_state() -> PackedFloat32Array:
 		return s
 	if walker:
 		var p := walker.global_position
-		return PackedFloat32Array([0.0, p.x, p.y, p.z, walker.yaw(), walker.pitch()])
+		return PackedFloat32Array([0.0, p.x, p.y, p.z, walker.yaw(), walker.pitch(), 1.0 if walker.crouched else 0.0])
 	return PackedFloat32Array()
 
 

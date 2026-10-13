@@ -10,6 +10,7 @@ var auto_shift := true
 var high_quality := true
 var sfx_volume := 0.8
 var radio_volume := 0.6
+var units := "metric"     # or "imperial"
 
 
 func _ready() -> void:
@@ -27,6 +28,7 @@ func load_settings() -> void:
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
 		radio_volume = cfg.get_value("audio", "radio", radio_volume)
+		units = cfg.get_value("display", "units", units)
 
 
 func save_settings() -> void:
@@ -38,6 +40,7 @@ func save_settings() -> void:
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("audio", "radio", radio_volume)
+	cfg.set_value("display", "units", units)
 	cfg.save(PATH)
 
 
@@ -57,6 +60,7 @@ func _setup_inputs() -> void:
 	_bind("respawn", [KEY_R], [JOY_BUTTON_BACK])
 	_bind("camera", [KEY_C], [JOY_BUTTON_RIGHT_STICK])
 	_bind("toggle_auto_shift", [KEY_T], [])
+	_bind("ignition", [KEY_I], [JOY_BUTTON_DPAD_UP])
 	# On foot in the shed
 	_bind("move_forward", [KEY_W, KEY_UP], [])
 	_bind("move_back", [KEY_S, KEY_DOWN], [])
@@ -66,10 +70,13 @@ func _setup_inputs() -> void:
 	_bind("act", [], [JOY_BUTTON_A], [MOUSE_BUTTON_LEFT])
 	_bind("tool_next", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [MOUSE_BUTTON_WHEEL_DOWN])
 	_bind("tool_prev", [KEY_Q], [JOY_BUTTON_LEFT_SHOULDER], [MOUSE_BUTTON_WHEEL_UP])
-	for i in 5:
+	for i in 6:
 		_bind("tool_%d" % (i + 1), [KEY_1 + i], [])
 	_bind("spray_colour", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	_bind("spray_finish", [KEY_T], [JOY_BUTTON_B], [MOUSE_BUTTON_MIDDLE])
+	# The second work button: drains fluids into a held container.
+	_bind("alt_act", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
+	_bind("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
 	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])

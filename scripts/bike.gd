@@ -9,6 +9,7 @@ extends RigidBody3D
 signal crashed
 signal respawned
 signal gear_changed(gear: int)
+signal engine_changed(running: bool, reason: String)
 
 const G := 9.81
 const MAX_LEAN := deg_to_rad(52.0)
@@ -20,6 +21,7 @@ const ROLLING_RESISTANCE := 0.015
 const CRASH_LEAN := deg_to_rad(78.0)
 const CRASH_PITCH := deg_to_rad(72.0)
 const AUTO_RESPAWN_TIME := 3.5
+const START_TIME := 0.7           # seconds on the starter motor before it fires
 
 var build: BikeBuild
 
@@ -32,6 +34,10 @@ var body_shift := 0.0      # -1 weight back (wheelies) .. 1 weight forward
 var auto_shift := true
 var assist := 0.5          # rider balance help: 0 sim .. 1 easy
 var controls_enabled := true
+var engine_on := true      # a parked bike you get on starts with it off; tests ride with it running
+var fuel_litres := 15.0    # petrol left in the tank
+var fuel_used := 0.0       # litres burnt since the last time someone read and cleared it
+var effects: BikeEffects
 
 # Simulation state, read by the HUD, camera, audio and network.
 var gear := 1
@@ -53,6 +59,7 @@ var _crash_timer := 0.0
 var _base_com := Vector3.ZERO
 var _rider_shape_index := -1
 var _ragdoll: RigidBody3D
+var _starting := 0.0
 
 
 func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
@@ -103,6 +110,12 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	model = BikeModel.new()
 	add_child(model)
 	model.build_from(build, paint)
+	fuel_litres = build.fuel_litres
+	if effects:
+		effects.free()
+	effects = BikeEffects.new()
+	add_child(effects)
+	effects.setup(model.exhaust_tip(), Vector3(0.0, -build.rear_radius, wb * 0.5), model.lamp_position(), build.headlight_lumens)
 
 	if not body_shape_entered.is_connected(_on_body_shape_entered):
 		body_shape_entered.connect(_on_body_shape_entered)
@@ -147,6 +160,30 @@ func place(pos: Vector3, heading: float) -> void:
 	respawned.emit()
 
 
+## Turns the key: the starter cranks for a moment, then it fires, as long as there's petrol.
+func start_engine() -> String:
+	if engine_on or _starting > 0.0:
+		return ""
+	if is_crashed:
+		return "Pick the bike up first."
+	if fuel_litres <= 0.0:
+		return "Out of petrol."
+	_starting = START_TIME
+	return ""
+
+
+func stop_engine(reason := "") -> void:
+	_starting = 0.0
+	if not engine_on:
+		return
+	engine_on = false
+	engine_changed.emit(false, reason)
+
+
+func is_starting() -> bool:
+	return _starting > 0.0
+
+
 func respawn() -> void:
 	var fwd := -global_transform.basis.z
 	var heading := atan2(-fwd.x, -fwd.z)
@@ -161,6 +198,15 @@ func _physics_process(delta: float) -> void:
 	var fwd := -b.z
 	speed = linear_velocity.dot(fwd)
 	_measure_attitude()
+
+	if _starting > 0.0:
+		_starting -= delta
+		rpm = lerpf(rpm, build.idle_rpm * 0.3, 0.2)
+		if _starting <= 0.0:
+			_starting = 0.0
+			engine_on = true
+			rpm = build.idle_rpm * 1.3
+			engine_changed.emit(true, "")
 
 	if is_crashed:
 		throttle = 0.0
@@ -190,6 +236,9 @@ func _physics_process(delta: float) -> void:
 
 	if model:
 		model.update_pose(self)
+	if effects:
+		effects.update(delta, speed, throttle, engine_on, build.overall_health(), surface,
+			wheels[1]["contact"], wheels[1]["slip"])
 
 
 func _measure_attitude() -> void:
@@ -262,13 +311,28 @@ func _update_engine(delta: float) -> void:
 	var torque := build.engine_torque(rpm) * throttle * _traction
 	if rpm >= build.redline:
 		torque = 0.0  # rev limiter
+	var made := maxf(torque, 0.0)
 	if engaged:
 		# Engine braking when the throttle is closed.
 		torque -= (1.0 - throttle) * build.peak_torque * 0.25 * clampf(rpm / build.redline, 0.0, 1.0)
 	if shifting:
 		torque = 0.0
+		made = 0.0
+	if not engine_on:
+		# Engine off: the bike just rolls. The revs fall away to nothing.
+		torque = 0.0
+		made = 0.0
+		if _starting <= 0.0:
+			rpm = wheel_rpm if engaged else move_toward(rpm, 0.0, 3000.0 * delta)
+	else:
+		var burnt := build.fuel_rate(made * rpm * TAU / 60.0 / 1000.0, rpm) / 3600.0 * delta
+		fuel_litres -= burnt
+		fuel_used += burnt
+		if fuel_litres <= 0.0:
+			fuel_litres = 0.0
+			stop_engine("Out of petrol! Push it home or bring it a can.")
 	rear["drive_torque"] = torque * ratio * build.drivetrain_efficiency
-	rpm = clampf(rpm, build.idle_rpm * 0.9, build.redline * 1.02)
+	rpm = clampf(rpm, build.idle_rpm * 0.9 if engine_on else 0.0, build.redline * 1.02)
 
 	_since_shift += delta
 	if auto_shift and not shifting and _since_shift > 0.6:
@@ -469,5 +533,5 @@ func get_net_state() -> PackedFloat32Array:
 	return PackedFloat32Array([
 		p.x, p.y, p.z, q.x, q.y, q.z, q.w, v.x, v.y, v.z,
 		steer, wheels[0]["spin"], wheels[1]["spin"], wheels[0]["compression"], wheels[1]["compression"],
-		rpm, throttle, 1.0 if is_crashed else 0.0, body_shift,
+		rpm, throttle, 1.0 if is_crashed else 0.0, body_shift, 1.0 if engine_on else 0.0,
 	])

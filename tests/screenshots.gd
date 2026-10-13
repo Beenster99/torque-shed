@@ -20,11 +20,11 @@ func _ready() -> void:
 	var c := Workshop.CENTER
 	await _look_from(c + Vector3(0.5, 0.0, 4.6), c + Vector3(-0.5, 1.0, -5.0), "02_shed_overview")
 	var ranger := _bike_named("Rusty Ranger")
-	var model: BikeModel = main.workshop.bike_views[ranger].get_child(0)
+	var model: BikeModel = main.workshop.bike_model(ranger)
 	var engine: Vector3 = model.global_transform * model.slot_bounds("engine").get_center()
 	await _look_from(engine + Vector3(1.5, -engine.y, 0.6), engine, "03_rusty_engine")
 	var faithful_id := _bike_named("Old Faithful")
-	var sport: BikeModel = main.workshop.bike_views[faithful_id].get_child(0)
+	var sport: BikeModel = main.workshop.bike_model(faithful_id)
 	var wheel: Vector3 = sport.global_transform * sport.slot_bounds("front_disc").get_center()
 	await _look_from(wheel + Vector3(1.2, -wheel.y, -0.6), wheel + Vector3(0.0, 0.1, 0.0), "04_brakes_and_wheel")
 	var stand: Vector3 = Shed.spot_transform(Shed.stand_spots()[0]).origin
@@ -75,9 +75,44 @@ func _ready() -> void:
 			n += 1
 	Shed.request({"a": "label", "furniture": shelf, "text": "Tyres and plugs"})
 	await _look_from(c + Vector3(-4.8, 0.0, 2.9), c + Vector3(-4.8, 1.0, 5.15), "18_labelled_shelf")
+	# Fluids: a jerry can, a bottle of oil and brake fluid on the floor.
+	var i := 0
+	for part in ["unleaded_95", "synthetic_5w40", "dot4", "drain_pan"]:
+		var fid: int = Shed._new_item(part, 0.0, 0.0, 0.0)
+		Shed._move(fid, "floor", Transform3D(Basis(Vector3.UP, 0.3 * i), c + Vector3(-1.2 + i * 0.8, 0.0, 2.4)))
+		i += 1
+	Shed.changed.emit()
+	await _look_from(c + Vector3(0.0, 0.0, 4.0), c + Vector3(0.0, 0.1, 2.4), "19_fluids")
+	# Old Faithful wheeled outside and left on its side stand.
 	var faithful := _bike_named("Old Faithful")
+	var outside := c + Vector3(2.5, 0.0, 9.5)
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(), outside)})
+	await _frames(5)
+	await _look_from(outside + Vector3(-2.0, 0.0, 1.2), outside + Vector3(0.0, 0.5, 0.0), "20_on_the_side_stand")
+	# Muddy and in the wash bay, getting the pressure washer.
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(), Workshop.WASH_CENTER)})
+	for slot in PartsDB.SLOTS:
+		var on: int = Shed.item_on(faithful, slot)
+		if on != 0:
+			Shed.items[on]["dirt"] = 0.85
+	Shed.changed.emit()
+	await _frames(5)
+	var fsport: BikeModel = main.workshop.bike_model(faithful)
+	var tyre: Vector3 = fsport.global_transform * fsport.slot_bounds("front_tyre").get_center()
+	main.walker.set_tool("lance")
+	await _look_from(Vector3(tyre.x + 1.6, 0.0, tyre.z + 0.9), tyre, "21_wash_bay_before")
+	Input.action_press("act")
+	await _frames(45)
+	await _shot("22_pressure_washing")
+	Input.action_release("act")
+	await _look_from(Workshop.WASH_CENTER + Vector3(4.5, 0.0, 4.5), Workshop.WASH_CENTER + Vector3(0.0, 1.0, 0.0), "23_wash_bay_outside")
+	main.walker.set_tool("hands")
 	main._try_mount(faithful)
 	await _frames(30)
+	main.bike.start_engine()
+	await _frames(120)
 	Input.action_press("throttle", 0.3)
 	await _frames(90)
 	await _shot("13_riding_out_the_door")
@@ -88,6 +123,17 @@ func _ready() -> void:
 	Input.action_press("throttle", 0.6)
 	await _frames(100)
 	await _shot("14_riding_outside")
+	main.camera.set_mode(ChaseCamera.Mode.HELMET)
+	await _frames(40)
+	await _shot("24_first_person")
+	main.camera.set_mode(ChaseCamera.Mode.CHASE)
+	Input.action_release("throttle")
+	road_t = main.world.road_transform(0.62)
+	main.bike.place(road_t.origin, road_t.basis.get_euler().y)
+	main.camera.snap()
+	Input.action_press("throttle", 0.8)
+	await _frames(150)
+	await _shot("25_dust_on_the_dirt")
 	Input.action_release("throttle")
 	get_tree().quit()
 

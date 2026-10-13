@@ -12,6 +12,12 @@ const DOOR_HALF := 2.3
 const DOOR_HEIGHT := 3.2
 const BAY_COUNT := 4
 const INTERACT_LAYER := 8
+## The wash bay: a lean-to on the west wall, open to the yard, with a pressure washer whose
+## hose reaches anywhere inside it and a little way out.
+const WASH_CENTER := Vector3(-9.3, 0.0, 66.0)
+const WASH_HALF := Vector2(2.4, 3.4)
+const WASH_POS := Vector3(-11.3, 0.0, 63.2)
+const WASH_REACH := 8.0
 
 var bike_views := {}       # bike id -> Node3D holding a BikeModel
 var _view_sigs := {}
@@ -73,6 +79,7 @@ func build() -> void:
 	_build_bin()
 	_build_tool_wall()
 	_build_radio()
+	_build_wash_bay()
 	_build_lights()
 	_crew_screen = Dashboard.new("crew", 3.0)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
@@ -94,12 +101,14 @@ func sync_state() -> void:
 		if bike["rider"] != 0:
 			continue
 		var sig := _bike_signature(id)
-		if _view_sigs.get(id, "") == sig:
-			continue
-		_view_sigs[id] = sig
-		if bike_views.has(id):
-			bike_views[id].free()
-		bike_views[id] = _make_bike_view(id)
+		if _view_sigs.get(id, "") != sig:
+			_view_sigs[id] = sig
+			if bike_views.has(id):
+				bike_views[id].free()
+			bike_views[id] = _make_bike_view(id)
+		# Moving a bike only moves its view; the one you're wheeling follows you directly.
+		if bike.get("pusher", 0) != Shed.me() or bike.get("pusher", 0) == 0:
+			bike_views[id].transform = bike["xf"]
 	_sync_furniture()
 	var spots := Shed.all_spots()
 	for spot in _spot_nodes.keys():
@@ -158,6 +167,11 @@ func _sync_furniture() -> void:
 		var label: Label3D = node.get_node_or_null("Label")
 		if label:
 			label.text = str(f.get("label", ""))
+
+
+func preview_bike(id: int, xf: Transform3D) -> void:
+	if bike_views.has(id):
+		bike_views[id].transform = xf
 
 
 func preview_furniture(id: int, xf: Transform3D) -> void:
@@ -262,8 +276,13 @@ func model_for(target: Dictionary) -> BikeModel:
 			return _spot_nodes[spot].get_meta("model", null)
 		return null
 	if bike_views.has(target.get("bike", 0)):
-		return bike_views[target["bike"]].get_child(0) as BikeModel
+		return bike_model(int(target["bike"]))
 	return null
+
+
+## The model drawn for a parked bike (inside its lean pivot).
+func bike_model(id: int) -> BikeModel:
+	return bike_views[id].get_child(0).get_child(0) as BikeModel
 
 
 ## Every part within `radius` of a point: fitted to parked bikes, on the engine stand, on the
@@ -271,7 +290,7 @@ func model_for(target: Dictionary) -> BikeModel:
 func items_near(at: Vector3, radius: float) -> Array:
 	var out := []
 	for id in bike_views:
-		var model: BikeModel = bike_views[id].get_child(0)
+		var model: BikeModel = bike_model(id)
 		for slot in PartsDB.SLOTS:
 			var item := Shed.item_at_target({"bike": id, "slot": slot})
 			if item != 0 and _near(model, model.slot_bounds(slot), at, radius):
@@ -307,7 +326,8 @@ func _near(model: BikeModel, box: AABB, at: Vector3, radius: float) -> bool:
 
 func _item_signature(item_id: int) -> String:
 	var it: Dictionary = Shed.items[item_id]
-	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", "")]
+	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
+		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else ""]
 	if Shed.is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
@@ -324,8 +344,9 @@ func _bike_signature(id: int) -> String:
 			parts.append("-")
 		else:
 			var it: Dictionary = Shed.items[item_id]
-			parts.append("%s:%.2f:%.2f:%.2f:%s:%s:%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot)])
-	return "%s|%s|%s" % [",".join(parts), str(bike["xf"]), str(bike["paint"])]
+			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot)])
+	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
+	return "%s|%s|%s" % [",".join(parts), pose, str(bike["paint"])]
 
 
 func _make_bike_view(id: int) -> Node3D:
@@ -336,13 +357,22 @@ func _make_bike_view(id: int) -> Node3D:
 	add_child(view)
 	var build := Shed.build_of(id)
 	var model := BikeModel.new()
-	view.add_child(model)
-	var missing := Shed.missing_slots(id)
-	var on_stand: bool = bike["xf"].origin.distance_to(bay_transform(bike["bay"]).origin) < 0.5
-	for slot in ["front_wheel", "rear_wheel", "front_tyre", "rear_tyre"]:
-		on_stand = on_stand or missing.has(slot)
+	# Leaning on its side stand, or lying on its side, the bike tips over about the tyres' contact line.
+	var lean := Node3D.new()
+	view.add_child(lean)
+	lean.add_child(model)
+	var on_stand: bool = Shed.on_paddock(id) and bike.get("pusher", 0) == 0
+	var stand := "" if on_stand else str(bike.get("stand", ""))
 	var lift := 0.06 if on_stand else 0.0
+	if stand == "centre":
+		lift = build.centre_lift
+	elif stand == "side":
+		lean.basis = Basis(Vector3.BACK, deg_to_rad(float(PartsDB.get_part(build.parts["side_stand"]).get("lean", 12.0))))
+	elif stand == "down":
+		lean.basis = Basis(Vector3.BACK, deg_to_rad(74.0))
+		lift = 0.12
 	model.position.y = build.rear_radius + lift
+	model.stand_pose = stand
 	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)
 	model.build_pickers({"bike": id})
 	if on_stand:
@@ -382,7 +412,7 @@ func _refresh_dashboards() -> void:
 		var doing := str(c.get("activity", ""))
 		var riding := int(c.get("riding", 0))
 		if riding != 0 and Shed.bikes.has(riding):
-			doing = "Riding %s, %d km/h" % [Shed.bikes[riding]["name"], roundi(float(c.get("kmh", 0.0)))]
+			doing = "Riding %s, %s" % [Shed.bikes[riding]["name"], Units.kmh(float(c.get("kmh", 0.0)))]
 		elif Shed.held_by(peer) != 0:
 			doing = "Carrying " + Shed.item_title(Shed.held_by(peer))
 		elif doing == "":
@@ -420,13 +450,21 @@ func _bay_data(bay: int) -> Dictionary:
 		if PartsDB.is_engine_slot(slot) and not has_engine:
 			continue
 		var item_id := Shed.item_on(bike_id, slot)
+		if item_id == 0 and PartsDB.is_optional(slot):
+			continue
 		var name: String = PartsDB.slot_name(slot)
 		if slot == "engine" and not has_engine:
 			name = "Engine (out)"
 		parts.append({"name": name, "fitted": item_id != 0, "bolted": Shed.is_bolted(bike_id, slot),
 			"health": BikeBuild.part_health(Shed.condition_of(Shed.items[item_id])) if item_id != 0 else 0.0})
+	var fluids := [
+		["Fuel", build.fuel_litres / maxf(build.fuel_capacity, 0.1), build.fuel_age],
+		["Oil", build.oil_litres / maxf(build.oil_capacity, 0.1) if has_engine else 0.0, build.oil_age],
+		["Brake F", build.brake_fluid["front"], 0.0],
+		["Brake R", build.brake_fluid["rear"], 0.0],
+	]
 	return {"name": bike["name"], "status": status, "now": build.summary(), "delivered": bike["delivered"], "parts": parts,
-		"notes": build.notes}
+		"notes": build.notes, "fluids": fluids, "range_km": build.range_km()}
 
 
 # ---------------------------------------------------------------------------- building
@@ -798,6 +836,57 @@ func _build_radio() -> void:
 	radio.position = Vector3(x + 0.19, 1.615, z)
 	radio.rotation.y = PI * 0.5
 	add_child(radio)
+
+
+## A lean-to wash bay on the west side of the shed, open to the yard: a concrete pad with a
+## drain, a pressure washer on the back wall and a strip light. Ride or wheel a muddy bike in
+## and blast it clean with the pressure washer (tool 6).
+func _build_wash_bay() -> void:
+	var c := WASH_CENTER
+	var hx := WASH_HALF.x
+	var hz := WASH_HALF.y
+	var h := 3.0
+	var pad := _material(Color(0.42, 0.44, 0.45), 0.0, 0.25, _noise(0.3, 0.85, 1.05), 4.0)
+	var floor_mi := _deco(self, c + Vector3(0.0, 0.006, 0.0), Vector3(hx * 2.0, 0.012, hz * 2.0), pad)
+	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_deco(self, c + Vector3(0.0, 0.014, 0.6), Vector3(1.6, 0.006, 0.2), _mats["dark"]).name = "Drain"
+	# Back and outer walls (the shed wall is the inner side); open to the yard at the front.
+	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.2, h, 0.2), _mats["cladding"])
+	_solid(c + Vector3(-hx - 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.2), _mats["cladding"])
+	var tiles := _material(Color(0.82, 0.86, 0.88), 0.0, 0.2)
+	_deco(self, c + Vector3(0.0, 1.0, -hz + 0.005), Vector3(hx * 2.0, 2.0, 0.01), tiles)
+	_deco(self, c + Vector3(-hx + 0.005, 1.0, 0.0), Vector3(0.01, 2.0, hz * 2.0), tiles)
+	_solid(c + Vector3(0.0, h + 0.08, 0.0), Vector3(hx * 2.0 + 0.4, 0.12, hz * 2.0 + 0.4), _mats["roof"])
+	_deco(self, c + Vector3(-hx + 0.1, h * 0.5, hz - 0.1), Vector3(0.12, h, 0.12), _mats["yellow"])
+	_deco(self, c + Vector3(0.0, h - 0.1, hz - 0.05), Vector3(hx * 2.0, 0.2, 0.1), _mats["yellow"])
+	var sign := _label("WASH BAY", c + Vector3(0.0, h - 0.1, hz + 0.02), 0.0, 64, Color(0.08, 0.08, 0.08))
+	sign.outline_size = 0
+	# The pressure washer: a yellow trolley unit with a hose reel, against the back wall.
+	var unit := WASH_POS
+	_solid(unit + Vector3(0.0, 0.45, 0.0), Vector3(0.5, 0.9, 0.4), _mats["yellow"])
+	_deco(self, unit + Vector3(0.0, 0.92, 0.0), Vector3(0.52, 0.04, 0.42), _mats["dark"])
+	var reel := MeshInstance3D.new()
+	var drum := CylinderMesh.new()
+	drum.top_radius = 0.22
+	drum.bottom_radius = 0.22
+	drum.height = 0.12
+	reel.mesh = drum
+	reel.material_override = _mats["dark"]
+	reel.position = unit + Vector3(0.45, 1.4, -0.1)
+	reel.rotation.x = PI * 0.5
+	add_child(reel)
+	_poster("PRESSURE WASHER: TOOL 6", unit + Vector3(-0.1, 1.75, -0.19), 0.0, Vector2(0.9, 0.2))
+	var lamp := _material(Color(1.0, 0.97, 0.9), 0.0, 0.5)
+	lamp.emission_enabled = true
+	lamp.emission = Color(1.0, 0.95, 0.85)
+	lamp.emission_energy_multiplier = 3.0
+	_deco(self, c + Vector3(0.0, h - 0.06, 0.0), Vector3(0.15, 0.04, 1.6), lamp)
+	var light := OmniLight3D.new()
+	light.position = c + Vector3(0.0, h - 0.4, 0.0)
+	light.omni_range = 5.5
+	light.light_energy = 1.0
+	light.light_color = Color(1.0, 0.95, 0.88)
+	add_child(light)
 
 
 func _build_lights() -> void:

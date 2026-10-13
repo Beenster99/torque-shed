@@ -5,14 +5,15 @@ extends Node
 ## sliders control.
 
 const RATE := 22050
-const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static"]
+const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour"]
 ## Which loop each kind of work makes while you hold the button.
-const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray"}
+const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray",
+	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet"}
 ## Which loop a tool makes in someone else's hands while they work.
-const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray"}
+const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet"}
 ## The one-shot when a job is done.
 const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "install": "clunk", "take": "pickup",
-	"place": "clunk", "drop": "clunk", "bin": "scrap", "order_part": "clunk"}
+	"place": "clunk", "drop": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk"}
 
 var _cache := {}
 var _rng := RandomNumberGenerator.new()
@@ -111,6 +112,12 @@ func _make(sound: String) -> AudioStreamWAV:
 			data = _scrap()
 		"switch":
 			data = _thud(900.0, 0.04, 0.5)
+		"starter":
+			data = _starter()
+		"jet":
+			data = _jet()
+		"pour":
+			data = _pour()
 		_:
 			data.resize(RATE / 10)
 	var wav := AudioStreamWAV.new()
@@ -182,6 +189,43 @@ func _grinder() -> PackedFloat32Array:
 		spark = n - spark * 0.6
 		var wobble := 0.85 + 0.15 * sin(TAU * 6.0 * t)
 		d[i] = (whine * 0.22 + spark * 0.25) * wobble
+	return d
+
+
+## The starter motor: a whirring crank that speeds up, then the engine catches.
+func _starter() -> PackedFloat32Array:
+	var d := _samples(0.8)
+	var phase := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		var crank := lerpf(7.0, 13.0, t / 0.7)
+		phase += crank / RATE
+		var whirr := sin(TAU * 420.0 * t) * 0.15 + sin(TAU * 840.0 * t) * 0.06
+		var chug := pow(1.0 - fmod(phase, 1.0), 6.0) * 0.8
+		var env := clampf(t * 30.0, 0.0, 1.0) * clampf((0.8 - t) * 12.0, 0.0, 1.0)
+		d[i] = (whirr + chug + _rng.randf_range(-0.05, 0.05)) * env * 0.6
+	return d
+
+
+## A pressure washer: a hard jet of water over a pump's buzz.
+func _jet() -> PackedFloat32Array:
+	var d := _hiss(1.0, 0.5, 0.75)
+	for i in d.size():
+		var t := float(i) / RATE
+		d[i] += (sin(TAU * 100.0 * t) * 0.12 + sin(TAU * 200.0 * t) * 0.05) * (0.9 + 0.1 * sin(TAU * 6.0 * t))
+	return d
+
+
+## Fluid glugging out of a can.
+func _pour() -> PackedFloat32Array:
+	var d := _samples(1.0)
+	var lp := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.06
+		var glug := pow(maxf(sin(TAU * 4.0 * t), 0.0), 3.0)
+		d[i] = lp * (0.6 + 1.4 * glug) * 0.9 + sin(TAU * (180.0 + 60.0 * glug) * t) * 0.08 * glug
 	return d
 
 

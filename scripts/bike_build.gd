@@ -3,12 +3,20 @@ extends RefCounted
 ## A bike as a set of chosen parts in some condition, plus every stat the physics and the
 ## garage dashboards derive from them. Rust, dirt and wear on a part sap its performance,
 ## and engine parts have to suit each other: a big engine needs enough fuel and cooling.
+## Fluids count too: the petrol in the tank, the oil in the engine and the brake fluid in each
+## master cylinder, how much there is and how old it is. A part's condition can carry its
+## "fluid" as {type, litres, age}; without one the bike is taken as freshly serviced.
 
 const RIDER_MASS := 75.0
 const FIXED_MASS := 39.0      # battery, wiring, lights, bodywork, fluids
-const FUEL_DENSITY := 0.74    # kg per litre; tanks are taken as half full
+const FUEL_DENSITY := 0.74    # kg per litre
+const OIL_DENSITY := 0.87
+## Litres of petrol per kWh at the crank, and the engine's own thirst ticking over per litre of capacity.
+const FUEL_PER_KWH := 0.5
+const IDLE_FUEL_PER_LITRE := 0.9   # litres an hour
 const AIR_DENSITY := 1.2
 const DRIVETRAIN_EFFICIENCY := 0.92
+const ROLLING := 0.015
 
 var parts: Dictionary          # slot -> part id
 var condition: Dictionary      # slot -> {rust, dirt, wear, color}, each 0 (as new) .. 1 (ruined)
@@ -26,6 +34,22 @@ var cda := 0.55                # drag area, m^2
 var steer_rate := 4.0          # how quickly the bars turn, rad/s; wider bars give more leverage
 var fuel_capacity := 15.0
 var dash_features: Array = ["speed"]
+var headlight_lumens := 0.0    # 0 with no headlight fitted
+var has_side_stand := false
+var has_centre_stand := false
+var centre_lift := 0.04
+
+# Fluids
+var fuel_litres := 0.0
+var fuel_type := "unleaded_95"
+var fuel_age := 0.0            # 0 fresh .. 1 stale, gummed-up petrol
+var oil_capacity := 2.5
+var oil_litres := 2.5
+var oil_age := 0.0             # 0 fresh .. 1 black sludge
+var oil_type := "semi_10w40"
+var oil_protection := 0.88     # how well the oil looks after the engine, 0..1
+var brake_fluid := {"front": 1.0, "rear": 1.0}   # how full each side's master cylinder is, 0..1
+var economy_mult := 1.0        # how far each litre goes: fuel grade, tune and condition
 
 # Suspension
 var front_travel := 0.13
@@ -94,6 +118,20 @@ func _cond(slot: String, key: String) -> float:
 	return float(condition.get(slot, {}).get(key, 0.0))
 
 
+func has_part(slot: String) -> bool:
+	return parts.get(slot, "none") != "none"
+
+
+## The fluid in a slot's part as {type, litres, age}. Unknown means full and fresh.
+func _fluid(slot: String, default_type: String, capacity: float) -> Dictionary:
+	var f = condition.get(slot, {}).get("fluid", null)
+	if f is Dictionary and f.has("litres"):
+		var t := str(f.get("type", ""))
+		return {"type": t if t != "" else default_type, "litres": clampf(float(f["litres"]), 0.0, capacity),
+			"age": clampf(float(f.get("age", 0.0)), 0.0, 1.0)}
+	return {"type": default_type, "litres": capacity, "age": 0.0}
+
+
 func part(slot: String) -> Dictionary:
 	return PartsDB.get_part(parts[slot])
 
@@ -101,15 +139,18 @@ func part(slot: String) -> Dictionary:
 ## Average health of all the parts, as a 0..1 rating.
 func overall_health() -> float:
 	var total := 0.0
+	var n := 0
 	for slot in PartsDB.SLOTS:
-		total += float(health.get(slot, 1.0))
-	return total / PartsDB.SLOTS.size()
+		if has_part(slot):
+			total += float(health.get(slot, 1.0))
+			n += 1
+	return total / maxf(n, 1)
 
 
 func _compute() -> void:
 	notes.clear()
 	for slot in PartsDB.SLOTS:
-		health[slot] = part_health(condition.get(slot, {}))
+		health[slot] = part_health(condition.get(slot, {})) if has_part(slot) else 1.0
 	var frame := part("frame")
 	var fork := part("fork")
 	var shock := part("shock")
@@ -120,7 +161,19 @@ func _compute() -> void:
 	var bars := part("handlebars")
 
 	cylinders = int(block["cylinders"])
-	bike_mass = FIXED_MASS + float(tank["capacity"]) * FUEL_DENSITY * 0.5
+	fuel_capacity = tank["capacity"]
+	var fuel := _fluid("tank", "unleaded_95", fuel_capacity)
+	fuel_litres = fuel["litres"]
+	fuel_type = fuel["type"]
+	fuel_age = fuel["age"]
+	oil_capacity = PartsDB.fluid_capacity(parts["engine"])
+	var oil := _fluid("engine", "semi_10w40", oil_capacity)
+	oil_litres = oil["litres"]
+	oil_age = oil["age"]
+	oil_type = oil["type"]
+	var oil_part := PartsDB.get_part(oil["type"])
+	oil_protection = float(oil_part.get("protection", 0.8)) * lerpf(1.0, 0.55, oil_age)
+	bike_mass = FIXED_MASS + fuel_litres * FUEL_DENSITY + oil_litres * OIL_DENSITY
 	for slot in parts:
 		var p := part(slot)
 		bike_mass += float(p.get("mass", float(p.get("mass_per_cyl", 0.0)) * cylinders))
@@ -132,8 +185,11 @@ func _compute() -> void:
 	seat_height = float(frame["seat_height"]) + float(saddle["height"])
 	cda = float(frame["cda"]) + float(bars["cda"])
 	steer_rate = 4.0 * float(bars["width"]) / 720.0
-	fuel_capacity = tank["capacity"]
 	dash_features = part("dashboard")["features"]
+	headlight_lumens = float(part("headlight").get("lumens", 0.0)) * lerpf(0.6, 1.0, health.get("headlight", 1.0))
+	has_side_stand = has_part("side_stand")
+	has_centre_stand = has_part("centre_stand")
+	centre_lift = float(part("centre_stand").get("lift", 0.04))
 
 	front_travel = fork["travel"]
 	front_spring = fork["spring"] * lerpf(0.85, 1.0, health["fork"])
@@ -229,8 +285,24 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 		notes.append("Runs hot: the %s can't cope." % str(cooling["name"]).to_lower())
 	# Rotten pipes leak and lose power.
 	torque_mult *= float(exhaust["torque_mult"]) * (1.0 - 0.15 * _cond("exhaust", "rust")) * lerpf(0.9, 1.0, health["exhaust"])
+	# Better petrol is a little stronger; stale petrol from a barn is not.
+	var petrol := PartsDB.get_part(fuel_type)
+	torque_mult *= float(petrol.get("power", 1.0)) * lerpf(1.0, 0.82, fuel_age)
+	if fuel_age > 0.5 and fuel_litres > 0.0:
+		notes.append("The petrol has gone stale. Drain the tank and fill it fresh.")
+	# Low or old oil: more friction now, and the engine wears out fast when ridden.
+	var oil_level := oil_litres / maxf(oil_capacity, 0.1)
+	torque_mult *= 2.0 - float(PartsDB.get_part(oil_type).get("friction", 1.0))
+	if oil_level < 0.5:
+		torque_mult *= lerpf(0.7, 1.0, oil_level / 0.5)
+		notes.append("No oil in the engine!" if oil_level <= 0.01 else "Low on oil: top it up before it wrecks the engine.")
+	elif oil_age > 0.7:
+		notes.append("The oil is old and black. Drain it and fill it fresh.")
 	peak_torque *= torque_mult
 	exhaust_loudness = float(exhaust["loudness"])
+	# How far a litre goes: the petrol, the plugs, the filter and how healthy the engine is.
+	economy_mult = float(petrol.get("economy", 1.0)) * lerpf(0.82, 1.0, plug_health) * (1.0 - 0.15 * clog) \
+		* lerpf(0.85, 1.0, clampf(block_health, 0.0, 1.0)) * lerpf(0.9, 1.0, health["fuel"])
 
 
 func _side_brake(side: String) -> float:
@@ -241,8 +313,16 @@ func _side_brake(side: String) -> float:
 	var h := 0.0
 	for s in ["disc", "caliper", "pads", "master"]:
 		h += float(health[side + "_" + s]) * (0.4 if s == "pads" else 0.2)
+	# Low fluid makes the lever spongy; old fluid has soaked up water and fades.
+	var fluid := _fluid(side + "_master", "dot4", PartsDB.MASTER_FLUID)
+	var level: float = fluid["litres"] / PartsDB.MASTER_FLUID
+	brake_fluid[side] = level
+	var fluid_mult := lerpf(0.25, 1.0, clampf(level / 0.6, 0.0, 1.0)) * float(PartsDB.get_part(fluid["type"]).get("brake", 1.0)) \
+		* lerpf(1.0, 0.82, fluid["age"])
+	if level < 0.6:
+		notes.append("%s brake is spongy: top up the brake fluid." % side.capitalize())
 	return 1600.0 * float(disc["diameter"]) / 300.0 * float(caliper["force"]) * float(pads["mu"]) / 0.42 \
-		* float(master["ratio"]) * lerpf(0.5, 1.0, h)
+		* float(master["ratio"]) * lerpf(0.5, 1.0, h) * fluid_mult
 
 
 func _compute_brakes() -> void:
@@ -306,11 +386,30 @@ func top_speed_estimate() -> float:
 		while rpm <= redline:
 			var v := rpm / ratio * TAU / 60.0 * rear_radius
 			var drive := engine_torque(rpm) * ratio * drivetrain_efficiency / rear_radius
-			var resist := 0.5 * AIR_DENSITY * cda * v * v + 0.015 * total_mass * 9.81
+			var resist := 0.5 * AIR_DENSITY * cda * v * v + ROLLING * total_mass * 9.81
 			if drive >= resist:
 				best = maxf(best, v)
 			rpm += 50.0
 	return best
+
+
+## Litres an hour the engine burns making `kw` at the crank while turning `rpm`.
+func fuel_rate(kw: float, rpm: float) -> float:
+	var idle := IDLE_FUEL_PER_LITRE * displacement / 1000.0 * clampf(rpm / maxf(idle_rpm * 3.0, 1.0), 0.33, 2.5)
+	return (maxf(kw, 0.0) * FUEL_PER_KWH + idle) / maxf(economy_mult, 0.3)
+
+
+## Kilometres per litre at a steady 90 km/h, for comparing bikes.
+func cruise_economy() -> float:
+	var v := 25.0
+	var kw := (0.5 * AIR_DENSITY * cda * v * v * v + ROLLING * total_mass * 9.81 * v) / drivetrain_efficiency / 1000.0
+	var rpm := v / rear_radius * overall_ratio(gear_count()) * 60.0 / TAU
+	return 90.0 / fuel_rate(kw, rpm)
+
+
+## How far the petrol in the tank goes at a steady 90 km/h.
+func range_km() -> float:
+	return fuel_litres * cruise_economy()
 
 
 func hp() -> float:
@@ -331,4 +430,5 @@ func summary() -> Dictionary:
 		"health": overall_health(),
 		"brake": front_brake_torque + rear_brake_torque,
 		"grip": float(grip.get("tarmac", 1.0)),
+		"economy": cruise_economy(),
 	}

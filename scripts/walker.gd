@@ -2,18 +2,23 @@ class_name Walker
 extends CharacterBody3D
 ## The player on foot in first person. Looks at bikes and parts, picks a tool, and holds the
 ## action button to work: unbolt, remove, fit, bolt up, clean and restore. Every change goes
-## through the Shed state so everyone in the session sees the same bikes.
+## through the Shed state so everyone in the session sees the same bikes. Crouches to get at
+## the low bits, wheels bikes about, and pours and drains fluids with a can in hand.
 
 signal mount_requested(bike_id: int)
 signal computer_requested
 signal label_requested(furniture_id: int)
 
-const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair", "spray"]
+const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair", "spray", "lance"]
 const TOOL_NAMES := {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder and welder",
-	"spray": "Spray can"}
+	"spray": "Spray can", "lance": "Pressure washer"}
 const EYE := 1.62
+const CROUCH_EYE := 0.95
 const WALK := 3.2
 const RUN := 5.5
+const CROUCH_WALK := 1.5
+const HOLD_TO_PUSH := 0.35   # hold F this long on a bike to wheel it instead of getting on
+const JET_REACH := 0.3       # the pressure washer cleans every part this close to where it hits
 const REACH := 2.6
 const BRUSH_REACH := 0.35    # the brush cleans every part this close to where it touches
 const MOUSE_SENS := 0.0025
@@ -28,6 +33,8 @@ var info := ""              # description of the target for the HUD
 var progress := 0.0         # 0..1 of the current hold-to-work action
 var spray_color := 0        # index into Shed.PAINTS loaded in the spray can
 var spray_finish := 0       # index into Shed.FINISHES
+var crouched := false
+var alt_plan := {}          # what the second work button would do (drain a fluid), same shape as plan
 
 var _pitch := 0.0
 var _hold := 0.0
@@ -41,18 +48,25 @@ var _highlighted: BikeModel
 var _work_sound: AudioStreamPlayer3D
 var _stride := 0.0
 var _push_timer := 0.0
+var _shape: CapsuleShape3D
+var _shape_node: CollisionShape3D
+var _eye := EYE
+var _f_bike := 0            # bike F went down on, waiting to see if it's a tap (ride) or a hold (push)
+var _f_time := 0.0
+var _active_plan := {}
+var _jet: CPUParticles3D
 
 
 func _ready() -> void:
 	collision_layer = 16
 	collision_mask = 1 | 2 | 4
-	var shape := CapsuleShape3D.new()
-	shape.radius = 0.3
-	shape.height = 1.75
-	var cs := CollisionShape3D.new()
-	cs.shape = shape
-	cs.position.y = 0.875
-	add_child(cs)
+	_shape = CapsuleShape3D.new()
+	_shape.radius = 0.3
+	_shape.height = 1.75
+	_shape_node = CollisionShape3D.new()
+	_shape_node.shape = _shape
+	_shape_node.position.y = 0.875
+	add_child(_shape_node)
 	camera = Camera3D.new()
 	camera.position.y = EYE
 	camera.near = 0.03
@@ -95,12 +109,26 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif tool == "spray" and event.is_action_pressed("spray_finish"):
 		spray_finish = (spray_finish + 1) % Shed.FINISHES.size()
 		_spray_changed()
+	elif event.is_action_pressed("crouch"):
+		set_crouched(not crouched)
+	elif event.is_action_released("interact") and _f_bike != 0:
+		# A tap of F on a bike gets you on it; holding it takes hold of the bars (see _physics_process).
+		get_viewport().set_input_as_handled()
+		var bike := _f_bike
+		_f_bike = 0
+		if _f_time < HOLD_TO_PUSH:
+			mount_requested.emit(bike)
 	elif event.is_action_pressed("interact"):
 		var box := _target_box()
 		var pushed := Shed.moving(Shed.me())
+		var wheeling := Shed.pushing_bike(Shed.me())
 		var furniture := _target_furniture()
 		# Mark the press handled before mounting, or the same F reaches main and gets you off again.
-		if pushed != 0:
+		if wheeling != 0:
+			get_viewport().set_input_as_handled()
+			Shed.request({"a": "release_bike", "bike": wheeling, "xf": _bike_push_transform(wheeling)})
+			collision_mask = 1 | 2 | 4
+		elif pushed != 0:
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "release", "furniture": pushed, "xf": _push_transform(pushed)})
 		elif box != 0:
@@ -112,7 +140,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			Shed.request({"a": "grab", "furniture": furniture})
 		elif target.get("kind", "") == "part" and int(target.get("bike", 0)) != 0:
 			get_viewport().set_input_as_handled()
-			mount_requested.emit(int(target["bike"]))
+			_f_bike = int(target["bike"])
+			_f_time = 0.0
 		elif target.get("kind", "") == "pc":
 			get_viewport().set_input_as_handled()
 			computer_requested.emit()
@@ -123,6 +152,27 @@ func _unhandled_input(event: InputEvent) -> void:
 		for i in TOOLS.size():
 			if event.is_action_pressed("tool_%d" % (i + 1)):
 				set_tool(TOOLS[i])
+
+
+func set_crouched(on: bool) -> void:
+	if on == crouched:
+		return
+	if not on:
+		# Only stand up if there's head room.
+		var q := PhysicsShapeQueryParameters3D.new()
+		var probe := CapsuleShape3D.new()
+		probe.radius = 0.28
+		probe.height = 1.7
+		q.shape = probe
+		q.transform = Transform3D(Basis(), global_position + Vector3.UP * 0.9)
+		q.collision_mask = 1
+		q.exclude = [get_rid()]
+		if not get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty():
+			Shed.feedback.emit("No room to stand up here.", false)
+			return
+	crouched = on
+	_shape.height = 1.1 if crouched else 1.75
+	_shape_node.position.y = _shape.height * 0.5
 
 
 func _look(dyaw: float, dpitch: float) -> void:
@@ -171,7 +221,10 @@ func _physics_process(delta: float) -> void:
 		var look := Controls.stick(true)
 		if look != Vector2.ZERO:
 			_look(-look.x * PAD_LOOK * delta, -look.y * PAD_LOOK * 0.7 * delta)
-	var wish := (transform.basis * Vector3(input.x, 0.0, input.y)) * (RUN if running else WALK)
+	var pace := CROUCH_WALK if crouched else (RUN if running else WALK)
+	if Shed.pushing_bike(Shed.me()) != 0:
+		pace = minf(pace, 2.4)   # a bike is heavy to wheel about
+	var wish := (transform.basis * Vector3(input.x, 0.0, input.y)) * pace
 	velocity.x = move_toward(velocity.x, wish.x, 30.0 * delta)
 	velocity.z = move_toward(velocity.z, wish.z, 30.0 * delta)
 	if not is_on_floor():
@@ -186,13 +239,26 @@ func _physics_process(delta: float) -> void:
 			Sfx.play_at("step", global_position, -14.0)
 	if global_position.y < -20.0:
 		place(Workshop.walker_spawn(0))
+	_eye = move_toward(_eye, CROUCH_EYE if crouched else EYE, delta * 4.0)
+	camera.position.y = _eye
+	if _f_bike != 0:
+		_f_time += delta
+		if _f_time >= HOLD_TO_PUSH:
+			Shed.request({"a": "grab_bike", "bike": _f_bike})
+			_f_bike = 0
 	var pushed := Shed.moving(Shed.me())
-	if pushed != 0:
+	var wheeling := Shed.pushing_bike(Shed.me())
+	if wheeling != 0:
+		_push_bike(wheeling, delta)
+	elif pushed != 0:
 		_push(pushed, delta)
 	else:
+		if collision_mask != 1 | 2 | 4:
+			collision_mask = 1 | 2 | 4
 		_update_target()
 	_update_work(delta)
 	_update_held_view()
+	_update_jet()
 
 
 # ---------------------------------------------------------------------------- targeting
@@ -289,11 +355,43 @@ func _push(id: int, delta: float) -> void:
 	_highlight()
 
 
+## Where the bike you're wheeling goes: beside you on your right, pointing the way you face,
+## with you holding the bars.
+func _bike_push_transform(_id: int) -> Transform3D:
+	var heading := rotation.y
+	var b := Basis(Vector3.UP, heading)
+	var at := global_position + b * Vector3(0.75, 0.0, 0.25)
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * 2.0, 1)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	at.y = (hit["position"] as Vector3).y if hit else global_position.y
+	return Transform3D(b, at)
+
+
+func _push_bike(id: int, delta: float) -> void:
+	# Parked bikes are solid to walk into; the one in your hands mustn't shove you about.
+	collision_mask = 1 | 2
+	var xf := _bike_push_transform(id)
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	if view:
+		view.preview_bike(id, xf)
+	_push_timer += delta
+	if _push_timer > 0.1:
+		_push_timer = 0.0
+		Shed.request({"a": "move_bike", "bike": id, "xf": xf})
+	target = {}
+	plan = {}
+	alt_plan = {}
+	info = "Wheeling %s\nWalk to push it, back up to pull it. Bikes don't have reverse.\nF: let go (it goes on its stand, or into a bay's paddock stand)" % \
+		str(Shed.bikes[id]["name"])
+	_highlight()
+
+
 ## The bike or engine a part target belongs to, as action fields.
 func _where() -> Dictionary:
 	if int(target.get("engine", 0)) != 0:
-		return {"engine": int(target["engine"]), "slot": str(target["slot"])}
-	return {"bike": int(target.get("bike", 0)), "slot": str(target.get("slot", ""))}
+		return {"engine": int(target["engine"]), "slot": str(target["slot"]), "crouched": crouched}
+	return {"bike": int(target.get("bike", 0)), "slot": str(target.get("slot", "")), "crouched": crouched}
 
 
 ## The item the crosshair is on: a fitted part, or whatever sits on a spot.
@@ -309,11 +407,16 @@ func target_item() -> int:
 
 
 func _make_plan() -> Dictionary:
+	alt_plan = {}
 	var me := Shed.me()
 	var held := Shed.held_by(me)
 	var kind := str(target.get("kind", ""))
 	if kind == "":
 		return {}
+	if held != 0 and tool == "hands" and PartsDB.is_fluid(Shed.items[held]["part"]):
+		var fp := _fluid_plan(held, kind)
+		if not fp.is_empty() or kind == "part":
+			return fp
 	var item_id := target_item()
 	var p := {}
 	if kind == "label":
@@ -358,8 +461,15 @@ func _make_plan() -> Dictionary:
 				match kind:
 					"part":
 						var a := _where()
-						a["a"] = "remove"
-						p = {"action": a, "time": 1.0, "verb": "take it off"}
+						var slot := str(target.get("slot", ""))
+						if slot in ["side_stand", "centre_stand"] and int(target.get("bike", 0)) != 0 and Shed.bolted_at_target(target):
+							# Working the stand itself: kick it down, or heave the bike up onto it.
+							var which := slot.trim_suffix("_stand")
+							p = {"action": {"a": "set_stand", "bike": int(target["bike"]), "stand": which}, "time": 0.6 if which == "side" else 1.4,
+								"verb": "kick the side stand down" if which == "side" else "heave it up onto the centre stand"}
+						else:
+							a["a"] = "remove"
+							p = {"action": a, "time": 1.0, "verb": "take it off"}
 					"spot":
 						if item_id != 0:
 							p = {"action": {"a": "take", "spot": target["spot"]}, "time": 0.25, "verb": "pick it up"}
@@ -397,10 +507,55 @@ func _make_plan() -> Dictionary:
 			if item_id != 0:
 				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": Shed.FINISHES[spray_finish]},
 					"time": 1.5, "verb": "spray it %s" % spray_text().to_lower()}
+		"lance":
+			if target.has("at"):
+				var near := [] if item_id == 0 else [item_id]
+				var view: Node = get_tree().get_first_node_in_group("workshop")
+				if view:
+					for id in view.items_near(target["at"], JET_REACH):
+						if not near.has(id) and Shed.items.has(id):
+							near.append(id)
+				if not near.is_empty() or item_id != 0:
+					p = {"action": {"a": "wash", "items": near, "at": target["at"]}, "time": 0.2, "verb": "blast the muck off"}
 	if p.is_empty():
 		return {}
 	p["blocked"] = "" if p["action"]["a"] in ["computer", "write_label"] else Shed.check(me, p["action"])
 	return p
+
+
+## With a can or bottle in hand: pour it into the tank, engine or brakes (first button), drain
+## them into it (second button), or tip what's in it away in the scrap bin.
+func _fluid_plan(held: int, kind: String) -> Dictionary:
+	var me := Shed.me()
+	var can: Dictionary = Shed.items[held]
+	var fluid := PartsDB.kind_of(can["part"])
+	var holder := 0
+	match kind:
+		"part":
+			holder = Shed.fluid_holder(target, fluid)
+		"spot":
+			var on_spot := Shed.item_at_spot(str(target["spot"]))
+			if Shed.is_engine(on_spot) and fluid == "oil":
+				holder = on_spot
+		"bin":
+			if float(can["fluid"]["litres"]) > 0.0:
+				var tip := {"action": {"a": "tip"}, "time": 1.5, "verb": "tip it away"}
+				tip["blocked"] = Shed.check(me, tip["action"])
+				return tip
+			return {}
+	if holder == 0:
+		return {}
+	var what: String = PartsDB.KIND_NAMES[fluid].to_lower()
+	var where := PartsDB.slot_name(PartsDB.slots_for_kind(PartsDB.kind_of(Shed.items[holder]["part"]))[0]).to_lower()
+	if fluid == "brake_fluid":
+		where = "brake reservoir"
+	var pour := {"action": {"a": "pour", "item": holder}, "time": Shed.pour_time(can, Shed.items[holder]),
+		"verb": "pour the %s into the %s" % [what, where]}
+	pour["blocked"] = Shed.check(me, pour["action"])
+	alt_plan = {"action": {"a": "drain", "item": holder, "crouched": crouched}, "time": Shed.pour_time(Shed.items[holder], can),
+		"verb": "drain the %s into your %s" % [what, str(PartsDB.get_part(can["part"])["container"]).to_lower()]}
+	alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
+	return pour
 
 
 func _describe() -> String:
@@ -418,8 +573,10 @@ func _describe() -> String:
 				lines.append("%s on %s  ·  %s" % [PartsDB.slot_name(slot), owner, "bolted" if Shed.bolted_at_target(target) else "LOOSE"])
 				lines.append(PartsDB.spec_line(it["part"]))
 				lines.append(Shed.condition_text(it))
+				if it.has("fluid"):
+					lines.append(Shed.fluid_text(it))
 			var held := Shed.held_by(Shed.me())
-			if held != 0 and tool == "hands":
+			if held != 0 and tool == "hands" and not PartsDB.is_fluid(Shed.items[held]["part"]):
 				lines.append(_preview(held))
 			if engine_id != 0:
 				var missing := Shed.engine_missing(engine_id)
@@ -430,6 +587,9 @@ func _describe() -> String:
 					lines.append("! " + note)
 				var ride := Shed.check(Shed.me(), {"a": "mount", "bike": bike_id})
 				lines.append("F: ride %s" % Shed.bikes[bike_id]["name"] if ride == "" else "Can't ride yet. " + ride)
+				var wheel := Shed.check(Shed.me(), {"a": "grab_bike", "bike": bike_id})
+				if wheel == "":
+					lines.append("Hold F: wheel it about")
 		"spot":
 			var spot := str(target["spot"])
 			var item_id := Shed.item_at_spot(spot)
@@ -444,6 +604,8 @@ func _describe() -> String:
 				lines.append(Shed.condition_text(it))
 				if it.get("boxed", false):
 					lines.append("F: unpack it")
+				if it.has("fluid") and not PartsDB.is_fluid(it["part"]):
+					lines.append(Shed.fluid_text(it))
 				if Shed.is_engine(item_id) and Shed.is_stand_spot(spot) and not it.get("boxed", false):
 					var missing := Shed.engine_missing(item_id)
 					lines.append("Engine complete." if missing.is_empty() else "Engine needs: %s" % ", ".join(missing.map(func(m): return PartsDB.slot_name(m).to_lower())))
@@ -511,9 +673,10 @@ func _preview(item_id: int, at := {}) -> String:
 		before = Shed.build_of(int(action["bike"])).summary()
 		after = Shed.build_of(int(action["bike"]), item_id, slot).summary()
 	var verb := "Fit as %s" % PartsDB.slot_name(slot).to_lower()
-	return "%s: %d → %d hp   %d → %d km/h   %d → %d kg   brakes %d → %d" % [verb, roundi(before["hp"]), roundi(after["hp"]),
-		roundi(before["top_kmh"]), roundi(after["top_kmh"]), roundi(before["mass"]), roundi(after["mass"]),
-		roundi(before["brake"]), roundi(after["brake"])]
+	return "%s: %d → %d hp   %d → %d %s   %d → %d %s   brakes %d → %d   %s → %s" % [verb, roundi(before["hp"]), roundi(after["hp"]),
+		Units.speed_value(before["top_kmh"] / 3.6), Units.speed_value(after["top_kmh"] / 3.6), Units.speed_unit(),
+		roundi(Units.mass_value(before["mass"])), roundi(Units.mass_value(after["mass"])), Units.mass_unit(),
+		roundi(before["brake"]), roundi(after["brake"]), Units.economy(before["economy"]), Units.economy(after["economy"])]
 
 
 func _highlight() -> void:
@@ -534,41 +697,59 @@ func _highlight() -> void:
 # ---------------------------------------------------------------------------- working
 
 func _acting() -> bool:
-	return controls_enabled and (Input.is_action_pressed("act") or Controls.trigger(true) > 0.5)
+	return controls_enabled and (_main_button() or _alt_button())
+
+
+func _main_button() -> bool:
+	return Input.is_action_pressed("act") or Controls.trigger(true) > 0.5
+
+
+## The second work button, for draining. Only counts when there's something to drain.
+func _alt_button() -> bool:
+	return not alt_plan.is_empty() and (Input.is_action_pressed("alt_act") or Controls.trigger(false) > 0.5)
 
 
 func _update_work(delta: float) -> void:
-	var key := str(plan.get("action", {}))
-	if plan.get("action", {}).get("a", "") == "drop":
-		key = "drop"  # the spot moves with the crosshair; keep the hold going
+	var use_alt := controls_enabled and _alt_button() and not _main_button()
+	var plan_now: Dictionary = alt_plan if use_alt else plan
+	_active_plan = plan_now
+	var key := ("alt:" if use_alt else "") + str(plan_now.get("action", {}))
+	var a_now := str(plan_now.get("action", {}).get("a", ""))
+	if a_now in ["drop", "wash"]:
+		key = a_now  # the spot moves with the crosshair; keep the hold going
 	if not _acting():
 		_need_release = false
-	if plan.is_empty() or plan["blocked"] != "" or key != _plan_key or not _acting() or _need_release:
+	if plan_now.is_empty() or plan_now["blocked"] != "" or key != _plan_key or not _acting() or _need_release:
 		Sfx.set_loop(_work_sound, "")
 		if _hold > 0.0 and _last_status != "":
 			_send_status("")
 		_hold = 0.0
 		progress = 0.0
 		_plan_key = key
-		if _acting() and not plan.is_empty() and plan["blocked"] != "" and not _need_release:
-			Shed.feedback.emit(plan["blocked"], false)
+		if _acting() and not plan_now.is_empty() and plan_now["blocked"] != "" and not _need_release:
+			Shed.feedback.emit(plan_now["blocked"], false)
 			_need_release = true
 		return
 	if _hold == 0.0:
 		_send_status(_activity_text())
-		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get(plan["action"]["a"], ""))
+		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get(a_now, ""))
 	_hold += delta
-	progress = clampf(_hold / float(plan["time"]), 0.0, 1.0)
+	progress = clampf(_hold / float(plan_now["time"]), 0.0, 1.0)
 	if progress >= 1.0:
-		if plan["action"]["a"] == "computer":
+		if a_now == "computer":
 			computer_requested.emit()
-		elif plan["action"]["a"] == "write_label":
+		elif a_now == "write_label":
 			label_requested.emit(int(target.get("furniture", 0)))
 		else:
-			Shed.request(plan["action"])
-			var done: String = Sfx.DONE_SOUNDS.get(plan["action"]["a"], "")
+			Shed.request(plan_now["action"])
+			var done: String = Sfx.DONE_SOUNDS.get(a_now, "")
 			if done != "":
 				Sfx.play_at(done, camera.global_position - camera.global_transform.basis.z * 1.2, -4.0)
+		if a_now == "wash":
+			# The jet keeps going for as long as you hold the trigger.
+			_hold = 0.0
+			progress = 0.0
+			return
 		Sfx.set_loop(_work_sound, "")
 		_hold = 0.0
 		progress = 0.0
@@ -577,14 +758,15 @@ func _update_work(delta: float) -> void:
 
 
 func _activity_text() -> String:
-	var a: Dictionary = plan["action"]
+	var a: Dictionary = _active_plan["action"]
 	var what := ""
 	if target.get("kind", "") == "part":
 		var owner := "the engine" if int(target.get("engine", 0)) != 0 else str(Shed.bikes[target["bike"]]["name"])
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
 		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
-		"place": "Putting down a part", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer"}
+		"place": "Putting down a part", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer",
+		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()
@@ -592,6 +774,10 @@ func _activity_text() -> String:
 		what = "the " + Shed.item_title(int(a["item"]))
 	if a["a"] == "install":
 		what = "the engine" if int(a.get("engine", 0)) != 0 else str(Shed.bikes[int(a.get("bike", 0))]["name"])
+	if a["a"] in ["pour", "drain"] and what == "":
+		what = "the " + Shed.item_title(int(a["item"]))
+	if a["a"] == "wash" and what == "":
+		what = "%d parts" % a["items"].size()
 	return ("%s %s" % [verb, what]).strip_edges()
 
 
@@ -636,10 +822,50 @@ func _update_held_view() -> void:
 func _set_tool_view() -> void:
 	if _tool_view:
 		_tool_view.queue_free()
+	_jet = null
 	_tool_view = make_tool_mesh(tool, Shed.PAINTS[spray_color])
 	_tool_view.position = Vector3(0.28, -0.28, -0.5)
 	_tool_view.rotation = Vector3(0.25, -0.3, 0.0)
+	if tool == "lance":
+		_tool_view.position = Vector3(0.22, -0.26, -0.3)
+		_tool_view.rotation = Vector3(0.05, -0.12, 0.0)
+		_jet = make_jet()
+		_jet.position = Vector3(0.0, 0.0, -0.6)
+		_tool_view.add_child(_jet)
 	camera.add_child(_tool_view)
+
+
+## A fan of water from the pressure washer's nozzle. Shared with other players' avatars.
+static func make_jet() -> CPUParticles3D:
+	var jet := CPUParticles3D.new()
+	jet.amount = 60
+	jet.lifetime = 0.35
+	jet.emitting = false
+	jet.local_coords = false
+	jet.direction = Vector3(0.0, 0.0, -1.0)
+	jet.spread = 5.0
+	jet.initial_velocity_min = 9.0
+	jet.initial_velocity_max = 12.0
+	jet.gravity = Vector3(0.0, -4.0, 0.0)
+	jet.scale_amount_min = 0.025
+	jet.scale_amount_max = 0.05
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.0, 1.0)
+	var m := StandardMaterial3D.new()
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(0.85, 0.92, 1.0, 0.55)
+	quad.material = m
+	jet.mesh = quad
+	return jet
+
+
+func _update_jet() -> void:
+	if _jet == null:
+		return
+	var a := str(_active_plan.get("action", {}).get("a", ""))
+	_jet.emitting = tool == "lance" and _acting() and a == "wash" and str(_active_plan.get("blocked", "")) in ["", "It's already clean."]
 
 
 ## A simple mesh of a tool, held in the hand. Shared with other players' avatars.
@@ -675,6 +901,14 @@ static func make_tool_mesh(which: String, can_color := Color(0.9, 0.75, 0.1)) ->
 			can.roughness = 0.3
 			parts = [[Vector3(0, -0.02, 0), Vector3(0.06, 0.18, 0.06), can], [Vector3(0, 0.09, 0), Vector3(0.03, 0.04, 0.03), steel],
 				[Vector3(0, 0.12, -0.01), Vector3(0.02, 0.02, 0.03), grip]]
+		"lance":
+			var yellow := StandardMaterial3D.new()
+			yellow.albedo_color = Color(0.95, 0.75, 0.05)
+			yellow.roughness = 0.4
+			var black := StandardMaterial3D.new()
+			black.albedo_color = Color(0.05, 0.05, 0.05)
+			parts = [[Vector3(0, -0.06, 0.04), Vector3(0.04, 0.14, 0.05), black], [Vector3(0, 0.0, -0.02), Vector3(0.05, 0.06, 0.14), yellow],
+				[Vector3(0, 0.0, -0.32), Vector3(0.015, 0.015, 0.5), steel], [Vector3(0, 0.0, -0.58), Vector3(0.03, 0.03, 0.05), black]]
 		_:
 			pass  # bare hands: nothing to draw
 	for p in parts:

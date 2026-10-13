@@ -12,6 +12,7 @@ var _build: BikeBuild
 var _snapshots: Array = []   # [{t, state}]
 var _label: Label3D
 var _last := PackedFloat32Array()
+var _effects: BikeEffects
 
 
 func setup(rider_name: String, build: BikeBuild, paint: Color) -> void:
@@ -45,6 +46,10 @@ func setup(rider_name: String, build: BikeBuild, paint: Color) -> void:
 	audio.loudness = _build.exhaust_loudness
 	audio.volume_db = -6.0
 	add_child(audio)
+	_effects = BikeEffects.new()
+	add_child(_effects)
+	_effects.setup(model.exhaust_tip(), Vector3(0.0, -_build.rear_radius, _build.wheelbase * 0.5), model.lamp_position(),
+		_build.headlight_lumens)
 
 
 func push_state(state: PackedFloat32Array) -> void:
@@ -55,7 +60,7 @@ func push_state(state: PackedFloat32Array) -> void:
 		_snapshots.pop_front()
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if _snapshots.is_empty():
 		return
 	var render_t := Time.get_ticks_msec() / 1000.0 - DELAY
@@ -79,6 +84,10 @@ func _physics_process(_delta: float) -> void:
 	model.set_rider_visible(sb[17] < 0.5)
 	audio.rpm = sb[15]
 	audio.throttle = sb[16]
+	var running := sb.size() < 20 or sb[19] > 0.5
+	audio.running = running
+	var v := Vector3(sb[7], sb[8], sb[9])
+	_effects.update(delta, v.length(), sb[16], running, _build.overall_health(), "", true, 0.0)
 
 
 func current_speed() -> float:

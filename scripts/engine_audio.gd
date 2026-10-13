@@ -8,6 +8,8 @@ var rpm := 1000.0
 var throttle := 0.0
 var cylinders := 2
 var loudness := 1.0         # exhaust: stock muffler 0.6 .. straight pipe 1.3
+var running := true
+var _level := 1.0           # fades the note in and out as the engine starts and stops
 
 var _playback: AudioStreamGeneratorPlayback
 var _phase := 0.0
@@ -40,7 +42,9 @@ func _process(_delta: float) -> void:
 	var cutoff := clampf(0.08 + rpm / 22000.0 + throttle * 0.15 + (loudness - 0.8) * 0.12, 0.05, 0.9)
 	var buf := PackedVector2Array()
 	buf.resize(frames)
+	var target := 1.0 if running else 0.0
 	for i in frames:
+		_level += (target - _level) * 0.0008
 		_phase += step
 		if _phase >= 1.0:
 			_phase -= 1.0
@@ -51,5 +55,5 @@ func _process(_delta: float) -> void:
 		var noise := _rng.randf_range(-1.0, 1.0) * 0.12 * throttle
 		var s := (pulse + buzz + noise) * load
 		_y += (s - _y) * cutoff
-		buf[i] = Vector2(_y, _y) * 0.3 * loudness
+		buf[i] = Vector2(_y, _y) * 0.3 * loudness * _level
 	_playback.push_buffer(buf)

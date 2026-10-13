@@ -11,18 +11,19 @@ signal leave_session
 signal order_bike
 
 const CONTROLS_TEXT := """ON FOOT
-W A S D / left stick: walk      Shift: run      Mouse / right stick: look
-1-5, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can)
+W A S D / left stick: walk      Shift: run      Mouse / right stick: look      C / Ctrl / R3: crouch
+1-6, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can, pressure washer)
 Hold left mouse / RT / A: work on what you're looking at, or put a held part down anywhere
+Holding a can of fluid: left mouse pours it in, right mouse / LT drains into it
 Spray can: R / right mouse / X picks the colour, T / middle mouse / B the finish
-F / Y: get on a finished bike, use the parts computer, switch the radio on or off,
-  unpack a delivery box, take hold of an engine stand or shelving unit (F again lets go)
-Radio: hold left mouse / RT / A on it to change station
+F / Y: get on a finished bike (hold to wheel it about), use the parts computer, switch the
+  radio on or off, unpack a box, take hold of an engine stand or shelving unit (F again lets go)
+Hands on a bolted-on stand: kick the side stand down or heave the bike onto the centre stand
 
 RIDING
-W / RT: throttle      S / LT: front brake      Space / B: rear brake
-A D / left stick: lean      Shift / LB: weight back      Ctrl / RB: weight forward
-E Q / A X: gear up / down      T: auto-shift      C / R3: camera
+I / D-pad up: start or stop the engine      W / RT: throttle      S / LT: front brake
+Space / B: rear brake      A D / left stick: lean      Shift / LB: weight back      Ctrl / RB: forward
+E Q / A X: gear up / down      T: auto-shift      C / R3: chase or first-person camera
 R / View: reset after a crash      F / Y: get off (when stopped)"""
 
 var _name: LineEdit
@@ -116,6 +117,13 @@ func _ready() -> void:
 	_auto.button_pressed = Settings.auto_shift
 	_auto.toggled.connect(func(v): Settings.auto_shift = v)
 	settings.add_child(_auto)
+	settings.add_child(UITheme.label("Units", 15))
+	var units := OptionButton.new()
+	units.add_item("Metric (km/h, km, kg, L/100 km)")
+	units.add_item("Imperial (mph, miles, lb, mpg)")
+	units.selected = 1 if Settings.units == "imperial" else 0
+	units.item_selected.connect(func(i): Settings.units = "imperial" if i == 1 else "metric")
+	settings.add_child(units)
 	_quality = CheckBox.new()
 	_quality.text = "High quality lighting (restart to apply)"
 	_quality.button_pressed = Settings.high_quality

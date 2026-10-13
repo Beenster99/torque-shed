@@ -25,14 +25,27 @@ const FINISH_NAMES := {"gloss": "Gloss", "matte": "Matte", "metallic": "Metallic
 const BIKE_NAMES := ["Barn Find", "Rusty Ranger", "Basket Case", "Old Faithful", "The Widowmaker", "Rattler",
 	"Hedge Hopper", "Midnight Special", "Scrapyard Dog", "Grandad's Pride", "Mud Puppy", "Iron Maiden"]
 const WASH_RATE := 0.18        # dirt removed per second in the parts washer
+const JET_CLEAN := 0.07        # dirt the pressure washer blasts off each part per pass
+## How much road dirt each part picks up per kilometre ridden off-road (tarmac is a fraction of it).
+const ROAD_DIRT := 0.3
+const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9, "rear_wheel": 0.9, "fork": 0.7,
+	"shock": 0.8, "final_drive": 1.0, "exhaust": 0.8, "engine": 0.6, "front_disc": 0.8, "rear_disc": 0.8,
+	"front_caliper": 0.8, "rear_caliper": 0.8, "front_pads": 0.6, "rear_pads": 0.6, "frame": 0.5, "side_stand": 0.9,
+	"centre_stand": 0.9, "cooling": 0.6, "oil_filter": 0.6, "air_filter": 0.5, "gearbox": 0.5, "rear_master": 0.5,
+	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15}
+## Litres a second poured from a container, or drained out of a bike.
+const POUR_RATE := {"petrol": 2.0, "oil": 0.8, "brake_fluid": 0.15}
 const SYNC_INTERVAL := 0.1
 const MAX_PAINT_RUST := 0.2
 
-## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered}
+## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered,
+## stand ("" upright on its wheels or the bay's paddock stand, "side", "centre" or "down" when it has fallen over),
+## pusher (peer wheeling it about, or 0)}
 var bikes := {}
 ## item id -> {id, part, kind, rust, dirt, wear, color, finish, boxed, at, ref}, where
 ## at is "bike", "engine", "held", "spot" or "floor" (ref is then the Transform3D it was put down at).
-## Engine blocks also carry slots{} and bolted{} for the parts fitted to them.
+## Engine blocks also carry slots{} and bolted{} for the parts fitted to them. Tanks, engines, master
+## cylinders and fluid containers carry fluid{type, litres, age}: petrol, oil or brake fluid.
 var items := {}
 ## furniture id -> {id, kind ("stand" | "shelf"), xf, label, mover (peer pushing it, or 0)}
 var furniture := {}
@@ -225,7 +238,7 @@ func riding(peer: int) -> int:
 func missing_slots(bike_id: int) -> Array:
 	var out := []
 	for slot in PartsDB.BIKE_SLOTS:
-		if item_on(bike_id, slot) == 0:
+		if item_on(bike_id, slot) == 0 and not PartsDB.is_optional(slot):
 			out.append(slot)
 	if item_on(bike_id, "engine") != 0:
 		for slot in PartsDB.ENGINE_SLOTS:
@@ -255,8 +268,11 @@ func is_complete(bike_id: int) -> bool:
 
 
 func condition_of(item: Dictionary) -> Dictionary:
-	return {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"],
+	var cond := {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"],
 		"finish": item.get("finish", "")}
+	if item.has("fluid"):
+		cond["fluid"] = item["fluid"]
+	return cond
 
 
 ## The bike's build from the parts on it. Missing parts fall back to what it was delivered
@@ -270,6 +286,8 @@ func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 		if item_id != 0:
 			parts[slot] = items[item_id]["part"]
 			cond[slot] = condition_of(items[item_id])
+		elif PartsDB.is_optional(slot):
+			parts[slot] = "none"
 	if swap != 0 and items.has(swap) and swap_slot != "":
 		var it: Dictionary = items[swap]
 		parts[swap_slot] = it["part"]
@@ -356,9 +374,45 @@ func paint_index(c: Color) -> int:
 func condition_text(item: Dictionary) -> String:
 	if item.get("boxed", false):
 		return "Brand new, still in its box"
+	if PartsDB.is_fluid(item["part"]):
+		return fluid_text(item)
 	return "Condition %d%%   Rust %d%%   Dirt %d%%   Wear %d%%   %s" % [
 		roundi(BikeBuild.part_health(condition_of(item)) * 100.0), roundi(item["rust"] * 100.0),
 		roundi(item["dirt"] * 100.0), roundi(item["wear"] * 100.0), paint_text(item)]
+
+
+## "Fuel: 3.2 of 15 L, stale". Empty for parts that hold no fluid.
+func fluid_text(item: Dictionary) -> String:
+	if not item.has("fluid"):
+		return ""
+	var f: Dictionary = item["fluid"]
+	var cap := PartsDB.fluid_capacity(item["part"])
+	var k := PartsDB.fluid_kind(item["part"])
+	var what: String = {"petrol": "Petrol", "oil": "Oil", "brake_fluid": "Brake fluid"}[k]
+	var amount := ("%.2f of %.2f L" if cap < 1.0 else "%.1f of %.0f L") % [float(f["litres"]), cap]
+	if float(f["litres"]) <= 0.001:
+		return "%s: empty (holds %s L)" % [what, ("%.2f" if cap < 1.0 else "%.0f") % cap]
+	var kind_name := PartsDB.part_name(str(f["type"])) if str(f["type"]) != "" else what
+	var age := float(f.get("age", 0.0))
+	var state := "fresh" if age < 0.25 else ("used" if age < 0.6 else ("stale" if k == "petrol" else "old and dirty"))
+	return "%s: %s  ·  %s, %s" % [what, amount, kind_name, state]
+
+
+## The part on a bike or engine that holds `kind` of fluid, as an item id: the tank, the engine,
+## or the master cylinder looked at (`slot`), else the front one.
+func fluid_holder(target: Dictionary, kind: String) -> int:
+	var slot := str(target.get("slot", ""))
+	match kind:
+		"petrol":
+			slot = "tank"
+		"oil":
+			slot = "engine"
+		"brake_fluid":
+			if not slot in ["front_master", "rear_master"]:
+				slot = "rear_master" if slot.begins_with("rear_") else "front_master"
+	if int(target.get("engine", 0)) != 0:
+		return int(target["engine"]) if kind == "oil" else 0
+	return item_on(int(target.get("bike", 0)), slot)
 
 
 func free_bay(bay_count: int) -> int:
@@ -470,6 +524,57 @@ func moving(peer: int) -> int:
 	return 0
 
 
+func pushing_bike(peer: int) -> int:
+	for id in bikes:
+		if bikes[id].get("pusher", 0) == peer:
+			return id
+	return 0
+
+
+## Whether a bike sits on its bay's paddock stand: parked square in the bay, or missing a wheel.
+func on_paddock(bike_id: int) -> bool:
+	var bike: Dictionary = bikes[bike_id]
+	if bike["xf"].origin.distance_to(Workshop.bay_transform(bike["bay"]).origin) < 0.5:
+		return true
+	for slot in ["front_wheel", "rear_wheel", "front_tyre", "rear_tyre"]:
+		if item_on(bike_id, slot) == 0:
+			return true
+	return false
+
+
+## Why a bike can't be wheeled about, or "".
+func _wheel_check(bike_id: int) -> String:
+	for slot in ["front_wheel", "rear_wheel", "front_tyre", "rear_tyre"]:
+		if item_on(bike_id, slot) == 0:
+			return "It won't roll without both wheels and tyres."
+	return ""
+
+
+## The stand a bike drops onto when you let go of it or get off: the side stand if it has one,
+## then the centre stand, otherwise it falls over.
+func _rest_stand(bike_id: int) -> String:
+	if item_on(bike_id, "side_stand") != 0:
+		return "side"
+	if item_on(bike_id, "centre_stand") != 0:
+		return "centre"
+	return "down"
+
+
+## A free bay whose parking spot is close to `xf`, or -1.
+func _bay_near(xf: Transform3D, bike_id: int) -> int:
+	for bay in Workshop.BAY_COUNT:
+		var spot := Workshop.bay_transform(bay)
+		if spot.origin.distance_to(xf.origin) > 0.9:
+			continue
+		var taken := false
+		for id in bikes:
+			if id != bike_id and bikes[id]["xf"].origin.distance_to(spot.origin) < 1.5:
+				taken = true
+		if not taken:
+			return bay
+	return -1
+
+
 ## Where a held part would go on a target, or why it can't: {slot} or {error}.
 ## Prefers the slot being looked at, then the same side (front or rear), then any free slot.
 func install_slot(action: Dictionary, item_id: int) -> Dictionary:
@@ -477,6 +582,8 @@ func install_slot(action: Dictionary, item_id: int) -> Dictionary:
 		return {"error": "You're not holding a part."}
 	var k: String = items[item_id]["kind"]
 	var candidates := PartsDB.slots_for_kind(k)
+	if candidates.is_empty():
+		return {"error": "That doesn't bolt on anywhere."}
 	var engine_id := int(action.get("engine", 0))
 	var bike_id := int(action.get("bike", 0))
 	var on_engine := PartsDB.is_engine_slot(candidates[0])
@@ -537,7 +644,10 @@ func check(peer: int, action: Dictionary) -> String:
 	var bike_id := int(action.get("bike", 0))
 	var engine_id := int(action.get("engine", 0))
 	var slot := str(action.get("slot", ""))
-	if a in ["unbolt", "bolt", "remove", "install", "mount"]:
+	if a in ["unbolt", "bolt", "remove"] and engine_id == 0 and PartsDB.LOW_SLOTS.has(slot) \
+			and not action.get("crouched", false):
+		return "Crouch down to reach it (C)."
+	if a in ["unbolt", "bolt", "remove", "install", "mount", "grab_bike", "set_stand"]:
 		if engine_id != 0:
 			if not is_engine(engine_id):
 				return "That engine has gone."
@@ -545,6 +655,8 @@ func check(peer: int, action: Dictionary) -> String:
 			return "That bike has gone."
 		elif bikes[bike_id]["rider"] != 0:
 			return "Someone is riding that bike."
+		elif bikes[bike_id].get("pusher", 0) != 0 and bikes[bike_id].get("pusher", 0) != peer:
+			return "Someone is wheeling that bike about."
 	match a:
 		"unbolt", "bolt", "remove":
 			var host := host_of(bike_id, slot, engine_id)
@@ -575,6 +687,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var where := install_slot(action, held)
 			if where.has("error"):
 				return where["error"]
+			if engine_id == 0 and PartsDB.LOW_SLOTS.has(where["slot"]) and not action.get("crouched", false):
+				return "Crouch down to reach it (C)."
 			var access := _engine_access(action, where["slot"])
 			if access != "":
 				return access
@@ -649,6 +763,9 @@ func check(peer: int, action: Dictionary) -> String:
 		"bin":
 			if held == 0:
 				return "You're not holding a part."
+		"tip":
+			if held == 0 or not items[held].has("fluid") or float(items[held]["fluid"]["litres"]) <= 0.0:
+				return "Nothing to tip away."
 		"clean_many":
 			var dirty := 0
 			for id in action.get("items", []):
@@ -678,9 +795,68 @@ func check(peer: int, action: Dictionary) -> String:
 			if a == "paint" and it.get("finish", "") == str(action.get("finish", "gloss")) \
 					and paint_index(it["color"]) == int(action.get("color", 0)) and it["color"] == PAINTS[paint_index(it["color"])]:
 				return "It's already %s." % paint_text(it).to_lower()
+		"pour", "drain":
+			if held == 0 or not PartsDB.is_fluid(items[held]["part"]):
+				return "You need a can or bottle of it in your hands."
+			var into := int(action.get("item", 0))
+			if not items.has(into) or not items[into].has("fluid") or PartsDB.is_fluid(items[into]["part"]):
+				return "That doesn't take any fluid."
+			var k := PartsDB.fluid_kind(items[into]["part"])
+			var can_k := PartsDB.kind_of(items[held]["part"])
+			if k != can_k:
+				return "That takes %s, not %s." % [PartsDB.KIND_NAMES[k].to_lower(), PartsDB.KIND_NAMES[can_k].to_lower()]
+			var room := PartsDB.fluid_capacity(items[into]["part"]) - float(items[into]["fluid"]["litres"])
+			var can_room := PartsDB.fluid_capacity(items[held]["part"]) - float(items[held]["fluid"]["litres"])
+			if a == "pour":
+				if float(items[held]["fluid"]["litres"]) <= 0.001:
+					return "It's empty."
+				if room <= 0.005:
+					return "It's already full."
+			else:
+				if k == "oil" and items[into]["at"] == "bike" and not action.get("crouched", false):
+					return "Crouch down to get at the drain plug (C)."
+				if float(items[into]["fluid"]["litres"]) <= 0.001:
+					return "There's nothing to drain."
+				if can_room <= 0.005:
+					return "Your %s is full. Tip it in the scrap bin." % PartsDB.get_part(items[held]["part"])["container"].to_lower()
+		"wash":
+			var at = action.get("at", null)
+			if not (at is Vector3) or (at as Vector3).distance_to(Workshop.WASH_POS) > Workshop.WASH_REACH:
+				return "The hose doesn't reach. Bring the bike to the wash bay beside the shed."
+			var any := false
+			for id in action.get("items", []):
+				if items.has(int(id)) and items[int(id)]["dirt"] >= 0.005 and not items[int(id)].get("boxed", false):
+					any = true
+			if not any:
+				return "It's already clean."
+		"grab_bike":
+			var why := _wheel_check(bike_id)
+			if why != "":
+				return why
+			if held != 0:
+				return "Put the part down first."
+			if moving(peer) != 0 or pushing_bike(peer) != 0:
+				return "You're already moving something."
+		"move_bike", "release_bike":
+			if not bikes.has(bike_id) or bikes[bike_id].get("pusher", 0) != peer:
+				return "You're not holding that bike."
+			if not (action.get("xf") is Transform3D):
+				return "You can't put it there."
+		"set_stand":
+			var which := str(action.get("stand", ""))
+			if not which in ["side", "centre"]:
+				return "Unknown stand."
+			if item_on(bike_id, which + "_stand") == 0:
+				return "There's no %s stand fitted." % which
+			if bikes[bike_id].get("stand", "") == which:
+				return "It's already on its %s stand." % which
+			if on_paddock(bike_id):
+				return "It's on the paddock stand in the bay."
 		"mount":
 			if riding(peer) != 0:
 				return "You're already riding."
+			if pushing_bike(peer) != 0:
+				return "Let go of the bike first, then get on it."
 			if held != 0:
 				return "Put the part down first."
 			if moving(peer) != 0:
@@ -697,7 +873,7 @@ func check(peer: int, action: Dictionary) -> String:
 		"order":
 			if free_bay(Workshop.BAY_COUNT) < 0:
 				return "Every bay is full. Ride a bike out or strip one down first."
-		"status", "ride":
+		"status", "ride", "tip":
 			pass
 		_:
 			return "Unknown action."
@@ -784,9 +960,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"order_part":
 			var part_id := str(action["part"])
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
-			items[item_id]["boxed"] = true
+			# Parts come boxed; cans and bottles of fluid are left as they are.
+			items[item_id]["boxed"] = not PartsDB.is_fluid(part_id)
 			_move(item_id, "floor", free_delivery_xf())
-			text = "Ordered a %s. The box is outside by the roller door." % PartsDB.part_name(part_id)
+			text = "Ordered %s. %s outside by the roller door." % [PartsDB.part_name(part_id),
+				"The box is" if items[item_id]["boxed"] else "It's"]
 		"order_furniture":
 			var kind := str(action["kind"])
 			_new_furniture(kind, free_delivery_xf())
@@ -840,12 +1018,55 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_bump(c, "painted")
 			text = "Sprayed the %s %s" % [item_title(int(action["item"])), paint_text(it).to_lower()]
 		"mount":
+			if bikes[bike_id].get("stand", "") == "down":
+				text = "You heave %s back upright" % bikes[bike_id]["name"]
 			bikes[bike_id]["rider"] = peer
+			bikes[bike_id]["stand"] = ""
 			c["riding"] = bike_id
 		"dismount":
 			bikes[bike_id]["rider"] = 0
 			bikes[bike_id]["xf"] = action.get("xf", bikes[bike_id]["xf"])
 			c["riding"] = 0
+			_park(bike_id)
+			if bikes[bike_id]["stand"] == "down":
+				text = "No stand fitted, so it falls over. Fit a side stand."
+		"grab_bike":
+			bikes[bike_id]["pusher"] = peer
+			bikes[bike_id]["stand"] = ""
+			text = "Got hold of %s. F to let go." % bikes[bike_id]["name"]
+		"move_bike":
+			bikes[bike_id]["xf"] = action["xf"]
+		"release_bike":
+			bikes[bike_id]["pusher"] = 0
+			bikes[bike_id]["xf"] = action["xf"]
+			_park(bike_id)
+			if bikes[bike_id]["stand"] == "down":
+				text = "No stand fitted, so it falls over."
+			elif on_paddock(bike_id):
+				text = "%s is on the paddock stand in bay %d" % [bikes[bike_id]["name"], bikes[bike_id]["bay"] + 1]
+		"set_stand":
+			bikes[bike_id]["stand"] = str(action["stand"])
+			text = "Up on the centre stand" if action["stand"] == "centre" else "Down on the side stand"
+		"pour", "drain":
+			var can: Dictionary = items[held_by(peer)]
+			var into: Dictionary = items[int(action["item"])]
+			var moved := _transfer(can, into) if a == "pour" else _transfer(into, can)
+			var what: String = PartsDB.KIND_NAMES[PartsDB.fluid_kind(into["part"])].to_lower()
+			text = ("Poured in %.2f L of %s" if moved < 1.0 else "Poured in %.1f L of %s") % [moved, what] if a == "pour" \
+				else ("Drained %.2f L of %s" if moved < 1.0 else "Drained %.1f L of %s") % [moved, what]
+		"tip":
+			var can: Dictionary = items[held_by(peer)]
+			can["fluid"]["litres"] = 0.0
+			can["fluid"]["age"] = 0.0
+			text = "Tipped it away for recycling"
+		"wash":
+			var n := 0
+			for id in action["items"]:
+				if items.has(int(id)) and not items[int(id)].get("boxed", false) and items[int(id)]["dirt"] > 0.0:
+					items[int(id)]["dirt"] = maxf(0.0, items[int(id)]["dirt"] - JET_CLEAN)
+					if items[int(id)]["dirt"] == 0.0:
+						n += 1
+			c["cleaned"] = int(c.get("cleaned", 0)) + n
 		"order":
 			var id := _random_bike(free_bay(Workshop.BAY_COUNT))
 			text = "%s has been delivered to bay %d" % [bikes[id]["name"], bikes[id]["bay"] + 1]
@@ -856,6 +1077,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 			c["tool"] = str(action.get("tool", c.get("tool", "")))
 			c["activity"] = str(action.get("activity", "")).left(60)
 		"ride":
+			var bike := int(c.get("riding", 0))
+			if bikes.has(bike):
+				_wear_from_ride(bike, action)
 			c["km"] = float(c.get("km", 0.0)) + clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 			c["top_kmh"] = maxf(float(c.get("top_kmh", 0.0)), clampf(float(action.get("top_kmh", 0.0)), 0.0, 400.0))
 			c["kmh"] = clampf(float(action.get("kmh", 0.0)), 0.0, 400.0)
@@ -863,6 +1087,80 @@ func _apply(peer: int, action: Dictionary) -> void:
 		_tell(peer, text, true)
 	_mark_dirty()
 	changed.emit()
+
+
+## Pours as much as fits from one fluid holder into another and returns the litres moved.
+## The mix takes the type of whichever there's more of, and its age is the average.
+func _transfer(from: Dictionary, into: Dictionary) -> float:
+	var src: Dictionary = from["fluid"]
+	var dst: Dictionary = into["fluid"]
+	var room := PartsDB.fluid_capacity(into["part"]) - float(dst["litres"])
+	var moved := minf(float(src["litres"]), maxf(room, 0.0))
+	if moved <= 0.0:
+		return 0.0
+	var before := float(dst["litres"])
+	var src_type := str(src["type"]) if str(src["type"]) != "" else str(from["part"])
+	if before <= 0.001 or moved >= before:
+		dst["type"] = src_type
+	dst["age"] = (float(dst.get("age", 0.0)) * before + float(src.get("age", 0.0)) * moved) / (before + moved)
+	dst["litres"] = before + moved
+	src["litres"] = float(src["litres"]) - moved
+	if src["litres"] <= 0.0005:
+		src["litres"] = 0.0
+		if PartsDB.get_part(from["part"]).get("empty", false):
+			src["type"] = ""
+	return moved
+
+
+## How long pouring between two holders takes, in seconds.
+func pour_time(from: Dictionary, into: Dictionary) -> float:
+	var room := PartsDB.fluid_capacity(into["part"]) - float(into["fluid"]["litres"])
+	var moved := minf(float(from["fluid"]["litres"]), maxf(room, 0.0))
+	return clampf(moved / float(POUR_RATE.get(PartsDB.fluid_kind(into["part"]), 1.0)), 0.6, 5.0)
+
+
+## Leaves a bike standing where it was let go: snapped onto the paddock stand of a bay it's in,
+## or on its own stand.
+func _park(bike_id: int) -> void:
+	var bike: Dictionary = bikes[bike_id]
+	var bay := _bay_near(bike["xf"], bike_id)
+	if bay >= 0:
+		bike["bay"] = bay
+		bike["xf"] = Workshop.bay_transform(bay)
+		bike["stand"] = ""
+	elif on_paddock(bike_id):
+		bike["stand"] = ""
+	else:
+		bike["stand"] = _rest_stand(bike_id)
+
+
+## What a ride does to a bike: road dirt on its parts, petrol used, oil and brake fluid aging,
+## and engine wear, which climbs steeply when the oil is low or worn out.
+func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
+	var km := clampf(float(action.get("km", 0.0)), 0.0, 5.0)
+	var dirty := clampf(float(action.get("dirt_km", 0.0)), 0.0, 5.0)
+	for slot in PartsDB.SLOTS:
+		var id := item_on(bike_id, slot)
+		if id != 0 and dirty > 0.0:
+			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * float(DIRT_EXPOSURE.get(slot, 0.4)))
+	var tank := item_on(bike_id, "tank")
+	if tank != 0 and items[tank].has("fluid"):
+		var f: Dictionary = items[tank]["fluid"]
+		f["litres"] = maxf(0.0, float(f["litres"]) - clampf(float(action.get("fuel", 0.0)), 0.0, 2.0))
+	var block := item_on(bike_id, "engine")
+	if block != 0 and items[block].has("fluid"):
+		var oil: Dictionary = items[block]["fluid"]
+		oil["age"] = minf(1.0, float(oil.get("age", 0.0)) + km / 1500.0)
+		var level := float(oil["litres"]) / maxf(PartsDB.fluid_capacity(items[block]["part"]), 0.1)
+		var protection := float(PartsDB.get_part(str(oil["type"])).get("protection", 0.7)) * lerpf(1.0, 0.55, float(oil["age"]))
+		var rate := 0.0005 * (1.6 - protection)
+		if level < 0.5:
+			rate = lerpf(0.03, rate, level / 0.5)
+		items[block]["wear"] = minf(1.0, float(items[block]["wear"]) + km * rate)
+	for slot in ["front_master", "rear_master"]:
+		var m := item_on(bike_id, slot)
+		if m != 0 and items[m].has("fluid"):
+			items[m]["fluid"]["age"] = minf(1.0, float(items[m]["fluid"].get("age", 0.0)) + km / 4000.0)
 
 
 func _tell(peer: int, text: String, ok: bool) -> void:
@@ -920,6 +1218,9 @@ func _new_item(part: String, rust: float, dirt: float, wear: float, color = null
 	if k == "engine":
 		items[id]["slots"] = {}
 		items[id]["bolted"] = {}
+	if PartsDB.fluid_kind(part) != "":
+		var full: bool = PartsDB.is_fluid(part) and not PartsDB.get_part(part).get("empty", false)
+		items[id]["fluid"] = {"type": part if full else "", "litres": PartsDB.fluid_capacity(part) if full else 0.0, "age": 0.0}
 	return id
 
 
@@ -937,10 +1238,14 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 	parts = PartsDB.sanitize_build(parts)
 	var paint_color: Color = PAINTS[_rng.randi() % PAINTS.size()] if paint == null else paint
 	var bike := {"id": id, "name": bike_name, "paint": paint_color, "slots": {}, "bolted": {},
-		"rider": 0, "bay": bay, "xf": Workshop.bay_transform(bay), "original": parts.duplicate()}
+		"rider": 0, "bay": bay, "xf": Workshop.bay_transform(bay), "original": parts.duplicate(), "stand": "", "pusher": 0}
 	bikes[id] = bike
 	var cond := {}
 	for slot in PartsDB.BIKE_SLOTS:
+		if parts[slot] == "none":
+			bike["slots"][slot] = 0
+			bike["bolted"][slot] = false
+			continue
 		var item_id := _aged_item(parts[slot], age, paint_color if slot == "tank" else null)
 		_move(item_id, "bike", id)
 		bike["slots"][slot] = item_id
@@ -953,9 +1258,27 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 		block["slots"][slot] = item_id
 		block["bolted"][slot] = true
 		cond[slot] = condition_of(items[item_id])
+	_fill_fluids(id, age)
+	for slot in ["tank", "engine", "front_master", "rear_master"]:
+		cond[slot] = condition_of(items[item_on(id, slot)])
 	bike["original_cond"] = cond
 	bike["delivered"] = BikeBuild.new(parts, cond).summary()
 	return id
+
+
+## Project bikes come with whatever fluids were left in them: the older the bike, the less
+## there is and the older it is.
+func _fill_fluids(bike_id: int, age: float) -> void:
+	var fills := {"tank": ["unleaded_95", _rng.randf_range(0.05, 0.5) * (1.0 - age * 0.6)],
+		"engine": ["mineral_20w50" if age > 0.5 else "semi_10w40", _rng.randf_range(0.55, 1.0) * (1.0 - age * 0.4)],
+		"front_master": ["dot4", _rng.randf_range(0.5, 1.0) * (1.0 - age * 0.3)],
+		"rear_master": ["dot4", _rng.randf_range(0.5, 1.0) * (1.0 - age * 0.3)]}
+	for slot in fills:
+		var id := item_on(bike_id, slot)
+		if id == 0:
+			continue
+		items[id]["fluid"] = {"type": fills[slot][0], "litres": snappedf(PartsDB.fluid_capacity(items[id]["part"]) * fills[slot][1], 0.01),
+			"age": clampf(age * _rng.randf_range(0.9, 1.3), 0.0, 1.0)}
 
 
 func _random_bike(bay: int) -> int:
@@ -966,7 +1289,9 @@ func _random_bike(bay: int) -> int:
 		# A random bike wears a matching pair of tyres; everything else is picked per slot.
 		var key: String = k if k == "tyre" else slot
 		if not pick.has(key):
-			var options: Array = PartsDB.by_kind[k]
+			var options: Array = PartsDB.by_kind[k].duplicate()
+			if PartsDB.is_optional(slot):
+				options.append("none")
 			pick[key] = options[_rng.randi() % options.size()]
 		parts[slot] = pick[key]
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
@@ -1002,6 +1327,10 @@ func _on_player_left(id: int) -> void:
 	var pushing := moving(id)
 	if pushing != 0:
 		furniture[pushing]["mover"] = 0
+	var wheeling := pushing_bike(id)
+	if wheeling != 0:
+		bikes[wheeling]["pusher"] = 0
+		_park(wheeling)
 	crew.erase(id)
 	_mark_dirty()
 	changed.emit()

@@ -18,6 +18,9 @@ var paint := Color(0.78, 0.09, 0.08)
 var jacket := Color(0.1, 0.12, 0.16)
 var present := {}                # slot -> bool; missing slots are not drawn
 var condition := {}              # slot -> {rust, dirt, wear, color, finish}
+var stand_pose := ""             # "side" or "centre" draws that stand down on the ground; set before build_from
+## The rider's helmet is on its own render layer so the first-person camera can leave it out.
+const HELMET_LAYER := 2
 
 var _build: BikeBuild
 var _slot_meshes := {}           # slot -> Array of GeometryInstance3D
@@ -43,6 +46,10 @@ var _arm_len := 0.6
 var _grip_l := Vector3(-0.31, 0.12, 0.06)   # handlebar grips, in steering space
 var _grip_r := Vector3(0.31, 0.12, 0.06)
 var _highlighted := ""
+var _exhaust_tip := Vector3.ZERO
+var _eye := Vector3.ZERO
+var _grime: StandardMaterial3D
+var _dash_label: Label3D
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -97,6 +104,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_handlebars()
 	_draw_dashboard()
 	_draw_front_master()
+	_draw_headlight()
 
 	_front_wheel = Node3D.new()
 	_front_hub.add_child(_front_wheel)
@@ -118,6 +126,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_rear_master()
 	_draw_final_drive(zr)
 	_draw_shock()
+	_draw_side_stand(build)
+	_draw_centre_stand(build)
 
 	_apply_visibility()
 	_current_slot = ""
@@ -443,9 +453,11 @@ func _draw_exhaust(zr: float) -> void:
 		_tube(port, low, 0.02, pipe_mat)
 		_tube(low, header_back, 0.022, pipe_mat)
 	var can_end := Vector3(0.16, 0.2, zr - 0.08)
+	_exhaust_tip = can_end + Vector3(0.0, 0.0, 0.06)
 	match exhaust_id:
 		"straight_pipe":
 			_tube(header_back, can_end + Vector3(0.0, -0.04, 0.12), 0.03, pipe_mat)
+			_exhaust_tip = can_end + Vector3(0.0, -0.04, 0.14)
 		"slip_on":
 			_tube(header_back, header_back.lerp(can_end, 0.4), 0.03, _mat(Color(0.85, 0.86, 0.88), 1.0, 0.12))
 			_tube(header_back.lerp(can_end, 0.4), can_end, 0.05, _mat(_col(), 0.3, 0.3, 0.7))
@@ -484,8 +496,6 @@ func _draw_fork(build: BikeBuild) -> void:
 	var clamp_mat := _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
 	_box(Vector3.ZERO, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
 	_box(-_steer_axis * 0.16, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
-	var lamp := _mesh_instance(_sphere(0.075), _glow(Color(1.0, 0.92, 0.75), 3.0), Vector3(0.0, -0.08, -0.13), _steer_node)
-	lamp.scale = Vector3(1.0, 1.0, 0.6)
 	var fender := _mat(paint, 0.25, 0.2, 0.6)
 	if build.tyre_style == "offroad":
 		_box(-_steer_axis * 0.2 + Vector3(0.0, -0.02, -0.12), Vector3(0.13, 0.015, 0.42), fender, _steer_node)
@@ -583,6 +593,101 @@ func _draw_rear_master() -> void:
 	var at := Vector3(0.15, 0.06, _pivot.z - 0.04)
 	_tube(at, at + Vector3(0.0, 0.1, 0.03), 0.014, mat)
 	_mesh_instance(_cylinder(0.02, 0.04), mat, at + Vector3(0.0, 0.16, 0.08))
+
+
+## The headlight on the fork: round, a café bucket, twin lamps, an enduro plate or an LED projector.
+func _draw_headlight() -> void:
+	_current_slot = "headlight"
+	var p := _part()
+	if p.is_empty():
+		return
+	var at := Vector3(0.0, -0.08, -0.13)
+	var size := float(p.get("size", 0.08))
+	var shell := _mat(_col(), 0.7, 0.3)
+	var lens := _glow(Color(1.0, 0.95, 0.82) if float(p.get("lumens", 0)) < 2000 else Color(0.9, 0.95, 1.0), 2.5)
+	match str(p.get("style", "round")):
+		"bucket":
+			var bucket := _mesh_instance(_cylinder(size, size * 1.1, size * 0.75), shell, at + Vector3(0.0, 0.0, 0.03), _steer_node)
+			bucket.rotation.x = -PI * 0.5
+			var face := _mesh_instance(_cylinder(size * 0.92, 0.01), lens, at + Vector3(0.0, 0.0, -0.03), _steer_node)
+			face.rotation.x = PI * 0.5
+		"twin":
+			for x in [-0.07, 0.07]:
+				var lamp := _mesh_instance(_sphere(size), shell, at + Vector3(x, 0.0, 0.01), _steer_node)
+				lamp.scale = Vector3(1.0, 1.0, 0.7)
+				var face := _mesh_instance(_cylinder(size * 0.85, 0.01), lens, at + Vector3(x, 0.0, -size * 0.6), _steer_node)
+				face.rotation.x = PI * 0.5
+		"plate":
+			var plate := _box(at + Vector3(0.0, -0.02, -0.02), Vector3(0.22, 0.27, 0.02), shell, _steer_node)
+			plate.rotation.x = 0.25
+			var face := _box(at + Vector3(0.0, 0.0, -0.035), Vector3(0.1, 0.07, 0.01), lens, _steer_node)
+			face.rotation.x = 0.25
+		"projector":
+			_box(at + Vector3(0.0, 0.0, 0.0), Vector3(0.17, 0.09, 0.09), shell, _steer_node)
+			for x in [-0.04, 0.04]:
+				var face := _mesh_instance(_cylinder(0.025, 0.01), lens, at + Vector3(x, 0.0, -0.05), _steer_node)
+				face.rotation.x = PI * 0.5
+			_box(at + Vector3(0.0, -0.035, -0.047), Vector3(0.15, 0.008, 0.004), _glow(Color(0.85, 0.92, 1.0), 3.0), _steer_node)
+		_:
+			var lamp := _mesh_instance(_sphere(size), shell, at, _steer_node)
+			lamp.scale = Vector3(1.0, 1.0, 0.75)
+			var face := _mesh_instance(_cylinder(size * 0.9, 0.012), lens, at + Vector3(0.0, 0.0, -size * 0.7), _steer_node)
+			face.rotation.x = PI * 0.5
+
+
+## The side stand on the left, under the footpeg: tucked up along the frame, or down on the
+## ground with the bike leaning over onto it.
+func _draw_side_stand(build: BikeBuild) -> void:
+	_current_slot = "side_stand"
+	var p := _part()
+	if p.is_empty():
+		return
+	var mat := _mat(_col(), 0.6, 0.4)
+	var pivot := Vector3(-0.12, -0.04, _pivot.z - 0.16)
+	var length := float(p.get("length", 0.3))
+	var foot: Vector3
+	if stand_pose == "side":
+		# Swing the leg out until it reaches the ground with the bike leaned over by the stand's lean.
+		var lean := deg_to_rad(float(p.get("lean", 12.0)))
+		var height := pivot.y + build.rear_radius
+		var best := 0.0
+		var best_err := INF
+		for i in 90:
+			var a := deg_to_rad(float(i))
+			var fx := pivot.x - length * sin(a)
+			var fy := height - length * cos(a)
+			var err := absf(fy * cos(lean) + fx * sin(lean))
+			if err < best_err:
+				best_err = err
+				best = a
+		foot = pivot + Vector3(-length * sin(best), -length * cos(best), -0.06)
+	else:
+		foot = pivot + Vector3(-0.03, -0.04, length * 0.95)
+	_tube(pivot, foot, 0.012, mat)
+	var pad := _box(foot, Vector3(0.05, 0.012, 0.07), mat)
+	pad.name = "StandFoot"
+	_box(pivot, Vector3(0.03, 0.04, 0.04), mat)
+
+
+## The centre stand under the engine: two legs and a foot lever, swung down to lift the
+## back wheel off the ground, or folded up behind.
+func _draw_centre_stand(build: BikeBuild) -> void:
+	_current_slot = "centre_stand"
+	var p := _part()
+	if p.is_empty():
+		return
+	var mat := _mat(_col(), 0.6, 0.4)
+	var z := _pivot.z - 0.08
+	var reach := build.rear_radius - 0.06 + float(p.get("lift", 0.04))
+	for side in [-1.0, 1.0]:
+		var top := Vector3(0.1 * side, -0.06, z)
+		var foot := top + (Vector3(0.02 * side, -reach, -0.02) if stand_pose == "centre" else Vector3(0.0, -0.08, reach * 0.9))
+		_tube(top, foot, 0.013, mat)
+		_box(foot, Vector3(0.05, 0.012, 0.06), mat)
+	var bar_z := z - 0.02 if stand_pose == "centre" else z + reach * 0.9
+	var bar_y := -0.06 - reach if stand_pose == "centre" else -0.14
+	_tube(Vector3(-0.1, bar_y + 0.04, bar_z), Vector3(0.1, bar_y + 0.04, bar_z), 0.01, mat)
+	_tube(Vector3(-0.1, bar_y + 0.04, bar_z), Vector3(-0.2, bar_y + 0.08, bar_z + 0.05), 0.01, mat)
 
 
 # ---------------------------------------------------------------------------- wheels and brakes
@@ -716,12 +821,17 @@ func _build_rider() -> void:
 	var gloves := _mat(Color(0.04, 0.04, 0.04), 0.0, 0.6)
 	var hips := Vector3(0.0, seat_y + 0.1, lerpf(_seat_front.z, _tail.z, 0.42))
 	var shoulders := hips + Vector3(0.0, 0.5, -0.3)
-	_tube(hips, shoulders, 0.15, suit, Vector3(1.25, 1.0, 0.8), _rider)
-	_mesh_instance(_sphere(0.15), helmet, shoulders + Vector3(0.0, 0.2, -0.08), _rider)
+	var torso := _tube(hips, shoulders, 0.15, suit, Vector3(1.25, 1.0, 0.8), _rider)
+	var lid := _mesh_instance(_sphere(0.15), helmet, shoulders + Vector3(0.0, 0.2, -0.08), _rider)
 	var v := _mesh_instance(_sphere(0.1), visor, shoulders + Vector3(0.0, 0.2, -0.17), _rider)
 	v.scale = Vector3(1.1, 0.6, 0.5)
 	var grip_l := _head + _grip_l
 	var grip_r := _head + _grip_r
+	# The first-person eye sits up and back from the bars so both gloves and the clocks are in
+	# view; the torso and helmet, which would be in the way, are hidden from it.
+	for mi in [torso, lid, v]:
+		(mi as GeometryInstance3D).layers = 1 << (HELMET_LAYER - 1)
+	_eye = grip_l.lerp(grip_r, 0.5) + Vector3(0.0, 0.6, 0.62)
 	for side in [-1.0, 1.0]:
 		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
 		var grip := grip_r if side > 0 else grip_l
@@ -768,6 +878,83 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 	if _rider:
 		_rider.position = Vector3(lean_in * 0.05, 0.0, -body_shift * 0.1)
 		_rider.rotation = Vector3(-body_shift * 0.12, 0.0, -lean_in * 0.12)
+
+
+## Where the rider's eyes are, looking down over the bars at the clocks, in the model's space.
+func eye_transform() -> Transform3D:
+	var at := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-21.0)), _eye)
+	return (_rider.transform * at) if _rider else at
+
+
+func exhaust_tip() -> Vector3:
+	return _exhaust_tip
+
+
+func lamp_position() -> Vector3:
+	return _head + Vector3(0.0, -0.08, -0.13)
+
+
+## Road muck over the whole bike while it's ridden, 0 (none) .. 1 (plastered).
+func set_grime(level: float) -> void:
+	if level < 0.02:
+		if _grime:
+			for slot in _slot_meshes:
+				for mi in _slot_meshes[slot]:
+					(mi as GeometryInstance3D).material_overlay = null
+			_grime = null
+		return
+	if _grime == null:
+		_grime = StandardMaterial3D.new()
+		_grime.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_grime.albedo_color = Color(0.3, 0.22, 0.13, 0.0)
+		_grime.albedo_texture = _splatter()
+		_grime.uv1_triplanar = true
+		_grime.uv1_scale = Vector3(4.0, 4.0, 4.0)
+		_grime.roughness = 1.0
+		for slot in _slot_meshes:
+			for mi in _slot_meshes[slot]:
+				(mi as GeometryInstance3D).material_overlay = _grime
+	_grime.albedo_color.a = clampf(level, 0.0, 0.9)
+
+
+static var _splatter_tex: NoiseTexture2D
+
+
+## Blotchy alpha for mud: big clumps with gaps between.
+static func _splatter() -> NoiseTexture2D:
+	if _splatter_tex:
+		return _splatter_tex
+	var noise := FastNoiseLite.new()
+	noise.frequency = 0.03
+	noise.fractal_octaves = 3
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(1, 1, 1, 0.0))
+	ramp.set_color(1, Color(1, 1, 1, 1.0))
+	ramp.add_point(0.45, Color(1, 1, 1, 0.0))
+	ramp.add_point(0.6, Color(1, 1, 1, 0.9))
+	_splatter_tex = NoiseTexture2D.new()
+	_splatter_tex.width = 256
+	_splatter_tex.height = 256
+	_splatter_tex.seamless = true
+	_splatter_tex.noise = noise
+	_splatter_tex.color_ramp = ramp
+	return _splatter_tex
+
+
+## A readout on the clocks for the rider: speed, gear and fuel. Only the ridden bike has one.
+func dash_readout() -> Label3D:
+	if _dash_label == null:
+		_dash_label = Label3D.new()
+		_dash_label.font_size = 40
+		_dash_label.pixel_size = 0.0005
+		_dash_label.outline_size = 0
+		_dash_label.modulate = Color(0.75, 1.0, 0.85)
+		_dash_label.position = Vector3(0.0, 0.16, -0.03)
+		_dash_label.rotation.x = -0.75
+		_dash_label.line_spacing = -4.0
+		_dash_label.shaded = false
+		_steer_node.add_child(_dash_label)
+	return _dash_label
 
 
 func set_rider_visible(v: bool) -> void:
@@ -897,6 +1084,8 @@ static func assembly_display(parts: Dictionary, cond: Dictionary) -> Node3D:
 
 ## One loose part from the catalogue.
 static func part_display(part_id: String, cond: Dictionary) -> Node3D:
+	if PartsDB.is_fluid(part_id):
+		return fluid_display(part_id, 0.0 if PartsDB.get_part(part_id).get("empty", false) else 1.0)
 	var slot: String = PartsDB.slots_for_kind(PartsDB.kind_of(part_id))[0]
 	return assembly_display({slot: part_id}, {slot: cond})
 
@@ -907,6 +1096,9 @@ static func item_display(item_id: int) -> Node3D:
 	var it: Dictionary = Shed.items[item_id]
 	if it.get("boxed", false):
 		return box_display(str(it["part"]))
+	if PartsDB.is_fluid(str(it["part"])):
+		var f: Dictionary = it.get("fluid", {})
+		return fluid_display(str(it["part"]), float(f.get("litres", 0.0)) / maxf(PartsDB.fluid_capacity(str(it["part"])), 0.01))
 	if Shed.is_engine(item_id):
 		var asm := Shed.engine_assembly(item_id)
 		var shown := {}
@@ -915,6 +1107,83 @@ static func item_display(item_id: int) -> Node3D:
 				shown[slot] = asm["parts"][slot]
 		return assembly_display(shown, asm["cond"])
 	return part_display(it["part"], Shed.condition_of(it))
+
+
+## A can, bottle or pan of fluid, sitting on its base. `full` 0..1 shows how much is in it
+## where you can see in (the drain pan and the bleed bottle).
+static func fluid_display(part_id: String, full: float) -> Node3D:
+	var p := PartsDB.get_part(part_id)
+	var c: Array = p.get("color", [0.5, 0.5, 0.5])
+	var body := StandardMaterial3D.new()
+	body.albedo_color = Color(c[0], c[1], c[2])
+	body.roughness = 0.45
+	body.metallic = 0.3 if PartsDB.kind_of(part_id) == "petrol" else 0.0
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.08, 0.08, 0.08)
+	dark.roughness = 0.6
+	var l: Array = p.get("liquid", [0.5, 0.4, 0.2])
+	var liquid := StandardMaterial3D.new()
+	liquid.albedo_color = Color(l[0], l[1], l[2])
+	liquid.roughness = 0.1
+	liquid.metallic = 0.2
+	var root := Node3D.new()
+	var size := Vector3.ONE * 0.2
+	var pieces := []   # [mesh, material, position]
+	match str(p.get("container", "")):
+		"Jerry can":
+			var big := float(p["litres"]) > 6.0
+			size = Vector3(0.14 if big else 0.11, 0.38 if big else 0.3, 0.3 if big else 0.24)
+			pieces = [[_box_mesh(size), body, Vector3(0.0, size.y * 0.5, 0.0)],
+				[_box_mesh(Vector3(0.03, 0.04, size.z * 0.6)), body, Vector3(0.0, size.y + 0.02, 0.0)],
+				[_cyl_mesh(0.022, 0.05), dark, Vector3(0.0, size.y + 0.01, size.z * 0.38)]]
+		"Race fuel drum":
+			size = Vector3(0.2, 0.3, 0.2)
+			pieces = [[_cyl_mesh(0.1, 0.3), body, Vector3(0.0, 0.15, 0.0)], [_cyl_mesh(0.02, 0.03), dark, Vector3(0.05, 0.315, 0.0)]]
+		"Oil bottle":
+			size = Vector3(0.11, 0.3, 0.17)
+			pieces = [[_box_mesh(Vector3(0.11, 0.26, 0.17)), body, Vector3(0.0, 0.13, 0.0)],
+				[_cyl_mesh(0.025, 0.04), dark, Vector3(0.0, 0.28, -0.04)],
+				[_box_mesh(Vector3(0.112, 0.08, 0.1)), dark, Vector3(0.0, 0.12, 0.02)]]
+		"Drain pan":
+			size = Vector3(0.46, 0.08, 0.46)
+			pieces = [[_cyl_mesh(0.23, 0.08, 0.2), body, Vector3(0.0, 0.04, 0.0)]]
+			if full > 0.01:
+				pieces.append([_cyl_mesh(0.2, 0.006), liquid, Vector3(0.0, 0.01 + 0.06 * full, 0.0)])
+		"Bleed bottle":
+			var glass := StandardMaterial3D.new()
+			glass.albedo_color = Color(0.85, 0.9, 0.95, 0.35)
+			glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			glass.roughness = 0.05
+			size = Vector3(0.09, 0.2, 0.09)
+			pieces = [[_cyl_mesh(0.045, 0.16), glass, Vector3(0.0, 0.08, 0.0)], [_cyl_mesh(0.004, 0.25), dark, Vector3(0.0, 0.2, 0.0)]]
+			if full > 0.01:
+				pieces.append([_cyl_mesh(0.04, 0.15 * full), liquid, Vector3(0.0, 0.075 * full, 0.0)])
+		_:
+			size = Vector3(0.08, 0.17, 0.08)
+			pieces = [[_cyl_mesh(0.04, 0.14), body, Vector3(0.0, 0.07, 0.0)], [_cyl_mesh(0.022, 0.03), dark, Vector3(0.0, 0.155, 0.0)]]
+	for piece in pieces:
+		var mi := MeshInstance3D.new()
+		mi.mesh = piece[0]
+		mi.material_override = piece[1]
+		mi.position = piece[2]
+		root.add_child(mi)
+	root.set_meta("size", size)
+	return root
+
+
+static func _box_mesh(size: Vector3) -> BoxMesh:
+	var m := BoxMesh.new()
+	m.size = size
+	return m
+
+
+static func _cyl_mesh(radius: float, height: float, top := -1.0) -> CylinderMesh:
+	var m := CylinderMesh.new()
+	m.bottom_radius = radius
+	m.top_radius = radius if top < 0.0 else top
+	m.height = height
+	m.radial_segments = 24
+	return m
 
 
 ## A new part still in its cardboard box, sized to fit it, with the part's name on the lid.

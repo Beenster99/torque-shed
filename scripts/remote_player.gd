@@ -149,6 +149,9 @@ func _physics_process(_delta: float) -> void:
 	_figure.global_transform = Transform3D(Basis(Vector3.UP, lerp_angle(sa[4], sb[4], f)), pos)
 	_head.rotation.x = lerpf(sa[5], sb[5], f) * 0.6
 	_hand.rotation.x = _head.rotation.x
+	# Crouching: squash the figure down to about two thirds of its height.
+	var low := sb.size() > 6 and sb[6] > 0.5
+	_figure.scale.y = move_toward(_figure.scale.y, 0.62 if low else 1.0, 0.08)
 
 
 func _process(_delta: float) -> void:
@@ -158,6 +161,9 @@ func _process(_delta: float) -> void:
 	# You hear their tools while they work.
 	var working := riding_bike == 0 and str(Shed.crew.get(peer, {}).get("activity", "")) != ""
 	Sfx.set_loop(_work_sound, Sfx.TOOL_LOOPS.get(tool, "") if working else "")
+	var jet := _hand.get_node_or_null("Jet") as CPUParticles3D
+	if jet:
+		jet.emitting = working and tool == "lance"
 	var sig := "%d|%s" % [held, tool]
 	if sig == _hand_sig:
 		return
@@ -172,6 +178,11 @@ func _process(_delta: float) -> void:
 		_hand.add_child(part)
 	else:
 		_hand.add_child(Walker.make_tool_mesh(tool))
+		if tool == "lance":
+			var spray := Walker.make_jet()
+			spray.name = "Jet"
+			spray.position = Vector3(0.0, 0.0, -0.6)
+			_hand.add_child(spray)
 
 
 func world_position() -> Vector3:
