@@ -91,6 +91,10 @@ func _setup_inputs() -> void:
 	# The second work button: drains fluids into a held container.
 	_bind("alt_act", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	_bind("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])
+	# At the whiteboard: write a line of text, undo your last mark (Z or Ctrl+Z), hold to wipe it.
+	_bind("board_text", [KEY_T], [])
+	_bind("board_undo", [KEY_Z], [JOY_BUTTON_DPAD_LEFT])
+	_bind("board_wipe", [KEY_X], [])
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
 	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])

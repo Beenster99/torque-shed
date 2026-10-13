@@ -6,12 +6,15 @@ signal closed
 
 var furniture_id := 0
 var bike_id := 0
+var _board: Node            # writing on the whiteboard: the Whiteboard, and where the next line goes
+var _board_at := Vector2.ZERO
 var _edit: LineEdit
 var _title: Label
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_to_group("label_dialog")
 	theme = UITheme.make()
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var center := CenterContainer.new()
@@ -45,6 +48,7 @@ func _ready() -> void:
 func open(id: int) -> void:
 	furniture_id = id
 	bike_id = 0
+	_board = null
 	_title.text = "SHELF LABEL"
 	_edit.max_length = 24
 	_edit.placeholder_text = "Brakes, engine spares, Barn Find..."
@@ -56,10 +60,25 @@ func open(id: int) -> void:
 func open_bike(id: int) -> void:
 	bike_id = id
 	furniture_id = 0
+	_board = null
 	_title.text = "NAME THIS BIKE"
 	_edit.max_length = 28
 	_edit.placeholder_text = "Old Faithful, The Beast, Project X..."
 	_edit.text = str(Shed.bikes.get(id, {}).get("name", ""))
+	_show()
+
+
+## Write on the whiteboard at `at` (board pixels). Enter puts each line up and starts the next.
+func open_board(board: Node, at: Vector2) -> void:
+	_board = board
+	_board_at = at
+	bike_id = 0
+	furniture_id = 0
+	_title.text = "WRITE ON THE WHITEBOARD"
+	_edit.max_length = BoardData.MAX_TEXT
+	_edit.placeholder_text = "Enter puts the line up and starts the next. Esc when done."
+	_edit.text = ""
+	_edit.keep_editing_on_text_submit = true
 	_show()
 
 
@@ -75,6 +94,13 @@ func close_dialog() -> void:
 
 
 func _save() -> void:
+	if _board != null:
+		if _edit.text.strip_edges() == "":
+			close_dialog()
+		else:
+			_board_at = _board.write_text(_edit.text, _board_at)
+			_edit.text = ""
+		return
 	if bike_id != 0:
 		Shed.request({"a": "rename_bike", "bike": bike_id, "name": _edit.text})
 	else:

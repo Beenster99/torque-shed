@@ -8,6 +8,8 @@ signal changed
 signal feedback(text: String, ok: bool)
 ## Someone pointed at something for the crew: {at, what, item, furniture, name}.
 signal pinged(peer: int, ping: Dictionary)
+## The whiteboard's marks changed (see BoardData).
+signal board_changed
 
 ## The fixed workbench along the wall. Equipment adds its own places: engine stands
 ## ("stand_<id>") and the rest "<prefix>_<id>_<n>" (see Equipment.SPOT_PREFIX).
@@ -63,6 +65,7 @@ var radio := {"on": false, "station": 0}
 var door_open := true     # the roller door
 var lights_on := true     # the shed's strip lights
 var stations: Array = []    # [{name, genre, url}] from data/radio.json
+var board := BoardData.empty()   # what's drawn and written on the shed whiteboard
 
 var _next_id := 1
 var _dirty := false
@@ -101,6 +104,8 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	lights_on = true
 	items.clear()
 	crew.clear()
+	board = BoardData.empty()
+	board_changed.emit()
 	_next_id = 1
 	_rng.seed = seed_value if seed_value != 0 else int(Time.get_unix_time_from_system())
 	active = true
@@ -182,6 +187,8 @@ func _set_up_yard() -> void:
 
 
 func join_remote() -> void:
+	board = BoardData.empty()
+	board_changed.emit()
 	bikes.clear()
 	furniture.clear()
 	radio = {"on": false, "station": 0}
@@ -191,6 +198,8 @@ func join_remote() -> void:
 
 
 func stop() -> void:
+	board = BoardData.empty()
+	board_changed.emit()
 	furniture.clear()
 	radio = {"on": false, "station": 0}
 	active = false
@@ -1145,6 +1154,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		if Net.is_online():
 			_ping.rpc(peer, d)
 		return
+	if str(action.get("a", "")).begins_with("board_"):
+		_board_apply(peer, action)
+		return
 	var why := check(peer, action)
 	if why != "":
 		_tell(peer, why, false)
@@ -1471,6 +1483,67 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 			items[m]["fluid"]["age"] = minf(1.0, float(items[m]["fluid"].get("age", 0.0)) + km / 4000.0)
 
 
+# ---------------------------------------------------------------------------- whiteboard
+
+## Draws or writes on the whiteboard. Your own marks show straight away; the host checks them
+## and passes them on to everyone else as you go.
+func board_request(op: Dictionary) -> void:
+	if not is_authority() and str(op.get("a", "")) in ["board_draw", "board_text"]:
+		var mine := BoardData.clean(op, me(), str(crew.get(me(), {}).get("name", Settings.player_name)))
+		if not mine.is_empty() and BoardData.apply(board, mine):
+			board_changed.emit()
+	request(op)
+
+
+func _board_apply(peer: int, action: Dictionary) -> void:
+	var op := BoardData.clean(action, peer, str(crew.get(peer, {}).get("name", "Someone")))
+	var a := str(op.get("a", ""))
+	match a:
+		"board_draw", "board_text":
+			if not BoardData.apply(board, op):
+				return
+			# The finished mark goes back to its author too, in case a whole-shed sync
+			# crossed with it on the way and wiped their copy.
+			var done: bool = a == "board_text" or op["done"]
+			_board_send(op, 0 if done else peer)
+			if done:
+				var gone := BoardData.tidy(board, int(op["id"]))
+				if not gone.is_empty():
+					var removal := {"a": "board_remove", "ids": gone}
+					BoardData.apply(board, removal)
+					_board_send(removal)
+		"board_undo":
+			var last := BoardData.last_of(board, peer)
+			if last == 0:
+				_tell(peer, "Nothing of yours on the board to undo.", false)
+				return
+			var removal := {"a": "board_remove", "ids": [last]}
+			BoardData.apply(board, removal)
+			_board_send(removal)
+		"board_clear":
+			BoardData.apply(board, op)
+			_board_send({"a": "board_clear"})
+			_tell(peer, "Whiteboard wiped clean.", true)
+		_:
+			return
+	board_changed.emit()
+
+
+## Passes a board op on to every other player, except the one who drew it (they already have it).
+func _board_send(op: Dictionary, skip := 0) -> void:
+	if not Net.is_online():
+		return
+	for p in multiplayer.get_peers():
+		if p != skip:
+			_board_op.rpc_id(p, op)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _board_op(op: Dictionary) -> void:
+	if BoardData.apply(board, op):
+		board_changed.emit()
+
+
 func _tell(peer: int, text: String, ok: bool) -> void:
 	if peer == me():
 		feedback.emit(text, ok)
@@ -1686,9 +1759,14 @@ func _mark_dirty() -> void:
 	_dirty = true
 
 
-func _snapshot() -> Dictionary:
-	return {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
+## The whole shed. The regular syncs leave the whiteboard out: its marks go out one by one
+## as they're drawn (_board_op), and whole only to players joining.
+func _snapshot(with_board := true) -> Dictionary:
+	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on}
+	if with_board:
+		state["board"] = board
+	return state
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1701,6 +1779,9 @@ func _sync(state: Dictionary) -> void:
 	door_open = bool(state.get("door", true))
 	lights_on = bool(state.get("lights", true))
 	_next_id = int(state.get("next", 1))
+	if state.get("board", null) is Dictionary:
+		board = state["board"]
+		board_changed.emit()
 	active = true
 	changed.emit()
 
@@ -1725,5 +1806,5 @@ func _process(delta: float) -> void:
 		_sync_timer = SYNC_INTERVAL
 		_dirty = false
 		if Net.is_online():
-			_sync.rpc(_snapshot())
+			_sync.rpc(_snapshot(false))
 		changed.emit()

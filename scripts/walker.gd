@@ -401,6 +401,8 @@ func _update_target() -> void:
 			t = {"kind": "door"}
 		elif c.has_meta("light_switch"):
 			t = {"kind": "lights"}
+		elif c.has_meta("whiteboard"):
+			t = {"kind": "board"}   # the Whiteboard handles drawing on it itself
 		elif c.has_meta("furniture") and Shed.furniture.has(int(c.get_meta("furniture"))):
 			t = {"kind": "furniture", "furniture": int(c.get_meta("furniture"))}
 		elif c.has_meta("label") and Shed.furniture.has(int(c.get_meta("label"))):
@@ -579,7 +581,7 @@ func _make_plan() -> Dictionary:
 	var p := {}
 	if kind == "label":
 		return {"action": {"a": "write_label"}, "time": 0.15, "verb": "write a label for these shelves", "blocked": ""}
-	if kind in ["furniture", "door", "lights"]:
+	if kind in ["furniture", "door", "lights", "board"]:
 		return {}
 	if kind == "radio":
 		if Shed.stations.is_empty():
@@ -854,6 +856,10 @@ func _describe() -> String:
 		"lights":
 			lines.append("Shed lights")
 			lines.append("F: switch them %s" % ("off" if Shed.lights_on else "on"))
+		"board":
+			var board: Node = get_tree().get_first_node_in_group("whiteboard")
+			if board:
+				lines.append_array(board.describe())
 		"pc":
 			lines.append("Parts computer")
 			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")

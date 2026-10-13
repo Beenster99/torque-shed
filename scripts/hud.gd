@@ -158,7 +158,10 @@ func _draw_toolbar() -> void:
 		var label: String = {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder", "spray": "Spray can",
 			"lance": "Pressure wash", "gun": "Spray gun", "watch": "Stopwatch"}.get(t, t)
 		draw_string(font, r.position + Vector2(0, 34), label, HORIZONTAL_ALIGNMENT_CENTER, w, 16, Color.WHITE if active else Color(1, 1, 1, 0.65))
-	if walker.tool in ["spray", "gun"]:
+	var board: Node = get_tree().get_first_node_in_group("whiteboard") if walker.target.get("kind", "") == "board" else null
+	if board:
+		board.draw_picker(self, font, y)
+	elif walker.tool in ["spray", "gun"]:
 		_draw_spray_picker(font, y)
 	var held := Shed.held_by(Shed.me())
 	if held != 0:
