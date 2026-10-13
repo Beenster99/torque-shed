@@ -1125,29 +1125,7 @@ func _set_tool_view() -> void:
 
 ## A fan of water from the pressure washer's nozzle. Shared with other players' avatars.
 static func make_jet() -> CPUParticles3D:
-	var jet := CPUParticles3D.new()
-	jet.amount = 60
-	jet.lifetime = 0.35
-	jet.emitting = false
-	jet.local_coords = false
-	jet.direction = Vector3(0.0, 0.0, -1.0)
-	jet.spread = 5.0
-	jet.initial_velocity_min = 9.0
-	jet.initial_velocity_max = 12.0
-	jet.gravity = Vector3(0.0, -4.0, 0.0)
-	jet.scale_amount_min = 0.025
-	jet.scale_amount_max = 0.05
-	var quad := QuadMesh.new()
-	quad.size = Vector2(1.0, 1.0)
-	var m := StandardMaterial3D.new()
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.billboard_keep_scale = true   # or every puff draws at the full quad size
-	m.albedo_color = Color(0.85, 0.92, 1.0, 0.55)
-	quad.material = m
-	jet.mesh = quad
-	return jet
+	return WaterSpray.make()
 
 
 func _update_jet() -> void:
@@ -1159,54 +1137,4 @@ func _update_jet() -> void:
 
 ## A simple mesh of a tool, held in the hand. Shared with other players' avatars.
 static func make_tool_mesh(which: String, can_color := Color(0.9, 0.75, 0.1)) -> Node3D:
-	var root := Node3D.new()
-	var steel := StandardMaterial3D.new()
-	steel.albedo_color = Color(0.8, 0.81, 0.83)
-	steel.metallic = 1.0
-	steel.roughness = 0.25
-	var grip := StandardMaterial3D.new()
-	grip.albedo_color = Color(0.75, 0.12, 0.08)
-	grip.roughness = 0.6
-	var parts := []
-	match which:
-		"wrench":
-			parts = [[Vector3(0, 0, 0), Vector3(0.025, 0.22, 0.012), steel], [Vector3(0, 0.12, 0), Vector3(0.06, 0.04, 0.014), steel],
-				[Vector3(0, -0.06, 0), Vector3(0.03, 0.1, 0.02), grip]]
-		"brush":
-			var bristle := StandardMaterial3D.new()
-			bristle.albedo_color = Color(0.85, 0.7, 0.35)
-			parts = [[Vector3(0, -0.05, 0), Vector3(0.03, 0.18, 0.03), grip], [Vector3(0, 0.07, 0), Vector3(0.07, 0.06, 0.04), steel],
-				[Vector3(0, 0.12, 0), Vector3(0.065, 0.05, 0.035), bristle]]
-		"repair":
-			var body := StandardMaterial3D.new()
-			body.albedo_color = Color(0.1, 0.3, 0.75)
-			body.roughness = 0.4
-			parts = [[Vector3(0, -0.04, 0), Vector3(0.05, 0.2, 0.05), body], [Vector3(0, 0.08, 0.03), Vector3(0.06, 0.05, 0.06), body],
-				[Vector3(0, 0.08, 0.07), Vector3(0.11, 0.11, 0.008), steel]]
-		"spray":
-			var can := StandardMaterial3D.new()
-			can.albedo_color = can_color
-			can.metallic = 0.6
-			can.roughness = 0.3
-			parts = [[Vector3(0, -0.02, 0), Vector3(0.06, 0.18, 0.06), can], [Vector3(0, 0.09, 0), Vector3(0.03, 0.04, 0.03), steel],
-				[Vector3(0, 0.12, -0.01), Vector3(0.02, 0.02, 0.03), grip]]
-		"lance":
-			var yellow := StandardMaterial3D.new()
-			yellow.albedo_color = Color(0.95, 0.75, 0.05)
-			yellow.roughness = 0.4
-			var black := StandardMaterial3D.new()
-			black.albedo_color = Color(0.05, 0.05, 0.05)
-			parts = [[Vector3(0, -0.06, 0.04), Vector3(0.04, 0.14, 0.05), black], [Vector3(0, 0.0, -0.02), Vector3(0.05, 0.06, 0.14), yellow],
-				[Vector3(0, 0.0, -0.32), Vector3(0.015, 0.015, 0.5), steel], [Vector3(0, 0.0, -0.58), Vector3(0.03, 0.03, 0.05), black]]
-		_:
-			pass  # bare hands: nothing to draw
-	for p in parts:
-		var mi := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = p[1]
-		mi.mesh = box
-		mi.material_override = p[2]
-		mi.position = p[0]
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(mi)
-	return root
+	return ToolModels.make(which, can_color)
