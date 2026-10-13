@@ -434,7 +434,7 @@ func _net_state() -> PackedFloat32Array:
 		return s
 	if walker:
 		var p := walker.global_position
-		return PackedFloat32Array([0.0, p.x, p.y, p.z, walker.yaw(), walker.pitch(), 1.0 if walker.crouched else 0.0])
+		return PackedFloat32Array([0.0, p.x, p.y, p.z, walker.yaw(), walker.pitch(), 1.0 if walker.crouched or walker.seat != 0 else 0.0])
 	return PackedFloat32Array()
 
 

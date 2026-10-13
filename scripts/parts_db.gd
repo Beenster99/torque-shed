@@ -7,34 +7,34 @@ extends Node
 
 const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc", "caliper", "pads", "master", "tank",
 	"saddle", "handlebars", "dashboard", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling",
-	"gearbox", "exhaust", "final_drive", "side_stand", "centre_stand", "headlight"]
+	"gearbox", "exhaust", "final_drive", "chain", "side_stand", "centre_stand", "headlight"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
-const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid"]
+const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube"]
 const KIND_NAMES := {
 	"frame": "Frame", "fork": "Front fork", "shock": "Rear suspension", "wheel": "Wheel", "tyre": "Tyre",
 	"disc": "Brake disc", "caliper": "Brake caliper", "pads": "Brake pads", "master": "Master cylinder",
 	"tank": "Fuel tank", "saddle": "Saddle", "handlebars": "Handlebars", "dashboard": "Dashboard",
 	"engine": "Engine block", "head": "Cylinder head", "fuel": "Fuel system", "air_filter": "Air filter",
 	"oil_filter": "Oil filter", "spark_plugs": "Spark plugs", "cooling": "Cooling", "gearbox": "Gearbox",
-	"exhaust": "Exhaust", "final_drive": "Final drive", "side_stand": "Side stand", "centre_stand": "Centre stand",
-	"headlight": "Headlight", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid",
+	"exhaust": "Exhaust", "final_drive": "Sprockets", "chain": "Chain", "side_stand": "Side stand", "centre_stand": "Centre stand",
+	"headlight": "Headlight", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
 }
 ## Slots on the bike itself.
 const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
-	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive",
+	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight"]
 ## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
 const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight"]
 ## Parts low down on a bike that you have to crouch to reach while it's in the frame.
-const LOW_SLOTS: Array[String] = ["side_stand", "centre_stand", "oil_filter", "final_drive"]
+const LOW_SLOTS: Array[String] = ["side_stand", "centre_stand", "oil_filter", "final_drive", "chain"]
 ## Slots on an engine block. They travel with the block when it comes out of the frame.
 const ENGINE_SLOTS: Array[String] = ["head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox"]
 ## Engine parts you can change with the engine still in the frame. The rest need the engine stand.
 const SERVICE_SLOTS: Array[String] = ["air_filter", "oil_filter", "spark_plugs"]
 const SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
-	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive",
+	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox"]
 const SLOT_KIND := {
 	"frame": "frame", "fork": "fork", "shock": "shock", "front_wheel": "wheel", "rear_wheel": "wheel",
@@ -42,7 +42,7 @@ const SLOT_KIND := {
 	"front_caliper": "caliper", "rear_caliper": "caliper", "front_pads": "pads", "rear_pads": "pads",
 	"front_master": "master", "rear_master": "master", "tank": "tank", "saddle": "saddle",
 	"handlebars": "handlebars", "dashboard": "dashboard", "engine": "engine", "exhaust": "exhaust",
-	"final_drive": "final_drive", "head": "head", "fuel": "fuel", "air_filter": "air_filter",
+	"final_drive": "final_drive", "chain": "chain", "head": "head", "fuel": "fuel", "air_filter": "air_filter",
 	"oil_filter": "oil_filter", "spark_plugs": "spark_plugs", "cooling": "cooling", "gearbox": "gearbox",
 	"side_stand": "side_stand", "centre_stand": "centre_stand", "headlight": "headlight",
 }
@@ -52,7 +52,7 @@ const DEFAULT_BUILD := {
 	"rear_disc": "solid_240", "front_caliper": "four_piston_axial", "rear_caliper": "single_piston",
 	"front_pads": "semi_metallic", "rear_pads": "semi_metallic", "front_master": "axial_14", "rear_master": "axial_14",
 	"tank": "cafe_15", "saddle": "flat_bench", "handlebars": "flat_bar", "dashboard": "twin_clocks",
-	"engine": "twin_700", "exhaust": "stock_muffler", "final_drive": "short_14_50", "head": "four_valve",
+	"engine": "twin_700", "exhaust": "stock_muffler", "final_drive": "short_14_50", "chain": "oring_520", "head": "four_valve",
 	"fuel": "twin_carbs", "air_filter": "paper_airbox", "oil_filter": "paper_oil", "spark_plugs": "iridium_plugs",
 	"cooling": "oil_cooler", "gearbox": "five_wide", "side_stand": "stamped_side", "centre_stand": "none",
 	"headlight": "round_7",
@@ -68,7 +68,7 @@ const MOUNTS := {
 	"front_pads": ["front_caliper"], "rear_pads": ["rear_caliper"],
 	"handlebars": ["fork"], "dashboard": ["handlebars"], "front_master": ["handlebars"], "rear_master": ["frame"],
 	"tank": ["frame"], "saddle": ["frame"],
-	"engine": ["frame"], "exhaust": ["engine"], "final_drive": ["engine", "rear_wheel"],
+	"engine": ["frame"], "exhaust": ["engine"], "final_drive": ["engine", "rear_wheel"], "chain": ["final_drive"],
 	"head": ["engine"], "oil_filter": ["engine"], "cooling": ["engine"], "gearbox": ["engine"],
 	"spark_plugs": ["head"], "fuel": ["head"], "air_filter": ["fuel"],
 	"side_stand": ["frame"], "centre_stand": ["frame"], "headlight": ["fork"],
@@ -165,6 +165,23 @@ func fluid_capacity(id: String) -> float:
 	return 0.0
 
 
+## How much lighter this part is than the heaviest of its kind, in kg. Weight saving is free
+## performance: less to accelerate, stop and turn.
+func weight_saving(id: String) -> float:
+	var k := kind_of(id)
+	var p := get_part(id)
+	if not p.has("mass") or FLUID_KINDS.has(k):
+		return 0.0
+	var heaviest := 0.0
+	for other in by_kind.get(k, []):
+		heaviest = maxf(heaviest, float(get_part(other).get("mass", 0.0)))
+	return heaviest - float(p["mass"])
+
+
+func is_lightweight(id: String) -> bool:
+	return bool(get_part(id).get("lightweight", false))
+
+
 func is_engine_slot(slot: String) -> bool:
 	return ENGINE_SLOTS.has(slot)
 
@@ -200,7 +217,10 @@ func spec_line(id: String) -> String:
 			bits = [p["type"], "%d mm travel" % roundi(p["travel"] * 1000.0), "bump %d" % roundi(p["bump"]),
 				"rebound %d" % roundi(p["rebound"]), "adjust: " + str(p["adjust_name"])]
 		"wheel":
-			bits = [p["type"], "%d\"" % int(p["diameter"])]
+			var dia := float(p["diameter"])
+			bits = [p["type"], ("%d\"" % roundi(dia)) if is_equal_approx(dia, roundf(dia)) else ("%.1f\"" % dia)]
+			if p.has("spokes"):
+				bits.append("%d spokes" % int(p["spokes"]))
 		"tyre":
 			bits = [p["type"], p["compound"] + " compound", "%d mm" % int(p["width"]),
 				"grip %.2f tarmac / %.2f dirt" % [p["grip"]["tarmac"], p["grip"]["dirt"]]]
@@ -241,6 +261,11 @@ func spec_line(id: String) -> String:
 			bits = ["power %+d%%" % roundi((p["torque_mult"] - 1.0) * 100.0), "loudness %d%%" % roundi(p["loudness"] * 100.0)]
 		"final_drive":
 			bits = [p["type"]]
+		"chain":
+			bits = [p["type"], "power loss %.1f%%" % (float(p["friction"]) * 100.0), "stretches %s" % ("slowly" if p["stretch"] < 6.0 else "fast" if p["stretch"] > 10.0 else "normally"),
+				"lube lasts %s" % Units.distance(float(p["lube_life"]), 0)]
+		"chain_lube":
+			bits = [p["container"], "%.1f L (about %d coats)" % [p["litres"], roundi(float(p["litres"]) / 0.03)], "lasts x%.1f" % float(p["lasts"])]
 		"side_stand":
 			bits = [p["type"], "leans %d°" % int(p["lean"]), "springs up by itself" if p["auto_retract"] else "kick it up"]
 		"centre_stand":
@@ -258,6 +283,8 @@ func spec_line(id: String) -> String:
 				"bite %+d%%" % roundi((p["brake"] - 1.0) * 100.0)]
 	if p.has("mass") or p.has("mass_per_cyl"):
 		bits.append(Units.mass(float(p.get("mass", p.get("mass_per_cyl", 0.0))), 1))
+	if is_lightweight(id):
+		bits.append("Lightweight: saves %s" % Units.mass(weight_saving(id), 1))
 	return "  ·  ".join(bits.map(func(b): return str(b)))
 
 

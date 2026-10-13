@@ -49,6 +49,7 @@ func _run_all() -> void:
 	print("The shed")
 	_test_shed_rules()
 	_test_garage_life()
+	_test_equipment_and_chains()
 	print("Sound and radio")
 	_test_sounds()
 	_test_mp3_decoder()
@@ -73,7 +74,7 @@ func _merge(a: Dictionary, b: Dictionary) -> Dictionary:
 
 
 func _test_catalogue() -> void:
-	check(PartsDB.KINDS.size() == 26 and PartsDB.parts.size() >= 130, "catalogue has 26 kinds of part (%d parts)" % PartsDB.parts.size())
+	check(PartsDB.KINDS.size() == 27 and PartsDB.parts.size() >= 170, "catalogue has 27 kinds of part (%d parts)" % PartsDB.parts.size())
 	for k in PartsDB.KINDS:
 		check(PartsDB.by_kind[k].size() >= 5, "%s has at least five variants (%d)" % [k, PartsDB.by_kind[k].size()])
 	var no_colour := []
@@ -81,7 +82,7 @@ func _test_catalogue() -> void:
 		if not PartsDB.parts[id].has("color"):
 			no_colour.append(id)
 	check(no_colour.is_empty(), "every part has a colour %s" % str(no_colour))
-	check(PartsDB.SLOTS.size() == 32, "a bike has 32 slots, 7 of them on the engine")
+	check(PartsDB.SLOTS.size() == 33, "a bike has 33 slots, 7 of them on the engine")
 	var b := BikeBuild.new()
 	check(b.bike_mass > 120.0 and b.bike_mass < 230.0, "default bike mass is plausible (%.0f kg)" % b.bike_mass)
 	check(b.hp() > 40.0 and b.hp() < 120.0, "default bike power is plausible (%.0f hp)" % b.hp())
@@ -343,14 +344,17 @@ func _test_shed_rules() -> void:
 	check(pipe != 0 and Shed.item_on(ranger, "exhaust") == 0, "an unbolted exhaust comes off into your hands")
 	check(Shed.check(me, {"a": "take", "spot": "bench_0"}) != "", "you can't carry two parts at once")
 	check(Shed.check(me, {"a": "mount", "bike": ranger}) != "", "a bike with no exhaust can't be ridden")
-	Shed.request({"a": "place", "spot": "washer"})
+	var washer := _spot_on("washer")
+	var repair := _spot_on("repair")
+	check(washer != "" and repair != "", "the shed starts with a parts washer and a repair bench (%s, %s)" % [washer, repair])
+	Shed.request({"a": "place", "spot": washer})
 	var dirt_before: float = Shed.items[pipe]["dirt"]
 	Shed._process(2.0)
 	check(Shed.items[pipe]["dirt"] < dirt_before, "the parts washer cleans what's in it")
 	check(Shed.check(me, {"a": "repair", "item": pipe}) != "", "repairs need the repair bench")
 	check(Shed.check(me, {"a": "paint", "item": pipe, "color": 3}).contains("rust"), "rusty parts can't be painted")
-	Shed.request({"a": "take", "spot": "washer"})
-	Shed.request({"a": "place", "spot": "repair"})
+	Shed.request({"a": "take", "spot": washer})
+	Shed.request({"a": "place", "spot": repair})
 	Shed.request({"a": "repair", "item": pipe})
 	check(Shed.items[pipe]["rust"] == 0.0 and Shed.items[pipe]["wear"] == 0.0, "the repair bench restores rust and wear")
 	Shed.request({"a": "paint", "item": pipe, "color": 3, "finish": "chrome"})
@@ -369,7 +373,7 @@ func _test_shed_rules() -> void:
 	BikeModel._apply_finish(matte, Shed.PAINTS[0], "matte")
 	check(chrome.metallic > 0.9 and chrome.roughness < 0.15 and matte.roughness > 0.8, "chrome is a mirror and matte is flat")
 	Shed.request({"a": "clean", "item": pipe})
-	Shed.request({"a": "take", "spot": "repair"})
+	Shed.request({"a": "take", "spot": repair})
 	Shed.request({"a": "install", "bike": ranger, "slot": "frame"})
 	check(Shed.item_on(ranger, "exhaust") == pipe and not Shed.is_bolted(ranger, "exhaust"), "a part goes back on loose")
 	Shed.request({"a": "bolt", "bike": ranger, "slot": "exhaust"})
@@ -413,8 +417,8 @@ func _test_shed_rules() -> void:
 	Shed.request({"a": "install", "bike": barn, "slot": "frame"})
 	check(Shed.item_on(barn, "engine") == block and Shed.item_on(barn, "spark_plugs") == plugs, "the built engine goes into the frame")
 	Shed.request({"a": "bolt", "bike": barn, "slot": "engine"})
-	# The bench has the exhaust, chain and both tyres.
-	for spot in ["bench_0", "bench_1", "bench_2", "bench_3"]:
+	# The bench has the exhaust, chain, sprockets and front tyre; the sprockets go on before the chain.
+	for spot in ["bench_0", "bench_2", "bench_1", "bench_3"]:
 		var item := Shed.item_at_spot(spot)
 		var k: String = Shed.items[item]["kind"]
 		Shed.request({"a": "take", "spot": spot})
@@ -441,7 +445,7 @@ func _test_shed_rules() -> void:
 	for id in Shed.furniture:
 		if Shed.furniture[id]["kind"] == "shelf":
 			shelf = id
-	check(shelf != 0 and Shed.all_spots().size() == Shed.SPOTS.size() + 2 + Shed.SHELF_SLOTS, "a shelving unit adds six places to put things")
+	check(shelf != 0 and Shed.furniture_spots(shelf).size() == 12, "a shelving unit adds twelve places to put things")
 	Shed.request({"a": "grab", "furniture": shelf})
 	check(Shed.moving(me) == shelf and Shed.check(me, {"a": "mount", "bike": faithful}) != "", "you push one thing at a time and can't ride off with it")
 	var wall := Transform3D(Basis(), Workshop.CENTER + Vector3(-2.0, 0.0, 4.6))
@@ -453,7 +457,7 @@ func _test_shed_rules() -> void:
 	check(Shed.items[stock]["boxed"] and Shed.items[stock]["ref"] == "shelf_%d_3" % shelf, "boxed stock goes on the shelves")
 	check(Shed.spot_transform("shelf_%d_3" % shelf).origin.distance_to(wall.origin) < 2.0, "shelf places move with the shelf")
 	Shed.request({"a": "label", "furniture": shelf, "text": "Handlebars"})
-	check(Shed.furniture_name(Shed.furniture[shelf]) == "Shelving: Handlebars", "shelves take a label")
+	check(Shed.furniture_name(Shed.furniture[shelf]) == "Shelving unit: Handlebars", "shelves take a label")
 	check(Shed.check(me, {"a": "place", "spot": "stand_%d" % shelf}) != "", "a shelf isn't an engine stand")
 	for i in 12:
 		Shed.request({"a": "order_part", "part": "flat_bar"})
@@ -470,6 +474,122 @@ func _test_shed_rules() -> void:
 	check(Shed.bikes.size() == before + 1, "ordering a project bike delivers one to the free bay")
 	check(Shed.check(me, {"a": "order"}) != "", "you can't order when every bay is full")
 	Shed.stop()
+
+
+func _test_equipment_and_chains() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	# The shop sells every kind of equipment, with compact versions for a tight shed.
+	for k in Equipment.KINDS:
+		check(Equipment.by_kind(k).size() >= 2, "the parts computer sells %s (%d models)" % [Equipment.KIND_NAMES[k].to_lower(), Equipment.by_kind(k).size()])
+	for k in ["washer", "repair", "bench", "shelf"]:
+		check(Equipment.by_kind(k).any(func(m): return Equipment.get_model(m).get("compact", false)), "there's a compact %s" % Equipment.KIND_NAMES[k].to_lower())
+	check(Equipment.places("shelf_standard") == 12 and Equipment.places("shelf_racking") == 20, "shelves hold more: 12 on a standard unit, 20 on racking")
+	for model in Equipment.MODELS:
+		check(Equipment.spec_line(model) != "", "%s has a spec line" % model)
+	# Order a compact washer, a big repair machine, a poster, a seat and a TV.
+	var ordered := {}
+	for model in ["washer_compact", "repair_workshop", "poster_cafe", "seat_sofa", "tv_55", "bench_compact"]:
+		Shed.request({"a": "order_furniture", "model": model})
+		for id in Shed.furniture:
+			if Shed.furniture[id]["model"] == model:
+				ordered[model] = id
+	check(ordered.size() == 6, "equipment orders arrive outside (%s)" % str(ordered.keys()))
+	check(Shed.check(me, {"a": "order_furniture", "model": "rocket_ship"}) != "", "you can only order real equipment")
+	var machine: int = ordered["repair_workshop"]
+	check(Shed.furniture_spots(machine).size() == 4 and Shed.spot_role(Shed.furniture_spots(machine)[0]) == "repair",
+		"the machine shop bench has four repair places")
+	# Restore several parts at once on the repair machine.
+	var rusty := []
+	for part in ["stock_muffler", "flat_bar", "cafe_15"]:
+		var id := Shed._new_item(part, 0.7, 0.3, 0.5)
+		Shed._move(id, "spot", Shed.furniture_spots(machine)[rusty.size()])
+		rusty.append(id)
+	var batch := Shed.repair_batch(Shed.furniture_spots(machine)[0])
+	check(batch.size() == 3, "the grinder works on every part on the machine (%d)" % batch.size())
+	check(Shed.repair_time(batch) < 3.0 * Shed.repair_time([rusty[0]]) * 0.6, "doing three at once is much quicker than one by one")
+	Shed.request({"a": "repair_many", "items": batch})
+	check(rusty.all(func(id): return Shed.items[id]["rust"] == 0.0 and Shed.items[id]["wear"] == 0.0), "all three parts come off restored")
+	check(Shed.check(me, {"a": "repair_many", "items": batch}).contains("top condition"), "nothing left to restore")
+	# A parts washer with two places cleans both.
+	var washer := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == "washer_standard":
+			washer = id
+	var grubby := []
+	for n in 2:
+		var id := Shed._new_item("paper_oil", 0.0, 0.8, 0.0)
+		Shed._move(id, "spot", Shed.furniture_spots(washer)[n])
+		grubby.append(id)
+	Shed._process(1.0)
+	check(grubby.all(func(id): return Shed.items[id]["dirt"] < 0.8), "the parts washer cleans both parts in it")
+	# A poster hangs on the wall where you let go.
+	var poster: int = ordered["poster_cafe"]
+	Shed.request({"a": "grab", "furniture": poster})
+	var on_wall := Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(0.0, 2.0, Workshop.HALF.y - 0.01))
+	Shed.request({"a": "release", "furniture": poster, "xf": on_wall})
+	check(Shed.furniture[poster]["xf"] == on_wall and Equipment.is_wall("poster_cafe"), "posters hang on the wall")
+	check(EquipmentView.sit_point("seat_sofa", 2).x > EquipmentView.sit_point("seat_sofa", 0).x, "a sofa seats several")
+
+	# Chains: they stretch and dry out as you ride, and you tighten and lube them.
+	var faithful := _bike_named("Old Faithful")
+	var chain := Shed.item_on(faithful, "chain")
+	check(chain != 0 and Shed.items[chain].has("slack") and Shed.items[chain].has("lube"), "bikes have a chain with slack and lube")
+	Shed.items[chain]["slack"] = 30.0
+	Shed.items[chain]["lube"] = 1.0
+	var fresh := Shed.build_of(faithful)
+	Shed.crew[me]["riding"] = faithful
+	Shed._wear_from_ride(faithful, {"km": 5.0, "dirt_km": 3.0})
+	Shed.crew[me]["riding"] = 0
+	check(float(Shed.items[chain]["slack"]) > 30.0 and float(Shed.items[chain]["lube"]) < 1.0,
+		"riding stretches the chain and wears the lube off (%.1f mm, %.0f%%)" % [Shed.items[chain]["slack"], Shed.items[chain]["lube"] * 100.0])
+	Shed.items[chain]["slack"] = 70.0
+	Shed.items[chain]["lube"] = 0.0
+	var neglected := Shed.build_of(faithful)
+	check(neglected.drivetrain_efficiency < fresh.drivetrain_efficiency * 0.95 and str(neglected.notes).contains("slack")
+		and str(neglected.notes).contains("dry"), "a slack, dry chain wastes power and the bay screen says so (%s)" % str(neglected.notes))
+	check(Shed.check(me, {"a": "adjust_chain", "bike": faithful}).contains("Crouch"), "you crouch to get at the chain adjusters")
+	Shed.request({"a": "adjust_chain", "bike": faithful, "crouched": true})
+	check(is_equal_approx(float(Shed.items[chain]["slack"]), Shed.CHAIN_SLACK_SET), "the wrench sets the chain tension right")
+	check(Shed.check(me, {"a": "adjust_chain", "bike": faithful, "crouched": true}).contains("spot on"), "no need to adjust a good chain")
+	check(Shed.check(me, {"a": "lube", "item": chain, "crouched": true}).contains("chain lube"), "lubing needs a can of chain lube")
+	var can := Shed._new_item("wax_lube", 0.0, 0.0, 0.0)
+	Shed._move(can, "held", me)
+	Shed.request({"a": "lube", "item": chain, "crouched": true})
+	check(float(Shed.items[chain]["lube"]) == 1.0 and float(Shed.items[can]["fluid"]["litres"]) < 0.4, "the can lubes the chain and gets lighter")
+	check(Shed.build_of(faithful).drivetrain_efficiency > neglected.drivetrain_efficiency, "a tight, lubed chain gives the power back")
+	check(Shed.condition_text(Shed.items[chain]).contains("Chain slack 30 mm"), "the info panel shows chain slack and lube")
+	Shed._erase_item(can)
+	check(PartsDB.dependents("final_drive").has("chain"), "the chain comes off before the sprockets")
+
+	# More wheels, and parts that save weight.
+	check(PartsDB.by_kind["wheel"].size() >= 15, "there are %d wheels" % PartsDB.by_kind["wheel"].size())
+	var sizes := {}
+	for w in PartsDB.by_kind["wheel"]:
+		sizes[float(PartsDB.get_part(w)["diameter"])] = true
+		var display := BikeModel.part_display(w, {"rust": 0.0, "dirt": 0.0, "wear": 0.0, "color": PartsDB.default_color(w), "finish": ""})
+		display.free()
+	check(sizes.size() >= 5, "wheels come in %d sizes" % sizes.size())
+	var light := 0
+	for id in PartsDB.parts:
+		if PartsDB.is_lightweight(id):
+			light += 1
+	check(light >= 12, "%d lightweight parts to choose from" % light)
+	var stock := BikeBuild.new()
+	var diet := BikeBuild.new({"tank": "carbon_sport_16", "exhaust": "carbon_slip_on", "saddle": "carbon_race_seat",
+		"handlebars": "alloy_clip_ons", "front_wheel": "forged_17_mag", "rear_wheel": "forged_17_mag", "chain": "light_428"})
+	check(diet.bike_mass < stock.bike_mass - 10.0 and diet.power_to_weight() > stock.power_to_weight(),
+		"lightweight parts cut %.0f kg and raise power to weight" % (stock.bike_mass - diet.bike_mass))
+	check(PartsDB.spec_line("carbon_sport_16").contains("Lightweight"), "the parts computer flags lightweight parts")
+	Shed.stop()
+
+
+## The first place on the first piece of equipment of a kind ("washer", "repair"...).
+func _spot_on(kind: String) -> String:
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == kind:
+			return Shed.furniture_spots(id)[0]
+	return ""
 
 
 ## Orders a part and returns its box, waiting outside.
@@ -812,6 +932,14 @@ func _test_session() -> void:
 		await get_tree().physics_frame
 	Input.action_release("move_forward")
 	check(main.walker.global_position.distance_to(start) > 1.0, "WASD walks you around (%.1f m)" % main.walker.global_position.distance_to(start))
+	# A TV on the back wall, to watch the ride on later.
+	Shed.request({"a": "order_furniture", "model": "tv_55"})
+	var tv_id := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "tv":
+			tv_id = id
+	Shed.request({"a": "grab", "furniture": tv_id})
+	Shed.request({"a": "release", "furniture": tv_id, "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(1.6, 3.4, -Workshop.HALF.y + 0.02))})
 	# Look at the Rusty Ranger's exhaust from beside it and unbolt it with the wrench.
 	var ranger := _bike_named("Rusty Ranger")
 	var view: Node3D = main.workshop.bike_views[ranger]
@@ -939,6 +1067,9 @@ func _test_session() -> void:
 	Input.action_release("throttle")
 	check(not main.bike.is_crashed and main.bike.global_position.z > Workshop.CENTER.z + Workshop.HALF.y + 4.0,
 		"the bike rides out through the roller door (z %.1f)" % main.bike.global_position.z)
+	await get_tree().process_frame
+	var screens: Array = main.workshop.tvs()
+	check(screens.size() == 1 and screens[0].is_live() and main.workshop.tv_feed != null, "the shed TV shows the ride live")
 	Input.action_press("front_brake")
 	Input.action_press("rear_brake")
 	for i in 600:
@@ -1005,9 +1136,116 @@ func _test_session() -> void:
 	var tyre_dirt: float = Shed.items[Shed.item_on(faithful, "front_tyre")]["dirt"]
 	check(tyre_dirt < 0.5, "holding the trigger keeps the jet going and washes the tyre (%.2f dirt left)" % tyre_dirt)
 	main.walker.set_tool("hands")
+	await get_tree().physics_frame
+	check(main.workshop.tvs().size() == 1 and not main.workshop.tvs()[0].is_live(), "with nobody riding, the TV goes back to the crew board")
+	await _session_equipment(main, faithful)
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## Equipment in the real shed: every model draws, posters hang on walls, seats sit you down,
+## the grinder does a whole machine at once and the wrench sets chain tension.
+func _session_equipment(main: Node, faithful: int) -> void:
+	var w: Walker = main.walker
+	var row := 0
+	for model in Equipment.MODELS:
+		var kind := Equipment.kind_of(model)
+		var at := Workshop.CENTER + Vector3(-20.0 + (row % 8) * 3.0, 0.0, 30.0 + (row / 8) * 3.0)
+		Shed._new_furniture(kind, Transform3D(Basis(), at), model)
+		row += 1
+	Shed.changed.emit()
+	await get_tree().process_frame
+	var drawn := 0
+	for id in main.workshop.furniture_nodes:
+		if main.workshop.furniture_nodes[id] is EquipmentView:
+			drawn += 1
+	check(drawn == Shed.furniture.size() and drawn >= Equipment.MODELS.size(), "every model of equipment is drawn in the world (%d)" % drawn)
+	# Carry a poster and hang it on the side wall.
+	var poster := 0
+	var sofa := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == "poster_mx":
+			poster = id
+		if Shed.furniture[id]["model"] == "seat_sofa":
+			sofa = id
+	Shed.request({"a": "grab", "furniture": poster})
+	w.place(Transform3D(Basis(Vector3.UP, PI * 0.5), Workshop.CENTER + Vector3(-Workshop.HALF.x + 1.5, 0.0, 1.0)))
+	for i in 4:
+		await get_tree().physics_frame
+	check(w._on_wall, "holding a poster up to the wall offers to hang it")
+	_press("interact")
+	await get_tree().physics_frame
+	var hung: Transform3D = Shed.furniture[poster]["xf"]
+	check(Shed.moving(Shed.me()) == 0 and absf(hung.origin.x - (Workshop.CENTER.x - Workshop.HALF.x)) < 0.1 and hung.origin.y > 1.0,
+		"F hangs it flat on the wall (%s)" % str(hung.origin))
+	# Sit on the sofa, then walk off it.
+	Shed.request({"a": "grab", "furniture": sofa})
+	Shed.request({"a": "release", "furniture": sofa, "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 2.0))})
+	await get_tree().physics_frame
+	w.sit(sofa)
+	for i in 3:
+		await get_tree().physics_frame
+	check(w.seat == sofa and w.camera.global_position.y < Walker.EYE, "you can sit on the sofa (eye at %.2f m)" % w.camera.global_position.y)
+	Input.action_press("move_forward")
+	for i in 3:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(w.seat == 0, "walking gets you up again")
+	# Two rusty parts on the repair bench: the grinder does both.
+	var bench_spots: Array = []
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == "repair_standard" and bench_spots.is_empty():
+			bench_spots = Shed.furniture_spots(id)
+	var rusty := []
+	for n in 2:
+		var part := Shed._new_item("stock_muffler", 0.6, 0.2, 0.4)
+		Shed._move(part, "spot", bench_spots[n])
+		rusty.append(part)
+	Shed.changed.emit()
+	await get_tree().process_frame
+	var spot_at: Vector3 = Shed.spot_transform(bench_spots[0]).origin + Vector3.UP * 0.15
+	w.place(Transform3D(Basis(), spot_at + Vector3(0.0, -spot_at.y, -1.2)))
+	w.set_tool("repair")
+	await _aim_point(w, spot_at)
+	check(w.plan.get("action", {}).get("a", "") == "repair_many" and w.plan["action"]["items"].size() == 2,
+		"the grinder offers to restore both parts on the bench (%s)" % str(w.plan.get("verb", w.target)))
+	Input.action_press("act")
+	for i in 1200:
+		await get_tree().physics_frame
+		if rusty.all(func(id): return Shed.items[id]["rust"] == 0.0):
+			break
+	Input.action_release("act")
+	check(rusty.all(func(id): return Shed.items[id]["rust"] == 0.0), "holding the grinder restores both")
+	# The wrench's second button sets the chain tension, crouched by the bike.
+	var chain := Shed.item_on(faithful, "chain")
+	Shed.items[chain]["slack"] = 60.0
+	w.set_tool("wrench")
+	w.set_crouched(true)
+	var model: BikeModel = main.workshop.bike_model(faithful)
+	var aim: Vector3 = model.global_transform * model.slot_bounds("chain").get_center()
+	var side: Vector3 = model.global_transform.basis.x
+	var feet := aim - Vector3(side.x, 0.0, side.z).normalized() * 1.0
+	feet.y = 0.0
+	w.place(Transform3D(Basis(), feet))
+	await _aim_point(w, aim)
+	check(w.alt_plan.get("action", {}).get("a", "") == "adjust_chain" and w.alt_plan["blocked"] == "",
+		"crouched with the wrench at the chain, the second button adjusts it (%s / %s)" % [str(w.alt_plan.get("blocked", "")), str(w.target)])
+	w.set_crouched(false)
+	w.set_tool("hands")
+
+
+## Turns the walker where it stands to look straight at a point, once its eye height has settled.
+func _aim_point(w: Walker, at: Vector3) -> void:
+	for i in 30:
+		await get_tree().physics_frame
+	var eye: Vector3 = w.camera.global_position
+	var d := at - eye
+	w.rotation.y = atan2(-d.x, -d.z)
+	w._pitch = 0.0
+	w._look(0.0, atan2(d.y, Vector2(d.x, d.z).length()))
+	for i in 3:
+		await get_tree().physics_frame
 
 
 func _test_addresses() -> void:

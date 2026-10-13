@@ -704,7 +704,7 @@ func _draw_rim(wheel: Node3D, rim_r: float, width: float) -> void:
 		var rim := _mesh_instance(ring, rim_mat, Vector3.ZERO, wheel)
 		rim.rotation.z = PI * 0.5
 		rim.scale = Vector3(1.0, maxf(1.0, width / 0.03), 1.0)
-		var count := 36 if style == "wire" else 18
+		var count := int(p.get("spokes", 36 if style == "wire" else 18))
 		for i in count:
 			var a := TAU * i / count
 			var spoke := _tube(Vector3(0.025 * (1 if i % 2 == 0 else -1), 0.0, 0.0),
@@ -713,11 +713,21 @@ func _draw_rim(wheel: Node3D, rim_r: float, width: float) -> void:
 	else:
 		var rim := _mesh_instance(_cylinder(rim_r, width * 0.5), rim_mat, Vector3.ZERO, wheel)
 		rim.rotation.z = PI * 0.5
-		var spokes := 3 if style == "carbon" else 5
+		var spokes := int(p.get("spokes", 3 if style == "carbon" else 5))
+		# Fewer spokes are chunkier; a "y" wheel splits each spoke in two near the rim.
+		var thick := clampf(0.12 / spokes, 0.016, 0.04)
 		for i in spokes:
 			var a := TAU * i / spokes
-			var spoke := _box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.5, Vector3(0.04, rim_r * 0.95, 0.04 if style == "carbon" else 0.028), rim_mat, wheel)
-			spoke.rotation.x = -a
+			if style == "y":
+				_box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.3, Vector3(0.026, rim_r * 0.55, 0.022), rim_mat, wheel).rotation.x = -a
+				for split in [-0.2, 0.2]:
+					var b: float = a + split
+					var arm := _box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.55 + Vector3(0.0, cos(b), sin(b)) * rim_r * 0.2,
+						Vector3(0.02, rim_r * 0.45, 0.016), rim_mat, wheel)
+					arm.rotation.x = -(a + split * 0.5)
+			else:
+				var spoke := _box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.5, Vector3(0.04, rim_r * 0.95, thick), rim_mat, wheel)
+				spoke.rotation.x = -a
 	var hub := _mesh_instance(_cylinder(0.05, 0.14), chrome, Vector3.ZERO, wheel)
 	hub.rotation.z = PI * 0.5
 
@@ -790,9 +800,21 @@ func _draw_final_drive(zr: float) -> void:
 	front_sp.rotation.z = PI * 0.5
 	var rear_sp := _mesh_instance(_cylinder(rear_r, 0.008), sprocket_mat, Vector3(-0.12, 0.0, 0.0), _rear_wheel)
 	rear_sp.rotation.z = PI * 0.5
-	var chain_mat := _mat(Color(0.12, 0.12, 0.12), 0.8, 0.5)
-	for s in [-1.0, 1.0]:
-		_box(Vector3(-0.125, s * lerpf(front_r, rear_r, 0.5), _arm_len * 0.5), Vector3(0.012, 0.012, _arm_len), chain_mat, _swingarm)
+	_current_slot = "chain"
+	if _part_id() == "" or _part_id() == "none":
+		return
+	# The bottom run sags with the chain's slack; a dry chain goes rusty brown.
+	var lube := float(condition.get("chain", {}).get("lube", 1.0))
+	var slack := float(condition.get("chain", {}).get("slack", 30.0))
+	var chain_mat := _mat(_col().lerp(Color(0.4, 0.22, 0.1), clampf(0.7 - lube, 0.0, 0.7)), 0.8, lerpf(0.75, 0.4, lube))
+	var mid_r := lerpf(front_r, rear_r, 0.5)
+	_box(Vector3(-0.125, mid_r, _arm_len * 0.5), Vector3(0.012, 0.012, _arm_len), chain_mat, _swingarm)
+	var sag := clampf((slack - 20.0) / 1000.0, 0.0, 0.07)
+	var a := Vector3(-0.125, -front_r, 0.0)
+	var b := Vector3(-0.125, -rear_r, _arm_len)
+	var low := (a + b) * 0.5 + Vector3(0.0, -sag, 0.0)
+	_tube(a, low, 0.006, chain_mat, Vector3.ONE, _swingarm)
+	_tube(low, b, 0.006, chain_mat, Vector3.ONE, _swingarm)
 
 
 func _draw_shock() -> void:
@@ -828,15 +850,16 @@ func _build_rider() -> void:
 	var grip_l := _head + _grip_l
 	var grip_r := _head + _grip_r
 	# The first-person eye sits up and back from the bars so both gloves and the clocks are in
-	# view; the torso and helmet, which would be in the way, are hidden from it.
+	# view; the torso, helmet and upper arms, which would be in the way, are hidden from it.
 	for mi in [torso, lid, v]:
 		(mi as GeometryInstance3D).layers = 1 << (HELMET_LAYER - 1)
-	_eye = grip_l.lerp(grip_r, 0.5) + Vector3(0.0, 0.6, 0.62)
+	_eye = grip_l.lerp(grip_r, 0.5) + Vector3(0.0, 0.55, 0.42)
 	for side in [-1.0, 1.0]:
 		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
 		var grip := grip_r if side > 0 else grip_l
 		var elbow := sh.lerp(grip, 0.5) + Vector3(0.08 * side, -0.06, 0.04)
-		_tube(sh, elbow, 0.05, suit, Vector3.ONE, _rider)
+		var upper := _tube(sh, elbow, 0.05, suit, Vector3.ONE, _rider)
+		upper.layers = 1 << (HELMET_LAYER - 1)
 		_tube(elbow, grip, 0.045, suit, Vector3.ONE, _rider)
 		_mesh_instance(_sphere(0.045), gloves, grip, _rider)
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
@@ -882,7 +905,7 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 
 ## Where the rider's eyes are, looking down over the bars at the clocks, in the model's space.
 func eye_transform() -> Transform3D:
-	var at := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-21.0)), _eye)
+	var at := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-27.0)), _eye)
 	return (_rider.transform * at) if _rider else at
 
 
@@ -1031,7 +1054,11 @@ func build_pickers(meta: Dictionary, slot_meta := {}) -> void:
 					_add_box(body, xf * piece, Vector3(depth, depth, TAU * mid / 12.0))
 				continue
 			var aabb: AABB = (mi as VisualInstance3D).get_aabb()
-			_add_box(body, xf * Transform3D(Basis(), aabb.get_center()), aabb.size)
+			var size := aabb.size
+			if slot == "chain":
+				# A chain is thin; make it easy to aim at from the side, standing out past the frame.
+				size = size.max(Vector3(0.14, 0.07, 0.07))
+			_add_box(body, xf * Transform3D(Basis(), aabb.get_center() + (Vector3(-0.06, 0.0, 0.0) if slot == "chain" else Vector3.ZERO)), size)
 		add_child(body)
 
 
@@ -1136,6 +1163,14 @@ static func fluid_display(part_id: String, full: float) -> Node3D:
 			pieces = [[_box_mesh(size), body, Vector3(0.0, size.y * 0.5, 0.0)],
 				[_box_mesh(Vector3(0.03, 0.04, size.z * 0.6)), body, Vector3(0.0, size.y + 0.02, 0.0)],
 				[_cyl_mesh(0.022, 0.05), dark, Vector3(0.0, size.y + 0.01, size.z * 0.38)]]
+		"Aerosol":
+			# A spray can of chain lube with a red straw nozzle.
+			size = Vector3(0.066, 0.22, 0.066)
+			var straw := StandardMaterial3D.new()
+			straw.albedo_color = Color(0.8, 0.1, 0.08)
+			pieces = [[_cyl_mesh(0.033, 0.19), body, Vector3(0.0, 0.095, 0.0)],
+				[_cyl_mesh(0.026, 0.03, 0.033), dark, Vector3(0.0, 0.205, 0.0)],
+				[_box_mesh(Vector3(0.004, 0.004, 0.09)), straw, Vector3(0.0, 0.215, -0.05)]]
 		"Race fuel drum":
 			size = Vector3(0.2, 0.3, 0.2)
 			pieces = [[_cyl_mesh(0.1, 0.3), body, Vector3(0.0, 0.15, 0.0)], [_cyl_mesh(0.02, 0.03), dark, Vector3(0.05, 0.315, 0.0)]]

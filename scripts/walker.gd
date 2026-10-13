@@ -18,6 +18,7 @@ const WALK := 3.2
 const RUN := 5.5
 const CROUCH_WALK := 1.5
 const HOLD_TO_PUSH := 0.35   # hold F this long on a bike to wheel it instead of getting on
+const SEATED_EYE := 0.75     # eye height above the seat when sitting down
 const JET_REACH := 0.3       # the pressure washer cleans every part this close to where it hits
 const REACH := 2.6
 const BRUSH_REACH := 0.35    # the brush cleans every part this close to where it touches
@@ -52,7 +53,10 @@ var _shape: CapsuleShape3D
 var _shape_node: CollisionShape3D
 var _eye := EYE
 var _f_bike := 0            # bike F went down on, waiting to see if it's a tap (ride) or a hold (push)
+var _f_seat := 0            # seat F went down on: a tap sits you down, a hold picks it up to move
 var _f_time := 0.0
+var seat := 0               # the seat you're sitting on, or 0
+var _seat_spot := Vector3.ZERO
 var _active_plan := {}
 var _jet: CPUParticles3D
 
@@ -111,6 +115,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		_spray_changed()
 	elif event.is_action_pressed("crouch"):
 		set_crouched(not crouched)
+	elif event.is_action_released("interact") and _f_seat != 0:
+		get_viewport().set_input_as_handled()
+		var chair := _f_seat
+		_f_seat = 0
+		if _f_time < HOLD_TO_PUSH:
+			sit(chair)
+	elif seat != 0 and (event.is_action_pressed("interact") or event.is_action_pressed("crouch")):
+		get_viewport().set_input_as_handled()
+		stand_up()
 	elif event.is_action_released("interact") and _f_bike != 0:
 		# A tap of F on a bike gets you on it; holding it takes hold of the bars (see _physics_process).
 		get_viewport().set_input_as_handled()
@@ -130,11 +143,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			collision_mask = 1 | 2 | 4
 		elif pushed != 0:
 			get_viewport().set_input_as_handled()
-			Shed.request({"a": "release", "furniture": pushed, "xf": _push_transform(pushed)})
+			var model := str(Shed.furniture[pushed].get("model", ""))
+			var xf = _push_transform(pushed)
+			if Equipment.is_wall(model) and not _on_wall:
+				Shed.feedback.emit("Hold it up against a wall to hang it.", false)
+			else:
+				Shed.request({"a": "release", "furniture": pushed, "xf": xf})
 		elif box != 0:
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "unpack", "item": box})
 			Sfx.play_at("pickup", camera.global_position - camera.global_transform.basis.z, -4.0)
+		elif furniture != 0 and Shed.furniture[furniture]["kind"] == "seat":
+			get_viewport().set_input_as_handled()
+			_f_seat = furniture
+			_f_time = 0.0
 		elif furniture != 0:
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "grab", "furniture": furniture})
@@ -173,6 +195,42 @@ func set_crouched(on: bool) -> void:
 	crouched = on
 	_shape.height = 1.1 if crouched else 1.75
 	_shape_node.position.y = _shape.height * 0.5
+
+
+## Sits down on a seat, on the free place nearest you. Walking off (or F) stands you up.
+func sit(id: int) -> void:
+	if not Shed.furniture.has(id) or Shed.held_by(Shed.me()) != 0:
+		Shed.feedback.emit("Put the part down first." if Shed.furniture.has(id) else "", false)
+		return
+	var f: Dictionary = Shed.furniture[id]
+	var model := str(f["model"])
+	var best := Vector3.ZERO
+	var best_d := INF
+	var size: Vector3 = Equipment.get_model(model).get("size", Vector3.ONE)
+	for n in maxi(1, roundi(size.x / 0.6)):
+		var p := EquipmentView.sit_point(model, n)
+		var d: float = ((f["xf"] as Transform3D) * p).distance_to(global_position)
+		if d < best_d:
+			best_d = d
+			best = p
+	set_crouched(false)
+	seat = id
+	# Sit with your back to the seat's back, facing out the front, eyes above the cushion.
+	_seat_spot = best + Vector3.UP * SEATED_EYE
+	rotation.y = (f["xf"] as Transform3D).basis.get_euler().y
+	_shape_node.disabled = true
+	Shed.feedback.emit("Sitting down. Move or press F to get up.", true)
+
+
+func stand_up() -> void:
+	if seat == 0:
+		return
+	var f: Dictionary = Shed.furniture.get(seat, {})
+	seat = 0
+	_shape_node.disabled = false
+	if not f.is_empty():
+		var fwd := (f["xf"] as Transform3D).basis.z
+		global_position = (f["xf"] as Transform3D).origin + Vector3(fwd.x, 0.0, fwd.z).normalized() * 0.75 + Vector3.UP * 0.05
 
 
 func _look(dyaw: float, dpitch: float) -> void:
@@ -221,6 +279,13 @@ func _physics_process(delta: float) -> void:
 		var look := Controls.stick(true)
 		if look != Vector2.ZERO:
 			_look(-look.x * PAD_LOOK * delta, -look.y * PAD_LOOK * 0.7 * delta)
+	if seat != 0:
+		if not Shed.furniture.has(seat) or Shed.furniture[seat]["mover"] != 0 or input.length() > 0.5:
+			stand_up()
+		else:
+			input = Vector2.ZERO
+			global_position = Shed.furniture[seat]["xf"] * _seat_spot - Vector3.UP * SEATED_EYE
+			velocity = Vector3.ZERO
 	var pace := CROUCH_WALK if crouched else (RUN if running else WALK)
 	if Shed.pushing_bike(Shed.me()) != 0:
 		pace = minf(pace, 2.4)   # a bike is heavy to wheel about
@@ -240,12 +305,19 @@ func _physics_process(delta: float) -> void:
 	if global_position.y < -20.0:
 		place(Workshop.walker_spawn(0))
 	_eye = move_toward(_eye, CROUCH_EYE if crouched else EYE, delta * 4.0)
+	if seat != 0:
+		_eye = SEATED_EYE
 	camera.position.y = _eye
 	if _f_bike != 0:
 		_f_time += delta
 		if _f_time >= HOLD_TO_PUSH:
 			Shed.request({"a": "grab_bike", "bike": _f_bike})
 			_f_bike = 0
+	if _f_seat != 0:
+		_f_time += delta
+		if _f_time >= HOLD_TO_PUSH:
+			Shed.request({"a": "grab", "furniture": _f_seat})
+			_f_seat = 0
 	var pushed := Shed.moving(Shed.me())
 	var wheeling := Shed.pushing_bike(Shed.me())
 	if wheeling != 0:
@@ -327,7 +399,11 @@ func _target_furniture() -> int:
 
 ## Where the stand or shelf being pushed sits: in front of you, square to you.
 func _push_transform(id: int) -> Transform3D:
-	var dist := 1.05 if Shed.furniture[id]["kind"] == "stand" else 1.0
+	var model := str(Shed.furniture[id].get("model", ""))
+	var size: Vector3 = Equipment.get_model(model).get("size", Vector3.ONE)
+	if Equipment.is_wall(model):
+		return _wall_transform(size)
+	var dist := 1.05 if Shed.furniture[id]["kind"] == "stand" else 0.55 + size.z * 0.5
 	var fwd := -transform.basis.z
 	var at := global_position + Vector3(fwd.x, 0.0, fwd.z).normalized() * dist
 	at.y = global_position.y
@@ -337,6 +413,30 @@ func _push_transform(id: int) -> Transform3D:
 	if hit and (hit["normal"] as Vector3).y > 0.8:
 		at.y = (hit["position"] as Vector3).y
 	return Transform3D(Basis(Vector3.UP, rotation.y), at)
+
+
+var _on_wall := false
+
+
+## Where a poster or TV you're carrying would hang: flat on the wall you're looking at, at the
+## height you're looking, or held up in front of you if there's no wall in reach.
+func _wall_transform(size: Vector3) -> Transform3D:
+	var from := camera.global_position
+	var dir := -camera.global_transform.basis.z
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 3.0, 1)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit and absf((hit["normal"] as Vector3).y) < 0.3:
+		var n: Vector3 = hit["normal"]
+		n.y = 0.0
+		n = n.normalized()
+		var at: Vector3 = hit["position"] + n * 0.01
+		at.y = clampf(at.y, size.y * 0.5 + 0.5, Workshop.HEIGHT - size.y * 0.5 - 0.1)
+		_on_wall = true
+		return Transform3D(Basis(Vector3.UP, atan2(n.x, n.z)), at)
+	_on_wall = false
+	var flat := Vector3(dir.x, 0.0, dir.z).normalized()
+	return Transform3D(Basis(Vector3.UP, rotation.y + PI), from + flat * 0.9 + Vector3.DOWN * 0.2)
 
 
 func _push(id: int, delta: float) -> void:
@@ -350,8 +450,12 @@ func _push(id: int, delta: float) -> void:
 		Shed.request({"a": "move_furniture", "furniture": id, "xf": xf})
 	target = {}
 	plan = {}
-	info = "Pushing the %s\nWalk to move it and turn to face it the way you want.\nF: let go here" % \
-		Shed.furniture_name(Shed.furniture[id]).to_lower()
+	if Equipment.is_wall(str(Shed.furniture[id].get("model", ""))):
+		info = "Carrying the %s\n%s" % [Shed.furniture_name(Shed.furniture[id]).to_lower(),
+			"F: hang it here" if _on_wall else "Look at a wall to hang it up."]
+	else:
+		info = "Moving the %s\nWalk to move it and turn to face it the way you want.\nF: put it down here" % \
+			Shed.furniture_name(Shed.furniture[id]).to_lower()
 	_highlight()
 
 
@@ -483,6 +587,10 @@ func _make_plan() -> Dictionary:
 				var bolted := Shed.bolted_at_target(target)
 				a["a"] = "unbolt" if bolted else "bolt"
 				p = {"action": a, "time": 1.6, "verb": "unbolt it" if bolted else "bolt it up"}
+				if str(target.get("slot", "")) == "chain" and int(target.get("bike", 0)) != 0:
+					alt_plan = {"action": {"a": "adjust_chain", "bike": int(target["bike"]), "crouched": crouched}, "time": 3.0,
+						"verb": "adjust the chain tension"}
+					alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
 		"brush":
 			if item_id != 0 or target.has("at"):
 				# The brush scrubs everything around where it lands, not just one part.
@@ -501,8 +609,13 @@ func _make_plan() -> Dictionary:
 		"repair":
 			if item_id != 0:
 				var it: Dictionary = Shed.items[item_id]
-				p = {"action": {"a": "repair", "item": item_id}, "time": 2.0 + 4.0 * (float(it["rust"]) + float(it["wear"])),
-					"verb": "grind off the rust and rebuild it"}
+				var batch: Array = Shed.repair_batch(str(it["ref"])) if it["at"] == "spot" else []
+				if batch.size() > 1:
+					p = {"action": {"a": "repair_many", "items": batch}, "time": Shed.repair_time(batch),
+						"verb": "restore all %d parts on the %s" % [batch.size(), Shed.furniture_name(Shed.furniture_of_spot(str(it["ref"]))).to_lower()]}
+				else:
+					p = {"action": {"a": "repair", "item": item_id}, "time": Shed.repair_time([item_id]),
+						"verb": "grind off the rust and rebuild it"}
 		"spray":
 			if item_id != 0:
 				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": Shed.FINISHES[spray_finish]},
@@ -529,6 +642,14 @@ func _fluid_plan(held: int, kind: String) -> Dictionary:
 	var me := Shed.me()
 	var can: Dictionary = Shed.items[held]
 	var fluid := PartsDB.kind_of(can["part"])
+	if fluid == "chain_lube":
+		var chain := target_item() if kind in ["part", "spot", "item"] else 0
+		if chain != 0 and Shed.items[chain]["kind"] == "chain":
+			var lube := {"action": {"a": "lube", "item": chain, "crouched": crouched}, "time": 2.5, "verb": "spray lube along the chain"}
+			lube["blocked"] = Shed.check(me, lube["action"])
+			return lube
+		if kind != "bin":
+			return {}
 	var holder := 0
 	match kind:
 		"part":
@@ -594,8 +715,8 @@ func _describe() -> String:
 			var spot := str(target["spot"])
 			var item_id := Shed.item_at_spot(spot)
 			var f := Shed.furniture_of_spot(spot)
-			var where: String = {"washer": "Parts washer", "repair": "Repair bench"}.get(spot,
-				"Workbench" if f.is_empty() else Shed.furniture_name(f))
+			var where: String = "Workbench" if f.is_empty() else Shed.furniture_name(f)
+			var role := Shed.spot_role(spot)
 			if item_id != 0:
 				var it: Dictionary = Shed.items[item_id]
 				lines.append(PartsDB.part_name(it["part"]))
@@ -612,22 +733,27 @@ func _describe() -> String:
 				var held := Shed.held_by(Shed.me())
 				if held != 0 and tool == "hands" and Shed.is_engine(item_id) and not Shed.is_engine(held):
 					lines.append(_preview(held, {"engine": item_id, "slot": ""}))
-				if spot == "washer" and float(it["dirt"]) > 0.0:
+				if role == "washer" and float(it["dirt"]) > 0.0:
 					lines.append("Washing... %d%% dirt left" % roundi(float(it["dirt"]) * 100.0))
+				if role == "repair":
+					var batch := Shed.repair_batch(spot)
+					if batch.size() > 1:
+						lines.append("Grinder: restores all %d parts on here at once" % batch.size())
 			else:
 				lines.append(where)
-				match spot:
+				match role:
 					"washer":
-						lines.append("Leave a dirty part in here and it comes out clean.")
+						lines.append("Leave dirty parts in here and they come out clean.")
 					"repair":
-						lines.append("Put a part here and use the grinder and welder to restore it.")
+						lines.append("Put parts here and use the grinder and welder to restore them all at once.")
 					_:
 						if Shed.is_stand_spot(spot):
 							lines.append("Bolt an engine on here to strip it or build it up.")
 						elif not f.is_empty():
 							lines.append("Store parts and boxed stock here.")
 				if not f.is_empty():
-					lines.append("F: push it somewhere else")
+					lines.append(Equipment.spec_line(str(f["model"])))
+					lines.append("F: move it somewhere else")
 		"item":
 			var it: Dictionary = Shed.items[int(target["item"])]
 			lines.append(PartsDB.part_name(it["part"]))
@@ -645,7 +771,14 @@ func _describe() -> String:
 		"furniture", "label":
 			var f: Dictionary = Shed.furniture[int(target["furniture"])]
 			lines.append(Shed.furniture_name(f))
-			lines.append("F: push it somewhere else")
+			lines.append(Equipment.spec_line(str(f["model"])))
+			match str(f["kind"]):
+				"seat":
+					lines.append("F: sit down   Hold F: move it")
+				"poster", "tv":
+					lines.append("F: take it down to hang somewhere else")
+				_:
+					lines.append("F: move it somewhere else")
 			if kind == "label":
 				lines.append("Hold %s on the label to write on it" % ("RT" if Controls.active_device >= 0 else "left mouse"))
 		"pc":
@@ -766,7 +899,8 @@ func _activity_text() -> String:
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
 		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
 		"place": "Putting down a part", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer",
-		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand"}
+		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
+		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()
@@ -855,6 +989,7 @@ static func make_jet() -> CPUParticles3D:
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_keep_scale = true   # or every puff draws at the full quad size
 	m.albedo_color = Color(0.85, 0.92, 1.0, 0.55)
 	quad.material = m
 	jet.mesh = quad

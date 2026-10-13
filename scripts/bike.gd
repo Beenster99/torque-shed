@@ -63,6 +63,7 @@ var _starting := 0.0
 
 
 func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
+	add_to_group("ridden_bike")   # shed TVs follow whoever is out riding
 	build = new_build
 	mass = build.total_mass
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM

@@ -95,6 +95,8 @@ var gear_ratios: Array = []
 var final_drive := 3.5
 var shift_time := 0.12
 var drivetrain_efficiency := DRIVETRAIN_EFFICIENCY
+var chain_slack := 30.0        # mm of free play in the chain
+var chain_lube := 1.0          # 0 bone dry .. 1 freshly lubed
 
 # Brakes
 var front_brake_torque := 1500.0
@@ -212,6 +214,31 @@ func _compute() -> void:
 	final_drive = float(sprocket["rear"]) / float(sprocket["front"])
 	shift_time = float(gearbox.get("shift_time", 0.12))
 	drivetrain_efficiency = DRIVETRAIN_EFFICIENCY * lerpf(0.8, 1.0, health["gearbox"]) * lerpf(0.88, 1.0, health["final_drive"])
+	_compute_chain()
+
+
+## The chain soaks up some power on its own; a dry one more, and a slack or tight one more again.
+func _compute_chain() -> void:
+	var chain := part("chain")
+	var c: Dictionary = condition.get("chain", {})
+	chain_slack = clampf(float(c.get("slack", 30.0)), 5.0, 90.0)
+	chain_lube = clampf(float(c.get("lube", 1.0)), 0.0, 1.0)
+	var loss := float(chain.get("friction", 0.025)) * (1.0 + (1.0 - chain_lube) * 2.5)
+	if chain_slack > 40.0:
+		loss += (chain_slack - 40.0) * 0.0012
+		notes.append("The chain is slapping about: tighten it (crouch, wrench, right mouse)." if chain_slack < 65.0
+			else "The chain is so slack it could jump off! Tighten it.")
+	elif chain_slack < 20.0:
+		loss += (20.0 - chain_slack) * 0.002
+		notes.append("The chain is too tight and will wear the sprockets. Slacken it off.")
+	if chain_lube < 0.3:
+		notes.append("The chain is dry and rusty-sounding. Give it some chain lube.")
+	drivetrain_efficiency *= (1.0 - loss) * lerpf(0.9, 1.0, health["chain"])
+
+
+## Power per kilo with the rider on: the number weight-saving parts improve.
+func power_to_weight() -> float:
+	return hp() / maxf(total_mass, 1.0)
 
 
 func _compute_wheels() -> void:
@@ -431,4 +458,5 @@ func summary() -> Dictionary:
 		"brake": front_brake_torque + rear_brake_torque,
 		"grip": float(grip.get("tarmac", 1.0)),
 		"economy": cruise_economy(),
+		"pw": power_to_weight(),
 	}

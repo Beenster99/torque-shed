@@ -1,0 +1,377 @@
+class_name EquipmentView
+extends Node3D
+## Draws one piece of shed equipment (see Equipment) where it stands: engine stands, shelving,
+## parts washers, repair machines, workbenches, posters, seats and TVs. Each has a target to
+## take hold of it by and, if it holds parts, a target for each place. +Z is its front.
+
+var id := 0
+var model := ""
+var kind := ""
+var washer_sound: AudioStreamPlayer3D
+var tv: ShedTv
+var _ws: Node   # the Workshop, for its materials and helpers
+
+
+static func create(workshop: Node, furniture_id: int) -> EquipmentView:
+	var v := EquipmentView.new()
+	v._ws = workshop
+	v.id = furniture_id
+	v.model = str(Shed.furniture[furniture_id].get("model", ""))
+	v.kind = Equipment.kind_of(v.model)
+	v.name = "Equipment%d" % furniture_id
+	workshop.add_child(v)
+	v._build()
+	return v
+
+
+func _build() -> void:
+	match kind:
+		"stand":
+			_build_stand()
+		"shelf":
+			_build_shelf()
+		"washer":
+			_build_washer()
+		"repair":
+			_build_repair()
+		"bench":
+			_build_bench()
+		"poster":
+			_build_poster()
+		"seat":
+			_build_seat()
+		"tv":
+			_build_tv()
+
+
+func _m() -> Dictionary:
+	return Equipment.get_model(model)
+
+
+func _size() -> Vector3:
+	return _m().get("size", Vector3.ONE)
+
+
+func _mat(key: String) -> Material:
+	return _ws._mats[key]
+
+
+func _deco(center: Vector3, size: Vector3, mat: Material) -> MeshInstance3D:
+	return _ws._deco(self, center, size, mat)
+
+
+func _cyl(center: Vector3, radius: float, height: float, mat: Material, axis := Vector3.UP) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var c := CylinderMesh.new()
+	c.top_radius = radius
+	c.bottom_radius = radius
+	c.height = height
+	c.radial_segments = 16
+	mi.mesh = c
+	mi.material_override = mat
+	mi.position = center
+	if axis == Vector3.RIGHT:
+		mi.rotation.z = PI * 0.5
+	elif axis == Vector3.BACK:
+		mi.rotation.x = PI * 0.5
+	add_child(mi)
+	return mi
+
+
+## The body you take hold of to move it, a collision box so you can't walk through it, and a
+## target over each place parts go.
+func _body(blocker := true) -> void:
+	var size := _size()
+	if blocker:
+		_ws._blocker(Vector3(0.0, size.y * 0.5, 0.0), size, self)
+	# The cabinet below the working surface is what you take hold of; the top is for parts.
+	var top := Equipment.work_height(model) - 0.08
+	_ws._target(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z) + Vector3(0.04, 0.0, 0.04), {"furniture": id}, self)
+	for spot in Shed.furniture_spots(id):
+		var at := Shed.local_spot_transform(spot).origin
+		var w := size.x / maxf(1.0, Equipment.places(model)) if kind != "shelf" else size.x / float(_m()["cols"])
+		var h := 0.42 if kind == "shelf" else 0.5
+		_ws._target(at + Vector3(0.0, h * 0.5, 0.03), Vector3(w * 0.95, h, size.z * 0.95), {"spot": spot}, self)
+
+
+func _name_plate(text: String, at: Vector3, size := 26, color := Color(1, 1, 1, 0.85)) -> void:
+	var l := Label3D.new()
+	l.text = text
+	l.font_size = size
+	l.pixel_size = 0.0022
+	l.modulate = color
+	l.outline_size = 0
+	l.position = at
+	add_child(l)
+
+
+# ---------------------------------------------------------------------------- floor equipment
+
+## A red engine stand on castors: a column with a turning head that the block bolts to.
+func _build_stand() -> void:
+	var folding := model == "engine_stand_folding"
+	var red: Material = _ws._material(Color(0.2, 0.35, 0.7), 0.5, 0.35) if folding else _mat("red")
+	var reach := 0.25 if folding else 0.32
+	_deco(Vector3(0.0, 0.05, 0.0), Vector3(reach * 2.0, 0.06, 0.08), red)
+	_deco(Vector3(0.25, 0.05, 0.0), Vector3(0.08, 0.06, 0.6 if folding else 0.8), red)
+	_deco(Vector3(0.25, 0.32, 0.0), Vector3(0.09, 0.56, 0.09), red)
+	_deco(Vector3(0.12, 0.58, 0.0), Vector3(0.26, 0.06, 0.06), _mat("steel"))
+	_deco(Vector3(0.0, 0.58, 0.0), Vector3(0.04, 0.24, 0.24), _mat("steel"))
+	_deco(Vector3(0.25, 0.75, 0.0), Vector3(0.04, 0.04, 0.5), _mat("steel")).name = "Handle"
+	for p in [Vector3(-reach, 0.03, 0.0), Vector3(0.25, 0.03, -0.27 if folding else -0.37), Vector3(0.25, 0.03, 0.27 if folding else 0.37)]:
+		_deco(p, Vector3(0.06, 0.06, 0.06), _mat("dark")).name = "Caster"
+	var size := _size()
+	_ws._blocker(Vector3(0.0, 0.3, 0.0), Vector3(size.x, 0.6, size.z), self)
+	_ws._target(Vector3(0.25, 0.4, 0.0), Vector3(0.2, 0.8, size.z + 0.1), {"furniture": id}, self)
+	_ws._target(Vector3(0.0, 0.62 + 0.18, 0.0), Vector3(0.7, 0.35, 0.7), {"spot": "stand_%d" % id}, self)
+
+
+## Steel shelving: boards on four posts, and a label plate on top.
+func _build_shelf() -> void:
+	var m := _m()
+	var size := _size()
+	var heavy := model == "shelf_racking"
+	var frame: Material = _ws._material(Color(0.9, 0.45, 0.05), 0.5, 0.45) if heavy else _ws._material(Color(0.2, 0.32, 0.5), 0.6, 0.45)
+	var board: Material = _ws._material(Color(0.62, 0.6, 0.56), 0.5, 0.55)
+	var post := 0.06 if heavy else 0.04
+	for x in [-size.x * 0.5 + post * 0.5, size.x * 0.5 - post * 0.5]:
+		for z in [-size.z * 0.5 + post * 0.5, size.z * 0.5 - post * 0.5]:
+			_deco(Vector3(x, size.y * 0.5, z), Vector3(post, size.y, post), frame)
+	var levels := int(m["levels"])
+	var pitch := (size.y - 0.15) / float(levels)
+	for level in levels + 1:
+		var y := minf(0.06 + level * pitch, size.y - 0.02)
+		_deco(Vector3(0.0, y, 0.0), Vector3(size.x, 0.03, size.z), board)
+		if heavy:
+			_deco(Vector3(0.0, y - 0.04, size.z * 0.5 - 0.02), Vector3(size.x, 0.06, 0.04), frame)
+	_ws._blocker(Vector3(0.0, size.y * 0.5, 0.0), size, self)
+	_ws._target(Vector3(0.0, size.y + 0.05, 0.0), Vector3(size.x + 0.04, 0.12, size.z + 0.04), {"furniture": id}, self)
+	for x in [-size.x * 0.5 - 0.02, size.x * 0.5 + 0.02]:
+		_ws._target(Vector3(x, size.y * 0.5, 0.0), Vector3(0.06, size.y, size.z), {"furniture": id}, self)
+	for spot in Shed.furniture_spots(id):
+		var at := Shed.local_spot_transform(spot).origin
+		var w := size.x / float(m["cols"])
+		_ws._target(at + Vector3(0.0, pitch * 0.42, 0.03), Vector3(w * 0.96, pitch * 0.82, size.z * 0.95), {"spot": spot}, self)
+	var plate_y := size.y - 0.12
+	_deco(Vector3(0.0, plate_y, size.z * 0.5 + 0.005), Vector3(0.7, 0.14, 0.01), _ws._material(Color(0.88, 0.86, 0.8), 0.0, 0.8)).name = "Plate"
+	_ws._target(Vector3(0.0, plate_y, size.z * 0.5), Vector3(0.74, 0.18, 0.06), {"label": id}, self)
+	var label := Label3D.new()
+	label.name = "Label"
+	label.font_size = 36
+	label.pixel_size = 0.002
+	label.modulate = Color(0.12, 0.1, 0.1)
+	label.outline_size = 0
+	label.position = Vector3(0.0, plate_y, size.z * 0.5 + 0.012)
+	add_child(label)
+
+
+## A solvent tank on a cabinet with a splash back and a tap, or a cabinet washer with a door.
+func _build_washer() -> void:
+	var size := _size()
+	var top := Equipment.work_height(model)
+	var colors := {"washer_compact": Color(0.15, 0.45, 0.25), "washer_standard": Color(0.1, 0.3, 0.65),
+		"washer_ultrasonic": Color(0.85, 0.85, 0.82), "washer_cabinet": Color(0.75, 0.12, 0.08), "washer_industrial": Color(0.25, 0.28, 0.3)}
+	var body: Material = _ws._material(colors.get(model, Color(0.1, 0.3, 0.65)), 0.6, 0.35)
+	if model == "washer_compact":
+		# A small tank on four legs.
+		for x in [-size.x * 0.4, size.x * 0.4]:
+			for z in [-size.z * 0.4, size.z * 0.4]:
+				_deco(Vector3(x, top * 0.4, z), Vector3(0.04, top * 0.8, 0.04), _mat("steel"))
+		_deco(Vector3(0.0, top - 0.12, 0.0), Vector3(size.x, 0.24, size.z), body)
+	else:
+		_deco(Vector3(0.0, (top - 0.04) * 0.5, 0.0), Vector3(size.x, top - 0.04, size.z), body)
+	_deco(Vector3(0.0, top - 0.02, 0.0), Vector3(size.x - 0.1, 0.04, size.z - 0.1), _mat("steel"))
+	if model in ["washer_standard", "washer_industrial", "washer_cabinet"]:
+		var back := minf(size.y - top, 1.1)
+		_deco(Vector3(0.0, top + back * 0.5, -size.z * 0.5 + 0.03), Vector3(size.x, back, 0.06), body)
+		_cyl(Vector3(size.x * 0.25, top + 0.3, -size.z * 0.5 + 0.2), 0.02, 0.5, _mat("chrome")).rotation.x = 0.6
+	if model == "washer_cabinet":
+		# Glass door hinged up at the back, and a turntable.
+		_cyl(Vector3(0.0, top + 0.01, 0.0), size.z * 0.38, 0.02, _mat("steel"))
+	if model == "washer_ultrasonic":
+		_deco(Vector3(size.x * 0.35, top - 0.2, size.z * 0.5 + 0.005), Vector3(0.12, 0.08, 0.01), _ws._material(Color(0.1, 0.8, 0.4), 0.0, 0.3))
+	_name_plate(str(_m()["name"]).to_upper(), Vector3(0.0, top - 0.25, size.z * 0.5 + 0.01), 22)
+	_body(false)
+	_ws._blocker(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z), self)
+	washer_sound = Sfx.make_loop_player(self)
+	washer_sound.position = Vector3(0.0, top, 0.0)
+	washer_sound.volume_db = -8.0
+
+
+## A steel bench with a vice and a grinder, a blast cabinet, or a full machine-shop bench.
+func _build_repair() -> void:
+	var size := _size()
+	var top := Equipment.work_height(model)
+	if model == "repair_compact":
+		_cyl(Vector3(0.0, top * 0.45, 0.0), 0.06, top * 0.9, _mat("dark"))
+		_deco(Vector3(0.0, 0.03, 0.0), Vector3(0.5, 0.06, 0.5), _mat("dark"))
+		_deco(Vector3(0.0, top - 0.03, 0.0), Vector3(size.x, 0.06, size.z * 0.8), _mat("steel"))
+	elif model == "repair_blaster":
+		var cab: Material = _ws._material(Color(0.25, 0.45, 0.25), 0.5, 0.4)
+		_deco(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z), cab)
+		_deco(Vector3(0.0, top + 0.3, -size.z * 0.3), Vector3(size.x, 0.6, size.z * 0.4), cab)
+		for x in [-0.2, 0.2]:
+			_cyl(Vector3(x, top + 0.25, -size.z * 0.1), 0.07, 0.12, _mat("dark"), Vector3.BACK)
+	else:
+		_deco(Vector3(0.0, (top - 0.06) * 0.5, 0.0), Vector3(size.x, top - 0.06, size.z), _mat("steel"))
+		_deco(Vector3(0.0, top - 0.03, 0.0), Vector3(size.x + 0.05, 0.06, size.z + 0.05), _mat("dark"))
+		if model in ["repair_pro", "repair_workshop"]:
+			# A pegboard of tools across the back, and drawers.
+			_deco(Vector3(0.0, top + 0.5, -size.z * 0.5 + 0.03), Vector3(size.x, 0.8, 0.03), _ws._material(Color(0.55, 0.42, 0.28), 0.0, 0.8))
+			for i in 4:
+				_deco(Vector3(size.x * 0.5 - 0.25, 0.2 + i * 0.18, size.z * 0.5 + 0.01), Vector3(0.4, 0.14, 0.02), _mat("red"))
+	# The vice and grinder every repair machine has, at the ends.
+	var end := size.x * 0.5 - 0.12
+	_deco(Vector3(-end, top + 0.08, size.z * 0.25), Vector3(0.16, 0.16, 0.24), _mat("blue"))
+	_deco(Vector3(end, top + 0.1, -size.z * 0.2), Vector3(0.24, 0.2, 0.18), _mat("dark"))
+	for side in [-1.0, 1.0]:
+		_cyl(Vector3(end + side * 0.15, top + 0.12, -size.z * 0.2), 0.08, 0.03, _mat("steel"), Vector3.RIGHT)
+	_name_plate(str(_m()["name"]).to_upper(), Vector3(0.0, top - 0.2, size.z * 0.5 + 0.03), 22)
+	_body(false)
+	_ws._blocker(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z), self)
+
+
+## A workbench: a top on a frame, with drawers, castors or folding legs to suit.
+func _build_bench() -> void:
+	var size := _size()
+	var top := Equipment.work_height(model) - 0.01
+	var top_mat: Material = _mat("chrome") if model == "bench_pro" else _mat("wood")
+	_deco(Vector3(0.0, top - 0.03, 0.0), Vector3(size.x, 0.06, size.z), top_mat)
+	match model:
+		"bench_compact":
+			for x in [-size.x * 0.4, size.x * 0.4]:
+				var leg := _deco(Vector3(x, (top - 0.06) * 0.5, 0.0), Vector3(0.04, top, 0.04), _mat("steel"))
+				leg.rotation.z = 0.0
+				_deco(Vector3(x, 0.03, 0.0), Vector3(0.05, 0.04, size.z * 0.9), _mat("steel"))
+		"bench_mobile":
+			_deco(Vector3(0.0, (top - 0.06) * 0.5 + 0.06, 0.0), Vector3(size.x - 0.04, top - 0.12, size.z - 0.04), _mat("red"))
+			for i in 4:
+				_deco(Vector3(0.0, 0.2 + i * 0.18, size.z * 0.5 - 0.01), Vector3(size.x - 0.12, 0.02, 0.02), _mat("chrome"))
+			for x in [-size.x * 0.42, size.x * 0.42]:
+				for z in [-size.z * 0.4, size.z * 0.4]:
+					_cyl(Vector3(x, 0.04, z), 0.04, 0.03, _mat("dark"), Vector3.RIGHT)
+		_:
+			for x in [-size.x * 0.5 + 0.04, size.x * 0.5 - 0.04]:
+				for z in [-size.z * 0.5 + 0.04, size.z * 0.5 - 0.04]:
+					_deco(Vector3(x, (top - 0.06) * 0.5, z), Vector3(0.05, top - 0.06, 0.05), _mat("steel"))
+			_deco(Vector3(0.0, 0.18, 0.0), Vector3(size.x - 0.1, 0.03, size.z - 0.1), _mat("steel"))
+			if model == "bench_pro":
+				_deco(Vector3(size.x * 0.25, top * 0.5, 0.0), Vector3(size.x * 0.45, top - 0.1, size.z - 0.06), _ws._material(Color(0.1, 0.1, 0.12), 0.6, 0.35))
+				for i in 5:
+					_deco(Vector3(size.x * 0.25, 0.15 + i * 0.15, size.z * 0.5 - 0.02), Vector3(size.x * 0.4, 0.02, 0.02), _mat("chrome"))
+				_deco(Vector3(0.0, top + 0.5, -size.z * 0.5 + 0.02), Vector3(size.x, 0.85, 0.03), _ws._material(Color(0.3, 0.32, 0.35), 0.4, 0.5))
+	_body(false)
+	_ws._blocker(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z), self)
+
+
+# ---------------------------------------------------------------------------- wall equipment
+
+## A printed poster: coloured paper, a band of colour, a big title and a line under it.
+func _build_poster() -> void:
+	var m := _m()
+	var size := _size()
+	var paper := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(size.x, size.y)
+	paper.mesh = quad
+	paper.material_override = _ws._material(m["paper"], 0.0, 0.85)
+	paper.position = Vector3(0.0, 0.0, 0.004)
+	add_child(paper)
+	var band := MeshInstance3D.new()
+	var bq := QuadMesh.new()
+	bq.size = Vector2(size.x, size.y * 0.18)
+	band.mesh = bq
+	band.material_override = _ws._material(m["band"], 0.0, 0.85)
+	band.position = Vector3(0.0, -size.y * 0.22, 0.006)
+	add_child(band)
+	var wide := size.x > size.y
+	var title := Label3D.new()
+	title.text = str(m["title"])
+	title.font_size = 96
+	title.pixel_size = size.x / (title.text.length() * 64.0)
+	title.modulate = m["ink"]
+	title.outline_size = 0
+	title.position = Vector3(0.0, size.y * (0.12 if wide else 0.22), 0.008)
+	add_child(title)
+	var sub := Label3D.new()
+	sub.text = str(m["sub"])
+	sub.font_size = 40
+	sub.pixel_size = size.x / (sub.text.length() * 30.0)
+	sub.modulate = m["ink"]
+	sub.outline_size = 0
+	sub.position = Vector3(0.0, size.y * (-0.38 if not wide else -0.36), 0.008)
+	add_child(sub)
+	if not wide:
+		# A simple bike silhouette in the middle: two wheels and a frame line.
+		var ink: Material = _ws._material(m["ink"], 0.0, 0.8)
+		for x in [-0.14, 0.14]:
+			var w := MeshInstance3D.new()
+			var t := TorusMesh.new()
+			t.inner_radius = 0.06
+			t.outer_radius = 0.075
+			w.mesh = t
+			w.material_override = ink
+			w.position = Vector3(x * size.x / 0.6, size.y * 0.0, 0.008)
+			w.rotation.x = PI * 0.5
+			add_child(w)
+		_deco(Vector3(0.0, size.y * 0.06, 0.008), Vector3(0.24 * size.x / 0.6, 0.02, 0.004), ink)
+	_ws._target(Vector3(0.0, 0.0, 0.02), Vector3(size.x, size.y, 0.06), {"furniture": id}, self)
+
+
+## A flat screen on a wall bracket.
+func _build_tv() -> void:
+	var size := _size()
+	tv = ShedTv.new(size.x, size.y)
+	tv.position = Vector3(0.0, 0.0, size.z * 0.5)
+	add_child(tv)
+	_ws._target(Vector3(0.0, 0.0, size.z * 0.5), Vector3(size.x + 0.04, size.y + 0.04, size.z + 0.04), {"furniture": id}, self)
+
+
+# ---------------------------------------------------------------------------- seats
+
+## Somewhere to sit: a stool, a creeper, a camp chair, a slat bench or an old sofa.
+func _build_seat() -> void:
+	var m := _m()
+	var size := _size()
+	var sit := float(m["sit"])
+	var cover: Material = _ws._material(m["color"], 0.0, 0.55)
+	match str(m["style"]):
+		"stool":
+			_cyl(Vector3(0.0, sit - 0.04, 0.0), 0.2, 0.08, cover)
+			_cyl(Vector3(0.0, sit * 0.5, 0.0), 0.025, sit, _mat("chrome"))
+			_cyl(Vector3(0.0, 0.03, 0.0), 0.2, 0.04, _mat("dark"))
+		"creeper":
+			_deco(Vector3(0.0, sit - 0.05, 0.0), Vector3(0.38, 0.1, 0.38), cover)
+			_deco(Vector3(0.0, 0.18, 0.0), Vector3(0.45, 0.03, 0.55), _mat("red"))
+			for x in [-0.2, 0.2]:
+				for z in [-0.24, 0.24]:
+					_cyl(Vector3(x, 0.035, z), 0.035, 0.03, _mat("dark"), Vector3.RIGHT)
+				_deco(Vector3(x, 0.1, 0.0), Vector3(0.03, 0.14, 0.03), _mat("chrome"))
+		"chair":
+			_deco(Vector3(0.0, sit, 0.02), Vector3(0.48, 0.03, 0.42), cover)
+			_deco(Vector3(0.0, sit + 0.25, -0.2), Vector3(0.48, 0.45, 0.03), cover)
+			for x in [-0.22, 0.22]:
+				_deco(Vector3(x, sit * 0.5, 0.0), Vector3(0.025, sit, 0.4), _mat("steel")).rotation.x = 0.35
+				_deco(Vector3(x, sit + 0.12, 0.02), Vector3(0.03, 0.03, 0.42), _mat("steel"))
+		"bench":
+			for i in 3:
+				_deco(Vector3(0.0, sit, -0.15 + i * 0.15), Vector3(size.x, 0.04, 0.12), cover)
+			for x in [-size.x * 0.4, size.x * 0.4]:
+				_deco(Vector3(x, sit * 0.5, 0.0), Vector3(0.06, sit, 0.4), _mat("steel"))
+		"sofa":
+			_deco(Vector3(0.0, sit - 0.12, 0.05), Vector3(size.x - 0.3, 0.24, size.z - 0.25), cover)
+			_deco(Vector3(0.0, 0.18, 0.0), Vector3(size.x, 0.2, size.z), cover)
+			_deco(Vector3(0.0, sit + 0.2, -size.z * 0.5 + 0.12), Vector3(size.x, 0.5, 0.24), cover)
+			for x in [-size.x * 0.5 + 0.12, size.x * 0.5 - 0.12]:
+				_deco(Vector3(x, sit + 0.02, 0.0), Vector3(0.24, 0.3, size.z), cover)
+	_ws._blocker(Vector3(0.0, sit * 0.5, 0.0), Vector3(size.x, sit, size.z) * 0.9, self)
+	_ws._target(Vector3(0.0, size.y * 0.5, 0.0), size + Vector3(0.04, 0.04, 0.04), {"furniture": id}, self)
+
+
+## Where someone sitting on seat place `n` sits, in the seat's own space.
+static func sit_point(model_id: String, n := 0) -> Vector3:
+	var m := Equipment.get_model(model_id)
+	var size: Vector3 = m.get("size", Vector3.ONE)
+	var seats := maxi(1, roundi(size.x / 0.6)) if m.get("style", "") in ["bench", "sofa"] else 1
+	var x := -size.x * 0.5 + size.x * (0.5 + clampi(n, 0, seats - 1)) / float(seats)
+	return Vector3(x, float(m.get("sit", 0.5)), 0.05)

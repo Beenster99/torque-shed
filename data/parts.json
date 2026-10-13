@@ -83,7 +83,8 @@
 			],
 			"cda": 0.48,
 			"style": "spar",
-			"type": "Carbon monocoque"
+			"type": "Carbon monocoque",
+			"lightweight": true
 		}
 	},
 	"fork": {
@@ -306,7 +307,8 @@
 				0.75,
 				0.76,
 				0.78
-			]
+			],
+			"spokes": 36
 		},
 		"spoked_18": {
 			"name": "18\" spoked wheel",
@@ -319,7 +321,8 @@
 				0.75,
 				0.76,
 				0.78
-			]
+			],
+			"spokes": 36
 		},
 		"wire_19_chrome": {
 			"name": "19\" chrome wire wheel",
@@ -332,7 +335,8 @@
 				0.9,
 				0.9,
 				0.92
-			]
+			],
+			"spokes": 40
 		},
 		"cast_17": {
 			"name": "17\" cast wheel",
@@ -345,7 +349,8 @@
 				0.05,
 				0.05,
 				0.05
-			]
+			],
+			"spokes": 5
 		},
 		"supermoto_17": {
 			"name": "17\" supermoto wheel",
@@ -358,7 +363,8 @@
 				0.85,
 				0.65,
 				0.15
-			]
+			],
+			"spokes": 36
 		},
 		"carbon_17": {
 			"name": "17\" carbon wheel",
@@ -371,6 +377,137 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"lightweight": true,
+			"spokes": 3
+		},
+		"wire_16_bobber": {
+			"name": "16\" fat wire wheel",
+			"description": "Fat chrome laced rim for the bobber look.",
+			"mass": 8.0,
+			"type": "Spoked",
+			"style": "wire",
+			"spokes": 40,
+			"diameter": 16,
+			"color": [
+				0.9,
+				0.9,
+				0.92
+			]
+		},
+		"spoked_19_adventure": {
+			"name": "19\" cross-spoke adventure wheel",
+			"description": "Tubeless spoked rim for big trail bikes.",
+			"mass": 6.2,
+			"type": "Spoked (tubeless)",
+			"style": "spoked",
+			"spokes": 28,
+			"diameter": 19,
+			"color": [
+				0.15,
+				0.15,
+				0.16
+			]
+		},
+		"excel_21_black": {
+			"name": "21\" black anodised race rim",
+			"description": "Featherweight aluminium MX rim with alloy nipples.",
+			"mass": 4.3,
+			"type": "Spoked alloy",
+			"style": "spoked",
+			"spokes": 36,
+			"diameter": 21,
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			],
+			"lightweight": true
+		},
+		"cast_18_three": {
+			"name": "18\" three-spoke cast wheel",
+			"description": "Classic 80s three-spoke alloy.",
+			"mass": 6.8,
+			"type": "Cast alloy",
+			"style": "cast",
+			"spokes": 3,
+			"diameter": 18,
+			"color": [
+				0.75,
+				0.6,
+				0.25
+			]
+		},
+		"cast_19_six": {
+			"name": "19\" six-spoke cast wheel",
+			"description": "Retro six-spoke for standard and café bikes.",
+			"mass": 6.5,
+			"type": "Cast alloy",
+			"style": "cast",
+			"spokes": 6,
+			"diameter": 19,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			]
+		},
+		"cast_17_y": {
+			"name": "17\" Y-spoke cast wheel",
+			"description": "Ten slim spokes in five Y pairs. Modern sportbike look.",
+			"mass": 5.6,
+			"type": "Cast alloy",
+			"style": "y",
+			"spokes": 5,
+			"diameter": 17,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"forged_17_alu": {
+			"name": "17\" forged aluminium wheel",
+			"description": "Seven thin forged spokes. Strong and much lighter than cast.",
+			"mass": 4.4,
+			"type": "Forged aluminium",
+			"style": "cast",
+			"spokes": 7,
+			"diameter": 17,
+			"color": [
+				0.8,
+				0.81,
+				0.83
+			],
+			"lightweight": true
+		},
+		"forged_17_mag": {
+			"name": "17\" forged magnesium wheel",
+			"description": "Race magnesium in gold. The lightest metal wheel you can buy.",
+			"mass": 3.6,
+			"type": "Forged magnesium",
+			"style": "y",
+			"spokes": 5,
+			"diameter": 17,
+			"color": [
+				0.85,
+				0.65,
+				0.15
+			],
+			"lightweight": true
+		},
+		"supermoto_16_5": {
+			"name": "16.5\" supermoto rim",
+			"description": "Small, wide race rim for slicks and tight tracks.",
+			"mass": 5.2,
+			"type": "Spoked alloy",
+			"style": "spoked",
+			"spokes": 36,
+			"diameter": 16.5,
+			"color": [
+				0.15,
+				0.3,
+				0.75
 			]
 		}
 	},
@@ -561,6 +698,20 @@
 				0.71,
 				0.73
 			]
+		},
+		"light_wave_260": {
+			"name": "260 mm lightweight wave disc",
+			"description": "Thin, drilled petal disc. Less spinning weight, a little less bite.",
+			"mass": 0.6,
+			"type": "Wave (lightweight)",
+			"diameter": 260,
+			"style": "wave",
+			"color": [
+				0.7,
+				0.71,
+				0.73
+			],
+			"lightweight": true
 		}
 	},
 	"caliper": {
@@ -814,6 +965,32 @@
 				0.2,
 				0.22
 			]
+		},
+		"carbon_sport_16": {
+			"name": "Carbon sport tank, 16 L",
+			"description": "Race carbon shell over a fuel cell. Saves weight up high where you feel it.",
+			"mass": 1.4,
+			"capacity": 16,
+			"style": "sport",
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			],
+			"lightweight": true
+		},
+		"alloy_cafe_14": {
+			"name": "Hand-beaten alloy café tank, 14 L",
+			"description": "Polished aluminium with a quick-release cap.",
+			"mass": 2.0,
+			"capacity": 14,
+			"style": "cafe",
+			"color": [
+				0.82,
+				0.83,
+				0.85
+			],
+			"lightweight": true
 		}
 	},
 	"saddle": {
@@ -881,6 +1058,20 @@
 				0.08,
 				0.05
 			]
+		},
+		"carbon_race_seat": {
+			"name": "Carbon race seat",
+			"description": "A carbon pan with a thin foam pad. Not for long days.",
+			"mass": 0.6,
+			"style": "sport",
+			"height": 0.01,
+			"comfort": 0.2,
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			],
+			"lightweight": true
 		}
 	},
 	"handlebars": {
@@ -953,6 +1144,36 @@
 				0.86,
 				0.88
 			]
+		},
+		"alloy_clip_ons": {
+			"name": "Billet alloy clip-ons",
+			"description": "CNC-machined race clip-ons, half the weight of steel.",
+			"mass": 0.6,
+			"style": "Clip-ons",
+			"width": 620,
+			"rise": -0.1,
+			"cda": -0.045,
+			"color": [
+				0.75,
+				0.3,
+				0.1
+			],
+			"lightweight": true
+		},
+		"titanium_flat": {
+			"name": "Titanium flat bar",
+			"description": "Straight 740 mm bar in titanium. Light and springy.",
+			"mass": 0.8,
+			"style": "Flat",
+			"width": 740,
+			"rise": 0.08,
+			"cda": 0.0,
+			"color": [
+				0.55,
+				0.55,
+				0.6
+			],
+			"lightweight": true
 		}
 	},
 	"dashboard": {
@@ -1744,17 +1965,32 @@
 				0.55,
 				0.55,
 				0.75
-			]
+			],
+			"lightweight": true
+		},
+		"carbon_slip_on": {
+			"name": "Carbon slip-on silencer",
+			"description": "Short carbon can. Light, loud and a touch more power.",
+			"mass": 2.4,
+			"torque_mult": 1.03,
+			"loudness": 0.9,
+			"style": "slip",
+			"color": [
+				0.07,
+				0.07,
+				0.08
+			],
+			"lightweight": true
 		}
 	},
 	"final_drive": {
 		"mx_13_52": {
 			"name": "MX gearing (13/52)",
 			"description": "Explosive launches, low top speed.",
-			"mass": 1.6,
+			"mass": 0.6,
 			"front": 13.0,
 			"rear": 52.0,
-			"type": "Chain, 13/52 sprockets",
+			"type": "13/52 sprockets",
 			"color": [
 				0.55,
 				0.56,
@@ -1764,10 +2000,10 @@
 		"short_14_50": {
 			"name": "Short gearing (14/50)",
 			"description": "Hard acceleration, lower top speed.",
-			"mass": 1.5,
+			"mass": 0.5,
 			"front": 14.0,
 			"rear": 50.0,
-			"type": "Chain, 14/50 sprockets",
+			"type": "14/50 sprockets",
 			"color": [
 				0.55,
 				0.56,
@@ -1777,10 +2013,10 @@
 		"stock_15_45": {
 			"name": "Stock gearing (15/45)",
 			"description": "The sensible middle ground.",
-			"mass": 1.4,
+			"mass": 0.4,
 			"front": 15.0,
 			"rear": 45.0,
-			"type": "Chain, 15/45 sprockets",
+			"type": "15/45 sprockets",
 			"color": [
 				0.55,
 				0.56,
@@ -1790,10 +2026,10 @@
 		"tall_15_42": {
 			"name": "Tall gearing (15/42)",
 			"description": "Higher top speed, softer launch.",
-			"mass": 1.3,
+			"mass": 0.3,
 			"front": 15.0,
 			"rear": 42.0,
-			"type": "Chain, 15/42 sprockets",
+			"type": "15/42 sprockets",
 			"color": [
 				0.55,
 				0.56,
@@ -1803,15 +2039,116 @@
 		"top_speed_16_40": {
 			"name": "Top-speed gearing (16/40)",
 			"description": "For the drag strip and long straights.",
-			"mass": 1.3,
+			"mass": 0.3,
 			"front": 16.0,
 			"rear": 40.0,
-			"type": "Chain, 16/40 sprockets",
+			"type": "16/40 sprockets",
 			"color": [
 				0.55,
 				0.56,
 				0.6
 			]
+		},
+		"alu_15_45": {
+			"name": "Alloy race sprockets (15/45)",
+			"description": "Stock gearing in drilled aluminium. Lighter, but wears faster.",
+			"mass": 0.25,
+			"front": 15.0,
+			"rear": 45.0,
+			"type": "15/45 aluminium sprockets",
+			"color": [
+				0.85,
+				0.55,
+				0.1
+			],
+			"lightweight": true
+		}
+	},
+	"chain": {
+		"std_520": {
+			"name": "Standard 520 chain",
+			"description": "Plain unsealed chain. Cheap, but it stretches and needs lubing often.",
+			"mass": 1.9,
+			"type": "520 plain",
+			"friction": 0.03,
+			"stretch": 12.0,
+			"lube_life": 250,
+			"color": [
+				0.45,
+				0.46,
+				0.48
+			]
+		},
+		"oring_520": {
+			"name": "O-ring 520 chain",
+			"description": "Sealed rollers keep the grease in. The sensible road chain.",
+			"mass": 1.9,
+			"type": "520 O-ring",
+			"friction": 0.028,
+			"stretch": 7.0,
+			"lube_life": 450,
+			"color": [
+				0.3,
+				0.3,
+				0.32
+			]
+		},
+		"xring_520": {
+			"name": "X-ring 520 chain",
+			"description": "Lower friction seals than an O-ring, and it lasts.",
+			"mass": 1.85,
+			"type": "520 X-ring",
+			"friction": 0.022,
+			"stretch": 5.0,
+			"lube_life": 600,
+			"color": [
+				0.28,
+				0.28,
+				0.3
+			]
+		},
+		"gold_xring_520": {
+			"name": "Gold X-ring race chain",
+			"description": "Hardened pins, gold side plates, the least friction going.",
+			"mass": 1.75,
+			"type": "520 X-ring (gold)",
+			"friction": 0.018,
+			"stretch": 4.0,
+			"lube_life": 550,
+			"color": [
+				0.85,
+				0.65,
+				0.15
+			]
+		},
+		"heavy_530": {
+			"name": "Heavy-duty 530 chain",
+			"description": "Fat, strong and slow to stretch. Made for big torque.",
+			"mass": 2.4,
+			"type": "530 X-ring",
+			"friction": 0.026,
+			"stretch": 3.5,
+			"lube_life": 650,
+			"color": [
+				0.22,
+				0.22,
+				0.24
+			]
+		},
+		"light_428": {
+			"name": "Lightweight 428 chain",
+			"description": "Skinny race chain. Saves weight, but stretches quickly.",
+			"mass": 1.1,
+			"type": "428 plain",
+			"friction": 0.024,
+			"stretch": 11.0,
+			"lube_life": 300,
+			"color": [
+				0.55,
+				0.56,
+				0.6
+			],
+			"lightweight": true
 		}
 	},
 	"side_stand": {
@@ -1869,7 +2206,8 @@
 				0.75,
 				0.76,
 				0.78
-			]
+			],
+			"lightweight": true
 		},
 		"chrome_custom_side": {
 			"name": "Chrome custom side stand",
@@ -1937,7 +2275,8 @@
 				0.72,
 				0.73,
 				0.75
-			]
+			],
+			"lightweight": true
 		},
 		"chrome_centre": {
 			"name": "Chrome centre stand",
@@ -2022,7 +2361,8 @@
 				0.05,
 				0.05,
 				0.06
-			]
+			],
+			"lightweight": true
 		}
 	},
 	"petrol": {
@@ -2243,6 +2583,76 @@
 				0.5,
 				0.4,
 				0.25
+			]
+		}
+	},
+	"chain_lube": {
+		"road_lube": {
+			"name": "Road chain lube",
+			"description": "Sticky spray lube for road riding.",
+			"container": "Aerosol",
+			"litres": 0.4,
+			"lasts": 1.0,
+			"color": [
+				0.15,
+				0.35,
+				0.75
+			],
+			"liquid": [
+				0.6,
+				0.5,
+				0.3
+			]
+		},
+		"wax_lube": {
+			"name": "Chain wax",
+			"description": "Dries to a clean wax. Doesn't fling, lasts well on the road.",
+			"container": "Aerosol",
+			"litres": 0.4,
+			"lasts": 1.3,
+			"color": [
+				0.9,
+				0.85,
+				0.75
+			],
+			"liquid": [
+				0.9,
+				0.85,
+				0.7
+			]
+		},
+		"dry_ptfe": {
+			"name": "Dry PTFE lube",
+			"description": "For dusty trails: grit doesn't stick to it, but it wears off sooner.",
+			"container": "Aerosol",
+			"litres": 0.4,
+			"lasts": 0.75,
+			"color": [
+				0.95,
+				0.6,
+				0.1
+			],
+			"liquid": [
+				0.85,
+				0.85,
+				0.85
+			]
+		},
+		"race_lube": {
+			"name": "Race chain lube",
+			"description": "Ultra-low friction, short life. For race day.",
+			"container": "Aerosol",
+			"litres": 0.25,
+			"lasts": 0.6,
+			"color": [
+				0.75,
+				0.1,
+				0.1
+			],
+			"liquid": [
+				0.4,
+				0.3,
+				0.2
 			]
 		}
 	}

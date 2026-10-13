@@ -5,11 +5,6 @@ extends Control
 
 signal closed
 
-const EQUIPMENT := {
-	"stand": {"name": "Engine stand", "desc": "A wheeled stand to strip and build an engine on. Get more than one and you can build engines while the bikes are being worked on.", "spec": "Holds one engine  ·  push it anywhere with F"},
-	"shelf": {"name": "Shelving unit", "desc": "Steel shelving for parts and boxed stock, with a label plate on top so everyone knows what goes where.", "spec": "Three shelves, six places  ·  push it anywhere with F"},
-}
-
 var _kinds: VBoxContainer
 var _variants: VBoxContainer
 var _title: Label
@@ -80,18 +75,23 @@ func _ready() -> void:
 	_order.text = "Order it (free for now)"
 	_order.custom_minimum_size = Vector2(0, 48)
 	_order.pressed.connect(func():
-		if _kind == "equipment":
-			Shed.request({"a": "order_furniture", "kind": _part})
+		if _kind.begins_with("eq:"):
+			Shed.request({"a": "order_furniture", "model": _part})
 		else:
 			Shed.request({"a": "order_part", "part": _part}))
 	detail.add_child(_order)
 
-	var kinds: Array = ["equipment"]
+	var kinds: Array = []
+	for k in Equipment.KINDS:
+		kinds.append("eq:" + k)
 	kinds.append_array(PartsDB.FLUID_KINDS)
 	kinds.append_array(PartsDB.KINDS)
 	for k in kinds:
 		var b := Button.new()
-		b.text = "Shed equipment" if k == "equipment" else PartsDB.KIND_NAMES[k]
+		if k.begins_with("eq:"):
+			b.text = ("Shed: " if not k.trim_prefix("eq:") in ["poster", "seat", "tv"] else "Decor: ") + Equipment.KIND_NAMES[k.trim_prefix("eq:")]
+		else:
+			b.text = PartsDB.KIND_NAMES[k]
 		if PartsDB.FLUID_KINDS.has(k):
 			b.text = "Fluids: " + b.text
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -134,10 +134,13 @@ func _show_kind(k: String) -> void:
 		b.button_pressed = b.get_meta("kind") == k
 	for c in _variants.get_children():
 		c.queue_free()
-	var ids: Array = EQUIPMENT.keys() if k == "equipment" else PartsDB.by_kind[k]
+	var ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
 	for id in ids:
 		var b := Button.new()
-		b.text = EQUIPMENT[id]["name"] if k == "equipment" else PartsDB.part_name(id)
+		if k.begins_with("eq:"):
+			b.text = str(Equipment.get_model(id)["name"]) + ("  (compact)" if Equipment.get_model(id).get("compact", false) else "")
+		else:
+			b.text = PartsDB.part_name(id) + ("  (light)" if PartsDB.is_lightweight(id) else "")
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
 		b.set_meta("part", id)
@@ -152,14 +155,22 @@ func _show_part(id: String) -> void:
 	for b in _variants.get_children():
 		if b.has_meta("part"):
 			b.button_pressed = b.get_meta("part") == id
-	if _kind == "equipment":
-		_title.text = EQUIPMENT[id]["name"]
-		_desc.text = EQUIPMENT[id]["desc"]
-		_spec.text = EQUIPMENT[id]["spec"]
+	if _kind.begins_with("eq:"):
+		var m := Equipment.get_model(id)
+		_title.text = str(m["name"])
+		_desc.text = str(m["desc"])
+		var how := "Arrives outside the roller door. Press F on it to carry it in, look at a wall and press F to hang it." \
+			if Equipment.is_wall(id) else ("Arrives outside the roller door. Hold F on it to move it." if m["kind"] == "seat"
+			else "Arrives outside the roller door. Press F on it to push it in and F again to put it down.")
+		_spec.text = Equipment.spec_line(id).replace("  ·  ", "\n") + "\n\n" + how
 		return
 	var p := PartsDB.get_part(id)
 	_title.text = str(p["name"])
 	_desc.text = str(p.get("description", ""))
+	if _kind == "chain_lube":
+		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it, crouch by a bike's chain and hold left mouse to lube it." \
+			+ " A dry chain wastes power and wears out.\nDelivered outside, no box to unpack."
+		return
 	if PartsDB.FLUID_KINDS.has(_kind):
 		var into: String = {"petrol": "the fuel tank", "oil": "the engine", "brake_fluid": "the front and rear brake master cylinders"}[_kind]
 		var how := "Hold it and aim at %s: left mouse pours it in, right mouse drains into it." % into
@@ -169,6 +180,8 @@ func _show_part(id: String) -> void:
 		return
 	var fits := PartsDB.slots_for_kind(_kind).map(func(s): return PartsDB.slot_name(s).to_lower())
 	_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nFits: " + ", ".join(fits)
+	if _kind == "chain":
+		_spec.text += "\n\nCrouch by the bike with the wrench and hold right mouse to set the tension. Lube it with chain lube."
 
 
 func _unhandled_input(event: InputEvent) -> void:

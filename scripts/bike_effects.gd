@@ -78,6 +78,7 @@ func _particles(amount: int, life: float, mat: Material) -> CPUParticles3D:
 func _puff_material(tint: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.billboard_keep_scale = true   # or every puff draws at the full quad size
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.vertex_color_use_as_albedo = true
 	m.albedo_color = tint

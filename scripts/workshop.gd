@@ -23,7 +23,7 @@ var bike_views := {}       # bike id -> Node3D holding a BikeModel
 var _view_sigs := {}
 var _spot_nodes := {}      # spot -> Node3D
 var _spot_sigs := {}
-var furniture_nodes := {} # furniture id -> Node3D (engine stands and shelving units)
+var furniture_nodes := {} # furniture id -> EquipmentView
 var _furniture_sigs := {}
 var _floor_nodes := {}     # item id -> Node3D for parts put down anywhere
 var _floor_sigs := {}
@@ -33,7 +33,10 @@ var _dash_timer := 0.0
 var _dash_dirty := true
 var _mats := {}
 var radio: ShedRadio
-var _washer_sound: AudioStreamPlayer3D
+## The live riding picture every wall TV shows: one camera chasing whoever is out riding.
+var tv_feed: SubViewport
+var _tv_camera: Camera3D
+var _tv_target: Node3D
 
 
 static func bay_transform(bay: int) -> Transform3D:
@@ -52,10 +55,6 @@ static func spot_transform(spot: String) -> Transform3D:
 	match spot:
 		"engine_stand":
 			return Transform3D(Basis(Vector3.UP, -PI * 0.5), CENTER + Vector3(HALF.x - 0.9, 0.72, -0.4))
-		"washer":
-			return Transform3D(Basis(Vector3.UP, PI * 0.5), CENTER + Vector3(HALF.x - 1.05, 0.86, HALF.y - 0.6))
-		"repair":
-			return Transform3D(Basis(Vector3.UP, PI * 0.5), CENTER + Vector3(3.4, 0.96, HALF.y - 0.6))
 	return Transform3D(Basis(), CENTER)
 
 
@@ -74,8 +73,6 @@ func build() -> void:
 	_build_bench()
 	_build_computer()
 	_build_delivery_area()
-	_build_washer()
-	_build_repair_bench()
 	_build_bin()
 	_build_tool_wall()
 	_build_radio()
@@ -142,25 +139,35 @@ func sync_state() -> void:
 			_spot_nodes[spot] = display
 	_sync_floor()
 	radio.sync()
-	var washing := Shed.item_at_spot("washer")
-	Sfx.set_loop(_washer_sound, "washer" if washing != 0 and float(Shed.items[washing]["dirt"]) > 0.0 else "")
+	for id in furniture_nodes:
+		var view: EquipmentView = furniture_nodes[id]
+		if view.washer_sound:
+			var busy := false
+			for spot in Shed.furniture_spots(id):
+				var washing := Shed.item_at_spot(spot)
+				busy = busy or (washing != 0 and float(Shed.items[washing]["dirt"]) > 0.0)
+			Sfx.set_loop(view.washer_sound, "washer" if busy else "")
 	_dash_dirty = true
 
 
 # ---------------------------------------------------------------------------- furniture
 
-## Draws engine stands and shelving units where they stand. One being pushed by this player
-## follows them directly (see preview_furniture), so it doesn't lag behind.
+## Draws the shed's equipment where it stands. One being moved by this player follows them
+## directly (see preview_furniture), so it doesn't lag behind.
 func _sync_furniture() -> void:
 	for id in furniture_nodes.keys():
-		if not Shed.furniture.has(id):
+		if not Shed.furniture.has(id) or furniture_nodes[id].model != str(Shed.furniture[id].get("model", "")):
 			furniture_nodes[id].queue_free()
 			furniture_nodes.erase(id)
 			_furniture_sigs.erase(id)
+			for spot in _spot_nodes.keys():
+				if spot.get_slice_count("_") >= 2 and int(spot.get_slice("_", 1)) == id:
+					_spot_sigs.erase(spot)
+					_spot_nodes.erase(spot)
 	for id in Shed.furniture:
 		var f: Dictionary = Shed.furniture[id]
 		if not furniture_nodes.has(id):
-			furniture_nodes[id] = _make_stand(id) if f["kind"] == "stand" else _make_shelf(id)
+			furniture_nodes[id] = EquipmentView.create(self, id)
 		var node: Node3D = furniture_nodes[id]
 		if f["mover"] != Shed.me() or f["mover"] == 0:
 			node.transform = f["xf"]
@@ -179,57 +186,59 @@ func preview_furniture(id: int, xf: Transform3D) -> void:
 		furniture_nodes[id].transform = xf
 
 
-## A red engine stand on castors: a column with a turning head that the block bolts to.
-func _make_stand(id: int) -> Node3D:
-	var root := Node3D.new()
-	root.name = "Stand%d" % id
-	add_child(root)
-	var red: Material = _mats["red"]
-	_deco(root, Vector3(0.0, 0.05, 0.0), Vector3(0.7, 0.06, 0.08), red)
-	_deco(root, Vector3(0.25, 0.05, 0.0), Vector3(0.08, 0.06, 0.8), red)
-	_deco(root, Vector3(0.25, 0.32, 0.0), Vector3(0.09, 0.56, 0.09), red)
-	_deco(root, Vector3(0.12, 0.58, 0.0), Vector3(0.26, 0.06, 0.06), _mats["steel"])
-	_deco(root, Vector3(0.0, 0.58, 0.0), Vector3(0.04, 0.24, 0.24), _mats["steel"])
-	_deco(root, Vector3(0.25, 0.75, 0.0), Vector3(0.04, 0.04, 0.5), _mats["steel"]).name = "Handle"
-	for p in [Vector3(-0.32, 0.03, 0.0), Vector3(0.25, 0.03, -0.37), Vector3(0.25, 0.03, 0.37)]:
-		_deco(root, p, Vector3(0.06, 0.06, 0.06), _mats["dark"]).name = "Caster"
-	_blocker(Vector3(0.0, 0.3, 0.0), Vector3(0.7, 0.6, 0.8), root)
-	_target(Vector3(0.25, 0.4, 0.0), Vector3(0.2, 0.8, 0.9), {"furniture": id}, root)
-	_target(Vector3(0.0, 0.62 + 0.18, 0.0), Vector3(0.7, 0.35, 0.7), {"spot": "stand_%d" % id}, root)
-	return root
+## Every wall TV in the shed.
+func tvs() -> Array:
+	var out := []
+	for id in furniture_nodes:
+		if furniture_nodes[id].tv:
+			out.append(furniture_nodes[id].tv)
+	return out
 
 
-## A steel shelving unit: three shelves, two places on each, and a label plate on top.
-func _make_shelf(id: int) -> Node3D:
-	var root := Node3D.new()
-	root.name = "Shelf%d" % id
-	add_child(root)
-	var frame: Material = _material(Color(0.2, 0.32, 0.5), 0.6, 0.45)
-	var board: Material = _material(Color(0.62, 0.6, 0.56), 0.5, 0.55)
-	for x in [-0.58, 0.58]:
-		for z in [-0.22, 0.22]:
-			_deco(root, Vector3(x, 0.92, z), Vector3(0.04, 1.84, 0.04), frame)
-	for level in 4:
-		var y := 0.06 + level * 0.6
-		_deco(root, Vector3(0.0, y, 0.0), Vector3(1.2, 0.03, 0.48), board)
-	_blocker(Vector3(0.0, 0.92, 0.0), Vector3(1.2, 1.84, 0.48), root)
-	for n in Shed.SHELF_SLOTS:
-		var spot := "shelf_%d_%d" % [id, n]
-		var at := Shed.local_spot_transform(spot).origin
-		_target(at + Vector3(0.0, 0.26, 0.03), Vector3(0.56, 0.5, 0.5), {"spot": spot}, root)
-	var plate := _deco(root, Vector3(0.0, 1.72, 0.25), Vector3(0.7, 0.14, 0.01), _material(Color(0.88, 0.86, 0.8), 0.0, 0.8))
-	plate.name = "Plate"
-	_target(Vector3(0.0, 1.72, 0.25), Vector3(0.74, 0.18, 0.06), {"label": id}, root)
-	_target(Vector3(0.0, 1.9, 0.0), Vector3(1.24, 0.12, 0.52), {"furniture": id}, root)
-	var label := Label3D.new()
-	label.name = "Label"
-	label.font_size = 36
-	label.pixel_size = 0.002
-	label.modulate = Color(0.12, 0.1, 0.1)
-	label.outline_size = 0
-	label.position = Vector3(0.0, 1.72, 0.257)
-	root.add_child(label)
-	return root
+## Points the TV camera at whoever is out riding, and switches the TVs between the live
+## picture and the crew board.
+func _update_tv_feed(delta: float) -> void:
+	var screens := tvs()
+	var rider: Node3D = null
+	if not screens.is_empty():
+		for b in get_tree().get_nodes_in_group("ridden_bike"):
+			if b is Node3D and (b as Node3D).is_inside_tree() and (b as Node3D).visible:
+				rider = b
+				break
+	if rider == null:
+		if tv_feed:
+			tv_feed.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		for tv in screens:
+			tv.show_feed(null, "")
+		_tv_target = null
+		return
+	if tv_feed == null:
+		tv_feed = SubViewport.new()
+		tv_feed.size = Vector2i(640, 360)
+		add_child(tv_feed)
+		_tv_camera = Camera3D.new()
+		_tv_camera.fov = 60.0
+		_tv_camera.far = 1500.0
+		tv_feed.add_child(_tv_camera)
+	tv_feed.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# A broadcast-style chase camera: behind and above, easing after the bike.
+	var bxf := rider.global_transform
+	var back := Vector3(bxf.basis.z.x, 0.0, bxf.basis.z.z).normalized()
+	var want := bxf.origin + back * 4.5 + Vector3.UP * 1.8
+	if _tv_target != rider:
+		_tv_camera.global_position = want
+	else:
+		_tv_camera.global_position = _tv_camera.global_position.lerp(want, 1.0 - exp(-4.0 * delta))
+	_tv_camera.look_at(bxf.origin + Vector3.UP * 0.8, Vector3.UP)
+	_tv_target = rider
+	var caption := "LIVE"
+	for peer in Shed.crew:
+		var riding := int(Shed.crew[peer].get("riding", 0))
+		if riding != 0 and Shed.bikes.has(riding):
+			caption = "LIVE: %s on %s" % [Shed.crew[peer]["name"], Shed.bikes[riding]["name"]]
+			break
+	for tv in screens:
+		tv.show_feed(tv_feed.get_texture(), caption)
 
 
 ## Parts put down anywhere, each with a box around it to aim at and pick it up by.
@@ -390,6 +399,7 @@ func _paddock_stand(parent: Node3D, build: BikeBuild) -> void:
 
 
 func _process(delta: float) -> void:
+	_update_tv_feed(delta)
 	_dash_timer -= delta
 	if _dash_timer > 0.0:
 		return
@@ -422,6 +432,9 @@ func _refresh_dashboards() -> void:
 		p["color"] = Shed.PAINTS[int(c.get("slot", 0)) % Shed.PAINTS.size()]
 		players.append(p)
 	_crew_screen.show_data({"players": players})
+	for tv in tvs():
+		if not tv.is_live():
+			tv.board.show_data({"players": players})
 
 
 func _bay_data(bay: int) -> Dictionary:
@@ -752,52 +765,6 @@ func _build_delivery_area() -> void:
 	var mark := _label("DELIVERIES", c + Vector3(0.0, 0.012, d * 0.5 + 0.35), 0.0, 48, Color(0.85, 0.7, 0.2, 0.8))
 	mark.rotation = Vector3(-PI * 0.5, PI, 0.0)
 	mark.outline_size = 0
-
-
-func _build_washer() -> void:
-	var xf := spot_transform("washer")
-	var base := xf.origin - Vector3(0.0, 0.86, 0.0)
-	_solid(base + Vector3(0.0, 0.4, 0.0), Vector3(1.3, 0.8, 0.9), _mats["blue"])
-	_deco(self, base + Vector3(0.0, 0.82, 0.0), Vector3(1.2, 0.04, 0.8), _mats["steel"])
-	_deco(self, base + Vector3(0.0, 1.35, 0.42), Vector3(1.3, 1.1, 0.06), _mats["blue"])
-	var tap := MeshInstance3D.new()
-	var tube := CylinderMesh.new()
-	tube.top_radius = 0.02
-	tube.bottom_radius = 0.02
-	tube.height = 0.5
-	tap.mesh = tube
-	tap.material_override = _mats["chrome"]
-	tap.position = base + Vector3(0.3, 1.15, 0.3)
-	tap.rotation.x = -0.6
-	add_child(tap)
-	_target(xf.origin + Vector3(0.0, 0.2, 0.0), Vector3(1.3, 0.6, 0.9), {"spot": "washer"})
-	_poster("PARTS WASHER", base + Vector3(0.0, 1.6, 0.385), PI)
-	_washer_sound = Sfx.make_loop_player(self)
-	_washer_sound.position = base + Vector3(0.0, 0.8, 0.0)
-	_washer_sound.volume_db = -8.0
-
-
-func _build_repair_bench() -> void:
-	var xf := spot_transform("repair")
-	var base := xf.origin - Vector3(0.0, 0.96, 0.0)
-	_solid(base + Vector3(0.0, 0.45, 0.0), Vector3(1.8, 0.9, 0.9), _mats["steel"])
-	_deco(self, base + Vector3(0.0, 0.92, 0.0), Vector3(1.85, 0.06, 0.95), _mats["dark"])
-	# Vice and bench grinder.
-	_deco(self, base + Vector3(-0.7, 1.03, 0.2), Vector3(0.2, 0.16, 0.3), _mats["blue"])
-	_deco(self, base + Vector3(0.7, 1.05, 0.0), Vector3(0.3, 0.2, 0.2), _mats["dark"])
-	for side in [-1.0, 1.0]:
-		var wheel := MeshInstance3D.new()
-		var w := CylinderMesh.new()
-		w.top_radius = 0.09
-		w.bottom_radius = 0.09
-		w.height = 0.03
-		wheel.mesh = w
-		wheel.material_override = _mats["steel"]
-		wheel.position = base + Vector3(0.7 + side * 0.18, 1.07, 0.0)
-		wheel.rotation.z = PI * 0.5
-		add_child(wheel)
-	_target(xf.origin + Vector3(0.0, 0.25, 0.0), Vector3(1.8, 0.5, 0.9), {"spot": "repair"})
-	_poster("REPAIR BENCH", Vector3(base.x, 1.4, CENTER.z + HALF.y - 0.012), PI)
 
 
 func _build_bin() -> void:

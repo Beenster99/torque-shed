@@ -117,6 +117,8 @@ func _shown(key: String, v: float) -> float:
 			return Units.mass_value(v)
 		"economy":
 			return Units.economy_value(v)
+		"pw":
+			return v * 100.0 / (Units.LB_PER_KG if Units.imperial() else 1.0)
 	return v
 
 
@@ -136,6 +138,7 @@ func _draw_bike(font: Font) -> void:
 		["Torque", "torque", "Nm", "%.0f", true],
 		["Top speed", "top_kmh", Units.speed_unit(), "%.0f", true],
 		["Weight", "mass", Units.mass_unit(), "%.0f", false],
+		["hp per 100 " + Units.mass_unit(), "pw", "", "%.1f", true],
 		["Brakes", "brake", "Nm", "%.0f", true],
 		["Economy", "economy", Units.economy_unit(), "%.1f" if not Units.imperial() else "%.0f", Units.imperial()],
 		["Condition", "health", "%", "%.0f", true],

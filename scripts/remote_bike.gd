@@ -16,6 +16,7 @@ var _effects: BikeEffects
 
 
 func setup(rider_name: String, build: BikeBuild, paint: Color) -> void:
+	add_to_group("ridden_bike")   # shed TVs follow whoever is out riding
 	player_name = rider_name
 	_build = build
 	sync_to_physics = false

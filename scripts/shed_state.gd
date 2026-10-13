@@ -7,9 +7,9 @@ extends Node
 signal changed
 signal feedback(text: String, ok: bool)
 
-## Fixed work spots. Engine stands ("stand_<id>") and shelves ("shelf_<id>_<n>") add their own.
-const SPOTS: Array[String] = ["bench_0", "bench_1", "bench_2", "bench_3", "washer", "repair"]
-const SHELF_SLOTS := 6          # two places on each of a shelving unit's three shelves
+## The fixed workbench along the wall. Equipment adds its own places: engine stands
+## ("stand_<id>") and the rest "<prefix>_<id>_<n>" (see Equipment.SPOT_PREFIX).
+const SPOTS: Array[String] = ["bench_0", "bench_1", "bench_2", "bench_3"]
 const DELIVERY_ROWS := 3
 const DELIVERY_COLS := 4
 const PAINTS := [Color(0.78, 0.09, 0.08), Color(0.1, 0.35, 0.8), Color(0.95, 0.6, 0.05), Color(0.1, 0.6, 0.3),
@@ -24,7 +24,10 @@ const FINISH_NAMES := {"gloss": "Gloss", "matte": "Matte", "metallic": "Metallic
 	"patina": "Old patina"}
 const BIKE_NAMES := ["Barn Find", "Rusty Ranger", "Basket Case", "Old Faithful", "The Widowmaker", "Rattler",
 	"Hedge Hopper", "Midnight Special", "Scrapyard Dog", "Grandad's Pride", "Mud Puppy", "Iron Maiden"]
-const WASH_RATE := 0.18        # dirt removed per second in the parts washer
+## Chains: slack in mm. Adjusted right it sits between these; lube 0 (dry) .. 1 (just done).
+const CHAIN_SLACK_GOOD := Vector2(20.0, 40.0)
+const CHAIN_SLACK_SET := 30.0
+const LUBE_USE := 0.03         # litres of chain lube a full coat takes
 const JET_CLEAN := 0.07        # dirt the pressure washer blasts off each part per pass
 ## How much road dirt each part picks up per kilometre ridden off-road (tarmac is a fraction of it).
 const ROAD_DIRT := 0.3
@@ -47,7 +50,8 @@ var bikes := {}
 ## Engine blocks also carry slots{} and bolted{} for the parts fitted to them. Tanks, engines, master
 ## cylinders and fluid containers carry fluid{type, litres, age}: petrol, oil or brake fluid.
 var items := {}
-## furniture id -> {id, kind ("stand" | "shelf"), xf, label, mover (peer pushing it, or 0)}
+## furniture id -> {id, kind (see Equipment.KINDS), model (an Equipment model id), xf, label,
+## mover (peer pushing it, or 0)}
 var furniture := {}
 var crew := {}      # peer id -> {name, tool, activity, riding, fitted, removed, cleaned, repaired, painted, km, top_kmh}
 var active := false
@@ -110,13 +114,17 @@ func start_new(player_name: String, seed_value := 0) -> void:
 		"engine": "twin_700", "exhaust": "stock_muffler", "final_drive": "stock_15_45", "head": "two_valve_stock",
 		"fuel": "twin_carbs", "air_filter": "paper_airbox", "oil_filter": "centrifugal_oil", "spark_plugs": "vintage_plugs",
 		"cooling": "air_fins", "gearbox": "four_vintage"}, 1, "Barn Find", 0.6, PAINTS[0])
-	# The barn find arrives half stripped: exhaust, final drive and tyres are on the bench, the
-	# engine is on the stand, and its spark plugs and air filter were lost in the barn.
+	# The barn find arrives half stripped: exhaust, sprockets, chain and front tyre are on the
+	# bench, the engine is on the stand, and its spark plugs and air filter were lost in the barn.
 	var bench := 0
-	for slot in ["exhaust", "final_drive", "front_tyre", "rear_tyre"]:
+	for slot in ["exhaust", "chain", "final_drive", "front_tyre"]:
 		_detach(cafe, slot, "spot", "bench_%d" % bench)
 		bench += 1
 	var stand := _new_furniture("stand", Transform3D(Basis(), Workshop.CENTER + Vector3(Workshop.HALF.x - 0.9, 0.0, -0.4)))
+	# The shed's own parts washer and repair bench, against the front wall. They can be moved,
+	# and more bought from the parts computer.
+	_new_furniture("washer", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(Workshop.HALF.x - 1.05, 0.0, Workshop.HALF.y - 0.6)))
+	_new_furniture("repair", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(3.4, 0.0, Workshop.HALF.y - 0.6)))
 	var block := _detach(cafe, "engine", "spot", "stand_%d" % stand)
 	for slot in ["spark_plugs", "air_filter"]:
 		var gone: int = items[block]["slots"][slot]
@@ -272,6 +280,9 @@ func condition_of(item: Dictionary) -> Dictionary:
 		"finish": item.get("finish", "")}
 	if item.has("fluid"):
 		cond["fluid"] = item["fluid"]
+	if item.has("slack"):
+		cond["slack"] = item["slack"]
+		cond["lube"] = item.get("lube", 1.0)
 	return cond
 
 
@@ -376,9 +387,25 @@ func condition_text(item: Dictionary) -> String:
 		return "Brand new, still in its box"
 	if PartsDB.is_fluid(item["part"]):
 		return fluid_text(item)
-	return "Condition %d%%   Rust %d%%   Dirt %d%%   Wear %d%%   %s" % [
+	var text := "Condition %d%%   Rust %d%%   Dirt %d%%   Wear %d%%   %s" % [
 		roundi(BikeBuild.part_health(condition_of(item)) * 100.0), roundi(item["rust"] * 100.0),
 		roundi(item["dirt"] * 100.0), roundi(item["wear"] * 100.0), paint_text(item)]
+	if item.has("slack"):
+		text += "\n" + chain_text(item)
+	return text
+
+
+## "Slack 52 mm (too slack)  ·  Lube 20% (dry)".
+func chain_text(item: Dictionary) -> String:
+	var slack := float(item.get("slack", CHAIN_SLACK_SET))
+	var lube := float(item.get("lube", 1.0))
+	var tension := "just right"
+	if slack > CHAIN_SLACK_GOOD.y:
+		tension = "too slack"
+	elif slack < CHAIN_SLACK_GOOD.x:
+		tension = "too tight"
+	var oiled := "freshly lubed" if lube > 0.8 else ("fine" if lube > 0.3 else "dry")
+	return "Chain slack %d mm (%s)   Lube %d%% (%s)" % [roundi(slack), tension, roundi(lube * 100.0), oiled]
 
 
 ## "Fuel: 3.2 of 15 L, stale". Empty for parts that hold no fluid.
@@ -388,7 +415,7 @@ func fluid_text(item: Dictionary) -> String:
 	var f: Dictionary = item["fluid"]
 	var cap := PartsDB.fluid_capacity(item["part"])
 	var k := PartsDB.fluid_kind(item["part"])
-	var what: String = {"petrol": "Petrol", "oil": "Oil", "brake_fluid": "Brake fluid"}[k]
+	var what: String = {"petrol": "Petrol", "oil": "Oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube"}.get(k, "Fluid")
 	var amount := ("%.2f of %.2f L" if cap < 1.0 else "%.1f of %.0f L") % [float(f["litres"]), cap]
 	if float(f["litres"]) <= 0.001:
 		return "%s: empty (holds %s L)" % [what, ("%.2f" if cap < 1.0 else "%.0f") % cap]
@@ -456,32 +483,60 @@ func is_spot(spot: String) -> bool:
 	var f := furniture_of_spot(spot)
 	if f.is_empty():
 		return false
-	return f["kind"] == "stand" or int(spot.get_slice("_", 2)) < SHELF_SLOTS
+	if f["kind"] == "stand":
+		return true
+	var n := int(spot.get_slice("_", 2))
+	return n >= 0 and n < Equipment.places(str(f["model"]))
 
 
 func is_stand_spot(spot: String) -> bool:
 	return spot.begins_with("stand_")
 
 
-## The engine stand or shelving unit a spot belongs to, or {}.
+## The equipment a spot belongs to, or {}.
 func furniture_of_spot(spot: String) -> Dictionary:
-	if not (spot.begins_with("stand_") or spot.begins_with("shelf_")):
+	var prefix := spot.get_slice("_", 0)
+	if prefix != "stand" and not Equipment.SPOT_PREFIX.values().has(prefix):
+		return {}
+	if prefix != "stand" and spot.get_slice_count("_") != 3:
 		return {}
 	var f: Dictionary = furniture.get(int(spot.get_slice("_", 1)), {})
-	if f.is_empty() or (f["kind"] == "stand") != spot.begins_with("stand_"):
+	if f.is_empty():
 		return {}
-	return f
+	var want: String = "stand" if f["kind"] == "stand" else str(Equipment.SPOT_PREFIX.get(f["kind"], "-"))
+	return f if want == prefix else {}
+
+
+## What a spot is part of: "bench" (the fixed workbench or a bought one), "shelf", "washer",
+## "repair", "stand" or "".
+func spot_role(spot: String) -> String:
+	if SPOTS.has(spot):
+		return "bench"
+	var f := furniture_of_spot(spot)
+	return "" if f.is_empty() else str(f["kind"])
+
+
+## The places on one piece of equipment.
+func furniture_spots(id: int) -> Array:
+	var f: Dictionary = furniture.get(id, {})
+	if f.is_empty():
+		return []
+	if f["kind"] == "stand":
+		return ["stand_%d" % id]
+	var prefix: String = Equipment.SPOT_PREFIX.get(f["kind"], "")
+	if prefix == "":
+		return []
+	var out := []
+	for n in Equipment.places(str(f["model"])):
+		out.append("%s_%d_%d" % [prefix, id, n])
+	return out
 
 
 ## Every spot that exists right now, fixed ones first.
 func all_spots() -> Array:
 	var out: Array = SPOTS.duplicate()
 	for id in furniture:
-		if furniture[id]["kind"] == "stand":
-			out.append("stand_%d" % id)
-		else:
-			for n in SHELF_SLOTS:
-				out.append("shelf_%d_%d" % [id, n])
+		out.append_array(furniture_spots(id))
 	return out
 
 
@@ -489,7 +544,7 @@ func stand_spots() -> Array:
 	return all_spots().filter(func(s): return is_stand_spot(s))
 
 
-## Where a part on a spot sits in the world. Stands and shelves carry theirs with them.
+## Where a part on a spot sits in the world. Equipment carries its places with it.
 func spot_transform(spot: String) -> Transform3D:
 	var f := furniture_of_spot(spot)
 	if f.is_empty():
@@ -497,24 +552,55 @@ func spot_transform(spot: String) -> Transform3D:
 	return (f["xf"] as Transform3D) * local_spot_transform(spot)
 
 
-static func local_spot_transform(spot: String) -> Transform3D:
-	if spot.begins_with("stand_"):
-		return Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(0.0, 0.72, 0.0))
-	var n := int(spot.get_slice("_", 2))
-	return Transform3D(Basis(), Vector3(-0.28 + (n % 2) * 0.56, 0.08 + (n / 2) * 0.6, 0.0))
+## Where a spot is on its piece of equipment, in the equipment's own space.
+func local_spot_transform(spot: String) -> Transform3D:
+	var f := furniture_of_spot(spot)
+	if f.is_empty():
+		return Transform3D()
+	return Equipment.local_place(str(f["model"]), 0 if f["kind"] == "stand" else int(spot.get_slice("_", 2)))
 
 
 func furniture_name(f: Dictionary) -> String:
-	if f["kind"] == "stand":
-		return "Engine stand"
-	return "Shelving: " + str(f["label"]) if str(f.get("label", "")) != "" else "Shelving unit"
+	var n := str(Equipment.get_model(str(f.get("model", ""))).get("name", "Equipment"))
+	if f["kind"] == "shelf" and str(f.get("label", "")) != "":
+		return "%s: %s" % [n, f["label"]]
+	return n
 
 
-func _new_furniture(kind: String, xf: Transform3D) -> int:
+func _new_furniture(kind: String, xf: Transform3D, model := "") -> int:
+	if model == "" or Equipment.kind_of(model) != kind:
+		model = str(Equipment.DEFAULT.get(kind, ""))
 	var id := _next_id
 	_next_id += 1
-	furniture[id] = {"id": id, "kind": kind, "xf": xf, "label": "", "mover": 0}
+	furniture[id] = {"id": id, "kind": kind, "model": model, "xf": xf, "label": "", "mover": 0}
 	return id
+
+
+## Repairable parts sitting on the same repair machine as `spot`.
+func repair_batch(spot: String) -> Array:
+	var f := furniture_of_spot(spot)
+	if f.is_empty() or f["kind"] != "repair":
+		return []
+	var out := []
+	for s in furniture_spots(int(f["id"])):
+		var id := item_at_spot(s)
+		if id != 0 and not items[id].get("boxed", false) and (items[id]["rust"] >= 0.02 or items[id]["wear"] >= 0.02):
+			out.append(id)
+	return out
+
+
+## How long the grinder takes over a batch on a repair machine: the worst part sets the pace.
+func repair_time(ids: Array) -> float:
+	var worst := 0.0
+	var speed := 1.0
+	for id in ids:
+		if not items.has(int(id)):
+			continue
+		worst = maxf(worst, float(items[int(id)]["rust"]) + float(items[int(id)]["wear"]))
+		var f := furniture_of_spot(str(items[int(id)]["ref"]))
+		if not f.is_empty():
+			speed = float(Equipment.get_model(str(f["model"])).get("speed", 1.0))
+	return (2.0 + 4.0 * worst + 0.6 * maxi(0, ids.size() - 1)) / speed
 
 
 func moving(peer: int) -> int:
@@ -647,7 +733,7 @@ func check(peer: int, action: Dictionary) -> String:
 	if a in ["unbolt", "bolt", "remove"] and engine_id == 0 and PartsDB.LOW_SLOTS.has(slot) \
 			and not action.get("crouched", false):
 		return "Crouch down to reach it (C)."
-	if a in ["unbolt", "bolt", "remove", "install", "mount", "grab_bike", "set_stand"]:
+	if a in ["unbolt", "bolt", "remove", "install", "mount", "grab_bike", "set_stand", "adjust_chain"]:
 		if engine_id != 0:
 			if not is_engine(engine_id):
 				return "That engine has gone."
@@ -718,7 +804,7 @@ func check(peer: int, action: Dictionary) -> String:
 				return "That spot is taken."
 			if is_stand_spot(spot) and (not is_engine(held) or items[held].get("boxed", false)):
 				return "Only an engine goes on the engine stand."
-			if spot in ["washer", "repair"] and items[held].get("boxed", false):
+			if spot_role(spot) in ["washer", "repair"] and items[held].get("boxed", false):
 				return "Unpack it first."
 		"radio":
 			var st := int(action.get("station", radio["station"]))
@@ -730,7 +816,8 @@ func check(peer: int, action: Dictionary) -> String:
 			if free_delivery_xf() == null:
 				return "The delivery area outside is full. Bring some boxes in first."
 		"order_furniture":
-			if not str(action.get("kind", "")) in ["stand", "shelf"]:
+			var model := str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), "")))
+			if Equipment.get_model(model).is_empty():
 				return "Unknown equipment."
 			if free_delivery_xf() == null:
 				return "The delivery area outside is full. Bring some boxes in first."
@@ -774,6 +861,45 @@ func check(peer: int, action: Dictionary) -> String:
 					dirty += 1
 			if dirty == 0:
 				return "It's already clean."
+		"repair_many":
+			var batch: Array = action.get("items", [])
+			if batch.is_empty():
+				return "Nothing on it needs restoring."
+			var machine := ""
+			for id in batch:
+				if not items.has(int(id)) or items[int(id)]["at"] != "spot" or spot_role(str(items[int(id)]["ref"])) != "repair":
+					return "Put the parts on a repair machine first."
+				var f := furniture_of_spot(str(items[int(id)]["ref"]))
+				if machine != "" and machine != str(f["id"]):
+					return "Those parts are on different machines."
+				machine = str(f["id"])
+				if items[int(id)].get("boxed", false):
+					return "Unpack it first."
+			if batch.all(func(id): return items[int(id)]["rust"] < 0.02 and items[int(id)]["wear"] < 0.02):
+				return "It's all in top condition."
+		"adjust_chain":
+			var chain := item_on(bike_id, "chain")
+			if chain == 0:
+				return "There's no chain on it."
+			if not action.get("crouched", false):
+				return "Crouch down (C) to get at the chain adjusters."
+			if bikes[bike_id]["rider"] != 0:
+				return "Someone's riding it."
+			var slack := float(items[chain].get("slack", CHAIN_SLACK_SET))
+			if absf(slack - CHAIN_SLACK_SET) < 3.0:
+				return "The chain tension is spot on."
+		"lube":
+			if held == 0 or PartsDB.kind_of(items[held]["part"]) != "chain_lube":
+				return "You need a can of chain lube in your hands."
+			if float(items[held].get("fluid", {}).get("litres", 0.0)) < LUBE_USE * 0.5:
+				return "The can's empty."
+			var chain := int(action.get("item", 0))
+			if not items.has(chain) or items[chain]["kind"] != "chain":
+				return "Aim at a chain."
+			if items[chain]["at"] == "bike" and not action.get("crouched", false):
+				return "Crouch down (C) to get at the chain."
+			if float(items[chain].get("lube", 0.0)) > 0.95:
+				return "It's freshly lubed."
 		"clean", "repair", "paint":
 			var item_id := int(action.get("item", 0))
 			if not items.has(item_id):
@@ -786,8 +912,8 @@ func check(peer: int, action: Dictionary) -> String:
 			if a == "clean" and it["dirt"] < 0.02:
 				return "It's already clean."
 			if a == "repair":
-				if not (it["at"] == "spot" and it["ref"] == "repair"):
-					return "Put the part on the repair bench first."
+				if not (it["at"] == "spot" and spot_role(str(it["ref"])) == "repair"):
+					return "Put the part on a repair machine first."
 				if it["rust"] < 0.02 and it["wear"] < 0.02:
 					return "It's already in top condition."
 			if a == "paint" and it["rust"] > MAX_PAINT_RUST:
@@ -955,8 +1081,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_move(item_id, "spot", str(action["spot"]))
 			if is_stand_spot(str(action["spot"])):
 				text = "Engine on the stand. Strip it down or build it up."
-			elif str(action["spot"]) == "washer":
-				text = "Into the parts washer"
+			elif spot_role(str(action["spot"])) == "washer":
+				text = "Into the %s" % furniture_name(furniture_of_spot(str(action["spot"]))).to_lower()
 		"order_part":
 			var part_id := str(action["part"])
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
@@ -966,10 +1092,12 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Ordered %s. %s outside by the roller door." % [PartsDB.part_name(part_id),
 				"The box is" if items[item_id]["boxed"] else "It's"]
 		"order_furniture":
-			var kind := str(action["kind"])
-			_new_furniture(kind, free_delivery_xf())
-			text = "Ordered %s. It's outside by the roller door: press F on it to push it in." % \
-				("an engine stand" if kind == "stand" else "a shelving unit")
+			var model := str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), "")))
+			var kind := Equipment.kind_of(model)
+			_new_furniture(kind, free_delivery_xf(), model)
+			var how := "press F on it to carry it in and hang it on a wall" if Equipment.is_wall(model) else \
+				("hold F on it to move it" if kind == "seat" else "press F on it to push it in")
+			text = "Ordered the %s. It's outside by the roller door: %s." % [Equipment.get_model(model)["name"].to_lower(), how]
 		"unpack":
 			items[int(action["item"])]["boxed"] = false
 			text = "Unpacked the %s" % item_title(int(action["item"]))
@@ -1007,6 +1135,27 @@ func _apply(peer: int, action: Dictionary) -> void:
 			it["wear"] = 0.0
 			_bump(c, "repaired")
 			text = "Restored the %s" % item_title(int(action["item"]))
+		"repair_many":
+			var n := 0
+			for id in action["items"]:
+				if items.has(int(id)) and (items[int(id)]["rust"] > 0.0 or items[int(id)]["wear"] > 0.0):
+					items[int(id)]["rust"] = 0.0
+					items[int(id)]["wear"] = 0.0
+					n += 1
+			c["repaired"] = int(c.get("repaired", 0)) + n
+			text = "Restored %d part%s" % [n, "" if n == 1 else "s"] if n != 1 else "Restored the %s" % item_title(int(action["items"][0]))
+		"adjust_chain":
+			var chain := item_on(bike_id, "chain")
+			var was := float(items[chain].get("slack", CHAIN_SLACK_SET))
+			items[chain]["slack"] = CHAIN_SLACK_SET
+			text = "Chain %s to %d mm of slack" % ["tightened" if was > CHAIN_SLACK_SET else "slackened off", roundi(CHAIN_SLACK_SET)]
+		"lube":
+			var chain := int(action["item"])
+			var can: Dictionary = items[held_by(peer)]["fluid"]
+			can["litres"] = maxf(0.0, float(can["litres"]) - LUBE_USE)
+			items[chain]["lube"] = 1.0
+			items[chain]["lube_type"] = str(can["type"])
+			text = "Lubed the chain with %s" % PartsDB.part_name(str(can["type"]))
 		"paint":
 			var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
 			var finish := str(action.get("finish", "gloss"))
@@ -1157,6 +1306,16 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 		if level < 0.5:
 			rate = lerpf(0.03, rate, level / 0.5)
 		items[block]["wear"] = minf(1.0, float(items[block]["wear"]) + km * rate)
+	var chain := item_on(bike_id, "chain")
+	if chain != 0:
+		var spec := PartsDB.get_part(items[chain]["part"])
+		var lube := float(items[chain].get("lube", 1.0))
+		var life := float(spec.get("lube_life", 400.0)) * float(PartsDB.get_part(str(items[chain].get("lube_type", ""))).get("lasts", 1.0))
+		# Muck and rain wash the lube off faster off-road; a dry chain stretches and wears quicker.
+		items[chain]["lube"] = maxf(0.0, lube - (km + dirty) / life)
+		var stretch := float(spec.get("stretch", 8.0)) * (1.0 + (1.0 - lube) * 2.0) * (1.0 + float(items[chain]["wear"]))
+		items[chain]["slack"] = minf(90.0, float(items[chain].get("slack", CHAIN_SLACK_SET)) + km * stretch / 1000.0 * 12.0)
+		items[chain]["wear"] = minf(1.0, float(items[chain]["wear"]) + km * 0.0004 * (1.0 + (1.0 - lube) * 3.0))
 	for slot in ["front_master", "rear_master"]:
 		var m := item_on(bike_id, slot)
 		if m != 0 and items[m].has("fluid"):
@@ -1218,6 +1377,10 @@ func _new_item(part: String, rust: float, dirt: float, wear: float, color = null
 	if k == "engine":
 		items[id]["slots"] = {}
 		items[id]["bolted"] = {}
+	if k == "chain":
+		items[id]["slack"] = CHAIN_SLACK_SET
+		items[id]["lube"] = 1.0
+		items[id]["lube_type"] = ""
 	if PartsDB.fluid_kind(part) != "":
 		var full: bool = PartsDB.is_fluid(part) and not PartsDB.get_part(part).get("empty", false)
 		items[id]["fluid"] = {"type": part if full else "", "litres": PartsDB.fluid_capacity(part) if full else 0.0, "age": 0.0}
@@ -1273,6 +1436,10 @@ func _fill_fluids(bike_id: int, age: float) -> void:
 		"engine": ["mineral_20w50" if age > 0.5 else "semi_10w40", _rng.randf_range(0.55, 1.0) * (1.0 - age * 0.4)],
 		"front_master": ["dot4", _rng.randf_range(0.5, 1.0) * (1.0 - age * 0.3)],
 		"rear_master": ["dot4", _rng.randf_range(0.5, 1.0) * (1.0 - age * 0.3)]}
+	var chain := item_on(bike_id, "chain")
+	if chain != 0:
+		items[chain]["slack"] = snappedf(CHAIN_SLACK_SET + _rng.randf_range(5.0, 45.0) * (0.3 + age), 1.0)
+		items[chain]["lube"] = clampf(_rng.randf_range(0.0, 0.6) * (1.0 - age), 0.0, 1.0)
 	for slot in fills:
 		var id := item_on(bike_id, slot)
 		if id == 0:
@@ -1361,13 +1528,18 @@ func _sync(state: Dictionary) -> void:
 func _process(delta: float) -> void:
 	if not active or not is_authority():
 		return
-	# The parts washer slowly cleans whatever is in it.
-	var washing := item_at_spot("washer")
-	if washing != 0 and items[washing]["dirt"] > 0.0:
-		items[washing]["dirt"] = maxf(0.0, items[washing]["dirt"] - WASH_RATE * delta)
-		_mark_dirty()
-		if items[washing]["dirt"] == 0.0:
-			changed.emit()
+	# Parts washers slowly clean whatever is in them.
+	for id in furniture:
+		if furniture[id]["kind"] != "washer":
+			continue
+		var rate := float(Equipment.get_model(str(furniture[id]["model"])).get("rate", 0.18))
+		for spot in furniture_spots(id):
+			var washing := item_at_spot(spot)
+			if washing != 0 and items[washing]["dirt"] > 0.0 and not items[washing].get("boxed", false):
+				items[washing]["dirt"] = maxf(0.0, items[washing]["dirt"] - rate * delta)
+				_mark_dirty()
+				if items[washing]["dirt"] == 0.0:
+					changed.emit()
 	_sync_timer -= delta
 	if _dirty and _sync_timer <= 0.0:
 		_sync_timer = SYNC_INTERVAL
