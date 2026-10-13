@@ -420,6 +420,29 @@ func _bike_named(n: String) -> int:
 	return 0
 
 
+## Stands the walker beside a bike slot and points the crosshair at it.
+func _aim_at(main: Node, bike_id: int, slot: String) -> void:
+	var model: BikeModel = main.workshop.bike_views[bike_id].get_child(0)
+	var aim: Vector3 = model.global_transform * model.slot_bounds(slot).get_center()
+	var stand: Vector3 = aim + Vector3(1.4, 0.0, 0.0)
+	stand.y = 0.0
+	main.walker.place(Transform3D(Basis(), stand))
+	main.walker.rotation.y = PI * 0.5
+	var eye: Vector3 = stand + Vector3.UP * Walker.EYE
+	main.walker._look(0.0, -atan2(eye.y - aim.y, Vector2(eye.x - aim.x, eye.z - aim.z).length()))
+	for i in 5:
+		await get_tree().physics_frame
+
+
+## Sends a real press and release of an action through the viewport, as a key would.
+func _press(action: String) -> void:
+	for pressed in [true, false]:
+		var ev := InputEventAction.new()
+		ev.action = action
+		ev.pressed = pressed
+		get_viewport().push_input(ev)
+
+
 func _test_session() -> void:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
@@ -457,10 +480,17 @@ func _test_session() -> void:
 	Input.action_release("act")
 	check(slot != "" and not Shed.is_bolted(ranger, slot), "holding the wrench on a part unbolts it (%s)" % slot)
 	# Ride the finished sport bike out of the roller door.
+	# Aim at it and press a real F, so the press can't also reach the get-off handler.
 	var faithful := _bike_named("Old Faithful")
-	main._try_mount(faithful)
-	await get_tree().physics_frame
+	await _aim_at(main, faithful, "tank")
+	check(int(main.walker.target.get("bike", 0)) == faithful, "the crosshair finds Old Faithful (%s)" % str(main.walker.target))
+	_press("interact")
+	for i in 3:
+		await get_tree().physics_frame
 	check(main.bike != null and main.riding_id == faithful, "F on a finished bike gets you on it")
+	_press("interact")
+	await get_tree().physics_frame
+	check(main.bike != null, "a second F straight away doesn't throw you off")
 	check(not main.workshop.bike_views.has(faithful), "the parked copy disappears while you ride")
 	for i in 120:
 		await get_tree().physics_frame

@@ -81,9 +81,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("tool_prev"):
 		_cycle_tool(-1)
 	elif event.is_action_pressed("interact"):
+		# Mark the press handled before mounting, or the same F reaches main and gets you off again.
 		if target.get("kind", "") == "part" and int(target.get("bike", 0)) != 0:
+			get_viewport().set_input_as_handled()
 			mount_requested.emit(int(target["bike"]))
 		elif target.get("kind", "") == "pc":
+			get_viewport().set_input_as_handled()
 			computer_requested.emit()
 	else:
 		for i in TOOLS.size():

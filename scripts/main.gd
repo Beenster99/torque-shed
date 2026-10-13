@@ -4,6 +4,7 @@ extends Node
 
 const MAP_SEED := 1234
 const GET_OFF_SPEED := 2.0
+const GET_OFF_DELAY := 0.6  # seconds after getting on before the same button gets you off
 
 var world: World
 var workshop: Workshop
@@ -21,6 +22,7 @@ var _send_timer := 0.0
 var _stats_timer := 0.0
 var _ride_km := 0.0
 var _ride_top := 0.0
+var _mounted_at := 0
 
 
 func _ready() -> void:
@@ -205,6 +207,7 @@ func _start_riding(bike_id: int) -> void:
 	_set_walker_active(false)
 	_ride_km = 0.0
 	_ride_top = 0.0
+	_mounted_at = Time.get_ticks_msec()
 
 
 func _get_off() -> void:
@@ -265,7 +268,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if menu.visible or computer.visible or bike == null:
 		return
 	if event.is_action_pressed("interact"):
-		_get_off()
+		if Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
+			_get_off()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("respawn"):
 		bike.respawn()
