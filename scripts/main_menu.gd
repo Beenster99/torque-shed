@@ -9,6 +9,8 @@ signal join_game(ip: String)
 signal resume
 signal leave_session
 signal order_bike
+signal save_requested
+signal quitting
 
 const CONTROLS_TEXT := """ON FOOT
 W A S D / left stick: walk      Shift: run      Mouse / right stick: look      C / Ctrl / R3: crouch
@@ -43,6 +45,15 @@ var _day_length: OptionButton
 var _time: HSlider
 var _time_label: Label
 var _time_note: Label
+## Set when the player chose "New shed": the next solo or hosted start begins a fresh shed.
+var new_shed := false
+var _solo: Button
+var _host: Button
+var _save_line: Label
+var _new_shed: Button
+var _confirm: ConfirmationDialog
+var _save_status: Label
+var _save_button: Button
 
 
 func _ready() -> void:
@@ -75,8 +86,12 @@ func _ready() -> void:
 	_name.text = Settings.player_name
 	_name.max_length = 24
 	_start_box.add_child(_name)
-	_start_box.add_child(_button("Open the shed (solo)", func(): _save(); ride_solo.emit()))
-	_start_box.add_child(_button("Host a co-op shed", func(): _save(); host_game.emit()))
+	_build_save_choice()
+	_solo = _button("Open the shed (solo)", func(): _save(); ride_solo.emit())
+	_start_box.add_child(_solo)
+	_host = _button("Host a co-op shed", func(): _save(); host_game.emit())
+	_start_box.add_child(_host)
+	_start_box.add_child(_new_shed)
 	var join_row := HBoxContainer.new()
 	_ip = LineEdit.new()
 	_ip.text = Settings.last_ip
@@ -98,8 +113,15 @@ func _ready() -> void:
 	_pause_box.add_child(_host_info)
 	_crew = UITheme.label("", 15, Color(1, 1, 1, 0.85))
 	_pause_box.add_child(_crew)
+	var save_row := HBoxContainer.new()
+	save_row.add_theme_constant_override("separation", 16)
+	_save_button = _button("Save now", func(): save_requested.emit())
+	save_row.add_child(_save_button)
+	_save_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
+	save_row.add_child(_save_status)
+	_pause_box.add_child(save_row)
 	_pause_box.add_child(_button("Leave and return to title", func(): _save(); leave_session.emit()))
-	col.add_child(_button("Quit", func(): _save(); get_tree().quit()))
+	col.add_child(_button("Quit", func(): _save(); quitting.emit(); get_tree().quit()))
 	_status = UITheme.label("", 15, Color(1, 0.75, 0.6))
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size.x = 560.0
@@ -167,12 +189,15 @@ func _process(_delta: float) -> void:
 		for peer in Shed.crew:
 			names.append(Shed.crew[peer]["name"] + (" (you)" if peer == Shed.me() else ""))
 		_crew.text = "In the shed: " + ", ".join(names)
+		_save_status.text = SaveGame.status_text()
+		_save_button.visible = not (Net.is_online() and not Net.is_host())
 
 
 func show_title(status := "") -> void:
 	_start_box.visible = true
 	_pause_box.visible = false
 	_status.text = status
+	_refresh_save_choice()
 	show()
 
 
@@ -243,6 +268,42 @@ func _refresh_time_settings(move_slider: bool) -> void:
 	_time_label.text = "Time of day  %s" % Daylight.clock_text(h)
 	if move_slider or by_host:
 		_time.set_value_no_signal(h)
+
+
+## "Continue" or "New shed" when there's a saved shed: the start buttons carry on with it unless
+## the player confirms starting again.
+func _build_save_choice() -> void:
+	_save_line = UITheme.label("", 14, Color(1, 1, 1, 0.7))
+	_save_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_save_line.custom_minimum_size.x = 400.0
+	_start_box.add_child(_save_line)
+	_new_shed = _button("New shed", func():
+		if new_shed:
+			new_shed = false
+			_refresh_save_choice()
+		else:
+			_confirm.popup_centered())
+	_confirm = ConfirmationDialog.new()
+	_confirm.title = "Start a new shed?"
+	_confirm.dialog_text = "Your saved shed will be replaced by a new one\nthe next time the game saves."
+	_confirm.ok_button_text = "New shed"
+	_confirm.confirmed.connect(func():
+		new_shed = true
+		_refresh_save_choice())
+	add_child(_confirm)
+
+
+func _refresh_save_choice() -> void:
+	var saved := SaveGame.can_continue()
+	var info := SaveGame.describe(SaveGame.read(SaveGame.active_slot())) if saved else ""
+	var going_on := saved and not new_shed
+	_solo.text = "Continue (solo)" if going_on else "Open a new shed (solo)" if saved else "Open the shed (solo)"
+	_host.text = "Continue as a co-op host" if going_on else "Host a new co-op shed"
+	_save_line.visible = saved
+	_save_line.text = ("Saved shed: %s" % info if info != "" else "The saved shed can't be read; a new one will be opened.") \
+		if going_on else "Starting a new shed. The saved one is replaced when this one saves."
+	_new_shed.visible = saved
+	_new_shed.text = "Keep the saved shed" if new_shed else "New shed"
 
 
 func set_status(text: String) -> void:

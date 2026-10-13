@@ -73,6 +73,8 @@ func _run_all() -> void:
 	await _test_session()
 	print("Tool models, posters and the water jet")
 	await _test_tool_art()
+	print("Saving and loading")
+	await _test_save_load()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1918,3 +1920,148 @@ func _test_tyre_smoke() -> void:
 	fx.queue_free()
 	fx2.queue_free()
 	await get_tree().process_frame
+
+
+## The shed is saved and comes back as it was: parts, names, paint, furniture, the clock, where
+## you stood and a bike left out on the road. Uses its own slot so a real save is never touched.
+func _test_save_load() -> void:
+	var kept := [Settings.time_of_day, Settings.day_night_cycle, Settings.day_length]
+	SaveGame.slot_override = "test_save_load"
+	var slot := SaveGame.active_slot()
+	SaveGame.delete_slot(slot)
+	# Types and int keys survive the file.
+	var sample := {"version": SaveGame.VERSION, "shed": {"items": {7: {"ref": Transform3D(Basis(Vector3.UP, 0.5), Vector3(1, 2, 3)),
+		"color": Color(0.1, 0.2, 0.3)}}, "next": 8}}
+	check(SaveGame.write(slot, sample) == OK, "a save file is written")
+	var back := SaveGame.read(slot)
+	check(back.get("shed", {}).get("items", {}).has(7) and back["shed"]["items"][7]["ref"] is Transform3D
+		and back["shed"]["items"][7]["ref"].origin == Vector3(1, 2, 3) and back["shed"]["items"][7]["color"] == Color(0.1, 0.2, 0.3),
+		"transforms, colours and int keys come back from the file")
+	check(not FileAccess.file_exists(SaveGame.path_of(slot) + ".tmp"), "the temp file is swapped in")
+	SaveGame.delete_slot(slot)
+	check(not SaveGame.can_continue(), "with no save there's nothing to continue")
+
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	check(Shed.bikes.size() == 3 and main.walker != null, "with no save a new shed opens")
+	# Ride Old Faithful out onto the road loop and leave it there.
+	var faithful := _bike_named("Old Faithful")
+	Shed.request({"a": "mount", "bike": faithful})
+	await get_tree().physics_frame
+	check(main.bike != null, "you get on Old Faithful")
+	var road: Transform3D = main.world.road_transform(0.3)
+	main.bike.place(road.origin, road.basis.get_euler().y)
+	for i in 90:
+		await get_tree().physics_frame
+	main._get_off()
+	await get_tree().physics_frame
+	var parked: Transform3D = Shed.bikes[faithful]["xf"]
+	check(main.bike == null and parked.origin.distance_to(road.origin) < 3.0, "Old Faithful is left out on the road")
+	# Change some things.
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.request({"a": "rename_bike", "bike": ranger, "name": "Saved Ranger"})
+	var tank := Shed.item_on(ranger, "tank")
+	Shed.items[tank]["color"] = Shed.PAINTS[3]
+	Shed.items[tank]["finish"] = "chrome"
+	var plugs := _order("iridium_plugs")
+	var plug_xf := Transform3D(Basis(Vector3.UP, 1.0), Workshop.CENTER + Vector3(0.7, 0.0, 1.3))
+	Shed.items[plugs]["ref"] = plug_xf
+	var washer := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "washer":
+			washer = id
+	var washer_xf := Transform3D(Basis(Vector3.UP, 0.3), Workshop.CENTER + Vector3(-2.0, 0.0, 0.5))
+	Shed.request({"a": "grab", "furniture": washer})
+	Shed.request({"a": "release", "furniture": washer, "xf": washer_xf})
+	Shed.request({"a": "door", "open": false})
+	Shed.crew[Shed.me()]["fitted"] = 7
+	var bench := Shed.item_at_spot("bench_0")
+	Shed.request({"a": "take", "spot": "bench_0"})
+	Daylight.current.set_time(21.5)
+	var stand_at := Transform3D(Basis(Vector3.UP, 0.8), Workshop.CENTER + Vector3(1.0, 0.0, -1.0))
+	main.walker.place(stand_at)
+	var next_id: int = Shed._next_id
+	check(main.saver.save_now(), "the host saves the shed")
+	check(FileAccess.file_exists(SaveGame.path_of(slot)) and SaveGame.last_saved > 0 and SaveGame.status_text().begins_with("Saved"),
+		"the save file is there and the Esc menu says it just saved (%s)" % SaveGame.status_text())
+	main._leave()
+	check(SaveGame.can_continue() and SaveGame.describe(SaveGame.read(slot)).begins_with("3 bikes, 21:30"),
+		"the title menu offers to continue it (%s)" % SaveGame.describe(SaveGame.read(slot)))
+	# A fresh shed in between, then continue the saved one.
+	Shed.start_new("Someone else", 99)
+	Daylight.current.set_time(8.0)
+	check(_bike_named("Saved Ranger") == 0, "a new shed forgets the changes")
+	Shed.stop()
+	main._start_session()
+	await get_tree().physics_frame
+	check(_bike_named("Saved Ranger") == ranger, "the renamed bike comes back")
+	check(Shed.items[tank]["color"] == Shed.PAINTS[3] and Shed.items[tank]["finish"] == "chrome", "its tank keeps its new paint")
+	check(Shed.items.has(plugs) and Shed.items[plugs]["at"] == "floor" and Shed.items[plugs]["ref"] == plug_xf,
+		"a part put down on the floor is where it was left")
+	check(Shed.furniture[washer]["xf"] == washer_xf and Shed.furniture[washer]["mover"] == 0, "moved furniture stays moved")
+	check(Shed.bikes[faithful]["xf"].origin.distance_to(parked.origin) < 0.01 and Shed.bikes[faithful]["stand"] == "side",
+		"the bike left on the road is still there on its stand")
+	check(not Shed.door_open, "the roller door is still down")
+	check(absf(Daylight.time_of_day() - 21.5) < 0.05, "the clock carries on from 21:30 (%s)" % Daylight.clock_text(Daylight.time_of_day()))
+	check(main.walker.global_position.distance_to(stand_at.origin) < 0.3 and absf(wrapf(main.walker.yaw() - 0.8, -PI, PI)) < 0.01,
+		"you're back where you stood, facing the same way")
+	check(Shed.held_by(Shed.me()) == 0 and Shed.items[bench]["at"] == "spot", "nobody holds anything after loading")
+	check(Shed.crew.size() == 1 and Shed.crew.has(Shed.me()) and int(Shed.crew[Shed.me()]["fitted"]) == 7,
+		"the crew is who's here, with their numbers kept")
+	check(Shed._next_id >= next_id, "new ids carry on past the saved ones")
+	Shed.request({"a": "order_part", "part": "copper_plugs"})
+	var newest := 0
+	for id in Shed.items:
+		newest = maxi(newest, id)
+	check(newest >= next_id and Shed.items[newest]["part"] == "copper_plugs", "a part ordered after loading gets a fresh id")
+	# Saved while riding: you're back on the bike, out where you were.
+	Shed.request({"a": "mount", "bike": faithful})
+	await get_tree().physics_frame
+	var far: Transform3D = main.world.road_transform(0.6)
+	main.bike.place(far.origin, far.basis.get_euler().y)
+	for i in 60:
+		await get_tree().physics_frame
+	var ride_at: Vector3 = main.bike.global_position
+	main._leave()
+	var ridden: Dictionary = SaveGame.read(slot)
+	check(ridden["shed"]["bikes"][faithful]["xf"].origin.distance_to(ride_at) < 2.0
+		and int(ridden["players"][Settings.player_name]["riding"]) == faithful,
+		"a save while riding keeps the bike where it is and who was on it")
+	main._start_session()
+	await get_tree().physics_frame
+	check(Shed.riding(Shed.me()) == faithful and main.bike != null and main.bike.global_position.distance_to(ride_at) < 2.5,
+		"loading puts you back on the bike out on the road")
+	main._leave()
+	# A damaged save falls back to a new shed.
+	SaveGame.delete_slot(slot)
+	var f := FileAccess.open(SaveGame.path_of(slot), FileAccess.WRITE)
+	f.store_string("{ \"version\": 1, \"shed\": { not a shed")
+	f.close()
+	main._start_session()
+	check(Shed.bikes.size() == 3 and _bike_named("Saved Ranger") == 0 and main.in_session, "a damaged save opens a new shed instead")
+	check(FileAccess.file_exists(SaveGame.path_of(slot) + ".broken"), "the damaged file is kept to one side")
+	main._leave()
+	# A damaged newest save with a good one behind it uses the good one.
+	main._start_session()
+	main.saver.save_now()
+	main.saver.save_now()
+	f = FileAccess.open(SaveGame.path_of(slot), FileAccess.WRITE)
+	f.store_string("garbage")
+	f.close()
+	check(SaveGame.read(slot).has("shed"), "a damaged save falls back to the one before it")
+	main._leave()
+	SaveGame.delete_slot(slot)
+	main.menu.new_shed = false
+	main._start_session()
+	check(Shed.bikes.size() == 3, "a missing save opens a new shed")
+	main._leave()
+	main.queue_free()
+	await get_tree().process_frame
+	SaveGame.delete_slot(slot)
+	SaveGame.slot_override = ""
+	SaveGame.last_saved = 0
+	Settings.time_of_day = kept[0]
+	Settings.day_night_cycle = kept[1]
+	Settings.day_length = kept[2]
