@@ -1,6 +1,6 @@
 class_name PaintSplats
 extends Node3D
-## Wet paint (or chain lube) showing on a part as it's sprayed: a soft decal on each patch,
+## Wet paint (or chain lube) showing on a part as it's sprayed: a soft disc on each patch,
 ## more solid with each coat, and drips running down where it's been laid on too thick.
 ## Lives in the world over the part; set_coats() as the spray lands, finish() when it's done.
 
@@ -65,22 +65,23 @@ static func _drip_texture() -> Texture2D:
 func set_coats(i: int, coats: float) -> void:
 	if i < 0 or i >= _points.size() or coats <= 0.02:
 		return
-	var d: Decal = _decals[i]
+	var d: MeshInstance3D = _decals[i]
 	var n := _normals[i] if i < _normals.size() else Vector3.UP
 	if n.length() < 0.5:
 		n = Vector3.UP
 	n = n.normalized()
 	if d == null:
-		d = Decal.new()
-		d.texture_albedo = _blob_texture()
-		d.size = Vector3(_cell * 1.7, 0.14, _cell * 1.7)
-		d.upper_fade = 0.2
-		d.lower_fade = 0.2
-		d.normal_fade = 0.1
-		d.cull_mask = 1
+		# A soft disc of paint lying on the surface (a mesh rather than a decal, so it shows
+		# on every renderer).
+		d = MeshInstance3D.new()
+		var q := QuadMesh.new()
+		q.size = Vector2(_cell * 1.7, _cell * 1.7)
+		d.mesh = q
+		d.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var side := n.cross(Vector3.FORWARD if absf(n.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
-		var b := Basis(side, n, side.cross(n)).rotated(n, randf() * TAU)
-		d.transform = Transform3D(b, _points[i])
+		var b := Basis(side, n.cross(side), n).rotated(n, randf() * TAU)
+		d.transform = Transform3D(b, _points[i] + n * 0.003)
+		d.material_override = _wet_material(_blob_texture())
 		add_child(d)
 		_decals[i] = d
 	var wet := color
@@ -89,8 +90,7 @@ func set_coats(i: int, coats: float) -> void:
 	elif finish == "patina":
 		wet = wet.darkened(0.25)
 	var a := clampf(coats, 0.0, 1.0)
-	d.modulate = Color(wet.r, wet.g, wet.b, lerpf(0.35, 0.97, a))
-	d.albedo_mix = 1.0
+	(d.material_override as StandardMaterial3D).albedo_color = Color(wet.r, wet.g, wet.b, lerpf(0.35, 0.97, a))
 	if coats > RUN_LEVEL and not d.has_meta("drip"):
 		_add_drip(i, n)
 		d.set_meta("drip", true)
@@ -103,16 +103,29 @@ func _add_drip(i: int, n: Vector3) -> void:
 	if down.length() < 0.2:
 		return   # a flat top doesn't run
 	down = down.normalized()
-	var d := Decal.new()
-	d.texture_albedo = _drip_texture()
+	var d := MeshInstance3D.new()
 	var length := _cell * randf_range(1.6, 2.6)
-	d.size = Vector3(_cell * 0.6, 0.12, length)
-	d.normal_fade = 0.1
-	d.cull_mask = 1
-	var side := n.cross(down).normalized()
-	d.transform = Transform3D(Basis(side, n, down), _points[i] + down * length * 0.5)
-	d.modulate = Color(color.darkened(0.15).r, color.darkened(0.15).g, color.darkened(0.15).b, 0.95)
+	var q := QuadMesh.new()
+	q.size = Vector2(_cell * 0.6, length)
+	d.mesh = q
+	d.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var side := (-down).cross(n).normalized()
+	d.transform = Transform3D(Basis(side, -down, n), _points[i] + down * length * 0.5 + n * 0.004)
+	var m := _wet_material(_drip_texture())
+	var c := color.darkened(0.15)
+	m.albedo_color = Color(c.r, c.g, c.b, 0.95)
+	d.material_override = m
 	add_child(d)
+
+
+func _wet_material(tex: Texture2D) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_texture = tex
+	m.roughness = 0.25 if finish == "gloss" or finish == "chrome" else 0.6
+	m.metallic = 0.6 if finish == "chrome" or finish == "metallic" else 0.0
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return m
 
 
 ## How many patches have any paint on them yet (for tests).
@@ -138,5 +151,6 @@ func _process(delta: float) -> void:
 		return
 	var a := clampf(_fading / 0.6, 0.0, 1.0)
 	for d in get_children():
-		if d is Decal:
-			(d as Decal).modulate.a = minf((d as Decal).modulate.a, a)
+		if d is MeshInstance3D and d.material_override:
+			var m := d.material_override as StandardMaterial3D
+			m.albedo_color.a = minf(m.albedo_color.a, a)
