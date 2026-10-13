@@ -27,7 +27,8 @@ const MAX_PAINT_RUST := 0.2
 
 ## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered}
 var bikes := {}
-## item id -> {id, part, kind, rust, dirt, wear, color, finish, at ("bike" | "engine" | "held" | "spot"), ref}.
+## item id -> {id, part, kind, rust, dirt, wear, color, finish, at, ref}, where
+## at is "bike", "engine", "held", "spot" or "floor" (ref is then the Transform3D it was put down at).
 ## Engine blocks also carry slots{} and bolted{} for the parts fitted to them.
 var items := {}
 var crew := {}      # peer id -> {name, tool, activity, riding, fitted, removed, cleaned, repaired, painted, km, top_kmh}
@@ -175,6 +176,15 @@ func held_by(peer: int) -> int:
 		if items[id]["at"] == "held" and items[id]["ref"] == peer:
 			return id
 	return 0
+
+
+## Loose parts put down anywhere: on the floor, a bench top or another surface.
+func floor_items() -> Array:
+	var out := []
+	for id in items:
+		if items[id]["at"] == "floor":
+			out.append(id)
+	return out
 
 
 func item_at_spot(spot: String) -> int:
@@ -451,8 +461,19 @@ func check(peer: int, action: Dictionary) -> String:
 		"take":
 			if held != 0:
 				return "Your hands are full."
-			if item_at_spot(str(action.get("spot", ""))) == 0:
+			if action.has("item"):
+				if not (items.has(int(action["item"])) and items[int(action["item"])]["at"] == "floor"):
+					return "Nothing there."
+			elif item_at_spot(str(action.get("spot", ""))) == 0:
 				return "Nothing there."
+		"drop":
+			if held == 0:
+				return "You're not holding a part."
+			if not (action.get("xf") is Transform3D):
+				return "You can't put it there."
+			var at: Vector3 = (action["xf"] as Transform3D).origin
+			if at.y < -5.0 or at.distance_to(Workshop.CENTER) > 400.0:
+				return "You can't put it there."
 		"place":
 			if held == 0:
 				return "You're not holding a part."
@@ -578,7 +599,12 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Fitted the %s as the %s. Bolt it up with the wrench." % [PartsDB.part_name(items[item_id]["part"]),
 				PartsDB.slot_name(s).to_lower()]
 		"take":
-			_move(item_at_spot(str(action["spot"])), "held", peer)
+			if action.has("item"):
+				_move(int(action["item"]), "held", peer)
+			else:
+				_move(item_at_spot(str(action["spot"])), "held", peer)
+		"drop":
+			_move(held_by(peer), "floor", action["xf"])
 		"place":
 			var item_id := held_by(peer)
 			_move(item_id, "spot", str(action["spot"]))

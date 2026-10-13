@@ -17,6 +17,8 @@ var bike_views := {}       # bike id -> Node3D holding a BikeModel
 var _view_sigs := {}
 var _spot_nodes := {}      # spot -> Node3D
 var _spot_sigs := {}
+var _floor_nodes := {}     # item id -> Node3D for parts put down anywhere
+var _floor_sigs := {}
 var _bay_screens: Array[Dashboard] = []
 var _crew_screen: Dashboard
 var _dash_timer := 0.0
@@ -112,7 +114,43 @@ func sync_state() -> void:
 				var model: BikeModel = display.get_meta("model")
 				model.build_pickers({"engine": item_id}, {"engine": {"spot": "engine_stand"}})
 			_spot_nodes[spot] = display
+	_sync_floor()
 	_dash_dirty = true
+
+
+## Parts put down anywhere, each with a box around it to aim at and pick it up by.
+func _sync_floor() -> void:
+	var loose := Shed.floor_items()
+	for id in _floor_nodes.keys():
+		if not loose.has(id):
+			_floor_nodes[id].queue_free()
+			_floor_nodes.erase(id)
+			_floor_sigs.erase(id)
+	for id in loose:
+		var xf: Transform3D = Shed.items[id]["ref"]
+		var sig := _item_signature(id) + str(xf)
+		if _floor_sigs.get(id, "") == sig:
+			continue
+		_floor_sigs[id] = sig
+		if _floor_nodes.has(id):
+			_floor_nodes[id].free()
+		var display := BikeModel.item_display(id)
+		display.transform = xf
+		add_child(display)
+		var size: Vector3 = display.get_meta("size", Vector3.ONE * 0.3)
+		size = size.max(Vector3(0.12, 0.08, 0.12))
+		var body := StaticBody3D.new()
+		body.collision_layer = INTERACT_LAYER
+		body.collision_mask = 0
+		body.set_meta("item", id)
+		body.position = Vector3(0.0, size.y * 0.5, 0.0)
+		var shape := BoxShape3D.new()
+		shape.size = size
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		body.add_child(cs)
+		display.add_child(body)
+		_floor_nodes[id] = display
 
 
 ## The model a part target is drawn on: a parked bike, or the engine on the stand.

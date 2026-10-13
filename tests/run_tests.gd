@@ -447,6 +447,17 @@ func _aim_at(main: Node, bike_id: int, slot: String) -> void:
 		await get_tree().physics_frame
 
 
+## Holds the work button until the current job is done.
+func _hold_act(main: Node) -> void:
+	Input.action_press("act")
+	for i in 240:
+		await get_tree().physics_frame
+		if main.walker.progress == 0.0 and i > 10:
+			break
+	Input.action_release("act")
+	await get_tree().physics_frame
+
+
 ## Sends a real press and release of an action through the viewport, as a key would.
 func _press(action: String) -> void:
 	for pressed in [true, false]:
@@ -493,6 +504,29 @@ func _test_session() -> void:
 	Input.action_release("act")
 	check(slot != "" and not Shed.is_bolted(ranger, slot), "holding the wrench on a part unbolts it (%s)" % slot)
 	# Ride the finished sport bike out of the roller door.
+	# Put a part down on the open floor, then pick it back up off the floor.
+	main.walker.set_tool("hands")
+	Shed.request({"a": "order_part", "part": "iridium_plugs"})
+	var plugs := 0
+	for id in Shed.items:
+		if Shed.items[id]["part"] == "iridium_plugs" and Shed.items[id]["at"] == "spot":
+			plugs = id
+	Shed.request({"a": "take", "spot": Shed.items[plugs]["ref"]})
+	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 1.0)))
+	main.walker._look(0.0, -0.9)
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.walker.plan.get("action", {}).get("a", "") == "drop", "holding a part and looking at the floor offers to put it down (%s)" % str(main.walker.plan))
+	await _hold_act(main)
+	check(Shed.items[plugs]["at"] == "floor" and Shed.held_by(Shed.me()) == 0, "the part is put down on the floor")
+	check(main.workshop._floor_nodes.has(plugs), "the floor part is drawn where it was put down")
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.walker.target.get("item", 0) == plugs, "the crosshair finds the part on the floor (%s)" % str(main.walker.target))
+	await _hold_act(main)
+	check(Shed.held_by(Shed.me()) == plugs, "the part is picked back up off the floor")
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(-1.0, 0.0, 2.0))})
+	main.walker._look(0.0, 0.9)
 	# Aim at it and press a real F, so the press can't also reach the get-off handler.
 	var faithful := _bike_named("Old Faithful")
 	await _aim_at(main, faithful, "tank")

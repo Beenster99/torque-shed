@@ -184,6 +184,13 @@ func _update_target() -> void:
 			t = {"kind": "pc"}
 		elif c.has_meta("bin"):
 			t = {"kind": "bin"}
+		elif c.has_meta("item") and Shed.items.has(int(c.get_meta("item"))):
+			t = {"kind": "item", "item": int(c.get_meta("item"))}
+		elif Shed.held_by(Shed.me()) != 0 and (c is CollisionObject3D) and (c as CollisionObject3D).collision_layer & 1:
+			t = {"kind": "surface"}
+		# Anything flat enough can take a part put down on it, whatever the crosshair is on.
+		if not t.is_empty() and (hit["normal"] as Vector3).y > 0.6:
+			t["drop"] = Transform3D(Basis(Vector3.UP, rotation.y), hit["position"])
 	target = t
 	plan = _make_plan()
 	info = _describe()
@@ -204,6 +211,8 @@ func target_item() -> int:
 			return Shed.item_at_target(target)
 		"spot":
 			return Shed.item_at_spot(str(target["spot"]))
+		"item":
+			return int(target["item"])
 	return 0
 
 
@@ -225,9 +234,15 @@ func _make_plan() -> Dictionary:
 						a["a"] = "install"
 						p = {"action": a, "time": 1.2, "verb": "fit the " + held_name}
 					"spot":
-						p = {"action": {"a": "place", "spot": target["spot"]}, "time": 0.25, "verb": "put it down"}
+						if Shed.item_at_spot(str(target["spot"])) != 0 and target.has("drop"):
+							p = {"action": {"a": "drop", "xf": target["drop"]}, "time": 0.25, "verb": "put it down here"}
+						else:
+							p = {"action": {"a": "place", "spot": target["spot"]}, "time": 0.25, "verb": "put it down"}
 					"bin":
 						p = {"action": {"a": "bin"}, "time": 0.4, "verb": "scrap the " + held_name}
+					"surface", "item":
+						if target.has("drop"):
+							p = {"action": {"a": "drop", "xf": target["drop"]}, "time": 0.25, "verb": "put it down here"}
 			else:
 				match kind:
 					"part":
@@ -237,6 +252,8 @@ func _make_plan() -> Dictionary:
 					"spot":
 						if item_id != 0:
 							p = {"action": {"a": "take", "spot": target["spot"]}, "time": 0.25, "verb": "pick it up"}
+					"item":
+						p = {"action": {"a": "take", "item": item_id}, "time": 0.25, "verb": "pick it up"}
 					"pc":
 						p = {"action": {"a": "computer"}, "time": 0.15, "verb": "use the parts computer"}
 		"wrench":
@@ -312,6 +329,12 @@ func _describe() -> String:
 						lines.append("Put a part here and use the grinder and welder to restore it.")
 					"engine_stand":
 						lines.append("Bolt an engine on here to strip it or build it up.")
+		"item":
+			var it: Dictionary = Shed.items[int(target["item"])]
+			lines.append(PartsDB.part_name(it["part"]))
+			lines.append("Put down here  ·  %s" % PartsDB.KIND_NAMES[it["kind"]])
+			lines.append(PartsDB.spec_line(it["part"]))
+			lines.append(Shed.condition_text(it))
 		"pc":
 			lines.append("Parts computer")
 			lines.append("Order any part. It turns up on the delivery pallets.")
@@ -365,6 +388,8 @@ func _acting() -> bool:
 
 func _update_work(delta: float) -> void:
 	var key := str(plan.get("action", {}))
+	if plan.get("action", {}).get("a", "") == "drop":
+		key = "drop"  # the spot moves with the crosshair; keep the hold going
 	if not _acting():
 		_need_release = false
 	if plan.is_empty() or plan["blocked"] != "" or key != _plan_key or not _acting() or _need_release:
@@ -400,7 +425,7 @@ func _activity_text() -> String:
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
 		"clean": "Cleaning", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
-		"place": "Putting down a part", "bin": "Scrapping a part", "computer": "Browsing the parts computer"}
+		"place": "Putting down a part", "drop": "Putting down a part", "bin": "Scrapping a part", "computer": "Browsing the parts computer"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] in ["clean", "repair", "paint"] and what == "":
 		what = "the " + Shed.item_title(int(a["item"]))
