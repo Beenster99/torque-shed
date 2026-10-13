@@ -187,3 +187,8 @@ func _process(_delta: float) -> void:
 
 func world_position() -> Vector3:
 	return bike.global_position if bike else _figure.global_position
+
+
+## Where they are and which way they face: their bike's, while they ride.
+func world_transform() -> Transform3D:
+	return bike.global_transform if bike else _figure.global_transform

@@ -25,6 +25,8 @@ Engine parts have to suit each other: one carb can't feed a big four, a race hea
 
 Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 
+**Saving**: the shed saves itself every minute, when you leave to the title and when you close the game, and the Esc menu has a **Save now** button. Everything is kept: the bikes and every part, where things were left (bikes out on the road included), equipment, the time of day and where you stood. The title screen's solo and host buttons **Continue** the saved shed; **New shed** starts again (after asking). In co-op the host's shed is the one saved. Saves live in `%APPDATA%\Godot\app_userdata\Torque Shed\saves`.
+
 ### In the shed
 
 | Action | Keyboard and mouse | Gamepad |

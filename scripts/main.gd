@@ -17,6 +17,7 @@ var menu: MainMenu
 var computer: PartsComputer
 var label_dialog: LabelDialog
 var audio: EngineAudio
+var saver: SaveGame
 var remotes := {}     # peer id -> RemotePlayer
 var in_session := false
 var _send_timer := 0.0
@@ -65,6 +66,10 @@ func _ready() -> void:
 	menu.order_bike.connect(func():
 		Shed.request({"a": "order"})
 		_close_menu())
+	saver = SaveGame.new()
+	saver.name = "SaveGame"
+	saver.main = self
+	add_child(saver)
 
 	Net.player_joined.connect(_on_player_joined)
 	Net.player_updated.connect(_on_player_updated)
@@ -134,8 +139,9 @@ func _start_session() -> void:
 	Net.update_local_info(_local_info())
 	if Net.is_online() and not Net.is_host():
 		Shed.join_remote()
-	else:
+	elif menu.new_shed or not saver.continue_shed():
 		Shed.start_new(Settings.player_name)
+	menu.new_shed = false
 	walker = Walker.new()
 	world.add_child(walker)
 	walker.place(Workshop.walker_spawn(Net.local_slot()))
@@ -156,9 +162,11 @@ func _start_session() -> void:
 	workshop.sync_state()
 	_capture_mouse(true)
 	hud.flash("Welcome to the shed. Esc for the menu.", 4.0)
+	saver.session_started()
 
 
 func _leave() -> void:
+	saver.save_now()
 	Net.leave()
 	_end_session()
 	menu.show_title()

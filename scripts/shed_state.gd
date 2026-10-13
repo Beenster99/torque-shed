@@ -182,6 +182,43 @@ func _set_up_yard() -> void:
 	_new_furniture("barrier", Transform3D(north, Vector3(-8.0, 0.0, 142.0)), "wall_brick")
 
 
+## Opens a saved shed (see SaveGame): the host's side of _sync. Nothing is held, ridden, pushed
+## or wheeled any more (a bike someone was on is parked where it stood), the crew is just who is
+## here now, and new ids carry on past every id in the save.
+func load_state(state: Dictionary, player_name: String) -> void:
+	var was_moving := []
+	var saved_bikes: Dictionary = state.get("bikes", {})
+	for id in saved_bikes:
+		if int(saved_bikes[id].get("rider", 0)) != 0 or int(saved_bikes[id].get("pusher", 0)) != 0:
+			saved_bikes[id]["rider"] = 0
+			saved_bikes[id]["pusher"] = 0
+			was_moving.append(id)
+	_sync(state)
+	for id in was_moving:
+		_park(id)
+	for id in items:
+		if items[id]["at"] == "held":
+			_move(id, "spot", _free_spot())
+	for id in furniture:
+		furniture[id]["mover"] = 0
+	crew.clear()
+	_add_crew(me(), player_name)
+	for peer in Net.players:
+		_add_crew(peer, str(Net.players[peer].get("name", "Rider")))
+	# Anything keyed by its own id (bikes, items, furniture and whatever comes next) counts.
+	var top := 0
+	for key in state:
+		if state[key] is Dictionary:
+			for id in state[key]:
+				if id is int and state[key][id] is Dictionary and state[key][id].get("id", 0) == id:
+					top = maxi(top, id)
+	_next_id = maxi(_next_id, top + 1)
+	_rng.seed = int(Time.get_unix_time_from_system())
+	ensure_fixtures()
+	_mark_dirty()
+	changed.emit()
+
+
 func join_remote() -> void:
 	bikes.clear()
 	furniture.clear()
