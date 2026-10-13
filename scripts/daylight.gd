@@ -11,7 +11,7 @@ extends Node
 ## Emitted when darkness() moves by a hundredth or more (and on any jump in time).
 signal darkness_changed(value: float)
 
-const DAY_LENGTHS := [10, 20, 40, 60]   # minutes of real time per 24 h, for the settings menu
+const DAY_LENGTHS := [20, 60, 120, 180, 240, 360]   # minutes of real time per 24 h, for the settings menu (up to 6 hours)
 const SYNC_INTERVAL := 1.0
 const TILT := 0.61                      # how far south the sun's path leans (35 degrees)
 const SUN_ENERGY := 1.25

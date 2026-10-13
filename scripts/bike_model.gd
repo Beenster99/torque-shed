@@ -47,6 +47,7 @@ var _bore_r := 0.048             # cylinder barrel radius
 var _eng_s := 1.0                # engine size relative to a 700 cc
 var _cyls := []                  # {base, up} per cylinder barrel
 var _arm_len := 0.6
+var _struts: Array = []     # rear shocks: [{mi, top (model space), bottom (on the swingarm), rest}]
 var _grip_l := Vector3(-0.31, 0.12, 0.06)   # handlebar grips, in steering space
 var _grip_r := Vector3(0.31, 0.12, 0.06)
 var _highlighted := ""
@@ -1086,15 +1087,45 @@ func _draw_shock() -> void:
 	_current_slot = "shock"
 	var shock := _part()
 	var col := _col()
+	var chrome := _mat(Color(0.8, 0.8, 0.82), 1.0, 0.2)
+	_struts.clear()
 	if shock.get("layout", "mono") == "twin":
 		var gas: bool = _part_id() == "twin_shock_gas"
 		var spring_mat := _mat(col, 0.6, 0.3)
 		for side in [-1.0, 1.0]:
-			_tube(Vector3(0.12 * side, 0.02, _arm_len - 0.08), Vector3(0.12 * side, 0.3, _arm_len - 0.2), 0.025, spring_mat, Vector3.ONE, _swingarm)
+			# Each shock runs from the swingarm up to the frame, and works as the arm swings.
+			var top := _pivot + Vector3(0.12 * side, 0.3, _arm_len - 0.2)
+			var bottom := Vector3(0.12 * side, 0.02, _arm_len - 0.08)
+			_strut(top, bottom, 0.012, chrome)
+			_strut(top + (_pivot + bottom - top) * 0.08, bottom + (top - _pivot - bottom) * 0.25, 0.028, spring_mat)
 			if gas:
-				_tube(Vector3(0.155 * side, 0.22, _arm_len - 0.17), Vector3(0.155 * side, 0.32, _arm_len - 0.21), 0.016, _mat(Color(0.8, 0.8, 0.82), 1.0, 0.2), Vector3.ONE, _swingarm)
+				_tube(Vector3(0.155 * side, 0.22, _arm_len - 0.17), Vector3(0.155 * side, 0.32, _arm_len - 0.21), 0.016, chrome, Vector3.ONE, _swingarm)
 	else:
-		_tube(_pivot + Vector3(0.0, 0.05, 0.08), Vector3(0.0, _seat_y - 0.14, _pivot.z + 0.02), 0.035, _mat(col, 0.3, 0.4))
+		var top := Vector3(0.0, _seat_y - 0.14, _pivot.z + 0.02)
+		var bottom := Vector3(0.0, 0.07, 0.14)
+		_strut(top, bottom, 0.016, chrome)
+		_strut(top + (_pivot + bottom - top) * 0.1, bottom + (top - _pivot - bottom) * 0.3, 0.038, _mat(col, 0.3, 0.4))
+
+
+## A shock absorber part between a point on the frame (`top`, model space) and one on the
+## swingarm (`bottom`, in the arm's space), stretched to fit as the arm moves.
+func _strut(top: Vector3, bottom: Vector3, radius: float, mat: Material) -> void:
+	var low := _pivot + bottom
+	var mi := _tube(top, low, radius, mat)
+	_struts.append({"mi": mi, "top": top, "bottom": bottom, "rest": top.distance_to(low)})
+
+
+func _update_struts() -> void:
+	for s in _struts:
+		var mi: MeshInstance3D = s["mi"]
+		if not is_instance_valid(mi):
+			continue
+		var top: Vector3 = s["top"]
+		var low: Vector3 = _swingarm.transform * (s["bottom"] as Vector3)
+		var dir := low - top
+		var length := dir.length()
+		mi.position = (top + low) * 0.5
+		mi.basis = _basis_up(dir / maxf(length, 0.001)) * Basis.from_scale(Vector3(1.0, length / float(s["rest"]), 1.0))
 
 
 func _build_rider() -> void:
@@ -1165,6 +1196,7 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 	_rear_wheel.rotation.x = -spin_r
 	var to_axle := rear_axle - _pivot
 	_swingarm.rotation.x = -atan2(to_axle.y, to_axle.z)
+	_update_struts()
 	if _rider:
 		_rider.position = Vector3(lean_in * 0.05, 0.0, -body_shift * 0.1)
 		_rider.rotation = Vector3(-body_shift * 0.12, 0.0, -lean_in * 0.12)

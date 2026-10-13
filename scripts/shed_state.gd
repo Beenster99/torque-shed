@@ -132,6 +132,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	# and more bought from the parts computer.
 	_new_furniture("washer", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(Workshop.HALF.x - 1.05, 0.0, Workshop.HALF.y - 0.6)))
 	_new_furniture("repair", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(3.4, 0.0, Workshop.HALF.y - 0.6)))
+	ensure_fixtures()
 	var block := _detach(cafe, "engine", "spot", "stand_%d" % stand)
 	for slot in ["spark_plugs", "air_filter"]:
 		var gone: int = items[block]["slots"][slot]
@@ -650,6 +651,16 @@ func furniture_name(f: Dictionary) -> String:
 	return n
 
 
+## The shed's built-in kit: the paint booth in its lean-to. Adds whatever is missing (a new shed,
+## or a save from before it was built in).
+func ensure_fixtures() -> void:
+	for id in furniture:
+		if furniture[id]["kind"] == "booth":
+			furniture[id]["xf"] = Workshop.BOOTH_XF
+			return
+	_new_furniture("booth", Workshop.BOOTH_XF, "booth_pro")
+
+
 func _new_furniture(kind: String, xf: Transform3D, model := "") -> int:
 	if model == "" or Equipment.kind_of(model) != kind:
 		model = str(Equipment.DEFAULT.get(kind, ""))
@@ -902,6 +913,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var model := str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), "")))
 			if Equipment.get_model(model).is_empty():
 				return "Unknown equipment."
+			if Equipment.FIXED_KINDS.has(Equipment.kind_of(model)):
+				return "The paint booth is built into the shed: it's in the paint shop on the east side."
 			if Equipment.is_yard(model):
 				if free_yard_xf(model) == null:
 					return "The drop-off by the drag strip is full. Move some of the yard kit first."
@@ -917,6 +930,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var f: Dictionary = furniture.get(int(action.get("furniture", 0)), {})
 			if f.is_empty():
 				return "That has gone."
+			if Equipment.FIXED_KINDS.has(str(f["kind"])):
+				return "The %s is built in." % furniture_name(f).to_lower()
 			if f["mover"] != 0 and f["mover"] != peer:
 				return "Someone else is moving that."
 			if held != 0:

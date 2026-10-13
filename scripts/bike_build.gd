@@ -197,6 +197,8 @@ func _compute() -> void:
 	cda = float(frame["cda"]) + float(bars["cda"]) + float(part("panniers").get("cda", 0.0)) + float(part("top_box").get("cda", 0.0))
 	luggage_litres = float(part("panniers").get("litres", 0.0)) + float(part("top_box").get("litres", 0.0))
 	steer_rate = 4.0 * float(bars["width"]) / 720.0
+	# A fat front tyre is slower to turn in.
+	steer_rate *= clampf(1.0 - 0.3 * (float(part("front_tyre")["width"]) - 160.0) / 160.0, 0.85, 1.12)
 	dash_features = part("dashboard")["features"]
 	headlight_lumens = float(part("headlight").get("lumens", 0.0)) * lerpf(0.6, 1.0, health.get("headlight", 1.0))
 	var fog := part("fog_lights")
@@ -285,14 +287,40 @@ func _compute_wheels() -> void:
 	grip = {}
 	var scale_f := lerpf(0.7, 1.0, health["front_tyre"]) * lerpf(0.92, 1.0, health["front_wheel"])
 	var scale_r := lerpf(0.7, 1.0, health["rear_tyre"]) * lerpf(0.92, 1.0, health["rear_wheel"])
+	# Section width: a wider tyre lays more rubber on tarmac, a narrow one cuts into mud. And it has
+	# to suit the rim it's on, or it's pinched or ballooned and the contact patch suffers.
+	var fit_f := rim_fit(front_tyre_width * 1000.0, float(wf.get("rim_width", 3.5)))
+	var fit_r := rim_fit(rear_tyre_width * 1000.0, float(wr.get("rim_width", 4.5)))
+	for fit in [[fit_f, "front", tf, wf], [fit_r, "rear", tr, wr]]:
+		if fit[0] != 0:
+			notes.append("The %s tyre is too %s for its %.1f\" rim." % [fit[1], "wide" if fit[0] > 0 else "narrow",
+				float(fit[3].get("rim_width", 0.0))])
 	for surf in tr["grip"]:
-		grip_front[surf] = float(tf["grip"][surf]) * scale_f
-		grip_rear[surf] = float(tr["grip"][surf]) * scale_r
+		var road: bool = surf == "tarmac"
+		grip_front[surf] = float(tf["grip"][surf]) * scale_f * _width_grip(front_tyre_width / 0.7, road) * (0.9 if fit_f != 0 else 1.0)
+		grip_rear[surf] = float(tr["grip"][surf]) * scale_r * _width_grip(rear_tyre_width, road) * (0.9 if fit_r != 0 else 1.0)
 		grip[surf] = (grip_front[surf] + grip_rear[surf]) * 0.5
 	var mass_f := float(wf["mass"]) + float(tf["mass"])
 	var mass_r := float(wr["mass"]) + float(tr["mass"])
 	front_inertia = 0.8 * mass_f * front_radius * front_radius
 	rear_inertia = 0.8 * mass_r * rear_radius * rear_radius + 0.15  # plus spinning drivetrain
+
+
+## Grip from a tyre's section width (metres): wider grips tarmac better, narrower digs into dirt.
+static func _width_grip(width: float, tarmac: bool) -> float:
+	var mm := width * 1000.0
+	if tarmac:
+		return clampf(1.0 + 0.14 * (mm - 160.0) / 160.0, 0.9, 1.06)
+	return clampf(1.0 - 0.1 * (mm - 120.0) / 120.0, 0.9, 1.06)
+
+
+## Whether a tyre this wide (mm) suits a rim this wide (inches): 0 if it does, 1 too wide, -1 too narrow.
+static func rim_fit(tyre_mm: float, rim_in: float) -> int:
+	if tyre_mm / rim_in > 62.0:
+		return 1
+	if tyre_mm / rim_in < 24.0:
+		return -1
+	return 0
 
 
 func _compute_engine(block: Dictionary, head: Dictionary) -> void:

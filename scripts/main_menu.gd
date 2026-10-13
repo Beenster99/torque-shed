@@ -204,7 +204,9 @@ func _build_time_settings(settings: VBoxContainer) -> void:
 	row.add_child(UITheme.label("Day length", 15))
 	_day_length = OptionButton.new()
 	for m in Daylight.DAY_LENGTHS:
-		_day_length.add_item("%d minutes" % m)
+		_day_length.add_item("%d minutes" % m if m < 60 else ("1 hour" if m == 60 else "%d hours" % (m / 60)))
+	if not Daylight.DAY_LENGTHS.has(Settings.day_length):
+		Settings.day_length = 120
 	_day_length.selected = maxi(Daylight.DAY_LENGTHS.find(Settings.day_length), 0)
 	_day_length.item_selected.connect(func(i): Settings.day_length = Daylight.DAY_LENGTHS[i])
 	row.add_child(_day_length)

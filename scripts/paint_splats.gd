@@ -98,7 +98,7 @@ func set_coats(i: int, coats: float) -> void:
 
 ## Too much paint in one place: it runs down the part.
 func _add_drip(i: int, n: Vector3) -> void:
-	var down := (transform.basis.inverse() * Vector3.DOWN)
+	var down := (global_transform.basis.inverse() * Vector3.DOWN)
 	down = (down - n * down.dot(n))
 	if down.length() < 0.2:
 		return   # a flat top doesn't run

@@ -58,6 +58,9 @@ func _run_all() -> void:
 	_test_round6_parts()
 	_test_round6_shed()
 	await _test_round6_riding()
+	print("Round 7: lights, suspension, landings, tyre widths, paint shop")
+	_test_round7_parts()
+	await _test_round7_riding()
 	print("Sound and radio")
 	_test_sounds()
 	_test_mp3_decoder()
@@ -1659,7 +1662,7 @@ func _test_round6_parts() -> void:
 	check(model.fog_positions().size() == 2, "rally lamps sit either side of the fork")
 	model.queue_free()
 	# The shop: three aisles and a search box.
-	check(PartsComputer.section_of("eq:ramp") == "outdoors" and PartsComputer.section_of("eq:booth") == "shed"
+	check(PartsComputer.section_of("eq:ramp") == "outdoors" and PartsComputer.section_of("eq:seat") == "shed"
 		and PartsComputer.section_of("horn") == "bike" and PartsComputer.section_of("petrol") == "bike", "the shop is split into shed, bike and outdoors")
 	var horns := PartsComputer.search("horn")
 	check(horns.size() >= 10, "searching 'horn' finds every horn (%d)" % horns.size())
@@ -1668,9 +1671,9 @@ func _test_round6_parts() -> void:
 	check(PartsComputer.search("zzzz nothing").is_empty(), "a search for nothing finds nothing")
 	var pc := PartsComputer.new()
 	add_child(pc)
-	pc._search.text = "booth"
+	pc._search.text = "sofa"
 	pc._refresh_list()
-	check(pc._kind == "eq:booth", "picking a search result shows its aisle and kind")
+	check(pc._kind == "eq:seat", "picking a search result shows its aisle and kind")
 	pc.queue_free()
 	# Fluid containers show how full they are.
 	var full := BikeModel.fluid_display("semi_10w40", 1.0)
@@ -1708,13 +1711,16 @@ func _test_round6_shed() -> void:
 	Shed.request({"a": "ping", "at": Vector3(1, 2, 3), "what": "Front brake caliper", "item": 0})
 	Shed.pinged.disconnect(on_ping)
 	check(got.size() == 1 and got[0][1]["what"] == "Front brake caliper" and got[0][1]["name"] == "Tester", "a ping is sent round with who and what")
-	# The paint booth: parts hang on its hooks and the spray gun only works there.
-	Shed.request({"a": "order_furniture", "model": "booth_standard"})
+	# The paint booth: built into the paint shop, parts hang on its hooks and the spray gun only
+	# works there.
 	var booth := 0
 	for id in Shed.furniture:
-		if Shed.furniture[id]["model"] == "booth_standard":
+		if Shed.furniture[id]["kind"] == "booth":
 			booth = id
-	check(booth != 0 and Shed.furniture_spots(booth).size() == 4, "a paint booth has four hooks")
+	check(booth != 0 and Shed.furniture_spots(booth).size() == 6, "the shed has a built-in paint booth with six hooks")
+	check(Shed.furniture[booth]["xf"] == Workshop.BOOTH_XF, "in the paint shop lean-to")
+	check(Shed.check(me, {"a": "grab", "furniture": booth}) != "", "it can't be moved")
+	check(Shed.check(me, {"a": "order_furniture", "model": "booth_compact"}) != "", "and booths aren't sold")
 	var tank := Shed._new_item("cafe_15", 0.0, 0.0, 0.0)
 	Shed.items[tank]["at"] = "floor"
 	Shed.items[tank]["ref"] = Transform3D(Basis(), Workshop.CENTER)
@@ -1918,3 +1924,57 @@ func _test_tyre_smoke() -> void:
 	fx.queue_free()
 	fx2.queue_free()
 	await get_tree().process_frame
+
+
+func _test_round7_riding() -> void:
+	# A jump landing: dropped from 2.5 m at speed, the suspension soaks it up instead of bouncing.
+	var log := {"dropped": false, "flying": false, "landed": false, "max_up": 0.0, "impact": 0.0, "air_after": 0, "max_comp": 0.0}
+	var r := await ride({}, 6.0, func(b, t):
+		b.throttle = 0.3
+		if t >= 2.0 and not log["dropped"]:
+			log["dropped"] = true
+			b.global_position.y += 2.5
+		if log["dropped"]:
+			var both: bool = b.wheels[0]["contact"] and b.wheels[1]["contact"]
+			var any: bool = b.wheels[0]["contact"] or b.wheels[1]["contact"]
+			if not log["flying"]:
+				log["flying"] = not any
+			elif not log["landed"] and any:
+				log["landed"] = true
+				log["impact"] = -b.linear_velocity.y
+			elif log["landed"]:
+				log["max_up"] = maxf(log["max_up"], b.linear_velocity.y)
+				log["max_comp"] = maxf(log["max_comp"], maxf(b.wheels[0]["compression"] / b.wheels[0]["travel"], b.wheels[1]["compression"] / b.wheels[1]["travel"]))
+				if not any:
+					log["air_after"] += 1)
+	print("    landing: impact %.1f m/s, rebound %.2f m/s, %d frames airborne after, max travel used %.0f%%" % [log["impact"], log["max_up"], log["air_after"], log["max_comp"] * 100.0])
+	check(not r["crashed"] and log["landed"], "a bike dropped from 2.5 m lands on its wheels")
+	check(log["max_comp"] > 0.6, "and uses most of its suspension travel (%.0f%%)" % (log["max_comp"] * 100.0))
+	check(log["max_up"] < 0.25 * log["impact"], "without bouncing back up (%.2f m/s up after a %.1f m/s landing)" % [log["max_up"], log["impact"]])
+	check(log["air_after"] < 6, "and the wheels stay on the ground (%d frames in the air after landing)" % log["air_after"])
+	await _done(r)
+
+
+func _test_round7_parts() -> void:
+	check(PartsDB.by_kind["tyre"].size() >= 30, "tyres come in lots of widths (%d)" % PartsDB.by_kind["tyre"].size())
+	var widths := {}
+	for id in PartsDB.by_kind["tyre"]:
+		widths[int(PartsDB.parts[id]["width"])] = true
+	check(widths.size() >= 10, "from narrow to fat (%d widths)" % widths.size())
+	for id in PartsDB.by_kind["wheel"]:
+		check(PartsDB.parts[id].has("rim_width"), "the %s has a rim width" % id)
+	var narrow := BikeBuild.new({"rear_tyre": "sport_road_120"})
+	var fat := BikeBuild.new({"rear_tyre": "sport_road_200"})
+	check(fat.grip_rear["tarmac"] > narrow.grip_rear["tarmac"], "a fatter rear tyre grips tarmac better (%.3f vs %.3f)" % [fat.grip_rear["tarmac"], narrow.grip_rear["tarmac"]])
+	check(fat.rear_radius > narrow.rear_radius, "and is taller")
+	var mx_narrow := BikeBuild.new({"rear_tyre": "knobbly_mx_90", "rear_wheel": "spoked_18"})
+	var mx_wide := BikeBuild.new({"rear_tyre": "knobbly_mx_140", "rear_wheel": "spoked_18"})
+	check(mx_narrow.grip_rear["dirt"] > mx_wide.grip_rear["dirt"], "a narrow knobbly digs into dirt better")
+	var wrong := BikeBuild.new({"rear_wheel": "spoked_21", "rear_tyre": "sport_road_200"})
+	check(wrong.notes.any(func(n): return n.contains("too wide")), "a fat tyre on a skinny rim is flagged")
+	check(BikeBuild.new().notes.all(func(n): return not n.contains("rim")), "the stock bike's tyres suit its rims")
+	for b in Shed.bikes:
+		var notes: Array = Shed.build_of(b).notes
+		check(notes.all(func(n): return not n.contains("rim")), "%s's tyres suit its rims" % Shed.bikes[b]["name"])
+	var quick := BikeBuild.new({"front_tyre": "sport_road_120"})
+	check(quick.steer_rate > BikeBuild.new({"front_tyre": "sport_road_200"}).steer_rate, "a narrow front turns in quicker")

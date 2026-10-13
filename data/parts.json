@@ -308,7 +308,8 @@
 				0.76,
 				0.78
 			],
-			"spokes": 36
+			"spokes": 36,
+			"rim_width": 1.6
 		},
 		"spoked_18": {
 			"name": "18\" spoked wheel",
@@ -322,7 +323,8 @@
 				0.76,
 				0.78
 			],
-			"spokes": 36
+			"spokes": 36,
+			"rim_width": 2.15
 		},
 		"wire_19_chrome": {
 			"name": "19\" chrome wire wheel",
@@ -336,7 +338,8 @@
 				0.9,
 				0.92
 			],
-			"spokes": 40
+			"spokes": 40,
+			"rim_width": 2.5
 		},
 		"cast_17": {
 			"name": "17\" cast wheel",
@@ -350,7 +353,8 @@
 				0.05,
 				0.05
 			],
-			"spokes": 5
+			"spokes": 5,
+			"rim_width": 4.5
 		},
 		"supermoto_17": {
 			"name": "17\" supermoto wheel",
@@ -364,7 +368,8 @@
 				0.65,
 				0.15
 			],
-			"spokes": 36
+			"spokes": 36,
+			"rim_width": 4.25
 		},
 		"carbon_17": {
 			"name": "17\" carbon wheel",
@@ -379,7 +384,8 @@
 				0.09
 			],
 			"lightweight": true,
-			"spokes": 3
+			"spokes": 3,
+			"rim_width": 5.5
 		},
 		"wire_16_bobber": {
 			"name": "16\" fat wire wheel",
@@ -393,7 +399,8 @@
 				0.9,
 				0.9,
 				0.92
-			]
+			],
+			"rim_width": 3.5
 		},
 		"spoked_19_adventure": {
 			"name": "19\" cross-spoke adventure wheel",
@@ -407,7 +414,8 @@
 				0.15,
 				0.15,
 				0.16
-			]
+			],
+			"rim_width": 2.5
 		},
 		"excel_21_black": {
 			"name": "21\" black anodised race rim",
@@ -422,7 +430,8 @@
 				0.06,
 				0.07
 			],
-			"lightweight": true
+			"lightweight": true,
+			"rim_width": 1.6
 		},
 		"cast_18_three": {
 			"name": "18\" three-spoke cast wheel",
@@ -436,7 +445,8 @@
 				0.75,
 				0.6,
 				0.25
-			]
+			],
+			"rim_width": 2.75
 		},
 		"cast_19_six": {
 			"name": "19\" six-spoke cast wheel",
@@ -450,7 +460,8 @@
 				0.72,
 				0.73,
 				0.75
-			]
+			],
+			"rim_width": 2.5
 		},
 		"cast_17_y": {
 			"name": "17\" Y-spoke cast wheel",
@@ -464,7 +475,8 @@
 				0.08,
 				0.08,
 				0.09
-			]
+			],
+			"rim_width": 5.0
 		},
 		"forged_17_alu": {
 			"name": "17\" forged aluminium wheel",
@@ -479,7 +491,8 @@
 				0.81,
 				0.83
 			],
-			"lightweight": true
+			"lightweight": true,
+			"rim_width": 5.5
 		},
 		"forged_17_mag": {
 			"name": "17\" forged magnesium wheel",
@@ -494,7 +507,8 @@
 				0.65,
 				0.15
 			],
-			"lightweight": true
+			"lightweight": true,
+			"rim_width": 6.0
 		},
 		"supermoto_16_5": {
 			"name": "16.5\" supermoto rim",
@@ -508,12 +522,13 @@
 				0.15,
 				0.3,
 				0.75
-			]
+			],
+			"rim_width": 5.0
 		}
 	},
 	"tyre": {
 		"vintage_ribbed": {
-			"name": "Vintage ribbed tyre",
+			"name": "Vintage ribbed tyre 130/80",
 			"description": "Hard old-school rubber. Looks right, grips so-so.",
 			"mass": 4.5,
 			"type": "Road, bias ply",
@@ -532,8 +547,88 @@
 				0.05
 			]
 		},
+		"vintage_ribbed_90": {
+			"name": "Vintage ribbed tyre 90/90",
+			"description": "Hard old-school rubber. Looks right, grips so-so. A narrow 90 mm section.",
+			"mass": 3.9,
+			"type": "Road, bias ply",
+			"compound": "Hard",
+			"width": 90,
+			"aspect": 0.9,
+			"style": "road",
+			"grip": {
+				"tarmac": 0.95,
+				"dirt": 0.74,
+				"grass": 0.64
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"vintage_ribbed_100": {
+			"name": "Vintage ribbed tyre 100/90",
+			"description": "Hard old-school rubber. Looks right, grips so-so. A narrow 100 mm section.",
+			"mass": 4.1,
+			"type": "Road, bias ply",
+			"compound": "Hard",
+			"width": 100,
+			"aspect": 0.9,
+			"style": "road",
+			"grip": {
+				"tarmac": 0.95,
+				"dirt": 0.74,
+				"grass": 0.64
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"vintage_ribbed_110": {
+			"name": "Vintage ribbed tyre 110/85",
+			"description": "Hard old-school rubber. Looks right, grips so-so. A narrow 110 mm section.",
+			"mass": 4.2,
+			"type": "Road, bias ply",
+			"compound": "Hard",
+			"width": 110,
+			"aspect": 0.85,
+			"style": "road",
+			"grip": {
+				"tarmac": 0.95,
+				"dirt": 0.74,
+				"grass": 0.64
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"vintage_ribbed_150": {
+			"name": "Vintage ribbed tyre 150/80",
+			"description": "Hard old-school rubber. Looks right, grips so-so. A wide 150 mm section.",
+			"mass": 4.8,
+			"type": "Road, bias ply",
+			"compound": "Hard",
+			"width": 150,
+			"aspect": 0.8,
+			"style": "road",
+			"grip": {
+				"tarmac": 0.95,
+				"dirt": 0.74,
+				"grass": 0.64
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
 		"touring_road": {
-			"name": "Touring road tyre",
+			"name": "Touring road tyre 160/60",
 			"description": "Long-lasting dual compound for all weathers.",
 			"mass": 5.5,
 			"type": "Road radial",
@@ -552,8 +647,108 @@
 				0.05
 			]
 		},
+		"touring_road_110": {
+			"name": "Touring road tyre 110/80",
+			"description": "Long-lasting dual compound for all weathers. A narrow 110 mm section.",
+			"mass": 4.8,
+			"type": "Road radial",
+			"compound": "Dual",
+			"width": 110,
+			"aspect": 0.8,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.1,
+				"dirt": 0.74,
+				"grass": 0.62
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"touring_road_120": {
+			"name": "Touring road tyre 120/70",
+			"description": "Long-lasting dual compound for all weathers. A narrow 120 mm section.",
+			"mass": 4.9,
+			"type": "Road radial",
+			"compound": "Dual",
+			"width": 120,
+			"aspect": 0.7,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.1,
+				"dirt": 0.74,
+				"grass": 0.62
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"touring_road_130": {
+			"name": "Touring road tyre 130/70",
+			"description": "Long-lasting dual compound for all weathers. A narrow 130 mm section.",
+			"mass": 5.1,
+			"type": "Road radial",
+			"compound": "Dual",
+			"width": 130,
+			"aspect": 0.7,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.1,
+				"dirt": 0.74,
+				"grass": 0.62
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"touring_road_150": {
+			"name": "Touring road tyre 150/70",
+			"description": "Long-lasting dual compound for all weathers. A narrow 150 mm section.",
+			"mass": 5.4,
+			"type": "Road radial",
+			"compound": "Dual",
+			"width": 150,
+			"aspect": 0.7,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.1,
+				"dirt": 0.74,
+				"grass": 0.62
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"touring_road_180": {
+			"name": "Touring road tyre 180/55",
+			"description": "Long-lasting dual compound for all weathers. A wide 180 mm section.",
+			"mass": 5.8,
+			"type": "Road radial",
+			"compound": "Dual",
+			"width": 180,
+			"aspect": 0.55,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.1,
+				"dirt": 0.74,
+				"grass": 0.62
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
 		"sport_road": {
-			"name": "Sport road tyre",
+			"name": "Sport road tyre 180/55",
 			"description": "Soft edges, warms up quickly.",
 			"mass": 5.0,
 			"type": "Road radial",
@@ -572,8 +767,88 @@
 				0.05
 			]
 		},
+		"sport_road_120": {
+			"name": "Sport road tyre 120/70",
+			"description": "Soft edges, warms up quickly. A narrow 120 mm section.",
+			"mass": 4.3,
+			"type": "Road radial",
+			"compound": "Soft",
+			"width": 120,
+			"aspect": 0.7,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.2,
+				"dirt": 0.72,
+				"grass": 0.6
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"sport_road_160": {
+			"name": "Sport road tyre 160/60",
+			"description": "Soft edges, warms up quickly. A narrow 160 mm section.",
+			"mass": 4.8,
+			"type": "Road radial",
+			"compound": "Soft",
+			"width": 160,
+			"aspect": 0.6,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.2,
+				"dirt": 0.72,
+				"grass": 0.6
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"sport_road_190": {
+			"name": "Sport road tyre 190/55",
+			"description": "Soft edges, warms up quickly. A wide 190 mm section.",
+			"mass": 5.1,
+			"type": "Road radial",
+			"compound": "Soft",
+			"width": 190,
+			"aspect": 0.55,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.2,
+				"dirt": 0.72,
+				"grass": 0.6
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"sport_road_200": {
+			"name": "Sport road tyre 200/55",
+			"description": "Soft edges, warms up quickly. A wide 200 mm section.",
+			"mass": 5.2,
+			"type": "Road radial",
+			"compound": "Soft",
+			"width": 200,
+			"aspect": 0.55,
+			"style": "road",
+			"grip": {
+				"tarmac": 1.2,
+				"dirt": 0.72,
+				"grass": 0.6
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
 		"dual_sport": {
-			"name": "Dual-sport tyre",
+			"name": "Dual-sport tyre 130/85",
 			"description": "Chunky blocks that still work on tarmac.",
 			"mass": 5.5,
 			"type": "Adventure",
@@ -592,8 +867,88 @@
 				0.05
 			]
 		},
+		"dual_sport_90": {
+			"name": "Dual-sport tyre 90/90",
+			"description": "Chunky blocks that still work on tarmac. A narrow 90 mm section.",
+			"mass": 4.8,
+			"type": "Adventure",
+			"compound": "Medium",
+			"width": 90,
+			"aspect": 0.9,
+			"style": "offroad",
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.92,
+				"grass": 0.82
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"dual_sport_110": {
+			"name": "Dual-sport tyre 110/80",
+			"description": "Chunky blocks that still work on tarmac. A narrow 110 mm section.",
+			"mass": 5.2,
+			"type": "Adventure",
+			"compound": "Medium",
+			"width": 110,
+			"aspect": 0.8,
+			"style": "offroad",
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.92,
+				"grass": 0.82
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"dual_sport_150": {
+			"name": "Dual-sport tyre 150/70",
+			"description": "Chunky blocks that still work on tarmac. A wide 150 mm section.",
+			"mass": 5.8,
+			"type": "Adventure",
+			"compound": "Medium",
+			"width": 150,
+			"aspect": 0.7,
+			"style": "offroad",
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.92,
+				"grass": 0.82
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"dual_sport_170": {
+			"name": "Dual-sport tyre 170/60",
+			"description": "Chunky blocks that still work on tarmac. A wide 170 mm section.",
+			"mass": 6.2,
+			"type": "Adventure",
+			"compound": "Medium",
+			"width": 170,
+			"aspect": 0.6,
+			"style": "offroad",
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.92,
+				"grass": 0.82
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
 		"knobbly_mx": {
-			"name": "Knobbly MX tyre",
+			"name": "Knobbly MX tyre 120/90",
 			"description": "Tall knobs that dig into dirt and grass.",
 			"mass": 5.0,
 			"type": "Off-road knobbly",
@@ -612,13 +967,193 @@
 				0.05
 			]
 		},
+		"knobbly_mx_80": {
+			"name": "Knobbly MX tyre 80/100",
+			"description": "Tall knobs that dig into dirt and grass. A narrow 80 mm section.",
+			"mass": 4.3,
+			"type": "Off-road knobbly",
+			"compound": "Soft",
+			"width": 80,
+			"aspect": 1.0,
+			"style": "offroad",
+			"grip": {
+				"tarmac": 0.88,
+				"dirt": 1.0,
+				"grass": 0.9
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"knobbly_mx_90": {
+			"name": "Knobbly MX tyre 90/100",
+			"description": "Tall knobs that dig into dirt and grass. A narrow 90 mm section.",
+			"mass": 4.5,
+			"type": "Off-road knobbly",
+			"compound": "Soft",
+			"width": 90,
+			"aspect": 1.0,
+			"style": "offroad",
+			"grip": {
+				"tarmac": 0.88,
+				"dirt": 1.0,
+				"grass": 0.9
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"knobbly_mx_100": {
+			"name": "Knobbly MX tyre 100/95",
+			"description": "Tall knobs that dig into dirt and grass. A narrow 100 mm section.",
+			"mass": 4.7,
+			"type": "Off-road knobbly",
+			"compound": "Soft",
+			"width": 100,
+			"aspect": 0.95,
+			"style": "offroad",
+			"grip": {
+				"tarmac": 0.88,
+				"dirt": 1.0,
+				"grass": 0.9
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"knobbly_mx_110": {
+			"name": "Knobbly MX tyre 110/95",
+			"description": "Tall knobs that dig into dirt and grass. A narrow 110 mm section.",
+			"mass": 4.8,
+			"type": "Off-road knobbly",
+			"compound": "Soft",
+			"width": 110,
+			"aspect": 0.95,
+			"style": "offroad",
+			"grip": {
+				"tarmac": 0.88,
+				"dirt": 1.0,
+				"grass": 0.9
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"knobbly_mx_140": {
+			"name": "Knobbly MX tyre 140/80",
+			"description": "Tall knobs that dig into dirt and grass. A wide 140 mm section.",
+			"mass": 5.3,
+			"type": "Off-road knobbly",
+			"compound": "Soft",
+			"width": 140,
+			"aspect": 0.8,
+			"style": "offroad",
+			"grip": {
+				"tarmac": 0.88,
+				"dirt": 1.0,
+				"grass": 0.9
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
 		"race_slick": {
-			"name": "Race slick",
+			"name": "Race slick 190/55",
 			"description": "No tread at all. Phenomenal on tarmac, lethal on dirt.",
 			"mass": 4.8,
 			"type": "Slick",
 			"compound": "Super soft",
 			"width": 190,
+			"aspect": 0.55,
+			"style": "slick",
+			"grip": {
+				"tarmac": 1.32,
+				"dirt": 0.56,
+				"grass": 0.46
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"race_slick_120": {
+			"name": "Race slick 120/70",
+			"description": "No tread at all. Phenomenal on tarmac, lethal on dirt. A narrow 120 mm section.",
+			"mass": 4.1,
+			"type": "Slick",
+			"compound": "Super soft",
+			"width": 120,
+			"aspect": 0.7,
+			"style": "slick",
+			"grip": {
+				"tarmac": 1.32,
+				"dirt": 0.56,
+				"grass": 0.46
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"race_slick_160": {
+			"name": "Race slick 160/60",
+			"description": "No tread at all. Phenomenal on tarmac, lethal on dirt. A narrow 160 mm section.",
+			"mass": 4.5,
+			"type": "Slick",
+			"compound": "Super soft",
+			"width": 160,
+			"aspect": 0.6,
+			"style": "slick",
+			"grip": {
+				"tarmac": 1.32,
+				"dirt": 0.56,
+				"grass": 0.46
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"race_slick_180": {
+			"name": "Race slick 180/55",
+			"description": "No tread at all. Phenomenal on tarmac, lethal on dirt. A narrow 180 mm section.",
+			"mass": 4.7,
+			"type": "Slick",
+			"compound": "Super soft",
+			"width": 180,
+			"aspect": 0.55,
+			"style": "slick",
+			"grip": {
+				"tarmac": 1.32,
+				"dirt": 0.56,
+				"grass": 0.46
+			},
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		"race_slick_200": {
+			"name": "Race slick 200/55",
+			"description": "No tread at all. Phenomenal on tarmac, lethal on dirt. A wide 200 mm section.",
+			"mass": 4.9,
+			"type": "Slick",
+			"compound": "Super soft",
+			"width": 200,
 			"aspect": 0.55,
 			"style": "slick",
 			"grip": {

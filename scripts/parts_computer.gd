@@ -123,7 +123,8 @@ static func section_of(k: String) -> String:
 static func all_kinds() -> Array:
 	var kinds: Array = []
 	for k in Equipment.KINDS:
-		kinds.append("eq:" + k)
+		if not Equipment.FIXED_KINDS.has(k):
+			kinds.append("eq:" + k)
 	kinds.append_array(PartsDB.FLUID_KINDS)
 	kinds.append_array(PartsDB.KINDS)
 	return kinds

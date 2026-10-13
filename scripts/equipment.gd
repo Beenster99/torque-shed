@@ -17,6 +17,8 @@ const YARD_KINDS: Array[String] = ["ramp", "obstacle", "barrier", "marker"]
 ## Kinds that hang on a wall rather than stand on the floor.
 const WALL_KINDS: Array[String] = ["poster", "tv"]
 ## What the places on each kind are called in spot names: "<prefix>_<furniture id>_<n>".
+## Kinds built into the shed: not sold, and can't be moved.
+const FIXED_KINDS: Array[String] = ["booth"]
 const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb", "booth": "booth"}
 ## The model each kind defaults to (and what an order without a model gets).
 const DEFAULT := {"stand": "engine_stand", "shelf": "shelf_standard", "washer": "washer_standard",

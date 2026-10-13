@@ -102,6 +102,8 @@ func _physics_process(delta: float) -> void:
 	_effects.update(delta, v.length(), sb[16], running, _build.overall_health(), "", true, 0.0)
 	_effects.set_screech(sb[20] if sb.size() > 20 else 0.0)
 	_horn.pressed = sb.size() > 21 and sb[21] > 0.5
+	if sb.size() > 24:
+		_effects.beam_mode = int(sb[24])
 	if sb.size() > 22:
 		audio.gear = int(sb[22])
 	if sb.size() > 23 and _effects.has_method("set_tyre_smoke"):

@@ -356,6 +356,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		bike.shift_up()
 	elif event.is_action_pressed("shift_down"):
 		bike.shift_down()
+	elif event.is_action_pressed("headlight"):
+		hud.flash("Headlight: %s" % bike.cycle_beam(), 1.2)
 	elif event.is_action_pressed("ping"):
 		PingMarker.ping_from(camera, [bike.get_rid()])
 	elif event.is_action_pressed("stopwatch") and walker:

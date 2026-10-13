@@ -18,6 +18,11 @@ const WASH_CENTER := Vector3(-9.3, 0.0, 66.0)
 const WASH_HALF := Vector2(2.4, 3.4)
 const WASH_POS := Vector3(-11.3, 0.0, 63.2)
 const WASH_REACH := 8.0
+## The paint booth: a lean-to on the east wall, entered from the yard, with the shed's own
+## downdraft spray booth built into it.
+const BOOTH_ROOM_CENTER := Vector3(9.0, 0.0, 66.2)
+const BOOTH_ROOM_HALF := Vector2(2.2, 2.6)
+const BOOTH_XF := Transform3D(Basis(), Vector3(9.0, 0.0, 64.85))
 
 var bike_views := {}       # bike id -> Node3D holding a BikeModel
 var _view_sigs := {}
@@ -85,6 +90,7 @@ func build() -> void:
 	_build_tool_wall()
 	_build_radio()
 	_build_wash_bay()
+	_build_booth_room()
 	_build_lights()
 	_build_door_and_switches()
 	_crew_screen = Dashboard.new("crew", 3.0)
@@ -119,7 +125,7 @@ func sync_state() -> void:
 	var spots := Shed.all_spots()
 	for spot in _spot_nodes.keys():
 		if not spots.has(spot):
-			_spot_nodes[spot].queue_free()
+			_drop_spot_node(_spot_nodes[spot]).queue_free()
 			_spot_nodes.erase(spot)
 			_spot_sigs.erase(spot)
 	for spot in spots:
@@ -129,7 +135,7 @@ func sync_state() -> void:
 			continue
 		_spot_sigs[spot] = sig
 		if _spot_nodes.has(spot):
-			_spot_nodes[spot].free()
+			_drop_spot_node(_spot_nodes[spot]).free()
 			_spot_nodes.erase(spot)
 		if item_id != 0:
 			var display := BikeModel.item_display(item_id)
@@ -137,6 +143,16 @@ func sync_state() -> void:
 			if f.is_empty():
 				display.transform = spot_transform(spot)
 				add_child(display)
+			elif Shed.spot_role(spot) == "booth":
+				# Hung from a booth hook: it swings on the hook.
+				var hang := Shed.local_spot_transform(spot)
+				var swing := Swing.new()
+				swing.name = "Swing"
+				swing.position = hang.origin + Vector3.UP * swing.length
+				furniture_nodes[int(f["id"])].add_child(swing)
+				display.transform = Transform3D(hang.basis, Vector3.DOWN * swing.length)
+				swing.add_child(display)
+				swing.push(Vector3(randf_range(-0.3, 0.3), 0.0, randf_range(-0.3, 0.3)))
 			else:
 				# Parts on a stand or shelf ride along with it when it's moved.
 				display.transform = Shed.local_spot_transform(spot)
@@ -332,7 +348,7 @@ func item_frame(item_id: int) -> Dictionary:
 			var model := bike_model(bike)
 			for slot in PartsDB.BIKE_SLOTS:
 				if Shed.item_on(bike, slot) == item_id:
-					return {"xf": model.global_transform, "box": model.slot_bounds(slot)}
+					return {"xf": model.global_transform, "box": model.slot_bounds(slot), "node": model}
 		"engine":
 			var block := int(it["ref"])
 			var model := model_for({"engine": block})
@@ -340,7 +356,7 @@ func item_frame(item_id: int) -> Dictionary:
 				return {}
 			for slot in PartsDB.ENGINE_SLOTS:
 				if Shed.engine_item(block, slot) == item_id:
-					return {"xf": model.global_transform, "box": model.slot_bounds(slot)}
+					return {"xf": model.global_transform, "box": model.slot_bounds(slot), "node": model}
 		"spot":
 			if _spot_nodes.has(str(it["ref"])):
 				return _node_frame(_spot_nodes[str(it["ref"])])
@@ -355,6 +371,11 @@ func furniture_frame(id: int) -> Dictionary:
 	if furniture_nodes.has(id):
 		return _node_frame(furniture_nodes[id])
 	return {}
+
+
+## The node to remove for a spot's display: its hook swing, if it hangs from one.
+func _drop_spot_node(n: Node) -> Node:
+	return n.get_parent() if n.get_parent() is Swing else n
 
 
 func _node_frame(node: Node3D) -> Dictionary:
@@ -375,7 +396,7 @@ func _node_frame(node: Node3D) -> Dictionary:
 				stack.append([child, cxf])
 	if first:
 		return {}
-	return {"xf": node.global_transform, "box": box}
+	return {"xf": node.global_transform, "box": box, "node": node}
 
 
 ## The model drawn for a parked bike (inside its lean pivot).
@@ -948,6 +969,46 @@ func _build_wash_bay() -> void:
 	add_child(light)
 
 
+func _build_booth_room() -> void:
+	var c := BOOTH_ROOM_CENTER
+	var hx := BOOTH_ROOM_HALF.x
+	var hz := BOOTH_ROOM_HALF.y
+	var h := 3.1
+	var floor_mat := _material(Color(0.33, 0.35, 0.37), 0.0, 0.4, _noise(0.3, 0.85, 1.05), 4.0)
+	var floor_mi := _deco(self, c + Vector3(0.0, 0.006, 0.0), Vector3(hx * 2.0, 0.012, hz * 2.0), floor_mat)
+	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Back and outer walls (the shed wall is the inner side), and a front wall with a wide doorway.
+	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.2, h, 0.2), _mats["cladding"])
+	_solid(c + Vector3(hx + 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.2), _mats["cladding"])
+	var gap := 1.25
+	for side in [-1.0, 1.0]:
+		var w: float = hx - gap
+		_solid(c + Vector3(side * (gap + w * 0.5), h * 0.5, hz + 0.1), Vector3(w, h, 0.2), _mats["cladding"])
+		_deco(self, c + Vector3(side * (gap + 0.06), 1.25, hz + 0.1), Vector3(0.12, 2.5, 0.24), _mats["yellow"])
+	_solid(c + Vector3(0.0, (h + 2.5) * 0.5, hz + 0.1), Vector3(gap * 2.0, h - 2.5, 0.2), _mats["cladding"])
+	var white := _material(Color(0.9, 0.91, 0.92), 0.0, 0.35)
+	_deco(self, c + Vector3(0.0, h * 0.5, -hz + 0.005), Vector3(hx * 2.0, h, 0.01), white)
+	_deco(self, c + Vector3(hx - 0.005, h * 0.5, 0.0), Vector3(0.01, h, hz * 2.0), white)
+	_deco(self, c + Vector3(-hx + 0.005, h * 0.5, 0.0), Vector3(0.01, h, hz * 2.0), white)
+	_solid(c + Vector3(0.0, h + 0.08, 0.0), Vector3(hx * 2.0 + 0.4, 0.12, hz * 2.0 + 0.4), _mats["roof"])
+	var sign := _label("PAINT SHOP", c + Vector3(0.0, 2.8, hz + 0.22), 0.0, 64, Color(0.08, 0.08, 0.08))
+	sign.outline_size = 0
+	_poster("SPRAY GUN: TOOL 7", c + Vector3(-hx + 0.02, 1.6, hz - 0.9), PI * 0.5, Vector2(0.8, 0.2))
+	var lamp := _material(Color(1.0, 0.98, 0.95), 0.0, 0.5)
+	lamp.emission_enabled = true
+	lamp.emission = Color(1.0, 0.98, 0.94)
+	lamp.emission_energy_multiplier = 3.0
+	_deco(self, c + Vector3(0.0, h - 0.06, hz - 0.9), Vector3(1.6, 0.04, 0.15), lamp)
+	_fixture_mats.append(lamp)
+	var light := OmniLight3D.new()
+	light.position = c + Vector3(0.0, h - 0.4, hz - 0.9)
+	light.omni_range = 4.5
+	light.light_energy = 0.9
+	light.light_color = Color(1.0, 0.97, 0.92)
+	add_child(light)
+	_shed_lights.append(light)
+
+
 ## The roller door that comes down over the opening, and the switches inside beside it: one for
 ## the door, one for the lights.
 func _build_door_and_switches() -> void:
@@ -1014,7 +1075,10 @@ func set_lights(on: bool) -> void:
 	for m in _fixture_mats:
 		m.emission_energy_multiplier = 4.0 if on else 0.0
 	if _probe:
-		_probe.ambient_color_energy = 0.45 if on else 0.08
+		# Lights off is properly dark: no warm fill, dim reflections; the screens and the open
+		# door are all that's left.
+		_probe.ambient_color_energy = 0.45 if on else 0.0
+		_probe.intensity = 1.0 if on else 0.15
 	var rocker := get_node_or_null("LightRocker")
 	if rocker:
 		rocker.rotation.x = 0.0 if on else 0.5

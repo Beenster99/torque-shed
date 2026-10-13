@@ -226,10 +226,12 @@ func spec_line(id: String) -> String:
 		"wheel":
 			var dia := float(p["diameter"])
 			bits = [p["type"], ("%d\"" % roundi(dia)) if is_equal_approx(dia, roundf(dia)) else ("%.1f\"" % dia)]
+			if p.has("rim_width"):
+				bits.append("%.2f\" rim (tyres %d-%d mm)" % [float(p["rim_width"]), roundi(float(p["rim_width"]) * 24.0 / 10.0) * 10, roundi(float(p["rim_width"]) * 62.0 / 10.0) * 10])
 			if p.has("spokes"):
 				bits.append("%d spokes" % int(p["spokes"]))
 		"tyre":
-			bits = [p["type"], p["compound"] + " compound", "%d mm" % int(p["width"]),
+			bits = [p["type"], p["compound"] + " compound", "%d mm wide (%d mm as a front)" % [int(p["width"]), roundi(float(p["width"]) * 0.7)],
 				"grip %.2f tarmac / %.2f dirt" % [p["grip"]["tarmac"], p["grip"]["dirt"]]]
 		"disc":
 			bits = [p["type"], "%d mm" % int(p["diameter"])]

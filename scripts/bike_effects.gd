@@ -19,6 +19,9 @@ var _dust: CPUParticles3D
 var _grit: CPUParticles3D
 var _tyre: CPUParticles3D
 var _beam: SpotLight3D
+var _cone: MeshInstance3D
+var beam_mode := 1      # headlight switch: 0 off, 1 dipped (low), 2 main (high)
+const BEAM_NAMES := ["off", "low beam", "high beam"]
 var _lamp_glow: OmniLight3D
 var _surface := "tarmac"
 var _screech: AudioStreamPlayer3D
@@ -85,8 +88,9 @@ func setup(exhaust: Vector3, rear_contact: Vector3, lamp: Vector3, lumens: float
 		_beam.rotation.x = deg_to_rad(-4.0)
 		_beam.spot_range = 18.0 + lumens / 100.0
 		_beam.spot_angle = 24.0
-		_beam.light_energy = lumens / 450.0
+		_beam.light_energy = lumens / 300.0
 		_beam.set_meta("day_energy", _beam.light_energy)
+		_beam.set_meta("lumens", lumens)
 		_beam.light_color = Color(1.0, 0.92, 0.78) if lumens < 2000.0 else Color(0.92, 0.96, 1.0)
 		_beam.shadow_enabled = false
 		add_child(_beam)
@@ -96,6 +100,43 @@ func setup(exhaust: Vector3, rear_contact: Vector3, lamp: Vector3, lumens: float
 		_lamp_glow.light_energy = 0.4
 		_lamp_glow.light_color = _beam.light_color
 		add_child(_lamp_glow)
+		_cone = _make_cone(_beam.light_color)
+		_beam.add_child(_cone)
+
+
+## The visible shaft of the headlight: an open cone along the beam, glowing brightest at the lamp
+## and fading out along its length and at its edges.
+func _make_cone(color: Color) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.06
+	cyl.bottom_radius = 1.0
+	cyl.height = 10.0
+	cyl.cap_top = false
+	cyl.cap_bottom = false
+	cyl.radial_segments = 24
+	cyl.rings = 1
+	mi.mesh = cyl
+	mi.rotation.x = PI * 0.5   # the narrow top (+Y) turns to +Z, back at the lamp
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var sh := Shader.new()
+	sh.code = """shader_type spatial;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+uniform vec4 tint : source_color = vec4(1.0);
+uniform float strength = 0.2;
+void fragment() {
+	float along = clamp(UV.y, 0.0, 1.0);   // 0 at the lamp, 1 at the far end
+	float edge = abs(dot(normalize(NORMAL), normalize(VIEW)));
+	float a = strength * pow(1.0 - along, 1.6) * smoothstep(0.0, 0.7, edge);
+	ALBEDO = tint.rgb * a;
+	ALPHA = 1.0;
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.set_shader_parameter("tint", color)
+	mi.material_override = m
+	return mi
 
 
 ## Burnout and skid smoke: thick white-grey clouds that roll off the back tyre and hang in the
@@ -290,12 +331,27 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 		_dust.initial_velocity_max = 1.5 + 3.0 * kick
 	_grit.emitting = _dust.emitting and kick * dusty > 0.35
 	if _beam:
-		_beam.visible = engine_on
+		_beam.visible = engine_on and beam_mode > 0
 		# The eye adjusts at night: the same lamp throws a much brighter pool on the road.
 		var night := World.darkness()
-		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night)
-		_beam.spot_angle = lerpf(24.0, 30.0, night)
-		_lamp_glow.visible = engine_on
+		var high := beam_mode == 2
+		var lumens: float = _beam.get_meta("lumens")
+		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night) * (2.2 if high else 1.0)
+		_beam.spot_angle = 17.0 if high else lerpf(26.0, 32.0, night)
+		_beam.spot_range = (55.0 + lumens / 40.0) if high else (24.0 + lumens / 100.0)
+		_beam.rotation.x = deg_to_rad(-1.2 if high else -5.0)
+		_lamp_glow.visible = engine_on and beam_mode > 0
+		_lamp_glow.light_energy = 0.9 if high else 0.5
+		if _cone:
+			# A faint shaft of light in the air, mostly seen at dusk and night.
+			var length := minf(_beam.spot_range * 0.6, 26.0)
+			var radius := length * tan(deg_to_rad(_beam.spot_angle))
+			var cyl := _cone.mesh as CylinderMesh
+			cyl.height = length
+			cyl.bottom_radius = radius
+			_cone.position = Vector3(0.0, 0.0, -length * 0.5)
+			(_cone.material_override as ShaderMaterial).set_shader_parameter("strength",
+				(0.05 + 0.3 * night) * (1.5 if high else 1.0))
 
 
 ## Thick tyre smoke from a burnout or skid: `level` 0 (none) .. 1 (full cloud), billowing from

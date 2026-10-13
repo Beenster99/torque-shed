@@ -1033,6 +1033,12 @@ func _coverage_step(delta: float, plan_now: Dictionary) -> void:
 			hit_at = surf["position"]
 		for job in jobs:
 			var xf: Transform3D = job["xf"]
+			var splat_node: Node3D = job.get("splats", null)
+			if is_instance_valid(splat_node):
+				xf = splat_node.global_transform   # the part as it is now, swung or moved
+				var swing := _swing_of(job)
+				if swing and gun:
+					swing.push(view_dir * delta * 0.35)
 			var local: Vector3 = xf.affine_inverse() * hit_at
 			# The spray is a cone along the line of sight: it lands in a round patch across that line,
 			# so a face at a slant gets a longer splash.
@@ -1078,6 +1084,14 @@ func ping() -> void:
 	var what := PingMarker.ping_from(camera, [get_rid()], PING_REACH)
 	if what == "":
 		Shed.feedback.emit("Nothing there to ping.", false)
+
+
+## The hook swing a job's part hangs from, if any.
+func _swing_of(job: Dictionary) -> Swing:
+	var n: Node = job.get("node", null)
+	if is_instance_valid(n) and n.get_parent() is Swing:
+		return n.get_parent() as Swing
+	return null
 
 
 func _cover_key(a: Dictionary) -> String:
@@ -1128,9 +1142,15 @@ func _start_cover(item: int, key: String, plan_now: Dictionary) -> Dictionary:
 	var paint: Color = Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)] if a["a"] == "paint" \
 		else Color(0.22, 0.17, 0.1, 0.8)
 	splats.setup(xf, points, normals, COVER_CELL, paint, str(a.get("finish", "gloss")))
-	get_parent().add_child(splats)
+	# The wet paint rides on the part, so it stays put if the part swings or the bike moves.
+	var holder: Node3D = frame.get("node", null)
+	if is_instance_valid(holder):
+		holder.add_child(splats)
+		splats.transform = holder.global_transform.affine_inverse() * xf
+	else:
+		get_parent().add_child(splats)
 	return {"key": key, "plan": plan_now, "item": item, "points": points, "cells": cells, "live": false, "xf": xf,
-		"splats": splats}
+		"splats": splats, "node": holder}
 
 
 ## The part a ray hit, the same way the crosshair reads it.
@@ -1259,29 +1279,47 @@ static func make_jet() -> CPUParticles3D:
 
 ## The fine cloud of paint (or lube) coming off the nozzle while you spray.
 static func make_mist() -> CPUParticles3D:
-	var mist := CPUParticles3D.new()
-	mist.amount = 90
-	mist.lifetime = 0.7
-	mist.emitting = false
-	mist.local_coords = false
-	mist.direction = Vector3(0.0, 0.0, -1.0)
-	mist.spread = 11.0
-	mist.initial_velocity_min = 2.2
-	mist.initial_velocity_max = 3.6
-	mist.damping_min = 3.0
-	mist.damping_max = 5.0
-	mist.gravity = Vector3(0.0, -0.25, 0.0)
-	mist.scale_amount_min = 0.025
-	mist.scale_amount_max = 0.06
+	# The atomised spray itself: a fast cone of fine droplets that slows in the air, with a
+	# soft overspray haze (a child emitter) that drifts and hangs after it.
+	var mist := _spray_particles(420, 0.42, 0.004, 0.011, 0.9)
+	mist.spread = 9.0
+	mist.initial_velocity_min = 5.5
+	mist.initial_velocity_max = 8.5
+	mist.damping_min = 9.0
+	mist.damping_max = 14.0
+	mist.gravity = Vector3(0.0, -0.6, 0.0)
+	var haze := _spray_particles(60, 1.6, 0.05, 0.11, 0.13)
+	haze.name = "Haze"
+	haze.spread = 16.0
+	haze.initial_velocity_min = 1.0
+	haze.initial_velocity_max = 2.2
+	haze.damping_min = 1.5
+	haze.damping_max = 2.5
+	haze.gravity = Vector3(0.0, 0.05, 0.0)
 	var grow := Curve.new()
-	grow.max_value = 4.0
-	grow.add_point(Vector2(0.0, 0.6))
-	grow.add_point(Vector2(1.0, 4.0))
-	mist.scale_amount_curve = grow
+	grow.max_value = 5.0
+	grow.add_point(Vector2(0.0, 0.4))
+	grow.add_point(Vector2(1.0, 5.0))
+	haze.scale_amount_curve = grow
+	mist.add_child(haze)
+	return mist
+
+
+static func _spray_particles(count: int, life: float, size_min: float, size_max: float, alpha: float) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.amount = count
+	p.lifetime = life
+	p.randomness = 0.5
+	p.emitting = false
+	p.local_coords = false
+	p.direction = Vector3(0.0, 0.0, -1.0)
+	p.scale_amount_min = size_min
+	p.scale_amount_max = size_max
 	var fade := Gradient.new()
-	fade.set_color(0, Color(1, 1, 1, 0.55))
-	fade.set_color(1, Color(1, 1, 1, 0.0))
-	mist.color_ramp = fade
+	fade.set_color(0, Color(1, 1, 1, alpha))
+	fade.add_point(0.15, Color(1, 1, 1, alpha))
+	fade.set_color(fade.get_point_count() - 1, Color(1, 1, 1, 0.0))
+	p.color_ramp = fade
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1.0, 1.0)
 	var m := StandardMaterial3D.new()
@@ -1292,7 +1330,8 @@ static func make_mist() -> CPUParticles3D:
 	m.vertex_color_use_as_albedo = true
 	var g := Gradient.new()
 	g.set_color(0, Color(1, 1, 1, 1))
-	g.set_color(1, Color(1, 1, 1, 0))
+	g.add_point(0.5, Color(1, 1, 1, 0.8))
+	g.set_color(g.get_point_count() - 1, Color(1, 1, 1, 0))
 	var tex := GradientTexture2D.new()
 	tex.gradient = g
 	tex.fill = GradientTexture2D.FILL_RADIAL
@@ -1302,8 +1341,8 @@ static func make_mist() -> CPUParticles3D:
 	tex.height = 32
 	m.albedo_texture = tex
 	quad.material = m
-	mist.mesh = quad
-	return mist
+	p.mesh = quad
+	return p
 
 
 func _update_mist() -> void:
@@ -1312,15 +1351,27 @@ func _update_mist() -> void:
 		if not on:
 			return
 		_mist = make_mist()
-		_mist.position = Vector3(0.2, -0.2, -0.55)
 		camera.add_child(_mist)
+	var haze: CPUParticles3D = _mist.get_node("Haze")
 	if on:
 		var a: Dictionary = _cover["plan"]["action"]
 		var c: Color = Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)] if a["a"] == "paint" else Color(0.45, 0.35, 0.2)
 		_mist.color = c
-		_mist.spread = 7.0 if a.get("gun", false) else 11.0
-		_mist.amount = 90
+		haze.color = c.lightened(0.15)
+		var gun := bool(a.get("gun", false))
+		_mist.spread = 6.5 if gun else 9.0
+		haze.spread = 12.0 if gun else 16.0
+		# From the nozzle of the tool in your hand, towards where you're aiming.
+		var nozzle := camera.global_transform * Vector3(0.2, -0.2, -0.55)
+		if is_instance_valid(_tool_view) and _tool_view.has_meta("nozzle"):
+			nozzle = _tool_view.global_transform * (_tool_view.get_meta("nozzle") as Vector3)
+		var aim: Vector3 = target.get("at", camera.global_position - camera.global_transform.basis.z * 1.0)
+		_mist.global_position = nozzle
+		var dir := (aim - nozzle).normalized()
+		_mist.direction = camera.global_transform.basis.inverse() * dir
+		haze.direction = _mist.direction
 	_mist.emitting = on
+	haze.emitting = on
 
 
 func _update_jet() -> void:

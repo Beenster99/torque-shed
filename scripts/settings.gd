@@ -12,7 +12,7 @@ var sfx_volume := 0.8
 var radio_volume := 0.6
 var units := "metric"     # or "imperial"
 var day_night_cycle := true
-var day_length := 20       # real minutes per 24 h game day
+var day_length := 120      # real minutes per 24 h game day
 var time_of_day := 9.0     # hours; kept up to date while playing so the clock carries on next time
 
 
@@ -71,6 +71,7 @@ func _setup_inputs() -> void:
 	_bind("toggle_auto_shift", [KEY_T], [])
 	_bind("ignition", [KEY_I], [JOY_BUTTON_DPAD_UP])
 	_bind("horn", [KEY_H], [JOY_BUTTON_DPAD_DOWN])
+	_bind("headlight", [KEY_L], [JOY_BUTTON_LEFT_STICK])
 	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])
 	# On foot in the shed
 	_bind("move_forward", [KEY_W, KEY_UP], [])

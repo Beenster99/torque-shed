@@ -42,6 +42,17 @@ func _init(page_kind := "bike", width := 2.0) -> void:
 	screen.position.z = 0.03
 	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(screen)
+	# The screen glows on whatever is in front of it: with the shed lights off, screens are
+	# the light you work by.
+	var spill := OmniLight3D.new()
+	spill.position = Vector3(0.0, 0.0, 0.45)
+	spill.omni_range = 2.0 + width * 1.2
+	spill.omni_attenuation = 1.4
+	spill.light_energy = 0.35 + width * 0.12
+	spill.light_color = Color(0.72, 0.84, 1.0)
+	spill.shadow_enabled = false
+	spill.light_specular = 0.2
+	add_child(spill)
 	var bezel := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = Vector3(width + 0.08, height + 0.08, 0.05)

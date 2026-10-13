@@ -26,6 +26,8 @@ const WHEELIE_PITCH := deg_to_rad(28.0)   # where the rider tries to hold a whee
 const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down
 const AIR_REV_PITCH := 7.0        # pitch acceleration (rad/s^2) from blipping the rear wheel in the air
 const SKID_SLIP := 0.2            # tyre slip above which it screeches and marks the road
+const BUMP_HEIGHT := {"tarmac": 0.006, "concrete": 0.004, "dirt": 0.035, "grass": 0.025, "gravel": 0.03}
+static var _bumps: FastNoiseLite
 const FRONT_LOCK_SLIP := 0.1      # the rider (or ABS) eases the brake before a wheel slips more than this
 const PADDLE_SPEED := 1.1         # walking pace when the rider paddles backwards with their feet
 const PADDLE_HOLD := 0.45         # hold the front brake this long at a standstill to start paddling back
@@ -71,6 +73,7 @@ var _starting := 0.0
 var _shift_from_rpm := 0.0
 var skid := 0.0            # 0..1, how hard the tyres are squealing on tarmac, set by the effects
 var horn := false          # horn button held
+var beam := 1              # headlight switch: 0 off, 1 low beam, 2 high beam
 var rider_color := Color(0, 0, 0, 0)   # the rider's own colours; clear uses the bike's paint
 var burnout := 0.0         # 0..1, how hard the back tyre is spinning on the spot
 var paddling := false      # walking the bike backwards with the rider's feet
@@ -510,17 +513,37 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		return
 
 	var dist := mount.distance_to(hit["position"])
-	var raw_comp := ray_len - dist
+	var hit_surf := "grass"
+	if hit["collider"] and (hit["collider"] as Object).has_meta("surface"):
+		hit_surf = str((hit["collider"] as Object).get_meta("surface"))
+	# The ground isn't a billiard table: ripples, ruts and stones under the tyre work the suspension.
+	var raw_comp := ray_len - dist + road_bump(hit["position"], hit_surf)
 	var comp := clampf(raw_comp, 0.0, travel)
-	var comp_vel: float = (comp - w["compression"]) / delta
+	var was_touching: bool = w["contact"]
+	# How fast the wheel is being pushed up into the bike. On the first frame of touchdown the
+	# wheel was hanging free, so take the bike's own closing speed instead of the jump in travel.
+	var closing := -(linear_velocity + angular_velocity.cross(mount - global_position)).dot(up)
+	var comp_vel: float = (comp - w["compression"]) / delta if was_touching else closing
+	var raw_vel: float = (raw_comp - float(w.get("raw", raw_comp))) / delta if was_touching else closing
+	w["raw"] = raw_comp
 	w["compression"] = comp
 	var n: Vector3 = hit["normal"]
-	# Bump damping resists the wheel coming up, rebound damping resists it going back down.
-	var damping: float = w["bump"] if comp_vel > 0.0 else w["rebound"]
-	var fz: float = w["spring"] * comp + damping * comp_vel
+	# Bump damping resists the wheel coming up, rebound damping resists it going back down. Fast
+	# hits blow the compression valving open a little, as real dampers do, so a big landing is
+	# soaked up rather than kicked back.
+	var damp_force: float
+	if comp_vel > 0.0:
+		var bump: float = w["bump"]
+		damp_force = bump * (comp_vel if comp_vel < 1.0 else 1.0 + (comp_vel - 1.0) * 0.45)
+	else:
+		damp_force = float(w["rebound"]) * comp_vel
+	var fz: float = w["spring"] * comp + damp_force
 	if raw_comp > travel:
-		fz += (raw_comp - travel) * 250000.0  # bump stop
-	fz = clampf(fz, 0.0, mass * G * 8.0)
+		# Bottomed out: a firm, heavily damped rubber stop that eats the energy it takes, both
+		# squashing and coming back off it, so it never kicks the bike back up.
+		var over := raw_comp - travel
+		fz += over * 160000.0 + raw_vel * (9000.0 if raw_vel > 0.0 else 14000.0)
+	fz = clampf(fz, 0.0, mass * G * 6.0)
 	w["contact"] = true
 	w["load"] = fz
 	var collider = hit["collider"]
@@ -590,6 +613,22 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	w["omega"] = omega_new
 	w["spin"] = fmod(w["spin"] + omega_new * delta, TAU)
 	apply_force(long_dir * fx + lat_dir * fy, arm)
+
+
+## How far the surface under a tyre rises above its smooth shape at `at`, in metres: a few
+## millimetres of ripple on tarmac, proper ruts and stones off-road.
+static func road_bump(at: Vector3, surf: String) -> float:
+	var amp: float = BUMP_HEIGHT.get(surf, 0.012)
+	if amp <= 0.0:
+		return 0.0
+	if _bumps == null:
+		_bumps = FastNoiseLite.new()
+		_bumps.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		_bumps.frequency = 0.9
+		_bumps.fractal_octaves = 3
+		_bumps.fractal_gain = 0.55
+	# Only bumps up: the tyre rides over the high spots and the dips are filled by the smooth ground.
+	return amp * maxf(_bumps.get_noise_2d(at.x, at.z) + 0.35, 0.0)
 
 
 func _apply_aero() -> void:
@@ -686,8 +725,17 @@ func get_net_state() -> PackedFloat32Array:
 		p.x, p.y, p.z, q.x, q.y, q.z, q.w, v.x, v.y, v.z,
 		steer, wheels[0]["spin"], wheels[1]["spin"], wheels[0]["compression"], wheels[1]["compression"],
 		rpm, sound_load(), 1.0 if is_crashed else 0.0, body_shift, 1.0 if engine_on else 0.0, skid,
-		1.0 if (horn_audio and horn_audio.pressed) else 0.0, float(gear), burnout,
+		1.0 if (horn_audio and horn_audio.pressed) else 0.0, float(gear), burnout, float(beam),
 	])
+
+
+## The headlight switch: low beam, high beam, off. Returns the new setting's name.
+func cycle_beam() -> String:
+	beam = (beam + 1) % 3
+	if effects:
+		effects.beam_mode = beam
+	Sfx.play_at("switch", global_position, -10.0)
+	return BikeEffects.BEAM_NAMES[beam]
 
 
 ## Fog lamp beams for a bike's fog lights, children of `parent`, off until the engine runs.
