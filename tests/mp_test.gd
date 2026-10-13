@@ -1,8 +1,8 @@
 extends Node
 ## Two-process co-op check, run by tests/mp_test.sh: a host and a client each start the real
 ## game. The client must receive the host's shed, unbolt a part and put another down on the
-## floor, which the host must then see, each puts a mark on the whiteboard the other must see,
-## and both must see each other walk.
+## floor and tune a tyre pressure, which the host must then see, each puts a mark on the whiteboard
+## the other must see, and both must see each other walk.
 
 var role := "host"
 var main: Node
@@ -48,6 +48,7 @@ func _ready() -> void:
 			Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(0.5, 0.0, 1.5))})
 			Shed.board_request({"a": "board_draw", "id": 4242, "c": 1, "w": 6.0, "from": 0,
 				"pts": PackedVector2Array([Vector2(100, 100), Vector2(300, 200)]), "done": true})
+			Shed.request({"a": "tune", "bike": ranger, "key": "psi_f", "value": 0.9})
 			asked = true
 		if role == "host" and Shed.crew.size() == 2 and not asked:
 			Shed.board_request({"a": "board_text", "id": 4343, "c": 2, "s": 38, "at": Vector2(500, 300), "text": "Host's list"})
@@ -57,7 +58,8 @@ func _ready() -> void:
 		var dropped := false
 		for id in Shed.floor_items():
 			dropped = dropped or (Shed.items[id]["ref"] is Transform3D)
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and Shed.crew.size() == 2 and board_ok:
+		var tuned := ranger != 0 and is_equal_approx(float(Shed.tune_of(ranger).get("psi_f", 0.0)), 0.9)
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000

@@ -266,6 +266,8 @@ func spec_line(id: String) -> String:
 			bits = [p["type"], "capacity %.1f" % p["capacity"]]
 		"gearbox":
 			bits = [p["type"], "%d speeds" % p["ratios"].size()]
+			if p.get("cassette", false):
+				bits.append("cassette: ratio spacing tunable")
 		"exhaust":
 			bits = ["power %+d%%" % roundi((p["torque_mult"] - 1.0) * 100.0), "loudness %d%%" % roundi(p["loudness"] * 100.0)]
 		"final_drive":
@@ -288,6 +290,7 @@ func spec_line(id: String) -> String:
 			bits = ["Aids: " + (", ".join(aids) if not aids.is_empty() else "none"), "power %+d%%" % roundi((float(p["power"]) - 1.0) * 100.0)]
 			if int(p["rev_add"]) > 0:
 				bits.append("+%d rpm limit" % int(p["rev_add"]))
+			bits.append("map tunable %d%%" % roundi(float(p.get("tune_range", 0.25)) * 100.0))
 		"panniers", "top_box":
 			bits = [p["type"], "%d litres" % int(p["litres"])]
 		"petrol":

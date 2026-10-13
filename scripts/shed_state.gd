@@ -44,11 +44,22 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 ## Litres a second poured from a container, or drained out of a bike.
 const POUR_RATE := {"petrol": 2.0, "oil": 0.8, "brake_fluid": 0.15}
 const SYNC_INTERVAL := 0.1
+## Tuning (the dyno room): where each setting is kept. The engine's calibration belongs to the
+## bike ("bike": its tune{}); the rest live on the part they adjust, in its tune{}, so they go
+## with it when it's swapped. Chain tension is the chain's own slack.
+const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "limiter": ["bike", "limiter"],
+	"f_preload": ["fork", "preload"], "f_bump": ["fork", "bump"], "f_rebound": ["fork", "rebound"],
+	"r_preload": ["shock", "preload"], "r_bump": ["shock", "bump"], "r_rebound": ["shock", "rebound"],
+	"psi_f": ["front_tyre", "pressure"], "psi_r": ["rear_tyre", "pressure"],
+	"sprocket_f": ["final_drive", "front"], "sprocket_r": ["final_drive", "rear"], "spread": ["gearbox", "spread"],
+	"chain": ["chain", "slack"]}
+const LIGHTEN_WEAR := 0.08     # condition a part gives up to being drilled and trimmed
+const TYRE_WEAR := 0.0002      # tyre wear per km at the right pressure
 const MAX_PAINT_RUST := 0.2
 
 ## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered,
 ## stand ("" upright on its wheels or the bay's paddock stand, "side", "centre" or "down" when it has fallen over),
-## pusher (peer wheeling it about, or 0)}
+## pusher (peer wheeling it about, or 0), tune{map, ignition, limiter}, dyno{n, runs: the last two dyno runs}}
 var bikes := {}
 ## item id -> {id, part, kind, rust, dirt, wear, color, finish, boxed, at, ref}, where
 ## at is "bike", "engine", "held", "spot" or "floor" (ref is then the Transform3D it was put down at).
@@ -71,6 +82,7 @@ var _next_id := 1
 var _dirty := false
 var _sync_timer := 0.0
 var _rng := RandomNumberGenerator.new()
+var _dyno_busy_until := 0      # msec: the host won't start another dyno run until this one is done
 
 
 func _ready() -> void:
@@ -368,6 +380,8 @@ func condition_of(item: Dictionary) -> Dictionary:
 	if item.has("slack"):
 		cond["slack"] = item["slack"]
 		cond["lube"] = item.get("lube", 1.0)
+	if item.get("lightened", false):
+		cond["lightened"] = true
 	return cond
 
 
@@ -394,7 +408,39 @@ func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 				if sub != 0:
 					parts[slot] = items[sub]["part"]
 					cond[slot] = condition_of(items[sub])
-	return BikeBuild.new(parts, cond)
+	return BikeBuild.new(parts, cond, tune_of(bike_id))
+
+
+## A bike's tune gathered from where each setting is kept (see TUNE_HOME), for BikeBuild.
+## Settings never touched are left out, so they stay stock.
+func tune_of(bike_id: int) -> Dictionary:
+	var out := {}
+	if not bikes.has(bike_id):
+		return out
+	var own: Dictionary = bikes[bike_id].get("tune", {})
+	for key in TUNE_HOME:
+		var home: Array = TUNE_HOME[key]
+		if home[0] == "bike":
+			if own.has(home[1]):
+				out[key] = float(own[home[1]])
+		elif key != "chain":
+			var id := item_on(bike_id, str(home[0]))
+			if id != 0 and items[id].get("tune", {}).has(home[1]):
+				out[key] = float(items[id]["tune"][home[1]])
+	return out
+
+
+## Whether a bike is strapped down on the dyno rig.
+func on_dyno(bike_id: int) -> bool:
+	return bikes.has(bike_id) and (bikes[bike_id]["xf"] as Transform3D).origin.distance_to(DynoRoom.rig_transform().origin) < 0.3
+
+
+## The bike on the dyno, or 0.
+func dyno_bike() -> int:
+	for id in bikes:
+		if on_dyno(id) and bikes[id]["rider"] == 0:
+			return id
+	return 0
 
 
 ## A stock bike built around an engine on the stand, so its numbers can be compared.
@@ -1134,6 +1180,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "It's already on its %s stand." % which
 			if on_paddock(bike_id):
 				return "It's on the paddock stand in the bay."
+			if on_dyno(bike_id):
+				return "It's strapped down on the dyno."
 		"mount":
 			if riding(peer) != 0:
 				return "You're already riding."
@@ -1165,6 +1213,54 @@ func check(peer: int, action: Dictionary) -> String:
 		"order":
 			if free_bay(Workshop.BAY_COUNT) < 0:
 				return "Every bay is full. Ride a bike out or strip one down first."
+		"tune":
+			if not bikes.has(bike_id):
+				return "That bike has gone."
+			if bikes[bike_id]["rider"] != 0:
+				return "Someone is riding that bike."
+			var key := str(action.get("key", ""))
+			if not TUNE_HOME.has(key):
+				return "There's nothing like that to adjust."
+			var home: Array = TUNE_HOME[key]
+			if home[0] != "bike" and item_on(bike_id, str(home[0])) == 0:
+				return "There's no %s fitted." % PartsDB.slot_name(str(home[0])).to_lower()
+			if not action.get("reset", false) and not (action.get("value") is float or action.get("value") is int):
+				return "Pick a setting."
+			var why := build_of(bike_id).tune_block(key)
+			if why != "":
+				return why
+		"lighten":
+			var id := int(action.get("item", 0))
+			if not items.has(id):
+				return "That part has gone."
+			if items[id].get("boxed", false):
+				return "Unpack it first."
+			if items[id]["at"] == "bike" and bikes.has(int(items[id]["ref"])) and bikes[int(items[id]["ref"])]["rider"] != 0:
+				return "Someone is riding that bike."
+			if items[id].get("lightened", false):
+				return "It's already been drilled and trimmed."
+			if PartsDB.is_lightweight(str(items[id]["part"])):
+				return "It's already as light as it goes."
+			if BikeBuild.lighten_cut(str(items[id]["part"])) <= 0.0:
+				return "There's nothing to trim off that."
+		"dyno_run":
+			if not on_dyno(bike_id):
+				return "Wheel a bike onto the dyno first."
+			if bikes[bike_id]["rider"] != 0 or bikes[bike_id].get("pusher", 0) != 0:
+				return "Let go of it so it can be strapped down."
+			if Time.get_ticks_msec() < _dyno_busy_until:
+				return "It's mid-run. Wait for it to finish."
+			var missing := missing_slots(bike_id)
+			if not missing.is_empty():
+				return "It won't run. Missing: %s." % _slot_list(missing)
+			var loose := loose_slots(bike_id)
+			if not loose.is_empty():
+				return "Bolt it up first: %s." % _slot_list(loose)
+			var build := build_of(bike_id)
+			if build.fuel_litres < 0.05:
+				return "There's no petrol in the tank."
+			if build.oil_litres < 0.1:
+				return "There's no oil in the engine. It would seize."
 		"status", "ride", "tip":
 			pass
 		_:
@@ -1402,10 +1498,52 @@ func _apply(peer: int, action: Dictionary) -> void:
 			bikes[bike_id]["pusher"] = 0
 			bikes[bike_id]["xf"] = action["xf"]
 			_park(bike_id)
-			if bikes[bike_id]["stand"] == "down":
+			if on_dyno(bike_id):
+				text = "%s is strapped down on the dyno. Use the dyno desk (F) to tune it and run it." % bikes[bike_id]["name"]
+			elif bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over."
 			elif on_paddock(bike_id):
 				text = "%s is on the paddock stand in bay %d" % [bikes[bike_id]["name"], bikes[bike_id]["bay"] + 1]
+		"tune":
+			var key := str(action["key"])
+			var home: Array = TUNE_HOME[key]
+			var holder: Dictionary = bikes[bike_id] if home[0] == "bike" else items[item_on(bike_id, str(home[0]))]
+			var field := str(home[1])
+			if key == "chain":
+				holder["slack"] = BikeBuild.new().tune_default("chain") if action.get("reset", false) else \
+					clampf(float(action["value"]), BikeBuild.TUNE_LIMITS["chain"][0], BikeBuild.TUNE_LIMITS["chain"][1])
+			elif action.get("reset", false):
+				if holder.has("tune"):
+					holder["tune"].erase(field)
+			else:
+				var r := build_of(bike_id).tune_range(key)
+				if not holder.has("tune"):
+					holder["tune"] = {}
+				holder["tune"][field] = clampf(float(action["value"]), r.x, r.y)
+		"lighten":
+			var it: Dictionary = items[int(action["item"])]
+			var kg := float(PartsDB.get_part(str(it["part"])).get("mass", 0.0)) * BikeBuild.lighten_cut(str(it["part"]))
+			it["lightened"] = true
+			it["wear"] = minf(1.0, float(it["wear"]) + LIGHTEN_WEAR)
+			text = "Drilled and trimmed the %s: %.1f kg lighter, but a little weaker" % [item_title(int(action["item"])), kg]
+		"dyno_run":
+			var build := build_of(bike_id)
+			var run := build.dyno_run()
+			var d: Dictionary = bikes[bike_id].get("dyno", {"n": 0, "runs": []})
+			var runs: Array = d.get("runs", [])
+			d["n"] = int(d.get("n", 0)) + 1
+			run["n"] = d["n"]
+			runs.append(run)
+			while runs.size() > 2:
+				runs.pop_front()
+			d["runs"] = runs
+			bikes[bike_id]["dyno"] = d
+			_dyno_busy_until = Time.get_ticks_msec() + int(DynoRoom.run_time(build) * 1000.0)
+			# A run burns a splash of petrol.
+			var tank := item_on(bike_id, "tank")
+			if tank != 0 and items[tank].has("fluid"):
+				items[tank]["fluid"]["litres"] = maxf(0.0, float(items[tank]["fluid"]["litres"]) - 0.05)
+			text = "Dyno run %d on %s..." % [d["n"], bikes[bike_id]["name"]]
 		"set_stand":
 			bikes[bike_id]["stand"] = str(action["stand"])
 			text = "Up on the centre stand" if action["stand"] == "centre" else "Down on the side stand"
@@ -1485,6 +1623,12 @@ func pour_time(from: Dictionary, into: Dictionary) -> float:
 ## or on its own stand.
 func _park(bike_id: int) -> void:
 	var bike: Dictionary = bikes[bike_id]
+	var rig := DynoRoom.rig_transform()
+	if (bike["xf"] as Transform3D).origin.distance_to(rig.origin) < 1.0 and (dyno_bike() == 0 or dyno_bike() == bike_id):
+		# Rolled onto the dyno: square on the drum and strapped down.
+		bike["xf"] = rig
+		bike["stand"] = ""
+		return
 	var bay := _bay_near(bike["xf"], bike_id)
 	if bay >= 0:
 		bike["bay"] = bay
@@ -1501,10 +1645,18 @@ func _park(bike_id: int) -> void:
 func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 	var km := clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 	var dirty := clampf(float(action.get("dirt_km", 0.0)), 0.0, 5.0)
+	var build := build_of(bike_id)
 	for slot in PartsDB.SLOTS:
 		var id := item_on(bike_id, slot)
 		if id != 0 and dirty > 0.0:
 			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * float(DIRT_EXPOSURE.get(slot, 0.4)))
+		if id != 0 and items[id].get("lightened", false):
+			items[id]["wear"] = minf(1.0, float(items[id]["wear"]) + km * 0.0003)
+	# Tyres wear, faster at the wrong pressure.
+	for side in ["front", "rear"]:
+		var tyre := item_on(bike_id, side + "_tyre")
+		if tyre != 0:
+			items[tyre]["wear"] = minf(1.0, float(items[tyre]["wear"]) + km * TYRE_WEAR * float(build.tyre_wear[side]))
 	var tank := item_on(bike_id, "tank")
 	if tank != 0 and items[tank].has("fluid"):
 		var f: Dictionary = items[tank]["fluid"]
@@ -1518,7 +1670,7 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 		var rate := 0.0005 * (1.6 - protection)
 		if level < 0.5:
 			rate = lerpf(0.03, rate, level / 0.5)
-		items[block]["wear"] = minf(1.0, float(items[block]["wear"]) + km * rate)
+		items[block]["wear"] = minf(1.0, float(items[block]["wear"]) + km * rate * build.engine_stress)
 	var chain := item_on(bike_id, "chain")
 	if chain != 0:
 		var spec := PartsDB.get_part(items[chain]["part"])

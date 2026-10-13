@@ -3616,7 +3616,8 @@
 				0.31,
 				0.33
 			],
-			"whine": 0.35
+			"whine": 0.35,
+			"cassette": true
 		},
 		"six_race_quickshift": {
 			"name": "6-speed race with quickshifter",
@@ -3638,7 +3639,8 @@
 				0.31,
 				0.33
 			],
-			"whine": 0.8
+			"whine": 0.8,
+			"cassette": true
 		}
 	},
 	"exhaust": {
@@ -4292,7 +4294,9 @@
 				0.1,
 				0.1,
 				0.11
-			]
+			],
+			"tune_range": 0.35,
+			"limiter_add": 0
 		},
 		"remap_ecu": {
 			"name": "Performance remap ECU",
@@ -4309,7 +4313,9 @@
 				0.75,
 				0.1,
 				0.08
-			]
+			],
+			"tune_range": 1.0,
+			"limiter_add": 800
 		},
 		"abs_ecu": {
 			"name": "ABS controller",
@@ -4326,7 +4332,9 @@
 				0.15,
 				0.15,
 				0.17
-			]
+			],
+			"tune_range": 0.35,
+			"limiter_add": 0
 		},
 		"sport_ecu": {
 			"name": "Sport ride-by-wire ECU",
@@ -4345,7 +4353,9 @@
 				0.1,
 				0.25,
 				0.6
-			]
+			],
+			"tune_range": 0.6,
+			"limiter_add": 400
 		},
 		"race_ecu": {
 			"name": "Race ECU with IMU",
@@ -4366,7 +4376,9 @@
 				0.75,
 				0.1
 			],
-			"lightweight": true
+			"lightweight": true,
+			"tune_range": 1.0,
+			"limiter_add": 1000
 		}
 	},
 	"panniers": {

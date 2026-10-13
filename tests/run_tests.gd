@@ -80,6 +80,8 @@ func _run_all() -> void:
 	await _test_save_load()
 	print("Whiteboard")
 	await _test_whiteboard()
+	print("Tuning room and dyno")
+	await _test_tuning()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -2265,3 +2267,200 @@ func _test_whiteboard() -> void:
 	main._end_session()
 	main.queue_free()
 	await get_tree().process_frame
+
+func _test_tuning() -> void:
+	Shed.start_new("Tester", 7)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")   # USD fork and sport shock (3-way), close-ratio cassette box, no ECU
+	var ranger := _bike_named("Rusty Ranger")     # enduro fork: preload and rebound only
+	var barn := _bike_named("Barn Find")          # classic fork: no adjusters
+	var stock := BikeBuild.new()
+	check(BikeBuild.new({}, {}, {}).hp() == stock.hp() and BikeBuild.new({}, {}, {}).rolling == BikeBuild.ROLLING,
+		"an untouched tune leaves the bike stock")
+
+	# Settings live in the Shed: the engine's on the bike, the rest on the part they belong to.
+	Shed.request({"a": "tune", "bike": faithful, "key": "map", "value": 0.6})
+	Shed.request({"a": "tune", "bike": faithful, "key": "psi_r", "value": 2.0})
+	Shed.request({"a": "tune", "bike": faithful, "key": "sprocket_r", "value": 50})
+	var rear_tyre := Shed.item_on(faithful, "rear_tyre")
+	check(is_equal_approx(float(Shed.bikes[faithful]["tune"]["map"]), 0.25),
+		"with no ECU the fuel map only moves a little (asked 0.6, got %.2f)" % float(Shed.bikes[faithful]["tune"]["map"]))
+	check(is_equal_approx(float(Shed.items[rear_tyre]["tune"]["pressure"]), 2.0), "tyre pressure is kept on the tyre")
+	var copy: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	Shed._sync(copy)
+	var t := Shed.tune_of(faithful)
+	check(is_equal_approx(float(t.get("map", 0.0)), 0.25) and is_equal_approx(float(t.get("psi_r", 0.0)), 2.0)
+		and is_equal_approx(float(t.get("sprocket_r", 0.0)), 50.0), "the tune survives the snapshot (save and co-op sync) %s" % str(t))
+	check(BikeBuild.new({"ecu": "race_ecu"}).tune_range("map").y > BikeBuild.new({"ecu": "stock_ecu"}).tune_range("map").y
+		and BikeBuild.new({"ecu": "remap_ecu"}).tune_range("limiter").y > 0.0 and stock.tune_range("limiter").y == 0.0,
+		"a remap or race ECU opens up the map and the rev limiter")
+
+	# Gearing: a bigger rear sprocket is shorter.
+	var short := Shed.build_of(faithful)
+	Shed.request({"a": "tune", "bike": faithful, "key": "sprocket_r", "reset": true})
+	var tall := Shed.build_of(faithful)
+	check(short.final_drive > tall.final_drive and float(short.gear_speeds()[-1]) < float(tall.gear_speeds()[-1])
+		and absf(short.top_speed_estimate() - tall.top_speed_estimate()) > 0.1,
+		"a 50-tooth rear sprocket gears it down (%.0f vs %.0f km/h in top at the limiter, top speed %.0f vs %.0f)" % [
+		short.gear_speeds()[-1], tall.gear_speeds()[-1], short.top_speed_estimate() * 3.6, tall.top_speed_estimate() * 3.6])
+	var wide := BikeBuild.new({"gearbox": "six_close"}, {}, {"spread": 1.0})
+	var close := BikeBuild.new({"gearbox": "six_close"})
+	check(float(wide.gear_ratios[0]) > float(close.gear_ratios[0]) and is_equal_approx(float(wide.gear_ratios[-1]), float(close.gear_ratios[-1])),
+		"a cassette gearbox can be respaced about top gear")
+	check(Shed.check(me, {"a": "tune", "bike": ranger, "key": "spread", "value": 0.5}).contains("cassette"),
+		"an ordinary gearbox can't be respaced")
+
+	# Fuel map and ignition.
+	var rich := BikeBuild.new({"ecu": "race_ecu"}, {}, {"map": 0.4})
+	var lean := BikeBuild.new({"ecu": "race_ecu"}, {}, {"map": -0.8})
+	var base := BikeBuild.new({"ecu": "race_ecu"})
+	var low := base.peak_torque_rpm * 0.6
+	check(rich.engine_torque(low) > base.engine_torque(low) * 1.01 and rich.hp() > base.hp(),
+		"a richer map fattens the curve (%.1f vs %.1f Nm low down)" % [rich.engine_torque(low), base.engine_torque(low)])
+	check(lean.cruise_economy() > base.cruise_economy() and lean.hp() < base.hp() and lean.engine_stress > 1.5
+		and rich.cruise_economy() < base.cruise_economy(), "lean saves petrol but costs power and works the engine harder")
+	var pinking := BikeBuild.new({"ecu": "race_ecu"}, {}, {"ignition": 1.0})
+	var race_fuel := BikeBuild.new({"ecu": "race_ecu"}, {"tank": {"fluid": {"type": "race_fuel", "litres": 5.0, "age": 0.0}}}, {"ignition": 1.0})
+	check(str(pinking.notes).contains("Pinking") and not str(race_fuel.notes).contains("Pinking")
+		and pinking.engine_stress > race_fuel.engine_stress, "full advance pinks on 95 but not on race fuel")
+	var revvy := BikeBuild.new({"ecu": "race_ecu"}, {}, {"limiter": 800.0})
+	check(is_equal_approx(revvy.redline, base.redline + 800.0) and float(revvy.gear_speeds()[0]) > float(base.gear_speeds()[0]),
+		"raising the limiter lets each gear run on")
+
+	# Tyre pressures.
+	var soft := BikeBuild.new({}, {}, {"psi_f": 1.4, "psi_r": 1.4})
+	var hard := BikeBuild.new({}, {}, {"psi_f": 3.2, "psi_r": 3.2})
+	check(float(soft.grip_front["tarmac"]) < float(stock.grip_front["tarmac"]) and float(hard.grip_rear["tarmac"]) < float(stock.grip_rear["tarmac"])
+		and soft.rolling > stock.rolling and float(soft.tyre_wear["rear"]) > 1.5,
+		"tyres off their best pressure grip less; soft ones drag and wear (%.3f vs %.3f grip)" % [soft.grip_front["tarmac"], stock.grip_front["tarmac"]])
+	var mx := {"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}
+	check(float(BikeBuild.new(mx, {}, {"psi_r": 0.85}).grip_rear["dirt"]) > float(BikeBuild.new(mx).grip_rear["dirt"]),
+		"a knobbly a touch soft finds more grip in the dirt")
+
+	# Suspension clickers, only where the parts have them.
+	check(Shed.check(me, {"a": "tune", "bike": barn, "key": "f_preload", "value": 0.5}).contains("no preload adjuster"),
+		"a fork with no adjusters can't be changed")
+	check(Shed.check(me, {"a": "tune", "bike": ranger, "key": "f_bump", "value": 0.5}).contains("no bump adjuster")
+		and Shed.check(me, {"a": "tune", "bike": ranger, "key": "f_rebound", "value": 0.5}) == "",
+		"a 2-way fork adjusts rebound but not compression")
+	check(BikeBuild.new({"fork": "classic_conventional"}, {}, {"f_preload": 1.0}).front_spring == BikeBuild.new({"fork": "classic_conventional"}).front_spring,
+		"a setting the part can't take is ignored")
+	var before := Shed.build_of(faithful)
+	Shed.request({"a": "tune", "bike": faithful, "key": "f_bump", "value": 0.5})
+	Shed.request({"a": "tune", "bike": faithful, "key": "r_preload", "value": 1.0})
+	var after := Shed.build_of(faithful)
+	check(after.front_bump > before.front_bump * 1.1 and after.rear_spring > before.rear_spring * 1.1
+		and Shed.items[Shed.item_on(faithful, "fork")]["tune"].has("bump"), "clicking the USD fork and shock firms them up")
+
+	# Chain tension from the desk is the chain's own slack.
+	Shed.request({"a": "tune", "bike": faithful, "key": "chain", "value": 26})
+	check(is_equal_approx(float(Shed.items[Shed.item_on(faithful, "chain")]["slack"]), 26.0) and is_equal_approx(Shed.build_of(faithful).chain_slack, 26.0),
+		"the desk sets the chain slack")
+
+	# Lightening parts.
+	var frame := Shed.item_on(faithful, "frame")
+	var heavy := Shed.build_of(faithful).bike_mass
+	var wear := float(Shed.items[frame]["wear"])
+	Shed.request({"a": "lighten", "item": frame})
+	var saved := heavy - Shed.build_of(faithful).bike_mass
+	check(Shed.items[frame].get("lightened", false) and saved > 0.5 and float(Shed.items[frame]["wear"]) > wear,
+		"a drilled and trimmed frame weighs less (%.1f kg saved) but gives up some condition" % saved)
+	check(Shed.check(me, {"a": "lighten", "item": frame}).contains("already"), "a part is only lightened once")
+	var carbon := Shed._new_item("carbon_monocoque", 0.0, 0.0, 0.0)
+	check(Shed.check(me, {"a": "lighten", "item": carbon}).contains("light as it goes"), "lightweight parts can't be trimmed further")
+	Shed._erase_item(carbon)
+
+	# Riding wears tyres faster at the wrong pressure.
+	var tyre := Shed.item_on(faithful, "front_tyre")
+	Shed.items[tyre]["wear"] = 0.0
+	Shed._wear_from_ride(faithful, {"km": 5.0})
+	var right := float(Shed.items[tyre]["wear"])
+	Shed.request({"a": "tune", "bike": faithful, "key": "psi_f", "value": 1.2})
+	Shed.items[tyre]["wear"] = 0.0
+	Shed._wear_from_ride(faithful, {"km": 5.0})
+	check(float(Shed.items[tyre]["wear"]) > right * 1.5 and right > 0.0, "a soft tyre wears faster")
+	Shed.request({"a": "tune", "bike": faithful, "key": "psi_f", "reset": true})
+
+	# The dyno: wheel it on and it's strapped down; then run it.
+	check(Shed.check(me, {"a": "dyno_run", "bike": faithful}).contains("onto the dyno"), "only a bike on the dyno can be run")
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	var near := DynoRoom.rig_transform().translated(Vector3(0.3, 0.0, 0.5))
+	Shed.request({"a": "move_bike", "bike": faithful, "xf": near})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": near})
+	check(Shed.on_dyno(faithful) and Shed.dyno_bike() == faithful and Shed.bikes[faithful]["stand"] == ""
+		and (Shed.bikes[faithful]["xf"] as Transform3D).is_equal_approx(DynoRoom.rig_transform()),
+		"let go near the drum, the bike snaps onto the rig and is strapped down")
+	Shed.request({"a": "dyno_run", "bike": faithful})
+	var runs: Array = Shed.bikes[faithful].get("dyno", {}).get("runs", [])
+	check(runs.size() == 1, "a dyno run is stored on the bike")
+	check(Shed.check(me, {"a": "dyno_run", "bike": faithful}).contains("mid-run"), "one run at a time")
+	var run: Dictionary = runs[0] if not runs.is_empty() else {}
+	var b := Shed.build_of(faithful)
+	if not run.is_empty():
+		var rpms: Array = run["rpm"]
+		var ascending := true
+		var positive := true
+		for i in range(1, rpms.size()):
+			ascending = ascending and float(rpms[i]) > float(rpms[i - 1])
+			positive = positive and float(run["hp"][i]) > 0.0 and float(run["nm"][i]) > 0.0
+		check(ascending and positive and rpms.size() == run["hp"].size() and is_equal_approx(float(rpms[-1]), roundf(b.redline)),
+			"the sweep runs from low revs to the limiter")
+		check(float(run["peak_nm_rpm"]) < float(run["peak_hp_rpm"]), "peak torque comes before peak power (%d < %d rpm)" % [
+			run["peak_nm_rpm"], run["peak_hp_rpm"]])
+		var wheel_hp := b.hp() * b.drivetrain_efficiency
+		check(absf(float(run["peak_hp"]) - wheel_hp) < wheel_hp * 0.02 and absf(float(run["top_kmh"]) - b.top_speed_estimate() * 3.6) < 0.5
+			and run["gears"].size() == b.gear_count(), "the dyno's numbers match the build (%.1f vs %.1f hp at the wheel)" % [run["peak_hp"], wheel_hp])
+		check(float(run["zero_100"]) > 2.0 and float(run["zero_100"]) < 15.0, "a 0-100 estimate (%.2f s)" % run["zero_100"])
+	# Change something and run again: the last run stays to compare against.
+	Shed._dyno_busy_until = 0
+	Shed.request({"a": "tune", "bike": faithful, "key": "map", "value": -0.25})
+	Shed.request({"a": "dyno_run", "bike": faithful})
+	runs = Shed.bikes[faithful]["dyno"]["runs"]
+	check(runs.size() == 2 and int(runs[0]["n"]) == 1 and int(runs[1]["n"]) == 2 and float(runs[1]["peak_hp"]) < float(runs[0]["peak_hp"]),
+		"the previous run is kept as a ghost to compare (%.1f -> %.1f hp)" % [runs[0]["peak_hp"], runs[-1]["peak_hp"]])
+	Shed._dyno_busy_until = 0
+	Shed.request({"a": "dyno_run", "bike": faithful})
+	check(Shed.bikes[faithful]["dyno"]["runs"].size() == 2 and int(Shed.bikes[faithful]["dyno"]["n"]) == 3, "only the last two runs are kept")
+	check(Shed.check(me, {"a": "set_stand", "bike": faithful, "stand": "side"}).contains("dyno"), "it stays strapped down until you wheel it off")
+	# The run plays back the same everywhere: through the gears, then a sweep to the limiter.
+	var peak_rpm := 0.0
+	var last_p := -1.0
+	var monotonic := true
+	var tt := 0.0
+	while tt < DynoRoom.run_time(b):
+		var st := DynoRoom.sweep_state(b, tt)
+		peak_rpm = maxf(peak_rpm, float(st["rpm"]))
+		monotonic = monotonic and float(st["progress"]) >= last_p
+		last_p = float(st["progress"])
+		tt += 0.05
+	check(monotonic and peak_rpm >= b.redline * 0.99 and DynoRoom.run_time(b) > 6.0 and DynoRoom.run_time(b) < 14.0,
+		"a run revs through the gears to the limiter in %.1f s" % DynoRoom.run_time(b))
+
+	# The desk and its graph.
+	var desk := TuningComputer.new()
+	add_child(desk)
+	var tune_before := Shed.tune_of(faithful)
+	desk.open()
+	await get_tree().process_frame
+	desk._process(1.0)
+	check(desk.bike_id == faithful and desk.tunable_bikes()[0] == faithful, "the desk picks the bike on the dyno")
+	check(Shed.tune_of(faithful) == tune_before, "opening the desk doesn't change the tune %s" % str(Shed.tune_of(faithful)))
+	(desk._rows["psi_r"]["slider"] as HSlider).value = 2.2
+	desk._flush()
+	check(is_equal_approx(float(Shed.tune_of(faithful).get("psi_r", 0.0)), 2.2), "moving a slider tunes the bike through the Shed")
+	desk._select(barn)
+	check(not (desk._rows["f_preload"]["slider"] as HSlider).editable, "sliders are locked where the part has no adjuster")
+	check(TuningComputer.value_text("map", 0.2, b).begins_with("Rich") and TuningComputer.value_text("psi_f", 2.0, b).contains("bar"),
+		"the desk reads settings in plain words")
+	desk.close_computer()
+	desk.queue_free()
+	var graph := DynoGraph.new()
+	graph.size = Vector2(1280, 720)
+	add_child(graph)
+	graph.show_runs("DYNO", Shed.bikes[faithful]["dyno"]["runs"], 0.5, {"rpm": 6000.0, "gear": 5})
+	await get_tree().process_frame
+	graph.show_runs("DYNO", Shed.bikes[faithful]["dyno"]["runs"], 1.0)
+	await get_tree().process_frame
+	check(graph.runs.size() == 2, "the dyno graph draws the last two runs")
+	graph.queue_free()
+	Shed.stop()
