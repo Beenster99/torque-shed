@@ -10,6 +10,7 @@ var _dust: CPUParticles3D
 var _beam: SpotLight3D
 var _lamp_glow: OmniLight3D
 var _surface := "tarmac"
+var _screech: AudioStreamPlayer3D
 var _probe_timer := 0.0
 
 
@@ -149,6 +150,42 @@ func _probe_surface() -> String:
 	if hit and hit["collider"] and (hit["collider"] as Object).has_meta("surface"):
 		return str((hit["collider"] as Object).get_meta("surface"))
 	return "grass" if hit else "tarmac"
+
+
+## Tyre screech and rubber on the road while the ridden bike's tyres skid.
+func update_skids(bike: Bike) -> void:
+	var marks := SkidMarks.shared(get_tree())
+	var loudest := 0.0
+	for i in bike.wheels.size():
+		var w: Dictionary = bike.wheels[i]
+		var hard := 0.0
+		if w["contact"] and absf(bike.speed) > 2.0 and w["surface"] in ["tarmac", "dirt"]:
+			hard = clampf((float(w["slip"]) - Bike.SKID_SLIP) / 0.5, 0.0, 1.0)
+		var width: float = bike.build.front_tyre_width if w["is_front"] else bike.build.rear_tyre_width
+		marks.mark("%d_%d" % [bike.get_instance_id(), i], w.get("contact_pos", Vector3.ZERO), w.get("normal", Vector3.UP),
+			width, hard, str(w["surface"]))
+		if w["surface"] == "tarmac":
+			loudest = maxf(loudest, hard)
+	bike.skid = loudest
+	set_screech(loudest)
+
+
+## The tyre squeal on its own, 0 (none) .. 1 (full lock-up), for other players' bikes too.
+func set_screech(level: float) -> void:
+	if _screech == null:
+		_screech = Sfx.make_loop_player(self)
+		_screech.max_distance = 80.0
+		_screech.unit_size = 10.0
+	if level > 0.02:
+		Sfx.set_loop(_screech, "screech")
+		_screech.volume_db = linear_to_db(clampf(0.3 + level * 0.9, 0.0, 1.2))
+		_screech.pitch_scale = 0.9 + level * 0.25
+	else:
+		Sfx.set_loop(_screech, "")
+
+
+func screeching() -> bool:
+	return _screech != null and _screech.playing
 
 
 func smoke_emitting() -> bool:

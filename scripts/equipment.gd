@@ -7,16 +7,21 @@ extends RefCounted
 ## Each model has a kind, a footprint `size` (width, height, depth in metres) and, for the ones
 ## that hold parts, a number of places. Compact models are for a shed that's filling up.
 
-const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "bench", "poster", "seat", "tv"]
+const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "bench", "poster", "seat", "tv",
+	"ramp", "obstacle", "barrier", "marker"]
 const KIND_NAMES := {"stand": "Engine stands", "shelf": "Shelving", "washer": "Parts washers",
-	"repair": "Repair machines", "bench": "Workbenches", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs"}
+	"repair": "Repair machines", "bench": "Workbenches", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs",
+	"ramp": "Jump ramps", "obstacle": "Things to jump", "barrier": "Walls and fences", "marker": "Cones, posts and flags"}
+## Kinds that live outside in the yard, to ride over, round and through.
+const YARD_KINDS: Array[String] = ["ramp", "obstacle", "barrier", "marker"]
 ## Kinds that hang on a wall rather than stand on the floor.
 const WALL_KINDS: Array[String] = ["poster", "tv"]
 ## What the places on each kind are called in spot names: "<prefix>_<furniture id>_<n>".
 const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb"}
 ## The model each kind defaults to (and what an order without a model gets).
 const DEFAULT := {"stand": "engine_stand", "shelf": "shelf_standard", "washer": "washer_standard",
-	"repair": "repair_standard", "bench": "bench_standard", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_43"}
+	"repair": "repair_standard", "bench": "bench_standard", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_43",
+	"ramp": "ramp_medium", "obstacle": "barrels", "barrier": "wall_concrete", "marker": "cone"}
 
 const MODELS := {
 	# Engine stands hold one engine each.
@@ -114,6 +119,47 @@ const MODELS := {
 		"desc": "Big screen for the shed. Live riding feed, or the crew board."},
 	"tv_65": {"kind": "tv", "name": "65\" wall TV", "size": Vector3(1.44, 0.82, 0.07), "inches": 65,
 		"desc": "Cinema in the shed. Live riding feed, or the crew board."},
+
+	# Yard kit: pushed about with F like the shed equipment. Ramps rise away from their front (+Z),
+	# so ride at the low end. `solid` ones stop a bike; markers you can ride straight past.
+	"ramp_small": {"kind": "ramp", "name": "Small kicker ramp", "size": Vector3(1.6, 0.45, 2.0), "solid": true,
+		"desc": "A little wooden kicker. Hop a foot or two in the air."},
+	"ramp_medium": {"kind": "ramp", "name": "Medium jump ramp", "size": Vector3(2.0, 0.9, 3.2), "solid": true,
+		"desc": "Proper air. Steady throttle up the face and keep your weight central."},
+	"ramp_large": {"kind": "ramp", "name": "Big jump ramp", "size": Vector3(2.6, 1.6, 4.8), "solid": true,
+		"desc": "Steel-framed launch ramp. Bring speed, and a landing."},
+	"ramp_landing": {"kind": "ramp", "name": "Landing ramp", "size": Vector3(2.8, 1.5, 7.0), "solid": true,
+		"desc": "Long gentle slope to land on. Turn it to face a jump ramp, a bike's length or three away."},
+	"tabletop": {"kind": "obstacle", "name": "Dirt tabletop", "size": Vector3(3.2, 1.2, 9.0), "solid": true,
+		"desc": "Up, across the flat top, and down the far side. Clear the top for the big landing."},
+	"barrels": {"kind": "obstacle", "name": "Row of oil drums", "size": Vector3(1.9, 0.62, 0.9), "solid": true,
+		"desc": "Three drums on their sides. The classic stunt-show jump."},
+	"log": {"kind": "obstacle", "name": "Log", "size": Vector3(2.4, 0.45, 0.45), "solid": true,
+		"desc": "Trials practice: wheelie the front over and let the back follow."},
+	"tyre_stack": {"kind": "obstacle", "name": "Tyre stack", "size": Vector3(0.75, 0.9, 0.75), "solid": true,
+		"desc": "Old car tyres piled up. A marker you can lean on, or a target to miss."},
+	"hay_bales": {"kind": "obstacle", "name": "Hay bales", "size": Vector3(2.2, 0.5, 1.0), "solid": true,
+		"desc": "Two bales side by side. Soft-ish."},
+	"car_wreck": {"kind": "obstacle", "name": "Old car", "size": Vector3(1.75, 1.35, 4.0), "solid": true,
+		"desc": "A rusty saloon with no engine. Jump it, if you dare."},
+	"wall_concrete": {"kind": "barrier", "name": "Concrete barrier", "size": Vector3(2.0, 0.8, 0.6), "solid": true,
+		"desc": "Road-works barrier. Builds a track edge that stays put."},
+	"wall_brick": {"kind": "barrier", "name": "Brick wall section", "size": Vector3(2.4, 1.2, 0.3), "solid": true,
+		"desc": "A short run of brick wall on a frame."},
+	"fence_wood": {"kind": "barrier", "name": "Wooden fence panel", "size": Vector3(2.4, 1.1, 0.12), "solid": true,
+		"desc": "Post and rail fence for marking out a paddock."},
+	"fence_mesh": {"kind": "barrier", "name": "Mesh fence panel", "size": Vector3(3.0, 2.0, 0.15), "solid": true,
+		"desc": "Site fencing on concrete feet. Keeps spectators back."},
+	"cone": {"kind": "marker", "name": "Traffic cone", "compact": true, "size": Vector3(0.36, 0.5, 0.36),
+		"desc": "Orange cone for slaloms and braking markers. Ride through it, it won't hurt."},
+	"post": {"kind": "marker", "name": "Marker post", "compact": true, "size": Vector3(0.15, 1.0, 0.15),
+		"desc": "Black and yellow bollard post."},
+	"flag_red": {"kind": "marker", "name": "Red course flag", "compact": true, "size": Vector3(0.6, 2.2, 0.1),
+		"color": Color(0.85, 0.08, 0.05), "desc": "A flag on a pole to mark a turn."},
+	"flag_blue": {"kind": "marker", "name": "Blue course flag", "compact": true, "size": Vector3(0.6, 2.2, 0.1),
+		"color": Color(0.1, 0.25, 0.85), "desc": "A flag on a pole to mark the other side of a gate."},
+	"flag_chequered": {"kind": "marker", "name": "Chequered flag", "compact": true, "size": Vector3(0.6, 2.2, 0.1),
+		"color": Color(1, 1, 1), "desc": "Start, finish, or just showing off."},
 }
 
 
@@ -135,6 +181,10 @@ static func by_kind(kind: String) -> Array:
 
 static func is_wall(id: String) -> bool:
 	return WALL_KINDS.has(kind_of(id))
+
+
+static func is_yard(id: String) -> bool:
+	return YARD_KINDS.has(kind_of(id))
 
 
 ## How many parts one of these holds.
@@ -166,6 +216,14 @@ static func spec_line(id: String) -> String:
 			bits.append("F: sit down  ·  hold F: move it")
 		"tv":
 			bits.append("%d inch" % int(m["inches"]))
+		"ramp":
+			bits.append("%.1f m high, %.1f m long" % [m["size"].y, m["size"].z])
+		"obstacle", "barrier":
+			bits.append("%.1f m high" % m["size"].y)
+		"marker":
+			bits.append("Ride past or through it")
+	if is_yard(id):
+		bits.append("For the yard outside")
 	var size: Vector3 = m.get("size", Vector3.ONE)
 	if is_wall(id):
 		bits.append("%.2f x %.2f m  ·  hangs on a wall" % [size.x, size.y])

@@ -41,6 +41,8 @@ var _seat_front := Vector3.ZERO
 var _tail := Vector3.ZERO
 var _engine_c := Vector3.ZERO
 var _block_w := 0.3
+var _bore_r := 0.048             # cylinder barrel radius
+var _eng_s := 1.0                # engine size relative to a 700 cc
 var _cyls := []                  # {base, up} per cylinder barrel
 var _arm_len := 0.6
 var _grip_l := Vector3(-0.31, 0.12, 0.06)   # handlebar grips, in steering space
@@ -50,6 +52,9 @@ var _exhaust_tip := Vector3.ZERO
 var _eye := Vector3.ZERO
 var _grime: StandardMaterial3D
 var _dash_label: Label3D
+var _needles := []               # {node, what: "speed" or "rpm"} on dial clocks
+var _leds := []                  # shift lights: {mat, color}
+var _dash_screen := Transform3D()  # where the readout text sits on the clocks, in steering space
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -77,7 +82,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_head_bottom = _head - _steer_axis * 0.16
 	_seat_y = build.seat_height - build.rear_radius
 	_pivot = Vector3(0.0, 0.16, zr - 0.6)
-	_seat_front = Vector3(0.0, _seat_y - 0.1, _pivot.z - 0.32)
+	# The seat starts over the swingarm pivot, leaving the tank its own space behind the bars.
+	_seat_front = Vector3(0.0, _seat_y - 0.1, _pivot.z + 0.02)
 	_tail = Vector3(0.0, build.seat_height - build.rear_radius - 0.02, zr - 0.12)
 	_engine_c = Vector3(0.0, 0.1, lerpf(_head_bottom.z, _pivot.z, 0.48))
 	_layout_cylinders(build)
@@ -134,23 +140,39 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	if with_rider:
 		_build_rider()
 	update_pose_from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+	set_gauges(0.0, 0.0)
 
 
-## Where each cylinder's barrel sits and which way it points, for the engine layout.
+## Where each cylinder's barrel sits and which way it points, for the engine layout. Barrels
+## are sized from the bore, so a 50 cc twin looks tiny next to a 1200.
 func _layout_cylinders(build: BikeBuild) -> void:
 	_cyls.clear()
 	var cyl := build.cylinders
-	if build.layout == "vtwin":
-		_block_w = 0.22
-		for dir in [-1.0, 1.0]:
-			var up := Vector3(0.0, cos(0.6), 0.6 * dir).normalized()
-			_cyls.append({"base": _engine_c + Vector3(0.0, 0.13, 0.07 * dir) + up * 0.12, "up": up})
-		return
-	_block_w = 0.2 + 0.11 * (cyl - 1)
-	var up := Vector3(0.0, 1.0, -0.25).normalized()
+	var block := PartsDB.get_part(str(build.parts.get("engine", "")))
+	_bore_r = clampf(float(block.get("bore", 80.0)) * 0.0006, 0.022, 0.062)
+	_eng_s = clampf(pow(build.displacement / 700.0, 0.3), 0.55, 1.2)
+	var s := _eng_s
+	match build.layout:
+		"vtwin":
+			_block_w = 0.22 * s
+			for dir in [-1.0, 1.0]:
+				var up := Vector3(0.0, cos(0.6), 0.6 * dir).normalized()
+				_cyls.append({"base": _engine_c + Vector3(0.0, 0.13 * s, 0.07 * dir * s) + up * 0.12 * s, "up": up})
+			return
+		"boxer":
+			# Flat twin: the barrels stick straight out either side, ahead of the rider's knees.
+			_block_w = 0.24 * s
+			for dir in [-1.0, 1.0]:
+				var up := Vector3(dir, 0.08, -0.05).normalized()
+				_cyls.append({"base": _engine_c + Vector3(0.1 * dir * s, 0.03, -0.06) + up * 0.1 * s, "up": up})
+			return
+	_block_w = (0.2 + 0.11 * (cyl - 1)) * s
+	# A classic twin stands upright; two-strokes lean right forward; the rest lean a little.
+	var lean := {"twin": 0.04, "2stroke": 0.4}.get(build.layout, 0.25) as float
+	var up := Vector3(0.0, 1.0, -lean).normalized()
 	for c in cyl:
-		var cx := (c - (cyl - 1) * 0.5) * 0.12
-		_cyls.append({"base": _engine_c + Vector3(cx, 0.14, -0.04) + up * 0.1, "up": up})
+		var cx := (c - (cyl - 1) * 0.5) * maxf(0.12 * s, _bore_r * 2.4)
+		_cyls.append({"base": _engine_c + Vector3(cx, 0.14 * s, -0.04) + up * 0.1 * s, "up": up})
 
 
 func _part_id() -> String:
@@ -237,33 +259,40 @@ func _draw_tank() -> void:
 	var p := _part()
 	var mat := _mat(_col(), 0.25, 0.2, 0.6)
 	var size := pow(float(p.get("capacity", 15.0)) / 15.0, 0.33)
-	var c := Vector3(0.0, lerpf(_head.y, _seat_front.y, 0.5) + 0.06, lerpf(_head.z, _seat_front.z, 0.55))
+	# The tank fills the gap between the bars and the front of the seat, and no further.
+	var front := _head.z + 0.13
+	var back := _seat_front.z + 0.03
+	var root := Node3D.new()
+	root.position = Vector3(0.0, lerpf(_head.y, _seat_front.y, 0.5) + 0.06, (front + back) * 0.5)
+	root.scale = Vector3(1.0, 1.0, clampf((back - front) / (0.6 * size), 0.55, 1.25))
+	add_child(root)
+	var c := Vector3.ZERO
 	match str(p.get("style", "cafe")):
 		"sport":
-			var main := _box(c + Vector3(0.0, -0.01, 0.02), Vector3(0.36, 0.2, 0.44) * size, mat)
+			var main := _box(c + Vector3(0.0, -0.01, 0.02), Vector3(0.36, 0.2, 0.44) * size, mat, root)
 			main.rotation.x = -0.12
-			var nose := _box(c + Vector3(0.0, 0.04, -0.2 * size), Vector3(0.3, 0.14, 0.18) * size, mat)
+			var nose := _box(c + Vector3(0.0, 0.04, -0.2 * size), Vector3(0.3, 0.14, 0.18) * size, mat, root)
 			nose.rotation.x = 0.45
 		"enduro":
-			var t := _mesh_instance(_capsule(0.13, 0.46), mat, c + Vector3(0.0, -0.02, -0.03))
+			var t := _mesh_instance(_capsule(0.13, 0.46), mat, c + Vector3(0.0, -0.02, -0.03), root)
 			t.rotation = Vector3(PI * 0.5 - 0.3, 0.0, 0.0)
 			t.scale = Vector3(1.0, 1.0, 0.7)
 			for side in [-1.0, 1.0]:
-				var shroud := _box(c + Vector3(0.15 * side, -0.12, -0.12), Vector3(0.03, 0.22, 0.3), mat)
+				var shroud := _box(c + Vector3(0.15 * side, -0.12, -0.12), Vector3(0.03, 0.22, 0.3), mat, root)
 				shroud.rotation.x = -0.4
 		"peanut":
-			var t := _mesh_instance(_capsule(0.11, 0.36), mat, c + Vector3(0.0, 0.02, 0.0))
+			var t := _mesh_instance(_capsule(0.11, 0.36), mat, c + Vector3(0.0, 0.02, 0.0), root)
 			t.rotation = Vector3(PI * 0.5 - 0.15, 0.0, 0.0)
 			t.scale = Vector3(0.85, 1.0, 0.85)
 		"touring":
-			var t := _mesh_instance(_capsule(0.18, 0.6), mat, c + Vector3(0.0, 0.01, 0.0))
+			var t := _mesh_instance(_capsule(0.18, 0.6), mat, c + Vector3(0.0, 0.01, 0.0), root)
 			t.rotation = Vector3(PI * 0.5 - 0.1, 0.0, 0.0)
 			t.scale = Vector3(1.15, 1.0, 0.8)
 		_:
-			var t := _mesh_instance(_capsule(0.15 * size, 0.58 * size), mat, c)
+			var t := _mesh_instance(_capsule(0.15 * size, 0.58 * size), mat, c, root)
 			t.rotation = Vector3(PI * 0.5 - 0.12, 0.0, 0.0)
 			t.scale = Vector3(1.0, 1.0, 0.72)
-	_mesh_instance(_cylinder(0.035, 0.02), _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15), c + Vector3(0.0, 0.13 * size, -0.03))
+	_mesh_instance(_cylinder(0.035, 0.02), _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15), c + Vector3(0.0, 0.13 * size, -0.03), root)
 
 
 func _draw_saddle() -> void:
@@ -273,7 +302,6 @@ func _draw_saddle() -> void:
 	var y := _seat_y
 	var z0 := _seat_front.z
 	var z1 := _tail.z
-	var mid := lerpf(z0, z1, 0.45)
 	match str(p.get("style", "bench")):
 		"cafe":
 			_box(Vector3(0.0, y, lerpf(z0, z1, 0.3)), Vector3(0.24, 0.07, 0.36), mat)
@@ -291,7 +319,7 @@ func _draw_saddle() -> void:
 			var back := _box(Vector3(0.0, y + 0.22, z1 + 0.04), Vector3(0.3, 0.26, 0.06), mat)
 			back.rotation.x = 0.2
 		_:
-			_box(Vector3(0.0, y, mid), Vector3(0.26, 0.08, 0.6), mat)
+			_box(Vector3(0.0, y, lerpf(z0, z1, 0.5)), Vector3(0.26, 0.08, z1 - z0 + 0.04), mat)
 
 
 # ---------------------------------------------------------------------------- engine
@@ -299,9 +327,19 @@ func _draw_saddle() -> void:
 func _draw_engine() -> void:
 	_current_slot = "engine"
 	var mat := _mat(_col(), 0.8, 0.4)
-	_box(_engine_c, Vector3(_block_w, 0.26, 0.34), mat)
+	_box(_engine_c, Vector3(_block_w, 0.26 * _eng_s, 0.34 * _eng_s), mat)
+	var fins := _build.layout in ["boxer", "twin", "2stroke"]
 	for c in _cyls:
-		_tube(c["base"] - c["up"] * 0.1, c["base"] + c["up"] * 0.09, 0.048, mat)
+		_tube(c["base"] - c["up"] * 0.1, c["base"] + c["up"] * 0.09, _bore_r, mat)
+		if fins:
+			# Deep cooling fins round the barrel.
+			for k in 4:
+				var at: Vector3 = c["base"] + c["up"] * (-0.06 + k * 0.045)
+				var fin := _mesh_instance(_cylinder(_bore_r * 1.45, 0.008), mat, at)
+				fin.basis = _basis_up(c["up"])
+	if _build.layout == "2stroke":
+		# Expansion chamber bulge under the engine instead of a sump.
+		_box(_engine_c + Vector3(0.0, -0.16 * _eng_s, 0.02), Vector3(_block_w * 0.7, 0.06, 0.24 * _eng_s), mat)
 
 
 func _draw_head() -> void:
@@ -548,33 +586,80 @@ func _draw_handlebars() -> void:
 
 func _draw_dashboard() -> void:
 	_current_slot = "dashboard"
+	_needles.clear()
+	_leds.clear()
+	_dash_screen = Transform3D()
 	var p := _part()
 	var housing := _mat(_col(), 0.6, 0.35)
 	var at := Vector3(0.0, 0.1, -0.06)
-	var tilt := Basis(Vector3.RIGHT, -0.9)
+	# The clocks lean back towards the rider, so their faces look up and back at the eyes.
+	var tilt := Basis(Vector3.RIGHT, 0.9)
+	var face_mat := _glow(Color(0.95, 0.9, 0.75), 1.2)
+	var needle_mat := _glow(Color(1.0, 0.25, 0.1), 2.5)
 	match str(p.get("style", "analog")):
 		"analog", "twin":
-			var xs := [0.0] if p.get("style") == "analog" else [-0.07, 0.07]
-			for x in xs:
-				var dial := _mesh_instance(_cylinder(0.05, 0.05), housing, at + Vector3(x, 0.0, 0.0), _steer_node)
+			var twin: bool = p.get("style") == "twin"
+			var dials := [{"x": -0.06, "what": "speed"}, {"x": 0.06, "what": "rpm"}] if twin else [{"x": 0.0, "what": "speed"}]
+			for d in dials:
+				var c: Vector3 = at + Vector3(d["x"], 0.0, 0.0)
+				var dial := _mesh_instance(_cylinder(0.05, 0.05), housing, c, _steer_node)
 				dial.basis = tilt
-				var face := _mesh_instance(_cylinder(0.043, 0.004), _glow(Color(0.95, 0.9, 0.75), 1.2), at + Vector3(x, 0.0, 0.0) + tilt.y * 0.026, _steer_node)
+				var face := _mesh_instance(_cylinder(0.043, 0.004), face_mat, c + tilt.y * 0.026, _steer_node)
 				face.basis = tilt
+				# Tick marks round the dial.
+				for i in 9:
+					var a := lerpf(-2.35, 2.35, i / 8.0)
+					var tick := _box(c + tilt.y * 0.029 + tilt * Vector3(sin(a) * 0.036, 0.0, -cos(a) * 0.036), Vector3(0.003, 0.002, 0.008), _mat(Color(0.05, 0.05, 0.05), 0.0, 0.8), _steer_node)
+					tick.basis = tilt * Basis(Vector3.UP, -a)
+				var pivot := Node3D.new()
+				pivot.position = c + tilt.y * 0.031
+				pivot.basis = tilt
+				_steer_node.add_child(pivot)
+				_box(Vector3(0.0, 0.0, -0.016), Vector3(0.004, 0.003, 0.034), needle_mat, pivot)
+				_needles.append({"node": pivot, "what": d["what"]})
+			# The little window under the needle (or between the two dials) for gear and fuel.
+			_dash_screen = Transform3D(tilt, at + tilt.y * 0.032 + tilt * Vector3(0.0, 0.0, 0.046 if twin else 0.022))
 		"lcd", "tft":
 			var tft: bool = p.get("style") == "tft"
 			var size := Vector3(0.2, 0.03, 0.12) if tft else Vector3(0.16, 0.03, 0.09)
 			var body := _box(at, size, housing, _steer_node)
 			body.basis = tilt
 			var screen := _box(at + tilt.y * 0.016, Vector3(size.x - 0.02, 0.004, size.z - 0.02),
-				_glow(Color(0.3, 0.6, 1.0) if tft else Color(0.55, 0.75, 0.55), 1.5), _steer_node)
+				_glow(Color(0.05, 0.12, 0.25) if tft else Color(0.42, 0.55, 0.42), 1.0), _steer_node)
 			screen.basis = tilt
+			_dash_screen = Transform3D(tilt, at + tilt.y * 0.019)
+			if tft:
+				_add_leds(at + tilt.y * 0.017 + tilt * Vector3(0.0, 0.0, -size.z * 0.5 - 0.008), tilt, 0.14)
 		_:
-			var body := _box(at, Vector3(0.22, 0.03, 0.07), housing, _steer_node)
+			var body := _box(at, Vector3(0.22, 0.03, 0.09), housing, _steer_node)
 			body.basis = tilt
-			var colors := [Color(0.1, 1.0, 0.2), Color(0.1, 1.0, 0.2), Color(1.0, 0.85, 0.1), Color(1.0, 0.85, 0.1), Color(1.0, 0.1, 0.05), Color(1.0, 0.1, 0.05)]
-			for i in 6:
-				var led := _box(at + tilt.y * 0.017 + tilt.x * (-0.075 + i * 0.03) + tilt.z * 0.018, Vector3(0.018, 0.004, 0.014), _glow(colors[i], 2.0), _steer_node)
-				led.basis = tilt
+			var screen := _box(at + tilt.y * 0.016 + tilt * Vector3(0.0, 0.0, 0.012), Vector3(0.18, 0.004, 0.05),
+				_glow(Color(0.03, 0.03, 0.04), 0.6), _steer_node)
+			screen.basis = tilt
+			_dash_screen = Transform3D(tilt, at + tilt.y * 0.019 + tilt * Vector3(0.0, 0.0, 0.012))
+			_add_leds(at + tilt.y * 0.017 + tilt * Vector3(0.0, 0.0, -0.028), tilt, 0.18)
+
+
+## A row of shift lights across the top of the clocks, green to amber to red.
+func _add_leds(center: Vector3, tilt: Basis, width: float) -> void:
+	var colors := [Color(0.1, 1.0, 0.2), Color(0.1, 1.0, 0.2), Color(1.0, 0.85, 0.1), Color(1.0, 0.85, 0.1), Color(1.0, 0.1, 0.05), Color(1.0, 0.1, 0.05)]
+	for i in 6:
+		var mat := _glow(colors[i], 0.0)
+		var led := _box(center + tilt.x * (-width * 0.5 + width * (i + 0.5) / 6.0), Vector3(0.016, 0.004, 0.01), mat, _steer_node)
+		led.basis = tilt
+		_leds.append({"mat": mat, "color": colors[i]})
+
+
+## Moves the needles and shift lights: `speed_frac` and `rpm_frac` are 0..1 of full scale.
+func set_gauges(speed_frac: float, rpm_frac: float) -> void:
+	for n in _needles:
+		var f: float = speed_frac if n["what"] == "speed" else rpm_frac
+		(n["node"] as Node3D).basis = _dash_screen.basis * Basis(Vector3.UP, lerpf(2.35, -2.35, clampf(f, 0.0, 1.0)))
+	for i in _leds.size():
+		var lit := rpm_frac > 0.55 + i * 0.07
+		var m: StandardMaterial3D = _leds[i]["mat"]
+		m.emission_energy_multiplier = 3.0 if lit else 0.0
+		m.albedo_color = _leds[i]["color"] if lit else Color(0.08, 0.08, 0.08)
 
 
 func _draw_front_master() -> void:
@@ -849,11 +934,11 @@ func _build_rider() -> void:
 	v.scale = Vector3(1.1, 0.6, 0.5)
 	var grip_l := _head + _grip_l
 	var grip_r := _head + _grip_r
-	# The first-person eye sits up and back from the bars so both gloves and the clocks are in
-	# view; the torso, helmet and upper arms, which would be in the way, are hidden from it.
+	# The first-person eye is the rider's own, inside the helmet, looking down the road over the
+	# bars; the torso, helmet and upper arms, which would be in the way, are hidden from it.
 	for mi in [torso, lid, v]:
 		(mi as GeometryInstance3D).layers = 1 << (HELMET_LAYER - 1)
-	_eye = grip_l.lerp(grip_r, 0.5) + Vector3(0.0, 0.55, 0.42)
+	_eye = shoulders + Vector3(0.0, 0.28, 0.28)
 	for side in [-1.0, 1.0]:
 		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
 		var grip := grip_r if side > 0 else grip_l
@@ -905,7 +990,7 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 
 ## Where the rider's eyes are, looking down over the bars at the clocks, in the model's space.
 func eye_transform() -> Transform3D:
-	var at := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-27.0)), _eye)
+	var at := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-21.0)), _eye)
 	return (_rider.transform * at) if _rider else at
 
 
@@ -964,20 +1049,27 @@ static func _splatter() -> NoiseTexture2D:
 	return _splatter_tex
 
 
-## A readout on the clocks for the rider: speed, gear and fuel. Only the ridden bike has one.
+## A readout on the clocks for the rider: speed, gear and fuel, printed on the screen (or under
+## the needle on dial clocks). Only the ridden bike has one.
 func dash_readout() -> Label3D:
 	if _dash_label == null:
 		_dash_label = Label3D.new()
-		_dash_label.font_size = 40
-		_dash_label.pixel_size = 0.0005
+		var dials := not _needles.is_empty()
+		_dash_label.font_size = 28 if dials else 40
+		_dash_label.pixel_size = 0.0004
 		_dash_label.outline_size = 0
-		_dash_label.modulate = Color(0.75, 1.0, 0.85)
-		_dash_label.position = Vector3(0.0, 0.16, -0.03)
-		_dash_label.rotation.x = -0.75
+		_dash_label.modulate = Color(0.1, 0.1, 0.1) if dials else Color(0.75, 1.0, 0.85)
+		# Label3D faces +Z; lay it flat on the face, which looks along the tilted Y.
+		_dash_label.transform = Transform3D(_dash_screen.basis * Basis(Vector3.RIGHT, -PI * 0.5), _dash_screen.origin)
 		_dash_label.line_spacing = -4.0
 		_dash_label.shaded = false
+		_dash_label.double_sided = false
 		_steer_node.add_child(_dash_label)
 	return _dash_label
+
+
+func has_dials() -> bool:
+	return not _needles.is_empty()
 
 
 func set_rider_visible(v: bool) -> void:

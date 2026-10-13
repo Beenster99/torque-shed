@@ -50,6 +50,10 @@ func _run_all() -> void:
 	_test_shed_rules()
 	_test_garage_life()
 	_test_equipment_and_chains()
+	print("Round 5: scratch builds, engines, clocks, yard kit")
+	_test_round5_shed()
+	_test_round5_models()
+	await _test_round5_riding()
 	print("Sound and radio")
 	_test_sounds()
 	_test_mp3_decoder()
@@ -944,7 +948,7 @@ func _test_session() -> void:
 	var ranger := _bike_named("Rusty Ranger")
 	var view: Node3D = main.workshop.bike_views[ranger]
 	var model: BikeModel = main.workshop.bike_model(ranger)
-	var aim: Vector3 = model.global_transform * model.slot_bounds("exhaust").get_center()
+	var aim: Vector3 = model.global_transform * (model.exhaust_tip() + Vector3(0.0, -0.04, -0.2))
 	var stand: Vector3 = aim + Vector3(1.4, 0.0, 0.0)
 	stand.y = 0.0
 	main.walker.place(Transform3D(Basis(), stand))
@@ -1052,10 +1056,11 @@ func _test_session() -> void:
 	var rider_eye: Vector3 = main.bike.model.global_transform * main.bike.model.eye_transform().origin
 	check(main.camera.mode == ChaseCamera.Mode.HELMET and main.camera.global_position.distance_to(rider_eye) < 0.05
 		and not main.camera.get_cull_mask_value(BikeModel.HELMET_LAYER), "C switches to first person, from the rider's eyes inside the helmet")
-	var grips: Vector3 = main.camera.to_local(main.bike.model.global_transform * (main.bike.model._head + main.bike.model._grip_l))
+	# The forearms reaching down to the bars, just above the gloves (low clip-ons sit under the view, as they do).
+	var grips: Vector3 = main.camera.to_local(main.bike.model.global_transform * (main.bike.model._head + main.bike.model._grip_l + Vector3(0.0, 0.12, 0.1)))
 	var dash: Vector3 = main.camera.to_local(main.bike.model.global_transform * (main.bike.model._head + Vector3(0.0, 0.1, -0.06)))
 	check(main.camera.is_position_in_frustum(main.camera.to_global(grips)) and main.camera.is_position_in_frustum(main.camera.to_global(dash)),
-		"the first-person view shows the hands on the bars and the clocks (grips %s, dash %s)" % [grips, dash])
+		"the first-person view shows the rider's arms on the bars and the clocks (arms %s, dash %s)" % [grips, dash])
 	check(main._dash != null and main._dash.text.contains(Units.speed_unit()), "the clocks show speed and fuel (%s)" % main._dash.text.replace("\n", " / "))
 	_press("camera")
 	await get_tree().physics_frame
@@ -1139,6 +1144,7 @@ func _test_session() -> void:
 	await get_tree().physics_frame
 	check(main.workshop.tvs().size() == 1 and not main.workshop.tvs()[0].is_live(), "with nobody riding, the TV goes back to the crew board")
 	await _session_equipment(main, faithful)
+	await _session_round5(main)
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
@@ -1233,6 +1239,310 @@ func _session_equipment(main: Node, faithful: int) -> void:
 		"crouched with the wrench at the chain, the second button adjusts it (%s / %s)" % [str(w.alt_plan.get("blocked", "")), str(w.target)])
 	w.set_crouched(false)
 	w.set_tool("hands")
+
+
+## Building a bike from a bare frame, the yard kit, and the new engines in the catalogue.
+func _test_round5_shed() -> void:
+	Shed.start_new("Tester", 5)
+	var me := Shed.me()
+	# A frame set up on the empty fourth bay becomes a new bike to build on.
+	Shed.request({"a": "order_part", "part": "steel_cradle"})
+	var frame := 0
+	for id in Shed.items:
+		if Shed.items[id]["part"] == "steel_cradle" and Shed.items[id]["at"] == "floor":
+			frame = id
+	Shed.request({"a": "unpack", "item": frame})
+	Shed.request({"a": "take", "item": frame})
+	check(Shed.check(me, {"a": "start_build", "bay": 0}).contains("already"), "a frame can't go on a bay that has a bike in it")
+	var bay := Shed.free_bay(Workshop.BAY_COUNT)
+	check(bay == 3 and Shed.bay_at(Workshop.bay_transform(bay).origin) == bay, "bay 4 is the empty one")
+	var before := Shed.bikes.size()
+	Shed.request({"a": "start_build", "bay": bay})
+	var scratch := 0
+	for id in Shed.bikes:
+		if Shed.item_on(id, "frame") == frame:
+			scratch = id
+	check(Shed.bikes.size() == before + 1 and scratch != 0 and Shed.held_by(me) == 0,
+		"setting the frame on the empty bay's stand starts a bike from scratch")
+	check(str(Shed.bikes[scratch]["name"]) == "Scratch build 1" and Shed.missing_slots(scratch).has("fork")
+		and Shed.on_paddock(scratch), "it's just a frame on the paddock stand, waiting for parts")
+	# Now parts go on it like any bike.
+	Shed.request({"a": "order_part", "part": "classic_conventional"})
+	var fork := 0
+	for id in Shed.items:
+		if Shed.items[id]["part"] == "classic_conventional" and Shed.items[id]["at"] == "floor":
+			fork = id
+	Shed.request({"a": "unpack", "item": fork})
+	Shed.request({"a": "take", "item": fork})
+	Shed.request({"a": "install", "bike": scratch, "slot": "fork"})
+	check(Shed.item_on(scratch, "fork") == fork, "the forks bolt onto the bare frame (%s)" % Shed.check(me, {"a": "install", "bike": scratch, "slot": "fork"}))
+	check(Shed.build_of(scratch).hp() > 0.0 and not Shed.build_of(scratch).summary().is_empty(), "the bay screens can show its numbers")
+	# Strip it back to nothing and the bay is free again.
+	Shed.request({"a": "unbolt", "bike": scratch, "slot": "fork"})
+	Shed.request({"a": "remove", "bike": scratch, "slot": "fork"})
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER)})
+	Shed.request({"a": "unbolt", "bike": scratch, "slot": "frame"})
+	Shed.request({"a": "remove", "bike": scratch, "slot": "frame"})
+	check(not Shed.bikes.has(scratch) and Shed.held_by(me) == frame and Shed.bay_is_free(bay),
+		"taking the frame off the stand clears the bay")
+
+	# The yard comes with a jump line, a slalom and things to jump, and more can be ordered.
+	var yard := {}
+	for id in Shed.furniture:
+		if Equipment.is_yard(str(Shed.furniture[id]["model"])):
+			yard[Equipment.kind_of(str(Shed.furniture[id]["model"]))] = true
+	check(yard.size() == 4, "the yard has ramps, things to jump, walls and markers (%s)" % str(yard.keys()))
+	for k in Equipment.YARD_KINDS:
+		check(Equipment.by_kind(k).size() >= 4, "the parts computer sells %s (%d)" % [Equipment.KIND_NAMES[k].to_lower(), Equipment.by_kind(k).size()])
+	for model in ["ramp_small", "ramp_medium", "ramp_large", "ramp_landing", "cone", "post", "flag_red", "wall_concrete", "fence_wood", "barrels", "car_wreck"]:
+		check(Equipment.get_model(model).size() > 0, "%s is in the catalogue" % model)
+	var n := Shed.furniture.size()
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER)})
+	Shed.request({"a": "order_furniture", "model": "ramp_large"})
+	var ordered: Dictionary = Shed.furniture[Shed.furniture.keys().max()]
+	var at: Vector3 = ordered["xf"].origin
+	check(Shed.furniture.size() == n + 1 and ordered["model"] == "ramp_large" and at.z > 104.0 and absf(at.x) < 65.0,
+		"an ordered ramp is left in the yard past the drag strip (%s)" % str(at))
+	check(Shed.check(me, {"a": "grab", "furniture": ordered["id"]}) == "", "you can take hold of it to move it")
+
+	# Six engine layouts in ten sizes each.
+	for layout in ["boxer", "twin", "parallel", "vtwin", "2stroke", "inline"]:
+		var sizes := 0
+		for cc in [50, 125, 350, 500, 600, 750, 800, 1000, 1100, 1200]:
+			var p := PartsDB.get_part("%s_%d" % [layout, cc])
+			if not p.is_empty() and p["layout"] == layout and int(p["displacement"]) == cc:
+				sizes += 1
+		check(sizes == 10, "%s engines come in all ten sizes (%d)" % [layout, sizes])
+	var small := BikeBuild.new({"engine": "parallel_125"})
+	var big := BikeBuild.new({"engine": "parallel_1200"})
+	check(big.hp() > small.hp() * 5.0 and small.redline > big.redline, "a 125 is gutless and revvy next to a 1200 (%.0f vs %.0f hp)" % [small.hp(), big.hp()])
+	check(BikeBuild.new({"engine": "2stroke_125"}).hp() > BikeBuild.new({"engine": "twin_125"}).hp(), "a two-stroke makes more power per cc")
+
+
+func _test_round5_models() -> void:
+	# The clocks face the rider, and dial clocks have needles that move.
+	for dash in ["analog_speedo", "twin_clocks", "lcd_basic", "tft_colour", "race_logger"]:
+		var m := BikeModel.new()
+		add_child(m)
+		m.build_from(BikeBuild.new({"dashboard": dash}))
+		var label := m.dash_readout()
+		var facing: Vector3 = label.global_transform.basis.z
+		check(facing.z > 0.3 and facing.y > 0.3, "the %s readout faces back up at the rider (%s)" % [dash, str(facing)])
+		if dash in ["analog_speedo", "twin_clocks"]:
+			check(m.has_dials(), "%s has needles" % dash)
+			var n0: Basis = m._needles[0]["node"].basis
+			m.set_gauges(0.8, 0.8)
+			check(not m._needles[0]["node"].basis.is_equal_approx(n0), "the %s needle swings with speed" % dash)
+		m.queue_free()
+	# Tanks sit behind the bars and the saddle behind the tank; the eye is in the helmet.
+	for frame in ["steel_cradle", "steel_backbone", "alu_twin_spar"]:
+		for tank in PartsDB.by_kind["tank"]:
+			var m := BikeModel.new()
+			add_child(m)
+			m.build_from(BikeBuild.new({"frame": frame, "tank": tank, "handlebars": "clip_ons"}))
+			var t := m.slot_bounds("tank")
+			var bars := m.slot_bounds("handlebars")
+			var seat := m.slot_bounds("saddle")
+			check(t.position.z > m._head.z + 0.04 and t.end.z < seat.position.z + 0.12,
+				"%s on a %s sits between the bars and the seat (%.2f..%.2f, head %.2f, seat %.2f)" % [tank, frame, t.position.z, t.end.z, m._head.z, seat.position.z])
+			m.queue_free()
+	var m := BikeModel.new()
+	add_child(m)
+	m.build_from(BikeBuild.new({}))
+	var eye := m.eye_transform().origin
+	check(eye.y > m._head.y + 0.4 and eye.z > m._head.z, "the first-person eye is up in the rider's helmet (%.2f m above the bars)" % (eye.y - m._head.y))
+	m.queue_free()
+	# Every engine layout draws, from 50 cc to 1200.
+	for layout in ["boxer", "twin", "parallel", "vtwin", "2stroke", "inline"]:
+		var sizes := []
+		for cc in [50, 1200]:
+			var em := BikeModel.new()
+			add_child(em)
+			em.build_from(BikeBuild.new({"engine": "%s_%d" % [layout, cc]}))
+			sizes.append(em.slot_bounds("engine").size.length())
+			em.queue_free()
+		check(sizes[1] > sizes[0] * 1.2, "a 1200 cc %s is drawn bigger than a 50 (%.2f vs %.2f)" % [layout, sizes[1], sizes[0]])
+	var boxer := BikeModel.new()
+	add_child(boxer)
+	boxer.build_from(BikeBuild.new({"engine": "boxer_1000"}))
+	check(boxer.slot_bounds("engine").size.x > 0.5, "a boxer's cylinders stick out either side (%.2f m wide)" % boxer.slot_bounds("engine").size.x)
+	boxer.queue_free()
+	var audio := EngineAudio.new()
+	for case in [["vtwin", 2], ["parallel", 2], ["inline", 4], ["2stroke", 1]]:
+		audio.layout = case[0]
+		audio.cylinders = case[1]
+		check(audio.firing_angles().size() == case[1], "a %s fires %d times a cycle" % case)
+	audio.layout = "vtwin"
+	var v: Array = audio.firing_angles()
+	check(absf(v[1] - 0.5) > 0.03, "a V-twin's beat is uneven")
+	audio.free()
+
+
+func _test_round5_riding() -> void:
+	# Hold a wheelie: weight back and the throttle pinned; the rider keeps it at the balance angle.
+	var pitches := []
+	var r := await ride({"engine": "four_1000"}, 9.0, func(b, t):
+		b.body_shift = -1.0 if t > 1.0 else 0.0
+		b.throttle = 0.35 if t < 1.0 else 1.0
+		if t > 3.0 and not b.wheels[0]["contact"]:
+			pitches.append(rad_to_deg(b.pitch_angle)))
+	check(not r["crashed"] and r["front_lifted"], "a big four lifts the front under power and doesn't loop out")
+	check(pitches.size() > 120, "the wheelie can be held for a good while (%.1f s)" % (pitches.size() / float(Engine.physics_ticks_per_second)))
+	if not pitches.is_empty():
+		check(pitches.max() < 60.0, "it stays short of the balance point (max %.0f deg)" % pitches.max())
+	await _done(r)
+	# A stoppie: hard on the front brake from speed lifts the back without throwing you over the bars.
+	var stoppie := [false]
+	r = await ride({"engine": "four_1000", "front_caliper": "four_piston_radial", "front_pads": "sintered"}, 9.0, func(b, t):
+		if t < 5.0:
+			b.throttle = 0.8
+		else:
+			b.throttle = 0.0
+			b.front_brake = 1.0
+			b.body_shift = 1.0
+			if not b.wheels[1]["contact"] and b.wheels[0]["contact"]:
+				stoppie[0] = true)
+	check(not r["crashed"], "stamping on the front brake doesn't throw you over the bars")
+	check(absf(r["bike"].speed) < 2.0, "and still stops the bike")
+	await _done(r)
+	# Skids: lock the back wheel at speed and it screeches and leaves a black line.
+	var marks_before := SkidMarks.shared(get_tree()).count()
+	var screeched := [false]
+	r = await ride({}, 9.0, func(b, t):
+		if t < 6.0:
+			b.throttle = 1.0
+		else:
+			b.throttle = 0.0
+			b.rear_brake = 1.0
+			if b.effects.screeching():
+				screeched[0] = true)
+	check(screeched[0], "locking the back wheel screeches")
+	check(SkidMarks.shared(get_tree()).count() > marks_before, "and lays a skid mark (%d strips)" % SkidMarks.shared(get_tree()).count())
+	await _done(r)
+	# Gear changes: the revs fall to the new gear over the shift instead of jumping, and the
+	# engine note drops while the clutch is in.
+	var during := []
+	r = await ride({}, 4.0, func(b, t):
+		b.auto_shift = false
+		b.throttle = 1.0
+		if absf(t - 3.0) < 0.001:
+			b.shift_up()
+		if t > 3.0 and t < 3.0 + b.build.shift_time:
+			during.append([b.rpm, b.sound_load()]))
+	if during.size() > 2:
+		check(during[0][0] > during[-1][0] and during[1][1] < 0.5, "shifting up drops the revs smoothly and the note softens (%.0f -> %.0f rpm)" % [during[0][0], during[-1][0]])
+	else:
+		check(false, "the shift was recorded")
+	await _done(r)
+	# In the air the revs steer the pitch: gas lifts the nose, closing it drops the nose.
+	for gas in [1.0, 0.0]:
+		var root := Node3D.new()
+		add_child(root)
+		var bike := Bike.new()
+		bike.setup(BikeBuild.new({}))
+		root.add_child(bike)
+		bike.place(Vector3(0.0, 200.0, 0.0), 0.0)
+		bike.throttle = gas
+		for i in 30:
+			await get_tree().physics_frame
+		var rate := bike.angular_velocity.dot(bike.global_transform.basis.x)
+		check(rate > 0.3 if gas > 0.5 else rate < -0.3, "in the air, %s (%.2f rad/s)" % ["gas rotates the bike backwards" if gas > 0.5 else "shutting the throttle drops the nose", rate])
+		root.queue_free()
+		await get_tree().physics_frame
+
+
+## In the real shed: set a frame up on the empty bay by aiming at it, spray a part by sweeping
+## over it, and ride a bike up a yard ramp.
+func _session_round5(main: Node) -> void:
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	# A frame carried to the empty bay.
+	var frame := Shed._new_item("steel_backbone", 0.0, 0.0, 0.0)
+	Shed._move(frame, "held", Shed.me())
+	Shed.changed.emit()
+	var bay := Shed.free_bay(Workshop.BAY_COUNT)
+	var stand := Workshop.bay_transform(bay).origin
+	w.place(Transform3D(Basis(), stand + Vector3(0.0, 0.0, 1.8)))
+	await _aim_point(w, stand + Vector3(0.0, 0.0, 0.5))
+	check(w.plan.get("action", {}).get("a", "") == "start_build" and w.plan["blocked"] == "",
+		"holding a frame over an empty bay offers to set it up on the stand (%s)" % str(w.plan.get("verb", w.target)))
+	await _hold_act(main)
+	var built := false
+	for id in Shed.bikes:
+		if Shed.item_on(id, "frame") == frame:
+			built = true
+	check(built, "and doing it starts a new bike there")
+	# Spray a muffler on the floor: holding still covers one patch; sweeping covers it all.
+	var pipe := Shed._new_item("stock_muffler", 0.0, 0.0, 0.0)
+	Shed._move(pipe, "floor", Transform3D(Basis(Vector3.UP, 0.4), Workshop.CENTER + Vector3(-3.0, 0.0, 12.0)))
+	Shed.changed.emit()
+	await get_tree().process_frame
+	var frame_info: Dictionary = main.workshop.item_frame(pipe)
+	check(not frame_info.is_empty(), "the part on the bench has a shape to spray")
+	var box: AABB = frame_info["box"]
+	var xf: Transform3D = frame_info["xf"]
+	var centre: Vector3 = xf * box.get_center()
+	w.place(Transform3D(Basis(), Vector3(centre.x, 0.0, centre.z) + (Workshop.CENTER - Vector3(centre.x, 0.0, centre.z)).normalized() * 1.0))
+	w.set_tool("spray")
+	w.spray_color = 4
+	await _aim_point(w, centre)
+	check(w.plan.get("coverage", false) and w.plan["blocked"] == "", "the spray can wants sweeping over the part (%s %s)" % [str(w.plan.get("verb", "")), str(w.plan.get("blocked", ""))])
+	Input.action_press("act")
+	for i in 90:
+		await get_tree().physics_frame
+	check(w.coverage > 0.0 and w.coverage < Walker.COVER_DONE and Shed.items[pipe]["color"] != Shed.PAINTS[4],
+		"spraying one spot only covers part of it (%.0f%%)" % (w.coverage * 100.0))
+	# Work over it like a painter: steady horizontal passes across it, a hand's width apart.
+	var cam: Camera3D = w.camera
+	var rect := Rect2(cam.unproject_position(xf * box.position), Vector2.ZERO)
+	for c in 8:
+		rect = rect.expand(cam.unproject_position(xf * box.get_endpoint(c)))
+	var dist: float = cam.global_position.distance_to(centre)
+	var px_per_m: float = get_viewport().get_visible_rect().size.y / (2.0 * dist * tan(deg_to_rad(cam.fov) * 0.5))
+	var rows := maxi(2, ceili(rect.size.y / (0.12 * px_per_m)))
+	var path: Array[Vector3] = []
+	for r in rows:
+		var y := rect.position.y + (r + 0.5) * rect.size.y / rows
+		var frames := maxi(30, ceili(rect.size.x / px_per_m * 120.0))
+		for k in frames:
+			var f := float(k) / (frames - 1)
+			var x := lerpf(rect.position.x, rect.end.x, f if r % 2 == 0 else 1.0 - f)
+			path.append(cam.project_position(Vector2(x, y), dist))
+	for p in path:
+		var d: Vector3 = p - w.camera.global_position
+		w.rotation.y = atan2(-d.x, -d.z)
+		w._pitch = 0.0
+		w._look(0.0, atan2(d.y, Vector2(d.x, d.z).length()))
+		await get_tree().physics_frame
+		if Shed.items[pipe]["color"] == Shed.PAINTS[4]:
+			break
+	Input.action_release("act")
+	await get_tree().physics_frame
+	check(Shed.items[pipe]["color"] == Shed.PAINTS[4] and Shed.items[pipe].has("paint_quality"),
+		"sweeping the can over all of it finishes the paint job (quality %.0f%%)" % (float(Shed.items[pipe].get("paint_quality", 0.0)) * 100.0))
+	check(Shed.condition_text(Shed.items[pipe]).contains("Paint job"), "the info panel says how good the paint job is")
+	w.set_tool("hands")
+	# The yard: a bike ridden at a ramp goes up it.
+	var ramp := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == "ramp_large":
+			ramp = id
+			break
+	var rxf: Transform3D = Shed.furniture[ramp]["xf"]
+	var top := rxf * Vector3(0.0, 3.0, -1.8)
+	var q := PhysicsRayQueryParameters3D.create(top, top + Vector3.DOWN * 4.0, 1)
+	var hit: Dictionary = w.get_world_3d().direct_space_state.intersect_ray(q)
+	check(not hit.is_empty() and (hit["position"] as Vector3).y > 1.0 and str((hit["collider"] as Object).get_meta("surface", "")) == "tarmac",
+		"the big ramp is solid near its lip (%.2f m up)" % ((hit["position"] as Vector3).y if hit else -1.0))
+	var cone := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == "cone":
+			cone = id
+			break
+	var cxf: Transform3D = Shed.furniture[cone]["xf"]
+	q = PhysicsRayQueryParameters3D.create(cxf.origin + Vector3.UP * 2.0, cxf.origin + Vector3.DOWN * 0.5, 1)
+	hit = w.get_world_3d().direct_space_state.intersect_ray(q)
+	check(hit.is_empty() or (hit["position"] as Vector3).y < 0.05, "cones don't stop a bike: you ride through them")
 
 
 ## Turns the walker where it stands to look straight at a point, once its eye height has settled.

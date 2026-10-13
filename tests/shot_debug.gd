@@ -12,82 +12,59 @@ func _ready() -> void:
 	add_child(main)
 	await _frames(10)
 	main._start_session()
-	await _frames(10)
-	var c := Workshop.CENTER
-	var yard := c + Vector3(-6.0, 0.0, 16.0)
-	# Equipment laid out in the yard, one row per kind, facing the camera.
-	var rows := ["washer", "repair", "bench", "shelf"]
-	for r in rows.size():
-		var x := 0.0
-		for model in Equipment.by_kind(rows[r]):
-			var size: Vector3 = Equipment.get_model(model)["size"]
-			x += size.x * 0.5
-			Shed._new_furniture(rows[r], Transform3D(Basis(), yard + Vector3(x, 0.0, -r * 3.2)), model)
-			x += size.x * 0.5 + 0.5
-	# Parts on some of them.
-	for id in Shed.furniture:
-		var spots := Shed.furniture_spots(id)
-		var kind := str(Shed.furniture[id]["kind"])
-		if kind in ["shelf", "repair", "bench", "washer"] and Shed.furniture[id]["xf"].origin.z > c.z + 8.0:
-			var parts := ["stock_muffler", "cafe_15", "cast_17", "paper_oil", "twin_carbs", "iridium_plugs"]
-			for n in mini(spots.size(), 5 if kind == "shelf" else 2):
-				var item := Shed._new_item(parts[(n + id) % parts.size()], 0.5, 0.6, 0.3)
-				Shed._move(item, "spot", spots[n])
-	Shed.changed.emit()
+	await _frames(20)
+	# The yard kit from above, then the jump line from the run-up.
+	await _look_from(Vector3(-2.0, 0.0, 103.0), Vector3(2.0, 0.0, 124.0), "r5_1_yard")
+	await _look_from(Vector3(-6.0, 0.4, 108.0), Vector3(-2.0, 1.0, 120.0), "r5_2_jump_line")
+	await _look_from(Vector3(6.0, 0.6, 140.0), Vector3(-6.0, 0.5, 128.0), "r5_3_obstacles")
+	# Every engine layout at 1000 cc, side on, on bikes in a row outside the shed.
+	var x := -8.0
+	for layout in ["boxer", "twin", "parallel", "vtwin", "2stroke", "inline"]:
+		var m := BikeModel.new()
+		main.add_child(m)
+		m.build_from(BikeBuild.new({"engine": "%s_1000" % layout, "frame": "steel_cradle"}), Color(0.2, 0.3, 0.6), {}, null, false)
+		m.global_transform = Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(x, 0.32, 84.0))
+		var l := Label3D.new()
+		l.text = layout
+		l.position = Vector3(0.0, 1.2, 0.0)
+		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		m.add_child(l)
+		x += 2.2
 	await _frames(5)
-	for r in rows.size():
-		var z := yard.z - r * 3.2
-		await _look_from(Vector3(yard.x + 4.5, 0.0, z + 3.6), Vector3(yard.x + 4.5, 0.8, z), "r4_%d_%s" % [r + 1, rows[r]])
-	# Posters and a TV on the front wall inside, a sofa and stools under them.
-	var wall_z := c.z + Workshop.HALF.y - 0.01
-	var hang := [["poster_tt", -5.6, 2.2], ["poster_cafe", -4.8, 2.2], ["tv_55", 4.6, 2.3], ["poster_shed", -5.2, 3.3], ["poster_oil", 5.6, 3.4]]
-	for h in hang:
-		Shed._new_furniture(Equipment.kind_of(h[0]), Transform3D(Basis(Vector3.UP, PI), Vector3(c.x + h[1], h[2], wall_z)), h[0])
-	Shed._new_furniture("seat", Transform3D(Basis(Vector3.UP, PI), c + Vector3(-1.2, 0.0, 3.0)), "seat_sofa")
-	Shed._new_furniture("seat", Transform3D(Basis(Vector3.UP, PI * 0.8), c + Vector3(1.0, 0.0, 2.6)), "seat_stool")
-	Shed._new_furniture("seat", Transform3D(Basis(Vector3.UP, PI * 1.2), c + Vector3(2.0, 0.0, 2.4)), "seat_chair")
-	Shed.changed.emit()
-	await _frames(5)
-	await _look_from(c + Vector3(-2.5, 0.0, -1.5), c + Vector3(-3.5, 1.6, 5.0), "r4_5_posters_and_sofa")
-	await _look_from(c + Vector3(2.5, 0.0, -0.5), c + Vector3(4.0, 1.8, 5.0), "r4_6_tv")
-	# Wheels on the floor.
-	var i := 0
-	for w in ["wire_16_bobber", "excel_21_black", "cast_18_three", "cast_19_six", "cast_17_y", "forged_17_alu", "forged_17_mag", "spoked_19_adventure"]:
-		var item := Shed._new_item(w, 0.0, 0.0, 0.0)
-		Shed._move(item, "floor", Transform3D(Basis(Vector3.FORWARD, PI * 0.5).rotated(Vector3.UP, 0.0), c + Vector3(-3.0 + (i % 4) * 0.9, 0.0, -0.6 + (i / 4) * 1.0)))
-		i += 1
-	Shed.changed.emit()
-	await _frames(5)
-	await _look_from(c + Vector3(-1.6, 0.0, 2.2), c + Vector3(-1.6, 0.0, -0.1), "r4_7_wheels")
-	# The chain on Old Faithful, from low down on its left.
+	await _look_from(Vector3(-2.5, 0.0, 88.5), Vector3(-2.5, 0.6, 84.0), "r5_4_engines")
+	# Old Faithful and the barn find side on: tanks behind the bars, seats behind the tanks.
 	var faithful := _bike_named("Old Faithful")
 	var model: BikeModel = main.workshop.bike_model(faithful)
-	var chain: Vector3 = model.global_transform * model.slot_bounds("chain").get_center()
+	var at: Vector3 = model.global_position
 	var side: Vector3 = model.global_transform.basis.x
-	main.walker.set_crouched(true)
-	await _frames(30)
-	var feet := chain - Vector3(side.x, 0.0, side.z).normalized() * 0.9
-	feet.y = 0.0
-	main.walker.place(Transform3D(Basis(), feet))
-	await _frames(20)
-	var eye: Vector3 = main.walker.camera.global_position
-	var d := chain - eye
-	main.walker.rotation.y = atan2(-d.x, -d.z)
-	main.walker._pitch = 0.0
-	main.walker._look(0.0, atan2(d.y, Vector2(d.x, d.z).length()))
-	await _frames(10)
-	await _shot("r4_8_chain")
-	main.walker.set_crouched(false)
-	# Riding: first person, and the jet in the wash bay.
+	await _look_from(at - side * 2.2 - Vector3.UP * at.y, at + Vector3.UP * 0.5, "r5_5_tank_and_seat")
+	# The clocks from the rider's seat, and first person riding out on the road.
 	main._try_mount(faithful)
 	await _frames(10)
 	main.bike.start_engine()
-	await _frames(60)
+	await _frames(90)
+	main.camera.set_mode(ChaseCamera.Mode.HELMET)
+	await _frames(5)
+	await _shot("r5_6_first_person_parked")
 	var road_t: Transform3D = main.world.road_transform(0.12)
 	main.bike.place(road_t.origin, road_t.basis.get_euler().y)
-	main.camera.set_mode(ChaseCamera.Mode.HELMET)
-	Input.action_press("throttle", 0.6)
-	await _frames(40)
-	await _shot("r4_9_first_person")
+	Input.action_press("throttle", 0.7)
+	await _frames(150)
+	await _shot("r5_7_first_person_riding")
 	Input.action_release("throttle")
+	# Lock the back wheel for skid marks, from the chase camera.
+	main.camera.set_mode(ChaseCamera.Mode.CHASE)
+	Input.action_press("rear_brake", 1.0)
+	await _frames(70)
+	Input.action_release("rear_brake")
+	await _frames(20)
+	var p: Vector3 = main.bike.global_position
+	var back: Vector3 = main.bike.global_transform.basis.z
+	main.camera.orbit_center = p + back * 5.0
+	main.camera.orbit_radius = 6.0
+	main.camera.orbit_height = 3.5
+	main.camera.set_mode(ChaseCamera.Mode.ORBIT)
+	await _frames(10)
+	await _shot("r5_8_skid_marks")
+	print("skid strips: ", SkidMarks.shared(get_tree()).count())
 	get_tree().quit()

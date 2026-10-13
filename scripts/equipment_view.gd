@@ -42,6 +42,8 @@ func _build() -> void:
 			_build_seat()
 		"tv":
 			_build_tv()
+		"ramp", "obstacle", "barrier", "marker":
+			_build_yard()
 
 
 func _m() -> Dictionary:
@@ -375,3 +377,162 @@ static func sit_point(model_id: String, n := 0) -> Vector3:
 	var seats := maxi(1, roundi(size.x / 0.6)) if m.get("style", "") in ["bench", "sofa"] else 1
 	var x := -size.x * 0.5 + size.x * (0.5 + clampi(n, 0, seats - 1)) / float(seats)
 	return Vector3(x, float(m.get("sit", 0.5)), 0.05)
+
+
+# ---------------------------------------------------------------------------- yard kit
+
+func _build_yard() -> void:
+	var size := _size()
+	var wood: Material = _mat("wood")
+	var steel: Material = _mat("steel")
+	match model:
+		"ramp_small", "ramp_medium", "ramp_large", "ramp_landing":
+			var deck: Material = wood if model != "ramp_large" else _ws._material(Color(0.45, 0.47, 0.5), 0.8, 0.45)
+			_wedge(Vector3(0.0, 0.0, 0.0), size, deck, true)
+			# Side rails show the shape and which end is the lip.
+			for x in [-size.x * 0.5, size.x * 0.5]:
+				var rail := _deco(Vector3(x, size.y * 0.5, 0.0), Vector3(0.06, 0.06, Vector2(size.y, size.z).length()), _mat("yellow"))
+				rail.rotation.x = atan2(size.y, size.z)
+		"tabletop":
+			var dirt: Material = _ws._material(Color(0.42, 0.3, 0.19), 0.0, 1.0, _ws._noise(0.4, 0.8, 1.1), 2.0)
+			var face := 3.0
+			_wedge(Vector3(0.0, 0.0, size.z * 0.5 - face * 0.5), Vector3(size.x, size.y, face), dirt, true)
+			_wedge(Vector3(0.0, 0.0, -size.z * 0.5 + face * 0.5), Vector3(size.x, size.y, face), dirt, false)
+			var top := size.z - face * 2.0
+			_deco(Vector3(0.0, size.y * 0.5, 0.0), Vector3(size.x, size.y, top), dirt)
+			_solid_box(Vector3(0.0, size.y * 0.5, 0.0), Vector3(size.x, size.y, top), "dirt")
+		"barrels":
+			var drum: StandardMaterial3D = _ws._material(Color(0.12, 0.3, 0.55), 0.6, 0.45)
+			for i in 3:
+				_cyl(Vector3(-0.62 + i * 0.62, 0.3, 0.0), 0.29, 0.88, drum, Vector3.BACK)
+			_solid_box(Vector3(0.0, size.y * 0.5, 0.0), size, "tarmac")
+		"log":
+			_cyl(Vector3(0.0, 0.22, 0.0), 0.22, size.x, _ws._material(Color(0.36, 0.25, 0.15), 0.0, 0.95, _ws._noise(0.8, 0.7, 1.1), 3.0), Vector3.RIGHT)
+			_solid_box(Vector3(0.0, size.y * 0.5, 0.0), size, "dirt")
+		"tyre_stack":
+			for i in 5:
+				var t := _cyl(Vector3(0.0, 0.09 + i * 0.18, 0.0), 0.36, 0.17, _mat("dark"))
+				t.rotation.y = i * 0.4
+			_solid_box(Vector3(0.0, size.y * 0.5, 0.0), size, "tarmac")
+		"hay_bales":
+			var hay: StandardMaterial3D = _ws._material(Color(0.82, 0.68, 0.35), 0.0, 1.0, _ws._noise(1.5, 0.75, 1.1), 3.0)
+			for x in [-0.55, 0.55]:
+				_deco(Vector3(x, 0.25, 0.0), Vector3(1.05, 0.5, 1.0), hay)
+			_solid_box(Vector3(0.0, size.y * 0.5, 0.0), size, "dirt")
+		"car_wreck":
+			var rust: StandardMaterial3D = _ws._material(Color(0.45, 0.22, 0.1), 0.4, 0.85, _ws._noise(1.2, 0.6, 1.1), 2.0)
+			_deco(Vector3(0.0, 0.5, 0.0), Vector3(size.x, 0.55, size.z), rust)
+			_deco(Vector3(0.0, 1.05, 0.15), Vector3(size.x - 0.15, 0.55, 2.0), rust)
+			_deco(Vector3(0.0, 1.05, 0.15), Vector3(size.x - 0.12, 0.42, 1.85), _ws._material(Color(0.1, 0.12, 0.13), 0.9, 0.1))
+			for x in [-size.x * 0.5, size.x * 0.5]:
+				for z in [-1.3, 1.3]:
+					_cyl(Vector3(x * 0.9, 0.3, z), 0.3, 0.2, _mat("dark"), Vector3.RIGHT)
+			_solid_box(Vector3(0.0, 0.66, 0.0), Vector3(size.x, 1.32, size.z), "tarmac")
+		"wall_concrete":
+			var conc: StandardMaterial3D = _ws._material(Color(0.7, 0.7, 0.68), 0.0, 0.95, _ws._noise(0.6, 0.85, 1.05), 2.0)
+			_deco(Vector3(0.0, 0.15, 0.0), Vector3(size.x, 0.3, size.z), conc)
+			_deco(Vector3(0.0, 0.55, 0.0), Vector3(size.x, 0.5, size.z * 0.4), conc)
+			_deco(Vector3(0.0, 0.6, size.z * 0.21), Vector3(size.x, 0.12, 0.01), _ws._material(Color(0.9, 0.1, 0.05), 0.0, 0.6))
+			_solid_box(Vector3(0.0, size.y * 0.5, 0.0), size, "tarmac")
+		"wall_brick":
+			var brick: StandardMaterial3D = _ws._material(Color(0.55, 0.2, 0.12), 0.0, 0.95, _ws._noise(2.5, 0.75, 1.1), 4.0)
+			_deco(Vector3(0.0, size.y * 0.5, 0.0), size, brick)
+			_deco(Vector3(0.0, size.y + 0.03, 0.0), Vector3(size.x + 0.04, 0.06, size.z + 0.06), _ws._material(Color(0.6, 0.6, 0.58), 0.0, 0.9))
+			_solid_box(Vector3(0.0, size.y * 0.5, 0.0), size, "tarmac")
+		"fence_wood":
+			for x in [-size.x * 0.5 + 0.05, 0.0, size.x * 0.5 - 0.05]:
+				_deco(Vector3(x, size.y * 0.5, 0.0), Vector3(0.1, size.y, 0.1), wood)
+			for y in [0.35, 0.75, 1.0]:
+				_deco(Vector3(0.0, y, 0.04), Vector3(size.x, 0.1, 0.03), wood)
+			_solid_box(Vector3(0.0, size.y * 0.5, 0.0), size, "tarmac")
+		"fence_mesh":
+			var mesh: StandardMaterial3D = _ws._material(Color(0.7, 0.72, 0.75, 0.55), 0.7, 0.4)
+			mesh.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			_deco(Vector3(0.0, size.y * 0.5 + 0.1, 0.0), Vector3(size.x - 0.06, size.y - 0.2, 0.02), mesh)
+			for x in [-size.x * 0.5, size.x * 0.5]:
+				_deco(Vector3(x, size.y * 0.5 + 0.1, 0.0), Vector3(0.04, size.y - 0.2, 0.04), steel)
+				_deco(Vector3(x, 0.06, 0.0), Vector3(0.25, 0.12, 0.6), _ws._material(Color(0.55, 0.55, 0.53), 0.0, 0.95))
+			_solid_box(Vector3(0.0, size.y * 0.5, 0.0), size, "tarmac")
+		"cone":
+			var orange: StandardMaterial3D = _ws._material(Color(1.0, 0.38, 0.05), 0.0, 0.6)
+			var c := _cyl(Vector3(0.0, 0.26, 0.0), 0.16, 0.46, orange)
+			(c.mesh as CylinderMesh).top_radius = 0.025
+			_deco(Vector3(0.0, 0.02, 0.0), Vector3(0.36, 0.04, 0.36), orange)
+			_cyl(Vector3(0.0, 0.3, 0.0), 0.095, 0.07, _ws._material(Color(0.95, 0.95, 0.95), 0.0, 0.4))
+		"post":
+			_cyl(Vector3(0.0, 0.5, 0.0), 0.07, 1.0, _mat("dark"))
+			for y in [0.65, 0.85]:
+				_cyl(Vector3(0.0, y, 0.0), 0.072, 0.09, _mat("yellow"))
+		"flag_red", "flag_blue", "flag_chequered":
+			_cyl(Vector3(0.0, size.y * 0.5, 0.0), 0.02, size.y, _mat("chrome"))
+			var cloth: Material = _ws._material(_m()["color"], 0.0, 0.8)
+			if model == "flag_chequered":
+				cloth = _checker_cloth()
+			var flag := _deco(Vector3(0.28, size.y - 0.22, 0.0), Vector3(0.52, 0.38, 0.01), cloth)
+			flag.rotation.y = 0.15
+	# The whole footprint is what you take hold of to move it.
+	_ws._target(Vector3(0.0, size.y * 0.5, 0.0), size + Vector3(0.06, 0.06, 0.06), {"furniture": id}, self)
+
+
+## A ramp: a solid wedge whose deck rises from the front (+Z, ground level) to the lip at the
+## back, or the other way round with `rising` false. Bikes ride up it and the wheels read
+## its surface.
+func _wedge(center: Vector3, size: Vector3, mat: Material, rising: bool) -> void:
+	var w := size.x * 0.5
+	var l := size.z * 0.5
+	var lo := l if rising else -l
+	var hi := -l if rising else l
+	var pts := PackedVector3Array([
+		Vector3(-w, 0.0, lo), Vector3(w, 0.0, lo), Vector3(-w, 0.0, hi), Vector3(w, 0.0, hi),
+		Vector3(-w, size.y, hi), Vector3(w, size.y, hi),
+	])
+	for i in pts.size():
+		pts[i] += center
+	var body := StaticBody3D.new()
+	body.set_meta("surface", "dirt" if model == "tabletop" else "tarmac")
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = pts
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var tris := [[0, 1, 5], [0, 5, 4], [2, 4, 5], [2, 5, 3], [0, 4, 2], [1, 3, 5], [0, 2, 3], [0, 3, 1]]
+	for t in tris:
+		for idx in t:
+			st.add_vertex(pts[idx])
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	var m := (mat as StandardMaterial3D).duplicate() as StandardMaterial3D
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.uv1_triplanar = true
+	mi.material_override = m
+	body.add_child(mi)
+	add_child(body)
+
+
+## A solid box that stops bikes and people, with a surface for the tyres.
+func _solid_box(center: Vector3, size: Vector3, surface: String) -> void:
+	var body := StaticBody3D.new()
+	body.position = center
+	body.set_meta("surface", surface)
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	add_child(body)
+
+
+func _checker_cloth() -> StandardMaterial3D:
+	var img := Image.create(8, 6, false, Image.FORMAT_RGB8)
+	for x in 8:
+		for y in 6:
+			img.set_pixel(x, y, Color.WHITE if (x + y) % 2 == 0 else Color.BLACK)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = ImageTexture.create_from_image(img)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3(2.0, 2.0, 2.0)
+	return m

@@ -5,7 +5,7 @@ extends Node
 ## sliders control.
 
 const RATE := 22050
-const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour"]
+const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour", "screech"]
 ## Which loop each kind of work makes while you hold the button.
 const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray",
 	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray"}
@@ -118,6 +118,10 @@ func _make(sound: String) -> AudioStreamWAV:
 			data = _jet()
 		"pour":
 			data = _pour()
+		"screech":
+			data = _screech()
+		"gear":
+			data = _gear()
 		_:
 			data.resize(RATE / 10)
 	var wav := AudioStreamWAV.new()
@@ -308,4 +312,27 @@ func _scrap() -> PackedFloat32Array:
 			var env := exp(-t * (7.0 + hit * 3.0))
 			d[start + i] += (sin(TAU * f1 * t) + sin(TAU * f2 * t) * 0.6 + _rng.randf_range(-1.0, 1.0) * exp(-t * 80.0)) \
 				* env * 0.3 / (1.0 + hit * 0.4)
+	return d
+
+
+## Rubber squealing on tarmac: a wobbling high whine with a rough edge.
+func _screech() -> PackedFloat32Array:
+	var d := _samples(1.0)
+	var phase := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		# Whole number of wobbles per second so the loop joins up.
+		var f := 1150.0 + 140.0 * sin(TAU * 7.0 * t) + 60.0 * sin(TAU * 13.0 * t)
+		phase += f / RATE
+		var tone := sin(TAU * phase) * 0.5 + sin(TAU * phase * 2.01) * 0.18
+		d[i] = (tone + _rng.randf_range(-1.0, 1.0) * 0.12) * 0.45
+	return d
+
+
+## The gearbox clicking into the next gear: a short metallic knock.
+func _gear() -> PackedFloat32Array:
+	var d := _thud(140.0, 0.12, 0.6)
+	var ring := _ring([1250.0, 2100.0], 0.12, 0.25)
+	for i in mini(d.size(), ring.size()):
+		d[i] += ring[i]
 	return d

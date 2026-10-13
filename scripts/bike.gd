@@ -22,6 +22,10 @@ const CRASH_LEAN := deg_to_rad(78.0)
 const CRASH_PITCH := deg_to_rad(72.0)
 const AUTO_RESPAWN_TIME := 3.5
 const START_TIME := 0.7           # seconds on the starter motor before it fires
+const WHEELIE_PITCH := deg_to_rad(28.0)   # where the rider tries to hold a wheelie (weight back: higher)
+const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down
+const AIR_REV_PITCH := 7.0        # pitch acceleration (rad/s^2) from blipping the rear wheel in the air
+const SKID_SLIP := 0.2            # tyre slip above which it screeches and marks the road
 
 var build: BikeBuild
 
@@ -60,6 +64,8 @@ var _base_com := Vector3.ZERO
 var _rider_shape_index := -1
 var _ragdoll: RigidBody3D
 var _starting := 0.0
+var _shift_from_rpm := 0.0
+var skid := 0.0            # 0..1, how hard the tyres are squealing on tarmac, set by the effects
 
 
 func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
@@ -226,8 +232,21 @@ func _physics_process(delta: float) -> void:
 
 	_update_steering(delta)
 	_update_engine(delta)
-	wheels[0]["brake_torque"] = front_brake * build.front_brake_torque
-	wheels[1]["brake_torque"] = rear_brake * build.rear_brake_torque
+	var rear_grip := rear_brake
+	if not wheels[0]["contact"] and wheels[1]["contact"] and pitch_angle > deg_to_rad(4.0):
+		# Past the wheelie angle the rider covers the back brake to bring the front down.
+		var over := pitch_angle - wheelie_target()
+		var rising := angular_velocity.dot(global_transform.basis.x)
+		if over > 0.0:
+			rear_grip = maxf(rear_grip, clampf(over * 3.0 + rising * 0.6, 0.0, 1.0) * lerpf(0.45, 1.0, assist))
+	var front_grip := front_brake
+	if not wheels[1]["contact"] and wheels[0]["contact"] and pitch_angle < -deg_to_rad(3.0):
+		# Holding a stoppie: ease the front brake as the back climbs past the balance angle.
+		var over := -pitch_angle - STOPPIE_PITCH
+		var falling := -angular_velocity.dot(global_transform.basis.x)
+		front_grip *= clampf(1.0 - (over * 5.0 + falling * 0.8) * lerpf(0.45, 1.0, assist), 0.0, 1.0)
+	wheels[0]["brake_torque"] = front_grip * build.front_brake_torque
+	wheels[1]["brake_torque"] = rear_grip * build.rear_brake_torque
 	for w in wheels:
 		_wheel_forces(w, delta, space)
 	surface = wheels[1]["surface"] if wheels[1]["contact"] else wheels[0]["surface"]
@@ -240,6 +259,7 @@ func _physics_process(delta: float) -> void:
 	if effects:
 		effects.update(delta, speed, throttle, engine_on, build.overall_health(), surface,
 			wheels[1]["contact"], wheels[1]["slip"])
+		effects.update_skids(self)
 
 
 func _measure_attitude() -> void:
@@ -291,7 +311,11 @@ func _update_engine(delta: float) -> void:
 	var shifting := _shift_timer > 0.0
 	_shift_timer -= delta
 
-	if engaged:
+	if shifting and engine_on:
+		# The clutch is in: the revs fall (or blip up) to the new gear's speed instead of jumping.
+		var f := clampf(1.0 - _shift_timer / maxf(build.shift_time, 0.01), 0.0, 1.0)
+		rpm = lerpf(_shift_from_rpm, maxf(wheel_rpm, build.idle_rpm), f * f)
+	elif engaged:
 		rpm = wheel_rpm
 	else:
 		# Slipping clutch: the engine holds launch revs while the wheel catches up.
@@ -304,10 +328,13 @@ func _update_engine(delta: float) -> void:
 	var tc_target := 1.0
 	if assist > 0.05 and spin_ratio > 0.12 and rear["contact"]:
 		tc_target = clampf(1.0 - (spin_ratio - 0.12) * 4.0 * assist, 0.15, 1.0)
-	# With assist on, the rider also eases off when the front wheel climbs too high.
-	var wheelie := rad_to_deg(pitch_angle)
-	if assist > 0.05 and not wheels[0]["contact"] and wheelie > 6.0:
-		tc_target = minf(tc_target, clampf(1.0 - (wheelie - 6.0) / 10.0 * (0.5 + assist), 0.0, 1.0))
+	# In a wheelie the rider feathers the throttle to hold the front up at the balance angle
+	# rather than looping it; more assist, steadier hands.
+	if not wheels[0]["contact"] and rear["contact"] and pitch_angle > deg_to_rad(4.0):
+		var over := pitch_angle - wheelie_target()
+		var rising := angular_velocity.dot(global_transform.basis.x)
+		var hands := lerpf(0.45, 1.0, assist)
+		tc_target = minf(tc_target, clampf(1.0 - (over * 8.0 + rising * 1.2) * hands, 0.0, 1.0))
 	_traction = lerpf(_traction, tc_target, 1.0 - exp(-25.0 * delta))
 	var torque := build.engine_torque(rpm) * throttle * _traction
 	if rpm >= build.redline:
@@ -349,6 +376,7 @@ func _update_engine(delta: float) -> void:
 
 func shift_up() -> void:
 	if gear < build.gear_count():
+		_shift_from_rpm = rpm
 		gear += 1
 		_shift_timer = build.shift_time
 		_since_shift = 0.0
@@ -357,10 +385,24 @@ func shift_up() -> void:
 
 func shift_down() -> void:
 	if gear > 1:
+		_shift_from_rpm = rpm
 		gear -= 1
 		_shift_timer = build.shift_time
 		_since_shift = 0.0
 		gear_changed.emit(gear)
+
+
+## The wheelie angle the rider aims for: with their weight back, the balance angle (higher the
+## further back); otherwise they keep the front wheel near the ground.
+func wheelie_target() -> float:
+	if body_shift > -0.25:
+		return deg_to_rad(6.0)
+	return WHEELIE_PITCH + deg_to_rad(10.0) * clampf((-body_shift - 0.25) / 0.75, 0.0, 1.0)
+
+
+## How much revs the engine note should carry: the throttle, except while the clutch is in for a shift.
+func sound_load() -> float:
+	return throttle * 0.15 if _shift_timer > 0.0 else throttle
 
 
 func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D) -> void:
@@ -407,6 +449,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	w["surface"] = surf
 
 	var contact: Vector3 = hit["position"]
+	w["contact_pos"] = contact
+	w["normal"] = n
 	var arm := contact - global_position
 	apply_force(n * fz, arm)
 
@@ -477,6 +521,15 @@ func _apply_rider_balance() -> void:
 	# Pitch control by shifting body weight, mostly useful in the air.
 	var right := b.x
 	var pitch_tau := -body_shift * (60.0 if any_contact else 220.0)
+	var pitch_rate := angular_velocity.dot(right)
+	if not any_contact:
+		# Spinning the back wheel up rotates the bike backwards; letting it slow (or dabbing the
+		# back brake) drops the nose. A third throttle holds it steady.
+		var revs := (throttle - 0.33) if engine_on else -0.2
+		pitch_tau += (revs - rear_brake * 0.6) * AIR_REV_PITCH * inertia.x
+	elif wheels[0]["contact"] != wheels[1]["contact"]:
+		# On one wheel the rider's body soaks up the bobbing so it's easier to hold.
+		pitch_tau -= pitch_rate * inertia.x * lerpf(1.2, 3.0, assist)
 	apply_torque(right * pitch_tau)
 	if not any_contact:
 		# Stop the bike yawing wildly in the air.
@@ -534,5 +587,5 @@ func get_net_state() -> PackedFloat32Array:
 	return PackedFloat32Array([
 		p.x, p.y, p.z, q.x, q.y, q.z, q.w, v.x, v.y, v.z,
 		steer, wheels[0]["spin"], wheels[1]["spin"], wheels[0]["compression"], wheels[1]["compression"],
-		rpm, throttle, 1.0 if is_crashed else 0.0, body_shift, 1.0 if engine_on else 0.0,
+		rpm, sound_load(), 1.0 if is_crashed else 0.0, body_shift, 1.0 if engine_on else 0.0, skid,
 	])

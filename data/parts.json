@@ -1378,6 +1378,1206 @@
 				0.11
 			],
 			"type": "Inline four"
+		},
+		"boxer_50": {
+			"name": "50 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Learner-sized.",
+			"mass": 12.5,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 50.0,
+			"bore": 34.6,
+			"stroke": 26.6,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 8700.0,
+			"redline": 13000.0,
+			"idle_rpm": 1600.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"boxer_125": {
+			"name": "125 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Learner-sized.",
+			"mass": 16.2,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 125.0,
+			"bore": 46.9,
+			"stroke": 36.1,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 7950.0,
+			"redline": 11900.0,
+			"idle_rpm": 1450.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"boxer_350": {
+			"name": "350 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Light and nimble.",
+			"mass": 27.5,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 350.0,
+			"bore": 66.2,
+			"stroke": 50.9,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 6600.0,
+			"redline": 9900.0,
+			"idle_rpm": 1200.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"boxer_500": {
+			"name": "500 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Light and nimble.",
+			"mass": 35.0,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 500.0,
+			"bore": 74.5,
+			"stroke": 57.3,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 6200.0,
+			"redline": 9300.0,
+			"idle_rpm": 1150.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"boxer_600": {
+			"name": "600 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Middleweight.",
+			"mass": 40.0,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 600.0,
+			"bore": 79.2,
+			"stroke": 60.9,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 6000.0,
+			"redline": 9000.0,
+			"idle_rpm": 1100.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"boxer_750": {
+			"name": "750 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Middleweight.",
+			"mass": 47.5,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 750.0,
+			"bore": 85.3,
+			"stroke": 65.6,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 5750.0,
+			"redline": 8600.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"boxer_800": {
+			"name": "800 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Middleweight.",
+			"mass": 50.0,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 800.0,
+			"bore": 87.2,
+			"stroke": 67.0,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 5700.0,
+			"redline": 8500.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"boxer_1000": {
+			"name": "1000 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Big-bore.",
+			"mass": 60.0,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 1000.0,
+			"bore": 93.9,
+			"stroke": 72.2,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 5450.0,
+			"redline": 8200.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"boxer_1100": {
+			"name": "1100 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Big-bore.",
+			"mass": 65.0,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 1100.0,
+			"bore": 96.9,
+			"stroke": 74.6,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 5400.0,
+			"redline": 8100.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"boxer_1200": {
+			"name": "1200 cc boxer twin",
+			"description": "Flat twin with its cylinders sticking out either side. Low and smooth, and it keeps your shins warm. Big-bore.",
+			"mass": 70.0,
+			"layout": "boxer",
+			"cylinders": 2,
+			"displacement": 1200.0,
+			"bore": 99.8,
+			"stroke": 76.7,
+			"torque_per_cc": 0.095,
+			"peak_torque_rpm": 5300.0,
+			"redline": 7900.0,
+			"idle_rpm": 950.0,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"type": "Boxer twin"
+		},
+		"twin_50": {
+			"name": "50 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Learner-sized.",
+			"mass": 11.4,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 50.0,
+			"bore": 31.2,
+			"stroke": 32.8,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 8000.0,
+			"redline": 11600.0,
+			"idle_rpm": 1600.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"twin_125": {
+			"name": "125 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Learner-sized.",
+			"mass": 15.0,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 125.0,
+			"bore": 42.3,
+			"stroke": 44.5,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 7300.0,
+			"redline": 10600.0,
+			"idle_rpm": 1450.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"twin_350": {
+			"name": "350 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Light and nimble.",
+			"mass": 25.8,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 350.0,
+			"bore": 59.6,
+			"stroke": 62.7,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 6050.0,
+			"redline": 8800.0,
+			"idle_rpm": 1200.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"twin_500": {
+			"name": "500 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Light and nimble.",
+			"mass": 33.0,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 500.0,
+			"bore": 67.1,
+			"stroke": 70.7,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 5700.0,
+			"redline": 8300.0,
+			"idle_rpm": 1150.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"twin_600": {
+			"name": "600 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Middleweight.",
+			"mass": 37.8,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 600.0,
+			"bore": 71.3,
+			"stroke": 75.1,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 5500.0,
+			"redline": 8000.0,
+			"idle_rpm": 1100.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"twin_750": {
+			"name": "750 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Middleweight.",
+			"mass": 45.0,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 750.0,
+			"bore": 76.8,
+			"stroke": 80.9,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 5300.0,
+			"redline": 7700.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"twin_800": {
+			"name": "800 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Middleweight.",
+			"mass": 47.4,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 800.0,
+			"bore": 78.5,
+			"stroke": 82.6,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 5200.0,
+			"redline": 7600.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"twin_1000": {
+			"name": "1000 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Big-bore.",
+			"mass": 57.0,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 1000.0,
+			"bore": 84.6,
+			"stroke": 89.0,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 5000.0,
+			"redline": 7300.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"twin_1100": {
+			"name": "1100 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Big-bore.",
+			"mass": 61.8,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 1100.0,
+			"bore": 87.3,
+			"stroke": 91.9,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 4950.0,
+			"redline": 7200.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"twin_1200": {
+			"name": "1200 cc twin",
+			"description": "Classic upright twin with a 360 degree crank. Even, thrummy beat and plenty of low-down pull. Big-bore.",
+			"mass": 66.6,
+			"layout": "twin",
+			"cylinders": 2,
+			"displacement": 1200.0,
+			"bore": 89.9,
+			"stroke": 94.6,
+			"torque_per_cc": 0.09,
+			"peak_torque_rpm": 4850.0,
+			"redline": 7100.0,
+			"idle_rpm": 950.0,
+			"color": [
+				0.66,
+				0.67,
+				0.68
+			],
+			"type": "Twin"
+		},
+		"parallel_50": {
+			"name": "50 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Learner-sized.",
+			"mass": 10.2,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 50.0,
+			"bore": 33.2,
+			"stroke": 28.9,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 10150.0,
+			"redline": 14500.0,
+			"idle_rpm": 1600.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"parallel_125": {
+			"name": "125 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Learner-sized.",
+			"mass": 13.5,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 125.0,
+			"bore": 45.1,
+			"stroke": 39.2,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 9300.0,
+			"redline": 13300.0,
+			"idle_rpm": 1450.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"parallel_350": {
+			"name": "350 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Light and nimble.",
+			"mass": 23.4,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 350.0,
+			"bore": 63.5,
+			"stroke": 55.2,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 7700.0,
+			"redline": 11000.0,
+			"idle_rpm": 1200.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"parallel_500": {
+			"name": "500 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Light and nimble.",
+			"mass": 30.0,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 500.0,
+			"bore": 71.5,
+			"stroke": 62.2,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 7250.0,
+			"redline": 10300.0,
+			"idle_rpm": 1150.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"parallel_600": {
+			"name": "600 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Middleweight.",
+			"mass": 34.4,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 600.0,
+			"bore": 76.0,
+			"stroke": 66.1,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 7000.0,
+			"redline": 10000.0,
+			"idle_rpm": 1100.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"parallel_750": {
+			"name": "750 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Middleweight.",
+			"mass": 41.0,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 750.0,
+			"bore": 81.9,
+			"stroke": 71.2,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 6700.0,
+			"redline": 9600.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"parallel_800": {
+			"name": "800 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Middleweight.",
+			"mass": 43.2,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 800.0,
+			"bore": 83.7,
+			"stroke": 72.8,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 6650.0,
+			"redline": 9500.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"parallel_1000": {
+			"name": "1000 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Big-bore.",
+			"mass": 52.0,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 1000.0,
+			"bore": 90.1,
+			"stroke": 78.4,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 6400.0,
+			"redline": 9100.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"parallel_1100": {
+			"name": "1100 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Big-bore.",
+			"mass": 56.4,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 1100.0,
+			"bore": 93.0,
+			"stroke": 80.9,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 6300.0,
+			"redline": 9000.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"parallel_1200": {
+			"name": "1200 cc parallel twin",
+			"description": "Modern 270 degree parallel twin. Narrow, light and punchy with a V-twin-like beat. Big-bore.",
+			"mass": 60.8,
+			"layout": "parallel",
+			"cylinders": 2,
+			"displacement": 1200.0,
+			"bore": 95.8,
+			"stroke": 83.3,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 6200.0,
+			"redline": 8800.0,
+			"idle_rpm": 950.0,
+			"color": [
+				0.18,
+				0.18,
+				0.2
+			],
+			"type": "Parallel twin"
+		},
+		"vtwin_50": {
+			"name": "50 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Learner-sized.",
+			"mass": 12.5,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 50.0,
+			"bore": 33.7,
+			"stroke": 28.1,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 8400.0,
+			"redline": 13000.0,
+			"idle_rpm": 1600.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"vtwin_125": {
+			"name": "125 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Learner-sized.",
+			"mass": 16.2,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 125.0,
+			"bore": 45.7,
+			"stroke": 38.1,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 7700.0,
+			"redline": 11900.0,
+			"idle_rpm": 1450.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"vtwin_350": {
+			"name": "350 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Light and nimble.",
+			"mass": 27.5,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 350.0,
+			"bore": 64.4,
+			"stroke": 53.7,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 6400.0,
+			"redline": 9900.0,
+			"idle_rpm": 1200.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"vtwin_500": {
+			"name": "500 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Light and nimble.",
+			"mass": 35.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 500.0,
+			"bore": 72.6,
+			"stroke": 60.5,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 6000.0,
+			"redline": 9300.0,
+			"idle_rpm": 1150.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"vtwin_600": {
+			"name": "600 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Middleweight.",
+			"mass": 40.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 600.0,
+			"bore": 77.1,
+			"stroke": 64.3,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 5800.0,
+			"redline": 9000.0,
+			"idle_rpm": 1100.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"vtwin_750": {
+			"name": "750 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Middleweight.",
+			"mass": 47.5,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 750.0,
+			"bore": 83.1,
+			"stroke": 69.2,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 5550.0,
+			"redline": 8600.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"vtwin_800": {
+			"name": "800 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Middleweight.",
+			"mass": 50.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 800.0,
+			"bore": 84.9,
+			"stroke": 70.7,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 5500.0,
+			"redline": 8500.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"vtwin_1000": {
+			"name": "1000 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Big-bore.",
+			"mass": 60.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1000.0,
+			"bore": 91.4,
+			"stroke": 76.2,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 5300.0,
+			"redline": 8200.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"vtwin_1100": {
+			"name": "1100 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Big-bore.",
+			"mass": 65.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1100.0,
+			"bore": 94.4,
+			"stroke": 78.6,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 5200.0,
+			"redline": 8100.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"vtwin_1200": {
+			"name": "1200 cc V-twin",
+			"description": "Two cylinders in a V. Lumpy, torquey and loud. Big-bore.",
+			"mass": 70.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1200.0,
+			"bore": 97.1,
+			"stroke": 81.0,
+			"torque_per_cc": 0.1,
+			"peak_torque_rpm": 5100.0,
+			"redline": 7900.0,
+			"idle_rpm": 950.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin"
+		},
+		"2stroke_50": {
+			"name": "50 cc two-stroke",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Learner-sized.",
+			"mass": 6.4,
+			"layout": "2stroke",
+			"cylinders": 1,
+			"displacement": 50.0,
+			"bore": 39.9,
+			"stroke": 39.9,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 12300.0,
+			"redline": 16000.0,
+			"idle_rpm": 1600.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"2stroke_125": {
+			"name": "125 cc two-stroke",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Learner-sized.",
+			"mass": 8.5,
+			"layout": "2stroke",
+			"cylinders": 1,
+			"displacement": 125.0,
+			"bore": 54.2,
+			"stroke": 54.2,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 11250.0,
+			"redline": 14600.0,
+			"idle_rpm": 1450.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"2stroke_350": {
+			"name": "350 cc two-stroke twin",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Light and nimble.",
+			"mass": 14.8,
+			"layout": "2stroke",
+			"cylinders": 2,
+			"displacement": 350.0,
+			"bore": 60.6,
+			"stroke": 60.6,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 9350.0,
+			"redline": 12100.0,
+			"idle_rpm": 1200.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"2stroke_500": {
+			"name": "500 cc two-stroke twin",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Light and nimble.",
+			"mass": 19.0,
+			"layout": "2stroke",
+			"cylinders": 2,
+			"displacement": 500.0,
+			"bore": 68.3,
+			"stroke": 68.3,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 8800.0,
+			"redline": 11400.0,
+			"idle_rpm": 1150.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"2stroke_600": {
+			"name": "600 cc two-stroke twin",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Middleweight.",
+			"mass": 21.8,
+			"layout": "2stroke",
+			"cylinders": 2,
+			"displacement": 600.0,
+			"bore": 72.6,
+			"stroke": 72.6,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 8500.0,
+			"redline": 11000.0,
+			"idle_rpm": 1100.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"2stroke_750": {
+			"name": "750 cc two-stroke triple",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Middleweight.",
+			"mass": 26.0,
+			"layout": "2stroke",
+			"cylinders": 3,
+			"displacement": 750.0,
+			"bore": 68.3,
+			"stroke": 68.3,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 8150.0,
+			"redline": 10600.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"2stroke_800": {
+			"name": "800 cc two-stroke triple",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Middleweight.",
+			"mass": 27.4,
+			"layout": "2stroke",
+			"cylinders": 3,
+			"displacement": 800.0,
+			"bore": 69.8,
+			"stroke": 69.8,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 8050.0,
+			"redline": 10400.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"2stroke_1000": {
+			"name": "1000 cc two-stroke triple",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Big-bore.",
+			"mass": 33.0,
+			"layout": "2stroke",
+			"cylinders": 3,
+			"displacement": 1000.0,
+			"bore": 75.2,
+			"stroke": 75.2,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 7750.0,
+			"redline": 10000.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"2stroke_1100": {
+			"name": "1100 cc two-stroke triple",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Big-bore.",
+			"mass": 35.8,
+			"layout": "2stroke",
+			"cylinders": 3,
+			"displacement": 1100.0,
+			"bore": 77.6,
+			"stroke": 77.6,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 7600.0,
+			"redline": 9900.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"2stroke_1200": {
+			"name": "1200 cc two-stroke triple",
+			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Big-bore.",
+			"mass": 38.6,
+			"layout": "2stroke",
+			"cylinders": 3,
+			"displacement": 1200.0,
+			"bore": 79.9,
+			"stroke": 79.9,
+			"torque_per_cc": 0.118,
+			"peak_torque_rpm": 7500.0,
+			"redline": 9700.0,
+			"idle_rpm": 950.0,
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"type": "Two-stroke"
+		},
+		"inline_50": {
+			"name": "50 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Learner-sized.",
+			"mass": 14.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 50.0,
+			"bore": 27.8,
+			"stroke": 20.6,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 14500.0,
+			"redline": 18000.0,
+			"idle_rpm": 1600.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
+		},
+		"inline_125": {
+			"name": "125 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Learner-sized.",
+			"mass": 17.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 125.0,
+			"bore": 37.7,
+			"stroke": 27.9,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 13250.0,
+			"redline": 18000.0,
+			"idle_rpm": 1450.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
+		},
+		"inline_350": {
+			"name": "350 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Light and nimble.",
+			"mass": 26.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 350.0,
+			"bore": 53.2,
+			"stroke": 39.4,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 11000.0,
+			"redline": 15400.0,
+			"idle_rpm": 1200.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
+		},
+		"inline_500": {
+			"name": "500 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Light and nimble.",
+			"mass": 32.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 500.0,
+			"bore": 59.9,
+			"stroke": 44.4,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 10350.0,
+			"redline": 14500.0,
+			"idle_rpm": 1150.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
+		},
+		"inline_600": {
+			"name": "600 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Middleweight.",
+			"mass": 36.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 600.0,
+			"bore": 63.6,
+			"stroke": 47.1,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 10000.0,
+			"redline": 14000.0,
+			"idle_rpm": 1100.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
+		},
+		"inline_750": {
+			"name": "750 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Middleweight.",
+			"mass": 42.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 750.0,
+			"bore": 68.6,
+			"stroke": 50.8,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 9600.0,
+			"redline": 13400.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
+		},
+		"inline_800": {
+			"name": "800 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Middleweight.",
+			"mass": 44.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 800.0,
+			"bore": 70.1,
+			"stroke": 51.9,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 9500.0,
+			"redline": 13300.0,
+			"idle_rpm": 1050.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
+		},
+		"inline_1000": {
+			"name": "1000 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Big-bore.",
+			"mass": 52.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 1000.0,
+			"bore": 75.5,
+			"stroke": 55.9,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 9100.0,
+			"redline": 12800.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
+		},
+		"inline_1100": {
+			"name": "1100 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Big-bore.",
+			"mass": 56.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 1100.0,
+			"bore": 77.9,
+			"stroke": 57.7,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 8950.0,
+			"redline": 12600.0,
+			"idle_rpm": 1000.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
+		},
+		"inline_1200": {
+			"name": "1200 cc inline four",
+			"description": "Four in a row. Smooth, revvy and screams at the top. Big-bore.",
+			"mass": 60.0,
+			"layout": "inline",
+			"cylinders": 4,
+			"displacement": 1200.0,
+			"bore": 80.2,
+			"stroke": 59.4,
+			"torque_per_cc": 0.098,
+			"peak_torque_rpm": 8850.0,
+			"redline": 12400.0,
+			"idle_rpm": 950.0,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"type": "Inline four"
 		}
 	},
 	"head": {

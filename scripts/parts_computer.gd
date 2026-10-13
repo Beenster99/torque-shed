@@ -89,7 +89,8 @@ func _ready() -> void:
 	for k in kinds:
 		var b := Button.new()
 		if k.begins_with("eq:"):
-			b.text = ("Shed: " if not k.trim_prefix("eq:") in ["poster", "seat", "tv"] else "Decor: ") + Equipment.KIND_NAMES[k.trim_prefix("eq:")]
+			var ek: String = k.trim_prefix("eq:")
+			b.text = ("Yard: " if Equipment.YARD_KINDS.has(ek) else ("Decor: " if ek in ["poster", "seat", "tv"] else "Shed: ")) + Equipment.KIND_NAMES[ek]
 		else:
 			b.text = PartsDB.KIND_NAMES[k]
 		if PartsDB.FLUID_KINDS.has(k):
@@ -135,7 +136,21 @@ func _show_kind(k: String) -> void:
 	for c in _variants.get_children():
 		c.queue_free()
 	var ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
+	var group := ""
+	if k == "engine":
+		ids = ids.duplicate()
+		var order := ["Single", "Twin", "Parallel twin", "V-twin", "Boxer twin", "Inline triple", "Inline four", "Two-stroke"]
+		ids.sort_custom(func(a, b):
+			var pa := PartsDB.get_part(a)
+			var pb := PartsDB.get_part(b)
+			var ta := order.find(str(pa.get("type", "")))
+			var tb := order.find(str(pb.get("type", "")))
+			return ta < tb if ta != tb else float(pa["displacement"]) < float(pb["displacement"]))
 	for id in ids:
+		if k == "engine" and str(PartsDB.get_part(id).get("type", "")) != group:
+			# Engines come in families: a heading over each layout's sizes.
+			group = str(PartsDB.get_part(id).get("type", ""))
+			_variants.add_child(UITheme.label(group.to_upper(), 14, UITheme.ACCENT))
 		var b := Button.new()
 		if k.begins_with("eq:"):
 			b.text = str(Equipment.get_model(id)["name"]) + ("  (compact)" if Equipment.get_model(id).get("compact", false) else "")
@@ -159,7 +174,8 @@ func _show_part(id: String) -> void:
 		var m := Equipment.get_model(id)
 		_title.text = str(m["name"])
 		_desc.text = str(m["desc"])
-		var how := "Arrives outside the roller door. Press F on it to carry it in, look at a wall and press F to hang it." \
+		var how := "Left in the yard by the drag strip. Press F on it to push it, F again to put it down." if Equipment.is_yard(id) else \
+			"Arrives outside the roller door. Press F on it to carry it in, look at a wall and press F to hang it." \
 			if Equipment.is_wall(id) else ("Arrives outside the roller door. Hold F on it to move it." if m["kind"] == "seat"
 			else "Arrives outside the roller door. Press F on it to push it in and F again to put it down.")
 		_spec.text = Equipment.spec_line(id).replace("  ·  ", "\n") + "\n\n" + how

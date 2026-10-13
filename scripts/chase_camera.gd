@@ -90,7 +90,7 @@ func _helmet() -> void:
 		global_transform = model.global_transform * model.eye_transform()
 	else:
 		global_transform = target.global_transform.translated_local(Vector3(0.0, 1.5, 0.0))
-	fov = 72.0
+	fov = 80.0
 
 
 func _orbit(delta: float) -> void:

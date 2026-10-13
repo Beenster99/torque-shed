@@ -23,6 +23,11 @@ const JET_REACH := 0.3       # the pressure washer cleans every part this close 
 const REACH := 2.6
 const BRUSH_REACH := 0.35    # the brush cleans every part this close to where it touches
 const MOUSE_SENS := 0.0025
+const SPRAY_RADIUS := 0.08   # how wide the spray lands, in metres; skill will widen it later
+const COVER_CELL := 0.06     # parts are sprayed a patch this size at a time
+const COVER_RATE := 10.0     # coats a second where the spray is pointed
+const COVER_DONE := 0.9      # this much of the part covered and the job's done
+const RUN_LEVEL := 4.0       # a patch sprayed this many coats over runs (paint) or flings off (lube)
 const PAD_LOOK := 2.6
 
 var camera: Camera3D
@@ -58,6 +63,9 @@ var _f_time := 0.0
 var seat := 0               # the seat you're sitting on, or 0
 var _seat_spot := Vector3.ZERO
 var _active_plan := {}
+var spray_skill := 1.0       # widens the spray; XP will raise it in a later milestone
+var coverage := 0.0          # how much of the part being sprayed is covered, 0..1
+var _cover := {}             # the spray job under way: {key, plan, item, points, cells, live}
 var _jet: CPUParticles3D
 
 
@@ -372,6 +380,10 @@ func _update_target() -> void:
 	target = t
 	plan = _make_plan()
 	info = _describe()
+	if not _cover.is_empty() and target_item() == int(_cover["item"]):
+		var st := cover_stats()
+		info += "\nSprayed so far: %d%% covered%s" % [roundi(st["covered"] * 100.0),
+			"  ·  overdone in places" if st["over"] > 0.04 else ""]
 	_highlight()
 
 
@@ -408,7 +420,12 @@ func _push_transform(id: int) -> Transform3D:
 	var at := global_position + Vector3(fwd.x, 0.0, fwd.z).normalized() * dist
 	at.y = global_position.y
 	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * 2.0, 1)
-	q.exclude = [get_rid()]
+	var ignore: Array[RID] = [get_rid()]
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	if view:
+		# Not the thing being moved, or a ramp would climb up its own deck.
+		ignore.append_array(view.furniture_rids(id))
+	q.exclude = ignore
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit and (hit["normal"] as Vector3).y > 0.8:
 		at.y = (hit["position"] as Vector3).y
@@ -542,6 +559,13 @@ func _make_plan() -> Dictionary:
 		"hands":
 			if held != 0:
 				var held_name := Shed.item_title(held)
+				var bay := Shed.bay_at(target["at"]) if target.has("at") and kind != "part" else -1
+				if bay >= 0 and Shed.items[held]["kind"] == "frame" and Shed.bay_is_free(bay):
+					# A bare frame on an empty bay's paddock stand starts a bike from scratch.
+					p = {"action": {"a": "start_build", "bay": bay}, "time": 1.5,
+						"verb": "set the frame up on the paddock stand in bay %d" % (bay + 1)}
+					p["blocked"] = Shed.check(me, p["action"])
+					return p
 				match kind:
 					"part":
 						var a := _where()
@@ -619,7 +643,7 @@ func _make_plan() -> Dictionary:
 		"spray":
 			if item_id != 0:
 				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": Shed.FINISHES[spray_finish]},
-					"time": 1.5, "verb": "spray it %s" % spray_text().to_lower()}
+					"time": 1.5, "coverage": true, "verb": "spray it %s: sweep over all of it, evenly" % spray_text().to_lower()}
 		"lance":
 			if target.has("at"):
 				var near := [] if item_id == 0 else [item_id]
@@ -645,7 +669,8 @@ func _fluid_plan(held: int, kind: String) -> Dictionary:
 	if fluid == "chain_lube":
 		var chain := target_item() if kind in ["part", "spot", "item"] else 0
 		if chain != 0 and Shed.items[chain]["kind"] == "chain":
-			var lube := {"action": {"a": "lube", "item": chain, "crouched": crouched}, "time": 2.5, "verb": "spray lube along the chain"}
+			var lube := {"action": {"a": "lube", "item": chain, "crouched": crouched}, "time": 2.5, "coverage": true,
+				"verb": "sweep the lube along the whole chain"}
 			lube["blocked"] = Shed.check(me, lube["action"])
 			return lube
 		if kind != "bin":
@@ -845,6 +870,20 @@ func _alt_button() -> bool:
 func _update_work(delta: float) -> void:
 	var use_alt := controls_enabled and _alt_button() and not _main_button()
 	var plan_now: Dictionary = alt_plan if use_alt else plan
+	# Spraying is a skill: sweep the can over the part until it's all covered, without
+	# lingering in one place. The job carries on while the button's held, even off the part.
+	if not use_alt and _acting() and not _need_release:
+		if plan_now.get("coverage", false) and plan_now["blocked"] == "":
+			_coverage_step(delta, plan_now)
+			return
+		if not _cover.is_empty() and _cover.get("live", false):
+			_coverage_step(delta, _cover["plan"])
+			return
+	if not _cover.is_empty() and _cover.get("live", false):
+		_cover["live"] = false
+		Sfx.set_loop(_work_sound, "")
+		_send_status("")
+		progress = 0.0
 	_active_plan = plan_now
 	var key := ("alt:" if use_alt else "") + str(plan_now.get("action", {}))
 	var a_now := str(plan_now.get("action", {}).get("a", ""))
@@ -890,6 +929,121 @@ func _update_work(delta: float) -> void:
 		_send_status("")
 
 
+## One frame of spraying: whatever patches of the part are under the spray get another coat.
+func _coverage_step(delta: float, plan_now: Dictionary) -> void:
+	var a: Dictionary = plan_now["action"]
+	var item := int(a["item"])
+	var key := str(a.get("a", "")) + ":" + str(item) + ":" + str(a.get("color", "")) + str(a.get("finish", ""))
+	if _cover.get("key", "") != key:
+		_cover = _start_cover(item, key, plan_now)
+		if _cover.is_empty():
+			return
+	if not _cover["live"]:
+		_cover["live"] = true
+		_active_plan = plan_now
+		_send_status(_activity_text())
+		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get(str(a["a"]), "spray"))
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	var frame: Dictionary = view.item_frame(item) if view else {}
+	if not frame.is_empty() and target_item() == item and target.has("at"):
+		var xf: Transform3D = frame["xf"]
+		var local: Vector3 = xf.affine_inverse() * (target["at"] as Vector3)
+		# The spray is a cone along the line of sight: it lands in a round patch across that line,
+		# so a face at a slant gets a longer splash.
+		var along: Vector3 = (xf.basis.inverse() * -camera.global_transform.basis.z).normalized()
+		var reach := SPRAY_RADIUS * spray_skill
+		var points: PackedVector3Array = _cover["points"]
+		var cells: PackedFloat32Array = _cover["cells"]
+		for i in points.size():
+			var v := points[i] - local
+			var depth := v.dot(along)
+			if absf(depth) > 0.25:
+				continue
+			var d := (v - along * depth).length()
+			if d < reach:
+				cells[i] += delta * COVER_RATE * (1.0 - 0.5 * d / reach)
+		_cover["cells"] = cells
+	var stats := cover_stats()
+	coverage = stats["covered"]
+	progress = clampf(coverage / COVER_DONE, 0.0, 1.0)
+	if coverage >= COVER_DONE:
+		var done := (plan_now["action"] as Dictionary).duplicate()
+		done["quality"] = clampf(stats["covered"] * (1.0 - stats["over"] * 0.6), 0.0, 1.0)
+		done["waste"] = stats["over"]
+		Shed.request(done)
+		Sfx.set_loop(_work_sound, "")
+		_send_status("")
+		_cover = {}
+		coverage = 0.0
+		progress = 0.0
+		_need_release = true
+
+
+## A fresh spray job on `item`: the bits of it you can see from where you stand, found by
+## looking over it ray by ray, each needing a coat. The undersides you can't reach don't count.
+func _start_cover(item: int, key: String, plan_now: Dictionary) -> Dictionary:
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	var frame: Dictionary = view.item_frame(item) if view else {}
+	if frame.is_empty():
+		return {}
+	var box: AABB = frame["box"]
+	var xf: Transform3D = frame["xf"]
+	var eye := camera.global_position
+	var space := get_world_3d().direct_space_state
+	var seen := {}
+	var points := PackedVector3Array()
+	const N := 9
+	for i in N:
+		for j in N:
+			for k in N:
+				var at := xf * (box.position + box.size * Vector3((i + 0.5) / N, (j + 0.5) / N, (k + 0.5) / N))
+				var q := PhysicsRayQueryParameters3D.create(eye, eye + (at - eye) * 1.5, 1 | 4 | Workshop.INTERACT_LAYER)
+				q.exclude = [get_rid()]
+				var hit := space.intersect_ray(q)
+				if hit.is_empty() or _item_hit(hit["collider"]) != item:
+					continue
+				var local: Vector3 = xf.affine_inverse() * (hit["position"] as Vector3)
+				var cell := Vector3i((local / (COVER_CELL * 0.7)).floor())
+				if not seen.has(cell):
+					seen[cell] = true
+					points.append(local)
+	if points.is_empty():
+		return {}
+	var cells := PackedFloat32Array()
+	cells.resize(points.size())
+	return {"key": key, "plan": plan_now, "item": item, "points": points, "cells": cells, "live": false}
+
+
+## The part a ray hit, the same way the crosshair reads it.
+func _item_hit(c: Object) -> int:
+	if c == null:
+		return 0
+	if c.has_meta("bike") and Shed.bikes.has(int(c.get_meta("bike"))):
+		return Shed.item_at_target({"bike": int(c.get_meta("bike")), "slot": str(c.get_meta("slot"))})
+	if c.has_meta("engine"):
+		return Shed.item_at_target({"engine": int(c.get_meta("engine")), "slot": str(c.get_meta("slot"))})
+	if c.has_meta("spot"):
+		return Shed.item_at_spot(str(c.get_meta("spot")))
+	if c.has_meta("item"):
+		return int(c.get_meta("item"))
+	return 0
+
+
+## How the spray job is going: {covered, over} as fractions of the part's patches.
+func cover_stats() -> Dictionary:
+	if _cover.is_empty():
+		return {"covered": 0.0, "over": 0.0}
+	var cells: PackedFloat32Array = _cover["cells"]
+	var covered := 0
+	var over := 0
+	for c in cells:
+		if c >= 1.0:
+			covered += 1
+		if c >= RUN_LEVEL:
+			over += 1
+	return {"covered": float(covered) / cells.size(), "over": float(over) / cells.size()}
+
+
 func _activity_text() -> String:
 	var a: Dictionary = _active_plan["action"]
 	var what := ""
@@ -898,7 +1052,7 @@ func _activity_text() -> String:
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
 		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
-		"place": "Putting down a part", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer",
+		"place": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on"}
 	var verb: String = verbs.get(a["a"], "Working on")

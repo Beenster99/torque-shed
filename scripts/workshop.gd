@@ -181,6 +181,20 @@ func preview_bike(id: int, xf: Transform3D) -> void:
 		bike_views[id].transform = xf
 
 
+## Every physics body that belongs to one piece of equipment.
+func furniture_rids(id: int) -> Array[RID]:
+	var out: Array[RID] = []
+	if not furniture_nodes.has(id):
+		return out
+	var stack: Array[Node] = [furniture_nodes[id]]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is CollisionObject3D:
+			out.append((n as CollisionObject3D).get_rid())
+		stack.append_array(n.get_children())
+	return out
+
+
 func preview_furniture(id: int, xf: Transform3D) -> void:
 	if furniture_nodes.has(id):
 		furniture_nodes[id].transform = xf
@@ -287,6 +301,59 @@ func model_for(target: Dictionary) -> BikeModel:
 	if bike_views.has(target.get("bike", 0)):
 		return bike_model(int(target["bike"]))
 	return null
+
+
+## Where a part is drawn and how big it is, for spraying it: {xf: the frame its box is in,
+## box: AABB in that frame}, or {} when it isn't drawn.
+func item_frame(item_id: int) -> Dictionary:
+	if not Shed.items.has(item_id):
+		return {}
+	var it: Dictionary = Shed.items[item_id]
+	match str(it["at"]):
+		"bike":
+			var bike := int(it["ref"])
+			if not bike_views.has(bike):
+				return {}
+			var model := bike_model(bike)
+			for slot in PartsDB.BIKE_SLOTS:
+				if Shed.item_on(bike, slot) == item_id:
+					return {"xf": model.global_transform, "box": model.slot_bounds(slot)}
+		"engine":
+			var block := int(it["ref"])
+			var model := model_for({"engine": block})
+			if model == null:
+				return {}
+			for slot in PartsDB.ENGINE_SLOTS:
+				if Shed.engine_item(block, slot) == item_id:
+					return {"xf": model.global_transform, "box": model.slot_bounds(slot)}
+		"spot":
+			if _spot_nodes.has(str(it["ref"])):
+				return _node_frame(_spot_nodes[str(it["ref"])])
+		"floor":
+			if _floor_nodes.has(item_id):
+				return _node_frame(_floor_nodes[item_id])
+	return {}
+
+
+func _node_frame(node: Node3D) -> Dictionary:
+	var box := AABB()
+	var first := true
+	var stack: Array = [[node, Transform3D()]]
+	while not stack.is_empty():
+		var top: Array = stack.pop_back()
+		var n: Node = top[0]
+		var xf: Transform3D = top[1]
+		for child in n.get_children():
+			if child is Node3D:
+				var cxf: Transform3D = xf * (child as Node3D).transform
+				if child is VisualInstance3D and not (child is Label3D):
+					var b: AABB = cxf * (child as VisualInstance3D).get_aabb()
+					box = b if first else box.merge(b)
+					first = false
+				stack.append([child, cxf])
+	if first:
+		return {}
+	return {"xf": node.global_transform, "box": box}
 
 
 ## The model drawn for a parked bike (inside its lean pivot).

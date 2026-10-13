@@ -234,8 +234,10 @@ func _start_riding(bike_id: int) -> void:
 			hud.flash(reason, 3.0, true))
 	audio = EngineAudio.new()
 	audio.cylinders = bike.build.cylinders
+	audio.layout = bike.build.layout
 	audio.loudness = bike.build.exhaust_loudness
 	bike.add_child(audio)
+	bike.gear_changed.connect(func(_g): Sfx.play_at("gear", bike.global_position, -6.0, bike))
 	camera.target = bike
 	camera.set_mode(_ride_view)
 	camera.snap()
@@ -375,7 +377,7 @@ func _physics_process(delta: float) -> void:
 		bike.auto_shift = Settings.auto_shift
 		bike.assist = Settings.assist
 		audio.rpm = bike.rpm
-		audio.throttle = bike.throttle
+		audio.throttle = bike.sound_load()
 		audio.running = bike.engine_on
 		var km := absf(bike.speed) * delta / 1000.0
 		_ride_km += km
@@ -410,19 +412,30 @@ func _send_ride_stats() -> void:
 	_dirt_km = 0.0
 
 
-## The rider's view of the clocks: speed, gear and a fuel gauge.
+## The rider's view of the clocks: needles for speed and revs on dial clocks, and speed, gear and
+## fuel on the screen of digital ones.
 func _update_dash() -> void:
 	if _dash == null:
 		return
 	var b := bike.build
 	var fuel := clampf(bike.fuel_litres / maxf(b.fuel_capacity, 0.1), 0.0, 1.0)
+	var full_scale := 200.0 if Units.speed_unit() == "km/h" else 120.0
+	bike.model.set_gauges(Units.speed_value(bike.speed) / full_scale, bike.rpm / maxf(b.redline * 1.1, 1000.0))
 	var bars := roundi(fuel * 8.0)
 	var gauge := "F " + "|".repeat(bars) + ".".repeat(8 - bars) + " E"
+	var gear := "G%d" % bike.gear if b.dash_features.has("gear") else ""
+	if bike.model.has_dials():
+		_dash.text = ("OFF" if not bike.engine_on else gear) + "\n" + "|".repeat(bars) + ".".repeat(8 - bars)
+		_dash.modulate = Color(0.8, 0.1, 0.05) if fuel < 0.15 else Color(0.1, 0.1, 0.1)
+		return
 	if not bike.engine_on:
 		_dash.text = "%d %s\n%s" % [Units.speed_value(bike.speed), Units.speed_unit(), "STARTING" if bike.is_starting() else "ENGINE OFF"]
 	else:
-		_dash.text = "%d %s   %s\n%s" % [Units.speed_value(bike.speed), Units.speed_unit(),
-			"G%d" % bike.gear if b.dash_features.has("gear") else "", gauge]
+		var revs := ""
+		if b.dash_features.has("rpm"):
+			var seg := roundi(clampf(bike.rpm / b.redline, 0.0, 1.0) * 10.0)
+			revs = "\n" + "#".repeat(seg) + "-".repeat(10 - seg) + " %d rpm" % (roundi(bike.rpm / 100.0) * 100)
+		_dash.text = "%d %s   %s%s\n%s" % [Units.speed_value(bike.speed), Units.speed_unit(), gear, revs, gauge]
 	_dash.modulate = Color(1.0, 0.45, 0.3) if fuel < 0.15 else Color(0.75, 1.0, 0.85)
 
 

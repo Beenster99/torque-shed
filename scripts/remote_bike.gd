@@ -44,6 +44,7 @@ func setup(rider_name: String, build: BikeBuild, paint: Color) -> void:
 	add_child(_label)
 	audio = EngineAudio.new()
 	audio.cylinders = _build.cylinders
+	audio.layout = _build.layout
 	audio.loudness = _build.exhaust_loudness
 	audio.volume_db = -6.0
 	add_child(audio)
@@ -89,6 +90,7 @@ func _physics_process(delta: float) -> void:
 	audio.running = running
 	var v := Vector3(sb[7], sb[8], sb[9])
 	_effects.update(delta, v.length(), sb[16], running, _build.overall_health(), "", true, 0.0)
+	_effects.set_screech(sb[20] if sb.size() > 20 else 0.0)
 
 
 func current_speed() -> float:
