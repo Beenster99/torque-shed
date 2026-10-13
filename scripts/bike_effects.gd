@@ -292,9 +292,9 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 	if _beam:
 		_beam.visible = engine_on
 		# The eye adjusts at night: the same lamp throws a much brighter pool on the road.
-		var dark := World.darkness()
-		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * dark)
-		_beam.spot_angle = lerpf(24.0, 30.0, dark)
+		var night := World.darkness()
+		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night)
+		_beam.spot_angle = lerpf(24.0, 30.0, night)
 		_lamp_glow.visible = engine_on
 
 
