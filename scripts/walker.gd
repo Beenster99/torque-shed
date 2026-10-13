@@ -36,6 +36,8 @@ var _held_sig := ""
 var _tool_view: Node3D
 var _last_status := ""
 var _highlighted: BikeModel
+var _work_sound: AudioStreamPlayer3D
+var _stride := 0.0
 
 
 func _ready() -> void:
@@ -54,6 +56,8 @@ func _ready() -> void:
 	camera.far = 2500.0
 	camera.fov = 75.0
 	add_child(camera)
+	_work_sound = Sfx.make_loop_player(camera)
+	_work_sound.position = Vector3(0.0, -0.3, -0.6)
 	_set_tool_view()
 
 
@@ -96,6 +100,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif target.get("kind", "") == "pc":
 			get_viewport().set_input_as_handled()
 			computer_requested.emit()
+		elif target.get("kind", "") == "radio":
+			get_viewport().set_input_as_handled()
+			Shed.request({"a": "radio", "on": not Shed.radio["on"]})
 	else:
 		for i in TOOLS.size():
 			if event.is_action_pressed("tool_%d" % (i + 1)):
@@ -156,6 +163,11 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y = -0.5
 	move_and_slide()
+	if is_on_floor():
+		_stride += Vector2(velocity.x, velocity.z).length() * delta
+		if _stride > (0.85 if running else 0.7):
+			_stride = 0.0
+			Sfx.play_at("step", global_position, -14.0)
 	if global_position.y < -20.0:
 		place(Workshop.walker_spawn(0))
 	_update_target()
@@ -184,6 +196,8 @@ func _update_target() -> void:
 			t = {"kind": "pc"}
 		elif c.has_meta("bin"):
 			t = {"kind": "bin"}
+		elif c.has_meta("radio"):
+			t = {"kind": "radio"}
 		elif c.has_meta("item") and Shed.items.has(int(c.get_meta("item"))):
 			t = {"kind": "item", "item": int(c.get_meta("item"))}
 		elif Shed.held_by(Shed.me()) != 0 and (c is CollisionObject3D) and (c as CollisionObject3D).collision_layer & 1:
@@ -224,6 +238,17 @@ func _make_plan() -> Dictionary:
 		return {}
 	var item_id := target_item()
 	var p := {}
+	if kind == "radio":
+		if Shed.stations.is_empty():
+			return {}
+		if not Shed.radio["on"]:
+			p = {"action": {"a": "radio", "on": true}, "time": 0.2, "verb": "switch the radio on"}
+		else:
+			var next := (int(Shed.radio["station"]) + 1) % Shed.stations.size()
+			p = {"action": {"a": "radio", "on": true, "station": next}, "time": 0.2,
+				"verb": "tune to %s" % Shed.station_name(next)}
+		p["blocked"] = Shed.check(me, p["action"])
+		return p
 	match tool:
 		"hands":
 			if held != 0:
@@ -335,6 +360,12 @@ func _describe() -> String:
 			lines.append("Put down here  ·  %s" % PartsDB.KIND_NAMES[it["kind"]])
 			lines.append(PartsDB.spec_line(it["part"]))
 			lines.append(Shed.condition_text(it))
+		"radio":
+			lines.append("Shed radio (everyone hears it)")
+			var view: Node = get_tree().get_first_node_in_group("workshop")
+			if view and view.radio:
+				lines.append(view.radio.now_playing())
+			lines.append("F: switch %s" % ("off" if Shed.radio["on"] else "on"))
 		"pc":
 			lines.append("Parts computer")
 			lines.append("Order any part. It turns up on the delivery pallets.")
@@ -393,6 +424,7 @@ func _update_work(delta: float) -> void:
 	if not _acting():
 		_need_release = false
 	if plan.is_empty() or plan["blocked"] != "" or key != _plan_key or not _acting() or _need_release:
+		Sfx.set_loop(_work_sound, "")
 		if _hold > 0.0 and _last_status != "":
 			_send_status("")
 		_hold = 0.0
@@ -404,6 +436,7 @@ func _update_work(delta: float) -> void:
 		return
 	if _hold == 0.0:
 		_send_status(_activity_text())
+		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get(plan["action"]["a"], ""))
 	_hold += delta
 	progress = clampf(_hold / float(plan["time"]), 0.0, 1.0)
 	if progress >= 1.0:
@@ -411,6 +444,10 @@ func _update_work(delta: float) -> void:
 			computer_requested.emit()
 		else:
 			Shed.request(plan["action"])
+			var done: String = Sfx.DONE_SOUNDS.get(plan["action"]["a"], "")
+			if done != "":
+				Sfx.play_at(done, camera.global_position - camera.global_transform.basis.z * 1.2, -4.0)
+		Sfx.set_loop(_work_sound, "")
 		_hold = 0.0
 		progress = 0.0
 		_need_release = true
@@ -425,7 +462,7 @@ func _activity_text() -> String:
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
 		"clean": "Cleaning", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
-		"place": "Putting down a part", "drop": "Putting down a part", "bin": "Scrapping a part", "computer": "Browsing the parts computer"}
+		"place": "Putting down a part", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] in ["clean", "repair", "paint"] and what == "":
 		what = "the " + Shed.item_title(int(a["item"]))

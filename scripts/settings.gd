@@ -8,6 +8,8 @@ var last_ip := "127.0.0.1"
 var assist := 0.5          # 0 = full sim, 1 = maximum riding assistance
 var auto_shift := true
 var high_quality := true
+var sfx_volume := 0.8
+var radio_volume := 0.6
 
 
 func _ready() -> void:
@@ -23,6 +25,8 @@ func load_settings() -> void:
 		assist = cfg.get_value("riding", "assist", assist)
 		auto_shift = cfg.get_value("riding", "auto_shift", auto_shift)
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
+		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
+		radio_volume = cfg.get_value("audio", "radio", radio_volume)
 
 
 func save_settings() -> void:
@@ -32,6 +36,8 @@ func save_settings() -> void:
 	cfg.set_value("riding", "assist", assist)
 	cfg.set_value("riding", "auto_shift", auto_shift)
 	cfg.set_value("video", "high_quality", high_quality)
+	cfg.set_value("audio", "sfx", sfx_volume)
+	cfg.set_value("audio", "radio", radio_volume)
 	cfg.save(PATH)
 
 

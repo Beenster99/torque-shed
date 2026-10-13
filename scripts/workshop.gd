@@ -24,6 +24,8 @@ var _crew_screen: Dashboard
 var _dash_timer := 0.0
 var _dash_dirty := true
 var _mats := {}
+var radio: ShedRadio
+var _washer_sound: AudioStreamPlayer3D
 
 
 static func bay_transform(bay: int) -> Transform3D:
@@ -69,6 +71,7 @@ func build() -> void:
 	_build_repair_bench()
 	_build_bin()
 	_build_tool_wall()
+	_build_radio()
 	_build_lights()
 	_crew_screen = Dashboard.new("crew", 3.0)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
@@ -115,6 +118,9 @@ func sync_state() -> void:
 				model.build_pickers({"engine": item_id}, {"engine": {"spot": "engine_stand"}})
 			_spot_nodes[spot] = display
 	_sync_floor()
+	radio.sync()
+	var washing := Shed.item_at_spot("washer")
+	Sfx.set_loop(_washer_sound, "washer" if washing != 0 and float(Shed.items[washing]["dirt"]) > 0.0 else "")
 	_dash_dirty = true
 
 
@@ -588,6 +594,9 @@ func _build_washer() -> void:
 	add_child(tap)
 	_target(xf.origin + Vector3(0.0, 0.2, 0.0), Vector3(1.3, 0.6, 0.9), {"spot": "washer"})
 	_label("PARTS WASHER", base + Vector3(0.0, 1.7, 0.38), PI, 32, Color(0.7, 0.9, 1.0))
+	_washer_sound = Sfx.make_loop_player(self)
+	_washer_sound.position = base + Vector3(0.0, 0.8, 0.0)
+	_washer_sound.volume_db = -8.0
 
 
 func _build_repair_bench() -> void:
@@ -636,6 +645,19 @@ func _build_tool_wall() -> void:
 		var handle := _deco(self, Vector3(x - 0.05, 1.9, z0 + 0.4 + i * 0.5), Vector3(0.05, 0.3, 0.05), _mats["red"] if i % 2 else _mats["yellow"])
 		handle.rotation.x = 0.1
 		_deco(self, Vector3(x - 0.05, 1.7, z0 + 0.4 + i * 0.5), Vector3(0.025, 0.12, 0.025), steel)
+
+
+## A wall shelf over the back end of the workbench with the shed radio on it.
+func _build_radio() -> void:
+	var x := CENTER.x - HALF.x
+	var z := spot_transform("bench_0").origin.z - 0.25
+	_deco(self, Vector3(x + 0.17, 1.6, z), Vector3(0.34, 0.03, 0.6), _mats["wood"])
+	for dz in [-0.22, 0.22]:
+		_deco(self, Vector3(x + 0.04, 1.52, z + dz), Vector3(0.03, 0.14, 0.03), _mats["steel"])
+	radio = ShedRadio.new()
+	radio.position = Vector3(x + 0.19, 1.615, z)
+	radio.rotation.y = PI * 0.5
+	add_child(radio)
 
 
 func _build_lights() -> void:

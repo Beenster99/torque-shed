@@ -47,6 +47,10 @@ func _run_all() -> void:
 	_test_models()
 	print("The shed")
 	_test_shed_rules()
+	print("Sound and radio")
+	_test_sounds()
+	_test_mp3_decoder()
+	await _test_radio_stream()
 	print("World")
 	await _test_world()
 	print("Game session")
@@ -431,6 +435,108 @@ func _bike_named(n: String) -> int:
 		if Shed.bikes[id]["name"] == n:
 			return id
 	return 0
+
+
+func _test_sounds() -> void:
+	var ok := true
+	for sound in ["ratchet", "scrub", "grinder", "spray", "washer", "static", "clink", "clunk", "pickup", "step", "scrap", "switch"]:
+		var wav := Sfx.stream(sound)
+		var loud := 0
+		for i in range(0, wav.data.size() - 1, 64):
+			loud = maxi(loud, absi(wav.data.decode_s16(i)))
+		if wav.data.size() < 1000 or loud < 2000 or loud > 32767:
+			ok = false
+			print("    quiet or broken sound: ", sound, " peak ", loud)
+	check(ok, "every shed sound is made and audible")
+	check(AudioServer.get_bus_index("SFX") != -1 and AudioServer.get_bus_index("Radio") != -1, "sound effects and radio have their own volume")
+	Shed.start_new("Tester", 7)
+	check(not Shed.radio["on"] and Shed.stations.size() >= 5, "the radio starts off with %d stations to pick from" % Shed.stations.size())
+	Shed.request({"a": "radio", "on": true, "station": 2})
+	check(Shed.radio["on"] and Shed.radio["station"] == 2, "anyone can switch the radio on and pick a station")
+	check(Shed._snapshot()["radio"]["station"] == 2, "the radio's state goes to everyone with the shed")
+	check(Shed.check(Shed.me(), {"a": "radio", "station": 99}) != "", "there's no station 99")
+	Shed.stop()
+
+
+## A live stream arrives in odd-sized pieces; decoding it run by run must join up seamlessly.
+## (A sine this loud steps about 0.03 per sample; a bad join jumps 0.15 or more.)
+func _test_mp3_decoder() -> void:
+	var bytes := FileAccess.get_file_as_bytes("res://tests/fixtures/sine_440_mp3.bin")
+	var dec := Mp3StreamDecoder.new()
+	var out := PackedVector2Array()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var pos := 0
+	while pos < bytes.size():
+		var n := rng.randi_range(300, 5000)
+		dec.feed(bytes.slice(pos, pos + n))
+		pos += n
+		out.append_array(dec.decode(10))
+	var worst := 0.0
+	for i in range(3000, out.size()):
+		worst = maxf(worst, absf(out[i].x - out[i - 1].x))
+	check(out.size() > AudioServer.get_mix_rate() * 3.0, "the stream decodes to audio (%.1f s)" % (out.size() / AudioServer.get_mix_rate()))
+	check(worst < 0.06, "the joins between decoded runs are seamless (biggest step %.3f)" % worst)
+
+
+## Runs a tiny radio station on this machine: it redirects once, then streams the test tone
+## with a song title in the metadata, the way Icecast and Shoutcast servers do.
+func _test_radio_stream() -> void:
+	var server := TCPServer.new()
+	var port := 0
+	for p in range(18750, 18800):
+		if server.listen(p, "127.0.0.1") == OK:
+			port = p
+			break
+	var holder := Node3D.new()
+	add_child(holder)
+	var speaker := AudioStreamPlayer3D.new()
+	holder.add_child(speaker)
+	var radio := RadioStream.new()
+	radio.player = speaker
+	holder.add_child(radio)
+	radio.tune("http://127.0.0.1:%d/start" % port)
+	var audio := FileAccess.get_file_as_bytes("res://tests/fixtures/sine_440_mp3.bin")
+	var metaint := 4000
+	var conns: Array[StreamPeerTCP] = []
+	var sent := {}
+	for frame in 600:
+		await get_tree().process_frame
+		while server.is_connection_available():
+			conns.append(server.take_connection())
+		for c in conns:
+			c.poll()
+			if not sent.has(c):
+				if c.get_available_bytes() == 0:
+					continue
+				var req := c.get_utf8_string(c.get_available_bytes())
+				if req.begins_with("GET /start"):
+					c.put_data(("HTTP/1.0 302 Found\r\nLocation: http://127.0.0.1:%d/live\r\n\r\n" % port).to_utf8_buffer())
+					sent[c] = -1
+				else:
+					c.put_data(("ICY 200 OK\r\nicy-name: Test FM\r\nicy-metaint: %d\r\n\r\n" % metaint).to_utf8_buffer())
+					sent[c] = 0
+			elif sent[c] >= 0 and sent[c] < audio.size():
+				var at: int = sent[c]
+				var piece := audio.slice(at, at + metaint)
+				c.put_data(piece)
+				sent[c] = at + piece.size()
+				if piece.size() == metaint:
+					var meta := "StreamTitle='Test Artist - Test Song';".to_utf8_buffer()
+					var blocks := ceili(meta.size() / 16.0)
+					meta.resize(blocks * 16)
+					var lead := PackedByteArray([blocks])
+					lead.append_array(meta)
+					c.put_data(lead)
+		if radio.is_live() and radio.title != "":
+			break
+	check(radio.is_live(), "the radio follows a redirect, buffers the stream and plays it (%s)" % radio.status)
+	check(radio.title == "Test Artist - Test Song", "the radio reads the song title from the stream (%s)" % radio.title)
+	radio.stop()
+	check(not speaker.playing, "switching off stops the sound")
+	server.stop()
+	holder.queue_free()
+	await get_tree().process_frame
 
 
 ## Stands the walker beside a bike slot and points the crosshair at it.

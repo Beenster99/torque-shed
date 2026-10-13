@@ -12,9 +12,11 @@ signal order_bike
 
 const CONTROLS_TEXT := """ON FOOT
 W A S D / left stick: walk      Shift: run      Mouse / right stick: look
-1-4, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder)
-Hold left mouse / RT / A: work on what you're looking at
-F / Y: get on a finished bike
+1-5, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can)
+Hold left mouse / RT / A: work on what you're looking at, or put a held part down anywhere
+Spray can: R / right mouse / X picks the colour, T / middle mouse / B the finish
+F / Y: get on a finished bike, use the parts computer, switch the radio on or off
+Radio: hold left mouse / RT / A on it to change station
 
 RIDING
 W / RT: throttle      S / LT: front brake      Space / B: rear brake
@@ -118,6 +120,10 @@ func _ready() -> void:
 	_quality.button_pressed = Settings.high_quality
 	_quality.toggled.connect(func(v): Settings.high_quality = v)
 	settings.add_child(_quality)
+	settings.add_child(UITheme.label("Sound effects volume", 15))
+	settings.add_child(_volume_slider(Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
+	settings.add_child(UITheme.label("Radio volume", 15))
+	settings.add_child(_volume_slider(Settings.radio_volume, func(v): Settings.radio_volume = v; Sfx.apply_volumes()))
 	var controls := VBoxContainer.new()
 	controls.name = "Controls"
 	_tabs.add_child(controls)
@@ -177,6 +183,16 @@ func _save() -> void:
 	Settings.player_name = player_name()
 	Settings.last_ip = _ip.text.strip_edges()
 	Settings.save_settings()
+
+
+func _volume_slider(value: float, cb: Callable) -> HSlider:
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = value
+	slider.value_changed.connect(cb)
+	return slider
 
 
 func _button(text: String, cb: Callable) -> Button:

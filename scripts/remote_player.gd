@@ -17,6 +17,7 @@ var _hand: Node3D
 var _label: Label3D
 var _snapshots: Array = []
 var _hand_sig := ""
+var _work_sound: AudioStreamPlayer3D
 
 
 func setup(peer_id: int, rider_name: String, paint: Color) -> void:
@@ -51,6 +52,7 @@ func setup(peer_id: int, rider_name: String, paint: Color) -> void:
 	_hand = Node3D.new()
 	_hand.position = Vector3(0.28, 1.0, -0.35)
 	_figure.add_child(_hand)
+	_work_sound = Sfx.make_loop_player(_hand)
 	_label = Label3D.new()
 	_label.text = player_name
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -153,6 +155,9 @@ func _process(_delta: float) -> void:
 	# What's in their hand: a part they carry, else their tool.
 	var held := Shed.held_by(peer)
 	var tool := str(Shed.crew.get(peer, {}).get("tool", "hands"))
+	# You hear their tools while they work.
+	var working := riding_bike == 0 and str(Shed.crew.get(peer, {}).get("activity", "")) != ""
+	Sfx.set_loop(_work_sound, Sfx.TOOL_LOOPS.get(tool, "") if working else "")
 	var sig := "%d|%s" % [held, tool]
 	if sig == _hand_sig:
 		return

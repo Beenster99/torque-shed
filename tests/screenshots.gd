@@ -43,6 +43,19 @@ func _ready() -> void:
 	main.walker.set_tool("spray")
 	var tank: Vector3 = model.global_transform * model.slot_bounds("tank").get_center()
 	await _look_from(tank + Vector3(1.1, -tank.y, 0.2), tank, "12_spray_can_on_tank")
+	# Five tanks on the floor, one in each spray finish.
+	var finishes := ["gloss", "matte", "metallic", "chrome", "patina"]
+	var colors := [0, 1, 3, 9, 2]
+	for i in finishes.size():
+		var id: int = Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[colors[i]])
+		Shed.items[id]["finish"] = finishes[i]
+		Shed._move(id, "floor", Transform3D(Basis(Vector3.UP, 0.4), c + Vector3(-1.6 + i * 0.75, 0.0, 1.6)))
+	Shed.changed.emit()
+	await _look_from(c + Vector3(0.0, 0.0, 3.4), c + Vector3(0.0, 0.1, 1.6), "15_paint_finishes_on_the_floor")
+	Shed.request({"a": "radio", "on": true, "station": 0})
+	var radio_at: Vector3 = main.workshop.radio.global_position
+	main.walker.set_tool("hands")
+	await _look_from(radio_at + Vector3(1.5, -radio_at.y, 0.0), radio_at + Vector3(0.0, 0.15, 0.0), "16_shed_radio")
 	var faithful := _bike_named("Old Faithful")
 	main._try_mount(faithful)
 	await _frames(30)

@@ -33,6 +33,9 @@ var bikes := {}
 var items := {}
 var crew := {}      # peer id -> {name, tool, activity, riding, fitted, removed, cleaned, repaired, painted, km, top_kmh}
 var active := false
+## The shed radio everyone hears: on or off, and which of `stations` it's tuned to.
+var radio := {"on": false, "station": 0}
+var stations: Array = []    # [{name, genre, url}] from data/radio.json
 
 var _next_id := 1
 var _dirty := false
@@ -41,6 +44,11 @@ var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
+	var file := FileAccess.open("res://data/radio.json", FileAccess.READ)
+	if file:
+		var parsed = JSON.parse_string(file.get_as_text())
+		if parsed is Array:
+			stations = parsed
 	Net.player_joined.connect(_on_player_joined)
 	Net.player_updated.connect(func(id, info): _on_player_joined(id, info))
 	Net.player_left.connect(_on_player_left)
@@ -60,6 +68,7 @@ func me() -> int:
 ## joiners receive the host's shed instead.
 func start_new(player_name: String, seed_value := 0) -> void:
 	bikes.clear()
+	radio = {"on": false, "station": 0}
 	items.clear()
 	crew.clear()
 	_next_id = 1
@@ -108,12 +117,14 @@ func start_new(player_name: String, seed_value := 0) -> void:
 
 func join_remote() -> void:
 	bikes.clear()
+	radio = {"on": false, "station": 0}
 	items.clear()
 	crew.clear()
 	active = true
 
 
 func stop() -> void:
+	radio = {"on": false, "station": 0}
 	active = false
 	bikes.clear()
 	items.clear()
@@ -308,6 +319,11 @@ func paint_name(c: Color) -> String:
 	return PAINT_NAMES[paint_index(c)]
 
 
+func station_name(index := -1) -> String:
+	var i: int = radio["station"] if index < 0 else index
+	return str(stations[i]["name"]) if i >= 0 and i < stations.size() else ""
+
+
 ## "Gloss red", or just "Red" for a part still in its factory finish.
 func paint_text(item: Dictionary) -> String:
 	var f: String = item.get("finish", "")
@@ -484,6 +500,10 @@ func check(peer: int, action: Dictionary) -> String:
 				return "That spot is taken."
 			if spot == "engine_stand" and not is_engine(held):
 				return "Only an engine goes on the engine stand."
+		"radio":
+			var st := int(action.get("station", radio["station"]))
+			if st < 0 or st >= stations.size():
+				return "No such station."
 		"order_part":
 			if PartsDB.get_part(str(action.get("part", ""))).is_empty():
 				return "Unknown part."
@@ -653,6 +673,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"order":
 			var id := _random_bike(free_bay(Workshop.BAY_COUNT))
 			text = "%s has been delivered to bay %d" % [bikes[id]["name"], bikes[id]["bay"] + 1]
+		"radio":
+			radio = {"on": bool(action.get("on", radio["on"])), "station": int(action.get("station", radio["station"]))}
+			text = "Radio: %s" % station_name() if radio["on"] else "Radio off"
 		"status":
 			c["tool"] = str(action.get("tool", c.get("tool", "")))
 			c["activity"] = str(action.get("activity", "")).left(60)
@@ -812,7 +835,7 @@ func _mark_dirty() -> void:
 
 
 func _snapshot() -> Dictionary:
-	return {"bikes": bikes, "items": items, "crew": crew, "next": _next_id}
+	return {"bikes": bikes, "items": items, "crew": crew, "radio": radio, "next": _next_id}
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -820,6 +843,7 @@ func _sync(state: Dictionary) -> void:
 	bikes = state.get("bikes", {})
 	items = state.get("items", {})
 	crew = state.get("crew", {})
+	radio = state.get("radio", radio)
 	_next_id = int(state.get("next", 1))
 	active = true
 	changed.emit()

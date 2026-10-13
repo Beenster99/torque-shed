@@ -21,6 +21,7 @@ func _ready() -> void:
 	gen.mix_rate = MIX_RATE
 	gen.buffer_length = 0.1
 	stream = gen
+	bus = "SFX"
 	unit_size = 12.0
 	max_db = 3.0
 	play()
