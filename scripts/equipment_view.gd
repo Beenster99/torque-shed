@@ -332,53 +332,8 @@ func _build_booth() -> void:
 
 ## A printed poster: coloured paper, a band of colour, a big title and a line under it.
 func _build_poster() -> void:
-	var m := _m()
 	var size := _size()
-	var paper := MeshInstance3D.new()
-	var quad := QuadMesh.new()
-	quad.size = Vector2(size.x, size.y)
-	paper.mesh = quad
-	paper.material_override = _ws._material(m["paper"], 0.0, 0.85)
-	paper.position = Vector3(0.0, 0.0, 0.004)
-	add_child(paper)
-	var band := MeshInstance3D.new()
-	var bq := QuadMesh.new()
-	bq.size = Vector2(size.x, size.y * 0.18)
-	band.mesh = bq
-	band.material_override = _ws._material(m["band"], 0.0, 0.85)
-	band.position = Vector3(0.0, -size.y * 0.22, 0.006)
-	add_child(band)
-	var wide := size.x > size.y
-	var title := Label3D.new()
-	title.text = str(m["title"])
-	title.font_size = 96
-	title.pixel_size = size.x / (title.text.length() * 64.0)
-	title.modulate = m["ink"]
-	title.outline_size = 0
-	title.position = Vector3(0.0, size.y * (0.12 if wide else 0.22), 0.008)
-	add_child(title)
-	var sub := Label3D.new()
-	sub.text = str(m["sub"])
-	sub.font_size = 40
-	sub.pixel_size = size.x / (sub.text.length() * 30.0)
-	sub.modulate = m["ink"]
-	sub.outline_size = 0
-	sub.position = Vector3(0.0, size.y * (-0.38 if not wide else -0.36), 0.008)
-	add_child(sub)
-	if not wide:
-		# A simple bike silhouette in the middle: two wheels and a frame line.
-		var ink: Material = _ws._material(m["ink"], 0.0, 0.8)
-		for x in [-0.14, 0.14]:
-			var w := MeshInstance3D.new()
-			var t := TorusMesh.new()
-			t.inner_radius = 0.06
-			t.outer_radius = 0.075
-			w.mesh = t
-			w.material_override = ink
-			w.position = Vector3(x * size.x / 0.6, size.y * 0.0, 0.008)
-			w.rotation.x = PI * 0.5
-			add_child(w)
-		_deco(Vector3(0.0, size.y * 0.06, 0.008), Vector3(0.24 * size.x / 0.6, 0.02, 0.004), ink)
+	add_child(PosterArt.make(model, size))   # flat printed art, see PosterArt
 	_ws._target(Vector3(0.0, 0.0, 0.02), Vector3(size.x, size.y, 0.06), {"furniture": id}, self)
 
 

@@ -68,6 +68,8 @@ func _run_all() -> void:
 	await _test_world()
 	print("Game session")
 	await _test_session()
+	print("Tool models, posters and the water jet")
+	await _test_tool_art()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1785,3 +1787,44 @@ func _test_round6_riding() -> void:
 	check(is_instance_valid(small) and is_instance_valid(big), "engine notes run for any size of engine")
 	small.queue_free()
 	big.queue_free()
+
+
+func _test_tool_art() -> void:
+	for which in ["wrench", "brush", "repair", "spray", "lance", "gun", "stopwatch"]:
+		var t := ToolModels.make(which, Color(0.2, 0.5, 0.9))
+		add_child(t)
+		var meshes := t.find_children("*", "MeshInstance3D", true, false)
+		var shadowless := true
+		for mi: MeshInstance3D in meshes:
+			shadowless = shadowless and mi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		check(meshes.size() >= 8 and shadowless, "%s model builds from %d shadowless meshes" % [which, meshes.size()])
+		t.queue_free()
+	check(Walker.make_tool_mesh("hands").get_child_count() == 0, "bare hands draw nothing")
+	var lance := ToolModels.make("lance")
+	check(lance.has_meta("nozzle") and (lance.get_meta("nozzle") as Vector3).is_equal_approx(Vector3(0, 0, -0.6)), "lance nozzle sits where the jet goes")
+	var gun := ToolModels.make("gun")
+	check(gun.has_meta("nozzle") and (gun.get_meta("nozzle") as Vector3).distance_to(Vector3(0, 0.02, -0.12)) < 0.01, "paint gun nozzle at the front")
+	var watch := ToolModels.make("stopwatch")
+	ToolModels.set_hand_seconds(watch, 15.0)
+	var hand := watch.get_node_or_null("Hand") as Node3D
+	check(hand != null and is_equal_approx(hand.rotation.z, -PI * 0.5), "stopwatch hand turns to quarter past")
+	lance.free()
+	gun.free()
+	watch.free()
+	var jet := Walker.make_jet()
+	add_child(jet)
+	jet.emitting = true
+	for i in 3:   # the mist and core follow on the jet's next _process
+		await get_tree().process_frame
+	var mist := jet.get_node_or_null("Mist") as CPUParticles3D
+	check(jet is WaterSpray and mist != null and mist.emitting and (jet.get_node("Core") as Node3D).visible, "water jet emits with its mist and core")
+	jet.queue_free()
+	for model in Equipment.MODELS:
+		if Equipment.kind_of(model) != "poster":
+			continue
+		var size: Vector3 = Equipment.get_model(model)["size"]
+		var art := PosterArt.make(model, size)
+		var quad := art.mesh as QuadMesh
+		check(quad != null and quad.size.is_equal_approx(Vector2(size.x, size.y)) and absf(art.position.z) <= 0.003
+			and art.material_override != null, "%s poster is one flat sheet on the wall" % model)
+		art.free()
