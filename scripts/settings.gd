@@ -1,0 +1,85 @@
+extends Node
+## Player settings and input bindings, saved to user://settings.cfg.
+
+const PATH := "user://settings.cfg"
+
+var player_name := "Rider"
+var last_ip := "127.0.0.1"
+var assist := 0.5          # 0 = full sim, 1 = maximum riding assistance
+var auto_shift := true
+var high_quality := true
+
+
+func _ready() -> void:
+	_setup_inputs()
+	load_settings()
+
+
+func load_settings() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(PATH) == OK:
+		player_name = cfg.get_value("player", "name", player_name)
+		last_ip = cfg.get_value("player", "last_ip", last_ip)
+		assist = cfg.get_value("riding", "assist", assist)
+		auto_shift = cfg.get_value("riding", "auto_shift", auto_shift)
+		high_quality = cfg.get_value("video", "high_quality", high_quality)
+
+
+func save_settings() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("player", "name", player_name)
+	cfg.set_value("player", "last_ip", last_ip)
+	cfg.set_value("riding", "assist", assist)
+	cfg.set_value("riding", "auto_shift", auto_shift)
+	cfg.set_value("video", "high_quality", high_quality)
+	cfg.save(PATH)
+
+
+## Keyboard, mouse and gamepad-button bindings. Gamepad sticks and triggers are read by the
+## Controls autoload instead, so a stuck or odd axis can't hold an action down.
+func _setup_inputs() -> void:
+	# Riding
+	_bind("throttle", [KEY_W, KEY_UP], [])
+	_bind("front_brake", [KEY_S, KEY_DOWN], [])
+	_bind("rear_brake", [KEY_SPACE], [JOY_BUTTON_B])
+	_bind("lean_left", [KEY_A, KEY_LEFT], [])
+	_bind("lean_right", [KEY_D, KEY_RIGHT], [])
+	_bind("body_back", [KEY_SHIFT], [JOY_BUTTON_LEFT_SHOULDER])
+	_bind("body_forward", [KEY_CTRL], [JOY_BUTTON_RIGHT_SHOULDER])
+	_bind("shift_up", [KEY_E], [JOY_BUTTON_A])
+	_bind("shift_down", [KEY_Q], [JOY_BUTTON_X])
+	_bind("respawn", [KEY_R], [JOY_BUTTON_BACK])
+	_bind("camera", [KEY_C], [JOY_BUTTON_RIGHT_STICK])
+	_bind("toggle_auto_shift", [KEY_T], [])
+	# On foot in the shed
+	_bind("move_forward", [KEY_W, KEY_UP], [])
+	_bind("move_back", [KEY_S, KEY_DOWN], [])
+	_bind("move_left", [KEY_A, KEY_LEFT], [])
+	_bind("move_right", [KEY_D, KEY_RIGHT], [])
+	_bind("sprint", [KEY_SHIFT], [JOY_BUTTON_LEFT_STICK])
+	_bind("act", [], [JOY_BUTTON_A], [MOUSE_BUTTON_LEFT])
+	_bind("tool_next", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [MOUSE_BUTTON_WHEEL_DOWN])
+	_bind("tool_prev", [KEY_Q], [JOY_BUTTON_LEFT_SHOULDER], [MOUSE_BUTTON_WHEEL_UP])
+	for i in 5:
+		_bind("tool_%d" % (i + 1), [KEY_1 + i], [])
+	# Both
+	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
+	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])
+
+
+func _bind(action: String, keys: Array, buttons: Array, mouse := []) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action, 0.15)
+	for key in keys:
+		var ev := InputEventKey.new()
+		ev.physical_keycode = key
+		InputMap.action_add_event(action, ev)
+	for button in buttons:
+		var ev := InputEventJoypadButton.new()
+		ev.device = -1   # any controller, not just the first one Windows lists
+		ev.button_index = button
+		InputMap.action_add_event(action, ev)
+	for button in mouse:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = button
+		InputMap.action_add_event(action, ev)
