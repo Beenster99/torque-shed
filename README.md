@@ -14,7 +14,7 @@ Current milestone, **The Shed**: a snug first-person workshop with four bike bay
 | Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens) |
 | Stands | Side stand (length, lean), centre stand (lift). Without either, a bike left anywhere but a paddock stand falls over |
 | Fluids | Petrol in the tank, oil in the engine, brake fluid in each master cylinder. Each has 3 grades and ages with use |
-| Engine, built on the stand | Block (single to inline four, 250 to 1000 cc), cylinder head, fuel system, air filter, oil filter, spark plugs, cooling, gearbox |
+| Engine, built on the stand | Block (single, twin, parallel twin, V-twin, boxer, two-stroke or inline four; 50 to 1200 cc), cylinder head, fuel system, air filter, oil filter, spark plugs, cooling, gearbox |
 | Drivetrain | Exhaust, sprockets, chain (slack and lube matter) |
 
 Engine parts have to suit each other: one carb can't feed a big four, a race head needs a radiator, worn plugs misfire and a poor oil filter lets a tired engine wear faster. The bay screens list anything that doesn't suit.
@@ -41,9 +41,11 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Change radio station | Hold left mouse on the radio | Hold RT or A |
 | Menu | Esc | Start |
 
-Look at any part to see its spec, condition, rust, dirt, wear and colour. With your **hands** you take parts off (once unbolted and once the parts mounted on them are off), carry them, fit them and put them down anywhere: the floor, a bench top, a shelf or an engine stand. The **wrench** bolts and unbolts. The **brush** scrubs off dirt from every part around where it lands; the parts washer does it on its own. The **grinder and welder** restores rust and wear on a repair machine, every part on the machine at once. The **spray can** paints a part in the colour and finish shown above the tool bar (16 colours; gloss, matte, metallic flake, chrome or old patina); the part has to be free of rust first. Hold a part while looking at a bike or engine to see how fitting it would change power, top speed, weight and braking.
+**Building from scratch**: hold a frame and look at an empty bay floor (bay 4 is free in a new shed), then hold the work button to stand the frame up in the bay. Fit the fork, wheels, engine and the rest onto it from there. Taking the bare frame off again frees the bay.
 
-Chains stretch and lose their lube as you ride, faster off-road: crouch by the chain with the wrench and hold the second button to set the tension, and spray it with **chain lube** (hold the can, crouch, aim at the chain). A slack or dry chain wastes power and the bay screen says so.
+Look at any part to see its spec, condition, rust, dirt, wear and colour. With your **hands** you take parts off (once unbolted and once the parts mounted on them are off), carry them, fit them and put them down anywhere: the floor, a bench top, a shelf or an engine stand. The **wrench** bolts and unbolts. The **brush** scrubs off dirt from every part around where it lands; the parts washer does it on its own. The **grinder and welder** restores rust and wear on a repair machine, every part on the machine at once. The **spray can** paints a part in the colour and finish shown above the tool bar (16 colours; gloss, matte, metallic flake, chrome or old patina); the part has to be free of rust first. Painting and chain lube are hand work: hold the button and sweep the can over the whole part. The panel shows how much is covered; missed patches make a patchy job and going over one spot too long leaves runs (or flings lube off), and the part's info shows how good the job was. Hold a part while looking at a bike or engine to see how fitting it would change power, top speed, weight and braking.
+
+Chains stretch and lose their lube as you ride, faster off-road: crouch by the chain with the wrench and hold the second button to set the tension, and spray it with **chain lube** (hold the can, crouch, sweep it along the chain). A slack or dry chain wastes power and the bay screen says so.
 
 **Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt road. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
 
@@ -68,6 +70,10 @@ The **radio** on the shelf above the workbench streams internet radio stations (
 | Get off (when stopped) | F | Y |
 
 You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear, so hold F next to a bike to wheel it about on foot. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
+
+Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
+
+The **yard** past the drag strip has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
 
 You steer by leaning: the rider counter-steers for you, like on a real bike. The **rider assist** setting goes from 0 (full sim) to 1 (most help with balance, wheelspin and wheelies). The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
 
