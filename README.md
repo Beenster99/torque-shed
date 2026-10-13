@@ -62,9 +62,9 @@ Filters and spark plugs can be changed with the engine in the frame. Everything 
 
 The **parts computer** is split into three aisles, **Shed**, **Bike** and **Outdoors**, and has a search box that finds any part or piece of kit by name, kind or spec.
 
-The **paint booth** (three sizes, 2 to 6 hooks) is for proper paint jobs: hang parts on its hooks and sweep the **spray gun** over them. The gun's wide, even fan coats every part it passes, and a booth adds a better finish. With the can or the gun, the wet paint shows on the part as you go, so you can see the patches you've missed, and too much in one place runs. Fluid containers are see-through or have a sight strip, so you can see how full they are.
+The **paint shop** is built into the shed now, through the doorway on the east side: a white-walled room with a booth of six hooks. Hang parts on its hooks and sweep the **spray gun** over them; the parts swing on their hooks when you knock them or spray them. The gun's fine mist coats every part it passes, and the booth adds a better finish. With the can or the gun, the wet paint shows on the part as you go, so you can see the patches you've missed, and too much in one place runs. Fluid containers are see-through or have a sight strip, so you can see how full they are.
 
-**Ping** (G or middle mouse) outlines whatever you're pointing at, with your name and what it is, for everyone in the shed. The **stopwatch** is for timing whatever runs you dream up; it keeps running while you ride. Press N while looking at a bike to give it a name. The roller door and the shed lights have switches beside the door. A day and night cycle runs outside; its speed (or a fixed time of day) is in the Esc menu.
+**Ping** (G or middle mouse) outlines whatever you're pointing at, with your name and what it is, for everyone in the shed. The **stopwatch** is for timing whatever runs you dream up; it keeps running while you ride. Press N while looking at a bike to give it a name. The roller door and the shed lights have switches beside the door. With the lights off the shed is properly dark, lit only by its TVs and screens. A day and night cycle runs outside; a whole day takes from 20 minutes up to 6 hours (2 hours by default), or you can fix the time of day, in the Esc menu.
 
 The **whiteboard** on the front wall, left of the roller door, is for the crew's plans and lists. Walk up and look at it: hold left mouse to draw where you're looking and right mouse to rub out; 1–6 pick the pen colour (black, blue, red, green, orange, purple), 7 the eraser, and the scroll wheel the thickness (fine, medium, thick, marker). T types a line of text at the crosshair (Enter starts the next line under it), Z or Ctrl+Z undoes your own last mark, and holding X wipes the whole board. Everyone sees it as it's drawn, and it's kept with the shed.
 
@@ -99,10 +99,13 @@ Press F at the **dyno desk** to tune the bike on the rig, or any bike within abo
 | Reset after a crash | R | View |
 | Camera (chase, first person) | C | Right stick click |
 | Horn | H | D-pad down |
+| Headlight: low beam, high beam, off | L | Left stick click |
 | Paddle backwards with your feet (when stopped) | Hold S | Hold left trigger |
 | Burnout | Hold S, then throttle | Left then right trigger |
 | Ping / stopwatch | G or middle mouse / P | D-pad right / left |
 | Get off (when stopped) | F | Y |
+
+The suspension now moves visibly over bumps and dirt ruts, the rear shocks stretch and squash with the swingarm, and landings from jumps soak up instead of bouncing. **Tyres come in widths** (for example 120/70, 160/60, 180/55, 190/50): wider tyres grip more on tarmac and less in mud, a wide front tyre steers slower, and each wheel rim takes a range of widths (the part info shows it); a tyre on the wrong rim loses grip.
 
 You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The engine sound now follows the engine: cylinders, capacity, the exhaust and the gearbox's whine. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
 
