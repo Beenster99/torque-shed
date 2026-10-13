@@ -124,6 +124,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_cycle_tool(1)
 	elif event.is_action_pressed("tool_prev"):
 		_cycle_tool(-1)
+	elif _screen_key() != "" and (event.is_action_pressed("alt_act") or event.is_action_pressed("spray_finish")) \
+			and Shed.moving(Shed.me()) == 0:
+		# Looking at a TV or one of the shed's screens: R for the next channel, T for the one before.
+		get_viewport().set_input_as_handled()
+		_change_channel(_screen_key(), 1 if event.is_action_pressed("alt_act") else -1)
 	elif tool in ["spray", "gun"] and event.is_action_pressed("spray_colour"):
 		spray_color = (spray_color + 1) % Shed.PAINTS.size()
 		_spray_changed()
@@ -399,8 +404,10 @@ func _update_target() -> void:
 			t = {"kind": "pc"}
 		elif c.has_meta("dyno"):
 			t = {"kind": "dyno"}
+		elif c.has_meta("screen"):
+			t = {"kind": "screen", "screen": str(c.get_meta("screen"))}
 		elif c.has_meta("bin"):
-			t = {"kind": "bin"}
+			t = {"kind": "bin", "bin": str(c.get_meta("bin"))}
 		elif c.has_meta("radio"):
 			t = {"kind": "radio"}
 		elif c.has_meta("door_switch"):
@@ -494,11 +501,34 @@ func _wall_transform(size: Vector3) -> Transform3D:
 		n = n.normalized()
 		var at: Vector3 = hit["position"] + n * 0.025
 		at.y = clampf(at.y, size.y * 0.5 + 0.5, Workshop.HEIGHT - size.y * 0.5 - 0.1)
+		at = _clear_of_corners(at, n, size)
 		_on_wall = true
 		return Transform3D(Basis(Vector3.UP, atan2(n.x, n.z)), at)
 	_on_wall = false
 	var flat := Vector3(dir.x, 0.0, dir.z).normalized()
 	return Transform3D(Basis(Vector3.UP, rotation.y + PI), from + flat * 0.9 + Vector3.DOWN * 0.2)
+
+
+## Slides something hanging on a wall along it until neither end pokes into a wall round the
+## corner (big TVs are three metres wide). Looks along the wall both ways, just in front of it.
+func _clear_of_corners(at: Vector3, normal: Vector3, size: Vector3) -> Vector3:
+	var along := normal.cross(Vector3.UP).normalized()
+	var space := get_world_3d().direct_space_state
+	var half := size.x * 0.5 + 0.02
+	var from := at + normal * maxf(size.z, 0.06)
+	for i in 2:
+		var free := []
+		for dir in [along, -along]:
+			var q := PhysicsRayQueryParameters3D.create(from, from + dir * half, 1)
+			q.exclude = [get_rid()]
+			var hit := space.intersect_ray(q)
+			free.append(from.distance_to(hit["position"]) if hit else half)
+		var shift := (half - float(free[0])) * -1.0 + (half - float(free[1]))
+		if absf(shift) < 0.001:
+			break
+		at += along * shift
+		from += along * shift
+	return at
 
 
 func _push(id: int, delta: float) -> void:
@@ -587,7 +617,7 @@ func _make_plan() -> Dictionary:
 	var p := {}
 	if kind == "label":
 		return {"action": {"a": "write_label"}, "time": 0.15, "verb": "write a label for these shelves", "blocked": ""}
-	if kind in ["furniture", "door", "lights", "board"]:
+	if kind in ["furniture", "door", "lights", "board", "screen"]:
 		return {}
 	if kind == "radio":
 		if Shed.stations.is_empty():
@@ -626,7 +656,9 @@ func _make_plan() -> Dictionary:
 						else:
 							p = {"action": {"a": "place", "spot": target["spot"]}, "time": 0.25, "verb": "put it down"}
 					"bin":
-						p = {"action": {"a": "bin"}, "time": 0.4, "verb": "scrap the " + held_name}
+						var which := str(target.get("bin", "general"))
+						p = {"action": {"a": "bin", "bin": which}, "time": 0.4,
+							"verb": ("throw the %s away" if which == "general" else "recycle the %s") % held_name}
 					"surface", "item":
 						if target.has("drop"):
 							p = {"action": {"a": "drop", "xf": target["drop"]}, "time": 0.25, "verb": "put it down here"}
@@ -735,7 +767,8 @@ func _fluid_plan(held: int, kind: String) -> Dictionary:
 			if Shed.is_engine(on_spot) and fluid == "oil":
 				holder = on_spot
 		"bin":
-			if float(can["fluid"]["litres"]) > 0.0:
+			# Old fluid goes in general waste; the recycling bins take the empty container.
+			if float(can["fluid"]["litres"]) > 0.0 and str(target.get("bin", "general")) == "general":
 				var tip := {"action": {"a": "tip"}, "time": 1.5, "verb": "tip it away"}
 				tip["blocked"] = Shed.check(me, tip["action"])
 				return tip
@@ -770,6 +803,7 @@ func _describe() -> String:
 				lines.append("%s on %s  ·  %s" % [PartsDB.slot_name(slot), owner, "bolted" if Shed.bolted_at_target(target) else "LOOSE"])
 				lines.append(PartsDB.spec_line(it["part"]))
 				lines.append(Shed.condition_text(it))
+				lines.append(PartsDB.bin_text(str(it["part"])))
 				if it.has("fluid"):
 					lines.append(Shed.fluid_text(it))
 			var held := Shed.held_by(Shed.me())
@@ -800,6 +834,7 @@ func _describe() -> String:
 				lines.append("%s  ·  %s" % [where, PartsDB.KIND_NAMES[it["kind"]]])
 				lines.append(PartsDB.spec_line(it["part"]))
 				lines.append(Shed.condition_text(it))
+				lines.append(PartsDB.bin_text(str(it["part"])))
 				if it.get("boxed", false):
 					lines.append("F: unpack it")
 				if it.has("fluid") and not PartsDB.is_fluid(it["part"]):
@@ -837,6 +872,7 @@ func _describe() -> String:
 			lines.append("Put down here  ·  %s" % PartsDB.KIND_NAMES[it["kind"]])
 			lines.append(PartsDB.spec_line(it["part"]))
 			lines.append(Shed.condition_text(it))
+			lines.append(PartsDB.bin_text(str(it["part"])))
 			if it.get("boxed", false):
 				lines.append("F: unpack it")
 		"radio":
@@ -852,12 +888,19 @@ func _describe() -> String:
 			match str(f["kind"]):
 				"seat":
 					lines.append("F: sit down   Hold F: move it")
-				"poster", "tv":
+				"tv":
+					lines.append_array(_channel_lines(_screen_key()))
+					lines.append("F: take it down to hang somewhere else")
+				"poster":
 					lines.append("F: take it down to hang somewhere else")
 				_:
 					lines.append("F: move it somewhere else")
 			if kind == "label":
 				lines.append("Hold %s on the label to write on it" % ("RT" if Controls.active_device >= 0 else "left mouse"))
+		"screen":
+			var key := _screen_key()
+			lines.append("Crew board screen" if key == "crew" else "Bay %d screen" % (int(key.trim_prefix("bay")) + 1))
+			lines.append_array(_channel_lines(key))
 		"door":
 			lines.append("Roller door")
 			lines.append("F: %s" % ("close it" if Shed.door_open else "open it"))
@@ -876,9 +919,52 @@ func _describe() -> String:
 			var on := Shed.dyno_bike()
 			lines.append("F: tune %s and run the dyno" % (Shed.bikes[on]["name"] if on != 0 else "a bike"))
 		"bin":
-			lines.append("Scrap bin")
-			lines.append("Drop parts you don't want in here.")
+			var which := str(target.get("bin", "general"))
+			lines.append(str(PartsDB.BIN_NAMES.get(which, "Bin")))
+			match which:
+				"plastic":
+					lines.append("Plastic only: oil and brake fluid bottles, drain pans, plastic cases and top boxes.")
+				"metal":
+					lines.append("Metal only: frames, engines, wheels, discs, exhausts, chains, jerry cans and aerosols.")
+				_:
+					lines.append("Takes anything you don't want, and old fluid tipped out of a can.")
+			var held := Shed.held_by(Shed.me())
+			if held != 0:
+				lines.append(PartsDB.bin_text(str(Shed.items[held]["part"])))
+				var why := Shed.bin_check(held, which)
+				if why != "":
+					lines.append("Not in here: " + why)
+				elif which == "general" and PartsDB.bin_for(str(Shed.items[held]["part"])) != "general":
+					lines.append("It could be recycled instead, for more XP.")
 	return "\n".join(lines)
+
+
+## The screen under the crosshair with channels to change (see TvChannels), or "".
+func _screen_key() -> String:
+	match str(target.get("kind", "")):
+		"screen":
+			return str(target["screen"])
+		"furniture":
+			if str(Shed.furniture.get(int(target["furniture"]), {}).get("kind", "")) == "tv":
+				return "f%d" % int(target["furniture"])
+	return ""
+
+
+## "On CH 3: XP goals" and which keys change it, for the info panel.
+func _channel_lines(key: String) -> Array:
+	if key == "":
+		return []
+	var state := Shed.screen_channel(key)
+	var label := TvChannels.osd_label(key, state, Shed.riders())
+	var pad := Controls.active_device >= 0
+	return ["Showing " + label,
+		"%s: next channel   %s: previous" % ["X" if pad else "R / right mouse", "B" if pad else "T"]]
+
+
+## Changes the channel on the screen you're looking at, through the host.
+func _change_channel(key: String, dir: int) -> void:
+	Shed.request({"a": "tv_channel", "screen": key, "step": dir})
+	Sfx.play_at("beep", camera.global_position, -14.0)
 
 
 ## How fitting `item_id` at the target would change the numbers.

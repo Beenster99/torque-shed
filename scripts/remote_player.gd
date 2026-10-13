@@ -116,6 +116,7 @@ func _start_riding(bike_id: int) -> void:
 	bike = RemoteBike.new()
 	add_child(bike)
 	bike.setup(player_name, Shed.build_of(bike_id), Shed.bikes[bike_id]["paint"], color)
+	bike.set_meta("shed_bike", bike_id)   # so the shed TVs know whose ride this is
 	_figure.visible = false
 	_figure.process_mode = Node.PROCESS_MODE_DISABLED
 	_snapshots.clear()

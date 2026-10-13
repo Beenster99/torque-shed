@@ -246,6 +246,7 @@ func _start_riding(bike_id: int) -> void:
 	bike = Bike.new()
 	bike.rider_color = _paint()
 	bike.setup(Shed.build_of(bike_id), data["paint"])
+	bike.set_meta("shed_bike", bike_id)   # so the shed TVs know whose ride this is
 	world.add_child(bike)
 	var xf: Transform3D = data["xf"]
 	bike.place(xf.origin, xf.basis.get_euler().y)

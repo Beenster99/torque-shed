@@ -82,6 +82,10 @@ func _run_all() -> void:
 	await _test_whiteboard()
 	print("Tuning room and dyno")
 	await _test_tuning()
+	print("Shop: recycling and TV channels")
+	_test_recycling()
+	await _test_tv_channels()
+	await _test_tv_and_bins_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -2464,3 +2468,257 @@ func _test_tuning() -> void:
 	check(graph.runs.size() == 2, "the dyno graph draws the last two runs")
 	graph.queue_free()
 	Shed.stop()
+
+
+## A stand-in for the XP autoload, when the real one isn't there, that notes every award.
+func _xp_stub() -> Node:
+	if get_node_or_null("/root/Progress"):
+		return null
+	var s := GDScript.new()
+	s.source_code = "extends Node\nvar calls := []\nfunc award(peer, key, mult = 1.0):\n\tcalls.append([peer, key])\n" + \
+		"func summary(peer):\n\treturn {\"name\": \"P%d\" % peer, \"level\": 3, \"xp\": 250, \"xp_level_start\": 200, \"xp_next\": 400," + \
+		" \"tool_points\": 1, \"skill_points\": 2, \"goals\": [{\"text\": \"Fit 5 parts\", \"have\": 2, \"need\": 5, \"xp\": 50, \"done\": false}," + \
+		" {\"text\": \"Ride 1 km\", \"have\": 1, \"need\": 1, \"xp\": 20, \"done\": true}]}\n"
+	s.reload()
+	var n := Node.new()
+	n.set_script(s)
+	n.name = "Progress"
+	get_tree().root.add_child(n)
+	return n
+
+
+## Takes a fresh part out of its box into your hands.
+func _hold_new(part: String) -> int:
+	var id := _order(part)
+	if PartsDB.is_fluid(part):
+		id = _newest(part)    # cans and bottles come unboxed
+	Shed.request({"a": "unpack", "item": id})
+	Shed.request({"a": "take", "item": id})
+	return id
+
+
+func _test_recycling() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var stub := _xp_stub()
+	# Every part is made of something, and that decides its bin.
+	var unknown := []
+	for id in PartsDB.parts:
+		if not PartsDB.MATERIAL_NAMES.has(PartsDB.material(id)):
+			unknown.append(id)
+	check(unknown.is_empty(), "every part has a known material (%s)" % str(unknown.slice(0, 5)))
+	var expect := {"steel_cradle": "metal", "four_1000": "metal", "cast_17": "metal", "floating_310": "metal",
+		"carbon_monocoque": "general", "carbon_17": "general", "sport_road": "general", "knobbly_mx": "general",
+		"plastic_cases": "plastic", "aluminium_boxes": "metal", "leather_saddlebags": "general", "top_box_30": "plastic",
+		"semi_10w40": "plastic", "drain_pan": "plastic", "dot4": "plastic", "empty_jerry_can": "metal", "road_lube": "metal",
+		"bulb_horn": "general", "tft_colour": "general"}
+	var wrong := []
+	for id in expect:
+		if PartsDB.bin_for(id) != expect[id]:
+			wrong.append("%s -> %s" % [id, PartsDB.bin_for(id)])
+	check(wrong.is_empty(), "parts go in the right bins: frames, engines, wheels metal; tyres and carbon general; bottles plastic (%s)" % str(wrong))
+	check(PartsDB.material("sport_road") == "rubber" and PartsDB.bin_text("sport_road").contains("general waste"),
+		"a tyre is rubber, and its info says general waste (%s)" % PartsDB.bin_text("sport_road"))
+	# A tyre is refused by the metal bin, with the reason, and the general bin takes it.
+	var tyre := _hold_new("sport_road")
+	var why := Shed.check(me, {"a": "bin", "bin": "metal"})
+	check(why.contains("rubber") and why.contains("general waste"), "the metal bin refuses a tyre: %s" % why)
+	Shed.request({"a": "bin", "bin": "metal"})
+	check(Shed.held_by(me) == tyre, "the refused tyre stays in your hands")
+	Shed.request({"a": "bin", "bin": "general"})
+	check(Shed.held_by(me) == 0 and not Shed.items.has(tyre), "general waste takes the tyre and it's gone")
+	# A brake disc is metal: not plastic, yes metal.
+	var disc := _hold_new("solid_240")
+	why = Shed.check(me, {"a": "bin", "bin": "plastic"})
+	check(why.contains("metal recycling"), "the plastic bin refuses a disc: %s" % why)
+	Shed.request({"a": "bin", "bin": "metal"})
+	check(Shed.held_by(me) == 0 and not Shed.items.has(disc), "the disc is recycled in the metal bin and disappears")
+	# A full oil bottle has to be emptied first, at general waste; then the bottle is plastic.
+	var oil := _hold_new("semi_10w40")
+	check(Shed.check(me, {"a": "bin", "bin": "plastic"}).contains("Empty it first"), "a full bottle can't be recycled")
+	check(Shed.check(me, {"a": "tip", "bin": "plastic"}) != "", "old fluid isn't tipped into a recycling bin")
+	Shed.request({"a": "tip"})
+	Shed.request({"a": "bin", "bin": "plastic"})
+	check(not Shed.items.has(oil), "once tipped out, the oil bottle is recycled with the plastic")
+	# Boxed parts need unpacking, and an engine needs stripping, before recycling.
+	var boxed := _order("wave_270")
+	Shed.request({"a": "take", "item": boxed})
+	check(Shed.check(me, {"a": "bin", "bin": "metal"}) == "Unpack it first.", "a part still in its box isn't recycled")
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER)})
+	var block := Shed.item_at_spot(Shed.stand_spots()[0])
+	Shed.request({"a": "take", "spot": Shed.stand_spots()[0]})
+	check(Shed.held_by(me) == block and Shed.check(me, {"a": "bin", "bin": "metal"}).contains("Strip the engine"),
+		"an engine with parts on it has to be stripped before recycling")
+	check(Shed.check(me, {"a": "bin", "bin": "compost"}) != "", "there's no such bin as compost")
+	if stub:
+		var keys: Array = stub.calls.map(func(c): return c[1])
+		check(keys == ["bin", "recycle_metal", "recycle_plastic"] and stub.calls.all(func(c): return c[0] == me),
+			"binning and recycling award XP to whoever did it (%s)" % str(stub.calls))
+		stub.queue_free()
+	Shed.stop()
+
+
+func _test_tv_channels() -> void:
+	# Bought TVs are as big as the screens built into the shed; old models still load.
+	var tvs := Equipment.by_kind("tv")
+	var small := tvs.filter(func(id): return float(Equipment.get_model(id)["size"].x) < Workshop.BAY_SCREEN_INNER)
+	var biggest := 0.0
+	for id in tvs:
+		biggest = maxf(biggest, float(Equipment.get_model(id)["size"].x))
+	check(small.is_empty() and biggest >= Workshop.CREW_SCREEN, "wall TVs are at least as big as the bay screens, up to the crew board (%s)" % str(small))
+	check(["tv_32", "tv_43", "tv_55", "tv_65"].all(func(id): return Equipment.kind_of(Equipment.current_id(id)) == "tv"),
+		"the old TV models map onto new ones")
+	Shed.start_new("Tester", 12)
+	var me := Shed.me()
+	Shed.request({"a": "order_furniture", "model": "tv_55"})
+	var tv := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "tv":
+			tv = id
+	check(tv != 0 and Shed.furniture[tv]["model"] == "tv_98", "ordering an old TV model gets its new size (%s)" % Shed.furniture.get(tv, {}).get("model", ""))
+	var key := "f%d" % tv
+	check(Shed.screen_channel(key)["ch"] == "live" and Shed.screen_channel("bay0")["ch"] == "bay" and Shed.screen_channel("crew")["ch"] == "crew",
+		"screens start on their home channel")
+	Shed.request({"a": "tv_channel", "screen": key, "step": 1})
+	check(Shed.screen_channel(key)["ch"] == "crew", "next channel: the crew board")
+	Shed.request({"a": "tv_channel", "screen": key, "step": 1})
+	check(Shed.screen_channel(key)["ch"] == "xp" and TvChannels.osd_label(key, Shed.screen_channel(key), []) == "CH 3  XP GOALS",
+		"then XP goals, CH 3 (%s)" % TvChannels.osd_label(key, Shed.screen_channel(key), []))
+	Shed.request({"a": "tv_channel", "screen": key, "step": -1})
+	Shed.request({"a": "tv_channel", "screen": key, "step": -1})
+	Shed.request({"a": "tv_channel", "screen": key, "step": -1})
+	check(Shed.screen_channel(key)["ch"] == "contracts", "back past the first channel wraps round to the last")
+	check(Shed.check(me, {"a": "tv_channel", "screen": "f99999", "step": 1}) != "" and Shed.check(me, {"a": "tv_channel", "screen": key, "step": 3}) != "",
+		"the host refuses a screen that isn't there or a jump of several channels")
+	Shed.request({"a": "tv_channel", "screen": "bay2", "step": 1})
+	check(Shed.screen_channel("bay2")["ch"] == "live", "the bay screens change channel too")
+	# Two riders out: the live channel has a stop for each.
+	var a := _bike_named("Old Faithful")
+	var b := _bike_named("Rusty Ranger")
+	Shed._add_crew(5, "Pal")
+	Shed.bikes[a]["rider"] = me
+	Shed.crew[me]["riding"] = a
+	Shed.bikes[b]["rider"] = 5
+	Shed.crew[5]["riding"] = b
+	check(Shed.riders() == [me, 5], "both riders are out (%s)" % str(Shed.riders()))
+	Shed.request({"a": "tv_channel", "screen": key, "step": 1})
+	check(Shed.screen_channel(key) == {"ch": "live", "rider": me}, "live follows the first rider (%s)" % str(Shed.screen_channel(key)))
+	Shed.request({"a": "tv_channel", "screen": key, "step": 1})
+	check(Shed.screen_channel(key) == {"ch": "live", "rider": 5} and TvChannels.osd_label(key, Shed.screen_channel(key), Shed.riders()) == "CH 1  LIVE: PAL",
+		"then the second rider (%s)" % TvChannels.osd_label(key, Shed.screen_channel(key), Shed.riders()))
+	Shed.request({"a": "tv_channel", "screen": key, "step": 1})
+	check(Shed.screen_channel(key)["ch"] == "crew", "then on to the crew board")
+	Shed.request({"a": "tv_channel", "screen": key, "step": -1})
+	check(Shed.screen_channel(key) == {"ch": "live", "rider": 5}, "and back to the last rider")
+	# Kept in the save; old TV models and live riders sorted out on load.
+	Shed.furniture[tv]["model"] = "tv_43"
+	var state: Dictionary = Shed._snapshot().duplicate(true)
+	SaveGame.write("test_tv_channels", {"version": SaveGame.VERSION, "shed": state})
+	var back := SaveGame.read("test_tv_channels")
+	SaveGame.delete_slot("test_tv_channels")
+	Shed.start_new("Someone else", 3)
+	check(Shed.screens.is_empty(), "a new shed's screens are on their home channels")
+	Shed.load_state(back["shed"], "Tester")
+	check(Shed.furniture.has(tv) and Shed.furniture[tv]["model"] == "tv_86", "an old 43\" TV loads as the new 86\" one")
+	check(Shed.screen_channel(key) == {"ch": "live", "rider": 0} and Shed.screen_channel("bay2")["ch"] == "live",
+		"the channels come back from the save (%s)" % str(Shed.screens))
+	var old := Shed._snapshot().duplicate(true)
+	old.erase("screens")
+	Shed.load_state(old, "Tester")
+	check(Shed.screens.is_empty(), "a save from before channels loads with every screen on its home channel")
+	# Placeholder pages read zeros; the XP page says so when there's no XP system.
+	check(int(TvChannels.money_data(me)["cash"]) == 0 and TvChannels.garage_data()["placeholder"] and TvChannels.contracts_data()["offered"].is_empty()
+		and TvChannels.afford_data(me)["items"].size() > 3, "the money and contracts pages have placeholder data")
+	if get_node_or_null("/root/Progress") == null:
+		check(TvChannels.xp_data().get("offline", false), "with no XP system the XP page says it's starting up")
+	# Every page draws.
+	var dash := Dashboard.new("crew", 2.0)
+	add_child(dash)
+	var drawn := [0]
+	dash._page.draw.connect(func(): drawn[0] += 1)
+	dash._viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	for ch in TvChannels.CHANNELS:
+		if ch != "crew":
+			dash.show_page(TvChannels.page_kind(ch), TvChannels.page_data(ch))
+			await get_tree().process_frame
+			await get_tree().process_frame
+	var stub := _xp_stub()
+	if stub:
+		var xp := TvChannels.xp_data()
+		check(not xp.get("offline", false) and xp["players"].size() == Shed.crew.size() and xp["me"]["goals"].size() == 2,
+			"with the XP system running the page lists everyone's level and your goals")
+		dash.show_page("xp", xp)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		stub.queue_free()
+	dash.show_osd("CH 2  CREW BOARD")
+	check(dash.osd_text() == "CH 2  CREW BOARD", "the channel name flashes up on the screen")
+	dash._process(Dashboard.OSD_TIME + 0.1)
+	check(dash.osd_text() == "", "and goes again after a moment")
+	print("    (pages drawn %d times)" % drawn[0])
+	dash.queue_free()
+	Shed.stop()
+
+
+## In the real shed: look at a screen and press R to change its channel; the bins by the door.
+func _test_tv_and_bins_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	# The screen over bay 1.
+	var screen: Dashboard = main.workshop.screens()["bay0"]
+	w.place(Transform3D(Basis(), Vector3(screen.global_position.x, 0.0, screen.global_position.z + 1.6)))
+	await _aim_point(w, screen.global_position)
+	check(w.target.get("kind", "") == "screen" and w.target.get("screen", "") == "bay0", "you can look at a bay screen (%s)" % str(w.target))
+	check(w.info.contains("CH 1  BAY 1") and w.info.contains("next channel"), "the panel says what's on and how to change it")
+	_press("alt_act")
+	await get_tree().process_frame
+	check(Shed.screen_channel("bay0")["ch"] == "live", "R changes the bay screen's channel")
+	main.workshop._refresh_dashboards()
+	check(screen.osd_text() == "CH 2  LIVE: NOBODY RIDING", "the new channel's name shows on the screen (%s)" % screen.osd_text())
+	_press("spray_finish")
+	await get_tree().process_frame
+	check(Shed.screen_channel("bay0")["ch"] == "bay", "T goes back a channel")
+	# A bought TV on the back wall shows the live channel, or a page when nobody's riding.
+	Shed.request({"a": "order_furniture", "model": "tv_136"})
+	var tv := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "tv":
+			tv = id
+	Shed.request({"a": "grab", "furniture": tv})
+	Shed.request({"a": "release", "furniture": tv, "xf": Transform3D(Basis(Vector3.UP, -PI * 0.5), Workshop.CENTER + Vector3(Workshop.HALF.x - 0.03, 2.6, 2.6))})
+	await get_tree().process_frame
+	main.workshop._refresh_dashboards()
+	var board: Dashboard = main.workshop.screens()["f%d" % tv]
+	check(board.kind == "nobody" and not board.is_live(), "with nobody out, the TV's live channel says so")
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(Workshop.HALF.x - 2.0, 0.0, 2.6)))
+	await _aim_point(w, board.global_position)
+	check(w._screen_key() == "f%d" % tv, "you can look at the TV (%s)" % str(w.target))
+	_press("alt_act")
+	_press("alt_act")
+	await get_tree().process_frame
+	main.workshop._refresh_dashboards()
+	check(board.kind == "xp", "two presses on: the XP page")
+	# Hanging a big TV next to a corner slides it clear of the side wall.
+	var size: Vector3 = Equipment.get_model("tv_136")["size"]
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(Workshop.HALF.x - 1.5, 0.0, Workshop.HALF.y - 0.6)))
+	await _aim_point(w, Workshop.CENTER + Vector3(Workshop.HALF.x, 2.2, Workshop.HALF.y - 0.4))
+	var hang: Transform3D = w._wall_transform(size)
+	check(w._on_wall and hang.origin.z + size.x * 0.5 <= Workshop.CENTER.z + Workshop.HALF.y + 0.03,
+		"a big TV hung near a corner doesn't poke through the wall round it (%.2f)" % (hang.origin.z + size.x * 0.5 - Workshop.CENTER.z - Workshop.HALF.y))
+	# The three bins by the door.
+	var tyre := _hold_new("sport_road")
+	var bin_at := Workshop.CENTER + Vector3(Workshop.BINS["plastic"][0], 0.0, Workshop.HALF.y - 1.5)
+	w.place(Transform3D(Basis(Vector3.UP, PI), bin_at))
+	await _aim_point(w, Workshop.CENTER + Vector3(Workshop.BINS["plastic"][0], 0.8, Workshop.HALF.y - 0.4))
+	check(w.target.get("bin", "") == "plastic", "the plastic recycling bin is by the door (%s)" % str(w.target))
+	check(w.plan.get("blocked", "").contains("rubber") and w.info.contains("Not in here"), "it won't take a tyre, and says why (%s)" % w.plan.get("blocked", ""))
+	await _aim_point(w, Workshop.CENTER + Vector3(Workshop.BINS["general"][0], 0.8, Workshop.HALF.y - 0.4))
+	check(w.target.get("bin", "") == "general", "general waste is next to it")
+	await _hold_act(main)
+	check(not Shed.items.has(tyre), "the tyre goes in general waste")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame

@@ -22,7 +22,7 @@ const FIXED_KINDS: Array[String] = ["booth"]
 const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb", "booth": "booth"}
 ## The model each kind defaults to (and what an order without a model gets).
 const DEFAULT := {"stand": "engine_stand", "shelf": "shelf_standard", "washer": "washer_standard",
-	"repair": "repair_standard", "bench": "bench_standard", "booth": "booth_standard", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_43",
+	"repair": "repair_standard", "bench": "bench_standard", "booth": "booth_standard", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_86",
 	"ramp": "ramp_medium", "obstacle": "barrels", "barrier": "wall_concrete", "marker": "cone"}
 
 const MODELS := {
@@ -120,15 +120,19 @@ const MODELS := {
 	"seat_sofa": {"kind": "seat", "name": "Old leather sofa", "size": Vector3(1.8, 0.85, 0.85), "sit": 0.45,
 		"style": "sofa", "color": Color(0.35, 0.15, 0.08), "desc": "Saggy, cracked and the comfiest thing in the shed."},
 
-	# Wall TVs: show whoever is out riding, or the crew board when nobody is.
-	"tv_32": {"kind": "tv", "name": "32\" wall TV", "compact": true, "size": Vector3(0.72, 0.42, 0.06), "inches": 32,
-		"desc": "Small screen. Shows whoever's out riding, from the chase camera, or the crew board when nobody is."},
-	"tv_43": {"kind": "tv", "name": "43\" wall TV", "size": Vector3(0.96, 0.56, 0.06), "inches": 43,
-		"desc": "Watch the crew ride from the shed. Shows the crew board when nobody is out."},
-	"tv_55": {"kind": "tv", "name": "55\" wall TV", "size": Vector3(1.22, 0.7, 0.06), "inches": 55,
-		"desc": "Big screen for the shed. Live riding feed, or the crew board."},
-	"tv_65": {"kind": "tv", "name": "65\" wall TV", "size": Vector3(1.44, 0.82, 0.07), "inches": 65,
-		"desc": "Cinema in the shed. Live riding feed, or the crew board."},
+	# Wall TVs: as big as the screens built into the shed, or bigger. Each one has channels: the
+	# live riding feed, the crew board, XP goals, how to play, money and contracts (TvChannels).
+	# 16:9 screens; the size is the panel, the bezel adds a little.
+	"tv_86": {"kind": "tv", "name": "86\" wall TV", "size": Vector3(1.91, 1.08, 0.07), "inches": 86,
+		"desc": "As big as the screens over the middle bays. Live riding, the crew board, XP goals and more: R changes the channel."},
+	"tv_98": {"kind": "tv", "name": "98\" wall TV", "size": Vector3(2.17, 1.22, 0.08), "inches": 98,
+		"desc": "Big screen for the shed. Live riding, the crew board, XP goals and more."},
+	"tv_110": {"kind": "tv", "name": "110\" wall TV", "size": Vector3(2.44, 1.37, 0.08), "inches": 110,
+		"desc": "Proper cinema size. Live riding, the crew board, XP goals and more."},
+	"tv_120": {"kind": "tv", "name": "120\" wall TV", "size": Vector3(2.66, 1.5, 0.09), "inches": 120,
+		"desc": "As big as the screens over the outer bays. Watch the crew ride from across the shed."},
+	"tv_136": {"kind": "tv", "name": "136\" video wall", "size": Vector3(3.01, 1.69, 0.1), "inches": 136,
+		"desc": "A whole wall of screen, as big as the crew board. Needs a clear stretch of wall."},
 
 	# Yard kit: pushed about with F like the shed equipment. Ramps rise away from their front (+Z),
 	# so ride at the low end. `solid` ones stop a bike; markers you can ride straight past.
@@ -171,6 +175,16 @@ const MODELS := {
 	"flag_chequered": {"kind": "marker", "name": "Chequered flag", "compact": true, "size": Vector3(0.6, 2.2, 0.1),
 		"color": Color(1, 1, 1), "desc": "Start, finish, or just showing off."},
 }
+
+
+## Model ids that have been renamed, old -> new, so saves made before still load. The wall TVs
+## grew to match the shed's own screens.
+const RENAMED := {"tv_32": "tv_86", "tv_43": "tv_86", "tv_55": "tv_98", "tv_65": "tv_110"}
+
+
+## The model an id means now: itself, or what it was renamed to.
+static func current_id(id: String) -> String:
+	return str(RENAMED.get(id, id))
 
 
 static func get_model(id: String) -> Dictionary:

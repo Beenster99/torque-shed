@@ -24,6 +24,19 @@ const WASH_REACH := 8.0
 const BOOTH_ROOM_CENTER := Vector3(9.0, 0.0, 66.2)
 const BOOTH_ROOM_HALF := Vector2(2.2, 2.6)
 const BOOTH_XF := Transform3D(Basis(), Vector3(9.0, 0.0, 64.85))
+## Widths of the screens built into the shed: over the middle bays, over the outer bays, and
+## the crew board. Wall TVs from the parts computer are at least as big as the smallest.
+const BAY_SCREEN_INNER := 1.9
+const BAY_SCREEN_OUTER := 2.6
+const CREW_SCREEN := 3.0
+## The bins by the roller door: general waste and the two recycling bins, left to right
+## from the door, tucked under the end of the whiteboard. x offset from CENTER, lid colour.
+const BINS := {"general": [-2.75, Color(0.1, 0.1, 0.1)], "plastic": [-3.33, Color(0.1, 0.35, 0.85)],
+	"metal": [-3.91, Color(0.2, 0.55, 0.3)]}
+const BIN_SIZE := Vector3(0.52, 0.9, 0.6)
+## How far a live TV picture's camera sits behind and above the rider.
+const FEED_BACK := 4.5
+const FEED_UP := 1.8
 
 var bike_views := {}       # bike id -> Node3D holding a BikeModel
 var _view_sigs := {}
@@ -40,8 +53,12 @@ var _dash_dirty := true
 var _mats := {}
 var radio: ShedRadio
 var dyno_room: DynoRoom     # the tuning room through the back wall
-## The live riding picture every wall TV shows: one camera chasing whoever is out riding.
+## A live riding picture a TV is showing (the first one, if there are several), or null.
 var tv_feed: SubViewport
+## Live riding pictures, one per rider being watched: bike node instance id -> {vp, cam, node}.
+var _feeds := {}
+var _screen_shown := {}    # screen key -> the channel it last drew, to flash the name on a change
+var _screens_sig := ""
 var door_open_amount := 1.0   # the roller door: 0 down, 1 rolled up
 var _door_panel: MeshInstance3D
 var _door_shape: CollisionShape3D
@@ -50,8 +67,6 @@ var _shed_lights: Array[Light3D] = []
 var _fixture_mats: Array[StandardMaterial3D] = []
 var _probe: ReflectionProbe
 var _lights_shown := true
-var _tv_camera: Camera3D
-var _tv_target: Node3D
 
 
 static func bay_transform(bay: int) -> Transform3D:
@@ -102,10 +117,17 @@ func build() -> void:
 	dyno_room = DynoRoom.new()
 	add_child(dyno_room)
 	dyno_room.build(self)
-	_crew_screen = Dashboard.new("crew", 3.0)
+	_crew_screen = Dashboard.new("crew", CREW_SCREEN)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
 	_crew_screen.rotation.y = PI * 0.5
 	add_child(_crew_screen)
+	_screen_target(_crew_screen, "crew")
+
+
+## Lets players look at a built-in screen to change its channel.
+func _screen_target(screen: Dashboard, key: String) -> void:
+	var h := screen.width * Dashboard.PX.y / Dashboard.PX.x
+	_target(Vector3(0.0, 0.0, 0.04), Vector3(screen.width + 0.08, h + 0.08, 0.08), {"screen": key}, screen)
 
 
 # ---------------------------------------------------------------------------- state
@@ -185,6 +207,11 @@ func sync_state() -> void:
 				busy = busy or (washing != 0 and float(Shed.items[washing]["dirt"]) > 0.0)
 			Sfx.set_loop(view.washer_sound, "washer" if busy else "")
 	_dash_dirty = true
+	# A channel changed: show it straight away rather than at the next refresh.
+	var sig := str(Shed.screens)
+	if sig != _screens_sig:
+		_screens_sig = sig
+		_dash_timer = 0.0
 
 
 # ---------------------------------------------------------------------------- furniture
@@ -246,50 +273,87 @@ func tvs() -> Array:
 	return out
 
 
-## Points the TV camera at whoever is out riding, and switches the TVs between the live
-## picture and the crew board.
+## Every screen with channels, by its key (see TvChannels): bought TVs, bay screens, crew board.
+func screens() -> Dictionary:
+	var out := {"crew": _crew_screen}
+	for bay in _bay_screens.size():
+		out["bay%d" % bay] = _bay_screens[bay]
+	for id in furniture_nodes:
+		if furniture_nodes[id].tv:
+			out["f%d" % id] = furniture_nodes[id].tv.board
+	return out
+
+
+## The bike node a rider is out on (theirs or a remote one), or null.
+func _ridden_node(peer: int) -> Node3D:
+	var bike_id := int(Shed.crew.get(peer, {}).get("riding", 0))
+	var only: Node3D = null
+	var count := 0
+	for b in get_tree().get_nodes_in_group("ridden_bike"):
+		if not (b is Node3D and (b as Node3D).is_inside_tree() and (b as Node3D).visible):
+			continue
+		count += 1
+		only = b
+		if bike_id != 0 and int(b.get_meta("shed_bike", 0)) == bike_id:
+			return b
+	# A bike that doesn't say which it is: fine when it's the only one out.
+	return only if count == 1 and not only.has_meta("shed_bike") else null
+
+
+## Points a chase camera at each rider a screen is tuned to, and puts the live picture on
+## those screens. Screens on other channels, or live with nobody out, show their page.
 func _update_tv_feed(delta: float) -> void:
-	var screens := tvs()
-	var rider: Node3D = null
-	if not screens.is_empty():
-		for b in get_tree().get_nodes_in_group("ridden_bike"):
-			if b is Node3D and (b as Node3D).is_inside_tree() and (b as Node3D).visible:
-				rider = b
-				break
-	if rider == null:
-		if tv_feed:
-			tv_feed.render_target_update_mode = SubViewport.UPDATE_DISABLED
-		for tv in screens:
-			tv.show_feed(null, "")
-		_tv_target = null
-		return
-	if tv_feed == null:
-		tv_feed = SubViewport.new()
-		tv_feed.size = Vector2i(640, 360)
-		add_child(tv_feed)
-		_tv_camera = Camera3D.new()
-		_tv_camera.fov = 60.0
-		_tv_camera.far = 1500.0
-		tv_feed.add_child(_tv_camera)
-	tv_feed.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	# A broadcast-style chase camera: behind and above, easing after the bike.
-	var bxf := rider.global_transform
-	var back := Vector3(bxf.basis.z.x, 0.0, bxf.basis.z.z).normalized()
-	var want := bxf.origin + back * 4.5 + Vector3.UP * 1.8
-	if _tv_target != rider:
-		_tv_camera.global_position = want
-	else:
-		_tv_camera.global_position = _tv_camera.global_position.lerp(want, 1.0 - exp(-4.0 * delta))
-	_tv_camera.look_at(bxf.origin + Vector3.UP * 0.8, Vector3.UP)
-	_tv_target = rider
-	var caption := "LIVE"
-	for peer in Shed.crew:
+	var riders := Shed.riders()
+	var want := {}     # bike node instance id -> {node, screens: [[dashboard, caption]]}
+	var all := screens()
+	for key in all:
+		var dash: Dashboard = all[key]
+		var state := Shed.screen_channel(key)
+		var node: Node3D = null
+		var peer := 0
+		if state["ch"] == "live":
+			peer = TvChannels.live_rider(state, riders)
+			node = _ridden_node(peer) if peer != 0 else null
+		if node == null:
+			dash.show_feed(null, "")
+			continue
 		var riding := int(Shed.crew[peer].get("riding", 0))
-		if riding != 0 and Shed.bikes.has(riding):
-			caption = "LIVE: %s on %s" % [Shed.crew[peer]["name"], Shed.bikes[riding]["name"]]
-			break
-	for tv in screens:
-		tv.show_feed(tv_feed.get_texture(), caption)
+		var caption := "LIVE: %s on %s" % [Shed.crew[peer]["name"], Shed.bikes[riding]["name"]] if Shed.bikes.has(riding) else "LIVE"
+		var nid := node.get_instance_id()
+		if not want.has(nid):
+			want[nid] = {"node": node, "screens": []}
+		want[nid]["screens"].append([dash, caption])
+	for nid in _feeds.keys():
+		if not want.has(nid):
+			_feeds[nid]["vp"].queue_free()
+			_feeds.erase(nid)
+	tv_feed = null
+	for nid in want:
+		var node: Node3D = want[nid]["node"]
+		var fresh := not _feeds.has(nid)
+		if fresh:
+			var vp := SubViewport.new()
+			vp.size = Vector2i(640, 360)
+			vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+			add_child(vp)
+			var cam := Camera3D.new()
+			cam.fov = 60.0
+			cam.far = 1500.0
+			vp.add_child(cam)
+			_feeds[nid] = {"vp": vp, "cam": cam}
+		# A broadcast-style chase camera: behind and above, easing after the bike.
+		var cam: Camera3D = _feeds[nid]["cam"]
+		var bxf := node.global_transform
+		var back := Vector3(bxf.basis.z.x, 0.0, bxf.basis.z.z).normalized()
+		var at := bxf.origin + back * FEED_BACK + Vector3.UP * FEED_UP
+		cam.global_position = at if fresh else cam.global_position.lerp(at, 1.0 - exp(-4.0 * delta))
+		if not cam.global_position.is_equal_approx(bxf.origin + Vector3.UP * 0.8):
+			cam.look_at(bxf.origin + Vector3.UP * 0.8, Vector3.UP)
+		var vp: SubViewport = _feeds[nid]["vp"]
+		if tv_feed == null:
+			tv_feed = vp
+		for s in want[nid]["screens"]:
+			(s[0] as Dashboard).show_feed(vp.get_texture(), s[1])
 
 
 ## Parts put down anywhere, each with a box around it to aim at and pick it up by.
@@ -532,10 +596,38 @@ func _process(delta: float) -> void:
 func _refresh_dashboards() -> void:
 	if not Shed.active:
 		return
-	if _dash_dirty:
-		_dash_dirty = false
-		for bay in BAY_COUNT:
-			_bay_screens[bay].show_data(_bay_data(bay))
+	var bays_dirty := _dash_dirty
+	_dash_dirty = false
+	var riders := Shed.riders()
+	var pages := {}    # channel -> its page data, worked out once for every screen on it
+	var all := screens()
+	for key in all:
+		var dash: Dashboard = all[key]
+		var state := Shed.screen_channel(key)
+		var ch: String = state["ch"]
+		var shown := "%s:%d" % [ch, TvChannels.live_rider(state, riders) if ch == "live" else 0]
+		var changed: bool = _screen_shown.get(key, shown) != shown
+		if changed:
+			dash.show_osd(TvChannels.osd_label(key, state, riders))
+		if not _screen_shown.has(key):
+			changed = true
+		_screen_shown[key] = shown
+		match ch:
+			"bay":
+				if bays_dirty or changed:
+					dash.show_page("bike", _bay_data(int(key.trim_prefix("bay"))))
+			"crew":
+				dash.show_page("crew", {"players": _crew_rows()})
+			_:
+				if ch == "live" and dash.is_live():
+					continue
+				if not pages.has(ch):
+					pages[ch] = TvChannels.page_data(ch)
+				dash.show_page(TvChannels.page_kind(ch), pages[ch])
+
+
+## The crew board's rows: everyone here and what they're up to.
+func _crew_rows() -> Array:
 	var players := []
 	var ids: Array = Shed.crew.keys()
 	ids.sort()
@@ -553,10 +645,7 @@ func _refresh_dashboards() -> void:
 		p["doing"] = doing
 		p["color"] = Shed.PAINTS[int(c.get("slot", 0)) % Shed.PAINTS.size()]
 		players.append(p)
-	_crew_screen.show_data({"players": players})
-	for tv in tvs():
-		if not tv.is_live():
-			tv.board.show_data({"players": players})
+	return players
 
 
 func _bay_data(bay: int) -> Dictionary:
@@ -841,10 +930,11 @@ func _build_bays() -> void:
 		var xf := bay_transform(bay)
 		# The middle two are narrower and nudged out to clear the dyno room doorway between them.
 		var inner := absf(xf.origin.x - CENTER.x) < 2.0
-		var screen := Dashboard.new("bike", 1.9 if inner else 2.6)
+		var screen := Dashboard.new("bike", BAY_SCREEN_INNER if inner else BAY_SCREEN_OUTER)
 		screen.position = Vector3(xf.origin.x + signf(xf.origin.x - CENTER.x) * (0.5 if inner else 0.0), 2.45, CENTER.z - HALF.y + 0.1)
 		add_child(screen)
 		_bay_screens.append(screen)
+		_screen_target(screen, "bay%d" % bay)
 
 
 func _build_bench() -> void:
@@ -898,12 +988,45 @@ func _build_delivery_area() -> void:
 	mark.outline_size = 0
 
 
+## The shed's bins against the front wall, left of the roller door: general waste (black), and
+## recycling for plastic (blue) and metal (green). Hold a part and look at one to throw it away.
 func _build_bin() -> void:
-	var pos := CENTER + Vector3(-2.9, 0.0, HALF.y - 0.6)
-	_solid(pos + Vector3(0.0, 0.45, 0.0), Vector3(0.9, 0.9, 0.8), _mats["dark"])
-	_deco(self, pos + Vector3(0.0, 0.91, 0.0), Vector3(0.8, 0.02, 0.7), _material(Color(0.12, 0.1, 0.08), 0.4, 0.8))
-	_target(pos + Vector3(0.0, 0.75, 0.0), Vector3(1.0, 0.7, 0.9), {"bin": true})
-	_poster("SCRAP", Vector3(pos.x, 1.3, CENTER.z + HALF.y - 0.012), PI, Vector2(0.36, 0.2))
+	for which in BINS:
+		var x: float = BINS[which][0]
+		var color: Color = BINS[which][1]
+		var pos := CENTER + Vector3(x, 0.0, HALF.y - BIN_SIZE.z * 0.5 - 0.03)
+		var body := _material(color, 0.1, 0.55)
+		_solid(pos + Vector3(0.0, BIN_SIZE.y * 0.5 - 0.02, 0.0), BIN_SIZE - Vector3(0.0, 0.04, 0.0), body)
+		# Lid with an overhang and a handle at the back, wheels at the bottom.
+		_deco(self, pos + Vector3(0.0, BIN_SIZE.y - 0.01, -0.02), Vector3(BIN_SIZE.x + 0.04, 0.04, BIN_SIZE.z + 0.06), _material(color.lightened(0.12), 0.1, 0.45))
+		_deco(self, pos + Vector3(0.0, BIN_SIZE.y - 0.06, BIN_SIZE.z * 0.5 + 0.02), Vector3(BIN_SIZE.x - 0.06, 0.04, 0.04), _material(color.darkened(0.3), 0.1, 0.5))
+		for side in [-1.0, 1.0]:
+			var wheel := _deco(self, pos + Vector3(side * (BIN_SIZE.x * 0.5 - 0.06), 0.08, BIN_SIZE.z * 0.5 - 0.06), Vector3(0.05, 0.16, 0.16), _mats["dark"])
+			wheel.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# A white label on the front (facing into the shed) saying what goes in.
+		var front := pos + Vector3(0.0, 0.58, -BIN_SIZE.z * 0.5 - 0.006)
+		var plate := _deco(self, front, Vector3(BIN_SIZE.x - 0.08, 0.26, 0.01), _material(Color(0.95, 0.95, 0.93), 0.0, 0.7))
+		plate.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var title := Label3D.new()
+		title.text = "GENERAL\nWASTE" if which == "general" else which.to_upper()
+		title.font_size = 44
+		title.pixel_size = 0.0021
+		title.modulate = color.darkened(0.2) if which != "general" else Color(0.1, 0.1, 0.1)
+		title.outline_size = 0
+		title.position = front + Vector3(0.0, 0.03 if which != "general" else 0.0, -0.007)
+		title.rotation.y = PI
+		add_child(title)
+		if which != "general":
+			var sub := Label3D.new()
+			sub.text = "RECYCLING"
+			sub.font_size = 26
+			sub.pixel_size = 0.0021
+			sub.modulate = Color(0.25, 0.25, 0.25)
+			sub.outline_size = 0
+			sub.position = front + Vector3(0.0, -0.07, -0.007)
+			sub.rotation.y = PI
+			add_child(sub)
+		_target(pos + Vector3(0.0, BIN_SIZE.y * 0.5 - 0.02, 0.0), BIN_SIZE + Vector3(0.04, 0.0, 0.04), {"bin": which})
 
 
 ## A pegboard of hand tools above the engine stand.
