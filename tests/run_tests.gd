@@ -82,6 +82,8 @@ func _run_all() -> void:
 	await _test_whiteboard()
 	print("Tuning room and dyno")
 	await _test_tuning()
+	print("XP, levels, tool upgrades and skills")
+	_test_progress()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -2463,4 +2465,148 @@ func _test_tuning() -> void:
 	await get_tree().process_frame
 	check(graph.runs.size() == 2, "the dyno graph draws the last two runs")
 	graph.queue_free()
+	Shed.stop()
+
+
+## XP, levels, tool upgrades and skills (Progress), with a throwaway profile file.
+func _test_progress() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_unit_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	Shed.start_new("Tester", 5)
+	Progress.select("Tester")
+	var me := Shed.me()
+	var xp := func() -> int: return int(Progress.profile["xp"])
+	check(xp.call() == 0 and Progress.level() == 1, "a new character starts at level 1 with no XP")
+	# The table, ranked the way it should be.
+	for key in ["bin", "recycle_plastic", "recycle_metal", "tyre_fit", "tyre_remove", "sell_bike", "sell_part", "money_milestone"]:
+		check(Progress.XP.has(key), "the XP table has %s" % key)
+	var v := func(k: String) -> int: return int(Progress.XP[k]["xp"])
+	check(v.call("bin") < v.call("recycle_plastic") and v.call("recycle_plastic") < v.call("recycle_metal"),
+		"binning < recycling < recycling metal")
+	check(v.call("carry") <= v.call("bolt") and v.call("bolt") < v.call("brush") and v.call("brush") < v.call("repair")
+		and v.call("repair") <= v.call("paint") and v.call("paint") < v.call("build_complete") and v.call("build_complete") < v.call("max_health"),
+		"moving < wrenching < cleaning < repairing <= spraying < a build < max health")
+	# The level curve.
+	check(Progress.xp_for_level(1) == 0 and Progress.xp_for_level(2) == 75 and Progress.level_for_xp(74) == 1
+		and Progress.level_for_xp(75) == 2, "level 2 at 75 XP")
+	var rising := true
+	for l in range(2, Progress.MAX_LEVEL):
+		rising = rising and Progress.xp_for_level(l + 1) - Progress.xp_for_level(l) > Progress.xp_for_level(l) - Progress.xp_for_level(l - 1)
+	check(rising and Progress.level_for_xp(100000000) == Progress.MAX_LEVEL, "each level takes more than the last, up to level 50")
+	# Awards and the repeat cut.
+	Progress.award(me, "brush", 1.0, "item:1")
+	check(xp.call() == 6, "cleaning a part pays 6 XP (%d)" % xp.call())
+	Progress.award(me, "brush", 1.0, "item:1")
+	Progress.award(me, "brush", 1.0, "item:1")
+	check(xp.call() == 6 + 3 + 2, "cleaning the same part again straight away pays less and less (%d)" % xp.call())
+	Progress.award(me, "unbolt", 1.0, "item:7")
+	Progress.award(me, "bolt", 1.0, "item:7")
+	Progress.award(me, "unbolt", 1.0, "item:7")
+	check(xp.call() == 11 + 2 + 1 + 1, "bolting and unbolting the same bolt over and over soon stops paying (%d)" % xp.call())
+	var before: int = xp.call()
+	Progress.award(me, "no_such_job")
+	check(xp.call() == before, "an unknown XP key is ignored")
+	var faithful := _bike_named("Old Faithful")
+	Progress.award(me, "build_complete", 1.0, "bike:%d" % faithful)
+	Progress.award(me, "build_complete", 1.0, "bike:%d" % faithful)
+	check(xp.call() == before + 150 + 50 and Progress.level() == 2, "a finished build pays 150 once per bike, and its goal 50 (%d)" % xp.call())
+	# Work in the shed pays through the Shed's actions.
+	before = xp.call()
+	Shed.request({"a": "unbolt", "bike": faithful, "slot": "exhaust"})
+	check(xp.call() == before + 2, "unbolting a part in the shed pays wrench XP")
+	# Max health: everything on a tired project bike made like new, the last part cleaned.
+	var ids := []
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(faithful, slot)
+		if id != 0:
+			ids.append(id)
+			for k in ["rust", "dirt", "wear"]:
+				Shed.items[id][k] = 0.0
+	Shed.items[ids[3]]["dirt"] = 0.6
+	Shed.request({"a": "bolt", "bike": faithful, "slot": "exhaust"})
+	before = xp.call()
+	Shed.request({"a": "clean", "item": ids[3]})
+	check(xp.call() >= before + 300, "bringing a project bike to max health pays 300 (%d)" % (xp.call() - before))
+	# Riding XP: worked out on the bike, paid by the host.
+	var events := []
+	var ride := RideXP.new(faithful)
+	ride.sink = func(a, m, d): events.append([a, m, d])
+	ride.landed(1.2, true)
+	ride.wheelie_done(25.0)
+	ride.sprint_done(4.5)
+	check(events.size() == 3 and events[0][0] == "jump" and float(events[0][1]) > 2.0 and events[1][0] == "wheelie"
+		and events[2][0] == "sprint", "jumps, wheelies and 0-100 runs make riding XP %s" % str(events))
+	check(Progress.record("air") >= 1.2 and Progress.profile["goals"].has("jump1"), "a 1.2 s jump is a personal best and reaches a goal")
+	before = xp.call()
+	Progress.rider_event("jump", 2.0)
+	check(xp.call() == before + 24, "riding XP goes through the host's award (%d)" % (xp.call() - before))
+	# Spend points: a tool stage really changes the work and the spray.
+	Progress.profile["xp"] = Progress.xp_for_level(10)
+	var w := Walker.new()
+	w.tool = "wrench"
+	var p := {"action": {"a": "bolt", "bike": faithful, "slot": "exhaust"}, "time": 1.6}
+	w._scale_time(p)
+	check(is_equal_approx(float(p["time"]), 1.6), "a stock wrench takes the stock time")
+	check(Progress.upgrade_tool("wrench") == "" and Progress.upgrade_tool("wrench") == "" and Progress.tool_stage(me, "wrench") == 2,
+		"tool points buy wrench stages")
+	p["time"] = 1.6
+	w._scale_time(p)
+	check(float(p["time"]) < 1.3, "an upgraded wrench bolts up quicker (%.2f s)" % float(p["time"]))
+	var radius := Progress.spread_mult(me, "spray")
+	Progress.upgrade_tool("spray")
+	check(Progress.spread_mult(me, "spray") > radius and Progress.cover_rate_mult(me, "spray") > 1.0, "an upgraded spray can sprays wider and faster")
+	check(Progress.upgrade_tool("brush") == "" and Progress.upgrade_tool("brush") == "" and Progress.upgrade_tool("brush") == ""
+		and Progress.upgrade_tool("brush").contains("level"),
+		"higher stages need higher levels")
+	w.free()
+	# A gold-trimmed tool looks it.
+	var gold := false
+	var model := ToolModels.make("wrench", Color.RED, 5)
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		var m := (mi as MeshInstance3D).material_override as StandardMaterial3D
+		gold = gold or (m != null and m.albedo_color.r > 0.9 and m.albedo_color.b < 0.4 and m.metallic > 0.9)
+	model.free()
+	check(gold, "a stage 5 tool has gold trim")
+	# Skills.
+	check(Progress.buy_skill("master_builder").contains("first"), "deep skills need the ones before them")
+	var points := Progress.skill_points()
+	check(Progress.buy_skill("salvager").contains("first") and Progress.buy_skill("quick_hands") == "" and Progress.buy_skill("salvager") == ""
+		and Progress.skill_points() == points - 2, "skills cost a point a rank, after their prerequisite")
+	before = xp.call()
+	Progress.award(me, "recycle_metal")
+	check(xp.call() == before + 6, "Salvager gets more XP from recycling (%d)" % (xp.call() - before))
+	var plain := Progress.time_mult(me, "hands", {"a": "install"})
+	Progress.buy_skill("quick_hands")
+	check(Progress.time_mult(me, "hands", {"a": "install"}) < plain, "Quick Hands fits parts quicker")
+	Progress.buy_skill("featherweight")
+	var frame := Shed.item_on(faithful, "frame")
+	Shed.request({"a": "lighten", "item": frame})
+	check(BikeBuild.lighten_cut(str(Shed.items[frame]["part"]), float(Shed.items[frame].get("lighten_extra", 0.0)))
+		> BikeBuild.lighten_cut(str(Shed.items[frame]["part"])), "Featherweight takes more weight off when lightening")
+	var bike := Bike.new()
+	bike.assist = 0.3
+	var steady := bike._steadiness()
+	bike.skills = {"balance": 2}
+	check(bike._steadiness() > steady, "Balance steadies the rider on one wheel")
+	bike.free()
+	Progress.respec()
+	check(Progress.skill_rank(me, "quick_hands") == 0 and Progress.skill_points() == Progress.level() - 1, "a respec hands every skill point back")
+	# The character is kept on disk, by name.
+	Progress.buy_skill("torque_feel")
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	check(Progress.save_profile(), "the profile saves")
+	Progress.profile["xp"] = 0
+	Progress.profile["tools"] = {}
+	Progress.select("Somebody else")
+	check(int(Progress.profile["xp"]) == 0, "another name has its own character")
+	Progress.select("Tester")
+	check(int(Progress.profile["xp"]) == int(saved["xp"]) and Progress.tool_stage(me, "wrench") == 2
+		and Progress.skill_rank(me, "torque_feel") == 1 and Progress.record("air") >= 1.2, "the character loads back as it was saved")
+	var s := Progress.summary(me)
+	check(s.has_all(["name", "level", "xp", "xp_level_start", "xp_next", "tool_points", "skill_points", "goals"])
+		and s["goals"].size() == Progress.GOALS.size() and s["level"] == 10, "summary() gives the TVs everything")
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
 	Shed.stop()

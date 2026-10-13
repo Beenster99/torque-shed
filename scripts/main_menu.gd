@@ -128,7 +128,7 @@ func _ready() -> void:
 	col.add_child(_status)
 
 	_tabs = TabContainer.new()
-	_tabs.custom_minimum_size = Vector2(660, 460)
+	_tabs.custom_minimum_size = Vector2(760, 600)
 	_tabs.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.add_child(_tabs)
 	var settings := VBoxContainer.new()
@@ -177,6 +177,9 @@ func _ready() -> void:
 	_pad = UITheme.label("", 16)
 	pad.add_child(_pad)
 	pad.add_child(_button("Recalibrate (hands off the controller)", func(): Controls.recalibrate()))
+	# Your level, tool upgrades, skills tree and goals (see Progress).
+	var character := CharacterTab.new()
+	_tabs.add_child(character)
 
 
 func _process(_delta: float) -> void:

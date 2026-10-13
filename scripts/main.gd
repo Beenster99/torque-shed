@@ -141,6 +141,7 @@ func _start_session() -> void:
 		return
 	in_session = true
 	menu.hide()
+	Progress.select(Settings.player_name)
 	Net.update_local_info(_local_info())
 	if Net.is_online() and not Net.is_host():
 		Shed.join_remote()
@@ -245,6 +246,8 @@ func _start_riding(bike_id: int) -> void:
 	riding_id = bike_id
 	bike = Bike.new()
 	bike.rider_color = _paint()
+	bike.skills = Progress.rider_skills()
+	bike.ride_xp = RideXP.new(bike_id)
 	bike.setup(Shed.build_of(bike_id), data["paint"])
 	world.add_child(bike)
 	var xf: Transform3D = data["xf"]
@@ -256,6 +259,8 @@ func _start_riding(bike_id: int) -> void:
 	bike.engine_changed.connect(func(running, reason):
 		if running:
 			hud.flash("Engine running", 1.2)
+			if bike and bike.ride_xp:
+				bike.ride_xp.engine_started()
 		elif reason != "":
 			hud.flash(reason, 3.0, true))
 	audio = EngineAudio.new()

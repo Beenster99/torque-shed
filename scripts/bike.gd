@@ -80,6 +80,10 @@ var paddling := false      # walking the bike backwards with the rider's feet
 var horn_audio: HornAudio
 var _stopped_brake := 0.0  # how long the front brake has been held at a standstill
 var _fog: Array = []
+## The rider's riding skills (see Progress.rider_skills): balance, throttle_control, airtime, quick_reset.
+var skills := {}
+## Works out riding XP as the bike is ridden; only the local player's bike has one.
+var ride_xp: RideXP
 
 
 func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
@@ -247,8 +251,10 @@ func _physics_process(delta: float) -> void:
 	if is_crashed:
 		throttle = 0.0
 		_crash_timer += delta
-		if _crash_timer > AUTO_RESPAWN_TIME:
+		if _crash_timer > AUTO_RESPAWN_TIME - float(skills.get("quick_reset", 0)):
 			respawn()
+		if ride_xp:
+			ride_xp.step(self, delta)
 		return
 
 	if not controls_enabled:
@@ -268,13 +274,13 @@ func _physics_process(delta: float) -> void:
 		var over := pitch_angle - wheelie_target()
 		var rising := angular_velocity.dot(global_transform.basis.x)
 		if over > 0.0:
-			rear_grip = maxf(rear_grip, clampf(over * 3.0 + rising * 0.6, 0.0, 1.0) * lerpf(0.45, 1.0, assist))
+			rear_grip = maxf(rear_grip, clampf(over * 3.0 + rising * 0.6, 0.0, 1.0) * _steadiness())
 	var front_grip := front_brake
 	if not wheels[1]["contact"] and wheels[0]["contact"] and pitch_angle < -deg_to_rad(3.0):
 		# Holding a stoppie: ease the front brake as the back climbs past the balance angle.
 		var over := -pitch_angle - STOPPIE_PITCH
 		var falling := -angular_velocity.dot(global_transform.basis.x)
-		front_grip *= clampf(1.0 - (over * 5.0 + falling * 0.8) * lerpf(0.45, 1.0, assist), 0.0, 1.0)
+		front_grip *= clampf(1.0 - (over * 5.0 + falling * 0.8) * _steadiness(), 0.0, 1.0)
 	if paddling:
 		front_grip = 0.0
 	wheels[0]["brake_torque"] = front_grip * build.front_brake_torque
@@ -295,6 +301,8 @@ func _physics_process(delta: float) -> void:
 		effects.update_skids(self)
 		if effects.has_method("set_tyre_smoke"):
 			effects.call("set_tyre_smoke", burnout, Vector3(0.0, -build.rear_radius, build.wheelbase * 0.5))
+	if ride_xp:
+		ride_xp.step(self, delta)
 
 
 func _measure_attitude() -> void:
@@ -362,7 +370,8 @@ func _update_engine(delta: float) -> void:
 	var v_ground := maxf(absf(speed), 1.0)
 	var spin_ratio: float = (rear["omega"] * build.rear_radius - v_ground) / v_ground
 	var tc_target := 1.0
-	var tc := maxf(assist, build.ecu_aid if build.has_aid("traction") else 0.0)
+	# Throttle Control (a riding skill) feathers it as if there were more assist.
+	var tc := maxf(minf(1.0, assist + 0.15 * float(skills.get("throttle_control", 0))), build.ecu_aid if build.has_aid("traction") else 0.0)
 	var tc_from := 0.08 if build.has_aid("traction") else 0.12
 	if tc > 0.05 and spin_ratio > tc_from and rear["contact"] and burnout <= 0.0:
 		tc_target = clampf(1.0 - (spin_ratio - tc_from) * 4.0 * tc, 0.15, 1.0)
@@ -371,7 +380,7 @@ func _update_engine(delta: float) -> void:
 	if not wheels[0]["contact"] and rear["contact"] and pitch_angle > deg_to_rad(4.0):
 		var over := pitch_angle - wheelie_target()
 		var rising := angular_velocity.dot(global_transform.basis.x)
-		var hands := lerpf(0.45, 1.0, assist)
+		var hands := _steadiness()
 		tc_target = minf(tc_target, clampf(1.0 - (over * 8.0 + rising * 1.2) * hands, 0.0, 1.0))
 	if build.has_aid("anti_wheelie") and pitch_angle > deg_to_rad(2.0):
 		# The ECU's anti-wheelie trims the power to keep the front wheel skimming the road.
@@ -666,7 +675,7 @@ func _apply_rider_balance() -> void:
 		pitch_tau += (revs - rear_brake * 0.6) * AIR_REV_PITCH * inertia.x
 	elif wheels[0]["contact"] != wheels[1]["contact"]:
 		# On one wheel the rider's body soaks up the bobbing so it's easier to hold.
-		pitch_tau -= pitch_rate * inertia.x * lerpf(1.2, 3.0, assist)
+		pitch_tau -= pitch_rate * inertia.x * (lerpf(1.2, 3.0, assist) + 0.4 * float(skills.get("balance", 0)))
 	apply_torque(right * pitch_tau)
 	if not any_contact:
 		# Stop the bike yawing wildly in the air.
@@ -674,8 +683,15 @@ func _apply_rider_balance() -> void:
 
 
 func _check_crash() -> void:
-	if absf(lean_angle) > CRASH_LEAN or absf(pitch_angle) > CRASH_PITCH or global_transform.basis.y.y < -0.2:
+	# Airtime (a riding skill) rides out landings a little further nose-up or down.
+	var pitch_limit := CRASH_PITCH + deg_to_rad(4.0) * float(skills.get("airtime", 0))
+	if absf(lean_angle) > CRASH_LEAN or absf(pitch_angle) > pitch_limit or global_transform.basis.y.y < -0.2:
 		crash()
+
+
+## How steady the rider's hands and body are on one wheel: rider assist, plus the Balance skill.
+func _steadiness() -> float:
+	return lerpf(0.45, 1.0, assist) + 0.12 * float(skills.get("balance", 0))
 
 
 func _on_body_shape_entered(_rid: RID, _body: Node, _body_shape: int, local_shape: int) -> void:

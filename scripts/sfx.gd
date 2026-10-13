@@ -69,6 +69,20 @@ func make_loop_player(parent: Node3D) -> AudioStreamPlayer3D:
 	return p
 
 
+## Plays a one-shot that isn't anywhere in the world: menu and HUD sounds.
+func play_ui(sound: String, volume_db := 0.0) -> void:
+	var host: Node = get_tree().current_scene if get_tree() else null
+	if host == null:
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = stream(sound)
+	p.bus = "SFX"
+	p.volume_db = volume_db
+	host.add_child(p)
+	p.finished.connect(p.queue_free)
+	p.play()
+
+
 ## Starts `sound` looping on `p`, or stops it for "".
 func set_loop(p: AudioStreamPlayer3D, sound: String) -> void:
 	if sound == "":
@@ -128,6 +142,8 @@ func _make(sound: String) -> AudioStreamWAV:
 			data = _door()
 		"beep":
 			data = _beep()
+		"levelup":
+			data = _levelup()
 		_:
 			data.resize(RATE / 10)
 	var wav := AudioStreamWAV.new()
@@ -377,4 +393,22 @@ func _beep() -> PackedFloat32Array:
 	for i in d.size():
 		var t := float(i) / RATE
 		d[i] = (1.0 if fmod(t * 2600.0, 1.0) < 0.5 else -1.0) * 0.18 * clampf((0.09 - t) / 0.01, 0.0, 1.0)
+	return d
+
+
+## Level up: a bright rising arpeggio with a shimmer on the top note.
+func _levelup() -> PackedFloat32Array:
+	var d := _samples(1.3)
+	var notes := [523.25, 659.25, 783.99, 1046.5]
+	for i in d.size():
+		var t := float(i) / RATE
+		var s := 0.0
+		for n in notes.size():
+			var start: float = n * 0.11
+			if t >= start:
+				var u := t - start
+				var f: float = notes[n]
+				var decay := 3.0 if n == notes.size() - 1 else 7.0
+				s += (sin(TAU * f * u) + 0.3 * sin(TAU * f * 2.0 * u) * (0.6 + 0.4 * sin(TAU * 6.0 * u))) * exp(-u * decay)
+		d[i] = s * 0.22
 	return d

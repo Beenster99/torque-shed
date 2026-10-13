@@ -25,6 +25,8 @@ func _ready() -> void:
 	var shed_ok := false
 	var start := Vector3.ZERO
 	var asked := false
+	var xp_start := -1
+	var xp_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -42,6 +44,13 @@ func _ready() -> void:
 			elif start != Vector3.ZERO and p.distance_to(start) > 0.8:
 				moved = true
 		var ranger := _bike_named("Rusty Ranger")
+		# XP: the host pays the client for its work, and learns the client's level from its report.
+		if xp_start < 0:
+			xp_start = int(Progress.profile["xp"])
+		if role == "client":
+			xp_ok = int(Progress.profile["xp"]) > xp_start
+		elif main.remotes.size() == 1:
+			xp_ok = str(Progress.summary(main.remotes.keys()[0]).get("name", "")) == "Test client"
 		if role == "client" and ranger != 0 and not asked:
 			Shed.request({"a": "unbolt", "bike": ranger, "slot": "exhaust"})
 			Shed.request({"a": "take", "spot": "bench_0"})
@@ -59,15 +68,15 @@ func _ready() -> void:
 		for id in Shed.floor_items():
 			dropped = dropped or (Shed.items[id]["ref"] is Transform3D)
 		var tuned := ranger != 0 and is_equal_approx(float(Shed.tune_of(ranger).get("psi_f", 0.0)), 0.9)
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and xp_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 	var ok := moved and shed_ok
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size()])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok])
 	get_tree().quit(0 if ok else 1)
 
 

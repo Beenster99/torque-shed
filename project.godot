@@ -24,6 +24,7 @@ Net="*res://scripts/net.gd"
 Controls="*res://scripts/controls.gd"
 Shed="*res://scripts/shed_state.gd"
 Sfx="*res://scripts/sfx.gd"
+Progress="*res://scripts/progress.gd"
 
 [display]
 

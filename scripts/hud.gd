@@ -14,6 +14,12 @@ var _prompt: Label
 var _top_kmh := 0.0
 var trip_km := 0.0         # this ride, for the economy readout
 var trip_fuel := 0.0       # litres burnt this ride
+## "+6 XP Cleaning" popups under the level bar: [{amount, label, age}], newest first.
+var popups: Array = []
+var _banner_level := 0
+var _banner_time := 0.0
+const POPUP_LIFE := 3.0
+const BANNER_LIFE := 4.0
 
 
 func _ready() -> void:
@@ -56,6 +62,22 @@ func _ready() -> void:
 	_prompt = UITheme.label("", 17, UITheme.ACCENT)
 	_prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_prompt)
+	Progress.xp_gained.connect(add_popup)
+	Progress.leveled_up.connect(func(level: int):
+		_banner_level = level
+		_banner_time = BANNER_LIFE
+		Sfx.play_ui("levelup", -4.0))
+
+
+## Shows "+N XP label"; the same kind of XP arriving close together adds up in one popup.
+func add_popup(amount: int, label: String) -> void:
+	if not popups.is_empty() and popups[0]["label"] == label and float(popups[0]["age"]) < 0.8:
+		popups[0]["amount"] = int(popups[0]["amount"]) + amount
+		popups[0]["age"] = 0.0
+		return
+	popups.push_front({"amount": amount, "label": label, "age": 0.0})
+	while popups.size() > 5:
+		popups.pop_back()
 
 
 func flash(text: String, seconds := 2.5, bad := false) -> void:
@@ -66,6 +88,10 @@ func flash(text: String, seconds := 2.5, bad := false) -> void:
 
 func _process(delta: float) -> void:
 	_message_timer -= delta
+	for p in popups:
+		p["age"] = float(p["age"]) + delta
+	popups = popups.filter(func(p): return float(p["age"]) < POPUP_LIFE)
+	_banner_time = maxf(0.0, _banner_time - delta)
 	if _message_timer <= 0.0 and _message.text != "":
 		_message.text = ""
 	var on_foot := walker != null and bike == null
@@ -110,6 +136,43 @@ func _draw() -> void:
 		_draw_toolbar()
 	if walker and (walker.stopwatch.showing() or (bike == null and walker.tool == "watch")):
 		_draw_stopwatch()
+	if walker:
+		_draw_level()
+
+
+## Your level and XP bar, top right, with XP popups fading under it and the level-up banner.
+func _draw_level() -> void:
+	var font := get_theme_default_font()
+	var s := Progress.own_summary()
+	var w := 250.0
+	var r := Rect2(size.x - w - 24.0, 18.0, w, 40.0)
+	draw_rect(r, Color(0.03, 0.03, 0.04, 0.55))
+	draw_string(font, r.position + Vector2(10, 18), "LV %d" % s["level"], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UITheme.ACCENT)
+	var pts := int(s["tool_points"]) + int(s["skill_points"])
+	var right := "%d / %d XP" % [int(s["xp"]), int(s["xp_next"])]
+	if pts > 0:
+		right = "%d point%s to spend (Esc)" % [pts, "" if pts == 1 else "s"]
+	draw_string(font, r.position + Vector2(60, 18), right, HORIZONTAL_ALIGNMENT_RIGHT, w - 70.0, 12,
+		UITheme.ACCENT if pts > 0 else Color(1, 1, 1, 0.65))
+	var span := maxf(1.0, float(int(s["xp_next"]) - int(s["xp_level_start"])))
+	var frac := clampf(float(int(s["xp"]) - int(s["xp_level_start"])) / span, 0.0, 1.0)
+	var bar := Rect2(r.position + Vector2(10, 26), Vector2(w - 20.0, 6))
+	draw_rect(bar, Color(1, 1, 1, 0.12))
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), UITheme.ACCENT)
+	for i in popups.size():
+		var p: Dictionary = popups[i]
+		var age := float(p["age"])
+		var alpha := clampf((POPUP_LIFE - age) / 0.8, 0.0, 1.0) * clampf(age / 0.12, 0.0, 1.0)
+		var y := r.end.y + 20.0 + i * 20.0 - minf(age, 0.25) * 16.0
+		draw_string(font, Vector2(r.position.x, y), "+%d XP  %s" % [int(p["amount"]), p["label"]], HORIZONTAL_ALIGNMENT_RIGHT, w,
+			14, Color(1.0, 0.85, 0.45, alpha * 0.9))
+	if _banner_time > 0.0:
+		var a := clampf(_banner_time / 0.6, 0.0, 1.0) * clampf((BANNER_LIFE - _banner_time) / 0.25, 0.0, 1.0)
+		var y := size.y * 0.3
+		draw_rect(Rect2(0, y - 52, size.x, 84), Color(0, 0, 0, 0.45 * a))
+		draw_string(font, Vector2(0, y), "LEVEL %d" % _banner_level, HORIZONTAL_ALIGNMENT_CENTER, size.x, 44, Color(UITheme.ACCENT, a))
+		draw_string(font, Vector2(0, y + 24), "A tool point and a skill point to spend: Esc, then the Character tab",
+			HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.85 * a))
 
 
 ## The stopwatch readout, top left, with the last few laps. It stays up while you ride.
@@ -158,6 +221,9 @@ func _draw_toolbar() -> void:
 		var label: String = {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder", "spray": "Spray can",
 			"lance": "Pressure wash", "gun": "Spray gun", "watch": "Stopwatch"}.get(t, t)
 		draw_string(font, r.position + Vector2(0, 34), label, HORIZONTAL_ALIGNMENT_CENTER, w, 16, Color.WHITE if active else Color(1, 1, 1, 0.65))
+		var stage := Progress.tool_stage(Shed.me(), t)
+		if stage > 0:
+			draw_string(font, r.position + Vector2(0, 18), "●".repeat(stage), HORIZONTAL_ALIGNMENT_RIGHT, w - 6.0, 9, Color(UITheme.ACCENT, 0.9))
 	var board: Node = get_tree().get_first_node_in_group("whiteboard") if walker.target.get("kind", "") == "board" else null
 	if board:
 		board.draw_picker(self, font, y)

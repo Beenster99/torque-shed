@@ -23,6 +23,7 @@ var _work_sound: AudioStreamPlayer3D
 func setup(peer_id: int, rider_name: String, paint: Color) -> void:
 	peer = peer_id
 	player_name = rider_name
+	add_to_group("remote_players")
 	color = paint
 	_figure = AnimatableBody3D.new()
 	_figure.sync_to_physics = false
@@ -164,7 +165,8 @@ func _process(_delta: float) -> void:
 	var jet := _hand.get_node_or_null("Jet") as CPUParticles3D
 	if jet:
 		jet.emitting = working and tool == "lance"
-	var sig := "%d|%s" % [held, tool]
+	var stage := Progress.tool_stage(peer, tool)
+	var sig := "%d|%s|%d" % [held, tool, stage]
 	if sig == _hand_sig:
 		return
 	_hand_sig = sig
@@ -177,7 +179,7 @@ func _process(_delta: float) -> void:
 		part.position = Vector3(-0.28, -0.1, -0.1)
 		_hand.add_child(part)
 	else:
-		_hand.add_child(Walker.make_tool_mesh(tool))
+		_hand.add_child(Walker.make_tool_mesh(tool, Color(0.9, 0.75, 0.1), stage))
 		if tool == "lance":
 			var spray := Walker.make_jet()
 			spray.name = "Jet"

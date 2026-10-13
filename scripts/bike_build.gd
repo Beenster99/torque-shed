@@ -586,16 +586,16 @@ func _part_mass(slot: String) -> float:
 	var p := part(slot)
 	var m := float(p.get("mass", float(p.get("mass_per_cyl", 0.0)) * cylinders))
 	if condition.get(slot, {}).get("lightened", false):
-		m *= 1.0 - lighten_cut(str(parts[slot]))
+		m *= 1.0 - lighten_cut(str(parts[slot]), float(condition[slot].get("lighten_extra", 0.0)))
 	return m
 
 
 ## The fraction of a part's mass lightening it takes off: 0 for parts already built light or
-## with nothing to trim.
-static func lighten_cut(part_id: String) -> float:
+## with nothing to trim. `extra` is how much more the Featherweight skill takes (0.1 = 10% more).
+static func lighten_cut(part_id: String, extra := 0.0) -> float:
 	if PartsDB.is_lightweight(part_id):
 		return 0.0
-	return float(LIGHTEN.get(PartsDB.kind_of(part_id), 0.0))
+	return minf(float(LIGHTEN.get(PartsDB.kind_of(part_id), 0.0)) * (1.0 + extra), 0.5)
 
 
 ## Why a setting can't be changed on this bike's parts, or "" when it can.
@@ -623,10 +623,13 @@ func ecu_reach() -> float:
 func tune_range(key: String) -> Vector2:
 	var lim: Array = TUNE_LIMITS.get(key, [0.0, 0.0])
 	var r := Vector2(float(lim[0]), float(lim[1]))
+	# Tuned by someone with the Fine Tuning skill: the engine settings go a little further.
+	var reach := 1.0 + float(tune.get("reach", 0.0))
 	if key in ["map", "ignition"]:
-		r = Vector2(-ecu_reach(), ecu_reach())
+		var e := minf(ecu_reach() * reach, float(lim[1]))
+		r = Vector2(-e, e)
 	elif key == "limiter":
-		r.y = float(part("ecu").get("limiter_add", 0.0)) if has_part("ecu") else 0.0
+		r.y = float(part("ecu").get("limiter_add", 0.0)) * reach if has_part("ecu") else 0.0
 	return r
 
 

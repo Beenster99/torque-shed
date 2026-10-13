@@ -83,6 +83,9 @@ var _dirty := false
 var _sync_timer := 0.0
 var _rng := RandomNumberGenerator.new()
 var _dyno_busy_until := 0      # msec: the host won't start another dyno run until this one is done
+var _washer_by := {}           # item id -> peer who put it in a parts washer, for their XP
+## Distinct parts taken off a bike before its rebuild counts as a build (see _milestones).
+const BUILD_STRIP := 5
 
 
 func _ready() -> void:
@@ -248,6 +251,7 @@ func join_remote() -> void:
 
 
 func stop() -> void:
+	_washer_by.clear()
 	board = BoardData.empty()
 	board_changed.emit()
 	furniture.clear()
@@ -382,6 +386,8 @@ func condition_of(item: Dictionary) -> Dictionary:
 		cond["lube"] = item.get("lube", 1.0)
 	if item.get("lightened", false):
 		cond["lightened"] = true
+		if float(item.get("lighten_extra", 0.0)) > 0.0:
+			cond["lighten_extra"] = float(item["lighten_extra"])
 	return cond
 
 
@@ -408,7 +414,11 @@ func build_of(bike_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 				if sub != 0:
 					parts[slot] = items[sub]["part"]
 					cond[slot] = condition_of(items[sub])
-	return BikeBuild.new(parts, cond, tune_of(bike_id))
+	var tune := tune_of(bike_id)
+	if float(bike.get("tune_reach", 0.0)) > 0.0:
+		# Tuned by someone with Fine Tuning: the map, ignition and limiter go further.
+		tune["reach"] = float(bike["tune_reach"])
+	return BikeBuild.new(parts, cond, tune)
 
 
 ## A bike's tune gathered from where each setting is kept (see TUNE_HOME), for BikeBuild.
@@ -1315,10 +1325,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 	var slot := str(action.get("slot", ""))
 	var c: Dictionary = crew.get(peer, {})
 	var text := ""
+	# The part a bike or engine job is on, for its XP.
+	var on_target := item_at_target(action) if slot != "" and (bike_id != 0 or engine_id != 0) else 0
 	match a:
 		"unbolt":
 			host_of(bike_id, slot, engine_id)["bolted"][slot] = false
 			text = "%s unbolted" % PartsDB.slot_name(slot)
+			_xp(peer, "unbolt", 1.0, "item:%d" % on_target)
 		"bolt":
 			host_of(bike_id, slot, engine_id)["bolted"][slot] = true
 			text = "%s bolted up" % PartsDB.slot_name(slot)
@@ -1326,6 +1339,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text += ". The bike is ready to ride!"
 			elif engine_id != 0 and engine_missing(engine_id).is_empty():
 				text += ". The engine is complete."
+			_xp(peer, "bolt", 1.0, "item:%d" % on_target)
+			if engine_id == 0:
+				_milestones(peer, bike_id)
+			elif engine_missing(engine_id).is_empty() and PartsDB.ENGINE_SLOTS.all(func(s2): return engine_bolted(engine_id, s2)):
+				_xp(peer, "engine_build", 1.0, "item:%d" % engine_id)
 		"remove":
 			var host := host_of(bike_id, slot, engine_id)
 			var item_id := int(host["slots"][slot])
@@ -1333,6 +1351,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 			host["bolted"][slot] = false
 			_move(item_id, "held", peer)
 			_bump(c, "removed")
+			_xp(peer, "remove", 1.0, "item:%d" % item_id)
+			if engine_id == 0:
+				_note_stripped(bike_id, slot)
 			text = "Removed the %s" % PartsDB.part_name(items[item_id]["part"])
 			if engine_id == 0 and slot == "frame":
 				# Nothing left of it: the bay is free for the next project.
@@ -1346,18 +1367,23 @@ func _apply(peer: int, action: Dictionary) -> void:
 			host["bolted"][s] = false
 			_move(item_id, "engine" if PartsDB.is_engine_slot(s) else "bike", int(host["id"]))
 			_bump(c, "fitted")
+			_xp(peer, "fit", 1.0, "item:%d" % item_id)
 			text = "Fitted the %s as the %s. Bolt it up with the wrench." % [PartsDB.part_name(items[item_id]["part"]),
 				PartsDB.slot_name(s).to_lower()]
 		"take":
-			if action.has("item"):
-				_move(int(action["item"]), "held", peer)
-			else:
-				_move(item_at_spot(str(action["spot"])), "held", peer)
+			var item_id := int(action["item"]) if action.has("item") else item_at_spot(str(action["spot"]))
+			_move(item_id, "held", peer)
+			_washer_by.erase(item_id)
 		"drop":
-			_move(held_by(peer), "floor", action["xf"])
+			var item_id := held_by(peer)
+			_move(item_id, "floor", action["xf"])
+			_xp(peer, "carry", 1.0, "item:%d" % item_id)
 		"place":
 			var item_id := held_by(peer)
 			_move(item_id, "spot", str(action["spot"]))
+			_xp(peer, "carry", 1.0, "item:%d" % item_id)
+			if spot_role(str(action["spot"])) == "washer":
+				_washer_by[item_id] = peer
 			if is_stand_spot(str(action["spot"])):
 				text = "Engine on the stand. Strip it down or build it up."
 			elif spot_role(str(action["spot"])) == "washer":
@@ -1385,11 +1411,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"start_build":
 			var id := _empty_bike(held_by(peer), int(action["bay"]))
 			_bump(c, "fitted")
+			_xp(peer, "start_build", 1.0, "bike:%d" % id)
 			text = "%s is on the paddock stand in bay %d. Fit the forks, shock and the rest to it, then bolt it all up." % [
 				bikes[id]["name"], int(action["bay"]) + 1]
 		"unpack":
 			items[int(action["item"])]["boxed"] = false
 			text = "Unpacked the %s" % item_title(int(action["item"]))
+			_xp(peer, "unbox", 1.0, "item:%d" % int(action["item"]))
 		"grab":
 			furniture[int(action["furniture"])]["mover"] = peer
 		"move_furniture":
@@ -1413,33 +1441,46 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var item_id := held_by(peer)
 			text = "Binned the %s" % PartsDB.part_name(items[item_id]["part"])
 			_erase_item(item_id)
+			_xp(peer, "bin")
 		"clean_many":
 			var n := 0
 			for id in action["items"]:
 				if items.has(int(id)) and items[int(id)]["at"] != "held" and items[int(id)]["dirt"] >= 0.02 \
 						and not items[int(id)].get("boxed", false):
+					_note_low(int(id))
 					items[int(id)]["dirt"] = 0.0
 					n += 1
+					_xp(peer, "brush", 1.0, "item:%d" % int(id))
+					_check_part(peer, int(id))
 			_bump(c, "cleaned")
 			c["cleaned"] = int(c["cleaned"]) + n - 1
 			text = "Scrubbed %d part%s clean" % [n, "" if n == 1 else "s"]
 		"clean":
+			_note_low(int(action["item"]))
 			items[int(action["item"])]["dirt"] = 0.0
 			_bump(c, "cleaned")
+			_xp(peer, "brush", 1.0, "item:%d" % int(action["item"]))
+			_check_part(peer, int(action["item"]))
 			text = "Cleaned the %s" % item_title(int(action["item"]))
 		"repair":
 			var it: Dictionary = items[int(action["item"])]
+			_note_low(int(action["item"]))
 			it["rust"] = 0.0
 			it["wear"] = 0.0
 			_bump(c, "repaired")
+			_xp(peer, "repair", 1.0, "item:%d" % int(action["item"]))
+			_check_part(peer, int(action["item"]))
 			text = "Restored the %s" % item_title(int(action["item"]))
 		"repair_many":
 			var n := 0
 			for id in action["items"]:
 				if items.has(int(id)) and (items[int(id)]["rust"] > 0.0 or items[int(id)]["wear"] > 0.0):
+					_note_low(int(id))
 					items[int(id)]["rust"] = 0.0
 					items[int(id)]["wear"] = 0.0
 					n += 1
+					_xp(peer, "repair", 1.0, "item:%d" % int(id))
+					_check_part(peer, int(id))
 			c["repaired"] = int(c.get("repaired", 0)) + n
 			text = "Restored %d part%s" % [n, "" if n == 1 else "s"] if n != 1 else "Restored the %s" % item_title(int(action["items"][0]))
 		"adjust_chain":
@@ -1447,16 +1488,18 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var was := float(items[chain].get("slack", CHAIN_SLACK_SET))
 			items[chain]["slack"] = CHAIN_SLACK_SET
 			text = "Chain %s to %d mm of slack" % ["tightened" if was > CHAIN_SLACK_SET else "slackened off", roundi(CHAIN_SLACK_SET)]
+			_xp(peer, "chain_tension", 1.0, "item:%d" % chain)
 		"lube":
 			# How well it went on: coverage along the chain, less any flung off where it was overdone.
 			var chain := int(action["item"])
-			var q := clampf(float(action.get("quality", 1.0)), 0.0, 1.0)
+			var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
 			var waste := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
 			var can: Dictionary = items[held_by(peer)]["fluid"]
 			can["litres"] = maxf(0.0, float(can["litres"]) - LUBE_USE * (1.0 + waste * 2.0))
 			items[chain]["lube"] = maxf(float(items[chain].get("lube", 0.0)), lerpf(0.5, 1.0, q))
 			items[chain]["lube_type"] = str(can["type"])
 			text = "Lubed the chain with %s: %s" % [PartsDB.part_name(str(can["type"])), _job_word(q, waste, "lube")]
+			_xp(peer, "chain_lube", q, "item:%d" % chain)
 		"paint":
 			var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
 			var finish := str(action.get("finish", "gloss"))
@@ -1465,7 +1508,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var it: Dictionary = items[int(action["item"])]
 			it["color"] = PAINTS[idx]
 			it["finish"] = finish
-			var q := clampf(float(action.get("quality", 1.0)), 0.0, 1.0)
+			# Showroom Shine (a skill) gives a better finish.
+			var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
 			var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
 			if it["at"] == "spot" and spot_role(str(it["ref"])) == "booth":
 				# No dust settling in the wet paint: a booth gives a cleaner finish.
@@ -1475,6 +1519,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			it["paint_runs"] = runs
 			_bump(c, "painted")
 			text = "Sprayed the %s %s: %s" % [item_title(int(action["item"])), paint_text(it).to_lower(), _job_word(q, runs, "paint")]
+			_xp(peer, "paint", q, "item:%d" % int(action["item"]))
 		"mount":
 			if bikes[bike_id].get("stand", "") == "down":
 				text = "You heave %s back upright" % bikes[bike_id]["name"]
@@ -1516,14 +1561,24 @@ func _apply(peer: int, action: Dictionary) -> void:
 				if holder.has("tune"):
 					holder["tune"].erase(field)
 			else:
+				var prog := _prog()
+				if prog and float(prog.tune_reach(peer)) > float(bikes[bike_id].get("tune_reach", 0.0)):
+					bikes[bike_id]["tune_reach"] = float(prog.tune_reach(peer))
 				var r := build_of(bike_id).tune_range(key)
 				if not holder.has("tune"):
 					holder["tune"] = {}
 				holder["tune"][field] = clampf(float(action["value"]), r.x, r.y)
+			_xp(peer, "tune", 1.0, "%d:%s" % [bike_id, key])
 		"lighten":
 			var it: Dictionary = items[int(action["item"])]
-			var kg := float(PartsDB.get_part(str(it["part"])).get("mass", 0.0)) * BikeBuild.lighten_cut(str(it["part"]))
+			# Featherweight (a skill) takes a little more off.
+			var prog := _prog()
+			var extra: float = float(prog.lighten_bonus(peer)) if prog else 0.0
+			var kg := float(PartsDB.get_part(str(it["part"])).get("mass", 0.0)) * BikeBuild.lighten_cut(str(it["part"]), extra)
 			it["lightened"] = true
+			if extra > 0.0:
+				it["lighten_extra"] = extra
+			_xp(peer, "lighten", 1.0, "item:%d" % int(action["item"]))
 			it["wear"] = minf(1.0, float(it["wear"]) + LIGHTEN_WEAR)
 			text = "Drilled and trimmed the %s: %.1f kg lighter, but a little weaker" % [item_title(int(action["item"])), kg]
 		"dyno_run":
@@ -1544,6 +1599,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			if tank != 0 and items[tank].has("fluid"):
 				items[tank]["fluid"]["litres"] = maxf(0.0, float(items[tank]["fluid"]["litres"]) - 0.05)
 			text = "Dyno run %d on %s..." % [d["n"], bikes[bike_id]["name"]]
+			_xp(peer, "dyno_run", 1.0, "bike:%d" % bike_id)
 		"set_stand":
 			bikes[bike_id]["stand"] = str(action["stand"])
 			text = "Up on the centre stand" if action["stand"] == "centre" else "Down on the side stand"
@@ -1554,19 +1610,41 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var what: String = PartsDB.KIND_NAMES[PartsDB.fluid_kind(into["part"])].to_lower()
 			text = ("Poured in %.2f L of %s" if moved < 1.0 else "Poured in %.1f L of %s") % [moved, what] if a == "pour" \
 				else ("Drained %.2f L of %s" if moved < 1.0 else "Drained %.1f L of %s") % [moved, what]
+			_xp(peer, "fluids", 1.0, "item:%d" % int(action["item"]))
 		"tip":
 			var can: Dictionary = items[held_by(peer)]
 			can["fluid"]["litres"] = 0.0
 			can["fluid"]["age"] = 0.0
 			text = "Tipped it away for recycling"
+			_xp(peer, "tip")
 		"wash":
 			var n := 0
+			# An upgraded pressure washer and Elbow Grease blast off more muck a pass.
+			var prog := _prog()
+			var jet := JET_CLEAN * (float(prog.jet_clean_mult(peer)) if prog else 1.0)
+			var washing := {}     # bike id -> how muddy it was before this pass
 			for id in action["items"]:
 				if items.has(int(id)) and not items[int(id)].get("boxed", false) and items[int(id)]["dirt"] > 0.0:
-					items[int(id)]["dirt"] = maxf(0.0, items[int(id)]["dirt"] - JET_CLEAN)
+					var on_bike := _bike_of(int(id))
+					if on_bike != 0 and not washing.has(on_bike):
+						washing[on_bike] = _bike_dirt(on_bike)
+					_note_low(int(id))
+					items[int(id)]["dirt"] = maxf(0.0, items[int(id)]["dirt"] - jet)
 					if items[int(id)]["dirt"] == 0.0:
 						n += 1
+						_xp(peer, "wash_part", 1.0, "item:%d" % int(id))
+						_check_part(peer, int(id))
 			c["cleaned"] = int(c.get("cleaned", 0)) + n
+			for b in washing:
+				# The whole bike clean: more for a muddier one, and a one-off for a real mud monster.
+				var peak := maxf(float(bikes[b].get("mud_peak", 0.0)), float(washing[b]))
+				if _bike_dirt(b, true) < 0.02:
+					bikes[b].erase("mud_peak")
+					_xp(peer, "pressure_wash", 1.0 + 4.0 * peak, "bike:%d" % b)
+					if peak > 0.25:
+						_xp(peer, "muddy_wash", 1.0, "bike:%d" % b)
+				else:
+					bikes[b]["mud_peak"] = peak
 		"order":
 			var id := _random_bike(free_bay(Workshop.BAY_COUNT))
 			text = "%s has been delivered to bay %d" % [bikes[id]["name"], bikes[id]["bay"] + 1]
@@ -1769,6 +1847,112 @@ func _bump(c: Dictionary, key: String) -> void:
 	c[key] = int(c.get(key, 0)) + 1
 
 
+# ---------------------------------------------------------------------------- XP (see Progress)
+
+func _prog() -> Node:
+	return get_node_or_null("/root/Progress")
+
+
+## Gives `peer` XP for a job. Guarded so the shed works without Progress.
+func _xp(peer: int, action: String, mult := 1.0, detail := "") -> void:
+	var prog := _prog()
+	if prog:
+		prog.award(peer, action, mult, detail)
+
+
+func _finish_bonus(peer: int) -> float:
+	var prog := _prog()
+	return float(prog.finish_bonus(peer)) if prog else 0.0
+
+
+## The bike a part is on, directly or in its engine, or 0.
+func _bike_of(item_id: int) -> int:
+	var it: Dictionary = items.get(item_id, {})
+	if it.is_empty():
+		return 0
+	if it["at"] == "bike":
+		return int(it["ref"]) if bikes.has(int(it["ref"])) else 0
+	if it["at"] == "engine":
+		return _bike_of(int(it["ref"]))
+	return 0
+
+
+## How muddy a bike is: the average dirt of its parts, or the worst part's with `worst`.
+func _bike_dirt(bike_id: int, worst := false) -> float:
+	var total := 0.0
+	var top := 0.0
+	var n := 0
+	for slot in PartsDB.SLOTS:
+		var id := item_on(bike_id, slot)
+		if id != 0:
+			total += float(items[id]["dirt"])
+			top = maxf(top, float(items[id]["dirt"]))
+			n += 1
+	return top if worst else total / maxf(n, 1)
+
+
+func _health(item_id: int) -> float:
+	return BikeBuild.part_health(condition_of(items[item_id]))
+
+
+## Remembers that a part was in a bad way before work on it, so bringing it back pays.
+func _note_low(item_id: int) -> void:
+	if items.has(item_id) and _health(item_id) < 0.6:
+		items[item_id]["xp_low"] = true
+
+
+## After work on a part: a one-off for bringing a bad part back to like new, then the bike's milestones.
+func _check_part(peer: int, item_id: int) -> void:
+	if not items.has(item_id):
+		return
+	if items[item_id].get("xp_low", false) and _health(item_id) >= 0.95:
+		items[item_id].erase("xp_low")
+		_xp(peer, "restore_part", 1.0, "item:%d" % item_id)
+	var bike_id := _bike_of(item_id)
+	if bike_id != 0:
+		_milestones(peer, bike_id)
+
+
+func _note_stripped(bike_id: int, slot: String) -> void:
+	if not bikes.has(bike_id):
+		return
+	var off: Array = bikes[bike_id].get("stripped", [])
+	if not off.has(slot):
+		off.append(slot)
+	bikes[bike_id]["stripped"] = off
+
+
+## A bike's big one-offs, each paid once per bike: the build complete (a scratch build, or a bike
+## stripped of at least BUILD_STRIP parts and built back up), and a project brought back to max
+## health (every part at 95% or better).
+func _milestones(peer: int, bike_id: int) -> void:
+	if not bikes.has(bike_id) or not is_complete(bike_id):
+		return
+	var bike: Dictionary = bikes[bike_id]
+	var scratch: bool = bike.get("scratch", false) or bike.get("original_cond", {}).is_empty()
+	if scratch or bike.get("stripped", []).size() >= BUILD_STRIP:
+		_xp(peer, "build_complete", 1.0, "bike:%d" % bike_id)
+	if scratch:
+		_xp(peer, "scratch_build", 1.0, "bike:%d" % bike_id)
+	if not scratch and _was_project(bike_id):
+		for slot in PartsDB.SLOTS:
+			var id := item_on(bike_id, slot)
+			if id != 0 and _health(id) < 0.95:
+				return
+		_xp(peer, "max_health", 1.0, "bike:%d" % bike_id)
+
+
+## Whether a bike came in tired enough for restoring it to count.
+func _was_project(bike_id: int) -> bool:
+	var cond: Dictionary = bikes[bike_id].get("original_cond", {})
+	if cond.is_empty():
+		return false
+	var total := 0.0
+	for slot in cond:
+		total += BikeBuild.part_health(cond[slot])
+	return total / cond.size() < 0.85
+
+
 func _move(item_id: int, at: String, ref) -> void:
 	items[item_id]["at"] = at
 	items[item_id]["ref"] = ref
@@ -1776,6 +1960,7 @@ func _move(item_id: int, at: String, ref) -> void:
 
 ## Takes a part off a bike (whatever is mounted on it stays put) and puts it somewhere.
 func _detach(bike_id: int, slot: String, at: String, ref) -> int:
+	_note_stripped(bike_id, slot)
 	var item_id: int = bikes[bike_id]["slots"][slot]
 	bikes[bike_id]["slots"][slot] = 0
 	bikes[bike_id]["bolted"][slot] = false
@@ -1872,7 +2057,7 @@ func _empty_bike(frame_id: int, bay: int) -> int:
 	parts["frame"] = items[frame_id]["part"]
 	var bike := {"id": id, "name": "Scratch build %d" % builds, "paint": items[frame_id]["color"], "slots": {}, "bolted": {},
 		"rider": 0, "bay": bay, "xf": Workshop.bay_transform(bay), "original": parts, "stand": "", "pusher": 0,
-		"original_cond": {}, "delivered": BikeBuild.new(parts, {}).summary()}
+		"original_cond": {}, "delivered": BikeBuild.new(parts, {}).summary(), "scratch": true}
 	for slot in PartsDB.BIKE_SLOTS:
 		bike["slots"][slot] = 0
 		bike["bolted"][slot] = false
@@ -2004,6 +2189,11 @@ func _process(delta: float) -> void:
 				items[washing]["dirt"] = maxf(0.0, items[washing]["dirt"] - rate * delta)
 				_mark_dirty()
 				if items[washing]["dirt"] == 0.0:
+					# Whoever put it in gets the credit.
+					if _washer_by.has(washing) and crew.has(int(_washer_by[washing])):
+						_xp(int(_washer_by[washing]), "washer", 1.0, "item:%d" % washing)
+						_check_part(int(_washer_by[washing]), washing)
+					_washer_by.erase(washing)
 					changed.emit()
 	_sync_timer -= delta
 	if _dirty and _sync_timer <= 0.0:

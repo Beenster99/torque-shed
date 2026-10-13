@@ -69,16 +69,18 @@ var _f_time := 0.0
 var seat := 0               # the seat you're sitting on, or 0
 var _seat_spot := Vector3.ZERO
 var _active_plan := {}
-var spray_skill := 1.0       # widens the spray; XP will raise it in a later milestone
+var spray_skill := 1.0       # widens the spray: the tool's upgrade stage and Steady Hand (see Progress)
 var coverage := 0.0          # how much of the part being sprayed is covered, 0..1
 var _cover := {}             # the spray job under way: {key, plan, item, points, cells, live, splats}
 var _covers := {}            # every part with a spray job on it, by job key, so you can go back to one
 var _mist: CPUParticles3D
 var stopwatch := Stopwatch.new()
 var _jet: CPUParticles3D
+var _tool_sig := ""          # tool and upgrade stage the tool in your hand is drawn at
 
 
 func _ready() -> void:
+	add_to_group("local_walker")
 	collision_layer = 16
 	collision_mask = 1 | 2 | 4
 	_shape = CapsuleShape3D.new()
@@ -97,6 +99,12 @@ func _ready() -> void:
 	_work_sound = Sfx.make_loop_player(camera)
 	_work_sound.position = Vector3(0.0, -0.3, -0.6)
 	_set_tool_view()
+	stopwatch.max_laps = Progress.stopwatch_laps(Shed.me())
+	# A tool upgrade bought in the Character tab shows in your hand straight away.
+	Progress.changed.connect(func():
+		stopwatch.max_laps = Progress.stopwatch_laps(Shed.me())
+		if _tool_sig != "%s:%d" % [tool, Progress.tool_stage(Shed.me(), tool)]:
+			_set_tool_view())
 
 
 func place(xf: Transform3D) -> void:
@@ -424,6 +432,8 @@ func _update_target() -> void:
 			t["drop"] = Transform3D(Basis(Vector3.UP, rotation.y), hit["position"])
 	target = t
 	plan = _make_plan()
+	_scale_time(plan)
+	_scale_time(alt_plan)
 	info = _describe()
 	if not _cover.is_empty() and target_item() == int(_cover["item"]):
 		var st := cover_stats()
@@ -668,7 +678,7 @@ func _make_plan() -> Dictionary:
 				var near := [] if item_id == 0 else [item_id]
 				var view: Node = get_tree().get_first_node_in_group("workshop")
 				if view and target.has("at"):
-					for id in view.items_near(target["at"], BRUSH_REACH):
+					for id in view.items_near(target["at"], BRUSH_REACH * Progress.spread_mult(me, "brush")):
 						if not near.has(id) and Shed.items.has(id) and float(Shed.items[id]["dirt"]) >= 0.02:
 							near.append(id)
 				var dirt := 0.0
@@ -700,7 +710,7 @@ func _make_plan() -> Dictionary:
 				var near := [] if item_id == 0 else [item_id]
 				var view: Node = get_tree().get_first_node_in_group("workshop")
 				if view:
-					for id in view.items_near(target["at"], JET_REACH):
+					for id in view.items_near(target["at"], JET_REACH * Progress.spread_mult(me, "lance")):
 						if not near.has(id) and Shed.items.has(id):
 							near.append(id)
 				if not near.is_empty() or item_id != 0:
@@ -772,6 +782,9 @@ func _describe() -> String:
 				lines.append(Shed.condition_text(it))
 				if it.has("fluid"):
 					lines.append(Shed.fluid_text(it))
+				var whisper := _whisper(slot, engine_id)
+				if whisper != "":
+					lines.append(whisper)
 			var held := Shed.held_by(Shed.me())
 			if held != 0 and tool == "hands" and not PartsDB.is_fluid(Shed.items[held]["part"]):
 				lines.append(_preview(held))
@@ -879,6 +892,25 @@ func _describe() -> String:
 			lines.append("Scrap bin")
 			lines.append("Drop parts you don't want in here.")
 	return "\n".join(lines)
+
+
+## Engine Whisperer (a skill): how much power a worn or grimy engine part is costing, worked
+## out by comparing the engine with that part as new.
+func _whisper(slot: String, engine_id: int) -> String:
+	if Progress.skill_rank(Shed.me(), "engine_whisperer") <= 0:
+		return ""
+	if not (slot == "engine" or slot == "exhaust" or PartsDB.is_engine_slot(slot)):
+		return ""
+	var build: BikeBuild = Shed.engine_build(engine_id) if engine_id != 0 else Shed.build_of(int(target["bike"]))
+	var cond: Dictionary = build.condition.duplicate(true)
+	if not cond.has(slot):
+		return ""
+	for k in ["rust", "dirt", "wear"]:
+		cond[slot][k] = 0.0
+	var lost := BikeBuild.new(build.parts, cond, build.tune).hp() - build.hp()
+	if lost < 0.1:
+		return "Engine Whisperer: it isn't costing any power."
+	return "Engine Whisperer: its wear and grime are costing about %.1f hp." % lost
 
 
 ## How fitting `item_id` at the target would change the numbers.
@@ -1039,8 +1071,10 @@ func _coverage_step(delta: float, plan_now: Dictionary) -> void:
 						_covers[ok] = job
 					jobs.append(_covers[ok])
 	if target.has("at"):
+		var kit := _cover_tool(a)
+		spray_skill = Progress.spread_mult(Shed.me(), kit)
 		var reach := (GUN_RADIUS if gun else SPRAY_RADIUS) * spray_skill
-		var rate := GUN_RATE if gun else COVER_RATE
+		var rate := (GUN_RATE if gun else COVER_RATE) * Progress.cover_rate_mult(Shed.me(), kit)
 		var falloff := 0.15 if gun else 0.5
 		var hit_at: Vector3 = target["at"]
 		var view_dir := -camera.global_transform.basis.z
@@ -1075,7 +1109,7 @@ func _coverage_step(delta: float, plan_now: Dictionary) -> void:
 				if d < reach:
 					cells[i] += delta * rate * (1.0 - falloff * d / reach)
 					if is_instance_valid(splats):
-						splats.set_coats(i, cells[i] * (RUN_LEVEL / (GUN_RUN_LEVEL if gun else RUN_LEVEL)))
+						splats.set_coats(i, cells[i] * (RUN_LEVEL / float(job.get("runs", RUN_LEVEL))))
 			job["cells"] = cells
 	for job in jobs:
 		var stats := _job_stats(job)
@@ -1169,8 +1203,27 @@ func _start_cover(item: int, key: String, plan_now: Dictionary) -> Dictionary:
 		splats.transform = holder.global_transform.affine_inverse() * xf
 	else:
 		get_parent().add_child(splats)
+	# Upgraded tools lay paint faster, so a patch takes more coats before it runs; Steady Hand more still.
+	var runs := (GUN_RUN_LEVEL if a.get("gun", false) else RUN_LEVEL) * Progress.run_level_mult(Shed.me(), _cover_tool(a))
 	return {"key": key, "plan": plan_now, "item": item, "points": points, "cells": cells, "live": false, "xf": xf,
-		"splats": splats, "node": holder}
+		"splats": splats, "node": holder, "runs": runs}
+
+
+## The tool doing a spray job: the gun, the spray can, or a can of chain lube in your hands.
+func _cover_tool(a: Dictionary) -> String:
+	if a.get("gun", false):
+		return "gun"
+	return "spray" if str(a.get("a", "")) == "paint" else "hands"
+
+
+## Shortens a job's hold time for the tool's upgrade stage and the skills that speed it up.
+func _scale_time(p: Dictionary) -> void:
+	if p.is_empty() or p.get("coverage", false) or not p.has("time"):
+		return
+	var a := str(p["action"].get("a", ""))
+	if a in ["computer", "tuning", "write_label", "wash", "radio"]:
+		return
+	p["time"] = float(p["time"]) * Progress.time_mult(Shed.me(), tool, p["action"])
 
 
 ## The part a ray hit, the same way the crosshair reads it.
@@ -1197,7 +1250,7 @@ func _job_stats(job: Dictionary) -> Dictionary:
 	if job.is_empty():
 		return {"covered": 0.0, "over": 0.0}
 	var cells: PackedFloat32Array = job["cells"]
-	var runs := GUN_RUN_LEVEL if job["plan"]["action"].get("gun", false) else RUN_LEVEL
+	var runs := float(job.get("runs", GUN_RUN_LEVEL if job["plan"]["action"].get("gun", false) else RUN_LEVEL))
 	var covered := 0
 	var over := 0
 	for c in cells:
@@ -1276,13 +1329,16 @@ func _set_tool_view() -> void:
 	if _tool_view:
 		_tool_view.queue_free()
 	_jet = null
-	_tool_view = make_tool_mesh(tool, Shed.PAINTS[spray_color])
+	var stage := Progress.tool_stage(Shed.me(), tool)
+	_tool_sig = "%s:%d" % [tool, stage]
+	_tool_view = make_tool_mesh(tool, Shed.PAINTS[spray_color], stage)
 	_tool_view.position = Vector3(0.28, -0.28, -0.5)
 	_tool_view.rotation = Vector3(0.25, -0.3, 0.0)
 	if tool == "lance":
 		_tool_view.position = Vector3(0.22, -0.26, -0.3)
 		_tool_view.rotation = Vector3(0.05, -0.12, 0.0)
 		_jet = make_jet()
+		_jet.spread *= Progress.spread_mult(Shed.me(), "lance")
 		_jet.position = Vector3(0.0, 0.0, -0.6)
 		_tool_view.add_child(_jet)
 	elif tool == "watch":
@@ -1379,7 +1435,7 @@ func _update_mist() -> void:
 		_mist.color = c
 		haze.color = c.lightened(0.15)
 		var gun := bool(a.get("gun", false))
-		_mist.spread = 6.5 if gun else 9.0
+		_mist.spread = (6.5 if gun else 9.0) * spray_skill
 		haze.spread = 12.0 if gun else 16.0
 		# From the nozzle of the tool in your hand, towards where you're aiming.
 		var nozzle := camera.global_transform * Vector3(0.2, -0.2, -0.55)
@@ -1401,6 +1457,7 @@ func _update_jet() -> void:
 	_jet.emitting = tool == "lance" and _acting() and a == "wash" and str(_active_plan.get("blocked", "")) in ["", "It's already clean."]
 
 
-## A simple mesh of a tool, held in the hand. Shared with other players' avatars.
-static func make_tool_mesh(which: String, can_color := Color(0.9, 0.75, 0.1)) -> Node3D:
-	return ToolModels.make("stopwatch" if which == "watch" else which, can_color)
+## A simple mesh of a tool, held in the hand, at its upgrade stage (0..5, see ToolModels).
+## Shared with other players' avatars.
+static func make_tool_mesh(which: String, can_color := Color(0.9, 0.75, 0.1), stage := 0) -> Node3D:
+	return ToolModels.make("stopwatch" if which == "watch" else which, can_color, stage)

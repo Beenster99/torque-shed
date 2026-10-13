@@ -2,7 +2,7 @@
 
 A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 38 parts from 32 kinds (stands, headlight, horn, ECU, panniers, top box and fog lights are optional), at least 5 of each and 15 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Skills, XP and money come later.
+Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 38 parts from 32 kinds (stands, headlight, horn, ECU, panniers, top box and fog lights are optional), at least 5 of each and 15 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree (see below); money comes later.
 
 ### What a bike is made of
 
@@ -48,7 +48,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Sit on a seat (tap), or move it (hold) | F | Y |
 | Change radio station | Hold left mouse on the radio | Hold RT or A |
 | Whiteboard: draw / rub out; pen colour, eraser, thickness; text; undo; wipe it all | Hold left / right mouse; 1-6, 7, wheel; T; Z; hold X | Hold RT / LT; B colour; LB / RB thickness; D-pad left undo |
-| Menu | Esc | Start |
+| Menu (your level, tool upgrades and skills are in its Character tab) | Esc | Start |
 
 **Building from scratch**: hold a frame and look at an empty bay floor (bay 4 is free in a new shed), then hold the work button to stand the frame up in the bay. Fit the fork, wheels, engine and the rest onto it from there. Taking the bare frame off again frees the bay.
 
@@ -83,6 +83,48 @@ Press F at the **dyno desk** to tune the bike on the rig, or any bike within abo
 - **Weight**: drill and trim parts (frame, wheels, discs, sprockets, seat, bars, exhaust and more) to save weight. Each part can be done once; it costs it some condition and it wears a little faster after.
 
 **Run the dyno** and the bike revs up through the gears on the drum, then sweeps one gear to the limiter. The desk and the wall screen plot power and torque at the rear wheel against rpm, the speed in each gear, and the peak power and torque, top speed, power to weight and a 0-100 km/h estimate. The previous run stays on the graph, dashed, with the change in each number, so you can see what a change did.
+
+### XP, levels, tool upgrades and skills
+
+Everything you do earns **XP**, one pool for the lot: work in the shed, riding, and (from the money milestone) selling. Each job pops up a small "+6 XP Cleaning" under the level bar at the top right. Doing the same job to the same part again straight away pays half as much each time (so unbolting and bolting one bolt over and over soon pays nothing), and the big one-offs pay once per bike or part.
+
+| Job | XP |
+| --- | --- |
+| Moving a part, unpacking a box, binning a part | 1 |
+| Unbolting or bolting, taking a part off, a tuning change, tipping old fluid | 2 |
+| Fitting a part, recycling plastic | 3 |
+| Chain tension, taking a tyre off | 4 |
+| Pouring or draining fluids, a dyno run, recycling metal | 5 |
+| Scrubbing a part with the brush, a part coming out of the parts washer, lubing a chain (x how good the job was) | 6 |
+| Pressure washing a whole bike clean (more for a muddier one; 12 more, once, for a real mud monster) | 8+ |
+| Drilling and trimming a part | 8 |
+| Restoring a part on the grinder, starting a scratch build | 10 |
+| Fitting a tyre (x quality) | 10 |
+| Spraying a part (x how good the paint job is) | 12 |
+| A part brought from tired (under 60%) to like new (95%) | 4, once |
+| The first time a bike starts | 25, once per bike |
+| Rebuilding an engine on the stand | 40, once per engine |
+| Finishing a build: a scratch build, or a bike stripped of 5 or more parts, all fitted, bolted up and rideable | 150, once per bike |
+| A scratch build finished (on top) | 100, once per bike |
+| A project bike restored to max health (every part 95% or better) | 300, once per bike |
+| Riding: a jump of half a second or more (more for longer, half again for a clean landing), wheelies (3 per 10 m), stoppies (4 per 5 m), burnouts, knee-down corners, every km ridden, new top speeds (50, 80, 100 ... 320 km/h), 0-100 km/h times, and beating your longest jump, wheelie or stoppie | 2 to 60 |
+| Selling a bike, selling a part, money milestones (money milestone) | 100, 5, 50 |
+
+**Levels**: level 2 takes 75 XP, and each level takes more than the last (level 10 is about 3,900 XP, level 50 the top). Levelling up sounds a fanfare and gives you **one tool point and one skill point**. The Character tab lists **goals** too ("Land a 2 s jump", "Restore a bike to 95% health", "Ride 10 km" and more), each paying a lump of XP once.
+
+**Your character goes with you**: XP, level, tool upgrades, skills, personal bests and goals are kept on your own PC by your player name (`profile.json` beside the saves folder), not in the shed, so you take them to any shed and any co-op session. In co-op everyone earns their own XP, and the host's screens can show the whole crew's levels.
+
+**Tool upgrades**: spend a tool point on the next stage of any hand tool (Esc, then **Character**). Stages need level 2, 4, 8, 14 and 20. Each stage makes the tool about 11% quicker (fitting, bolting, scrubbing, grinding), the spray can and gun coat 12% faster with a wider fan, the brush scrubs a wider patch, the pressure washer has a wider jet and blasts off more muck, and the stopwatch keeps more laps. Each stage looks better too: bare steel, polished, chrome, anodised, carbon and finally gold trim, and other players see your upgraded tools. The tool bar shows each tool's stage as dots.
+
+**Skills tree**: spend skill points on ranks (Esc, then **Character**: click a skill). A skill needs the one before it in its branch, and the deeper tiers need level 5 and level 10. **Respec** hands every skill point back.
+
+| Branch | Skills |
+| --- | --- |
+| Mechanic | **Quick Hands** (fit, remove, carry and pour 10% faster a rank) · **Torque Feel** (bolting and chain tension 10% faster a rank) · **Engine Whisperer** (engine work on the stand 15% faster a rank; part info shows how much power a worn engine part costs) · **Salvager** (+20% a rank XP from binning, tipping and recycling) · **Master Builder** (+25% a rank XP for builds, engine rebuilds and max-health restorations) |
+| Finisher | **Elbow Grease** (scrub 12% faster, pressure washer 15% stronger a rank) · **Steady Hand** (spray fans 8% wider, and 10% more before it runs, a rank) · **Hot Welder** (grinder and welder 12% faster a rank) · **Showroom Shine** (paint and lube jobs 4% better a rank) |
+| Rider | **Balance** (steadier wheelies and stoppies) · **Throttle Control** (less wheelspin) · **Airtime** (+15% jump XP a rank, ride out landings 4 degrees steeper a rank) · **Quick Reset** (back up a second sooner a rank after a crash) · **Speed Demon** (+25% XP a rank for top speeds and 0-100 times) |
+| Tuner | **Dyno Reader** (the dyno desk shows the power lost to wear, then which part to restore first) · **Featherweight** (drilling and trimming takes 10% more off a rank) · **Fine Tuning** (map, ignition and rev limiter go 8% further a rank on bikes you tune) |
+| Crew | **Foreman** (+5% XP a rank with a teammate within 6 m) · **Mentor** (crew within 10 m get a bonus 5% a rank of your XP) · **Haggler** (cheaper parts: unlocks with the money milestone) |
 
 ### Riding
 
@@ -140,6 +182,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
 | `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |
+| `scripts/progress.gd`, `ride_xp.gd`, `character_tab.gd`, `skill_tree_view.gd` | XP, levels, tool upgrades, skills and goals, kept in your own profile; riding XP; the Character tab |
 | `scripts/sfx.gd` | Tool, footstep and workshop sounds, synthesised at start-up, and the volume buses |
 | `scripts/shed_radio.gd`, `radio_stream.gd`, `mp3_stream_decoder.gd` | The shed radio: streams an MP3 station over HTTP(S) and decodes it gaplessly |
 
