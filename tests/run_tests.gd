@@ -66,6 +66,9 @@ func _run_all() -> void:
 	_test_addresses()
 	print("World")
 	await _test_world()
+	print("Day and night, tyre smoke")
+	await _test_daylight()
+	await _test_tyre_smoke()
 	print("Game session")
 	await _test_session()
 	print("Tool models, posters and the water jet")
@@ -1828,3 +1831,90 @@ func _test_tool_art() -> void:
 		check(quad != null and quad.size.is_equal_approx(Vector2(size.x, size.y)) and absf(art.position.z) <= 0.003
 			and art.material_override != null, "%s poster is one flat sheet on the wall" % model)
 		art.free()
+
+
+## Time of day: the sun sets, darkness rises, the moon and yard lamps take over, the clock
+## settings persist, and a client follows the host's clock.
+func _test_daylight() -> void:
+	var saved := [Settings.day_night_cycle, Settings.day_length, Settings.time_of_day]
+	Settings.day_night_cycle = false
+	var env := Environment.new()
+	var sun := DirectionalLight3D.new()
+	add_child(sun)
+	var dl := Daylight.new()
+	add_child(dl)
+	dl.setup(env, sun)
+	check(Daylight.current == dl and get_tree().get_first_node_in_group("daylight") == dl, "the daylight node is findable")
+	var lamp := OmniLight3D.new()
+	lamp.set_meta("night_energy", 3.0)
+	lamp.add_to_group(Daylight.NIGHT_LIGHTS)
+	add_child(lamp)
+	dl.set_time(12.0)
+	var noon_dark := World.darkness()
+	check(is_equal_approx(World.time_of_day(), 12.0) and noon_dark < 0.05, "noon is bright (darkness %.2f)" % noon_dark)
+	check(sun.visible and sun.light_energy > 1.0 and not lamp.visible, "the sun is up at noon and lamps are off")
+	check(sun.global_transform.basis.z.y > 0.5, "the noon sun shines down from high in the sky")
+	dl.set_time(0.0)
+	check(World.darkness() > 0.95 and World.darkness() > noon_dark, "midnight is dark (darkness %.2f)" % World.darkness())
+	check(not sun.visible and dl._moon.visible and dl._moon.light_energy > 0.05, "at midnight the moon lights the yard")
+	check(lamp.visible and is_equal_approx(lamp.light_energy, 3.0), "lamps in the night_lights group switch on at night")
+	dl.set_time(18.0)
+	check(sun.light_color.b < 0.6 and World.darkness() > 0.05 and World.darkness() < 0.7, "dusk is warm and half dark (%.2f)" % World.darkness())
+	check(Daylight.sun_direction(6.0).x > 0.9 and Daylight.sun_direction(18.0).x < -0.9, "the sun rises in the east and sets in the west")
+	check(Daylight.clock_text(18.75) == "18:45" and Daylight.clock_text(24.0) == "00:00", "the clock reads hours and minutes")
+	# The cycle runs at the chosen day length.
+	Settings.day_night_cycle = true
+	Settings.day_length = 10
+	dl.set_time(10.0)
+	for i in 120:
+		await get_tree().process_frame
+	var ran := dl.hours - 10.0
+	check(ran > 0.03 and ran < 0.05, "a 10 minute day moves the clock 0.04 h a second (%.3f h)" % ran)
+	check(absf(Settings.time_of_day - dl.hours) < 0.001, "the settings follow the clock so it carries on next time")
+	# Persisted like the other settings.
+	Settings.day_length = 40
+	Settings.time_of_day = 21.5
+	Settings.save_settings()
+	Settings.day_length = 20
+	Settings.time_of_day = 3.0
+	Settings.load_settings()
+	check(Settings.day_length == 40 and is_equal_approx(Settings.time_of_day, 21.5) and Settings.day_night_cycle,
+		"day/night settings persist")
+	# Solo, a message from a "host" is ignored.
+	Settings.day_night_cycle = false
+	dl.set_time(8.0)
+	Net.time_received.emit(20.0, 0.0)
+	check(is_equal_approx(dl.hours, 8.0), "solo, the local clock rules")
+	Settings.day_night_cycle = saved[0]
+	Settings.day_length = saved[1]
+	Settings.time_of_day = saved[2]
+	Settings.save_settings()
+	lamp.queue_free()
+	dl.queue_free()
+	sun.queue_free()
+	await get_tree().process_frame
+	check(Daylight.current == null and is_equal_approx(World.time_of_day(), 12.0), "with no world it reads noon")
+
+
+func _test_tyre_smoke() -> void:
+	var fx := BikeEffects.new()
+	add_child(fx)
+	fx.setup(Vector3(0.2, 0.4, 0.9), Vector3(0.0, -0.3, 0.7), Vector3(0.0, 0.9, -0.8), 900.0)
+	check(not fx.tyre_smoke_emitting(), "no tyre smoke to start with")
+	for i in 10:
+		fx.set_tyre_smoke(1.0, Vector3(0.0, -0.3, 0.7))
+		await get_tree().process_frame
+	check(fx.tyre_smoke_emitting(), "a burnout makes tyre smoke")
+	for i in 10:
+		fx.set_tyre_smoke(0.0, Vector3(0.0, -0.3, 0.7))
+		await get_tree().process_frame
+	check(not fx.tyre_smoke_emitting(), "the smoke stops when the tyre grips again")
+	var tex := BikeEffects.puff_texture()
+	check(tex.get_width() == BikeEffects.PUFF_FRAME * 2, "smoke puffs come from a shared atlas texture")
+	var fx2 := BikeEffects.new()
+	add_child(fx2)
+	fx2.set_tyre_smoke(0.5, Vector3.ZERO)
+	check(BikeEffects.puff_texture() == tex, "the atlas is made once")
+	fx.queue_free()
+	fx2.queue_free()
+	await get_tree().process_frame

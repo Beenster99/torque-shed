@@ -38,6 +38,11 @@ var _host_info: Label
 var _crew: Label
 var _pad: Label
 var _tabs: TabContainer
+var _cycle: CheckBox
+var _day_length: OptionButton
+var _time: HSlider
+var _time_label: Label
+var _time_note: Label
 
 
 func _ready() -> void:
@@ -133,6 +138,7 @@ func _ready() -> void:
 	_quality.button_pressed = Settings.high_quality
 	_quality.toggled.connect(func(v): Settings.high_quality = v)
 	settings.add_child(_quality)
+	_build_time_settings(settings)
 	settings.add_child(UITheme.label("Sound effects volume", 15))
 	settings.add_child(_volume_slider(Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
 	settings.add_child(UITheme.label("Radio volume", 15))
@@ -154,6 +160,8 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if visible and _tabs.current_tab == 2:
 		_pad.text = Controls.diagnostics()
+	if visible and _tabs.current_tab == 0:
+		_refresh_time_settings(false)
 	if visible and _pause_box.visible:
 		var names := []
 		for peer in Shed.crew:
@@ -179,7 +187,62 @@ func show_pause() -> void:
 	else:
 		_host_info.text = "Working solo."
 	_auto.button_pressed = Settings.auto_shift
+	_refresh_time_settings(true)
 	show()
+
+
+## Day/night cycle on or off, how long a day lasts and a clock slider. On a co-op client the
+## host's clock rules, so these are shown greyed out.
+func _build_time_settings(settings: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	_cycle = CheckBox.new()
+	_cycle.text = "Day/night cycle"
+	_cycle.button_pressed = Settings.day_night_cycle
+	_cycle.toggled.connect(func(v): Settings.day_night_cycle = v)
+	row.add_child(_cycle)
+	row.add_child(UITheme.label("Day length", 15))
+	_day_length = OptionButton.new()
+	for m in Daylight.DAY_LENGTHS:
+		_day_length.add_item("%d minutes" % m)
+	_day_length.selected = maxi(Daylight.DAY_LENGTHS.find(Settings.day_length), 0)
+	_day_length.item_selected.connect(func(i): Settings.day_length = Daylight.DAY_LENGTHS[i])
+	row.add_child(_day_length)
+	settings.add_child(row)
+	var time_row := HBoxContainer.new()
+	time_row.add_theme_constant_override("separation", 16)
+	_time_label = UITheme.label("Time of day", 15)
+	_time_label.custom_minimum_size.x = 170.0
+	time_row.add_child(_time_label)
+	_time = HSlider.new()
+	_time.min_value = 0.0
+	_time.max_value = 24.0
+	_time.step = 0.25
+	_time.value = Settings.time_of_day
+	_time.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_time.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_time.value_changed.connect(func(v):
+		if Daylight.current:
+			Daylight.current.set_time(v)
+		else:
+			Settings.time_of_day = v)
+	time_row.add_child(_time)
+	_time_note = UITheme.label("set by the host", 14, Color(1, 1, 1, 0.55))
+	time_row.add_child(_time_note)
+	settings.add_child(time_row)
+	_refresh_time_settings(true)
+
+
+func _refresh_time_settings(move_slider: bool) -> void:
+	var by_host := Daylight.set_by_host()
+	_cycle.disabled = by_host
+	_day_length.disabled = by_host
+	_time.editable = not by_host
+	_time_note.visible = by_host
+	var h := Daylight.time_of_day() if Daylight.current else Settings.time_of_day
+	_time_label.text = "Time of day  %s" % Daylight.clock_text(h)
+	if move_slider or by_host:
+		_time.set_value_no_signal(h)
 
 
 func set_status(text: String) -> void:

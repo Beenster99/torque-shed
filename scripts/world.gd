@@ -21,6 +21,7 @@ var _rng := RandomNumberGenerator.new()
 var _sun: DirectionalLight3D
 var _env: WorldEnvironment
 var workshop: Workshop
+var daylight: Daylight
 
 
 func generate(seed_value := 1) -> void:
@@ -36,6 +37,7 @@ func generate(seed_value := 1) -> void:
 	_build_road_meshes()
 	_build_yard()
 	_build_garage()
+	_build_yard_lights()
 	_build_trees()
 
 
@@ -71,15 +73,7 @@ func surface_height(x: float, z: float) -> float:
 func _build_environment() -> void:
 	_env = WorldEnvironment.new()
 	var env := Environment.new()
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.22, 0.42, 0.75)
-	sky_mat.sky_horizon_color = Color(0.68, 0.76, 0.86)
-	sky_mat.ground_horizon_color = Color(0.6, 0.66, 0.72)
-	sky_mat.ground_bottom_color = Color(0.25, 0.27, 0.25)
-	sky_mat.sun_angle_max = 20.0
-	sky_mat.sun_curve = 0.1
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
+	var sky := Sky.new()   # Daylight gives it a day-night sky shader
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
@@ -121,6 +115,22 @@ func _build_environment() -> void:
 	_sun.light_angular_distance = 0.6
 	_sun.light_volumetric_fog_energy = 1.2
 	add_child(_sun)
+
+	daylight = Daylight.new()
+	daylight.name = "Daylight"
+	add_child(daylight)
+	daylight.setup(env, _sun)
+
+
+## The time of day in hours (0..24), from the session's Daylight. 12 when there's no world.
+static func time_of_day() -> float:
+	return Daylight.time_of_day()
+
+
+## 0 in full daylight .. 1 at night. Read it every frame, or connect to
+## `daylight.darkness_changed`.
+static func darkness() -> float:
+	return Daylight.darkness()
 
 
 # ---------------------------------------------------------------------------- terrain height
@@ -490,6 +500,63 @@ func _build_yard() -> void:
 		cone.material_override = cone_mat
 		cone.position = Vector3(36.0 + cos(a) * 9.0, 0.25, 122.0 + sin(a) * 9.0)
 		add_child(cone)
+
+
+## Floodlights on poles around the Build Yard that come on at dusk (Daylight drives them via
+## its "night_lights" group).
+func _build_yard_lights() -> void:
+	var pole_mat := StandardMaterial3D.new()
+	pole_mat.albedo_color = Color(0.32, 0.33, 0.34)
+	pole_mat.metallic = 0.6
+	pole_mat.roughness = 0.45
+	var spots: Array[Vector3] = [Vector3(-30.0, 0.0, 88.0), Vector3(30.0, 0.0, 88.0), Vector3(-58.0, 0.0, 112.0),
+		Vector3(0.0, 0.0, 141.0), Vector3(58.0, 0.0, 112.0), Vector3(-36.0, 0.0, 141.0), Vector3(36.0, 0.0, 141.0)]
+	var aim := Vector3(YARD_CENTER.x, 0.0, YARD_CENTER.y + 8.0)
+	for p in spots:
+		var pole := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 0.08
+		cyl.bottom_radius = 0.13
+		cyl.height = 8.0
+		cyl.radial_segments = 8
+		pole.mesh = cyl
+		pole.material_override = pole_mat
+		pole.position = p + Vector3.UP * 4.0
+		add_child(pole)
+		var inward := (aim - p).normalized()
+		var head_pos: Vector3 = p + Vector3.UP * 8.1 + inward * 0.35
+		var head := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(0.9, 0.18, 0.5)
+		head.mesh = box
+		var lens := StandardMaterial3D.new()
+		lens.albedo_color = Color(0.9, 0.9, 0.85)
+		lens.emission_enabled = true
+		lens.emission = Color(1.0, 0.86, 0.62)
+		lens.emission_energy_multiplier = 0.05
+		head.material_override = lens
+		head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		head.position = head_pos
+		head.rotation.y = atan2(inward.x, inward.z)
+		head.set_meta("night_emission", 6.0)
+		head.add_to_group(Daylight.NIGHT_LIGHTS)
+		add_child(head)
+		var spot := SpotLight3D.new()
+		spot.position = head_pos + Vector3.DOWN * 0.15
+		spot.basis = Basis.looking_at(p + inward * 16.0 - spot.position, Vector3.UP)
+		add_child(spot)
+		spot.spot_range = 40.0
+		spot.spot_angle = 52.0
+		spot.spot_attenuation = 0.8
+		spot.spot_angle_attenuation = 1.6
+		spot.light_color = Color(1.0, 0.85, 0.62)   # sodium-ish warm
+		spot.light_energy = 0.0
+		spot.light_volumetric_fog_energy = 2.5
+		spot.shadow_enabled = false
+		spot.visible = false
+		spot.set_meta("night_energy", 14.0)
+		spot.add_to_group(Daylight.NIGHT_LIGHTS)
+	daylight._update_lamps()
 
 
 func _paint_box(center: Vector3, size: Vector3, mat: Material) -> void:

@@ -11,6 +11,9 @@ var high_quality := true
 var sfx_volume := 0.8
 var radio_volume := 0.6
 var units := "metric"     # or "imperial"
+var day_night_cycle := true
+var day_length := 20       # real minutes per 24 h game day
+var time_of_day := 9.0     # hours; kept up to date while playing so the clock carries on next time
 
 
 func _ready() -> void:
@@ -29,6 +32,9 @@ func load_settings() -> void:
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
 		radio_volume = cfg.get_value("audio", "radio", radio_volume)
 		units = cfg.get_value("display", "units", units)
+		day_night_cycle = cfg.get_value("world", "day_night_cycle", day_night_cycle)
+		day_length = int(cfg.get_value("world", "day_length", day_length))
+		time_of_day = float(cfg.get_value("world", "time_of_day", time_of_day))
 
 
 func save_settings() -> void:
@@ -41,6 +47,9 @@ func save_settings() -> void:
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("audio", "radio", radio_volume)
 	cfg.set_value("display", "units", units)
+	cfg.set_value("world", "day_night_cycle", day_night_cycle)
+	cfg.set_value("world", "day_length", day_length)
+	cfg.set_value("world", "time_of_day", time_of_day)
 	cfg.save(PATH)
 
 
