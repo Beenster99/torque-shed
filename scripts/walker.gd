@@ -24,6 +24,8 @@ var target := {}            # what the crosshair is on: {kind, bike, engine, slo
 var plan := {}              # what the action button would do: {action, time, verb, blocked}
 var info := ""              # description of the target for the HUD
 var progress := 0.0         # 0..1 of the current hold-to-work action
+var spray_color := 0        # index into Shed.PAINTS loaded in the spray can
+var spray_finish := 0       # index into Shed.FINISHES
 
 var _pitch := 0.0
 var _hold := 0.0
@@ -80,6 +82,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		_cycle_tool(1)
 	elif event.is_action_pressed("tool_prev"):
 		_cycle_tool(-1)
+	elif tool == "spray" and event.is_action_pressed("spray_colour"):
+		spray_color = (spray_color + 1) % Shed.PAINTS.size()
+		_spray_changed()
+	elif tool == "spray" and event.is_action_pressed("spray_finish"):
+		spray_finish = (spray_finish + 1) % Shed.FINISHES.size()
+		_spray_changed()
 	elif event.is_action_pressed("interact"):
 		# Mark the press handled before mounting, or the same F reaches main and gets you off again.
 		if target.get("kind", "") == "part" and int(target.get("bike", 0)) != 0:
@@ -98,6 +106,18 @@ func _look(dyaw: float, dpitch: float) -> void:
 	rotation.y += dyaw
 	_pitch = clampf(_pitch + dpitch, -1.45, 1.45)
 	camera.rotation.x = _pitch
+
+
+func _spray_changed() -> void:
+	get_viewport().set_input_as_handled()
+	_set_tool_view()
+	_plan_key = ""
+	Shed.feedback.emit("Spray can: %s" % spray_text(), true)
+
+
+## "Gloss red": what the spray can is loaded with.
+func spray_text() -> String:
+	return "%s %s" % [Shed.FINISH_NAMES[Shed.FINISHES[spray_finish]], Shed.PAINT_NAMES[spray_color]]
 
 
 func _cycle_tool(step: int) -> void:
@@ -235,9 +255,8 @@ func _make_plan() -> Dictionary:
 					"verb": "grind off the rust and rebuild it"}
 		"spray":
 			if item_id != 0:
-				var next := (Shed.paint_index(Shed.items[item_id]["color"]) + 1) % Shed.PAINTS.size()
-				p = {"action": {"a": "paint", "item": item_id, "color": next}, "time": 1.5,
-					"verb": "spray it %s" % Shed.PAINT_NAMES[next]}
+				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": Shed.FINISHES[spray_finish]},
+					"time": 1.5, "verb": "spray it %s" % spray_text().to_lower()}
 	if p.is_empty():
 		return {}
 	p["blocked"] = "" if p["action"]["a"] == "computer" else Shed.check(me, p["action"])
@@ -405,7 +424,7 @@ func _update_held_view() -> void:
 	var sig := ""
 	if held != 0:
 		var it: Dictionary = Shed.items[held]
-		sig = "%d:%s:%.1f:%.1f:%.1f:%s" % [held, it["part"], it["rust"], it["dirt"], it["wear"], it["color"]]
+		sig = "%d:%s:%.1f:%.1f:%.1f:%s:%s" % [held, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", "")]
 		if tool != "hands":
 			tool = "hands"
 			_set_tool_view()
@@ -431,14 +450,14 @@ func _update_held_view() -> void:
 func _set_tool_view() -> void:
 	if _tool_view:
 		_tool_view.queue_free()
-	_tool_view = make_tool_mesh(tool)
+	_tool_view = make_tool_mesh(tool, Shed.PAINTS[spray_color])
 	_tool_view.position = Vector3(0.28, -0.28, -0.5)
 	_tool_view.rotation = Vector3(0.25, -0.3, 0.0)
 	camera.add_child(_tool_view)
 
 
 ## A simple mesh of a tool, held in the hand. Shared with other players' avatars.
-static func make_tool_mesh(which: String) -> Node3D:
+static func make_tool_mesh(which: String, can_color := Color(0.9, 0.75, 0.1)) -> Node3D:
 	var root := Node3D.new()
 	var steel := StandardMaterial3D.new()
 	steel.albedo_color = Color(0.8, 0.81, 0.83)
@@ -465,7 +484,7 @@ static func make_tool_mesh(which: String) -> Node3D:
 				[Vector3(0, 0.08, 0.07), Vector3(0.11, 0.11, 0.008), steel]]
 		"spray":
 			var can := StandardMaterial3D.new()
-			can.albedo_color = Color(0.9, 0.75, 0.1)
+			can.albedo_color = can_color
 			can.metallic = 0.6
 			can.roughness = 0.3
 			parts = [[Vector3(0, -0.02, 0), Vector3(0.06, 0.18, 0.06), can], [Vector3(0, 0.09, 0), Vector3(0.03, 0.04, 0.03), steel],

@@ -11,8 +11,14 @@ const SPOTS: Array[String] = ["bench_0", "bench_1", "bench_2", "bench_3", "deliv
 	"delivery_3", "engine_stand", "washer", "repair"]
 const PAINTS := [Color(0.78, 0.09, 0.08), Color(0.1, 0.35, 0.8), Color(0.95, 0.6, 0.05), Color(0.1, 0.6, 0.3),
 	Color(0.55, 0.15, 0.7), Color(0.9, 0.9, 0.9), Color(0.06, 0.06, 0.06), Color(0.0, 0.6, 0.7),
-	Color(0.72, 0.73, 0.75), Color(0.8, 0.62, 0.2)]
-const PAINT_NAMES := ["red", "blue", "orange", "green", "purple", "white", "black", "teal", "silver", "gold"]
+	Color(0.72, 0.73, 0.75), Color(0.8, 0.62, 0.2), Color(0.95, 0.85, 0.1), Color(0.95, 0.4, 0.6),
+	Color(0.42, 0.06, 0.1), Color(0.45, 0.28, 0.14), Color(0.9, 0.85, 0.7), Color(0.35, 0.4, 0.18)]
+const PAINT_NAMES := ["red", "blue", "orange", "green", "purple", "white", "black", "teal", "silver", "gold",
+	"yellow", "pink", "burgundy", "brown", "cream", "olive"]
+## How the paint looks: "" is the part's factory finish, the rest come out of the spray can.
+const FINISHES: Array[String] = ["gloss", "matte", "metallic", "chrome", "patina"]
+const FINISH_NAMES := {"gloss": "Gloss", "matte": "Matte", "metallic": "Metallic flake", "chrome": "Chrome",
+	"patina": "Old patina"}
 const BIKE_NAMES := ["Barn Find", "Rusty Ranger", "Basket Case", "Old Faithful", "The Widowmaker", "Rattler",
 	"Hedge Hopper", "Midnight Special", "Scrapyard Dog", "Grandad's Pride", "Mud Puppy", "Iron Maiden"]
 const WASH_RATE := 0.18        # dirt removed per second in the parts washer
@@ -21,7 +27,7 @@ const MAX_PAINT_RUST := 0.2
 
 ## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered}
 var bikes := {}
-## item id -> {id, part, kind, rust, dirt, wear, color, at ("bike" | "engine" | "held" | "spot"), ref}.
+## item id -> {id, part, kind, rust, dirt, wear, color, finish, at ("bike" | "engine" | "held" | "spot"), ref}.
 ## Engine blocks also carry slots{} and bolted{} for the parts fitted to them.
 var items := {}
 var crew := {}      # peer id -> {name, tool, activity, riding, fitted, removed, cleaned, repaired, painted, km, top_kmh}
@@ -219,7 +225,8 @@ func is_complete(bike_id: int) -> bool:
 
 
 func condition_of(item: Dictionary) -> Dictionary:
-	return {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"]}
+	return {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"],
+		"finish": item.get("finish", "")}
 
 
 ## The bike's build from the parts on it. Missing parts fall back to what it was delivered
@@ -291,6 +298,13 @@ func paint_name(c: Color) -> String:
 	return PAINT_NAMES[paint_index(c)]
 
 
+## "Gloss red", or just "Red" for a part still in its factory finish.
+func paint_text(item: Dictionary) -> String:
+	var f: String = item.get("finish", "")
+	var n := paint_name(item["color"])
+	return n.capitalize() if f == "" else "%s %s" % [FINISH_NAMES[f], n]
+
+
 ## The palette colour closest to `c`.
 func paint_index(c: Color) -> int:
 	var best := 0
@@ -307,7 +321,7 @@ func paint_index(c: Color) -> int:
 func condition_text(item: Dictionary) -> String:
 	return "Condition %d%%   Rust %d%%   Dirt %d%%   Wear %d%%   %s" % [
 		roundi(BikeBuild.part_health(condition_of(item)) * 100.0), roundi(item["rust"] * 100.0),
-		roundi(item["dirt"] * 100.0), roundi(item["wear"] * 100.0), paint_name(item["color"]).capitalize()]
+		roundi(item["dirt"] * 100.0), roundi(item["wear"] * 100.0), paint_text(item)]
 
 
 func free_bay(bay_count: int) -> int:
@@ -473,6 +487,9 @@ func check(peer: int, action: Dictionary) -> String:
 					return "It's already in top condition."
 			if a == "paint" and it["rust"] > MAX_PAINT_RUST:
 				return "Too rusty to paint. Grind it back on the repair bench first."
+			if a == "paint" and it.get("finish", "") == str(action.get("finish", "gloss")) \
+					and paint_index(it["color"]) == int(action.get("color", 0)) and it["color"] == PAINTS[paint_index(it["color"])]:
+				return "It's already %s." % paint_text(it).to_lower()
 		"mount":
 			if riding(peer) != 0:
 				return "You're already riding."
@@ -592,9 +609,14 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Restored the %s" % item_title(int(action["item"]))
 		"paint":
 			var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
-			items[int(action["item"])]["color"] = PAINTS[idx]
+			var finish := str(action.get("finish", "gloss"))
+			if not FINISHES.has(finish):
+				finish = "gloss"
+			var it: Dictionary = items[int(action["item"])]
+			it["color"] = PAINTS[idx]
+			it["finish"] = finish
 			_bump(c, "painted")
-			text = "Sprayed the %s %s" % [item_title(int(action["item"])), PAINT_NAMES[idx]]
+			text = "Sprayed the %s %s" % [item_title(int(action["item"])), paint_text(it).to_lower()]
 		"mount":
 			bikes[bike_id]["rider"] = peer
 			c["riding"] = bike_id
@@ -669,7 +691,7 @@ func _new_item(part: String, rust: float, dirt: float, wear: float, color = null
 	_next_id += 1
 	var k := PartsDB.kind_of(part)
 	items[id] = {"id": id, "part": part, "kind": k, "rust": rust, "dirt": dirt, "wear": wear,
-		"color": PartsDB.default_color(part) if color == null else color, "at": "spot", "ref": ""}
+		"color": PartsDB.default_color(part) if color == null else color, "finish": "", "at": "spot", "ref": ""}
 	if k == "engine":
 		items[id]["slots"] = {}
 		items[id]["bolted"] = {}

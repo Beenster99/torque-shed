@@ -344,8 +344,21 @@ func _test_shed_rules() -> void:
 	Shed.request({"a": "place", "spot": "repair"})
 	Shed.request({"a": "repair", "item": pipe})
 	check(Shed.items[pipe]["rust"] == 0.0 and Shed.items[pipe]["wear"] == 0.0, "the repair bench restores rust and wear")
-	Shed.request({"a": "paint", "item": pipe, "color": 3})
-	check(Shed.items[pipe]["color"] == Shed.PAINTS[3], "the spray can paints a restored part")
+	Shed.request({"a": "paint", "item": pipe, "color": 3, "finish": "chrome"})
+	check(Shed.items[pipe]["color"] == Shed.PAINTS[3] and Shed.items[pipe]["finish"] == "chrome",
+		"the spray can paints a restored part in the chosen colour and finish")
+	check(Shed.check(me, {"a": "paint", "item": pipe, "color": 3, "finish": "chrome"}).contains("already"),
+		"spraying the same paint again is refused")
+	check(Shed.condition_text(Shed.items[pipe]).contains("Chrome green"), "the info panel names the finish")
+	for f in Shed.FINISHES:
+		var mat_model := BikeModel.part_display("stock_muffler", {"rust": 0.0, "dirt": 0.0, "wear": 0.0,
+			"color": Shed.PAINTS[0], "finish": f})
+		mat_model.free()
+	var chrome := StandardMaterial3D.new()
+	BikeModel._apply_finish(chrome, Shed.PAINTS[0], "chrome")
+	var matte := StandardMaterial3D.new()
+	BikeModel._apply_finish(matte, Shed.PAINTS[0], "matte")
+	check(chrome.metallic > 0.9 and chrome.roughness < 0.1 and matte.roughness > 0.8, "chrome is a mirror and matte is flat")
 	Shed.request({"a": "clean", "item": pipe})
 	Shed.request({"a": "take", "spot": "repair"})
 	Shed.request({"a": "install", "bike": ranger, "slot": "frame"})

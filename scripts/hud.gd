@@ -112,9 +112,44 @@ func _draw_toolbar() -> void:
 		draw_string(font, r.position + Vector2(8, 18), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.5))
 		var label: String = {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder", "spray": "Spray can"}[t]
 		draw_string(font, r.position + Vector2(0, 34), label, HORIZONTAL_ALIGNMENT_CENTER, w, 16, Color.WHITE if active else Color(1, 1, 1, 0.65))
+	if walker.tool == "spray":
+		_draw_spray_picker(font, y)
 	var held := Shed.held_by(Shed.me())
 	if held != 0:
 		draw_string(font, Vector2(0, y - 10), "Carrying: " + Shed.item_title(held), HORIZONTAL_ALIGNMENT_CENTER, size.x, 17, UITheme.ACCENT)
+
+
+## The spray can's colour swatches and finishes, above the tool bar while it's in your hand.
+func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
+	var n := Shed.PAINTS.size()
+	var sw := 30.0
+	var gap := 6.0
+	var total := n * (sw + gap) - gap
+	var x0 := size.x * 0.5 - total * 0.5
+	var y := toolbar_y - 120.0
+	draw_rect(Rect2(x0 - 14, y - 32, total + 28, 104), Color(0.05, 0.06, 0.08, 0.7))
+	draw_string(font, Vector2(x0, y - 12), "SPRAY CAN  ·  %s" % walker.spray_text().to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UITheme.ACCENT)
+	for i in n:
+		var r := Rect2(x0 + i * (sw + gap), y, sw, sw)
+		if i == walker.spray_color:
+			r = r.grow(4.0)
+		draw_rect(r, Shed.PAINTS[i])
+		if i == walker.spray_color:
+			draw_rect(r.grow(2.0), Color.WHITE, false, 2.0)
+	var fx := x0
+	for i in Shed.FINISHES.size():
+		var label: String = Shed.FINISH_NAMES[Shed.FINISHES[i]]
+		var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 16.0
+		var r := Rect2(fx, y + 42, w, 24)
+		var on := i == walker.spray_finish
+		draw_rect(r, Color(1, 1, 1, 0.18) if on else Color(1, 1, 1, 0.05))
+		if on:
+			draw_rect(r, UITheme.ACCENT, false, 2.0)
+		draw_string(font, r.position + Vector2(8, 17), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE if on else Color(1, 1, 1, 0.6))
+		fx += w + 6.0
+	var pad := Controls.device() >= 0 and Controls.active_device >= 0
+	var hint := "X: colour   B: finish" if pad else "R or right mouse: colour   T or middle mouse: finish"
+	draw_string(font, Vector2(x0, y + 90), hint, HORIZONTAL_ALIGNMENT_LEFT, total, 14, Color(1, 1, 1, 0.6))
 
 
 ## The speedo shows what the bike's dashboard can: an old analogue clock gives you only speed,

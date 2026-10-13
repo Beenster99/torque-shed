@@ -128,7 +128,7 @@ func model_for(target: Dictionary) -> BikeModel:
 
 func _item_signature(item_id: int) -> String:
 	var it: Dictionary = Shed.items[item_id]
-	var sig := "%d:%s:%.1f:%.1f:%.1f:%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"]]
+	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", "")]
 	if Shed.is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
@@ -145,7 +145,7 @@ func _bike_signature(id: int) -> String:
 			parts.append("-")
 		else:
 			var it: Dictionary = Shed.items[item_id]
-			parts.append("%s:%.2f:%.2f:%.2f:%s:%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], Shed.is_bolted(id, slot)])
+			parts.append("%s:%.2f:%.2f:%.2f:%s:%s:%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot)])
 	return "%s|%s|%s" % [",".join(parts), str(bike["xf"]), str(bike["paint"])]
 
 

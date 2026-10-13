@@ -9,12 +9,13 @@ const PICK_LAYER := 4
 
 static var _rust_masks := {}     # rust level (1..10) -> NoiseTexture2D mask
 static var _rust_albedo: NoiseTexture2D
+static var _patina_albedo: NoiseTexture2D
 static var _highlight_mat: StandardMaterial3D
 
 var paint := Color(0.78, 0.09, 0.08)
 var jacket := Color(0.1, 0.12, 0.16)
 var present := {}                # slot -> bool; missing slots are not drawn
-var condition := {}              # slot -> {rust, dirt, wear, color}
+var condition := {}              # slot -> {rust, dirt, wear, color, finish}
 
 var _build: BikeBuild
 var _slot_meshes := {}           # slot -> Array of GeometryInstance3D
@@ -940,6 +941,12 @@ func _mat(color: Color, metallic: float, roughness: float, clearcoat := 0.0) -> 
 		m.clearcoat = clearcoat
 		m.clearcoat_roughness = 0.1
 	var cond: Dictionary = condition.get(_current_slot, {}) if _current_slot != "" else {}
+	# A sprayed finish only goes on the painted surfaces, not the rubber or chrome bits.
+	var finish := str(cond.get("finish", ""))
+	if finish != "" and cond.has("color") and color == cond["color"]:
+		_apply_finish(m, color, finish)
+		metallic = m.metallic
+		roughness = m.roughness
 	var rust := float(cond.get("rust", 0.0))
 	var dirt := float(cond.get("dirt", 0.0))
 	if rust > 0.05:
@@ -958,6 +965,63 @@ func _mat(color: Color, metallic: float, roughness: float, clearcoat := 0.0) -> 
 		m.roughness = lerpf(m.roughness, 1.0, dirt * 0.8)
 		m.metallic *= 1.0 - dirt * 0.5
 	return m
+
+
+## Gloss is wet-look clear coat, matte soaks up the light, metallic has flake under the lacquer,
+## chrome is a tinted mirror and patina is faded, mottled old paint.
+static func _apply_finish(m: StandardMaterial3D, color: Color, finish: String) -> void:
+	m.clearcoat_enabled = false
+	match finish:
+		"gloss":
+			m.metallic = 0.05
+			m.roughness = 0.12
+			m.clearcoat_enabled = true
+			m.clearcoat = 1.0
+			m.clearcoat_roughness = 0.02
+		"matte":
+			m.metallic = 0.0
+			m.roughness = 0.9
+			m.albedo_color = color.darkened(0.08)
+		"metallic":
+			m.metallic = 0.8
+			m.roughness = 0.32
+			m.clearcoat_enabled = true
+			m.clearcoat = 0.8
+			m.clearcoat_roughness = 0.05
+			m.albedo_color = color.lightened(0.08)
+		"chrome":
+			m.metallic = 1.0
+			m.roughness = 0.04
+			m.albedo_color = color.lerp(Color(0.95, 0.95, 0.97), 0.55)
+		"patina":
+			m.metallic = 0.15
+			m.roughness = 0.78
+			var faded := Color.from_hsv(color.h, color.s * 0.55, color.v * 0.8)
+			m.albedo_color = faded
+			m.detail_enabled = true
+			m.detail_mask = _rust_mask(0.45)
+			m.detail_albedo = _patina_texture()
+			m.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+			m.uv1_triplanar = true
+			m.uv1_scale = Vector3(2.0, 2.0, 2.0)
+
+
+static func _patina_texture() -> NoiseTexture2D:
+	if _patina_albedo:
+		return _patina_albedo
+	var noise := FastNoiseLite.new()
+	noise.frequency = 0.05
+	noise.fractal_octaves = 4
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(0.62, 0.58, 0.5))
+	ramp.set_color(1, Color(0.95, 0.93, 0.88))
+	_patina_albedo = NoiseTexture2D.new()
+	_patina_albedo.width = 256
+	_patina_albedo.height = 256
+	_patina_albedo.seamless = true
+	_patina_albedo.noise = noise
+	_patina_albedo.color_ramp = ramp
+	return _patina_albedo
 
 
 func _glow(color: Color, energy: float) -> StandardMaterial3D:

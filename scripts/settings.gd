@@ -62,6 +62,8 @@ func _setup_inputs() -> void:
 	_bind("tool_prev", [KEY_Q], [JOY_BUTTON_LEFT_SHOULDER], [MOUSE_BUTTON_WHEEL_UP])
 	for i in 5:
 		_bind("tool_%d" % (i + 1), [KEY_1 + i], [])
+	_bind("spray_colour", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
+	_bind("spray_finish", [KEY_T], [JOY_BUTTON_B], [MOUSE_BUTTON_MIDDLE])
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
 	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])
