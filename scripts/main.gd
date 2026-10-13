@@ -71,6 +71,7 @@ func _ready() -> void:
 	Net.player_left.connect(_on_player_left)
 	Net.state_received.connect(_on_state)
 	Net.connected.connect(func(): _start_session())
+	Net.internet_status_changed.connect(_on_internet_status)
 	Net.connection_failed.connect(func(reason): menu.show_title(reason))
 	Net.disconnected.connect(func(): _end_session(); menu.show_title("The host closed the shed."))
 	Shed.changed.connect(_on_shed_changed)
@@ -100,15 +101,28 @@ func _host() -> void:
 		menu.set_status("Could not host on port %d (error %d)." % [Net.PORT, err])
 		return
 	_start_session()
-	hud.flash("Hosting. Friends join with %s" % ", ".join(Net.local_addresses()), 6.0)
+	hud.flash("Hosting. Opening the port on your router... the Esc menu shows the address to give friends.", 6.0)
+
+
+func _on_internet_status() -> void:
+	if not Net.is_host():
+		return
+	if Net.internet_status == "open":
+		hud.flash("Friends over the internet can join with %s" % (Net.external_ip if Net.external_ip != "" else "your public IP"), 8.0)
+	elif Net.internet_status == "closed":
+		hud.flash("Your router didn't open port %d automatically. See the Esc menu for how to let friends in." % Net.PORT, 8.0, true)
+	if menu.visible:
+		menu.show_pause()
 
 
 func _join(ip: String) -> void:
-	if ip == "":
+	var where := Net.parse_address(ip)
+	if where["host"] == "":
 		menu.set_status("Enter the host's IP address.")
 		return
 	var err := Net.join(ip, _local_info())
-	menu.set_status("Connecting to %s..." % ip if err == OK else "Could not start connecting (error %d)." % err)
+	menu.set_status("Connecting to %s, port %d..." % [where["host"], where["port"]] if err == OK
+		else "Couldn't find %s. Check the address (error %d)." % [where["host"], err])
 
 
 func _start_session() -> void:

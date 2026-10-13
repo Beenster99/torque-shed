@@ -18,7 +18,7 @@ func _ready() -> void:
 	if role == "host":
 		main._host()
 	else:
-		main._join("127.0.0.1")
+		main._join(" 127.0.0.1:24680 ")
 	var deadline := Time.get_ticks_msec() + 25000
 	var moved := false
 	var shed_ok := false

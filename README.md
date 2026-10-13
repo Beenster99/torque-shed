@@ -70,10 +70,12 @@ You steer by leaning: the rider counter-steers for you, like on a real bike. The
 
 ### Co-op
 
-One player picks **Host a co-op shed**; the others enter the host's IP address and pick **Join**. The game uses UDP port **24680**. The host's shed is the shared one: everyone works on the same bikes.
+One player picks **Host a co-op shed**; the others type the host's address into the box and pick **Join**. The game uses UDP port **24680**. The host's shed is the shared one: everyone works on the same bikes. The host's Esc menu shows exactly which address to give friends.
 
-- Same network: use the host's local address, which the Esc menu shows.
-- Over the internet: the host forwards UDP port 24680 on their router to their PC, and friends join with the host's public IP. (Steam invites are planned for later.)
+- Same network: use the host's local address (192.168.x.x or similar).
+- Over the internet: friends use the host's public IP address. When hosting, the game asks the host's router to open UDP port 24680 itself (UPnP), and the Esc menu says whether that worked. If it didn't, forward UDP port 24680 on the router to the host's PC by hand. The first time the game hosts, Windows asks whether to let it through the firewall: tick both Private and Public networks.
+- The join box takes `81.2.3.4`, `81.2.3.4:24680`, an IPv6 address or a host name.
+- If the host's internet provider shares one public address between many homes (carrier-grade NAT), port forwarding can't work; Steam invites are planned for later.
 
 ## How it works
 

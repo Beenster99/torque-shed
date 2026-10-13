@@ -273,7 +273,7 @@ func model_for(target: Dictionary) -> BikeModel:
 	if engine != 0:
 		var spot := str(Shed.items.get(engine, {}).get("ref", ""))
 		if _spot_nodes.has(spot):
-			return _spot_nodes[spot].get_meta("model", null)
+			return _spot_nodes[spot].get_meta("model") if _spot_nodes[spot].has_meta("model") else null
 		return null
 	if bike_views.has(target.get("bike", 0)):
 		return bike_model(int(target["bike"]))
@@ -298,7 +298,7 @@ func items_near(at: Vector3, radius: float) -> Array:
 	for spot in _spot_nodes:
 		var node: Node3D = _spot_nodes[spot]
 		var item := Shed.item_at_spot(spot)
-		var model: BikeModel = node.get_meta("model", null)
+		var model: BikeModel = node.get_meta("model") if node.has_meta("model") else null
 		if Shed.is_engine(item) and model:
 			for slot in PartsDB.ENGINE_SLOTS:
 				var sub := Shed.engine_item(item, slot)

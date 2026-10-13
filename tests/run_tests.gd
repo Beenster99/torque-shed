@@ -53,6 +53,8 @@ func _run_all() -> void:
 	_test_sounds()
 	_test_mp3_decoder()
 	await _test_radio_stream()
+	print("Co-op addresses")
+	_test_addresses()
 	print("World")
 	await _test_world()
 	print("Game session")
@@ -1006,6 +1008,34 @@ func _test_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+func _test_addresses() -> void:
+	var cases := {
+		"81.159.199.56": ["81.159.199.56", Net.PORT],
+		" 81.159.199.56:24680 ": ["81.159.199.56", 24680],
+		"81.159.199.56:3000": ["81.159.199.56", 3000],
+		"udp://81.159.199.56:24681/": ["81.159.199.56", 24681],
+		"myshed.example.com:24680": ["myshed.example.com", 24680],
+		"2a00:23c5::1": ["2a00:23c5::1", Net.PORT],
+		"[2a00:23c5::1]:24682": ["2a00:23c5::1", 24682],
+		"81.159.199.56:port": ["81.159.199.56", Net.PORT],
+	}
+	for text in cases:
+		var got := Net.parse_address(text)
+		check(got["host"] == cases[text][0] and got["port"] == cases[text][1],
+			"the join box reads '%s' as %s port %d (%s)" % [text, cases[text][0], cases[text][1], str(got)])
+	check(Net._is_private("192.168.1.64") and Net._is_private("10.0.0.2") and Net._is_private("172.20.1.1")
+		and Net._is_private("100.72.1.1") and not Net._is_private("81.159.199.56") and not Net._is_private("172.32.0.1"),
+		"home-network and carrier-shared addresses aren't offered as the internet address")
+	Net.internet_status = "closed"
+	var text := Net.join_instructions()
+	check(text.contains("forward UDP port %d" % Net.PORT), "when the router won't open the port, the menu says how to forward it")
+	Net.internet_status = "open"
+	Net.external_ip = "81.159.199.56"
+	check(Net.join_instructions().contains("81.159.199.56"), "when the router opens the port, the menu shows the internet address")
+	Net.internet_status = ""
+	Net.external_ip = ""
 
 
 func _test_world() -> void:

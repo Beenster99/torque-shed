@@ -75,7 +75,7 @@ func _ready() -> void:
 	var join_row := HBoxContainer.new()
 	_ip = LineEdit.new()
 	_ip.text = Settings.last_ip
-	_ip.placeholder_text = "Host IP address"
+	_ip.placeholder_text = "Host IP address (port optional, e.g. 81.2.3.4:24680)"
 	_ip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	join_row.add_child(_ip)
 	join_row.add_child(_button("Join", func(): _save(); join_game.emit(_ip.text.strip_edges())))
@@ -88,12 +88,16 @@ func _ready() -> void:
 	_pause_box.add_child(_button("Back to the shed", func(): _save(); resume.emit()))
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_host_info = UITheme.label("", 15, Color(1, 1, 1, 0.75))
+	_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_host_info.custom_minimum_size.x = 560.0
 	_pause_box.add_child(_host_info)
 	_crew = UITheme.label("", 15, Color(1, 1, 1, 0.85))
 	_pause_box.add_child(_crew)
 	_pause_box.add_child(_button("Leave and return to title", func(): _save(); leave_session.emit()))
 	col.add_child(_button("Quit", func(): _save(); get_tree().quit()))
 	_status = UITheme.label("", 15, Color(1, 0.75, 0.6))
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status.custom_minimum_size.x = 560.0
 	col.add_child(_status)
 
 	_tabs = TabContainer.new()
@@ -169,8 +173,7 @@ func show_pause() -> void:
 	_pause_box.visible = true
 	_status.text = ""
 	if Net.is_host():
-		var addrs := Net.local_addresses()
-		_host_info.text = "Hosting on port %d. Friends on your network join with: %s" % [Net.PORT, ", ".join(addrs)]
+		_host_info.text = "Hosting on port %d.\n%s" % [Net.PORT, Net.join_instructions()]
 	elif Net.is_online():
 		_host_info.text = "Connected to a co-op shed."
 	else:
