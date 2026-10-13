@@ -42,6 +42,17 @@ func _init(page_kind := "bike", width := 2.0) -> void:
 	screen.position.z = 0.03
 	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(screen)
+	# The screen glows on whatever is in front of it: with the shed lights off, screens are
+	# the light you work by.
+	var spill := OmniLight3D.new()
+	spill.position = Vector3(0.0, 0.0, 0.45)
+	spill.omni_range = 2.0 + width * 1.2
+	spill.omni_attenuation = 1.4
+	spill.light_energy = 0.35 + width * 0.12
+	spill.light_color = Color(0.72, 0.84, 1.0)
+	spill.shadow_enabled = false
+	spill.light_specular = 0.2
+	add_child(spill)
 	var bezel := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = Vector3(width + 0.08, height + 0.08, 0.05)
@@ -84,7 +95,7 @@ func _draw_crew(font: Font) -> void:
 	if players.is_empty():
 		_text(font, Vector2(24, 140), "Nobody here yet.", 30, DIM)
 		return
-	var cols := ["", "Doing", "Fitted", "Painted", "Cleaned", "Restored", "km", "Top km/h"]
+	var cols := ["", "Doing", "Fitted", "Painted", "Cleaned", "Restored", Units.distance_unit(), "Top " + Units.speed_unit()]
 	var xs := [24, 230, 560, 650, 750, 850, 945, 1000]
 	for i in cols.size():
 		if i >= 2:
@@ -98,12 +109,28 @@ func _draw_crew(font: Font) -> void:
 		_text(font, Vector2(34, y), str(p["name"]).left(14), 28)
 		_text(font, Vector2(xs[1], y), str(p.get("doing", "")).left(30), 20, Color(1, 0.8, 0.55))
 		var nums := [p.get("fitted", 0), p.get("painted", 0), p.get("cleaned", 0), p.get("repaired", 0),
-			"%.1f" % float(p.get("km", 0.0)), "%d" % roundi(float(p.get("top_kmh", 0.0)))]
+			"%.1f" % Units.distance_value(float(p.get("km", 0.0))), "%d" % Units.speed_value(float(p.get("top_kmh", 0.0)) / 3.6)]
 		for i in nums.size():
 			_text(font, Vector2(xs[i + 2] - 40, y), str(nums[i]), 24, Color.WHITE, 90, HORIZONTAL_ALIGNMENT_RIGHT)
 		y += 62.0
 		if y > PX.y - 20:
 			break
+
+
+## A summary number in the units the player picked.
+func _shown(key: String, v: float) -> float:
+	match key:
+		"health":
+			return v * 100.0
+		"top_kmh":
+			return float(Units.speed_value(v / 3.6))
+		"mass":
+			return Units.mass_value(v)
+		"economy":
+			return Units.economy_value(v)
+		"pw":
+			return v * 100.0 / (Units.LB_PER_KG if Units.imperial() else 1.0)
+	return v
 
 
 func _draw_bike(font: Font) -> void:
@@ -120,19 +147,20 @@ func _draw_bike(font: Font) -> void:
 	var rows := [
 		["Power", "hp", "hp", "%.0f", true],
 		["Torque", "torque", "Nm", "%.0f", true],
-		["Top speed", "top_kmh", "km/h", "%.0f", true],
-		["Weight", "mass", "kg", "%.0f", false],
+		["Top speed", "top_kmh", Units.speed_unit(), "%.0f", true],
+		["Weight", "mass", Units.mass_unit(), "%.0f", false],
+		["hp per 100 " + Units.mass_unit(), "pw", "", "%.1f", true],
 		["Brakes", "brake", "Nm", "%.0f", true],
+		["Economy", "economy", Units.economy_unit(), "%.1f" if not Units.imperial() else "%.0f", Units.imperial()],
 		["Condition", "health", "%", "%.0f", true],
 	]
 	_text(font, Vector2(220, 108), "NOW", 16, DIM, 120, HORIZONTAL_ALIGNMENT_RIGHT)
 	_text(font, Vector2(340, 108), "DELIVERED", 16, DIM, 110, HORIZONTAL_ALIGNMENT_RIGHT)
-	var y := 150.0
+	var y := 146.0
 	for r in rows:
 		var key: String = r[1]
-		var scale := 100.0 if key == "health" else 1.0
-		var v_now := float(now.get(key, 0.0)) * scale
-		var v_was := float(was.get(key, 0.0)) * scale
+		var v_now := _shown(key, float(now.get(key, 0.0)))
+		var v_was := _shown(key, float(was.get(key, 0.0)))
 		var diff := v_now - v_was
 		var better: bool = diff > 0.0 if r[4] else diff < 0.0
 		_text(font, Vector2(24, y), r[0], 24, DIM)
@@ -140,20 +168,32 @@ func _draw_bike(font: Font) -> void:
 		_text(font, Vector2(340, y), (r[3] % v_was), 22, DIM, 110, HORIZONTAL_ALIGNMENT_RIGHT)
 		if absf(diff) >= 0.5:
 			_text(font, Vector2(462, y), ("+" if diff > 0 else "") + (r[3] % diff), 20, GOOD if better else BAD)
-		y += 44.0
+		y += 40.0
 	# What doesn't suit: fuel starvation, overheating, worn plugs.
 	for note in data.get("notes", []):
 		_text(font, Vector2(24, y + 6), str(note).left(46), 17, Color(1.0, 0.75, 0.3))
 		y += 26.0
-		if y > PX.y - 10:
+		if y > PX.y - 90:
 			break
+	# Fluid levels along the bottom: petrol, oil and both brakes.
+	var fluids: Array = data.get("fluids", [])
+	for i in fluids.size():
+		var f: Array = fluids[i]
+		var fx := 24.0 + i * 130.0
+		var level := clampf(float(f[1]), 0.0, 1.0)
+		_text(font, Vector2(fx, PX.y - 40), str(f[0]), 15, DIM)
+		_page.draw_rect(Rect2(fx, PX.y - 30, 110, 14), Color(1, 1, 1, 0.1))
+		var col := BAD if level < 0.3 else (Color(1.0, 0.75, 0.3) if level < 0.6 or float(f[2]) > 0.6 else GOOD)
+		_page.draw_rect(Rect2(fx, PX.y - 30, 110 * level, 14), col)
+	if not fluids.is_empty():
+		_text(font, Vector2(24, PX.y - 62), "Range on this tank: %s" % Units.distance(float(data.get("range_km", 0.0)), 0), 16, DIM)
 	# Part list with condition bars, in two columns.
 	var parts: Array = data.get("parts", [])
-	var rows_per_col := 15
+	var rows_per_col := 16
 	for i in parts.size():
 		var p: Dictionary = parts[i]
 		var px := 560.0 + (i / rows_per_col) * 232.0
-		var py := 88.0 + (i % rows_per_col) * 31.0
+		var py := 84.0 + (i % rows_per_col) * 30.0
 		_text(font, Vector2(px, py + 14), str(p["name"]).left(19), 14, Color.WHITE if p["fitted"] else BAD)
 		if p["fitted"]:
 			var h := float(p["health"])

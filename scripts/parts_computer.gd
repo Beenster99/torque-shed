@@ -1,7 +1,7 @@
 class_name PartsComputer
 extends Control
-## The shed's parts computer: browse every part by kind, read its spec and order it. Orders
-## land on the delivery pallets by the door. Parts are free until money arrives.
+## The shed's parts computer: browse every part by kind, read its spec and order it, or order
+## equipment for the shed. Deliveries are left outside the roller door. Free until money arrives.
 
 signal closed
 
@@ -14,6 +14,12 @@ var _status: Label
 var _order: Button
 var _kind := "frame"
 var _part := ""
+var _section := "bike"
+var _search: LineEdit
+var _section_btns := {}
+
+## The shop's three aisles, so nobody scrolls through everything.
+const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors"}
 
 
 func _ready() -> void:
@@ -47,7 +53,28 @@ func _ready() -> void:
 	close.pressed.connect(close_computer)
 	head.add_child(close)
 	root.add_child(head)
-	root.add_child(UITheme.label("Pick a kind of part, then a model. Orders arrive on the delivery pallets by the door.", 15, Color(1, 1, 1, 0.6)))
+	root.add_child(UITheme.label("Pick a kind of part, then a model. Orders arrive in boxes outside the roller door.", 15, Color(1, 1, 1, 0.6)))
+
+	var aisles := HBoxContainer.new()
+	aisles.add_theme_constant_override("separation", 8)
+	for sec in SECTIONS:
+		var sb := Button.new()
+		sb.text = SECTIONS[sec]
+		sb.toggle_mode = true
+		sb.custom_minimum_size = Vector2(130, 40)
+		sb.pressed.connect(_show_section.bind(sec))
+		aisles.add_child(sb)
+		_section_btns[sec] = sb
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	aisles.add_child(gap)
+	_search = LineEdit.new()
+	_search.placeholder_text = "Search the shop..."
+	_search.custom_minimum_size = Vector2(360, 40)
+	_search.clear_button_enabled = true
+	_search.text_changed.connect(func(_t): _refresh_list())
+	aisles.add_child(_search)
+	root.add_child(aisles)
 
 	var cols := HBoxContainer.new()
 	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -74,19 +101,120 @@ func _ready() -> void:
 	_order = Button.new()
 	_order.text = "Order it (free for now)"
 	_order.custom_minimum_size = Vector2(0, 48)
-	_order.pressed.connect(func(): Shed.request({"a": "order_part", "part": _part}))
+	_order.pressed.connect(func():
+		if _kind.begins_with("eq:"):
+			Shed.request({"a": "order_furniture", "model": _part})
+		else:
+			Shed.request({"a": "order_part", "part": _part}))
 	detail.add_child(_order)
 
-	for k in PartsDB.KINDS:
+	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
+	_show_section(_section)
+
+
+## Which aisle a kind is sold in.
+static func section_of(k: String) -> String:
+	if k.begins_with("eq:"):
+		return "outdoors" if Equipment.YARD_KINDS.has(k.trim_prefix("eq:")) else "shed"
+	return "bike"
+
+
+## Every kind the shop sells, in shop order.
+static func all_kinds() -> Array:
+	var kinds: Array = []
+	for k in Equipment.KINDS:
+		if not Equipment.FIXED_KINDS.has(k):
+			kinds.append("eq:" + k)
+	kinds.append_array(PartsDB.FLUID_KINDS)
+	kinds.append_array(PartsDB.KINDS)
+	return kinds
+
+
+static func kind_title(k: String) -> String:
+	if k.begins_with("eq:"):
+		return Equipment.KIND_NAMES[k.trim_prefix("eq:")]
+	return ("Fluids: " if PartsDB.FLUID_KINDS.has(k) else "") + str(PartsDB.KIND_NAMES[k])
+
+
+func _show_section(sec: String) -> void:
+	_section = sec
+	for key in _section_btns:
+		_section_btns[key].button_pressed = key == sec
+	for c in _kinds.get_children():
+		c.queue_free()
+	var first := ""
+	for k in all_kinds():
+		if section_of(k) != sec:
+			continue
+		if first == "":
+			first = k
 		var b := Button.new()
-		b.text = PartsDB.KIND_NAMES[k]
+		b.text = kind_title(k)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
 		b.pressed.connect(_show_kind.bind(k))
 		b.set_meta("kind", k)
 		_kinds.add_child(b)
-	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
-	_show_kind(_kind)
+	if _search:
+		_search.text = ""
+	_show_kind(_kind if section_of(_kind) == sec else first)
+
+
+func _refresh_list() -> void:
+	var q := _search.text.strip_edges().to_lower()
+	if q == "":
+		_show_kind(_kind)
+		return
+	for c in _variants.get_children():
+		c.queue_free()
+	var found := search(q)
+	_variants.add_child(UITheme.label("%d FOUND" % found.size(), 14, UITheme.ACCENT))
+	for hit in found.slice(0, 80):
+		var b := Button.new()
+		b.text = "%s  ·  %s" % [hit["name"], kind_title(hit["kind"])]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.toggle_mode = true
+		b.set_meta("part", hit["id"])
+		b.pressed.connect(_pick_found.bind(hit["kind"], hit["id"]))
+		_variants.add_child(b)
+	if not found.is_empty():
+		_pick_found(found[0]["kind"], found[0]["id"])
+
+
+func _pick_found(k: String, id: String) -> void:
+	_kind = k
+	for b in _kinds.get_children():
+		b.button_pressed = b.get_meta("kind") == k
+	_show_part(id)
+
+
+## Everything in the shop whose name, kind or description matches every word typed.
+static func search(q: String) -> Array:
+	var words := q.to_lower().split(" ", false)
+	var out: Array = []
+	for k in all_kinds():
+		var ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
+		for id in ids:
+			var name := ""
+			var text := ""
+			if k.begins_with("eq:"):
+				var m := Equipment.get_model(id)
+				name = str(m["name"])
+				text = str(m.get("desc", ""))
+			else:
+				var p := PartsDB.get_part(id)
+				name = PartsDB.part_name(id)
+				text = str(p.get("description", "")) + " " + str(p.get("type", ""))
+			var hay := (name + " " + kind_title(k) + " " + text + " " + str(id)).to_lower()
+			var all_in := true
+			for w in words:
+				if not hay.contains(w):
+					all_in = false
+					break
+			if all_in:
+				out.append({"kind": k, "id": id, "name": name, "title": name.to_lower().contains(words[0]) if words.size() > 0 else false})
+	out.sort_custom(func(a, b): return a["title"] and not b["title"])
+	return out
 
 
 func _column(parent: Control, width: float) -> VBoxContainer:
@@ -103,9 +231,10 @@ func _column(parent: Control, width: float) -> VBoxContainer:
 
 func open() -> void:
 	visible = true
-	_status.text = "Free delivery pallet: %s" % ("none, clear one first" if Shed.free_delivery_spot() == "" else "yes")
-	var first: Button = _kinds.get_child(PartsDB.KINDS.find(_kind))
-	first.grab_focus()
+	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.free_delivery_xf() == null else "yes")
+	for b in _kinds.get_children():
+		if b.get_meta("kind") == _kind:
+			b.grab_focus()
 
 
 func close_computer() -> void:
@@ -115,14 +244,33 @@ func close_computer() -> void:
 
 func _show_kind(k: String) -> void:
 	_kind = k
+	if _search and _search.text != "":
+		_search.text = ""
 	for b in _kinds.get_children():
 		b.button_pressed = b.get_meta("kind") == k
 	for c in _variants.get_children():
 		c.queue_free()
-	var ids: Array = PartsDB.by_kind[k]
+	var ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
+	var group := ""
+	if k == "engine":
+		ids = ids.duplicate()
+		var order := ["Single", "Twin", "Parallel twin", "V-twin", "Boxer twin", "Inline triple", "Inline four", "Two-stroke"]
+		ids.sort_custom(func(a, b):
+			var pa := PartsDB.get_part(a)
+			var pb := PartsDB.get_part(b)
+			var ta := order.find(str(pa.get("type", "")))
+			var tb := order.find(str(pb.get("type", "")))
+			return ta < tb if ta != tb else float(pa["displacement"]) < float(pb["displacement"]))
 	for id in ids:
+		if k == "engine" and str(PartsDB.get_part(id).get("type", "")) != group:
+			# Engines come in families: a heading over each layout's sizes.
+			group = str(PartsDB.get_part(id).get("type", ""))
+			_variants.add_child(UITheme.label(group.to_upper(), 14, UITheme.ACCENT))
 		var b := Button.new()
-		b.text = PartsDB.part_name(id)
+		if k.begins_with("eq:"):
+			b.text = str(Equipment.get_model(id)["name"]) + ("  (compact)" if Equipment.get_model(id).get("compact", false) else "")
+		else:
+			b.text = PartsDB.part_name(id) + ("  (light)" if PartsDB.is_lightweight(id) else "")
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
 		b.set_meta("part", id)
@@ -137,11 +285,34 @@ func _show_part(id: String) -> void:
 	for b in _variants.get_children():
 		if b.has_meta("part"):
 			b.button_pressed = b.get_meta("part") == id
+	if _kind.begins_with("eq:"):
+		var m := Equipment.get_model(id)
+		_title.text = str(m["name"])
+		_desc.text = str(m["desc"])
+		var how := "Left in the yard by the drag strip. Press F on it to push it, F again to put it down." if Equipment.is_yard(id) else \
+			"Arrives outside the roller door. Press F on it to carry it in, look at a wall and press F to hang it." \
+			if Equipment.is_wall(id) else ("Arrives outside the roller door. Hold F on it to move it." if m["kind"] == "seat"
+			else "Arrives outside the roller door. Press F on it to push it in and F again to put it down.")
+		_spec.text = Equipment.spec_line(id).replace("  ·  ", "\n") + "\n\n" + how
+		return
 	var p := PartsDB.get_part(id)
 	_title.text = str(p["name"])
 	_desc.text = str(p.get("description", ""))
+	if _kind == "chain_lube":
+		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it, crouch by a bike's chain and hold left mouse to lube it." \
+			+ " A dry chain wastes power and wears out.\nDelivered outside, no box to unpack."
+		return
+	if PartsDB.FLUID_KINDS.has(_kind):
+		var into: String = {"petrol": "the fuel tank", "oil": "the engine", "brake_fluid": "the front and rear brake master cylinders"}[_kind]
+		var how := "Hold it and aim at %s: left mouse pours it in, right mouse drains into it." % into
+		if p.get("empty", false):
+			how = "Hold it and aim at %s, then hold right mouse to drain into it. Tip it out in the scrap bin." % into
+		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\n" + how + "\nDelivered outside, no box to unpack."
+		return
 	var fits := PartsDB.slots_for_kind(_kind).map(func(s): return PartsDB.slot_name(s).to_lower())
 	_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nFits: " + ", ".join(fits)
+	if _kind == "chain":
+		_spec.text += "\n\nCrouch by the bike with the wrench and hold right mouse to set the tension. Lube it with chain lube."
 
 
 func _unhandled_input(event: InputEvent) -> void:

@@ -1,0 +1,9 @@
+[
+	{"name": "Groove Salad", "genre": "Ambient and downtempo", "url": "https://ice1.somafm.com/groovesalad-128-mp3"},
+	{"name": "Left Coast 70s", "genre": "Seventies rock", "url": "https://ice1.somafm.com/seventies-128-mp3"},
+	{"name": "Underground 80s", "genre": "Eighties new wave", "url": "https://ice1.somafm.com/u80s-128-mp3"},
+	{"name": "Indie Pop Rocks", "genre": "Indie pop", "url": "https://ice1.somafm.com/indiepop-128-mp3"},
+	{"name": "Boot Liquor", "genre": "Americana", "url": "https://ice1.somafm.com/bootliquor-128-mp3"},
+	{"name": "Metal Detector", "genre": "Heavy metal", "url": "https://ice1.somafm.com/metal-128-mp3"},
+	{"name": "Radio Paradise", "genre": "Eclectic rock", "url": "https://stream.radioparadise.com/mp3-128"}
+]

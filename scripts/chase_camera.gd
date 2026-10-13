@@ -1,6 +1,7 @@
 class_name ChaseCamera
 extends Camera3D
-## Follows the bike: a smooth chase view, a helmet view, and a slow orbit for the garage and menu.
+## Follows the bike: a smooth chase view, a first-person view from the rider's helmet looking
+## down over the bars and clocks, and a slow orbit for the title screen.
 
 enum Mode { CHASE, HELMET, ORBIT }
 
@@ -22,8 +23,18 @@ func _ready() -> void:
 
 
 func cycle_mode() -> void:
-	mode = Mode.HELMET if mode == Mode.CHASE else Mode.CHASE
+	set_mode(Mode.HELMET if mode == Mode.CHASE else Mode.CHASE)
+
+
+func set_mode(new_mode: Mode) -> void:
+	mode = new_mode
 	_initialized = false
+	_set_helmet_hidden(mode == Mode.HELMET)
+
+
+## The first-person camera sits inside the rider's helmet, so it leaves the helmet out.
+func _set_helmet_hidden(hidden: bool) -> void:
+	set_cull_mask_value(BikeModel.HELMET_LAYER, not hidden)
 
 
 func snap() -> void:
@@ -74,14 +85,16 @@ func _chase(delta: float) -> void:
 func _helmet() -> void:
 	if target == null:
 		return
-	var seat := 0.85
-	if target is Bike and target.build:
-		seat = target.build.seat_height - target.build.rear_radius
-	global_transform = target.global_transform.translated_local(Vector3(0.0, seat + 0.72, -0.08))
+	if target is Bike and target.model:
+		var model: BikeModel = target.model
+		global_transform = model.global_transform * model.eye_transform()
+	else:
+		global_transform = target.global_transform.translated_local(Vector3(0.0, 1.5, 0.0))
 	fov = 80.0
 
 
 func _orbit(delta: float) -> void:
+	_set_helmet_hidden(false)
 	_orbit_angle += delta * 0.25
 	var pos := orbit_center + Vector3(sin(_orbit_angle) * orbit_radius, orbit_height, cos(_orbit_angle) * orbit_radius)
 	global_position = pos

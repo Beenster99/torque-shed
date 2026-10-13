@@ -1,0 +1,372 @@
+class_name Daylight
+extends Node
+## Time of day: moves the sun across the sky, warms it at dawn and dusk, hands over to a dim
+## blue moon at night, and darkens the sky (with stars), fog and ambient light to match.
+## The World makes one; find it in group "daylight" or through Daylight.current, or just read
+## World.time_of_day() and World.darkness().
+##
+## Solo or hosting, the Settings drive it. On a co-op client the host's clock wins: the host
+## broadcasts its time every second through Net and clients ease toward it.
+
+## Emitted when darkness() moves by a hundredth or more (and on any jump in time).
+signal darkness_changed(value: float)
+
+const DAY_LENGTHS := [20, 60, 120, 180, 240, 360]   # minutes of real time per 24 h, for the settings menu (up to 6 hours)
+const SYNC_INTERVAL := 1.0
+const TILT := 0.61                      # how far south the sun's path leans (35 degrees)
+const SUN_ENERGY := 1.25
+const MOON_ENERGY := 0.16
+## Lights in this group with a "night_energy" meta are switched on at dusk at that energy.
+const NIGHT_LIGHTS := "night_lights"
+
+static var current: Daylight
+
+var hours := 9.0
+## 0 in full daylight .. 1 at night.
+var dark := 0.0
+## Unit vector from the ground toward the sun (below the horizon at night).
+var sun_dir := Vector3.UP
+## 0 by day, ramps to 1 as dusk falls: how strongly lamps should be on.
+var lamps := 0.0
+
+var _env: Environment
+var _sun: DirectionalLight3D
+var _moon: DirectionalLight3D
+var _sky_mat: ShaderMaterial
+var _sky_hours := -100.0
+var _signalled_dark := -1.0
+var _host_hours := 0.0
+var _host_rate := 0.0
+var _synced := false
+var _was_client := false
+var _send_timer := 0.0
+
+
+static func time_of_day() -> float:
+	return current.hours if current else 12.0
+
+
+static func darkness() -> float:
+	return current.dark if current else 0.0
+
+
+## "18:45" for menus.
+static func clock_text(h: float) -> String:
+	var mins := int(roundf(wrapf(h, 0.0, 24.0) * 60.0)) % (24 * 60)
+	return "%02d:%02d" % [mins / 60, mins % 60]
+
+
+## `env` gets a new sky; `sun` is moved and coloured every frame.
+func setup(env: Environment, sun: DirectionalLight3D) -> void:
+	_env = env
+	_sun = sun
+	_sky_mat = ShaderMaterial.new()
+	_sky_mat.shader = _sky_shader()
+	_sky_mat.set_shader_parameter("cloud_noise", _cloud_noise())
+	if _env.sky == null:
+		_env.sky = Sky.new()
+	_env.sky.sky_material = _sky_mat
+	# Sky uniforms change slowly, so spread the reflection and ambient refresh over frames.
+	_env.sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
+	_env.sky.radiance_size = Sky.RADIANCE_SIZE_128
+	_moon = DirectionalLight3D.new()
+	_moon.name = "Moon"
+	_moon.light_color = Color(0.62, 0.72, 1.0)
+	_moon.light_energy = 0.0
+	_moon.shadow_enabled = true
+	_moon.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	_moon.directional_shadow_max_distance = 120.0
+	_moon.light_angular_distance = 0.5
+	_moon.light_volumetric_fog_energy = 0.6
+	_moon.visible = false
+	add_child(_moon)
+	hours = wrapf(Settings.time_of_day, 0.0, 24.0)
+	_apply(true)
+
+
+func _ready() -> void:
+	add_to_group("daylight")
+	current = self
+	Net.time_received.connect(_on_host_time)
+
+
+func _exit_tree() -> void:
+	if current == self:
+		current = null
+
+
+## Hours of game time that pass per real second (0 with the cycle switched off).
+static func local_rate() -> float:
+	if not Settings.day_night_cycle:
+		return 0.0
+	return 24.0 / (maxf(float(Settings.day_length), 1.0) * 60.0)
+
+
+## True on a co-op client, where the host sets the time.
+static func set_by_host() -> bool:
+	return Net.is_online() and not Net.is_host()
+
+
+## Jump to `h` hours (solo or host only; ignored on a client).
+func set_time(h: float) -> void:
+	if set_by_host():
+		return
+	hours = wrapf(h, 0.0, 24.0)
+	Settings.time_of_day = hours
+	_send_timer = 0.0
+	_apply(true)
+
+
+func _process(delta: float) -> void:
+	if _env == null:
+		return
+	var client := set_by_host()
+	if client and _synced:
+		_host_hours = wrapf(_host_hours + _host_rate * delta, 0.0, 24.0)
+		var diff := wrapf(_host_hours - hours, -12.0, 12.0)
+		if absf(diff) > 0.5:
+			hours = _host_hours
+			_apply(true)
+		else:
+			hours = wrapf(hours + _host_rate * delta + diff * minf(1.0, delta * 2.0), 0.0, 24.0)
+	else:
+		if _was_client and not client:
+			# Left a co-op session: back to our own clock.
+			hours = wrapf(Settings.time_of_day, 0.0, 24.0)
+			_synced = false
+			_apply(true)
+		hours = wrapf(hours + local_rate() * delta, 0.0, 24.0)
+		if not client:
+			Settings.time_of_day = hours
+			if Net.is_host():
+				_send_timer -= delta
+				if _send_timer <= 0.0:
+					_send_timer = SYNC_INTERVAL
+					Net.send_time(hours, local_rate())
+	_was_client = client
+	_apply(false)
+
+
+func _on_host_time(h: float, rate: float) -> void:
+	if not set_by_host():
+		return
+	_host_hours = wrapf(h, 0.0, 24.0)
+	_host_rate = clampf(rate, 0.0, 1.0)
+	if not _synced:
+		_synced = true
+		hours = _host_hours
+		_apply(true)
+
+
+# ---------------------------------------------------------------------------- the look
+
+## Where the sun is at `h` hours: rises in the east (+X) at 6, highest in the south (+Z) at
+## noon, sets in the west at 18.
+static func sun_direction(h: float) -> Vector3:
+	var a := (h - 12.0) / 24.0 * TAU
+	return Vector3(-sin(a), cos(a) * cos(TILT), cos(a) * sin(TILT)).normalized()
+
+
+func _apply(force: bool) -> void:
+	sun_dir = sun_direction(hours)
+	var s := sun_dir.y
+	dark = 1.0 - smoothstep(-0.24, 0.06, s)
+	lamps = smoothstep(0.25, 0.6, dark)
+	var light_day := clampf((s + 0.06) / 0.3, 0.0, 1.0)
+	var warm := 1.0 - smoothstep(0.02, 0.42, s)
+	var twilight := exp(-pow(s / 0.13, 2.0))
+
+	# Sun: golden and low, then gone.
+	_sun.visible = s > -0.06
+	if _sun.visible:
+		_sun.basis = Basis.looking_at(-sun_dir, Vector3.UP if absf(s) < 0.99 else Vector3.FORWARD)
+		_sun.light_color = Color(1.0, 0.95, 0.86).lerp(Color(1.0, 0.52, 0.26), warm)
+		_sun.light_energy = SUN_ENERGY * pow(light_day, 0.55)
+	# Moon: roughly opposite the sun, cool and dim, only once the sun is down.
+	var moon_dir := sun_direction(hours + 12.0).rotated(Vector3.UP, 0.35)
+	_moon.visible = s <= -0.06 and moon_dir.y > -0.02
+	if _moon.visible:
+		_moon.basis = Basis.looking_at(-moon_dir, Vector3.UP if absf(moon_dir.y) < 0.99 else Vector3.FORWARD)
+		_moon.light_energy = MOON_ENERGY * (1.0 - smoothstep(-0.2, -0.06, s)) * smoothstep(-0.02, 0.2, moon_dir.y)
+
+	# Ambient and fog: night is dark blue, not black, so the yard stays readable.
+	_env.ambient_light_sky_contribution = lerpf(1.0, 0.25, dark)
+	_env.ambient_light_color = Color(0.32, 0.4, 0.62).lerp(Color(0.75, 0.55, 0.5), twilight * (1.0 - dark))
+	_env.ambient_light_energy = lerpf(0.9, 0.22, dark) + 0.35 * twilight * (1.0 - dark)
+	var fog := Color(0.7, 0.77, 0.86).lerp(Color(0.85, 0.58, 0.44), twilight * 0.6).lerp(Color(0.03, 0.04, 0.07), dark)
+	_env.fog_light_color = fog
+	_env.fog_light_energy = 1.0
+	_env.fog_sun_scatter = 0.25 * twilight
+	_env.volumetric_fog_albedo = Color(0.9, 0.92, 0.95).lerp(Color(0.5, 0.55, 0.7), dark)
+	_env.tonemap_exposure = lerpf(1.0, 1.35, dark)
+	_env.glow_intensity = lerpf(0.4, 0.75, dark)
+	_env.glow_bloom = lerpf(0.05, 0.02, dark)
+
+	if force or absf(wrapf(hours - _sky_hours, -12.0, 12.0)) > 0.01:
+		_sky_hours = hours
+		_update_sky(s, moon_dir, warm, twilight)
+	if force or absf(dark - _signalled_dark) >= 0.01:
+		_signalled_dark = dark
+		_update_lamps()
+		darkness_changed.emit(dark)
+
+
+func _update_sky(s: float, moon_dir: Vector3, warm: float, twilight: float) -> void:
+	var day_top := Color(0.22, 0.42, 0.75)
+	var day_horizon := Color(0.68, 0.76, 0.86)
+	var night_top := Color(0.01, 0.014, 0.035)
+	var night_horizon := Color(0.035, 0.045, 0.085)
+	var top := day_top.lerp(night_top, dark).lerp(Color(0.2, 0.22, 0.42), twilight * 0.35)
+	var horizon := day_horizon.lerp(night_horizon, dark).lerp(Color(0.95, 0.56, 0.38), twilight * 0.55)
+	var ground := Color(0.25, 0.27, 0.25).lerp(Color(0.012, 0.014, 0.02), dark)
+	_sky_mat.set_shader_parameter("top_color", top)
+	_sky_mat.set_shader_parameter("horizon_color", horizon)
+	_sky_mat.set_shader_parameter("ground_color", ground)
+	_sky_mat.set_shader_parameter("sun_dir", sun_dir)
+	_sky_mat.set_shader_parameter("sun_color", Color(1.0, 0.93, 0.8).lerp(Color(1.0, 0.5, 0.2), warm))
+	_sky_mat.set_shader_parameter("sun_strength", smoothstep(-0.04, 0.02, s))
+	_sky_mat.set_shader_parameter("glow_color", Color(1.0, 0.45, 0.16))
+	_sky_mat.set_shader_parameter("glow_strength", twilight * 1.4)
+	_sky_mat.set_shader_parameter("moon_dir", moon_dir)
+	_sky_mat.set_shader_parameter("moon_strength", smoothstep(0.2, 0.8, dark))
+	_sky_mat.set_shader_parameter("star_strength", smoothstep(0.55, 0.95, dark))
+	var cloud := Color(1.0, 1.0, 1.0).lerp(Color(1.0, 0.7, 0.55), twilight * 0.8).lerp(Color(0.05, 0.06, 0.09), dark)
+	_sky_mat.set_shader_parameter("cloud_color", cloud)
+	_sky_mat.set_shader_parameter("cloud_shadow", Color(0.62, 0.68, 0.78).lerp(Color(0.5, 0.32, 0.38), twilight * 0.8).lerp(Color(0.02, 0.025, 0.04), dark))
+
+
+func _update_lamps() -> void:
+	if not is_inside_tree():
+		return
+	for n in get_tree().get_nodes_in_group(NIGHT_LIGHTS):
+		if n is Light3D and n.has_meta("night_energy"):
+			var full: float = n.get_meta("night_energy")
+			n.light_energy = full * lamps
+			n.visible = lamps > 0.01
+		elif n is GeometryInstance3D and n.has_meta("night_emission"):
+			var mat := (n as GeometryInstance3D).material_override as StandardMaterial3D
+			if mat:
+				var e: float = n.get_meta("night_emission")
+				mat.emission_energy_multiplier = lerpf(0.05, e, lamps)
+
+
+func _cloud_noise() -> NoiseTexture2D:
+	var tex := NoiseTexture2D.new()
+	tex.width = 512
+	tex.height = 512
+	tex.seamless = true
+	tex.generate_mipmaps = true
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.frequency = 0.008
+	n.fractal_octaves = 5
+	n.fractal_gain = 0.5
+	n.seed = 7
+	tex.noise = n
+	return tex
+
+
+func _sky_shader() -> Shader:
+	var sh := Shader.new()
+	sh.code = SKY_SHADER
+	return sh
+
+
+const SKY_SHADER := """
+shader_type sky;
+
+uniform vec3 top_color : source_color = vec3(0.22, 0.42, 0.75);
+uniform vec3 horizon_color : source_color = vec3(0.68, 0.76, 0.86);
+uniform vec3 ground_color : source_color = vec3(0.25, 0.27, 0.25);
+uniform vec3 sun_dir = vec3(0.0, 0.7, 0.7);
+uniform vec3 sun_color : source_color = vec3(1.0, 0.93, 0.8);
+uniform float sun_strength = 1.0;
+uniform vec3 glow_color : source_color = vec3(1.0, 0.45, 0.16);
+uniform float glow_strength = 0.0;
+uniform vec3 moon_dir = vec3(0.0, 0.7, -0.7);
+uniform float moon_strength = 0.0;
+uniform float star_strength = 0.0;
+uniform vec3 cloud_color : source_color = vec3(1.0);
+uniform vec3 cloud_shadow : source_color = vec3(0.62, 0.68, 0.78);
+uniform sampler2D cloud_noise : repeat_enable, filter_linear_mipmap;
+
+float cloud_n(vec2 uv) {
+	return texture(cloud_noise, uv).r * 0.65 + texture(cloud_noise, uv * 2.9 + 0.37).r * 0.35;
+}
+
+float hash13(vec3 p) {
+	p = fract(p * 0.1031);
+	p += dot(p, p.zyx + 31.32);
+	return fract((p.x + p.y) * p.z);
+}
+
+vec3 star_layer(vec3 d, float scale, float density, float seed) {
+	vec3 p = d * scale;
+	vec3 c = floor(p);
+	float h = hash13(c + seed);
+	if (h < 1.0 - density) {
+		return vec3(0.0);
+	}
+	vec3 jitter = vec3(hash13(c + 3.1 + seed), hash13(c + 7.7 + seed), hash13(c + 1.3 + seed)) - 0.5;
+	float dist = length(fract(p) - 0.5 - jitter * 0.5);
+	float bright = pow(hash13(c + 11.0 + seed), 4.0);
+	vec3 tint = mix(vec3(0.7, 0.8, 1.0), vec3(1.0, 0.86, 0.7), hash13(c + 5.0 + seed));
+	return tint * (1.0 - smoothstep(0.0, 0.32, dist)) * (0.25 + 3.0 * bright);
+}
+
+void sky() {
+	vec3 d = EYEDIR;
+	float up = d.y;
+	float sd = dot(d, normalize(sun_dir));
+	vec3 col;
+	if (up >= 0.0) {
+		col = mix(top_color, horizon_color, exp(-up * 5.0));
+	} else {
+		col = mix(horizon_color * 0.85, ground_color, smoothstep(0.0, 0.12, -up));
+	}
+	// Dusk: a warm glow around the sun hugging the horizon, a wider haze across the sky.
+	float horizon_hug = exp(-abs(up) * 7.0);
+	col += glow_color * glow_strength * (pow(max(sd, 0.0), 6.0) * horizon_hug * 1.2 + pow(max(sd, 0.0), 2.0) * horizon_hug * 0.25);
+	// Daytime halo around the sun.
+	col += sun_color * pow(max(sd, 0.0), 120.0) * 0.6 * sun_strength;
+	if (up > -0.02) {
+		// Stars, fading out toward the horizon haze (not baked into reflections).
+		if (!AT_CUBEMAP_PASS && star_strength > 0.0) {
+			vec3 stars = star_layer(d, 230.0, 0.035, 0.0) + star_layer(d, 520.0, 0.03, 17.0) * 0.5;
+			// A faint band of extra stars across the sky, like the milky way.
+			float band = exp(-pow(dot(d, normalize(vec3(0.45, 0.25, 0.86))) * 3.5, 2.0));
+			stars += star_layer(d, 700.0, 0.08 * band, 33.0) * 0.4;
+			col += stars * star_strength * smoothstep(0.0, 0.25, up);
+			col += vec3(0.03, 0.035, 0.06) * band * star_strength * smoothstep(0.0, 0.3, up);
+		}
+		// Moon: a pale disc with soft mottling, and a halo.
+		vec3 md = normalize(moon_dir);
+		float mcos = dot(d, md);
+		if (moon_strength > 0.0) {
+			float disc = smoothstep(0.99985, 0.99992, mcos);
+			vec3 tangent = normalize(cross(md, vec3(0.0, 1.0, 0.0)));
+			vec3 bitangent = cross(tangent, md);
+			vec2 muv = vec2(dot(d, tangent), dot(d, bitangent)) * 80.0;
+			float mottle = texture(cloud_noise, muv + 0.5).r;
+			col += vec3(0.85, 0.88, 0.95) * disc * (1.6 + mottle * 1.2) * moon_strength;
+			col += vec3(0.25, 0.3, 0.45) * pow(max(mcos, 0.0), 400.0) * 0.5 * moon_strength;
+			col += vec3(0.05, 0.06, 0.1) * pow(max(mcos, 0.0), 12.0) * moon_strength;
+		}
+		// Sun disc.
+		float disc = smoothstep(0.99990, 0.99996, sd);
+		col += sun_color * disc * 30.0 * sun_strength;
+		// Clouds: two octaves of noise projected onto a flat layer overhead.
+		if (up > 0.0) {
+			vec2 uv = d.xz / (up + 0.12) * 0.11;
+			float n = cloud_n(uv);
+			float dens = smoothstep(0.52, 0.78, n) * smoothstep(0.0, 0.18, up);
+			float lit = cloud_n(uv + normalize(sun_dir.xz + vec2(0.001)) * 0.02);
+			vec3 c = mix(cloud_color, cloud_shadow, clamp((lit - n) * 6.0 + 0.45, 0.0, 1.0));
+			c += glow_color * glow_strength * pow(max(sd, 0.0), 4.0) * 0.8;
+			c += sun_color * pow(max(sd, 0.0), 30.0) * 0.5 * sun_strength;
+			col = mix(col, c, dens * 0.9);
+		}
+	}
+	COLOR = col;
+}
+"""

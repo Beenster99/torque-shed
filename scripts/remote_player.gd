@@ -17,6 +17,7 @@ var _hand: Node3D
 var _label: Label3D
 var _snapshots: Array = []
 var _hand_sig := ""
+var _work_sound: AudioStreamPlayer3D
 
 
 func setup(peer_id: int, rider_name: String, paint: Color) -> void:
@@ -51,6 +52,7 @@ func setup(peer_id: int, rider_name: String, paint: Color) -> void:
 	_hand = Node3D.new()
 	_hand.position = Vector3(0.28, 1.0, -0.35)
 	_figure.add_child(_hand)
+	_work_sound = Sfx.make_loop_player(_hand)
 	_label = Label3D.new()
 	_label.text = player_name
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -113,7 +115,7 @@ func _start_riding(bike_id: int) -> void:
 	riding_bike = bike_id
 	bike = RemoteBike.new()
 	add_child(bike)
-	bike.setup(player_name, Shed.build_of(bike_id), Shed.bikes[bike_id]["paint"])
+	bike.setup(player_name, Shed.build_of(bike_id), Shed.bikes[bike_id]["paint"], color)
 	_figure.visible = false
 	_figure.process_mode = Node.PROCESS_MODE_DISABLED
 	_snapshots.clear()
@@ -147,12 +149,21 @@ func _physics_process(_delta: float) -> void:
 	_figure.global_transform = Transform3D(Basis(Vector3.UP, lerp_angle(sa[4], sb[4], f)), pos)
 	_head.rotation.x = lerpf(sa[5], sb[5], f) * 0.6
 	_hand.rotation.x = _head.rotation.x
+	# Crouching: squash the figure down to about two thirds of its height.
+	var low := sb.size() > 6 and sb[6] > 0.5
+	_figure.scale.y = move_toward(_figure.scale.y, 0.62 if low else 1.0, 0.08)
 
 
 func _process(_delta: float) -> void:
 	# What's in their hand: a part they carry, else their tool.
 	var held := Shed.held_by(peer)
 	var tool := str(Shed.crew.get(peer, {}).get("tool", "hands"))
+	# You hear their tools while they work.
+	var working := riding_bike == 0 and str(Shed.crew.get(peer, {}).get("activity", "")) != ""
+	Sfx.set_loop(_work_sound, Sfx.TOOL_LOOPS.get(tool, "") if working else "")
+	var jet := _hand.get_node_or_null("Jet") as CPUParticles3D
+	if jet:
+		jet.emitting = working and tool == "lance"
 	var sig := "%d|%s" % [held, tool]
 	if sig == _hand_sig:
 		return
@@ -167,7 +178,17 @@ func _process(_delta: float) -> void:
 		_hand.add_child(part)
 	else:
 		_hand.add_child(Walker.make_tool_mesh(tool))
+		if tool == "lance":
+			var spray := Walker.make_jet()
+			spray.name = "Jet"
+			spray.position = Vector3(0.0, 0.0, -0.6)
+			_hand.add_child(spray)
 
 
 func world_position() -> Vector3:
 	return bike.global_position if bike else _figure.global_position
+
+
+## Where they are and which way they face: their bike's, while they ride.
+func world_transform() -> Transform3D:
+	return bike.global_transform if bike else _figure.global_transform
