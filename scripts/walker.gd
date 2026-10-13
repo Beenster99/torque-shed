@@ -259,7 +259,11 @@ func _make_plan() -> Dictionary:
 						a["a"] = "install"
 						p = {"action": a, "time": 1.2, "verb": "fit the " + held_name}
 					"spot":
-						if Shed.item_at_spot(str(target["spot"])) != 0 and target.has("drop"):
+						var on_spot := Shed.item_at_spot(str(target["spot"]))
+						if Shed.is_engine(on_spot) and not Shed.is_engine(held):
+							# Building an engine back up: fit the part to the block on the stand.
+							p = {"action": {"a": "install", "engine": on_spot, "slot": ""}, "time": 1.2, "verb": "fit the " + held_name}
+						elif on_spot != 0 and target.has("drop"):
 							p = {"action": {"a": "drop", "xf": target["drop"]}, "time": 0.25, "verb": "put it down here"}
 						else:
 							p = {"action": {"a": "place", "spot": target["spot"]}, "time": 0.25, "verb": "put it down"}
@@ -343,6 +347,12 @@ func _describe() -> String:
 				lines.append("%s  ·  %s" % [where, PartsDB.KIND_NAMES[it["kind"]]])
 				lines.append(PartsDB.spec_line(it["part"]))
 				lines.append(Shed.condition_text(it))
+				if Shed.is_engine(item_id) and spot == "engine_stand":
+					var missing := Shed.engine_missing(item_id)
+					lines.append("Engine complete." if missing.is_empty() else "Engine needs: %s" % ", ".join(missing.map(func(m): return PartsDB.slot_name(m).to_lower())))
+				var held := Shed.held_by(Shed.me())
+				if held != 0 and tool == "hands" and Shed.is_engine(item_id) and not Shed.is_engine(held):
+					lines.append(_preview(held, {"engine": item_id, "slot": ""}))
 				if spot == "washer" and float(it["dirt"]) > 0.0:
 					lines.append("Washing... %d%% dirt left" % roundi(float(it["dirt"]) * 100.0))
 			else:
@@ -376,8 +386,8 @@ func _describe() -> String:
 
 
 ## How fitting `item_id` at the target would change the numbers.
-func _preview(item_id: int) -> String:
-	var action := _where()
+func _preview(item_id: int, at := {}) -> String:
+	var action := _where() if at.is_empty() else at
 	var where := Shed.install_slot(action, item_id)
 	if where.has("error"):
 		return where["error"]
@@ -467,7 +477,7 @@ func _activity_text() -> String:
 	if a["a"] in ["clean", "repair", "paint"] and what == "":
 		what = "the " + Shed.item_title(int(a["item"]))
 	if a["a"] == "install":
-		what = "the engine" if int(target.get("engine", 0)) != 0 else str(Shed.bikes[target["bike"]]["name"])
+		what = "the engine" if int(a.get("engine", 0)) != 0 else str(Shed.bikes[int(a.get("bike", 0))]["name"])
 	return ("%s %s" % [verb, what]).strip_edges()
 
 

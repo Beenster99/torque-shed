@@ -631,8 +631,21 @@ func _test_session() -> void:
 	check(main.walker.target.get("item", 0) == plugs, "the crosshair finds the part on the floor (%s)" % str(main.walker.target))
 	await _hold_act(main)
 	check(Shed.held_by(Shed.me()) == plugs, "the part is picked back up off the floor")
-	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(-1.0, 0.0, 2.0))})
-	main.walker._look(0.0, 0.9)
+	# Build the stripped engine on the stand back up: aim at the block and fit the plugs.
+	var block: int = Shed.item_at_spot("engine_stand")
+	var stand_at: Vector3 = Workshop.spot_transform("engine_stand").origin
+	main.walker.place(Transform3D(Basis(), Vector3(stand_at.x - 1.4, 0.0, stand_at.z)))
+	main.walker.rotation.y = -PI * 0.5
+	main.walker._pitch = 0.0
+	main.walker._look(0.0, -atan2(Walker.EYE - stand_at.y - 0.1, 1.4))
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.walker.plan.get("action", {}).get("a", "") == "install", "holding plugs at the engine on the stand offers to fit them (%s)" % str(main.walker.plan))
+	await _hold_act(main)
+	check(Shed.engine_item(block, "spark_plugs") == plugs, "the plugs go back on the engine on the stand")
+	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 1.0)))
+	main.walker._pitch = 0.0
+	main.walker._look(0.0, 0.0)
 	# Aim at it and press a real F, so the press can't also reach the get-off handler.
 	var faithful := _bike_named("Old Faithful")
 	await _aim_at(main, faithful, "tank")

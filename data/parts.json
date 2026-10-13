@@ -386,8 +386,8 @@
 			"style": "road",
 			"grip": {
 				"tarmac": 0.95,
-				"dirt": 0.6,
-				"grass": 0.5
+				"dirt": 0.74,
+				"grass": 0.64
 			},
 			"color": [
 				0.05,
@@ -406,8 +406,8 @@
 			"style": "road",
 			"grip": {
 				"tarmac": 1.1,
-				"dirt": 0.6,
-				"grass": 0.48
+				"dirt": 0.74,
+				"grass": 0.62
 			},
 			"color": [
 				0.05,
@@ -426,8 +426,8 @@
 			"style": "road",
 			"grip": {
 				"tarmac": 1.2,
-				"dirt": 0.58,
-				"grass": 0.45
+				"dirt": 0.72,
+				"grass": 0.6
 			},
 			"color": [
 				0.05,
@@ -446,8 +446,8 @@
 			"style": "offroad",
 			"grip": {
 				"tarmac": 1.0,
-				"dirt": 0.85,
-				"grass": 0.72
+				"dirt": 0.92,
+				"grass": 0.82
 			},
 			"color": [
 				0.05,
@@ -466,8 +466,8 @@
 			"style": "offroad",
 			"grip": {
 				"tarmac": 0.88,
-				"dirt": 0.96,
-				"grass": 0.84
+				"dirt": 1.0,
+				"grass": 0.9
 			},
 			"color": [
 				0.05,
@@ -486,8 +486,8 @@
 			"style": "slick",
 			"grip": {
 				"tarmac": 1.32,
-				"dirt": 0.45,
-				"grass": 0.35
+				"dirt": 0.56,
+				"grass": 0.46
 			},
 			"color": [
 				0.05,

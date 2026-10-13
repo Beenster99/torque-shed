@@ -375,7 +375,9 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var total := sqrt(fx * fx + fy * fy)
 	var slip_ratio := 0.0
 	if total > f_max and total > 0.0:
-		var limit := f_max * SLIDE_FACTOR if total > f_max * 1.25 else f_max
+		# Tarmac lets go once the tyre slides; loose dirt and grass keep biting as it digs in.
+		var slide := SLIDE_FACTOR if surf == "tarmac" else 0.95
+		var limit := f_max * slide if total > f_max * 1.25 else f_max
 		var scale := limit / total
 		fx *= scale
 		fy *= scale
