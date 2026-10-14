@@ -701,7 +701,7 @@ func respec() -> void:
 func time_mult(peer: int, tool: String, action: Dictionary) -> float:
 	var a := str(action.get("a", ""))
 	var m := 1.0 / (1.0 + STAGE_SPEED * tool_stage(peer, tool))
-	if a in ["install", "remove", "take", "place", "drop", "pour", "drain", "tip", "bin", "start_build"]:
+	if a in ["install", "remove", "take", "place", "drop", "set_down", "pour", "drain", "tip", "bin", "start_build"]:
 		m *= 1.0 - 0.1 * skill_rank(peer, "quick_hands")
 	if a in ["bolt", "unbolt", "adjust_chain"]:
 		m *= 1.0 - 0.1 * skill_rank(peer, "torque_feel")

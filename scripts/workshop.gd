@@ -114,10 +114,7 @@ func build() -> void:
 	_build_booth_room()
 	_build_lights()
 	_build_door_and_switches()
-	var board := Whiteboard.new()
-	board.position = Whiteboard.MOUNT
-	board.rotation.y = Whiteboard.FACING
-	add_child(board)
+	# The whiteboard is drawn with the equipment, so it can be hung on any wall (EquipmentView).
 	dyno_room = DynoRoom.new()
 	add_child(dyno_room)
 	dyno_room.build(self)
@@ -165,7 +162,7 @@ func sync_state() -> void:
 			_spot_sigs.erase(spot)
 	for spot in spots:
 		var item_id := Shed.item_at_spot(spot)
-		var sig := "" if item_id == 0 else _item_signature(item_id)
+		var sig := "" if item_id == 0 else _item_signature(item_id) + str(Shed.items[item_id].get("place", ""))
 		if _spot_sigs.get(spot, "") == sig:
 			continue
 		_spot_sigs[spot] = sig
@@ -175,8 +172,11 @@ func sync_state() -> void:
 		if item_id != 0:
 			var display := BikeModel.item_display(item_id)
 			var f := Shed.furniture_of_spot(spot)
+			if Shed.surface_of_spot(spot) != "":
+				# Put down anywhere on a bench, washer or repair machine: a box round it to aim at.
+				_pick_box(display, {"spot": spot})
 			if f.is_empty():
-				display.transform = spot_transform(spot)
+				display.transform = Shed.spot_transform(spot)
 				add_child(display)
 			elif Shed.spot_role(spot) == "changer":
 				# A wheel lies flat on the tyre changer's turntable and turns with it.
@@ -391,23 +391,29 @@ func _sync_floor() -> void:
 		var display := BikeModel.item_display(id)
 		display.transform = xf
 		add_child(display)
-		var size: Vector3 = display.get_meta("size", Vector3.ONE * 0.3)
-		size = size.max(Vector3(0.12, 0.08, 0.12))
-		var body := StaticBody3D.new()
-		body.collision_layer = INTERACT_LAYER
-		body.collision_mask = 0
-		body.set_meta("item", id)
-		body.position = Vector3(0.0, size.y * 0.5, 0.0)
-		var shape := BoxShape3D.new()
-		shape.size = size
-		var cs := CollisionShape3D.new()
-		cs.shape = shape
-		body.add_child(cs)
-		display.add_child(body)
+		_pick_box(display, {"item": id})
 		if display.has_meta("model") and not Shed.items[id].get("boxed", false):
 			# Fitted shapes as well as the box round it, so spray lands on the part itself.
 			(display.get_meta("model") as BikeModel).build_pickers({"item": id}, {}, BikeModel.SPRAY_LAYER)
 		_floor_nodes[id] = display
+
+
+## A box round a loose part's display to aim at it by, carrying `meta` ({item} or {spot}).
+func _pick_box(display: Node3D, meta: Dictionary) -> void:
+	var size: Vector3 = display.get_meta("size", Vector3.ONE * 0.3)
+	size = size.max(Vector3(0.12, 0.08, 0.12))
+	var body := StaticBody3D.new()
+	body.collision_layer = INTERACT_LAYER
+	body.collision_mask = 0
+	for key in meta:
+		body.set_meta(key, meta[key])
+	body.position = Vector3(0.0, size.y * 0.5, 0.0)
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	display.add_child(body)
 
 
 ## The model a part target is drawn on: a parked bike, or the engine on the stand.
@@ -999,10 +1005,8 @@ func _build_bench() -> void:
 	_deco(self, Vector3(x, 0.92, mid), Vector3(0.95, 0.06, length + 0.05), _mats["wood"])
 	for i in 3:
 		_deco(self, Vector3(x + 0.46, 0.25 + i * 0.25, mid), Vector3(0.02, 0.2, length - 0.2), _mats["red"])
-	for i in 4:
-		var spot := "bench_%d" % i
-		var xf := spot_transform(spot)
-		_target(xf.origin + Vector3(0.0, 0.25, 0.0), Vector3(0.95, 0.5, 1.15), {"spot": spot})
+	# Parts go down anywhere along the top (see Shed.surface); each one has its own box to pick it up by.
+	_target(Vector3(x, spot_transform("bench_0").origin.y + 0.015, mid), Vector3(0.95, 0.03, length), {"top": "bench"})
 	_poster("WORKBENCH", Vector3(CENTER.x - HALF.x + 0.012, 1.32, spot_transform("bench_3").origin.z + 0.2), PI * 0.5)
 
 

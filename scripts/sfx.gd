@@ -14,7 +14,7 @@ const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "
 const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet", "gun": "spray"}
 ## The one-shot when a job is done.
 const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "install": "clunk", "take": "pickup",
-	"place": "clunk", "drop": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink",
+	"place": "clunk", "drop": "clunk", "set_down": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink",
 	"tyre_remove": "pickup"}
 
 var _cache := {}

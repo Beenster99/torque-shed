@@ -14,6 +14,7 @@ var units := "metric"     # or "imperial"
 var day_night_cycle := true
 var day_length := 120      # real minutes per 24 h game day
 var time_of_day := 9.0     # hours; kept up to date while playing so the clock carries on next time
+var snap_placement := true # equipment you carry snaps square and flush to walls and corners
 
 
 ## Every action a player can rebind, in the order the Key bindings tab lists them:
@@ -84,6 +85,7 @@ func load_settings() -> void:
 				var codes = cfg.get_value("bindings", action, [])
 				if _defaults.has(action) and (codes is Array or codes is PackedStringArray):
 					_set_events(action, codes)
+		snap_placement = bool(cfg.get_value("building", "snap", snap_placement))
 
 
 func save_settings() -> void:
@@ -104,6 +106,7 @@ func save_settings() -> void:
 		var codes := binding_codes(a[0])
 		if codes != _codes_of(_defaults.get(a[0], [])):
 			cfg.set_value("bindings", a[0], codes)
+	cfg.set_value("building", "snap", snap_placement)
 	cfg.save(PATH)
 
 
