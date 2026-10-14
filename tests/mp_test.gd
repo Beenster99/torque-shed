@@ -32,6 +32,8 @@ func _ready() -> void:
 	var shed_ok := false
 	var start := Vector3.ZERO
 	var span := AABB()
+	var own := AABB()   # how far this side's own walker went (for the diagnostic)
+	var own_seen := false
 	var asked := false
 	var xp_start := -1
 	var xp_ok := false
@@ -57,6 +59,12 @@ func _ready() -> void:
 		Input.action_release("move_forward")
 		Input.action_release("move_back")
 		Input.action_press("move_forward" if fmod(t, 2.0) < 1.0 else "move_back")
+		if main.walker:
+			if own_seen:
+				own = own.expand(main.walker.global_position)
+			else:
+				own = AABB(main.walker.global_position, Vector3.ZERO)
+				own_seen = true
 		if main.remotes.size() == 1:
 			var rp: RemotePlayer = main.remotes.values()[0]
 			var p := rp.world_position()
@@ -183,8 +191,8 @@ func _ready() -> void:
 		Input.action_release("move_back")
 		Input.action_press("move_forward" if fmod(tl, 2.0) < 1.0 else "move_back")
 	var ok := moved and shed_ok
-	if not moved:
-		print("    (remotes %d, first seen %s, span %s)" % [main.remotes.size(), start, span.size])
+	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
+		role, own.size, main.remotes.size(), start, span.size])
 	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s)" % [
 		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok])
 	get_tree().quit(0 if ok else 1)
