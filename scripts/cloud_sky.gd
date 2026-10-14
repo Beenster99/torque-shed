@@ -211,7 +211,8 @@ float cloud_shape(vec3 p, vec2 dr, out float hfrac) {
 	hfrac = h;
 	vec2 wp = (p.xz + dr) / 26000.0;
 	float wm = texture(cloud_noise, wp).r * 0.7 + texture(cloud_noise, wp * 3.1 + vec2(0.37, 0.71)).r * 0.3;
-	float lo = mix(0.64, 0.06, cloud_cover);
+	// A few clouds when it's clear, a broken sky when cloudy, one heavy deck in the rain.
+	float lo = mix(mix(0.56, 0.4, smoothstep(0.0, 0.8, cloud_cover)), 0.06, smoothstep(0.8, 1.0, cloud_cover));
 	float cov = smoothstep(lo, lo + 0.2, wm);
 	float top = mix(0.35, 1.0, cov) * mix(1.0, 0.7, cloud_cover * cloud_cover);
 	float prof = smoothstep(0.0, 0.07, h) * (1.0 - smoothstep(top * 0.55, top, h));
