@@ -82,6 +82,10 @@ func _run_all() -> void:
 	await _test_whiteboard()
 	print("Tuning room and dyno")
 	await _test_tuning()
+	print("Bike lights, tyres and the tyre changer")
+	await _test_bike_lights()
+	await _test_tyre_changer()
+	await _test_changer_save_load()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -440,12 +444,21 @@ func _test_shed_rules() -> void:
 	check(Shed.item_on(barn, "engine") == block and Shed.item_on(barn, "spark_plugs") == plugs, "the built engine goes into the frame")
 	Shed.request({"a": "bolt", "bike": barn, "slot": "engine"})
 	# The bench has the exhaust, chain, sprockets and front tyre; the sprockets go on before the chain.
-	for spot in ["bench_0", "bench_2", "bench_1", "bench_3"]:
-		var item := Shed.item_at_spot(spot)
-		var k: String = Shed.items[item]["kind"]
+	for spot in ["bench_0", "bench_2", "bench_1"]:
 		Shed.request({"a": "take", "spot": spot})
-		Shed.request({"a": "install", "bike": barn, "slot": "rear_tyre" if k == "tyre" else "frame", "crouched": true})
-	check(Shed.item_on(barn, "front_tyre") != 0 and Shed.item_on(barn, "rear_tyre") != 0, "a tyre fills whichever wheel is bare")
+		Shed.request({"a": "install", "bike": barn, "slot": "frame", "crouched": true})
+	# The front tyre goes on at the tyre changer: the front wheel has to come off first.
+	var new_tyre := Shed.item_at_spot("bench_3")
+	Shed.request({"a": "take", "spot": "bench_3"})
+	check(Shed.check(me, {"a": "install", "bike": barn, "slot": "front_wheel"}).contains("tyre changer"),
+		"a tyre can't be fitted to a wheel on the bike")
+	Shed.request({"a": "place", "spot": "bench_3"})
+	var brake := _wheel_to_changer(barn, "front")
+	Shed.request({"a": "take", "spot": "bench_3"})
+	Shed.request({"a": "tyre_fit", "spot": Shed.changer_spot(), "quality": 0.9})
+	_wheel_from_changer(barn, "front", brake)
+	check(Shed.item_on(barn, "front_tyre") == new_tyre and Shed.item_on(barn, "rear_tyre") != 0
+		and Shed.is_bolted(barn, "front_tyre"), "the front wheel goes back in with its new tyre seated")
 	for slot in Shed.loose_slots(barn):
 		Shed.request({"a": "bolt", "bike": barn, "slot": slot, "crouched": true})
 	check(Shed.is_complete(barn), "the barn find is rebuilt and ready to ride (%s)" % str(Shed.missing_slots(barn) + Shed.loose_slots(barn)))
@@ -503,6 +516,8 @@ func _test_equipment_and_chains() -> void:
 	var me := Shed.me()
 	# The shop sells every kind of equipment, with compact versions for a tight shed.
 	for k in Equipment.KINDS:
+		if Equipment.FIXED_KINDS.has(k):
+			continue   # built into the shed, not sold
 		check(Equipment.by_kind(k).size() >= 2, "the parts computer sells %s (%d models)" % [Equipment.KIND_NAMES[k].to_lower(), Equipment.by_kind(k).size()])
 	for k in ["washer", "repair", "bench", "shelf"]:
 		check(Equipment.by_kind(k).any(func(m): return Equipment.get_model(m).get("compact", false)), "there's a compact %s" % Equipment.KIND_NAMES[k].to_lower())
@@ -962,19 +977,9 @@ func _test_session() -> void:
 			tv_id = id
 	Shed.request({"a": "grab", "furniture": tv_id})
 	Shed.request({"a": "release", "furniture": tv_id, "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(1.6, 3.4, -Workshop.HALF.y + 0.02))})
-	# Look at the Rusty Ranger's exhaust from beside it and unbolt it with the wrench.
+	# Look at the Rusty Ranger's tank from beside it and unbolt it with the wrench.
 	var ranger := _bike_named("Rusty Ranger")
-	var view: Node3D = main.workshop.bike_views[ranger]
-	var model: BikeModel = main.workshop.bike_model(ranger)
-	var aim: Vector3 = model.global_transform * (model.exhaust_tip() + Vector3(0.0, -0.04, -0.2))
-	var stand: Vector3 = aim + Vector3(1.4, 0.0, 0.0)
-	stand.y = 0.0
-	main.walker.place(Transform3D(Basis(), stand))
-	main.walker.rotation.y = PI * 0.5
-	var eye: Vector3 = stand + Vector3.UP * Walker.EYE
-	main.walker._look(0.0, -atan2(eye.y - aim.y, Vector2(eye.x - aim.x, eye.z - aim.z).length()))
-	for i in 5:
-		await get_tree().physics_frame
+	await _aim_at(main, ranger, "tank")
 	check(main.walker.target.get("kind", "") == "part", "the crosshair finds the bike's parts (%s)" % str(main.walker.target))
 	var slot: String = main.walker.target.get("slot", "")
 	main.walker.set_tool("wrench")
@@ -2463,4 +2468,279 @@ func _test_tuning() -> void:
 	await get_tree().process_frame
 	check(graph.runs.size() == 2, "the dyno graph draws the last two runs")
 	graph.queue_free()
+	Shed.stop()
+
+
+## Takes a bike's wheel off (the brake parts mounted on it come off first and are put down on the
+## floor) and puts it, tyre and all, on the tyre changer. Returns [[slot, item]] of the brake parts.
+func _wheel_to_changer(bike_id: int, side: String) -> Array:
+	var off := []
+	for part in ["pads", "caliper", "disc"]:
+		var slot: String = side + "_" + part
+		var id := Shed.item_on(bike_id, slot)
+		if id == 0:
+			continue
+		Shed.request({"a": "unbolt", "bike": bike_id, "slot": slot})
+		Shed.request({"a": "remove", "bike": bike_id, "slot": slot})
+		Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(-1.0 + off.size() * 0.4, 0.0, 1.5))})
+		off.append([slot, id])
+	Shed.request({"a": "unbolt", "bike": bike_id, "slot": side + "_wheel"})
+	Shed.request({"a": "remove", "bike": bike_id, "slot": side + "_wheel"})
+	Shed.request({"a": "place", "spot": Shed.changer_spot()})
+	return off
+
+
+## Lifts the wheel off the tyre changer, puts it back in the bike and refits its brake parts.
+func _wheel_from_changer(bike_id: int, side: String, brake: Array) -> void:
+	Shed.request({"a": "take", "spot": Shed.changer_spot()})
+	Shed.request({"a": "install", "bike": bike_id, "slot": side + "_wheel"})
+	Shed.request({"a": "bolt", "bike": bike_id, "slot": side + "_wheel"})
+	for i in range(brake.size() - 1, -1, -1):
+		Shed.request({"a": "take", "item": int(brake[i][1])})
+		Shed.request({"a": "install", "bike": bike_id, "slot": str(brake[i][0])})
+		Shed.request({"a": "bolt", "bike": bike_id, "slot": str(brake[i][0])})
+
+
+## Lights run off the ignition: a parked or switched-off bike is dark, lenses and all, ridden or
+## another player's; the beam is grainy and dusty, with motes drifting in it at night.
+func _test_bike_lights() -> void:
+	var parked := BikeModel.new()
+	add_child(parked)
+	parked.build_from(BikeBuild.new({"fog_lights": "rally_lamps", "headlight": "led_projector"}))
+	check(not parked.lights_lit(), "a parked bike's headlight, tail light, fog lamps and clocks are dark")
+	parked.set_lights(true, false)
+	check(parked.lights_lit(), "with the ignition on the tail light and clocks glow")
+	parked.queue_free()
+	var r := await ride({"fog_lights": "rally_lamps"}, 0.3, func(b, _t): b.engine_on = false)
+	var bike: Bike = r["bike"]
+	check(not bike.model.lights_lit() and not bike.effects.light_on() and bike._fog.all(func(l): return not l.visible),
+		"engine off: no beam, no fog lamps, every lens dark")
+	bike.engine_on = true
+	for i in 3:
+		await get_tree().physics_frame
+	check(bike.model.lights_lit() and bike.effects.light_on() and bike._fog.all(func(l): return l.visible), "engine running: the lights come on")
+	bike.beam = 0
+	for i in 3:
+		await get_tree().physics_frame
+	check(not bike.effects.light_on() and bike.model.lights_lit(), "L switches the headlight off; the tail light stays on")
+	bike.beam = 2
+	bike.engine_on = false
+	for i in 3:
+		await get_tree().physics_frame
+	check(not bike.effects.light_on() and not bike.model.lights_lit(), "switching the engine off puts every light out, even on high beam")
+	# At night the beam fills with dust motes; by day there are none.
+	var env := Environment.new()
+	var sun := DirectionalLight3D.new()
+	add_child(sun)
+	var dl := Daylight.new()
+	add_child(dl)
+	var cycle := Settings.day_night_cycle
+	Settings.day_night_cycle = false
+	dl.setup(env, sun)
+	dl.set_time(0.0)
+	bike.engine_on = true
+	bike.beam = 1
+	for i in 3:
+		await get_tree().physics_frame
+	var cone := bike.effects._cone.material_override as ShaderMaterial
+	check(bike.effects.motes_showing() and cone.get_shader_parameter("haze") is Texture2D,
+		"at night dust motes drift in the beam and the shaft is grainy haze, not a smooth gradient")
+	dl.set_time(12.0)
+	for i in 3:
+		await get_tree().physics_frame
+	check(bike.effects.light_on() and not bike.effects.motes_showing(), "in daylight the motes fade out")
+	Settings.day_night_cycle = cycle
+	dl.queue_free()
+	sun.queue_free()
+	await _done(r)
+	# Another player's bike follows their ignition.
+	var rb := RemoteBike.new()
+	add_child(rb)
+	rb.setup("Other", BikeBuild.new(), Color(0.2, 0.4, 0.9))
+	var st := PackedFloat32Array()
+	st.resize(25)
+	st[6] = 1.0
+	st[24] = 1.0
+	rb.push_state(st)
+	for i in 3:
+		await get_tree().physics_frame
+	check(not rb.model.lights_lit() and not rb._effects.light_on(), "another player's parked, switched-off bike is dark")
+	st[19] = 1.0
+	rb.push_state(st)
+	for i in 3:
+		await get_tree().physics_frame
+	check(rb.model.lights_lit() and rb._effects.light_on(), "and lights up when they start it")
+	rb.queue_free()
+	await get_tree().process_frame
+
+
+## Tyres and rims: drawn to their real sizes, only fitted to rims they suit, and changed on the
+## tyre changer with a little skill game.
+func _test_tyre_changer() -> void:
+	# Drawn to size: a 180/55 is 180 mm wide and 99 mm tall on its rim.
+	var b := BikeBuild.new({"rear_tyre": "sport_road", "rear_wheel": "cast_17"})
+	var model := BikeModel.new()
+	add_child(model)
+	model.build_from(b)
+	var tyre_box := model.slot_bounds("rear_tyre")
+	check(absf(tyre_box.size.x - 0.18) < 0.006 and absf(tyre_box.size.y - 2.0 * (b.rear_rim_radius + 0.18 * 0.55)) < 0.01,
+		"a 180/55 tyre is drawn 180 mm wide and to its profile (%.3f x %.3f m)" % [tyre_box.size.x, tyre_box.size.y])
+	check(is_equal_approx(b.front_tyre_width, 0.12) and BikeModel.rim_width_of(PartsDB.get_part("cast_17")) < 0.18,
+		"the front tyre is its own width, and the rim is narrower than the tyre on it")
+	model.queue_free()
+	# Which tyres go on which rims.
+	check(PartsDB.tyre_fit("sport_road", "cast_17") == 0 and PartsDB.tyre_fit("sport_road_200", "spoked_21") == 1
+		and PartsDB.tyre_fit("knobbly_mx_80", "cast_17") != 0 and PartsDB.tyre_fit("sport_road_120", "cast_19_six") == 2,
+		"a tyre fits only a rim of its width range and diameter")
+	check(PartsDB.spec_line("cast_17").contains("140-180 mm") and PartsDB.spec_line("cast_17").contains("17\""),
+		"a wheel's info says which tyres it takes (%s)" % PartsDB.spec_line("cast_17"))
+	check(PartsDB.spec_line("knobbly_mx_80").contains("21\" rims"), "a tyre's info says which rims it fits (%s)" % PartsDB.spec_line("knobbly_mx_80"))
+	for w in PartsDB.by_kind["wheel"]:
+		check(not PartsDB.tyres_for(w).is_empty(), "the %s has tyres to fit it (%d)" % [w, PartsDB.tyres_for(w).size()])
+	# The skill game: following the marker seats the bead; leaving the lever still doesn't.
+	var good := TyreGame.new()
+	while not good.done():
+		good.cursor = good.marker()
+		good.step(1.0 / 60.0)
+	var lazy := TyreGame.new()
+	while not lazy.done():
+		lazy.step(1.0 / 60.0)
+	check(good.quality() > 0.95 and lazy.quality() < 0.3, "following the marker round seats the bead (%.2f, left alone %.2f)" % [good.quality(), lazy.quality()])
+
+	Shed.start_new("Tester", 5)
+	var me := Shed.me()
+	var spot := Shed.changer_spot()
+	var changer := Shed.furniture_of_spot(spot)
+	check(spot != "" and Equipment.FIXED_KINDS.has(str(changer["kind"])) and Shed.check(me, {"a": "grab", "furniture": int(changer["id"])}) != "",
+		"the shed has a built-in tyre changer")
+	var at: Vector3 = (changer["xf"] as Transform3D).origin
+	check(at.distance_to(Workshop.CENTER) < 8.0 and absf(at.x - (Workshop.CENTER.x - Workshop.HALF.x)) < 0.6
+		and at.distance_to(Whiteboard.MOUNT) > 1.6 and at.z > Workshop.spot_transform("bench_3").origin.z,
+		"it stands against the west wall past the workbench, clear of the whiteboard")
+	for bay in Workshop.BAY_COUNT:
+		check(Workshop.bay_transform(bay).origin.distance_to(at) > 3.0, "it's clear of bay %d" % (bay + 1))
+	var faithful := _bike_named("Old Faithful")
+	# On the bike, tyres can't be changed.
+	var tyre := _order("sport_road_120")
+	Shed.request({"a": "unpack", "item": tyre})
+	Shed.request({"a": "take", "item": tyre})
+	check(Shed.check(me, {"a": "install", "bike": faithful, "slot": "rear_tyre"}).contains("tyre changer"),
+		"a tyre can't be fitted with the wheel on the bike")
+	check(Shed.check(me, {"a": "remove", "bike": faithful, "slot": "rear_tyre"}).contains("tyre changer")
+		and Shed.check(me, {"a": "unbolt", "bike": faithful, "slot": "rear_tyre"}).contains("tyre changer"),
+		"nor taken off: take the wheel off and use the tyre changer")
+	check(Shed.check(me, {"a": "place", "spot": spot}).contains("wheel"), "only a wheel goes on the changer")
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(0.5, 0.0, 2.0))})
+	# The wheel comes off with its tyre on and goes on the changer.
+	var old_tyre := Shed.item_on(faithful, "front_tyre")
+	var wheel := Shed.item_on(faithful, "front_wheel")
+	var brake := _wheel_to_changer(faithful, "front")
+	check(Shed.item_at_spot(spot) == wheel and Shed.tyre_on_wheel(wheel) == old_tyre and Shed.items[old_tyre]["at"] == "wheel"
+		and Shed.item_on(faithful, "front_tyre") == 0, "the wheel comes off with its tyre and sits on the changer")
+	var shown := BikeModel.item_display(wheel)
+	check((shown.get_meta("model") as BikeModel).is_fitted("front_tyre"), "the wheel is drawn with its tyre on")
+	shown.free()
+	# Lever the old tyre off, then try a tyre that's wrong for the rim.
+	# (XP goes through /root/Progress: a stand-in records it if the game's isn't loaded.)
+	var prog := get_node_or_null("/root/Progress")
+	var mock: Node = null
+	if prog == null:
+		var s := GDScript.new()
+		s.source_code = "extends Node\nvar got := []\nfunc award(peer, key, mult := 1.0) -> void:\n\tgot.append([peer, key, mult])\n"
+		s.reload()
+		mock = Node.new()
+		mock.set_script(s)
+		mock.name = "Progress"
+		get_tree().root.add_child(mock)
+	Shed.request({"a": "tyre_remove", "spot": spot})
+	check(Shed.held_by(me) == old_tyre and Shed.tyre_on_wheel(wheel) == 0, "the old tyre is levered off into your hands")
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(1.0, 0.0, 2.0))})
+	var skinny := _order("knobbly_mx_80")
+	Shed.request({"a": "unpack", "item": skinny})
+	Shed.request({"a": "take", "item": skinny})
+	var why := Shed.check(me, {"a": "tyre_fit", "spot": spot, "quality": 1.0})
+	check(why.contains("too narrow") and why.contains("110-130"), "a tyre that doesn't suit the rim can't be fitted (%s)" % why)
+	Shed.request({"a": "tyre_fit", "spot": spot, "quality": 1.0})
+	check(Shed.tyre_on_wheel(wheel) == 0 and Shed.held_by(me) == skinny, "so it stays in your hands")
+	Shed.request({"a": "bin"})
+	# Fit the new tyre with a sloppy bead: XP for the job, and the build feels it.
+	Shed.request({"a": "take", "item": tyre})
+	Shed.request({"a": "tyre_fit", "spot": spot, "quality": 0.3})
+	check(Shed.tyre_on_wheel(wheel) == tyre and is_equal_approx(float(Shed.items[tyre]["bead"]), 0.3),
+		"the new tyre goes on, its bead seated as well as it was worked on")
+	check(Shed.condition_text(Shed.items[tyre]).contains("badly seated"), "the part info says the bead is badly seated")
+	_wheel_from_changer(faithful, "front", brake)
+	check(Shed.item_on(faithful, "front_wheel") == wheel and Shed.item_on(faithful, "front_tyre") == tyre and Shed.is_complete(faithful),
+		"the wheel goes back in with its new tyre and the bike is whole again (%s)" % str(Shed.missing_slots(faithful) + Shed.loose_slots(faithful)))
+	var sloppy := Shed.build_of(faithful)
+	check(sloppy.notes.any(func(n): return n.contains("bead")), "the bay screen flags the badly seated bead")
+	var grip_sloppy: float = sloppy.grip_front["tarmac"]
+	Shed.crew[me]["riding"] = faithful
+	Shed.request({"a": "ride", "km": 4.0})
+	Shed.crew[me]["riding"] = 0
+	check(float(Shed.items[tyre].get("tune", {}).get("pressure", 9.0)) < Shed.build_of(faithful).tune_default("psi_f") - 0.03,
+		"a badly seated bead slowly lets the tyre down")
+	Shed.items[tyre]["bead"] = 1.0
+	check(Shed.build_of(faithful).grip_front["tarmac"] > grip_sloppy, "a well seated bead grips better")
+	if mock:
+		var got: Array = mock.get("got")
+		check(got.size() == 2 and got[0][1] == "tyre_remove" and got[1][1] == "tyre_fit" and is_equal_approx(float(got[1][2]), 0.3)
+			and int(got[1][0]) == me, "XP goes to whoever changed the tyre, scaled by how well (%s)" % str(got))
+		mock.queue_free()
+	# Binning a wheel with a tyre on it bins both.
+	var spare := _order("cast_17_front")
+	Shed.request({"a": "unpack", "item": spare})
+	Shed.request({"a": "take", "item": spare})
+	Shed.request({"a": "place", "spot": spot})
+	Shed.request({"a": "take", "item": old_tyre})
+	Shed.request({"a": "tyre_fit", "spot": spot, "quality": 1.0})
+	Shed.request({"a": "take", "spot": spot})
+	Shed.request({"a": "bin"})
+	check(not Shed.items.has(spare) and not Shed.items.has(old_tyre), "a wheel binned with its tyre on takes the tyre with it")
+	# New project bikes always wear tyres that suit their rims.
+	for i in 12:
+		var id := Shed._random_bike(3)
+		var parts: Dictionary = Shed.bikes[id]["original"]
+		check(PartsDB.tyre_fit(parts["front_tyre"], parts["front_wheel"]) == 0 and PartsDB.tyre_fit(parts["rear_tyre"], parts["rear_wheel"]) == 0,
+			"a delivered bike's tyres suit its rims (%s on %s, %s on %s)" % [parts["front_tyre"], parts["front_wheel"], parts["rear_tyre"], parts["rear_wheel"]])
+		Shed.bikes.erase(id)
+	Shed.stop()
+
+
+## A wheel left on the tyre changer, with its tyre on, is saved and comes back; a shed saved
+## before the changer was built in gets one.
+func _test_changer_save_load() -> void:
+	SaveGame.slot_override = "test_changer"
+	var slot := SaveGame.active_slot()
+	SaveGame.delete_slot(slot)
+	Shed.start_new("Tester", 3)
+	var spot := Shed.changer_spot()
+	var wheel := _order("spoked_21")
+	Shed.request({"a": "unpack", "item": wheel})
+	Shed.request({"a": "take", "item": wheel})
+	Shed.request({"a": "place", "spot": spot})
+	var tyre := _order("knobbly_mx_90")
+	Shed.request({"a": "unpack", "item": tyre})
+	Shed.request({"a": "take", "item": tyre})
+	Shed.request({"a": "tyre_fit", "spot": spot, "quality": 0.72})
+	check(Shed.tyre_on_wheel(wheel) == tyre, "a tyre is fitted on the changer")
+	check(SaveGame.write(slot, {"version": SaveGame.VERSION, "shed": Shed._snapshot().duplicate(true)}) == OK, "the shed is saved")
+	Shed.start_new("Tester", 4)
+	check(Shed.item_at_spot(spot) != wheel, "a new shed has an empty changer")
+	Shed.load_state(SaveGame.read(slot)["shed"], "Tester")
+	check(Shed.item_at_spot(spot) == wheel and Shed.tyre_on_wheel(wheel) == tyre and Shed.items[tyre]["at"] == "wheel"
+		and is_equal_approx(float(Shed.items[tyre]["bead"]), 0.72), "the wheel on the changer and its tyre come back from the save")
+	var changers := Shed.furniture.values().filter(func(f): return f["kind"] == "changer")
+	check(changers.size() == 1, "loading doesn't add a second changer")
+	# An old save with no tyre changer in it.
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	for id in old["furniture"].keys():
+		if old["furniture"][id]["kind"] == "changer":
+			old["furniture"].erase(id)
+	old["items"].erase(wheel)
+	old["items"].erase(tyre)
+	Shed.load_state(old, "Tester")
+	check(Shed.changer_spot() != "", "a shed saved before the tyre changer gets one")
+	SaveGame.delete_slot(slot)
+	SaveGame.slot_override = ""
 	Shed.stop()

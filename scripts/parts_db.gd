@@ -51,8 +51,8 @@ const SLOT_KIND := {
 	"panniers": "panniers", "top_box": "top_box", "fog_lights": "fog_lights",
 }
 const DEFAULT_BUILD := {
-	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17",
-	"rear_wheel": "cast_17", "front_tyre": "sport_road", "rear_tyre": "sport_road", "front_disc": "floating_310",
+	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17_front",
+	"rear_wheel": "cast_17", "front_tyre": "sport_road_120", "rear_tyre": "sport_road", "front_disc": "floating_310",
 	"rear_disc": "solid_240", "front_caliper": "four_piston_axial", "rear_caliper": "single_piston",
 	"front_pads": "semi_metallic", "rear_pads": "semi_metallic", "front_master": "axial_14", "rear_master": "axial_14",
 	"tank": "cafe_15", "saddle": "flat_bench", "handlebars": "flat_bar", "dashboard": "twin_clocks",
@@ -227,12 +227,13 @@ func spec_line(id: String) -> String:
 			var dia := float(p["diameter"])
 			bits = [p["type"], ("%d\"" % roundi(dia)) if is_equal_approx(dia, roundf(dia)) else ("%.1f\"" % dia)]
 			if p.has("rim_width"):
-				bits.append("%.2f\" rim (tyres %d-%d mm)" % [float(p["rim_width"]), roundi(float(p["rim_width"]) * 24.0 / 10.0) * 10, roundi(float(p["rim_width"]) * 62.0 / 10.0) * 10])
+				var r := tyre_range(id)
+				bits.append("%.2f\" rim: takes %d-%d mm tyres made for %s rims" % [float(p["rim_width"]), r.x, r.y, inch_text(dia)])
 			if p.has("spokes"):
 				bits.append("%d spokes" % int(p["spokes"]))
 		"tyre":
-			bits = [p["type"], p["compound"] + " compound", "%d mm wide (%d mm as a front)" % [int(p["width"]), roundi(float(p["width"]) * 0.7)],
-				"grip %.2f tarmac / %.2f dirt" % [p["grip"]["tarmac"], p["grip"]["dirt"]]]
+			bits = [p["type"], p["compound"] + " compound", "%d mm wide, %d%% profile" % [int(p["width"]), roundi(float(p["aspect"]) * 100.0)],
+				"fits " + tyre_rims_text(id), "grip %.2f tarmac / %.2f dirt" % [p["grip"]["tarmac"], p["grip"]["dirt"]]]
 		"disc":
 			bits = [p["type"], "%d mm" % int(p["diameter"])]
 		"caliper":
@@ -307,6 +308,93 @@ func spec_line(id: String) -> String:
 	if is_lightweight(id):
 		bits.append("Lightweight: saves %s" % Units.mass(weight_saving(id), 1))
 	return "  ·  ".join(bits.map(func(b): return str(b)))
+
+
+## "17\"" or "16.5\"".
+static func inch_text(d: float) -> String:
+	return ("%d\"" % roundi(d)) if is_equal_approx(d, roundf(d)) else ("%.1f\"" % d)
+
+
+## The tyre widths (mm) a wheel's rim takes, smallest to widest.
+func tyre_range(wheel_id: String) -> Vector2i:
+	var p := get_part(wheel_id)
+	var r: Array = p.get("tyres", [])
+	if r.size() == 2:
+		return Vector2i(int(r[0]), int(r[1]))
+	# Older catalogues: worked out from the rim width.
+	var rim := float(p.get("rim_width", 3.5))
+	return Vector2i(roundi(rim * 24.0), roundi(rim * 62.0))
+
+
+## The rim diameters (inches) a tyre is made for. Empty means any.
+func tyre_rims(tyre_id: String) -> Array:
+	return get_part(tyre_id).get("rims", [])
+
+
+## Whether a tyre goes on a wheel: 0 if it does, 1 too wide for the rim, -1 too narrow,
+## 2 made for a different rim diameter.
+func tyre_fit(tyre_id: String, wheel_id: String) -> int:
+	var t := get_part(tyre_id)
+	var w := get_part(wheel_id)
+	if t.is_empty() or w.is_empty():
+		return 0
+	var r := tyre_range(wheel_id)
+	var mm := float(t.get("width", 120.0))
+	if mm > r.y:
+		return 1
+	if mm < r.x:
+		return -1
+	var rims := tyre_rims(tyre_id)
+	var dia := float(w.get("diameter", 17.0))
+	if not rims.is_empty() and not rims.any(func(d): return is_equal_approx(float(d), dia)):
+		return 2
+	return 0
+
+
+## Why a tyre won't go on a wheel, in words, or "" when it fits.
+func tyre_fit_reason(tyre_id: String, wheel_id: String) -> String:
+	var t := get_part(tyre_id)
+	var w := get_part(wheel_id)
+	match tyre_fit(tyre_id, wheel_id):
+		2:
+			return "That tyre is made for %s rims, not this %s wheel." % [" or ".join(tyre_rims(tyre_id).map(func(d): return inch_text(float(d)))),
+				inch_text(float(w.get("diameter", 17.0)))]
+		1, -1:
+			var r := tyre_range(wheel_id)
+			return "A %d mm tyre is too %s for this %.2f\" rim: it takes %d-%d mm." % [int(t.get("width", 0)),
+				"wide" if tyre_fit(tyre_id, wheel_id) == 1 else "narrow", float(w.get("rim_width", 0.0)), r.x, r.y]
+	return ""
+
+
+## "17\" rims 4.25-6.0\" wide": the wheels in the catalogue a tyre goes on.
+func tyre_rims_text(tyre_id: String) -> String:
+	var dias := []
+	var lo := INF
+	var hi := 0.0
+	for w in by_kind.get("wheel", []):
+		if tyre_fit(tyre_id, w) == 0:
+			var d := float(get_part(w).get("diameter", 17.0))
+			if not dias.has(d):
+				dias.append(d)
+			lo = minf(lo, float(get_part(w).get("rim_width", 0.0)))
+			hi = maxf(hi, float(get_part(w).get("rim_width", 0.0)))
+	if dias.is_empty():
+		return "no wheel in the catalogue"
+	dias.sort()
+	var sizes := " or ".join(dias.map(func(d): return inch_text(float(d))))
+	if is_equal_approx(lo, hi):
+		return "%s rims %.2f\" wide" % [sizes, lo]
+	return "%s rims %.2f-%.2f\" wide" % [sizes, lo, hi]
+
+
+## The catalogue tyres that go on a wheel.
+func tyres_for(wheel_id: String) -> Array:
+	return by_kind.get("tyre", []).filter(func(t): return tyre_fit(t, wheel_id) == 0)
+
+
+## The catalogue wheels a tyre goes on.
+func wheels_for(tyre_id: String) -> Array:
+	return by_kind.get("wheel", []).filter(func(w): return tyre_fit(tyre_id, w) == 0)
 
 
 ## Returns a complete build, filling missing or unknown slots with defaults.

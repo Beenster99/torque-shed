@@ -8,12 +8,14 @@ const RATE := 22050
 const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour", "screech", "door"]
 ## Which loop each kind of work makes while you hold the button.
 const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray",
-	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray"}
+	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray",
+	"tyre_fit": "ratchet", "tyre_remove": "ratchet"}
 ## Which loop a tool makes in someone else's hands while they work.
 const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet", "gun": "spray"}
 ## The one-shot when a job is done.
 const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "install": "clunk", "take": "pickup",
-	"place": "clunk", "drop": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink"}
+	"place": "clunk", "drop": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink",
+	"tyre_remove": "pickup"}
 
 var _cache := {}
 var _rng := RandomNumberGenerator.new()

@@ -38,6 +38,8 @@ func _build() -> void:
 			_build_bench()
 		"booth":
 			_build_booth()
+		"changer":
+			_build_changer()
 		"poster":
 			_build_poster()
 		"seat":
@@ -231,6 +233,54 @@ func _build_repair() -> void:
 	for side in [-1.0, 1.0]:
 		_cyl(Vector3(end + side * 0.15, top + 0.12, -size.z * 0.2), 0.08, 0.03, _mat("steel"), Vector3.RIGHT)
 	_name_plate(str(_m()["name"]).to_upper(), Vector3(0.0, top - 0.2, size.z * 0.5 + 0.03), 22)
+	_body(false)
+	_ws._blocker(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z), self)
+
+
+## The tyre changer: a pedestal with a clamping turntable the wheel lies flat on, a column at the
+## back with a swing arm and a mount head that rides on the rim, a bead breaker on the side and
+## foot pedals. The turntable ("Turntable") and the head ("Head") move while a tyre is worked
+## on (see Workshop.spin_changers); a wheel put on it lies on the turntable.
+func _build_changer() -> void:
+	var size := _size()
+	var top := Equipment.work_height(model)
+	var body: Material = _ws._material(Color(0.12, 0.35, 0.62), 0.5, 0.35)
+	_deco(Vector3(0.0, (top - 0.06) * 0.5, 0.0), Vector3(size.x - 0.1, top - 0.06, size.z - 0.2), body)
+	_deco(Vector3(0.0, 0.025, 0.0), Vector3(size.x, 0.05, size.z), _mat("dark"))
+	var place := Equipment.local_place(model, 0).origin
+	var table := Node3D.new()
+	table.name = "Turntable"
+	table.position = place
+	add_child(table)
+	var disc := _cyl(Vector3(0.0, -0.025, 0.0), 0.3, 0.05, _mat("steel"))
+	disc.reparent(table, false)
+	for i in 4:
+		var a := TAU * i / 4.0
+		var jaw := _deco(Vector3(cos(a) * 0.17, 0.005, sin(a) * 0.17), Vector3(0.07, 0.03, 0.035), _mat("red"))
+		jaw.rotation.y = -a
+		jaw.reparent(table, false)
+	var post := _cyl(Vector3(0.0, 0.08, 0.0), 0.018, 0.16, _mat("chrome"))
+	post.reparent(table, false)
+	# Column, swing arm and the mount head that rides on the rim's edge.
+	var back := -size.z * 0.5 + 0.08
+	_deco(Vector3(0.0, top + 0.42, back), Vector3(0.1, 0.84 + top * 0.0, 0.1), body)
+	_deco(Vector3(0.0, top + 0.8, back + 0.2), Vector3(0.08, 0.08, 0.48), body)
+	var head := Node3D.new()
+	head.name = "Head"
+	head.position = Vector3(0.0, top + 0.8, place.z - 0.24)
+	add_child(head)
+	var bar := _cyl(Vector3(0.0, -0.3, 0.0), 0.022, 0.6, _mat("chrome"))
+	bar.reparent(head, false)
+	var foot := _deco(Vector3(0.0, -0.62, 0.0), Vector3(0.05, 0.06, 0.09), _mat("dark"))
+	foot.reparent(head, false)
+	# Bead breaker arm and its pad on the side, and the tyre lever hung on the column.
+	_deco(Vector3(size.x * 0.5 - 0.04, top * 0.55, 0.0), Vector3(0.05, top * 0.6, 0.05), body)
+	_deco(Vector3(size.x * 0.5 + 0.02, top * 0.55, 0.12), Vector3(0.04, 0.04, 0.3), _mat("steel")).rotation.x = -0.4
+	_deco(Vector3(0.06, top + 0.5, back + 0.06), Vector3(0.02, 0.45, 0.02), _mat("red")).rotation.z = 0.15
+	# Foot pedals at the front: turntable, clamps and bead breaker.
+	for i in 3:
+		_deco(Vector3(-0.18 + i * 0.18, 0.08, size.z * 0.5 - 0.05), Vector3(0.1, 0.03, 0.14), _mat("dark"))
+	_name_plate("TYRE CHANGER", Vector3(0.0, top - 0.2, size.z * 0.5 - 0.09), 22)
 	_body(false)
 	_ws._blocker(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z), self)
 

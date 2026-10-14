@@ -75,6 +75,10 @@ var _cover := {}             # the spray job under way: {key, plan, item, points
 var _covers := {}            # every part with a spray job on it, by job key, so you can go back to one
 var _mist: CPUParticles3D
 var stopwatch := Stopwatch.new()
+## The tyre-fitting game under way on the tyre changer (see TyreGame), or null. While it runs the
+## mouse (or right stick) works the tyre lever instead of looking about.
+var tyre_game: TyreGame
+var _game_key := ""
 var _jet: CPUParticles3D
 
 
@@ -119,7 +123,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not controls_enabled:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_look(-event.relative.x * MOUSE_SENS, -event.relative.y * MOUSE_SENS)
+		if tyre_game:
+			tyre_game.move(event.relative)
+		else:
+			_look(-event.relative.x * MOUSE_SENS, -event.relative.y * MOUSE_SENS)
 	elif event.is_action_pressed("tool_next"):
 		_cycle_tool(1)
 	elif event.is_action_pressed("tool_prev"):
@@ -319,7 +326,9 @@ func _physics_process(delta: float) -> void:
 		input = input.limit_length(1.0)
 		running = Input.is_action_pressed("sprint")
 		var look := Controls.stick(true)
-		if look != Vector2.ZERO:
+		if tyre_game:
+			tyre_game.aim(look)
+		elif look != Vector2.ZERO:
 			_look(-look.x * PAD_LOOK * delta, -look.y * PAD_LOOK * 0.7 * delta)
 	if seat != 0:
 		if not Shed.furniture.has(seat) or Shed.furniture[seat]["mover"] != 0 or input.length() > 0.5:
@@ -618,7 +627,11 @@ func _make_plan() -> Dictionary:
 						p = {"action": a, "time": 1.2, "verb": "fit the " + held_name}
 					"spot":
 						var on_spot := Shed.item_at_spot(str(target["spot"]))
-						if Shed.is_engine(on_spot) and not Shed.is_engine(held):
+						if Shed.spot_role(str(target["spot"])) == "changer" and on_spot != 0 and Shed.items[held]["kind"] == "tyre":
+							# Work the tyre on round the rim: a skill game (TyreGame).
+							p = {"action": {"a": "tyre_fit", "spot": target["spot"]}, "time": TyreGame.GRACE + TyreGame.DURATION,
+								"game": "tyre", "verb": "work the tyre on: keep the lever on the marker round the rim"}
+						elif Shed.is_engine(on_spot) and not Shed.is_engine(held):
 							# Building an engine back up: fit the part to the block on the stand.
 							p = {"action": {"a": "install", "engine": on_spot, "slot": ""}, "time": 1.2, "verb": "fit the " + held_name}
 						elif on_spot != 0 and target.has("drop"):
@@ -644,7 +657,13 @@ func _make_plan() -> Dictionary:
 							a["a"] = "remove"
 							p = {"action": a, "time": 1.0, "verb": "take it off"}
 					"spot":
-						if item_id != 0:
+						if item_id != 0 and Shed.spot_role(str(target["spot"])) == "changer" and Shed.tyre_on_wheel(item_id) != 0:
+							# On the tyre changer: break the bead and lever the old tyre off, or lift the wheel off whole.
+							p = {"action": {"a": "tyre_remove", "spot": target["spot"]}, "time": Shed.TYRE_REMOVE_TIME,
+								"verb": "break the bead and lever the tyre off"}
+							alt_plan = {"action": {"a": "take", "spot": target["spot"]}, "time": 0.4, "verb": "lift the wheel off, tyre and all"}
+							alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
+						elif item_id != 0:
 							p = {"action": {"a": "take", "spot": target["spot"]}, "time": 0.25, "verb": "pick it up"}
 					"item":
 						p = {"action": {"a": "take", "item": item_id}, "time": 0.25, "verb": "pick it up"}
@@ -816,6 +835,8 @@ func _describe() -> String:
 					var batch := Shed.repair_batch(spot)
 					if batch.size() > 1:
 						lines.append("Grinder: restores all %d parts on here at once" % batch.size())
+				if role == "changer":
+					lines.append_array(_changer_lines(item_id))
 			else:
 				lines.append(where)
 				match role:
@@ -823,6 +844,8 @@ func _describe() -> String:
 						lines.append("Leave dirty parts in here and they come out clean.")
 					"repair":
 						lines.append("Put parts here and use the grinder and welder to restore them all at once.")
+					"changer":
+						lines.append("Take a wheel off a bike (its tyre comes with it) and put it here to change the tyre.")
 					_:
 						if Shed.is_stand_spot(spot):
 							lines.append("Bolt an engine on here to strip it or build it up.")
@@ -830,7 +853,8 @@ func _describe() -> String:
 							lines.append("Store parts and boxed stock here.")
 				if not f.is_empty():
 					lines.append(Equipment.spec_line(str(f["model"])))
-					lines.append("F: move it somewhere else")
+					if not Equipment.FIXED_KINDS.has(str(f["kind"])):
+						lines.append("F: move it somewhere else")
 		"item":
 			var it: Dictionary = Shed.items[int(target["item"])]
 			lines.append(PartsDB.part_name(it["part"]))
@@ -879,6 +903,28 @@ func _describe() -> String:
 			lines.append("Scrap bin")
 			lines.append("Drop parts you don't want in here.")
 	return "\n".join(lines)
+
+
+## What the tyre changer shows about the wheel on it: its tyre and how it went on, or whether
+## the tyre in your hands fits.
+func _changer_lines(wheel: int) -> Array:
+	var out := []
+	var tyre := Shed.tyre_on_wheel(wheel)
+	var wheel_part := str(Shed.items[wheel]["part"])
+	if tyre != 0:
+		var it: Dictionary = Shed.items[tyre]
+		out.append("Tyre on it: %s" % PartsDB.part_name(it["part"]))
+		if it.has("bead"):
+			out.append(Shed.bead_text(it))
+		out.append("Hold %s: lift the wheel off, tyre and all" % ("LT" if Controls.active_device >= 0 else "right mouse"))
+	else:
+		out.append("No tyre on it. Tyres that fit: %d to %d mm wide, made for %s rims" % [PartsDB.tyre_range(wheel_part).x,
+			PartsDB.tyre_range(wheel_part).y, PartsDB.inch_text(float(PartsDB.get_part(wheel_part).get("diameter", 17.0)))])
+		var held := Shed.held_by(Shed.me())
+		if held != 0 and Shed.items[held]["kind"] == "tyre":
+			var why := PartsDB.tyre_fit_reason(str(Shed.items[held]["part"]), wheel_part)
+			out.append(why if why != "" else "The %s fits this rim." % PartsDB.part_name(Shed.items[held]["part"]))
+	return out
 
 
 ## How fitting `item_id` at the target would change the numbers.
@@ -936,6 +982,8 @@ func _alt_button() -> bool:
 func _update_work(delta: float) -> void:
 	var use_alt := controls_enabled and _alt_button() and not _main_button()
 	var plan_now: Dictionary = alt_plan if use_alt else plan
+	if _tyre_game_step(delta, plan_now, use_alt):
+		return
 	# Spraying is a skill: sweep the can over the part until it's all covered, without
 	# lingering in one place. The job carries on while the button's held, even off the part.
 	if not use_alt and _acting() and not _need_release:
@@ -969,7 +1017,7 @@ func _update_work(delta: float) -> void:
 			_need_release = true
 		return
 	if _hold == 0.0:
-		_send_status(_activity_text())
+		_send_status(_activity_text(), _changer_of(plan_now))
 		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get(a_now, ""))
 	_hold += delta
 	progress = clampf(_hold / float(plan_now["time"]), 0.0, 1.0)
@@ -995,6 +1043,53 @@ func _update_work(delta: float) -> void:
 		progress = 0.0
 		_need_release = true
 		_send_status("")
+
+
+## The tyre changer piece of work under way, if any: the furniture id of the changer.
+func _changer_of(p: Dictionary) -> int:
+	var spot := str(p.get("action", {}).get("spot", ""))
+	if spot == "" or Shed.spot_role(spot) != "changer":
+		return 0
+	return int(Shed.furniture_of_spot(spot)["id"])
+
+
+## Runs the tyre-fitting game while the work button is held on the changer with a tyre in hand.
+## Letting go, or looking away, before the marker has gone round lets the bead slip back off.
+## Returns true while the game has the work button.
+func _tyre_game_step(delta: float, plan_now: Dictionary, use_alt: bool) -> bool:
+	var playing: bool = not use_alt and plan_now.get("game", "") == "tyre" and plan_now["blocked"] == "" and _acting() \
+		and not _need_release
+	var key := str(plan_now.get("action", {}))
+	if tyre_game and (not playing or key != _game_key):
+		tyre_game = null
+		progress = 0.0
+		_send_status("")
+		Sfx.set_loop(_work_sound, "")
+		Shed.feedback.emit("The bead slipped back off the rim. Hold on all the way round.", false)
+		_need_release = _acting()
+		return true
+	if not playing:
+		return false
+	if tyre_game == null:
+		tyre_game = TyreGame.new()
+		_game_key = key
+		_active_plan = plan_now
+		_send_status("Fitting a tyre on the tyre changer", _changer_of(plan_now))
+		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get("tyre_fit", ""))
+	tyre_game.step(delta)
+	progress = tyre_game.progress()
+	if tyre_game.done():
+		var a: Dictionary = plan_now["action"].duplicate()
+		a["quality"] = tyre_game.quality()
+		Shed.request(a)
+		tyre_game = null
+		progress = 0.0
+		_need_release = true
+		_hold = 0.0
+		_send_status("")
+		Sfx.set_loop(_work_sound, "")
+		Sfx.play_at("pickup", camera.global_position - camera.global_transform.basis.z * 1.2, -4.0)
+	return true
 
 
 ## One frame of spraying: whatever patches of the part are under the spray get another coat.
@@ -1218,7 +1313,8 @@ func _activity_text() -> String:
 		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
 		"place": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
-		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on"}
+		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
+		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()
@@ -1233,12 +1329,12 @@ func _activity_text() -> String:
 	return ("%s %s" % [verb, what]).strip_edges()
 
 
-func _send_status(activity: String) -> void:
-	var sig := tool + "|" + activity
+func _send_status(activity: String, changer := 0) -> void:
+	var sig := "%s|%s|%d" % [tool, activity, changer if activity != "" else 0]
 	if sig == _last_status:
 		return
 	_last_status = sig
-	Shed.request({"a": "status", "tool": tool, "activity": activity})
+	Shed.request({"a": "status", "tool": tool, "activity": activity, "changer": changer if activity != "" else 0})
 
 
 # ---------------------------------------------------------------------------- what's in your hands

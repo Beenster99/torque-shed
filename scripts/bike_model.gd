@@ -58,6 +58,8 @@ var _dash_label: Label3D
 var _needles := []               # {node, what: "speed" or "rpm"} on dial clocks
 var _leds := []                  # shift lights: {mat, color}
 var _dash_screen := Transform3D()  # where the readout text sits on the clocks, in steering space
+var _lamps: Array = []           # lit lenses and clocks: {mat, albedo, energy, group ("ign" or "head")}
+var _lit := [true, true]         # [ignition, headlight] as last set
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -69,6 +71,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	present = fitted
 	condition = build.condition if part_condition == null else part_condition
 	_slot_meshes.clear()
+	_lamps.clear()
+	_lit = [true, true]
 	_highlighted = ""
 	for slot in PartsDB.SLOTS:
 		_slot_meshes[slot] = []
@@ -128,10 +132,11 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 		var rim_r := build.front_rim_radius if front else build.rear_rim_radius
 		var width := build.front_tyre_width if front else build.rear_tyre_width
 		_current_slot = side + "_wheel"
-		_draw_rim(wheel, rim_r, width)
+		var rim_w := rim_width_of(_part())
+		_draw_rim(wheel, rim_r, rim_w)
 		_current_slot = side + "_tyre"
-		_draw_tyre(wheel, rim_r, build.front_radius if front else build.rear_radius, width)
-		_draw_brake(side, wheel, hub, rim_r)
+		_draw_tyre(wheel, rim_r, build.front_radius if front else build.rear_radius, width, rim_w)
+		_draw_brake(side, wheel, hub, rim_r, rim_w)
 	_draw_rear_master()
 	_draw_final_drive(zr)
 	_draw_shock()
@@ -149,6 +154,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 		_build_rider()
 	update_pose_from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 	set_gauges(0.0, 0.0)
+	# Parked, every lamp and the clocks are dark until the engine runs (see set_lights).
+	set_lights(false, false)
 
 
 ## Where each cylinder's barrel sits and which way it points, for the engine layout. Barrels
@@ -249,7 +256,7 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 	_tube(_head - _steer_axis * 0.02, hb, 0.038, frame_mat)
 	_box(_tail + Vector3(0.0, -0.05, 0.2), Vector3(0.13, 0.015, 0.26), black)  # rear fender
 	_box(Vector3(0.0, 0.06, lerpf(_engine_c.z, _pivot.z, 0.6)), Vector3(0.18, 0.14, 0.14), black)  # battery box
-	var tail_light := _box(_tail + Vector3(0.0, -0.02, 0.2), Vector3(0.1, 0.04, 0.02), _glow(Color(1.0, 0.05, 0.02), 2.0))
+	var tail_light := _box(_tail + Vector3(0.0, -0.02, 0.2), Vector3(0.1, 0.04, 0.02), _lamp(Color(1.0, 0.05, 0.02), 2.0, "ign"))
 	tail_light.name = "TailLight"
 	for side in [-1.0, 1.0]:
 		_box(Vector3(0.17 * side, 0.02, _pivot.z + 0.02), Vector3(0.1, 0.02, 0.04), black)  # footpegs
@@ -257,9 +264,11 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 	_swingarm.position = _pivot
 	add_child(_swingarm)
 	_arm_len = Vector3(0.0, 0.0, zr).distance_to(_pivot)
+	# The arms clear the back tyre and rim, however fat they are.
+	var arm_x := maxf(0.11, maxf(build.rear_tyre_width, rim_width_of(PartsDB.get_part(str(build.parts.get("rear_wheel", ""))))) * 0.5 + 0.035)
 	for side in [-1.0, 1.0]:
-		_box(Vector3(0.11 * side, 0.0, _arm_len * 0.5), Vector3(0.035, 0.07, _arm_len), frame_mat, _swingarm)
-	_box(Vector3(0.0, 0.0, 0.04), Vector3(0.24, 0.07, 0.05), frame_mat, _swingarm)
+		_box(Vector3(arm_x * side, 0.0, _arm_len * 0.5), Vector3(0.035, 0.07, _arm_len), frame_mat, _swingarm)
+	_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x * 2.0 + 0.02, 0.07, 0.05), frame_mat, _swingarm)
 
 
 func _draw_tank() -> void:
@@ -602,8 +611,8 @@ func _draw_dashboard() -> void:
 	var at := Vector3(0.0, 0.1, -0.06)
 	# The clocks lean back towards the rider, so their faces look up and back at the eyes.
 	var tilt := Basis(Vector3.RIGHT, 0.9)
-	var face_mat := _glow(Color(0.95, 0.9, 0.75), 1.2)
-	var needle_mat := _glow(Color(1.0, 0.25, 0.1), 2.5)
+	var face_mat := _lamp(Color(0.95, 0.9, 0.75), 1.2, "ign")
+	var needle_mat := _lamp(Color(1.0, 0.25, 0.1), 2.5, "ign")
 	match str(p.get("style", "analog")):
 		"analog", "twin":
 			var twin: bool = p.get("style") == "twin"
@@ -633,7 +642,7 @@ func _draw_dashboard() -> void:
 			var body := _box(at, size, housing, _steer_node)
 			body.basis = tilt
 			var screen := _box(at + tilt.y * 0.016, Vector3(size.x - 0.02, 0.004, size.z - 0.02),
-				_glow(Color(0.05, 0.12, 0.25) if tft else Color(0.42, 0.55, 0.42), 1.0), _steer_node)
+				_lamp(Color(0.05, 0.12, 0.25) if tft else Color(0.42, 0.55, 0.42), 1.0, "ign"), _steer_node)
 			screen.basis = tilt
 			_dash_screen = Transform3D(tilt, at + tilt.y * 0.019)
 			if tft:
@@ -642,7 +651,7 @@ func _draw_dashboard() -> void:
 			var body := _box(at, Vector3(0.22, 0.03, 0.09), housing, _steer_node)
 			body.basis = tilt
 			var screen := _box(at + tilt.y * 0.016 + tilt * Vector3(0.0, 0.0, 0.012), Vector3(0.18, 0.004, 0.05),
-				_glow(Color(0.03, 0.03, 0.04), 0.6), _steer_node)
+				_lamp(Color(0.03, 0.03, 0.04), 0.6, "ign"), _steer_node)
 			screen.basis = tilt
 			_dash_screen = Transform3D(tilt, at + tilt.y * 0.019 + tilt * Vector3(0.0, 0.0, 0.012))
 			_add_leds(at + tilt.y * 0.017 + tilt * Vector3(0.0, 0.0, -0.028), tilt, 0.18)
@@ -697,7 +706,7 @@ func _draw_headlight() -> void:
 	var at := Vector3(0.0, -0.08, -0.13)
 	var size := float(p.get("size", 0.08))
 	var shell := _mat(_col(), 0.7, 0.3)
-	var lens := _glow(Color(1.0, 0.95, 0.82) if float(p.get("lumens", 0)) < 2000 else Color(0.9, 0.95, 1.0), 2.5)
+	var lens := _lamp(Color(1.0, 0.95, 0.82) if float(p.get("lumens", 0)) < 2000 else Color(0.9, 0.95, 1.0), 2.5, "head")
 	match str(p.get("style", "round")):
 		"bucket":
 			var bucket := _mesh_instance(_cylinder(size, size * 1.1, size * 0.75), shell, at + Vector3(0.0, 0.0, 0.03), _steer_node)
@@ -720,7 +729,7 @@ func _draw_headlight() -> void:
 			for x in [-0.04, 0.04]:
 				var face := _mesh_instance(_cylinder(0.025, 0.01), lens, at + Vector3(x, 0.0, -0.05), _steer_node)
 				face.rotation.x = PI * 0.5
-			_box(at + Vector3(0.0, -0.035, -0.047), Vector3(0.15, 0.008, 0.004), _glow(Color(0.85, 0.92, 1.0), 3.0), _steer_node)
+			_box(at + Vector3(0.0, -0.035, -0.047), Vector3(0.15, 0.008, 0.004), _lamp(Color(0.85, 0.92, 1.0), 3.0, "head"), _steer_node)
 		_:
 			var lamp := _mesh_instance(_sphere(size), shell, at, _steer_node)
 			lamp.scale = Vector3(1.0, 1.0, 0.75)
@@ -853,7 +862,7 @@ func _draw_top_box() -> void:
 			if style == "large":
 				var pad := _box(c + Vector3(0.0, 0.0, -size.z * 0.5 - 0.01), Vector3(0.22, 0.12, 0.03), _mat(Color(0.08, 0.08, 0.08), 0.0, 0.8))
 				pad.rotation.x = 0.15
-			_box(c + Vector3(0.0, size.y * 0.05, size.z * 0.5), Vector3(0.12, 0.04, 0.01), _glow(Color(0.9, 0.1, 0.05), 0.6))
+			_box(c + Vector3(0.0, size.y * 0.05, size.z * 0.5), Vector3(0.12, 0.04, 0.01), _lamp(Color(0.9, 0.1, 0.05), 0.6, "ign"))
 
 
 ## Fog or spot lamps on the fork legs, or an LED bar across the fork.
@@ -864,7 +873,7 @@ func _draw_fog_lights() -> void:
 		return
 	var shell := _mat(_col(), 0.8, 0.25)
 	var b: Array = p.get("beam", [1.0, 0.9, 0.8])
-	var lens := _glow(Color(b[0], b[1], b[2]), 2.0)
+	var lens := _lamp(Color(b[0], b[1], b[2]), 2.0, "ign")
 	var style := str(p.get("style", "round"))
 	if style == "bar":
 		var mid := -_steer_axis * 0.2 + Vector3(0.0, 0.0, -0.1)
@@ -958,18 +967,35 @@ func _draw_centre_stand(build: BikeBuild) -> void:
 
 # ---------------------------------------------------------------------------- wheels and brakes
 
-func _draw_rim(wheel: Node3D, rim_r: float, width: float) -> void:
+## A rim's width across its bead seats, in metres, from the wheel part's rim width in inches.
+static func rim_width_of(wheel: Dictionary) -> float:
+	return float(wheel.get("rim_width", 3.5)) * 0.0254
+
+
+## The rim: a barrel `rim_w` wide between two flanges the tyre's beads sit inside, and the spokes.
+func _draw_rim(wheel: Node3D, rim_r: float, rim_w: float) -> void:
 	var p := _part()
 	var style := str(p.get("style", "cast"))
 	var rim_mat := _mat(_col(), 0.9 if style != "carbon" else 0.2, 0.25, 0.8 if style == "carbon" else 0.0)
 	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.12)
+	# The barrel is open at the sides, so it's drawn from both faces.
+	var barrel_mat := rim_mat.duplicate() as StandardMaterial3D
+	barrel_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var barrel := _mesh_instance(_cylinder(rim_r - 0.004, rim_w, -1.0, 40), barrel_mat, Vector3.ZERO, wheel)
+	(barrel.mesh as CylinderMesh).cap_top = false
+	(barrel.mesh as CylinderMesh).cap_bottom = false
+	barrel.rotation.z = PI * 0.5
+	barrel.set_meta("hoop", Vector3(rim_r - 0.03, rim_r, rim_w))
+	for side in [-1.0, 1.0]:
+		var flange := TorusMesh.new()
+		flange.inner_radius = rim_r - 0.012
+		flange.outer_radius = rim_r + 0.009
+		flange.rings = 40
+		flange.ring_segments = 8
+		var f := _mesh_instance(flange, rim_mat, Vector3(side * rim_w * 0.5, 0.0, 0.0), wheel)
+		f.rotation.z = PI * 0.5
+		f.scale = Vector3(1.0, 0.4, 1.0)
 	if style == "spoked" or style == "wire":
-		var ring := TorusMesh.new()
-		ring.inner_radius = rim_r - 0.022
-		ring.outer_radius = rim_r
-		var rim := _mesh_instance(ring, rim_mat, Vector3.ZERO, wheel)
-		rim.rotation.z = PI * 0.5
-		rim.scale = Vector3(1.0, maxf(1.0, width / 0.03), 1.0)
 		var count := int(p.get("spokes", 36 if style == "wire" else 18))
 		for i in count:
 			var a := TAU * i / count
@@ -977,50 +1003,48 @@ func _draw_rim(wheel: Node3D, rim_r: float, width: float) -> void:
 				Vector3(0.0, cos(a), sin(a)) * (rim_r - 0.02), 0.003 if style == "spoked" else 0.0022, chrome, Vector3.ONE, wheel)
 			spoke.name = "Spoke%d" % i
 	else:
-		var rim := _mesh_instance(_cylinder(rim_r, width * 0.5), rim_mat, Vector3.ZERO, wheel)
-		rim.rotation.z = PI * 0.5
 		var spokes := int(p.get("spokes", 3 if style == "carbon" else 5))
 		# Fewer spokes are chunkier; a "y" wheel splits each spoke in two near the rim.
 		var thick := clampf(0.12 / spokes, 0.016, 0.04)
+		var depth := clampf(rim_w * 0.45, 0.03, 0.05)
 		for i in spokes:
 			var a := TAU * i / spokes
 			if style == "y":
-				_box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.3, Vector3(0.026, rim_r * 0.55, 0.022), rim_mat, wheel).rotation.x = -a
+				_box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.3, Vector3(depth * 0.65, rim_r * 0.55, 0.022), rim_mat, wheel).rotation.x = -a
 				for split in [-0.2, 0.2]:
 					var b: float = a + split
 					var arm := _box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.55 + Vector3(0.0, cos(b), sin(b)) * rim_r * 0.2,
-						Vector3(0.02, rim_r * 0.45, 0.016), rim_mat, wheel)
+						Vector3(depth * 0.5, rim_r * 0.45, 0.016), rim_mat, wheel)
 					arm.rotation.x = -(a + split * 0.5)
 			else:
-				var spoke := _box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.5, Vector3(0.04, rim_r * 0.95, thick), rim_mat, wheel)
+				var spoke := _box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.5, Vector3(depth, rim_r * 0.95, thick), rim_mat, wheel)
 				spoke.rotation.x = -a
 	var hub := _mesh_instance(_cylinder(0.05, 0.14), chrome, Vector3.ZERO, wheel)
 	hub.rotation.z = PI * 0.5
 
 
-func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float) -> void:
+## The tyre, drawn to its size: `width` is its section width and its height off the rim
+## (radius - rim_r) comes from its profile, so a 180/55 is 180 mm wide and 99 mm tall. Its
+## beads sit inside the rim's flanges, `rim_w` apart.
+func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w: float) -> void:
 	var style := str(_part().get("style", "road"))
 	var rubber := _mat(_col(), 0.0, 0.92)
-	var tyre := TorusMesh.new()
-	tyre.inner_radius = rim_r - 0.005
-	tyre.outer_radius = radius
-	tyre.rings = 48
-	tyre.ring_segments = 14
-	var tyre_mi := _mesh_instance(tyre, rubber, Vector3.ZERO, wheel)
+	rubber.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var tyre_mi := _mesh_instance(tyre_mesh(rim_r, radius, width, rim_w, style), rubber, Vector3.ZERO, wheel)
 	tyre_mi.rotation.z = PI * 0.5
-	tyre_mi.scale = Vector3(1.0, width / maxf(radius - rim_r, 0.02) * 0.55, 1.0)
+	tyre_mi.set_meta("hoop", Vector3(rim_r, radius, width))
 	if style != "offroad":
 		return
 	var knobs := MultiMesh.new()
 	knobs.transform_format = MultiMesh.TRANSFORM_3D
 	var knob := BoxMesh.new()
-	knob.size = Vector3(width * 0.9, 0.022, 0.03)
+	knob.size = Vector3(width * 0.36, 0.022, 0.03)
 	knobs.mesh = knob
-	knobs.instance_count = 40
-	for i in 40:
-		var a := TAU * i / 40.0
-		var t := Transform3D(Basis(Vector3.RIGHT, a), Vector3(0.0, cos(a), sin(a)) * (radius - 0.006))
-		t = t.translated_local(Vector3((0.02 if i % 2 == 0 else -0.02), 0.0, 0.0))
+	knobs.instance_count = 80
+	for i in 80:
+		var a := TAU * (i / 2) / 40.0 + (PI / 40.0 if i % 2 else 0.0)
+		var t := Transform3D(Basis(Vector3.RIGHT, a), Vector3(0.0, cos(a), sin(a)) * (radius - 0.008))
+		t = t.translated_local(Vector3((width * 0.19 if i % 2 == 0 else -width * 0.19), 0.0, 0.0))
 		knobs.set_instance_transform(i, t)
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = knobs
@@ -1029,9 +1053,61 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float) -> voi
 	_slot_meshes[_current_slot].append(mmi)
 
 
-func _draw_brake(side: String, wheel: Node3D, hub: Node3D, rim_r: float) -> void:
+## A tyre as a solid of revolution round local Y, like a TorusMesh: its cross-section rises
+## from the beads (inside the rim flanges, `rim_w` apart) and bulges out to the full section
+## `width` low on the sidewall, then rounds over the tread to `radius`. Road and race tyres
+## have a round crown to lean on; knobblies and tourers are squarer.
+static func tyre_mesh(rim_r: float, radius: float, width: float, rim_w: float, style := "road", segments := 48) -> ArrayMesh:
+	var h := maxf(radius - rim_r, 0.02)
+	var half := width * 0.5
+	var bead := minf(rim_w * 0.5 - 0.004, half * 0.9)
+	var bulge_r := rim_r + h * 0.4
+	var p := 2.0 if style in ["slick", "road"] else 2.8
+	var prof: Array[Vector2] = []    # (radial, axial) from the right-hand bead over the crown
+	var n := 6
+	for i in n:
+		var t := float(i) / n
+		prof.append(Vector2(lerpf(rim_r - 0.006, bulge_r, 1.0 - cos(t * PI * 0.5)), lerpf(bead, half, sin(t * PI * 0.5))))
+	var m := 10
+	for i in m + 1:
+		var th := float(i) / m * PI * 0.5
+		var c := pow(cos(th), 2.0 / p)
+		var sn := pow(sin(th), 2.0 / p)
+		prof.append(Vector2(bulge_r + (rim_r + h - bulge_r) * sn, half * c))
+	for i in range(prof.size() - 2, -1, -1):
+		prof.append(Vector2(prof[i].x, -prof[i].y))
+	var normals: Array[Vector2] = []
+	for j in prof.size():
+		var tangent := prof[mini(j + 1, prof.size() - 1)] - prof[maxi(j - 1, 0)]
+		normals.append(Vector2(-tangent.y, tangent.x).normalized())
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in segments + 1:
+		var a := TAU * i / segments
+		var ca := cos(a)
+		var sa := sin(a)
+		for j in prof.size():
+			st.set_uv(Vector2(float(i) / segments, float(j) / (prof.size() - 1)))
+			st.set_normal(Vector3(ca * normals[j].x, normals[j].y, sa * normals[j].x))
+			st.add_vertex(Vector3(ca * prof[j].x, prof[j].y, sa * prof[j].x))
+	var rows := prof.size()
+	for i in segments:
+		for j in rows - 1:
+			var a0 := i * rows + j
+			var b0 := (i + 1) * rows + j
+			st.add_index(a0)
+			st.add_index(b0)
+			st.add_index(a0 + 1)
+			st.add_index(a0 + 1)
+			st.add_index(b0)
+			st.add_index(b0 + 1)
+	return st.commit()
+
+
+func _draw_brake(side: String, wheel: Node3D, hub: Node3D, rim_r: float, rim_w := 0.09) -> void:
 	var front := side == "front"
-	var x := 0.068 if front else 0.07
+	# The disc bolts on just outside the rim.
+	var x := maxf(0.068 if front else 0.07, rim_w * 0.5 + 0.012)
 	_current_slot = side + "_disc"
 	var disc := _part()
 	var disc_r := minf(float(disc.get("diameter", 280)) / 2000.0, rim_r - 0.03)
@@ -1350,6 +1426,16 @@ func build_pickers(meta: Dictionary, slot_meta := {}, layer := PICK_LAYER) -> vo
 			if mi is MultiMeshInstance3D or str(mi.name).begins_with("Spoke"):
 				continue
 			var xf := _local_xform(mi)
+			if mi.has_meta("hoop"):
+				# A ring (the tyre, a rim barrel): boxes round it, with the middle left open.
+				var hoop: Vector3 = mi.get_meta("hoop")
+				var mid_r := (hoop.x + hoop.y) * 0.5
+				var deep := hoop.y - hoop.x
+				for i in 16:
+					var a := TAU * i / 16.0
+					var piece := Transform3D(Basis(Vector3.UP, -a), Vector3(cos(a), 0.0, sin(a)) * mid_r)
+					_add_box(body, xf * piece, Vector3(deep, hoop.z, TAU * mid_r / 16.0))
+				continue
 			if (mi as MeshInstance3D).mesh is TorusMesh:
 				var torus: TorusMesh = mi.mesh
 				var mid := (torus.inner_radius + torus.outer_radius) * 0.5
@@ -1390,8 +1476,9 @@ func strip_to(keep: Array) -> void:
 ## Loose parts on their own, sitting with their base on the origin. `parts` maps slot ->
 ## part id for each part to show; `cond` maps slot -> condition. The node's "size" meta is
 ## the bounding size and its "model" meta is the BikeModel inside.
-static func assembly_display(parts: Dictionary, cond: Dictionary) -> Node3D:
+static func assembly_display(parts: Dictionary, cond: Dictionary, unseen := {}) -> Node3D:
 	var build := PartsDB.DEFAULT_BUILD.duplicate()
+	build.merge(unseen, true)
 	var fitted := {}
 	for slot in parts:
 		build[slot] = parts[slot]
@@ -1420,6 +1507,11 @@ static func part_display(part_id: String, cond: Dictionary) -> Node3D:
 	if PartsDB.is_fluid(part_id):
 		return fluid_display(part_id, 0.0 if PartsDB.get_part(part_id).get("empty", false) else 1.0)
 	var slot: String = PartsDB.slots_for_kind(PartsDB.kind_of(part_id))[0]
+	if slot == "front_tyre":
+		# A loose tyre keeps the size it is on a wheel it's made for (`unseen` sizes it, and isn't drawn).
+		var fits: Array = PartsDB.wheels_for(part_id)
+		if not fits.is_empty():
+			return assembly_display({slot: part_id}, {slot: cond}, {"front_wheel": fits[0]})
 	return assembly_display({slot: part_id}, {slot: cond})
 
 
@@ -1439,6 +1531,11 @@ static func item_display(item_id: int) -> Node3D:
 			if asm["fitted"][slot]:
 				shown[slot] = asm["parts"][slot]
 		return assembly_display(shown, asm["cond"])
+	var tyre := Shed.tyre_on_wheel(item_id)
+	if tyre != 0:
+		# A wheel off the bike with its tyre still on.
+		return assembly_display({"front_wheel": it["part"], "front_tyre": Shed.items[tyre]["part"]},
+			{"front_wheel": Shed.condition_of(it), "front_tyre": Shed.condition_of(Shed.items[tyre])})
 	return part_display(it["part"], Shed.condition_of(it))
 
 
@@ -1702,6 +1799,35 @@ static func _patina_texture() -> NoiseTexture2D:
 	_patina_albedo.noise = noise
 	_patina_albedo.color_ramp = ramp
 	return _patina_albedo
+
+
+## A lens or lit face that only glows with the ignition on ("ign": tail light, fog lamps,
+## clocks) or the headlight switched on too ("head").
+func _lamp(color: Color, energy: float, group: String) -> StandardMaterial3D:
+	var m := _glow(color, energy)
+	_lamps.append({"mat": m, "albedo": m.albedo_color, "energy": energy, "group": group})
+	return m
+
+
+## Lights the lenses and clocks: `ignition` for the engine running, `headlight` for the
+## headlight switched on as well. Unlit, the lenses are dull glass.
+func set_lights(ignition: bool, headlight: bool) -> void:
+	headlight = headlight and ignition
+	if _lit[0] == ignition and _lit[1] == headlight:
+		return
+	_lit = [ignition, headlight]
+	for l in _lamps:
+		var on: bool = headlight if l["group"] == "head" else ignition
+		var m: StandardMaterial3D = l["mat"]
+		var c: Color = l["albedo"]
+		m.emission_enabled = on
+		m.emission_energy_multiplier = float(l["energy"]) if on else 0.0
+		m.albedo_color = c if on else c.darkened(0.6)
+
+
+## Whether any lens or clock is glowing.
+func lights_lit() -> bool:
+	return _lit[0] or _lit[1]
 
 
 func _glow(color: Color, energy: float) -> StandardMaterial3D:
