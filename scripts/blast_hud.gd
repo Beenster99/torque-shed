@@ -103,7 +103,7 @@ func _draw() -> void:
 			RUST.lerp(GOOD, 1.0 - clampf(float(l["rust"]) * 2.0, 0.0, 1.0)))
 		y += row_h
 	# How to work it, along the bottom.
-	draw_string(font, Vector2(0, size.y - 34.0), walker.blast_controls(), HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
+	draw_string(font, Vector2(0, size.y - 120.0), walker.blast_controls(), HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
 	_draw_cue(font)
 
 

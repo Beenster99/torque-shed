@@ -20,6 +20,11 @@ func _ready() -> void:
 		await _beam_shots()
 		get_tree().quit()
 		return
+	if "--blast" in OS.get_cmdline_user_args():
+		await _blast_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -54,56 +59,7 @@ func _ready() -> void:
 	Shed.request({"a": "grab_bike", "bike": faithful})
 	var home := Workshop.CENTER + Vector3(-4.0, 0.0, 1.0)
 	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(), home)})
-	# The sandblaster, mid-blast: the barn find's engine turning on the turntable, bare metal
-	# coming up where the jet has been.
-	Shed.request({"a": "order_furniture", "model": "blaster_cabinet"})
-	var cab := 0
-	for id in Shed.furniture:
-		if Shed.furniture[id]["kind"] == "blaster":
-			cab = id
-	var spot := "blast_%d_0" % cab
-	var at := Workshop.CENTER + Vector3(1.5, 0.0, 1.8)
-	Shed.request({"a": "grab", "furniture": cab})
-	Shed.request({"a": "release", "furniture": cab, "xf": Transform3D(Basis(), at)})
-	var engine := 0
-	for s in Shed.stand_spots():
-		if engine == 0 and Shed.is_engine(Shed.item_at_spot(s)):
-			engine = Shed.item_at_spot(s)
-			Shed.request({"a": "take", "spot": s})
-	Shed.request({"a": "place", "spot": spot})
-	await _frames(10)
-	var view: EquipmentView = main.workshop.furniture_nodes[cab]
-	var pivot: Node3D = view.get_node("Pivot")
-	# A rusty, grubby engine, so the bare metal shows.
-	var rusty := [engine]
-	for slot in PartsDB.ENGINE_SLOTS:
-		if Shed.engine_item(engine, slot) != 0:
-			rusty.append(Shed.engine_item(engine, slot))
-	for id in rusty:
-		Shed.items[id]["rust"] = 0.85
-		Shed.items[id]["dirt"] = 0.5
-	Shed.changed.emit()
-	await _frames(10)
-	pivot = view.get_node("Pivot")
-	await _look_from(at + Vector3(2.0, 0.0, 2.8), at + Vector3(0.0, 1.1, 0.0), "c6_sandblaster_cabinet")
-	await _look_from(at + Vector3(0.0, 0.0, 1.3), pivot.global_position, "c7_sandblaster_ready")
-	Shed.request({"a": "blast_use", "spot": spot, "on": true})
-	await _frames(5)
-	# Sweep the jet over one side in bands, turning the engine a little between them.
-	Input.action_press("act")
-	for i in 900:
-		await get_tree().physics_frame
-		if w.blast:
-			w.blast.turn(Vector2(0.004 * sin(i * 0.01), 0.0))
-		w._look(0.0025 * sin(i * 0.09), 0.0012 * cos(i * 0.011))
-		if i == 700:
-			await _shot("c8_sandblaster_mid_blast")
-	Input.action_release("act")
-	await _frames(10)
-	await _shot("c9_sandblaster_bare_patches")
-	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9b_sandblaster_satin_closeup")
-	w.finish_blast()
-	await _frames(10)
+	await _blast_shots()
 	await _beam_shots()
 	SaveGame.delete_slot("shots")
 	get_tree().quit()
@@ -169,3 +125,59 @@ func _geo_shots() -> void:
 	Shed.changed.emit()
 	await _frames(10)
 	await _look_from(bay.origin + Vector3(-1.9, 0.0, 2.6), bay.origin + Vector3(0.0, 0.7, 0.0), "g6_half_built_with_ghosts")
+
+
+## The sandblaster, mid-blast: a rusty engine turning on the turntable, satin bare metal
+## coming up where the jet has been, and the live readout.
+func _blast_shots() -> void:
+	var w: Walker = main.walker
+	# The sandblaster, mid-blast: the barn find's engine turning on the turntable, bare metal
+	# coming up where the jet has been.
+	Shed.request({"a": "order_furniture", "model": "blaster_cabinet"})
+	var cab := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "blaster":
+			cab = id
+	var spot := "blast_%d_0" % cab
+	var at := Workshop.CENTER + Vector3(1.5, 0.0, 1.8)
+	Shed.request({"a": "grab", "furniture": cab})
+	Shed.request({"a": "release", "furniture": cab, "xf": Transform3D(Basis(), at)})
+	var engine := 0
+	for s in Shed.stand_spots():
+		if engine == 0 and Shed.is_engine(Shed.item_at_spot(s)):
+			engine = Shed.item_at_spot(s)
+			Shed.request({"a": "take", "spot": s})
+	Shed.request({"a": "place", "spot": spot})
+	await _frames(10)
+	var view: EquipmentView = main.workshop.furniture_nodes[cab]
+	var pivot: Node3D = view.get_node("Pivot")
+	# A rusty, grubby engine, so the bare metal shows.
+	var rusty := [engine]
+	for slot in PartsDB.ENGINE_SLOTS:
+		if Shed.engine_item(engine, slot) != 0:
+			rusty.append(Shed.engine_item(engine, slot))
+	for id in rusty:
+		Shed.items[id]["rust"] = 0.85
+		Shed.items[id]["dirt"] = 0.5
+	Shed.changed.emit()
+	await _frames(10)
+	pivot = view.get_node("Pivot")
+	await _look_from(at + Vector3(2.0, 0.0, 2.8), at + Vector3(0.0, 1.1, 0.0), "c6_sandblaster_cabinet")
+	await _look_from(at + Vector3(0.0, 0.0, 1.3), pivot.global_position, "c7_sandblaster_ready")
+	Shed.request({"a": "blast_use", "spot": spot, "on": true})
+	await _frames(5)
+	# Sweep the jet over one side in bands, turning the engine a little between them.
+	Input.action_press("act")
+	for i in 900:
+		await get_tree().physics_frame
+		if w.blast:
+			w.blast.turn(Vector2(0.004 * sin(i * 0.01), 0.0))
+		w._look(0.0025 * sin(i * 0.09), 0.0012 * cos(i * 0.011))
+		if i == 700:
+			await _shot("c8_sandblaster_mid_blast")
+	Input.action_release("act")
+	await _frames(10)
+	await _shot("c9_sandblaster_bare_patches")
+	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9b_sandblaster_satin_closeup")
+	w.finish_blast()
+	await _frames(10)
