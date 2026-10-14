@@ -587,9 +587,14 @@ const CHIRP_MAX_DB := 6.0
 var _skid_level := 0.0
 var _skid_held := 0.0       # seconds the tyre has been sliding
 var _skid_bite := 0.0       # 1 just as grip breaks, fading: the moment it lets go is loudest
-var _skid_msec := 0
+var _skid_slow := 0.0       # the level eased over a fifth of a second
+var _onset := -1.0          # seconds since grip started to go (-1: not letting go)
+var _onset_peak := 0.0
+## How long after grip starts to go the bark comes: long enough to tell a snap from a slow slide.
+const CHIRP_WINDOW := 0.06
 var _chirp_wait := 0.0
 var _chirps := 0
+var last_chirp := 0.0        # how hard the last bark was, 0..1
 
 
 ## The tyre squeal on its own, 0 (none) .. 1 (full lock-up), for other players' bikes too.
@@ -600,17 +605,26 @@ func set_screech(level: float) -> void:
 		_screech = Sfx.make_loop_player(self)
 		_screech.max_distance = 80.0
 		_screech.unit_size = 10.0
-	var now := Time.get_ticks_msec()
-	var dt := clampf(float(now - _skid_msec) / 1000.0, 0.001, 0.1) if _skid_msec > 0 else 1.0 / 60.0
-	_skid_msec = now
+	var dt := get_physics_process_delta_time() if Engine.is_in_physics_frame() else get_process_delta_time()
+	dt = clampf(dt, 0.001, 0.1)
 	level = clampf(level, 0.0, 1.0)
-	var rise := (level - _skid_level) / dt
 	_chirp_wait = maxf(_chirp_wait - dt, 0.0)
-	# Grip breaking: the level jumps up from (nearly) nothing.
-	if level > 0.08 and _skid_level < 0.06 and _chirp_wait <= 0.0:
-		chirp(clampf(maxf(rise / 8.0, level), 0.0, 1.0))
-	elif rise > 5.0 and _chirp_wait <= 0.0 and level > 0.3:
-		chirp(clampf(rise / 12.0, 0.0, 1.0))
+	# Grip breaking: the level climbs from (nearly) nothing. How far it gets in the first
+	# CHIRP_WINDOW says how suddenly the tyre let go, and sets how loud it barks.
+	if _onset < 0.0 and level > 0.08 and _skid_level < 0.06 and _chirp_wait <= 0.0:
+		_onset = 0.0
+		_onset_peak = 0.0
+	if _onset >= 0.0:
+		_onset += dt
+		_onset_peak = maxf(_onset_peak, level)
+		if _onset >= CHIRP_WINDOW or level < 0.02:
+			if _onset_peak > 0.15:
+				chirp(_onset_peak)
+			_onset = -1.0
+	elif level - _skid_slow > 0.45 and _chirp_wait <= 0.0:
+		# Already sliding and it suddenly lets go much more (the back stepping right out).
+		chirp(level - _skid_slow)
+	_skid_slow = lerpf(_skid_slow, level, 1.0 - exp(-dt / 0.2))
 	if level > 0.02:
 		_skid_held += dt
 	else:
@@ -637,6 +651,7 @@ func chirp(strength: float) -> void:
 	_chirp_wait = 0.35
 	_skid_bite = 1.0
 	_chirps += 1
+	last_chirp = clampf(strength, 0.0, 1.0)
 	if is_inside_tree():
 		Sfx.play_at("chirp", global_position, lerpf(CHIRP_MIN_DB, CHIRP_MAX_DB, clampf(strength, 0.0, 1.0)), self)
 

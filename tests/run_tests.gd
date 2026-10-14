@@ -119,7 +119,7 @@ func _run_all() -> void:
 	await _test_geometry_session()
 	print("Soft headlight, tyre sounds, debug tab, menu rows and weather")
 	await _test_soft_beam()
-	_test_skid_sounds()
+	await _test_skid_sounds()
 	_test_debug_tab()
 	await _test_weather()
 	await _test_weather_session()
@@ -4871,13 +4871,34 @@ func _test_skid_sounds() -> void:
 	fx.set_screech(0.0)
 	check(fx.chirp_count() == 0, "no sound while the tyres grip")
 	fx.set_screech(0.9)
-	check(fx.chirp_count() == 1 and fx.screeching(), "grip breaking barks once and the squeal starts")
-	for i in 5:
+	check(fx.screeching(), "grip breaking starts the squeal")
+	for i in 12:
 		fx.set_screech(0.9)
+	check(fx.chirp_count() == 1, "and a moment later the tyre barks once")
+	var hard := fx.last_chirp
+	for i in 30:
+		fx.set_screech(0.85 + 0.1 * (i % 2))
 	check(fx.chirp_count() == 1, "a slide that goes on doesn't keep barking")
+	for i in 60:
+		fx.set_screech(0.0)
+	for i in 20:
+		fx.set_screech(0.3)
+	check(fx.chirp_count() == 2 and fx.last_chirp < hard, "a gentler break barks more softly (%.2f vs %.2f)" % [fx.last_chirp, hard])
+	for i in 60:
+		fx.set_screech(0.0)
+	for i in 20:
+		fx.set_screech(0.1)
+	check(fx.chirp_count() == 2, "a tyre only just scrubbing doesn't bark")
 	var wav := Sfx.stream("chirp")
 	check(wav != null and wav.loop_mode == AudioStreamWAV.LOOP_DISABLED and wav.get_length() < 0.6, "the bark is a short one-shot")
 	fx.free()
+	# On the road: stamp on the back brake at speed and the tyre barks as it locks.
+	var r := await ride({}, 7.0, func(b, t):
+		b.throttle = 1.0 if t < 5.0 else 0.0
+		b.rear_brake = 0.0 if t < 5.0 else 1.0)
+	var bike: Bike = r["bike"]
+	check(bike.effects.chirp_count() >= 1, "locking the back wheel barks (%d)" % bike.effects.chirp_count())
+	await _done(r)
 
 
 ## The Esc menu's Debug tab: reset or max your XP and money, reset everyone's XP, and empty the
@@ -4962,7 +4983,8 @@ func _test_weather() -> void:
 	check(Weather.grip_mult("tarmac") == 1.0, "dry roads grip fully")
 	Settings.weather = "rain"
 	await get_tree().process_frame
-	check(w.state == "rain" and w.blend < 0.5 and w.rain < 0.5, "held at rain, it turns to rain gradually")
+	await get_tree().process_frame
+	check(w.state == "rain" and w.blend < 0.5 and w.rain < 0.5, "held at rain, it turns to rain gradually (%s from %s, %.2f, rain %.2f)" % [w.state, w.from, w.blend, w.rain])
 	w.change_to("rain", true)
 	dl.set_time(12.0)
 	check(Weather.rain_level() == 1.0 and Weather.wetness() == 1.0 and Weather.cover_level() == 1.0, "rain: overcast, raining, soaked")
@@ -4983,6 +5005,7 @@ func _test_weather() -> void:
 	Settings.weather = "auto"
 	w.change_to("clear", true)
 	w._spell = 0.0
+	await get_tree().process_frame
 	await get_tree().process_frame
 	check(w.state in Weather.NEXT["clear"] and w.state != "clear", "left to itself, clear skies turn to %s" % w.state)
 	check(w._spell >= Weather.SPELL.x - 1.0, "and the new spell lasts a few minutes")
