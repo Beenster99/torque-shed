@@ -74,6 +74,7 @@ func _run_all() -> void:
 	await _test_tyre_smoke()
 	print("Game session")
 	await _test_session()
+	await _test_walker_spawns()
 	print("Tool models, posters and the water jet")
 	await _test_tool_art()
 	print("Saving and loading")
@@ -7291,3 +7292,29 @@ func _test_shop_session() -> void:
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
+
+
+## Every player's start spot in the shed has room to walk: forward and back from each of the
+## spots a co-op player can be given, nothing pins them in place.
+func _test_walker_spawns() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var stuck := []
+	for i in Net.MAX_PLAYERS:
+		main.walker.place(Workshop.walker_spawn(i))
+		for f in 5:
+			await get_tree().physics_frame
+		var span := AABB(main.walker.global_position, Vector3.ZERO)
+		for dir in ["move_forward", "move_back"]:
+			Input.action_press(dir)
+			for f in 45:
+				await get_tree().physics_frame
+				span = span.expand(main.walker.global_position)
+			Input.action_release(dir)
+		if span.size.length() < 1.0:
+			stuck.append("%d at %s (%.2f m)" % [i, Workshop.walker_spawn(i).origin, span.size.length()])
+	check(stuck.is_empty(), "every start spot in the shed has room to walk %s" % str(stuck))
+	main.queue_free()
+	await get_tree().process_frame
