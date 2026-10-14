@@ -3402,75 +3402,6 @@ func _test_board_images() -> void:
 	check(not data.is_empty() and data.size() <= Shed.MAX_IMAGE_BYTES and back.load_webp_from_buffer(data) == OK,
 		"a picture from the PC is packed small (%d bytes)" % data.size())
 	check(back.get_width() == BoardData.IMAGE_PX and back.get_height() == BoardData.IMAGE_PX / 2, "and shrunk to 512 px across (%dx%d)" % [back.get_width(), back.get_height()])
-
-
-# ---------------------------------------------------------------------------- carrying, snapping, surfaces, whiteboard, boxes
-
-## A loose part made up and put straight into your hands.
-func _in_hands(part: String, dirt := 0.0, rust := 0.0) -> int:
-	var id := Shed._new_item(part, rust, dirt, rust)
-	Shed._move(id, "held", Shed.me())
-	return id
-
-
-## Puts what you're holding down on a surface at the clear place nearest `at`; false if there's no room.
-func _set_down_near(key: String, at := Vector2.ZERO) -> bool:
-	var held := Shed.held_by(Shed.me())
-	var place = Shed.find_room(key, held, at)
-	if not (place is Transform3D):
-		return false
-	Shed.request({"a": "set_down", "top": key, "xf": place})
-	return Shed.held_by(Shed.me()) == 0
-
-
-func _first_furniture(model: String) -> int:
-	for id in Shed.furniture:
-		if Shed.furniture[id]["model"] == model:
-			return id
-	return 0
-
-
-func _test_carry_and_snap() -> void:
-	# How far out you hold equipment: arm's length plus the wheel, within limits.
-	check(Walker.carry_distance(1.0, 0.0) == 1.0 and Walker.carry_distance(1.0, 0.5) == 1.5, "the mouse wheel pushes carried equipment further out")
-	check(is_equal_approx(Walker.carry_distance(1.0, 99.0), 1.0 + Walker.CARRY_MAX) and is_equal_approx(Walker.carry_distance(1.0, -99.0), 1.0 + Walker.CARRY_MIN),
-		"it stays between %.2f and %.2f m beyond arm's length" % [Walker.CARRY_MIN, Walker.CARRY_MAX])
-	check(Placement.snap_yaw(0.3) == 0.0 and is_equal_approx(Placement.snap_yaw(1.4), PI * 0.5) and is_equal_approx(Placement.snap_yaw(-3.0), -PI),
-		"snapping squares equipment up in quarter turns")
-	# A corner of two walls out of the way of everything, to snap against.
-	var corner := Vector3(600.0, 0.0, 600.0)
-	var walls := Node3D.new()
-	add_child(walls)
-	for w in [[corner + Vector3(-0.1, 1.0, 5.0), Vector3(0.2, 2.0, 10.0)], [corner + Vector3(5.0, 1.0, -0.1), Vector3(10.0, 2.0, 0.2)]]:
-		var body := StaticBody3D.new()
-		var cs := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = w[1]
-		cs.shape = box
-		body.add_child(cs)
-		body.position = w[0]
-		walls.add_child(body)
-	await get_tree().physics_frame
-	await get_tree().physics_frame
-	var space := get_viewport().get_world_3d().direct_space_state
-	var size := Vector3(1.2, 1.0, 0.6)
-	var none: Array[RID] = []
-	var free := Placement.snap(space, Transform3D(Basis(Vector3.UP, 0.2), corner + Vector3(3.0, 0.0, 3.0)), size, none)
-	check((free["walls"] as Array).is_empty() and (free["xf"] as Transform3D).origin.is_equal_approx(corner + Vector3(3.0, 0.0, 3.0))
-		and is_zero_approx((free["xf"] as Transform3D).basis.get_euler().y), "away from walls it only squares up")
-	var by_wall := Placement.snap(space, Transform3D(Basis(Vector3.UP, 0.2), corner + Vector3(0.85, 0.0, 3.0)), size, none)
-	var at: Vector3 = (by_wall["xf"] as Transform3D).origin
-	check((by_wall["walls"] as Array).size() == 1 and absf(at.x - (corner.x + 0.6 + Placement.GAP)) < 0.005 and absf(at.z - (corner.z + 3.0)) < 0.005,
-		"near a wall it slides flush against it (%s)" % str(at - corner))
-	var cornered := Placement.snap(space, Transform3D(Basis(Vector3.UP, -0.1), corner + Vector3(0.85, 0.0, 0.5)), size, none)
-	at = (cornered["xf"] as Transform3D).origin
-	check((cornered["walls"] as Array).size() == 2 and absf(at.x - (corner.x + 0.6 + Placement.GAP)) < 0.005
-		and absf(at.z - (corner.z + 0.3 + Placement.GAP)) < 0.005, "near a corner it goes tight into it (%s)" % str(at - corner))
-	var turned := Placement.snap(space, Transform3D(Basis(Vector3.UP, PI * 0.5 + 0.2), corner + Vector3(0.6, 0.0, 3.0)), size, none)
-	at = (turned["xf"] as Transform3D).origin
-	check(absf(at.x - (corner.x + 0.3 + Placement.GAP)) < 0.005, "turned a quarter, its narrow side goes to the wall (%s)" % str(at - corner))
-	walls.queue_free()
-	# In the shed: carry a stool about, wheel it out, and the tool stays the same.
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
@@ -3576,6 +3507,79 @@ func _test_carry_and_snap() -> void:
 	await get_tree().physics_frame
 
 
+
+# ---------------------------------------------------------------------------- carrying, snapping, surfaces, whiteboard, boxes
+
+## A loose part made up and put straight into your hands.
+func _in_hands(part: String, dirt := 0.0, rust := 0.0) -> int:
+	var id := Shed._new_item(part, rust, dirt, rust)
+	Shed._move(id, "held", Shed.me())
+	return id
+
+
+## Puts what you're holding down on a surface at the clear place nearest `at`; false if there's no room.
+func _set_down_near(key: String, at := Vector2.ZERO) -> bool:
+	var held := Shed.held_by(Shed.me())
+	var place = Shed.find_room(key, held, at)
+	if not (place is Transform3D):
+		return false
+	Shed.request({"a": "set_down", "top": key, "xf": place})
+	return Shed.held_by(Shed.me()) == 0
+
+
+func _first_furniture(model: String) -> int:
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == model:
+			return id
+	return 0
+
+
+func _test_carry_and_snap() -> void:
+	# How far out you hold equipment: arm's length plus the wheel, within limits.
+	check(Walker.carry_distance(1.0, 0.0) == 1.0 and Walker.carry_distance(1.0, 0.5) == 1.5, "the mouse wheel pushes carried equipment further out")
+	check(is_equal_approx(Walker.carry_distance(1.0, 99.0), 1.0 + Walker.CARRY_MAX) and is_equal_approx(Walker.carry_distance(1.0, -99.0), 1.0 + Walker.CARRY_MIN),
+		"it stays between %.2f and %.2f m beyond arm's length" % [Walker.CARRY_MIN, Walker.CARRY_MAX])
+	check(Placement.snap_yaw(0.3) == 0.0 and is_equal_approx(Placement.snap_yaw(1.4), PI * 0.5) and is_equal_approx(Placement.snap_yaw(-3.0), -PI),
+		"snapping squares equipment up in quarter turns")
+	# A corner of two walls out of the way of everything, to snap against.
+	var corner := Vector3(600.0, 0.0, 600.0)
+	var walls := Node3D.new()
+	add_child(walls)
+	for w in [[corner + Vector3(-0.1, 1.0, 5.0), Vector3(0.2, 2.0, 10.0)], [corner + Vector3(5.0, 1.0, -0.1), Vector3(10.0, 2.0, 0.2)]]:
+		var body := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = w[1]
+		cs.shape = box
+		body.add_child(cs)
+		body.position = w[0]
+		walls.add_child(body)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var space := get_viewport().get_world_3d().direct_space_state
+	var size := Vector3(1.2, 1.0, 0.6)
+	var none: Array[RID] = []
+	var free := Placement.snap(space, Transform3D(Basis(Vector3.UP, 0.2), corner + Vector3(3.0, 0.0, 3.0)), size, none)
+	check((free["walls"] as Array).is_empty() and (free["xf"] as Transform3D).origin.is_equal_approx(corner + Vector3(3.0, 0.0, 3.0))
+		and is_zero_approx((free["xf"] as Transform3D).basis.get_euler().y), "away from walls it only squares up")
+	var by_wall := Placement.snap(space, Transform3D(Basis(Vector3.UP, 0.2), corner + Vector3(0.85, 0.0, 3.0)), size, none)
+	var at: Vector3 = (by_wall["xf"] as Transform3D).origin
+	check((by_wall["walls"] as Array).size() == 1 and absf(at.x - (corner.x + 0.6 + Placement.GAP)) < 0.005 and absf(at.z - (corner.z + 3.0)) < 0.005,
+		"near a wall it slides flush against it (%s)" % str(at - corner))
+	var cornered := Placement.snap(space, Transform3D(Basis(Vector3.UP, -0.1), corner + Vector3(0.85, 0.0, 0.5)), size, none)
+	at = (cornered["xf"] as Transform3D).origin
+	check((cornered["walls"] as Array).size() == 2 and absf(at.x - (corner.x + 0.6 + Placement.GAP)) < 0.005
+		and absf(at.z - (corner.z + 0.3 + Placement.GAP)) < 0.005, "near a corner it goes tight into it (%s)" % str(at - corner))
+	var turned := Placement.snap(space, Transform3D(Basis(Vector3.UP, PI * 0.5 + 0.2), corner + Vector3(0.6, 0.0, 3.0)), size, none)
+	at = (turned["xf"] as Transform3D).origin
+	check(absf(at.x - (corner.x + 0.3 + Placement.GAP)) < 0.005, "turned a quarter, its narrow side goes to the wall (%s)" % str(at - corner))
+	walls.queue_free()
+	# In the shed: carry a stool about, wheel it out, and the tool stays the same.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
 	var kept_snap: bool = Settings.snap_placement
 	Settings.snap_placement = true
 	Shed.request({"a": "order_furniture", "model": "seat_stool"})
@@ -3868,6 +3872,8 @@ func _test_box_labels() -> void:
 	check(int(shown.get_meta("courier")) == BikeModel.courier_for(box), "a delivered box carries the label for its own id")
 	shown.free()
 	Shed.stop()
+
+
 
 
 func _test_side_rooms() -> void:
