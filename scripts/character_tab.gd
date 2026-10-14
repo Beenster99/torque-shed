@@ -37,6 +37,14 @@ func _rebuild() -> void:
 	var bar := ProgressBar.new()
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(0, 14)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = UITheme.ACCENT
+	fill.set_corner_radius_all(4)
+	var back := StyleBoxFlat.new()
+	back.bg_color = Color(1, 1, 1, 0.12)
+	back.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("fill", fill)
+	bar.add_theme_stylebox_override("background", back)
 	var span: int = maxi(1, int(s["xp_next"]) - int(s["xp_level_start"]))
 	bar.max_value = span
 	bar.value = clampi(int(s["xp"]) - int(s["xp_level_start"]), 0, span)

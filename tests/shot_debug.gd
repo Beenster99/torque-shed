@@ -15,49 +15,34 @@ func _ready() -> void:
 	main.menu.new_shed = true
 	main._start_session()
 	await _frames(20)
-	var r := Workshop.BOOTH_ROOM_CENTER
-	var h := Workshop.BOOTH_ROOM_HALF
-	# The paint shop from the yard, then inside with two parts hung in the booth.
-	await _look_from(r + Vector3(-1.0, 0.0, h.y + 6.0), r + Vector3(0.0, 1.4, 0.0), "r7_1_paint_shop_outside")
-	var booth := 0
-	for id in Shed.furniture:
-		if Shed.furniture[id]["kind"] == "booth":
-			booth = id
-	var spots: Array = Shed.furniture_spots(booth)
-	var tank := Shed._new_item(PartsDB.by_kind["tank"][0], 0.0, 0.0, 0.0)
-	var guard := Shed._new_item(PartsDB.by_kind["exhaust"][0], 0.0, 0.0, 0.0)
-	Shed._move(tank, "spot", spots[2])
-	Shed._move(guard, "spot", spots[3])
-	Shed.changed.emit()
-	await _frames(5)
+	# Milestone B: a character with some XP, upgraded tools and skills.
+	Progress.path = "user://profile_shots.json"
+	Progress.select("Shots")
+	Progress.profile["xp"] = Progress.xp_for_level(12) + 200
+	for t in ["wrench", "wrench", "wrench", "wrench", "spray", "spray", "brush"]:
+		Progress.upgrade_tool(t)
+	for k in ["torque_feel", "torque_feel", "engine_whisperer", "steady_hand", "balance"]:
+		Progress.buy_skill(k)
 	var w: Walker = main.walker
-	w.set_tool("gun")
-	var frame: Dictionary = main.workshop.item_frame(tank)
-	var centre: Vector3 = frame["xf"] * (frame["box"] as AABB).get_center()
-	await _look_from(Vector3(centre.x - 0.3, 0.0, centre.z + 1.6), centre, "r7_2_booth_inside")
-	Input.action_press("act")
-	await _frames(45)
-	await _shot("r7_3_spraying")
-	Input.action_release("act")
-	w.set_tool("hands")
-	# Shed lights off in the evening: just the screens.
-	Daylight.current.set_time(21.0)
-	Shed.lights_on = false
-	main.workshop.set_lights(false)
-	await _look_from(Workshop.CENTER + Vector3(0.0, 0.0, 3.0), Workshop.CENTER + Vector3(0.0, 1.8, -5.0), "r7_4_lights_off")
-	main.workshop.set_lights(true)
-	# High beam at night on the road.
-	var faithful := _bike_named("Old Faithful")
-	main._try_mount(faithful)
+	w.set_tool("wrench")
+	main.hud.add_popup(6, "Cleaning")
+	main.hud.add_popup(12, "Spraying")
+	Progress.leveled_up.emit(12)
+	await _look_from(Workshop.CENTER + Vector3(0.0, 0.0, 3.0), Workshop.CENTER + Vector3(0.0, 1.2, -5.0), "b1_hud_wrench_stage4")
+	w.set_tool("spray")
+	await _frames(5)
+	await _shot("b2_spray_stage2")
+	main.menu.show_pause()
+	main.menu._tabs.current_tab = main.menu._tabs.get_tab_count() - 1
 	await _frames(10)
-	main.bike.start_engine()
-	var road_t: Transform3D = main.world.road_transform(0.12)
-	main.bike.place(road_t.origin, road_t.basis.get_euler().y)
-	main.camera.set_mode(ChaseCamera.Mode.CHASE)
-	await _frames(40)
-	await _shot("r7_5_low_beam")
-	main.bike.cycle_beam()
-	await _frames(10)
-	await _shot("r7_6_high_beam")
+	await _shot("b3_character_tab")
+	var scroll: ScrollContainer = main.menu._tabs.get_current_tab_control()
+	scroll.scroll_vertical = 700
+	await _frames(5)
+	await _shot("b4_character_skills")
+	scroll.scroll_vertical = 2000
+	await _frames(5)
+	await _shot("b5_character_goals")
+	DirAccess.remove_absolute(Progress.path)
 	SaveGame.delete_slot("shots")
 	get_tree().quit()

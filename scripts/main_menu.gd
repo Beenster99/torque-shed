@@ -118,6 +118,8 @@ func _ready() -> void:
 	_save_button = _button("Save now", func(): save_requested.emit())
 	save_row.add_child(_save_button)
 	_save_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
+	_save_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_save_status.custom_minimum_size.x = 260.0
 	save_row.add_child(_save_status)
 	_pause_box.add_child(save_row)
 	_pause_box.add_child(_button("Leave and return to title", func(): _save(); leave_session.emit()))
