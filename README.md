@@ -324,6 +324,18 @@ The weather changes by itself every few minutes between **clear skies**, **cloud
 
 In the Esc menu's **Settings** tab, **Weather** picks **Changes by itself** or holds one kind (always clear, cloudy, foggy or raining). In co-op the host's weather is everyone's. The weather is saved with the shed.
 
+### Lighting
+
+The game uses Godot's best lighting on the Forward+ renderer, all set from the **Graphics** settings in the Esc menu:
+
+- **Global illumination** (SDFGI, or the lighter SSIL, or off): light bounces. Sun through the open roller door spills warm light across the shed floor and up the walls, and the lamps light the room round them, not just what's under them.
+- **Volumetric clouds** (high, low or off): real 3D clouds 1.5 to 3 km up, lit by the sun with bright silver edges when you look towards it and dark, heavy bases, drifting with the wind. A few fair-weather clouds on a clear day, a broken sky when it's cloudy, a low, dark deck in the rain; the moon lights them at night. Off draws the older flat cloud layer.
+- **Volumetric fog** (high, low or off): the air itself catches the light. Morning sun makes soft shafts through the dust hanging in the shed, the shed's lamps make soft cones of light, the paint shop fills with haze while you spray and clears again, the dyno room fills with exhaust haze, and fog and rain thicken the air outside. Headlights stay a soft glow in the night air, not a hard beam.
+- **Shadows** (low to ultra): sharper and further away the higher you go; at high and above the yard floodlights cast shadows too, so their light breaks into rays at night, and ultra softens shadow edges with distance.
+- **Reflections** on paint, chrome and wet roads, **ambient occlusion**, and **glow** round anything bright: tail lights, neon, screens and the sales sign.
+
+Your eyes adjust too: walk out of the bright yard into the shed with the lights off and it starts dark, then slowly opens up; step back into daylight and it clamps down quickly. On the simpler renderer (and on low settings) the game keeps a plainer look: flat clouds, no bounce light and no light in the air.
+
 ### Money
 
 There are two kinds of money: **your own cash**, kept with your character like your XP (so it goes with you to any shed), and **the business**: the garage's own account, kept with the shed. A new shed's business opens with **£10,000**. Your cash shows top right, next to your level, and pops up green ("+£4 Restoring") as it comes in.
@@ -387,6 +399,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
 | `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |
 | `scripts/daylight.gd`, `weather.gd` | Time of day, sky and lighting; the weather (clouds, fog, rain, wet roads, rain sounds) |
+| `scripts/lighting.gd`, `cloud_sky.gd` | Graphics settings into GI, volumetric fog, fog volumes, shadows, glow and eye adaptation; the raymarched cloud sky shader |
 | `scripts/debug_tab.gd` | The Esc menu's Debug tab: reset or max XP and money, give the garage a million, send a customer, raise the reputation |
 | `scripts/money.gd`, `money_tab.gd` | Money: part and bike prices, selling, the business's bank (cut, owner, ledger, loans) and its requests; the Esc menu's Money tab |
 | `scripts/contracts.gd`, `mot.gd` | Contracts: customers, offers, goals, payouts and reputation (kept in `Shed.contracts`); the MOT inspection sheet |
