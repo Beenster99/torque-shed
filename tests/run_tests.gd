@@ -163,6 +163,12 @@ func _run_all() -> void:
 	_test_gear_buying()
 	await _test_gear_seen_by_others()
 	await _test_shop_session()
+	print("Engine sound: firing pulses, exhausts, pops, gear shifts")
+	_test_engine_firing()
+	_test_engine_bank()
+	await _test_engine_events()
+	await _test_engine_users()
+	_test_engine_samples()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1467,15 +1473,11 @@ func _test_round5_models() -> void:
 	boxer.build_from(BikeBuild.new({"engine": "boxer_1000"}))
 	check(boxer.slot_bounds("engine").size.x > 0.5, "a boxer's cylinders stick out either side (%.2f m wide)" % boxer.slot_bounds("engine").size.x)
 	boxer.queue_free()
-	var audio := EngineAudio.new()
 	for case in [["vtwin", 2], ["parallel", 2], ["inline", 4], ["2stroke", 1]]:
-		audio.layout = case[0]
-		audio.cylinders = case[1]
-		check(audio.firing_angles().size() == case[1], "a %s fires %d times a cycle" % case)
-	audio.layout = "vtwin"
-	var v: Array = audio.firing_angles()
-	check(absf(v[1] - 0.5) > 0.03, "a V-twin's beat is uneven")
-	audio.free()
+		var fires := EngineSynth.firing_events(EngineSynth.make_spec(case[0], case[1], 600.0))
+		check(fires.size() == case[1], "a %s fires %d times a cycle" % case)
+	var v: Array = EngineSynth.firing_events(EngineSynth.make_spec("vtwin", 2, 900.0))
+	check(absf(float(v[1][0]) / 720.0 - 0.5) > 0.03, "a V-twin's beat is uneven")
 
 
 func _test_round5_riding() -> void:
@@ -1874,12 +1876,12 @@ func _test_round6_riding() -> void:
 	check(st.size() >= 24 and st[21] > 0.5, "and the other players hear it")
 	await _done(r)
 	# Engine notes: a little 50 and a big 1200 are synthesised differently.
-	var small := EngineAudio.new()
-	small.displacement = 50.0
-	var big := EngineAudio.new()
-	big.displacement = 1200.0
+	var small := EngineSound.new()
+	var big := EngineSound.new()
 	add_child(small)
 	add_child(big)
+	small.setup(BikeBuild.new({"engine": "inline_50"}))
+	big.setup(BikeBuild.new({"engine": "inline_1200"}))
 	await get_tree().process_frame
 	check(is_instance_valid(small) and is_instance_valid(big), "engine notes run for any size of engine")
 	small.queue_free()
@@ -7291,3 +7293,323 @@ func _test_shop_session() -> void:
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
+
+
+## Strength of a loop at `hz` (a Goertzel filter over the whole loop).
+func _tone(x: PackedFloat32Array, hz: float) -> float:
+	var w := TAU * hz / EngineSynth.RATE
+	var c := 2.0 * cos(w)
+	var s1 := 0.0
+	var s2 := 0.0
+	for v in x:
+		var s0 := v + c * s1 - s2
+		s2 = s1
+		s1 = s0
+	return sqrt(maxf(s1 * s1 + s2 * s2 - c * s1 * s2, 0.0)) / x.size()
+
+
+func _rms(x: PackedFloat32Array) -> float:
+	var t := 0.0
+	for v in x:
+		t += v * v
+	return sqrt(t / maxf(x.size(), 1))
+
+
+## Strength of each order of the engine cycle (k times the cycle rate), k = 1..count.
+func _orders(spec: Dictionary, x: PackedFloat32Array, rpm: float, count: int) -> PackedFloat32Array:
+	var cycle_hz := rpm / 60.0 * 360.0 / EngineSynth.cycle_degrees(spec)
+	var out := PackedFloat32Array()
+	for k in range(1, count + 1):
+		out.append(_tone(x, cycle_hz * k))
+	return out
+
+
+func _test_engine_firing() -> void:
+	var specs := {
+		"single": EngineSynth.make_spec("single", 1, 450.0, {"idle": 1500.0, "redline": 11000.0}),
+		"twin 360": EngineSynth.make_spec("twin", 2, 750.0, {"idle": 1050.0, "redline": 7700.0}),
+		"parallel 270": EngineSynth.make_spec("parallel", 2, 700.0, {"idle": 1300.0, "redline": 9500.0}),
+		"V-twin": EngineSynth.make_spec("vtwin", 2, 1100.0, {"idle": 1000.0, "redline": 8100.0}),
+		"boxer": EngineSynth.make_spec("boxer", 2, 1200.0, {"idle": 950.0, "redline": 7900.0}),
+		"triple": EngineSynth.make_spec("triple", 3, 850.0, {"idle": 1250.0, "redline": 10500.0}),
+		"inline four": EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0}),
+		"crossplane four": EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "crank": "crossplane"}),
+		"two-stroke single": EngineSynth.make_spec("2stroke", 1, 125.0, {"idle": 1450.0, "redline": 14600.0, "peak": 11250.0}),
+		"two-stroke triple": EngineSynth.make_spec("2stroke", 3, 750.0, {"idle": 1050.0, "redline": 10600.0, "peak": 8150.0}),
+	}
+	var even := ["single", "twin 360", "boxer", "triple", "inline four", "two-stroke single", "two-stroke triple"]
+	var profiles := {}
+	var offbeat := {}
+	for name in specs:
+		var spec: Dictionary = specs[name]
+		var rpm := EngineSynth.loop_rpm(spec, 5000.0)
+		var x := EngineSynth.render_loop(spec, "ex_on", rpm)
+		var events := EngineSynth.firing_events(spec).size()
+		var orders := _orders(spec, x, rpm, 4 * events)
+		check(_rms(x) > 0.01, "a %s makes an audible exhaust note (rms %.3f)" % [name, _rms(x)])
+		if name in even:
+			# Evenly spaced firings: the note is the firing rate, rpm x cylinders / 2 (x cylinders on a two-stroke).
+			var best := 0
+			for k in orders.size():
+				if orders[k] > orders[best]:
+					best = k
+			var fire_hz := EngineSynth.firing_hz(spec, rpm)
+			var expect: float = rpm / 60.0 * spec["cylinders"] * (1.0 if EngineSynth.is_two_stroke(spec) else 0.5)
+			check((best + 1) % events == 0 and absf(fire_hz - expect) < 0.01,
+				"a %s's strongest note is a harmonic of its firing rate, %.0f Hz at %.0f rpm (order %d, %d firings a cycle)" % [name, fire_hz, rpm, best + 1, events])
+		# Its spectral shape: the energy in each octave band up to 8 kHz, in dB of the whole.
+		var cycle_hz := rpm / 60.0 * 360.0 / EngineSynth.cycle_degrees(spec)
+		var bands := PackedFloat32Array()
+		bands.resize(7)
+		var order := 1
+		while order * cycle_hz < 8000.0:
+			var hz := order * cycle_hz
+			var band := clampi(int(log(hz / 62.5) / log(2.0)), 0, 6)
+			var t := _tone(x, hz)
+			bands[band] += t * t
+			order += 1 if hz < 1000.0 else 3
+		var whole := 0.0
+		for v in bands:
+			whole += v
+		for i in bands.size():
+			bands[i] = 10.0 * log(maxf(bands[i] / maxf(whole, 1e-12), 1e-7)) / log(10.0)
+		# And its rhythm: the first 16 orders of the cycle, in dB of the strongest.
+		var top := 0.0
+		for v in orders:
+			top = maxf(top, v)
+		for q in mini(16, orders.size()):
+			bands.append(20.0 * log(maxf(orders[q] / maxf(top, 1e-12), 1e-4)) / log(10.0))
+		profiles[name] = bands
+		# Off-beat engines have strong in-between orders; even ones barely any.
+		var on_beat := 0.0
+		var off_beat := 0.0
+		for k in orders.size():
+			if (k + 1) % events == 0:
+				on_beat += orders[k] * orders[k]
+			else:
+				off_beat += orders[k] * orders[k]
+		offbeat[name] = off_beat / maxf(on_beat, 1e-12)
+	check(offbeat["parallel 270"] > 4.0 * offbeat["twin 360"],
+		"a 270 degree twin lopes where a 360 twin is even (off-beat %.2f vs %.2f)" % [offbeat["parallel 270"], offbeat["twin 360"]])
+	check(offbeat["crossplane four"] > 4.0 * offbeat["inline four"],
+		"a crossplane four growls where a flat-plane four screams evenly (off-beat %.2f vs %.2f)" % [offbeat["crossplane four"], offbeat["inline four"]])
+	# Every layout sounds different from every other: their spectra don't line up.
+	var names: Array = specs.keys()
+	var closest := 1000.0
+	var pair := ""
+	for i in names.size():
+		for j in range(i + 1, names.size()):
+			var a: PackedFloat32Array = profiles[names[i]]
+			var b: PackedFloat32Array = profiles[names[j]]
+			var diff := 0.0
+			for q in mini(a.size(), b.size()):
+				diff += absf(clampf(a[q], -40.0, 0.0) - clampf(b[q], -40.0, 0.0)) / mini(a.size(), b.size())
+			if diff < closest:
+				closest = diff
+				pair = "%s / %s" % [names[i], names[j]]
+	check(closest > 1.5, "every engine layout has its own spectrum and rhythm (closest pair %s, %.1f dB apart per band)" % [pair, closest])
+	# A two-stroke comes on the pipe: much stronger in its powerband than below it.
+	var two: Dictionary = specs["two-stroke single"]
+	var below := EngineSynth.render_loop(two, "ex_on", EngineSynth.loop_rpm(two, two["peak"] * 0.55))
+	var on_pipe := EngineSynth.render_loop(two, "ex_on", EngineSynth.loop_rpm(two, two["peak"]))
+	check(_rms(on_pipe) > 1.4 * _rms(below), "a two-stroke swells on the pipe (rms %.3f in the powerband, %.3f below)" % [_rms(on_pipe), _rms(below)])
+	# Loud pipes are louder and brighter than a stock can.
+	var stock := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "stock"})
+	var straight := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "straight"})
+	var rs := EngineSynth.render_loop(stock, "ex_on", 11000.0)
+	var rr := EngineSynth.render_loop(straight, "ex_on", 11000.0)
+	check(_rms(rr) > 1.5 * _rms(rs), "a straight pipe is louder than the stock can (%.3f vs %.3f)" % [_rms(rr), _rms(rs)])
+	check(_tone(rr, 3000.0) > 2.0 * _tone(rs, 3000.0), "and rasps where the stock can is muffled")
+	# On the throttle it barks; off it, the overrun is quieter.
+	var off := EngineSynth.render_loop(straight, "ex_off", 11000.0)
+	check(_rms(rr) > 2.0 * _rms(off), "on the throttle is louder than the overrun (%.3f vs %.3f)" % [_rms(rr), _rms(off)])
+	# Loops repeat without a click at the seam.
+	var seam_ok := true
+	for layer in EngineSynth.LAYERS:
+		var x := EngineSynth.render_loop(specs["triple"], layer, 4000.0)
+		var step := 0.0
+		for i in range(1, x.size()):
+			step += absf(x[i] - x[i - 1])
+		step /= x.size()
+		seam_ok = seam_ok and absf(x[0] - x[x.size() - 1]) < 6.0 * step + 0.002
+	check(seam_ok, "the loops join up seamlessly")
+	# The CPU budget: baking runs on a worker thread, but it should still be quick.
+	var t0 := Time.get_ticks_usec()
+	var made := 0
+	for layer in EngineSynth.LAYERS:
+		made += EngineSynth.render_loop(specs["inline four"], layer, 9000.0).size()
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	var per_second := ms / (made / float(EngineSynth.RATE))
+	check(per_second < 150.0, "one second of engine sound bakes in %.0f ms (budget 150)" % per_second)
+
+
+func _test_engine_bank() -> void:
+	# The recipe comes from the parts fitted.
+	var race := EngineSynth.spec_from_build(BikeBuild.new({"engine": "four_1000", "exhaust": "titanium_race", "gearbox": "six_race_quickshift"}))
+	check(race["exhaust"] == "race" and race["shift"] == "slick" and race["quickshifter"] and race["dry_clutch"] and race["crank"] == "crossplane",
+		"a race build: race exhaust, slick quickshifter, dry clutch, crossplane crank (%s)" % str([race["exhaust"], race["shift"], race["crank"]]))
+	var sport := EngineSynth.spec_from_build(BikeBuild.new({"gearbox": "six_close", "exhaust": "slip_on"}))
+	var old := EngineSynth.spec_from_build(BikeBuild.new({"gearbox": "four_vintage", "exhaust": "stock_muffler"}))
+	var pipe := EngineSynth.spec_from_build(BikeBuild.new({"exhaust": "straight_pipe"}))
+	check(sport["shift"] == "click" and not sport["quickshifter"] and old["shift"] == "clunk",
+		"a sports box clicks, an old box clunks (%s, %s)" % [sport["shift"], old["shift"]])
+	check(old["exhaust"] == "stock" and sport["exhaust"] == "slip" and pipe["exhaust"] == "straight", "exhausts: stock, slip-on, straight pipe")
+	var kicker := EngineSynth.spec_from_build(BikeBuild.new({"engine": "2stroke_125"}))
+	check(kicker["kick"] and not race["kick"], "a little two-stroke kick starts; the superbike has a starter")
+	# Each gearbox's shift sounds different: slick is short and bright, a clunk long and low.
+	var feel := {}
+	for kind in ["slick", "click", "clunk"]:
+		var x := EngineSynth.render_shift(kind)
+		var energy := 0.0
+		var late := 0.0
+		for i in x.size():
+			energy += x[i] * x[i]
+			if i > EngineSynth.RATE * 0.03:
+				late += x[i] * x[i]
+		feel[kind] = {"bright": _tone(x, 5000.0) / maxf(_tone(x, 150.0), 1e-6), "tail": late / maxf(energy, 1e-9)}
+	check(feel["slick"]["bright"] > feel["click"]["bright"] and feel["click"]["bright"] > feel["clunk"]["bright"],
+		"a quickshifter's shift is crispest, a clunk dullest (%.2f, %.2f, %.2f)" % [feel["slick"]["bright"], feel["click"]["bright"], feel["clunk"]["bright"]])
+	check(feel["clunk"]["tail"] > feel["slick"]["tail"], "and the clunk rings on longer")
+	# A bank bakes the buckets nearest idle first, and everything else after.
+	var spec := EngineSynth.make_spec("triple", 3, 850.0, {"idle": 1250.0, "redline": 10500.0, "exhaust": "full"})
+	var bank := EngineBank.new(spec)
+	var order := bank.bake_order()
+	var nearest := 0
+	for i in bank.rpms.size():
+		if absf(log(bank.rpms[i] / 1250.0)) < absf(log(bank.rpms[nearest] / 1250.0)):
+			nearest = i
+	check(order[0] == nearest and bank.rpms[0] < 1250.0 and bank.rpms[-1] > 10500.0,
+		"buckets run from below idle (%.0f) past the redline (%.0f), idle baked first" % [bank.rpms[0], bank.rpms[-1]])
+	bank.bake_now()
+	check(bank.is_baked() and bank.baked.size() == bank.rpms.size() and bank.streams["ex_on"][0] is AudioStreamWAV
+		and bank.oneshots.has("pop") and bank.oneshots.has("shift") and bank.oneshots.has("starter"),
+		"the bank bakes every loop, the pops, shifts and starter (%d loops in %.0f ms)" % [bank.loop_count(), bank.bake_ms])
+	var w := bank.mix_weights(5000.0, 1.0)
+	var total := 0.0
+	var pitch_ok := true
+	for e in w:
+		if str(e[0]) == "ex_on":
+			total += float(e[2]) * float(e[2])
+			pitch_ok = pitch_ok and absf(bank.rpms[e[1]] * float(e[3]) - 5000.0) < 1.0
+	check(absf(total - 1.0) < 0.01 and pitch_ok, "loops crossfade at equal power, each pitched to the exact revs")
+	var idle_mix := bank.mix_weights(1250.0, 0.0)
+	var only_off := true
+	for e in idle_mix:
+		only_off = only_off and str(e[0]).ends_with("_off")
+	check(only_off and not idle_mix.is_empty(), "with the throttle shut only the off-throttle loops play")
+
+
+func _test_engine_events() -> void:
+	var spec := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "straight", "shift": "click"})
+	var stock := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "stock"})
+	check(EngineSound.pop_rate(spec, 10000.0, 0.2) > 4.0 * EngineSound.pop_rate(stock, 10000.0, 0.2),
+		"a straight pipe pops far more than a stock can on the overrun")
+	check(EngineSound.pop_rate(spec, 1500.0, 0.2) == 0.0, "nothing pops at tickover")
+	var es := EngineSound.new()
+	add_child(es)
+	es.setup_spec(spec)
+	es.bank.bake_now()
+	es.running = true
+	es.gear = 3
+	es.rpm = 10000.0
+	es.throttle = 1.0
+	for i in 240:
+		es._process(1.0 / 60.0)
+	check(es.pops == 0, "no pops while the throttle is open")
+	check(es.playing_count() >= 2, "the loops play on the throttle (%d players)" % es.playing_count())
+	es.throttle = 0.0
+	for i in 180:
+		es.rpm = lerpf(10000.0, 6000.0, i / 180.0)
+		es._process(1.0 / 60.0)
+	check(es.pops > 0, "snap the throttle shut at high revs and the pipe pops (%d pops)" % es.pops)
+	es.flame.flash(1.0)
+	check(es.flame.is_lit(), "a backfire lights the exhaust flame")
+	es.rpm = 1300.0
+	var before := es.pops
+	for i in 240:
+		es._process(1.0 / 60.0)
+	check(es.pops == before, "and it settles at idle")
+	# Shifting: an upshift cuts the sound for a blink; a downshift blips (the bark).
+	es.rpm = 9000.0
+	es.throttle = 1.0
+	es.gear = 4
+	es._process(1.0 / 60.0)
+	check(es.shifts == 1 and es.last_shift == "click" and es._cut > 0.0, "an upshift clicks and cuts the drive for a moment")
+	es.gear = 3
+	es.throttle = 0.0
+	es._process(1.0 / 60.0)
+	check(es.shifts == 2 and es._blip > 0.5, "a downshift blips the throttle")
+	es.queue_free()
+	var qs := EngineSound.new()
+	add_child(qs)
+	qs.setup(BikeBuild.new({"engine": "four_1000", "exhaust": "titanium_race", "gearbox": "six_race_quickshift"}))
+	qs.running = true
+	qs.rpm = 9000.0
+	qs.gear = 2
+	qs._process(1.0 / 60.0)
+	qs.gear = 3
+	qs._process(1.0 / 60.0)
+	check(qs.last_shift == "slick" and qs._cut > 0.0 and qs._cut < 0.06, "the quickshifter's cut is crisp and short")
+	# The runtime cost: one bike's sound updating each frame.
+	qs.bank.bake_now()
+	var t0 := Time.get_ticks_usec()
+	for i in 300:
+		qs.rpm = 3000.0 + 20.0 * i
+		qs.throttle = float(i % 50) / 50.0
+		qs._process(1.0 / 60.0)
+	var per := (Time.get_ticks_usec() - t0) / 300.0 / 1000.0
+	check(per < 0.5, "a bike's engine sound costs %.3f ms a frame (budget 0.5)" % per)
+	qs.queue_free()
+	await get_tree().process_frame
+
+
+func _test_engine_users() -> void:
+	# Other players' bikes and the dyno use the same engine sound as your own.
+	var build := BikeBuild.new({"engine": "triple_850"})
+	var rb := RemoteBike.new()
+	add_child(rb)
+	rb.setup("Visitor", build, Color.RED)
+	check(rb.audio is EngineSound and rb.audio.spec["layout"] == "triple" and rb.audio.infer_cranking,
+		"another player's bike plays its own engine sound")
+	check(rb.audio.exhaust_at.position.distance_to(rb.model.exhaust_tip()) < 0.01, "from its exhaust")
+	rb.queue_free()
+	var dyno_src := FileAccess.get_file_as_string("res://scripts/dyno_room.gd")
+	check(dyno_src.contains("EngineSound.new()") and not dyno_src.contains("EngineAudio"), "the dyno room uses the same engine sound")
+	# The starter: a remote bike guesses it from the revs rising with the engine off.
+	var es := EngineSound.new()
+	add_child(es)
+	es.infer_cranking = true
+	es.setup_spec(EngineSynth.make_spec("twin", 2, 750.0, {"idle": 1050.0, "redline": 7700.0}))
+	es.bank.bake_now()
+	es.running = false
+	es.rpm = 0.0
+	es._process(1.0 / 60.0)
+	es.rpm = 120.0
+	es._process(1.0 / 60.0)
+	check(es.cranking, "a remote bike's starter is heard when its revs rise with the engine off")
+	es.queue_free()
+	await get_tree().process_frame
+
+
+func _test_engine_samples() -> void:
+	# Recorded sounds dropped into user://engine_samples/<layout>_<exhaust> replace the synthesised ones.
+	var dir := "user://engine_samples/boxer_straight"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var spec := EngineSynth.make_spec("boxer", 2, 1000.0, {"idle": 1000.0, "redline": 8200.0, "exhaust": "straight"})
+	for r in [2000.0, 5000.0]:
+		EngineSynth.save_wav(EngineSynth.render_loop(spec, "ex_on", r), dir.path_join("ex_on_%d.wav" % int(r)))
+		EngineSynth.save_wav(EngineSynth.render_loop(spec, "ex_off", r), dir.path_join("ex_off_%d.wav" % int(r)))
+	EngineSynth.save_wav(EngineSynth.render_pop(spec, 1.0), dir.path_join("pop_1.wav"))
+	check(EngineBank.sample_folder(spec) == dir, "a folder of recordings is found for the engine")
+	var bank := EngineBank.for_spec(spec)
+	bank.bake_now()
+	check(bank.recorded and bank.rpms.size() == 2 and absf(bank.rpms[1] - 5000.0) < 1.0 and bank.streams["ex_on"][1] is AudioStreamWAV
+		and bank.streams["ex_on"][1].loop_mode == AudioStreamWAV.LOOP_FORWARD, "its loops are used, held at their rpm and looping")
+	check(bank.recorded_shots.has("pop") and bank.oneshots["pop"].size() == 1 and bank.oneshots.has("shift"),
+		"recorded pops are used; the rest is still synthesised")
+	var mix := bank.mix_weights(3500.0, 1.0)
+	check(not mix.is_empty(), "and they crossfade like the synthesised loops")
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir.path_join(f))
+	DirAccess.remove_absolute(dir)
+	DirAccess.remove_absolute("user://engine_samples")

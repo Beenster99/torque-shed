@@ -1,0 +1,335 @@
+class_name EngineSound
+extends Node3D
+## A bike's engine as you hear it: the baked loops of its EngineBank played on 3D players, the
+## exhaust side at the tail pipe and the engine/intake side at the airbox, crossfaded and pitched
+## to the revs and the throttle. On top: pops and burbles when the throttle snaps shut at high
+## revs (more from loud pipes), a blip-and-bang on downshifts, the quickshifter's crisp cut or a
+## clutch shift, the gearbox's own shift sound, its whine, the starter or kick start, and the
+## backfire's flame. Used by the ridden bike, other players' bikes and the dyno.
+
+signal backfired(strength: float)
+
+const SLOTS := 3              # players per layer: two buckets crossfading and one spare
+## How loud each side is from where you're listening: in the helmet you hear the airbox, on
+## the chase camera the pipe, and other people's bikes are mostly pipe.
+const VIEW_MIX := {"rider": [0.75, 1.3], "chase": [1.0, 0.7], "remote": [1.0, 0.55], "room": [1.0, 0.85]}
+
+var rpm := 0.0
+var throttle := 0.0
+var running := true
+var gear := 1
+var speed := 0.0              # m/s, so it knows when it's dropping into first at a standstill
+var cranking := false         # the starter is turning it over (set by the owner)
+var infer_cranking := false   # other players' bikes: guess cranking from the revs rising with the engine off
+var view := "remote":
+	set(v):
+		view = v if VIEW_MIX.has(v) else "remote"
+var volume_db := 0.0
+var spec: Dictionary
+var bank: EngineBank
+var exhaust_at: Node3D        # where the pipe ends
+var engine_at: Node3D         # the airbox and engine
+var flame: ExhaustFlame
+## Counters, for tests and the HUD.
+var pops := 0
+var shifts := 0
+var last_shift := ""
+
+var _players := {}            # layer -> Array of AudioStreamPlayer3D
+var _assigned := {}           # layer -> {bucket: player}
+var _oneshot_ex: Array = []
+var _oneshot_en: Array = []
+var _next_ex := 0
+var _next_en := 0
+var _whine: AudioStreamPlayer3D
+var _rng := RandomNumberGenerator.new()
+var _load := 0.0              # smoothed throttle as the sound hears it
+var _level := 0.0             # fades the engine in as it catches and out as it dies
+var _blip := 0.0              # a downshift's throttle blip
+var _cut := 0.0               # ignition cut: quickshifter or clutch in
+var _last_gear := -1
+var _overrun := 0.0           # seconds since the throttle shut with the revs up
+var _bang_in := -1.0          # a downshift bang due in this many seconds
+var _was_running := false
+var _was_cranking := false
+var _last_rpm := 0.0
+var _crank_guess := 0.0
+var _bus_t := 0.0
+var _bus := "SFX"
+
+
+## Sets the sound up for a bike. `model` gives where the pipe and engine are; without one they
+## sit at sensible spots round this node.
+func setup(build: BikeBuild, model: BikeModel = null) -> void:
+	setup_spec(EngineSynth.spec_from_build(build), model)
+
+
+func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
+	spec = engine_spec
+	bank = EngineBank.for_spec(spec)
+	_rng.randomize()
+	if exhaust_at == null:
+		exhaust_at = Node3D.new()
+		exhaust_at.name = "Exhaust"
+		add_child(exhaust_at)
+		engine_at = Node3D.new()
+		engine_at.name = "Engine"
+		add_child(engine_at)
+		for layer in EngineSynth.LAYERS:
+			var list := []
+			for i in SLOTS:
+				list.append(_make_player(exhaust_at if layer.begins_with("ex") else engine_at, 12.0 if layer.begins_with("ex") else 8.0))
+			_players[layer] = list
+			_assigned[layer] = {}
+		for i in 4:
+			_oneshot_ex.append(_make_player(exhaust_at, 14.0))
+		for i in 2:
+			_oneshot_en.append(_make_player(engine_at, 6.0))
+		_whine = _make_player(engine_at, 6.0)
+		_whine.stream = EngineBank.whine_stream()
+		flame = ExhaustFlame.new()
+		exhaust_at.add_child(flame)
+	exhaust_at.position = Vector3(0.18, 0.4, 0.75)
+	engine_at.position = Vector3(0.0, 0.6, -0.1)
+	if model:
+		exhaust_at.position = model.exhaust_tip()
+		var box := model.slot_bounds("engine")
+		if box.size != Vector3.ZERO:
+			engine_at.position = box.get_center() + Vector3(0.0, box.size.y * 0.4, 0.0)
+	for layer in _assigned:
+		for b in _assigned[layer]:
+			_assigned[layer][b].stop()
+		_assigned[layer] = {}
+
+
+func _make_player(parent: Node3D, unit: float) -> AudioStreamPlayer3D:
+	var p := AudioStreamPlayer3D.new()
+	p.bus = "SFX"
+	p.unit_size = unit
+	p.max_db = 6.0
+	p.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
+	p.attenuation_filter_cutoff_hz = 20500.0
+	parent.add_child(p)
+	return p
+
+
+## Other players' bikes: the far-off sound loses its top end and they come and go with doppler.
+func set_distant_filter(on: bool) -> void:
+	for layer in _players:
+		for p: AudioStreamPlayer3D in _players[layer]:
+			p.attenuation_filter_cutoff_hz = 5000.0 if on else 20500.0
+			p.attenuation_filter_db = -24.0 if on else -24.0
+	for p: AudioStreamPlayer3D in _oneshot_ex:
+		p.attenuation_filter_cutoff_hz = 6000.0 if on else 20500.0
+
+
+## Overrun pops a second for this engine at `rpm`, `overrun_s` seconds after the throttle shut:
+## a hot pipe pops most just after you roll off, then it settles to the odd burble.
+static func pop_rate(engine_spec: Dictionary, at_rpm: float, overrun_s: float) -> float:
+	var style: Dictionary = EngineSynth.EXHAUSTS[engine_spec["exhaust"]]
+	var lo := maxf(float(engine_spec["idle"]) * 2.2, 3000.0)
+	if at_rpm <= lo:
+		return 0.0
+	var revs := clampf((at_rpm - lo) / (float(engine_spec["redline"]) * 0.5), 0.0, 1.0)
+	var settle := 0.3 + 0.7 * exp(-overrun_s / 1.2)
+	return float(style["pops"]) * 3.0 * revs * settle * (1.0 + float(engine_spec["rust"]))
+
+
+func _process(delta: float) -> void:
+	if bank == null:
+		return
+	bank.poll()
+	_bus_t -= delta
+	if _bus_t <= 0.0:
+		_bus_t = 0.5
+		_update_bus()
+	if infer_cranking:
+		# Another player's bike: the revs rising with the engine off is the starter turning it.
+		if not running and rpm > 20.0 and rpm > _last_rpm + 1.0:
+			_crank_guess = 0.3
+		_crank_guess -= delta
+		cranking = _crank_guess > 0.0
+	_events(delta)
+	_last_rpm = rpm
+	# The sound's own throttle: it snaps open fast and closes a touch slower.
+	var target := maxf(throttle, _blip)
+	if _cut > 0.0:
+		target = minf(target, 0.04)
+	_load += (target - _load) * (1.0 - exp(-delta * (30.0 if target > _load else 16.0)))
+	_blip = maxf(_blip - delta * 6.0, 0.0)
+	_cut -= delta
+	var alive := 1.0 if running else 0.0
+	_level += (alive - _level) * (1.0 - exp(-delta * (14.0 if running else 4.0)))
+	# Below idle (stalling, switched off) the note dies away with the revs.
+	var idle: float = spec["idle"]
+	var life := _level * clampf((rpm - idle * 0.25) / (idle * 0.5), 0.0, 1.0)
+	var mix: Array = VIEW_MIX[view]
+	var weights := bank.mix_weights(rpm, _load) if life > 0.001 else []
+	var wanted := {}
+	for layer in EngineSynth.LAYERS:
+		wanted[layer] = {}
+	for w in weights:
+		var g: float = float(w[2]) * life * (mix[0] if str(w[0]).begins_with("ex") else mix[1])
+		var loud: float = 0.75 + 0.35 * float(spec["loud"]) if str(w[0]).begins_with("ex") else 1.0
+		wanted[w[0]][w[1]] = [g * loud, float(w[3])]
+	for layer in EngineSynth.LAYERS:
+		_drive_layer(layer, wanted[layer])
+	_drive_whine(life)
+
+
+## Points this layer's players at the buckets wanted, at their volume and pitch; frees the rest.
+func _drive_layer(layer: String, want: Dictionary) -> void:
+	var have: Dictionary = _assigned[layer]
+	for b in have.keys():
+		if not want.has(b):
+			have[b].stop()
+			have.erase(b)
+	for b in want:
+		var gain: float = want[b][0]
+		var pitch: float = want[b][1]
+		var p: AudioStreamPlayer3D = have.get(b)
+		if p == null:
+			if gain < 0.002:
+				continue
+			for cand: AudioStreamPlayer3D in _players[layer]:
+				if not have.values().has(cand):
+					p = cand
+					break
+			if p == null:
+				continue
+			var stream: AudioStreamWAV = bank.streams[layer][b]
+			if stream == null:
+				continue
+			p.stream = stream
+			have[b] = p
+			# Start each loop somewhere different so layers don't line up and phase.
+			p.play(_rng.randf() * stream.get_length())
+		p.volume_db = linear_to_db(maxf(gain, 0.00001)) + volume_db
+		p.pitch_scale = clampf(pitch, 0.05, 4.0)
+
+
+## The gears' whine: pitched to their mesh, loudest off the throttle on a straight-cut race box.
+func _drive_whine(life: float) -> void:
+	var amount: float = spec["whine"]
+	var hz := rpm / 60.0 * 21.0 * (1.0 + gear * 0.06)
+	var gain := amount * (0.03 + 0.06 * (1.0 - _load)) * clampf(rpm / 6000.0, 0.0, 1.0) * life
+	if gain < 0.002 or hz < 60.0:
+		if _whine.playing:
+			_whine.stop()
+		return
+	if not _whine.playing:
+		_whine.play()
+	_whine.pitch_scale = clampf(hz / 1000.0, 0.05, 4.0)
+	_whine.volume_db = linear_to_db(gain) + volume_db
+
+
+## Gear changes, pops, bangs, the starter: the things that happen rather than hum.
+func _events(delta: float) -> void:
+	# Starter and catching.
+	if cranking and not _was_cranking and not running:
+		_play(_oneshot_en, "starter", 0.0, 1.0)
+	_was_cranking = cranking
+	if running and not _was_running:
+		_blip = 0.8   # it catches with a bark
+	_was_running = running
+	# Shifts.
+	if _last_gear < 0:
+		_last_gear = gear
+	if gear != _last_gear and gear == 1 and absf(speed) < 1.5:
+		_play(_oneshot_en, "neutral", -2.0, 1.0)   # clunk, into first from a standstill
+	elif gear != _last_gear and running:
+		_shift(gear > _last_gear)
+	_last_gear = gear
+	if _bang_in >= 0.0:
+		_bang_in -= delta
+		if _bang_in < 0.0:
+			_pop("bang", 1.0)
+	# Overrun: the throttle shut with the revs up.
+	if running and throttle < 0.08 and _cut <= 0.0:
+		_overrun += delta
+		var rate := pop_rate(spec, rpm, _overrun)
+		if rate > 0.0 and _rng.randf() < rate * delta:
+			var style: Dictionary = EngineSynth.EXHAUSTS[spec["exhaust"]]
+			if _rng.randf() < 0.04 * float(style["pops"]):
+				_pop("crack", 1.0)
+			else:
+				_pop("pop", _rng.randf_range(0.6, 1.1))
+	else:
+		_overrun = 0.0
+
+
+func _shift(up: bool) -> void:
+	shifts += 1
+	var qs: bool = spec["quickshifter"]
+	var style: Dictionary = EngineSynth.EXHAUSTS[spec["exhaust"]]
+	var pops_amt: float = style["pops"]
+	if up:
+		# A quickshifter cuts the spark for a blink, which cracks out of a loud pipe; a clutch
+		# shift lets the revs drop as the lever comes in.
+		_cut = 0.05 if qs else 0.12
+		if qs and _rng.randf() < 0.25 + 0.25 * pops_amt:
+			_pop("pop", 0.7)
+	else:
+		# Downshift: blip the throttle (the bark), then the overrun bangs.
+		if rpm > float(spec["idle"]) * 1.4:
+			_blip = 1.0
+			if _rng.randf() < 0.2 + 0.25 * pops_amt:
+				_bang_in = 0.12
+	last_shift = "slick" if qs else str(spec["shift"])
+	_play(_oneshot_en, "shift", -3.0, _rng.randf_range(0.95, 1.05))
+
+
+## An overrun pop, a downshift bang or a backfire crack, with the flame for the loud ones.
+func _pop(kind: String, strength: float) -> void:
+	pops += 1
+	_play(_oneshot_ex, kind, linear_to_db(strength), _rng.randf_range(0.9, 1.1))
+	var big := 0.4 if kind == "pop" else (0.8 if kind == "bang" else 1.0)
+	var style: String = spec["exhaust"]
+	if kind != "pop" or style in ["race", "straight"]:
+		backfired.emit(big * strength)
+		if flame:
+			flame.flash(big * strength)
+
+
+func _play(pool: Array, kind: String, db: float, pitch: float) -> void:
+	if bank == null or pool.is_empty():
+		return
+	var s := bank.oneshot(kind, _rng)
+	if s == null:
+		return
+	var p: AudioStreamPlayer3D
+	if pool == _oneshot_ex:
+		p = pool[_next_ex % pool.size()]
+		_next_ex += 1
+	else:
+		p = pool[_next_en % pool.size()]
+		_next_en += 1
+	p.stream = s
+	p.volume_db = db + volume_db + (2.0 * (float(spec["loud"]) - 1.0) if pool == _oneshot_ex else 0.0)
+	p.pitch_scale = pitch
+	p.play()
+
+
+## Keeps the listening camera tracked for doppler, and in the shed or out in the open picks the shed sounds' room and distance buses, when there are any.
+func _update_bus() -> void:
+	# Doppler needs the listening camera tracked too (cameras here move on the physics step).
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam and cam.doppler_tracking == Camera3D.DOPPLER_TRACKING_DISABLED:
+		cam.doppler_tracking = Camera3D.DOPPLER_TRACKING_PHYSICS_STEP
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx == null or not sfx.has_method("bus_for") or not is_inside_tree():
+		return
+	var bus := str(sfx.call("bus_for", global_position))
+	if bus == _bus or AudioServer.get_bus_index(bus) < 0:
+		return
+	_bus = bus
+	for p in find_children("*", "AudioStreamPlayer3D", true, false):
+		p.bus = bus
+
+
+## How many loop players are sounding right now (tests).
+func playing_count() -> int:
+	var n := 0
+	for layer in _assigned:
+		n += _assigned[layer].size()
+	return n

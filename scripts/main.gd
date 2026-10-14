@@ -20,7 +20,7 @@ var label_dialog: LabelDialog
 var contract_panel: ContractPanel   # a customer's offer card and the jobs list
 var contracts_view: ContractsView   # the customers walking in to reception
 var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
-var audio: EngineAudio
+var audio: EngineSound
 var saver: SaveGame
 var remotes := {}     # peer id -> RemotePlayer
 var in_session := false
@@ -336,14 +336,9 @@ func _start_riding(bike_id: int) -> void:
 				bike.ride_xp.engine_started()
 		elif reason != "":
 			hud.flash(reason, 3.0, true))
-	audio = EngineAudio.new()
-	audio.cylinders = bike.build.cylinders
-	audio.layout = bike.build.layout
-	audio.loudness = bike.build.exhaust_loudness
-	audio.displacement = bike.build.displacement
-	audio.whine = bike.build.gear_whine
+	audio = EngineSound.new()   # engine, exhaust, pops, gear shifts and the starter
 	bike.add_child(audio)
-	bike.gear_changed.connect(func(_g): Sfx.play_at("gear", bike.global_position, -6.0, bike))
+	audio.setup(bike.build, bike.model)
 	camera.target = bike
 	camera.set_mode(_ride_view)
 	camera.snap()
@@ -400,7 +395,7 @@ func _ignition() -> void:
 		hud.flash(why, 2.0, true)
 		Sfx.play_at("switch", bike.global_position, -6.0)
 		return
-	Sfx.play_at("starter", bike.global_position + Vector3.UP * 0.4, -2.0)
+	Sfx.play_at("switch", bike.global_position, -10.0)   # the starter itself is the engine sound's
 
 
 func _stop_riding() -> void:
@@ -506,6 +501,9 @@ func _physics_process(delta: float) -> void:
 		audio.gear = bike.gear
 		audio.throttle = bike.sound_load()
 		audio.running = bike.engine_on
+		audio.speed = bike.speed
+		audio.cranking = bike.is_starting()
+		audio.view = "rider" if camera.mode == ChaseCamera.Mode.HELMET else "chase"
 		var km := absf(bike.speed) * delta / 1000.0
 		_ride_km += km
 		hud.trip_km += km
