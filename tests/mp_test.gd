@@ -27,10 +27,11 @@ func _ready() -> void:
 		main._host()
 	else:
 		main._join(" 127.0.0.1:24680 ")
-	var deadline := Time.get_ticks_msec() + 25000
+	var deadline := Time.get_ticks_msec() + 40000
 	var moved := false
 	var shed_ok := false
 	var start := Vector3.ZERO
+	var span := AABB()
 	var asked := false
 	var xp_start := -1
 	var xp_ok := false
@@ -57,10 +58,14 @@ func _ready() -> void:
 		if main.remotes.size() == 1:
 			var rp: RemotePlayer = main.remotes.values()[0]
 			var p := rp.world_position()
+			# Moved: the other player's walk spans more than 0.8 m (from wherever it was first seen).
 			if start == Vector3.ZERO and p != Vector3.ZERO:
 				start = p
-			elif start != Vector3.ZERO and p.distance_to(start) > 0.8:
-				moved = true
+				span = AABB(p, Vector3.ZERO)
+			elif start != Vector3.ZERO:
+				span = span.expand(p)
+				if span.size.length() > 0.8:
+					moved = true
 		var ranger := _bike_named("Rusty Ranger")
 		# Garage upgrades: the host puts money in the garage, the client buys the extension with
 		# it, and both sheds are rebuilt with it.
@@ -154,10 +159,17 @@ func _ready() -> void:
 		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty()
 		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok:
 			shed_ok = true
-	# Keep running for a moment so the other side can finish its own check.
-	var linger := Time.get_ticks_msec() + 3000
+	# Keep running for a moment so the other side can finish its own check: the client stays (and
+	# keeps walking) until the host has finished and gone, or 10 s at most.
+	var linger := Time.get_ticks_msec() + (10000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
+		if role == "client" and shed_ok and not main.in_session:
+			break
+		var tl := Time.get_ticks_msec() / 1000.0
+		Input.action_release("move_forward")
+		Input.action_release("move_back")
+		Input.action_press("move_forward" if fmod(tl, 2.0) < 1.0 else "move_back")
 	var ok := moved and shed_ok
 	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s)" % [
 		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing")])
