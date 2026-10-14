@@ -24,6 +24,8 @@ var _head_look: Node3D
 ## The rider gear they're drawn in: slot -> item id (see RiderGear).
 var gear := {}
 var _gear_sig := ""
+var _stride := 0.0         # how far they've walked since their last footstep
+var _step_from := Vector3.INF
 
 
 func setup(peer_id: int, rider_name: String, paint: Color) -> void:
@@ -134,11 +136,24 @@ func _physics_process(_delta: float) -> void:
 	var f := 1.0 if span <= 0.0 else clampf((render_t - a["t"]) / span, 0.0, 1.0)
 	var pos := Vector3(sa[1], sa[2], sa[3]).lerp(Vector3(sb[1], sb[2], sb[3]), f)
 	_figure.global_transform = Transform3D(Basis(Vector3.UP, lerp_angle(sa[4], sb[4], f)), pos)
+	_footsteps(pos)
 	_head.rotation.x = lerpf(sa[5], sb[5], f) * 0.6
 	_hand.rotation.x = _head.rotation.x
 	# Crouching: squash the figure down to about two thirds of its height.
 	var low := sb.size() > 6 and sb[6] > 0.5
 	_figure.scale.y = move_toward(_figure.scale.y, 0.62 if low else 1.0, 0.08)
+
+
+## Their footsteps, by the floor they walk on (a step every 0.7 m or so).
+func _footsteps(pos: Vector3) -> void:
+	if _step_from != Vector3.INF:
+		var moved := Vector2(pos.x - _step_from.x, pos.z - _step_from.z).length()
+		if moved < 2.0:
+			_stride += moved
+	_step_from = pos
+	if _stride > 0.75:
+		_stride = 0.0
+		Sfx.footstep(pos, false, -12.0)
 
 
 ## Whether they've got the dyno room's ear defenders on.

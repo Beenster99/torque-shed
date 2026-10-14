@@ -163,6 +163,9 @@ func _run_all() -> void:
 	_test_gear_buying()
 	await _test_gear_seen_by_others()
 	await _test_shop_session()
+	print("Shed sound: variants, impacts by material, footsteps by floor, room acoustics, ambience")
+	await _test_shed_sound_variants()
+	await _test_shed_sound_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -7288,6 +7291,203 @@ func _test_shop_session() -> void:
 	main.queue_free()
 	await get_tree().physics_frame
 	Progress.save_profile()   # into the test file, not the real profile once the path is back
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+
+## Shed sound: every sound and variant made and audible, variants picked without repeats,
+## impacts sounding of their material and surface, footsteps by floor, machine start and stop
+## sounds, and the start-up synthesis kept off the main thread and within budget.
+func _test_shed_sound_variants() -> void:
+	var quiet := []
+	var loops_ok := true
+	for sound in SfxSynth.all_sounds():
+		var list := Sfx.variants(sound)
+		for v in list.size():
+			var wav: AudioStreamWAV = list[v]
+			var loud := 0
+			for i in range(0, wav.data.size() - 1, 32):
+				loud = maxi(loud, absi(wav.data.decode_s16(i)))
+			if wav.data.size() < 1000 or loud < 2000:
+				quiet.append("%s#%d (%d)" % [sound, v, loud])
+			if (wav.loop_mode == AudioStreamWAV.LOOP_FORWARD) != Sfx.LOOPS.has(sound):
+				loops_ok = false
+	check(quiet.is_empty(), "every sound and every variant is made and audible (%d sounds) %s" % [SfxSynth.all_sounds().size(), str(quiet)])
+	check(loops_ok, "loops loop and one-shots don't")
+	check(Sfx.variants("clink").size() >= 4 and Sfx.variants("step_gravel").size() >= 6 and Sfx.variants("impact_metal_concrete").size() >= 4
+		and Sfx.variants("pickup").size() >= 4 and Sfx.variants("scrap").size() >= 4, "one-shots come in several variants")
+	var same := false
+	for sound in ["clink", "step_concrete", "impact_plastic_wood"]:
+		var list := Sfx.variants(sound)
+		for a in list.size():
+			for b in range(a + 1, list.size()):
+				same = same or (list[a] as AudioStreamWAV).data == (list[b] as AudioStreamWAV).data
+	check(not same, "no two variants are the same")
+	# Picked at random, never the same one twice running, and all of them get used.
+	var last: AudioStreamWAV = null
+	var repeats := 0
+	var seen := {}
+	for i in 200:
+		var s := Sfx.pick("clink")
+		if s == last:
+			repeats += 1
+		last = s
+		seen[s] = true
+	check(repeats == 0 and seen.size() == Sfx.variants("clink").size(), "a variant never plays twice running (%d repeats, %d of %d used)" % [repeats, seen.size(), Sfx.variants("clink").size()])
+	check(Sfx.stream("bell") == Sfx.pick("bell"), "a one-variant sound is always the same stream")
+	# Materials and surfaces sound different: brightness (zero crossings) and how long it rings.
+	var metal := _zcr(Sfx.stream("impact_metal_concrete"))
+	var plastic := _zcr(Sfx.stream("impact_plastic_concrete"))
+	var rubber := _zcr(Sfx.stream("impact_rubber_concrete"))
+	check(metal > plastic * 1.5 and plastic > rubber, "steel rings brighter than plastic, plastic than a tyre (%d, %d, %d crossings a second)" % [metal, plastic, rubber])
+	var on_steel := _tail_energy(Sfx.stream("impact_metal_steel"))
+	var on_wood := _tail_energy(Sfx.stream("impact_metal_wood"))
+	var on_ground := _tail_energy(Sfx.stream("impact_metal_ground"))
+	check(on_steel > on_wood * 1.5 and on_wood > on_ground, "on a steel shelf it rings on; on the bench less; outside it's dead (%.5f, %.5f, %.5f)" % [on_steel, on_wood, on_ground])
+	check(_zcr(Sfx.stream("step_gravel")) > _zcr(Sfx.stream("step_concrete")) * 2.0 and _zcr(Sfx.stream("step_carpet")) < _zcr(Sfx.stream("step_tile")),
+		"gravel crunches brighter than concrete, carpet is duller than tiles")
+	check(Sfx.impact_material("fabric") == "soft" and Sfx.impact_material("electronics") == "plastic" and Sfx.impact_material("rubber") == "rubber"
+		and Sfx.impact_material("unknown") == "metal", "parts' materials map onto impact sounds")
+	# Start-up: the main thread only sets up buses and starts the worker.
+	check(Sfx.ready_ms < 100.0, "starting the sound system takes %.1f ms on the main thread" % Sfx.ready_ms)
+	var t0 := Time.get_ticks_msec()
+	for sound in ["grinder", "impact_metal_steel", "step_puddle", "amb_out"]:
+		for v in SfxSynth.variant_count(sound):
+			SfxSynth.make(sound, v)
+	var ms := Time.get_ticks_msec() - t0
+	check(ms < 8000, "the heaviest sounds synthesise in %d ms" % ms)
+	for i in 6000:
+		if Sfx.synth_done:
+			break
+		await get_tree().create_timer(0.05).timeout
+	check(Sfx.synth_done, "the worker has made every sound (%.0f ms, %s)" % [Sfx.synth_ms, "from the cache" if Sfx.loaded_from_cache else "synthesised"])
+	check(Sfx.synth_ms < 60000.0, "within the start-up budget")
+	check(FileAccess.file_exists(Sfx.CACHE_PATH), "and keeps them in a cache for next time")
+
+
+## Zero crossings a second in the first quarter second: a rough measure of brightness.
+func _zcr(wav: AudioStreamWAV) -> int:
+	var n := mini(wav.data.size() / 2, int(wav.mix_rate * 0.25))
+	var count := 0
+	var prev := 0
+	for i in n:
+		var v := wav.data.decode_s16(i * 2)
+		if (v >= 0) != (prev >= 0):
+			count += 1
+		prev = v
+	return int(count / (float(n) / wav.mix_rate))
+
+
+## Mean square level from 0.3 s to 0.8 s: how long a sound rings on.
+func _tail_energy(wav: AudioStreamWAV) -> float:
+	var a := int(wav.mix_rate * 0.3)
+	var b := mini(wav.data.size() / 2, int(wav.mix_rate * 0.8))
+	var sum := 0.0
+	for i in range(a, b):
+		var v := wav.data.decode_s16(i * 2) / 32768.0
+		sum += v * v
+	return sum / maxf(b - a, 1.0)
+
+
+## Room acoustics, routing through walls, footsteps by floor, parts landing by material,
+## machines' start and stop sounds and the ambience, in a running shed.
+func _test_shed_sound_session() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_sound_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	# Reverb follows the room the listener is in.
+	var sizes := {}
+	for room in ["shed", "paint", "sales", ""]:
+		Sfx.set_listener_room(room)
+		sizes[room] = Sfx.room_reverb().room_size
+	check(sizes["sales"] > sizes["shed"] and sizes["shed"] > sizes["paint"] and Sfx.room_reverb().wet < 0.1,
+		"each room has its own reverb: the showroom's biggest, the paint booth's small, outside almost dry (%s)" % str(sizes))
+	var paint_c := Workshop.rooms()["paint"] as Rect2
+	var paint_at := Vector3(paint_c.get_center().x, 0.1, paint_c.get_center().y)
+	w.place(Transform3D(Basis(), paint_at))
+	for i in 10:
+		await get_tree().process_frame
+	check(Sfx.listener_room == "paint", "walking into the paint shop, you hear its room (%s)" % Sfx.listener_room)
+	for i in 120:
+		await get_tree().process_frame
+	check(absf(Sfx.room_reverb().room_size - float(Sfx.ROOM_PRESETS["paint"]["size"])) < 0.05, "and the reverb eases to the booth's (%.2f)" % Sfx.room_reverb().room_size)
+	var shed_at := Workshop.CENTER + Vector3(0.0, 0.1, 0.0)
+	check(Sfx.bus_for(paint_at) == "Room" and Sfx.bus_for(shed_at) == "Far" and Sfx.occlusion_db(shed_at) < 0.0 and Sfx.occlusion_db(paint_at) == 0.0,
+		"a sound in the shed comes through the wall, muffled and quieter; one in the booth doesn't")
+	var outside := SalesOffice.SALES_DOOR + Vector3(0.0, 0.1, 25.0)
+	check(Sfx.occlusion_db(outside) <= Sfx.WALL_DB, "outside is through a wall from the paint shop")
+	var p := Sfx.play_at("clink", shed_at)
+	check(p != null and p.bus == "Far", "a one-shot in another room goes through the far bus")
+	# Footsteps by floor.
+	check(Sfx.step_surface(shed_at) == "concrete" and Sfx.step_surface(paint_at) == "tile", "concrete in the shed, tiles in the paint shop")
+	check(Sfx.step_surface(SalesOffice.at(5.0, 0.0, 0.0) + Vector3.UP * 0.05) == "tile"
+		and Sfx.step_surface(Vector3(SalesOffice.office_rect().get_center().x, SalesOffice.MEZZ_Y + 0.05, SalesOffice.office_rect().get_center().y)) == "carpet",
+		"the showroom's tiles and the office's carpet")
+	Shed.upgrades["epoxy"] = true
+	check(Sfx.step_surface(shed_at) == "epoxy", "with the epoxy floor bought, the shed floor sounds of it")
+	Shed.upgrades.erase("epoxy")
+	var step := Sfx.footstep(paint_at)
+	check(step != null and Sfx.variants("step_tile").has(step.stream), "a footstep in the booth is a step on tiles")
+	# A part put down sounds of its material and what it lands on.
+	var metal_item := 0
+	for id in Shed.items:
+		if PartsDB.material(str(Shed.items[id]["part"])) == "metal" and not Shed.items[id].get("boxed", false):
+			metal_item = id
+			break
+	var before := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).size()
+	Sfx.job_done("drop", {"a": "drop", "xf": Transform3D(Basis(), shed_at)}, metal_item, shed_at)
+	Sfx.job_done("set_down", {"a": "set_down", "top": "bench", "xf": Transform3D(Basis(), shed_at)}, metal_item, shed_at)
+	var players := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false)
+	var on_floor := players.filter(func(q): return Sfx.variants("impact_metal_concrete").has(q.stream))
+	var on_bench := players.filter(func(q): return Sfx.variants("impact_metal_wood").has(q.stream))
+	check(metal_item != 0 and players.size() >= before + 2 and not on_floor.is_empty() and not on_bench.is_empty(),
+		"a steel part dropped on the floor clanks on concrete, set on the bench it knocks on wood")
+	# Machines spin up and run down either side of their loop.
+	var holder := Node3D.new()
+	main.add_child(holder)
+	holder.global_position = shed_at
+	var loop := Sfx.make_loop_player(holder)
+	Sfx.set_loop(loop, "grinder")
+	var ups := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(q): return Sfx.variants("grinder_up").has(q.stream))
+	check(loop.playing and not ups.is_empty(), "the grinder spins up as it starts")
+	Sfx.set_loop(loop, "")
+	var downs := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(q): return Sfx.variants("grinder_down").has(q.stream))
+	check(not loop.playing and not downs.is_empty(), "and runs down when it stops")
+	check(Sfx.WORK_LOOPS["tyre_fit"] == "changer" and Sfx.TOOL_LOOPS["gun"] == "spray_gun" and Sfx.DONE_SOUNDS["tyre_remove"] == "bead_pop",
+		"the tyre changer, the spray gun and the bead have their own sounds")
+	# The ambience: room tone, lights, outdoors and the compressor.
+	for i in 6000:
+		if Sfx.synth_done and Sfx.ambience() != null:
+			break
+		await get_tree().create_timer(0.05).timeout
+	var amb: SfxAmbience = Sfx.ambience()
+	check(amb != null, "the shed has its ambience")
+	if amb:
+		amb.kick_compressor()
+		check(amb.compressor_on and amb._comp.playing and amb._comp.stream == Sfx.stream("compressor"), "the compressor in the corner kicks in")
+		w.place(Transform3D(Basis(), shed_at))
+		for i in 90:
+			await get_tree().process_frame
+		check(amb._tone.playing and amb._hum.playing and amb._wind.playing, "indoors: room tone, the lights' hum and the outdoors muffled through the walls")
+		var lp := AudioServer.get_bus_effect(AudioServer.get_bus_index("AmbOut"), 0) as AudioEffectLowPassFilter
+		check(lp.cutoff_hz < 5000.0, "the outdoor sounds are muffled indoors (%.0f Hz)" % lp.cutoff_hz)
+		check(SfxAmbience.lit("shed") == Shed.lights_on, "the hum follows the shed's lights")
+	main._leave()
+	main.queue_free()
+	await get_tree().create_timer(2.0).timeout
+	# One-shots left here with no listener in the world any more never finish: tidy them up.
+	for q in find_children("*", "AudioStreamPlayer3D", false, false):
+		(q as AudioStreamPlayer3D).stop()
+		q.queue_free()
+	await get_tree().process_frame
+	Sfx.set_listener_room("shed")
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
