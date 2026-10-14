@@ -6873,6 +6873,8 @@ func _test_upgrade_catalogue() -> void:
 	var clear := true
 	for a in all:
 		for b in all:
+			if a.begins_with("sales") and b.begins_with("sales"):
+				continue   # the mezzanine office is upstairs inside the sales office
 			if a != b and (all[a] as Rect2).grow(-0.01).intersects((all[b] as Rect2).grow(-0.01)):
 				clear = false
 				print("    %s overlaps %s" % [a, b])
