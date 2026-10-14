@@ -312,7 +312,7 @@ func sync_state() -> void:
 ## directly (see preview_furniture), so it doesn't lag behind.
 func _sync_furniture() -> void:
 	for id in furniture_nodes.keys():
-		if not Shed.furniture.has(id) or furniture_nodes[id].model != str(Shed.furniture[id].get("model", "")):
+		if not Shed.furniture.has(id) or furniture_nodes[id].look != EquipmentView.look_of(Shed.furniture[id]):
 			furniture_nodes[id].queue_free()
 			furniture_nodes.erase(id)
 			_furniture_sigs.erase(id)

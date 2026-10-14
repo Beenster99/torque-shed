@@ -33,6 +33,8 @@ const ACTIONS := [
 	["tool_8", "Stopwatch", ["foot", "board"]],
 	["spray_colour", "Spray colour", ["spray"]], ["spray_finish", "Spray finish", ["spray"]],
 	["rename", "Name a bike", ["foot"]],
+	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
+	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot", "ride"]],
 	["stopwatch", "Stopwatch start / stop", ["foot", "ride"]], ["menu", "Menu", ["foot", "ride", "board"]],
 	["board_text", "Whiteboard: write text", ["board"]], ["board_undo", "Whiteboard: undo", ["board"]],
@@ -152,6 +154,12 @@ func _setup_inputs() -> void:
 	# Point at something and ping it for the crew to see.
 	_bind("ping", [KEY_G], [JOY_BUTTON_DPAD_RIGHT], [MOUSE_BUTTON_MIDDLE])
 	_bind("rename", [KEY_N], [])
+	# Turn a part in your hands, equipment you're carrying, a poster before you hang it or a
+	# picture on the whiteboard: , and . (the < and > keys); View on a pad turns it right.
+	_bind("rotate_left", [KEY_COMMA], [])
+	_bind("rotate_right", [KEY_PERIOD], [JOY_BUTTON_BACK])
+	# Hold to scrap the equipment you're carrying or the part in your hands, for good.
+	_bind("scrap", [KEY_DELETE], [JOY_BUTTON_DPAD_DOWN])
 	# The second work button: drains fluids into a held container.
 	_bind("alt_act", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	_bind("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])

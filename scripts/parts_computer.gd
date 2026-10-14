@@ -18,6 +18,10 @@ var _section := "bike"
 var _search: LineEdit
 var _section_btns := {}
 var _posters_shown := -1
+## Posters come printed in several sizes (Equipment.POSTER_SIZES): the one picked, and its buttons.
+var poster_size := Equipment.POSTER_SIZE_DEFAULT
+var _sizes: HBoxContainer
+var _size_btns := {}
 
 ## The shop's three aisles, so nobody scrolls through everything.
 const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors"}
@@ -103,6 +107,19 @@ func _ready() -> void:
 	var fill := Control.new()
 	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	detail.add_child(fill)
+	_sizes = HBoxContainer.new()
+	_sizes.add_theme_constant_override("separation", 6)
+	_sizes.add_child(UITheme.label("Size:", 16))
+	for key in Equipment.POSTER_SIZE_ORDER:
+		var sb := Button.new()
+		sb.text = str(Equipment.POSTER_SIZES[key]["name"])
+		sb.toggle_mode = true
+		sb.button_pressed = key == poster_size
+		sb.pressed.connect(pick_poster_size.bind(key))
+		_sizes.add_child(sb)
+		_size_btns[key] = sb
+	_sizes.visible = false
+	detail.add_child(_sizes)
 	_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
 	detail.add_child(_status)
 	_order = Button.new()
@@ -110,7 +127,9 @@ func _ready() -> void:
 	_order.custom_minimum_size = Vector2(0, 48)
 	_order.pressed.connect(func():
 		if design_of(_part) != 0:
-			Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": design_of(_part)})
+			Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": design_of(_part), "psize": poster_size})
+		elif Equipment.kind_of(_part) == "poster":
+			Shed.request({"a": "order_furniture", "model": _part, "psize": poster_size})
 		elif _kind.begins_with("eq:"):
 			Shed.request({"a": "order_furniture", "model": _part})
 		else:
@@ -341,17 +360,35 @@ static func design_of(part: String) -> int:
 	return int(part.trim_prefix("design:")) if part.begins_with("design:") else 0
 
 
+## Picks the size posters are printed in (a key of Equipment.POSTER_SIZES).
+func pick_poster_size(key: String) -> void:
+	poster_size = key
+	for k in _size_btns:
+		_size_btns[k].button_pressed = k == key
+	if _part != "":
+		_show_part(_part)
+
+
+## "Size: A1, 0.60 x 0.84 m. Turn it with , and . before you hang it." for the poster being shown.
+func _size_text(model: String) -> String:
+	var art := Equipment.poster_size(model, poster_size)
+	var keys := Walker._keys("rotate_left", "rotate_right")
+	return "\n\nSize: %s, %.2f x %.2f m. Carrying it, %s turns it portrait or landscape before you hang it." % [
+		str(Equipment.POSTER_SIZES[poster_size]["name"]), art.x, art.y, keys]
+
+
 func _show_part(id: String) -> void:
 	_part = id
 	for b in _variants.get_children():
 		if b.has_meta("part"):
 			b.button_pressed = b.get_meta("part") == id
+	_sizes.visible = design_of(id) != 0 or Equipment.kind_of(id) == "poster"
 	if design_of(id) != 0:
 		var d: Dictionary = Shed.posters.get(design_of(id), {})
 		var m := Equipment.get_model(Equipment.BOARD_POSTER)
 		_title.text = str(d.get("name", "Whiteboard poster"))
 		_desc.text = "%s Saved from the whiteboard by %s." % [m["desc"], str(d.get("by", "the crew"))]
-		_spec.text = Equipment.spec_line(Equipment.BOARD_POSTER).replace("  ·  ", "\n") \
+		_spec.text = "Hangs on a wall." + _size_text(Equipment.BOARD_POSTER) \
 			+ "\n\nArrives outside the roller door. Press F on it to carry it in, look at a wall and press F to hang it."
 		return
 	if _kind.begins_with("eq:"):
@@ -363,6 +400,8 @@ func _show_part(id: String) -> void:
 			if Equipment.is_wall(id) else ("Arrives outside the roller door. Hold F on it to move it." if m["kind"] == "seat"
 			else "Arrives outside the roller door. Press F on it to push it in and F again to put it down.")
 		_spec.text = Equipment.spec_line(id).replace("  ·  ", "\n") + "\n\n" + how
+		if m["kind"] == "poster":
+			_spec.text = how + _size_text(id)
 		return
 	var p := PartsDB.get_part(id)
 	_title.text = str(p["name"])

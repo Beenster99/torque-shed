@@ -41,6 +41,10 @@ var _files: FileDialog
 var picking := false
 var _image_at := Vector2.ZERO
 const IMAGE_FIT := Vector2(420.0, 300.0)   # a new picture goes up at most this big
+const TURN_STEP := 15.0                    # degrees a press of a rotate key turns a picture, snapping on
+const TURN_NUDGE := 2.0                    # and with snapping off; holding the key turns it freely
+const TURN_RATE := 60.0                    # degrees a second, held
+var _turn_held := 0.0
 const MAX_FILE_BYTES := 40000000           # bigger files than this aren't opened at all
 
 
@@ -215,7 +219,8 @@ func _refresh() -> void:
 ## What a mark looks like now, so only the marks that changed are drawn again.
 static func _sig(m: Dictionary) -> String:
 	if m.has("img"):
-		return "img|%d|%s|%s|%s" % [int(m["img"]), str(m["at"]), str(m["sz"]), str(Shed.image_texture(int(m["img"])) != null)]
+		return "img|%d|%s|%s|%s|%.2f" % [int(m["img"]), str(m["at"]), str(m["sz"]), str(Shed.image_texture(int(m["img"])) != null),
+			BoardData.rotation_of(m)]
 	if m.has("text"):
 		return "%s|%d|%d|%s" % [m["text"], int(m["c"]), int(m["s"]), str(m["at"])]
 	var pts: PackedVector2Array = m["pts"]
@@ -250,6 +255,9 @@ static func mark_node(m: Dictionary, node: CanvasItem) -> CanvasItem:
 		pic.texture = tex
 		pic.position = m["at"]
 		pic.size = m["sz"]
+		# Turned about its middle, clockwise.
+		pic.pivot_offset = (m["sz"] as Vector2) * 0.5
+		pic.rotation = deg_to_rad(BoardData.rotation_of(m))
 		return pic
 	if m.has("text"):
 		var label: Label = node if node != null else Label.new()
@@ -423,6 +431,14 @@ func _input(event: InputEvent) -> void:
 		_scale_carried(1.15)
 	elif carrying != 0 and (event.is_action_pressed("tool_prev") or event.is_action_pressed("board_smaller")):
 		_scale_carried(1.0 / 1.15)
+	elif carrying != 0 and (event.is_action_pressed("rotate_left") or event.is_action_pressed("rotate_right")):
+		_turn_carried(1 if event.is_action_pressed("rotate_right") else -1)
+	elif event.is_action_pressed("rotate_left") or event.is_action_pressed("rotate_right"):
+		# Over a picture without holding it: turn it where it is.
+		var over := BoardData.image_at(Shed.board, aim(_local_walker()))
+		if over == 0:
+			return
+		_turn(over, 1 if event.is_action_pressed("rotate_right") else -1)
 	elif event.is_action_pressed("board_move"):
 		take_image()
 	elif event.is_action_pressed("board_bigger") or event.is_action_pressed("board_smaller"):
@@ -449,7 +465,8 @@ func _input(event: InputEvent) -> void:
 		pass   # Ctrl+Z undoes here, so Ctrl doesn't crouch
 	elif event.is_action("act") or event.is_action("alt_act") or event.is_action("spray_colour") or event.is_action("spray_finish") \
 			or event.is_action("board_wipe") or event.is_action("board_colour") or event.is_action("board_move") \
-			or event.is_action("board_poster") or event.is_action("board_image"):
+			or event.is_action("board_poster") or event.is_action("board_image") or event.is_action("rotate_left") \
+			or event.is_action("rotate_right"):
 		pass   # held, and read in _process; the tool in your hand stays out of it
 	else:
 		var picked := false
@@ -563,7 +580,7 @@ func take_image() -> bool:
 	var m: Dictionary = Shed.board["marks"][BoardData.find(Shed.board, id)]
 	carrying = id
 	_grab = p - (m["at"] as Vector2)
-	_carry_sent = {"at": m["at"], "sz": m["sz"]}
+	_carry_sent = {"at": m["at"], "sz": m["sz"], "rot": BoardData.rotation_of(m)}
 	_carry_timer = 0.0
 	return true
 
@@ -586,6 +603,11 @@ func _update_carry(p: Vector2, delta: float) -> void:
 		return
 	var sz: Vector2 = Shed.board["marks"][i]["sz"]
 	_grab = _grab.clamp(Vector2.ZERO, sz)
+	# With snapping off, holding a rotate key turns it freely.
+	var spin := Input.get_axis("rotate_left", "rotate_right")
+	_turn_held = _turn_held + delta if spin != 0.0 else 0.0
+	if spin != 0.0 and not Settings.snap_placement and _turn_held > 0.2:
+		_set_turn(BoardData.rotation_of(Shed.board["marks"][i]) + spin * TURN_RATE * delta)
 	_move_here(p - _grab, sz)
 	_carry_timer += delta
 	if _carry_timer >= SEND_EVERY * 2.0:
@@ -593,8 +615,11 @@ func _update_carry(p: Vector2, delta: float) -> void:
 
 
 ## Moves the picture you hold on your own board straight away; it goes to the crew in _send_move.
-func _move_here(at: Vector2, sz: Vector2) -> void:
-	var op := BoardData.clean({"a": "board_move", "id": carrying, "at": at, "sz": sz}, Shed.me(), "")
+func _move_here(at: Vector2, sz: Vector2, rot = null) -> void:
+	var raw := {"a": "board_move", "id": carrying, "at": at, "sz": sz}
+	if rot != null:
+		raw["rot"] = rot
+	var op := BoardData.clean(raw, Shed.me(), "")
 	if not op.is_empty() and BoardData.apply(Shed.board, op):
 		Shed.board_changed.emit()
 
@@ -606,10 +631,11 @@ func _send_move(_final: bool) -> void:
 	if i < 0:
 		return
 	var m: Dictionary = Shed.board["marks"][i]
-	if _carry_sent.get("at") == m["at"] and _carry_sent.get("sz") == m["sz"]:
+	var rot := BoardData.rotation_of(m)
+	if _carry_sent.get("at") == m["at"] and _carry_sent.get("sz") == m["sz"] and is_equal_approx(float(_carry_sent.get("rot", 0.0)), rot):
 		return
-	_carry_sent = {"at": m["at"], "sz": m["sz"]}
-	Shed.board_request({"a": "board_move", "id": carrying, "at": m["at"], "sz": m["sz"]})
+	_carry_sent = {"at": m["at"], "sz": m["sz"], "rot": rot}
+	Shed.board_request({"a": "board_move", "id": carrying, "at": m["at"], "sz": m["sz"], "rot": rot})
 
 
 func _scale_carried(k: float) -> void:
@@ -623,6 +649,38 @@ func _scale_carried(k: float) -> void:
 	var grab := _grab * (sz / old)
 	_move_here((m["at"] as Vector2) + _grab - grab, sz)
 	_grab = grab
+
+
+## A press of a rotate key while moving a picture (1 clockwise, -1 back): 15 degrees, onto the
+## next multiple of 15, with snapping on; a nudge with it off.
+func _turn_carried(dir: int) -> void:
+	var i := BoardData.find(Shed.board, carrying)
+	if i >= 0:
+		_set_turn(turned(BoardData.rotation_of(Shed.board["marks"][i]), dir))
+
+
+## `rot` turned one press of a rotate key `dir` (see _turn_carried).
+static func turned(rot: float, dir: int) -> float:
+	if Settings.snap_placement:
+		# On to the next multiple of 15 that way (from 7 degrees: 15 one way, 0 the other).
+		var steps := floorf(rot / TURN_STEP + 0.001) + 1.0 if dir > 0 else ceilf(rot / TURN_STEP - 0.001) - 1.0
+		return wrapf(steps * TURN_STEP, 0.0, 360.0)
+	return wrapf(rot + dir * TURN_NUDGE, 0.0, 360.0)
+
+
+## Turns the picture you hold to `rot` degrees on your own board; it goes to the crew in _send_move.
+func _set_turn(rot: float) -> void:
+	var i := BoardData.find(Shed.board, carrying)
+	if i < 0:
+		return
+	var m: Dictionary = Shed.board["marks"][i]
+	_move_here(m["at"], m["sz"], rot)
+
+
+## Turns picture `id` a press of a rotate key where it is.
+func _turn(id: int, dir: int) -> void:
+	var m: Dictionary = Shed.board["marks"][BoardData.find(Shed.board, id)]
+	Shed.board_request({"a": "board_move", "id": id, "at": m["at"], "sz": m["sz"], "rot": turned(BoardData.rotation_of(m), dir)})
 
 
 ## Sizes picture `id` by `k` about its middle.
@@ -682,8 +740,11 @@ func describe() -> Array:
 	if carrying != 0:
 		lines.append("Moving a picture: %s or left mouse puts it down, scroll or %s / %s sizes it" % [
 			_k("board_move"), _k("board_bigger"), _k("board_smaller")])
+		lines.append("%s / %s turns it (%s)" % [_k("rotate_left"), _k("rotate_right"),
+			"15 degrees at a time" if Settings.snap_placement else "hold to turn it freely"])
 	elif BoardData.image_at(Shed.board, aim(_local_walker())) != 0:
-		lines.append("On a picture: %s moves it, %s / %s sizes it" % [_k("board_move"), _k("board_bigger"), _k("board_smaller")])
+		lines.append("On a picture: %s moves it, %s / %s sizes it, %s / %s turns it" % [_k("board_move"), _k("board_bigger"),
+			_k("board_smaller"), _k("rotate_left"), _k("rotate_right")])
 	if marks.is_empty():
 		lines.append("The board is clean.")
 	else:
@@ -704,8 +765,9 @@ func draw_picker(hud: Control, font: Font, toolbar_y: float) -> void:
 		"1-6: colour   7: eraser   scroll: thickness   %s: text   %s: undo   hold %s: wipe   %s: picture   %s: poster" % [
 		_k("board_text"), _k("board_undo"), _k("board_wipe"), _k("board_image"), _k("board_poster")]
 	if carrying != 0:
-		hint = ("D-pad up or A puts it down   LB / RB: size" if pad else "%s or left mouse puts it down   scroll or %s / %s: size" % [
-			_k("board_move"), _k("board_bigger"), _k("board_smaller")])
+		hint = ("D-pad up or A puts it down   LB / RB: size   %s: turn" % _k("rotate_right", true) if pad else \
+			"%s or left mouse puts it down   scroll or %s / %s: size   %s / %s: turn" % [
+			_k("board_move"), _k("board_bigger"), _k("board_smaller"), _k("rotate_left"), _k("rotate_right")])
 	if wipe > 0.0:
 		hint = "Wiping the whole board... keep holding X"
 	var total := maxf(swatches, font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x)

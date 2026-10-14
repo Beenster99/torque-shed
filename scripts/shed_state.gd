@@ -270,6 +270,11 @@ func load_state(state: Dictionary, player_name: String) -> void:
 		furniture[id]["mover"] = 0
 		# Equipment renamed since the save was made (the wall TVs grew): the model it is now.
 		furniture[id]["model"] = Equipment.current_id(str(furniture[id].get("model", "")))
+	# Shelves from before parts could go anywhere on them: what sat in a numbered place stays
+	# just where it was, now as a part put down on that board.
+	for id in items:
+		if items[id]["at"] == "spot" and not (items[id].get("place") is Transform3D) and spot_role(str(items[id]["ref"])) == "shelf":
+			items[id]["place"] = item_place(id)
 	# Nobody is holding the hose or wearing the ear defenders in a new session.
 	if dyno["hose"] == "held":
 		dyno["hose"] = "hook"
@@ -1149,6 +1154,11 @@ func surface_of_spot(spot: String) -> String:
 		return "bench"
 	var f := furniture_of_spot(spot)
 	if not f.is_empty() and Equipment.SURFACE_KINDS.has(str(f["kind"])):
+		if f["kind"] == "shelf":
+			# Each board of a shelving unit is its own surface: the one the part sits on.
+			var id := item_at_spot(spot)
+			var y := item_place(id).origin.y if id != 0 else 0.0
+			return "f%ds%d" % [int(f["id"]), Equipment.shelf_level(str(f["model"]), y)]
 		return "f%d" % int(f["id"])
 	return ""
 
@@ -1166,13 +1176,24 @@ func surface(key: String) -> Dictionary:
 		var xf := Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(a.x, 0.0, (a.z + b.z) * 0.5))
 		return {"xf": xf, "rect": Rect2(-length * 0.5 + 0.05, -0.42, length - 0.1, 0.84), "top": a.y, "prefix": "bench_",
 			"kind": "bench", "furniture": 0, "rated": SPOTS.size(), "key": key}
-	if not key.begins_with("f") or not key.substr(1).is_valid_int():
+	# "f<id>" for a washer, repair machine or bench; "f<id>s<board>" for one board of a shelving unit.
+	var bits := key.substr(1).split("s")
+	if not key.begins_with("f") or bits.size() > 2 or not bits[0].is_valid_int() or (bits.size() == 2 and not bits[1].is_valid_int()):
 		return {}
-	var id := int(key.substr(1))
+	var id := int(bits[0])
 	var f: Dictionary = furniture.get(id, {})
 	if f.is_empty() or not Equipment.SURFACE_KINDS.has(str(f["kind"])):
 		return {}
 	var model := str(f["model"])
+	if f["kind"] == "shelf":
+		var level := int(bits[1]) if bits.size() == 2 else 0
+		if level < 0 or level >= int(Equipment.get_model(model).get("levels", 1)):
+			return {}
+		return {"xf": f["xf"], "rect": Equipment.surface_rect(model), "top": Equipment.shelf_top(model, level),
+			"prefix": "shelf_%d_" % id, "kind": "shelf", "furniture": id, "rated": Equipment.places(model),
+			"key": "f%ds%d" % [id, level], "level": level}
+	if bits.size() == 2:
+		return {}
 	return {"xf": f["xf"], "rect": Equipment.surface_rect(model), "top": Equipment.work_height(model),
 		"prefix": "%s_%d_" % [Equipment.SPOT_PREFIX[f["kind"]], id], "kind": str(f["kind"]), "furniture": id,
 		"rated": Equipment.places(model), "key": key}
@@ -1183,6 +1204,8 @@ func surface_name(key: String) -> String:
 	if key == "bench":
 		return "Workbench"
 	var s := surface(key)
+	if not s.is_empty() and s["kind"] == "shelf":
+		return "%s, shelf %d" % [furniture_name(furniture[int(s["furniture"])]), int(s["level"]) + 1]
 	return "" if s.is_empty() else furniture_name(furniture[int(s["furniture"])])
 
 
@@ -1193,7 +1216,7 @@ func surface_items(key: String) -> Array:
 	if s.is_empty():
 		return out
 	for id in items:
-		if items[id]["at"] == "spot" and str(items[id]["ref"]).begins_with(str(s["prefix"])) and surface_of_spot(str(items[id]["ref"])) == key:
+		if items[id]["at"] == "spot" and str(items[id]["ref"]).begins_with(str(s["prefix"])) and surface_of_spot(str(items[id]["ref"])) == str(s["key"]):
 			out.append(id)
 	return out
 
@@ -1205,9 +1228,8 @@ func item_place(item_id: int) -> Transform3D:
 	if it.get("place") is Transform3D:
 		return it["place"]
 	var spot := str(it["ref"])
-	var key := surface_of_spot(spot)
-	if key == "bench":
-		return (surface(key)["xf"] as Transform3D).affine_inverse() * Workshop.spot_transform(spot)
+	if spot.begins_with("bench_"):
+		return (surface("bench")["xf"] as Transform3D).affine_inverse() * Workshop.spot_transform(spot)
 	return local_spot_transform(spot)
 
 
@@ -1319,6 +1341,16 @@ func whiteboard_id() -> int:
 		if furniture[id]["kind"] == "whiteboard":
 			return id
 	return 0
+
+
+## How big a piece of equipment is as it stands (width, height, depth): its model's size, or
+## for a poster the size it was printed at, on its side when it's been turned a quarter.
+static func furniture_size(f: Dictionary) -> Vector3:
+	var model := str(f.get("model", ""))
+	if Equipment.kind_of(model) != "poster":
+		return Equipment.get_model(model).get("size", Vector3.ONE)
+	var art := Equipment.poster_size(model, str(f.get("psize", "")))
+	return Vector3(art.y, art.x, art.z) if int(f.get("turn", 0)) % 2 == 1 else art
 
 
 func furniture_name(f: Dictionary) -> String:
@@ -1728,6 +1760,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "The paint booth is built into the shed: it's in the paint shop on the east side."
 			if model == Equipment.BOARD_POSTER and not posters.has(int(action.get("design", 0))):
 				return "That whiteboard poster isn't in the shop any more."
+			if str(action.get("psize", "")) != "" and (Equipment.kind_of(model) != "poster" or not Equipment.POSTER_SIZES.has(str(action["psize"]))):
+				return "That size isn't sold."
 			if Equipment.kind_of(model) == "whiteboard":
 				return "The shed has its whiteboard already. Press F on it to hang it somewhere else."
 			if Equipment.is_yard(model):
@@ -1761,6 +1795,16 @@ func check(peer: int, action: Dictionary) -> String:
 				return "You're not moving that."
 			if not (action.get("xf") is Transform3D):
 				return "You can't put it there."
+		"turn_poster":
+			var f: Dictionary = furniture.get(int(action.get("furniture", 0)), {})
+			if f.is_empty() or f["mover"] != peer:
+				return "You're not carrying that."
+			if f["kind"] != "poster":
+				return "Only posters turn round: the %s hangs one way up." % furniture_name(f).to_lower()
+			if not (action.get("turn") is int or action.get("turn") is float):
+				return "Turn it which way?"
+		"scrap":
+			return scrap_check(peer, action)
 		"label":
 			var f: Dictionary = furniture.get(int(action.get("furniture", 0)), {})
 			if f.is_empty() or f["kind"] != "shelf":
@@ -2039,6 +2083,79 @@ func bin_check(item_id: int, which: String) -> String:
 	return ""
 
 
+## Why `peer` can't scrap what the action names, or "": {furniture: the equipment they're
+## carrying} or {item: the part in their hands}. The shed's own kit (the spray bay, the tyre
+## changer and the whiteboard) can't be scrapped.
+func scrap_check(peer: int, action: Dictionary) -> String:
+	if action.has("furniture"):
+		var f: Dictionary = furniture.get(int(action["furniture"]), {})
+		if f.is_empty():
+			return "That has gone."
+		if Equipment.FIXED_KINDS.has(str(f["kind"])) or f["kind"] == "whiteboard":
+			return "The %s is part of the shed: it can't be scrapped." % furniture_name(f).to_lower()
+		if f["mover"] != peer:
+			return "Take hold of it first (F), then hold the scrap key."
+		if blaster_user(int(f["id"])) != 0:
+			return "Someone's working at it."
+		return ""
+	var item_id := int(action.get("item", 0))
+	if item_id == 0 or not items.has(item_id) or held_by(peer) != item_id:
+		return "Hold the part you want to scrap."
+	return ""
+
+
+## Scraps equipment or a part for good (see scrap_check). Whatever was on or in it goes on the
+## floor first: the parts on a shelf or bench under where they sat, and the parts bolted to an
+## engine or the tyre on a wheel at `at` (where the player is looking, on the floor).
+func _scrap(_peer: int, action: Dictionary) -> String:
+	if action.has("furniture"):
+		var id := int(action["furniture"])
+		var f: Dictionary = furniture[id]
+		var what := furniture_name(f).to_lower()
+		var floor_y: float = (f["xf"] as Transform3D).origin.y
+		var dropped := 0
+		for spot in furniture_spots(id):
+			var on := item_at_spot(spot)
+			if on == 0:
+				continue
+			var xf := spot_transform(spot)
+			_move(on, "floor", Transform3D(Basis(Vector3.UP, xf.basis.get_euler().y), Vector3(xf.origin.x, floor_y, xf.origin.z)))
+			_washer_by.erase(on)
+			dropped += 1
+		screens.erase("f%d" % id)
+		furniture.erase(id)
+		if dropped > 0:
+			return "Scrapped the %s. What was on it is on the floor." % what
+		return "Scrapped the %s" % what
+	var item_id := int(action["item"])
+	var at := Transform3D(Basis(), Workshop.CENTER)
+	if action.get("at") is Transform3D and (action["at"] as Transform3D).origin.distance_to(Workshop.CENTER) < 400.0 \
+			and (action["at"] as Transform3D).origin.y > -5.0:
+		at = action["at"]
+	var dropped := []
+	var tyre := tyre_on_wheel(item_id)
+	if tyre != 0:
+		items[item_id].erase("tyre")
+		items[tyre].erase("bead")
+		dropped.append(tyre)
+	if is_engine(item_id):
+		for slot in PartsDB.ENGINE_SLOTS:
+			var sub := engine_item(item_id, slot)
+			if sub != 0:
+				items[item_id]["slots"][slot] = 0
+				items[item_id]["bolted"][slot] = false
+				dropped.append(sub)
+	for i in dropped.size():
+		var d: int = dropped[i]
+		_move(d, "floor", at.translated_local(Vector3((i % 4 - 1.5) * 0.3, 0.0, -(i / 4) * 0.3)))
+	var name_was := item_title(item_id).to_lower()
+	_erase_item(item_id)
+	if dropped.is_empty():
+		return "Scrapped the %s" % name_was
+	return "Scrapped the %s. The %d part%s on it are on the floor." % [name_was, dropped.size(), "" if dropped.size() == 1 else "s"] \
+		if dropped.size() != 1 else "Scrapped the %s. The %s on it is on the floor." % [name_was, item_title(dropped[0]).to_lower()]
+
+
 ## Everyone out riding right now, by peer id, lowest first.
 func riders() -> Array:
 	var out := []
@@ -2264,6 +2381,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 			else:
 				var fid := _new_furniture(kind, free_delivery_xf(), model)
 				var what := str(Equipment.get_model(model)["name"]).to_lower()
+				if kind == "poster":
+					# Printed A2, A1, A0 or as a big banner (A1 unless the order says).
+					var psize := str(action.get("psize", ""))
+					furniture[fid]["psize"] = psize if Equipment.POSTER_SIZES.has(psize) else Equipment.POSTER_SIZE_DEFAULT
+					furniture[fid]["turn"] = 0
 				if model == Equipment.BOARD_POSTER:
 					# A print of a whiteboard drawing: it shows that design.
 					var design := int(action.get("design", 0))
@@ -2271,6 +2393,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 					what = "\"%s\" poster" % str(posters[design]["name"])
 				var how := "press F on it to carry it in and hang it on a wall" if Equipment.is_wall(model) else \
 					("hold F on it to move it" if kind == "seat" else "press F on it to push it in")
+				if kind == "poster":
+					what = "%s %s" % [Equipment.POSTER_SIZES[furniture[fid]["psize"]]["name"], what]
 				text = "Ordered the %s. It's outside by the roller door: %s." % [what, how]
 		"start_build":
 			var id := _empty_bike(held_by(peer), int(action["bay"]))
@@ -2291,6 +2415,16 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"release":
 			furniture[int(action["furniture"])]["xf"] = action["xf"]
 			furniture[int(action["furniture"])]["mover"] = 0
+		"turn_poster":
+			var f: Dictionary = furniture[int(action["furniture"])]
+			f["turn"] = posmod(int(action["turn"]), 4)
+			text = "Landscape" if f["turn"] % 2 == 1 else "Portrait"
+			var art := Equipment.poster_size(str(f["model"]), str(f.get("psize", "")))
+			if art.x > art.y:
+				text = "Portrait" if f["turn"] % 2 == 1 else "Landscape"
+			text += " (%s)" % ["the right way up", "turned left", "upside down", "turned right"][int(f["turn"])]
+		"scrap":
+			text = _scrap(peer, action)
 		"rename_bike":
 			bikes[bike_id]["name"] = str(action["name"]).strip_edges().left(28)
 			text = "Named it %s" % bikes[bike_id]["name"]

@@ -117,6 +117,14 @@ func _run_all() -> void:
 	_test_geo_shed()
 	_test_blueprint_build()
 	await _test_geometry_session()
+	print("Scrapping kit, turning what you hold, free shelves, turned board pictures and poster sizes")
+	_test_scrap()
+	await _test_scrap_session()
+	await _test_hold_turning()
+	_test_shelf_surfaces()
+	await _test_shelf_session()
+	await _test_board_turning()
+	await _test_poster_sizes()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -4792,6 +4800,482 @@ func _test_geometry_session() -> void:
 	check(holo != null and not holo.is_fitted("tank"), "a ghost part vanishes as the real one goes on")
 	check(absf(ws.bike_model(built).slot_bounds("tank").get_center().y - ws.bike_model(built).geo_pivot("tank").y - 0.05) < 0.001,
 		"the real tank goes on with the blueprint's fit")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+
+# ---------------------------------------------------------------------------- scrapping, turning, shelves, board pictures, posters
+
+func _test_scrap() -> void:
+	Shed.start_new("Tester", 41)
+	var me := Shed.me()
+	# The keys: hold Delete to scrap, , and . turn what you hold; none of them do two things.
+	for a in ["scrap", "rotate_left", "rotate_right"]:
+		check(Settings.binding_text(a, false) != "" and Settings.clash_text(a) == "", "%s has a key of its own (%s)" % [a, Settings.binding_text(a, false)])
+	# Shelving with parts on it: carry it, scrap it, and the parts end up on the floor.
+	Shed.request({"a": "order_furniture", "model": "shelf_standard"})
+	var shelf := _first_furniture("shelf_standard")
+	var xf := Transform3D(Basis(Vector3.UP, 0.4), Workshop.CENTER + Vector3(1.0, 0.0, 2.0))
+	Shed.furniture[shelf]["xf"] = xf
+	var on := []
+	for i in 3:
+		_in_hands("iridium_plugs")
+		if _set_down_near("f%ds%d" % [shelf, i], Vector2.ZERO):
+			on.append(Shed.items.keys().max())
+	check(on.size() == 3, "three parts go on its shelves")
+	check(Shed.check(me, {"a": "scrap", "furniture": shelf}).contains("Take hold"), "you have to be carrying it to scrap it")
+	Shed.request({"a": "grab", "furniture": shelf})
+	check(Shed.check(me, {"a": "scrap", "furniture": shelf}) == "", "carrying it, it can be scrapped")
+	Shed.request({"a": "scrap", "furniture": shelf})
+	check(not Shed.furniture.has(shelf) and Shed.moving(me) == 0, "scrapped, the shelving is gone")
+	check(_on_floor_near(on, xf.origin, 1.0), "what was on it is on the floor where it stood")
+	# The shed's own kit stays.
+	for kind in ["booth", "changer", "whiteboard"]:
+		var fid := 0
+		for id in Shed.furniture:
+			if Shed.furniture[id]["kind"] == kind:
+				fid = id
+		Shed.furniture[fid]["mover"] = me
+		check(Shed.check(me, {"a": "scrap", "furniture": fid}).contains("part of the shed"), "the %s can't be scrapped" % kind)
+		Shed.furniture[fid]["mover"] = 0
+	# A wall TV goes, and its channel with it.
+	Shed.request({"a": "order_furniture", "model": "tv_120"})
+	var tv := _first_furniture("tv_120")
+	Shed.screens["f%d" % tv] = {"ch": 1, "rider": 0}
+	Shed.request({"a": "grab", "furniture": tv})
+	Shed.request({"a": "scrap", "furniture": tv})
+	check(not Shed.furniture.has(tv) and not Shed.screens.has("f%d" % tv), "a TV can be scrapped")
+	# Parts in your hands: only what you're holding.
+	var plug := _in_hands("iridium_plugs")
+	var loose := Shed._new_item("flat_bar", 0.0, 0.0, 0.0)
+	Shed._move(loose, "floor", Transform3D(Basis(), Workshop.CENTER))
+	check(Shed.check(me, {"a": "scrap", "item": loose}).contains("Hold"), "a part has to be in your hands to scrap it")
+	Shed.request({"a": "scrap", "item": plug})
+	check(not Shed.items.has(plug) and Shed.held_by(me) == 0, "a part in your hands is scrapped")
+	# A wheel's tyre and an engine's parts come off onto the floor first.
+	var at := Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 1.5))
+	var wheel := _in_hands("spoked_21")
+	var tyre := Shed._new_item("knobbly_mx", 0.0, 0.0, 0.0)
+	Shed.items[wheel]["tyre"] = tyre
+	Shed._move(tyre, "wheel", wheel)
+	Shed.items[tyre]["bead"] = 0.9
+	Shed.request({"a": "scrap", "item": wheel, "at": at})
+	check(not Shed.items.has(wheel) and Shed.items.has(tyre) and Shed.items[tyre]["at"] == "floor" and not Shed.items[tyre].has("bead"),
+		"scrapping a wheel leaves its tyre on the floor")
+	var block := 0
+	var bike := 0
+	for b in Shed.bikes:
+		var e := int(Shed.bikes[b]["slots"].get("engine", 0))
+		if e != 0 and Shed.is_engine(e) and Shed.engine_item(e, "spark_plugs") != 0:
+			block = e
+			bike = b
+			break
+	var subs := []
+	for s in PartsDB.ENGINE_SLOTS:
+		if Shed.engine_item(block, s) != 0:
+			subs.append(Shed.engine_item(block, s))
+	Shed._detach(bike, "engine", "held", me)
+	Shed.request({"a": "scrap", "item": block, "at": at})
+	check(block != 0 and not Shed.items.has(block) and not subs.is_empty() and _on_floor_near(subs, at.origin, 1.5),
+		"scrapping an engine leaves its %d parts on the floor" % subs.size())
+	Shed.stop()
+
+
+## Whether every item in `ids` is on the floor within `r` of `at` (across), at its height.
+func _on_floor_near(ids: Array, at: Vector3, r: float) -> bool:
+	for id in ids:
+		if not Shed.items.has(id) or Shed.items[id]["at"] != "floor":
+			return false
+		var o: Vector3 = (Shed.items[id]["ref"] as Transform3D).origin
+		if Vector2(o.x - at.x, o.z - at.z).length() > r or absf(o.y - at.y) > 0.001:
+			return false
+	return true
+
+
+func _test_scrap_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	Shed.request({"a": "order_furniture", "model": "seat_stool"})
+	var stool := _first_furniture("seat_stool")
+	var middle := Workshop.CENTER + Vector3(0.0, 0.0, 1.0)
+	Shed.furniture[stool]["xf"] = Transform3D(Basis(), middle)
+	w.place(Transform3D(Basis(), middle + Vector3(0.0, 0.0, 1.2)))
+	Shed.request({"a": "grab", "furniture": stool})
+	for i in 3:
+		await get_tree().physics_frame
+	check(w.info.contains("scrap it"), "carrying equipment, the panel says how to scrap it")
+	Input.action_press("scrap")
+	var armed := -1
+	for i in 240:
+		await get_tree().physics_frame
+		if not w.scrap_armed.is_empty():
+			armed = i
+			break
+	Input.action_release("scrap")
+	await get_tree().physics_frame
+	check(armed > 90 and Shed.furniture.has(stool), "held for a second, it asks first and nothing goes yet (%d frames)" % armed)
+	_press("scrap")
+	await get_tree().physics_frame
+	check(not Shed.furniture.has(stool) and w.scrap_armed.is_empty(), "pressed again, the stool is scrapped")
+	# A part: left too long, it's kept.
+	var plug := _in_hands("iridium_plugs")
+	for attempt in 2:
+		Input.action_press("scrap")
+		for i in 160:
+			await get_tree().physics_frame
+		Input.action_release("scrap")
+		await get_tree().physics_frame
+		if attempt == 0:
+			check(not w.scrap_armed.is_empty() and int(w.scrap_armed.get("item", 0)) == plug, "holding it with a part in hand asks to scrap the part")
+			w.scrap_armed["until"] = 0
+			await get_tree().physics_frame
+			check(w.scrap_armed.is_empty() and Shed.items.has(plug), "not confirmed in time, it's kept")
+	_press("scrap")
+	await get_tree().physics_frame
+	check(not Shed.items.has(plug) and Shed.held_by(Shed.me()) == 0, "confirmed, the part is gone")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _test_hold_turning() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var kept: bool = Settings.snap_placement
+	Settings.snap_placement = true
+	var middle := Workshop.CENTER + Vector3(0.0, 0.0, 1.0)
+	w.place(Transform3D(Basis(), middle))
+	var bar := _in_hands("flat_bar")
+	await _aim_point(w, middle + Vector3(0.0, 0.0, -1.2))
+	check(w.plan.get("action", {}).get("a", "") == "drop", "aiming at the floor with a part offers to put it down (%s)" % str(w.plan.get("action", {})))
+	_press("rotate_left")
+	for i in 3:
+		await get_tree().physics_frame
+	check(is_equal_approx(w.hold_turn, PI * 0.5), "with snapping on, a press turns it a quarter left (%.2f)" % w.hold_turn)
+	var drop: Transform3D = w.plan["action"]["xf"]
+	check(absf(wrapf(drop.basis.get_euler().y - w.rotation.y - PI * 0.5, -PI, PI)) < 0.01, "it goes down turned that way")
+	check(w._part_ghost != null and w._part_ghost.visible
+		and absf(wrapf(w._part_ghost.global_basis.get_euler().y - drop.basis.get_euler().y, -PI, PI)) < 0.01, "and its outline on the floor shows it turned")
+	check(w.info.contains("turn it"), "the panel says how to turn it")
+	_press("rotate_right")
+	_press("rotate_right")
+	await get_tree().physics_frame
+	check(is_equal_approx(w.hold_turn, -PI * 0.5), "the other key turns it the other way")
+	# Snapping off: hold the key and it turns freely.
+	Settings.snap_placement = false
+	var was := w.hold_turn
+	Input.action_press("rotate_left")
+	for i in 60:
+		await get_tree().physics_frame
+	Input.action_release("rotate_left")
+	await get_tree().physics_frame
+	var turned := wrapf(w.hold_turn - was, -PI, PI)
+	check(turned > 0.2 and turned < PI * 0.5 and fmod(absf(w.hold_turn), PI * 0.5) > 0.01,
+		"with snapping off it turns freely while the key is held (%.0f degrees)" % rad_to_deg(turned))
+	var want := w.rotation.y + w.hold_turn
+	await _hold_act(main)
+	check(Shed.items[bar]["at"] == "floor" and absf(wrapf((Shed.items[bar]["ref"] as Transform3D).basis.get_euler().y - want, -PI, PI)) < 0.02,
+		"put down, it lies as it was turned")
+	_in_hands("flat_bar")
+	await get_tree().physics_frame
+	check(w.hold_turn == 0.0, "the next part in your hands starts the way you face")
+	# Equipment you carry turns too.
+	Shed.request({"a": "order_furniture", "model": "seat_stool"})
+	var stool := _first_furniture("seat_stool")
+	Shed._erase_item(Shed.held_by(Shed.me()))
+	Shed.furniture[stool]["xf"] = Transform3D(Basis(), middle + Vector3(0.0, 0.0, -1.0))
+	Settings.snap_placement = true
+	Shed.request({"a": "grab", "furniture": stool})
+	for i in 3:
+		await get_tree().physics_frame
+	_press("rotate_left")
+	await get_tree().physics_frame
+	var sxf: Transform3D = w._push_transform(stool)
+	check(is_equal_approx(w.carry_turn, PI * 0.5) and absf(wrapf(sxf.basis.get_euler().y - Placement.snap_yaw(w.rotation.y + PI * 0.5), -PI, PI)) < 0.01,
+		"carried equipment turns a quarter with snapping on")
+	Settings.snap_placement = false
+	Input.action_press("rotate_right")
+	for i in 60:
+		await get_tree().physics_frame
+	Input.action_release("rotate_right")
+	await get_tree().physics_frame
+	sxf = w._push_transform(stool)
+	check(w.carry_turn < PI * 0.5 - 0.2 and absf(wrapf(sxf.basis.get_euler().y - w.rotation.y - w.carry_turn, -PI, PI)) < 0.01,
+		"and freely with it off (%.0f degrees)" % rad_to_deg(w.carry_turn))
+	check(w.info.contains("turn it"), "the panel says how to turn it")
+	_press("interact")
+	for i in 3:
+		await get_tree().physics_frame
+	# Down on the repair bench: as turned with snapping off, square to it with snapping on.
+	var machine := _first_furniture("repair_standard")
+	var mxf: Transform3D = Shed.furniture[machine]["xf"]
+	var top := Equipment.work_height("repair_standard")
+	w.place(Transform3D(Basis(), mxf * Vector3(-0.3, 0.0, 1.3)))
+	_in_hands("iridium_plugs")
+	await get_tree().physics_frame
+	w.hold_turn = 0.3
+	await _aim_point(w, mxf * Vector3(-0.3, top, 0.0))
+	var pa: Dictionary = w.plan.get("action", {})
+	check(pa.get("a", "") == "set_down", "aiming at the bench top offers to put it down (%s)" % str(pa))
+	if pa.get("a", "") == "set_down":
+		var rel := wrapf((pa["xf"] as Transform3D).basis.get_euler().y - (w.rotation.y + 0.3 - mxf.basis.get_euler().y), -PI, PI)
+		check(absf(rel) < 0.01 or absf(absf(rel) - PI * 0.5) < 0.01, "with snapping off it goes on the bench as turned (%.2f)" % rel)
+	Settings.snap_placement = true
+	for i in 3:
+		await get_tree().physics_frame
+	pa = w.plan.get("action", {})
+	if pa.get("a", "") == "set_down":
+		var yaw := (pa["xf"] as Transform3D).basis.get_euler().y
+		check(absf(wrapf(yaw - Placement.snap_yaw(yaw), -PI, PI)) < 0.01, "with snapping on it goes square to the bench (%.2f)" % yaw)
+	Settings.snap_placement = kept
+	Settings.save_settings()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _test_shelf_surfaces() -> void:
+	Shed.start_new("Tester", 43)
+	var me := Shed.me()
+	var shelf := Shed._new_furniture("shelf", Transform3D(Basis(Vector3.UP, PI * 0.5), Workshop.CENTER + Vector3(1.0, 0.0, 2.0)), "shelf_standard")
+	var levels := int(Equipment.get_model("shelf_standard")["levels"])
+	var cols := int(Equipment.get_model("shelf_standard")["cols"])
+	check(Shed.surface("f%ds0" % shelf).get("kind", "") == "shelf" and not Shed.surface("f%ds%d" % [shelf, levels - 1]).is_empty()
+		and Shed.surface("f%ds%d" % [shelf, levels]).is_empty(), "each of its %d boards is a surface to put parts on" % levels)
+	var key := "f%ds1" % shelf
+	var on := []
+	for i in 12:
+		_in_hands("iridium_plugs")
+		if _set_down_near(key, Vector2(-0.5 + i * 0.09, 0.0)):
+			on.append(Shed.items.keys().max())
+		else:
+			Shed._erase_item(Shed.held_by(me))
+	check(on.size() > cols, "more than its old %d places go on one board (%d)" % [cols, on.size()])
+	var rects := Shed._surface_rects(key)
+	var overlaps := 0
+	for a in rects.size():
+		for b in range(a + 1, rects.size()):
+			if (rects[a][1] as Rect2).grow(-Shed.SURFACE_GAP).intersects(rects[b][1]):
+				overlaps += 1
+	check(overlaps == 0, "none of them overlap")
+	check(Shed.surface_items(key).size() == on.size() and Shed.surface_items("f%ds0" % shelf).is_empty() and Shed.surface_items("f%ds2" % shelf).is_empty(),
+		"they're on that board and no other")
+	var ref := str(Shed.items[on[0]]["ref"])
+	var sxf: Transform3D = Shed.furniture[shelf]["xf"]
+	check(Shed.surface_of_spot(ref) == key and Shed.spot_role(ref) == "shelf"
+		and absf((sxf.affine_inverse() * Shed.spot_transform(ref).origin).y - Equipment.shelf_top("shelf_standard", 1)) < 0.001, "each sits on the board where it was put")
+	check(Shed.surface_name(key).contains("shelf 2"), "the board is named for the panel (%s)" % Shed.surface_name(key))
+	var box := _in_hands("flat_bar")
+	Shed.items[box]["boxed"] = true
+	check(_set_down_near("f%ds2" % shelf, Vector2.ZERO), "boxed stock goes on a shelf")
+	# Moved, the parts go with it.
+	Shed.furniture[shelf]["xf"] = sxf.translated(Vector3(0.5, 0.0, 0.0))
+	check(Shed.spot_transform(ref).origin.distance_to((Shed.furniture[shelf]["xf"] as Transform3D) * Shed.item_place(on[0]).origin) < 0.001, "and moves with the shelving")
+	# An older save: a part in one of the old numbered places of another unit.
+	var old_shelf := Shed._new_furniture("shelf", Transform3D(Basis(), Workshop.CENTER + Vector3(-1.0, 0.0, 2.0)), "shelf_standard")
+	var legacy := Shed._new_item("paper_oil", 0.0, 0.0, 0.0)
+	var n := cols * 3 + 1
+	Shed._move(legacy, "spot", "shelf_%d_%d" % [old_shelf, n])
+	check(Shed.surface_items("f%ds3" % old_shelf) == [legacy] and Shed.item_place(legacy) == Equipment.local_place("shelf_standard", n),
+		"a part in an old numbered place is on its board, where it was")
+	_in_hands("paper_oil")
+	check(Shed.check(me, {"a": "set_down", "top": "f%ds3" % old_shelf, "xf": Shed.item_place(legacy)}).contains("in the way"), "and parts are kept clear of it")
+	Shed._erase_item(Shed.held_by(me))
+	Shed.load_state(str_to_var(var_to_str(Shed._snapshot())), "Tester")
+	check(Shed.items[legacy].get("place") is Transform3D and Shed.items[legacy]["place"] == Equipment.local_place("shelf_standard", n)
+		and Shed.surface_items("f%ds3" % old_shelf) == [legacy], "opened, the old save keeps it there, now as put down on the board")
+	check(on.all(func(id): return Shed.surface_items(key).has(id)), "the rest come back from the save on their board")
+	Shed.stop()
+
+
+func _test_shelf_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var kept: bool = Settings.snap_placement
+	Settings.snap_placement = true
+	var middle := Workshop.CENTER + Vector3(0.0, 0.0, 1.0)
+	var shelf := Shed._new_furniture("shelf", Transform3D(Basis(), middle), "shelf_standard")
+	Shed.changed.emit()
+	for i in 2:
+		await get_tree().process_frame
+	w.place(Transform3D(Basis(), middle + Vector3(0.0, 0.0, 1.3)))
+	var key := "f%ds2" % shelf
+	var top := Equipment.shelf_top("shelf_standard", 2)
+	var count := 0
+	for i in 4:
+		_in_hands("iridium_plugs")
+		Shed.changed.emit()
+		await _aim_point(w, middle + Vector3(-0.3, top + 0.08, 0.1))
+		check(w.plan.get("action", {}).get("a", "") == "set_down" and w.plan["action"].get("top", "") == key and w.plan["blocked"] == "",
+			"looking at a shelf with a part offers to put it down on that board (%s, %s)" % [str(w.target), str(w.plan.get("blocked", w.plan))])
+		await _hold_act(main)
+		if Shed.held_by(Shed.me()) == 0:
+			count += 1
+	check(count == 4 and Shed.surface_items(key).size() == 4, "four spark plugs go on the one board, side by side (%d)" % Shed.surface_items(key).size())
+	Shed.changed.emit()
+	await get_tree().process_frame
+	var plug: int = Shed.surface_items(key)[0]
+	await _aim_point(w, Shed.spot_transform(str(Shed.items[plug]["ref"])).origin + Vector3.UP * 0.02)
+	check(w.target.get("kind", "") == "spot" and w.target_item() != 0 and w.plan.get("action", {}).get("a", "") == "take",
+		"a part on a shelf can be aimed at and picked up (%s)" % str(w.target))
+	Settings.snap_placement = kept
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _test_board_turning() -> void:
+	var b := BoardData.empty()
+	var op := BoardData.clean({"a": "board_image", "id": 5, "img": 3, "at": Vector2(500, 200), "sz": Vector2(200, 40), "rot": 450.0}, 1, "T")
+	check(is_equal_approx(float(op["rot"]), 90.0), "a picture's turn wraps round into 0 to 360 degrees")
+	BoardData.apply(b, op)
+	var r := BoardData.bounds(b["marks"][0])
+	check(r.size.is_equal_approx(Vector2(40, 200)) and r.get_center().is_equal_approx(Vector2(600, 220)), "turned a quarter it covers a tall box (%s)" % str(r))
+	check(BoardData.image_at(b, Vector2(600, 300)) == 5 and BoardData.image_at(b, Vector2(680, 220)) == 0
+		and BoardData.ink_at(b, Vector2(600, 300)) == BoardData.IMAGE, "it's found where it shows, turned")
+	BoardData.apply(b, BoardData.clean({"a": "board_move", "id": 5, "at": Vector2(500, 200), "sz": Vector2(200, 40), "rot": 30.0}, 1, "T"))
+	check(is_equal_approx(BoardData.rotation_of(b["marks"][0]), 30.0), "moving it can turn it")
+	BoardData.apply(b, BoardData.clean({"a": "board_move", "id": 5, "at": Vector2(510, 200), "sz": Vector2(200, 40)}, 1, "T"))
+	check(is_equal_approx(BoardData.rotation_of(b["marks"][0]), 30.0) and (b["marks"][0]["at"] as Vector2).x == 510.0, "moving it without a turn keeps its turn")
+	var node := Whiteboard.mark_node(b["marks"][0], null)
+	check(is_equal_approx(node.rotation, deg_to_rad(30.0)) and (node as Control).pivot_offset.is_equal_approx(Vector2(100, 20)), "drawn turned about its middle")
+	node.free()
+	var kept: bool = Settings.snap_placement
+	Settings.snap_placement = true
+	check(is_equal_approx(Whiteboard.turned(0.0, 1), 15.0) and is_equal_approx(Whiteboard.turned(7.0, 1), 15.0)
+		and is_equal_approx(Whiteboard.turned(7.0, -1), 0.0) and is_equal_approx(Whiteboard.turned(0.0, -1), 345.0), "with snapping on a press turns it 15 degrees")
+	Settings.snap_placement = false
+	check(is_equal_approx(Whiteboard.turned(7.0, 1), 7.0 + Whiteboard.TURN_NUDGE), "with snapping off a press nudges it")
+	# The eraser rubs out a turned picture where it shows, not the box it used to fill.
+	for rot in [90.0, 0.0]:
+		var rb := BoardData.empty()
+		BoardData.apply(rb, BoardData.clean({"a": "board_image", "id": 7, "img": 3, "at": Vector2(450, 280), "sz": Vector2(100, 40), "rot": rot}, 1, "T"))
+		BoardData.apply(rb, BoardData.clean({"a": "board_draw", "id": 8, "c": BoardData.ERASER, "pts": PackedVector2Array([Vector2(500, 230), Vector2(500, 370)])}, 1, "T"))
+		var gone := BoardData.tidy(rb, 8)
+		check(gone.has(7) == (rot == 90.0), "a line down the middle rubs out the picture turned upright, not lying flat (%d degrees)" % roundi(rot))
+	# At the board: take hold of a picture, turn it, put it down; turn one you're looking at.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var board: Whiteboard = get_tree().get_first_node_in_group("whiteboard")
+	var face: Vector3 = board.global_position
+	w.place(Transform3D(Basis(), Vector3(face.x, 0.0, face.z - 1.4)))
+	w.rotation.y = PI
+	w._pitch = 0.0
+	w._look(0.0, -atan2(Walker.EYE - face.y, 1.4))
+	for i in 5:
+		await get_tree().physics_frame
+	Settings.snap_placement = true
+	var id := board.add_image(_test_picture(96, 48), BoardData.PX * 0.5)
+	check(id != 0, "a picture goes up")
+	_press("board_move")
+	await get_tree().process_frame
+	check(board.carrying == id, "M takes hold of it")
+	_press("rotate_right")
+	await get_tree().process_frame
+	_press("rotate_right")
+	await get_tree().process_frame
+	_press("board_move")
+	await get_tree().process_frame
+	var m: Dictionary = Shed.board["marks"][BoardData.find(Shed.board, id)]
+	check(board.carrying == 0 and is_equal_approx(BoardData.rotation_of(m), 30.0), "two presses while moving it turn it 30 degrees (%.1f)" % BoardData.rotation_of(m))
+	for i in 2:
+		await get_tree().process_frame
+	check(board._nodes.get(id) is TextureRect and is_equal_approx((board._nodes[id] as Control).rotation, deg_to_rad(30.0)), "the board draws it turned")
+	_press("rotate_left")
+	await get_tree().process_frame
+	m = Shed.board["marks"][BoardData.find(Shed.board, id)]
+	check(is_equal_approx(BoardData.rotation_of(m), 15.0), "looking at it, a press turns it back a step (%.1f)" % BoardData.rotation_of(m))
+	var copy: Dictionary = str_to_var(var_to_str(main.saver.capture()["shed"]))
+	Shed.load_state(copy, "Tester")
+	check(is_equal_approx(BoardData.rotation_of(Shed.board["marks"][BoardData.find(Shed.board, id)]), 15.0), "its turn is kept with the shed")
+	Shed.board_request({"a": "board_undo"})
+	check(BoardData.find(Shed.board, id) < 0, "undo still takes it off")
+	Settings.snap_placement = kept
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _test_poster_sizes() -> void:
+	var a1 := Equipment.poster_size("poster_tt", "a1")
+	check(is_equal_approx(maxf(a1.x, a1.y), 0.841) and absf(a1.x / a1.y - 0.6 / 0.85) < 0.001, "an A1 print keeps the design's shape, 841 mm tall (%s)" % str(a1))
+	check(Equipment.poster_size("poster_tt", "a2").y < a1.y and Equipment.poster_size("poster_tt", "a0").y > a1.y, "A2 is smaller and A0 bigger")
+	var ban := Equipment.poster_size("poster_tt", "banner")
+	check(ban.x > 2.0 and ban.x > ban.y * 2.5, "the large banner is a long, wide strip (%s)" % str(ban))
+	check(Equipment.poster_size("poster_tt", "") == Equipment.get_model("poster_tt")["size"], "a poster from before sizes keeps its own size")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var me := Shed.me()
+	Shed.request({"a": "order_furniture", "model": "poster_tt", "psize": "a0"})
+	var p := _first_furniture("poster_tt")
+	check(p != 0 and Shed.furniture[p]["psize"] == "a0" and Shed.furniture_size(Shed.furniture[p]).is_equal_approx(Equipment.poster_size("poster_tt", "a0")),
+		"ordered in A0, it's that big")
+	check(Shed.check(me, {"a": "order_furniture", "model": "poster_tt", "psize": "a9"}) != ""
+		and Shed.check(me, {"a": "order_furniture", "model": "tv_120", "psize": "a1"}) != "", "only the poster sizes are sold, and only for posters")
+	Shed.posters[900] = {"id": 900, "name": "Plan", "by": "Tester", "blob": 0, "imgs": []}
+	Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": 900, "psize": "banner"})
+	var bp := _first_furniture(Equipment.BOARD_POSTER)
+	var bsize := Shed.furniture_size(Shed.furniture.get(bp, {}))
+	check(bp != 0 and is_equal_approx(bsize.x, 2.4) and is_equal_approx(bsize.y, 1.2), "a whiteboard poster as a banner keeps the board's shape (%s)" % str(bsize))
+	# Turned before it's hung, a quarter at a time.
+	check(Shed.check(me, {"a": "turn_poster", "furniture": p, "turn": 1}) != "", "you turn a poster while you're carrying it")
+	Shed.request({"a": "grab", "furniture": p})
+	for i in 2:
+		await get_tree().physics_frame
+	_press("rotate_left")
+	await get_tree().physics_frame
+	var turned := Shed.furniture_size(Shed.furniture[p])
+	check(Shed.furniture[p]["turn"] == 1 and is_equal_approx(turned.x, Equipment.poster_size("poster_tt", "a0").y), "the rotate key turns it on its side, landscape")
+	check(w.info.contains("portrait or landscape"), "the panel says how to turn it")
+	Shed.changed.emit()
+	for i in 2:
+		await get_tree().process_frame
+	var view: EquipmentView = main.workshop.furniture_nodes[p]
+	var sheet: Node3D = view.get_node_or_null("PosterArt")
+	check(view.look.ends_with("|1") and sheet != null and is_equal_approx(sheet.rotation.z, PI * 0.5), "and it's drawn turned")
+	Shed.request({"a": "turn_poster", "furniture": p, "turn": -2})
+	check(Shed.furniture[p]["turn"] == 2, "turns go round in quarters")
+	Shed.request({"a": "release", "furniture": p, "xf": Shed.furniture[p]["xf"]})
+	Shed.request({"a": "order_furniture", "model": "tv_120"})
+	var tv := _first_furniture("tv_120")
+	Shed.request({"a": "grab", "furniture": tv})
+	check(Shed.check(me, {"a": "turn_poster", "furniture": tv, "turn": 1}).contains("one way"), "a TV doesn't turn")
+	Shed.request({"a": "release", "furniture": tv, "xf": Shed.furniture[tv]["xf"]})
+	Shed.load_state(str_to_var(var_to_str(Shed._snapshot())), "Tester")
+	check(Shed.furniture[p]["psize"] == "a0" and Shed.furniture[p]["turn"] == 2, "size and turn are kept with the shed")
+	# The parts computer sells every design in each size.
+	var pc: PartsComputer = main.computer
+	pc._show_section("shed")
+	pc._show_kind("eq:poster")
+	pc._pick_part("poster_cafe")
+	check(pc._sizes.visible and pc._size_btns.size() == Equipment.POSTER_SIZE_ORDER.size(), "the poster page has a size for each print")
+	pc.pick_poster_size("banner")
+	check(pc._spec.text.contains("Large banner"), "picking a size shows it (%s)" % pc._spec.text)
+	pc._order.pressed.emit()
+	var cafe := _first_furniture("poster_cafe")
+	check(cafe != 0 and Shed.furniture[cafe]["psize"] == "banner", "and the order comes in that size")
+	pc._pick_part("design:900")
+	check(pc._sizes.visible, "whiteboard posters come in the sizes too")
+	pc.pick_poster_size(Equipment.POSTER_SIZE_DEFAULT)
+	pc._pick_part("tv_120")
+	check(not pc._sizes.visible, "other kit has no sizes")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

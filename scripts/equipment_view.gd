@@ -6,6 +6,7 @@ extends Node3D
 
 var id := 0
 var model := ""
+var look := ""   # what it's drawn as (see look_of): it's drawn again when that changes
 var kind := ""
 var washer_sound: AudioStreamPlayer3D
 var blast_sound: AudioStreamPlayer3D
@@ -22,6 +23,7 @@ static func create(workshop: Node, furniture_id: int) -> EquipmentView:
 	v.id = furniture_id
 	v.model = str(Shed.furniture[furniture_id].get("model", ""))
 	v.kind = Equipment.kind_of(v.model)
+	v.look = look_of(Shed.furniture[furniture_id])
 	v.name = "Equipment%d" % furniture_id
 	workshop.add_child(v)
 	v._build()
@@ -57,6 +59,14 @@ func _build() -> void:
 			add_child(Whiteboard.new())
 		"ramp", "obstacle", "barrier", "marker":
 			_build_yard()
+
+
+## What a piece of equipment is drawn as: its model, and for a poster its size and which way up it hangs.
+static func look_of(f: Dictionary) -> String:
+	var m := str(f.get("model", ""))
+	if Equipment.kind_of(m) == "poster":
+		return "%s|%s|%d" % [m, str(f.get("psize", "")), int(f.get("turn", 0))]
+	return m
 
 
 func _m() -> Dictionary:
@@ -165,14 +175,22 @@ func _build_shelf() -> void:
 		_deco(Vector3(0.0, y, 0.0), Vector3(size.x, 0.03, size.z), board)
 		if heavy:
 			_deco(Vector3(0.0, y - 0.04, size.z * 0.5 - 0.02), Vector3(size.x, 0.06, 0.04), frame)
-	_ws._blocker(Vector3(0.0, size.y * 0.5, 0.0), size, self)
+	# Solid at the ends, the back and every board, but open at the front, so the crosshair
+	# reaches the parts on each shelf.
+	for x in [-size.x * 0.5 + 0.01, size.x * 0.5 - 0.01]:
+		_ws._blocker(Vector3(x, size.y * 0.5, 0.0), Vector3(0.02, size.y, size.z), self)
+	_ws._blocker(Vector3(0.0, size.y * 0.5, -size.z * 0.5 + 0.01), Vector3(size.x, size.y, 0.02), self)
+	for level in levels + 1:
+		_ws._blocker(Vector3(0.0, minf(0.06 + level * pitch, size.y - 0.02), 0.0), Vector3(size.x, 0.03, size.z), self)
 	_ws._target(Vector3(0.0, size.y + 0.05, 0.0), Vector3(size.x + 0.04, 0.12, size.z + 0.04), {"furniture": id}, self)
 	for x in [-size.x * 0.5 - 0.02, size.x * 0.5 + 0.02]:
 		_ws._target(Vector3(x, size.y * 0.5, 0.0), Vector3(0.06, size.y, size.z), {"furniture": id}, self)
-	for spot in Shed.furniture_spots(id):
-		var at := Shed.local_spot_transform(spot).origin
-		var w := size.x / float(m["cols"])
-		_ws._target(at + Vector3(0.0, pitch * 0.42, 0.03), Vector3(w * 0.96, pitch * 0.82, size.z * 0.95), {"spot": spot}, self)
+	# Each board takes parts anywhere on it (see Shed.surface): a target over the space above it.
+	# The crosshair looks past it for a part on the board (see Walker._update_target).
+	for level in levels:
+		var y := Equipment.shelf_top(model, level)
+		_ws._target(Vector3(0.0, y + pitch * 0.42, 0.03), Vector3(size.x * 0.96, pitch * 0.82, size.z * 0.95),
+			{"top": "f%ds%d" % [id, level], "furniture": id, "shelf": level}, self)
 	var plate_y := size.y - 0.12
 	_deco(Vector3(0.0, plate_y, size.z * 0.5 + 0.005), Vector3(0.7, 0.14, 0.01), _ws._material(Color(0.88, 0.86, 0.8), 0.0, 0.8)).name = "Plate"
 	_ws._target(Vector3(0.0, plate_y, size.z * 0.5), Vector3(0.74, 0.18, 0.06), {"label": id}, self)
@@ -411,12 +429,18 @@ func _build_booth() -> void:
 
 ## A printed poster: coloured paper, a band of colour, a big title and a line under it.
 func _build_poster() -> void:
-	var size := _size()
-	var design := int(Shed.furniture.get(id, {}).get("design", 0))
+	var f: Dictionary = Shed.furniture.get(id, {})
+	var art := Equipment.poster_size(model, str(f.get("psize", "")))
+	var design := int(f.get("design", 0))
+	var sheet: Node3D
 	if model == Equipment.BOARD_POSTER:
-		add_child(BoardPrint.new(design, Vector2(size.x, size.y)))   # a whiteboard drawing, see BoardPrint
+		sheet = BoardPrint.new(design, Vector2(art.x, art.y))   # a whiteboard drawing, see BoardPrint
 	else:
-		add_child(PosterArt.make(model, size))   # flat printed art, see PosterArt
+		sheet = PosterArt.make(model, art)   # flat printed art, see PosterArt
+	# Turned on the wall in quarter turns, portrait or landscape.
+	sheet.rotation.z = int(f.get("turn", 0)) * PI * 0.5
+	add_child(sheet)
+	var size := Shed.furniture_size(f)
 	_ws._target(Vector3(0.0, 0.0, 0.02), Vector3(size.x, size.y, 0.06), {"furniture": id}, self)
 
 

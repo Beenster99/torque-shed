@@ -3,7 +3,8 @@ extends Node
 ## game. The client must receive the host's shed, unbolt a part and put another down on the
 ## floor, tune a tyre pressure and change the crew board's channel, which the host must then see, each puts a mark on the whiteboard
 ## the other must see (the client also puts up a picture, sent in chunks, and the host makes a
-## poster of the board that the client must get), and both must see each other walk.
+## poster of the board that the client must get), and both must see each other walk. The client
+## also orders an A0 poster and, once it's in, carries it and scraps it: both must see it come and go.
 
 var role := "host"
 var main: Node
@@ -29,6 +30,9 @@ func _ready() -> void:
 	var xp_start := -1
 	var xp_ok := false
 	var postered := false
+	var poster_seen := false
+	var scrap_asked := false
+	var scrap_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -66,7 +70,20 @@ func _ready() -> void:
 			Shed.request({"a": "lights", "room": "paint", "on": false})
 			# Geometry mode: the client's fit for the tank reaches the host's shed.
 			Shed.request({"a": "geo_save", "bike": ranger, "geo": {"tank": {"p": Vector3(0.0, 0.05, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}}})
+			Shed.request({"a": "order_furniture", "model": "poster_mx", "psize": "a0"})
 			asked = true
+		# The A0 poster the client ordered arrives in that size; the client then scraps it.
+		var mx := 0
+		for fid in Shed.furniture:
+			if Shed.furniture[fid]["model"] == "poster_mx":
+				mx = fid
+		if mx != 0 and str(Shed.furniture[mx].get("psize", "")) == "a0":
+			poster_seen = true
+		if role == "client" and mx != 0 and poster_seen and not scrap_asked:
+			Shed.request({"a": "grab", "furniture": mx})
+			Shed.request({"a": "scrap", "furniture": mx})
+			scrap_asked = true
+		scrap_ok = poster_seen and mx == 0
 		# The host makes a poster of the board once the client's picture is on it.
 		if role == "host" and not postered and _picture_ok():
 			Shed.request({"a": "board_poster", "name": "MP poster"})
@@ -84,15 +101,15 @@ func _ready() -> void:
 		var tv_ok: bool = Shed.screen_channel("crew")["ch"] == "live"   # the client changed the crew board's channel
 		var lights_ok := not Shed.room_lit("paint")   # the client switched the paint shop lights off
 		var geo_ok := ranger != 0 and Shed.geometry_of(ranger).has("tank")
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 	var ok := moved and shed_ok
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size()])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok])
 	get_tree().quit(0 if ok else 1)
 
 

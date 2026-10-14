@@ -18,8 +18,9 @@ const YARD_KINDS: Array[String] = ["ramp", "obstacle", "barrier", "marker"]
 ## though it comes with the shed rather than being sold (it isn't in KINDS).
 const WALL_KINDS: Array[String] = ["poster", "tv", "whiteboard"]
 ## Kinds whose top is a free surface: parts go down anywhere on it there's room for them, as
-## many as fit, rather than in a set number of places (see Shed.surface).
-const SURFACE_KINDS: Array[String] = ["washer", "repair", "bench"]
+## many as fit, rather than in a set number of places (see Shed.surface). Each board of a
+## shelving unit is a surface of its own.
+const SURFACE_KINDS: Array[String] = ["washer", "repair", "bench", "shelf"]
 ## Kept clear round the edge of a surface, in metres.
 const SURFACE_MARGIN := 0.05
 ## What the places on each kind are called in spot names: "<prefix>_<furniture id>_<n>".
@@ -45,7 +46,7 @@ const MODELS := {
 	"shelf_standard": {"kind": "shelf", "name": "Shelving unit", "size": Vector3(1.2, 2.0, 0.5),
 		"cols": 3, "levels": 4, "desc": "Steel shelving for parts and boxed stock, with a label plate on top so everyone knows what goes where."},
 	"shelf_tall": {"kind": "shelf", "name": "Tall shelving", "size": Vector3(1.2, 2.5, 0.5),
-		"cols": 3, "levels": 5, "desc": "Five shelves up to the rafters. Same floor space as the standard unit, more places."},
+		"cols": 3, "levels": 5, "desc": "Five shelves up to the rafters. Same floor space as the standard unit, more shelf space."},
 	"shelf_wide": {"kind": "shelf", "name": "Wide shelving", "size": Vector3(1.8, 2.0, 0.55),
 		"cols": 4, "levels": 4, "desc": "Long boltless shelving for a whole bike's worth of parts."},
 	"shelf_racking": {"kind": "shelf", "name": "Heavy-duty racking", "size": Vector3(2.4, 2.2, 0.6),
@@ -207,6 +208,15 @@ const MODELS := {
 }
 
 
+## The sizes every poster design is printed in: A2, A1 and A0 keep the design's shape with its
+## long side this long; the large banner is a wide 2.4 by 0.8 m strip (a whiteboard print keeps
+## its own shape, 2.4 m across). Posters bought before sizes came stay as they were.
+const POSTER_SIZES := {"a2": {"name": "A2", "long": 0.594}, "a1": {"name": "A1", "long": 0.841},
+	"a0": {"name": "A0", "long": 1.189}, "banner": {"name": "Large banner", "long": 2.4}}
+const POSTER_SIZE_ORDER: Array[String] = ["a2", "a1", "a0", "banner"]
+const POSTER_SIZE_DEFAULT := "a1"
+
+
 ## Model ids that have been renamed, old -> new, so saves made before still load. The wall TVs
 ## grew to match the shed's own screens.
 ## The model a whiteboard poster is printed on.
@@ -261,7 +271,7 @@ static func spec_line(id: String) -> String:
 		"stand":
 			bits.append("Holds one engine")
 		"shelf":
-			bits.append("%d shelves, %d places" % [int(m["levels"]), places(id)])
+			bits.append("%d shelves: parts go anywhere on them, as many as fit" % int(m["levels"]))
 		"washer":
 			bits.append("Parts go anywhere in it, as many as fit")
 			bits.append("Full speed with up to %d part%s" % [places(id), "" if places(id) == 1 else "s"])
@@ -351,6 +361,37 @@ static func surface_rect(model_id: String) -> Rect2:
 		# The splash-back at the rear takes a strip off the depth.
 		return Rect2(-w * 0.5, -d * 0.5 + 0.06, w, d - 0.06)
 	return Rect2(-w * 0.5, -d * 0.5, w, d)
+
+
+## How far apart a shelving unit's boards are.
+static func shelf_pitch(model_id: String) -> float:
+	var m := get_model(model_id)
+	return (float(m.get("size", Vector3.ONE).y) - 0.15) / float(maxi(1, int(m.get("levels", 1))))
+
+
+## The height parts sit at on board `level` of a shelving unit (0 is the bottom one). Parts left
+## in the old numbered places sat at these heights too.
+static func shelf_top(model_id: String, level: int) -> float:
+	return 0.08 + level * shelf_pitch(model_id)
+
+
+## Which board of a shelving unit something at height `y` (in its own space) is on.
+static func shelf_level(model_id: String, y: float) -> int:
+	var levels := int(get_model(model_id).get("levels", 1))
+	return clampi(roundi((y - 0.08) / shelf_pitch(model_id)), 0, maxi(0, levels - 1))
+
+
+## The size a poster of `model_id` is printed at in poster size `psize` (see POSTER_SIZES):
+## width, height and depth before it's turned. "" (or one not known) is the design's own size.
+static func poster_size(model_id: String, psize: String) -> Vector3:
+	var native: Vector3 = get_model(model_id).get("size", Vector3(0.6, 0.85, 0.01))
+	if not POSTER_SIZES.has(psize):
+		return native
+	var long := float(POSTER_SIZES[psize]["long"])
+	if psize == "banner" and model_id != BOARD_POSTER:
+		return Vector3(long, long / 3.0, native.z)
+	var k := long / maxf(native.x, native.y)
+	return Vector3(native.x * k, native.y * k, native.z)
 
 
 ## Height of the working surface parts sit on.
