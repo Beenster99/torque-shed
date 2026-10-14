@@ -211,7 +211,7 @@ func _weather_shots() -> void:
 	Daylight.current.set_time(13.0)
 	var yard := Vector3(6.0, 0.0, 92.0)
 	var shed := Workshop.CENTER + Vector3(0.0, 1.5, 0.0)
-	for st in Weather.STATES:
+	for st in (["rain"] if "--rain" in OS.get_cmdline_user_args() else Weather.STATES):
 		Settings.weather = st
 		Weather.current.change_to(st, true)
 		await _frames(10)
