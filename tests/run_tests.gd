@@ -111,6 +111,12 @@ func _run_all() -> void:
 	_test_dyno_kit()
 	await _test_dyno_room_session()
 	await _test_sandblaster()
+	print("Geometry mode and blueprints")
+	_test_geo_gizmo_math()
+	_test_geo_model()
+	_test_geo_shed()
+	_test_blueprint_build()
+	await _test_geometry_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -4467,6 +4473,325 @@ func _test_sandblaster() -> void:
 		"normals": PackedVector3Array([Vector3.BACK]), "cells": PackedFloat32Array([BlastGame.OVER + 1.0])}}
 	check(float(g.stats(1)["over"]) == 1.0 and float(g.stats(1)["covered"]) == 1.0, "a patch blasted too long counts as pitted")
 	Shed.items.erase(tyre)
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+# ---------------------------------------------------------------------------- geometry mode and blueprints
+
+func _test_geo_gizmo_math() -> void:
+	var id := GeoGizmo.identity()
+	var m := GeoGizmo.moved(id, 0, 0.1234, false)
+	check(is_equal_approx((m["p"] as Vector3).x, 0.1234) and (m["p"] as Vector3).y == 0.0 and (m["p"] as Vector3).z == 0.0
+		and m["r"] == Vector3.ZERO and m["s"] == Vector3.ONE, "dragging the X arrow moves only X (%s)" % str(m["p"]))
+	var ms := GeoGizmo.moved(m, 1, 0.0567, true)
+	check(is_equal_approx((ms["p"] as Vector3).y, 0.06) and is_equal_approx((ms["p"] as Vector3).x, 0.1234),
+		"Ctrl snaps a move to 1 cm and leaves the other axes (%s)" % str(ms["p"]))
+	check(is_equal_approx((GeoGizmo.moved(id, 2, 9.0, false)["p"] as Vector3).z, GeoGizmo.MAX_MOVE), "a move can't go off past the limit")
+	var r := GeoGizmo.rotated(id, 1, 33.0, true)
+	check(is_equal_approx((r["r"] as Vector3).y, 35.0) and (r["r"] as Vector3).x == 0.0 and (r["r"] as Vector3).z == 0.0
+		and r["p"] == Vector3.ZERO, "turning the Y ring turns only about Y, snapped to 5 degrees (%s)" % str(r["r"]))
+	check(is_equal_approx((GeoGizmo.rotated(id, 0, 12.3, false)["r"] as Vector3).x, 12.3), "unsnapped, it turns by exactly what was dragged")
+	var s := GeoGizmo.scaled(id, 2, 1.37, true)
+	check(s["s"] == Vector3(1.0, 1.0, 1.35), "stretching along Z changes only Z, snapped to 5%% (%s)" % str(s["s"]))
+	check(GeoGizmo.scaled(id, GeoGizmo.UNIFORM, 2.0, false)["s"] == Vector3(2.0, 2.0, 2.0), "the middle box sizes it all over")
+	check(GeoGizmo.scaled(id, 0, 100.0, false)["s"] == Vector3(GeoGizmo.MAX_SCALE, 1.0, 1.0)
+		and GeoGizmo.scaled(id, 0, 0.0, false)["s"] == Vector3(GeoGizmo.MIN_SCALE, 1.0, 1.0), "sizes stay in range")
+	# Dragging maths: where the mouse ray passes the axis, and the angle round a ring.
+	var t := GeoGizmo.line_param(Vector3.ZERO, Vector3.RIGHT, Vector3(0.5, 1.0, 5.0), Vector3(0.0, 0.0, -1.0))
+	check(is_equal_approx(t, 0.5), "the mouse ray picks the right point along an arrow (%.3f)" % t)
+	check(is_equal_approx(GeoGizmo.angle_about(Vector3.RIGHT, Vector3.FORWARD, Vector3.UP), 90.0), "a quarter turn round a ring reads 90 degrees")
+	# The offset is about the part's middle.
+	var pivot := Vector3(0.2, 0.6, -0.3)
+	var turn := GeoGizmo.offset_xform(GeoGizmo.rotated(id, 1, 90.0, false), pivot)
+	check((turn * pivot).is_equal_approx(pivot), "a part turns about its own middle")
+	check((GeoGizmo.offset_xform(m, pivot) * pivot).is_equal_approx(pivot + Vector3(0.1234, 0.0, 0.0)), "and moves by its offset")
+	var clean := GeoGizmo.sanitize({"tank": ms, "saddle": GeoGizmo.identity(), "rocket": m, "fork": {"s": Vector3(9, 9, 9)}})
+	check(clean.has("tank") and not clean.has("saddle") and not clean.has("rocket") and clean["fork"]["s"] == Vector3.ONE * GeoGizmo.MAX_SCALE,
+		"saving keeps real slots only, drops untouched parts and keeps sizes in range %s" % str(clean.keys()))
+
+
+func _test_geo_model() -> void:
+	var model := BikeModel.new()
+	add_child(model)
+	model.build_from(BikeBuild.new())
+	var tank0 := model.slot_bounds("tank").get_center()
+	var frame0 := model.slot_bounds("frame").get_center()
+	var wheel0 := model.slot_bounds("front_wheel").get_center()
+	var bars0 := model.slot_bounds("handlebars").get_center()
+	model.apply_geometry({"tank": {"p": Vector3(0.0, 0.1, 0.0), "r": Vector3.ZERO, "s": Vector3(1.0, 1.0, 1.5)}})
+	check(model.slot_bounds("tank").get_center().is_equal_approx(tank0 + Vector3(0.0, 0.1, 0.0)), "the tank moves up 10 cm on the model")
+	check(model.slot_bounds("frame").get_center().is_equal_approx(frame0), "and nothing else moves")
+	var with_meshes := 0
+	for slot in model._slot_meshes:
+		if not model._slot_meshes[slot].is_empty():
+			with_meshes += 1
+	check(model._geo_nodes.size() == with_meshes and with_meshes > 20, "every drawn slot gets its own geometry node (%d)" % with_meshes)
+	model.apply_geometry({"front_wheel": {"p": Vector3(0.05, 0.0, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}})
+	check(model.slot_bounds("tank").get_center().is_equal_approx(tank0), "a new fit replaces the old one")
+	var moved_wheel := model.slot_bounds("front_wheel").get_center()
+	model.update_pose_from(0.0, 1.3, 0.7, 0.0, 0.0, 0.0, 0.0)
+	check(model.slot_bounds("front_wheel").get_center().distance_to(moved_wheel) < 0.002 and absf(moved_wheel.x - wheel0.x - 0.05) < 0.002,
+		"a moved wheel still spins about its own middle, without wobbling")
+	model.apply_geometry({"handlebars": {"p": Vector3(0.0, 0.08, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}})
+	model.update_pose_from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+	check(model.slot_bounds("handlebars").get_center().is_equal_approx(bars0 + Vector3(0.0, 0.08, 0.0)), "raised bars sit higher")
+	model.update_pose_from(0.4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+	check(not model.slot_bounds("handlebars").get_center().is_equal_approx(bars0 + Vector3(0.0, 0.08, 0.0)), "and still turn with the steering")
+	model.update_pose_from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+	# Click targets follow the part.
+	model.apply_geometry({"saddle": {"p": Vector3(0.0, 0.2, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}})
+	model.build_pickers({"bike": 1})
+	var pick: StaticBody3D = model.get_node("Pick_saddle")
+	var top := -INF
+	for cs in pick.get_children():
+		top = maxf(top, (cs as CollisionShape3D).position.y)
+	check(top > model.geo_pivot("saddle").y + 0.1, "the saddle's click target moves with it")
+	# Set before building: a parked or ridden bike is drawn with its fit straight away.
+	var parked := BikeModel.new()
+	add_child(parked)
+	parked.geometry = {"tank": {"p": Vector3(0.0, 0.1, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}}
+	parked.build_from(BikeBuild.new())
+	check(parked.slot_bounds("tank").get_center().is_equal_approx(tank0 + Vector3(0.0, 0.1, 0.0)), "a model built with a fit shows it")
+	model.queue_free()
+	parked.queue_free()
+
+
+func _geo_off(y: float) -> Dictionary:
+	return {"p": Vector3(0.0, y, 0.0), "r": Vector3(0.0, 15.0, 0.0), "s": Vector3(1.0, 1.0, 1.2)}
+
+
+func _test_geo_shed() -> void:
+	Shed.start_new("Tester", 31)
+	var me := Shed.me()
+	var a := 0
+	for id in Shed.bikes:
+		if Shed.bikes[id]["name"] == "Rusty Ranger":
+			a = id
+	var b := Shed._new_bike(Shed.bikes[a]["original"].duplicate(), 3, "Ranger Twin", 0.3)
+	check(Shed.item_on(a, "tank") != 0 and Shed.items[Shed.item_on(a, "tank")]["part"] == Shed.items[Shed.item_on(b, "tank")]["part"],
+		"two bikes with the same tank")
+	check(Shed.check(me, {"a": "geo_save", "bike": a, "geo": {"tank": _geo_off(0.05)}}) == "", "the host lets a bike's fit be saved")
+	Shed.request({"a": "geo_save", "bike": a, "geo": {"tank": _geo_off(0.05), "saddle": GeoGizmo.identity(), "nonsense": _geo_off(1.0)}})
+	check(Shed.geometry_of(a).has("tank") and Shed.geometry_of(a).size() == 1, "the tank's fit is saved to that bike %s" % str(Shed.geometry_of(a).keys()))
+	check(Shed.geometry_of(b).is_empty(), "and the other bike with the same tank is untouched")
+	# Swapping the part keeps the slot's fit.
+	var tank := Shed.item_on(a, "tank")
+	Shed.bikes[a]["slots"]["tank"] = 0
+	Shed.items.erase(tank)
+	var other := Shed._new_item("sport_17", 0.0, 0.0, 0.0)
+	Shed.bikes[a]["slots"]["tank"] = other
+	Shed._move(other, "bike", a)
+	check(Shed.geometry_of(a).has("tank"), "a different tank in that slot keeps the slot's fit")
+	Shed.bikes[a]["rider"] = 99
+	check(Shed.check(me, {"a": "geo_save", "bike": a, "geo": {}}).contains("riding"), "not while someone is riding it")
+	Shed.bikes[a]["rider"] = 0
+	check(Shed.check(me, {"a": "geo_blueprint", "bike": a, "geo": {}, "name": "  "}) != "", "a blueprint needs a name")
+	Shed.request({"a": "geo_blueprint", "bike": a, "geo": {"tank": _geo_off(0.07)}, "name": "Ranger Mk2"})
+	var bp := Shed.blueprint_named("ranger mk2")
+	check(bp != 0 and is_equal_approx((Shed.geometry_of(a)["tank"]["p"] as Vector3).y, 0.07), "Save + blueprint saves the bike's fit and a named blueprint")
+	var plan: Dictionary = Shed.blueprints.get(bp, {})
+	check(plan.get("parts", {}).get("tank", "") == "sport_17" and plan["parts"].get("frame", "") == Shed.items[Shed.item_on(a, "frame")]["part"]
+		and is_equal_approx((plan["geo"]["tank"]["p"] as Vector3).y, 0.07) and plan["paint"] == Shed.bikes[a]["paint"] and plan["colors"].has("tank"),
+		"the blueprint has the bike's parts, paint, colours and fit")
+	Shed.request({"a": "geo_blueprint", "bike": a, "geo": {"tank": _geo_off(0.07)}, "name": "Ranger MK2"})
+	check(Shed.blueprints.size() == 1, "saving again under the same name updates it")
+	check(Shed.check(me, {"a": "bp_rename", "bp": bp, "name": "Desert Sled"}) == "", "a blueprint can be renamed")
+	Shed.request({"a": "bp_rename", "bp": bp, "name": "Desert Sled"})
+	check(Shed.blueprints[bp]["name"] == "Desert Sled", "and is (%s)" % Shed.blueprints[bp]["name"])
+	# Kept with the shed.
+	var state: Dictionary = Shed.save_snapshot().duplicate(true)
+	Shed.start_new("Tester", 32)
+	check(Shed.blueprints.is_empty(), "a new shed has no blueprints")
+	Shed.load_state(state, "Tester")
+	check(Shed.blueprints.has(bp) and is_equal_approx((Shed.blueprints[bp]["geo"]["tank"]["p"] as Vector3).y, 0.07) and Shed.blueprints[bp]["name"] == "Desert Sled",
+		"blueprints, with their fit, come back with the save")
+	check(Shed.geometry_of(a).has("tank") and Shed.geometry_of(b).is_empty(), "and each bike keeps its own fit")
+	var old := state.duplicate(true)
+	old.erase("blueprints")
+	old.erase("holograms")
+	for id in old["bikes"]:
+		old["bikes"][id].erase("geo")
+	Shed.load_state(old, "Tester")
+	check(Shed.blueprints.is_empty() and Shed.holograms.is_empty() and Shed.geometry_of(a).is_empty(), "an older save opens with none")
+	Shed.load_state(state, "Tester")
+	check(Shed.check(me, {"a": "bp_delete", "bp": bp}) == "", "a blueprint can be deleted")
+	Shed.request({"a": "bp_delete", "bp": bp})
+	check(Shed.blueprints.is_empty(), "and is gone")
+	Shed.stop()
+
+
+## Fits a new part straight into a slot of a bike (or onto its engine), for building it up quickly.
+func _fit_direct(bike: int, slot: String, part: String) -> void:
+	var item := Shed._new_item(part, 0.0, 0.0, 0.0)
+	var host := Shed.host_of(bike, slot)
+	host["slots"][slot] = item
+	host["bolted"][slot] = true
+	Shed._move(item, "engine" if PartsDB.is_engine_slot(slot) else "bike", int(host["id"]))
+
+
+func _test_blueprint_build() -> void:
+	Shed.start_new("Tester", 33)
+	var me := Shed.me()
+	var a := 0
+	for id in Shed.bikes:
+		if Shed.bikes[id]["name"] == "Old Faithful":
+			a = id
+	Shed.request({"a": "geo_save", "bike": a, "geo": {"tank": _geo_off(0.04)}})
+	Shed.request({"a": "geo_blueprint", "bike": a, "geo": {"tank": _geo_off(0.04)}, "name": "Track Day"})
+	var bp := Shed.blueprint_named("Track Day")
+	check(Shed.check(me, {"a": "bp_build", "bp": bp, "bay": 0}).contains("isn't empty"), "a blueprint only builds in an empty bay")
+	check(Shed.check(me, {"a": "bp_build", "bp": bp, "bay": 3}) == "", "bay 4 is free for it")
+	Shed.request({"a": "bp_build", "bp": bp, "bay": 3})
+	check(Shed.holograms.has(3) and Shed.plan_at(3)["name"] == "Track Day", "a hologram of the blueprint stands in bay 4")
+	check(Shed.check(me, {"a": "order"}).contains("full"), "a project bike isn't delivered into a hologram's bay")
+	var rows := Shed.plan_rows(Shed.plan_at(3), 0)
+	var expect: int = Shed.blueprints[bp]["parts"].values().filter(func(p): return str(p) != "none").size()
+	check(rows.size() == expect and rows.all(func(r): return r["state"] == "needed"), "its list has every part on the blueprint, all needed (%d)" % rows.size())
+	Shed.request({"a": "bp_order", "bay": 3})
+	rows = Shed.plan_rows(Shed.plan_at(3), 0)
+	var ordered := rows.filter(func(r): return r["state"] == "ordered").size()
+	check(ordered == Shed.DELIVERY_ROWS * Shed.DELIVERY_COLS and ordered < rows.size(), "ordering fills the delivery area (%d ordered)" % ordered)
+	var frame_item := int(Shed.plan_at(3)["ordered"]["frame"])
+	check(Shed.items[frame_item]["boxed"] and Shed.items[frame_item]["part"] == Shed.blueprints[bp]["parts"]["frame"], "the frame arrives boxed")
+	check(Shed.items[frame_item]["color"] == Shed.blueprints[bp]["colors"]["frame"]["color"], "parts come in the blueprint's colours")
+	Shed.request({"a": "bp_order", "bay": 3})
+	check(Shed.plan_rows(Shed.plan_at(3), 0).filter(func(r): return r["state"] == "ordered").size() == ordered,
+		"ordering again doesn't double up while the area is full")
+	# Clear the delivery area and order the rest.
+	for i in 4:
+		for r in Shed.plan_at(3)["ordered"].values():
+			if Shed.items[int(r)]["at"] == "floor":
+				Shed._move(int(r), "spot", "bench_0")
+		Shed.request({"a": "bp_order", "bay": 3})
+	check(Shed.plan_rows(Shed.plan_at(3), 0).all(func(r): return r["state"] == "ordered"), "with room, the rest are ordered")
+	# The frame goes on the bay: the bike takes the blueprint's name, paint and fit.
+	Shed.items[frame_item]["boxed"] = false
+	Shed._move(frame_item, "held", me)
+	check(Shed.check(me, {"a": "start_build", "bay": 3}) == "", "the frame goes on the hologram's stand")
+	Shed.request({"a": "start_build", "bay": 3})
+	var bike := Shed.bike_in_bay(3)
+	check(bike != 0 and Shed.bikes[bike]["name"] == "Track Day" and Shed.bikes[bike].get("blueprint") is Dictionary and not Shed.holograms.has(3),
+		"the new bike carries the blueprint's name and plan")
+	check(Shed.geometry_of(bike).has("tank") and is_equal_approx((Shed.geometry_of(bike)["tank"]["p"] as Vector3).y, 0.04)
+		and Shed.bikes[bike]["paint"] == Shed.blueprints[bp]["paint"], "and its paint and fit")
+	check(Shed.plan_rows(Shed.plan_at(3), bike).filter(func(r): return r["state"] == "fitted").size() == 1, "the frame is ticked off")
+	# Fit everything but the saddle, then the saddle by hand: the plan is done.
+	var parts: Dictionary = Shed.blueprints[bp]["parts"]
+	for slot in PartsDB.SLOTS:
+		if slot in ["frame", "saddle"] or str(parts.get(slot, "none")) == "none":
+			continue
+		_fit_direct(bike, slot, str(parts[slot]))
+	check(Shed.bikes[bike].get("blueprint") is Dictionary, "with one part to go it's still a blueprint build")
+	var saddle := Shed._new_item(str(parts["saddle"]), 0.0, 0.0, 0.0)
+	Shed._move(saddle, "held", me)
+	Shed.request({"a": "install", "bike": bike, "slot": "saddle"})
+	check(Shed.item_on(bike, "saddle") == saddle and not Shed.bikes[bike].has("blueprint"), "the last part on finishes the build")
+	check(Shed.geometry_of(bike).has("tank"), "and the finished bike keeps the blueprint's fit")
+	# Cancelling, and a stripped build's hologram going back to its bay.
+	Shed.request({"a": "bp_build", "bp": bp, "bay": 3})
+	check(not Shed.holograms.has(3), "a bay with a bike in it can't take another hologram")
+	Shed.stop()
+
+
+func _test_geometry_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	var ws: Workshop = main.workshop
+	var w: Walker = main.walker
+	var a := 0
+	var other := 0
+	for id in Shed.bikes:
+		if Shed.bikes[id]["name"] == "Rusty Ranger":
+			a = id
+		elif Shed.bikes[id]["name"] == "Old Faithful":
+			other = id
+	var view: Node3D = ws.bike_views[a]
+	w.place(Transform3D(Basis(), view.global_position + Vector3(1.4, 0.1, 0.0)))
+	await get_tree().physics_frame
+	check(main.geometry_bike() == a, "geometry mode picks the bike you're at")
+	main.open_geometry()
+	var geo: GeometryMode = main.geometry
+	check(geo.active and geo.camera.current and w.process_mode == Node.PROCESS_MODE_DISABLED and not main.hud.visible,
+		"F2 opens geometry mode: its own camera, and the walker stands still")
+	geo.select("tank")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(geo.gizmo.visible and geo.gizmo.mode == GeoGizmo.Mode.MOVE, "selecting the tank shows the move handles")
+	var model := ws.bike_model(a)
+	var tank0 := model.slot_bounds("tank").get_center()
+	# Drag the X arrow 10 cm with the mouse.
+	var cam := geo.camera
+	var size: float = geo.gizmo.global_basis.get_scale().x
+	var o := geo.gizmo.global_position
+	var dir := geo.gizmo.axis_dir(0)
+	var grab := cam.unproject_position(o + dir * GeoGizmo.ARM * size * 0.6)
+	check(geo.gizmo.pick(cam, grab) == 0, "the mouse over the X arrow picks it")
+	geo._press(grab)
+	geo._drag_to(cam.unproject_position(o + dir * (GeoGizmo.ARM * size * 0.6 + 0.1)))
+	geo._release()
+	var p: Vector3 = GeoGizmo.offset_of(geo.draft, "tank")["p"]
+	check(absf(p.x - 0.1) < 0.01 and p.y == 0.0 and p.z == 0.0, "dragging it moves the tank 10 cm along X only (%s)" % str(p))
+	check(absf(model.slot_bounds("tank").get_center().x - tank0.x - p.x) < 0.001, "the bike shows the draft at once")
+	check(Shed.geometry_of(a).is_empty() and geo.is_dirty(), "but it's only a draft until saved")
+	geo.undo()
+	check(geo.draft.is_empty(), "Z undoes it")
+	geo.set_part_offset("tank", _geo_off(0.05))
+	geo.request_exit()
+	check(geo.active and geo._confirm.visible, "leaving with changes asks to save or discard")
+	geo.discard_and_close()
+	await get_tree().process_frame
+	check(not geo.active and Shed.geometry_of(a).is_empty() and ws.bike_model(a).slot_bounds("tank").get_center().is_equal_approx(tank0)
+		and w.process_mode != Node.PROCESS_MODE_DISABLED and main.hud.visible, "discarding puts the tank back and gives you your legs back")
+	main.open_geometry()
+	geo.select("tank")
+	geo.set_part_offset("tank", _geo_off(0.05))
+	geo.save()
+	await get_tree().process_frame
+	check(Shed.geometry_of(a).has("tank") and not geo.is_dirty(), "Save to this bike keeps the fit on it")
+	check(Shed.geometry_of(other).is_empty(), "no other bike changes")
+	check(absf(ws.bike_model(a).slot_bounds("tank").get_center().y - tank0.y - 0.05) < 0.03, "the redrawn bike has its tank where it was put")
+	geo.save_blueprint("Ranger Mk2")
+	geo.request_exit()
+	check(not geo.active, "with everything saved it just closes")
+	var bp := Shed.blueprint_named("Ranger Mk2")
+	check(bp != 0, "Save + blueprint makes a blueprint")
+	# The Esc menu's blueprints tab lists it.
+	main.menu.show_pause()
+	main.menu.show_blueprints()
+	await get_tree().process_frame
+	var tab: BlueprintTab = main.menu.blueprints
+	tab.refresh(true)
+	await get_tree().process_frame
+	check(tab._list.get_child_count() == 1, "the Blueprints tab lists it")
+	main._close_menu()
+	# Build it in bay 4: a hologram appears, with the blueprint's fit.
+	Shed.request({"a": "bp_build", "bp": bp, "bay": 3})
+	await get_tree().process_frame
+	check(ws._holo_views.has(3), "a hologram stands in bay 4")
+	var ghost: BikeModel = ws._holo_views[3].get_child(0)
+	check(ghost.geometry.has("tank") and ghost.is_fitted("frame") and ghost.is_fitted("tank"), "the hologram is the whole bike, with the blueprint's fit")
+	var bay_page: Dictionary = ws._bay_data(3)
+	check(bay_page.has("blueprint") and (bay_page["blueprint"] as Array).size() > 20, "the bay screen lists the parts it needs")
+	var frame := Shed._new_item(str(Shed.blueprints[bp]["parts"]["frame"]), 0.0, 0.0, 0.0)
+	Shed._move(frame, "held", Shed.me())
+	Shed.request({"a": "start_build", "bay": 3})
+	await get_tree().process_frame
+	var built := Shed.bike_in_bay(3)
+	check(built != 0 and not ws._holo_views.has(3), "with a frame on the stand, the hologram moves onto the bike")
+	var holo: BikeModel = ws.bike_views[built].get_child(0).get_node_or_null("Hologram")
+	check(holo != null and not holo.is_fitted("frame") and holo.is_fitted("tank"), "the frame shows solid and the rest as ghosts")
+	_fit_direct(built, "tank", str(Shed.blueprints[bp]["parts"]["tank"]))
+	Shed.changed.emit()
+	await get_tree().process_frame
+	holo = ws.bike_views[built].get_child(0).get_node_or_null("Hologram")
+	check(holo != null and not holo.is_fitted("tank"), "a ghost part vanishes as the real one goes on")
+	check(absf(ws.bike_model(built).slot_bounds("tank").get_center().y - ws.bike_model(built).geo_pivot("tank").y - 0.05) < 0.001,
+		"the real tank goes on with the blueprint's fit")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

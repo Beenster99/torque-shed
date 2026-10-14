@@ -20,6 +20,11 @@ func _ready() -> void:
 		await _beam_shots()
 		get_tree().quit()
 		return
+	if "--geo" in OS.get_cmdline_user_args():
+		await _geo_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	# Full-width bay screens either side of the narrower dyno room doorway.
 	await _look_from(Workshop.CENTER + Vector3(0.0, 0.0, 4.5), Vector3(0.0, 1.9, 59.2), "c1_bay_screens_doorway")
 	# The dyno room: a bike strapped down at all four posts, the extraction hose on its
@@ -107,3 +112,47 @@ func _beam_shots() -> void:
 	main.bike.cycle_beam()
 	await _frames(20)
 	await _shot("c11_high_beam_night")
+
+
+## Geometry mode on the Rusty Ranger (move, rotate and scale handles on its tank), and a
+## blueprint build: the hologram in an empty bay, then half built with ghosts for the rest.
+## `-- --geo` takes just these.
+func _geo_shots() -> void:
+	var w: Walker = main.walker
+	var ranger := _bike_named("Rusty Ranger")
+	var view: Node3D = main.workshop.bike_views[ranger]
+	w.place(Transform3D(Basis(), view.global_position + Vector3(1.6, 0.1, 0.4)))
+	await _frames(5)
+	main.open_geometry()
+	var geo: GeometryMode = main.geometry
+	geo.select("tank")
+	geo.set_part_offset("tank", {"p": Vector3(0.0, 0.04, -0.03), "r": Vector3(-8.0, 0.0, 0.0), "s": Vector3(1.0, 1.0, 1.15)})
+	await _frames(20)
+	await _shot("g1_geometry_move")
+	geo.set_mode(GeoGizmo.Mode.ROTATE)
+	await _frames(5)
+	await _shot("g2_geometry_rotate")
+	geo.set_mode(GeoGizmo.Mode.SCALE)
+	geo.select("handlebars")
+	await _frames(5)
+	await _shot("g3_geometry_scale_bars")
+	geo.save_blueprint("Desert Ranger")
+	geo.request_exit()
+	await _frames(5)
+	var bp := Shed.blueprint_named("Desert Ranger")
+	Shed.request({"a": "bp_build", "bp": bp, "bay": 3})
+	await _frames(10)
+	var bay := Workshop.bay_transform(3)
+	await _look_from(bay.origin + Vector3(-1.9, 0.0, 2.6), bay.origin + Vector3(0.0, 0.7, 0.0), "g4_hologram_in_bay")
+	await _look_from(bay.origin + Vector3(-0.6, 0.0, 3.0), Vector3(Workshop.BAY_SCREEN_X[3], 2.5, Workshop.CENTER.z - Workshop.HALF.y), "g5_bay_screen_blueprint")
+	var frame := Shed._new_item(str(Shed.blueprints[bp]["parts"]["frame"]), 0.0, 0.0, 0.0)
+	Shed._move(frame, "held", Shed.me())
+	Shed.request({"a": "start_build", "bay": 3})
+	var built := Shed.bike_in_bay(3)
+	for slot in ["fork", "front_wheel", "front_tyre", "tank", "engine"]:
+		var item := Shed._new_item(str(Shed.blueprints[bp]["parts"][slot]), 0.0, 0.0, 0.0)
+		Shed.bikes[built]["slots"][slot] = item
+		Shed._move(item, "bike", built)
+	Shed.changed.emit()
+	await _frames(10)
+	await _look_from(bay.origin + Vector3(-1.9, 0.0, 2.6), bay.origin + Vector3(0.0, 0.7, 0.0), "g6_half_built_with_ghosts")

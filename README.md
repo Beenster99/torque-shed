@@ -59,6 +59,9 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Throw away or recycle a part (hold it, look at a bin) | Hold left mouse | Hold RT or A |
 | Whiteboard: draw / rub out; pen colour, eraser, thickness; text; undo; wipe it all | Hold left / right mouse; 1-6, 7, wheel; T; Z; hold X | Hold RT / LT; B colour; LB / RB thickness; D-pad left undo |
 | Whiteboard: add a picture from your PC; move a picture (again to put it down); size it; make a poster of the board | U; M; + / - (or the wheel while moving it); K | (no picture upload); D-pad up; LB / RB while moving it; D-pad down |
+| Geometry mode: fit the parts of the bike you're looking at (again, or Esc, to leave) | F2 | |
+| Geometry mode: select a part / drag a handle; orbit; pan; zoom | Left mouse; right drag; middle drag; wheel | |
+| Geometry mode: move, rotate, scale handles; snap (hold); undo; reset the part | W, E, R; Ctrl; Z; Backspace | |
 | Menu (your level, tool upgrades and skills are in its Character tab; change any key in its Key bindings tab) | Esc | Start |
 | In menus and on the computers: move, press, back; next / previous tab or aisle | Mouse, Esc | D-pad or left stick, A, B; LB / RB |
 
@@ -69,6 +72,20 @@ Look at any part to see its spec, condition, rust, dirt, wear and colour. With y
 Chains stretch and lose their lube as you ride, faster off-road: crouch by the chain with the wrench and hold the second button to set the tension, and spray it with **chain lube** (hold the can, crouch, sweep it along the chain). A slack or dry chain wastes power and the bay screen says so.
 
 **Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the general waste bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt road. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
+
+### Geometry mode and blueprints
+
+The bikes are built from simple shapes, and on some of them a part doesn't sit quite right. **Geometry mode** lets you fix that yourself. Walk up to any bike, look at it and press **F2** (or use the Esc menu's **Geometry mode** button): the mouse is freed and the camera circles the bike. **Click any part** to select it (it glows), and a set of handles appears on it, like in Blender, Unreal or 3ds Max:
+
+- **Move (W)**: red, green and blue arrows. Drag one to slide the part along X (across), Y (up) or Z (along the bike).
+- **Rotate (E)**: three rings. Drag one to turn the part about that axis.
+- **Scale (R)**: boxes on stalks stretch the part along its own X, Y or Z; the white box in the middle sizes it all over.
+
+Hold **Ctrl** to snap (1 cm, 5 degrees, 5%), or tick "Always snap". **Z** undoes, **Backspace** resets the selected part (Reset all puts every part back). The panel shows exactly how far the part has been moved, turned and stretched. Right-drag orbits the camera round the bike, middle-drag pans and the wheel zooms, so you can see it from every side. Every part can be fitted, engine parts and all.
+
+Changes are only for **that bike**: another bike with the same tank isn't touched. While you work they're a draft; **Save to this bike** keeps them (the host saves them with the shed, and everyone in co-op sees them, riding too). **Save + blueprint** saves them to the bike and also keeps the bike as a **blueprint** with the name you type: its parts, paint, each part's colour and finish, and your fit. Leaving with changes not saved asks whether to save or discard them. If you swap a part, the new one in that slot keeps the slot's fit. It's only looks: power, weight and handling don't change.
+
+**Building from a blueprint**: in the Esc menu press **Build from blueprint** (the **Blueprints** tab, where blueprints can also be renamed and deleted). Pick a blueprint and an empty bay, and a flickering blue **hologram** of the finished bike appears in that bay. The bay screen shows the checklist of every part it needs (fitted, on order or needed, with a price total that's a placeholder until money arrives). **Order missing parts** (in the Blueprints tab, or **Order blueprint parts** on the parts computer) delivers what's still needed in boxes outside the roller door, in the blueprint's colours; if the delivery area fills up, bring boxes in and order again. Then put the frame on the bay's stand as for any scratch build: the bike takes the blueprint's name, paint and fit. Each ghost part vanishes as the real one goes on, and when the last part is on the hologram is gone. A project bike is never delivered into a bay with a hologram in it. Cancel in the Blueprints tab takes a hologram away.
 
 ### The sandblaster
 
@@ -245,7 +262,8 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/settings.gd`, `keybind_tab.gd` | Settings, every key binding and rebinding them in the Esc menu |
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
-| `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime |
+| `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime, and each part's own fit from geometry mode |
+| `scripts/geometry_mode.gd`, `geo_gizmo.gd`, `blueprint_tab.gd` | Geometry mode (fitting a bike's parts with move, rotate and scale handles), the handles and their maths, and the Esc menu's Blueprints tab |
 | `scripts/tyre_game.gd` | The tyre-fitting game on the tyre changer |
 | `scripts/blast_game.gd`, `blast_marks.gd` | The sandblasting game in the blast cabinet, and the bare-metal patches it leaves |
 | `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |

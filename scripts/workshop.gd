@@ -67,6 +67,10 @@ var furniture_nodes := {} # furniture id -> EquipmentView
 var _furniture_sigs := {}
 var _floor_nodes := {}     # item id -> Node3D for parts put down anywhere
 var _floor_sigs := {}
+var _holo_views := {}      # bay -> Node3D: the hologram of a blueprint build waiting for its frame
+var _holo_sigs := {}
+var _ghost_mat: StandardMaterial3D
+var _ghosts := 0           # holograms drawn, so the flicker only runs while there are some
 var _bay_screens: Array[Dashboard] = []
 var _crew_screen: Dashboard
 var _dash_timer := 0.0
@@ -209,6 +213,7 @@ func sync_state() -> void:
 		# Moving a bike only moves its view; the one you're wheeling follows you directly.
 		if bike.get("pusher", 0) != Shed.me() or bike.get("pusher", 0) == 0:
 			bike_views[id].transform = bike["xf"]
+	_sync_holograms()
 	_sync_furniture()
 	var spots := Shed.all_spots()
 	for spot in _spot_nodes.keys():
@@ -641,7 +646,9 @@ func _bike_signature(id: int) -> String:
 			var it: Dictionary = Shed.items[item_id]
 			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot)])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
-	return "%s|%s|%s" % [",".join(parts), pose, str(bike["paint"])]
+	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
+	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
+		str(bike.get("blueprint", {}).get("parts", "")) if bike.get("blueprint") is Dictionary else ""]
 
 
 func _make_bike_view(id: int) -> Node3D:
@@ -668,11 +675,88 @@ func _make_bike_view(id: int) -> Node3D:
 		lift = 0.12
 	model.position.y = build.rear_radius + lift
 	model.stand_pose = stand
+	model.geometry = Shed.geometry_of(id)
 	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)
 	model.build_pickers({"bike": id})
 	if on_stand:
 		_paddock_stand(view, build)
+	var plan = bike.get("blueprint")
+	if plan is Dictionary:
+		# Being built to a blueprint: the parts still to go on show as a hologram, in place.
+		var show := {}
+		for slot in PartsDB.SLOTS:
+			show[slot] = Shed.item_on(id, slot) == 0 and str(plan["parts"].get(slot, "none")) != "none"
+		var ghost := ghost_model(plan, show)
+		ghost.position = model.position
+		lean.add_child(ghost)
 	return view
+
+
+## A blueprint drawn as a flickering blue hologram, only the slots in `show` (all when empty).
+func ghost_model(plan: Dictionary, show := {}) -> BikeModel:
+	if _ghost_mat == null:
+		_ghost_mat = StandardMaterial3D.new()
+		_ghost_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_ghost_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_ghost_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_ghost_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_ghost_mat.albedo_color = Color(0.25, 0.6, 1.0, 0.35)
+	var build := BikeBuild.new(PartsDB.sanitize_build(plan.get("parts", {}).duplicate()))
+	var ghost := BikeModel.new()
+	ghost.name = "Hologram"
+	ghost.geometry = GeoGizmo.sanitize(plan.get("geo", {}))
+	ghost.build_from(build, plan.get("paint", Color.WHITE) if plan.get("paint") is Color else Color.WHITE, show, null, false)
+	ghost.make_ghost(_ghost_mat)
+	ghost.set_meta("hologram", true)
+	_ghosts += 1
+	return ghost
+
+
+## Bays with a blueprint build waiting for its frame show the whole bike as a hologram.
+func _sync_holograms() -> void:
+	for bay in _holo_views.keys():
+		if not Shed.holograms.has(bay):
+			_holo_views[bay].queue_free()
+			_holo_views.erase(bay)
+			_holo_sigs.erase(bay)
+			_ghosts = maxi(0, _ghosts - 1)
+	for bay in Shed.holograms:
+		var plan: Dictionary = Shed.holograms[bay]
+		var sig := str(plan.get("parts", {})) + str(plan.get("geo", {})) + str(plan.get("name", ""))
+		if _holo_sigs.get(bay, "") == sig:
+			continue
+		_holo_sigs[bay] = sig
+		if _holo_views.has(bay):
+			_holo_views[bay].free()
+			_ghosts = maxi(0, _ghosts - 1)
+		var view := Node3D.new()
+		view.name = "Hologram%d" % bay
+		view.transform = bay_transform(int(bay))
+		add_child(view)
+		var ghost := ghost_model(plan)
+		ghost.position.y = BikeBuild.new(PartsDB.sanitize_build(plan.get("parts", {}).duplicate())).rear_radius + 0.06
+		view.add_child(ghost)
+		var label := Label3D.new()
+		label.text = "BLUEPRINT: %s\nPut a frame on the stand to start" % str(plan.get("name", "")).to_upper()
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.position = Vector3(0.0, 1.75, 0.0)
+		label.font_size = 40
+		label.pixel_size = 0.005
+		label.outline_size = 8
+		label.modulate = Color(0.55, 0.8, 1.0)
+		view.add_child(label)
+		_holo_views[bay] = view
+
+
+## The holograms' flicker: a soft shimmer with the odd dip, like a projector.
+func _flicker_holograms() -> void:
+	if _ghost_mat == null:
+		return
+	var t := Time.get_ticks_msec() / 1000.0
+	var a := 0.3 + 0.06 * sin(t * 7.0) + 0.04 * sin(t * 23.0)
+	if fmod(t, 3.7) < 0.08:
+		a *= 0.4
+	_ghost_mat.albedo_color.a = a
 
 
 func _paddock_stand(parent: Node3D, build: BikeBuild) -> void:
@@ -685,6 +769,7 @@ func _paddock_stand(parent: Node3D, build: BikeBuild) -> void:
 
 
 func _process(delta: float) -> void:
+	_flicker_holograms()
 	_update_tv_feed(delta)
 	_update_door(delta)
 	spin_changers(delta)
@@ -787,6 +872,9 @@ func _bay_data(bay: int) -> Dictionary:
 			bike_id = id
 			if Shed.bikes[id]["xf"].origin.distance_to(bay_transform(bay).origin) < 2.5:
 				break
+	var plan := Shed.plan_at(bay)
+	if not plan.is_empty():
+		return _blueprint_data(plan, Shed.plan_bike(bay))
 	if bike_id == 0:
 		return {}
 	var bike: Dictionary = Shed.bikes[bike_id]
@@ -821,6 +909,18 @@ func _bay_data(bay: int) -> Dictionary:
 	]
 	return {"name": bike["name"], "status": status, "now": build.summary(), "delivered": bike["delivered"], "parts": parts,
 		"notes": build.notes, "fluids": fluids, "range_km": build.range_km()}
+
+
+## A bay screen's blueprint page: the parts the build needs and how far it's got.
+func _blueprint_data(plan: Dictionary, bike_id: int) -> Dictionary:
+	var rows := Shed.plan_rows(plan, bike_id)
+	var done := rows.filter(func(r): return r["state"] in ["fitted", "other"]).size()
+	var price := 0
+	for r in rows:
+		if r["state"] == "needed":
+			price += Shed.part_price(str(r["part"]))
+	return {"name": str(plan.get("name", "Blueprint")), "blueprint": rows, "done": done, "price": price,
+		"status": "BLUEPRINT BUILD: %d OF %d PARTS" % [done, rows.size()], "framed": bike_id != 0}
 
 
 # ---------------------------------------------------------------------------- building

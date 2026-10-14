@@ -508,6 +508,9 @@ func _update_target() -> void:
 	_scale_time(plan)
 	_scale_time(alt_plan)
 	info = _describe()
+	var geo_key := Settings.binding_text("geometry_mode", false)
+	if str(target.get("kind", "")) == "part" and int(target.get("bike", 0)) != 0 and geo_key != "":
+		info += "\n%s: geometry mode (move, turn and size this bike's parts)" % geo_key
 	if str(target.get("kind", "")) == "spot" and Shed.spot_role(str(target["spot"])) == "blaster" \
 			and Shed.item_at_spot(str(target["spot"])) != 0 and Shed.held_by(Shed.me()) == 0:
 		info += "\nF: hands in the gloves and sandblast it back to bare metal"

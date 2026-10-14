@@ -9,6 +9,7 @@ signal join_game(ip: String)
 signal resume
 signal leave_session
 signal order_bike
+signal geometry_mode
 signal save_requested
 signal quitting
 
@@ -23,6 +24,7 @@ F / Y: get on a finished bike (hold to wheel it about), use the parts computer, 
   radio on or off, unpack a box, take hold of an engine stand or shelving unit (F again lets go)
 Carrying equipment: mouse wheel / LB RB pushes it further away or closer, R / X snaps to walls on or off
 Hands on a bolted-on stand: kick the side stand down or heave the bike onto the centre stand
+F2 at a bike: geometry mode (click a part, drag the handles; W move, E rotate, R scale, Ctrl snap, Z undo)
 
 RIDING
 I / D-pad up: start or stop the engine      W / RT: throttle      S / LT: front brake
@@ -59,6 +61,7 @@ var _save_status: Label
 var _save_button: Button
 var _resume: Button
 var keybinds: KeybindTab
+var blueprints: BlueprintTab
 
 
 func _ready() -> void:
@@ -113,6 +116,8 @@ func _ready() -> void:
 	_resume = _button("Back to the shed", func(): _save(); resume.emit())
 	_pause_box.add_child(_resume)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
+	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
+	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at (F2)", func(): geometry_mode.emit()))
 	_host_info = UITheme.label("", 15, Color(1, 1, 1, 0.75))
 	_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_host_info.custom_minimum_size.x = 560.0
@@ -184,6 +189,8 @@ func _ready() -> void:
 	controls.add_child(UITheme.label(CONTROLS_TEXT, 15))
 	keybinds = KeybindTab.new()
 	_tabs.add_child(keybinds)
+	blueprints = BlueprintTab.new()
+	_tabs.add_child(blueprints)
 	var pad := VBoxContainer.new()
 	pad.name = "Controller check"
 	pad.add_theme_constant_override("separation", 10)
@@ -374,3 +381,8 @@ func _button(text: String, cb: Callable) -> Button:
 	b.text = text
 	b.pressed.connect(cb)
 	return b
+
+
+## Opens the Blueprints tab, where a blueprint is built in an empty bay.
+func show_blueprints() -> void:
+	_tabs.current_tab = _tabs.get_tab_idx_from_control(blueprints)

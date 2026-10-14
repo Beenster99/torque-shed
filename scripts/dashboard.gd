@@ -234,6 +234,9 @@ func _shown(key: String, v: float) -> float:
 
 
 func _draw_bike(font: Font) -> void:
+	if data.has("blueprint"):
+		_draw_blueprint(font)
+		return
 	if data.is_empty():
 		_text(font, Vector2(24, 50), "EMPTY BAY", 40, Color(0.05, 0.05, 0.05))
 		_text(font, Vector2(24, 160), "Order a project bike from the Esc menu,", 28, DIM)
@@ -303,3 +306,34 @@ func _draw_bike(font: Font) -> void:
 				_text(font, Vector2(px + 152, py + 26), "LOOSE", 11, Color(1, 0.85, 0.3))
 		else:
 			_text(font, Vector2(px + 150, py + 14), "MISSING", 12, BAD)
+
+
+## A blueprint build's checklist: every part the blueprint needs, ticked off as it goes on.
+func _draw_blueprint(font: Font) -> void:
+	var blue := Color(0.45, 0.75, 1.0)
+	_page.draw_rect(Rect2(0, 0, PX.x, 70), Color(0.2, 0.5, 0.95, 0.95))
+	_text(font, Vector2(24, 50), ("BLUEPRINT: " + str(data["name"])).to_upper().left(30), 36, Color(0.02, 0.05, 0.1))
+	_text(font, Vector2(560, 48), str(data.get("status", "")), 22, Color(0.02, 0.05, 0.1), 440, HORIZONTAL_ALIGNMENT_RIGHT)
+	var rows: Array = data["blueprint"]
+	var needed := rows.filter(func(r): return r["state"] == "needed").size()
+	var ordered := rows.filter(func(r): return r["state"] == "ordered").size()
+	var hint := "Hold a frame and put it on this bay's stand to start." if not data.get("framed", false) else \
+		"Fit the parts the hologram shows. Ghost parts go as the real ones go on."
+	_text(font, Vector2(24, 100), hint, 18, blue)
+	_text(font, Vector2(24, 126), "%d needed, %d on order. Order missing parts at the parts computer or Esc, Blueprints." % [needed, ordered], 16, DIM)
+	var price := int(data.get("price", 0))
+	_text(font, Vector2(24, PX.y - 18), "Price of what's needed: %s (parts are free until money arrives)" % (
+		("£%d" % price) if price > 0 else "£--"), 16, DIM)
+	var per_col := 13
+	for i in rows.size():
+		var r: Dictionary = rows[i]
+		var col := i / per_col
+		if col > 2:
+			break
+		var px := 24.0 + col * 336.0
+		var py := 160.0 + (i % per_col) * 29.0
+		var state := str(r["state"])
+		var c := GOOD if state == "fitted" else (Color(1.0, 0.75, 0.3) if state in ["other", "ordered"] else BAD)
+		var mark: String = {"fitted": "FITTED", "other": "OTHER PART", "ordered": "ON ORDER", "needed": "NEEDED"}.get(state, "")
+		_text(font, Vector2(px, py), str(r["name"]).left(24), 15, Color.WHITE if state != "needed" else Color(1, 1, 1, 0.8))
+		_text(font, Vector2(px + 220, py), mark, 12, c)

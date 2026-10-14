@@ -49,6 +49,12 @@ func _ready() -> void:
 	bike_btn.text = "Order a project bike"
 	bike_btn.pressed.connect(func(): Shed.request({"a": "order"}))
 	head.add_child(bike_btn)
+	# Blueprint builds under way (Esc, Blueprints): order whatever their holograms still show.
+	var bp_btn := Button.new()
+	bp_btn.text = "Order blueprint parts"
+	bp_btn.tooltip_text = "Orders every part a blueprint build still needs (free for now)"
+	bp_btn.pressed.connect(func(): Shed.request({"a": "bp_order"}))
+	head.add_child(bp_btn)
 	var close := Button.new()
 	close.text = "Close (Esc)"
 	close.pressed.connect(close_computer)

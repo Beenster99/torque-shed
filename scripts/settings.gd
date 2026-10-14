@@ -47,8 +47,13 @@ const ACTIONS := [
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
 	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera", ["ride"]],
 	["horn", "Horn", ["ride"]], ["headlight", "Headlight", ["ride"]],
+	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
+	["geo_move", "Geometry: move", ["geo"]], ["geo_rotate", "Geometry: rotate", ["geo"]],
+	["geo_scale", "Geometry: scale / stretch", ["geo"]], ["geo_snap", "Geometry: snap (hold)", ["geo"]],
+	["geo_undo", "Geometry: undo", ["geo"]], ["geo_reset", "Geometry: reset the part", ["geo"]],
 ]
-const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding", "spray": "with a spray can or gun", "board": "at the whiteboard"}
+const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding", "spray": "with a spray can or gun", "board": "at the whiteboard",
+	"geo": "in geometry mode"}
 ## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
 const SHARED_OK := [["alt_act", "spray_colour"]]
 ## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
@@ -162,6 +167,14 @@ func _setup_inputs() -> void:
 	_bind("board_smaller", [KEY_MINUS, KEY_KP_SUBTRACT], [])
 	# Turn what's on the board into a poster to order from the parts computer.
 	_bind("board_poster", [KEY_K], [JOY_BUTTON_DPAD_DOWN])
+	# Geometry mode: fit a bike's parts with move, rotate and scale handles, Blender style.
+	_bind("geometry_mode", [KEY_F2], [])
+	_bind("geo_move", [KEY_W], [])
+	_bind("geo_rotate", [KEY_E], [])
+	_bind("geo_scale", [KEY_R], [])
+	_bind("geo_snap", [KEY_CTRL], [])
+	_bind("geo_undo", [KEY_Z], [])
+	_bind("geo_reset", [KEY_BACKSPACE], [])
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
 	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])

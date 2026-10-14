@@ -60,6 +60,13 @@ var _leds := []                  # shift lights: {mat, color}
 var _dash_screen := Transform3D()  # where the readout text sits on the clocks, in steering space
 var _lamps: Array = []           # lit lenses and clocks: {mat, albedo, energy, group ("ign" or "head")}
 var _lit := [true, true]         # [ignition, headlight] as last set
+## This bike's own fit for each part, set in geometry mode: slot -> {p, r, s} (see GeoGizmo),
+## about the part's middle in the model's axes. Set it before build_from, or change it any time
+## with apply_geometry. Looks only: the physics never see it.
+var geometry := {}
+var _geo_nodes := {}             # slot -> [{node, parent, anchor}]: a node per slot per parent its meshes hang from
+var _geo_pivots := {}            # slot -> the part's middle at rest, in model space
+var _geo_anchors := {}           # node -> its rest transform in model space, for the nodes offsets ride on
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -79,6 +86,9 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	for child in get_children():
 		child.free()
 	_rider = null
+	_geo_nodes.clear()
+	_geo_pivots.clear()
+	_geo_anchors.clear()
 
 	var wb := build.wheelbase
 	var zf := -wb * 0.5
@@ -156,6 +166,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	set_gauges(0.0, 0.0)
 	# Parked, every lamp and the clocks are dark until the engine runs (see set_lights).
 	set_lights(false, false)
+	if not geometry.is_empty():
+		apply_geometry(geometry)
 
 
 ## Where each cylinder's barrel sits and which way it points, for the engine layout. Barrels
@@ -677,6 +689,8 @@ func set_gauges(speed_frac: float, rpm_frac: float) -> void:
 		var m: StandardMaterial3D = _leds[i]["mat"]
 		m.emission_energy_multiplier = 3.0 if lit else 0.0
 		m.albedo_color = _leds[i]["color"] if lit else Color(0.08, 0.08, 0.08)
+	if not geometry.is_empty() and not _needles.is_empty():
+		_update_geometry()
 
 
 func _draw_front_master() -> void:
@@ -1276,6 +1290,8 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 	if _rider:
 		_rider.position = Vector3(lean_in * 0.05, 0.0, -body_shift * 0.1)
 		_rider.rotation = Vector3(-body_shift * 0.12, 0.0, -lean_in * 0.12)
+	if not geometry.is_empty():
+		_update_geometry()
 
 
 ## Where the rider's eyes are, looking down over the bars at the clocks, in the model's space.
@@ -1354,7 +1370,12 @@ func dash_readout() -> Label3D:
 		_dash_label.line_spacing = -4.0
 		_dash_label.shaded = false
 		_dash_label.double_sided = false
-		_steer_node.add_child(_dash_label)
+		# With the clocks moved in geometry mode, the readout goes with them.
+		var host: Node3D = _steer_node
+		for e in _geo_nodes.get("dashboard", []):
+			if e["parent"] == _steer_node:
+				host = e["node"]
+		host.add_child(_dash_label)
 	return _dash_label
 
 
@@ -1392,6 +1413,99 @@ func highlight(slot: String) -> void:
 		for mi in _slot_meshes[s]:
 			(mi as GeometryInstance3D).material_overlay = _highlight_mat if s == slot else null
 	_highlighted = slot
+
+
+# ---------------------------------------------------------------------------- geometry (per-bike fit)
+
+## Moves, turns and sizes each part by this bike's own fit (see `geometry`). The first time,
+## every slot's meshes are hung from a node of their own under whatever they were drawn on
+## (the frame, the steering, a hub, a wheel, the swingarm), so this works for any slot, new
+## ones included. Wheels and needles still spin under their offset rather than wobbling.
+func apply_geometry(geo: Dictionary) -> void:
+	geometry = geo
+	if _build == null:
+		return
+	if _geo_pivots.is_empty():
+		if geo.is_empty():
+			return
+		_wrap_slots()
+	_update_geometry()
+
+
+## The middle of a part as it was drawn, before its fit, in this model's space.
+func geo_pivot(slot: String) -> Vector3:
+	if _geo_pivots.has(slot):
+		return _geo_pivots[slot]
+	return slot_bounds(slot).get_center()
+
+
+## Where a part's middle is now and how it's turned, in this model's space (for the gizmo).
+func geo_xform(slot: String) -> Transform3D:
+	var off := GeoGizmo.offset_of(geometry, slot)
+	return Transform3D(GeoGizmo.rotation_of(off), geo_pivot(slot) + (off["p"] as Vector3))
+
+
+func _wrap_slots() -> void:
+	var anchors: Array = [self]
+	for n in [_steer_node, _front_hub, _rear_hub, _swingarm]:
+		if n != null and is_instance_valid(n):
+			anchors.append(n)
+	for a in anchors:
+		_geo_anchors[a] = Transform3D.IDENTITY if a == self else _local_xform(a)
+	for slot in _slot_meshes:
+		var meshes: Array = _slot_meshes[slot].filter(func(m): return is_instance_valid(m))
+		if meshes.is_empty():
+			continue
+		_geo_pivots[slot] = slot_bounds(slot).get_center()
+		var by_parent := {}
+		var nodes := []
+		for mi in meshes:
+			var parent: Node = (mi as Node).get_parent()
+			if parent == null:
+				continue
+			if not by_parent.has(parent):
+				var g := Node3D.new()
+				g.name = "Geo_" + slot
+				parent.add_child(g)
+				by_parent[parent] = g
+				var anchor: Node = parent
+				while anchor != null and not _geo_anchors.has(anchor):
+					anchor = anchor.get_parent()
+				nodes.append({"node": g, "parent": parent, "anchor": anchor if anchor != null else self})
+			(mi as Node).reparent(by_parent[parent], false)
+		_geo_nodes[slot] = nodes
+
+
+## Sets every slot node from `geometry`: the offset is in model space at rest, carried into
+## the frame of what it rides on (so moved bars still steer) and undone through anything that
+## spins between (so a moved wheel still turns about its own middle).
+func _update_geometry() -> void:
+	for slot in _geo_nodes:
+		var o := GeoGizmo.offset_xform(geometry.get(slot, {}), _geo_pivots[slot])
+		for e in _geo_nodes[slot]:
+			var g: Node3D = e["node"]
+			if not is_instance_valid(g):
+				continue
+			var a0: Transform3D = _geo_anchors.get(e["anchor"], Transform3D.IDENTITY)
+			var oa := a0.affine_inverse() * o * a0
+			var q := Transform3D.IDENTITY
+			var n: Node = e["parent"]
+			while n != null and n != e["anchor"] and n is Node3D:
+				q = (n as Node3D).transform * q
+				n = n.get_parent()
+			g.transform = q.affine_inverse() * oa * q
+
+
+## Turns the whole model into a see-through glowing hologram (for blueprint builds).
+func make_ghost(mat: Material) -> void:
+	for slot in _slot_meshes:
+		for mi in _slot_meshes[slot]:
+			if is_instance_valid(mi):
+				(mi as GeometryInstance3D).material_override = mat
+				(mi as GeometryInstance3D).material_overlay = null
+				(mi as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if _dash_label:
+		_dash_label.visible = false
 
 
 ## Local-space bounding box of a part's meshes.

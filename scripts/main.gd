@@ -17,6 +17,7 @@ var menu: MainMenu
 var computer: PartsComputer
 var tuning: TuningComputer
 var label_dialog: LabelDialog
+var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
 var audio: EngineAudio
 var saver: SaveGame
 var remotes := {}     # peer id -> RemotePlayer
@@ -61,6 +62,9 @@ func _ready() -> void:
 	label_dialog.visible = false
 	ui.add_child(label_dialog)
 	label_dialog.closed.connect(func(): _capture_mouse(true))
+	geometry = GeometryMode.new()
+	ui.add_child(geometry)
+	geometry.closed.connect(_geometry_closed)
 	menu = MainMenu.new()
 	ui.add_child(menu)
 	menu.ride_solo.connect(func(): _start_session())
@@ -71,6 +75,9 @@ func _ready() -> void:
 	menu.order_bike.connect(func():
 		Shed.request({"a": "order"})
 		_close_menu())
+	menu.geometry_mode.connect(func():
+		_close_menu()
+		open_geometry())
 	saver = SaveGame.new()
 	saver.name = "SaveGame"
 	saver.main = self
@@ -184,6 +191,8 @@ func _end_session() -> void:
 	computer.visible = false
 	tuning.visible = false
 	label_dialog.visible = false
+	if geometry.active:
+		geometry.close()
 	_stop_riding()
 	for id in remotes.keys():
 		remotes[id].queue_free()
@@ -220,6 +229,53 @@ func _close_menu() -> void:
 	_capture_mouse(true)
 
 
+# ---------------------------------------------------------------------------- geometry mode
+
+## The bike geometry mode would edit: the one you're looking at, else the nearest parked one
+## within a few metres. 0 when there's none.
+func geometry_bike() -> int:
+	if walker == null:
+		return 0
+	var t: Dictionary = walker.target
+	if t.get("kind", "") == "part" and int(t.get("bike", 0)) != 0 and workshop.bike_views.has(int(t["bike"])):
+		return int(t["bike"])
+	var best := 0
+	var best_d := 4.0
+	for id in workshop.bike_views:
+		var d: float = (workshop.bike_views[id] as Node3D).global_position.distance_to(walker.global_position)
+		if d < best_d and Shed.bikes.has(id) and Shed.bikes[id]["rider"] == 0:
+			best_d = d
+			best = id
+	return best
+
+
+## Opens geometry mode on the bike you're at: the mouse is freed and the camera orbits it.
+func open_geometry() -> void:
+	if bike != null or walker == null:
+		return
+	var id := geometry_bike()
+	if id == 0:
+		hud.flash("Walk up to a bike and look at it to fit its parts in geometry mode.", 2.5, true)
+		return
+	if not geometry.open(id, workshop, walker.camera):
+		hud.flash("That bike can't be edited right now.", 2.0, true)
+		return
+	walker.process_mode = Node.PROCESS_MODE_DISABLED
+	hud.visible = false
+	_capture_mouse(false)
+
+
+func _geometry_closed() -> void:
+	if not in_session:
+		return
+	hud.visible = true
+	if walker:
+		walker.process_mode = Node.PROCESS_MODE_INHERIT
+		if bike == null:
+			walker.camera.current = true
+	_capture_mouse(true)
+
+
 # ---------------------------------------------------------------------------- riding
 
 func _try_mount(bike_id: int) -> void:
@@ -249,6 +305,7 @@ func _start_riding(bike_id: int) -> void:
 	bike.skills = Progress.rider_skills()
 	bike.ride_xp = RideXP.new(bike_id)
 	bike.setup(Shed.build_of(bike_id), data["paint"])
+	bike.model.apply_geometry(Shed.geometry_of(bike_id))
 	bike.set_meta("shed_bike", bike_id)   # so the shed TVs know whose ride this is
 	world.add_child(bike)
 	var xf: Transform3D = data["xf"]
@@ -352,7 +409,12 @@ func _set_walker_active(on: bool) -> void:
 # ---------------------------------------------------------------------------- input
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not in_session:
+	if not in_session or geometry.active:
+		return   # geometry mode takes its own keys, Esc and F2 included
+	if event.is_action_pressed("geometry_mode") and bike == null and walker and not menu.visible and not computer.visible \
+			and not tuning.visible and not label_dialog.visible:
+		get_viewport().set_input_as_handled()
+		open_geometry()
 		return
 	if event.is_action_pressed("menu"):
 		if label_dialog.visible:
@@ -400,7 +462,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
-	var active := not menu.visible and not computer.visible and not tuning.visible and not label_dialog.visible
+	var active := not menu.visible and not computer.visible and not tuning.visible and not label_dialog.visible \
+		and not geometry.active
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:

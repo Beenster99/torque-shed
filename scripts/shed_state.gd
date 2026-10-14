@@ -104,6 +104,15 @@ var screens := {}
 ## defenders (0: on their hook), how hot the engine on the rig is (0..1) and how much exhaust
 ## haze hangs in the room (0..1).
 var dyno := dyno_defaults()
+## Bikes saved as blueprints in geometry mode, to build again: blueprint id -> {id, name, parts
+## {slot: part id or "none"}, colors {slot: {color, finish}}, paint, geo (its parts' fit, see
+## GeoGizmo), from (the bike it was taken from)}.
+var blueprints := {}
+## Blueprint builds waiting for a frame: bay -> a copy of the blueprint (bp: its id, bay, ordered
+## {slot: item id} for parts already ordered). Once a frame goes on the bay's stand the copy
+## moves onto that bike as its "blueprint", and goes when the bike is built.
+var holograms := {}
+const MAX_BLUEPRINTS := 40
 
 var _next_id := 1
 var _dirty := false
@@ -150,6 +159,8 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	lights_on = true
 	room_lights = {"paint": true, "storage": true}
 	screens = {}
+	blueprints = {}
+	holograms = {}
 	dyno = dyno_defaults()
 	_dyno_busy_until = 0
 	items.clear()
@@ -296,6 +307,8 @@ func join_remote() -> void:
 	furniture.clear()
 	radio = {"on": false, "station": 0}
 	screens = {}
+	blueprints = {}
+	holograms = {}
 	dyno = dyno_defaults()
 	_dyno_busy_until = 0
 	items.clear()
@@ -311,6 +324,8 @@ func stop() -> void:
 	furniture.clear()
 	radio = {"on": false, "station": 0}
 	screens = {}
+	blueprints = {}
+	holograms = {}
 	dyno = dyno_defaults()
 	_dyno_busy_until = 0
 	active = false
@@ -956,7 +971,7 @@ func fluid_holder(target: Dictionary, kind: String) -> int:
 
 func free_bay(bay_count: int) -> int:
 	for bay in bay_count:
-		if bay_is_free(bay):
+		if bay_is_free(bay) and not holograms.has(bay):
 			return bay
 	return -1
 
@@ -1936,6 +1951,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Take it to one of the bays."
 			if not bay_is_free(bay):
 				return "There's already a bike in bay %d." % (bay + 1)
+		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
+			return _blueprint_check(action)
 		"order":
 			if free_bay(Workshop.BAY_COUNT) < 0:
 				return "Every bay is full. Ride a bike out or strip one down first."
@@ -2151,6 +2168,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 			if engine_id == 0 and slot == "frame":
 				# Nothing left of it: the bay is free for the next project.
 				text += ". Bay %d is free." % (bikes[bike_id]["bay"] + 1)
+				var plan = bikes[bike_id].get("blueprint")
+				var bay := int(bikes[bike_id]["bay"])
+				if plan is Dictionary and bay >= 0 and not holograms.has(bay):
+					# A blueprint build stripped back to nothing: its hologram waits for another frame.
+					holograms[bay] = plan
 				bikes.erase(bike_id)
 		"install":
 			var item_id := held_by(peer)
@@ -2170,6 +2192,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_xp(peer, "fit", 1.0, "item:%d" % item_id)
 			text = "Fitted the %s as the %s. Bolt it up with the wrench." % [PartsDB.part_name(items[item_id]["part"]),
 				PartsDB.slot_name(s).to_lower()]
+			if engine_id == 0 and _blueprint_done(bike_id):
+				text += " That's every part on its blueprint: the hologram is gone."
+			elif engine_id != 0 and _bike_of(engine_id) != 0 and _blueprint_done(_bike_of(engine_id)):
+				text += " That's every part on its blueprint: the hologram is gone."
 		"take":
 			var item_id := int(action["item"]) if action.has("item") else item_at_spot(str(action["spot"]))
 			_move(item_id, "held", peer)
@@ -2252,6 +2278,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_xp(peer, "start_build", 1.0, "bike:%d" % id)
 			text = "%s is on the paddock stand in bay %d. Fit the forks, shock and the rest to it, then bolt it all up." % [
 				bikes[id]["name"], int(action["bay"]) + 1]
+			if holograms.has(int(action["bay"])):
+				text = _start_blueprint(id, int(action["bay"]))
 		"unpack":
 			items[int(action["item"])]["boxed"] = false
 			text = "Unpacked the %s" % item_title(int(action["item"]))
@@ -2515,6 +2543,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 						_xp(peer, "muddy_wash", 1.0, "bike:%d" % b)
 				else:
 					bikes[b]["mud_peak"] = peak
+		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
+			text = _blueprint_apply(action)
 		"order":
 			var id := _random_bike(free_bay(Workshop.BAY_COUNT))
 			text = "%s has been delivered to bay %d" % [bikes[id]["name"], bikes[id]["bay"] + 1]
@@ -3326,6 +3356,271 @@ func _on_player_left(id: int) -> void:
 	changed.emit()
 
 
+# ---------------------------------------------------------------------------- geometry and blueprints
+
+## A bike's own fit for its parts (see GeoGizmo): slot -> {p, r, s}. Never shared between bikes.
+func geometry_of(bike_id: int) -> Dictionary:
+	var geo = bikes.get(bike_id, {}).get("geo", {})
+	return geo if geo is Dictionary else {}
+
+
+func blueprint_named(bp_name: String) -> int:
+	for id in blueprints:
+		if str(blueprints[id]["name"]).to_lower() == bp_name.strip_edges().to_lower():
+			return int(id)
+	return 0
+
+
+## The bike standing in a bay (on or near its stand), or 0.
+func bike_in_bay(bay: int) -> int:
+	for id in bikes:
+		if int(bikes[id].get("bay", -1)) == bay and bikes[id]["rider"] == 0 \
+				and (bikes[id]["xf"] as Transform3D).origin.distance_to(Workshop.bay_transform(bay).origin) < 2.5:
+			return int(id)
+	return 0
+
+
+## The blueprint build under way in a bay: its hologram waiting for a frame, or the plan carried
+## by the bike being built there. Empty when there's none.
+func plan_at(bay: int) -> Dictionary:
+	if holograms.has(bay):
+		return holograms[bay]
+	var bike := bike_in_bay(bay)
+	if bike != 0 and bikes[bike].get("blueprint") is Dictionary:
+		return bikes[bike]["blueprint"]
+	return {}
+
+
+## Every bay with a blueprint build under way.
+func plan_bays() -> Array:
+	var out := []
+	for bay in Workshop.BAY_COUNT:
+		if not plan_at(bay).is_empty():
+			out.append(bay)
+	return out
+
+
+## The bike a bay's blueprint build is on, or 0 while its hologram still waits for a frame.
+func plan_bike(bay: int) -> int:
+	return 0 if holograms.has(bay) else bike_in_bay(bay)
+
+
+## A blueprint build's checklist: one row per part on the blueprint, {slot, part, name, state},
+## where state is "fitted" (that part is on), "other" (a different part fills the slot), "ordered"
+## (delivered or on its way) or "needed".
+func plan_rows(plan: Dictionary, bike_id: int) -> Array:
+	var rows := []
+	var parts: Dictionary = plan.get("parts", {})
+	var ordered: Dictionary = plan.get("ordered", {}) if plan.get("ordered") is Dictionary else {}
+	for slot in PartsDB.SLOTS:
+		var part := str(parts.get(slot, "none"))
+		if part == "none" or part == "" or PartsDB.get_part(part).is_empty():
+			continue
+		var state := "needed"
+		var on := item_on(bike_id, slot) if bike_id != 0 and bikes.has(bike_id) else 0
+		if on != 0:
+			state = "fitted" if str(items[on]["part"]) == part else "other"
+		elif ordered.has(slot) and items.has(int(ordered[slot])):
+			var it: Dictionary = items[int(ordered[slot])]
+			# Fitted to some other bike since, it doesn't count any more.
+			if not (it["at"] == "bike" and int(it["ref"]) != bike_id):
+				state = "ordered"
+		rows.append({"slot": slot, "part": part, "name": PartsDB.part_name(part), "state": state})
+	return rows
+
+
+## Placeholder until money arrives (Milestone C): every part is free.
+static func part_price(_part_id: String) -> int:
+	return 0
+
+
+func _blueprint_check(action: Dictionary) -> String:
+	var a := str(action.get("a", ""))
+	var bike_id := int(action.get("bike", 0))
+	match a:
+		"geo_save", "geo_blueprint":
+			if not bikes.has(bike_id):
+				return "That bike has gone."
+			if bikes[bike_id]["rider"] != 0:
+				return "Someone is riding that bike."
+			if not (action.get("geo") is Dictionary):
+				return "There's nothing to save."
+			if a == "geo_blueprint":
+				var n := str(action.get("name", "")).strip_edges()
+				if n == "":
+					return "Give the blueprint a name."
+				if blueprints.size() >= MAX_BLUEPRINTS and blueprint_named(n) == 0:
+					return "There are %d blueprints already. Delete one first (Esc, Blueprints)." % MAX_BLUEPRINTS
+		"bp_rename", "bp_delete", "bp_build":
+			if not blueprints.has(int(action.get("bp", 0))):
+				return "That blueprint has gone."
+			if a == "bp_rename":
+				var n := str(action.get("name", "")).strip_edges()
+				if n == "":
+					return "Give it a name."
+				var other := blueprint_named(n)
+				if other != 0 and other != int(action["bp"]):
+					return "There's already a blueprint called %s." % n
+			if a == "bp_build":
+				var bay := int(action.get("bay", -1))
+				if bay < 0 or bay >= Workshop.BAY_COUNT:
+					return "Pick a bay."
+				if not bay_is_free(bay) or holograms.has(bay):
+					return "Bay %d isn't empty. Pick an empty bay." % (bay + 1)
+		"bp_cancel":
+			if plan_at(int(action.get("bay", -1))).is_empty():
+				return "There's no blueprint build in that bay."
+		"bp_order":
+			var bay := int(action.get("bay", -1))
+			if bay >= 0 and plan_at(bay).is_empty():
+				return "There's no blueprint build in that bay."
+			if bay < 0 and plan_bays().is_empty():
+				return "No blueprint builds under way. Start one from the Esc menu: Build from blueprint."
+	return ""
+
+
+func _blueprint_apply(action: Dictionary) -> String:
+	var a := str(action.get("a", ""))
+	var bike_id := int(action.get("bike", 0))
+	match a:
+		"geo_save":
+			bikes[bike_id]["geo"] = GeoGizmo.sanitize(action["geo"])
+			return "Saved the fit of %s's parts." % bikes[bike_id]["name"]
+		"geo_blueprint":
+			bikes[bike_id]["geo"] = GeoGizmo.sanitize(action["geo"])
+			var bp := _save_blueprint(bike_id, str(action["name"]).strip_edges().left(28))
+			return "Saved the fit of %s's parts, and the blueprint \"%s\" (Esc, Build from blueprint)." % [
+				bikes[bike_id]["name"], blueprints[bp]["name"]]
+		"bp_rename":
+			blueprints[int(action["bp"])]["name"] = str(action["name"]).strip_edges().left(28)
+			return "Renamed the blueprint %s." % blueprints[int(action["bp"])]["name"]
+		"bp_delete":
+			var gone := str(blueprints[int(action["bp"])]["name"])
+			blueprints.erase(int(action["bp"]))
+			return "Deleted the blueprint %s." % gone
+		"bp_build":
+			var bp := int(action["bp"])
+			var bay := int(action["bay"])
+			var plan: Dictionary = blueprints[bp].duplicate(true)
+			plan.erase("id")
+			plan["bp"] = bp
+			plan["bay"] = bay
+			plan["ordered"] = {}
+			holograms[bay] = plan
+			return "A hologram of %s is in bay %d. Order the missing parts at the parts computer, then put a frame on the stand and build it up." % [
+				plan["name"], bay + 1]
+		"bp_cancel":
+			var bay := int(action["bay"])
+			var plan := plan_at(bay)
+			var what := str(plan.get("name", "the bike"))
+			holograms.erase(bay)
+			var bike := bike_in_bay(bay)
+			if bike != 0:
+				bikes[bike].erase("blueprint")
+			return "Cancelled the blueprint build of %s in bay %d." % [what, bay + 1]
+		"bp_order":
+			var bays: Array = [int(action.get("bay", -1))] if int(action.get("bay", -1)) >= 0 else plan_bays()
+			var sent := 0
+			var left := 0
+			for bay in bays:
+				var got := _order_plan(plan_at(bay), plan_bike(bay))
+				sent += int(got[0])
+				left += int(got[1])
+			if sent == 0 and left == 0:
+				return "Everything on the blueprint is fitted or already ordered."
+			var said := "Ordered %d part%s for the blueprint (free for now). They're boxed outside the roller door." % [sent, "" if sent == 1 else "s"]
+			if left > 0:
+				said += " %d more didn't fit in the delivery area: bring some boxes in and order again." % left
+			return said
+	return ""
+
+
+## Stores what a bike is now as a blueprint: its parts (what it was delivered with where a slot
+## is empty), each part's colour and finish, its paint and its parts' fit. One with the same
+## name is replaced.
+func _save_blueprint(bike_id: int, bp_name: String) -> int:
+	var bike: Dictionary = bikes[bike_id]
+	var parts := {}
+	var colors := {}
+	for slot in PartsDB.SLOTS:
+		var on := item_on(bike_id, slot)
+		if on != 0:
+			parts[slot] = str(items[on]["part"])
+			colors[slot] = {"color": items[on]["color"], "finish": str(items[on].get("finish", ""))}
+		elif PartsDB.is_optional(slot):
+			parts[slot] = "none"
+		else:
+			parts[slot] = str(bike.get("original", {}).get(slot, PartsDB.DEFAULT_BUILD.get(slot, "none")))
+	var id := blueprint_named(bp_name)
+	if id == 0:
+		id = _next_id
+		_next_id += 1
+	blueprints[id] = {"id": id, "name": bp_name, "parts": parts, "colors": colors, "paint": bike["paint"],
+		"geo": geometry_of(bike_id).duplicate(true), "from": str(bike["name"])}
+	return id
+
+
+## Orders whatever a blueprint build still needs, boxed outside the roller door in the
+## blueprint's colours. Returns [parts ordered, parts that didn't fit in the delivery area].
+func _order_plan(plan: Dictionary, bike_id: int) -> Array:
+	if plan.is_empty():
+		return [0, 0]
+	if not (plan.get("ordered") is Dictionary):
+		plan["ordered"] = {}
+	var sent := 0
+	var left := 0
+	var colors: Dictionary = plan.get("colors", {})
+	for row in plan_rows(plan, bike_id):
+		if row["state"] != "needed":
+			continue
+		var xf = free_delivery_xf()
+		if xf == null:
+			left += 1
+			continue
+		var part: String = row["part"]
+		var look: Dictionary = colors.get(row["slot"], {})
+		var item_id := _new_item(part, 0.0, 0.0, 0.0, look.get("color"))
+		items[item_id]["finish"] = str(look.get("finish", ""))
+		items[item_id]["boxed"] = not PartsDB.is_fluid(part)
+		_move(item_id, "floor", xf)
+		plan["ordered"][row["slot"]] = item_id
+		sent += 1
+	return [sent, left]
+
+
+## A frame has gone on a bay with a hologram waiting: the new bike takes on the blueprint's
+## name, paint and fit, and carries the plan until it's built.
+func _start_blueprint(bike_id: int, bay: int) -> String:
+	var plan: Dictionary = holograms[bay]
+	holograms.erase(bay)
+	var bike: Dictionary = bikes[bike_id]
+	bike["blueprint"] = plan
+	bike["geo"] = GeoGizmo.sanitize(plan.get("geo", {}))
+	bike["name"] = str(plan.get("name", bike["name"]))
+	if plan.get("paint") is Color:
+		bike["paint"] = plan["paint"]
+	# The blueprint is what it's being built to: its numbers are what the bay screen compares with.
+	var original: Dictionary = PartsDB.sanitize_build(plan.get("parts", {}).duplicate())
+	original["frame"] = items[int(bike["slots"]["frame"])]["part"]
+	bike["original"] = original
+	bike["delivered"] = BikeBuild.new(original, {}).summary()
+	_blueprint_done(bike_id)
+	return "%s is on the stand in bay %d. Fit the parts the hologram shows: each ghost part goes as the real one goes on." % [
+		bike["name"], bay + 1]
+
+
+## Whether a bike being built to a blueprint now has every part on it; if so its plan (and
+## hologram) goes and it keeps the blueprint's fit.
+func _blueprint_done(bike_id: int) -> bool:
+	if not bikes.has(bike_id) or not (bikes[bike_id].get("blueprint") is Dictionary):
+		return false
+	for row in plan_rows(bikes[bike_id]["blueprint"], bike_id):
+		if not (row["state"] in ["fitted", "other"]):
+			return false
+	bikes[bike_id].erase("blueprint")
+	return true
+
+
 # ---------------------------------------------------------------------------- syncing
 
 func _mark_dirty() -> void:
@@ -3336,7 +3631,8 @@ func _mark_dirty() -> void:
 ## as they're drawn (_board_op), and whole only to players joining.
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
-		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno}
+		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
+		"blueprints": blueprints, "holograms": holograms}
 	if with_board:
 		state["board"] = board
 	return state
@@ -3376,6 +3672,9 @@ func _sync(state: Dictionary) -> void:
 		dyno.merge(state["dyno"], true)
 	_next_id = int(state.get("next", 1))
 	posters = state["posters"] if state.get("posters") is Dictionary else {}
+	# Sheds saved before blueprints have none.
+	blueprints = state["blueprints"] if state.get("blueprints") is Dictionary else {}
+	holograms = state["holograms"] if state.get("holograms") is Dictionary else {}
 	if state.get("blobs") is Dictionary:
 		# A save being opened: its pictures and poster prints.
 		for id in state["blobs"]:
