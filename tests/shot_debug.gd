@@ -43,6 +43,31 @@ func _ready() -> void:
 	scroll.scroll_vertical = 2000
 	await _frames(5)
 	await _shot("b5_character_goals")
+	main.menu.hide()
+	await _frames(5)
+	# Bins by the roller door, the tyre changer, and a bay screen on the XP goals channel.
+	await _look_from(Vector3(-3.3, 0.0, 67.4), Vector3(-3.6, 1.0, 70.4), "b6_bins")
+	var cx: Vector3 = Workshop.CHANGER_XF.origin
+	await _look_from(cx + Vector3(1.9, 0.0, 0.4), cx + Vector3(0.0, 0.9, 0.0), "b7_tyre_changer")
+	for i in 8:
+		if Shed.screen_channel("bay1")["ch"] == "xp":
+			break
+		Shed.request({"a": "tv_channel", "screen": "bay1", "step": 1})
+		await _frames(2)
+	await _look_from(Workshop.CENTER + Vector3(-1.5, 0.0, 0.5), Workshop.CENTER + Vector3(-1.5, 2.2, -5.5), "b8_tv_xp_channel")
+	# High beam at night: dusty beam.
+	Daylight.current.set_time(22.0)
+	var faithful := _bike_named("Old Faithful")
+	main._try_mount(faithful)
+	await _frames(10)
+	main.bike.start_engine()
+	var road_t: Transform3D = main.world.road_transform(0.12)
+	main.bike.place(road_t.origin, road_t.basis.get_euler().y)
+	main.camera.set_mode(ChaseCamera.Mode.CHASE)
+	await _frames(40)
+	main.bike.cycle_beam()
+	await _frames(20)
+	await _shot("b9_high_beam_dust")
 	DirAccess.remove_absolute(Progress.path)
 	SaveGame.delete_slot("shots")
 	get_tree().quit()
