@@ -249,7 +249,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			Sfx.play_at("switch", camera.global_position, -6.0)
 		elif target.get("kind", "") == "lights":
 			get_viewport().set_input_as_handled()
-			Shed.request({"a": "lights", "on": not Shed.lights_on})
+			var room := str(target.get("room", ""))
+			Shed.request({"a": "lights", "room": room, "on": not Shed.room_lit(room)})
 			Sfx.play_at("switch", camera.global_position, -4.0)
 	else:
 		for i in TOOLS.size():
@@ -452,7 +453,9 @@ func _update_target() -> void:
 		elif c.has_meta("door_switch"):
 			t = {"kind": "door"}
 		elif c.has_meta("light_switch"):
-			t = {"kind": "lights"}
+			# The shed's own switch says true; a side room's says which room.
+			var room = c.get_meta("light_switch")
+			t = {"kind": "lights", "room": room if room is String else ""}
 		elif c.has_meta("whiteboard"):
 			t = {"kind": "board"}   # the Whiteboard handles drawing on it itself
 		elif c.has_meta("top"):
@@ -1158,6 +1161,8 @@ func _describe() -> String:
 					lines.append("F: take it down to hang somewhere else")
 				"poster":
 					lines.append("F: take it down to hang somewhere else")
+				"booth", "changer":
+					lines.append("Built into the shed")
 				_:
 					lines.append("F: move it somewhere else")
 			if kind == "label":
@@ -1170,8 +1175,9 @@ func _describe() -> String:
 			lines.append("Roller door")
 			lines.append("F: %s" % ("close it" if Shed.door_open else "open it"))
 		"lights":
-			lines.append("Shed lights")
-			lines.append("F: switch them %s" % ("off" if Shed.lights_on else "on"))
+			var room := str(target.get("room", ""))
+			lines.append({"paint": "Paint shop lights", "storage": "Storage room lights"}.get(room, "Shed lights"))
+			lines.append("F: switch them %s" % ("off" if Shed.room_lit(room) else "on"))
 		"board":
 			var board: Node = get_tree().get_first_node_in_group("whiteboard")
 			if board:

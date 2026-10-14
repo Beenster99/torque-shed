@@ -63,6 +63,7 @@ func _ready() -> void:
 			Shed.request({"a": "tv_channel", "screen": "crew", "step": 1})
 			# A picture big enough to go in several chunks.
 			Shed.board_add_image(Shed.pack_image(_noise(400, 300)), Vector2(650, 120), Vector2(400, 300))
+			Shed.request({"a": "lights", "room": "paint", "on": false})
 			asked = true
 		# The host makes a poster of the board once the client's picture is on it.
 		if role == "host" and not postered and _picture_ok():
@@ -79,7 +80,8 @@ func _ready() -> void:
 			dropped = dropped or (Shed.items[id]["ref"] is Transform3D)
 		var tuned := ranger != 0 and is_equal_approx(float(Shed.tune_of(ranger).get("psi_f", 0.0)), 0.9)
 		var tv_ok: bool = Shed.screen_channel("crew")["ch"] == "live"   # the client changed the crew board's channel
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok:
+		var lights_ok := not Shed.room_lit("paint")   # the client switched the paint shop lights off
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000

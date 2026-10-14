@@ -84,6 +84,9 @@ var active := false
 var radio := {"on": false, "station": 0}
 var door_open := true     # the roller door
 var lights_on := true     # the shed's strip lights
+## The side rooms' own lights, each with a switch by its door: room name -> on.
+var room_lights := {"paint": true, "storage": true}
+const LIT_ROOMS: Array[String] = ["paint", "storage"]
 var stations: Array = []    # [{name, genre, url}] from data/radio.json
 var board := BoardData.empty()   # what's drawn and written on the shed whiteboard
 ## Bigger bits of data that go out in chunks (see share_blob): the pictures players put on the
@@ -139,6 +142,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	radio = {"on": false, "station": 0}
 	door_open = true
 	lights_on = true
+	room_lights = {"paint": true, "storage": true}
 	screens = {}
 	items.clear()
 	crew.clear()
@@ -1006,21 +1010,62 @@ func furniture_name(f: Dictionary) -> String:
 ## the workbench. Adds whatever is missing (a new shed, or a save from before it was built in).
 func ensure_fixtures() -> void:
 	var have := {}
+	var booths := []
 	for id in furniture:
 		match str(furniture[id]["kind"]):
 			"booth":
-				furniture[id]["xf"] = Workshop.BOOTH_XF
-				have["booth"] = true
+				booths.append(id)
 			"changer":
 				furniture[id]["xf"] = Workshop.CHANGER_XF
 				have["changer"] = true
-	if not have.has("booth"):
-		_new_furniture("booth", Workshop.BOOTH_XF, "booth_pro")
+	booths.sort()
+	if booths.is_empty():
+		_new_furniture("booth", Workshop.BOOTH_XF, Workshop.BOOTH_MODEL)
+	else:
+		# Older sheds had a smaller booth (or more than one): there's one big spray bay now, and
+		# everything that hung in the old ones moves onto its hooks, in order.
+		var main: int = booths[0]
+		var hung := []
+		for id in booths.slice(1):
+			for spot in furniture_spots(id):
+				var it := item_at_spot(spot)
+				if it != 0:
+					hung.append(it)
+			furniture.erase(id)
+		furniture[main]["model"] = Workshop.BOOTH_MODEL
+		furniture[main]["xf"] = Workshop.BOOTH_XF
+		furniture[main]["mover"] = 0
+		# Parts on the main booth keep their hooks (it only gained some).
+		var free := furniture_spots(main).filter(func(s): return item_at_spot(s) == 0)
+		for i in hung.size():
+			if i < free.size():
+				_move(hung[i], "spot", free[i])
+			else:
+				var at := Workshop.BOOTH_ROOM_CENTER + Vector3(-2.6, 0.0, -4.5 + (i - free.size()) * 0.6)
+				_move(hung[i], "floor", Transform3D(Basis(), at))
 	if not have.has("changer"):
 		_new_furniture("changer", Workshop.CHANGER_XF, "tyre_changer")
 	# The crew whiteboard can be hung on any wall; a save from before that keeps it where it was.
 	if whiteboard_id() == 0:
 		_new_furniture("whiteboard", Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT), "whiteboard")
+	# Kit left where the bigger spray bay stands now goes to the paint shop's walkway.
+	var bay := Workshop.booth_footprint()
+	var n := 0
+	for id in furniture:
+		var f: Dictionary = furniture[id]
+		if Equipment.FIXED_KINDS.has(str(f["kind"])) or Equipment.is_wall(str(f["model"])):
+			continue
+		var at: Vector3 = (f["xf"] as Transform3D).origin
+		if bay.has_point(Vector2(at.x, at.z)):
+			f["xf"] = Transform3D(Basis(Vector3.UP, PI * 0.5), Workshop.BOOTH_ROOM_CENTER + Vector3(-2.6, 0.0, -3.0 + n * 1.4))
+			n += 1
+
+
+## Whether a side room's lights are on ("paint" or "storage"; "" is the shed itself).
+func room_lit(room: String) -> bool:
+	if room == "":
+		return lights_on
+	return bool(room_lights.get(room, true))
 
 
 ## The tyre on a loose wheel (one that's off the bike), or 0.
@@ -1391,8 +1436,12 @@ func check(peer: int, action: Dictionary) -> String:
 				return "That bike's gone."
 			if str(action.get("name", "")).strip_edges() == "":
 				return "Give it a name."
-		"door", "lights":
+		"door":
 			pass
+		"lights":
+			var room := str(action.get("room", ""))
+			if room != "" and not LIT_ROOMS.has(room):
+				return "There's no light switch for that."
 		"bin":
 			if held == 0:
 				return "You're not holding a part."
@@ -1882,8 +1931,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 			door_open = bool(action.get("open", not door_open))
 			text = "Roller door %s" % ("going up" if door_open else "coming down")
 		"lights":
-			lights_on = bool(action.get("on", not lights_on))
-			text = "Lights %s" % ("on" if lights_on else "off")
+			var room := str(action.get("room", ""))
+			if room == "":
+				lights_on = bool(action.get("on", not lights_on))
+				text = "Lights %s" % ("on" if lights_on else "off")
+			else:
+				room_lights[room] = bool(action.get("on", not room_lit(room)))
+				text = "%s lights %s" % ["Paint shop" if room == "paint" else "Storage room", "on" if room_lights[room] else "off"]
 		"label":
 			furniture[int(action["furniture"])]["label"] = str(action.get("text", "")).strip_edges().left(24)
 			text = "Labelled the shelves \"%s\"" % furniture[int(action["furniture"])]["label"]
@@ -2922,7 +2976,7 @@ func _mark_dirty() -> void:
 ## as they're drawn (_board_op), and whole only to players joining.
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
-		"door": door_open, "lights": lights_on, "screens": screens, "posters": posters}
+		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters}
 	if with_board:
 		state["board"] = board
 	return state
@@ -2948,6 +3002,13 @@ func _sync(state: Dictionary) -> void:
 	radio = state.get("radio", radio)
 	door_open = bool(state.get("door", true))
 	lights_on = bool(state.get("lights", true))
+	# Sheds saved before the side rooms had switches: their lights start on.
+	room_lights = {"paint": true, "storage": true}
+	var saved_rooms = state.get("room_lights", {})
+	if saved_rooms is Dictionary:
+		for room in LIT_ROOMS:
+			if saved_rooms.has(room):
+				room_lights[room] = bool(saved_rooms[room])
 	screens = state["screens"] if state.get("screens") is Dictionary else {}
 	_next_id = int(state.get("next", 1))
 	posters = state["posters"] if state.get("posters") is Dictionary else {}

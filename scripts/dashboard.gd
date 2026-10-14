@@ -53,15 +53,21 @@ func _init(page_kind := "bike", screen_width := 2.0) -> void:
 	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(screen)
 	# The screen glows on whatever is in front of it: with the shed lights off, screens are
-	# the light you work by.
-	var spill := OmniLight3D.new()
-	spill.position = Vector3(0.0, 0.0, 0.45)
-	spill.omni_range = 2.0 + width * 1.2
-	spill.omni_attenuation = 1.4
-	spill.light_energy = 0.35 + width * 0.12
+	# the light you work by. A wide spot from the face of the screen, pointing out into the
+	# room, so nothing behind it (the wall round it, or the room through the wall) is lit.
+	var spill := SpotLight3D.new()
+	spill.name = "Spill"
+	spill.position = Vector3(0.0, 0.0, 0.06)
+	spill.spot_angle = 70.0
+	spill.spot_angle_attenuation = 1.6
+	spill.spot_range = 2.5 + width * 1.3
+	spill.spot_attenuation = 1.4
+	spill.light_energy = 0.5 + width * 0.18
 	spill.light_color = Color(0.72, 0.84, 1.0)
 	spill.shadow_enabled = false
 	spill.light_specular = 0.2
+	# A SpotLight3D shines down its -Z; turned round it shines out of the screen's face.
+	spill.rotation.y = PI
 	add_child(spill)
 	var bezel := MeshInstance3D.new()
 	var box := BoxMesh.new()
@@ -72,12 +78,6 @@ func _init(page_kind := "bike", screen_width := 2.0) -> void:
 	bezel_mat.roughness = 0.4
 	bezel.material_override = bezel_mat
 	add_child(bezel)
-	var glow := OmniLight3D.new()
-	glow.light_color = Color(0.5, 0.75, 1.0)
-	glow.light_energy = 0.25
-	glow.omni_range = 2.5
-	glow.position.z = 0.6
-	add_child(glow)
 	# The live picture sits just in front of the page, with a caption along its bottom.
 	_feed_mat = StandardMaterial3D.new()
 	_feed_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED

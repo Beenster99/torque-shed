@@ -340,33 +340,44 @@ func _build_booth() -> void:
 		_deco(Vector3(side * (size.x * 0.5 - t * 0.5), size.y * 0.5, size.z * 0.5), Vector3(t + 0.04, size.y, 0.06), frame)
 		_ws._blocker(Vector3(side * (size.x * 0.5 - t * 0.5), size.y * 0.5, 0.0), Vector3(t, size.y, size.z), self)
 	_ws._blocker(Vector3(0.0, size.y * 0.5, -size.z * 0.5 + t * 0.5), Vector3(size.x, size.y, t), self)
-	# Roof with light panels.
-	_deco(Vector3(0.0, size.y - t * 0.5, 0.0), Vector3(size.x, t, size.z), panel)
-	var glow: StandardMaterial3D = _ws._material(Color(1.0, 0.98, 0.94), 0.0, 0.5)
-	glow.emission_enabled = true
-	glow.emission = Color(1.0, 0.97, 0.92)
-	glow.emission_energy_multiplier = 2.5
-	for i in 2:
-		_deco(Vector3((i - 0.5) * size.x * 0.45, size.y - t - 0.01, 0.0), Vector3(size.x * 0.35, 0.02, size.z * 0.5), glow)
-	var lamp := OmniLight3D.new()
-	lamp.position = Vector3(0.0, size.y - 0.35, 0.2)
-	lamp.omni_range = maxf(size.x, size.z) * 1.1
-	lamp.light_energy = 0.9
-	lamp.light_color = Color(1.0, 0.98, 0.95)
-	add_child(lamp)
+	var open_top := bool(_m().get("open_top", false))
+	if not open_top:
+		# Roof with light panels (an open-topped bay is lit by the room it stands in).
+		_deco(Vector3(0.0, size.y - t * 0.5, 0.0), Vector3(size.x, t, size.z), panel)
+		var glow: StandardMaterial3D = _ws._material(Color(1.0, 0.98, 0.94), 0.0, 0.5)
+		glow.emission_enabled = true
+		glow.emission = Color(1.0, 0.97, 0.92)
+		glow.emission_energy_multiplier = 2.5
+		for i in 2:
+			_deco(Vector3((i - 0.5) * size.x * 0.45, size.y - t - 0.01, 0.0), Vector3(size.x * 0.35, 0.02, size.z * 0.5), glow)
+		var lamp := OmniLight3D.new()
+		lamp.position = Vector3(0.0, size.y - 0.35, 0.2)
+		lamp.omni_range = maxf(size.x, size.z) * 1.1
+		lamp.light_energy = 0.9
+		lamp.light_color = Color(1.0, 0.98, 0.95)
+		add_child(lamp)
 	# Filter wall at the back, with an extractor grille.
 	var filter: Material = _ws._material(Color(0.95, 0.6, 0.35), 0.0, 0.95)
 	_deco(Vector3(0.0, size.y * 0.45, -size.z * 0.5 + t + 0.02), Vector3(size.x * 0.8, size.y * 0.6, 0.03), filter)
 	for i in 6:
 		_deco(Vector3(0.0, size.y * 0.2 + i * size.y * 0.1, -size.z * 0.5 + t + 0.04), Vector3(size.x * 0.8, 0.012, 0.01), frame)
-	if model == "booth_pro":
+	if model in ["booth_pro", "booth_shop"]:
 		# Downdraft: a grated floor.
 		_deco(Vector3(0.0, 0.02, 0.0), Vector3(size.x - 0.1, 0.04, size.z - 0.1), _ws._material(Color(0.2, 0.21, 0.23), 0.8, 0.4))
 		for i in 12:
 			_deco(Vector3(0.0, 0.045, -size.z * 0.45 + i * size.z * 0.9 / 11.0), Vector3(size.x - 0.2, 0.01, 0.015), frame)
-	# The hook rail and a hook for each place.
+	# The hook rails (one, or several back to front) and a hook for each place.
 	var rail_y := size.y - 0.35
-	_deco(Vector3(0.0, rail_y, -0.1), Vector3(size.x - 0.2, 0.04, 0.04), _mat("chrome"))
+	var per := ceili(maxi(1, Equipment.places(model)) / float(maxi(1, int(_m().get("rails", 1)))))
+	var rail_zs := {}
+	for n in Equipment.places(model):
+		rail_zs[snappedf(Equipment.local_place(model, n).origin.z, 0.01)] = true
+	for rz in rail_zs:
+		_deco(Vector3(0.0, rail_y, rz), Vector3(size.x - 0.2, 0.04, 0.04), _mat("chrome"))
+		if open_top:
+			# Hung from the paint shop's ceiling on drop rods.
+			for side in [-1.0, 1.0]:
+				_cyl(Vector3(side * (size.x * 0.5 - 0.3), rail_y + 0.5, rz), 0.012, 1.0, _mat("chrome"))
 	for spot in Shed.furniture_spots(id):
 		var at := Shed.local_spot_transform(spot).origin
 		var wire := _cyl(Vector3(at.x, (rail_y + at.y + 0.55) * 0.5, at.z), 0.004, rail_y - at.y - 0.55, _mat("chrome"))
@@ -380,8 +391,11 @@ func _build_booth() -> void:
 		hook.position = Vector3(at.x, at.y + 0.55, at.z)
 		hook.rotation.z = PI * 0.5
 		add_child(hook)
-		_ws._target(at + Vector3(0.0, 0.3, 0.0), Vector3((size.x - 0.5) / maxf(1.0, Equipment.places(model)) * 0.9, 0.6, 0.5), {"spot": spot}, self)
-	_name_plate(str(_m()["name"]).to_upper(), Vector3(0.0, size.y - 0.12, size.z * 0.5 + 0.01), 22)
+		_ws._target(at + Vector3(0.0, 0.3, 0.0), Vector3((size.x - 0.5) / float(per) * 0.9, 0.6, 0.5), {"spot": spot}, self)
+	if open_top:
+		_name_plate(str(_m()["name"]).to_upper(), Vector3(0.0, size.y - 0.3, -size.z * 0.5 + t + 0.01), 40, Color(0.12, 0.12, 0.14))
+	else:
+		_name_plate(str(_m()["name"]).to_upper(), Vector3(0.0, size.y - 0.12, size.z * 0.5 + 0.01), 22)
 	# Take hold of it by the side panels.
 	for side in [-1.0, 1.0]:
 		_ws._target(Vector3(side * (size.x * 0.5 - t * 0.5), 1.0, 0.0), Vector3(t + 0.04, 2.0, size.z), {"furniture": id}, self)

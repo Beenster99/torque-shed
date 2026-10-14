@@ -93,6 +93,11 @@ const MODELS := {
 		"desc": "Lit, filtered spray booth with four hooks on a rail. Hang the parts and go along them with the spray gun."},
 	"booth_pro": {"kind": "booth", "name": "Downdraft spray booth", "size": Vector3(3.4, 2.5, 2.2), "places": 6, "finish": 0.12,
 		"desc": "Pro booth: air pulled down through a floor grate so no dust lands in the paint. Six hooks."},
+	# The paint shop's own spray bay: open topped under the shop's hex lights, two rails of five
+	# hooks spaced so you can walk right round every part.
+	"booth_shop": {"kind": "booth", "name": "Downdraft spray bay", "size": Vector3(8.0, 2.7, 4.7), "places": 10, "rails": 2,
+		"open_top": true, "finish": 0.12,
+		"desc": "The paint shop's spray bay: a floor grate pulls the air down, ten hooks on two rails with room to walk round each part."},
 
 	# The tyre changer: a wheel lies on its turntable, and tyres are levered off and on there.
 	"tyre_changer": {"kind": "changer", "name": "Tyre changer", "size": Vector3(0.8, 1.2, 0.9), "places": 1,
@@ -304,10 +309,14 @@ static func local_place(model_id: String, n: int) -> Transform3D:
 			var col_w := size.x / float(cols)
 			return Transform3D(Basis(), Vector3(-size.x * 0.5 + col_w * (0.5 + n % cols), 0.08 + (n / cols) * pitch, 0.0))
 		"booth":
-			# Hooks along the rail, the parts hanging at chest height in the middle of the booth.
-			var count := maxi(1, places(model_id))
+			# Hooks along the rail (or rails, back to front), the parts hanging at chest height.
+			var rails := maxi(1, int(m.get("rails", 1)))
+			var per := ceili(maxi(1, places(model_id)) / float(rails))
 			var w := size.x - 0.5
-			return Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-w * 0.5 + w * (0.5 + n) / float(count), 0.85, -0.1))
+			var z := -0.1
+			if rails > 1:
+				z = lerpf(-size.z * 0.235, size.z * 0.235, float(mini(n / per, rails - 1)) / float(rails - 1))
+			return Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-w * 0.5 + w * (0.5 + n % per) / float(per), 0.85, z))
 		"changer":
 			# The wheel lies flat on the turntable (see Workshop), its hub on the centre post.
 			return Transform3D(Basis(), Vector3(0.0, work_height(model_id), 0.08))
