@@ -30,8 +30,11 @@ const CHANGER_XF := Transform3D(Basis(Vector3(0.0, 0.0, -1.0), Vector3(0.0, 1.0,
 	Vector3(-6.04, 0.0, 68.55))
 ## Widths of the screens built into the shed: over the middle bays, over the outer bays, and
 ## the crew board. Wall TVs from the parts computer are at least as big as the smallest.
-const BAY_SCREEN_INNER := 1.9
+const BAY_SCREEN_INNER := 2.6
 const BAY_SCREEN_OUTER := 2.6
+## Where each bay's screen hangs along the back wall (x from CENTER): the four sit in pairs
+## either side of the dyno room doorway, nudged off their bays to clear it.
+const BAY_SCREEN_X := [-5.04, -2.32, 2.32, 5.04]
 const CREW_SCREEN := 3.0
 ## The bins by the roller door: general waste and the two recycling bins, left to right
 ## from the door, tucked under the end of the whiteboard. x offset from CENTER, lid colour.
@@ -980,10 +983,10 @@ func _build_shell() -> void:
 func _build_bays() -> void:
 	for bay in BAY_COUNT:
 		var xf := bay_transform(bay)
-		# The middle two are narrower and nudged out to clear the dyno room doorway between them.
+		# Full-width screens, in pairs either side of the dyno room doorway between bays 2 and 3.
 		var inner := absf(xf.origin.x - CENTER.x) < 2.0
 		var screen := Dashboard.new("bike", BAY_SCREEN_INNER if inner else BAY_SCREEN_OUTER)
-		screen.position = Vector3(xf.origin.x + signf(xf.origin.x - CENTER.x) * (0.5 if inner else 0.0), 2.45, CENTER.z - HALF.y + 0.1)
+		screen.position = Vector3(CENTER.x + float(BAY_SCREEN_X[bay]), 2.45, CENTER.z - HALF.y + 0.1)
 		add_child(screen)
 		_bay_screens.append(screen)
 		_screen_target(screen, "bay%d" % bay)

@@ -232,6 +232,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "lights", "on": not Shed.lights_on})
 			Sfx.play_at("switch", camera.global_position, -4.0)
+		elif target.get("kind", "") == "dyno_kit" and not DynoRoom.f_action(target).is_empty():
+			# The dyno room's light and fan switches, and the ear defenders on their hook.
+			get_viewport().set_input_as_handled()
+			Shed.request(DynoRoom.f_action(target))
+			Sfx.play_at("switch" if str(target.get("kit", "")) != "phones" else "pickup", camera.global_position, -4.0)
 	else:
 		for i in TOOLS.size():
 			if event.is_action_pressed("tool_%d" % (i + 1)):
@@ -431,6 +436,8 @@ func _update_target() -> void:
 			t = {"kind": "door"}
 		elif c.has_meta("light_switch"):
 			t = {"kind": "lights"}
+		elif c.has_meta("dyno_kit"):
+			t = {"kind": "dyno_kit", "kit": str(c.get_meta("dyno_kit")), "point": int(c.get_meta("point", 0))}
 		elif c.has_meta("whiteboard"):
 			t = {"kind": "board"}   # the Whiteboard handles drawing on it itself
 		elif c.has_meta("furniture") and Shed.furniture.has(int(c.get_meta("furniture"))):
@@ -628,6 +635,12 @@ func _make_plan() -> Dictionary:
 	var kind := str(target.get("kind", ""))
 	if kind == "":
 		return {}
+	if kind == "dyno_kit" or Shed.hose_holder() == me:
+		# The dyno room's straps and extraction hose (carrying the hose, that's all you can do).
+		var dp := DynoRoom.plan_for(target, me)
+		if not dp.is_empty():
+			dp["blocked"] = Shed.check(me, dp["action"])
+		return dp
 	if held != 0 and tool == "hands" and PartsDB.is_fluid(Shed.items[held]["part"]):
 		var fp := _fluid_plan(held, kind)
 		if not fp.is_empty() or kind == "part":
@@ -951,6 +964,8 @@ func _describe() -> String:
 		"pc":
 			lines.append("Parts computer")
 			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")
+		"dyno_kit":
+			lines.append_array(DynoRoom.describe(target, Shed.me()))
 		"dyno":
 			lines.append("Dyno desk")
 			var on := Shed.dyno_bike()

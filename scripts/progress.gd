@@ -47,6 +47,8 @@ const XP := {
 	"chain_tension": {"xp": 4, "label": "Chain tension"},
 	"tune": {"xp": 2, "label": "Tuning"},
 	"dyno_run": {"xp": 5, "label": "Dyno run"},
+	"dyno_strap": {"xp": 1, "label": "Strapping down", "group": "strap"},
+	"dyno_hose": {"xp": 2, "label": "Extraction hose on"},
 	"fluids": {"xp": 5, "label": "Fluids"},
 	"start_build": {"xp": 10, "label": "New build started", "once": "bike"},
 	# Getting rid of things: binning is low, recycling better, metal best.
@@ -63,6 +65,7 @@ const XP := {
 	"chain_lube": {"xp": 6, "label": "Chain lube"},
 	# Repairing and spraying: higher again.
 	"repair": {"xp": 10, "label": "Restoring"},
+	"sandblast": {"xp": 10, "label": "Sandblasting"},
 	"paint": {"xp": 12, "label": "Spraying"},
 	"lighten": {"xp": 8, "label": "Lightening"},
 	"tyre_remove": {"xp": 4, "label": "Tyre off"},

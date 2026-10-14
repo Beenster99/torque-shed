@@ -532,7 +532,7 @@ func _test_equipment_and_chains() -> void:
 		check(Equipment.spec_line(model) != "", "%s has a spec line" % model)
 	# Order a compact washer, a big repair machine, a poster, a seat and a TV.
 	var ordered := {}
-	for model in ["washer_compact", "repair_workshop", "poster_cafe", "seat_sofa", "tv_98", "bench_compact"]:
+	for model in ["washer_compact", "repair_workshop", "poster_cafe", "seat_sofa", "tv_128", "bench_compact"]:
 		Shed.request({"a": "order_furniture", "model": model})
 		for id in Shed.furniture:
 			if Shed.furniture[id]["model"] == model:
@@ -2392,7 +2392,7 @@ func _test_tuning() -> void:
 	check(float(Shed.items[tyre]["wear"]) > right * 1.5 and right > 0.0, "a soft tyre wears faster")
 	Shed.request({"a": "tune", "bike": faithful, "key": "psi_f", "reset": true})
 
-	# The dyno: wheel it on and it's strapped down; then run it.
+	# The dyno: wheel it on, strap it down at the four posts, then run it.
 	check(Shed.check(me, {"a": "dyno_run", "bike": faithful}).contains("onto the dyno"), "only a bike on the dyno can be run")
 	Shed.request({"a": "grab_bike", "bike": faithful})
 	var near := DynoRoom.rig_transform().translated(Vector3(0.3, 0.0, 0.5))
@@ -2400,7 +2400,14 @@ func _test_tuning() -> void:
 	Shed.request({"a": "release_bike", "bike": faithful, "xf": near})
 	check(Shed.on_dyno(faithful) and Shed.dyno_bike() == faithful and Shed.bikes[faithful]["stand"] == ""
 		and (Shed.bikes[faithful]["xf"] as Transform3D).is_equal_approx(DynoRoom.rig_transform()),
-		"let go near the drum, the bike snaps onto the rig and is strapped down")
+		"let go near the drum, the bike snaps onto the rig")
+	check(not Shed.strapped() and Shed.check(me, {"a": "dyno_run", "bike": faithful}).contains("Strap it down"),
+		"it won't run until it's strapped down")
+	for i in 4:
+		Shed.request({"a": "dyno_strap", "point": i})
+	check(Shed.strapped() and Shed.check(me, {"a": "grab_bike", "bike": faithful}).contains("straps"),
+		"strapped down at all four posts, and it can't be wheeled off until they're undone")
+	Shed.request({"a": "dyno_fan", "on": true})
 	Shed.request({"a": "dyno_run", "bike": faithful})
 	var runs: Array = Shed.bikes[faithful].get("dyno", {}).get("runs", [])
 	check(runs.size() == 1, "a dyno run is stored on the bike")
@@ -2651,7 +2658,7 @@ func _wheel_from_changer(bike_id: int, side: String, brake: Array) -> void:
 
 
 ## Lights run off the ignition: a parked or switched-off bike is dark, lenses and all, ridden or
-## another player's; the beam is grainy and dusty, with motes drifting in it at night.
+## another player's; at night the beam shows softly in the fog, with a few motes drifting in it.
 func _test_bike_lights() -> void:
 	var parked := BikeModel.new()
 	add_child(parked)
@@ -2691,13 +2698,27 @@ func _test_bike_lights() -> void:
 	bike.beam = 1
 	for i in 3:
 		await get_tree().physics_frame
-	var cone := bike.effects._cone.material_override as ShaderMaterial
-	check(bike.effects.motes_showing() and cone.get_shader_parameter("haze") is Texture2D,
-		"at night dust motes drift in the beam and the shaft is grainy haze, not a smooth gradient")
+	# The beam is light in the night air (volumetric fog), not a cone you can see the edge of.
+	var night_fog := bike.effects.beam_fog()
+	check(bike.effects.motes_showing() and night_fog > 0.5 and night_fog <= BikeEffects.BEAM_FOG_LOW + 0.01,
+		"at night the beam lights the fog softly (%.2f) with a few motes drifting in it" % night_fog)
+	var cone := bike.effects._cone
+	check(BikeEffects.volumetric_beams() == (cone == null), "with volumetric fog there's no cone mesh at all; without it, only a stand-in glow")
+	if cone:
+		check(float((cone.material_override as ShaderMaterial).get_shader_parameter("strength")) <= 0.05,
+			"the stand-in glow is faint (%.3f)" % float((cone.material_override as ShaderMaterial).get_shader_parameter("strength")))
+	check(env.volumetric_fog_density > Daylight.DAY_FOG, "the night air is a little hazier (%.3f)" % env.volumetric_fog_density)
+	bike.beam = 2
+	for i in 3:
+		await get_tree().physics_frame
+	check(bike.effects.beam_fog() > night_fog and bike.effects.beam_fog() <= BikeEffects.BEAM_FOG_HIGH + 0.01,
+		"high beam shows a little more in the air, still subtle (%.2f)" % bike.effects.beam_fog())
+	bike.beam = 1
 	dl.set_time(12.0)
 	for i in 3:
 		await get_tree().physics_frame
-	check(bike.effects.light_on() and not bike.effects.motes_showing(), "in daylight the motes fade out")
+	check(bike.effects.light_on() and not bike.effects.motes_showing() and bike.effects.beam_fog() < 0.01,
+		"in daylight the motes fade out and the beam doesn't show in the air")
 	Settings.day_night_cycle = cycle
 	dl.queue_free()
 	sun.queue_free()
@@ -3000,7 +3021,7 @@ func _test_tv_channels() -> void:
 	for id in Shed.furniture:
 		if Shed.furniture[id]["kind"] == "tv":
 			tv = id
-	check(tv != 0 and Shed.furniture[tv]["model"] == "tv_98", "ordering an old TV model gets its new size (%s)" % Shed.furniture.get(tv, {}).get("model", ""))
+	check(tv != 0 and Shed.furniture[tv]["model"] == "tv_120", "ordering an old TV model gets its new size (%s)" % Shed.furniture.get(tv, {}).get("model", ""))
 	var key := "f%d" % tv
 	check(Shed.screen_channel(key)["ch"] == "live" and Shed.screen_channel("bay0")["ch"] == "bay" and Shed.screen_channel("crew")["ch"] == "crew",
 		"screens start on their home channel")
@@ -3044,7 +3065,7 @@ func _test_tv_channels() -> void:
 	Shed.start_new("Someone else", 3)
 	check(Shed.screens.is_empty(), "a new shed's screens are on their home channels")
 	Shed.load_state(back["shed"], "Tester")
-	check(Shed.furniture.has(tv) and Shed.furniture[tv]["model"] == "tv_86", "an old 43\" TV loads as the new 86\" one")
+	check(Shed.furniture.has(tv) and Shed.furniture[tv]["model"] == "tv_120", "an old 43\" TV loads as the new 120\" one")
 	check(Shed.screen_channel(key) == {"ch": "live", "rider": 0} and Shed.screen_channel("bay2")["ch"] == "live",
 		"the channels come back from the save (%s)" % str(Shed.screens))
 	var old := Shed._snapshot().duplicate(true)

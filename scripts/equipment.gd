@@ -22,7 +22,7 @@ const FIXED_KINDS: Array[String] = ["booth", "changer"]
 const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb", "booth": "booth", "changer": "changer"}
 ## The model each kind defaults to (and what an order without a model gets).
 const DEFAULT := {"stand": "engine_stand", "shelf": "shelf_standard", "washer": "washer_standard",
-	"repair": "repair_standard", "bench": "bench_standard", "booth": "booth_standard", "changer": "tyre_changer", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_86",
+	"repair": "repair_standard", "bench": "bench_standard", "booth": "booth_standard", "changer": "tyre_changer", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_120",
 	"ramp": "ramp_medium", "obstacle": "barrels", "barrier": "wall_concrete", "marker": "cone"}
 
 const MODELS := {
@@ -127,14 +127,10 @@ const MODELS := {
 	# Wall TVs: as big as the screens built into the shed, or bigger. Each one has channels: the
 	# live riding feed, the crew board, XP goals, how to play, money and contracts (TvChannels).
 	# 16:9 screens; the size is the panel, the bezel adds a little.
-	"tv_86": {"kind": "tv", "name": "86\" wall TV", "size": Vector3(1.91, 1.08, 0.07), "inches": 86,
-		"desc": "As big as the screens over the middle bays. Live riding, the crew board, XP goals and more: R changes the channel."},
-	"tv_98": {"kind": "tv", "name": "98\" wall TV", "size": Vector3(2.17, 1.22, 0.08), "inches": 98,
-		"desc": "Big screen for the shed. Live riding, the crew board, XP goals and more."},
-	"tv_110": {"kind": "tv", "name": "110\" wall TV", "size": Vector3(2.44, 1.37, 0.08), "inches": 110,
-		"desc": "Proper cinema size. Live riding, the crew board, XP goals and more."},
 	"tv_120": {"kind": "tv", "name": "120\" wall TV", "size": Vector3(2.66, 1.5, 0.09), "inches": 120,
-		"desc": "As big as the screens over the outer bays. Watch the crew ride from across the shed."},
+		"desc": "As big as the screens over the bays. Live riding, the crew board, XP goals and more: R changes the channel."},
+	"tv_128": {"kind": "tv", "name": "128\" wall TV", "size": Vector3(2.83, 1.59, 0.09), "inches": 128,
+		"desc": "Proper cinema size. Watch the crew ride from across the shed."},
 	"tv_136": {"kind": "tv", "name": "136\" video wall", "size": Vector3(3.01, 1.69, 0.1), "inches": 136,
 		"desc": "A whole wall of screen, as big as the crew board. Needs a clear stretch of wall."},
 
@@ -183,7 +179,8 @@ const MODELS := {
 
 ## Model ids that have been renamed, old -> new, so saves made before still load. The wall TVs
 ## grew to match the shed's own screens.
-const RENAMED := {"tv_32": "tv_86", "tv_43": "tv_86", "tv_55": "tv_98", "tv_65": "tv_110"}
+const RENAMED := {"tv_32": "tv_120", "tv_43": "tv_120", "tv_55": "tv_120", "tv_65": "tv_120", "tv_86": "tv_120",
+	"tv_98": "tv_120", "tv_110": "tv_120"}
 
 
 ## The model an id means now: itself, or what it was renamed to.

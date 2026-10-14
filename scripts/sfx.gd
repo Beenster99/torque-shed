@@ -5,7 +5,11 @@ extends Node
 ## sliders control.
 
 const RATE := 22050
-const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour", "screech", "door"]
+const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour", "screech", "door",
+	"fan", "blast"]
+## Ear defenders on (the dyno room): every sound effect comes through dull and quieter.
+const MUFFLE_CUTOFF := 520.0
+const MUFFLE_DB := -12.0
 ## Which loop each kind of work makes while you hold the button.
 const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray",
 	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray",
@@ -19,6 +23,7 @@ const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "i
 
 var _cache := {}
 var _rng := RandomNumberGenerator.new()
+var muffled := false
 
 
 func _ready() -> void:
@@ -33,7 +38,8 @@ func _ready() -> void:
 
 
 func apply_volumes() -> void:
-	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), linear_to_db(maxf(Settings.sfx_volume, 0.0001)))
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), linear_to_db(maxf(Settings.sfx_volume, 0.0001))
+		+ (MUFFLE_DB if muffled else 0.0))
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Radio"), linear_to_db(maxf(Settings.radio_volume, 0.0001)))
 
 
@@ -41,6 +47,39 @@ func stream(sound: String) -> AudioStreamWAV:
 	if not _cache.has(sound):
 		_cache[sound] = _make(sound)
 	return _cache[sound]
+
+
+## Ear defenders on or off: a low-pass filter on the sound effects (engines, the dyno, tools,
+## footsteps) and the level brought down. The radio isn't affected.
+func set_muffled(on: bool) -> void:
+	if on == muffled:
+		return
+	muffled = on
+	var bus := AudioServer.get_bus_index("SFX")
+	if bus < 0:
+		return
+	var at := -1
+	for i in AudioServer.get_bus_effect_count(bus):
+		if AudioServer.get_bus_effect(bus, i) is AudioEffectLowPassFilter:
+			at = i
+	if at < 0 and on:
+		var lp := AudioEffectLowPassFilter.new()
+		lp.cutoff_hz = MUFFLE_CUTOFF
+		lp.resonance = 0.4
+		AudioServer.add_bus_effect(bus, lp)
+		at = AudioServer.get_bus_effect_count(bus) - 1
+	if at >= 0:
+		AudioServer.set_bus_effect_enabled(bus, at, on)
+	apply_volumes()
+
+
+## Whether the sound effects are coming through muffled right now.
+func is_muffled() -> bool:
+	var bus := AudioServer.get_bus_index("SFX")
+	for i in AudioServer.get_bus_effect_count(bus):
+		if AudioServer.get_bus_effect(bus, i) is AudioEffectLowPassFilter and AudioServer.is_bus_effect_enabled(bus, i):
+			return true
+	return false
 
 
 ## Plays a one-shot at a point in the world.
@@ -146,6 +185,12 @@ func _make(sound: String) -> AudioStreamWAV:
 			data = _beep()
 		"levelup":
 			data = _levelup()
+		"fan":
+			data = _fan()
+		"blast":
+			data = _blast()
+		"ting":
+			data = _ring([3100.0, 4650.0, 6900.0], 0.5, 0.35)
 		_:
 			data.resize(RATE / 10)
 	var wav := AudioStreamWAV.new()
@@ -241,6 +286,34 @@ func _jet() -> PackedFloat32Array:
 	for i in d.size():
 		var t := float(i) / RATE
 		d[i] += (sin(TAU * 100.0 * t) * 0.12 + sin(TAU * 200.0 * t) * 0.05) * (0.9 + 0.1 * sin(TAU * 6.0 * t))
+	return d
+
+
+## The dyno's cooling fan: a motor hum and the whoosh of the blades chopping the air.
+func _fan() -> PackedFloat32Array:
+	var d := _samples(2.0)
+	var lp := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.12
+		var chop := 0.75 + 0.25 * sin(TAU * 40.0 * t)    # five blades at eight turns a second
+		d[i] = lp * 0.55 * chop + sin(TAU * 100.0 * t) * 0.05 + sin(TAU * 300.0 * t) * 0.02
+	return d
+
+
+## The sandblaster: a harsh roar of air and grit with a crackle of sand hitting metal.
+func _blast() -> PackedFloat32Array:
+	var d := _samples(1.5)
+	var lp := 0.0
+	var rumble := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.85
+		rumble += (n - rumble) * 0.03
+		var crackle := (_rng.randf_range(-1.0, 1.0) if _rng.randf() < 0.04 else 0.0) * 0.6
+		d[i] = lp * 0.42 + rumble * 0.9 + crackle + sin(TAU * 70.0 * t) * 0.04
 	return d
 
 
