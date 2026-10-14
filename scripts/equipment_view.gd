@@ -60,6 +60,14 @@ func _build() -> void:
 			add_child(Whiteboard.new())
 		"ramp", "obstacle", "barrier", "marker":
 			_build_yard()
+		"trinket":
+			# Decorations bought with your own money in the Shop tab (see Trinkets).
+			Trinkets.build(self, model)
+			var size := _size()
+			if not Trinkets.MODELS[model].get("wall", false) and size.y > 0.3:
+				_ws._blocker(Vector3(0.0, size.y * 0.5, 0.0), size * 0.9, self)
+			var mid := Vector3(0.0, 0.0, size.z * 0.5) if Trinkets.MODELS[model].get("wall", false) else Vector3(0.0, size.y * 0.5, 0.0)
+			_ws._target(mid, size + Vector3(0.05, 0.05, 0.05), {"furniture": id}, self)
 
 
 ## What a piece of equipment is drawn as: its model, and for a poster its size and which way up it hangs.

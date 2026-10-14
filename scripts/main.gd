@@ -316,6 +316,7 @@ func _start_riding(bike_id: int) -> void:
 	riding_id = bike_id
 	bike = Bike.new()
 	bike.rider_color = _paint()
+	bike.rider_gear = RiderGear.worn_of(Shed.me())
 	bike.skills = Progress.rider_skills()
 	bike.ride_xp = RideXP.new(bike_id)
 	bike.setup(Shed.build_of(bike_id), data["paint"])

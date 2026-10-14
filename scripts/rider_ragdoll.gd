@@ -27,6 +27,7 @@ func _init() -> void:
 	capsule.height = 1.25
 	body.mesh = capsule
 	body.material_override = body_mat
+	body.name = "Body"
 	body.position.y = -0.15
 	add_child(body)
 	var helmet_mat := StandardMaterial3D.new()
@@ -40,4 +41,19 @@ func _init() -> void:
 	helmet.mesh = sphere
 	helmet.material_override = helmet_mat
 	helmet.position.y = 0.62
+	helmet.name = "Helmet"
 	add_child(helmet)
+
+
+## Puts the rider's gear on (slot -> RiderGear item id, `tint` their colour): the jacket on the
+## body and their helmet in place of the plain one. Empty gear leaves them as they are.
+func dress(gear: Dictionary, tint: Color) -> void:
+	if gear.is_empty():
+		return
+	var worn := RiderGear.clean_worn(gear)
+	if tint.a <= 0.0:
+		tint = Color(0.85, 0.2, 0.15)
+	(get_node("Body") as MeshInstance3D).material_override = RiderFigure.material(str(worn["jacket"]), tint)
+	var plain := get_node("Helmet") as MeshInstance3D
+	plain.visible = false
+	RiderFigure.helmet(self, plain.position, 0.15, str(worn["helmet"]), tint, 1, true)

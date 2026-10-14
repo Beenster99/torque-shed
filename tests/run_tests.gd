@@ -158,6 +158,11 @@ func _run_all() -> void:
 	_test_upgrade_catalogue()
 	_test_upgrade_buying()
 	await _test_upgrade_session()
+	print("Rider gear and trinkets from the Shop")
+	_test_gear_catalogue()
+	_test_gear_buying()
+	await _test_gear_seen_by_others()
+	await _test_shop_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -7063,3 +7068,226 @@ func _test_upgrade_session() -> void:
 	await get_tree().physics_frame
 	SaveGame.delete_slot("test_upgrades")
 	SaveGame.slot_override = ""
+
+
+# ---------------------------------------------------------------------------- rider gear and trinkets
+
+func _test_gear_catalogue() -> void:
+	for slot in RiderGear.SLOTS:
+		var ids := RiderGear.by_slot(slot)
+		var free := ids.filter(func(id): return RiderGear.price(id) == 0)
+		check(ids.size() >= 6 and free.size() == 1 and free[0] == RiderGear.DEFAULTS[slot] and ids[0] == RiderGear.DEFAULTS[slot],
+			"%s: %d designs, one free default listed first" % [slot, ids.size()])
+	var bad := []
+	var names := {}
+	for id in RiderGear.ITEMS:
+		var it: Dictionary = RiderGear.ITEMS[id]
+		if not RiderGear.SLOTS.has(str(it["slot"])) or str(it.get("name", "")) == "" or str(it.get("desc", "")) == "" \
+				or not RiderFigure.PATTERNS.has(str(it.get("pattern", "plain"))) or not (it["base"] is Color or it["base"] is String):
+			bad.append(id)
+		names[str(it["slot"]) + str(it["name"])] = true
+	check(bad.is_empty(), "every gear item has a slot, name, description, colour and a known pattern (%s)" % str(bad))
+	check(names.size() == RiderGear.ITEMS.size(), "no two items in a slot share a name")
+	var shapes := {}
+	for id in RiderGear.by_slot("helmet"):
+		shapes[str(RiderGear.ITEMS[id]["shape"])] = true
+	check(shapes.size() >= 5, "helmets come in at least five shapes (%s)" % str(shapes.keys()))
+	# Patterns: a stripe runs down the front, hoops go round.
+	var b := Color.WHITE
+	var t := Color.RED
+	check(RiderFigure.pattern_color("stripe", 0.5, 0.3, b, t, b) == t and RiderFigure.pattern_color("stripe", 0.25, 0.3, b, t, b) == b,
+		"a stripe is at the front, not the side")
+	check(RiderFigure.pattern_color("hoops", 0.1, 0.2, b, t, b) != RiderFigure.pattern_color("hoops", 0.1, 0.05, b, t, b), "hoops go round")
+	# Trinkets: sold in the Shop, kit of kind "trinket" once in the shed, not on the parts computer.
+	check(Trinkets.MODELS.size() >= 10, "at least ten trinkets (%d)" % Trinkets.MODELS.size())
+	var odd := []
+	for id in Trinkets.MODELS:
+		var m: Dictionary = Trinkets.MODELS[id]
+		if Equipment.kind_of(id) != "trinket" or int(m["price"]) <= 0 or not (m["size"] is Vector3) or Equipment.get_model(id).is_empty():
+			odd.append(id)
+	check(odd.is_empty(), "every trinket is shed kit of kind trinket with a price and a size (%s)" % str(odd))
+	check(Equipment.is_wall("trinket_clock") and Equipment.is_wall("trinket_neon") and not Equipment.is_wall("trinket_plant"),
+		"the clock and neon sign hang on a wall, the plant stands on the floor")
+	check(not PartsComputer.all_kinds().has("eq:trinket") and PartsComputer.search("lava lamp").is_empty(),
+		"trinkets aren't on the parts computer")
+	# Each trinket draws something.
+	var empty := []
+	for id in Trinkets.MODELS:
+		var n := Node3D.new()
+		Trinkets.build(n, id)
+		if n.get_child_count() == 0:
+			empty.append(id)
+		n.free()
+	check(empty.is_empty(), "every trinket has a model (%s)" % str(empty))
+
+
+func _test_gear_buying() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_gear_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	Shed.start_new("Gear Tester", 5)
+	Progress.select("Gear Tester")
+	var gear: Dictionary = Progress.profile.get("gear", {})
+	check(RiderGear.sig(gear.get("worn", {})) == RiderGear.sig(RiderGear.DEFAULTS) and (gear["owned"] as Array).size() == 5,
+		"a new rider owns and wears the five free defaults")
+	Progress.set_money(100)
+	var why := RiderGear.buy("helmet_sprint")
+	check(why.contains("afford") and not RiderGear.owns("helmet_sprint") and Progress.money() == 100,
+		"too little money: the helmet isn't sold and nothing is taken (%s)" % why)
+	check(RiderGear.wear("helmet_sprint") != "" and RiderGear.worn_of(Shed.me())["helmet"] == "helmet_cap", "you can't wear what you haven't bought")
+	Progress.set_money(500)
+	why = RiderGear.buy("helmet_sprint")
+	check(why == "" and RiderGear.owns("helmet_sprint") and Progress.money() == 500 - RiderGear.price("helmet_sprint"),
+		"with enough money it's bought and paid for (%d left)" % Progress.money())
+	check(RiderGear.buy("helmet_sprint") != "" and Progress.money() == 500 - RiderGear.price("helmet_sprint"), "you can't buy the same thing twice")
+	check(RiderGear.wear("helmet_sprint") == "" and RiderGear.worn_of(Shed.me())["helmet"] == "helmet_sprint", "and then worn")
+	check(RiderGear.buy("no_such_lid") != "", "an unknown item isn't sold")
+	check(Progress.own_summary()["gear"]["helmet"] == "helmet_sprint", "what you wear goes out in your summary")
+	# Kept in the profile, so it goes with you to any shed.
+	Progress.save_profile()
+	Progress.profile = {}
+	Progress.select("Gear Tester")
+	check(RiderGear.owns("helmet_sprint") and RiderGear.worn_of(Shed.me())["helmet"] == "helmet_sprint", "owned and worn gear are kept in the profile")
+	# A profile from before gear gets the defaults; bad entries are dropped.
+	var f := FileAccess.open(Progress.path, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"version": 1, "profiles": {"Old Timer": {"name": "Old Timer", "xp": 10, "money": 40},
+		"Cheat": {"name": "Cheat", "gear": {"owned": ["jacket_kestrel", "rocket_boots"], "worn": {"jacket": "jacket_kestrel", "boots": "rocket_boots", "gloves": "gloves_kestrel"}}}}}))
+	f.close()
+	Progress.select("Old Timer")
+	check(RiderGear.sig(RiderGear.worn_of(Shed.me())) == RiderGear.sig(RiderGear.DEFAULTS) and Progress.money() == 40,
+		"an old profile without gear wears the defaults")
+	Progress.select("Cheat")
+	var worn := RiderGear.worn_of(Shed.me())
+	check(worn["jacket"] == "jacket_kestrel" and worn["boots"] == "boots_work" and worn["gloves"] == "gloves_work"
+		and not RiderGear.owns("rocket_boots"), "unknown gear is dropped, and gear not owned isn't worn (%s)" % str(worn))
+	check(RiderGear.sig(Progress._clean_summary({"gear": {"helmet": "helmet_mx", "jacket": 5, "boots": "helmet_mx"}})["gear"]) ==
+		"helmet_mx|jacket_overalls|trousers_overalls|boots_work|gloves_work", "a reported summary's gear is checked slot by slot")
+	Progress.save_profile()   # into the test file, not the real profile once the path is back
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+func _test_gear_seen_by_others() -> void:
+	# Another player in their gear: their figure, and their rider on a bike.
+	var peer := 777
+	Progress._summaries[peer] = {"name": "Visitor", "gear": RiderGear.clean_worn({"helmet": "helmet_mx", "jacket": "jacket_mx"})}
+	var rp := RemotePlayer.new()
+	add_child(rp)
+	rp.setup(peer, "Visitor", Color(0.2, 0.4, 0.9))
+	check(rp.gear["helmet"] == "helmet_mx" and rp.gear["jacket"] == "jacket_mx" and rp.gear["boots"] == "boots_work",
+		"another player is drawn in the gear their summary says")
+	var meshes := func() -> int: return rp._head_look.get_child_count()
+	var was: int = meshes.call()
+	Progress._summaries[peer]["gear"] = RiderGear.clean_worn({"helmet": "helmet_cap"})
+	for i in 2:
+		await get_tree().process_frame
+	check(rp.gear["helmet"] == "helmet_cap" and meshes.call() != was, "when they change, they're drawn again (%d -> %d meshes)" % [was, meshes.call()])
+	rp.queue_free()
+	Progress._summaries.erase(peer)
+	# The rider on a bike.
+	var plain := BikeModel.new()
+	add_child(plain)
+	plain.build_from(BikeBuild.new())
+	var dressed := BikeModel.new()
+	dressed.rider_gear = RiderGear.clean_worn({"helmet": "helmet_kestrel", "jacket": "jacket_kestrel", "boots": "boots_mx", "trousers": "trousers_kestrel"})
+	add_child(dressed)
+	dressed.build_from(BikeBuild.new())
+	check(dressed._rider != null and dressed._rider.get_child_count() > plain._rider.get_child_count(),
+		"a rider in race gear on a bike is drawn with it (%d meshes, plain %d)" % [dressed._rider.get_child_count(), plain._rider.get_child_count()])
+	var helmeted := 0
+	for c in dressed._rider.get_children():
+		if (c as VisualInstance3D).layers == 1 << (BikeModel.HELMET_LAYER - 1):
+			helmeted += 1
+	check(helmeted >= 4, "the helmet, torso and upper arms stay out of the first-person view (%d)" % helmeted)
+	dressed.redress(RiderGear.clean_worn({}))
+	check(dressed._rider != null and dressed.rider_gear["helmet"] == "helmet_cap", "a rider can be dressed again mid-ride")
+	plain.queue_free()
+	dressed.queue_free()
+	var doll := RiderRagdoll.new()
+	add_child(doll)
+	doll.dress(RiderGear.clean_worn({"helmet": "helmet_sprint"}), Color.RED)
+	check(not (doll.get_node("Helmet") as Node3D).visible and doll.get_child_count() > 4, "a crashed rider wears their own helmet")
+	doll.queue_free()
+	await get_tree().process_frame
+
+
+func _test_shop_session() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_gear_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Progress.select("Gear Tester")
+	var w: Walker = main.walker
+	var shop: ShopTab = main.menu.shop
+	check(shop != null and main.menu._tabs.get_tab_idx_from_control(shop) >= 0, "the Esc menu has a Shop tab")
+	# Gear from the Shop tab.
+	Progress.set_money(0)
+	shop.show_category("boots")
+	shop.select("boots_mx")
+	shop.buy_selected()
+	check(not RiderGear.owns("boots_mx") and shop._status.text.contains("afford"), "broke, the shop says so (%s)" % shop._status.text)
+	Progress.set_money(1000)
+	shop.buy_selected()
+	check(RiderGear.owns("boots_mx") and RiderGear.wearing("boots_mx") and Progress.money() == 1000 - RiderGear.price("boots_mx"),
+		"Buy pays for the boots and puts them on")
+	shop.select("boots_work")
+	shop.wear_selected()
+	check(RiderGear.worn_of(Shed.me())["boots"] == "boots_work", "Wear changes back into the old pair")
+	shop._update_preview()
+	check(shop._turntable.get_child_count() == 1, "the turntable shows the rider")
+	# A trinket: paid for from your own money and delivered to the shed.
+	var cash := Progress.money()
+	shop.show_category("trinket")
+	shop.select("trinket_trophy")
+	shop.buy_selected()
+	var trophy := _first_furniture("trinket_trophy")
+	check(trophy != 0 and Progress.money() == cash - Trinkets.price("trinket_trophy") and Shed.furniture[trophy]["kind"] == "trinket",
+		"a trophy bought in the Shop arrives in the shed, paid for")
+	Progress.set_money(5)
+	check(Trinkets.buy("trinket_neon").contains("afford") and _first_furniture("trinket_neon") == 0 and Progress.money() == 5,
+		"broke, no neon sign")
+	Progress.set_money(1000)
+	check(Trinkets.buy("trinket_neon") == "" and Trinkets.buy("trinket_plant") == "", "the neon sign and a plant")
+	var neon := _first_furniture("trinket_neon")
+	var plant := _first_furniture("trinket_plant")
+	await get_tree().process_frame
+	check(main.workshop.furniture_nodes.has(trophy) and main.workshop.furniture_nodes[trophy].kind == "trinket", "the trophy is drawn in the shed")
+	# Carried and put down on the workbench like any other kit.
+	var bz: float = Workshop.spot_transform("bench_1").origin.z
+	w.place(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(Workshop.CENTER.x - Workshop.HALF.x + 1.5, 0.0, bz)))
+	Shed.request({"a": "grab", "furniture": trophy})
+	for i in 4:
+		await get_tree().physics_frame
+	var xf: Transform3D = w._push_transform(trophy)
+	check(absf(xf.origin.y - 0.945) < 0.03, "held over the workbench, the trophy goes down on its top (%.2f)" % xf.origin.y)
+	Shed.request({"a": "release", "furniture": trophy, "xf": xf})
+	check(Shed.furniture[trophy]["mover"] == 0 and absf((Shed.furniture[trophy]["xf"] as Transform3D).origin.y - 0.945) < 0.03, "and stays there")
+	# The neon sign hangs on a wall.
+	Shed.request({"a": "grab", "furniture": neon})
+	w.place(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(Workshop.CENTER.x - Workshop.HALF.x + 1.2, 0.0, bz + 2.0)))
+	w._pitch = 0.0
+	w.camera.rotation.x = 0.0
+	await get_tree().physics_frame
+	var wall_xf: Transform3D = w._push_transform(neon)
+	check(w._on_wall and absf(wall_xf.origin.x - (Workshop.CENTER.x - Workshop.HALF.x)) < 0.1, "the neon sign goes on the wall (%s)" % str(wall_xf.origin))
+	Shed.request({"a": "release", "furniture": neon, "xf": wall_xf})
+	# Scrapped like other kit.
+	Shed.request({"a": "grab", "furniture": plant})
+	Shed.request({"a": "scrap", "furniture": plant})
+	check(not Shed.furniture.has(plant), "a trinket can be scrapped")
+	# Saved with the shed.
+	Shed.load_state(str_to_var(var_to_str(Shed._snapshot())), "Tester")
+	check(Shed.furniture.has(trophy) and Shed.furniture[trophy]["model"] == "trinket_trophy"
+		and absf((Shed.furniture[trophy]["xf"] as Transform3D).origin.y - 0.945) < 0.03 and Shed.furniture.has(neon),
+		"trinkets are kept with the shed, where they were put")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	Progress.save_profile()   # into the test file, not the real profile once the path is back
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)

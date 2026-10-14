@@ -344,6 +344,8 @@ static func _clean_profile(p: Dictionary, player_name: String) -> Dictionary:
 	if goals is Array:
 		for g in goals:
 			out["goals"].append(str(g))
+	# Rider gear bought in the Shop tab (see RiderGear): what's owned and what's worn.
+	out["gear"] = RiderGear.clean_gear(p.get("gear", {}))
 	return out
 
 
@@ -606,7 +608,8 @@ func own_summary() -> Dictionary:
 	return {"name": str(profile.get("name", "Rider")), "level": lv, "xp": int(profile.get("xp", 0)),
 		"xp_level_start": xp_for_level(lv), "xp_next": xp_for_level(mini(lv + 1, MAX_LEVEL)),
 		"tool_points": tool_points(), "skill_points": skill_points(), "goals": goals,
-		"tools": profile["tools"].duplicate(), "skills": profile["skills"].duplicate(), "money": money()}
+		"tools": profile["tools"].duplicate(), "skills": profile["skills"].duplicate(), "money": money(),
+		"gear": RiderGear.worn_of(Shed.me())}
 
 
 func tool_stage(peer_id: int, tool: String) -> int:
@@ -661,7 +664,8 @@ static func _clean_summary(s: Dictionary) -> Dictionary:
 	return {"name": str(s.get("name", "Rider")).left(24), "level": clampi(int(s.get("level", 1)), 1, MAX_LEVEL),
 		"xp": maxi(0, int(s.get("xp", 0))), "xp_level_start": int(s.get("xp_level_start", 0)), "xp_next": int(s.get("xp_next", 0)),
 		"tool_points": int(s.get("tool_points", 0)), "skill_points": int(s.get("skill_points", 0)), "goals": goals,
-		"tools": tools, "skills": skills, "money": clampi(int(s.get("money", 0)), 0, MAX_MONEY)}
+		"tools": tools, "skills": skills, "money": clampi(int(s.get("money", 0)), 0, MAX_MONEY),
+		"gear": RiderGear.clean_worn(s.get("gear", {}))}
 
 
 # ---------------------------------------------------------------------------- spending points

@@ -15,6 +15,8 @@ var _last := PackedFloat32Array()
 var _effects: BikeEffects
 var _horn: HornAudio
 var _fog: Array = []
+## The rider's gear (slot -> RiderGear item id); set before setup. Empty dresses them as before.
+var rider_gear := {}
 
 
 func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Color(0, 0, 0, 0)) -> void:
@@ -28,6 +30,7 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 		child.free()
 	model = BikeModel.new()
 	model.rider_color = rider_color
+	model.rider_gear = rider_gear
 	add_child(model)
 	model.build_from(_build, paint)
 	_fog = Bike.make_fog_lights(self, model, _build)

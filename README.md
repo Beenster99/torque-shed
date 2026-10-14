@@ -69,7 +69,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Geometry mode: fit the parts of the bike you're looking at (again, or Esc, to leave) | F2 | |
 | Geometry mode: select a part / drag a handle; orbit; pan; zoom | Left mouse; right drag; middle drag; wheel | |
 | Geometry mode: move, rotate, scale handles; snap (hold); undo; reset the part | W, E, R; Ctrl; Z; Backspace | |
-| Menu (your level, tool upgrades and skills are in its Character tab; change any key in its Key bindings tab) | Esc | Start |
+| Menu (your level, tool upgrades and skills are in its Character tab; rider gear and trinkets in its Shop tab; change any key in its Key bindings tab) | Esc | Start |
 | In menus and on the computers: move, press, back; next / previous tab or aisle | Mouse, Esc | D-pad or left stick, A, B; LB / RB |
 
 **Building from scratch**: hold a frame and look at an empty bay floor (bay 4 is free in a new shed), then hold the work button to stand the frame up in the bay. Fit the fork, wheels, engine and the rest onto it from there. Taking the bare frame off again frees the bay.
@@ -341,6 +341,14 @@ There are two kinds of money: **your own cash**, kept with your character like y
 
 In co-op the host keeps the books: everyone's wages, transfers and the business are checked by the host, and your cash is kept on your own PC.
 
+### The Shop: rider gear and trinkets
+
+The Esc menu's **Shop** tab spends **your own money** (not the garage's). Pick a category along the top, then an item in the list: the turntable on the right shows your rider wearing it with the rest of your gear, so you can try it on before you buy.
+
+- **Rider gear**: helmets, jackets, trousers, boots and gloves, six to eight designs of each from made-up brands (Kestrel race leathers, Mudlark motocross kit, Ironside leathers, Fenway waxed cotton, Beacon hi-vis, Strata adventure gear and more), from £20 gloves to a £620 carbon race helmet. Helmets come as full-face, race (with a spoiler), open-face, pudding basin with goggles and motocross (peak, chin bar and goggles); jackets and trousers come in stripes, hoops, panels, chequers, hi-vis bands and carbon. **Buy and wear** pays and puts it on; **Wear** changes into something you already own. Everyone starts in free shed overalls in their crew colour, work boots, work gloves and a cap (a plain lid in your colour on the bike).
+- What you own and wear is kept with your character, so it goes with you to every shed. Everyone sees your gear: walking about the shed, on the bike and when you come off it.
+- **Trinkets** for the shed: a bobblehead racer, a biker gnome, a potted plant, a framed photo, a lava lamp, a wall clock that keeps the shed's time, a gold trophy, a chequered flag rug, a toolbox radio, a mini bike model and a pink neon TORQUE SHED sign. A trinket you buy is delivered outside the roller door and then belongs to the shed: press **F** on it to pick it up and carry it (the mouse wheel holds it further out, the rotate keys turn it, R toggles snapping), hold it over the workbench or another bench to put it down on top, or against a wall for the clock, photo and neon sign, and **F** puts it down. Hold the scrap key while carrying one to get rid of it. Trinkets are saved with the shed.
+
 ### Debug tab
 
 The Esc menu's **Debug** tab is for trying things out: **Reset my XP** (back to level 1 with no upgrades, skills or goals), **Max my XP** (top level, every point to spend), **Reset everyone's XP** (host only: every player in the shed), **Reset my money**, **Max my money**, **Reset garage money** and **Give the garage £1,000,000** (the last two host only); for contracts (host only) **Send a customer**, **Send a bespoke customer** and **Reputation +5**. Every reset asks first. Your money is kept with your character and the garage's with the shed, and both show on the TVs' **My money** and **Garage money** pages.
@@ -384,6 +392,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/contracts.gd`, `mot.gd` | Contracts: customers, offers, goals, payouts and reputation (kept in `Shed.contracts`); the MOT inspection sheet |
 | `scripts/customer.gd`, `contracts_view.gd`, `contract_panel.gd`, `contracts_tab.gd` | The customers walking in to reception, the offer card and jobs list, and the Esc menu's Contracts tab |
 | `scripts/progress.gd`, `ride_xp.gd`, `character_tab.gd`, `skill_tree_view.gd` | XP, levels, tool upgrades, skills and goals, kept in your own profile; riding XP; the Character tab |
+| `scripts/rider_gear.gd`, `rider_figure.gd`, `trinkets.gd`, `shop_tab.gd` | Rider gear (catalogue, owned and worn in your profile), drawing the avatar in it on foot and on the bike, trinkets for the shed, and the Esc menu's Shop tab |
 | `scripts/sfx.gd` | Tool, footstep and workshop sounds, synthesised at start-up, and the volume buses |
 | `scripts/shed_radio.gd`, `radio_stream.gd`, `mp3_stream_decoder.gd` | The shed radio: streams an MP3 station over HTTP(S) and decodes it gaplessly |
 

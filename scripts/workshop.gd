@@ -1262,7 +1262,8 @@ func _build_bench() -> void:
 	var z_to := spot_transform("bench_3").origin.z + 0.6
 	var mid := (z_from + z_to) * 0.5
 	var length := z_to - z_from
-	_solid(Vector3(x, 0.45, mid), Vector3(0.9, 0.9, length), _mats["steel"])
+	# Solid up to just under the wooden top, so a trinket put down on it sits on the wood.
+	_solid(Vector3(x, 0.4725, mid), Vector3(0.9, 0.945, length), _mats["steel"])
 	_deco(self, Vector3(x, 0.92, mid), Vector3(0.95, 0.06, length + 0.05), _mats["wood"])
 	for i in 3:
 		_deco(self, Vector3(x + 0.46, 0.25 + i * 0.25, mid), Vector3(0.02, 0.2, length - 0.2), _mats["red"])

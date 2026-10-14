@@ -54,6 +54,7 @@ var _weather: OptionButton
 var _weather_now: Label
 var debug: DebugTab
 var money: MoneyTab
+var shop: ShopTab
 ## Set when the player chose "New shed": the next solo or hosted start begins a fresh shed.
 var new_shed := false
 var _solo: Button
@@ -209,6 +210,9 @@ func _ready() -> void:
 	# Your cash, the business's account, sending money, loans and the ledger (see Money).
 	money = MoneyTab.new()
 	_tabs.add_child(money)
+	# Rider gear and shed trinkets bought with your own money (see ShopTab).
+	shop = ShopTab.new()
+	_tabs.add_child(shop)
 	# Testing helpers: reset or max out XP and money.
 	_tabs.add_child(ContractsTab.new())
 	debug = DebugTab.new()

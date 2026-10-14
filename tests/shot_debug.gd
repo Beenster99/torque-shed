@@ -45,6 +45,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--gear" in OS.get_cmdline_user_args():
+		await _gear_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -364,3 +369,121 @@ func _aerial(from: Vector3, at: Vector3, name: String) -> void:
 	await _shot(name)
 	cam.queue_free()
 	main.walker.camera.current = true
+
+
+## Rider gear and trinkets (`-- --gear`): a line-up of riders in different outfits, close-ups
+## of the helmets, the Shop tab's turntable, a rider on a bike in race leathers, and trinkets
+## put about the shed.
+const OUTFITS := [
+	{},
+	{"helmet": "helmet_kestrel", "jacket": "jacket_kestrel", "trousers": "trousers_kestrel", "boots": "boots_kestrel", "gloves": "gloves_kestrel"},
+	{"helmet": "helmet_mx", "jacket": "jacket_mx", "trousers": "trousers_mx", "boots": "boots_mx", "gloves": "gloves_mx"},
+	{"helmet": "helmet_pudding", "jacket": "jacket_ironside", "trousers": "trousers_jeans", "boots": "boots_engineer", "gloves": "gloves_brookstone"},
+	{"helmet": "helmet_sprint", "jacket": "jacket_hivis", "trousers": "trousers_strata", "boots": "boots_strata", "gloves": "gloves_hivis"},
+	{"helmet": "helmet_open_cream", "jacket": "jacket_wax", "trousers": "trousers_wax", "boots": "boots_trainers", "gloves": "gloves_rigger"},
+	{"helmet": "helmet_chequer", "jacket": "jacket_denim", "trousers": "trousers_ironside", "boots": "boots_work", "gloves": "gloves_strata"},
+	{"helmet": "helmet_stealth", "jacket": "jacket_strata", "trousers": "trousers_overalls", "boots": "boots_mx", "gloves": "gloves_work"},
+]
+
+
+func _gear_shots() -> void:
+	# A profile of its own, so the money and gear bought here don't stay on the test rider.
+	Progress.path = "user://profile_gear_shots.json"
+	Progress.select("Shot Rider")
+	if not "--trinkets" in OS.get_cmdline_user_args():   # `-- --gear --trinkets`: just the bike and the trinkets
+		await _outfit_shots()
+	await _ride_and_trinket_shots()
+
+
+func _outfit_shots() -> void:
+	var riders := []
+	var base := Workshop.CENTER + Vector3(-2.8, 0.0, 2.6)
+	for i in OUTFITS.size():
+		var peer := 900 + i
+		Progress._summaries[peer] = {"name": "Rider %d" % (i + 1), "gear": RiderGear.clean_worn(OUTFITS[i])}
+		var rp := RemotePlayer.new()
+		main.world.add_child(rp)
+		rp.setup(peer, "Rider %d" % (i + 1), Shed.PAINTS[i % Shed.PAINTS.size()])
+		rp.global_position = base + Vector3(i * 0.8, 0.0, 0.0)
+		rp.rotation.y = PI   # facing +Z, towards the camera
+		riders.append(rp)
+	await _frames(10)
+	await _look_from(base + Vector3(2.8, 0.0, 4.6), base + Vector3(2.8, 1.0, 0.0), "r1_rider_gear_lineup")
+	await _look_from(base + Vector3(0.8, 0.0, 2.2), base + Vector3(0.8, 1.1, 0.0), "r2_outfits_left")
+	await _look_from(base + Vector3(4.4, 0.0, 2.2), base + Vector3(4.4, 1.1, 0.0), "r3_outfits_right")
+	# Helmets up close, and from the side and behind.
+	await _look_from(base + Vector3(1.2, -0.25, 1.3), base + Vector3(1.2, 1.55, 0.0), "r4_helmets_close")
+	for rp in riders:
+		rp.rotation.y = PI * 0.5
+	await _look_from(base + Vector3(2.8, 0.0, 3.4), base + Vector3(2.8, 1.1, 0.0), "r5_lineup_side")
+	for rp in riders:
+		rp.rotation.y = 0.0
+	await _look_from(base + Vector3(2.8, 0.0, 3.4), base + Vector3(2.8, 1.1, 0.0), "r6_lineup_back")
+	for rp in riders:
+		rp.queue_free()
+	# The Shop tab, its turntable showing the race leathers.
+	Progress.set_money(2500)
+	main.menu.show_pause()
+	var shop: ShopTab = main.menu.shop
+	main.menu._tabs.current_tab = main.menu._tabs.get_tab_idx_from_control(shop)
+	shop.show_category("jacket")
+	shop.select("jacket_kestrel")
+	await _frames(30)
+	await _shot("r7_shop_tab_jacket")
+	shop.show_category("trinket")
+	shop.select("trinket_neon")
+	await _frames(30)
+	await _shot("r8_shop_tab_trinket")
+	main.menu.hide()
+
+
+func _ride_and_trinket_shots() -> void:
+	# Riding in the race leathers: own the lot and wear it.
+	for id in OUTFITS[1].values():
+		Progress.profile["gear"]["owned"].append(id)
+		RiderGear.wear(id)
+	main._try_mount(_bike_named("Old Faithful"))
+	await _frames(10)
+	var road_t: Transform3D = main.world.road_transform(0.12)
+	main.bike.place(road_t.origin, road_t.basis.get_euler().y)
+	main.camera.set_mode(ChaseCamera.Mode.CHASE)
+	await _frames(40)
+	await _shot("r9_riding_in_race_leathers")
+	main._get_off()
+	await _frames(10)
+	# Trinkets about the shed: small ones on the workbench, the rest on the floor and walls.
+	var wall_x := Workshop.CENTER.x - Workshop.HALF.x + 0.03
+	var bench_x := Workshop.CENTER.x - Workshop.HALF.x + 0.4
+	var bz: float = Shed.spot_transform("bench_0").origin.z
+	var turn := Basis(Vector3.UP, PI * 0.5)
+	var places := {
+		"trinket_bobblehead": Vector3(bench_x, 0.95, bz + 0.2),
+		"trinket_trophy": Vector3(bench_x, 0.95, bz + 0.6),
+		"trinket_radio": Vector3(bench_x, 0.95, bz + 1.1),
+		"trinket_lava": Vector3(bench_x, 0.95, bz + 1.5),
+		"trinket_bike_model": Vector3(bench_x, 0.95, bz + 1.9),
+		"trinket_gnome": Vector3(bench_x - 0.1, 0.0, bz - 1.0),
+		"trinket_plant": Vector3(bench_x - 0.05, 0.0, bz - 1.6),
+		"trinket_rug": Vector3(bench_x + 1.6, 0.0, bz + 1.0),
+		"trinket_clock": Vector3(wall_x, 2.9, bz - 1.2),
+		"trinket_neon": Vector3(wall_x, 3.7, bz + 1.6),
+		"trinket_photo": Vector3(wall_x, 1.9, bz - 1.2),
+	}
+	# One at a time: each is moved in before the next is ordered, so the drop-off never fills.
+	for id in Trinkets.all():
+		Shed.request({"a": "order_furniture", "model": id})
+		for fid in Shed.furniture:
+			if str(Shed.furniture[fid]["model"]) == id:
+				Shed.furniture[fid]["xf"] = Transform3D(turn, places[id])
+	Shed.changed.emit()
+	await _frames(20)
+	var eye_at := Vector3(bench_x + 2.6, 0.0, bz + 0.6)
+	await _look_from(eye_at, Vector3(bench_x, 1.2, bz + 0.4), "r10_trinkets_on_bench")
+	await _look_from(Vector3(bench_x + 1.0, 0.0, bz + 0.9), Vector3(bench_x, 1.05, bz + 1.0), "r11_trinkets_close")
+	await _look_from(Vector3(bench_x + 2.4, 0.0, bz - 0.6), Vector3(bench_x, 0.7, bz - 1.2), "r12_plant_gnome_photo")
+	Daylight.current.set_time(22.0)
+	Shed.request({"a": "lights", "room": "", "on": false})
+	await _frames(20)
+	await _look_from(eye_at, Vector3(bench_x, 1.5, bz + 1.0), "r13_neon_and_lava_at_night")
+	Progress.save_profile()
+	DirAccess.remove_absolute(Progress.path)

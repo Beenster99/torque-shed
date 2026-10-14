@@ -46,6 +46,8 @@ func _ready() -> void:
 	var customer_sent := false
 	var money_set := false
 	var upgrade_asked := false
+	var gear_asked := false
+	var gear_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -126,6 +128,16 @@ func _ready() -> void:
 				Progress.earn(10, "Test")
 				money_sent = Money.send(int(main.remotes.keys()[0]), 5) == ""
 			money_ok = ledger_ok and money_sent
+		# Rider gear: the client puts on an MX helmet, and the host sees it on the client's figure.
+		if role == "client" and not gear_asked:
+			Progress.profile["gear"]["owned"].append("helmet_mx")
+			RiderGear.wear("helmet_mx")
+			gear_asked = true
+		if role == "client":
+			gear_ok = RiderGear.worn_of(Shed.me())["helmet"] == "helmet_mx"
+		elif main.remotes.size() == 1:
+			var other: RemotePlayer = main.remotes.values()[0]
+			gear_ok = other.gear.get("helmet", "") == "helmet_mx" and other._head_look.get_child_count() > 3
 		# The host makes a poster of the board once the client's picture is on it.
 		if role == "host" and not postered and _picture_ok():
 			Shed.request({"a": "board_poster", "name": "MP poster"})
@@ -157,7 +169,7 @@ func _ready() -> void:
 			Shed.request({"a": "contract_spawn", "kind": "maint"})
 			customer_sent = true
 		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty()
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 10 s at most.
@@ -171,8 +183,8 @@ func _ready() -> void:
 		Input.action_release("move_back")
 		Input.action_press("move_forward" if fmod(tl, 2.0) < 1.0 else "move_back")
 	var ok := moved and shed_ok
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing")])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok])
 	get_tree().quit(0 if ok else 1)
 
 
