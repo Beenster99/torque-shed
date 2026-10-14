@@ -367,6 +367,17 @@ The game uses Godot's best lighting on the Forward+ renderer, all set from the *
 
 Your eyes adjust too: walk out of the bright yard into the shed with the lights off and it starts dark, then slowly opens up; step back into daylight and it clamps down quickly. On the simpler renderer (and on low settings) the game keeps a plainer look: flat clouds, no bounce light and no light in the air.
 
+### Sound
+
+Every sound is made by the game itself as it starts (there are no audio files), modelled on how the real thing makes its noise, and kept in a cache file so later starts are quick. Nothing to set up: the Esc menu's sound effects slider covers all of it.
+
+- **Variety**: every knock, clink, footstep and part going down comes in several versions, played at random with a touch of pitch and level, and never the same one twice running. Tools pick up their loop at a different point each time.
+- **Parts landing**: putting a part down sounds of what it's made of and what it lands on: steel clanks and rings on the concrete floor, knocks on the wooden bench top, rings on for a while on a steel shelf or machine, and thuds dead on the grass outside; plastic clacks, tyres thump and bounce, seats and gear flop, delivery boxes thud.
+- **Tools and machines**: the ratchet's pawl clicking on the backswing and the bolt creaking round; the grinder spinning up, dropping in pitch as it bites with a rasp and spark crackle, and winding down; the pressure washer's pump pulse and jet; the parts washer's pump, splash and bubbles; the spray can's sputtering hiss and the spray gun's air rush; the sandblaster's roar and grit hiss; the tyre changer's motor and the rubber groaning, then the bead popping on; the dyno drum whining with its speed; the roller door's motor, chain and slats with a clunk at each end.
+- **Footsteps** sound of the floor: concrete (or the epoxy floor once it's bought, with the odd squeak), tiles in the paint shop and the showroom, wooden stairs and carpet upstairs in the sales office, the steel mezzanine, and outside tarmac, gravel on the dirt, grass, and splashes in puddles when it's wet. You hear other players' footsteps too.
+- **Rooms**: each room has its own acoustics: the shed's hard concrete, the small tiled paint booth, the cluttered store, the dyno room, the showroom's glass, the carpeted office, and outside nearly dry with an echo back off the shed wall. Sounds from another room come through muffled and quieter.
+- **Ambience**: a low room tone indoors (the showroom's air conditioning), the strip lights humming (the LED upgrade's are quieter) and ticking on when switched on, the roof creaking now and then, and the air compressor in the shed's back corner cycling on and off (sooner while the spray gun or sandblaster is drawing air). Outside there's wind, distant traffic, birdsong by day and crickets at night, quieter in the rain and muffled from indoors. The sales office's front doors whirr open and thump shut.
+
 ### Money
 
 There are two kinds of money: **your own cash**, kept with your character like your XP (so it goes with you to any shed), and **the business**: the garage's own account, kept with the shed. A new shed's business opens with **£10,000**. Your cash shows top right, next to your level, and pops up green ("+£4 Restoring") as it comes in.
@@ -438,8 +449,10 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/customer.gd`, `contracts_view.gd`, `contract_panel.gd`, `contracts_tab.gd` | The customers walking in to reception, the offer card and jobs list, and the Esc menu's Contracts tab |
 | `scripts/progress.gd`, `ride_xp.gd`, `character_tab.gd`, `skill_tree_view.gd` | XP, levels, tool upgrades, skills and goals, kept in your own profile; riding XP; the Character tab |
 | `scripts/rider_gear.gd`, `rider_figure.gd`, `trinkets.gd`, `shop_tab.gd` | Rider gear (catalogue, owned and worn in your profile), drawing the avatar in it on foot and on the bike, trinkets for the shed, and the Esc menu's Shop tab |
-| `scripts/sfx.gd` | Tool, footstep and workshop sounds, synthesised at start-up, and the volume buses |
 | `scripts/engine_synth.gd`, `engine_bank.gd`, `engine_sound.gd`, `exhaust_flame.gd` | Engine sound: the synthesis (firing order and crank phasing, header and silencer resonances, intake and airbox, valve train, clutch rattle, two-stroke ring-ding), the per-engine bank of seamless loops baked on a worker thread, and the 3D player that crossfades and pitches them and adds pops, bangs, shifts, the starter and the backfire flame. `tests/engine_render.tscn` renders them to .wav files |
+| `scripts/sfx.gd` | Playing the shed's sounds: variants without repeats, impacts by material, footsteps by floor, machine start and stop sounds, room reverb and through-wall muffling, the volume buses and the sound cache |
+| `scripts/sfx_synth.gd` | Synthesising every shed sound from physical models (modal metal, contact impacts, motors under load, water and bubbles) |
+| `scripts/sfx_ambience.gd` | The shed's ambience: room tone, light hum, the compressor's cycle, creaks, the sliding doors, wind, traffic, birds and crickets |
 | `scripts/shed_radio.gd`, `radio_stream.gd`, `mp3_stream_decoder.gd` | The shed radio: streams an MP3 station over HTTP(S) and decodes it gaplessly |
 
 Built with [Godot 4.6](https://godotengine.org) and Jolt physics.
