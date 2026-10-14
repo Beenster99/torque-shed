@@ -193,6 +193,21 @@ func sync_state() -> void:
 				else:
 					display.transform = Shed.local_spot_transform(spot) * flat
 					view.add_child(display)
+			elif Shed.spot_role(spot) == "blaster":
+				# In the sandblaster: on its turntable, turning about the engine's middle.
+				var view: Node3D = furniture_nodes[int(f["id"])]
+				var pivot: Node3D = view.get_node_or_null("Pivot")
+				var size: Vector3 = display.get_meta("size", Vector3(0.4, 0.4, 0.4))
+				if pivot:
+					pivot.position = Shed.local_spot_transform(spot).origin + Vector3.UP * size.y * 0.5
+					display.position = Vector3.DOWN * size.y * 0.5
+					pivot.add_child(display)
+				else:
+					display.transform = Shed.local_spot_transform(spot)
+					view.add_child(display)
+				if Shed.is_engine(item_id) and not Shed.items[item_id].get("boxed", false) and display.has_meta("model"):
+					# Fitted shapes for the blast to land on; the crosshair passes through them.
+					(display.get_meta("model") as BikeModel).build_pickers({"engine": item_id}, {"engine": {"spot": spot}}, BikeModel.SPRAY_LAYER)
 			elif Shed.spot_role(spot) == "booth":
 				# Hung from a booth hook: it swings on the hook.
 				var hang := Shed.local_spot_transform(spot)

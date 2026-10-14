@@ -7,10 +7,10 @@ extends RefCounted
 ## Each model has a kind, a footprint `size` (width, height, depth in metres) and, for the ones
 ## that hold parts, a number of places. Compact models are for a shed that's filling up.
 
-const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "bench", "booth", "changer", "poster", "seat", "tv",
+const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "blaster", "bench", "booth", "changer", "poster", "seat", "tv",
 	"ramp", "obstacle", "barrier", "marker"]
 const KIND_NAMES := {"stand": "Engine stands", "shelf": "Shelving", "washer": "Parts washers",
-	"repair": "Repair machines", "bench": "Workbenches", "booth": "Paint booths", "changer": "Tyre changers", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs",
+	"repair": "Repair machines", "blaster": "Sandblasting cabinets", "bench": "Workbenches", "booth": "Paint booths", "changer": "Tyre changers", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs",
 	"ramp": "Jump ramps", "obstacle": "Things to jump", "barrier": "Walls and fences", "marker": "Cones, posts and flags"}
 ## Kinds that live outside in the yard, to ride over, round and through.
 const YARD_KINDS: Array[String] = ["ramp", "obstacle", "barrier", "marker"]
@@ -19,10 +19,11 @@ const WALL_KINDS: Array[String] = ["poster", "tv"]
 ## What the places on each kind are called in spot names: "<prefix>_<furniture id>_<n>".
 ## Kinds built into the shed: not sold, and can't be moved.
 const FIXED_KINDS: Array[String] = ["booth", "changer"]
-const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb", "booth": "booth", "changer": "changer"}
+const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb", "booth": "booth", "changer": "changer",
+	"blaster": "blast"}
 ## The model each kind defaults to (and what an order without a model gets).
 const DEFAULT := {"stand": "engine_stand", "shelf": "shelf_standard", "washer": "washer_standard",
-	"repair": "repair_standard", "bench": "bench_standard", "booth": "booth_standard", "changer": "tyre_changer", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_120",
+	"repair": "repair_standard", "blaster": "blaster_cabinet", "bench": "bench_standard", "booth": "booth_standard", "changer": "tyre_changer", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_120",
 	"ramp": "ramp_medium", "obstacle": "barrels", "barrier": "wall_concrete", "marker": "cone"}
 
 const MODELS := {
@@ -55,6 +56,14 @@ const MODELS := {
 		"places": 3, "rate": 0.28, "desc": "Hot jets in a closed cabinet. Three parts on the turntable."},
 	"washer_industrial": {"kind": "washer", "name": "Industrial parts washer", "size": Vector3(1.9, 1.7, 1.0),
 		"places": 4, "rate": 0.25, "desc": "A big heated tank that takes a full engine's worth of parts."},
+
+	# Sandblasting cabinets: an engine goes in whole, ancillaries and all, and you blast the rust
+	# and muck off it by hand through the glove ports (see BlastGame). `rate` is how fast the
+	# jet strips it, `jet` how wide it is.
+	"blaster_cabinet": {"kind": "blaster", "name": "Sandblasting cabinet", "size": Vector3(1.25, 1.75, 0.9), "places": 1,
+		"rate": 1.0, "jet": 1.0, "desc": "A glass-topped blast cabinet for engines. Put an engine in, hands in the gloves, and blast it back to bare metal."},
+	"blaster_pro": {"kind": "blaster", "name": "Industrial blast cabinet", "size": Vector3(1.55, 1.85, 1.05), "places": 1,
+		"rate": 1.35, "jet": 1.2, "desc": "A bigger cabinet with a bigger compressor: a wider, harder jet that strips an engine quicker. Easier to overdo, too."},
 
 	# Repair machines: the grinder restores every part on one together, `speed` times as fast.
 	"repair_compact": {"kind": "repair", "name": "Grinder stand", "compact": true, "size": Vector3(0.8, 1.2, 0.6),
@@ -232,6 +241,9 @@ static func spec_line(id: String) -> String:
 		"washer":
 			bits.append("Washes %d part%s at once" % [places(id), "" if places(id) == 1 else "s"])
 			bits.append("Cleans in about %d s" % roundi(1.0 / float(m["rate"])))
+		"blaster":
+			bits.append("Takes an engine, ancillaries and all")
+			bits.append("Blast x%.2f" % float(m["rate"]))
 		"repair":
 			bits.append("Restores %d part%s at once" % [places(id), "" if places(id) == 1 else "s"])
 			bits.append("Speed x%.1f" % float(m["speed"]))
@@ -282,6 +294,9 @@ static func local_place(model_id: String, n: int) -> Transform3D:
 			var count := maxi(1, places(model_id))
 			var w := size.x - 0.5
 			return Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-w * 0.5 + w * (0.5 + n) / float(count), 0.85, -0.1))
+		"blaster":
+			# On the turntable grate in the middle of the cabinet.
+			return Transform3D(Basis(), Vector3(0.0, work_height(model_id), -0.04))
 		"changer":
 			# The wheel lies flat on the turntable (see Workshop), its hub on the centre post.
 			return Transform3D(Basis(), Vector3(0.0, work_height(model_id), 0.08))
@@ -301,6 +316,8 @@ static func work_height(model_id: String) -> float:
 			return 0.86 if model_id != "washer_compact" else 0.8
 		"repair":
 			return 0.96
+		"blaster":
+			return 0.92
 		"changer":
 			return 0.86
 		"bench":

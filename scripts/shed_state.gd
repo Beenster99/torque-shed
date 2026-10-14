@@ -661,6 +661,125 @@ func _cool_dyno(delta: float) -> void:
 		_mark_dirty()
 
 
+# ---------------------------------------------------------------------------- the sandblaster
+
+const BLAST_WEAR := 0.12     # wear a part picks up if every patch of it were blasted too long
+
+
+## The blast cabinet someone is working at (their hands in its gloves), or 0.
+func blasting(peer: int) -> int:
+	return int(crew.get(peer, {}).get("blaster", 0))
+
+
+## Who is working at a blast cabinet, or 0.
+func blaster_user(furniture_id: int) -> int:
+	for peer in crew:
+		if int(crew[peer].get("blaster", 0)) == furniture_id:
+			return int(peer)
+	return 0
+
+
+func _blast_check(peer: int, action: Dictionary) -> String:
+	var a := str(action.get("a", ""))
+	match a:
+		"blast_use":
+			if not action.get("on", true):
+				return ""
+			var spot := str(action.get("spot", ""))
+			if spot_role(spot) != "blaster":
+				return "That's not a sandblaster."
+			var f := furniture_of_spot(spot)
+			var engine := item_at_spot(spot)
+			if engine == 0 or not is_engine(engine) or items[engine].get("boxed", false):
+				return "Put an engine in the sandblaster first."
+			var user := blaster_user(int(f["id"]))
+			if user != 0 and user != peer:
+				return "%s is using it." % str(crew.get(user, {}).get("name", "Someone"))
+			if int(f.get("mover", 0)) != 0:
+				return "Someone's moving it."
+			if held_by(peer) != 0:
+				return "Put the part down first: it takes both hands."
+			if riding(peer) != 0 or pushing_bike(peer) != 0 or moving(peer) != 0:
+				return "Let go of what you've got first."
+		"blast_aim":
+			if blasting(peer) == 0:
+				return "You're not at a sandblaster."
+		"blast":
+			var spot := str(action.get("spot", ""))
+			var f := furniture_of_spot(spot)
+			if f.is_empty() or blasting(peer) != int(f["id"]):
+				return "You're not at that sandblaster."
+			var engine := item_at_spot(spot)
+			if engine == 0 or not is_engine(engine):
+				return "The engine has gone."
+			if not (action.get("parts") is Dictionary):
+				return "Nothing was blasted."
+		_:
+			return "Unknown action."
+	return ""
+
+
+func _blast_apply(peer: int, action: Dictionary) -> String:
+	var c: Dictionary = crew.get(peer, {})
+	match str(action["a"]):
+		"blast_use":
+			if action.get("on", true):
+				c["blaster"] = int(furniture_of_spot(str(action["spot"]))["id"])
+				c["blast_rot"] = Vector2.ZERO
+				c["blast_fire"] = false
+				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse. F to step back."
+			c["blaster"] = 0
+			c["blast_fire"] = false
+		"blast_aim":
+			var r = action.get("rot", Vector2.ZERO)
+			var at = action.get("at", Vector3.ZERO)
+			c["blast_rot"] = r if r is Vector2 else Vector2.ZERO
+			c["blast_fire"] = bool(action.get("fire", false))
+			c["blast_at"] = at if at is Vector3 else Vector3.ZERO
+		"blast":
+			var engine := item_at_spot(str(action["spot"]))
+			var on_engine := {engine: true}
+			for slot in PartsDB.ENGINE_SLOTS:
+				if engine_item(engine, slot) != 0:
+					on_engine[engine_item(engine, slot)] = true
+			var done := 0
+			var cover_sum := 0.0
+			var pitted := []
+			var parts: Dictionary = action["parts"]
+			for key in parts:
+				var id := int(key)
+				var r = parts[key]
+				if not on_engine.has(id) or not (r is Array) or (r as Array).size() < 2:
+					continue
+				var cover := clampf(float(r[0]), 0.0, 1.0)
+				var over := clampf(float(r[1]), 0.0, 1.0)
+				if cover < 0.02:
+					continue
+				var it: Dictionary = items[id]
+				var strip := clampf(cover / BlastGame.DONE, 0.0, 1.0)
+				_note_low(id)
+				it["rust"] = 0.0 if strip >= 0.999 else float(it["rust"]) * (1.0 - strip)
+				it["dirt"] = 0.0 if strip >= 0.999 else float(it["dirt"]) * (1.0 - strip)
+				it["wear"] = minf(1.0, float(it["wear"]) + over * BLAST_WEAR)
+				if over > 0.08:
+					pitted.append(PartsDB.slot_name(PartsDB.slots_for_kind(str(it["kind"]))[0]).to_lower())
+				cover_sum += cover
+				done += 1
+				if strip >= 0.3:
+					_xp(peer, "sandblast", clampf(strip * (1.0 - over * 0.8), 0.1, 1.0), "item:%d" % id)
+				_check_part(peer, id)
+			c["blaster"] = 0
+			c["blast_fire"] = false
+			c["repaired"] = int(c.get("repaired", 0)) + done
+			if done == 0:
+				return ""
+			var text := "Blasted %d part%s: %d%% back to bare metal" % [done, "" if done == 1 else "s", roundi(cover_sum / done * 100.0)]
+			if not pitted.is_empty():
+				text += ", but you've pitted the %s" % ", ".join(pitted.slice(0, 3))
+			return text
+	return ""
+
+
 ## A stock bike built around an engine on the stand, so its numbers can be compared.
 func engine_build(engine_id: int, swap := 0, swap_slot := "") -> BikeBuild:
 	var asm := engine_assembly(engine_id)
@@ -1185,6 +1304,8 @@ func check(peer: int, action: Dictionary) -> String:
 			return "Someone is wheeling that bike about."
 	if a.begins_with("dyno_") and a != "dyno_run":
 		return _dyno_check(peer, action)
+	if a.begins_with("blast"):
+		return _blast_check(peer, action)
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
 		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
 	match a:
@@ -1229,6 +1350,8 @@ func check(peer: int, action: Dictionary) -> String:
 		"take":
 			if held != 0:
 				return "Your hands are full."
+			if spot_role(str(action.get("spot", ""))) == "blaster" and blaster_user(int(furniture_of_spot(str(action["spot"]))["id"])) != 0:
+				return "Someone's blasting it."
 			if action.has("item"):
 				if not (items.has(int(action["item"])) and items[int(action["item"])]["at"] == "floor"):
 					return "Nothing there."
@@ -1256,6 +1379,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unpack it first."
 			if spot_role(spot) == "changer" and items[held]["kind"] != "wheel":
 				return "Only a wheel goes on the tyre changer. Fit tyres to a wheel on it."
+			if spot_role(spot) == "blaster" and (not is_engine(held) or items[held].get("boxed", false)):
+				return "The sandblaster is for engines: put an engine in it, ancillaries and all."
 		"tyre_fit", "tyre_remove":
 			var spot := str(action.get("spot", ""))
 			if spot_role(spot) != "changer":
@@ -1316,6 +1441,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "The %s is built in." % furniture_name(f).to_lower()
 			if f["mover"] != 0 and f["mover"] != peer:
 				return "Someone else is moving that."
+			if blaster_user(int(f["id"])) != 0:
+				return "Someone's working at it."
 			if held != 0:
 				return "Put the part down first."
 			if moving(peer) != 0:
@@ -1666,6 +1793,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		_tell(peer, why, false)
 		return
 	var a := str(action["a"])
+	if a.begins_with("blast"):
+		var told := _blast_apply(peer, action)
+		if told != "":
+			_tell(peer, told, true)
+		_mark_dirty()
+		changed.emit()
+		return
 	if a.begins_with("dyno_") and a != "dyno_run":
 		var said := _dyno_apply(peer, action)
 		if said != "":

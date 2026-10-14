@@ -80,6 +80,8 @@ var stopwatch := Stopwatch.new()
 var tyre_game: TyreGame
 var _game_key := ""
 var _jet: CPUParticles3D
+var blast: BlastGame         # hands in a sandblaster's gloves (see BlastGame), or null
+var _blast_send := 0.0
 var _tool_sig := ""          # tool and upgrade stage the tool in your hand is drawn at
 
 
@@ -129,6 +131,8 @@ func pitch() -> float:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not controls_enabled:
+		return
+	if blast and _blast_input(event):
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		if tyre_game:
@@ -200,6 +204,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				Shed.feedback.emit("Hold it up against a wall to hang it.", false)
 			else:
 				Shed.request({"a": "release", "furniture": pushed, "xf": xf})
+		elif target.get("kind", "") == "spot" and Shed.spot_role(str(target["spot"])) == "blaster" \
+				and Shed.item_at_spot(str(target["spot"])) != 0 and Shed.held_by(Shed.me()) == 0:
+			# Hands in the sandblaster's gloves.
+			get_viewport().set_input_as_handled()
+			Shed.request({"a": "blast_use", "spot": target["spot"], "on": true})
 		elif box != 0:
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "unpack", "item": box})
@@ -348,6 +357,10 @@ func _physics_process(delta: float) -> void:
 			tyre_game.aim(look)
 		elif look != Vector2.ZERO:
 			_look(-look.x * PAD_LOOK * delta, -look.y * PAD_LOOK * 0.7 * delta)
+	if blast or Shed.blasting(Shed.me()) != 0:
+		# At the sandblaster: the keys and the left stick turn the engine instead of walking.
+		_blast_frame(delta, input)
+		input = Vector2.ZERO
 	if seat != 0:
 		if not Shed.furniture.has(seat) or Shed.furniture[seat]["mover"] != 0 or input.length() > 0.5:
 			stand_up()
@@ -393,10 +406,19 @@ func _physics_process(delta: float) -> void:
 		_push_bike(wheeling, delta)
 	elif pushed != 0:
 		_push(pushed, delta)
+	elif blast:
+		target = {}
+		plan = {}
+		alt_plan = {}
+		info = _blast_info()
+		_highlight()
 	else:
 		if collision_mask != 1 | 2 | 4:
 			collision_mask = 1 | 2 | 4
 		_update_target()
+	if blast:
+		_update_held_view()
+		return
 	_update_work(delta)
 	_update_held_view()
 	_update_jet()
@@ -458,6 +480,9 @@ func _update_target() -> void:
 	_scale_time(plan)
 	_scale_time(alt_plan)
 	info = _describe()
+	if str(target.get("kind", "")) == "spot" and Shed.spot_role(str(target["spot"])) == "blaster" \
+			and Shed.item_at_spot(str(target["spot"])) != 0 and Shed.held_by(Shed.me()) == 0:
+		info += "\nF: hands in the gloves and sandblast it back to bare metal"
 	if not _cover.is_empty() and target_item() == int(_cover["item"]):
 		var st := cover_stats()
 		info += "\nSprayed so far: %d%% covered%s" % [roundi(st["covered"] * 100.0),
@@ -1658,3 +1683,101 @@ func _update_jet() -> void:
 ## Shared with other players' avatars.
 static func make_tool_mesh(which: String, can_color := Color(0.9, 0.75, 0.1), stage := 0) -> Node3D:
 	return ToolModels.make("stopwatch" if which == "watch" else which, can_color, stage)
+
+
+# ---------------------------------------------------------------------------- the sandblaster
+
+## Mouse and buttons at the sandblaster: hold the alt button and move the mouse to turn the
+## engine, F to step back. Returns true when the event was used.
+func _blast_input(event: InputEvent) -> bool:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED \
+			and (Input.is_action_pressed("alt_act") or Controls.trigger(false) > 0.5):
+		blast.turn(Vector2(event.relative.x, event.relative.y) * BlastGame.TURN_MOUSE)
+		get_viewport().set_input_as_handled()
+		return true
+	if event.is_action_pressed("interact"):
+		get_viewport().set_input_as_handled()
+		finish_blast()
+		return true
+	return false
+
+
+## Starts the game once the host has put our hands in the gloves, runs it, and ends it if the
+## engine or the cabinet goes.
+func _blast_frame(delta: float, input: Vector2) -> void:
+	var at := Shed.blasting(Shed.me())
+	if blast == null:
+		if at == 0:
+			return
+		var spot := ""
+		for s in Shed.furniture_spots(at):
+			spot = s
+		var view: Node = get_tree().get_first_node_in_group("workshop")
+		var model: BikeModel = view.model_for({"engine": Shed.item_at_spot(spot)}) if view and spot != "" else null
+		var game := BlastGame.new()
+		if model == null or not game.start(at, spot, model):
+			Shed.request({"a": "blast_use", "on": false})
+			return
+		blast = game
+		crouched = false
+		_send_status("Sandblasting an engine")
+		return
+	if at != blast.furniture or Shed.item_at_spot(blast.spot) != blast.engine or not is_instance_valid(blast.model):
+		_end_blast()
+		return
+	if controls_enabled:
+		blast.turn(Vector2(input.x, -input.y) * BlastGame.TURN_RATE * delta)
+	var firing := controls_enabled and _main_button()
+	var from := camera.global_position
+	var dir := -camera.global_transform.basis.z
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 3.0, BikeModel.SPRAY_LAYER)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	blast.step(delta, firing, from, dir, hit)
+	var j := blast.jet
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	var cab: EquipmentView = view.furniture_nodes.get(blast.furniture, null) if view else null
+	if cab:
+		var aim: Vector3 = j.get("at", from + dir * 0.9)
+		cab.set_blast(blast.rot, firing, aim, j.get("normal", Vector3.UP), float(j.get("rust", 0.0)), int(j.get("fresh", 0)))
+	for id in blast.newly_done():
+		Sfx.play_at("ting", camera.global_position + dir, -6.0)
+		Shed.feedback.emit("%s: back to bare metal" % str(blast.parts[id]["name"]), true)
+	_blast_send -= delta
+	if _blast_send <= 0.0:
+		_blast_send = 0.12
+		Shed.request({"a": "blast_aim", "rot": blast.rot, "fire": firing, "at": j.get("at", Vector3.ZERO)})
+	if blast.all_done() and not firing:
+		finish_blast()
+
+
+## Steps back from the sandblaster: the host strips each part by how much of it is bare.
+func finish_blast() -> void:
+	if blast == null:
+		Shed.request({"a": "blast_use", "on": false})
+		return
+	if blast.total() > 0.0:
+		Shed.request({"a": "blast", "spot": blast.spot, "parts": blast.results()})
+	else:
+		Shed.request({"a": "blast_use", "on": false})
+	_end_blast()
+
+
+func _end_blast() -> void:
+	if blast:
+		blast.clear()
+	blast = null
+	if Shed.blasting(Shed.me()) != 0:
+		Shed.request({"a": "blast_use", "on": false})
+	_send_status("")
+
+
+func _blast_info() -> String:
+	var lines := ["Sandblasting: %d%% bare metal" % roundi(blast.total() * 100.0)]
+	for l in blast.lines():
+		var mark := "  ·  pitted!" if float(l["over"]) > 0.05 else ("  ·  done" if float(l["covered"]) >= BlastGame.DONE else "")
+		lines.append("%s  %d%%%s" % [l["name"], roundi(float(l["covered"]) * 100.0), mark])
+	var pad := Controls.device() >= 0 and Controls.active_device >= 0
+	lines.append("Hold RT to blast · left stick turns the engine · Y steps back" if pad else \
+		"Hold left mouse to blast · W A S D (or hold right mouse) turns the engine · F steps back")
+	return "\n".join(lines)

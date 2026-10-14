@@ -92,6 +92,10 @@ func _run_all() -> void:
 	_test_recycling()
 	await _test_tv_channels()
 	await _test_tv_and_bins_session()
+	print("Dyno room kit and the sandblaster")
+	_test_dyno_kit()
+	await _test_dyno_room_session()
+	await _test_sandblaster()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -3165,6 +3169,359 @@ func _test_tv_and_bins_session() -> void:
 	check(w.target.get("bin", "") == "general", "general waste is next to it")
 	await _hold_act(main)
 	check(not Shed.items.has(tyre), "the tyre goes in general waste")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## Puts a bike on the dyno rig the way a player does: wheel it there and let go.
+func _onto_dyno(bike_id: int) -> void:
+	Shed.request({"a": "grab_bike", "bike": bike_id})
+	var near := DynoRoom.rig_transform().translated(Vector3(0.2, 0.0, 0.4))
+	Shed.request({"a": "move_bike", "bike": bike_id, "xf": near})
+	Shed.request({"a": "release_bike", "bike": bike_id, "xf": near})
+
+
+## The dyno room's kit in the shed state: straps, the extraction hose, the fan and the heat it
+## keeps down, exhaust haze, the ear defenders and the room's own lights, all kept with the shed.
+func _test_dyno_kit() -> void:
+	Shed.start_new("Tester", 21)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	check(Shed.dyno["hose"] == "hook" and not Shed.dyno["fan"] and Shed.dyno["lights"] and Shed.dyno["headphones"] == 0,
+		"a new shed's dyno room: hose on its hook, fan off, lights on, ear defenders hanging up")
+	_onto_dyno(faithful)
+	check(Shed.dyno_bike() == faithful and Shed.straps_done() == 0, "a bike rolled onto the rig isn't strapped down by itself")
+	Shed.request({"a": "dyno_strap", "point": 0})
+	Shed.request({"a": "dyno_strap", "point": 3})
+	check(Shed.straps_done() == 2 and Shed.check(me, {"a": "dyno_run", "bike": faithful}).contains("2 of the 4"),
+		"two straps done: still no run, and it says how many")
+	Shed.request({"a": "dyno_strap", "point": 3})
+	check(Shed.straps_done() == 1, "the work button at a done-up strap undoes it")
+	for i in [1, 2, 3]:
+		Shed.request({"a": "dyno_strap", "point": i})
+	check(Shed.strapped(), "all four straps done up")
+	check(Shed.check(me, {"a": "dyno_strap", "point": 7}) != "", "there are only four strap posts")
+	# The extraction hose: off its hook, over the exhaust.
+	check(Shed.check(me, {"a": "dyno_hose", "to": "bike"}).contains("hook"), "you need the hose in your hands to fit it")
+	Shed.request({"a": "dyno_hose", "to": "held"})
+	check(Shed.hose_holder() == me and Shed.check(me, {"a": "take", "spot": "bench_0"}).contains("hose"),
+		"carrying the hose, your hands are full")
+	var plan := DynoRoom.plan_for({"kind": "part", "bike": faithful, "slot": "tank"}, me)
+	check(plan.get("action", {}).get("to", "") == "bike", "carrying the hose, the work button on the bike fits it (%s)" % str(plan))
+	Shed.request(plan["action"])
+	check(Shed.dyno["hose"] == "bike" and Shed.hose_holder() == 0 and Shed.check(me, {"a": "grab_bike", "bike": faithful}) != "",
+		"the hose is on the exhaust, and the bike can't be wheeled off with it on")
+	# Heat: a run with the fan on stays cool; with it off the engine heat soaks and fades.
+	Shed.request({"a": "dyno_fan", "on": true})
+	Shed.dyno["heat"] = 0.0
+	Shed._dyno_busy_until = 0
+	Shed.request({"a": "dyno_run", "bike": faithful})
+	var cool: Dictionary = Shed.bikes[faithful]["dyno"]["runs"][-1]
+	check(cool.get("fan", false) and cool.get("hose", false) and float(cool["temp_c"]) < 95.0 and float(Shed.dyno["haze"]) == 0.0,
+		"fan on and hose on: a cool run (%d °C) and no fumes in the room" % int(cool.get("temp_c", 0)))
+	Shed.request({"a": "dyno_fan", "on": false})
+	Shed.dyno["heat"] = 0.0
+	Shed._dyno_busy_until = 0
+	Shed.request({"a": "dyno_run", "bike": faithful})
+	Shed._dyno_busy_until = 0
+	Shed.request({"a": "dyno_run", "bike": faithful})
+	var hot: Dictionary = Shed.bikes[faithful]["dyno"]["runs"][-1]
+	check(float(hot["temp_c"]) > 110.0 and float(hot["peak_hp"]) < float(cool["peak_hp"]) * 0.97,
+		"with the fan off it runs hot (%d °C) and down on power (%.1f vs %.1f hp)" % [int(hot["temp_c"]), hot["peak_hp"], cool["peak_hp"]])
+	var heat := float(Shed.dyno["heat"])
+	Shed.request({"a": "dyno_fan", "on": true})
+	Shed._cool_dyno(10.0)
+	check(float(Shed.dyno["heat"]) < heat - 0.2, "the fan cools it down between runs (%.2f -> %.2f)" % [heat, Shed.dyno["heat"]])
+	# No hose: the room fills with exhaust.
+	Shed.request({"a": "dyno_hose", "to": "held"})
+	Shed.request({"a": "dyno_hose", "to": "hook"})
+	check(Shed.dyno["hose"] == "hook", "the hose comes off the exhaust and back on its hook")
+	Shed._dyno_busy_until = 0
+	Shed.request({"a": "dyno_run", "bike": faithful})
+	check(float(Shed.dyno["haze"]) > 0.4 and not Shed.bikes[faithful]["dyno"]["runs"][-1]["hose"],
+		"a run without the extraction hose fills the room with haze (%.2f)" % Shed.dyno["haze"])
+	var haze := float(Shed.dyno["haze"])
+	Shed._cool_dyno(20.0)
+	check(float(Shed.dyno["haze"]) < haze, "the haze clears slowly")
+	# Ear defenders and lights.
+	Shed.request({"a": "dyno_headphones"})
+	check(Shed.wearing_headphones(me), "F at the hook puts the ear defenders on")
+	Shed.request({"a": "dyno_lights", "on": false})
+	check(not Shed.dyno["lights"] and Shed.lights_on, "the dyno room has its own light switch; the shed's lights stay on")
+	# Kept with the shed; nobody is still wearing the ear defenders in a new session.
+	var saved: Dictionary = Shed._snapshot().duplicate(true)
+	Shed.load_state(saved, "Tester")
+	check(not Shed.dyno["lights"] and Shed.dyno["fan"] and Shed.strapped() and Shed.dyno["headphones"] == 0,
+		"the dyno room's kit is saved (lights off, fan on, strapped down) and the ear defenders go back on their hook")
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	old.erase("dyno")
+	Shed.load_state(old, "Tester")
+	check(Shed.dyno["hose"] == "hook" and Shed.dyno["lights"] and Shed.straps_done() == 0, "a save from before the dyno kit loads with it all put away")
+	# Unstrapped, the bike wheels off and the straps are clear for the next one.
+	for i in 4:
+		if Shed.dyno["straps"][i]:
+			Shed.request({"a": "dyno_strap", "point": i})
+	check(Shed.check(me, {"a": "grab_bike", "bike": faithful}) == "", "straps undone, it can be wheeled off")
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": Workshop.bay_transform(2)})
+	check(Shed.dyno_bike() == 0 and Shed.straps_done() == 0, "off the rig and back in its bay")
+	# XP for the new jobs.
+	for key in ["dyno_strap", "dyno_hose", "sandblast"]:
+		check(Progress.XP.has(key), "the XP table has %s" % key)
+	check(int(Progress.XP["sandblast"]["xp"]) == int(Progress.XP["repair"]["xp"]), "sandblasting pays like restoring on the grinder")
+	# The ear defenders muffle the sound effects.
+	Sfx.set_muffled(true)
+	check(Sfx.is_muffled(), "with the ear defenders on, sound effects are muffled")
+	Sfx.set_muffled(false)
+	check(not Sfx.is_muffled(), "and clear again with them off")
+	for sound in ["fan", "blast", "ting"]:
+		check(Sfx.stream(sound).data.size() > 1000, "the %s sound is made" % sound)
+	Shed.stop()
+
+
+## Walking into the dyno room: the doorway between bays 2 and 3 with full-width bay screens
+## either side, no tool chest or tyres, the kit drawn and working through the walker.
+func _test_dyno_room_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var ws: Workshop = main.workshop
+	var room: DynoRoom = ws.dyno_room
+	# The bay screens are all full width again, clear of the doorway and of each other.
+	var spans := []
+	for bay in Workshop.BAY_COUNT:
+		var s: Dashboard = ws._bay_screens[bay]
+		spans.append(Vector2(s.global_position.x - s.width * 0.5 - 0.04, s.global_position.x + s.width * 0.5 + 0.04))
+	var clear := true
+	for i in spans.size():
+		clear = clear and spans[i].x >= Workshop.CENTER.x - Workshop.HALF.x
+		clear = clear and spans[i].y <= Workshop.CENTER.x + Workshop.HALF.x
+		if i > 0:
+			clear = clear and spans[i].x > spans[i - 1].y
+	var door := DynoRoom.DOOR_HALF + 0.12
+	check(ws._bay_screens.all(func(s): return is_equal_approx(s.width, Workshop.BAY_SCREEN_OUTER)), "all four bay screens are full width")
+	check(clear and spans[1].y < -door and spans[2].x > door, "they fit either side of the doorway without overlapping (%s)" % str(spans))
+	check(DynoRoom.DOOR_HALF * 2.0 >= 1.6, "the doorway is %.1f m wide: room to wheel a bike through" % (DynoRoom.DOOR_HALF * 2.0))
+	# Walk through the doorway into the dyno room.
+	w.place(Transform3D(Basis(), Vector3(0.0, 0.0, Workshop.CENTER.z - Workshop.HALF.y + 1.2)))
+	Input.action_press("move_forward")
+	for i in 120:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(w.global_position.z < DynoRoom.CENTER.z + DynoRoom.HALF.y - 0.5, "you can walk through the doorway (z %.1f)" % w.global_position.z)
+	# No tool chest or tyre rack along the west wall any more.
+	var west := 0
+	for n in room.find_children("*", "StaticBody3D", true, false):
+		var at: Vector3 = (n as Node3D).global_position
+		if at.x < DynoRoom.CENTER.x - DynoRoom.HALF.x + 1.0 and at.y < 1.2 and absf(at.z - DynoRoom.CENTER.z) < 2.5 \
+				and not (n as StaticBody3D).has_meta("dyno_kit"):
+			west += 1
+	check(west == 0, "the tool chest and spare tyres are gone from the west wall (%d)" % west)
+	# The light switch by the door, with F.
+	await _aim_point(w, room.get_node("LightSwitch").global_position)
+	check(w.target.get("kit", "") == "lights" and w.info.contains("switch them off"), "the dyno room's light switch is by its door (%s)" % str(w.target))
+	_press("interact")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(not Shed.dyno["lights"] and not room.lights_shown() and ws._lights_shown, "F switches the dyno room's lights off, not the shed's")
+	_press("interact")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	# The fan.
+	await _aim_point(w, room.get_node("FanSwitch").global_position)
+	_press("interact")
+	for i in 60:
+		await get_tree().process_frame
+	check(Shed.dyno["fan"] and room._fan_speed > 5.0 and room._fan_sound.playing, "the fan switch spins the fan up, and you hear it")
+	# Ear defenders off their hook.
+	await _aim_point(w, room.get_node("PhonesHook").global_position)
+	check(w.target.get("kit", "") == "phones", "the ear defenders hang by the door")
+	_press("interact")
+	for i in 3:
+		await get_tree().process_frame
+	check(Shed.wearing_headphones(Shed.me()) and not room.phones_on_hook() and Sfx.is_muffled(),
+		"F puts them on: off the hook, and everything's muffled")
+	var rp := RemotePlayer.new()
+	add_child(rp)
+	rp.setup(4242, "Mate", Color.RED)
+	Shed.dyno["headphones"] = 4242
+	rp._process(0.0)
+	check(rp.wearing_phones(), "another player wearing them has them on their head")
+	Shed.dyno["headphones"] = Shed.me()
+	rp.queue_free()
+	_press("interact")
+	for i in 3:
+		await get_tree().process_frame
+	check(not Shed.wearing_headphones(Shed.me()) and room.phones_on_hook() and not Sfx.is_muffled(), "and F hangs them back up")
+	# A bike on the rig: strap it down at the posts with the work button.
+	var faithful := _bike_named("Old Faithful")
+	_onto_dyno(faithful)
+	for i in 4:
+		var post: Node3D = room.get_node("Rig/StrapPost%d" % i)
+		w.place(Transform3D(Basis(), post.global_position + (post.global_position - DynoRoom.CENTER).normalized() * 1.0 * Vector3(1, 0, 1)))
+		await _aim_point(w, post.global_position)
+		await _hold_act(main)
+	check(Shed.strapped() and room._strap_nodes.all(func(s): return s.visible), "holding the work button at each post straps it down, and the straps show")
+	# The hose: off the hook, onto the exhaust.
+	w.place(Transform3D(Basis(), DynoRoom.HOSE_HOOK + Vector3(-1.2, -DynoRoom.HOSE_HOOK.y, 0.0)))
+	await _aim_point(w, room.get_node("HoseHook").global_position)
+	await _hold_act(main)
+	check(Shed.hose_holder() == Shed.me(), "the work button at the hook takes the hose")
+	await _aim_at(main, faithful, "exhaust")
+	await _hold_act(main)
+	for i in 3:
+		await get_tree().process_frame
+	var tip = room.exhaust_tip()
+	check(Shed.dyno["hose"] == "bike" and tip is Transform3D and room.get_node("HoseEnd").global_position.distance_to((tip as Transform3D).origin) < 0.05,
+		"pushed over the exhaust, the hose is drawn on the tailpipe")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The sandblaster: an engine goes in, ancillaries and all; turn it and blast it, and the rust
+## comes off where the jet hits, back to bare metal.
+func _test_sandblaster() -> void:
+	check(Equipment.KINDS.has("blaster") and Equipment.by_kind("blaster").size() >= 2
+		and PartsComputer.all_kinds().has("eq:blaster"), "the parts computer sells sandblasting cabinets")
+	# Surface patches face outwards.
+	var bm := BikeModel.new()
+	add_child(bm)
+	bm.build_from(BikeBuild.new())
+	var surf := bm.surface_points("tank", 0.03)
+	var pts: PackedVector3Array = surf[0]
+	var nrm: PackedVector3Array = surf[1]
+	var centre := bm.slot_bounds("tank").get_center()
+	var out := 0
+	for i in pts.size():
+		if (pts[i] - centre).dot(nrm[i]) > 0.0:
+			out += 1
+	check(pts.size() > 50 and out > pts.size() * 0.8, "the coverage map covers the part's surface, normals facing out (%d of %d)" % [out, pts.size()])
+	bm.queue_free()
+
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var me := Shed.me()
+	Shed.request({"a": "order_furniture", "model": "blaster_cabinet"})
+	var cab := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "blaster":
+			cab = id
+	check(cab != 0, "a sandblasting cabinet can be ordered")
+	var spot := "blast_%d_0" % cab
+	var at := Workshop.CENTER + Vector3(1.5, 0.0, 1.8)
+	Shed.request({"a": "grab", "furniture": cab})
+	Shed.request({"a": "release", "furniture": cab, "xf": Transform3D(Basis(), at)})
+	# Only an engine goes in it: the barn find's, off the stand, with its head and carbs on.
+	var engine := 0
+	var stand_spot := ""
+	for s in Shed.stand_spots():
+		if Shed.is_engine(Shed.item_at_spot(s)):
+			stand_spot = s
+			engine = Shed.item_at_spot(s)
+	var tyre := _hold_new("sport_road")
+	check(Shed.check(me, {"a": "place", "spot": spot}).contains("engines"), "a tyre doesn't go in the sandblaster")
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), at + Vector3(2.0, 0.0, 0.0))})
+	Shed.request({"a": "take", "spot": stand_spot})
+	Shed.request({"a": "place", "spot": spot})
+	check(Shed.item_at_spot(spot) == engine and engine != 0, "the engine goes in the cabinet, ancillaries and all")
+	var parts := [engine]
+	for slot in PartsDB.ENGINE_SLOTS:
+		if Shed.engine_item(engine, slot) != 0:
+			parts.append(Shed.engine_item(engine, slot))
+	for id in parts:
+		Shed.items[id]["rust"] = 0.7
+		Shed.items[id]["dirt"] = 0.6
+		Shed.items[id]["wear"] = 0.1
+	for i in 5:
+		await get_tree().process_frame
+	# Stand at the front, look in through the glass and put your hands in the gloves (F).
+	var view: EquipmentView = main.workshop.furniture_nodes[cab]
+	var pivot: Node3D = view.get_node("Pivot")
+	w.place(Transform3D(Basis(), at + Vector3(0.0, 0.0, 0.95)))
+	await _aim_point(w, pivot.global_position)
+	check(w.target.get("spot", "") == spot and w.info.contains("sandblast"), "looking in, the panel says F to sandblast it (%s)" % str(w.target))
+	_press("interact")
+	for i in 4:
+		await get_tree().physics_frame
+	check(w.blast != null and Shed.blasting(me) == cab and w.blast.parts.size() == parts.size(),
+		"F: hands in the gloves, every part of the engine on the coverage map (%d parts)" % (w.blast.parts.size() if w.blast else 0))
+	var start := w.global_position
+	# Blast: hold the work button; the jet strips where you aim, with grit and sparks flying.
+	Input.action_press("act")
+	var saw_jet := false
+	for i in 80:
+		await get_tree().physics_frame
+		saw_jet = saw_jet or (view.blast_firing() and (view.get_node("Nozzle/Jet") as CPUParticles3D).emitting)
+	var bare := w.blast.marks.bare_count()
+	check(saw_jet and bare > 5 and w.blast.total() > 0.0, "holding the work button blasts: sand from the nozzle and bare metal where it hits (%d patches)" % bare)
+	check((view.get_node("Rebound") as CPUParticles3D).emitting and view.blast_sound.playing, "dust kicks back off the engine and you hear the roar")
+	# Turn the engine with the keys and sweep it.
+	var rot0: Vector2 = w.blast.rot
+	Input.action_press("move_right")
+	for i in 120:
+		await get_tree().physics_frame
+		if i % 30 == 0:
+			w._look(0.0, 0.02 if (i / 30) % 2 == 0 else -0.02)
+	Input.action_release("move_right")
+	Input.action_press("move_forward")
+	for i in 30:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	Input.action_release("act")
+	await get_tree().physics_frame
+	check(absf(w.blast.rot.x - rot0.x) > 0.5 and w.global_position.distance_to(start) < 0.05,
+		"W A S D turn the engine on the turntable instead of walking (%.2f rad)" % (w.blast.rot.x - rot0.x))
+	check(pivot.basis.is_equal_approx(BlastGame.pivot_basis(w.blast.rot)), "the engine turns in the cabinet")
+	var total := w.blast.total()
+	check(w.blast.marks.bare_count() > bare * 2 and total > 0.02, "sweeping round, more of it comes up bare (%d%%)" % roundi(total * 100.0))
+	# Too long on one spot pits it.
+	var game := w.blast
+	var id0 := int(game.parts.keys()[0])
+	var cells: PackedFloat32Array = game.parts[id0]["cells"]
+	var rust_before := float(Shed.items[engine]["rust"])
+	# Step back: the host strips each part by how much of it came up bare.
+	_press("interact")
+	for i in 4:
+		await get_tree().physics_frame
+	check(w.blast == null and Shed.blasting(me) == 0, "F steps back from the cabinet")
+	var stripped := 0
+	for id in parts:
+		if float(Shed.items[id]["rust"]) < 0.7 - 0.01:
+			stripped += 1
+	check(stripped >= 1 and float(Shed.items[engine]["rust"]) <= rust_before, "the parts the jet reached have less rust and muck on them (%d)" % stripped)
+	# The host's rules: coverage strips rust and muck, overdoing it wears the part.
+	Shed.request({"a": "blast_use", "spot": spot, "on": true})
+	var res := {}
+	for id in parts:
+		res[id] = [0.95, 0.0]
+	res[parts[0]] = [0.95, 0.5]
+	var xp_before := int(Progress.profile.get("xp", 0))
+	Shed.request({"a": "blast", "spot": spot, "parts": res})
+	check(parts.all(func(id): return float(Shed.items[id]["rust"]) == 0.0 and float(Shed.items[id]["dirt"]) == 0.0),
+		"blasted all over, the engine and every ancillary come back to bare metal")
+	check(float(Shed.items[parts[0]]["wear"]) > 0.15 and float(Shed.items[parts[1]]["wear"]) < 0.11, "lingering pits the metal: the overdone part wears")
+	check(int(Progress.profile.get("xp", 0)) > xp_before, "sandblasting earns XP")
+	check(Shed.check(me, {"a": "blast", "spot": spot, "parts": res}) != "", "you have to be at the cabinet to blast")
+	# Someone else can't take the engine out while you're blasting.
+	Shed.request({"a": "blast_use", "spot": spot, "on": true})
+	Shed.crew[777] = {"name": "Mate"}
+	check(Shed.check(777, {"a": "blast_use", "spot": spot, "on": true}).contains("using it")
+		and Shed.check(777, {"a": "take", "spot": spot}).contains("blasting"), "one person at the gloves at a time, and the engine stays put")
+	Shed.crew.erase(777)
+	Shed.request({"a": "blast_use", "on": false})
+	# A blast game on its own: one patch held too long goes past bare and pits.
+	var g := BlastGame.new()
+	g.parts = {1: {"slot": "engine", "name": "Engine", "start": 0, "points": PackedVector3Array([Vector3.ZERO]),
+		"normals": PackedVector3Array([Vector3.BACK]), "cells": PackedFloat32Array([BlastGame.OVER + 1.0])}}
+	check(float(g.stats(1)["over"]) == 1.0 and float(g.stats(1)["covered"]) == 1.0, "a patch blasted too long counts as pitted")
+	Shed.items.erase(tyre)
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
