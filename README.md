@@ -144,7 +144,7 @@ The **storage room** is through the doorway in the west wall, by the back corner
 - **Crew board**: everyone in the shed and what they're doing.
 - **XP goals**: everyone's level and XP bar, and your own goals and points.
 - **How to play**: the controls and the basics, a page at a time, turning over by itself.
-- **My money**, **Garage money**, **What you can afford** and **Contracts**: these are laid out now, and their numbers arrive with money and contracts in a later update.
+- **My money**, **Garage money**, **What you can afford** and **Contracts**: these are laid out now. The cash figures on the two money pages are real (both start at nothing); the rest of their numbers arrive with money and contracts in a later update.
 
 Bay screens start on their bay's bike and the crew board starts on the crew list. The channel each screen is on is kept with the shed, and everyone in co-op sees the same channel. The money pages show your own figures on your own screen.
 
@@ -249,15 +249,25 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 
 The suspension now moves visibly over bumps and dirt ruts, the rear shocks stretch and squash with the swingarm, and landings from jumps soak up instead of bouncing. **Tyres come in widths** (for example 120/70, 160/60, 180/55, 190/50): wider tyres grip more on tarmac and less in mud, a wide front tyre steers slower, and each wheel rim takes a range of widths and one rim size (the part info shows it). Tyres and rims are drawn at their real width and profile.
 
-Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L still picks low beam, high beam or off. At night the beam lights the night air softly, a faint glow in the mist rather than a solid cone, a little stronger on high beam, with a few specks drifting through it. (On the simpler renderer for older graphics cards it's a faint soft glow instead.)
+Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L still picks low beam, high beam or off. At night the beam lights the night air softly, a faint glow in the mist rather than a solid cone, a little stronger on high beam, with a few specks drifting through it. The headlight is two lights: a core that lights the road and a wide, dim flood round it. Both fade out gradually from the middle, so the pool of light on the road has no ring round it, and only the soft flood shows in the air, as a haze with no edges. (On the simpler renderer for older graphics cards it's a faint soft glow instead.)
 
 You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The engine sound now follows the engine: cylinders, capacity, the exhaust and the gearbox's whine. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
 
-Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
+Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The moment a tyre loses grip it gives a loud, sharp chirp (louder the more suddenly it lets go, from a lock-up, a wheelspin or a burnout), and a skid that goes on settles to a quieter screech. The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
 
 The **yard** past the drag strip has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
 
 You steer by leaning: the rider counter-steers for you, like on a real bike. The **rider assist** setting goes from 0 (full sim) to 1 (most help with balance, wheelspin and wheelies). The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
+
+### Weather
+
+The weather changes by itself every few minutes between **clear skies**, **cloudy**, **fog** and **rain**, drifting from one to the next over about 40 seconds. Clouds grey the sky and dim the sun, and the shadows go soft; fog closes in so you see only a short way; rain falls round you, soaks the roads and the yard so they go darker and shiny, and wet tarmac grips a little less (about 15%), so brake and lean with care. Once it stops the roads dry out over a few minutes. You hear the rain outside and drumming on the roof when you're in the shed, and it never rains indoors.
+
+In the Esc menu's **Settings** tab, **Weather** picks **Changes by itself** or holds one kind (always clear, cloudy, foggy or raining). In co-op the host's weather is everyone's. The weather is saved with the shed.
+
+### Debug tab
+
+The Esc menu's **Debug** tab is for trying things out: **Reset my XP** (back to level 1 with no upgrades, skills or goals), **Max my XP** (top level, every point to spend), **Reset everyone's XP** (host only: every player in the shed), **Reset my money**, **Max my money** and **Reset garage money**. Every reset asks first. Your money is kept with your character and the garage's with the shed; both start at nothing and show on the TVs' **My money** and **Garage money** pages.
 
 ### Co-op
 
@@ -290,6 +300,8 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
 | `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |
+| `scripts/daylight.gd`, `weather.gd` | Time of day, sky and lighting; the weather (clouds, fog, rain, wet roads, rain sounds) |
+| `scripts/debug_tab.gd` | The Esc menu's Debug tab: reset or max XP and money |
 | `scripts/progress.gd`, `ride_xp.gd`, `character_tab.gd`, `skill_tree_view.gd` | XP, levels, tool upgrades, skills and goals, kept in your own profile; riding XP; the Character tab |
 | `scripts/sfx.gd` | Tool, footstep and workshop sounds, synthesised at start-up, and the volume buses |
 | `scripts/shed_radio.gd`, `radio_stream.gd`, `mp3_stream_decoder.gd` | The shed radio: streams an MP3 station over HTTP(S) and decodes it gaplessly |

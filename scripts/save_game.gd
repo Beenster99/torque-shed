@@ -209,6 +209,8 @@ func capture() -> Dictionary:
 		"host": _local_name(), "shed": shed,
 		"time": Daylight.time_of_day() if Daylight.current else Settings.time_of_day,
 		"day_night_cycle": Settings.day_night_cycle, "day_length": Settings.day_length,
+		"weather_mode": Settings.weather,
+		"weather": Weather.current.save_data() if Weather.current else {"state": Settings.weather_now, "wet": 0.0},
 		"players": _players.duplicate(true)}
 
 
@@ -305,6 +307,13 @@ func restore(data: Dictionary) -> bool:
 		Daylight.current.set_time(hours)
 	else:
 		Settings.time_of_day = wrapf(hours, 0.0, 24.0)
+	# Saves from before the weather carry on with whatever it is now.
+	Settings.weather = str(data.get("weather_mode", Settings.weather))
+	var weather = data.get("weather", {})
+	if weather is Dictionary and not weather.is_empty():
+		Settings.weather_now = str(weather.get("state", Settings.weather_now))
+		if Weather.current:
+			Weather.current.restore(weather)
 	var players = data.get("players", {})
 	_players = players.duplicate(true) if players is Dictionary else {}
 	# Renamed since the last save: you're still the host who saved it.

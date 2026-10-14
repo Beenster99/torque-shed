@@ -25,6 +25,8 @@ signal changed
 const VERSION := 1
 const PATH := "user://profile.json"
 const MAX_LEVEL := 50
+## A player's own cash (money comes properly with Milestone C; 0 to start).
+const MAX_MONEY := 1000000
 ## How long a repeat of the same job on the same thing keeps counting against it, seconds.
 const REPEAT_WINDOW := 120.0
 ## Jobs with nothing named to them are only cut back after this many in a minute.
@@ -287,7 +289,7 @@ func _read_all() -> Dictionary:
 ## A profile with every field present and the right types (JSON brings numbers back as floats).
 static func _clean_profile(p: Dictionary, player_name: String) -> Dictionary:
 	var out := {"name": player_name, "xp": maxi(0, int(p.get("xp", 0))), "tools": {}, "skills": {}, "stats": {},
-		"records": {}, "goals": []}
+		"records": {}, "goals": [], "money": clampi(int(p.get("money", 0)), 0, MAX_MONEY)}
 	var tools = p.get("tools", {})
 	if tools is Dictionary:
 		for t in tools:
@@ -553,7 +555,7 @@ func summary(peer_id: int) -> Dictionary:
 	if _summaries.has(peer_id):
 		return _summaries[peer_id]
 	return {"name": str(Shed.crew.get(peer_id, {}).get("name", "Rider")), "level": 1, "xp": 0, "xp_level_start": 0,
-		"xp_next": xp_for_level(2), "tool_points": 0, "skill_points": 0, "goals": [], "tools": {}, "skills": {}}
+		"xp_next": xp_for_level(2), "tool_points": 0, "skill_points": 0, "goals": [], "tools": {}, "skills": {}, "money": 0}
 
 
 func own_summary() -> Dictionary:
@@ -565,7 +567,7 @@ func own_summary() -> Dictionary:
 	return {"name": str(profile.get("name", "Rider")), "level": lv, "xp": int(profile.get("xp", 0)),
 		"xp_level_start": xp_for_level(lv), "xp_next": xp_for_level(mini(lv + 1, MAX_LEVEL)),
 		"tool_points": tool_points(), "skill_points": skill_points(), "goals": goals,
-		"tools": profile["tools"].duplicate(), "skills": profile["skills"].duplicate()}
+		"tools": profile["tools"].duplicate(), "skills": profile["skills"].duplicate(), "money": money()}
 
 
 func tool_stage(peer_id: int, tool: String) -> int:
@@ -620,7 +622,7 @@ static func _clean_summary(s: Dictionary) -> Dictionary:
 	return {"name": str(s.get("name", "Rider")).left(24), "level": clampi(int(s.get("level", 1)), 1, MAX_LEVEL),
 		"xp": maxi(0, int(s.get("xp", 0))), "xp_level_start": int(s.get("xp_level_start", 0)), "xp_next": int(s.get("xp_next", 0)),
 		"tool_points": int(s.get("tool_points", 0)), "skill_points": int(s.get("skill_points", 0)), "goals": goals,
-		"tools": tools, "skills": skills}
+		"tools": tools, "skills": skills, "money": clampi(int(s.get("money", 0)), 0, MAX_MONEY)}
 
 
 # ---------------------------------------------------------------------------- spending points
@@ -793,3 +795,56 @@ func add_speed_band(band: int) -> void:
 		bands.append(band)
 	profile["records"]["bands"] = bands
 	_touch()
+
+
+# ---------------------------------------------------------------------------- money and debugging
+
+## This player's cash.
+func money() -> int:
+	return int(profile.get("money", 0))
+
+
+## Any player's cash, as far as this machine knows (their reported summary for others).
+func money_of(peer_id: int) -> int:
+	return money() if peer_id == Shed.me() else int(summary(peer_id).get("money", 0))
+
+
+## Sets this player's cash (kept in their profile).
+func set_money(amount: int) -> void:
+	profile["money"] = clampi(amount, 0, MAX_MONEY)
+	_touch()
+
+
+## Debug: this player back to a new character: level 1, no XP, no tool upgrades, skills or goals.
+func debug_reset_xp() -> void:
+	profile["xp"] = 0
+	profile["tools"] = {}
+	profile["skills"] = {}
+	profile["goals"] = []
+	profile["stats"] = {}
+	profile["records"] = {}
+	_touch()
+
+
+## Debug: this player straight to the top level, with every point to spend.
+func debug_max_xp() -> void:
+	profile["xp"] = maxi(int(profile.get("xp", 0)), xp_for_level(MAX_LEVEL))
+	_touch()
+	leveled_up.emit(level())
+
+
+## Debug, host or solo only: every player's XP reset, the host's own here and each client's on
+## their machine. False on a client.
+func debug_reset_all_xp() -> bool:
+	if not Shed.is_authority():
+		return false
+	debug_reset_xp()
+	if Net.is_online():
+		_debug_reset.rpc()
+	return true
+
+
+@rpc("authority", "call_remote", "reliable")
+func _debug_reset() -> void:
+	debug_reset_xp()
+	Shed.feedback.emit("The host reset everyone's XP.", true)

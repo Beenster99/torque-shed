@@ -6,7 +6,7 @@ extends Node
 
 const RATE := 22050
 const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour", "screech", "door",
-	"fan", "blast"]
+	"fan", "blast", "rain", "rain_roof"]
 ## Ear defenders on (the dyno room): every sound effect comes through dull and quieter.
 const MUFFLE_CUTOFF := 520.0
 const MUFFLE_DB := -12.0
@@ -175,6 +175,12 @@ func _make(sound: String) -> AudioStreamWAV:
 			data = _pour()
 		"screech":
 			data = _screech()
+		"chirp":
+			data = _chirp()
+		"rain":
+			data = _rain(false)
+		"rain_roof":
+			data = _rain(true)
 		"gear":
 			data = _gear()
 		"ping":
@@ -423,6 +429,49 @@ func _screech() -> PackedFloat32Array:
 		phase += f / RATE
 		var tone := sin(TAU * phase) * 0.5 + sin(TAU * phase * 2.01) * 0.18
 		d[i] = (tone + _rng.randf_range(-1.0, 1.0) * 0.12) * 0.45
+	return d
+
+
+## A tyre letting go: a sharp, bright bark that snaps in and dies quickly, the pitch dropping
+## as the rubber breaks loose. Much louder and more sudden than the long screech.
+func _chirp() -> PackedFloat32Array:
+	var d := _samples(0.42)
+	var phase := 0.0
+	var lp := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		var f := 1750.0 - 520.0 * minf(t / 0.25, 1.0) + 90.0 * sin(TAU * 31.0 * t)
+		phase += f / RATE
+		var env := minf(t / 0.006, 1.0) * exp(-t * 9.0) * (1.0 + 0.6 * exp(-t * 40.0))
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.5
+		var tone := sin(TAU * phase) * 0.55 + sin(TAU * phase * 2.02) * 0.22 + sin(TAU * phase * 0.5) * 0.12
+		d[i] = (tone + lp * 0.35) * env * 0.85
+	return d
+
+
+## Rain: a soft wash of fine noise with drops pattering through it. On the roof (`roof`) it's
+## a deeper drumming on the metal sheets with louder taps, heard from inside the shed.
+func _rain(roof: bool) -> PackedFloat32Array:
+	var d := _samples(3.0)
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in d.size():
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * (0.12 if roof else 0.55)
+		lp2 += (lp - lp2) * (0.2 if roof else 0.8)
+		d[i] = lp2 * (0.55 if roof else 0.3)
+	# Single drops: little ticks outdoors, ringing taps on the tin roof.
+	var drops := 260 if roof else 420
+	for k in drops:
+		var start := _rng.randi_range(0, d.size() - 1)
+		var f := _rng.randf_range(1800.0, 4200.0) if roof else _rng.randf_range(2500.0, 6000.0)
+		var amp := _rng.randf_range(0.04, 0.16 if roof else 0.1)
+		var length := int(RATE * (0.05 if roof else 0.012))
+		for j in length:
+			var t := float(j) / RATE
+			var at := (start + j) % d.size()   # wraps round, so the loop joins up
+			d[at] += sin(TAU * f * t) * exp(-t * (90.0 if roof else 400.0)) * amp
 	return d
 
 

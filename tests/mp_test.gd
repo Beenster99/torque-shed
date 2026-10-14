@@ -3,8 +3,9 @@ extends Node
 ## game. The client must receive the host's shed, unbolt a part and put another down on the
 ## floor, tune a tyre pressure and change the crew board's channel, which the host must then see, each puts a mark on the whiteboard
 ## the other must see (the client also puts up a picture, sent in chunks, and the host makes a
-## poster of the board that the client must get), and both must see each other walk. The client
-## also orders an A0 poster and, once it's in, carries it and scraps it: both must see it come and go.
+## poster of the board that the client must get), the client's weather follows the host's, and
+## both must see each other walk. The client also orders an A0 poster and, once it's in, carries
+## it and scraps it: both must see it come and go.
 
 var role := "host"
 var main: Node
@@ -101,7 +102,12 @@ func _ready() -> void:
 		var tv_ok: bool = Shed.screen_channel("crew")["ch"] == "live"   # the client changed the crew board's channel
 		var lights_ok := not Shed.room_lit("paint")   # the client switched the paint shop lights off
 		var geo_ok := ranger != 0 and Shed.geometry_of(ranger).has("tank")
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok:
+		# Weather: the host holds it at fog and the client's sky follows.
+		if role == "host" and Weather.current and Weather.current.state != "fog":
+			Settings.weather = "fog"
+			Weather.current.change_to("fog", true)
+		var weather_ok := Weather.current != null and Weather.current.state == "fog"
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000
