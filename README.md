@@ -36,7 +36,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Crouch (low parts such as stands, oil filter and chain need it) | C or Ctrl | Right stick click |
 | Pick a tool (hands, wrench, brush, grinder, spray can, pressure washer, spray gun, stopwatch) | 1-8, Q / E, mouse wheel | LB / RB |
 | Work on what you're looking at, or put a held part down anywhere | Hold left mouse | Hold RT or A |
-| Spray colour / finish (can or gun) | R or right mouse / T | X / B |
+| Spray colour / finish (can or gun) | R or right mouse / T or the mouse back (side) button | X / B |
 | Ping what you're looking at for the crew | G or middle mouse | D-pad right |
 | Stopwatch start / stop (lap or reset: right mouse with the stopwatch out) | P | D-pad left |
 | Name the bike you're looking at | N | |
@@ -52,7 +52,9 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | TV or wall screen: next / previous channel | R or right mouse / T | X / B |
 | Throw away or recycle a part (hold it, look at a bin) | Hold left mouse | Hold RT or A |
 | Whiteboard: draw / rub out; pen colour, eraser, thickness; text; undo; wipe it all | Hold left / right mouse; 1-6, 7, wheel; T; Z; hold X | Hold RT / LT; B colour; LB / RB thickness; D-pad left undo |
-| Menu (your level, tool upgrades and skills are in its Character tab) | Esc | Start |
+| Whiteboard: add a picture from your PC; move a picture (again to put it down); size it; make a poster of the board | U; M; + / - (or the wheel while moving it); K | (no picture upload); D-pad up; LB / RB while moving it; D-pad down |
+| Menu (your level, tool upgrades and skills are in its Character tab; change any key in its Key bindings tab) | Esc | Start |
+| In menus and on the computers: move, press, back; next / previous tab or aisle | Mouse, Esc | D-pad or left stick, A, B; LB / RB |
 
 **Building from scratch**: hold a frame and look at an empty bay floor (bay 4 is free in a new shed), then hold the work button to stand the frame up in the bay. Fit the fork, wheels, engine and the rest onto it from there. Taking the bare frame off again frees the bay.
 
@@ -88,6 +90,14 @@ The **paint shop** is built into the shed now, through the doorway on the east s
 Bay screens start on their bay's bike and the crew board starts on the crew list. The channel each screen is on is kept with the shed, and everyone in co-op sees the same channel. The money pages show your own figures on your own screen.
 
 The **whiteboard** on the front wall, left of the roller door, is for the crew's plans and lists. Walk up and look at it: hold left mouse to draw where you're looking and right mouse to rub out; 1–6 pick the pen colour (black, blue, red, green, orange, purple), 7 the eraser, and the scroll wheel the thickness (fine, medium, thick, marker). T types a line of text at the crosshair (Enter starts the next line under it), Z or Ctrl+Z undoes your own last mark, and holding X wipes the whole board. Everyone sees it as it's drawn, and it's kept with the shed.
+
+**Pictures on the whiteboard**: press U at the board to pick a picture on your PC (PNG, JPEG or WebP). It goes up where you're looking, shrunk to at most 512 pixels across so it's quick to send, and everyone in the shed gets it a piece at a time (a grey card shows where it goes until it arrives). Look at a picture and press M to take hold of it: it follows the crosshair, the scroll wheel or + and - size it, and M or left mouse puts it down. + and - also size a picture you're just looking at. Pictures rub out with the eraser and undo with Z like any other mark. The board holds 12 pictures; they're saved with the shed.
+
+**Posters of the whiteboard**: press K at the board and give it a name, and what's on the board now (pictures and all) is saved as a poster design kept with the shed. The parts computer's **Shed, Wall posters** list then has it under "From the whiteboard": order it and a framed print of that drawing arrives outside the roller door, to hang on any wall. Wiping the board afterwards doesn't change the poster. The shop holds up to 24 designs; past that the oldest one nobody has hung goes.
+
+**Key bindings**: the Esc menu's **Key bindings** tab lists every action with its key or mouse button and its pad button. Click one and press the new key, mouse button or pad button (Esc cancels); Clear takes a binding off and Reset to defaults puts them all back. If one key would do two things in the same place (on foot, riding, with a spray can out, or at the whiteboard), the tab says so in red. Your bindings are saved with your settings and used from the next start too. The spray can's finish moved off the middle mouse button, which is ping's: it's T or the mouse's back side button now.
+
+**Using a controller in menus**: the parts computer, the dyno desk and the Esc menu work with a pad. The d-pad or left stick moves between buttons, A presses (on the parts computer: A picks a kind, A picks a part, A again orders it), B goes back a step and then closes, and LB / RB go to the next aisle or tab.
 
 The **radio** on the shelf above the workbench streams internet radio stations (SomaFM and Radio Paradise). Everyone in the shed hears the same station; each player's PC streams it, so it needs an internet connection. The Esc menu has volume sliders for sound effects and the radio. Stations live in `data/radio.json`.
 
@@ -198,7 +208,8 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/workshop.gd` | Builds the shed, its stations and dashboards, and draws parked bikes and loose parts |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |
-| `scripts/whiteboard.gd`, `board_data.gd` | The shared whiteboard: drawing on it, and its marks kept in the shed state |
+| `scripts/whiteboard.gd`, `board_data.gd`, `board_print.gd` | The shared whiteboard: drawing on it, pictures from players' PCs, and its marks kept in the shed state; whiteboard posters |
+| `scripts/settings.gd`, `keybind_tab.gd` | Settings, every key binding and rebinding them in the Esc menu |
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime |

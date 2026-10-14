@@ -17,7 +17,8 @@ W A S D / left stick: walk      Shift: run      Mouse / right stick: look      C
 1-6, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can, pressure washer)
 Hold left mouse / RT / A: work on what you're looking at, or put a held part down anywhere
 Holding a can of fluid: left mouse pours it in, right mouse / LT drains into it
-Spray can: R / right mouse / X picks the colour, T / middle mouse / B the finish
+Spray can or gun: R / right mouse / X picks the colour, T / mouse back button / B the finish
+G / middle mouse / D-pad right: ping   (Key bindings tab: change any of these)
 F / Y: get on a finished bike (hold to wheel it about), use the parts computer, switch the
   radio on or off, unpack a box, take hold of an engine stand or shelving unit (F again lets go)
 Hands on a bolted-on stand: kick the side stand down or heave the bike onto the centre stand
@@ -54,6 +55,8 @@ var _new_shed: Button
 var _confirm: ConfirmationDialog
 var _save_status: Label
 var _save_button: Button
+var _resume: Button
+var keybinds: KeybindTab
 
 
 func _ready() -> void:
@@ -105,7 +108,8 @@ func _ready() -> void:
 	_pause_box.add_theme_constant_override("separation", 10)
 	_pause_box.visible = false
 	col.add_child(_pause_box)
-	_pause_box.add_child(_button("Back to the shed", func(): _save(); resume.emit()))
+	_resume = _button("Back to the shed", func(): _save(); resume.emit())
+	_pause_box.add_child(_resume)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_host_info = UITheme.label("", 15, Color(1, 1, 1, 0.75))
 	_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -171,6 +175,8 @@ func _ready() -> void:
 	controls.name = "Controls"
 	_tabs.add_child(controls)
 	controls.add_child(UITheme.label(CONTROLS_TEXT, 15))
+	keybinds = KeybindTab.new()
+	_tabs.add_child(keybinds)
 	var pad := VBoxContainer.new()
 	pad.name = "Controller check"
 	pad.add_theme_constant_override("separation", 10)
@@ -185,7 +191,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if visible and _tabs.current_tab == 2:
+	if visible and _tabs.get_current_tab_control() == _pad.get_parent():
 		_pad.text = Controls.diagnostics()
 	if visible and _tabs.current_tab == 0:
 		_refresh_time_settings(false)
@@ -204,6 +210,7 @@ func show_title(status := "") -> void:
 	_status.text = status
 	_refresh_save_choice()
 	show()
+	_solo.grab_focus()
 
 
 func show_pause() -> void:
@@ -219,6 +226,22 @@ func show_pause() -> void:
 	_auto.button_pressed = Settings.auto_shift
 	_refresh_time_settings(true)
 	show()
+	_resume.grab_focus()
+
+
+## On a pad: B goes back to the shed, LB / RB turn the tabs over.
+func _unhandled_input(event: InputEvent) -> void:
+	if not visible or not event is InputEventJoypadButton or not event.is_pressed() or not keybinds.listening.is_empty():
+		return
+	if event.is_action_pressed("ui_cancel") and _pause_box.visible:
+		_save()
+		resume.emit()
+	elif event.is_action_pressed("tool_next") or event.is_action_pressed("tool_prev"):
+		var step := 1 if event.is_action_pressed("tool_next") else -1
+		_tabs.current_tab = posmod(_tabs.current_tab + step, _tabs.get_tab_count())
+	else:
+		return
+	get_viewport().set_input_as_handled()
 
 
 ## Day/night cycle on or off, how long a day lasts and a clock slider. On a co-op client the

@@ -198,7 +198,7 @@ func save_now(manual := false) -> bool:
 ## now), the clock and day/night settings, and where each player stood.
 func capture() -> Dictionary:
 	_note_players()
-	var shed: Dictionary = Shed._snapshot().duplicate(true)
+	var shed: Dictionary = Shed.save_snapshot().duplicate(true)
 	var bikes: Dictionary = shed.get("bikes", {})
 	for id in bikes:
 		var rider: int = int(bikes[id].get("rider", 0))

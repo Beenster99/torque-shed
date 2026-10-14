@@ -10,6 +10,8 @@ signal feedback(text: String, ok: bool)
 signal pinged(peer: int, ping: Dictionary)
 ## The whiteboard's marks changed (see BoardData).
 signal board_changed
+## A picture or poster print's data arrived (see share_blob).
+signal blob_arrived(id: int)
 
 ## The fixed workbench along the wall. Equipment adds its own places: engine stands
 ## ("stand_<id>") and the rest "<prefix>_<id>_<n>" (see Equipment.SPOT_PREFIX).
@@ -84,6 +86,12 @@ var door_open := true     # the roller door
 var lights_on := true     # the shed's strip lights
 var stations: Array = []    # [{name, genre, url}] from data/radio.json
 var board := BoardData.empty()   # what's drawn and written on the shed whiteboard
+## Bigger bits of data that go out in chunks (see share_blob): the pictures players put on the
+## whiteboard (WebP) and the whiteboard drawings turned into posters. blob id -> PackedByteArray.
+var blobs := {}
+## Whiteboard drawings saved as posters to order from the parts computer:
+## design id -> {id, name, by, blob (its marks, compressed), imgs (blob ids of its pictures)}.
+var posters := {}
 ## What each screen is tuned to: screen key (see TvChannels) -> {ch: channel id, rider: the peer
 ## its live channel follows, 0 for whoever is out first}. Screens not in here show their home channel.
 var screens := {}
@@ -131,6 +139,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	items.clear()
 	crew.clear()
 	board = BoardData.empty()
+	_clear_prints()
 	board_changed.emit()
 	_next_id = 1
 	_rng.seed = seed_value if seed_value != 0 else int(Time.get_unix_time_from_system())
@@ -260,6 +269,7 @@ func load_state(state: Dictionary, player_name: String) -> void:
 
 func join_remote() -> void:
 	board = BoardData.empty()
+	_clear_prints()
 	board_changed.emit()
 	bikes.clear()
 	furniture.clear()
@@ -273,6 +283,7 @@ func join_remote() -> void:
 func stop() -> void:
 	_washer_by.clear()
 	board = BoardData.empty()
+	_clear_prints()
 	board_changed.emit()
 	furniture.clear()
 	radio = {"on": false, "station": 0}
@@ -1108,6 +1119,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unknown equipment."
 			if Equipment.FIXED_KINDS.has(Equipment.kind_of(model)):
 				return "The paint booth is built into the shed: it's in the paint shop on the east side."
+			if model == Equipment.BOARD_POSTER and not posters.has(int(action.get("design", 0))):
+				return "That whiteboard poster isn't in the shop any more."
 			if Equipment.is_yard(model):
 				if free_yard_xf(model) == null:
 					return "The drop-off by the drag strip is full. Move some of the yard kit first."
@@ -1593,10 +1606,16 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "Ordered the %s. It's in the yard by the drag strip: press F on it to move it where you want it." % \
 					Equipment.get_model(model)["name"].to_lower()
 			else:
-				_new_furniture(kind, free_delivery_xf(), model)
+				var fid := _new_furniture(kind, free_delivery_xf(), model)
+				var what := str(Equipment.get_model(model)["name"]).to_lower()
+				if model == Equipment.BOARD_POSTER:
+					# A print of a whiteboard drawing: it shows that design.
+					var design := int(action.get("design", 0))
+					furniture[fid]["design"] = design
+					what = "\"%s\" poster" % str(posters[design]["name"])
 				var how := "press F on it to carry it in and hang it on a wall" if Equipment.is_wall(model) else \
 					("hold F on it to move it" if kind == "seat" else "press F on it to push it in")
-				text = "Ordered the %s. It's outside by the roller door: %s." % [Equipment.get_model(model)["name"].to_lower(), how]
+				text = "Ordered the %s. It's outside by the roller door: %s." % [what, how]
 		"start_build":
 			var id := _empty_bike(held_by(peer), int(action["bay"]))
 			_bump(c, "fitted")
@@ -1975,7 +1994,7 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 ## Draws or writes on the whiteboard. Your own marks show straight away; the host checks them
 ## and passes them on to everyone else as you go.
 func board_request(op: Dictionary) -> void:
-	if not is_authority() and str(op.get("a", "")) in ["board_draw", "board_text"]:
+	if not is_authority() and str(op.get("a", "")) in ["board_draw", "board_text", "board_image", "board_move"]:
 		var mine := BoardData.clean(op, me(), str(crew.get(me(), {}).get("name", Settings.player_name)))
 		if not mine.is_empty() and BoardData.apply(board, mine):
 			board_changed.emit()
@@ -2011,6 +2030,35 @@ func _board_apply(peer: int, action: Dictionary) -> void:
 			BoardData.apply(board, op)
 			_board_send({"a": "board_clear"})
 			_tell(peer, "Whiteboard wiped clean.", true)
+		"board_image":
+			var why := ""
+			if BoardData.find(board, int(op["id"])) >= 0:
+				return
+			if BoardData.image_count(board) >= BoardData.MAX_IMAGES:
+				why = "The board holds %d pictures at most. Rub one out or undo one first." % BoardData.MAX_IMAGES
+			elif not image_ok(int(op["img"])):
+				why = "That picture didn't arrive in one piece. Try adding it again."
+			if why != "":
+				# The author put it up on their own board straight away: take it back off there.
+				if peer != me():
+					_board_op.rpc_id(peer, {"a": "board_remove", "ids": [int(op["id"])]})
+				_tell(peer, why, false)
+				return
+			BoardData.apply(board, op)
+			# The picture's bytes go to everyone else first, then the mark that shows it.
+			_send_blob(int(op["img"]), peer)
+			_board_send(op)
+		"board_move":
+			# Anyone can move a picture. The mover has it there already (and the host may too,
+			# when it's the host moving it), so it goes out whether or not it changed here.
+			var k := BoardData.find(board, int(op["id"]))
+			if k < 0 or not BoardData.is_image(board["marks"][k]):
+				return
+			BoardData.apply(board, op)
+			_board_send(op, peer)
+		"board_poster":
+			_make_poster(peer, str(action.get("name", "")))
+			return
 		_:
 			return
 	board_changed.emit()
@@ -2029,6 +2077,247 @@ func _board_send(op: Dictionary, skip := 0) -> void:
 func _board_op(op: Dictionary) -> void:
 	if BoardData.apply(board, op):
 		board_changed.emit()
+
+
+# ---------------------------------------------------------------------------- pictures and posters
+
+const BLOB_CHUNK := 24000        # bytes in each chunk sent, well inside what one message carries
+const MAX_BLOB := 600000         # the biggest picture or poster print taken
+const MAX_IMAGE_BYTES := 300000  # a picture from a player's PC, after it's been shrunk
+const MAX_BLOBS := 64            # past this, data nothing uses any more is dropped
+const MAX_POSTERS := 24
+const MAX_INCOMING := 16         # pictures part-way through arriving at once
+var _blob_in := {}               # blob id -> {from, n, parts: {i: bytes}} while it arrives
+var _textures := {}              # blob id -> ImageTexture, made when first shown
+var _marks_cache := {}           # blob id -> a poster print's marks, unpacked
+
+
+func _clear_prints() -> void:
+	blobs = {}
+	posters = {}
+	_blob_in = {}
+	_textures = {}
+	_marks_cache = {}
+
+
+func new_blob_id() -> int:
+	var id := 1 + randi() % 2000000000
+	while blobs.has(id) or _blob_in.has(id):
+		id = 1 + randi() % 2000000000
+	return id
+
+
+## Keeps `data` here as blob `id` and sends it on in chunks: a player's to the host, the host's
+## to everyone. Send the op that uses it after this, so it arrives first.
+func share_blob(id: int, data: PackedByteArray) -> void:
+	_store_blob(id, data)
+	if not Net.is_online():
+		return
+	if is_authority():
+		_send_blob(id)
+	else:
+		_send_chunks(1, id, data)
+
+
+## The host sends blob `id` to every player but `skip`.
+func _send_blob(id: int, skip := 0) -> void:
+	if not Net.is_online() or not is_authority() or not blobs.has(id):
+		return
+	for p in multiplayer.get_peers():
+		if p != skip:
+			_send_chunks(p, id, blobs[id])
+
+
+func _send_chunks(to: int, id: int, data: PackedByteArray) -> void:
+	var n := maxi(1, ceili(data.size() / float(BLOB_CHUNK)))
+	for i in n:
+		_blob_chunk.rpc_id(to, id, i, n, data.slice(i * BLOB_CHUNK, (i + 1) * BLOB_CHUNK))
+
+
+## A player joining gets every picture and poster print in use, after the shed itself.
+func _send_blobs_to(peer: int) -> void:
+	for id in blobs_in_use():
+		_send_chunks(peer, id, blobs[id])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _blob_chunk(id: int, i: int, n: int, data: PackedByteArray) -> void:
+	var from := multiplayer.get_remote_sender_id()
+	if not is_authority() and from != 1:
+		return
+	if id <= 0 or n <= 0 or i < 0 or i >= n or data.size() > BLOB_CHUNK or (n - 1) * BLOB_CHUNK >= MAX_BLOB:
+		return
+	if blobs.has(id):
+		return
+	var inc: Dictionary = _blob_in.get(id, {})
+	if inc.is_empty() or int(inc["from"]) != from or int(inc["n"]) != n:
+		if _blob_in.size() >= MAX_INCOMING:
+			_blob_in.erase(_blob_in.keys()[0])
+		inc = {"from": from, "n": n, "parts": {}}
+		_blob_in[id] = inc
+	inc["parts"][i] = data
+	if inc["parts"].size() < n:
+		return
+	var all := PackedByteArray()
+	for k in n:
+		all.append_array(inc["parts"][k])
+	_blob_in.erase(id)
+	if all.size() <= MAX_BLOB:
+		_store_blob(id, all)
+
+
+func _store_blob(id: int, data: PackedByteArray) -> void:
+	blobs[id] = data
+	_textures.erase(id)
+	_marks_cache.erase(id)
+	if blobs.size() > MAX_BLOBS:
+		# Drop the oldest that nothing uses, leaving the newest few (one may be on its way to the board).
+		var used := blobs_in_use()
+		var keys := blobs.keys()
+		for k in keys.slice(0, maxi(0, keys.size() - 8)):
+			if blobs.size() <= MAX_BLOBS:
+				break
+			if not used.has(k):
+				blobs.erase(k)
+	blob_arrived.emit(id)
+	board_changed.emit()
+
+
+## Every blob the board's pictures and the poster prints use.
+func blobs_in_use() -> Array:
+	var out := BoardData.images_in(board.get("marks", []))
+	for d in posters:
+		var p: Dictionary = posters[d]
+		for id in [int(p.get("blob", 0))] + Array(p.get("imgs", [])):
+			if not out.has(int(id)) and blobs.has(int(id)):
+				out.append(int(id))
+	return out.filter(func(id): return blobs.has(id))
+
+
+## Whether blob `id` is a picture fit to put on the board.
+func image_ok(id: int) -> bool:
+	if not blobs.has(id) or (blobs[id] as PackedByteArray).size() > MAX_IMAGE_BYTES or not _is_webp(blobs[id]):
+		return false
+	var img := Image.new()
+	if img.load_webp_from_buffer(blobs[id]) != OK:
+		return false
+	return maxi(img.get_width(), img.get_height()) <= BoardData.IMAGE_PX and img.get_width() > 0
+
+
+## Whether `data` starts like a WebP file, before it's handed to the decoder.
+static func _is_webp(data: PackedByteArray) -> bool:
+	return data.size() > 12 and data.slice(0, 4).get_string_from_ascii() == "RIFF" and data.slice(8, 12).get_string_from_ascii() == "WEBP"
+
+
+## The picture in blob `id` to draw, or null while it hasn't arrived (or isn't a picture).
+func image_texture(id: int) -> Texture2D:
+	if _textures.has(id):
+		return _textures[id]
+	if not blobs.has(id) or not _is_webp(blobs[id]):
+		return null
+	var img := Image.new()
+	if img.load_webp_from_buffer(blobs[id]) != OK:
+		return null
+	var tex := ImageTexture.create_from_image(img)
+	_textures[id] = tex
+	return tex
+
+
+## Shrinks a picture from a player's PC to at most BoardData.IMAGE_PX on its longest side and
+## packs it as WebP, small enough to send; an empty array when it can't be done.
+static func pack_image(img: Image) -> PackedByteArray:
+	if img == null or img.is_empty():
+		return PackedByteArray()
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	var px := BoardData.IMAGE_PX
+	while px >= 64:
+		var copy := img.duplicate() as Image
+		var longest := maxi(copy.get_width(), copy.get_height())
+		if longest > px:
+			var k := float(px) / longest
+			copy.resize(maxi(1, roundi(copy.get_width() * k)), maxi(1, roundi(copy.get_height() * k)), Image.INTERPOLATE_LANCZOS)
+		var data := copy.save_webp_to_buffer(true, 0.8)
+		if not data.is_empty() and data.size() <= MAX_IMAGE_BYTES:
+			return data
+		px = px * 3 / 4
+	return PackedByteArray()
+
+
+## Puts a picture (packed with pack_image) up on the whiteboard: the top left at `at` and `sz`
+## across, in board pixels. Its bytes go out first, then the mark. Gives the mark's id.
+func board_add_image(data: PackedByteArray, at: Vector2, sz: Vector2) -> int:
+	if data.is_empty() or data.size() > MAX_IMAGE_BYTES:
+		feedback.emit("That picture is too big to put up.", false)
+		return 0
+	if BoardData.image_count(board) >= BoardData.MAX_IMAGES:
+		feedback.emit("The board holds %d pictures at most. Rub one out or undo one first." % BoardData.MAX_IMAGES, false)
+		return 0
+	var img_id := new_blob_id()
+	share_blob(img_id, data)
+	var id := 1 + randi() % 1000000000
+	board_request({"a": "board_image", "id": id, "img": img_id, "at": at, "sz": sz})
+	return id
+
+
+## The host turns what's on the whiteboard now into a poster design for the parts computer.
+func _make_poster(peer: int, poster_name: String) -> void:
+	var marks: Array = board.get("marks", [])
+	if marks.is_empty():
+		_tell(peer, "The board is clean: draw something to make a poster of.", false)
+		return
+	poster_name = poster_name.strip_edges().left(32)
+	if poster_name == "":
+		poster_name = "Whiteboard poster %d" % (posters.size() + 1)
+	var raw := var_to_bytes(marks)
+	var data := raw.compress(FileAccess.COMPRESSION_ZSTD)
+	if data.size() > MAX_BLOB:
+		_tell(peer, "There's too much on the board for one poster. Rub some out first.", false)
+		return
+	if posters.size() >= MAX_POSTERS:
+		# Make room: the oldest design that isn't hanging on a wall goes.
+		var hung := {}
+		for f in furniture:
+			hung[int(furniture[f].get("design", 0))] = true
+		var gone := 0
+		for d in posters:
+			if not hung.has(int(d)):
+				gone = int(d)
+				break
+		if gone == 0:
+			_tell(peer, "The shop holds %d whiteboard posters, all of them on the walls." % MAX_POSTERS, false)
+			return
+		posters.erase(gone)
+	var blob := new_blob_id()
+	_store_blob(blob, data)
+	_send_blob(blob)
+	var id := _next_id
+	_next_id += 1
+	posters[id] = {"id": id, "name": poster_name, "by": str(crew.get(peer, {}).get("name", "Someone")), "blob": blob,
+		"raw": raw.size(), "imgs": BoardData.images_in(marks)}
+	_mark_dirty()
+	changed.emit()
+	_tell(peer, "Saved the board as the poster \"%s\". Order it from the parts computer: Shed, Wall posters." % poster_name, true)
+
+
+## The marks a poster design shows, or [] while its print hasn't arrived.
+func poster_marks(design: int) -> Array:
+	var p: Dictionary = posters.get(design, {})
+	var blob := int(p.get("blob", 0))
+	if _marks_cache.has(blob):
+		return _marks_cache[blob]
+	if not blobs.has(blob):
+		return []
+	var raw := (blobs[blob] as PackedByteArray).decompress(clampi(int(p.get("raw", 0)), 1, 16000000), FileAccess.COMPRESSION_ZSTD)
+	var marks = bytes_to_var(raw) if not raw.is_empty() else null
+	var out := []
+	if marks is Array:
+		for m in marks:
+			if m is Dictionary and m.has("id"):
+				out.append(m)
+	_marks_cache[blob] = out
+	return out
 
 
 func _tell(peer: int, text: String, ok: bool) -> void:
@@ -2341,6 +2630,7 @@ func _on_player_joined(id: int, info: Dictionary) -> void:
 	_add_crew(id, str(info.get("name", "Rider")))
 	_mark_dirty()
 	_sync.rpc_id(id, _snapshot())
+	_send_blobs_to(id)
 	changed.emit()
 
 
@@ -2375,9 +2665,20 @@ func _mark_dirty() -> void:
 ## as they're drawn (_board_op), and whole only to players joining.
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
-		"door": door_open, "lights": lights_on, "screens": screens}
+		"door": door_open, "lights": lights_on, "screens": screens, "posters": posters}
 	if with_board:
 		state["board"] = board
+	return state
+
+
+## The whole shed as a save keeps it: the snapshot plus every picture and poster print still in
+## use (players joining get those in chunks instead, see _send_blobs_to).
+func save_snapshot() -> Dictionary:
+	var state := _snapshot()
+	var keep := {}
+	for id in blobs_in_use():
+		keep[id] = Marshalls.raw_to_base64(blobs[id])   # far smaller in the text save than a byte list
+	state["blobs"] = keep
 	return state
 
 
@@ -2392,6 +2693,15 @@ func _sync(state: Dictionary) -> void:
 	lights_on = bool(state.get("lights", true))
 	screens = state["screens"] if state.get("screens") is Dictionary else {}
 	_next_id = int(state.get("next", 1))
+	posters = state["posters"] if state.get("posters") is Dictionary else {}
+	if state.get("blobs") is Dictionary:
+		# A save being opened: its pictures and poster prints.
+		for id in state["blobs"]:
+			var data = state["blobs"][id]
+			if data is String:
+				data = Marshalls.base64_to_raw(data)
+			if data is PackedByteArray and not data.is_empty() and data.size() <= MAX_BLOB:
+				blobs[int(id)] = data
 	if state.get("board", null) is Dictionary:
 		board = state["board"]
 		board_changed.emit()

@@ -401,6 +401,8 @@ func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not label_dialog.visible
+	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
+	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:
 		walker.controls_enabled = active
 	if bike:

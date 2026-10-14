@@ -383,7 +383,11 @@ func _build_booth() -> void:
 ## A printed poster: coloured paper, a band of colour, a big title and a line under it.
 func _build_poster() -> void:
 	var size := _size()
-	add_child(PosterArt.make(model, size))   # flat printed art, see PosterArt
+	var design := int(Shed.furniture.get(id, {}).get("design", 0))
+	if model == Equipment.BOARD_POSTER:
+		add_child(BoardPrint.new(design, Vector2(size.x, size.y)))   # a whiteboard drawing, see BoardPrint
+	else:
+		add_child(PosterArt.make(model, size))   # flat printed art, see PosterArt
 	_ws._target(Vector3(0.0, 0.0, 0.02), Vector3(size.x, size.y, 0.06), {"furniture": id}, self)
 
 

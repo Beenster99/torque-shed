@@ -92,6 +92,11 @@ func _run_all() -> void:
 	_test_recycling()
 	await _test_tv_channels()
 	await _test_tv_and_bins_session()
+	print("Key bindings, the pad in menus, whiteboard pictures and posters")
+	await _test_key_bindings()
+	await _test_pad_menus()
+	await _test_board_posters()
+	await _test_board_images()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -3144,6 +3149,349 @@ func _test_tv_and_bins_session() -> void:
 	check(w.target.get("bin", "") == "general", "general waste is next to it")
 	await _hold_act(main)
 	check(not Shed.items.has(tyre), "the tyre goes in general waste")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _key(code: int) -> InputEventKey:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = code as Key
+	ev.pressed = true
+	return ev
+
+
+func _test_key_bindings() -> void:
+	# Keep the player's own settings file as it was.
+	var had := FileAccess.file_exists(Settings.PATH)
+	var before := FileAccess.get_file_as_string(Settings.PATH) if had else ""
+	Settings.reset_bindings()
+	check(Settings.clashes().is_empty(), "the default bindings don't clash %s" % str(Settings.clashes().slice(0, 3)))
+	check(Settings.binding_codes("ping").has("mouse:%d" % MOUSE_BUTTON_MIDDLE) and not Settings.binding_codes("spray_finish").has("mouse:%d" % MOUSE_BUTTON_MIDDLE),
+		"ping keeps the middle mouse button and the spray finish has moved off it (%s)" % Settings.binding_text("spray_finish", false))
+	var listed := Settings.ACTIONS.map(func(a): return a[0])
+	var missing := InputMap.get_actions().filter(func(a): return not str(a).begins_with("ui_") and not listed.has(str(a)))
+	check(missing.is_empty(), "every action is in the key bindings list %s" % str(missing))
+	# Rebind ping's key: saved in the settings file and put back on at the next start.
+	Settings.rebind("ping", _key(KEY_J))
+	check(Settings.binding_text("ping", false) == "J" and Settings.binding_text("ping", true) == "D-pad right",
+		"rebinding ping's key leaves its pad button (%s / %s)" % [Settings.binding_text("ping", false), Settings.binding_text("ping", true)])
+	var cfg := ConfigFile.new()
+	cfg.load(Settings.PATH)
+	var saved := Array(cfg.get_value("bindings", "ping", []))
+	check(saved.has("key:%d" % KEY_J) and saved.has("joy:%d" % JOY_BUTTON_DPAD_RIGHT) and saved.size() == 2 and not cfg.has_section_key("bindings", "act"),
+		"the new binding is saved, and only what changed (%s)" % str(saved))
+	InputMap.action_erase_events("ping")
+	for e in Settings._defaults["ping"]:
+		InputMap.action_add_event("ping", e)
+	Settings.load_settings()
+	check(_key(KEY_J).is_action_pressed("ping") and not _key(KEY_G).is_action_pressed("ping"), "a saved binding is put back when the game starts")
+	# Clashes: the same button doing two things in the same place.
+	var rmb := InputEventMouseButton.new()
+	rmb.button_index = MOUSE_BUTTON_RIGHT
+	rmb.pressed = true
+	Settings.rebind("ping", rmb)
+	var clash := Settings.clashes()
+	check(clash.any(func(c): return [c["a"], c["b"]].has("ping") and [c["a"], c["b"]].has("alt_act") and c["context"] == "foot"),
+		"ping on right mouse clashes with the second work button on foot")
+	var tab := KeybindTab.new()
+	add_child(tab)
+	await get_tree().process_frame
+	check(tab.warning().contains("Right mouse") and tab.warning().contains("Ping") and tab.warning().contains("on foot"),
+		"the Key bindings tab warns about it (%s)" % tab.warning())
+	Settings.rebind("ping", _key(KEY_G))
+	Settings.rebind("horn", _key(KEY_N))
+	check(Settings.clashes().is_empty(), "a key that names a bike on foot can sound the horn when riding: no clash")
+	Settings.rebind("spray_finish", _key(KEY_G))
+	check(Settings.clashes().any(func(c): return [c["a"], c["b"]].has("spray_finish") and [c["a"], c["b"]].has("ping")),
+		"a spray key clashes with an on-foot one")
+	# Click a binding in the tab, then press the key or pad button.
+	tab.listen("rename", false)
+	get_viewport().push_input(_key(KEY_O))
+	check(Settings.binding_text("rename", false) == "O" and tab.listening.is_empty(), "click and press a key: it's bound (%s)" % Settings.binding_text("rename", false))
+	tab.listen("rename", true)
+	get_viewport().push_input(_key(KEY_P))
+	check(not tab.listening.is_empty(), "waiting for a pad button, a key doesn't count")
+	var pad := InputEventJoypadButton.new()
+	pad.button_index = JOY_BUTTON_LEFT_STICK
+	pad.pressed = true
+	get_viewport().push_input(pad)
+	check(Settings.binding_text("rename", true) == "L3", "a pad button binds the pad column (%s)" % Settings.binding_text("rename", true))
+	tab.listen("rename", false)
+	get_viewport().push_input(_key(KEY_ESCAPE))
+	check(tab.listening.is_empty() and Settings.binding_text("rename", false) == "O", "Esc cancels")
+	Settings.clear_binding("rename", false)
+	check(Settings.binding_text("rename", false) == "", "Clear takes a binding off")
+	Settings.reset_bindings()
+	check(Settings.clashes().is_empty() and Settings.binding_text("rename", false) == "N" and Settings.binding_text("ping", false) == "G / Middle mouse",
+		"Reset to defaults puts it all back (%s)" % Settings.binding_text("ping", false))
+	tab.queue_free()
+	if had:
+		var f := FileAccess.open(Settings.PATH, FileAccess.WRITE)
+		f.store_string(before)
+		f.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
+	await get_tree().process_frame
+
+
+## A pad button pressed and let go, through the viewport like a real one.
+func _pad(button: int) -> void:
+	for pressed in [true, false]:
+		var ev := InputEventJoypadButton.new()
+		ev.button_index = button as JoyButton
+		ev.pressed = pressed
+		ev.pressure = 1.0 if pressed else 0.0
+		get_viewport().push_input(ev)
+	await get_tree().process_frame
+
+
+func _test_pad_menus() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	for i in 3:
+		await get_tree().physics_frame
+	var pc: PartsComputer = main.computer
+	main._open_computer()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var focus := get_viewport().gui_get_focus_owner()
+	check(focus != null and pc._kinds.is_ancestor_of(focus), "the parts computer opens with the pad's focus on a kind of part (%s)" % str(focus))
+	await _pad(JOY_BUTTON_DPAD_DOWN)
+	await _pad(JOY_BUTTON_DPAD_DOWN)
+	var kind_btn := get_viewport().gui_get_focus_owner()
+	check(kind_btn != focus and pc._kinds.is_ancestor_of(kind_btn), "the d-pad moves down the kinds")
+	await _pad(JOY_BUTTON_A)
+	await get_tree().process_frame
+	focus = get_viewport().gui_get_focus_owner()
+	check(pc._kind == str(kind_btn.get_meta("kind")) and focus != null and pc._variants.is_ancestor_of(focus),
+		"A picks the kind and goes to its parts (%s)" % pc._kind)
+	await _pad(JOY_BUTTON_DPAD_DOWN)
+	focus = get_viewport().gui_get_focus_owner()
+	check(focus != null and pc._part == str(focus.get_meta("part", "")), "moving down the parts shows each one (%s)" % pc._part)
+	await _pad(JOY_BUTTON_A)
+	check(get_viewport().gui_get_focus_owner() == pc._order, "A on a part goes to the Order button")
+	var count := Shed.items.size()
+	await _pad(JOY_BUTTON_A)
+	check(Shed.items.size() == count + 1, "and A again orders it (%s)" % pc._part)
+	await _pad(JOY_BUTTON_B)
+	check(pc._variants.is_ancestor_of(get_viewport().gui_get_focus_owner()), "B goes back to the parts")
+	await _pad(JOY_BUTTON_B)
+	check(pc._kinds.is_ancestor_of(get_viewport().gui_get_focus_owner()), "B again goes back to the kinds")
+	var sec := pc._section
+	await _pad(JOY_BUTTON_RIGHT_SHOULDER)
+	check(pc._section != sec and pc._kinds.is_ancestor_of(get_viewport().gui_get_focus_owner()), "RB goes to the next aisle (%s)" % pc._section)
+	await _pad(JOY_BUTTON_B)
+	await get_tree().process_frame
+	check(not pc.visible, "and B once more closes the computer")
+	# The dyno desk.
+	main._open_tuning()
+	await get_tree().process_frame
+	check(get_viewport().gui_get_focus_owner() == main.tuning._run, "the dyno desk opens with the focus on Run the dyno")
+	await _pad(JOY_BUTTON_RIGHT_SHOULDER)
+	await get_tree().process_frame
+	check(main.tuning._tabs.current_tab == 1 and get_viewport().gui_get_focus_owner() != null, "RB turns the desk's tabs")
+	await _pad(JOY_BUTTON_B)
+	check(not main.tuning.visible, "B closes the dyno desk")
+	# The Esc menu.
+	main.menu.show_pause()
+	main._capture_mouse(false)
+	await get_tree().process_frame
+	check(get_viewport().gui_get_focus_owner() == main.menu._resume, "the menu opens on Back to the shed")
+	var tab: int = main.menu._tabs.current_tab
+	await _pad(JOY_BUTTON_RIGHT_SHOULDER)
+	check(main.menu._tabs.current_tab != tab, "RB turns the menu's tabs")
+	await _pad(JOY_BUTTON_B)
+	await get_tree().process_frame
+	check(not main.menu.visible, "B goes back to the shed")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _test_board_posters() -> void:
+	Shed.start_new("Tester", 12)
+	Shed.request({"a": "board_poster", "name": "Nothing"})
+	check(Shed.posters.is_empty(), "a clean board can't be made into a poster")
+	Shed.board_request({"a": "board_draw", "id": 501, "c": 2, "w": 6.0, "from": 0, "done": true,
+		"pts": PackedVector2Array([Vector2(100, 100), Vector2(500, 300)])})
+	Shed.board_request({"a": "board_text", "id": 502, "c": 1, "s": 38, "at": Vector2(600, 80), "text": "Bay 3 plan"})
+	Shed.request({"a": "board_poster", "name": "  Build plan  "})
+	check(Shed.posters.size() == 1, "the board is saved as a poster design")
+	var design: int = Shed.posters.keys()[0]
+	var p: Dictionary = Shed.posters[design]
+	check(p["name"] == "Build plan" and p["by"] == "Tester", "named, and by who made it (%s)" % str(p))
+	var marks := Shed.poster_marks(design)
+	check(marks.size() == 2 and marks[1].get("text", "") == "Bay 3 plan", "the design keeps the drawing as it was (%d marks)" % marks.size())
+	Shed.board_request({"a": "board_clear"})
+	check(Shed.poster_marks(design).size() == 2, "wiping the board leaves the poster as it was")
+	check(not Equipment.by_kind("poster").has(Equipment.BOARD_POSTER), "the blank whiteboard print isn't sold on its own")
+	# The parts computer lists it with the posters, and orders it.
+	var pc := PartsComputer.new()
+	add_child(pc)
+	pc._show_section("shed")
+	pc._show_kind("eq:poster")
+	var entry: Button = null
+	for b in pc._variants.get_children():
+		if b is Button and b.get_meta("part", "") == "design:%d" % design:
+			entry = b
+	check(entry != null and entry.text == "Build plan", "the parts computer's posters list the whiteboard poster")
+	pc._pick_part("design:%d" % design)
+	check(pc._title.text == "Build plan" and pc._desc.text.contains("Tester"), "with its name and who drew it")
+	pc._order.pressed.emit()
+	var fid := 0
+	for id in Shed.furniture:
+		if int(Shed.furniture[id].get("design", 0)) == design:
+			fid = id
+	check(fid != 0 and Shed.furniture[fid]["model"] == Equipment.BOARD_POSTER and Shed.furniture[fid]["kind"] == "poster",
+		"ordering it brings a poster of that drawing")
+	Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": 999999})
+	check(Shed.furniture.values().filter(func(f): return f["model"] == Equipment.BOARD_POSTER).size() == 1, "a poster design that doesn't exist can't be ordered")
+	pc.queue_free()
+	# It hangs in the shed showing the drawing, and it's all kept in the save.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.load_state(copy, "Tester")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(Shed.posters.size() == 1 and Shed.poster_marks(design).size() == 2 and int(Shed.furniture[fid].get("design", 0)) == design,
+		"the poster design and the ordered poster are kept in the save")
+	var view: Node = main.workshop.furniture_nodes.get(fid, null)
+	var print_node: BoardPrint = view.get_node_or_null("BoardPrint") if view else null
+	check(print_node != null and print_node.mark_count() == 2, "the poster in the shed shows the whiteboard drawing")
+	# Old saves, made before posters, still open.
+	copy.erase("posters")
+	copy.erase("blobs")
+	Shed.load_state(copy, "Tester")
+	check(Shed.posters.is_empty(), "an older save without posters opens with none")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## A made-up picture to put on the board: a colour gradient with noise, so it doesn't pack tiny.
+func _test_picture(w: int, h: int) -> Image:
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for y in h:
+		for x in w:
+			img.set_pixel(x, y, Color(float(x) / w, float(y) / h, rng.randf(), 1.0))
+	return img
+
+
+func _test_board_images() -> void:
+	var pic := _test_picture(900, 450)
+	var data := Shed.pack_image(pic)
+	var back := Image.new()
+	check(not data.is_empty() and data.size() <= Shed.MAX_IMAGE_BYTES and back.load_webp_from_buffer(data) == OK,
+		"a picture from the PC is packed small (%d bytes)" % data.size())
+	check(back.get_width() == BoardData.IMAGE_PX and back.get_height() == BoardData.IMAGE_PX / 2, "and shrunk to 512 px across (%dx%d)" % [back.get_width(), back.get_height()])
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var board: Whiteboard = get_tree().get_first_node_in_group("whiteboard")
+	var face: Vector3 = board.global_position
+	w.place(Transform3D(Basis(), Vector3(face.x, 0.0, face.z - 1.4)))
+	w.rotation.y = PI
+	w._pitch = 0.0
+	w._look(0.0, -atan2(Walker.EYE - face.y, 1.4))
+	for i in 5:
+		await get_tree().physics_frame
+	# Put it up from a file, as the file dialog would.
+	var base_snapshot := var_to_bytes(Shed._snapshot()).size()
+	var path := "user://test_board_picture.png"
+	pic.save_png(path)
+	var id := board.add_image_file(path, BoardData.PX * 0.5)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	check(id != 0 and BoardData.find(Shed.board, id) >= 0, "a picture from a file goes up on the board")
+	var m: Dictionary = Shed.board["marks"][BoardData.find(Shed.board, id)]
+	check(BoardData.bounds(m).has_point(BoardData.PX * 0.5) and (m["sz"] as Vector2).x <= Whiteboard.IMAGE_FIT.x + 0.1,
+		"where you're looking, at a sensible size (%s)" % str(m["sz"]))
+	check(Shed.image_texture(int(m["img"])) != null and BoardData.ink_at(Shed.board, BoardData.PX * 0.5) == BoardData.IMAGE, "it shows as a picture")
+	for i in 2:
+		await get_tree().process_frame
+	check(board._nodes.get(id) is TextureRect, "drawn on the board")
+	check(board.add_image_file("user://no_such_picture.png", BoardData.PX * 0.5) == 0, "a missing file is turned down")
+	# Move it with M, size it with the wheel or + and -, put it down with M.
+	var at0: Vector2 = m["at"]
+	var sz0: Vector2 = m["sz"]
+	_press("board_move")
+	await get_tree().process_frame
+	check(board.carrying == id, "M on a picture takes hold of it")
+	for i in 20:
+		w._look(0.004, 0.0)
+		await get_tree().process_frame
+	_press("board_bigger")
+	_press("tool_next")
+	await get_tree().process_frame
+	_press("board_move")
+	await get_tree().process_frame
+	m = Shed.board["marks"][BoardData.find(Shed.board, id)]
+	check(board.carrying == 0 and (m["at"] as Vector2).x != at0.x, "it follows the crosshair and M puts it down (%s -> %s)" % [str(at0), str(m["at"])])
+	check((m["sz"] as Vector2).x > sz0.x * 1.25 and absf((m["sz"] as Vector2).aspect() - sz0.aspect()) < 0.01,
+		"+ and the wheel make it bigger, keeping its shape (%s)" % str(m["sz"]))
+	Shed.board_request({"a": "board_move", "id": id, "at": Vector2(-5000, 9000), "sz": Vector2(99999, 2)})
+	m = Shed.board["marks"][BoardData.find(Shed.board, id)]
+	check((m["sz"] as Vector2).x <= BoardData.PX.x and (m["sz"] as Vector2).y >= BoardData.IMAGE_MIN and (m["at"] as Vector2).y <= BoardData.PX.y,
+		"it can't be moved off the board or sized past it")
+	# The bytes go out in chunks small enough to send; a player joining gets the board without them.
+	var with_pic := var_to_bytes(Shed._snapshot()).size()
+	check(with_pic < base_snapshot + 1000, "the shed snapshot leaves the picture's bytes out (%d bytes more)" % (with_pic - base_snapshot))
+	var big := Shed.pack_image(_test_picture(512, 512))
+	var n := ceili(big.size() / float(Shed.BLOB_CHUNK))
+	check(n >= 2, "a busy picture takes several chunks (%d)" % n)
+	var order := range(n)
+	order.reverse()
+	for k in order.slice(0, n - 1):
+		Shed._blob_chunk(777, k, n, big.slice(k * Shed.BLOB_CHUNK, (k + 1) * Shed.BLOB_CHUNK))
+	check(not Shed.blobs.has(777), "a picture isn't used till every chunk is in")
+	var last: int = order[n - 1]
+	Shed._blob_chunk(777, last, n, big.slice(last * Shed.BLOB_CHUNK, (last + 1) * Shed.BLOB_CHUNK))
+	check(Shed.blobs.get(777, PackedByteArray()) == big and Shed.image_ok(777), "then it's put back together whole, in any order")
+	Shed._blob_chunk(778, 0, 1, PackedByteArray([1, 2, 3]))
+	Shed.board_request({"a": "board_image", "id": 9001, "img": 778, "at": Vector2(10, 10), "sz": Vector2(100, 100)})
+	check(BoardData.find(Shed.board, 9001) < 0, "something that isn't a picture isn't put up")
+	# Undo and the eraser take pictures off like marks.
+	var second := board.add_image(_test_picture(64, 64), Vector2(1000, 450))
+	check(second != 0 and BoardData.image_count(Shed.board) == 2, "a second picture goes up")
+	Shed.board_request({"a": "board_undo"})
+	check(BoardData.find(Shed.board, second) < 0 and BoardData.find(Shed.board, id) >= 0, "undo takes the last picture back off")
+	var r := BoardData.bounds(Shed.board["marks"][BoardData.find(Shed.board, id)])
+	var rub := PackedVector2Array()
+	var y := r.position.y
+	var row := 0
+	while y <= r.end.y + 36.0:
+		var xs := [r.position.x - 5.0, r.end.x + 5.0]
+		if row % 2 == 1:
+			xs.reverse()
+		rub.append(Vector2(xs[0], minf(y, r.end.y)))
+		rub.append(Vector2(xs[1], minf(y, r.end.y)))
+		y += 36.0
+		row += 1
+	Shed.board_request({"a": "board_draw", "id": 9100, "c": BoardData.ERASER, "from": 0, "done": true, "pts": rub})
+	check(BoardData.find(Shed.board, id) < 0, "rubbing all over a picture rubs it out")
+	# No more than so many on the board.
+	var added := 0
+	for i in BoardData.MAX_IMAGES + 2:
+		if board.add_image(_test_picture(32, 32), Vector2(80 + i * 60, 80)) != 0:
+			added += 1
+	check(added == BoardData.MAX_IMAGES and BoardData.image_count(Shed.board) == BoardData.MAX_IMAGES,
+		"the board takes %d pictures at most (%d)" % [BoardData.MAX_IMAGES, added])
+	# Saved with the shed, and back again.
+	var keep: Dictionary = Shed.board["marks"][-1]
+	var copy: Dictionary = str_to_var(var_to_str(main.saver.capture()["shed"]))
+	check(copy["blobs"].size() == BoardData.MAX_IMAGES, "the save keeps the pictures in use, and not the rest (%d)" % copy["blobs"].size())
+	Shed.load_state(copy, "Tester")
+	check(BoardData.image_count(Shed.board) == BoardData.MAX_IMAGES and Shed.image_texture(int(keep["img"])) != null,
+		"opening the save puts the pictures back on the board")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

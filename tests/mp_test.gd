@@ -2,7 +2,8 @@ extends Node
 ## Two-process co-op check, run by tests/mp_test.sh: a host and a client each start the real
 ## game. The client must receive the host's shed, unbolt a part and put another down on the
 ## floor, tune a tyre pressure and change the crew board's channel, which the host must then see, each puts a mark on the whiteboard
-## the other must see, and both must see each other walk.
+## the other must see (the client also puts up a picture, sent in chunks, and the host makes a
+## poster of the board that the client must get), and both must see each other walk.
 
 var role := "host"
 var main: Node
@@ -27,6 +28,7 @@ func _ready() -> void:
 	var asked := false
 	var xp_start := -1
 	var xp_ok := false
+	var postered := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -59,7 +61,14 @@ func _ready() -> void:
 				"pts": PackedVector2Array([Vector2(100, 100), Vector2(300, 200)]), "done": true})
 			Shed.request({"a": "tune", "bike": ranger, "key": "psi_f", "value": 0.9})
 			Shed.request({"a": "tv_channel", "screen": "crew", "step": 1})
+			# A picture big enough to go in several chunks.
+			Shed.board_add_image(Shed.pack_image(_noise(400, 300)), Vector2(650, 120), Vector2(400, 300))
 			asked = true
+		# The host makes a poster of the board once the client's picture is on it.
+		if role == "host" and not postered and _picture_ok():
+			Shed.request({"a": "board_poster", "name": "MP poster"})
+			postered = true
+		var prints_ok := _picture_ok() and Shed.posters.size() == 1 and Shed.poster_marks(Shed.posters.keys()[0]).any(func(m): return m.has("img"))
 		if role == "host" and Shed.crew.size() == 2 and not asked:
 			Shed.board_request({"a": "board_text", "id": 4343, "c": 2, "s": 38, "at": Vector2(500, 300), "text": "Host's list"})
 			asked = true
@@ -70,16 +79,34 @@ func _ready() -> void:
 			dropped = dropped or (Shed.items[id]["ref"] is Transform3D)
 		var tuned := ranger != 0 and is_equal_approx(float(Shed.tune_of(ranger).get("psi_f", 0.0)), 0.9)
 		var tv_ok: bool = Shed.screen_channel("crew")["ch"] == "live"   # the client changed the crew board's channel
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 	var ok := moved and shed_ok
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size()])
 	get_tree().quit(0 if ok else 1)
+
+
+## Whether a picture is up on the board with its bytes here, decoded and drawable.
+func _picture_ok() -> bool:
+	for m in Shed.board["marks"]:
+		if m.has("img") and Shed.image_texture(int(m["img"])) != null:
+			return true
+	return false
+
+
+func _noise(w: int, h: int) -> Image:
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	for y in h:
+		for x in w:
+			img.set_pixel(x, y, Color(rng.randf(), float(y) / h, float(x) / w))
+	return img
 
 
 func _bike_named(n: String) -> int:

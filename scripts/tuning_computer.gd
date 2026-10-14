@@ -101,6 +101,7 @@ func _ready() -> void:
 		var scroll := ScrollContainer.new()
 		scroll.name = tab
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.follow_focus = true
 		var list := VBoxContainer.new()
 		list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		list.add_theme_constant_override("separation", 6)
@@ -111,6 +112,7 @@ func _ready() -> void:
 	var wscroll := ScrollContainer.new()
 	wscroll.name = "Weight"
 	wscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	wscroll.follow_focus = true
 	_weight = VBoxContainer.new()
 	_weight.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_weight.add_theme_constant_override("separation", 6)
@@ -187,6 +189,8 @@ func open(from := Vector3.ZERO) -> void:
 	elif not _in_reach(bike_id):
 		bike_id = 0
 	refresh()
+	# Somewhere for a pad to start: A runs the dyno, the d-pad goes to the settings.
+	_run.grab_focus()
 
 
 func close_computer() -> void:
@@ -196,9 +200,33 @@ func close_computer() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if visible and event.is_action_pressed("menu"):
+	if not visible:
+		return
+	if event.is_action_pressed("menu") or (event is InputEventJoypadButton and event.is_action_pressed("ui_cancel")):
 		close_computer()
-		get_viewport().set_input_as_handled()
+	elif event is InputEventJoypadButton and (event.is_action_pressed("tool_next") or event.is_action_pressed("tool_prev")):
+		# LB / RB on a pad: the next or previous tab, with the focus on its first setting.
+		var step := 1 if event.is_action_pressed("tool_next") else -1
+		_tabs.current_tab = posmod(_tabs.current_tab + step, _tabs.get_tab_count())
+		_focus_tab.call_deferred()
+	else:
+		return
+	get_viewport().set_input_as_handled()
+
+
+## The pad's focus on the first setting in the tab showing, or the Run button.
+func _focus_tab() -> void:
+	var tab := _tabs.get_current_tab_control()
+	var stack: Array = [tab] if tab else []
+	while not stack.is_empty():
+		var n: Node = stack.pop_front()
+		if n is Control and n != tab and (n as Control).focus_mode != Control.FOCUS_NONE and (n as Control).is_visible_in_tree() \
+				and not (n is ScrollBar):
+			if not (n is BaseButton and (n as BaseButton).disabled):
+				(n as Control).grab_focus()
+				return
+		stack.append_array(n.get_children())
+	_run.grab_focus()
 
 
 func _in_reach(id: int) -> bool:

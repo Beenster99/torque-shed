@@ -112,6 +112,11 @@ const MODELS := {
 		"title": "TORQUE SHED RACING", "sub": "STRIP IT - FIX IT - RIDE IT", "paper": Color(0.12, 0.12, 0.14), "ink": Color(1.0, 0.85, 0.35),
 		"band": Color(0.8, 0.12, 0.1), "desc": "The crew's own banner."},
 
+	# A print of a whiteboard drawing (the furniture's `design`, see Shed.posters). Ordered from
+	# the parts computer's poster list, one entry for each saved design, not on its own.
+	"poster_board": {"kind": "poster", "name": "Whiteboard poster", "size": Vector3(1.0, 0.5, 0.01), "hidden": true,
+		"paper": Color(0.95, 0.96, 0.965), "desc": "The crew's own whiteboard drawing, printed and framed."},
+
 	# Seats: F sits you down; hold F to move one.
 	"seat_stool": {"kind": "seat", "name": "Shop stool", "compact": true, "size": Vector3(0.45, 0.7, 0.45), "sit": 0.68,
 		"style": "stool", "color": Color(0.75, 0.1, 0.08), "desc": "Swivel stool with a red vinyl top."},
@@ -183,6 +188,8 @@ const MODELS := {
 
 ## Model ids that have been renamed, old -> new, so saves made before still load. The wall TVs
 ## grew to match the shed's own screens.
+## The model a whiteboard poster is printed on.
+const BOARD_POSTER := "poster_board"
 const RENAMED := {"tv_32": "tv_86", "tv_43": "tv_86", "tv_55": "tv_98", "tv_65": "tv_110"}
 
 
@@ -199,10 +206,11 @@ static func kind_of(id: String) -> String:
 	return str(MODELS.get(id, {}).get("kind", ""))
 
 
+## The models of a kind the shop lists (not the hidden whiteboard print).
 static func by_kind(kind: String) -> Array:
 	var out := []
 	for id in MODELS:
-		if MODELS[id]["kind"] == kind:
+		if MODELS[id]["kind"] == kind and not MODELS[id].get("hidden", false):
 			out.append(id)
 	return out
 
