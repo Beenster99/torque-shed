@@ -22,7 +22,7 @@ jobs:
       - name: Import project
         run: godot --headless --path . --import || true
       - name: Run tests
-        run: godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn
+        run: stdbuf -oL -eL godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn
       - name: Multiplayer test
         run: tests/mp_test.sh
 
