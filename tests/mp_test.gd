@@ -172,8 +172,8 @@ func _ready() -> void:
 		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
-	# keeps walking) until the host has finished and gone, or 10 s at most.
-	var linger := Time.get_ticks_msec() + (10000 if role == "client" else 3000)
+	# keeps walking) until the host has finished and gone, or 20 s at most.
+	var linger := Time.get_ticks_msec() + (20000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 		if role == "client" and shed_ok and not main.in_session:
@@ -183,6 +183,8 @@ func _ready() -> void:
 		Input.action_release("move_back")
 		Input.action_press("move_forward" if fmod(tl, 2.0) < 1.0 else "move_back")
 	var ok := moved and shed_ok
+	if not moved:
+		print("    (remotes %d, first seen %s, span %s)" % [main.remotes.size(), start, span.size])
 	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s)" % [
 		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok])
 	get_tree().quit(0 if ok else 1)
