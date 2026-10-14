@@ -16,6 +16,10 @@ func _ready() -> void:
 	main._start_session()
 	await _frames(20)
 	var w: Walker = main.walker
+	if "--beam" in OS.get_cmdline_user_args():
+		await _beam_shots()
+		get_tree().quit()
+		return
 	# Full-width bay screens either side of the narrower dyno room doorway.
 	await _look_from(Workshop.CENTER + Vector3(0.0, 0.0, 4.5), Vector3(0.0, 1.9, 59.2), "c1_bay_screens_doorway")
 	# The dyno room: a bike strapped down at all four posts, the extraction hose on its
@@ -82,9 +86,17 @@ func _ready() -> void:
 	await _shot("c9_sandblaster_bare_patches")
 	w.finish_blast()
 	await _frames(10)
-	# The headlight at night: a soft beam in the night air rather than a solid cone.
+	await _beam_shots()
+	SaveGame.delete_slot("shots")
+	get_tree().quit()
+
+
+## The headlight at night: a soft beam in the night air rather than a solid cone. (Only the
+## stand-in glow shows here: volumetric fog needs Forward+, which the cloud can't render.)
+## `-- --beam` takes just these.
+func _beam_shots() -> void:
 	Daylight.current.set_time(22.0)
-	main._try_mount(faithful)
+	main._try_mount(_bike_named("Old Faithful"))
 	await _frames(10)
 	main.bike.start_engine()
 	var road_t: Transform3D = main.world.road_transform(0.12)
@@ -95,5 +107,3 @@ func _ready() -> void:
 	main.bike.cycle_beam()
 	await _frames(20)
 	await _shot("c11_high_beam_night")
-	SaveGame.delete_slot("shots")
-	get_tree().quit()

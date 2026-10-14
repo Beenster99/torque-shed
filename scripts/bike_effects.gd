@@ -150,7 +150,9 @@ uniform sampler2D depth_tex : hint_depth_texture, filter_linear;
 void fragment() {
 	float along = clamp(UV.y, 0.0, 1.0);   // 0 at the lamp, 1 at the far end
 	float facing = abs(dot(normalize(NORMAL), normalize(VIEW)));
-	float a = strength * pow(1.0 - along, 2.4) * pow(facing, 3.0);
+	// Gone right at the silhouette, but full strength by a modest angle, so it still shows
+	// from behind the bike, looking down the beam.
+	float a = strength * pow(1.0 - along, 2.4) * smoothstep(0.0, 0.35, facing);
 	// Soften where the cone meets the road or anything else, and right in front of the eye.
 	float scene = texture(depth_tex, SCREEN_UV).r;
 #if CURRENT_RENDERER == RENDERER_COMPATIBILITY
