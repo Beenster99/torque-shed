@@ -6,11 +6,14 @@ class_name ToolModels
 ## nozzle at (0, 0, -0.6)), "gun" (HVLP paint gun, cup tinted can_color, nozzle near
 ## (0, 0.02, -0.12)) and "stopwatch" (turn its hand with set_hand_angle / set_hand_seconds).
 ## Tools with a nozzle carry it as the "nozzle" meta (a local Vector3).
+## `stage` (0..5, the tool's upgrade stage, see Progress) dresses it up: bare steel, polished,
+## chrome, anodised, carbon, then gold trim.
 
 static var _mats := {}
+static var _staged := {}
 
 
-static func make(which: String, can_color := Color(0.9, 0.75, 0.1)) -> Node3D:
+static func make(which: String, can_color := Color(0.9, 0.75, 0.1), stage := 0) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Tool_" + which
 	match which:
@@ -30,7 +33,61 @@ static func make(which: String, can_color := Color(0.9, 0.75, 0.1)) -> Node3D:
 			_stopwatch(root)
 		_:
 			pass  # bare hands: nothing to draw
+	if stage > 0:
+		apply_stage(root, stage)
+	root.set_meta("stage", stage)
 	return root
+
+
+## Gives every part of a tool model the finish of an upgrade stage: metal gets polished, then
+## chromed, then gold; coloured bodies go glossy, then anodised, then carbon. The paint colour
+## of a can or cup, glass, rubber and wood grips keep their look (wood gets lacquered).
+static func apply_stage(root: Node, stage: int) -> void:
+	for c in root.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).material_override is StandardMaterial3D:
+			var mi := c as MeshInstance3D
+			mi.material_override = _stage_mat(mi.material_override as StandardMaterial3D, stage)
+		apply_stage(c, stage)
+
+
+static func _stage_mat(m: StandardMaterial3D, stage: int) -> StandardMaterial3D:
+	var key := "%d:%d" % [m.get_instance_id(), stage]
+	if _staged.has(key):
+		return _staged[key]
+	var out := m
+	var c := m.albedo_color
+	var lum := c.get_luminance()
+	if m.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED and not m.has_meta("tint"):
+		out = m.duplicate() as StandardMaterial3D
+		var brass := c.r > 0.75 and c.g > 0.55 and c.b < 0.4 and m.metallic > 0.5
+		var wood := m.metallic < 0.1 and c.r > c.b * 1.6 and c.r < 0.6 and lum < 0.45
+		if m.metallic >= 0.5:
+			# Steel and aluminium: polished, then chrome, then gold.
+			if stage >= 5 or (brass and stage >= 4):
+				_pbr(out, Color(0.96, 0.76, 0.32), 1.0, 0.14)
+			elif stage >= 2:
+				_pbr(out, Color(0.92, 0.93, 0.96), 1.0, 0.07)
+			else:
+				out.roughness = m.roughness * 0.5
+		elif wood:
+			if stage >= 3:
+				_pbr(out, c.darkened(0.25), 0.0, 0.18)
+				out.clearcoat_enabled = true
+		elif lum > 0.2:
+			# A coloured body (the grinder, the pressure washer): glossy, anodised, then carbon.
+			if stage >= 4:
+				_pbr(out, Color(0.07, 0.07, 0.08), 0.35, 0.16)
+				out.clearcoat_enabled = true
+			elif stage >= 3:
+				_pbr(out, Color.from_hsv(c.h, minf(1.0, c.s * 1.2 + 0.1), maxf(0.45, c.v * 0.9)), 0.75, 0.22)
+			else:
+				out.roughness = m.roughness * (0.7 if stage == 1 else 0.45)
+		elif stage >= 4 and m.roughness > 0.4 and m.roughness < 0.6:
+			# Black plastic housings turn to carbon.
+			_pbr(out, Color(0.06, 0.06, 0.07), 0.35, 0.18)
+			out.clearcoat_enabled = true
+	_staged[key] = out
+	return out
 
 
 ## Turns a stopwatch's hand: radians clockwise from twelve o'clock.
@@ -109,6 +166,7 @@ static func _tint(color: Color, metallic: float, roughness: float, alpha := 1.0)
 		return _mats[key]
 	var m := StandardMaterial3D.new()
 	_pbr(m, Color(color, alpha), metallic, roughness)
+	m.set_meta("tint", true)
 	if alpha < 1.0:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED

@@ -16,6 +16,13 @@ const SYNC_INTERVAL := 1.0
 const TILT := 0.61                      # how far south the sun's path leans (35 degrees)
 const SUN_ENERGY := 1.25
 const MOON_ENERGY := 0.16
+## Volumetric fog density by day (the world's own light haze) and at night, for headlights in the air.
+const DAY_FOG := 0.006
+const NIGHT_FOG := 0.009
+## Depth fog: the world's light haze, and how much fog weather and rain add to it.
+const WORLD_FOG := 0.0007
+const FOG_WEATHER := 0.03
+const RAIN_HAZE := 0.004
 ## Lights in this group with a "night_energy" meta are switched on at dusk at that energy.
 const NIGHT_LIGHTS := "night_lights"
 
@@ -34,6 +41,7 @@ var _sun: DirectionalLight3D
 var _moon: DirectionalLight3D
 var _sky_mat: ShaderMaterial
 var _sky_hours := -100.0
+var _sky_weather := Vector3(-1.0, -1.0, -1.0)
 var _signalled_dark := -1.0
 var _host_hours := 0.0
 var _host_rate := 0.0
@@ -175,47 +183,73 @@ func _apply(force: bool) -> void:
 	var light_day := clampf((s + 0.06) / 0.3, 0.0, 1.0)
 	var warm := 1.0 - smoothstep(0.02, 0.42, s)
 	var twilight := exp(-pow(s / 0.13, 2.0))
+	# The weather (see Weather): cloud cover greys the sky and dims the sun, mist and rain thicken
+	# the fog and the haze.
+	var cover := Weather.cover_level()
+	var mist := Weather.fog_level()
+	var rain := Weather.rain_level()
+	var overcast := smoothstep(0.35, 1.0, cover)
+	twilight *= 1.0 - 0.7 * overcast
 
 	# Sun: golden and low, then gone.
 	_sun.visible = s > -0.06
 	if _sun.visible:
 		_sun.basis = Basis.looking_at(-sun_dir, Vector3.UP if absf(s) < 0.99 else Vector3.FORWARD)
 		_sun.light_color = Color(1.0, 0.95, 0.86).lerp(Color(1.0, 0.52, 0.26), warm)
-		_sun.light_energy = SUN_ENERGY * pow(light_day, 0.55)
+		_sun.light_energy = SUN_ENERGY * pow(light_day, 0.55) * (1.0 - 0.72 * overcast) * (1.0 - 0.35 * mist)
+		# Under cloud the shadows go soft and faint.
+		_sun.shadow_opacity = lerpf(1.0, 0.35, maxf(overcast, mist))
 	# Moon: roughly opposite the sun, cool and dim, only once the sun is down.
 	var moon_dir := sun_direction(hours + 12.0).rotated(Vector3.UP, 0.35)
 	_moon.visible = s <= -0.06 and moon_dir.y > -0.02
 	if _moon.visible:
 		_moon.basis = Basis.looking_at(-moon_dir, Vector3.UP if absf(moon_dir.y) < 0.99 else Vector3.FORWARD)
-		_moon.light_energy = MOON_ENERGY * (1.0 - smoothstep(-0.2, -0.06, s)) * smoothstep(-0.02, 0.2, moon_dir.y)
+		_moon.light_energy = MOON_ENERGY * (1.0 - smoothstep(-0.2, -0.06, s)) * smoothstep(-0.02, 0.2, moon_dir.y) * (1.0 - 0.8 * overcast)
 
 	# Ambient and fog: night is dark blue, not black, so the yard stays readable.
 	_env.ambient_light_sky_contribution = lerpf(1.0, 0.25, dark)
 	_env.ambient_light_color = Color(0.32, 0.4, 0.62).lerp(Color(0.75, 0.55, 0.5), twilight * (1.0 - dark))
 	_env.ambient_light_energy = lerpf(0.9, 0.22, dark) + 0.35 * twilight * (1.0 - dark)
-	var fog := Color(0.7, 0.77, 0.86).lerp(Color(0.85, 0.58, 0.44), twilight * 0.6).lerp(Color(0.03, 0.04, 0.07), dark)
+	_env.ambient_light_energy *= 1.0 - 0.18 * overcast
+	var fog := Color(0.7, 0.77, 0.86).lerp(Color(0.85, 0.58, 0.44), twilight * 0.6).lerp(Color(0.62, 0.65, 0.68), maxf(overcast * 0.6, mist)) \
+		.lerp(Color(0.03, 0.04, 0.07), dark)
 	_env.fog_light_color = fog
+	# Depth fog works on every renderer: a light haze by default, thick in fog, misty in rain.
+	_env.fog_density = WORLD_FOG + mist * FOG_WEATHER + rain * RAIN_HAZE
+	_env.fog_sky_affect = lerpf(0.25, 0.95, maxf(mist, rain * 0.5))
+	_env.fog_aerial_perspective = lerpf(0.3, 0.0, maxf(mist, rain * 0.6))
 	_env.fog_light_energy = 1.0
 	_env.fog_sun_scatter = 0.25 * twilight
 	_env.volumetric_fog_albedo = Color(0.9, 0.92, 0.95).lerp(Color(0.5, 0.55, 0.7), dark)
+	# A touch more haze in the night air, so headlights (and the moon) show softly in it.
+	_env.volumetric_fog_density = lerpf(DAY_FOG, NIGHT_FOG, dark) + mist * 0.01 + rain * 0.003
 	_env.tonemap_exposure = lerpf(1.0, 1.35, dark)
 	_env.glow_intensity = lerpf(0.4, 0.75, dark)
 	_env.glow_bloom = lerpf(0.05, 0.02, dark)
 
-	if force or absf(wrapf(hours - _sky_hours, -12.0, 12.0)) > 0.01:
+	var weather_now := Vector3(cover, mist, rain)
+	if force or absf(wrapf(hours - _sky_hours, -12.0, 12.0)) > 0.01 or weather_now.distance_to(_sky_weather) > 0.01:
 		_sky_hours = hours
-		_update_sky(s, moon_dir, warm, twilight)
+		_sky_weather = weather_now
+		_update_sky(s, moon_dir, warm, twilight, overcast, mist, rain)
 	if force or absf(dark - _signalled_dark) >= 0.01:
 		_signalled_dark = dark
 		_update_lamps()
 		darkness_changed.emit(dark)
 
 
-func _update_sky(s: float, moon_dir: Vector3, warm: float, twilight: float) -> void:
+func _update_sky(s: float, moon_dir: Vector3, warm: float, twilight: float, overcast := 0.0, mist := 0.0,
+		rain := 0.0) -> void:
 	var day_top := Color(0.22, 0.42, 0.75)
 	var day_horizon := Color(0.68, 0.76, 0.86)
 	var night_top := Color(0.01, 0.014, 0.035)
 	var night_horizon := Color(0.035, 0.045, 0.085)
+	# Overcast: a flat grey sky, darker in rain; fog washes it out to the fog's own grey.
+	var grey := Color(0.55, 0.58, 0.62).lerp(Color(0.38, 0.4, 0.44), rain)
+	day_top = day_top.lerp(grey, overcast * 0.85).lerp(Color(0.66, 0.68, 0.7), mist * 0.8)
+	day_horizon = day_horizon.lerp(grey.lightened(0.12), overcast * 0.85).lerp(Color(0.7, 0.72, 0.74), mist * 0.9)
+	night_top = night_top.lerp(Color(0.02, 0.022, 0.03), overcast)
+	night_horizon = night_horizon.lerp(Color(0.04, 0.045, 0.055), overcast)
 	var top := day_top.lerp(night_top, dark).lerp(Color(0.2, 0.22, 0.42), twilight * 0.35)
 	var horizon := day_horizon.lerp(night_horizon, dark).lerp(Color(0.95, 0.56, 0.38), twilight * 0.55)
 	var ground := Color(0.25, 0.27, 0.25).lerp(Color(0.012, 0.014, 0.02), dark)
@@ -224,15 +258,17 @@ func _update_sky(s: float, moon_dir: Vector3, warm: float, twilight: float) -> v
 	_sky_mat.set_shader_parameter("ground_color", ground)
 	_sky_mat.set_shader_parameter("sun_dir", sun_dir)
 	_sky_mat.set_shader_parameter("sun_color", Color(1.0, 0.93, 0.8).lerp(Color(1.0, 0.5, 0.2), warm))
-	_sky_mat.set_shader_parameter("sun_strength", smoothstep(-0.04, 0.02, s))
+	_sky_mat.set_shader_parameter("sun_strength", smoothstep(-0.04, 0.02, s) * (1.0 - 0.95 * maxf(overcast, mist)))
 	_sky_mat.set_shader_parameter("glow_color", Color(1.0, 0.45, 0.16))
 	_sky_mat.set_shader_parameter("glow_strength", twilight * 1.4)
 	_sky_mat.set_shader_parameter("moon_dir", moon_dir)
-	_sky_mat.set_shader_parameter("moon_strength", smoothstep(0.2, 0.8, dark))
-	_sky_mat.set_shader_parameter("star_strength", smoothstep(0.55, 0.95, dark))
-	var cloud := Color(1.0, 1.0, 1.0).lerp(Color(1.0, 0.7, 0.55), twilight * 0.8).lerp(Color(0.05, 0.06, 0.09), dark)
+	_sky_mat.set_shader_parameter("moon_strength", smoothstep(0.2, 0.8, dark) * (1.0 - 0.9 * overcast))
+	_sky_mat.set_shader_parameter("star_strength", smoothstep(0.55, 0.95, dark) * (1.0 - overcast) * (1.0 - mist))
+	_sky_mat.set_shader_parameter("cloud_cover", Weather.cover_level())
+	var cloud := Color(1.0, 1.0, 1.0).lerp(Color(0.62, 0.64, 0.68), overcast * 0.7).lerp(Color(0.42, 0.44, 0.48), rain) \
+		.lerp(Color(1.0, 0.7, 0.55), twilight * 0.8).lerp(Color(0.05, 0.06, 0.09), dark)
 	_sky_mat.set_shader_parameter("cloud_color", cloud)
-	_sky_mat.set_shader_parameter("cloud_shadow", Color(0.62, 0.68, 0.78).lerp(Color(0.5, 0.32, 0.38), twilight * 0.8).lerp(Color(0.02, 0.025, 0.04), dark))
+	_sky_mat.set_shader_parameter("cloud_shadow", Color(0.62, 0.68, 0.78).lerp(Color(0.32, 0.34, 0.38), overcast).lerp(Color(0.5, 0.32, 0.38), twilight * 0.8).lerp(Color(0.02, 0.025, 0.04), dark))
 
 
 func _update_lamps() -> void:
@@ -288,6 +324,7 @@ uniform float moon_strength = 0.0;
 uniform float star_strength = 0.0;
 uniform vec3 cloud_color : source_color = vec3(1.0);
 uniform vec3 cloud_shadow : source_color = vec3(0.62, 0.68, 0.78);
+uniform float cloud_cover = 0.2;
 uniform sampler2D cloud_noise : repeat_enable, filter_linear_mipmap;
 
 float cloud_n(vec2 uv) {
@@ -359,7 +396,9 @@ void sky() {
 		if (up > 0.0) {
 			vec2 uv = d.xz / (up + 0.12) * 0.11;
 			float n = cloud_n(uv);
-			float dens = smoothstep(0.52, 0.78, n) * smoothstep(0.0, 0.18, up);
+			// More cover: the noise's lower values turn to cloud too, until it's one grey deck.
+			float lo = mix(0.6, 0.12, cloud_cover);
+			float dens = smoothstep(lo, lo + 0.26, n) * smoothstep(0.0, 0.18, up);
 			float lit = cloud_n(uv + normalize(sun_dir.xz + vec2(0.001)) * 0.02);
 			vec3 c = mix(cloud_color, cloud_shadow, clamp((lit - n) * 6.0 + 0.45, 0.0, 1.0));
 			c += glow_color * glow_strength * pow(max(sd, 0.0), 4.0) * 0.8;

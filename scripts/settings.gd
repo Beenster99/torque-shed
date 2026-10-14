@@ -14,10 +14,65 @@ var units := "metric"     # or "imperial"
 var day_night_cycle := true
 var day_length := 120      # real minutes per 24 h game day
 var time_of_day := 9.0     # hours; kept up to date while playing so the clock carries on next time
+## Weather: "auto" (it changes by itself) or held at one of Weather.STATES.
+var weather := "auto"
+var weather_now := "clear"   # the weather when last played, so it carries on next time
+var snap_placement := true # equipment you carry snaps square and flush to walls and corners
+
+
+## Every action a player can rebind, in the order the Key bindings tab lists them:
+## [action, what it does, contexts]. Two actions clash when they share a key or button and a
+## context: "foot" (walking about the shed), "ride" (on a bike), "spray" (a spray can or gun in
+## your hand, on foot) and "board" (at the whiteboard, where its own keys take over).
+const ACTIONS := [
+	["move_forward", "Walk forward", ["foot"]], ["move_back", "Walk back", ["foot"]],
+	["move_left", "Walk left", ["foot"]], ["move_right", "Walk right", ["foot"]],
+	["sprint", "Run", ["foot"]], ["crouch", "Crouch", ["foot"]],
+	["act", "Work / use (hold)", ["foot", "board"]], ["alt_act", "Second work button (hold)", ["foot", "board"]],
+	["tool_next", "Next tool", ["foot", "board"]], ["tool_prev", "Previous tool", ["foot", "board"]],
+	["tool_1", "Hands", ["foot", "board"]], ["tool_2", "Wrench", ["foot", "board"]], ["tool_3", "Brush", ["foot", "board"]],
+	["tool_4", "Grinder", ["foot", "board"]], ["tool_5", "Spray can", ["foot", "board"]],
+	["tool_6", "Pressure washer", ["foot", "board"]], ["tool_7", "Spray gun", ["foot", "board"]],
+	["tool_8", "Stopwatch", ["foot", "board"]],
+	["spray_colour", "Spray colour", ["spray"]], ["spray_finish", "Spray finish", ["spray"]],
+	["rename", "Name a bike", ["foot"]],
+	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
+	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
+	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot", "ride"]],
+	["stopwatch", "Stopwatch start / stop", ["foot", "ride"]], ["menu", "Menu", ["foot", "ride", "board"]],
+	["board_text", "Whiteboard: write text", ["board"]], ["board_undo", "Whiteboard: undo", ["board"]],
+	["board_wipe", "Whiteboard: wipe (hold)", ["board"]], ["board_colour", "Whiteboard: next colour", ["board"]],
+	["board_image", "Whiteboard: add a picture", ["board"]], ["board_move", "Whiteboard: move a picture", ["board"]],
+	["board_bigger", "Whiteboard: picture bigger", ["board"]], ["board_smaller", "Whiteboard: picture smaller", ["board"]],
+	["board_poster", "Whiteboard: make a poster", ["board"]],
+	["throttle", "Throttle", ["ride"]], ["front_brake", "Front brake", ["ride"]], ["rear_brake", "Rear brake", ["ride"]],
+	["lean_left", "Lean left", ["ride"]], ["lean_right", "Lean right", ["ride"]],
+	["body_back", "Weight back", ["ride"]], ["body_forward", "Weight forward", ["ride"]],
+	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down", ["ride"]],
+	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
+	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera", ["ride"]],
+	["horn", "Horn", ["ride"]], ["headlight", "Headlight", ["ride"]],
+	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
+	["geo_move", "Geometry: move", ["geo"]], ["geo_rotate", "Geometry: rotate", ["geo"]],
+	["geo_scale", "Geometry: scale / stretch", ["geo"]], ["geo_snap", "Geometry: snap (hold)", ["geo"]],
+	["geo_undo", "Geometry: undo", ["geo"]], ["geo_reset", "Geometry: reset the part", ["geo"]],
+]
+const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding", "spray": "with a spray can or gun", "board": "at the whiteboard",
+	"geo": "in geometry mode"}
+## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
+const SHARED_OK := [["alt_act", "spray_colour"]]
+## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
+const CONTEXT_ALSO := {"spray": ["foot"]}
+
+## action -> the events it had before any rebinding, for Reset to defaults.
+var _defaults := {}
 
 
 func _ready() -> void:
 	_setup_inputs()
+	_pad_ui()
+	for a in ACTIONS:
+		_defaults[a[0]] = InputMap.action_get_events(a[0]).duplicate()
 	load_settings()
 
 
@@ -35,6 +90,14 @@ func load_settings() -> void:
 		day_night_cycle = cfg.get_value("world", "day_night_cycle", day_night_cycle)
 		day_length = int(cfg.get_value("world", "day_length", day_length))
 		time_of_day = float(cfg.get_value("world", "time_of_day", time_of_day))
+		weather = str(cfg.get_value("world", "weather", weather))
+		weather_now = str(cfg.get_value("world", "weather_now", weather_now))
+		if cfg.has_section("bindings"):
+			for action in cfg.get_section_keys("bindings"):
+				var codes = cfg.get_value("bindings", action, [])
+				if _defaults.has(action) and (codes is Array or codes is PackedStringArray):
+					_set_events(action, codes)
+		snap_placement = bool(cfg.get_value("building", "snap", snap_placement))
 
 
 func save_settings() -> void:
@@ -50,6 +113,14 @@ func save_settings() -> void:
 	cfg.set_value("world", "day_night_cycle", day_night_cycle)
 	cfg.set_value("world", "day_length", day_length)
 	cfg.set_value("world", "time_of_day", time_of_day)
+	cfg.set_value("world", "weather", weather)
+	cfg.set_value("world", "weather_now", weather_now)
+	# Only what differs from the defaults is kept, so new defaults reach everything else.
+	for a in ACTIONS:
+		var codes := binding_codes(a[0])
+		if codes != _codes_of(_defaults.get(a[0], [])):
+			cfg.set_value("bindings", a[0], codes)
+	cfg.set_value("building", "snap", snap_placement)
 	cfg.save(PATH)
 
 
@@ -85,10 +156,17 @@ func _setup_inputs() -> void:
 	for i in 8:
 		_bind("tool_%d" % (i + 1), [KEY_1 + i], [])
 	_bind("spray_colour", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
-	_bind("spray_finish", [KEY_T], [JOY_BUTTON_B])
+	# The finish is T or the mouse's back side button: the middle button is ping's.
+	_bind("spray_finish", [KEY_T], [JOY_BUTTON_B], [MOUSE_BUTTON_XBUTTON1])
 	# Point at something and ping it for the crew to see.
 	_bind("ping", [KEY_G], [JOY_BUTTON_DPAD_RIGHT], [MOUSE_BUTTON_MIDDLE])
 	_bind("rename", [KEY_N], [])
+	# Turn a part in your hands, equipment you're carrying, a poster before you hang it or a
+	# picture on the whiteboard: , and . (the < and > keys); View on a pad turns it right.
+	_bind("rotate_left", [KEY_COMMA], [])
+	_bind("rotate_right", [KEY_PERIOD], [JOY_BUTTON_BACK])
+	# Hold to scrap the equipment you're carrying or the part in your hands, for good.
+	_bind("scrap", [KEY_DELETE], [JOY_BUTTON_DPAD_DOWN])
 	# The second work button: drains fluids into a held container.
 	_bind("alt_act", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	_bind("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])
@@ -96,6 +174,22 @@ func _setup_inputs() -> void:
 	_bind("board_text", [KEY_T], [])
 	_bind("board_undo", [KEY_Z], [JOY_BUTTON_DPAD_LEFT])
 	_bind("board_wipe", [KEY_X], [])
+	_bind("board_colour", [], [JOY_BUTTON_B])
+	# Pictures from your PC on the board: add one, move it about and size it.
+	_bind("board_image", [KEY_U], [])
+	_bind("board_move", [KEY_M], [JOY_BUTTON_DPAD_UP])
+	_bind("board_bigger", [KEY_EQUAL, KEY_KP_ADD], [])
+	_bind("board_smaller", [KEY_MINUS, KEY_KP_SUBTRACT], [])
+	# Turn what's on the board into a poster to order from the parts computer.
+	_bind("board_poster", [KEY_K], [JOY_BUTTON_DPAD_DOWN])
+	# Geometry mode: fit a bike's parts with move, rotate and scale handles, Blender style.
+	_bind("geometry_mode", [KEY_F2], [])
+	_bind("geo_move", [KEY_W], [])
+	_bind("geo_rotate", [KEY_E], [])
+	_bind("geo_scale", [KEY_R], [])
+	_bind("geo_snap", [KEY_CTRL], [])
+	_bind("geo_undo", [KEY_Z], [])
+	_bind("geo_reset", [KEY_BACKSPACE], [])
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
 	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])
@@ -117,3 +211,191 @@ func _bind(action: String, keys: Array, buttons: Array, mouse := []) -> void:
 		var ev := InputEventMouseButton.new()
 		ev.button_index = button
 		InputMap.action_add_event(action, ev)
+
+
+## The pad works the menus too: A presses the button in focus and B goes back. (Godot's own
+## ui_accept and ui_cancel only have keys; the d-pad and left stick already move the focus.)
+func _pad_ui() -> void:
+	for pair in [["ui_accept", JOY_BUTTON_A], ["ui_cancel", JOY_BUTTON_B]]:
+		var ev := InputEventJoypadButton.new()
+		ev.device = -1
+		ev.button_index = pair[1]
+		InputMap.action_add_event(pair[0], ev)
+
+
+# ---------------------------------------------------------------------------- rebinding
+
+## Whether an event is a gamepad button (as opposed to a key or mouse button).
+static func is_pad(ev: InputEvent) -> bool:
+	return ev is InputEventJoypadButton
+
+
+## The action's bindings as saved: "key:<physical keycode>", "mouse:<button>", "joy:<button>".
+func binding_codes(action: String) -> PackedStringArray:
+	return _codes_of(InputMap.action_get_events(action) if InputMap.has_action(action) else [])
+
+
+static func _codes_of(events: Array) -> PackedStringArray:
+	var out := PackedStringArray()
+	for ev in events:
+		var c := code_of(ev)
+		if c != "":
+			out.append(c)
+	return out
+
+
+static func code_of(ev: InputEvent) -> String:
+	if ev is InputEventKey:
+		var k: int = ev.physical_keycode if ev.physical_keycode != 0 else ev.keycode
+		return "key:%d" % k
+	if ev is InputEventMouseButton:
+		return "mouse:%d" % ev.button_index
+	if ev is InputEventJoypadButton:
+		return "joy:%d" % ev.button_index
+	return ""
+
+
+static func event_of(code: String) -> InputEvent:
+	var bits := code.split(":")
+	if bits.size() != 2 or not bits[1].is_valid_int():
+		return null
+	var n := int(bits[1])
+	match bits[0]:
+		"key":
+			var k := InputEventKey.new()
+			k.physical_keycode = n as Key
+			return k
+		"mouse":
+			var m := InputEventMouseButton.new()
+			m.button_index = n as MouseButton
+			return m
+		"joy":
+			var j := InputEventJoypadButton.new()
+			j.device = -1
+			j.button_index = n as JoyButton
+			return j
+	return null
+
+
+func _set_events(action: String, codes) -> void:
+	InputMap.action_erase_events(action)
+	for c in codes:
+		var ev := event_of(str(c))
+		if ev:
+			InputMap.action_add_event(action, ev)
+
+
+## The action's keys and mouse buttons (pad = false) or its pad buttons (pad = true).
+func events_of(action: String, pad: bool) -> Array:
+	if not InputMap.has_action(action):
+		return []
+	return InputMap.action_get_events(action).filter(func(e): return code_of(e) != "" and is_pad(e) == pad)
+
+
+## Puts `ev` on `action` in place of its keyboard and mouse bindings (or its pad button), and saves.
+func rebind(action: String, ev: InputEvent) -> void:
+	var code := code_of(ev)
+	if code == "" or not InputMap.has_action(action):
+		return
+	var keep := InputMap.action_get_events(action).filter(func(e): return code_of(e) != "" and is_pad(e) != is_pad(ev))
+	InputMap.action_erase_events(action)
+	for e in keep:
+		InputMap.action_add_event(action, e)
+	InputMap.action_add_event(action, event_of(code))
+	save_settings()
+
+
+## Takes the action's keyboard and mouse (or pad) bindings off, and saves.
+func clear_binding(action: String, pad: bool) -> void:
+	for e in events_of(action, pad):
+		InputMap.action_erase_event(action, e)
+	save_settings()
+
+
+## Every action back to how the game comes, and saves.
+func reset_bindings() -> void:
+	for action in _defaults:
+		InputMap.action_erase_events(action)
+		for e in _defaults[action]:
+			InputMap.action_add_event(action, e)
+	save_settings()
+
+
+static func action_name(action: String) -> String:
+	for a in ACTIONS:
+		if a[0] == action:
+			return a[1]
+	return action
+
+
+static func _contexts(action: String) -> Array:
+	for a in ACTIONS:
+		if a[0] == action:
+			var out: Array = a[2].duplicate()
+			for c in a[2]:
+				out.append_array(CONTEXT_ALSO.get(c, []))
+			return out
+	return []
+
+
+## Keys or buttons that do two things at once: [{a, b, code, context}].
+func clashes() -> Array:
+	var out := []
+	for i in ACTIONS.size():
+		var a: String = ACTIONS[i][0]
+		var ca := _contexts(a)
+		var mine := binding_codes(a)
+		for j in range(i + 1, ACTIONS.size()):
+			var b: String = ACTIONS[j][0]
+			if SHARED_OK.has([a, b]) or SHARED_OK.has([b, a]):
+				continue
+			var shared := ""
+			for c in _contexts(b):
+				if ca.has(c):
+					shared = c
+					break
+			if shared == "":
+				continue
+			for code in binding_codes(b):
+				if mine.has(code):
+					out.append({"a": a, "b": b, "code": code, "context": shared})
+	return out
+
+
+## "R is also Spray colour (on foot)" for each clash `action` is in, from `found` (see clashes()).
+func clash_text(action: String, found := []) -> String:
+	var lines := []
+	for c in (found if not found.is_empty() else clashes()):
+		if c["a"] == action or c["b"] == action:
+			var other: String = c["b"] if c["a"] == action else c["a"]
+			lines.append("%s is also %s (%s)" % [code_text(c["code"]), action_name(other), CONTEXT_NAMES[c["context"]]])
+	return ", ".join(lines)
+
+
+const PAD_NAMES := {JOY_BUTTON_A: "A", JOY_BUTTON_B: "B", JOY_BUTTON_X: "X", JOY_BUTTON_Y: "Y",
+	JOY_BUTTON_BACK: "View", JOY_BUTTON_GUIDE: "Guide", JOY_BUTTON_START: "Start", JOY_BUTTON_LEFT_STICK: "L3",
+	JOY_BUTTON_RIGHT_STICK: "R3", JOY_BUTTON_LEFT_SHOULDER: "LB", JOY_BUTTON_RIGHT_SHOULDER: "RB",
+	JOY_BUTTON_DPAD_UP: "D-pad up", JOY_BUTTON_DPAD_DOWN: "D-pad down", JOY_BUTTON_DPAD_LEFT: "D-pad left",
+	JOY_BUTTON_DPAD_RIGHT: "D-pad right", JOY_BUTTON_MISC1: "Share"}
+const MOUSE_NAMES := {MOUSE_BUTTON_LEFT: "Left mouse", MOUSE_BUTTON_RIGHT: "Right mouse", MOUSE_BUTTON_MIDDLE: "Middle mouse",
+	MOUSE_BUTTON_WHEEL_UP: "Wheel up", MOUSE_BUTTON_WHEEL_DOWN: "Wheel down", MOUSE_BUTTON_WHEEL_LEFT: "Wheel left",
+	MOUSE_BUTTON_WHEEL_RIGHT: "Wheel right", MOUSE_BUTTON_XBUTTON1: "Mouse back", MOUSE_BUTTON_XBUTTON2: "Mouse forward"}
+
+
+## A binding as a player reads it: "G", "Middle mouse", "D-pad right".
+static func code_text(code: String) -> String:
+	var ev := event_of(code)
+	if ev is InputEventKey:
+		return OS.get_keycode_string((ev as InputEventKey).physical_keycode)
+	if ev is InputEventMouseButton:
+		var mb: int = (ev as InputEventMouseButton).button_index
+		return str(MOUSE_NAMES.get(mb, "Mouse %d" % mb))
+	if ev is InputEventJoypadButton:
+		var jb: int = (ev as InputEventJoypadButton).button_index
+		return str(PAD_NAMES.get(jb, "Button %d" % jb))
+	return "?"
+
+
+## The action's keyboard and mouse (or pad) bindings as text, "" when it has none.
+func binding_text(action: String, pad: bool) -> String:
+	return " / ".join(events_of(action, pad).map(func(e): return code_text(code_of(e))))

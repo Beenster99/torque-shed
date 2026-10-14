@@ -8,7 +8,7 @@ extends Node
 const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc", "caliper", "pads", "master", "tank",
 	"saddle", "handlebars", "dashboard", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling",
 	"gearbox", "exhaust", "final_drive", "chain", "side_stand", "centre_stand", "headlight", "horn", "ecu",
-	"panniers", "top_box", "fog_lights"]
+	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
 const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube"]
 const KIND_NAMES := {
@@ -19,16 +19,16 @@ const KIND_NAMES := {
 	"oil_filter": "Oil filter", "spark_plugs": "Spark plugs", "cooling": "Cooling", "gearbox": "Gearbox",
 	"exhaust": "Exhaust", "final_drive": "Sprockets", "chain": "Chain", "side_stand": "Side stand", "centre_stand": "Centre stand",
 	"headlight": "Headlight", "horn": "Horn", "ecu": "ECU", "panniers": "Panniers", "top_box": "Top box",
-	"fog_lights": "Fog lights", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
+	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
 }
 ## Slots on the bike itself.
 const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
-	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights"]
+	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors"]
 ## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
 const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box",
-	"fog_lights"]
+	"fog_lights", "fairing", "mirrors"]
 ## Parts low down on a bike that you have to crouch to reach while it's in the frame.
 const LOW_SLOTS: Array[String] = ["side_stand", "centre_stand", "oil_filter", "final_drive", "chain"]
 ## Slots on an engine block. They travel with the block when it comes out of the frame.
@@ -38,7 +38,7 @@ const SERVICE_SLOTS: Array[String] = ["air_filter", "oil_filter", "spark_plugs"]
 const SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
-	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox"]
+	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox"]
 const SLOT_KIND := {
 	"frame": "frame", "fork": "fork", "shock": "shock", "front_wheel": "wheel", "rear_wheel": "wheel",
 	"front_tyre": "tyre", "rear_tyre": "tyre", "front_disc": "disc", "rear_disc": "disc",
@@ -48,11 +48,12 @@ const SLOT_KIND := {
 	"final_drive": "final_drive", "chain": "chain", "head": "head", "fuel": "fuel", "air_filter": "air_filter",
 	"oil_filter": "oil_filter", "spark_plugs": "spark_plugs", "cooling": "cooling", "gearbox": "gearbox",
 	"side_stand": "side_stand", "centre_stand": "centre_stand", "headlight": "headlight", "horn": "horn", "ecu": "ecu",
-	"panniers": "panniers", "top_box": "top_box", "fog_lights": "fog_lights",
+	"panniers": "panniers", "top_box": "top_box", "fog_lights": "fog_lights", "tail": "tail", "fairing": "fairing",
+	"mirrors": "mirrors",
 }
 const DEFAULT_BUILD := {
-	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17",
-	"rear_wheel": "cast_17", "front_tyre": "sport_road", "rear_tyre": "sport_road", "front_disc": "floating_310",
+	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17_front",
+	"rear_wheel": "cast_17", "front_tyre": "sport_road_120", "rear_tyre": "sport_road", "front_disc": "floating_310",
 	"rear_disc": "solid_240", "front_caliper": "four_piston_axial", "rear_caliper": "single_piston",
 	"front_pads": "semi_metallic", "rear_pads": "semi_metallic", "front_master": "axial_14", "rear_master": "axial_14",
 	"tank": "cafe_15", "saddle": "flat_bench", "handlebars": "flat_bar", "dashboard": "twin_clocks",
@@ -60,6 +61,7 @@ const DEFAULT_BUILD := {
 	"fuel": "twin_carbs", "air_filter": "paper_airbox", "oil_filter": "paper_oil", "spark_plugs": "iridium_plugs",
 	"cooling": "oil_cooler", "gearbox": "five_wide", "side_stand": "stamped_side", "centre_stand": "none",
 	"headlight": "round_7", "horn": "disc_horn", "ecu": "none", "panniers": "none", "top_box": "none", "fog_lights": "none",
+	"tail": "classic_mudguard", "fairing": "none", "mirrors": "none",
 }
 ## What each slot bolts onto. A part can only go on once its mounts are fitted, and has to
 ## come off before any of them can. Engine slots mount on the block ("engine").
@@ -77,12 +79,35 @@ const MOUNTS := {
 	"spark_plugs": ["head"], "fuel": ["head"], "air_filter": ["fuel"],
 	"side_stand": ["frame"], "centre_stand": ["frame"], "headlight": ["fork"],
 	"horn": ["frame"], "ecu": ["frame"], "panniers": ["frame"], "top_box": ["frame"], "fog_lights": ["fork"],
+	# The tail unit carries the rear light and mudguard; a fairing goes on over the headlight;
+	# mirrors bolt to the bars (or to the fairing, for parts that say so: see part_mounts).
+	"tail": ["frame"], "fairing": ["headlight"], "mirrors": ["handlebars"],
 }
 ## Which fluid each part holds, and how much (litres; the tank and engine work theirs out).
 const FLUID_HOLDERS := {"tank": "petrol", "engine": "oil", "master": "brake_fluid"}
 const MASTER_FLUID := 0.25
 const ECU_AID_NAMES := {"traction": "traction control", "abs": "ABS", "anti_wheelie": "anti-wheelie",
 	"stability": "stability control"}
+
+## What each kind of part is mostly made of, which decides the bin it goes in when it's thrown
+## away (see bin_for). A part can say otherwise with its own "material" in data/parts.json:
+## carbon bodywork, plastic or alloy luggage, a rubber bulb horn.
+const KIND_MATERIAL := {
+	"frame": "metal", "fork": "metal", "shock": "metal", "wheel": "metal", "tyre": "rubber", "disc": "metal",
+	"caliper": "metal", "pads": "mixed", "master": "metal", "tank": "metal", "saddle": "mixed", "handlebars": "metal",
+	"dashboard": "electronics", "engine": "metal", "head": "metal", "fuel": "metal", "air_filter": "mixed",
+	"oil_filter": "metal", "spark_plugs": "mixed", "cooling": "metal", "gearbox": "metal", "exhaust": "metal",
+	"final_drive": "metal", "chain": "metal", "side_stand": "metal", "centre_stand": "metal", "headlight": "electronics",
+	"horn": "metal", "ecu": "electronics", "panniers": "fabric", "top_box": "plastic", "fog_lights": "electronics",
+	"tail": "plastic", "fairing": "plastic", "mirrors": "mixed",
+	"petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
+}
+const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
+	"mixed": "Mixed materials", "electronics": "Electronics", "fabric": "Fabric", "leather": "Leather", "wood": "Wood"}
+## The shed's three bins, by the roller door: general waste takes anything; the recycling
+## bins take only their own material.
+const BINS: Array[String] = ["general", "plastic", "metal"]
+const BIN_NAMES := {"general": "General waste", "plastic": "Plastic recycling", "metal": "Metal recycling"}
 
 var parts := {}    # part id -> Dictionary of stats (with "id" and "kind" added)
 var by_kind := {}  # kind -> Array of part ids, in catalogue order
@@ -121,6 +146,24 @@ func part_name(id: String) -> String:
 
 func kind_of(id: String) -> String:
 	return str(get_part(id).get("kind", ""))
+
+
+## What a part is made of: "metal", "plastic", "rubber", "carbon", "mixed" and so on.
+func material(id: String) -> String:
+	var p := get_part(id)
+	return str(p.get("material", KIND_MATERIAL.get(str(p.get("kind", "")), "mixed")))
+
+
+## Which bin a part goes in: "metal" or "plastic" recycling, or "general" waste for the rest.
+func bin_for(id: String) -> String:
+	var m := material(id)
+	return m if m in ["metal", "plastic"] else "general"
+
+
+## "Metal: metal recycling bin" for the info panel.
+func bin_text(id: String) -> String:
+	var m := material(id)
+	return "%s: goes in the %s bin" % [MATERIAL_NAMES.get(m, m.capitalize()), str(BIN_NAMES[bin_for(id)]).to_lower()]
 
 
 func default_color(id: String) -> Color:
@@ -227,12 +270,13 @@ func spec_line(id: String) -> String:
 			var dia := float(p["diameter"])
 			bits = [p["type"], ("%d\"" % roundi(dia)) if is_equal_approx(dia, roundf(dia)) else ("%.1f\"" % dia)]
 			if p.has("rim_width"):
-				bits.append("%.2f\" rim (tyres %d-%d mm)" % [float(p["rim_width"]), roundi(float(p["rim_width"]) * 24.0 / 10.0) * 10, roundi(float(p["rim_width"]) * 62.0 / 10.0) * 10])
+				var r := tyre_range(id)
+				bits.append("%.2f\" rim: takes %d-%d mm tyres made for %s rims" % [float(p["rim_width"]), r.x, r.y, inch_text(dia)])
 			if p.has("spokes"):
 				bits.append("%d spokes" % int(p["spokes"]))
 		"tyre":
-			bits = [p["type"], p["compound"] + " compound", "%d mm wide (%d mm as a front)" % [int(p["width"]), roundi(float(p["width"]) * 0.7)],
-				"grip %.2f tarmac / %.2f dirt" % [p["grip"]["tarmac"], p["grip"]["dirt"]]]
+			bits = [p["type"], p["compound"] + " compound", "%d mm wide, %d%% profile" % [int(p["width"]), roundi(float(p["aspect"]) * 100.0)],
+				"fits " + tyre_rims_text(id), "grip %.2f tarmac / %.2f dirt" % [p["grip"]["tarmac"], p["grip"]["dirt"]]]
 		"disc":
 			bits = [p["type"], "%d mm" % int(p["diameter"])]
 		"caliper":
@@ -293,6 +337,15 @@ func spec_line(id: String) -> String:
 			bits.append("map tunable %d%%" % roundi(float(p.get("tune_range", 0.25)) * 100.0))
 		"panniers", "top_box":
 			bits = [p["type"], "%d litres" % int(p["litres"])]
+		"tail":
+			bits = [p["type"], str(TAIL_LIGHT_NAMES.get(str(p.get("light", "")), "rear light"))]
+		"fairing":
+			bits = [p["type"], "%d%% less drag" % roundi(-float(p["cda"]) / 0.55 * 100.0),
+				"%d mm screen" % roundi(float(p.get("screen", 0.0)) * 1000.0)]
+		"mirrors":
+			bits = [p["type"]]
+			if not p.get("mounts_on", []).is_empty():
+				bits.append("needs a %s fitted" % ", ".join(p["mounts_on"].map(func(s): return slot_name(str(s)).to_lower())))
 		"petrol":
 			bits = [p["container"], "%.0f L" % p["litres"]] if p.get("empty", false) else [p["container"], "%.0f L" % p["litres"],
 				"power %+d%%" % roundi((p["power"] - 1.0) * 100.0), "economy %+d%%" % roundi((p["economy"] - 1.0) * 100.0)]
@@ -309,9 +362,98 @@ func spec_line(id: String) -> String:
 	return "  ·  ".join(bits.map(func(b): return str(b)))
 
 
-## Returns a complete build, filling missing or unknown slots with defaults.
+## "17\"" or "16.5\"".
+static func inch_text(d: float) -> String:
+	return ("%d\"" % roundi(d)) if is_equal_approx(d, roundf(d)) else ("%.1f\"" % d)
+
+
+## The tyre widths (mm) a wheel's rim takes, smallest to widest.
+func tyre_range(wheel_id: String) -> Vector2i:
+	var p := get_part(wheel_id)
+	var r: Array = p.get("tyres", [])
+	if r.size() == 2:
+		return Vector2i(int(r[0]), int(r[1]))
+	# Older catalogues: worked out from the rim width.
+	var rim := float(p.get("rim_width", 3.5))
+	return Vector2i(roundi(rim * 24.0), roundi(rim * 62.0))
+
+
+## The rim diameters (inches) a tyre is made for. Empty means any.
+func tyre_rims(tyre_id: String) -> Array:
+	return get_part(tyre_id).get("rims", [])
+
+
+## Whether a tyre goes on a wheel: 0 if it does, 1 too wide for the rim, -1 too narrow,
+## 2 made for a different rim diameter.
+func tyre_fit(tyre_id: String, wheel_id: String) -> int:
+	var t := get_part(tyre_id)
+	var w := get_part(wheel_id)
+	if t.is_empty() or w.is_empty():
+		return 0
+	var r := tyre_range(wheel_id)
+	var mm := float(t.get("width", 120.0))
+	if mm > r.y:
+		return 1
+	if mm < r.x:
+		return -1
+	var rims := tyre_rims(tyre_id)
+	var dia := float(w.get("diameter", 17.0))
+	if not rims.is_empty() and not rims.any(func(d): return is_equal_approx(float(d), dia)):
+		return 2
+	return 0
+
+
+## Why a tyre won't go on a wheel, in words, or "" when it fits.
+func tyre_fit_reason(tyre_id: String, wheel_id: String) -> String:
+	var t := get_part(tyre_id)
+	var w := get_part(wheel_id)
+	match tyre_fit(tyre_id, wheel_id):
+		2:
+			return "That tyre is made for %s rims, not this %s wheel." % [" or ".join(tyre_rims(tyre_id).map(func(d): return inch_text(float(d)))),
+				inch_text(float(w.get("diameter", 17.0)))]
+		1, -1:
+			var r := tyre_range(wheel_id)
+			return "A %d mm tyre is too %s for this %.2f\" rim: it takes %d-%d mm." % [int(t.get("width", 0)),
+				"wide" if tyre_fit(tyre_id, wheel_id) == 1 else "narrow", float(w.get("rim_width", 0.0)), r.x, r.y]
+	return ""
+
+
+## "17\" rims 4.25-6.0\" wide": the wheels in the catalogue a tyre goes on.
+func tyre_rims_text(tyre_id: String) -> String:
+	var dias := []
+	var lo := INF
+	var hi := 0.0
+	for w in by_kind.get("wheel", []):
+		if tyre_fit(tyre_id, w) == 0:
+			var d := float(get_part(w).get("diameter", 17.0))
+			if not dias.has(d):
+				dias.append(d)
+			lo = minf(lo, float(get_part(w).get("rim_width", 0.0)))
+			hi = maxf(hi, float(get_part(w).get("rim_width", 0.0)))
+	if dias.is_empty():
+		return "no wheel in the catalogue"
+	dias.sort()
+	var sizes := " or ".join(dias.map(func(d): return inch_text(float(d))))
+	if is_equal_approx(lo, hi):
+		return "%s rims %.2f\" wide" % [sizes, lo]
+	return "%s rims %.2f-%.2f\" wide" % [sizes, lo, hi]
+
+
+## The catalogue tyres that go on a wheel.
+func tyres_for(wheel_id: String) -> Array:
+	return by_kind.get("tyre", []).filter(func(t): return tyre_fit(t, wheel_id) == 0)
+
+
+## The catalogue wheels a tyre goes on.
+func wheels_for(tyre_id: String) -> Array:
+	return by_kind.get("wheel", []).filter(func(w): return tyre_fit(tyre_id, w) == 0)
+
+
+## Returns a complete build, filling missing or unknown slots with defaults. A build from
+## before tail units existed gets one that suits its saddle (see fitting_tail).
 func sanitize_build(build: Dictionary) -> Dictionary:
 	var clean := {}
+	var no_tail := false
 	for slot in SLOTS:
 		var id: String = str(build.get(slot, ""))
 		if id == "none" and is_optional(slot):
@@ -319,5 +461,36 @@ func sanitize_build(build: Dictionary) -> Dictionary:
 			continue
 		if not parts.has(id) or parts[id]["kind"] != SLOT_KIND[slot]:
 			id = DEFAULT_BUILD[slot]
+			no_tail = no_tail or slot == "tail"
 		clean[slot] = id
+	if no_tail:
+		clean["tail"] = fitting_tail(clean)
 	return clean
+
+
+## What each tail unit's rear light is, for the spec line.
+const TAIL_LIGHT_NAMES := {"lucas": "big Lucas-style rear lamp", "round": "small round rear lamp",
+	"strip": "LED strip rear light", "bullet": "bullet rear lamp", "led": "tiny LED rear light"}
+## Which tail unit suits a saddle style, for bikes that never had one chosen.
+const SADDLE_TAIL := {"cafe": "cafe_tail", "sport": "sport_tail_tidy", "enduro": "enduro_fender",
+	"touring": "classic_mudguard", "bench": "classic_mudguard"}
+
+
+## The tail unit that looks right on a build: a hump on a café seat, a high fender on an enduro,
+## a tail tidy on a sports bike, a long mudguard on the rest (and a scrambler loop on knobblies).
+func fitting_tail(build: Dictionary) -> String:
+	var saddle := str(get_part(str(build.get("saddle", ""))).get("style", "bench"))
+	var tail := str(SADDLE_TAIL.get(saddle, DEFAULT_BUILD["tail"]))
+	if tail == "classic_mudguard" and str(get_part(str(build.get("rear_tyre", ""))).get("style", "")) == "offroad":
+		tail = "scrambler_loop"
+	return tail if parts.has(tail) else str(DEFAULT_BUILD["tail"])
+
+
+## Everything a part in a slot needs fitted first: the slot's own mounts, plus any the part
+## itself names ("mounts_on": fairing-mount mirrors need a fairing).
+func part_mounts(slot: String, part_id: String) -> Array:
+	var out: Array = MOUNTS.get(slot, []).duplicate()
+	for m in get_part(part_id).get("mounts_on", []):
+		if not out.has(str(m)):
+			out.append(str(m))
+	return out

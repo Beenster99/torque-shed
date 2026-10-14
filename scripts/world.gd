@@ -22,6 +22,9 @@ var _sun: DirectionalLight3D
 var _env: WorldEnvironment
 var workshop: Workshop
 var daylight: Daylight
+var weather: Weather
+## Ground that rain soaks (see Weather): [{mat, color, rough, shine}], shine 0 (stays matt) .. 1.
+var wet_surfaces := []
 
 
 func generate(seed_value := 1) -> void:
@@ -39,6 +42,10 @@ func generate(seed_value := 1) -> void:
 	_build_garage()
 	_build_yard_lights()
 	_build_trees()
+	weather = Weather.new()
+	weather.name = "Weather"
+	add_child(weather)
+	weather.setup(self)
 
 
 # ---------------------------------------------------------------------------- queries
@@ -98,7 +105,10 @@ func _build_environment() -> void:
 	env.volumetric_fog_enabled = Settings.high_quality
 	env.volumetric_fog_density = 0.006
 	env.volumetric_fog_albedo = Color(0.9, 0.92, 0.95)
-	env.volumetric_fog_anisotropy = 0.6
+	# Fairly even scattering: a forward-heavy fog turns a headlight seen end-on into a hard streak.
+	env.volumetric_fog_anisotropy = 0.35
+	# Blend each frame's fog with the last ones more, for a smoother, softer haze.
+	env.volumetric_fog_temporal_reprojection_amount = 0.95
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.08
 	env.adjustment_contrast = 1.04
@@ -230,8 +240,8 @@ func _road_info(x: float, z: float) -> Vector2:
 func _build_road_meshes() -> void:
 	var count := road_points.size()
 	var dirt_from := int(count * DIRT_START)
-	_road_strip(0, dirt_from, "tarmac", _road_material(Color(0.13, 0.13, 0.14), 0.82))
-	_road_strip(dirt_from, count, "dirt", _road_material(Color(0.42, 0.31, 0.2), 1.0))
+	_road_strip(0, dirt_from, "tarmac", _wet(_road_material(Color(0.13, 0.13, 0.14), 0.82), 1.0))
+	_road_strip(dirt_from, count, "dirt", _wet(_road_material(Color(0.42, 0.31, 0.2), 1.0), 0.35))
 	var line_mat := StandardMaterial3D.new()
 	line_mat.albedo_color = Color(0.92, 0.92, 0.88)
 	line_mat.roughness = 0.6
@@ -243,6 +253,12 @@ func _build_road_meshes() -> void:
 		var i := int(count * t)
 		var xf := Transform3D(Basis(Vector3.UP, atan2(-road_tangents[i].x, -road_tangents[i].z)), road_points[i])
 		_kicker(xf, 4.5, 1.1, 5.0, "dirt")
+
+
+## Registers `mat` as ground the rain soaks, `shine` (0..1) how glossy it goes wet.
+func _wet(mat: StandardMaterial3D, shine: float) -> StandardMaterial3D:
+	wet_surfaces.append({"mat": mat, "color": mat.albedo_color, "rough": mat.roughness, "shine": shine})
+	return mat
 
 
 func _road_material(color: Color, roughness: float) -> StandardMaterial3D:
@@ -429,6 +445,7 @@ func _build_terrain() -> void:
 	mat.roughness = 0.95
 	mat.albedo_texture = _noise_texture(0.05, Color(0.72, 0.72, 0.72), Color(1.12, 1.12, 1.12))
 	mat.uv1_scale = Vector3(1.0, 1.0, 1.0)
+	_wet(mat, 0.15)
 	var body := _static_mesh(mesh, mat, "grass")
 	body.name = "Terrain"
 
@@ -441,6 +458,7 @@ func _build_yard() -> void:
 	concrete.roughness = 0.97
 	concrete.albedo_texture = _noise_texture(0.15, Color(0.82, 0.82, 0.82), Color(1.08, 1.08, 1.08))
 	concrete.uv1_scale = Vector3(12.0, 12.0, 12.0)
+	_wet(concrete, 0.8)
 	var body := StaticBody3D.new()
 	body.set_meta("surface", "tarmac")
 	body.position = Vector3(YARD_CENTER.x, -0.25, YARD_CENTER.y)

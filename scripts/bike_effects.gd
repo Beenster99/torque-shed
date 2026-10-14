@@ -13,13 +13,31 @@ const GRIT_PROFILE := [[0.0, 1.0], [0.7, 0.8], [1.0, 0.0]]
 const PUFF_FRAME := 64   # pixels per puff in the 2x2 atlas of soft noisy puffs
 
 static var _puff_tex: ImageTexture
+static var _mote_tex: ImageTexture
 
 var _smoke: CPUParticles3D
 var _dust: CPUParticles3D
 var _grit: CPUParticles3D
 var _tyre: CPUParticles3D
-var _beam: SpotLight3D
+var _beam: SpotLight3D      # the beam's core: lights the road, never the air
+var _flood: SpotLight3D     # a wide, dim, very soft flood round it: fills the edges and lights the fog
 var _cone: MeshInstance3D
+var _motes: CPUParticles3D   # dust drifting through the headlight beam
+var _mote_shape := Vector2.ZERO   # the beam (length, radius) the motes were scattered for
+const MOTES := 36
+## How much the beam lights the night fog (light energy x fog energy), low and high beam. Only
+## the wide soft flood lights the air, so what shows is a faint haze, not a shaft with edges.
+const BEAM_FOG_LOW := 1.6
+const BEAM_FOG_HIGH := 2.6
+## The flood: how much wider than the core, how bright next to it and how far it reaches.
+const FLOOD_WIDER := 18.0
+const FLOOD_SHARE := 0.3
+const FLOOD_REACH := 0.65
+## Cone falloff (SpotLight3D.spot_angle_attenuation): below 1 the light fades from the middle
+## outwards, so there is next to nothing left at the cone's edge to show as a line.
+const CORE_FALLOFF := 0.7
+const FLOOD_FALLOFF := 0.35
+static var _soft_tex: GradientTexture2D
 var beam_mode := 1      # headlight switch: 0 off, 1 dipped (low), 2 main (high)
 const BEAM_NAMES := ["off", "low beam", "high beam"]
 var _lamp_glow: OmniLight3D
@@ -93,19 +111,64 @@ func setup(exhaust: Vector3, rear_contact: Vector3, lamp: Vector3, lumens: float
 		_beam.set_meta("lumens", lumens)
 		_beam.light_color = Color(1.0, 0.92, 0.78) if lumens < 2000.0 else Color(0.92, 0.96, 1.0)
 		_beam.shadow_enabled = false
+		_beam.spot_angle_attenuation = CORE_FALLOFF
+		# A blurred round projector (Forward+): the pool of light on the road fades out smoothly
+		# to nothing before the cone's edge, so there is no ring.
+		_beam.light_projector = soft_spot_texture()
 		add_child(_beam)
+		_flood = SpotLight3D.new()
+		_flood.name = "Flood"
+		_flood.light_color = _beam.light_color
+		_flood.shadow_enabled = false
+		_flood.spot_angle_attenuation = FLOOD_FALLOFF
+		_flood.spot_attenuation = 1.3     # fades with distance faster than the core: no long tube
+		_flood.light_projector = soft_spot_texture()
+		_flood.light_specular = 0.2
+		_beam.add_child(_flood)
 		_lamp_glow = OmniLight3D.new()
 		_lamp_glow.position = lamp + Vector3(0.0, 0.0, -0.12)
 		_lamp_glow.omni_range = 0.8
 		_lamp_glow.light_energy = 0.4
 		_lamp_glow.light_color = _beam.light_color
 		add_child(_lamp_glow)
-		_cone = _make_cone(_beam.light_color)
-		_beam.add_child(_cone)
+		# Light in the night air: the beam lights the volumetric fog (Forward+), soft and diffuse
+		# rather than a shape; a faint stand-in glow only where there's no volumetric fog.
+		_beam.light_volumetric_fog_energy = 0.0
+		if not volumetric_beams():
+			_cone = _make_cone(_beam.light_color)
+			_beam.add_child(_cone)
+		_motes = _make_motes(_beam.light_color)
+		_beam.add_child(_motes)
 
 
-## The visible shaft of the headlight: an open cone along the beam, glowing brightest at the lamp
-## and fading out along its length and at its edges.
+## A soft round spot for light projectors: white in the middle, fading smoothly (no edge at
+## all) to black at the rim.
+static func soft_spot_texture() -> GradientTexture2D:
+	if _soft_tex == null:
+		var g := Gradient.new()
+		g.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CUBIC
+		g.offsets = PackedFloat32Array([0.0, 0.3, 0.62, 0.86, 1.0])
+		g.colors = PackedColorArray([Color(1, 1, 1), Color(0.86, 0.86, 0.86), Color(0.42, 0.42, 0.42),
+			Color(0.08, 0.08, 0.08), Color(0, 0, 0)])
+		_soft_tex = GradientTexture2D.new()
+		_soft_tex.gradient = g
+		_soft_tex.fill = GradientTexture2D.FILL_RADIAL
+		_soft_tex.fill_from = Vector2(0.5, 0.5)
+		_soft_tex.fill_to = Vector2(1.0, 0.5)
+		_soft_tex.width = 128
+		_soft_tex.height = 128
+	return _soft_tex
+
+
+## Whether the headlight shows as light scattered in the night air through volumetric fog
+## (Forward+ with the quality setting on). Otherwise a faint soft glow stands in for it.
+static func volumetric_beams() -> bool:
+	return RenderingServer.get_current_rendering_method() == "forward_plus" and Settings.high_quality
+
+
+## The stand-in for the beam where there's no volumetric fog (the compatibility renderer): a
+## very faint, soft glow along the beam with no hard edge, brightest at the lamp and gone
+## well before the end. Just enough to hint at the light in the air.
 func _make_cone(color: Color) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
@@ -115,19 +178,34 @@ func _make_cone(color: Color) -> MeshInstance3D:
 	cyl.cap_top = false
 	cyl.cap_bottom = false
 	cyl.radial_segments = 24
-	cyl.rings = 1
+	cyl.rings = 4
 	mi.mesh = cyl
 	mi.rotation.x = PI * 0.5   # the narrow top (+Y) turns to +Z, back at the lamp
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var sh := Shader.new()
+	# Diffuse: the glow falls away smoothly towards the rim of the cone (seen edge-on it's gone),
+	# along its length and close to the eye, so there's never a visible surface.
 	sh.code = """shader_type spatial;
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
 uniform vec4 tint : source_color = vec4(1.0);
-uniform float strength = 0.2;
+uniform float strength = 0.02;
+uniform sampler2D depth_tex : hint_depth_texture, filter_linear;
 void fragment() {
 	float along = clamp(UV.y, 0.0, 1.0);   // 0 at the lamp, 1 at the far end
-	float edge = abs(dot(normalize(NORMAL), normalize(VIEW)));
-	float a = strength * pow(1.0 - along, 1.6) * smoothstep(0.0, 0.7, edge);
+	float facing = abs(dot(normalize(NORMAL), normalize(VIEW)));
+	// Gone right at the silhouette, but full strength by a modest angle, so it still shows
+	// from behind the bike, looking down the beam.
+	float a = strength * pow(1.0 - along, 2.4) * smoothstep(0.0, 0.35, facing);
+	// Soften where the cone meets the road or anything else, and right in front of the eye.
+	float scene = texture(depth_tex, SCREEN_UV).r;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	vec3 ndc = vec3(SCREEN_UV, scene) * 2.0 - 1.0;
+#else
+	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, scene);
+#endif
+	vec4 p = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
+	float gap = -p.z / p.w + VERTEX.z;
+	a *= smoothstep(0.0, 1.5, gap) * smoothstep(0.5, 3.0, -VERTEX.z);
 	ALBEDO = tint.rgb * a;
 	ALPHA = 1.0;
 }
@@ -137,6 +215,77 @@ void fragment() {
 	m.set_shader_parameter("tint", color)
 	mi.material_override = m
 	return mi
+
+
+## Dust motes in the beam: tiny glints that only show where the light falls on them. They are
+## scattered through the cone itself (see _scatter_motes), drift slowly, and stream back past
+## the lamp as the bike moves, like dust in a torch beam. Cheap: one small CPU emitter a bike.
+func _make_motes(color: Color) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.amount = MOTES
+	p.lifetime = 2.6
+	p.local_coords = true
+	p.emitting = false
+	p.randomness = 0.8
+	p.lifetime_randomness = 0.5
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
+	p.direction = Vector3(0.0, 0.0, 1.0)
+	p.spread = 25.0
+	p.initial_velocity_min = 0.02
+	p.initial_velocity_max = 0.15
+	p.gravity = Vector3(0.0, -0.02, 0.0)
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.4
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0, 0.25, 0.7, 1.0])
+	fade.colors = PackedColorArray([Color(1, 1, 1, 0), Color(1, 1, 1, 1), Color(1, 1, 1, 0.8), Color(1, 1, 1, 0)])
+	p.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.022, 0.022)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(color.r, color.g, color.b, 0.0)
+	m.albedo_texture = mote_texture()
+	m.disable_receive_shadows = true
+	m.no_depth_test = false
+	quad.material = m
+	p.mesh = quad
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return p
+
+
+## Points to start motes from, inside a cone `length` long (out along -Z from the lamp) that
+## widens to `radius`, bunched towards the lamp where the beam is brightest.
+func _scatter_motes(length: float, radius: float) -> void:
+	var pts := PackedVector3Array()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1234
+	for i in 160:
+		var along := pow(rng.randf(), 1.6)
+		var r := radius * along * sqrt(rng.randf()) * 0.9
+		var a := rng.randf() * TAU
+		pts.append(Vector3(cos(a) * r, sin(a) * r, -0.25 - along * length))
+	_motes.emission_points = pts
+	_mote_shape = Vector2(length, radius)
+
+
+## A soft round glint for a dust mote.
+static func mote_texture() -> ImageTexture:
+	if _mote_tex:
+		return _mote_tex
+	var size := 16
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	for y in size:
+		for x in size:
+			var d := Vector2(x + 0.5 - size * 0.5, y + 0.5 - size * 0.5).length() / (size * 0.5)
+			var a := clampf(1.0 - d, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+	_mote_tex = ImageTexture.create_from_image(img)
+	return _mote_tex
 
 
 ## Burnout and skid smoke: thick white-grey clouds that roll off the back tyre and hang in the
@@ -342,16 +491,39 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 		_beam.rotation.x = deg_to_rad(-1.2 if high else -5.0)
 		_lamp_glow.visible = engine_on and beam_mode > 0
 		_lamp_glow.light_energy = 0.9 if high else 0.5
+		# The core lights only the road; the flood, wide, dim and fading from its middle, fills
+		# round it and is the only light the fog picks up: the same faint amount whatever the
+		# lamp's power, a little more on high beam, nothing by day.
+		_beam.light_volumetric_fog_energy = 0.0
+		_flood.light_energy = _beam.light_energy * FLOOD_SHARE
+		_flood.spot_angle = minf(_beam.spot_angle + FLOOD_WIDER, 60.0)
+		_flood.spot_range = minf(_beam.spot_range * FLOOD_REACH, 45.0)
+		_flood.light_volumetric_fog_energy = night * (BEAM_FOG_HIGH if high else BEAM_FOG_LOW) / maxf(_flood.light_energy, 1.0)
 		if _cone:
-			# A faint shaft of light in the air, mostly seen at dusk and night.
-			var length := minf(_beam.spot_range * 0.6, 26.0)
+			var length := minf(_beam.spot_range * 0.5, 22.0)
 			var radius := length * tan(deg_to_rad(_beam.spot_angle))
 			var cyl := _cone.mesh as CylinderMesh
 			cyl.height = length
 			cyl.bottom_radius = radius
 			_cone.position = Vector3(0.0, 0.0, -length * 0.5)
-			(_cone.material_override as ShaderMaterial).set_shader_parameter("strength",
-				(0.05 + 0.3 * night) * (1.5 if high else 1.0))
+			_cone.visible = night > 0.2
+			(_cone.material_override as ShaderMaterial).set_shader_parameter("strength", beam_glow(night, high))
+		if _motes:
+			# Dust only shows up against the dark: barely there by day, a glittering beam at night.
+			var length := minf(_beam.spot_range * 0.45, 18.0)
+			var radius := length * tan(deg_to_rad(_beam.spot_angle))
+			if absf(_mote_shape.x - length) > 0.5 or absf(_mote_shape.y - radius) > 0.2:
+				_scatter_motes(length, radius)
+			var glow := (0.08 + 0.92 * night) * (1.3 if high else 1.0)
+			_motes.emitting = _beam.visible and night > 0.15
+			var mm := (_motes.mesh as QuadMesh).material as StandardMaterial3D
+			mm.albedo_color.a = clampf(glow * 0.35, 0.0, 1.0)
+			# Riding along, the air streams back through the beam towards the lamp.
+			var rush := minf(absf(speed), 30.0)
+			_motes.initial_velocity_max = 0.15 + rush * 0.5
+			_motes.initial_velocity_min = 0.02 + rush * 0.35
+			_motes.lifetime = clampf(2.6 - rush * 0.06, 0.6, 2.6)
+			_motes.spread = 25.0 if rush < 2.0 else 6.0
 
 
 ## Thick tyre smoke from a burnout or skid: `level` 0 (none) .. 1 (full cloud), billowing from
@@ -399,22 +571,94 @@ func update_skids(bike: Bike) -> void:
 			width, hard, str(w["surface"]))
 		if w["surface"] == "tarmac":
 			loudest = maxf(loudest, hard)
+			# Lighting the back tyre up on the spot squeals too.
+			if not w["is_front"] and w["contact"]:
+				loudest = maxf(loudest, bike.burnout * 0.8)
 	bike.skid = loudest
 	set_screech(loudest)
 
 
+## How loud a long slide gets: the screech settles to this share of its level once the tyre
+## has been sliding a while, so a held skid doesn't drown everything.
+const SCREECH_SETTLE := 0.45
+## How loud the bark is when a tyre lets go, at the softest and the sharpest break of grip.
+const CHIRP_MIN_DB := -6.0
+const CHIRP_MAX_DB := 6.0
+var _skid_level := 0.0
+var _skid_held := 0.0       # seconds the tyre has been sliding
+var _skid_bite := 0.0       # 1 just as grip breaks, fading: the moment it lets go is loudest
+var _skid_slow := 0.0       # the level eased over a fifth of a second
+var _onset := -1.0          # seconds since grip started to go (-1: not letting go)
+var _onset_peak := 0.0
+## How long after grip starts to go the bark comes: long enough to tell a snap from a slow slide.
+const CHIRP_WINDOW := 0.06
+var _chirp_wait := 0.0
+var _chirps := 0
+var last_chirp := 0.0        # how hard the last bark was, 0..1
+
+
 ## The tyre squeal on its own, 0 (none) .. 1 (full lock-up), for other players' bikes too.
+## The moment a tyre loses grip it barks (a sharp chirp, louder the faster grip goes) and the
+## squeal starts loud; a slide that goes on settles to a quieter screech.
 func set_screech(level: float) -> void:
 	if _screech == null:
 		_screech = Sfx.make_loop_player(self)
 		_screech.max_distance = 80.0
 		_screech.unit_size = 10.0
+	var dt := get_physics_process_delta_time() if Engine.is_in_physics_frame() else get_process_delta_time()
+	dt = clampf(dt, 0.001, 0.1)
+	level = clampf(level, 0.0, 1.0)
+	_chirp_wait = maxf(_chirp_wait - dt, 0.0)
+	# Grip breaking: the level climbs from (nearly) nothing. How far it gets in the first
+	# CHIRP_WINDOW says how suddenly the tyre let go, and sets how loud it barks.
+	if _onset < 0.0 and level > 0.08 and _skid_level < 0.06 and _chirp_wait <= 0.0:
+		_onset = 0.0
+		_onset_peak = 0.0
+	if _onset >= 0.0:
+		_onset += dt
+		_onset_peak = maxf(_onset_peak, level)
+		if _onset >= CHIRP_WINDOW or level < 0.02:
+			if _onset_peak > 0.15:
+				chirp(_onset_peak)
+			_onset = -1.0
+	elif level - _skid_slow > 0.45 and _chirp_wait <= 0.0:
+		# Already sliding and it suddenly lets go much more (the back stepping right out).
+		chirp(level - _skid_slow)
+	_skid_slow = lerpf(_skid_slow, level, 1.0 - exp(-dt / 0.2))
+	if level > 0.02:
+		_skid_held += dt
+	else:
+		_skid_held = 0.0
+	_skid_bite = maxf(_skid_bite - dt / 0.5, 0.0)
+	_skid_level = level
 	if level > 0.02:
 		Sfx.set_loop(_screech, "screech")
-		_screech.volume_db = linear_to_db(clampf(0.3 + level * 0.9, 0.0, 1.2))
-		_screech.pitch_scale = 0.9 + level * 0.25
+		_screech.volume_db = linear_to_db(screech_gain(level, _skid_held, _skid_bite))
+		_screech.pitch_scale = 0.9 + level * 0.25 + _skid_bite * 0.08
 	else:
 		Sfx.set_loop(_screech, "")
+
+
+## How loud the sliding squeal is (linear gain) at `level` after `held` seconds of sliding,
+## with `bite` (1 .. 0) just after grip broke.
+static func screech_gain(level: float, held: float, bite: float) -> float:
+	var settle := lerpf(1.0, SCREECH_SETTLE, smoothstep(0.25, 1.6, held))
+	return clampf((0.14 + 0.42 * level) * settle + 0.35 * bite * level, 0.0, 0.9)
+
+
+## The bark of a tyre letting go: `strength` 0 (just) .. 1 (snapped loose all at once).
+func chirp(strength: float) -> void:
+	_chirp_wait = 0.35
+	_skid_bite = 1.0
+	_chirps += 1
+	last_chirp = clampf(strength, 0.0, 1.0)
+	if is_inside_tree():
+		Sfx.play_at("chirp", global_position, lerpf(CHIRP_MIN_DB, CHIRP_MAX_DB, clampf(strength, 0.0, 1.0)), self)
+
+
+## How many times a tyre has barked as it lost grip (for tests).
+func chirp_count() -> int:
+	return _chirps
 
 
 func screeching() -> bool:
@@ -431,3 +675,20 @@ func dust_emitting() -> bool:
 
 func light_on() -> bool:
 	return _beam != null and _beam.visible
+
+
+## How strong the stand-in glow is (no volumetric fog): faint, and only after dusk.
+static func beam_glow(night: float, high: bool) -> float:
+	return 0.07 * smoothstep(0.2, 1.0, night) * (1.4 if high else 1.0)
+
+
+## How brightly the beam is lighting the night fog right now (light energy x fog energy).
+func beam_fog() -> float:
+	if _beam == null or not _beam.visible:
+		return 0.0
+	return _beam.light_energy * _beam.light_volumetric_fog_energy + _flood.light_energy * _flood.light_volumetric_fog_energy
+
+
+## Whether dust motes are drifting through the beam (at night, with the headlight on).
+func motes_showing() -> bool:
+	return _motes != null and _motes.emitting

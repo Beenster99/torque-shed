@@ -5,6 +5,7 @@ extends RefCounted
 
 var running := false
 var laps: Array[float] = []     # lap times, newest last
+var max_laps := 5               # how many it keeps: more on an upgraded stopwatch
 var _start_ms := 0
 var _stopped_at := 0.0
 var _lap_from := 0.0
@@ -34,7 +35,7 @@ func lap_or_reset() -> void:
 		var now := elapsed()
 		laps.append(now - _lap_from)
 		_lap_from = now
-		if laps.size() > 5:
+		while laps.size() > max_laps:
 			laps.pop_front()
 	else:
 		_stopped_at = 0.0

@@ -6,10 +6,13 @@ extends RefCounted
 ## line of typed text. Every mark remembers who made it. Positions are board pixels (PX).
 ##   stroke: {id, peer, by, c (colour index, ERASER for the eraser), w (width), pts}
 ##   text:   {id, peer, by, c, s (font size), at (top left), text}
+##   image:  {id, peer, by, img (its Shed.blobs id), at (top left), sz (size on the board), and
+##           rot: degrees it's turned clockwise about its middle (missing on older boards: 0)}
 ## Players send ops through Shed.board_request(): board_draw adds points to a stroke (pts
 ## replace the stroke's points from index `from` on, so a resend does no harm), board_text,
-## board_undo and board_clear. The host passes on what it accepts, and board_remove for marks
-## it tidies away.
+## board_undo and board_clear, board_image puts a picture up (its bytes go first, see
+## Shed.share_blob) and board_move moves or sizes one. The host passes on what it accepts, and
+## board_remove for marks it tidies away.
 
 const PX := Vector2(1200.0, 600.0)
 const BG := Color(0.95, 0.96, 0.965)
@@ -25,6 +28,12 @@ const MAX_MARKS := 500
 const MAX_POINTS := 20000       # across the whole board: past it the oldest marks are wiped
 const MAX_STROKE_POINTS := 256  # a longer line carries on as a new stroke (see Whiteboard.SPLIT_AT)
 const MAX_TEXT := 60
+## Pictures from players' PCs: at most this many on the board, each stored at most IMAGE_PX
+## on its longest side (see Shed.blobs), shown at least IMAGE_MIN board pixels across.
+const MAX_IMAGES := 12
+const IMAGE_PX := 512
+const IMAGE_MIN := 24.0
+const IMAGE := -2    # what ink_at() gives over a picture
 
 
 static func empty() -> Dictionary:
@@ -77,9 +86,70 @@ static func clean(op: Dictionary, peer: int, author: String) -> Dictionary:
 				return {}
 			return {"a": a, "id": id, "peer": peer, "by": author, "c": clampi(int(op.get("c", 0)), 0, COLORS.size() - 1),
 				"s": clampi(int(op.get("s", TEXT_SIZES[1])), 12, 120), "at": (at as Vector2).clamp(Vector2.ZERO, PX), "text": text}
-		"board_undo", "board_clear":
+		"board_image", "board_move":
+			var at = op.get("at", null)
+			var sz = op.get("sz", null)
+			if id <= 0 or not at is Vector2 or not sz is Vector2:
+				return {}
+			var size := (sz as Vector2).clamp(Vector2(IMAGE_MIN, IMAGE_MIN), PX)
+			var out := {"a": a, "id": id, "peer": peer, "by": author, "sz": size,
+				"at": (at as Vector2).clamp(Vector2.ZERO, PX - size)}
+			if a == "board_image":
+				out["img"] = int(op.get("img", 0))
+				if int(out["img"]) <= 0:
+					return {}
+			var rot = op.get("rot", null)
+			if rot is float or rot is int:
+				out["rot"] = wrapf(float(rot), 0.0, 360.0)
+			return out
+		"board_undo", "board_clear", "board_poster":
 			return {"a": a, "peer": peer, "by": author}
 	return {}
+
+
+static func is_image(m: Dictionary) -> bool:
+	return m.has("img")
+
+
+static func image_count(board: Dictionary) -> int:
+	return board.get("marks", []).filter(func(m): return is_image(m)).size()
+
+
+## The picture mark under `p` (board pixels), topmost first, or 0.
+static func image_at(board: Dictionary, p: Vector2) -> int:
+	var marks: Array = board.get("marks", [])
+	for i in range(marks.size() - 1, -1, -1):
+		if is_image(marks[i]) and on_image(marks[i], p):
+			return int(marks[i]["id"])
+	return 0
+
+
+## How far a picture is turned, clockwise in degrees.
+static func rotation_of(m: Dictionary) -> float:
+	return float(m.get("rot", 0.0))
+
+
+## Where board point `p` falls on picture `m`, measured from its middle along its own sides
+## (it may be turned).
+static func image_local(m: Dictionary, p: Vector2) -> Vector2:
+	var sz: Vector2 = m["sz"]
+	return (p - (m["at"] as Vector2) - sz * 0.5).rotated(-deg_to_rad(rotation_of(m)))
+
+
+## Whether board point `p` is on picture `m`, turned as it is.
+static func on_image(m: Dictionary, p: Vector2) -> bool:
+	var half: Vector2 = (m["sz"] as Vector2) * 0.5
+	var l := image_local(m, p)
+	return absf(l.x) <= half.x and absf(l.y) <= half.y
+
+
+## The Shed.blobs ids the marks show.
+static func images_in(marks: Array) -> Array:
+	var out := []
+	for m in marks:
+		if m is Dictionary and m.has("img") and not out.has(int(m["img"])):
+			out.append(int(m["img"]))
+	return out
 
 
 ## Applies a cleaned op to the board. True when something changed.
@@ -97,7 +167,7 @@ static func apply(board: Dictionary, op: Dictionary) -> bool:
 					"w": float(op["w"]), "pts": pts})
 				return true
 			var m: Dictionary = marks[i]
-			if m.has("text") or int(m.get("peer", 0)) != int(op["peer"]):
+			if m.has("text") or m.has("img") or int(m.get("peer", 0)) != int(op["peer"]):
 				return false
 			var old: PackedVector2Array = m["pts"]
 			var merged := old.slice(0, mini(int(op["from"]), old.size()))
@@ -111,6 +181,26 @@ static func apply(board: Dictionary, op: Dictionary) -> bool:
 				return false
 			marks.append({"id": int(op["id"]), "peer": int(op["peer"]), "by": str(op["by"]), "c": int(op["c"]),
 				"s": int(op["s"]), "at": op["at"], "text": str(op["text"])})
+			return true
+		"board_image":
+			if find(board, int(op["id"])) >= 0:
+				return false
+			marks.append({"id": int(op["id"]), "peer": int(op["peer"]), "by": str(op["by"]), "img": int(op["img"]),
+				"at": op["at"], "sz": op["sz"]})
+			if op.has("rot"):
+				marks[marks.size() - 1]["rot"] = float(op["rot"])
+			return true
+		"board_move":
+			var k := find(board, int(op["id"]))
+			if k < 0 or not is_image(marks[k]):
+				return false
+			var rot := float(op.get("rot", rotation_of(marks[k])))
+			if marks[k]["at"] == op["at"] and marks[k]["sz"] == op["sz"] and is_equal_approx(rot, rotation_of(marks[k])):
+				return false
+			marks[k]["at"] = op["at"]
+			marks[k]["sz"] = op["sz"]
+			if op.has("rot"):
+				marks[k]["rot"] = rot
 			return true
 		"board_remove":
 			var ids: Array = op.get("ids", [])
@@ -178,11 +268,21 @@ static func tidy(board: Dictionary, id: int) -> Array:
 
 
 static func _weight(m: Dictionary) -> int:
-	return 4 if m.has("text") else (m["pts"] as PackedVector2Array).size()
+	return 4 if m.has("text") or m.has("img") else (m["pts"] as PackedVector2Array).size()
 
 
 ## The area a mark covers, ink and all.
 static func bounds(m: Dictionary) -> Rect2:
+	if m.has("img"):
+		var sz: Vector2 = m["sz"]
+		if is_zero_approx(rotation_of(m)):
+			return Rect2(m["at"], sz)
+		# Turned: the box round all four corners.
+		var mid: Vector2 = (m["at"] as Vector2) + sz * 0.5
+		var r := Rect2(mid, Vector2.ZERO)
+		for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+			r = r.expand(mid + (c * sz * 0.5).rotated(deg_to_rad(rotation_of(m))))
+		return r
 	if m.has("text"):
 		return Rect2(m["at"], text_size(str(m["text"]), int(m["s"])))
 	var pts: PackedVector2Array = m["pts"]
@@ -203,8 +303,19 @@ static func _rubbed_out(mark: Dictionary, box: Rect2, rub: Dictionary, rub_box: 
 		return false
 	var reach := float(rub["w"]) * 0.5 + 1.0
 	var samples := PackedVector2Array()
-	if mark.has("text"):
-		var step := maxf(4.0, box.size.y / 3.0)
+	if mark.has("img") and not is_zero_approx(rotation_of(mark)):
+		# A turned picture: points over the picture itself, not the box round it.
+		var sz: Vector2 = mark["sz"]
+		var mid: Vector2 = (mark["at"] as Vector2) + sz * 0.5
+		var u := -sz.x * 0.5
+		while u <= sz.x * 0.5 + 0.01:
+			var v := -sz.y * 0.5
+			while v <= sz.y * 0.5 + 0.01:
+				samples.append(mid + Vector2(u, v).rotated(deg_to_rad(rotation_of(mark))))
+				v += 24.0
+			u += 24.0
+	elif mark.has("text") or mark.has("img"):
+		var step := 24.0 if mark.has("img") else maxf(4.0, box.size.y / 3.0)
 		var x := box.position.x
 		while x <= box.end.x + 0.01:
 			var y := box.position.y
@@ -235,14 +346,20 @@ static func _distance(pts: PackedVector2Array, p: Vector2) -> float:
 	return best
 
 
-## The colour showing at `p`: a COLORS index, or -1 for bare board.
+## The colour showing at `p`: a COLORS index, -1 for bare board or IMAGE over a picture.
 static func ink_at(board: Dictionary, p: Vector2) -> int:
 	var marks: Array = board.get("marks", [])
 	for i in range(marks.size() - 1, -1, -1):
 		var m: Dictionary = marks[i]
-		var hit := bounds(m).has_point(p) if m.has("text") else _distance(m["pts"], p) <= float(m["w"]) * 0.5
+		var hit := false
+		if m.has("img"):
+			hit = on_image(m, p)
+		elif m.has("text"):
+			hit = bounds(m).has_point(p)
+		else:
+			hit = _distance(m["pts"], p) <= float(m["w"]) * 0.5
 		if hit:
-			return -1 if is_eraser(m) else int(m["c"])
+			return IMAGE if is_image(m) else (-1 if is_eraser(m) else int(m["c"]))
 	return -1
 
 

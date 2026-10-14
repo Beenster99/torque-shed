@@ -17,6 +17,11 @@ var _part := ""
 var _section := "bike"
 var _search: LineEdit
 var _section_btns := {}
+var _posters_shown := -1
+## Posters come printed in several sizes (Equipment.POSTER_SIZES): the one picked, and its buttons.
+var poster_size := Equipment.POSTER_SIZE_DEFAULT
+var _sizes: HBoxContainer
+var _size_btns := {}
 
 ## The shop's three aisles, so nobody scrolls through everything.
 const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors"}
@@ -48,6 +53,12 @@ func _ready() -> void:
 	bike_btn.text = "Order a project bike"
 	bike_btn.pressed.connect(func(): Shed.request({"a": "order"}))
 	head.add_child(bike_btn)
+	# Blueprint builds under way (Esc, Blueprints): order whatever their holograms still show.
+	var bp_btn := Button.new()
+	bp_btn.text = "Order blueprint parts"
+	bp_btn.tooltip_text = "Orders every part a blueprint build still needs (free for now)"
+	bp_btn.pressed.connect(func(): Shed.request({"a": "bp_order"}))
+	head.add_child(bp_btn)
 	var close := Button.new()
 	close.text = "Close (Esc)"
 	close.pressed.connect(close_computer)
@@ -96,19 +107,40 @@ func _ready() -> void:
 	var fill := Control.new()
 	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	detail.add_child(fill)
+	_sizes = HBoxContainer.new()
+	_sizes.add_theme_constant_override("separation", 6)
+	_sizes.add_child(UITheme.label("Size:", 16))
+	for key in Equipment.POSTER_SIZE_ORDER:
+		var sb := Button.new()
+		sb.text = str(Equipment.POSTER_SIZES[key]["name"])
+		sb.toggle_mode = true
+		sb.button_pressed = key == poster_size
+		sb.pressed.connect(pick_poster_size.bind(key))
+		_sizes.add_child(sb)
+		_size_btns[key] = sb
+	_sizes.visible = false
+	detail.add_child(_sizes)
 	_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
 	detail.add_child(_status)
 	_order = Button.new()
 	_order.text = "Order it (free for now)"
 	_order.custom_minimum_size = Vector2(0, 48)
 	_order.pressed.connect(func():
-		if _kind.begins_with("eq:"):
+		if design_of(_part) != 0:
+			Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": design_of(_part), "psize": poster_size})
+		elif Equipment.kind_of(_part) == "poster":
+			Shed.request({"a": "order_furniture", "model": _part, "psize": poster_size})
+		elif _kind.begins_with("eq:"):
 			Shed.request({"a": "order_furniture", "model": _part})
 		else:
 			Shed.request({"a": "order_part", "part": _part}))
 	detail.add_child(_order)
 
 	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
+	# A poster made at the whiteboard while the list is up joins it.
+	Shed.changed.connect(func():
+		if visible and _kind == "eq:poster" and _posters_shown != Shed.posters.size() and (_search == null or _search.text == ""):
+			_show_kind(_kind))
 	_show_section(_section)
 
 
@@ -152,7 +184,7 @@ func _show_section(sec: String) -> void:
 		b.text = kind_title(k)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
-		b.pressed.connect(_show_kind.bind(k))
+		b.pressed.connect(_pick_kind.bind(k))
 		b.set_meta("kind", k)
 		_kinds.add_child(b)
 	if _search:
@@ -175,7 +207,7 @@ func _refresh_list() -> void:
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
 		b.set_meta("part", hit["id"])
-		b.pressed.connect(_pick_found.bind(hit["kind"], hit["id"]))
+		b.pressed.connect(func(): _pick_found(hit["kind"], hit["id"]); _order.grab_focus())
 		_variants.add_child(b)
 	if not found.is_empty():
 		_pick_found(found[0]["kind"], found[0]["id"])
@@ -221,6 +253,7 @@ func _column(parent: Control, width: float) -> VBoxContainer:
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(width, 0)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.follow_focus = true   # the list scrolls along as the pad moves down it
 	parent.add_child(scroll)
 	var box := VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -232,9 +265,33 @@ func _column(parent: Control, width: float) -> VBoxContainer:
 func open() -> void:
 	visible = true
 	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.free_delivery_xf() == null else "yes")
+	if _kind == "eq:poster":
+		_show_kind(_kind)   # whiteboard prints made since it was last open
+	_focus_kind()
+
+
+## Puts the pad's focus on the kind being shown (or the first one), so A works straight away.
+func _focus_kind() -> void:
+	var first: Control = null
 	for b in _kinds.get_children():
+		if b.is_queued_for_deletion():
+			continue
+		if first == null:
+			first = b
 		if b.get_meta("kind") == _kind:
 			b.grab_focus()
+			return
+	if first:
+		first.grab_focus()
+
+
+## The button in the parts list for the part being shown.
+func _focus_part() -> void:
+	for b in _variants.get_children():
+		if b is Button and not b.is_queued_for_deletion() and b.get_meta("part", "") == _part:
+			b.grab_focus()
+			return
+	_focus_kind()
 
 
 func close_computer() -> void:
@@ -274,10 +331,50 @@ func _show_kind(k: String) -> void:
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.toggle_mode = true
 		b.set_meta("part", id)
-		b.pressed.connect(_show_part.bind(id))
+		b.pressed.connect(_pick_part.bind(id))
 		b.focus_entered.connect(_show_part.bind(id))
 		_variants.add_child(b)
+	_posters_shown = Shed.posters.size()
+	if k == "eq:poster":
+		# The crew's own whiteboard drawings, saved as posters at the board.
+		_variants.add_child(UITheme.label("FROM THE WHITEBOARD", 14, UITheme.ACCENT))
+		if Shed.posters.is_empty():
+			var none := UITheme.label("None yet: press K at the whiteboard to make one.", 14, Color(1, 1, 1, 0.5))
+			none.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_variants.add_child(none)
+		for d in Shed.posters:
+			var key := "design:%d" % int(d)
+			var b := Button.new()
+			b.text = str(Shed.posters[d]["name"])
+			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.toggle_mode = true
+			b.set_meta("part", key)
+			b.pressed.connect(_pick_part.bind(key))
+			b.focus_entered.connect(_show_part.bind(key))
+			_variants.add_child(b)
 	_show_part(ids[0])
+
+
+## The whiteboard poster design a "design:<id>" entry in the poster list is, or 0.
+static func design_of(part: String) -> int:
+	return int(part.trim_prefix("design:")) if part.begins_with("design:") else 0
+
+
+## Picks the size posters are printed in (a key of Equipment.POSTER_SIZES).
+func pick_poster_size(key: String) -> void:
+	poster_size = key
+	for k in _size_btns:
+		_size_btns[k].button_pressed = k == key
+	if _part != "":
+		_show_part(_part)
+
+
+## "Size: A1, 0.60 x 0.84 m. Turn it with , and . before you hang it." for the poster being shown.
+func _size_text(model: String) -> String:
+	var art := Equipment.poster_size(model, poster_size)
+	var keys := Walker._keys("rotate_left", "rotate_right")
+	return "\n\nSize: %s, %.2f x %.2f m. Carrying it, %s turns it portrait or landscape before you hang it." % [
+		str(Equipment.POSTER_SIZES[poster_size]["name"]), art.x, art.y, keys]
 
 
 func _show_part(id: String) -> void:
@@ -285,6 +382,15 @@ func _show_part(id: String) -> void:
 	for b in _variants.get_children():
 		if b.has_meta("part"):
 			b.button_pressed = b.get_meta("part") == id
+	_sizes.visible = design_of(id) != 0 or Equipment.kind_of(id) == "poster"
+	if design_of(id) != 0:
+		var d: Dictionary = Shed.posters.get(design_of(id), {})
+		var m := Equipment.get_model(Equipment.BOARD_POSTER)
+		_title.text = str(d.get("name", "Whiteboard poster"))
+		_desc.text = "%s Saved from the whiteboard by %s." % [m["desc"], str(d.get("by", "the crew"))]
+		_spec.text = "Hangs on a wall." + _size_text(Equipment.BOARD_POSTER) \
+			+ "\n\nArrives outside the roller door. Press F on it to carry it in, look at a wall and press F to hang it."
+		return
 	if _kind.begins_with("eq:"):
 		var m := Equipment.get_model(id)
 		_title.text = str(m["name"])
@@ -294,6 +400,8 @@ func _show_part(id: String) -> void:
 			if Equipment.is_wall(id) else ("Arrives outside the roller door. Hold F on it to move it." if m["kind"] == "seat"
 			else "Arrives outside the roller door. Press F on it to push it in and F again to put it down.")
 		_spec.text = Equipment.spec_line(id).replace("  ·  ", "\n") + "\n\n" + how
+		if m["kind"] == "poster":
+			_spec.text = how + _size_text(id)
 		return
 	var p := PartsDB.get_part(id)
 	_title.text = str(p["name"])
@@ -315,7 +423,42 @@ func _show_part(id: String) -> void:
 		_spec.text += "\n\nCrouch by the bike with the wrench and hold right mouse to set the tension. Lube it with chain lube."
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if visible and event.is_action_pressed("menu"):
+## A kind picked (A on a pad, or a click): its parts list, with the pad's focus on the first.
+func _pick_kind(k: String) -> void:
+	_show_kind(k)
+	_focus_part()
+
+
+## A part picked: the focus goes to the Order button, so a second A orders it.
+func _pick_part(id: String) -> void:
+	_show_part(id)
+	_order.grab_focus()
+
+
+## B on a pad steps back: Order button to the parts list, parts list to the kinds, then closes.
+func back() -> void:
+	var f := get_viewport().gui_get_focus_owner()
+	if f == _order:
+		_focus_part()
+	elif f != null and (_variants.is_ancestor_of(f) or f == _search):
+		_focus_kind()
+	else:
 		close_computer()
-		get_viewport().set_input_as_handled()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not visible:
+		return
+	if event.is_action_pressed("menu"):
+		close_computer()
+	elif event is InputEventJoypadButton and event.is_action_pressed("ui_cancel"):
+		back()
+	elif event is InputEventJoypadButton and (event.is_action_pressed("tool_next") or event.is_action_pressed("tool_prev")):
+		# LB / RB: the aisle to the left or right.
+		var keys := SECTIONS.keys()
+		var step := 1 if event.is_action_pressed("tool_next") else -1
+		_show_section(keys[posmod(keys.find(_section) + step, keys.size())])
+		_focus_kind()
+	else:
+		return
+	get_viewport().set_input_as_handled()

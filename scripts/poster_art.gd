@@ -18,32 +18,38 @@ static func make(model_id: String, size: Vector3) -> MeshInstance3D:
 	var quad := QuadMesh.new()
 	quad.size = Vector2(size.x, size.y)
 	mi.mesh = quad
-	mi.material_override = material(model_id)
+	mi.material_override = material(model_id, size)
 	mi.position = Vector3(0.0, 0.0, 0.002)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
 
 
 ## The shared material for a poster model; its texture arrives a few frames after first use.
-static func material(model_id: String) -> StandardMaterial3D:
-	if _materials.has(model_id):
-		return _materials[model_id]
+## Printed a different shape (a banner, see Equipment.poster_size) it's laid out afresh for
+## that shape; any size of the same shape shares the one print.
+static func material(model_id: String, print_size := Vector3.ZERO) -> StandardMaterial3D:
 	var m: Dictionary = Equipment.get_model(model_id)
+	var size: Vector3 = m.get("size", Vector3(0.6, 0.85, 0.01))
+	var key := model_id
+	if print_size.x > 0.0 and print_size.y > 0.0 and absf(print_size.x / print_size.y - size.x / size.y) > 0.05:
+		key = "%s|%.2f" % [model_id, print_size.x / print_size.y]
+		size = print_size
+	if _materials.has(key):
+		return _materials[key]
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = m.get("paper", Color(0.9, 0.85, 0.7))
 	mat.roughness = 0.82
 	mat.metallic = 0.0
 	mat.metallic_specular = 0.3
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	_materials[model_id] = mat
+	_materials[key] = mat
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null or tree.root == null or DisplayServer.get_name() == "headless" or not m.has("title"):
 		return mat   # no renderer to draw with: a plain sheet of paper
-	var size: Vector3 = m.get("size", Vector3(0.6, 0.85, 0.01))
 	var px := Vector2(size.x, size.y) * PX_PER_M
 	px *= minf(1.0, MAX_PX / maxf(px.x, px.y))
 	var vp := SubViewport.new()
-	vp.name = "PosterArt_" + model_id
+	vp.name = "PosterArt_" + key.replace("|", "_").replace(".", "_")
 	vp.size = Vector2i(px.round())
 	vp.transparent_bg = false
 	vp.disable_3d = true

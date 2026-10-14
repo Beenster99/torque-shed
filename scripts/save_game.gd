@@ -19,7 +19,7 @@ const TEST_SLOT := "test"
 const AUTOSAVE_INTERVAL := 60.0
 const NOTE_INTERVAL := 1.0
 ## Crew fields that belong to the moment rather than the player, so aren't carried over.
-const TRANSIENT_CREW := ["name", "tool", "activity", "riding", "kmh", "slot"]
+const TRANSIENT_CREW := ["name", "tool", "activity", "riding", "kmh", "slot", "blaster", "blast_rot", "blast_fire", "blast_at", "blast_base"]
 
 ## Saves and loads go here instead of the default slot when set.
 static var slot_override := ""
@@ -198,7 +198,7 @@ func save_now(manual := false) -> bool:
 ## now), the clock and day/night settings, and where each player stood.
 func capture() -> Dictionary:
 	_note_players()
-	var shed: Dictionary = Shed._snapshot().duplicate(true)
+	var shed: Dictionary = Shed.save_snapshot().duplicate(true)
 	var bikes: Dictionary = shed.get("bikes", {})
 	for id in bikes:
 		var rider: int = int(bikes[id].get("rider", 0))
@@ -209,6 +209,8 @@ func capture() -> Dictionary:
 		"host": _local_name(), "shed": shed,
 		"time": Daylight.time_of_day() if Daylight.current else Settings.time_of_day,
 		"day_night_cycle": Settings.day_night_cycle, "day_length": Settings.day_length,
+		"weather_mode": Settings.weather,
+		"weather": Weather.current.save_data() if Weather.current else {"state": Settings.weather_now, "wet": 0.0},
 		"players": _players.duplicate(true)}
 
 
@@ -305,6 +307,13 @@ func restore(data: Dictionary) -> bool:
 		Daylight.current.set_time(hours)
 	else:
 		Settings.time_of_day = wrapf(hours, 0.0, 24.0)
+	# Saves from before the weather carry on with whatever it is now.
+	Settings.weather = str(data.get("weather_mode", Settings.weather))
+	var weather = data.get("weather", {})
+	if weather is Dictionary and not weather.is_empty():
+		Settings.weather_now = str(weather.get("state", Settings.weather_now))
+		if Weather.current:
+			Weather.current.restore(weather)
 	var players = data.get("players", {})
 	_players = players.duplicate(true) if players is Dictionary else {}
 	# Renamed since the last save: you're still the host who saved it.

@@ -101,6 +101,7 @@ func _ready() -> void:
 		var scroll := ScrollContainer.new()
 		scroll.name = tab
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.follow_focus = true
 		var list := VBoxContainer.new()
 		list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		list.add_theme_constant_override("separation", 6)
@@ -111,6 +112,7 @@ func _ready() -> void:
 	var wscroll := ScrollContainer.new()
 	wscroll.name = "Weight"
 	wscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	wscroll.follow_focus = true
 	_weight = VBoxContainer.new()
 	_weight.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_weight.add_theme_constant_override("separation", 6)
@@ -187,6 +189,8 @@ func open(from := Vector3.ZERO) -> void:
 	elif not _in_reach(bike_id):
 		bike_id = 0
 	refresh()
+	# Somewhere for a pad to start: A runs the dyno, the d-pad goes to the settings.
+	_run.grab_focus()
 
 
 func close_computer() -> void:
@@ -196,9 +200,33 @@ func close_computer() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if visible and event.is_action_pressed("menu"):
+	if not visible:
+		return
+	if event.is_action_pressed("menu") or (event is InputEventJoypadButton and event.is_action_pressed("ui_cancel")):
 		close_computer()
-		get_viewport().set_input_as_handled()
+	elif event is InputEventJoypadButton and (event.is_action_pressed("tool_next") or event.is_action_pressed("tool_prev")):
+		# LB / RB on a pad: the next or previous tab, with the focus on its first setting.
+		var step := 1 if event.is_action_pressed("tool_next") else -1
+		_tabs.current_tab = posmod(_tabs.current_tab + step, _tabs.get_tab_count())
+		_focus_tab.call_deferred()
+	else:
+		return
+	get_viewport().set_input_as_handled()
+
+
+## The pad's focus on the first setting in the tab showing, or the Run button.
+func _focus_tab() -> void:
+	var tab := _tabs.get_current_tab_control()
+	var stack: Array = [tab] if tab else []
+	while not stack.is_empty():
+		var n: Node = stack.pop_front()
+		if n is Control and n != tab and (n as Control).focus_mode != Control.FOCUS_NONE and (n as Control).is_visible_in_tree() \
+				and not (n is ScrollBar):
+			if not (n is BaseButton and (n as BaseButton).disabled):
+				(n as Control).grab_focus()
+				return
+		stack.append_array(n.get_children())
+	_run.grab_focus()
 
 
 func _in_reach(id: int) -> bool:
@@ -261,6 +289,8 @@ func _refresh() -> void:
 		_graph.show_runs("DYNO", [], 1.0, {}, "Wheel a bike onto the dyno, or bring one close, to tune it.")
 		return
 	var build := Shed.build_of(bike_id)
+	# Fine Tuning (a skill) shows its wider range before the first change is made.
+	build.tune["reach"] = maxf(float(build.tune.get("reach", 0.0)), Progress.tune_reach(Shed.me()))
 	var tune := Shed.tune_of(bike_id)
 	for key in _rows:
 		var row: Dictionary = _rows[key]
@@ -292,7 +322,35 @@ func _refresh() -> void:
 		float(s["hp"]), float(s["torque"]), Units.kmh(float(s["top_kmh"])), Units.mass(build.bike_mass),
 		Units.economy(float(s["economy"])), build.engine_stress, "%.2f s" % build.zero_to_100() if build.zero_to_100() > 0.0 else "--",
 		("\n" + "\n".join(build.notes.slice(0, 3))) if not build.notes.is_empty() else ""]
+	_summary.text += dyno_reader_text(build, Progress.skill_rank(Shed.me(), "dyno_reader"))
 	_update_graph()
+
+
+## Dyno Reader (a skill): what wear, rust and grime are costing (rank 1), and the one part whose
+## restoration would give the most back (rank 2). "" without the skill.
+static func dyno_reader_text(build: BikeBuild, rank: int) -> String:
+	if rank <= 0:
+		return ""
+	var hp := build.hp()
+	var fresh := build.condition.duplicate(true)
+	for slot in fresh:
+		for k in ["rust", "dirt", "wear"]:
+			fresh[slot][k] = 0.0
+	var text := "\nDyno Reader: wear and grime cost %.1f hp" % maxf(0.0, BikeBuild.new(build.parts, fresh, build.tune).hp() - hp)
+	if rank >= 2:
+		var best_slot := ""
+		var best := 0.1
+		for slot in build.condition:
+			var one := build.condition.duplicate(true)
+			for k in ["rust", "dirt", "wear"]:
+				one[slot][k] = 0.0
+			var gain := BikeBuild.new(build.parts, one, build.tune).hp() - hp
+			if gain > best:
+				best = gain
+				best_slot = str(slot)
+		if best_slot != "":
+			text += "  ·  restore the %s first (+%.1f hp)" % [PartsDB.slot_name(best_slot).to_lower(), best]
+	return text
 
 
 func _ecu_text(build: BikeBuild, key: String) -> String:
@@ -361,7 +419,7 @@ func _refresh_weight() -> void:
 		var mass := float(PartsDB.get_part(str(entry[2])).get("mass", 0.0))
 		var row := HBoxContainer.new()
 		var text := UITheme.label("%s: %s, %s" % [PartsDB.slot_name(str(entry[0])), PartsDB.part_name(str(entry[2])),
-			Units.mass(mass * (1.0 - float(entry[3])) if it.get("lightened", false) else mass, 1)], 16)
+			Units.mass(mass * (1.0 - BikeBuild.lighten_cut(str(entry[2]), float(it.get("lighten_extra", 0.0)))) if it.get("lightened", false) else mass, 1)], 16)
 		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(text)
 		var b := Button.new()
@@ -373,7 +431,7 @@ func _refresh_weight() -> void:
 			b.text = "Lightened"
 			b.disabled = true
 		else:
-			b.text = "Lighten (-%s)" % Units.mass(mass * float(entry[3]), 1)
+			b.text = "Lighten (-%s)" % Units.mass(mass * BikeBuild.lighten_cut(str(entry[2]), Progress.lighten_bonus(Shed.me())), 1)
 			var item_id := int(entry[1])
 			b.pressed.connect(func(): Shed.request({"a": "lighten", "item": item_id}))
 		row.add_child(b)

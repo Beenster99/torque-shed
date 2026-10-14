@@ -9,6 +9,7 @@ signal join_game(ip: String)
 signal resume
 signal leave_session
 signal order_bike
+signal geometry_mode
 signal save_requested
 signal quitting
 
@@ -17,10 +18,13 @@ W A S D / left stick: walk      Shift: run      Mouse / right stick: look      C
 1-6, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can, pressure washer)
 Hold left mouse / RT / A: work on what you're looking at, or put a held part down anywhere
 Holding a can of fluid: left mouse pours it in, right mouse / LT drains into it
-Spray can: R / right mouse / X picks the colour, T / middle mouse / B the finish
+Spray can or gun: R / right mouse / X picks the colour, T / mouse back button / B the finish
+G / middle mouse / D-pad right: ping   (Key bindings tab: change any of these)
 F / Y: get on a finished bike (hold to wheel it about), use the parts computer, switch the
   radio on or off, unpack a box, take hold of an engine stand or shelving unit (F again lets go)
+Carrying equipment: mouse wheel / LB RB pushes it further away or closer, R / X snaps to walls on or off
 Hands on a bolted-on stand: kick the side stand down or heave the bike onto the centre stand
+F2 at a bike: geometry mode (click a part, drag the handles; W move, E rotate, R scale, Ctrl snap, Z undo)
 
 RIDING
 I / D-pad up: start or stop the engine      W / RT: throttle      S / LT: front brake
@@ -36,6 +40,7 @@ var _pause_box: VBoxContainer
 var _assist: HSlider
 var _auto: CheckBox
 var _quality: CheckBox
+var _snap: CheckBox
 var _host_info: Label
 var _crew: Label
 var _pad: Label
@@ -45,6 +50,9 @@ var _day_length: OptionButton
 var _time: HSlider
 var _time_label: Label
 var _time_note: Label
+var _weather: OptionButton
+var _weather_now: Label
+var debug: DebugTab
 ## Set when the player chose "New shed": the next solo or hosted start begins a fresh shed.
 var new_shed := false
 var _solo: Button
@@ -54,6 +62,9 @@ var _new_shed: Button
 var _confirm: ConfirmationDialog
 var _save_status: Label
 var _save_button: Button
+var _resume: Button
+var keybinds: KeybindTab
+var blueprints: BlueprintTab
 
 
 func _ready() -> void:
@@ -105,8 +116,11 @@ func _ready() -> void:
 	_pause_box.add_theme_constant_override("separation", 10)
 	_pause_box.visible = false
 	col.add_child(_pause_box)
-	_pause_box.add_child(_button("Back to the shed", func(): _save(); resume.emit()))
+	_resume = _button("Back to the shed", func(): _save(); resume.emit())
+	_pause_box.add_child(_resume)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
+	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
+	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at (F2)", func(): geometry_mode.emit()))
 	_host_info = UITheme.label("", 15, Color(1, 1, 1, 0.75))
 	_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_host_info.custom_minimum_size.x = 560.0
@@ -118,6 +132,8 @@ func _ready() -> void:
 	_save_button = _button("Save now", func(): save_requested.emit())
 	save_row.add_child(_save_button)
 	_save_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
+	_save_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_save_status.custom_minimum_size.x = 260.0
 	save_row.add_child(_save_status)
 	_pause_box.add_child(save_row)
 	_pause_box.add_child(_button("Leave and return to title", func(): _save(); leave_session.emit()))
@@ -128,7 +144,7 @@ func _ready() -> void:
 	col.add_child(_status)
 
 	_tabs = TabContainer.new()
-	_tabs.custom_minimum_size = Vector2(660, 460)
+	_tabs.custom_minimum_size = Vector2(760, 600)
 	_tabs.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.add_child(_tabs)
 	var settings := VBoxContainer.new()
@@ -160,6 +176,11 @@ func _ready() -> void:
 	_quality.button_pressed = Settings.high_quality
 	_quality.toggled.connect(func(v): Settings.high_quality = v)
 	settings.add_child(_quality)
+	_snap = CheckBox.new()
+	_snap.text = "Snap equipment to walls and corners when placing it (R toggles it while carrying)"
+	_snap.button_pressed = Settings.snap_placement
+	_snap.toggled.connect(func(v): Settings.snap_placement = v)
+	settings.add_child(_snap)
 	_build_time_settings(settings)
 	settings.add_child(UITheme.label("Sound effects volume", 15))
 	settings.add_child(_volume_slider(Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
@@ -169,6 +190,10 @@ func _ready() -> void:
 	controls.name = "Controls"
 	_tabs.add_child(controls)
 	controls.add_child(UITheme.label(CONTROLS_TEXT, 15))
+	keybinds = KeybindTab.new()
+	_tabs.add_child(keybinds)
+	blueprints = BlueprintTab.new()
+	_tabs.add_child(blueprints)
 	var pad := VBoxContainer.new()
 	pad.name = "Controller check"
 	pad.add_theme_constant_override("separation", 10)
@@ -177,10 +202,16 @@ func _ready() -> void:
 	_pad = UITheme.label("", 16)
 	pad.add_child(_pad)
 	pad.add_child(_button("Recalibrate (hands off the controller)", func(): Controls.recalibrate()))
+	# Your level, tool upgrades, skills tree and goals (see Progress).
+	var character := CharacterTab.new()
+	_tabs.add_child(character)
+	# Testing helpers: reset or max out XP and money.
+	debug = DebugTab.new()
+	_tabs.add_child(debug)
 
 
 func _process(_delta: float) -> void:
-	if visible and _tabs.current_tab == 2:
+	if visible and _tabs.get_current_tab_control() == _pad.get_parent():
 		_pad.text = Controls.diagnostics()
 	if visible and _tabs.current_tab == 0:
 		_refresh_time_settings(false)
@@ -199,6 +230,7 @@ func show_title(status := "") -> void:
 	_status.text = status
 	_refresh_save_choice()
 	show()
+	_solo.grab_focus()
 
 
 func show_pause() -> void:
@@ -212,8 +244,25 @@ func show_pause() -> void:
 	else:
 		_host_info.text = "Working solo."
 	_auto.button_pressed = Settings.auto_shift
+	_snap.button_pressed = Settings.snap_placement
 	_refresh_time_settings(true)
 	show()
+	_resume.grab_focus()
+
+
+## On a pad: B goes back to the shed, LB / RB turn the tabs over.
+func _unhandled_input(event: InputEvent) -> void:
+	if not visible or not event is InputEventJoypadButton or not event.is_pressed() or not keybinds.listening.is_empty():
+		return
+	if event.is_action_pressed("ui_cancel") and _pause_box.visible:
+		_save()
+		resume.emit()
+	elif event.is_action_pressed("tool_next") or event.is_action_pressed("tool_prev"):
+		var step := 1 if event.is_action_pressed("tool_next") else -1
+		_tabs.current_tab = posmod(_tabs.current_tab + step, _tabs.get_tab_count())
+	else:
+		return
+	get_viewport().set_input_as_handled()
 
 
 ## Day/night cycle on or off, how long a day lasts and a clock slider. On a co-op client the
@@ -226,8 +275,10 @@ func _build_time_settings(settings: VBoxContainer) -> void:
 	_cycle.button_pressed = Settings.day_night_cycle
 	_cycle.toggled.connect(func(v): Settings.day_night_cycle = v)
 	row.add_child(_cycle)
-	row.add_child(UITheme.label("Day length", 15))
+	# One line, not wrapped: a wrapping label squeezed into a row stands its words on end.
+	row.add_child(_row_label("Day length"))
 	_day_length = OptionButton.new()
+	_day_length.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for m in Daylight.DAY_LENGTHS:
 		_day_length.add_item("%d minutes" % m if m < 60 else ("1 hour" if m == 60 else "%d hours" % (m / 60)))
 	if not Daylight.DAY_LENGTHS.has(Settings.day_length):
@@ -255,10 +306,40 @@ func _build_time_settings(settings: VBoxContainer) -> void:
 			Settings.time_of_day = v)
 	time_row.add_child(_time)
 	_time_note = UITheme.label("set by the host", 14, Color(1, 1, 1, 0.55))
+	_time_note.autowrap_mode = TextServer.AUTOWRAP_OFF
 	time_row.add_child(_time_note)
 	settings.add_child(time_row)
+	_build_weather_settings(settings)
 	_refresh_time_settings(true)
 
+
+## A label for the start of a settings row: one line, centred on the row.
+func _row_label(text: String) -> Label:
+	var l := UITheme.label(text, 15)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return l
+
+
+## Weather: changing by itself, or held at one kind. On a co-op client the host's weather rules.
+func _build_weather_settings(settings: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	row.add_child(_row_label("Weather"))
+	_weather = OptionButton.new()
+	_weather.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_weather.add_item("Changes by itself")
+	for st in Weather.STATES:
+		_weather.add_item("Always " + Weather.state_name(st).to_lower())
+	_weather.selected = maxi(Weather.STATES.find(Settings.weather) + 1, 0)
+	_weather.item_selected.connect(func(i):
+		Settings.weather = "auto" if i == 0 else Weather.STATES[i - 1]
+		Settings.save_settings())
+	row.add_child(_weather)
+	_weather_now = _row_label("")
+	_weather_now.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	row.add_child(_weather_now)
+	settings.add_child(row)
 
 func _refresh_time_settings(move_slider: bool) -> void:
 	var by_host := Daylight.set_by_host()
@@ -266,6 +347,12 @@ func _refresh_time_settings(move_slider: bool) -> void:
 	_day_length.disabled = by_host
 	_time.editable = not by_host
 	_time_note.visible = by_host
+	if _weather:
+		_weather.disabled = by_host
+		if not by_host:
+			_weather.selected = maxi(Weather.STATES.find(Settings.weather) + 1, 0)
+		var now := Weather.state_name(Weather.current.state) if Weather.current else Weather.state_name(Settings.weather_now)
+		_weather_now.text = "Now: %s%s" % [now, "  (set by the host)" if by_host else ""]
 	var h := Daylight.time_of_day() if Daylight.current else Settings.time_of_day
 	_time_label.text = "Time of day  %s" % Daylight.clock_text(h)
 	if move_slider or by_host:
@@ -338,3 +425,8 @@ func _button(text: String, cb: Callable) -> Button:
 	b.text = text
 	b.pressed.connect(cb)
 	return b
+
+
+## Opens the Blueprints tab, where a blueprint is built in an empty bay.
+func show_blueprints() -> void:
+	_tabs.current_tab = _tabs.get_tab_idx_from_control(blueprints)

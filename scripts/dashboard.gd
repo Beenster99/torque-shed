@@ -2,22 +2,32 @@ class_name Dashboard
 extends Node3D
 ## A wall-mounted screen in the shed. It draws a 2D page into a SubViewport and shows it on a
 ## glowing panel. "crew" pages list every player; "bike" pages show one bike's numbers now
-## against how it was delivered.
+## against how it was delivered; the rest are TV channels drawn by TvChannels. It can also show
+## a live picture over the page (the riding feed), and flashes the channel name when it changes.
 
 const PX := Vector2i(1024, 576)
 const BG := Color(0.03, 0.05, 0.07)
 const GOOD := Color(0.35, 0.9, 0.45)
 const BAD := Color(1.0, 0.35, 0.25)
 const DIM := Color(1, 1, 1, 0.55)
+const OSD_TIME := 2.5
 
 var kind := "bike"
 var data := {}
+var width := 2.0
 var _viewport: SubViewport
 var _page: Control
+var _feed: MeshInstance3D
+var _feed_mat: StandardMaterial3D
+var _caption: Label3D
+var _osd: Label3D
+var _osd_left := 0.0
+var _osd_bg: MeshInstance3D
 
 
-func _init(page_kind := "bike", width := 2.0) -> void:
+func _init(page_kind := "bike", screen_width := 2.0) -> void:
 	kind = page_kind
+	width = screen_width
 	_viewport = SubViewport.new()
 	_viewport.size = PX
 	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
@@ -43,15 +53,21 @@ func _init(page_kind := "bike", width := 2.0) -> void:
 	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(screen)
 	# The screen glows on whatever is in front of it: with the shed lights off, screens are
-	# the light you work by.
-	var spill := OmniLight3D.new()
-	spill.position = Vector3(0.0, 0.0, 0.45)
-	spill.omni_range = 2.0 + width * 1.2
-	spill.omni_attenuation = 1.4
-	spill.light_energy = 0.35 + width * 0.12
+	# the light you work by. A wide spot from the face of the screen, pointing out into the
+	# room, so nothing behind it (the wall round it, or the room through the wall) is lit.
+	var spill := SpotLight3D.new()
+	spill.name = "Spill"
+	spill.position = Vector3(0.0, 0.0, 0.06)
+	spill.spot_angle = 70.0
+	spill.spot_angle_attenuation = 1.6
+	spill.spot_range = 2.5 + width * 1.3
+	spill.spot_attenuation = 1.4
+	spill.light_energy = 0.5 + width * 0.18
 	spill.light_color = Color(0.72, 0.84, 1.0)
 	spill.shadow_enabled = false
 	spill.light_specular = 0.2
+	# A SpotLight3D shines down its -Z; turned round it shines out of the screen's face.
+	spill.rotation.y = PI
 	add_child(spill)
 	var bezel := MeshInstance3D.new()
 	var box := BoxMesh.new()
@@ -62,17 +78,99 @@ func _init(page_kind := "bike", width := 2.0) -> void:
 	bezel_mat.roughness = 0.4
 	bezel.material_override = bezel_mat
 	add_child(bezel)
-	var glow := OmniLight3D.new()
-	glow.light_color = Color(0.5, 0.75, 1.0)
-	glow.light_energy = 0.25
-	glow.omni_range = 2.5
-	glow.position.z = 0.6
-	add_child(glow)
+	# The live picture sits just in front of the page, with a caption along its bottom.
+	_feed_mat = StandardMaterial3D.new()
+	_feed_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_feed = MeshInstance3D.new()
+	var feed_quad := QuadMesh.new()
+	feed_quad.size = Vector2(width, height)
+	_feed.mesh = feed_quad
+	_feed.material_override = _feed_mat
+	_feed.position.z = 0.032
+	_feed.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_feed.visible = false
+	add_child(_feed)
+	_caption = Label3D.new()
+	_caption.font_size = 32
+	_caption.pixel_size = width / 1400.0
+	_caption.outline_size = 8
+	_caption.modulate = Color(1.0, 0.9, 0.5)
+	_caption.position = Vector3(0.0, -height * 0.5 + width * 0.04, 0.034)
+	_caption.visible = false
+	add_child(_caption)
+	# The on-screen display: the channel's number and name, top left, for a moment after a change.
+	_osd = Label3D.new()
+	_osd.font_size = 64
+	_osd.pixel_size = width / 1700.0
+	_osd.outline_size = 14
+	_osd.outline_modulate = Color(0, 0, 0, 0.9)
+	_osd.modulate = Color(0.45, 1.0, 0.5)
+	_osd.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_osd.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	# Just under the page's header bar, on a dark band so it reads over whatever is underneath.
+	_osd.position = Vector3(-width * 0.5 + width * 0.04, height * 0.5 - height * 0.16, 0.039)
+	_osd.visible = false
+	add_child(_osd)
+	_osd_bg = MeshInstance3D.new()
+	_osd_bg.mesh = QuadMesh.new()
+	var bg_mat := StandardMaterial3D.new()
+	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bg_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.85)
+	_osd_bg.material_override = bg_mat
+	_osd_bg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_osd_bg.visible = false
+	add_child(_osd_bg)
 
 
 func show_data(new_data: Dictionary) -> void:
 	data = new_data
 	_page.queue_redraw()
+
+
+## Switches to another page (see TvChannels.PAGES) with its data.
+func show_page(page_kind: String, new_data: Dictionary) -> void:
+	kind = page_kind
+	show_data(new_data)
+
+
+## Shows the live picture over the page (null goes back to the page) with a caption such as
+## "LIVE: Simon on Old Faithful".
+func show_feed(texture: Texture2D, caption: String) -> void:
+	_feed.visible = texture != null
+	_caption.visible = texture != null
+	if texture:
+		_feed_mat.albedo_texture = texture
+		_caption.text = caption
+
+
+func is_live() -> bool:
+	return _feed.visible
+
+
+## Flashes "CH 3  XP GOALS" in the corner, like a real TV does when you change channel.
+func show_osd(text: String) -> void:
+	_osd.text = text
+	_osd.visible = true
+	_osd_left = OSD_TIME
+	# The band fits the text: about 0.62 of the font size per letter.
+	var line_h := _osd.font_size * _osd.pixel_size
+	var w := text.length() * line_h * 0.62 + line_h
+	(_osd_bg.mesh as QuadMesh).size = Vector2(w, line_h * 1.5)
+	_osd_bg.position = _osd.position + Vector3(w * 0.5 - line_h * 0.5, -line_h * 0.55, -0.0015)
+	_osd_bg.visible = true
+
+
+func osd_text() -> String:
+	return _osd.text if _osd.visible else ""
+
+
+func _process(delta: float) -> void:
+	if _osd_left > 0.0:
+		_osd_left -= delta
+		if _osd_left <= 0.0:
+			_osd.visible = false
+			_osd_bg.visible = false
 
 
 func _draw_page() -> void:
@@ -81,8 +179,10 @@ func _draw_page() -> void:
 	_page.draw_rect(Rect2(0, 0, PX.x, 70), Color(1.0, 0.55, 0.15, 0.9))
 	if kind == "crew":
 		_draw_crew(font)
-	else:
+	elif kind == "bike":
 		_draw_bike(font)
+	else:
+		TvChannels.draw_page(_page, font, kind, data)
 
 
 func _text(font: Font, pos: Vector2, text: String, size: int, color := Color.WHITE, width := -1.0, align := HORIZONTAL_ALIGNMENT_LEFT) -> void:
@@ -134,6 +234,9 @@ func _shown(key: String, v: float) -> float:
 
 
 func _draw_bike(font: Font) -> void:
+	if data.has("blueprint"):
+		_draw_blueprint(font)
+		return
 	if data.is_empty():
 		_text(font, Vector2(24, 50), "EMPTY BAY", 40, Color(0.05, 0.05, 0.05))
 		_text(font, Vector2(24, 160), "Order a project bike from the Esc menu,", 28, DIM)
@@ -203,3 +306,34 @@ func _draw_bike(font: Font) -> void:
 				_text(font, Vector2(px + 152, py + 26), "LOOSE", 11, Color(1, 0.85, 0.3))
 		else:
 			_text(font, Vector2(px + 150, py + 14), "MISSING", 12, BAD)
+
+
+## A blueprint build's checklist: every part the blueprint needs, ticked off as it goes on.
+func _draw_blueprint(font: Font) -> void:
+	var blue := Color(0.45, 0.75, 1.0)
+	_page.draw_rect(Rect2(0, 0, PX.x, 70), Color(0.2, 0.5, 0.95, 0.95))
+	_text(font, Vector2(24, 50), ("BLUEPRINT: " + str(data["name"])).to_upper().left(30), 36, Color(0.02, 0.05, 0.1))
+	_text(font, Vector2(560, 48), str(data.get("status", "")), 22, Color(0.02, 0.05, 0.1), 440, HORIZONTAL_ALIGNMENT_RIGHT)
+	var rows: Array = data["blueprint"]
+	var needed := rows.filter(func(r): return r["state"] == "needed").size()
+	var ordered := rows.filter(func(r): return r["state"] == "ordered").size()
+	var hint := "Hold a frame and put it on this bay's stand to start." if not data.get("framed", false) else \
+		"Fit the parts the hologram shows. Ghost parts go as the real ones go on."
+	_text(font, Vector2(24, 100), hint, 18, blue)
+	_text(font, Vector2(24, 126), "%d needed, %d on order. Order missing parts at the parts computer or Esc, Blueprints." % [needed, ordered], 16, DIM)
+	var price := int(data.get("price", 0))
+	_text(font, Vector2(24, PX.y - 18), "Price of what's needed: %s (parts are free until money arrives)" % (
+		("£%d" % price) if price > 0 else "£--"), 16, DIM)
+	var per_col := 13
+	for i in rows.size():
+		var r: Dictionary = rows[i]
+		var col := i / per_col
+		if col > 2:
+			break
+		var px := 24.0 + col * 336.0
+		var py := 160.0 + (i % per_col) * 29.0
+		var state := str(r["state"])
+		var c := GOOD if state == "fitted" else (Color(1.0, 0.75, 0.3) if state in ["other", "ordered"] else BAD)
+		var mark: String = {"fitted": "FITTED", "other": "OTHER PART", "ordered": "ON ORDER", "needed": "NEEDED"}.get(state, "")
+		_text(font, Vector2(px, py), str(r["name"]).left(24), 15, Color.WHITE if state != "needed" else Color(1, 1, 1, 0.8))
+		_text(font, Vector2(px + 220, py), mark, 12, c)

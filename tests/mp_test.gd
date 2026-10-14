@@ -1,8 +1,11 @@
 extends Node
 ## Two-process co-op check, run by tests/mp_test.sh: a host and a client each start the real
 ## game. The client must receive the host's shed, unbolt a part and put another down on the
-## floor and tune a tyre pressure, which the host must then see, each puts a mark on the whiteboard
-## the other must see, and both must see each other walk.
+## floor, tune a tyre pressure and change the crew board's channel, which the host must then see, each puts a mark on the whiteboard
+## the other must see (the client also puts up a picture, sent in chunks, and the host makes a
+## poster of the board that the client must get), the client's weather follows the host's, and
+## both must see each other walk. The client also orders an A0 poster and, once it's in, carries
+## it and scraps it: both must see it come and go.
 
 var role := "host"
 var main: Node
@@ -25,6 +28,12 @@ func _ready() -> void:
 	var shed_ok := false
 	var start := Vector3.ZERO
 	var asked := false
+	var xp_start := -1
+	var xp_ok := false
+	var postered := false
+	var poster_seen := false
+	var scrap_asked := false
+	var scrap_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -42,6 +51,13 @@ func _ready() -> void:
 			elif start != Vector3.ZERO and p.distance_to(start) > 0.8:
 				moved = true
 		var ranger := _bike_named("Rusty Ranger")
+		# XP: the host pays the client for its work, and learns the client's level from its report.
+		if xp_start < 0:
+			xp_start = int(Progress.profile["xp"])
+		if role == "client":
+			xp_ok = int(Progress.profile["xp"]) > xp_start
+		elif main.remotes.size() == 1:
+			xp_ok = str(Progress.summary(main.remotes.keys()[0]).get("name", "")) == "Test client"
 		if role == "client" and ranger != 0 and not asked:
 			Shed.request({"a": "unbolt", "bike": ranger, "slot": "exhaust"})
 			Shed.request({"a": "take", "spot": "bench_0"})
@@ -49,7 +65,31 @@ func _ready() -> void:
 			Shed.board_request({"a": "board_draw", "id": 4242, "c": 1, "w": 6.0, "from": 0,
 				"pts": PackedVector2Array([Vector2(100, 100), Vector2(300, 200)]), "done": true})
 			Shed.request({"a": "tune", "bike": ranger, "key": "psi_f", "value": 0.9})
+			Shed.request({"a": "tv_channel", "screen": "crew", "step": 1})
+			# A picture big enough to go in several chunks.
+			Shed.board_add_image(Shed.pack_image(_noise(400, 300)), Vector2(650, 120), Vector2(400, 300))
+			Shed.request({"a": "lights", "room": "paint", "on": false})
+			# Geometry mode: the client's fit for the tank reaches the host's shed.
+			Shed.request({"a": "geo_save", "bike": ranger, "geo": {"tank": {"p": Vector3(0.0, 0.05, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}}})
+			Shed.request({"a": "order_furniture", "model": "poster_mx", "psize": "a0"})
 			asked = true
+		# The A0 poster the client ordered arrives in that size; the client then scraps it.
+		var mx := 0
+		for fid in Shed.furniture:
+			if Shed.furniture[fid]["model"] == "poster_mx":
+				mx = fid
+		if mx != 0 and str(Shed.furniture[mx].get("psize", "")) == "a0":
+			poster_seen = true
+		if role == "client" and mx != 0 and poster_seen and not scrap_asked:
+			Shed.request({"a": "grab", "furniture": mx})
+			Shed.request({"a": "scrap", "furniture": mx})
+			scrap_asked = true
+		scrap_ok = poster_seen and mx == 0
+		# The host makes a poster of the board once the client's picture is on it.
+		if role == "host" and not postered and _picture_ok():
+			Shed.request({"a": "board_poster", "name": "MP poster"})
+			postered = true
+		var prints_ok := _picture_ok() and Shed.posters.size() == 1 and Shed.poster_marks(Shed.posters.keys()[0]).any(func(m): return m.has("img"))
 		if role == "host" and Shed.crew.size() == 2 and not asked:
 			Shed.board_request({"a": "board_text", "id": 4343, "c": 2, "s": 38, "at": Vector2(500, 300), "text": "Host's list"})
 			asked = true
@@ -59,16 +99,42 @@ func _ready() -> void:
 		for id in Shed.floor_items():
 			dropped = dropped or (Shed.items[id]["ref"] is Transform3D)
 		var tuned := ranger != 0 and is_equal_approx(float(Shed.tune_of(ranger).get("psi_f", 0.0)), 0.9)
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok:
+		var tv_ok: bool = Shed.screen_channel("crew")["ch"] == "live"   # the client changed the crew board's channel
+		var lights_ok := not Shed.room_lit("paint")   # the client switched the paint shop lights off
+		var geo_ok := ranger != 0 and Shed.geometry_of(ranger).has("tank")
+		# Weather: the host holds it at fog and the client's sky follows.
+		if role == "host" and Weather.current and Weather.current.state != "fog":
+			Settings.weather = "fog"
+			Weather.current.change_to("fog", true)
+		var weather_ok := Weather.current != null and Weather.current.state == "fog"
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 	var ok := moved and shed_ok
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size()])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok])
 	get_tree().quit(0 if ok else 1)
+
+
+## Whether a picture is up on the board with its bytes here, decoded and drawable.
+func _picture_ok() -> bool:
+	for m in Shed.board["marks"]:
+		if m.has("img") and Shed.image_texture(int(m["img"])) != null:
+			return true
+	return false
+
+
+func _noise(w: int, h: int) -> Image:
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	for y in h:
+		for x in w:
+			img.set_pixel(x, y, Color(rng.randf(), float(y) / h, float(x) / w))
+	return img
 
 
 func _bike_named(n: String) -> int:

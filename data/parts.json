@@ -84,7 +84,8 @@
 			"cda": 0.48,
 			"style": "spar",
 			"type": "Carbon monocoque",
-			"lightweight": true
+			"lightweight": true,
+			"material": "carbon"
 		}
 	},
 	"fork": {
@@ -309,7 +310,11 @@
 				0.78
 			],
 			"spokes": 36,
-			"rim_width": 1.6
+			"rim_width": 1.6,
+			"tyres": [
+				80,
+				100
+			]
 		},
 		"spoked_18": {
 			"name": "18\" spoked wheel",
@@ -324,7 +329,11 @@
 				0.78
 			],
 			"spokes": 36,
-			"rim_width": 2.15
+			"rim_width": 2.15,
+			"tyres": [
+				90,
+				130
+			]
 		},
 		"wire_19_chrome": {
 			"name": "19\" chrome wire wheel",
@@ -339,7 +348,11 @@
 				0.92
 			],
 			"spokes": 40,
-			"rim_width": 2.5
+			"rim_width": 2.5,
+			"tyres": [
+				90,
+				130
+			]
 		},
 		"cast_17": {
 			"name": "17\" cast wheel",
@@ -354,7 +367,30 @@
 				0.05
 			],
 			"spokes": 5,
-			"rim_width": 4.5
+			"rim_width": 4.5,
+			"tyres": [
+				140,
+				180
+			]
+		},
+		"cast_17_front": {
+			"name": "17\" cast front wheel",
+			"description": "Narrow five-spoke cast alloy for the front of a road bike.",
+			"mass": 5.0,
+			"type": "Cast alloy",
+			"style": "cast",
+			"diameter": 17,
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"spokes": 5,
+			"rim_width": 3.5,
+			"tyres": [
+				110,
+				130
+			]
 		},
 		"supermoto_17": {
 			"name": "17\" supermoto wheel",
@@ -369,7 +405,11 @@
 				0.15
 			],
 			"spokes": 36,
-			"rim_width": 4.25
+			"rim_width": 4.25,
+			"tyres": [
+				130,
+				170
+			]
 		},
 		"carbon_17": {
 			"name": "17\" carbon wheel",
@@ -385,7 +425,12 @@
 			],
 			"lightweight": true,
 			"spokes": 3,
-			"rim_width": 5.5
+			"rim_width": 5.5,
+			"tyres": [
+				170,
+				200
+			],
+			"material": "carbon"
 		},
 		"wire_16_bobber": {
 			"name": "16\" fat wire wheel",
@@ -400,7 +445,11 @@
 				0.9,
 				0.92
 			],
-			"rim_width": 3.5
+			"rim_width": 3.5,
+			"tyres": [
+				130,
+				160
+			]
 		},
 		"spoked_19_adventure": {
 			"name": "19\" cross-spoke adventure wheel",
@@ -415,7 +464,11 @@
 				0.15,
 				0.16
 			],
-			"rim_width": 2.5
+			"rim_width": 2.5,
+			"tyres": [
+				90,
+				130
+			]
 		},
 		"excel_21_black": {
 			"name": "21\" black anodised race rim",
@@ -431,7 +484,11 @@
 				0.07
 			],
 			"lightweight": true,
-			"rim_width": 1.6
+			"rim_width": 1.6,
+			"tyres": [
+				80,
+				100
+			]
 		},
 		"cast_18_three": {
 			"name": "18\" three-spoke cast wheel",
@@ -446,7 +503,11 @@
 				0.6,
 				0.25
 			],
-			"rim_width": 2.75
+			"rim_width": 2.75,
+			"tyres": [
+				100,
+				140
+			]
 		},
 		"cast_19_six": {
 			"name": "19\" six-spoke cast wheel",
@@ -461,7 +522,11 @@
 				0.73,
 				0.75
 			],
-			"rim_width": 2.5
+			"rim_width": 2.5,
+			"tyres": [
+				90,
+				130
+			]
 		},
 		"cast_17_y": {
 			"name": "17\" Y-spoke cast wheel",
@@ -476,7 +541,11 @@
 				0.08,
 				0.09
 			],
-			"rim_width": 5.0
+			"rim_width": 5.0,
+			"tyres": [
+				160,
+				190
+			]
 		},
 		"forged_17_alu": {
 			"name": "17\" forged aluminium wheel",
@@ -492,7 +561,11 @@
 				0.83
 			],
 			"lightweight": true,
-			"rim_width": 5.5
+			"rim_width": 5.5,
+			"tyres": [
+				170,
+				200
+			]
 		},
 		"forged_17_mag": {
 			"name": "17\" forged magnesium wheel",
@@ -508,7 +581,11 @@
 				0.15
 			],
 			"lightweight": true,
-			"rim_width": 6.0
+			"rim_width": 6.0,
+			"tyres": [
+				180,
+				200
+			]
 		},
 		"supermoto_16_5": {
 			"name": "16.5\" supermoto rim",
@@ -523,7 +600,11 @@
 				0.3,
 				0.75
 			],
-			"rim_width": 5.0
+			"rim_width": 5.0,
+			"tyres": [
+				160,
+				190
+			]
 		}
 	},
 	"tyre": {
@@ -545,6 +626,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16,
+				18,
+				19
 			]
 		},
 		"vintage_ribbed_90": {
@@ -565,6 +651,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16,
+				18,
+				19
 			]
 		},
 		"vintage_ribbed_100": {
@@ -585,6 +676,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16,
+				18,
+				19
 			]
 		},
 		"vintage_ribbed_110": {
@@ -605,6 +701,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16,
+				18,
+				19
 			]
 		},
 		"vintage_ribbed_150": {
@@ -625,6 +726,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16,
+				18,
+				19
 			]
 		},
 		"touring_road": {
@@ -645,6 +751,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19
 			]
 		},
 		"touring_road_110": {
@@ -665,6 +776,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19
 			]
 		},
 		"touring_road_120": {
@@ -685,6 +801,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19
 			]
 		},
 		"touring_road_130": {
@@ -705,6 +826,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19
 			]
 		},
 		"touring_road_150": {
@@ -725,6 +851,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19
 			]
 		},
 		"touring_road_180": {
@@ -745,6 +876,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19
 			]
 		},
 		"sport_road": {
@@ -765,6 +901,9 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17
 			]
 		},
 		"sport_road_120": {
@@ -785,6 +924,9 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17
 			]
 		},
 		"sport_road_160": {
@@ -805,6 +947,9 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17
 			]
 		},
 		"sport_road_190": {
@@ -825,6 +970,9 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17
 			]
 		},
 		"sport_road_200": {
@@ -845,6 +993,9 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17
 			]
 		},
 		"dual_sport": {
@@ -865,6 +1016,12 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19,
+				21
 			]
 		},
 		"dual_sport_90": {
@@ -885,6 +1042,12 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19,
+				21
 			]
 		},
 		"dual_sport_110": {
@@ -905,6 +1068,12 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19,
+				21
 			]
 		},
 		"dual_sport_150": {
@@ -925,6 +1094,12 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19,
+				21
 			]
 		},
 		"dual_sport_170": {
@@ -945,6 +1120,12 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				17,
+				18,
+				19,
+				21
 			]
 		},
 		"knobbly_mx": {
@@ -965,6 +1146,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				18,
+				19,
+				21
 			]
 		},
 		"knobbly_mx_80": {
@@ -985,6 +1171,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				18,
+				19,
+				21
 			]
 		},
 		"knobbly_mx_90": {
@@ -1005,6 +1196,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				18,
+				19,
+				21
 			]
 		},
 		"knobbly_mx_100": {
@@ -1025,6 +1221,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				18,
+				19,
+				21
 			]
 		},
 		"knobbly_mx_110": {
@@ -1045,6 +1246,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				18,
+				19,
+				21
 			]
 		},
 		"knobbly_mx_140": {
@@ -1065,6 +1271,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				18,
+				19,
+				21
 			]
 		},
 		"race_slick": {
@@ -1085,6 +1296,10 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16.5,
+				17
 			]
 		},
 		"race_slick_120": {
@@ -1105,6 +1320,10 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16.5,
+				17
 			]
 		},
 		"race_slick_160": {
@@ -1125,6 +1344,10 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16.5,
+				17
 			]
 		},
 		"race_slick_180": {
@@ -1145,6 +1368,10 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16.5,
+				17
 			]
 		},
 		"race_slick_200": {
@@ -1165,6 +1392,10 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"rims": [
+				16.5,
+				17
 			]
 		}
 	},
@@ -1351,7 +1582,8 @@
 				0.55,
 				0.45,
 				0.3
-			]
+			],
+			"material": "metal"
 		},
 		"ceramic": {
 			"name": "Ceramic pads",
@@ -1375,7 +1607,8 @@
 				0.1,
 				0.1,
 				0.1
-			]
+			],
+			"material": "carbon"
 		}
 	},
 	"master": {
@@ -1512,7 +1745,8 @@
 				0.06,
 				0.07
 			],
-			"lightweight": true
+			"lightweight": true,
+			"material": "carbon"
 		},
 		"alloy_cafe_14": {
 			"name": "Hand-beaten alloy café tank, 14 L",
@@ -1606,7 +1840,8 @@
 				0.06,
 				0.07
 			],
-			"lightweight": true
+			"lightweight": true,
+			"material": "carbon"
 		}
 	},
 	"handlebars": {
@@ -3343,7 +3578,8 @@
 				0.85,
 				0.86,
 				0.88
-			]
+			],
+			"material": "metal"
 		}
 	},
 	"oil_filter": {
@@ -3722,7 +3958,8 @@
 				0.07,
 				0.08
 			],
-			"lightweight": true
+			"lightweight": true,
+			"material": "carbon"
 		}
 	},
 	"final_drive": {
@@ -4224,7 +4461,8 @@
 				0.1,
 				0.08
 			],
-			"lightweight": true
+			"lightweight": true,
+			"material": "rubber"
 		},
 		"scooter_beep": {
 			"name": "Scooter beeper",
@@ -4394,7 +4632,8 @@
 				0.32,
 				0.3,
 				0.2
-			]
+			],
+			"material": "fabric"
 		},
 		"leather_saddlebags": {
 			"name": "Leather saddlebags",
@@ -4408,7 +4647,8 @@
 				0.25,
 				0.13,
 				0.06
-			]
+			],
+			"material": "leather"
 		},
 		"adventure_soft": {
 			"name": "Adventure soft bags",
@@ -4422,7 +4662,8 @@
 				0.12,
 				0.12,
 				0.13
-			]
+			],
+			"material": "fabric"
 		},
 		"plastic_cases": {
 			"name": "Hard plastic cases",
@@ -4436,7 +4677,8 @@
 				0.08,
 				0.08,
 				0.09
-			]
+			],
+			"material": "plastic"
 		},
 		"aluminium_boxes": {
 			"name": "Aluminium adventure boxes",
@@ -4450,7 +4692,8 @@
 				0.72,
 				0.73,
 				0.75
-			]
+			],
+			"material": "metal"
 		}
 	},
 	"top_box": {
@@ -4494,7 +4737,8 @@
 				0.72,
 				0.73,
 				0.75
-			]
+			],
+			"material": "metal"
 		},
 		"wooden_crate": {
 			"name": "Rack-mounted crate",
@@ -4508,7 +4752,8 @@
 				0.55,
 				0.38,
 				0.2
-			]
+			],
+			"material": "wood"
 		},
 		"leather_trunk": {
 			"name": "Leather tour trunk",
@@ -4522,7 +4767,8 @@
 				0.28,
 				0.14,
 				0.07
-			]
+			],
+			"material": "leather"
 		}
 	},
 	"fog_lights": {
@@ -4615,6 +4861,281 @@
 				0.06,
 				0.06,
 				0.07
+			]
+		}
+	},
+	"tail": {
+		"classic_mudguard": {
+			"name": "Long classic mudguard",
+			"description": "A full-length steel guard following the back tyre, with a chunky rear lamp and the plate on top. Keeps the spray off.",
+			"mass": 3.0,
+			"type": "Steel, full length",
+			"style": "classic",
+			"light": "lucas",
+			"light_at": [
+				-0.12,
+				0.3
+			],
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			],
+			"material": "metal"
+		},
+		"cafe_tail": {
+			"name": "Cafe racer tail hump",
+			"description": "A fibreglass seat cowl with a little round lamp let into its tail and a short hugger underneath.",
+			"mass": 2.2,
+			"type": "Fibreglass seat cowl",
+			"style": "cafe",
+			"light": "round",
+			"light_at": [
+				0.02,
+				0.28
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"material": "mixed"
+		},
+		"scrambler_loop": {
+			"name": "Scrambler loop and short fender",
+			"description": "A bent steel hoop closing off the subframe, a stubby fender and a lamp on a bracket. Old-school dirt style.",
+			"mass": 2.8,
+			"type": "Steel hoop, short fender",
+			"style": "loop",
+			"light": "round",
+			"light_at": [
+				-0.06,
+				0.24
+			],
+			"color": [
+				0.07,
+				0.07,
+				0.07
+			],
+			"material": "metal"
+		},
+		"sport_tail_tidy": {
+			"name": "Sport tail tidy",
+			"description": "Ditches the long hanger for a neat undertray, a slim LED strip and the plate tucked up on a short arm.",
+			"mass": 1.1,
+			"type": "Plastic undertray, LED strip",
+			"style": "tidy",
+			"light": "strip",
+			"light_at": [
+				-0.03,
+				0.26
+			],
+			"color": [
+				0.05,
+				0.05,
+				0.06
+			],
+			"material": "plastic",
+			"lightweight": true
+		},
+		"bobber_fender": {
+			"name": "Bobber chopped fender",
+			"description": "A short steel fender hugging the tyre, a bullet lamp on top and the plate hung off the side.",
+			"mass": 2.4,
+			"type": "Steel bobbed fender, side plate",
+			"style": "bobber",
+			"light": "bullet",
+			"light_at": [
+				-0.1,
+				0.2
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"material": "metal"
+		},
+		"enduro_fender": {
+			"name": "Enduro high fender",
+			"description": "A long plastic blade swept up high out of the mud, with a tiny LED lamp under its tip.",
+			"mass": 0.9,
+			"type": "Plastic high fender",
+			"style": "enduro",
+			"light": "led",
+			"light_at": [
+				-0.03,
+				0.4
+			],
+			"color": [
+				0.92,
+				0.92,
+				0.9
+			],
+			"material": "plastic",
+			"lightweight": true
+		}
+	},
+	"fairing": {
+		"flyscreen": {
+			"name": "Headlight flyscreen",
+			"description": "A little cowl and screen over the headlight. Takes the wind off your chest, just.",
+			"mass": 0.8,
+			"type": "Headlight cowl",
+			"style": "flyscreen",
+			"cda": -0.01,
+			"screen": 0.12,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"bikini_fairing": {
+			"name": "Bikini fairing",
+			"description": "A small fairing round the headlight, on the forks, with a short screen. Classic 70s look.",
+			"mass": 2.0,
+			"type": "Fork-mounted, small",
+			"style": "bikini",
+			"cda": -0.025,
+			"screen": 0.18,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"half_fairing": {
+			"name": "Half fairing",
+			"description": "Frame-mounted upper fairing with a proper screen. Calm at motorway speeds.",
+			"mass": 4.5,
+			"type": "Frame-mounted, upper",
+			"style": "half",
+			"cda": -0.05,
+			"screen": 0.22,
+			"frame_mount": true,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"touring_fairing": {
+			"name": "Touring fairing",
+			"description": "A big frame-mounted fairing and a tall screen. Weatherproof and calm, but heavy and a lot of front to push.",
+			"mass": 9.0,
+			"type": "Frame-mounted, tall screen",
+			"style": "touring",
+			"cda": -0.035,
+			"screen": 0.42,
+			"frame_mount": true,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"race_fairing": {
+			"name": "Full race fairing",
+			"description": "Upper, sides and belly pan in fibreglass with a bubble screen. Tuck in and it slips through the air.",
+			"mass": 6.5,
+			"type": "Fibreglass, full",
+			"style": "race",
+			"cda": -0.09,
+			"screen": 0.16,
+			"frame_mount": true,
+			"color": [
+				0.92,
+				0.92,
+				0.9
+			],
+			"material": "mixed"
+		},
+		"carbon_race_fairing": {
+			"name": "Carbon race fairing",
+			"description": "The full race fairing in carbon fibre. Half the weight, a touch slipperier.",
+			"mass": 3.2,
+			"type": "Carbon fibre, full",
+			"style": "race",
+			"cda": -0.095,
+			"screen": 0.16,
+			"frame_mount": true,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"material": "carbon",
+			"lightweight": true
+		}
+	},
+	"mirrors": {
+		"round_mirrors": {
+			"name": "Round chrome mirrors",
+			"description": "A pair of classic round mirrors on chrome stalks from the bar clamps.",
+			"mass": 0.6,
+			"type": "Round, on stalks",
+			"style": "round",
+			"cda": 0.004,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"bar_end_mirrors": {
+			"name": "Bar-end mirrors",
+			"description": "Round mirrors hung off the ends of the bars. Clean lines on a cafe racer.",
+			"mass": 0.5,
+			"type": "Round, bar-end",
+			"style": "bar_end",
+			"cda": 0.003,
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
+		},
+		"sport_mirrors": {
+			"name": "Sport stalk mirrors",
+			"description": "Angular mirrors on long swept stalks, so you see past your elbows.",
+			"mass": 0.4,
+			"type": "Angular, long stalks",
+			"style": "sport",
+			"cda": 0.004,
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
+		},
+		"touring_mirrors": {
+			"name": "Wide touring mirrors",
+			"description": "Big rectangular mirrors up high. You see everything behind you.",
+			"mass": 0.8,
+			"type": "Rectangular, tall stalks",
+			"style": "rect",
+			"cda": 0.007,
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
+		},
+		"fairing_mirrors": {
+			"name": "Fairing-mount mirrors",
+			"description": "Slim mirror pods that bolt to the fairing, out of the wind. Needs a fairing fitted.",
+			"mass": 0.5,
+			"type": "Fairing-mounted pods",
+			"style": "fairing",
+			"mounts_on": [
+				"fairing"
+			],
+			"cda": 0.002,
+			"color": [
+				0.08,
+				0.08,
+				0.09
 			]
 		}
 	},
@@ -4765,7 +5286,8 @@
 				0.15,
 				0.1,
 				0.05
-			]
+			],
+			"material": "plastic"
 		}
 	},
 	"brake_fluid": {

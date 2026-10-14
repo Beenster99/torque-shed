@@ -5,18 +5,25 @@ extends Node
 ## sliders control.
 
 const RATE := 22050
-const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour", "screech", "door"]
+const LOOPS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "washer", "static", "jet", "pour", "screech", "door",
+	"fan", "blast", "rain", "rain_roof"]
+## Ear defenders on (the dyno room): every sound effect comes through dull and quieter.
+const MUFFLE_CUTOFF := 520.0
+const MUFFLE_DB := -12.0
 ## Which loop each kind of work makes while you hold the button.
 const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray",
-	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray"}
+	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray",
+	"tyre_fit": "ratchet", "tyre_remove": "ratchet"}
 ## Which loop a tool makes in someone else's hands while they work.
 const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet", "gun": "spray"}
 ## The one-shot when a job is done.
 const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "install": "clunk", "take": "pickup",
-	"place": "clunk", "drop": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink"}
+	"place": "clunk", "drop": "clunk", "set_down": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink",
+	"tyre_remove": "pickup"}
 
 var _cache := {}
 var _rng := RandomNumberGenerator.new()
+var muffled := false
 
 
 func _ready() -> void:
@@ -31,7 +38,8 @@ func _ready() -> void:
 
 
 func apply_volumes() -> void:
-	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), linear_to_db(maxf(Settings.sfx_volume, 0.0001)))
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), linear_to_db(maxf(Settings.sfx_volume, 0.0001))
+		+ (MUFFLE_DB if muffled else 0.0))
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Radio"), linear_to_db(maxf(Settings.radio_volume, 0.0001)))
 
 
@@ -39,6 +47,39 @@ func stream(sound: String) -> AudioStreamWAV:
 	if not _cache.has(sound):
 		_cache[sound] = _make(sound)
 	return _cache[sound]
+
+
+## Ear defenders on or off: a low-pass filter on the sound effects (engines, the dyno, tools,
+## footsteps) and the level brought down. The radio isn't affected.
+func set_muffled(on: bool) -> void:
+	if on == muffled:
+		return
+	muffled = on
+	var bus := AudioServer.get_bus_index("SFX")
+	if bus < 0:
+		return
+	var at := -1
+	for i in AudioServer.get_bus_effect_count(bus):
+		if AudioServer.get_bus_effect(bus, i) is AudioEffectLowPassFilter:
+			at = i
+	if at < 0 and on:
+		var lp := AudioEffectLowPassFilter.new()
+		lp.cutoff_hz = MUFFLE_CUTOFF
+		lp.resonance = 0.4
+		AudioServer.add_bus_effect(bus, lp)
+		at = AudioServer.get_bus_effect_count(bus) - 1
+	if at >= 0:
+		AudioServer.set_bus_effect_enabled(bus, at, on)
+	apply_volumes()
+
+
+## Whether the sound effects are coming through muffled right now.
+func is_muffled() -> bool:
+	var bus := AudioServer.get_bus_index("SFX")
+	for i in AudioServer.get_bus_effect_count(bus):
+		if AudioServer.get_bus_effect(bus, i) is AudioEffectLowPassFilter and AudioServer.is_bus_effect_enabled(bus, i):
+			return true
+	return false
 
 
 ## Plays a one-shot at a point in the world.
@@ -67,6 +108,20 @@ func make_loop_player(parent: Node3D) -> AudioStreamPlayer3D:
 	p.max_distance = 40.0
 	parent.add_child(p)
 	return p
+
+
+## Plays a one-shot that isn't anywhere in the world: menu and HUD sounds.
+func play_ui(sound: String, volume_db := 0.0) -> void:
+	var host: Node = get_tree().current_scene if get_tree() else null
+	if host == null:
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = stream(sound)
+	p.bus = "SFX"
+	p.volume_db = volume_db
+	host.add_child(p)
+	p.finished.connect(p.queue_free)
+	p.play()
 
 
 ## Starts `sound` looping on `p`, or stops it for "".
@@ -120,6 +175,12 @@ func _make(sound: String) -> AudioStreamWAV:
 			data = _pour()
 		"screech":
 			data = _screech()
+		"chirp":
+			data = _chirp()
+		"rain":
+			data = _rain(false)
+		"rain_roof":
+			data = _rain(true)
 		"gear":
 			data = _gear()
 		"ping":
@@ -128,6 +189,14 @@ func _make(sound: String) -> AudioStreamWAV:
 			data = _door()
 		"beep":
 			data = _beep()
+		"levelup":
+			data = _levelup()
+		"fan":
+			data = _fan()
+		"blast":
+			data = _blast()
+		"ting":
+			data = _ring([3100.0, 4650.0, 6900.0], 0.5, 0.35)
 		_:
 			data.resize(RATE / 10)
 	var wav := AudioStreamWAV.new()
@@ -223,6 +292,34 @@ func _jet() -> PackedFloat32Array:
 	for i in d.size():
 		var t := float(i) / RATE
 		d[i] += (sin(TAU * 100.0 * t) * 0.12 + sin(TAU * 200.0 * t) * 0.05) * (0.9 + 0.1 * sin(TAU * 6.0 * t))
+	return d
+
+
+## The dyno's cooling fan: a motor hum and the whoosh of the blades chopping the air.
+func _fan() -> PackedFloat32Array:
+	var d := _samples(2.0)
+	var lp := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.12
+		var chop := 0.75 + 0.25 * sin(TAU * 40.0 * t)    # five blades at eight turns a second
+		d[i] = lp * 0.55 * chop + sin(TAU * 100.0 * t) * 0.05 + sin(TAU * 300.0 * t) * 0.02
+	return d
+
+
+## The sandblaster: a harsh roar of air and grit with a crackle of sand hitting metal.
+func _blast() -> PackedFloat32Array:
+	var d := _samples(1.5)
+	var lp := 0.0
+	var rumble := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.85
+		rumble += (n - rumble) * 0.03
+		var crackle := (_rng.randf_range(-1.0, 1.0) if _rng.randf() < 0.04 else 0.0) * 0.6
+		d[i] = lp * 0.42 + rumble * 0.9 + crackle + sin(TAU * 70.0 * t) * 0.04
 	return d
 
 
@@ -335,6 +432,49 @@ func _screech() -> PackedFloat32Array:
 	return d
 
 
+## A tyre letting go: a sharp, bright bark that snaps in and dies quickly, the pitch dropping
+## as the rubber breaks loose. Much louder and more sudden than the long screech.
+func _chirp() -> PackedFloat32Array:
+	var d := _samples(0.42)
+	var phase := 0.0
+	var lp := 0.0
+	for i in d.size():
+		var t := float(i) / RATE
+		var f := 1750.0 - 520.0 * minf(t / 0.25, 1.0) + 90.0 * sin(TAU * 31.0 * t)
+		phase += f / RATE
+		var env := minf(t / 0.006, 1.0) * exp(-t * 9.0) * (1.0 + 0.6 * exp(-t * 40.0))
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.5
+		var tone := sin(TAU * phase) * 0.55 + sin(TAU * phase * 2.02) * 0.22 + sin(TAU * phase * 0.5) * 0.12
+		d[i] = (tone + lp * 0.35) * env * 0.85
+	return d
+
+
+## Rain: a soft wash of fine noise with drops pattering through it. On the roof (`roof`) it's
+## a deeper drumming on the metal sheets with louder taps, heard from inside the shed.
+func _rain(roof: bool) -> PackedFloat32Array:
+	var d := _samples(3.0)
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in d.size():
+		var n := _rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * (0.12 if roof else 0.55)
+		lp2 += (lp - lp2) * (0.2 if roof else 0.8)
+		d[i] = lp2 * (0.55 if roof else 0.3)
+	# Single drops: little ticks outdoors, ringing taps on the tin roof.
+	var drops := 260 if roof else 420
+	for k in drops:
+		var start := _rng.randi_range(0, d.size() - 1)
+		var f := _rng.randf_range(1800.0, 4200.0) if roof else _rng.randf_range(2500.0, 6000.0)
+		var amp := _rng.randf_range(0.04, 0.16 if roof else 0.1)
+		var length := int(RATE * (0.05 if roof else 0.012))
+		for j in length:
+			var t := float(j) / RATE
+			var at := (start + j) % d.size()   # wraps round, so the loop joins up
+			d[at] += sin(TAU * f * t) * exp(-t * (90.0 if roof else 400.0)) * amp
+	return d
+
+
 ## The gearbox clicking into the next gear: a short metallic knock.
 func _gear() -> PackedFloat32Array:
 	var d := _thud(140.0, 0.12, 0.6)
@@ -377,4 +517,22 @@ func _beep() -> PackedFloat32Array:
 	for i in d.size():
 		var t := float(i) / RATE
 		d[i] = (1.0 if fmod(t * 2600.0, 1.0) < 0.5 else -1.0) * 0.18 * clampf((0.09 - t) / 0.01, 0.0, 1.0)
+	return d
+
+
+## Level up: a bright rising arpeggio with a shimmer on the top note.
+func _levelup() -> PackedFloat32Array:
+	var d := _samples(1.3)
+	var notes := [523.25, 659.25, 783.99, 1046.5]
+	for i in d.size():
+		var t := float(i) / RATE
+		var s := 0.0
+		for n in notes.size():
+			var start: float = n * 0.11
+			if t >= start:
+				var u := t - start
+				var f: float = notes[n]
+				var decay := 3.0 if n == notes.size() - 1 else 7.0
+				s += (sin(TAU * f * u) + 0.3 * sin(TAU * f * 2.0 * u) * (0.6 + 0.4 * sin(TAU * 6.0 * u))) * exp(-u * decay)
+		d[i] = s * 0.22
 	return d
