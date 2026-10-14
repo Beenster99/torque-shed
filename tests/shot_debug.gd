@@ -20,6 +20,11 @@ func _ready() -> void:
 		await _beam_shots()
 		get_tree().quit()
 		return
+	if "--tails" in OS.get_cmdline_user_args():
+		await _tail_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -156,3 +161,38 @@ func _geo_shots() -> void:
 	Shed.changed.emit()
 	await _frames(10)
 	await _look_from(bay.origin + Vector3(-1.9, 0.0, 2.6), bay.origin + Vector3(0.0, 0.7, 0.0), "g6_half_built_with_ghosts")
+
+
+## Tail units, fairings and mirrors: Old Faithful tried with every tail unit (from behind), then
+## each fairing with mirrors (from the front quarter). `-- --tails` takes just these.
+func _tail_shots() -> void:
+	var bike := _bike_named("Old Faithful")
+	var view: Node3D = main.workshop.bike_views[bike]
+	var at := view.global_position
+	var side := view.global_transform.basis.x
+	var back := view.global_transform.basis.z
+	for id in PartsDB.by_kind["tail"]:
+		_swap_part(bike, "tail", id)
+		await _frames(5)
+		await _look_from(at + back * 2.2 + side * 1.4, at + Vector3(0.0, 0.5, 0.0) + back * 0.6, "t_tail_" + id)
+	_swap_part(bike, "tail", "sport_tail_tidy")
+	var mirrors := ["fairing_mirrors", "bar_end_mirrors", "fairing_mirrors", "touring_mirrors", "fairing_mirrors", "sport_mirrors"]
+	var i := 0
+	for id in PartsDB.by_kind["fairing"]:
+		_swap_part(bike, "fairing", id)
+		_swap_part(bike, "mirrors", mirrors[i % mirrors.size()])
+		i += 1
+		await _frames(5)
+		await _look_from(at - back * 2.2 + side * 1.5, at + Vector3(0.0, 0.7, 0.0) - back * 0.6, "t_fairing_" + id)
+	await _look_from(at + side * 2.6, at + Vector3(0.0, 0.6, 0.0), "t_side_view")
+
+
+func _swap_part(bike: int, slot: String, part: String) -> void:
+	var old := Shed.item_on(bike, slot)
+	if old != 0:
+		Shed.items.erase(old)
+	var item := Shed._new_item(part, 0.0, 0.0, 0.0)
+	Shed.bikes[bike]["slots"][slot] = item
+	Shed.bikes[bike]["bolted"][slot] = true
+	Shed._move(item, "bike", bike)
+	Shed.changed.emit()

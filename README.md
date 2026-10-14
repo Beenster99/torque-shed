@@ -2,7 +2,7 @@
 
 A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 38 parts from 32 kinds (stands, headlight, horn, ECU, panniers, top box and fog lights are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree (see below); money comes later.
+Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 41 parts from 35 kinds (stands, headlight, horn, ECU, panniers, top box, fog lights, fairing and mirrors are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree (see below); money comes later.
 
 ### What a bike is made of
 
@@ -13,6 +13,7 @@ Current milestone, **The Shed**: a snug first-person workshop with four bike bay
 | Brakes, front and rear | Disc (type, diameter), caliper (pistons), pads (compound), master cylinder (axial or radial) |
 | Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens), horn (10 types, from a disc horn to a train horn or a musical one), fog lights |
 | Electronics | ECU (stock, remap, ABS, sport with traction control, race with all of it): more power and revs, and rider aids for ABS, traction control, stability and anti-wheelie |
+| Tail and front | Tail unit (6 kinds: long classic mudguard, café racer hump, scrambler loop, sport tail tidy, bobber chopped fender, enduro high fender), which carries the rear light, mudguard and number plate; fairing (headlight flyscreen, bikini, half, touring with a tall screen, full race in fibreglass or carbon), which cuts drag for a higher top speed but adds weight; mirrors (round chrome, bar-end, sport stalk, wide touring, fairing-mount) |
 | Luggage | Panniers and top boxes; they add drag |
 | Stands | Side stand (length, lean), centre stand (lift). Without either, a bike left anywhere but a paddock stand falls over |
 | Fluids | Petrol in the tank, oil in the engine, brake fluid in each master cylinder. Each has 3 grades and ages with use |
@@ -72,6 +73,16 @@ Look at any part to see its spec, condition, rust, dirt, wear and colour. With y
 Chains stretch and lose their lube as you ride, faster off-road: crouch by the chain with the wrench and hold the second button to set the tension, and spray it with **chain lube** (hold the can, crouch, sweep it along the chain). A slack or dry chain wastes power and the bay screen says so.
 
 **Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the general waste bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt road. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
+
+### Tail units, fairings and mirrors
+
+Every bike has a **tail unit** behind the seat: the rear light, the mudguard or hugger and the number plate in one part, so swapping it changes the look of the back end and where the rear light sits. It bolts to the frame and is needed to ride. Bikes from older saves get the one that suits them (a hump on a café seat, a tail tidy on a sports bike, a high fender on an enduro, a long mudguard on the rest).
+
+A **fairing** is an extra, like panniers. It goes on over the headlight, so the headlight has to be fitted first and the fairing has to come off before the headlight can. Flyscreens and bikini fairings turn with the bars; the half, touring and race fairings are fixed to the frame. The bigger and sleeker it is, the less drag and the higher the top speed (a cracked or filthy one helps less), but it adds weight; the touring fairing's tall screen is calm but pushes a lot of air. New bikes come with theirs painted to match.
+
+**Mirrors** bolt to the handlebars (take them off before the bars), except fairing-mount mirrors, which need a fairing fitted and have to come off before it. They add a touch of drag. From the saddle the glass is a real mirror finish, catching the sky and what's round you.
+
+All three are ordinary parts: order them at the parts computer (Bike aisle), clean, repair, paint and recycle them (steel guards go in metal recycling, plastic fenders and fairings in plastic, fibreglass and carbon ones and mirrors in general waste), and blueprints and saves keep them.
 
 ### Geometry mode and blueprints
 

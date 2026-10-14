@@ -157,6 +157,9 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_panniers(build, zr)
 	_draw_top_box()
 	_draw_fog_lights()
+	_draw_tail(build)
+	_draw_fairing()
+	_draw_mirrors()
 
 	_apply_visibility()
 	_current_slot = ""
@@ -266,10 +269,7 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			_tube(cradle_front, cradle_back, 0.022, frame_mat)
 			_tube(cradle_back, _pivot, 0.022, frame_mat)
 	_tube(_head - _steer_axis * 0.02, hb, 0.038, frame_mat)
-	_box(_tail + Vector3(0.0, -0.05, 0.2), Vector3(0.13, 0.015, 0.26), black)  # rear fender
 	_box(Vector3(0.0, 0.06, lerpf(_engine_c.z, _pivot.z, 0.6)), Vector3(0.18, 0.14, 0.14), black)  # battery box
-	var tail_light := _box(_tail + Vector3(0.0, -0.02, 0.2), Vector3(0.1, 0.04, 0.02), _lamp(Color(1.0, 0.05, 0.02), 2.0, "ign"))
-	tail_light.name = "TailLight"
 	for side in [-1.0, 1.0]:
 		_box(Vector3(0.17 * side, 0.02, _pivot.z + 0.02), Vector3(0.1, 0.02, 0.04), black)  # footpegs
 	_swingarm = Node3D.new()
@@ -922,6 +922,248 @@ func fog_positions() -> Array:
 	if str(p.get("style", "")) == "bar":
 		return [_head - _steer_axis * 0.2 + Vector3(0.0, 0.0, -0.13)]
 	return [_head - _steer_axis * 0.34 + Vector3(-0.15, 0.0, -0.09), _head - _steer_axis * 0.34 + Vector3(0.15, 0.0, -0.09)]
+
+
+## The tail unit behind the seat: the rear light, the mudguard (or hugger) and the number plate,
+## as a long classic guard, a café hump, a scrambler loop, a sports tail tidy, a bobbed fender
+## or a high enduro fender. The lamp sits where the part says (see tail_light_position).
+func _draw_tail(build: BikeBuild) -> void:
+	_current_slot = "tail"
+	var p := _part()
+	if p.is_empty():
+		return
+	var metal := str(p.get("material", "")) == "metal"
+	var mat := _mat(_col(), 0.85 if metal else 0.1, 0.25 if metal else 0.45, 0.0 if metal else 0.4)
+	var black := _mat(Color(0.04, 0.04, 0.045), 0.3, 0.6)
+	var plate := _mat(Color(0.95, 0.82, 0.16), 0.0, 0.5)
+	var lamp := tail_light_position()
+	var axle := Vector3(0.0, 0.0, build.wheelbase * 0.5)
+	var r := build.rear_radius
+	var w := build.rear_tyre_width + 0.05
+	match str(p.get("style", "classic")):
+		"cafe":
+			var cowl := _box(_tail + Vector3(0.0, 0.0, 0.14), Vector3(0.24, 0.12, 0.3), mat)
+			cowl.rotation.x = -0.08
+			var hump := _box(_tail + Vector3(0.0, 0.08, 0.1), Vector3(0.2, 0.07, 0.24), mat)
+			hump.rotation.x = 0.22
+			_guard(axle, r + 0.03, w, -0.25, 0.75, black, 5)
+			_tube(_tail + Vector3(0.0, -0.05, 0.24), _tail + Vector3(0.0, -0.15, 0.31), 0.008, black)
+			_number_plate(_tail + Vector3(0.0, -0.2, 0.32), Vector2(0.18, 0.12), -0.2, plate)
+		"loop":
+			for side in [-1.0, 1.0]:
+				_tube(_tail + Vector3(0.07 * side, 0.0, -0.08), _tail + Vector3(0.07 * side, 0.01, 0.2), 0.012, mat)
+				_tube(_tail + Vector3(0.07 * side, 0.01, 0.2), _tail + Vector3(0.04 * side, 0.04, 0.25), 0.012, mat)
+			_tube(_tail + Vector3(-0.04, 0.04, 0.25), _tail + Vector3(0.04, 0.04, 0.25), 0.012, mat)
+			_guard(axle, r + 0.04, w, -0.3, 0.8, mat, 5)
+			_tube(_tail + Vector3(0.0, 0.01, 0.2), lamp, 0.008, black)
+			_number_plate(lamp + Vector3(0.0, -0.09, 0.0), Vector2(0.16, 0.11), -0.1, plate)
+		"tidy":
+			var tray := _box(_tail + Vector3(0.0, -0.05, 0.1), Vector3(0.18, 0.025, 0.28), mat)
+			tray.rotation.x = -0.15
+			_box(lamp - Vector3(0.0, 0.0, 0.012), Vector3(0.16, 0.035, 0.02), mat)
+			_tube(_tail + Vector3(0.0, -0.06, 0.2), _tail + Vector3(0.0, -0.15, 0.33), 0.01, black)
+			_number_plate(_tail + Vector3(0.0, -0.2, 0.34), Vector2(0.17, 0.11), -0.35, plate)
+		"bobber":
+			_guard(axle, r + 0.035, w, -0.55, 1.05, mat, 6)
+			var plate_at := axle + Vector3(-(w * 0.5 + 0.06), 0.14, 0.04)
+			_tube(axle + Vector3(-(w * 0.5 + 0.02), 0.04, 0.0), plate_at, 0.008, black)
+			var side_plate := _number_plate(plate_at, Vector2(0.17, 0.12), 0.0, plate)
+			side_plate.rotation.y = PI * 0.5
+		"enduro":
+			var a := _tail + Vector3(0.0, -0.05, -0.12)
+			var b := _tail + Vector3(0.0, -0.02, 0.2)
+			var c := _tail + Vector3(0.0, 0.06, 0.46)
+			_plank(a, b, w + 0.02, 0.012, mat)
+			_plank(b, c, w, 0.012, mat)
+			_number_plate(lamp + Vector3(0.0, -0.07, -0.01), Vector2(0.13, 0.08), -0.3, plate)
+		_:
+			_guard(axle, r + 0.05, w + 0.02, -0.45, 2.0, mat, 10)
+			# The lamp on a bracket off the guard, the plate below it.
+			var a := atan2(lamp.z - axle.z, lamp.y - axle.y)
+			_tube(lamp, axle + Vector3(0.0, cos(a), sin(a)) * (r + 0.05), 0.01, mat)
+			var below := a + 0.4
+			_number_plate(axle + Vector3(0.0, cos(below), sin(below)) * (r + 0.08), Vector2(0.2, 0.13), -0.25, plate)
+	# The rear light, lit with the ignition.
+	var lens := _lamp(Color(1.0, 0.05, 0.02), 2.0, "ign")
+	var face: MeshInstance3D
+	match str(p.get("light", "round")):
+		"lucas":
+			_box(lamp, Vector3(0.12, 0.07, 0.07), _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15))
+			face = _box(lamp + Vector3(0.0, 0.0, 0.037), Vector3(0.1, 0.05, 0.008), lens)
+		"strip":
+			face = _box(lamp, Vector3(0.14, 0.022, 0.01), lens)
+		"bullet":
+			var shell := _mesh_instance(_sphere(0.03), black, lamp)
+			shell.scale = Vector3(1.0, 1.0, 1.5)
+			face = _mesh_instance(_cylinder(0.025, 0.006), lens, lamp + Vector3(0.0, 0.0, 0.043))
+			face.rotation.x = PI * 0.5
+		"led":
+			_box(lamp - Vector3(0.0, 0.0, 0.01), Vector3(0.07, 0.035, 0.03), black)
+			face = _box(lamp + Vector3(0.0, 0.0, 0.006), Vector3(0.06, 0.025, 0.006), lens)
+		_:
+			var can := _mesh_instance(_cylinder(0.036, 0.04), black, lamp)
+			can.rotation.x = PI * 0.5
+			face = _mesh_instance(_cylinder(0.032, 0.006), lens, lamp + Vector3(0.0, 0.0, 0.022))
+			face.rotation.x = PI * 0.5
+	face.name = "TailLight"
+
+
+## Where the rear light sits, in the bike's own space: the tail unit's "light_at" (up and back
+## from the end of the subframe). Vector3.ZERO with no tail unit.
+func tail_light_position() -> Vector3:
+	var p := PartsDB.get_part(str(_build.parts.get("tail", "none"))) if _build else {}
+	if p.is_empty():
+		return Vector3.ZERO
+	var at: Array = p.get("light_at", [0.0, 0.25])
+	return _tail + Vector3(0.0, float(at[0]), float(at[1]))
+
+
+## A mudguard following a wheel: plates round an arc of `radius` about `c`, from angle `a0` to
+## `a1` (radians from straight up, positive towards the back).
+func _guard(c: Vector3, radius: float, width: float, a0: float, a1: float, mat: Material, segs := 8) -> void:
+	var step := (a1 - a0) / segs
+	for i in segs:
+		var a := a0 + step * (i + 0.5)
+		var seg := _box(c + Vector3(0.0, cos(a), sin(a)) * radius, Vector3(width, 0.012, radius * step * 1.1), mat)
+		seg.rotation.x = a
+
+
+## A flat plate from `a` to `b` (both on the centre line), `width` across and `thick` deep.
+func _plank(a: Vector3, b: Vector3, width: float, thick: float, mat: Material) -> MeshInstance3D:
+	var d := b - a
+	var plank := _box((a + b) * 0.5, Vector3(width, thick, d.length()), mat)
+	plank.rotation.x = atan2(-d.y, d.z)
+	return plank
+
+
+## A number plate facing backwards, its top leaning back by `tilt` (radians).
+func _number_plate(at: Vector3, size: Vector2, tilt: float, mat: Material) -> MeshInstance3D:
+	var plate := _box(at, Vector3(size.x, size.y, 0.005), mat)
+	plate.rotation.x = tilt
+	return plate
+
+
+## The fairing round the headlight: a flyscreen or bikini fairing on the forks (they turn with
+## the bars), or a half, touring or full race fairing on the frame, each with its screen. The
+## nose is open in the middle, so the headlight shines through.
+func _draw_fairing() -> void:
+	_current_slot = "fairing"
+	var p := _part()
+	if p.is_empty():
+		return
+	var carbon := str(p.get("material", "")) == "carbon"
+	var mat := _mat(_col(), 0.2 if carbon else 0.15, 0.25 if carbon else 0.2, 0.8 if carbon else 0.6)
+	var glass := _mat(Color(0.5, 0.58, 0.66), 0.2, 0.05)
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.albedo_color.a = 0.35
+	var screen := float(p.get("screen", 0.15))
+	var style := str(p.get("style", "half"))
+	if style in ["flyscreen", "bikini"]:
+		var lamp := Vector3(0.0, -0.08, -0.13)   # the headlight, in steering space (see _draw_headlight)
+		var big := style == "bikini"
+		if big:
+			for side in [-1.0, 1.0]:
+				var cheek := _box(lamp + Vector3(0.14 * side, 0.0, 0.03), Vector3(0.03, 0.2, 0.16), mat, _steer_node)
+				cheek.rotation.y = 0.3 * side
+			_box(lamp + Vector3(0.0, -0.1, 0.03), Vector3(0.26, 0.03, 0.14), mat, _steer_node)
+		var cowl := _box(lamp + Vector3(0.0, 0.09 if big else 0.08, 0.02), Vector3(0.3 if big else 0.22, 0.04, 0.16 if big else 0.13), mat, _steer_node)
+		cowl.rotation.x = 0.22
+		var tilt := 0.45
+		var base := lamp + Vector3(0.0, 0.1, 0.06)
+		var glass_mi := _box(base + Vector3(0.0, cos(tilt), sin(tilt)) * screen * 0.5, Vector3(0.28 if big else 0.2, screen, 0.006), glass, _steer_node)
+		glass_mi.rotation.x = tilt
+		return
+	var touring := style == "touring"
+	var wide := 0.27 if touring else 0.2
+	var tall := 1.25 if touring else 1.0
+	var h := lamp_position()
+	var brow := _box(h + Vector3(0.0, 0.11 * tall, -0.05), Vector3(wide * 2.0, 0.1, 0.05), mat)
+	brow.rotation.x = 0.35
+	_box(h + Vector3(0.0, -0.12 * tall, -0.03), Vector3(wide * 1.8, 0.08, 0.05), mat)
+	for side in [-1.0, 1.0]:
+		var cheek := _box(h + Vector3((wide - 0.02) * side, -0.01, 0.0), Vector3(0.03, 0.3 * tall, 0.26), mat)
+		cheek.rotation.y = 0.3 * side
+		if touring:
+			# Knee wings to keep the rain off the rider's legs.
+			_box(h + Vector3((wide + 0.02) * side, -0.27, 0.16), Vector3(0.03, 0.18, 0.2), mat)
+	var top := _box(h + Vector3(0.0, 0.16 * tall, 0.05), Vector3(wide * 1.9, 0.03, 0.2), mat)
+	top.rotation.x = 0.35
+	var tilt := {"race": 0.85, "touring": 0.3}.get(style, 0.55) as float
+	var base := h + Vector3(0.0, 0.17 * tall, 0.1)
+	var glass_mi := _box(base + Vector3(0.0, cos(tilt), sin(tilt)) * screen * 0.5, Vector3(wide * 1.7, screen, 0.006), glass)
+	glass_mi.rotation.x = tilt
+	if style == "race":
+		# Side panels down past the engine and a belly pan under it.
+		var side_x := maxf(wide, _block_w * 0.5 + 0.07)
+		var z0 := h.z + 0.08
+		var z1 := _engine_c.z + 0.12
+		for side in [-1.0, 1.0]:
+			var panel := _box(Vector3(side_x * side, _engine_c.y + 0.06, (z0 + z1) * 0.5), Vector3(0.03, 0.36, z1 - z0), mat)
+			panel.rotation.y = 0.06 * side
+		_box(Vector3(0.0, _engine_c.y - 0.18, _engine_c.z + 0.02), Vector3(side_x * 1.8, 0.03, 0.4), mat)
+
+
+## Mirrors: round or sport ones on stalks from the bars, round ones off the bar ends, tall
+## touring ones, or pods on the fairing. The glass is a mirror finish, so from the saddle it
+## catches the sky and the road round you.
+func _draw_mirrors() -> void:
+	_current_slot = "mirrors"
+	var p := _part()
+	if p.is_empty():
+		return
+	var mat := _mat(_col(), 0.8, 0.25)
+	var glass := _mat(Color(0.9, 0.92, 0.95), 1.0, 0.02)
+	var style := str(p.get("style", "round"))
+	var fairing := PartsDB.get_part(str(_build.parts.get("fairing", "none")))
+	if style == "fairing" and fairing.is_empty():
+		style = "sport"   # nothing to bolt to (a loose part on its own): shown as stalks
+	for side in [-1.0, 1.0]:
+		var grip: Vector3 = _grip_r if side > 0.0 else _grip_l
+		var base := Vector3(grip.x * 0.55, grip.y + 0.01, grip.z - 0.02)
+		match style:
+			"bar_end":
+				var end := grip + Vector3(0.06 * side, 0.0, 0.0)
+				var head := end + Vector3(0.07 * side, -0.04, -0.01)
+				_tube(end, head, 0.008, mat, Vector3.ONE, _steer_node)
+				_mirror_head(head, Vector2(0.045, 0.0), mat, glass, _steer_node)
+			"sport":
+				var head := base + Vector3(0.13 * side, 0.1, -0.08)
+				_tube(base, head, 0.007, mat, Vector3.ONE, _steer_node)
+				_mirror_head(head, Vector2(0.13, 0.06), mat, glass, _steer_node)
+			"rect":
+				var head := base + Vector3(0.14 * side, 0.28, -0.02)
+				_tube(base, head, 0.008, mat, Vector3.ONE, _steer_node)
+				_mirror_head(head, Vector2(0.13, 0.09), mat, glass, _steer_node)
+			"fairing":
+				if fairing.get("frame_mount", false):
+					var wide := 0.27 if str(fairing.get("style", "")) == "touring" else 0.2
+					var h := lamp_position()
+					var head := h + Vector3((wide + 0.05) * side, 0.1, 0.06)
+					_tube(h + Vector3((wide - 0.01) * side, 0.08, 0.04), head, 0.01, mat)
+					_mirror_head(head, Vector2(0.11, 0.055), mat, glass, self)
+				else:
+					var lamp := Vector3(0.0, -0.08, -0.13)
+					var head := lamp + Vector3(0.2 * side, 0.08, 0.05)
+					_tube(lamp + Vector3(0.12 * side, 0.06, 0.03), head, 0.009, mat, Vector3.ONE, _steer_node)
+					_mirror_head(head, Vector2(0.1, 0.05), mat, glass, _steer_node)
+			_:
+				var head := base + Vector3(0.08 * side, 0.2, -0.03)
+				_tube(base, head, 0.007, mat, Vector3.ONE, _steer_node)
+				_mirror_head(head, Vector2(0.05, 0.0), mat, glass, _steer_node)
+
+
+## One mirror facing the rider: round (`size.x` its radius, `size.y` 0) or a rectangle `size`.
+func _mirror_head(at: Vector3, size: Vector2, mat: Material, glass: Material, parent: Node3D) -> void:
+	if size.y <= 0.0:
+		var shell := _mesh_instance(_cylinder(size.x, 0.02), mat, at, parent)
+		shell.rotation.x = PI * 0.5
+		var face := _mesh_instance(_cylinder(size.x * 0.88, 0.002), glass, at + Vector3(0.0, 0.0, 0.011), parent)
+		face.rotation.x = PI * 0.5
+		face.name = "MirrorGlass"
+		return
+	_box(at, Vector3(size.x, size.y, 0.02), mat, parent)
+	var pane := _box(at + Vector3(0.0, 0.0, 0.011), Vector3(size.x - 0.01, size.y - 0.01, 0.002), glass, parent)
+	pane.name = "MirrorGlass"
 
 
 ## The side stand on the left, under the footpeg: tucked up along the frame, or down on the
