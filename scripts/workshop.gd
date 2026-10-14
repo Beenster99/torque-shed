@@ -24,6 +24,10 @@ const WASH_REACH := 8.0
 const BOOTH_ROOM_CENTER := Vector3(9.0, 0.0, 66.2)
 const BOOTH_ROOM_HALF := Vector2(2.2, 2.6)
 const BOOTH_XF := Transform3D(Basis(), Vector3(9.0, 0.0, 64.85))
+## The tyre changer, built in against the west wall just past the end of the workbench and
+## facing into the shed, clear of the bays, the doors and the whiteboard.
+const CHANGER_XF := Transform3D(Basis(Vector3(0.0, 0.0, -1.0), Vector3(0.0, 1.0, 0.0), Vector3(1.0, 0.0, 0.0)),
+	Vector3(-6.04, 0.0, 68.55))
 
 var bike_views := {}       # bike id -> Node3D holding a BikeModel
 var _view_sigs := {}
@@ -152,6 +156,18 @@ func sync_state() -> void:
 			if f.is_empty():
 				display.transform = spot_transform(spot)
 				add_child(display)
+			elif Shed.spot_role(spot) == "changer":
+				# A wheel lies flat on the tyre changer's turntable and turns with it.
+				var view: Node3D = furniture_nodes[int(f["id"])]
+				var table: Node3D = view.get_node_or_null("Turntable")
+				var size: Vector3 = display.get_meta("size", Vector3(0.1, 0.6, 0.6))
+				var flat := Transform3D(Basis(Vector3.BACK, PI * 0.5), Vector3(size.y * 0.5, size.x * 0.5, 0.0))
+				if table:
+					display.transform = flat
+					table.add_child(display)
+				else:
+					display.transform = Shed.local_spot_transform(spot) * flat
+					view.add_child(display)
 			elif Shed.spot_role(spot) == "booth":
 				# Hung from a booth hook: it swings on the hook.
 				var hang := Shed.local_spot_transform(spot)
@@ -372,6 +388,9 @@ func item_frame(item_id: int) -> Dictionary:
 		"floor":
 			if _floor_nodes.has(item_id):
 				return _node_frame(_floor_nodes[item_id])
+		"wheel":
+			# A tyre on a loose wheel is drawn with it.
+			return item_frame(int(it["ref"]))
 	return {}
 
 
@@ -436,11 +455,15 @@ func items_near(at: Vector3, radius: float) -> Array:
 				out.append(item)
 		elif item != 0 and node.global_position.distance_to(at) < radius + 0.3:
 			out.append(item)
+			if Shed.tyre_on_wheel(item) != 0:
+				out.append(Shed.tyre_on_wheel(item))
 	for id in _floor_nodes:
 		var node: Node3D = _floor_nodes[id]
 		var size: Vector3 = node.get_meta("size", Vector3.ONE * 0.3)
 		if (node.global_position + Vector3.UP * size.y * 0.5).distance_to(at) < radius + size.length() * 0.5:
 			out.append(id)
+			if Shed.tyre_on_wheel(id) != 0:
+				out.append(Shed.tyre_on_wheel(id))
 	return out
 
 
@@ -460,6 +483,9 @@ func _item_signature(item_id: int) -> String:
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
 			sig += "|" + ("-" if sub == 0 else _item_signature(sub) + str(Shed.engine_bolted(item_id, slot)))
+	var tyre := Shed.tyre_on_wheel(item_id)
+	if tyre != 0:
+		sig += "|tyre " + _item_signature(tyre)
 	return sig
 
 
@@ -520,6 +546,7 @@ func _paddock_stand(parent: Node3D, build: BikeBuild) -> void:
 func _process(delta: float) -> void:
 	_update_tv_feed(delta)
 	_update_door(delta)
+	spin_changers(delta)
 	if _lights_shown != Shed.lights_on:
 		set_lights(Shed.lights_on)
 	_dash_timer -= delta
@@ -527,6 +554,31 @@ func _process(delta: float) -> void:
 		return
 	_dash_timer = 0.5
 	_refresh_dashboards()
+
+
+## Turns a tyre changer's turntable, with the wheel on it, while someone works a tyre on or off,
+## and rocks the mount head as it levers the bead over the rim.
+func spin_changers(delta: float) -> void:
+	for id in furniture_nodes:
+		var view: EquipmentView = furniture_nodes[id]
+		if view.kind != "changer":
+			continue
+		var busy := changer_turning(id)
+		var table: Node3D = view.get_node_or_null("Turntable")
+		var head: Node3D = view.get_node_or_null("Head")
+		if table and busy:
+			table.rotation.y = wrapf(table.rotation.y + delta * 2.2, 0.0, TAU)
+		if head:
+			var t := Time.get_ticks_msec() / 1000.0
+			head.rotation.x = sin(t * 9.0) * 0.06 if busy else lerpf(head.rotation.x, 0.0, minf(1.0, delta * 6.0))
+
+
+## Whether a tyre changer's turntable is turning (someone is working a tyre on it).
+func changer_turning(id: int) -> bool:
+	for peer in Shed.crew:
+		if int(Shed.crew[peer].get("changer", 0)) == id and str(Shed.crew[peer].get("activity", "")) != "":
+			return true
+	return false
 
 
 func _refresh_dashboards() -> void:

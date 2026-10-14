@@ -13,6 +13,8 @@ const GRIT_PROFILE := [[0.0, 1.0], [0.7, 0.8], [1.0, 0.0]]
 const PUFF_FRAME := 64   # pixels per puff in the 2x2 atlas of soft noisy puffs
 
 static var _puff_tex: ImageTexture
+static var _mote_tex: ImageTexture
+static var _haze_tex: NoiseTexture2D
 
 var _smoke: CPUParticles3D
 var _dust: CPUParticles3D
@@ -20,6 +22,9 @@ var _grit: CPUParticles3D
 var _tyre: CPUParticles3D
 var _beam: SpotLight3D
 var _cone: MeshInstance3D
+var _motes: CPUParticles3D   # dust drifting through the headlight beam
+var _mote_shape := Vector2.ZERO   # the beam (length, radius) the motes were scattered for
+const MOTES := 70
 var beam_mode := 1      # headlight switch: 0 off, 1 dipped (low), 2 main (high)
 const BEAM_NAMES := ["off", "low beam", "high beam"]
 var _lamp_glow: OmniLight3D
@@ -102,6 +107,8 @@ func setup(exhaust: Vector3, rear_contact: Vector3, lamp: Vector3, lumens: float
 		add_child(_lamp_glow)
 		_cone = _make_cone(_beam.light_color)
 		_beam.add_child(_cone)
+		_motes = _make_motes(_beam.light_color)
+		_beam.add_child(_motes)
 
 
 ## The visible shaft of the headlight: an open cone along the beam, glowing brightest at the lamp
@@ -120,14 +127,31 @@ func _make_cone(color: Color) -> MeshInstance3D:
 	mi.rotation.x = PI * 0.5   # the narrow top (+Y) turns to +Z, back at the lamp
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var sh := Shader.new()
+	# Light through dusty, misty air: the shaft isn't a smooth gradient but streaky and grainy,
+	# with slow wisps of haze drifting along it and fine sparkling grain where dust catches it.
 	sh.code = """shader_type spatial;
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
 uniform vec4 tint : source_color = vec4(1.0);
 uniform float strength = 0.2;
+uniform float drift = 0.15;       // how fast the haze streams back along the beam
+uniform sampler2D haze : filter_linear_mipmap, repeat_enable;
+varying vec3 local_pos;
+void vertex() {
+	local_pos = VERTEX;
+}
 void fragment() {
 	float along = clamp(UV.y, 0.0, 1.0);   // 0 at the lamp, 1 at the far end
 	float edge = abs(dot(normalize(NORMAL), normalize(VIEW)));
 	float a = strength * pow(1.0 - along, 1.6) * smoothstep(0.0, 0.7, edge);
+	// Streaks: haze stretched along the beam, drifting back past the lamp.
+	float t = TIME * drift;
+	float streak = texture(haze, vec2(UV.x * 3.0, UV.y * 0.6 - t)).r;
+	float wisp = texture(haze, vec2(UV.x * 1.3 + t * 0.2, UV.y * 1.7 - t * 1.6)).r;
+	float body = mix(0.45, 1.35, smoothstep(0.25, 0.8, streak * 0.6 + wisp * 0.4));
+	// Grain: fine specks of dust that twinkle as they drift through.
+	float grain = texture(haze, vec2(local_pos.x + local_pos.z, local_pos.y) * 1.7 + vec2(t * 3.1, -t * 2.3)).r;
+	float speck = smoothstep(0.72, 0.9, grain) * 1.6;
+	a *= body + speck * (1.0 - along);
 	ALBEDO = tint.rgb * a;
 	ALPHA = 1.0;
 }
@@ -135,8 +159,98 @@ void fragment() {
 	var m := ShaderMaterial.new()
 	m.shader = sh
 	m.set_shader_parameter("tint", color)
+	m.set_shader_parameter("haze", haze_texture())
 	mi.material_override = m
 	return mi
+
+
+## Seamless soft noise for the beam's haze and grain, made once and shared by every bike.
+static func haze_texture() -> NoiseTexture2D:
+	if _haze_tex:
+		return _haze_tex
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.frequency = 0.03
+	n.fractal_octaves = 3
+	n.seed = 7
+	_haze_tex = NoiseTexture2D.new()
+	_haze_tex.width = 128
+	_haze_tex.height = 128
+	_haze_tex.seamless = true
+	_haze_tex.generate_mipmaps = true
+	_haze_tex.noise = n
+	return _haze_tex
+
+
+## Dust motes in the beam: tiny glints that only show where the light falls on them. They are
+## scattered through the cone itself (see _scatter_motes), drift slowly, and stream back past
+## the lamp as the bike moves, like dust in a torch beam. Cheap: one small CPU emitter a bike.
+func _make_motes(color: Color) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.amount = MOTES
+	p.lifetime = 2.6
+	p.local_coords = true
+	p.emitting = false
+	p.randomness = 0.8
+	p.lifetime_randomness = 0.5
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
+	p.direction = Vector3(0.0, 0.0, 1.0)
+	p.spread = 25.0
+	p.initial_velocity_min = 0.02
+	p.initial_velocity_max = 0.15
+	p.gravity = Vector3(0.0, -0.02, 0.0)
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.4
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0, 0.25, 0.7, 1.0])
+	fade.colors = PackedColorArray([Color(1, 1, 1, 0), Color(1, 1, 1, 1), Color(1, 1, 1, 0.8), Color(1, 1, 1, 0)])
+	p.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.035, 0.035)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(color.r, color.g, color.b, 0.0)
+	m.albedo_texture = mote_texture()
+	m.disable_receive_shadows = true
+	m.no_depth_test = false
+	quad.material = m
+	p.mesh = quad
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return p
+
+
+## Points to start motes from, inside a cone `length` long (out along -Z from the lamp) that
+## widens to `radius`, bunched towards the lamp where the beam is brightest.
+func _scatter_motes(length: float, radius: float) -> void:
+	var pts := PackedVector3Array()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1234
+	for i in 160:
+		var along := pow(rng.randf(), 1.6)
+		var r := radius * along * sqrt(rng.randf()) * 0.9
+		var a := rng.randf() * TAU
+		pts.append(Vector3(cos(a) * r, sin(a) * r, -0.25 - along * length))
+	_motes.emission_points = pts
+	_mote_shape = Vector2(length, radius)
+
+
+## A soft round glint for a dust mote.
+static func mote_texture() -> ImageTexture:
+	if _mote_tex:
+		return _mote_tex
+	var size := 16
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	for y in size:
+		for x in size:
+			var d := Vector2(x + 0.5 - size * 0.5, y + 0.5 - size * 0.5).length() / (size * 0.5)
+			var a := clampf(1.0 - d, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+	_mote_tex = ImageTexture.create_from_image(img)
+	return _mote_tex
 
 
 ## Burnout and skid smoke: thick white-grey clouds that roll off the back tyre and hang in the
@@ -352,6 +466,23 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 			_cone.position = Vector3(0.0, 0.0, -length * 0.5)
 			(_cone.material_override as ShaderMaterial).set_shader_parameter("strength",
 				(0.05 + 0.3 * night) * (1.5 if high else 1.0))
+			(_cone.material_override as ShaderMaterial).set_shader_parameter("drift", 0.08 + minf(absf(speed), 30.0) * 0.02)
+		if _motes:
+			# Dust only shows up against the dark: barely there by day, a glittering beam at night.
+			var length := minf(_beam.spot_range * 0.45, 18.0)
+			var radius := length * tan(deg_to_rad(_beam.spot_angle))
+			if absf(_mote_shape.x - length) > 0.5 or absf(_mote_shape.y - radius) > 0.2:
+				_scatter_motes(length, radius)
+			var glow := (0.08 + 0.92 * night) * (1.3 if high else 1.0)
+			_motes.emitting = _beam.visible and night > 0.15
+			var mm := (_motes.mesh as QuadMesh).material as StandardMaterial3D
+			mm.albedo_color.a = clampf(glow * 0.9, 0.0, 1.0)
+			# Riding along, the air streams back through the beam towards the lamp.
+			var rush := minf(absf(speed), 30.0)
+			_motes.initial_velocity_max = 0.15 + rush * 0.5
+			_motes.initial_velocity_min = 0.02 + rush * 0.35
+			_motes.lifetime = clampf(2.6 - rush * 0.06, 0.6, 2.6)
+			_motes.spread = 25.0 if rush < 2.0 else 6.0
 
 
 ## Thick tyre smoke from a burnout or skid: `level` 0 (none) .. 1 (full cloud), billowing from
@@ -431,3 +562,8 @@ func dust_emitting() -> bool:
 
 func light_on() -> bool:
 	return _beam != null and _beam.visible
+
+
+## Whether dust motes are drifting through the beam (at night, with the headlight on).
+func motes_showing() -> bool:
+	return _motes != null and _motes.emitting

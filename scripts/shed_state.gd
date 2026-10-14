@@ -56,13 +56,20 @@ const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "l
 const LIGHTEN_WEAR := 0.08     # condition a part gives up to being drilled and trimmed
 const TYRE_WEAR := 0.0002      # tyre wear per km at the right pressure
 const MAX_PAINT_RUST := 0.2
+## The tyre slot that goes with each wheel slot: a wheel comes off the bike with its tyre still on.
+const WHEEL_TYRE := {"front_wheel": "front_tyre", "rear_wheel": "rear_tyre"}
+const TYRE_REMOVE_TIME := 2.5   # seconds to lever a tyre off on the tyre changer
+## How fast a badly seated bead lets a tyre down, in bar per km at the worst.
+const BEAD_LEAK := 0.02
 
 ## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered,
 ## stand ("" upright on its wheels or the bay's paddock stand, "side", "centre" or "down" when it has fallen over),
 ## pusher (peer wheeling it about, or 0), tune{map, ignition, limiter}, dyno{n, runs: the last two dyno runs}}
 var bikes := {}
 ## item id -> {id, part, kind, rust, dirt, wear, color, finish, boxed, at, ref}, where
-## at is "bike", "engine", "held", "spot" or "floor" (ref is then the Transform3D it was put down at).
+## at is "bike", "engine", "held", "spot", "floor" (ref is then the Transform3D it was put down at)
+## or "wheel" (a tyre on a wheel that's off the bike: ref is the wheel's id, and the wheel carries
+## tyre: the tyre's id). A tyre fitted on the tyre changer carries bead: how well it was seated, 0..1.
 ## Engine blocks also carry slots{} and bolted{} for the parts fitted to them. Tanks, engines, master
 ## cylinders and fluid containers carry fluid{type, litres, age}: petrol, oil or brake fluid.
 var items := {}
@@ -126,7 +133,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	active = true
 	_add_crew(me(), player_name)
 	_new_bike({"frame": "steel_backbone", "fork": "enduro_usd", "shock": "enduro_mono", "front_wheel": "spoked_21",
-		"rear_wheel": "spoked_18", "front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx", "front_disc": "wave_270",
+		"rear_wheel": "spoked_18", "front_tyre": "knobbly_mx_90", "rear_tyre": "knobbly_mx", "front_disc": "wave_270",
 		"rear_disc": "wave_270", "front_caliper": "twin_piston", "rear_caliper": "single_piston", "front_pads": "sintered",
 		"rear_pads": "sintered", "front_master": "axial_12", "rear_master": "axial_14", "tank": "enduro_12",
 		"saddle": "enduro_seat", "handlebars": "mx_tall", "dashboard": "lcd_basic", "engine": "single_450",
@@ -134,7 +141,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 		"air_filter": "foam_filter", "oil_filter": "paper_oil", "spark_plugs": "copper_plugs", "cooling": "single_radiator",
 		"gearbox": "six_wide_enduro"}, 0, "Rusty Ranger", 0.75, PAINTS[2])
 	var cafe := _new_bike({"frame": "steel_cradle", "fork": "classic_conventional", "shock": "twin_shock",
-		"front_wheel": "wire_19_chrome", "rear_wheel": "spoked_18", "front_tyre": "vintage_ribbed", "rear_tyre": "vintage_ribbed",
+		"front_wheel": "wire_19_chrome", "rear_wheel": "spoked_18", "front_tyre": "vintage_ribbed_100", "rear_tyre": "vintage_ribbed",
 		"front_disc": "drilled_280", "rear_disc": "solid_240", "front_caliper": "twin_piston", "rear_caliper": "single_piston",
 		"front_pads": "organic", "rear_pads": "organic", "front_master": "axial_14", "rear_master": "axial_14",
 		"tank": "cafe_15", "saddle": "cafe_hump", "handlebars": "clip_ons", "dashboard": "analog_speedo",
@@ -159,8 +166,8 @@ func start_new(player_name: String, seed_value := 0) -> void:
 		items[block]["slots"][slot] = 0
 		items[block]["bolted"][slot] = false
 		items.erase(gone)
-	_new_bike({"frame": "alu_twin_spar", "fork": "usd_sport", "shock": "sport_mono", "front_wheel": "cast_17",
-		"rear_wheel": "cast_17", "front_tyre": "sport_road", "rear_tyre": "sport_road", "front_disc": "floating_310",
+	_new_bike({"frame": "alu_twin_spar", "fork": "usd_sport", "shock": "sport_mono", "front_wheel": "cast_17_front",
+		"rear_wheel": "cast_17", "front_tyre": "sport_road_120", "rear_tyre": "sport_road", "front_disc": "floating_310",
 		"rear_disc": "solid_240", "front_caliper": "four_piston_radial", "rear_caliper": "twin_piston",
 		"front_pads": "sintered", "rear_pads": "semi_metallic", "front_master": "radial_19x20", "rear_master": "axial_14",
 		"tank": "sport_17", "saddle": "sport_solo", "handlebars": "clip_ons", "dashboard": "tft_colour",
@@ -388,6 +395,8 @@ func condition_of(item: Dictionary) -> Dictionary:
 		cond["lightened"] = true
 		if float(item.get("lighten_extra", 0.0)) > 0.0:
 			cond["lighten_extra"] = float(item["lighten_extra"])
+	if item.has("bead"):
+		cond["bead"] = item["bead"]
 	return cond
 
 
@@ -535,6 +544,8 @@ func condition_text(item: Dictionary) -> String:
 		text += "\n" + chain_text(item)
 	if item.has("paint_quality"):
 		text += "\n" + finish_text(item)
+	if item.has("bead"):
+		text += "\n" + bead_text(item)
 	return text
 
 
@@ -753,14 +764,48 @@ func furniture_name(f: Dictionary) -> String:
 	return n
 
 
-## The shed's built-in kit: the paint booth in its lean-to. Adds whatever is missing (a new shed,
-## or a save from before it was built in).
+## The shed's built-in kit: the paint booth in its lean-to and the tyre changer by the end of
+## the workbench. Adds whatever is missing (a new shed, or a save from before it was built in).
 func ensure_fixtures() -> void:
+	var have := {}
 	for id in furniture:
-		if furniture[id]["kind"] == "booth":
-			furniture[id]["xf"] = Workshop.BOOTH_XF
-			return
-	_new_furniture("booth", Workshop.BOOTH_XF, "booth_pro")
+		match str(furniture[id]["kind"]):
+			"booth":
+				furniture[id]["xf"] = Workshop.BOOTH_XF
+				have["booth"] = true
+			"changer":
+				furniture[id]["xf"] = Workshop.CHANGER_XF
+				have["changer"] = true
+	if not have.has("booth"):
+		_new_furniture("booth", Workshop.BOOTH_XF, "booth_pro")
+	if not have.has("changer"):
+		_new_furniture("changer", Workshop.CHANGER_XF, "tyre_changer")
+
+
+## The tyre on a loose wheel (one that's off the bike), or 0.
+func tyre_on_wheel(wheel_id: int) -> int:
+	var t := int(items.get(wheel_id, {}).get("tyre", 0))
+	return t if items.has(t) else 0
+
+
+## The tyre changer's place for a wheel, or "".
+func changer_spot() -> String:
+	for id in furniture:
+		if furniture[id]["kind"] == "changer":
+			return str(furniture_spots(id)[0])
+	return ""
+
+
+## "Bead seated perfectly (96%)": how well a tyre went on at the tyre changer.
+func bead_text(item: Dictionary) -> String:
+	if not item.has("bead"):
+		return ""
+	var q := float(item["bead"])
+	if q >= 0.9:
+		return "Bead seated perfectly (%d%%)" % roundi(q * 100.0)
+	if q >= BikeBuild.BEAD_OK:
+		return "Bead seated well (%d%%)" % roundi(q * 100.0)
+	return "Bead badly seated (%d%%): it loses pressure and grips less. Refit it on the tyre changer." % roundi(q * 100.0)
 
 
 func _new_furniture(kind: String, xf: Transform3D, model := "") -> int:
@@ -946,6 +991,8 @@ func check(peer: int, action: Dictionary) -> String:
 			if item_id == 0:
 				return "That part isn't fitted."
 			var bolted := bool(host["bolted"].get(slot, false))
+			if a in ["unbolt", "remove"] and engine_id == 0 and WHEEL_TYRE.values().has(slot):
+				return "The tyre comes off with its wheel: take the wheel off and change the tyre on the tyre changer."
 			if a == "unbolt" and not bolted:
 				return "It's already unbolted."
 			if a == "bolt" and bolted:
@@ -959,13 +1006,15 @@ func check(peer: int, action: Dictionary) -> String:
 				if bolted:
 					return "Unbolt it with the wrench first."
 				for dep in PartsDB.dependents(slot):
-					if int(host["slots"].get(dep, 0)) != 0:
+					if int(host["slots"].get(dep, 0)) != 0 and not (engine_id == 0 and WHEEL_TYRE.get(slot, "") == dep):
 						return "Take the %s off first." % PartsDB.slot_name(dep).to_lower()
 		"install":
 			if held == 0:
 				return "You're not holding a part."
 			if items[held].get("boxed", false):
 				return "Unpack it first."
+			if items[held]["kind"] == "tyre" and engine_id == 0:
+				return "Tyres go on at the tyre changer: take the wheel off and put it on the changer by the workbench."
 			var where := install_slot(action, held)
 			if where.has("error"):
 				return where["error"]
@@ -1000,8 +1049,36 @@ func check(peer: int, action: Dictionary) -> String:
 				return "That spot is taken."
 			if is_stand_spot(spot) and (not is_engine(held) or items[held].get("boxed", false)):
 				return "Only an engine goes on the engine stand."
-			if spot_role(spot) in ["washer", "repair"] and items[held].get("boxed", false):
+			if spot_role(spot) in ["washer", "repair", "changer"] and items[held].get("boxed", false):
 				return "Unpack it first."
+			if spot_role(spot) == "changer" and items[held]["kind"] != "wheel":
+				return "Only a wheel goes on the tyre changer. Fit tyres to a wheel on it."
+		"tyre_fit", "tyre_remove":
+			var spot := str(action.get("spot", ""))
+			if spot_role(spot) != "changer":
+				return "Use the tyre changer."
+			var wheel := item_at_spot(spot)
+			if wheel == 0:
+				return "Put a wheel on the tyre changer first."
+			var on := tyre_on_wheel(wheel)
+			if a == "tyre_fit":
+				if held == 0 or items[held]["kind"] != "tyre":
+					return "Hold a tyre to fit it."
+				if items[held].get("boxed", false):
+					return "Unpack it first."
+				if on != 0:
+					return "There's already a tyre on that wheel. Lever it off first."
+				var why := PartsDB.tyre_fit_reason(str(items[held]["part"]), str(items[wheel]["part"]))
+				if why != "":
+					return why
+				var q = action.get("quality", 1.0)
+				if not (q is float or q is int):
+					return "Work the tyre on first."
+			else:
+				if on == 0:
+					return "There's no tyre on that wheel."
+				if held != 0:
+					return "Your hands are full."
 		"radio":
 			var st := int(action.get("station", radio["station"]))
 			if st < 0 or st >= stations.size():
@@ -1350,6 +1427,15 @@ func _apply(peer: int, action: Dictionary) -> void:
 			host["slots"][slot] = 0
 			host["bolted"][slot] = false
 			_move(item_id, "held", peer)
+			if engine_id == 0 and WHEEL_TYRE.has(slot):
+				# The tyre stays on its wheel: take them both to the tyre changer.
+				var ts: String = WHEEL_TYRE[slot]
+				var tyre := int(host["slots"].get(ts, 0))
+				if tyre != 0:
+					host["slots"][ts] = 0
+					host["bolted"][ts] = false
+					items[item_id]["tyre"] = tyre
+					_move(tyre, "wheel", item_id)
 			_bump(c, "removed")
 			_xp(peer, "remove", 1.0, "item:%d" % item_id)
 			if engine_id == 0:
@@ -1366,6 +1452,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 			host["slots"][s] = item_id
 			host["bolted"][s] = false
 			_move(item_id, "engine" if PartsDB.is_engine_slot(s) else "bike", int(host["id"]))
+			var tyre := tyre_on_wheel(item_id)
+			if tyre != 0 and WHEEL_TYRE.has(s) and int(host["slots"].get(WHEEL_TYRE[s], 0)) == 0:
+				# A wheel goes back on with its tyre seated on it.
+				host["slots"][WHEEL_TYRE[s]] = tyre
+				host["bolted"][WHEEL_TYRE[s]] = true
+				_move(tyre, "bike", int(host["id"]))
+				items[item_id].erase("tyre")
 			_bump(c, "fitted")
 			_xp(peer, "fit", 1.0, "item:%d" % item_id)
 			text = "Fitted the %s as the %s. Bolt it up with the wrench." % [PartsDB.part_name(items[item_id]["part"]),
@@ -1388,6 +1481,28 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "Engine on the stand. Strip it down or build it up."
 			elif spot_role(str(action["spot"])) == "washer":
 				text = "Into the %s" % furniture_name(furniture_of_spot(str(action["spot"]))).to_lower()
+			elif spot_role(str(action["spot"])) == "changer":
+				text = "Wheel clamped on the tyre changer. %s" % ("Lever the old tyre off, or lift the wheel off again." \
+					if tyre_on_wheel(item_id) != 0 else "Hold a tyre that fits it and work it on.")
+		"tyre_fit":
+			var wheel := item_at_spot(str(action["spot"]))
+			var tyre := held_by(peer)
+			var q := clampf(float(action.get("quality", 1.0)), 0.0, 1.0)
+			items[wheel]["tyre"] = tyre
+			_move(tyre, "wheel", wheel)
+			items[tyre]["bead"] = q
+			_bump(c, "fitted")
+			_xp(peer, "tyre_fit", q, "item:%d" % tyre)
+			text = "Fitted the %s to the %s. %s" % [item_title(tyre), item_title(wheel), bead_text(items[tyre])]
+		"tyre_remove":
+			var wheel := item_at_spot(str(action["spot"]))
+			var tyre := tyre_on_wheel(wheel)
+			items[wheel].erase("tyre")
+			items[tyre].erase("bead")
+			_move(tyre, "held", peer)
+			_bump(c, "removed")
+			_xp(peer, "tyre_remove", 1.0, "item:%d" % tyre)
+			text = "Levered the %s off the %s" % [item_title(tyre), item_title(wheel)]
 		"order_part":
 			var part_id := str(action["part"])
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
@@ -1654,6 +1769,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"status":
 			c["tool"] = str(action.get("tool", c.get("tool", "")))
 			c["activity"] = str(action.get("activity", "")).left(60)
+			c["changer"] = int(action.get("changer", 0))   # the tyre changer they're working at, to spin it
 		"ride":
 			var bike := int(c.get("riding", 0))
 			if bikes.has(bike):
@@ -1730,11 +1846,18 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * float(DIRT_EXPOSURE.get(slot, 0.4)))
 		if id != 0 and items[id].get("lightened", false):
 			items[id]["wear"] = minf(1.0, float(items[id]["wear"]) + km * 0.0003)
-	# Tyres wear, faster at the wrong pressure.
+	# Tyres wear, faster at the wrong pressure, and a badly seated bead slowly lets one down.
 	for side in ["front", "rear"]:
 		var tyre := item_on(bike_id, side + "_tyre")
 		if tyre != 0:
 			items[tyre]["wear"] = minf(1.0, float(items[tyre]["wear"]) + km * TYRE_WEAR * float(build.tyre_wear[side]))
+			var bead := float(items[tyre].get("bead", 1.0))
+			if bead < BikeBuild.BEAD_OK and km > 0.0:
+				var key := "psi_f" if side == "front" else "psi_r"
+				var tune: Dictionary = items[tyre].get("tune", {})
+				var psi := float(tune.get("pressure", build.tune_default(key)))
+				tune["pressure"] = maxf(float(BikeBuild.TUNE_LIMITS[key][0]), psi - km * BEAD_LEAK * (1.0 - bead / BikeBuild.BEAD_OK))
+				items[tyre]["tune"] = tune
 	var tank := item_on(bike_id, "tank")
 	if tank != 0 and items[tank].has("fluid"):
 		var f: Dictionary = items[tank]["fluid"]
@@ -1953,6 +2076,7 @@ func _was_project(bike_id: int) -> bool:
 	return total / cond.size() < 0.85
 
 
+
 func _move(item_id: int, at: String, ref) -> void:
 	items[item_id]["at"] = at
 	items[item_id]["ref"] = ref
@@ -1969,6 +2093,9 @@ func _detach(bike_id: int, slot: String, at: String, ref) -> int:
 
 
 func _erase_item(item_id: int) -> void:
+	var tyre := tyre_on_wheel(item_id)
+	if tyre != 0:
+		items.erase(tyre)
 	if is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := engine_item(item_id, slot)
@@ -2100,6 +2227,20 @@ func _random_bike(bay: int) -> int:
 				options.append("none")
 			pick[key] = options[_rng.randi() % options.size()]
 		parts[slot] = pick[key]
+	# Each tyre has to suit its rim: the same make where one fits, else any tyre that does.
+	for ws in WHEEL_TYRE:
+		var ts: String = WHEEL_TYRE[ws]
+		var wheel := str(parts[ws])
+		var picked := str(parts[ts])
+		if PartsDB.tyre_fit(picked, wheel) == 0:
+			continue
+		var fits: Array = PartsDB.tyres_for(wheel)
+		if fits.is_empty():
+			continue
+		var family := picked.get_slice("_", 0)
+		var same: Array = fits.filter(func(t): return str(t).begins_with(family))
+		var from: Array = same if not same.is_empty() else fits
+		parts[ts] = from[_rng.randi() % from.size()]
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
 	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9))
 

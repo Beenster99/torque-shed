@@ -2,7 +2,7 @@
 
 A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 38 parts from 32 kinds (stands, headlight, horn, ECU, panniers, top box and fog lights are optional), at least 5 of each and 15 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree (see below); money comes later.
+Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 38 parts from 32 kinds (stands, headlight, horn, ECU, panniers, top box and fog lights are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree (see below); money comes later.
 
 ### What a bike is made of
 
@@ -47,6 +47,8 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Unpack a delivery box; take hold of or let go of equipment (posters and TVs hang on the wall you look at) | F | Y |
 | Sit on a seat (tap), or move it (hold) | F | Y |
 | Change radio station | Hold left mouse on the radio | Hold RT or A |
+| Tyre changer: fit the tyre you're holding (keep the lever on the marker) | Hold left mouse, steer the lever with the mouse | Hold RT or A, steer with the right stick |
+| Tyre changer: lever the old tyre off / lift the wheel off, tyre and all | Hold left mouse / hold right mouse | Hold RT or A / hold LT |
 | Whiteboard: draw / rub out; pen colour, eraser, thickness; text; undo; wipe it all | Hold left / right mouse; 1-6, 7, wheel; T; Z; hold X | Hold RT / LT; B colour; LB / RB thickness; D-pad left undo |
 | Menu (your level, tool upgrades and skills are in its Character tab) | Esc | Start |
 
@@ -59,6 +61,12 @@ Chains stretch and lose their lube as you ride, faster off-road: crouch by the c
 **Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt road. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
 
 Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (free for now), equipment or a new project bike. Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (8 to 20 places), parts washers (1 to 4 parts, some faster), repair machines (1 to 4 parts at once, some faster), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and wall TVs that show whoever is out riding live, or the crew board. Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters and TVs hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
+
+### The tyre changer
+
+Tyres are changed on the **tyre changer**, built into the shed against the west wall past the end of the workbench. A tyre only goes on a rim it suits: each wheel takes a range of tyre widths and a tyre is made for certain rim sizes (17", 18", 21" and so on). Look at a wheel or tyre, here or on the parts computer, and its info says what it fits; if it doesn't fit, the changer tells you why.
+
+To change one: unbolt the wheel and take it off the bike (any brake disc, caliper and pads on it come off first). The tyre comes off with it. Put the wheel on the changer. With empty hands, hold the work button to break the bead and lever the old tyre off, or hold the alt button to lift the wheel off whole. Then hold the new tyre and hold the work button: a marker runs round the rim, and you keep your tyre lever on it with the mouse (or right stick) until it has gone all the way round. Let go early and the bead slips off. How closely you follow it decides how well the bead is seated. A badly seated bead grips a little less and slowly lets the tyre down as you ride, and the part info and bay screen say so; do it again to put it right. Put the wheel back in the bike and it goes in with its new tyre. Everyone in the crew sees the changer turn while someone works on it, and a wheel left on it is kept with the shed.
 
 The **parts computer** is split into three aisles, **Shed**, **Bike** and **Outdoors**, and has a search box that finds any part or piece of kit by name, kind or spec.
 
@@ -147,7 +155,9 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Ping / stopwatch | G or middle mouse / P | D-pad right / left |
 | Get off (when stopped) | F | Y |
 
-The suspension now moves visibly over bumps and dirt ruts, the rear shocks stretch and squash with the swingarm, and landings from jumps soak up instead of bouncing. **Tyres come in widths** (for example 120/70, 160/60, 180/55, 190/50): wider tyres grip more on tarmac and less in mud, a wide front tyre steers slower, and each wheel rim takes a range of widths (the part info shows it); a tyre on the wrong rim loses grip.
+The suspension now moves visibly over bumps and dirt ruts, the rear shocks stretch and squash with the swingarm, and landings from jumps soak up instead of bouncing. **Tyres come in widths** (for example 120/70, 160/60, 180/55, 190/50): wider tyres grip more on tarmac and less in mud, a wide front tyre steers slower, and each wheel rim takes a range of widths and one rim size (the part info shows it). Tyres and rims are drawn at their real width and profile.
+
+Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L still picks low beam, high beam or off. At night the beam shows as a dusty, grainy shaft with specks drifting through it, thicker on high beam and streaming past as you ride.
 
 You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The engine sound now follows the engine: cylinders, capacity, the exhaust and the gearbox's whine. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
 
@@ -178,6 +188,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime |
+| `scripts/tyre_game.gd` | The tyre-fitting game on the tyre changer |
 | `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |

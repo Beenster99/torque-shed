@@ -110,6 +110,7 @@ func _physics_process(delta: float) -> void:
 		_effects.call("set_tyre_smoke", sb[23], Vector3(0.0, -_build.rear_radius, _build.wheelbase * 0.5))
 	for l in _fog:
 		l.visible = running
+	model.set_lights(running, _effects.beam_mode > 0)
 
 
 func current_speed() -> float:

@@ -20,6 +20,8 @@ const IDLE_FUEL_PER_LITRE := 0.9   # litres an hour
 const AIR_DENSITY := 1.2
 const DRIVETRAIN_EFFICIENCY := 0.92
 const ROLLING := 0.015
+## A tyre bead seated at least this well on the tyre changer (0..1) holds its pressure and grips fully.
+const BEAD_OK := 0.6
 ## Every tuning setting and its widest range, [min, max]. A setting missing from a tune is left
 ## stock. The ECU narrows the map and ignition and caps the limiter (see tune_range), and the
 ## suspension clickers only work on parts with that adjuster (see tune_block).
@@ -100,7 +102,7 @@ var front_radius := 0.3
 var rear_radius := 0.31
 var front_rim_radius := 0.22
 var rear_rim_radius := 0.22
-var front_tyre_width := 0.12
+var front_tyre_width := 0.12   # section widths, metres, straight from the tyres (180/55 is 0.18)
 var rear_tyre_width := 0.16
 var tyre_style := "road"
 var grip := {}                 # average of both tyres, for dashboards
@@ -314,7 +316,7 @@ func _compute_wheels() -> void:
 	var wr := part("rear_wheel")
 	front_rim_radius = float(wf["diameter"]) * 0.0127
 	rear_rim_radius = float(wr["diameter"]) * 0.0127
-	front_tyre_width = float(tf["width"]) * 0.7 / 1000.0
+	front_tyre_width = float(tf["width"]) / 1000.0
 	rear_tyre_width = float(tr["width"]) / 1000.0
 	front_radius = front_rim_radius + front_tyre_width * float(tf["aspect"])
 	rear_radius = rear_rim_radius + rear_tyre_width * float(tr["aspect"])
@@ -324,18 +326,28 @@ func _compute_wheels() -> void:
 	grip = {}
 	var scale_f := lerpf(0.7, 1.0, health["front_tyre"]) * lerpf(0.92, 1.0, health["front_wheel"])
 	var scale_r := lerpf(0.7, 1.0, health["rear_tyre"]) * lerpf(0.92, 1.0, health["rear_wheel"])
-	# Section width: a wider tyre lays more rubber on tarmac, a narrow one cuts into mud. And it has
-	# to suit the rim it's on, or it's pinched or ballooned and the contact patch suffers.
-	var fit_f := rim_fit(front_tyre_width * 1000.0, float(wf.get("rim_width", 3.5)))
-	var fit_r := rim_fit(rear_tyre_width * 1000.0, float(wr.get("rim_width", 4.5)))
+	# Section width: a wider tyre lays more rubber on tarmac, a narrow one cuts into mud. A tyre
+	# can only be fitted to a rim it suits (on the tyre changer), but a bike from an older save may
+	# still wear one that doesn't: it's pinched or ballooned and the contact patch suffers.
+	var fit_f := rim_fit(str(parts.get("front_tyre", "")), str(parts.get("front_wheel", "")))
+	var fit_r := rim_fit(str(parts.get("rear_tyre", "")), str(parts.get("rear_wheel", "")))
 	for fit in [[fit_f, "front", tf, wf], [fit_r, "rear", tr, wr]]:
-		if fit[0] != 0:
-			notes.append("The %s tyre is too %s for its %.1f\" rim." % [fit[1], "wide" if fit[0] > 0 else "narrow",
-				float(fit[3].get("rim_width", 0.0))])
+		if fit[0] == 2:
+			notes.append("The %s tyre isn't made for a %s rim. Change it on the tyre changer." % [fit[1],
+				PartsDB.inch_text(float(fit[3].get("diameter", 17.0)))])
+		elif fit[0] != 0:
+			notes.append("The %s tyre is too %s for its %.1f\" rim. Change it on the tyre changer." % [fit[1],
+				"wide" if fit[0] > 0 else "narrow", float(fit[3].get("rim_width", 0.0))])
+	# A bead that wasn't seated properly on the changer lets the tyre squirm on the rim.
+	var bead_f := float(condition.get("front_tyre", {}).get("bead", 1.0))
+	var bead_r := float(condition.get("rear_tyre", {}).get("bead", 1.0))
+	for b in [[bead_f, "front"], [bead_r, "rear"]]:
+		if float(b[0]) < BEAD_OK:
+			notes.append("The %s tyre's bead isn't seated right: it grips less and loses pressure. Refit it on the tyre changer." % b[1])
 	for surf in tr["grip"]:
 		var road: bool = surf == "tarmac"
-		grip_front[surf] = float(tf["grip"][surf]) * scale_f * _width_grip(front_tyre_width / 0.7, road) * (0.9 if fit_f != 0 else 1.0)
-		grip_rear[surf] = float(tr["grip"][surf]) * scale_r * _width_grip(rear_tyre_width, road) * (0.9 if fit_r != 0 else 1.0)
+		grip_front[surf] = float(tf["grip"][surf]) * scale_f * _width_grip(front_tyre_width, road) * (0.9 if fit_f != 0 else 1.0) * bead_grip(bead_f)
+		grip_rear[surf] = float(tr["grip"][surf]) * scale_r * _width_grip(rear_tyre_width, road) * (0.9 if fit_r != 0 else 1.0) * bead_grip(bead_r)
 		grip[surf] = (grip_front[surf] + grip_rear[surf]) * 0.5
 	# Tyre pressures: off the tyre's best, it grips less on tarmac. A little soft finds more
 	# grip in the dirt, but squirms, drags and wears.
@@ -365,13 +377,15 @@ static func _width_grip(width: float, tarmac: bool) -> float:
 	return clampf(1.0 - 0.1 * (mm - 120.0) / 120.0, 0.9, 1.06)
 
 
-## Whether a tyre this wide (mm) suits a rim this wide (inches): 0 if it does, 1 too wide, -1 too narrow.
-static func rim_fit(tyre_mm: float, rim_in: float) -> int:
-	if tyre_mm / rim_in > 62.0:
-		return 1
-	if tyre_mm / rim_in < 24.0:
-		return -1
-	return 0
+## Whether a tyre suits a wheel's rim: 0 if it does, 1 too wide, -1 too narrow, 2 made for a
+## different rim diameter (see PartsDB.tyre_fit).
+static func rim_fit(tyre_id: String, wheel_id: String) -> int:
+	return PartsDB.tyre_fit(tyre_id, wheel_id)
+
+
+## Grip from how well a tyre's bead was seated on the changer, 0..1: a sloppy job costs up to 8%.
+static func bead_grip(bead: float) -> float:
+	return lerpf(0.92, 1.0, clampf(bead / BEAD_OK, 0.0, 1.0))
 
 
 func _compute_engine(block: Dictionary, head: Dictionary) -> void:

@@ -134,6 +134,8 @@ func _draw() -> void:
 	elif walker:
 		_draw_crosshair()
 		_draw_toolbar()
+		if walker.tyre_game:
+			_draw_tyre_game(walker.tyre_game)
 	if walker and (walker.stopwatch.showing() or (bike == null and walker.tool == "watch")):
 		_draw_stopwatch()
 	if walker:
@@ -192,6 +194,34 @@ func _draw_stopwatch() -> void:
 		var pad := Controls.device() >= 0 and Controls.active_device >= 0
 		var hint := "RT: start / stop   LT: lap / reset" if pad else "Left mouse: start / stop   Right mouse: lap / reset   P: start / stop anywhere"
 		draw_string(font, Vector2(r.position.x, r.end.y + 20), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.6))
+
+
+## The tyre changer game: the rim as a ring, the marker going round it, your tyre lever, and
+## each stretch of the rim coloured by how well the bead went on there.
+func _draw_tyre_game(game: TyreGame) -> void:
+	var font := get_theme_default_font()
+	var c := size * 0.5
+	var r := minf(size.y * 0.2, 150.0)
+	draw_circle(c, r + 34.0, Color(0.03, 0.03, 0.04, 0.55))
+	draw_arc(c, r, 0.0, TAU, 64, Color(1, 1, 1, 0.25), 10.0, true)
+	for i in TyreGame.SEGMENTS:
+		var q := game.segment(i)
+		if q < 0.0:
+			continue
+		var a0 := -PI * 0.5 + TAU * i / TyreGame.SEGMENTS
+		draw_arc(c, r, a0, a0 + TAU / TyreGame.SEGMENTS + 0.01, 4, Color(1.0, 0.3, 0.2).lerp(Color(0.3, 1.0, 0.4), q), 10.0, true)
+	var m := c + game.marker() * r
+	draw_circle(m, 13.0, Color(0, 0, 0, 0.5))
+	draw_circle(m, 10.0, UITheme.ACCENT)
+	var lever := c + game.cursor * r
+	var on := game.on_target()
+	draw_line(c, lever, Color(1, 1, 1, 0.35), 3.0, true)
+	draw_circle(lever, 7.0, Color(1, 1, 1).lerp(Color(0.3, 1.0, 0.4), on))
+	var pad := Controls.device() >= 0 and Controls.active_device >= 0
+	var hint := "Keep the lever on the marker with the right stick" if pad else "Keep the lever on the marker with the mouse"
+	draw_string(font, Vector2(0, c.y - r - 48), "WORK THE TYRE ON", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
+	draw_string(font, Vector2(0, c.y + r + 52), "%s  ·  bead %d%%" % [hint, roundi(game.quality() * 100.0)],
+		HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
 
 
 func _draw_crosshair() -> void:

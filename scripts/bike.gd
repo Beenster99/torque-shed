@@ -245,8 +245,13 @@ func _physics_process(delta: float) -> void:
 
 	if horn_audio:
 		horn_audio.pressed = horn and controls_enabled and not is_crashed
+	# Every lamp, lens and the clocks run off the ignition: a bike that isn't running is dark.
 	for l in _fog:
 		l.visible = engine_on
+	if model:
+		model.set_lights(engine_on, beam > 0)
+	if effects:
+		effects.beam_mode = beam
 
 	if is_crashed:
 		throttle = 0.0
