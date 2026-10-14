@@ -144,6 +144,12 @@ func _run_all() -> void:
 	_test_money_pay_and_transfers()
 	_test_money_loans()
 	_test_money_parts_and_selling()
+	print("Contracts: customers, offers, MOT, goals, payouts and saving")
+	_test_contract_customers()
+	_test_contract_mot()
+	_test_contract_goals_and_pay()
+	_test_contract_save()
+	await _test_contract_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -3124,12 +3130,12 @@ func _test_tv_channels() -> void:
 	old.erase("screens")
 	Shed.load_state(old, "Tester")
 	check(Shed.screens.is_empty(), "a save from before channels loads with every screen on its home channel")
-	# The money pages read real numbers; contracts is still a placeholder, and the XP page says
+	# The money pages read real numbers; contracts is a list, and the XP page says
 	# so when there's no XP system.
 	check(not TvChannels.garage_data().has("placeholder") and int(TvChannels.garage_data()["cash"]) == Shed.garage_money
-		and not TvChannels.money_data(me).has("placeholder") and TvChannels.contracts_data()["offered"].is_empty()
+		and not TvChannels.money_data(me).has("placeholder") and TvChannels.contracts_data()["offered"] is Array
 		and TvChannels.afford_data(me)["items"].size() > 3 and int(TvChannels.afford_data(me)["items"][0]["price"]) > 0,
-		"the money pages have real numbers, and contracts placeholder data")
+		"the money pages have real numbers, and the contracts page a list")
 	if get_node_or_null("/root/Progress") == null:
 		check(TvChannels.xp_data().get("offline", false), "with no XP system the XP page says it's starting up")
 	# Every page draws.
@@ -6263,3 +6269,327 @@ func _test_money_parts_and_selling() -> void:
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
+
+
+# ---------------------------------------------------------------------------- contracts
+
+## A bike in a known, roadworthy state: new parts, mirrors, fluids full, chain set right.
+func _mot_ready_bike(bay: int) -> int:
+	var parts: Dictionary = PartsDB.DEFAULT_BUILD.duplicate()
+	parts["mirrors"] = "round_mirrors"
+	var id := Shed._new_bike(parts, bay, "Test MOT", 0.0)
+	_make_roadworthy(id)
+	return id
+
+
+## Puts every part on a bike back to like new, fits what the road needs and fills it up.
+func _make_roadworthy(bike_id: int) -> void:
+	var road_kit := {"mirrors": "round_mirrors", "headlight": "round_7", "horn": "disc_horn"}
+	for slot in road_kit:
+		if Shed.item_on(bike_id, slot) == 0:
+			var it := Shed._new_item(str(road_kit[slot]), 0.0, 0.0, 0.0)
+			Shed._move(it, "bike", bike_id)
+			Shed.bikes[bike_id]["slots"][slot] = it
+			Shed.bikes[bike_id]["bolted"][slot] = true
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(bike_id, slot)
+		if id == 0:
+			continue
+		var item: Dictionary = Shed.items[id]
+		item["rust"] = 0.0
+		item["dirt"] = 0.0
+		item["wear"] = 0.0
+		if slot == "exhaust" and str(item["part"]) == "straight_pipe":
+			item["part"] = "stock_muffler"
+		if str(PartsDB.get_part(str(item["part"])).get("style", "")) == "slick":
+			var wheel := str(Shed.items[Shed.item_on(bike_id, slot.replace("tyre", "wheel"))]["part"])
+			item["part"] = PartsDB.tyres_for(wheel).filter(func(t): return str(PartsDB.get_part(str(t)).get("style", "")) != "slick")[0]
+		if item.has("fluid"):
+			item["fluid"]["litres"] = PartsDB.fluid_capacity(str(item["part"]))
+			item["fluid"]["age"] = 0.0
+			if str(item["fluid"]["type"]) == "":
+				item["fluid"]["type"] = {"engine": "semi_10w40", "tank": "unleaded_95"}.get(slot, "dot4")
+		if item.has("slack"):
+			item["slack"] = Shed.CHAIN_SLACK_SET
+			item["lube"] = 1.0
+		if item.has("bead"):
+			item["bead"] = 1.0
+	for slot in PartsDB.BIKE_SLOTS:
+		if Shed.item_on(bike_id, slot) != 0:
+			Shed.bikes[bike_id]["bolted"][slot] = true
+
+
+func _test_contract_customers() -> void:
+	Shed.start_new("Tester", 41)
+	check(Contracts.customers().is_empty() and Contracts.jobs().is_empty() and Contracts.reputation() == 0,
+		"a new shed has no customers, no jobs and no reputation")
+	check(Contracts.unlocked(0) == ["maint"] and Contracts.unlocked(int(Contracts.UNLOCK["mot"])).has("mot")
+		and Contracts.unlocked(10).size() == 4, "reputation unlocks harder jobs: service first, then MOT, mods and bespoke builds")
+	Contracts.advance(Contracts.FIRST_CUSTOMER + 0.05)
+	check(Contracts.customers().size() == 1, "the first customer turns up soon after the shed opens")
+	var c: Dictionary = Contracts.customers().values()[0]
+	check(str(c["offer"]["kind"]) == "maint" and str(c["name"]).contains(" ") and c["look"].get("top") is Color,
+		"with an easy job at no reputation, a name and their own clothes (%s, %s)" % [c["name"], c["offer"]["title"]])
+	var most := 0
+	for i in 12:
+		Contracts.advance(Contracts.SPAWN_HOURS.y * 0.25)
+		most = maxi(most, Contracts.customers().size())
+	check(most <= Contracts.MAX_WAITING and most >= 1, "never more than a couple waiting (at most %d)" % most)
+	Contracts.advance(Contracts.PATIENCE_HOURS + 0.1)
+	var stayed := Contracts.customers().values().filter(func(x): return Contracts.clock() >= float(x["leave_at"]))
+	check(stayed.is_empty(), "ignored customers leave after a while")
+	Contracts._st()["reputation"] = 20
+	for kind in Contracts.KINDS:
+		var id := Contracts.spawn(kind)
+		var o: Dictionary = Contracts.customers()[id]["offer"]
+		var ok: bool = not o["goals"].is_empty() and int(o["pay"]) > 0 and int(o["days"]) >= 2 \
+			and str(o["title"]).begins_with(str(Contracts.KIND_NAMES[kind]))
+		if kind in ["mod", "bespoke"]:
+			ok = ok and int(o["budget"]) > 0 and o["goals"].size() >= 2
+		if kind == "mot":
+			ok = ok and o["goals"] == [{"t": "mot"}]
+		check(ok, "a %s offer: pay %s, budget %s, %d days (%s)" % [kind, Contracts.money(int(o["pay"])),
+			Contracts.money(int(o["budget"])), int(o["days"]), ", ".join(o["goals"].map(func(g): return Contracts.goal_text(g)))])
+		Contracts.customers().erase(id)
+	var bespoke := Contracts.make_offer("bespoke", "Lady Okafor")
+	var maint := Contracts.make_offer("maint", "Dave Smith")
+	check(int(bespoke["pay"]) > int(maint["pay"]) * 5 and int(bespoke["days"]) > int(maint["days"]) * 2,
+		"a bespoke build pays far more and has far longer than a service")
+	var cid := Contracts.spawn("maint")
+	check(Shed.check(2, {"a": "contract_spawn"}) != "" and Shed.check(Shed.me(), {"a": "contract_spawn"}) == "",
+		"only the host can send customers from the Debug tab")
+	Shed.request({"a": "contract_decline", "customer": cid})
+	check(not Contracts.customers().has(cid) and Contracts.reputation() == 20, "turning a job down sends them off, no harm done")
+
+
+func _mot_fail_names(bike: int) -> Array:
+	return MotTest.fails(MotTest.inspect(bike)).map(func(r): return r["name"])
+
+
+func _test_contract_mot() -> void:
+	Shed.start_new("Tester", 42)
+	var bike := _mot_ready_bike(3)
+	var sheet := MotTest.inspect(bike)
+	check(sheet.size() >= 30 and MotTest.fails(sheet).is_empty(), "a sound bike passes all %d MOT checks %s" % [sheet.size(),
+		str(_mot_fail_names(bike))])
+	var areas := {}
+	for r in sheet:
+		areas[r["area"]] = true
+	check(areas.has("Tyres") and areas.has("Brakes") and areas.has("Suspension") and areas.has("Lights") and areas.has("Exhaust")
+		and areas.has("Structure") and areas.has("Fluids") and areas.has("Drive"),
+		"the sheet covers tyres, brakes, suspension, drive, lights, exhaust, frame and fluids")
+	var tyre := Shed.item_on(bike, "front_tyre")
+	Shed.items[tyre]["wear"] = 0.9
+	check(is_equal_approx(MotTest.tread_mm(Shed.items[tyre]), 0.6), "tread depth comes from tyre wear (0.6 mm left at 90% worn)")
+	check(_mot_fail_names(bike).has("Front tyre tread depth"), "under 1 mm of tread fails")
+	Shed.items[tyre]["wear"] = 0.8
+	check(not _mot_fail_names(bike).has("Front tyre tread depth"), "1.2 mm is still legal")
+	Shed.items[Shed.item_on(bike, "rear_pads")]["wear"] = 0.9
+	Shed.items[Shed.item_on(bike, "frame")]["rust"] = 0.7
+	Shed.items[Shed.item_on(bike, "chain")]["slack"] = 60.0
+	Shed._erase_item(Shed.item_on(bike, "mirrors"))
+	Shed.bikes[bike]["slots"]["mirrors"] = 0
+	Shed.items[Shed.item_on(bike, "exhaust")]["part"] = "straight_pipe"
+	var f := _mot_fail_names(bike)
+	check(f.has("Rear pads") and f.has("Frame corrosion and damage") and f.has("Chain tension") and f.has("Mirrors fitted")
+		and f.has("Exhaust noise"), "worn pads, a rusty frame, a slack chain, no mirrors and a straight pipe all fail (%s)" % str(f))
+	# The job: take it on, test it, fix it, test again, hand it back for the certificate.
+	Shed.start_new("Tester", 43)
+	Contracts._st()["reputation"] = 3
+	var cid := Contracts.spawn("mot")
+	var cust: String = Contracts.customers()[cid]["name"]
+	Shed.request({"a": "contract_accept", "customer": cid})
+	check(Contracts.jobs().size() == 1 and not Contracts.customers().has(cid), "accepting takes the job on and the customer goes")
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var jid := int(job["id"])
+	var jb := int(job["bike"])
+	check(Shed.bikes.has(jb) and int(Shed.bikes[jb]["bay"]) >= 0 and str(Shed.bikes[jb]["name"]).contains(cust.get_slice(" ", 0)),
+		"their bike is delivered to a free bay (%s)" % str(Shed.bikes.get(jb, {}).get("name", "")))
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}) != "", "it can't be handed back where it stands")
+	Shed.request({"a": "contract_mot_test", "job": jid})
+	check(job["mot"]["tested"] and int(job["mot"]["fails"]) > 0, "the first test finds faults (%d: %s)" % [int(job["mot"]["fails"]),
+		str(MotTest.fails(job["mot"]["sheet"]).map(func(r): return r["name"]))])
+	check(not Contracts.eval_goal(job, {"t": "mot"})["done"], "a failed test isn't a pass")
+	_make_roadworthy(jb)
+	Shed.request({"a": "contract_mot_test", "job": jid})
+	check(int(job["mot"]["fails"]) == 0 and Contracts.eval_goal(job, {"t": "mot"})["done"] and int(job["mot"]["tests"]) == 2,
+		"fixed and re-tested, it passes %s" % str(MotTest.fails(job["mot"]["sheet"]).map(func(r): return r["name"])))
+	Contracts.note_action(Shed.me(), {"a": "clean", "bike": jb})
+	check(not Contracts.eval_goal(job, {"t": "mot"})["done"] and job["workers"].has(Shed.me()), "work on it after a test means testing it again")
+	Shed.request({"a": "contract_mot_test", "job": jid})
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}).contains("reception"), "it has to go round to reception")
+	Shed.bikes[jb]["xf"] = Contracts.reception()
+	var before := Shed.garage_money
+	var expected := int(Contracts.payout(job)["total"])
+	Shed.request({"a": "contract_hand_in", "job": jid})
+	var done: Dictionary = Contracts._st()["done"][0] if not Contracts._st()["done"].is_empty() else {}
+	check(Contracts.jobs().is_empty() and not Shed.bikes.has(jb)
+		and not Shed.items.values().any(func(it): return str(it["at"]) == "bike" and int(it["ref"]) == jb),
+		"handed back, the customer rides it away")
+	check(not done.is_empty() and not done.get("cert", {}).is_empty() and str(done["cert"]["number"]).begins_with("TS-"),
+		"with an MOT certificate (%s)" % str(done.get("cert", {}).get("number", "")))
+	check(Shed.garage_money > before and Shed.garage_money - before <= expected and Contracts.reputation() == 3 + int(Contracts.REP_GAIN["mot"]),
+		"the garage is paid (%s of %s) and the reputation goes up" % [Contracts.money(Shed.garage_money - before), Contracts.money(expected)])
+
+
+func _test_contract_goals_and_pay() -> void:
+	Shed.start_new("Tester", 44)
+	Contracts._st()["reputation"] = 20
+	# Modifications: known goals on a known bike.
+	var cid := Contracts.spawn("mod")
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var bike := int(job["bike"])
+	var pan := Shed.item_on(bike, "panniers")
+	if pan != 0:
+		Shed._erase_item(pan)
+		Shed.bikes[bike]["slots"]["panniers"] = 0
+	var ex := Shed.item_on(bike, "exhaust")
+	Shed.items[ex]["part"] = "stock_muffler"
+	job["goals"] = [{"t": "fit", "slot": "panniers"}, {"t": "paint", "color": 3}, {"t": "pipes", "from": "stock_muffler"}]
+	job["pay"] = 1000
+	job["budget"] = 500
+	Shed.items[Shed.item_on(bike, "tank")]["color"] = Shed.PAINTS[1]
+	check(Contracts.progress(job) == 0.0, "none of the goals are met to start with")
+	var bag := Shed._new_item("leather_saddlebags", 0.0, 0.0, 0.0)
+	Shed._move(bag, "bike", bike)
+	Shed.bikes[bike]["slots"]["panniers"] = bag
+	Shed.bikes[bike]["bolted"]["panniers"] = true
+	check(is_equal_approx(Contracts.progress(job), 1.0 / 3.0), "panniers on: a third of the way")
+	Shed.items[Shed.item_on(bike, "tank")]["color"] = Shed.PAINTS[3]
+	Shed.items[ex]["part"] = "full_system"
+	check(Contracts.progress(job) == 1.0, "painted %s and a full system on: every goal met" % Shed.PAINT_NAMES[3])
+	job["due"] = Contracts.clock() + 10.0
+	var pay := Contracts.payout(job, 400)
+	check(int(pay["labour"]) == 1000 and int(pay["parts"]) == 400 and int(pay["tip"]) > 0 and int(pay["rep"]) == int(Contracts.REP_GAIN["mod"]),
+		"on time and within budget: the full fee, the parts back and a tip (%s)" % Contracts.money(int(pay["total"])))
+	var over := Contracts.payout(job, 700)
+	check(int(over["over"]) == 200 and int(over["labour"]) == 800 and int(over["parts"]) == 500, "200 over budget comes off the pay")
+	job["due"] = Contracts.clock() - 30.0
+	var late := Contracts.payout(job, 400)
+	check(int(late["late"]) == 2 and int(late["labour"]) == 700 and int(late["tip"]) == 0 and int(late["rep"]) < int(pay["rep"]),
+		"two days late: 30% off, no tip, less reputation")
+	job["goals"].append({"t": "top_kmh", "min": 900.0})
+	var part_met := Contracts.payout(job, 400)
+	check(is_equal_approx(float(part_met["sat"]), 0.75) and int(part_met["labour"]) < int(late["labour"]), "a goal missed pays less")
+	# Bespoke: the targets set from a style's own parts can be met by building it.
+	for style in Contracts.STYLES:
+		var ref := Contracts.style_build(style)
+		check(int(Contracts.style_marks(style, ref)[0]) >= 3, "a %s built from its own parts counts as one" % style)
+	var ref2 := Contracts.style_build("cafe")
+	var built := Shed._new_bike(ref2, 3, "Cafe test", 0.0)
+	_make_roadworthy(built)
+	var goals := Contracts._bespoke_goals("cafe", ref2, Shed._rng)
+	for g in goals:
+		if g["t"] == "paint":
+			g["color"] = Shed.paint_index(Shed.items[Shed.item_on(built, "tank")]["color"])
+	var bj := {"id": 999, "kind": "bespoke", "bike": built, "goals": goals, "pay": 3000, "budget": 4000, "due": Contracts.clock() + 100.0,
+		"start_parts": {"frame": ref2["frame"]}}
+	var rows := Contracts.evaluate(bj)
+	check(rows.all(func(r): return r["done"]), "a bespoke cafe racer's targets are reachable: %s" % str(rows.map(func(r): return "%s %s" % [str(r["text"]).left(24), r["have"]])))
+	# Maintenance: each task reads the bike.
+	Shed.start_new("Tester", 45)
+	cid = Contracts.spawn("maint")
+	Contracts.customers()[cid]["offer"]["goals"] = Contracts.TASKS.keys().map(func(k): return {"t": "task", "task": k})
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var mj: Dictionary = Contracts.jobs().values()[0]
+	var mrows := Contracts.evaluate(mj)
+	check(mrows.all(func(r): return not r["done"]), "a service job's bike comes in needing every task (%s)" % str(mrows.map(func(r): return r["have"])))
+	_make_roadworthy(int(mj["bike"]))
+	mrows = Contracts.evaluate(mj)
+	check(mrows.all(func(r): return r["done"]), "serviced, every task is ticked off (%s)" % str(mrows.map(func(r): return r["have"])))
+	# Paying out: the crew who worked on it and the garage.
+	Contracts.note_action(Shed.me(), {"a": "unbolt", "bike": int(mj["bike"]), "slot": "chain"})
+	check(int(mj["workers"].get(Shed.me(), 0)) == 1, "work on a contract bike counts who did it")
+	Shed.bikes[int(mj["bike"])]["xf"] = Transform3D(Basis(), Contracts.door_front())
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": mj["id"]}) == "", "just outside the roller door counts as handing it back")
+	var xp_before := int(Progress.profile["xp"])
+	var g0 := Shed.garage_money
+	var total := int(Contracts.payout(mj)["total"])
+	Shed.request({"a": "contract_hand_in", "job": mj["id"]})
+	check(Shed.garage_money > g0 and Shed.garage_money - g0 <= total, "the garage gets its share (%s of %s)" % [
+		Contracts.money(Shed.garage_money - g0), Contracts.money(total)])
+	check(int(Progress.profile["xp"]) > xp_before and Progress.XP.has("contract_maint") and Progress.XP.has("contract_bespoke"),
+		"and the crew get contract XP")
+	var tv := TvChannels.contracts_data()
+	check(not tv["placeholder"] and not tv["done"].is_empty() and str(tv["done"][0].get("title", "")) != "", "the Contracts TV channel lists it as done")
+
+
+func _test_contract_save() -> void:
+	Shed.start_new("Tester", 46)
+	Contracts._st()["reputation"] = 12
+	var cid := Contracts.spawn("mod")
+	var cid2 := Contracts.spawn("bespoke")
+	Shed.request({"a": "contract_accept", "customer": cid2})
+	Contracts.advance(1.0)
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var bike := int(job["bike"])
+	check(str(job["kind"]) == "bespoke" and Shed.bikes[bike].get("scratch", false) and Shed.item_on(bike, "frame") != 0
+		and Shed.item_on(bike, "engine") == 0, "a bespoke build starts as a bare frame on a bay")
+	var clock := Contracts.clock()
+	var text := var_to_str(Shed.save_snapshot().duplicate(true))
+	Shed.start_new("Tester", 47)
+	Shed.load_state(str_to_var(text), "Tester")
+	check(Contracts.reputation() == 12 and Contracts.customers().has(cid) and Contracts.jobs().size() == 1
+		and is_equal_approx(Contracts.clock(), clock), "customers, jobs, reputation and the clock survive a save")
+	var back: Dictionary = Contracts.jobs().values()[0]
+	check(int(back["bike"]) == bike and Shed.bikes.has(bike) and back["goals"] == job["goals"], "with the job still on its bike")
+	var nid := Contracts.spawn("maint")
+	check(nid != cid and nid > int(back["id"]), "new customers and jobs get new ids after loading")
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	old.erase("contracts")
+	Shed.start_new("Tester", 48)
+	Shed.load_state(old, "Tester")
+	check(Contracts.customers().is_empty() and Contracts.jobs().is_empty() and Contracts.reputation() == 0 and Contracts.clock() == 0.0,
+		"a save from before contracts opens with none")
+
+
+func _test_contract_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	var view: ContractsView = main.contracts_view
+	Shed.request({"a": "contract_spawn", "kind": "maint"})
+	await get_tree().process_frame
+	check(view.views.size() == 1, "a customer appears in the world")
+	var cv: CustomerView = view.views.values()[0]
+	var start := cv.global_position
+	var arrived := [false]
+	cv.arrived.connect(func(_v): arrived[0] = true)
+	for i in 3000:
+		await get_tree().process_frame
+		if arrived[0]:
+			break
+	var at := Contracts.reception().origin
+	check(arrived[0] and cv.at_counter and Vector2(cv.global_position.x, cv.global_position.z).distance_to(Vector2(at.x, at.z)) < 0.2
+		and start.distance_to(cv.global_position) > 3.0, "they walk to reception and ring the bell")
+	check(cv.is_in_group("sales_visitor"), "and open the sales office's doors as they come")
+	# Look at them and press F.
+	main.walker.global_position = at - Contracts.reception().basis.z * 1.6 + Vector3(0, 0.1, 0)
+	await get_tree().physics_frame
+	main.walker.camera.look_at(cv.global_position + Vector3.UP * 1.4)
+	await get_tree().physics_frame
+	check(view.looked_at() == cv.customer_id, "looking at them picks them out")
+	var ev := InputEventAction.new()
+	ev.action = "interact"
+	ev.pressed = true
+	view._unhandled_input(ev)
+	await get_tree().physics_frame
+	check(main.contract_panel.visible and main.contract_panel.customer_id == cv.customer_id and not main.walker.controls_enabled,
+		"F opens their offer card, and you stand still while it's up")
+	main.contract_panel.press("Accept")
+	await get_tree().process_frame
+	check(not main.contract_panel.visible and Contracts.jobs().size() == 1, "Accept takes the job on")
+	for i in 30:
+		await get_tree().process_frame
+	check(view.views.is_empty(), "and they head off")
+	var tabs: Array = main.menu.find_children("Contracts", "ContractsTab", true, false)
+	if not tabs.is_empty():
+		(tabs[0] as ContractsTab).refresh(true)
+	check(not tabs.is_empty() and tabs[0].find_children("*", "Button", true, false).any(func(b): return (b as Button).text == "Hand back"),
+		"the Esc menu's Contracts tab lists the job")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame

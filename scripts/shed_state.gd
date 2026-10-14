@@ -90,6 +90,8 @@ const MAX_GARAGE_MONEY := 100000000
 ## Everything else about the business's money: wage cut, owner, ledger, loans (see Money.defaults).
 var bank := Money.defaults()
 var _clock_hours := -1.0       # host: the clock last frame, to see midnight pass
+## Customers at reception and the jobs taken on for them (see Contracts).
+var contracts := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -166,6 +168,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	bank = Money.defaults()
 	Money.log_entry(bank, Money.START_FUNDS, "Opening funds", garage_money)
 	Money._mark_milestones(bank, garage_money)
+	contracts = Contracts.empty()
 	door_open = true
 	lights_on = true
 	room_lights = {"paint": true, "storage": true}
@@ -356,6 +359,7 @@ func _add_new_slots() -> void:
 func join_remote() -> void:
 	garage_money = 0
 	bank = Money.defaults()
+	contracts = Contracts.empty()
 	board = BoardData.empty()
 	_clear_prints()
 	board_changed.emit()
@@ -376,6 +380,7 @@ func stop() -> void:
 	garage_money = 0
 	bank = Money.defaults()
 	_clock_hours = -1.0
+	contracts = Contracts.empty()
 	_washer_by.clear()
 	board = BoardData.empty()
 	_clear_prints()
@@ -1723,6 +1728,8 @@ func check(peer: int, action: Dictionary) -> String:
 			return "Someone is riding that bike."
 		elif bikes[bike_id].get("pusher", 0) != 0 and bikes[bike_id].get("pusher", 0) != peer:
 			return "Someone is wheeling that bike about."
+	if a.begins_with("contract_"):
+		return Contracts.check(peer, action)
 	if a.begins_with("dyno_") and a != "dyno_run":
 		return _dyno_check(peer, action)
 	if a.begins_with("blast"):
@@ -2338,6 +2345,14 @@ func _apply(peer: int, action: Dictionary) -> void:
 		_tell(peer, why, false)
 		return
 	var a := str(action["a"])
+	Contracts.note_action(peer, action)
+	if a.begins_with("contract_"):
+		var said_c := Contracts.apply(peer, action)
+		if said_c != "":
+			_tell(peer, said_c, true)
+		_mark_dirty()
+		changed.emit()
+		return
 	if a.begins_with("blast"):
 		var told := _blast_apply(peer, action)
 		if told != "":
@@ -3922,7 +3937,7 @@ func _mark_dirty() -> void:
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank}
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts}
 	if with_board:
 		state["board"] = board
 	return state
@@ -3955,6 +3970,8 @@ func _sync(state: Dictionary) -> void:
 	bank = Money.sanitize(state.get("bank"))
 	if not state.has("bank"):
 		Money._mark_milestones(bank, garage_money)
+	# Sheds saved before contracts have no customers or jobs.
+	contracts = Contracts.sanitize(state.get("contracts"))
 	# Sheds saved before the side rooms had switches: their lights start on.
 	room_lights = {"paint": true, "storage": true}
 	var saved_rooms = state.get("room_lights", {})
@@ -3992,6 +4009,7 @@ func _process(delta: float) -> void:
 		return
 	_cool_dyno(delta)
 	_money_clock()
+	Contracts.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":

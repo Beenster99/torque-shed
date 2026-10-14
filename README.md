@@ -50,6 +50,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
 | Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
 | Sell a loose part or a whole bike (parts computer, Sell aisle); send money, take money out, loans (Esc, Money tab) | F at the computer / Esc | Y / Start |
+| Talk to a customer waiting at reception (their offer card: Accept, Decline) | F | Y |
 | Unpack a delivery box; take hold of or let go of equipment (posters, TVs and the whiteboard hang on the wall you look at) | F | Y |
 | Carrying equipment: push it further away / pull it closer | Mouse wheel up / down (or Q / E) | LB / RB |
 | Carrying equipment: snapping to walls and corners on or off | R or right mouse | X |
@@ -168,6 +169,21 @@ The **whiteboard** on the front wall, left of the roller door, is for the crew's
 
 The **radio** on the shelf above the workbench streams internet radio stations (SomaFM and Radio Paradise). Everyone in the shed hears the same station; each player's PC streams it, so it needs an internet connection. The Esc menu has volume sliders for sound effects and the radio. Stations live in `data/radio.json`.
 
+### Contracts: customers at reception
+
+Customers come to the **sales office reception** (just outside the roller door until the shed has a sales office) every few in-game hours, a couple at most at once; a **bell** rings as each one reaches the counter. Look at them and press **F** to see their offer card: who they are, the job, their bike, what they want, the budget, the pay and the deadline in in-game days. **Accept** and their bike is delivered to a free bay; **Decline** and they leave. Ignore them and they give up after about three in-game hours.
+
+| Job | Unlocks at reputation | What it is |
+| --- | --- | --- |
+| Maintenance | 0 | A service: oil change, chain lubed and tensioned, brake pads, air and oil filters, spark plugs, brake fluid, a wash (3 to 5 of them). 2-3 days |
+| MOT | 2 | The full inspection: tyre tread depth (legal minimum 1 mm), tyre condition and bead, wheels and rims, brake discs (thickness), pads (mm left), calipers, master cylinders, brake fluid level and age, fork and shock leaks, handlebars, chain and sprocket wear and tension, headlight, rear light, number plate (the tail unit), horn, dash, mirrors, exhaust condition and noise (a straight pipe is too loud), frame rust, the tank, the seat, engine oil and everything bolted up. 3-4 days |
+| Modifications | 5 | 2 to 4 goals (a top speed, a weight, a style such as cafe racer or scrambler, panniers or a fairing fitted, new pipes, a paint colour) and a parts budget. 5-7 days |
+| Bespoke build | 10 | An exclusive customer: a bare frame on a bay, built up to their targets (style, top speed or power, weight, a particular part, colour, condition 95% or better). Big pay, 10-14 days |
+
+The **Contracts** tab in the Esc menu lists every job with its goals ticked off as you meet them, the deadline, the parts spent against the budget and what handing it back now would pay. For an MOT job, **Run MOT test** fills in the pass/fail sheet with what to fix; fix the fails and test again (any work on the bike after a test needs a re-test). When the bike is finished, wheel it round to reception (or just out of the roller door) and press **Hand back**: the customer rides it away and pays. A pass on an MOT issues an **MOT certificate**.
+
+**Pay**: the fee, plus the parts back up to the budget; spending over the budget comes off the fee. Missing goals pays less (an MOT that never passed pays only the test fee), each day late takes 15% off (up to half), and a job done to the letter on time earns a tip, bigger for a bike in great condition. The garage's account gets the parts money and half the labour and tip; the other half is shared out to the players who worked on the bike, by how much each did. Good jobs raise the garage's **reputation** (1 for a service up to 5 for a bespoke build); late or poor ones lower it. The **Contracts** TV channel shows who's waiting, the jobs in progress with their deadlines, and what's done.
+
 ### The dyno room
 
 Through the doorway in the back wall, between bays 2 and 3, is the **dyno room**: a rolling road set into the floor with a drum under the rear wheel, a clamp for the front, strap-down posts, a big cooling fan, the dyno desk and a wall screen. The doorway is just wide enough to wheel a bike through. The room has its **own light switch** inside the door, next to the **fan switch**.
@@ -216,6 +232,8 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Riding: a jump of half a second or more (more for longer, half again for a clean landing), wheelies (3 per 10 m), stoppies (4 per 5 m), burnouts, knee-down corners, every km ridden, new top speeds (50, 80, 100 ... 320 km/h), 0-100 km/h times, and beating your longest jump, wheelie or stoppie | 2 to 60 |
 | Selling a bike, selling a part (at the parts computer) | 100, 5 |
 | The business's account reaching 10k, 25k, 50k, 100k, 250k, 500k and 1 million (everyone in the shed, once each) | 50 |
+| Running an MOT test on a contract bike | 6 |
+| A contract handed back: a service, an MOT, modifications, a bespoke build (x how many goals were met; to everyone who worked on it) | 40, 60, 100, 250 |
 
 **Levels**: level 2 takes 75 XP, and each level takes more than the last (level 10 is about 3,900 XP, level 50 the top). Levelling up sounds a fanfare and gives you **one tool point and one skill point**. The Character tab lists **goals** too ("Land a 2 s jump", "Restore a bike to 95% health", "Ride 10 km" and more), each paying a lump of XP once.
 
@@ -291,7 +309,7 @@ In co-op the host keeps the books: everyone's wages, transfers and the business 
 
 ### Debug tab
 
-The Esc menu's **Debug** tab is for trying things out: **Reset my XP** (back to level 1 with no upgrades, skills or goals), **Max my XP** (top level, every point to spend), **Reset everyone's XP** (host only: every player in the shed), **Reset my money**, **Max my money**, **Reset garage money** and **Give the garage £1,000,000** (the last two host only). Every reset asks first. Your money is kept with your character and the garage's with the shed, and both show on the TVs' **My money** and **Garage money** pages.
+The Esc menu's **Debug** tab is for trying things out: **Reset my XP** (back to level 1 with no upgrades, skills or goals), **Max my XP** (top level, every point to spend), **Reset everyone's XP** (host only: every player in the shed), **Reset my money**, **Max my money**, **Reset garage money** and **Give the garage £1,000,000** (the last two host only); for contracts (host only) **Send a customer**, **Send a bespoke customer** and **Reputation +5**. Every reset asks first. Your money is kept with your character and the garage's with the shed, and both show on the TVs' **My money** and **Garage money** pages.
 
 ### Co-op
 
@@ -325,8 +343,10 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
 | `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |
 | `scripts/daylight.gd`, `weather.gd` | Time of day, sky and lighting; the weather (clouds, fog, rain, wet roads, rain sounds) |
-| `scripts/debug_tab.gd` | The Esc menu's Debug tab: reset or max XP and money, give the garage a million |
+| `scripts/debug_tab.gd` | The Esc menu's Debug tab: reset or max XP and money, give the garage a million, send a customer, raise the reputation |
 | `scripts/money.gd`, `money_tab.gd` | Money: part and bike prices, selling, the business's bank (cut, owner, ledger, loans) and its requests; the Esc menu's Money tab |
+| `scripts/contracts.gd`, `mot.gd` | Contracts: customers, offers, goals, payouts and reputation (kept in `Shed.contracts`); the MOT inspection sheet |
+| `scripts/customer.gd`, `contracts_view.gd`, `contract_panel.gd`, `contracts_tab.gd` | The customers walking in to reception, the offer card and jobs list, and the Esc menu's Contracts tab |
 | `scripts/progress.gd`, `ride_xp.gd`, `character_tab.gd`, `skill_tree_view.gd` | XP, levels, tool upgrades, skills and goals, kept in your own profile; riding XP; the Character tab |
 | `scripts/sfx.gd` | Tool, footstep and workshop sounds, synthesised at start-up, and the volume buses |
 | `scripts/shed_radio.gd`, `radio_stream.gd`, `mp3_stream_decoder.gd` | The shed radio: streams an MP3 station over HTTP(S) and decodes it gaplessly |

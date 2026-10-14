@@ -8,6 +8,7 @@ extends Node
 ## it and scraps it: both must see it come and go. Money: the client's unbolting pays it a wage
 ## from the host, it sends some to the business (the host's ledger must show it) and the host
 ## sends the client some of its own cash, which must arrive.
+## The host also sends a customer to reception, whom the client must see.
 
 var role := "host"
 var main: Node
@@ -40,6 +41,7 @@ func _ready() -> void:
 	var paid_ok := false
 	var money_sent := false
 	var money_ok := false
+	var customer_sent := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -128,15 +130,20 @@ func _ready() -> void:
 			Settings.weather = "fog"
 			Weather.current.change_to("fog", true)
 		var weather_ok := Weather.current != null and Weather.current.state == "fog"
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok:
+		# Contracts: the host sends a customer to reception and the client sees them walk in.
+		if role == "host" and Shed.crew.size() == 2 and not customer_sent:
+			Shed.request({"a": "contract_spawn", "kind": "maint"})
+			customer_sent = true
+		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty()
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 	var ok := moved and shed_ok
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size()])
 	get_tree().quit(0 if ok else 1)
 
 

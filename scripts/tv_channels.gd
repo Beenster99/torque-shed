@@ -226,10 +226,10 @@ static func afford_data(peer: int) -> Dictionary:
 	return {"cash": int(money_data(peer)["cash"]), "items": items}
 
 
-## Jobs for the shed: offered, being worked on and done. Placeholder until contracts arrive
-## (Milestone D).
+## Jobs for the shed: offered (customers at reception), being worked on (with how far along
+## each is and its deadline) and done. See Contracts.tv_data.
 static func contracts_data() -> Dictionary:
-	return {"placeholder": true, "offered": [], "active": [], "done": [], "reputation": 0}
+	return Contracts.tv_data()
 
 
 ## The data for a channel's page, for the screen `key` on this player's game.
@@ -511,7 +511,13 @@ static func _draw_contracts(c: Control, font: Font, data: Dictionary) -> void:
 		for job in list:
 			var line := str(job.get("title", job)) if job is Dictionary else str(job)
 			_text(c, font, Vector2(x + 16, y), line.left(22), 22)
-			y += 36.0
+			if job is Dictionary and job.has("sub"):
+				_text(c, font, Vector2(x + 16, y + 22), str(job["sub"]).left(30), 16,
+					Dashboard.BAD if job.get("late", false) else Dashboard.DIM)
+			if job is Dictionary and job.has("progress"):
+				_bar(c, Rect2(x + 16, y + 30, 280, 8), float(job["progress"]), Dashboard.GOOD)
+				y += 12.0
+			y += 36.0 if not (job is Dictionary and job.has("sub")) else 60.0
 			if y > 480.0:
 				break
 	if data.get("placeholder", false):

@@ -17,6 +17,8 @@ var menu: MainMenu
 var computer: PartsComputer
 var tuning: TuningComputer
 var label_dialog: LabelDialog
+var contract_panel: ContractPanel   # a customer's offer card and the jobs list
+var contracts_view: ContractsView   # the customers walking in to reception
 var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
 var audio: EngineAudio
 var saver: SaveGame
@@ -62,6 +64,17 @@ func _ready() -> void:
 	label_dialog.visible = false
 	ui.add_child(label_dialog)
 	label_dialog.closed.connect(func(): _capture_mouse(true))
+	contract_panel = ContractPanel.new()
+	contract_panel.visible = false
+	ui.add_child(contract_panel)
+	contract_panel.closed.connect(func(): _capture_mouse(true))
+	contracts_view = ContractsView.new()
+	contracts_view.name = "Customers"
+	contracts_view.main = self
+	world.add_child(contracts_view)
+	contracts_view.talk_requested.connect(func(id):
+		contract_panel.open_offer(id)
+		_capture_mouse(false))
 	geometry = GeometryMode.new()
 	ui.add_child(geometry)
 	geometry.closed.connect(_geometry_closed)
@@ -191,6 +204,7 @@ func _end_session() -> void:
 	computer.visible = false
 	tuning.visible = false
 	label_dialog.visible = false
+	contract_panel.visible = false
 	if geometry.active:
 		geometry.close()
 	_stop_riding()
@@ -412,13 +426,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not in_session or geometry.active:
 		return   # geometry mode takes its own keys, Esc and F2 included
 	if event.is_action_pressed("geometry_mode") and bike == null and walker and not menu.visible and not computer.visible \
-			and not tuning.visible and not label_dialog.visible:
+			and not tuning.visible and not label_dialog.visible and not contract_panel.visible:
 		get_viewport().set_input_as_handled()
 		open_geometry()
 		return
 	if event.is_action_pressed("menu"):
 		if label_dialog.visible:
 			label_dialog.close_dialog()
+		elif contract_panel.visible:
+			contract_panel.close_dialog()
 		elif computer.visible:
 			computer.close_computer()
 		elif tuning.visible:
@@ -430,7 +446,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_capture_mouse(false)
 		get_viewport().set_input_as_handled()
 		return
-	if menu.visible or computer.visible or tuning.visible or label_dialog.visible or bike == null:
+	if menu.visible or computer.visible or tuning.visible or label_dialog.visible or contract_panel.visible or bike == null:
 		return
 	if event.is_action_pressed("interact"):
 		if Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
@@ -463,7 +479,7 @@ func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not label_dialog.visible \
-		and not geometry.active
+		and not contract_panel.visible and not geometry.active
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:

@@ -87,6 +87,12 @@ const XP := {
 	"sell_bike": {"xp": 100, "label": "Bike sold"},
 	"sell_part": {"xp": 5, "label": "Part sold"},
 	"money_milestone": {"xp": 50, "label": "Money milestone"},
+	# Contracts (see Contracts): paid to the crew who worked on the job when it's handed back.
+	"contract_maint": {"xp": 40, "label": "Service job done"},
+	"contract_mot": {"xp": 60, "label": "MOT job done"},
+	"contract_mod": {"xp": 100, "label": "Modification job done"},
+	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
+	"mot_test": {"xp": 6, "label": "MOT test"},
 	# Riding: worked out on the rider's own machine (RideXP) and paid by the host.
 	"jump": {"xp": 12, "label": "Jump", "tag": "air", "rider": true},
 	"jump_record": {"xp": 25, "label": "Longest jump", "tag": "air", "rider": true},

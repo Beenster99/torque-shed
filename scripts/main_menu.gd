@@ -210,6 +210,7 @@ func _ready() -> void:
 	money = MoneyTab.new()
 	_tabs.add_child(money)
 	# Testing helpers: reset or max out XP and money.
+	_tabs.add_child(ContractsTab.new())
 	debug = DebugTab.new()
 	_tabs.add_child(debug)
 

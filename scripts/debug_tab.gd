@@ -46,6 +46,13 @@ func _ready() -> void:
 	_grant = _button("Give the garage £1,000,000", give_garage_million)
 	box.add_child(_row([_garage, _grant]))
 
+	box.add_child(UITheme.label("Contracts (host)", 15, UITheme.ACCENT))
+	box.add_child(_row([
+		_button("Send a customer", func(): Shed.request({"a": "contract_spawn"})),
+		_button("Send a bespoke customer", func(): Shed.request({"a": "contract_spawn", "kind": "bespoke"})),
+		_button("Reputation +5", func(): Shed.request({"a": "contract_rep", "value": Contracts.reputation() + 5})),
+	]))
+
 	_confirm = ConfirmationDialog.new()
 	_confirm.confirmed.connect(func():
 		if _pending.is_valid():
