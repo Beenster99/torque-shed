@@ -40,6 +40,13 @@ var _env: Environment
 var _sun: DirectionalLight3D
 var _moon: DirectionalLight3D
 var _sky_mat: ShaderMaterial
+var _cloud_q := {}
+var _noise_tex: NoiseTexture2D
+## The exposure and glow for the time of day; Lighting adds eye adaptation on top of these
+## (without a Lighting they go straight onto the environment).
+var exposure := 1.0
+var glow_intensity := 0.4
+var glow_bloom := 0.05
 var _sky_hours := -100.0
 var _sky_weather := Vector3(-1.0, -1.0, -1.0)
 var _signalled_dark := -1.0
@@ -69,8 +76,7 @@ func setup(env: Environment, sun: DirectionalLight3D) -> void:
 	_env = env
 	_sun = sun
 	_sky_mat = ShaderMaterial.new()
-	_sky_mat.shader = _sky_shader()
-	_sky_mat.set_shader_parameter("cloud_noise", _cloud_noise())
+	set_cloud_quality(Lighting.option("gfx_clouds"))
 	if _env.sky == null:
 		_env.sky = Sky.new()
 	_env.sky.sky_material = _sky_mat
@@ -223,9 +229,13 @@ func _apply(force: bool) -> void:
 	_env.volumetric_fog_albedo = Color(0.9, 0.92, 0.95).lerp(Color(0.5, 0.55, 0.7), dark)
 	# A touch more haze in the night air, so headlights (and the moon) show softly in it.
 	_env.volumetric_fog_density = lerpf(DAY_FOG, NIGHT_FOG, dark) + mist * 0.01 + rain * 0.003
-	_env.tonemap_exposure = lerpf(1.0, 1.35, dark)
-	_env.glow_intensity = lerpf(0.4, 0.75, dark)
-	_env.glow_bloom = lerpf(0.05, 0.02, dark)
+	exposure = lerpf(1.0, 1.35, dark)
+	glow_intensity = lerpf(0.4, 0.75, dark)
+	glow_bloom = lerpf(0.05, 0.02, dark)
+	if Lighting.current == null:
+		_env.tonemap_exposure = exposure
+		_env.glow_intensity = glow_intensity
+		_env.glow_bloom = glow_bloom
 
 	var weather_now := Vector3(cover, mist, rain)
 	if force or absf(wrapf(hours - _sky_hours, -12.0, 12.0)) > 0.01 or weather_now.distance_to(_sky_weather) > 0.01:
@@ -265,6 +275,11 @@ func _update_sky(s: float, moon_dir: Vector3, warm: float, twilight: float, over
 	_sky_mat.set_shader_parameter("moon_strength", smoothstep(0.2, 0.8, dark) * (1.0 - 0.9 * overcast))
 	_sky_mat.set_shader_parameter("star_strength", smoothstep(0.55, 0.95, dark) * (1.0 - overcast) * (1.0 - mist))
 	_sky_mat.set_shader_parameter("cloud_cover", Weather.cover_level())
+	# The raymarched clouds are lit by the sun, or by the moon once it's down; rain makes them
+	# heavier and darker and the wind picks up.
+	_sky_mat.set_shader_parameter("cloud_light_dir", sun_dir if s > -0.06 else moon_dir)
+	_sky_mat.set_shader_parameter("cloud_rain", rain)
+	_sky_mat.set_shader_parameter("wind", CloudSky.wind_for(rain))
 	var cloud := Color(1.0, 1.0, 1.0).lerp(Color(0.62, 0.64, 0.68), overcast * 0.7).lerp(Color(0.42, 0.44, 0.48), rain) \
 		.lerp(Color(1.0, 0.7, 0.55), twilight * 0.8).lerp(Color(0.05, 0.06, 0.09), dark)
 	_sky_mat.set_shader_parameter("cloud_color", cloud)
@@ -302,110 +317,23 @@ func _cloud_noise() -> NoiseTexture2D:
 	return tex
 
 
-func _sky_shader() -> Shader:
-	var sh := Shader.new()
-	sh.code = SKY_SHADER
-	return sh
+## The sky shader at a cloud setting ("off", "low", "high"; see CloudSky.quality()). Rebuilt
+## only when the quality actually changes.
+func set_cloud_quality(setting: String) -> void:
+	var q := CloudSky.quality(setting, Lighting.forward_plus())
+	if q == _cloud_q and _sky_mat.shader != null:
+		return
+	_cloud_q = q
+	_sky_mat.shader = CloudSky.make_shader(q)
+	if _noise_tex == null:
+		_noise_tex = _cloud_noise()
+	_sky_mat.set_shader_parameter("cloud_noise", _noise_tex)
+	if bool(q["volumetric"]):
+		_sky_mat.set_shader_parameter("cloud_detail", CloudSky.detail_texture())
+	if _env and _env.sky:
+		_sky_hours = -100.0   # set every uniform again next frame
 
 
-const SKY_SHADER := """
-shader_type sky;
-
-uniform vec3 top_color : source_color = vec3(0.22, 0.42, 0.75);
-uniform vec3 horizon_color : source_color = vec3(0.68, 0.76, 0.86);
-uniform vec3 ground_color : source_color = vec3(0.25, 0.27, 0.25);
-uniform vec3 sun_dir = vec3(0.0, 0.7, 0.7);
-uniform vec3 sun_color : source_color = vec3(1.0, 0.93, 0.8);
-uniform float sun_strength = 1.0;
-uniform vec3 glow_color : source_color = vec3(1.0, 0.45, 0.16);
-uniform float glow_strength = 0.0;
-uniform vec3 moon_dir = vec3(0.0, 0.7, -0.7);
-uniform float moon_strength = 0.0;
-uniform float star_strength = 0.0;
-uniform vec3 cloud_color : source_color = vec3(1.0);
-uniform vec3 cloud_shadow : source_color = vec3(0.62, 0.68, 0.78);
-uniform float cloud_cover = 0.2;
-uniform sampler2D cloud_noise : repeat_enable, filter_linear_mipmap;
-
-float cloud_n(vec2 uv) {
-	return texture(cloud_noise, uv).r * 0.65 + texture(cloud_noise, uv * 2.9 + 0.37).r * 0.35;
-}
-
-float hash13(vec3 p) {
-	p = fract(p * 0.1031);
-	p += dot(p, p.zyx + 31.32);
-	return fract((p.x + p.y) * p.z);
-}
-
-vec3 star_layer(vec3 d, float scale, float density, float seed) {
-	vec3 p = d * scale;
-	vec3 c = floor(p);
-	float h = hash13(c + seed);
-	if (h < 1.0 - density) {
-		return vec3(0.0);
-	}
-	vec3 jitter = vec3(hash13(c + 3.1 + seed), hash13(c + 7.7 + seed), hash13(c + 1.3 + seed)) - 0.5;
-	float dist = length(fract(p) - 0.5 - jitter * 0.5);
-	float bright = pow(hash13(c + 11.0 + seed), 4.0);
-	vec3 tint = mix(vec3(0.7, 0.8, 1.0), vec3(1.0, 0.86, 0.7), hash13(c + 5.0 + seed));
-	return tint * (1.0 - smoothstep(0.0, 0.32, dist)) * (0.25 + 3.0 * bright);
-}
-
-void sky() {
-	vec3 d = EYEDIR;
-	float up = d.y;
-	float sd = dot(d, normalize(sun_dir));
-	vec3 col;
-	if (up >= 0.0) {
-		col = mix(top_color, horizon_color, exp(-up * 5.0));
-	} else {
-		col = mix(horizon_color * 0.85, ground_color, smoothstep(0.0, 0.12, -up));
-	}
-	// Dusk: a warm glow around the sun hugging the horizon, a wider haze across the sky.
-	float horizon_hug = exp(-abs(up) * 7.0);
-	col += glow_color * glow_strength * (pow(max(sd, 0.0), 6.0) * horizon_hug * 1.2 + pow(max(sd, 0.0), 2.0) * horizon_hug * 0.25);
-	// Daytime halo around the sun.
-	col += sun_color * pow(max(sd, 0.0), 120.0) * 0.6 * sun_strength;
-	if (up > -0.02) {
-		// Stars, fading out toward the horizon haze (not baked into reflections).
-		if (!AT_CUBEMAP_PASS && star_strength > 0.0) {
-			vec3 stars = star_layer(d, 230.0, 0.035, 0.0) + star_layer(d, 520.0, 0.03, 17.0) * 0.5;
-			// A faint band of extra stars across the sky, like the milky way.
-			float band = exp(-pow(dot(d, normalize(vec3(0.45, 0.25, 0.86))) * 3.5, 2.0));
-			stars += star_layer(d, 700.0, 0.08 * band, 33.0) * 0.4;
-			col += stars * star_strength * smoothstep(0.0, 0.25, up);
-			col += vec3(0.03, 0.035, 0.06) * band * star_strength * smoothstep(0.0, 0.3, up);
-		}
-		// Moon: a pale disc with soft mottling, and a halo.
-		vec3 md = normalize(moon_dir);
-		float mcos = dot(d, md);
-		if (moon_strength > 0.0) {
-			float disc = smoothstep(0.99985, 0.99992, mcos);
-			vec3 tangent = normalize(cross(md, vec3(0.0, 1.0, 0.0)));
-			vec3 bitangent = cross(tangent, md);
-			vec2 muv = vec2(dot(d, tangent), dot(d, bitangent)) * 80.0;
-			float mottle = texture(cloud_noise, muv + 0.5).r;
-			col += vec3(0.85, 0.88, 0.95) * disc * (1.6 + mottle * 1.2) * moon_strength;
-			col += vec3(0.25, 0.3, 0.45) * pow(max(mcos, 0.0), 400.0) * 0.5 * moon_strength;
-			col += vec3(0.05, 0.06, 0.1) * pow(max(mcos, 0.0), 12.0) * moon_strength;
-		}
-		// Sun disc.
-		float disc = smoothstep(0.99990, 0.99996, sd);
-		col += sun_color * disc * 30.0 * sun_strength;
-		// Clouds: two octaves of noise projected onto a flat layer overhead.
-		if (up > 0.0) {
-			vec2 uv = d.xz / (up + 0.12) * 0.11;
-			float n = cloud_n(uv);
-			// More cover: the noise's lower values turn to cloud too, until it's one grey deck.
-			float lo = mix(0.6, 0.12, cloud_cover);
-			float dens = smoothstep(lo, lo + 0.26, n) * smoothstep(0.0, 0.18, up);
-			float lit = cloud_n(uv + normalize(sun_dir.xz + vec2(0.001)) * 0.02);
-			vec3 c = mix(cloud_color, cloud_shadow, clamp((lit - n) * 6.0 + 0.45, 0.0, 1.0));
-			c += glow_color * glow_strength * pow(max(sd, 0.0), 4.0) * 0.8;
-			c += sun_color * pow(max(sd, 0.0), 30.0) * 0.5 * sun_strength;
-			col = mix(col, c, dens * 0.9);
-		}
-	}
-	COLOR = col;
-}
-"""
+## The cloud quality the sky is drawn at now (see CloudSky.quality()).
+func cloud_quality() -> Dictionary:
+	return _cloud_q

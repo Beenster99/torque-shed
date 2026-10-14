@@ -55,6 +55,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--lighting" in OS.get_cmdline_user_args():
+		await _lighting_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -511,3 +516,39 @@ func _graphics_shots() -> void:
 	await _shot("gfx3_graphics_tab_end")
 	main._close_menu()
 	Settings.set_graphics("gfx_fps_counter", fps)
+## The lighting (`-- --lighting`): the cloud sky in each weather and at dusk and night, flat
+## clouds against raymarched ones, and the shed from the yard and inside with its lights off.
+## (Here only the compatibility renderer runs: no SDFGI, volumetric fog or fog volumes.)
+func _lighting_shots() -> void:
+	Settings.day_night_cycle = false
+	var yard := Vector3(6.0, 0.0, 92.0)
+	var up := Vector3(-40.0, 60.0, 30.0)
+	for q in ["off", "high"]:
+		Lighting.overrides = {"gfx_clouds": q}
+		main.world.lighting.apply()
+		for st in Weather.STATES:
+			Settings.weather = st
+			Weather.current.change_to(st, true)
+			Daylight.current.set_time(14.0)
+			await _frames(10)
+			await _look_from(yard, up, "l_%s_clouds_%s" % [q, st])
+	Settings.weather = "cloudy"
+	Weather.current.change_to("cloudy", true)
+	for h in [7.0, 18.6, 19.2, 23.0]:
+		Daylight.current.set_time(h)
+		await _frames(10)
+		await _look_from(yard, Vector3(60.0 if h < 12.0 else -60.0, 25.0, 90.0), "l_cloudy_%s" % Daylight.clock_text(h).replace(":", ""))
+	Settings.weather = "clear"
+	Weather.current.change_to("clear", true)
+	Daylight.current.set_time(12.0)
+	await _frames(10)
+	await _look_from(Vector3(-8.0, 0.0, 95.0), Vector3(-3.0, 60.0, 0.0), "l_clear_sun_noon")
+	Shed.request({"a": "door", "open": true})
+	await _frames(200)
+	await _look_from(Workshop.CENTER + Vector3(0.0, 0.0, -3.0), Vector3(0.0, 1.0, 90.0), "l_shed_looking_out")
+	Shed.request({"a": "lights", "room": "", "on": false})
+	await _frames(60)
+	await _look_from(Workshop.CENTER + Vector3(2.0, 0.0, 3.0), Workshop.CENTER + Vector3(-3.0, 1.0, -4.0), "l_shed_lights_off_adapted")
+	Shed.request({"a": "lights", "room": "", "on": true})
+	Lighting.overrides = {}
+	Settings.weather = "auto"

@@ -165,6 +165,11 @@ func _run_all() -> void:
 	await _test_shop_session()
 	print("Graphics settings: presets, saving, applying, the driver override, the Graphics tab")
 	await _test_graphics_settings()
+	print("Lighting: GI, volumetric fog and clouds, shadows, eye adaptation")
+	_test_lighting_profile()
+	_test_lighting_lamps_and_gi()
+	await _test_lighting_clouds()
+	await _test_lighting_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -7414,3 +7419,237 @@ func _test_graphics_settings() -> void:
 	else:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
 	await get_tree().process_frame
+## The Graphics settings turned into the environment: SDFGI or SSIL, SSR, SSAO, glow,
+## volumetric fog, the cloud sky and shadows; and the plainer look on the compatibility renderer.
+func _test_lighting_profile() -> void:
+	var best := {"gfx_gi": "sdfgi", "gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_ssr": true, "gfx_ssao": true,
+		"gfx_glow": true, "gfx_shadows": "ultra", "gfx_draw_distance": 1.0, "gfx_brightness": 1.0}
+	var p := Lighting.profile(best, true)
+	check(p["sdfgi"] and not p["ssil"] and p["ssr"] and p["ssao"] and p["glow"] and p["volumetric_fog"] and p["fog_volumes"],
+		"the best settings: SDFGI, reflections, AO, glow, volumetric fog and fog volumes")
+	check(int(p["sdfgi_cascades"]) == 6 and float(p["sdfgi_min_cell"]) < 0.2, "SDFGI reaches across the map with fine cells near you")
+	check(bool(p["clouds"]["volumetric"]) and str(p["clouds"]["res"]) == "half" and int(p["fog_size"]) >= 128, "raymarched clouds at half resolution")
+	check(int(p["shadow"]["soft"]) == 5 and bool(p["shadow"]["pcss"]), "ultra shadows are the softest, with contact hardening")
+	var ssil := best.duplicate()
+	ssil["gfx_gi"] = "ssil"
+	ssil["gfx_volumetrics"] = "low"
+	ssil["gfx_clouds"] = "low"
+	p = Lighting.profile(ssil, true)
+	check(p["ssil"] and not p["sdfgi"] and int(p["fog_size"]) < 128, "SSIL is the lighter GI; low fog is coarser")
+	check(str(p["clouds"]["res"]) == "quarter" and int(p["clouds"]["steps"]) < 20, "low clouds: quarter resolution, fewer steps")
+	var off := best.duplicate()
+	off["gfx_gi"] = "off"
+	off["gfx_volumetrics"] = "off"
+	off["gfx_clouds"] = "off"
+	off["gfx_shadows"] = "low"
+	p = Lighting.profile(off, true)
+	check(not p["sdfgi"] and not p["ssil"] and not p["volumetric_fog"] and not p["fog_volumes"] and not bool(p["clouds"]["volumetric"]),
+		"everything off: no GI, no volumetric fog, the flat cloud layer")
+	check(not bool(p["shadow"]["omni"]) and int(p["shadow"]["atlas"]) <= 2048, "low shadows: small maps, round lamps don't cast them")
+	# The compatibility renderer: none of the Forward+ extras, the flat clouds at "low".
+	p = Lighting.profile(best, false)
+	check(not p["sdfgi"] and not p["fog_volumes"] and str(p["clouds"]["res"]) == "full", "compatibility: no SDFGI or fog volumes, clouds drawn at full size")
+	check(not bool(CloudSky.quality("low", false)["volumetric"]), "compatibility at low: the old flat clouds")
+	# Missing settings: the defaults, or the low look with the old quality switch off.
+	var hq := Settings.high_quality
+	Lighting.overrides = {}
+	if Settings.get("gfx_gi") == null:
+		Settings.high_quality = true
+		check(str(Lighting.option("gfx_gi")) == "sdfgi" and str(Lighting.option("gfx_shadows")) == "high", "no Graphics settings yet: the high defaults")
+		Settings.high_quality = false
+		check(str(Lighting.option("gfx_gi")) == "off" and str(Lighting.option("gfx_volumetrics")) == "off", "with high quality off: the low look")
+	Settings.high_quality = hq
+	Lighting.overrides = {"gfx_gi": "ssil"}
+	check(str(Lighting.option("gfx_gi")) == "ssil", "overrides win")
+	Lighting.overrides = {}
+	# Every variant of the sky shader compiles (a broken one has no uniforms).
+	for setting in ["off", "low", "high"]:
+		for fp in [true, false]:
+			var sh := CloudSky.make_shader(CloudSky.quality(setting, fp))
+			check(sh.get_shader_uniform_list().size() >= 18, "the %s sky shader compiles (%s)" % [setting, "Forward+" if fp else "compatibility"])
+	var fog := Shader.new()
+	fog.code = Lighting.DUST_SHADER
+	check(fog.get_shader_uniform_list().size() == 5, "the dust fog shader compiles")
+
+
+## Each lamp lights the fog by a sensible amount and casts shadows to suit the quality, and
+## only buildings and big fixed things take part in GI.
+func _test_lighting_lamps_and_gi() -> void:
+	var opts := Lighting.options()
+	opts["gfx_shadows"] = "high"
+	var high := Lighting.profile(opts, true)
+	opts["gfx_shadows"] = "low"
+	var low := Lighting.profile(opts, true)
+	var omni := OmniLight3D.new()
+	omni.shadow_enabled = true
+	var spot := SpotLight3D.new()
+	var flood := SpotLight3D.new()
+	flood.light_volumetric_fog_energy = 2.5
+	flood.add_to_group(Daylight.NIGHT_LIGHTS)
+	add_child(omni)
+	add_child(spot)
+	add_child(flood)
+	for l in [omni, spot, flood]:
+		Lighting.tune_light(l, high)
+	check(is_equal_approx(omni.light_volumetric_fog_energy, Lighting.OMNI_FOG) and is_equal_approx(spot.light_volumetric_fog_energy, Lighting.SPOT_FOG),
+		"lamps nobody tuned get a sensible glow in the fog")
+	check(is_equal_approx(flood.light_volumetric_fog_energy, 2.5) and flood.shadow_enabled, "a tuned floodlight keeps its glow and casts shadows (god rays) at high")
+	for l in [omni, spot, flood]:
+		Lighting.tune_light(l, low)
+	check(not omni.shadow_enabled and not flood.shadow_enabled, "low shadows: the round lamp and floodlight stop casting them")
+	for l in [omni, spot, flood]:
+		Lighting.tune_light(l, high)
+	check(omni.shadow_enabled and is_equal_approx(omni.light_volumetric_fog_energy, Lighting.OMNI_FOG), "and back at high they come back as they were")
+	# The headlight looks after itself (its soft flood is tuned for the fog).
+	var fx := BikeEffects.new()
+	add_child(fx)
+	var beam := SpotLight3D.new()
+	beam.light_volumetric_fog_energy = 0.0
+	fx.add_child(beam)
+	Lighting.tune_light(beam, high)
+	check(beam.has_meta("lighting_skip") and beam.light_volumetric_fog_energy == 0.0, "a bike's lights are left alone")
+	# GI: a building is static, a small part and anything on a moving body are left out.
+	var wall := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(6.0, 3.0, 0.2)
+	wall.mesh = box
+	add_child(wall)
+	var bolt := MeshInstance3D.new()
+	var little := BoxMesh.new()
+	little.size = Vector3(0.1, 0.1, 0.1)
+	bolt.mesh = little
+	add_child(bolt)
+	var body := CharacterBody3D.new()
+	add_child(body)
+	var big_on_body := MeshInstance3D.new()
+	big_on_body.mesh = box
+	body.add_child(big_on_body)
+	var dust := CPUParticles3D.new()
+	add_child(dust)
+	check(Lighting.gi_mode_for(wall) == GeometryInstance3D.GI_MODE_STATIC, "walls bounce light (static GI)")
+	check(Lighting.gi_mode_for(bolt) == GeometryInstance3D.GI_MODE_DISABLED and Lighting.gi_mode_for(big_on_body) == GeometryInstance3D.GI_MODE_DISABLED
+		and Lighting.gi_mode_for(dust) == GeometryInstance3D.GI_MODE_DISABLED, "small props, moving things and particles stay out of GI")
+	# Eye adaptation: a dark room opens your eyes up more than a lit one; outdoors is as is.
+	check(Lighting.eye_target("", false, 0.0) == 1.0 and Lighting.eye_target("shed", false, 0.0) > Lighting.eye_target("shed", true, 0.0),
+		"walking into a dark shed your eyes adjust more than into a lit one")
+	check(Lighting.eye_target("shed", true, 1.0) < 1.0, "at night the lamps are bright after the dark")
+	for n in [omni, spot, flood, fx, wall, bolt, body, dust]:
+		n.queue_free()
+
+
+## The cloud sky follows the weather: more and heavier cloud from clear to cloudy to rain, lit
+## by the moon at night; the cloud setting swaps the shader.
+func _test_lighting_clouds() -> void:
+	var kept := [Settings.weather, Settings.weather_now, Settings.day_night_cycle]
+	Settings.day_night_cycle = false
+	var env := Environment.new()
+	var sun := DirectionalLight3D.new()
+	add_child(sun)
+	var dl := Daylight.new()
+	add_child(dl)
+	var w := Weather.new()
+	add_child(w)
+	dl.setup(env, sun)
+	var covers := {}
+	for st in ["clear", "cloudy", "rain"]:
+		Settings.weather = st
+		w.change_to(st, true)
+		dl.set_time(12.0)
+		covers[st] = float(dl._sky_mat.get_shader_parameter("cloud_cover"))
+	check(covers["clear"] < covers["cloudy"] and covers["cloudy"] < covers["rain"], "cloud cover grows from clear to cloudy to rain (%s)" % [covers])
+	check(float(dl._sky_mat.get_shader_parameter("cloud_rain")) == 1.0, "rain clouds are heavy and dark")
+	var wind: Vector2 = dl._sky_mat.get_shader_parameter("wind")
+	check(wind.length() > CloudSky.wind_for(0.0).length(), "and the wind blows them faster")
+	var lit: Vector3 = dl._sky_mat.get_shader_parameter("cloud_light_dir")
+	check(lit.is_equal_approx(dl.sun_dir), "by day the sun lights the clouds")
+	dl.set_time(0.5)
+	lit = dl._sky_mat.get_shader_parameter("cloud_light_dir")
+	check(not lit.is_equal_approx(dl.sun_dir) and lit.y > 0.0, "at night the moon does")
+	# Changing the setting swaps the shader, and back.
+	dl.set_cloud_quality("off")
+	check(not dl._sky_mat.shader.code.contains("#define VOLUMETRIC"), "clouds off: the flat layer")
+	dl.set_cloud_quality("high")
+	check(dl._sky_mat.shader.code.contains("#define VOLUMETRIC") == bool(CloudSky.quality("high", Lighting.forward_plus())["volumetric"]),
+		"clouds high: raymarched")
+	check(dl._sky_mat.get_shader_parameter("cloud_noise") != null, "the noise survives the swap")
+	Settings.weather = kept[0]
+	Settings.weather_now = kept[1]
+	Settings.day_night_cycle = kept[2]
+	w.queue_free()
+	dl.queue_free()
+	sun.queue_free()
+	await get_tree().process_frame
+
+
+## In a running shed: the World's Lighting sets the environment up, re-applies when the settings
+## change (any mix, without errors), fills the shed with dust (Forward+), the paint shop fills
+## with overspray, and your eyes adjust going into a dark shed.
+func _test_lighting_session() -> void:
+	SaveGame.slot_override = "test_lighting"
+	SaveGame.delete_slot("test_lighting")
+	var kept_cycle := Settings.day_night_cycle
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	var lt: Lighting = main.world.lighting
+	check(lt != null and Lighting.current == lt, "the world has its lighting")
+	var env: Environment = lt.env
+	var combos := [
+		{"gfx_gi": "sdfgi", "gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_shadows": "ultra", "gfx_glow": true, "gfx_ssr": true},
+		{"gfx_gi": "ssil", "gfx_volumetrics": "low", "gfx_clouds": "low", "gfx_shadows": "medium", "gfx_glow": false, "gfx_ssr": false},
+		{"gfx_gi": "off", "gfx_volumetrics": "off", "gfx_clouds": "off", "gfx_shadows": "low", "gfx_glow": true, "gfx_ssr": true},
+	]
+	var fp := Lighting.forward_plus()
+	for c in combos:
+		Lighting.overrides = c
+		lt.apply()
+		await get_tree().process_frame
+		check(env.sdfgi_enabled == (fp and c["gfx_gi"] == "sdfgi") and env.ssil_enabled == (fp and c["gfx_gi"] == "ssil")
+			and env.volumetric_fog_enabled == (c["gfx_volumetrics"] != "off") and env.glow_enabled == c["gfx_glow"] and env.ssr_enabled == c["gfx_ssr"],
+			"settings %s/%s/%s reach the environment" % [c["gfx_gi"], c["gfx_volumetrics"], c["gfx_shadows"]])
+		check(is_instance_valid(lt.dust) == (fp and c["gfx_volumetrics"] != "off"), "the shed's dust is there only with volumetric fog on Forward+")
+		var sky_q: Dictionary = main.world.daylight.cloud_quality()
+		check(bool(sky_q["volumetric"]) == bool(CloudSky.quality(str(c["gfx_clouds"]), fp)["volumetric"]), "the sky follows the cloud setting")
+		var sun: DirectionalLight3D = lt.sun
+		check(is_equal_approx(sun.directional_shadow_max_distance, float(Lighting.SHADOWS[c["gfx_shadows"]]["distance"])),
+			"the sun's shadows reach as far as the setting says")
+	# The polling notices a change without any signal.
+	Lighting.overrides = combos[0]
+	await get_tree().create_timer(0.6).timeout
+	check(env.sdfgi_enabled == fp, "a settings change is picked up by itself")
+	# Every lamp in the shed has been tuned.
+	var tuned := 0
+	for l in lt._lights:
+		if is_instance_valid(l) and (l.has_meta("lighting_orig") or l.has_meta("lighting_skip")):
+			tuned += 1
+	check(lt._lights.size() > 10 and tuned == lt._lights.size(), "every lamp is tuned (%d)" % tuned)
+	# Eyes adjusting: into the shed with the lights off by day.
+	Settings.day_night_cycle = false
+	main.world.daylight.set_time(12.0)
+	Shed.request({"a": "lights", "room": "", "on": false})
+	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.1, 0.0)))
+	for i in 5:
+		await get_tree().process_frame
+	var early := lt.adapt
+	for i in 60:
+		await get_tree().process_frame
+	check(lt.adapt > early and lt.adapt > 1.05, "in the dark shed your eyes slowly open up (%.2f to %.2f)" % [early, lt.adapt])
+	Shed.request({"a": "lights", "room": "", "on": true})
+	# Overspray: build it up as if someone were spraying in the paint shop.
+	if is_instance_valid(lt.overspray):
+		lt.overspray_level = 0.8
+		lt._update_overspray(0.0)
+		check(lt.overspray.visible and float((lt.overspray.material as ShaderMaterial).get_shader_parameter("density")) > 0.0, "spraying fills the paint shop with haze")
+		lt._update_overspray(30.0)
+		check(lt.overspray_level < 0.8, "and it clears again")
+	Lighting.overrides = {}
+	lt.apply()
+	Settings.day_night_cycle = kept_cycle
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_lighting")
+	SaveGame.slot_override = ""
