@@ -15,6 +15,11 @@ func _ready() -> void:
 	main.menu.new_shed = true
 	main._start_session()
 	await _frames(20)
+	await _room_shots()
+	if "--rooms" in OS.get_cmdline_user_args():
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	# Milestone B: a character with some XP, upgraded tools and skills.
 	Progress.path = "user://profile_shots.json"
 	Progress.select("Shots")
@@ -71,3 +76,41 @@ func _ready() -> void:
 	DirAccess.remove_absolute(Progress.path)
 	SaveGame.delete_slot("shots")
 	get_tree().quit()
+
+
+## The side rooms: the TV wall with the lights off (no glow behind the screens), the paint shop
+## under its hexagon lights with all ten hooks filled, its doorway from the shed, and the
+## empty storage room.
+func _room_shots() -> void:
+	Daylight.current.set_time(22.0)
+	Shed.request({"a": "lights", "on": false})
+	await _frames(5)
+	await _look_from(Workshop.CENTER + Vector3(-5.6, 0.0, -2.6), Workshop.CENTER + Vector3(2.0, 2.2, -5.5), "r1_tv_wall_dark_side")
+	await _look_from(DynoRoom.CENTER + Vector3(-3.5, 0.0, -2.5), DynoRoom.CENTER + Vector3(1.0, 1.6, 3.6), "r2_dyno_side_of_tv_wall")
+	Shed.request({"a": "lights", "on": true})
+	Daylight.current.set_time(12.0)
+	# Fill every hook in the spray bay with loose parts.
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var hooks: Array = Shed.furniture_spots(booth)
+	var parts := ["sport_17", "cast_17_front", "slip_on", "clip_ons", "sport_solo", "floating_310", "solid_240",
+		"sport_road", "cast_17", "twin_piston", "sport_17", "slip_on"]
+	for n in hooks.size():
+		if Shed.item_at_spot(hooks[n]) == 0:
+			Shed._move(Shed._new_item(parts[n % parts.size()], 0.0, 0.1, 0.0), "spot", hooks[n])
+	Shed.changed.emit()
+	await _frames(5)
+	var pc := Workshop.BOOTH_ROOM_CENTER
+	await _look_from(pc + Vector3(-3.2, 0.0, 4.6), pc + Vector3(1.0, 1.0, -2.0), "r3_paint_shop_hex")
+	await _look_from(pc + Vector3(-2.9, 0.0, -4.7), pc + Vector3(1.5, 2.4, 1.5), "r4_paint_shop_ceiling")
+	Shed.request({"a": "lights", "room": "paint", "on": false})
+	await _frames(5)
+	await _look_from(pc + Vector3(-3.2, 0.0, 4.6), pc + Vector3(1.0, 1.0, -2.0), "r5_paint_shop_lights_off")
+	Shed.request({"a": "lights", "room": "paint", "on": true})
+	await _look_from(Workshop.CENTER + Vector3(2.5, 0.0, 2.0), Vector3(6.6, 1.2, Workshop.PAINT_DOOR_Z), "r6_paint_door_from_shed")
+	await _look_from(Workshop.CENTER + Vector3(-3.0, 0.0, -3.0), Vector3(-6.6, 1.2, Workshop.STORE_DOOR_Z), "r7_storage_door_from_shed")
+	var sc := Workshop.STORE_CENTER
+	await _look_from(sc + Vector3(3.6, 0.0, 3.0), sc + Vector3(-2.0, 1.0, -2.0), "r8_storage_room")
+	await _look_from(pc + Vector3(4.5, 0.0, 9.0), pc + Vector3(0.0, 1.5, 0.0), "r9_paint_shop_outside")

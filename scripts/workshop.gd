@@ -19,11 +19,25 @@ const WASH_CENTER := Vector3(-9.3, 0.0, 66.0)
 const WASH_HALF := Vector2(2.4, 3.4)
 const WASH_POS := Vector3(-11.3, 0.0, 63.2)
 const WASH_REACH := 8.0
-## The paint booth: a lean-to on the east wall, entered from the yard, with the shed's own
-## downdraft spray booth built into it.
-const BOOTH_ROOM_CENTER := Vector3(9.0, 0.0, 66.2)
-const BOOTH_ROOM_HALF := Vector2(2.2, 2.6)
-const BOOTH_XF := Transform3D(Basis(), Vector3(9.0, 0.0, 64.85))
+## Doorways through the shed's side walls into the paint shop and the storage room.
+const SIDE_DOOR_HALF := 0.65
+const SIDE_DOOR_HEIGHT := 2.4
+const ROOM_HEIGHT := 3.4
+## The paint shop: a room off the east wall, entered through a doorway from inside the shed,
+## with the shed's own open-topped downdraft spray bay (ten hooks on two rails) built into it
+## and a ceiling of hexagon LED tiles. Interior x 6.8..14.0, z 59.8..70.2.
+const BOOTH_ROOM_CENTER := Vector3(10.4, 0.0, 65.0)
+const BOOTH_ROOM_HALF := Vector2(3.6, 5.2)
+const PAINT_DOOR_Z := 68.5
+const BOOTH_MODEL := "booth_shop"
+## The spray bay's open front faces the walkway by the door (its +Z points along -X).
+const BOOTH_XF := Transform3D(Basis(Vector3(0.0, 0.0, 1.0), Vector3(0.0, 1.0, 0.0), Vector3(-1.0, 0.0, 0.0)),
+	Vector3(11.6, 0.0, 65.0))
+## The storage room: an empty room off the west wall behind the wash bay, through a doorway
+## by the back corner, for lining up shelving. Interior x -15.0..-6.8, z 54.0..62.2.
+const STORE_CENTER := Vector3(-10.9, 0.0, 58.1)
+const STORE_HALF := Vector2(4.1, 4.1)
+const STORE_DOOR_Z := 60.5
 ## The tyre changer, built in against the west wall just past the end of the workbench and
 ## facing into the shed, clear of the bays, the doors and the whiteboard.
 const CHANGER_XF := Transform3D(Basis(Vector3(0.0, 0.0, -1.0), Vector3(0.0, 1.0, 0.0), Vector3(1.0, 0.0, 0.0)),
@@ -71,6 +85,11 @@ var _shed_lights: Array[Light3D] = []
 var _fixture_mats: Array[StandardMaterial3D] = []
 var _probe: ReflectionProbe
 var _lights_shown := true
+## The side rooms' lights, fixtures and ambient probes, by room ("paint", "storage").
+var _room_lights := {"paint": [], "storage": []}
+var _room_mats := {"paint": [], "storage": []}
+var _room_probes := {}
+var _room_shown := {}
 
 
 static func bay_transform(bay: int) -> Transform3D:
@@ -92,6 +111,40 @@ static func spot_transform(spot: String) -> Transform3D:
 	return Transform3D(Basis(), CENTER)
 
 
+## The floor of each room, as x/z rectangles: the shed, the paint shop, the storage room and
+## the dyno room.
+static func rooms() -> Dictionary:
+	return {
+		"shed": Rect2(CENTER.x - HALF.x, CENTER.z - HALF.y, HALF.x * 2.0, HALF.y * 2.0),
+		"paint": Rect2(BOOTH_ROOM_CENTER.x - BOOTH_ROOM_HALF.x, BOOTH_ROOM_CENTER.z - BOOTH_ROOM_HALF.y, BOOTH_ROOM_HALF.x * 2.0, BOOTH_ROOM_HALF.y * 2.0),
+		"storage": Rect2(STORE_CENTER.x - STORE_HALF.x, STORE_CENTER.z - STORE_HALF.y, STORE_HALF.x * 2.0, STORE_HALF.y * 2.0),
+		"dyno": Rect2(DynoRoom.CENTER.x - DynoRoom.HALF.x, DynoRoom.CENTER.z - DynoRoom.HALF.y, DynoRoom.HALF.x * 2.0, DynoRoom.HALF.y * 2.0),
+	}
+
+
+## Which room a point is in ("shed", "paint", "storage", "dyno"), or "" outside.
+static func room_at(at: Vector3) -> String:
+	var all := rooms()
+	for room in all:
+		if (all[room] as Rect2).has_point(Vector2(at.x, at.z)):
+			return room
+	return ""
+
+
+## The floor the paint shop's spray bay stands on, as an x/z rectangle.
+static func booth_footprint() -> Rect2:
+	var size: Vector3 = Equipment.get_model(BOOTH_MODEL).get("size", Vector3.ONE)
+	var a := BOOTH_XF * Vector3(-size.x * 0.5, 0.0, -size.z * 0.5)
+	var b := BOOTH_XF * Vector3(size.x * 0.5, 0.0, size.z * 0.5)
+	return Rect2(Vector2(minf(a.x, b.x), minf(a.z, b.z)), Vector2(absf(a.x - b.x), absf(a.z - b.z)))
+
+
+## Where the doorway through a side wall of the shed is: {x (the wall's middle), z, half}.
+static func side_doors() -> Dictionary:
+	return {"paint": {"x": CENTER.x + HALF.x + 0.15, "z": PAINT_DOOR_Z, "half": SIDE_DOOR_HALF},
+		"storage": {"x": CENTER.x - HALF.x - 0.15, "z": STORE_DOOR_Z, "half": SIDE_DOOR_HALF}}
+
+
 ## Where players appear on foot when they arrive.
 static func walker_spawn(index: int) -> Transform3D:
 	var x := -1.5 + (index % 4) * 1.0
@@ -108,10 +161,10 @@ func build() -> void:
 	_build_computer()
 	_build_delivery_area()
 	_build_bin()
-	_build_tool_wall()
 	_build_radio()
 	_build_wash_bay()
 	_build_booth_room()
+	_build_storage_room()
 	_build_lights()
 	_build_door_and_switches()
 	var board := Whiteboard.new()
@@ -613,6 +666,9 @@ func _process(delta: float) -> void:
 	spin_changers(delta)
 	if _lights_shown != Shed.lights_on:
 		set_lights(Shed.lights_on)
+	for room in _room_lights:
+		if _room_shown.get(room, null) != Shed.room_lit(room):
+			set_room_lights(room, Shed.room_lit(room))
 	_dash_timer -= delta
 	if _dash_timer > 0.0:
 		return
@@ -918,9 +974,13 @@ func _build_shell() -> void:
 	var back_w := hx + t - DynoRoom.DOOR_HALF
 	var walls := [
 		[c + Vector3(0.0, (HEIGHT + DynoRoom.DOOR_HEIGHT) * 0.5, -hz - t * 0.5), Vector3(DynoRoom.DOOR_HALF * 2.0, HEIGHT - DynoRoom.DOOR_HEIGHT, t)],
-		[c + Vector3(-hx - t * 0.5, HEIGHT * 0.5, 0.0), Vector3(t, HEIGHT, hz * 2.0)],
-		[c + Vector3(hx + t * 0.5, HEIGHT * 0.5, 0.0), Vector3(t, HEIGHT, hz * 2.0)],
 	]
+	# The side walls, each with a doorway: the storage room to the west, the paint shop east.
+	for side in [-1.0, 1.0]:
+		var door_z: float = STORE_DOOR_Z if side < 0.0 else PAINT_DOOR_Z
+		for seg in _wall_runs(c.z - hz, c.z + hz, door_z, SIDE_DOOR_HALF):
+			walls.append([Vector3(c.x + side * (hx + t * 0.5), HEIGHT * 0.5, seg[0]), Vector3(t, HEIGHT, seg[1])])
+		walls.append([Vector3(c.x + side * (hx + t * 0.5), (HEIGHT + SIDE_DOOR_HEIGHT) * 0.5, door_z), Vector3(t, HEIGHT - SIDE_DOOR_HEIGHT, SIDE_DOOR_HALF * 2.0)])
 	var side_w := hx - DOOR_HALF
 	for side in [-1.0, 1.0]:
 		walls.append([c + Vector3(side * (DOOR_HALF + side_w * 0.5), HEIGHT * 0.5, hz + t * 0.5), Vector3(side_w + t, HEIGHT, t)])
@@ -936,8 +996,20 @@ func _build_shell() -> void:
 		_deco(self, c + Vector3(x, 0.6, -hz + 0.01), Vector3(in_w, 1.2, 0.02), _mats["wall_low"])
 	_deco(self, c + Vector3(0.0, (HEIGHT + DynoRoom.DOOR_HEIGHT) * 0.5, -hz + 0.01), Vector3(DynoRoom.DOOR_HALF * 2.0, HEIGHT - DynoRoom.DOOR_HEIGHT, 0.02), _mats["wall_in"])
 	for side in [-1.0, 1.0]:
-		_deco(self, c + Vector3(side * (hx - 0.01), HEIGHT * 0.5 + 0.6, 0.0), Vector3(0.02, HEIGHT - 1.2, hz * 2.0), _mats["wall_in"])
-		_deco(self, c + Vector3(side * (hx - 0.01), 0.6, 0.0), Vector3(0.02, 1.2, hz * 2.0), _mats["wall_low"])
+		var door_z: float = STORE_DOOR_Z if side < 0.0 else PAINT_DOOR_Z
+		var wx: float = c.x + side * (hx - 0.01)
+		for seg in _wall_runs(c.z - hz, c.z + hz, door_z, SIDE_DOOR_HALF):
+			_deco(self, Vector3(wx, HEIGHT * 0.5 + 0.6, seg[0]), Vector3(0.02, HEIGHT - 1.2, seg[1]), _mats["wall_in"])
+			_deco(self, Vector3(wx, 0.6, seg[0]), Vector3(0.02, 1.2, seg[1]), _mats["wall_low"])
+		_deco(self, Vector3(wx, (HEIGHT + SIDE_DOOR_HEIGHT) * 0.5, door_z), Vector3(0.02, HEIGHT - SIDE_DOOR_HEIGHT, SIDE_DOOR_HALF * 2.0), _mats["wall_in"])
+		# Hazard-yellow frame round the doorway, through the wall's thickness.
+		var fx: float = c.x + side * (hx + t * 0.5)
+		for end in [-1.0, 1.0]:
+			_deco(self, Vector3(fx, SIDE_DOOR_HEIGHT * 0.5, door_z + end * (SIDE_DOOR_HALF + 0.05)), Vector3(t + 0.06, SIDE_DOOR_HEIGHT, 0.1), _mats["yellow"])
+		_deco(self, Vector3(fx, SIDE_DOOR_HEIGHT + 0.05, door_z), Vector3(t + 0.06, 0.1, SIDE_DOOR_HALF * 2.0 + 0.2), _mats["yellow"])
+		var door_sign := _label("STORAGE" if side < 0.0 else "PAINT SHOP", Vector3(c.x + side * (hx - 0.03), SIDE_DOOR_HEIGHT + 0.35, door_z),
+			-side * PI * 0.5, 44, Color(0.08, 0.08, 0.08))
+		door_sign.outline_size = 0
 		_deco(self, c + Vector3(side * (DOOR_HALF + side_w * 0.5), HEIGHT * 0.5 + 0.6, hz - 0.01), Vector3(side_w, HEIGHT - 1.2, 0.02), _mats["wall_in"])
 		_deco(self, c + Vector3(side * (DOOR_HALF + side_w * 0.5), 0.6, hz - 0.01), Vector3(side_w, 1.2, 0.02), _mats["wall_low"])
 		# Hazard-yellow door posts.
@@ -1081,23 +1153,6 @@ func _build_bin() -> void:
 		_target(pos + Vector3(0.0, BIN_SIZE.y * 0.5 - 0.02, 0.0), BIN_SIZE + Vector3(0.04, 0.0, 0.04), {"bin": which})
 
 
-## A pegboard of hand tools above the engine stand.
-func _build_tool_wall() -> void:
-	var x := CENTER.x + HALF.x - 0.04
-	var z0 := CENTER.z - 1.8
-	_deco(self, Vector3(x, 2.2, z0 + 1.4), Vector3(0.03, 1.2, 2.8), _material(Color(0.55, 0.42, 0.28), 0.0, 0.8, _noise(1.5, 0.75, 1.0), 6.0))
-	var steel: Material = _mats["chrome"]
-	for i in 10:
-		var len := 0.22 + (i % 4) * 0.06
-		var tool := _deco(self, Vector3(x - 0.04, 2.45 - len * 0.5, z0 + 0.3 + i * 0.25), Vector3(0.015, len, 0.035), steel)
-		tool.rotation.x = 0.08 * (i % 3 - 1)
-		_deco(self, Vector3(x - 0.04, 2.47, z0 + 0.3 + i * 0.25), Vector3(0.02, 0.05, 0.07), steel)
-	for i in 5:
-		var handle := _deco(self, Vector3(x - 0.05, 1.9, z0 + 0.4 + i * 0.5), Vector3(0.05, 0.3, 0.05), _mats["red"] if i % 2 else _mats["yellow"])
-		handle.rotation.x = 0.1
-		_deco(self, Vector3(x - 0.05, 1.7, z0 + 0.4 + i * 0.5), Vector3(0.025, 0.12, 0.025), steel)
-
-
 ## A wall shelf over the back end of the workbench with the shed radio on it.
 func _build_radio() -> void:
 	var x := CENTER.x - HALF.x
@@ -1162,44 +1217,214 @@ func _build_wash_bay() -> void:
 	add_child(light)
 
 
+## Splits a wall running from `from` to `to` round a doorway at `door` (half width `half`):
+## [[middle, length]] of the solid runs either side.
+static func _wall_runs(from: float, to: float, door: float, half: float) -> Array:
+	var out := []
+	if door - half > from:
+		out.append([(from + door - half) * 0.5, door - half - from])
+	if door + half < to:
+		out.append([(door + half + to) * 0.5, to - door - half])
+	return out
+
+
+## The paint shop off the east wall, entered from inside the shed through the doorway by the
+## parts computer: white walls, a dark ceiling with a honeycomb of hexagon LED tiles, its own
+## light switch by the door, and the downdraft spray bay (equipment "booth_shop") built in.
 func _build_booth_room() -> void:
 	var c := BOOTH_ROOM_CENTER
 	var hx := BOOTH_ROOM_HALF.x
 	var hz := BOOTH_ROOM_HALF.y
-	var h := 3.1
+	var h := ROOM_HEIGHT
 	var floor_mat := _material(Color(0.33, 0.35, 0.37), 0.0, 0.4, _noise(0.3, 0.85, 1.05), 4.0)
 	var floor_mi := _deco(self, c + Vector3(0.0, 0.006, 0.0), Vector3(hx * 2.0, 0.012, hz * 2.0), floor_mat)
 	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	# Back and outer walls (the shed wall is the inner side), and a front wall with a wide doorway.
-	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.2, h, 0.2), _mats["cladding"])
-	_solid(c + Vector3(hx + 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.2), _mats["cladding"])
-	var gap := 1.25
-	for side in [-1.0, 1.0]:
-		var w: float = hx - gap
-		_solid(c + Vector3(side * (gap + w * 0.5), h * 0.5, hz + 0.1), Vector3(w, h, 0.2), _mats["cladding"])
-		_deco(self, c + Vector3(side * (gap + 0.06), 1.25, hz + 0.1), Vector3(0.12, 2.5, 0.24), _mats["yellow"])
-	_solid(c + Vector3(0.0, (h + 2.5) * 0.5, hz + 0.1), Vector3(gap * 2.0, h - 2.5, 0.2), _mats["cladding"])
+	# Back, front and outer walls, all closed: the way in is from the shed (its east wall is
+	# this room's west side).
+	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
+	_solid(c + Vector3(0.0, h * 0.5, hz + 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
+	_solid(c + Vector3(hx + 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.4), _mats["cladding"])
+	_solid(c + Vector3(0.0, h + 0.08, 0.0), Vector3(hx * 2.0 + 0.4, 0.12, hz * 2.0 + 0.4), _mats["roof"])
 	var white := _material(Color(0.9, 0.91, 0.92), 0.0, 0.35)
 	_deco(self, c + Vector3(0.0, h * 0.5, -hz + 0.005), Vector3(hx * 2.0, h, 0.01), white)
+	_deco(self, c + Vector3(0.0, h * 0.5, hz - 0.005), Vector3(hx * 2.0, h, 0.01), white)
 	_deco(self, c + Vector3(hx - 0.005, h * 0.5, 0.0), Vector3(0.01, h, hz * 2.0), white)
-	_deco(self, c + Vector3(-hx + 0.005, h * 0.5, 0.0), Vector3(0.01, h, hz * 2.0), white)
+	var wx := c.x - hx + 0.005
+	for seg in _wall_runs(c.z - hz, c.z + hz, PAINT_DOOR_Z, SIDE_DOOR_HALF):
+		_deco(self, Vector3(wx, h * 0.5, seg[0]), Vector3(0.01, h, seg[1]), white)
+	_deco(self, Vector3(wx, (h + SIDE_DOOR_HEIGHT) * 0.5, PAINT_DOOR_Z), Vector3(0.01, h - SIDE_DOOR_HEIGHT, SIDE_DOOR_HALF * 2.0), white)
+	_poster("SPRAY GUN: TOOL 7", Vector3(wx + 0.01, 1.6, PAINT_DOOR_Z - SIDE_DOOR_HALF - 1.2), PI * 0.5, Vector2(0.8, 0.2))
+	# A dark ceiling so the hexagon tiles stand out.
+	var ceiling := _deco(self, c + Vector3(0.0, h - 0.005, 0.0), Vector3(hx * 2.0, 0.01, hz * 2.0), _material(Color(0.08, 0.08, 0.09), 0.2, 0.6))
+	ceiling.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_room_mats["paint"].append(_hex_ceiling(Rect2(c.x - hx + 0.35, c.z - hz + 0.35, hx * 2.0 - 0.7, hz * 2.0 - 0.7), h - 0.04, 0.55))
+	# Real light under the tiles: bright clean white from above, shadowed so none of it shines
+	# through the walls into the shed.
+	for p in [Vector2(-1.8, -2.6), Vector2(1.2, -2.6), Vector2(-1.8, 2.6), Vector2(1.2, 2.6)]:
+		var spot := SpotLight3D.new()
+		spot.position = c + Vector3(p.x, h - 0.12, p.y)
+		spot.rotation.x = -PI * 0.5
+		spot.spot_angle = 72.0
+		spot.spot_range = 5.5
+		spot.spot_attenuation = 0.8
+		spot.light_energy = 1.7
+		spot.light_color = Color(0.97, 0.99, 1.0)
+		spot.shadow_enabled = true
+		add_child(spot)
+		_room_lights["paint"].append(spot)
+	_room_probe("paint", c, Vector3(hx * 2.0 + 0.1, h, hz * 2.0 + 0.1), Color(0.8, 0.82, 0.86), 0.6)
+	_room_switch("paint", Vector3(c.x - hx + 0.03, 1.35, PAINT_DOOR_Z - SIDE_DOOR_HALF - 0.3), 1.0)
+
+
+## A honeycomb of hexagon LED tubes across a ceiling, the shared edges drawn once, inside a
+## rectangular frame. Returns the glowing material (its brightness follows the light switch).
+func _hex_ceiling(area: Rect2, y: float, r: float) -> StandardMaterial3D:
+	var glow := _material(Color(1.0, 1.0, 1.0), 0.0, 0.4)
+	glow.emission_enabled = true
+	glow.emission = Color(0.97, 0.99, 1.0)
+	glow.emission_energy_multiplier = 4.0
+	var edges := {}   # rounded middle -> [a, b]
+	var row_h := sqrt(3.0) * r
+	var cols := int(floor((area.size.x - 2.0 * r) / (1.5 * r))) + 1
+	var rows := int(floor((area.size.y - row_h) / row_h)) + 1
+	# Centre the honeycomb in the area.
+	var span := Vector2((cols - 1) * 1.5 * r + 2.0 * r, rows * row_h + (row_h * 0.5 if cols > 1 else 0.0))
+	var origin := area.position + (area.size - span) * 0.5 + Vector2(r, row_h * 0.5)
+	for col in cols:
+		for row in rows:
+			var centre := origin + Vector2(col * 1.5 * r, row * row_h + (row_h * 0.5 if col % 2 == 1 else 0.0))
+			for k in 6:
+				var a := centre + Vector2.from_angle(k * PI / 3.0) * r
+				var b := centre + Vector2.from_angle((k + 1) * PI / 3.0) * r
+				var key := Vector2i(roundi((a.x + b.x) * 50.0), roundi((a.y + b.y) * 50.0))
+				edges[key] = [a, b]
+	# The frame round the whole array.
+	var lo := origin - Vector2(r, row_h * 0.5) - Vector2(0.12, 0.12)
+	var hi := lo + span + Vector2(0.24, 0.24)
+	var frame := [[lo, Vector2(hi.x, lo.y)], [Vector2(hi.x, lo.y), hi], [hi, Vector2(lo.x, hi.y)], [Vector2(lo.x, hi.y), lo]]
+	var segs: Array = edges.values() + frame
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	var tube := BoxMesh.new()
+	tube.size = Vector3(0.035, 0.025, 1.0)
+	mm.mesh = tube
+	mm.instance_count = segs.size()
+	for i in segs.size():
+		var a: Vector2 = segs[i][0]
+		var b: Vector2 = segs[i][1]
+		var d := b - a
+		var turn := Basis(Vector3.UP, atan2(d.x, d.y)) * Basis.from_scale(Vector3(1.0, 1.0, d.length() * 0.94))
+		mm.set_instance_transform(i, Transform3D(turn, Vector3((a.x + b.x) * 0.5, y, (a.y + b.y) * 0.5)))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "HexLights"
+	mmi.multimesh = mm
+	mmi.material_override = glow
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
+	return glow
+
+
+## The storage room off the west wall: an empty, lit room with a plain concrete floor for
+## lining up shelving in rows, through the doorway by the shed's back corner.
+func _build_storage_room() -> void:
+	var c := STORE_CENTER
+	var hx := STORE_HALF.x
+	var hz := STORE_HALF.y
+	var h := ROOM_HEIGHT
+	# Part of it sits off the back of the yard slab, so it has its own floor slab.
+	_solid(c + Vector3(0.0, -0.25, 0.0), Vector3(hx * 2.0 + 0.4, 0.5, hz * 2.0 + 0.4), _mats["floor"]).name = "StorageFloor"
+	var floor_mi := _deco(self, c + Vector3(0.0, 0.004, 0.0), Vector3(hx * 2.0, 0.008, hz * 2.0), _mats["floor"])
+	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Its own walls on three sides and the stretch of the fourth behind the shed; the shed's
+	# west wall, with the doorway, closes the rest.
+	var shed_back := CENTER.z - HALF.y - 0.3
+	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
+	_solid(c + Vector3(0.0, h * 0.5, hz + 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
+	_solid(c + Vector3(-hx - 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.4), _mats["cladding"])
+	var east_len := shed_back - (c.z - hz - 0.2)
+	_solid(Vector3(c.x + hx + 0.1, h * 0.5, c.z - hz - 0.2 + east_len * 0.5), Vector3(0.2, h, east_len), _mats["cladding"])
 	_solid(c + Vector3(0.0, h + 0.08, 0.0), Vector3(hx * 2.0 + 0.4, 0.12, hz * 2.0 + 0.4), _mats["roof"])
-	var sign := _label("PAINT SHOP", c + Vector3(0.0, 2.8, hz + 0.22), 0.0, 64, Color(0.08, 0.08, 0.08))
-	sign.outline_size = 0
-	_poster("SPRAY GUN: TOOL 7", c + Vector3(-hx + 0.02, 1.6, hz - 0.9), PI * 0.5, Vector2(0.8, 0.2))
-	var lamp := _material(Color(1.0, 0.98, 0.95), 0.0, 0.5)
-	lamp.emission_enabled = true
-	lamp.emission = Color(1.0, 0.98, 0.94)
-	lamp.emission_energy_multiplier = 3.0
-	_deco(self, c + Vector3(0.0, h - 0.06, hz - 0.9), Vector3(1.6, 0.04, 0.15), lamp)
-	_fixture_mats.append(lamp)
-	var light := OmniLight3D.new()
-	light.position = c + Vector3(0.0, h - 0.4, hz - 0.9)
-	light.omni_range = 4.5
-	light.light_energy = 0.9
-	light.light_color = Color(1.0, 0.97, 0.92)
-	add_child(light)
-	_shed_lights.append(light)
+	# Inside faces: plaster over a dark band, like the shed.
+	var faces := [
+		[c + Vector3(0.0, 0.0, -hz + 0.01), Vector3(hx * 2.0, 0.0, 0.02)],
+		[c + Vector3(0.0, 0.0, hz - 0.01), Vector3(hx * 2.0, 0.0, 0.02)],
+		[c + Vector3(-hx + 0.01, 0.0, 0.0), Vector3(0.02, 0.0, hz * 2.0)],
+	]
+	for seg in _wall_runs(c.z - hz, c.z + hz, STORE_DOOR_Z, SIDE_DOOR_HALF):
+		faces.append([Vector3(c.x + hx - 0.01, 0.0, seg[0]), Vector3(0.02, 0.0, seg[1])])
+	for f in faces:
+		var face_at: Vector3 = f[0]
+		var size: Vector3 = f[1]
+		_deco(self, face_at + Vector3(0.0, h * 0.5 + 0.6, 0.0), size + Vector3(0.0, h - 1.2, 0.0), _mats["wall_in"])
+		_deco(self, face_at + Vector3(0.0, 0.6, 0.0), size + Vector3(0.0, 1.2, 0.0), _mats["wall_low"])
+	_deco(self, Vector3(c.x + hx - 0.01, (h + SIDE_DOOR_HEIGHT) * 0.5, STORE_DOOR_Z), Vector3(0.02, h - SIDE_DOOR_HEIGHT, SIDE_DOOR_HALF * 2.0), _mats["wall_in"])
+	_poster("STORAGE", Vector3(c.x - hx + 0.012, 1.7, c.z), PI * 0.5, Vector2(0.5, 0.18))
+	# Strip lights in two rows, a shadowed lamp under each so the shelving throws shadows.
+	var fixture := _material(Color(1.0, 0.97, 0.9), 0.0, 0.5)
+	fixture.emission_enabled = true
+	fixture.emission = Color(1.0, 0.95, 0.85)
+	fixture.emission_energy_multiplier = 4.0
+	_room_mats["storage"].append(fixture)
+	for i in 2:
+		for j in 2:
+			var at := c + Vector3((i - 0.5) * hx, h - 0.06, (j - 0.5) * hz)
+			_deco(self, at, Vector3(0.18, 0.05, 1.4), fixture)
+			if j == 0:
+				continue
+			var spot := SpotLight3D.new()
+			spot.position = Vector3(at.x, h - 0.15, c.z)
+			spot.rotation.x = -PI * 0.5
+			spot.spot_angle = 70.0
+			spot.spot_range = 5.5
+			spot.light_energy = 1.6
+			spot.light_color = Color(1.0, 0.95, 0.88)
+			spot.shadow_enabled = true
+			add_child(spot)
+			_room_lights["storage"].append(spot)
+	_room_probe("storage", c, Vector3(hx * 2.0 + 0.1, h, hz * 2.0 + 0.1), Color(0.55, 0.5, 0.45), 0.4)
+	_room_switch("storage", Vector3(c.x + hx - 0.03, 1.35, STORE_DOOR_Z + SIDE_DOOR_HALF + 0.3), -1.0)
+
+
+## A room's ambient light: warm fill while its lights are on, dark when they're off.
+func _room_probe(room: String, at: Vector3, size: Vector3, color: Color, energy: float) -> void:
+	var probe := ReflectionProbe.new()
+	probe.position = at + Vector3(0.0, size.y * 0.5, 0.0)
+	probe.size = size
+	probe.interior = true
+	probe.box_projection = true
+	probe.ambient_mode = ReflectionProbe.AMBIENT_COLOR
+	probe.ambient_color = color
+	probe.ambient_color_energy = energy
+	probe.update_mode = ReflectionProbe.UPDATE_ONCE
+	probe.set_meta("energy", energy)
+	add_child(probe)
+	_room_probes[room] = probe
+
+
+## A light switch for a side room on a wall facing along x (`facing` +1 or -1).
+func _room_switch(room: String, at: Vector3, facing: float) -> void:
+	var plate := _material(Color(0.92, 0.92, 0.9), 0.0, 0.5)
+	_deco(self, at, Vector3(0.03, 0.14, 0.1), plate)
+	var rocker := _deco(self, at + Vector3(facing * 0.02, 0.0, 0.0), Vector3(0.015, 0.07, 0.04), _material(Color(0.85, 0.85, 0.82), 0.0, 0.5))
+	rocker.name = "LightRocker_" + room
+	_poster("LIGHTS", at + Vector3(facing * 0.018, 0.13, 0.0), facing * PI * 0.5, Vector2(0.16, 0.06))
+	_target(at, Vector3(0.1, 0.2, 0.16), {"light_switch": room})
+
+
+## A side room's lights on or off (its switch by the door).
+func set_room_lights(room: String, on: bool) -> void:
+	_room_shown[room] = on
+	for l in _room_lights.get(room, []):
+		(l as Light3D).visible = on
+	for m in _room_mats.get(room, []):
+		(m as StandardMaterial3D).emission_energy_multiplier = 4.0 if on else 0.0
+	var probe: ReflectionProbe = _room_probes.get(room, null)
+	if probe:
+		probe.ambient_color_energy = float(probe.get_meta("energy", 0.4)) if on else 0.0
+		probe.intensity = 1.0 if on else 0.15
+	var rocker := get_node_or_null("LightRocker_" + room)
+	if rocker:
+		rocker.rotation.z = 0.0 if on else 0.5
 
 
 ## The roller door that comes down over the opening, and the switches inside beside it: one for

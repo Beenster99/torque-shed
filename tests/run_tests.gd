@@ -92,6 +92,10 @@ func _run_all() -> void:
 	_test_recycling()
 	await _test_tv_channels()
 	await _test_tv_and_bins_session()
+	print("Side rooms: paint shop, storage room, light switches")
+	_test_side_rooms()
+	_test_side_rooms_old_save()
+	await _test_side_rooms_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1734,8 +1738,8 @@ func _test_round6_shed() -> void:
 	for id in Shed.furniture:
 		if Shed.furniture[id]["kind"] == "booth":
 			booth = id
-	check(booth != 0 and Shed.furniture_spots(booth).size() == 6, "the shed has a built-in paint booth with six hooks")
-	check(Shed.furniture[booth]["xf"] == Workshop.BOOTH_XF, "in the paint shop lean-to")
+	check(booth != 0 and Shed.furniture_spots(booth).size() >= 10, "the shed has a built-in paint booth with ten hooks")
+	check(Shed.furniture[booth]["xf"] == Workshop.BOOTH_XF, "in the paint shop")
 	check(Shed.check(me, {"a": "grab", "furniture": booth}) != "", "it can't be moved")
 	check(Shed.check(me, {"a": "order_furniture", "model": "booth_compact"}) != "", "and booths aren't sold")
 	var tank := Shed._new_item("cafe_15", 0.0, 0.0, 0.0)
@@ -3144,6 +3148,223 @@ func _test_tv_and_bins_session() -> void:
 	check(w.target.get("bin", "") == "general", "general waste is next to it")
 	await _hold_act(main)
 	check(not Shed.items.has(tyre), "the tyre goes in general waste")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+
+func _test_side_rooms() -> void:
+	var rooms := Workshop.rooms()
+	var wash := Rect2(Workshop.WASH_CENTER.x - Workshop.WASH_HALF.x, Workshop.WASH_CENTER.z - Workshop.WASH_HALF.y,
+		Workshop.WASH_HALF.x * 2.0, Workshop.WASH_HALF.y * 2.0)
+	var names: Array = rooms.keys()
+	var apart := true
+	for i in names.size():
+		var a: Rect2 = rooms[names[i]]
+		apart = apart and not a.grow(-0.05).intersects(wash)
+		for j in range(i + 1, names.size()):
+			apart = apart and not a.grow(-0.05).intersects((rooms[names[j]] as Rect2).grow(-0.05))
+	check(apart, "the shed, paint shop, storage room, dyno room and wash bay don't overlap")
+	check(Workshop.room_at(Workshop.BOOTH_ROOM_CENTER) == "paint" and Workshop.room_at(Workshop.STORE_CENTER) == "storage"
+		and Workshop.room_at(Workshop.CENTER) == "shed", "every room knows where it is")
+	# Each side door opens off the shed into its room, clear of the bays and the parts computer.
+	var doors := Workshop.side_doors()
+	for room in ["paint", "storage"]:
+		var d: Dictionary = doors[room]
+		var side := signf(float(d["x"]) - Workshop.CENTER.x)
+		var inside := Vector3(float(d["x"]) - side * 0.5, 0.0, float(d["z"]))
+		var beyond := Vector3(float(d["x"]) + side * 0.5, 0.0, float(d["z"]))
+		check(Workshop.room_at(inside) == "shed" and Workshop.room_at(beyond) == room, "the %s door leads from the shed into the room" % room)
+	check(absf(Workshop.PAINT_DOOR_Z - (Workshop.CENTER.z + 1.9)) > 0.65 + Workshop.SIDE_DOOR_HALF, "the paint shop door is clear of the parts computer")
+	# The storage room takes three rows of the biggest shelving, with walking aisles round them.
+	var store: Rect2 = rooms["storage"]
+	var rack: Vector3 = Equipment.get_model("shelf_racking")["size"]
+	var aisle := 1.1
+	check(store.size.y >= 3.0 * rack.z + 4.0 * aisle and store.size.x >= 2.0 * rack.x + 2.0 * aisle,
+		"the storage room fits three rows of two heavy-duty racks with aisles round them (%.1f x %.1f m)" % [store.size.x, store.size.y])
+	# Ten hooks in the paint shop, spaced to walk round every part.
+	Shed.start_new("Tester", 12)
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var hooks: Array = Shed.furniture_spots(booth)
+	check(hooks.size() >= 10 and Shed.furniture[booth]["model"] == Workshop.BOOTH_MODEL, "the paint shop's spray bay has %d hooks" % hooks.size())
+	var paint: Rect2 = rooms["paint"]
+	var gap := 99.0
+	var wall := 99.0
+	var bay := Workshop.booth_footprint()
+	for i in hooks.size():
+		var at: Vector3 = Shed.spot_transform(hooks[i]).origin
+		wall = minf(wall, minf(minf(at.x - paint.position.x, paint.end.x - at.x), minf(at.z - paint.position.y, paint.end.y - at.z)))
+		check(bay.has_point(Vector2(at.x, at.z)), "hook %d is inside the spray bay" % i)
+		for j in range(i + 1, hooks.size()):
+			gap = minf(gap, at.distance_to(Shed.spot_transform(hooks[j]).origin))
+	check(gap >= 1.2 and wall >= 1.0, "the hooks are %.1f m apart and %.1f m from the walls: room to walk round each part" % [gap, wall])
+	check(paint.encloses(bay), "the spray bay fits inside the paint shop")
+	check(bay.position.x - paint.position.x >= 2.0, "with a walkway from the door in front of it")
+	# Light switches for the side rooms, host-checked and in the snapshot everyone gets.
+	var me := Shed.me()
+	check(Shed.room_lit("paint") and Shed.room_lit("storage"), "a new shed's side rooms start lit")
+	check(Shed.check(me, {"a": "lights", "room": "attic", "on": false}) != "", "there's no switch for a room that isn't there")
+	Shed.request({"a": "lights", "room": "paint", "on": false})
+	check(not Shed.room_lit("paint") and Shed.room_lit("storage") and Shed.lights_on, "the paint shop switch only turns off the paint shop")
+	Shed.request({"a": "lights", "room": "storage", "on": false})
+	var snap: Dictionary = Shed._snapshot().duplicate(true)
+	check(snap["room_lights"] == {"paint": false, "storage": false}, "the side rooms' lights go out with the shed state")
+	Shed.start_new("Tester", 13)
+	Shed.load_state(snap, "Tester")
+	check(not Shed.room_lit("paint") and not Shed.room_lit("storage"), "and come back from a save as they were left")
+	Shed.stop()
+
+
+## A shed saved before the side rooms: the old six-hook booth and a bought tent with parts on
+## their hooks, a shelf where the bigger bay stands now, and no room lights saved.
+func _test_side_rooms_old_save() -> void:
+	Shed.start_new("Tester", 14)
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	Shed.furniture[booth]["model"] = "booth_pro"
+	Shed.furniture[booth]["xf"] = Transform3D(Basis(), Vector3(9.0, 0.0, 64.85))
+	var tent := Shed._new_furniture("booth", Transform3D(Basis(), Vector3(9.0, 0.0, 67.0)), "booth_compact")
+	var shelf := Shed._new_furniture("shelf", Transform3D(Basis(), Vector3(12.0, 0.0, 65.0)), "shelf_standard")
+	var loose: Array = []
+	for part in ["solid_240", "sport_road", "solid_240"]:
+		loose.append(Shed._new_item(part, 0.0, 0.0, 0.0))
+	Shed._move(loose[0], "spot", "booth_%d_2" % booth)
+	Shed._move(loose[1], "spot", "booth_%d_5" % booth)
+	Shed._move(loose[2], "spot", "booth_%d_0" % tent)
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	old.erase("room_lights")
+	Shed.start_new("Tester", 15)
+	Shed.load_state(old, "Tester")
+	var booths := Shed.furniture.values().filter(func(f): return f["kind"] == "booth")
+	check(booths.size() == 1 and int(booths[0]["id"]) == booth and booths[0]["model"] == Workshop.BOOTH_MODEL
+		and booths[0]["xf"] == Workshop.BOOTH_XF, "an old save's booth becomes the paint shop's ten-hook spray bay")
+	check(Shed.items[loose[0]]["ref"] == "booth_%d_2" % booth and Shed.items[loose[1]]["ref"] == "booth_%d_5" % booth,
+		"parts on its hooks stay on the same hooks")
+	var moved := str(Shed.items[loose[2]]["ref"])
+	check(Shed.items[loose[2]]["at"] == "spot" and moved.begins_with("booth_%d_" % booth) and Shed.spot_role(moved) == "booth"
+		and Shed.all_spots().has(moved), "a part from a second booth moves onto a free hook (%s)" % moved)
+	var spots := {}
+	for id in Shed.items:
+		if Shed.items[id]["at"] == "spot":
+			spots[Shed.items[id]["ref"]] = spots.get(Shed.items[id]["ref"], 0) + 1
+	check(spots.values().all(func(v): return v == 1), "no two parts share a place")
+	var at: Vector3 = (Shed.furniture[shelf]["xf"] as Transform3D).origin
+	check(not Workshop.booth_footprint().has_point(Vector2(at.x, at.z)) and Workshop.room_at(at) == "paint",
+		"a shelf standing where the spray bay is now moves to the paint shop walkway")
+	check(Shed.room_lit("paint") and Shed.room_lit("storage"), "the side rooms are lit in a save from before their switches")
+	Shed.stop()
+
+
+func _test_side_rooms_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var space: PhysicsDirectSpaceState3D = main.workshop.get_world_3d().direct_space_state
+	var ray := func(a: Vector3, b: Vector3) -> Dictionary:
+		var q := PhysicsRayQueryParameters3D.create(a, b, 1)
+		return space.intersect_ray(q)
+	var doors := Workshop.side_doors()
+	for room in ["paint", "storage"]:
+		var d: Dictionary = doors[room]
+		var x := float(d["x"])
+		var z := float(d["z"])
+		check(ray.call(Vector3(x - 1.0, 1.2, z), Vector3(x + 1.0, 1.2, z)).is_empty(), "the %s doorway is open" % room)
+		check(not ray.call(Vector3(x - 1.0, 1.2, z - 1.4), Vector3(x + 1.0, 1.2, z - 1.4)).is_empty()
+			and not ray.call(Vector3(x - 1.0, 2.8, z), Vector3(x + 1.0, 2.8, z)).is_empty(), "with wall either side and over it")
+	# The paint shop's old way in from the yard is closed.
+	var pc := Workshop.BOOTH_ROOM_CENTER
+	var front := pc.z + Workshop.BOOTH_ROOM_HALF.y
+	for dx in [-2.5, -1.0, 0.0, 1.0, 2.5]:
+		check(not ray.call(Vector3(pc.x + dx, 1.2, front + 1.5), Vector3(pc.x + dx, 1.2, front - 0.5)).is_empty(),
+			"the paint shop is closed to the yard (x %+.1f)" % dx)
+	# The storage room has a floor to stand shelving on.
+	var sc := Workshop.STORE_CENTER
+	for p in [Vector2(-3.5, -3.5), Vector2(3.5, -3.5), Vector2(0.0, 0.0), Vector2(-3.5, 3.5)]:
+		var hit: Dictionary = ray.call(sc + Vector3(p.x, 2.5, p.y), sc + Vector3(p.x, -1.0, p.y))
+		check(not hit.is_empty() and absf((hit["position"] as Vector3).y) < 0.02, "the storage room floor is level (%s)" % str(p))
+	# Push a rack into the storage room and leave it there.
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	Shed.request({"a": "order_furniture", "model": "shelf_racking"})
+	var rack := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == "shelf_racking":
+			rack = id
+	Shed.request({"a": "grab", "furniture": rack})
+	w.place(Transform3D(Basis(Vector3.UP, PI * 0.5), sc + Vector3(1.5, 0.1, -2.0)))
+	for i in 10:
+		await get_tree().physics_frame
+	var xf: Transform3D = w._push_transform(rack)
+	check(Workshop.room_at(xf.origin) == "storage" and absf(xf.origin.y) < 0.05, "a rack pushed in the storage room stands on its floor (%s)" % str(xf.origin))
+	check(Shed.check(Shed.me(), {"a": "release", "furniture": rack, "xf": xf}) == "", "and can be let go there")
+	Shed.request({"a": "release", "furniture": rack, "xf": xf})
+	check(Workshop.room_at((Shed.furniture[rack]["xf"] as Transform3D).origin) == "storage", "the rack stays in the storage room")
+	# Each side room's switch, and its lights follow it.
+	var ws: Workshop = main.workshop
+	for room in ["paint", "storage"]:
+		var sw: Node3D = ws.get_node("LightRocker_" + room)
+		var d: Dictionary = doors[room]
+		var side := signf(float(d["x"]) - Workshop.CENTER.x)
+		w.place(Transform3D(Basis(), Vector3(sw.global_position.x + side * 1.2, 0.1, sw.global_position.z)))
+		await _aim_point(w, sw.global_position)
+		check(w.target.get("kind", "") == "lights" and w.target.get("room", "") == room, "the %s light switch is by its door (%s)" % [room, str(w.target)])
+		check(w.info.contains("lights"), "and says what it switches")
+		Shed.request({"a": "lights", "room": room, "on": false})
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var lamps: Array = ws._room_lights[room]
+		check(not lamps.is_empty() and lamps.all(func(l): return not (l as Light3D).visible), "the %s lights go off" % room)
+		Shed.request({"a": "lights", "room": room, "on": true})
+		await get_tree().process_frame
+		await get_tree().process_frame
+		check(lamps.all(func(l): return (l as Light3D).visible), "and on again")
+	check(ws.get_node_or_null("HexLights") is MultiMeshInstance3D and (ws.get_node("HexLights") as MultiMeshInstance3D).multimesh.instance_count > 60,
+		"the paint shop ceiling is a honeycomb of hexagon lights")
+	# Screens light only the room in front of them.
+	var omni := 0
+	for dash in ws.screens().values():
+		for child in (dash as Node).get_children():
+			if child is OmniLight3D:
+				omni += 1
+		var spill: SpotLight3D = (dash as Node).get_node_or_null("Spill")
+		check(spill != null and (spill.global_basis.z).dot((dash as Node3D).global_basis.z) < -0.99, "a screen's light shines out of its face")
+	check(omni == 0, "and none of them glows all round, through the wall behind")
+	# Walking into a hanging part sets it swinging, and it soon settles.
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var hook: String = Shed.furniture_spots(booth)[3]
+	var disc := _hold_new("solid_240")
+	check(Shed.check(Shed.me(), {"a": "place", "spot": hook}) == "", "a disc can hang on a hook")
+	Shed.request({"a": "place", "spot": hook})
+	await get_tree().process_frame
+	check(Shed.item_at_spot(hook) == disc, "the disc is on the hook")
+	var swing: Swing = ws._spot_nodes[hook].get_parent()
+	swing._angle = Vector2.ZERO
+	swing._rate = Vector2.ZERO
+	var part := swing.part_position()
+	var dir := Vector3(0.0, 0.0, 1.0)
+	w.place(Transform3D(Basis(), Vector3(part.x, 0.1, part.z) - dir * 1.2))
+	await get_tree().physics_frame
+	var most := 0.0
+	for i in 60:
+		w.global_position += dir * 2.4 / 60.0
+		await get_tree().physics_frame
+		most = maxf(most, swing.angle().length())
+	check(most > 0.05, "walking into a part on its hook knocks it swinging (%.2f rad)" % most)
+	for i in 600:
+		await get_tree().physics_frame
+	check(swing.angle().length() < 0.02, "and it settles again after a few seconds (%.3f)" % swing.angle().length())
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

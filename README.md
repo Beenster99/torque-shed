@@ -40,7 +40,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Ping what you're looking at for the crew | G or middle mouse | D-pad right |
 | Stopwatch start / stop (lap or reset: right mouse with the stopwatch out) | P | D-pad left |
 | Name the bike you're looking at | N | |
-| Roller door, shed lights (switches by the door) | F | Y |
+| Roller door, shed lights (switches by the door); paint shop and storage room lights (switch inside each door) | F | Y |
 | Drain a fluid (holding a drain pan, empty can or bleed bottle); with the wrench at a chain, set its tension | Hold R or right mouse | Hold X |
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
 | Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
@@ -72,9 +72,11 @@ To change one: unbolt the wheel and take it off the bike (any brake disc, calipe
 
 The **parts computer** is split into three aisles, **Shed**, **Bike** and **Outdoors**, and has a search box that finds any part or piece of kit by name, kind or spec.
 
-The **paint shop** is built into the shed now, through the doorway on the east side: a white-walled room with a booth of six hooks. Hang parts on its hooks and sweep the **spray gun** over them; the parts swing on their hooks when you knock them or spray them. The gun's fine mist coats every part it passes, and the booth adds a better finish. With the can or the gun, the wet paint shows on the part as you go, so you can see the patches you've missed, and too much in one place runs. Fluid containers are see-through or have a sight strip, so you can see how full they are.
+The **paint shop** is through the doorway in the east wall, between the parts computer and the parts washer; it's only reachable from inside the shed. It's a white-walled room with a ceiling of bright white **hexagon LED tiles** and its own light switch just inside the door. Its built-in **downdraft spray bay** has **ten hooks** on two rails, spaced so you can walk right round every part, with a walkway between the bay and the door. Hang parts on its hooks and sweep the **spray gun** over them. Hung parts swing on their hooks when you (or a mate) walk into them or spray them, and settle again after a few seconds. The gun's fine mist coats every part it passes, and the bay adds a better finish. With the can or the gun, the wet paint shows on the part as you go, so you can see the patches you've missed, and too much in one place runs. Fluid containers are see-through or have a sight strip, so you can see how full they are. In a shed saved before the paint shop got bigger, parts on the old booth's hooks stay on the same hooks.
 
-**Ping** (G or middle mouse) outlines whatever you're pointing at, with your name and what it is, for everyone in the shed. The **stopwatch** is for timing whatever runs you dream up; it keeps running while you ride. Press N while looking at a bike to give it a name. The roller door and the shed lights have switches beside the door. With the lights off the shed is properly dark, lit only by its TVs and screens. A day and night cycle runs outside; a whole day takes from 20 minutes up to 6 hours (2 hours by default), or you can fix the time of day, in the Esc menu.
+The **storage room** is through the doorway in the west wall, by the back corner next to bay 1. It's an empty 8 by 8 metre room with its own lights and a switch just inside the door: room for three or more rows of shelving with aisles to walk between them. Push shelving in (F to take hold of it, F to let go) and line it up however you like.
+
+**Ping** (G or middle mouse) outlines whatever you're pointing at, with your name and what it is, for everyone in the shed. The **stopwatch** is for timing whatever runs you dream up; it keeps running while you ride. Press N while looking at a bike to give it a name. The roller door and the shed lights have switches beside the door; the paint shop and the storage room each have their own light switch just inside their door. With the lights off the shed is properly dark, lit only by its TVs and screens, which light the room in front of them and nothing behind the wall. A day and night cycle runs outside; a whole day takes from 20 minutes up to 6 hours (2 hours by default), or you can fix the time of day, in the Esc menu.
 
 **Bins and recycling**: three wheelie bins stand against the front wall, left of the roller door, under the end of the whiteboard. **General waste** (black) takes anything, and it's where you tip old fluid out of a can. **Plastic** recycling (blue) takes oil and brake fluid bottles, drain pans, bleed bottles, plastic cases and top boxes. **Metal** recycling (green) takes frames, engines, wheels, discs, exhausts, chains, stands, jerry cans and chain lube cans. Every part is made of something (metal, plastic, rubber, carbon fibre, electronics, fabric and so on), and its info panel says which bin it goes in. Tyres are rubber and carbon parts can't be recycled, so they go in general waste. A recycling bin won't take the wrong material, and it tells you why ("That's rubber: general waste."). It also won't take a part still in its box, a container with fluid still in it, or an engine with parts still fitted. Look at a bin while holding a part to see whether it fits. Hold the work button to throw the part in, and it's gone. Recycling earns more XP than binning.
 
@@ -195,7 +197,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | --- | --- |
 | `data/parts.json` | Every part and its numbers, which feed the physics directly |
 | `scripts/shed_state.gd` | The shared shed: bikes, parts, who holds what. The host checks and applies every action |
-| `scripts/workshop.gd` | Builds the shed, its stations and dashboards, and draws parked bikes and loose parts |
+| `scripts/workshop.gd` | Builds the shed, the paint shop and storage room, its stations and dashboards, and draws parked bikes and loose parts |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |
 | `scripts/whiteboard.gd`, `board_data.gd` | The shared whiteboard: drawing on it, and its marks kept in the shed state |

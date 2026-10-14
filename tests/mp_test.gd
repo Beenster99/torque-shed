@@ -59,6 +59,7 @@ func _ready() -> void:
 				"pts": PackedVector2Array([Vector2(100, 100), Vector2(300, 200)]), "done": true})
 			Shed.request({"a": "tune", "bike": ranger, "key": "psi_f", "value": 0.9})
 			Shed.request({"a": "tv_channel", "screen": "crew", "step": 1})
+			Shed.request({"a": "lights", "room": "paint", "on": false})
 			asked = true
 		if role == "host" and Shed.crew.size() == 2 and not asked:
 			Shed.board_request({"a": "board_text", "id": 4343, "c": 2, "s": 38, "at": Vector2(500, 300), "text": "Host's list"})
@@ -70,7 +71,8 @@ func _ready() -> void:
 			dropped = dropped or (Shed.items[id]["ref"] is Transform3D)
 		var tuned := ranger != 0 and is_equal_approx(float(Shed.tune_of(ranger).get("psi_f", 0.0)), 0.9)
 		var tv_ok: bool = Shed.screen_channel("crew")["ch"] == "live"   # the client changed the crew board's channel
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok:
+		var lights_ok := not Shed.room_lit("paint")   # the client switched the paint shop lights off
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and lights_ok and xp_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000
