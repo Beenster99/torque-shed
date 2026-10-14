@@ -1,16 +1,19 @@
 class_name Swing
 extends Node3D
-## A part hanging from a hook: swings like a pendulum when it's knocked or caught by the spray,
-## and settles again. The part is a child, hanging below this pivot. Anyone walking into it
-## (this player or another one) knocks it the way they were going.
+## A part hanging on a hook: it, the hook and the wire swing together like a pendulum from the
+## wire's mount on the ceiling rail when it's knocked or caught by the spray, for a few seconds,
+## and settle again. This node is that mount; the wire, hook and part are children hanging
+## below it. Anyone walking into the part (this player or another one) knocks it the way they
+## were going.
 
 const GRAVITY := 9.8
 ## How close someone has to come to the hanging part to knock it, and how hard it goes.
 const KNOCK_RADIUS := 0.5
 const KNOCK_GAIN := 0.5          # push per metre walked through it, at a walk
+const MAX_ANGLE := 0.45           # radians either way, at most
 
-var length := 0.55          # hook to the part's middle, in metres
-var damping := 1.3          # how quickly the swing dies away (a knock settles in a few seconds)
+var length := 0.55          # the rail mount to the part, in metres
+var damping := 0.9          # how quickly the swing dies away (a knock swings for a few seconds)
 var _angle := Vector2.ZERO  # tilt about the pivot's x and z axes, radians
 var _rate := Vector2.ZERO
 var _last := {}             # walker instance id -> where they were last frame
@@ -68,7 +71,7 @@ func _physics_process(delta: float) -> void:
 	var acc := -GRAVITY / length * Vector2(sin(_angle.x), sin(_angle.y)) - damping * _rate
 	_rate += acc * delta
 	_angle += _rate * delta
-	_angle = _angle.clamp(Vector2(-0.6, -0.6), Vector2(0.6, 0.6))
+	_angle = _angle.clamp(-Vector2.ONE * MAX_ANGLE, Vector2.ONE * MAX_ANGLE)
 	if _angle.length() < 0.0005 and _rate.length() < 0.002:
 		_angle = Vector2.ZERO
 		_rate = Vector2.ZERO

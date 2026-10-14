@@ -67,9 +67,9 @@ const MODELS := {
 	# Sandblasting cabinets: an engine goes in whole, ancillaries and all, and you blast the rust
 	# and muck off it by hand through the glove ports (see BlastGame). `rate` is how fast the
 	# jet strips it, `jet` how wide it is.
-	"blaster_cabinet": {"kind": "blaster", "name": "Sandblasting cabinet", "size": Vector3(1.25, 1.75, 0.9), "places": 1,
+	"blaster_cabinet": {"kind": "blaster", "name": "Sandblasting cabinet", "size": Vector3(1.7, 2.35, 1.7), "places": 1,
 		"rate": 1.0, "jet": 1.0, "desc": "A glass-topped blast cabinet for engines. Put an engine in, hands in the gloves, and blast it back to bare metal."},
-	"blaster_pro": {"kind": "blaster", "name": "Industrial blast cabinet", "size": Vector3(1.55, 1.85, 1.05), "places": 1,
+	"blaster_pro": {"kind": "blaster", "name": "Industrial blast cabinet", "size": Vector3(2.0, 2.45, 1.95), "places": 1,
 		"rate": 1.35, "jet": 1.2, "desc": "A bigger cabinet with a bigger compressor: a wider, harder jet that strips an engine quicker. Easier to overdo, too."},
 
 	# Repair machines: the grinder restores every part on one together, `speed` times as fast.
@@ -338,7 +338,7 @@ static func local_place(model_id: String, n: int) -> Transform3D:
 			return Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-w * 0.5 + w * (0.5 + n % per) / float(per), 0.85, z))
 		"blaster":
 			# On the turntable grate in the middle of the cabinet.
-			return Transform3D(Basis(), Vector3(0.0, work_height(model_id), -0.04))
+			return Transform3D(Basis(), Vector3(0.0, work_height(model_id), float(blaster_inside(model_id)["turn_z"])))
 		"changer":
 			# The wheel lies flat on the turntable (see Workshop), its hub on the centre post.
 			return Transform3D(Basis(), Vector3(0.0, work_height(model_id), 0.08))
@@ -402,9 +402,35 @@ static func work_height(model_id: String) -> float:
 		"repair":
 			return 0.96
 		"blaster":
-			return 0.92
+			return 0.72
 		"changer":
 			return 0.86
 		"bench":
 			return float(get_model(model_id)["size"].y) + 0.01
 	return 0.9
+
+
+## The chamber of a sandblasting cabinet, in its own space: the grate the engine turns over
+## (`floor`), the `roof`, the side walls (`half_w` either side), the `back` and `front` walls,
+## the top of the low front wall the glass starts from (`front_top`), where the sloping glass
+## meets the roof (`glass_z`), and where the turntable is (`turn_z`).
+static func blaster_inside(model_id: String) -> Dictionary:
+	var size: Vector3 = get_model(model_id).get("size", Vector3.ONE)
+	var wall := 0.04
+	var floor_y := work_height(model_id)
+	var roof := size.y - 0.15
+	var front_top := floor_y + 0.43
+	return {"floor": floor_y, "roof": roof, "half_w": size.x * 0.5 - wall, "back": -size.z * 0.5 + wall,
+		"front": size.z * 0.5 - wall, "front_top": front_top, "glass_z": size.z * 0.5 - wall - (roof - front_top) * 0.6,
+		"turn_z": -size.z * 0.06}
+
+
+## How high above the grate an engine of `size` (its box) turns in the sandblaster: high enough
+## to tip right over without touching the grate.
+static func blaster_lift(size: Vector3) -> float:
+	return maxf(size.y * 0.5, Vector2(size.y, size.z).length() * 0.5) + 0.03
+
+
+## Height of a paint booth's hook rail, in its own space: the parts' wires hang from it.
+static func rail_height(model_id: String) -> float:
+	return float(get_model(model_id).get("size", Vector3.ONE).y) - 0.35

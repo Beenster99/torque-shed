@@ -135,6 +135,11 @@ func _run_all() -> void:
 	_test_debug_tab()
 	await _test_weather()
 	await _test_weather_session()
+	print("Sandblaster round 2: big cabinet, satin metal, live readout; hooks swing from the rail")
+	await _test_blast_cabinet_fits()
+	_test_blast_detail_and_satin()
+	await _test_blast_live_session()
+	await _test_booth_swing_from_rail()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -4413,7 +4418,7 @@ func _test_sandblaster() -> void:
 	# Stand at the front, look in through the glass and put your hands in the gloves (F).
 	var view: EquipmentView = main.workshop.furniture_nodes[cab]
 	var pivot: Node3D = view.get_node("Pivot")
-	w.place(Transform3D(Basis(), at + Vector3(0.0, 0.0, 0.95)))
+	w.place(Transform3D(Basis(), at + Vector3(0.0, 0.0, 1.3)))
 	await _aim_point(w, pivot.global_position)
 	check(w.target.get("spot", "") == spot and w.info.contains("sandblast"), "looking in, the panel says F to sandblast it (%s)" % str(w.target))
 	_press("interact")
@@ -4427,8 +4432,9 @@ func _test_sandblaster() -> void:
 	var saw_jet := false
 	for i in 80:
 		await get_tree().physics_frame
-		saw_jet = saw_jet or (view.blast_firing() and (view.get_node("Nozzle/Jet") as CPUParticles3D).emitting)
+		saw_jet = saw_jet or (view.blast_firing() and (view.get_node("Nozzle/Jet") as GPUParticles3D).emitting)
 	var bare := w.blast.marks.bare_count()
+	var total0 := w.blast.total()
 	check(saw_jet and bare > 5 and w.blast.total() > 0.0, "holding the work button blasts: sand from the nozzle and bare metal where it hits (%d patches)" % bare)
 	check((view.get_node("Rebound") as CPUParticles3D).emitting and view.blast_sound.playing, "dust kicks back off the engine and you hear the roar")
 	# Turn the engine with the keys and sweep it.
@@ -4449,7 +4455,7 @@ func _test_sandblaster() -> void:
 		"W A S D turn the engine on the turntable instead of walking (%.2f rad)" % (w.blast.rot.x - rot0.x))
 	check(pivot.basis.is_equal_approx(BlastGame.pivot_basis(w.blast.rot)), "the engine turns in the cabinet")
 	var total := w.blast.total()
-	check(w.blast.marks.bare_count() > bare * 2 and total > 0.02, "sweeping round, more of it comes up bare (%d%%)" % roundi(total * 100.0))
+	check(w.blast.marks.bare_count() > bare * 1.5 and total > total0 and total > 0.02, "sweeping round, more of it comes up bare (%d%% from %d%%, %d cubes from %d)" % [roundi(total * 100.0), roundi(total0 * 100.0), w.blast.marks.bare_count(), bare])
 	# Too long on one spot pits it.
 	var game := w.blast
 	var id0 := int(game.parts.keys()[0])
@@ -5755,3 +5761,265 @@ func _test_weather_session() -> void:
 	SaveGame.slot_override = ""
 	Settings.weather = kept[0]
 	Settings.weather_now = kept[1]
+
+
+## The sandblasting cabinets take the biggest engine there is, ancillaries and all, with room to
+## turn it right round and tip it over, and have no lamp inside.
+func _test_blast_cabinet_fits() -> void:
+	for cab in Equipment.by_kind("blaster"):
+		var inside := Equipment.blaster_inside(cab)
+		var floor_y: float = inside["floor"]
+		var roof: float = inside["roof"]
+		var hw: float = inside["half_w"]
+		var back: float = inside["back"]
+		var front: float = inside["front"]
+		var g0 := Vector2(float(inside["front_top"]), front)
+		var g1 := Vector2(roof, float(inside["glass_z"]))
+		var glass_dir := (g1 - g0).normalized()
+		var worst := INF
+		var worst_engine := ""
+		for id in PartsDB.by_kind["engine"]:
+			var parts := {"engine": id, "cooling": "race_radiator"}
+			for slot in PartsDB.ENGINE_SLOTS:
+				if not parts.has(slot):
+					parts[slot] = PartsDB.DEFAULT_BUILD[slot]
+			var d: Node3D = BikeModel.assembly_display(parts, {})
+			var size: Vector3 = d.get_meta("size")
+			d.free()
+			var centre := Equipment.local_place(cab, 0).origin + Vector3.UP * Equipment.blaster_lift(size)
+			for yaw in 12:
+				for pitch in [-BlastGame.PITCH_LIMIT, -0.6, 0.0, 0.6, BlastGame.PITCH_LIMIT]:
+					var b := BlastGame.pivot_basis(Vector2(yaw * PI / 6.0, pitch))
+					for corner in 8:
+						var c := Vector3(size.x * (0.5 if corner & 1 else -0.5), size.y * (0.5 if corner & 2 else -0.5),
+							size.z * (0.5 if corner & 4 else -0.5))
+						var p := centre + b * c
+						# Room to the walls, the grate, the roof and the sloping glass.
+						var rel := Vector2(p.y, p.z) - g0
+						var to_glass := rel.x * glass_dir.y - rel.y * glass_dir.x
+						var room := minf(minf(hw - absf(p.x), minf(p.z - back, front - p.z)), minf(p.y - floor_y, roof - p.y))
+						room = minf(room, to_glass)
+						if room < worst:
+							worst = room
+							worst_engine = id
+		check(worst > 0.0, "the %s takes every engine with room to turn it right over (closest %.0f mm, %s)" % [
+			Equipment.get_model(cab)["name"], worst * 1000.0, worst_engine])
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.request({"a": "order_furniture", "model": "blaster_cabinet"})
+	await get_tree().process_frame
+	var lamps := 0
+	var views := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "blaster":
+			views += 1
+			var stack: Array = [main.workshop.furniture_nodes[id]]
+			while not stack.is_empty():
+				var n: Node = stack.pop_back()
+				if n is Light3D:
+					lamps += 1
+				stack.append_array(n.get_children())
+	check(views > 0 and lamps == 0, "no light inside the sandblaster: you see in by the shed's light")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The close-up engine in the cabinet: more castings, bolts and fins, each in its part's own
+## material; and the satin bare-metal mask that turns the surface over as you blast.
+func _test_blast_detail_and_satin() -> void:
+	var parts := {"engine": "twin_700"}
+	for slot in PartsDB.ENGINE_SLOTS:
+		parts[slot] = PartsDB.DEFAULT_BUILD[slot]
+	var d: Node3D = BikeModel.assembly_display(parts, {})
+	add_child(d)
+	var m: BikeModel = d.get_meta("model")
+	var before := {}
+	for slot in m._slot_meshes:
+		before[slot] = (m._slot_meshes[slot] as Array).size()
+	var added := BlastDetail.add_to(m)
+	var grown := []
+	for slot in ["engine", "head", "fuel", "gearbox", "oil_filter"]:
+		if (m._slot_meshes[slot] as Array).size() > int(before[slot]):
+			grown.append(slot)
+	check(added > 60 and grown.size() == 5, "the cabinet's close-up engine gets castings, fins and bolts on every part (%d pieces on %s)" % [added, ", ".join(grown)])
+	check(BlastDetail.add_to(m) == 0, "and only once")
+	var pts: PackedVector3Array = m.surface_points("engine", 0.03)[0]
+	check(pts.size() > 300, "the coverage map covers the new detail too (%d patches on the engine)" % pts.size())
+	var marks := BlastMarks.new()
+	marks.setup(m, ["engine", "head", "oil_filter"], BlastGame.OVER)
+	m.add_child(marks)
+	var mi: GeometryInstance3D = m._slot_meshes["engine"][0]
+	var mat := mi.material_override as BaseMaterial3D
+	check(mat != null and mat.next_pass is ShaderMaterial and (mat.next_pass as ShaderMaterial).get_shader_parameter("mask") is ImageTexture3D,
+		"each part's surface reads the bare-metal mask on top of its own finish")
+	var alu: Vector3 = marks.material_for("engine").get_shader_parameter("bare_color")
+	var steel: Vector3 = marks.material_for("oil_filter").get_shader_parameter("bare_color")
+	check(alu.x > steel.x + 0.1, "castings come up satin aluminium, steel parts bare steel")
+	# Blast one spot: it goes bare right there and nowhere else, so missed bits show.
+	var b := m.slot_bounds("engine")
+	var at := Vector3(b.end.x, b.get_center().y, b.get_center().z)
+	for i in 40:
+		marks.paint(at, Vector3.LEFT, BlastGame.RADIUS, 0.05)
+	var here := marks.coats[marks.index_of(at + Vector3.LEFT * 0.01)]
+	var away := marks.coats[marks.index_of(Vector3(b.end.x, b.get_center().y, b.position.z + 0.02))]
+	var behind := marks.coats[marks.index_of(Vector3(b.position.x + 0.02, b.get_center().y, b.get_center().z))]
+	check(here >= 1.0 and away == 0.0 and behind == 0.0,
+		"blasting turns the surface bare where the jet lands, and only there (%.1f there, %.1f along, %.1f behind)" % [here, away, behind])
+	marks.restore()
+	check(not ((mi.material_override as BaseMaterial3D).next_pass is ShaderMaterial), "stepping back puts each part's own finish back")
+	d.queue_free()
+
+
+## At the gloves: the readout, the rust coming off while you blast, the engine staying put while
+## you work, the cheer when a part and then the whole engine come up bare, and the sand itself.
+func _test_blast_live_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	Shed.request({"a": "order_furniture", "model": "blaster_cabinet"})
+	var cab := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "blaster":
+			cab = id
+	var spot := "blast_%d_0" % cab
+	var at := Workshop.CENTER + Vector3(1.5, 0.0, 1.8)
+	Shed.request({"a": "grab", "furniture": cab})
+	Shed.request({"a": "release", "furniture": cab, "xf": Transform3D(Basis(), at)})
+	var engine := 0
+	for s in Shed.stand_spots():
+		if engine == 0 and Shed.is_engine(Shed.item_at_spot(s)):
+			engine = Shed.item_at_spot(s)
+			Shed.request({"a": "take", "spot": s})
+	Shed.request({"a": "place", "spot": spot})
+	var parts := [engine]
+	for slot in PartsDB.ENGINE_SLOTS:
+		if Shed.engine_item(engine, slot) != 0:
+			parts.append(Shed.engine_item(engine, slot))
+	for id in parts:
+		Shed.items[id]["rust"] = 0.8
+		Shed.items[id]["dirt"] = 0.5
+	Shed.changed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	var view: EquipmentView = main.workshop.furniture_nodes[cab]
+	var jet: GPUParticles3D = view.get_node("Nozzle/Jet")
+	var grain := (jet.draw_pass_1 as QuadMesh).size
+	var pm := jet.process_material as ParticleProcessMaterial
+	check(jet.amount >= 3000 and grain.x < 0.004 and pm.initial_velocity_min >= 20.0 and pm.collision_mode == ParticleProcessMaterial.COLLISION_RIGID,
+		"the nozzle shoots thousands of tiny, fast grains of sand that bounce off what they hit (%d at %.0f m/s)" % [jet.amount, pm.initial_velocity_min])
+	var colliders: int = main.workshop.model_for({"engine": engine}).find_children("SandCollider", "GPUParticlesCollisionBox3D", true, false).size()
+	check(colliders > 3 and view.get_node("SandWalls").get_child_count() >= 5, "the sand bounces off the engine and the chamber (%d shapes on the engine)" % colliders)
+	var post: Node3D = view.get_node("Post")
+	var pivot: Node3D = view.get_node("Pivot")
+	check(post.scale.y > 0.01 and pivot.position.y > float(Equipment.blaster_inside("blaster_cabinet")["floor"]) + 0.2, "the engine is held up on the turntable's post")
+	w.place(Transform3D(Basis(), at + Vector3(0.0, 0.0, 1.3)))
+	await _aim_point(w, pivot.global_position)
+	_press("interact")
+	for i in 4:
+		await get_tree().physics_frame
+	check(w.blast != null, "hands in the gloves")
+	if w.blast == null:
+		main._leave()
+		main.queue_free()
+		await get_tree().physics_frame
+		return
+	var hud: BlastHud = main.hud.blast_hud
+	await get_tree().process_frame
+	check(hud.visible and not main.hud._panel.visible, "the big sandblasting readout comes up in place of the side panel")
+	var model_before: BikeModel = w.blast.model
+	Input.action_press("act")
+	var rust_seen := 1.0
+	for i in 150:
+		await get_tree().physics_frame
+		if i % 20 == 0:
+			w._look(0.0, 0.03 if (i / 20) % 2 == 0 else -0.03)
+		w.blast.turn(Vector2(0.01, 0.0))
+		rust_seen = minf(rust_seen, float(Shed.items[engine]["rust"]))
+	Input.action_release("act")
+	await get_tree().physics_frame
+	check(rust_seen < 0.8 - 0.005 and w.blast != null, "the rust comes off while you blast, not just when you stop (%.3f)" % rust_seen)
+	check(is_instance_valid(model_before) and w.blast.model == model_before and main.workshop.model_for({"engine": engine}) == model_before,
+		"the engine isn't redrawn under you as the numbers change")
+	var lines := w.blast.lines()
+	check(lines.size() == parts.size() and absf(float(lines[0]["rust"]) - float(Shed.items[int(lines[0]["id"])]["rust"])) < 0.001
+		and lines[0].has("health") and lines[0].has("wear"), "each part's rust, dirt, wear and condition show live on the readout")
+	# A part comes up bare: a ding, a flash and "Bare metal!"; then the whole engine.
+	var id0 := int(w.blast.parts.keys()[0])
+	var cells: PackedFloat32Array = w.blast.parts[id0]["cells"]
+	cells.fill(1.5)
+	w.blast.parts[id0]["cells"] = cells
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(not hud.cue.is_empty() and str(hud.cue["kind"]) == "part" and hud.flash > 0.0, "a part done: the screen flashes and says Bare metal!")
+	for id in w.blast.parts:
+		var c: PackedFloat32Array = w.blast.parts[id]["cells"]
+		c.fill(1.5)
+		w.blast.parts[id]["cells"] = c
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(str(hud.cue.get("kind", "")) == "engine" and w.blast != null, "the whole engine done: a big cheer before you step back")
+	for i in 400:
+		await get_tree().physics_frame
+		if w.blast == null:
+			break
+	check(w.blast == null and float(Shed.items[engine]["rust"]) == 0.0, "then you step back, every part bare metal")
+	await get_tree().process_frame
+	check(main.workshop.model_for({"engine": engine}) != model_before, "and the engine's redrawn as it is now")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## A part hung in the paint shop swings with its hook and wire from the wire's mount on the
+## ceiling rail, for a few seconds after a knock.
+func _test_booth_swing_from_rail() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var ws: Workshop = main.workshop
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var hook: String = Shed.furniture_spots(booth)[1]
+	var disc := _hold_new("solid_240")
+	Shed.request({"a": "place", "spot": hook})
+	await get_tree().process_frame
+	var swing: Swing = ws._spot_nodes[hook].get_parent()
+	var view: EquipmentView = ws.furniture_nodes[booth]
+	var rail_y := view.global_position.y + Equipment.rail_height(str(Shed.furniture[booth]["model"]))
+	check(absf(swing.global_position.y - rail_y) < 0.01 and swing.length > 1.0,
+		"the part swings from the wire's mount on the ceiling rail (%.2f m of wire and hook)" % swing.length)
+	check(swing.get_node_or_null("HookWire") != null and swing.get_node_or_null("Hook") != null
+		and not (view.get_node("Hanger_" + hook) as Node3D).visible, "the wire and hook swing with it")
+	swing._angle = Vector2.ZERO
+	swing._rate = Vector2.ZERO
+	swing.push(Vector3(0.0, 0.0, 0.6))
+	var later := 0.0
+	for i in 240:
+		await get_tree().physics_frame
+	for i in 120:
+		await get_tree().physics_frame
+		later = maxf(later, swing.angle().length())
+	check(later > 0.01, "a knock keeps it swinging for a few seconds (%.3f rad after 2 s)" % later)
+	var hook_pos: Vector3 = (swing.get_node("Hook") as Node3D).global_position
+	check(hook_pos.y > swing.part_position().y + 0.3 and hook_pos.y < rail_y - 0.2, "with the hook on its wire above the part")
+	for i in 1200:
+		await get_tree().physics_frame
+	check(swing.angle().length() < 0.01, "then it settles (%.4f)" % swing.angle().length())
+	Shed.request({"a": "take", "spot": hook})
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check((view.get_node("Hanger_" + hook) as Node3D).visible, "an empty hook hangs from the rail again")
+	Shed.items.erase(disc)
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame

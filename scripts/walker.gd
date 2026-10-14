@@ -85,6 +85,10 @@ var _game_key := ""
 var _jet: CPUParticles3D
 var blast: BlastGame         # hands in a sandblaster's gloves (see BlastGame), or null
 var _blast_send := 0.0
+var _blast_tick := 0.0
+var _blast_done_for := 0.0
+## Moments to celebrate at the sandblaster, for the HUD: [{kind: "part" or "engine", name}].
+var blast_cues: Array = []
 var _tool_sig := ""          # tool and upgrade stage the tool in your hand is drawn at
 ## Carrying equipment: how much further out than arm's length you hold it (the mouse wheel, or
 ## LB / RB, push it out and pull it in), and how it last snapped ({walls: the wall normals it
@@ -2227,6 +2231,7 @@ func _blast_frame(delta: float, input: Vector2) -> void:
 			Shed.request({"a": "blast_use", "on": false})
 			return
 		blast = game
+		_blast_tick = BlastGame.TICK
 		crouched = false
 		_send_status("Sandblasting an engine")
 		return
@@ -2249,14 +2254,31 @@ func _blast_frame(delta: float, input: Vector2) -> void:
 		var aim: Vector3 = j.get("at", from + dir * 0.9)
 		cab.set_blast(blast.rot, firing, aim, j.get("normal", Vector3.UP), float(j.get("rust", 0.0)), int(j.get("fresh", 0)))
 	for id in blast.newly_done():
-		Sfx.play_at("ting", camera.global_position + dir, -6.0)
-		Shed.feedback.emit("%s: back to bare metal" % str(blast.parts[id]["name"]), true)
+		# Ding, a flash on the part and "Bare metal!" on the screen.
+		Sfx.play_at("ting", camera.global_position + dir, -1.0)
+		blast_cues.append({"kind": "part", "name": str(blast.parts[id]["name"])})
+	if blast.engine_just_done():
+		Sfx.play_ui("levelup", -4.0)
+		blast_cues.append({"kind": "engine", "name": "Engine"})
+		_blast_done_for = 0.0
 	_blast_send -= delta
 	if _blast_send <= 0.0:
 		_blast_send = 0.12
 		Shed.request({"a": "blast_aim", "rot": blast.rot, "fire": firing, "at": j.get("at", Vector3.ZERO)})
+	# The rust, muck and wear numbers change as you go: the host is told a few times a second.
+	_blast_tick -= delta
+	if _blast_tick <= 0.0:
+		_blast_tick = BlastGame.TICK
+		var news := blast.changed_results()
+		if not news.is_empty():
+			Shed.request({"a": "blast_tick", "spot": blast.spot, "parts": news})
 	if blast.all_done() and not firing:
-		finish_blast()
+		# Done: a moment to take it in, then step back.
+		_blast_done_for += delta
+		if _blast_done_for > 2.5:
+			finish_blast()
+	else:
+		_blast_done_for = 0.0
 
 
 ## Steps back from the sandblaster: the host strips each part by how much of it is bare.
@@ -2275,17 +2297,24 @@ func _end_blast() -> void:
 	if blast:
 		blast.clear()
 	blast = null
+	blast_cues.clear()
+	_blast_done_for = 0.0
 	if Shed.blasting(Shed.me()) != 0:
 		Shed.request({"a": "blast_use", "on": false})
 	_send_status("")
 
 
+## The side panel at the sandblaster (the HUD shows the full readout: see BlastHud).
 func _blast_info() -> String:
 	var lines := ["Sandblasting: %d%% bare metal" % roundi(blast.total() * 100.0)]
 	for l in blast.lines():
 		var mark := "  ·  pitted!" if float(l["over"]) > 0.05 else ("  ·  done" if float(l["covered"]) >= BlastGame.DONE else "")
 		lines.append("%s  %d%%%s" % [l["name"], roundi(float(l["covered"]) * 100.0), mark])
-	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	lines.append("Hold RT to blast · left stick turns the engine · Y steps back" if pad else \
-		"Hold left mouse to blast · W A S D (or hold right mouse) turns the engine · F steps back")
+	lines.append(blast_controls())
 	return "\n".join(lines)
+
+
+func blast_controls() -> String:
+	var pad := Controls.device() >= 0 and Controls.active_device >= 0
+	return "Hold RT to blast · left stick turns the engine · Y steps back" if pad else \
+		"Hold left mouse to blast · W A S D (or hold right mouse) turns the engine · F steps back"

@@ -16,6 +16,7 @@ var trip_km := 0.0         # this ride, for the economy readout
 var trip_fuel := 0.0       # litres burnt this ride
 ## "+6 XP Cleaning" popups under the level bar: [{amount, label, age}], newest first.
 var popups: Array = []
+var blast_hud: BlastHud     # the sandblaster's readout, while your hands are in the gloves
 var _banner_level := 0
 var _banner_time := 0.0
 const POPUP_LIFE := 3.0
@@ -62,6 +63,8 @@ func _ready() -> void:
 	_prompt = UITheme.label("", 17, UITheme.ACCENT)
 	_prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_prompt)
+	blast_hud = BlastHud.new()
+	add_child(blast_hud)
 	Progress.xp_gained.connect(add_popup)
 	Progress.leveled_up.connect(func(level: int):
 		_banner_level = level
@@ -95,7 +98,8 @@ func _process(delta: float) -> void:
 	if _message_timer <= 0.0 and _message.text != "":
 		_message.text = ""
 	var on_foot := walker != null and bike == null
-	_panel.visible = on_foot and (walker.info != "" or not walker.plan.is_empty() or walker.crouched)
+	blast_hud.walker = walker if on_foot else null
+	_panel.visible = on_foot and walker.blast == null and (walker.info != "" or not walker.plan.is_empty() or walker.crouched)
 	if on_foot:
 		var lines := walker.info.split("\n")
 		_title.text = lines[0]
