@@ -741,7 +741,7 @@ func _blast_check(peer: int, action: Dictionary) -> String:
 		"blast_aim":
 			if blasting(peer) == 0:
 				return "You're not at a sandblaster."
-		"blast":
+		"blast", "blast_tick":
 			var spot := str(action.get("spot", ""))
 			var f := furniture_of_spot(spot)
 			if f.is_empty() or blasting(peer) != int(f["id"]):
@@ -764,42 +764,37 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 				c["blaster"] = int(furniture_of_spot(str(action["spot"]))["id"])
 				c["blast_rot"] = Vector2.ZERO
 				c["blast_fire"] = false
+				# How every part was when the work started: the live updates strip from there.
+				var base := {}
+				var engine := item_at_spot(str(action["spot"]))
+				for id in _blast_parts(engine):
+					base[id] = [float(items[id]["rust"]), float(items[id]["dirt"]), float(items[id]["wear"])]
+				c["blast_base"] = base
 				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse. F to step back."
 			c["blaster"] = 0
 			c["blast_fire"] = false
+			c.erase("blast_base")
 		"blast_aim":
 			var r = action.get("rot", Vector2.ZERO)
 			var at = action.get("at", Vector3.ZERO)
 			c["blast_rot"] = r if r is Vector2 else Vector2.ZERO
 			c["blast_fire"] = bool(action.get("fire", false))
 			c["blast_at"] = at if at is Vector3 else Vector3.ZERO
+		"blast_tick":
+			# Live, while blasting: the rust and muck come off as the metal comes up bare.
+			_blast_strip(c, item_at_spot(str(action["spot"])), action["parts"])
 		"blast":
 			var engine := item_at_spot(str(action["spot"]))
-			var on_engine := {engine: true}
-			for slot in PartsDB.ENGINE_SLOTS:
-				if engine_item(engine, slot) != 0:
-					on_engine[engine_item(engine, slot)] = true
+			var stripped := _blast_strip(c, engine, action["parts"])
 			var done := 0
 			var cover_sum := 0.0
 			var pitted := []
-			var parts: Dictionary = action["parts"]
-			for key in parts:
-				var id := int(key)
-				var r = parts[key]
-				if not on_engine.has(id) or not (r is Array) or (r as Array).size() < 2:
-					continue
-				var cover := clampf(float(r[0]), 0.0, 1.0)
-				var over := clampf(float(r[1]), 0.0, 1.0)
-				if cover < 0.02:
-					continue
-				var it: Dictionary = items[id]
+			for id in stripped:
+				var cover: float = stripped[id][0]
+				var over: float = stripped[id][1]
 				var strip := clampf(cover / BlastGame.DONE, 0.0, 1.0)
-				_note_low(id)
-				it["rust"] = 0.0 if strip >= 0.999 else float(it["rust"]) * (1.0 - strip)
-				it["dirt"] = 0.0 if strip >= 0.999 else float(it["dirt"]) * (1.0 - strip)
-				it["wear"] = minf(1.0, float(it["wear"]) + over * BLAST_WEAR)
 				if over > 0.08:
-					pitted.append(PartsDB.slot_name(PartsDB.slots_for_kind(str(it["kind"]))[0]).to_lower())
+					pitted.append(PartsDB.slot_name(PartsDB.slots_for_kind(str(items[id]["kind"]))[0]).to_lower())
 				cover_sum += cover
 				done += 1
 				if strip >= 0.3:
@@ -807,6 +802,7 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 				_check_part(peer, id)
 			c["blaster"] = 0
 			c["blast_fire"] = false
+			c.erase("blast_base")
 			c["repaired"] = int(c.get("repaired", 0)) + done
 			if done == 0:
 				return ""
@@ -815,6 +811,51 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 				text += ", but you've pitted the %s" % ", ".join(pitted.slice(0, 3))
 			return text
 	return ""
+
+
+## The engine and everything fitted to it.
+func _blast_parts(engine: int) -> Array:
+	var out := []
+	if engine == 0 or not items.has(engine):
+		return out
+	out.append(engine)
+	for slot in PartsDB.ENGINE_SLOTS:
+		if engine_item(engine, slot) != 0:
+			out.append(engine_item(engine, slot))
+	return out
+
+
+## Strips each part of `engine` by its blast coverage (`parts`: item id -> [covered, over]), from
+## how it was when the blasting started, so it can be sent again and again as the work goes on.
+## Returns what it used: item id -> [covered, over].
+func _blast_strip(c: Dictionary, engine: int, parts: Dictionary) -> Dictionary:
+	var on_engine := {}
+	for id in _blast_parts(engine):
+		on_engine[id] = true
+	var base: Dictionary = c.get("blast_base", {})
+	var out := {}
+	for key in parts:
+		var id := int(key)
+		var r = parts[key]
+		if not on_engine.has(id) or not (r is Array) or (r as Array).size() < 2:
+			continue
+		var cover := clampf(float(r[0]), 0.0, 1.0)
+		var over := clampf(float(r[1]), 0.0, 1.0)
+		if cover < 0.02:
+			continue
+		var it: Dictionary = items[id]
+		if not base.has(id):
+			base[id] = [float(it["rust"]), float(it["dirt"]), float(it["wear"])]
+			c["blast_base"] = base
+		var was: Array = base[id]
+		var strip := clampf(cover / BlastGame.DONE, 0.0, 1.0)
+		_note_low(id)
+		# Never puts back rust that's already come off (a late or repeated update).
+		it["rust"] = 0.0 if strip >= 0.999 else minf(float(it["rust"]), float(was[0]) * (1.0 - strip))
+		it["dirt"] = 0.0 if strip >= 0.999 else minf(float(it["dirt"]), float(was[1]) * (1.0 - strip))
+		it["wear"] = maxf(float(it["wear"]), minf(1.0, float(was[2]) + over * BLAST_WEAR))
+		out[id] = [cover, over]
+	return out
 
 
 ## A stock bike built around an engine on the stand, so its numbers can be compared.

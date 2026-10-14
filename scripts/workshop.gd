@@ -226,6 +226,12 @@ func sync_state() -> void:
 		var sig := "" if item_id == 0 else _item_signature(item_id) + str(Shed.items[item_id].get("place", ""))
 		if _spot_sigs.get(spot, "") == sig:
 			continue
+		if item_id != 0 and _spot_nodes.has(spot) and Shed.spot_role(spot) == "blaster" \
+				and Shed.blaster_user(int(Shed.furniture_of_spot(spot).get("id", 0))) != 0 \
+				and str(_spot_sigs.get(spot, "")).begins_with("%d:" % item_id):
+			# Mid-blast the rust comes off as you go: the engine keeps its bare-metal look until
+			# you step back, then it's redrawn.
+			continue
 		_spot_sigs[spot] = sig
 		if _spot_nodes.has(spot):
 			_drop_spot_node(_spot_nodes[spot]).free()
@@ -257,22 +263,43 @@ func sync_state() -> void:
 				var pivot: Node3D = view.get_node_or_null("Pivot")
 				var size: Vector3 = display.get_meta("size", Vector3(0.4, 0.4, 0.4))
 				if pivot:
-					pivot.position = Shed.local_spot_transform(spot).origin + Vector3.UP * size.y * 0.5
+					# Held up off the grate on the turntable's post, high enough to tip right over.
+					var lift := Equipment.blaster_lift(size)
+					pivot.position = Shed.local_spot_transform(spot).origin + Vector3.UP * lift
 					display.position = Vector3.DOWN * size.y * 0.5
 					pivot.add_child(display)
+					var post: Node3D = view.get_node_or_null("Post")
+					if post:
+						post.position.y = Shed.local_spot_transform(spot).origin.y
+						post.scale.y = maxf(0.01, lift - size.y * 0.5 + 0.02)
 				else:
 					display.transform = Shed.local_spot_transform(spot)
 					view.add_child(display)
 				if Shed.is_engine(item_id) and not Shed.items[item_id].get("boxed", false) and display.has_meta("model"):
-					# Fitted shapes for the blast to land on; the crosshair passes through them.
-					(display.get_meta("model") as BikeModel).build_pickers({"engine": item_id}, {"engine": {"spot": spot}}, BikeModel.SPRAY_LAYER)
+					# Close up through the glass: the castings, fins and bolts (BlastDetail), and
+					# fitted shapes for the blast to land on; the crosshair passes through them.
+					var engine_model: BikeModel = display.get_meta("model")
+					BlastDetail.add_to(engine_model)
+					engine_model.build_pickers({"engine": item_id}, {"engine": {"spot": spot}}, BikeModel.SPRAY_LAYER)
+					(view as EquipmentView).fit_blast_colliders(engine_model)
 			elif Shed.spot_role(spot) == "booth":
-				# Hung from a booth hook: it swings on the hook.
+				# Hung from a booth hook: the part, its hook and wire swing together as one
+				# pendulum from the wire's mount on the ceiling rail.
 				var hang := Shed.local_spot_transform(spot)
+				var booth: EquipmentView = furniture_nodes[int(f["id"])]
 				var swing := Swing.new()
 				swing.name = "Swing"
+				swing.length = maxf(0.3, Equipment.rail_height(str(f.get("model", ""))) - hang.origin.y)
 				swing.position = hang.origin + Vector3.UP * swing.length
-				furniture_nodes[int(f["id"])].add_child(swing)
+				booth.add_child(swing)
+				booth.add_hook_wire(swing, swing.length)
+				var fixed: Node3D = booth.get_node_or_null("Hanger_" + spot)
+				if fixed:
+					# The empty hook's wire is hidden while this one swings in its place.
+					fixed.visible = false
+					swing.tree_exiting.connect(func():
+						if is_instance_valid(fixed):
+							fixed.visible = true)
 				display.transform = Transform3D(hang.basis, Vector3.DOWN * swing.length)
 				swing.add_child(display)
 				swing.push(Vector3(randf_range(-0.3, 0.3), 0.0, randf_range(-0.3, 0.3)))

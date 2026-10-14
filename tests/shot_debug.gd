@@ -74,21 +74,34 @@ func _ready() -> void:
 	await _frames(10)
 	var view: EquipmentView = main.workshop.furniture_nodes[cab]
 	var pivot: Node3D = view.get_node("Pivot")
-	await _look_from(at + Vector3(1.6, 0.0, 2.2), at + Vector3(0.0, 0.9, 0.0), "c6_sandblaster_cabinet")
-	await _look_from(at + Vector3(0.0, 0.0, 0.95), pivot.global_position, "c7_sandblaster_ready")
+	# A rusty, grubby engine, so the bare metal shows.
+	var rusty := [engine]
+	for slot in PartsDB.ENGINE_SLOTS:
+		if Shed.engine_item(engine, slot) != 0:
+			rusty.append(Shed.engine_item(engine, slot))
+	for id in rusty:
+		Shed.items[id]["rust"] = 0.85
+		Shed.items[id]["dirt"] = 0.5
+	Shed.changed.emit()
+	await _frames(10)
+	pivot = view.get_node("Pivot")
+	await _look_from(at + Vector3(2.0, 0.0, 2.8), at + Vector3(0.0, 1.1, 0.0), "c6_sandblaster_cabinet")
+	await _look_from(at + Vector3(0.0, 0.0, 1.3), pivot.global_position, "c7_sandblaster_ready")
 	Shed.request({"a": "blast_use", "spot": spot, "on": true})
 	await _frames(5)
+	# Sweep the jet over one side in bands, turning the engine a little between them.
 	Input.action_press("act")
-	for i in 420:
+	for i in 900:
 		await get_tree().physics_frame
 		if w.blast:
-			w.blast.turn(Vector2(0.012, 0.004 * sin(i * 0.05)))
-		if i % 40 == 0:
-			w._look(0.0, 0.03 if (i / 40) % 2 == 0 else -0.03)
-	await _shot("c8_sandblaster_mid_blast")
+			w.blast.turn(Vector2(0.004 * sin(i * 0.01), 0.0))
+		w._look(0.0025 * sin(i * 0.09), 0.0012 * cos(i * 0.011))
+		if i == 700:
+			await _shot("c8_sandblaster_mid_blast")
 	Input.action_release("act")
 	await _frames(10)
 	await _shot("c9_sandblaster_bare_patches")
+	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9b_sandblaster_satin_closeup")
 	w.finish_blast()
 	await _frames(10)
 	await _beam_shots()
