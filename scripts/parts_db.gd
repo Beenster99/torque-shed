@@ -84,6 +84,25 @@ const MASTER_FLUID := 0.25
 const ECU_AID_NAMES := {"traction": "traction control", "abs": "ABS", "anti_wheelie": "anti-wheelie",
 	"stability": "stability control"}
 
+## What each kind of part is mostly made of, which decides the bin it goes in when it's thrown
+## away (see bin_for). A part can say otherwise with its own "material" in data/parts.json:
+## carbon bodywork, plastic or alloy luggage, a rubber bulb horn.
+const KIND_MATERIAL := {
+	"frame": "metal", "fork": "metal", "shock": "metal", "wheel": "metal", "tyre": "rubber", "disc": "metal",
+	"caliper": "metal", "pads": "mixed", "master": "metal", "tank": "metal", "saddle": "mixed", "handlebars": "metal",
+	"dashboard": "electronics", "engine": "metal", "head": "metal", "fuel": "metal", "air_filter": "mixed",
+	"oil_filter": "metal", "spark_plugs": "mixed", "cooling": "metal", "gearbox": "metal", "exhaust": "metal",
+	"final_drive": "metal", "chain": "metal", "side_stand": "metal", "centre_stand": "metal", "headlight": "electronics",
+	"horn": "metal", "ecu": "electronics", "panniers": "fabric", "top_box": "plastic", "fog_lights": "electronics",
+	"petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
+}
+const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
+	"mixed": "Mixed materials", "electronics": "Electronics", "fabric": "Fabric", "leather": "Leather", "wood": "Wood"}
+## The shed's three bins, by the roller door: general waste takes anything; the recycling
+## bins take only their own material.
+const BINS: Array[String] = ["general", "plastic", "metal"]
+const BIN_NAMES := {"general": "General waste", "plastic": "Plastic recycling", "metal": "Metal recycling"}
+
 var parts := {}    # part id -> Dictionary of stats (with "id" and "kind" added)
 var by_kind := {}  # kind -> Array of part ids, in catalogue order
 
@@ -121,6 +140,24 @@ func part_name(id: String) -> String:
 
 func kind_of(id: String) -> String:
 	return str(get_part(id).get("kind", ""))
+
+
+## What a part is made of: "metal", "plastic", "rubber", "carbon", "mixed" and so on.
+func material(id: String) -> String:
+	var p := get_part(id)
+	return str(p.get("material", KIND_MATERIAL.get(str(p.get("kind", "")), "mixed")))
+
+
+## Which bin a part goes in: "metal" or "plastic" recycling, or "general" waste for the rest.
+func bin_for(id: String) -> String:
+	var m := material(id)
+	return m if m in ["metal", "plastic"] else "general"
+
+
+## "Metal: metal recycling bin" for the info panel.
+func bin_text(id: String) -> String:
+	var m := material(id)
+	return "%s: goes in the %s bin" % [MATERIAL_NAMES.get(m, m.capitalize()), str(BIN_NAMES[bin_for(id)]).to_lower()]
 
 
 func default_color(id: String) -> Color:

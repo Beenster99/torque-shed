@@ -84,6 +84,9 @@ var door_open := true     # the roller door
 var lights_on := true     # the shed's strip lights
 var stations: Array = []    # [{name, genre, url}] from data/radio.json
 var board := BoardData.empty()   # what's drawn and written on the shed whiteboard
+## What each screen is tuned to: screen key (see TvChannels) -> {ch: channel id, rider: the peer
+## its live channel follows, 0 for whoever is out first}. Screens not in here show their home channel.
+var screens := {}
 
 var _next_id := 1
 var _dirty := false
@@ -124,6 +127,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	radio = {"on": false, "station": 0}
 	door_open = true
 	lights_on = true
+	screens = {}
 	items.clear()
 	crew.clear()
 	board = BoardData.empty()
@@ -228,6 +232,14 @@ func load_state(state: Dictionary, player_name: String) -> void:
 			_move(id, "spot", _free_spot())
 	for id in furniture:
 		furniture[id]["mover"] = 0
+		# Equipment renamed since the save was made (the wall TVs grew): the model it is now.
+		furniture[id]["model"] = Equipment.current_id(str(furniture[id].get("model", "")))
+	# Peer ids don't carry over between sessions, so live channels follow whoever rides first.
+	for key in screens.keys():
+		if not (screens[key] is Dictionary) or not TvChannels.screen_exists(str(key)):
+			screens.erase(key)
+		else:
+			screens[key]["rider"] = 0
 	crew.clear()
 	_add_crew(me(), player_name)
 	for peer in Net.players:
@@ -252,6 +264,7 @@ func join_remote() -> void:
 	bikes.clear()
 	furniture.clear()
 	radio = {"on": false, "station": 0}
+	screens = {}
 	items.clear()
 	crew.clear()
 	active = true
@@ -263,6 +276,7 @@ func stop() -> void:
 	board_changed.emit()
 	furniture.clear()
 	radio = {"on": false, "station": 0}
+	screens = {}
 	active = false
 	bikes.clear()
 	items.clear()
@@ -1089,7 +1103,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if free_delivery_xf() == null:
 				return "The delivery area outside is full. Bring some boxes in first."
 		"order_furniture":
-			var model := str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), "")))
+			var model := Equipment.current_id(str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), ""))))
 			if Equipment.get_model(model).is_empty():
 				return "Unknown equipment."
 			if Equipment.FIXED_KINDS.has(Equipment.kind_of(model)):
@@ -1137,9 +1151,17 @@ func check(peer: int, action: Dictionary) -> String:
 		"bin":
 			if held == 0:
 				return "You're not holding a part."
+			return bin_check(held, str(action.get("bin", "general")))
+		"tv_channel":
+			if not TvChannels.screen_exists(str(action.get("screen", ""))):
+				return "That screen has gone."
+			if not int(action.get("step", 0)) in [-1, 1]:
+				return "Pick the next or previous channel."
 		"tip":
 			if held == 0 or not items[held].has("fluid") or float(items[held]["fluid"]["litres"]) <= 0.0:
 				return "Nothing to tip away."
+			if str(action.get("bin", "general")) != "general":
+				return "Tip it away at the general waste bin."
 		"clean_many":
 			var dirty := 0
 			for id in action.get("items", []):
@@ -1355,6 +1377,58 @@ func check(peer: int, action: Dictionary) -> String:
 	return ""
 
 
+## Why `item_id` can't go in `which` bin ("general", "plastic" or "metal"), or "". General waste
+## takes anything; a recycling bin only takes its own material, empty and unboxed.
+func bin_check(item_id: int, which: String) -> String:
+	if not PartsDB.BINS.has(which):
+		return "That's not a bin."
+	if not items.has(item_id) or which == "general":
+		return ""
+	var it: Dictionary = items[item_id]
+	var part := str(it["part"])
+	if it.get("boxed", false):
+		return "Unpack it first."
+	if is_engine(item_id):
+		for slot in PartsDB.ENGINE_SLOTS:
+			if engine_item(item_id, slot) != 0:
+				return "Strip the engine down first: there are parts still on it."
+	if it.has("fluid") and float(it["fluid"].get("litres", 0.0)) > 0.01:
+		if PartsDB.is_fluid(part):
+			return "Empty it first: tip it away at the general waste bin."
+		return "Drain the %s out of it first." % str(PartsDB.KIND_NAMES.get(PartsDB.fluid_kind(part), "fluid")).to_lower()
+	var want := PartsDB.bin_for(part)
+	if want != which:
+		var mat := str(PartsDB.MATERIAL_NAMES.get(PartsDB.material(part), "mixed")).to_lower()
+		return "That's %s: %s." % [mat, "general waste" if want == "general" else str(PartsDB.BIN_NAMES[want]).to_lower()]
+	return ""
+
+
+## Everyone out riding right now, by peer id, lowest first.
+func riders() -> Array:
+	var out := []
+	for peer in crew:
+		var bike := int(crew[peer].get("riding", 0))
+		if bike != 0 and bikes.has(bike) and int(bikes[bike].get("rider", 0)) == int(peer):
+			out.append(int(peer))
+	out.sort()
+	return out
+
+
+## The channel a screen is showing: {ch, rider}, its home channel if nobody has changed it.
+func screen_channel(key: String) -> Dictionary:
+	var s = screens.get(key, null)
+	if s is Dictionary and TvChannels.channels_for(key).has(str(s.get("ch", ""))):
+		return {"ch": str(s["ch"]), "rider": int(s.get("rider", 0))}
+	return {"ch": TvChannels.home(key), "rider": 0}
+
+
+## Gives `peer` XP for `key` through the Progress autoload, when it's there (host only).
+func _award(peer: int, key: String, mult := 1.0) -> void:
+	var prog := get_node_or_null("/root/Progress")
+	if prog and prog.has_method("award"):
+		prog.award(peer, key, mult)
+
+
 func _slot_list(slots: Array) -> String:
 	var names: Array = slots.slice(0, 4).map(func(m): return PartsDB.slot_name(m).to_lower())
 	if slots.size() > 4:
@@ -1512,7 +1586,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Ordered %s. %s outside by the roller door." % [PartsDB.part_name(part_id),
 				"The box is" if items[item_id]["boxed"] else "It's"]
 		"order_furniture":
-			var model := str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), "")))
+			var model := Equipment.current_id(str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), ""))))
 			var kind := Equipment.kind_of(model)
 			if Equipment.is_yard(model):
 				_new_furniture(kind, free_yard_xf(model), model)
@@ -1554,9 +1628,17 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Labelled the shelves \"%s\"" % furniture[int(action["furniture"])]["label"]
 		"bin":
 			var item_id := held_by(peer)
-			text = "Binned the %s" % PartsDB.part_name(items[item_id]["part"])
+			var which := str(action.get("bin", "general"))
+			if which == "general":
+				text = "Binned the %s" % PartsDB.part_name(items[item_id]["part"])
+			else:
+				text = "Recycled the %s in the %s bin" % [PartsDB.part_name(items[item_id]["part"]), which]
 			_erase_item(item_id)
-			_xp(peer, "bin")
+			_award(peer, "bin" if which == "general" else "recycle_" + which)
+		"tv_channel":
+			var key := str(action["screen"])
+			var was: Dictionary = screens.get(key, {})
+			screens[key] = TvChannels.step(key, was, int(action["step"]), riders())
 		"clean_many":
 			var n := 0
 			for id in action["items"]:
@@ -2293,7 +2375,7 @@ func _mark_dirty() -> void:
 ## as they're drawn (_board_op), and whole only to players joining.
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
-		"door": door_open, "lights": lights_on}
+		"door": door_open, "lights": lights_on, "screens": screens}
 	if with_board:
 		state["board"] = board
 	return state
@@ -2308,6 +2390,7 @@ func _sync(state: Dictionary) -> void:
 	radio = state.get("radio", radio)
 	door_open = bool(state.get("door", true))
 	lights_on = bool(state.get("lights", true))
+	screens = state["screens"] if state.get("screens") is Dictionary else {}
 	_next_id = int(state.get("next", 1))
 	if state.get("board", null) is Dictionary:
 		board = state["board"]

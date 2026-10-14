@@ -84,7 +84,8 @@
 			"cda": 0.48,
 			"style": "spar",
 			"type": "Carbon monocoque",
-			"lightweight": true
+			"lightweight": true,
+			"material": "carbon"
 		}
 	},
 	"fork": {
@@ -428,7 +429,8 @@
 			"tyres": [
 				170,
 				200
-			]
+			],
+			"material": "carbon"
 		},
 		"wire_16_bobber": {
 			"name": "16\" fat wire wheel",
@@ -1580,7 +1582,8 @@
 				0.55,
 				0.45,
 				0.3
-			]
+			],
+			"material": "metal"
 		},
 		"ceramic": {
 			"name": "Ceramic pads",
@@ -1604,7 +1607,8 @@
 				0.1,
 				0.1,
 				0.1
-			]
+			],
+			"material": "carbon"
 		}
 	},
 	"master": {
@@ -1741,7 +1745,8 @@
 				0.06,
 				0.07
 			],
-			"lightweight": true
+			"lightweight": true,
+			"material": "carbon"
 		},
 		"alloy_cafe_14": {
 			"name": "Hand-beaten alloy café tank, 14 L",
@@ -1835,7 +1840,8 @@
 				0.06,
 				0.07
 			],
-			"lightweight": true
+			"lightweight": true,
+			"material": "carbon"
 		}
 	},
 	"handlebars": {
@@ -3572,7 +3578,8 @@
 				0.85,
 				0.86,
 				0.88
-			]
+			],
+			"material": "metal"
 		}
 	},
 	"oil_filter": {
@@ -3951,7 +3958,8 @@
 				0.07,
 				0.08
 			],
-			"lightweight": true
+			"lightweight": true,
+			"material": "carbon"
 		}
 	},
 	"final_drive": {
@@ -4453,7 +4461,8 @@
 				0.1,
 				0.08
 			],
-			"lightweight": true
+			"lightweight": true,
+			"material": "rubber"
 		},
 		"scooter_beep": {
 			"name": "Scooter beeper",
@@ -4623,7 +4632,8 @@
 				0.32,
 				0.3,
 				0.2
-			]
+			],
+			"material": "fabric"
 		},
 		"leather_saddlebags": {
 			"name": "Leather saddlebags",
@@ -4637,7 +4647,8 @@
 				0.25,
 				0.13,
 				0.06
-			]
+			],
+			"material": "leather"
 		},
 		"adventure_soft": {
 			"name": "Adventure soft bags",
@@ -4651,7 +4662,8 @@
 				0.12,
 				0.12,
 				0.13
-			]
+			],
+			"material": "fabric"
 		},
 		"plastic_cases": {
 			"name": "Hard plastic cases",
@@ -4665,7 +4677,8 @@
 				0.08,
 				0.08,
 				0.09
-			]
+			],
+			"material": "plastic"
 		},
 		"aluminium_boxes": {
 			"name": "Aluminium adventure boxes",
@@ -4679,7 +4692,8 @@
 				0.72,
 				0.73,
 				0.75
-			]
+			],
+			"material": "metal"
 		}
 	},
 	"top_box": {
@@ -4723,7 +4737,8 @@
 				0.72,
 				0.73,
 				0.75
-			]
+			],
+			"material": "metal"
 		},
 		"wooden_crate": {
 			"name": "Rack-mounted crate",
@@ -4737,7 +4752,8 @@
 				0.55,
 				0.38,
 				0.2
-			]
+			],
+			"material": "wood"
 		},
 		"leather_trunk": {
 			"name": "Leather tour trunk",
@@ -4751,7 +4767,8 @@
 				0.28,
 				0.14,
 				0.07
-			]
+			],
+			"material": "leather"
 		}
 	},
 	"fog_lights": {
@@ -4994,7 +5011,8 @@
 				0.15,
 				0.1,
 				0.05
-			]
+			],
+			"material": "plastic"
 		}
 	},
 	"brake_fluid": {
