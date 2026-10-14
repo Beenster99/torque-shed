@@ -55,7 +55,9 @@ func _ready() -> void:
 		if not main.in_session:
 			continue
 		# Walk up and down so the other side sees movement.
-		var t := Time.get_ticks_msec() / 1000.0
+		# Turn round every second of game time, not wall time: on a slow machine a wall-clock second
+		# can be a handful of frames, too short a walk for the other side to see.
+		var t := Engine.get_physics_frames() / float(Engine.physics_ticks_per_second)
 		Input.action_release("move_forward")
 		Input.action_release("move_back")
 		Input.action_press("move_forward" if fmod(t, 2.0) < 1.0 else "move_back")
@@ -186,7 +188,7 @@ func _ready() -> void:
 		await get_tree().physics_frame
 		if role == "client" and shed_ok and not main.in_session:
 			break
-		var tl := Time.get_ticks_msec() / 1000.0
+		var tl := Engine.get_physics_frames() / float(Engine.physics_ticks_per_second)
 		Input.action_release("move_forward")
 		Input.action_release("move_back")
 		Input.action_press("move_forward" if fmod(tl, 2.0) < 1.0 else "move_back")
