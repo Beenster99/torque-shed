@@ -142,5 +142,9 @@ func _build_row(bay: int) -> Control:
 	col.add_child(head)
 	if not needed.is_empty():
 		var names: Array = needed.map(func(r): return str(r["name"]))
-		col.add_child(UITheme.label("Needed: %s. Price: £-- (free until money arrives)" % ", ".join(names), 13, Color(1, 0.75, 0.6)))
+		var price := 0
+		for r in needed:
+			price += Shed.part_price(str(r["part"]))
+		col.add_child(UITheme.label("Needed: %s. Price: %s, from the business's account." % [", ".join(names), TvChannels.money_text(price)],
+			13, Color(1, 0.75, 0.6)))
 	return col

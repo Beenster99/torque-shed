@@ -5,7 +5,9 @@ extends Node
 ## the other must see (the client also puts up a picture, sent in chunks, and the host makes a
 ## poster of the board that the client must get), the client's weather follows the host's, and
 ## both must see each other walk. The client also orders an A0 poster and, once it's in, carries
-## it and scraps it: both must see it come and go.
+## it and scraps it: both must see it come and go. Money: the client's unbolting pays it a wage
+## from the host, it sends some to the business (the host's ledger must show it) and the host
+## sends the client some of its own cash, which must arrive.
 
 var role := "host"
 var main: Node
@@ -34,6 +36,10 @@ func _ready() -> void:
 	var poster_seen := false
 	var scrap_asked := false
 	var scrap_ok := false
+	var cash_start := -1
+	var paid_ok := false
+	var money_sent := false
+	var money_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -85,6 +91,21 @@ func _ready() -> void:
 			Shed.request({"a": "scrap", "furniture": mx})
 			scrap_asked = true
 		scrap_ok = poster_seen and mx == 0
+		# Money: wages reach the client, and transfers go both ways through the host.
+		if cash_start < 0:
+			cash_start = Progress.money()
+		var ledger_ok: bool = Shed.bank["ledger"].any(func(e): return str(e["why"]) == "From Test client")
+		if role == "client":
+			paid_ok = paid_ok or Progress.money() > cash_start
+			if paid_ok and not money_sent:
+				money_sent = Money.send(0, 1) == ""
+			var got: bool = Progress.profile["cash_log"].any(func(e): return str(e["why"]) == "From Test host")
+			money_ok = paid_ok and ledger_ok and got
+		else:
+			if main.remotes.size() == 1 and not money_sent:
+				Progress.earn(10, "Test")
+				money_sent = Money.send(int(main.remotes.keys()[0]), 5) == ""
+			money_ok = ledger_ok and money_sent
 		# The host makes a poster of the board once the client's picture is on it.
 		if role == "host" and not postered and _picture_ok():
 			Shed.request({"a": "board_poster", "name": "MP poster"})
@@ -107,15 +128,15 @@ func _ready() -> void:
 			Settings.weather = "fog"
 			Weather.current.change_to("fog", true)
 		var weather_ok := Weather.current != null and Weather.current.state == "fog"
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 	var ok := moved and shed_ok
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok])
 	get_tree().quit(0 if ok else 1)
 
 

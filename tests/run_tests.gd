@@ -140,6 +140,10 @@ func _run_all() -> void:
 	_test_blast_detail_and_satin()
 	await _test_blast_live_session()
 	await _test_booth_swing_from_rail()
+	print("Money: wages, transfers, loans, prices and selling")
+	_test_money_pay_and_transfers()
+	_test_money_loans()
+	_test_money_parts_and_selling()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -3120,9 +3124,12 @@ func _test_tv_channels() -> void:
 	old.erase("screens")
 	Shed.load_state(old, "Tester")
 	check(Shed.screens.is_empty(), "a save from before channels loads with every screen on its home channel")
-	# Placeholder pages read zeros; the XP page says so when there's no XP system.
-	check(int(TvChannels.money_data(me)["cash"]) == 0 and TvChannels.garage_data()["placeholder"] and TvChannels.contracts_data()["offered"].is_empty()
-		and TvChannels.afford_data(me)["items"].size() > 3, "the money and contracts pages have placeholder data")
+	# The money pages read real numbers; contracts is still a placeholder, and the XP page says
+	# so when there's no XP system.
+	check(not TvChannels.garage_data().has("placeholder") and int(TvChannels.garage_data()["cash"]) == Shed.garage_money
+		and not TvChannels.money_data(me).has("placeholder") and TvChannels.contracts_data()["offered"].is_empty()
+		and TvChannels.afford_data(me)["items"].size() > 3 and int(TvChannels.afford_data(me)["items"][0]["price"]) > 0,
+		"the money pages have real numbers, and contracts placeholder data")
 	if get_node_or_null("/root/Progress") == null:
 		check(TvChannels.xp_data().get("offline", false), "with no XP system the XP page says it's starting up")
 	# Every page draws.
@@ -4657,6 +4664,7 @@ func _fit_direct(bike: int, slot: String, part: String) -> void:
 
 func _test_blueprint_build() -> void:
 	Shed.start_new("Tester", 33)
+	Shed.garage_money = 1000000   # a whole blueprint of parts to pay for
 	var me := Shed.me()
 	var a := 0
 	for id in Shed.bikes:
@@ -5586,7 +5594,7 @@ func _test_debug_tab() -> void:
 	Shed.start_new("Tester", 5)
 	Progress.select("Tester")
 	var me := Shed.me()
-	check(Progress.money() == 0 and Shed.garage_money == 0, "money starts at nothing, yours and the garage's")
+	check(Progress.money() == 0 and Shed.garage_money == Money.START_FUNDS, "money starts at nothing for you, and the starting funds for the garage")
 	var tab := DebugTab.new()
 	add_child(tab)
 	Progress.profile["xp"] = Progress.xp_for_level(6)
@@ -5629,8 +5637,9 @@ func _test_debug_tab() -> void:
 	Shed.load_state(copy, "Tester")
 	check(Shed.garage_money == 5000, "the garage's money is kept in the shed save")
 	copy.erase("garage_money")
+	copy.erase("bank")
 	Shed.load_state(copy, "Tester")
-	check(Shed.garage_money == 0, "a shed saved before money has an empty account")
+	check(Shed.garage_money == Money.START_FUNDS, "a shed saved before money opens with the starting funds")
 	tab.free()
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
@@ -6023,3 +6032,234 @@ func _test_booth_swing_from_rail() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## Money: wages for jobs with the business's cut, sending money about, who may take money out
+## and change the garage's settings.
+func _test_money_pay_and_transfers() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_money_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	Shed.start_new("Boss", 7)
+	Progress.select("Boss")
+	var me := Shed.me()
+	check(Shed.garage_money == Money.START_FUNDS and Progress.money() == 0 and int(Shed.bank["cut"]) == Money.DEFAULT_CUT
+		and Money.owner_name() == "Boss" and Money.is_owner(me), "a new shed opens with %s in the business, run by the host" % TvChannels.money_text(Money.START_FUNDS))
+	Shed.request({"a": "money_settings", "cut": 25})
+	check(int(Shed.bank["cut"]) == 25, "the host sets the business's cut of wages")
+	var bank_was := Shed.garage_money
+	Progress.award(me, "repair", 1.0, "item:4242")
+	var first := Progress.money()
+	check(first == 6 - Money.cut_of(6, 25) and Shed.garage_money == bank_was + Money.cut_of(6, 25),
+		"a job pays the worker its wage less the cut (%s), the cut going to the business" % TvChannels.money_text(first))
+	Progress.award(me, "repair", 1.0, "item:4242")
+	check(Progress.money() - first < first, "doing the same job again straight away pays less, as the XP does")
+	check(str(Shed.bank["ledger"][-1]["why"]) == "Cut of Boss's wages", "the cut shows in the business's ledger")
+	var cash := Progress.money()
+	bank_was = Shed.garage_money
+	Shed.pay_worker(me, 100, "Test wage")
+	check(Progress.money() == cash + 75 and Shed.garage_money == bank_was + 25, "pay_worker: 75 to the worker, 25 to the business")
+	check(str(Progress.profile["cash_log"][-1]["why"]) == "Test wage", "and the wage shows in your own money log")
+	Progress.award(me, "jump", 1.0)
+	check(Progress.money() == cash + 75, "riding tricks pay XP, not wages")
+	# Sending money.
+	Progress.earn(500, "Test")
+	cash = Progress.money()
+	bank_was = Shed.garage_money
+	check(Money.send(0, 200) == "" and Progress.money() == cash - 200 and Shed.garage_money == bank_was + 200,
+		"anyone can send money to the business")
+	check(str(Shed.bank["ledger"][-1]["why"]) == "From Boss", "and the ledger says who sent it")
+	check(Money.send(0, 1000000) != "" and Progress.money() == cash - 200, "you can't send more than you have")
+	check(Money.send(me, 10) != "", "or send money to yourself")
+	cash = Progress.money()
+	Progress.spend(30, "Test")
+	Shed.request({"a": "money_send", "to": 99, "amount": 30})
+	check(Progress.money() == cash, "money sent to someone who's gone comes back")
+	# A mate in the shed (not really connected here, so it bounces back too).
+	Shed.crew[5] = {"name": "Mate", "tool": "hands", "activity": "", "riding": 0}
+	cash = Progress.money()
+	check(Money.send(5, 40) == "" and Progress.money() == cash, "a mate who can't receive it: the money comes back")
+	# Taking money out: the owner only.
+	cash = Progress.money()
+	bank_was = Shed.garage_money
+	Shed.request({"a": "money_withdraw", "amount": 1000})
+	check(Progress.money() == cash + 1000 and Shed.garage_money == bank_was - 1000, "the owner takes money out of the business")
+	check(Money.check(me, {"a": "money_withdraw", "amount": Shed.garage_money + 1}) != "", "but not more than it has")
+	check(Money.check(5, {"a": "money_withdraw", "amount": 10}) != "" and Money.check(5, {"a": "money_settings", "cut": 5}) != "",
+		"a mate can't take money out or change the settings")
+	Shed.request({"a": "money_settings", "owner": "Mate"})
+	check(Money.owner_name() == "Mate" and Money.is_owner(5) and not Money.is_owner(me), "the host can make someone else the owner")
+	check(Money.check(5, {"a": "money_withdraw", "amount": 10}) == "" and Money.check(me, {"a": "money_withdraw", "amount": 10}) != "",
+		"then only they can take money out")
+	check(Money.check(me, {"a": "money_loan", "offer": 0}) != "", "or take out a loan")
+	Shed.request({"a": "money_settings", "owner": "Boss"})
+	check(str(Shed.bank["owner"]) == "" and Money.is_owner(me), "picking the host again goes back to the default")
+	# The Money tab.
+	var tab := MoneyTab.new()
+	add_child(tab)
+	tab.refresh()
+	check(tab._summary.text.contains(TvChannels.money_text(Shed.garage_money)) and not tab._take.disabled and tab._cut.editable,
+		"the Money tab shows both accounts; the host owner can take out and change the cut")
+	cash = Progress.money()
+	tab.send_money(0, 5)
+	check(Progress.money() == cash - 5, "the tab's Send pays the business")
+	tab.free()
+	Shed.crew.erase(5)
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+## Bank loans: borrowing, a repayment a day with interest, paying off early, missing one, the
+## debt limit, and the bank saved with the shed (old saves get the defaults).
+func _test_money_loans() -> void:
+	Shed.start_new("Boss", 8)
+	var me := Shed.me()
+	var start := Shed.garage_money
+	Shed.request({"a": "money_loan", "offer": 0})
+	var loan: Dictionary = Shed.bank["loans"][0] if not Shed.bank["loans"].is_empty() else {}
+	check(Shed.garage_money == start + 5000 and int(loan.get("owed", 0)) == 5000 and Money.debt(Shed.bank) == 5000,
+		"borrowing 5k puts it in the business's account")
+	var daily := int(loan["daily"])
+	check(daily > 500 and daily < 600, "repaid in 10 days with interest (%s a day)" % TvChannels.money_text(daily))
+	var bal := Shed.garage_money
+	Shed.money_new_day()
+	check(int(loan["owed"]) == 5000 + 40 - daily and Shed.garage_money == bal - daily and int(Shed.bank["day"]) == 1,
+		"a new day: interest on what's owed, then the day's repayment")
+	bal = Shed.garage_money
+	Shed.request({"a": "money_repay", "loan": int(loan["id"]), "amount": 1000})
+	check(int(loan["owed"]) == 5040 - daily - 1000 and Shed.garage_money == bal - 1000, "paying more off early")
+	Shed.request({"a": "money_loan", "offer": 2})
+	check(Shed.bank["loans"].size() == 2, "a second loan")
+	check(Money.check(me, {"a": "money_loan", "offer": 2}) != "", "but the bank won't lend past %s in all" % TvChannels.money_text(Money.MAX_DEBT))
+	# Missing a repayment.
+	Shed.garage_money = 0
+	var owed := int(loan["owed"])
+	Shed.money_new_day()
+	check(int(loan["missed"]) == 1 and int(loan["owed"]) > owed and bool(Shed.bank["blocked"]),
+		"no money for the repayment: missed, a fee added, and no new loans")
+	check(Money.check(me, {"a": "money_loan", "offer": 0}).contains("missed"), "the bank says why")
+	# Save and load.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.request({"a": "money_settings", "cut": 33})
+	Shed.load_state(copy, "Boss")
+	check(Shed.bank["loans"].size() == 2 and bool(Shed.bank["blocked"]) and int(Shed.bank["cut"]) == Money.DEFAULT_CUT
+		and Shed.bank["ledger"].size() > 3 and int(Shed.bank["day"]) == 2, "the bank's loans, ledger, day and settings are saved with the shed")
+	# Clearing every loan lifts the block.
+	Shed.garage_money = 500000
+	for l in Shed.bank["loans"].duplicate():
+		Shed.request({"a": "money_repay", "loan": int(l["id"]), "amount": int(l["owed"])})
+	check(Shed.bank["loans"].is_empty() and not bool(Shed.bank["blocked"]) and Money.check(me, {"a": "money_loan", "offer": 0}) == "",
+		"loans cleared: the bank lends again")
+	var old: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	old.erase("bank")
+	old["garage_money"] = 0
+	Shed.load_state(old, "Boss")
+	check(Shed.garage_money == Money.START_FUNDS and Shed.bank["loans"].is_empty() and int(Shed.bank["cut"]) == Money.DEFAULT_CUT,
+		"a shed saved before money opens with the starting funds and default settings")
+
+
+## Prices: parts cost the business money (Haggler takes some off), the business can run out,
+## selling loose parts and whole bikes, project bikes, the money milestones and the debug million.
+func _test_money_parts_and_selling() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_money_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	Shed.start_new("Boss", 9)
+	Progress.select("Boss")
+	var me := Shed.me()
+	var unpriced := []
+	for id in PartsDB.parts:
+		if Money.part_price(id) <= 0:
+			unpriced.append(id)
+	check(unpriced.is_empty(), "every part has a price %s" % str(unpriced))
+	check(Money.part_price("carbon_monocoque") > Money.part_price("steel_cradle") and Money.part_price("four_1000") > Money.part_price("single_250"),
+		"fancier and bigger parts cost more (carbon frame %s, steel %s)" % [TvChannels.money_text(Money.part_price("carbon_monocoque")),
+		TvChannels.money_text(Money.part_price("steel_cradle"))])
+	check(Shed.part_price("frame_nope") == 0 and Shed.part_price("steel_cradle") == Money.part_price("steel_cradle"), "Shed.part_price is the same price")
+	var price := Money.part_price("chromoly_trellis")
+	var bal := Shed.garage_money
+	var frame := _order("chromoly_trellis")
+	check(frame != 0 and Shed.garage_money == bal - price and str(Shed.bank["ledger"][-1]["why"]).begins_with("Bought"),
+		"ordering a part takes its price from the business (%s)" % TvChannels.money_text(price))
+	Progress.profile["skills"]["haggler"] = 2
+	check(Money.buy_price("chromoly_trellis", me) == roundi(price * 0.9), "Haggler 2: 10% off")
+	Progress.profile["skills"].erase("haggler")
+	Shed.garage_money = 10
+	var count := Shed.items.size()
+	check(Shed.check(me, {"a": "order_part", "part": "chromoly_trellis"}).contains("afford"), "the business can't afford it: it says so")
+	Shed.request({"a": "order_part", "part": "chromoly_trellis"})
+	check(Shed.items.size() == count and Shed.garage_money == 10, "and nothing comes")
+	var bikes := Shed.bikes.size()
+	Shed.request({"a": "order"})
+	check(Shed.bikes.size() == bikes and Shed.items.size() == count, "no money, no project bike")
+	Shed.garage_money = 20000
+	# Selling a loose part: as good as new, it fetches SELL_RATE of its price.
+	var sale := Money.part_sale(frame)
+	check(sale == roundi(price * Money.SELL_RATE), "a new part sells for %d%% of its price" % roundi(Money.SELL_RATE * 100.0))
+	var rusty := _order("chromoly_trellis")
+	Shed.items[rusty]["rust"] = 0.9
+	Shed.items[rusty]["wear"] = 0.6
+	check(Money.part_sale(rusty) < sale / 2, "a worn, rusty one far less (%s)" % TvChannels.money_text(Money.part_sale(rusty)))
+	var sold_was := int(Progress.profile["stats"].get("sell_part", 0))
+	bal = Shed.garage_money
+	Shed.request({"a": "money_sell_part", "item": frame})
+	check(not Shed.items.has(frame) and Shed.garage_money == bal + sale and int(Progress.profile["stats"].get("sell_part", 0)) == sold_was + 1,
+		"selling it: the part goes, the money goes to the business and the seller gets the XP")
+	var on_bike := Shed.item_on(Shed.bikes.keys()[0], "frame")
+	check(Money.check(me, {"a": "money_sell_part", "item": on_bike}) != "", "parts on a bike can't be sold on their own")
+	# Selling a whole bike.
+	var ranger := 0
+	for id in Shed.bikes:
+		if Shed.bikes[id]["name"] == "Rusty Ranger":
+			ranger = id
+	var value := Money.bike_sale(ranger)
+	var parts_on := []
+	for slot in PartsDB.SLOTS:
+		if Shed.item_on(ranger, slot) != 0:
+			parts_on.append(Shed.item_on(ranger, slot))
+	check(value > 0 and Shed.is_complete(ranger), "a complete bike has a price (%s)" % TvChannels.money_text(value))
+	var bare := 0.0
+	for id in parts_on:
+		bare += Money.item_worth(Shed.items[id])
+	check(value > roundi(bare * Money.SELL_RATE * (1.0 + Money.BONUS_COMPLETE)) - 2, "with a bonus for being complete (and more ready to ride)")
+	bal = Shed.garage_money
+	var sold_bikes := int(Progress.profile["stats"].get("sell_bike", 0))
+	Shed.request({"a": "money_sell_bike", "bike": ranger})
+	check(not Shed.bikes.has(ranger) and parts_on.all(func(i): return not Shed.items.has(i)) and Shed.garage_money == bal + value + Money.cut_of(int(Progress.PAY["sell_bike"]), int(Shed.bank["cut"])),
+		"selling the bike: it goes, every part with it, and the business is paid (and takes its cut of the seller's commission)")
+	check(int(Progress.profile["stats"].get("sell_bike", 0)) == sold_bikes + 1 and int(TvChannels.money_data(me)["sold"]) == sold_bikes + 1,
+		"the seller gets the Bike sold XP, and My money counts it")
+	# A project bike costs a bit more than it would fetch.
+	bal = Shed.garage_money
+	Shed.request({"a": "order"})
+	var newest := 0
+	for id in Shed.bikes:
+		newest = maxi(newest, id)
+	check(Shed.bikes.size() == 3 and Shed.garage_money < bal and Shed.garage_money == bal - Money.project_price(newest)
+		and Money.project_price(newest) > Money.bike_sale(newest), "a project bike costs more than it fetches as it comes (%s)" % TvChannels.money_text(bal - Shed.garage_money))
+	# Money milestones: XP for the crew the first time the business gets there.
+	Shed.garage_money = 20000
+	var ms := int(Progress.profile["stats"].get("money_milestone", 0))
+	Shed.credit_garage(6000, "Test sale")
+	check(int(Progress.profile["stats"].get("money_milestone", 0)) == ms + 1 and Shed.bank["milestones"].has(25000),
+		"reaching 25k pays the money milestone XP")
+	Shed.garage_money = 20000
+	Shed.credit_garage(6000, "Test sale")
+	check(int(Progress.profile["stats"].get("money_milestone", 0)) == ms + 1, "only the first time")
+	# The debug million, and the TV pages.
+	var tab := DebugTab.new()
+	add_child(tab)
+	bal = Shed.garage_money
+	tab.press("Give the garage £1,000,000")
+	check(Shed.garage_money == bal + 1000000, "Debug: give the garage £1,000,000")
+	tab.free()
+	var g := TvChannels.garage_data()
+	check(int(g["cash"]) == Shed.garage_money and int(g["bike_value"]) > 0 and int(g["income_week"]) >= 1000000 and int(g["outgoings_week"]) > 0
+		and (g["history"] as Array).size() == 7, "the Garage money page: bikes' worth, the week in and out")
+	var mine := TvChannels.money_data(me)
+	check(int(mine["earned_week"]) > 0 and (mine["history"] as Array).size() == 7 and int((mine["history"] as Array)[-1]) == Progress.money(),
+		"the My money page: what you earned this week")
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)

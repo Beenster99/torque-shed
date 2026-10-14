@@ -53,6 +53,7 @@ var _time_note: Label
 var _weather: OptionButton
 var _weather_now: Label
 var debug: DebugTab
+var money: MoneyTab
 ## Set when the player chose "New shed": the next solo or hosted start begins a fresh shed.
 var new_shed := false
 var _solo: Button
@@ -205,6 +206,9 @@ func _ready() -> void:
 	# Your level, tool upgrades, skills tree and goals (see Progress).
 	var character := CharacterTab.new()
 	_tabs.add_child(character)
+	# Your cash, the business's account, sending money, loans and the ledger (see Money).
+	money = MoneyTab.new()
+	_tabs.add_child(money)
 	# Testing helpers: reset or max out XP and money.
 	debug = DebugTab.new()
 	_tabs.add_child(debug)

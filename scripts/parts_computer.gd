@@ -1,7 +1,9 @@
 class_name PartsComputer
 extends Control
 ## The shed's parts computer: browse every part by kind, read its spec and order it, or order
-## equipment for the shed. Deliveries are left outside the roller door. Free until money arrives.
+## equipment for the shed. Deliveries are left outside the roller door. Parts and project bikes
+## are paid for from the business's account (see Money); the Sell aisle sells loose parts and
+## whole bikes, the money going into the business.
 
 signal closed
 
@@ -22,9 +24,15 @@ var _posters_shown := -1
 var poster_size := Equipment.POSTER_SIZE_DEFAULT
 var _sizes: HBoxContainer
 var _size_btns := {}
+var _bank: Label
+var _bike_btn: Button
+var _sell_shown := ""
+
+## The Sell aisle's two lists.
+const SELL_KINDS := ["sell:bikes", "sell:parts"]
 
 ## The shop's three aisles, so nobody scrolls through everything.
-const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors"}
+const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors", "sell": "Sell"}
 
 
 func _ready() -> void:
@@ -49,14 +57,16 @@ func _ready() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
-	var bike_btn := Button.new()
-	bike_btn.text = "Order a project bike"
-	bike_btn.pressed.connect(func(): Shed.request({"a": "order"}))
-	head.add_child(bike_btn)
+	_bank = UITheme.label("", 17, Color(0.55, 0.95, 0.55))
+	head.add_child(_bank)
+	_bike_btn = Button.new()
+	_bike_btn.text = "Order a project bike"
+	_bike_btn.pressed.connect(func(): Shed.request({"a": "order"}))
+	head.add_child(_bike_btn)
 	# Blueprint builds under way (Esc, Blueprints): order whatever their holograms still show.
 	var bp_btn := Button.new()
 	bp_btn.text = "Order blueprint parts"
-	bp_btn.tooltip_text = "Orders every part a blueprint build still needs (free for now)"
+	bp_btn.tooltip_text = "Orders every part a blueprint build still needs, paid for by the business"
 	bp_btn.pressed.connect(func(): Shed.request({"a": "bp_order"}))
 	head.add_child(bp_btn)
 	var close := Button.new()
@@ -123,10 +133,12 @@ func _ready() -> void:
 	_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
 	detail.add_child(_status)
 	_order = Button.new()
-	_order.text = "Order it (free for now)"
+	_order.text = "Order it"
 	_order.custom_minimum_size = Vector2(0, 48)
 	_order.pressed.connect(func():
-		if design_of(_part) != 0:
+		if _kind.begins_with("sell:"):
+			sell(_part)
+		elif design_of(_part) != 0:
 			Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": design_of(_part), "psize": poster_size})
 		elif Equipment.kind_of(_part) == "poster":
 			Shed.request({"a": "order_furniture", "model": _part, "psize": poster_size})
@@ -139,13 +151,20 @@ func _ready() -> void:
 	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
 	# A poster made at the whiteboard while the list is up joins it.
 	Shed.changed.connect(func():
-		if visible and _kind == "eq:poster" and _posters_shown != Shed.posters.size() and (_search == null or _search.text == ""):
+		if not visible:
+			return
+		_refresh_bank()
+		if _kind == "eq:poster" and _posters_shown != Shed.posters.size() and (_search == null or _search.text == ""):
+			_show_kind(_kind)
+		elif _kind.begins_with("sell:") and _sell_signature(_kind) != _sell_shown:
 			_show_kind(_kind))
 	_show_section(_section)
 
 
 ## Which aisle a kind is sold in.
 static func section_of(k: String) -> String:
+	if k.begins_with("sell:"):
+		return "sell"
 	if k.begins_with("eq:"):
 		return "outdoors" if Equipment.YARD_KINDS.has(k.trim_prefix("eq:")) else "shed"
 	return "bike"
@@ -163,6 +182,10 @@ static func all_kinds() -> Array:
 
 
 static func kind_title(k: String) -> String:
+	if k == "sell:bikes":
+		return "Whole bikes"
+	if k == "sell:parts":
+		return "Loose parts"
 	if k.begins_with("eq:"):
 		return Equipment.KIND_NAMES[k.trim_prefix("eq:")]
 	return ("Fluids: " if PartsDB.FLUID_KINDS.has(k) else "") + str(PartsDB.KIND_NAMES[k])
@@ -175,7 +198,7 @@ func _show_section(sec: String) -> void:
 	for c in _kinds.get_children():
 		c.queue_free()
 	var first := ""
-	for k in all_kinds():
+	for k in all_kinds() + SELL_KINDS:
 		if section_of(k) != sec:
 			continue
 		if first == "":
@@ -264,6 +287,7 @@ func _column(parent: Control, width: float) -> VBoxContainer:
 
 func open() -> void:
 	visible = true
+	_refresh_bank()
 	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.free_delivery_xf() == null else "yes")
 	if _kind == "eq:poster":
 		_show_kind(_kind)   # whiteboard prints made since it was last open
@@ -307,6 +331,9 @@ func _show_kind(k: String) -> void:
 		b.button_pressed = b.get_meta("kind") == k
 	for c in _variants.get_children():
 		c.queue_free()
+	if k.begins_with("sell:"):
+		_show_sellables(k)
+		return
 	var ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
 	var group := ""
 	if k == "engine":
@@ -382,6 +409,12 @@ func _show_part(id: String) -> void:
 	for b in _variants.get_children():
 		if b.has_meta("part"):
 			b.button_pressed = b.get_meta("part") == id
+	_order.disabled = false
+	if _kind.begins_with("sell:"):
+		_sizes.visible = false
+		_show_sale(id)
+		return
+	_order.text = "Order it"
 	_sizes.visible = design_of(id) != 0 or Equipment.kind_of(id) == "poster"
 	if design_of(id) != 0:
 		var d: Dictionary = Shed.posters.get(design_of(id), {})
@@ -406,6 +439,10 @@ func _show_part(id: String) -> void:
 	var p := PartsDB.get_part(id)
 	_title.text = str(p["name"])
 	_desc.text = str(p.get("description", ""))
+	var cost := Money.buy_price(id, Shed.me())
+	_order.text = "Order it: %s" % TvChannels.money_text(cost)
+	_desc.text += "\n\n%s from the business's account%s." % [TvChannels.money_text(cost),
+		" (Haggler discount)" if cost < Money.part_price(id) else ""]
 	if _kind == "chain_lube":
 		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it, crouch by a bike's chain and hold left mouse to lube it." \
 			+ " A dry chain wastes power and wears out.\nDelivered outside, no box to unpack."
@@ -462,3 +499,107 @@ func _unhandled_input(event: InputEvent) -> void:
 	else:
 		return
 	get_viewport().set_input_as_handled()
+
+
+# ---------------------------------------------------------------------------- money
+
+## The business's balance in the header, and what a project bike goes for.
+func _refresh_bank() -> void:
+	if _bank == null:
+		return
+	_bank.text = "Business: %s  " % TvChannels.money_text(Shed.garage_money)
+	_bike_btn.tooltip_text = "Around %s, paid by the business" % TvChannels.money_text(Money.typical_project_price())
+
+
+## What the Sell aisle can sell now: "bike:<id>" for every bike nobody is riding, "item:<id>"
+## for every loose part (on the floor, a bench or shelf, or in your hands).
+static func sellables(k: String) -> Array:
+	var out := []
+	if k == "sell:bikes":
+		for id in Shed.bikes:
+			if int(Shed.bikes[id]["rider"]) == 0:
+				out.append("bike:%d" % int(id))
+	else:
+		for id in Shed.items:
+			var it: Dictionary = Shed.items[id]
+			if it["at"] in ["spot", "floor"] or (it["at"] == "held" and int(it["ref"]) == Shed.me()):
+				out.append("item:%d" % int(id))
+	return out
+
+
+func _sell_signature(k: String) -> String:
+	return ",".join(sellables(k))
+
+
+func _show_sellables(k: String) -> void:
+	var keys := sellables(k)
+	_sell_shown = ",".join(keys)
+	_variants.add_child(UITheme.label("%d TO SELL" % keys.size(), 14, UITheme.ACCENT))
+	if keys.is_empty():
+		var none := UITheme.label("Nothing to sell here." if k == "sell:bikes" else
+			"No loose parts. Take parts off a bike, or put them down in the shed, to sell them.", 14, Color(1, 1, 1, 0.5))
+		none.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_variants.add_child(none)
+		_title.text = kind_title(k)
+		_desc.text = ""
+		_spec.text = ""
+		_order.text = "Sell it"
+		_order.disabled = true
+		_part = ""
+		return
+	for key in keys:
+		var b := Button.new()
+		b.text = "%s  ·  %s" % [_sale_name(key), TvChannels.money_text(sale_price(key))]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.toggle_mode = true
+		b.set_meta("part", key)
+		b.pressed.connect(_pick_part.bind(key))
+		b.focus_entered.connect(_show_part.bind(key))
+		_variants.add_child(b)
+	_show_part(keys[0])
+
+
+static func _sale_name(key: String) -> String:
+	var id := int(key.get_slice(":", 1))
+	if key.begins_with("bike:"):
+		return str(Shed.bikes.get(id, {}).get("name", "Bike"))
+	return Shed.item_title(id) if Shed.items.has(id) else "Part"
+
+
+## What a "bike:<id>" or "item:<id>" fetches if this player sells it.
+static func sale_price(key: String) -> int:
+	var id := int(key.get_slice(":", 1))
+	return Money.bike_sale(id, Shed.me()) if key.begins_with("bike:") else Money.part_sale(id, Shed.me())
+
+
+func _show_sale(key: String) -> void:
+	var id := int(key.get_slice(":", 1))
+	_title.text = _sale_name(key)
+	var price := sale_price(key)
+	_order.text = "Sell it: %s" % TvChannels.money_text(price)
+	_order.disabled = price <= 0 and not key.begins_with("bike:")
+	if key.begins_with("bike:"):
+		var missing := Shed.missing_slots(id).size()
+		var loose := Shed.loose_slots(id).size()
+		var state := "Complete, fuelled and ready to ride: it fetches %d%% more." % roundi((Money.BONUS_COMPLETE + Money.BONUS_RIDEABLE) * 100.0) \
+			if Money.rideable(id) else ("Complete, but needs petrol and oil to fetch the best price." if Shed.is_complete(id)
+			else "%d part%s missing and %d loose: a complete bike fetches more." % [missing, "" if missing == 1 else "s", loose])
+		_desc.text = "Sells the whole bike and every part on it. %s" % state
+		_spec.text = "The money goes into the business's account. Bikes sold: XP for whoever sells it."
+		return
+	var it: Dictionary = Shed.items.get(id, {})
+	var health := BikeBuild.part_health(Shed.condition_of(it)) if not it.is_empty() else 0.0
+	_desc.text = "Condition %d%%. New, it costs %s; a dealer pays %d%% of what it's worth now, and worn parts are worth far less." % [
+		roundi(health * 100.0), TvChannels.money_text(Money.part_price(str(it.get("part", "")))), roundi(Money.SELL_RATE * 100.0)]
+	_spec.text = "The money goes into the business's account." + (" Whatever is fitted to it goes too." if Shed.is_engine(id) or Shed.tyre_on_wheel(id) != 0 else "")
+
+
+## Sells a "bike:<id>" or "item:<id>" to the dealer, through the host.
+func sell(key: String) -> void:
+	if key == "":
+		return
+	var id := int(key.get_slice(":", 1))
+	if key.begins_with("bike:"):
+		Shed.request({"a": "money_sell_bike", "bike": id})
+	else:
+		Shed.request({"a": "money_sell_part", "item": id})

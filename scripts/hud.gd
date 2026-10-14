@@ -66,19 +66,22 @@ func _ready() -> void:
 	blast_hud = BlastHud.new()
 	add_child(blast_hud)
 	Progress.xp_gained.connect(add_popup)
+	Progress.cash_changed.connect(add_popup.bind(true))
 	Progress.leveled_up.connect(func(level: int):
 		_banner_level = level
 		_banner_time = BANNER_LIFE
 		Sfx.play_ui("levelup", -4.0))
 
 
-## Shows "+N XP label"; the same kind of XP arriving close together adds up in one popup.
-func add_popup(amount: int, label: String) -> void:
-	if not popups.is_empty() and popups[0]["label"] == label and float(popups[0]["age"]) < 0.8:
-		popups[0]["amount"] = int(popups[0]["amount"]) + amount
-		popups[0]["age"] = 0.0
-		return
-	popups.push_front({"amount": amount, "label": label, "age": 0.0})
+## Shows "+N XP label" (or "+£N label" for cash); the same kind arriving close together adds up
+## in one popup.
+func add_popup(amount: int, label: String, cash := false) -> void:
+	for p in popups.slice(0, 2):
+		if p["label"] == label and bool(p.get("cash", false)) == cash and float(p["age"]) < 0.8:
+			p["amount"] = int(p["amount"]) + amount
+			p["age"] = 0.0
+			return
+	popups.push_front({"amount": amount, "label": label, "age": 0.0, "cash": cash})
 	while popups.size() > 5:
 		popups.pop_back()
 
@@ -173,6 +176,11 @@ func _draw_level() -> void:
 	var r := Rect2(size.x - w - 24.0, 18.0, w, 40.0)
 	draw_rect(r, Color(0.03, 0.03, 0.04, 0.55))
 	draw_string(font, r.position + Vector2(10, 18), "LV %d" % s["level"], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UITheme.ACCENT)
+	# Your own cash, just left of the level box.
+	var cash := TvChannels.money_text(Progress.money())
+	var cw := font.get_string_size(cash, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 20.0
+	draw_rect(Rect2(r.position.x - cw - 8.0, r.position.y, cw, r.size.y), Color(0.03, 0.03, 0.04, 0.55))
+	draw_string(font, Vector2(r.position.x - cw + 2.0, r.position.y + 26), cash, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.55, 0.95, 0.55))
 	var pts := int(s["tool_points"]) + int(s["skill_points"])
 	var right := "%d / %d XP" % [int(s["xp"]), int(s["xp_next"])]
 	if pts > 0:
@@ -189,8 +197,13 @@ func _draw_level() -> void:
 		var age := float(p["age"])
 		var alpha := clampf((POPUP_LIFE - age) / 0.8, 0.0, 1.0) * clampf(age / 0.12, 0.0, 1.0)
 		var y := r.end.y + 20.0 + i * 20.0 - minf(age, 0.25) * 16.0
-		draw_string(font, Vector2(r.position.x, y), "+%d XP  %s" % [int(p["amount"]), p["label"]], HORIZONTAL_ALIGNMENT_RIGHT, w,
-			14, Color(1.0, 0.85, 0.45, alpha * 0.9))
+		var amt := int(p["amount"])
+		if p.get("cash", false):
+			draw_string(font, Vector2(r.position.x, y), "%s%s  %s" % ["+" if amt >= 0 else "", TvChannels.money_text(amt), p["label"]],
+				HORIZONTAL_ALIGNMENT_RIGHT, w, 14, Color(0.55, 0.95, 0.55, alpha * 0.9) if amt >= 0 else Color(1.0, 0.55, 0.45, alpha * 0.9))
+		else:
+			draw_string(font, Vector2(r.position.x, y), "+%d XP  %s" % [amt, p["label"]], HORIZONTAL_ALIGNMENT_RIGHT, w,
+				14, Color(1.0, 0.85, 0.45, alpha * 0.9))
 	if _banner_time > 0.0:
 		var a := clampf(_banner_time / 0.6, 0.0, 1.0) * clampf((BANNER_LIFE - _banner_time) / 0.25, 0.0, 1.0)
 		var y := size.y * 0.3

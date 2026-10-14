@@ -2,7 +2,7 @@
 
 A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 41 parts from 35 kinds (stands, headlight, horn, ECU, panniers, top box, fog lights, fairing and mirrors are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree (see below); money comes later.
+Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 41 parts from 35 kinds (stands, headlight, horn, ECU, panniers, top box, fog lights, fairing and mirrors are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree, and a wage; the business buys parts and project bikes, sells parts and bikes, and can borrow from the bank (see Money below).
 
 ### What a bike is made of
 
@@ -49,6 +49,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Drain a fluid (holding a drain pan, empty can or bleed bottle); with the wrench at a chain, set its tension | Hold R or right mouse | Hold X |
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
 | Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
+| Sell a loose part or a whole bike (parts computer, Sell aisle); send money, take money out, loans (Esc, Money tab) | F at the computer / Esc | Y / Start |
 | Unpack a delivery box; take hold of or let go of equipment (posters, TVs and the whiteboard hang on the wall you look at) | F | Y |
 | Carrying equipment: push it further away / pull it closer | Mouse wheel up / down (or Q / E) | LB / RB |
 | Carrying equipment: snapping to walls and corners on or off | R or right mouse | X |
@@ -99,7 +100,7 @@ Hold **Ctrl** to snap (1 cm, 5 degrees, 5%), or tick "Always snap". **Z** undoes
 
 Changes are only for **that bike**: another bike with the same tank isn't touched. While you work they're a draft; **Save to this bike** keeps them (the host saves them with the shed, and everyone in co-op sees them, riding too). **Save + blueprint** saves them to the bike and also keeps the bike as a **blueprint** with the name you type: its parts, paint, each part's colour and finish, and your fit. Leaving with changes not saved asks whether to save or discard them. If you swap a part, the new one in that slot keeps the slot's fit. It's only looks: power, weight and handling don't change.
 
-**Building from a blueprint**: in the Esc menu press **Build from blueprint** (the **Blueprints** tab, where blueprints can also be renamed and deleted). Pick a blueprint and an empty bay, and a flickering blue **hologram** of the finished bike appears in that bay. The bay screen shows the checklist of every part it needs (fitted, on order or needed, with a price total that's a placeholder until money arrives). **Order missing parts** (in the Blueprints tab, or **Order blueprint parts** on the parts computer) delivers what's still needed in boxes outside the roller door, in the blueprint's colours; if the delivery area fills up, bring boxes in and order again. Then put the frame on the bay's stand as for any scratch build: the bike takes the blueprint's name, paint and fit. Each ghost part vanishes as the real one goes on, and when the last part is on the hologram is gone. A project bike is never delivered into a bay with a hologram in it. Cancel in the Blueprints tab takes a hologram away.
+**Building from a blueprint**: in the Esc menu press **Build from blueprint** (the **Blueprints** tab, where blueprints can also be renamed and deleted). Pick a blueprint and an empty bay, and a flickering blue **hologram** of the finished bike appears in that bay. The bay screen shows the checklist of every part it needs (fitted, on order or needed, with what the parts still needed cost). **Order missing parts** (in the Blueprints tab, or **Order blueprint parts** on the parts computer) delivers what's still needed in boxes outside the roller door, in the blueprint's colours, each paid for by the business (it stops when the money runs out); if the delivery area fills up, bring boxes in and order again. Then put the frame on the bay's stand as for any scratch build: the bike takes the blueprint's name, paint and fit. Each ghost part vanishes as the real one goes on, and when the last part is on the hologram is gone. A project bike is never delivered into a bay with a hologram in it. Cancel in the Blueprints tab takes a hologram away.
 
 ### The sandblaster
 
@@ -107,7 +108,7 @@ A **sandblasting cabinet** (from the equipment page of the parts computer) strip
 
 While you work, a big readout shows a bar for the whole engine across the top and, down the side, each part with how much of it is bare and its **rust, dirt, wear and condition**, which change as you go (the crew sees them change too). When a part comes up bare there's a ding, a flash and "Bare metal!"; when the whole engine is done it says so, and you step back a moment later. Don't linger: blast one spot for too long and it goes dull and pitted, which wears the part. Press F to step back early: each part keeps what you've stripped off it, and pays XP like restoring on the grinder. One person at the gloves at a time; the crew sees the jet, the engine turning and the bare metal coming up.
 
-Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (free for now), equipment or a new project bike. Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (four or five shelves that take parts anywhere on them), parts washers and repair machines (rated for 1 to 4 parts at full speed, some faster; see below), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters, TVs and the whiteboard hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
+Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (paid for from the business's account), equipment or a new project bike (also paid for), and its **Sell** aisle sells loose parts and whole bikes (see Money). Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (four or five shelves that take parts anywhere on them), parts washers and repair machines (rated for 1 to 4 parts at full speed, some faster; see below), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters, TVs and the whiteboard hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
 
 ### Placing equipment and parts
 
@@ -146,7 +147,10 @@ The **storage room** is through the doorway in the west wall, by the back corner
 - **Crew board**: everyone in the shed and what they're doing.
 - **XP goals**: everyone's level and XP bar, and your own goals and points.
 - **How to play**: the controls and the basics, a page at a time, turning over by itself.
-- **My money**, **Garage money**, **What you can afford** and **Contracts**: these are laid out now. The cash figures on the two money pages are real (both start at nothing); the rest of their numbers arrive with money and contracts in a later update.
+- **My money**: your cash, what you earned and spent this in-game week, bikes you've sold and a chart of your cash day by day.
+- **Garage money**: the business's account, what its bikes and loose parts would fetch, money in and out this week, what it owes the bank and a chart of the account day by day.
+- **What you can afford**: a project bike and some fancy parts, at what they cost now, and whether your cash would cover them.
+- **Contracts**: laid out now; customers' jobs arrive in a later update.
 
 Bay screens start on their bay's bike and the crew board starts on the crew list. The channel each screen is on is kept with the shed, and everyone in co-op sees the same channel. The money pages show your own figures on your own screen.
 
@@ -186,7 +190,7 @@ Press F at the **dyno desk** to tune the bike on the rig, or any bike within abo
 
 ### XP, levels, tool upgrades and skills
 
-Everything you do earns **XP**, one pool for the lot: work in the shed, riding, and (from the money milestone) selling. Each job pops up a small "+6 XP Cleaning" under the level bar at the top right. Doing the same job to the same part again straight away pays half as much each time (so unbolting and bolting one bolt over and over soon pays nothing), and the big one-offs pay once per bike or part.
+Everything you do earns **XP**, one pool for the lot: work in the shed, riding, and selling. Each job pops up a small "+6 XP Cleaning" under the level bar at the top right. Doing the same job to the same part again straight away pays half as much each time (so unbolting and bolting one bolt over and over soon pays nothing), and the big one-offs pay once per bike or part.
 
 | Job | XP |
 | --- | --- |
@@ -210,7 +214,8 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | A scratch build finished (on top) | 100, once per bike |
 | A project bike restored to max health (every part 95% or better) | 300, once per bike |
 | Riding: a jump of half a second or more (more for longer, half again for a clean landing), wheelies (3 per 10 m), stoppies (4 per 5 m), burnouts, knee-down corners, every km ridden, new top speeds (50, 80, 100 ... 320 km/h), 0-100 km/h times, and beating your longest jump, wheelie or stoppie | 2 to 60 |
-| Selling a bike, selling a part, money milestones (money milestone) | 100, 5, 50 |
+| Selling a bike, selling a part (at the parts computer) | 100, 5 |
+| The business's account reaching 10k, 25k, 50k, 100k, 250k, 500k and 1 million (everyone in the shed, once each) | 50 |
 
 **Levels**: level 2 takes 75 XP, and each level takes more than the last (level 10 is about 3,900 XP, level 50 the top). Levelling up sounds a fanfare and gives you **one tool point and one skill point**. The Character tab lists **goals** too ("Land a 2 s jump", "Restore a bike to 95% health", "Ride 10 km" and more), each paying a lump of XP once.
 
@@ -226,7 +231,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Finisher | **Elbow Grease** (scrub 12% faster, pressure washer 15% stronger a rank) · **Steady Hand** (spray fans 8% wider, and 10% more before it runs, a rank) · **Hot Welder** (grinder and welder 12% faster a rank) · **Showroom Shine** (paint and lube jobs 4% better a rank) |
 | Rider | **Balance** (steadier wheelies and stoppies) · **Throttle Control** (less wheelspin) · **Airtime** (+15% jump XP a rank, ride out landings 4 degrees steeper a rank) · **Quick Reset** (back up a second sooner a rank after a crash) · **Speed Demon** (+25% XP a rank for top speeds and 0-100 times) |
 | Tuner | **Dyno Reader** (the dyno desk shows the power lost to wear, then which part to restore first) · **Featherweight** (drilling and trimming takes 10% more off a rank) · **Fine Tuning** (map, ignition and rev limiter go 8% further a rank on bikes you tune) |
-| Crew | **Foreman** (+5% XP a rank with a teammate within 6 m) · **Mentor** (crew within 10 m get a bonus 5% a rank of your XP) · **Haggler** (cheaper parts: unlocks with the money milestone) |
+| Crew | **Foreman** (+5% XP a rank with a teammate within 6 m) · **Mentor** (crew within 10 m get a bonus 5% a rank of your XP) · **Haggler** (parts you order 5% cheaper and what you sell 3% dearer, a rank) |
 
 ### Riding
 
@@ -267,9 +272,26 @@ The weather changes by itself every few minutes between **clear skies**, **cloud
 
 In the Esc menu's **Settings** tab, **Weather** picks **Changes by itself** or holds one kind (always clear, cloudy, foggy or raining). In co-op the host's weather is everyone's. The weather is saved with the shed.
 
+### Money
+
+There are two kinds of money: **your own cash**, kept with your character like your XP (so it goes with you to any shed), and **the business**: the garage's own account, kept with the shed. A new shed's business opens with **£10,000**. Your cash shows top right, next to your level, and pops up green ("+£4 Restoring") as it comes in.
+
+**Wages**: every job that earns XP also pays a small wage (a few pounds for spanner work, more for restoring, spraying and fitting tyres, and a good lump for finishing a build or restoring a bike to max health). Like the XP, doing the same job again straight away pays less and less, and the one-offs pay once. The business takes its **cut** of every wage (20% to start); you get the rest. Riding pays XP, not wages. The real money is in selling bikes (and, later, contracts).
+
+**Buying and selling**: parts cost money now, from the business's account: plain parts are cheap, fancy and light ones dear, engines by their size. If the business can't afford a part, the parts computer says so and nothing comes. A **project bike** costs a bit more than it would fetch as it comes, so the profit is in restoring it. The parts computer's **Sell** aisle sells **loose parts** (on the floor, a bench or shelf, or in your hands; an engine goes with whatever is fitted to it) and **whole bikes**. A dealer pays 70% of what a thing is worth now, and worn, rusty parts are worth far less than good ones, so restore before you sell. A complete bike fetches 15% more, and 15% more again with petrol and oil in it, ready to ride. The money goes to the business; whoever sells gets the XP and a small commission.
+
+**The Money tab** (Esc menu): your cash and the business's, and:
+- **Send money**: pick a mate or the business and an amount: it comes out of your own cash. Anyone can pay the business.
+- **Take money out**: only the **garage owner** can move money from the business into their own cash.
+- **Garage settings** (the host only; greyed for everyone else, and saved with the shed): the business's **cut** of wages (0 to 100%) and who the **garage owner** is (the host to start).
+- **Bank loans**: the owner can borrow £5,000 (10 days), £20,000 (20 days) or £50,000 (30 days), up to £100,000 owed in all. Every in-game day (when the clock passes midnight) the bank adds a little interest to what's owed and takes the day's repayment from the business. **Pay** a thousand off, or **Clear it**, any time: paying early saves interest. If the business can't make a repayment it's **missed**: a fee goes on the loan and the bank won't lend again until that loan is paid off. With the day and night cycle off, days don't pass and nothing is due.
+- **The ledger**: the business's last 100 movements (sales, purchases, cuts of wages, money sent in, repayments), newest first, and your own money's recent log.
+
+In co-op the host keeps the books: everyone's wages, transfers and the business are checked by the host, and your cash is kept on your own PC.
+
 ### Debug tab
 
-The Esc menu's **Debug** tab is for trying things out: **Reset my XP** (back to level 1 with no upgrades, skills or goals), **Max my XP** (top level, every point to spend), **Reset everyone's XP** (host only: every player in the shed), **Reset my money**, **Max my money** and **Reset garage money**. Every reset asks first. Your money is kept with your character and the garage's with the shed; both start at nothing and show on the TVs' **My money** and **Garage money** pages.
+The Esc menu's **Debug** tab is for trying things out: **Reset my XP** (back to level 1 with no upgrades, skills or goals), **Max my XP** (top level, every point to spend), **Reset everyone's XP** (host only: every player in the shed), **Reset my money**, **Max my money**, **Reset garage money** and **Give the garage £1,000,000** (the last two host only). Every reset asks first. Your money is kept with your character and the garage's with the shed, and both show on the TVs' **My money** and **Garage money** pages.
 
 ### Co-op
 
@@ -303,7 +325,8 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
 | `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |
 | `scripts/daylight.gd`, `weather.gd` | Time of day, sky and lighting; the weather (clouds, fog, rain, wet roads, rain sounds) |
-| `scripts/debug_tab.gd` | The Esc menu's Debug tab: reset or max XP and money |
+| `scripts/debug_tab.gd` | The Esc menu's Debug tab: reset or max XP and money, give the garage a million |
+| `scripts/money.gd`, `money_tab.gd` | Money: part and bike prices, selling, the business's bank (cut, owner, ledger, loans) and its requests; the Esc menu's Money tab |
 | `scripts/progress.gd`, `ride_xp.gd`, `character_tab.gd`, `skill_tree_view.gd` | XP, levels, tool upgrades, skills and goals, kept in your own profile; riding XP; the Character tab |
 | `scripts/sfx.gd` | Tool, footstep and workshop sounds, synthesised at start-up, and the volume buses |
 | `scripts/shed_radio.gd`, `radio_stream.gd`, `mp3_stream_decoder.gd` | The shed radio: streams an MP3 station over HTTP(S) and decodes it gaplessly |

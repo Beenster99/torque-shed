@@ -18,6 +18,8 @@ extends Node
 ## less, and one-off rewards ("once" in XP) are only paid once per bike or part.
 
 signal xp_gained(amount: int, label: String)
+## This player's own cash went up (amount > 0) or down: for the pound popups.
+signal cash_changed(amount: int, label: String)
 signal leveled_up(level: int)
 ## Anything about the character changed: XP, upgrades, skills, or another player's summary.
 signal changed
@@ -25,8 +27,10 @@ signal changed
 const VERSION := 1
 const PATH := "user://profile.json"
 const MAX_LEVEL := 50
-## A player's own cash (money comes properly with Milestone C; 0 to start).
-const MAX_MONEY := 1000000
+## The most cash a player can hold.
+const MAX_MONEY := 100000000
+## A player's own money log kept in the profile, for the My money page: [{day, amt, why}].
+const CASH_LOG_SIZE := 60
 ## How long a repeat of the same job on the same thing keeps counting against it, seconds.
 const REPEAT_WINDOW := 120.0
 ## Jobs with nothing named to them are only cut back after this many in a minute.
@@ -79,7 +83,7 @@ const XP := {
 	"build_complete": {"xp": 150, "label": "Bike build complete", "once": "bike", "tag": "builder"},
 	"scratch_build": {"xp": 100, "label": "Built from scratch", "once": "bike", "tag": "builder"},
 	"max_health": {"xp": 300, "label": "Restored to max health", "once": "bike", "tag": "builder"},
-	# Money (Milestone C): not paid by anything yet.
+	# Money: selling at the parts computer, and the business's account growing.
 	"sell_bike": {"xp": 100, "label": "Bike sold"},
 	"sell_part": {"xp": 5, "label": "Part sold"},
 	"money_milestone": {"xp": 50, "label": "Money milestone"},
@@ -98,6 +102,20 @@ const XP := {
 	# Paid locally when a goal is reached (see GOALS); never sent by award().
 	"goal": {"xp": 0, "label": "Goal"},
 	"mentor": {"xp": 0, "label": "Mentored"},
+}
+
+## Wages, in pounds, for the jobs in XP (same keys): the host pays them with Shed.pay_worker,
+## so the business takes its cut. They follow the XP's mult and its repeat cut-back (redoing the
+## same job pays less and less) and one-offs pay once. Kept modest: selling and contracts are
+## where the real money is. Riding pays nothing.
+const PAY := {
+	"carry": 0, "unbox": 1, "unbolt": 1, "bolt": 1, "remove": 1, "fit": 2, "chain_tension": 3, "tune": 1, "dyno_run": 5,
+	"dyno_strap": 0, "dyno_hose": 1, "fluids": 3, "start_build": 10,
+	"bin": 0, "tip": 1, "recycle_plastic": 1, "recycle_metal": 2,
+	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "chain_lube": 3,
+	"repair": 6, "sandblast": 6, "paint": 8, "lighten": 5, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
+	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
+	"sell_bike": 50, "sell_part": 2,
 }
 
 ## Hand tool upgrade stages: the level each needs, its look, and what it does.
@@ -122,7 +140,7 @@ const TOOL_INFO := {
 const BRANCHES := ["mechanic", "finisher", "rider", "tuner", "crew"]
 const BRANCH_NAMES := {"mechanic": "Mechanic", "finisher": "Finisher", "rider": "Rider", "tuner": "Tuner", "crew": "Crew"}
 ## Skills tree. tier sets the row and the level it needs (TIER_LEVEL); needs: skills that must
-## have at least one rank first; milestone: "C" for a skill that does nothing until money arrives.
+## have at least one rank first; milestone: a later milestone a skill does nothing until (none now).
 const TIER_LEVEL := [2, 5, 10]
 const SKILLS := {
 	"quick_hands": {"name": "Quick Hands", "branch": "mechanic", "tier": 0, "ranks": 3, "needs": [],
@@ -163,8 +181,8 @@ const SKILLS := {
 		"desc": "+5% XP per rank while a teammate works within 6 m of you."},
 	"mentor": {"name": "Mentor", "branch": "crew", "tier": 1, "ranks": 3, "needs": ["foreman"],
 		"desc": "Crew within 10 m get a bonus 5% per rank of the XP you earn (you keep all yours)."},
-	"haggler": {"name": "Haggler", "branch": "crew", "tier": 1, "ranks": 3, "needs": ["foreman"], "milestone": "C",
-		"desc": "Cheaper parts. Unlocks in Milestone C (money)."},
+	"haggler": {"name": "Haggler", "branch": "crew", "tier": 1, "ranks": 3, "needs": ["foreman"],
+		"desc": "Parts you order cost 5% less per rank, and what you sell fetches 3% more per rank."},
 }
 
 ## Goals the Character tab lists: reaching one pays its XP once. stat: a count in the profile's
@@ -289,7 +307,12 @@ func _read_all() -> Dictionary:
 ## A profile with every field present and the right types (JSON brings numbers back as floats).
 static func _clean_profile(p: Dictionary, player_name: String) -> Dictionary:
 	var out := {"name": player_name, "xp": maxi(0, int(p.get("xp", 0))), "tools": {}, "skills": {}, "stats": {},
-		"records": {}, "goals": [], "money": clampi(int(p.get("money", 0)), 0, MAX_MONEY)}
+		"records": {}, "goals": [], "money": clampi(int(p.get("money", 0)), 0, MAX_MONEY), "cash_log": []}
+	var cash_log = p.get("cash_log", [])
+	if cash_log is Array:
+		for e in cash_log.slice(-CASH_LOG_SIZE):
+			if e is Dictionary:
+				out["cash_log"].append({"day": int(e.get("day", 0)), "amt": int(e.get("amt", 0)), "why": str(e.get("why", "")).left(60)})
 	var tools = p.get("tools", {})
 	if tools is Dictionary:
 		for t in tools:
@@ -382,7 +405,9 @@ func award(peer_id: int, action: String, mult := 1.0, detail := "") -> void:
 	if not _once_ok(e, action, detail):
 		return
 	var amount := float(e["xp"]) * clampf(mult, 0.0, 20.0)
-	amount *= _repeat_factor(peer_id, action, e, detail)
+	var repeat := _repeat_factor(peer_id, action, e, detail)
+	amount *= repeat
+	_pay(peer_id, action, clampf(mult, 0.0, 20.0) * repeat, str(e["label"]))
 	amount *= _skill_bonus(peer_id, e)
 	var crew_near := _crew_near(peer_id, NEAR_TEAMMATE)
 	if not crew_near.is_empty():
@@ -419,6 +444,13 @@ func _rider_event(action: String, mult: float, detail: String) -> void:
 	if not XP.get(action, {}).get("rider", false) and action != "first_start":
 		return
 	award(multiplayer.get_remote_sender_id(), action, minf(mult, 10.0), detail.left(40))
+
+
+## The wage for a job (see PAY), paid through the shed so the business takes its cut.
+func _pay(peer_id: int, action: String, mult: float, label: String) -> void:
+	var gross := roundi(float(PAY.get(action, 0)) * mult)
+	if gross > 0 and Shed.has_method("pay_worker"):
+		Shed.call("pay_worker", peer_id, gross, label)
 
 
 func _deliver(peer: int, xp: int, label: String, action: String) -> void:
@@ -813,6 +845,98 @@ func money_of(peer_id: int) -> int:
 func set_money(amount: int) -> void:
 	profile["money"] = clampi(amount, 0, MAX_MONEY)
 	_touch()
+
+
+## Adds to this player's own cash (wages, money sent to them, what they take out of the business).
+func earn(amount: int, reason: String) -> void:
+	if amount <= 0 or profile.is_empty():
+		return
+	var was := money()
+	profile["money"] = clampi(was + amount, 0, MAX_MONEY)
+	_log_cash(money() - was, reason)
+	cash_changed.emit(money() - was, reason)
+	_touch()
+
+
+## Takes `amount` of this player's own cash. False, and nothing taken, when they haven't got it.
+func spend(amount: int, reason: String) -> bool:
+	if amount < 0 or profile.is_empty() or money() < amount:
+		return false
+	if amount == 0:
+		return true
+	profile["money"] = money() - amount
+	_log_cash(-amount, reason)
+	cash_changed.emit(-amount, reason)
+	_touch()
+	return true
+
+
+func _log_cash(amt: int, why: String) -> void:
+	var cash_log: Array = profile["cash_log"]
+	var day := _today()
+	if not cash_log.is_empty() and str(cash_log[-1]["why"]) == why and int(cash_log[-1]["day"]) == day \
+			and (int(cash_log[-1]["amt"]) >= 0) == (amt >= 0):
+		cash_log[-1]["amt"] = int(cash_log[-1]["amt"]) + amt
+	else:
+		cash_log.append({"day": day, "amt": amt, "why": why.left(60)})
+	while cash_log.size() > CASH_LOG_SIZE:
+		cash_log.pop_front()
+
+
+## The shed's in-game day (see Money), 0 without one.
+func _today() -> int:
+	var bank = Shed.get("bank")
+	return int(bank.get("day", 0)) if bank is Dictionary else 0
+
+
+## Host: hands `peer` cash, here for the host's own player, else on their machine. False when
+## they aren't connected (nothing is paid).
+func give_cash(peer: int, amount: int, reason: String) -> bool:
+	if amount <= 0:
+		return true
+	if peer == Shed.me():
+		earn(amount, reason)
+		return true
+	if Net.is_online() and multiplayer.get_peers().has(peer):
+		_cash.rpc_id(peer, amount, reason)
+		return true
+	return false
+
+
+@rpc("authority", "call_remote", "reliable")
+func _cash(amount: int, reason: String) -> void:
+	earn(amount, reason.left(60))
+
+
+## This player's money over the last `days` in-game days: {earned, spent}.
+func cash_flow(days := 7) -> Dictionary:
+	var since := _today() - days + 1
+	var earned := 0
+	var spent := 0
+	for e in profile.get("cash_log", []):
+		if int(e["day"]) < since:
+			continue
+		if int(e["amt"]) > 0:
+			earned += int(e["amt"])
+		else:
+			spent -= int(e["amt"])
+	return {"earned": earned, "spent": spent}
+
+
+## This player's cash at the end of each of the last six days and now, worked back from the log.
+func cash_history() -> Array:
+	var today := _today()
+	var out := []
+	var bal := money()
+	var cash_log: Array = profile.get("cash_log", [])
+	var i := cash_log.size() - 1
+	for d in range(today, today - 7, -1):
+		out.push_front(bal)
+		while i >= 0 and int(cash_log[i]["day"]) >= d:
+			bal -= int(cash_log[i]["amt"])
+			i -= 1
+		bal = maxi(bal, 0)
+	return out
 
 
 ## Debug: this player back to a new character: level 1, no XP, no tool upgrades, skills or goals.
