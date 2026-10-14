@@ -30,6 +30,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--graphics" in OS.get_cmdline_user_args():
+		await _graphics_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--blast" in OS.get_cmdline_user_args():
 		await _blast_shots()
 		SaveGame.delete_slot("shots")
@@ -487,3 +492,22 @@ func _ride_and_trinket_shots() -> void:
 	await _look_from(eye_at, Vector3(bench_x, 1.5, bz + 1.0), "r13_neon_and_lava_at_night")
 	Progress.save_profile()
 	DirAccess.remove_absolute(Progress.path)
+
+
+## The Esc menu's Graphics tab, at the top and scrolled down, with the FPS counter on.
+func _graphics_shots() -> void:
+	var fps := Settings.gfx_fps_counter
+	Settings.set_graphics("gfx_fps_counter", true)
+	main.menu.show_pause()
+	main.menu._tabs.current_tab = main.menu._tabs.get_tab_idx_from_control(main.menu.graphics)
+	await _frames(10)
+	await _shot("gfx1_graphics_tab")
+	var scroll: ScrollContainer = main.menu.graphics.get_child(1)
+	scroll.scroll_vertical = 700
+	await _frames(10)
+	await _shot("gfx2_graphics_tab_scrolled")
+	scroll.scroll_vertical = 2000
+	await _frames(10)
+	await _shot("gfx3_graphics_tab_end")
+	main._close_menu()
+	Settings.set_graphics("gfx_fps_counter", fps)

@@ -324,6 +324,22 @@ The weather changes by itself every few minutes between **clear skies**, **cloud
 
 In the Esc menu's **Settings** tab, **Weather** picks **Changes by itself** or holds one kind (always clear, cloudy, foggy or raining). In co-op the host's weather is everyone's. The weather is saved with the shed.
 
+### Graphics settings
+
+The Esc menu's **Graphics** tab sets how the game looks and how fast it runs. Everything except the rendering driver changes straight away, and it's all saved with your settings.
+
+- **Quality preset**: **Low**, **Medium**, **High** (the default) or **Ultra** set the shadows, detail, draw distance, lighting, effects and anti-aliasing together (Low also renders at 75% with FSR 1). Change any one of those yourself and the preset says **Custom**.
+- **Display**: **Window mode** (windowed, borderless fullscreen or exclusive fullscreen); **Resolution**, from 1280 x 720 to 3840 x 2160 (4K) in 16:9, 16:10 and 21:9 sizes: in a window it's the window's size (never bigger than the screen), in fullscreen the screen keeps its own size and this sets how sharp the 3D view renders while the menus stay crisp; **Monitor** (when you have more than one); **VSync** (off, on, adaptive or mailbox); a **frame-rate cap** (30, 60, 120, 144, 165, 240 or unlimited); **Field of view** (60 to 110 degrees; the riding cameras move by the same amount); **Brightness**; and **Show the frame rate**, a small FPS counter in the top left corner to help you tune.
+- **Upscaling**: **Render scale** from 50% to 100% renders the 3D view smaller and scales it back up (faster), and 100% to 200% renders it bigger and shrinks it (supersampling: sharp but slow). The **Upscaler** for below 100% is **AMD FSR 2.2** (temporal: the best looking), **FSR 1.0** (fastest) or plain bilinear, with a **Sharpness** slider. At exactly 100% no upscaler runs.
+- **DLSS?** No. The Godot engine the game is built on (4.6) doesn't include NVIDIA DLSS or Intel XeSS. FSR 2.2 is its temporal upscaler and works on NVIDIA, AMD and Intel cards alike.
+- **Anti-aliasing**: **MSAA** (off, 2x, 4x, 8x), **TAA** (smoothest, a little soft; FSR 2.2 does its own, so TAA is skipped while it upscales) and **screen-space AA** (off, FXAA or SMAA).
+- **Quality**: **Shadows** (low to ultra), **Detail level** (how far away bikes and parts keep their detailed shape, and texture sharpness at an angle), **Draw distance** (50% to 200%), **Global illumination** (off, SSIL or SDFGI), **Volumetric fog and light**, **Volumetric clouds**, **Screen-space reflections**, **Ambient occlusion** and **Glow**.
+- **Ray tracing?** Godot 4.6 has no hardware ray tracing (RTX / DXR). The **Ray-traced lighting** switch honestly turns on SDFGI, Godot's real-time global illumination that bounces sun, sky and lamp light round the shed; off uses SSIL, a cheaper screen-space version.
+- **Motion blur**: there isn't any, so it's always off. **HDR**: the game always renders in HDR and tone-maps it for your screen, but HDR displays (HDR10 output) aren't supported by the engine yet.
+- **Rendering driver**: **Vulkan** (the default) or **DirectX 12** on Windows. The driver is picked when the game starts, so the tab says **restart to apply**; if DirectX 12 won't start on your PC the game falls back to Vulkan by itself and the tab tells you. The choice is written to `graphics_override.cfg` in the game's user folder (`%APPDATA%\Godot\app_userdata\Torque Shed` on Windows), which the game reads at start-up; delete it to go back to Vulkan. Nothing extra needs shipping with the exe: the official Godot 4.6 Windows export templates include DirectX 12.
+
+Settings files from before this tab carry on: if "high quality lighting" was off, you start on the Low preset.
+
 ### Money
 
 There are two kinds of money: **your own cash**, kept with your character like your XP (so it goes with you to any shed), and **the business**: the garage's own account, kept with the shed. A new shed's business opens with **£10,000**. Your cash shows top right, next to your level, and pops up green ("+£4 Restoring") as it comes in.
@@ -375,6 +391,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |
 | `scripts/whiteboard.gd`, `board_data.gd`, `board_print.gd` | The shared whiteboard: drawing on it, pictures from players' PCs, and its marks kept in the shed state; whiteboard posters |
 | `scripts/settings.gd`, `keybind_tab.gd` | Settings, every key binding and rebinding them in the Esc menu |
+| `scripts/graphics.gd`, `graphics_tab.gd` | Graphics settings: presets, putting them on the window, viewport and cameras, the driver override and FPS counter; the Esc menu's Graphics tab |
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
 | `scripts/sales_office.gd` | The sales office: its forecourt, showroom plinths, reception, viewing area, kitchen, stairs and mezzanine office, the sliding doors and the shop bell |
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |

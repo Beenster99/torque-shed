@@ -19,7 +19,7 @@ var _initialized := false
 func _ready() -> void:
 	near = 0.05
 	far = 2500.0
-	fov = 70.0
+	fov = 70.0 + Graphics.fov_offset()
 
 
 func cycle_mode() -> void:
@@ -79,7 +79,7 @@ func _chase(delta: float) -> void:
 	global_position = _smoothed_pos
 	if global_position.distance_to(_look) > 0.1:
 		look_at(_look, Vector3.UP)
-	fov = lerpf(fov, 68.0 + clampf(speed * 0.35, 0.0, 22.0), 1.0 - exp(-3.0 * delta))
+	fov = lerpf(fov, 68.0 + Graphics.fov_offset() + clampf(speed * 0.35, 0.0, 22.0), 1.0 - exp(-3.0 * delta))
 
 
 func _helmet() -> void:
@@ -90,7 +90,7 @@ func _helmet() -> void:
 		global_transform = model.global_transform * model.eye_transform()
 	else:
 		global_transform = target.global_transform.translated_local(Vector3(0.0, 1.5, 0.0))
-	fov = 80.0
+	fov = 80.0 + Graphics.fov_offset()
 
 
 func _orbit(delta: float) -> void:

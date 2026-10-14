@@ -135,7 +135,8 @@ func _ready() -> void:
 	camera.position.y = EYE
 	camera.near = 0.03
 	camera.far = 2500.0
-	camera.fov = 75.0
+	camera.fov = Settings.gfx_fov
+	camera.add_to_group("gfx_fov")   # follows the field-of-view setting (see Graphics)
 	add_child(camera)
 	_work_sound = Sfx.make_loop_player(camera)
 	_work_sound.position = Vector3(0.0, -0.3, -0.6)

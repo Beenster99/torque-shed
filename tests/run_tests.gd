@@ -163,6 +163,8 @@ func _run_all() -> void:
 	_test_gear_buying()
 	await _test_gear_seen_by_others()
 	await _test_shop_session()
+	print("Graphics settings: presets, saving, applying, the driver override, the Graphics tab")
+	await _test_graphics_settings()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -7291,3 +7293,124 @@ func _test_shop_session() -> void:
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
+
+
+## Graphics settings: presets set their keys, Custom after a change, saving and loading,
+## applying to the viewport headless, the driver override file and the Graphics tab.
+func _test_graphics_settings() -> void:
+	# Keep the player's own settings file and graphics settings as they were.
+	var had := FileAccess.file_exists(Settings.PATH)
+	var before := FileAccess.get_file_as_string(Settings.PATH) if had else ""
+	var keep := {"high_quality": Settings.high_quality}
+	for k in Settings.GFX_KEYS:
+		keep[k] = Settings.get(k)
+	var changes := [0]
+	var count := func(): changes[0] += 1
+	Settings.graphics_changed.connect(count)
+	# Presets set every key they cover.
+	for preset in ["low", "medium", "high", "ultra"]:
+		Settings.apply_preset(preset)
+		var values: Dictionary = Graphics.PRESETS[preset]
+		var wrong := values.keys().filter(func(k): return Settings.get(k) != values[k])
+		check(wrong.is_empty() and Settings.gfx_preset == preset and Settings.high_quality == (preset != "low"),
+			"the %s preset sets its options %s" % [preset, str(wrong)])
+	check(changes[0] == 4, "every preset change tells the game (%d)" % changes[0])
+	var shared := ["gfx_gi", "gfx_volumetrics", "gfx_clouds", "gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_shadows", "gfx_draw_distance"]
+	check(shared.all(func(k): return Graphics.PRESETS["low"].has(k) and Settings.GFX_KEYS.has(k)), "presets cover the lighting options too")
+	# Custom: changing one option the preset covers.
+	Settings.apply_preset("high")
+	Settings.set_graphics("gfx_fov", 90.0)
+	check(Settings.gfx_preset == "high" and is_equal_approx(Graphics.fov_offset(), 15.0), "field of view isn't part of a preset")
+	Settings.set_graphics("gfx_ssao", false)
+	check(Settings.gfx_preset == "custom" and not Settings.gfx_ssao and Settings.high_quality, "changing one option makes it Custom")
+	var res_before := Settings.gfx_resolution
+	Settings.set_graphics("gfx_msaa", "16x")
+	Settings.set_graphics("gfx_render_scale", 5.0)
+	Settings.set_graphics("gfx_resolution", "1x1")
+	check(Settings.gfx_msaa == "2x" and is_equal_approx(Settings.gfx_render_scale, 2.0) and Settings.gfx_resolution == res_before,
+		"values it can't take are refused or clamped (%s, %.2f, %s)" % [Settings.gfx_msaa, Settings.gfx_render_scale, Settings.gfx_resolution])
+	# Saved and loaded back.
+	Settings.set_graphics("gfx_window_mode", "borderless")
+	Settings.set_graphics("gfx_resolution", "2560x1440")
+	Settings.set_graphics("gfx_render_scale", 0.75)
+	Settings.set_graphics("gfx_upscaler", "fsr1")
+	Settings.set_graphics("gfx_fps_cap", 144)
+	Settings.set_graphics("gfx_gi", "ssil")
+	Settings.set_graphics("gfx_fps_counter", true)
+	var saved := {}
+	for k in Settings.GFX_KEYS:
+		saved[k] = Settings.get(k)
+	Settings.save_settings()
+	Settings.apply_preset("ultra")
+	Settings.gfx_window_mode = "windowed"
+	Settings.gfx_fps_cap = 0
+	Settings.load_settings()
+	var differ := saved.keys().filter(func(k): return Settings.get(k) != saved[k])
+	check(differ.is_empty() and Settings.gfx_preset == "custom", "graphics settings save and load back %s" % str(differ))
+	# An old settings file with high quality off comes up on the Low preset.
+	var old := ConfigFile.new()
+	old.set_value("video", "high_quality", false)
+	old.save(Settings.PATH)
+	Settings.apply_preset("high")
+	Settings.load_settings()
+	check(Settings.gfx_preset == "low" and Settings.gfx_gi == "off" and not Settings.high_quality, "an old 'high quality off' file becomes Low")
+	# Applying to the viewport (headless, so the window itself is left alone).
+	var g: Graphics = null
+	for c in Settings.get_children():
+		if c is Graphics:
+			g = c
+	check(g != null, "Settings has a Graphics node")
+	Settings.apply_preset("low")
+	var vp := get_tree().root
+	check(vp.msaa_3d == Viewport.MSAA_DISABLED and vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR and is_equal_approx(vp.scaling_3d_scale, 0.75)
+		and vp.screen_space_aa == Viewport.SCREEN_SPACE_AA_FXAA, "Low: no MSAA, FSR 1 at 75%%, FXAA (mode %d, %.2f)" % [vp.scaling_3d_mode, vp.scaling_3d_scale])
+	Settings.apply_preset("ultra")
+	check(vp.msaa_3d == Viewport.MSAA_4X and vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_BILINEAR and vp.use_taa
+		and vp.screen_space_aa == Viewport.SCREEN_SPACE_AA_SMAA and vp.mesh_lod_threshold < 0.5, "Ultra: 4x MSAA, TAA, SMAA, native, fine LOD")
+	Settings.set_graphics("gfx_render_scale", 0.5)
+	Settings.set_graphics("gfx_upscaler", "fsr2")
+	check(vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR2 and not vp.use_taa, "FSR 2.2 upscales and takes over from TAA")
+	check(Graphics.scaling_mode("fsr2", 1.5) == Viewport.SCALING_3D_MODE_BILINEAR and Graphics.scaling_mode("fsr1", 1.0) == Viewport.SCALING_3D_MODE_BILINEAR,
+		"supersampling and 100% use plain bilinear")
+	check(Graphics.parse_resolution("3840x2160") == Vector2i(3840, 2160) and Graphics.parse_resolution("7680x4320") == Vector2i(1600, 900)
+		and Graphics.RESOLUTIONS.all(func(r): return r.x <= 3840 and r.y <= 2160), "resolutions go up to 4K")
+	await get_tree().process_frame
+	# The driver override, read by Godot at the next start.
+	check(str(ProjectSettings.get_setting("application/config/project_settings_override")) == Graphics.OVERRIDE_PATH,
+		"the project reads the graphics override file at start-up")
+	var test_path := "user://test_graphics_override.cfg"
+	Graphics.write_driver_override("d3d12", test_path)
+	var ovr := ConfigFile.new()
+	check(ovr.load(test_path) == OK and ovr.get_value("rendering", "rendering_device/driver.windows", "") == "d3d12"
+		and ovr.get_value("rendering", "rendering_device/fallback_to_vulkan", false) == true, "DirectX 12 is written for the next start, falling back to Vulkan")
+	Graphics.write_driver_override("vulkan", test_path)
+	ovr.load(test_path)
+	check(ovr.get_value("rendering", "rendering_device/driver.windows", "") == "vulkan", "and Vulkan back again")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(test_path))
+	# The Graphics tab: picking a preset, and Custom showing after a change.
+	var tab := GraphicsTab.new()
+	add_child(tab)
+	await get_tree().process_frame
+	var preset_box: OptionButton = tab._controls["gfx_preset"]["control"]
+	preset_box.select(0)
+	preset_box.item_selected.emit(0)
+	check(Settings.gfx_preset == "low", "the tab's preset list picks Low")
+	var ssr: CheckBox = tab._controls["gfx_ssr"]["control"]
+	ssr.button_pressed = true
+	check(Settings.gfx_ssr and Settings.gfx_preset == "custom" and preset_box.get_item_text(preset_box.selected) == "Custom",
+		"ticking an option in the tab makes the preset Custom")
+	tab._rt.button_pressed = true
+	check(Settings.gfx_gi == "sdfgi", "the ray-traced lighting switch turns SDFGI on")
+	tab.queue_free()
+	# Put everything back.
+	Settings.graphics_changed.disconnect(count)
+	for k in keep:
+		Settings.set(k, keep[k])
+	Settings.graphics_changed.emit()
+	if had:
+		var f := FileAccess.open(Settings.PATH, FileAccess.WRITE)
+		f.store_string(before)
+		f.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
+	await get_tree().process_frame

@@ -39,7 +39,6 @@ var _start_box: VBoxContainer
 var _pause_box: VBoxContainer
 var _assist: HSlider
 var _auto: CheckBox
-var _quality: CheckBox
 var _snap: CheckBox
 var _host_info: Label
 var _crew: Label
@@ -66,6 +65,7 @@ var _save_status: Label
 var _save_button: Button
 var _resume: Button
 var keybinds: KeybindTab
+var graphics: GraphicsTab
 var blueprints: BlueprintTab
 
 
@@ -173,11 +173,6 @@ func _ready() -> void:
 	units.selected = 1 if Settings.units == "imperial" else 0
 	units.item_selected.connect(func(i): Settings.units = "imperial" if i == 1 else "metric")
 	settings.add_child(units)
-	_quality = CheckBox.new()
-	_quality.text = "High quality lighting (restart to apply)"
-	_quality.button_pressed = Settings.high_quality
-	_quality.toggled.connect(func(v): Settings.high_quality = v)
-	settings.add_child(_quality)
 	_snap = CheckBox.new()
 	_snap.text = "Snap equipment to walls and corners when placing it (R toggles it while carrying)"
 	_snap.button_pressed = Settings.snap_placement
@@ -188,6 +183,9 @@ func _ready() -> void:
 	settings.add_child(_volume_slider(Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
 	settings.add_child(UITheme.label("Radio volume", 15))
 	settings.add_child(_volume_slider(Settings.radio_volume, func(v): Settings.radio_volume = v; Sfx.apply_volumes()))
+	# Graphics: presets, display, upscaling, anti-aliasing, quality and the driver (see GraphicsTab).
+	graphics = GraphicsTab.new()
+	_tabs.add_child(graphics)
 	var controls := VBoxContainer.new()
 	controls.name = "Controls"
 	_tabs.add_child(controls)
