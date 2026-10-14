@@ -41,7 +41,7 @@ func _ready() -> void:
 ## What the tab shows, so it's only rebuilt (losing a half-typed name) when that changes.
 func _signature() -> String:
 	var parts := [str(Shed.blueprints.keys()), str(Shed.blueprints.values().map(func(b): return b["name"]))]
-	for bay in Workshop.BAY_COUNT:
+	for bay in Workshop.bay_count():
 		parts.append("%s:%s" % [Shed.bay_is_free(bay) and not Shed.holograms.has(bay), str(_states(bay))])
 	return "|".join(parts)
 
@@ -63,7 +63,7 @@ func refresh(force := false) -> void:
 	for c in _builds.get_children():
 		c.queue_free()
 	var empty_bays := []
-	for bay in Workshop.BAY_COUNT:
+	for bay in Workshop.bay_count():
 		if Shed.bay_is_free(bay) and not Shed.holograms.has(bay):
 			empty_bays.append(bay)
 	var ids: Array = Shed.blueprints.keys()

@@ -72,6 +72,9 @@ const HOWTO := [
 static func screen_exists(key: String) -> bool:
 	if BUILT_IN.has(key):
 		return true
+	if key.begins_with("bay") and key.substr(3).is_valid_int():
+		# Bays the garage's extension added (GarageUpgrades) have screens too.
+		return int(key.substr(3)) < Workshop.bay_count()
 	if key.begins_with("f") and key.substr(1).is_valid_int():
 		var f: Dictionary = Shed.furniture.get(int(key.substr(1)), {})
 		return str(f.get("kind", "")) == "tv"

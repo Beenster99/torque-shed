@@ -93,6 +93,7 @@ const XP := {
 	"contract_mod": {"xp": 100, "label": "Modification job done"},
 	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
 	"mot_test": {"xp": 6, "label": "MOT test"},
+	"garage_upgrade": {"xp": 40, "label": "Garage upgrade"},
 	# Riding: worked out on the rider's own machine (RideXP) and paid by the host.
 	"jump": {"xp": 12, "label": "Jump", "tag": "air", "rider": true},
 	"jump_record": {"xp": 25, "label": "Longest jump", "tag": "air", "rider": true},

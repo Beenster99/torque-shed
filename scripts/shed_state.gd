@@ -86,6 +86,8 @@ var radio := {"on": false, "station": 0}
 var door_open := true     # the roller door
 ## The business's own account, in pounds (see Money: a new shed opens with START_FUNDS).
 var garage_money := 0
+## Garage upgrades bought (GarageUpgrades): upgrade id -> true.
+var upgrades := {}
 const MAX_GARAGE_MONEY := 100000000
 ## Everything else about the business's money: wage cut, owner, ledger, loans (see Money.defaults).
 var bank := Money.defaults()
@@ -170,6 +172,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	Money.log_entry(bank, Money.START_FUNDS, "Opening funds", garage_money)
 	Money._mark_milestones(bank, garage_money)
 	contracts = Contracts.empty()
+	upgrades = {}
 	door_open = true
 	lights_on = true
 	room_lights = {"paint": true, "storage": true}
@@ -361,6 +364,7 @@ func join_remote() -> void:
 	garage_money = 0
 	bank = Money.defaults()
 	contracts = Contracts.empty()
+	upgrades = {}
 	board = BoardData.empty()
 	_clear_prints()
 	board_changed.emit()
@@ -382,6 +386,7 @@ func stop() -> void:
 	bank = Money.defaults()
 	_clock_hours = -1.0
 	contracts = Contracts.empty()
+	upgrades = {}
 	_washer_by.clear()
 	board = BoardData.empty()
 	_clear_prints()
@@ -1091,7 +1096,7 @@ func bay_is_free(bay: int) -> bool:
 
 ## The bay whose paddock stand is near `at`, or -1.
 func bay_at(at: Vector3) -> int:
-	for bay in Workshop.BAY_COUNT:
+	for bay in Workshop.bay_count():
 		var o := Workshop.bay_transform(bay).origin
 		if Vector2(at.x - o.x, at.z - o.z).length() < 1.6:
 			return bay
@@ -1634,7 +1639,7 @@ func _rest_stand(bike_id: int) -> String:
 
 ## A free bay whose parking spot is close to `xf`, or -1.
 func _bay_near(xf: Transform3D, bike_id: int) -> int:
-	for bay in Workshop.BAY_COUNT:
+	for bay in Workshop.bay_count():
 		var spot := Workshop.bay_transform(bay)
 		if spot.origin.distance_to(xf.origin) > 0.9:
 			continue
@@ -2105,14 +2110,14 @@ func check(peer: int, action: Dictionary) -> String:
 			if items[held].get("boxed", false):
 				return "Unpack it first."
 			var bay := int(action.get("bay", -1))
-			if bay < 0 or bay >= Workshop.BAY_COUNT:
+			if bay < 0 or bay >= Workshop.bay_count():
 				return "Take it to one of the bays."
 			if not bay_is_free(bay):
 				return "There's already a bike in bay %d." % (bay + 1)
 		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
 			return _blueprint_check(action)
 		"order":
-			if free_bay(Workshop.BAY_COUNT) < 0:
+			if free_bay(Workshop.bay_count()) < 0:
 				return "Every bay is full. Ride a bike out or strip one down first."
 		"tune":
 			if not bikes.has(bike_id):
@@ -2171,6 +2176,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Only the host can change the garage's money."
 			if not (action.get("value") is int or action.get("value") is float):
 				return "How much?"
+		"buy_upgrade":
+			return GarageUpgrades.check(str(action.get("id", "")), upgrades, garage_money)
 		_:
 			return "Unknown action."
 	return ""
@@ -2566,6 +2573,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			garage_money = clampi(int(action.get("value", 0)), 0, MAX_GARAGE_MONEY)
 			Money.log_entry(bank, garage_money - was, "Debug: account set", garage_money)
 			text = "Garage money set to %s" % TvChannels.money_text(garage_money)
+		"buy_upgrade":
+			text = _buy_upgrade(peer, str(action["id"]))
 		"door":
 			door_open = bool(action.get("open", not door_open))
 			text = "Roller door %s" % ("going up" if door_open else "coming down")
@@ -2818,7 +2827,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
 			text = _blueprint_apply(action, peer)
 		"order":
-			var id := _random_bike(free_bay(Workshop.BAY_COUNT))
+			var id := _random_bike(free_bay(Workshop.bay_count()))
 			# A project bike costs a little more than it would fetch as it comes (see Money).
 			var cost := Money.project_price(id)
 			if not charge_garage(cost, "Bought %s" % bikes[id]["name"]):
@@ -3687,7 +3696,7 @@ func plan_at(bay: int) -> Dictionary:
 ## Every bay with a blueprint build under way.
 func plan_bays() -> Array:
 	var out := []
-	for bay in Workshop.BAY_COUNT:
+	for bay in Workshop.bay_count():
 		if not plan_at(bay).is_empty():
 			out.append(bay)
 	return out
@@ -3756,7 +3765,7 @@ func _blueprint_check(action: Dictionary) -> String:
 					return "There's already a blueprint called %s." % n
 			if a == "bp_build":
 				var bay := int(action.get("bay", -1))
-				if bay < 0 or bay >= Workshop.BAY_COUNT:
+				if bay < 0 or bay >= Workshop.bay_count():
 					return "Pick a bay."
 				if not bay_is_free(bay) or holograms.has(bay):
 					return "Bay %d isn't empty. Pick an empty bay." % (bay + 1)
@@ -3929,6 +3938,28 @@ func _blueprint_done(bike_id: int) -> bool:
 	return true
 
 
+# ---------------------------------------------------------------------------- garage upgrades
+
+## Buys a garage upgrade with the garage's money (already checked): takes the money, adds the
+## upgrade and anything it comes with (the racking), and pays the buyer XP.
+func _buy_upgrade(peer: int, id: String) -> String:
+	var cost := GarageUpgrades.price(id)
+	var paid := false
+	if has_method("charge_garage"):
+		paid = bool(call("charge_garage", cost, "Garage upgrade: " + GarageUpgrades.title(id)))
+	elif garage_money >= cost:
+		garage_money -= cost
+		paid = true
+	if not paid:
+		return "The garage can't afford the %s." % GarageUpgrades.title(id).to_lower()
+	upgrades[id] = true
+	if id == "racking":
+		for xf in GarageUpgrades.racking_xfs():
+			_new_furniture("shelf", xf, "shelf_racking")
+	_xp(peer, GarageUpgrades.XP_KEY, GarageUpgrades.award_mult(id))
+	return "%s bought for %s" % [GarageUpgrades.title(id), TvChannels.money_text(cost)]
+
+
 # ---------------------------------------------------------------------------- syncing
 
 func _mark_dirty() -> void:
@@ -3940,7 +3971,7 @@ func _mark_dirty() -> void:
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts}
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "upgrades": upgrades}
 	if with_board:
 		state["board"] = board
 	return state
@@ -3975,6 +4006,8 @@ func _sync(state: Dictionary) -> void:
 		Money._mark_milestones(bank, garage_money)
 	# Sheds saved before contracts have no customers or jobs.
 	contracts = Contracts.sanitize(state.get("contracts"))
+	# Sheds saved before garage upgrades have none.
+	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the side rooms had switches: their lights start on.
 	room_lights = {"paint": true, "storage": true}
 	var saved_rooms = state.get("room_lights", {})

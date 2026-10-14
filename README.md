@@ -2,7 +2,7 @@
 
 A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 41 parts from 35 kinds (stands, headlight, horn, ECU, panniers, top box, fog lights, fairing and mirrors are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree, and a wage; the business buys parts and project bikes, sells parts and bikes, and can borrow from the bank (see Money below).
+Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 41 parts from 35 kinds (stands, headlight, horn, ECU, panniers, top box, fog lights, fairing and mirrors are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree, and a wage; the business buys parts and project bikes, sells parts and bikes, and can borrow from the bank (see Money below), and the garage's money buys upgrades to the shed itself.
 
 ### What a bike is made of
 
@@ -297,6 +297,27 @@ The **yard** past the drag strip has movable kit: small, medium and large ramps 
 
 You steer by leaning: the rider counter-steers for you, like on a real bike. The **rider assist** setting goes from 0 (full sim) to 1 (most help with balance, wheelspin and wheelies). The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
 
+### Garage upgrades
+
+The garage's money (the **Garage money** channel on any screen) buys a bigger, smarter shed. On the parts computer press **Garage upgrades** at the top: every upgrade is listed with its price and what it needs first. Pick one and press **Buy**. Anyone in the crew can buy with the garage's money, and it's built for everyone straight away. Each purchase earns the buyer XP, bigger jobs more.
+
+| Upgrade | Price | Needs | What you get |
+| --- | --- | --- | --- |
+| Workshop extension | £30,000 | | A new wing behind the paint shop, through a doorway knocked in the back wall behind bay 4 (bay 4's screen moves up over it). Lots of floor room for more kit |
+| Bays 5 and 6 | £20,000 | Extension | Two more work bays in the extension with lift plates, lights and their own screens. Project bikes, blueprint builds and scratch builds all use them |
+| Bay 7 | £12,500 | Bays 5 and 6 | A seventh bay at the far end |
+| Storage annex | £15,000 | | A tall storage building behind the storage room, through a wide doorway in its back wall. Lit from the storage room's switch |
+| Pallet racking | £4,500 | Annex | Three runs of heavy-duty racking in the annex: real shelving that takes parts and can be moved |
+| Mezzanine floor | £35,000 | Annex | A steel deck across the back of the annex, with stairs up the side, stacked with stock; room for the racking underneath |
+| Painted epoxy floor | £3,500 | | A glossy charcoal flake floor |
+| LED lighting | £6,000 | | Brighter cool-white lights and an LED strip round the walls |
+| Wall cladding | £9,000 | | White wall panels over aluminium chequer plate with a red pinstripe |
+| Branded signage | £5,000 | | A lit sign box over the roller door and a neon TORQUE SHED inside |
+| Crew lounge | £22,000 | Extension | Leather sofa, coffee table, drinks fridge, arcade machine, rug, lamp and a neon sign in the extension |
+| Showroom finish | £250,000 | Epoxy, LED, cladding, lounge | A gloss black and white chequered floor, honeycomb LED ceilings and chrome trim |
+
+Upgrades are kept in the shed's save; older saves start with none. Everything is built behind the shed, away from the yard.
+
 ### Weather
 
 The weather changes by itself every few minutes between **clear skies**, **cloudy**, **fog** and **rain**, drifting from one to the next over about 40 seconds. Clouds grey the sky and dim the sun, and the shadows go soft; fog closes in so you see only a short way; rain falls round you, soaks the roads and the yard so they go darker and shiny, and wet tarmac grips a little less (about 15%), so brake and lean with care. Once it stops the roads dry out over a few minutes. You hear the rain outside and drumming on the roof when you're in the shed, and it never rains indoors.
@@ -340,6 +361,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `data/parts.json` | Every part and its numbers, which feed the physics directly |
 | `scripts/shed_state.gd` | The shared shed: bikes, parts, who holds what. The host checks and applies every action |
 | `scripts/workshop.gd` | Builds the shed, the paint shop and storage room, its stations and dashboards, and draws parked bikes and loose parts |
+| `scripts/garage_upgrades.gd`, `workshop_upgrades.gd`, `upgrades_panel.gd` | Garage upgrades: the catalogue and rules, building them onto the shed, and the parts computer's Garage upgrades page |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
 | `scripts/placement.gd` | Snapping equipment square and flush to walls and corners |
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |

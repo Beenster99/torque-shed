@@ -765,7 +765,7 @@ static func check(peer: int, action: Dictionary) -> String:
 			if a == "contract_accept":
 				if active_count() >= MAX_ACTIVE:
 					return "The shed has as many jobs as it can take. Finish one first."
-				if Shed.free_bay(Workshop.BAY_COUNT) < 0:
+				if Shed.free_bay(Workshop.bay_count()) < 0:
 					return "Every bay is full. Clear one for the customer's bike first."
 		"contract_mot_test", "contract_hand_in":
 			var job: Dictionary = jobs().get(int(action.get("job", 0)), {})
@@ -864,7 +864,7 @@ static func _accept(_peer: int, cid: int) -> String:
 	var cust: Dictionary = customers()[cid]
 	var offer: Dictionary = cust["offer"]
 	var kind := str(offer["kind"])
-	var bay := Shed.free_bay(Workshop.BAY_COUNT)
+	var bay := Shed.free_bay(Workshop.bay_count())
 	var bike_id := 0
 	if kind == "bespoke":
 		var frame := Shed._new_item(str(offer["parts"].get("frame", "steel_cradle")), 0.0, 0.0, 0.0)

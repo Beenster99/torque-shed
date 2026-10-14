@@ -154,6 +154,10 @@ func _run_all() -> void:
 	_test_sales_office_layout()
 	_test_sales_office_save()
 	await _test_sales_office_session()
+	print("Garage upgrades: extension, bays 5 to 7, storage annex, luxury finishes")
+	_test_upgrade_catalogue()
+	_test_upgrade_buying()
+	await _test_upgrade_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -6841,3 +6845,219 @@ func _test_sales_office_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## The garage upgrades catalogue: every upgrade named and priced from a few thousand up to
+## hundreds of thousands, and everything it needs listed before it.
+func _test_upgrade_catalogue() -> void:
+	var seen := []
+	var ok := true
+	var top := 0
+	var cheapest := 1000000000
+	for id in GarageUpgrades.CATALOGUE:
+		var u: Dictionary = GarageUpgrades.CATALOGUE[id]
+		ok = ok and str(u.get("name", "")) != "" and str(u.get("desc", "")) != "" and GarageUpgrades.CATEGORIES.has(str(u.get("cat", "")))
+		for n in u["needs"]:
+			ok = ok and seen.has(n)
+		top = maxi(top, int(u["price"]))
+		cheapest = mini(cheapest, int(u["price"]))
+		seen.append(id)
+	check(ok, "every upgrade has a name, a description and a group, and comes after what it needs")
+	check(cheapest >= 1000 and cheapest < 10000 and top >= 100000, "prices run from %s to %s" % [TvChannels.money_text(cheapest), TvChannels.money_text(top)])
+	for key in ["wing", "bays_56", "bay_7", "annex", "racking", "mezzanine", "epoxy", "led", "cladding", "signage", "lounge", "showroom"]:
+		check(GarageUpgrades.exists(key), "the catalogue has %s" % GarageUpgrades.title(key))
+	check(Progress.XP.has(GarageUpgrades.XP_KEY), "buying one is worth XP")
+	# The new buildings stay clear of the shed's rooms, each other and the yard in front.
+	var all := Workshop.rooms()
+	all.merge(GarageUpgrades.rooms({"wing": true, "annex": true}))
+	var clear := true
+	for a in all:
+		for b in all:
+			if a != b and (all[a] as Rect2).grow(-0.01).intersects((all[b] as Rect2).grow(-0.01)):
+				clear = false
+				print("    %s overlaps %s" % [a, b])
+	check(clear, "the extension and the annex don't overlap any room")
+	check(GarageUpgrades.WING.end.y < Workshop.CENTER.z - Workshop.HALF.y and GarageUpgrades.ANNEX.end.y < Workshop.STORE_CENTER.z - Workshop.STORE_HALF.y,
+		"both are behind the shed, away from the yard")
+	var racks_in := true
+	for xf in GarageUpgrades.racking_xfs():
+		var size: Vector3 = Equipment.get_model("shelf_racking")["size"]
+		var foot := Shed.foot_rect(xf, Vector2(size.x, size.z))
+		racks_in = racks_in and GarageUpgrades.ANNEX.encloses(foot)
+	check(racks_in, "the racking stands inside the annex")
+
+
+## Buying upgrades with the garage's money: refused when broke or before what it needs, the
+## money taken, XP paid, more bays that take bikes, holograms and builds, racking that is real
+## shelving, and all of it kept in the save (old saves have none).
+func _test_upgrade_buying() -> void:
+	Shed.start_new("Tester", 9)
+	var me := Shed.me()
+	check(Shed.upgrades.is_empty() and Workshop.bay_count() == Workshop.BAY_COUNT, "a new shed has no upgrades and four bays")
+	Shed.request({"a": "buy_upgrade", "id": "wing"})
+	check(not GarageUpgrades.owned("wing") and Shed.check(me, {"a": "buy_upgrade", "id": "wing"}).contains("afford"), "the garage can't buy one with no money")
+	Shed.request({"a": "garage_money", "value": 100000})
+	check(Shed.check(me, {"a": "buy_upgrade", "id": "bays_56"}).contains("Needs the workshop extension"), "bays 5 and 6 need the extension first")
+	check(Shed.check(me, {"a": "buy_upgrade", "id": "nope"}) != "", "nothing that isn't in the catalogue")
+	var xp := int(Progress.profile.get("xp", 0))
+	Shed.request({"a": "buy_upgrade", "id": "wing"})
+	check(GarageUpgrades.owned("wing") and Shed.garage_money == 70000, "the extension is built and %s comes out of the garage's money" % TvChannels.money_text(30000))
+	check(int(Progress.profile.get("xp", 0)) > xp, "the buyer gets XP")
+	check(Shed.check(me, {"a": "buy_upgrade", "id": "wing"}).contains("already"), "it can't be bought twice")
+	check(Workshop.rooms().has("wing") and not Workshop.rooms().has("annex"), "the extension is a room now (no rain inside)")
+	Shed.request({"a": "buy_upgrade", "id": "bays_56"})
+	check(Workshop.bay_count() == 6, "bays 5 and 6: six bays")
+	Shed.request({"a": "buy_upgrade", "id": "bay_7"})
+	check(Workshop.bay_count() == 7 and Shed.garage_money == 100000 - 30000 - 20000 - 12500, "bay 7: seven bays, and the money's gone down")
+	check(TvChannels.screen_exists("bay6") and not TvChannels.screen_exists("bay7"), "each new bay has a screen with channels")
+	var spots := {}
+	for bay in Workshop.bay_count():
+		spots[Workshop.bay_transform(bay).origin.snapped(Vector3.ONE * 0.1)] = true
+		check(Shed.bay_at(Workshop.bay_transform(bay).origin) == bay, "bay %d's stand is where bay_at finds it" % (bay + 1))
+	check(spots.size() == 7, "every bay has its own spot")
+	var inside := true
+	for i in 3:
+		inside = inside and GarageUpgrades.WING.has_point(Vector2(Workshop.bay_transform(4 + i).origin.x, Workshop.bay_transform(4 + i).origin.z))
+	check(inside, "the new bays are in the extension")
+	# Project bikes go to the new bays once the shed's own are full.
+	Shed.request({"a": "order"})
+	Shed.request({"a": "order"})
+	var in_five := Shed.bike_in_bay(4)
+	check(in_five != 0 and Shed.on_paddock(in_five), "a project bike is delivered to bay 5, on its paddock stand")
+	# A blueprint build waiting in bay 6, and a frame started in bay 7.
+	var bp := Shed._save_blueprint(in_five, "Bay six special")
+	Shed.request({"a": "bp_build", "bp": bp, "bay": 5})
+	check(Shed.holograms.has(5) and Shed.plan_bays().has(5), "a blueprint build can wait in bay 6")
+	var frame := Shed._new_item("steel_cradle", 0.0, 0.0, 0.0)
+	Shed._move(frame, "held", me)
+	Shed.request({"a": "start_build", "bay": 6})
+	check(Shed.bike_in_bay(6) != 0, "a bike can be started from a bare frame in bay 7")
+	check(Shed.free_bay(Workshop.bay_count()) < 0 and Shed.check(me, {"a": "order"}) != "", "with all seven full, no more project bikes")
+	# Storage: the annex, then racking that is real shelving.
+	Shed.request({"a": "buy_upgrade", "id": "racking"})
+	check(not GarageUpgrades.owned("racking"), "racking needs the annex")
+	Shed.request({"a": "garage_money", "value": 500000})
+	var shelves := Shed.furniture.values().filter(func(f): return f["model"] == "shelf_racking").size()
+	Shed.request({"a": "buy_upgrade", "id": "annex"})
+	Shed.request({"a": "buy_upgrade", "id": "racking"})
+	var racks := Shed.furniture.values().filter(func(f): return f["model"] == "shelf_racking")
+	check(racks.size() == shelves + 3 and Shed.furniture_spots(int(racks[0]["id"])).size() > 0, "racking: three runs of heavy-duty shelving in the annex")
+	Shed.request({"a": "buy_upgrade", "id": "showroom"})
+	check(not GarageUpgrades.owned("showroom") and Shed.check(me, {"a": "buy_upgrade", "id": "showroom"}).contains("Needs"), "the showroom needs the other finishes first")
+	# Saved and loaded.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.start_new("Tester", 9)
+	check(Workshop.bay_count() == 4, "a new shed starts without them")
+	Shed.load_state(copy, "Tester")
+	check(GarageUpgrades.owned("bay_7") and GarageUpgrades.owned("racking") and Workshop.bay_count() == 7 and Shed.bike_in_bay(4) != 0,
+		"the upgrades come back with the save, bikes still in the new bays")
+	check(Shed.screen_channel("bay6")["ch"] == "bay", "bay 7's screen shows its bay")
+	copy.erase("upgrades")
+	Shed.load_state(copy, "Tester")
+	check(Shed.upgrades.is_empty() and Workshop.bay_count() == 4, "a shed saved before upgrades has none")
+	copy["upgrades"] = {"wing": true, "gold_toilet": true}
+	Shed.load_state(copy, "Tester")
+	check(Shed.upgrades.keys() == ["wing"], "upgrades that don't exist are dropped from a save")
+	Shed.stop()
+
+
+## In the game: buying rebuilds the shed for everyone straight away. The doorway is knocked
+## through, the new bays have screens and lights, the stairs can be climbed, and nothing new
+## is built through the shed's own walls.
+func _test_upgrade_session() -> void:
+	SaveGame.slot_override = "test_upgrades"
+	SaveGame.delete_slot("test_upgrades")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	var ws: Workshop = main.world.workshop
+	check(ws.upgrades != null and ws.upgrades.built() == "", "the shed starts with nothing built on")
+	var space := ws.get_world_3d().direct_space_state
+	var through := func(from: Vector3, to: Vector3) -> bool:
+		var q := PhysicsRayQueryParameters3D.create(from, to, 1)
+		return space.intersect_ray(q).is_empty()
+	var door_from := Vector3(GarageUpgrades.WING_DOOR_X, 1.2, 60.5)
+	var door_to := Vector3(GarageUpgrades.WING_DOOR_X, 1.2, 57.0)
+	check(not through.call(door_from, door_to), "before the extension the back wall is solid there")
+	var nodes := ws.get_child_count()
+	Shed.request({"a": "garage_money", "value": 1000000})
+	for id in GarageUpgrades.CATALOGUE:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	check(Shed.upgrades.size() == GarageUpgrades.CATALOGUE.size(), "with money enough, everything can be bought in order")
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	check(ws.upgrades.built().contains("showroom") and ws.get_node_or_null("Upgrades/Built/WingFloor") != null
+		and ws.get_node_or_null("Upgrades/Built/AnnexFloor") != null and ws.get_node_or_null("Upgrades/Built/MezzanineDeck") != null,
+		"the shed is rebuilt with the extension, the annex and the mezzanine")
+	check(through.call(door_from, door_to), "a doorway is knocked through the back wall behind bay 4")
+	check(not through.call(Vector3(3.0, 1.2, 60.5), Vector3(3.0, 1.2, 57.0)), "the rest of the back wall is still there")
+	check(through.call(Vector3(GarageUpgrades.ANNEX_DOOR_X, 1.2, 56.0), Vector3(GarageUpgrades.ANNEX_DOOR_X, 1.2, 52.0))
+		and not through.call(Vector3(-14.0, 1.2, 56.0), Vector3(-14.0, 1.2, 52.0)), "and one through the storage room's back wall into the annex")
+	var stairs := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-7.45, 4.0, 51.7), Vector3(-7.45, -1.0, 51.7), 1))
+	check(not stairs.is_empty() and absf(float(stairs["position"].y) - 1.2) < 0.25, "the mezzanine stairs are a slope to walk up (%.2f m half way)" % float(stairs.get("position", Vector3.ZERO).y))
+	var deck := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-11.5, 4.0, 48.5), Vector3(-11.5, -1.0, 48.5), 1))
+	check(not deck.is_empty() and absf(float(deck["position"].y) - GarageUpgrades.MEZZ_TOP) < 0.05, "the deck is up at %.1f m" % GarageUpgrades.MEZZ_TOP)
+	var all := ws.screens()
+	check(all.has("bay4") and all.has("bay5") and all.has("bay6") and not all.has("bay7"), "the three new bays have screens")
+	check((all["bay6"] as Dashboard).global_position.distance_to(Workshop.bay_transform(6).origin) < 3.5, "bay 7's screen hangs over bay 7")
+	var raised: Dashboard = all["bay3"]
+	check(raised.global_position.y - raised.width * Dashboard.PX.y / Dashboard.PX.x * 0.5 > GarageUpgrades.WING_DOOR_HEIGHT,
+		"bay 4's screen moves up over the new doorway")
+	var shelters: PackedVector4Array = main.world.weather._rain_mat.get_shader_parameter("shelters")
+	var w := GarageUpgrades.WING.get_center()
+	var dry := false
+	for r in shelters:
+		dry = dry or (w.x > r.x and w.x < r.z and w.y > r.y and w.y < r.w)
+	check(dry, "rain isn't drawn inside the extension")
+	check(Workshop.room_at(Vector3(w.x, 0.0, w.y)) == "wing", "and it counts as indoors")
+	# A bike in a new bay is drawn there, on its paddock stand, and its bay screen shows it.
+	Shed.request({"a": "order"})
+	Shed.request({"a": "order"})
+	await get_tree().process_frame
+	var b5 := Shed.bike_in_bay(4)
+	check(b5 != 0 and ws.bike_views.has(b5) and (ws.bike_views[b5] as Node3D).global_position.distance_to(Workshop.bay_transform(4).origin) < 0.1,
+		"a project bike delivered to bay 5 is drawn in the extension")
+	check(str(ws._bay_data(4).get("name", "")) == str(Shed.bikes[b5]["name"]), "bay 5's screen shows its bike")
+	# Rebuilding again changes nothing, and nothing piles up.
+	var count := ws.upgrades.get_child(0).get_child_count()
+	var lights := ws._shed_lights.size()
+	var nodes_now := ws.get_child_count()
+	ws.upgrades._sig = "?"
+	ws.upgrades.sync()
+	await get_tree().process_frame
+	check(ws.upgrades.get_child_count() == 1 and ws.upgrades.get_child(0).get_child_count() == count and ws._shed_lights.size() == lights
+		and ws._bay_screens.size() == 7, "a rebuild replaces what was there")
+	check(ws.get_child_count() == nodes_now, "nothing is left behind on the workshop")
+	# Gone again in a new shed.
+	Shed.upgrades = {}
+	Shed.changed.emit()
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	check(ws.upgrades.built() == "" and not through.call(door_from, door_to) and ws._bay_screens.size() == 4
+		and is_equal_approx(raised.position.y, 2.45), "with none, the shed is back as it was")
+	# The parts computer's Garage upgrades page.
+	Shed.request({"a": "garage_money", "value": 0})
+	main.computer.open()
+	main.computer.open_upgrades()
+	var page: UpgradesPanel = main.computer.upgrades_panel
+	check(page.visible and page._rows.size() == GarageUpgrades.CATALOGUE.size(), "the parts computer lists every upgrade")
+	page.show_upgrade("wing")
+	check(page._buy.disabled and page._status.text.contains("afford"), "Buy is greyed out while the garage can't afford it")
+	check(UpgradesPanel.row_text("bay_7").contains("needs") and UpgradesPanel.row_text("bay_7").contains(TvChannels.money_text(12500)), "each row shows its price and what it needs")
+	Shed.request({"a": "garage_money", "value": 40000})
+	page.refresh()
+	page.show_upgrade("wing")
+	check(not page._buy.disabled, "with the money, it can be bought")
+	page.buy()
+	await get_tree().process_frame
+	check(GarageUpgrades.owned("wing") and UpgradesPanel.row_text("wing").contains("BUILT"), "Buy builds it, and the list says so")
+	main.computer.close_computer()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_upgrades")
+	SaveGame.slot_override = ""

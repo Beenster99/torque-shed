@@ -339,6 +339,10 @@ static func shelter_top(room: String) -> float:
 			return DynoRoom.HEIGHT + 0.3
 		"sales", "sales_office":
 			return SalesOffice.CEIL_Y + 0.4
+		"wing":
+			return GarageUpgrades.WING_HEIGHT + 0.3
+		"annex":
+			return GarageUpgrades.ANNEX_HEIGHT + 0.3
 	return Workshop.ROOM_HEIGHT + 0.2
 
 

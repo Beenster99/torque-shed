@@ -30,6 +30,8 @@ var _sell_shown := ""
 
 ## The Sell aisle's two lists.
 const SELL_KINDS := ["sell:bikes", "sell:parts"]
+## The Garage upgrades page (UpgradesPanel), opened from the button at the top.
+var upgrades_panel: UpgradesPanel
 
 ## The shop's three aisles, so nobody scrolls through everything.
 const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors", "sell": "Sell"}
@@ -69,6 +71,11 @@ func _ready() -> void:
 	bp_btn.tooltip_text = "Orders every part a blueprint build still needs, paid for by the business"
 	bp_btn.pressed.connect(func(): Shed.request({"a": "bp_order"}))
 	head.add_child(bp_btn)
+	var up_btn := Button.new()
+	up_btn.text = "Garage upgrades"
+	up_btn.tooltip_text = "Spend the garage's money on more bays, storage and a smarter shed"
+	up_btn.pressed.connect(open_upgrades)
+	head.add_child(up_btn)
 	var close := Button.new()
 	close.text = "Close (Esc)"
 	close.pressed.connect(close_computer)
@@ -159,6 +166,13 @@ func _ready() -> void:
 		elif _kind.begins_with("sell:") and _sell_signature(_kind) != _sell_shown:
 			_show_kind(_kind))
 	_show_section(_section)
+	upgrades_panel = UpgradesPanel.new()
+	add_child(upgrades_panel)
+
+
+## Opens the Garage upgrades page over the shop.
+func open_upgrades() -> void:
+	upgrades_panel.open()
 
 
 ## Which aisle a kind is sold in.
@@ -288,6 +302,8 @@ func _column(parent: Control, width: float) -> VBoxContainer:
 func open() -> void:
 	visible = true
 	_refresh_bank()
+	if upgrades_panel:
+		upgrades_panel.close()
 	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.free_delivery_xf() == null else "yes")
 	if _kind == "eq:poster":
 		_show_kind(_kind)   # whiteboard prints made since it was last open

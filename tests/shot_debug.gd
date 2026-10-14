@@ -40,6 +40,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--upgrades" in OS.get_cmdline_user_args():
+		await _upgrade_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -312,3 +317,50 @@ func _office_shots() -> void:
 	await _frames(10)
 	if only == "" or "lights_off".contains(only):
 		await _look_from(Vector3(31.0, 0.0, 88.0), o + Vector3(-1.0, 2.6, 0.0), "o13_outside_night_lights_off")
+
+
+## Garage upgrades: the shed as it starts, then with every upgrade bought (the extension with
+## bays 5 to 7 and the lounge, the storage annex with racking and the mezzanine, and the
+## luxury finishes). `-- --upgrades` takes just these.
+func _upgrade_shots() -> void:
+	Settings.weather = "clear"
+	if Weather.current:
+		Weather.current.change_to("clear", true)
+	Daylight.current.set_time(13.0)
+	for pass_name in ["none", "all"]:
+		if pass_name == "all":
+			Shed.request({"a": "garage_money", "value": 1000000})
+			for id in GarageUpgrades.CATALOGUE:
+				Shed.request({"a": "buy_upgrade", "id": id})
+			await _frames(10)
+			print("built: ", main.workshop.upgrades.built())
+		await _aerial(Vector3(22.0, 14.0, 38.0), Vector3(2.0, 0.0, 57.0), "u1_aerial_back_%s" % pass_name)
+		await _aerial(Vector3(-22.0, 13.0, 40.0), Vector3(-6.0, 0.0, 55.0), "u2_aerial_west_%s" % pass_name)
+		await _look_from(Vector3(-1.0, 0.0, 69.0), Vector3(3.0, 1.6, 59.5), "u3_shed_back_wall_%s" % pass_name)
+		await _look_from(Vector3(-4.5, 0.0, 69.5), Vector3(4.0, 1.4, 62.0), "u4_shed_inside_%s" % pass_name)
+		await _look_from(Vector3(0.0, 0.0, 82.0), Vector3(0.0, 3.0, 70.8), "u5_shed_front_%s" % pass_name)
+		if pass_name == "none":
+			continue
+		await _look_from(Vector3(6.0, 0.0, 58.6), Vector3(10.5, 1.0, 51.5), "u6_wing_bays")
+		await _look_from(Vector3(8.0, 0.0, 55.6), Vector3(13.6, 1.0, 58.2), "u7_lounge")
+		await _look_from(Vector3(-8.6, 0.0, 53.2), Vector3(-13.0, 1.6, 48.0), "u8_annex_mezzanine")
+		await _look_from(Vector3(-10.9, 0.0, 60.5), Vector3(-10.9, 1.4, 50.0), "u9_annex_doorway")
+		await _look_from(Vector3(5.75, 0.0, 66.0), Vector3(5.75, 1.6, 59.5), "u10_extension_doorway")
+		Daylight.current.set_time(22.0)
+		await _frames(10)
+		await _look_from(Vector3(0.0, 0.0, 82.0), Vector3(0.0, 3.0, 70.8), "u11_sign_at_night")
+		await _look_from(Vector3(8.0, 0.0, 55.6), Vector3(13.6, 1.0, 58.2), "u12_lounge_at_night")
+
+
+## A shot from a camera anywhere (up in the air), then back to the walker's eyes.
+func _aerial(from: Vector3, at: Vector3, name: String) -> void:
+	var cam := Camera3D.new()
+	cam.far = 1500.0
+	add_child(cam)
+	cam.global_position = from
+	cam.look_at(at, Vector3.UP)
+	cam.current = true
+	await _frames(15)
+	await _shot(name)
+	cam.queue_free()
+	main.walker.camera.current = true

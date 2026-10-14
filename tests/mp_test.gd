@@ -43,6 +43,8 @@ func _ready() -> void:
 	var money_sent := false
 	var money_ok := false
 	var customer_sent := false
+	var money_set := false
+	var upgrade_asked := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -60,6 +62,16 @@ func _ready() -> void:
 			elif start != Vector3.ZERO and p.distance_to(start) > 0.8:
 				moved = true
 		var ranger := _bike_named("Rusty Ranger")
+		# Garage upgrades: the host puts money in the garage, the client buys the extension with
+		# it, and both sheds are rebuilt with it.
+		if role == "host" and not money_set:
+			Shed.request({"a": "garage_money", "value": 100000})
+			money_set = true
+		if role == "client" and not upgrade_asked and Shed.garage_money >= GarageUpgrades.price("wing"):
+			Shed.request({"a": "buy_upgrade", "id": "wing"})
+			upgrade_asked = true
+		var ws: Workshop = main.world.workshop if main.world else null
+		var upgrade_ok := GarageUpgrades.owned("wing") and ws != null and ws.get_node_or_null("Upgrades/Built/WingFloor") != null
 		# XP: the host pays the client for its work, and learns the client's level from its report.
 		if xp_start < 0:
 			xp_start = int(Progress.profile["xp"])
@@ -140,15 +152,15 @@ func _ready() -> void:
 			Shed.request({"a": "contract_spawn", "kind": "maint"})
 			customer_sent = true
 		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty()
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 	var ok := moved and shed_ok
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size()])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing")])
 	get_tree().quit(0 if ok else 1)
 
 
