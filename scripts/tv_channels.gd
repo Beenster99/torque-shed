@@ -205,7 +205,7 @@ static func garage_data() -> Dictionary:
 ## placeholders (-1: not priced yet) until money arrives (Milestone C).
 static func afford_data(peer: int) -> Dictionary:
 	var picks := [["A project bike", "Bikes"], [str(Equipment.get_model("shelf_tall").get("name", "")), "Shed"],
-		[str(Equipment.get_model("repair_pro").get("name", "")), "Shed"], [str(Equipment.get_model("tv_98").get("name", "")), "Shed"],
+		[str(Equipment.get_model("repair_pro").get("name", "")), "Shed"], [str(Equipment.get_model("tv_120").get("name", "")), "Shed"],
 		[PartsDB.part_name("sport_ecu"), "Bike"], [PartsDB.part_name("race_slick"), "Bike"],
 		[str(Equipment.get_model("ramp_large").get("name", "")), "Outdoors"]]
 	var items := []

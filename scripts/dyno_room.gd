@@ -4,14 +4,17 @@ extends Node3D
 ## rolling-road dyno set into the floor (a drum under the rear wheel, a clamp for the front,
 ## strap-down posts and a cooling fan), the dyno desk where bikes are tuned and run, and a big
 ## screen on the far wall showing the latest run. Wheel a bike in and let go of it near the
-## drum and it's strapped down (Shed._park). A run is the same for everyone: the host stores
-## the result on the bike and each player plays the run back from it.
+## drum and it squares up on the rig (Shed._park); strap it down at the four posts before a run.
+## The room has its own lights, a wall switch for the cooling fan, an exhaust extraction hose on
+## a hook and ear defenders hanging by the door (Shed.dyno holds their state). A run is the
+## same for everyone: the host stores the result on the bike and each player plays it back.
 
 const CENTER := Vector3(0.0, 0.0, 55.6)
 const HALF := Vector2(4.5, 3.6)           # interior: x -4.5..4.5, z 52.0..59.2 (the shed's back wall)
 const HEIGHT := 3.6
-## The doorway through the shed's back wall, centred on x = 0.
-const DOOR_HALF := 1.1
+## The doorway through the shed's back wall, centred on x = 0: 1.7 m clear, wide enough to
+## wheel a bike through, and narrow enough for full-size bay screens either side of it.
+const DOOR_HALF := 0.85
 const DOOR_HEIGHT := 2.5
 const DRUM_RADIUS := 0.32
 const DRUM_Z := 0.71                      # the drum's axle behind the rig's centre, under the rear tyre
@@ -23,6 +26,17 @@ const QUICK_T := 0.6
 const SETTLE_T := 0.5
 const SWEEP_T := 4.0
 const COAST_T := 1.2
+## The four strap posts round the rig (front left, front right, rear left, rear right), in rig
+## space, and where on the bike each strap pulls to.
+const STRAP_POSTS := [Vector3(-0.95, 0.0, -0.6), Vector3(0.95, 0.0, -0.6), Vector3(-0.95, 0.0, 0.8), Vector3(0.95, 0.0, 0.8)]
+## The extraction hose: where it drops from the ceiling, its hook on the east wall, and how far
+## it reaches from the drop.
+const HOSE_DROP := Vector3(3.7, 3.45, 56.9)
+const HOSE_HOOK := Vector3(4.42, 1.45, 56.9)
+const HOSE_REACH := 5.6
+## Switches by the door (lights, fan) and the ear defenders' hook, on the shed side wall.
+const SWITCHES := Vector3(-1.3, 1.35, 59.17)
+const PHONES_HOOK := Vector3(-2.1, 1.62, 59.15)
 
 var workshop: Workshop
 var screen: DynoGraph
@@ -41,6 +55,21 @@ var _drum_angle := 0.0
 var _wheel_angle := 0.0
 var _fan_speed := 0.0
 var _screen_sig := ""
+var _lights: Array[Light3D] = []
+var _fixture: StandardMaterial3D
+var _lights_shown := true
+var _strap_nodes: Array[Node3D] = []
+var _hose_parts: Array[MeshInstance3D] = []
+var _hose_end: Node3D
+var _hose_end_target: StaticBody3D
+var _hose_sig := ""
+var _phones: Node3D
+var _fan_sound: AudioStreamPlayer3D
+var _rocker_lights: Node3D
+var _rocker_fan: Node3D
+var _haze: CPUParticles3D
+var _fumes: CPUParticles3D
+var _haze_level := 0.0
 
 
 ## Where a bike sits on the rig: facing the fan and the far wall (-Z), rear tyre on the drum.
@@ -99,6 +128,10 @@ func build(shop: Workshop) -> void:
 	_build_screen()
 	_build_decor()
 	_build_lights()
+	_build_switches()
+	_build_hose()
+	_build_phones()
+	_build_haze()
 
 
 ## How far through its measured sweep the run on a bike is, for the dyno desk: -1 before it
@@ -127,7 +160,9 @@ func _process(delta: float) -> void:
 	if not Shed.active:
 		return
 	var bike := Shed.dyno_bike()
-	_straps.visible = bike != 0
+	var straps: Array = Shed.dyno.get("straps", [])
+	for i in _strap_nodes.size():
+		_strap_nodes[i].visible = bike != 0 and i < straps.size() and bool(straps[i])
 	if bike != 0:
 		var n := int(Shed.bikes[bike].get("dyno", {}).get("n", 0))
 		if not _seen.has(bike):
@@ -161,13 +196,18 @@ func _process(delta: float) -> void:
 	_wheel_angle += wheel_omega * delta
 	_drum_angle += wheel_omega * rear_r / DRUM_RADIUS * delta
 	_drum.rotation.x = -_drum_angle
-	_fan_speed = move_toward(_fan_speed, 25.0 if running else 0.0, delta * 12.0)
+	var fan_on := bool(Shed.dyno.get("fan", false))
+	_fan_speed = move_toward(_fan_speed, 25.0 if fan_on else 0.0, delta * (12.0 if fan_on else 5.0))
 	_fan.rotation.z += _fan_speed * delta
+	if _fan_sound:
+		Sfx.set_loop(_fan_sound, "fan" if _fan_speed > 2.0 else "")
+		_fan_sound.pitch_scale = clampf(_fan_speed / 25.0, 0.4, 1.0)
+	_update_kit(delta, running)
 	if running and workshop and workshop.bike_views.has(_run_bike):
 		workshop.bike_model(_run_bike).update_pose_from(0.0, 0.0, _wheel_angle, 0.0, 0.0, 0.0, 0.0)
 	_update_screen(bike)
-	if _probe:
-		_probe.ambient_color_energy = 0.4 if Shed.lights_on else 0.06
+	if _lights_shown != bool(Shed.dyno.get("lights", true)):
+		set_lights(bool(Shed.dyno.get("lights", true)))
 
 
 func _start_run(bike: int) -> void:
@@ -354,18 +394,26 @@ func _build_rig() -> void:
 	_deco(rig, Vector3(0.0, 0.03, cz - 0.08), Vector3(0.26, 0.04, 0.62), _mats["blue"])
 	var stop := _deco(rig, Vector3(0.0, 0.2, cz - 0.42), Vector3(0.26, 0.4, 0.04), _mats["blue"])
 	stop.rotation.x = -0.35
-	# Strap-down posts, and the straps themselves while a bike is on.
+	# Strap-down posts, each with its ratchet strap, drawn once it's done up. Hold the work
+	# button at a post to do its strap up (or undo it).
 	_straps = Node3D.new()
 	rig.add_child(_straps)
-	for post in [Vector3(-0.95, 0.0, -0.6), Vector3(0.95, 0.0, -0.6), Vector3(-0.95, 0.0, 0.8), Vector3(0.95, 0.0, 0.8)]:
+	for i in STRAP_POSTS.size():
+		var post: Vector3 = STRAP_POSTS[i]
 		_cylinder(rig, post + Vector3(0.0, 0.22, 0.0), 0.045, 0.44, _mats["yellow"])
 		_cylinder(rig, post + Vector3(0.0, 0.46, 0.0), 0.06, 0.05, _mats["dark"])
+		var strap := Node3D.new()
+		strap.name = "Strap%d" % i
+		_straps.add_child(strap)
 		var to := Vector3(signf(post.x) * 0.14, 0.78 if post.z < 0.0 else 0.62, -0.5 if post.z < 0.0 else 0.55)
-		_strap(post + Vector3(0.0, 0.46, 0.0), to)
-	_straps.visible = false
+		_strap(strap, post + Vector3(0.0, 0.46, 0.0), to)
+		strap.visible = false
+		_strap_nodes.append(strap)
+		var t := workshop._target(post + Vector3(0.0, 0.35, 0.0), Vector3(0.34, 0.7, 0.34), {"dyno_kit": "strap", "point": i}, rig)
+		t.name = "StrapPost%d" % i
 
 
-func _strap(a: Vector3, b: Vector3) -> void:
+func _strap(parent: Node3D, a: Vector3, b: Vector3) -> void:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(0.04, 0.006, a.distance_to(b))
@@ -373,7 +421,10 @@ func _strap(a: Vector3, b: Vector3) -> void:
 	mi.material_override = _mats["strap"]
 	mi.position = (a + b) * 0.5
 	mi.basis = Basis.looking_at(b - a, Vector3.UP)
-	_straps.add_child(mi)
+	parent.add_child(mi)
+	# The ratchet buckle a third of the way up.
+	var buckle := _deco(parent, a.lerp(b, 0.3), Vector3(0.07, 0.04, 0.09), _mats["steel"])
+	buckle.basis = mi.basis
 
 
 ## A big cooling fan in front of the bike, as a rolling road needs.
@@ -392,6 +443,9 @@ func _build_fan() -> void:
 		blade.rotation = Vector3(0.0, 0.3, TAU * i / 5.0)
 		blade.position = Vector3(0.0, 0.2, 0.0).rotated(Vector3.BACK, TAU * i / 5.0)
 	_cylinder(_fan, Vector3.ZERO, 0.07, 0.08, _mats["steel"], Vector3.BACK)
+	_fan_sound = Sfx.make_loop_player(self)
+	_fan_sound.position = at + Vector3(0.0, 0.95, 0.0)
+	_fan_sound.volume_db = -6.0
 	# The grille: rings and a cross on the front.
 	for r in [0.2, 0.33, 0.46]:
 		var ring := MeshInstance3D.new()
@@ -470,38 +524,11 @@ func _build_decor() -> void:
 		_deco(self, c + Vector3(side * 1.45, 0.01, -0.3), Vector3(0.06, 0.004, 4.2), _mats["yellow"])
 	_deco(self, c + Vector3(0.0, 0.01, -2.4), Vector3(2.9, 0.004, 0.06), _mats["yellow"])
 	_deco(self, DESK + Vector3(0.0, 0.006, 0.85), Vector3(1.6, 0.012, 0.9), _mats["rubber"])
-	# Exhaust extraction: a hose dropping from the ceiling to a funnel behind the rig.
-	var hose_at := c + Vector3(1.75, 0.0, 0.9)
-	_cylinder(self, hose_at + Vector3(0.0, (HEIGHT + 0.85) * 0.5, 0.0), 0.09, HEIGHT - 0.85, _mats["rubber"])
-	var funnel := MeshInstance3D.new()
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0.07
-	cone.bottom_radius = 0.15
-	cone.height = 0.25
-	funnel.mesh = cone
-	funnel.material_override = _mats["red"]
-	funnel.position = hose_at + Vector3(-0.1, 0.78, 0.0)
-	funnel.rotation.z = -0.9
-	add_child(funnel)
-	# A tool chest and a tyre rack along the west wall.
-	_solid(c + Vector3(-HALF.x + 0.4, 0.5, -1.4), Vector3(0.6, 1.0, 1.1), _mats["red"])
-	for i in 4:
-		_deco(self, c + Vector3(-HALF.x + 0.71, 0.18 + i * 0.22, -1.4), Vector3(0.02, 0.03, 0.9), _mats["steel"])
-	for i in 3:
-		var tyre := MeshInstance3D.new()
-		var torus := TorusMesh.new()
-		torus.inner_radius = 0.2
-		torus.outer_radius = 0.32
-		tyre.mesh = torus
-		tyre.material_override = _mats["rubber"]
-		tyre.position = c + Vector3(-HALF.x + 0.25, 0.33, 0.6 + i * 0.45)
-		tyre.rotation.z = PI * 0.5
-		add_child(tyre)
-	_blocker(c + Vector3(-HALF.x + 0.25, 0.33, 1.05), Vector3(0.4, 0.66, 1.4))
 	# Signs.
 	_poster("DYNO ROOM", c + Vector3(0.0, DOOR_HEIGHT + 0.45, hz + 0.32), 0.0, Vector2(1.0, 0.26), 64)
 	_poster("STRAP IT DOWN. EARS ON.", c + Vector3(-2.6, 1.6, -hz + 0.025), 0.0, Vector2(1.2, 0.22), 40)
 	_poster("PULL IN, LET GO NEAR THE DRUM", c + Vector3(-HALF.x + 0.025, 1.6, 0.4), PI * 0.5, Vector2(1.4, 0.22), 40)
+	_poster("HOSE ON THE EXHAUST", HOSE_HOOK + Vector3(-0.025, 0.45, 0.0), -PI * 0.5, Vector2(0.8, 0.16), 34)
 	_poster("TUNE AT THE DESK (F)", DESK + Vector3(0.0, 1.75, -0.33), 0.0, Vector2(0.9, 0.2), 40)
 
 
@@ -541,7 +568,7 @@ func _build_lights() -> void:
 		omni.light_energy = 1.1
 		omni.light_color = Color(1.0, 0.94, 0.85)
 		add_child(omni)
-		workshop._shed_lights.append(omni)
+		_lights.append(omni)
 	var spot := SpotLight3D.new()
 	spot.position = CENTER + Vector3(0.0, HEIGHT - 0.2, 0.2)
 	spot.rotation.x = -PI * 0.5
@@ -551,8 +578,8 @@ func _build_lights() -> void:
 	spot.light_color = Color(1.0, 0.96, 0.9)
 	spot.shadow_enabled = true
 	add_child(spot)
-	workshop._shed_lights.append(spot)
-	workshop._fixture_mats.append(fixture)
+	_lights.append(spot)
+	_fixture = fixture
 	_probe = ReflectionProbe.new()
 	_probe.position = CENTER + Vector3(0.0, HEIGHT * 0.5, 0.0)
 	_probe.size = Vector3(HALF.x * 2.0 + 0.2, HEIGHT, HALF.y * 2.0 + 0.2)
@@ -563,3 +590,409 @@ func _build_lights() -> void:
 	_probe.ambient_color_energy = 0.4
 	_probe.update_mode = ReflectionProbe.UPDATE_ONCE
 	add_child(_probe)
+
+
+# ---------------------------------------------------------------------------- the room's kit
+
+## The dyno room's lights on or off (its own switch by the door, not the shed's).
+func set_lights(on: bool) -> void:
+	_lights_shown = on
+	for l in _lights:
+		l.visible = on
+	if _fixture:
+		_fixture.emission_energy_multiplier = 4.0 if on else 0.0
+	if _probe:
+		_probe.ambient_color_energy = 0.4 if on else 0.04
+		_probe.intensity = 1.0 if on else 0.15
+	if _rocker_lights:
+		_rocker_lights.rotation.x = 0.0 if on else 0.5
+
+
+func lights_shown() -> bool:
+	return _lights_shown
+
+
+## Two switches on the wall by the door, inside: the room's lights and the cooling fan.
+func _build_switches() -> void:
+	var at := SWITCHES
+	_deco(self, at + Vector3(-0.17, 0.0, 0.0), Vector3(0.52, 0.26, 0.03), _mats["yellow"])
+	var white := _material(Color(0.92, 0.92, 0.9), 0.0, 0.5)
+	for i in 2:
+		var x := -0.05 - i * 0.24
+		_deco(self, at + Vector3(x, 0.0, -0.02), Vector3(0.12, 0.16, 0.02), white)
+		var rocker := _deco(self, at + Vector3(x, 0.0, -0.035), Vector3(0.05, 0.08, 0.015), _mats["red"] if i == 1 else white)
+		_poster("LIGHTS" if i == 0 else "FAN", at + Vector3(x, 0.17, -0.02), PI, Vector2(0.16, 0.06), 34)
+		var t := workshop._target(at + Vector3(x, 0.0, -0.04), Vector3(0.2, 0.26, 0.12), {"dyno_kit": "lights" if i == 0 else "fan"}, self)
+		t.name = "LightSwitch" if i == 0 else "FanSwitch"
+		if i == 0:
+			_rocker_lights = rocker
+		else:
+			_rocker_fan = rocker
+
+
+## The exhaust extraction hose: a flexible duct dropping from the ceiling to a hook on the east
+## wall. Take it off the hook, carry it to the bike and push it over the exhaust; it's drawn
+## sagging from the drop to wherever its end is.
+func _build_hose() -> void:
+	_cylinder(self, HOSE_DROP + Vector3(0.0, 0.1, 0.0), 0.13, 0.12, _mats["steel"])
+	# The hook.
+	_deco(self, HOSE_HOOK + Vector3(0.03, 0.0, 0.0), Vector3(0.04, 0.2, 0.2), _mats["steel"])
+	_deco(self, HOSE_HOOK + Vector3(-0.06, -0.06, 0.0), Vector3(0.14, 0.03, 0.04), _mats["steel"])
+	var t := workshop._target(HOSE_HOOK + Vector3(-0.15, -0.3, 0.0), Vector3(0.36, 0.8, 0.5), {"dyno_kit": "hose"}, self)
+	t.name = "HoseHook"
+	var duct := _material(Color(0.12, 0.12, 0.13), 0.2, 0.7)
+	var rib := _material(Color(0.3, 0.3, 0.32), 0.6, 0.4)
+	for i in 18:
+		var seg := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.065
+		cm.bottom_radius = 0.065
+		cm.height = 1.0
+		cm.radial_segments = 10
+		cm.rings = 1
+		seg.mesh = cm
+		seg.material_override = duct
+		seg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var ring := MeshInstance3D.new()
+		var torus := TorusMesh.new()
+		torus.inner_radius = 0.06
+		torus.outer_radius = 0.078
+		torus.rings = 10
+		torus.ring_segments = 4
+		ring.mesh = torus
+		ring.material_override = rib
+		seg.add_child(ring)
+		add_child(seg)
+		_hose_parts.append(seg)
+	# The end: a red rubber boot that goes over the tailpipe.
+	_hose_end = Node3D.new()
+	_hose_end.name = "HoseEnd"
+	add_child(_hose_end)
+	var boot := MeshInstance3D.new()
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.07
+	cone.bottom_radius = 0.11
+	cone.height = 0.24
+	boot.mesh = cone
+	boot.material_override = _mats["red"]
+	boot.rotation.x = PI * 0.5      # its wide mouth faces -Z, onto the pipe
+	boot.position.z = -0.08
+	_hose_end.add_child(boot)
+	_hose_end_target = workshop._target(Vector3.ZERO, Vector3(0.3, 0.3, 0.4), {"dyno_kit": "hose_end"}, self)
+	_hose_end_target.name = "HoseOnExhaust"
+
+
+## Where the hose's end is and which way its mouth faces (-Z of the returned transform).
+func hose_end_transform() -> Transform3D:
+	var state := str(Shed.dyno.get("hose", "hook"))
+	if state == "bike":
+		var tip = exhaust_tip()
+		if tip is Transform3D:
+			return tip
+	elif state == "held" and is_inside_tree():
+		var holder := Shed.hose_holder()
+		if holder == Shed.me():
+			var w: Node = get_tree().get_first_node_in_group("local_walker")
+			if w is Walker:
+				var cam: Camera3D = (w as Walker).camera
+				var at: Vector3 = cam.global_transform * Vector3(0.22, -0.32, -0.55)
+				return Transform3D(Basis.looking_at(-cam.global_transform.basis.z, Vector3.UP), at)
+		else:
+			for rp in get_tree().get_nodes_in_group("remote_players"):
+				if int(rp.get("peer")) == holder:
+					var xf: Transform3D = rp.world_transform()
+					return Transform3D(xf.basis, xf.origin + Vector3.UP * 1.05 - xf.basis.z * 0.4)
+	return Transform3D(Basis.looking_at(Vector3.DOWN, Vector3.FORWARD), HOSE_HOOK + Vector3(-0.14, -0.12, 0.0))
+
+
+## The bike on the rig's tailpipe, facing out of the pipe (-Z of the transform), or null.
+func exhaust_tip():
+	var bike := Shed.dyno_bike()
+	if bike == 0 or workshop == null or not workshop.bike_views.has(bike) or Shed.item_on(bike, "exhaust") == 0:
+		return null
+	var model := workshop.bike_model(bike)
+	if model == null or not model.is_inside_tree():
+		return null
+	var out := model.global_transform.basis.z.normalized()   # the bike faces -Z: the pipe points back
+	return Transform3D(Basis.looking_at(-out, Vector3.UP), model.global_transform * model.exhaust_tip() + out * 0.05)
+
+
+func _draw_hose(end: Transform3D) -> void:
+	var a := HOSE_DROP
+	var b := end.origin + end.basis.z * 0.12
+	var dist := a.distance_to(b)
+	var sag := clampf(HOSE_REACH - dist, 0.15, 2.2) * 0.55
+	var c := (a + b) * 0.5 + Vector3.DOWN * sag
+	c.y = maxf(c.y, 0.08)
+	var n := _hose_parts.size()
+	var prev := a
+	for i in n:
+		var t := float(i + 1) / n
+		var p := a.lerp(c, t).lerp(c.lerp(b, t), t)
+		var seg := _hose_parts[i]
+		var d := p - prev
+		var length := maxf(d.length(), 0.01)
+		var up := d / length
+		var side := up.cross(Vector3.FORWARD if absf(up.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
+		# Each segment's own tube is sized to its length (only redrawn when the hose moves), so
+		# the rib round its middle stays a ring.
+		var cm := seg.mesh as CylinderMesh
+		if absf(cm.height - length * 1.05) > 0.005:
+			cm.height = length * 1.05
+		seg.transform = Transform3D(Basis(side, up, side.cross(up)), (prev + p) * 0.5)
+		prev = p
+	_hose_end.global_transform = end
+
+
+## The ear defenders, on a hook by the door when nobody's wearing them.
+func _build_phones() -> void:
+	_deco(self, PHONES_HOOK + Vector3(0.0, 0.08, 0.0), Vector3(0.04, 0.04, 0.12), _mats["steel"])
+	_phones = headphones_model()
+	_phones.position = PHONES_HOOK + Vector3(0.0, -0.02, -0.08)
+	add_child(_phones)
+	_poster("EAR DEFENDERS", PHONES_HOOK + Vector3(0.0, 0.3, 0.02), PI, Vector2(0.42, 0.08), 32)
+	var t := workshop._target(PHONES_HOOK + Vector3(0.0, -0.06, -0.1), Vector3(0.34, 0.36, 0.24), {"dyno_kit": "phones"}, self)
+	t.name = "PhonesHook"
+
+
+## A pair of ear defenders: a headband over two big cups, ear to ear along x. Sits on a head
+## with its band on top.
+static func headphones_model() -> Node3D:
+	var root := Node3D.new()
+	root.name = "EarDefenders"
+	var shell := StandardMaterial3D.new()
+	shell.albedo_color = Color(0.95, 0.72, 0.05)
+	shell.roughness = 0.45
+	var black := StandardMaterial3D.new()
+	black.albedo_color = Color(0.06, 0.06, 0.06)
+	black.roughness = 0.8
+	var band := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.135
+	torus.outer_radius = 0.155
+	band.mesh = torus
+	band.material_override = black
+	band.rotation.x = PI * 0.5    # a hoop standing up, ear to ear
+	root.add_child(band)
+	for side in [-1.0, 1.0]:
+		var cup := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.055
+		cm.bottom_radius = 0.06
+		cm.height = 0.05
+		cup.mesh = cm
+		cup.material_override = shell
+		cup.rotation.z = PI * 0.5
+		cup.position = Vector3(side * 0.15, -0.06, 0.0)
+		root.add_child(cup)
+		var pad := MeshInstance3D.new()
+		var pm := CylinderMesh.new()
+		pm.top_radius = 0.05
+		pm.bottom_radius = 0.05
+		pm.height = 0.02
+		pad.mesh = pm
+		pad.material_override = black
+		pad.rotation.z = PI * 0.5
+		pad.position = Vector3(side * 0.12, -0.06, 0.0)
+		root.add_child(pad)
+	return root
+
+
+## Exhaust haze that fills the room after a run without the extraction hose, and the fumes
+## out of the tailpipe while it runs. Soft grey puffs drifting slowly (and, with volumetric
+## fog, a fog volume as thick as the haze).
+func _build_haze() -> void:
+	_haze = _smoke_particles(46, 9.0, Vector2(1.4, 2.2))
+	_haze.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	_haze.emission_box_extents = Vector3(HALF.x - 0.4, 0.9, HALF.y - 0.4)
+	_haze.position = CENTER + Vector3(0.0, 1.5, 0.0)
+	_haze.initial_velocity_max = 0.08
+	_haze.gravity = Vector3(0.0, 0.01, 0.0)
+	add_child(_haze)
+	_fumes = _smoke_particles(40, 2.6, Vector2(0.15, 0.7))
+	_fumes.direction = Vector3(0.0, 0.3, -1.0)
+	_fumes.spread = 14.0
+	_fumes.initial_velocity_min = 1.0
+	_fumes.initial_velocity_max = 1.8
+	_fumes.damping_min = 0.8
+	_fumes.damping_max = 1.4
+	_fumes.gravity = Vector3(0.0, 0.25, 0.0)
+	add_child(_fumes)
+	if RenderingServer.get_current_rendering_method() != "forward_plus":
+		return   # fog volumes need Forward+; the haze particles carry it on the simpler renderer
+	var fog := FogVolume.new()
+	fog.name = "HazeFog"
+	fog.size = Vector3(HALF.x * 2.0, HEIGHT, HALF.y * 2.0)
+	fog.position = CENTER + Vector3(0.0, HEIGHT * 0.5, 0.0)
+	var fm := FogMaterial.new()
+	fm.density = 0.0
+	fm.albedo = Color(0.7, 0.7, 0.72)
+	fog.material = fm
+	fog.visible = false
+	add_child(fog)
+
+
+func _smoke_particles(amount: int, life: float, scale: Vector2) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.amount = amount
+	p.lifetime = life
+	p.emitting = false
+	p.local_coords = false
+	p.randomness = 0.6
+	p.lifetime_randomness = 0.4
+	p.scale_amount_min = scale.x
+	p.scale_amount_max = scale.y
+	p.anim_offset_max = 1.0
+	var curve := Curve.new()
+	curve.add_point(Vector2(0.0, 0.4))
+	curve.add_point(Vector2(1.0, 1.0))
+	p.scale_amount_curve = curve
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0, 0.2, 0.7, 1.0])
+	fade.colors = PackedColorArray([Color(1, 1, 1, 0), Color(1, 1, 1, 1), Color(1, 1, 1, 0.7), Color(1, 1, 1, 0)])
+	p.color_ramp = fade
+	var quad := QuadMesh.new()
+	var m := StandardMaterial3D.new()
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.billboard_keep_scale = true
+	m.particles_anim_h_frames = 2
+	m.particles_anim_v_frames = 2
+	m.particles_anim_loop = false
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(0.62, 0.63, 0.66, 0.0)
+	m.albedo_texture = BikeEffects.puff_texture()
+	m.disable_receive_shadows = true
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	quad.material = m
+	p.mesh = quad
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return p
+
+
+## How thick the exhaust haze in the room looks right now, 0..1.
+func haze_shown() -> float:
+	return _haze_level if _haze and _haze.emitting else 0.0
+
+
+func fumes_showing() -> bool:
+	return _fumes != null and _fumes.emitting
+
+
+func phones_on_hook() -> bool:
+	return _phones != null and _phones.visible
+
+
+## The hose, ear defenders, haze and fumes, every frame.
+func _update_kit(delta: float, running: bool) -> void:
+	var end := hose_end_transform()
+	var sig := "%s|%s" % [Shed.dyno.get("hose", ""), str(end.origin.snapped(Vector3.ONE * 0.01))]
+	if sig != _hose_sig:
+		_hose_sig = sig
+		_draw_hose(end)
+	var on_bike: bool = Shed.dyno.get("hose", "") == "bike"
+	_hose_end_target.global_position = end.origin if on_bike else Vector3(0.0, -50.0, 0.0)
+	# Carried too far from the drop, the hose pulls out of your hands back to its hook.
+	if Shed.hose_holder() == Shed.me():
+		var w: Node = get_tree().get_first_node_in_group("local_walker")
+		if w is Node3D and Vector2((w as Node3D).global_position.x - HOSE_DROP.x, (w as Node3D).global_position.z - HOSE_DROP.z).length() > HOSE_REACH + 0.6:
+			if not has_meta("hose_pulled"):
+				set_meta("hose_pulled", true)
+				Shed.request({"a": "dyno_hose", "to": "hook"})
+				Shed.feedback.emit("The hose won't reach that far: it's back on its hook.", false)
+		elif has_meta("hose_pulled"):
+			remove_meta("hose_pulled")
+	_phones.visible = int(Shed.dyno.get("headphones", 0)) == 0
+	Sfx.set_muffled(Shed.wearing_headphones(Shed.me()))
+	if _rocker_fan:
+		_rocker_fan.rotation.x = 0.5 if bool(Shed.dyno.get("fan", false)) else 0.0
+	# Exhaust haze: thickens after a run with no hose on, clears slowly (faster with the fan
+	# blowing and the extraction on).
+	var want := float(Shed.dyno.get("haze", 0.0))
+	_haze_level = move_toward(_haze_level, want, delta * 0.25)
+	_haze.emitting = _haze_level > 0.02
+	var hm := (_haze.mesh as QuadMesh).material as StandardMaterial3D
+	hm.albedo_color.a = clampf(_haze_level * 0.32, 0.0, 0.4)
+	var fog: FogVolume = get_node_or_null("HazeFog")
+	if fog:
+		fog.visible = _haze_level > 0.02
+		(fog.material as FogMaterial).density = _haze_level * 0.08
+	var tip = exhaust_tip() if running else null
+	_fumes.emitting = running and not on_bike and tip != null
+	if _fumes.emitting:
+		_fumes.global_transform = tip
+		var fm := (_fumes.mesh as QuadMesh).material as StandardMaterial3D
+		fm.albedo_color.a = 0.3
+
+
+# ---------------------------------------------------------------------------- for the player
+
+## What the work button does at a piece of the dyno room's kit (or anywhere while carrying the
+## hose): {action, time, verb}, or {}. `target` is the walker's.
+static func plan_for(target: Dictionary, peer: int) -> Dictionary:
+	var kind := str(target.get("kind", ""))
+	var kit := str(target.get("kit", ""))
+	if Shed.hose_holder() == peer:
+		var on_rig := Shed.dyno_bike()
+		if kind == "part" and on_rig != 0 and int(target.get("bike", 0)) == on_rig:
+			return {"action": {"a": "dyno_hose", "to": "bike"}, "time": 1.0, "verb": "push the extraction hose over the exhaust"}
+		if kit == "hose":
+			return {"action": {"a": "dyno_hose", "to": "hook"}, "time": 0.3, "verb": "hang the hose back on its hook"}
+		return {}
+	match kit:
+		"strap":
+			var i := clampi(int(target.get("point", 0)), 0, 3)
+			var done := bool(Shed.dyno["straps"][i])
+			return {"action": {"a": "dyno_strap", "point": i}, "time": 0.8 if done else 1.4,
+				"verb": "undo this strap" if done else "hook the strap on and ratchet it down tight"}
+		"hose_end":
+			return {"action": {"a": "dyno_hose", "to": "held"}, "time": 0.6, "verb": "pull the hose off the exhaust"}
+		"hose":
+			if Shed.dyno.get("hose", "") == "hook":
+				return {"action": {"a": "dyno_hose", "to": "held"}, "time": 0.3, "verb": "take the extraction hose off its hook"}
+	return {}
+
+
+## What F does at the dyno room's switches and the ear defenders' hook, or {}.
+static func f_action(target: Dictionary) -> Dictionary:
+	match str(target.get("kit", "")):
+		"lights":
+			return {"a": "dyno_lights", "on": not bool(Shed.dyno.get("lights", true))}
+		"fan":
+			return {"a": "dyno_fan", "on": not bool(Shed.dyno.get("fan", false))}
+		"phones":
+			return {"a": "dyno_headphones"}
+	return {}
+
+
+## The info panel's lines for the dyno room's kit.
+static func describe(target: Dictionary, peer: int) -> Array:
+	var lines := []
+	match str(target.get("kit", "")):
+		"lights":
+			lines = ["Dyno room lights", "F: switch them %s" % ("off" if bool(Shed.dyno.get("lights", true)) else "on")]
+		"fan":
+			var hot := Shed.dyno_temp(float(Shed.dyno.get("heat", 0.0)))
+			lines = ["Cooling fan", "F: switch it %s" % ("off" if bool(Shed.dyno.get("fan", false)) else "on"),
+				"Blows air over the engine on the rig so it doesn't heat soak and lose power. Engine at %d °C." % roundi(hot)]
+		"phones":
+			var wearer := int(Shed.dyno.get("headphones", 0))
+			if wearer == peer:
+				lines = ["Ear defenders (you're wearing them)", "F: hang them back up"]
+			elif wearer != 0:
+				lines = ["Ear defenders", "%s is wearing them." % str(Shed.crew.get(wearer, {}).get("name", "Someone"))]
+			else:
+				lines = ["Ear defenders", "F: put them on. The dyno's roar (and everything else) is muffled while you wear them."]
+		"strap":
+			var i := clampi(int(target.get("point", 0)), 0, 3)
+			lines = ["Strap post (%s)" % ["front left", "front right", "rear left", "rear right"][i],
+				"Strapped: %d of 4" % Shed.straps_done()]
+			if Shed.dyno_bike() == 0:
+				lines.append("Wheel a bike onto the rig to strap it down.")
+		"hose", "hose_end":
+			var state := str(Shed.dyno.get("hose", "hook"))
+			lines = ["Exhaust extraction hose", str({"hook": "On its hook. Take it to the bike on the rig and fit it over the exhaust.",
+				"bike": "On the exhaust: the fumes go outside.", "held": "Being carried."}.get(state, ""))]
+	if Shed.hose_holder() == peer:
+		lines.append("Carrying the extraction hose: hold the work button on the bike on the rig to fit it, or hang it back on its hook.")
+	return lines

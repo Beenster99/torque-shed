@@ -92,6 +92,15 @@ func _legend(at: Vector2) -> void:
 	if not _previous().is_empty():
 		draw_dashed_line(Vector2(x, at.y - 6.0 * k), Vector2(x + 28.0 * k, at.y - 6.0 * k), INK_DIM, 2.0 * k, 6.0 * k)
 		_text(Vector2(x + 36.0 * k, at.y), "Run %d (previous)" % int(_previous().get("n", 0)), 16, INK_DIM)
+	# How hot the engine ran: a heat-soaked engine (fan off) loses power towards the limiter.
+	if latest.has("temp_c"):
+		var hot := float(latest.get("heat", 0.0)) > 0.35
+		var note := "Engine %d °C  ·  fan %s" % [roundi(float(latest["temp_c"])), "on" if latest.get("fan", false) else "off"]
+		if hot:
+			note += "  ·  heat soaked, down on power"
+		if not latest.get("hose", true):
+			note += "  ·  no extraction hose"
+		_text(Vector2(size.x - 18.0 * k - 640.0 * k, at.y), note, 16, BAD if hot else INK_DIM, 640.0 * k, HORIZONTAL_ALIGNMENT_RIGHT)
 
 
 func _rpm_max() -> float:

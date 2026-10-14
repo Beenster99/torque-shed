@@ -18,6 +18,7 @@ var _label: Label3D
 var _snapshots: Array = []
 var _hand_sig := ""
 var _work_sound: AudioStreamPlayer3D
+var _phones: Node3D     # ear defenders, shown while they wear them (the dyno room's)
 
 
 func setup(peer_id: int, rider_name: String, paint: Color) -> void:
@@ -50,6 +51,11 @@ func setup(peer_id: int, rider_name: String, paint: Color) -> void:
 	_part(_head, SphereMesh.new(), Vector3.ZERO, Vector3(0.24, 0.27, 0.25), skin)
 	_part(_head, SphereMesh.new(), Vector3(0.0, 0.07, 0.02), Vector3(0.27, 0.16, 0.28), _mat(color, 0.1, 0.5))  # cap
 	_part(_head, BoxMesh.new(), Vector3(0.0, 0.04, -0.17), Vector3(0.22, 0.02, 0.14), _mat(color, 0.1, 0.5))   # peak
+	_phones = DynoRoom.headphones_model()
+	_phones.position = Vector3(0.0, 0.035, 0.0)
+	_phones.scale = Vector3(0.95, 0.95, 0.95)
+	_phones.visible = false
+	_head.add_child(_phones)
 	_hand = Node3D.new()
 	_hand.position = Vector3(0.28, 1.0, -0.35)
 	_figure.add_child(_hand)
@@ -156,7 +162,13 @@ func _physics_process(_delta: float) -> void:
 	_figure.scale.y = move_toward(_figure.scale.y, 0.62 if low else 1.0, 0.08)
 
 
+## Whether they've got the dyno room's ear defenders on.
+func wearing_phones() -> bool:
+	return _phones != null and _phones.visible
+
+
 func _process(_delta: float) -> void:
+	_phones.visible = Shed.wearing_headphones(peer)
 	# What's in their hand: a part they carry, else their tool.
 	var held := Shed.held_by(peer)
 	var tool := str(Shed.crew.get(peer, {}).get("tool", "hands"))

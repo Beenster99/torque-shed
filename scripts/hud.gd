@@ -140,6 +140,25 @@ func _draw() -> void:
 		_draw_stopwatch()
 	if walker:
 		_draw_level()
+		_draw_badges()
+
+
+## Small reminders down the left: ear defenders on, carrying the dyno's extraction hose.
+func _draw_badges() -> void:
+	var badges := []
+	if Shed.wearing_headphones(Shed.me()):
+		badges.append(["EAR DEFENDERS ON", "Everything's muffled. F at their hook to hang them up."])
+	if Shed.hose_holder() == Shed.me():
+		badges.append(["CARRYING THE EXHAUST HOSE", "Hold %s on the exhaust to fit it." % _act_key()])
+	var font := get_theme_default_font()
+	var y := size.y * 0.42
+	for b in badges:
+		var r := Rect2(24.0, y, 380.0, 50.0)
+		draw_rect(r, Color(0.04, 0.05, 0.07, 0.72))
+		draw_rect(Rect2(r.position, Vector2(4.0, r.size.y)), Color(0.95, 0.72, 0.05))
+		draw_string(font, r.position + Vector2(14.0, 21.0), b[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.95, 0.72, 0.05))
+		draw_string(font, r.position + Vector2(14.0, 40.0), b[1], HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20.0, 12, Color(1, 1, 1, 0.75))
+		y += 58.0
 
 
 ## Your level and XP bar, top right, with XP popups fading under it and the level-up banner.

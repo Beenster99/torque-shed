@@ -98,6 +98,12 @@ var posters := {}
 ## What each screen is tuned to: screen key (see TvChannels) -> {ch: channel id, rider: the peer
 ## its live channel follows, 0 for whoever is out first}. Screens not in here show their home channel.
 var screens := {}
+## The dyno room's kit (see DynoRoom): the extraction hose ("hook", "bike" or "held" with
+## hose_by the peer holding it), the cooling fan and the room's own lights (on/off), the four
+## straps on the rig (front left, front right, rear left, rear right), who is wearing the ear
+## defenders (0: on their hook), how hot the engine on the rig is (0..1) and how much exhaust
+## haze hangs in the room (0..1).
+var dyno := dyno_defaults()
 
 var _next_id := 1
 var _dirty := false
@@ -144,6 +150,8 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	lights_on = true
 	room_lights = {"paint": true, "storage": true}
 	screens = {}
+	dyno = dyno_defaults()
+	_dyno_busy_until = 0
 	items.clear()
 	crew.clear()
 	board = BoardData.empty()
@@ -251,6 +259,11 @@ func load_state(state: Dictionary, player_name: String) -> void:
 		furniture[id]["mover"] = 0
 		# Equipment renamed since the save was made (the wall TVs grew): the model it is now.
 		furniture[id]["model"] = Equipment.current_id(str(furniture[id].get("model", "")))
+	# Nobody is holding the hose or wearing the ear defenders in a new session.
+	if dyno["hose"] == "held":
+		dyno["hose"] = "hook"
+	dyno["hose_by"] = 0
+	dyno["headphones"] = 0
 	# Peer ids don't carry over between sessions, so live channels follow whoever rides first.
 	for key in screens.keys():
 		if not (screens[key] is Dictionary) or not TvChannels.screen_exists(str(key)):
@@ -283,6 +296,8 @@ func join_remote() -> void:
 	furniture.clear()
 	radio = {"on": false, "station": 0}
 	screens = {}
+	dyno = dyno_defaults()
+	_dyno_busy_until = 0
 	items.clear()
 	crew.clear()
 	active = true
@@ -296,6 +311,8 @@ func stop() -> void:
 	furniture.clear()
 	radio = {"on": false, "station": 0}
 	screens = {}
+	dyno = dyno_defaults()
+	_dyno_busy_until = 0
 	active = false
 	bikes.clear()
 	items.clear()
@@ -493,6 +510,296 @@ func dyno_bike() -> int:
 		if on_dyno(id) and bikes[id]["rider"] == 0:
 			return id
 	return 0
+
+
+static func dyno_defaults() -> Dictionary:
+	return {"hose": "hook", "hose_by": 0, "fan": false, "lights": true, "straps": [false, false, false, false],
+		"headphones": 0, "heat": 0.0, "haze": 0.0}
+
+
+## Whether every strap on the rig is done up.
+func strapped() -> bool:
+	return dyno_bike() != 0 and (dyno["straps"] as Array).all(func(on): return bool(on))
+
+
+## How many of the rig's straps are done up.
+func straps_done() -> int:
+	return (dyno["straps"] as Array).count(true)
+
+
+## Who is carrying the dyno's exhaust hose about, or 0.
+func hose_holder() -> int:
+	return int(dyno.get("hose_by", 0)) if dyno.get("hose", "hook") == "held" else 0
+
+
+## Whether `peer` has the ear defenders on.
+func wearing_headphones(peer: int) -> bool:
+	return peer != 0 and int(dyno.get("headphones", 0)) == peer
+
+
+## Why `peer` can't do a dyno room job, or "".
+func _dyno_check(peer: int, action: Dictionary) -> String:
+	var a := str(action.get("a", ""))
+	var on_rig := dyno_bike()
+	match a:
+		"dyno_strap":
+			var point := int(action.get("point", -1))
+			if point < 0 or point >= 4:
+				return "There's no strap there."
+			if on_rig == 0:
+				return "Wheel a bike onto the rig first."
+			if bikes[on_rig].get("pusher", 0) != 0:
+				return "Let go of the bike first."
+			if hose_holder() == peer:
+				return "Your hands are full of exhaust hose."
+		"dyno_hose":
+			var to := str(action.get("to", ""))
+			var now := str(dyno.get("hose", "hook"))
+			match to:
+				"held":
+					if now == "held":
+						return "Someone's already got the hose."
+					if held_by(peer) != 0:
+						return "Put the part down first."
+					if pushing_bike(peer) != 0 or moving(peer) != 0:
+						return "Let go of what you're moving first."
+				"bike":
+					if hose_holder() != peer:
+						return "Take the exhaust hose off its hook first."
+					if on_rig == 0:
+						return "Wheel a bike onto the rig first."
+					if item_on(on_rig, "exhaust") == 0:
+						return "There's no exhaust fitted to put it on."
+				"hook":
+					if hose_holder() != peer:
+						return "You're not holding the hose."
+				_:
+					return "Put it where?"
+		"dyno_fan", "dyno_lights":
+			pass
+		"dyno_headphones":
+			var wearer := int(dyno.get("headphones", 0))
+			if wearer != 0 and wearer != peer:
+				return "Someone's wearing them."
+	return ""
+
+
+## Does a dyno room job (already checked) and says what happened.
+func _dyno_apply(peer: int, action: Dictionary) -> String:
+	var a := str(action["a"])
+	match a:
+		"dyno_strap":
+			var point := int(action["point"])
+			var straps: Array = dyno["straps"]
+			straps[point] = not bool(straps[point])
+			if straps[point]:
+				_xp(peer, "dyno_strap", 1.0, "strap:%d" % point)
+			if straps.all(func(on): return bool(on)):
+				return "Strapped down: %s is ready for a run." % bikes[dyno_bike()]["name"]
+			return ("Strap done up (%d of 4)" if straps[point] else "Strap undone (%d of 4 done up)") % straps.count(true)
+		"dyno_hose":
+			var to := str(action["to"])
+			var was := str(dyno["hose"])
+			dyno["hose"] = to
+			dyno["hose_by"] = peer if to == "held" else 0
+			if to == "bike":
+				_xp(peer, "dyno_hose", 1.0, "bike:%d" % dyno_bike())
+				return "Extraction hose on the exhaust. The fumes go outside."
+			if to == "held":
+				return "Got the extraction hose. Hold the work button on the bike's exhaust to fit it." if was == "hook" \
+					else "Took the hose off the exhaust."
+			return "Hose back on its hook."
+		"dyno_fan":
+			dyno["fan"] = bool(action.get("on", not bool(dyno["fan"])))
+			return "Cooling fan %s" % ("on" if dyno["fan"] else "off")
+		"dyno_lights":
+			dyno["lights"] = bool(action.get("on", not bool(dyno["lights"])))
+			return "Dyno room lights %s" % ("on" if dyno["lights"] else "off")
+		"dyno_headphones":
+			var wearing := int(dyno["headphones"]) == peer
+			dyno["headphones"] = 0 if wearing else peer
+			return "Hung the ear defenders back up." if wearing else "Ear defenders on: the dyno's roar is muffled."
+	return ""
+
+
+## Keeps the dyno kit straight when the bike leaves the rig (or the hose holder has gone).
+func _tidy_dyno() -> void:
+	if dyno_bike() == 0:
+		dyno["straps"] = [false, false, false, false]
+		if dyno["hose"] == "bike":
+			dyno["hose"] = "hook"
+	if dyno["hose"] == "held" and not crew.has(int(dyno.get("hose_by", 0))):
+		dyno["hose"] = "hook"
+		dyno["hose_by"] = 0
+	if int(dyno.get("headphones", 0)) != 0 and not crew.has(int(dyno["headphones"])):
+		dyno["headphones"] = 0
+
+
+const DYNO_HEAT_FAN := 0.08      # how much hotter the engine gets in one run with the fan on
+const DYNO_HEAT_NO_FAN := 0.4    # and without it
+const DYNO_HEAT_POWER := 0.07    # power lost at the top of the sweep, fully heat soaked
+
+
+## The engine's temperature on the dyno, in degrees C, from its heat 0..1.
+static func dyno_temp(heat: float) -> float:
+	return 85.0 + heat * 45.0
+
+
+## A hot engine fades as the sweep goes on: power and torque fall away towards the limiter.
+static func _heat_run(run: Dictionary, heat: float) -> void:
+	run["heat"] = heat
+	run["temp_c"] = roundf(dyno_temp(heat))
+	if heat <= 0.05:
+		return
+	var n: int = (run["hp"] as Array).size()
+	var best_hp := 0.0
+	var best_nm := 0.0
+	for i in n:
+		var fade := 1.0 - DYNO_HEAT_POWER * heat * (0.3 + 0.7 * float(i) / maxf(n - 1, 1))
+		run["hp"][i] = snappedf(float(run["hp"][i]) * fade, 0.01)
+		run["nm"][i] = snappedf(float(run["nm"][i]) * fade, 0.01)
+		if float(run["hp"][i]) > best_hp:
+			best_hp = float(run["hp"][i])
+			run["peak_hp_rpm"] = float(run["rpm"][i])
+		if float(run["nm"][i]) > best_nm:
+			best_nm = float(run["nm"][i])
+			run["peak_nm_rpm"] = float(run["rpm"][i])
+	run["hp_per_tonne"] = float(run["hp_per_tonne"]) * best_hp / maxf(float(run["peak_hp"]), 0.01)
+	run["peak_hp"] = best_hp
+	run["peak_nm"] = best_nm
+
+
+## The engine on the rig cools down, quickly with the fan on; the haze clears, quickly with
+## the extraction hose on. Synced in steps so it doesn't flood the network.
+func _cool_dyno(delta: float) -> void:
+	var heat := float(dyno.get("heat", 0.0))
+	var haze := float(dyno.get("haze", 0.0))
+	var fan := bool(dyno.get("fan", false))
+	var heat_now := maxf(0.0, heat - delta * (0.03 if fan else 0.004))
+	var haze_now := maxf(0.0, haze - delta * ((0.02 if dyno.get("hose", "") == "bike" else 0.006) + (0.01 if fan else 0.0)))
+	dyno["heat"] = heat_now
+	dyno["haze"] = haze_now
+	if floori(heat_now * 20.0) != floori(heat * 20.0) or floori(haze_now * 20.0) != floori(haze * 20.0):
+		_mark_dirty()
+
+
+# ---------------------------------------------------------------------------- the sandblaster
+
+const BLAST_WEAR := 0.12     # wear a part picks up if every patch of it were blasted too long
+
+
+## The blast cabinet someone is working at (their hands in its gloves), or 0.
+func blasting(peer: int) -> int:
+	return int(crew.get(peer, {}).get("blaster", 0))
+
+
+## Who is working at a blast cabinet, or 0.
+func blaster_user(furniture_id: int) -> int:
+	for peer in crew:
+		if int(crew[peer].get("blaster", 0)) == furniture_id:
+			return int(peer)
+	return 0
+
+
+func _blast_check(peer: int, action: Dictionary) -> String:
+	var a := str(action.get("a", ""))
+	match a:
+		"blast_use":
+			if not action.get("on", true):
+				return ""
+			var spot := str(action.get("spot", ""))
+			if spot_role(spot) != "blaster":
+				return "That's not a sandblaster."
+			var f := furniture_of_spot(spot)
+			var engine := item_at_spot(spot)
+			if engine == 0 or not is_engine(engine) or items[engine].get("boxed", false):
+				return "Put an engine in the sandblaster first."
+			var user := blaster_user(int(f["id"]))
+			if user != 0 and user != peer:
+				return "%s is using it." % str(crew.get(user, {}).get("name", "Someone"))
+			if int(f.get("mover", 0)) != 0:
+				return "Someone's moving it."
+			if held_by(peer) != 0:
+				return "Put the part down first: it takes both hands."
+			if riding(peer) != 0 or pushing_bike(peer) != 0 or moving(peer) != 0:
+				return "Let go of what you've got first."
+		"blast_aim":
+			if blasting(peer) == 0:
+				return "You're not at a sandblaster."
+		"blast":
+			var spot := str(action.get("spot", ""))
+			var f := furniture_of_spot(spot)
+			if f.is_empty() or blasting(peer) != int(f["id"]):
+				return "You're not at that sandblaster."
+			var engine := item_at_spot(spot)
+			if engine == 0 or not is_engine(engine):
+				return "The engine has gone."
+			if not (action.get("parts") is Dictionary):
+				return "Nothing was blasted."
+		_:
+			return "Unknown action."
+	return ""
+
+
+func _blast_apply(peer: int, action: Dictionary) -> String:
+	var c: Dictionary = crew.get(peer, {})
+	match str(action["a"]):
+		"blast_use":
+			if action.get("on", true):
+				c["blaster"] = int(furniture_of_spot(str(action["spot"]))["id"])
+				c["blast_rot"] = Vector2.ZERO
+				c["blast_fire"] = false
+				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse. F to step back."
+			c["blaster"] = 0
+			c["blast_fire"] = false
+		"blast_aim":
+			var r = action.get("rot", Vector2.ZERO)
+			var at = action.get("at", Vector3.ZERO)
+			c["blast_rot"] = r if r is Vector2 else Vector2.ZERO
+			c["blast_fire"] = bool(action.get("fire", false))
+			c["blast_at"] = at if at is Vector3 else Vector3.ZERO
+		"blast":
+			var engine := item_at_spot(str(action["spot"]))
+			var on_engine := {engine: true}
+			for slot in PartsDB.ENGINE_SLOTS:
+				if engine_item(engine, slot) != 0:
+					on_engine[engine_item(engine, slot)] = true
+			var done := 0
+			var cover_sum := 0.0
+			var pitted := []
+			var parts: Dictionary = action["parts"]
+			for key in parts:
+				var id := int(key)
+				var r = parts[key]
+				if not on_engine.has(id) or not (r is Array) or (r as Array).size() < 2:
+					continue
+				var cover := clampf(float(r[0]), 0.0, 1.0)
+				var over := clampf(float(r[1]), 0.0, 1.0)
+				if cover < 0.02:
+					continue
+				var it: Dictionary = items[id]
+				var strip := clampf(cover / BlastGame.DONE, 0.0, 1.0)
+				_note_low(id)
+				it["rust"] = 0.0 if strip >= 0.999 else float(it["rust"]) * (1.0 - strip)
+				it["dirt"] = 0.0 if strip >= 0.999 else float(it["dirt"]) * (1.0 - strip)
+				it["wear"] = minf(1.0, float(it["wear"]) + over * BLAST_WEAR)
+				if over > 0.08:
+					pitted.append(PartsDB.slot_name(PartsDB.slots_for_kind(str(it["kind"]))[0]).to_lower())
+				cover_sum += cover
+				done += 1
+				if strip >= 0.3:
+					_xp(peer, "sandblast", clampf(strip * (1.0 - over * 0.8), 0.1, 1.0), "item:%d" % id)
+				_check_part(peer, id)
+			c["blaster"] = 0
+			c["blast_fire"] = false
+			c["repaired"] = int(c.get("repaired", 0)) + done
+			if done == 0:
+				return ""
+			var text := "Blasted %d part%s: %d%% back to bare metal" % [done, "" if done == 1 else "s", roundi(cover_sum / done * 100.0)]
+			if not pitted.is_empty():
+				text += ", but you've pitted the %s" % ", ".join(pitted.slice(0, 3))
+			return text
+	return ""
 
 
 ## A stock bike built around an engine on the stand, so its numbers can be compared.
@@ -1274,6 +1581,12 @@ func check(peer: int, action: Dictionary) -> String:
 			return "Someone is riding that bike."
 		elif bikes[bike_id].get("pusher", 0) != 0 and bikes[bike_id].get("pusher", 0) != peer:
 			return "Someone is wheeling that bike about."
+	if a.begins_with("dyno_") and a != "dyno_run":
+		return _dyno_check(peer, action)
+	if a.begins_with("blast"):
+		return _blast_check(peer, action)
+	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
+		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
 	match a:
 		"unbolt", "bolt", "remove":
 			var host := host_of(bike_id, slot, engine_id)
@@ -1316,6 +1629,8 @@ func check(peer: int, action: Dictionary) -> String:
 		"take":
 			if held != 0:
 				return "Your hands are full."
+			if spot_role(str(action.get("spot", ""))) == "blaster" and blaster_user(int(furniture_of_spot(str(action["spot"]))["id"])) != 0:
+				return "Someone's blasting it."
 			if action.has("item"):
 				if not (items.has(int(action["item"])) and items[int(action["item"])]["at"] == "floor"):
 					return "Nothing there."
@@ -1343,6 +1658,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unpack it first."
 			if spot_role(spot) == "changer" and items[held]["kind"] != "wheel":
 				return "Only a wheel goes on the tyre changer. Fit tyres to a wheel on it."
+			if spot_role(spot) == "blaster" and (not is_engine(held) or items[held].get("boxed", false)):
+				return "The sandblaster is for engines: put an engine in it, ancillaries and all."
 		"set_down":
 			# Down anywhere on a workbench, washer or repair machine there's room for it.
 			if held == 0:
@@ -1417,6 +1734,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "The %s is built in." % furniture_name(f).to_lower()
 			if f["mover"] != 0 and f["mover"] != peer:
 				return "Someone else is moving that."
+			if blaster_user(int(f["id"])) != 0:
+				return "Someone's working at it."
 			if held != 0:
 				return "Put the part down first."
 			if moving(peer) != 0:
@@ -1564,6 +1883,10 @@ func check(peer: int, action: Dictionary) -> String:
 			var why := _wheel_check(bike_id)
 			if why != "":
 				return why
+			if on_dyno(bike_id) and straps_done() > 0:
+				return "Undo the straps first (hold the work button at each one)."
+			if on_dyno(bike_id) and dyno["hose"] == "bike":
+				return "Take the extraction hose off the exhaust first."
 			if held != 0:
 				return "Put the part down first."
 			if moving(peer) != 0 or pushing_bike(peer) != 0:
@@ -1584,7 +1907,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if on_paddock(bike_id):
 				return "It's on the paddock stand in the bay."
 			if on_dyno(bike_id):
-				return "It's strapped down on the dyno."
+				return "It's on the dyno rig."
 		"mount":
 			if riding(peer) != 0:
 				return "You're already riding."
@@ -1653,6 +1976,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Let go of it so it can be strapped down."
 			if Time.get_ticks_msec() < _dyno_busy_until:
 				return "It's mid-run. Wait for it to finish."
+			if not strapped():
+				return "Strap it down first: %d of the 4 straps are done up." % straps_done()
 			var missing := missing_slots(bike_id)
 			if not missing.is_empty():
 				return "It won't run. Missing: %s." % _slot_list(missing)
@@ -1765,6 +2090,20 @@ func _apply(peer: int, action: Dictionary) -> void:
 		_tell(peer, why, false)
 		return
 	var a := str(action["a"])
+	if a.begins_with("blast"):
+		var told := _blast_apply(peer, action)
+		if told != "":
+			_tell(peer, told, true)
+		_mark_dirty()
+		changed.emit()
+		return
+	if a.begins_with("dyno_") and a != "dyno_run":
+		var said := _dyno_apply(peer, action)
+		if said != "":
+			_tell(peer, said, true)
+		_mark_dirty()
+		changed.emit()
+		return
 	var bike_id := int(action.get("bike", 0))
 	var engine_id := int(action.get("engine", 0))
 	var slot := str(action.get("slot", ""))
@@ -2056,7 +2395,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			bikes[bike_id]["xf"] = action["xf"]
 			_park(bike_id)
 			if on_dyno(bike_id):
-				text = "%s is strapped down on the dyno. Use the dyno desk (F) to tune it and run it." % bikes[bike_id]["name"]
+				text = "%s is on the dyno. Strap it down at the four posts (hold the work button), then tune and run it at the desk." % bikes[bike_id]["name"]
 			elif bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over."
 			elif on_paddock(bike_id):
@@ -2096,6 +2435,21 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"dyno_run":
 			var build := build_of(bike_id)
 			var run := build.dyno_run()
+			# Heat: the engine gets hotter every run, far hotter without the cooling fan, and a hot
+			# engine makes less power as the sweep goes on.
+			var fan := bool(dyno["fan"])
+			dyno["heat"] = clampf(float(dyno["heat"]) + (DYNO_HEAT_FAN if fan else DYNO_HEAT_NO_FAN), 0.0, 1.0)
+			_heat_run(run, float(dyno["heat"]))
+			run["fan"] = fan
+			run["hose"] = dyno["hose"] == "bike"
+			if not fan and float(dyno["heat"]) > 0.6:
+				# Cooking it costs a little engine life.
+				var block := item_on(bike_id, "engine")
+				if block != 0:
+					items[block]["wear"] = minf(1.0, float(items[block]["wear"]) + 0.004)
+			if dyno["hose"] != "bike":
+				# No extraction: the room fills with exhaust.
+				dyno["haze"] = clampf(float(dyno["haze"]) + 0.55, 0.0, 1.0)
 			var d: Dictionary = bikes[bike_id].get("dyno", {"n": 0, "runs": []})
 			var runs: Array = d.get("runs", [])
 			d["n"] = int(d.get("n", 0)) + 1
@@ -2111,6 +2465,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 			if tank != 0 and items[tank].has("fluid"):
 				items[tank]["fluid"]["litres"] = maxf(0.0, float(items[tank]["fluid"]["litres"]) - 0.05)
 			text = "Dyno run %d on %s..." % [d["n"], bikes[bike_id]["name"]]
+			if dyno["hose"] != "bike":
+				text += " No extraction hose on: the room's filling with fumes."
+			if not fan and float(dyno["heat"]) > 0.5:
+				text += " It's running hot: switch the fan on."
 			_xp(peer, "dyno_run", 1.0, "bike:%d" % bike_id)
 		"set_stand":
 			bikes[bike_id]["stand"] = str(action["stand"])
@@ -2176,6 +2534,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			c["kmh"] = clampf(float(action.get("kmh", 0.0)), 0.0, 400.0)
 	if text != "":
 		_tell(peer, text, true)
+	_tidy_dyno()
 	_mark_dirty()
 	changed.emit()
 
@@ -2216,7 +2575,7 @@ func _park(bike_id: int) -> void:
 	var bike: Dictionary = bikes[bike_id]
 	var rig := DynoRoom.rig_transform()
 	if (bike["xf"] as Transform3D).origin.distance_to(rig.origin) < 1.0 and (dyno_bike() == 0 or dyno_bike() == bike_id):
-		# Rolled onto the dyno: square on the drum and strapped down.
+		# Rolled onto the dyno: square on the drum, ready to strap down.
 		bike["xf"] = rig
 		bike["stand"] = ""
 		return
@@ -2962,6 +3321,7 @@ func _on_player_left(id: int) -> void:
 		bikes[wheeling]["pusher"] = 0
 		_park(wheeling)
 	crew.erase(id)
+	_tidy_dyno()
 	_mark_dirty()
 	changed.emit()
 
@@ -2976,7 +3336,7 @@ func _mark_dirty() -> void:
 ## as they're drawn (_board_op), and whole only to players joining.
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
-		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters}
+		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno}
 	if with_board:
 		state["board"] = board
 	return state
@@ -3010,6 +3370,10 @@ func _sync(state: Dictionary) -> void:
 			if saved_rooms.has(room):
 				room_lights[room] = bool(saved_rooms[room])
 	screens = state["screens"] if state.get("screens") is Dictionary else {}
+	dyno = dyno_defaults()
+	_dyno_busy_until = 0
+	if state.get("dyno") is Dictionary:
+		dyno.merge(state["dyno"], true)
 	_next_id = int(state.get("next", 1))
 	posters = state["posters"] if state.get("posters") is Dictionary else {}
 	if state.get("blobs") is Dictionary:
@@ -3030,6 +3394,7 @@ func _sync(state: Dictionary) -> void:
 func _process(delta: float) -> void:
 	if not active or not is_authority():
 		return
+	_cool_dyno(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":

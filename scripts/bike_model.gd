@@ -1405,6 +1405,46 @@ func slot_bounds(slot: String) -> AABB:
 	return box
 
 
+## Points spread evenly over a part's surfaces, about `cell` apart, in this model's space, with
+## the outward surface normal at each: [points, normals]. For the sandblaster's coverage map.
+func surface_points(slot: String, cell: float) -> Array:
+	var points := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var seen := {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(slot)
+	for mi in _slot_meshes.get(slot, []):
+		if not (mi is MeshInstance3D) or (mi as MeshInstance3D).mesh == null or not is_instance_valid(mi):
+			continue
+		var xf := _local_xform(mi)
+		var faces := (mi as MeshInstance3D).mesh.get_faces()
+		for f in range(0, faces.size() - 2, 3):
+			var a: Vector3 = xf * faces[f]
+			var b: Vector3 = xf * faces[f + 1]
+			var c: Vector3 = xf * faces[f + 2]
+			# Godot's front faces wind clockwise, so this cross product points out of the surface.
+			var n := (c - a).cross(b - a)
+			var area := n.length() * 0.5
+			if area < 1e-7:
+				continue
+			n = n.normalized()
+			var count := ceili(area / (cell * cell) * 1.5)
+			for k in count:
+				var u := rng.randf()
+				var v := rng.randf()
+				if u + v > 1.0:
+					u = 1.0 - u
+					v = 1.0 - v
+				var p := a + (b - a) * u + (c - a) * v
+				var key := Vector3i((p / cell).floor())
+				if seen.has(key):
+					continue
+				seen[key] = true
+				points.append(p)
+				normals.append(n)
+	return [points, normals]
+
+
 ## Adds a static click target per fitted part, with box shapes fitted to its meshes.
 ## Each body carries metadata "slot", plus everything in `meta`; `slot_meta` replaces `meta`
 ## for particular slots. Rings (tyres, spoked rims) get a hoop of boxes so the ray can still

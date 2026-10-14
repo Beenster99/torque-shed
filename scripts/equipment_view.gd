@@ -8,6 +8,10 @@ var id := 0
 var model := ""
 var kind := ""
 var washer_sound: AudioStreamPlayer3D
+var blast_sound: AudioStreamPlayer3D
+var _blast_local_until := 0
+var _blast_firing := false
+var _spark_time := 0.0
 var tv: ShedTv
 var _ws: Node   # the Workshop, for its materials and helpers
 
@@ -34,6 +38,8 @@ func _build() -> void:
 			_build_washer()
 		"repair":
 			_build_repair()
+		"blaster":
+			_build_blaster()
 		"bench":
 			_build_bench()
 		"booth":
@@ -630,3 +636,297 @@ func _checker_cloth() -> StandardMaterial3D:
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3(2.0, 2.0, 2.0)
 	return m
+
+
+# ---------------------------------------------------------------------------- the sandblaster
+
+## A blast cabinet on legs: a steel chamber with a sloping glass window on top, two glove ports
+## in the front, a light inside and a turntable grate the engine sits on ("Pivot"). The nozzle
+## ("Nozzle") points where the person at the gloves aims, with the sand jet, the rust and dust
+## kicking back off the engine, sparks off fresh metal and a haze of grit in the chamber.
+func _build_blaster() -> void:
+	var size := _size()
+	var floor_y := Equipment.work_height(model)
+	var top := size.y - 0.15
+	var body: Material = _ws._material(Color(0.2, 0.36, 0.62) if model == "blaster_cabinet" else Color(0.55, 0.12, 0.08), 0.5, 0.4)
+	# Legs and the hopper the spent grit runs down into.
+	for x in [-size.x * 0.45, size.x * 0.45]:
+		for z in [-size.z * 0.42, size.z * 0.42]:
+			_deco(Vector3(x, 0.38, z), Vector3(0.05, 0.76, 0.05), _mat("steel"))
+	var hopper := _cyl(Vector3(0.0, 0.62, 0.0), size.x * 0.32, 0.3, body)
+	(hopper.mesh as CylinderMesh).bottom_radius = 0.08
+	# The chamber: floor, back, sides, a low front with the glove ports, and the glass on top.
+	var depth := size.z
+	_deco(Vector3(0.0, 0.8, 0.0), Vector3(size.x, 0.08, depth), body)
+	_deco(Vector3(0.0, (0.8 + top) * 0.5, -depth * 0.5 + 0.02), Vector3(size.x, top - 0.8, 0.04), body)
+	for side in [-1.0, 1.0]:
+		_deco(Vector3(side * (size.x * 0.5 - 0.02), (0.8 + top) * 0.5, 0.0), Vector3(0.04, top - 0.8, depth), body)
+	var front_top := 1.22
+	_deco(Vector3(0.0, (0.8 + front_top) * 0.5, depth * 0.5 - 0.02), Vector3(size.x, front_top - 0.8, 0.04), body)
+	_deco(Vector3(0.0, top - 0.02, -depth * 0.3), Vector3(size.x, 0.04, depth * 0.4), body)
+	var glass := StandardMaterial3D.new()
+	glass.albedo_color = Color(0.75, 0.85, 0.9, 0.14)
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.roughness = 0.05
+	glass.metallic = 0.2
+	glass.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var win := MeshInstance3D.new()
+	var wq := QuadMesh.new()
+	var from := Vector3(0.0, front_top, depth * 0.5)
+	var to := Vector3(0.0, top, -depth * 0.1)
+	wq.size = Vector2(size.x - 0.06, from.distance_to(to))
+	win.mesh = wq
+	win.material_override = glass
+	win.position = (from + to) * 0.5
+	var up := (to - from).normalized()
+	win.basis = Basis(Vector3.RIGHT, up, Vector3.RIGHT.cross(up))
+	win.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	win.name = "Window"
+	add_child(win)
+	# Frame round the glass.
+	for side in [-1.0, 1.0]:
+		var rail := _deco((from + to) * 0.5 + Vector3(side * (size.x * 0.5 - 0.03), 0.0, 0.0), Vector3(0.05, 0.05, from.distance_to(to)), _mat("dark"))
+		rail.basis = Basis.looking_at(to - from, Vector3.UP)
+	# Glove ports and the black rubber gloves hanging in.
+	for side in [-1.0, 1.0]:
+		var port := _cyl(Vector3(side * 0.24, 1.02, depth * 0.5), 0.09, 0.05, _mat("dark"), Vector3.BACK)
+		port.name = "Port"
+		var glove := _cyl(Vector3(side * 0.24, 0.98, depth * 0.5 - 0.2), 0.06, 0.36, _ws._material(Color(0.04, 0.04, 0.04), 0.0, 0.85), Vector3.BACK)
+		glove.rotation.x = PI * 0.5 + 0.35
+	# The turntable grate.
+	_cyl(Vector3(0.0, floor_y - 0.02, -0.04), minf(size.x, depth) * 0.36, 0.03, _mat("steel"))
+	var pivot := Node3D.new()
+	pivot.name = "Pivot"
+	pivot.position = Vector3(0.0, floor_y, -0.04)
+	add_child(pivot)
+	# A light inside, so you can see what you're doing.
+	var lamp := OmniLight3D.new()
+	lamp.name = "Lamp"
+	lamp.position = Vector3(0.0, top - 0.12, -depth * 0.25)
+	lamp.omni_range = 1.4
+	lamp.light_energy = 1.1
+	lamp.light_color = Color(1.0, 0.96, 0.9)
+	add_child(lamp)
+	_deco(Vector3(0.0, top - 0.06, -depth * 0.25), Vector3(0.3, 0.03, 0.06), _ws._material(Color(1.0, 0.97, 0.9), 0.0, 0.4))
+	# The nozzle: a short gun with a ceramic tip, on its hose from the back of the chamber.
+	var nozzle := Node3D.new()
+	nozzle.name = "Nozzle"
+	nozzle.position = Vector3(0.18, floor_y + 0.38, depth * 0.5 - 0.2)
+	add_child(nozzle)
+	var gun := _cyl(Vector3(0.0, 0.0, 0.06), 0.022, 0.16, _mat("dark"), Vector3.BACK)
+	remove_child(gun)
+	nozzle.add_child(gun)
+	var tip := _cyl(Vector3(0.0, 0.0, -0.04), 0.012, 0.06, _ws._material(Color(0.85, 0.82, 0.75), 0.0, 0.5), Vector3.BACK)
+	remove_child(tip)
+	nozzle.add_child(tip)
+	nozzle.add_child(_blast_jet())
+	add_child(_blast_dust("Rebound", 70, 0.9, Vector2(0.04, 0.11)))
+	add_child(_blast_sparks())
+	var haze := _blast_dust("Grit", 18, 2.4, Vector2(0.18, 0.32))
+	haze.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	haze.emission_box_extents = Vector3(size.x * 0.4, 0.2, depth * 0.35)
+	haze.position = Vector3(0.0, floor_y + 0.3, 0.0)
+	haze.local_coords = true
+	haze.initial_velocity_max = 0.1
+	haze.gravity = Vector3(0.0, -0.05, 0.0)
+	add_child(haze)
+	blast_sound = Sfx.make_loop_player(self)
+	blast_sound.position = Vector3(0.0, floor_y + 0.3, 0.0)
+	blast_sound.volume_db = -3.0
+	_name_plate(str(_m()["name"]).to_upper(), Vector3(0.0, 0.9, depth * 0.5 + 0.005), 22)
+	# Solid to walk into but not to look through: the chamber is on the bikes' layer, which the
+	# crosshair ignores, so you can aim at the engine through the glass.
+	var wall := StaticBody3D.new()
+	wall.collision_layer = 2
+	wall.collision_mask = 0
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(size.x, size.y, depth)
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	cs.position = Vector3(0.0, size.y * 0.5, 0.0)
+	wall.add_child(cs)
+	add_child(wall)
+	# Take hold of it by its legs and hopper; the chamber is where the engine goes.
+	_ws._target(Vector3(0.0, 0.4, 0.0), Vector3(size.x, 0.8, depth) + Vector3(0.04, 0.0, 0.04), {"furniture": id}, self)
+	for spot in Shed.furniture_spots(id):
+		_ws._target(Vector3(0.0, (floor_y + top) * 0.5, 0.0), Vector3(size.x - 0.1, top - floor_y, depth - 0.1), {"spot": spot}, self)
+
+
+## Sand shooting out of the nozzle: fine, fast grit that's gone in a blink.
+func _blast_jet() -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.name = "Jet"
+	p.amount = 160
+	p.lifetime = 0.07
+	p.emitting = false
+	p.local_coords = false
+	p.direction = Vector3(0.0, 0.0, -1.0)
+	p.spread = 2.5
+	p.initial_velocity_min = 13.0
+	p.initial_velocity_max = 18.0
+	p.gravity = Vector3(0.0, -0.5, 0.0)
+	p.scale_amount_min = 0.6
+	p.scale_amount_max = 1.4
+	p.position = Vector3(0.0, 0.0, -0.07)
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0, 0.8, 1.0])
+	fade.colors = PackedColorArray([Color(1, 1, 1, 0.9), Color(1, 1, 1, 0.7), Color(1, 1, 1, 0)])
+	p.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.008, 0.008)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(0.93, 0.86, 0.68)
+	quad.material = m
+	p.mesh = quad
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return p
+
+
+## Dust and rust knocked off the engine, kicked back off where the jet lands.
+func _blast_dust(node_name: String, amount: int, life: float, scale: Vector2) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.name = node_name
+	p.amount = amount
+	p.lifetime = life
+	p.emitting = false
+	p.local_coords = false
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 0.025
+	p.direction = Vector3(0.0, 0.0, 1.0)
+	p.spread = 70.0
+	p.initial_velocity_min = 0.6
+	p.initial_velocity_max = 2.2
+	p.damping_min = 2.5
+	p.damping_max = 4.0
+	p.gravity = Vector3(0.0, -1.2, 0.0)
+	p.scale_amount_min = scale.x / 0.1
+	p.scale_amount_max = scale.y / 0.1
+	p.anim_offset_max = 1.0
+	var curve := Curve.new()
+	curve.add_point(Vector2(0.0, 0.4))
+	curve.add_point(Vector2(1.0, 1.0))
+	p.scale_amount_curve = curve
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0, 0.15, 0.6, 1.0])
+	fade.colors = PackedColorArray([Color(1, 1, 1, 0), Color(1, 1, 1, 0.8), Color(1, 1, 1, 0.45), Color(1, 1, 1, 0)])
+	p.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.1, 0.1)
+	var m := StandardMaterial3D.new()
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.billboard_keep_scale = true
+	m.particles_anim_h_frames = 2
+	m.particles_anim_v_frames = 2
+	m.particles_anim_loop = false
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(0.6, 0.45, 0.3, 0.7)
+	m.albedo_texture = BikeEffects.puff_texture()
+	m.disable_receive_shadows = true
+	quad.material = m
+	p.mesh = quad
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return p
+
+
+## Bright specks off freshly bared metal: the satisfying bit.
+func _blast_sparks() -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.name = "Sparks"
+	p.amount = 36
+	p.lifetime = 0.3
+	p.emitting = false
+	p.local_coords = false
+	p.direction = Vector3(0.0, 0.0, 1.0)
+	p.spread = 85.0
+	p.initial_velocity_min = 1.2
+	p.initial_velocity_max = 3.2
+	p.gravity = Vector3(0.0, -3.0, 0.0)
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.2
+	var fade := Gradient.new()
+	fade.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+	fade.colors = PackedColorArray([Color(1, 1, 1, 1), Color(1, 0.95, 0.8, 0.8), Color(1, 0.9, 0.6, 0)])
+	p.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.012, 0.012)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(1.0, 0.97, 0.9)
+	m.albedo_texture = BikeEffects.mote_texture()
+	quad.material = m
+	p.mesh = quad
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return p
+
+
+## Drives the cabinet from the person working it on this machine (BlastGame, every frame):
+## the turntable, the nozzle aimed at `at`, the jet, the dust and sparks, and the roar.
+func set_blast(rot: Vector2, firing: bool, at: Vector3, normal: Vector3, rust: float, fresh: int) -> void:
+	_blast_local_until = Time.get_ticks_msec() + 200
+	_show_blast(rot, firing, at, normal, rust, fresh)
+
+
+func _show_blast(rot: Vector2, firing: bool, at: Vector3, normal: Vector3, rust: float, fresh: int) -> void:
+	var pivot: Node3D = get_node_or_null("Pivot")
+	if pivot:
+		pivot.basis = BlastGame.pivot_basis(rot)
+	var nozzle: Node3D = get_node_or_null("Nozzle")
+	if nozzle and at != Vector3.ZERO:
+		var aim := at - nozzle.global_position
+		if aim.length() > 0.05:
+			nozzle.global_basis = Basis.looking_at(aim.normalized(), Vector3.UP if absf(aim.normalized().y) < 0.95 else Vector3.FORWARD)
+	var jet: CPUParticles3D = get_node_or_null("Nozzle/Jet")
+	if jet:
+		jet.emitting = firing
+		if nozzle and at != Vector3.ZERO:
+			# The grit reaches the engine and no further.
+			jet.lifetime = clampf(nozzle.global_position.distance_to(at) / 15.0, 0.02, 0.12)
+	var rebound: CPUParticles3D = get_node_or_null("Rebound")
+	if rebound:
+		rebound.emitting = firing and at != Vector3.ZERO
+		if rebound.emitting:
+			rebound.global_position = at
+			var n := normal if normal.length() > 0.5 else Vector3.UP
+			rebound.direction = (global_basis.inverse() * n).normalized()
+			var mm := (rebound.mesh as QuadMesh).material as StandardMaterial3D
+			# Rust comes off brown; clean metal just throws up pale grit.
+			mm.albedo_color = Color(0.72, 0.68, 0.6, 0.55).lerp(Color(0.5, 0.28, 0.12, 0.75), clampf(rust * 1.5, 0.0, 1.0))
+	var sparks: CPUParticles3D = get_node_or_null("Sparks")
+	if sparks:
+		_spark_time = 0.25 if fresh > 0 else maxf(0.0, _spark_time - get_process_delta_time())
+		sparks.emitting = firing and (_spark_time > 0.0 or rust > 0.05)
+		if sparks.emitting:
+			sparks.global_position = at
+			sparks.direction = (global_basis.inverse() * (normal if normal.length() > 0.5 else Vector3.UP)).normalized()
+	var grit: CPUParticles3D = get_node_or_null("Grit")
+	if grit:
+		grit.emitting = firing
+	if blast_sound:
+		Sfx.set_loop(blast_sound, "blast" if firing else "")
+	_blast_firing = firing
+
+
+## Whether the jet's going (for tests and the crew's ears).
+func blast_firing() -> bool:
+	return _blast_firing
+
+
+func _process(_delta: float) -> void:
+	if kind != "blaster" or Time.get_ticks_msec() < _blast_local_until:
+		return
+	# Someone else at the gloves: show what they're doing from the shed state.
+	var user := Shed.blaster_user(id)
+	var c: Dictionary = Shed.crew.get(user, {}) if user != 0 else {}
+	var r = c.get("blast_rot", Vector2.ZERO)
+	var at = c.get("blast_at", Vector3.ZERO)
+	_show_blast(r if r is Vector2 else Vector2.ZERO, user != 0 and bool(c.get("blast_fire", false)),
+		at if at is Vector3 else Vector3.ZERO, Vector3.UP, 0.3, 0)

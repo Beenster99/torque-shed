@@ -16,6 +16,9 @@ const SYNC_INTERVAL := 1.0
 const TILT := 0.61                      # how far south the sun's path leans (35 degrees)
 const SUN_ENERGY := 1.25
 const MOON_ENERGY := 0.16
+## Volumetric fog density by day (the world's own light haze) and at night, for headlights in the air.
+const DAY_FOG := 0.006
+const NIGHT_FOG := 0.012
 ## Lights in this group with a "night_energy" meta are switched on at dusk at that energy.
 const NIGHT_LIGHTS := "night_lights"
 
@@ -198,6 +201,8 @@ func _apply(force: bool) -> void:
 	_env.fog_light_energy = 1.0
 	_env.fog_sun_scatter = 0.25 * twilight
 	_env.volumetric_fog_albedo = Color(0.9, 0.92, 0.95).lerp(Color(0.5, 0.55, 0.7), dark)
+	# A touch more haze in the night air, so headlights (and the moon) show softly in it.
+	_env.volumetric_fog_density = lerpf(DAY_FOG, NIGHT_FOG, dark)
 	_env.tonemap_exposure = lerpf(1.0, 1.35, dark)
 	_env.glow_intensity = lerpf(0.4, 0.75, dark)
 	_env.glow_bloom = lerpf(0.05, 0.02, dark)
