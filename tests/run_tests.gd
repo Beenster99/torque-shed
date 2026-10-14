@@ -3344,6 +3344,8 @@ func _test_pad_menus() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+	# Back to the keyboard and mouse for the tests after this one.
+	Controls.active_device = -1
 
 
 func _test_board_posters() -> void:
