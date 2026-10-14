@@ -45,7 +45,7 @@ var _drum: Node3D
 var _fan: Node3D
 var _straps: Node3D
 var _probe: ReflectionProbe
-var _audio: EngineAudio
+var _audio: EngineSound
 var _mats := {}
 var _seen := {}              # bike id -> the dyno run count we've seen, so a new run plays once
 var _run_bike := 0
@@ -216,14 +216,12 @@ func _start_run(bike: int) -> void:
 	_run_start = _now()
 	_wheel_angle = 0.0
 	if _audio == null:
-		_audio = EngineAudio.new()
-		_audio.position = CENTER + Vector3(0.12, 0.45, 0.6)
+		_audio = EngineSound.new()
+		_audio.position = CENTER
+		_audio.view = "room"
 		add_child(_audio)
-	_audio.cylinders = _run_build.cylinders
-	_audio.layout = _run_build.layout
-	_audio.displacement = _run_build.displacement
-	_audio.loudness = _run_build.exhaust_loudness
-	_audio.whine = _run_build.gear_whine
+	var model: BikeModel = workshop.bike_model(bike) if workshop and workshop.bike_views.has(bike) else null
+	_audio.setup(_run_build, model)
 
 
 func _update_screen(bike: int) -> void:

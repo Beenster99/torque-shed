@@ -2147,7 +2147,8 @@
 				0.1,
 				0.11
 			],
-			"type": "Inline four"
+			"type": "Inline four",
+			"crank": "crossplane"
 		},
 		"boxer_50": {
 			"name": "50 cc boxer twin",
@@ -3787,7 +3788,8 @@
 				0.31,
 				0.33
 			],
-			"whine": 0.6
+			"whine": 0.6,
+			"shift_feel": "clunk"
 		},
 		"five_wide": {
 			"name": "5-speed wide-ratio",
@@ -3808,7 +3810,8 @@
 				0.31,
 				0.33
 			],
-			"whine": 0.25
+			"whine": 0.25,
+			"shift_feel": "clunk"
 		},
 		"six_wide_enduro": {
 			"name": "6-speed wide enduro",
@@ -3830,7 +3833,8 @@
 				0.31,
 				0.33
 			],
-			"whine": 0.3
+			"whine": 0.3,
+			"shift_feel": "click"
 		},
 		"six_close": {
 			"name": "6-speed close-ratio",
@@ -3853,7 +3857,8 @@
 				0.33
 			],
 			"whine": 0.35,
-			"cassette": true
+			"cassette": true,
+			"shift_feel": "click"
 		},
 		"six_race_quickshift": {
 			"name": "6-speed race with quickshifter",
@@ -3876,7 +3881,10 @@
 				0.33
 			],
 			"whine": 0.8,
-			"cassette": true
+			"cassette": true,
+			"shift_feel": "slick",
+			"quickshifter": true,
+			"dry_clutch": true
 		}
 	},
 	"exhaust": {
