@@ -22,6 +22,7 @@ var _feed_mat: StandardMaterial3D
 var _caption: Label3D
 var _osd: Label3D
 var _osd_left := 0.0
+var _osd_bg: MeshInstance3D
 
 
 func _init(page_kind := "bike", screen_width := 2.0) -> void:
@@ -106,9 +107,20 @@ func _init(page_kind := "bike", screen_width := 2.0) -> void:
 	_osd.modulate = Color(0.45, 1.0, 0.5)
 	_osd.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_osd.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	_osd.position = Vector3(-width * 0.5 + width * 0.035, height * 0.5 - width * 0.06, 0.038)
+	# Just under the page's header bar, on a dark band so it reads over whatever is underneath.
+	_osd.position = Vector3(-width * 0.5 + width * 0.04, height * 0.5 - height * 0.16, 0.039)
 	_osd.visible = false
 	add_child(_osd)
+	_osd_bg = MeshInstance3D.new()
+	_osd_bg.mesh = QuadMesh.new()
+	var bg_mat := StandardMaterial3D.new()
+	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bg_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.85)
+	_osd_bg.material_override = bg_mat
+	_osd_bg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_osd_bg.visible = false
+	add_child(_osd_bg)
 
 
 func show_data(new_data: Dictionary) -> void:
@@ -141,6 +153,12 @@ func show_osd(text: String) -> void:
 	_osd.text = text
 	_osd.visible = true
 	_osd_left = OSD_TIME
+	# The band fits the text: about 0.62 of the font size per letter.
+	var line_h := _osd.font_size * _osd.pixel_size
+	var w := text.length() * line_h * 0.62 + line_h
+	(_osd_bg.mesh as QuadMesh).size = Vector2(w, line_h * 1.5)
+	_osd_bg.position = _osd.position + Vector3(w * 0.5 - line_h * 0.5, -line_h * 0.55, -0.0015)
+	_osd_bg.visible = true
 
 
 func osd_text() -> String:
@@ -152,6 +170,7 @@ func _process(delta: float) -> void:
 		_osd_left -= delta
 		if _osd_left <= 0.0:
 			_osd.visible = false
+			_osd_bg.visible = false
 
 
 func _draw_page() -> void:

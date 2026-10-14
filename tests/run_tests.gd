@@ -515,7 +515,7 @@ func _test_equipment_and_chains() -> void:
 		check(Equipment.spec_line(model) != "", "%s has a spec line" % model)
 	# Order a compact washer, a big repair machine, a poster, a seat and a TV.
 	var ordered := {}
-	for model in ["washer_compact", "repair_workshop", "poster_cafe", "seat_sofa", "tv_55", "bench_compact"]:
+	for model in ["washer_compact", "repair_workshop", "poster_cafe", "seat_sofa", "tv_98", "bench_compact"]:
 		Shed.request({"a": "order_furniture", "model": model})
 		for id in Shed.furniture:
 			if Shed.furniture[id]["model"] == model:
