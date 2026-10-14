@@ -147,9 +147,9 @@ func _draw() -> void:
 func _draw_badges() -> void:
 	var badges := []
 	if Shed.wearing_headphones(Shed.me()):
-		badges.append(["EAR DEFENDERS ON", "Everything's muffled. Hang them back on the hook by the dyno room door (F)."])
+		badges.append(["EAR DEFENDERS ON", "Everything's muffled. F at their hook to hang them up."])
 	if Shed.hose_holder() == Shed.me():
-		badges.append(["CARRYING THE EXHAUST HOSE", "Hold %s on the bike on the dyno to fit it." % _act_key()])
+		badges.append(["CARRYING THE EXHAUST HOSE", "Hold %s on the exhaust to fit it." % _act_key()])
 	var font := get_theme_default_font()
 	var y := size.y * 0.42
 	for b in badges:

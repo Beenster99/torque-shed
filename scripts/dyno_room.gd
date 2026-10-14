@@ -734,7 +734,12 @@ func _draw_hose(end: Transform3D) -> void:
 		var length := maxf(d.length(), 0.01)
 		var up := d / length
 		var side := up.cross(Vector3.FORWARD if absf(up.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
-		seg.transform = Transform3D(Basis(side, up, side.cross(up)).scaled(Vector3(1.0, length * 1.05, 1.0)), (prev + p) * 0.5)
+		# Each segment's own tube is sized to its length (only redrawn when the hose moves), so
+		# the rib round its middle stays a ring.
+		var cm := seg.mesh as CylinderMesh
+		if absf(cm.height - length * 1.05) > 0.005:
+			cm.height = length * 1.05
+		seg.transform = Transform3D(Basis(side, up, side.cross(up)), (prev + p) * 0.5)
 		prev = p
 	_hose_end.global_transform = end
 
@@ -813,6 +818,8 @@ func _build_haze() -> void:
 	_fumes.damping_max = 1.4
 	_fumes.gravity = Vector3(0.0, 0.25, 0.0)
 	add_child(_fumes)
+	if RenderingServer.get_current_rendering_method() != "forward_plus":
+		return   # fog volumes need Forward+; the haze particles carry it on the simpler renderer
 	var fog := FogVolume.new()
 	fog.name = "HazeFog"
 	fog.size = Vector3(HALF.x * 2.0, HEIGHT, HALF.y * 2.0)

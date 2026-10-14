@@ -41,6 +41,10 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Stopwatch start / stop (lap or reset: right mouse with the stopwatch out) | P | D-pad left |
 | Name the bike you're looking at | N | |
 | Roller door, shed lights (switches by the door) | F | Y |
+| Dyno room: its lights and the cooling fan (switches inside its door), put on or hang up the ear defenders | F | Y |
+| Dyno room: strap the bike down (at each of the 4 posts), take the extraction hose off its hook and push it over the exhaust | Hold left mouse | Hold RT or A |
+| Sandblaster: put your hands in the gloves / step back | F | Y |
+| Sandblaster: blast where you aim / turn the engine | Hold left mouse / W A S D, or hold right mouse and move the mouse | Hold RT / left stick |
 | Drain a fluid (holding a drain pan, empty can or bleed bottle); with the wrench at a chain, set its tension | Hold R or right mouse | Hold X |
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
 | Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
@@ -62,7 +66,11 @@ Chains stretch and lose their lube as you ride, faster off-road: crouch by the c
 
 **Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the general waste bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt road. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
 
-Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (free for now), equipment or a new project bike. Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (8 to 20 places), parts washers (1 to 4 parts, some faster), repair machines (1 to 4 parts at once, some faster), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters and TVs hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
+### The sandblaster
+
+A **sandblasting cabinet** (from the equipment page of the parts computer) strips rust and muck off a whole engine at once, its head, carbs and other ancillaries and all. Take the engine off the stand and put it in the cabinet, then look in through the glass and press F to put your hands in the gloves. One hand turns the engine on its turntable (W A S D, the left stick, or hold right mouse and move the mouse); the other blasts wherever you aim (hold left mouse or RT). Sand roars out of the nozzle, dust kicks back off the metal, and every patch the jet hits comes up shiny bare steel. The panel lists each part and how much of it is bare, with a ting as each one is done. Don't linger: blast one spot for too long and it pits the metal, which wears the part. Press F to step back: each part loses rust and dirt by how much of it you got to, and pays XP like restoring on the grinder. One person at the gloves at a time; the crew sees the jet and the engine turning.
+
+Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (free for now), equipment or a new project bike. Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (8 to 20 places), parts washers (1 to 4 parts, some faster), repair machines (1 to 4 parts at once, some faster), sandblasting cabinets (see below), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters and TVs hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
 
 ### The tyre changer
 
@@ -78,7 +86,7 @@ The **paint shop** is built into the shed now, through the doorway on the east s
 
 **Bins and recycling**: three wheelie bins stand against the front wall, left of the roller door, under the end of the whiteboard. **General waste** (black) takes anything, and it's where you tip old fluid out of a can. **Plastic** recycling (blue) takes oil and brake fluid bottles, drain pans, bleed bottles, plastic cases and top boxes. **Metal** recycling (green) takes frames, engines, wheels, discs, exhausts, chains, stands, jerry cans and chain lube cans. Every part is made of something (metal, plastic, rubber, carbon fibre, electronics, fabric and so on), and its info panel says which bin it goes in. Tyres are rubber and carbon parts can't be recycled, so they go in general waste. A recycling bin won't take the wrong material, and it tells you why ("That's rubber: general waste."). It also won't take a part still in its box, a container with fluid still in it, or an engine with parts still fitted. Look at a bin while holding a part to see whether it fits. Hold the work button to throw the part in, and it's gone. Recycling earns more XP than binning.
 
-**TVs and channels**: the wall TVs now come in 86", 98", 110" and 120", plus a 136" video wall. The smallest is as big as the screens over the middle bays and the biggest matches the crew board. Older, smaller TVs in a saved shed come back as the nearest new size. When you hang a big TV near a corner, it slides along the wall until it clears the corner. Every TV, the screen over each bay and the crew board has channels. Look at one and press **R** (right mouse, X on a pad) for the next channel or **T** (B on a pad) to go back one. The channel number and name show in the corner for a moment. The channels are:
+**TVs and channels**: the wall TVs now come in 120" and 128", plus a 136" video wall. The smallest is as big as the screens over the bays and the biggest matches the crew board. Older, smaller TVs in a saved shed come back as the nearest new size. When you hang a big TV near a corner, it slides along the wall until it clears the corner. Every TV, the screen over each bay and the crew board has channels. Look at one and press **R** (right mouse, X on a pad) for the next channel or **T** (B on a pad) to go back one. The channel number and name show in the corner for a moment. The channels are:
 - **Live riding**: a chase camera on whoever is out riding. With two or more out, there's a stop for each rider. With nobody out, it shows which bikes are ready to ride.
 - **Crew board**: everyone in the shed and what they're doing.
 - **XP goals**: everyone's level and XP bar, and your own goals and points.
@@ -93,7 +101,13 @@ The **radio** on the shelf above the workbench streams internet radio stations (
 
 ### The dyno room
 
-Through the doorway in the back wall, between bays 2 and 3, is the **dyno room**: a rolling road set into the floor with a drum under the rear wheel, a clamp for the front, strap-down posts, a big cooling fan, the dyno desk and a wall screen. Wheel a bike in (hold F on it) and let go of it near the drum: it snaps onto the rig and is strapped down. Wheel it off again the same way.
+Through the doorway in the back wall, between bays 2 and 3, is the **dyno room**: a rolling road set into the floor with a drum under the rear wheel, a clamp for the front, strap-down posts, a big cooling fan, the dyno desk and a wall screen. The doorway is just wide enough to wheel a bike through. The room has its **own light switch** inside the door, next to the **fan switch**.
+
+Wheel a bike in (hold F on it) and let go of it near the drum: it snaps onto the rig. Before it will run it has to be **strapped down**: hold the work button at each of the four strap posts until the strap is done up (hold it again to undo one). Undo all four and take the hose off before you wheel it out.
+
+- **Extraction hose**: it hangs on its hook on the east wall. Hold the work button at the hook to take it, then at the bike's exhaust to push it on; it stays drawn on the tailpipe. Hold the button on it again to take it off and hang it back up. Run the bike without it and the room fills with exhaust haze, which clears slowly.
+- **Cooling fan**: switch it on and it spins up with a roar. Without it the engine heats up run after run and makes less power; the graph shows the engine temperature. The fan cools it down again between runs.
+- **Ear defenders**: they hang by the door. Press F to put them on and the shed goes quiet and muffled; the badge in the corner says you're wearing them, and the crew sees them on your head. F at the hook hangs them back up.
 
 Press F at the **dyno desk** to tune the bike on the rig, or any bike within about 10 m. Every change goes through the host, so the whole crew sees the same tune, and riding uses it too:
 
@@ -115,11 +129,13 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Unbolting or bolting, taking a part off, a tuning change, tipping old fluid | 2 |
 | Fitting a part, recycling plastic | 3 |
 | Chain tension, taking a tyre off | 4 |
+| Strapping a bike down on the dyno (each strap) | 1 |
+| Fitting the dyno's extraction hose | 2 |
 | Pouring or draining fluids, a dyno run, recycling metal | 5 |
 | Scrubbing a part with the brush, a part coming out of the parts washer, lubing a chain (x how good the job was) | 6 |
 | Pressure washing a whole bike clean (more for a muddier one; 12 more, once, for a real mud monster) | 8+ |
 | Drilling and trimming a part | 8 |
-| Restoring a part on the grinder, starting a scratch build | 10 |
+| Restoring a part on the grinder, sandblasting a part (x how much came up bare), starting a scratch build | 10 |
 | Fitting a tyre (x quality) | 10 |
 | Spraying a part (x how good the paint job is) | 12 |
 | A part brought from tired (under 60%) to like new (95%) | 4, once |
@@ -170,7 +186,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 
 The suspension now moves visibly over bumps and dirt ruts, the rear shocks stretch and squash with the swingarm, and landings from jumps soak up instead of bouncing. **Tyres come in widths** (for example 120/70, 160/60, 180/55, 190/50): wider tyres grip more on tarmac and less in mud, a wide front tyre steers slower, and each wheel rim takes a range of widths and one rim size (the part info shows it). Tyres and rims are drawn at their real width and profile.
 
-Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L still picks low beam, high beam or off. At night the beam shows as a dusty, grainy shaft with specks drifting through it, thicker on high beam and streaming past as you ride.
+Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L still picks low beam, high beam or off. At night the beam lights the night air softly, a faint glow in the mist rather than a solid cone, a little stronger on high beam, with a few specks drifting through it. (On the simpler renderer for older graphics cards it's a faint soft glow instead.)
 
 You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The engine sound now follows the engine: cylinders, capacity, the exhaust and the gearbox's whine. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
 
@@ -203,6 +219,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime |
 | `scripts/tyre_game.gd` | The tyre-fitting game on the tyre changer |
+| `scripts/blast_game.gd`, `blast_marks.gd` | The sandblasting game in the blast cabinet, and the bare-metal patches it leaves |
 | `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |

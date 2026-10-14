@@ -135,6 +135,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	lights_on = true
 	screens = {}
 	dyno = dyno_defaults()
+	_dyno_busy_until = 0
 	items.clear()
 	crew.clear()
 	board = BoardData.empty()
@@ -278,6 +279,7 @@ func join_remote() -> void:
 	radio = {"on": false, "station": 0}
 	screens = {}
 	dyno = dyno_defaults()
+	_dyno_busy_until = 0
 	items.clear()
 	crew.clear()
 	active = true
@@ -291,6 +293,7 @@ func stop() -> void:
 	radio = {"on": false, "station": 0}
 	screens = {}
 	dyno = dyno_defaults()
+	_dyno_busy_until = 0
 	active = false
 	bikes.clear()
 	items.clear()
@@ -2749,6 +2752,7 @@ func _sync(state: Dictionary) -> void:
 	lights_on = bool(state.get("lights", true))
 	screens = state["screens"] if state.get("screens") is Dictionary else {}
 	dyno = dyno_defaults()
+	_dyno_busy_until = 0
 	if state.get("dyno") is Dictionary:
 		dyno.merge(state["dyno"], true)
 	_next_id = int(state.get("next", 1))

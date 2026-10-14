@@ -557,7 +557,7 @@ func light_on() -> bool:
 
 ## How strong the stand-in glow is (no volumetric fog): faint, and only after dusk.
 static func beam_glow(night: float, high: bool) -> float:
-	return 0.035 * smoothstep(0.2, 1.0, night) * (1.4 if high else 1.0)
+	return 0.07 * smoothstep(0.2, 1.0, night) * (1.4 if high else 1.0)
 
 
 ## How brightly the beam is lighting the night fog right now (light energy x fog energy).

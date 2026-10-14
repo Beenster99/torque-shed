@@ -15,49 +15,75 @@ func _ready() -> void:
 	main.menu.new_shed = true
 	main._start_session()
 	await _frames(20)
-	# Milestone B: a character with some XP, upgraded tools and skills.
-	Progress.path = "user://profile_shots.json"
-	Progress.select("Shots")
-	Progress.profile["xp"] = Progress.xp_for_level(12) + 200
-	for t in ["wrench", "wrench", "wrench", "wrench", "spray", "spray", "brush"]:
-		Progress.upgrade_tool(t)
-	for k in ["torque_feel", "torque_feel", "engine_whisperer", "steady_hand", "balance"]:
-		Progress.buy_skill(k)
 	var w: Walker = main.walker
-	w.set_tool("wrench")
-	main.hud.add_popup(6, "Cleaning")
-	main.hud.add_popup(12, "Spraying")
-	Progress.leveled_up.emit(12)
-	await _look_from(Workshop.CENTER + Vector3(0.0, 0.0, 3.0), Workshop.CENTER + Vector3(0.0, 1.2, -5.0), "b1_hud_wrench_stage4")
-	w.set_tool("spray")
-	await _frames(5)
-	await _shot("b2_spray_stage2")
-	main.menu.show_pause()
-	main.menu._tabs.current_tab = main.menu._tabs.get_tab_count() - 1
-	await _frames(10)
-	await _shot("b3_character_tab")
-	var scroll: ScrollContainer = main.menu._tabs.get_current_tab_control()
-	scroll.scroll_vertical = 700
-	await _frames(5)
-	await _shot("b4_character_skills")
-	scroll.scroll_vertical = 2000
-	await _frames(5)
-	await _shot("b5_character_goals")
-	main.menu.hide()
-	await _frames(5)
-	# Bins by the roller door, the tyre changer, and a bay screen on the XP goals channel.
-	await _look_from(Vector3(-3.3, 0.0, 67.4), Vector3(-3.6, 1.0, 70.4), "b6_bins")
-	var cx: Vector3 = Workshop.CHANGER_XF.origin
-	await _look_from(cx + Vector3(1.9, 0.0, 0.4), cx + Vector3(0.0, 0.9, 0.0), "b7_tyre_changer")
-	for i in 8:
-		if Shed.screen_channel("bay1")["ch"] == "xp":
-			break
-		Shed.request({"a": "tv_channel", "screen": "bay1", "step": 1})
-		await _frames(2)
-	await _look_from(Workshop.CENTER + Vector3(-1.5, 0.0, 0.5), Workshop.CENTER + Vector3(-1.5, 2.2, -5.5), "b8_tv_xp_channel")
-	# High beam at night: dusty beam.
-	Daylight.current.set_time(22.0)
+	# Full-width bay screens either side of the narrower dyno room doorway.
+	await _look_from(Workshop.CENTER + Vector3(0.0, 0.0, 4.5), Vector3(0.0, 1.9, 59.2), "c1_bay_screens_doorway")
+	# The dyno room: a bike strapped down at all four posts, the extraction hose on its
+	# exhaust, the fan running, and the ear defenders on their hook by the door.
 	var faithful := _bike_named("Old Faithful")
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	var near := DynoRoom.rig_transform().translated(Vector3(0.2, 0.0, 0.4))
+	Shed.request({"a": "move_bike", "bike": faithful, "xf": near})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": near})
+	for i in 4:
+		Shed.request({"a": "dyno_strap", "point": i})
+	Shed.request({"a": "dyno_hose", "to": "held"})
+	Shed.request({"a": "dyno_hose", "to": "bike"})
+	Shed.request({"a": "dyno_fan", "on": true})
+	await _frames(10)
+	await _look_from(Vector3(-3.4, 0.0, 53.0), Vector3(0.6, 0.8, 57.2), "c2_dyno_room_strapped_hose")
+	await _look_from(Vector3(3.6, 0.0, 58.6), Vector3(-0.4, 0.7, 54.4), "c3_dyno_fan_and_hose")
+	await _look_from(Vector3(-1.0, 0.0, 57.4), Vector3(-1.7, 1.45, 59.2), "c4_dyno_switches_and_ear_defenders")
+	Shed.request({"a": "dyno_headphones", "on": true})
+	await _frames(10)
+	await _look_from(Vector3(-2.6, 0.0, 57.8), Vector3(0.0, 0.8, 55.0), "c5_wearing_ear_defenders")
+	Shed.request({"a": "dyno_headphones", "on": false})
+	Shed.request({"a": "dyno_hose", "to": "held"})
+	Shed.request({"a": "dyno_hose", "to": "hook"})
+	for i in 4:
+		Shed.request({"a": "dyno_strap", "point": i})
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	var home := Workshop.CENTER + Vector3(-4.0, 0.0, 1.0)
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(), home)})
+	# The sandblaster, mid-blast: the barn find's engine turning on the turntable, bare metal
+	# coming up where the jet has been.
+	Shed.request({"a": "order_furniture", "model": "blaster_cabinet"})
+	var cab := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "blaster":
+			cab = id
+	var spot := "blast_%d_0" % cab
+	var at := Workshop.CENTER + Vector3(1.5, 0.0, 1.8)
+	Shed.request({"a": "grab", "furniture": cab})
+	Shed.request({"a": "release", "furniture": cab, "xf": Transform3D(Basis(), at)})
+	var engine := 0
+	for s in Shed.stand_spots():
+		if engine == 0 and Shed.is_engine(Shed.item_at_spot(s)):
+			engine = Shed.item_at_spot(s)
+			Shed.request({"a": "take", "spot": s})
+	Shed.request({"a": "place", "spot": spot})
+	await _frames(10)
+	var view: EquipmentView = main.workshop.furniture_nodes[cab]
+	var pivot: Node3D = view.get_node("Pivot")
+	await _look_from(at + Vector3(1.6, 0.0, 2.2), at + Vector3(0.0, 0.9, 0.0), "c6_sandblaster_cabinet")
+	await _look_from(at + Vector3(0.0, 0.0, 0.95), pivot.global_position, "c7_sandblaster_ready")
+	Shed.request({"a": "blast_use", "spot": spot, "on": true})
+	await _frames(5)
+	Input.action_press("act")
+	for i in 420:
+		await get_tree().physics_frame
+		if w.blast:
+			w.blast.turn(Vector2(0.012, 0.004 * sin(i * 0.05)))
+		if i % 40 == 0:
+			w._look(0.0, 0.03 if (i / 40) % 2 == 0 else -0.03)
+	await _shot("c8_sandblaster_mid_blast")
+	Input.action_release("act")
+	await _frames(10)
+	await _shot("c9_sandblaster_bare_patches")
+	w.finish_blast()
+	await _frames(10)
+	# The headlight at night: a soft beam in the night air rather than a solid cone.
+	Daylight.current.set_time(22.0)
 	main._try_mount(faithful)
 	await _frames(10)
 	main.bike.start_engine()
@@ -65,9 +91,9 @@ func _ready() -> void:
 	main.bike.place(road_t.origin, road_t.basis.get_euler().y)
 	main.camera.set_mode(ChaseCamera.Mode.CHASE)
 	await _frames(40)
+	await _shot("c10_low_beam_night")
 	main.bike.cycle_beam()
 	await _frames(20)
-	await _shot("b9_high_beam_dust")
-	DirAccess.remove_absolute(Progress.path)
+	await _shot("c11_high_beam_night")
 	SaveGame.delete_slot("shots")
 	get_tree().quit()
