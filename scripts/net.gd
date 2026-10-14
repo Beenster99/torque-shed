@@ -13,6 +13,9 @@ signal disconnected
 signal internet_status_changed
 ## The host's clock (hours, and hours per second it runs at), for Daylight on clients.
 signal time_received(hours: float, rate: float)
+## The host's weather (see Weather): the state it's heading for, the one it's leaving, how far
+## the change has got (0..1) and how wet the roads are (0..1).
+signal weather_received(state: String, from: String, blend: float, wet: float)
 
 ## Whether friends outside your network can reach your shed: "" (not hosting), "checking",
 ## "open" (the router opened the port for us via UPnP) or "closed" (it has to be forwarded by hand).
@@ -296,3 +299,14 @@ func _state(state: PackedFloat32Array) -> void:
 @rpc("authority", "call_remote", "unreliable_ordered")
 func _time(hours: float, rate: float) -> void:
 	time_received.emit(hours, rate)
+
+
+## Host only: tell everyone the weather.
+func send_weather(state: String, from: String, blend: float, wet: float) -> void:
+	if is_host() and not players.is_empty():
+		_weather.rpc(state, from, blend, wet)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _weather(state: String, from: String, blend: float, wet: float) -> void:
+	weather_received.emit(state, from, blend, wet)

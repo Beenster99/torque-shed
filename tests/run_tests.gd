@@ -117,6 +117,12 @@ func _run_all() -> void:
 	_test_geo_shed()
 	_test_blueprint_build()
 	await _test_geometry_session()
+	print("Soft headlight, tyre sounds, debug tab, menu rows and weather")
+	await _test_soft_beam()
+	_test_skid_sounds()
+	_test_debug_tab()
+	await _test_weather()
+	await _test_weather_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -4795,3 +4801,265 @@ func _test_geometry_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+
+## The headlight is a soft core that lights the road and a wide, dim flood round it that is the
+## only light in the fog: both fade from the middle, with a blurred round projector, so neither
+## the pool on the road nor the haze in the air has an edge.
+func _test_soft_beam() -> void:
+	var env := Environment.new()
+	var sun := DirectionalLight3D.new()
+	add_child(sun)
+	var dl := Daylight.new()
+	add_child(dl)
+	var cycle := Settings.day_night_cycle
+	Settings.day_night_cycle = false
+	dl.setup(env, sun)
+	dl.set_time(0.0)
+	var fx := BikeEffects.new()
+	add_child(fx)
+	fx.setup(Vector3(0.2, 0.4, 0.8), Vector3(0.0, 0.0, 0.7), Vector3(0.0, 1.0, -0.8), 1200.0)
+	fx.beam_mode = 1
+	fx.update(0.016, 10.0, 0.3, true, 1.0, "tarmac", true, 0.0)
+	var core: SpotLight3D = fx._beam
+	var flood: SpotLight3D = fx._flood
+	check(core != null and flood != null and flood.get_parent() == core, "the headlight has a core and a flood round it")
+	check(flood.spot_angle >= core.spot_angle + 10.0 and flood.light_energy < core.light_energy * 0.5,
+		"the flood is much wider (%.0f vs %.0f degrees) and dimmer" % [flood.spot_angle, core.spot_angle])
+	check(core.spot_angle_attenuation < 1.0 and flood.spot_angle_attenuation < 0.5,
+		"both fade from the middle outwards (falloff %.2f / %.2f), nothing left at the edge" % [core.spot_angle_attenuation, flood.spot_angle_attenuation])
+	check(core.light_projector is GradientTexture2D and flood.light_projector == core.light_projector,
+		"a blurred round projector softens the pool of light on the road")
+	var tex := BikeEffects.soft_spot_texture()
+	var mid := tex.gradient.sample(0.0).r
+	var rim := tex.gradient.sample(1.0).r
+	var half := tex.gradient.sample(0.5).r
+	check(tex.fill == GradientTexture2D.FILL_RADIAL and is_equal_approx(tex.fill_to.x - tex.fill_from.x, 0.5),
+		"a round spot that reaches black at the cone's edge")
+	check(mid > 0.9 and rim < 0.05 and half > rim and half < mid, "the projector fades smoothly from white to black (%.2f, %.2f, %.2f)" % [mid, half, rim])
+	check(core.light_volumetric_fog_energy == 0.0 and flood.light_volumetric_fog_energy > 0.0,
+		"only the soft flood lights the night air, never the bright core")
+	check(fx.beam_fog() > 0.5 and fx.beam_fog() <= BikeEffects.BEAM_FOG_LOW + 0.01, "the haze is faint (%.2f)" % fx.beam_fog())
+	check(env.volumetric_fog_density <= 0.0095, "the night air is only lightly hazy (%.4f)" % env.volumetric_fog_density)
+	fx.beam_mode = 2
+	fx.update(0.016, 10.0, 0.3, true, 1.0, "tarmac", true, 0.0)
+	check(flood.spot_angle > core.spot_angle and fx.beam_fog() <= BikeEffects.BEAM_FOG_HIGH + 0.01,
+		"high beam: the flood still spreads round the narrower core, still faint (%.2f)" % fx.beam_fog())
+	dl.set_time(12.0)
+	fx.update(0.016, 10.0, 0.3, true, 1.0, "tarmac", true, 0.0)
+	check(fx.beam_fog() < 0.01, "by day nothing shows in the air")
+	Settings.day_night_cycle = cycle
+	fx.queue_free()
+	dl.queue_free()
+	sun.queue_free()
+	await get_tree().process_frame
+
+
+## Tyre sounds: a long skid settles to a quieter screech; the moment grip breaks the tyre barks
+## loudly, harder the faster grip goes.
+func _test_skid_sounds() -> void:
+	var start := BikeEffects.screech_gain(1.0, 0.0, 1.0)
+	var held := BikeEffects.screech_gain(1.0, 3.0, 0.0)
+	check(held < start * 0.6 and held <= 0.3, "a long skid is much quieter (%.2f) than the moment it starts (%.2f)" % [held, start])
+	check(BikeEffects.screech_gain(0.3, 3.0, 0.0) < held, "a light slide is quieter still")
+	check(BikeEffects.CHIRP_MAX_DB > 0.0 and BikeEffects.CHIRP_MAX_DB - BikeEffects.CHIRP_MIN_DB >= 10.0,
+		"the bark when grip breaks is loud, and scales with how suddenly it goes")
+	var fx := BikeEffects.new()
+	add_child(fx)
+	fx.set_screech(0.0)
+	fx.set_screech(0.0)
+	check(fx.chirp_count() == 0, "no sound while the tyres grip")
+	fx.set_screech(0.9)
+	check(fx.chirp_count() == 1 and fx.screeching(), "grip breaking barks once and the squeal starts")
+	for i in 5:
+		fx.set_screech(0.9)
+	check(fx.chirp_count() == 1, "a slide that goes on doesn't keep barking")
+	var wav := Sfx.stream("chirp")
+	check(wav != null and wav.loop_mode == AudioStreamWAV.LOOP_DISABLED and wav.get_length() < 0.6, "the bark is a short one-shot")
+	fx.free()
+
+
+## The Esc menu's Debug tab: reset or max your XP and money, reset everyone's XP, and empty the
+## garage's account, every reset behind a confirm dialog. Money is kept in your profile and the
+## garage's in the shed save, and the TV money pages show both.
+func _test_debug_tab() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_debug_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	Shed.start_new("Tester", 5)
+	Progress.select("Tester")
+	var me := Shed.me()
+	check(Progress.money() == 0 and Shed.garage_money == 0, "money starts at nothing, yours and the garage's")
+	var tab := DebugTab.new()
+	add_child(tab)
+	Progress.profile["xp"] = Progress.xp_for_level(6)
+	Progress.profile["tools"] = {"wrench": 2}
+	tab.press("Reset my XP")
+	check(tab.asking() and int(Progress.profile["xp"]) > 0, "Reset my XP asks first")
+	tab.answer(false)
+	check(not tab.asking() and Progress.level() == 6, "cancel leaves it alone")
+	tab.press("Reset my XP")
+	tab.answer(true)
+	check(int(Progress.profile["xp"]) == 0 and Progress.level() == 1 and Progress.tool_stage(me, "wrench") == 0,
+		"confirmed: back to level 1, no upgrades")
+	tab.press("Max my XP")
+	check(Progress.level() == Progress.MAX_LEVEL and Progress.skill_points() == Progress.MAX_LEVEL - 1, "Max my XP: top level, every point to spend")
+	tab.press("Reset everyone's XP")
+	check(tab.asking(), "resetting everyone asks first")
+	tab.answer(true)
+	check(Progress.level() == 1, "solo or hosting, everyone's XP goes (yours here; the host tells each client)")
+	tab.press("Max my money")
+	check(Progress.money() == Progress.MAX_MONEY and int(TvChannels.money_data(me)["cash"]) == Progress.MAX_MONEY,
+		"Max my money, and the My money page shows it")
+	check(int(Progress.summary(me)["money"]) == Progress.MAX_MONEY and int(Progress._clean_summary(Progress.own_summary())["money"]) == Progress.MAX_MONEY,
+		"your money goes to the crew in your summary")
+	Progress.save_profile()
+	Progress.select("Somebody else")
+	check(Progress.money() == 0, "another name has its own money")
+	Progress.select("Tester")
+	check(Progress.money() == Progress.MAX_MONEY, "money is kept in the profile")
+	tab.press("Reset my money")
+	check(tab.asking() and Progress.money() == Progress.MAX_MONEY, "Reset my money asks first")
+	tab.answer(true)
+	check(Progress.money() == 0, "and empties your pocket")
+	Shed.garage_money = 5000
+	check(int(TvChannels.garage_data()["cash"]) == 5000, "the Garage money page shows the shed's account")
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	tab.press("Reset garage money")
+	check(tab.asking() and Shed.garage_money == 5000, "Reset garage money asks first")
+	tab.answer(true)
+	check(Shed.garage_money == 0, "and empties the shed's account")
+	Shed.load_state(copy, "Tester")
+	check(Shed.garage_money == 5000, "the garage's money is kept in the shed save")
+	copy.erase("garage_money")
+	Shed.load_state(copy, "Tester")
+	check(Shed.garage_money == 0, "a shed saved before money has an empty account")
+	tab.free()
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+## The weather on its own: each kind's look, changing by itself or held, wet roads and grip,
+## and how Daylight greys the sky and thickens the fog.
+func _test_weather() -> void:
+	var kept := [Settings.weather, Settings.weather_now, Settings.day_night_cycle]
+	Settings.weather = "clear"
+	var env := Environment.new()
+	var sun := DirectionalLight3D.new()
+	add_child(sun)
+	var dl := Daylight.new()
+	add_child(dl)
+	Settings.day_night_cycle = false
+	var w := Weather.new()
+	add_child(w)
+	dl.setup(env, sun)
+	dl.set_time(12.0)
+	check(Weather.current == w and w.state == "clear" and Weather.rain_level() == 0.0, "held clear, it's clear")
+	var clear_fog := env.fog_density
+	var clear_sun := sun.light_energy
+	check(Weather.grip_mult("tarmac") == 1.0, "dry roads grip fully")
+	Settings.weather = "rain"
+	await get_tree().process_frame
+	check(w.state == "rain" and w.blend < 0.5 and w.rain < 0.5, "held at rain, it turns to rain gradually")
+	w.change_to("rain", true)
+	dl.set_time(12.0)
+	check(Weather.rain_level() == 1.0 and Weather.wetness() == 1.0 and Weather.cover_level() == 1.0, "rain: overcast, raining, soaked")
+	check(Weather.grip_mult("tarmac") < 0.9 and Weather.grip_mult("tarmac") > 0.75, "wet tarmac grips a bit less (%.2f)" % Weather.grip_mult("tarmac"))
+	check(sun.light_energy < clear_sun * 0.5 and sun.shadow_opacity < 0.6, "the sun is dimmed behind the cloud, shadows soft")
+	check(env.fog_density > clear_fog and float(dl._sky_mat.get_shader_parameter("cloud_cover")) == 1.0, "the sky clouds over and the air hazes")
+	Settings.weather = "fog"
+	w.change_to("fog", true)
+	dl.set_time(12.0)
+	check(env.fog_density > 0.02 and env.fog_sky_affect > 0.8, "fog: thick depth fog, on every renderer (%.3f)" % env.fog_density)
+	check(Weather.rain_level() == 0.0, "no rain in the fog")
+	# Drying out after rain.
+	w.wet = 1.0
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(w.wet < 1.0, "after the rain the roads slowly dry")
+	# Changing by itself: when a spell ends it moves on to one of the kinds that can follow.
+	Settings.weather = "auto"
+	w.change_to("clear", true)
+	w._spell = 0.0
+	await get_tree().process_frame
+	check(w.state in Weather.NEXT["clear"] and w.state != "clear", "left to itself, clear skies turn to %s" % w.state)
+	check(w._spell >= Weather.SPELL.x - 1.0, "and the new spell lasts a few minutes")
+	var data := w.save_data()
+	w.change_to("clear", true)
+	w.restore(data)
+	check(w.state == str(data["state"]) and w.blend == 1.0, "saved weather comes back")
+	check(Weather.state_name("rain") == "Rain" and Weather.STATES.size() == 4, "four kinds of weather")
+	Settings.weather = kept[0]
+	Settings.weather_now = kept[1]
+	Settings.day_night_cycle = kept[2]
+	w.queue_free()
+	dl.queue_free()
+	sun.queue_free()
+	await get_tree().process_frame
+
+
+## The weather in the shed: rain round the camera outside but never drawn in the rooms, the
+## rain heard outside and on the roof inside, darker shinier roads, the Esc menu setting and
+## its saved state. And the day length row in the menu is one normal line.
+func _test_weather_session() -> void:
+	var kept := [Settings.weather, Settings.weather_now]
+	SaveGame.slot_override = "test_weather"
+	SaveGame.delete_slot("test_weather")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	var w: Weather = main.world.weather
+	check(w != null and Weather.current == w, "the world has weather")
+	Settings.weather = "rain"
+	w.change_to("rain", true)
+	main.walker.place(Transform3D(Basis(), Vector3(0.0, 0.1, 85.0)))
+	for i in 6:
+		await get_tree().process_frame
+	check(not w.indoors and w._rain_mesh.visible and w._outside.playing and not w._roof.playing, "outside in the rain: rain falls round you and you hear it")
+	check(Weather.raining_at(Vector3(0.0, 0.0, 85.0)) and not Weather.raining_at(Workshop.CENTER), "it rains in the yard, not in the shed")
+	var shelters: PackedVector4Array = w._rain_mat.get_shader_parameter("shelters")
+	var c := Workshop.CENTER
+	check(shelters.size() == 4 and shelters[0].x < c.x and shelters[0].z > c.x and shelters[0].y < c.z and shelters[0].w > c.z,
+		"no drops are drawn inside the shed's rooms")
+	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.1, 1.0)))
+	for i in 90:
+		await get_tree().process_frame
+	check(w.indoors and w._roof.playing and not w._outside.playing, "inside the shed you hear it drumming on the roof instead")
+	var road: Dictionary = main.world.wet_surfaces.filter(func(e): return float(e["shine"]) == 1.0)[0]
+	var mat: StandardMaterial3D = road["mat"]
+	check(mat.albedo_color.v < (road["color"] as Color).v and mat.roughness < float(road["rough"]) - 0.3,
+		"the tarmac is darker and shinier in the wet")
+	# The Esc menu: the weather setting, and the day length on one normal line.
+	main.menu.show_pause()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var menu: MainMenu = main.menu
+	check(menu._weather.selected == Weather.STATES.find("rain") + 1, "the menu shows the weather held at rain")
+	menu._weather.select(0)
+	menu._weather.item_selected.emit(0)
+	check(Settings.weather == "auto", "and can leave it to change by itself")
+	var row := menu._day_length.get_parent() as Control
+	check(row.size.y < 60.0, "the day length row is one normal line (%.0f px tall)" % row.size.y)
+	var label: Label = row.get_child(1)
+	check(label.autowrap_mode == TextServer.AUTOWRAP_OFF and label.size.x > 60.0, "its label reads across, not down")
+	main._close_menu()
+	# Saved with the shed.
+	Settings.weather = "fog"
+	w.change_to("fog", true)
+	var data: Dictionary = main.saver.capture()
+	check(str(data["weather"]["state"]) == "fog" and str(data["weather_mode"]) == "fog", "the save keeps the weather")
+	Settings.weather = "clear"
+	w.change_to("clear", true)
+	main.saver.restore(data)
+	check(w.state == "fog" and Settings.weather == "fog", "and puts it back")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_weather")
+	SaveGame.slot_override = ""
+	Settings.weather = kept[0]
+	Settings.weather_now = kept[1]

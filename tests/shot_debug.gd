@@ -20,6 +20,11 @@ func _ready() -> void:
 		await _beam_shots()
 		get_tree().quit()
 		return
+	if "--weather" in OS.get_cmdline_user_args():
+		await _weather_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -156,3 +161,31 @@ func _geo_shots() -> void:
 	Shed.changed.emit()
 	await _frames(10)
 	await _look_from(bay.origin + Vector3(-1.9, 0.0, 2.6), bay.origin + Vector3(0.0, 0.7, 0.0), "g6_half_built_with_ghosts")
+
+
+## The weather from the yard: clear, cloudy, fog and rain at midday, rain from inside the shed
+## looking out of the roller door, rain at dusk, and the Esc menu's settings and Debug tabs.
+## `-- --weather` takes just these.
+func _weather_shots() -> void:
+	Settings.day_night_cycle = false
+	Daylight.current.set_time(13.0)
+	var yard := Vector3(6.0, 0.0, 92.0)
+	var shed := Workshop.CENTER + Vector3(0.0, 1.5, 0.0)
+	for st in Weather.STATES:
+		Settings.weather = st
+		Weather.current.change_to(st, true)
+		await _frames(10)
+		await _look_from(yard, shed, "w_%s" % st)
+	await _look_from(Vector3(10.0, 0.0, 118.0), Vector3(-6.0, 1.0, 98.0), "w_rain_wet_yard")
+	await _look_from(Workshop.CENTER + Vector3(0.0, 0.0, 1.5), Vector3(0.0, 1.4, 90.0), "w_rain_from_inside")
+	Daylight.current.set_time(19.2)
+	await _frames(10)
+	await _look_from(yard, shed, "w_rain_dusk")
+	Settings.weather = "auto"
+	main.menu.show_pause()
+	await _frames(10)
+	await _shot("w_menu_settings")
+	main.menu._tabs.current_tab = main.menu._tabs.get_tab_idx_from_control(main.menu.debug)
+	await _frames(10)
+	await _shot("w_menu_debug")
+	main._close_menu()

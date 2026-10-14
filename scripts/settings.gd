@@ -14,6 +14,9 @@ var units := "metric"     # or "imperial"
 var day_night_cycle := true
 var day_length := 120      # real minutes per 24 h game day
 var time_of_day := 9.0     # hours; kept up to date while playing so the clock carries on next time
+## Weather: "auto" (it changes by itself) or held at one of Weather.STATES.
+var weather := "auto"
+var weather_now := "clear"   # the weather when last played, so it carries on next time
 var snap_placement := true # equipment you carry snaps square and flush to walls and corners
 
 
@@ -85,6 +88,8 @@ func load_settings() -> void:
 		day_night_cycle = cfg.get_value("world", "day_night_cycle", day_night_cycle)
 		day_length = int(cfg.get_value("world", "day_length", day_length))
 		time_of_day = float(cfg.get_value("world", "time_of_day", time_of_day))
+		weather = str(cfg.get_value("world", "weather", weather))
+		weather_now = str(cfg.get_value("world", "weather_now", weather_now))
 		if cfg.has_section("bindings"):
 			for action in cfg.get_section_keys("bindings"):
 				var codes = cfg.get_value("bindings", action, [])
@@ -106,6 +111,8 @@ func save_settings() -> void:
 	cfg.set_value("world", "day_night_cycle", day_night_cycle)
 	cfg.set_value("world", "day_length", day_length)
 	cfg.set_value("world", "time_of_day", time_of_day)
+	cfg.set_value("world", "weather", weather)
+	cfg.set_value("world", "weather_now", weather_now)
 	# Only what differs from the defaults is kept, so new defaults reach everything else.
 	for a in ACTIONS:
 		var codes := binding_codes(a[0])

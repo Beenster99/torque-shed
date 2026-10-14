@@ -50,6 +50,9 @@ var _day_length: OptionButton
 var _time: HSlider
 var _time_label: Label
 var _time_note: Label
+var _weather: OptionButton
+var _weather_now: Label
+var debug: DebugTab
 ## Set when the player chose "New shed": the next solo or hosted start begins a fresh shed.
 var new_shed := false
 var _solo: Button
@@ -202,6 +205,9 @@ func _ready() -> void:
 	# Your level, tool upgrades, skills tree and goals (see Progress).
 	var character := CharacterTab.new()
 	_tabs.add_child(character)
+	# Testing helpers: reset or max out XP and money.
+	debug = DebugTab.new()
+	_tabs.add_child(debug)
 
 
 func _process(_delta: float) -> void:
@@ -269,8 +275,10 @@ func _build_time_settings(settings: VBoxContainer) -> void:
 	_cycle.button_pressed = Settings.day_night_cycle
 	_cycle.toggled.connect(func(v): Settings.day_night_cycle = v)
 	row.add_child(_cycle)
-	row.add_child(UITheme.label("Day length", 15))
+	# One line, not wrapped: a wrapping label squeezed into a row stands its words on end.
+	row.add_child(_row_label("Day length"))
 	_day_length = OptionButton.new()
+	_day_length.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for m in Daylight.DAY_LENGTHS:
 		_day_length.add_item("%d minutes" % m if m < 60 else ("1 hour" if m == 60 else "%d hours" % (m / 60)))
 	if not Daylight.DAY_LENGTHS.has(Settings.day_length):
@@ -298,10 +306,40 @@ func _build_time_settings(settings: VBoxContainer) -> void:
 			Settings.time_of_day = v)
 	time_row.add_child(_time)
 	_time_note = UITheme.label("set by the host", 14, Color(1, 1, 1, 0.55))
+	_time_note.autowrap_mode = TextServer.AUTOWRAP_OFF
 	time_row.add_child(_time_note)
 	settings.add_child(time_row)
+	_build_weather_settings(settings)
 	_refresh_time_settings(true)
 
+
+## A label for the start of a settings row: one line, centred on the row.
+func _row_label(text: String) -> Label:
+	var l := UITheme.label(text, 15)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return l
+
+
+## Weather: changing by itself, or held at one kind. On a co-op client the host's weather rules.
+func _build_weather_settings(settings: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	row.add_child(_row_label("Weather"))
+	_weather = OptionButton.new()
+	_weather.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_weather.add_item("Changes by itself")
+	for st in Weather.STATES:
+		_weather.add_item("Always " + Weather.state_name(st).to_lower())
+	_weather.selected = maxi(Weather.STATES.find(Settings.weather) + 1, 0)
+	_weather.item_selected.connect(func(i):
+		Settings.weather = "auto" if i == 0 else Weather.STATES[i - 1]
+		Settings.save_settings())
+	row.add_child(_weather)
+	_weather_now = _row_label("")
+	_weather_now.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	row.add_child(_weather_now)
+	settings.add_child(row)
 
 func _refresh_time_settings(move_slider: bool) -> void:
 	var by_host := Daylight.set_by_host()
@@ -309,6 +347,12 @@ func _refresh_time_settings(move_slider: bool) -> void:
 	_day_length.disabled = by_host
 	_time.editable = not by_host
 	_time_note.visible = by_host
+	if _weather:
+		_weather.disabled = by_host
+		if not by_host:
+			_weather.selected = maxi(Weather.STATES.find(Settings.weather) + 1, 0)
+		var now := Weather.state_name(Weather.current.state) if Weather.current else Weather.state_name(Settings.weather_now)
+		_weather_now.text = "Now: %s%s" % [now, "  (set by the host)" if by_host else ""]
 	var h := Daylight.time_of_day() if Daylight.current else Settings.time_of_day
 	_time_label.text = "Time of day  %s" % Daylight.clock_text(h)
 	if move_slider or by_host:

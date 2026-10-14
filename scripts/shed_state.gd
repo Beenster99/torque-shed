@@ -83,6 +83,9 @@ var active := false
 ## The shed radio everyone hears: on or off, and which of `stations` it's tuned to.
 var radio := {"on": false, "station": 0}
 var door_open := true     # the roller door
+## The shed's own shared account (money comes properly with Milestone C; 0 to start).
+var garage_money := 0
+const MAX_GARAGE_MONEY := 100000000
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -155,6 +158,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	bikes.clear()
 	furniture.clear()
 	radio = {"on": false, "station": 0}
+	garage_money = 0
 	door_open = true
 	lights_on = true
 	room_lights = {"paint": true, "storage": true}
@@ -300,6 +304,7 @@ func load_state(state: Dictionary, player_name: String) -> void:
 
 
 func join_remote() -> void:
+	garage_money = 0
 	board = BoardData.empty()
 	_clear_prints()
 	board_changed.emit()
@@ -317,6 +322,7 @@ func join_remote() -> void:
 
 
 func stop() -> void:
+	garage_money = 0
 	_washer_by.clear()
 	board = BoardData.empty()
 	_clear_prints()
@@ -2008,6 +2014,9 @@ func check(peer: int, action: Dictionary) -> String:
 				return "There's no oil in the engine. It would seize."
 		"status", "ride", "tip":
 			pass
+		"garage_money":
+			if not (action.get("value") is int or action.get("value") is float):
+				return "How much?"
 		_:
 			return "Unknown action."
 	return ""
@@ -2294,6 +2303,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"rename_bike":
 			bikes[bike_id]["name"] = str(action["name"]).strip_edges().left(28)
 			text = "Named it %s" % bikes[bike_id]["name"]
+		"garage_money":
+			# The debug tab: set the shed's account (reset to 0).
+			garage_money = clampi(int(action.get("value", 0)), 0, MAX_GARAGE_MONEY)
+			text = "Garage money set to %s" % TvChannels.money_text(garage_money)
 		"door":
 			door_open = bool(action.get("open", not door_open))
 			text = "Roller door %s" % ("going up" if door_open else "coming down")
@@ -3632,7 +3645,7 @@ func _mark_dirty() -> void:
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms}
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money}
 	if with_board:
 		state["board"] = board
 	return state
@@ -3658,6 +3671,8 @@ func _sync(state: Dictionary) -> void:
 	radio = state.get("radio", radio)
 	door_open = bool(state.get("door", true))
 	lights_on = bool(state.get("lights", true))
+	# Sheds saved before money have an empty account.
+	garage_money = clampi(int(state.get("garage_money", 0)), 0, MAX_GARAGE_MONEY)
 	# Sheds saved before the side rooms had switches: their lights start on.
 	room_lights = {"paint": true, "storage": true}
 	var saved_rooms = state.get("room_lights", {})

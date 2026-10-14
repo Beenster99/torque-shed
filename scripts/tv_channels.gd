@@ -188,16 +188,19 @@ static func howto_data() -> Dictionary:
 	return {"page": page}
 
 
-## This player's own money: cash in hand, the week's takings and how it's grown.
-## Placeholder until money arrives (Milestone C).
+## This player's own money: cash in hand (from their Progress profile), the week's takings and
+## how it's grown. The takings and history are placeholders until money arrives (Milestone C).
 static func money_data(peer: int) -> Dictionary:
-	return {"placeholder": true, "name": str(Shed.crew.get(peer, {}).get("name", "You")), "cash": 0,
-		"earned_week": 0, "spent_week": 0, "sold": 0, "history": [0, 0, 0, 0, 0, 0, 0]}
+	var prog := _progress()
+	var cash: int = int(prog.money_of(peer)) if prog and prog.has_method("money_of") else 0
+	return {"placeholder": true, "name": str(Shed.crew.get(peer, {}).get("name", "You")), "cash": cash,
+		"earned_week": 0, "spent_week": 0, "sold": 0, "history": [0, 0, 0, 0, 0, 0, cash]}
 
 
-## The shed's shared account and what it's worth. Placeholder until money arrives (Milestone C).
+## The shed's shared account (Shed.garage_money) and what it's worth. The rest are placeholders
+## until money arrives (Milestone C).
 static func garage_data() -> Dictionary:
-	return {"placeholder": true, "cash": 0, "bike_value": 0, "stock_value": 0, "income_week": 0,
+	return {"placeholder": true, "cash": Shed.garage_money, "bike_value": 0, "stock_value": 0, "income_week": 0,
 		"outgoings_week": 0, "bikes": Shed.bikes.size(), "history": [0, 0, 0, 0, 0, 0, 0]}
 
 

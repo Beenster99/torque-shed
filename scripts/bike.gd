@@ -582,6 +582,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var v_long := v_contact.dot(long_dir)
 	var v_lat := v_contact.dot(lat_dir)
 	var mu: float = float((build.grip_front if w["is_front"] else build.grip_rear).get(surf, 0.7))
+	mu *= Weather.grip_mult(surf)   # wet roads after rain grip a little less
 	var f_max := mu * fz
 
 	# Longitudinal: implicit wheel spin update so stiff tyres stay stable.
