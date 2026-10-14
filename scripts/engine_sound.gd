@@ -118,7 +118,7 @@ func set_distant_filter(on: bool) -> void:
 	for layer in _players:
 		for p: AudioStreamPlayer3D in _players[layer]:
 			p.attenuation_filter_cutoff_hz = 5000.0 if on else 20500.0
-			p.attenuation_filter_db = -24.0 if on else -24.0
+			p.attenuation_filter_db = -30.0 if on else -24.0
 	for p: AudioStreamPlayer3D in _oneshot_ex:
 		p.attenuation_filter_cutoff_hz = 6000.0 if on else 20500.0
 
