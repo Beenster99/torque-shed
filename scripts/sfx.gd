@@ -110,6 +110,32 @@ func make_loop_player(parent: Node3D) -> AudioStreamPlayer3D:
 	return p
 
 
+## The sales office's door bell: the brass shop bell rings at `at` (loud close by, carrying
+## across the yard), and the chime box on the shed's wall goes ding-dong so the crew hear it at
+## work. Only plays here: Shed.ring_bell rings it for everyone.
+func bell(at: Vector3) -> void:
+	var host: Node = get_tree().current_scene if get_tree() else null
+	if host == null:
+		return
+	var pairs := [["bell", at, 2.0, 9.0, 140.0], ["bell_chime", SalesOffice.SHED_CHIME_POS, -2.0, 5.0, 60.0]]
+	for p in pairs:
+		var player := AudioStreamPlayer3D.new()
+		player.stream = stream(str(p[0]))
+		player.bus = "SFX"
+		player.volume_db = float(p[2])
+		player.unit_size = float(p[3])
+		player.max_distance = float(p[4])
+		player.attenuation_filter_cutoff_hz = 12000.0
+		host.add_child(player)
+		player.global_position = p[1]
+		player.finished.connect(player.queue_free)
+		player.play()
+	# The shop bell over the doors and the chime's striker swing.
+	var office := get_tree().get_first_node_in_group("sales_office")
+	if office and office.has_method("ring"):
+		office.ring()
+
+
 ## Plays a one-shot that isn't anywhere in the world: menu and HUD sounds.
 func play_ui(sound: String, volume_db := 0.0) -> void:
 	var host: Node = get_tree().current_scene if get_tree() else null
@@ -197,6 +223,10 @@ func _make(sound: String) -> AudioStreamWAV:
 			data = _blast()
 		"ting":
 			data = _ring([3100.0, 4650.0, 6900.0], 0.5, 0.35)
+		"bell":
+			data = _shop_bell()
+		"bell_chime":
+			data = _door_chime()
 		_:
 			data.resize(RATE / 10)
 	var wav := AudioStreamWAV.new()
@@ -535,4 +565,45 @@ func _levelup() -> PackedFloat32Array:
 				var decay := 3.0 if n == notes.size() - 1 else 7.0
 				s += (sin(TAU * f * u) + 0.3 * sin(TAU * f * 2.0 * u) * (0.6 + 0.4 * sin(TAU * 6.0 * u))) * exp(-u * decay)
 		d[i] = s * 0.22
+	return d
+
+
+## A brass shop bell on its spring, swinging as the door opens: the clapper strikes it four
+## times, softer each time, each strike a ring of the bell's out-of-tune partials.
+func _shop_bell() -> PackedFloat32Array:
+	var d := _samples(1.8)
+	var strikes := [[0.0, 1.0], [0.16, 0.7], [0.3, 0.5], [0.47, 0.32], [0.66, 0.18]]
+	var partials := [[2093.0, 1.0, 3.2], [2093.0 * 2.32, 0.55, 5.0], [2093.0 * 3.16, 0.35, 7.0], [2093.0 * 4.11, 0.22, 9.0],
+		[2093.0 * 0.51, 0.25, 2.2]]
+	for i in d.size():
+		var t := float(i) / RATE
+		var s := 0.0
+		for st in strikes:
+			var u: float = t - float(st[0])
+			if u < 0.0:
+				continue
+			var hit := float(st[1])
+			for p in partials:
+				# A touch of beating, as a real bell's partials come in pairs.
+				var f: float = float(p[0]) * (1.0 + 0.0015 * sin(TAU * 3.0 * u))
+				s += sin(TAU * f * u) * float(p[1]) * exp(-u * float(p[2])) * hit
+			s += _rng.randf_range(-1.0, 1.0) * exp(-u * 600.0) * 0.3 * hit
+		d[i] = s * 0.16
+	return d
+
+
+## The chime box in the shed: a soft two-tone ding-dong.
+func _door_chime() -> PackedFloat32Array:
+	var d := _samples(1.9)
+	var notes := [[0.0, 659.25], [0.45, 523.25]]
+	for i in d.size():
+		var t := float(i) / RATE
+		var s := 0.0
+		for n in notes:
+			var u: float = t - float(n[0])
+			if u < 0.0:
+				continue
+			var f := float(n[1])
+			s += (sin(TAU * f * u) + 0.25 * sin(TAU * f * 2.0 * u) * exp(-u * 3.0) + 0.1 * sin(TAU * f * 3.0 * u) * exp(-u * 6.0)) * exp(-u * 2.2)
+		d[i] = s * 0.25
 	return d

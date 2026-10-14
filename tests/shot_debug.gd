@@ -35,6 +35,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--office" in OS.get_cmdline_user_args():
+		await _office_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -254,3 +259,56 @@ func _blast_shots() -> void:
 	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9b_sandblaster_satin_closeup")
 	w.finish_blast()
 	await _frames(10)
+
+
+## The sales office: from the car park by day and lit up at night, the showroom with bikes on its
+## plinths, the reception and viewing sofas, the kitchen, the stairs and the mezzanine office.
+## `-- --office` takes just these.
+const MEZZ := SalesOffice.MEZZ_Y
+
+
+func _office_shots() -> void:
+	Settings.day_night_cycle = false
+	Settings.weather = "clear"
+	Weather.current.change_to("clear", true)
+	Daylight.current.set_time(11.0)
+	var n := 0
+	for name in ["Old Faithful", "Rusty Ranger"]:
+		var bike := _bike_named(name)
+		if bike == 0:
+			continue
+		var spot: Transform3D = SalesOffice.SHOWROOM_SPOTS[n]
+		Shed.request({"a": "grab_bike", "bike": bike})
+		Shed.request({"a": "release_bike", "bike": bike, "xf": spot.translated(Vector3(0.3, 0.0, 0.2))})
+		n += 1
+	await _frames(10)
+	var o := SalesOffice.CENTER
+	var only := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--shot="):
+			only = a.trim_prefix("--shot=")
+	var shots := [
+		["o1_outside_day", Vector3(31.0, 0.0, 88.0), o + Vector3(-1.0, 2.6, 0.0)],
+		["o2_outside_day_wide", Vector3(4.0, 0.0, 92.0), o + Vector3(-6.0, 2.5, 0.0)],
+		["o3_showroom", o + Vector3(-0.8, 0.0, 5.4), o + Vector3(4.5, 0.8, -1.5)],
+		["o4_showroom_from_stairs", o + Vector3(5.6, 0.0, -5.4), o + Vector3(1.0, 0.8, 4.0)],
+		["o5_reception_lounge", o + Vector3(2.0, 0.0, 2.0), o + Vector3(-4.5, 0.9, 2.0)],
+		["o6_kitchen", o + Vector3(-2.2, 0.0, -1.8), o + Vector3(-4.6, 0.9, -5.4)],
+		["o7_mezzanine_office", o + Vector3(-5.6, MEZZ, -2.0), o + Vector3(-2.4, 3.6, 1.6)],
+		["o8_office_overlooking_showroom", o + Vector3(-4.3, MEZZ, 2.3), o + Vector3(4.0, 0.6, 1.5)],
+		["o9_stairs", o + Vector3(6.4, 0.0, -2.6), o + Vector3(0.5, 2.0, -5.4)],
+	]
+	for s in shots:
+		if only == "" or str(s[0]).contains(only):
+			await _look_from(s[1], s[2], s[0])
+	Daylight.current.set_time(22.5)
+	await _frames(20)
+	for s in [["o10_outside_night", Vector3(31.0, 0.0, 88.0), o + Vector3(-1.0, 2.6, 0.0)],
+			["o11_outside_night_wide", Vector3(10.0, 0.0, 90.0), o + Vector3(-4.0, 2.5, 0.0)],
+			["o12_showroom_night", o + Vector3(-0.8, 0.0, 5.4), o + Vector3(4.5, 0.8, -1.5)]]:
+		if only == "" or str(s[0]).contains(only):
+			await _look_from(s[1], s[2], s[0])
+	Shed.request({"a": "lights", "room": "sales", "on": false})
+	await _frames(10)
+	if only == "" or "lights_off".contains(only):
+		await _look_from(Vector3(31.0, 0.0, 88.0), o + Vector3(-1.0, 2.6, 0.0), "o13_outside_night_lights_off")

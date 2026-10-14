@@ -95,7 +95,8 @@ var contracts := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
-const LIT_ROOMS: Array[String] = ["paint", "storage"]
+## (The sales office's "sales" switch is saved with them; it starts on, so it isn't listed above.)
+const LIT_ROOMS: Array[String] = ["paint", "storage", "sales"]
 var stations: Array = []    # [{name, genre, url}] from data/radio.json
 var board := BoardData.empty()   # what's drawn and written on the shed whiteboard
 ## Bigger bits of data that go out in chunks (see share_blob): the pictures players put on the
@@ -2575,7 +2576,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "Lights %s" % ("on" if lights_on else "off")
 			else:
 				room_lights[room] = bool(action.get("on", not room_lit(room)))
-				text = "%s lights %s" % ["Paint shop" if room == "paint" else "Storage room", "on" if room_lights[room] else "off"]
+				text = "%s lights %s" % [{"paint": "Paint shop", "sales": "Sales office"}.get(room, "Storage room"), "on" if room_lights[room] else "off"]
 		"label":
 			furniture[int(action["furniture"])]["label"] = str(action.get("text", "")).strip_edges().left(24)
 			text = "Labelled the shelves \"%s\"" % furniture[int(action["furniture"])]["label"]
@@ -2887,6 +2888,8 @@ func _park(bike_id: int) -> void:
 		# Rolled onto the dyno: square on the drum, ready to strap down.
 		bike["xf"] = rig
 		bike["stand"] = ""
+		return
+	if _park_on_show(bike_id):
 		return
 	var bay := _bay_near(bike["xf"], bike_id)
 	if bay >= 0:
@@ -4149,3 +4152,57 @@ func money_new_day() -> void:
 			_tell(int(p), said, not said.contains("MISSED"))
 	_mark_dirty()
 	changed.emit()
+
+
+# ---------------------------------------------------------------------------- sales office
+
+## The sales office's door bell rang (everyone hears it: see ring_bell).
+signal bell_rang
+## How many times the bell has rung here this session (for tests).
+var bells_heard := 0
+
+
+## Host-side: rings the sales office's door bell for every player, the shop bell over its doors
+## and the chime in the shed (Sfx.bell). Customers coming in ring it.
+func ring_bell() -> void:
+	if not is_authority():
+		return
+	_bell()
+	if Net.is_online():
+		_bell_rpc.rpc()
+
+
+@rpc("authority", "call_remote", "reliable")
+func _bell_rpc() -> void:
+	_bell()
+
+
+func _bell() -> void:
+	bells_heard += 1
+	Sfx.bell(SalesOffice.BELL_POS)
+	bell_rang.emit()
+
+
+## Which showroom plinth a bike is on, or -1.
+func showroom_spot_of(bike_id: int) -> int:
+	if not bikes.has(bike_id):
+		return -1
+	var i := SalesOffice.spot_near((bikes[bike_id]["xf"] as Transform3D).origin)
+	if i >= 0 and (bikes[bike_id]["xf"] as Transform3D).origin.distance_to(SalesOffice.SHOWROOM_SPOTS[i].origin) < 0.05:
+		return i
+	return -1
+
+
+## A bike let go of by a free showroom plinth goes onto it, square and upright, on show.
+func _park_on_show(bike_id: int) -> bool:
+	var bike: Dictionary = bikes[bike_id]
+	var i := SalesOffice.spot_near((bike["xf"] as Transform3D).origin)
+	if i < 0:
+		return false
+	var spot: Transform3D = SalesOffice.SHOWROOM_SPOTS[i]
+	for id in bikes:
+		if id != bike_id and bikes[id]["rider"] == 0 and (bikes[id]["xf"] as Transform3D).origin.distance_to(spot.origin) < 1.2:
+			return false
+	bike["xf"] = spot
+	bike["stand"] = ""
+	return true

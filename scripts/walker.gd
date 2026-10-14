@@ -1468,7 +1468,7 @@ func _describe() -> String:
 			lines.append("F: %s" % ("close it" if Shed.door_open else "open it"))
 		"lights":
 			var room := str(target.get("room", ""))
-			lines.append({"paint": "Paint shop lights", "storage": "Storage room lights"}.get(room, "Shed lights"))
+			lines.append({"paint": "Paint shop lights", "storage": "Storage room lights", "sales": "Sales office lights"}.get(room, "Shed lights"))
 			lines.append("F: switch them %s" % ("off" if Shed.room_lit(room) else "on"))
 		"board":
 			var board: Node = get_tree().get_first_node_in_group("whiteboard")

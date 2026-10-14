@@ -150,6 +150,10 @@ func _run_all() -> void:
 	_test_contract_goals_and_pay()
 	_test_contract_save()
 	await _test_contract_session()
+	print("Sales office: showroom, reception, kitchen, viewing area, mezzanine office, the bell")
+	_test_sales_office_layout()
+	_test_sales_office_save()
+	await _test_sales_office_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -3950,6 +3954,7 @@ func _test_side_rooms() -> void:
 	var wash := Rect2(Workshop.WASH_CENTER.x - Workshop.WASH_HALF.x, Workshop.WASH_CENTER.z - Workshop.WASH_HALF.y,
 		Workshop.WASH_HALF.x * 2.0, Workshop.WASH_HALF.y * 2.0)
 	var names: Array = rooms.keys()
+	names.erase("sales_office")   # upstairs in the sales office: inside "sales" by design
 	var apart := true
 	for i in names.size():
 		var a: Rect2 = rooms[names[i]]
@@ -5736,7 +5741,7 @@ func _test_weather_session() -> void:
 	check(Weather.raining_at(Vector3(0.0, 0.0, 85.0)) and not Weather.raining_at(Workshop.CENTER), "it rains in the yard, not in the shed")
 	var shelters: PackedVector4Array = w._rain_mat.get_shader_parameter("shelters")
 	var c := Workshop.CENTER
-	check(shelters.size() == 4 and shelters[0].x < c.x and shelters[0].z > c.x and shelters[0].y < c.z and shelters[0].w > c.z,
+	check(shelters.size() == Weather.SHELTERS and shelters[0].x < c.x and shelters[0].z > c.x and shelters[0].y < c.z and shelters[0].w > c.z,
 		"no drops are drawn inside the shed's rooms")
 	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.1, 1.0)))
 	for i in 90:
@@ -6590,6 +6595,249 @@ func _test_contract_session() -> void:
 		(tabs[0] as ContractsTab).refresh(true)
 	check(not tabs.is_empty() and tabs[0].find_children("*", "Button", true, false).any(func(b): return (b as Button).text == "Hand back"),
 		"the Esc menu's Contracts tab lists the job")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The sales office's plan: where it stands (clear of the shed's rooms, on the yard, off the road),
+## where its rooms are, and the hooks customers use.
+func _test_sales_office_layout() -> void:
+	var rooms := Workshop.rooms()
+	var sales: Rect2 = rooms["sales"]
+	var office: Rect2 = rooms["sales_office"]
+	check(sales == SalesOffice.footprint() and sales.encloses(office), "the sales office and its mezzanine office are rooms")
+	var wash := Rect2(Workshop.WASH_CENTER.x - Workshop.WASH_HALF.x, Workshop.WASH_CENTER.z - Workshop.WASH_HALF.y,
+		Workshop.WASH_HALF.x * 2.0, Workshop.WASH_HALF.y * 2.0)
+	var clear := not sales.grow(1.0).intersects(wash) and not SalesOffice.FORECOURT.intersects(wash)
+	for room in ["shed", "paint", "storage", "dyno"]:
+		var r: Rect2 = rooms[room]
+		clear = clear and not sales.grow(SalesOffice.WALL + 1.0).intersects(r) and not SalesOffice.FORECOURT.intersects(r.grow(0.3))
+	check(clear, "the building and its forecourt keep clear of the shed, its side rooms and the wash bay")
+	var yard := Rect2(World.YARD_CENTER - World.YARD_HALF, World.YARD_HALF * 2.0)
+	check(yard.encloses(sales.grow(SalesOffice.WALL)) and yard.encloses(SalesOffice.FORECOURT), "it all stands on the flat yard slab")
+	check(SalesOffice.FORECOURT.end.y < 95.0, "the car park stops short of the drag strip")
+	check(Workshop.room_at(Workshop.RECEPTION.origin) == "sales" and Workshop.room_at(Workshop.RECEPTION_DESK.origin) == "sales",
+		"reception is inside")
+	var to_desk := (Workshop.RECEPTION_DESK.origin - Workshop.RECEPTION.origin).normalized()
+	check((-Workshop.RECEPTION.basis.z).dot(to_desk) > 0.99 and (-Workshop.RECEPTION_DESK.basis.z).dot(-to_desk) > 0.99,
+		"the customer faces the desk, and you face the customer")
+	var entry: Vector3 = Workshop.CUSTOMER_ENTRY.origin
+	check(Workshop.room_at(entry) == "" and SalesOffice.FORECOURT.has_point(Vector2(entry.x, entry.z)), "customers arrive at the car park edge")
+	var to_door := (Workshop.SALES_DOOR - entry).normalized()
+	check((-Workshop.CUSTOMER_ENTRY.basis.z).dot(to_door) > 0.99, "facing the doors")
+	# The straight walk in goes through the doors, clear of the plinths.
+	var door_t := (entry.z - Workshop.SALES_DOOR.z) / (entry.z - Workshop.RECEPTION.origin.z)
+	var through := entry.lerp(Workshop.RECEPTION.origin, door_t)
+	check(absf(through.x - Workshop.SALES_DOOR.x) < SalesOffice.DOOR_HALF - 0.4, "the walk from the car park to the desk goes through the doors (x %.2f)" % through.x)
+	var plinths_clear := true
+	for i in 40:
+		var p := Workshop.SALES_DOOR.lerp(Workshop.RECEPTION.origin, i / 39.0)
+		for spot in Workshop.SHOWROOM_SPOTS:
+			plinths_clear = plinths_clear and Vector2(p.x - spot.origin.x, p.z - spot.origin.z).length() > SalesOffice.PLINTH_RADIUS + 0.4
+	check(plinths_clear, "and past the bikes on show")
+	check(Workshop.SHOWROOM_SPOTS.size() == 4 and Workshop.SHOWROOM_SPOTS.all(func(x): return Workshop.room_at(x.origin) == "sales"),
+		"four display plinths in the showroom")
+	var apart := true
+	for i in 4:
+		for j in range(i + 1, 4):
+			apart = apart and Workshop.SHOWROOM_SPOTS[i].origin.distance_to(Workshop.SHOWROOM_SPOTS[j].origin) > SalesOffice.PLINTH_RADIUS * 2.0 + 0.2
+	check(apart, "far enough apart for a bike on each")
+	# Upstairs and downstairs.
+	var mid := office.get_center()
+	check(Workshop.room_at(Vector3(mid.x, 0.0, mid.y)) == "sales" and Workshop.room_at(Vector3(mid.x, SalesOffice.MEZZ_Y + 1.6, mid.y)) == "sales_office",
+		"the office is upstairs, over the ground floor")
+	check(Workshop.room_at(SalesOffice.at(5.0, 4.0, 0.0)) == "sales", "the showroom is double height")
+	check(Weather.shelter_top("sales") > SalesOffice.CEIL_Y and not Weather.raining_at(SalesOffice.CENTER), "its roof keeps the rain off")
+	check(SalesOffice.spot_near(Workshop.SHOWROOM_SPOTS[2].origin + Vector3(0.5, 0.0, 0.3)) == 2 and SalesOffice.spot_near(SalesOffice.CENTER + Vector3(-5.0, 0.0, 0.0)) == -1,
+		"a bike let go of by a plinth goes onto it")
+	var bell := Sfx.stream("bell")
+	var chime := Sfx.stream("bell_chime")
+	check(bell.data.size() > Sfx.RATE * 2 and chime.data.size() > Sfx.RATE * 2 and not Sfx.LOOPS.has("bell"), "the shop bell and the shed chime are one-shot sounds")
+
+
+## Bikes on show and the office lights in a save; a save from before the sales office.
+func _test_sales_office_save() -> void:
+	Shed.start_new("Tester", 31)
+	check(Shed.room_lit("sales"), "a new shed's sales office is lit")
+	var bike := _bike_named("Old Faithful")
+	var spot: Transform3D = Workshop.SHOWROOM_SPOTS[1]
+	check(Shed.check(Shed.me(), {"a": "grab_bike", "bike": bike}) == "", "you can wheel a bike to the showroom")
+	Shed.request({"a": "grab_bike", "bike": bike})
+	Shed.request({"a": "move_bike", "bike": bike, "xf": spot.translated(Vector3(0.4, 0.0, -0.3))})
+	Shed.request({"a": "release_bike", "bike": bike, "xf": Transform3D(Basis(), spot.origin + Vector3(0.4, 0.0, -0.3))})
+	var xf: Transform3D = Shed.bikes[bike]["xf"]
+	check(xf.is_equal_approx(spot) and str(Shed.bikes[bike]["stand"]) == "" and Shed.showroom_spot_of(bike) == 1,
+		"let go of by a plinth, it stands square on it, upright on show")
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.request({"a": "grab_bike", "bike": ranger})
+	Shed.request({"a": "release_bike", "bike": ranger, "xf": Transform3D(Basis(), spot.origin + Vector3(-0.5, 0.0, 0.2))})
+	check(not (Shed.bikes[ranger]["xf"] as Transform3D).is_equal_approx(spot) and Shed.showroom_spot_of(ranger) == -1,
+		"a plinth with a bike on it is taken")
+	Shed.request({"a": "lights", "room": "sales", "on": false})
+	check(not Shed.room_lit("sales") and Shed.room_lit("paint") and Shed.lights_on, "the office lights have their own switch")
+	var snap: Dictionary = Shed._snapshot().duplicate(true)
+	Shed.start_new("Tester", 32)
+	Shed.load_state(snap, "Tester")
+	check((Shed.bikes[bike]["xf"] as Transform3D).is_equal_approx(spot) and not Shed.room_lit("sales"), "and both come back from a save")
+	var old: Dictionary = snap.duplicate(true)
+	(old["room_lights"] as Dictionary).erase("sales")
+	Shed.start_new("Tester", 33)
+	Shed.load_state(old, "Tester")
+	check(Shed.room_lit("sales") and Shed.bikes.size() == (snap["bikes"] as Dictionary).size(),
+		"a save from before the sales office opens with it lit, and nothing else changed")
+	Shed.stop()
+
+
+## Walking it: the floors, the doors, the stairs up to the office and back down, wheeling a
+## bike in onto a plinth, the light switches and the bell.
+func _test_sales_office_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var ws: Workshop = main.workshop
+	var so: SalesOffice = ws.sales_office
+	check(so != null and so.get_parent() == ws, "the sales office is built with the shed")
+	var space: PhysicsDirectSpaceState3D = ws.get_world_3d().direct_space_state
+	var down := func(x: float, z: float, from_y: float) -> Dictionary:
+		var q := PhysicsRayQueryParameters3D.create(Vector3(x, from_y, z), Vector3(x, from_y - 8.0, z), 1)
+		return space.intersect_ray(q)
+	var at := func(lx: float, lz: float) -> Vector2:
+		return Vector2(SalesOffice.CENTER.x + lx, SalesOffice.CENTER.z + lz)
+	# Off the road loop.
+	var road_gap := 999.0
+	for p in [Vector2(SalesOffice.FORECOURT.position.x, SalesOffice.FORECOURT.end.y), SalesOffice.FORECOURT.end, SalesOffice.footprint().position,
+			Vector2(SalesOffice.footprint().end.x, SalesOffice.footprint().position.y)]:
+		road_gap = minf(road_gap, (main.world._road_info(p.x, p.y) as Vector2).x)
+	check(road_gap > World.ROAD_HALF_WIDTH + 10.0, "the sales office and car park are well off the road (%.0f m)" % road_gap)
+	# Floors: the ground floor everywhere (yard level), the mezzanine at its height.
+	var level := true
+	for p in [Vector2(0.0, 4.0), Vector2(3.9, 1.4), Vector2(-3.5, 0.5), Vector2(-4.0, -4.6), Vector2(-5.0, 1.2), Vector2(6.5, -5.4)]:
+		var q: Vector2 = at.call(p.x, p.y)
+		var hit: Dictionary = down.call(q.x, q.y, 2.5)
+		level = level and not hit.is_empty() and absf((hit["position"] as Vector3).y) < 0.02 and (hit["normal"] as Vector3).y > 0.99
+	check(level, "the ground floor is level with the yard")
+	var upstairs := true
+	for p in [Vector2(-3.8, 2.6), Vector2(-5.5, -4.0), Vector2(-2.0, 5.0), Vector2(-6.0, 3.0)]:
+		var q: Vector2 = at.call(p.x, p.y)
+		var hit: Dictionary = down.call(q.x, q.y, SalesOffice.CEIL_Y - 0.2)
+		upstairs = upstairs and not hit.is_empty() and absf((hit["position"] as Vector3).y - SalesOffice.MEZZ_Y) < 0.02
+	check(upstairs, "the mezzanine floor is level")
+	var plinth: Vector3 = Workshop.SHOWROOM_SPOTS[0].origin
+	var top: Dictionary = down.call(plinth.x, plinth.z, 2.0)
+	check(not top.is_empty() and absf((top["position"] as Vector3).y - SalesOffice.PLINTH_TOP) < 0.01, "the plinths are low enough to step and wheel onto")
+	# The stairs: a smooth slope under the steps, at a pitch the walker climbs.
+	var w: Walker = main.walker
+	var ramp_ok := true
+	for k in 9:
+		var lx := lerpf(SalesOffice.STAIR_LOW_X - 0.2, SalesOffice.MEZZ_EDGE + 0.2, k / 8.0)
+		var q: Vector2 = at.call(lx, -5.4)
+		var hit: Dictionary = down.call(q.x, q.y, SalesOffice.CEIL_Y - 0.3)
+		ramp_ok = ramp_ok and not hit.is_empty() and absf((hit["position"] as Vector3).y - SalesOffice.stair_height(lx)) < 0.08 \
+			and (hit["normal"] as Vector3).angle_to(Vector3.UP) < w.floor_max_angle
+	check(ramp_ok, "the stairs climb at %.0f degrees, under the walker's %.0f" % [rad_to_deg(atan2(SalesOffice.MEZZ_Y, SalesOffice.STAIR_LOW_X - SalesOffice.MEZZ_EDGE)),
+		rad_to_deg(w.floor_max_angle)])
+	# The front doors: shut with nobody about, sliding open as you come up.
+	w.set_tool("hands")
+	var door := Workshop.SALES_DOOR
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.1, 2.0)))
+	for i in 120:
+		await get_tree().physics_frame
+	var through := func() -> bool:
+		var q := PhysicsRayQueryParameters3D.create(door + Vector3(0.4, 1.2, 1.0), door + Vector3(0.4, 1.2, -1.0), 1)
+		return space.intersect_ray(q).is_empty()
+	check(so.door_open_amount < 0.01 and not through.call(), "the sales office doors are shut with nobody about")
+	w.place(Transform3D(Basis(), door + Vector3(-0.3, 0.1, 3.5)))
+	Input.action_press("move_forward")
+	var opened := false
+	for i in 360:
+		await get_tree().physics_frame
+		if absf(w.global_position.z - door.z) < 0.6:
+			opened = opened or (so.door_open_amount > 0.9 and through.call())
+	Input.action_release("move_forward")
+	check(Workshop.room_at(w.global_position) == "sales", "they slide open and you walk in (%s)" % str(w.global_position))
+	check(opened, "open wide as you go through them")
+	# Up the stairs to the office, and back down.
+	var foot: Vector2 = at.call(SalesOffice.STAIR_LOW_X + 1.2, -5.4)
+	w.place(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(foot.x, 0.1, foot.y)))
+	Input.action_press("move_forward")
+	for i in 600:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(absf(w.global_position.y - SalesOffice.MEZZ_Y) < 0.1 and Workshop.room_at(w.global_position) == "sales_office",
+		"you can climb the stairs to the mezzanine office (%s)" % str(w.global_position))
+	var landing: Vector2 = at.call(SalesOffice.MEZZ_EDGE - 1.0, -5.4)
+	w.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(landing.x, SalesOffice.MEZZ_Y + 0.1, landing.y)))
+	Input.action_press("move_forward")
+	for i in 600:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(absf(w.global_position.y) < 0.1 and w.global_position.x > SalesOffice.CENTER.x + SalesOffice.STAIR_LOW_X,
+		"and walk back down (%s)" % str(w.global_position))
+	# The balustrade stops you walking off the edge of the mezzanine.
+	var edge: Vector2 = at.call(SalesOffice.MEZZ_EDGE - 1.0, 2.6)
+	w.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(edge.x, SalesOffice.MEZZ_Y + 0.1, edge.y)))
+	Input.action_press("move_forward")
+	for i in 240:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(w.global_position.y > SalesOffice.MEZZ_Y - 0.1, "the glass balustrade keeps you on the mezzanine")
+	# Wheel a bike in through the doors and onto a plinth.
+	var bike := _bike_named("Old Faithful")
+	w.place(Transform3D(Basis(), door + Vector3(-0.75, 0.1, 4.0)))
+	await get_tree().physics_frame
+	Shed.request({"a": "grab_bike", "bike": bike})
+	check(Shed.pushing_bike(Shed.me()) == bike, "you take hold of a bike outside")
+	Input.action_press("move_forward")
+	for i in 300:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(Workshop.room_at(w.global_position) == "sales" and Workshop.room_at((Shed.bikes[bike]["xf"] as Transform3D).origin) == "sales",
+		"and wheel it in through the doors")
+	var spot: Transform3D = Workshop.SHOWROOM_SPOTS[0]
+	w.place(Transform3D(Basis(), spot.origin - Vector3(0.55, 0.0, 0.1) + Vector3.UP * 0.1))
+	for i in 20:
+		await get_tree().physics_frame
+	_press("interact")
+	for i in 5:
+		await get_tree().physics_frame
+	check(Shed.pushing_bike(Shed.me()) == 0 and Shed.showroom_spot_of(bike) == 0, "let go of by a plinth, it goes on show (%s)" % str((Shed.bikes[bike]["xf"] as Transform3D).origin))
+	await get_tree().process_frame
+	var view: Node3D = ws.bike_views.get(bike)
+	check(view != null and absf(view.global_position.y - SalesOffice.PLINTH_TOP) < 0.01, "drawn standing on the plinth")
+	# The light switch by the stairs.
+	w.place(Transform3D(Basis(), SalesOffice.CENTER + Vector3(SalesOffice.MEZZ_EDGE + 1.3, 0.1, -2.0)))
+	await _aim_point(w, SalesOffice.at(SalesOffice.MEZZ_EDGE + 0.02, 1.35, -2.0))
+	check(w.target.get("kind", "") == "lights" and w.target.get("room", "") == "sales" and w.info.contains("Sales office lights"),
+		"the sales office light switch (%s)" % str(w.target))
+	_press("interact")
+	for i in 3:
+		await get_tree().process_frame
+	check(not Shed.room_lit("sales") and so._lights.all(func(l): return not (l as Light3D).visible), "turns its lights off")
+	Shed.request({"a": "lights", "room": "sales", "on": true})
+	for i in 3:
+		await get_tree().process_frame
+	check(so._lights.all(func(l): return (l as Light3D).visible) and so.lights_shown(), "and on")
+	# The bell: everyone hears it, and the shop bell swings.
+	var heard := [0]
+	var on_bell := func(): heard[0] += 1
+	Shed.bell_rang.connect(on_bell)
+	var before := Shed.bells_heard
+	Shed.ring_bell()
+	for i in 6:
+		await get_tree().process_frame
+	check(Shed.bells_heard == before + 1 and heard[0] == 1, "the host rings the sales office bell")
+	var bell_s := Sfx.stream("bell")
+	var chime_s := Sfx.stream("bell_chime")
+	var players := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(p): return p.stream == bell_s or p.stream == chime_s)
+	check(players.size() >= 2, "the shop bell rings over its door and the chime in the shed")
+	var chime := players.filter(func(p): return p.stream == chime_s)
+	check(not chime.is_empty() and Workshop.room_at((chime[0] as Node3D).global_position) == "shed", "the chime is in the shed")
+	check(absf((so.get_node("ShopBell") as Node3D).rotation.x) > 0.01, "and the bell over the door swings")
+	Shed.bell_rang.disconnect(on_bell)
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

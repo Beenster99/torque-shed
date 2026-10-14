@@ -58,6 +58,15 @@ const BIN_SIZE := Vector3(0.52, 0.9, 0.6)
 ## How far a live TV picture's camera sits behind and above the rider.
 const FEED_BACK := 4.5
 const FEED_UP := 1.8
+## The sales office (SalesOffice, east of the paint shop): where a customer stands at the
+## reception desk (-Z facing it), where a player stands behind the desk to serve them, where
+## customers arrive from (the car park edge, facing the doors), the front doors, and the
+## showroom's display plinths for bikes on show.
+const RECEPTION := SalesOffice.RECEPTION
+const RECEPTION_DESK := SalesOffice.RECEPTION_DESK
+const CUSTOMER_ENTRY := SalesOffice.CUSTOMER_ENTRY
+const SALES_DOOR := SalesOffice.SALES_DOOR
+const SHOWROOM_SPOTS := SalesOffice.SHOWROOM_SPOTS
 
 var bike_views := {}       # bike id -> Node3D holding a BikeModel
 var _view_sigs := {}
@@ -78,6 +87,7 @@ var _dash_dirty := true
 var _mats := {}
 var radio: ShedRadio
 var dyno_room: DynoRoom     # the tuning room through the back wall
+var sales_office: SalesOffice   # the showroom and office east of the paint shop
 ## A live riding picture a TV is showing (the first one, if there are several), or null.
 var tv_feed: SubViewport
 ## Live riding pictures, one per rider being watched: bike node instance id -> {vp, cam, node}.
@@ -118,20 +128,27 @@ static func spot_transform(spot: String) -> Transform3D:
 	return Transform3D(Basis(), CENTER)
 
 
-## The floor of each room, as x/z rectangles: the shed, the paint shop, the storage room and
-## the dyno room.
+## The floor of each room, as x/z rectangles: the shed, the paint shop, the storage room, the
+## dyno room, and the sales office ("sales", the whole building) with its mezzanine office upstairs
+## ("sales_office", over the west end of it).
 static func rooms() -> Dictionary:
 	return {
 		"shed": Rect2(CENTER.x - HALF.x, CENTER.z - HALF.y, HALF.x * 2.0, HALF.y * 2.0),
 		"paint": Rect2(BOOTH_ROOM_CENTER.x - BOOTH_ROOM_HALF.x, BOOTH_ROOM_CENTER.z - BOOTH_ROOM_HALF.y, BOOTH_ROOM_HALF.x * 2.0, BOOTH_ROOM_HALF.y * 2.0),
 		"storage": Rect2(STORE_CENTER.x - STORE_HALF.x, STORE_CENTER.z - STORE_HALF.y, STORE_HALF.x * 2.0, STORE_HALF.y * 2.0),
 		"dyno": Rect2(DynoRoom.CENTER.x - DynoRoom.HALF.x, DynoRoom.CENTER.z - DynoRoom.HALF.y, DynoRoom.HALF.x * 2.0, DynoRoom.HALF.y * 2.0),
+		"sales": SalesOffice.footprint(),
+		"sales_office": SalesOffice.office_rect(),
 	}
 
 
-## Which room a point is in ("shed", "paint", "storage", "dyno"), or "" outside.
+## Which room a point is in ("shed", "paint", "storage", "dyno", "sales", "sales_office"
+## upstairs in the sales office), or "" outside.
 static func room_at(at: Vector3) -> String:
+	if SalesOffice.office_rect().has_point(Vector2(at.x, at.z)) and at.y > SalesOffice.MEZZ_Y - 0.3:
+		return "sales_office"
 	var all := rooms()
+	all.erase("sales_office")
 	for room in all:
 		if (all[room] as Rect2).has_point(Vector2(at.x, at.z)):
 			return room
@@ -178,6 +195,7 @@ func build() -> void:
 	dyno_room = DynoRoom.new()
 	add_child(dyno_room)
 	dyno_room.build(self)
+	_build_sales_office()
 	_crew_screen = Dashboard.new("crew", CREW_SCREEN)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
 	_crew_screen.rotation.y = PI * 0.5
@@ -1692,3 +1710,11 @@ func _build_lights() -> void:
 	add_child(probe)
 	_probe = probe
 	_fixture_mats.append(fixture)
+
+
+# ---------------------------------------------------------------------------- sales office
+
+func _build_sales_office() -> void:
+	sales_office = SalesOffice.new()
+	add_child(sales_office)
+	sales_office.build()

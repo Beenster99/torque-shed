@@ -9,6 +9,7 @@ extends Node
 ## from the host, it sends some to the business (the host's ledger must show it) and the host
 ## sends the client some of its own cash, which must arrive.
 ## The host also sends a customer to reception, whom the client must see.
+## The host rings the sales office bell, and the client must hear it.
 
 var role := "host"
 var main: Node
@@ -113,6 +114,10 @@ func _ready() -> void:
 			Shed.request({"a": "board_poster", "name": "MP poster"})
 			postered = true
 		var prints_ok := _picture_ok() and Shed.posters.size() == 1 and Shed.poster_marks(Shed.posters.keys()[0]).any(func(m): return m.has("img"))
+		# The host rings the sales office bell once the client is in: the client must hear it.
+		if role == "host" and Shed.crew.size() == 2 and Shed.bells_heard == 0:
+			Shed.ring_bell()
+		var bell_ok := Shed.bells_heard > 0
 		if role == "host" and Shed.crew.size() == 2 and not asked:
 			Shed.board_request({"a": "board_text", "id": 4343, "c": 2, "s": 38, "at": Vector2(500, 300), "text": "Host's list"})
 			asked = true
@@ -135,7 +140,7 @@ func _ready() -> void:
 			Shed.request({"a": "contract_spawn", "kind": "maint"})
 			customer_sent = true
 		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty()
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check.
 	var linger := Time.get_ticks_msec() + 3000

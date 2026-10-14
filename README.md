@@ -43,6 +43,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Name the bike you're looking at | N | |
 | Roller door, shed lights (switches by the door); paint shop and storage room lights (switch inside each door) | F | Y |
 | Dyno room: its lights and the cooling fan (switches inside its door), put on or hang up the ear defenders | F | Y |
+| Sales office lights (switches by the foot of the stairs and at the top) | F | Y |
 | Dyno room: strap the bike down (at each of the 4 posts), take the extraction hose off its hook and push it over the exhaust | Hold left mouse | Hold RT or A |
 | Sandblaster: put your hands in the gloves / step back | F | Y |
 | Sandblaster: blast where you aim / turn the engine | Hold left mouse / W A S D, or hold right mouse and move the mouse | Hold RT / left stick |
@@ -204,6 +205,18 @@ Press F at the **dyno desk** to tune the bike on the rig, or any bike within abo
 
 **Run the dyno** and the bike revs up through the gears on the drum, then sweeps one gear to the limiter. The desk and the wall screen plot power and torque at the rear wheel against rpm, the speed in each gear, and the peak power and torque, top speed, power to weight and a 0-100 km/h estimate. The previous run stays on the graph, dashed, with the change in each number, so you can see what a change did.
 
+### The sales office
+
+East of the paint shop, across a block-paved forecourt with a small car park, is the **sales office**: a two-storey building with a full glass front. Its **doors slide open** as you walk up to them, and a brass **shop bell** over them rings when someone comes in. You hear it across the yard, and a chime box high on the shed's front wall (inside, right of the roller door) goes ding-dong so the crew hear it at work. Customers coming to the office ring it.
+
+- **Showroom**: double height behind the glass, with four lit **display plinths**. Wheel a bike in through the doors (hold F on it) and let go of it on a plinth: it stands square and upright on it, on show. Each plinth takes one bike.
+- **Reception**: the desk facing the doors, with helmets on the shelves behind it. Customers stand in front of it, and you stand behind it to talk to them.
+- **Viewing area**: sofas round a low table, looking out over the showroom.
+- **Kitchen**: through the door behind reception, with the kettle, a fridge and a table.
+- **Office**: up the stairs along the back wall, on a **mezzanine** that looks down over the showroom, with a desk, a computer and a meeting table.
+
+The office has **its own light switch** (one at the foot of the stairs, one at the top); it's saved with the shed. The sign, canopy, bollards and car park lamps come on by themselves at dusk.
+
 ### XP, levels, tool upgrades and skills
 
 Everything you do earns **XP**, one pool for the lot: work in the shed, riding, and selling. Each job pops up a small "+6 XP Cleaning" under the level bar at the top right. Doing the same job to the same part again straight away pays half as much each time (so unbolting and bolting one bolt over and over soon pays nothing), and the big one-offs pay once per bike or part.
@@ -333,6 +346,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/whiteboard.gd`, `board_data.gd`, `board_print.gd` | The shared whiteboard: drawing on it, pictures from players' PCs, and its marks kept in the shed state; whiteboard posters |
 | `scripts/settings.gd`, `keybind_tab.gd` | Settings, every key binding and rebinding them in the Esc menu |
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
+| `scripts/sales_office.gd` | The sales office: its forecourt, showroom plinths, reception, viewing area, kitchen, stairs and mezzanine office, the sliding doors and the shop bell |
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime, and each part's own fit from geometry mode |
 | `scripts/geometry_mode.gd`, `geo_gizmo.gd`, `blueprint_tab.gd` | Geometry mode (fitting a bike's parts with move, rotate and scale handles), the handles and their maths, and the Esc menu's Blueprints tab |
