@@ -92,6 +92,12 @@ func _run_all() -> void:
 	_test_recycling()
 	await _test_tv_channels()
 	await _test_tv_and_bins_session()
+	print("Carrying, snapping, free surfaces, the whiteboard and delivery boxes")
+	await _test_carry_and_snap()
+	_test_free_surfaces()
+	await _test_surface_session()
+	await _test_whiteboard_moves()
+	_test_box_labels()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -3147,3 +3153,369 @@ func _test_tv_and_bins_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+# ---------------------------------------------------------------------------- carrying, snapping, surfaces, whiteboard, boxes
+
+## A loose part made up and put straight into your hands.
+func _in_hands(part: String, dirt := 0.0, rust := 0.0) -> int:
+	var id := Shed._new_item(part, rust, dirt, rust)
+	Shed._move(id, "held", Shed.me())
+	return id
+
+
+## Puts what you're holding down on a surface at the clear place nearest `at`; false if there's no room.
+func _set_down_near(key: String, at := Vector2.ZERO) -> bool:
+	var held := Shed.held_by(Shed.me())
+	var place = Shed.find_room(key, held, at)
+	if not (place is Transform3D):
+		return false
+	Shed.request({"a": "set_down", "top": key, "xf": place})
+	return Shed.held_by(Shed.me()) == 0
+
+
+func _first_furniture(model: String) -> int:
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == model:
+			return id
+	return 0
+
+
+func _test_carry_and_snap() -> void:
+	# How far out you hold equipment: arm's length plus the wheel, within limits.
+	check(Walker.carry_distance(1.0, 0.0) == 1.0 and Walker.carry_distance(1.0, 0.5) == 1.5, "the mouse wheel pushes carried equipment further out")
+	check(is_equal_approx(Walker.carry_distance(1.0, 99.0), 1.0 + Walker.CARRY_MAX) and is_equal_approx(Walker.carry_distance(1.0, -99.0), 1.0 + Walker.CARRY_MIN),
+		"it stays between %.2f and %.2f m beyond arm's length" % [Walker.CARRY_MIN, Walker.CARRY_MAX])
+	check(Placement.snap_yaw(0.3) == 0.0 and is_equal_approx(Placement.snap_yaw(1.4), PI * 0.5) and is_equal_approx(Placement.snap_yaw(-3.0), -PI),
+		"snapping squares equipment up in quarter turns")
+	# A corner of two walls out of the way of everything, to snap against.
+	var corner := Vector3(600.0, 0.0, 600.0)
+	var walls := Node3D.new()
+	add_child(walls)
+	for w in [[corner + Vector3(-0.1, 1.0, 5.0), Vector3(0.2, 2.0, 10.0)], [corner + Vector3(5.0, 1.0, -0.1), Vector3(10.0, 2.0, 0.2)]]:
+		var body := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = w[1]
+		cs.shape = box
+		body.add_child(cs)
+		body.position = w[0]
+		walls.add_child(body)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var space := get_viewport().get_world_3d().direct_space_state
+	var size := Vector3(1.2, 1.0, 0.6)
+	var none: Array[RID] = []
+	var free := Placement.snap(space, Transform3D(Basis(Vector3.UP, 0.2), corner + Vector3(3.0, 0.0, 3.0)), size, none)
+	check((free["walls"] as Array).is_empty() and (free["xf"] as Transform3D).origin.is_equal_approx(corner + Vector3(3.0, 0.0, 3.0))
+		and is_zero_approx((free["xf"] as Transform3D).basis.get_euler().y), "away from walls it only squares up")
+	var by_wall := Placement.snap(space, Transform3D(Basis(Vector3.UP, 0.2), corner + Vector3(0.85, 0.0, 3.0)), size, none)
+	var at: Vector3 = (by_wall["xf"] as Transform3D).origin
+	check((by_wall["walls"] as Array).size() == 1 and absf(at.x - (corner.x + 0.6 + Placement.GAP)) < 0.005 and absf(at.z - (corner.z + 3.0)) < 0.005,
+		"near a wall it slides flush against it (%s)" % str(at - corner))
+	var cornered := Placement.snap(space, Transform3D(Basis(Vector3.UP, -0.1), corner + Vector3(0.85, 0.0, 0.5)), size, none)
+	at = (cornered["xf"] as Transform3D).origin
+	check((cornered["walls"] as Array).size() == 2 and absf(at.x - (corner.x + 0.6 + Placement.GAP)) < 0.005
+		and absf(at.z - (corner.z + 0.3 + Placement.GAP)) < 0.005, "near a corner it goes tight into it (%s)" % str(at - corner))
+	var turned := Placement.snap(space, Transform3D(Basis(Vector3.UP, PI * 0.5 + 0.2), corner + Vector3(0.6, 0.0, 3.0)), size, none)
+	at = (turned["xf"] as Transform3D).origin
+	check(absf(at.x - (corner.x + 0.3 + Placement.GAP)) < 0.005, "turned a quarter, its narrow side goes to the wall (%s)" % str(at - corner))
+	walls.queue_free()
+	# In the shed: carry a stool about, wheel it out, and the tool stays the same.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var kept_snap: bool = Settings.snap_placement
+	Settings.snap_placement = true
+	Shed.request({"a": "order_furniture", "model": "seat_stool"})
+	var stool := _first_furniture("seat_stool")
+	var middle := Workshop.CENTER + Vector3(0.0, 0.0, 1.0)
+	Shed.furniture[stool]["xf"] = Transform3D(Basis(), middle)
+	w.place(Transform3D(Basis(Vector3.UP, 0.3), middle + Vector3(0.0, 0.0, 1.2)))
+	Shed.request({"a": "grab", "furniture": stool})
+	for i in 3:
+		await get_tree().physics_frame
+	var near_xf: Transform3D = w._push_transform(stool)
+	var flat := (near_xf.origin - w.global_position) * Vector3(1, 0, 1)
+	_press("tool_prev")
+	_press("tool_prev")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	check(is_equal_approx(w.carry_reach, 2.0 * Walker.CARRY_STEP) and w.tool == "hands", "two clicks of the wheel push it out, and don't change tool")
+	var far_xf: Transform3D = w._push_transform(stool)
+	var far := (far_xf.origin - w.global_position) * Vector3(1, 0, 1)
+	check(absf(far.length() - flat.length() - 2.0 * Walker.CARRY_STEP) < 0.05, "it's held half a metre further away (%.2f -> %.2f m)" % [flat.length(), far.length()])
+	check(is_zero_approx(wrapf(far_xf.basis.get_euler().y, -PI, PI)) and w.snap_text() == "", "in the open it squares up but has no wall to snap to")
+	check(w._ghost != null and w._ghost.visible and w.info.contains("Mouse wheel") and w.info.contains("snapping off"),
+		"an outline shows where it'll go, and the panel says how to move and snap it (%s)" % w.info)
+	for i in 30:
+		_press("tool_next")
+	await get_tree().physics_frame
+	check(is_equal_approx(w.carry_reach, Walker.CARRY_MIN), "pulled in, it stops just short of you")
+	_press("alt_act")
+	await get_tree().physics_frame
+	check(not Settings.snap_placement, "R while carrying turns snapping off")
+	var loose: Transform3D = w._push_transform(stool)
+	check(absf(wrapf(loose.basis.get_euler().y - 0.3, -PI, PI)) < 0.01, "with snapping off it turns with you freely")
+	_press("alt_act")
+	await get_tree().physics_frame
+	check(Settings.snap_placement, "and back on again")
+	_press("interact")
+	for i in 3:
+		await get_tree().physics_frame
+	check(Shed.moving(Shed.me()) == 0 and not w._ghost.visible, "F puts it down and the outline goes")
+	Settings.snap_placement = kept_snap
+	Settings.save_settings()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _test_free_surfaces() -> void:
+	Shed.start_new("Tester", 21)
+	var me := Shed.me()
+	# The shed's repair bench was rated for two parts; now it takes as many as fit on top.
+	var machine := _first_furniture("repair_standard")
+	var key := "f%d" % machine
+	check(Shed.surface(key).get("kind", "") == "repair" and Shed.surface_items(key).is_empty(), "the repair bench has a free top")
+	var on := []
+	for i in 24:
+		_in_hands("stock_muffler" if i % 3 == 0 else "flat_bar", 0.2, 0.6)
+		if _set_down_near(key, Vector2(-0.7 + float(i % 6) * 0.28, -0.3 + float(i % 4) * 0.2)):
+			on.append(Shed.items.keys().max())
+		else:
+			Shed._erase_item(Shed.held_by(me))
+	check(on.size() > 2, "far more than two parts go on the repair bench (%d)" % on.size())
+	var rects := Shed._surface_rects(key)
+	var overlaps := 0
+	for a in rects.size():
+		for b in range(a + 1, rects.size()):
+			if (rects[a][1] as Rect2).grow(-Shed.SURFACE_GAP).intersects(rects[b][1]):
+				overlaps += 1
+	check(overlaps == 0, "none of them overlap")
+	var spots := Shed.furniture_spots(machine)
+	check(on.all(func(id): return Shed.items[id]["at"] == "spot" and spots.has(Shed.items[id]["ref"]) and Shed.items[id].get("place") is Transform3D),
+		"each sits on the machine where it was put down")
+	# A part dropped right on another is refused by the host.
+	_in_hands("iridium_plugs")
+	var taken: Transform3D = Shed.item_place(on[0])
+	check(Shed.check(me, {"a": "set_down", "top": key, "xf": taken}).contains("in the way"), "you can't put a part down on top of another")
+	var gap = Shed.find_room(key, Shed.held_by(me), Vector2(taken.origin.x, taken.origin.z))
+	check(gap == null or Shed.surface_fits(key, Shed.held_by(me), gap) == "", "looking for room next to it finds a real gap, or says it's full")
+	Shed._erase_item(Shed.held_by(me))
+	# The grinder still does the lot, a little slower with more on than it's rated for.
+	var batch := Shed.repair_batch(str(spots[0]))
+	check(batch.size() == on.size(), "the grinder works on every part on it (%d)" % batch.size())
+	var two := Shed.repair_time(batch.slice(0, 2))
+	check(Shed.repair_time(batch) > two * float(batch.size()) / 2.0 * 0.99, "a pile of parts takes longer than the rated two")
+	Shed.request({"a": "repair_many", "items": batch})
+	check(on.all(func(id): return Shed.items[id]["rust"] == 0.0 and Shed.items[id]["wear"] == 0.0), "every part on it comes off restored")
+	# The parts washer cleans everything in it; more than it's rated for and each part goes slower.
+	var washer := _first_furniture("washer_standard")
+	var wkey := "f%d" % washer
+	var dirty := []
+	for i in 6:
+		_in_hands("paper_oil", 0.9)
+		if _set_down_near(wkey, Vector2(-0.5 + i * 0.2, 0.0)):
+			dirty.append(Shed.items.keys().max())
+	check(dirty.size() == 6, "six oil filters go in a two-part washer")
+	Shed._process(1.0)
+	var rate := float(Equipment.get_model("washer_standard")["rate"])
+	var drop := 0.9 - float(Shed.items[dirty[0]]["dirt"])
+	check(dirty.all(func(id): return Shed.items[id]["dirt"] < 0.9), "the washer cleans all six")
+	check(absf(drop - rate * 2.0 / 6.0) < 0.01, "six in a washer rated for two go at a third of the speed (%.3f)" % drop)
+	# Boxes stay out of the washer, and a frame is too big for a small one.
+	var box := _in_hands("paper_oil")
+	Shed.items[box]["boxed"] = true
+	check(Shed.check(me, {"a": "set_down", "top": wkey, "xf": Transform3D(Basis(), Vector3(0.0, 0.86, 0.0))}) == "Unpack it first.", "boxed parts can't go in the washer")
+	Shed._erase_item(box)
+	Shed.request({"a": "order_furniture", "model": "washer_compact"})
+	var small := "f%d" % _first_furniture("washer_compact")
+	var frame := _in_hands("steel_cradle")
+	check(Shed.check(me, {"a": "set_down", "top": small, "xf": Transform3D(Basis(), Vector3(0.0, 0.8, 0.0))}).contains("too big"),
+		"a frame is too big for the benchtop washer (%s)" % Shed.check(me, {"a": "set_down", "top": small, "xf": Transform3D(Basis(), Vector3(0.0, 0.8, 0.0))}))
+	Shed._erase_item(frame)
+	# The shed's own workbench takes more than its four old places.
+	var bench_had := Shed.surface_items("bench").size()
+	var added := 0
+	for i in 10:
+		_in_hands("iridium_plugs")
+		if _set_down_near("bench", Vector2(-0.1, -0.35 + i * 0.08)):
+			added += 1
+		else:
+			Shed._erase_item(Shed.held_by(me))
+	check(Shed.surface_items("bench").size() == bench_had + added and added == 10, "the workbench holds %d parts, not just four" % (bench_had + added))
+	frame = Shed.surface_items("bench").filter(func(id): return Shed.items[id]["part"] == "iridium_plugs")[0]
+	check(Shed.spot_role(str(Shed.items[frame]["ref"])) == "bench" and Shed.spot_transform(str(Shed.items[frame]["ref"])).origin.distance_to(
+		Shed.surface("bench")["xf"] * Shed.item_place(frame).origin) < 0.001, "it's drawn where it was put")
+	Shed.request({"a": "take", "spot": str(Shed.items[frame]["ref"])})
+	check(Shed.held_by(me) == frame and not Shed.items[frame].has("place"), "picked up again it leaves its place")
+	Shed._erase_item(frame)
+	# An older save: parts in the washer's numbered places still count, get cleaned and are kept clear of.
+	var old := Shed._new_item("paper_oil", 0.0, 0.7, 0.0)
+	var old_spot := "washer_%d_%d" % [washer, 1]
+	for id in Shed.surface_items(wkey):
+		Shed._erase_item(id)
+	Shed._move(old, "spot", old_spot)
+	check(Shed.surface_items(wkey) == [old] and Shed.item_place(old) == Equipment.local_place("washer_standard", 1),
+		"a part left in a numbered place is still on the washer, in its old place")
+	Shed._process(0.5)
+	check(Shed.items[old]["dirt"] < 0.7, "and the washer still cleans it")
+	_in_hands("paper_oil")
+	var old_at: Transform3D = Shed.item_place(old)
+	check(Shed.check(me, {"a": "set_down", "top": wkey, "xf": old_at}).contains("in the way"), "a new part can't go on top of it")
+	# What's put down survives the trip to everyone else, and a save.
+	var placed: int = Shed.held_by(me)
+	check(_set_down_near(wkey, Vector2(-0.4, 0.0)), "a part goes in beside it")
+	var place: Transform3D = Shed.items[placed]["place"]
+	var snap: Dictionary = bytes_to_var(var_to_bytes(Shed._snapshot()))
+	Shed._sync(snap)
+	check(Shed.items[placed]["place"] == place and Shed.surface_items(wkey).has(placed), "the place goes out with the shed state")
+	var saved: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	Shed.load_state(saved, "Tester")
+	check(Shed.items[placed]["place"] == place and Shed.items[placed]["at"] == "spot", "and comes back from a save")
+	# Something held when the shed was saved goes back on the workbench, wherever there's room.
+	var held := _in_hands("iridium_plugs")
+	Shed.load_state(str_to_var(var_to_str(Shed._snapshot())), "Tester")
+	check(Shed.items[held]["at"] == "spot" and Shed.surface_of_spot(str(Shed.items[held]["ref"])) == "bench", "a part in your hands goes back on the bench")
+	Shed.stop()
+
+
+func _test_surface_session() -> void:
+	# In the game: hold a part, look at the top of the repair bench and put it down there.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var machine := _first_furniture("repair_standard")
+	var key := "f%d" % machine
+	var mxf: Transform3D = Shed.furniture[machine]["xf"]
+	var top := Equipment.work_height("repair_standard")
+	var spot_at: Vector3 = mxf * Vector3(-0.3, top, 0.0)
+	w.place(Transform3D(Basis(), mxf * Vector3(-0.3, 0.0, 1.3)))
+	var count := 0
+	for i in 5:
+		_in_hands("iridium_plugs")
+		Shed.changed.emit()
+		await _aim_point(w, spot_at)
+		check(w.target.get("kind", "") in ["top", "spot"] and w.plan.get("action", {}).get("a", "") == "set_down" and w.plan["blocked"] == "",
+			"looking at the bench top with a part in hand offers to put it down (%s, %s)" % [str(w.target.get("kind", "")), str(w.plan.get("blocked", w.plan))])
+		await _hold_act(main)
+		if Shed.held_by(Shed.me()) == 0:
+			count += 1
+	check(count == 5 and Shed.surface_items(key).size() == 5, "five spark plugs go down in the same spot, each beside the last (%d)" % Shed.surface_items(key).size())
+	Shed.changed.emit()
+	await get_tree().process_frame
+	var plug: int = Shed.surface_items(key)[0]
+	await _aim_point(w, Shed.spot_transform(str(Shed.items[plug]["ref"])).origin + Vector3.UP * 0.02)
+	check(w.target.get("kind", "") == "spot" and w.target_item() != 0, "each part on it can be aimed at (%s)" % str(w.target))
+	check(w.plan.get("action", {}).get("a", "") == "take", "and picked up again")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _test_whiteboard_moves() -> void:
+	Shed.start_new("Tester", 31)
+	var me := Shed.me()
+	var board := Shed.whiteboard_id()
+	check(board != 0 and Shed.furniture[board]["xf"].origin == Whiteboard.MOUNT and Equipment.is_wall("whiteboard"),
+		"the whiteboard is a wall hanging in its old place on the front wall")
+	check(Shed.check(me, {"a": "order_furniture", "model": "whiteboard"}).contains("already"), "there's only the one whiteboard")
+	check(not PartsComputer.all_kinds().has("eq:whiteboard"), "it isn't sold")
+	check(Shed.check(me, {"a": "grab", "furniture": board}) == "", "it can be taken down")
+	# An older save had no whiteboard to move: it stays where it always was.
+	var old: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	(old["furniture"] as Dictionary).erase(board)
+	Shed.load_state(old, "Tester")
+	var again := Shed.whiteboard_id()
+	check(again != 0 and Shed.furniture[again]["xf"].origin == Whiteboard.MOUNT, "a save from before keeps it at the old spot")
+	Shed.stop()
+	# In the game: take it down, hang it on the east wall, and it's still there after a save.
+	var kept := [Settings.time_of_day, Settings.day_night_cycle, Settings.day_length]
+	SaveGame.slot_override = "test_whiteboard_move"
+	SaveGame.delete_slot(SaveGame.active_slot())
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	board = Shed.whiteboard_id()
+	var node: Whiteboard = get_tree().get_first_node_in_group("whiteboard")
+	check(node != null and node.global_position.distance_to(Whiteboard.MOUNT) < 0.01, "it hangs where it always did")
+	Shed.board_request({"a": "board_draw", "id": 501, "c": 2, "w": 6.0, "from": 0, "done": true,
+		"pts": PackedVector2Array([Vector2(100, 100), Vector2(400, 120)])})
+	w.target = {"kind": "board"}
+	check(w._target_furniture() == board, "F at the whiteboard takes hold of it")
+	Shed.request({"a": "grab", "furniture": board})
+	var east := Transform3D(Basis(Vector3.UP, -PI * 0.5), Workshop.CENTER + Vector3(Workshop.HALF.x - 0.03, 1.6, 2.0))
+	Shed.request({"a": "release", "furniture": board, "xf": east})
+	await get_tree().process_frame
+	node = get_tree().get_first_node_in_group("whiteboard")
+	check(node.global_position.distance_to(east.origin) < 0.01, "it hangs on the east wall now")
+	check(main.saver.save_now(), "the shed saves")
+	main._leave()
+	main._start_session()
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	board = Shed.whiteboard_id()
+	node = get_tree().get_first_node_in_group("whiteboard")
+	check(Shed.furniture[board]["xf"] == east and node != null and node.global_position.distance_to(east.origin) < 0.01,
+		"after loading it's still on the east wall")
+	check(BoardData.find(Shed.board, 501) >= 0, "with its drawing on it")
+	# You can still draw on it where it is.
+	w = main.walker
+	var face: Vector3 = node.global_position
+	w.place(Transform3D(Basis(), Vector3(face.x - 1.4, 0.0, face.z)))
+	await _aim_point(w, face)
+	check(w.target.get("kind", "") == "board" and node.aim(w).distance_to(BoardData.PX * 0.5) < 40.0, "and draw on it there (%s)" % str(node.aim(w)))
+	check(w.info.contains("F: take it down"), "the panel says F takes it down")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot(SaveGame.active_slot())
+	SaveGame.slot_override = ""
+	Settings.time_of_day = kept[0]
+	Settings.day_night_cycle = kept[1]
+	Settings.day_length = kept[2]
+
+
+func _test_box_labels() -> void:
+	# Each box comes from a made-up delivery firm, always the same one for the same box.
+	check(BikeModel.courier_for(42) == BikeModel.courier_for(42) and BikeModel.tracking_for(42) == BikeModel.tracking_for(42),
+		"a box's courier and tracking number come from its id, so it always looks the same")
+	var seen := {}
+	for id in range(1, 41):
+		seen[BikeModel.courier_for(id)] = true
+	check(seen.size() >= 4, "boxes come from several different couriers (%d)" % seen.size())
+	check(BikeModel.tracking_for(1) != BikeModel.tracking_for(2), "each has its own tracking number")
+	var long_box := BikeModel.box_display("stock_muffler", 42)
+	var size: Vector3 = long_box.get_meta("size")
+	var lid: Node3D = long_box.get_node("Label")
+	var front: Node3D = long_box.get_node("FrontLabel")
+	check(int(long_box.get_meta("courier")) == BikeModel.courier_for(42), "the box shows its courier's label")
+	check(lid.position.y > size.y and is_equal_approx(lid.rotation.x, -PI * 0.5), "the lid label lies face up on top")
+	check(is_equal_approx(lid.rotation.y, PI * 0.5) == (size.z > size.x * 1.15), "it reads along the box's longer side")
+	check(front.position.z > size.z * 0.5 and is_zero_approx(front.rotation.y), "and another faces out the front")
+	var texts := []
+	for n in lid.get_children():
+		if n is Label3D:
+			texts.append((n as Label3D).text)
+	var firm: Dictionary = BikeModel.COURIERS[BikeModel.courier_for(42)]
+	check(texts.has(firm["name"]) and texts.has(PartsDB.part_name("stock_muffler")) and texts.has(BikeModel.tracking_for(42)),
+		"the label has the firm's name, what's inside and the tracking number (%s)" % str(texts))
+	long_box.free()
+	# A delivery outside is drawn with its own courier.
+	Shed.start_new("Tester", 41)
+	Shed.request({"a": "order_part", "part": "iridium_plugs"})
+	var box := 0
+	for id in Shed.items:
+		if Shed.items[id].get("boxed", false):
+			box = id
+	var shown := BikeModel.item_display(box)
+	check(int(shown.get_meta("courier")) == BikeModel.courier_for(box), "a delivered box carries the label for its own id")
+	shown.free()
+	Shed.stop()

@@ -46,6 +46,9 @@ func _build() -> void:
 			_build_seat()
 		"tv":
 			_build_tv()
+		"whiteboard":
+			# The crew whiteboard draws itself and takes the drawing (see Whiteboard).
+			add_child(Whiteboard.new())
 		"ramp", "obstacle", "barrier", "marker":
 			_build_yard()
 
@@ -93,6 +96,12 @@ func _body(blocker := true) -> void:
 	# The cabinet below the working surface is what you take hold of; the top is for parts.
 	var top := Equipment.work_height(model) - 0.08
 	_ws._target(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z) + Vector3(0.04, 0.0, 0.04), {"furniture": id}, self)
+	if Equipment.SURFACE_KINDS.has(kind):
+		# Parts go down anywhere on top (see Shed.surface): one thin target over all of it, under
+		# the parts on it, which each have their own (Workshop).
+		var h := Equipment.work_height(model)
+		_ws._target(Vector3(0.0, h + 0.015, 0.0), Vector3(size.x, 0.03, size.z), {"top": "f%d" % id, "furniture": id}, self)
+		return
 	for spot in Shed.furniture_spots(id):
 		var at := Shed.local_spot_transform(spot).origin
 		var w := size.x / maxf(1.0, Equipment.places(model)) if kind != "shelf" else size.x / float(_m()["cols"])

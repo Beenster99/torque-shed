@@ -11,11 +11,17 @@ const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "bench", "bo
 	"ramp", "obstacle", "barrier", "marker"]
 const KIND_NAMES := {"stand": "Engine stands", "shelf": "Shelving", "washer": "Parts washers",
 	"repair": "Repair machines", "bench": "Workbenches", "booth": "Paint booths", "changer": "Tyre changers", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs",
-	"ramp": "Jump ramps", "obstacle": "Things to jump", "barrier": "Walls and fences", "marker": "Cones, posts and flags"}
+	"ramp": "Jump ramps", "obstacle": "Things to jump", "barrier": "Walls and fences", "marker": "Cones, posts and flags", "whiteboard": "Whiteboard"}
 ## Kinds that live outside in the yard, to ride over, round and through.
 const YARD_KINDS: Array[String] = ["ramp", "obstacle", "barrier", "marker"]
-## Kinds that hang on a wall rather than stand on the floor.
-const WALL_KINDS: Array[String] = ["poster", "tv"]
+## Kinds that hang on a wall rather than stand on the floor. The crew whiteboard is one too,
+## though it comes with the shed rather than being sold (it isn't in KINDS).
+const WALL_KINDS: Array[String] = ["poster", "tv", "whiteboard"]
+## Kinds whose top is a free surface: parts go down anywhere on it there's room for them, as
+## many as fit, rather than in a set number of places (see Shed.surface).
+const SURFACE_KINDS: Array[String] = ["washer", "repair", "bench"]
+## Kept clear round the edge of a surface, in metres.
+const SURFACE_MARGIN := 0.05
 ## What the places on each kind are called in spot names: "<prefix>_<furniture id>_<n>".
 ## Kinds built into the shed: not sold, and can't be moved.
 const FIXED_KINDS: Array[String] = ["booth", "changer"]
@@ -23,7 +29,7 @@ const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", 
 ## The model each kind defaults to (and what an order without a model gets).
 const DEFAULT := {"stand": "engine_stand", "shelf": "shelf_standard", "washer": "washer_standard",
 	"repair": "repair_standard", "bench": "bench_standard", "booth": "booth_standard", "changer": "tyre_changer", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_86",
-	"ramp": "ramp_medium", "obstacle": "barrels", "barrier": "wall_concrete", "marker": "cone"}
+	"ramp": "ramp_medium", "obstacle": "barrels", "barrier": "wall_concrete", "marker": "cone", "whiteboard": "whiteboard"}
 
 const MODELS := {
 	# Engine stands hold one engine each.
@@ -138,6 +144,11 @@ const MODELS := {
 	"tv_136": {"kind": "tv", "name": "136\" video wall", "size": Vector3(3.01, 1.69, 0.1), "inches": 136,
 		"desc": "A whole wall of screen, as big as the crew board. Needs a clear stretch of wall."},
 
+	# The crew whiteboard: one comes with the shed, on the front wall. F takes it down to hang it
+	# on another wall, drawing and all (see Whiteboard). Not sold.
+	"whiteboard": {"kind": "whiteboard", "name": "Crew whiteboard", "size": Vector3(2.47, 1.27, 0.05),
+		"desc": "The crew's whiteboard for plans, lists and sketches. Take it down with F and hang it on any wall."},
+
 	# Yard kit: pushed about with F like the shed equipment. Ramps rise away from their front (+Z),
 	# so ride at the low end. `solid` ones stop a bike; markers you can ride straight past.
 	"ramp_small": {"kind": "ramp", "name": "Small kicker ramp", "size": Vector3(1.6, 0.45, 2.0), "solid": true,
@@ -233,13 +244,17 @@ static func spec_line(id: String) -> String:
 		"shelf":
 			bits.append("%d shelves, %d places" % [int(m["levels"]), places(id)])
 		"washer":
-			bits.append("Washes %d part%s at once" % [places(id), "" if places(id) == 1 else "s"])
+			bits.append("Parts go anywhere in it, as many as fit")
+			bits.append("Full speed with up to %d part%s" % [places(id), "" if places(id) == 1 else "s"])
 			bits.append("Cleans in about %d s" % roundi(1.0 / float(m["rate"])))
 		"repair":
-			bits.append("Restores %d part%s at once" % [places(id), "" if places(id) == 1 else "s"])
+			bits.append("Parts go anywhere on it, as many as fit")
+			bits.append("Full speed with up to %d part%s" % [places(id), "" if places(id) == 1 else "s"])
 			bits.append("Speed x%.1f" % float(m["speed"]))
 		"bench":
-			bits.append("%d places on top" % places(id))
+			bits.append("Parts go anywhere on top, as many as fit")
+		"whiteboard":
+			bits.append("Draw, write and plan on it")
 		"changer":
 			bits.append("Takes one wheel at a time")
 		"booth":
@@ -295,6 +310,18 @@ static func local_place(model_id: String, n: int) -> Transform3D:
 			var x := -w * 0.5 + w * (0.5 + n) / float(count)
 			return Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(x, top, 0.0))
 	return Transform3D()
+
+
+## The free surface on top of a washer, repair machine or workbench, in its own space: x across
+## the front, y the depth (its z). Parts can go anywhere inside it.
+static func surface_rect(model_id: String) -> Rect2:
+	var size: Vector3 = get_model(model_id).get("size", Vector3.ONE)
+	var w := maxf(0.1, size.x - SURFACE_MARGIN * 2.0)
+	var d := maxf(0.1, size.z - SURFACE_MARGIN * 2.0)
+	if model_id in ["washer_standard", "washer_industrial", "washer_cabinet"]:
+		# The splash-back at the rear takes a strip off the depth.
+		return Rect2(-w * 0.5, -d * 0.5 + 0.06, w, d - 0.06)
+	return Rect2(-w * 0.5, -d * 0.5, w, d)
 
 
 ## Height of the working surface parts sit on.

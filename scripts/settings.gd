@@ -14,6 +14,7 @@ var units := "metric"     # or "imperial"
 var day_night_cycle := true
 var day_length := 120      # real minutes per 24 h game day
 var time_of_day := 9.0     # hours; kept up to date while playing so the clock carries on next time
+var snap_placement := true # equipment you carry snaps square and flush to walls and corners
 
 
 func _ready() -> void:
@@ -35,6 +36,7 @@ func load_settings() -> void:
 		day_night_cycle = cfg.get_value("world", "day_night_cycle", day_night_cycle)
 		day_length = int(cfg.get_value("world", "day_length", day_length))
 		time_of_day = float(cfg.get_value("world", "time_of_day", time_of_day))
+		snap_placement = bool(cfg.get_value("building", "snap", snap_placement))
 
 
 func save_settings() -> void:
@@ -50,6 +52,7 @@ func save_settings() -> void:
 	cfg.set_value("world", "day_night_cycle", day_night_cycle)
 	cfg.set_value("world", "day_length", day_length)
 	cfg.set_value("world", "time_of_day", time_of_day)
+	cfg.set_value("building", "snap", snap_placement)
 	cfg.save(PATH)
 
 

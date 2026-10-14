@@ -20,6 +20,7 @@ Holding a can of fluid: left mouse pours it in, right mouse / LT drains into it
 Spray can: R / right mouse / X picks the colour, T / middle mouse / B the finish
 F / Y: get on a finished bike (hold to wheel it about), use the parts computer, switch the
   radio on or off, unpack a box, take hold of an engine stand or shelving unit (F again lets go)
+Carrying equipment: mouse wheel / LB RB pushes it further away or closer, R / X snaps to walls on or off
 Hands on a bolted-on stand: kick the side stand down or heave the bike onto the centre stand
 
 RIDING
@@ -36,6 +37,7 @@ var _pause_box: VBoxContainer
 var _assist: HSlider
 var _auto: CheckBox
 var _quality: CheckBox
+var _snap: CheckBox
 var _host_info: Label
 var _crew: Label
 var _pad: Label
@@ -162,6 +164,11 @@ func _ready() -> void:
 	_quality.button_pressed = Settings.high_quality
 	_quality.toggled.connect(func(v): Settings.high_quality = v)
 	settings.add_child(_quality)
+	_snap = CheckBox.new()
+	_snap.text = "Snap equipment to walls and corners when placing it (R toggles it while carrying)"
+	_snap.button_pressed = Settings.snap_placement
+	_snap.toggled.connect(func(v): Settings.snap_placement = v)
+	settings.add_child(_snap)
 	_build_time_settings(settings)
 	settings.add_child(UITheme.label("Sound effects volume", 15))
 	settings.add_child(_volume_slider(Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
@@ -217,6 +224,7 @@ func show_pause() -> void:
 	else:
 		_host_info.text = "Working solo."
 	_auto.button_pressed = Settings.auto_shift
+	_snap.button_pressed = Settings.snap_placement
 	_refresh_time_settings(true)
 	show()
 

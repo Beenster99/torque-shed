@@ -1520,7 +1520,7 @@ static func part_display(part_id: String, cond: Dictionary) -> Node3D:
 static func item_display(item_id: int) -> Node3D:
 	var it: Dictionary = Shed.items[item_id]
 	if it.get("boxed", false):
-		return box_display(str(it["part"]))
+		return box_display(str(it["part"]), item_id)
 	if PartsDB.is_fluid(str(it["part"])):
 		var f: Dictionary = it.get("fluid", {})
 		return fluid_display(str(it["part"]), float(f.get("litres", 0.0)) / maxf(PartsDB.fluid_capacity(str(it["part"])), 0.01))
@@ -1648,13 +1648,130 @@ static func _cyl_mesh(radius: float, height: float, top := -1.0) -> CylinderMesh
 	return m
 
 
-## A new part still in its cardboard box, sized to fit it, with the part's name on the lid.
-static func box_display(part_id: String) -> Node3D:
+## Made-up delivery firms whose shipping labels go on the boxes (no real companies): name, the
+## colour of their band, the ink on it and the little mark beside the name.
+const COURIERS := [
+	{"name": "HEDGEHOG PARCELS", "bg": Color(0.98, 0.78, 0.12), "ink": Color(0.12, 0.1, 0.08), "mark": "disc"},
+	{"name": "RAPID ROOSTER", "bg": Color(0.82, 0.12, 0.1), "ink": Color(1.0, 0.95, 0.85), "mark": "chevron"},
+	{"name": "SPANNER EXPRESS", "bg": Color(0.12, 0.3, 0.72), "ink": Color(1.0, 1.0, 1.0), "mark": "stripes"},
+	{"name": "KWIKKRATE", "bg": Color(0.1, 0.55, 0.3), "ink": Color(1.0, 1.0, 1.0), "mark": "diamond"},
+	{"name": "OTTERPOST", "bg": Color(0.42, 0.2, 0.62), "ink": Color(1.0, 0.9, 0.3), "mark": "disc"},
+	{"name": "MUDGUARD MAIL", "bg": Color(0.2, 0.2, 0.22), "ink": Color(0.98, 0.6, 0.1), "mark": "stripes"},
+	{"name": "PISTON PARCEL CO", "bg": Color(0.95, 0.45, 0.08), "ink": Color(0.1, 0.1, 0.1), "mark": "diamond"},
+	{"name": "BOLT & BARREL", "bg": Color(0.0, 0.55, 0.6), "ink": Color(1.0, 1.0, 1.0), "mark": "chevron"},
+]
+static var _sticker_mats := {}    # colour -> material for shipping labels
+
+
+## Which delivery firm brought a box: an index into COURIERS, always the same for one box.
+static func courier_for(seed_value: int) -> int:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("courier:%d" % seed_value)
+	return rng.randi_range(0, COURIERS.size() - 1)
+
+
+## The tracking number printed on a box's label, from the same seed.
+static func tracking_for(seed_value: int) -> String:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("tracking:%d" % seed_value)
+	return "TS %03d %04d %03d" % [rng.randi_range(0, 999), rng.randi_range(0, 9999), rng.randi_range(0, 999)]
+
+
+## The size a loose part is drawn at (width, height, depth), as it sits on a bench.
+static func part_size(part_id: String) -> Vector3:
 	if not _part_sizes.has(part_id):
 		var probe := part_display(part_id, {})
 		_part_sizes[part_id] = probe.get_meta("size", Vector3.ONE * 0.3)
 		probe.free()
-	var size: Vector3 = (_part_sizes[part_id] as Vector3).max(Vector3(0.15, 0.1, 0.15)) + Vector3(0.06, 0.05, 0.06)
+	return _part_sizes[part_id]
+
+
+## The size of the cardboard box a part comes in.
+static func box_size(part_id: String) -> Vector3:
+	return part_size(part_id).max(Vector3(0.15, 0.1, 0.15)) + Vector3(0.06, 0.05, 0.06)
+
+
+## How much room a part takes up where it's put down (width, height, depth): its box if it's
+## still boxed. Used to fit parts onto benches, washers and repair machines.
+static func footprint(part_id: String, boxed := false) -> Vector3:
+	if boxed:
+		return box_size(part_id)
+	return part_size(part_id)
+
+
+static func _sticker_mat(c: Color) -> StandardMaterial3D:
+	if not _sticker_mats.has(c):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = c
+		m.roughness = 0.65
+		_sticker_mats[c] = m
+	return _sticker_mats[c]
+
+
+static func _quad(parent: Node3D, size: Vector2, at: Vector3, c: Color, roll := 0.0) -> void:
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = size
+	mi.mesh = q
+	mi.material_override = _sticker_mat(c)
+	mi.position = at
+	mi.rotation.z = roll
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
+
+
+static func _sticker_text(parent: Node3D, text: String, at: Vector3, fit: Vector2, c: Color, font := 48) -> void:
+	var l := Label3D.new()
+	l.text = text
+	l.font_size = font
+	l.outline_size = 0
+	l.modulate = c
+	# Big enough to read, small enough to fit: about 0.7 of the font size a letter.
+	l.pixel_size = maxf(0.00012, minf(fit.x / (maxf(1.0, text.length()) * 0.7 * font), fit.y / font))
+	l.position = at
+	parent.add_child(l)
+
+
+## A shipping label facing +Z, `w` by `h` metres: the courier's band with its mark and name,
+## what's in the box, and the tracking number.
+static func _box_sticker(w: float, h: float, part_id: String, seed_value: int) -> Node3D:
+	var c: Dictionary = COURIERS[courier_for(seed_value)]
+	var root := Node3D.new()
+	root.name = "Label"
+	_quad(root, Vector2(w, h), Vector3.ZERO, Color(0.95, 0.94, 0.9))
+	var band := h * 0.36
+	var by := h * 0.5 - band * 0.5
+	_quad(root, Vector2(w, band), Vector3(0.0, by, 0.0006), c["bg"])
+	# The firm's mark beside its name.
+	var m := band * 0.62
+	var mx := -w * 0.5 + m * 0.75
+	var ink: Color = c["ink"]
+	match str(c["mark"]):
+		"disc":
+			_quad(root, Vector2(m, m) * 0.72, Vector3(mx, by, 0.0012), ink, PI * 0.25)
+			_quad(root, Vector2(m, m) * 0.72, Vector3(mx, by, 0.0012), ink)
+		"diamond":
+			_quad(root, Vector2(m, m) * 0.68, Vector3(mx, by, 0.0012), ink, PI * 0.25)
+		"chevron":
+			for side in [-1.0, 1.0]:
+				_quad(root, Vector2(m * 0.75, m * 0.2), Vector3(mx, by + side * m * 0.2, 0.0012), ink, -side * 0.65)
+		_:
+			for i in 3:
+				_quad(root, Vector2(m * (1.0 - i * 0.25), m * 0.16), Vector3(mx + i * m * 0.12, by + (1 - i) * m * 0.3, 0.0012), ink)
+	var name_w := w - m * 1.7
+	_sticker_text(root, str(c["name"]), Vector3(mx + m * 0.6 + name_w * 0.5, by, 0.0016), Vector2(name_w * 0.95, band * 0.62), ink)
+	_sticker_text(root, PartsDB.part_name(part_id), Vector3(0.0, -h * 0.06, 0.0016), Vector2(w * 0.92, h * 0.24), Color(0.1, 0.09, 0.08))
+	_sticker_text(root, tracking_for(seed_value), Vector3(0.0, -h * 0.36, 0.0016), Vector2(w * 0.7, h * 0.12), Color(0.25, 0.25, 0.25), 32)
+	return root
+
+
+## A new part still in its cardboard box, sized to fit it, with a delivery firm's shipping
+## label on the lid and the front saying what's inside. `seed_value` (the item id) picks the
+## firm and the tracking number, so a box always looks the same.
+static func box_display(part_id: String, seed_value := 0) -> Node3D:
+	if seed_value == 0:
+		seed_value = hash(part_id)
+	var size := box_size(part_id)
 	if _cardboard == null:
 		_cardboard = StandardMaterial3D.new()
 		_cardboard.albedo_color = Color(0.66, 0.5, 0.32)
@@ -1677,16 +1794,27 @@ static func box_display(part_id: String) -> Node3D:
 	tape.material_override = tape_mat
 	tape.position.y = size.y + 0.001
 	root.add_child(tape)
-	var name_tag := Label3D.new()
-	name_tag.text = PartsDB.part_name(part_id)
-	name_tag.font_size = 32
-	name_tag.pixel_size = clampf(size.x / 900.0, 0.0006, 0.0016)
-	name_tag.modulate = Color(0.12, 0.1, 0.08)
-	name_tag.outline_size = 0
-	name_tag.rotation.x = -PI * 0.5
-	name_tag.position = Vector3(0.0, size.y + 0.003, 0.0)
-	root.add_child(name_tag)
+	# On the lid, lying face up and reading along the box's longer side, from the front when
+	# it's wider than deep and from its right-hand side when it's deeper.
+	var long_z := size.z > size.x * 1.15
+	var across := size.z if long_z else size.x
+	var along := size.x if long_z else size.z
+	var lw := minf(across * 0.82, 0.32)
+	var lh := minf(along * 0.7, lw * 0.62)
+	var lid := _box_sticker(lw, lh, part_id, seed_value)
+	lid.rotation = Vector3(-PI * 0.5, PI * 0.5 if long_z else 0.0, 0.0)
+	lid.rotation_order = EULER_ORDER_YXZ
+	lid.position = Vector3(0.0, size.y + 0.0045, 0.0)   # over the tape
+	root.add_child(lid)
+	# And upright on the front, for a box on a shelf.
+	var fw := minf(size.x * 0.8, 0.3)
+	var fh := minf(size.y * 0.75, fw * 0.62)
+	var front := _box_sticker(fw, fh, part_id, seed_value)
+	front.name = "FrontLabel"
+	front.position = Vector3(0.0, size.y * 0.5, size.z * 0.5 + 0.002)
+	root.add_child(front)
 	root.set_meta("size", size)
+	root.set_meta("courier", courier_for(seed_value))
 	return root
 
 

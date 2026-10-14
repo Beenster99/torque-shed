@@ -35,6 +35,9 @@ const GUN_RATE := 7.0
 const GUN_RUN_LEVEL := 5.5
 const PING_REACH := 60.0
 const PAD_LOOK := 2.6
+const CARRY_STEP := 0.25     # a click of the mouse wheel moves equipment you're carrying this far out or in
+const CARRY_MIN := -0.15     # metres closer than arm's length it can come
+const CARRY_MAX := 3.0       # and further out
 
 var camera: Camera3D
 var tool := "hands"
@@ -81,6 +84,15 @@ var tyre_game: TyreGame
 var _game_key := ""
 var _jet: CPUParticles3D
 var _tool_sig := ""          # tool and upgrade stage the tool in your hand is drawn at
+## Carrying equipment: how much further out than arm's length you hold it (the mouse wheel, or
+## LB / RB, push it out and pull it in), and how it last snapped ({walls: the wall normals it
+## sits against}, see Placement; empty when it didn't).
+var carry_reach := 0.0
+var snap_info := {}
+var _carrying := 0           # the equipment carry_reach was set for
+var _ghost: Node3D           # the outline on the floor of where the equipment will go
+var _ghost_sig := ""
+var _room_cache := {}        # the last free place found on a surface: {key, place}
 
 
 func _ready() -> void:
@@ -135,6 +147,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			tyre_game.move(event.relative)
 		else:
 			_look(-event.relative.x * MOUSE_SENS, -event.relative.y * MOUSE_SENS)
+	elif Shed.moving(Shed.me()) != 0 and (event.is_action_pressed("tool_next") or event.is_action_pressed("tool_prev")):
+		# Carrying equipment, the wheel only moves it out or in (wheel up, Q or LB: further away).
+		get_viewport().set_input_as_handled()
+		nudge_carry(1 if event.is_action_pressed("tool_prev") else -1)
+	elif Shed.moving(Shed.me()) != 0 and event.is_action_pressed("alt_act"):
+		get_viewport().set_input_as_handled()
+		toggle_snap()
 	elif event.is_action_pressed("tool_next"):
 		_cycle_tool(1)
 	elif event.is_action_pressed("tool_prev"):
@@ -388,7 +407,10 @@ func _physics_process(delta: float) -> void:
 		_push_bike(wheeling, delta)
 	elif pushed != 0:
 		_push(pushed, delta)
-	else:
+	if pushed == 0 or wheeling != 0:
+		_carrying = 0
+		_update_ghost(0, Transform3D())
+	if wheeling == 0 and pushed == 0:
 		if collision_mask != 1 | 2 | 4:
 			collision_mask = 1 | 2 | 4
 		_update_target()
@@ -433,6 +455,9 @@ func _update_target() -> void:
 			t = {"kind": "lights"}
 		elif c.has_meta("whiteboard"):
 			t = {"kind": "board"}   # the Whiteboard handles drawing on it itself
+		elif c.has_meta("top"):
+			# The top of a workbench, washer or repair machine: parts go anywhere on it.
+			t = {"kind": "top", "top": str(c.get_meta("top")), "furniture": int(c.get_meta("furniture", 0))}
 		elif c.has_meta("furniture") and Shed.furniture.has(int(c.get_meta("furniture"))):
 			t = {"kind": "furniture", "furniture": int(c.get_meta("furniture"))}
 		elif c.has_meta("label") and Shed.furniture.has(int(c.get_meta("label"))):
@@ -468,11 +493,16 @@ func _target_box() -> int:
 	return 0
 
 
-## The engine stand or shelving unit under the crosshair, which F grabs to push around.
+## The equipment under the crosshair, which F grabs to push around: an engine stand, shelving,
+## the top of a bench or washer, or the whiteboard.
 func _target_furniture() -> int:
 	match str(target.get("kind", "")):
 		"furniture", "label":
 			return int(target["furniture"])
+		"top":
+			return int(target.get("furniture", 0))
+		"board":
+			return Shed.whiteboard_id()
 		"spot":
 			var f := Shed.furniture_of_spot(str(target["spot"]))
 			if not f.is_empty():
@@ -480,38 +510,99 @@ func _target_furniture() -> int:
 	return 0
 
 
-## Where the stand or shelf being pushed sits: in front of you, square to you.
+## How far in front of you equipment you're carrying sits: arm's length (`base`) plus however
+## far the mouse wheel has pushed it out, kept between CARRY_MIN and CARRY_MAX of that.
+static func carry_distance(base: float, extra: float) -> float:
+	return base + clampf(extra, CARRY_MIN, CARRY_MAX)
+
+
+## Pushes the equipment you're carrying a step further away (1) or pulls it a step closer (-1).
+func nudge_carry(dir: int) -> void:
+	carry_reach = clampf(carry_reach + CARRY_STEP * dir, CARRY_MIN, CARRY_MAX)
+
+
+## Turns snapping to walls and corners on or off (the Esc menu has it too).
+func toggle_snap() -> void:
+	Settings.snap_placement = not Settings.snap_placement
+	Settings.save_settings()
+	Shed.feedback.emit("Snapping to walls and corners %s" % ("on" if Settings.snap_placement else "off"), true)
+
+
+## Where the equipment being pushed sits: in front of you, square to you, as far out as the
+## mouse wheel has put it (but not through a wall). With snapping on it squares up to the walls
+## and slides flush against a wall or into a corner that's close (see Placement).
 func _push_transform(id: int) -> Transform3D:
 	var model := str(Shed.furniture[id].get("model", ""))
 	var size: Vector3 = Equipment.get_model(model).get("size", Vector3.ONE)
+	snap_info = {}
 	if Equipment.is_wall(model):
 		return _wall_transform(size)
-	var dist := 1.05 if Shed.furniture[id]["kind"] == "stand" else 0.55 + size.z * 0.5
-	var fwd := -transform.basis.z
-	var at := global_position + Vector3(fwd.x, 0.0, fwd.z).normalized() * dist
-	at.y = global_position.y
-	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * 2.0, 1)
 	var ignore: Array[RID] = [get_rid()]
 	var view: Node = get_tree().get_first_node_in_group("workshop")
 	if view:
 		# Not the thing being moved, or a ramp would climb up its own deck.
 		ignore.append_array(view.furniture_rids(id))
+	var base := 1.05 if Shed.furniture[id]["kind"] == "stand" else 0.55 + size.z * 0.5
+	var fwd := -transform.basis.z
+	var flat := Vector3(fwd.x, 0.0, fwd.z).normalized()
+	var dist := carry_distance(base, carry_reach)
+	if dist > base:
+		dist = minf(dist, maxf(base, _wall_gap(flat, ignore) - size.z * 0.5 - 0.02))
+	var at := global_position + flat * dist
+	at.y = global_position.y
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP, at + Vector3.DOWN * 2.0, 1)
 	q.exclude = ignore
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit and (hit["normal"] as Vector3).y > 0.8:
 		at.y = (hit["position"] as Vector3).y
-	return Transform3D(Basis(Vector3.UP, rotation.y), at)
+	var xf := Transform3D(Basis(Vector3.UP, rotation.y), at)
+	if Settings.snap_placement and not Equipment.is_yard(model):
+		snap_info = Placement.snap(get_world_3d().direct_space_state, xf, size, ignore)
+		xf = snap_info["xf"]
+	return xf
+
+
+## How far ahead the nearest wall is, low down and at waist height. Other equipment doesn't
+## count: you can hold something out over a bench.
+func _wall_gap(dir: Vector3, ignore: Array[RID]) -> float:
+	var space := get_world_3d().direct_space_state
+	var best := INF
+	for h in [0.3, 1.0]:
+		var from: Vector3 = global_position + Vector3.UP * h
+		var skip: Array[RID] = ignore.duplicate()
+		for i in 6:
+			var q := PhysicsRayQueryParameters3D.create(from, from + dir * (CARRY_MAX + 4.0), 1)
+			q.exclude = skip
+			var hit := space.intersect_ray(q)
+			if hit.is_empty():
+				break
+			if _is_equipment(hit["collider"]):
+				skip.append(hit["rid"])
+				continue
+			best = minf(best, from.distance_to(hit["position"]))
+			break
+	return best
+
+
+static func _is_equipment(o: Object) -> bool:
+	var n := o as Node
+	while n != null:
+		if n is EquipmentView:
+			return true
+		n = n.get_parent()
+	return false
 
 
 var _on_wall := false
 
 
-## Where a poster or TV you're carrying would hang: flat on the wall you're looking at, at the
-## height you're looking, or held up in front of you if there's no wall in reach.
+## Where a poster, TV or the whiteboard you're carrying would hang: flat on the wall you're
+## looking at, at the height you're looking, or held up in front of you if there's no wall in
+## reach (the mouse wheel reaches further). With snapping on, it slides into a corner that's close.
 func _wall_transform(size: Vector3) -> Transform3D:
 	var from := camera.global_position
 	var dir := -camera.global_transform.basis.z
-	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 3.0, 1)
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * (3.0 + maxf(carry_reach, 0.0)), 1)
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit and absf((hit["normal"] as Vector3).y) < 0.3:
@@ -521,6 +612,8 @@ func _wall_transform(size: Vector3) -> Transform3D:
 		var at: Vector3 = hit["position"] + n * 0.025
 		at.y = clampf(at.y, size.y * 0.5 + 0.5, Workshop.HEIGHT - size.y * 0.5 - 0.1)
 		at = _clear_of_corners(at, n, size)
+		if Settings.snap_placement:
+			at = _into_corner(at, n, size)
 		_on_wall = true
 		return Transform3D(Basis(Vector3.UP, atan2(n.x, n.z)), at)
 	_on_wall = false
@@ -550,23 +643,113 @@ func _clear_of_corners(at: Vector3, normal: Vector3, size: Vector3) -> Vector3:
 	return at
 
 
+## Snapping a wall hanging: with a corner within Placement.SNAP_REACH of one end, slides it
+## along to sit tight in the corner.
+func _into_corner(at: Vector3, normal: Vector3, size: Vector3) -> Vector3:
+	var along := normal.cross(Vector3.UP).normalized()
+	var space := get_world_3d().direct_space_state
+	var half := size.x * 0.5
+	var from := at + normal * maxf(size.z, 0.06)
+	var best := INF
+	var best_dir := Vector3.ZERO
+	for dir in [along, -along]:
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir * (half + Placement.SNAP_REACH), 1)
+		q.exclude = [get_rid()]
+		var hit := space.intersect_ray(q)
+		if hit and from.distance_to(hit["position"]) < best:
+			best = from.distance_to(hit["position"])
+			best_dir = dir
+	if best == INF:
+		return at
+	snap_info = {"walls": [normal, -best_dir]}
+	return at + best_dir * (best - half - Placement.GAP)
+
+
+## The outline on the floor of where the equipment you're carrying will go, blue when it has
+## snapped to a wall or corner.
+func _update_ghost(id: int, xf: Transform3D) -> void:
+	var model := str(Shed.furniture.get(id, {}).get("model", ""))
+	if id == 0 or Equipment.is_wall(model):
+		if _ghost:
+			_ghost.visible = false
+		return
+	var size: Vector3 = Equipment.get_model(model).get("size", Vector3.ONE)
+	var snapped: bool = not (snap_info.get("walls", []) as Array).is_empty()
+	var sig := "%s:%s" % [model, snapped]
+	if _ghost == null:
+		_ghost = Node3D.new()
+		_ghost.top_level = true
+		add_child(_ghost)
+	if sig != _ghost_sig:
+		_ghost_sig = sig
+		for c in _ghost.get_children():
+			c.free()
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(0.25, 0.75, 1.0, 0.3) if snapped else Color(1.0, 1.0, 1.0, 0.18)
+		var edge := mat.duplicate() as StandardMaterial3D
+		edge.albedo_color.a = 0.85
+		var pieces := [[Vector3(size.x, 0.004, size.z), Vector3.ZERO, mat]]
+		for side in [-1.0, 1.0]:
+			pieces.append([Vector3(size.x, 0.008, 0.03), Vector3(0.0, 0.002, side * size.z * 0.5), edge])
+			pieces.append([Vector3(0.03, 0.008, size.z), Vector3(side * size.x * 0.5, 0.002, 0.0), edge])
+		for p in pieces:
+			var mi := MeshInstance3D.new()
+			var box := BoxMesh.new()
+			box.size = p[0]
+			mi.mesh = box
+			mi.material_override = p[2]
+			mi.position = p[1]
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_ghost.add_child(mi)
+	_ghost.global_transform = Transform3D(xf.basis, xf.origin + Vector3.UP * 0.012)
+	_ghost.visible = true
+
+
+## "Snapped into the corner" or "Snapped to the wall", or "" when it hasn't snapped.
+func snap_text() -> String:
+	match (snap_info.get("walls", []) as Array).size():
+		0:
+			return ""
+		1:
+			return "Snapped flush to the wall"
+	return "Snapped into the corner"
+
+
 func _push(id: int, delta: float) -> void:
+	if id != _carrying:
+		# Picked up something new: it starts at arm's length.
+		_carrying = id
+		carry_reach = 0.0
 	var xf := _push_transform(id)
 	var view: Node = get_tree().get_first_node_in_group("workshop")
 	if view:
 		view.preview_furniture(id, xf)
+	_update_ghost(id, xf)
 	_push_timer += delta
 	if _push_timer > 0.1:
 		_push_timer = 0.0
 		Shed.request({"a": "move_furniture", "furniture": id, "xf": xf})
 	target = {}
 	plan = {}
+	var pad := Controls.active_device >= 0
+	var lines := []
+	var what := Shed.furniture_name(Shed.furniture[id]).to_lower()
 	if Equipment.is_wall(str(Shed.furniture[id].get("model", ""))):
-		info = "Carrying the %s\n%s" % [Shed.furniture_name(Shed.furniture[id]).to_lower(),
-			"F: hang it here" if _on_wall else "Look at a wall to hang it up."]
+		lines.append("Carrying the %s" % what)
+		lines.append("F: hang it here" if _on_wall else "Look at a wall to hang it up.")
 	else:
-		info = "Moving the %s\nWalk to move it and turn to face it the way you want.\nF: put it down here" % \
-			Shed.furniture_name(Shed.furniture[id]).to_lower()
+		lines.append("Moving the %s" % what)
+		lines.append("Walk to move it and turn to face it the way you want.")
+		lines.append("%s: push it further away or pull it closer" % ("LB / RB" if pad else "Mouse wheel"))
+		lines.append("F: put it down here")
+	var snap := snap_text()
+	if Settings.snap_placement:
+		lines.append("%s%s: snapping off" % [snap + "  ·  " if snap != "" else "Snapping to walls and corners  ·  ", "X" if pad else "R / right mouse"])
+	else:
+		lines.append("Snapping off  ·  %s: snap to walls and corners" % ("X" if pad else "R / right mouse"))
+	info = "\n".join(lines)
 	_highlight()
 
 
@@ -671,9 +854,12 @@ func _make_plan() -> Dictionary:
 							# Work the tyre on round the rim: a skill game (TyreGame).
 							p = {"action": {"a": "tyre_fit", "spot": target["spot"]}, "time": TyreGame.GRACE + TyreGame.DURATION,
 								"game": "tyre", "verb": "work the tyre on: keep the lever on the marker round the rim"}
-						elif Shed.is_engine(on_spot) and not Shed.is_engine(held):
+						elif Shed.is_engine(on_spot) and not Shed.is_engine(held) and Shed.surface_of_spot(str(target["spot"])) == "":
 							# Building an engine back up: fit the part to the block on the stand.
 							p = {"action": {"a": "install", "engine": on_spot, "slot": ""}, "time": 1.2, "verb": "fit the " + held_name}
+						elif Shed.surface_of_spot(str(target["spot"])) != "":
+							# Looking at a part on a bench, washer or repair machine: down beside it.
+							p = _set_down_plan(Shed.surface_of_spot(str(target["spot"])))
 						elif on_spot != 0 and target.has("drop"):
 							p = {"action": {"a": "drop", "xf": target["drop"]}, "time": 0.25, "verb": "put it down here"}
 						else:
@@ -682,6 +868,8 @@ func _make_plan() -> Dictionary:
 						var which := str(target.get("bin", "general"))
 						p = {"action": {"a": "bin", "bin": which}, "time": 0.4,
 							"verb": ("throw the %s away" if which == "general" else "recycle the %s") % held_name}
+					"top":
+						p = _set_down_plan(str(target["top"]))
 					"surface", "item":
 						if target.has("drop"):
 							p = {"action": {"a": "drop", "xf": target["drop"]}, "time": 0.25, "verb": "put it down here"}
@@ -748,6 +936,13 @@ func _make_plan() -> Dictionary:
 				else:
 					p = {"action": {"a": "repair", "item": item_id}, "time": Shed.repair_time([item_id]),
 						"verb": "grind off the rust and rebuild it"}
+			elif kind == "top" and int(target.get("furniture", 0)) != 0 and Shed.surface(str(target["top"])).get("kind", "") == "repair":
+				# Aimed at the machine's top between parts: it does the lot.
+				var batch: Array = Shed.repair_batch(str(Shed.furniture_spots(int(target["furniture"]))[0]))
+				if not batch.is_empty():
+					p = {"action": {"a": "repair_many", "items": batch}, "time": Shed.repair_time(batch),
+						"verb": "restore all %d part%s on the %s" % [batch.size(), "" if batch.size() == 1 else "s",
+							Shed.surface_name(str(target["top"])).to_lower()]}
 		"spray":
 			if item_id != 0:
 				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": Shed.FINISHES[spray_finish]},
@@ -770,6 +965,39 @@ func _make_plan() -> Dictionary:
 		return {}
 	p["blocked"] = "" if p["action"]["a"] in ["computer", "tuning", "write_label"] else Shed.check(me, p["action"])
 	return p
+
+
+## Putting the part in your hands down on a workbench, washer or repair machine, anywhere on
+## top there's room: where the crosshair meets the top, or the nearest clear place to it,
+## turned square to the way you face. The host checks it fits (Shed.surface_fits).
+func _set_down_plan(key: String) -> Dictionary:
+	var s := Shed.surface(key)
+	var held := Shed.held_by(Shed.me())
+	if s.is_empty() or held == 0:
+		return {}
+	var frame: Transform3D = s["xf"]
+	var inv := frame.affine_inverse()
+	var from := inv * camera.global_position
+	var dir := inv.basis * -camera.global_transform.basis.z
+	var top := float(s["top"])
+	var aim := Vector2.ZERO
+	if dir.y < -0.01:
+		var hit := from + dir * ((top - from.y) / dir.y)
+		aim = Vector2(hit.x, hit.z)
+	elif target.has("at"):
+		var local := inv * (target["at"] as Vector3)
+		aim = Vector2(local.x, local.z)
+	var yaw := Placement.snap_yaw(rotation.y - frame.basis.get_euler().y)
+	var ck := "%s:%d:%d:%d:%d:%d" % [key, held, roundi(aim.x * 40.0), roundi(aim.y * 40.0), roundi(yaw / (PI * 0.5)),
+		Shed.surface_items(key).size()]
+	if _room_cache.get("key", "") != ck:
+		_room_cache = {"key": ck, "place": Shed.find_room(key, held, aim, yaw)}
+	var place = _room_cache["place"]
+	var verb := ("put it in the %s" if s["kind"] == "washer" else "put it on the %s") % Shed.surface_name(key).to_lower()
+	if not (place is Transform3D):
+		# Nowhere near: ask for where you're looking, and the host says why not.
+		place = Transform3D(Basis(Vector3.UP, yaw), Vector3(aim.x, top, aim.y))
+	return {"action": {"a": "set_down", "top": key, "xf": place}, "time": 0.25, "verb": verb}
 
 
 ## With a can or bottle in hand: pour it into the tank, engine or brakes (first button), drain
@@ -948,6 +1176,28 @@ func _describe() -> String:
 			var board: Node = get_tree().get_first_node_in_group("whiteboard")
 			if board:
 				lines.append_array(board.describe())
+			if Shed.whiteboard_id() != 0:
+				lines.append("F: take it down to hang it on another wall")
+		"top":
+			var key := str(target["top"])
+			var s := Shed.surface(key)
+			lines.append(Shed.surface_name(key))
+			var on := Shed.surface_items(key)
+			match str(s.get("kind", "")):
+				"washer":
+					lines.append("Put dirty parts in anywhere there's room and they come out clean.")
+				"repair":
+					lines.append("Put parts on it anywhere there's room, then use the grinder and welder to restore them all at once.")
+				_:
+					lines.append("Put parts down anywhere along it there's room.")
+			if not on.is_empty():
+				lines.append("%d part%s on it" % [on.size(), "" if on.size() == 1 else "s"])
+			if int(s.get("rated", 0)) > 0 and on.size() > int(s["rated"]) and str(s.get("kind", "")) in ["washer", "repair"]:
+				lines.append("More than %d on it, so it works a little slower on each." % int(s["rated"]))
+			var fid := int(target.get("furniture", 0))
+			if fid != 0 and Shed.furniture.has(fid):
+				lines.append(Equipment.spec_line(str(Shed.furniture[fid]["model"])))
+				lines.append("F: move it somewhere else")
 		"pc":
 			lines.append("Parts computer")
 			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")
@@ -1119,7 +1369,7 @@ func _update_work(delta: float) -> void:
 	_active_plan = plan_now
 	var key := ("alt:" if use_alt else "") + str(plan_now.get("action", {}))
 	var a_now := str(plan_now.get("action", {}).get("a", ""))
-	if a_now in ["drop", "wash"]:
+	if a_now in ["drop", "wash", "set_down"]:
 		key = a_now  # the spot moves with the crosshair; keep the hold going
 	if not _acting():
 		_need_release = false
@@ -1450,7 +1700,7 @@ func _activity_text() -> String:
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
 		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
-		"place": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk",
+		"place": "Putting down a part", "set_down": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
 		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer"}

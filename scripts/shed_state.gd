@@ -96,6 +96,10 @@ var _dyno_busy_until := 0      # msec: the host won't start another dyno run unt
 var _washer_by := {}           # item id -> peer who put it in a parts washer, for their XP
 ## Distinct parts taken off a bike before its rebuild counts as a build (see _milestones).
 const BUILD_STRIP := 5
+## Parts on a free surface (see surface): how far one may hang over the edge, and how much two
+## may touch before they count as in each other's way.
+const SURFACE_OVERHANG := 0.06
+const SURFACE_GAP := 0.005
 
 
 func _ready() -> void:
@@ -229,7 +233,7 @@ func load_state(state: Dictionary, player_name: String) -> void:
 		_park(id)
 	for id in items:
 		if items[id]["at"] == "held":
-			_move(id, "spot", _free_spot())
+			_put_on_bench(id)
 	for id in furniture:
 		furniture[id]["mover"] = 0
 		# Equipment renamed since the save was made (the wall TVs grew): the model it is now.
@@ -691,12 +695,17 @@ func _clear_at(at: Vector3, radius: float) -> bool:
 func is_spot(spot: String) -> bool:
 	if SPOTS.has(spot):
 		return true
+	if spot.begins_with("bench_"):
+		# Parts put down anywhere along the workbench: bench_<n> for any n.
+		return spot.trim_prefix("bench_").is_valid_int() and int(spot.trim_prefix("bench_")) >= 0
 	var f := furniture_of_spot(spot)
 	if f.is_empty():
 		return false
 	if f["kind"] == "stand":
 		return true
 	var n := int(spot.get_slice("_", 2))
+	if Equipment.SURFACE_KINDS.has(str(f["kind"])):
+		return spot.get_slice("_", 2).is_valid_int() and n >= 0
 	return n >= 0 and n < Equipment.places(str(f["model"]))
 
 
@@ -721,13 +730,15 @@ func furniture_of_spot(spot: String) -> Dictionary:
 ## What a spot is part of: "bench" (the fixed workbench or a bought one), "shelf", "washer",
 ## "repair", "stand" or "".
 func spot_role(spot: String) -> String:
-	if SPOTS.has(spot):
+	if SPOTS.has(spot) or spot.begins_with("bench_"):
 		return "bench"
 	var f := furniture_of_spot(spot)
 	return "" if f.is_empty() else str(f["kind"])
 
 
-## The places on one piece of equipment.
+## The places on one piece of equipment. A washer, repair machine or workbench takes parts
+## anywhere on top (see surface): its places are the ones it had before that, plus one for
+## every part on it.
 func furniture_spots(id: int) -> Array:
 	var f: Dictionary = furniture.get(id, {})
 	if f.is_empty():
@@ -740,6 +751,12 @@ func furniture_spots(id: int) -> Array:
 	var out := []
 	for n in Equipment.places(str(f["model"])):
 		out.append("%s_%d_%d" % [prefix, id, n])
+	if Equipment.SURFACE_KINDS.has(str(f["kind"])):
+		var start := "%s_%d_" % [prefix, id]
+		for item_id in items:
+			var it: Dictionary = items[item_id]
+			if it["at"] == "spot" and str(it["ref"]).begins_with(start) and not out.has(str(it["ref"])):
+				out.append(str(it["ref"]))
 	return out
 
 
@@ -748,6 +765,10 @@ func all_spots() -> Array:
 	var out: Array = SPOTS.duplicate()
 	for id in furniture:
 		out.append_array(furniture_spots(id))
+	for item_id in items:
+		var it: Dictionary = items[item_id]
+		if it["at"] == "spot" and str(it["ref"]).begins_with("bench_") and not out.has(str(it["ref"])):
+			out.append(str(it["ref"]))
 	return out
 
 
@@ -757,6 +778,13 @@ func stand_spots() -> Array:
 
 ## Where a part on a spot sits in the world. Equipment carries its places with it.
 func spot_transform(spot: String) -> Transform3D:
+	var key := surface_of_spot(spot)
+	if key != "":
+		var s := surface(key)
+		if not s.is_empty():
+			var id := item_at_spot(spot)
+			if id != 0 and items[id].get("place") is Transform3D:
+				return (s["xf"] as Transform3D) * (items[id]["place"] as Transform3D)
 	var f := furniture_of_spot(spot)
 	if f.is_empty():
 		return Workshop.spot_transform(spot)
@@ -768,7 +796,192 @@ func local_spot_transform(spot: String) -> Transform3D:
 	var f := furniture_of_spot(spot)
 	if f.is_empty():
 		return Transform3D()
+	if Equipment.SURFACE_KINDS.has(str(f["kind"])):
+		var id := item_at_spot(spot)
+		if id != 0 and items[id].get("place") is Transform3D:
+			return items[id]["place"]
 	return Equipment.local_place(str(f["model"]), 0 if f["kind"] == "stand" else int(spot.get_slice("_", 2)))
+
+
+# ---------------------------------------------------------------------------- free surfaces
+
+## The surface a spot is on, when it's one parts go anywhere on: "bench" for the shed's own
+## workbench, "f<id>" for a washer, repair machine or bought workbench, else "".
+func surface_of_spot(spot: String) -> String:
+	if spot.begins_with("bench_"):
+		return "bench"
+	var f := furniture_of_spot(spot)
+	if not f.is_empty() and Equipment.SURFACE_KINDS.has(str(f["kind"])):
+		return "f%d" % int(f["id"])
+	return ""
+
+
+## A surface parts are put down anywhere on: {xf: its frame in the world (+Z the front, y up),
+## rect: the area in x and z (Rect2 x, y = z), top: the height parts sit at in the frame,
+## prefix: the start of its spot names, kind ("bench", "washer", "repair"), furniture: its id
+## (0 for the shed's workbench), rated: how many parts it works on at full speed}, or {}.
+func surface(key: String) -> Dictionary:
+	if key == "bench":
+		var a := Workshop.spot_transform("bench_0").origin
+		var b := Workshop.spot_transform("bench_3").origin
+		var length := b.z - a.z + 1.2
+		# Turned so its front faces into the shed (+X), and x runs along it.
+		var xf := Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(a.x, 0.0, (a.z + b.z) * 0.5))
+		return {"xf": xf, "rect": Rect2(-length * 0.5 + 0.05, -0.42, length - 0.1, 0.84), "top": a.y, "prefix": "bench_",
+			"kind": "bench", "furniture": 0, "rated": SPOTS.size(), "key": key}
+	if not key.begins_with("f") or not key.substr(1).is_valid_int():
+		return {}
+	var id := int(key.substr(1))
+	var f: Dictionary = furniture.get(id, {})
+	if f.is_empty() or not Equipment.SURFACE_KINDS.has(str(f["kind"])):
+		return {}
+	var model := str(f["model"])
+	return {"xf": f["xf"], "rect": Equipment.surface_rect(model), "top": Equipment.work_height(model),
+		"prefix": "%s_%d_" % [Equipment.SPOT_PREFIX[f["kind"]], id], "kind": str(f["kind"]), "furniture": id,
+		"rated": Equipment.places(model), "key": key}
+
+
+## A surface's name for the info panel: "Workbench", "Parts washer"...
+func surface_name(key: String) -> String:
+	if key == "bench":
+		return "Workbench"
+	var s := surface(key)
+	return "" if s.is_empty() else furniture_name(furniture[int(s["furniture"])])
+
+
+## Every part sitting on a surface.
+func surface_items(key: String) -> Array:
+	var s := surface(key)
+	var out := []
+	if s.is_empty():
+		return out
+	for id in items:
+		if items[id]["at"] == "spot" and str(items[id]["ref"]).begins_with(str(s["prefix"])) and surface_of_spot(str(items[id]["ref"])) == key:
+			out.append(id)
+	return out
+
+
+## Where a part on a surface sits, in the surface's frame: where it was put down, or for one
+## left there before parts could go anywhere (an older save), its old fixed place.
+func item_place(item_id: int) -> Transform3D:
+	var it: Dictionary = items[item_id]
+	if it.get("place") is Transform3D:
+		return it["place"]
+	var spot := str(it["ref"])
+	var key := surface_of_spot(spot)
+	if key == "bench":
+		return (surface(key)["xf"] as Transform3D).affine_inverse() * Workshop.spot_transform(spot)
+	return local_spot_transform(spot)
+
+
+## How much room an item takes up: its width and depth in its own frame (x, z).
+func item_footprint(item_id: int) -> Vector2:
+	var it: Dictionary = items[item_id]
+	var size := BikeModel.footprint(str(it["part"]), bool(it.get("boxed", false)))
+	var tyre := tyre_on_wheel(item_id)
+	if tyre != 0:
+		size = size.max(BikeModel.footprint(str(items[tyre]["part"])))
+	if is_engine(item_id) and not it.get("boxed", false):
+		size *= 1.15   # whatever is bolted to the block sticks out a bit
+	return Vector2(maxf(size.x, 0.06), maxf(size.z, 0.06))
+
+
+## The area a footprint covers on a surface, put down at `place`.
+static func foot_rect(place: Transform3D, foot: Vector2) -> Rect2:
+	var r := Rect2(Vector2(place.origin.x, place.origin.z), Vector2.ZERO)
+	for corner in [Vector3(-1, 0, -1), Vector3(1, 0, -1), Vector3(-1, 0, 1), Vector3(1, 0, 1)]:
+		var p: Vector3 = place * (corner * Vector3(foot.x * 0.5, 0.0, foot.y * 0.5))
+		r = r.expand(Vector2(p.x, p.z))
+	return r
+
+
+## Why `item_id` can't go down on a surface at `place` (in the surface's frame), or "" when it
+## fits: inside the top (a part can hang over the edge a little) and clear of everything on it.
+func surface_fits(key: String, item_id: int, place: Transform3D) -> String:
+	var s := surface(key)
+	if s.is_empty() or not items.has(item_id):
+		return "You can't put it there."
+	return _fits(s, item_id, foot_rect(place, item_footprint(item_id)), _surface_rects(key, item_id))
+
+
+func _fits(s: Dictionary, item_id: int, r: Rect2, others: Array) -> String:
+	var area: Rect2 = (s["rect"] as Rect2).grow(SURFACE_OVERHANG)
+	if not area.encloses(r):
+		var foot := item_footprint(item_id)
+		var room: Vector2 = area.size
+		if maxf(foot.x, foot.y) > maxf(room.x, room.y) or minf(foot.x, foot.y) > minf(room.x, room.y):
+			return "The %s is too big for the %s." % [item_title(item_id).to_lower(), surface_name(str(s["key"])).to_lower()]
+		return "That's over the edge. Put it further on."
+	for o in others:
+		if (o[1] as Rect2).grow(-SURFACE_GAP).intersects(r):
+			return "No room there: the %s is in the way." % item_title(int(o[0])).to_lower()
+	return ""
+
+
+## [item id, the area it covers] for everything on a surface but `skip`.
+func _surface_rects(key: String, skip := 0) -> Array:
+	var out := []
+	for id in surface_items(key):
+		if id != skip:
+			out.append([id, foot_rect(item_place(id), item_footprint(id))])
+	return out
+
+
+## The nearest place to `at` (x, z on the surface) where `item_id` fits, turned `yaw` or a
+## quarter turn from it: a Transform3D in the surface's frame, or null when there's no room
+## anywhere near. Looks out in rings up to 0.6 m.
+func find_room(key: String, item_id: int, at: Vector2, yaw := 0.0):
+	var s := surface(key)
+	if s.is_empty() or not items.has(item_id):
+		return null
+	var rect: Rect2 = s["rect"]
+	at = at.clamp(rect.position, rect.end)
+	var others := _surface_rects(key, item_id)
+	var foot := item_footprint(item_id)
+	var top := float(s["top"])
+	for ring in 13:
+		var n := 1 if ring == 0 else 6 + ring * 3
+		for k in n:
+			var a := TAU * float(k) / float(n)
+			var p := at + Vector2(cos(a), sin(a)) * (ring * 0.05)
+			for turn in [0.0, PI * 0.5]:
+				var place := Transform3D(Basis(Vector3.UP, yaw + turn), Vector3(p.x, top, p.y))
+				if _fits(s, item_id, foot_rect(place, foot), others) == "":
+					return place
+	return null
+
+
+## A spot name nobody on the surface is using yet.
+func _free_surface_spot(key: String) -> String:
+	var prefix := str(surface(key)["prefix"])
+	var used := {}
+	for id in items:
+		if items[id]["at"] == "spot" and str(items[id]["ref"]).begins_with(prefix):
+			used[str(items[id]["ref"])] = true
+	var n := 0
+	while used.has("%s%d" % [prefix, n]):
+		n += 1
+	return "%s%d" % [prefix, n]
+
+
+## A put-down place cleaned up: flat on the surface at its top, turned only about the vertical.
+func _flat_place(xf: Transform3D, top: float) -> Transform3D:
+	var yaw := xf.basis.get_euler().y
+	return Transform3D(Basis(Vector3.UP, yaw), Vector3(xf.origin.x, top, xf.origin.z))
+
+
+## How hard a washer or repair machine is working: 1 with up to its rated number of parts on
+## it, slowing in step past that, so piling more on doesn't get more done at once.
+static func load_factor(count: int, rated: int) -> float:
+	return maxf(1.0, float(count) / float(maxi(1, rated)))
+
+
+## The crew whiteboard (see Whiteboard): its furniture id, or 0.
+func whiteboard_id() -> int:
+	for id in furniture:
+		if furniture[id]["kind"] == "whiteboard":
+			return id
+	return 0
 
 
 func furniture_name(f: Dictionary) -> String:
@@ -794,6 +1007,9 @@ func ensure_fixtures() -> void:
 		_new_furniture("booth", Workshop.BOOTH_XF, "booth_pro")
 	if not have.has("changer"):
 		_new_furniture("changer", Workshop.CHANGER_XF, "tyre_changer")
+	# The crew whiteboard can be hung on any wall; a save from before that keeps it where it was.
+	if whiteboard_id() == 0:
+		_new_furniture("whiteboard", Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT), "whiteboard")
 
 
 ## The tyre on a loose wheel (one that's off the bike), or 0.
@@ -844,10 +1060,12 @@ func repair_batch(spot: String) -> Array:
 	return out
 
 
-## How long the grinder takes over a batch on a repair machine: the worst part sets the pace.
+## How long the grinder takes over a batch on a repair machine: the worst part sets the pace,
+## and a machine with more on it than it's rated for slows in step (see load_factor).
 func repair_time(ids: Array) -> float:
 	var worst := 0.0
 	var speed := 1.0
+	var rated := 0
 	for id in ids:
 		if not items.has(int(id)):
 			continue
@@ -855,7 +1073,9 @@ func repair_time(ids: Array) -> float:
 		var f := furniture_of_spot(str(items[int(id)]["ref"]))
 		if not f.is_empty():
 			speed = float(Equipment.get_model(str(f["model"])).get("speed", 1.0))
-	return (2.0 + 4.0 * worst + 0.6 * maxi(0, ids.size() - 1)) / speed
+			rated = Equipment.places(str(f["model"]))
+	var t := (2.0 + 4.0 * worst + 0.6 * maxi(0, ids.size() - 1)) / speed
+	return t * load_factor(ids.size(), rated) if rated > 0 else t
 
 
 func moving(peer: int) -> int:
@@ -1067,6 +1287,16 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unpack it first."
 			if spot_role(spot) == "changer" and items[held]["kind"] != "wheel":
 				return "Only a wheel goes on the tyre changer. Fit tyres to a wheel on it."
+		"set_down":
+			# Down anywhere on a workbench, washer or repair machine there's room for it.
+			if held == 0:
+				return "You're not holding a part."
+			var s := surface(str(action.get("top", "")))
+			if s.is_empty() or not (action.get("xf") is Transform3D):
+				return "You can't put it there."
+			if str(s["kind"]) in ["washer", "repair"] and items[held].get("boxed", false):
+				return "Unpack it first."
+			return surface_fits(str(action["top"]), held, _flat_place(action["xf"], float(s["top"])))
 		"tyre_fit", "tyre_remove":
 			var spot := str(action.get("spot", ""))
 			if spot_role(spot) != "changer":
@@ -1108,6 +1338,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unknown equipment."
 			if Equipment.FIXED_KINDS.has(Equipment.kind_of(model)):
 				return "The paint booth is built into the shed: it's in the paint shop on the east side."
+			if Equipment.kind_of(model) == "whiteboard":
+				return "The shed has its whiteboard already. Press F on it to hang it somewhere else."
 			if Equipment.is_yard(model):
 				if free_yard_xf(model) == null:
 					return "The drop-off by the drag strip is full. Move some of the yard kit first."
@@ -1558,6 +1790,16 @@ func _apply(peer: int, action: Dictionary) -> void:
 			elif spot_role(str(action["spot"])) == "changer":
 				text = "Wheel clamped on the tyre changer. %s" % ("Lever the old tyre off, or lift the wheel off again." \
 					if tyre_on_wheel(item_id) != 0 else "Hold a tyre that fits it and work it on.")
+		"set_down":
+			var item_id := held_by(peer)
+			var key := str(action["top"])
+			var s := surface(key)
+			_move(item_id, "spot", _free_surface_spot(key))
+			items[item_id]["place"] = _flat_place(action["xf"], float(s["top"]))
+			_xp(peer, "carry", 1.0, "item:%d" % item_id)
+			if s["kind"] == "washer":
+				_washer_by[item_id] = peer
+				text = "Into the %s" % surface_name(key).to_lower()
 		"tyre_fit":
 			var wheel := item_at_spot(str(action["spot"]))
 			var tyre := held_by(peer)
@@ -2162,6 +2404,8 @@ func _was_project(bike_id: int) -> bool:
 func _move(item_id: int, at: String, ref) -> void:
 	items[item_id]["at"] = at
 	items[item_id]["ref"] = ref
+	# Where it sat on a surface goes with it (set_down gives it a new one).
+	items[item_id].erase("place")
 
 
 ## Takes a part off a bike (whatever is mounted on it stays put) and puts it somewhere.
@@ -2191,6 +2435,19 @@ func _free_spot() -> String:
 		if spot.begins_with("bench") and item_at_spot(spot) == 0:
 			return spot
 	return "bench_0"
+
+
+## Puts a part down on the workbench wherever there's room for it, along from the door end;
+## failing that, in a free one of its old places.
+func _put_on_bench(item_id: int) -> void:
+	var length: float = (surface("bench")["rect"] as Rect2).size.x
+	for i in 9:
+		var place = find_room("bench", item_id, Vector2(-length * 0.5 + length * i / 8.0, 0.0))
+		if place is Transform3D:
+			_move(item_id, "spot", _free_surface_spot("bench"))
+			items[item_id]["place"] = place
+			return
+	_move(item_id, "spot", _free_spot())
 
 
 func _new_item(part: String, rust: float, dirt: float, wear: float, color = null) -> int:
@@ -2407,6 +2664,13 @@ func _process(delta: float) -> void:
 		if furniture[id]["kind"] != "washer":
 			continue
 		var rate := float(Equipment.get_model(str(furniture[id]["model"])).get("rate", 0.18))
+		# Piled up past what it's rated for, each part takes longer (see load_factor).
+		var busy := 0
+		for spot in furniture_spots(id):
+			var w := item_at_spot(spot)
+			if w != 0 and items[w]["dirt"] > 0.0 and not items[w].get("boxed", false):
+				busy += 1
+		rate /= load_factor(busy, Equipment.places(str(furniture[id]["model"])))
 		for spot in furniture_spots(id):
 			var washing := item_at_spot(spot)
 			if washing != 0 and items[washing]["dirt"] > 0.0 and not items[washing].get("boxed", false):

@@ -44,7 +44,9 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Drain a fluid (holding a drain pan, empty can or bleed bottle); with the wrench at a chain, set its tension | Hold R or right mouse | Hold X |
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
 | Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
-| Unpack a delivery box; take hold of or let go of equipment (posters and TVs hang on the wall you look at) | F | Y |
+| Unpack a delivery box; take hold of or let go of equipment (posters, TVs and the whiteboard hang on the wall you look at) | F | Y |
+| Carrying equipment: push it further away / pull it closer | Mouse wheel up / down (or Q / E) | LB / RB |
+| Carrying equipment: snapping to walls and corners on or off | R or right mouse | X |
 | Sit on a seat (tap), or move it (hold) | F | Y |
 | Change radio station | Hold left mouse on the radio | Hold RT or A |
 | Tyre changer: fit the tyre you're holding (keep the lever on the marker) | Hold left mouse, steer the lever with the mouse | Hold RT or A, steer with the right stick |
@@ -62,7 +64,19 @@ Chains stretch and lose their lube as you ride, faster off-road: crouch by the c
 
 **Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the general waste bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt road. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
 
-Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (free for now), equipment or a new project bike. Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (8 to 20 places), parts washers (1 to 4 parts, some faster), repair machines (1 to 4 parts at once, some faster), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters and TVs hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
+Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (free for now), equipment or a new project bike. Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (8 to 20 places), parts washers and repair machines (rated for 1 to 4 parts at full speed, some faster; see below), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters, TVs and the whiteboard hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
+
+### Placing equipment and parts
+
+**Carrying equipment**: while you hold a piece of equipment, the mouse wheel (or LB / RB on a pad) pushes it further away from you, up to 3 m, or pulls it back in, so you can stand back and see the whole space you're putting it in. It stops short of walls. An outline on the floor shows exactly where it will go. While carrying, the wheel only moves the equipment; it doesn't change tool.
+
+**Snapping** (on by default): equipment you put down turns square to the walls in quarter turns, and when one side comes close to a wall (or another piece of equipment) it slides flush against it; near two walls it goes tight into the corner. The outline turns blue and the panel says "Snapped flush to the wall" or "Snapped into the corner". Posters, TVs and the whiteboard slide into a corner that's close. Press R (right mouse, X on a pad) while carrying to turn snapping off or on; the Esc menu's Settings tab has the same switch. Yard kit outside never snaps.
+
+**Benches, washers and repair machines take as many parts as fit**: there are no set places any more. Look anywhere on the top of the workbench, a bought bench, a parts washer or a repair machine with a part in your hands and put it down; it goes where you're looking, or the nearest clear spot to it, turned the way you face. Each part takes up its real size, so you can line up a row of spark plugs, but a frame won't go in a small washer, and parts can't go on top of one another. The washer cleans everything in it and the grinder restores everything on the machine at once. Each machine works at full speed up to its rated number of parts (shown in its info); pile on more and each one goes a little slower, so a big load saves walking rather than time. Parts left in the old places in an older save stay where they were.
+
+**The whiteboard can move**: press F on it to take it down and hang it on any wall, drawing and all. Where it hangs is kept with the shed; an older save has it in its usual place on the front wall.
+
+**Delivery boxes** carry a shipping label from one of several made-up courier firms, with its logo, what's inside and a tracking number, on the lid (reading along the box's longer side) and on the front, so boxed stock on a shelf is easy to read. A box always comes from the same courier.
 
 ### The tyre changer
 
@@ -197,6 +211,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/shed_state.gd` | The shared shed: bikes, parts, who holds what. The host checks and applies every action |
 | `scripts/workshop.gd` | Builds the shed, its stations and dashboards, and draws parked bikes and loose parts |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
+| `scripts/placement.gd` | Snapping equipment square and flush to walls and corners |
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |
 | `scripts/whiteboard.gd`, `board_data.gd` | The shared whiteboard: drawing on it, and its marks kept in the shed state |
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
