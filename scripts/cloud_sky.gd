@@ -204,14 +204,6 @@ float ign(vec2 px) {
 	return fract(52.9829189 * fract(dot(px, vec2(0.06711056, 0.00583715))));
 }
 
-vec2 drift() {
-#ifdef WIND
-	return wind * TIME;
-#else
-	return vec2(0.0);
-#endif
-}
-
 // How much cloud there is at p (0..1) before the detail: the weather map's coverage times a
 // height profile with rounded bases and tapering tops. Overcast turns it into a flatter deck.
 float cloud_shape(vec3 p, vec2 dr, out float hfrac) {
@@ -242,7 +234,9 @@ float cloud_density(vec3 p, vec2 dr, bool detail, out float hfrac) {
 }
 
 // March through the cloud layer: scattered light (rgb) and how much it hides behind it (a).
-vec4 clouds(vec3 d, vec3 cam, float jitter) {
+// `dr`: how far the wind has blown the clouds (TIME is only read in sky(): the compatibility
+// renderer has no TIME in other functions).
+vec4 clouds(vec3 d, vec3 cam, float jitter, vec2 dr) {
 	if (d.y < 0.01) {
 		return vec4(0.0);
 	}
@@ -252,7 +246,6 @@ vec4 clouds(vec3 d, vec3 cam, float jitter) {
 	}
 	float t1 = min(max(CLOUD_TOP - cam.y, 0.0) / d.y, t0 + 9000.0);
 	float dt = (t1 - t0) / float(CLOUD_STEPS);
-	vec2 dr = drift();
 	vec3 L = normalize(cloud_light_dir);
 	float c = dot(d, L);
 	// Bright silver edges looking towards the light, a little back-scatter away from it.
@@ -304,12 +297,17 @@ vec4 clouds(vec3 d, vec3 cam, float jitter) {
 void sky() {
 	vec3 d = EYEDIR;
 #ifdef VOLUMETRIC
+#ifdef WIND
+	vec2 dr = wind * TIME;
+#else
+	vec2 dr = vec2(0.0);
+#endif
 	if (AT_CUBEMAP_PASS) {
 		COLOR = background(d, true, true);
 	} else {
 #ifdef LOWRES
 		if (AT_HALF_RES_PASS || AT_QUARTER_RES_PASS) {
-			vec4 c = clouds(d, POSITION, ign(FRAGCOORD.xy));
+			vec4 c = clouds(d, POSITION, ign(FRAGCOORD.xy), dr);
 			COLOR = c.rgb;
 			ALPHA = c.a;
 		} else {
@@ -321,7 +319,7 @@ void sky() {
 			COLOR = background(d, false, false) * (1.0 - c.a) + c.rgb;
 		}
 #else
-		vec4 c = clouds(d, POSITION, ign(FRAGCOORD.xy));
+		vec4 c = clouds(d, POSITION, ign(FRAGCOORD.xy), dr);
 		COLOR = background(d, false, false) * (1.0 - c.a) + c.rgb;
 #endif
 	}
