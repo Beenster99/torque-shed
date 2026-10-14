@@ -11,7 +11,7 @@ extends RefCounted
 ## carry "lightened" in their condition.
 
 const RIDER_MASS := 75.0
-const FIXED_MASS := 39.0      # battery, wiring, lights, bodywork, fluids
+const FIXED_MASS := 36.0      # battery, wiring, side panels (the tail unit weighs its own)
 const FUEL_DENSITY := 0.74    # kg per litre
 const OIL_DENSITY := 0.87
 ## Litres of petrol per kWh at the crank, and the engine's own thirst ticking over per litre of capacity.
@@ -227,6 +227,9 @@ func _compute() -> void:
 	rake_deg = frame["rake_deg"]
 	seat_height = float(frame["seat_height"]) + float(saddle["height"])
 	cda = float(frame["cda"]) + float(bars["cda"]) + float(part("panniers").get("cda", 0.0)) + float(part("top_box").get("cda", 0.0))
+	# A fairing parts the air round the rider (a cracked, grimy one less well); mirrors stick out into it.
+	cda += float(part("fairing").get("cda", 0.0)) * lerpf(0.7, 1.0, health.get("fairing", 1.0))
+	cda += float(part("mirrors").get("cda", 0.0))
 	luggage_litres = float(part("panniers").get("litres", 0.0)) + float(part("top_box").get("litres", 0.0))
 	steer_rate = 4.0 * float(bars["width"]) / 720.0
 	# A fat front tyre is slower to turn in.

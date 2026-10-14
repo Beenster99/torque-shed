@@ -4864,6 +4864,281 @@
 			]
 		}
 	},
+	"tail": {
+		"classic_mudguard": {
+			"name": "Long classic mudguard",
+			"description": "A full-length steel guard following the back tyre, with a chunky rear lamp and the plate on top. Keeps the spray off.",
+			"mass": 3.0,
+			"type": "Steel, full length",
+			"style": "classic",
+			"light": "lucas",
+			"light_at": [
+				-0.12,
+				0.3
+			],
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			],
+			"material": "metal"
+		},
+		"cafe_tail": {
+			"name": "Cafe racer tail hump",
+			"description": "A fibreglass seat cowl with a little round lamp let into its tail and a short hugger underneath.",
+			"mass": 2.2,
+			"type": "Fibreglass seat cowl",
+			"style": "cafe",
+			"light": "round",
+			"light_at": [
+				0.02,
+				0.28
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"material": "mixed"
+		},
+		"scrambler_loop": {
+			"name": "Scrambler loop and short fender",
+			"description": "A bent steel hoop closing off the subframe, a stubby fender and a lamp on a bracket. Old-school dirt style.",
+			"mass": 2.8,
+			"type": "Steel hoop, short fender",
+			"style": "loop",
+			"light": "round",
+			"light_at": [
+				-0.06,
+				0.24
+			],
+			"color": [
+				0.07,
+				0.07,
+				0.07
+			],
+			"material": "metal"
+		},
+		"sport_tail_tidy": {
+			"name": "Sport tail tidy",
+			"description": "Ditches the long hanger for a neat undertray, a slim LED strip and the plate tucked up on a short arm.",
+			"mass": 1.1,
+			"type": "Plastic undertray, LED strip",
+			"style": "tidy",
+			"light": "strip",
+			"light_at": [
+				-0.03,
+				0.26
+			],
+			"color": [
+				0.05,
+				0.05,
+				0.06
+			],
+			"material": "plastic",
+			"lightweight": true
+		},
+		"bobber_fender": {
+			"name": "Bobber chopped fender",
+			"description": "A short steel fender hugging the tyre, a bullet lamp on top and the plate hung off the side.",
+			"mass": 2.4,
+			"type": "Steel bobbed fender, side plate",
+			"style": "bobber",
+			"light": "bullet",
+			"light_at": [
+				-0.1,
+				0.2
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"material": "metal"
+		},
+		"enduro_fender": {
+			"name": "Enduro high fender",
+			"description": "A long plastic blade swept up high out of the mud, with a tiny LED lamp under its tip.",
+			"mass": 0.9,
+			"type": "Plastic high fender",
+			"style": "enduro",
+			"light": "led",
+			"light_at": [
+				-0.03,
+				0.4
+			],
+			"color": [
+				0.92,
+				0.92,
+				0.9
+			],
+			"material": "plastic",
+			"lightweight": true
+		}
+	},
+	"fairing": {
+		"flyscreen": {
+			"name": "Headlight flyscreen",
+			"description": "A little cowl and screen over the headlight. Takes the wind off your chest, just.",
+			"mass": 0.8,
+			"type": "Headlight cowl",
+			"style": "flyscreen",
+			"cda": -0.01,
+			"screen": 0.12,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"bikini_fairing": {
+			"name": "Bikini fairing",
+			"description": "A small fairing round the headlight, on the forks, with a short screen. Classic 70s look.",
+			"mass": 2.0,
+			"type": "Fork-mounted, small",
+			"style": "bikini",
+			"cda": -0.025,
+			"screen": 0.18,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"half_fairing": {
+			"name": "Half fairing",
+			"description": "Frame-mounted upper fairing with a proper screen. Calm at motorway speeds.",
+			"mass": 4.5,
+			"type": "Frame-mounted, upper",
+			"style": "half",
+			"cda": -0.05,
+			"screen": 0.22,
+			"frame_mount": true,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"touring_fairing": {
+			"name": "Touring fairing",
+			"description": "A big frame-mounted fairing and a tall screen. Weatherproof and calm, but heavy and a lot of front to push.",
+			"mass": 9.0,
+			"type": "Frame-mounted, tall screen",
+			"style": "touring",
+			"cda": -0.035,
+			"screen": 0.42,
+			"frame_mount": true,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		},
+		"race_fairing": {
+			"name": "Full race fairing",
+			"description": "Upper, sides and belly pan in fibreglass with a bubble screen. Tuck in and it slips through the air.",
+			"mass": 6.5,
+			"type": "Fibreglass, full",
+			"style": "race",
+			"cda": -0.09,
+			"screen": 0.16,
+			"frame_mount": true,
+			"color": [
+				0.92,
+				0.92,
+				0.9
+			],
+			"material": "mixed"
+		},
+		"carbon_race_fairing": {
+			"name": "Carbon race fairing",
+			"description": "The full race fairing in carbon fibre. Half the weight, a touch slipperier.",
+			"mass": 3.2,
+			"type": "Carbon fibre, full",
+			"style": "race",
+			"cda": -0.095,
+			"screen": 0.16,
+			"frame_mount": true,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"material": "carbon",
+			"lightweight": true
+		}
+	},
+	"mirrors": {
+		"round_mirrors": {
+			"name": "Round chrome mirrors",
+			"description": "A pair of classic round mirrors on chrome stalks from the bar clamps.",
+			"mass": 0.6,
+			"type": "Round, on stalks",
+			"style": "round",
+			"cda": 0.004,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			]
+		},
+		"bar_end_mirrors": {
+			"name": "Bar-end mirrors",
+			"description": "Round mirrors hung off the ends of the bars. Clean lines on a cafe racer.",
+			"mass": 0.5,
+			"type": "Round, bar-end",
+			"style": "bar_end",
+			"cda": 0.003,
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
+		},
+		"sport_mirrors": {
+			"name": "Sport stalk mirrors",
+			"description": "Angular mirrors on long swept stalks, so you see past your elbows.",
+			"mass": 0.4,
+			"type": "Angular, long stalks",
+			"style": "sport",
+			"cda": 0.004,
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
+		},
+		"touring_mirrors": {
+			"name": "Wide touring mirrors",
+			"description": "Big rectangular mirrors up high. You see everything behind you.",
+			"mass": 0.8,
+			"type": "Rectangular, tall stalks",
+			"style": "rect",
+			"cda": 0.007,
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			]
+		},
+		"fairing_mirrors": {
+			"name": "Fairing-mount mirrors",
+			"description": "Slim mirror pods that bolt to the fairing, out of the wind. Needs a fairing fitted.",
+			"mass": 0.5,
+			"type": "Fairing-mounted pods",
+			"style": "fairing",
+			"mounts_on": [
+				"fairing"
+			],
+			"cda": 0.002,
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			]
+		}
+	},
 	"petrol": {
 		"unleaded_95": {
 			"name": "Unleaded petrol (95)",

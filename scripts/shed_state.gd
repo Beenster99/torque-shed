@@ -42,7 +42,8 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"front_caliper": 0.8, "rear_caliper": 0.8, "front_pads": 0.6, "rear_pads": 0.6, "frame": 0.5, "side_stand": 0.9,
 	"centre_stand": 0.9, "cooling": 0.6, "oil_filter": 0.6, "air_filter": 0.5, "gearbox": 0.5, "rear_master": 0.5,
 	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
-	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6}
+	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6,
+	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2}
 ## Litres a second poured from a container, or drained out of a bike.
 const POUR_RATE := {"petrol": 2.0, "oil": 0.8, "brake_fluid": 0.15}
 const SYNC_INTERVAL := 0.1
@@ -299,9 +300,47 @@ func load_state(state: Dictionary, player_name: String) -> void:
 					top = maxi(top, id)
 	_next_id = maxi(_next_id, top + 1)
 	_rng.seed = int(Time.get_unix_time_from_system())
+	_add_new_slots()
 	ensure_fixtures()
 	_mark_dirty()
 	changed.emit()
+
+
+## Sheds saved before tail units, fairings and mirrors: every bike gets the tail unit that suits
+## it (fitted and bolted where its frame is on, else on the bench), in the same state as its
+## frame, and empty fairing and mirror slots. Blueprints and holograms get the tail on their plan.
+func _add_new_slots() -> void:
+	for id in bikes:
+		var bike: Dictionary = bikes[id]
+		var original: Dictionary = bike.get("original", {})
+		if not original.has("tail"):
+			original["tail"] = PartsDB.fitting_tail(PartsDB.sanitize_build(original.duplicate()))
+		for slot in ["fairing", "mirrors"]:
+			if not original.has(slot):
+				original[slot] = "none"
+			if not bike["slots"].has(slot):
+				bike["slots"][slot] = 0
+				bike["bolted"][slot] = false
+		if bike["slots"].has("tail"):
+			continue
+		var frame := int(bike["slots"].get("frame", 0))
+		var like: Dictionary = items.get(frame, {"rust": 0.3, "dirt": 0.3, "wear": 0.2})
+		var tail := _new_item(str(original["tail"]), float(like["rust"]), float(like["dirt"]), float(like["wear"]))
+		if frame != 0:
+			_move(tail, "bike", id)
+			bike["slots"]["tail"] = tail
+			bike["bolted"]["tail"] = true
+		else:
+			bike["slots"]["tail"] = 0
+			bike["bolted"]["tail"] = false
+			_put_on_bench(tail)
+	var plans: Array = blueprints.values() + holograms.values()
+	for id in bikes:
+		if bikes[id].get("blueprint") is Dictionary:
+			plans.append(bikes[id]["blueprint"])
+	for plan in plans:
+		if plan is Dictionary and plan.get("parts") is Dictionary and not plan["parts"].has("tail"):
+			plan["parts"]["tail"] = PartsDB.fitting_tail(PartsDB.sanitize_build(plan["parts"].duplicate()))
 
 
 func join_remote() -> void:
@@ -1571,7 +1610,7 @@ func install_slot(action: Dictionary, item_id: int) -> Dictionary:
 		if int(host["slots"].get(slot, 0)) != 0:
 			continue
 		var ok := true
-		for m in PartsDB.MOUNTS[slot]:
+		for m in PartsDB.part_mounts(slot, str(items[item_id]["part"])):
 			if m == "engine" and on_engine:
 				continue
 			if int(host["slots"].get(m, 0)) == 0:
@@ -1658,6 +1697,12 @@ func check(peer: int, action: Dictionary) -> String:
 				for dep in PartsDB.dependents(slot):
 					if int(host["slots"].get(dep, 0)) != 0 and not (engine_id == 0 and WHEEL_TYRE.get(slot, "") == dep):
 						return "Take the %s off first." % PartsDB.slot_name(dep).to_lower()
+				# Parts that bolt onto this one as well as their own mounts (fairing-mount mirrors).
+				for other in host["slots"]:
+					var on := int(host["slots"][other])
+					if on != 0 and items.has(on) and PartsDB.part_mounts(str(other), str(items[on]["part"])).has(slot) \
+							and not PartsDB.MOUNTS.get(other, []).has(slot):
+						return "Take the %s off first." % PartsDB.slot_name(str(other)).to_lower()
 		"install":
 			if held == 0:
 				return "You're not holding a part."
@@ -3357,7 +3402,13 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 			bike["slots"][slot] = 0
 			bike["bolted"][slot] = false
 			continue
-		var item_id := _aged_item(parts[slot], age, paint_color if slot == "tank" else null)
+		var item_id := 0
+		if slot == "tail":
+			# The tail unit has aged with the frame it's bolted to.
+			var frame: Dictionary = items[bike["slots"]["frame"]]
+			item_id = _new_item(parts[slot], frame["rust"], minf(1.0, float(frame["dirt"]) * 1.2), frame["wear"])
+		else:
+			item_id = _aged_item(parts[slot], age, paint_color if slot in ["tank", "fairing"] else null)
 		_move(item_id, "bike", id)
 		bike["slots"][slot] = item_id
 		bike["bolted"][slot] = true
@@ -3446,6 +3497,11 @@ func _random_bike(bay: int) -> int:
 		var same: Array = fits.filter(func(t): return str(t).begins_with(family))
 		var from: Array = same if not same.is_empty() else fits
 		parts[ts] = from[_rng.randi() % from.size()]
+	# A fairing goes on over a headlight, and fairing-mount mirrors need the fairing.
+	if parts["headlight"] == "none":
+		parts["fairing"] = "none"
+	if parts["mirrors"] != "none" and not PartsDB.part_mounts("mirrors", parts["mirrors"]).all(func(m): return parts.get(m, "none") != "none"):
+		parts["mirrors"] = "round_mirrors"
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
 	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9))
 

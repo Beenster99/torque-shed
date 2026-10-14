@@ -117,6 +117,10 @@ func _run_all() -> void:
 	_test_geo_shed()
 	_test_blueprint_build()
 	await _test_geometry_session()
+	print("Tail units, fairings and mirrors")
+	_test_tail_fairing_mirrors_parts()
+	_test_tail_fairing_mirrors_shed()
+	_test_tail_old_save()
 	print("Scrapping kit, turning what you hold, free shelves, turned board pictures and poster sizes")
 	_test_scrap()
 	await _test_scrap_session()
@@ -139,7 +143,7 @@ func _merge(a: Dictionary, b: Dictionary) -> Dictionary:
 
 
 func _test_catalogue() -> void:
-	check(PartsDB.KINDS.size() == 32 and PartsDB.parts.size() >= 170, "catalogue has 32 kinds of part (%d parts)" % PartsDB.parts.size())
+	check(PartsDB.KINDS.size() == 35 and PartsDB.parts.size() >= 170, "catalogue has 35 kinds of part (%d parts)" % PartsDB.parts.size())
 	for k in PartsDB.KINDS:
 		check(PartsDB.by_kind[k].size() >= 5, "%s has at least five variants (%d)" % [k, PartsDB.by_kind[k].size()])
 	var no_colour := []
@@ -147,7 +151,7 @@ func _test_catalogue() -> void:
 		if not PartsDB.parts[id].has("color"):
 			no_colour.append(id)
 	check(no_colour.is_empty(), "every part has a colour %s" % str(no_colour))
-	check(PartsDB.SLOTS.size() == 38, "a bike has 38 slots, 7 of them on the engine")
+	check(PartsDB.SLOTS.size() == 41, "a bike has 41 slots, 7 of them on the engine")
 	var b := BikeBuild.new()
 	check(b.bike_mass > 120.0 and b.bike_mass < 230.0, "default bike mass is plausible (%.0f kg)" % b.bike_mass)
 	check(b.hp() > 40.0 and b.hp() < 120.0, "default bike power is plausible (%.0f hp)" % b.hp())
@@ -5279,3 +5283,184 @@ func _test_poster_sizes() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+func _test_tail_fairing_mirrors_parts() -> void:
+	for k in ["tail", "fairing", "mirrors"]:
+		check(PartsDB.by_kind[k].size() >= 5, "the shop has %d %s parts" % [PartsDB.by_kind[k].size(), k])
+		for id in PartsDB.by_kind[k]:
+			if PartsDB.spec_line(id) == "":
+				check(false, "%s has a spec line" % id)
+	check(not PartsDB.is_optional("tail") and PartsDB.is_optional("fairing") and PartsDB.is_optional("mirrors"),
+		"every bike needs a tail unit; fairings and mirrors are extras")
+	check(PartsDB.dependents("headlight").has("fairing") and PartsDB.dependents("handlebars").has("mirrors")
+		and PartsDB.dependents("frame").has("tail"), "the fairing comes off before the headlight, the mirrors before the bars")
+	check(PartsDB.part_mounts("mirrors", "fairing_mirrors").has("fairing") and not PartsDB.part_mounts("mirrors", "round_mirrors").has("fairing"),
+		"fairing-mount mirrors need the fairing; bar mirrors don't")
+	# A build from before tail units gets the one that suits it.
+	var tails := {"flat_bench": "classic_mudguard", "cafe_hump": "cafe_tail", "sport_solo": "sport_tail_tidy", "enduro_seat": "enduro_fender"}
+	for saddle in tails:
+		check(PartsDB.sanitize_build({"saddle": saddle})["tail"] == tails[saddle], "a bike with a %s gets a %s" % [saddle, tails[saddle]])
+	check(PartsDB.sanitize_build({"rear_tyre": "knobbly_mx"})["tail"] == "scrambler_loop", "and knobblies on a bench seat get a scrambler loop")
+	check(PartsDB.sanitize_build({"tail": "bobber_fender"})["tail"] == "bobber_fender", "a chosen tail stays")
+	var old := BikeBuild.new({})
+	check(old.parts["fairing"] == "none" and old.parts["mirrors"] == "none", "and no fairing or mirrors")
+	# The fairing cuts drag: more top speed, a bit more weight. A battered one helps less.
+	var race := BikeBuild.new({"fairing": "race_fairing"})
+	# Geared tall so it runs out of power, not revs.
+	var tall := {"sprocket_f": 18.0, "sprocket_r": 36.0}
+	var bare_top := BikeBuild.new({}, {}, tall).top_speed_estimate()
+	var race_top := BikeBuild.new({"fairing": "race_fairing"}, {}, tall).top_speed_estimate()
+	check(race.cda < old.cda - 0.08 and race_top > bare_top + 3.0 and race.bike_mass > old.bike_mass + 6.0,
+		"a full race fairing: %.0f -> %.0f km/h, %.0f -> %.0f kg" % [bare_top * 3.6, race_top * 3.6, old.bike_mass, race.bike_mass])
+	var tired := BikeBuild.new({"fairing": "race_fairing"}, {"fairing": {"wear": 1.0, "dirt": 1.0}})
+	check(tired.cda > race.cda and tired.cda < old.cda, "a cracked, filthy fairing parts the air less well")
+	check(BikeBuild.new({"fairing": "carbon_race_fairing"}).bike_mass < race.bike_mass - 2.0, "the carbon one is far lighter")
+	check(BikeBuild.new({"mirrors": "touring_mirrors"}).cda > old.cda, "mirrors stick out into the wind a little")
+	check(BikeBuild.new({"tail": "enduro_fender"}).bike_mass < BikeBuild.new({"tail": "classic_mudguard"}).bike_mass,
+		"a plastic fender weighs less than a steel mudguard")
+	# Recycling: what each is made of.
+	check(PartsDB.bin_for("classic_mudguard") == "metal" and PartsDB.bin_for("enduro_fender") == "plastic"
+		and PartsDB.bin_for("half_fairing") == "plastic" and PartsDB.bin_for("carbon_race_fairing") == "general"
+		and PartsDB.bin_for("round_mirrors") == "general", "steel guards go in metal, plastic in plastic, carbon and mirrors in general")
+	# Every variant draws, with the rear light where the tail unit puts it.
+	var lamps := {}
+	for id in PartsDB.by_kind["tail"]:
+		var m := BikeModel.new()
+		add_child(m)
+		m.build_from(BikeBuild.new({"tail": id}))
+		var light: Node = m.find_child("TailLight", true, false)
+		check(m.slot_bounds("tail").size.length() > 0.1 and light != null and m.tail_light_position() != Vector3.ZERO,
+			"the %s is drawn, rear light and all" % id)
+		lamps[m.tail_light_position().snapped(Vector3.ONE * 0.01)] = true
+		m.free()
+	check(lamps.size() >= 5, "each tail puts the rear light somewhere of its own (%d places)" % lamps.size())
+	for id in PartsDB.by_kind["fairing"]:
+		var m := BikeModel.new()
+		add_child(m)
+		m.build_from(BikeBuild.new({"fairing": id, "mirrors": "fairing_mirrors"}))
+		check(m.slot_bounds("fairing").size.length() > 0.2 and m.slot_bounds("mirrors").size.length() > 0.1,
+			"the %s and its mirrors are drawn" % id)
+		check(m.slot_bounds("fairing").get_center().z < m.slot_bounds("tank").get_center().z, "round the front of the bike")
+		m.free()
+	for id in PartsDB.by_kind["mirrors"]:
+		var m := BikeModel.new()
+		add_child(m)
+		m.build_from(BikeBuild.new({"mirrors": id}))
+		var glass: Node = m.find_child("MirrorGlass*", true, false)
+		var mat: StandardMaterial3D = (glass as MeshInstance3D).material_override if glass is MeshInstance3D else null
+		check(m.slot_bounds("mirrors").size.x > 0.3 and mat != null and mat.metallic > 0.9 and mat.roughness < 0.05,
+			"the %s are drawn, with mirror glass" % id)
+		m.free()
+	var bare := BikeModel.new()
+	add_child(bare)
+	bare.build_from(BikeBuild.new({}), Color.RED, {"tail": false})
+	check(not bare.is_fitted("tail"), "with the tail unit off, it and its light are gone")
+	bare.free()
+
+
+func _test_tail_fairing_mirrors_shed() -> void:
+	Shed.start_new("Tester", 41)
+	var me := Shed.me()
+	var expect := {"Rusty Ranger": "enduro_fender", "Barn Find": "cafe_tail", "Old Faithful": "sport_tail_tidy"}
+	var sport := 0
+	for id in Shed.bikes:
+		var tail := Shed.item_on(id, "tail")
+		var want := str(expect.get(Shed.bikes[id]["name"], ""))
+		check(tail != 0 and Shed.is_bolted(id, "tail") and str(Shed.items[tail]["part"]) == want,
+			"%s comes with its %s bolted on" % [Shed.bikes[id]["name"], want])
+		if Shed.bikes[id]["name"] == "Old Faithful":
+			sport = id
+	check(not Shed.missing_slots(sport).has("fairing") and not Shed.missing_slots(sport).has("mirrors"), "no fairing or mirrors needed to ride")
+	# Fitting order: mirrors on the fairing need the fairing, the fairing needs the headlight.
+	var fairing := Shed._new_item("half_fairing", 0.0, 0.0, 0.0)
+	var mirrors := Shed._new_item("fairing_mirrors", 0.0, 0.0, 0.0)
+	Shed._move(mirrors, "held", me)
+	check(Shed.check(me, {"a": "install", "bike": sport, "slot": "mirrors"}).contains("fairing first"), "fairing mirrors need the fairing on first")
+	Shed._move(mirrors, "spot", "bench_0")
+	var lamp := Shed.item_on(sport, "headlight")
+	Shed.bikes[sport]["slots"]["headlight"] = 0
+	Shed._move(lamp, "spot", "bench_1")
+	Shed._move(fairing, "held", me)
+	check(Shed.check(me, {"a": "install", "bike": sport, "slot": "fairing"}).contains("headlight first"), "a fairing goes on over the headlight")
+	Shed.bikes[sport]["slots"]["headlight"] = lamp
+	Shed._move(lamp, "bike", sport)
+	check(Shed.check(me, {"a": "install", "bike": sport, "slot": "fairing"}) == "", "with the headlight on, the fairing fits")
+	Shed.request({"a": "install", "bike": sport, "slot": "fairing"})
+	Shed.request({"a": "bolt", "bike": sport, "slot": "fairing"})
+	check(Shed.item_on(sport, "fairing") == fairing and Shed.is_bolted(sport, "fairing"), "and bolts up")
+	Shed._move(mirrors, "held", me)
+	Shed.request({"a": "install", "bike": sport, "slot": "mirrors"})
+	Shed.request({"a": "bolt", "bike": sport, "slot": "mirrors"})
+	check(Shed.item_on(sport, "mirrors") == mirrors, "then its mirrors go on")
+	Shed.request({"a": "unbolt", "bike": sport, "slot": "headlight"})
+	check(Shed.check(me, {"a": "remove", "bike": sport, "slot": "headlight"}).contains("fairing off first"), "the headlight can't come out from under the fairing")
+	Shed.request({"a": "unbolt", "bike": sport, "slot": "fairing"})
+	check(Shed.check(me, {"a": "remove", "bike": sport, "slot": "fairing"}).contains("mirrors off first"), "nor the fairing with its mirrors on")
+	Shed.request({"a": "bolt", "bike": sport, "slot": "fairing"})
+	Shed.request({"a": "bolt", "bike": sport, "slot": "headlight"})
+	var build := Shed.build_of(sport)
+	check(build.parts["fairing"] == "half_fairing" and build.cda < BikeBuild.new(Shed.bikes[sport]["original"]).cda,
+		"the bike's numbers count the fairing")
+	check(Shed.condition_text(Shed.items[fairing]) != "" and build.condition.has("tail") and build.condition.has("fairing"),
+		"they have a condition of their own")
+	# A blueprint keeps them, and the save keeps everything.
+	var bp := Shed._save_blueprint(sport, "Faired")
+	check(str(Shed.blueprints[bp]["parts"]["fairing"]) == "half_fairing" and str(Shed.blueprints[bp]["parts"]["tail"]) == "sport_tail_tidy"
+		and str(Shed.blueprints[bp]["parts"]["mirrors"]) == "fairing_mirrors", "a blueprint stores the tail, fairing and mirrors")
+	var was := SaveGame.slot_override
+	SaveGame.slot_override = "test_tail_fairing"
+	check(SaveGame.write(SaveGame.active_slot(), {"version": SaveGame.VERSION, "shed": Shed.save_snapshot()}) == OK, "the shed saves")
+	var back := SaveGame.read(SaveGame.active_slot())
+	SaveGame.delete_slot(SaveGame.active_slot())
+	SaveGame.slot_override = was
+	Shed.start_new("Tester", 42)
+	Shed.load_state(back.get("shed", {}), "Tester")
+	var f := Shed.item_on(sport, "fairing")
+	var mi := Shed.item_on(sport, "mirrors")
+	check(f != 0 and mi != 0 and str(Shed.items[f]["part"]) == "half_fairing" and str(Shed.items[mi]["part"]) == "fairing_mirrors"
+		and str(Shed.items[Shed.item_on(sport, "tail")]["part"]) == "sport_tail_tidy", "and loads with the tail, fairing and mirrors on")
+
+
+func _test_tail_old_save() -> void:
+	Shed.start_new("Tester", 43)
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	# Take the shed back to before tail units, fairings and mirrors.
+	var stripped := 0
+	for id in old["bikes"]:
+		var bike: Dictionary = old["bikes"][id]
+		for slot in ["tail", "fairing", "mirrors"]:
+			var item := int(bike["slots"].get(slot, 0))
+			if item != 0:
+				old["items"].erase(item)
+			bike["slots"].erase(slot)
+			bike["bolted"].erase(slot)
+			bike["original"].erase(slot)
+		if bike["name"] == "Barn Find":
+			stripped = id
+	# One bike has lost its frame too: its new tail unit waits on the bench.
+	var frame := int(old["bikes"][stripped]["slots"]["frame"])
+	old["bikes"][stripped]["slots"]["frame"] = 0
+	old["items"][frame]["at"] = "spot"
+	old["items"][frame]["ref"] = "bench_3"
+	var parts := PartsDB.sanitize_build({"saddle": "enduro_seat"})
+	parts.erase("tail")
+	parts.erase("fairing")
+	old["blueprints"] = {9000: {"id": 9000, "name": "Old plan", "parts": parts, "colors": {}, "paint": Shed.PAINTS[0], "geo": {}, "from": "x"}}
+	Shed.start_new("Tester", 44)
+	Shed.load_state(old, "Tester")
+	for id in Shed.bikes:
+		var tail := Shed.item_on(id, "tail")
+		if id == stripped:
+			var loose := Shed.items.values().filter(func(it): return it["kind"] == "tail" and it["at"] == "spot")
+			check(tail == 0 and loose.size() == 1 and str(loose[0]["part"]) == "cafe_tail", "a bike with no frame gets its tail unit on the bench")
+		else:
+			check(tail != 0 and Shed.is_bolted(id, "tail") and Shed.items[tail]["at"] == "bike",
+				"an old save's %s gets a %s fitted" % [Shed.bikes[id]["name"], Shed.items[tail]["part"] if tail != 0 else "nothing"])
+			check(not Shed.missing_slots(id).has("tail"), "so it's no part short")
+		check(Shed.item_on(id, "fairing") == 0 and Shed.bikes[id]["slots"].has("mirrors") and Shed.bikes[id]["original"].has("tail"),
+			"with empty fairing and mirror slots")
+	check(str(Shed.blueprints[9000]["parts"].get("tail", "")) == "enduro_fender", "an old blueprint gets a tail that suits it")
+	var rows := Shed.plan_rows(Shed.blueprints[9000], 0)
+	check(rows.any(func(r): return r["slot"] == "tail"), "so a build from it orders one")
+	check(Shed._next_id > Shed.items.keys().max(), "new parts get fresh ids")
