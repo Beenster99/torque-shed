@@ -80,6 +80,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--telemetry" in OS.get_cmdline_user_args():
+		await _telemetry_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -732,3 +737,39 @@ func _look_shots() -> void:
 	Shed.request({"a": "buy_upgrade", "id": "showroom", "looks": {"floor": "redblack", "tiles": "large", "ceiling": "hex_big", "glow": "ice", "trim": "gold"}})
 	await _frames(10)
 	await _look_from(Vector3(-4.5, 0.0, 69.5), Vector3(4.0, 1.4, 62.0), "l5_showroom_red_black_gold")
+
+
+## Handling phase 1 (`-- --telemetry`): the telemetry overlay while riding a bend, the dyno
+## desk's Last ride page, and the riding rows of the Settings tab.
+func _telemetry_shots() -> void:
+	var was := Settings.telemetry_overlay
+	Settings.telemetry_overlay = true
+	main._try_mount(_bike_named("Old Faithful"))
+	await _frames(10)
+	var road_t: Transform3D = main.world.road_transform(0.12)
+	main.bike.place(road_t.origin, road_t.basis.get_euler().y)
+	main.bike.engine_on = true
+	main.camera.set_mode(ChaseCamera.Mode.CHASE)
+	for i in 600:
+		Input.action_press("throttle", 0.6 if i < 300 else 0.35)
+		if i > 300:
+			Input.action_press("lean_right", 0.5)
+		await get_tree().physics_frame
+	Input.action_release("throttle")
+	Input.action_release("lean_right")
+	await _shot("t1_telemetry_overlay")
+	main._get_off()
+	await _frames(10)
+	main._open_tuning()
+	await _frames(5)
+	for i in main.tuning._tabs.get_tab_count():
+		if main.tuning._tabs.get_tab_control(i).name == "Last ride":
+			main.tuning._tabs.current_tab = i
+	await _frames(40)
+	await _shot("t2_dyno_desk_last_ride")
+	main.tuning.close_computer()
+	main.menu.show_pause()
+	await _frames(10)
+	await _shot("t3_settings_riding_rows")
+	main.menu.hide()
+	Settings.telemetry_overlay = was

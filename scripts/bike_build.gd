@@ -22,6 +22,8 @@ const DRIVETRAIN_EFFICIENCY := 0.92
 const ROLLING := 0.015
 ## A tyre bead seated at least this well on the tyre changer (0..1) holds its pressure and grips fully.
 const BEAD_OK := 0.6
+## The fork's offset ahead of the steering axis, m: with the rake and the front wheel's size it sets the trail.
+const FORK_OFFSET := 0.03
 ## Every tuning setting and its widest range, [min, max]. A setting missing from a tune is left
 ## stock. The ECU narrows the map and ignition and caps the limiter (see tune_range), and the
 ## suspension clickers only work on parts with that adjuster (see tune_block).
@@ -111,6 +113,14 @@ var grip_front := {}
 var grip_rear := {}
 var front_inertia := 0.6
 var rear_inertia := 0.8
+## Each tyre's Magic Formula numbers (see TyreModel.params_of), with the pressure taken into account.
+var tyre_front := {}
+var tyre_rear := {}
+## Mechanical trail (m): how far the front contact patch trails the steering axis. It makes the
+## front steer itself into a lean and lines the wheel up with where it's rolling.
+var trail := 0.1
+## How heavy the steering is to swing: the front wheel, fork and bars about the steering axis, kg m^2.
+var steer_inertia := 0.3
 
 # Engine
 var cylinders := 2
@@ -372,6 +382,22 @@ func _compute_wheels() -> void:
 	var mass_r := _part_mass("rear_wheel") + float(tr["mass"])
 	front_inertia = 0.8 * mass_f * front_radius * front_radius
 	rear_inertia = 0.8 * mass_r * rear_radius * rear_radius + 0.15  # plus spinning drivetrain
+	tyre_front = tyre_params(tf, dev_f)
+	tyre_rear = tyre_params(tr, dev_r)
+	var rake := deg_to_rad(rake_deg)
+	trail = clampf((front_radius * sin(rake) - FORK_OFFSET) / cos(rake), 0.05, 0.16)
+	steer_inertia = 0.5 * front_inertia + 0.06 + 0.02 * float(part("handlebars").get("width", 720.0)) / 720.0
+
+
+## A tyre's Magic Formula numbers (TyreModel.params_of) at a pressure `dev` off its best: soft
+## squirms (slips further before it peaks, builds grip over a longer roll), hard is twitchier.
+static func tyre_params(tyre: Dictionary, dev := 0.0) -> Dictionary:
+	var p := TyreModel.params_of(tyre)
+	var firm := clampf(1.0 + 0.35 * dev, 0.75, 1.2)
+	p["kappa_peak"] = float(p["kappa_peak"]) / firm
+	p["alpha_peak"] = float(p["alpha_peak"]) / firm
+	p["relax"] = float(p["relax"]) / firm
+	return p
 
 
 ## Grip from a tyre's section width (metres): wider grips tarmac better, narrower digs into dirt.

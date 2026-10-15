@@ -32,7 +32,7 @@ Space / B: rear brake      A D / left stick: lean      Shift / LB: weight back  
 E Q / A X: gear up / down      T: auto-shift      C / R3: chase or first-person camera
 Mouse / right stick: swing the camera round      V: ride-by camera (watch yourself go past)
 L / L3: headlight (off, low, high, high with fog lights)      S + W / LT + RT: burnout (lean to spin round)
-R / View: reset after a crash      F / Y: get off (when stopped)"""
+R / View: reset after a crash      F / Y: get off (when stopped)      F3: telemetry overlay"""
 
 var _name: LineEdit
 var _ip: LineEdit
@@ -162,14 +162,7 @@ func _ready() -> void:
 	settings.name = "Settings"
 	settings.add_theme_constant_override("separation", 10)
 	_tabs.add_child(settings)
-	settings.add_child(UITheme.label("Rider assist (0 = full sim)", 15))
-	_assist = HSlider.new()
-	_assist.min_value = 0.0
-	_assist.max_value = 1.0
-	_assist.step = 0.05
-	_assist.value = Settings.assist
-	_assist.value_changed.connect(func(v): Settings.assist = v)
-	settings.add_child(_assist)
+	_build_riding_settings(settings)
 	_auto = CheckBox.new()
 	_auto.text = "Automatic gearbox"
 	_auto.button_pressed = Settings.auto_shift
@@ -234,6 +227,47 @@ func _ready() -> void:
 	_tabs.add_child(ContractsTab.new())
 	debug = DebugTab.new()
 	_tabs.add_child(debug)
+
+
+## The riding rows of the Settings tab: the Riding realism slider (what each end means shows
+## under it), Direct bars and the telemetry overlay.
+func _build_riding_settings(settings: VBoxContainer) -> void:
+	settings.add_child(UITheme.label("Riding realism (0 = full sim, 1 = easy)", 15))
+	_assist = HSlider.new()
+	_assist.min_value = 0.0
+	_assist.max_value = 1.0
+	_assist.step = 0.05
+	var value := UITheme.label("", 14, UITheme.ACCENT)
+	var show := func(v: float) -> void:
+		value.text = "%.2f: %s" % [v, realism_text(v)]
+	_assist.value_changed.connect(func(v):
+		Settings.assist = v
+		show.call(v))
+	_assist.value = Settings.assist
+	show.call(Settings.assist)
+	settings.add_child(_assist)
+	settings.add_child(value)
+	var bars := CheckBox.new()
+	bars.text = "Direct bars: steering pushes on the handlebars (push right to lean right)"
+	bars.button_pressed = Settings.direct_bars
+	bars.toggled.connect(func(v): Settings.direct_bars = v)
+	settings.add_child(bars)
+	var tele := CheckBox.new()
+	tele.text = "Telemetry overlay while riding (F3)"
+	tele.button_pressed = Settings.telemetry_overlay
+	tele.toggled.connect(func(v): Settings.telemetry_overlay = v)
+	settings.add_child(tele)
+
+
+## What a Riding realism setting does, in a few words.
+static func realism_text(v: float) -> String:
+	if v < 0.15:
+		return "full sim: nothing saves the front, slides can high-side"
+	if v < 0.45:
+		return "mostly sim: the rider barely saves the front"
+	if v < 0.8:
+		return "the rider protects the front and smooths the throttle"
+	return "easy: the rider also balances the bike for you"
 
 
 func _process(_delta: float) -> void:
