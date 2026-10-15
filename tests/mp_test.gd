@@ -10,6 +10,7 @@ extends Node
 ## sends the client some of its own cash, which must arrive.
 ## The host also sends a customer to reception, whom the client must see riding in on their bike.
 ## The host rings the sales office bell, and the client must hear it.
+## The client buys bays 5 and 6 and raises bay 5's lift: both must see it go up.
 
 var role := "host"
 var main: Node
@@ -48,6 +49,8 @@ func _ready() -> void:
 	var customer_sent := false
 	var money_set := false
 	var upgrade_asked := false
+	var bays_asked := false
+	var lift_asked := false
 	var gear_asked := false
 	var gear_ok := false
 	var left_out := false
@@ -92,6 +95,15 @@ func _ready() -> void:
 			upgrade_asked = true
 		var ws: Workshop = main.world.workshop if main.world else null
 		var upgrade_ok := GarageUpgrades.owned("wing") and ws != null and ws.get_node_or_null("Upgrades/Built/WingFloor") != null
+		# Bike lifts: the client buys bays 5 and 6 and raises bay 5's lift; both see it rise.
+		if role == "client" and GarageUpgrades.owned("wing") and not bays_asked and Shed.garage_money >= GarageUpgrades.price("bays_56"):
+			Shed.request({"a": "buy_upgrade", "id": "bays_56"})
+			bays_asked = true
+		if role == "client" and GarageUpgrades.owned("bays_56") and not lift_asked:
+			Shed.request({"a": "lift", "bay": 4, "up": true})
+			lift_asked = true
+		var lift_node: Node3D = ws.get_node_or_null("Upgrades/Built/LiftBase4/Lift4") if ws != null else null
+		var lift_ok := Shed.lifts.has(4) and lift_node != null and lift_node.position.y > 0.1
 		# XP: the host pays the client for its work, and learns the client's level from its report.
 		if xp_start < 0:
 			xp_start = int(Progress.profile["xp"])
@@ -196,7 +208,7 @@ func _ready() -> void:
 		# They ride in on their own bike, which both sides see.
 		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty() \
 			and main.contracts_view.views.values().any(func(v): return is_instance_valid(v) and (v as CustomerView).has_bike())
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -212,8 +224,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4)])
 	get_tree().quit(0 if ok else 1)
 
 

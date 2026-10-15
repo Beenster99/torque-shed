@@ -50,6 +50,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--building" in OS.get_cmdline_user_args():
+		await _building_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--gear" in OS.get_cmdline_user_args():
 		await _gear_shots()
 		SaveGame.delete_slot("shots")
@@ -553,3 +558,37 @@ func _lighting_shots() -> void:
 	Shed.request({"a": "lights", "room": "", "on": true})
 	Lighting.overrides = {}
 	Settings.weather = "auto"
+
+
+
+## Shed building (`-- --building`): a whole bike's parts packed in the delivery area, a bike up
+## on a bay lift, the big annex and its mezzanine stairs, and the crew lounge upstairs with its
+## outside stairs.
+func _building_shots() -> void:
+	Settings.weather = "clear"
+	if Weather.current:
+		Weather.current.change_to("clear", true)
+	Daylight.current.set_time(13.0)
+	Shed.request({"a": "garage_money", "value": 2000000})
+	for id in GarageUpgrades.CATALOGUE:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	var bp := Shed._save_blueprint(_bike_named("Old Faithful"), "Whole bike")
+	Shed.request({"a": "bp_build", "bp": bp, "bay": 3})
+	Shed.request({"a": "bp_order", "bay": 3})
+	for i in 60:
+		Shed.request({"a": "order_part", "part": "sport_17" if i % 2 == 0 else "copper_plugs"})
+	Shed.request({"a": "order"})
+	Shed.request({"a": "order"})
+	Shed.request({"a": "lift", "bay": 4, "up": true})
+	await _frames(10)
+	await _aerial(Vector3(6.8, 7.0, 84.0), Vector3(6.8, 0.0, 74.5), "b1_delivery_area")
+	await _look_from(Vector3(12.0, 0.0, 79.5), Vector3(6.0, 0.6, 75.5), "b2_delivery_racking")
+	for i in 240:
+		await get_tree().physics_frame
+	await _look_from(Vector3(9.0, 0.0, 56.5), Vector3(6.6, 1.0, 52.4), "b3_bay_lift_up")
+	await _look_from(Vector3(-8.0, 0.0, 53.2), Vector3(-12.5, 2.2, 42.0), "b4_annex")
+	await _look_from(Vector3(-8.8, 0.0, 52.0), Vector3(-6.25, 1.6, 45.5), "b5_mezzanine_stairs")
+	await _aerial(Vector3(20.0, 6.0, 82.0), Vector3(8.0, 3.0, 71.0), "b6_lounge_stairs")
+	await _look_from(Vector3(5.4, GarageUpgrades.LOFT_FLOOR, 69.6), Vector3(-3.0, GarageUpgrades.LOFT_FLOOR + 0.9, 63.5), "b7_lounge_inside")
+	await _look_from(Vector3(-5.5, GarageUpgrades.LOFT_FLOOR, 60.4), Vector3(3.0, GarageUpgrades.LOFT_FLOOR + 0.8, 67.0), "b8_lounge_back")
+	await _aerial(Vector3(-24.0, 16.0, 30.0), Vector3(-4.0, 0.0, 58.0), "b9_aerial_back")

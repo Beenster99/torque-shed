@@ -12,15 +12,15 @@ const CATALOGUE := {
 	"wing": {"name": "Workshop extension", "cat": "build", "price": 30000, "needs": [],
 		"desc": "A new wing behind the paint shop, knocked through the back wall behind bay 4: a big open floor for more kit, with its own lights and roof."},
 	"bays_56": {"name": "Bays 5 and 6", "cat": "build", "price": 20000, "needs": ["wing"],
-		"desc": "Two more work bays in the extension, each with a flush lift plate, paddock stand marks, a bay light and its own screen. More bikes on the go at once."},
+		"desc": "Two more work bays in the extension, each with a motorbike lift that raises the bike to working height, a bay light and its own screen. More bikes on the go at once."},
 	"bay_7": {"name": "Bay 7", "cat": "build", "price": 12500, "needs": ["bays_56"],
-		"desc": "A seventh bay at the far end of the extension, with its lift plate and screen."},
+		"desc": "A seventh bay at the far end of the extension, with its own bike lift and screen."},
 	"annex": {"name": "Storage annex", "cat": "storage", "price": 15000, "needs": [],
-		"desc": "A tall storage building behind the storage room, through a wide doorway in its back wall."},
+		"desc": "A big, deep, tall storage building behind the storage room, through a wide doorway in its back wall: room for rows of racking."},
 	"racking": {"name": "Pallet racking", "cat": "storage", "price": 4500, "needs": ["annex"],
 		"desc": "Three runs of heavy-duty racking put up in the annex. Parts go down anywhere on the shelves, and they can be moved like any shelving."},
 	"mezzanine": {"name": "Mezzanine floor", "cat": "storage", "price": 35000, "needs": ["annex"],
-		"desc": "A steel mezzanine across the back of the annex with stairs and a railing: room underneath for racking and a deck on top stacked with stock."},
+		"desc": "A steel mezzanine across the back of the annex with a staircase up the side and a railing: room underneath for racking and a deck on top for more stock."},
 	"epoxy": {"name": "Painted epoxy floor", "cat": "luxury", "price": 3500, "needs": [],
 		"desc": "A glossy charcoal resin floor with a speckled flake finish, through the shed and the extension."},
 	"led": {"name": "LED lighting", "cat": "luxury", "price": 6000, "needs": [],
@@ -29,8 +29,8 @@ const CATALOGUE := {
 		"desc": "Clean white wall panels over brushed aluminium chequer plate, with a red pinstripe."},
 	"signage": {"name": "Branded signage", "cat": "luxury", "price": 5000, "needs": [],
 		"desc": "A lit TORQUE SHED light box over the roller door, and a neon sign inside."},
-	"lounge": {"name": "Crew lounge", "cat": "luxury", "price": 22000, "needs": ["wing"],
-		"desc": "A corner of the extension for the crew: leather sofa, coffee table, drinks fridge, rug, a lamp and an arcade machine."},
+	"lounge": {"name": "Crew lounge", "cat": "luxury", "price": 22000, "needs": [],
+		"desc": "A room of its own upstairs, on top of the workshop, up an outside staircase: leather sofa, coffee table, drinks fridge, pool table, rug, a lamp and an arcade machine."},
 	"showroom": {"name": "Showroom finish", "cat": "luxury", "price": 250000, "needs": ["epoxy", "led", "cladding", "lounge"],
 		"desc": "The works: a gloss black and white chequered floor, a honeycomb LED ceiling over the shed and the extension, and chrome trim."},
 }
@@ -107,22 +107,37 @@ const WING_HEIGHT := 3.8
 const WING_DOOR_X := 5.75
 const WING_DOOR_HALF := 0.7
 const WING_DOOR_HEIGHT := 2.4
-## The storage annex: interior rectangle behind the storage room.
-const ANNEX := Rect2(-15.0, 46.8, 8.2, 7.0)
-const ANNEX_HEIGHT := 4.6
+## The storage annex: interior rectangle behind the storage room, wider than it and deep.
+const ANNEX := Rect2(-17.0, 40.0, 11.4, 13.8)
+const ANNEX_HEIGHT := 6.0
 const ANNEX_DOOR_X := -10.9
-const ANNEX_DOOR_HALF := 0.9
-const ANNEX_DOOR_HEIGHT := 2.6
-## The mezzanine deck across the back of the annex, and its stairs up the east side.
-const MEZZ_TOP := 2.4
-const MEZZ_DEPTH := 3.0
-const STAIR_X := Vector2(-8.05, -6.85)
-const STAIR_Z := Vector2(53.6, 46.8 + 3.0)
-## The crew lounge: the east end of the wing, past the bays.
-const LOUNGE := Rect2(11.4, 55.4, 3.2, 3.8)
+const ANNEX_DOOR_HALF := 1.2
+const ANNEX_DOOR_HEIGHT := 2.8
+## The mezzanine deck across the back of the annex, and its stairs up the east wall: x across
+## the flight, z from its foot to the deck's edge, with a clear landing in front of the foot.
+const MEZZ_TOP := 3.0
+const MEZZ_DEPTH := 4.0
+const STAIR_X := Vector2(-6.85, -5.65)
+const STAIR_Z := Vector2(40.0 + 4.0 + 4.6, 40.0 + 4.0)
+## The crew lounge: a room upstairs on top of the shed (its roof is the floor), reached by a
+## steel staircase up the front of the paint shop to a landing at the lounge's door.
+const LOFT := Rect2(-6.3, 59.7, 12.6, 10.6)
+const LOFT_FLOOR := 4.8
+const LOFT_HEIGHT := 2.8
+const LOFT_DOOR_X := 5.4
+const LOFT_DOOR_HALF := 0.55
+const LOFT_DOOR_HEIGHT := 2.2
+## The outside stairs: x from the foot to the top, z across the flight; the landing runs on
+## from the top of the stairs to LOFT_LANDING_X, in front of the door.
+const LOFT_STAIR_X := Vector2(14.2, 7.0)
+const LOFT_STAIR_Z := Vector2(70.6, 71.8)
+const LOFT_LANDING_X := 4.5
 ## Where each extension bay's paddock stand is (x), all facing the wing's back wall.
 const WING_BAY_X := [6.6, 9.8, 13.0]
 const WING_BAY_Z := 52.4
+## The extension bays' bike lifts: how high the platform goes and how fast (m/s).
+const LIFT_TOP := 0.9
+const LIFT_SPEED := 0.3
 
 
 ## The rooms the upgrades add, for Workshop.rooms(): "wing" and "annex" once they're built.
@@ -141,4 +156,33 @@ static func racking_xfs() -> Array:
 	var back := Basis()   # facing +Z, into the room
 	return [Transform3D(back, Vector3(ANNEX.position.x + 1.5, 0.0, ANNEX.position.y + 0.35)),
 		Transform3D(back, Vector3(ANNEX.position.x + 4.1, 0.0, ANNEX.position.y + 0.35)),
-		Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(ANNEX.position.x + 0.35, 0.0, ANNEX.position.y + 4.6))]
+		Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(ANNEX.position.x + 0.35, 0.0, ANNEX.position.y + 8.0))]
+
+
+## The bays with a bike lift (the extension's), of those built with `have`.
+static func lift_bays(have: Dictionary) -> Array:
+	var out := []
+	for i in extra_bays(have):
+		out.append(Workshop.BAY_COUNT + i)
+	return out
+
+
+## A save's lifts that are up (bay -> true), kept to bays that have one.
+static func sanitize_lifts(saved, have: Dictionary) -> Dictionary:
+	var out := {}
+	var bays := lift_bays(have)
+	if saved is Dictionary:
+		for bay in saved:
+			if str(bay).is_valid_int() and bays.has(int(bay)) and bool(saved[bay]):
+				out[int(bay)] = true
+	return out
+
+
+## Whether `at` (x, z) is on the outside stairs or landing up to the crew lounge.
+static func on_loft_stairs(at: Vector2) -> bool:
+	return at.x >= LOFT_LANDING_X and at.x <= LOFT_STAIR_X.x and at.y >= LOFT_STAIR_Z.x and at.y <= LOFT_STAIR_Z.y
+
+
+## The height of the lounge stairs' walking surface at x (0 at the foot, LOFT_FLOOR at the top).
+static func loft_stair_height(x: float) -> float:
+	return clampf((LOFT_STAIR_X.x - x) / (LOFT_STAIR_X.x - LOFT_STAIR_X.y), 0.0, 1.0) * LOFT_FLOOR

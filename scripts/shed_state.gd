@@ -16,8 +16,17 @@ signal blob_arrived(id: int)
 ## The fixed workbench along the wall. Equipment adds its own places: engine stands
 ## ("stand_<id>") and the rest "<prefix>_<id>_<n>" (see Equipment.SPOT_PREFIX).
 const SPOTS: Array[String] = ["bench_0", "bench_1", "bench_2", "bench_3"]
-const DELIVERY_ROWS := 3
-const DELIVERY_COLS := 4
+## The delivery area outside, east of the roller door (x/z): boxes are packed tight on its front
+## part (DELIVERY_FLOOR), sized by what's in them, and the delivery racking stands along the back
+## with an aisle in front of it. When the floor is full boxes go on the racking, then stack up.
+const DELIVERY_AREA := Rect2(3.0, 72.6, 7.6, 4.8)
+const DELIVERY_FLOOR := Rect2(3.0, 72.6, 7.6, 3.0)
+const DELIVERY_RACK := "shelf_delivery"
+const DELIVERY_RACK_XFS: Array[Transform3D] = [Transform3D(Basis(Vector3.UP, PI), Vector3(4.9, 0.0, 77.05)),
+	Transform3D(Basis(Vector3.UP, PI), Vector3(8.7, 0.0, 77.05))]
+const DELIVERY_GAP := 0.04      # left between boxes
+const DELIVERY_STACK := 1.3     # how high boxes are stacked on the floor, at most
+const PACK_CELL := 0.05         # the grid boxes are packed on
 const PAINTS := [Color(0.78, 0.09, 0.08), Color(0.1, 0.35, 0.8), Color(0.95, 0.6, 0.05), Color(0.1, 0.6, 0.3),
 	Color(0.55, 0.15, 0.7), Color(0.9, 0.9, 0.9), Color(0.06, 0.06, 0.06), Color(0.0, 0.6, 0.7),
 	Color(0.72, 0.73, 0.75), Color(0.8, 0.62, 0.2), Color(0.95, 0.85, 0.1), Color(0.95, 0.4, 0.6),
@@ -89,6 +98,8 @@ var door_open := true     # the roller door
 var garage_money := 0
 ## Garage upgrades bought (GarageUpgrades): upgrade id -> true.
 var upgrades := {}
+## The extension bays' bike lifts that are up: bay -> true (the rest are down).
+var lifts := {}
 const MAX_GARAGE_MONEY := 100000000
 ## Everything else about the business's money: wage cut, owner, ledger, loans (see Money.defaults).
 var bank := Money.defaults()
@@ -174,6 +185,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	Money._mark_milestones(bank, garage_money)
 	contracts = Contracts.empty()
 	upgrades = {}
+	lifts = {}
 	door_open = true
 	lights_on = true
 	room_lights = {"paint": true, "storage": true}
@@ -366,6 +378,7 @@ func join_remote() -> void:
 	bank = Money.defaults()
 	contracts = Contracts.empty()
 	upgrades = {}
+	lifts = {}
 	board = BoardData.empty()
 	_clear_prints()
 	board_changed.emit()
@@ -388,6 +401,7 @@ func stop() -> void:
 	_clock_hours = -1.0
 	contracts = Contracts.empty()
 	upgrades = {}
+	lifts = {}
 	_washer_by.clear()
 	board = BoardData.empty()
 	_clear_prints()
@@ -1104,15 +1118,216 @@ func bay_at(at: Vector3) -> int:
 	return -1
 
 
-## Where the next delivery is left outside the roller door, beside the drive so bikes can still
-## get out. Returns null when the delivery area is full.
-func free_delivery_xf():
-	for row in DELIVERY_ROWS:
-		for col in DELIVERY_COLS:
-			var at := Workshop.CENTER + Vector3(3.2 + col * 0.85, 0.0, Workshop.HALF.y + 1.3 + row * 0.9)
-			if _clear_at(at, 0.5):
-				return Transform3D(Basis(Vector3.UP, PI), at)
-	return null
+## Where the next piece of equipment `size` big (width, height, depth) is left outside the
+## roller door: on the delivery area's floor, beside the drive so bikes can still get out.
+## Returns null when there's no room on the floor for it.
+func free_delivery_xf(size := Vector3(0.9, 0.5, 0.9)):
+	var spot = _pack(DELIVERY_FLOOR, Vector2(size.x, size.z), _delivery_floor_rects(), true)
+	if spot == null:
+		return null
+	var at: Vector3 = spot
+	return Transform3D(Basis(Vector3.UP, PI), Vector3(at.x, 0.0, at.z))
+
+
+## Where a delivered box (or can) `size` big (width, height, depth) goes: packed onto the delivery
+## area's floor, else onto the delivery racking, else stacked on a box on the floor. Returns
+## {at: "floor", xf} or {at: "spot", key (the rack's board), place (on it)}, or {} when it's full.
+func delivery_place(size: Vector3) -> Dictionary:
+	var foot := Vector2(size.x, size.z)
+	var spot = _pack(DELIVERY_FLOOR, foot, _delivery_floor_rects(), false)
+	if spot != null:
+		var at: Vector3 = spot
+		return {"at": "floor", "xf": Transform3D(Basis(Vector3.UP, at.y), Vector3(at.x, 0.0, at.z))}
+	for id in _delivery_racks():
+		var model := str(furniture[id]["model"])
+		var levels := int(Equipment.get_model(model).get("levels", 1))
+		for level in levels:
+			if level < levels - 1 and size.y > Equipment.shelf_pitch(model) - 0.06:
+				continue   # too tall to go under the board above
+			var key := "f%ds%d" % [id, level]
+			var s := surface(key)
+			var others := []
+			for o in _surface_rects(key):
+				others.append(o[1])
+			var on = _pack(s["rect"], foot, others, false)
+			if on != null:
+				var p: Vector3 = on
+				return {"at": "spot", "key": key, "place": Transform3D(Basis(Vector3.UP, p.y), Vector3(p.x, float(s["top"]), p.z))}
+	# Last of all, on top of a box already on the floor, lowest first.
+	var best := {}
+	var best_y := INF
+	for id in _delivery_floor_items():
+		var it: Dictionary = items[id]
+		if not it.get("boxed", false):
+			continue
+		var xf: Transform3D = it["ref"]
+		var top := xf.origin.y + _item_height(id)
+		if top + size.y > DELIVERY_STACK or top >= best_y:
+			continue
+		var under := item_footprint(id)
+		var turn := 0.0
+		if foot.x > under.x + 0.05 or foot.y > under.y + 0.05:
+			if foot.y > under.x + 0.05 or foot.x > under.y + 0.05:
+				continue
+			turn = PI * 0.5
+		if _box_on(id) != 0:
+			continue
+		best = {"at": "floor", "xf": Transform3D(xf.basis * Basis(Vector3.UP, turn), Vector3(xf.origin.x, top, xf.origin.z))}
+		best_y = top
+	return best
+
+
+## Puts a new part where delivery_place says. False (and it isn't moved) when there's no room.
+func _deliver(item_id: int) -> bool:
+	var where := delivery_place(_delivered_size(item_id))
+	if where.is_empty():
+		return false
+	if where["at"] == "floor":
+		_move(item_id, "floor", where["xf"])
+	else:
+		_move(item_id, "spot", _free_surface_spot(str(where["key"])))
+		items[item_id]["place"] = where["place"]
+	return true
+
+
+## How much room a part takes up in the delivery area: its box, or the can as it is.
+func _delivered_size(item_id: int) -> Vector3:
+	var foot := item_footprint(item_id)
+	return Vector3(foot.x, _item_height(item_id), foot.y)
+
+
+func _item_height(item_id: int) -> float:
+	var it: Dictionary = items[item_id]
+	return BikeModel.footprint(str(it["part"]), bool(it.get("boxed", false))).y
+
+
+## Whether there's room for a part `part_id` in the delivery area (see delivery_place).
+func delivery_room(part_id: String) -> bool:
+	return not delivery_place(BikeModel.footprint(part_id, not PartsDB.is_fluid(part_id))).is_empty()
+
+
+## The delivery racking units (fixed in the delivery area, see ensure_fixtures).
+func _delivery_racks() -> Array:
+	var out := []
+	for id in furniture:
+		if str(furniture[id]["model"]) == DELIVERY_RACK:
+			out.append(id)
+	out.sort()
+	return out
+
+
+## Parts lying on the ground in the delivery area (and stacked there).
+func _delivery_floor_items() -> Array:
+	var out := []
+	var area := DELIVERY_AREA.grow(0.5)
+	for id in items:
+		if items[id]["at"] == "floor":
+			var at: Vector3 = (items[id]["ref"] as Transform3D).origin
+			if area.has_point(Vector2(at.x, at.z)):
+				out.append(id)
+	return out
+
+
+## What takes up the delivery area's floor: the bottom box of each stack, equipment, and bikes.
+func _delivery_floor_rects() -> Array:
+	var out := []
+	for id in _delivery_floor_items():
+		var xf: Transform3D = items[id]["ref"]
+		if xf.origin.y < 0.05:
+			out.append(foot_rect(xf, item_footprint(id)))
+	var area := DELIVERY_AREA.grow(3.0)
+	for id in furniture:
+		var f: Dictionary = furniture[id]
+		var at: Vector3 = (f["xf"] as Transform3D).origin
+		if area.has_point(Vector2(at.x, at.z)):
+			var size := furniture_size(f)
+			out.append(foot_rect(f["xf"], Vector2(size.x, size.z)))
+	for id in bikes:
+		var at: Vector3 = (bikes[id]["xf"] as Transform3D).origin
+		if area.has_point(Vector2(at.x, at.z)):
+			out.append(foot_rect(bikes[id]["xf"], Vector2(0.9, 2.3)))
+	return out
+
+
+## The box sitting on top of box `item_id` in the delivery area, or 0.
+func _box_on(item_id: int) -> int:
+	var xf: Transform3D = items[item_id]["ref"]
+	var top := xf.origin.y + _item_height(item_id)
+	var r := foot_rect(xf, item_footprint(item_id)).grow(-0.02)
+	for id in _delivery_floor_items():
+		var o: Transform3D = items[id]["ref"]
+		if id != item_id and absf(o.origin.y - top) < 0.03 and foot_rect(o, item_footprint(id)).intersects(r):
+			return id
+	return 0
+
+
+## Packs a box with footprint `foot` (x by z) into `area` clear of `others` (Rect2s, kept
+## DELIVERY_GAP away from): the free spot nearest the area's front (low z), then its left (low
+## x), the box's long side along x, or turned across where only that fits (unless `fixed`).
+## Works on a 5 cm grid of what's taken. Returns Vector3(centre x, turn, centre z), or null
+## when there's no room.
+func _pack(area: Rect2, foot: Vector2, others: Array, fixed: bool):
+	var nx := int(area.size.x / PACK_CELL)
+	var ny := int(area.size.y / PACK_CELL)
+	if nx <= 0 or ny <= 0:
+		return null
+	var taken := PackedByteArray()
+	taken.resize(nx * ny)
+	for o in others:
+		var r := (o as Rect2).grow(DELIVERY_GAP)
+		var i0 := maxi(0, int(floor((r.position.x - area.position.x) / PACK_CELL + 0.001)))
+		var i1 := mini(nx, int(ceil((r.end.x - area.position.x) / PACK_CELL - 0.001)))
+		var j0 := maxi(0, int(floor((r.position.y - area.position.y) / PACK_CELL + 0.001)))
+		var j1 := mini(ny, int(ceil((r.end.y - area.position.y) / PACK_CELL - 0.001)))
+		for j in range(j0, j1):
+			for i in range(i0, i1):
+				taken[j * nx + i] = 1
+	# Running totals of the taken cells, so any block is checked in four lookups.
+	var w := nx + 1
+	var sums := PackedInt32Array()
+	sums.resize(w * (ny + 1))
+	for j in ny:
+		var row := 0
+		for i in nx:
+			row += taken[j * nx + i]
+			sums[(j + 1) * w + i + 1] = sums[j * w + i + 1] + row
+	var sizes: Array[Vector2] = [foot]
+	if not fixed:
+		# Long side along x first, then turned across.
+		sizes = [Vector2(maxf(foot.x, foot.y), minf(foot.x, foot.y)), Vector2(minf(foot.x, foot.y), maxf(foot.x, foot.y))]
+	var best = null
+	var best_at := Vector2i(nx, ny)
+	for size in sizes:
+		var cw := int(ceil(size.x / PACK_CELL - 0.001))
+		var ch := int(ceil(size.y / PACK_CELL - 0.001))
+		for j in range(0, ny - ch + 1):
+			if j > best_at.y:
+				break
+			for i in range(0, nx - cw + 1):
+				if sums[(j + ch) * w + i + cw] - sums[j * w + i + cw] - sums[(j + ch) * w + i] + sums[j * w + i] == 0:
+					if j < best_at.y or (j == best_at.y and i < best_at.x):
+						best_at = Vector2i(i, j)
+						var turn := 0.0 if size == foot else PI * 0.5
+						best = Vector3(area.position.x + i * PACK_CELL + size.x * 0.5, turn, area.position.y + j * PACK_CELL + size.y * 0.5)
+					break
+	return best
+
+
+## Boxes left stacked in the delivery area drop down onto whatever is under them now, once one
+## under them has been taken away.
+func _settle_delivery() -> void:
+	var stacked := _delivery_floor_items().filter(func(id): return (items[id]["ref"] as Transform3D).origin.y > 0.01)
+	stacked.sort_custom(func(a, b): return (items[a]["ref"] as Transform3D).origin.y < (items[b]["ref"] as Transform3D).origin.y)
+	for id in stacked:
+		var xf: Transform3D = items[id]["ref"]
+		var r := foot_rect(xf, item_footprint(id)).grow(-0.02)
+		var rest := 0.0
+		for other in _delivery_floor_items():
+			var o: Transform3D = items[other]["ref"]
+			if other != id and o.origin.y < xf.origin.y - 0.01 and foot_rect(o, item_footprint(other)).intersects(r):
+				rest = maxf(rest, o.origin.y + _item_height(other))
+		if rest < xf.origin.y - 0.005:
+			items[id]["ref"] = Transform3D(xf.basis, Vector3(xf.origin.x, rest, xf.origin.z))
 
 
 ## Where yard kit is dropped off: the west end of the yard just past the drag strip, clear of the
@@ -1506,6 +1721,15 @@ func ensure_fixtures() -> void:
 				_move(hung[i], "floor", Transform3D(Basis(), at))
 	if not have.has("changer"):
 		_new_furniture("changer", Workshop.CHANGER_XF, "tyre_changer")
+	# The delivery racking along the back of the delivery area (sheds from before it get it too).
+	var racks := _delivery_racks()
+	for i in DELIVERY_RACK_XFS.size():
+		if i < racks.size():
+			furniture[racks[i]]["xf"] = DELIVERY_RACK_XFS[i]
+			furniture[racks[i]]["mover"] = 0
+		else:
+			var rack := _new_furniture("shelf", DELIVERY_RACK_XFS[i], DELIVERY_RACK)
+			furniture[rack]["label"] = "DELIVERIES"
 	# The crew whiteboard can be hung on any wall; a save from before that keeps it where it was.
 	if whiteboard_id() == 0:
 		_new_furniture("whiteboard", Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT), "whiteboard")
@@ -1651,6 +1875,23 @@ func _bay_near(xf: Transform3D, bike_id: int) -> int:
 		if not taken:
 			return bay
 	return -1
+
+
+## The bay of the lift a bike stands on (an extension bay's, see GarageUpgrades), or -1.
+func lift_of(bike_id: int) -> int:
+	if not bikes.has(bike_id):
+		return -1
+	var at: Vector3 = (bikes[bike_id]["xf"] as Transform3D).origin
+	for bay in GarageUpgrades.lift_bays(upgrades):
+		if at.distance_to(Workshop.bay_transform(bay).origin) < 0.5:
+			return bay
+	return -1
+
+
+## Whether a bike is up on a raised lift (it can't be wheeled off or ridden till it's down).
+func lift_raised(bike_id: int) -> bool:
+	var bay := lift_of(bike_id)
+	return bay >= 0 and lifts.has(bay)
 
 
 ## Where a held part would go on a target, or why it can't: {slot} or {error}.
@@ -1872,8 +2113,8 @@ func check(peer: int, action: Dictionary) -> String:
 		"order_part":
 			if PartsDB.get_part(str(action.get("part", ""))).is_empty():
 				return "Unknown part."
-			if free_delivery_xf() == null:
-				return "The delivery area outside is full. Bring some boxes in first."
+			if not delivery_room(str(action["part"])):
+				return "The delivery area outside is full, racking and all. Bring some boxes in first."
 			var cost := Money.buy_price(str(action["part"]), peer)
 			if cost > garage_money:
 				return "The business can't afford it: %s, and it has %s." % [TvChannels.money_text(cost), TvChannels.money_text(garage_money)]
@@ -1883,6 +2124,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unknown equipment."
 			if Equipment.FIXED_KINDS.has(Equipment.kind_of(model)):
 				return "The paint booth is built into the shed: it's in the paint shop on the east side."
+			if model == DELIVERY_RACK:
+				return "The delivery racking comes with the shed: it's in the delivery area outside."
 			if model == Equipment.BOARD_POSTER and not posters.has(int(action.get("design", 0))):
 				return "That whiteboard poster isn't in the shop any more."
 			if str(action.get("psize", "")) != "" and (Equipment.kind_of(model) != "poster" or not Equipment.POSTER_SIZES.has(str(action["psize"]))):
@@ -1892,8 +2135,8 @@ func check(peer: int, action: Dictionary) -> String:
 			if Equipment.is_yard(model):
 				if free_yard_xf(model) == null:
 					return "The drop-off by the drag strip is full. Move some of the yard kit first."
-			elif free_delivery_xf() == null:
-				return "The delivery area outside is full. Bring some boxes in first."
+			elif free_delivery_xf(Equipment.get_model(model).get("size", Vector3.ONE)) == null:
+				return "There's no room for it in the delivery area outside. Bring some boxes in first."
 		"unpack":
 			var box := int(action.get("item", 0))
 			if not items.has(box) or not items[box].get("boxed", false):
@@ -1906,6 +2149,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "That has gone."
 			if Equipment.FIXED_KINDS.has(str(f["kind"])):
 				return "The %s is built in." % furniture_name(f).to_lower()
+			if str(f["model"]) == DELIVERY_RACK:
+				return "The delivery racking is fixed down in the delivery area."
 			if f["mover"] != 0 and f["mover"] != peer:
 				return "Someone else is moving that."
 			if blaster_user(int(f["id"])) != 0:
@@ -2067,6 +2312,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var why := _wheel_check(bike_id)
 			if why != "":
 				return why
+			if lift_raised(bike_id):
+				return "It's up on the lift. Lower the lift first (F on the button post)."
 			if on_dyno(bike_id) and straps_done() > 0:
 				return "Undo the straps first (hold the work button at each one)."
 			if on_dyno(bike_id) and dyno["hose"] == "bike":
@@ -2080,6 +2327,10 @@ func check(peer: int, action: Dictionary) -> String:
 				return "You're not holding that bike."
 			if not (action.get("xf") is Transform3D):
 				return "You can't put it there."
+			if action["a"] == "release_bike":
+				var bay := _bay_near(action["xf"], bike_id)
+				if bay >= 0 and lifts.has(bay):
+					return "Bay %d's lift is up. Lower it first, then wheel the bike on." % (bay + 1)
 		"set_stand":
 			var which := str(action.get("stand", ""))
 			if not which in ["side", "centre"]:
@@ -2095,6 +2346,8 @@ func check(peer: int, action: Dictionary) -> String:
 		"mount":
 			if riding(peer) != 0:
 				return "You're already riding."
+			if lift_raised(bike_id):
+				return "It's up on the lift. Lower the lift first (F on the button post)."
 			if pushing_bike(peer) != 0:
 				return "Let go of the bike first, then get on it."
 			if held != 0:
@@ -2184,6 +2437,13 @@ func check(peer: int, action: Dictionary) -> String:
 				return "How much?"
 		"buy_upgrade":
 			return GarageUpgrades.check(str(action.get("id", "")), upgrades, garage_money)
+		"lift":
+			var bay := int(action.get("bay", -1))
+			if not GarageUpgrades.lift_bays(upgrades).has(bay):
+				return "There's no lift there."
+			var on := bike_in_bay(bay)
+			if on != 0 and (bikes[on]["rider"] != 0 or bikes[on].get("pusher", 0) != 0):
+				return "Someone's moving the bike in bay %d." % (bay + 1)
 		_:
 			return "Unknown action."
 	return ""
@@ -2223,7 +2483,7 @@ func scrap_check(peer: int, action: Dictionary) -> String:
 		var f: Dictionary = furniture.get(int(action["furniture"]), {})
 		if f.is_empty():
 			return "That has gone."
-		if Equipment.FIXED_KINDS.has(str(f["kind"])) or f["kind"] == "whiteboard":
+		if Equipment.FIXED_KINDS.has(str(f["kind"])) or f["kind"] == "whiteboard" or str(f["model"]) == DELIVERY_RACK:
 			return "The %s is part of the shed: it can't be scrapped." % furniture_name(f).to_lower()
 		if f["mover"] != peer:
 			return "Take hold of it first (F), then hold the scrap key."
@@ -2522,9 +2782,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
 			# Parts come boxed; cans and bottles of fluid are left as they are.
 			items[item_id]["boxed"] = not PartsDB.is_fluid(part_id)
-			_move(item_id, "floor", free_delivery_xf())
-			text = "Ordered %s for %s. %s outside by the roller door." % [PartsDB.part_name(part_id), TvChannels.money_text(cost),
-				"The box is" if items[item_id]["boxed"] else "It's"]
+			_deliver(item_id)
+			text = "Ordered %s for %s. %s in the delivery area outside the roller door%s." % [PartsDB.part_name(part_id), TvChannels.money_text(cost),
+				"The box is" if items[item_id]["boxed"] else "It's", ", on the racking" if items[item_id]["at"] == "spot" else ""]
 		"order_furniture":
 			var model := Equipment.current_id(str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), ""))))
 			var kind := Equipment.kind_of(model)
@@ -2533,7 +2793,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "Ordered the %s. It's in the yard by the drag strip: press F on it to move it where you want it." % \
 					Equipment.get_model(model)["name"].to_lower()
 			else:
-				var fid := _new_furniture(kind, free_delivery_xf(), model)
+				var fid := _new_furniture(kind, free_delivery_xf(Equipment.get_model(model).get("size", Vector3.ONE)), model)
 				var what := str(Equipment.get_model(model)["name"]).to_lower()
 				if kind == "poster":
 					# Printed A2, A1, A0 or as a big banner (A1 unless the order says).
@@ -2560,6 +2820,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = _start_blueprint(id, int(action["bay"]))
 		"unpack":
 			items[int(action["item"])]["boxed"] = false
+			_settle_delivery()
 			text = "Unpacked the %s" % item_title(int(action["item"]))
 			_xp(peer, "unbox", 1.0, "item:%d" % int(action["item"]))
 		"grab":
@@ -2590,6 +2851,14 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Garage money set to %s" % TvChannels.money_text(garage_money)
 		"buy_upgrade":
 			text = _buy_upgrade(peer, str(action["id"]))
+		"lift":
+			var bay := int(action["bay"])
+			var up := bool(action.get("up", not lifts.has(bay)))
+			if up:
+				lifts[bay] = true
+			else:
+				lifts.erase(bay)
+			text = "Bay %d's lift going %s" % [bay + 1, "up" if up else "down"]
 		"door":
 			door_open = bool(action.get("open", not door_open))
 			text = "Roller door %s" % ("going up" if door_open else "coming down")
@@ -3445,10 +3714,13 @@ func _was_project(bike_id: int) -> bool:
 
 
 func _move(item_id: int, at: String, ref) -> void:
+	var was_floor: bool = items[item_id].get("at", "") == "floor"
 	items[item_id]["at"] = at
 	items[item_id]["ref"] = ref
 	# Where it sat on a surface goes with it (set_down gives it a new one).
 	items[item_id].erase("place")
+	if was_floor and at != "floor":
+		_settle_delivery()
 
 
 ## Takes a part off a bike (whatever is mounted on it stays put) and puts it somewhere.
@@ -3470,7 +3742,10 @@ func _erase_item(item_id: int) -> void:
 			var sub := engine_item(item_id, slot)
 			if sub != 0:
 				items.erase(sub)
+	var was_floor: bool = items.get(item_id, {}).get("at", "") == "floor"
 	items.erase(item_id)
+	if was_floor:
+		_settle_delivery()
 
 
 func _free_spot() -> String:
@@ -3889,8 +4164,9 @@ func _save_blueprint(bike_id: int, bp_name: String) -> int:
 	return id
 
 
-## Orders whatever a blueprint build still needs, boxed outside the roller door in the
-## blueprint's colours, each paid for by the business. Returns [parts ordered, parts that didn't
+## Orders whatever a blueprint build still needs, boxed in the delivery area outside the roller
+## door (packed tight, then on the racking) in the blueprint's colours, each paid for by the
+## business. Returns [parts ordered, parts that didn't
 ## fit in the delivery area, parts the business couldn't afford, pounds spent].
 func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 	if plan.is_empty():
@@ -3905,11 +4181,10 @@ func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 	for row in plan_rows(plan, bike_id):
 		if row["state"] != "needed":
 			continue
-		var xf = free_delivery_xf()
-		if xf == null:
+		var part: String = row["part"]
+		if not delivery_room(part):
 			left += 1
 			continue
-		var part: String = row["part"]
 		var cost := Money.buy_price(part, peer)
 		if not charge_garage(cost, "Bought %s" % PartsDB.part_name(part)):
 			broke += 1
@@ -3919,7 +4194,7 @@ func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 		var item_id := _new_item(part, 0.0, 0.0, 0.0, look.get("color"))
 		items[item_id]["finish"] = str(look.get("finish", ""))
 		items[item_id]["boxed"] = not PartsDB.is_fluid(part)
-		_move(item_id, "floor", xf)
+		_deliver(item_id)
 		plan["ordered"][row["slot"]] = item_id
 		sent += 1
 	return [sent, left, broke, spent]
@@ -3991,7 +4266,8 @@ func _mark_dirty() -> void:
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "upgrades": upgrades}
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "upgrades": upgrades,
+		"lifts": lifts}
 	if with_board:
 		state["board"] = board
 	return state
@@ -4028,6 +4304,8 @@ func _sync(state: Dictionary) -> void:
 	contracts = Contracts.sanitize(state.get("contracts"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
+	# Sheds saved before the bays had working lifts: all down.
+	lifts = GarageUpgrades.sanitize_lifts(state.get("lifts", {}), upgrades)
 	# Sheds saved before the side rooms had switches: their lights start on.
 	room_lights = {"paint": true, "storage": true}
 	var saved_rooms = state.get("room_lights", {})

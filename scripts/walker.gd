@@ -287,6 +287,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "door", "open": not Shed.door_open})
 			Sfx.play_at("switch", camera.global_position, -6.0)
+		elif target.get("kind", "") == "lift":
+			# A bay's bike lift: up if it's down, down if it's up.
+			get_viewport().set_input_as_handled()
+			var bay := int(target["bay"])
+			Shed.request({"a": "lift", "bay": bay, "up": not Shed.lifts.has(bay)})
+			Sfx.play_at("switch", camera.global_position, -6.0)
 		elif target.get("kind", "") == "lights":
 			get_viewport().set_input_as_handled()
 			var room := str(target.get("room", ""))
@@ -531,6 +537,8 @@ func _update_target() -> void:
 			t = {"kind": "radio"}
 		elif c.has_meta("door_switch"):
 			t = {"kind": "door"}
+		elif c.has_meta("lift"):
+			t = {"kind": "lift", "bay": int(c.get_meta("lift"))}
 		elif c.has_meta("light_switch"):
 			# The shed's own switch says true; a side room's says which room.
 			var room = c.get_meta("light_switch")
@@ -1116,7 +1124,7 @@ func _make_plan() -> Dictionary:
 	var p := {}
 	if kind == "label":
 		return {"action": {"a": "write_label"}, "time": 0.15, "verb": "write a label for these shelves", "blocked": ""}
-	if kind in ["furniture", "door", "lights", "board", "screen"]:
+	if kind in ["furniture", "door", "lights", "board", "screen", "lift"]:
 		return {}
 	if kind == "radio":
 		if Shed.stations.is_empty():
@@ -1452,7 +1460,7 @@ func _describe() -> String:
 							lines.append("Store parts and boxed stock here.")
 				if not f.is_empty():
 					lines.append(Equipment.spec_line(str(f["model"])))
-					if not Equipment.FIXED_KINDS.has(str(f["kind"])):
+					if not Equipment.FIXED_KINDS.has(str(f["kind"])) and str(f["model"]) != Shed.DELIVERY_RACK:
 						lines.append("F: move it somewhere else")
 		"item":
 			var it: Dictionary = Shed.items[int(target["item"])]
@@ -1484,7 +1492,10 @@ func _describe() -> String:
 				"booth", "changer":
 					lines.append("Built into the shed")
 				_:
-					lines.append("F: move it somewhere else")
+					if str(f["model"]) == Shed.DELIVERY_RACK:
+						lines.append("Fixed down in the delivery area")
+					else:
+						lines.append("F: move it somewhere else")
 			if kind == "label":
 				lines.append("Hold %s on the label to write on it" % ("RT" if Controls.active_device >= 0 else "left mouse"))
 		"screen":
@@ -1494,6 +1505,16 @@ func _describe() -> String:
 		"door":
 			lines.append("Roller door")
 			lines.append("F: %s" % ("close it" if Shed.door_open else "open it"))
+		"lift":
+			var bay := int(target["bay"])
+			var on := Shed.bike_in_bay(bay)
+			lines.append("Bay %d bike lift: %s" % [bay + 1, "up" if Shed.lifts.has(bay) else "down"])
+			if on != 0:
+				lines.append("%s is on it" % Shed.bikes[on]["name"])
+			lines.append("F: %s" % ("lower it" if Shed.lifts.has(bay) else "raise it"))
+			var why := Shed.check(Shed.me(), {"a": "lift", "bay": bay, "up": not Shed.lifts.has(bay)})
+			if why != "":
+				lines.append(why)
 		"lights":
 			var room := str(target.get("room", ""))
 			lines.append({"paint": "Paint shop lights", "storage": "Storage room lights", "sales": "Sales office lights"}.get(room, "Shed lights"))
@@ -1523,7 +1544,8 @@ func _describe() -> String:
 			var fid := int(target.get("furniture", 0))
 			if fid != 0 and Shed.furniture.has(fid):
 				lines.append(Equipment.spec_line(str(Shed.furniture[fid]["model"])))
-				lines.append("F: move it somewhere else")
+				if str(Shed.furniture[fid]["model"]) != Shed.DELIVERY_RACK:
+					lines.append("F: move it somewhere else")
 		"pc":
 			lines.append("Parts computer")
 			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")

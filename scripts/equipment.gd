@@ -52,6 +52,9 @@ const MODELS := {
 		"cols": 4, "levels": 4, "desc": "Long boltless shelving for a whole bike's worth of parts."},
 	"shelf_racking": {"kind": "shelf", "name": "Heavy-duty racking", "size": Vector3(2.4, 2.2, 0.6),
 		"cols": 5, "levels": 4, "desc": "Warehouse pallet racking cut down for the shed. Holds engines and frames without bowing."},
+	# The delivery racking fixed in the delivery area outside (Shed.DELIVERY_RACK): not sold.
+	"shelf_delivery": {"kind": "shelf", "name": "Delivery racking", "size": Vector3(3.6, 2.2, 0.7), "hidden": true,
+		"cols": 6, "levels": 4, "desc": "Racking in the delivery area: deliveries go on it when the floor's full."},
 
 	# Parts washers: everything in one gets cleaned on its own, `rate` dirt a second.
 	"washer_compact": {"kind": "washer", "name": "Benchtop parts washer", "compact": true, "size": Vector3(0.7, 1.0, 0.6),

@@ -196,6 +196,10 @@ func _run_all() -> void:
 	_test_customer_bay_screen()
 	_test_customer_save()
 	await _test_customer_ride_session()
+	print("Shed building: packed deliveries and racking, bay lifts, the big annex, the crew lounge upstairs")
+	_test_delivery_packing()
+	_test_bay_lifts()
+	await _test_shed_building_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -604,9 +608,14 @@ func _test_shed_rules() -> void:
 	Shed.request({"a": "label", "furniture": shelf, "text": "Handlebars"})
 	check(Shed.furniture_name(Shed.furniture[shelf]) == "Shelving unit: Handlebars", "shelves take a label")
 	check(Shed.check(me, {"a": "place", "spot": "stand_%d" % shelf}) != "", "a shelf isn't an engine stand")
-	for i in 12:
-		Shed.request({"a": "order_part", "part": "flat_bar"})
-	check(Shed.check(me, {"a": "order_part", "part": "flat_bar"}).contains("full"), "you can't order with the delivery area full")
+	var funds := Shed.garage_money
+	Shed.garage_money = 10000000
+	for i in 400:
+		if Shed.check(me, {"a": "order_part", "part": "steel_cradle"}) != "":
+			break
+		Shed.request({"a": "order_part", "part": "steel_cradle"})
+	check(Shed.check(me, {"a": "order_part", "part": "steel_cradle"}).contains("full"), "you can't order with the delivery area full")
+	Shed.garage_money = funds
 	# The brush scrubs a whole cluster of parts.
 	var dirty: Array = []
 	for id in Shed.items:
@@ -4734,13 +4743,13 @@ func _test_blueprint_build() -> void:
 	Shed.request({"a": "bp_order", "bay": 3})
 	rows = Shed.plan_rows(Shed.plan_at(3), 0)
 	var ordered := rows.filter(func(r): return r["state"] == "ordered").size()
-	check(ordered == Shed.DELIVERY_ROWS * Shed.DELIVERY_COLS and ordered < rows.size(), "ordering fills the delivery area (%d ordered)" % ordered)
+	check(ordered == rows.size(), "a whole bike's worth of parts fits in the delivery area (%d ordered)" % ordered)
 	var frame_item := int(Shed.plan_at(3)["ordered"]["frame"])
 	check(Shed.items[frame_item]["boxed"] and Shed.items[frame_item]["part"] == Shed.blueprints[bp]["parts"]["frame"], "the frame arrives boxed")
 	check(Shed.items[frame_item]["color"] == Shed.blueprints[bp]["colors"]["frame"]["color"], "parts come in the blueprint's colours")
 	Shed.request({"a": "bp_order", "bay": 3})
 	check(Shed.plan_rows(Shed.plan_at(3), 0).filter(func(r): return r["state"] == "ordered").size() == ordered,
-		"ordering again doesn't double up while the area is full")
+		"ordering again doesn't double up")
 	# Clear the delivery area and order the rest.
 	for i in 4:
 		for r in Shed.plan_at(3)["ordered"].values():
@@ -7035,9 +7044,11 @@ func _test_upgrade_session() -> void:
 	check(not through.call(Vector3(3.0, 1.2, 60.5), Vector3(3.0, 1.2, 57.0)), "the rest of the back wall is still there")
 	check(through.call(Vector3(GarageUpgrades.ANNEX_DOOR_X, 1.2, 56.0), Vector3(GarageUpgrades.ANNEX_DOOR_X, 1.2, 52.0))
 		and not through.call(Vector3(-14.0, 1.2, 56.0), Vector3(-14.0, 1.2, 52.0)), "and one through the storage room's back wall into the annex")
-	var stairs := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-7.45, 4.0, 51.7), Vector3(-7.45, -1.0, 51.7), 1))
-	check(not stairs.is_empty() and absf(float(stairs["position"].y) - 1.2) < 0.25, "the mezzanine stairs are a slope to walk up (%.2f m half way)" % float(stairs.get("position", Vector3.ZERO).y))
-	var deck := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-11.5, 4.0, 48.5), Vector3(-11.5, -1.0, 48.5), 1))
+	var mid_x := (GarageUpgrades.STAIR_X.x + GarageUpgrades.STAIR_X.y) * 0.5
+	var mid_z := (GarageUpgrades.STAIR_Z.x + GarageUpgrades.STAIR_Z.y) * 0.5
+	var stairs := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(mid_x, 5.5, mid_z), Vector3(mid_x, -1.0, mid_z), 1))
+	check(not stairs.is_empty() and absf(float(stairs["position"].y) - GarageUpgrades.MEZZ_TOP * 0.5) < 0.25, "the mezzanine stairs are a slope to walk up (%.2f m half way)" % float(stairs.get("position", Vector3.ZERO).y))
+	var deck := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-11.5, 5.5, 42.0), Vector3(-11.5, -1.0, 42.0), 1))
 	check(not deck.is_empty() and absf(float(deck["position"].y) - GarageUpgrades.MEZZ_TOP) < 0.05, "the deck is up at %.1f m" % GarageUpgrades.MEZZ_TOP)
 	var all := ws.screens()
 	check(all.has("bay4") and all.has("bay5") and all.has("bay6") and not all.has("bay7"), "the three new bays have screens")
@@ -9036,3 +9047,276 @@ func _test_customer_ride_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+# ---------------------------------------------------------------------------- shed building: deliveries, lifts, annex, lounge
+
+## The delivery area: boxes packed tight by size, a whole bike's blueprint order fits, the
+## racking takes the overflow, then boxes stack; a box taken from under a stack lets the one on
+## top down; the racking is fixed, comes with old saves, and isn't sold.
+func _test_delivery_packing() -> void:
+	Shed.start_new("Tester", 41)
+	Shed.garage_money = 5000000
+	var me := Shed.me()
+	var racks := Shed._delivery_racks()
+	check(racks.size() == Shed.DELIVERY_RACK_XFS.size() and str(Shed.furniture[racks[0]].get("label", "")) == "DELIVERIES",
+		"the delivery area comes with its racking")
+	var rack_feet := true
+	for id in racks:
+		var size := Shed.furniture_size(Shed.furniture[id])
+		rack_feet = rack_feet and Shed.DELIVERY_AREA.encloses(Shed.foot_rect(Shed.furniture[id]["xf"], Vector2(size.x, size.z)).grow(-0.01)) \
+			and not Shed.DELIVERY_FLOOR.intersects(Shed.foot_rect(Shed.furniture[id]["xf"], Vector2(size.x, size.z)))
+	check(rack_feet, "the racking stands at the back of the delivery area, off the floor boxes are packed on")
+	check(Shed.check(me, {"a": "grab", "furniture": racks[0]}).contains("fixed"), "the delivery racking can't be pushed away")
+	check(Shed.scrap_check(me, {"furniture": racks[0]}) != "", "or scrapped")
+	check(Shed.check(me, {"a": "order_furniture", "model": Shed.DELIVERY_RACK}) != "" and not Equipment.by_kind("shelf").has(Shed.DELIVERY_RACK),
+		"and it isn't sold")
+	check(not Shed.DELIVERY_AREA.intersects(Rect2(-Workshop.DOOR_HALF, 70.0, Workshop.DOOR_HALF * 2.0, 20.0)), "it's clear of the drive out of the roller door")
+	# A whole bike ordered from a blueprint fits in one go, packed on the floor.
+	var faithful := _bike_named("Old Faithful")
+	var bp := Shed._save_blueprint(faithful, "Whole bike")
+	Shed.request({"a": "bp_build", "bp": bp, "bay": 3})
+	Shed.request({"a": "bp_order", "bay": 3})
+	var rows := Shed.plan_rows(Shed.plan_at(3), 0)
+	check(rows.size() >= 30 and rows.all(func(r): return r["state"] == "ordered"), "a whole bike's blueprint order fits in the delivery area (%d parts)" % rows.size())
+	var floor_ok := true
+	var boxes := []
+	for r in Shed.plan_at(3)["ordered"].values():
+		var it: Dictionary = Shed.items[int(r)]
+		boxes.append(int(r))
+		if it["at"] == "floor":
+			var foot := Shed.foot_rect(it["ref"], Shed.item_footprint(int(r)))
+			floor_ok = floor_ok and Shed.DELIVERY_FLOOR.grow(0.01).encloses(foot)
+	check(floor_ok, "every box is inside the delivery area")
+	var overlap := false
+	for a in boxes:
+		for b in boxes:
+			if a < b and Shed.items[a]["at"] == "floor" and Shed.items[b]["at"] == "floor" \
+					and absf((Shed.items[a]["ref"] as Transform3D).origin.y - (Shed.items[b]["ref"] as Transform3D).origin.y) < 0.01:
+				var ra := Shed.foot_rect(Shed.items[a]["ref"], Shed.item_footprint(a)).grow(-0.01)
+				overlap = overlap or ra.intersects(Shed.foot_rect(Shed.items[b]["ref"], Shed.item_footprint(b)))
+	check(not overlap, "no two boxes overlap")
+	var frame_box := int(Shed.plan_at(3)["ordered"]["frame"])
+	var plugs_box := int(Shed.plan_at(3)["ordered"]["spark_plugs"])
+	check(Shed.item_footprint(frame_box).x * Shed.item_footprint(frame_box).y > 4.0 * Shed.item_footprint(plugs_box).x * Shed.item_footprint(plugs_box).y,
+		"each box is sized by the part in it")
+	# Keep ordering: the floor fills, then the racking, then boxes stack up.
+	var count_up := func() -> Vector3:
+		var rack_n := 0
+		var stack_n := 0
+		var top := 0.0
+		for id in Shed.items:
+			var it: Dictionary = Shed.items[id]
+			if it["at"] == "spot" and Shed.spot_role(str(it["ref"])) == "shelf" and racks.has(int(Shed.furniture_of_spot(str(it["ref"]))["id"])):
+				rack_n += 1
+			elif it["at"] == "floor" and (it["ref"] as Transform3D).origin.y > 0.05:
+				stack_n += 1
+				top = maxf(top, (it["ref"] as Transform3D).origin.y + Shed._item_height(id))
+		return Vector3(rack_n, stack_n, top)
+	var first_rack := -1
+	var first_stack := -1
+	for i in 400:
+		var got: Vector3 = count_up.call()
+		if first_rack < 0 and got.x > 0:
+			first_rack = i
+		if got.y > 3:
+			first_stack = i
+			break
+		Shed.request({"a": "order_part", "part": "sport_17"})
+	var counts: Vector3 = count_up.call()
+	check(first_rack > 40 and counts.x > 20, "when the floor's full, deliveries go onto the racking (%d)" % int(counts.x))
+	check(first_stack > first_rack and counts.y > 3 and counts.z <= Shed.DELIVERY_STACK + 0.01,
+		"then boxes stack up on the floor, not too high (%.2f m)" % counts.z)
+	# Take a box from under a stack: the one on top drops down onto the ground.
+	var top_box := 0
+	for id in Shed.items:
+		if Shed.items[id]["at"] == "floor" and (Shed.items[id]["ref"] as Transform3D).origin.y > 0.05:
+			top_box = id
+			break
+	var bottom := 0
+	for id in Shed._delivery_floor_items():
+		if Shed._box_on(id) == top_box:
+			bottom = id
+	check(bottom != 0, "a stacked box sits on the one under it")
+	var was_y: float = (Shed.items[top_box]["ref"] as Transform3D).origin.y
+	Shed.request({"a": "take", "item": bottom})
+	check(Shed.held_by(me) == bottom and (Shed.items[top_box]["ref"] as Transform3D).origin.y < was_y - 0.05,
+		"pick up the box underneath and the one on top comes down (%.2f m)" % (Shed.items[top_box]["ref"] as Transform3D).origin.y)
+	Shed._erase_item(bottom)
+	# Frames are too tall to stack: once the floor and the racking's top are full, it's full.
+	Shed.start_new("Tester", 44)
+	Shed.garage_money = 5000000
+	for i in 200:
+		if Shed.check(me, {"a": "order_part", "part": "steel_cradle"}) != "":
+			break
+		Shed.request({"a": "order_part", "part": "steel_cradle"})
+	counts = count_up.call()
+	check(Shed.check(me, {"a": "order_part", "part": "steel_cradle"}).contains("full") and counts.y == 0, "only then is the delivery area full")
+	check(Shed.check(me, {"a": "order_part", "part": "copper_plugs"}) == "", "though a small box can still go on top of one")
+	# Equipment still goes down on the floor, where there's room for it.
+	Shed.start_new("Tester", 42)
+	Shed.garage_money = 5000000
+	Shed.request({"a": "order_furniture", "model": "shelf_wide"})
+	var wide := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["model"] == "shelf_wide":
+			wide = id
+	var size := Shed.furniture_size(Shed.furniture[wide])
+	check(wide != 0 and Shed.DELIVERY_FLOOR.grow(0.01).encloses(Shed.foot_rect(Shed.furniture[wide]["xf"], Vector2(size.x, size.z))),
+		"equipment is left on the delivery area's floor")
+	var plugs := _order("copper_plugs")
+	check(not Shed.foot_rect(Shed.items[plugs]["ref"], Shed.item_footprint(plugs)).intersects(Shed.foot_rect(Shed.furniture[wide]["xf"], Vector2(size.x, size.z))),
+		"and boxes are packed round it")
+	# An older save (no racking yet, boxes where the old delivery bay was) gets the racking.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	for id in Shed._delivery_racks():
+		copy["furniture"].erase(id)
+	Shed.load_state(copy, "Tester")
+	check(Shed._delivery_racks().size() == Shed.DELIVERY_RACK_XFS.size() and Shed.items.has(plugs), "a shed saved before the racking gets it, and keeps its deliveries")
+	Shed.stop()
+
+
+## The extension bays' bike lifts: raised and lowered with "lift", the bike can't be wheeled
+## off or ridden while it's up, and which lifts are up is kept in the save.
+func _test_bay_lifts() -> void:
+	Shed.start_new("Tester", 43)
+	Shed.garage_money = 5000000
+	var me := Shed.me()
+	check(Shed.check(me, {"a": "lift", "bay": 4}) != "" and Shed.check(me, {"a": "lift", "bay": 0}) != "", "no lifts before the extension's bays")
+	for id in ["wing", "bays_56"]:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	check(GarageUpgrades.lift_bays(Shed.upgrades) == [4, 5], "bays 5 and 6 have lifts")
+	check(Shed.check(me, {"a": "lift", "bay": 0}) != "", "the shed's own bays don't")
+	Shed.request({"a": "order"})
+	Shed.request({"a": "order"})
+	var bike := Shed.bike_in_bay(4)
+	check(bike != 0 and Shed.lift_of(bike) == 4 and not Shed.lift_raised(bike), "a bike delivered to bay 5 stands on its lift")
+	Shed.request({"a": "lift", "bay": 4, "up": true})
+	check(Shed.lifts.has(4) and Shed.lift_raised(bike), "the lift goes up")
+	check(Shed.check(me, {"a": "grab_bike", "bike": bike}).contains("lift"), "a bike up on the lift can't be wheeled off")
+	check(Shed.check(me, {"a": "mount", "bike": bike}).contains("lift"), "or ridden off")
+	Shed.request({"a": "lift", "bay": 5, "up": true})
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.request({"a": "lift", "bay": 4, "up": false})
+	check(not Shed.lifts.has(4) and Shed.check(me, {"a": "grab_bike", "bike": bike}) == "", "lowered, it can be wheeled off again")
+	# Wheel a bike towards a raised lift: it can't be let go of on it.
+	var other := Shed.bike_in_bay(0)
+	Shed.request({"a": "grab_bike", "bike": other})
+	check(Shed.check(me, {"a": "release_bike", "bike": other, "xf": Workshop.bay_transform(5)}).contains("lift is up"), "a bike can't be parked on a raised lift")
+	Shed.request({"a": "release_bike", "bike": other, "xf": Shed.bikes[other]["xf"]})
+	Shed.load_state(copy, "Tester")
+	check(Shed.lifts.has(4) and Shed.lifts.has(5), "lifts left up are still up in the save")
+	copy.erase("lifts")
+	Shed.load_state(copy, "Tester")
+	check(Shed.lifts.is_empty(), "a shed saved before working lifts has them all down")
+	copy["lifts"] = {0: true, 4: true, 9: true}
+	Shed.load_state(copy, "Tester")
+	check(Shed.lifts.keys() == [4], "only bays with a lift are kept")
+	Shed.stop()
+
+
+## In the game: a bay's lift raises the bike on its platform smoothly (the bike drawn on it),
+## worked from its button post with F, and lowers it again; the annex is bigger and deeper and a
+## walker can climb its mezzanine stairs; the crew lounge is upstairs on top of the shed, and a
+## walker can climb the outside stairs, go through its door and be in it.
+func _test_shed_building_session() -> void:
+	SaveGame.slot_override = "test_shed_building"
+	SaveGame.delete_slot("test_shed_building")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	var ws: Workshop = main.world.workshop
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	Shed.request({"a": "garage_money", "value": 1000000})
+	for id in ["lounge", "wing", "bays_56", "annex", "mezzanine"]:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	check(GarageUpgrades.owned("lounge") and Shed.upgrades.size() == 5, "the crew lounge doesn't need the extension any more")
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var space := ws.get_world_3d().direct_space_state
+	# The annex: bigger and deeper than it was.
+	var r := GarageUpgrades.ANNEX
+	check(r.size.x >= 11.0 and r.size.y >= 13.0 and GarageUpgrades.ANNEX_HEIGHT >= 6.0, "the storage annex is big and deep (%.1f x %.1f m, %.1f m high)" % [r.size.x, r.size.y, GarageUpgrades.ANNEX_HEIGHT])
+	# A bike in bay 5, raised on its lift.
+	Shed.request({"a": "order"})
+	Shed.request({"a": "order"})
+	var bike := Shed.bike_in_bay(4)
+	var o := Workshop.bay_transform(4).origin
+	var post: Vector3 = Workshop.bay_transform(4) * Vector3(-1.25, 0.0, 1.6)
+	w.place(Transform3D(Basis(), post + Vector3(-0.2, 0.1, 1.2)))
+	await _aim_point(w, post + Vector3(0.0, 0.95, 0.0))
+	check(w.target.get("kind", "") == "lift" and int(w.target.get("bay", -1)) == 4 and w.info.contains("raise it"),
+		"looking at the lift's post: it says F raises it (%s)" % str(w.target))
+	_press("interact")
+	await get_tree().physics_frame
+	check(Shed.lifts.has(4), "F on the post raises the lift")
+	var lift: Node3D = ws.get_node("Upgrades/Built/LiftBase4/Lift4")
+	var heights := []
+	for i in 600:
+		await get_tree().physics_frame
+		if i % 60 == 0:
+			heights.append(lift.position.y)
+	var smooth := true
+	for i in heights.size() - 1:
+		smooth = smooth and float(heights[i + 1]) >= float(heights[i]) - 0.001
+	check(heights.size() > 3 and float(heights[1]) > 0.05 and float(heights[1]) < GarageUpgrades.LIFT_TOP - 0.05 and smooth,
+		"it goes up smoothly, not in one jump (%s)" % str(heights.slice(0, 4)))
+	check(absf(lift.position.y - GarageUpgrades.LIFT_TOP) < 0.01, "the platform reaches the top (%.2f m)" % lift.position.y)
+	var view: Node3D = ws.bike_views[bike]
+	check(absf(view.global_position.y - (o.y + GarageUpgrades.LIFT_TOP)) < 0.02, "and the bike is up on it (%.2f m)" % view.global_position.y)
+	var deck := space.intersect_ray(PhysicsRayQueryParameters3D.create(o + Vector3(0.0, 3.0, 0.9), o + Vector3(0.0, -1.0, 0.9), 1))
+	check(not deck.is_empty() and absf(float(deck["position"].y) - GarageUpgrades.LIFT_TOP) < 0.05, "the platform is solid up there")
+	_press("interact")
+	for i in 600:
+		await get_tree().physics_frame
+	check(not Shed.lifts.has(4) and lift.position.y < 0.01 and view.global_position.y < o.y + 0.02, "F again brings it back down, bike and all")
+	# Up the mezzanine stairs in the annex.
+	var foot := Vector3((GarageUpgrades.STAIR_X.x + GarageUpgrades.STAIR_X.y) * 0.5, 0.1, GarageUpgrades.STAIR_Z.x + 1.5)
+	w.place(Transform3D(Basis(), foot))   # facing -Z, up the stairs
+	for i in 5:
+		await get_tree().physics_frame
+	Input.action_press("move_forward")
+	for i in 480:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	for i in 10:
+		await get_tree().physics_frame
+	check(absf(w.global_position.y - GarageUpgrades.MEZZ_TOP) < 0.15 and w.global_position.z < GarageUpgrades.STAIR_Z.y,
+		"a walker climbs the stairs onto the mezzanine (%s)" % str(w.global_position))
+	# Up the outside stairs to the crew lounge, along the landing and in through its door.
+	var sx := GarageUpgrades.LOFT_STAIR_X
+	var sz := GarageUpgrades.LOFT_STAIR_Z
+	w.place(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(sx.x + 1.5, 0.1, (sz.x + sz.y) * 0.5)))   # facing -X, up the flight
+	for i in 5:
+		await get_tree().physics_frame
+	Input.action_press("move_forward")
+	for i in 900:
+		await get_tree().physics_frame
+		if w.global_position.x < GarageUpgrades.LOFT_DOOR_X + 0.1:
+			break
+	Input.action_release("move_forward")
+	check(absf(w.global_position.y - GarageUpgrades.LOFT_FLOOR) < 0.15 and w.global_position.x < sx.y,
+		"a walker climbs the outside stairs to the landing (%s)" % str(w.global_position))
+	w.rotation.y = 0.0   # facing -Z, through the door
+	Input.action_press("move_forward")
+	for i in 240:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	for i in 10:
+		await get_tree().physics_frame
+	check(Workshop.room_at(w.global_position) == "lounge" and absf(w.global_position.y - GarageUpgrades.LOFT_FLOOR) < 0.15,
+		"and walks through the door into the crew lounge, upstairs (%s)" % str(w.global_position))
+	check(Sfx.step_surface(w.global_position) == "carpet", "the lounge is carpeted underfoot")
+	check(ws.get_node_or_null("Upgrades/Built/LoungeSofa") != null and (ws.get_node("Upgrades/Built/LoungeSofa") as Node3D).global_position.y > GarageUpgrades.LOFT_FLOOR,
+		"the lounge's furniture is up there")
+	check(Workshop.room_at(Vector3(0.0, 1.0, 65.0)) == "shed", "downstairs is still the shed")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_shed_building")
+	SaveGame.slot_override = ""
