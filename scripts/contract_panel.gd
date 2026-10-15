@@ -141,7 +141,8 @@ static func bike_text(o: Dictionary) -> String:
 	return text
 
 
-## Where a job's bike is: in a bay, still in the car park where the customer left it, or out.
+## Where a job's bike is: in a bay, in the car park (where the customer left it, and where it
+## goes back to be handed back), or out.
 static func where_text(bike: Dictionary) -> String:
 	if not (bike.get("xf") is Transform3D):
 		return "gone"
@@ -149,8 +150,8 @@ static func where_text(bike: Dictionary) -> String:
 	var bay := Shed.bay_at(at)
 	if bay >= 0:
 		return "bay %d" % (bay + 1)
-	if SalesOffice.FORECOURT.has_point(Vector2(at.x, at.z)) and Workshop.room_at(at) == "":
-		return "in the car park: ride or wheel it into a bay"
+	if Contracts.in_car_park(at):
+		return "in the car park: work on it in a bay, hand it back from here"
 	return "out of its bay"
 
 

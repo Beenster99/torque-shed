@@ -807,7 +807,12 @@ func _build_blaster() -> void:
 	nozzle.add_child(tip)
 	nozzle.add_child(_blast_jet())
 	add_child(_blast_grains())
-	add_child(_blast_dust("Rebound", 70, 0.9, Vector2(0.04, 0.11)))
+	var rebound := _blast_dust("Rebound", 70, 0.7, Vector2(0.04, 0.11))
+	# Puffs that stay round where the jet lands, well inside the chamber.
+	rebound.initial_velocity_max = 1.2
+	rebound.damping_min = 4.0
+	rebound.damping_max = 6.0
+	add_child(rebound)
 	add_child(_blast_sparks())
 	var haze := _blast_dust("Grit", 24, 2.4, Vector2(0.18, 0.32))
 	haze.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
@@ -932,12 +937,13 @@ func fit_blast_colliders(engine_model: BikeModel) -> void:
 
 
 ## Sand shooting out of the nozzle: thousands of tiny, fast grains (each drawn as a short streak
-## along its flight) that bounce off whatever they hit and fall.
+## along its flight) that bounce off whatever they hit and fall, held inside the chamber (see
+## BlastGrit).
 func _blast_jet() -> GPUParticles3D:
 	var p := GPUParticles3D.new()
 	p.name = "Jet"
 	p.amount = 5000
-	p.lifetime = 0.4
+	p.lifetime = 0.3
 	p.emitting = false
 	p.local_coords = false
 	p.interpolate = true
@@ -946,26 +952,15 @@ func _blast_jet() -> GPUParticles3D:
 	p.transform_align = GPUParticles3D.TRANSFORM_ALIGN_Z_BILLBOARD_Y_TO_VELOCITY
 	p.position = Vector3(0.0, 0.0, -0.07)
 	p.visibility_aabb = AABB(Vector3(-2.0, -2.0, -2.5), Vector3(4.0, 4.0, 4.5))
-	var pm := ParticleProcessMaterial.new()
-	pm.direction = Vector3(0.0, 0.0, -1.0)
-	pm.spread = 3.0
-	pm.initial_velocity_min = 24.0
-	pm.initial_velocity_max = 34.0
-	pm.gravity = Vector3(0.0, -9.8, 0.0)
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	pm.emission_sphere_radius = 0.004
-	pm.scale_min = 0.6
-	pm.scale_max = 1.3
-	pm.collision_mode = ParticleProcessMaterial.COLLISION_RIGID
-	pm.collision_bounce = 0.3
-	pm.collision_friction = 0.25
-	pm.color = Color(0.95, 0.88, 0.7)
 	var fade := Gradient.new()
 	fade.offsets = PackedFloat32Array([0.0, 0.6, 1.0])
 	fade.colors = PackedColorArray([Color(1, 1, 1, 0.95), Color(1, 1, 1, 0.75), Color(1, 1, 1, 0)])
 	var ramp := GradientTexture1D.new()
 	ramp.gradient = fade
-	pm.color_ramp = ramp
+	var pm := BlastGrit.material(model, {"direction": Vector3(0.0, 0.0, -1.0), "spread": 3.0, "speed_min": 24.0,
+		"speed_max": 34.0, "gravity": Vector3(0.0, -9.8, 0.0), "emit_radius": 0.004, "scale_min": 0.6, "scale_max": 1.3,
+		"bounce": 0.3, "friction": 0.25, "tint": Color(0.95, 0.88, 0.7), "color_ramp": ramp})
+	_grit_mats.append(pm)
 	p.process_material = pm
 	p.draw_pass_1 = _grain_mesh(Vector2(0.0018, 0.016))
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -973,39 +968,26 @@ func _blast_jet() -> GPUParticles3D:
 
 
 ## The grit that ricochets back off where the jet lands: a spray of fine grains that rattles
-## round the chamber and settles on the grate.
+## round the chamber and settles on the grate, never out of it (see BlastGrit).
 func _blast_grains() -> GPUParticles3D:
 	var p := GPUParticles3D.new()
 	p.name = "Grains"
 	p.amount = 3000
-	p.lifetime = 0.9
+	p.lifetime = 0.7
 	p.emitting = false
 	p.local_coords = false
 	p.interpolate = true
 	p.collision_base_size = 0.003
 	p.visibility_aabb = AABB(Vector3(-2.0, -2.0, -2.0), Vector3(4.0, 4.0, 4.0))
-	var pm := ParticleProcessMaterial.new()
-	pm.direction = Vector3(0.0, 0.0, 1.0)
-	pm.spread = 70.0
-	pm.initial_velocity_min = 1.5
-	pm.initial_velocity_max = 6.0
-	pm.gravity = Vector3(0.0, -9.8, 0.0)
-	pm.damping_min = 0.5
-	pm.damping_max = 2.0
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	pm.emission_sphere_radius = 0.025
-	pm.scale_min = 0.5
-	pm.scale_max = 1.2
-	pm.collision_mode = ParticleProcessMaterial.COLLISION_RIGID
-	pm.collision_bounce = 0.25
-	pm.collision_friction = 0.6
-	pm.color = Color(0.88, 0.82, 0.68)
 	var fade := Gradient.new()
 	fade.offsets = PackedFloat32Array([0.0, 0.7, 1.0])
 	fade.colors = PackedColorArray([Color(1, 1, 1, 0.9), Color(1, 1, 1, 0.7), Color(1, 1, 1, 0)])
 	var ramp := GradientTexture1D.new()
 	ramp.gradient = fade
-	pm.color_ramp = ramp
+	var pm := BlastGrit.material(model, {"direction": Vector3(0.0, 0.0, 1.0), "spread": 70.0, "speed_min": 1.5,
+		"speed_max": 5.0, "gravity": Vector3(0.0, -9.8, 0.0), "damping_min": 0.8, "damping_max": 2.5, "emit_radius": 0.025,
+		"scale_min": 0.5, "scale_max": 1.2, "bounce": 0.25, "friction": 0.6, "tint": Color(0.88, 0.82, 0.68), "color_ramp": ramp})
+	_grit_mats.append(pm)
 	p.process_material = pm
 	p.draw_pass_1 = _grain_mesh(Vector2(0.0022, 0.0022))
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1079,13 +1061,15 @@ func _blast_sparks() -> CPUParticles3D:
 	var p := CPUParticles3D.new()
 	p.name = "Sparks"
 	p.amount = 36
-	p.lifetime = 0.3
+	p.lifetime = 0.22
 	p.emitting = false
 	p.local_coords = false
 	p.direction = Vector3(0.0, 0.0, 1.0)
 	p.spread = 85.0
-	p.initial_velocity_min = 1.2
-	p.initial_velocity_max = 3.2
+	p.initial_velocity_min = 0.6
+	p.initial_velocity_max = 1.6
+	p.damping_min = 2.0
+	p.damping_max = 4.0
 	p.gravity = Vector3(0.0, -3.0, 0.0)
 	p.scale_amount_min = 0.5
 	p.scale_amount_max = 1.2
@@ -1109,6 +1093,24 @@ func _blast_sparks() -> CPUParticles3D:
 	return p
 
 
+## The sand's materials, told where the cabinet stands so the grains stay inside it.
+var _grit_mats: Array[ShaderMaterial] = []
+var _grit_at := Transform3D()
+
+
+func _place_grit() -> void:
+	if not is_inside_tree():
+		return
+	_grit_at = global_transform
+	for m in _grit_mats:
+		BlastGrit.place(m, _grit_at)
+
+
+## The grain materials (for the tests).
+func grit_materials() -> Array[ShaderMaterial]:
+	return _grit_mats
+
+
 ## Drives the cabinet from the person working it on this machine (BlastGame, every frame):
 ## the turntable, the nozzle aimed at `at`, the jet, the dust and sparks, and the roar.
 func set_blast(rot: Vector2, firing: bool, at: Vector3, normal: Vector3, rust: float, fresh: int) -> void:
@@ -1117,6 +1119,8 @@ func set_blast(rot: Vector2, firing: bool, at: Vector3, normal: Vector3, rust: f
 
 
 func _show_blast(rot: Vector2, firing: bool, at: Vector3, normal: Vector3, rust: float, fresh: int) -> void:
+	if firing or _grit_at != global_transform:
+		_place_grit()
 	var pivot: Node3D = get_node_or_null("Pivot")
 	if pivot:
 		pivot.basis = BlastGame.pivot_basis(rot)

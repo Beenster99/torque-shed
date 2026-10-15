@@ -9,6 +9,8 @@ var verbose := OS.get_cmdline_user_args().has("--verbose")
 
 
 func _ready() -> void:
+	# The old demo bikes these were written round (a player's new shed starts empty).
+	Shed.demo_bikes = true
 	await get_tree().process_frame
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--only="):
@@ -225,6 +227,11 @@ func _run_all() -> void:
 	_test_sales_part_exchange()
 	_test_sales_save()
 	await _test_sales_session()
+	print("Playtest fixes: a blasted engine is new, grit stays in the cabinet, an empty new shed, varied contracts")
+	_test_blast_engine_like_new()
+	await _test_blast_grit_contained()
+	_test_new_shed_empty()
+	_test_contract_variety()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -4568,12 +4575,18 @@ func _test_sandblaster() -> void:
 	for id in parts:
 		res[id] = [0.95, 0.0]
 	res[parts[0]] = [0.95, 0.5]
+	# One ancillary left half done, so the engine isn't bare all over yet (that makes it new).
+	res[parts[parts.size() - 1]] = [0.45, 0.0]
 	var xp_before := int(Progress.profile.get("xp", 0))
+	Shed.request({"a": "blast", "spot": spot, "parts": res})
+	check(float(Shed.items[parts[0]]["wear"]) > 0.15 and (parts.size() < 3 or float(Shed.items[parts[1]]["wear"]) < 0.11),
+		"lingering pits the metal: the overdone part wears")
+	check(int(Progress.profile.get("xp", 0)) > xp_before, "sandblasting earns XP")
+	Shed.request({"a": "blast_use", "spot": spot, "on": true})
+	res[parts[parts.size() - 1]] = [0.95, 0.0]
 	Shed.request({"a": "blast", "spot": spot, "parts": res})
 	check(parts.all(func(id): return float(Shed.items[id]["rust"]) == 0.0 and float(Shed.items[id]["dirt"]) == 0.0),
 		"blasted all over, the engine and every ancillary come back to bare metal")
-	check(float(Shed.items[parts[0]]["wear"]) > 0.15 and float(Shed.items[parts[1]]["wear"]) < 0.11, "lingering pits the metal: the overdone part wears")
-	check(int(Progress.profile.get("xp", 0)) > xp_before, "sandblasting earns XP")
 	check(Shed.check(me, {"a": "blast", "spot": spot, "parts": res}) != "", "you have to be at the cabinet to blast")
 	# Someone else can't take the engine out while you're blasting.
 	Shed.request({"a": "blast_use", "spot": spot, "on": true})
@@ -6005,9 +6018,10 @@ func _test_blast_live_session() -> void:
 	var view: EquipmentView = main.workshop.furniture_nodes[cab]
 	var jet: GPUParticles3D = view.get_node("Nozzle/Jet")
 	var grain := (jet.draw_pass_1 as QuadMesh).size
-	var pm := jet.process_material as ParticleProcessMaterial
-	check(jet.amount >= 3000 and grain.x < 0.004 and pm.initial_velocity_min >= 20.0 and pm.collision_mode == ParticleProcessMaterial.COLLISION_RIGID,
-		"the nozzle shoots thousands of tiny, fast grains of sand that bounce off what they hit (%d at %.0f m/s)" % [jet.amount, pm.initial_velocity_min])
+	var pm := jet.process_material as ShaderMaterial
+	var speed: float = float(pm.get_shader_parameter("speed_min")) if pm else 0.0
+	check(jet.amount >= 3000 and grain.x < 0.004 and speed >= 20.0 and float(pm.get_shader_parameter("bounce")) > 0.0,
+		"the nozzle shoots thousands of tiny, fast grains of sand that bounce off what they hit (%d at %.0f m/s)" % [jet.amount, speed])
 	var colliders: int = main.workshop.model_for({"engine": engine}).find_children("SandCollider", "GPUParticlesCollisionBox3D", true, false).size()
 	check(colliders > 3 and view.get_node("SandWalls").get_child_count() >= 5, "the sand bounces off the engine and the chamber (%d shapes on the engine)" % colliders)
 	var post: Node3D = view.get_node("Post")
@@ -6432,7 +6446,7 @@ func _test_contract_customers() -> void:
 		if kind in ["mod", "bespoke"]:
 			ok = ok and int(o["budget"]) > 0 and o["goals"].size() >= 2
 		if kind == "mot":
-			ok = ok and o["goals"] == [{"t": "mot"}]
+			ok = ok and o["goals"][0] == {"t": "mot"} and o["goals"].slice(1).all(func(g): return g["t"] == "task")
 		check(ok, "a %s offer: pay %s, budget %s, %d days (%s)" % [kind, Contracts.money(int(o["pay"])),
 			Contracts.money(int(o["budget"])), int(o["days"]), ", ".join(o["goals"].map(func(g): return Contracts.goal_text(g)))])
 		Contracts.customers().erase(id)
@@ -6491,7 +6505,9 @@ func _test_contract_mot() -> void:
 	check(Shed.bikes.has(jb) and (Shed.bikes[jb]["xf"] as Transform3D).origin.distance_to(Contracts.park_xf(0).origin) < 0.1
 		and str(Shed.bikes[jb]["name"]).contains(cust.get_slice(" ", 0)),
 		"their bike is left in the car park (%s)" % str(Shed.bikes.get(jb, {}).get("name", "")))
-	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}) != "", "it can't be handed back where it stands")
+	# Into the shed to work on it.
+	Shed.bikes[jb]["xf"] = Workshop.bay_transform(3)
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}).contains("car park"), "it can't be handed back from a bay")
 	Shed.request({"a": "contract_mot_test", "job": jid})
 	check(job["mot"]["tested"] and int(job["mot"]["fails"]) > 0, "the first test finds faults (%d: %s)" % [int(job["mot"]["fails"]),
 		str(MotTest.fails(job["mot"]["sheet"]).map(func(r): return r["name"]))])
@@ -6503,8 +6519,8 @@ func _test_contract_mot() -> void:
 	Contracts.note_action(Shed.me(), {"a": "clean", "bike": jb})
 	check(not Contracts.eval_goal(job, {"t": "mot"})["done"] and job["workers"].has(Shed.me()), "work on it after a test means testing it again")
 	Shed.request({"a": "contract_mot_test", "job": jid})
-	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}).contains("bay"), "it has to be parked in a bay (or by reception)")
-	Shed.bikes[jb]["xf"] = Contracts.reception()
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}).contains("car park"), "it has to be left in the car park")
+	Shed.bikes[jb]["xf"] = Contracts.park_xf(0)
 	var before := Shed.garage_money
 	var expected := int(Contracts.payout(job)["total"])
 	Shed.request({"a": "contract_hand_in", "job": jid})
@@ -6588,7 +6604,9 @@ func _test_contract_goals_and_pay() -> void:
 	Contracts.note_action(Shed.me(), {"a": "unbolt", "bike": int(mj["bike"]), "slot": "chain"})
 	check(int(mj["workers"].get(Shed.me(), 0)) == 1, "work on a contract bike counts who did it")
 	Shed.bikes[int(mj["bike"])]["xf"] = Transform3D(Basis(), Contracts.door_front())
-	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": mj["id"]}) == "", "just outside the roller door counts as handing it back")
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": mj["id"]}).contains("car park"), "just outside the roller door isn't the car park")
+	Shed.bikes[int(mj["bike"])]["xf"] = Contracts.park_xf(2)
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": mj["id"]}) == "", "left in the car park, it can be handed back")
 	var xp_before := int(Progress.profile["xp"])
 	var g0 := Shed.garage_money
 	var total := int(Contracts.payout(mj)["total"])
@@ -8880,38 +8898,45 @@ func _test_customer_bike_in_and_back() -> void:
 	var job: Dictionary = Contracts.jobs().values()[0]
 	var jid := int(job["id"])
 	var jb := int(job["bike"])
-	check(Shed.check(me, {"a": "contract_hand_in", "job": jid}).contains("bay"), "it can't be handed back from the car park")
 	var bay := Shed.free_bay(Workshop.bay_count())
 	_wheel_bike_to(jb, Workshop.bay_transform(bay).translated(Vector3(0.3, 0.0, 0.4)))
 	check(int(Shed.bikes[jb]["bay"]) == bay and Shed.on_paddock(jb) and Shed.bike_in_bay(bay) == jb and int(Shed.bikes[jb]["pusher"]) == 0,
 		"wheeled into bay %d, it goes up on the paddock stand" % (bay + 1))
-	check(Shed.check(me, {"a": "contract_hand_in", "job": jid}) == "", "parked in a bay, it can be handed back")
-	var every := true
+	_make_roadworthy(jb)
+	var why := Shed.check(me, {"a": "contract_hand_in", "job": jid})
+	check(why.contains("car park") and why.contains("sales office"), "finished, it can't be handed back from the bay: it goes out to the car park (%s)" % why)
+	var none := true
 	for b in Workshop.bay_count():
 		Shed.bikes[jb]["xf"] = Workshop.bay_transform(b)
-		every = every and Contracts.near_handback(jb)
-	Shed.bikes[jb]["xf"] = Workshop.bay_transform(bay)
-	check(every, "from any of the %d bays" % Workshop.bay_count())
-	_make_roadworthy(jb)
+		none = none and not Contracts.near_handback(jb)
+	Shed.bikes[jb]["xf"] = Transform3D(Basis(), Contracts.door_front())
+	none = none and not Contracts.near_handback(jb)
+	check(none, "not from any of the %d bays, or the roller door" % Workshop.bay_count())
+	var spot := Contracts.park_xf(4)
+	_wheel_bike_to(jb, spot)
+	check(Shed.check(me, {"a": "contract_hand_in", "job": jid}) == "" and Contracts.in_car_park(spot.origin)
+		and ContractPanel.where_text(Shed.bikes[jb]).contains("hand it back"), "wheeled out to the car park, it can be handed back")
 	var frame := str(Shed.items[Shed.item_on(jb, "frame")]["part"])
 	Shed.request({"a": "contract_hand_in", "job": jid})
 	var leaving: Array = Contracts._st()["leaving"]
 	var d: Dictionary = leaving[0] if not leaving.is_empty() else {}
-	check(not Shed.bikes.has(jb) and Contracts.jobs().is_empty() and d.get("xf") == Workshop.bay_transform(bay)
+	check(not Shed.bikes.has(jb) and Contracts.jobs().is_empty() and d.get("xf") == spot
 		and str(d.get("parts", {}).get("frame", "")) == frame and str(d.get("name", "")) == str(job["customer"]) and d.get("cond") is Dictionary,
-		"handed back, the customer comes for it where it stands")
-	var out := Contracts.ride_out_path(Workshop.bay_transform(bay))
-	var door_z := Workshop.CENTER.z + Workshop.HALF.y
-	var through_door := false
+		"handed back, the customer comes for it in the car park")
+	var walk := Contracts.collect_path(spot)
+	var inside := false
+	for p in walk:
+		inside = inside or Workshop.room_at(p) in ["shed", "wing"]
+	check(walk[0].distance_to(Contracts.reception().origin) < 0.01 and walk.has(Workshop.SALES_DOOR)
+		and walk[walk.size() - 1].distance_to(spot.origin) < 1.2 and not inside,
+		"they walk out of the sales office, through its doors, to the bike in the car park (never into the shed)")
+	var out := Contracts.ride_out_path(spot)
+	var through_shed := false
 	for i in range(1, out.size()):
-		var a := out[i - 1]
-		var b2 := out[i]
-		if a.z < door_z and b2.z >= door_z:
-			var t := (door_z - a.z) / (b2.z - a.z)
-			through_door = absf(lerpf(a.x, b2.x, t) - Workshop.CENTER.x) < Workshop.DOOR_HALF - 0.4
-	check(through_door and (out[1] - out[0]).dot(-Workshop.bay_transform(bay).basis.z) > 0.0
-		and absf(out[out.size() - 1].x - Contracts.ROAD_FAR_X) < 0.5,
-		"and rides it forward out of the bay, through the roller door and away along the road")
+		for k in 10:
+			through_shed = through_shed or Workshop.room_at(out[i - 1].lerp(out[i], k / 10.0)) != ""
+	check(not through_shed and out[1].z > out[0].z and absf(out[out.size() - 1].x - Contracts.ROAD_FAR_X) < 0.5,
+		"and back it out of the bay and ride it off along the road")
 	Contracts.advance(Contracts.LEAVING_HOURS + 0.5)
 	check(Contracts._st()["leaving"].is_empty(), "and is gone after a while")
 
@@ -8921,6 +8946,7 @@ func _test_customer_bay_screen() -> void:
 	var cid := Contracts.spawn("maint")
 	Contracts.customers()[cid]["offer"]["goals"] = [{"t": "task", "task": "oil"}, {"t": "task", "task": "wash"}]
 	Contracts.customers()[cid]["offer"]["pay"] = 300
+	Contracts.customers()[cid]["offer"]["budget"] = 0
 	Shed.request({"a": "contract_accept", "customer": cid})
 	var job: Dictionary = Contracts.jobs().values()[0]
 	var jb := int(job["bike"])
@@ -8933,7 +8959,8 @@ func _test_customer_bay_screen() -> void:
 	check(not sd.is_empty() and sd["rows"].size() == 2 and int(sd["met"]) == 0 and str(sd["due"]).contains("left")
 		and int(sd["fee"]) == 300 and str(sd["customer"]) == str(job["customer"]),
 		"a contract bike's bay screen shows the job's checklist, who it's for and the deadline (%s)" % str(sd.get("due", "")))
-	check(int(sd["profit"]) == int(sd["payout"]) - int(sd["spent"]) and bool(sd["ready"]), "with what handing it back pays and the profit")
+	check(int(sd["profit"]) == int(sd["payout"]) - int(sd["spent"]) and not bool(sd["ready"]) and str(sd["why"]).contains("car park"),
+		"with what handing it back pays, the profit, and where to leave it to hand it back (%s)" % str(sd["why"]))
 	var engine: Dictionary = Shed.items[Shed.item_on(jb, "engine")]
 	engine["fluid"]["age"] = 0.0
 	engine["fluid"]["litres"] = PartsDB.fluid_capacity(str(engine["part"]))
@@ -8971,7 +8998,7 @@ func _test_customer_save() -> void:
 	var done := Contracts.spawn("maint")
 	Shed.request({"a": "contract_accept", "customer": done})
 	var jb := int(Contracts.jobs().values()[0]["bike"])
-	_wheel_bike_to(jb, Workshop.bay_transform(Shed.free_bay(Workshop.bay_count())))
+	_wheel_bike_to(jb, Contracts.park_xf(5))
 	Shed.request({"a": "contract_hand_in", "job": int(Contracts.jobs().values()[0]["id"])})
 	var text := var_to_str(Shed.save_snapshot().duplicate(true))
 	Shed.start_new("Tester", 66)
@@ -9061,21 +9088,42 @@ func _test_customer_ride_session() -> void:
 	var dash: Dashboard = main.workshop.screens().get("bay%d" % bay)
 	check(dash != null and dash.data.has("contract") and dash.data["contract"]["rows"].all(func(r): return r["done"]),
 		"the bay's screen shows the job's checklist, ticked off")
-	# Handed back from the bay: the customer walks in, gets on and rides it out of the door.
+	# Finished, it goes back out to the car park and is handed back: the customer walks out of
+	# the sales office to it, and only gets on it once they're there.
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": int(job["id"])}).contains("car park"), "it isn't handed back from the bay")
+	var spot := Contracts.park_xf(3)
+	_wheel_bike_to(jb, spot)
 	Shed.request({"a": "contract_hand_in", "job": int(job["id"])})
 	await get_tree().process_frame
 	var col = view.collecting.get(int(job["id"]))
-	check(col is CustomerView and (col as CustomerView).has_bike() and not Shed.bikes.has(jb),
-		"handed back, the customer comes to collect it")
-	var door_z := Workshop.CENTER.z + Workshop.HALF.y
-	var outside := false
+	check(col is CustomerView and (col as CustomerView).has_bike() and not Shed.bikes.has(jb)
+		and (col as CustomerView).bike_position().distance_to(spot.origin) < 0.05,
+		"handed back, the customer comes to collect it from the car park")
+	var started := Vector3.INF
+	var early_rider := false
+	var mounted_at := Vector3.INF
+	var both := false
+	var gone_far := 0.0
 	if col is CustomerView:
+		var cv3 := col as CustomerView
+		started = cv3.global_position
+		early_rider = cv3.rider_on_bike()
 		for i in 8000:
-			col._process(0.05)
-			if col.is_queued_for_deletion():
+			if cv3.on_foot() and cv3.rider_on_bike():
+				both = true
+			if cv3.on_foot():
+				early_rider = early_rider or cv3.rider_on_bike()
+			cv3._process(0.05)
+			if cv3.is_queued_for_deletion():
 				break
-			outside = outside or (col.riding and col.bike_position().z > door_z + 2.0)
-	check(outside and col is CustomerView and col.is_queued_for_deletion(), "and rides it out of the shed and away")
+			if mounted_at == Vector3.INF and cv3.rider_on_bike():
+				mounted_at = cv3.global_position
+			if cv3.riding:
+				gone_far = maxf(gone_far, cv3.bike_position().distance_to(spot.origin))
+	check(started.distance_to(Contracts.reception().origin) < 0.3, "they come out from the sales office counter (%s)" % started)
+	check(not early_rider and not both and mounted_at.distance_to(spot.origin) < 0.3,
+		"nobody is on the bike until they've walked up to it; then the walker goes and the rider is on it")
+	check(gone_far > 40.0 and col is CustomerView and col.is_queued_for_deletion(), "and they ride it away (%.0f m)" % gone_far)
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
@@ -10854,3 +10902,235 @@ func _test_sales_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+# ---------------------------------------------------------------------------- playtest fixes (round two)
+
+## Blasting an engine bare all over makes it as good as new: every part on it at 100%, no wear,
+## dirt or rust, and it stays bare metal (ready for a coat).
+func _test_blast_engine_like_new() -> void:
+	Shed.start_new("Tester", 81)
+	var me := Shed.me()
+	var cab := Shed._new_furniture("blaster", Transform3D(Basis(), Workshop.CENTER + Vector3(1.5, 0.0, 1.8)), "blaster_cabinet")
+	var spot := "blast_%d_0" % cab
+	var engine := 0
+	for s in Shed.stand_spots():
+		if engine == 0 and Shed.is_engine(Shed.item_at_spot(s)):
+			engine = Shed.item_at_spot(s)
+			Shed.request({"a": "take", "spot": s})
+	Shed.request({"a": "place", "spot": spot})
+	var parts := Shed._blast_parts(engine)
+	check(engine != 0 and Shed.item_at_spot(spot) == engine and parts.size() >= 3, "an engine and its ancillaries in the cabinet (%d parts)" % parts.size())
+	for id in parts:
+		Shed.items[id]["rust"] = 0.8
+		Shed.items[id]["dirt"] = 0.6
+		Shed.items[id]["wear"] = 0.5
+	Shed.request({"a": "blast_use", "spot": spot, "on": true})
+	var res := {}
+	for id in parts:
+		res[id] = [0.95, 0.3]
+	res[parts[0]] = [0.6, 0.0]
+	Shed.request({"a": "blast_tick", "spot": spot, "parts": res})
+	check(float(Shed.items[parts[1]]["wear"]) >= 0.5 and float(Shed.items[parts[0]]["rust"]) > 0.0,
+		"with part of it still to do, the worn parts are still worn")
+	res[parts[0]] = [0.95, 0.0]
+	Shed.request({"a": "blast_tick", "spot": spot, "parts": res})
+	var healths := parts.map(func(id): return "%.2f" % Shed._health(id))
+	check(_like_new(parts), "the moment the last of it comes up bare, every part is at 100%%: no wear, dirt or rust (%s)" % str(healths))
+	var text: String = Shed._blast_apply(me, {"a": "blast", "spot": spot, "parts": res})
+	check(_like_new(parts) and parts.all(func(id): return Shed.blast_full(Shed.items[id]) and float(Shed.items[id]["blast"].get("p", 0.0)) == 0.0)
+		and text.contains("good as new"), "stepping back it stays new, bare metal all over and unpitted (%s)" % text)
+	# Back in the cabinet later: the old wear doesn't come back.
+	Shed.request({"a": "blast_use", "spot": spot, "on": true})
+	for id in parts:
+		res[id] = [0.95, 0.0]
+	Shed.request({"a": "blast_tick", "spot": spot, "parts": res})
+	Shed.request({"a": "blast", "spot": spot, "parts": res})
+	check(_like_new(parts), "blasting it again keeps it new")
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Tester")
+	check(_like_new(parts) and parts.all(func(id): return Shed.blast_full(Shed.items[id])), "kept in the save, bare metal and new")
+	# The protective coat still goes on over it (in the paint shop).
+	check(not Shed.check(me, {"a": "coat", "item": engine, "coat": "clear", "gun": true, "quality": 0.9}).contains("sandblast"),
+		"nothing rusty left to stop a protective coat")
+
+
+## The sand stays inside the blast cabinet: its grains are held inside the chamber's walls and
+## glass on every step, however fast and however long the step.
+func _test_blast_grit_contained() -> void:
+	for model in ["blaster_cabinet", "blaster_pro"]:
+		var walls := BlastGrit.walls(model)
+		var inside := Equipment.blaster_inside(model)
+		var nozzle := Vector3(0.22, float(inside["floor"]) + 0.45, float(inside["front"]) - 0.28)
+		var size: Vector3 = Equipment.get_model(model)["size"]
+		check(walls.size() == 7 and BlastGrit.holds(walls, nozzle) and BlastGrit.holds(walls, Vector3(0.0, float(inside["floor"]) + 0.4, float(inside["turn_z"])))
+			and not BlastGrit.holds(walls, Vector3(0.0, float(inside["roof"]) - 0.05, float(inside["front"]) - 0.05))
+			and not BlastGrit.holds(walls, Vector3(size.x, 1.0, 0.0)), "%s: the chamber's walls and sloping glass hold the nozzle and the engine" % model)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 7
+		var escaped := 0
+		for g in 1500:
+			var dir := Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)).normalized()
+			var p := nozzle
+			var v := dir * rng.randf_range(1.5, 40.0)
+			var dt: float = [1.0 / 30.0, 1.0 / 60.0, 1.0 / 120.0, 0.1][g % 4]
+			var t := 0.0
+			while t < 0.9:
+				v += Vector3(0.0, -9.8, 0.0) * dt
+				var step := BlastGrit.contain(walls, p, v, dt)
+				p = step[0]
+				v = step[1]
+				t += dt
+				if not BlastGrit.holds(walls, p, 0.001):
+					escaped += 1
+					break
+		check(escaped == 0, "%s: 1500 grains fired every way at up to 40 m/s, with long and short steps, and none leaves the chamber (%d out)" % [model, escaped])
+	# The cabinet in the shed uses it for its jet and the ricochet.
+	var rig: Dictionary = await _blast_rig()
+	var main: Node = rig["main"]
+	var view: EquipmentView = main.workshop.furniture_nodes[rig["cab"]]
+	var jet: GPUParticles3D = view.get_node("Nozzle/Jet")
+	var grains: GPUParticles3D = view.get_node("Grains")
+	view.set_blast(Vector2.ZERO, true, (view.get_node("Pivot") as Node3D).global_position, Vector3.UP, 0.3, 0)
+	var mats := view.grit_materials()
+	var placed := mats.size() == 2
+	for m in mats:
+		var to_local: Projection = m.get_shader_parameter("to_local")
+		placed = placed and m.shader == BlastGrit.shader() and m.get_shader_parameter("walls") == BlastGrit.walls(view.model) \
+			and (Transform3D(to_local) * view.global_position).length() < 0.001
+	check(mats.has(jet.process_material) and mats.has(grains.process_material) and placed,
+		"the cabinet's jet and ricochet grains are held inside it, wherever it stands")
+	check(jet.lifetime <= 0.31 and grains.lifetime <= 0.71 and (view.get_node("Sparks") as CPUParticles3D).initial_velocity_max <= 1.61
+		and (view.get_node("Rebound") as CPUParticles3D).initial_velocity_max <= 1.21, "and the sparks and dust only puff round where the jet lands")
+	view.set_blast(Vector2.ZERO, false, Vector3.ZERO, Vector3.UP, 0.0, 0)
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## A brand new shed starts with no bikes and nothing on the workbench; its machines are there.
+func _test_new_shed_empty() -> void:
+	var was: bool = Shed.demo_bikes
+	Shed.demo_bikes = false
+	Shed.start_new("Tester", 82)
+	var on_bench := Shed.items.values().filter(func(it): return str(it["at"]) == "spot" and str(it["ref"]).begins_with("bench_"))
+	var kinds := {}
+	for id in Shed.furniture:
+		kinds[str(Shed.furniture[id]["kind"])] = true
+	check(Shed.bikes.is_empty() and on_bench.is_empty() and Shed.items.is_empty(),
+		"a new shed has no bikes, nothing on the workbench and no loose parts (%d bikes, %d items)" % [Shed.bikes.size(), Shed.items.size()])
+	check(kinds.has("stand") and kinds.has("washer") and kinds.has("repair") and kinds.has("booth") and kinds.has("changer")
+		and Shed.stand_spots().all(func(s): return Shed.item_at_spot(s) == 0), "its machines are all there, the engine stand empty (%s)" % str(kinds.keys()))
+	check(Shed.free_bay(Workshop.bay_count()) == 0 and Contracts.customers().is_empty() and Shed.garage_money == Money.START_FUNDS,
+		"every bay free, the garage's opening funds to spend")
+	# A save of it opens empty too.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Tester")
+	check(Shed.bikes.is_empty() and Shed.items.is_empty(), "and it saves and loads empty")
+	Shed.demo_bikes = was
+
+
+## Contracts vary: different sizes of service and parts to renew, MOTs from a couple of faults to
+## a bike off the road for years (some with jobs while it's in), mods with 2-5 different goals,
+## bespoke builds with their own mix of targets; pay, budget and time follow the work.
+func _test_contract_variety() -> void:
+	Shed.start_new("Tester", 83)
+	Shed._rng.seed = 99
+	var sizes := {}
+	var tasks := {}
+	var pay_small := []
+	var pay_big := []
+	var days := {}
+	var fair := true
+	for i in 80:
+		var o := Contracts.make_offer("maint", "Dave Smith")
+		var n: int = o["goals"].size()
+		sizes[n] = true
+		days[int(o["days"])] = true
+		var needs_parts := false
+		for g in o["goals"]:
+			tasks[str(g["task"])] = true
+			needs_parts = needs_parts or Contracts.TASK_PARTS.has(str(g["task"]))
+		if n <= 2:
+			pay_small.append(int(o["pay"]))
+		elif n >= 5:
+			pay_big.append(int(o["pay"]))
+		fair = fair and int(o["pay"]) >= 30 + n * 20 and int(o["pay"]) <= 500 and (int(o["budget"]) > 0) == needs_parts
+	check(sizes.size() >= 5 and tasks.size() == Contracts.TASKS.size() and days.size() >= 3,
+		"services come in sizes from one job to the works (%s tasks), with all %d kinds of task and deadlines of %s days" % [
+		str(sizes.keys()), Contracts.TASKS.size(), str(days.keys())])
+	check(fair and _avg(pay_big) > _avg(pay_small) * 2.0,
+		"a bigger service pays more (%.0f vs %.0f), and jobs that need parts come with a budget for them" % [_avg(pay_big), _avg(pay_small)])
+	# MOTs.
+	var faults := {}
+	var extras := 0
+	var low := []
+	var high := []
+	for i in 60:
+		var o := Contracts.make_offer("mot", "Sue Jones")
+		faults[int(o["faults"])] = true
+		if o["goals"].size() > 1:
+			extras += 1
+		elif int(o["faults"]) <= 3:
+			low.append(int(o["pay"]))
+		elif int(o["faults"]) >= 6:
+			high.append(int(o["pay"]))
+	check(faults.size() >= 5 and extras >= 10 and extras <= 50, "MOTs range from %d to %d faults, %d of 60 with jobs to do while it's in" % [
+		faults.keys().min(), faults.keys().max(), extras])
+	check(_avg(high) > _avg(low) + 60.0, "a bike in a worse state pays more for its MOT (%.0f vs %.0f)" % [_avg(high), _avg(low)])
+	var fails := {2: 0, 7: 0}
+	for n in [2, 7]:
+		for k in 4:
+			Shed.start_new("Tester", 90 + k)
+			Contracts._st()["reputation"] = 5
+			var cid := Contracts.spawn("mot")
+			Contracts.customers()[cid]["offer"]["faults"] = n
+			Shed.request({"a": "contract_accept", "customer": cid})
+			var jb := int(Contracts.jobs().values()[0]["bike"])
+			fails[n] = int(fails[n]) + MotTest.fails(MotTest.inspect(jb)).size()
+	check(int(fails[7]) > int(fails[2]) + 6, "and the test finds more wrong with it (%d fails over four bikes, against %d)" % [fails[7], fails[2]])
+	# Modifications.
+	Shed.start_new("Tester", 84)
+	Shed._rng.seed = 5
+	var counts := {}
+	var goal_kinds := {}
+	var mod_fair := true
+	for i in 40:
+		var o := Contracts.make_offer("mod", "Raj Khan")
+		counts[o["goals"].size()] = true
+		for g in o["goals"]:
+			goal_kinds[str(g["t"])] = true
+		mod_fair = mod_fair and int(o["budget"]) >= 300 and int(o["pay"]) >= 150 + o["goals"].size() * 90 \
+			and int(o["days"]) >= 3 + o["goals"].size()
+	check(counts.size() >= 3 and goal_kinds.size() >= 7, "mods ask for %s goals of %d kinds (%s)" % [str(counts.keys()), goal_kinds.size(), str(goal_kinds.keys())])
+	check(mod_fair, "more goals, more pay and more days")
+	# Bespoke builds.
+	var b_counts := {}
+	var finish := {}
+	var parts_asked := {}
+	for i in 30:
+		var o := Contracts.make_offer("bespoke", "Lady Okafor")
+		b_counts[o["goals"].size()] = true
+		for g in o["goals"]:
+			if g["t"] == "health":
+				finish[float(g["min"])] = true
+			if g["t"] == "part":
+				parts_asked[str(g["slot"])] = true
+	check(b_counts.size() >= 3 and finish.size() >= 2 and parts_asked.size() >= 4,
+		"bespoke builds each have their own targets (%s goals, finish %s, signature parts %s)" % [str(b_counts.keys()), str(finish.keys()), str(parts_asked.keys())])
+
+
+## Every part at 100%: no wear, dirt or rust.
+func _like_new(parts: Array) -> bool:
+	for id in parts:
+		var it: Dictionary = Shed.items[id]
+		if float(it["rust"]) != 0.0 or float(it["dirt"]) != 0.0 or float(it["wear"]) != 0.0 or not is_equal_approx(Shed._health(id), 1.0):
+			return false
+	return true
+
+
+func _avg(a: Array) -> float:
+	var total := 0.0
+	for x in a:
+		total += float(x)
+	return total / maxf(1.0, a.size())

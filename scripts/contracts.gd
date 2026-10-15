@@ -3,16 +3,23 @@ extends RefCounted
 ## Contracts: customers walk up to the sales office reception (a bell rings as they get there)
 ## with a job for the garage. Talk to one (F) to see the offer, then take it on or turn it down.
 ## Four kinds, unlocked by the garage's reputation:
-##   maint    easy: a service (oil, chain, pads, filters, plugs, brake fluid, a wash)
-##   mot      the yearly test: inspect it (see MotTest), fix what fails, re-test, hand it back
-##   mod      modifications to a budget: 2-4 goals (speed, weight, a style, panniers, pipes, paint)
-##   bespoke  a ground-up build on a bare frame, to an exclusive customer's targets
+##   maint    easy: a quick job, a service or the works (oil, chain, pads, filters, plugs, brake
+##            fluid, a wash, new tyres, a chain and sprockets, a brake disc, a fork service)
+##   mot      the yearly test: inspect it (see MotTest), fix what fails, re-test, hand it back;
+##            anything from a couple of faults to a bike off the road for years, sometimes with
+##            a job or two to do while it's in
+##   mod      modifications to a budget: 2-5 goals (speed, power, weight, a style, luggage,
+##            brakes, pipes, paint)
+##   bespoke  a ground-up build on a bare frame, to an exclusive customer's targets (a style,
+##            and some of: performance, weight, signature parts, paint, a finish standard)
+## Each job's pay, parts budget and deadline are worked out from what it asks for.
 ## Customers ride their own bike in along the road, park it in the sales office car park and
 ## walk in to reception. Taking the job on leaves their bike (and its keys) in the car park for
 ## the crew to ride or wheel into a bay; a bespoke build's bare frame goes straight onto a bay.
-## Hand it back from any bay (or near reception, or just outside the roller door) from the
-## Contracts panel: the goals are checked, the garage and the crew who worked on it are paid,
-## the reputation moves, and the customer walks in, collects it and rides it away.
+## When it's done, ride or wheel it out to the customer car park in front of the sales office and
+## hand it back from the Contracts panel: the goals are checked, the garage and the crew who
+## worked on it are paid, the reputation moves, and the customer walks out of the sales office
+## to it, gets on and rides it away.
 ##
 ## All of it is host-authoritative shed state in Shed.contracts (saved with the shed). Players
 ## ask for changes with Shed.request({"a": "contract_..."}), which Shed hands to check()/apply().
@@ -32,7 +39,6 @@ const MAX_WAITING := 2               # customers at reception at once
 const PATIENCE_HOURS := 3.0          # how long one waits before giving up
 const MAX_ACTIVE := 4                # jobs in the shed at once (one per bay)
 const MAX_DONE := 12
-const HANDBACK_RADIUS := 10.0
 const WORKER_SHARE := 0.5            # of the labour and tip, split among the crew who did the work
 const WALK_SPEED := 1.4              # m/s, for the customer figures
 const RIDE_SPEED := 9.0              # m/s, a customer riding in or away along the yard
@@ -53,7 +59,27 @@ const NOT_WORK: Array[String] = ["mount", "grab_bike", "release_bike", "ride", "
 ## Maintenance tasks: what the customer asked for.
 const TASKS := {"oil": "Oil change (fresh oil, topped up)", "chain": "Chain lubed and tensioned",
 	"pads": "New brake pads front and rear", "filters": "Air and oil filters renewed", "plugs": "New spark plugs",
-	"brake_fluid": "Brake fluid renewed and topped up", "wash": "A good wash"}
+	"brake_fluid": "Brake fluid renewed and topped up", "wash": "A good wash", "front_tyre": "New front tyre",
+	"rear_tyre": "New rear tyre", "chain_kit": "New chain and sprockets", "discs": "New front brake disc",
+	"fork": "Front fork serviced (seals and oil)"}
+## What each task pays in labour: a service's fee is these added up, give or take.
+const TASK_PAY := {"oil": 45, "chain": 35, "pads": 50, "filters": 40, "plugs": 35, "brake_fluid": 50, "wash": 25,
+	"front_tyre": 45, "rear_tyre": 50, "chain_kit": 60, "discs": 55, "fork": 80}
+## The parts a task renews (slots): what they cost goes into the job's parts budget, and a bike
+## without one can't have that task.
+const TASK_PARTS := {"pads": ["front_pads", "rear_pads"], "filters": ["air_filter", "oil_filter"], "plugs": ["spark_plugs"],
+	"front_tyre": ["front_tyre"], "rear_tyre": ["rear_tyre"], "chain_kit": ["chain", "final_drive"], "discs": ["front_disc"],
+	"fork": ["fork"]}
+## The sizes of service customers ask for: how many tasks, how long they give you, what they say.
+const SERVICES := [
+	{"n": Vector2i(1, 2), "days": Vector2i(2, 2), "blurb": "Just a couple of things need doing, nothing else. Quick as you can."},
+	{"n": Vector2i(3, 4), "days": Vector2i(2, 3), "blurb": "It's due a service. Nothing fancy, just look after it."},
+	{"n": Vector2i(5, 6), "days": Vector2i(3, 4), "blurb": "Give it the works: a full service and whatever's worn out."},
+]
+## Tasks an MOT customer sometimes adds while the bike's in.
+const MOT_EXTRAS: Array[String] = ["oil", "chain", "wash", "plugs", "filters", "brake_fluid", "pads"]
+## What each kind of modification goal pays in labour.
+const MOD_PAY := {"top_kmh": 220, "hp": 200, "mass": 240, "style": 320, "fit": 120, "pipes": 140, "paint": 110, "part": 130}
 const STYLES := {"cafe": "Cafe racer", "scrambler": "Scrambler", "tourer": "Tourer", "sport": "Sports bike", "bobber": "Bobber"}
 ## Exhausts that count as proper pipes.
 const PIPES: Array[String] = ["full_system", "titanium_race", "straight_pipe"]
@@ -226,6 +252,18 @@ static func park_xf(i: int) -> Transform3D:
 	return Transform3D(Basis(), Vector3(f.position.x + PARK_FROM.x + PARK_STEP * k, 0.0, f.position.y + PARK_FROM.y))
 
 
+## The customer car park in front of the sales office (the tarmac strip with the marked bays),
+## as an x/z rectangle: finished jobs are handed back from here.
+static func car_park() -> Rect2:
+	var f := SalesOffice.FORECOURT
+	return Rect2(f.position.x, f.position.y + 9.0, f.size.x, f.size.y - 9.0)
+
+
+## Whether a point is in the customer car park.
+static func in_car_park(at: Vector3) -> bool:
+	return car_park().grow(0.3).has_point(Vector2(at.x, at.z)) and Workshop.room_at(at) == ""
+
+
 ## A car park bay nobody's customer has taken and no bike stands in, or -1.
 static func free_park() -> int:
 	var taken := {}
@@ -307,13 +345,23 @@ static func ride_out_path(from: Transform3D) -> PackedVector3Array:
 	return pts
 
 
-## The walk a customer collecting their bike makes to it: in from just outside the roller door
-## for a bike in a bay, or from the car park edge for one handed back outside.
+## The walk a customer collecting their bike makes to it: from the sales office counter out
+## through its doors to the car park, where finished jobs are left for them. (A ride away kept
+## in a save from before then can start from a bay: in from just outside the roller door.)
 static func collect_path(bike_xf: Transform3D) -> PackedVector3Array:
 	var pts := PackedVector3Array()
 	var at := bike_xf.origin
 	var side := at + bike_xf.basis.x * 0.75 + bike_xf.basis.z * 0.3
 	side.y = 0.0
+	var door = _const("SALES_DOOR")
+	if in_car_park(at) and door is Vector3:
+		var kerb := SalesOffice.FORECOURT.position.y + 8.2
+		pts.append(reception().origin)
+		pts.append(door)
+		pts.append(Vector3(door.x, 0.0, kerb))
+		pts.append(Vector3(side.x, 0.0, kerb))
+		pts.append(side)
+		return pts
 	var room := Workshop.room_at(at)
 	var c := Workshop.CENTER
 	if room in ["wing", "shed"]:
@@ -428,33 +476,57 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 	match kind:
 		"maint":
 			var parts := random_parts(rng)
-			var keys: Array = TASKS.keys()
+			var size: Dictionary = SERVICES[rng.randi() % SERVICES.size()]
+			var keys: Array = TASKS.keys().filter(func(k): return task_fits(str(k), parts))
 			_shuffle(keys, rng)
-			var n := rng.randi_range(3, 5)
-			for k in keys.slice(0, n):
+			var range_n: Vector2i = size["n"]
+			var n := mini(rng.randi_range(range_n.x, range_n.y), keys.size())
+			var picked: Array = keys.slice(0, n)
+			for k in picked:
 				offer["goals"].append({"t": "task", "task": str(k)})
 			offer["parts"] = parts
-			offer["pay"] = 40 + n * rng.randi_range(45, 70)
-			offer["days"] = rng.randi_range(2, 3)
-			offer["blurb"] = "It's due a service. Nothing fancy, just look after it."
+			offer["pay"] = int(snappedi(30 + roundi(_tasks_pay(picked) * rng.randf_range(0.95, 1.3)), 5))
+			offer["budget"] = _tasks_budget(picked, parts, rng)
+			var range_d: Vector2i = size["days"]
+			offer["days"] = rng.randi_range(range_d.x, range_d.y)
+			offer["blurb"] = size["blurb"]
 		"mot":
 			var parts := random_parts(rng, true)
 			offer["parts"] = parts
 			offer["goals"] = [{"t": "mot"}]
-			offer["pay"] = rng.randi_range(180, 320)
-			offer["days"] = rng.randi_range(3, 4)
+			# How far gone it is: a couple of faults to a bike that's been off the road for years.
+			var faults := rng.randi_range(2, 7)
+			offer["faults"] = faults
+			var extras: Array = MOT_EXTRAS.filter(func(k): return task_fits(str(k), parts))
+			_shuffle(extras, rng)
+			var extra: Array = extras.slice(0, 0 if rng.randf() < 0.5 else rng.randi_range(1, 2))
+			for k in extra:
+				offer["goals"].append({"t": "task", "task": str(k)})
+			offer["pay"] = int(snappedi(120 + faults * rng.randi_range(22, 35) + roundi(_tasks_pay(extra) * rng.randf_range(0.95, 1.2)), 5))
+			offer["budget"] = _tasks_budget(extra, parts, rng)
+			offer["days"] = 2 + faults / 3 + rng.randi_range(0, 1)
 			offer["blurb"] = "Its MOT's run out. Test it, fix whatever fails, and get me the certificate."
+			if faults <= 3:
+				offer["blurb"] = "MOT time. It's always been reliable, so it should be a quick one."
+			elif faults >= 6:
+				offer["blurb"] = "It's been off the road a while and the MOT's long run out. Test it, fix what fails, and get me the certificate."
+			if not extra.is_empty():
+				offer["blurb"] += " And while it's in: %s." % ", ".join(extra.map(func(k): return str(TASKS[k]).to_lower()))
 		"mod":
 			var parts := random_parts(rng, true)
 			offer["parts"] = parts
 			offer["goals"] = _mod_goals(parts, rng)
 			var cost := 0
+			var labour := 0
 			for g in offer["goals"]:
 				cost += _goal_cost(g, parts)
-			offer["budget"] = int(snappedi(maxi(300, roundi(cost * rng.randf_range(1.2, 1.5))), 50))
-			offer["pay"] = 250 + offer["goals"].size() * rng.randi_range(120, 200)
-			offer["days"] = rng.randi_range(5, 7)
-			offer["blurb"] = "I want it to be more me. Here's what I'm after, and what I can spend on parts."
+				labour += int(MOD_PAY.get(str(g["t"]), 150))
+			offer["budget"] = int(snappedi(maxi(300, roundi(cost * rng.randf_range(1.15, 1.6))), 50))
+			offer["pay"] = int(snappedi(150 + roundi(labour * rng.randf_range(0.9, 1.3)), 10))
+			offer["days"] = 3 + offer["goals"].size() + rng.randi_range(0, 2)
+			offer["blurb"] = ["I want it to be more me. Here's what I'm after, and what I can spend on parts.",
+				"A few changes I've been dreaming about. Here's the list and the money for parts.",
+				"Make it mine. Here's what I want and what I can put towards parts."][rng.randi() % 3]
 		"bespoke":
 			var style: String = STYLES.keys()[rng.randi() % STYLES.size()]
 			var ref := style_build(style)
@@ -464,9 +536,9 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 			for slot in PartsDB.SLOTS:
 				if str(ref.get(slot, "none")) != "none" and slot != "frame":
 					cost += est_cost(str(ref[slot]))
-			offer["budget"] = int(snappedi(roundi(cost * rng.randf_range(1.25, 1.5)), 100))
-			offer["pay"] = rng.randi_range(25, 60) * 100
-			offer["days"] = rng.randi_range(10, 14)
+			offer["budget"] = int(snappedi(roundi(cost * rng.randf_range(1.2, 1.6)), 100))
+			offer["pay"] = int(snappedi(1500 + offer["goals"].size() * rng.randi_range(400, 650), 100))
+			offer["days"] = 8 + offer["goals"].size() + rng.randi_range(0, 2)
 			offer["blurb"] = "Something nobody else has. Start from a bare frame and build me exactly this."
 	var bike_name: String = "%s's %s" % [first, Shed.BIKE_NAMES[rng.randi() % Shed.BIKE_NAMES.size()]]
 	if kind == "bespoke":
@@ -474,6 +546,36 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 	offer["bike_name"] = bike_name
 	offer["title"] = "%s: %s" % [KIND_NAMES[kind], bike_name]
 	return offer
+
+
+## Whether a bike with `parts` can have a maintenance task done: it has the parts it renews.
+static func task_fits(task: String, parts: Dictionary) -> bool:
+	for slot in TASK_PARTS.get(task, []):
+		if str(parts.get(slot, "none")) == "none":
+			return false
+	return true
+
+
+## The labour for a list of tasks.
+static func _tasks_pay(tasks: Array) -> int:
+	var total := 0
+	for k in tasks:
+		total += int(TASK_PAY.get(str(k), 40))
+	return total
+
+
+## A parts budget for a list of tasks on a bike with `parts`: what the parts they renew cost,
+## with a bit over (0 when none need parts).
+static func _tasks_budget(tasks: Array, parts: Dictionary, rng: RandomNumberGenerator) -> int:
+	var cost := 0
+	for k in tasks:
+		for slot in TASK_PARTS.get(str(k), []):
+			var part := str(parts.get(slot, "none"))
+			if part != "none":
+				cost += est_cost(part)
+	if cost <= 0:
+		return 0
+	return int(snappedi(roundi(cost * rng.randf_range(1.1, 1.4)), 10))
 
 
 static func _shuffle(a: Array, rng: RandomNumberGenerator) -> void:
@@ -623,6 +725,9 @@ static func _mod_goals(parts: Dictionary, rng: RandomNumberGenerator) -> Array:
 	var ref := _summary(fast)
 	if float(ref["top_kmh"]) - float(now["top_kmh"]) >= 8.0:
 		pool.append({"t": "top_kmh", "min": snappedf(float(now["top_kmh"]) + (float(ref["top_kmh"]) - float(now["top_kmh"])) * 0.55, 1.0)})
+	# More power: the same kit would give it, half of the gain is asked for.
+	if float(ref["hp"]) - float(now["hp"]) >= 6.0 and rng.randf() < 0.6:
+		pool.append({"t": "hp", "min": snappedf(float(now["hp"]) + (float(ref["hp"]) - float(now["hp"])) * 0.5, 1.0)})
 	# Lighter: a carbon frame wheel and bodywork would give this, half of it is asked for.
 	var light := parts.duplicate()
 	for slot in ["front_wheel", "rear_wheel"]:
@@ -638,14 +743,19 @@ static func _mod_goals(parts: Dictionary, rng: RandomNumberGenerator) -> Array:
 	if not styles.is_empty():
 		pool.append({"t": "style", "style": styles[rng.randi() % styles.size()]})
 	var empty_slots: Array = FIT_SLOTS.keys().filter(func(s): return str(parts.get(s, "none")) == "none")
-	if not empty_slots.is_empty():
-		pool.append({"t": "fit", "slot": empty_slots[rng.randi() % empty_slots.size()]})
+	_shuffle(empty_slots, rng)
+	# Something fitted, or now and then two things.
+	for slot in empty_slots.slice(0, 1 if rng.randf() < 0.7 else 2):
+		pool.append({"t": "fit", "slot": slot})
+	# Better brakes: radial four-pots up front.
+	if str(parts.get("front_caliper", "")) != "four_piston_radial" and rng.randf() < 0.5:
+		pool.append({"t": "part", "slot": "front_caliper", "part": "four_piston_radial"})
 	if not str(parts.get("exhaust", "")) in PIPES:
 		pool.append({"t": "pipes", "from": str(parts.get("exhaust", ""))})
 	pool.append({"t": "paint", "color": rng.randi() % Shed.PAINTS.size()})
 	_shuffle(pool, rng)
 	# A tourer and a fairing goal, or a lighter bike and luggage, can fight each other: keep it simple.
-	var goals := pool.slice(0, rng.randi_range(2, mini(4, pool.size())))
+	var goals := pool.slice(0, rng.randi_range(2, mini(5, pool.size())))
 	var has_style := goals.any(func(g): return g["t"] == "style")
 	if has_style:
 		goals = goals.filter(func(g): return g["t"] != "mass")
@@ -664,6 +774,10 @@ static func _goal_cost(g: Dictionary, parts: Dictionary) -> int:
 			return est_cost("cafe_15") + est_cost("cafe_hump") + est_cost("clip_ons") + est_cost("cafe_tail")
 		"fit":
 			return int(EST_COST.get(str(g["slot"]), 150))
+		"hp":
+			return est_cost("race_ecu") + est_cost("velocity_stacks")
+		"part":
+			return est_cost(str(g["part"]))
 		"pipes":
 			return est_cost("full_system")
 		"paint":
@@ -671,19 +785,29 @@ static func _goal_cost(g: Dictionary, parts: Dictionary) -> int:
 	return 0
 
 
+## A bespoke build's targets: the style always, then some of: performance (speed, power or
+## both), a weight limit, one or two signature parts, a tank colour, and a finish standard.
 static func _bespoke_goals(style: String, ref: Dictionary, rng: RandomNumberGenerator) -> Array:
 	var s := _summary(ref)
 	var goals := [{"t": "style", "style": style}]
-	if rng.randf() < 0.5:
+	var perf := rng.randf()
+	if perf < 0.4:
 		goals.append({"t": "top_kmh", "min": snappedf(float(s["top_kmh"]) * 0.92, 5.0)})
-	else:
+	elif perf < 0.8:
 		goals.append({"t": "hp", "min": snappedf(float(s["hp"]) * 0.9, 1.0)})
-	goals.append({"t": "mass", "max": snappedf(float(s["mass"]) * 1.08, 1.0)})
-	var signature: Array = ["engine", "exhaust", "tank", "front_wheel"]
-	var slot: String = signature[rng.randi() % signature.size()]
-	goals.append({"t": "part", "slot": slot, "part": str(ref[slot])})
-	goals.append({"t": "paint", "color": rng.randi() % Shed.PAINTS.size()})
-	goals.append({"t": "health", "min": 0.95})
+	elif perf < 0.9:
+		goals.append({"t": "top_kmh", "min": snappedf(float(s["top_kmh"]) * 0.92, 5.0)})
+		goals.append({"t": "hp", "min": snappedf(float(s["hp"]) * 0.9, 1.0)})
+	if rng.randf() < 0.7:
+		goals.append({"t": "mass", "max": snappedf(float(s["mass"]) * 1.08, 1.0)})
+	var signature: Array = ["engine", "exhaust", "tank", "front_wheel", "saddle", "handlebars"]
+	signature = signature.filter(func(slot): return str(ref.get(slot, "none")) != "none")
+	_shuffle(signature, rng)
+	for slot in signature.slice(0, 1 if rng.randf() < 0.6 else 2):
+		goals.append({"t": "part", "slot": slot, "part": str(ref[slot])})
+	if rng.randf() < 0.8:
+		goals.append({"t": "paint", "color": rng.randi() % Shed.PAINTS.size()})
+	goals.append({"t": "health", "min": [0.9, 0.95, 0.98][rng.randi() % 3]})
 	return goals
 
 
@@ -813,6 +937,15 @@ static func _eval_task(bike_id: int, task: String) -> Dictionary:
 		"wash":
 			var d := Shed._bike_dirt(bike_id)
 			return {"done": d <= 0.15, "have": "%d%% dirty" % roundi(d * 100.0)}
+		"front_tyre", "rear_tyre", "chain_kit", "discs", "fork":
+			# Renewed: every part the task covers as good as new (or near enough).
+			var ok := true
+			var worst := 0.0
+			for slot in TASK_PARTS[task]:
+				var it := _item(bike_id, slot)
+				ok = ok and _fresh(it, 0.2)
+				worst = maxf(worst, float(it.get("wear", 1.0)))
+			return {"done": ok, "have": "good" if ok else "%d%% worn" % roundi(worst * 100.0)}
 	return {"done": false, "have": ""}
 
 
@@ -870,6 +1003,15 @@ static func spent(job: Dictionary) -> int:
 	return total
 
 
+## Whether an MOT job's test goal is met (`rows` from evaluate).
+static func _mot_passed(job: Dictionary, rows: Array) -> bool:
+	var goals: Array = job.get("goals", [])
+	for i in mini(goals.size(), rows.size()):
+		if str(goals[i].get("t", "")) == "mot":
+			return bool(rows[i]["done"])
+	return false
+
+
 ## What handing the job back now would pay: {labour, parts, tip, over, late, sat, total, rep, note}.
 static func payout(job: Dictionary, spend_override := -1) -> Dictionary:
 	var rows := evaluate(job)
@@ -879,7 +1021,7 @@ static func payout(job: Dictionary, spend_override := -1) -> Dictionary:
 	var late := maxi(0, ceili((clock() - float(job.get("due", 0.0))) / DAY))
 	var labour := float(fee) * (1.0 if sat >= 1.0 else 0.35 + 0.65 * sat)
 	var note := "Every goal met." if sat >= 1.0 else "%d of %d goals met." % [met, rows.size()]
-	if str(job.get("kind", "")) == "mot" and sat < 1.0:
+	if str(job.get("kind", "")) == "mot" and not _mot_passed(job, rows):
 		labour = fee * 0.25
 		note = "No MOT pass: they only pay for the test."
 	labour *= maxf(0.5, 1.0 - 0.15 * late)
@@ -935,7 +1077,7 @@ static func check(peer: int, action: Dictionary) -> String:
 				if not Shed.is_complete(bike_id):
 					return "It isn't finished: every part has to be on and bolted up."
 				if not near_handback(bike_id):
-					return "Park it in any bay (or by reception) to hand it back."
+					return "Leave it in the car park outside the sales office to hand it back."
 		"contract_spawn", "contract_rep":
 			# Debug tab helpers, for the host.
 			if peer != Shed.me():
@@ -976,18 +1118,13 @@ static func took_on(customer_id: int) -> bool:
 	return false
 
 
-## Whether a bike stands where it can be handed back: parked in any bay, near reception, or
-## just outside the roller door.
+## Whether a bike stands where it can be handed back: in the customer car park outside the
+## sales office, where the customer comes out to collect it.
 static func near_handback(bike_id: int) -> bool:
 	var xf = Shed.bikes[bike_id].get("xf")
 	if not (xf is Transform3D):
 		return false
-	var at: Vector3 = xf.origin
-	if Shed.bay_at(at) >= 0:
-		return true
-	var flat := func(p: Vector3) -> Vector3: return Vector3(p.x, 0.0, p.z)
-	return flat.call(at).distance_to(flat.call(reception().origin)) <= HANDBACK_RADIUS \
-		or flat.call(at).distance_to(flat.call(door_front())) <= HANDBACK_RADIUS * 0.6
+	return in_car_park((xf as Transform3D).origin)
 
 
 ## Does a contract action (already checked) and returns what to tell the player.
@@ -1058,7 +1195,7 @@ static func _accept(_peer: int, cid: int) -> String:
 			Shed.bikes[bike_id]["bay"] = -1
 			Shed.bikes[bike_id]["xf"] = park_xf(int(cust["park"]))
 			Shed.bikes[bike_id]["stand"] = Shed._rest_stand(bike_id)
-		prepare_bike(bike_id, kind, offer.get("goals", []), Shed._rng)
+		prepare_bike(bike_id, kind, offer.get("goals", []), Shed._rng, int(offer.get("faults", -1)))
 	Shed.bikes[bike_id]["name"] = str(offer["bike_name"])
 	Shed.bikes[bike_id]["contract"] = true
 	var s := _st()
@@ -1073,16 +1210,17 @@ static func _accept(_peer: int, cid: int) -> String:
 	jobs()[jid] = job
 	customers().erase(cid)
 	if parked:
-		return "Job taken on: %s, due in %d days. They've left it in the car park with the keys: ride it or wheel it (F) into a bay." % [
-			offer["bike_name"], int(offer["days"])]
+		return ("Job taken on: %s, due in %d days. They've left it in the car park with the keys: ride it or wheel it (F) into a bay. "
+			+ "When it's done, leave it back in the car park and hand it back.") % [offer["bike_name"], int(offer["days"])]
 	var where := "a bare %s on bay %d" % [PartsDB.part_name(str(offer["parts"]["frame"])).to_lower(), bay + 1] if kind == "bespoke" \
 		else "bay %d" % (bay + 1)
-	return "Job taken on: %s. It's on %s, due in %d days." % [offer["bike_name"], where, int(offer["days"])]
+	return "Job taken on: %s. It's on %s, due in %d days. When it's done, leave it in the car park outside the sales office and hand it back." % [
+		offer["bike_name"], where, int(offer["days"])]
 
 
 ## A customer's bike brought in for a job: generally looked after, but with whatever the job
 ## is about in a bad way (a service due, MOT faults to find).
-static func prepare_bike(bike_id: int, kind: String, goals: Array, rng: RandomNumberGenerator) -> void:
+static func prepare_bike(bike_id: int, kind: String, goals: Array, rng: RandomNumberGenerator, faults := -1) -> void:
 	var set_part := func(slot: String, key: String, v: float) -> void:
 		var id := Shed.item_on(bike_id, slot)
 		if id != 0:
@@ -1102,44 +1240,56 @@ static func prepare_bike(bike_id: int, kind: String, goals: Array, rng: RandomNu
 	if chain != 0:
 		Shed.items[chain]["slack"] = Shed.CHAIN_SLACK_SET + rng.randf_range(-4.0, 6.0)
 		Shed.items[chain]["lube"] = 0.65
+	# Whatever the customer asked to have done needs doing (a service, or jobs while it's in for its MOT).
+	for g in goals:
+		if str(g.get("t", "")) != "task":
+			continue
+		match str(g.get("task", "")):
+			"oil":
+				if engine != 0:
+					Shed.items[engine]["fluid"]["age"] = 0.9
+					Shed.items[engine]["fluid"]["litres"] = snappedf(PartsDB.fluid_capacity(str(Shed.items[engine]["part"])) * 0.55, 0.01)
+			"chain":
+				if chain != 0:
+					Shed.items[chain]["slack"] = 58.0
+					Shed.items[chain]["lube"] = 0.05
+			"pads":
+				set_part.call("front_pads", "wear", 0.85)
+				set_part.call("rear_pads", "wear", 0.8)
+			"filters":
+				for slot in ["air_filter", "oil_filter"]:
+					set_part.call(slot, "wear", 0.7)
+					set_part.call(slot, "dirt", 0.85)
+			"plugs":
+				set_part.call("spark_plugs", "wear", 0.8)
+			"brake_fluid":
+				for slot in ["front_master", "rear_master"]:
+					var id := Shed.item_on(bike_id, slot)
+					if id != 0:
+						Shed.items[id]["fluid"]["age"] = 0.9
+						Shed.items[id]["fluid"]["litres"] = snappedf(PartsDB.fluid_capacity(str(Shed.items[id]["part"])) * 0.45, 0.01)
+			"wash":
+				for slot in PartsDB.SLOTS:
+					var id := Shed.item_on(bike_id, slot)
+					if id != 0:
+						Shed.items[id]["dirt"] = clampf(float(Shed.items[id]["dirt"]) + 0.55, 0.0, 1.0)
+			"front_tyre", "rear_tyre":
+				set_part.call(str(g["task"]), "wear", rng.randf_range(0.8, 0.9))
+			"chain_kit":
+				set_part.call("chain", "wear", 0.8)
+				set_part.call("final_drive", "wear", 0.75)
+			"discs":
+				set_part.call("front_disc", "wear", 0.8)
+			"fork":
+				set_part.call("fork", "wear", 0.7)
 	match kind:
-		"maint":
-			for g in goals:
-				match str(g.get("task", "")):
-					"oil":
-						if engine != 0:
-							Shed.items[engine]["fluid"]["age"] = 0.9
-							Shed.items[engine]["fluid"]["litres"] = snappedf(PartsDB.fluid_capacity(str(Shed.items[engine]["part"])) * 0.55, 0.01)
-					"chain":
-						if chain != 0:
-							Shed.items[chain]["slack"] = 58.0
-							Shed.items[chain]["lube"] = 0.05
-					"pads":
-						set_part.call("front_pads", "wear", 0.85)
-						set_part.call("rear_pads", "wear", 0.8)
-					"filters":
-						for slot in ["air_filter", "oil_filter"]:
-							set_part.call(slot, "wear", 0.7)
-							set_part.call(slot, "dirt", 0.85)
-					"plugs":
-						set_part.call("spark_plugs", "wear", 0.8)
-					"brake_fluid":
-						for slot in ["front_master", "rear_master"]:
-							var id := Shed.item_on(bike_id, slot)
-							if id != 0:
-								Shed.items[id]["fluid"]["age"] = 0.9
-								Shed.items[id]["fluid"]["litres"] = snappedf(PartsDB.fluid_capacity(str(Shed.items[id]["part"])) * 0.45, 0.01)
-					"wash":
-						for slot in PartsDB.SLOTS:
-							var id := Shed.item_on(bike_id, slot)
-							if id != 0:
-								Shed.items[id]["dirt"] = clampf(float(Shed.items[id]["dirt"]) + 0.55, 0.0, 1.0)
 		"mot":
 			# A few faults for the test to find.
-			var faults := ["front_tyre", "rear_tyre", "pads", "disc", "mirrors", "horn", "headlight", "chain", "fork", "frame",
+			var fault_list := ["front_tyre", "rear_tyre", "pads", "disc", "mirrors", "horn", "headlight", "chain", "fork", "frame",
 				"exhaust", "oil", "shock"]
-			_shuffle(faults, rng)
-			for f in faults.slice(0, rng.randi_range(3, 6)):
+			_shuffle(fault_list, rng)
+			var count := clampi(faults, 1, 8) if faults > 0 else rng.randi_range(3, 6)
+			for f in fault_list.slice(0, count):
 				match str(f):
 					"front_tyre", "rear_tyre":
 						set_part.call(str(f), "wear", rng.randf_range(0.84, 0.95))

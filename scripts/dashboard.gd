@@ -371,7 +371,7 @@ func _draw_contract(font: Font) -> void:
 	_text(font, Vector2(800, my + 10), TvChannels.money_text(profit), 30, GOOD if profit > 0 else BAD, 200, HORIZONTAL_ALIGNMENT_RIGHT)
 	_page.draw_multiline_string(font, Vector2(656, my + 44), str(job.get("note", "")), HORIZONTAL_ALIGNMENT_LEFT, 344, 15, 3, DIM)
 	if bool(job.get("ready", false)):
-		_text(font, Vector2(24, PX.y - 16), "Finished? Hand it back: Esc, Contracts. The customer comes for it.", 17, GOOD, 600)
+		_text(font, Vector2(24, PX.y - 16), "Ready: Esc, Contracts, Hand back. The customer comes out for it.", 17, GOOD, 600)
 	else:
 		_text(font, Vector2(24, PX.y - 16), str(job.get("why", "")).left(70), 16, DIM, 600)
 

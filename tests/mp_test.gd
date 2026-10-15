@@ -17,6 +17,8 @@ var main: Node
 
 
 func _ready() -> void:
+	# The old demo bikes these were written round (a player's new shed starts empty).
+	Shed.demo_bikes = true
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
