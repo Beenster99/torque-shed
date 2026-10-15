@@ -129,23 +129,27 @@ func _ready() -> void:
 	_buy.custom_minimum_size = Vector2(0, 48)
 	_buy.pressed.connect(buy)
 	detail.add_child(_buy)
-	# Shown instead of the page while looking at the shed.
+	# Shown instead of the page while looking at the shed: a bar along the bottom, over the tool bar.
+	var bottom := CenterContainer.new()
+	bottom.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	bottom.offset_top = -150.0
+	bottom.offset_bottom = -70.0
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bottom)
 	_peek_bar = PanelContainer.new()
-	_peek_bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	_peek_bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_peek_bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_peek_bar.position.y -= 30.0
+	bottom.add_child(_peek_bar)
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 16)
 	_peek_bar.add_child(bar)
 	_peek_label = UITheme.label("", 17)
+	_peek_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_peek_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	bar.add_child(_peek_label)
 	var back_up := Button.new()
 	back_up.text = "Back to the upgrades (Esc)"
 	back_up.pressed.connect(stop_peek)
 	bar.add_child(back_up)
 	_peek_bar.visible = false
-	add_child(_peek_bar)
 	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
 	Shed.changed.connect(func(): if visible: refresh())
 	visibility_changed.connect(func():
@@ -266,6 +270,27 @@ func _build_options(id: String) -> void:
 				_swatch_style(b, c.get("color", Color.WHITE))
 				if (c.get("color", Color.WHITE) as Color).a <= 0.0:
 					b.text = "none"
+				if c.has("b") and c["b"] != c["color"]:
+					# A two-colour chequer: its second colour on the lower right half.
+					var half := ColorRect.new()
+					half.color = c["b"]
+					half.mouse_filter = Control.MOUSE_FILTER_IGNORE
+					half.set_anchors_preset(Control.PRESET_FULL_RECT)
+					half.anchor_left = 0.5
+					half.anchor_top = 0.5
+					half.offset_left = 0.0
+					half.offset_top = 0.0
+					half.offset_right = -4.0
+					half.offset_bottom = -4.0
+					b.add_child(half)
+					var half2 := ColorRect.new()
+					half2.color = c["b"]
+					half2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+					half2.anchor_right = 0.5
+					half2.anchor_bottom = 0.5
+					half2.offset_left = 4.0
+					half2.offset_top = 4.0
+					b.add_child(half2)
 			else:
 				b.text = str(c["name"])
 			b.pressed.connect(choose.bind(key, str(c["id"])))

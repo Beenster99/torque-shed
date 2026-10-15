@@ -33,7 +33,7 @@ func _init() -> void:
 	_vp.add_child(env)
 	var cam := Camera3D.new()
 	var eye := Vector3(2.3, 1.55, 2.6)
-	cam.transform = Transform3D(Basis.looking_at(Vector3(-0.2, 0.9, -0.6) - eye, Vector3.UP), eye)
+	cam.transform = Transform3D(Basis.looking_at(Vector3(-0.2, 1.2, -0.6) - eye, Vector3.UP), eye)
 	cam.fov = 62.0
 	_vp.add_child(cam)
 
@@ -153,7 +153,7 @@ func _neon(text: String, pos: Vector3, rot_y: float, c: Dictionary, fx: String) 
 	l.position = pos
 	l.rotation.y = rot_y
 	l.font_size = 96
-	l.pixel_size = 0.004
+	l.pixel_size = 0.0028
 	l.outline_size = 12
 	l.shaded = false
 	_room.add_child(l)
