@@ -282,34 +282,12 @@ func _demo_bikes_after(cafe: int, stand: int) -> void:
 		"cooling": "single_radiator", "gearbox": "six_close"}, 2, "Old Faithful", 0.35, PAINTS[1])
 
 
-## The practice area just past the drag strip starts with a jump line, a slalom and some things
-## to jump. Everything can be pushed about with F, and more ordered from the parts computer.
+## The yard's test area starts with a jump line, a slalom and an obstacle corner of things to
+## ride round and over (WorldYard.starting_kit). Everything can be pushed about with F, and
+## more ordered from the parts computer.
 func _set_up_yard() -> void:
-	var north := Basis()                     # a ramp's deck rises towards its back (-Z)
-	var south := Basis(Vector3.UP, PI)       # turned round: ridden heading south, away from the drag strip
-	# A jump line along x = -2, ridden south off the drag strip: the big ramp onto a landing.
-	_new_furniture("ramp", Transform3D(south, Vector3(-2.0, 0.0, 118.0)), "ramp_large")
-	_new_furniture("ramp", Transform3D(north, Vector3(-2.0, 0.0, 132.0)), "ramp_landing")
-	_new_furniture("marker", Transform3D(north, Vector3(0.5, 0.0, 137.0)), "flag_chequered")
-	_new_furniture("ramp", Transform3D(south, Vector3(-9.0, 0.0, 114.0)), "ramp_small")
-	_new_furniture("ramp", Transform3D(south, Vector3(-15.0, 0.0, 116.0)), "ramp_medium")
-	_new_furniture("obstacle", Transform3D(south, Vector3(12.0, 0.0, 124.0)), "tabletop")
-	# A slalom of cones and posts, with flags at the gate.
-	_new_furniture("marker", Transform3D(north, Vector3(4.6, 0.0, 109.0)), "flag_red")
-	_new_furniture("marker", Transform3D(north, Vector3(8.4, 0.0, 109.0)), "flag_blue")
-	for i in 6:
-		_new_furniture("marker", Transform3D(north, Vector3(5.8 + (i % 2) * 1.5, 0.0, 113.0 + i * 4.0)), "cone" if i % 3 != 2 else "post")
-	# Things to jump, and a short wall and fence.
-	_new_furniture("obstacle", Transform3D(north, Vector3(-15.0, 0.0, 126.0)), "barrels")
-	_new_furniture("obstacle", Transform3D(north, Vector3(-9.0, 0.0, 124.0)), "log")
-	_new_furniture("obstacle", Transform3D(north, Vector3(-9.0, 0.0, 130.0)), "hay_bales")
-	_new_furniture("obstacle", Transform3D(north, Vector3(18.5, 0.0, 140.0)), "tyre_stack")
-	_new_furniture("obstacle", Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-15.0, 0.0, 136.0)), "car_wreck")
-	_new_furniture("barrier", Transform3D(north, Vector3(15.0, 0.0, 136.0)), "wall_concrete")
-	_new_furniture("barrier", Transform3D(north, Vector3(17.2, 0.0, 136.0)), "wall_concrete")
-	_new_furniture("barrier", Transform3D(north, Vector3(6.0, 0.0, 142.0)), "fence_wood")
-	_new_furniture("barrier", Transform3D(north, Vector3(10.0, 0.0, 142.0)), "fence_mesh")
-	_new_furniture("barrier", Transform3D(north, Vector3(-8.0, 0.0, 142.0)), "wall_brick")
+	for k in WorldYard.starting_kit():
+		_new_furniture(str(k[0]), k[1], str(k[2]))
 
 
 ## Opens a saved shed (see SaveGame): the host's side of _sync. Nothing is held, ridden, pushed
@@ -1605,7 +1583,7 @@ func _settle_delivery() -> void:
 			items[id]["ref"] = Transform3D(xf.basis, Vector3(xf.origin.x, rest, xf.origin.z))
 
 
-## Where yard kit is dropped off: the west end of the yard just past the drag strip, clear of the
+## Where yard kit is dropped off: the painted drop-off box at the west end of the yard, clear of the
 ## jumps already set up. Returns null when it's all taken.
 func free_yard_xf(model: String):
 	var size: Vector3 = Equipment.get_model(model).get("size", Vector3.ONE)
@@ -2413,7 +2391,7 @@ func check(peer: int, action: Dictionary) -> String:
 				return "The shed has its whiteboard already. Press F on it to hang it somewhere else."
 			if Equipment.is_yard(model):
 				if free_yard_xf(model) == null:
-					return "The drop-off by the drag strip is full. Move some of the yard kit first."
+					return "The yard kit drop-off is full. Move some of the yard kit first."
 			elif free_delivery_xf(Equipment.get_model(model).get("size", Vector3.ONE)) == null:
 				return "There's no room for it in the delivery area outside. Bring some boxes in first."
 		"unpack":
