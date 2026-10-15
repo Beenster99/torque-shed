@@ -232,13 +232,12 @@ func _run_all() -> void:
 	await _test_blast_grit_contained()
 	_test_new_shed_empty()
 	_test_contract_variety()
-	print("Handling phase 1: real tyres, riding realism, Direct bars, telemetry")
+	print("Handling phase 1: real tyres, riding realism, telemetry")
 	await _test_tyre_steady_turn()
 	await _test_tyre_stopping()
 	await _test_tyre_front_tuck()
 	await _test_tyre_highside()
 	await _test_tyre_coasting()
-	await _test_direct_bars()
 	await _test_tyre_old_save()
 	await _test_telemetry()
 	await _test_physics_cost()
@@ -7005,6 +7004,18 @@ func _test_sales_office_session() -> void:
 	check(not chime.is_empty(), "the chime is in the shed")
 	check(absf((so.get_node("ShopBell") as Node3D).rotation.x) > 0.01, "and the bell over the door swings")
 	Shed.bell_rang.disconnect(on_bell)
+	# The service bell on the reception counter: click it and it dings.
+	var desk_bodies := so.find_children("*", "StaticBody3D", true, false).filter(func(n): return n.has_meta("desk_bell"))
+	check(desk_bodies.size() == 1 and (desk_bodies[0] as CollisionObject3D).collision_layer & Workshop.INTERACT_LAYER,
+		"the reception counter's bell can be clicked")
+	var dings := Shed.desk_bells
+	Shed.ding_desk_bell()
+	for i in 3:
+		await get_tree().process_frame
+	var ding_s: Array = Sfx.sounds("desk_bell")
+	var dinging := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(p): return ding_s.has(p.stream))
+	check(Shed.desk_bells == dings + 1 and not dinging.is_empty() and (dinging[0] as Node3D).global_position.distance_to(so.to_global(so.desk_bell_pos)) < 0.5,
+		"and it dings on the counter")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
@@ -8667,6 +8678,26 @@ func _test_ride_by_camera() -> void:
 	cam.start_ride_by()
 	check(cam.mode == ChaseCamera.Mode.HELMET, "pressing it again goes straight back to first person")
 	await _done(r)
+	# The fly-by view keeps hopping on ahead instead of going back.
+	var hops := [0, Vector3.ZERO, null]
+	r = await ride({}, 14.0, func(b, t):
+		b.throttle = 0.5 if t < 3.0 else 0.3
+		if t > 2.5 and hops[2] == null:
+			var cam2 := ChaseCamera.new()
+			b.get_parent().add_child(cam2)
+			cam2.target = b
+			cam2.set_mode(ChaseCamera.Mode.RIDE_BY)
+			hops[2] = cam2
+			hops[1] = cam2.ride_by_spot()
+		elif hops[2] != null:
+			var cam2: ChaseCamera = hops[2]
+			if cam2.ride_by_spot() != hops[1]:
+				hops[0] += 1
+				hops[1] = cam2.ride_by_spot())
+	var fb: ChaseCamera = hops[2]
+	check(fb != null and fb.mode == ChaseCamera.Mode.RIDE_BY and int(hops[0]) >= 1,
+		"the fly-by view stays on and hops to a new spot ahead (%d hops)" % int(hops[0]))
+	await _done(r)
 
 
 ## Front brake on, throttle open and the bars turned: the back tyre slides round the front
@@ -8820,6 +8851,14 @@ func _test_riding_feedback_session() -> void:
 	_press("camera")
 	await get_tree().physics_frame
 	check(main.camera.mode == ChaseCamera.Mode.CHASE, "C brings the chase camera straight back")
+	# The view toggle runs third person, first person, fly-by, and round again.
+	var views := []
+	for i in 3:
+		_press("camera")
+		await get_tree().physics_frame
+		views.append([main.camera.mode, main.camera.fly_by])
+	check(views == [[ChaseCamera.Mode.HELMET, false], [ChaseCamera.Mode.RIDE_BY, true], [ChaseCamera.Mode.CHASE, false]],
+		"C steps through third person, first person and fly-by (%s)" % str(views))
 	_press("headlight")
 	await get_tree().physics_frame
 	check(main.bike.beam == 2, "L steps the headlight on to high beam")
@@ -11315,13 +11354,11 @@ func _test_tyre_highside() -> void:
 
 func _test_tyre_coasting() -> void:
 	# Hands off, throttle shut, at full sim, with a shove sideways: the bike rides it out, runs
-	# straight on and stays up. In Direct bars too, where only the front end's own steering
-	# (trail and the spinning wheel) catches it.
-	for bars in [false, true]:
+	# straight on and stays up.
+	for bars in [false]:
 		var st := {"lean": 0.0, "yaw0": 0.0, "set": false, "end": 0.0}
 		var r := await ride({}, 13.0, func(b, t):
 			b.assist = 0.0
-			b.direct_bars = bars
 			if t < 5.0:
 				_hold_speed(b, 20.0)
 				return
@@ -11334,48 +11371,10 @@ func _test_tyre_coasting() -> void:
 			st["lean"] = maxf(st["lean"], absf(b.lean_angle))
 			st["end"] = absf(b.lean_angle))
 		var turned := absf(wrapf(_heading(r["bike"]) - float(st["yaw0"]), -PI, PI))
-		var how := "Direct bars" if bars else "lean steering"
+		var how := "lean steering"
 		check(not r["crashed"] and rad_to_deg(st["end"]) < 2.0 and rad_to_deg(turned) < 25.0,
 			"%s: coasting hands off at full sim rides out a shove and runs on upright (worst lean %.1f deg, now %.1f, %.0f deg off line)"
 			% [how, rad_to_deg(st["lean"]), rad_to_deg(st["end"]), rad_to_deg(turned)])
-		await _done(r)
-
-
-func _test_direct_bars() -> void:
-	# Direct bars: the steer input is bar torque. Hands off it runs straight; a push on the right
-	# grip leans it right and it turns right; a push on the left grip stands it back up. At a
-	# town speed, a brisk one and a fast one, without falling off.
-	for speed in [8.0, 15.0, 30.0]:
-		var st := {"yaw0": 0.0, "lean": 0.0, "straight": 0.0, "end": 0.0, "turned": 0.0}
-		var push := 0.5 if speed < 20.0 else 0.8
-		var r := await ride({}, 13.0, func(b, t):
-			b.assist = 0.5
-			b.direct_bars = true
-			_hold_speed(b, speed)
-			if t < 6.0:
-				b.lean_input = 0.0
-				if t > 3.0:
-					st["straight"] = maxf(st["straight"], absf(b.lean_angle))
-				st["yaw0"] = _heading(b)
-			elif t < 6.0 + push:
-				b.lean_input = 1.0
-			elif t < 9.0:
-				b.lean_input = 0.0
-				st["lean"] = maxf(st["lean"], b.lean_angle)
-				st["turned"] = wrapf(_heading(b) - float(st["yaw0"]), -PI, PI)
-			elif t < 9.0 + push * 0.8:
-				b.lean_input = -1.0
-			else:
-				b.lean_input = 0.0
-				st["end"] = absf(b.lean_angle))
-		var turned: float = st["turned"]
-		check(not r["crashed"] and rad_to_deg(st["straight"]) < 3.0,
-			"Direct bars at %d m/s: hands off it runs upright (lean %.1f deg)" % [speed, rad_to_deg(st["straight"])])
-		check(rad_to_deg(st["lean"]) > 10.0 and turned < -deg_to_rad(10.0),
-			"Direct bars at %d m/s: pushing the right grip leans it right (%.0f deg) and it turns right (%.0f deg)"
-			% [speed, rad_to_deg(st["lean"]), rad_to_deg(-turned)])
-		check(not r["crashed"] and rad_to_deg(st["end"]) < 10.0,
-			"Direct bars at %d m/s: pushing the left grip stands it back up (lean %.1f deg)" % [speed, rad_to_deg(st["end"])])
 		await _done(r)
 
 
@@ -11483,28 +11482,25 @@ func _test_telemetry() -> void:
 	overlay.queue_free()
 	desk.queue_free()
 	await _done(r)
-	# Settings: Riding realism, Direct bars and the overlay are kept; F3 toggles the overlay.
+	# Settings: Riding realism and the overlay are kept; F3 toggles the overlay.
 	check(InputMap.has_action("telemetry") and Settings.binding_codes("telemetry").size() > 0,
 		"the telemetry overlay has a key binding (%s)" % str(Settings.binding_codes("telemetry")))
 	check(Settings.ACTIONS.any(func(a): return a[0] == "telemetry"), "and it's in the Key bindings tab")
-	var was := [Settings.assist, Settings.direct_bars, Settings.telemetry_overlay]
+	var was := [Settings.assist, false, Settings.telemetry_overlay]
 	Settings.assist = 0.2
-	Settings.direct_bars = true
 	Settings.telemetry_overlay = true
 	Settings.save_settings()
 	Settings.assist = 0.9
-	Settings.direct_bars = false
 	Settings.telemetry_overlay = false
 	Settings.load_settings()
-	check(is_equal_approx(Settings.assist, 0.2) and Settings.direct_bars and Settings.telemetry_overlay,
-		"Riding realism, Direct bars and the overlay are saved with the settings")
+	check(is_equal_approx(Settings.assist, 0.2) and Settings.telemetry_overlay,
+		"Riding realism and the overlay are saved with the settings")
 	Settings.assist = was[0]
-	Settings.direct_bars = was[1]
 	Settings.telemetry_overlay = was[2]
 	Settings.save_settings()
 	check(MainMenu.realism_text(0.0).contains("full sim") and MainMenu.realism_text(0.5).contains("protects the front"),
 		"the Riding realism slider says what each end does")
-	# In a session: getting on starts a recording, F3 shows the overlay, Direct bars reaches the bike.
+	# In a session: getting on starts a recording and F3 shows the overlay.
 	var real_path := Progress.path
 	Progress.path = "user://profile_telemetry_test.json"
 	DirAccess.remove_absolute(Progress.path)
@@ -11518,18 +11514,15 @@ func _test_telemetry() -> void:
 	check(main.bike != null and main.bike.telemetry != null and RideTelemetry.last == main.bike.telemetry,
 		"getting on a bike starts a telemetry recording")
 	Settings.telemetry_overlay = false
-	Settings.direct_bars = true
 	_press("telemetry")
 	for i in 3:
 		await get_tree().physics_frame
 	check(Settings.telemetry_overlay and main.telemetry_overlay.visible and main.telemetry_overlay.bike == main.bike,
 		"F3 shows the telemetry overlay while riding")
-	check(main.bike.direct_bars, "Direct bars in the settings reaches the bike")
 	_press("telemetry")
 	for i in 3:
 		await get_tree().physics_frame
 	check(not main.telemetry_overlay.visible, "and F3 hides it again")
-	Settings.direct_bars = was[1]
 	Settings.telemetry_overlay = was[2]
 	main._leave()
 	main.queue_free()
@@ -11742,6 +11735,44 @@ func _test_world_map() -> void:
 	check(plan["buildings"].size() > 60 and kinds.has("barn") and kinds.has("silo") and kinds.has("church"),
 		"villages and farms have houses, barns, silos and a church (%d buildings)" % plan["buildings"].size())
 	check(plan["armco"].size() > 40 and plan["signs"].size() > 10, "armco on the mountain roads and signs at junctions")
+	# Fences stay off the roads and tracks, and the armco never runs across another road.
+	var fence_on_road := 0
+	for f: Array in plan["fences"]:
+		var f0: Vector3 = f[0]
+		var f1: Vector3 = f[1]
+		for k in 5:
+			var q := f0.lerp(f1, k / 4.0)
+			var nr := r.nearest(q.x, q.z, 20.0)
+			if not nr.is_empty() and float(nr["d"]) < float(r.roads[int(nr["road"])]["hw"]) + 1.0:
+				fence_on_road += 1
+				break
+	check(fence_on_road == 0, "no field fence crosses a road or track (%d do)" % fence_on_road)
+	var armco_on_road := 0
+	for sgm: Array in plan["armco"]:
+		var q: Vector3 = sgm[0]
+		var own := r.nearest(q.x, q.z, 30.0, "tarmac")
+		var other := r.nearest(q.x, q.z, 30.0, "", int(own["road"]) if not own.is_empty() else -1)
+		if not other.is_empty() and float(other["d"]) < float(r.roads[int(other["road"])]["hw"]) + 0.5:
+			armco_on_road += 1
+	check(armco_on_road == 0, "no armco runs across another road (%d posts do)" % armco_on_road)
+	# The armco is joined up: runs, not bits, with no short gaps between them.
+	var runs := 0
+	var short_gaps := 0
+	var prev_end := Vector3.INF
+	for sgm: Array in plan["armco"]:
+		var a0: Vector3 = sgm[0]
+		if prev_end == Vector3.INF or not prev_end.is_equal_approx(a0):
+			runs += 1
+			if prev_end != Vector3.INF and prev_end.distance_to(a0) < 12.0:
+				# A short gap is only right where another road joins (the barrier stops for it).
+				var gm := (prev_end + a0) * 0.5
+				var own_r := r.nearest(gm.x, gm.z, 30.0)
+				var join := r.nearest(gm.x, gm.z, 30.0, "", int(own_r["road"]) if not own_r.is_empty() else -1)
+				if join.is_empty() or float(join["d"]) > float(r.roads[int(join["road"])]["hw"]) + 3.0:
+					short_gaps += 1
+		prev_end = sgm[1]
+	check(runs > 0 and plan["armco"].size() / runs >= 5 and short_gaps == 0,
+		"the armco comes in joined-up runs, with gaps only at junctions (%d runs, %.1f rails each, %d short gaps)" % [runs, float(plan["armco"].size()) / maxi(runs, 1), short_gaps])
 	# Light enough to draw: trees and rocks in batches, everything far drawn only near.
 	var nodes := _count_world_nodes(world)
 	var batches := 0

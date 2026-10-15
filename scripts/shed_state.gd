@@ -4427,6 +4427,7 @@ func _blueprint_apply(action: Dictionary, peer := 1) -> String:
 	match a:
 		"geo_save":
 			bikes[bike_id]["geo"] = GeoGizmo.sanitize(action["geo"])
+			_sync_timer = 0.0   # out to the crew straight away
 			return "Saved the fit of %s's parts." % bikes[bike_id]["name"]
 		"geo_blueprint":
 			bikes[bike_id]["geo"] = GeoGizmo.sanitize(action["geo"])
@@ -4879,6 +4880,28 @@ func ring_bell() -> void:
 @rpc("authority", "call_remote", "reliable")
 func _bell_rpc() -> void:
 	_bell()
+
+
+## The service bell on the reception counter was dinged (by anyone: everyone hears it).
+signal desk_bell_rang
+var desk_bells := 0
+
+
+## Dings the reception counter's service bell, here and for the rest of the crew.
+func ding_desk_bell() -> void:
+	_desk_bell()
+	if Net.is_online():
+		_desk_bell_rpc.rpc()
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _desk_bell_rpc() -> void:
+	_desk_bell()
+
+
+func _desk_bell() -> void:
+	desk_bells += 1
+	desk_bell_rang.emit()
 
 
 func _bell() -> void:

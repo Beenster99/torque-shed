@@ -236,6 +236,10 @@ func _screen_target(screen: Dashboard, key: String) -> void:
 
 # ---------------------------------------------------------------------------- state
 
+## The bike open in geometry mode here, whose model shows the draft fit instead (see GeometryMode).
+var editing_bike := 0
+
+
 ## Redraws parked bikes, loose parts and screens to match the Shed state.
 func sync_state() -> void:
 	if upgrades:
@@ -250,6 +254,11 @@ func sync_state() -> void:
 		if bike["rider"] != 0:
 			continue
 		var sig := _bike_signature(id)
+		# A fit saved in geometry mode (by anyone) is put on the parked bike as soon as it arrives.
+		if _view_sigs.get(id, "") == sig and bike_views.has(id) and id != editing_bike:
+			var shown := bike_model(id)
+			if shown and str(shown.geometry) != str(Shed.geometry_of(id)):
+				sig += "|refit"
 		if _view_sigs.get(id, "") != sig:
 			_view_sigs[id] = sig
 			if bike_views.has(id):

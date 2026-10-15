@@ -11,7 +11,7 @@ const MAX_SAMPLES := 36000     # 20 minutes at the full rate before it starts th
 ## Every channel: [key, label, unit]. Slip angles and lean are in degrees.
 const CHANNELS := [
 	["t", "Time", "s"], ["speed", "Speed", "km/h"], ["lean", "Lean", "°"], ["steer", "Steering", "°"],
-	["bar", "Bar torque", "Nm"], ["kappa_f", "Front slip ratio", ""], ["kappa_r", "Rear slip ratio", ""],
+	["kappa_f", "Front slip ratio", ""], ["kappa_r", "Rear slip ratio", ""],
 	["alpha_f", "Front slip angle", "°"], ["alpha_r", "Rear slip angle", "°"], ["load_f", "Front load", "N"],
 	["load_r", "Rear load", "N"], ["grip_f", "Front grip used", ""], ["grip_r", "Rear grip used", ""],
 	["throttle", "Throttle", ""], ["brake_f", "Front brake", ""], ["brake_r", "Rear brake", ""],
@@ -57,7 +57,7 @@ func step(bike: Bike, delta: float) -> void:
 	_last_speed = bike.speed
 	add({
 		"t": time, "speed": absf(bike.speed) * 3.6, "lean": rad_to_deg(bike.lean_angle), "steer": rad_to_deg(bike.steer),
-		"bar": bike.bar_torque, "kappa_f": f["kappa"], "kappa_r": r["kappa"],
+		"kappa_f": f["kappa"], "kappa_r": r["kappa"],
 		"alpha_f": rad_to_deg(float(f["alpha"])), "alpha_r": rad_to_deg(float(r["alpha"])),
 		"load_f": f["load"], "load_r": r["load"], "grip_f": f["grip_used"], "grip_r": r["grip_used"],
 		"throttle": bike.throttle, "brake_f": bike.front_brake, "brake_r": bike.rear_brake,

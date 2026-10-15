@@ -328,7 +328,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Shift up / down | E / Q | A / X |
 | Toggle auto-shift | T | |
 | Reset after a crash | R | View |
-| Camera (chase, first person) | C | Right stick click |
+| Camera (third person, first person, fly-by) | C | Right stick click |
 | Swing the camera round the bike (first person: look round) | Mouse | Right stick |
 | Ride-by camera: watch yourself ride past (again to end it) | V | (none; set one in Key bindings) |
 | Telemetry overlay on / off | F3 | (none; set one in Key bindings) |
@@ -350,7 +350,7 @@ You get on with the engine off: press I to start it. The speedo shows a fuel gau
 
 Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The moment a tyre loses grip it gives a loud, sharp chirp (louder the more suddenly it lets go, from a lock-up, a wheelspin or a burnout), and a skid that goes on settles to a quieter screech. The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
 
-**Cameras**: move the mouse (or the right stick) to swing the chase camera round the bike and look at it from any side, or from above. Let go and after a moment it eases back behind the bike; untick "Chase camera swings back" in the Esc menu's Settings to leave it where you put it. In first person the same moves turn your head. Press **V** for the **ride-by camera**: it drops a camera at the roadside ahead of you, watches you ride past for a few seconds, then goes back to the view you had (V or C ends it early).
+**Cameras**: move the mouse (or the right stick) to swing the chase camera round the bike and look at it from any side, or from above. Let go and after a moment it eases back behind the bike; untick "Chase camera swings back" in the Esc menu's Settings to leave it where you put it. In first person the same moves turn your head. Press **V** for the **ride-by camera**: it drops a camera at the roadside ahead of you, watches you ride past for a few seconds, then goes back to the view you had (V or C ends it early). **C** steps through the views: third person, first person, then **fly-by** (the roadside camera stays on, hopping ahead each time you've gone past).
 
 **Circle burnouts**: hold the front brake and open the throttle to light up the back tyre, then lean (A / D or the left stick) and the back of the bike slides round the front wheel in a circle of smoke. Burnouts scrub the back tyre down quickly.
 
@@ -405,7 +405,7 @@ Each new engine's sound is worked out in the background when you get on (about a
 
 You steer by leaning: the rider counter-steers for you, like on a real bike. The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
 
-### Handling: tyres, riding realism, Direct bars and telemetry
+### Handling: tyres, riding realism and telemetry
 
 **Tyres work like real ones now.** Each tyre has a grip curve: grip builds as it starts to slip, peaks, then falls away to a slide. Braking or accelerating uses up grip the tyre could have used for cornering, so braking hard while leaned over leaves less to hold the line. A tyre loaded harder grips more, but not in proportion (a front tyre squashed under hard braking has a little less grip for its load). A leaned tyre pushes towards the lean (camber thrust), and grip builds over a short roll rather than all at once. The contact patch rolls round the tyre's round profile as you lean, so on fat tyres the bike leans a few degrees further for the same corner. Each tyre in the parts computer has a construction (radial or bias ply), a profile, a stiffness and how much grip is left once it slides: sport tyres and slicks are sharp and let go suddenly, touring tyres are softer, knobblies and old bias-ply tyres slide progressively. Tyre pressures change it too: a soft tyre slips further before it grips and is lazier to respond.
 
@@ -414,9 +414,7 @@ You steer by leaning: the rider counter-steers for you, like on a real bike. The
 - **About 0.5**: the rider protects the front (eases the brake before it locks, leaving grip for the corner), rolls the throttle on and off smoothly and feathers it when the back spins.
 - **1, easy**: as before this update, with the most help balancing, with wheelspin and with wheelies.
 
-**Direct bars** (Settings) changes what steering does: instead of choosing how far to lean and letting the rider counter-steer for you, A / D or the stick push on the handlebars. Push the right grip (D, stick right) and the bars turn left for a moment, which leans the bike right; let go and the front end steers itself into the lean and the bike carries on round the corner. Push the left grip to stand it back up. On a keyboard the push builds up as you hold the key, so a tap is a nudge; on a stick, a small move is a gentle push. At walking pace your feet are down and the bars just point where you steer.
-
-**Telemetry**: press **F3** while riding (or tick it in Settings) for the telemetry overlay at the right of the screen: each tyre's friction circle (the dot is where its force is against its grip: past the ring it's sliding, and it turns red) with its load, the throttle and brakes, and the last 8 seconds of lean, steering, bar torque (Direct bars), slip ratios, slip angles, grip used and tyre loads. Every ride is recorded; the **dyno desk's Last ride tab** shows the whole of your last ride as charts (speed, lean, steering, bar torque, slips, grip used, loads, throttle and brakes, gear and revs) with the top speed, most lean, hardest braking and cornering, and how long each tyre spent sliding.
+**Telemetry**: press **F3** while riding (or tick it in Settings) for the telemetry overlay at the right of the screen: each tyre's friction circle (the dot is where its force is against its grip: past the ring it's sliding, and it turns red) with its load, the throttle and brakes, and the last 8 seconds of lean, steering, slip ratios, slip angles, grip used and tyre loads. Every ride is recorded; the **dyno desk's Last ride tab** shows the whole of your last ride as charts (speed, lean, steering, slips, grip used, loads, throttle and brakes, gear and revs) with the top speed, most lean, hardest braking and cornering, and how long each tyre spent sliding.
 
 ### Garage upgrades
 
@@ -563,7 +561,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/geometry_mode.gd`, `geo_gizmo.gd`, `blueprint_tab.gd` | Geometry mode (fitting a bike's parts with move, rotate and scale handles), the handles and their maths, and the Esc menu's Blueprints tab |
 | `scripts/tyre_game.gd` | The tyre-fitting game on the tyre changer |
 | `scripts/blast_game.gd`, `blast_marks.gd`, `blast_hud.gd`, `blast_detail.gd`, `blast_grit.gd` | The sandblasting game in the blast cabinet: the coverage, the satin bare-metal mask and its shader, the live readout and the scan, the close-up engine detail, and the bare metal kept on each part and drawn wherever the engine goes, and the sand particles held inside the cabinet (protective coats, and a fully blasted engine coming out as new, are in `shed_state.gd`) |
-| `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, the tyres on the road, the rider (lean steering or Direct bars, riding realism), engine, clutch and gearbox |
+| `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, the tyres on the road, the rider (lean steering, riding realism), engine, clutch and gearbox |
 | `scripts/tyre_model.gd` | The tyres: a Magic Formula with combined slip, load sensitivity, camber thrust, relaxation length and the round profile, from each tyre's catalogue numbers |
 | `scripts/ride_telemetry.gd`, `telemetry_overlay.gd`, `telemetry_graph.gd` | The ride's telemetry recorder, the F3 overlay while riding, and the strip charts (the overlay's and the dyno desk's Last ride tab) |
 | `scripts/chase_camera.gd` | The riding cameras: the chase view you can swing round the bike, first person, the ride-by camera and the title screen orbit |

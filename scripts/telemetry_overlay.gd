@@ -7,7 +7,7 @@ extends Control
 
 const WIDTH := 400.0
 const WINDOW := 8.0            # seconds of history in the strips
-const STRIPS := ["Lean (+ right)", "Steering (+ right)", "Bar torque", "Slip ratio", "Slip angle",
+const STRIPS := ["Lean (+ right)", "Steering (+ right)", "Slip ratio", "Slip angle",
 	"Grip used (1 = the limit)", "Tyre load"]
 
 var bike: Bike
@@ -60,7 +60,7 @@ func _draw() -> void:
 		by += 36.0
 	y += d + 30.0
 	# The last few seconds as strips.
-	var shown := TelemetryGraph.STRIPS.filter(func(s): return STRIPS.has(s[0]) and (bike.direct_bars or s[0] != "Bar torque"))
+	var shown := TelemetryGraph.STRIPS.filter(func(s): return STRIPS.has(s[0]))
 	var gap := 5.0
 	var h := (size.y - y - gap * shown.size()) / maxf(shown.size(), 1)
 	var i0 := bike.telemetry.index_since(WINDOW)

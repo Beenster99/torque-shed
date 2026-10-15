@@ -8,8 +8,6 @@ var last_ip := "127.0.0.1"
 ## Riding realism: 0 = full sim (the front can tuck, a slide can high-side), 0.5 = the rider
 ## protects the front and smooths the throttle, 1 = the easiest, with the most help balancing.
 var assist := 0.5
-## Direct bars: the steer input turns into torque on the handlebars instead of a lean to aim for.
-var direct_bars := false
 ## The telemetry overlay at the side of the screen while riding (F3 toggles it).
 var telemetry_overlay := false
 var auto_shift := true
@@ -94,7 +92,7 @@ const ACTIONS := [
 	["body_back", "Weight back", ["ride"]], ["body_forward", "Weight forward", ["ride"]],
 	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down", ["ride"]],
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
-	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera", ["ride"]],
+	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera: third person, first person, fly-by", ["ride"]],
 	["horn", "Horn", ["ride"]], ["headlight", "Headlight", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
@@ -129,7 +127,6 @@ func load_settings() -> void:
 		last_ip = cfg.get_value("player", "last_ip", last_ip)
 		assist = cfg.get_value("riding", "assist", assist)
 		auto_shift = cfg.get_value("riding", "auto_shift", auto_shift)
-		direct_bars = bool(cfg.get_value("riding", "direct_bars", direct_bars))
 		telemetry_overlay = bool(cfg.get_value("riding", "telemetry", telemetry_overlay))
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
@@ -160,7 +157,6 @@ func save_settings() -> void:
 	cfg.set_value("player", "last_ip", last_ip)
 	cfg.set_value("riding", "assist", assist)
 	cfg.set_value("riding", "auto_shift", auto_shift)
-	cfg.set_value("riding", "direct_bars", direct_bars)
 	cfg.set_value("riding", "telemetry", telemetry_overlay)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
 	cfg.set_value("video", "high_quality", high_quality)

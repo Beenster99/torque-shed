@@ -74,8 +74,8 @@ func point(r: int, i: int) -> Vector3:
 
 ## The nearest road centre line to (x, z) within `max_d` metres: {d, h, road, i, u (0..1 along
 ## the segment from sample i)}, or {} when there's none that close. `kind` limits it to
-## "tarmac" or "dirt".
-func nearest(x: float, z: float, max_d := 40.0, kind := "") -> Dictionary:
+## "tarmac" or "dirt"; `skip` leaves one road (by its index) out.
+func nearest(x: float, z: float, max_d := 40.0, kind := "", skip := -1) -> Dictionary:
 	var c := Vector2i(floori(x / CELL), floori(z / CELL))
 	var reach := ceili(max_d / CELL)
 	var best := {}
@@ -89,7 +89,7 @@ func nearest(x: float, z: float, max_d := 40.0, kind := "") -> Dictionary:
 			for code in _grid[key]:
 				var ri: int = code >> 16
 				var road := roads[ri]
-				if kind != "" and road["kind"] != kind:
+				if (kind != "" and road["kind"] != kind) or ri == skip:
 					continue
 				var xz: PackedVector2Array = road["xz"]
 				var i: int = code & 0xFFFF

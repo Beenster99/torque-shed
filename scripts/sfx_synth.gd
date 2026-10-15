@@ -45,7 +45,7 @@ const LEVELS := {
 	"gun_on": ["peak", 0.4], "gun_off": ["peak", 0.4], "pump_on": ["peak", 0.5], "pump_off": ["peak", 0.45],
 	"blast_on": ["peak", 0.6], "blast_off": ["peak", 0.6], "comp_on": ["peak", 0.65], "comp_off": ["peak", 0.65],
 	"bead_pop": ["peak", 0.8], "slide_open": ["peak", 0.45], "slide_close": ["peak", 0.45], "slide_shut": ["peak", 0.5],
-	"tube_start": ["peak", 0.4], "creak": ["peak", 0.5], "sale_offer": ["peak", 0.55],
+	"tube_start": ["peak", 0.4], "creak": ["peak", 0.5], "sale_offer": ["peak", 0.55], "desk_bell": ["peak", 0.5],
 }
 ## Footstep loudness by floor (concrete is the reference).
 const STEP_PEAK := {"concrete": 0.5, "epoxy": 0.5, "wood": 0.55, "metal": 0.55, "gravel": 0.5, "grass": 0.35, "tarmac": 0.45,
@@ -73,7 +73,7 @@ static func all_sounds() -> Array[String]:
 	var out: Array[String] = ["step_concrete", "step_epoxy", "step", "switch", "pickup", "clink", "clunk", "ratchet", "scrub",
 		"impact_metal_concrete", "impact_metal_wood", "impact_metal_steel", "grinder", "spray", "spray_gun", "washer", "jet",
 		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "scrap", "screech", "chirp", "starter",
-		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "sale_offer", "rain", "rain_roof",
+		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "desk_bell", "sale_offer", "rain", "rain_roof",
 		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets"]
 	for s in VARIANTS:
 		if not out.has(s):
@@ -164,6 +164,7 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"levelup": return _levelup()
 		"bell": return _shop_bell()
 		"bell_chime": return _door_chime()
+		"desk_bell": return _desk_bell()
 		"sale_offer": return _till()
 	return buf(0.1)
 
@@ -1572,6 +1573,18 @@ func _shop_bell() -> PackedFloat32Array:
 			ring(d, at, float(p[0]), float(p[1]) * h * 0.6, float(p[2]))
 			ring(d, at, float(p[0]) * 1.0015, float(p[1]) * h * 0.4, float(p[2]))
 		burst(d, at, 0.01, 0.3 * h, 600.0, 1000.0, 16000.0)
+	return d
+
+
+## The chrome service bell on the reception counter: the plunger's click, then one bright
+## "ding" from the dome, its partials beating slowly as it rings away.
+func _desk_bell() -> PackedFloat32Array:
+	var d := buf(2.2)
+	var f0 := rf(2580.0, 2640.0)
+	burst(d, 0, 0.004, 0.35, 2500.0, 3000.0, 14000.0)
+	for p in [[1.0, 1.0, 1.6], [2.76, 0.42, 3.4], [5.4, 0.2, 6.0], [8.9, 0.08, 9.0], [0.5, 0.12, 2.4]]:
+		ring(d, 0, f0 * float(p[0]), float(p[1]) * 0.55, float(p[2]))
+		ring(d, 0, f0 * float(p[0]) * 1.0021, float(p[1]) * 0.4, float(p[2]) * 1.1)
 	return d
 
 

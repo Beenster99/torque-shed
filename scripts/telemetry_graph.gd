@@ -19,7 +19,6 @@ const STRIPS := [
 	["Speed", [["speed", ONE, ""]], 0.0, 0.0, "km/h"],
 	["Lean (+ right)", [["lean", ONE, ""]], -60.0, 60.0, "°"],
 	["Steering (+ right)", [["steer", ONE, "bars"]], -10.0, 10.0, "°"],
-	["Bar torque", [["bar", ONE, ""]], -30.0, 30.0, "Nm"],
 	["Slip ratio", [["kappa_f", FRONT, "front"], ["kappa_r", REAR, "rear"]], -0.4, 0.4, ""],
 	["Slip angle", [["alpha_f", FRONT, "front"], ["alpha_r", REAR, "rear"]], -15.0, 15.0, "°"],
 	["Grip used (1 = the limit)", [["grip_f", FRONT, "front"], ["grip_r", REAR, "rear"]], 0.0, 1.5, ""],

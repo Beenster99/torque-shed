@@ -8,6 +8,12 @@ extends Node3D
 
 const T := 0.2      # wall thickness of the new buildings
 const LIFT_ARM := 2.0   # length of a bike lift's scissor arms
+## The lounge's windows: size, the height of their middle above its floor, and where they are.
+const LOFT_WIN_W := 1.8
+const LOFT_WIN_H := 1.1
+const LOFT_WIN_Y := 1.5
+const LOFT_FRONT_WINDOWS := [-4.4, -1.6, 1.2]
+const LOFT_SIDE_WINDOWS := [62.4, 67.6]
 ## The lit sign box over the roller door (width, height), and the clear margin its letters keep
 ## inside the neon frame.
 const SIGN_BOX := Vector2(5.6, 1.15)
@@ -523,31 +529,39 @@ func _build_loft() -> void:
 	loft_floor.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Walls on the edge of the shed's roof, and a roof of its own.
 	_wall(Vector3(mid.x, y0 + h * 0.5, z0 - T * 0.5), Vector3(r.size.x + T * 2.0, h, T)).name = "LoftBackWall"
-	for side in [-1.0, 1.0]:
-		_wall(Vector3(mid.x + side * (r.size.x * 0.5 + T * 0.5), y0 + h * 0.5, mid.y), Vector3(T, h, r.size.y))
 	var dx := GarageUpgrades.LOFT_DOOR_X
 	var dh := GarageUpgrades.LOFT_DOOR_HALF
 	var door_h := GarageUpgrades.LOFT_DOOR_HEIGHT
-	for seg in Workshop._wall_runs(x0 - T, x1 + T, dx, dh):
-		_wall(Vector3(float(seg[0]), y0 + h * 0.5, z1 + T * 0.5), Vector3(float(seg[1]), h, T)).name = "LoftFrontWall"
-	_wall(Vector3(dx, y0 + (h + door_h) * 0.5, z1 + T * 0.5), Vector3(dh * 2.0, h - door_h, T))
+	# The front and side walls have real openings for the windows (and the door), so you can see
+	# out of the lounge and into it.
+	var sill := LOFT_WIN_Y - LOFT_WIN_H * 0.5
+	var head := LOFT_WIN_Y + LOFT_WIN_H * 0.5
+	var front_holes := [[dx, dh, 0.0, door_h]]
+	for wx in LOFT_FRONT_WINDOWS:
+		front_holes.append([wx, LOFT_WIN_W * 0.5, sill, head])
+	var side_holes := []
+	for wz in LOFT_SIDE_WINDOWS:
+		side_holes.append([wz, LOFT_WIN_W * 0.5, sill, head])
+	_holed_wall(true, x0 - T, x1 + T, z1 + T * 0.5, y0, h, front_holes, "LoftFrontWall")
+	for side in [-1.0, 1.0]:
+		_holed_wall(false, z0, z1, mid.x + side * (r.size.x * 0.5 + T * 0.5), y0, h, side_holes, "LoftSideWall")
 	_wall(Vector3(mid.x, y0 + h + 0.1, mid.y), Vector3(r.size.x + T * 2.0 + 0.4, 0.2, r.size.y + T * 2.0 + 0.4), ws._mats["roof"]).name = "LoftRoof"
 	_faces(true, x0, x1, z0 + 0.01, h, y0)
-	_faces(false, z0, z1, x0 + 0.01, h, y0)
-	_faces(false, z0, z1, x1 - 0.01, h, y0)
-	for seg in Workshop._wall_runs(x0, x1, dx, dh):
-		_faces(true, float(seg[0]) - float(seg[1]) * 0.5, float(seg[0]) + float(seg[1]) * 0.5, z1 - 0.01, h, y0)
-	_box(Vector3(dx, y0 + (h + door_h) * 0.5, z1 - 0.01), Vector3(dh * 2.0, h - door_h, 0.02), ws._mats["wall_in"])
+	_holed_faces(false, z0, z1, x0 + 0.01, y0, h, side_holes)
+	_holed_faces(false, z0, z1, x1 - 0.01, y0, h, side_holes)
+	_holed_faces(true, x0, x1, z1 - 0.01, y0, h, front_holes)
 	_door_frame(dx, dh, door_h, z1 + T * 0.5, T, y0)
 	var ceiling := ws._material(Color(0.86, 0.85, 0.82), 0.0, 0.8)
 	_box(Vector3(mid.x, y0 + h - 0.01, mid.y), Vector3(r.size.x, 0.02, r.size.y), ceiling)
-	# Windows: glazing with frames, inside and out, along the front and the sides.
-	var glaze := ws._material(Color(0.25, 0.38, 0.5), 0.6, 0.08)
-	for wx in [-4.4, -1.6, 1.2]:
-		_window(Vector3(wx, y0 + 1.5, z1), true, glaze)
+	# Windows: clear glazing in the openings, with frames inside and out.
+	var glaze := ws._material(Color(0.7, 0.82, 0.9, 0.18), 0.1, 0.03)
+	glaze.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glaze.cull_mode = BaseMaterial3D.CULL_DISABLED
+	for wx in LOFT_FRONT_WINDOWS:
+		_window(Vector3(wx, y0 + LOFT_WIN_Y, z1), true, glaze)
 	for side in [-1.0, 1.0]:
-		for wz in [62.4, 67.6]:
-			_window(Vector3(mid.x + side * (r.size.x * 0.5), y0 + 1.5, wz), false, glaze)
+		for wz in LOFT_SIDE_WINDOWS:
+			_window(Vector3(mid.x + side * (r.size.x * 0.5), y0 + LOFT_WIN_Y, wz), false, glaze)
 	# Lights on the shed's switch: a pendant over the pool table, ceiling panels, the lamp.
 	var fixture := _shed_fixture()
 	for at in [Vector3(-3.6, 0.0, 62.6), Vector3(-3.6, 0.0, 67.4)]:
@@ -578,19 +592,71 @@ func _build_loft() -> void:
 ## A window in a wall of the lounge: `at` is the middle of the wall's inside face line (z for the
 ## front wall `along_x`, x for a side wall), glazed with a frame on both faces.
 func _window(at: Vector3, along_x: bool, glaze: Material) -> void:
-	var w := 1.8
-	var wh := 1.1
+	var w := LOFT_WIN_W
+	var wh := LOFT_WIN_H
+	var mid_wall := at + (Vector3(0.0, 0.0, T * 0.5) if along_x else Vector3(signf(at.x - GarageUpgrades.LOFT.get_center().x) * T * 0.5, 0.0, 0.0))
+	var pane := _box(mid_wall, Vector3(w, wh, 0.01) if along_x else Vector3(0.01, wh, w), glaze)
+	pane.name = "LoftWindowGlass"
+	pane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for face in [-1.0, 1.0]:
 		var off: float = face * (T * 0.5 + 0.012)
 		var c := at + (Vector3(0.0, 0.0, T * 0.5 + off) if along_x else Vector3(signf(at.x - GarageUpgrades.LOFT.get_center().x) * T * 0.5 + off, 0.0, 0.0))
-		var size := Vector3(w, wh, 0.01) if along_x else Vector3(0.01, wh, w)
-		_box(c, size, glaze)
 		var bar := Vector3(w + 0.1, 0.06, 0.03) if along_x else Vector3(0.03, 0.06, w + 0.1)
 		var post := Vector3(0.06, wh, 0.03) if along_x else Vector3(0.03, wh, 0.06)
 		for s in [-1.0, 1.0]:
 			_box(c + Vector3(0.0, s * wh * 0.5, 0.0), bar, ws._mats["dark"])
 			_box(c + (Vector3(s * w * 0.5, 0.0, 0.0) if along_x else Vector3(0.0, 0.0, s * w * 0.5)), post, ws._mats["dark"])
 		_box(c, post, ws._mats["dark"])
+
+
+## A wall along x (`along_x`, at z = `at`) or along z (at x = `at`) from `a` to `b`, `h` high on a
+## floor at `y0`, with openings `holes`: [middle, half width, bottom, top] above the floor.
+func _holed_wall(along_x: bool, a: float, b: float, at: float, y0: float, h: float, holes: Array, label := "") -> void:
+	for piece in _wall_pieces(a, b, h, holes):
+		var mid := (float(piece[0]) + float(piece[1])) * 0.5
+		var len := float(piece[1]) - float(piece[0])
+		var y := y0 + (float(piece[2]) + float(piece[3])) * 0.5
+		var tall := float(piece[3]) - float(piece[2])
+		var w := _wall(Vector3(mid, y, at) if along_x else Vector3(at, y, mid), Vector3(len, tall, T) if along_x else Vector3(T, tall, len))
+		if label != "":
+			w.name = label
+
+
+## The inside lining of a holed wall: the darker band low down and the paint above it.
+func _holed_faces(along_x: bool, a: float, b: float, at: float, y0: float, h: float, holes: Array) -> void:
+	for piece in _wall_pieces(a, b, h, holes):
+		var mid := (float(piece[0]) + float(piece[1])) * 0.5
+		var len := float(piece[1]) - float(piece[0])
+		for band in [[0.0, 1.2, "wall_low"], [1.2, h, "wall_in"]]:
+			var lo := maxf(float(piece[2]), float(band[0]))
+			var hi := minf(float(piece[3]), float(band[1]))
+			if hi - lo < 0.005:
+				continue
+			var y := y0 + (lo + hi) * 0.5
+			_box(Vector3(mid, y, at) if along_x else Vector3(at, y, mid),
+				Vector3(len, hi - lo, 0.02) if along_x else Vector3(0.02, hi - lo, len), ws._mats[str(band[2])])
+
+
+## The solid pieces of a wall from `a` to `b` and 0 to `h` high round its openings, as
+## [from, to, bottom, top]: full height between openings, and a sill and a head over each.
+static func _wall_pieces(a: float, b: float, h: float, holes: Array) -> Array:
+	var cuts := holes.filter(func(o): return float(o[0]) + float(o[1]) > a and float(o[0]) - float(o[1]) < b)
+	cuts.sort_custom(func(p, q): return float(p[0]) < float(q[0]))
+	var out := []
+	var x := a
+	for o in cuts:
+		var lo := maxf(float(o[0]) - float(o[1]), a)
+		var hi := minf(float(o[0]) + float(o[1]), b)
+		if lo > x + 0.001:
+			out.append([x, lo, 0.0, h])
+		if float(o[2]) > 0.001:
+			out.append([lo, hi, 0.0, float(o[2])])
+		if float(o[3]) < h - 0.001:
+			out.append([lo, hi, float(o[3]), h])
+		x = hi
+	if b > x + 0.001:
+		out.append([x, b, 0.0, h])
+	return out
 
 
 ## The lounge's furniture, on its floor at `y0`.
@@ -760,8 +826,16 @@ func _build_loft_stairs() -> void:
 		_rail(Vector3(sx.x, 0.0, z), Vector3(sx.y, top, z))
 	_rail(Vector3(sx.y, top, sz.y - 0.03), Vector3(GarageUpgrades.LOFT_LANDING_X, top, sz.y - 0.03))
 	_rail(Vector3(GarageUpgrades.LOFT_LANDING_X + 0.03, top, sz.y), Vector3(GarageUpgrades.LOFT_LANDING_X + 0.03, top, front))
-	_text("CREW LOUNGE", Vector3(GarageUpgrades.LOFT_DOOR_X, top + GarageUpgrades.LOFT_DOOR_HEIGHT + 0.3, front + 0.02), 0.0, 44, Color(0.08, 0.08, 0.08), 0).name = "LoungeSign"
-	var up := _text("UP TO THE\nCREW LOUNGE", Vector3(sx.x + 0.35, 1.3, sz.x + 0.05), 0.0, 28, Color(0.95, 0.8, 0.2), 4)
+	# The name over the door, on a board fixed flat to the lounge's front wall (not out over the landing).
+	var wall_face := GarageUpgrades.LOFT.end.y + T
+	var sign_y := top + GarageUpgrades.LOFT_DOOR_HEIGHT + 0.3
+	_box(Vector3(GarageUpgrades.LOFT_DOOR_X, sign_y, wall_face + 0.01), Vector3(1.5, 0.32, 0.02), _mats["hazard"]).name = "LoungeSignBoard"
+	_text("CREW LOUNGE", Vector3(GarageUpgrades.LOFT_DOOR_X, sign_y, wall_face + 0.025), 0.0, 44, Color(0.08, 0.08, 0.08), 0).name = "LoungeSign"
+	# And at the foot of the stairs, on a post beside them, facing the yard.
+	var post_at := Vector3(sx.x + 0.3, 0.0, sz.y + 0.35)
+	ws._solid(post_at + Vector3(0.0, 0.75, 0.0), Vector3(0.08, 1.5, 0.08), _mats["hazard"], _root).name = "LoungeStairsPost"
+	_box(post_at + Vector3(0.0, 1.3, 0.05), Vector3(1.1, 0.42, 0.03), ws._mats["dark"]).name = "LoungeStairsBoard"
+	var up := _text("UP TO THE\nCREW LOUNGE", post_at + Vector3(0.0, 1.3, 0.07), 0.0, 28, Color(0.95, 0.8, 0.2), 4)
 	up.name = "LoungeStairsSign"
 	var lamp := OmniLight3D.new()
 	lamp.position = Vector3(GarageUpgrades.LOFT_DOOR_X, top + GarageUpgrades.LOFT_DOOR_HEIGHT + 0.2, front + 0.5)

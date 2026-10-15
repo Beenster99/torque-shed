@@ -48,6 +48,9 @@ var _elev := 0.0          # smoothed angle above the bike
 var _by_pos := Vector3.ZERO
 var _by_left := 0.0
 var _by_return := Mode.CHASE
+## Fly-by as a view of its own (picked with the view toggle): when the bike has gone past, the
+## camera hops on to a new spot ahead instead of going back.
+var fly_by := false
 
 
 func _ready() -> void:
@@ -56,14 +59,24 @@ func _ready() -> void:
 	fov = 70.0 + Graphics.fov_offset()
 
 
+## The view toggle: third person, then first person, then fly-by, then round again. A one-off
+## ride-by (V) ends back on the view it came from.
 func cycle_mode() -> void:
 	if mode == Mode.RIDE_BY:
-		set_mode(_by_return)
+		set_mode(Mode.CHASE if fly_by else _by_return)
 		return
-	set_mode(Mode.HELMET if mode == Mode.CHASE else Mode.CHASE)
+	set_mode(Mode.HELMET if mode == Mode.CHASE else Mode.RIDE_BY)
 
 
 func set_mode(new_mode: Mode) -> void:
+	if new_mode == Mode.RIDE_BY:
+		fly_by = true
+		_by_return = Mode.CHASE
+		mode = Mode.CHASE
+		start_ride_by()
+		if mode == Mode.RIDE_BY:
+			return
+	fly_by = false
 	mode = new_mode
 	_initialized = false
 	orbit_yaw = 0.0
@@ -108,6 +121,14 @@ func start_ride_by() -> void:
 	if mode == Mode.RIDE_BY:
 		set_mode(_by_return)
 		return
+	_place_ride_by()
+	_by_return = mode if mode in [Mode.CHASE, Mode.HELMET] else Mode.CHASE
+	mode = Mode.RIDE_BY
+	_set_helmet_hidden(false)
+
+
+## Picks the roadside spot ahead of the bike and how long to stay there.
+func _place_ride_by() -> void:
 	var t := target.global_transform
 	var flat := _flat_forward(t)
 	var right := flat.cross(Vector3.UP)
@@ -133,9 +154,6 @@ func start_ride_by() -> void:
 		spot = hit["position"] + (from - spot).normalized() * 0.4
 	_by_pos = spot
 	_by_left = clampf(ahead / maxf(speed, 1.0) + 2.0, RIDE_BY_MIN, RIDE_BY_MAX)
-	_by_return = mode if mode in [Mode.CHASE, Mode.HELMET] else Mode.CHASE
-	mode = Mode.RIDE_BY
-	_set_helmet_hidden(false)
 
 
 ## Seconds the ride-by view has left (0 when it isn't on).
@@ -240,7 +258,10 @@ func _ride_by(delta: float) -> void:
 		set_mode(_by_return)
 		return
 	_by_left -= delta
-	if _by_left <= 0.0:
+	# On the fly-by view, hop on ahead once the bike is past and pulling away (or time's up).
+	if fly_by and (_by_left <= 0.0 or _gone_past()):
+		_place_ride_by()
+	elif _by_left <= 0.0:
 		set_mode(_by_return)
 		snap()
 		return
@@ -250,6 +271,13 @@ func _ride_by(delta: float) -> void:
 		look_at(aim, Vector3.UP)
 	var d := global_position.distance_to(aim)
 	fov = clampf(70.0 - d * 0.6, 35.0, 65.0) + Graphics.fov_offset() * 0.5
+
+
+## Whether the bike has ridden past the fly-by camera and is a fair way off.
+func _gone_past() -> bool:
+	var to_cam := _by_pos - target.global_position
+	to_cam.y = 0.0
+	return to_cam.dot(_flat_forward(target.global_transform)) < 0.0 and to_cam.length() > 25.0
 
 
 func _orbit(delta: float) -> void:

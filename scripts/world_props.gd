@@ -239,13 +239,67 @@ static func _fence_line(p: Dictionary, t: WorldTerrain, r: WorldRoads, taken: Di
 		var p0 := a.lerp(b, float(k) / steps)
 		var p1 := a.lerp(b, float(k + 1) / steps)
 		var m := (p0 + p1) * 0.5
-		var near := r.nearest(m.x, m.y, 20.0)
-		if not near.is_empty() and float(near["d"]) < float(r.roads[int(near["road"])]["hw"]) + 9.0:
+		# Clear of every road and track along the whole panel, not just at its middle.
+		var crosses := false
+		for q in [p0, m, p1, p0.lerp(p1, 0.25), p0.lerp(p1, 0.75)]:
+			var near := r.nearest(q.x, q.y, 20.0)
+			if not near.is_empty() and float(near["d"]) < float(r.roads[int(near["road"])]["hw"]) + 6.0:
+				crosses = true
+				break
+		if crosses or _segment_crosses_road(r, p0, p1):
 			continue
 		if _is_taken(taken, m.x, m.y) or t.slope_at(m.x, m.y) > 0.3 or WorldTerrain.home_mask(m.x, m.y) < 0.5:
 			continue
 		p["fences"].append([Vector3(p0.x, t.height_at(p0.x, p0.y), p0.y), Vector3(p1.x, t.height_at(p1.x, p1.y), p1.y)])
 		_take(taken, m, Vector2(2.0, 2.0), 0.0, 0.0)
+
+
+## How many barrier samples (4 m each) of gap get filled in between two stretches of armco, and
+## how far each stretch carries on past where it's needed.
+const BARRIER_GAP_FILL := 5
+const BARRIER_RUN_ON := 1
+
+
+## `wants` with gaps of up to `fill` false entries between two trues made true, and each run
+## of trues carried on `run_on` entries at both ends.
+static func _join_runs(wants: Array, fill: int, run_on: int) -> Array:
+	var out := wants.duplicate()
+	var n := wants.size()
+	var last := -1
+	for i in n:
+		if wants[i]:
+			if last >= 0 and i - last - 1 <= fill:
+				for j in range(last + 1, i):
+					out[j] = true
+			last = i
+	var grown := out.duplicate()
+	for i in n:
+		if out[i]:
+			for j in range(maxi(0, i - run_on), mini(n, i + run_on + 1)):
+				grown[j] = true
+	return grown
+
+
+## Whether (x, z) is on (or within `margin` of) a road other than `road`.
+static func _on_other_road(r: WorldRoads, road: Dictionary, x: float, z: float, margin: float) -> bool:
+	var near := r.nearest(x, z, 30.0, "", r.roads.find(road))
+	return not near.is_empty() and float(near["d"]) < float(r.roads[int(near["road"])]["hw"]) + margin
+
+
+## Whether the line p0..p1 crosses any road's centre line.
+static func _segment_crosses_road(r: WorldRoads, p0: Vector2, p1: Vector2) -> bool:
+	var m := (p0 + p1) * 0.5
+	var near := r.nearest(m.x, m.y, p0.distance_to(p1) + 8.0)
+	if near.is_empty():
+		return false
+	var road: Dictionary = r.roads[int(near["road"])]
+	var xz: PackedVector2Array = road["xz"]
+	var i0 := maxi(int(near["i"]) - 12, 0)
+	var i1 := mini(int(near["i"]) + 12, xz.size() - 1)
+	for i in range(i0, i1):
+		if Geometry2D.segment_intersects_segment(p0, p1, xz[i], xz[i + 1]) != null:
+			return true
+	return false
 
 
 ## Armco along tarmac where the ground drops away beside the road or round the outside of a
@@ -263,7 +317,8 @@ static func _plan_barriers(p: Dictionary, t: WorldTerrain, r: WorldRoads) -> voi
 		var skip_b: float = float(road.get("end_skip", 0.0)) + 6.0
 		var dist: PackedFloat32Array = road["dist"]
 		for side: float in [-1.0, 1.0]:
-			var run := []
+			# Which samples want a barrier: a drop beside the road, or the outside of a bend.
+			var wants := []
 			for i in range(0, n, 2):
 				var want := false
 				if dist[i] > skip_a and dist[i] < float(road["length"]) - skip_b:
@@ -277,13 +332,27 @@ static func _plan_barriers(p: Dictionary, t: WorldTerrain, r: WorldRoads) -> voi
 						turn = (before.x * after.y - before.y * after.x) / (6.0 * WorldRoads.STEP)
 					var outside := turn * side < 0.0 and absf(turn) > 1.0 / 30.0
 					want = drop > 4.0 or outside
+				wants.append(want)
+			# Short breaks between two stretches are filled in, and each stretch runs on a little
+			# past its ends, so the barrier is one continuous rail rather than bits.
+			wants = _join_runs(wants, BARRIER_GAP_FILL, BARRIER_RUN_ON)
+			var run := []
+			for k in wants.size():
+				var i: int = k * 2
+				var want: bool = wants[k]
+				var at := Vector3.ZERO
 				if want:
 					var right2 := Vector3(-dirs[i].y, 0.0, dirs[i].x) * side
-					run.append(Vector3(xz[i].x, hs[i], xz[i].y) + right2 * (hw + 0.9))
-				if not want or i + 2 >= n:
+					at = Vector3(xz[i].x, hs[i], xz[i].y) + right2 * (hw + 0.9)
+					# Never across another road (at a junction): the barrier stops short of it.
+					if _on_other_road(r, road, at.x, at.z, 1.5):
+						want = false
+				if want:
+					run.append(at)
+				if not want or k == wants.size() - 1:
 					if run.size() >= 3:
-						for k in run.size() - 1:
-							p["armco"].append([run[k], run[k + 1]])
+						for j in run.size() - 1:
+							p["armco"].append([run[j], run[j + 1]])
 					run = []
 		# Chevrons: where a hairpin starts, on the outside, facing oncoming traffic both ways.
 		var i := 6
@@ -670,7 +739,7 @@ func _build_armco(segs: Array) -> void:
 		var yaw := atan2(flat.x, flat.y)
 		var tilt := atan2(b.y - a.y, flat.length())
 		var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -tilt)
-		rails.append(Transform3D(basis.scaled(Vector3(1.0, 1.0, length + 0.1)), (a + b) * 0.5 + Vector3.UP * 0.55))
+		rails.append(Transform3D(basis.scaled(Vector3(1.0, 1.0, length + 0.35)), (a + b) * 0.5 + Vector3.UP * 0.55))   # overlapping, so a bend has no gaps
 		posts.append(Transform3D(Basis(Vector3.UP, yaw), a))
 		var shape := BoxShape3D.new()
 		shape.size = Vector3(0.25, 0.9, length + 0.1)

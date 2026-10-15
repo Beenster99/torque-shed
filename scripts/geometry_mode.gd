@@ -140,6 +140,7 @@ func open(id: int, ws: Workshop, back: Camera3D) -> bool:
 		return false
 	workshop = ws
 	bike_id = id
+	ws.editing_bike = id
 	_back_camera = back
 	saved = GeoGizmo.sanitize(Shed.geometry_of(id)).duplicate(true)
 	draft = saved.duplicate(true)
@@ -209,6 +210,8 @@ func close() -> void:
 	if _back_camera and is_instance_valid(_back_camera):
 		_back_camera.current = true
 	_model = null
+	if workshop and is_instance_valid(workshop):
+		workshop.editing_bike = 0
 	closed.emit()
 
 

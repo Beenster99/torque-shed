@@ -47,7 +47,7 @@ func _ready() -> void:
 
 	_box.add_child(UITheme.title("Money over time", 20))
 	var range_row := _row()
-	range_row.add_child(UITheme.label("Show it by", 15))
+	range_row.add_child(_row_label("Show it by"))
 	var group := ButtonGroup.new()
 	for key in MoneyGraph.ORDER:
 		var k: String = key
@@ -57,7 +57,10 @@ func _ready() -> void:
 		b.button_pressed = k == Settings.money_graph_range
 		_graph_buttons[k] = b
 		range_row.add_child(b)
-	var graphs := _row()
+	# The two graphs one above the other, each the full width of the tab.
+	var graphs := VBoxContainer.new()
+	graphs.add_theme_constant_override("separation", 8)
+	_box.add_child(graphs)
 	_graph_mine = MoneyGraph.View.new()
 	graphs.add_child(_graph_mine)
 	_graph_garage = MoneyGraph.View.new()
@@ -89,7 +92,7 @@ func _ready() -> void:
 	_settings_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
 	_box.add_child(_settings_note)
 	var cut_row := _row()
-	cut_row.add_child(UITheme.label("The business's cut of every wage", 15))
+	cut_row.add_child(_row_label("The business's cut of every wage"))
 	_cut = SpinBox.new()
 	_cut.min_value = 0
 	_cut.max_value = 100
@@ -100,7 +103,7 @@ func _ready() -> void:
 			Shed.request({"a": "money_settings", "cut": int(v)}))
 	cut_row.add_child(_cut)
 	var owner_row := _row()
-	owner_row.add_child(UITheme.label("Garage owner", 15))
+	owner_row.add_child(_row_label("Garage owner"))
 	_owner = OptionButton.new()
 	_owner.custom_minimum_size.x = 220.0
 	_owner.item_selected.connect(func(i):
@@ -213,9 +216,11 @@ func refresh() -> void:
 	for loan in bank["loans"]:
 		var row := _row(_loans)
 		var missed := int(loan["missed"])
-		row.add_child(UITheme.label("%s borrowed: %s still owed, %s a day%s" % [TvChannels.money_text(int(loan["amount"])),
+		var loan_text := UITheme.label("%s borrowed: %s still owed, %s a day%s" % [TvChannels.money_text(int(loan["amount"])),
 			TvChannels.money_text(int(loan["owed"])), TvChannels.money_text(int(loan["daily"])),
-			("  (%d missed)" % missed) if missed > 0 else ""], 15, Color(1, 0.55, 0.45) if missed > 0 else Color(0.85, 0.87, 0.9)))
+			("  (%d missed)" % missed) if missed > 0 else ""], 15, Color(1, 0.55, 0.45) if missed > 0 else Color(0.85, 0.87, 0.9))
+		loan_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL   # wraps across the row, not into a column
+		row.add_child(loan_text)
 		var id := int(loan["id"])
 		var part := mini(1000, int(loan["owed"]))
 		var pay := _button("Pay %s" % TvChannels.money_text(part), func(): repay(id, part))
@@ -309,6 +314,14 @@ func _row(parent: Control = null) -> HBoxContainer:
 	row.add_theme_constant_override("separation", 10)
 	(parent if parent else _box).add_child(row)
 	return row
+
+
+## A label for the start of a row: one line, never squeezed into a column of letters.
+func _row_label(text: String) -> Label:
+	var l := UITheme.label(text, 15)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	return l
 
 
 func _amount_box() -> SpinBox:

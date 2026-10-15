@@ -183,6 +183,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("rotate_free"):
 		get_viewport().set_input_as_handled()
 		toggle_free_rotate()
+	elif event.is_action_pressed("act") and target.get("kind", "") == "desk_bell":
+		# A click on the reception bell dings it, whatever's in your hand.
+		get_viewport().set_input_as_handled()
+		Shed.ding_desk_bell()
 	elif event.is_action_pressed("scrap") and not scrap_armed.is_empty():
 		get_viewport().set_input_as_handled()
 		confirm_scrap()
@@ -288,6 +292,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif target.get("kind", "") == "sales_pc":
 			get_viewport().set_input_as_handled()
 			sales_requested.emit()
+		elif target.get("kind", "") == "desk_bell":
+			get_viewport().set_input_as_handled()
+			Shed.ding_desk_bell()
 		elif target.get("kind", "") == "radio":
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "radio", "on": not Shed.radio["on"]})
@@ -552,6 +559,8 @@ func _update_target() -> void:
 			t = {"kind": "dyno"}
 		elif c.has_meta("sales_pc"):
 			t = {"kind": "sales_pc"}
+		elif c.has_meta("desk_bell"):
+			t = {"kind": "desk_bell"}
 		elif c.has_meta("screen"):
 			t = {"kind": "screen", "screen": str(c.get_meta("screen"))}
 		elif c.has_meta("bin"):
@@ -1184,7 +1193,7 @@ func _make_plan() -> Dictionary:
 	var p := {}
 	if kind == "label":
 		return {"action": {"a": "write_label"}, "time": 0.15, "verb": "write a label for these shelves", "blocked": ""}
-	if kind in ["furniture", "door", "lights", "board", "screen", "lift"]:
+	if kind in ["furniture", "door", "lights", "board", "screen", "lift", "desk_bell"]:
 		return {}
 	if kind == "radio":
 		if Shed.stations.is_empty():
@@ -1618,6 +1627,9 @@ func _describe() -> String:
 			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")
 		"dyno_kit":
 			lines.append_array(DynoRoom.describe(target, Shed.me()))
+		"desk_bell":
+			lines.append("Reception bell")
+			lines.append("Click or F: ding it")
 		"sales_pc":
 			lines.append("Sales PC")
 			lines.append("F: price the bikes on the showroom stands, answer buyers' offers and part-exchanges.")

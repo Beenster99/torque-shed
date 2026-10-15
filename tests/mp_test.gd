@@ -205,6 +205,14 @@ func _ready() -> void:
 		var tv_ok: bool = Shed.screen_channel("crew")["ch"] == "live"   # the client changed the crew board's channel
 		var lights_ok := not Shed.room_lit("paint")   # the client switched the paint shop lights off
 		var geo_ok := ranger != 0 and Shed.geometry_of(ranger).has("tank")
+		# And the bike in this side's shed is drawn with it straight away.
+		if geo_ok and main.workshop:
+			var gm: BikeModel = main.workshop.bike_model(ranger)
+			var tank_at := gm.geo_xform("tank").origin - gm.geo_pivot("tank") if gm else Vector3.ZERO
+			var gnode: Node3D = gm.find_child("Geo_tank", true, false) if gm else null
+			geo_ok = gm != null and gm.geometry.has("tank") and absf(tank_at.y - 0.05) < 0.005 and gnode != null and absf(gnode.transform.origin.y - 0.05) < 0.005
+			if not geo_ok and Engine.get_process_frames() % 120 == 0:
+				print("MP %s geo waiting: model %s tank offset %s node %s" % [role, gm != null, tank_at, gnode.transform.origin if gnode else "none"])
 		# Weather: the host holds it at fog and the client's sky follows.
 		if role == "host" and Weather.current and Weather.current.state != "fog":
 			Settings.weather = "fog"

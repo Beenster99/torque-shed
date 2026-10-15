@@ -17,7 +17,6 @@ const ROLLING_RESISTANCE := 0.015
 const LONG_SLIP_SPEED := 3.0      # m/s: slip ratios are taken against at least this speed, so a crawl stays calm
 const LAT_SLIP_SPEED := 2.5       # and slip angles against at least this one
 const RELAX_SPEED := 4.0          # grip builds over the relaxation length, timed at no less than this speed
-const MAX_BAR_TORQUE := 26.0      # Nm: the most a rider pushes through the bars in Direct bars mode
 const STEER_LOCK := deg_to_rad(38.0)
 const STEER_DAMPING := 2.5        # Nm per rad/s: the bearings, the tyre scrubbing and the rider's arms
 const CRASH_LEAN := deg_to_rad(78.0)
@@ -52,9 +51,6 @@ var auto_shift := true
 ## throw you off), 0.5 and up the rider protects the front tyre and smooths the throttle, 1 also
 ## balances the bike for you. Kept as "assist" for the settings file and tests.
 var assist := 0.5
-## Direct bars: the steer input is torque on the handlebars (push the right grip to lean right)
-## instead of a lean the virtual rider steers for.
-var direct_bars := false
 ## Records the ride for the telemetry overlay and the dyno desk; only the local player's bike has one.
 var telemetry: RideTelemetry
 var controls_enabled := true
@@ -68,7 +64,6 @@ var gear := 1
 var rpm := 1000.0
 var steer := 0.0            # radians, + bars turned right
 var steer_vel := 0.0        # how fast the bars are turning, rad/s
-var bar_torque := 0.0       # Nm the rider is putting through the bars, + towards turning them right
 var speed := 0.0           # forward speed, m/s
 var lean_angle := 0.0      # radians, positive = leaning right
 var lean_rate := 0.0
@@ -215,7 +210,6 @@ func place(pos: Vector3, heading: float) -> void:
 	angular_velocity = Vector3.ZERO
 	steer = 0.0
 	steer_vel = 0.0
-	bar_torque = 0.0
 	gear = 1
 	rpm = build.idle_rpm
 	for w in wheels:
@@ -391,10 +385,6 @@ func _max_steer() -> float:
 ## then hold the steady-turn steering angle for the current lean and speed.
 func _update_steering(delta: float) -> void:
 	var v := absf(speed)
-	if direct_bars:
-		_steer_by_bars(delta, v)
-		return
-	bar_torque = 0.0
 	var before := steer
 	var target := _target_lean()
 	var cmd: float
@@ -408,37 +398,6 @@ func _update_steering(delta: float) -> void:
 		cmd = steer_eq - 0.22 * gain * err + 0.06 * gain * lean_rate
 	cmd = clampf(cmd, -_max_steer(), _max_steer())
 	steer = move_toward(steer, cmd, build.steer_rate * delta)
-	steer_vel = (steer - before) / delta
-
-
-## Direct bars: the steer input is torque on the bars, and the front end steers itself as a real
-## one does. Push the right grip (steer right) and the bars turn left for a moment, which leans
-## the bike right; the trail then swings the front into the lean and the bike turns. The front
-## settles where its side force holds the lean up (trail against the load), the spinning wheel
-## steers it into a fall (gyroscopic precession), and the head bearing and the rider's arms damp it.
-## At walking pace the feet are down and the bars just point where the rider turns them.
-func _steer_by_bars(delta: float, v: float) -> void:
-	var riding := clampf((v - 2.0) / 2.5, 0.0, 1.0)   # 0 feet down .. 1 riding
-	var front: Dictionary = wheels[0]
-	bar_torque = -lean_input * MAX_BAR_TORQUE * riding
-	var torque := bar_torque
-	var k := 0.0
-	if front["contact"]:
-		var fz: float = front["load"]
-		var cam: float = front["camber"]
-		# The front's side force against what its load needs to hold the lean, times the trail.
-		torque -= build.trail * (float(front["f_side"]) - fz * tan(clampf(cam, -1.3, 1.3)))
-		var tp: Dictionary = build.tyre_front
-		k = build.trail * float(front["mu"]) * fz * TyreModel.stiffness_at_zero(tp) / tan(float(tp["alpha_peak"])) \
-			* clampf(v / 6.0, 0.15, 1.0)
-	torque += build.front_inertia * float(front["omega"]) * lean_rate
-	var i_s := build.steer_inertia
-	var c := STEER_DAMPING + 0.8 * v   # more scrub and arm damping the faster it goes
-	var vel := (steer_vel + delta * torque / i_s) / (1.0 + delta * c / i_s + delta * delta * k / i_s)
-	var dyn := clampf(steer + vel * delta, -STEER_LOCK, STEER_LOCK)
-	var walk := move_toward(steer, lean_input * _max_steer(), build.steer_rate * delta)
-	var before := steer
-	steer = lerpf(walk, dyn, riding)
 	steer_vel = (steer - before) / delta
 
 
@@ -889,13 +848,6 @@ func _apply_rider_balance() -> void:
 		strength = 1.0
 	var err := _target_lean() - lean_angle
 	var tau := (22.0 * err - 4.0 * lean_rate) * mass * strength
-	if direct_bars:
-		# No lean to aim for: the bars do the balancing. Feet down at a crawl the rider holds the
-		# bike up; riding, their body only calms the roll a little (more with realism turned up).
-		var feet := 1.0 - clampf((absf(speed) - 2.0) / 2.5, 0.0, 1.0)
-		tau = (-22.0 * lean_angle * feet - (4.0 * feet + 0.8 * assist * (1.0 - feet)) * lean_rate) * mass
-		# Swinging the bars fast twists the spinning front wheel, which rolls the bike the other way.
-		tau -= build.front_inertia * float(wheels[0]["omega"]) * steer_vel
 	if build.has_aid("stability") and any_contact:
 		# Stability control calms a tank-slapper or a twitchy slide.
 		tau -= lean_rate * mass * 3.0 * build.ecu_aid
