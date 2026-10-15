@@ -307,7 +307,7 @@ func open() -> void:
 	_refresh_bank()
 	if upgrades_panel:
 		upgrades_panel.close()
-	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.free_delivery_xf() == null else "yes")
+	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.delivery_place(Vector3(0.25, 0.15, 0.25)).is_empty() else "yes")
 	if _kind == "eq:poster":
 		_show_kind(_kind)   # whiteboard prints made since it was last open
 	_focus_kind()

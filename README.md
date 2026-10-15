@@ -44,6 +44,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Roller door, shed lights (switches by the door); paint shop and storage room lights (switch inside each door) | F | Y |
 | Dyno room: its lights and the cooling fan (switches inside its door), put on or hang up the ear defenders | F | Y |
 | Sales office lights (switches by the foot of the stairs and at the top) | F | Y |
+| Raise or lower a bay's bike lift (bays 5 to 7: look at the yellow button post beside the bay) | F | Y |
 | Dyno room: strap the bike down (at each of the 4 posts), take the extraction hose off its hook and push it over the exhaust | Hold left mouse | Hold RT or A |
 | Sandblaster: put your hands in the gloves / step back | F | Y |
 | Sandblaster: blast where you aim / turn the engine | Hold left mouse / W A S D, or hold right mouse and move the mouse | Hold RT / left stick |
@@ -102,7 +103,7 @@ Hold **Ctrl** to snap (1 cm, 5 degrees, 5%), or tick "Always snap". **Z** undoes
 
 Changes are only for **that bike**: another bike with the same tank isn't touched. While you work they're a draft; **Save to this bike** keeps them (the host saves them with the shed, and everyone in co-op sees them, riding too). **Save + blueprint** saves them to the bike and also keeps the bike as a **blueprint** with the name you type: its parts, paint, each part's colour and finish, and your fit. Leaving with changes not saved asks whether to save or discard them. If you swap a part, the new one in that slot keeps the slot's fit. It's only looks: power, weight and handling don't change.
 
-**Building from a blueprint**: in the Esc menu press **Build from blueprint** (the **Blueprints** tab, where blueprints can also be renamed and deleted). Pick a blueprint and an empty bay, and a flickering blue **hologram** of the finished bike appears in that bay. The bay screen shows the checklist of every part it needs (fitted, on order or needed, with what the parts still needed cost). **Order missing parts** (in the Blueprints tab, or **Order blueprint parts** on the parts computer) delivers what's still needed in boxes outside the roller door, in the blueprint's colours, each paid for by the business (it stops when the money runs out); if the delivery area fills up, bring boxes in and order again. Then put the frame on the bay's stand as for any scratch build: the bike takes the blueprint's name, paint and fit. Each ghost part vanishes as the real one goes on, and when the last part is on the hologram is gone. A project bike is never delivered into a bay with a hologram in it. Cancel in the Blueprints tab takes a hologram away.
+**Building from a blueprint**: in the Esc menu press **Build from blueprint** (the **Blueprints** tab, where blueprints can also be renamed and deleted). Pick a blueprint and an empty bay, and a flickering blue **hologram** of the finished bike appears in that bay. The bay screen shows the checklist of every part it needs (fitted, on order or needed, with what the parts still needed cost). **Order missing parts** (in the Blueprints tab, or **Order blueprint parts** on the parts computer) delivers what's still needed in boxes to the delivery area outside the roller door, in the blueprint's colours, each paid for by the business (it stops when the money runs out). A whole bike's worth of parts fits in one go; if the delivery area and its racking ever fill up, bring boxes in and order again. Then put the frame on the bay's stand as for any scratch build: the bike takes the blueprint's name, paint and fit. Each ghost part vanishes as the real one goes on, and when the last part is on the hologram is gone. A project bike is never delivered into a bay with a hologram in it. Cancel in the Blueprints tab takes a hologram away.
 
 ### The sandblaster
 
@@ -110,7 +111,7 @@ A **sandblasting cabinet** (from the equipment page of the parts computer) strip
 
 While you work, a big readout shows a bar for the whole engine across the top and, down the side, each part with how much of it is bare and its **rust, dirt, wear and condition**, which change as you go (the crew sees them change too). When a part comes up bare there's a ding, a flash and "Bare metal!"; when the whole engine is done it says so, and you step back a moment later. Don't linger: blast one spot for too long and it goes dull and pitted, which wears the part. Press F to step back early: each part keeps what you've stripped off it, and pays XP like restoring on the grinder. One person at the gloves at a time; the crew sees the jet, the engine turning and the bare metal coming up.
 
-Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (paid for from the business's account), equipment or a new project bike (also paid for), and its **Sell** aisle sells loose parts and whole bikes (see Money). Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (four or five shelves that take parts anywhere on them), parts washers and repair machines (rated for 1 to 4 parts at full speed, some faster; see below), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters, TVs and the whiteboard hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
+Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (paid for from the business's account), equipment or a new project bike (also paid for), and its **Sell** aisle sells loose parts and whole bikes (see Money). Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (four or five shelves that take parts anywhere on them), parts washers and repair machines (rated for 1 to 4 parts at full speed, some faster; see below), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted delivery area outside the roller door (see Deliveries below): parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters, TVs and the whiteboard hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
 
 ### Placing equipment and parts
 
@@ -125,6 +126,8 @@ Filters and spark plugs can be changed with the engine in the frame. Everything 
 **Scrapping kit and parts**: anything the bins won't take, or that you just don't want, can be scrapped. Carry a piece of equipment (F) or hold a part, and hold Delete (D-pad down on a pad) for a second: the panel asks if you're sure, and pressing Delete again within a few seconds scraps it for good. Whatever was on a shelf or bench you scrap goes on the floor where it stood, and the parts bolted to an engine or the tyre on a wheel go on the floor in front of you. The shed's own kit (the spray bay, the tyre changer and the whiteboard) can't be scrapped.
 
 **The whiteboard can move**: press F on it to take it down and hang it on any wall, drawing and all. Where it hangs is kept with the shed; an older save has it in its usual place on the front wall.
+
+**Deliveries** go to the big painted delivery area in the yard, to the right of the roller door as you come out. Each part comes in a box sized to fit it (a spark plug in a little one, a frame in a long one), and the boxes are packed tight in rows from the front of the area, so a whole bike's worth of parts from a blueprint fits easily. When the floor is full, boxes go onto the orange **delivery racking** along the back of the area (four shelves on each of two units, with a hatched aisle in front to walk along), and after that small boxes are stacked on top of the ones on the floor, no more than about chest high. Pick up a box from the bottom of a stack and the ones on top drop down. Equipment you order is left on the floor of the area where there's room for it. The racking is fixed down there: it can't be moved or scrapped, but anything on it can be taken off like any shelf.
 
 **Delivery boxes** carry a shipping label from one of several made-up courier firms, with its logo, what's inside and a tracking number, on the lid (reading along the box's longer side) and on the front, so boxed stock on a shelf is easy to read. A box always comes from the same courier.
 
@@ -319,19 +322,25 @@ The garage's money (the **Garage money** channel on any screen) buys a bigger, s
 | Upgrade | Price | Needs | What you get |
 | --- | --- | --- | --- |
 | Workshop extension | £30,000 | | A new wing behind the paint shop, through a doorway knocked in the back wall behind bay 4 (bay 4's screen moves up over it). Lots of floor room for more kit |
-| Bays 5 and 6 | £20,000 | Extension | Two more work bays in the extension with lift plates, lights and their own screens. Project bikes, blueprint builds and scratch builds all use them |
-| Bay 7 | £12,500 | Bays 5 and 6 | A seventh bay at the far end |
-| Storage annex | £15,000 | | A tall storage building behind the storage room, through a wide doorway in its back wall. Lit from the storage room's switch |
+| Bays 5 and 6 | £20,000 | Extension | Two more work bays in the extension, each with a bike lift, a light and its own screen. Project bikes, blueprint builds and scratch builds all use them |
+| Bay 7 | £12,500 | Bays 5 and 6 | A seventh bay at the far end, with its own lift |
+| Storage annex | £15,000 | | A big, tall storage building (about 11 by 14 metres, 6 metres high) behind the storage room, through a wide doorway in its back wall. Lit from the storage room's switch |
 | Pallet racking | £4,500 | Annex | Three runs of heavy-duty racking in the annex: real shelving that takes parts and can be moved |
-| Mezzanine floor | £35,000 | Annex | A steel deck across the back of the annex, with stairs up the side, stacked with stock; room for the racking underneath |
+| Mezzanine floor | £35,000 | Annex | A steel deck across the back of the annex, with stairs up the east wall from a clear space at the bottom, stacked with stock; room for the racking underneath |
 | Painted epoxy floor | £3,500 | | A glossy charcoal flake floor |
 | LED lighting | £6,000 | | Brighter cool-white lights and an LED strip round the walls |
 | Wall cladding | £9,000 | | White wall panels over aluminium chequer plate with a red pinstripe |
 | Branded signage | £5,000 | | A lit sign box over the roller door and a neon TORQUE SHED inside |
-| Crew lounge | £22,000 | Extension | Leather sofa, coffee table, drinks fridge, arcade machine, rug, lamp and a neon sign in the extension |
+| Crew lounge | £22,000 | | A room of its own upstairs on top of the workshop, with windows, up a steel staircase outside along the front of the paint shop: leather sofa, coffee table, drinks fridge, pool table, arcade machine, rug, lamp and a neon sign |
 | Showroom finish | £250,000 | Epoxy, LED, cladding, lounge | A gloss black and white chequered floor, honeycomb LED ceilings and chrome trim |
 
-Upgrades are kept in the shed's save; older saves start with none. Everything is built behind the shed, away from the yard.
+Upgrades are kept in the shed's save; older saves start with none. Everything is built behind the shed, away from the yard, apart from the crew lounge on its roof.
+
+**Bike lifts**: bays 5, 6 and 7 each have a motorbike lift. Look at the yellow post beside the bay (it has a green and a red button) and press **F**: the platform rises smoothly on its scissor arms to about waist height, carrying the bike on its paddock stand, so you can work on it standing up. Press **F** again to bring it down. Everyone in the crew sees it go up and down, and a lift left up stays up in the save. A bike can't be wheeled off or ridden while its lift is up, and you can't wheel a bike onto a raised lift.
+
+**The crew lounge** is upstairs: walk round to the steel staircase that climbs the front of the paint shop (a sign at the bottom says UP TO THE CREW LOUNGE), up to the landing and in through the door. Its lights are on the shed's switch.
+
+**The storage annex mezzanine**: the stairs run up the annex's east wall, from a clear space at the bottom, onto the deck across the back.
 
 ### Weather
 
@@ -423,7 +432,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `data/parts.json` | Every part and its numbers, which feed the physics directly |
 | `scripts/shed_state.gd` | The shared shed: bikes, parts, who holds what. The host checks and applies every action |
 | `scripts/workshop.gd` | Builds the shed, the paint shop and storage room, its stations and dashboards, and draws parked bikes and loose parts |
-| `scripts/garage_upgrades.gd`, `workshop_upgrades.gd`, `upgrades_panel.gd` | Garage upgrades: the catalogue and rules, building them onto the shed, and the parts computer's Garage upgrades page |
+| `scripts/garage_upgrades.gd`, `workshop_upgrades.gd`, `upgrades_panel.gd` | Garage upgrades: the catalogue and rules, building them onto the shed (the extension bays and their bike lifts, the annex and its mezzanine, the crew lounge upstairs), and the parts computer's Garage upgrades page |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
 | `scripts/placement.gd` | Snapping equipment square and flush to walls and corners |
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |

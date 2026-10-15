@@ -160,10 +160,12 @@ static func rooms() -> Dictionary:
 
 
 ## Which room a point is in ("shed", "paint", "storage", "dyno", "sales", "sales_office"
-## upstairs in the sales office), or "" outside.
+## upstairs in the sales office, "lounge" upstairs on the shed), or "" outside.
 static func room_at(at: Vector3) -> String:
 	if SalesOffice.office_rect().has_point(Vector2(at.x, at.z)) and at.y > SalesOffice.MEZZ_Y - 0.3:
 		return "sales_office"
+	if Shed.upgrades.has("lounge") and GarageUpgrades.LOFT.has_point(Vector2(at.x, at.z)) and at.y > GarageUpgrades.LOFT_FLOOR - 0.3:
+		return "lounge"   # the crew lounge, upstairs on top of the shed
 	var all := rooms()
 	all.erase("sales_office")
 	for room in all:
@@ -1292,16 +1294,26 @@ func _build_computer() -> void:
 	_target(pos + Vector3(0.0, 1.0, 0.0), Vector3(0.8, 0.6, 1.3), {"pc": true})
 
 
-## Deliveries are left outside, to the side of the roller door: a painted bay on the yard.
+## Deliveries are left outside, to the side of the roller door: a painted bay on the yard (see
+## Shed.DELIVERY_AREA), boxes packed on its front part and the delivery racking (equipment the
+## shed comes with) along the back, with a hatched aisle in front of the racking.
 func _build_delivery_area() -> void:
 	var paint := _material(Color(0.85, 0.7, 0.2), 0.0, 0.8)
-	var c := CENTER + Vector3(3.2 + 1.5 * 0.85, 0.0, HALF.y + 1.3 + 0.9)
-	var w := 4.0 * 0.85 + 0.4
-	var d := 3.0 * 0.9 + 0.4
+	var area: Rect2 = Shed.DELIVERY_AREA
+	var c := Vector3(area.get_center().x, 0.0, area.get_center().y)
+	var w := area.size.x + 0.2
+	var d := area.size.y + 0.2
 	for side in [-1.0, 1.0]:
 		_deco(self, c + Vector3(side * w * 0.5, 0.005, 0.0), Vector3(0.08, 0.01, d), paint)
 		_deco(self, c + Vector3(0.0, 0.005, side * d * 0.5), Vector3(w, 0.01, 0.08), paint)
-	var mark := _label("DELIVERIES", c + Vector3(0.0, 0.012, d * 0.5 + 0.35), 0.0, 48, Color(0.85, 0.7, 0.2, 0.8))
+	# The aisle in front of the racking, kept clear: hatched.
+	var floor_end: float = Shed.DELIVERY_FLOOR.end.y + 0.05
+	_deco(self, Vector3(c.x, 0.005, floor_end), Vector3(w, 0.01, 0.06), paint)
+	var aisle := Shed.DELIVERY_RACK_XFS[0].origin.z - 0.35 - floor_end
+	for i in int(area.size.x / 0.6):
+		var stripe := _deco(self, Vector3(area.position.x + 0.3 + i * 0.6, 0.005, floor_end + aisle * 0.5), Vector3(0.06, 0.01, aisle * 1.2), paint)
+		stripe.rotation.y = 0.6
+	var mark := _label("DELIVERIES", Vector3(c.x, 0.012, area.position.y - 0.45), 0.0, 64, Color(0.85, 0.7, 0.2, 0.8))
 	mark.rotation = Vector3(-PI * 0.5, PI, 0.0)
 	mark.outline_size = 0
 

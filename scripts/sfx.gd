@@ -269,7 +269,7 @@ func step_surface(pos: Vector3) -> String:
 			return "tile"
 		"sales":
 			return "wood" if pos.y > 0.25 else "tile"
-		"sales_office":
+		"sales_office", "lounge":
 			return "carpet"
 	var ground := ground_at(pos)
 	var wet := Weather.current.wet if Weather.current else 0.0

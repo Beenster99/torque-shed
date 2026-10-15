@@ -170,7 +170,7 @@ func _build_stand() -> void:
 func _build_shelf() -> void:
 	var m := _m()
 	var size := _size()
-	var heavy := model == "shelf_racking"
+	var heavy := model in ["shelf_racking", "shelf_delivery"]
 	var frame: Material = _ws._material(Color(0.9, 0.45, 0.05), 0.5, 0.45) if heavy else _ws._material(Color(0.2, 0.32, 0.5), 0.6, 0.45)
 	var board: Material = _ws._material(Color(0.62, 0.6, 0.56), 0.5, 0.55)
 	var post := 0.06 if heavy else 0.04
