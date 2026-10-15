@@ -5,8 +5,9 @@ extends Node
 ## humming (fluorescents with a buzz, or the LED upgrade's faint whine) and ticking on when
 ## switched on, the air compressor in the back corner cycling on and off (sooner while the
 ## spray gun or the sandblaster is drawing air), the roof creaking now and then, the sales
-## office's sliding doors, and outside the wind, distant traffic, birds by day and crickets
-## at night, heard muffled from indoors.
+## office's sliding doors and its phone ringing as a customer calls ahead, and outside the
+## wind, distant traffic, birds by day (now and then, in short bursts, quietest at midday) and
+## crickets at night, heard muffled from indoors.
 
 ## The compressor's spot: the shed's back left corner, low down.
 const COMPRESSOR_POS := Workshop.CENTER + Vector3(-Workshop.HALF.x + 0.6, 0.5, -Workshop.HALF.y + 0.6)
@@ -15,6 +16,11 @@ const COMP_REST := Vector2(50.0, 120.0)
 const COMP_RUN := Vector2(10.0, 20.0)
 ## How much faster the tank empties (so the compressor comes on sooner) while air tools run.
 const AIR_DRAIN := 8.0
+## Birdsong comes in bursts this many seconds long, with gaps this long between them (longer
+## round midday, when birds are quietest), at this level (dB).
+const BIRD_BURST := Vector2(4.0, 10.0)
+const BIRD_GAP := Vector2(25.0, 70.0)
+const BIRD_DB := -16.0
 
 ## The shed this ambience belongs to.
 var workshop: Node3D
@@ -32,11 +38,19 @@ var _creak_timer := 20.0
 var _lit := {}
 var _door_amount := -1.0
 var _door_dir := 0
+## Birds: singing a burst now or not, and how long until that changes.
+var birds_singing := false
+var bird_timer := 0.0
+## Customers already known about, so only a new one rings the phone.
+var _customers_seen := {}
+var _customers_primed := false
+var _customer_check := 0.0
 
 
 func setup(shed: Node3D) -> void:
 	workshop = shed
 	_rng.randomize()
+	bird_timer = _rng.randf_range(5.0, 25.0)
 	_tone = _player("tone_shed", "SFX")
 	_hum = _player("hum_fluoro", "SFX")
 	_wind = _player("amb_out", "AmbOut")
@@ -85,12 +99,51 @@ func _process(delta: float) -> void:
 	var dark := Daylight.darkness()
 	var rain := Weather.current.rain if Weather.current else 0.0
 	_fade(_wind, 1.0, delta, -8.0)
-	_fade(_birds, (1.0 - dark) * (1.0 - rain * 0.85), delta, -10.0)
+	_fade(_birds, (1.0 - dark) * (1.0 - rain * 0.85) * _bird_burst(delta), delta, BIRD_DB)
 	_fade(_crickets, dark * (1.0 - rain * 0.7), delta, -14.0)
 	_muffle_outdoors(indoors, room, delta)
 	_compressor(delta)
 	_creaks(delta, room, kind)
 	_sliding_doors()
+	_watch_customers(delta)
+
+
+## How much the birds are singing now (0..1): an occasional burst, then a long quiet gap that
+## stretches round midday, when they sing less and more softly than at dawn and dusk.
+func _bird_burst(delta: float, hour := -1.0) -> float:
+	var h := Daylight.time_of_day() if hour < 0.0 else hour
+	var midday := clampf(1.0 - absf(h - 13.0) / 4.0, 0.0, 1.0)
+	bird_timer -= delta
+	if bird_timer <= 0.0:
+		birds_singing = not birds_singing
+		if birds_singing:
+			bird_timer = _rng.randf_range(BIRD_BURST.x, BIRD_BURST.y) * (1.0 - 0.3 * midday)
+		else:
+			bird_timer = _rng.randf_range(BIRD_GAP.x, BIRD_GAP.y) * (1.0 + 1.0 * midday)
+	return (1.0 - 0.4 * midday) if birds_singing else 0.0
+
+
+## A new customer rings the sales office phone as they set off to come in (one already there
+## when the shed loads doesn't).
+func _watch_customers(delta: float) -> void:
+	_customer_check -= delta
+	if _customer_check > 0.0:
+		return
+	_customer_check = 0.5
+	var now := Contracts.customers()
+	var fresh := false
+	for id in now:
+		if _customers_seen.has(id) or not _customers_primed:
+			continue
+		var c: Dictionary = now[id]
+		var since := (Contracts.clock() - float(c.get("arrived", Contracts.clock()))) / maxf(Contracts.hours_rate(), 0.000001)
+		fresh = fresh or since < 10.0
+	_customers_seen = {}
+	for id in now:
+		_customers_seen[id] = true
+	_customers_primed = true
+	if fresh:
+		Sfx.ring_phone(Contracts.reception().origin + Vector3.UP * 1.1)
 
 
 ## Whether `room`'s lights are on.

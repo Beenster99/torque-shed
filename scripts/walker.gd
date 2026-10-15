@@ -291,12 +291,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			var room := str(target.get("room", ""))
 			Shed.request({"a": "lights", "room": room, "on": not Shed.room_lit(room)})
-			Sfx.play_at("switch", camera.global_position, -4.0)
+			Sfx.play_at("light_switch", camera.global_position, -4.0)
 		elif target.get("kind", "") == "dyno_kit" and not DynoRoom.f_action(target).is_empty():
 			# The dyno room's light and fan switches, and the ear defenders on their hook.
 			get_viewport().set_input_as_handled()
 			Shed.request(DynoRoom.f_action(target))
-			Sfx.play_at("switch" if str(target.get("kit", "")) != "phones" else "pickup", camera.global_position, -4.0)
+			Sfx.play_at("light_switch" if str(target.get("kit", "")) != "phones" else "pickup", camera.global_position, -4.0)
 	else:
 		for i in TOOLS.size():
 			if event.is_action_pressed("tool_%d" % (i + 1)):

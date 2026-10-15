@@ -181,6 +181,8 @@ func _run_all() -> void:
 	print("Shed sound: variants, impacts by material, footsteps by floor, room acoustics, ambience")
 	await _test_shed_sound_variants()
 	await _test_shed_sound_session()
+	print("Recorded sounds: horns, phone, door chime, dyno fan, gear levers, light switches, birds")
+	await _test_recorded_sounds()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -6853,12 +6855,12 @@ func _test_sales_office_session() -> void:
 	for i in 6:
 		await get_tree().process_frame
 	check(Shed.bells_heard == before + 1 and heard[0] == 1, "the host rings the sales office bell")
-	var bell_s := Sfx.stream("bell")
-	var chime_s := Sfx.stream("bell_chime")
-	var players := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(p): return p.stream == bell_s or p.stream == chime_s)
+	var bell_s: Array = Sfx.sounds("bell")
+	var chime_s: Array = Sfx.sounds("bell_chime")
+	var players := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(p): return bell_s.has(p.stream) or chime_s.has(p.stream))
 	check(players.size() >= 2, "the shop bell rings over its door and the chime in the shed")
-	var chime := players.filter(func(p): return p.stream == chime_s)
-	check(not chime.is_empty() and Workshop.room_at((chime[0] as Node3D).global_position) == "shed", "the chime is in the shed")
+	var chime := players.filter(func(p): return chime_s.has(p.stream) and Workshop.room_at((p as Node3D).global_position) == "shed")
+	check(not chime.is_empty(), "the chime is in the shed")
 	check(absf((so.get_node("ShopBell") as Node3D).rotation.x) > 0.01, "and the bell over the door swings")
 	Shed.bell_rang.disconnect(on_bell)
 	main._leave()
@@ -8262,3 +8264,156 @@ func _scrolls_to_end(col: Control) -> bool:
 		return true
 	var vis := sc.get_global_rect()
 	return (kids[-1] as Control).get_global_rect().end.y <= vis.end.y + 1.0 and vis.end.y <= get_viewport().get_visible_rect().end.y + 1.0
+
+
+
+## Simon's recorded sounds: every file there and loading, loops looping, takes picked without
+## repeats, the made sounds kept as stand-ins, horns as parts that play their recordings (held,
+## once or repeating), the gear lever on shifts, the phone ringing for a new customer, and the
+## birds singing now and then rather than all the time.
+func _test_recorded_sounds() -> void:
+	var missing := []
+	var loops_ok := true
+	var total := 0
+	for sound in Sfx.RECORDED:
+		var rec: Array = Sfx.recordings(sound)
+		total += rec.size()
+		if rec.size() != (Sfx.RECORDED[sound] as Array).size():
+			missing.append(sound)
+		for s in rec:
+			if Sfx.LOOPS.has(sound) and not (s as AudioStreamOggVorbis).loop:
+				loops_ok = false
+			if (s as AudioStream).get_length() > 2.5 or (s as AudioStream).get_length() < 0.05:
+				missing.append("%s (%.2f s)" % [sound, (s as AudioStream).get_length()])
+	check(missing.is_empty(), "every recording is shipped and loads (%d takes) %s" % [total, str(missing)])
+	check(loops_ok, "the recorded loops (ratchet, sandblaster, dyno fan, roller door) loop")
+	var only_recorded := Sfx.RECORDED.keys().filter(func(k): return not str(k).begins_with("horn_") and not SfxSynth.all_sounds().has(k))
+	check(only_recorded.all(func(k): return Sfx.STAND_INS.has(k)), "a sound that's only ever recorded has a stand-in")
+	check(Sfx.sounds("ratchet") == Sfx.recordings("ratchet") and Sfx.variants("ratchet")[0] is AudioStreamWAV,
+		"the wrench plays the recordings, and the made ratchet is still there behind them")
+	check(Sfx.sounds("light_switch").size() == 4 and Sfx.sounds("bell").size() == 1 and Sfx.sounds("bell")[0] is AudioStreamWAV,
+		"the light switch has four takes; the brass bell stays synthesised")
+	var last: AudioStream = null
+	var repeats := 0
+	var seen := {}
+	for i in 60:
+		var s := Sfx.pick("ratchet")
+		repeats += 1 if s == last else 0
+		last = s
+		seen[s] = true
+	check(repeats == 0 and seen.size() == 4, "the wrench's takes never play twice running and all get used (%d)" % seen.size())
+	# A recorded loop on a machine.
+	var host := Node3D.new()
+	add_child(host)
+	var lp := Sfx.make_loop_player(host)
+	Sfx.set_loop(lp, "blast")
+	var first := lp.stream
+	check(lp.playing and Sfx.recordings("blast").has(first), "the sandblaster blasts with a recording")
+	Sfx.set_loop(lp, "blast")
+	check(lp.stream == first, "and keeps the same take while it runs")
+	Sfx.set_loop(lp, "")
+	check(not lp.playing, "and stops when you let go")
+	# Horns: parts with recordings.
+	var horns: Array = PartsDB.by_kind["horn"]
+	check(horns.size() >= 17 and horns.has("police_horn") and horns.has("ship_horn") and horns.has("truck_air_horn"),
+		"the horn aisle has police, ship and air horns (%d horns)" % horns.size())
+	var no_takes := horns.filter(func(id): return str(PartsDB.get_part(id).get("sound", "")) != "" and Sfx.recordings(str(PartsDB.get_part(id)["sound"])).is_empty())
+	check(no_takes.is_empty(), "every recorded horn has its takes %s" % str(no_takes))
+	var ship := BikeBuild.new({"engine": "twin_700", "horn": "ship_horn"})
+	check(ship.horn_sound == "horn_ship" and not ship.horn_tones.is_empty() and BikeBuild.new({"engine": "twin_700", "horn": "goose_horn"}).horn_sound == "",
+		"a bike knows its horn's recordings; the goose is still made")
+	var air := _horn("horn_air")
+	check(air.is_recorded(), "the air horn plays its recordings")
+	air.pressed = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var air_s := air.stream as AudioStreamOggVorbis
+	check(air.playing and air.takes == 1 and air_s.loop and is_equal_approx(air_s.loop_offset, HornAudio.LOOP_FROM),
+		"held, it sounds and its steady note loops")
+	air.pressed = false
+	for i in 30:
+		await get_tree().process_frame
+	check(not air.playing, "and it stops when you let go")
+	var ship_h := _horn("horn_ship")
+	ship_h.pressed = true
+	await get_tree().process_frame
+	ship_h.pressed = false
+	for i in 12:
+		await get_tree().process_frame
+	check(ship_h.playing and ship_h.takes == 1, "a tap on the ship's horn plays the whole blast")
+	var police := _horn("horn_police")
+	police.pressed = true
+	await get_tree().process_frame
+	check(police.takes == 1 and Sfx.recordings("horn_police").has(police.stream) and not (police.stream as AudioStreamOggVorbis).loop,
+		"the police horn yelps a take at a time")
+	var synth := HornAudio.new()
+	synth.style = "goose"
+	synth.tones = [330.0]
+	add_child(synth)
+	check(not synth.is_recorded() and synth.stream is AudioStreamGenerator, "a horn without recordings is still synthesised")
+	for h in [air, ship_h, police, synth]:
+		h.queue_free()
+	# The gear lever on a shift, by the gearbox's feel.
+	var es := EngineSound.new()
+	add_child(es)
+	es.setup(BikeBuild.new({"engine": "four_1000", "exhaust": "titanium_race", "gearbox": "six_race_quickshift"}))
+	es.running = true
+	es.rpm = 9000.0
+	es.gear = 2
+	es._process(1.0 / 60.0)
+	es.gear = 3
+	es._process(1.0 / 60.0)
+	check(es.lever_sounds == 1 and Sfx.recordings("shift_slick").has(es._lever.stream) and es._lever.pitch_scale > 1.1,
+		"a quickshift adds the recorded lever's slick tick, pitched up")
+	es.queue_free()
+	# The phone: a few rings, from the reception and the extension in the shed.
+	var calls := Sfx.phone_calls
+	Sfx.ring_phone(SalesOffice.RECEPTION.origin + Vector3.UP, 1)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var rings := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(q): return Sfx.recordings("phone_ring").has(q.stream))
+	check(Sfx.phone_calls == calls + 1 and rings.size() >= 2, "the phone rings at reception and in the shed (%d)" % rings.size())
+	# A new customer calls ahead; one already waiting doesn't.
+	Shed.start_new("Tester", 41)
+	var amb := SfxAmbience.new()
+	add_child(amb)
+	amb.set_process(false)
+	Contracts.customers()[990001] = {"id": 990001, "arrived": Contracts.clock() - 100.0}
+	amb._watch_customers(1.0)
+	check(Sfx.phone_calls == calls + 1, "customers already there when you arrive don't ring")
+	Contracts.customers()[990002] = {"id": 990002, "arrived": Contracts.clock()}
+	amb._watch_customers(1.0)
+	check(Sfx.phone_calls == calls + 2, "a new customer rings the sales office phone")
+	Contracts.customers().erase(990001)
+	Contracts.customers().erase(990002)
+	# Birds: short bursts with long gaps, fewer at midday.
+	var sung := {}
+	for hour in [8.0, 13.0]:
+		amb._rng.seed = 5
+		amb.birds_singing = false
+		amb.bird_timer = 0.0
+		var on := 0.0
+		var bursts := 0
+		var t := 0.0
+		while t < 3600.0:
+			var was := amb.birds_singing
+			on += amb._bird_burst(0.5, hour) * 0.5
+			if amb.birds_singing and not was:
+				bursts += 1
+			t += 0.5
+		sung[hour] = [on / 3600.0, bursts]
+	check(float(sung[8.0][0]) < 0.3 and int(sung[8.0][1]) >= 20, "birds sing now and then in the morning: %d bursts, %.0f%% of the time" % [sung[8.0][1], float(sung[8.0][0]) * 100.0])
+	check(float(sung[13.0][0]) < float(sung[8.0][0]) * 0.5, "and much less at midday (%.0f%%)" % (float(sung[13.0][0]) * 100.0))
+	check(SfxAmbience.BIRD_DB <= -14.0, "and quieter than before")
+	amb.queue_free()
+	host.queue_free()
+	Shed.stop()
+
+
+func _horn(sound: String) -> HornAudio:
+	var h := HornAudio.new()
+	h.sound = sound
+	h.tones = [300.0]
+	h.loudness = 1.0
+	add_child(h)
+	return h

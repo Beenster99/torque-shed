@@ -66,6 +66,7 @@ var fog_color := Color(1.0, 0.92, 0.78)
 var horn_tones: Array = []     # frequencies of the horn, empty with none fitted
 var horn_style := ""
 var horn_loudness := 0.0
+var horn_sound := ""           # the horn's recordings (an Sfx sound), "" for a synthesised one
 var ecu_features: Array = []   # rider aids the ECU gives: traction, abs, anti_wheelie, stability
 var ecu_aid := 0.0             # how firmly those aids step in, 0..1
 var luggage_litres := 0.0
@@ -243,6 +244,7 @@ func _compute() -> void:
 	var horn := part("horn")
 	horn_tones = horn.get("tones", [])
 	horn_style = str(horn.get("style", ""))
+	horn_sound = str(horn.get("sound", ""))
 	horn_loudness = float(horn.get("loudness", 0.0)) * lerpf(0.5, 1.0, health.get("horn", 1.0))
 	var ecu := part("ecu")
 	ecu_features = ecu.get("features", []).filter(func(f): return f != "remap")

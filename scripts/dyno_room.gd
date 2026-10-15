@@ -19,6 +19,8 @@ const DOOR_HEIGHT := 2.5
 const DRUM_RADIUS := 0.32
 const DRUM_Z := 0.71                      # the drum's axle behind the rig's centre, under the rear tyre
 const DESK := Vector3(2.9, 0.0, 53.9)
+## The cooling fan's level (dB) at rest; it gets louder as a run pushes it.
+const FAN_DB := -6.0
 ## Phases of a run, seconds: a blip at idle, up through the lower gears, settle, the measured
 ## sweep in the gear nearest 1:1, then coast down.
 const IDLE_T := 0.8
@@ -66,6 +68,7 @@ var _hose_end_target: StaticBody3D
 var _hose_sig := ""
 var _phones: Node3D
 var _fan_sound: AudioStreamPlayer3D
+var _fan_push := 0.0          # 0..1: how hard the fan's pushed as a run builds
 var _rocker_lights: Node3D
 var _rocker_fan: Node3D
 var _haze: CPUParticles3D
@@ -199,11 +202,16 @@ func _process(delta: float) -> void:
 	_drum.rotation.x = -_drum_angle
 	_update_roller(wheel_omega * rear_r)
 	var fan_on := bool(Shed.dyno.get("fan", false))
+	if fan_on and _fan_speed <= 0.0:
+		fan_build()
 	_fan_speed = move_toward(_fan_speed, 25.0 if fan_on else 0.0, delta * (12.0 if fan_on else 5.0))
-	_fan.rotation.z += _fan_speed * delta
+	# As a run builds the fan is pushed harder, following the roller's speed.
+	_fan_push = move_toward(_fan_push, clampf(absf(wheel_omega * rear_r) / 45.0, 0.0, 1.0) if fan_on else 0.0, delta * 0.6)
+	_fan.rotation.z += _fan_speed * (1.0 + 0.5 * _fan_push) * delta
 	if _fan_sound:
 		Sfx.set_loop(_fan_sound, "fan" if _fan_speed > 2.0 else "")
-		_fan_sound.pitch_scale = clampf(_fan_speed / 25.0, 0.4, 1.0)
+		_fan_sound.pitch_scale = clampf(_fan_speed / 25.0, 0.4, 1.0) * (1.0 + 0.15 * _fan_push)
+		_fan_sound.set_meta("base_db", FAN_DB + 5.0 * _fan_push)
 	_update_kit(delta, running)
 	if running and workshop and workshop.bike_views.has(_run_bike):
 		workshop.bike_model(_run_bike).update_pose_from(0.0, 0.0, _wheel_angle, 0.0, 0.0, 0.0, 0.0)
@@ -224,6 +232,14 @@ func _start_run(bike: int) -> void:
 		add_child(_audio)
 	var model: BikeModel = workshop.bike_model(bike) if workshop and workshop.bike_views.has(bike) else null
 	_audio.setup(_run_build, model)
+	if bool(Shed.dyno.get("fan", false)):
+		fan_build()
+
+
+## The cooling fan winding up: switched on, or pushed harder as a run starts.
+func fan_build() -> void:
+	if _fan_sound and _fan_sound.is_inside_tree():
+		Sfx.play_at("fan_build", _fan_sound.global_position, FAN_DB)
 
 
 func _update_screen(bike: int) -> void:
@@ -448,7 +464,7 @@ func _build_fan() -> void:
 	_cylinder(_fan, Vector3.ZERO, 0.07, 0.08, _mats["steel"], Vector3.BACK)
 	_fan_sound = Sfx.make_loop_player(self)
 	_fan_sound.position = at + Vector3(0.0, 0.95, 0.0)
-	_fan_sound.volume_db = -6.0
+	_fan_sound.volume_db = FAN_DB
 	# The grille: rings and a cross on the front.
 	for r in [0.2, 0.33, 0.46]:
 		var ring := MeshInstance3D.new()

@@ -11,7 +11,7 @@ Current milestone, **The Shed**: a snug first-person workshop with four bike bay
 | Chassis | Frame, front fork, rear suspension (type, travel, bump and rebound damping, adjustability) |
 | Wheels | Front and rear wheel (spoked, wire, cast, carbon; 17" to 21"), front and rear tyre (type, compound, width) |
 | Brakes, front and rear | Disc (type, diameter), caliper (pistons), pads (compound), master cylinder (axial or radial) |
-| Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens), horn (10 types, from a disc horn to a train horn or a musical one), fog lights |
+| Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens), horn (17 types, from a disc horn or a courtesy pip to a truck air horn, a police yelp, a ship's foghorn or a musical one), fog lights |
 | Electronics | ECU (stock, remap, ABS, sport with traction control, race with all of it): more power and revs, and rider aids for ABS, traction control, stability and anti-wheelie |
 | Tail and front | Tail unit (6 kinds: long classic mudguard, café racer hump, scrambler loop, sport tail tidy, bobber chopped fender, enduro high fender), which carries the rear light, mudguard and number plate; fairing (headlight flyscreen, bikini, half, touring with a tall screen, full race in fibreglass or carbon), which cuts drag for a higher top speed but adds weight; mirrors (round chrome, bar-end, sport stalk, wide touring, fairing-mount) |
 | Luggage | Panniers and top boxes; they add drag |
@@ -172,7 +172,7 @@ The **radio** on the shelf above the workbench streams internet radio stations (
 
 ### Contracts: customers at reception
 
-Customers come to the **sales office reception** (just outside the roller door until the shed has a sales office) every few in-game hours, a couple at most at once; a **bell** rings as each one reaches the counter. Look at them and press **F** to see their offer card: who they are, the job, their bike, what they want, the budget, the pay and the deadline in in-game days. **Accept** and their bike is delivered to a free bay; **Decline** and they leave. Ignore them and they give up after about three in-game hours.
+Customers come to the **sales office reception** (just outside the roller door until the shed has a sales office) every few in-game hours, a couple at most at once; a **door chime** rings as each one reaches the counter, and the **phone** at reception rings as a new one calls ahead to say they're on the way (an extension bell by the chime in the shed rings with it, so the crew hear it at work). Look at them and press **F** to see their offer card: who they are, the job, their bike, what they want, the budget, the pay and the deadline in in-game days. **Accept** and their bike is delivered to a free bay; **Decline** and they leave. Ignore them and they give up after about three in-game hours.
 
 | Job | Unlocks at reputation | What it is |
 | --- | --- | --- |
@@ -192,7 +192,7 @@ Through the doorway in the back wall, between bays 2 and 3, is the **dyno room**
 Wheel a bike in (hold F on it) and let go of it near the drum: it snaps onto the rig. Before it will run it has to be **strapped down**: hold the work button at each of the four strap posts until the strap is done up (hold it again to undo one). Undo all four and take the hose off before you wheel it out.
 
 - **Extraction hose**: it hangs on its hook on the east wall. Hold the work button at the hook to take it, then at the bike's exhaust to push it on; it stays drawn on the tailpipe. Hold the button on it again to take it off and hang it back up. Run the bike without it and the room fills with exhaust haze, which clears slowly.
-- **Cooling fan**: switch it on and it spins up with a roar. Without it the engine heats up run after run and makes less power; the graph shows the engine temperature. The fan cools it down again between runs.
+- **Cooling fan**: switch it on and it winds up with a roar. During a run it's pushed harder as the roller speeds up, louder and higher, and winds up again as each run starts. Without it the engine heats up run after run and makes less power; the graph shows the engine temperature. The fan cools it down again between runs.
 - **Ear defenders**: they hang by the door. Press F to put them on and the shed goes quiet and muffled; the badge in the corner says you're wearing them, and the crew sees them on your head. F at the hook hangs them back up.
 
 Press F at the **dyno desk** to tune the bike on the rig, or any bike within about 10 m. Every change goes through the host, so the whole crew sees the same tune, and riding uses it too:
@@ -207,7 +207,7 @@ Press F at the **dyno desk** to tune the bike on the rig, or any bike within abo
 
 ### The sales office
 
-East of the paint shop, across a block-paved forecourt with a small car park, is the **sales office**: a two-storey building with a full glass front. Its **doors slide open** as you walk up to them, and a brass **shop bell** over them rings when someone comes in. You hear it across the yard, and a chime box high on the shed's front wall (inside, right of the roller door) goes ding-dong so the crew hear it at work. Customers coming to the office ring it.
+East of the paint shop, across a block-paved forecourt with a small car park, is the **sales office**: a two-storey building with a full glass front. Its **doors slide open** as you walk up to them, and a **door chime** (with the little brass shop bell over them tinkling along) rings when someone comes in. You hear it across the yard, and a chime box high on the shed's front wall (inside, right of the roller door) goes ding-dong so the crew hear it at work. Customers coming to the office ring it.
 
 - **Showroom**: double height behind the glass, with four lit **display plinths**. Wheel a bike in through the doors (hold F on it) and let go of it on a plinth: it stands square and upright on it, on show. Each plinth takes one bike.
 - **Reception**: the desk facing the doors, with helmets on the shelves behind it. Customers stand in front of it, and you stand behind it to talk to them.
@@ -278,7 +278,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Toggle auto-shift | T | |
 | Reset after a crash | R | View |
 | Camera (chase, first person) | C | Right stick click |
-| Horn | H | D-pad down |
+| Horn (hold it; other players hear it where your bike is) | H | D-pad down |
 | Headlight: low beam, high beam, off | L | Left stick click |
 | Paddle backwards with your feet (when stopped) | Hold S | Hold left trigger |
 | Burnout | Hold S, then throttle | Left then right trigger |
@@ -291,18 +291,20 @@ Lights run off the ignition: with the engine off the headlight, tail light, fog 
 
 You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
 
+**Horns** are recorded from real ones: the stock disc horn, low-tone and high-tone discs, snail horns, the twin trumpet and truck air horns and the freight train horn sound for as long as you hold H and stop when you let go; the courtesy pip horn gives one short pip however long you hold it; the **police yelp horn** keeps whooping and yelping while you hold it, a different yelp each time; and, as a joke, the **ship's foghorn** and the **tugboat horn** blow their whole blast on every press. The twin-tone, klaxon, bulb, scooter beeper, musical and goose horns are still made by the game. Fit one from the parts computer's Horn aisle. Other players hear your horn from where your bike is, quieter and duller further off.
+
 Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The moment a tyre loses grip it gives a loud, sharp chirp (louder the more suddenly it lets go, from a lock-up, a wheelspin or a burnout), and a skid that goes on settles to a quieter screech. The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
 
 The **yard** past the drag strip has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
 
 ### Engine sound
 
-Every bike sounds like the parts it's built from. Nothing is a recording: the sound is worked out from how the engine runs. Each cylinder fires on its own crank angle, so a single thumps, a 360 degree twin beats evenly, a 270 degree parallel twin and a 90 degree V-twin lope, a boxer burbles, a triple warbles with its airbox howling and rasping, a flat-plane four screams evenly and the crossplane 1000 cc four growls. Two-strokes ring-ding at tickover, rattle, and come "on the pipe" in their powerband with a swelling, screaming note. Each firing goes down the header pipes and through the silencer: the **exhaust** decides how much gets out (stock can: quiet and boomy; slip-on; full system; titanium race system; straight pipe: loud and raspy). An open **air filter** (cotton cone, pods, velocity stacks) lets you hear the intake roar. A rusty exhaust blows and rasps, and worn plugs misfire.
+Every bike sounds like the parts it's built from. The engine itself isn't a recording: the sound is worked out from how the engine runs. Each cylinder fires on its own crank angle, so a single thumps, a 360 degree twin beats evenly, a 270 degree parallel twin and a 90 degree V-twin lope, a boxer burbles, a triple warbles with its airbox howling and rasping, a flat-plane four screams evenly and the crossplane 1000 cc four growls. Two-strokes ring-ding at tickover, rattle, and come "on the pipe" in their powerband with a swelling, screaming note. Each firing goes down the header pipes and through the silencer: the **exhaust** decides how much gets out (stock can: quiet and boomy; slip-on; full system; titanium race system; straight pipe: loud and raspy). An open **air filter** (cotton cone, pods, velocity stacks) lets you hear the intake roar. A rusty exhaust blows and rasps, and worn plugs misfire.
 
 - You hear the **exhaust** from the tail pipe and the **engine and intake** from the airbox. In the helmet view you hear more airbox and induction; on the chase camera, more exhaust. Other riders' bikes lose their top end with distance, and their pitch shifts (doppler) as they go past.
 - Snap the throttle shut at high revs and the pipe **pops and burbles** on the overrun, most just after you roll off, then the odd crackle as the revs fall. Loud pipes pop far more than a stock can. Now and then a big backfire cracks with a lick of **flame** from the tail pipe.
 - **Downshifts** blip the throttle with a bark, often followed by a bang from a loud pipe.
-- **Gear changes** sound like the gearbox: the race box's **quickshifter** cuts the engine for a blink with a crisp, slick tick (and a crack from a loud pipe); a close-ratio or enduro box gives a positive click; a vintage or wide-ratio box a basic clunk. Dropping into first at a standstill clunks. The race box has a dry clutch, which rattles at tickover, and its straight-cut gears whine.
+- **Gear changes** sound like the gearbox: the race box's **quickshifter** cuts the engine for a blink with a crisp, slick tick (and a crack from a loud pipe); a close-ratio or enduro box gives a positive click; a vintage or wide-ratio box a basic clunk. On top of that you hear a recording of a real gear lever and selector, a different take each change: light and high for the quickshifter's tick, as it is for a click, low and heavy for a clunk. Dropping into first at a standstill clunks. The race box has a dry clutch, which rattles at tickover, and its straight-cut gears whine.
 - Press I and you hear the **starter motor** crank the engine over before it catches with a bark; a small two-stroke single, or a single with the vintage four-speed box, is **kick-started**.
 - The dyno room and other players' bikes use the same sound.
 
@@ -369,14 +371,14 @@ Your eyes adjust too: walk out of the bright yard into the shed with the lights 
 
 ### Sound
 
-Every sound is made by the game itself as it starts (there are no audio files), modelled on how the real thing makes its noise, and kept in a cache file so later starts are quick. Nothing to set up: the Esc menu's sound effects slider covers all of it.
+Most sounds are made by the game itself as it starts, modelled on how the real thing makes its noise, and kept in a cache file so later starts are quick. A few are **recordings** (in `audio/sfx`): the wrench ratcheting, the sandblaster, the dyno room's cooling fan winding up and running, the roller door's motor, the sales office door chime and phone, the light switches, the gear levers and the horns. Each has several takes, picked at random and never the same one twice running; if a recording's file is missing the game makes its own sound instead. Nothing to set up: the Esc menu's sound effects slider covers all of it.
 
 - **Variety**: every knock, clink, footstep and part going down comes in several versions, played at random with a touch of pitch and level, and never the same one twice running. Tools pick up their loop at a different point each time.
 - **Parts landing**: putting a part down sounds of what it's made of and what it lands on: steel clanks and rings on the concrete floor, knocks on the wooden bench top, rings on for a while on a steel shelf or machine, and thuds dead on the grass outside; plastic clacks, tyres thump and bounce, seats and gear flop, delivery boxes thud.
 - **Tools and machines**: the ratchet's pawl clicking on the backswing and the bolt creaking round; the grinder spinning up, dropping in pitch as it bites with a rasp and spark crackle, and winding down; the pressure washer's pump pulse and jet; the parts washer's pump, splash and bubbles; the spray can's sputtering hiss and the spray gun's air rush; the sandblaster's roar and grit hiss; the tyre changer's motor and the rubber groaning, then the bead popping on; the dyno drum whining with its speed; the roller door's motor, chain and slats with a clunk at each end.
 - **Footsteps** sound of the floor: concrete (or the epoxy floor once it's bought, with the odd squeak), tiles in the paint shop and the showroom, wooden stairs and carpet upstairs in the sales office, the steel mezzanine, and outside tarmac, gravel on the dirt, grass, and splashes in puddles when it's wet. You hear other players' footsteps too.
 - **Rooms**: each room has its own acoustics: the shed's hard concrete, the small tiled paint booth, the cluttered store, the dyno room, the showroom's glass, the carpeted office, and outside nearly dry with an echo back off the shed wall. Sounds from another room come through muffled and quieter.
-- **Ambience**: a low room tone indoors (the showroom's air conditioning), the strip lights humming (the LED upgrade's are quieter) and ticking on when switched on, the roof creaking now and then, and the air compressor in the shed's back corner cycling on and off (sooner while the spray gun or sandblaster is drawing air). Outside there's wind, distant traffic, birdsong by day and crickets at night, quieter in the rain and muffled from indoors. The sales office's front doors whirr open and thump shut.
+- **Ambience**: a low room tone indoors (the showroom's air conditioning), the strip lights humming (the LED upgrade's are quieter) and ticking on when switched on, the roof creaking now and then, and the air compressor in the shed's back corner cycling on and off (sooner while the spray gun or sandblaster is drawing air). Outside there's wind, distant traffic, a burst of birdsong now and then by day (a few seconds of it, then quiet for a minute or so, and less round midday than morning and evening) and crickets at night, quieter in the rain and muffled from indoors. The sales office's front doors whirr open and thump shut.
 
 ### Money
 
@@ -450,9 +452,11 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/progress.gd`, `ride_xp.gd`, `character_tab.gd`, `skill_tree_view.gd` | XP, levels, tool upgrades, skills and goals, kept in your own profile; riding XP; the Character tab |
 | `scripts/rider_gear.gd`, `rider_figure.gd`, `trinkets.gd`, `shop_tab.gd` | Rider gear (catalogue, owned and worn in your profile), drawing the avatar in it on foot and on the bike, trinkets for the shed, and the Esc menu's Shop tab |
 | `scripts/engine_synth.gd`, `engine_bank.gd`, `engine_sound.gd`, `exhaust_flame.gd` | Engine sound: the synthesis (firing order and crank phasing, header and silencer resonances, intake and airbox, valve train, clutch rattle, two-stroke ring-ding), the per-engine bank of seamless loops baked on a worker thread, and the 3D player that crossfades and pitches them and adds pops, bangs, shifts, the starter and the backfire flame. `tests/engine_render.tscn` renders them to .wav files |
-| `scripts/sfx.gd` | Playing the shed's sounds: variants without repeats, impacts by material, footsteps by floor, machine start and stop sounds, room reverb and through-wall muffling, the volume buses and the sound cache |
+| `scripts/sfx.gd` | Playing the shed's sounds: the recordings that stand in for made ones (`audio/sfx`), variants without repeats, impacts by material, footsteps by floor, machine start and stop sounds, room reverb and through-wall muffling, the volume buses and the sound cache |
 | `scripts/sfx_synth.gd` | Synthesising every shed sound from physical models (modal metal, contact impacts, motors under load, water and bubbles) |
-| `scripts/sfx_ambience.gd` | The shed's ambience: room tone, light hum, the compressor's cycle, creaks, the sliding doors, wind, traffic, birds and crickets |
+| `scripts/sfx_ambience.gd` | The shed's ambience: room tone, light hum, the compressor's cycle, creaks, the sliding doors, the phone ringing for a new customer, wind, traffic, birds in bursts and crickets |
+| `scripts/horn_audio.gd` | Bike horns: playing a horn's recordings (held, once or repeating), or synthesising the rest |
+| `audio/sfx/` | The recorded sounds: mono Ogg Vorbis, trimmed, loops crossfaded so they repeat without a seam |
 | `scripts/shed_radio.gd`, `radio_stream.gd`, `mp3_stream_decoder.gd` | The shed radio: streams an MP3 station over HTTP(S) and decodes it gaplessly |
 
 Built with [Godot 4.6](https://godotengine.org) and Jolt physics.

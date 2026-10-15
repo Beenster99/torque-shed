@@ -4,7 +4,7 @@ extends Node3D
 ## exhaust side at the tail pipe and the engine/intake side at the airbox, crossfaded and pitched
 ## to the revs and the throttle. On top: pops and burbles when the throttle snaps shut at high
 ## revs (more from loud pipes), a blip-and-bang on downshifts, the quickshifter's crisp cut or a
-## clutch shift, the gearbox's own shift sound, its whine, the starter or kick start, and the
+## clutch shift, the gearbox's own shift sound with a recorded gear lever on top, its whine, the starter or kick start, and the
 ## backfire's flame. Used by the ridden bike, other players' bikes and the dyno.
 
 signal backfired(strength: float)
@@ -13,6 +13,10 @@ const SLOTS := 3              # players per layer: two buckets crossfading and o
 ## How loud each side is from where you're listening: in the helmet you hear the airbox, on
 ## the chase camera the pipe, and other people's bikes are mostly pipe.
 const VIEW_MIX := {"rider": [0.75, 1.3], "chase": [1.0, 0.7], "remote": [1.0, 0.55], "room": [1.0, 0.85]}
+## The recorded gear lever layered on each shift, by the gearbox's feel (Sfx "shift_<feel>"):
+## [dB, lowest pitch, highest pitch]. The quickshifter's slick tick is light and high, a sports
+## box clicks as recorded, a basic or old box clunks low and heavy.
+const SHIFT_FEEL := {"slick": [-10.0, 1.12, 1.24], "click": [-6.0, 0.95, 1.06], "clunk": [-3.0, 0.76, 0.88]}
 
 var rpm := 0.0
 var throttle := 0.0
@@ -34,6 +38,8 @@ var flame: ExhaustFlame
 var pops := 0
 var shifts := 0
 var last_shift := ""
+## Recorded gear-lever sounds played (tests).
+var lever_sounds := 0
 
 var _players := {}            # layer -> Array of AudioStreamPlayer3D
 var _assigned := {}           # layer -> {bucket: player}
@@ -42,6 +48,7 @@ var _oneshot_en: Array = []
 var _next_ex := 0
 var _next_en := 0
 var _whine: AudioStreamPlayer3D
+var _lever: AudioStreamPlayer3D
 var _rng := RandomNumberGenerator.new()
 var _load := 0.0              # smoothed throttle as the sound hears it
 var _level := 0.0             # fades the engine in as it catches and out as it dies
@@ -87,6 +94,7 @@ func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
 			_oneshot_en.append(_make_player(engine_at, 6.0))
 		_whine = _make_player(engine_at, 6.0)
 		_whine.stream = EngineBank.whine_stream()
+		_lever = _make_player(engine_at, 4.0)
 		flame = ExhaustFlame.new()
 		exhaust_at.add_child(flame)
 	exhaust_at.position = Vector3(0.18, 0.4, 0.75)
@@ -237,6 +245,7 @@ func _events(delta: float) -> void:
 		_last_gear = gear
 	if gear != _last_gear and gear == 1 and absf(speed) < 1.5:
 		_play(_oneshot_en, "neutral", -2.0, 1.0)   # clunk, into first from a standstill
+		_lever_sound("clunk")
 	elif gear != _last_gear and running:
 		_shift(gear > _last_gear)
 	_last_gear = gear
@@ -277,6 +286,24 @@ func _shift(up: bool) -> void:
 				_bang_in = 0.12
 	last_shift = "slick" if qs else str(spec["shift"])
 	_play(_oneshot_en, "shift", -3.0, _rng.randf_range(0.95, 1.05))
+	_lever_sound(last_shift)
+
+
+## The recorded gear lever and selector for this feel ("slick", "click", "clunk") on top of the
+## made shift sound: a different take each time (Sfx picks them), pitched to the feel.
+func _lever_sound(feel: String) -> void:
+	var sfx := get_node_or_null("/root/Sfx")
+	if _lever == null or sfx == null or not sfx.has_method("pick"):
+		return
+	var s: AudioStream = sfx.call("pick", "shift_" + feel)
+	if s == null:
+		return
+	var f: Array = SHIFT_FEEL.get(feel, SHIFT_FEEL["click"])
+	_lever.stream = s
+	_lever.volume_db = float(f[0]) + volume_db
+	_lever.pitch_scale = _rng.randf_range(float(f[1]), float(f[2]))
+	_lever.play()
+	lever_sounds += 1
 
 
 ## An overrun pop, a downshift bang or a backfire crack, with the flame for the loud ones.
