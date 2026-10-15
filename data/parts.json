@@ -5147,6 +5147,109 @@
 			]
 		}
 	},
+	"front_mudguard": {
+		"road_hugger": {
+			"name": "Short road hugger",
+			"description": "A short plastic guard that follows the top of the front tyre. Plain, light and painted to match the bike.",
+			"mass": 0.6,
+			"type": "Plastic, short",
+			"style": "hugger",
+			"cover": 0.75,
+			"paint_match": true,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"material": "plastic"
+		},
+		"mx_high_fender": {
+			"name": "MX high fender",
+			"description": "Bolted under the bottom yoke, well clear of the tyre so mud can't pack up and lock the wheel. Doesn't stop much spray.",
+			"mass": 0.45,
+			"type": "Plastic, high mount",
+			"style": "high",
+			"cover": 0.55,
+			"color": [
+				0.94,
+				0.94,
+				0.92
+			],
+			"material": "plastic"
+		},
+		"enduro_front_fender": {
+			"name": "Enduro front fender",
+			"description": "A high fender with a longer tail and a lip at the front: clears the mud and still keeps some off the rider.",
+			"mass": 0.55,
+			"type": "Plastic, high mount, long",
+			"style": "enduro",
+			"cover": 0.7,
+			"color": [
+				0.95,
+				0.42,
+				0.08
+			],
+			"material": "plastic"
+		},
+		"bobbed_steel": {
+			"name": "Bobbed steel blade",
+			"description": "A stubby steel blade on a pair of round stays. Bobber style: more look than protection.",
+			"mass": 0.9,
+			"type": "Steel, bobbed",
+			"style": "bobbed",
+			"cover": 0.5,
+			"paint_match": true,
+			"color": [
+				0.08,
+				0.08,
+				0.08
+			],
+			"material": "metal"
+		},
+		"alloy_cafe_blade": {
+			"name": "Polished alloy cafe guard",
+			"description": "A slim polished aluminium blade on wire stays, as on a sixties cafe racer.",
+			"mass": 0.7,
+			"type": "Polished alloy, slim",
+			"style": "cafe",
+			"cover": 0.8,
+			"color": [
+				0.82,
+				0.83,
+				0.84
+			],
+			"material": "metal"
+		},
+		"chrome_classic": {
+			"name": "Chrome classic mudguard",
+			"description": "A long, deeply valanced chrome guard with front and rear stays. Keeps the road off the engine and the rider's boots.",
+			"mass": 1.6,
+			"type": "Chromed steel, full length",
+			"style": "classic",
+			"cover": 1.0,
+			"color": [
+				0.88,
+				0.89,
+				0.9
+			],
+			"material": "metal"
+		},
+		"carbon_hugger": {
+			"name": "Carbon sport hugger",
+			"description": "A race-style carbon-fibre guard hugging the tyre close. Feather light and dear.",
+			"mass": 0.22,
+			"type": "Carbon fibre, short",
+			"style": "sport",
+			"cover": 0.8,
+			"lightweight": true,
+			"color": [
+				0.07,
+				0.07,
+				0.08
+			],
+			"material": "carbon"
+		}
+	},
 	"petrol": {
 		"unleaded_95": {
 			"name": "Unleaded petrol (95)",

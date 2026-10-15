@@ -42,13 +42,15 @@ const TASKS := {"oil": "Oil change (fresh oil, topped up)", "chain": "Chain lube
 const STYLES := {"cafe": "Cafe racer", "scrambler": "Scrambler", "tourer": "Tourer", "sport": "Sports bike", "bobber": "Bobber"}
 ## Exhausts that count as proper pipes.
 const PIPES: Array[String] = ["full_system", "titanium_race", "straight_pipe"]
-const FIT_SLOTS := {"panniers": "Panniers", "top_box": "A top box", "fairing": "A fairing", "fog_lights": "Fog lights"}
+const FIT_SLOTS := {"panniers": "Panniers", "top_box": "A top box", "fairing": "A fairing", "fog_lights": "Fog lights",
+	"front_mudguard": "A front mudguard"}
 ## A rough price by kind, for setting budgets when the parts computer has no price yet.
 const EST_COST := {"frame": 900, "fork": 450, "shock": 300, "wheel": 280, "tyre": 110, "disc": 90, "caliper": 120,
 	"pads": 35, "master": 70, "tank": 260, "saddle": 120, "handlebars": 80, "dashboard": 150, "engine": 1600,
 	"head": 400, "fuel": 260, "air_filter": 40, "oil_filter": 15, "spark_plugs": 20, "cooling": 180, "gearbox": 500,
 	"exhaust": 380, "final_drive": 90, "chain": 70, "side_stand": 40, "centre_stand": 70, "headlight": 90,
-	"horn": 25, "ecu": 350, "panniers": 220, "top_box": 120, "fog_lights": 110, "tail": 140, "fairing": 420, "mirrors": 45}
+	"horn": 25, "ecu": 350, "panniers": 220, "top_box": 120, "fog_lights": 110, "tail": 140, "fairing": 420, "mirrors": 45,
+	"front_mudguard": 90}
 const FIRST_NAMES := ["Dave", "Sue", "Raj", "Kim", "Gary", "Priya", "Tom", "Jo", "Mick", "Aisha", "Steve", "Lena",
 	"Barry", "Chloe", "Nigel", "Fatima", "Pete", "Grace", "Wayne", "Mei", "Colin", "Zara", "Ian", "Bev"]
 const LAST_NAMES := ["Smith", "Patel", "Jones", "O'Brien", "Taylor", "Khan", "Walsh", "Brown", "Nguyen", "Evans",
@@ -341,6 +343,8 @@ static func random_parts(rng: RandomNumberGenerator, road := false) -> Dictionar
 	var pick := {}
 	for slot in PartsDB.SLOTS:
 		var k: String = PartsDB.SLOT_KIND[slot]
+		if slot == "front_mudguard":
+			continue   # the one that suits its tail and tyres (sanitize_build picks it)
 		var key: String = k if k == "tyre" else slot
 		if not pick.has(key):
 			var options: Array = PartsDB.by_kind[k].duplicate()
@@ -393,26 +397,26 @@ static func style_build(style: String) -> Dictionary:
 			b.merge({"frame": "steel_cradle", "tank": "alloy_cafe_14", "saddle": "cafe_hump", "handlebars": "alloy_clip_ons",
 				"tail": "cafe_tail", "engine": "twin_750", "exhaust": "full_system", "headlight": "bates_cafe",
 				"front_wheel": "wire_19_chrome", "rear_wheel": "spoked_18", "front_tyre": "vintage_ribbed_100",
-				"rear_tyre": "vintage_ribbed", "mirrors": "bar_end_mirrors"}, true)
+				"rear_tyre": "vintage_ribbed", "mirrors": "bar_end_mirrors", "front_mudguard": "alloy_cafe_blade"}, true)
 		"scrambler":
 			b.merge({"frame": "steel_backbone", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "mx_tall",
 				"tail": "scrambler_loop", "engine": "twin_500", "exhaust": "full_system", "front_wheel": "spoked_19_adventure",
 				"rear_wheel": "spoked_18", "front_tyre": "dual_sport_90", "rear_tyre": "dual_sport", "fork": "enduro_usd",
-				"mirrors": "round_mirrors"}, true)
+				"mirrors": "round_mirrors", "front_mudguard": "enduro_front_fender"}, true)
 		"tourer":
 			b.merge({"frame": "alu_twin_spar", "tank": "touring_23", "saddle": "touring_comfort", "handlebars": "flat_bar",
 				"tail": "classic_mudguard", "engine": "boxer_1100", "panniers": "aluminium_boxes", "top_box": "alloy_top_box",
 				"fairing": "touring_fairing", "mirrors": "fairing_mirrors", "headlight": "led_projector",
-				"rear_tyre": "touring_road", "front_tyre": "touring_road_120"}, true)
+				"rear_tyre": "touring_road", "front_tyre": "touring_road_120", "front_mudguard": "chrome_classic"}, true)
 		"sport":
 			b.merge({"frame": "chromoly_trellis", "tank": "sport_17", "saddle": "sport_solo", "handlebars": "clip_ons",
 				"tail": "sport_tail_tidy", "engine": "inline_1000", "exhaust": "titanium_race", "fairing": "race_fairing",
 				"fork": "usd_sport", "shock": "sport_mono", "ecu": "sport_ecu", "mirrors": "fairing_mirrors",
-				"headlight": "led_projector"}, true)
+				"headlight": "led_projector", "front_mudguard": "carbon_hugger"}, true)
 		"bobber":
 			b.merge({"frame": "steel_cradle", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "drag_bar",
 				"tail": "bobber_fender", "engine": "vtwin_1000", "exhaust": "straight_pipe", "front_wheel": "wire_16_bobber",
-				"rear_wheel": "wire_16_bobber", "mirrors": "bar_end_mirrors"}, true)
+				"rear_wheel": "wire_16_bobber", "mirrors": "bar_end_mirrors", "front_mudguard": "bobbed_steel"}, true)
 	b = PartsDB.sanitize_build(b)
 	for ws in Shed.WHEEL_TYRE:
 		var ts: String = Shed.WHEEL_TYRE[ws]

@@ -8,7 +8,7 @@ extends Node
 const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc", "caliper", "pads", "master", "tank",
 	"saddle", "handlebars", "dashboard", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling",
 	"gearbox", "exhaust", "final_drive", "chain", "side_stand", "centre_stand", "headlight", "horn", "ecu",
-	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors"]
+	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "front_mudguard"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
 const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube"]
 const KIND_NAMES := {
@@ -19,16 +19,17 @@ const KIND_NAMES := {
 	"oil_filter": "Oil filter", "spark_plugs": "Spark plugs", "cooling": "Cooling", "gearbox": "Gearbox",
 	"exhaust": "Exhaust", "final_drive": "Sprockets", "chain": "Chain", "side_stand": "Side stand", "centre_stand": "Centre stand",
 	"headlight": "Headlight", "horn": "Horn", "ecu": "ECU", "panniers": "Panniers", "top_box": "Top box",
-	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
+	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "front_mudguard": "Front mudguard", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
 }
 ## Slots on the bike itself.
 const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
-	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors"]
+	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors",
+	"front_mudguard"]
 ## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
 const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box",
-	"fog_lights", "fairing", "mirrors"]
+	"fog_lights", "fairing", "mirrors", "front_mudguard"]
 ## Parts low down on a bike that you have to crouch to reach while it's in the frame.
 const LOW_SLOTS: Array[String] = ["side_stand", "centre_stand", "oil_filter", "final_drive", "chain"]
 ## Slots on an engine block. They travel with the block when it comes out of the frame.
@@ -38,7 +39,8 @@ const SERVICE_SLOTS: Array[String] = ["air_filter", "oil_filter", "spark_plugs"]
 const SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
-	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox"]
+	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox",
+	"front_mudguard"]
 const SLOT_KIND := {
 	"frame": "frame", "fork": "fork", "shock": "shock", "front_wheel": "wheel", "rear_wheel": "wheel",
 	"front_tyre": "tyre", "rear_tyre": "tyre", "front_disc": "disc", "rear_disc": "disc",
@@ -49,7 +51,7 @@ const SLOT_KIND := {
 	"oil_filter": "oil_filter", "spark_plugs": "spark_plugs", "cooling": "cooling", "gearbox": "gearbox",
 	"side_stand": "side_stand", "centre_stand": "centre_stand", "headlight": "headlight", "horn": "horn", "ecu": "ecu",
 	"panniers": "panniers", "top_box": "top_box", "fog_lights": "fog_lights", "tail": "tail", "fairing": "fairing",
-	"mirrors": "mirrors",
+	"mirrors": "mirrors", "front_mudguard": "front_mudguard",
 }
 const DEFAULT_BUILD := {
 	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17_front",
@@ -61,7 +63,7 @@ const DEFAULT_BUILD := {
 	"fuel": "twin_carbs", "air_filter": "paper_airbox", "oil_filter": "paper_oil", "spark_plugs": "iridium_plugs",
 	"cooling": "oil_cooler", "gearbox": "five_wide", "side_stand": "stamped_side", "centre_stand": "none",
 	"headlight": "round_7", "horn": "disc_horn", "ecu": "none", "panniers": "none", "top_box": "none", "fog_lights": "none",
-	"tail": "classic_mudguard", "fairing": "none", "mirrors": "none",
+	"tail": "classic_mudguard", "fairing": "none", "mirrors": "none", "front_mudguard": "chrome_classic",
 }
 ## What each slot bolts onto. A part can only go on once its mounts are fitted, and has to
 ## come off before any of them can. Engine slots mount on the block ("engine").
@@ -82,6 +84,8 @@ const MOUNTS := {
 	# The tail unit carries the rear light and mudguard; a fairing goes on over the headlight;
 	# mirrors bolt to the bars (or to the fairing, for parts that say so: see part_mounts).
 	"tail": ["frame"], "fairing": ["headlight"], "mirrors": ["handlebars"],
+	# The front mudguard bolts to the fork legs (or under the bottom yoke, for a high fender).
+	"front_mudguard": ["fork"],
 }
 ## Which fluid each part holds, and how much (litres; the tank and engine work theirs out).
 const FLUID_HOLDERS := {"tank": "petrol", "engine": "oil", "master": "brake_fluid"}
@@ -99,7 +103,7 @@ const KIND_MATERIAL := {
 	"oil_filter": "metal", "spark_plugs": "mixed", "cooling": "metal", "gearbox": "metal", "exhaust": "metal",
 	"final_drive": "metal", "chain": "metal", "side_stand": "metal", "centre_stand": "metal", "headlight": "electronics",
 	"horn": "metal", "ecu": "electronics", "panniers": "fabric", "top_box": "plastic", "fog_lights": "electronics",
-	"tail": "plastic", "fairing": "plastic", "mirrors": "mixed",
+	"tail": "plastic", "fairing": "plastic", "mirrors": "mixed", "front_mudguard": "plastic",
 	"petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
 }
 const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
@@ -342,6 +346,9 @@ func spec_line(id: String) -> String:
 		"fairing":
 			bits = [p["type"], "%d%% less drag" % roundi(-float(p["cda"]) / 0.55 * 100.0),
 				"%d mm screen" % roundi(float(p.get("screen", 0.0)) * 1000.0)]
+		"front_mudguard":
+			bits = [p["type"], "high mount" if mudguard_high(id) else "low mount",
+				"keeps off %d%% of the spray" % roundi(float(p.get("cover", 0.7)) * 100.0)]
 		"mirrors":
 			bits = [p["type"]]
 			if not p.get("mounts_on", []).is_empty():
@@ -454,6 +461,7 @@ func wheels_for(tyre_id: String) -> Array:
 func sanitize_build(build: Dictionary) -> Dictionary:
 	var clean := {}
 	var no_tail := false
+	var no_guard := false
 	for slot in SLOTS:
 		var id: String = str(build.get(slot, ""))
 		if id == "none" and is_optional(slot):
@@ -462,9 +470,12 @@ func sanitize_build(build: Dictionary) -> Dictionary:
 		if not parts.has(id) or parts[id]["kind"] != SLOT_KIND[slot]:
 			id = DEFAULT_BUILD[slot]
 			no_tail = no_tail or slot == "tail"
+			no_guard = no_guard or slot == "front_mudguard"
 		clean[slot] = id
 	if no_tail:
 		clean["tail"] = fitting_tail(clean)
+	if no_guard:
+		clean["front_mudguard"] = fitting_front_mudguard(clean)
 	return clean
 
 
@@ -484,6 +495,27 @@ func fitting_tail(build: Dictionary) -> String:
 	if tail == "classic_mudguard" and str(get_part(str(build.get("rear_tyre", ""))).get("style", "")) == "offroad":
 		tail = "scrambler_loop"
 	return tail if parts.has(tail) else str(DEFAULT_BUILD["tail"])
+
+
+## Which front mudguard goes with each style of tail unit, for bikes that never had one chosen.
+const TAIL_FRONT_GUARD := {"enduro": "mx_high_fender", "loop": "enduro_front_fender", "cafe": "alloy_cafe_blade",
+	"bobber": "bobbed_steel", "tidy": "road_hugger", "classic": "chrome_classic"}
+
+
+## The front mudguard that looks right on a build: a high fender on knobblies, a cafe blade on a
+## cafe racer, a bobbed blade on a bobber, a hugger on a sports bike, a chrome classic on the rest.
+func fitting_front_mudguard(build: Dictionary) -> String:
+	var tail := str(get_part(str(build.get("tail", ""))).get("style", "classic"))
+	var guard := str(TAIL_FRONT_GUARD.get(tail, DEFAULT_BUILD["front_mudguard"]))
+	if str(get_part(str(build.get("front_tyre", ""))).get("style", "")) == "offroad" and not tail in ["enduro", "loop"]:
+		guard = "enduro_front_fender"
+	return guard if parts.has(guard) else str(DEFAULT_BUILD["front_mudguard"])
+
+
+## Whether a front mudguard sits up under the bottom yoke (off-road), rather than down on the
+## fork legs following the tyre.
+func mudguard_high(id: String) -> bool:
+	return str(get_part(id).get("style", "")) in ["high", "enduro"]
 
 
 ## Everything a part in a slot needs fitted first: the slot's own mounts, plus any the part
