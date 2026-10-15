@@ -165,6 +165,22 @@ func _run_all() -> void:
 	_test_gear_buying()
 	await _test_gear_seen_by_others()
 	await _test_shop_session()
+	print("Graphics settings: presets, saving, applying, the driver override, the Graphics tab")
+	await _test_graphics_settings()
+	print("Lighting: GI, volumetric fog and clouds, shadows, eye adaptation")
+	_test_lighting_profile()
+	_test_lighting_lamps_and_gi()
+	await _test_lighting_clouds()
+	await _test_lighting_session()
+	print("Engine sound: firing pulses, exhausts, pops, gear shifts")
+	_test_engine_firing()
+	_test_engine_bank()
+	await _test_engine_events()
+	await _test_engine_users()
+	_test_engine_samples()
+	print("Shed sound: variants, impacts by material, footsteps by floor, room acoustics, ambience")
+	await _test_shed_sound_variants()
+	await _test_shed_sound_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1469,15 +1485,11 @@ func _test_round5_models() -> void:
 	boxer.build_from(BikeBuild.new({"engine": "boxer_1000"}))
 	check(boxer.slot_bounds("engine").size.x > 0.5, "a boxer's cylinders stick out either side (%.2f m wide)" % boxer.slot_bounds("engine").size.x)
 	boxer.queue_free()
-	var audio := EngineAudio.new()
 	for case in [["vtwin", 2], ["parallel", 2], ["inline", 4], ["2stroke", 1]]:
-		audio.layout = case[0]
-		audio.cylinders = case[1]
-		check(audio.firing_angles().size() == case[1], "a %s fires %d times a cycle" % case)
-	audio.layout = "vtwin"
-	var v: Array = audio.firing_angles()
-	check(absf(v[1] - 0.5) > 0.03, "a V-twin's beat is uneven")
-	audio.free()
+		var fires := EngineSynth.firing_events(EngineSynth.make_spec(case[0], case[1], 600.0))
+		check(fires.size() == case[1], "a %s fires %d times a cycle" % case)
+	var v: Array = EngineSynth.firing_events(EngineSynth.make_spec("vtwin", 2, 900.0))
+	check(absf(float(v[1][0]) / 720.0 - 0.5) > 0.03, "a V-twin's beat is uneven")
 
 
 func _test_round5_riding() -> void:
@@ -1876,12 +1888,12 @@ func _test_round6_riding() -> void:
 	check(st.size() >= 24 and st[21] > 0.5, "and the other players hear it")
 	await _done(r)
 	# Engine notes: a little 50 and a big 1200 are synthesised differently.
-	var small := EngineAudio.new()
-	small.displacement = 50.0
-	var big := EngineAudio.new()
-	big.displacement = 1200.0
+	var small := EngineSound.new()
+	var big := EngineSound.new()
 	add_child(small)
 	add_child(big)
+	small.setup(BikeBuild.new({"engine": "inline_50"}))
+	big.setup(BikeBuild.new({"engine": "inline_1200"}))
 	await get_tree().process_frame
 	check(is_instance_valid(small) and is_instance_valid(big), "engine notes run for any size of engine")
 	small.queue_free()
@@ -7295,6 +7307,361 @@ func _test_shop_session() -> void:
 	Progress.select(Settings.player_name)
 
 
+## Graphics settings: presets set their keys, Custom after a change, saving and loading,
+## applying to the viewport headless, the driver override file and the Graphics tab.
+func _test_graphics_settings() -> void:
+	# Keep the player's own settings file and graphics settings as they were.
+	var had := FileAccess.file_exists(Settings.PATH)
+	var before := FileAccess.get_file_as_string(Settings.PATH) if had else ""
+	var keep := {"high_quality": Settings.high_quality}
+	for k in Settings.GFX_KEYS:
+		keep[k] = Settings.get(k)
+	var changes := [0]
+	var count := func(): changes[0] += 1
+	Settings.graphics_changed.connect(count)
+	# Presets set every key they cover.
+	for preset in ["low", "medium", "high", "ultra"]:
+		Settings.apply_preset(preset)
+		var values: Dictionary = Graphics.PRESETS[preset]
+		var wrong := values.keys().filter(func(k): return Settings.get(k) != values[k])
+		check(wrong.is_empty() and Settings.gfx_preset == preset and Settings.high_quality == (preset != "low"),
+			"the %s preset sets its options %s" % [preset, str(wrong)])
+	check(changes[0] == 4, "every preset change tells the game (%d)" % changes[0])
+	var shared := ["gfx_gi", "gfx_volumetrics", "gfx_clouds", "gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_shadows", "gfx_draw_distance"]
+	check(shared.all(func(k): return Graphics.PRESETS["low"].has(k) and Settings.GFX_KEYS.has(k)), "presets cover the lighting options too")
+	# Custom: changing one option the preset covers.
+	Settings.apply_preset("high")
+	Settings.set_graphics("gfx_fov", 90.0)
+	check(Settings.gfx_preset == "high" and is_equal_approx(Graphics.fov_offset(), 15.0), "field of view isn't part of a preset")
+	Settings.set_graphics("gfx_ssao", false)
+	check(Settings.gfx_preset == "custom" and not Settings.gfx_ssao and Settings.high_quality, "changing one option makes it Custom")
+	var res_before := Settings.gfx_resolution
+	Settings.set_graphics("gfx_msaa", "16x")
+	Settings.set_graphics("gfx_render_scale", 5.0)
+	Settings.set_graphics("gfx_resolution", "1x1")
+	check(Settings.gfx_msaa == "2x" and is_equal_approx(Settings.gfx_render_scale, 2.0) and Settings.gfx_resolution == res_before,
+		"values it can't take are refused or clamped (%s, %.2f, %s)" % [Settings.gfx_msaa, Settings.gfx_render_scale, Settings.gfx_resolution])
+	# Saved and loaded back.
+	Settings.set_graphics("gfx_window_mode", "borderless")
+	Settings.set_graphics("gfx_resolution", "2560x1440")
+	Settings.set_graphics("gfx_render_scale", 0.75)
+	Settings.set_graphics("gfx_upscaler", "fsr1")
+	Settings.set_graphics("gfx_fps_cap", 144)
+	Settings.set_graphics("gfx_gi", "ssil")
+	Settings.set_graphics("gfx_fps_counter", true)
+	var saved := {}
+	for k in Settings.GFX_KEYS:
+		saved[k] = Settings.get(k)
+	Settings.save_settings()
+	Settings.apply_preset("ultra")
+	Settings.gfx_window_mode = "windowed"
+	Settings.gfx_fps_cap = 0
+	Settings.load_settings()
+	var differ := saved.keys().filter(func(k): return Settings.get(k) != saved[k])
+	check(differ.is_empty() and Settings.gfx_preset == "custom", "graphics settings save and load back %s" % str(differ))
+	# An old settings file with high quality off comes up on the Low preset.
+	var old := ConfigFile.new()
+	old.set_value("video", "high_quality", false)
+	old.save(Settings.PATH)
+	Settings.apply_preset("high")
+	Settings.load_settings()
+	check(Settings.gfx_preset == "low" and Settings.gfx_gi == "off" and not Settings.high_quality, "an old 'high quality off' file becomes Low")
+	# Applying to the viewport (headless, so the window itself is left alone).
+	var g: Graphics = null
+	for c in Settings.get_children():
+		if c is Graphics:
+			g = c
+	check(g != null, "Settings has a Graphics node")
+	Settings.apply_preset("low")
+	var vp := get_tree().root
+	check(vp.msaa_3d == Viewport.MSAA_DISABLED and vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR and is_equal_approx(vp.scaling_3d_scale, 0.75)
+		and vp.screen_space_aa == Viewport.SCREEN_SPACE_AA_FXAA, "Low: no MSAA, FSR 1 at 75%%, FXAA (mode %d, %.2f)" % [vp.scaling_3d_mode, vp.scaling_3d_scale])
+	Settings.apply_preset("ultra")
+	check(vp.msaa_3d == Viewport.MSAA_4X and vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_BILINEAR and vp.use_taa
+		and vp.screen_space_aa == Viewport.SCREEN_SPACE_AA_SMAA and vp.mesh_lod_threshold < 0.5, "Ultra: 4x MSAA, TAA, SMAA, native, fine LOD")
+	Settings.set_graphics("gfx_render_scale", 0.5)
+	Settings.set_graphics("gfx_upscaler", "fsr2")
+	check(vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR2 and not vp.use_taa, "FSR 2.2 upscales and takes over from TAA")
+	check(Graphics.scaling_mode("fsr2", 1.5) == Viewport.SCALING_3D_MODE_BILINEAR and Graphics.scaling_mode("fsr1", 1.0) == Viewport.SCALING_3D_MODE_BILINEAR,
+		"supersampling and 100% use plain bilinear")
+	check(Graphics.parse_resolution("3840x2160") == Vector2i(3840, 2160) and Graphics.parse_resolution("7680x4320") == Vector2i(1600, 900)
+		and Graphics.RESOLUTIONS.all(func(r): return r.x <= 3840 and r.y <= 2160), "resolutions go up to 4K")
+	await get_tree().process_frame
+	# The driver override, read by Godot at the next start.
+	check(str(ProjectSettings.get_setting("application/config/project_settings_override")) == Graphics.OVERRIDE_PATH,
+		"the project reads the graphics override file at start-up")
+	var test_path := "user://test_graphics_override.cfg"
+	Graphics.write_driver_override("d3d12", test_path)
+	var ovr := ConfigFile.new()
+	check(ovr.load(test_path) == OK and ovr.get_value("rendering", "rendering_device/driver.windows", "") == "d3d12"
+		and ovr.get_value("rendering", "rendering_device/fallback_to_vulkan", false) == true, "DirectX 12 is written for the next start, falling back to Vulkan")
+	Graphics.write_driver_override("vulkan", test_path)
+	ovr.load(test_path)
+	check(ovr.get_value("rendering", "rendering_device/driver.windows", "") == "vulkan", "and Vulkan back again")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(test_path))
+	# The Graphics tab: picking a preset, and Custom showing after a change.
+	var tab := GraphicsTab.new()
+	add_child(tab)
+	await get_tree().process_frame
+	var preset_box: OptionButton = tab._controls["gfx_preset"]["control"]
+	preset_box.select(0)
+	preset_box.item_selected.emit(0)
+	check(Settings.gfx_preset == "low", "the tab's preset list picks Low")
+	var ssr: CheckBox = tab._controls["gfx_ssr"]["control"]
+	ssr.button_pressed = true
+	check(Settings.gfx_ssr and Settings.gfx_preset == "custom" and preset_box.get_item_text(preset_box.selected) == "Custom",
+		"ticking an option in the tab makes the preset Custom")
+	tab._rt.button_pressed = true
+	check(Settings.gfx_gi == "sdfgi", "the ray-traced lighting switch turns SDFGI on")
+	tab.queue_free()
+	# Put everything back.
+	Settings.graphics_changed.disconnect(count)
+	for k in keep:
+		Settings.set(k, keep[k])
+	Settings.graphics_changed.emit()
+	if had:
+		var f := FileAccess.open(Settings.PATH, FileAccess.WRITE)
+		f.store_string(before)
+		f.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
+	await get_tree().process_frame
+## The Graphics settings turned into the environment: SDFGI or SSIL, SSR, SSAO, glow,
+## volumetric fog, the cloud sky and shadows; and the plainer look on the compatibility renderer.
+func _test_lighting_profile() -> void:
+	var best := {"gfx_gi": "sdfgi", "gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_ssr": true, "gfx_ssao": true,
+		"gfx_glow": true, "gfx_shadows": "ultra", "gfx_draw_distance": 1.0, "gfx_brightness": 1.0}
+	var p := Lighting.profile(best, true)
+	check(p["sdfgi"] and not p["ssil"] and p["ssr"] and p["ssao"] and p["glow"] and p["volumetric_fog"] and p["fog_volumes"],
+		"the best settings: SDFGI, reflections, AO, glow, volumetric fog and fog volumes")
+	check(int(p["sdfgi_cascades"]) == 6 and float(p["sdfgi_min_cell"]) < 0.2, "SDFGI reaches across the map with fine cells near you")
+	check(bool(p["clouds"]["volumetric"]) and str(p["clouds"]["res"]) == "half" and int(p["fog_size"]) >= 128, "raymarched clouds at half resolution")
+	check(int(p["shadow"]["soft"]) == 5 and bool(p["shadow"]["pcss"]), "ultra shadows are the softest, with contact hardening")
+	var ssil := best.duplicate()
+	ssil["gfx_gi"] = "ssil"
+	ssil["gfx_volumetrics"] = "low"
+	ssil["gfx_clouds"] = "low"
+	p = Lighting.profile(ssil, true)
+	check(p["ssil"] and not p["sdfgi"] and int(p["fog_size"]) < 128, "SSIL is the lighter GI; low fog is coarser")
+	check(str(p["clouds"]["res"]) == "quarter" and int(p["clouds"]["steps"]) < 20, "low clouds: quarter resolution, fewer steps")
+	var off := best.duplicate()
+	off["gfx_gi"] = "off"
+	off["gfx_volumetrics"] = "off"
+	off["gfx_clouds"] = "off"
+	off["gfx_shadows"] = "low"
+	p = Lighting.profile(off, true)
+	check(not p["sdfgi"] and not p["ssil"] and not p["volumetric_fog"] and not p["fog_volumes"] and not bool(p["clouds"]["volumetric"]),
+		"everything off: no GI, no volumetric fog, the flat cloud layer")
+	check(not bool(p["shadow"]["omni"]) and int(p["shadow"]["atlas"]) <= 2048, "low shadows: small maps, round lamps don't cast them")
+	# The compatibility renderer: none of the Forward+ extras, the flat clouds at "low".
+	p = Lighting.profile(best, false)
+	check(not p["sdfgi"] and not p["fog_volumes"] and str(p["clouds"]["res"]) == "full", "compatibility: no SDFGI or fog volumes, clouds drawn at full size")
+	check(not bool(CloudSky.quality("low", false)["volumetric"]), "compatibility at low: the old flat clouds")
+	# Missing settings: the defaults, or the low look with the old quality switch off.
+	var hq := Settings.high_quality
+	Lighting.overrides = {}
+	if Settings.get("gfx_gi") == null:
+		Settings.high_quality = true
+		check(str(Lighting.option("gfx_gi")) == "sdfgi" and str(Lighting.option("gfx_shadows")) == "high", "no Graphics settings yet: the high defaults")
+		Settings.high_quality = false
+		check(str(Lighting.option("gfx_gi")) == "off" and str(Lighting.option("gfx_volumetrics")) == "off", "with high quality off: the low look")
+	Settings.high_quality = hq
+	Lighting.overrides = {"gfx_gi": "ssil"}
+	check(str(Lighting.option("gfx_gi")) == "ssil", "overrides win")
+	Lighting.overrides = {}
+	# Every variant of the sky shader compiles (a broken one has no uniforms).
+	for setting in ["off", "low", "high"]:
+		for fp in [true, false]:
+			var sh := CloudSky.make_shader(CloudSky.quality(setting, fp))
+			check(sh.get_shader_uniform_list().size() >= 18, "the %s sky shader compiles (%s)" % [setting, "Forward+" if fp else "compatibility"])
+	var fog := Shader.new()
+	fog.code = Lighting.DUST_SHADER
+	check(fog.get_shader_uniform_list().size() == 5, "the dust fog shader compiles")
+
+
+## Each lamp lights the fog by a sensible amount and casts shadows to suit the quality, and
+## only buildings and big fixed things take part in GI.
+func _test_lighting_lamps_and_gi() -> void:
+	var opts := Lighting.options()
+	opts["gfx_shadows"] = "high"
+	var high := Lighting.profile(opts, true)
+	opts["gfx_shadows"] = "low"
+	var low := Lighting.profile(opts, true)
+	var omni := OmniLight3D.new()
+	omni.shadow_enabled = true
+	var spot := SpotLight3D.new()
+	var flood := SpotLight3D.new()
+	flood.light_volumetric_fog_energy = 2.5
+	flood.add_to_group(Daylight.NIGHT_LIGHTS)
+	add_child(omni)
+	add_child(spot)
+	add_child(flood)
+	for l in [omni, spot, flood]:
+		Lighting.tune_light(l, high)
+	check(is_equal_approx(omni.light_volumetric_fog_energy, Lighting.OMNI_FOG) and is_equal_approx(spot.light_volumetric_fog_energy, Lighting.SPOT_FOG),
+		"lamps nobody tuned get a sensible glow in the fog")
+	check(is_equal_approx(flood.light_volumetric_fog_energy, 2.5) and flood.shadow_enabled, "a tuned floodlight keeps its glow and casts shadows (god rays) at high")
+	for l in [omni, spot, flood]:
+		Lighting.tune_light(l, low)
+	check(not omni.shadow_enabled and not flood.shadow_enabled, "low shadows: the round lamp and floodlight stop casting them")
+	for l in [omni, spot, flood]:
+		Lighting.tune_light(l, high)
+	check(omni.shadow_enabled and is_equal_approx(omni.light_volumetric_fog_energy, Lighting.OMNI_FOG), "and back at high they come back as they were")
+	# The headlight looks after itself (its soft flood is tuned for the fog).
+	var fx := BikeEffects.new()
+	add_child(fx)
+	var beam := SpotLight3D.new()
+	beam.light_volumetric_fog_energy = 0.0
+	fx.add_child(beam)
+	Lighting.tune_light(beam, high)
+	check(beam.has_meta("lighting_skip") and beam.light_volumetric_fog_energy == 0.0, "a bike's lights are left alone")
+	# GI: a building is static, a small part and anything on a moving body are left out.
+	var wall := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(6.0, 3.0, 0.2)
+	wall.mesh = box
+	add_child(wall)
+	var bolt := MeshInstance3D.new()
+	var little := BoxMesh.new()
+	little.size = Vector3(0.1, 0.1, 0.1)
+	bolt.mesh = little
+	add_child(bolt)
+	var body := CharacterBody3D.new()
+	add_child(body)
+	var big_on_body := MeshInstance3D.new()
+	big_on_body.mesh = box
+	body.add_child(big_on_body)
+	var dust := CPUParticles3D.new()
+	add_child(dust)
+	check(Lighting.gi_mode_for(wall) == GeometryInstance3D.GI_MODE_STATIC, "walls bounce light (static GI)")
+	check(Lighting.gi_mode_for(bolt) == GeometryInstance3D.GI_MODE_DISABLED and Lighting.gi_mode_for(big_on_body) == GeometryInstance3D.GI_MODE_DISABLED
+		and Lighting.gi_mode_for(dust) == GeometryInstance3D.GI_MODE_DISABLED, "small props, moving things and particles stay out of GI")
+	# Eye adaptation: a dark room opens your eyes up more than a lit one; outdoors is as is.
+	check(Lighting.eye_target("", false, 0.0) == 1.0 and Lighting.eye_target("shed", false, 0.0) > Lighting.eye_target("shed", true, 0.0),
+		"walking into a dark shed your eyes adjust more than into a lit one")
+	check(Lighting.eye_target("shed", true, 1.0) < 1.0, "at night the lamps are bright after the dark")
+	for n in [omni, spot, flood, fx, wall, bolt, body, dust]:
+		n.queue_free()
+
+
+## The cloud sky follows the weather: more and heavier cloud from clear to cloudy to rain, lit
+## by the moon at night; the cloud setting swaps the shader.
+func _test_lighting_clouds() -> void:
+	var kept := [Settings.weather, Settings.weather_now, Settings.day_night_cycle]
+	Settings.day_night_cycle = false
+	var env := Environment.new()
+	var sun := DirectionalLight3D.new()
+	add_child(sun)
+	var dl := Daylight.new()
+	add_child(dl)
+	var w := Weather.new()
+	add_child(w)
+	dl.setup(env, sun)
+	var covers := {}
+	for st in ["clear", "cloudy", "rain"]:
+		Settings.weather = st
+		w.change_to(st, true)
+		dl.set_time(12.0)
+		covers[st] = float(dl._sky_mat.get_shader_parameter("cloud_cover"))
+	check(covers["clear"] < covers["cloudy"] and covers["cloudy"] < covers["rain"], "cloud cover grows from clear to cloudy to rain (%s)" % [covers])
+	check(float(dl._sky_mat.get_shader_parameter("cloud_rain")) == 1.0, "rain clouds are heavy and dark")
+	var wind: Vector2 = dl._sky_mat.get_shader_parameter("wind")
+	check(wind.length() > CloudSky.wind_for(0.0).length(), "and the wind blows them faster")
+	var lit: Vector3 = dl._sky_mat.get_shader_parameter("cloud_light_dir")
+	check(lit.is_equal_approx(dl.sun_dir), "by day the sun lights the clouds")
+	dl.set_time(0.5)
+	lit = dl._sky_mat.get_shader_parameter("cloud_light_dir")
+	check(not lit.is_equal_approx(dl.sun_dir) and lit.y > 0.0, "at night the moon does")
+	# Changing the setting swaps the shader, and back.
+	dl.set_cloud_quality("off")
+	check(not dl._sky_mat.shader.code.contains("#define VOLUMETRIC"), "clouds off: the flat layer")
+	dl.set_cloud_quality("high")
+	check(dl._sky_mat.shader.code.contains("#define VOLUMETRIC") == bool(CloudSky.quality("high", Lighting.forward_plus())["volumetric"]),
+		"clouds high: raymarched")
+	check(dl._sky_mat.get_shader_parameter("cloud_noise") != null, "the noise survives the swap")
+	Settings.weather = kept[0]
+	Settings.weather_now = kept[1]
+	Settings.day_night_cycle = kept[2]
+	w.queue_free()
+	dl.queue_free()
+	sun.queue_free()
+	await get_tree().process_frame
+
+
+## In a running shed: the World's Lighting sets the environment up, re-applies when the settings
+## change (any mix, without errors), fills the shed with dust (Forward+), the paint shop fills
+## with overspray, and your eyes adjust going into a dark shed.
+func _test_lighting_session() -> void:
+	SaveGame.slot_override = "test_lighting"
+	SaveGame.delete_slot("test_lighting")
+	var kept_cycle := Settings.day_night_cycle
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	var lt: Lighting = main.world.lighting
+	check(lt != null and Lighting.current == lt, "the world has its lighting")
+	var env: Environment = lt.env
+	var combos := [
+		{"gfx_gi": "sdfgi", "gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_shadows": "ultra", "gfx_glow": true, "gfx_ssr": true},
+		{"gfx_gi": "ssil", "gfx_volumetrics": "low", "gfx_clouds": "low", "gfx_shadows": "medium", "gfx_glow": false, "gfx_ssr": false},
+		{"gfx_gi": "off", "gfx_volumetrics": "off", "gfx_clouds": "off", "gfx_shadows": "low", "gfx_glow": true, "gfx_ssr": true},
+	]
+	var fp := Lighting.forward_plus()
+	for c in combos:
+		Lighting.overrides = c
+		lt.apply()
+		await get_tree().process_frame
+		check(env.sdfgi_enabled == (fp and c["gfx_gi"] == "sdfgi") and env.ssil_enabled == (fp and c["gfx_gi"] == "ssil")
+			and env.volumetric_fog_enabled == (c["gfx_volumetrics"] != "off") and env.glow_enabled == c["gfx_glow"] and env.ssr_enabled == c["gfx_ssr"],
+			"settings %s/%s/%s reach the environment" % [c["gfx_gi"], c["gfx_volumetrics"], c["gfx_shadows"]])
+		check(is_instance_valid(lt.dust) == (fp and c["gfx_volumetrics"] != "off"), "the shed's dust is there only with volumetric fog on Forward+")
+		var sky_q: Dictionary = main.world.daylight.cloud_quality()
+		check(bool(sky_q["volumetric"]) == bool(CloudSky.quality(str(c["gfx_clouds"]), fp)["volumetric"]), "the sky follows the cloud setting")
+		var sun: DirectionalLight3D = lt.sun
+		check(is_equal_approx(sun.directional_shadow_max_distance, float(Lighting.SHADOWS[c["gfx_shadows"]]["distance"])),
+			"the sun's shadows reach as far as the setting says")
+	# The polling notices a change without any signal.
+	Lighting.overrides = combos[0]
+	await get_tree().create_timer(0.6).timeout
+	check(env.sdfgi_enabled == fp, "a settings change is picked up by itself")
+	# Every lamp in the shed has been tuned.
+	var tuned := 0
+	for l in lt._lights:
+		if is_instance_valid(l) and (l.has_meta("lighting_orig") or l.has_meta("lighting_skip")):
+			tuned += 1
+	check(lt._lights.size() > 10 and tuned == lt._lights.size(), "every lamp is tuned (%d)" % tuned)
+	# Eyes adjusting: into the shed with the lights off by day.
+	Settings.day_night_cycle = false
+	main.world.daylight.set_time(12.0)
+	Shed.request({"a": "lights", "room": "", "on": false})
+	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.1, 0.0)))
+	for i in 5:
+		await get_tree().process_frame
+	var early := lt.adapt
+	for i in 60:
+		await get_tree().process_frame
+	check(lt.adapt > early and lt.adapt > 1.05, "in the dark shed your eyes slowly open up (%.2f to %.2f)" % [early, lt.adapt])
+	Shed.request({"a": "lights", "room": "", "on": true})
+	# Overspray: build it up as if someone were spraying in the paint shop.
+	if is_instance_valid(lt.overspray):
+		lt.overspray_level = 0.8
+		lt._update_overspray(0.0)
+		check(lt.overspray.visible and float((lt.overspray.material as ShaderMaterial).get_shader_parameter("density")) > 0.0, "spraying fills the paint shop with haze")
+		lt._update_overspray(30.0)
+		check(lt.overspray_level < 0.8, "and it clears again")
+	Lighting.overrides = {}
+	lt.apply()
+	Settings.day_night_cycle = kept_cycle
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_lighting")
+	SaveGame.slot_override = ""
+
+
 ## Every player's start spot in the shed has room to walk: forward and back from each of the
 ## spots a co-op player can be given, nothing pins them in place.
 func _test_walker_spawns() -> void:
@@ -7319,6 +7686,523 @@ func _test_walker_spawns() -> void:
 	check(stuck.is_empty(), "every start spot in the shed has room to walk %s" % str(stuck))
 	main.queue_free()
 	await get_tree().process_frame
+
+
+## Strength of a loop at `hz` (a Goertzel filter over the whole loop).
+func _tone(x: PackedFloat32Array, hz: float) -> float:
+	var w := TAU * hz / EngineSynth.RATE
+	var c := 2.0 * cos(w)
+	var s1 := 0.0
+	var s2 := 0.0
+	for v in x:
+		var s0 := v + c * s1 - s2
+		s2 = s1
+		s1 = s0
+	return sqrt(maxf(s1 * s1 + s2 * s2 - c * s1 * s2, 0.0)) / x.size()
+
+
+func _rms(x: PackedFloat32Array) -> float:
+	var t := 0.0
+	for v in x:
+		t += v * v
+	return sqrt(t / maxf(x.size(), 1))
+
+
+## Strength of each order of the engine cycle (k times the cycle rate), k = 1..count.
+func _orders(spec: Dictionary, x: PackedFloat32Array, rpm: float, count: int) -> PackedFloat32Array:
+	var cycle_hz := rpm / 60.0 * 360.0 / EngineSynth.cycle_degrees(spec)
+	var out := PackedFloat32Array()
+	for k in range(1, count + 1):
+		out.append(_tone(x, cycle_hz * k))
+	return out
+
+
+func _test_engine_firing() -> void:
+	var specs := {
+		"single": EngineSynth.make_spec("single", 1, 450.0, {"idle": 1500.0, "redline": 11000.0}),
+		"twin 360": EngineSynth.make_spec("twin", 2, 750.0, {"idle": 1050.0, "redline": 7700.0}),
+		"parallel 270": EngineSynth.make_spec("parallel", 2, 700.0, {"idle": 1300.0, "redline": 9500.0}),
+		"V-twin": EngineSynth.make_spec("vtwin", 2, 1100.0, {"idle": 1000.0, "redline": 8100.0}),
+		"boxer": EngineSynth.make_spec("boxer", 2, 1200.0, {"idle": 950.0, "redline": 7900.0}),
+		"triple": EngineSynth.make_spec("triple", 3, 850.0, {"idle": 1250.0, "redline": 10500.0}),
+		"inline four": EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0}),
+		"crossplane four": EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "crank": "crossplane"}),
+		"two-stroke single": EngineSynth.make_spec("2stroke", 1, 125.0, {"idle": 1450.0, "redline": 14600.0, "peak": 11250.0}),
+		"two-stroke triple": EngineSynth.make_spec("2stroke", 3, 750.0, {"idle": 1050.0, "redline": 10600.0, "peak": 8150.0}),
+	}
+	var even := ["single", "twin 360", "boxer", "triple", "inline four", "two-stroke single", "two-stroke triple"]
+	var profiles := {}
+	var offbeat := {}
+	for name in specs:
+		var spec: Dictionary = specs[name]
+		var rpm := EngineSynth.loop_rpm(spec, 5000.0)
+		var x := EngineSynth.render_loop(spec, "ex_on", rpm)
+		var events := EngineSynth.firing_events(spec).size()
+		var orders := _orders(spec, x, rpm, 4 * events)
+		check(_rms(x) > 0.01, "a %s makes an audible exhaust note (rms %.3f)" % [name, _rms(x)])
+		if name in even:
+			# Evenly spaced firings: the note is the firing rate, rpm x cylinders / 2 (x cylinders on a two-stroke).
+			var best := 0
+			for k in orders.size():
+				if orders[k] > orders[best]:
+					best = k
+			var fire_hz := EngineSynth.firing_hz(spec, rpm)
+			var expect: float = rpm / 60.0 * spec["cylinders"] * (1.0 if EngineSynth.is_two_stroke(spec) else 0.5)
+			check((best + 1) % events == 0 and absf(fire_hz - expect) < 0.01,
+				"a %s's strongest note is a harmonic of its firing rate, %.0f Hz at %.0f rpm (order %d, %d firings a cycle)" % [name, fire_hz, rpm, best + 1, events])
+		# Its spectral shape: the energy in each octave band up to 8 kHz, in dB of the whole.
+		var cycle_hz := rpm / 60.0 * 360.0 / EngineSynth.cycle_degrees(spec)
+		var bands := PackedFloat32Array()
+		bands.resize(7)
+		var order := 1
+		while order * cycle_hz < 8000.0:
+			var hz := order * cycle_hz
+			var band := clampi(int(log(hz / 62.5) / log(2.0)), 0, 6)
+			var t := _tone(x, hz)
+			bands[band] += t * t
+			order += 1 if hz < 1000.0 else 3
+		var whole := 0.0
+		for v in bands:
+			whole += v
+		for i in bands.size():
+			bands[i] = 10.0 * log(maxf(bands[i] / maxf(whole, 1e-12), 1e-7)) / log(10.0)
+		# And its rhythm: the first 16 orders of the cycle, in dB of the strongest.
+		var top := 0.0
+		for v in orders:
+			top = maxf(top, v)
+		for q in mini(16, orders.size()):
+			bands.append(20.0 * log(maxf(orders[q] / maxf(top, 1e-12), 1e-4)) / log(10.0))
+		profiles[name] = bands
+		# Off-beat engines have strong in-between orders; even ones barely any.
+		var on_beat := 0.0
+		var off_beat := 0.0
+		for k in orders.size():
+			if (k + 1) % events == 0:
+				on_beat += orders[k] * orders[k]
+			else:
+				off_beat += orders[k] * orders[k]
+		offbeat[name] = off_beat / maxf(on_beat, 1e-12)
+	check(offbeat["parallel 270"] > 4.0 * offbeat["twin 360"],
+		"a 270 degree twin lopes where a 360 twin is even (off-beat %.2f vs %.2f)" % [offbeat["parallel 270"], offbeat["twin 360"]])
+	check(offbeat["crossplane four"] > 4.0 * offbeat["inline four"],
+		"a crossplane four growls where a flat-plane four screams evenly (off-beat %.2f vs %.2f)" % [offbeat["crossplane four"], offbeat["inline four"]])
+	# Every layout sounds different from every other: their spectra don't line up.
+	var names: Array = specs.keys()
+	var closest := 1000.0
+	var pair := ""
+	for i in names.size():
+		for j in range(i + 1, names.size()):
+			var a: PackedFloat32Array = profiles[names[i]]
+			var b: PackedFloat32Array = profiles[names[j]]
+			var diff := 0.0
+			for q in mini(a.size(), b.size()):
+				diff += absf(clampf(a[q], -40.0, 0.0) - clampf(b[q], -40.0, 0.0)) / mini(a.size(), b.size())
+			if diff < closest:
+				closest = diff
+				pair = "%s / %s" % [names[i], names[j]]
+	check(closest > 1.5, "every engine layout has its own spectrum and rhythm (closest pair %s, %.1f dB apart per band)" % [pair, closest])
+	# A two-stroke comes on the pipe: much stronger in its powerband than below it.
+	var two: Dictionary = specs["two-stroke single"]
+	var below := EngineSynth.render_loop(two, "ex_on", EngineSynth.loop_rpm(two, two["peak"] * 0.55))
+	var on_pipe := EngineSynth.render_loop(two, "ex_on", EngineSynth.loop_rpm(two, two["peak"]))
+	check(_rms(on_pipe) > 1.4 * _rms(below), "a two-stroke swells on the pipe (rms %.3f in the powerband, %.3f below)" % [_rms(on_pipe), _rms(below)])
+	# Loud pipes are louder and brighter than a stock can.
+	var stock := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "stock"})
+	var straight := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "straight"})
+	var rs := EngineSynth.render_loop(stock, "ex_on", 11000.0)
+	var rr := EngineSynth.render_loop(straight, "ex_on", 11000.0)
+	check(_rms(rr) > 1.5 * _rms(rs), "a straight pipe is louder than the stock can (%.3f vs %.3f)" % [_rms(rr), _rms(rs)])
+	check(_tone(rr, 3000.0) > 2.0 * _tone(rs, 3000.0), "and rasps where the stock can is muffled")
+	# On the throttle it barks; off it, the overrun is quieter.
+	var off := EngineSynth.render_loop(straight, "ex_off", 11000.0)
+	check(_rms(rr) > 2.0 * _rms(off), "on the throttle is louder than the overrun (%.3f vs %.3f)" % [_rms(rr), _rms(off)])
+	# Loops repeat without a click at the seam.
+	var seam_ok := true
+	for layer in EngineSynth.LAYERS:
+		var x := EngineSynth.render_loop(specs["triple"], layer, 4000.0)
+		var step := 0.0
+		for i in range(1, x.size()):
+			step += absf(x[i] - x[i - 1])
+		step /= x.size()
+		seam_ok = seam_ok and absf(x[0] - x[x.size() - 1]) < 6.0 * step + 0.002
+	check(seam_ok, "the loops join up seamlessly")
+	# The CPU budget: baking runs on a worker thread, but it should still be quick.
+	var t0 := Time.get_ticks_usec()
+	var made := 0
+	for layer in EngineSynth.LAYERS:
+		made += EngineSynth.render_loop(specs["inline four"], layer, 9000.0).size()
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	var per_second := ms / (made / float(EngineSynth.RATE))
+	check(per_second < 150.0, "one second of engine sound bakes in %.0f ms (budget 150)" % per_second)
+
+
+func _test_engine_bank() -> void:
+	# The recipe comes from the parts fitted.
+	var race := EngineSynth.spec_from_build(BikeBuild.new({"engine": "four_1000", "exhaust": "titanium_race", "gearbox": "six_race_quickshift"}))
+	check(race["exhaust"] == "race" and race["shift"] == "slick" and race["quickshifter"] and race["dry_clutch"] and race["crank"] == "crossplane",
+		"a race build: race exhaust, slick quickshifter, dry clutch, crossplane crank (%s)" % str([race["exhaust"], race["shift"], race["crank"]]))
+	var sport := EngineSynth.spec_from_build(BikeBuild.new({"gearbox": "six_close", "exhaust": "slip_on"}))
+	var old := EngineSynth.spec_from_build(BikeBuild.new({"gearbox": "four_vintage", "exhaust": "stock_muffler"}))
+	var pipe := EngineSynth.spec_from_build(BikeBuild.new({"exhaust": "straight_pipe"}))
+	check(sport["shift"] == "click" and not sport["quickshifter"] and old["shift"] == "clunk",
+		"a sports box clicks, an old box clunks (%s, %s)" % [sport["shift"], old["shift"]])
+	check(old["exhaust"] == "stock" and sport["exhaust"] == "slip" and pipe["exhaust"] == "straight", "exhausts: stock, slip-on, straight pipe")
+	var kicker := EngineSynth.spec_from_build(BikeBuild.new({"engine": "2stroke_125"}))
+	check(kicker["kick"] and not race["kick"], "a little two-stroke kick starts; the superbike has a starter")
+	# Each gearbox's shift sounds different: slick is short and bright, a clunk long and low.
+	var feel := {}
+	for kind in ["slick", "click", "clunk"]:
+		var x := EngineSynth.render_shift(kind)
+		var energy := 0.0
+		var late := 0.0
+		for i in x.size():
+			energy += x[i] * x[i]
+			if i > EngineSynth.RATE * 0.03:
+				late += x[i] * x[i]
+		feel[kind] = {"bright": _tone(x, 5000.0) / maxf(_tone(x, 150.0), 1e-6), "tail": late / maxf(energy, 1e-9)}
+	check(feel["slick"]["bright"] > feel["click"]["bright"] and feel["click"]["bright"] > feel["clunk"]["bright"],
+		"a quickshifter's shift is crispest, a clunk dullest (%.2f, %.2f, %.2f)" % [feel["slick"]["bright"], feel["click"]["bright"], feel["clunk"]["bright"]])
+	check(feel["clunk"]["tail"] > feel["slick"]["tail"], "and the clunk rings on longer")
+	# A bank bakes the buckets nearest idle first, and everything else after.
+	var spec := EngineSynth.make_spec("triple", 3, 850.0, {"idle": 1250.0, "redline": 10500.0, "exhaust": "full"})
+	var bank := EngineBank.new(spec)
+	var order := bank.bake_order()
+	var nearest := 0
+	for i in bank.rpms.size():
+		if absf(log(bank.rpms[i] / 1250.0)) < absf(log(bank.rpms[nearest] / 1250.0)):
+			nearest = i
+	check(order[0] == nearest and bank.rpms[0] < 1250.0 and bank.rpms[-1] > 10500.0,
+		"buckets run from below idle (%.0f) past the redline (%.0f), idle baked first" % [bank.rpms[0], bank.rpms[-1]])
+	bank.bake_now()
+	check(bank.is_baked() and bank.baked.size() == bank.rpms.size() and bank.streams["ex_on"][0] is AudioStreamWAV
+		and bank.oneshots.has("pop") and bank.oneshots.has("shift") and bank.oneshots.has("starter"),
+		"the bank bakes every loop, the pops, shifts and starter (%d loops in %.0f ms)" % [bank.loop_count(), bank.bake_ms])
+	var w := bank.mix_weights(5000.0, 1.0)
+	var total := 0.0
+	var pitch_ok := true
+	for e in w:
+		if str(e[0]) == "ex_on":
+			total += float(e[2]) * float(e[2])
+			pitch_ok = pitch_ok and absf(bank.rpms[e[1]] * float(e[3]) - 5000.0) < 1.0
+	check(absf(total - 1.0) < 0.01 and pitch_ok, "loops crossfade at equal power, each pitched to the exact revs")
+	var idle_mix := bank.mix_weights(1250.0, 0.0)
+	var only_off := true
+	for e in idle_mix:
+		only_off = only_off and str(e[0]).ends_with("_off")
+	check(only_off and not idle_mix.is_empty(), "with the throttle shut only the off-throttle loops play")
+
+
+func _test_engine_events() -> void:
+	var spec := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "straight", "shift": "click"})
+	var stock := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "stock"})
+	check(EngineSound.pop_rate(spec, 10000.0, 0.2) > 4.0 * EngineSound.pop_rate(stock, 10000.0, 0.2),
+		"a straight pipe pops far more than a stock can on the overrun")
+	check(EngineSound.pop_rate(spec, 1500.0, 0.2) == 0.0, "nothing pops at tickover")
+	var es := EngineSound.new()
+	add_child(es)
+	es.setup_spec(spec)
+	es.bank.bake_now()
+	es.running = true
+	es.gear = 3
+	es.rpm = 10000.0
+	es.throttle = 1.0
+	for i in 240:
+		es._process(1.0 / 60.0)
+	check(es.pops == 0, "no pops while the throttle is open")
+	check(es.playing_count() >= 2, "the loops play on the throttle (%d players)" % es.playing_count())
+	es.throttle = 0.0
+	for i in 180:
+		es.rpm = lerpf(10000.0, 6000.0, i / 180.0)
+		es._process(1.0 / 60.0)
+	check(es.pops > 0, "snap the throttle shut at high revs and the pipe pops (%d pops)" % es.pops)
+	es.flame.flash(1.0)
+	check(es.flame.is_lit(), "a backfire lights the exhaust flame")
+	es.rpm = 1300.0
+	var before := es.pops
+	for i in 240:
+		es._process(1.0 / 60.0)
+	check(es.pops == before, "and it settles at idle")
+	# Shifting: an upshift cuts the sound for a blink; a downshift blips (the bark).
+	es.rpm = 9000.0
+	es.throttle = 1.0
+	es.gear = 4
+	es._process(1.0 / 60.0)
+	check(es.shifts == 1 and es.last_shift == "click" and es._cut > 0.0, "an upshift clicks and cuts the drive for a moment")
+	es.gear = 3
+	es.throttle = 0.0
+	es._process(1.0 / 60.0)
+	check(es.shifts == 2 and es._blip > 0.5, "a downshift blips the throttle")
+	es.queue_free()
+	var qs := EngineSound.new()
+	add_child(qs)
+	qs.setup(BikeBuild.new({"engine": "four_1000", "exhaust": "titanium_race", "gearbox": "six_race_quickshift"}))
+	qs.running = true
+	qs.rpm = 9000.0
+	qs.gear = 2
+	qs._process(1.0 / 60.0)
+	qs.gear = 3
+	qs._process(1.0 / 60.0)
+	check(qs.last_shift == "slick" and qs._cut > 0.0 and qs._cut < 0.06, "the quickshifter's cut is crisp and short")
+	# The runtime cost: one bike's sound updating each frame.
+	qs.bank.bake_now()
+	var t0 := Time.get_ticks_usec()
+	for i in 300:
+		qs.rpm = 3000.0 + 20.0 * i
+		qs.throttle = float(i % 50) / 50.0
+		qs._process(1.0 / 60.0)
+	var per := (Time.get_ticks_usec() - t0) / 300.0 / 1000.0
+	check(per < 0.5, "a bike's engine sound costs %.3f ms a frame (budget 0.5)" % per)
+	qs.queue_free()
+	await get_tree().process_frame
+
+
+func _test_engine_users() -> void:
+	# Other players' bikes and the dyno use the same engine sound as your own.
+	var build := BikeBuild.new({"engine": "triple_850"})
+	var rb := RemoteBike.new()
+	add_child(rb)
+	rb.setup("Visitor", build, Color.RED)
+	check(rb.audio is EngineSound and rb.audio.spec["layout"] == "triple" and rb.audio.infer_cranking,
+		"another player's bike plays its own engine sound")
+	check(rb.audio.exhaust_at.position.distance_to(rb.model.exhaust_tip()) < 0.01, "from its exhaust")
+	rb.queue_free()
+	var dyno_src := FileAccess.get_file_as_string("res://scripts/dyno_room.gd")
+	check(dyno_src.contains("EngineSound.new()") and not dyno_src.contains("EngineAudio"), "the dyno room uses the same engine sound")
+	# The starter: a remote bike guesses it from the revs rising with the engine off.
+	var es := EngineSound.new()
+	add_child(es)
+	es.infer_cranking = true
+	es.setup_spec(EngineSynth.make_spec("twin", 2, 750.0, {"idle": 1050.0, "redline": 7700.0}))
+	es.bank.bake_now()
+	es.running = false
+	es.rpm = 0.0
+	es._process(1.0 / 60.0)
+	es.rpm = 120.0
+	es._process(1.0 / 60.0)
+	check(es.cranking, "a remote bike's starter is heard when its revs rise with the engine off")
+	es.queue_free()
+	await get_tree().process_frame
+
+
+func _test_engine_samples() -> void:
+	# Recorded sounds dropped into user://engine_samples/<layout>_<exhaust> replace the synthesised ones.
+	var dir := "user://engine_samples/boxer_straight"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var spec := EngineSynth.make_spec("boxer", 2, 1000.0, {"idle": 1000.0, "redline": 8200.0, "exhaust": "straight"})
+	for r in [2000.0, 5000.0]:
+		EngineSynth.save_wav(EngineSynth.render_loop(spec, "ex_on", r), dir.path_join("ex_on_%d.wav" % int(r)))
+		EngineSynth.save_wav(EngineSynth.render_loop(spec, "ex_off", r), dir.path_join("ex_off_%d.wav" % int(r)))
+	EngineSynth.save_wav(EngineSynth.render_pop(spec, 1.0), dir.path_join("pop_1.wav"))
+	check(EngineBank.sample_folder(spec) == dir, "a folder of recordings is found for the engine")
+	var bank := EngineBank.for_spec(spec)
+	bank.bake_now()
+	check(bank.recorded and bank.rpms.size() == 2 and absf(bank.rpms[1] - 5000.0) < 1.0 and bank.streams["ex_on"][1] is AudioStreamWAV
+		and bank.streams["ex_on"][1].loop_mode == AudioStreamWAV.LOOP_FORWARD, "its loops are used, held at their rpm and looping")
+	check(bank.recorded_shots.has("pop") and bank.oneshots["pop"].size() == 1 and bank.oneshots.has("shift"),
+		"recorded pops are used; the rest is still synthesised")
+	var mix := bank.mix_weights(3500.0, 1.0)
+	check(not mix.is_empty(), "and they crossfade like the synthesised loops")
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir.path_join(f))
+	DirAccess.remove_absolute(dir)
+	DirAccess.remove_absolute("user://engine_samples")
+
+
+
+## Shed sound: every sound and variant made and audible, variants picked without repeats,
+## impacts sounding of their material and surface, footsteps by floor, machine start and stop
+## sounds, and the start-up synthesis kept off the main thread and within budget.
+func _test_shed_sound_variants() -> void:
+	var quiet := []
+	var loops_ok := true
+	for sound in SfxSynth.all_sounds():
+		var list := Sfx.variants(sound)
+		for v in list.size():
+			var wav: AudioStreamWAV = list[v]
+			var loud := 0
+			for i in range(0, wav.data.size() - 1, 32):
+				loud = maxi(loud, absi(wav.data.decode_s16(i)))
+			if wav.data.size() < 1000 or loud < 2000:
+				quiet.append("%s#%d (%d)" % [sound, v, loud])
+			if (wav.loop_mode == AudioStreamWAV.LOOP_FORWARD) != Sfx.LOOPS.has(sound):
+				loops_ok = false
+	check(quiet.is_empty(), "every sound and every variant is made and audible (%d sounds) %s" % [SfxSynth.all_sounds().size(), str(quiet)])
+	check(loops_ok, "loops loop and one-shots don't")
+	check(Sfx.variants("clink").size() >= 4 and Sfx.variants("step_gravel").size() >= 6 and Sfx.variants("impact_metal_concrete").size() >= 4
+		and Sfx.variants("pickup").size() >= 4 and Sfx.variants("scrap").size() >= 4, "one-shots come in several variants")
+	var same := false
+	for sound in ["clink", "step_concrete", "impact_plastic_wood"]:
+		var list := Sfx.variants(sound)
+		for a in list.size():
+			for b in range(a + 1, list.size()):
+				same = same or (list[a] as AudioStreamWAV).data == (list[b] as AudioStreamWAV).data
+	check(not same, "no two variants are the same")
+	# Picked at random, never the same one twice running, and all of them get used.
+	var last: AudioStreamWAV = null
+	var repeats := 0
+	var seen := {}
+	for i in 200:
+		var s := Sfx.pick("clink")
+		if s == last:
+			repeats += 1
+		last = s
+		seen[s] = true
+	check(repeats == 0 and seen.size() == Sfx.variants("clink").size(), "a variant never plays twice running (%d repeats, %d of %d used)" % [repeats, seen.size(), Sfx.variants("clink").size()])
+	check(Sfx.stream("bell") == Sfx.pick("bell"), "a one-variant sound is always the same stream")
+	# Materials and surfaces sound different: brightness (zero crossings) and how long it rings.
+	var metal := _zcr(Sfx.stream("impact_metal_concrete"))
+	var plastic := _zcr(Sfx.stream("impact_plastic_concrete"))
+	var rubber := _zcr(Sfx.stream("impact_rubber_concrete"))
+	check(metal > plastic * 1.5 and plastic > rubber, "steel rings brighter than plastic, plastic than a tyre (%d, %d, %d crossings a second)" % [metal, plastic, rubber])
+	var on_steel := _tail_energy(Sfx.stream("impact_metal_steel"))
+	var on_wood := _tail_energy(Sfx.stream("impact_metal_wood"))
+	var on_ground := _tail_energy(Sfx.stream("impact_metal_ground"))
+	check(on_steel > on_wood * 1.5 and on_wood > on_ground, "on a steel shelf it rings on; on the bench less; outside it's dead (%.5f, %.5f, %.5f)" % [on_steel, on_wood, on_ground])
+	check(_zcr(Sfx.stream("step_gravel")) > _zcr(Sfx.stream("step_concrete")) * 2.0 and _zcr(Sfx.stream("step_carpet")) < _zcr(Sfx.stream("step_tile")),
+		"gravel crunches brighter than concrete, carpet is duller than tiles")
+	check(Sfx.impact_material("fabric") == "soft" and Sfx.impact_material("electronics") == "plastic" and Sfx.impact_material("rubber") == "rubber"
+		and Sfx.impact_material("unknown") == "metal", "parts' materials map onto impact sounds")
+	# Start-up: the main thread only sets up buses and starts the worker.
+	check(Sfx.ready_ms < 100.0, "starting the sound system takes %.1f ms on the main thread" % Sfx.ready_ms)
+	var t0 := Time.get_ticks_msec()
+	for sound in ["grinder", "impact_metal_steel", "step_puddle", "amb_out"]:
+		for v in SfxSynth.variant_count(sound):
+			SfxSynth.make(sound, v)
+	var ms := Time.get_ticks_msec() - t0
+	check(ms < 8000, "the heaviest sounds synthesise in %d ms" % ms)
+	for i in 6000:
+		if Sfx.synth_done:
+			break
+		await get_tree().create_timer(0.05).timeout
+	check(Sfx.synth_done, "the worker has made every sound (%.0f ms, %s)" % [Sfx.synth_ms, "from the cache" if Sfx.loaded_from_cache else "synthesised"])
+	check(Sfx.synth_ms < 60000.0, "within the start-up budget")
+	check(FileAccess.file_exists(Sfx.CACHE_PATH), "and keeps them in a cache for next time")
+
+
+## Zero crossings a second in the first quarter second: a rough measure of brightness.
+func _zcr(wav: AudioStreamWAV) -> int:
+	var n := mini(wav.data.size() / 2, int(wav.mix_rate * 0.25))
+	var count := 0
+	var prev := 0
+	for i in n:
+		var v := wav.data.decode_s16(i * 2)
+		if (v >= 0) != (prev >= 0):
+			count += 1
+		prev = v
+	return int(count / (float(n) / wav.mix_rate))
+
+
+## Mean square level from 0.3 s to 0.8 s: how long a sound rings on.
+func _tail_energy(wav: AudioStreamWAV) -> float:
+	var a := int(wav.mix_rate * 0.3)
+	var b := mini(wav.data.size() / 2, int(wav.mix_rate * 0.8))
+	var sum := 0.0
+	for i in range(a, b):
+		var v := wav.data.decode_s16(i * 2) / 32768.0
+		sum += v * v
+	return sum / maxf(b - a, 1.0)
+
+
+## Room acoustics, routing through walls, footsteps by floor, parts landing by material,
+## machines' start and stop sounds and the ambience, in a running shed.
+func _test_shed_sound_session() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_sound_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	# Reverb follows the room the listener is in.
+	var sizes := {}
+	for room in ["shed", "paint", "sales", ""]:
+		Sfx.set_listener_room(room)
+		sizes[room] = Sfx.room_reverb().room_size
+	check(sizes["sales"] > sizes["shed"] and sizes["shed"] > sizes["paint"] and Sfx.room_reverb().wet < 0.1,
+		"each room has its own reverb: the showroom's biggest, the paint booth's small, outside almost dry (%s)" % str(sizes))
+	var paint_c := Workshop.rooms()["paint"] as Rect2
+	var paint_at := Vector3(paint_c.get_center().x, 0.1, paint_c.get_center().y)
+	w.place(Transform3D(Basis(), paint_at))
+	for i in 10:
+		await get_tree().process_frame
+	check(Sfx.listener_room == "paint", "walking into the paint shop, you hear its room (%s)" % Sfx.listener_room)
+	for i in 120:
+		await get_tree().process_frame
+	check(absf(Sfx.room_reverb().room_size - float(Sfx.ROOM_PRESETS["paint"]["size"])) < 0.05, "and the reverb eases to the booth's (%.2f)" % Sfx.room_reverb().room_size)
+	var shed_at := Workshop.CENTER + Vector3(0.0, 0.1, 0.0)
+	check(Sfx.bus_for(paint_at) == "Room" and Sfx.bus_for(shed_at) == "Far" and Sfx.occlusion_db(shed_at) < 0.0 and Sfx.occlusion_db(paint_at) == 0.0,
+		"a sound in the shed comes through the wall, muffled and quieter; one in the booth doesn't")
+	var outside := SalesOffice.SALES_DOOR + Vector3(0.0, 0.1, 25.0)
+	check(Sfx.occlusion_db(outside) <= Sfx.WALL_DB, "outside is through a wall from the paint shop")
+	var p := Sfx.play_at("clink", shed_at)
+	check(p != null and p.bus == "Far", "a one-shot in another room goes through the far bus")
+	# Footsteps by floor.
+	check(Sfx.step_surface(shed_at) == "concrete" and Sfx.step_surface(paint_at) == "tile", "concrete in the shed, tiles in the paint shop")
+	check(Sfx.step_surface(SalesOffice.at(5.0, 0.0, 0.0) + Vector3.UP * 0.05) == "tile"
+		and Sfx.step_surface(Vector3(SalesOffice.office_rect().get_center().x, SalesOffice.MEZZ_Y + 0.05, SalesOffice.office_rect().get_center().y)) == "carpet",
+		"the showroom's tiles and the office's carpet")
+	Shed.upgrades["epoxy"] = true
+	check(Sfx.step_surface(shed_at) == "epoxy", "with the epoxy floor bought, the shed floor sounds of it")
+	Shed.upgrades.erase("epoxy")
+	var step := Sfx.footstep(paint_at)
+	check(step != null and Sfx.variants("step_tile").has(step.stream), "a footstep in the booth is a step on tiles")
+	# A part put down sounds of its material and what it lands on.
+	var metal_item := 0
+	for id in Shed.items:
+		if PartsDB.material(str(Shed.items[id]["part"])) == "metal" and not Shed.items[id].get("boxed", false):
+			metal_item = id
+			break
+	var before := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).size()
+	Sfx.job_done("drop", {"a": "drop", "xf": Transform3D(Basis(), shed_at)}, metal_item, shed_at)
+	Sfx.job_done("set_down", {"a": "set_down", "top": "bench", "xf": Transform3D(Basis(), shed_at)}, metal_item, shed_at)
+	var players := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false)
+	var on_floor := players.filter(func(q): return Sfx.variants("impact_metal_concrete").has(q.stream))
+	var on_bench := players.filter(func(q): return Sfx.variants("impact_metal_wood").has(q.stream))
+	check(metal_item != 0 and players.size() >= before + 2 and not on_floor.is_empty() and not on_bench.is_empty(),
+		"a steel part dropped on the floor clanks on concrete, set on the bench it knocks on wood")
+	# Machines spin up and run down either side of their loop.
+	var holder := Node3D.new()
+	main.add_child(holder)
+	holder.global_position = shed_at
+	var loop := Sfx.make_loop_player(holder)
+	Sfx.set_loop(loop, "grinder")
+	var ups := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(q): return Sfx.variants("grinder_up").has(q.stream))
+	check(loop.playing and not ups.is_empty(), "the grinder spins up as it starts")
+	Sfx.set_loop(loop, "")
+	var downs := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(q): return Sfx.variants("grinder_down").has(q.stream))
+	check(not loop.playing and not downs.is_empty(), "and runs down when it stops")
+	check(Sfx.WORK_LOOPS["tyre_fit"] == "changer" and Sfx.TOOL_LOOPS["gun"] == "spray_gun" and Sfx.DONE_SOUNDS["tyre_remove"] == "bead_pop",
+		"the tyre changer, the spray gun and the bead have their own sounds")
+	# The ambience: room tone, lights, outdoors and the compressor.
+	for i in 6000:
+		if Sfx.synth_done and Sfx.ambience() != null:
+			break
+		await get_tree().create_timer(0.05).timeout
+	var amb: SfxAmbience = Sfx.ambience()
+	check(amb != null, "the shed has its ambience")
+	if amb:
+		amb.kick_compressor()
+		check(amb.compressor_on and amb._comp.playing and amb._comp.stream == Sfx.stream("compressor"), "the compressor in the corner kicks in")
+		w.place(Transform3D(Basis(), shed_at))
+		for i in 90:
+			await get_tree().process_frame
+		check(amb._tone.playing and amb._hum.playing and amb._wind.playing, "indoors: room tone, the lights' hum and the outdoors muffled through the walls")
+		var lp := AudioServer.get_bus_effect(AudioServer.get_bus_index("AmbOut"), 0) as AudioEffectLowPassFilter
+		check(lp.cutoff_hz < 5000.0, "the outdoor sounds are muffled indoors (%.0f Hz)" % lp.cutoff_hz)
+		check(SfxAmbience.lit("shed") == Shed.lights_on, "the hum follows the shed's lights")
+	main._leave()
+	main.queue_free()
+	await get_tree().create_timer(2.0).timeout
+	# One-shots left here with no listener in the world any more never finish: tidy them up.
+	for q in find_children("*", "AudioStreamPlayer3D", false, false):
+		(q as AudioStreamPlayer3D).stop()
+		q.queue_free()
+	await get_tree().process_frame
+	Sfx.set_listener_room("shed")
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
 
 
 ## The parts computer and its Garage upgrades page fit on the screen, and every list in them

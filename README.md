@@ -289,11 +289,26 @@ The suspension now moves visibly over bumps and dirt ruts, the rear shocks stret
 
 Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L still picks low beam, high beam or off. At night the beam lights the night air softly, a faint glow in the mist rather than a solid cone, a little stronger on high beam, with a few specks drifting through it. The headlight is two lights: a core that lights the road and a wide, dim flood round it. Both fade out gradually from the middle, so the pool of light on the road has no ring round it, and only the soft flood shows in the air, as a haze with no edges. (On the simpler renderer for older graphics cards it's a faint soft glow instead.)
 
-You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The engine sound now follows the engine: cylinders, capacity, the exhaust and the gearbox's whine. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
+You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
 
 Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The moment a tyre loses grip it gives a loud, sharp chirp (louder the more suddenly it lets go, from a lock-up, a wheelspin or a burnout), and a skid that goes on settles to a quieter screech. The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
 
 The **yard** past the drag strip has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
+
+### Engine sound
+
+Every bike sounds like the parts it's built from. Nothing is a recording: the sound is worked out from how the engine runs. Each cylinder fires on its own crank angle, so a single thumps, a 360 degree twin beats evenly, a 270 degree parallel twin and a 90 degree V-twin lope, a boxer burbles, a triple warbles with its airbox howling and rasping, a flat-plane four screams evenly and the crossplane 1000 cc four growls. Two-strokes ring-ding at tickover, rattle, and come "on the pipe" in their powerband with a swelling, screaming note. Each firing goes down the header pipes and through the silencer: the **exhaust** decides how much gets out (stock can: quiet and boomy; slip-on; full system; titanium race system; straight pipe: loud and raspy). An open **air filter** (cotton cone, pods, velocity stacks) lets you hear the intake roar. A rusty exhaust blows and rasps, and worn plugs misfire.
+
+- You hear the **exhaust** from the tail pipe and the **engine and intake** from the airbox. In the helmet view you hear more airbox and induction; on the chase camera, more exhaust. Other riders' bikes lose their top end with distance, and their pitch shifts (doppler) as they go past.
+- Snap the throttle shut at high revs and the pipe **pops and burbles** on the overrun, most just after you roll off, then the odd crackle as the revs fall. Loud pipes pop far more than a stock can. Now and then a big backfire cracks with a lick of **flame** from the tail pipe.
+- **Downshifts** blip the throttle with a bark, often followed by a bang from a loud pipe.
+- **Gear changes** sound like the gearbox: the race box's **quickshifter** cuts the engine for a blink with a crisp, slick tick (and a crack from a loud pipe); a close-ratio or enduro box gives a positive click; a vintage or wide-ratio box a basic clunk. Dropping into first at a standstill clunks. The race box has a dry clutch, which rattles at tickover, and its straight-cut gears whine.
+- Press I and you hear the **starter motor** crank the engine over before it catches with a bark; a small two-stroke single, or a single with the vintage four-speed box, is **kick-started**.
+- The dyno room and other players' bikes use the same sound.
+
+Each new engine's sound is worked out in the background when you get on (about a second; tickover is ready almost at once) and is shared by every bike with the same engine, exhaust, intake and gearbox.
+
+**Recorded sounds** can replace the synthesised ones. Put .wav files in a folder named after the engine and exhaust, in `engine_samples` in the game's user folder (no import needed) or in `res://audio/engines` to ship them: the folder is `<layout>_<cylinders>_<exhaust>`, `<layout>_<exhaust>` or just `<layout>` (layouts: single, twin, parallel, vtwin, boxer, triple, inline, 2stroke; exhausts: stock, slip, full, race, straight). Loops are named by side, throttle and revs, each a seamless loop held at those revs: `ex_on_6000.wav` (exhaust, on the throttle, 6000 rpm), `ex_off_6000.wav` (overrun), `in_on_6000.wav` and `in_off_6000.wav` (engine and intake side). One-shots: `pop*.wav`, `bang*.wav`, `crack*.wav`, `shift*.wav`, `neutral*.wav` and `starter*.wav`. Anything left out is synthesised as usual.
 
 You steer by leaning: the rider counter-steers for you, like on a real bike. The **rider assist** setting goes from 0 (full sim) to 1 (most help with balance, wheelspin and wheelies). The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
 
@@ -323,6 +338,45 @@ Upgrades are kept in the shed's save; older saves start with none. Everything is
 The weather changes by itself every few minutes between **clear skies**, **cloudy**, **fog** and **rain**, drifting from one to the next over about 40 seconds. Clouds grey the sky and dim the sun, and the shadows go soft; fog closes in so you see only a short way; rain falls round you, soaks the roads and the yard so they go darker and shiny, and wet tarmac grips a little less (about 15%), so brake and lean with care. Once it stops the roads dry out over a few minutes. You hear the rain outside and drumming on the roof when you're in the shed, and it never rains indoors.
 
 In the Esc menu's **Settings** tab, **Weather** picks **Changes by itself** or holds one kind (always clear, cloudy, foggy or raining). In co-op the host's weather is everyone's. The weather is saved with the shed.
+
+### Graphics settings
+
+The Esc menu's **Graphics** tab sets how the game looks and how fast it runs. Everything except the rendering driver changes straight away, and it's all saved with your settings.
+
+- **Quality preset**: **Low**, **Medium**, **High** (the default) or **Ultra** set the shadows, detail, draw distance, lighting, effects and anti-aliasing together (Low also renders at 75% with FSR 1). Change any one of those yourself and the preset says **Custom**.
+- **Display**: **Window mode** (windowed, borderless fullscreen or exclusive fullscreen); **Resolution**, from 1280 x 720 to 3840 x 2160 (4K) in 16:9, 16:10 and 21:9 sizes: in a window it's the window's size (never bigger than the screen), in fullscreen the screen keeps its own size and this sets how sharp the 3D view renders while the menus stay crisp; **Monitor** (when you have more than one); **VSync** (off, on, adaptive or mailbox); a **frame-rate cap** (30, 60, 120, 144, 165, 240 or unlimited); **Field of view** (60 to 110 degrees; the riding cameras move by the same amount); **Brightness**; and **Show the frame rate**, a small FPS counter in the top left corner to help you tune.
+- **Upscaling**: **Render scale** from 50% to 100% renders the 3D view smaller and scales it back up (faster), and 100% to 200% renders it bigger and shrinks it (supersampling: sharp but slow). The **Upscaler** for below 100% is **AMD FSR 2.2** (temporal: the best looking), **FSR 1.0** (fastest) or plain bilinear, with a **Sharpness** slider. At exactly 100% no upscaler runs.
+- **DLSS?** No. The Godot engine the game is built on (4.6) doesn't include NVIDIA DLSS or Intel XeSS. FSR 2.2 is its temporal upscaler and works on NVIDIA, AMD and Intel cards alike.
+- **Anti-aliasing**: **MSAA** (off, 2x, 4x, 8x), **TAA** (smoothest, a little soft; FSR 2.2 does its own, so TAA is skipped while it upscales) and **screen-space AA** (off, FXAA or SMAA).
+- **Quality**: **Shadows** (low to ultra), **Detail level** (how far away bikes and parts keep their detailed shape, and texture sharpness at an angle), **Draw distance** (50% to 200%), **Global illumination** (off, SSIL or SDFGI), **Volumetric fog and light**, **Volumetric clouds**, **Screen-space reflections**, **Ambient occlusion** and **Glow**.
+- **Ray tracing?** Godot 4.6 has no hardware ray tracing (RTX / DXR). The **Ray-traced lighting** switch honestly turns on SDFGI, Godot's real-time global illumination that bounces sun, sky and lamp light round the shed; off uses SSIL, a cheaper screen-space version.
+- **Motion blur**: there isn't any, so it's always off. **HDR**: the game always renders in HDR and tone-maps it for your screen, but HDR displays (HDR10 output) aren't supported by the engine yet.
+- **Rendering driver**: **Vulkan** (the default) or **DirectX 12** on Windows. The driver is picked when the game starts, so the tab says **restart to apply**; if DirectX 12 won't start on your PC the game falls back to Vulkan by itself and the tab tells you. The choice is written to `graphics_override.cfg` in the game's user folder (`%APPDATA%\Godot\app_userdata\Torque Shed` on Windows), which the game reads at start-up; delete it to go back to Vulkan. Nothing extra needs shipping with the exe: the official Godot 4.6 Windows export templates include DirectX 12.
+
+Settings files from before this tab carry on: if "high quality lighting" was off, you start on the Low preset.
+
+### Lighting
+
+The game uses Godot's best lighting on the Forward+ renderer, all set from the **Graphics** settings in the Esc menu:
+
+- **Global illumination** (SDFGI, or the lighter SSIL, or off): light bounces. Sun through the open roller door spills warm light across the shed floor and up the walls, and the lamps light the room round them, not just what's under them.
+- **Volumetric clouds** (high, low or off): real 3D clouds 1.5 to 3 km up, lit by the sun with bright silver edges when you look towards it and dark, heavy bases, drifting with the wind. A few fair-weather clouds on a clear day, a broken sky when it's cloudy, a low, dark deck in the rain; the moon lights them at night. Off draws the older flat cloud layer.
+- **Volumetric fog** (high, low or off): the air itself catches the light. Morning sun makes soft shafts through the dust hanging in the shed, the shed's lamps make soft cones of light, the paint shop fills with haze while you spray and clears again, the dyno room fills with exhaust haze, and fog and rain thicken the air outside. Headlights stay a soft glow in the night air, not a hard beam.
+- **Shadows** (low to ultra): sharper and further away the higher you go; at high and above the yard floodlights cast shadows too, so their light breaks into rays at night, and ultra softens shadow edges with distance.
+- **Reflections** on paint, chrome and wet roads, **ambient occlusion**, and **glow** round anything bright: tail lights, neon, screens and the sales sign.
+
+Your eyes adjust too: walk out of the bright yard into the shed with the lights off and it starts dark, then slowly opens up; step back into daylight and it clamps down quickly. On the simpler renderer (and on low settings) the game keeps a plainer look: flat clouds, no bounce light and no light in the air.
+
+### Sound
+
+Every sound is made by the game itself as it starts (there are no audio files), modelled on how the real thing makes its noise, and kept in a cache file so later starts are quick. Nothing to set up: the Esc menu's sound effects slider covers all of it.
+
+- **Variety**: every knock, clink, footstep and part going down comes in several versions, played at random with a touch of pitch and level, and never the same one twice running. Tools pick up their loop at a different point each time.
+- **Parts landing**: putting a part down sounds of what it's made of and what it lands on: steel clanks and rings on the concrete floor, knocks on the wooden bench top, rings on for a while on a steel shelf or machine, and thuds dead on the grass outside; plastic clacks, tyres thump and bounce, seats and gear flop, delivery boxes thud.
+- **Tools and machines**: the ratchet's pawl clicking on the backswing and the bolt creaking round; the grinder spinning up, dropping in pitch as it bites with a rasp and spark crackle, and winding down; the pressure washer's pump pulse and jet; the parts washer's pump, splash and bubbles; the spray can's sputtering hiss and the spray gun's air rush; the sandblaster's roar and grit hiss; the tyre changer's motor and the rubber groaning, then the bead popping on; the dyno drum whining with its speed; the roller door's motor, chain and slats with a clunk at each end.
+- **Footsteps** sound of the floor: concrete (or the epoxy floor once it's bought, with the odd squeak), tiles in the paint shop and the showroom, wooden stairs and carpet upstairs in the sales office, the steel mezzanine, and outside tarmac, gravel on the dirt, grass, and splashes in puddles when it's wet. You hear other players' footsteps too.
+- **Rooms**: each room has its own acoustics: the shed's hard concrete, the small tiled paint booth, the cluttered store, the dyno room, the showroom's glass, the carpeted office, and outside nearly dry with an echo back off the shed wall. Sounds from another room come through muffled and quieter.
+- **Ambience**: a low room tone indoors (the showroom's air conditioning), the strip lights humming (the LED upgrade's are quieter) and ticking on when switched on, the roof creaking now and then, and the air compressor in the shed's back corner cycling on and off (sooner while the spray gun or sandblaster is drawing air). Outside there's wind, distant traffic, birdsong by day and crickets at night, quieter in the rain and muffled from indoors. The sales office's front doors whirr open and thump shut.
 
 ### Money
 
@@ -375,6 +429,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |
 | `scripts/whiteboard.gd`, `board_data.gd`, `board_print.gd` | The shared whiteboard: drawing on it, pictures from players' PCs, and its marks kept in the shed state; whiteboard posters |
 | `scripts/settings.gd`, `keybind_tab.gd` | Settings, every key binding and rebinding them in the Esc menu |
+| `scripts/graphics.gd`, `graphics_tab.gd` | Graphics settings: presets, putting them on the window, viewport and cameras, the driver override and FPS counter; the Esc menu's Graphics tab |
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
 | `scripts/sales_office.gd` | The sales office: its forecourt, showroom plinths, reception, viewing area, kitchen, stairs and mezzanine office, the sliding doors and the shop bell |
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
@@ -387,13 +442,17 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
 | `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |
 | `scripts/daylight.gd`, `weather.gd` | Time of day, sky and lighting; the weather (clouds, fog, rain, wet roads, rain sounds) |
+| `scripts/lighting.gd`, `cloud_sky.gd` | Graphics settings into GI, volumetric fog, fog volumes, shadows, glow and eye adaptation; the raymarched cloud sky shader |
 | `scripts/debug_tab.gd` | The Esc menu's Debug tab: reset or max XP and money, give the garage a million, send a customer, raise the reputation |
 | `scripts/money.gd`, `money_tab.gd` | Money: part and bike prices, selling, the business's bank (cut, owner, ledger, loans) and its requests; the Esc menu's Money tab |
 | `scripts/contracts.gd`, `mot.gd` | Contracts: customers, offers, goals, payouts and reputation (kept in `Shed.contracts`); the MOT inspection sheet |
 | `scripts/customer.gd`, `contracts_view.gd`, `contract_panel.gd`, `contracts_tab.gd` | The customers walking in to reception, the offer card and jobs list, and the Esc menu's Contracts tab |
 | `scripts/progress.gd`, `ride_xp.gd`, `character_tab.gd`, `skill_tree_view.gd` | XP, levels, tool upgrades, skills and goals, kept in your own profile; riding XP; the Character tab |
 | `scripts/rider_gear.gd`, `rider_figure.gd`, `trinkets.gd`, `shop_tab.gd` | Rider gear (catalogue, owned and worn in your profile), drawing the avatar in it on foot and on the bike, trinkets for the shed, and the Esc menu's Shop tab |
-| `scripts/sfx.gd` | Tool, footstep and workshop sounds, synthesised at start-up, and the volume buses |
+| `scripts/engine_synth.gd`, `engine_bank.gd`, `engine_sound.gd`, `exhaust_flame.gd` | Engine sound: the synthesis (firing order and crank phasing, header and silencer resonances, intake and airbox, valve train, clutch rattle, two-stroke ring-ding), the per-engine bank of seamless loops baked on a worker thread, and the 3D player that crossfades and pitches them and adds pops, bangs, shifts, the starter and the backfire flame. `tests/engine_render.tscn` renders them to .wav files |
+| `scripts/sfx.gd` | Playing the shed's sounds: variants without repeats, impacts by material, footsteps by floor, machine start and stop sounds, room reverb and through-wall muffling, the volume buses and the sound cache |
+| `scripts/sfx_synth.gd` | Synthesising every shed sound from physical models (modal metal, contact impacts, motors under load, water and bubbles) |
+| `scripts/sfx_ambience.gd` | The shed's ambience: room tone, light hum, the compressor's cycle, creaks, the sliding doors, wind, traffic, birds and crickets |
 | `scripts/shed_radio.gd`, `radio_stream.gd`, `mp3_stream_decoder.gd` | The shed radio: streams an MP3 station over HTTP(S) and decodes it gaplessly |
 
 Built with [Godot 4.6](https://godotengine.org) and Jolt physics.

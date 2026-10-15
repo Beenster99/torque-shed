@@ -19,6 +19,39 @@ var weather := "auto"
 var weather_now := "clear"   # the weather when last played, so it carries on next time
 var snap_placement := true # equipment you carry snaps square and flush to walls and corners
 
+## Emitted whenever a graphics setting (gfx_*) changes.
+signal graphics_changed
+# Graphics (Esc menu > Graphics; see Graphics for what each does and its allowed values).
+var gfx_preset := "high"         # "low", "medium", "high", "ultra" or "custom"
+var gfx_window_mode := "windowed" # "windowed", "borderless" or "fullscreen" (exclusive)
+var gfx_resolution := "1600x900"  # window size, or the 3D render resolution in fullscreen
+var gfx_monitor := -1             # -1 = wherever the window opens
+var gfx_vsync := "on"             # "off", "on", "adaptive", "mailbox"
+var gfx_fps_cap := 0              # 0 = unlimited
+var gfx_fov := 75.0
+var gfx_brightness := 1.0
+var gfx_render_scale := 1.0       # 0.5..1.0 upscaled, 1.0..2.0 supersampled
+var gfx_upscaler := "fsr2"        # "fsr2", "fsr1" or "bilinear"
+var gfx_sharpness := 0.8          # 0 soft .. 1 sharpest
+var gfx_msaa := "2x"              # "off", "2x", "4x", "8x"
+var gfx_taa := false
+var gfx_screen_aa := "fxaa"       # "off", "fxaa", "smaa"
+var gfx_detail := "high"          # mesh detail and texture filtering: "low".."ultra"
+var gfx_draw_distance := 1.0      # 0.5..2.0
+var gfx_shadows := "high"         # "low", "medium", "high", "ultra"
+var gfx_gi := "sdfgi"             # "off", "ssil", "sdfgi"
+var gfx_volumetrics := "high"     # "off", "low", "high"
+var gfx_clouds := "high"          # "off", "low", "high"
+var gfx_ssr := true
+var gfx_ssao := true
+var gfx_glow := true
+var gfx_driver := "vulkan"        # "vulkan" or "d3d12" (Windows; from the next start)
+var gfx_fps_counter := false
+const GFX_KEYS := ["gfx_preset", "gfx_window_mode", "gfx_resolution", "gfx_monitor", "gfx_vsync", "gfx_fps_cap",
+	"gfx_fov", "gfx_brightness", "gfx_render_scale", "gfx_upscaler", "gfx_sharpness", "gfx_msaa", "gfx_taa",
+	"gfx_screen_aa", "gfx_detail", "gfx_draw_distance", "gfx_shadows", "gfx_gi", "gfx_volumetrics", "gfx_clouds",
+	"gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_driver", "gfx_fps_counter"]
+
 
 ## Every action a player can rebind, in the order the Key bindings tab lists them:
 ## [action, what it does, contexts]. Two actions clash when they share a key or button and a
@@ -74,6 +107,7 @@ func _ready() -> void:
 	for a in ACTIONS:
 		_defaults[a[0]] = InputMap.action_get_events(a[0]).duplicate()
 	load_settings()
+	add_child(Graphics.new())
 
 
 func load_settings() -> void:
@@ -98,6 +132,7 @@ func load_settings() -> void:
 				if _defaults.has(action) and (codes is Array or codes is PackedStringArray):
 					_set_events(action, codes)
 		snap_placement = bool(cfg.get_value("building", "snap", snap_placement))
+		_load_graphics(cfg)
 
 
 func save_settings() -> void:
@@ -121,7 +156,79 @@ func save_settings() -> void:
 		if codes != _codes_of(_defaults.get(a[0], [])):
 			cfg.set_value("bindings", a[0], codes)
 	cfg.set_value("building", "snap", snap_placement)
+	for k in GFX_KEYS:
+		cfg.set_value("graphics", k, get(k))
 	cfg.save(PATH)
+
+
+# ---------------------------------------------------------------------------- graphics
+
+func _load_graphics(cfg: ConfigFile) -> void:
+	if not cfg.has_section("graphics"):
+		# A settings file from before the Graphics tab: "high quality" off becomes the Low preset.
+		if not high_quality:
+			for k in Graphics.PRESETS["low"]:
+				set(k, Graphics.PRESETS["low"][k])
+			gfx_preset = "low"
+		return
+	for k in GFX_KEYS:
+		if cfg.has_section_key("graphics", k):
+			_set_checked(k, cfg.get_value("graphics", k))
+	high_quality = gfx_preset != "low"
+
+
+## Sets graphics key `k` to `v` if it's a value it can take (the right type, one of its
+## choices, within its range); returns whether it did.
+func _set_checked(k: String, v) -> bool:
+	var cur = get(k)
+	if cur is bool:
+		if not v is bool:
+			return false
+	elif cur is int or cur is float:
+		if not (v is int or v is float):
+			return false
+		if Graphics.RANGES.has(k):
+			v = clampf(float(v), float(Graphics.RANGES[k][0]), float(Graphics.RANGES[k][1]))
+		if k == "gfx_fps_cap" and not Graphics.FPS_CAPS.has(int(v)):
+			return false
+		v = int(v) if cur is int else float(v)
+	elif cur is String:
+		v = str(v)
+		if Graphics.CHOICES.has(k) and not Graphics.CHOICES[k].has(v):
+			return false
+		if k == "gfx_resolution" and Graphics.resolution_text(Graphics.parse_resolution(v)) != v:
+			return false
+	set(k, v)
+	return true
+
+
+## Changes one graphics setting from the menu. Changing anything a preset sets makes the
+## preset "Custom". Picking a driver writes it for the next start.
+func set_graphics(k: String, v) -> void:
+	if not GFX_KEYS.has(k) or not _set_checked(k, v):
+		return
+	if k == "gfx_preset":
+		if Graphics.PRESETS.has(v):
+			apply_preset(v)
+		return
+	if Graphics.PRESETS["high"].has(k):
+		gfx_preset = "custom"
+	if k == "gfx_driver":
+		Graphics.write_driver_override(gfx_driver)
+	high_quality = gfx_preset != "low"
+	graphics_changed.emit()
+
+
+## Sets every option a preset ("low", "medium", "high", "ultra") covers.
+func apply_preset(preset: String) -> void:
+	if not Graphics.PRESETS.has(preset):
+		return
+	var values: Dictionary = Graphics.PRESETS[preset]
+	for k in values:
+		set(k, values[k])
+	gfx_preset = preset
+	high_quality = preset != "low"
+	graphics_changed.emit()
 
 
 ## Keyboard, mouse and gamepad-button bindings. Gamepad sticks and triggers are read by the

@@ -45,7 +45,7 @@ var _drum: Node3D
 var _fan: Node3D
 var _straps: Node3D
 var _probe: ReflectionProbe
-var _audio: EngineAudio
+var _audio: EngineSound
 var _mats := {}
 var _seen := {}              # bike id -> the dyno run count we've seen, so a new run plays once
 var _run_bike := 0
@@ -54,6 +54,7 @@ var _run_build: BikeBuild
 var _drum_angle := 0.0
 var _wheel_angle := 0.0
 var _fan_speed := 0.0
+var _roller_sound: AudioStreamPlayer3D   # the drum whining as it turns
 var _screen_sig := ""
 var _lights: Array[Light3D] = []
 var _fixture: StandardMaterial3D
@@ -196,6 +197,7 @@ func _process(delta: float) -> void:
 	_wheel_angle += wheel_omega * delta
 	_drum_angle += wheel_omega * rear_r / DRUM_RADIUS * delta
 	_drum.rotation.x = -_drum_angle
+	_update_roller(wheel_omega * rear_r)
 	var fan_on := bool(Shed.dyno.get("fan", false))
 	_fan_speed = move_toward(_fan_speed, 25.0 if fan_on else 0.0, delta * (12.0 if fan_on else 5.0))
 	_fan.rotation.z += _fan_speed * delta
@@ -216,14 +218,12 @@ func _start_run(bike: int) -> void:
 	_run_start = _now()
 	_wheel_angle = 0.0
 	if _audio == null:
-		_audio = EngineAudio.new()
-		_audio.position = CENTER + Vector3(0.12, 0.45, 0.6)
+		_audio = EngineSound.new()
+		_audio.position = CENTER
+		_audio.view = "room"
 		add_child(_audio)
-	_audio.cylinders = _run_build.cylinders
-	_audio.layout = _run_build.layout
-	_audio.displacement = _run_build.displacement
-	_audio.loudness = _run_build.exhaust_loudness
-	_audio.whine = _run_build.gear_whine
+	var model: BikeModel = workshop.bike_model(bike) if workshop and workshop.bike_views.has(bike) else null
+	_audio.setup(_run_build, model)
 
 
 func _update_screen(bike: int) -> void:
@@ -378,6 +378,9 @@ func _build_rig() -> void:
 	for side in [-1.0, 1.0]:
 		_deco(rig, Vector3(side * 0.7, 0.009, -0.05), Vector3(0.08, 0.018, 3.4), _mats["yellow"])
 	_deco(rig, Vector3(0.0, 0.016, DRUM_Z), Vector3(0.6, 0.004, 0.62), _mats["dark"])   # the slot
+	_roller_sound = Sfx.make_loop_player(rig)
+	_roller_sound.position = Vector3(0.0, 0.1, DRUM_Z)
+	_roller_sound.volume_db = -6.0
 	_drum = Node3D.new()
 	_drum.position = Vector3(0.0, -DRUM_RADIUS + 0.025, DRUM_Z)
 	rig.add_child(_drum)
@@ -996,3 +999,13 @@ static func describe(target: Dictionary, peer: int) -> Array:
 	if Shed.hose_holder() == peer:
 		lines.append("Carrying the extraction hose: hold the work button on the bike on the rig to fit it, or hang it back on its hook.")
 	return lines
+
+
+## The drum's whine, pitched with its surface speed (`speed` m/s; the sound is made at 60 km/h).
+func _update_roller(speed: float) -> void:
+	if _roller_sound == null:
+		return
+	var turning := absf(speed) > 1.0
+	Sfx.set_loop(_roller_sound, "dyno_roller" if turning else "")
+	if turning:
+		_roller_sound.pitch_scale = clampf(absf(speed) / 16.7, 0.3, 3.0)
