@@ -199,10 +199,6 @@ func _guard_shots() -> void:
 	var at := view.global_position
 	var side := view.global_transform.basis.x
 	var back := view.global_transform.basis.z
-	for id in PartsDB.by_kind["front_mudguard"]:
-		_swap_part(bike, "front_mudguard", id)
-		await _frames(5)
-		await _look_from(at - back * 1.6 + side * 1.6, at + Vector3(0.0, 0.4, 0.0) - back * 0.7, "fm_" + id)
 	var pc: PartsComputer = main.computer
 	main._open_computer()
 	await _frames(5)
@@ -219,6 +215,10 @@ func _guard_shots() -> void:
 	await _frames(5)
 	await _shot("fm_computer_shed_aisle")
 	pc.close_computer()
+	for id in PartsDB.by_kind["front_mudguard"]:
+		_swap_part(bike, "front_mudguard", id)
+		await _frames(5)
+		await _look_from(at - back * 1.6 + side * 1.6, at + Vector3(0.0, 0.4, 0.0) - back * 0.7, "fm_" + id)
 
 
 func _swap_part(bike: int, slot: String, part: String) -> void:

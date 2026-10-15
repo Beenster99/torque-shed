@@ -1063,17 +1063,22 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 	if style in ["high", "enduro"]:
 		# Under the bottom yoke, sweeping forward and up into a beak; the enduro one is longer
 		# at the back and has a lip at the front.
-		var base := -_steer_axis * 0.2
+		# A hand's width above the tyre at rest (in steering space), held up off the yoke on stays.
+		var axle := Vector3(0.0, 0.0, -build.wheelbase * 0.5) - _head
+		var top := axle + Vector3(0.0, r + 0.1, 0.0)
+		var yoke := -_steer_axis * 0.16
+		var base := Vector3(0.0, minf(top.y, yoke.y - 0.03), lerpf(top.z, yoke.z, 0.5))
 		var long := style == "enduro"
-		var back := base + Vector3(0.0, -0.03, 0.12 if long else 0.07)
-		var mid := base + Vector3(0.0, -0.02, -0.1)
-		var nose := base + Vector3(0.0, 0.03, -0.3 if long else -0.36)
-		_plank(back, mid, w + 0.02, 0.012, mat, _steer_node)
+		var back := base + Vector3(0.0, -0.04, 0.14 if long else 0.08)
+		var mid := base + Vector3(0.0, 0.0, -0.08)
+		var nose := base + Vector3(0.0, 0.06, -0.3 if long else -0.34)
+		_plank(back, base, w + 0.02, 0.012, mat, _steer_node)
+		_plank(base, mid, w + 0.01, 0.012, mat, _steer_node)
 		_plank(mid, nose, w, 0.012, mat, _steer_node)
 		if long:
 			_plank(nose, nose + Vector3(0.0, -0.05, -0.03), w * 0.8, 0.012, mat, _steer_node)
 		for side in [-1.0, 1.0]:
-			_box(base + Vector3(0.05 * side, 0.01, 0.0), Vector3(0.012, 0.03, 0.05), black, _steer_node)
+			_tube(base + Vector3(0.05 * side, 0.0, 0.0), yoke + Vector3(0.05 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
 		return
 	var gap := 0.03
 	var a0 := -0.5

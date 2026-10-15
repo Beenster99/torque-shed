@@ -8488,5 +8488,13 @@ func _test_parts_computer_organised() -> void:
 	pc._search.text = "carbon hugger"
 	pc._refresh_list()
 	check(pc._part == "carbon_hugger" and pc._kind == "front_mudguard", "searching finds the carbon hugger")
+	# Laid out: the sort and filter bar is one line, and each row's price shows in full.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var tools: Control = pc.get_child(1).get_child(0).get_child(0).get_child(3)
+	check(tools.size.y < 60.0, "the sort and filter bar is one line (%.0f px)" % tools.size.y)
+	var hit: Button = pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion())[0]
+	var price_l: Label = hit.find_children("*", "Label", true, false).filter(func(l): return str(l.text).begins_with("£"))[0]
+	check(price_l.size.x >= price_l.get_minimum_size().x - 1.0 and price_l.size.x > 20.0, "and each row's price shows in full (%.0f px)" % price_l.size.x)
 	pc.queue_free()
 	await get_tree().process_frame

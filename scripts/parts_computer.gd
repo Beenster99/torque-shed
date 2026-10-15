@@ -141,7 +141,7 @@ func _ready() -> void:
 	# Sorting and filters for the list of models.
 	var tools := HBoxContainer.new()
 	tools.add_theme_constant_override("separation", 8)
-	tools.add_child(UITheme.label("Sort:", 15, Color(1, 1, 1, 0.7)))
+	tools.add_child(_cell("Sort:", 15, Color(1, 1, 1, 0.7), false))
 	_sort_pick = OptionButton.new()
 	for key in SORTS:
 		_sort_pick.add_item(SORTS[key])
@@ -151,7 +151,7 @@ func _ready() -> void:
 	var gap2 := Control.new()
 	gap2.custom_minimum_size = Vector2(16, 0)
 	tools.add_child(gap2)
-	tools.add_child(UITheme.label("Fits:", 15, Color(1, 1, 1, 0.7)))
+	tools.add_child(_cell("Fits:", 15, Color(1, 1, 1, 0.7), false))
 	_bike_pick = OptionButton.new()
 	_bike_pick.custom_minimum_size = Vector2(240, 0)
 	_bike_pick.tooltip_text = "Only show parts that go on this bike as it is now"
@@ -379,17 +379,20 @@ func _row(id: String, title: String, price: String, sub: String) -> Button:
 	name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(name_l)
 	if price != "":
-		top.add_child(_cell(price, 16, Color(0.55, 0.95, 0.55)))
+		top.add_child(_cell(price, 16, Color(0.55, 0.95, 0.55), false))
 	box.add_child(_cell(sub, 13, Color(1, 1, 1, 0.55)))
 	return b
 
 
-## A one-line label for a list row: cut short with "..." rather than wrapping.
-func _cell(text: String, font_size: int, color: Color) -> Label:
+## A one-line label: never wrapped (in a row it would be squeezed to a letter per line). With
+## `trim` it can be cut short with "..." to fit; without, it always shows in full.
+func _cell(text: String, font_size: int, color: Color, trim := true) -> Label:
 	var l := UITheme.label(text, font_size, color)
 	l.autowrap_mode = TextServer.AUTOWRAP_OFF
-	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	l.clip_text = true
+	if trim:
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		l.clip_text = true
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
@@ -550,6 +553,12 @@ func _show_kind(k: String) -> void:
 	for b in _kinds.get_children():
 		if b is Button:
 			b.button_pressed = b.get_meta("kind", "") == k
+			if b.button_pressed and not b.is_queued_for_deletion():
+				# Under its heading, the kind picked (by a search, say) may be scrolled out of view.
+				var scroll := _kinds.get_parent() as ScrollContainer
+				(func():
+					if is_instance_valid(b) and b.is_inside_tree() and not b.is_queued_for_deletion():
+						scroll.ensure_control_visible(b)).call_deferred()
 	for c in _variants.get_children():
 		c.queue_free()
 	if k.begins_with("sell:"):
