@@ -90,6 +90,16 @@ static func spot_near(at: Vector3) -> int:
 	return -1
 
 
+## The price card's text on stand `i` (SalesView writes on it), or null.
+func stand_tag(i: int) -> Label3D:
+	return find_child("StandTag%d" % i, true, false) as Label3D
+
+
+## The office PC's screen text (SalesView keeps it up to date), or null.
+func screen_text() -> Label3D:
+	return get_node_or_null("OfficeScreenText") as Label3D
+
+
 ## The height of the stairs' walking surface at local x `lx` (0 at the bottom, MEZZ_Y at the top).
 static func stair_height(lx: float) -> float:
 	return clampf((STAIR_LOW_X - lx) / (STAIR_LOW_X - MEZZ_EDGE), 0.0, 1.0) * MEZZ_Y
@@ -692,6 +702,7 @@ func _build_showroom() -> void:
 		card.rotation.y = SHOWROOM_SPOTS[i].basis.get_euler().y + PI
 		card.rotation.x = -0.35
 		var tag := Label3D.new()
+		tag.name = "StandTag%d" % i   # SalesView writes the bike and its price on it
 		tag.text = "ON SHOW\n%d" % (i + 1)
 		tag.font_size = 22
 		tag.pixel_size = 0.0025
@@ -913,14 +924,30 @@ func _build_office() -> void:
 		_deco(desk + Vector3(0.0, 0.36, dz), Vector3(0.7, 0.72, 0.04), _mats["white_gloss"])
 	_deco(desk + Vector3(0.1, 0.45, 0.0), Vector3(0.3, 0.55, 0.4), _mats["white_gloss"])
 	_blocker(desk + Vector3(0.0, 0.38, 0.0), Vector3(0.8, 0.76, 1.8))
-	# The computer: a widescreen monitor facing the chair (towards -x), keyboard and mouse.
-	var mon := desk + Vector3(0.22, 1.05, 0.0)
-	_deco(mon, Vector3(0.03, 0.36, 0.62), _mats["alu"])
-	var face := _deco(mon + Vector3(-0.017, 0.0, 0.0), Vector3(0.004, 0.32, 0.58), _mats["monitor"])
+	# The sales PC: a big widescreen monitor facing the chair (towards -x), keyboard and mouse.
+	# What it shows (SalesView) and using it (F: the Sales page, SalesComputer).
+	var mon := desk + Vector3(0.24, 1.17, 0.0)
+	_deco(mon, Vector3(0.04, 0.66, 1.34), _mats["alu"])
+	var face := _deco(mon + Vector3(-0.022, 0.0, 0.0), Vector3(0.004, 0.6, 1.28), _mats["monitor"])
 	face.name = "OfficeScreen"
-	var text := _label("TORQUE SHED SALES\n\nStock on show\nEnquiries\nDeals this month", mon + Vector3(-0.022, 0.0, 0.0), -PI * 0.5, 20, Color(0.85, 0.95, 1.0), 0.0018)
+	var text := _label("TORQUE SHED SALES", mon + Vector3(-0.027, 0.0, 0.0), -PI * 0.5, 26, Color(0.85, 0.95, 1.0), 0.0016)
 	text.name = "OfficeScreenText"
-	_deco(desk + Vector3(0.22, 0.8, 0.0), Vector3(0.12, 0.08, 0.16), _mats["alu"])
+	text.width = 760.0
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_deco(desk + Vector3(0.24, 0.8, 0.0), Vector3(0.16, 0.08, 0.22), _mats["alu"])
+	_deco(desk + Vector3(0.26, 0.9, 0.0), Vector3(0.04, 0.2, 0.06), _mats["alu"])
+	var pc := StaticBody3D.new()
+	pc.name = "SalesPC"
+	pc.collision_layer = Workshop.INTERACT_LAYER
+	pc.collision_mask = 0
+	pc.set_meta("sales_pc", true)
+	var pc_shape := BoxShape3D.new()
+	pc_shape.size = Vector3(0.3, 1.0, 1.4)   # up to eye height, so a level look finds it
+	var pc_cs := CollisionShape3D.new()
+	pc_cs.shape = pc_shape
+	pc.add_child(pc_cs)
+	pc.position = mon + Vector3(0.0, 0.15, 0.0)
+	add_child(pc)
 	_deco(desk + Vector3(-0.15, 0.765, 0.0), Vector3(0.16, 0.015, 0.45), _mats["anthracite"])
 	_deco(desk + Vector3(-0.15, 0.765, 0.35), Vector3(0.1, 0.02, 0.06), _mats["anthracite"])
 	# A coffee mug and a stack of papers.

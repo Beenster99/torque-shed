@@ -219,6 +219,12 @@ func _run_all() -> void:
 	print("Garage upgrade options: colours, effects and styles, preview, changing them later")
 	_test_upgrade_options()
 	await _test_upgrade_options_session()
+	print("Selling from the showroom: pricing, online offers and counter-offers, part exchange, saving")
+	_test_sales_pricing()
+	_test_sales_offers()
+	_test_sales_part_exchange()
+	_test_sales_save()
+	await _test_sales_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -6304,6 +6310,10 @@ func _test_money_parts_and_selling() -> void:
 	for id in parts_on:
 		bare += Money.item_worth(Shed.items[id])
 	check(value > roundi(bare * Money.SELL_RATE * (1.0 + Money.BONUS_COMPLETE)) - 2, "with a bonus for being complete (and more ready to ride)")
+	check(Money.check(me, {"a": "money_sell_bike", "bike": ranger}).contains("showroom"),
+		"bikes are only sold from a showroom display stand")
+	Shed.bikes[ranger]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	value = Money.bike_sale(ranger)
 	bal = Shed.garage_money
 	var sold_bikes := int(Progress.profile["stats"].get("sell_bike", 0))
 	Shed.request({"a": "money_sell_bike", "bike": ranger})
@@ -10493,3 +10503,354 @@ func _test_upgrade_options_session() -> void:
 	await get_tree().physics_frame
 	SaveGame.delete_slot("test_upgrade_looks")
 	SaveGame.slot_override = ""
+
+
+# ---------------------------------------------------------------------------- selling from the showroom
+
+## A Button under `root` whose text starts with `prefix`, or null.
+func _sales_button(root: Node, prefix: String) -> Button:
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_front()
+		if n is Button and (n as Button).text.begins_with(prefix) and (n as Button).is_visible_in_tree():
+			return n
+		stack.append_array(n.get_children())
+	return null
+
+
+## What a bike has cost and is worth, the recommended price and how buyers take to a price.
+func _test_sales_pricing() -> void:
+	Shed.start_new("Tester", 61)
+	var me := Shed.me()
+	var bike := _bike_named("Old Faithful")
+	var ap := Sales.appraise(bike)
+	check(not ap["bought_known"] and int(ap["bought"]) > 0 and int(ap["sunk"]) == int(ap["bought"]) + int(ap["parts"]) + int(ap["labour"]),
+		"a bike from before purchases were noted: about what it cost, and the money sunk in adds up (%s)" % Sales.money(int(ap["sunk"])))
+	check(int(ap["retail"]) > int(ap["worth"]) and int(ap["trade"]) == Money.bike_sale(bike) and int(ap["fair"]) >= int(ap["retail"])
+		and int(ap["trade"]) < int(ap["fair"]), "worth: its parts as they are, more for being complete; the trade pays less than a buyer")
+	# A project bike remembers what it cost.
+	Shed.garage_money = 50000
+	var before: Array = Shed.bikes.keys()
+	Shed.request({"a": "order"})
+	var project := 0
+	for id in Shed.bikes:
+		if not before.has(id):
+			project = id
+	check(project != 0 and Sales.appraise(project)["bought_known"] and int(Sales.appraise(project)["bought"]) == 50000 - Shed.garage_money,
+		"a project bike bought from the parts computer: its price counts as bought for")
+	# Parts bought for it count at what they cost.
+	var parts_was := int(ap["parts"])
+	Shed.items[Shed.item_on(bike, "exhaust")]["paid"] = 480
+	check(int(Sales.appraise(bike)["parts"]) == parts_was + 480, "a part bought for it counts at what it cost")
+	Shed.request({"a": "order_part", "part": "slip_on"})
+	var newest := 0
+	for id in Shed.items:
+		newest = maxi(newest, int(id))
+	check(int(Shed.items[newest].get("paid", -1)) == Money.buy_price("slip_on", me), "an ordered part notes what it cost")
+	# The crew's wages for work on it are labour sunk in.
+	var lab := int(Sales.appraise(bike)["labour"])
+	Shed.request({"a": "unbolt", "bike": bike, "slot": "exhaust"})
+	check(not Shed.is_bolted(bike, "exhaust") and int(Sales.appraise(bike)["labour"]) > lab, "wages paid for work on it count as labour")
+	Shed.request({"a": "bolt", "bike": bike, "slot": "exhaust"})
+	Sales.note_action({"a": "clean", "item": Shed.item_on(bike, "tank")})
+	Sales.add_labour(12)
+	check(int(Shed.items[Shed.item_on(bike, "tank")].get("labour", 0)) == 12, "work on one of its parts goes on that part")
+	# Uniqueness: a chrome tank makes it more of a one-off, and worth more to a buyer.
+	var u0 := float(Sales.appraise(bike)["unique"])
+	var fair0 := int(Sales.appraise(bike)["fair"])
+	Shed.items[Shed.item_on(bike, "tank")]["finish"] = "chrome"
+	var ap2 := Sales.appraise(bike)
+	check(float(ap2["unique"]) > u0 and (ap2["unique_why"] as Array).any(func(w): return str(w).contains("chrome")) and int(ap2["fair"]) > fair0,
+		"a chrome finish makes it more unusual (%d%%), and worth more" % roundi(float(ap2["unique"]) * 100.0))
+	# The recommended price: what it's worth, up to OVER_FAIR more to make the margin.
+	var ap3 := Sales.appraise(bike, 0.1)
+	check(int(ap3["recommended"]) >= int(ap3["fair"]) and int(ap3["recommended"]) <= roundi(int(ap3["fair"]) * (1.0 + Sales.OVER_FAIR)) + 10,
+		"recommended: at least its fair price, at most %d%% over (%s)" % [roundi(Sales.OVER_FAIR * 100.0), Sales.money(int(ap3["recommended"]))])
+	check(int(Sales.appraise(bike, 0.4)["target"]) > int(ap3["target"]), "a bigger target margin wants a higher price")
+	Shed.bikes[bike]["bought"] = int(ap3["fair"]) * 3
+	var dear := Sales.appraise(bike, 0.3)
+	check(int(dear["recommended"]) < int(dear["target"]) and int(dear["recommended"]) < int(dear["sunk"]) and str(dear["why"]).contains("lose"),
+		"more spent on it than it's worth: the price buyers will pay, and a warning of the loss")
+	Shed.bikes[bike].erase("bought")
+	# Buyers: more of them the fairer the price.
+	var fair := int(Sales.appraise(bike)["fair"])
+	check(Sales.interest(bike, roundi(fair * 0.8)) > Sales.interest(bike, fair) and Sales.interest(bike, fair) > Sales.interest(bike, roundi(fair * 1.3)) * 3.0,
+		"cheaper brings more buyers, dearer far fewer (%.1f / %.1f / %.2f a day)" % [Sales.interest(bike, roundi(fair * 0.8)),
+			Sales.interest(bike, fair), Sales.interest(bike, roundi(fair * 1.3))])
+	check(Sales.margin_text(1200, 1000) == "profit £200 (17%)" and Sales.margin_text(900, 1000) == "loss £100", "profit and margin read right")
+	# A customer's bike isn't the shed's to sell.
+	Shed.bikes[bike]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.bikes[bike]["contract"] = true
+	check(Shed.check(me, {"a": "sale_list", "bike": bike, "ask": 1000}).contains("customer"), "a customer's bike can't be put up for sale")
+	Shed.bikes[bike].erase("contract")
+	Shed.stop()
+
+
+## Online buyers: offers, accepting, turning down, counter-offers and the answers, lapsing.
+func _test_sales_offers() -> void:
+	Shed.start_new("Tester", 62)
+	var me := Shed.me()
+	var bike := _bike_named("Old Faithful")
+	var ask := int(Sales.appraise(bike)["fair"])
+	check(Shed.check(me, {"a": "sale_list", "bike": bike, "ask": ask}).contains("display stand"), "only a bike on a display stand goes up for sale")
+	Shed.bikes[bike]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.request({"a": "sale_list", "bike": bike, "ask": ask})
+	check(Sales.active(bike) and int(Sales.listings()[bike]["ask"]) == ask, "on a stand it goes up for sale at its price")
+	var alerts := int(Sales._st()["alerts"])
+	var oid := Sales.make_offer(bike)
+	var o: Dictionary = Sales.offers()[oid]
+	check(int(o["amount"]) > 0 and int(o["amount"]) <= ask and int(o["max"]) >= int(o["amount"]) and int(Sales._st()["alerts"]) == alerts + 1,
+		"a buyer makes an offer under the asking price (%s), and the till rings" % Sales.money(int(o["amount"])))
+	var amt := int(o["amount"])
+	var bal := Shed.garage_money
+	var sold := int(Progress.profile["stats"].get("sell_bike", 0))
+	Shed.request({"a": "sale_accept", "offer": oid})
+	var got := Shed.garage_money - bal
+	check(not Shed.bikes.has(bike) and Sales.offers().is_empty() and not Sales.listings().has(bike) and got >= amt
+		and got <= amt + Money.cut_of(int(Progress.PAY["sell_bike"]), int(Shed.bank["cut"])), "accepting: the bike is sold and the money goes to the business")
+	var d: Dictionary = Sales._st()["deals"][0]
+	check(int(d["price"]) == amt and str(d["kind"]) == "online" and int(d["profit"]) == amt - int(d["sunk"])
+		and int(Progress.profile["stats"].get("sell_bike", 0)) == sold + 1, "the deal is noted with its profit, and the seller gets the XP")
+	var col: Array = Sales._st()["collect"]
+	check(col.size() == 1 and (col[0]["xf"] as Transform3D).is_equal_approx(Workshop.SHOWROOM_SPOTS[0]), "the buyer comes to collect it from its stand")
+	# Counter-offers: one they'll pay is taken, after a moment.
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.bikes[ranger]["xf"] = Workshop.SHOWROOM_SPOTS[1]
+	Shed.request({"a": "sale_list", "bike": ranger, "ask": 9000})
+	var id2 := Sales.make_offer(ranger)
+	var o2: Dictionary = Sales.offers()[id2]
+	o2["amount"] = 3000
+	o2["max"] = 4000
+	check(Shed.check(me, {"a": "sale_counter", "offer": id2, "amount": 9500}).contains("more than you're asking"), "no counter-offer over the asking price")
+	check(Shed.check(me, {"a": "sale_counter", "offer": id2, "amount": 2900}).contains("accept it"), "nor one under their offer")
+	Shed.request({"a": "sale_counter", "offer": id2, "amount": 3800})
+	check(str(o2["state"]) == "waiting" and Shed.check(me, {"a": "sale_accept", "offer": id2}).contains("Waiting"), "a counter-offer waits for their answer")
+	Sales.advance(Sales.REPLY_HOURS * 0.4)
+	check(Shed.bikes.has(ranger) and str(o2["state"]) == "waiting", "which takes a little while")
+	Sales.advance(Sales.REPLY_HOURS)
+	check(not Shed.bikes.has(ranger) and int(Sales._st()["deals"][0]["price"]) == 3800, "they take a counter-offer within what they'll pay: sold at it")
+	# Meeting halfway, a final offer, and walking off.
+	var barn := _bike_named("Barn Find")
+	Shed.bikes[barn]["xf"] = Workshop.SHOWROOM_SPOTS[2]
+	Shed.request({"a": "sale_list", "bike": barn, "ask": 9000})
+	var id3 := Sales.make_offer(barn)
+	var o3: Dictionary = Sales.offers()[id3]
+	o3["amount"] = 3000
+	o3["max"] = 4000
+	Shed.request({"a": "sale_counter", "offer": id3, "amount": 4600})
+	o3["by"] = 0   # nobody with Haggler: their limit is just their max
+	Sales.advance(Sales.REPLY_HOURS + 0.01)
+	check(Sales.offers().has(id3) and str(o3["state"]) == "open" and int(o3["amount"]) == 3800 and not o3["final"],
+		"a counter a bit over what they'll pay: they meet you halfway (%s)" % Sales.money(int(o3["amount"])))
+	Shed.request({"a": "sale_counter", "offer": id3, "amount": 4500})
+	o3["by"] = 0
+	Sales.advance(Sales.REPLY_HOURS + 0.01)
+	check(Sales.offers().has(id3) and int(o3["amount"]) == 4000 and o3["final"], "halfway is past their limit: their limit, as a final offer")
+	Shed.request({"a": "sale_counter", "offer": id3, "amount": 4400})
+	o3["by"] = 0
+	Sales.advance(Sales.REPLY_HOURS + 0.01)
+	check(not Sales.offers().has(id3) and Shed.bikes.has(barn), "pushing past a final offer: they walk away")
+	var id4 := Sales.make_offer(barn)
+	Sales.offers()[id4]["amount"] = 2000
+	Sales.offers()[id4]["max"] = 3000
+	Shed.request({"a": "sale_counter", "offer": id4, "amount": 8000})
+	Sales.offers()[id4]["by"] = 0
+	Sales.advance(Sales.REPLY_HOURS + 0.01)
+	check(not Sales.offers().has(id4), "a counter far over what they'll pay sends them off")
+	var id5 := Sales.make_offer(barn)
+	Shed.request({"a": "sale_reject", "offer": id5})
+	check(not Sales.offers().has(id5) and Shed.bikes.has(barn), "turning an offer down")
+	# Off its stand it can't be sold; offers lapse if nobody answers.
+	var id6 := Sales.make_offer(barn)
+	Shed.bikes[barn]["xf"] = Workshop.SHOWROOM_SPOTS[2].translated(Vector3(3.0, 0.0, 0.0))
+	check(not Sales.active(barn) and Shed.check(me, {"a": "sale_accept", "offer": id6}).contains("stand"), "off its stand it can't be sold")
+	Sales._st()["next_px_at"] = 1.0e9
+	Sales.advance(Sales.OFFER_HOURS + 0.5)
+	check(not Sales.offers().has(id6) and Sales.listings().has(barn), "an offer left unanswered lapses; the listing stays")
+	# How often buyers come: a fair price brings some in two days, a silly one none.
+	Shed.bikes[barn]["xf"] = Workshop.SHOWROOM_SPOTS[2]
+	var fair := int(Sales.appraise(barn)["fair"])
+	Shed.request({"a": "sale_list", "bike": barn, "ask": roundi(fair * 0.9)})
+	var a0 := int(Sales._st()["alerts"])
+	for i in 48:
+		Sales.advance(1.0)
+	var cheap := int(Sales._st()["alerts"]) - a0
+	for id in Sales.offers().keys():
+		Shed.request({"a": "sale_reject", "offer": id})
+	Shed.request({"a": "sale_list", "bike": barn, "ask": fair * 4})
+	a0 = int(Sales._st()["alerts"])
+	for i in 48:
+		Sales.advance(1.0)
+	check(cheap >= 1 and int(Sales._st()["alerts"]) == a0, "priced fairly, buyers come (%d offers in two days); at four times its worth, none" % cheap)
+	# Selling it to the trade off its stand instead.
+	Shed.request({"a": "money_sell_bike", "bike": barn})
+	check(not Shed.bikes.has(barn) and str(Sales._st()["deals"][0]["kind"]) == "trade" and not Sales.listings().has(barn),
+		"sold to the trade from its stand: noted as a deal, off sale")
+	Shed.stop()
+
+
+## Part-exchange buyers: their bike's numbers, haggling over the allowance, the deal.
+func _test_sales_part_exchange() -> void:
+	Shed.start_new("Tester", 63)
+	var me := Shed.me()
+	var bike := _bike_named("Old Faithful")
+	Shed.bikes[bike]["xf"] = Workshop.SHOWROOM_SPOTS[2]
+	var ask := 6000
+	Shed.request({"a": "sale_list", "bike": bike, "ask": ask})
+	var pid := Sales.spawn_px(bike)
+	var p: Dictionary = Sales.px().get(pid, {})
+	check(pid != 0 and int(p["target"]) == bike and int(p["km"]) > 0 and int(p["retail"]) > int(p["trade"]) and int(p["trade"]) > 0
+		and int(p["want"]) >= int(p["min"]) and str(p["model"]).contains("cc"),
+		"a part-exchange buyer: a %s, %d km, retail %s, trade %s, wants %s" % [p.get("model", ""), int(p.get("km", 0)),
+			Sales.money(int(p.get("retail", 0))), Sales.money(int(p.get("trade", 0))), Sales.money(int(p.get("want", 0)))])
+	check(Sales.px_part_lines(p).size() >= 5 and float(p["condition"]) > 0.0 and float(p["condition"]) <= 1.0, "the Sales page has their bike's parts and condition")
+	check(Sales.free_px_spot() != int(p["park"]), "they park in a spot on the forecourt")
+	Shed.request({"a": "sale_px_offer", "px": pid, "amount": maxi(10, roundi(float(p["min"]) * 0.5))})
+	check(not Sales.px().has(pid), "an insulting allowance and they ride off")
+	pid = Sales.spawn_px(bike)
+	p = Sales.px()[pid]
+	p["want"] = 3000
+	p["min"] = 2400
+	Shed.request({"a": "sale_px_offer", "px": pid, "amount": 2000})
+	check(Sales.px().has(pid) and int(p["want"]) == 2500 and int(p["rounds"]) == 1, "a low allowance: they come down halfway")
+	check(Shed.check(me, {"a": "sale_px_offer", "px": pid, "amount": 2600}).contains("accept their figure"), "no offering more than they ask")
+	var bal := Shed.garage_money
+	var before: Array = Shed.bikes.keys()
+	var park := int(p["park"])
+	Shed.request({"a": "sale_px_accept", "px": pid})
+	var theirs := 0
+	for id in Shed.bikes:
+		if not before.has(id):
+			theirs = id
+	check(not Shed.bikes.has(bike) and not Sales.px().has(pid) and Shed.garage_money - bal >= ask - 2500, "the deal: they ride off on ours and pay the difference")
+	check(theirs != 0 and int(Shed.bikes[theirs]["bay"]) == -1 and (Shed.bikes[theirs]["xf"] as Transform3D).origin.distance_to(Sales.PX_SPOTS[park].origin) < 0.01
+		and int(Shed.bikes[theirs]["bought"]) == 2500 and str(Shed.bikes[theirs]["name"]).begins_with("Part-ex") and Shed.is_complete(theirs)
+		and Shed.bike_at_work(theirs), "their bike is ours, parked out front, ready to bring in (bought for the allowance)")
+	var cond: Dictionary = p["cond"]
+	check(is_equal_approx(float(Shed.items[Shed.item_on(theirs, "frame")]["rust"]), float(cond["frame"]["rust"]))
+		and is_equal_approx(float(Shed.items[Shed.item_on(theirs, "engine")]["wear"]), float(cond["engine"]["wear"])), "in just the state the page showed")
+	var d: Dictionary = Sales._st()["deals"][0]
+	check(str(d["kind"]) == "px" and int(d["allowance"]) == 2500 and int(d["price"]) == ask
+		and (Sales._st()["collect"] as Array).any(func(c): return int(c.get("visitor", -1)) == pid), "noted as a part-exchange, and they ride ours away")
+	# The business has to be able to pay a difference the other way.
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.bikes[ranger]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.request({"a": "sale_list", "bike": ranger, "ask": 500})
+	var pid2 := Sales.spawn_px(ranger)
+	check(pid2 != 0, "another one rides in")
+	Sales.px()[pid2]["want"] = 50000
+	Shed.garage_money = 10
+	check(Shed.check(me, {"a": "sale_px_accept", "px": pid2}).contains("can't pay"), "the business can't pay out more than it has")
+	Sales._st()["next_px_at"] = 1.0e9
+	Sales.advance(Sales.PX_PATIENCE + 0.5)
+	check(Sales.px().is_empty(), "left waiting too long, they give up")
+	Shed.stop()
+
+
+## Everything about selling is kept with the shed; older saves open with nothing for sale.
+func _test_sales_save() -> void:
+	Shed.start_new("Tester", 64)
+	var bike := _bike_named("Old Faithful")
+	Shed.bikes[bike]["xf"] = Workshop.SHOWROOM_SPOTS[3]
+	Shed.request({"a": "sale_list", "bike": bike, "ask": 7000, "margin": 0.3})
+	var oid := Sales.make_offer(bike)
+	var pid := Sales.spawn_px(bike)
+	Shed.bikes[bike]["labour"] = 77
+	Shed.items[Shed.item_on(bike, "exhaust")]["paid"] = 350
+	Sales._st()["next_px_at"] = 1.0e9
+	Sales.advance(0.3)
+	var clock := Sales.clock()
+	var ap := Sales.appraise(bike)
+	var text := var_to_str(Shed.save_snapshot().duplicate(true))
+	Shed.start_new("Tester", 65)
+	Shed.load_state(str_to_var(text), "Tester")
+	check(Sales.listings().has(bike) and int(Sales.listings()[bike]["ask"]) == 7000 and is_equal_approx(float(Sales.listings()[bike]["margin"]), 0.3)
+		and Sales.offers().has(oid) and Sales.px().has(pid) and is_equal_approx(Sales.clock(), clock),
+		"listings, offers, part-exchange buyers and the clock survive a save")
+	check(int(Sales.appraise(bike)["sunk"]) == int(ap["sunk"]) and int(Sales.appraise(bike)["labour"]) == int(ap["labour"])
+		and int(Sales.appraise(bike)["parts"]) == int(ap["parts"]) and Sales.active(bike), "and what the bike has cost, still on its stand for sale")
+	var nid := Sales.make_offer(bike)
+	check(nid > maxi(oid, pid), "new offers get new ids after loading")
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	old.erase("sales")
+	Shed.start_new("Tester", 66)
+	Shed.load_state(old, "Tester")
+	check(Sales.listings().is_empty() and Sales.offers().is_empty() and Sales.px().is_empty() and Sales.clock() == 0.0 and Shed.bikes.has(bike),
+		"a save from before selling from the showroom opens with nothing for sale")
+	Shed.stop()
+
+
+## In the game: the stands' cards and the office screen, the PC, the till, accepting on the
+## page, a part-exchange buyer riding in, the TV channel.
+func _test_sales_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	var view: SalesView = main.sales_view
+	var so: SalesOffice = main.workshop.sales_office
+	var bike := _bike_named("Old Faithful")
+	Shed.bikes[bike]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.request({"a": "sale_list", "bike": bike, "ask": 6500})
+	await get_tree().process_frame
+	check(so.stand_tag(0) != null and so.stand_tag(0).text.contains("£6,500") and so.screen_text().text.contains("Stand 1")
+		and so.screen_text().text.contains(str(Shed.bikes[bike]["name"])), "the stand's price card and the office PC's screen show it")
+	# The office PC.
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	w.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), SalesOffice.CENTER + Vector3(-4.4, SalesOffice.MEZZ_Y, 1.0)))
+	for i in 12:
+		await get_tree().physics_frame
+	check(str(w.target.get("kind", "")) == "sales_pc", "looking at the office PC from its chair")
+	_press("interact")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(main.sales_pc.visible and main.sales_pc.current_tab() == "Showroom" and _sales_button(main.sales_pc, "Change the price") != null,
+		"F opens the Sales page on the showroom")
+	# An offer: the till rings and the page has it.
+	var tills := view.tills
+	var oid := Sales.make_offer(bike)
+	Shed.changed.emit()
+	check(view.tills == tills + 1, "a buyer's offer rings the till")
+	main.sales_pc.open("Offers")
+	await get_tree().process_frame
+	var accept := _sales_button(main.sales_pc, "Accept")
+	check(accept != null and _sales_button(main.sales_pc, "Counter-offer") != null, "the Offers tab: accept, turn down, counter-offer")
+	if accept:
+		accept.pressed.emit()
+	await get_tree().process_frame
+	check(not Shed.bikes.has(bike) and not Sales.offers().has(oid) and view.collecting.size() == 1 and is_instance_valid(view.collecting.values()[0]),
+		"accepted on the page: sold, and the buyer comes for it")
+	main.sales_pc.close_computer()
+	# A part-exchange buyer rides in on their own bike.
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.bikes[ranger]["xf"] = Workshop.SHOWROOM_SPOTS[1]
+	Shed.request({"a": "sale_list", "bike": ranger, "ask": 4000})
+	var pid := Sales.spawn_px(ranger)
+	Shed.changed.emit()
+	await get_tree().process_frame
+	check(view.views.has(pid) and (view.views[pid] as CustomerView).has_bike(), "a part-exchange buyer rides in on their own bike")
+	# The garage TVs' Sales channel.
+	var data := TvChannels.page_data("sales")
+	check(TvChannels.CHANNELS.has("sales") and (data["stands"] as Array).size() == 4 and (data["px"] as Array).size() == 1, "the TVs have a Sales channel")
+	var dash := Dashboard.new("crew", 2.0)
+	add_child(dash)
+	dash.show_page("sales", data)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	dash.queue_free()
+	# Doing the deal on the page.
+	main.sales_pc.open_px(pid)
+	await get_tree().process_frame
+	check(main.sales_pc.current_tab() == "Part exchange", "talking to them opens the part-exchange page")
+	var deal := _sales_button(main.sales_pc, "Accept their")
+	if deal:
+		deal.pressed.emit()
+	await get_tree().process_frame
+	check(not Shed.bikes.has(ranger) and not view.views.has(pid) and view.collecting.size() == 2, "the deal done: they ride ours away")
+	main.sales_pc.close_computer()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame

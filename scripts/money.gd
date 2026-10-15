@@ -202,7 +202,7 @@ static func rideable(bike_id: int) -> bool:
 	return build.fuel_litres >= 0.05 and build.oil_litres >= 0.1
 
 
-## What a whole bike fetches: what its parts are worth, plus BONUS_COMPLETE when nothing is
+## What a whole bike fetches from the trade (the dealer; see Sales for private buyers): what its parts are worth, plus BONUS_COMPLETE when nothing is
 ## missing or loose and BONUS_RIDEABLE more when it's ready to ride.
 static func bike_sale(bike_id: int, peer := 0) -> int:
 	if not Shed.bikes.has(bike_id):
@@ -439,6 +439,11 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "Someone is wheeling that bike about."
 			if Shed.on_dyno(b) and Shed.strapped():
 				return "Unstrap it from the dyno first."
+			# Bikes are sold from the showroom (see Sales): the trade buys it off its display stand.
+			if Shed.showroom_spot_of(b) < 0:
+				return "Bikes are sold from the showroom: put it on a display stand in the sales office, then use the office PC."
+			if Sales.is_customer_bike(b):
+				return "That's a customer's bike: it isn't the shed's to sell."
 		"money_debug_grant":
 			if peer != 1:
 				return "Only the host can do that."
@@ -503,6 +508,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var b := int(action["bike"])
 			var price := bike_sale(b, peer)
 			var what := str(Shed.bikes[b]["name"])
+			Sales.note_trade(b, price)
 			Shed._xp(peer, "sell_bike", 1.0, "bike:%d" % b)
 			Shed.remove_bike(b)
 			Shed.credit_garage(price, "Sold %s" % what)

@@ -114,6 +114,8 @@ var bank := Money.defaults()
 var _clock_hours := -1.0       # host: the clock last frame, to see midnight pass
 ## Customers at reception and the jobs taken on for them (see Contracts).
 var contracts := {}
+## Bikes for sale on the showroom stands, buyers' offers and part-exchanges (see Sales).
+var sales := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -192,6 +194,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	Money.log_entry(bank, Money.START_FUNDS, "Opening funds", garage_money)
 	Money._mark_milestones(bank, garage_money)
 	contracts = Contracts.empty()
+	sales = Sales.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -420,6 +423,7 @@ func join_remote() -> void:
 	garage_money = 0
 	bank = Money.defaults()
 	contracts = Contracts.empty()
+	sales = Sales.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -444,6 +448,7 @@ func stop() -> void:
 	bank = Money.defaults()
 	_clock_hours = -1.0
 	contracts = Contracts.empty()
+	sales = Sales.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -2196,6 +2201,8 @@ func check(peer: int, action: Dictionary) -> String:
 			return "Someone is wheeling that bike about."
 	if a.begins_with("contract_"):
 		return Contracts.check(peer, action)
+	if a.begins_with("sale_"):
+		return Sales.check(peer, action)
 	if a.begins_with("dyno_") and a != "dyno_run":
 		return _dyno_check(peer, action)
 	if a.begins_with("blast"):
@@ -2871,6 +2878,14 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	var a := str(action["a"])
 	Contracts.note_action(peer, action)
+	Sales.note_action(action)
+	if a.begins_with("sale_"):
+		var said_s := Sales.apply(peer, action)
+		if said_s != "":
+			_tell(peer, said_s, true)
+		_mark_dirty()
+		changed.emit()
+		return
 	if a.begins_with("contract_"):
 		var said_c := Contracts.apply(peer, action)
 		if said_c != "":
@@ -3036,6 +3051,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var cost := Money.buy_price(part_id, peer)
 			charge_garage(cost, "Bought %s" % PartsDB.part_name(part_id))
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
+			items[item_id]["paid"] = cost   # for the cost of a bike it's fitted to (see Sales)
 			# Parts come boxed; cans and bottles of fluid are left as they are.
 			items[item_id]["boxed"] = not PartsDB.is_fluid(part_id)
 			_deliver(item_id)
@@ -3239,6 +3255,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_park(bike_id)
 			if bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over. Fit a side stand."
+			elif showroom_spot_of(bike_id) >= 0:
+				text = _on_stand_text(bike_id)
 		"grab_bike":
 			bikes[bike_id]["pusher"] = peer
 			bikes[bike_id]["stand"] = ""
@@ -3249,7 +3267,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 			bikes[bike_id]["pusher"] = 0
 			bikes[bike_id]["xf"] = action["xf"]
 			_park(bike_id)
-			if on_dyno(bike_id):
+			if showroom_spot_of(bike_id) >= 0:
+				text = _on_stand_text(bike_id)
+			elif on_dyno(bike_id):
 				text = "%s is on the dyno. Strap it down at the four posts (hold the work button), then tune and run it at the desk." % bikes[bike_id]["name"]
 			elif bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over."
@@ -3382,6 +3402,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 					TvChannels.money_text(cost), TvChannels.money_text(garage_money)], false)
 				changed.emit()
 				return
+			bikes[id]["bought"] = cost   # what it cost, for pricing it when it's sold (see Sales)
 			text = "%s has been delivered to bay %d, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1, TvChannels.money_text(cost)]
 		"radio":
 			radio = {"on": bool(action.get("on", radio["on"])), "station": int(action.get("station", radio["station"]))}
@@ -4483,6 +4504,7 @@ func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 		spent += cost
 		var look: Dictionary = colors.get(row["slot"], {})
 		var item_id := _new_item(part, 0.0, 0.0, 0.0, look.get("color"))
+		items[item_id]["paid"] = cost
 		items[item_id]["finish"] = str(look.get("finish", ""))
 		items[item_id]["boxed"] = not PartsDB.is_fluid(part)
 		_deliver(item_id)
@@ -4577,7 +4599,7 @@ func _snapshot(with_board := true) -> Dictionary:
 		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "upgrades": upgrades,
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "upgrades": upgrades,
 		"lifts": lifts, "looks": looks}
 	if with_board:
 		state["board"] = board
@@ -4613,6 +4635,8 @@ func _sync(state: Dictionary) -> void:
 		Money._mark_milestones(bank, garage_money)
 	# Sheds saved before contracts have no customers or jobs.
 	contracts = Contracts.sanitize(state.get("contracts"))
+	# Sheds saved before selling from the showroom have nothing listed.
+	sales = Sales.sanitize(state.get("sales"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.
@@ -4658,6 +4682,7 @@ func _process(delta: float) -> void:
 	_money_clock()
 	Money.record_graph()
 	Contracts.process(delta)
+	Sales.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":
@@ -4729,6 +4754,7 @@ func credit_garage(amount: int, reason: String) -> void:
 func pay_worker(peer: int, gross: int, reason: String) -> void:
 	if not is_authority() or gross <= 0:
 		return
+	Sales.add_labour(gross)
 	var cut := Money.cut_of(gross, int(bank["cut"]))
 	if not give_cash(peer, gross - cut, reason):
 		cut = gross
@@ -4836,6 +4862,15 @@ func showroom_spot_of(bike_id: int) -> int:
 	if i >= 0 and (bikes[bike_id]["xf"] as Transform3D).origin.distance_to(SalesOffice.SHOWROOM_SPOTS[i].origin) < 0.05:
 		return i
 	return -1
+
+
+## What a player is told putting a bike on a display stand: price it at the office PC to sell it.
+func _on_stand_text(bike_id: int) -> String:
+	var stand := showroom_spot_of(bike_id) + 1
+	if Sales.listings().has(bike_id):
+		return "%s is back on display stand %d, for sale at %s." % [bikes[bike_id]["name"], stand,
+			TvChannels.money_text(int(Sales.listings()[bike_id]["ask"]))]
+	return "%s is on display stand %d. Price it at the PC in the office upstairs to put it up for sale." % [bikes[bike_id]["name"], stand]
 
 
 ## A bike let go of by a free showroom plinth goes onto it, square and upright, on show.

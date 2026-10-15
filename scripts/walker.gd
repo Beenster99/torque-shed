@@ -8,6 +8,7 @@ extends CharacterBody3D
 signal mount_requested(bike_id: int)
 signal computer_requested
 signal tuning_requested
+signal sales_requested
 signal label_requested(furniture_id: int)
 signal rename_requested(bike_id: int)
 
@@ -284,6 +285,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif target.get("kind", "") == "dyno":
 			get_viewport().set_input_as_handled()
 			tuning_requested.emit()
+		elif target.get("kind", "") == "sales_pc":
+			get_viewport().set_input_as_handled()
+			sales_requested.emit()
 		elif target.get("kind", "") == "radio":
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "radio", "on": not Shed.radio["on"]})
@@ -546,6 +550,8 @@ func _update_target() -> void:
 			t = {"kind": "pc"}
 		elif c.has_meta("dyno"):
 			t = {"kind": "dyno"}
+		elif c.has_meta("sales_pc"):
+			t = {"kind": "sales_pc"}
 		elif c.has_meta("screen"):
 			t = {"kind": "screen", "screen": str(c.get_meta("screen"))}
 		elif c.has_meta("bin"):
@@ -1260,6 +1266,8 @@ func _make_plan() -> Dictionary:
 						p = {"action": {"a": "computer"}, "time": 0.15, "verb": "use the parts computer"}
 					"dyno":
 						p = {"action": {"a": "tuning"}, "time": 0.15, "verb": "use the dyno desk"}
+					"sales_pc":
+						p = {"action": {"a": "sales_pc"}, "time": 0.15, "verb": "use the sales PC"}
 		"wrench":
 			if kind == "part":
 				var a := _where()
@@ -1327,7 +1335,7 @@ func _make_plan() -> Dictionary:
 					p = {"action": {"a": "wash", "items": near, "at": target["at"]}, "time": 0.2, "verb": "blast the muck off"}
 	if p.is_empty():
 		return {}
-	p["blocked"] = "" if p["action"]["a"] in ["computer", "tuning", "write_label"] else Shed.check(me, p["action"])
+	p["blocked"] = "" if p["action"]["a"] in ["computer", "tuning", "sales_pc", "write_label"] else Shed.check(me, p["action"])
 	return p
 
 
@@ -1610,6 +1618,12 @@ func _describe() -> String:
 			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")
 		"dyno_kit":
 			lines.append_array(DynoRoom.describe(target, Shed.me()))
+		"sales_pc":
+			lines.append("Sales PC")
+			lines.append("F: price the bikes on the showroom stands, answer buyers' offers and part-exchanges.")
+			var waiting := Sales.offers().values().filter(func(o): return str(o["state"]) == "open").size() + Sales.px().size()
+			if waiting > 0:
+				lines.append("%d buyer%s waiting for an answer" % [waiting, "" if waiting == 1 else "s"])
 		"dyno":
 			lines.append("Dyno desk")
 			var on := Shed.dyno_bike()
@@ -1806,6 +1820,8 @@ func _update_work(delta: float) -> void:
 			computer_requested.emit()
 		elif a_now == "tuning":
 			tuning_requested.emit()
+		elif a_now == "sales_pc":
+			sales_requested.emit()
 		elif a_now == "write_label":
 			label_requested.emit(int(target.get("furniture", 0)))
 		else:
@@ -2067,7 +2083,7 @@ func _scale_time(p: Dictionary) -> void:
 	if p.is_empty() or p.get("coverage", false) or not p.has("time"):
 		return
 	var a := str(p["action"].get("a", ""))
-	if a in ["computer", "tuning", "write_label", "wash", "radio"]:
+	if a in ["computer", "tuning", "sales_pc", "write_label", "wash", "radio"]:
 		return
 	p["time"] = float(p["time"]) * Progress.time_mult(Shed.me(), tool, p["action"])
 
@@ -2115,7 +2131,7 @@ func _activity_text() -> String:
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
 		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "coat": "Coating", "take": "Picking up a part",
-		"place": "Putting down a part", "set_down": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk",
+		"place": "Putting down a part", "set_down": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk", "sales_pc": "At the sales PC",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
 		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer"}

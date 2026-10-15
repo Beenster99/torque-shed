@@ -19,6 +19,8 @@ var tuning: TuningComputer
 var label_dialog: LabelDialog
 var contract_panel: ContractPanel   # a customer's offer card and the jobs list
 var contracts_view: ContractsView   # the customers walking in to reception
+var sales_pc: SalesComputer     # the Sales page on the sales office's PC
+var sales_view: SalesView       # part-exchange buyers, buyers collecting, the till, the stands' prices
 var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
 var audio: EngineSound
 var saver: SaveGame
@@ -76,6 +78,17 @@ func _ready() -> void:
 	world.add_child(contracts_view)
 	contracts_view.talk_requested.connect(func(id):
 		contract_panel.open_offer(id)
+		_capture_mouse(false))
+	sales_pc = SalesComputer.new()
+	sales_pc.visible = false
+	ui.add_child(sales_pc)
+	sales_pc.closed.connect(func(): _capture_mouse(true))
+	sales_view = SalesView.new()
+	sales_view.name = "SalesVisitors"
+	sales_view.main = self
+	world.add_child(sales_view)
+	sales_view.talk_requested.connect(func(id):
+		sales_pc.open_px(id)
 		_capture_mouse(false))
 	geometry = GeometryMode.new()
 	ui.add_child(geometry)
@@ -176,6 +189,7 @@ func _start_session() -> void:
 	walker.mount_requested.connect(_try_mount)
 	walker.computer_requested.connect(_open_computer)
 	walker.tuning_requested.connect(_open_tuning)
+	walker.sales_requested.connect(_open_sales)
 	walker.label_requested.connect(func(id):
 		label_dialog.open(id)
 		_capture_mouse(false))
@@ -205,6 +219,7 @@ func _end_session() -> void:
 	in_session = false
 	computer.visible = false
 	tuning.visible = false
+	sales_pc.visible = false
 	label_dialog.visible = false
 	contract_panel.visible = false
 	if geometry.active:
@@ -231,6 +246,12 @@ func _capture_mouse(on: bool) -> void:
 
 func _open_computer() -> void:
 	computer.open()
+	_capture_mouse(false)
+
+
+## The sales office PC: the Sales page.
+func _open_sales() -> void:
+	sales_pc.open()
 	_capture_mouse(false)
 
 
@@ -428,7 +449,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not in_session or geometry.active:
 		return   # geometry mode takes its own keys, Esc and F2 included
 	if event.is_action_pressed("geometry_mode") and bike == null and walker and not menu.visible and not computer.visible \
-			and not tuning.visible and not label_dialog.visible and not contract_panel.visible:
+			and not tuning.visible and not sales_pc.visible and not label_dialog.visible and not contract_panel.visible:
 		get_viewport().set_input_as_handled()
 		open_geometry()
 		return
@@ -441,6 +462,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			computer.close_computer()
 		elif tuning.visible:
 			tuning.close_computer()
+		elif sales_pc.visible:
+			sales_pc.close_computer()
 		elif menu.visible:
 			_close_menu()
 		else:
@@ -448,7 +471,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_capture_mouse(false)
 		get_viewport().set_input_as_handled()
 		return
-	if menu.visible or computer.visible or tuning.visible or label_dialog.visible or contract_panel.visible or bike == null:
+	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or bike == null:
 		return
 	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"):
 		# Swing the chase camera round the bike (or turn your head in first person).
@@ -487,7 +510,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
-	var active := not menu.visible and not computer.visible and not tuning.visible and not label_dialog.visible \
+	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
 		and not contract_panel.visible and not geometry.active
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)

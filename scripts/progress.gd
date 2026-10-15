@@ -84,9 +84,10 @@ const XP := {
 	"build_complete": {"xp": 150, "label": "Bike build complete", "once": "bike", "tag": "builder"},
 	"scratch_build": {"xp": 100, "label": "Built from scratch", "once": "bike", "tag": "builder"},
 	"max_health": {"xp": 300, "label": "Restored to max health", "once": "bike", "tag": "builder"},
-	# Money: selling at the parts computer, and the business's account growing.
+	# Money: selling bikes from the showroom and parts at the parts computer, and the business growing.
 	"sell_bike": {"xp": 100, "label": "Bike sold"},
 	"sell_part": {"xp": 5, "label": "Part sold"},
+	"px_deal": {"xp": 40, "label": "Part-exchange deal"},
 	"money_milestone": {"xp": 50, "label": "Money milestone"},
 	# Contracts (see Contracts): paid to the crew who worked on the job when it's handed back.
 	"contract_maint": {"xp": 40, "label": "Service job done"},
@@ -123,7 +124,7 @@ const PAY := {
 	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "chain_lube": 3,
 	"repair": 6, "sandblast": 6, "paint": 8, "protect_coat": 8, "lighten": 5, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
 	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
-	"sell_bike": 50, "sell_part": 2,
+	"sell_bike": 50, "sell_part": 2, "px_deal": 20,
 }
 
 ## Hand tool upgrade stages: the level each needs, its look, and what it does.

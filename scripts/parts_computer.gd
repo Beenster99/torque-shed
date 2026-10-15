@@ -852,13 +852,14 @@ func _refresh_bank() -> void:
 	_bike_btn.tooltip_text = "Around %s, paid by the business" % TvChannels.money_text(Money.typical_project_price())
 
 
-## What the Sell aisle can sell now: "bike:<id>" for every bike nobody is riding, "item:<id>"
-## for every loose part (on the floor, a bench or shelf, or in your hands).
+## What the Sell aisle can sell now: "bike:<id>" for every bike standing on a showroom display
+## stand (bikes are only sold from there: see Sales), "item:<id>" for every loose part (on the
+## floor, a bench or shelf, or in your hands).
 static func sellables(k: String) -> Array:
 	var out := []
 	if k == "sell:bikes":
 		for id in Shed.bikes:
-			if int(Shed.bikes[id]["rider"]) == 0:
+			if int(Shed.bikes[id]["rider"]) == 0 and Shed.showroom_spot_of(int(id)) >= 0 and not Sales.is_customer_bike(int(id)):
 				out.append("bike:%d" % int(id))
 	else:
 		for id in Shed.items:
@@ -877,7 +878,8 @@ func _show_sellables(k: String) -> void:
 	_sell_shown = ",".join(keys)
 	_variants.add_child(UITheme.label("%d TO SELL" % keys.size(), 14, UITheme.ACCENT))
 	if keys.is_empty():
-		var none := UITheme.label("Nothing to sell here." if k == "sell:bikes" else
+		var none := UITheme.label("Bikes are sold from the showroom: stand one on a display stand in the sales office. "
+			+ "The office PC upstairs prices it for buyers; it can be sold to the trade from here." if k == "sell:bikes" else
 			"No loose parts. Take parts off a bike, or put them down in the shed, to sell them.", 14, Color(1, 1, 1, 0.5))
 		none.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_variants.add_child(none)
@@ -925,8 +927,8 @@ func _show_sale(key: String) -> void:
 		var state := "Complete, fuelled and ready to ride: it fetches %d%% more." % roundi((Money.BONUS_COMPLETE + Money.BONUS_RIDEABLE) * 100.0) \
 			if Money.rideable(id) else ("Complete, but needs petrol and oil to fetch the best price." if Shed.is_complete(id)
 			else "%d part%s missing and %d loose: a complete bike fetches more." % [missing, "" if missing == 1 else "s", loose])
-		_desc.text = "Sells the whole bike and every part on it. %s" % state
-		_spec.text = "The money goes into the business's account. Bikes sold: XP for whoever sells it."
+		_desc.text = "Sells the whole bike to the trade, off its display stand, with every part on it. %s" % state
+		_spec.text = "The money goes into the business's account. Private buyers pay more: price it at the sales office PC. Bikes sold: XP for whoever sells it."
 		return
 	var it: Dictionary = Shed.items.get(id, {})
 	var health := BikeBuild.part_health(Shed.condition_of(it)) if not it.is_empty() else 0.0

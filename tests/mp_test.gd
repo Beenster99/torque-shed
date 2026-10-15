@@ -56,6 +56,10 @@ func _ready() -> void:
 	var left_out := false
 	var retrieve_asked := false
 	var retrieve_ok := false
+	var stood := false
+	var listed_asked := false
+	var offered := false
+	var sales_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -211,7 +215,21 @@ func _ready() -> void:
 		# They ride in on their own bike, which both sides see.
 		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty() \
 			and main.contracts_view.views.values().any(func(v): return is_instance_valid(v) and (v as CustomerView).has_bike())
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok:
+		# Selling: the host puts Barn Find on a showroom stand, the client lists it from its sales
+		# PC, the host's buyer makes an offer, and both see the offer and hear the till.
+		var barn := _bike_named("Barn Find")
+		if role == "host" and Shed.crew.size() == 2 and barn != 0 and not stood:
+			Shed.bikes[barn]["xf"] = Workshop.SHOWROOM_SPOTS[1]
+			Shed._mark_dirty()
+			stood = true
+		if role == "client" and barn != 0 and Sales.stand_of(barn) >= 0 and not listed_asked:
+			Shed.request({"a": "sale_list", "bike": barn, "ask": 4000, "margin": 0.2})
+			listed_asked = true
+		if role == "host" and barn != 0 and Sales.listings().has(barn) and not offered:
+			offered = Sales.make_offer(barn) != 0
+			Shed._mark_dirty()
+		sales_ok = sales_ok or (barn != 0 and Sales.listings().has(barn) and not Sales.offers().is_empty() and main.sales_view.tills > 0)
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -227,8 +245,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4)])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok])
 	get_tree().quit(0 if ok else 1)
 
 

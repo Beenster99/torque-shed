@@ -13,9 +13,10 @@ extends RefCounted
 ## wiring it up later only touches that function.
 
 ## The channels every screen has, in order. A screen's own home channel goes first.
-const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "contracts"]
+const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts"]
 const NAMES := {"bay": "Bay", "live": "Live riding", "crew": "Crew board", "xp": "XP goals", "howto": "How to play",
-	"money_me": "My money", "money_garage": "Garage money", "afford": "What you can afford", "contracts": "Contracts"}
+	"money_me": "My money", "money_garage": "Garage money", "afford": "What you can afford", "contracts": "Contracts",
+	"sales": "Sales"}
 const BUILT_IN: Array[String] = ["crew", "bay0", "bay1", "bay2", "bay3"]
 ## The how-to-play pages turn over on their own, this many seconds each.
 const HOWTO_PAGE_TIME := 9.0
@@ -255,6 +256,8 @@ static func page_data(ch: String) -> Dictionary:
 			return afford_data(Shed.me())
 		"contracts":
 			return contracts_data()
+		"sales":
+			return Sales.tv_data()
 		"live":
 			return nobody_data()
 	return {}
@@ -376,6 +379,8 @@ static func draw_page(c: Control, font: Font, kind: String, data: Dictionary) ->
 			_draw_afford(c, font, data)
 		"contracts":
 			_draw_contracts(c, font, data)
+		"sales":
+			Sales.draw_tv(c, font, data)
 		_:
 			_title(c, font, "NO SIGNAL")
 

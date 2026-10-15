@@ -53,9 +53,13 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
 | Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
 | Sort the parts computer's list, or show only parts that fit a bike or are within budget | Sort / Fits / Within budget, under the aisles | d-pad up to them, A |
-| Sell a loose part or a whole bike (parts computer, Sell aisle); send money, take money out, loans (Esc, Money tab) | F at the computer / Esc | Y / Start |
+| Sell a loose part, or a bike on a showroom stand to the trade (parts computer, Sell aisle); send money, take money out, loans (Esc, Money tab) | F at the computer / Esc | Y / Start |
 | Garage upgrades (parts computer): pick a finish's colour or style, see it in the shed, back to the page | Click a swatch, **See it in the shed**, Esc | D-pad to a swatch and A, B |
 | Talk to a customer waiting at reception (their offer card: Accept, Decline) | F | Y |
+| Put a bike up for sale: ride or wheel it onto a showroom display stand and get off or let go | F (tap or hold) | Y |
+| Use the sales PC (upstairs office): Showroom, Offers, Part exchange and Deals pages | F at the PC; Esc to close | Y; B or Start |
+| Answer a buyer's offer (sales PC, Offers): **Accept**, **Turn it down**, or type a figure and **Counter-offer** | Click | d-pad to it, A |
+| Talk to a part-exchange buyer in the showroom (opens their page on the sales PC) | F | Y |
 | Bring a customer's bike in from the car park: get on and ride it (tap), or walk it in by the handlebars (hold) | F | Y |
 | Unpack a delivery box; take hold of or let go of equipment (posters, TVs and the whiteboard hang on the wall you look at) | F | Y |
 | Carrying equipment: push it further away / pull it closer | Mouse wheel up / down (or Q / E) | LB / RB |
@@ -181,6 +185,7 @@ The **storage room** is through the doorway in the west wall, by the back corner
 - **My money**: your cash, what you earned and spent this in-game week, bikes you've sold and a chart of your cash day by day.
 - **Garage money**: the business's account, what its bikes and loose parts would fetch, money in and out this week, what it owes the bank and a chart of the account day by day.
 - **What you can afford**: a project bike and some fancy parts, at what they cost now, and whether your cash would cover them.
+- **Sales**: the bikes on the showroom stands with their prices, buyers' offers waiting for an answer (with the margin on each), part-exchange buyers in the showroom, and the latest deals.
 - **Contracts**: laid out now; customers' jobs arrive in a later update.
 
 Bay screens start on their bay's bike and the crew board starts on the crew list. The channel each screen is on is kept with the shed, and everyone in co-op sees the same channel. The money pages show your own figures on your own screen.
@@ -244,9 +249,22 @@ East of the paint shop, across a block-paved forecourt with a small car park, is
 - **Reception**: the desk facing the doors, with helmets on the shelves behind it. Customers stand in front of it, and you stand behind it to talk to them.
 - **Viewing area**: sofas round a low table, looking out over the showroom.
 - **Kitchen**: through the door behind reception, with the kettle, a fridge and a table.
-- **Office**: up the stairs along the back wall, on a **mezzanine** that looks down over the showroom, with a desk, a computer and a meeting table.
+- **Office**: up the stairs along the back wall, on a **mezzanine** that looks down over the showroom, with a desk, the big-screened **sales PC** (see Selling bikes below) and a meeting table. The PC's screen shows the stands and any offers waiting, and each display plinth has a price card.
 
 The office has **its own light switch** (one at the foot of the stairs, one at the top); it's saved with the shed. The sign, canopy, bollards and car park lamps come on by themselves at dusk.
+
+### Selling bikes
+
+Bikes are sold from the **showroom**. Ride or wheel a bike in through the sales office doors and let go of it (or get off) on one of the four **display stands**: it's on show, and its price card says it's waiting for a price. Customers' bikes can't be sold.
+
+Go up to the office and use the **sales PC** (F). It has four pages:
+
+- **Showroom**: pick a stand. The page shows what's **sunk** into the bike (what it was bought for, the parts bought for it and the wages paid for work on it), what it's **worth** (its parts as they are, more for complete and ready to ride, and more again for being **unusual**: changed and top-spec parts, two-tone or chrome, metallic or patina paint, a scratch build, its own name, nothing like it in stock), and a **recommended price** for the target **margin** you pick (10% to 40%): at least the fair price, and no more than 15% over it. It says so when the bike is worth less than what's gone into it. Type an asking price (or **Use recommended**): the page shows the profit and margin at that price and how many buyers to expect. **Put it up for sale**, change the price later, or take it off sale. **Sell to the trade now** still pays 70% of its worth straight away.
+- **Offers**: buyers find the bike online. Priced near or under what it's worth, a couple a day get in touch; well over, hardly anyone. Each offer rings the **till** (heard by everyone, and shown on the TVs' **Sales** channel) and waits about 8 in-game hours. **Accept** it, **Turn it down**, or **Counter-offer**: each figure shows its profit and margin. The buyer answers a counter-offer within a quarter of an hour: they take it if it's within what they'd pay (a little more with the Haggler skill), meet you halfway, or walk away if it's far too much or you keep pushing. A sold bike leaves its stand when the buyer comes to collect it and rides it away; the money goes to the garage's account and the seller gets the XP.
+- **Part exchange**: now and then (sooner once a bike goes up for sale) a buyer **rides their own bike** into the forecourt, parks it and waits in the showroom by the bike they're after. Talk to them (F) or open the page: it shows their bike's model, colour, mileage, condition and each part's wear and rust, what it's worth to a buyer and to the trade, and what they want for it. **Accept their figure**, offer your own **allowance** (the page shows what the deal is worth: their cash plus their bike's trade value, against what ours cost), or **Send them away**. Offer too little or haggle too long and they leave. On a deal they pay the difference, ride ours away, and their bike is ours, parked outside the showroom.
+- **Deals**: what's been sold, to whom, for how much and at what margin.
+
+Everything is kept with the shed, and in co-op the host runs the buyers: everyone sees the same offers and hears the same till.
 
 ### XP, levels, tool upgrades and skills
 
@@ -275,6 +293,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | A project bike restored to max health (every part 95% or better) | 300, once per bike |
 | Riding: a jump of half a second or more (more for longer, half again for a clean landing), wheelies (3 per 10 m), stoppies (4 per 5 m), burnouts, knee-down corners, every km ridden, new top speeds (50, 80, 100 ... 320 km/h), 0-100 km/h times, and beating your longest jump, wheelie or stoppie | 2 to 60 |
 | Selling a bike, selling a part (at the parts computer) | 100, 5 |
+| A part-exchange deal (on top of selling the bike) | 40 |
 | The business's account reaching 10k, 25k, 50k, 100k, 250k, 500k and 1 million (everyone in the shed, once each) | 50 |
 | Running an MOT test on a contract bike | 6 |
 | A contract handed back: a service, an MOT, modifications, a bespoke build (x how many goals were met; to everyone who worked on it) | 40, 60, 100, 250 |
@@ -430,7 +449,7 @@ Your eyes adjust too: walk out of the bright yard into the shed with the lights 
 
 ### Sound
 
-Most sounds are made by the game itself as it starts, modelled on how the real thing makes its noise, and kept in a cache file so later starts are quick. A few are **recordings** (in `audio/sfx`): the wrench ratcheting, the sandblaster, the dyno room's cooling fan winding up and running, the roller door's motor, the sales office door chime and phone, the light switches, the gear levers and the horns. Each has several takes, picked at random and never the same one twice running; if a recording's file is missing the game makes its own sound instead. Nothing to set up: the Esc menu's sound effects slider covers all of it.
+Most sounds are made by the game itself as it starts, modelled on how the real thing makes its noise, and kept in a cache file so later starts are quick. A few are **recordings** (in `audio/sfx`): the wrench ratcheting, the sandblaster, the dyno room's cooling fan winding up and running, the roller door's motor, the sales office door chime and phone, the light switches, the gear levers and the horns. Each has several takes, picked at random and never the same one twice running; if a recording's file is missing the game makes its own sound instead. The sales PC's **cash till** (a buyer's offer or answer) is made by the game for now, until a recording is added as `sale_offer`. Nothing to set up: the Esc menu's sound effects slider covers all of it.
 
 - **Variety**: every knock, clink, footstep and part going down comes in several versions, played at random with a touch of pitch and level, and never the same one twice running. Tools pick up their loop at a different point each time.
 - **Parts landing**: putting a part down sounds of what it's made of and what it lands on: steel clanks and rings on the concrete floor, knocks on the wooden bench top, rings on for a while on a steel shelf or machine, and thuds dead on the grass outside; plastic clacks, tyres thump and bounce, seats and gear flop, delivery boxes thud.
@@ -445,7 +464,7 @@ There are two kinds of money: **your own cash**, kept with your character like y
 
 **Wages**: every job that earns XP also pays a small wage (a few pounds for spanner work, more for restoring, spraying and fitting tyres, and a good lump for finishing a build or restoring a bike to max health). Like the XP, doing the same job again straight away pays less and less, and the one-offs pay once. The business takes its **cut** of every wage (20% to start); you get the rest. Riding pays XP, not wages. The real money is in selling bikes (and, later, contracts).
 
-**Buying and selling**: parts cost money now, from the business's account: plain parts are cheap, fancy and light ones dear, engines by their size. If the business can't afford a part, the parts computer says so and nothing comes. A **project bike** costs a bit more than it would fetch as it comes, so the profit is in restoring it. The parts computer's **Sell** aisle sells **loose parts** (on the floor, a bench or shelf, or in your hands; an engine goes with whatever is fitted to it) and **whole bikes**. A dealer pays 70% of what a thing is worth now, and worn, rusty parts are worth far less than good ones, so restore before you sell. A complete bike fetches 15% more, and 15% more again with petrol and oil in it, ready to ride. The money goes to the business; whoever sells gets the XP and a small commission.
+**Buying and selling**: parts cost money now, from the business's account: plain parts are cheap, fancy and light ones dear, engines by their size. If the business can't afford a part, the parts computer says so and nothing comes. A **project bike** costs a bit more than it would fetch as it comes, so the profit is in restoring it. The parts computer's **Sell** aisle sells **loose parts** (on the floor, a bench or shelf, or in your hands; an engine goes with whatever is fitted to it) and, to the trade, **whole bikes standing on a showroom display stand** (see Selling bikes for buyers who pay more). A dealer pays 70% of what a thing is worth now, and worn, rusty parts are worth far less than good ones, so restore before you sell. A complete bike fetches 15% more, and 15% more again with petrol and oil in it, ready to ride. The money goes to the business; whoever sells gets the XP and a small commission.
 
 **The Money tab** (Esc menu): your cash and the business's, and:
 - **Send money**: pick a mate or the business and an amount: it comes out of your own cash. Anyone can pay the business.
@@ -494,7 +513,8 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/settings.gd`, `keybind_tab.gd` | Settings, every key binding and rebinding them in the Esc menu |
 | `scripts/graphics.gd`, `graphics_tab.gd` | Graphics settings: presets, putting them on the window, viewport and cameras, the driver override and FPS counter; the Esc menu's Graphics tab |
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
-| `scripts/sales_office.gd` | The sales office: its forecourt, showroom plinths, reception, viewing area, kitchen, stairs and mezzanine office, the sliding doors and the shop bell |
+| `scripts/sales_office.gd` | The sales office: its forecourt, showroom plinths, reception, viewing area, kitchen, stairs and mezzanine office with the sales PC, the sliding doors and the shop bell |
+| `scripts/sales.gd`, `sales_view.gd`, `sales_computer.gd` | Selling bikes: pricing and appraisal, online buyers' offers and counter-offers, part-exchange buyers and deals (host-run, saved with the shed); the buyers and their bikes in the showroom, the till and the price cards; the sales PC's pages |
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime, and each part's own fit from geometry mode |
 | `scripts/geometry_mode.gd`, `geo_gizmo.gd`, `blueprint_tab.gd` | Geometry mode (fitting a bike's parts with move, rotate and scale handles), the handles and their maths, and the Esc menu's Blueprints tab |

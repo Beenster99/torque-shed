@@ -45,7 +45,7 @@ const LEVELS := {
 	"gun_on": ["peak", 0.4], "gun_off": ["peak", 0.4], "pump_on": ["peak", 0.5], "pump_off": ["peak", 0.45],
 	"blast_on": ["peak", 0.6], "blast_off": ["peak", 0.6], "comp_on": ["peak", 0.65], "comp_off": ["peak", 0.65],
 	"bead_pop": ["peak", 0.8], "slide_open": ["peak", 0.45], "slide_close": ["peak", 0.45], "slide_shut": ["peak", 0.5],
-	"tube_start": ["peak", 0.4], "creak": ["peak", 0.5],
+	"tube_start": ["peak", 0.4], "creak": ["peak", 0.5], "sale_offer": ["peak", 0.55],
 }
 ## Footstep loudness by floor (concrete is the reference).
 const STEP_PEAK := {"concrete": 0.5, "epoxy": 0.5, "wood": 0.55, "metal": 0.55, "gravel": 0.5, "grass": 0.35, "tarmac": 0.45,
@@ -73,7 +73,7 @@ static func all_sounds() -> Array[String]:
 	var out: Array[String] = ["step_concrete", "step_epoxy", "step", "switch", "pickup", "clink", "clunk", "ratchet", "scrub",
 		"impact_metal_concrete", "impact_metal_wood", "impact_metal_steel", "grinder", "spray", "spray_gun", "washer", "jet",
 		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "scrap", "screech", "chirp", "starter",
-		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "rain", "rain_roof",
+		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "sale_offer", "rain", "rain_roof",
 		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets"]
 	for s in VARIANTS:
 		if not out.has(s):
@@ -164,6 +164,7 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"levelup": return _levelup()
 		"bell": return _shop_bell()
 		"bell_chime": return _door_chime()
+		"sale_offer": return _till()
 	return buf(0.1)
 
 
@@ -1571,6 +1572,38 @@ func _shop_bell() -> PackedFloat32Array:
 			ring(d, at, float(p[0]), float(p[1]) * h * 0.6, float(p[2]))
 			ring(d, at, float(p[0]) * 1.0015, float(p[1]) * h * 0.4, float(p[2]))
 		burst(d, at, 0.01, 0.3 * h, 600.0, 1000.0, 16000.0)
+	return d
+
+
+## An old cash till (an offer in at the sales office): two keys clacked down, the bright
+## "ching" of its bell, and the drawer rolling out to thump against its stop.
+func _till() -> PackedFloat32Array:
+	var d := buf(1.6)
+	# The keys: plastic-capped levers bottoming out on the frame.
+	for kk in 2:
+		var at := int((0.02 + kk * 0.11) * R)
+		hit(d, at, [[rf(1700.0, 2100.0), 0.7, 90.0], [rf(3800.0, 4400.0), 0.4, 160.0], [rf(420.0, 520.0), 0.6, 60.0]], 0.0001, 0.6)
+		burst(d, at, 0.012, 0.35, 400.0, 600.0, 9000.0)
+	# The bell: a small domed bell, struck once hard with a quick second bounce of the hammer.
+	var bell_at := 0.27
+	var f0 := rf(2550.0, 2650.0)
+	for st in [[0.0, 1.0], [0.035, 0.35]]:
+		var at := int((bell_at + float(st[0])) * R)
+		var h := float(st[1])
+		for pp in [[1.0, 1.0, 3.0], [2.31, 0.5, 4.5], [3.08, 0.32, 6.0], [4.2, 0.2, 8.0], [0.52, 0.18, 2.5]]:
+			ring(d, at, f0 * float(pp[0]), float(pp[1]) * h * 0.55, float(pp[2]))
+			ring(d, at, f0 * float(pp[0]) * 1.002, float(pp[1]) * h * 0.4, float(pp[2]))
+		burst(d, at, 0.008, 0.3 * h, 700.0, 1500.0, 16000.0)
+	# The drawer: a rattling roll out on its runners, then the thump at the end of its travel.
+	var roll := int((bell_at + 0.04) * R)
+	band(d, roll, 0.28, 900.0, 0.35, 0.22, 4.0, 0.01)
+	burst(d, roll, 0.28, 0.08, 3.0, 150.0, 2500.0, false, 0.02)
+	for r in 7:
+		var at := roll + int(rf(0.01, 0.26) * R)
+		hit(d, at, [[rf(1200.0, 2600.0), 0.3, 120.0]], 0.0002, 0.25)
+	var stop := roll + int(0.3 * R)
+	hit(d, stop, [[rf(140.0, 170.0), 0.9, 30.0], [rf(380.0, 440.0), 0.5, 45.0], [rf(1100.0, 1300.0), 0.3, 80.0]], 0.0008, 0.8)
+	burst(d, stop, 0.02, 0.3, 200.0, 120.0, 4000.0)
 	return d
 
 
