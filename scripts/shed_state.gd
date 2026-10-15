@@ -2231,6 +2231,27 @@ func scrap_check(peer: int, action: Dictionary) -> String:
 	return ""
 
 
+## Trinkets standing on top of equipment `id` (a bobblehead on a bench) go down to the floor
+## under where they stood, before it goes. How many moved.
+func _drop_trinkets_off(id: int) -> int:
+	var f: Dictionary = furniture[id]
+	var xf: Transform3D = f["xf"]
+	var half := furniture_size(f) * 0.5
+	var n := 0
+	for other in furniture:
+		var t: Dictionary = furniture[other]
+		if other == id or str(t["kind"]) != "trinket" or Equipment.is_wall(str(t["model"])):
+			continue
+		var at: Vector3 = (t["xf"] as Transform3D).origin
+		var local := xf.affine_inverse() * at
+		if absf(local.x) <= half.x + 0.02 and absf(local.z) <= half.z + 0.02 and at.y > xf.origin.y + 0.05:
+			var moved: Transform3D = t["xf"]
+			moved.origin.y = xf.origin.y
+			t["xf"] = moved
+			n += 1
+	return n
+
+
 ## Whether a piece of the shed's equipment can be scrapped: everything bought (machines,
 ## benches, shelves, stands, seats, posters, TVs, yard kit and trinkets), but not the kit built
 ## into the shed that it can't work without and can't buy again: the spray bay, the tyre
@@ -2259,6 +2280,7 @@ func _scrap(_peer: int, action: Dictionary) -> String:
 			_washer_by.erase(on)
 			dropped += 1
 		screens.erase("f%d" % id)
+		dropped += _drop_trinkets_off(id)
 		furniture.erase(id)
 		if dropped > 0:
 			return "Scrapped the %s. What was on it is on the floor." % what

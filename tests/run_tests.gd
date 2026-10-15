@@ -8313,6 +8313,20 @@ func _test_scrap_placed() -> void:
 		Shed.request({"a": "scrap", "furniture": stand})
 		check(not Shed.furniture.has(stand) and Shed.items.has(engine) and Shed.items[engine]["at"] == "floor",
 			"scrapping an engine stand leaves its engine on the floor")
+	# A trophy on a bench comes down to the floor with it.
+	Shed.request({"a": "order_furniture", "model": "bench_standard"})
+	var bench := 0
+	for id in Shed.furniture:
+		if str(Shed.furniture[id]["model"]) == "bench_standard":
+			bench = maxi(bench, int(id))
+	var bxf := Transform3D(Basis(Vector3.UP, 0.3), Workshop.CENTER + Vector3(2.0, 0.0, 2.0))
+	Shed.furniture[bench]["xf"] = bxf
+	Shed.request({"a": "order_furniture", "model": "trinket_trophy"})
+	var trophy := _first_furniture("trinket_trophy")
+	Shed.furniture[trophy]["xf"] = Transform3D(Basis(), bxf * Vector3(0.2, Equipment.work_height("bench_standard"), 0.0))
+	Shed.request({"a": "scrap", "furniture": bench})
+	check(not Shed.furniture.has(bench) and absf((Shed.furniture[trophy]["xf"] as Transform3D).origin.y - bxf.origin.y) < 0.001,
+		"a trinket on a scrapped bench ends up on the floor")
 	for kind in ["booth", "changer", "whiteboard"]:
 		var fid := 0
 		for id in Shed.furniture:
