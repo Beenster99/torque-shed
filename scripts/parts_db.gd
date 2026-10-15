@@ -179,6 +179,8 @@ func default_color(id: String) -> Color:
 func slot_name(slot: String) -> String:
 	var k: String = SLOT_KIND.get(slot, slot)
 	var n: String = KIND_NAMES.get(k, slot)
+	if n.begins_with("Front "):
+		return n   # the front mudguard is front by kind already
 	if slot.begins_with("front_"):
 		return "Front " + n.to_lower()
 	if slot.begins_with("rear_"):
@@ -347,8 +349,8 @@ func spec_line(id: String) -> String:
 			bits = [p["type"], "%d%% less drag" % roundi(-float(p["cda"]) / 0.55 * 100.0),
 				"%d mm screen" % roundi(float(p.get("screen", 0.0)) * 1000.0)]
 		"front_mudguard":
-			bits = [p["type"], "high mount" if mudguard_high(id) else "low mount",
-				"keeps off %d%% of the spray" % roundi(float(p.get("cover", 0.7)) * 100.0)]
+			bits = [p["type"], "keeps off %d%% of the spray" % roundi(float(p.get("cover", 0.7)) * 100.0),
+				"mounts high under the yoke" if mudguard_high(id) else "mounts low on the fork legs"]
 		"mirrors":
 			bits = [p["type"]]
 			if not p.get("mounts_on", []).is_empty():

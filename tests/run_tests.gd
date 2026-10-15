@@ -8279,6 +8279,8 @@ func _test_front_mudguard_parts() -> void:
 	for id in guards:
 		check(PartsDB.spec_line(id).contains("spray"), "the %s has a spec line" % id)
 	check(PartsDB.is_optional("front_mudguard") and PartsDB.BIKE_SLOTS.has("front_mudguard"), "it has its own slot on the bike, and a bike rides without one")
+	check(PartsDB.slot_name("front_mudguard") == "Front mudguard" and PartsDB.slot_name("front_tyre") == "Front tyre",
+		"its slot reads \"Front mudguard\" (%s)" % PartsDB.slot_name("front_mudguard"))
 	check(PartsDB.dependents("fork").has("front_mudguard") and PartsDB.MOUNTS["front_mudguard"] == ["fork"], "it bolts to the fork, so it comes off before the fork")
 	# Bikes that never had one chosen get one that suits them; a chosen one, or none, stays.
 	var want := {"cafe_tail": "alloy_cafe_blade", "bobber_fender": "bobbed_steel", "sport_tail_tidy": "road_hugger",
