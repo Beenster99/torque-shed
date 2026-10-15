@@ -974,8 +974,13 @@ func _bay_data(bay: int) -> Dictionary:
 		["Brake F", build.brake_fluid["front"], 0.0],
 		["Brake R", build.brake_fluid["rear"], 0.0],
 	]
-	return {"name": bike["name"], "status": status, "now": build.summary(), "delivered": bike["delivered"], "parts": parts,
+	var data := {"name": bike["name"], "status": status, "now": build.summary(), "delivered": bike["delivered"], "parts": parts,
 		"notes": build.notes, "fluids": fluids, "range_km": build.range_km()}
+	# A customer's bike: the screen shows the job's checklist, deadline and money instead.
+	var job := Contracts.job_for_bike(bike_id)
+	if not job.is_empty():
+		data["contract"] = Contracts.screen_data(job)
+	return data
 
 
 ## A bay screen's blueprint page: the parts the build needs and how far it's got.

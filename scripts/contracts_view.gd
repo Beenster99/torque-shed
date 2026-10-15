@@ -10,6 +10,7 @@ const REACH := 3.5
 
 var main: Node                 # for the walker and whether a menu is open
 var views := {}                # customer id -> CustomerView
+var collecting := {}           # finished job id -> the CustomerView riding its bike away (null once seen)
 var _looked := 0
 
 
@@ -17,7 +18,8 @@ func _ready() -> void:
 	Shed.changed.connect(sync_state)
 
 
-## Brings the figures into line with the customers waiting now.
+## Brings the figures into line with the customers waiting now, and the ones collecting their
+## bikes.
 func sync_state() -> void:
 	var waiting: Array = Contracts.customers().keys()
 	waiting.sort_custom(func(a, b): return float(Contracts.customers()[a]["arrived"]) < float(Contracts.customers()[b]["arrived"]))
@@ -25,26 +27,65 @@ func sync_state() -> void:
 		if not is_instance_valid(views[id]):
 			views.erase(id)
 		elif not waiting.has(id):
-			(views[id] as CustomerView).leave()
+			# Job taken on: they walk off and leave their bike. Otherwise they ride it away.
+			(views[id] as CustomerView).leave(not Contracts.took_on(int(id)))
 			views.erase(id)
 	var face := Contracts.reception().basis
 	for i in waiting.size():
 		var id: int = waiting[i]
-		var walk := Contracts.path_in(i)
+		var c: Dictionary = Contracts.customers()[id]
+		var park := int(c.get("park", -1)) if Contracts.rides_in(c) else -1
+		var walk := Contracts.path_in(i, park)
 		if views.has(id):
 			(views[id] as CustomerView).move_to(walk[walk.size() - 1])
 			continue
-		var c: Dictionary = Contracts.customers()[id]
-		var length := 0.0
-		for k in range(1, walk.size()):
-			length += walk[k].distance_to(walk[k - 1])
-		var rate := Contracts.hours_rate()
-		var since := (Contracts.clock() - float(c.get("arrived", 0.0))) / maxf(rate, 0.000001)
+		var ride := Contracts.ride_in_path(park) if park >= 0 else PackedVector3Array()
+		var bike := {}
+		if park >= 0:
+			var o: Dictionary = c["offer"]
+			bike = {"parts": o.get("parts", {}), "paint": Shed.PAINTS[int(o.get("paint", 0)) % Shed.PAINTS.size()]}
+		var secs := _length(walk) / Contracts.WALK_SPEED + _length(ride) / Contracts.RIDE_SPEED * 1.5 + 2.0
 		var v := CustomerView.new()
 		add_child(v)
-		v.setup(c, walk, face, since > length / Contracts.WALK_SPEED + 1.0)
+		v.setup(c, walk, face, _since(float(c.get("arrived", 0.0))) > secs, ride, bike)
 		v.arrived.connect(_on_arrived)
 		views[id] = v
+	_sync_leaving()
+
+
+## Customers who've come for their finished bikes: each walks up to it, gets on and rides off.
+## Seen once each, and only while it's still happening (not when joining long after).
+func _sync_leaving() -> void:
+	for d in Contracts._st().get("leaving", []):
+		if not (d is Dictionary) or not (d.get("xf") is Transform3D):
+			continue
+		var id := int(d.get("id", 0))
+		if collecting.has(id):
+			continue
+		var xf: Transform3D = d["xf"]
+		var walk := Contracts.collect_path(xf)
+		var ride := Contracts.ride_out_path(xf)
+		var secs := _length(walk) / Contracts.WALK_SPEED + _length(ride) / Contracts.RIDE_SPEED * 1.5 + 2.0
+		if _since(float(d.get("at", 0.0))) > secs:
+			collecting[id] = null
+			continue
+		var v := CustomerView.new()
+		add_child(v)
+		v.setup_collect({"id": -id, "name": d.get("name", ""), "look": d.get("look", {})}, walk,
+			{"parts": d.get("parts", {}), "paint": d.get("paint"), "cond": d.get("cond", {})}, xf, ride)
+		collecting[id] = v
+
+
+## Real seconds since the contracts clock read `at`.
+static func _since(at: float) -> float:
+	return (Contracts.clock() - at) / maxf(Contracts.hours_rate(), 0.000001)
+
+
+static func _length(pts: PackedVector3Array) -> float:
+	var length := 0.0
+	for k in range(1, pts.size()):
+		length += pts[k].distance_to(pts[k - 1])
+	return length
 
 
 ## The bell at the counter: the sales office's own when it has one.
