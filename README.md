@@ -237,6 +237,7 @@ Press F at the **dyno desk** to tune the bike on the rig, or any bike within abo
 - **Suspension**: preload, compression and rebound, front and rear, only where the fork or shock has that adjuster.
 - **Tyres and chain**: pressures (off a tyre's best pressure it grips less; soft tyres drag and wear faster, though a knobbly a touch soft finds more grip in the dirt) and chain slack.
 - **Gearing**: front and rear sprocket teeth, and with a cassette gearbox (the close-ratio and race boxes) the spacing of the ratios.
+- **Last ride**: charts of your last ride's telemetry (see Handling below).
 - **Weight**: drill and trim parts (frame, wheels, discs, sprockets, seat, bars, exhaust and more) to save weight. Each part can be done once; it costs it some condition and it wears a little faster after.
 
 **Run the dyno** and the bike revs up through the gears on the drum, then sweeps one gear to the limiter. The desk and the wall screen plot power and torque at the rear wheel against rpm, the speed in each gear, and the peak power and torque, top speed, power to weight and a 0-100 km/h estimate. The previous run stays on the graph, dashed, with the change in each number, so you can see what a change did.
@@ -330,6 +331,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Camera (chase, first person) | C | Right stick click |
 | Swing the camera round the bike (first person: look round) | Mouse | Right stick |
 | Ride-by camera: watch yourself ride past (again to end it) | V | (none; set one in Key bindings) |
+| Telemetry overlay on / off | F3 | (none; set one in Key bindings) |
 | Horn (hold it; other players hear it where your bike is) | H | D-pad down |
 | Headlight: off, low beam, high beam (then high beam and fog lights, with fog lights fitted) | L | Left stick click |
 | Paddle backwards with your feet (when stopped) | Hold S | Hold left trigger |
@@ -342,7 +344,7 @@ The suspension now moves visibly over bumps and dirt ruts, the rear shocks stret
 
 Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L steps through off, low beam and high beam; on a bike with fog lights the next press after high beam puts the fog lamps on as well, and the one after that switches everything off. At night the beam lights the night air softly, a faint glow in the mist rather than a solid cone, a little stronger on high beam, with a few specks drifting through it. The headlight is two lights: a core that lights the road and a wide, dim flood round it. Both fade out gradually from the middle, so the pool of light on the road has no ring round it, and only the soft flood shows in the air, as a haze with no edges. (On the simpler renderer for older graphics cards it's a faint soft glow instead.)
 
-You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
+You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. With Riding realism at 0.5 or more the rider won't let the front tyre lock; at full sim it can, and the back one can lock at any setting unless the ECU has ABS. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
 
 **Horns** are recorded from real ones: the stock disc horn, low-tone and high-tone discs, snail horns, the twin trumpet and truck air horns and the freight train horn sound for as long as you hold H and stop when you let go; the courtesy pip horn gives one short pip however long you hold it; the **police yelp horn** keeps whooping and yelping while you hold it, a different yelp each time; and, as a joke, the **ship's foghorn** and the **tugboat horn** blow their whole blast on every press. The twin-tone, klaxon, bulb, scooter beeper, musical and goose horns are still made by the game. Fit one from the parts computer's Horn aisle. Other players hear your horn from where your bike is, quieter and duller further off.
 
@@ -373,7 +375,20 @@ Each new engine's sound is worked out in the background when you get on (about a
 
 **Recorded sounds** can replace the synthesised ones. Put .wav files in a folder named after the engine and exhaust, in `engine_samples` in the game's user folder (no import needed) or in `res://audio/engines` to ship them: the folder is `<layout>_<cylinders>_<exhaust>`, `<layout>_<exhaust>` or just `<layout>` (layouts: single, twin, parallel, vtwin, boxer, triple, inline, 2stroke; exhausts: stock, slip, full, race, straight). Loops are named by side, throttle and revs, each a seamless loop held at those revs: `ex_on_6000.wav` (exhaust, on the throttle, 6000 rpm), `ex_off_6000.wav` (overrun), `in_on_6000.wav` and `in_off_6000.wav` (engine and intake side). One-shots: `pop*.wav`, `bang*.wav`, `crack*.wav`, `shift*.wav`, `neutral*.wav` and `starter*.wav`. Anything left out is synthesised as usual.
 
-You steer by leaning: the rider counter-steers for you, like on a real bike. The **rider assist** setting goes from 0 (full sim) to 1 (most help with balance, wheelspin and wheelies). The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
+You steer by leaning: the rider counter-steers for you, like on a real bike. The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
+
+### Handling: tyres, riding realism, Direct bars and telemetry
+
+**Tyres work like real ones now.** Each tyre has a grip curve: grip builds as it starts to slip, peaks, then falls away to a slide. Braking or accelerating uses up grip the tyre could have used for cornering, so braking hard while leaned over leaves less to hold the line. A tyre loaded harder grips more, but not in proportion (a front tyre squashed under hard braking has a little less grip for its load). A leaned tyre pushes towards the lean (camber thrust), and grip builds over a short roll rather than all at once. The contact patch rolls round the tyre's round profile as you lean, so on fat tyres the bike leans a few degrees further for the same corner. Each tyre in the parts computer has a construction (radial or bias ply), a profile, a stiffness and how much grip is left once it slides: sport tyres and slicks are sharp and let go suddenly, touring tyres are softer, knobblies and old bias-ply tyres slide progressively. Tyre pressures change it too: a soft tyre slips further before it grips and is lazier to respond.
+
+**Riding realism** (Esc menu, Settings) is a slider from 0 to 1:
+- **0, full sim**: nothing hidden helps. Grab a handful of front brake leaned over and the front locks and tucks under, and you're down. Spin the back tyre up in a corner and snap the throttle shut and the slide grips all at once and throws you over the high side. The throttle goes exactly where you put it.
+- **About 0.5**: the rider protects the front (eases the brake before it locks, leaving grip for the corner), rolls the throttle on and off smoothly and feathers it when the back spins.
+- **1, easy**: as before this update, with the most help balancing, with wheelspin and with wheelies.
+
+**Direct bars** (Settings) changes what steering does: instead of choosing how far to lean and letting the rider counter-steer for you, A / D or the stick push on the handlebars. Push the right grip (D, stick right) and the bars turn left for a moment, which leans the bike right; let go and the front end steers itself into the lean and the bike carries on round the corner. Push the left grip to stand it back up. On a keyboard the push builds up as you hold the key, so a tap is a nudge; on a stick, a small move is a gentle push. At walking pace your feet are down and the bars just point where you steer.
+
+**Telemetry**: press **F3** while riding (or tick it in Settings) for the telemetry overlay at the right of the screen: each tyre's friction circle (the dot is where its force is against its grip: past the ring it's sliding, and it turns red) with its load, the throttle and brakes, and the last 8 seconds of lean, steering, bar torque (Direct bars), slip ratios, slip angles, grip used and tyre loads. Every ride is recorded; the **dyno desk's Last ride tab** shows the whole of your last ride as charts (speed, lean, steering, bar torque, slips, grip used, loads, throttle and brakes, gear and revs) with the top speed, most lean, hardest braking and cornering, and how long each tyre spent sliding.
 
 ### Garage upgrades
 
@@ -520,7 +535,9 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/geometry_mode.gd`, `geo_gizmo.gd`, `blueprint_tab.gd` | Geometry mode (fitting a bike's parts with move, rotate and scale handles), the handles and their maths, and the Esc menu's Blueprints tab |
 | `scripts/tyre_game.gd` | The tyre-fitting game on the tyre changer |
 | `scripts/blast_game.gd`, `blast_marks.gd`, `blast_hud.gd`, `blast_detail.gd`, `blast_grit.gd` | The sandblasting game in the blast cabinet: the coverage, the satin bare-metal mask and its shader, the live readout and the scan, the close-up engine detail, and the bare metal kept on each part and drawn wherever the engine goes, and the sand particles held inside the cabinet (protective coats, and a fully blasted engine coming out as new, are in `shed_state.gd`) |
-| `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |
+| `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, the tyres on the road, the rider (lean steering or Direct bars, riding realism), engine, clutch and gearbox |
+| `scripts/tyre_model.gd` | The tyres: a Magic Formula with combined slip, load sensitivity, camber thrust, relaxation length and the round profile, from each tyre's catalogue numbers |
+| `scripts/ride_telemetry.gd`, `telemetry_overlay.gd`, `telemetry_graph.gd` | The ride's telemetry recorder, the F3 overlay while riding, and the strip charts (the overlay's and the dyno desk's Last ride tab) |
 | `scripts/chase_camera.gd` | The riding cameras: the chase view you can swing round the bike, first person, the ride-by camera and the title screen orbit |
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |

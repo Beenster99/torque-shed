@@ -27,6 +27,9 @@ var _rows := {}               # key -> {slider, value, why, reset}
 var _weight: VBoxContainer
 var _summary: Label
 var _graph: DynoGraph
+var _ride_graph: TelemetryGraph   # the last ride's telemetry, shown while the Last ride tab is open
+var _ride_text: Label
+var _ride_wait := 0.0            # seconds till the Last ride page is redrawn
 var _run: Button
 var _status: Label
 var _pending := {}            # key -> value waiting to be sent
@@ -118,6 +121,7 @@ func _ready() -> void:
 	_weight.add_theme_constant_override("separation", 6)
 	wscroll.add_child(_weight)
 	_tabs.add_child(wscroll)
+	_build_ride_tab()
 	_summary = UITheme.label("", 15, UITheme.ACCENT)
 	left.add_child(_summary)
 
@@ -129,6 +133,11 @@ func _ready() -> void:
 	_graph.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_graph.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_child(_graph)
+	_ride_graph = TelemetryGraph.new()
+	_ride_graph.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_ride_graph.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ride_graph.visible = false
+	right.add_child(_ride_graph)
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 12)
 	_run = Button.new()
@@ -461,9 +470,52 @@ func _flush() -> void:
 	_pending.clear()
 
 
+## The Last ride tab: what the telemetry recorded on your last ride (RideTelemetry.last), drawn
+## as strip charts in place of the dyno graph while the tab is open.
+func _build_ride_tab() -> void:
+	var scroll := ScrollContainer.new()
+	scroll.name = "Last ride"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_ride_text = UITheme.label("", 15)
+	_ride_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ride_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_ride_text)
+	_tabs.add_child(scroll)
+
+
+## Whether the Last ride tab is the one open.
+func showing_ride() -> bool:
+	var tab := _tabs.get_current_tab_control()
+	return tab != null and tab.name == "Last ride"
+
+
+func _update_ride() -> void:
+	var tel := RideTelemetry.last
+	_ride_graph.telemetry = tel
+	_ride_graph.queue_redraw()
+	if tel == null or tel.size() < 2:
+		_ride_text.text = "No ride recorded yet. Ride a bike and come back: the telemetry logs every ride."
+		return
+	var s := tel.summary()
+	_ride_text.text = ("%s\n\n%d:%02d ridden, top speed %s\nMost lean %.0f°\nHardest braking %.2f g, hardest cornering %.2f g\n"
+		+ "Past the grip: front %.1f s, rear %.1f s\n\nThe charts show speed, lean, steering, bar torque, each tyre's "
+		+ "slip ratio and slip angle, how much of its grip it used (1 is the limit: above it the tyre slides), "
+		+ "the loads on the tyres, the throttle and brakes, the gear and the revs. Front tyre blue, rear orange. "
+		+ "F3 shows the same live at the side of the screen while you ride.") % [
+		tel.bike_name if tel.bike_name != "" else "Last ride", int(s["duration"]) / 60, int(s["duration"]) % 60,
+		Units.kmh(float(s["top_kmh"])), s["max_lean"], s["max_brake_g"], s["max_lat_g"], s["front_over"], s["rear_over"]]
+
+
 func _process(delta: float) -> void:
 	if not visible:
 		return
+	var ride := showing_ride()
+	_ride_graph.visible = ride
+	_graph.visible = not ride
+	_ride_wait -= delta
+	if ride and _ride_wait <= 0.0:
+		_ride_wait = 0.5
+		_update_ride()
 	_send_timer -= delta
 	if _send_timer <= 0.0 and not _pending.is_empty():
 		_send_timer = SEND_EVERY

@@ -232,6 +232,16 @@ func _run_all() -> void:
 	await _test_blast_grit_contained()
 	_test_new_shed_empty()
 	_test_contract_variety()
+	print("Handling phase 1: real tyres, riding realism, Direct bars, telemetry")
+	await _test_tyre_steady_turn()
+	await _test_tyre_stopping()
+	await _test_tyre_front_tuck()
+	await _test_tyre_highside()
+	await _test_tyre_coasting()
+	await _test_direct_bars()
+	await _test_tyre_old_save()
+	await _test_telemetry()
+	await _test_physics_cost()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -354,11 +364,16 @@ func ride(build: Dictionary, seconds: float, drive: Callable, surf := "tarmac") 
 			result["crashed"] = true
 		if not bike.wheels[0]["contact"] and bike.wheels[1]["contact"] and bike.speed > 2.0:
 			result["front_lifted"] = true
-		if verbose and i % 60 == 0:
-			print("    t=%.1f v=%.1f lean=%.1f steer=%.1f gear=%d rpm=%.0f comp=%.3f/%.3f slip=%.2f/%.2f pitch=%.1f" % [
+		if verbose and i % (6 if OS.get_cmdline_user_args().has("--fine") else 60) == 0:
+			print("    t=%.2f v=%.1f lean=%.1f steer=%.1f gear=%d rpm=%.0f comp=%.3f/%.3f slip=%.2f/%.2f pitch=%.1f kappa=%.2f/%.2f alpha=%.1f/%.1f grip=%.2f/%.2f" % [
 				i * dt, bike.speed, rad_to_deg(bike.lean_angle), rad_to_deg(bike.steer), bike.gear, bike.rpm,
 				bike.wheels[0]["compression"], bike.wheels[1]["compression"], bike.wheels[0]["slip"], bike.wheels[1]["slip"],
-				rad_to_deg(bike.pitch_angle)])
+				rad_to_deg(bike.pitch_angle), bike.wheels[0]["kappa"], bike.wheels[1]["kappa"],
+				rad_to_deg(bike.wheels[0]["alpha"]), rad_to_deg(bike.wheels[1]["alpha"]),
+				bike.wheels[0]["grip_used"], bike.wheels[1]["grip_used"]])
+			if OS.get_cmdline_user_args().has("--fine"):
+				print("      load=%.0f/%.0f mu=%.2f/%.2f gx=%.2f/%.2f" % [bike.wheels[0]["load"], bike.wheels[1]["load"],
+					bike.wheels[0]["mu"], bike.wheels[1]["mu"], bike.wheels[0]["gx"], bike.wheels[1]["gx"]])
 	return result
 
 
@@ -11134,3 +11149,337 @@ func _avg(a: Array) -> float:
 	for x in a:
 		total += float(x)
 	return total / maxf(1.0, a.size())
+
+
+# ---------------------------------------------------------------------------- handling phase 1: tyres
+
+## Throttle (and a touch of brake) to hold the bike at `target` m/s.
+func _hold_speed(b: Bike, target: float) -> void:
+	var err := target - b.speed
+	b.throttle = clampf(0.25 + err * 0.35, 0.0, 1.0)
+	b.front_brake = clampf(-err * 0.15 - 0.1, 0.0, 0.4)
+
+
+func _test_tyre_steady_turn() -> void:
+	# A steady turn: the lean should be near the textbook atan(v^2 / g r), plus a little for the
+	# round tyre's contact patch moving inwards as it leans.
+	var acc := {"n": 0, "lean": 0.0, "v": 0.0, "yaw": 0.0}
+	var r := await ride({}, 11.0, func(b, t):
+		b.assist = 0.5
+		_hold_speed(b, 15.0)
+		b.lean_input = 0.0 if t < 3.0 else 0.6
+		if t > 7.0:
+			acc["n"] += 1
+			acc["lean"] += absf(b.lean_angle)
+			acc["v"] += b.linear_velocity.length()
+			acc["yaw"] += absf(b.angular_velocity.y))
+	var n := maxf(float(acc["n"]), 1.0)
+	var lean := rad_to_deg(float(acc["lean"]) / n)
+	var v := float(acc["v"]) / n
+	var yaw := float(acc["yaw"]) / n
+	var radius := v / maxf(yaw, 1e-3)
+	var textbook := rad_to_deg(atan(v * v / (Bike.G * radius)))
+	var balance := rad_to_deg((r["bike"] as Bike)._balance_lean(deg_to_rad(lean)))
+	check(not r["crashed"], "the steady turn holds (%.1f m/s on a %.0f m radius)" % [v, radius])
+	check(absf(balance - textbook) < 4.0,
+		"steady-turn lean is near the textbook atan(v^2/gr) = %.1f deg: %.1f deg from the tyres to the centre of mass" % [textbook, balance])
+	check(lean > balance and lean - balance < 8.0,
+		"and the bike leans a little further on its round tyres (%.1f deg)" % lean)
+	await _done(r)
+
+
+func _test_tyre_stopping() -> void:
+	# A hard stop on the front brake, dry sports tyres, from 25 m/s: about 1 g (the air helps a little).
+	var st := {"x0": Vector3.ZERO, "v0": 0.0, "dist": -1.0}
+	var r := await ride({}, 14.0, func(b, t):
+		b.assist = 0.5
+		if t < 8.0:
+			_hold_speed(b, 25.0)
+			return
+		b.throttle = 0.0
+		b.front_brake = 1.0
+		b.rear_brake = 0.0
+		if st["v0"] == 0.0:
+			st["v0"] = b.speed
+			st["x0"] = b.global_position
+		elif st["dist"] < 0.0 and b.speed < 0.3:
+			st["dist"] = (b.global_position - st["x0"]).length())
+	var v0: float = st["v0"]
+	var dist: float = st["dist"]
+	var g := v0 * v0 / (2.0 * maxf(dist, 0.01)) / Bike.G if dist > 0.0 else 0.0
+	check(not r["crashed"] and dist > 0.0, "a hard stop from %.0f m/s comes to a halt in %.1f m" % [v0, dist])
+	check(g > 0.85 and g < 1.2, "it stops at about 1 g on dry sports tyres (%.2f g)" % g)
+	await _done(r)
+
+
+func _test_tyre_front_tuck() -> void:
+	# Grabbing a handful of front brake leaned over: at realism 0 nothing saves the front and it
+	# tucks; at realism 1 the rider feels for it and the bike just slows.
+	for realism in [0.0, 1.0]:
+		var worst := {"front": 0.0}
+		var r := await ride({}, 8.0, func(b, t):
+			b.assist = realism
+			b.lean_input = 0.0 if t < 2.5 else 0.55
+			if t < 5.0:
+				_hold_speed(b, 15.0)
+			else:
+				b.throttle = 0.0
+				b.front_brake = 1.0
+				worst["front"] = maxf(worst["front"], float(b.wheels[0]["grip_used"])))
+		var front: float = worst["front"]
+		if realism == 0.0:
+			check(r["crashed"] and front > 1.5, "realism 0: grabbing the front brake leaned over tucks the front (grip used %.1f)" % front)
+		else:
+			check(not r["crashed"] and front <= 1.2, "realism 1: the rider eases the brake and the front holds (grip used %.2f)" % front)
+		await _done(r)
+
+
+func _test_tyre_highside() -> void:
+	# At realism 0, spin the back tyre up leaned over and snap the throttle shut: the slide
+	# grips again all at once and throws the bike over the other way.
+	var st := {"lean_in": 0.0, "slide": 0.0}
+	var r := await ride({}, 9.0, func(b, t):
+		b.assist = 0.0
+		b.auto_shift = t < 4.8
+		if t >= 4.8:
+			b.gear = 2
+		b.lean_input = 0.0 if t < 2.5 else 0.5
+		if t < 5.0:
+			_hold_speed(b, 13.0)
+		elif t < 5.6:
+			b.throttle = 1.0
+			b.front_brake = 0.0
+			st["slide"] = maxf(st["slide"], absf(rad_to_deg(float(b.wheels[1]["alpha"]))))
+		else:
+			b.throttle = 0.0
+		if t > 5.0 and t < 5.05:
+			st["lean_in"] = b.lean_angle)
+	if verbose:
+		print("    high side: lean before %.1f, rear slip angle %.1f" % [rad_to_deg(st["lean_in"]), st["slide"]])
+	check(r["crashed"], "realism 0: a rear slide that suddenly grips again high-sides (rear slid %.0f deg)" % st["slide"])
+	await _done(r)
+
+
+func _test_tyre_coasting() -> void:
+	# Hands off, throttle shut, at full sim, with a shove sideways: the bike rides it out, runs
+	# straight on and stays up. In Direct bars too, where only the front end's own steering
+	# (trail and the spinning wheel) catches it.
+	for bars in [false, true]:
+		var st := {"lean": 0.0, "yaw0": 0.0, "set": false, "end": 0.0}
+		var r := await ride({}, 13.0, func(b, t):
+			b.assist = 0.0
+			b.direct_bars = bars
+			if t < 5.0:
+				_hold_speed(b, 20.0)
+				return
+			b.throttle = 0.0
+			b.front_brake = 0.0
+			if not st["set"]:
+				st["set"] = true
+				st["yaw0"] = _heading(b)
+				b.apply_torque_impulse(-b.global_transform.basis.z * 30.0)
+			st["lean"] = maxf(st["lean"], absf(b.lean_angle))
+			st["end"] = absf(b.lean_angle))
+		var turned := absf(wrapf(_heading(r["bike"]) - float(st["yaw0"]), -PI, PI))
+		var how := "Direct bars" if bars else "lean steering"
+		check(not r["crashed"] and rad_to_deg(st["end"]) < 2.0 and rad_to_deg(turned) < 25.0,
+			"%s: coasting hands off at full sim rides out a shove and runs on upright (worst lean %.1f deg, now %.1f, %.0f deg off line)"
+			% [how, rad_to_deg(st["lean"]), rad_to_deg(st["end"]), rad_to_deg(turned)])
+		await _done(r)
+
+
+func _test_direct_bars() -> void:
+	# Direct bars: the steer input is bar torque. Hands off it runs straight; a push on the right
+	# grip leans it right and it turns right; a push on the left grip stands it back up. At a
+	# town speed, a brisk one and a fast one, without falling off.
+	for speed in [8.0, 15.0, 30.0]:
+		var st := {"yaw0": 0.0, "lean": 0.0, "straight": 0.0, "end": 0.0, "turned": 0.0}
+		var push := 0.5 if speed < 20.0 else 0.8
+		var r := await ride({}, 13.0, func(b, t):
+			b.assist = 0.5
+			b.direct_bars = true
+			_hold_speed(b, speed)
+			if t < 6.0:
+				b.lean_input = 0.0
+				if t > 3.0:
+					st["straight"] = maxf(st["straight"], absf(b.lean_angle))
+				st["yaw0"] = _heading(b)
+			elif t < 6.0 + push:
+				b.lean_input = 1.0
+			elif t < 9.0:
+				b.lean_input = 0.0
+				st["lean"] = maxf(st["lean"], b.lean_angle)
+				st["turned"] = wrapf(_heading(b) - float(st["yaw0"]), -PI, PI)
+			elif t < 9.0 + push * 0.8:
+				b.lean_input = -1.0
+			else:
+				b.lean_input = 0.0
+				st["end"] = absf(b.lean_angle))
+		var turned: float = st["turned"]
+		check(not r["crashed"] and rad_to_deg(st["straight"]) < 3.0,
+			"Direct bars at %d m/s: hands off it runs upright (lean %.1f deg)" % [speed, rad_to_deg(st["straight"])])
+		check(rad_to_deg(st["lean"]) > 10.0 and turned < -deg_to_rad(10.0),
+			"Direct bars at %d m/s: pushing the right grip leans it right (%.0f deg) and it turns right (%.0f deg)"
+			% [speed, rad_to_deg(st["lean"]), rad_to_deg(-turned)])
+		check(not r["crashed"] and rad_to_deg(st["end"]) < 10.0,
+			"Direct bars at %d m/s: pushing the left grip stands it back up (lean %.1f deg)" % [speed, rad_to_deg(st["end"])])
+		await _done(r)
+
+
+func _test_tyre_old_save() -> void:
+	# The tyre fields come from the catalogue; a tyre without them (an old catalogue entry) gets
+	# its style's defaults, and the bike still rides.
+	var bare := {"style": "road", "width": 160, "grip": {"tarmac": 1.1}}
+	var p := TyreModel.params_of(bare)
+	check(p["construction"] == "radial" and is_equal_approx(float(p["slide"]), 0.8) and float(p["crown"]) > 0.05,
+		"a tyre with no construction or profile gets its style's defaults (%s)" % str(p["construction"]))
+	var off := TyreModel.params_of({"style": "offroad", "width": 120})
+	check(off["construction"] == "bias" and float(off["alpha_peak"]) > float(p["alpha_peak"]), "an off-road tyre defaults to bias ply")
+	Shed.start_new("Tester", 51)
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	Shed.start_new("Tester", 52)
+	Shed.load_state(old, "Tester")
+	var ok := true
+	for id in Shed.bikes:
+		var b := Shed.build_of(id)
+		ok = ok and b.tyre_front.has_all(["kappa_peak", "alpha_peak", "crown", "relax", "B", "C"]) \
+			and b.tyre_rear.has_all(["kappa_peak", "alpha_peak", "crown", "relax", "B", "C"])
+	check(ok and not Shed.bikes.is_empty(), "every bike in a loaded save has tyre numbers")
+	# Strip the new fields from the catalogue's tyres, as an old one would be, and ride.
+	var keep := {}
+	for id in PartsDB.by_kind["tyre"]:
+		var t: Dictionary = PartsDB.parts[id]
+		keep[id] = {}
+		for k in ["construction", "profile", "stiffness", "slide"]:
+			if t.has(k):
+				keep[id][k] = t[k]
+				t.erase(k)
+	var built := BikeBuild.new({})
+	check(built.tyre_rear["construction"] == "radial", "a bike on an old catalogue's tyres still gets tyre numbers")
+	var r := await ride({}, 4.0, func(b, t):
+		b.throttle = 0.5
+		b.lean_input = 0.4 if t > 2.0 else 0.0)
+	check(not r["crashed"], "and rides on them")
+	await _done(r)
+	for id in keep:
+		PartsDB.parts[id].merge(keep[id], true)
+
+
+func _test_physics_cost() -> void:
+	# What the handling costs: the bike's own script per 120 Hz step, measured over a ride.
+	var st := {"us": 0, "n": 0}
+	var r := await ride({}, 4.0, func(b, t):
+		b.throttle = 0.6
+		b.lean_input = 0.5 if t > 1.5 else 0.0)
+	var bike: Bike = r["bike"]
+	var dt := 1.0 / Engine.physics_ticks_per_second
+	for i in 400:
+		var t0 := Time.get_ticks_usec()
+		bike._physics_process(dt)
+		st["us"] += Time.get_ticks_usec() - t0
+		st["n"] += 1
+		if i % 4 == 0:
+			await get_tree().physics_frame
+	var per := float(st["us"]) / float(st["n"])
+	print("    bike physics step: %.0f us per step (%.1f%% of a 120 Hz frame)" % [per, per / 8333.0 * 100.0])
+	check(per < 1500.0, "the bike's physics step is cheap enough (%.0f us)" % per)
+	await _done(r)
+
+
+func _test_telemetry() -> void:
+	# The recorder logs every channel through a ride, thins itself out on a long one, and sums it up.
+	var tel := RideTelemetry.new("Test bike")
+	var r := await ride({}, 4.0, func(b, t):
+		b.telemetry = tel
+		b.throttle = 0.7
+		b.lean_input = 0.5 if t > 2.0 else 0.0)
+	check(tel.size() > 100 and tel.size() < 130, "the telemetry logs about %d samples a second (%d in 4 s)" % [int(RideTelemetry.RATE), tel.size()])
+	var all := true
+	for c in RideTelemetry.CHANNELS:
+		all = all and (tel.data[c[0]] as PackedFloat32Array).size() == tel.size()
+	check(all and tel.latest("speed") > 20.0 and tel.latest("load_r") > 500.0 and absf(tel.latest("lean")) > 5.0
+		and tel.latest("rpm") > 1000.0, "every channel is recorded: speed, loads, lean, revs and the rest")
+	var s := tel.summary()
+	check(float(s["top_kmh"]) > 20.0 and float(s["max_lean"]) > 5.0, "the ride sums up (top %d km/h, lean %.0f deg)" % [int(s["top_kmh"]), s["max_lean"]])
+	check(RideTelemetry.last == tel, "the latest recorder is the one the dyno desk shows")
+	var long := RideTelemetry.new()
+	for i in RideTelemetry.MAX_SAMPLES + 10:
+		long.add({"t": i / RideTelemetry.RATE})
+	check(long.size() < RideTelemetry.MAX_SAMPLES and is_equal_approx(long.interval, 2.0 / RideTelemetry.RATE),
+		"a long ride thins out to fit (%d samples)" % long.size())
+	RideTelemetry.last = tel
+	# The overlay and the dyno desk's Last ride page draw it.
+	var bike: Bike = r["bike"]
+	var overlay := TelemetryOverlay.new()
+	overlay.size = Vector2(400, 700)
+	add_child(overlay)
+	overlay.bike = bike
+	overlay.queue_redraw()
+	await get_tree().process_frame
+	var desk := TuningComputer.new()
+	add_child(desk)
+	await get_tree().process_frame
+	desk.visible = true
+	for i in desk._tabs.get_tab_count():
+		if desk._tabs.get_tab_control(i).name == "Last ride":
+			desk._tabs.current_tab = i
+	desk._process(1.0)
+	check(desk.showing_ride() and desk._ride_graph.visible and not desk._graph.visible and desk._ride_text.text.contains("Test bike"),
+		"the dyno desk's Last ride tab shows the ride's charts and numbers")
+	await get_tree().process_frame
+	overlay.queue_free()
+	desk.queue_free()
+	await _done(r)
+	# Settings: Riding realism, Direct bars and the overlay are kept; F3 toggles the overlay.
+	check(InputMap.has_action("telemetry") and Settings.binding_codes("telemetry").size() > 0,
+		"the telemetry overlay has a key binding (%s)" % str(Settings.binding_codes("telemetry")))
+	check(Settings.ACTIONS.any(func(a): return a[0] == "telemetry"), "and it's in the Key bindings tab")
+	var was := [Settings.assist, Settings.direct_bars, Settings.telemetry_overlay]
+	Settings.assist = 0.2
+	Settings.direct_bars = true
+	Settings.telemetry_overlay = true
+	Settings.save_settings()
+	Settings.assist = 0.9
+	Settings.direct_bars = false
+	Settings.telemetry_overlay = false
+	Settings.load_settings()
+	check(is_equal_approx(Settings.assist, 0.2) and Settings.direct_bars and Settings.telemetry_overlay,
+		"Riding realism, Direct bars and the overlay are saved with the settings")
+	Settings.assist = was[0]
+	Settings.direct_bars = was[1]
+	Settings.telemetry_overlay = was[2]
+	Settings.save_settings()
+	check(MainMenu.realism_text(0.0).contains("full sim") and MainMenu.realism_text(0.5).contains("protects the front"),
+		"the Riding realism slider says what each end does")
+	# In a session: getting on starts a recording, F3 shows the overlay, Direct bars reaches the bike.
+	var real_path := Progress.path
+	Progress.path = "user://profile_telemetry_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.request({"a": "mount", "bike": _bike_named("Old Faithful")})
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.bike != null and main.bike.telemetry != null and RideTelemetry.last == main.bike.telemetry,
+		"getting on a bike starts a telemetry recording")
+	Settings.telemetry_overlay = false
+	Settings.direct_bars = true
+	_press("telemetry")
+	for i in 3:
+		await get_tree().physics_frame
+	check(Settings.telemetry_overlay and main.telemetry_overlay.visible and main.telemetry_overlay.bike == main.bike,
+		"F3 shows the telemetry overlay while riding")
+	check(main.bike.direct_bars, "Direct bars in the settings reaches the bike")
+	_press("telemetry")
+	for i in 3:
+		await get_tree().physics_frame
+	check(not main.telemetry_overlay.visible, "and F3 hides it again")
+	Settings.direct_bars = was[1]
+	Settings.telemetry_overlay = was[2]
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	Progress.path = real_path
+

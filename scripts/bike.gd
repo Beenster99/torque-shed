@@ -13,11 +13,13 @@ signal engine_changed(running: bool, reason: String)
 
 const G := 9.81
 const MAX_LEAN := deg_to_rad(52.0)
-const LONG_STIFFNESS := 14.0      # longitudinal force per unit slip ratio, per newton of load
-const LAT_B := 12.0               # lateral tyre curve shape
-const LAT_C := 1.35
-const SLIDE_FACTOR := 0.82        # sliding friction relative to peak
 const ROLLING_RESISTANCE := 0.015
+const LONG_SLIP_SPEED := 3.0      # m/s: slip ratios are taken against at least this speed, so a crawl stays calm
+const LAT_SLIP_SPEED := 2.5       # and slip angles against at least this one
+const RELAX_SPEED := 4.0          # grip builds over the relaxation length, timed at no less than this speed
+const MAX_BAR_TORQUE := 26.0      # Nm: the most a rider pushes through the bars in Direct bars mode
+const STEER_LOCK := deg_to_rad(38.0)
+const STEER_DAMPING := 2.5        # Nm per rad/s: the bearings, the tyre scrubbing and the rider's arms
 const CRASH_LEAN := deg_to_rad(78.0)
 const CRASH_PITCH := deg_to_rad(72.0)
 const AUTO_RESPAWN_TIME := 3.5
@@ -28,7 +30,9 @@ const AIR_REV_PITCH := 7.0        # pitch acceleration (rad/s^2) from blipping t
 const SKID_SLIP := 0.2            # tyre slip above which it screeches and marks the road
 const BUMP_HEIGHT := {"tarmac": 0.006, "concrete": 0.004, "dirt": 0.035, "grass": 0.025, "gravel": 0.03}
 static var _bumps: FastNoiseLite
-const FRONT_LOCK_SLIP := 0.1      # the rider (or ABS) eases the brake before a wheel slips more than this
+## How much past the grip that's left for braking (normalised slip) a rider with no help lets the
+## front go before they'd ease off: with full care (Riding realism 0.5 and up) none at all.
+const CARELESS_SLIP := 0.9
 const PADDLE_SPEED := 1.1         # walking pace when the rider paddles backwards with their feet
 const PADDLE_HOLD := 0.45         # hold the front brake this long at a standstill to start paddling back
 const BURNOUT_SPEED := 2.5        # below this, front brake plus throttle lights up the back tyre
@@ -44,7 +48,15 @@ var rear_brake := 0.0
 var lean_input := 0.0      # -1 lean left .. 1 lean right
 var body_shift := 0.0      # -1 weight back (wheelies) .. 1 weight forward
 var auto_shift := true
-var assist := 0.5          # rider balance help: 0 sim .. 1 easy
+## Riding realism: 0 is the full sim (nothing holds the front, a slide that grips again can
+## throw you off), 0.5 and up the rider protects the front tyre and smooths the throttle, 1 also
+## balances the bike for you. Kept as "assist" for the settings file and tests.
+var assist := 0.5
+## Direct bars: the steer input is torque on the handlebars (push the right grip to lean right)
+## instead of a lean the virtual rider steers for.
+var direct_bars := false
+## Records the ride for the telemetry overlay and the dyno desk; only the local player's bike has one.
+var telemetry: RideTelemetry
 var controls_enabled := true
 var engine_on := true      # a parked bike you get on starts with it off; tests ride with it running
 var fuel_litres := 15.0    # petrol left in the tank
@@ -54,7 +66,9 @@ var effects: BikeEffects
 # Simulation state, read by the HUD, camera, audio and network.
 var gear := 1
 var rpm := 1000.0
-var steer := 0.0
+var steer := 0.0            # radians, + bars turned right
+var steer_vel := 0.0        # how fast the bars are turning, rad/s
+var bar_torque := 0.0       # Nm the rider is putting through the bars, + towards turning them right
 var speed := 0.0           # forward speed, m/s
 var lean_angle := 0.0      # radians, positive = leaning right
 var lean_rate := 0.0
@@ -86,6 +100,7 @@ var donut_turn := 0.0
 var paddling := false      # walking the bike backwards with the rider's feet
 var horn_audio: HornAudio
 var _stopped_brake := 0.0  # how long the front brake has been held at a standstill
+var _throttle_eff := 0.0   # the throttle as the rider's wrist actually turns it (smoothed with realism up)
 var _fog: Array = []
 ## The rider's riding skills (see Progress.rider_skills): balance, throttle_control, airtime, quick_reset.
 var skills := {}
@@ -172,6 +187,11 @@ func _make_wheel(is_front: bool, mount: Vector3, radius: float, travel: float, s
 		"spring": spring, "bump": bump, "rebound": rebound, "inertia": wheel_inertia,
 		"omega": 0.0, "spin": 0.0, "compression": 0.0, "contact": false, "load": 0.0,
 		"drive_torque": 0.0, "brake_torque": 0.0, "slip": 0.0, "surface": "tarmac",
+		# Tyre state for the telemetry and the steering: slip ratio, slip angle (rad), lateral
+		# normalised slip after relaxation, camber (+ leaning right), grip used (0..1+), friction,
+		# side force along the bike's right (N), rolling radius, and whether the rider eased the brake.
+		"kappa": 0.0, "alpha": 0.0, "sy": 0.0, "camber": 0.0, "grip_used": 0.0, "mu": 0.0,
+		"f_side": 0.0, "r_eff": radius, "eased": false, "gx": 0.0, "gy": 0.0,
 	}
 
 
@@ -194,11 +214,14 @@ func place(pos: Vector3, heading: float) -> void:
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	steer = 0.0
+	steer_vel = 0.0
+	bar_torque = 0.0
 	gear = 1
 	rpm = build.idle_rpm
 	for w in wheels:
 		w["omega"] = 0.0
 		w["compression"] = 0.0
+		w["sy"] = 0.0
 	if model:
 		model.set_rider_visible(true)
 	respawned.emit()
@@ -319,6 +342,8 @@ func _physics_process(delta: float) -> void:
 			effects.call("set_tyre_smoke", burnout, Vector3(0.0, -build.rear_radius, build.wheelbase * 0.5))
 	if ride_xp:
 		ride_xp.step(self, delta)
+	if telemetry:
+		telemetry.step(self, delta)
 
 
 func _measure_attitude() -> void:
@@ -337,7 +362,25 @@ func _measure_attitude() -> void:
 
 func _target_lean() -> float:
 	var speed_factor := clampf((absf(speed) - 1.0) / 8.0, 0.15, 1.0)
-	return lean_input * MAX_LEAN * speed_factor
+	var want := lean_input * MAX_LEAN * speed_factor
+	# That's the lean of the line from the tyres to the centre of mass, which sets the turn; the
+	# bike itself leans a little further, as the contact patch rolls in round the tyre's crown.
+	var rc := _crown()
+	var arm := maxf(build.com_height - rc, 0.2)
+	return want + asin(clampf(rc * sin(want) / arm, -1.0, 1.0))
+
+
+## The tyres' average crown radius (see TyreModel), m.
+func _crown() -> float:
+	return (float(build.tyre_front.get("crown", 0.0)) + float(build.tyre_rear.get("crown", 0.0))) * 0.5
+
+
+## The lean of the line from the contact patches to the centre of mass at a body lean of `lean`:
+## a little less than the body's on round tyres.
+func _balance_lean(lean: float) -> float:
+	var rc := _crown()
+	var arm := maxf(build.com_height - rc, 0.2)
+	return atan2(arm * sin(lean), rc + arm * cos(lean))
 
 
 func _max_steer() -> float:
@@ -348,18 +391,55 @@ func _max_steer() -> float:
 ## then hold the steady-turn steering angle for the current lean and speed.
 func _update_steering(delta: float) -> void:
 	var v := absf(speed)
+	if direct_bars:
+		_steer_by_bars(delta, v)
+		return
+	bar_torque = 0.0
+	var before := steer
 	var target := _target_lean()
 	var cmd: float
 	if v < 2.0:
 		# Feet down at walking pace: the bars just point where the rider steers them.
 		cmd = lean_input * _max_steer()
 	else:
-		var steer_eq := atan(build.wheelbase * G * tan(lean_angle) / (v * v))
+		var steer_eq := atan(build.wheelbase * G * tan(_balance_lean(lean_angle)) / (v * v))
 		var gain := clampf(8.0 / v, 0.25, 2.5)
 		var err := target - lean_angle
 		cmd = steer_eq - 0.22 * gain * err + 0.06 * gain * lean_rate
 	cmd = clampf(cmd, -_max_steer(), _max_steer())
 	steer = move_toward(steer, cmd, build.steer_rate * delta)
+	steer_vel = (steer - before) / delta
+
+
+## Direct bars: the steer input is torque on the bars, and the front end steers itself as a real
+## one does. Push the right grip (steer right) and the bars turn left for a moment, which leans
+## the bike right; the trail then swings the front into the lean and the bike turns. The front
+## settles where its side force holds the lean up (trail against the load), the spinning wheel
+## steers it into a fall (gyroscopic precession), and the head bearing and the rider's arms damp it.
+## At walking pace the feet are down and the bars just point where the rider turns them.
+func _steer_by_bars(delta: float, v: float) -> void:
+	var riding := clampf((v - 2.0) / 2.5, 0.0, 1.0)   # 0 feet down .. 1 riding
+	var front: Dictionary = wheels[0]
+	bar_torque = -lean_input * MAX_BAR_TORQUE * riding
+	var torque := bar_torque
+	var k := 0.0
+	if front["contact"]:
+		var fz: float = front["load"]
+		var cam: float = front["camber"]
+		# The front's side force against what its load needs to hold the lean, times the trail.
+		torque -= build.trail * (float(front["f_side"]) - fz * tan(clampf(cam, -1.3, 1.3)))
+		var tp: Dictionary = build.tyre_front
+		k = build.trail * float(front["mu"]) * fz * TyreModel.stiffness_at_zero(tp) / tan(float(tp["alpha_peak"])) \
+			* clampf(v / 6.0, 0.15, 1.0)
+	torque += build.front_inertia * float(front["omega"]) * lean_rate
+	var i_s := build.steer_inertia
+	var c := STEER_DAMPING + 0.8 * v   # more scrub and arm damping the faster it goes
+	var vel := (steer_vel + delta * torque / i_s) / (1.0 + delta * c / i_s + delta * delta * k / i_s)
+	var dyn := clampf(steer + vel * delta, -STEER_LOCK, STEER_LOCK)
+	var walk := move_toward(steer, lean_input * _max_steer(), build.steer_rate * delta)
+	var before := steer
+	steer = lerpf(walk, dyn, riding)
+	steer_vel = (steer - before) / delta
 
 
 func _update_engine(delta: float) -> void:
@@ -379,12 +459,17 @@ func _update_engine(delta: float) -> void:
 		rpm = wheel_rpm
 	else:
 		# Slipping clutch: the engine holds launch revs while the wheel catches up.
-		var launch := lerpf(build.idle_rpm, build.peak_torque_rpm * 0.75, throttle)
+		var launch := lerpf(build.idle_rpm, build.peak_torque_rpm * 0.75, _throttle_eff)
 		rpm = lerpf(rpm, maxf(launch, wheel_rpm), 1.0 - exp(-10.0 * delta))
 
 	# Rider throttle control: with assist on, roll off when the rear tyre spins up.
+	# The rider's wrist: with realism at 0.5 and up the throttle is rolled on and off smoothly,
+	# at 0 it goes exactly where the input is, snap shut included.
+	var smooth := clampf(assist * 2.0, 0.0, 1.0)
+	var rate := lerpf(1000.0, 5.0 if throttle > _throttle_eff else 8.0, smooth)
+	_throttle_eff = move_toward(_throttle_eff, throttle, rate * delta)
 	var v_ground := maxf(absf(speed), 1.0)
-	var spin_ratio: float = (rear["omega"] * build.rear_radius - v_ground) / v_ground
+	var spin_ratio: float = (rear["omega"] * float(rear.get("r_eff", build.rear_radius)) - v_ground) / v_ground
 	var tc_target := 1.0
 	# Throttle Control (a riding skill) feathers it as if there were more assist.
 	var tc := maxf(minf(1.0, assist + 0.15 * float(skills.get("throttle_control", 0))), build.ecu_aid if build.has_aid("traction") else 0.0)
@@ -403,13 +488,13 @@ func _update_engine(delta: float) -> void:
 		var cap := deg_to_rad(lerpf(20.0, 4.0, build.ecu_aid))
 		tc_target = minf(tc_target, clampf(1.0 - (pitch_angle - cap) * 12.0, 0.05, 1.0))
 	_traction = lerpf(_traction, tc_target, 1.0 - exp(-25.0 * delta))
-	var torque := build.engine_torque(rpm) * throttle * _traction
+	var torque := build.engine_torque(rpm) * _throttle_eff * _traction
 	if rpm >= build.redline:
 		torque = 0.0  # rev limiter
 	var made := maxf(torque, 0.0)
 	if engaged:
 		# Engine braking when the throttle is closed.
-		torque -= (1.0 - throttle) * build.peak_torque * 0.25 * clampf(rpm / build.redline, 0.0, 1.0)
+		torque -= (1.0 - _throttle_eff) * build.peak_torque * 0.25 * clampf(rpm / build.redline, 0.0, 1.0)
 	if shifting:
 		torque = 0.0
 		made = 0.0
@@ -545,35 +630,66 @@ func sound_load() -> float:
 	return throttle * 0.15 if _shift_timer > 0.0 else throttle
 
 
+## One wheel's suspension and tyre: finds the ground under the round tyre, works the spring and
+## damper, then the tyre's Magic Formula with combined slip (see TyreModel) for the drive, brake
+## and side forces, and spins the wheel up or down by what the road gives back.
 func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D) -> void:
 	var b := global_transform.basis
 	var up := b.y
-	var mount: Vector3 = global_transform * w["mount"]
+	var is_front: bool = w["is_front"]
+	var tp: Dictionary = build.tyre_front if is_front else build.tyre_rear
 	var radius: float = w["radius"]
+	var crown := minf(float(tp.get("crown", 0.0)), radius * 0.6)
+	var mount: Vector3 = global_transform * w["mount"]
 	var travel: float = w["travel"]
-	var ray_len := travel + radius
+	# Leaned over, a round tyre sits lower than a thin disc would: look a little further.
+	var ray_len := travel + radius + crown * 2.0
 	var query := PhysicsRayQueryParameters3D.create(mount, mount - up * ray_len, 1)
 	query.exclude = [get_rid()]
 	var hit := space.intersect_ray(query)
 	var inertia_w: float = w["inertia"]
 
-	if hit.is_empty():
+	var heading := -b.z
+	var axle := b.x
+	if is_front:
+		heading = heading.rotated(up, -steer)
+		axle = axle.rotated(up, -steer)
+	var raw_comp := -1.0
+	var n := Vector3.UP
+	var cos_cam := 1.0
+	var hit_surf := "grass"
+	if not hit.is_empty():
+		n = hit["normal"]
+		if hit["collider"] and (hit["collider"] as Object).has_meta("surface"):
+			hit_surf = str((hit["collider"] as Object).get_meta("surface"))
+		# The contact patch rolls round the tyre's crown as it leans: the wheel centre sits
+		# (radius - crown) * cos(camber) + crown above the ground.
+		var sin_cam := clampf(axle.dot(n), -0.95, 0.95)
+		cos_cam = sqrt(1.0 - sin_cam * sin_cam)
+		var h_mount: float = (mount - hit["position"]).dot(n)
+		var hang := (h_mount - crown - (radius - crown) * cos_cam) / maxf(up.dot(n), 0.2)
+		# The ground isn't a billiard table: ripples, ruts and stones under the tyre work the suspension.
+		raw_comp = travel - hang + road_bump(hit["position"], hit_surf)
+
+	if raw_comp < 0.0:
 		w["contact"] = false
 		w["load"] = 0.0
 		w["compression"] = move_toward(w["compression"], 0.0, delta * 2.0)
-		var omega: float = w["omega"] + w["drive_torque"] * delta / inertia_w
-		omega = move_toward(omega, 0.0, w["brake_torque"] * delta / inertia_w)
-		w["omega"] = omega * 0.999
+		var omega_air: float = w["omega"] + w["drive_torque"] * delta / inertia_w
+		omega_air = move_toward(omega_air, 0.0, w["brake_torque"] * delta / inertia_w)
+		w["omega"] = omega_air * 0.999
 		w["spin"] = fmod(w["spin"] + w["omega"] * delta, TAU)
 		w["slip"] = 0.0
+		w["grip_used"] = 0.0
+		w["gx"] = 0.0
+		w["gy"] = 0.0
+		w["kappa"] = 0.0
+		w["alpha"] = 0.0
+		w["sy"] = 0.0
+		w["f_side"] = 0.0
+		w["eased"] = false
 		return
 
-	var dist := mount.distance_to(hit["position"])
-	var hit_surf := "grass"
-	if hit["collider"] and (hit["collider"] as Object).has_meta("surface"):
-		hit_surf = str((hit["collider"] as Object).get_meta("surface"))
-	# The ground isn't a billiard table: ripples, ruts and stones under the tyre work the suspension.
-	var raw_comp := ray_len - dist + road_bump(hit["position"], hit_surf)
 	var comp := clampf(raw_comp, 0.0, travel)
 	var was_touching: bool = w["contact"]
 	# How fast the wheel is being pushed up into the bike. On the first frame of touchdown the
@@ -583,7 +699,6 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var raw_vel: float = (raw_comp - float(w.get("raw", raw_comp))) / delta if was_touching else closing
 	w["raw"] = raw_comp
 	w["compression"] = comp
-	var n: Vector3 = hit["normal"]
 	# Bump damping resists the wheel coming up, rebound damping resists it going back down. Fast
 	# hits blow the compression valving open a little, as real dampers do, so a big landing is
 	# soaked up rather than kicked back.
@@ -602,76 +717,143 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	fz = clampf(fz, 0.0, mass * G * 6.0)
 	w["contact"] = true
 	w["load"] = fz
-	var collider = hit["collider"]
-	var surf := "grass"
-	if collider and collider.has_meta("surface"):
-		surf = collider.get_meta("surface")
-	w["surface"] = surf
+	w["surface"] = hit_surf
 
-	var contact: Vector3 = hit["position"]
+	# Where the crown touches: from the wheel centre, down the wheel's plane to the crown's
+	# centre, then straight down onto the road.
+	var down := -n - axle * (-n).dot(axle)
+	down = down.normalized() if down.length() > 0.01 else -up
+	var centre := mount - up * (travel - comp)
+	var contact := centre + down * (radius - crown) - n * crown
+	contact -= n * (contact - hit["position"]).dot(n)
+	var r_eff := (radius - crown) + crown * cos_cam    # the rolling radius at this camber
+	w["r_eff"] = r_eff
 	w["contact_pos"] = contact
 	w["normal"] = n
 	var arm := contact - global_position
 	apply_force(n * fz, arm)
 
-	# Tyre frame on the ground plane.
-	var heading := -b.z
-	if w["is_front"]:
-		heading = heading.rotated(up, -steer)
+	# Tyre frame on the ground plane. lat_dir points to the wheel's left.
 	var long_dir := (heading - n * heading.dot(n)).normalized()
 	var lat_dir := n.cross(long_dir)
 	var v_contact := linear_velocity + angular_velocity.cross(arm)
 	var v_long := v_contact.dot(long_dir)
 	var v_lat := v_contact.dot(lat_dir)
-	var mu: float = float((build.grip_front if w["is_front"] else build.grip_rear).get(surf, 0.7))
-	mu *= Weather.grip_mult(surf)   # wet roads after rain grip a little less
-	var f_max := mu * fz
+	var v_abs := absf(v_long)
+	var mu_surf: float = float((build.grip_front if is_front else build.grip_rear).get(hit_surf, 0.7))
+	mu_surf *= Weather.grip_mult(hit_surf)   # wet roads after rain grip a little less
+	var mu := TyreModel.mu_at(mu_surf, fz, build.total_mass * G * 0.5, tp)
+	var f_peak := mu * fz
+	var bc := TyreModel.stiffness_at_zero(tp)
+	var kp: float = tp["kappa_peak"]
+	var ap: float = tp["alpha_peak"]
+	w["mu"] = mu
 
-	# Longitudinal: implicit wheel spin update so stiff tyres stay stable.
+	# Lateral: the slip angle and camber thrust as one normalised slip. A leaned tyre pushes
+	# towards the lean (camber thrust) once it's rolling; the force builds over the relaxation
+	# length rather than all at once.
+	var alpha := atan2(v_lat, maxf(v_abs, LAT_SLIP_SPEED))
+	var cam_left := asin(clampf(-down.dot(lat_dir), -1.0, 1.0))   # wheel top leaning towards lat_dir
+	w["camber"] = -cam_left
+	w["alpha"] = alpha
+	var rolling_in := clampf((v_abs - 1.0) / 3.0, 0.0, 1.0)
+	var sy_now := -tan(clampf(alpha, -TyreModel.MAX_SLIP_ANGLE, TyreModel.MAX_SLIP_ANGLE)) / tan(ap) \
+		+ float(tp["camber"]) * cam_left / (maxf(mu, 0.1) * bc) * rolling_in
+	var sy := sy_now
+	if was_touching:
+		var keep := exp(-maxf(v_abs, RELAX_SPEED) * delta / float(tp["relax"]))
+		sy = sy_now + (float(w["sy"]) - sy_now) * keep
+	w["sy"] = sy
+
+	# Longitudinal: the wheel's new spin is solved implicitly against the tyre's own curve, so a
+	# stiff tyre on a light wheel stays stable at the physics rate and a locked wheel stays locked.
+	var vden := maxf(v_abs, LONG_SLIP_SPEED)
 	var omega: float = w["omega"] + w["drive_torque"] * delta / inertia_w
 	omega = move_toward(omega, 0.0, w["brake_torque"] * delta / inertia_w)
-	var k := LONG_STIFFNESS * fz / maxf(absf(v_long), 3.0)
-	var omega_new := (inertia_w * omega + k * radius * v_long * delta) / (inertia_w + k * radius * radius * delta)
-	var fx := k * (omega_new * radius - v_long)
-	fx -= signf(v_long) * build.rolling * fz
-
-	# Lateral: slip-angle curve, limited so it can't overshoot at low speed.
-	var alpha := atan2(v_lat, maxf(absf(v_long), 2.5))
-	var fy := -mu * fz * sin(LAT_C * atan(LAT_B * alpha))
+	var react := (1.0 - 0.4 * burnout) if burnout > 0.0 and not is_front else 1.0
+	var omega_new := _solve_spin(omega, v_long, vden, r_eff, kp, sy, f_peak * react, inertia_w / delta, tp)
+	var eased := false
+	var care := _brake_care(is_front)
+	if care > 0.0 and v_long > 1.0 and w["brake_torque"] > 0.0:
+		# The rider feels the tyre and eases the brake before it goes past the grip it has left
+		# with the cornering it's doing (ABS does the same for its wheels): with less care, a
+		# little later. With none at all a grabbed front brake locks the wheel and tucks the front.
+		var left := maxf(sqrt(maxf(1.0 - sy * sy, 0.0)), 0.25)
+		var allowed := left + CARELESS_SLIP * (1.0 - care) / care
+		if (omega_new * r_eff - v_long) / vden / kp < -allowed:
+			omega_new = maxf((v_long - allowed * kp * vden) / r_eff, 0.0)
+			eased = true
+	w["eased"] = eased
+	var sx := (omega_new * r_eff - v_long) / vden / kp
+	var g := TyreModel.combined(sx, sy, tp)
+	var fx := f_peak * g.x
+	var fy := f_peak * g.y
+	w["kappa"] = sx * kp
+	w["gx"] = g.x
+	w["gy"] = g.y
+	var rho := Vector2(sx, sy).length()
+	w["grip_used"] = Vector2(g.x, g.y).length() if rho <= 1.0 else rho
+	var slip_ratio := clampf(rho - 1.0, 0.0, 1.0)
+	# At a crawl the tyre can't push harder sideways than it takes to stop the sideways creep.
 	var fy_cap := absf(v_lat) * mass * 0.5 / delta
 	fy = clampf(fy, -fy_cap, fy_cap)
-
-	# Friction circle: peak grip, then sliding.
-	var total := sqrt(fx * fx + fy * fy)
-	var slip_ratio := 0.0
-	if total > f_max and total > 0.0:
-		# Tarmac lets go once the tyre slides; loose dirt and grass keep biting as it digs in.
-		var slide := SLIDE_FACTOR if surf == "tarmac" else 0.95
-		var limit := f_max * slide if total > f_max * 1.25 else f_max
-		var scale := limit / total
-		fx *= scale
-		fy *= scale
-		omega_new = omega - fx * radius * delta / inertia_w
-		slip_ratio = clampf((total - f_max) / f_max, 0.0, 1.0)
-	if burnout > 0.0 and not w["is_front"]:
+	fx -= signf(v_long) * build.rolling * fz
+	if burnout > 0.0 and not is_front:
 		# Lit up: the tyre spins free against the road, smoking, while the feet hold the bike.
-		if total > f_max:
-			omega_new = omega - fx * (1.0 - 0.4 * burnout) * radius * delta / inertia_w
 		fx *= 1.0 - 0.85 * burnout
 		# A spinning tyre has next to no side grip, so the back steps out where the rider pushes it.
 		fy *= 1.0 - 0.8 * burnout
 		slip_ratio = maxf(slip_ratio, burnout)
-	if (w["is_front"] or build.has_aid("abs")) and v_long > 1.0 and w["brake_torque"] > 0.0 \
-			and omega_new * radius < v_long * (1.0 - FRONT_LOCK_SLIP):
-		# The rider feels the front tyre and holds it at the edge of grip instead of locking it;
-		# ABS does the same for the back. Peak grip, no slide, no skid.
-		omega_new = v_long * (1.0 - FRONT_LOCK_SLIP) / radius
-		fx = -signf(v_long) * sqrt(maxf(f_max * f_max - fy * fy, 0.0))
-		slip_ratio = 0.0
 	w["slip"] = slip_ratio
 	w["omega"] = omega_new
 	w["spin"] = fmod(w["spin"] + omega_new * delta, TAU)
-	apply_force(long_dir * fx + lat_dir * fy, arm)
+	var force := long_dir * fx + lat_dir * fy
+	w["f_side"] = force.dot(b.x)
+	apply_force(force, arm)
+
+
+## The wheel speed at the end of the step: where the wheel's spin change balances the tyre's
+## grip on the road, I (w - w0) / dt = -r Fx(w). Fx follows the Magic Formula, so this is solved
+## (regula falsi, Illinois) between w0 and rolling speed, where the answer always lies.
+func _solve_spin(omega0: float, v_long: float, vden: float, r: float, kp: float, sy: float, f_peak: float,
+		i_dt: float, tp: Dictionary) -> float:
+	var roll := v_long / r
+	var a := omega0
+	var b := roll
+	var fa := r * f_peak * TyreModel.combined((a * r - v_long) / vden / kp, sy, tp).x
+	if absf(fa) < 1e-6 or absf(a - b) < 1e-5:
+		return a
+	var fb := i_dt * (b - omega0)
+	var side := 0
+	for i in 10:
+		var c := (a * fb - b * fa) / (fb - fa)
+		var fc := i_dt * (c - omega0) + r * f_peak * TyreModel.combined((c * r - v_long) / vden / kp, sy, tp).x
+		if absf(fc) < 0.5 or absf(b - a) < 1e-4:
+			return c
+		if (fc > 0.0) == (fb > 0.0):
+			b = c
+			fb = fc
+			if side == -1:
+				fa *= 0.5
+			side = -1
+		else:
+			a = c
+			fa = fc
+			if side == 1:
+				fb *= 0.5
+			side = 1
+	return (a * fb - b * fa) / (fb - fa)
+
+
+## How carefully the rider (or the ECU's ABS) works this wheel's brake, 0..1: 1 holds it at the
+## edge of grip, 0 lets it lock. Riding realism 0.5 and up looks after the front; ABS looks after
+## its wheels whatever the setting.
+func _brake_care(is_front: bool) -> float:
+	if build.has_aid("abs"):
+		return 1.0
+	if is_front:
+		return clampf(assist * 2.0, 0.0, 1.0)
+	return 0.0
 
 
 ## How far the surface under a tyre rises above its smooth shape at `at`, in metres: a few
@@ -707,6 +889,13 @@ func _apply_rider_balance() -> void:
 		strength = 1.0
 	var err := _target_lean() - lean_angle
 	var tau := (22.0 * err - 4.0 * lean_rate) * mass * strength
+	if direct_bars:
+		# No lean to aim for: the bars do the balancing. Feet down at a crawl the rider holds the
+		# bike up; riding, their body only calms the roll a little (more with realism turned up).
+		var feet := 1.0 - clampf((absf(speed) - 2.0) / 2.5, 0.0, 1.0)
+		tau = (-22.0 * lean_angle * feet - (4.0 * feet + 0.8 * assist * (1.0 - feet)) * lean_rate) * mass
+		# Swinging the bars fast twists the spinning front wheel, which rolls the bike the other way.
+		tau -= build.front_inertia * float(wheels[0]["omega"]) * steer_vel
 	if build.has_aid("stability") and any_contact:
 		# Stability control calms a tank-slapper or a twitchy slide.
 		tau -= lean_rate * mass * 3.0 * build.ecu_aid

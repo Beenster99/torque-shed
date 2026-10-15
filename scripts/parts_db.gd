@@ -283,6 +283,7 @@ func spec_line(id: String) -> String:
 		"tyre":
 			bits = [p["type"], p["compound"] + " compound", "%d mm wide, %d%% profile" % [int(p["width"]), roundi(float(p["aspect"]) * 100.0)],
 				"fits " + tyre_rims_text(id), "grip %.2f tarmac / %.2f dirt" % [p["grip"]["tarmac"], p["grip"]["dirt"]]]
+			bits.append(tyre_handling_text(p))
 		"disc":
 			bits = [p["type"], "%d mm" % int(p["diameter"])]
 		"caliper":
@@ -374,6 +375,16 @@ func spec_line(id: String) -> String:
 ## "17\"" or "16.5\"".
 static func inch_text(d: float) -> String:
 	return ("%d\"" % roundi(d)) if is_equal_approx(d, roundf(d)) else ("%.1f\"" % d)
+
+
+## How a tyre handles, in words: its construction, profile and how it lets go (see TyreModel).
+static func tyre_handling_text(p: Dictionary) -> String:
+	var t := TyreModel.params_of(p)
+	var profile := float(t["profile"])
+	var shape := "sharp sport profile" if profile < 0.95 else ("flat touring profile" if profile > 1.05 else "round profile")
+	var slide := float(t["slide"])
+	var lets_go := "lets go suddenly" if slide < 0.76 else ("slides progressively" if slide > 0.83 else "breaks away cleanly")
+	return "%s, %s, %s" % ["radial" if t["construction"] == "radial" else "bias ply", shape, lets_go]
 
 
 ## The tyre widths (mm) a wheel's rim takes, smallest to widest.

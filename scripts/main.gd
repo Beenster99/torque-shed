@@ -35,6 +35,8 @@ var _dirt_km := 0.0
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
+var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at the side while riding (F3)
+var _kb_bars := 0.0        # the keyboard's steer in Direct bars mode, ramped like a hand pushing harder
 ## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
 var _safe_xf := Transform3D()
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
@@ -56,6 +58,9 @@ func _ready() -> void:
 	hud = HUD.new()
 	hud.visible = false
 	ui.add_child(hud)
+	telemetry_overlay = TelemetryOverlay.new()
+	telemetry_overlay.visible = false
+	ui.add_child(telemetry_overlay)
 	computer = PartsComputer.new()
 	computer.visible = false
 	ui.add_child(computer)
@@ -345,6 +350,7 @@ func _start_riding(bike_id: int) -> void:
 	bike.rider_gear = RiderGear.worn_of(Shed.me())
 	bike.skills = Progress.rider_skills()
 	bike.ride_xp = RideXP.new(bike_id)
+	bike.telemetry = RideTelemetry.new(str(data.get("name", "")))
 	bike.setup(Shed.build_of(bike_id), data["paint"])
 	bike.model.apply_geometry(Shed.geometry_of(bike_id))
 	bike.set_meta("shed_bike", bike_id)   # so the shed TVs know whose ride this is
@@ -502,6 +508,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("stopwatch") and walker:
 		walker.stopwatch.start_stop()
 		Sfx.play_at("beep", camera.global_position, -6.0)
+	elif event.is_action_pressed("telemetry"):
+		Settings.telemetry_overlay = not Settings.telemetry_overlay
+		hud.flash("Telemetry %s" % ("on" if Settings.telemetry_overlay else "off"), 1.2)
 	elif event.is_action_pressed("toggle_auto_shift"):
 		Settings.auto_shift = not Settings.auto_shift
 		hud.flash("Auto-shift %s" % ("on" if Settings.auto_shift else "off"), 1.5)
@@ -522,7 +531,7 @@ func _physics_process(delta: float) -> void:
 			bike.throttle = maxf(Input.get_action_strength("throttle"), Controls.trigger(true))
 			bike.front_brake = maxf(Input.get_action_strength("front_brake"), Controls.trigger(false))
 			bike.rear_brake = Input.get_action_strength("rear_brake")
-			bike.lean_input = clampf(Input.get_axis("lean_left", "lean_right") + stick.x, -1.0, 1.0)
+			bike.lean_input = _steer_input(stick.x, delta)
 			bike.body_shift = clampf(Input.get_axis("body_back", "body_forward") - stick.y, -1.0, 1.0)
 			# The right stick swings the camera round, as the mouse does.
 			var look := Controls.stick(true)
@@ -537,6 +546,7 @@ func _physics_process(delta: float) -> void:
 		bike.auto_shift = Settings.auto_shift
 		camera.recentre = Settings.camera_recentre
 		bike.assist = Settings.assist
+		bike.direct_bars = Settings.direct_bars
 		bike.horn = active and Input.is_action_pressed("horn")
 		audio.rpm = bike.rpm
 		audio.gear = bike.gear
@@ -561,10 +571,25 @@ func _physics_process(delta: float) -> void:
 		if _stats_timer >= 1.0:
 			_stats_timer = 0.0
 			_send_ride_stats()
+	telemetry_overlay.bike = bike
+	telemetry_overlay.visible = bike != null and Settings.telemetry_overlay and not menu.visible
 	_send_timer += delta
 	if _send_timer >= 1.0 / 30.0:
 		_send_timer = 0.0
 		Net.send_state(_net_state())
+
+
+## The steer input: a lean to aim for, or with Direct bars the push on the bars. Keys are all or
+## nothing, so on Direct bars they're ramped up like a hand pushing harder (and let off quicker);
+## the stick is squared there, for fine pushes near the middle.
+func _steer_input(stick_x: float, delta: float) -> float:
+	var keys := Input.get_axis("lean_left", "lean_right")
+	if not Settings.direct_bars:
+		_kb_bars = 0.0
+		return clampf(keys + stick_x, -1.0, 1.0)
+	var easing := absf(keys) < absf(_kb_bars) or signf(keys) != signf(_kb_bars)
+	_kb_bars = move_toward(_kb_bars, keys, (6.0 if easing else 2.5) * delta)
+	return clampf(_kb_bars + stick_x * absf(stick_x), -1.0, 1.0)
 
 
 ## Off the edge of the map (or through it): the bike goes back to the last place it had its
