@@ -124,9 +124,10 @@ static func part_price(part_id: String) -> int:
 	return _nice(price)
 
 
-## 0 for the first part of its kind in the catalogue, 1 for the last.
+## 0 for the first part of its kind in the catalogue, 1 for the last. Parts with a price of
+## their own don't count, so adding them to the catalogue leaves the others' prices alone.
 static func _rank_in_kind(part_id: String, kind: String) -> float:
-	var ids: Array = PartsDB.by_kind.get(kind, [])
+	var ids: Array = PartsDB.by_kind.get(kind, []).filter(func(id): return not PartsDB.get_part(str(id)).has("price"))
 	if ids.size() <= 1:
 		return 0.5
 	return float(maxi(ids.find(part_id), 0)) / float(ids.size() - 1)

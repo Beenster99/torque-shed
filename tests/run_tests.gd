@@ -462,6 +462,16 @@ func _test_all_builds_ride() -> void:
 		_merge(MX, {"frame": "alu_twin_spar", "engine": "twin_700", "gearbox": "six_close"}),
 		{"engine": "vtwin_900", "fork": "girder_vintage", "handlebars": "ape_hangers", "front_wheel": "wire_19_chrome",
 			"front_tyre": "vintage_ribbed", "rear_tyre": "vintage_ribbed", "cooling": "air_fins", "head": "two_valve_stock"},
+		# The frames with their own geometry: long and raked, low, tall, and the sharp sport one.
+		{"frame": "chopper_raked", "fork": "springer_long", "engine": "vtwin_1200", "handlebars": "ape_hangers", "front_wheel": "spoked_21",
+			"rear_wheel": "wire_16_bobber", "front_tyre": "vintage_ribbed_90", "rear_tyre": "vintage_ribbed_150", "exhaust": "shotgun_duals"},
+		{"frame": "cruiser_cradle", "engine": "vtwin_1100", "front_wheel": "wire_16_bobber", "rear_wheel": "wire_16_bobber",
+			"front_tyre": "vintage_ribbed_130", "rear_tyre": "vintage_ribbed_150"},
+		{"frame": "softail_hardtail", "engine": "vtwin_1000", "front_wheel": "wire_16_bobber", "rear_wheel": "wire_16_bobber",
+			"front_tyre": "vintage_ribbed_130", "rear_tyre": "vintage_ribbed_150", "tank": "peanut_9"},
+		_merge(SLICK, {"frame": "alu_perimeter", "fork": "usd_sport", "shock": "sport_mono", "engine": "inline_1000", "gearbox": "six_close"}),
+		_merge(MX, {"frame": "adv_trellis", "engine": "boxer_1200", "fork": "enduro_usd", "shock": "enduro_mono"}),
+		_merge(MX, {"frame": "mx_twin_loop", "engine": "single_450", "exhaust": "mx_upswept"}),
 	]
 	for c in combos:
 		var r := await ride(c, 9.0, func(b, t):
@@ -1526,7 +1536,7 @@ func _test_round5_models() -> void:
 			check(not m._needles[0]["node"].basis.is_equal_approx(n0), "the %s needle swings with speed" % dash)
 		m.queue_free()
 	# Tanks sit behind the bars and the saddle behind the tank; the eye is in the helmet.
-	for frame in ["steel_cradle", "steel_backbone", "alu_twin_spar"]:
+	for frame in ["steel_cradle", "steel_backbone", "alu_twin_spar", "chopper_raked", "cruiser_cradle", "mx_twin_loop"]:
 		for tank in PartsDB.by_kind["tank"]:
 			var m := BikeModel.new()
 			add_child(m)
@@ -1537,6 +1547,47 @@ func _test_round5_models() -> void:
 			check(t.position.z > m._head.z + 0.04 and t.end.z < seat.position.z + 0.12,
 				"%s on a %s sits between the bars and the seat (%.2f..%.2f, head %.2f, seat %.2f)" % [tank, frame, t.position.z, t.end.z, m._head.z, seat.position.z])
 			m.queue_free()
+	# Each frame places the parts its own way: a chopper is long and raked with its pegs out
+	# front, an MX bike tall, and the tank always sits on the top tube between bars and seat.
+	var shapes := {}
+	for frame in PartsDB.by_kind["frame"]:
+		var fm := BikeModel.new()
+		add_child(fm)
+		fm.build_from(BikeBuild.new({"frame": frame}))
+		var all := AABB()
+		for slot in ["frame", "tank", "saddle", "engine", "exhaust", "front_wheel", "rear_wheel"]:
+			var sb := fm.slot_bounds(slot)
+			check(sb.size.length() > 0.05, "%s draws its %s" % [frame, slot])
+			all = sb if all.size == Vector3.ZERO else all.merge(sb)
+		check(fm.slot_bounds("tank").position.y > fm.slot_bounds("engine").position.y, "the tank on a %s sits above the engine" % frame)
+		shapes[frame] = {"len": all.size.z, "peg": fm._peg.z - fm._pivot.z, "seat": fm._seat_y, "model": fm}
+	check(shapes["chopper_raked"]["len"] > shapes["steel_cradle"]["len"] + 0.25, "a chopper is a lot longer than a cradle-frame bike (%.2f m vs %.2f m)" %
+		[shapes["chopper_raked"]["len"], shapes["steel_cradle"]["len"]])
+	check(shapes["cruiser_cradle"]["peg"] < -0.3 and absf(shapes["steel_cradle"]["peg"]) < 0.05, "a cruiser has forward controls, a cradle bike mid pegs")
+	check(shapes["mx_twin_loop"]["seat"] > shapes["cruiser_cradle"]["seat"] + 0.15, "an MX bike sits a lot taller than a cruiser")
+	for f in shapes:
+		(shapes[f]["model"] as Node).queue_free()
+	# Every exhaust follows its route on every frame, and its tail pipe is behind the engine.
+	var bad_tips := []
+	for frame in ["steel_cradle", "chopper_raked", "alu_perimeter", "mx_twin_loop"]:
+		for ex in PartsDB.by_kind["exhaust"]:
+			for engine in ["twin_750", "inline_1000", "2stroke_125"]:
+				var xm := BikeModel.new()
+				add_child(xm)
+				xm.build_from(BikeBuild.new({"frame": frame, "exhaust": ex, "engine": engine}))
+				var tip := xm.exhaust_tip()
+				var ok := tip.is_finite() and tip.z > xm._engine_c.z and xm.slot_bounds("exhaust").has_point(tip - (tip - xm._engine_c).normalized() * 0.03)
+				if not ok:
+					bad_tips.append("%s/%s/%s" % [ex, frame, engine])
+				xm.queue_free()
+	check(bad_tips.is_empty(), "every exhaust ends in a tail pipe behind the engine, on every frame and engine layout %s" % str(bad_tips))
+	# The curved shapes are real meshes the sandblaster and the picking can use.
+	var lm := BikeModel.new()
+	add_child(lm)
+	lm.build_from(BikeBuild.new({"frame": "alu_perimeter", "fairing": "race_fairing", "headlight": "led_projector"}))
+	check((lm.surface_points("tank", 0.03)[0] as PackedVector3Array).size() > 30, "a lofted tank has a surface to blast")
+	check(lm.slot_bounds("fairing").size.y > 0.4, "a race fairing wraps from the screen down under the engine (%.2f m tall)" % lm.slot_bounds("fairing").size.y)
+	lm.queue_free()
 	var m := BikeModel.new()
 	add_child(m)
 	m.build_from(BikeBuild.new({}))
@@ -1593,7 +1644,7 @@ func _test_round5_riding() -> void:
 	check(absf(r["bike"].speed) < 2.0, "and still stops the bike (%.1f m/s)" % r["bike"].speed)
 	await _done(r)
 	# Skids: lock the back wheel at speed and it screeches and leaves a black line.
-	var marks_before := SkidMarks.shared(get_tree()).count()
+	var marks_before := SkidMarks.shared(get_tree()).laid()
 	var screeched := [false]
 	r = await ride({}, 9.0, func(b, t):
 		if t < 6.0:
@@ -1604,7 +1655,7 @@ func _test_round5_riding() -> void:
 			if b.effects.screeching():
 				screeched[0] = true)
 	check(screeched[0], "locking the back wheel screeches")
-	check(SkidMarks.shared(get_tree()).count() > marks_before, "and lays a skid mark (%d strips)" % SkidMarks.shared(get_tree()).count())
+	check(SkidMarks.shared(get_tree()).laid() > marks_before, "and lays a skid mark (%d strips)" % (SkidMarks.shared(get_tree()).laid() - marks_before))
 	await _done(r)
 	# Gear changes: the revs fall to the new gear over the shift instead of jumping, and the
 	# engine note drops while the clutch is in.

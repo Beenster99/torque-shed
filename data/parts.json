@@ -86,6 +86,201 @@
 			"type": "Carbon monocoque",
 			"lightweight": true,
 			"material": "carbon"
+		},
+		"softail_hardtail": {
+			"name": "Hardtail-look softail frame",
+			"description": "Looks rigid, rides soft: the shocks hide under the gearbox. Long and low for bobbers.",
+			"mass": 19.0,
+			"wheelbase": 1.6,
+			"com_height": 0.58,
+			"rake_deg": 30.0,
+			"seat_height": 0.68,
+			"color": [
+				0.06,
+				0.06,
+				0.065
+			],
+			"cda": 0.6,
+			"style": "softail",
+			"type": "Softail",
+			"price": 1150,
+			"geo": {
+				"arm": 0.62,
+				"pivot_y": 0.12,
+				"engine_at": 0.5,
+				"engine_y": 0.06,
+				"seat_drop": 0.06,
+				"tail_back": 0.06,
+				"peg": [
+					0.07,
+					-0.4
+				],
+				"exhaust": "shotgun",
+				"swingarm": "softail"
+			}
+		},
+		"cruiser_cradle": {
+			"name": "Long-low cruiser frame",
+			"description": "Stretched double cradle with a raked neck. Lazy, stable steering and a low seat.",
+			"mass": 18.0,
+			"wheelbase": 1.66,
+			"com_height": 0.6,
+			"rake_deg": 32.0,
+			"seat_height": 0.7,
+			"color": [
+				0.07,
+				0.07,
+				0.08
+			],
+			"cda": 0.62,
+			"style": "cruiser",
+			"type": "Cruiser double cradle",
+			"price": 1250,
+			"geo": {
+				"arm": 0.6,
+				"pivot_y": 0.13,
+				"engine_at": 0.5,
+				"engine_y": 0.07,
+				"seat_drop": 0.06,
+				"tail_back": 0.08,
+				"peg": [
+					0.08,
+					-0.44
+				],
+				"exhaust": "shotgun",
+				"swingarm": "box"
+			}
+		},
+		"chopper_raked": {
+			"name": "Raked chopper frame",
+			"description": "38 degrees of rake and a long stretched backbone. Built for straight lines and attention.",
+			"mass": 17.0,
+			"wheelbase": 1.82,
+			"com_height": 0.6,
+			"rake_deg": 38.0,
+			"seat_height": 0.66,
+			"color": [
+				0.75,
+				0.1,
+				0.06
+			],
+			"cda": 0.64,
+			"style": "chopper",
+			"type": "Raked softail",
+			"price": 1400,
+			"geo": {
+				"arm": 0.6,
+				"pivot_y": 0.1,
+				"engine_at": 0.58,
+				"engine_y": 0.05,
+				"seat_drop": 0.05,
+				"tail_back": 0.1,
+				"peg": [
+					0.09,
+					-0.5
+				],
+				"exhaust": "shotgun",
+				"swingarm": "softail"
+			}
+		},
+		"alu_perimeter": {
+			"name": "Aluminium perimeter sport frame",
+			"description": "Big cast beams wrapped round the engine and a braced swingarm. Sharp and planted at speed.",
+			"mass": 9.5,
+			"wheelbase": 1.4,
+			"com_height": 0.66,
+			"rake_deg": 23.5,
+			"seat_height": 0.83,
+			"color": [
+				0.2,
+				0.21,
+				0.23
+			],
+			"cda": 0.5,
+			"style": "perimeter",
+			"type": "Perimeter beam",
+			"price": 1600,
+			"geo": {
+				"arm": 0.6,
+				"pivot_y": 0.2,
+				"engine_at": 0.45,
+				"engine_y": 0.1,
+				"seat_drop": 0.1,
+				"tail_back": 0.02,
+				"tail_y": 0.06,
+				"peg": [
+					0.12,
+					0.08
+				],
+				"exhaust": "stubby",
+				"swingarm": "braced"
+			},
+			"lightweight": true
+		},
+		"adv_trellis": {
+			"name": "Tall adventure trellis frame",
+			"description": "Long-travel steel trellis with a bolt-on rack. Roomy, tall and happy loaded up.",
+			"mass": 13.0,
+			"wheelbase": 1.56,
+			"com_height": 0.68,
+			"rake_deg": 26.5,
+			"seat_height": 0.87,
+			"color": [
+				0.85,
+				0.45,
+				0.08
+			],
+			"cda": 0.62,
+			"style": "adv",
+			"type": "Adventure trellis",
+			"price": 1300,
+			"geo": {
+				"arm": 0.62,
+				"pivot_y": 0.18,
+				"engine_at": 0.47,
+				"engine_y": 0.12,
+				"seat_drop": 0.1,
+				"tail_back": 0.08,
+				"peg": [
+					0.04,
+					0.0
+				],
+				"exhaust": "upswept",
+				"swingarm": "box"
+			}
+		},
+		"mx_twin_loop": {
+			"name": "MX twin-loop frame",
+			"description": "Chromoly single downtube splitting into twin loops under the engine. Light and stiff for the dirt.",
+			"mass": 9.0,
+			"wheelbase": 1.48,
+			"com_height": 0.7,
+			"rake_deg": 27.0,
+			"seat_height": 0.91,
+			"color": [
+				0.12,
+				0.25,
+				0.65
+			],
+			"cda": 0.6,
+			"style": "mx",
+			"type": "Twin loop",
+			"price": 1100,
+			"geo": {
+				"arm": 0.6,
+				"pivot_y": 0.2,
+				"engine_at": 0.5,
+				"engine_y": 0.14,
+				"seat_drop": 0.08,
+				"tail_back": 0.05,
+				"tail_y": 0.06,
+				"peg": [
+					0.02,
+					0.0
+				],
+				"exhaust": "upswept",
+				"swingarm": "braced"
+			}
 		}
 	},
 	"fork": {
@@ -202,6 +397,26 @@
 				0.75
 			],
 			"style": "usd"
+		},
+		"springer_long": {
+			"name": "Extended springer fork",
+			"description": "Long chromed springer with its springs out in the open. Made for raked choppers.",
+			"mass": 12.0,
+			"type": "Springer",
+			"travel": 0.1,
+			"spring": 28000.0,
+			"bump": 1500.0,
+			"rebound": 2200.0,
+			"adjust": 0,
+			"adjust_name": "None",
+			"length": 1.0,
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			],
+			"style": "springer",
+			"price": 950
 		}
 	},
 	"shock": {
@@ -4027,7 +4242,8 @@
 				0.85,
 				0.86,
 				0.88
-			]
+			],
+			"can": "round"
 		},
 		"slip_on": {
 			"name": "Slip-on silencer",
@@ -4040,7 +4256,8 @@
 				0.06,
 				0.06,
 				0.07
-			]
+			],
+			"can": "oval"
 		},
 		"straight_pipe": {
 			"name": "Straight pipe",
@@ -4053,7 +4270,8 @@
 				0.85,
 				0.86,
 				0.88
-			]
+			],
+			"can": "open"
 		},
 		"full_system": {
 			"name": "Full stainless system",
@@ -4066,7 +4284,8 @@
 				0.75,
 				0.73,
 				0.68
-			]
+			],
+			"can": "megaphone"
 		},
 		"titanium_race": {
 			"name": "Titanium race system",
@@ -4080,7 +4299,8 @@
 				0.55,
 				0.75
 			],
-			"lightweight": true
+			"lightweight": true,
+			"can": "hex"
 		},
 		"carbon_slip_on": {
 			"name": "Carbon slip-on silencer",
@@ -4095,7 +4315,72 @@
 				0.08
 			],
 			"lightweight": true,
-			"material": "carbon"
+			"material": "carbon",
+			"can": "short"
+		},
+		"scrambler_high": {
+			"name": "High-level scrambler pipe",
+			"description": "Swept up the side past your leg, with a heat shield. Clears ruts and looks the part.",
+			"mass": 6.5,
+			"torque_mult": 1.04,
+			"loudness": 0.95,
+			"style": "full",
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			],
+			"route": "high",
+			"can": "peashooter",
+			"price": 420
+		},
+		"shotgun_duals": {
+			"name": "Shotgun twin pipes",
+			"description": "Two long staggered pipes down the right side with slash-cut ends. A proper cruiser rumble.",
+			"mass": 7.5,
+			"torque_mult": 1.03,
+			"loudness": 1.15,
+			"style": "straight",
+			"color": [
+				0.85,
+				0.86,
+				0.88
+			],
+			"route": "shotgun",
+			"can": "slash",
+			"price": 380
+		},
+		"underseat_twin": {
+			"name": "Underseat twin cans",
+			"description": "Headers tucked up under the engine and two short cans under the tail. Clean and central.",
+			"mass": 6.0,
+			"torque_mult": 1.05,
+			"loudness": 1.0,
+			"style": "full",
+			"color": [
+				0.7,
+				0.7,
+				0.72
+			],
+			"route": "underseat",
+			"can": "round",
+			"price": 520
+		},
+		"mx_upswept": {
+			"name": "Upswept MX system",
+			"description": "Tight header and a high flat can tucked under the side panel. Out of the mud.",
+			"mass": 4.0,
+			"torque_mult": 1.05,
+			"loudness": 1.05,
+			"style": "full",
+			"color": [
+				0.75,
+				0.73,
+				0.68
+			],
+			"route": "upswept",
+			"can": "oval",
+			"price": 460
 		}
 	},
 	"final_drive": {

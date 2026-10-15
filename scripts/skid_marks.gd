@@ -9,6 +9,7 @@ const STEP := 0.12        # metres of travel between strips
 static var _shared: SkidMarks
 
 var _next := 0
+var _laid := 0  # every strip ever laid, so a full ring still shows new marks
 var _last := {}           # wheel key -> where its last strip went down
 
 
@@ -69,8 +70,14 @@ func mark(key: String, at: Vector3, normal: Vector3, width: float, strength: flo
 	rubber.a = clampf(0.45 + strength * 0.5, 0.0, 0.92)
 	multimesh.set_instance_color(_next, rubber)
 	_next = (_next + 1) % MAX_MARKS
+	_laid += 1
 	multimesh.visible_instance_count = maxi(multimesh.visible_instance_count, mini(_next if _next > 0 else MAX_MARKS, MAX_MARKS))
 
 
 func count() -> int:
 	return multimesh.visible_instance_count if multimesh else 0
+
+
+## How many strips have been laid in total (keeps rising once the ring is full).
+func laid() -> int:
+	return _laid

@@ -45,6 +45,8 @@ var _seat_y := 0.5
 var _seat_front := Vector3.ZERO
 var _tail := Vector3.ZERO
 var _engine_c := Vector3.ZERO
+var _peg := Vector3(0.17, 0.02, 0.0)   # the right footpeg (the left is its mirror)
+var _frame_geo := {}             # the frame part's mounting points (see build_from)
 var _block_w := 0.3
 var _bore_r := 0.048             # cylinder barrel radius
 var _eng_s := 1.0                # engine size relative to a 700 cc
@@ -101,11 +103,17 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_head = Vector3(0.0, 0.0, zf) + _steer_axis * build.fork_length
 	_head_bottom = _head - _steer_axis * 0.16
 	_seat_y = build.seat_height - build.rear_radius
-	_pivot = Vector3(0.0, 0.16, zr - 0.6)
+	# Each frame has its own mounting points (its "geo"): where the swingarm pivots, where the
+	# engine hangs, how far the seat rails run, where the footpegs go. Everything else is
+	# placed from these, so a long, low cruiser frame and a tall MX frame give different bikes.
+	_frame_geo = PartsDB.get_part(str(build.parts.get("frame", ""))).get("geo", {})
+	_pivot = Vector3(0.0, _geo("pivot_y", 0.16), zr - _geo("arm", 0.6))
 	# The seat starts over the swingarm pivot, leaving the tank its own space behind the bars.
-	_seat_front = Vector3(0.0, _seat_y - 0.1, _pivot.z + 0.02)
-	_tail = Vector3(0.0, build.seat_height - build.rear_radius - 0.02, zr - 0.12)
-	_engine_c = Vector3(0.0, 0.1, lerpf(_head_bottom.z, _pivot.z, 0.48))
+	_seat_front = Vector3(0.0, _seat_y - _geo("seat_drop", 0.1), _pivot.z + 0.02)
+	_tail = Vector3(0.0, build.seat_height - build.rear_radius - 0.02 + _geo("tail_y", 0.0), zr - _geo("tail_back", 0.12))
+	_engine_c = Vector3(0.0, _geo("engine_y", 0.1), lerpf(_head_bottom.z, _pivot.z, _geo("engine_at", 0.48)))
+	var peg: Array = _frame_geo.get("peg", [0.02, 0.02])
+	_peg = Vector3(0.17, float(peg[0]), _pivot.z + float(peg[1]))
 	_layout_cylinders(build)
 
 	_draw_frame(build, zr)
@@ -264,7 +272,8 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 				_tube(_pivot + Vector3(0.12 * side, 0.1, 0.0), _pivot + Vector3(0.12 * side, -0.12, 0.02), 0.04, frame_mat)
 				_tube(_seat_front + Vector3(0.08 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.016, frame_mat)
 				_tube(_pivot + Vector3(0.1 * side, 0.12, 0.0), _tail + Vector3(0.06 * side, -0.02, -0.05), 0.014, frame_mat)
-		"trellis":
+		"trellis", "adv":
+			var adv := style == "adv"
 			for side in [-1.0, 1.0]:
 				var top := []
 				var bottom := []
@@ -273,17 +282,84 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 					top.append(hb.lerp(_pivot + Vector3(0.0, 0.18, 0.0), f) + Vector3(0.1 * side, 0.08, 0.0))
 					bottom.append(hb.lerp(_pivot, f) + Vector3(0.11 * side, -0.12 * sin(f * PI), 0.0))
 				for i in 4:
-					_tube(top[i], top[i + 1], 0.012, frame_mat)
-					_tube(bottom[i], bottom[i + 1], 0.012, frame_mat)
+					_tube(top[i], top[i + 1], 0.013 if adv else 0.012, frame_mat)
+					_tube(bottom[i], bottom[i + 1], 0.013 if adv else 0.012, frame_mat)
 					_tube(top[i], bottom[i + 1], 0.01, frame_mat)
 				_tube(top[4], bottom[4], 0.012, frame_mat)
 				_tube(_seat_front + Vector3(0.07 * side, 0.0, 0.0), _tail + Vector3(0.06 * side, 0.0, 0.0), 0.012, frame_mat)
 				_tube(top[3], _tail + Vector3(0.06 * side, -0.03, -0.05), 0.01, frame_mat)
+				if adv:
+					# A bolt-on luggage rack: rails out past the tail and a hoop over the back.
+					var rail := _rack_mat()
+					_bend([_tail + Vector3(0.09 * side, 0.02, -0.25), _tail + Vector3(0.1 * side, 0.03, 0.05), _tail + Vector3(0.08 * side, 0.03, 0.22),
+						_tail + Vector3(0.0, 0.03, 0.26)], 0.009, rail)
+					_tube(_tail + Vector3(0.1 * side, 0.03, 0.05), _tail + Vector3(0.12 * side, -0.16, 0.0), 0.008, rail)
+			if adv:
+				_box(_tail + Vector3(0.0, 0.035, 0.1), Vector3(0.16, 0.008, 0.2), _rack_mat())
 		"backbone":
 			_tube(_head, _pivot + Vector3(0.0, 0.22, 0.0), 0.045, frame_mat)
 			_tube(_pivot + Vector3(0.0, 0.22, 0.0), _pivot, 0.035, frame_mat)
 			_tube(_seat_front, _tail, 0.018, frame_mat)
 			_tube(_pivot + Vector3(0.0, 0.2, 0.0), _tail + Vector3(0.0, -0.03, -0.05), 0.016, frame_mat)
+		"softail", "chopper", "cruiser":
+			# A single big backbone from the neck to the seat, twin downtubes cradling the
+			# engine, and a seat post behind the gearbox down to the swingarm pivot.
+			var chop := style == "chopper"
+			var spine_mid := _head.lerp(_seat_front, 0.5) + Vector3(0.0, 0.0 if chop else 0.03, 0.0)
+			_bend([_head + Vector3(0.0, -0.01, 0.02), spine_mid, _seat_front + Vector3(0.0, -0.04, 0.0)], 0.03 if not chop else 0.032, frame_mat)
+			if chop:
+				# A gusset under the stretched neck, where the backbone meets it.
+				var gusset := _shell([{"c": _head + Vector3(0.0, -0.06, 0.03), "w": 0.012, "up": 0.04, "down": 0.04, "n": 5.0},
+					{"c": _head.lerp(spine_mid, 0.35) + Vector3(0.0, -0.06, 0.0), "w": 0.012, "up": 0.04, "down": 0.01, "n": 5.0}], frame_mat)
+				gusset.name = "Gusset"
+			var low_y := _engine_c.y - 0.17 * _eng_s
+			for side in [-1.0, 1.0]:
+				var x: float = 0.085 * side
+				_bend([hb + Vector3(0.045 * side, -0.01, 0.02), Vector3(x, _engine_c.y - 0.02, _engine_c.z - 0.24 * _eng_s - 0.04),
+					Vector3(x, low_y, _engine_c.z - 0.12), Vector3(x, low_y - 0.01, _pivot.z - 0.2), Vector3(x, _pivot.y - 0.03, _pivot.z - 0.02)], 0.019, frame_mat)
+				# Rails from the seat back to the tail, carrying the fender.
+				_bend([_seat_front + Vector3(0.07 * side, -0.02, -0.04), _seat_front.lerp(_tail, 0.5) + Vector3(0.075 * side, -0.02, 0.0),
+					_tail + Vector3(0.07 * side, -0.03, 0.02)], 0.015, frame_mat)
+			_bend([_seat_front + Vector3(0.0, -0.04, -0.02), _seat_front.lerp(_pivot, 0.5) + Vector3(0.0, 0.0, -0.05), _pivot + Vector3(0.0, 0.05, -0.04)], 0.026, frame_mat)
+			_tube(_pivot + Vector3(-0.1, 0.0, 0.0), _pivot + Vector3(0.1, 0.0, 0.0), 0.022, frame_mat)
+			if style == "cruiser":
+				# Twin shocks need upper rails to push against, from the seat post back to the tail.
+				for side in [-1.0, 1.0]:
+					_bend([_pivot + Vector3(0.09 * side, 0.08, -0.04), _pivot + Vector3(0.12 * side, 0.3, _arm_rest_z() - 0.2), _tail + Vector3(0.075 * side, -0.05, 0.0)], 0.014, frame_mat)
+		"perimeter":
+			# Two big cast beams wrapped round the engine from the head stock to the pivot, deep
+			# pivot plates, and a light subframe kicking up to the tail.
+			var wide := maxf(0.15, _block_w * 0.5 + 0.05)
+			for side in [-1.0, 1.0]:
+				var path := [hb + Vector3(0.045 * side, 0.04, 0.03), hb.lerp(_pivot, 0.25) + Vector3(wide * side, 0.09, 0.0),
+					hb.lerp(_pivot, 0.65) + Vector3(wide * side, 0.1, 0.0), _pivot + Vector3((wide - 0.02) * side, 0.11, -0.06)]
+				var smooth := ShapeKit.smooth(path, 4)
+				var secs := []
+				for k in smooth.size():
+					var f := float(k) / (smooth.size() - 1)
+					secs.append({"c": smooth[k], "w": 0.022, "up": lerpf(0.05, 0.065, sin(f * PI)), "down": lerpf(0.04, 0.06, sin(f * PI)), "n": 6.0})
+				_shell(secs, frame_mat)
+				var plate := _shell([{"c": _pivot + Vector3((wide - 0.02) * side, 0.12, -0.06), "w": 0.022, "up": 0.04, "down": 0.04, "n": 6.0},
+					{"c": _pivot + Vector3((wide - 0.03) * side, 0.0, -0.02), "w": 0.022, "up": 0.05, "down": 0.05, "n": 6.0},
+					{"c": _pivot + Vector3((wide - 0.04) * side, -0.12, 0.0), "w": 0.02, "up": 0.03, "down": 0.03, "n": 6.0}], frame_mat)
+				plate.name = "PivotPlate"
+				_bend([_pivot + Vector3((wide - 0.04) * side, 0.14, -0.04), _seat_front + Vector3(0.075 * side, -0.02, 0.02), _tail + Vector3(0.05 * side, -0.01, -0.02)], 0.014, frame_mat)
+				_tube(_pivot + Vector3((wide - 0.04) * side, 0.06, 0.0), _tail + Vector3(0.05 * side, -0.05, -0.08), 0.012, frame_mat)
+		"mx":
+			# A single downtube that splits into twin loops under the engine, a big backbone
+			# to the top of the pivot, and a subframe sweeping up to the tail.
+			var split := Vector3(0.0, _engine_c.y - 0.06, _engine_c.z - 0.22 * _eng_s - 0.05)
+			_bend([hb + Vector3(0.0, -0.01, 0.02), hb.lerp(split, 0.55) + Vector3(0.0, 0.0, -0.01), split], 0.022, frame_mat)
+			var low_y := _engine_c.y - 0.2 * _eng_s
+			var top := _pivot + Vector3(0.0, 0.22, -0.06)
+			for side in [-1.0, 1.0]:
+				var x: float = 0.06 * side
+				_bend([split, Vector3(x, low_y + 0.04, split.z + 0.06), Vector3(x, low_y, _engine_c.z + 0.05),
+					Vector3(x + 0.01 * side, low_y + 0.01, _pivot.z - 0.14), Vector3(0.08 * side, _pivot.y - 0.05, _pivot.z - 0.03), _pivot + Vector3(0.09 * side, 0.08, -0.04)], 0.016, frame_mat)
+				_bend([top + Vector3(0.0, 0.0, 0.0), _pivot + Vector3(0.09 * side, 0.16, -0.06), _pivot + Vector3(0.09 * side, 0.02, -0.03)], 0.02, frame_mat)
+				_bend([top + Vector3(0.05 * side, 0.02, 0.02), _seat_front + Vector3(0.07 * side, 0.0, 0.06), _tail + Vector3(0.06 * side, -0.02, 0.02)], 0.012, frame_mat)
+				_tube(_pivot + Vector3(0.08 * side, 0.06, 0.0), _seat_front.lerp(_tail, 0.6) + Vector3(0.065 * side, -0.03, 0.0), 0.011, frame_mat)
+			_bend([_head + Vector3(0.0, -0.02, 0.02), _head.lerp(top, 0.5) + Vector3(0.0, 0.03, 0.0), top], 0.034, frame_mat)
 		_:
 			_tube(_head, _seat_front, 0.024, frame_mat)
 			_tube(_seat_front, _tail, 0.018, frame_mat)
@@ -295,59 +371,177 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			_tube(cradle_front, cradle_back, 0.022, frame_mat)
 			_tube(cradle_back, _pivot, 0.022, frame_mat)
 	_tube(_head - _steer_axis * 0.02, hb, 0.038, frame_mat)
-	_box(Vector3(0.0, 0.06, lerpf(_engine_c.z, _pivot.z, 0.6)), Vector3(0.18, 0.14, 0.14), black)  # battery box
+	if not style in ["softail", "chopper"]:
+		_box(Vector3(0.0, 0.06, lerpf(_engine_c.z, _pivot.z, 0.6)), Vector3(0.18, 0.14, 0.14), black)  # battery box
 	for side in [-1.0, 1.0]:
-		_box(Vector3(0.17 * side, 0.02, _pivot.z + 0.02), Vector3(0.1, 0.02, 0.04), black)  # footpegs
+		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
+		_box(peg, Vector3(0.1, 0.02, 0.04), black)  # footpegs
+		if _peg.z < _pivot.z - 0.2:
+			# Forward controls: the pegs stand out on stalks off the downtubes.
+			_tube(Vector3(0.08 * side, _peg.y + 0.01, _peg.z + 0.02), peg, 0.011, frame_mat)
+		elif absf(_peg.y - 0.02) > 0.04 or absf(_peg.z - _pivot.z) > 0.04:
+			# Rearsets: a hanger plate from the frame by the pivot down to the peg.
+			_box((peg + Vector3(0.12 * side, _pivot.y, _pivot.z - 0.02)) * 0.5, Vector3(0.012, absf(_peg.y - _pivot.y) + 0.06, 0.06), frame_mat)
+	_draw_swingarm(build, zr, frame_mat)
+
+
+## The swingarm, hung off the pivot: plain box arms, tall braced beams, or (on a softail) a
+## triangulated rear end that looks rigid but moves as one with the shocks hidden underneath.
+func _draw_swingarm(build: BikeBuild, zr: float, frame_mat: Material) -> void:
 	_swingarm = Node3D.new()
 	_swingarm.position = _pivot
 	add_child(_swingarm)
 	_arm_len = Vector3(0.0, 0.0, zr).distance_to(_pivot)
 	# The arms clear the back tyre and rim, however fat they are.
 	var arm_x := maxf(0.11, maxf(build.rear_tyre_width, rim_width_of(PartsDB.get_part(str(build.parts.get("rear_wheel", ""))))) * 0.5 + 0.035)
-	for side in [-1.0, 1.0]:
-		_box(Vector3(arm_x * side, 0.0, _arm_len * 0.5), Vector3(0.035, 0.07, _arm_len), frame_mat, _swingarm)
+	match str(_frame_geo.get("swingarm", "box")):
+		"braced":
+			for side in [-1.0, 1.0]:
+				var x: float = arm_x * side
+				var secs := []
+				for k in 6:
+					var f := k / 5.0
+					secs.append({"c": Vector3(x, 0.0, lerpf(0.0, _arm_len + 0.03, f)), "w": 0.02, "up": lerpf(0.06, 0.035, f), "down": lerpf(0.045, 0.03, f), "n": 5.0})
+				_shell(secs, frame_mat, false, 0.0, TAU, _swingarm)
+			# The brace arching over the right-hand arm.
+			_bend([Vector3(arm_x, 0.05, 0.08), Vector3(arm_x, 0.11, _arm_len * 0.4), Vector3(arm_x, 0.04, _arm_len * 0.78)], 0.014, frame_mat, _swingarm)
+			for f in [0.3, 0.55]:
+				_tube(Vector3(arm_x, 0.03, _arm_len * f), Vector3(arm_x, 0.1, _arm_len * f), 0.008, frame_mat, Vector3.ONE, _swingarm)
+		"softail":
+			for side in [-1.0, 1.0]:
+				var x: float = arm_x * side
+				var axle := Vector3(x, 0.0, _arm_len)
+				var post := _to_arm(Vector3(x, _seat_front.y - 0.05, _pivot.z + 0.14))
+				var top := _to_arm(Vector3(0.09 * side, _pivot.y + 0.1, _pivot.z - 0.02))
+				_tube(Vector3(0.09 * side, 0.0, 0.0), axle, 0.02, frame_mat, Vector3.ONE, _swingarm)
+				_tube(axle, post, 0.017, frame_mat, Vector3.ONE, _swingarm)
+				_tube(post, top, 0.017, frame_mat, Vector3.ONE, _swingarm)
+				_box(axle, Vector3(0.02, 0.06, 0.07), frame_mat, _swingarm)   # axle plate
+			var cross := _to_arm(Vector3(0.0, _seat_front.y - 0.05, _pivot.z + 0.14))
+			_tube(cross - Vector3(arm_x, 0.0, 0.0), cross + Vector3(arm_x, 0.0, 0.0), 0.014, frame_mat, Vector3.ONE, _swingarm)
+		_:
+			for side in [-1.0, 1.0]:
+				_box(Vector3(arm_x * side, 0.0, _arm_len * 0.5), Vector3(0.035, 0.07, _arm_len), frame_mat, _swingarm)
 	_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x * 2.0 + 0.02, 0.07, 0.05), frame_mat, _swingarm)
+
+
+## A point in the model's space, at rest, as seen from the swingarm (whose +Z runs to the axle).
+func _to_arm(p: Vector3) -> Vector3:
+	var to_axle := Vector3(0.0, 0.0, _build.wheelbase * 0.5) - _pivot
+	var rest := Basis(Vector3.RIGHT, -atan2(to_axle.y, to_axle.z))
+	return rest.inverse() * (p - _pivot)
+
+
+## How far back from the pivot the rear axle is, along the ground.
+func _arm_rest_z() -> float:
+	return _build.wheelbase * 0.5 - _pivot.z
+
+
+func _rack_mat() -> StandardMaterial3D:
+	return _mat(Color(0.08, 0.08, 0.09), 0.6, 0.45)
+
+
+## Tanks are lofted along the frame's top tube: their underside sits on the line from the head
+## stock back to the front of the seat, they butt up against the seat, and each style has its
+## own shape (knee dents on a café tank, the airbox hump on a sport tank, a teardrop peanut).
+## Profiles: [share of the length, half-width, rise above, drop below] from nose to tail.
+const TANK_SHAPES := {
+	"cafe": {"len": 0.62, "n": 2.6, "bw": 0.8, "keys": [[0.0, 0.07, 0.05, 0.04], [0.12, 0.13, 0.11, 0.06], [0.35, 0.155, 0.13, 0.07],
+		[0.6, 0.14, 0.12, 0.07], [0.8, 0.115, 0.1, 0.065], [0.95, 0.1, 0.07, 0.05], [1.0, 0.06, 0.03, 0.03]]},
+	"peanut": {"len": 0.44, "n": 2.2, "bw": 0.75, "keys": [[0.0, 0.05, 0.04, 0.03], [0.2, 0.1, 0.09, 0.05], [0.5, 0.115, 0.1, 0.06],
+		[0.8, 0.09, 0.08, 0.05], [1.0, 0.04, 0.03, 0.02]]},
+	"sport": {"len": 0.56, "n": 3.4, "bw": 0.85, "keys": [[0.0, 0.1, 0.08, 0.06], [0.15, 0.17, 0.15, 0.09], [0.4, 0.19, 0.16, 0.1],
+		[0.65, 0.16, 0.12, 0.09], [0.85, 0.12, 0.08, 0.07], [1.0, 0.08, 0.04, 0.04]]},
+	"enduro": {"len": 0.5, "n": 2.4, "bw": 0.9, "keys": [[0.0, 0.06, 0.05, 0.05], [0.2, 0.12, 0.09, 0.08], [0.5, 0.13, 0.1, 0.08],
+		[0.8, 0.1, 0.07, 0.06], [1.0, 0.05, 0.03, 0.03]]},
+	"touring": {"len": 0.66, "n": 2.6, "bw": 0.85, "keys": [[0.0, 0.1, 0.07, 0.06], [0.15, 0.18, 0.14, 0.11], [0.45, 0.21, 0.16, 0.13],
+		[0.75, 0.19, 0.14, 0.12], [0.92, 0.14, 0.1, 0.09], [1.0, 0.09, 0.05, 0.05]]},
+}
 
 
 func _draw_tank() -> void:
 	_current_slot = "tank"
 	var p := _part()
 	var mat := _mat(_col(), 0.25, 0.2, 0.6)
+	var style := str(p.get("style", "cafe"))
+	var shape: Dictionary = TANK_SHAPES.get(style, TANK_SHAPES["cafe"])
 	var size := pow(float(p.get("capacity", 15.0)) / 15.0, 0.33)
-	# The tank fills the gap between the bars and the front of the seat, and no further.
-	var front := _head.z + 0.13
-	var back := _seat_front.z + 0.03
-	var root := Node3D.new()
-	root.position = Vector3(0.0, lerpf(_head.y, _seat_front.y, 0.5) + 0.06, (front + back) * 0.5)
-	root.scale = Vector3(1.0, 1.0, clampf((back - front) / (0.6 * size), 0.55, 1.25))
-	add_child(root)
-	var c := Vector3.ZERO
-	match str(p.get("style", "cafe")):
-		"sport":
-			var main := _box(c + Vector3(0.0, -0.01, 0.02), Vector3(0.36, 0.2, 0.44) * size, mat, root)
-			main.rotation.x = -0.12
-			var nose := _box(c + Vector3(0.0, 0.04, -0.2 * size), Vector3(0.3, 0.14, 0.18) * size, mat, root)
-			nose.rotation.x = 0.45
-		"enduro":
-			var t := _mesh_instance(_capsule(0.13, 0.46), mat, c + Vector3(0.0, -0.02, -0.03), root)
-			t.rotation = Vector3(PI * 0.5 - 0.3, 0.0, 0.0)
-			t.scale = Vector3(1.0, 1.0, 0.7)
-			for side in [-1.0, 1.0]:
-				var shroud := _box(c + Vector3(0.15 * side, -0.12, -0.12), Vector3(0.03, 0.22, 0.3), mat, root)
-				shroud.rotation.x = -0.4
-		"peanut":
-			var t := _mesh_instance(_capsule(0.11, 0.36), mat, c + Vector3(0.0, 0.02, 0.0), root)
-			t.rotation = Vector3(PI * 0.5 - 0.15, 0.0, 0.0)
-			t.scale = Vector3(0.85, 1.0, 0.85)
-		"touring":
-			var t := _mesh_instance(_capsule(0.18, 0.6), mat, c + Vector3(0.0, 0.01, 0.0), root)
-			t.rotation = Vector3(PI * 0.5 - 0.1, 0.0, 0.0)
-			t.scale = Vector3(1.15, 1.0, 0.8)
-		_:
-			var t := _mesh_instance(_capsule(0.15 * size, 0.58 * size), mat, c, root)
-			t.rotation = Vector3(PI * 0.5 - 0.12, 0.0, 0.0)
-			t.scale = Vector3(1.0, 1.0, 0.72)
-	_mesh_instance(_cylinder(0.035, 0.02), _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15), c + Vector3(0.0, 0.13 * size, -0.03), root)
+	# The top tube, from the head stock back to the front of the seat.
+	var a := _head + Vector3(0.0, -0.03, 0.06)
+	var b := _seat_front + Vector3(0.0, 0.03, 0.0)
+	var back := b.z + 0.03
+	var room := back - (a.z + 0.02)
+	var length := clampf(float(shape["len"]) * lerpf(0.85, 1.0, size), 0.25, maxf(room, 0.25))
+	length = minf(length, room)
+	var front := back - length
+	var secs := []
+	var keys: Array = shape["keys"]
+	var steps := 14
+	for i in steps + 1:
+		var u := float(i) / steps
+		var k := _key_at(keys, u)
+		var z := lerpf(front, back, u)
+		var base_y := lerpf(a.y, b.y, clampf((z - a.z) / maxf(b.z - a.z, 0.01), 0.0, 1.0))
+		var down: float = k[2] * size
+		secs.append({"c": Vector3(0.0, base_y + down, z), "w": k[0] * size, "up": k[1] * size, "down": down,
+			"n": shape["n"], "bw": shape["bw"]})
+	var body := _shell(secs, mat)
+	body.name = "TankBody"
+	# The filler cap on top, a third of the way back; badges on the sides; knee pads on a café tank.
+	var cap_s: Dictionary = secs[roundi(steps * 0.3)]
+	var cap_at: Vector3 = cap_s["c"] + Vector3(0.0, float(cap_s["up"]) - 0.004, 0.0)
+	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15)
+	_mesh_instance(_cylinder(0.035, 0.02), chrome, cap_at, self)
+	var badge_s: Dictionary = secs[roundi(steps * 0.3)]
+	for side in [-1.0, 1.0]:
+		var at: Vector3 = badge_s["c"] + Vector3(float(badge_s["w"]) * 0.97 * side, float(badge_s["up"]) * 0.05, 0.0)
+		var badge := _mesh_instance(_sphere(0.03), chrome, at, self)
+		badge.scale = Vector3(0.15, 0.55, 1.1)
+	if style in ["cafe", "peanut"] and not p.get("lightweight", false):
+		var pad_s: Dictionary = secs[roundi(steps * 0.72)]
+		var rubber := _mat(Color(0.05, 0.05, 0.05), 0.0, 0.85)
+		for side in [-1.0, 1.0]:
+			var at: Vector3 = pad_s["c"] + Vector3(float(pad_s["w"]) * 0.93 * side, -float(pad_s["down"]) * 0.1, 0.0)
+			var pad := _mesh_instance(_sphere(0.05), rubber, at, self)
+			pad.scale = Vector3(0.18, 0.75, 1.3)
+	if style == "enduro":
+		# Radiator shrouds flaring forward either side of the tank.
+		for side in [-1.0, 1.0]:
+			var top: Dictionary = secs[2]
+			var c: Vector3 = top["c"]
+			_shell([{"c": c + Vector3(0.14 * side, 0.02, 0.07), "w": 0.012, "up": 0.04, "down": 0.03, "n": 3.0},
+				{"c": c + Vector3(0.16 * side, -0.06, 0.035), "w": 0.012, "up": 0.08, "down": 0.1, "n": 3.0},
+				{"c": c + Vector3(0.155 * side, -0.12, -0.01), "w": 0.012, "up": 0.06, "down": 0.1, "n": 3.0},
+				{"c": c + Vector3(0.13 * side, -0.16, -0.035), "w": 0.01, "up": 0.02, "down": 0.04, "n": 3.0}], mat)
+
+
+## A profile key list's [half-width, rise, drop] at `u` along it.
+static func _key_at(keys: Array, u: float) -> Array:
+	for i in keys.size() - 1:
+		var k0: Array = keys[i]
+		var k1: Array = keys[i + 1]
+		if u <= float(k1[0]):
+			var f := (u - float(k0[0])) / maxf(float(k1[0]) - float(k0[0]), 0.0001)
+			f = f * f * (3.0 - 2.0 * f)
+			return [lerpf(k0[1], k1[1], f), lerpf(k0[2], k1[2], f), lerpf(k0[3], k1[3], f)]
+	var last: Array = keys[keys.size() - 1]
+	return [last[1], last[2], last[3]]
+
+
+## Seats are lofted along the seat rails, from the front of the seat back to the tail:
+## [share of the length, half-width, rise above the rail, drop below, lift of the middle].
+const SEAT_SHAPES := {
+	"bench": {"n": 3.2, "from": -0.02, "to": 0.02, "keys": [[0.0, 0.1, 0.02, 0.03, 0.0], [0.08, 0.13, 0.04, 0.035, 0.0], [0.5, 0.14, 0.045, 0.035, -0.005],
+		[0.92, 0.13, 0.04, 0.035, 0.0], [1.0, 0.1, 0.02, 0.03, 0.0]]},
+	"cafe": {"n": 3.0, "from": -0.02, "to": 0.0, "keys": [[0.0, 0.1, 0.02, 0.03, 0.0], [0.08, 0.12, 0.035, 0.03, 0.0], [0.5, 0.125, 0.035, 0.03, -0.005],
+		[0.6, 0.12, 0.035, 0.03, 0.0], [0.7, 0.11, 0.06, 0.06, 0.035], [0.88, 0.1, 0.06, 0.07, 0.06], [1.0, 0.06, 0.03, 0.05, 0.045]]},
+	"enduro": {"n": 4.0, "from": -0.32, "to": 0.06, "keys": [[0.0, 0.06, 0.03, 0.03, 0.04], [0.12, 0.09, 0.045, 0.04, 0.035], [0.4, 0.1, 0.05, 0.04, 0.0],
+		[0.9, 0.095, 0.045, 0.04, 0.0], [1.0, 0.07, 0.025, 0.035, 0.0]]},
+	"sport": {"n": 3.0, "from": -0.02, "to": 0.04, "keys": [[0.0, 0.1, 0.02, 0.025, 0.0], [0.1, 0.12, 0.03, 0.03, 0.0], [0.42, 0.12, 0.03, 0.03, 0.0],
+		[0.55, 0.105, 0.05, 0.05, 0.03], [0.85, 0.08, 0.06, 0.07, 0.07], [1.0, 0.05, 0.03, 0.06, 0.08]]},
+	"touring": {"n": 3.4, "from": -0.03, "to": 0.02, "keys": [[0.0, 0.12, 0.03, 0.04, 0.0], [0.1, 0.17, 0.05, 0.05, -0.005], [0.42, 0.175, 0.05, 0.05, -0.015],
+		[0.55, 0.16, 0.06, 0.05, 0.04], [0.85, 0.16, 0.065, 0.05, 0.05], [1.0, 0.12, 0.04, 0.04, 0.05]]},
+}
 
 
 func _draw_saddle() -> void:
@@ -355,26 +549,42 @@ func _draw_saddle() -> void:
 	var p := _part()
 	var mat := _mat(_col(), 0.0, 0.6)
 	var y := _seat_y
-	var z0 := _seat_front.z
-	var z1 := _tail.z
-	match str(p.get("style", "bench")):
-		"cafe":
-			_box(Vector3(0.0, y, lerpf(z0, z1, 0.3)), Vector3(0.24, 0.07, 0.36), mat)
-			_box(Vector3(0.0, y + 0.05, lerpf(z0, z1, 0.78)), Vector3(0.22, 0.15, 0.2), mat)
-		"enduro":
-			var pad := _box(Vector3(0.0, y + 0.01, lerpf(z0, z1, 0.4) - 0.08), Vector3(0.18, 0.09, 0.78), mat)
-			pad.rotation.x = 0.06
-		"sport":
-			_box(Vector3(0.0, y, lerpf(z0, z1, 0.28)), Vector3(0.24, 0.06, 0.3), mat)
-			var cowl := _box(Vector3(0.0, y + 0.04, lerpf(z0, z1, 0.75)), Vector3(0.2, 0.12, 0.32), mat)
-			cowl.rotation.x = -0.18
-		"touring":
-			_box(Vector3(0.0, y, lerpf(z0, z1, 0.25)), Vector3(0.34, 0.1, 0.34), mat)
-			_box(Vector3(0.0, y + 0.05, lerpf(z0, z1, 0.72)), Vector3(0.32, 0.12, 0.28), mat)
-			var back := _box(Vector3(0.0, y + 0.22, z1 + 0.04), Vector3(0.3, 0.26, 0.06), mat)
-			back.rotation.x = 0.2
-		_:
-			_box(Vector3(0.0, y, lerpf(z0, z1, 0.5)), Vector3(0.26, 0.08, z1 - z0 + 0.04), mat)
+	var style := str(p.get("style", "bench"))
+	var shape: Dictionary = SEAT_SHAPES.get(style, SEAT_SHAPES["bench"])
+	var z0 := _seat_front.z + float(shape["from"])
+	var z1 := _tail.z + float(shape["to"])
+	var keys: Array = shape["keys"]
+	var secs := []
+	var steps := 16
+	for i in steps + 1:
+		var u := float(i) / steps
+		var k := _seat_key_at(keys, u)
+		var z := lerpf(z0, z1, u)
+		# The rail rises from the front of the seat to the tail with the frame.
+		var rail_y := y + lerpf(0.0, _tail.y - (_seat_y - 0.02), u) * 0.5
+		secs.append({"c": Vector3(0.0, rail_y + k[3], z), "w": k[0], "up": k[1], "down": k[2], "n": shape["n"], "bw": 0.85})
+	var pad := _shell(secs, mat)
+	pad.name = "SeatPad"
+	if style == "touring":
+		var back := _box(Vector3(0.0, y + 0.22, z1 + 0.04), Vector3(0.3, 0.26, 0.06), mat)
+		back.rotation.x = 0.2
+	# The seam round the edge, a shade darker.
+	var seam := _mat(_col().darkened(0.35), 0.0, 0.7)
+	var mid: Dictionary = secs[roundi(steps * 0.3)]
+	_box(mid["c"] + Vector3(0.0, float(mid["up"]) * 0.2, 0.0), Vector3(float(mid["w"]) * 2.02, 0.006, 0.006), seam)
+
+
+## A seat profile's [half-width, rise, drop, lift] at `u` along it.
+static func _seat_key_at(keys: Array, u: float) -> Array:
+	for i in keys.size() - 1:
+		var k0: Array = keys[i]
+		var k1: Array = keys[i + 1]
+		if u <= float(k1[0]):
+			var f := (u - float(k0[0])) / maxf(float(k1[0]) - float(k0[0]), 0.0001)
+			f = f * f * (3.0 - 2.0 * f)
+			return [lerpf(k0[1], k1[1], f), lerpf(k0[2], k1[2], f), lerpf(k0[3], k1[3], f), lerpf(k0[4], k1[4], f)]
+	var last: Array = keys[keys.size() - 1]
+	return [last[1], last[2], last[3], last[4]]
 
 
 # ---------------------------------------------------------------------------- engine
@@ -530,35 +740,165 @@ func _draw_gearbox() -> void:
 	_tube(_engine_c + Vector3(-_block_w * 0.5 - 0.06, -0.09, 0.2), _engine_c + Vector3(-_block_w * 0.5 - 0.14, -0.13, 0.12), 0.008, chrome)
 
 
+## The exhaust: a header from each cylinder bent round the frame along a route, then the can.
+## The route is the part's own ("route") or the frame's ("exhaust" in its geo): low under the
+## engine, high up the side (scrambler), upswept under the side panel (MX), up under the seat,
+## a stubby can under the pivot, shotgun pipes (one per cylinder, long and low), or expansion
+## chambers on a two-stroke. The can is the part's "can": round, oval, megaphone, hex, short,
+## peashooter, slash-cut or none at all (an open pipe).
 func _draw_exhaust(zr: float) -> void:
 	_current_slot = "exhaust"
-	var exhaust_id := _part_id()
+	var p := _part()
 	var pipe_mat := _mat(_col(), 1.0, 0.15)
-	var header_back := Vector3(0.15, -0.04, _pivot.z + 0.05)
+	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.12)
+	var style := str(p.get("style", "stock"))
+	var can := str(p.get("can", "round"))
+	var route := str(p.get("route", _frame_geo.get("exhaust", "low")))
+	if _build.layout == "2stroke" and route == "low":
+		route = "chamber"
+	# A slip-on is a chrome link pipe into a coloured can; the rest are one colour.
+	var header_mat := chrome if style == "slip" else pipe_mat
+	var can_mat := _mat(_col(), 0.3, 0.3, 0.7) if style == "slip" else pipe_mat
+	var ports := []
 	for i in _cyls.size():
 		var c: Dictionary = _cyls[i]
 		var port: Vector3 = c["base"] + c["up"] * 0.11 + Vector3(0.0, 0.0, -0.08)
 		if _build.layout == "vtwin" and i == 1:
 			port = c["base"] + c["up"] * 0.1 + Vector3(0.07, 0.0, 0.0)
-		var low := Vector3(0.1 + port.x * 0.4, -0.08, _engine_c.z - 0.16)
-		if _build.layout == "vtwin" and i == 1:
-			low = Vector3(0.14, 0.0, _engine_c.z + 0.12)
-		_tube(port, low, 0.02, pipe_mat)
-		_tube(low, header_back, 0.022, pipe_mat)
-	var can_end := Vector3(0.16, 0.2, zr - 0.08)
-	_exhaust_tip = can_end + Vector3(0.0, 0.0, 0.06)
-	match exhaust_id:
-		"straight_pipe":
-			_tube(header_back, can_end + Vector3(0.0, -0.04, 0.12), 0.03, pipe_mat)
-			_exhaust_tip = can_end + Vector3(0.0, -0.04, 0.14)
-		"slip_on":
-			_tube(header_back, header_back.lerp(can_end, 0.4), 0.03, _mat(Color(0.85, 0.86, 0.88), 1.0, 0.12))
-			_tube(header_back.lerp(can_end, 0.4), can_end, 0.05, _mat(_col(), 0.3, 0.3, 0.7))
-		"titanium_race", "full_system":
-			_tube(header_back, header_back.lerp(can_end, 0.5), 0.032, pipe_mat)
-			_tube(header_back.lerp(can_end, 0.5), can_end, 0.048, pipe_mat, Vector3(1.0, 1.0, 0.8))
+		ports.append(port)
+	var e := _engine_c
+	var s := _eng_s
+	var under := e.y - 0.19 * s
+	var front_z := e.z - 0.16 * s - 0.05
+	var r := 0.02 if _cyls.size() > 2 else 0.022
+	var tip := Vector3.ZERO
+	match route:
+		"shotgun":
+			# One long pipe per cylinder down the right, staggered one above the other.
+			for i in ports.size():
+				var dy := -0.075 * i
+				var port: Vector3 = ports[i]
+				var end := Vector3(0.17, _pivot.y - 0.02 + dy * 0.7, zr + 0.2)
+				_bend([port, port + Vector3(0.05, -0.03, -0.03), Vector3(0.15, e.y - 0.06 + dy * 0.6, e.z + 0.04),
+					Vector3(0.17, _pivot.y - 0.06 + dy * 0.8, _pivot.z + 0.05), Vector3(0.17, _pivot.y - 0.05 + dy * 0.75, _pivot.z + 0.3)], 0.026, header_mat)
+				var t := _can(Vector3(0.17, _pivot.y - 0.05 + dy * 0.75, _pivot.z + 0.3), end, can, can_mat, 0.04)
+				if i == 0:
+					tip = t
+		"high":
+			var join := Vector3(0.17, e.y + 0.08, e.z + 0.14)
+			for port in ports:
+				_bend([port, port + Vector3(0.0, -0.03, -0.06), Vector3(0.12, e.y - 0.02, e.z - 0.14 * s), Vector3(0.16, e.y + 0.02, e.z + 0.0), join], r, header_mat)
+			var can_a := Vector3(0.18, _seat_y - 0.2, _pivot.z + 0.02)
+			_bend([join, join.lerp(can_a, 0.5) + Vector3(0.005, 0.0, 0.0), can_a], 0.026, header_mat)
+			tip = _can(can_a, Vector3(0.18, _seat_y - 0.12, _tail.z - 0.02), can, can_mat, 0.045)
+			# A heat shield over the pipe where the rider's leg goes.
+			var shield := _mat(Color(0.12, 0.12, 0.13), 0.8, 0.4)
+			_shell([{"c": join + Vector3(0.0, -0.01, 0.06), "w": 0.034, "up": 0.034, "n": 2.0},
+				{"c": join.lerp(can_a, 0.6) + Vector3(0.0, 0.0, 0.0), "w": 0.034, "up": 0.034, "n": 2.0}], shield, true, -1.1, 1.1)
+		"upswept":
+			var join := Vector3(0.13, e.y - 0.04, e.z + 0.12)
+			for port in ports:
+				_bend([port, port + Vector3(0.0, -0.06, -0.05), Vector3(0.09, e.y - 0.12, front_z + 0.02), join], r, header_mat)
+			var can_a := Vector3(0.15, e.y + 0.14, _pivot.z + 0.02)
+			_bend([join, Vector3(0.145, e.y + 0.04, _pivot.z - 0.08), can_a], 0.025, header_mat)
+			tip = _can(can_a, Vector3(0.15, _seat_y - 0.04, zr + 0.0), can, can_mat, 0.045)
+		"underseat":
+			var gather := Vector3(0.0, under + 0.01, e.z + 0.04)
+			for port in ports:
+				_bend([port, port + Vector3(0.0, -0.06, -0.04), Vector3(port.x * 0.5, under + 0.02, front_z + 0.06), gather], r, header_mat)
+			var up := Vector3(0.0, _seat_y - 0.24, _pivot.z + 0.1)
+			_bend([gather, Vector3(0.0, under + 0.03, _pivot.z - 0.1), Vector3(0.0, _pivot.y + 0.06, _pivot.z - 0.02), up], 0.03, header_mat)
+			for x in [-0.05, 0.05]:
+				var t := _can(up + Vector3(x, 0.08, 0.04), Vector3(x, _seat_y - 0.1, _tail.z + 0.06), can, can_mat, 0.035)
+				if x > 0.0:
+					tip = t
+			_bend([up, up + Vector3(0.0, 0.06, 0.02), up + Vector3(0.05, 0.08, 0.04)], 0.025, header_mat)
+			_bend([up + Vector3(0.0, 0.06, 0.02), up + Vector3(-0.05, 0.08, 0.04)], 0.025, header_mat)
+		"chamber":
+			# Two-stroke expansion chambers: fat tuned pipes under the engine, a small silencer.
+			for i in ports.size():
+				var port: Vector3 = ports[i]
+				var x := port.x * 0.6 + 0.02
+				var end := Vector3(0.12 + 0.03 * i, _pivot.y - 0.05, _pivot.z + 0.06)
+				_bend([port, port + Vector3(0.0, -0.06, -0.06), Vector3(x, under - 0.02, front_z + 0.06), Vector3(x + 0.02, under - 0.01, e.z + 0.12), end],
+					[0.022, 0.03, 0.055, 0.06, 0.024], header_mat)
+				var t := _can(end, Vector3(0.14 + 0.03 * i, 0.16 + 0.04 * i, zr - 0.12), can, can_mat, 0.04)
+				if i == 0:
+					tip = t
 		_:
-			_tube(header_back, can_end, 0.06, pipe_mat)
+			# Low: down in front of the engine, under it, and back past the pivot to the can. A
+			# classic twin with stock pipes has a pipe and a can each side.
+			var both := style == "stock" and _cyls.size() == 2 and _build.layout in ["twin", "parallel", "boxer"]
+			var stubby := route == "stubby"
+			for side in ([-1.0, 1.0] if both else [1.0]):
+				var sx: float = side
+				var collector := Vector3(0.15 * sx, _pivot.y - 0.2, _pivot.z + 0.05)
+				if stubby:
+					collector = Vector3(0.11, under + 0.02, _pivot.z - 0.14)
+				for port in ports:
+					if both and signf(port.x) != sx and absf(port.x) > 0.01:
+						continue
+					_bend([port, port + Vector3(0.0, -0.05, -0.05), Vector3(0.06 * sx + port.x * 0.4, under + 0.02, front_z),
+						Vector3(0.11 * sx, under, e.z + 0.06), collector], r, header_mat)
+				var can_a := collector + Vector3(0.0, 0.03, 0.12)
+				var can_b := Vector3(0.16 * sx, 0.2, zr - 0.08)
+				if stubby:
+					can_a = collector + Vector3(0.02, 0.02, 0.06)
+					can_b = Vector3(0.15, _pivot.y - 0.06, _pivot.z + 0.2)
+				_bend([collector, collector.lerp(can_a, 0.5), can_a], 0.026, header_mat)
+				var t := _can(can_a, can_b, can, can_mat, 0.06 if style == "stock" else 0.05)
+				if sx > 0.0:
+					tip = t
+	_exhaust_tip = tip
+
+
+## A silencer from `a` to `b` in the part's can shape, `r` its biggest radius; returns where
+## the gas comes out.
+func _can(a: Vector3, b: Vector3, shape: String, mat: Material, r: float) -> Vector3:
+	var dir := (b - a).normalized()
+	var dark := _mat(Color(0.05, 0.05, 0.05), 0.4, 0.5)
+	match shape:
+		"open":
+			_bend([a, b], 0.028, mat)
+			return b + dir * 0.01
+		"slash":
+			_bend([a, b], 0.032, mat)
+			var lip := _mesh_instance(_cylinder(0.032, 0.012, 0.038), mat, b)
+			lip.basis = _basis_up(dir)
+			return b + dir * 0.01
+		"megaphone":
+			_bend([a, a.lerp(b, 0.3), a.lerp(b, 0.75), b, b + dir * 0.02], [r * 0.5, r * 0.65, r * 0.95, r * 1.1, r * 1.0], mat, self, 16)
+			var cone := _mesh_instance(_cylinder(r * 0.98, 0.05, r * 0.5), mat, b + dir * 0.03)
+			cone.basis = _basis_up(dir)
+			_tip(b + dir * 0.055, dir, r * 0.35, dark)
+			return b + dir * 0.06
+		"hex":
+			_bend([a, a.lerp(b, 0.12), a.lerp(b, 0.85), b], [r * 0.55, r * 0.95, r, r * 0.9], mat, self, 6)
+			_tip(b, dir, r * 0.6, dark)
+			return b + dir * 0.01
+		"short":
+			var bb := a.lerp(b, 0.6)
+			_bend([a, a.lerp(bb, 0.15), bb], [r * 0.6, r, r * 0.95], mat, self, 14)
+			_tip(bb, dir, r * 0.5, dark)
+			return bb + dir * 0.01
+		"peashooter":
+			_bend([a, a.lerp(b, 0.15), a.lerp(b, 0.9), b], [r * 0.6, r * 0.8, r * 0.8, r * 0.7], mat, self, 14)
+			_tip(b, dir, r * 0.4, dark)
+			return b + dir * 0.01
+		"oval":
+			_bend([a, a.lerp(b, 0.12), a.lerp(b, 0.88), b], [r * 0.55, r, r, r * 0.8], mat, self, 14)
+			_tip(b, dir, r * 0.5, dark)
+			return b + dir * 0.01
+		_:
+			_bend([a, a.lerp(b, 0.1), a.lerp(b, 0.9), b], [r * 0.55, r, r, r * 0.85], mat, self, 16)
+			_tip(b, dir, r * 0.45, dark)
+			return b + dir * 0.01
+
+
+## The dark tailpipe end in the middle of a can's end cap.
+func _tip(at: Vector3, dir: Vector3, radius: float, mat: Material) -> void:
+	var t := _mesh_instance(_cylinder(radius, 0.02), mat, at)
+	t.basis = _basis_up(dir)
 
 
 # ---------------------------------------------------------------------------- front end
@@ -577,6 +917,20 @@ func _draw_fork(build: BikeBuild) -> void:
 				_tube(Vector3(0.09 * side, 0.02, -0.03), Vector3(0.09 * side, 0.0, -0.03) - _steer_axis * fl, 0.02, main_mat, Vector3(1.0, 1.0, 2.2), _steer_node)
 				_box(Vector3(0.09 * side, 0.0, 0.0) - _steer_axis * (fl * 0.5), Vector3(0.025, 0.04, 0.12), main_mat, _steer_node)
 			var spring := _tube(Vector3(0.0, 0.0, -0.06), Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.18, 0.025, chrome, Vector3.ONE, _steer_node)
+			spring.name = "Spring"
+		"springer":
+			# Rear legs fixed to the yokes, front legs on a rocker at the axle, and the springs
+			# out in the open between them at the top.
+			for side in [-1.0, 1.0]:
+				var x: float = 0.085 * side
+				_tube(Vector3(x, 0.02, 0.02), Vector3(x, 0.0, 0.02) - _steer_axis * (fl * 0.97), 0.013, main_mat, Vector3.ONE, _steer_node)
+				_tube(Vector3(x, 0.0, -0.06) - _steer_axis * 0.22, Vector3(x, 0.0, -0.06) - _steer_axis * (fl * 0.92), 0.012, main_mat, Vector3.ONE, _steer_node)
+				# The rocker carrying the axle.
+				_box(Vector3(x, 0.0, -0.02), Vector3(0.016, 0.03, 0.1), main_mat, _front_hub)
+				for k in 7:
+					var ring := _mesh_instance(_torus(0.018, 0.005), chrome, Vector3(x, 0.0, -0.06) - _steer_axis * (0.04 + k * 0.026), _steer_node)
+					ring.basis = _basis_up(_steer_axis)
+			var spring := _tube(Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.02, Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.22, 0.006, chrome, Vector3.ONE, _steer_node)
 			spring.name = "Spring"
 		"usd":
 			for side in [-1.0, 1.0]:
@@ -1156,8 +1510,9 @@ func _number_plate(at: Vector3, size: Vector2, tilt: float, mat: Material) -> Me
 
 
 ## The fairing round the headlight: a flyscreen or bikini fairing on the forks (they turn with
-## the bars), or a half, touring or full race fairing on the frame, each with its screen. The
-## nose is open in the middle, so the headlight shines through.
+## the bars), or a half, touring or full race fairing on the frame, each with its screen. They're
+## curved shells lofted round the headlight, open at the nose so the headlight shines through;
+## the race fairing adds side panels and a belly pan wrapped under the engine.
 func _draw_fairing() -> void:
 	_current_slot = "fairing"
 	var p := _part()
@@ -1168,51 +1523,81 @@ func _draw_fairing() -> void:
 	var glass := _mat(Color(0.5, 0.58, 0.66), 0.2, 0.05)
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass.albedo_color.a = 0.35
+	var dark := _mat(Color(0.04, 0.04, 0.045), 0.2, 0.6)
 	var screen := float(p.get("screen", 0.15))
 	var style := str(p.get("style", "half"))
 	if style in ["flyscreen", "bikini"]:
 		var lamp := Vector3(0.0, -0.08, -0.13)   # the headlight, in steering space (see _draw_headlight)
 		var big := style == "bikini"
-		if big:
-			for side in [-1.0, 1.0]:
-				var cheek := _box(lamp + Vector3(0.14 * side, 0.0, 0.03), Vector3(0.03, 0.2, 0.16), mat, _steer_node)
-				cheek.rotation.y = 0.3 * side
-			_box(lamp + Vector3(0.0, -0.1, 0.03), Vector3(0.26, 0.03, 0.14), mat, _steer_node)
-		var cowl := _box(lamp + Vector3(0.0, 0.09 if big else 0.08, 0.02), Vector3(0.3 if big else 0.22, 0.04, 0.16 if big else 0.13), mat, _steer_node)
-		cowl.rotation.x = 0.22
-		var tilt := 0.45
-		var base := lamp + Vector3(0.0, 0.1, 0.06)
-		var glass_mi := _box(base + Vector3(0.0, cos(tilt), sin(tilt)) * screen * 0.5, Vector3(0.28 if big else 0.2, screen, 0.006), glass, _steer_node)
-		glass_mi.rotation.x = tilt
+		var w := 0.17 if big else 0.12
+		var secs := []
+		for k in 4:
+			var f := k / 3.0
+			secs.append({"c": lamp + Vector3(0.0, 0.01 * f, lerpf(-0.05, 0.1, f)), "w": w * lerpf(0.85, 1.05, f), "up": lerpf(0.1, 0.12, f) * (1.1 if big else 1.0),
+				"down": lerpf(0.08, 0.1, f) * (1.3 if big else 0.7), "n": 2.6})
+		_shell(secs, mat, true, -0.45, PI + 0.45, _steer_node)
+		var top: Dictionary = secs[1]
+		_screen(top["c"] + Vector3(0.0, float(top["up"]) - 0.01, 0.0), w * 0.8, screen, 0.45, glass, _steer_node)
 		return
 	var touring := style == "touring"
+	var race := style == "race"
 	var wide := 0.27 if touring else 0.2
 	var tall := 1.25 if touring else 1.0
 	var h := lamp_position()
-	var brow := _box(h + Vector3(0.0, 0.11 * tall, -0.05), Vector3(wide * 2.0, 0.1, 0.05), mat)
-	brow.rotation.x = 0.35
-	_box(h + Vector3(0.0, -0.12 * tall, -0.03), Vector3(wide * 1.8, 0.08, 0.05), mat)
-	for side in [-1.0, 1.0]:
-		var cheek := _box(h + Vector3((wide - 0.02) * side, -0.01, 0.0), Vector3(0.03, 0.3 * tall, 0.26), mat)
-		cheek.rotation.y = 0.3 * side
-		if touring:
-			# Knee wings to keep the rain off the rider's legs.
-			_box(h + Vector3((wide + 0.02) * side, -0.27, 0.16), Vector3(0.03, 0.18, 0.2), mat)
-	var top := _box(h + Vector3(0.0, 0.16 * tall, 0.05), Vector3(wide * 1.9, 0.03, 0.2), mat)
-	top.rotation.x = 0.35
-	var tilt := {"race": 0.85, "touring": 0.3}.get(style, 0.55) as float
-	var base := h + Vector3(0.0, 0.17 * tall, 0.1)
-	var glass_mi := _box(base + Vector3(0.0, cos(tilt), sin(tilt)) * screen * 0.5, Vector3(wide * 1.7, screen, 0.006), glass)
-	glass_mi.rotation.x = tilt
-	if style == "race":
-		# Side panels down past the engine and a belly pan under it.
+	var keys := [[-0.07, 0.11, 0.09, 0.1, 0.0], [0.02, 0.19, 0.14, 0.16, 0.01], [0.16, 0.22, 0.15, 0.22, 0.0], [0.28, 0.2, 0.12, 0.26, -0.02]]
+	if race:
+		keys = [[-0.13, 0.05, 0.04, 0.05, -0.02], [-0.06, 0.13, 0.1, 0.13, 0.0], [0.04, 0.19, 0.13, 0.2, 0.01], [0.16, 0.21, 0.12, 0.26, 0.0], [0.26, 0.19, 0.09, 0.28, -0.02]]
+	var secs := []
+	for k in keys:
+		secs.append({"c": h + Vector3(0.0, float(k[4]) * tall, float(k[0])), "w": float(k[1]) * wide / 0.2, "up": float(k[2]) * tall,
+			"down": float(k[3]) * (1.6 if touring else 1.0), "n": 2.5 if race else 2.8})
+	var shell := _shell(secs, mat, true, -0.75, PI + 0.75)
+	shell.name = "FairingShell"
+	var crown: Dictionary = secs[1]
+	_screen(crown["c"] + Vector3(0.0, float(crown["up"]) - 0.015, 0.02), float(crown["w"]) * 0.8, screen,
+		{"race": 0.85, "touring": 0.3}.get(style, 0.55) as float, glass)
+	if race:
+		# A ram-air intake under the nose.
+		var nose: Dictionary = secs[0]
+		var duct := _mesh_instance(_sphere(0.04), dark, nose["c"] + Vector3(0.0, -float(nose["down"]) * 0.6, 0.01))
+		duct.scale = Vector3(1.2, 0.55, 0.4)
+		# Side panels and a belly pan wrapped under the engine, as one U-shaped shell.
 		var side_x := maxf(wide, _block_w * 0.5 + 0.07)
-		var z0 := h.z + 0.08
-		var z1 := _engine_c.z + 0.12
+		var z0 := h.z + 0.1
+		var z1 := _engine_c.z + 0.16
+		var mid_y := _engine_c.y + 0.08
+		var low := mid_y - (_engine_c.y - 0.2 * _eng_s)
+		var lower := []
+		for k in 5:
+			var f := k / 4.0
+			# The front edge tucks in behind the wheel; the panels swell round the engine.
+			var swell := lerpf(0.55, 1.0, minf(f * 2.5, 1.0))
+			lower.append({"c": Vector3(0.0, mid_y + 0.04 * (1.0 - f), lerpf(z0, z1, f)), "w": side_x * swell,
+				"up": 0.12 * swell, "down": low * lerpf(0.55, 1.0, minf(f * 2.0, 1.0)), "n": 3.2})
+		var belly := _shell(lower, mat, true, PI - 0.35, TAU + 0.35)
+		belly.name = "LowerFairing"
+		# Vents in the side panels.
 		for side in [-1.0, 1.0]:
-			var panel := _box(Vector3(side_x * side, _engine_c.y + 0.06, (z0 + z1) * 0.5), Vector3(0.03, 0.36, z1 - z0), mat)
-			panel.rotation.y = 0.06 * side
-		_box(Vector3(0.0, _engine_c.y - 0.18, _engine_c.z + 0.02), Vector3(side_x * 1.8, 0.03, 0.4), mat)
+			for v in 3:
+				var at := Vector3(side_x * 0.97 * side, mid_y + 0.02 - v * 0.035, lerpf(z0, z1, 0.3) + v * 0.02)
+				_box(at, Vector3(0.006, 0.012, 0.09), dark)
+	elif touring:
+		# Knee wings to keep the rain off the rider's legs.
+		for side in [-1.0, 1.0]:
+			_shell([{"c": h + Vector3((wide + 0.0) * side, -0.22, 0.1), "w": 0.015, "up": 0.08, "down": 0.08, "n": 3.0},
+				{"c": h + Vector3((wide + 0.03) * side, -0.3, 0.22), "w": 0.015, "up": 0.1, "down": 0.08, "n": 3.0},
+				{"c": h + Vector3((wide - 0.02) * side, -0.34, 0.3), "w": 0.012, "up": 0.06, "down": 0.05, "n": 3.0}], mat)
+
+
+## A curved screen rising from `base`, `half` wide, `height` tall, leaning back by `tilt`.
+func _screen(base: Vector3, half: float, height: float, tilt: float, glass: Material, parent: Node3D = self) -> void:
+	var dir := Vector3(0.0, cos(tilt), sin(tilt))
+	var secs := []
+	for k in 4:
+		var f := k / 3.0
+		secs.append({"c": base + dir * height * f - Vector3(0.0, 0.035, 0.0), "w": half * lerpf(1.0, 0.8, f), "up": 0.04, "down": 0.0, "n": 2.0})
+	var pane := _shell(secs, glass, true, 0.25, PI - 0.25, parent)
+	pane.name = "Screen"
 
 
 ## Mirrors: round or sport ones on stalks from the bars, round ones off the bar ends, tall
@@ -1608,8 +1993,8 @@ func _build_rider() -> void:
 		_tube(elbow, grip, 0.045, suit, Vector3.ONE, _rider)
 		_mesh_instance(_sphere(0.045), gloves, grip, _rider)
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
-		var knee := Vector3(0.19 * side, seat_y - 0.02, hips.z - 0.36)
-		var peg := Vector3(0.17 * side, 0.02, _pivot.z + 0.02)
+		var knee := Vector3(0.19 * side, seat_y - 0.02, minf(hips.z - 0.36, lerpf(hips.z, _peg.z, 0.55)))
+		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
 		_tube(hip, knee, 0.075, pants, Vector3.ONE, _rider)
 		_tube(knee, peg, 0.06, pants, Vector3.ONE, _rider)
 		_box(peg + Vector3(0.0, -0.02, -0.06), Vector3(0.09, 0.08, 0.22), gloves, _rider)
@@ -1652,8 +2037,8 @@ func _build_dressed_rider() -> void:
 		RiderFigure.limb(_rider, elbow, grip, 0.045, jm)
 		RiderFigure.glove(_rider, grip, elbow, 0.045, str(worn["gloves"]), tint)
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
-		var knee := Vector3(0.19 * side, seat_y - 0.02, hips.z - 0.36)
-		var peg := Vector3(0.17 * side, 0.02, _pivot.z + 0.02)
+		var knee := Vector3(0.19 * side, seat_y - 0.02, minf(hips.z - 0.36, lerpf(hips.z, _peg.z, 0.55)))
+		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
 		RiderFigure.limb(_rider, hip, knee, 0.075, tm)
 		RiderFigure.limb(_rider, knee, peg, 0.06, tm)
 		if tx.has("knees"):
@@ -2620,6 +3005,15 @@ func _sphere(radius: float) -> SphereMesh:
 	return s
 
 
+func _torus(radius: float, thick: float) -> TorusMesh:
+	var t := TorusMesh.new()
+	t.inner_radius = radius - thick
+	t.outer_radius = radius + thick
+	t.rings = 16
+	t.ring_segments = 6
+	return t
+
+
 func _capsule(radius: float, height: float) -> CapsuleMesh:
 	var c := CapsuleMesh.new()
 	c.radius = radius
@@ -2655,3 +3049,18 @@ func _tube(a: Vector3, b: Vector3, radius: float, mat: Material, stretch := Vect
 		rot = Basis(Vector3.RIGHT, PI)
 	mi.basis = rot * Basis.from_scale(stretch)
 	return mi
+
+
+## How the fitted frame places a mounting point (see build_from), or `default`.
+func _geo(key: String, default: float) -> float:
+	return float(_frame_geo.get(key, default))
+
+
+## A lofted shell (see ShapeKit.loft) for the part being drawn.
+func _shell(sections: Array, mat: Material, open := false, a0 := 0.0, a1 := TAU, parent: Node3D = self) -> MeshInstance3D:
+	return _mesh_instance(ShapeKit.loft(sections, ShapeKit.RING, open, a0, a1), mat, Vector3.ZERO, parent)
+
+
+## A round tube bent smoothly through `path` (see ShapeKit.sweep): `radius` a float, or one per point.
+func _bend(path: Array, radius, mat: Material, parent: Node3D = self, sides := 12) -> MeshInstance3D:
+	return _mesh_instance(ShapeKit.sweep(path, radius, sides), mat, Vector3.ZERO, parent)
