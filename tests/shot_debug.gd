@@ -50,6 +50,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--looks" in OS.get_cmdline_user_args():
+		await _look_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--upgrades" in OS.get_cmdline_user_args():
 		await _upgrade_shots()
 		SaveGame.delete_slot("shots")
@@ -682,3 +687,48 @@ func _sign_shots() -> void:
 	await _look_from(Vector3(GarageUpgrades.WING_DOOR_X, 0.0, r.position.y + 3.0), Vector3(GarageUpgrades.WING_DOOR_X, 2.9, r.end.y), "s6_workshop_sign")
 	var a := GarageUpgrades.ANNEX
 	await _look_from(Vector3(GarageUpgrades.ANNEX_DOOR_X, 0.0, a.end.y + 3.0), Vector3(GarageUpgrades.ANNEX_DOOR_X, 3.0, a.end.y), "s8_annex_sign")
+
+
+## Garage upgrade colours and styles (`-- --looks`): every finish bought, then the inside in a
+## few different choices, and the upgrades page with its swatches and preview room.
+func _look_shots() -> void:
+	Settings.weather = "clear"
+	if Weather.current:
+		Weather.current.change_to("clear", true)
+	Daylight.current.set_time(13.0)
+	Shed.request({"a": "garage_money", "value": 5000000})
+	for id in GarageUpgrades.CATALOGUE:
+		if id != "showroom":
+			Shed.request({"a": "buy_upgrade", "id": id})
+	await _frames(10)
+	main.computer.open()
+	main.computer.open_upgrades()
+	var page: UpgradesPanel = main.computer.upgrades_panel
+	page.show_upgrade("epoxy")
+	page.choose("colour", "blue")
+	page.choose("effect", "gloss")
+	await _frames(10)
+	await _shot("l6_page_epoxy")
+	page.show_upgrade("showroom")
+	page.choose("floor", "bluewhite")
+	await _frames(10)
+	await _shot("l7_page_showroom")
+	page.start_peek()
+	await _frames(10)
+	await _shot("l8_peek")
+	main.computer.close_computer()
+	await _frames(5)
+	await _look_from(Vector3(-4.5, 0.0, 69.5), Vector3(4.0, 1.4, 62.0), "l1_standard_looks")
+	Shed.request({"a": "restyle_upgrade", "id": "epoxy", "looks": {"colour": "red", "effect": "metallic"}})
+	Shed.request({"a": "restyle_upgrade", "id": "cladding", "looks": {"upper": "anthracite", "lower": "black", "stripe": "yellow"}})
+	Shed.request({"a": "restyle_upgrade", "id": "led", "looks": {"tone": "warm", "strip": "purple"}})
+	Shed.request({"a": "restyle_upgrade", "id": "signage", "looks": {"neon": "pink"}})
+	await _frames(10)
+	await _look_from(Vector3(-4.5, 0.0, 69.5), Vector3(4.0, 1.4, 62.0), "l2_red_metallic_anthracite_warm")
+	await _look_from(Vector3(-2.0, 0.0, 66.0), Vector3(7.0, 2.8, 64.0), "l3_pink_neon")
+	Shed.request({"a": "restyle_upgrade", "id": "lounge", "looks": {"sofa": "tan", "rug": "navy", "neon": "blue"}})
+	await _frames(5)
+	await _look_from(Vector3(8.0, 0.0, 55.6), Vector3(13.6, 1.0, 58.2), "l4_lounge_tan_navy")
+	Shed.request({"a": "buy_upgrade", "id": "showroom", "looks": {"floor": "redblack", "tiles": "large", "ceiling": "hex_big", "glow": "ice", "trim": "gold"}})
+	await _frames(10)
+	await _look_from(Vector3(-4.5, 0.0, 69.5), Vector3(4.0, 1.4, 62.0), "l5_showroom_red_black_gold")

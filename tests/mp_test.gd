@@ -92,9 +92,12 @@ func _ready() -> void:
 			money_set = true
 		if role == "client" and not upgrade_asked and Shed.garage_money >= GarageUpgrades.price("wing"):
 			Shed.request({"a": "buy_upgrade", "id": "wing"})
+			# And an epoxy floor in a colour and effect picked on the client.
+			Shed.request({"a": "buy_upgrade", "id": "epoxy", "looks": {"colour": "blue", "effect": "gloss"}})
 			upgrade_asked = true
 		var ws: Workshop = main.world.workshop if main.world else null
-		var upgrade_ok := GarageUpgrades.owned("wing") and ws != null and ws.get_node_or_null("Upgrades/Built/WingFloor") != null
+		var upgrade_ok := GarageUpgrades.owned("wing") and ws != null and ws.get_node_or_null("Upgrades/Built/WingFloor") != null \
+			and str(Shed.looks.get("epoxy", {}).get("colour", "")) == "blue" and str(ws.upgrades.looks_shown().get("epoxy", {}).get("effect", "")) == "gloss"
 		# Bike lifts: the client buys bays 5 and 6 and raises bay 5's lift; both see it rise.
 		if role == "client" and GarageUpgrades.owned("wing") and not bays_asked and Shed.garage_money >= GarageUpgrades.price("bays_56"):
 			Shed.request({"a": "buy_upgrade", "id": "bays_56"})

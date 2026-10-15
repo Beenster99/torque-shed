@@ -105,6 +105,9 @@ var garage_money := 0
 var upgrades := {}
 ## The extension bays' bike lifts that are up: bay -> true (the rest are down).
 var lifts := {}
+## The looks chosen for the finishes bought (GarageUpgrades.OPTIONS): upgrade id -> {option: choice}.
+## A finish with none here looks as it always did.
+var looks := {}
 const MAX_GARAGE_MONEY := 100000000
 ## Everything else about the business's money: wage cut, owner, ledger, loans (see Money.defaults).
 var bank := Money.defaults()
@@ -191,6 +194,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	contracts = Contracts.empty()
 	upgrades = {}
 	lifts = {}
+	looks = {}
 	door_open = true
 	lights_on = true
 	room_lights = {"paint": true, "storage": true}
@@ -418,6 +422,7 @@ func join_remote() -> void:
 	contracts = Contracts.empty()
 	upgrades = {}
 	lifts = {}
+	looks = {}
 	board = BoardData.empty()
 	_clear_prints()
 	board_changed.emit()
@@ -441,6 +446,7 @@ func stop() -> void:
 	contracts = Contracts.empty()
 	upgrades = {}
 	lifts = {}
+	looks = {}
 	_washer_by.clear()
 	board = BoardData.empty()
 	_clear_prints()
@@ -2655,6 +2661,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var on := bike_in_bay(bay)
 			if on != 0 and (bikes[on]["rider"] != 0 or bikes[on].get("pusher", 0) != 0):
 				return "Someone's moving the bike in bay %d." % (bay + 1)
+		"restyle_upgrade":
+			return GarageUpgrades.check_restyle(str(action.get("id", "")), action.get("looks"), upgrades, looks, garage_money)
 		_:
 			return "Unknown action."
 	return ""
@@ -3098,7 +3106,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			Money.log_entry(bank, garage_money - was, "Debug: account set", garage_money)
 			text = "Garage money set to %s" % TvChannels.money_text(garage_money)
 		"buy_upgrade":
-			text = _buy_upgrade(peer, str(action["id"]))
+			text = _buy_upgrade(peer, str(action["id"]), action.get("looks"))
 		"lift":
 			var bay := int(action["bay"])
 			var up := bool(action.get("up", not lifts.has(bay)))
@@ -3107,6 +3115,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			else:
 				lifts.erase(bay)
 			text = "Bay %d's lift going %s" % [bay + 1, "up" if up else "down"]
+		"restyle_upgrade":
+			text = _restyle_upgrade(str(action["id"]), action.get("looks"))
 		"door":
 			door_open = bool(action.get("open", not door_open))
 			text = "Roller door %s" % ("going up" if door_open else "coming down")
@@ -4518,7 +4528,7 @@ func _blueprint_done(bike_id: int) -> bool:
 
 ## Buys a garage upgrade with the garage's money (already checked): takes the money, adds the
 ## upgrade and anything it comes with (the racking), and pays the buyer XP.
-func _buy_upgrade(peer: int, id: String) -> String:
+func _buy_upgrade(peer: int, id: String, chosen = null) -> String:
 	var cost := GarageUpgrades.price(id)
 	var paid := false
 	if has_method("charge_garage"):
@@ -4529,11 +4539,29 @@ func _buy_upgrade(peer: int, id: String) -> String:
 	if not paid:
 		return "The garage can't afford the %s." % GarageUpgrades.title(id).to_lower()
 	upgrades[id] = true
+	if GarageUpgrades.has_options(id):
+		looks[id] = GarageUpgrades.clean_looks(id, chosen)
 	if id == "racking":
 		for xf in GarageUpgrades.racking_xfs():
 			_new_furniture("shelf", xf, "shelf_racking")
 	_xp(peer, GarageUpgrades.XP_KEY, GarageUpgrades.award_mult(id))
 	return "%s bought for %s" % [GarageUpgrades.title(id), TvChannels.money_text(cost)]
+
+
+## Changes the look of a finish already bought (already checked), for a small fee.
+func _restyle_upgrade(id: String, chosen) -> String:
+	var fee := GarageUpgrades.restyle_fee(id)
+	var paid := false
+	if has_method("charge_garage"):
+		paid = bool(call("charge_garage", fee, "Restyled: " + GarageUpgrades.title(id)))
+	elif garage_money >= fee:
+		garage_money -= fee
+		paid = true
+	if not paid:
+		return "The garage can't afford to change the %s." % GarageUpgrades.title(id).to_lower()
+	looks[id] = GarageUpgrades.clean_looks(id, chosen)
+	return "%s changed to %s for %s" % [GarageUpgrades.title(id), GarageUpgrades.looks_text(id, looks[id]).to_lower(),
+		TvChannels.money_text(fee)]
 
 
 # ---------------------------------------------------------------------------- syncing
@@ -4550,7 +4578,7 @@ func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
 		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "upgrades": upgrades,
-		"lifts": lifts}
+		"lifts": lifts, "looks": looks}
 	if with_board:
 		state["board"] = board
 	return state
@@ -4589,6 +4617,8 @@ func _sync(state: Dictionary) -> void:
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.
 	lifts = GarageUpgrades.sanitize_lifts(state.get("lifts", {}), upgrades)
+	# Sheds saved before the finishes had choices keep their looks as they were.
+	looks = GarageUpgrades.sanitize_looks(state.get("looks", {}), upgrades)
 	# Sheds saved before the side rooms had switches: their lights start on.
 	room_lights = {"paint": true, "storage": true}
 	var saved_rooms = state.get("room_lights", {})

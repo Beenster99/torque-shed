@@ -216,6 +216,9 @@ func _run_all() -> void:
 	_test_front_mudguard_shed()
 	_test_front_mudguard_old_save()
 	await _test_parts_computer_organised()
+	print("Garage upgrade options: colours, effects and styles, preview, changing them later")
+	_test_upgrade_options()
+	await _test_upgrade_options_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -10327,3 +10330,166 @@ func _test_parts_computer_organised() -> void:
 	check(price_l.size.x >= price_l.get_minimum_size().x - 1.0 and price_l.size.x > 20.0, "and each row's price shows in full (%.0f px)" % price_l.size.x)
 	pc.queue_free()
 	await get_tree().process_frame
+
+
+## Garage upgrade options: every finish's choices are sound, buying one keeps the looks picked,
+## they can be changed later for a small fee (and only to something new), and they're kept in
+## the save. Old saves (no looks) keep the look each finish always had.
+func _test_upgrade_options() -> void:
+	var sound := true
+	for id in GarageUpgrades.OPTIONS:
+		sound = sound and GarageUpgrades.exists(id)
+		for g in GarageUpgrades.options(id):
+			var ids := []
+			for c in g["choices"]:
+				ids.append(str(c["id"]))
+				sound = sound and str(c.get("name", "")) != "" and (str(g["kind"]) != "colour" or c.get("color") is Color)
+			sound = sound and ids.has(str(g["default"])) and ids.size() >= 3 and str(g["kind"]) in ["colour", "style"]
+			for i in ids.size():
+				sound = sound and ids.find(ids[i]) == i
+	check(sound, "every option has a default among at least three named choices, no repeats, and swatches for colours")
+	for id in ["epoxy", "led", "cladding", "showroom", "signage", "lounge"]:
+		check(GarageUpgrades.has_options(id), "the %s has choices" % GarageUpgrades.title(id).to_lower())
+	check(not GarageUpgrades.has_options("wing") and GarageUpgrades.options("bays_56").is_empty(), "building work has none")
+	check(GarageUpgrades.default_looks("epoxy") == {"colour": "charcoal", "effect": "flake"}, "the epoxy floor is charcoal flake as standard")
+	var fx_names := []
+	for c in GarageUpgrades._group("epoxy", "effect")["choices"]:
+		fx_names.append(str(c["name"]).to_lower())
+	check(str(fx_names).contains("flake") and str(fx_names).contains("metallic") and str(fx_names).contains("gloss"), "epoxy comes with flake, metallic and gloss effects")
+	check(GarageUpgrades.clean_looks("epoxy", {"colour": "red", "effect": "glitter", "smell": "pine"}) == {"colour": "red", "effect": "flake"},
+		"unknown choices fall back to the default, unknown options are dropped")
+	check(GarageUpgrades.looks_text("epoxy", {"colour": "red", "effect": "metallic"}) == "Racing red, metallic swirl", "looks read out in words")
+	check(GarageUpgrades.restyle_fee("epoxy") >= GarageUpgrades.RESTYLE_MIN and GarageUpgrades.restyle_fee("showroom") <= GarageUpgrades.RESTYLE_MAX
+		and GarageUpgrades.restyle_fee("showroom") < GarageUpgrades.price("showroom") / 20, "changing a look later costs a small fee")
+	Shed.start_new("Tester", 9)
+	var me := Shed.me()
+	Shed.request({"a": "garage_money", "value": 100000})
+	check(Shed.check(me, {"a": "restyle_upgrade", "id": "epoxy", "looks": {"colour": "red"}}).contains("first"), "nothing to change before it's bought")
+	Shed.request({"a": "buy_upgrade", "id": "epoxy", "looks": {"colour": "red", "effect": "metallic"}})
+	check(GarageUpgrades.owned("epoxy") and Shed.looks.get("epoxy", {}) == {"colour": "red", "effect": "metallic"}, "bought in racing red with a metallic swirl")
+	check(Shed.garage_money == 100000 - GarageUpgrades.price("epoxy"), "picking colours costs nothing extra")
+	Shed.request({"a": "buy_upgrade", "id": "led"})
+	check(GarageUpgrades.looks_of("led", Shed.looks) == GarageUpgrades.default_looks("led"), "bought with no choices: the standard look")
+	check(Shed.check(me, {"a": "restyle_upgrade", "id": "epoxy", "looks": {"colour": "red", "effect": "metallic"}}).contains("already"),
+		"changing it to how it is already is refused")
+	check(Shed.check(me, {"a": "restyle_upgrade", "id": "wing", "looks": {}}) != "", "building work can't be restyled")
+	var before := Shed.garage_money
+	Shed.request({"a": "restyle_upgrade", "id": "epoxy", "looks": {"colour": "blue", "effect": "gloss"}})
+	check(Shed.looks["epoxy"] == {"colour": "blue", "effect": "gloss"} and Shed.garage_money == before - GarageUpgrades.restyle_fee("epoxy"),
+		"changed to blue gloss for %s" % TvChannels.money_text(GarageUpgrades.restyle_fee("epoxy")))
+	check(str(Shed.bank).contains("Restyled"), "the fee is in the garage's accounts")
+	Shed.request({"a": "garage_money", "value": 0})
+	check(Shed.check(me, {"a": "restyle_upgrade", "id": "epoxy", "looks": {"colour": "white"}}).contains("afford"), "no money, no change")
+	# Saved and loaded; old saves keep the standard looks.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.start_new("Tester", 9)
+	check(Shed.looks.is_empty(), "a new shed has no looks chosen")
+	Shed.load_state(copy, "Tester")
+	check(Shed.looks.get("epoxy", {}) == {"colour": "blue", "effect": "gloss"}, "the looks come back with the save")
+	copy.erase("looks")
+	Shed.load_state(copy, "Tester")
+	check(Shed.looks.is_empty() and GarageUpgrades.looks_of("epoxy", Shed.looks) == GarageUpgrades.default_looks("epoxy"),
+		"a shed saved before choices keeps the standard looks")
+	copy["looks"] = {"epoxy": {"colour": "plaid"}, "showroom": {"floor": "redblack"}, "nope": {}}
+	Shed.load_state(copy, "Tester")
+	check(Shed.looks.keys() == ["epoxy"] and Shed.looks["epoxy"]["colour"] == "charcoal", "looks for things not built, or not real, are dropped")
+	Shed.stop()
+
+
+## In the game: the looks are drawn on the shed (standard when nothing was chosen), the upgrades
+## page shows the choices and a preview, trying one on changes the shed on this screen only and
+## comes off when the page closes, and buying or changing one rebuilds it.
+func _test_upgrade_options_session() -> void:
+	SaveGame.slot_override = "test_upgrade_looks"
+	SaveGame.delete_slot("test_upgrade_looks")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	var ws: Workshop = main.world.workshop
+	var floor_m: StandardMaterial3D = ws._mats["floor"]
+	var bare := floor_m.albedo_color
+	Shed.request({"a": "garage_money", "value": 1000000})
+	# Bought with no choices: exactly the look it always had.
+	Shed.request({"a": "buy_upgrade", "id": "epoxy"})
+	Shed.request({"a": "buy_upgrade", "id": "cladding"})
+	await get_tree().process_frame
+	check(floor_m.albedo_color.is_equal_approx(Color(0.2, 0.22, 0.25)) and is_equal_approx(floor_m.roughness, 0.12) and is_equal_approx(floor_m.metallic, 0.15),
+		"the standard epoxy floor is the charcoal flake it always was")
+	check((ws._mats["wall_in"] as StandardMaterial3D).albedo_color.is_equal_approx(Color(0.94, 0.94, 0.95)), "standard cladding is white")
+	# The page: choices with swatches, and a preview room.
+	main.computer.open()
+	main.computer.open_upgrades()
+	var page: UpgradesPanel = main.computer.upgrades_panel
+	page.show_upgrade("led")
+	check(page._swatches.has("tone") and page._swatches["tone"].size() == 4 and page._swatches.has("fx"), "the LED lighting shows its colours and effects")
+	check(page._thumb.visible and page._thumb.shown.has("led") and page._thumb.shown.has("epoxy"), "the preview room shows it with what's built")
+	var lights_before: Color = (ws._shed_lights[0] as Light3D).light_color
+	page.choose("tone", "warm")
+	await get_tree().process_frame
+	check(page.previewing and WorkshopUpgrades.preview_id == "led" and (ws._shed_lights[0] as Light3D).light_color.is_equal_approx(Color(1.0, 0.85, 0.66)),
+		"picking warm white tries it on the shed's lights before it's bought")
+	check(not GarageUpgrades.owned("led") and page._buy.text.contains("Warm white"), "nothing is bought yet; Buy says what it buys")
+	page.start_peek()
+	check(page.peeking and not page._center.visible and page._peek_bar.visible, "See it in the shed hides the page")
+	page.stop_peek()
+	check(not page.peeking and page._center.visible, "and it comes back")
+	page.show_upgrade("wing")
+	await get_tree().process_frame
+	check(not page.previewing and WorkshopUpgrades.preview_id == "" and (ws._shed_lights[0] as Light3D).light_color.is_equal_approx(lights_before),
+		"looking at another upgrade puts the shed back as it is")
+	check(not page._thumb_box.visible, "building work has no choices to show")
+	# Buy it in the colour picked.
+	page.show_upgrade("led")
+	page.choose("tone", "warm")
+	page.choose("strip", "purple")
+	page.choose("fx", "pulse")
+	page.buy()
+	await get_tree().process_frame
+	check(GarageUpgrades.owned("led") and Shed.looks["led"] == {"tone": "warm", "strip": "purple", "fx": "pulse"}, "bought with the choices picked")
+	check(ws.upgrades.looks_shown()["led"]["strip"] == "purple" and not ws.upgrades._fx.is_empty(), "the strip is purple and pulses")
+	# Changing a built finish.
+	page.show_upgrade("epoxy")
+	check(page._buy.disabled and page._buy.text.begins_with("Built"), "a built finish says so until new colours are picked")
+	page.choose("colour", "green")
+	page.choose("effect", "metallic")
+	check(not page._buy.disabled and page._buy.text.contains(TvChannels.money_text(GarageUpgrades.restyle_fee("epoxy"))), "then it offers the change for the fee")
+	await get_tree().process_frame
+	check(floor_m.albedo_color.is_equal_approx(GarageUpgrades.choice("epoxy", "colour", {"colour": "green"})["color"]), "and the floor shows it while picking")
+	page.buy()
+	await get_tree().process_frame
+	check(Shed.looks["epoxy"] == {"colour": "green", "effect": "metallic"} and is_equal_approx(floor_m.metallic, 0.65), "changed: green metallic")
+	# The showroom: its styles.
+	for id in ["lounge", "showroom"]:
+		for need in GarageUpgrades.missing_needs(id, Shed.upgrades):
+			Shed.request({"a": "buy_upgrade", "id": need})
+		Shed.request({"a": "buy_upgrade", "id": id})
+	page.show_upgrade("showroom")
+	check(page._swatches.has("floor") and page._swatches.has("ceiling") and page._swatches.has("trim"), "the showroom offers floors, ceilings and trim")
+	page.choose("floor", "redblack")
+	page.buy()
+	await get_tree().process_frame
+	var tile := (floor_m.albedo_texture as ImageTexture).get_image() if floor_m.albedo_texture is ImageTexture else null
+	check(tile != null and tile.get_pixel(0, 0).r > 0.4 and tile.get_pixel(0, 0).g < 0.2, "the showroom floor is red and black chequer")
+	# Closing the page takes any preview off.
+	page.choose("trim", "gold")
+	check(WorkshopUpgrades.preview_id == "showroom", "trying gold trim")
+	main.computer.close_computer()
+	await get_tree().process_frame
+	check(WorkshopUpgrades.preview_id == "" and ws.upgrades.looks_shown()["showroom"]["trim"] == "chrome", "closing the computer puts the shed back")
+	# A shed without choices: the standard looks; no finishes, the bare floor again.
+	Shed.looks = {}
+	Shed.changed.emit()
+	await get_tree().process_frame
+	check(ws.upgrades.looks_shown()["led"] == GarageUpgrades.default_looks("led"), "no looks saved: the standard ones")
+	Shed.upgrades = {}
+	Shed.changed.emit()
+	await get_tree().process_frame
+	check(floor_m.albedo_color.is_equal_approx(bare), "with no finishes the floor is bare concrete again")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_upgrade_looks")
+	SaveGame.slot_override = ""

@@ -30,6 +30,14 @@ var _arcade_text: Label3D
 var _mats := {}
 var _lifts := {}       # bay -> {body, arms, motor}: the extension bays' lifts as built
 var _lift_h := {}      # bay -> how high its lift's platform is right now
+## The looks the finishes are drawn with (GarageUpgrades.OPTIONS): upgrade id -> {option: choice}.
+var _looks := {}
+## Animated looks: [kind ("strip", "neon"), effect, thing, its colour, its light, the light's energy].
+var _fx: Array = []
+## A look being tried on from the Garage upgrades page, on this screen only: the upgrade (built
+## for the preview if it isn't yet) and its choices. "" = none.
+static var preview_id := ""
+static var preview_looks := {}
 
 
 func setup(workshop: Workshop) -> void:
@@ -47,6 +55,7 @@ func setup(workshop: Workshop) -> void:
 	if ws.front_sign:
 		_front_sign_base = [ws.front_sign.pixel_size, ws.front_sign.position]
 	_make_materials()
+	add_to_group("workshop_upgrades")
 	sync()
 
 
@@ -56,15 +65,45 @@ static func _mat_state(m: StandardMaterial3D) -> Dictionary:
 		"texture_filter": m.texture_filter}
 
 
-## Rebuilds if the upgrades have changed since the last time.
+## Rebuilds if the upgrades (or their looks, or a look being previewed) have changed since the
+## last time.
 func sync() -> void:
-	var ids: Array = Shed.upgrades.keys()
+	var have := _have()
+	var ids: Array = have.keys()
 	ids.sort()
 	var sig := ",".join(ids)
-	if sig == _sig:
+	var looks := {}
+	for id in ids:
+		if GarageUpgrades.has_options(id):
+			looks[id] = GarageUpgrades.clean_looks(id, preview_looks if id == preview_id else Shed.looks.get(id, {}))
+	if sig == _sig and looks == _looks:
 		return
 	_sig = sig
-	_rebuild(Shed.upgrades)
+	_looks = looks
+	_rebuild(have)
+
+
+## The upgrades to draw: the shed's, plus one being previewed.
+func _have() -> Dictionary:
+	if preview_id == "" or not GarageUpgrades.has_options(preview_id):
+		return Shed.upgrades
+	var have := Shed.upgrades.duplicate()
+	have[preview_id] = true
+	return have
+
+
+## Tries a look on the shed, on this screen only (`id` "" puts it back as it is). Everyone else
+## keeps seeing the shed as it is until it's bought.
+static func set_preview(tree: SceneTree, id: String, chosen: Dictionary) -> void:
+	preview_id = id
+	preview_looks = chosen.duplicate()
+	if tree:
+		tree.call_group("workshop_upgrades", "sync")
+
+
+## The looks the finishes are drawn with right now (for tests).
+func looks_shown() -> Dictionary:
+	return _looks
 
 
 ## The upgrades built right now, by id (for tests).
@@ -81,12 +120,15 @@ func _process(_delta: float) -> void:
 	if _arcade_text:
 		_arcade_text.visible = fmod(Time.get_ticks_msec() / 1000.0, 1.2) < 0.8
 	_ride_lifts()
+	if not _fx.is_empty():
+		_animate(Time.get_ticks_msec() / 1000.0)
 
 
 # ---------------------------------------------------------------------------- rebuilding
 
 func _undo() -> void:
 	_probes.clear()
+	_fx.clear()
 	_arcade_text = null
 	_lifts.clear()
 	ws._bay_screens.resize(mini(ws._bay_screens.size(), Workshop.BAY_COUNT))
@@ -151,6 +193,7 @@ func _rebuild(have: Dictionary) -> void:
 		_signage()
 	if have.has("showroom"):
 		_showroom(have.has("wing"))
+	_lounge_looks()
 	ws.set_lights(Shed.lights_on)
 	ws.set_room_lights("storage", Shed.room_lit("storage"))
 	ws._dash_dirty = true
@@ -907,31 +950,23 @@ func _build_mezzanine() -> void:
 
 # ---------------------------------------------------------------------------- finishes
 
+## The look chosen for `id` (its defaults when nothing was).
+func _look(id: String) -> Dictionary:
+	return _looks.get(id, GarageUpgrades.default_looks(id))
+
+
+## The epoxy floor in the colour and effect chosen (charcoal with a speckled flake as standard).
 func _epoxy_floor() -> void:
-	var m: StandardMaterial3D = ws._mats["floor"]
-	m.albedo_color = Color(0.2, 0.22, 0.25)
-	m.albedo_texture = ws._noise(4.0, 0.7, 1.35)   # a fine speckled flake
-	m.uv1_triplanar = true
-	m.uv1_scale = Vector3(1.5, 1.5, 1.5)
-	m.roughness = 0.12
-	m.metallic = 0.15
+	UpgradeLooks.epoxy_floor(ws._mats["floor"], _look("epoxy"))
 
 
 func _wall_cladding(wing: bool) -> void:
-	var upper: StandardMaterial3D = ws._mats["wall_in"]
-	upper.albedo_color = Color(0.94, 0.94, 0.95)
-	upper.albedo_texture = null
-	upper.roughness = 0.3
-	var lower: StandardMaterial3D = ws._mats["wall_low"]
-	lower.albedo_color = Color(0.72, 0.74, 0.77)
-	lower.albedo_texture = ws._noise(6.0, 0.75, 1.15)
-	lower.uv1_triplanar = true
-	lower.uv1_scale = Vector3(3.0, 3.0, 3.0)
-	lower.metallic = 0.9
-	lower.roughness = 0.32
-	# A red pinstripe round the shed along the top of the chequer plate.
-	for run in _shed_wall_runs(wing):
-		_stripe(run, 1.23, ws._mats["red"], 0.05)
+	var stripe := UpgradeLooks.cladding(ws._mats["wall_in"], ws._mats["wall_low"], _look("cladding"))
+	# A pinstripe round the shed along the top of the chequer plate (red unless chosen otherwise).
+	if stripe.a > 0.0:
+		var paint := UpgradeLooks.paint(stripe, 0.5, 0.35)
+		for run in _shed_wall_runs(wing):
+			_stripe(run, 1.23, paint, 0.05)
 
 
 ## The inside of the shed's walls as runs of [from, to] (Vector3 at floor level, 1 cm in from
@@ -967,18 +1002,24 @@ func _stripe(run: Array, y: float, mat: Material, thick: float) -> void:
 
 
 func _led_lighting(wing: bool) -> void:
-	var cool := Color(0.92, 0.96, 1.0)
+	var look := _look("led")
+	var cool := UpgradeLooks.led_tone(look)
 	for m in ws._fixture_mats:
 		(m as StandardMaterial3D).emission = cool
-		(m as StandardMaterial3D).albedo_color = Color(0.95, 0.97, 1.0)
+		(m as StandardMaterial3D).albedo_color = cool.lerp(Color.WHITE, 0.4)
 	for l in ws._shed_lights:
 		if _base_lights.has(l) or l is SpotLight3D:
 			l.light_energy *= 1.35
 			l.light_color = cool
-	# An LED strip round the top of the shed's walls (and the extension's), on the light switch.
-	var strip := _glow(cool, 4.0)
+	# An LED strip round the top of the shed's walls (and the extension's), on the light switch,
+	# in the lights' colour or its own, steady, pulsing or cycling through colours.
+	var strip := _glow(UpgradeLooks.led_strip(look), 4.0)
+	strip.resource_name = "LedStrip"
 	ws._fixture_mats.append(strip)
 	_added_mats.append(strip)
+	var fx := str(GarageUpgrades.choice("led", "fx", look).get("id", "steady"))
+	if fx != "steady":
+		_fx.append(["strip", fx, strip, strip.emission, null, 0.0])
 	for run in _shed_wall_runs(wing):
 		_stripe(run, Workshop.HEIGHT - 0.5, strip, 0.04)
 	if wing:
@@ -997,7 +1038,8 @@ func _signage() -> void:
 	# A light box behind the TORQUE SHED letters over the roller door, edged in orange neon.
 	var box := SIGN_BOX
 	_box(Vector3(c.x, y, front + 0.02), Vector3(box.x, box.y, 0.03), ws._material(Color(0.05, 0.05, 0.06), 0.3, 0.4)).name = "SignBox"
-	var edge := _glow(Color(1.0, 0.55, 0.1), 5.0)
+	var look := _look("signage")
+	var edge := _glow(GarageUpgrades.choice("signage", "box", look).get("color", Color(1.0, 0.55, 0.1)), 5.0)
 	for s in [-1.0, 1.0]:
 		_box(Vector3(c.x, y + s * (box.y * 0.5 + 0.005), front + 0.04), Vector3(box.x + 0.1, 0.05, 0.03), edge)
 		_box(Vector3(c.x + s * (box.x * 0.5 + 0.03), y, front + 0.04), Vector3(0.05, box.y + 0.05, 0.03), edge)
@@ -1027,6 +1069,11 @@ func _signage() -> void:
 	blue.light_energy = 0.6
 	blue.light_color = Color(0.4, 0.6, 1.0)
 	_shed_light(blue)
+	# Its colour and effect, as chosen.
+	UpgradeLooks.neon(neon, blue, GarageUpgrades.choice("signage", "neon", look))
+	var fx := str(GarageUpgrades.choice("signage", "fx", look).get("id", "steady"))
+	if fx != "steady":
+		_fx.append(["neon", fx, neon, neon.modulate, blue, blue.light_energy])
 
 
 ## Fits the TORQUE SHED letters over the roller door inside the sign box centred at `mid`
@@ -1065,19 +1112,11 @@ func front_sign_extent() -> Dictionary:
 
 func _showroom(wing: bool) -> void:
 	# A gloss black and white chequered floor, through the shed and the extension.
-	var img := Image.create(2, 2, false, Image.FORMAT_RGB8)
-	img.set_pixel(0, 0, Color(0.92, 0.92, 0.92))
-	img.set_pixel(1, 1, Color(0.92, 0.92, 0.92))
-	img.set_pixel(1, 0, Color(0.05, 0.05, 0.06))
-	img.set_pixel(0, 1, Color(0.05, 0.05, 0.06))
-	var m: StandardMaterial3D = ws._mats["floor"]
-	m.albedo_texture = ImageTexture.create_from_image(img)
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	m.albedo_color = Color.WHITE
-	m.uv1_triplanar = true
-	m.uv1_scale = Vector3(0.83, 0.83, 0.83)   # 0.6 m tiles
-	m.roughness = 0.06
-	m.metallic = 0.0
+	# (Or the floor, tile size, ceiling, light colour and trim chosen for it.)
+	var look := _look("showroom")
+	UpgradeLooks.showroom_floor(ws._mats["floor"], look)
+	var cell := float(GarageUpgrades.choice("showroom", "ceiling", look).get("r", 0.7))
+	var glow_colour: Color = GarageUpgrades.choice("showroom", "glow", look).get("color", Color(0.97, 0.99, 1.0))
 	# Honeycomb LED ceilings, on the shed's light switch. They take the place of the strip light
 	# fittings, which would hang right through the tubes (the lamps themselves stay).
 	for strip in ws.ceiling_strips:
@@ -1090,11 +1129,48 @@ func _showroom(wing: bool) -> void:
 		var r := GarageUpgrades.WING
 		areas.append([r.grow(-0.4), GarageUpgrades.WING_HEIGHT - 0.04])
 	for a in areas:
-		var glow := ws._hex_ceiling(a[0], float(a[1]), 0.7)
+		var glow := ws._hex_ceiling(a[0], float(a[1]), cell)
+		glow.emission = glow_colour
 		var mmi := ws.get_child(ws.get_child_count() - 1)
 		mmi.reparent(_root)
 		ws._fixture_mats.append(glow)
 		_added_mats.append(glow)
-	# Chrome skirting round the shed.
+	# Chrome skirting round the shed (or the trim chosen).
+	var trim := UpgradeLooks.showroom_trim(look)
 	for run in _shed_wall_runs(wing):
-		_stripe(run, 0.06, ws._mats["chrome"], 0.12)
+		_stripe(run, 0.06, trim, 0.12)
+
+
+## The crew lounge's sofa leather, rug and neon sign in the colours chosen (after it's built).
+func _lounge_looks() -> void:
+	var look := _look("lounge")
+	(_mats["leather"] as StandardMaterial3D).albedo_color = GarageUpgrades.choice("lounge", "sofa", look).get("color", Color(0.32, 0.09, 0.06))
+	(_mats["rug"] as StandardMaterial3D).albedo_color = GarageUpgrades.choice("lounge", "rug", look).get("color", Color(0.55, 0.12, 0.1))
+	var neon: Label3D = _root.find_child("LoungeNeon", true, false) as Label3D if _root else null
+	if neon == null:
+		return
+	# The sign's own light is the pink one just in front of it.
+	var light: Light3D = null
+	for l in _added_lights:
+		if l is OmniLight3D and l.light_color.is_equal_approx(Color(1.0, 0.35, 0.8)) and l.position.distance_to(neon.position) < 1.5:
+			light = l
+	UpgradeLooks.neon(neon, light, GarageUpgrades.choice("lounge", "neon", look))
+
+
+## Runs the animated looks: a pulsing or colour-cycling LED strip, a flickering or pulsing neon.
+func _animate(t: float) -> void:
+	for i in _fx.size():
+		var f: Array = _fx[i]
+		var fx := str(f[1])
+		if str(f[0]) == "strip":
+			var m := f[2] as StandardMaterial3D
+			if fx == "rainbow":
+				m.emission = UpgradeLooks.fx_colour(t)
+			elif ws._lights_shown:
+				m.emission_energy_multiplier = 4.0 * UpgradeLooks.fx_level(fx, t)
+		else:
+			var level := UpgradeLooks.fx_level(fx, t, i * 1.7)
+			var base: Color = f[3]
+			(f[2] as Label3D).modulate = Color(base.r * level, base.g * level, base.b * level, base.a)
+			if f[4]:
+				(f[4] as Light3D).light_energy = float(f[5]) * level

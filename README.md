@@ -54,6 +54,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
 | Sort the parts computer's list, or show only parts that fit a bike or are within budget | Sort / Fits / Within budget, under the aisles | d-pad up to them, A |
 | Sell a loose part or a whole bike (parts computer, Sell aisle); send money, take money out, loans (Esc, Money tab) | F at the computer / Esc | Y / Start |
+| Garage upgrades (parts computer): pick a finish's colour or style, see it in the shed, back to the page | Click a swatch, **See it in the shed**, Esc | D-pad to a swatch and A, B |
 | Talk to a customer waiting at reception (their offer card: Accept, Decline) | F | Y |
 | Bring a customer's bike in from the car park: get on and ride it (tap), or walk it in by the handlebars (hold) | F | Y |
 | Unpack a delivery box; take hold of or let go of equipment (posters, TVs and the whiteboard hang on the wall you look at) | F | Y |
@@ -382,6 +383,17 @@ Upgrades are kept in the shed's save; older saves start with none. With branded 
 
 **The storage annex mezzanine**: the stairs run up the annex's east wall, from a clear space at the bottom, onto the deck across the back.
 
+**Colours and styles**: the finishes come in your choice of looks. Pick one in the list and click the swatches (colours) or named buttons (effects and styles) under its description before you press **Buy**; a little preview room beside them shows it with everything you've already built, and the shed itself changes to match on your screen while you pick (nobody else sees it until it's bought). Press **See it in the shed** to hide the page and look, then **Back to the upgrades** (or Esc). Closing the page, or picking another upgrade, puts the shed back as it is. Colours cost nothing extra when you buy; to change a finish you already have, pick new choices and press **Change it**, which costs 5% of its price (at least £250, at most £5,000) from the garage's money. In co-op the looks are the host's shed's and everyone sees them, and they're kept in the save (older saves keep the standard looks).
+
+| Finish | Choices (standard first) |
+| --- | --- |
+| Painted epoxy floor | Colour: charcoal, slate grey, racing red, garage blue, racing green, sand, gloss white, jet black. Effect: speckled flake, metallic swirl, plain gloss, satin |
+| LED lighting | Light colour: cool white, daylight, neutral white, warm white. Wall strip: the lights' colour, red, amber, green, blue, purple or pink. Strip effect: steady, slow pulse, colour cycle |
+| Wall cladding | Wall panels: white, light grey, cream, anthracite, garage blue, racing red, racing green. Chequer plate: brushed aluminium, black, copper, painted red. Pinstripe: red, blue, yellow, green, white, black or none |
+| Branded signage | Neon colour (blue, red, pink, green, orange, purple, white), light box edge colour, neon effect: steady, old flicker or slow pulse |
+| Crew lounge | Sofa leather, rug and neon sign colours |
+| Showroom finish | Floor: black and white, red and black, grey and white or blue and white chequer, mirror black, gallery white. Tile size: 30 cm, 60 cm, 1.2 m. Ceiling: honeycomb, fine or giant honeycomb. Ceiling light colour. Trim: chrome, gold, black chrome, red |
+
 ### Weather
 
 The weather changes by itself every few minutes between **clear skies**, **cloudy**, **fog** and **rain**, drifting from one to the next over about 40 seconds. Clouds grey the sky and dim the sun, and the shadows go soft; fog closes in so you see only a short way; rain falls round you, soaks the roads and the yard so they go darker and shiny, and wet tarmac grips a little less (about 15%), so brake and lean with care. Once it stops the roads dry out over a few minutes. You hear the rain outside and drumming on the roof when you're in the shed, and it never rains indoors.
@@ -474,6 +486,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/shed_state.gd` | The shared shed: bikes, parts, who holds what. The host checks and applies every action |
 | `scripts/workshop.gd` | Builds the shed, the paint shop and storage room, its stations and dashboards, and draws parked bikes and loose parts |
 | `scripts/garage_upgrades.gd`, `workshop_upgrades.gd`, `upgrades_panel.gd` | Garage upgrades: the catalogue and rules, building them onto the shed (the extension bays and their bike lifts, the annex and its mezzanine, the crew lounge upstairs), and the parts computer's Garage upgrades page |
+| `scripts/upgrade_looks.gd`, `look_preview.gd` | Garage upgrade colours and styles: how each choice looks on the shed, and the preview room on the Garage upgrades page |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
 | `scripts/placement.gd` | Snapping equipment square and flush to walls and corners |
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |
