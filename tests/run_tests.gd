@@ -6619,7 +6619,7 @@ func _test_contract_session() -> void:
 	check(not main.contract_panel.visible and Contracts.jobs().size() == 1, "Accept takes the job on")
 	for i in 30:
 		await get_tree().process_frame
-	check(view.views.is_empty(), "and they head off")
+	check(not view.views.has(cv.customer_id) and cv.leaving, "and they head off")
 	var tabs: Array = main.menu.find_children("Contracts", "ContractsTab", true, false)
 	if not tabs.is_empty():
 		(tabs[0] as ContractsTab).refresh(true)

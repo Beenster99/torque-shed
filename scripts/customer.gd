@@ -211,7 +211,9 @@ func _set_parked(on_stand: bool) -> void:
 	_model.build_from(_build, _bike_paint, {}, null, not on_stand)
 	if not on_stand:
 		_model.set_lights(true, true)
-		if _sound == null:
+		# Its engine is heard (the sound bakes in the background); not on a headless run, which
+		# would only wait on the bake at exit.
+		if _sound == null and DisplayServer.get_name() != "headless":
 			_sound = EngineSound.new()
 			_sound.volume_db = -6.0
 			_bike.add_child(_sound)
