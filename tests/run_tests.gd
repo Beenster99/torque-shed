@@ -181,6 +181,10 @@ func _run_all() -> void:
 	print("Shed sound: variants, impacts by material, footsteps by floor, room acoustics, ambience")
 	await _test_shed_sound_variants()
 	await _test_shed_sound_session()
+	print("Sandblaster round 3: bare metal that stays, the scan, cabinet lights and protective coats")
+	await _test_blast_keeps_bare_metal()
+	await _test_blast_scan()
+	await _test_protective_coat()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -5864,7 +5868,7 @@ func _test_blast_cabinet_fits() -> void:
 				if n is Light3D:
 					lamps += 1
 				stack.append_array(n.get_children())
-	check(views > 0 and lamps == 0, "no light inside the sandblaster: you see in by the shed's light")
+	check(views > 0 and lamps >= views, "the sandblaster has its own light inside, under the roof")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
@@ -8262,3 +8266,368 @@ func _scrolls_to_end(col: Control) -> bool:
 		return true
 	var vis := sc.get_global_rect()
 	return (kids[-1] as Control).get_global_rect().end.y <= vis.end.y + 1.0 and vis.end.y <= get_viewport().get_visible_rect().end.y + 1.0
+
+
+# ---------------------------------------------------------------------------- sandblaster round 3
+
+## A sandblasting cabinet moved into the shed with the barn find's engine in it: {main, w, cab,
+## spot, engine, parts}. The engine and its ancillaries start rusty.
+func _blast_rig() -> Dictionary:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.request({"a": "order_furniture", "model": "blaster_cabinet"})
+	var cab := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "blaster":
+			cab = id
+	var spot := "blast_%d_0" % cab
+	var at := Workshop.CENTER + Vector3(1.5, 0.0, 1.8)
+	Shed.request({"a": "grab", "furniture": cab})
+	Shed.request({"a": "release", "furniture": cab, "xf": Transform3D(Basis(), at)})
+	var engine := 0
+	for s in Shed.stand_spots():
+		if engine == 0 and Shed.is_engine(Shed.item_at_spot(s)):
+			engine = Shed.item_at_spot(s)
+			Shed.request({"a": "take", "spot": s})
+	Shed.request({"a": "place", "spot": spot})
+	var parts := Shed._blast_parts(engine)
+	for id in parts:
+		Shed.items[id]["rust"] = 0.8
+		Shed.items[id]["dirt"] = 0.5
+		Shed.items[id]["wear"] = 0.1
+	Shed.changed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	var w: Walker = main.walker
+	w.place(Transform3D(Basis(), at + Vector3(0.0, 0.0, 1.3)))
+	return {"main": main, "w": w, "cab": cab, "spot": spot, "engine": engine, "parts": parts, "at": at}
+
+
+## Hands in the cabinet's gloves (straight to the host, no aiming), waiting for the game to start.
+func _blast_gloves(rig: Dictionary) -> BlastGame:
+	Shed.request({"a": "blast_use", "spot": rig["spot"], "on": true})
+	for i in 6:
+		await get_tree().physics_frame
+	return (rig["w"] as Walker).blast
+
+
+## Blasts a part's patches in the live game as if the jet had been there: every patch, or only
+## those on the right-hand (+x) half of it.
+func _blast_fake(game: BlastGame, id: int, right_half: bool) -> void:
+	var p: Dictionary = game.parts[id]
+	var pts: PackedVector3Array = p["points"]
+	var vox: PackedInt32Array = p["vox"]
+	var cells: PackedFloat32Array = p["cells"]
+	var mid := 0.0
+	for q in pts:
+		mid += q.x
+	mid /= maxf(pts.size(), 1)
+	var coats := game.marks.coats
+	for i in pts.size():
+		if vox[i] >= 0 and (not right_half or pts[i].x > mid):
+			coats[vox[i]] = 1.5
+			cells[i] = 1.5
+	game.marks.coats = coats
+	p["cells"] = cells
+
+
+## The bare metal you blast stays: kept on each part when you step back, drawn again on the
+## engine in the cabinet, carried, on the stand and in a bike (lined up the same on each), kept in
+## the save, and picked up again next time it's in the cabinet. A part blasted all over is drawn
+## bare all over.
+func _test_blast_keeps_bare_metal() -> void:
+	var rig: Dictionary = await _blast_rig()
+	var main: Node = rig["main"]
+	var w: Walker = rig["w"]
+	var engine: int = rig["engine"]
+	var parts: Array = rig["parts"]
+	var game := await _blast_gloves(rig)
+	check(game != null and parts.size() >= 3, "hands in the gloves (%d parts)" % parts.size())
+	if game == null:
+		main._leave()
+		main.queue_free()
+		await get_tree().physics_frame
+		return
+	# Half the block and every ancillary blasted, then step back.
+	for id in parts:
+		_blast_fake(game, int(id), int(id) == engine)
+	var half := float(game.stats(engine)["covered"])
+	var total := game.total()
+	w.finish_blast()
+	for i in 4:
+		await get_tree().process_frame
+	var kept: Dictionary = Shed.items[engine].get("blast", {})
+	check(kept.has("v") and BlastMarks.valid(kept) and absf(float(kept["c"]) - half) < 0.01 and half > 0.25 and half < 0.75,
+		"stepping back keeps where the block is bare on it (%d%% of it)" % roundi(half * 100.0))
+	var all_full := true
+	for id in parts:
+		if int(id) != engine:
+			all_full = all_full and Shed.blast_full(Shed.items[id])
+	check(all_full and not Shed.blast_full(Shed.items[engine]), "the ancillaries blasted all over count as bare metal all over, the half-done block doesn't")
+	check(Shed.condition_text(Shed.items[engine]).contains("Sandblasted"), "the part's info says how much of it is bare")
+	# Drawn again from what's kept, in the cabinet.
+	var cab_model: BikeModel = main.workshop.model_for({"engine": engine})
+	var saved: BlastMarks = cab_model.get_node_or_null("BlastSaved") if cab_model else null
+	check(saved != null and saved.bare_count() > 50, "the engine in the cabinet is redrawn with its bare metal on (%d cubes)" % (saved.bare_count() if saved else 0))
+	var head_slot := ""
+	for slot in PartsDB.ENGINE_SLOTS:
+		if head_slot == "" and Shed.engine_item(engine, slot) != 0:
+			head_slot = slot
+	var full_on := saved != null and saved.material_for(head_slot) != null and float(saved.material_for(head_slot).get_shader_parameter("full")) == 1.0 \
+		and float(saved.material_for("engine").get_shader_parameter("full")) == 0.0
+	check(full_on, "a part blasted all over is drawn bare metal all over (%s)" % head_slot)
+	# The same bare patches in a bike's engine, lined up from the middle of the block.
+	var bm := BikeModel.new()
+	add_child(bm)
+	var b := Shed.engine_build(engine)
+	bm.build_from(b, Color.RED, {}, b.condition, false)
+	var in_bike: BlastMarks = bm.get_node_or_null("BlastSaved")
+	var same := 0
+	var looked := 0
+	if saved and in_bike:
+		for i in saved.coats.size():
+			if saved.coats[i] < 1.0 or looked >= 400:
+				continue
+			var v := Vector3i(i % saved.dims.x, (i / saved.dims.x) % saved.dims.y, i / (saved.dims.x * saved.dims.y)) + saved.lattice - in_bike.lattice
+			if v.x < 0 or v.y < 0 or v.z < 0 or v.x >= in_bike.dims.x or v.y >= in_bike.dims.y or v.z >= in_bike.dims.z:
+				continue
+			looked += 1
+			if in_bike.coats[v.x + in_bike.dims.x * (v.y + in_bike.dims.y * v.z)] >= 1.0:
+				same += 1
+	check(in_bike != null and looked > 50 and same >= looked * 0.95,
+		"fitted to a bike, the engine shows the same bare patches in the same places (%d of %d)" % [same, looked])
+	bm.queue_free()
+	# Carried, and on the stand.
+	var carried := BikeModel.item_display(engine)
+	add_child(carried)
+	check((carried.get_meta("model") as BikeModel).get_node_or_null("BlastSaved") != null, "carried, it's still bare where it was blasted")
+	carried.queue_free()
+	var stand_spot := ""
+	for s in Shed.stand_spots():
+		if stand_spot == "" and Shed.item_at_spot(s) == 0:
+			stand_spot = s
+	Shed.request({"a": "take", "spot": rig["spot"]})
+	Shed.request({"a": "place", "spot": stand_spot})
+	for i in 3:
+		await get_tree().process_frame
+	var on_stand: BikeModel = main.workshop.model_for({"engine": engine})
+	check(Shed.item_at_spot(stand_spot) == engine and on_stand != null and on_stand.get_node_or_null("BlastSaved") != null,
+		"and on the engine stand")
+	# A bike's own engine blasted all over shows bare in the bike.
+	var bike: int = Shed.bikes.keys()[0]
+	var block := Shed.item_on(bike, "engine")
+	if block != 0:
+		Shed.items[block]["blast"] = {"c": 1.0, "p": 0.0}
+		Shed.changed.emit()
+		for i in 3:
+			await get_tree().process_frame
+		var bmodel: BikeModel = main.workshop.bike_model(bike)
+		var bs: BlastMarks = bmodel.get_node_or_null("BlastSaved") if bmodel else null
+		check(bs != null and float(bs.material_for("engine").get_shader_parameter("full")) == 1.0, "a blasted engine fitted to a bike is drawn bare metal")
+		Shed.items[block].erase("blast")
+	# Kept in the save (and a save from before has none).
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	var v_before := str(kept["v"])
+	Shed.load_state(copy, "Tester")
+	await get_tree().process_frame
+	check(Shed.items[engine].get("blast", {}).get("v", "") == v_before and BlastMarks.valid(Shed.items[engine]["blast"])
+		and Shed.items[engine].has("blast_base"), "where it's bare is kept in the save")
+	var fresh := Shed._new_item("paper_oil", 0.3, 0.2, 0.0)
+	check(Shed.blast_cover(Shed.items[fresh]) == 0.0 and not Shed.condition_of(Shed.items[fresh]).has("blast"), "a part never blasted has none")
+	Shed.items.erase(fresh)
+	# Back in the cabinet it carries on from where it was.
+	Shed.request({"a": "take", "spot": stand_spot})
+	Shed.request({"a": "place", "spot": rig["spot"]})
+	for i in 5:
+		await get_tree().process_frame
+	var rust_mid := float(Shed.items[engine]["rust"])
+	game = await _blast_gloves(rig)
+	check(game != null and absf(game.total() - total) < 0.03 and game.newly_done().is_empty(),
+		"back in the cabinet, it starts from what's bare already (%d%% of %d%%)" % [roundi(game.total() * 100.0) if game else 0, roundi(total * 100.0)])
+	if game:
+		_blast_fake(game, engine, false)
+		var xp_before := int(Progress.profile.get("xp", 0))
+		w.finish_blast()
+		await get_tree().process_frame
+		check(float(Shed.items[engine]["rust"]) == 0.0 and rust_mid > 0.2 and Shed.blast_full(Shed.items[engine]),
+			"finishing the job strips the rest, from how rusty it was to start with")
+		check(int(Progress.profile.get("xp", 0)) > xp_before, "and pays for the part that came up bare this time")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The scan button at the sandblaster: the engine lights up where there's still rust to blast, the
+## readout lists how much is left on each part and each side, and the crew see it.
+func _test_blast_scan() -> void:
+	var g := BlastGame.new()
+	g.parts = {1: {"slot": "engine", "name": "Engine", "points": PackedVector3Array([Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]),
+		"normals": PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.DOWN, Vector3.LEFT]),
+		"cells": PackedFloat32Array([1.2, 1.2, 0.0, 0.3])}}
+	var s := g.scan()
+	var sides := {}
+	for row in s["sides"]:
+		sides[str(row["name"])] = float(row["left"])
+	check(absf(float(s["left"]) - 0.5) < 0.001 and sides.get("Top", -1.0) == 0.0 and sides.get("Underneath", -1.0) == 1.0
+		and sides.get("Left side", -1.0) == 1.0 and not sides.has("Front"), "the scan works out what's still to blast, side by side")
+	var rig: Dictionary = await _blast_rig()
+	var main: Node = rig["main"]
+	var w: Walker = rig["w"]
+	var engine: int = rig["engine"]
+	var game := await _blast_gloves(rig)
+	if game == null:
+		check(false, "hands in the gloves")
+		main._leave()
+		main.queue_free()
+		await get_tree().physics_frame
+		return
+	_blast_fake(game, engine, true)
+	var view: EquipmentView = main.workshop.furniture_nodes[rig["cab"]]
+	check(not game.scanning and not view.scan_lit() and view.get_node_or_null("ScanButton") != null, "the cabinet has a scan button, off to start with")
+	_press("blast_scan")
+	for i in 30:
+		await get_tree().physics_frame
+	await get_tree().process_frame
+	var hud: BlastHud = main.hud.blast_hud
+	var mat := game.marks.material_for("engine")
+	check(game.scanning and view.scan_lit() and float(mat.get_shader_parameter("scan")) > 0.3,
+		"X scans: the button lights and the engine glows where there's rust still to blast")
+	var sv: Dictionary = hud.scan_view
+	check(not sv.is_empty() and absf(float(sv["left"]) - (1.0 - game.total())) < 0.02 and (sv["parts"] as Array).size() == game.parts.size(),
+		"the readout says how much is still to blast, part by part (%d%% left)" % roundi(float(sv.get("left", 0.0)) * 100.0))
+	var by := {}
+	for row in sv.get("sides", []):
+		by[str(row["name"])] = float(row["left"])
+	check(by.size() >= 4 and float(by.get("Right side", 1.0)) < float(by.get("Left side", 0.0)),
+		"and side by side: the blasted right side has less left than the left (%d%% vs %d%%)" % [roundi(float(by.get("Right side", 1.0)) * 100.0), roundi(float(by.get("Left side", 0.0)) * 100.0)])
+	check(bool(Shed.crew[Shed.me()].get("blast_scan", false)), "the crew are told the scan is on, so they see it too")
+	check(w.blast_controls().contains("scan"), "the controls along the bottom say how to scan")
+	_press("blast_scan")
+	for i in 60:
+		await get_tree().physics_frame
+	await get_tree().process_frame
+	check(not game.scanning and not view.scan_lit() and float(mat.get_shader_parameter("scan")) < 0.01 and hud.scan_view.is_empty(), "press it again and the scan goes off")
+	w.finish_blast()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## After blasting, the engine hangs on a paint shop hook (on a lifting sling) and the spray gun
+## gives it a protective coat: clear lacquer over the bare metal or engine enamel. A coat keeps
+## flash rust and muck off when it's ridden; bare metal without one rusts.
+func _test_protective_coat() -> void:
+	var rig: Dictionary = await _blast_rig()
+	var main: Node = rig["main"]
+	var w: Walker = rig["w"]
+	var engine: int = rig["engine"]
+	var parts: Array = rig["parts"]
+	var me := Shed.me()
+	var clear := {"a": "coat", "item": engine, "coat": "clear", "gun": true, "quality": 0.9}
+	check(Shed.check(me, clear).contains("paint shop"), "a coat goes on in the paint shop")
+	# Blast it all bare.
+	Shed.request({"a": "blast_use", "spot": rig["spot"], "on": true})
+	var res := {}
+	for id in parts:
+		res[id] = [0.95, 0.0]
+	Shed.request({"a": "blast", "spot": rig["spot"], "parts": res})
+	await get_tree().physics_frame
+	check(parts.all(func(id): return float(Shed.items[id]["rust"]) == 0.0 and Shed.blast_full(Shed.items[id])), "blasted bare all over")
+	# Hang it in the paint shop.
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var hook: String = Shed.furniture_spots(booth)[2]
+	Shed.request({"a": "take", "spot": rig["spot"]})
+	check(Shed.check(me, {"a": "place", "spot": hook}) == "", "an engine hangs on a paint shop hook")
+	Shed.request({"a": "place", "spot": hook})
+	for i in 3:
+		await get_tree().process_frame
+	var ws: Workshop = main.workshop
+	var disp: Node3D = ws._spot_nodes.get(hook, null)
+	var swing: Node = disp.get_parent() if disp else null
+	var size: Vector3 = disp.get_meta("size", Vector3.ZERO) if disp else Vector3.ZERO
+	var hook_y := (swing.get_node("Hook") as Node3D).global_position.y if swing and swing.get_node_or_null("Hook") else 0.0
+	var top_y := disp.global_position.y + size.y if disp else 0.0
+	check(swing is Swing and swing.get_node_or_null("EngineSling") != null and top_y < hook_y and top_y > hook_y - 0.4 and disp.global_position.y > 0.2,
+		"on a lifting sling, its top just under the hook and clear of the floor (top %.2f, hook %.2f)" % [top_y, hook_y])
+	# The spray gun's coats: after the paint finishes.
+	w.set_tool("gun")
+	w.spray_finish = Shed.FINISHES.size()
+	check(w.spray_coat() == "clear" and w.spray_text() == "Clear lacquer", "the spray gun has protective coats after its finishes")
+	var seen := []
+	for i in Shed.FINISHES.size() + Shed.COAT_ORDER.size():
+		seen.append(w.spray_coat())
+		w.spray_finish = (w.spray_finish + 1) % (Shed.FINISHES.size() + Shed.COAT_ORDER.size())
+	check(seen.filter(func(c): return c != "").size() == Shed.COAT_ORDER.size(), "T goes through every coat")
+	# Looking at the hung engine with a coat loaded, the work button sprays it on.
+	w.spray_finish = Shed.FINISHES.size()
+	var mid: Vector3 = disp.global_position + Vector3.UP * size.y * 0.5
+	var stand := mid + Vector3(-1.4, 0.0, 0.0)
+	w.place(Transform3D(Basis(), Vector3(stand.x, 0.05, stand.z)))
+	await _aim_point(w, mid)
+	for i in 3:
+		await get_tree().physics_frame
+	var pa: Dictionary = w.plan.get("action", {})
+	check(str(pa.get("a", "")) == "coat" and int(pa.get("item", 0)) == engine and str(w.plan.get("blocked", "x")) == "",
+		"aimed at it with clear lacquer loaded, the work button coats the engine (%s)" % str(pa))
+	w.set_tool("spray")
+	check(w.spray_coat() == "" and not w.spray_text().contains("lacquer"), "the spray can only has paint")
+	w.set_tool("hands")
+	# Rusty bits can't be coated.
+	var anc: int = parts[1]
+	Shed.items[anc]["rust"] = 0.5
+	check(Shed.check(me, clear).contains("sandblast"), "a coat won't go over rust: blast it first")
+	Shed.items[anc]["rust"] = 0.0
+	var xp_before := int(Progress.profile.get("xp", 0))
+	Shed.request(clear)
+	check(parts.all(func(id): return Shed.items[id].get("coat", "") == "clear" and float(Shed.items[id]["coat_q"]) >= 0.9 and Shed.blast_full(Shed.items[id])),
+		"clear lacquer goes on the whole engine, ancillaries and all, the bare metal under it")
+	check(int(Progress.profile.get("xp", 0)) > xp_before and Shed.condition_text(Shed.items[engine]).contains("Protective coat"), "it pays XP and shows in the part's info")
+	for i in 3:
+		await get_tree().process_frame
+	var model: BikeModel = (ws._spot_nodes[hook] as Node3D).get_meta("model")
+	var bs: BlastMarks = model.get_node_or_null("BlastSaved")
+	check(bs != null and float(bs.material_for("engine").get_shader_parameter("lacquer")) > 0.5, "the bare metal shines under its clear coat")
+	# Kept in the save.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Tester")
+	await get_tree().process_frame
+	check(Shed.items[engine].get("coat", "") == "clear", "the coat is kept in the save")
+	# Engine enamel paints it.
+	Shed.request({"a": "coat", "item": engine, "coat": "enamel_black", "gun": true, "quality": 1.0})
+	check(parts.all(func(id): return Shed.items[id]["color"] == Shed.PAINTS[6] and not Shed.items[id].has("blast") and Shed.items[id]["coat"] == "enamel_black"),
+		"black engine enamel paints the lot black over the bare metal")
+	for i in 3:
+		await get_tree().process_frame
+	model = (ws._spot_nodes[hook] as Node3D).get_meta("model")
+	check(model.get_node_or_null("BlastSaved") == null, "and it's drawn painted, not bare")
+	# Riding: bare metal without a coat flash-rusts; a coat keeps it off and the muck from sticking.
+	var bike: int = Shed.bikes.keys()[0]
+	var block := Shed.item_on(bike, "engine")
+	var filter := Shed.item_on(bike, "oil_filter")
+	check(block != 0 and filter != 0, "a bike with an engine to ride")
+	if block != 0 and filter != 0:
+		for id in [block, filter]:
+			Shed.items[id]["rust"] = 0.0
+			Shed.items[id]["dirt"] = 0.0
+			Shed.items[id]["blast"] = {"c": 1.0, "p": 0.0}
+			Shed.items[id].erase("coat")
+		Shed.items[filter]["coat"] = "clear"
+		Shed.items[filter]["coat_q"] = 1.0
+		Shed._wear_from_ride(bike, {"km": 5.0, "dirt_km": 1.0})
+		var dirt_bare := float(Shed.items[block]["dirt"])
+		var dirt_coat := float(Shed.items[filter]["dirt"])
+		for i in 9:
+			Shed._wear_from_ride(bike, {"km": 5.0, "dirt_km": 2.0})
+		var bare_rust := float(Shed.items[block]["rust"])
+		var coat_rust := float(Shed.items[filter]["rust"])
+		check(bare_rust > 0.2 and coat_rust < bare_rust * 0.3, "ridden, bare metal flash-rusts (%.2f) and coated metal hardly does (%.2f)" % [bare_rust, coat_rust])
+		check(dirt_bare > 0.05 and dirt_coat < dirt_bare * 0.6 and float(Shed.items[filter]["coat_q"]) < 1.0,
+			"the coat keeps muck from sticking (%.2f vs %.2f), and wears thinner with the miles" % [dirt_coat, dirt_bare])
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame

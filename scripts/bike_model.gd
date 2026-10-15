@@ -172,8 +172,30 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	set_gauges(0.0, 0.0)
 	# Parked, every lamp and the clocks are dark until the engine runs (see set_lights).
 	set_lights(false, false)
+	# Before the bike's own fit moves anything: the mask is laid out where the parts were drawn.
+	_show_blasted()
 	if not geometry.is_empty():
 		apply_geometry(geometry)
+
+
+## Sandblasted bare metal on the engine, wherever it's drawn (see BlastMarks.show_saved). A part
+## off its engine is drawn bare only if it was blasted all over: where exactly depends on the
+## engine it was on.
+func _show_blasted() -> void:
+	var looks := {}
+	var on_engine := is_fitted("engine") and not (_slot_meshes.get("engine", []) as Array).is_empty()
+	for slot in ["engine"] + Array(PartsDB.ENGINE_SLOTS):
+		var cond = condition.get(slot)
+		if not (cond is Dictionary) or not ((cond as Dictionary).has("blast") or (cond as Dictionary).get("blast_full", false)):
+			continue
+		var look: Dictionary = (cond as Dictionary).duplicate()
+		if not on_engine:
+			look.erase("blast")
+			if not look.get("blast_full", false):
+				continue
+		looks[slot] = look
+	if not looks.is_empty():
+		BlastMarks.show_saved(self, looks)
 
 
 ## Where each cylinder's barrel sits and which way it points, for the engine layout. Barrels
@@ -2312,6 +2334,14 @@ func _mat(color: Color, metallic: float, roughness: float, clearcoat := 0.0) -> 
 	if finish != "" and cond.has("color") and color == cond["color"]:
 		_apply_finish(m, color, finish)
 		metallic = m.metallic
+		roughness = m.roughness
+	# A clear protective coat over paint adds its own gloss.
+	var lacquer := Shed.coat_gloss(str(cond.get("coat", ""))) if cond.has("coat") else 0.0
+	if lacquer > 0.0 and cond.has("color") and color == cond["color"]:
+		m.clearcoat_enabled = true
+		m.clearcoat = maxf(m.clearcoat, lacquer)
+		m.clearcoat_roughness = 0.05
+		m.roughness = m.roughness * (1.0 - 0.4 * lacquer)
 		roughness = m.roughness
 	var rust := float(cond.get("rust", 0.0))
 	var dirt := float(cond.get("dirt", 0.0))

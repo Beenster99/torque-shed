@@ -700,7 +700,8 @@ func add_hook_wire(hanger: Node3D, drop: float) -> void:
 ## A walk-in-sized blast cabinet on legs (sized to take the biggest engine with room to turn it
 ## right over, see Equipment.blaster_inside): a steel chamber with a sloping glass window, two
 ## glove ports in the front, and a turntable grate with a post the engine is held up on
-## ("Pivot"). No light of its own: you see in by the shed's light through the glass. The nozzle
+## ("Pivot"). Two strip lights under the roof light the chamber ("CabinetLight"), and a scan button
+## on the front panel ("ScanButton") glows while the scan is on. The nozzle
 ## ("Nozzle") points where the person at the gloves aims: thousands of fine, fast grains of sand
 ## shoot out of it, ricochet off the engine and the walls and patter down onto the grate, with
 ## rust and dust kicking back off the metal, sparks off fresh metal and a haze of grit.
@@ -832,6 +833,12 @@ func _build_blaster() -> void:
 		c.position = box[0]
 		c.size = box[1]
 		walls.add_child(c)
+	_blaster_lights(inside, size)
+	# The scan button on the front panel, right of the name plate: it glows while scanning.
+	var button := _cyl(Vector3(size.x * 0.36, floor_y + 0.22, depth * 0.5 + 0.01), 0.035, 0.03, _scan_mat(), Vector3.BACK)
+	button.name = "ScanButton"
+	_cyl(Vector3(size.x * 0.36, floor_y + 0.22, depth * 0.5 + 0.002), 0.048, 0.012, _mat("dark"), Vector3.BACK)
+	_name_plate("SCAN", Vector3(size.x * 0.36, floor_y + 0.13, depth * 0.5 + 0.005), 14)
 	blast_sound = Sfx.make_loop_player(self)
 	blast_sound.position = Vector3(0.0, floor_y + 0.4, 0.0)
 	blast_sound.volume_db = -3.0
@@ -852,6 +859,56 @@ func _build_blaster() -> void:
 	_ws._target(Vector3(0.0, floor_y * 0.5, 0.0), Vector3(size.x, floor_y, depth) + Vector3(0.04, 0.0, 0.04), {"furniture": id}, self)
 	for spot in Shed.furniture_spots(id):
 		_ws._target(Vector3(0.0, (floor_y + top) * 0.5, 0.0), Vector3(size.x - 0.1, top - floor_y, depth - 0.1), {"spot": spot}, self)
+
+
+## Strip lights under the cabinet's roof, front and back of the turntable, and the light they give:
+## a wide cone straight down over the turntable, shadowed so it stays inside the chamber.
+func _blaster_lights(inside: Dictionary, size: Vector3) -> void:
+	var top := float(inside["roof"])
+	var tube_mat := StandardMaterial3D.new()
+	tube_mat.albedo_color = Color(0.95, 0.97, 1.0)
+	tube_mat.emission_enabled = true
+	tube_mat.emission = Color(0.92, 0.96, 1.0)
+	tube_mat.emission_energy_multiplier = 3.0
+	for z in [float(inside["back"]) + 0.22, float(inside["glass_z"]) - 0.12]:
+		_deco(Vector3(0.0, top - 0.03, z), Vector3(size.x * 0.7, 0.03, 0.08), _mat("steel"))
+		var tube := _cyl(Vector3(0.0, top - 0.06, z), 0.016, size.x * 0.66, tube_mat, Vector3.RIGHT)
+		tube.name = "CabinetTube"
+		tube.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var lamp := SpotLight3D.new()
+	lamp.name = "CabinetLight"
+	lamp.position = Vector3(0.0, top - 0.09, float(inside["turn_z"]))
+	lamp.rotation.x = -PI * 0.5
+	lamp.spot_angle = 62.0
+	lamp.spot_range = top - float(inside["floor"]) + 0.3
+	lamp.spot_attenuation = 0.6
+	lamp.light_energy = 2.2
+	lamp.light_color = Color(0.95, 0.97, 1.0)
+	lamp.shadow_enabled = true
+	add_child(lamp)
+
+
+var _scan_glow: StandardMaterial3D
+
+
+func _scan_mat() -> StandardMaterial3D:
+	if _scan_glow == null:
+		_scan_glow = StandardMaterial3D.new()
+		_scan_glow.albedo_color = Color(0.1, 0.55, 0.25)
+		_scan_glow.emission_enabled = true
+		_scan_glow.emission = Color(0.2, 1.0, 0.45)
+		_scan_glow.emission_energy_multiplier = 0.2
+	return _scan_glow
+
+
+## Lights the scan button while the engine in this cabinet is being scanned.
+func set_scan_light(on: bool) -> void:
+	if _scan_glow:
+		_scan_glow.emission_energy_multiplier = 3.0 if on else 0.2
+
+
+func scan_lit() -> bool:
+	return _scan_glow != null and _scan_glow.emission_energy_multiplier > 1.0
 
 
 ## The sand stream bounces off the engine itself: a particle collider on each of the biggest
@@ -1117,7 +1174,11 @@ func _process(delta: float) -> void:
 	var at = c.get("blast_at", Vector3.ZERO)
 	var firing := user != 0 and bool(c.get("blast_fire", false))
 	_show_blast(r if r is Vector2 else Vector2.ZERO, firing, at if at is Vector3 else Vector3.ZERO, Vector3.UP, 0.3, 0)
+	var scanning := user != 0 and bool(c.get("blast_scan", false))
+	set_scan_light(scanning)
 	_spectate(delta, user, firing, at if at is Vector3 else Vector3.ZERO)
+	if is_instance_valid(_watch):
+		_watch.set_scan(scanning)
 
 
 ## Watching someone else blast: their jet strips the engine in front of you too, from where
@@ -1129,7 +1190,7 @@ func _spectate(delta: float, user: int, firing: bool, at: Vector3) -> void:
 			_watch.queue_free()
 		_watch = null
 		return
-	if not firing or at == Vector3.ZERO:
+	if (not firing or at == Vector3.ZERO) and not bool(Shed.crew.get(user, {}).get("blast_scan", false)):
 		return
 	var spot := ""
 	for s in Shed.furniture_spots(id):
@@ -1148,7 +1209,15 @@ func _spectate(delta: float, user: int, firing: bool, at: Vector3) -> void:
 			if Shed.engine_item(engine, slot) != 0:
 				slots.append(slot)
 		_watch.setup(engine_model, slots, BlastGame.OVER)
+		# Starting from what's already bare on it.
+		for slot in slots:
+			var part := engine if slot == "engine" else Shed.engine_item(engine, slot)
+			if Shed.items[part].has("blast"):
+				_watch.import_data(Shed.items[part]["blast"])
+			_watch.set_look(slot, 1.0 if Shed.blast_full(Shed.items[part]) else 0.0)
 		engine_model.add_child(_watch)
+	if not firing or at == Vector3.ZERO:
+		return
 	var nozzle: Node3D = get_node_or_null("Nozzle")
 	if nozzle == null:
 		return

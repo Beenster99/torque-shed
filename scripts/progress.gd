@@ -73,6 +73,7 @@ const XP := {
 	"repair": {"xp": 10, "label": "Restoring"},
 	"sandblast": {"xp": 10, "label": "Sandblasting"},
 	"paint": {"xp": 12, "label": "Spraying"},
+	"protect_coat": {"xp": 12, "label": "Protective coat"},
 	"lighten": {"xp": 8, "label": "Lightening"},
 	"tyre_remove": {"xp": 4, "label": "Tyre off"},
 	"tyre_fit": {"xp": 10, "label": "Tyre fitting"},
@@ -120,7 +121,7 @@ const PAY := {
 	"dyno_strap": 0, "dyno_hose": 1, "fluids": 3, "start_build": 10,
 	"bin": 0, "tip": 1, "recycle_plastic": 1, "recycle_metal": 2,
 	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "chain_lube": 3,
-	"repair": 6, "sandblast": 6, "paint": 8, "lighten": 5, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
+	"repair": 6, "sandblast": 6, "paint": 8, "protect_coat": 8, "lighten": 5, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
 	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
 	"sell_bike": 50, "sell_part": 2,
 }

@@ -277,8 +277,37 @@ func _blast_shots() -> void:
 	await _frames(10)
 	await _shot("c9_sandblaster_bare_patches")
 	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9b_sandblaster_satin_closeup")
+	# The scan: red where there's still rust to blast, and the readout of what's left.
+	if w.blast:
+		w.toggle_blast_scan()
+	await _frames(40)
+	await _shot("c9c_sandblaster_scan")
+	if w.blast:
+		w.toggle_blast_scan()
 	w.finish_blast()
 	await _frames(10)
+	# Stepped back: the bare patches stay.
+	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9d_sandblaster_after_step_back")
+	# Blasted bare all over, hung in the paint shop and given a clear coat.
+	Shed.request({"a": "blast_use", "spot": spot, "on": true})
+	var res := {}
+	for id in rusty:
+		res[id] = [0.95, 0.0]
+	Shed.request({"a": "blast", "spot": spot, "parts": res})
+	await _frames(5)
+	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9e_sandblaster_all_bare")
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var hook: String = Shed.furniture_spots(booth)[2]
+	Shed.request({"a": "take", "spot": spot})
+	Shed.request({"a": "place", "spot": hook})
+	Shed.request({"a": "coat", "item": engine, "coat": "clear", "gun": true, "quality": 0.95})
+	await _frames(20)
+	var hung: Node3D = main.workshop._spot_nodes[hook]
+	var mid := hung.global_position + Vector3.UP * 0.3
+	await _look_from(mid + Vector3(-1.6, -mid.y, 0.4), mid, "c9f_engine_hung_clear_coat")
 
 
 ## The sales office: from the car park by day and lit up at night, the showroom with bikes on its

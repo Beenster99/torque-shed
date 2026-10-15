@@ -68,7 +68,7 @@ const ACTIONS := [
 	["tool_6", "Pressure washer", ["foot", "board"]], ["tool_7", "Spray gun", ["foot", "board"]],
 	["tool_8", "Stopwatch", ["foot", "board"]],
 	["spray_colour", "Spray colour", ["spray"]], ["spray_finish", "Spray finish", ["spray"]],
-	["rename", "Name a bike", ["foot"]],
+	["rename", "Name a bike", ["foot"]], ["blast_scan", "Sandblaster: scan the engine", ["foot"]],
 	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
 	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot", "ride"]],
@@ -268,6 +268,8 @@ func _setup_inputs() -> void:
 	# Point at something and ping it for the crew to see.
 	_bind("ping", [KEY_G], [JOY_BUTTON_DPAD_RIGHT], [MOUSE_BUTTON_MIDDLE])
 	_bind("rename", [KEY_N], [])
+	# At the sandblaster's gloves: scan the engine for what's still to blast.
+	_bind("blast_scan", [KEY_X], [JOY_BUTTON_DPAD_UP])
 	# Turn a part in your hands, equipment you're carrying, a poster before you hang it or a
 	# picture on the whiteboard: , and . (the < and > keys); View on a pad turns it right.
 	_bind("rotate_left", [KEY_COMMA], [])

@@ -3,7 +3,8 @@ extends Control
 ## The sandblaster's readout, while your hands are in the gloves: a big bar across the top for
 ## the whole engine, and down the left each part with how much of it is bare metal and its rust,
 ## muck, wear and condition as they change. When a part comes up bare the screen flashes and
-## "Bare metal!" pops up; when the whole engine is done it says so, big.
+## "Bare metal!" pops up; when the whole engine is done it says so, big. With the scan on, a panel
+## down the right shows what's still to blast: over the whole engine, part by part and side by side.
 
 const GOOD := Color(0.45, 0.95, 0.55)
 const BAD := Color(1.0, 0.45, 0.35)
@@ -11,6 +12,7 @@ const RUST := Color(0.85, 0.45, 0.2)
 const METAL := Color(0.78, 0.86, 0.95)
 const CUE_LIFE := 1.8
 const ENGINE_CUE_LIFE := 3.2
+const SCAN := Color(0.35, 1.0, 0.55)
 
 var walker: Walker
 var game: BlastGame
@@ -18,6 +20,9 @@ var game: BlastGame
 var cue := {}
 var flash := 0.0
 var _row_flash := {}     # part name -> seconds of glow left on its row
+## The latest scan readout (BlastGame.scan), refreshed a few times a second while it's on.
+var scan_view := {}
+var _scan_age := 0.0
 
 
 func _ready() -> void:
@@ -32,7 +37,15 @@ func _process(delta: float) -> void:
 		cue = {}
 		flash = 0.0
 		_row_flash.clear()
+		scan_view = {}
 		return
+	if game.scanning:
+		_scan_age -= delta
+		if _scan_age <= 0.0 or scan_view.is_empty():
+			_scan_age = 0.25
+			scan_view = game.scan()
+	else:
+		scan_view = {}
 	while not walker.blast_cues.is_empty():
 		var c: Dictionary = walker.blast_cues.pop_front()
 		# The whole engine trumps a part finishing at the same moment.
@@ -104,7 +117,46 @@ func _draw() -> void:
 		y += row_h
 	# How to work it, along the bottom.
 	draw_string(font, Vector2(0, size.y - 120.0), walker.blast_controls(), HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
+	_draw_scan(font)
 	_draw_cue(font)
+
+
+## The scan's readout down the right: how much is still to blast, and where.
+func _draw_scan(font: Font) -> void:
+	if scan_view.is_empty():
+		return
+	var parts: Array = scan_view["parts"]
+	var sides: Array = scan_view["sides"]
+	var w := 340.0
+	var h := 96.0 + parts.size() * 26.0 + 30.0 + sides.size() * 26.0
+	var r := Rect2(size.x - w - 24.0, 160.0, w, h)
+	draw_rect(r, Color(0.02, 0.06, 0.04, 0.8))
+	draw_rect(Rect2(r.position, Vector2(r.size.x, 3.0)), SCAN)
+	var left := float(scan_view["left"])
+	draw_string(font, r.position + Vector2(14, 28), "SCAN", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, SCAN)
+	draw_string(font, r.position + Vector2(14, 28), "%d%% STILL TO BLAST" % roundi(left * 100.0) if left > 0.0005 else "ALL BARE",
+		HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 28.0, 18, Color.WHITE)
+	draw_string(font, r.position + Vector2(14, 50), "Red on the engine: rust still to blast · purple: pitted", HORIZONTAL_ALIGNMENT_LEFT,
+		r.size.x - 28.0, 12, Color(1, 1, 1, 0.65))
+	var y := r.position.y + 78.0
+	for p in parts:
+		_scan_row(font, r.position.x + 14.0, y, r.size.x - 28.0, str(p["name"]), float(p["left"]))
+		y += 26.0
+	draw_string(font, Vector2(r.position.x + 14.0, y + 10.0), "BY SIDE", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, SCAN)
+	y += 30.0
+	for s in sides:
+		_scan_row(font, r.position.x + 14.0, y, r.size.x - 28.0, str(s["name"]), float(s["left"]))
+		y += 26.0
+
+
+## One line of the scan: a name, a bar of how much is still rusty, and its percentage.
+func _scan_row(font: Font, x: float, y: float, w: float, label: String, left: float) -> void:
+	var c := GOOD.lerp(BAD, clampf(left * 4.0, 0.0, 1.0)) if left > 0.0005 else GOOD
+	draw_string(font, Vector2(x, y), label, HORIZONTAL_ALIGNMENT_LEFT, 130.0, 14, Color.WHITE)
+	var bar := Rect2(x + 136.0, y - 11.0, w - 196.0, 10.0)
+	draw_rect(bar, Color(0.0, 0.0, 0.0, 0.55))
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(left, 0.0, 1.0), bar.size.y)), BAD)
+	draw_string(font, Vector2(x, y), "%d%% left" % roundi(left * 100.0) if left > 0.0005 else "bare", HORIZONTAL_ALIGNMENT_RIGHT, w, 14, c)
 
 
 ## A progress bar, with a mark where a part counts as done.
