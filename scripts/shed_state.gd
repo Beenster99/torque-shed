@@ -860,7 +860,7 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 				for id in _blast_parts(engine):
 					base[id] = _blast_base_of(id)
 				c["blast_base"] = base
-				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse. F to step back."
+				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse, X to scan it. F to step back."
 			c["blaster"] = 0
 			c["blast_fire"] = false
 			c["blast_scan"] = false

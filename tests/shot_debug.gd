@@ -266,12 +266,12 @@ func _blast_shots() -> void:
 	await _frames(5)
 	# Sweep the jet over one side in bands, turning the engine a little between them.
 	Input.action_press("act")
-	for i in 900:
+	for i in 260:
 		await get_tree().physics_frame
 		if w.blast:
 			w.blast.turn(Vector2(0.004 * sin(i * 0.01), 0.0))
 		w._look(0.0025 * sin(i * 0.09), 0.0012 * cos(i * 0.011))
-		if i == 700:
+		if i == 220:
 			await _shot("c8_sandblaster_mid_blast")
 	Input.action_release("act")
 	await _frames(10)
