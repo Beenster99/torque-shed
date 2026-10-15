@@ -134,8 +134,24 @@ static func bike_text(o: Dictionary) -> String:
 	var parts: Dictionary = o.get("parts", {})
 	if str(o.get("kind", "")) == "bespoke":
 		return "Starts as a bare %s on a bay, built up from nothing." % PartsDB.part_name(str(parts.get("frame", ""))).to_lower()
-	return "Their bike: %s, a %s with a %s." % [o.get("bike_name", ""), PartsDB.part_name(str(parts.get("engine", ""))),
+	var text := "Their bike: %s, a %s with a %s." % [o.get("bike_name", ""), PartsDB.part_name(str(parts.get("engine", ""))),
 		PartsDB.part_name(str(parts.get("frame", ""))).to_lower()]
+	if o.has("paint"):
+		text += " It's parked in the car park: take the job on and they leave you the keys to bring it in."
+	return text
+
+
+## Where a job's bike is: in a bay, still in the car park where the customer left it, or out.
+static func where_text(bike: Dictionary) -> String:
+	if not (bike.get("xf") is Transform3D):
+		return "gone"
+	var at: Vector3 = (bike["xf"] as Transform3D).origin
+	var bay := Shed.bay_at(at)
+	if bay >= 0:
+		return "bay %d" % (bay + 1)
+	if SalesOffice.FORECOURT.has_point(Vector2(at.x, at.z)) and Workshop.room_at(at) == "":
+		return "in the car park: ride or wheel it into a bay"
+	return "out of its bay"
 
 
 ## Changes to anything the jobs list shows, so it's only rebuilt when they happen.
@@ -181,7 +197,7 @@ static func _fill_job(box: VBoxContainer, job: Dictionary) -> void:
 	var late := Contracts.clock() > float(job["due"])
 	box.add_child(UITheme.title(str(job["title"]), 20))
 	var bike: Dictionary = Shed.bikes.get(int(job["bike"]), {})
-	var where := "bay %d" % (int(bike.get("bay", 0)) + 1) if int(bike.get("bay", -1)) >= 0 else "out of its bay"
+	var where := ContractPanel.where_text(bike)
 	box.add_child(UITheme.label("For %s  ·  %s  ·  %s" % [job["customer"], where, Contracts.due_text(float(job["due"]))], 15,
 		Color(1, 0.5, 0.4) if late else Color(1, 1, 1, 0.75)))
 	for r in Contracts.evaluate(job):

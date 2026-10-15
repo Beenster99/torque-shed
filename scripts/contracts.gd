@@ -7,9 +7,12 @@ extends RefCounted
 ##   mot      the yearly test: inspect it (see MotTest), fix what fails, re-test, hand it back
 ##   mod      modifications to a budget: 2-4 goals (speed, weight, a style, panniers, pipes, paint)
 ##   bespoke  a ground-up build on a bare frame, to an exclusive customer's targets
-## Taking a job on delivers the customer's bike to a free bay. Hand it back near reception
-## (or just outside the roller door) from the Contracts panel: the goals are checked, the
-## garage and the crew who worked on it are paid, and the reputation moves.
+## Customers ride their own bike in along the road, park it in the sales office car park and
+## walk in to reception. Taking the job on leaves their bike (and its keys) in the car park for
+## the crew to ride or wheel into a bay; a bespoke build's bare frame goes straight onto a bay.
+## Hand it back from any bay (or near reception, or just outside the roller door) from the
+## Contracts panel: the goals are checked, the garage and the crew who worked on it are paid,
+## the reputation moves, and the customer walks in, collects it and rides it away.
 ##
 ## All of it is host-authoritative shed state in Shed.contracts (saved with the shed). Players
 ## ask for changes with Shed.request({"a": "contract_..."}), which Shed hands to check()/apply().
@@ -32,6 +35,18 @@ const MAX_DONE := 12
 const HANDBACK_RADIUS := 10.0
 const WORKER_SHARE := 0.5            # of the labour and tip, split among the crew who did the work
 const WALK_SPEED := 1.4              # m/s, for the customer figures
+const RIDE_SPEED := 9.0              # m/s, a customer riding in or away along the yard
+## The car park's marked bays (see SalesOffice._build_paving): how many, how far apart, and
+## where the first one's middle is from the forecourt's corner. Bikes park nose-in to the office.
+const PARK_SLOTS := 6
+const PARK_STEP := 2.6
+const PARK_FROM := Vector2(3.3, 11.6)
+## Where the road runs past the yard, by x: customers ride along it between these.
+const ROAD_FAR_X := 72.0
+const ROAD_TURN_X := 24.0
+## How long a finished job's ride away is kept (game hours), for players arriving to see it.
+const LEAVING_HOURS := 2.0
+const MAX_LEAVING := 6
 const DAY := 24.0
 ## Actions that are not work on a bike, so they don't count someone as having worked on it.
 const NOT_WORK: Array[String] = ["mount", "grab_bike", "release_bike", "ride", "status", "ping", "tv_channel", "tune"]
@@ -67,7 +82,7 @@ const HAIR := [Color(0.1, 0.07, 0.05), Color(0.35, 0.2, 0.1), Color(0.75, 0.6, 0
 ## A new shed's contracts: nobody waiting yet, no reputation.
 static func empty() -> Dictionary:
 	return {"clock": 0.0, "next_at": FIRST_CUSTOMER, "reputation": 0, "customers": {}, "jobs": {}, "done": [],
-		"next": 1, "certs": 0, "earned": 0}
+		"next": 1, "certs": 0, "earned": 0, "leaving": []}
 
 
 ## Saved or synced contracts made safe to use: anything missing (sheds from before contracts)
@@ -180,16 +195,136 @@ static func entry() -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(-4.5, 0.0, Workshop.HALF.y + 14.0))
 
 
-## The way a customer walks in: from the entry, through the sales doors if there are any, to
-## the counter. A queue forms behind the first one.
-static func path_in(place: int) -> PackedVector3Array:
+## The way a customer walks in: from the entry (or from beside their bike in car park bay
+## `park`, along the walkway), through the sales doors if there are any, to the counter. A
+## queue forms behind the first one.
+static func path_in(place: int, park := -1) -> PackedVector3Array:
 	var pts := PackedVector3Array()
-	pts.append(entry().origin)
 	var door = _const("SALES_DOOR")
+	if park >= 0:
+		var side := park_xf(park).origin + Vector3(0.75, 0.0, 0.3)
+		var kerb := SalesOffice.FORECOURT.position.y + 8.2
+		pts.append(side)
+		pts.append(Vector3(side.x, 0.0, kerb))
+		if door is Vector3:
+			pts.append(Vector3(door.x, 0.0, kerb))
+	else:
+		pts.append(entry().origin)
 	if door is Vector3:
 		pts.append(door)
 	var at := reception()
 	pts.append(at.origin + at.basis.z * (1.0 * place) + at.basis.x * (0.3 * place))
+	return pts
+
+
+## Car park bay `i`: where a customer's bike stands, nose-in towards the sales office (-Z).
+static func park_xf(i: int) -> Transform3D:
+	var f := SalesOffice.FORECOURT
+	var k := clampi(i, 0, PARK_SLOTS - 1)
+	return Transform3D(Basis(), Vector3(f.position.x + PARK_FROM.x + PARK_STEP * k, 0.0, f.position.y + PARK_FROM.y))
+
+
+## A car park bay nobody's customer has taken and no bike stands in, or -1.
+static func free_park() -> int:
+	var taken := {}
+	for id in customers():
+		taken[int(customers()[id].get("park", -1))] = true
+	for i in PARK_SLOTS:
+		if taken.has(i):
+			continue
+		var at := park_xf(i).origin
+		var clear := true
+		for b in Shed.bikes.values():
+			var o: Vector3 = (b["xf"] as Transform3D).origin
+			if Vector2(o.x - at.x, o.z - at.z).length() < 1.4:
+				clear = false
+		if clear:
+			return i
+	return -1
+
+
+## The point on the ring road where it passes the yard at `x` (the road is flat there).
+static func road_at(x: float) -> Vector3:
+	var lo := 0.0
+	var hi := 0.8
+	for i in 32:
+		var mid := (lo + hi) * 0.5
+		if _loop(mid).x < x:
+			lo = mid
+		else:
+			hi = mid
+	var p := _loop((lo + hi) * 0.5)
+	return Vector3(p.x, 0.0, p.z)
+
+
+## The ring road's centre line by angle (the same loop World lays the road along).
+static func _loop(theta: float) -> Vector3:
+	var f := 1.0 + 0.1 * sin(3.0 * theta + 0.5) + 0.05 * sin(5.0 * theta + 2.0)
+	return Vector3(185.0 * f * sin(theta), 0.0, 126.0 * f * cos(theta))
+
+
+## The ride in: along the road past the yard, up across it and into car park bay `park`.
+static func ride_in_path(park: int) -> PackedVector3Array:
+	var pts := PackedVector3Array()
+	for x in [ROAD_FAR_X, 56.0, 40.0, ROAD_TURN_X]:
+		pts.append(road_at(x))
+	var slot := park_xf(park).origin
+	pts.append(Vector3(ROAD_TURN_X - 3.0, 0.0, 116.0))
+	pts.append(Vector3(slot.x, 0.0, 94.0))
+	pts.append(Vector3(slot.x, 0.0, slot.z + 6.0))
+	pts.append(slot)
+	return pts
+
+
+## The ride away from where a bike stands: out of its bay and the roller door (through the
+## extension's doorway from its bays), across the yard to the road and off along it.
+static func ride_out_path(from: Transform3D) -> PackedVector3Array:
+	var pts := PackedVector3Array()
+	var at := Vector3(from.origin.x, 0.0, from.origin.z)
+	pts.append(at)
+	var c := Workshop.CENTER
+	var door_z := c.z + Workshop.HALF.y
+	var room := Workshop.room_at(at)
+	if room == "wing":
+		pts.append(Vector3(at.x, 0.0, GarageUpgrades.WING.end.y - 2.6))
+		pts.append(Vector3(GarageUpgrades.WING_DOOR_X, 0.0, GarageUpgrades.WING.end.y - 2.6))
+		pts.append(Vector3(GarageUpgrades.WING_DOOR_X, 0.0, c.z - Workshop.HALF.y + 1.2))
+		pts.append(Vector3(c.x + 1.2, 0.0, door_z - 2.0))
+	elif room == "shed":
+		pts.append(Vector3(at.x, 0.0, maxf(at.z + 2.0, c.z + 1.0)))
+		pts.append(Vector3(clampf(at.x, c.x - 1.2, c.x + 1.2), 0.0, door_z - 1.2))
+	if room in ["wing", "shed"]:
+		pts.append(Vector3(c.x, 0.0, door_z + 2.5))
+	elif at.z < SalesOffice.FORECOURT.end.y and at.x > SalesOffice.FORECOURT.position.x - 1.0:
+		# From the car park or the forecourt: back out of the bay first.
+		pts.append(Vector3(at.x, 0.0, at.z + 2.0))
+		pts.append(Vector3(at.x, 0.0, SalesOffice.FORECOURT.end.y + 4.0))
+	pts.append(Vector3(ROAD_TURN_X - 3.0, 0.0, 116.0))
+	for x in [ROAD_TURN_X, 40.0, 56.0, ROAD_FAR_X]:
+		pts.append(road_at(x))
+	return pts
+
+
+## The walk a customer collecting their bike makes to it: in from just outside the roller door
+## for a bike in a bay, or from the car park edge for one handed back outside.
+static func collect_path(bike_xf: Transform3D) -> PackedVector3Array:
+	var pts := PackedVector3Array()
+	var at := bike_xf.origin
+	var side := at + bike_xf.basis.x * 0.75 + bike_xf.basis.z * 0.3
+	side.y = 0.0
+	var room := Workshop.room_at(at)
+	var c := Workshop.CENTER
+	if room in ["wing", "shed"]:
+		pts.append(c + Vector3(1.5, 0.0, Workshop.HALF.y + 5.0))
+		pts.append(c + Vector3(0.6, 0.0, Workshop.HALF.y - 0.8))
+		if room == "wing":
+			pts.append(Vector3(GarageUpgrades.WING_DOOR_X, 0.0, c.z - Workshop.HALF.y + 1.2))
+			pts.append(Vector3(GarageUpgrades.WING_DOOR_X, 0.0, GarageUpgrades.WING.end.y - 2.0))
+		else:
+			pts.append(Vector3(side.x, 0.0, maxf(side.z + 2.0, c.z + 1.0)))
+	else:
+		pts.append(entry().origin)
+	pts.append(side)
 	return pts
 
 
@@ -220,6 +355,11 @@ static func advance(hours: float) -> void:
 	for id in jobs().keys():
 		if str(jobs()[id].get("state", "")) == "lost":
 			_finish(jobs()[id], {"paid": 0, "sat": 0.0, "late": 0, "rep": -2, "note": "The bike went missing."})
+			changed = true
+	var leaving: Array = s["leaving"]
+	for d in leaving.duplicate():
+		if not (d is Dictionary) or now - float(d.get("at", 0.0)) > LEAVING_HOURS:
+			leaving.erase(d)
 			changed = true
 	if now >= float(s["next_at"]):
 		s["next_at"] = now + Shed._rng.randf_range(SPAWN_HOURS.x, SPAWN_HOURS.y)
@@ -261,8 +401,16 @@ static func spawn(kind := "") -> int:
 		"skin": SKINS[rng.randi() % SKINS.size()], "hair": HAIR[rng.randi() % HAIR.size()], "hat": rng.randf() < 0.3,
 		"tall": rng.randf_range(0.92, 1.06), "vip": vip}
 	var now := clock()
+	var offer := make_offer(kind, person_name)
+	# Everyone but the exclusive customer rides their own bike in and parks it in the car park.
+	var park := free_park() if kind != "bespoke" else -1
+	if park >= 0:
+		var parts: Dictionary = offer["parts"]
+		if str(parts.get("side_stand", "none")) == "none" and str(parts.get("centre_stand", "none")) == "none":
+			parts["side_stand"] = PartsDB.DEFAULT_BUILD["side_stand"]
+		offer["paint"] = rng.randi() % Shed.PAINTS.size()
 	customers()[id] = {"id": id, "name": person_name, "look": look, "arrived": now, "leave_at": now + PATIENCE_HOURS,
-		"offer": make_offer(kind, person_name)}
+		"offer": offer, "park": park}
 	Shed._mark_dirty()
 	return id
 
@@ -765,7 +913,7 @@ static func check(peer: int, action: Dictionary) -> String:
 			if a == "contract_accept":
 				if active_count() >= MAX_ACTIVE:
 					return "The shed has as many jobs as it can take. Finish one first."
-				if Shed.free_bay(Workshop.bay_count()) < 0:
+				if not rides_in(customers()[cid]) and Shed.free_bay(Workshop.bay_count()) < 0:
 					return "Every bay is full. Clear one for the customer's bike first."
 		"contract_mot_test", "contract_hand_in":
 			var job: Dictionary = jobs().get(int(action.get("job", 0)), {})
@@ -783,7 +931,7 @@ static func check(peer: int, action: Dictionary) -> String:
 				if not Shed.is_complete(bike_id):
 					return "It isn't finished: every part has to be on and bolted up."
 				if not near_handback(bike_id):
-					return "Wheel it round to the customer at reception (or just out of the roller door) to hand it back."
+					return "Park it in any bay (or by reception) to hand it back."
 		"contract_spawn", "contract_rep":
 			# Debug tab helpers, for the host.
 			if peer != Shed.me():
@@ -800,12 +948,39 @@ static func active_count() -> int:
 	return jobs().values().filter(func(j): return str(j.get("state", "")) == "active").size()
 
 
-## Whether a bike stands where it can be handed back.
+## Whether a customer came on their own bike (parked in the car park), so taking the job on
+## leaves it there rather than delivering it to a bay. Customers from sheds saved before they
+## rode in, and the exclusive customer, didn't.
+static func rides_in(cust: Dictionary) -> bool:
+	return int(cust.get("park", -1)) >= 0 and str(cust.get("offer", {}).get("kind", "")) != "bespoke"
+
+
+## The job a bike is in the shed for, or {}.
+static func job_for_bike(bike_id: int) -> Dictionary:
+	for id in jobs():
+		if int(jobs()[id].get("bike", 0)) == bike_id:
+			return jobs()[id]
+	return {}
+
+
+## Whether a customer who was at reception took their job on: they leave on foot, and their
+## bike stays with the shed.
+static func took_on(customer_id: int) -> bool:
+	for id in jobs():
+		if int(jobs()[id].get("cid", 0)) == customer_id:
+			return true
+	return false
+
+
+## Whether a bike stands where it can be handed back: parked in any bay, near reception, or
+## just outside the roller door.
 static func near_handback(bike_id: int) -> bool:
 	var xf = Shed.bikes[bike_id].get("xf")
 	if not (xf is Transform3D):
 		return false
 	var at: Vector3 = xf.origin
+	if Shed.bay_at(at) >= 0:
+		return true
 	var flat := func(p: Vector3) -> Vector3: return Vector3(p.x, 0.0, p.z)
 	return flat.call(at).distance_to(flat.call(reception().origin)) <= HANDBACK_RADIUS \
 		or flat.call(at).distance_to(flat.call(door_front())) <= HANDBACK_RADIUS * 0.6
@@ -864,6 +1039,7 @@ static func _accept(_peer: int, cid: int) -> String:
 	var cust: Dictionary = customers()[cid]
 	var offer: Dictionary = cust["offer"]
 	var kind := str(offer["kind"])
+	var parked := rides_in(cust)
 	var bay := Shed.free_bay(Workshop.bay_count())
 	var bike_id := 0
 	if kind == "bespoke":
@@ -871,14 +1047,20 @@ static func _accept(_peer: int, cid: int) -> String:
 		bike_id = Shed._empty_bike(frame, bay)
 	else:
 		var age: float = {"maint": 0.15, "mot": 0.28, "mod": 0.12}.get(kind, 0.2)
-		bike_id = Shed._new_bike(offer["parts"], bay, str(offer["bike_name"]), age)
+		var paint = Shed.PAINTS[int(offer["paint"]) % Shed.PAINTS.size()] if offer.has("paint") else null
+		bike_id = Shed._new_bike(offer["parts"], maxi(bay, 0), str(offer["bike_name"]), age, paint)
+		if parked:
+			# Left in the car park bay they rode into, on its stand, keys with the crew.
+			Shed.bikes[bike_id]["bay"] = -1
+			Shed.bikes[bike_id]["xf"] = park_xf(int(cust["park"]))
+			Shed.bikes[bike_id]["stand"] = Shed._rest_stand(bike_id)
 		prepare_bike(bike_id, kind, offer.get("goals", []), Shed._rng)
 	Shed.bikes[bike_id]["name"] = str(offer["bike_name"])
 	Shed.bikes[bike_id]["contract"] = true
 	var s := _st()
 	var jid := int(s["next"])
 	s["next"] = jid + 1
-	var job := {"id": jid, "kind": kind, "title": str(offer["title"]), "customer": str(cust["name"]), "look": cust["look"],
+	var job := {"id": jid, "cid": cid, "kind": kind, "title": str(offer["title"]), "customer": str(cust["name"]), "look": cust["look"],
 		"bike": bike_id, "goals": offer["goals"].duplicate(true), "pay": int(offer["pay"]), "budget": int(offer.get("budget", 0)),
 		"accepted": clock(), "due": clock() + float(offer["days"]) * DAY, "start_parts": current_parts(bike_id),
 		"workers": {}, "state": "active"}
@@ -886,6 +1068,9 @@ static func _accept(_peer: int, cid: int) -> String:
 		job["mot"] = {"tested": false, "stale": false, "fails": 0, "sheet": [], "tests": 0}
 	jobs()[jid] = job
 	customers().erase(cid)
+	if parked:
+		return "Job taken on: %s, due in %d days. They've left it in the car park with the keys: ride it or wheel it (F) into a bay." % [
+			offer["bike_name"], int(offer["days"])]
 	var where := "a bare %s on bay %d" % [PartsDB.part_name(str(offer["parts"]["frame"])).to_lower(), bay + 1] if kind == "bespoke" \
 		else "bay %d" % (bay + 1)
 	return "Job taken on: %s. It's on %s, due in %d days." % [offer["bike_name"], where, int(offer["days"])]
@@ -1022,6 +1207,7 @@ static func _hand_in(job: Dictionary) -> String:
 		cert = {"number": "TS-%05d" % (1000 + int(_st()["certs"])), "bike": str(bike["name"]), "owner": str(job["customer"]),
 			"day": day_number(), "expires": day_number() + 365}
 	_pay(job, pay)
+	_ride_away(job)
 	_remove_bike(int(job["bike"]))
 	_finish(job, {"paid": int(pay["total"]), "sat": float(pay["sat"]), "late": int(pay["late"]), "rep": int(pay["rep"]),
 		"note": str(pay["note"]), "cert": cert})
@@ -1072,6 +1258,19 @@ static func credit_garage(amount: int, reason: String) -> void:
 		Shed.garage_money = clampi(Shed.garage_money + amount, 0, Shed.MAX_GARAGE_MONEY)
 
 
+## The customer comes for their bike: kept a while in "leaving" so everyone sees them walk up
+## to it, get on and ride it off from where it stands (see ContractsView).
+static func _ride_away(job: Dictionary) -> void:
+	var bike_id := int(job["bike"])
+	var bike: Dictionary = Shed.bikes[bike_id]
+	var leaving: Array = _st()["leaving"]
+	leaving.append({"id": int(job["id"]), "name": str(job.get("customer", "")), "look": job.get("look", {}),
+		"parts": current_parts(bike_id), "paint": bike["paint"], "cond": Shed.build_of(bike_id).condition.duplicate(true),
+		"xf": bike["xf"], "at": clock()})
+	while leaving.size() > MAX_LEAVING:
+		leaving.pop_front()
+
+
 ## The customer rides their bike away: it and every part on it leave the shed.
 static func _remove_bike(bike_id: int) -> void:
 	var gone := []
@@ -1119,3 +1318,32 @@ static func tv_data() -> Dictionary:
 			money(int(d.get("paid", 0)))]})
 	return {"placeholder": false, "offered": offered, "active": active, "done": done, "reputation": reputation(),
 		"day": day_number()}
+
+
+## What a contract bike's bay screen shows: the job's checklist, ticked off as the work gets
+## done (with an MOT's fails still to fix), the deadline, what's been spent on parts against the
+## budget, and what handing it back now would pay and make once the parts are paid for.
+static func screen_data(job: Dictionary) -> Dictionary:
+	var rows := evaluate(job)
+	var met := rows.filter(func(r): return r["done"]).size()
+	var fixes := []
+	var mot_line := ""
+	var m: Dictionary = job["mot"] if job.get("mot") is Dictionary else {}
+	if str(job.get("kind", "")) == "mot":
+		if not m.get("tested", false):
+			mot_line = "Not tested yet: run the MOT test from Esc, Contracts."
+		else:
+			var f: Array = MotTest.fails(m.get("sheet", []))
+			mot_line = "MOT test %d: %s%s" % [int(m.get("tests", 1)), "PASS" if f.is_empty() else "FAIL on %d" % f.size(),
+				", worked on since: test it again" if m.get("stale", false) else ""]
+			for r in f:
+				fixes.append({"text": str(r.get("name", "")), "fix": str(r.get("fix", ""))})
+	var pay := payout(job)
+	var spend := int(pay["spent"])
+	var why := Shed.check(Shed.me(), {"a": "contract_hand_in", "job": int(job.get("id", 0))})
+	return {"title": str(job.get("title", "")).get_slice(": ", 1), "kind": str(KIND_NAMES.get(str(job.get("kind", "")), "")),
+		"customer": str(job.get("customer", "")), "rows": rows, "met": met, "mot": mot_line, "fixes": fixes,
+		"due": due_text(float(job.get("due", 0.0))), "due_day": day_number(float(job.get("due", 0.0))),
+		"late": clock() > float(job.get("due", 0.0)), "fee": int(job.get("pay", 0)), "budget": int(job.get("budget", 0)),
+		"spent": spend, "over": int(pay["over"]), "payout": int(pay["total"]), "profit": int(pay["total"]) - spend,
+		"note": str(pay["note"]), "ready": why == "", "why": why}

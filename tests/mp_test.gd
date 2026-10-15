@@ -8,7 +8,7 @@ extends Node
 ## it and scraps it: both must see it come and go. Money: the client's unbolting pays it a wage
 ## from the host, it sends some to the business (the host's ledger must show it) and the host
 ## sends the client some of its own cash, which must arrive.
-## The host also sends a customer to reception, whom the client must see.
+## The host also sends a customer to reception, whom the client must see riding in on their bike.
 ## The host rings the sales office bell, and the client must hear it.
 
 var role := "host"
@@ -193,7 +193,9 @@ func _ready() -> void:
 		if role == "host" and Shed.crew.size() == 2 and not customer_sent:
 			Shed.request({"a": "contract_spawn", "kind": "maint"})
 			customer_sent = true
-		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty()
+		# They ride in on their own bike, which both sides see.
+		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty() \
+			and main.contracts_view.views.values().any(func(v): return is_instance_valid(v) and (v as CustomerView).has_bike())
 		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and

@@ -190,6 +190,12 @@ func _run_all() -> void:
 	await _test_headlight_sequence()
 	_test_road_bike_rules()
 	await _test_riding_feedback_session()
+	print("Customers: riding in and parking, bringing the bike in, handing back from any bay, the job's bay screen")
+	_test_customer_rides_in()
+	_test_customer_bike_in_and_back()
+	_test_customer_bay_screen()
+	_test_customer_save()
+	await _test_customer_ride_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -6441,8 +6447,9 @@ func _test_contract_mot() -> void:
 	var job: Dictionary = Contracts.jobs().values()[0]
 	var jid := int(job["id"])
 	var jb := int(job["bike"])
-	check(Shed.bikes.has(jb) and int(Shed.bikes[jb]["bay"]) >= 0 and str(Shed.bikes[jb]["name"]).contains(cust.get_slice(" ", 0)),
-		"their bike is delivered to a free bay (%s)" % str(Shed.bikes.get(jb, {}).get("name", "")))
+	check(Shed.bikes.has(jb) and (Shed.bikes[jb]["xf"] as Transform3D).origin.distance_to(Contracts.park_xf(0).origin) < 0.1
+		and str(Shed.bikes[jb]["name"]).contains(cust.get_slice(" ", 0)),
+		"their bike is left in the car park (%s)" % str(Shed.bikes.get(jb, {}).get("name", "")))
 	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}) != "", "it can't be handed back where it stands")
 	Shed.request({"a": "contract_mot_test", "job": jid})
 	check(job["mot"]["tested"] and int(job["mot"]["fails"]) > 0, "the first test finds faults (%d: %s)" % [int(job["mot"]["fails"]),
@@ -6455,7 +6462,7 @@ func _test_contract_mot() -> void:
 	Contracts.note_action(Shed.me(), {"a": "clean", "bike": jb})
 	check(not Contracts.eval_goal(job, {"t": "mot"})["done"] and job["workers"].has(Shed.me()), "work on it after a test means testing it again")
 	Shed.request({"a": "contract_mot_test", "job": jid})
-	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}).contains("reception"), "it has to go round to reception")
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}).contains("bay"), "it has to be parked in a bay (or by reception)")
 	Shed.bikes[jb]["xf"] = Contracts.reception()
 	var before := Shed.garage_money
 	var expected := int(Contracts.payout(job)["total"])
@@ -6596,7 +6603,7 @@ func _test_contract_session() -> void:
 	var start := cv.global_position
 	var arrived := [false]
 	cv.arrived.connect(func(_v): arrived[0] = true)
-	for i in 3000:
+	for i in 8000:
 		await get_tree().process_frame
 		if arrived[0]:
 			break
@@ -6622,7 +6629,7 @@ func _test_contract_session() -> void:
 	check(not main.contract_panel.visible and Contracts.jobs().size() == 1, "Accept takes the job on")
 	for i in 30:
 		await get_tree().process_frame
-	check(view.views.is_empty(), "and they head off")
+	check(not view.views.has(cv.customer_id) and cv.leaving, "and they head off")
 	var tabs: Array = main.menu.find_children("Contracts", "ContractsTab", true, false)
 	if not tabs.is_empty():
 		(tabs[0] as ContractsTab).refresh(true)
@@ -8738,3 +8745,294 @@ func _test_riding_feedback_session() -> void:
 	main.queue_free()
 	await get_tree().physics_frame
 	Progress.path = real_path
+
+
+# ---------------------------------------------------------------------------- customers ride in
+
+## The newest customer waiting at reception (or on the way), or 0.
+func _newest_customer() -> int:
+	var ids: Array = Contracts.customers().keys()
+	ids.sort()
+	return int(ids[-1]) if not ids.is_empty() else 0
+
+
+## Pushes a bike on foot (F) and lets go of it at `xf`, as a player wheeling it would.
+func _wheel_bike_to(bike_id: int, xf: Transform3D) -> void:
+	Shed.request({"a": "grab_bike", "bike": bike_id})
+	Shed.request({"a": "move_bike", "bike": bike_id, "xf": xf})
+	Shed.request({"a": "release_bike", "bike": bike_id, "xf": xf})
+
+
+func _test_customer_rides_in() -> void:
+	Shed.start_new("Tester", 61)
+	var me := Shed.me()
+	Contracts._st()["reputation"] = 20
+	var a := Contracts.spawn("maint")
+	var b := Contracts.spawn("mot")
+	var v := Contracts.spawn("bespoke")
+	var ca: Dictionary = Contracts.customers()[a]
+	var cb: Dictionary = Contracts.customers()[b]
+	var park := int(ca.get("park", -1))
+	check(park >= 0 and int(cb.get("park", -1)) >= 0 and int(cb["park"]) != park and Contracts.rides_in(ca)
+		and ca["offer"].has("paint"), "customers ride their own bike in, each to their own car park bay (%d, %d)" % [park, int(cb.get("park", -1))])
+	check(not Contracts.rides_in(Contracts.customers()[v]), "the exclusive customer walks in: their job starts as a bare frame")
+	var parts: Dictionary = ca["offer"]["parts"]
+	check(str(parts.get("side_stand", "none")) != "none" or str(parts.get("centre_stand", "none")) != "none",
+		"a bike ridden in has a stand to park on")
+	var slots_ok := true
+	for i in Contracts.PARK_SLOTS:
+		var o := Contracts.park_xf(i).origin
+		# Inside the area bikes can be worked on (x -22..38, z 42..86), so a customer's bike can be worked on where it's left.
+		slots_ok = slots_ok and SalesOffice.FORECOURT.has_point(Vector2(o.x, o.z)) and Workshop.room_at(o) == "" \
+			and Rect2(-22.0, 42.0, 60.0, 44.0).grow(-1.0).has_point(Vector2(o.x, o.z))
+		if i > 0:
+			slots_ok = slots_ok and o.distance_to(Contracts.park_xf(i - 1).origin) >= 2.0
+	check(slots_ok, "the car park bays are on the forecourt, outside, with room between them")
+	var ride := Contracts.ride_in_path(park)
+	var yard := Rect2(World.YARD_CENTER - World.YARD_HALF, World.YARD_HALF * 2.0).grow(8.0)
+	var flat := true
+	var inside := ""
+	for i in range(1, ride.size()):
+		for k in 10:
+			var p := ride[i - 1].lerp(ride[i], k / 10.0)
+			flat = flat and yard.has_point(Vector2(p.x, p.z))
+			if Workshop.room_at(p) != "":
+				inside = Workshop.room_at(p)
+	check(absf(ride[0].x - Contracts.ROAD_FAR_X) < 0.5 and ride[0].z > 120.0 and ride[0].z < 145.0 and flat and inside == "",
+		"they ride in along the road past the yard (from %s) and across the flat yard, through no buildings (%s)" % [ride[0], inside])
+	var last := ride[ride.size() - 1] - ride[ride.size() - 2]
+	check(ride[ride.size() - 1].distance_to(Contracts.park_xf(park).origin) < 0.01 and last.normalized().dot(Vector3.FORWARD) > 0.99,
+		"and park nose-in to the office in their bay")
+	var walk := Contracts.path_in(0, park)
+	check(walk[0].distance_to(Contracts.park_xf(park).origin) < 1.2 and walk[walk.size() - 1].distance_to(Contracts.reception().origin) < 0.01
+		and walk.has(Workshop.SALES_DOOR), "then get off and walk in through the doors to reception")
+	# With every bay full, a customer who rode in can still be taken on: the bike waits outside.
+	for bay in Workshop.bay_count():
+		if Shed.bay_is_free(bay):
+			Shed._new_bike(PartsDB.DEFAULT_BUILD.duplicate(), bay, "Filler", 0.2)
+	check(Shed.free_bay(Workshop.bay_count()) < 0 and Shed.check(me, {"a": "contract_accept", "customer": a}) == "",
+		"with every bay full, a customer who rode in can still be taken on")
+	var keep := cb.duplicate(true)
+	cb.erase("park")
+	check(Shed.check(me, {"a": "contract_accept", "customer": b}).contains("bay"), "one from an older save (no bike outside) still needs a free bay")
+	Contracts.customers()[b] = keep
+	Shed.request({"a": "contract_accept", "customer": a})
+	var job: Dictionary = Contracts.jobs().values()[0] if not Contracts.jobs().is_empty() else {}
+	var jb := int(job.get("bike", 0))
+	check(Shed.bikes.has(jb) and (Shed.bikes[jb]["xf"] as Transform3D).origin.distance_to(Contracts.park_xf(park).origin) < 0.01
+		and int(Shed.bikes[jb]["bay"]) == -1 and str(Shed.bikes[jb]["stand"]) in ["side", "centre"]
+		and Shed.bikes[jb]["paint"] == Shed.PAINTS[int(ca["offer"]["paint"]) % Shed.PAINTS.size()],
+		"taken on, their bike is left on its stand in the car park bay, in the colour they rode in on")
+	check(Contracts.took_on(a) and not Contracts.took_on(b) and int(job.get("cid", 0)) == a, "the job remembers who brought it")
+	check(Shed.check(me, {"a": "mount", "bike": jb}) == "" and Shed.check(me, {"a": "grab_bike", "bike": jb}) == "",
+		"and the crew can ride it or wheel it in")
+	check(Contracts.free_park() != park, "nobody else parks in its bay while it stands there")
+
+
+func _test_customer_bike_in_and_back() -> void:
+	Shed.start_new("Tester", 62)
+	var me := Shed.me()
+	var cid := Contracts.spawn("maint")
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var jid := int(job["id"])
+	var jb := int(job["bike"])
+	check(Shed.check(me, {"a": "contract_hand_in", "job": jid}).contains("bay"), "it can't be handed back from the car park")
+	var bay := Shed.free_bay(Workshop.bay_count())
+	_wheel_bike_to(jb, Workshop.bay_transform(bay).translated(Vector3(0.3, 0.0, 0.4)))
+	check(int(Shed.bikes[jb]["bay"]) == bay and Shed.on_paddock(jb) and Shed.bike_in_bay(bay) == jb and int(Shed.bikes[jb]["pusher"]) == 0,
+		"wheeled into bay %d, it goes up on the paddock stand" % (bay + 1))
+	check(Shed.check(me, {"a": "contract_hand_in", "job": jid}) == "", "parked in a bay, it can be handed back")
+	var every := true
+	for b in Workshop.bay_count():
+		Shed.bikes[jb]["xf"] = Workshop.bay_transform(b)
+		every = every and Contracts.near_handback(jb)
+	Shed.bikes[jb]["xf"] = Workshop.bay_transform(bay)
+	check(every, "from any of the %d bays" % Workshop.bay_count())
+	_make_roadworthy(jb)
+	var frame := str(Shed.items[Shed.item_on(jb, "frame")]["part"])
+	Shed.request({"a": "contract_hand_in", "job": jid})
+	var leaving: Array = Contracts._st()["leaving"]
+	var d: Dictionary = leaving[0] if not leaving.is_empty() else {}
+	check(not Shed.bikes.has(jb) and Contracts.jobs().is_empty() and d.get("xf") == Workshop.bay_transform(bay)
+		and str(d.get("parts", {}).get("frame", "")) == frame and str(d.get("name", "")) == str(job["customer"]) and d.get("cond") is Dictionary,
+		"handed back, the customer comes for it where it stands")
+	var out := Contracts.ride_out_path(Workshop.bay_transform(bay))
+	var door_z := Workshop.CENTER.z + Workshop.HALF.y
+	var through_door := false
+	for i in range(1, out.size()):
+		var a := out[i - 1]
+		var b2 := out[i]
+		if a.z < door_z and b2.z >= door_z:
+			var t := (door_z - a.z) / (b2.z - a.z)
+			through_door = absf(lerpf(a.x, b2.x, t) - Workshop.CENTER.x) < Workshop.DOOR_HALF - 0.4
+	check(through_door and (out[1] - out[0]).dot(-Workshop.bay_transform(bay).basis.z) > 0.0
+		and absf(out[out.size() - 1].x - Contracts.ROAD_FAR_X) < 0.5,
+		"and rides it forward out of the bay, through the roller door and away along the road")
+	Contracts.advance(Contracts.LEAVING_HOURS + 0.5)
+	check(Contracts._st()["leaving"].is_empty(), "and is gone after a while")
+
+
+func _test_customer_bay_screen() -> void:
+	Shed.start_new("Tester", 63)
+	var cid := Contracts.spawn("maint")
+	Contracts.customers()[cid]["offer"]["goals"] = [{"t": "task", "task": "oil"}, {"t": "task", "task": "wash"}]
+	Contracts.customers()[cid]["offer"]["pay"] = 300
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var jb := int(job["bike"])
+	var bay := Shed.free_bay(Workshop.bay_count())
+	_wheel_bike_to(jb, Workshop.bay_transform(bay))
+	var ws := Workshop.new()
+	var page := ws._bay_data(bay)
+	ws.free()
+	var sd: Dictionary = page.get("contract", {})
+	check(not sd.is_empty() and sd["rows"].size() == 2 and int(sd["met"]) == 0 and str(sd["due"]).contains("left")
+		and int(sd["fee"]) == 300 and str(sd["customer"]) == str(job["customer"]),
+		"a contract bike's bay screen shows the job's checklist, who it's for and the deadline (%s)" % str(sd.get("due", "")))
+	check(int(sd["profit"]) == int(sd["payout"]) - int(sd["spent"]) and bool(sd["ready"]), "with what handing it back pays and the profit")
+	var engine: Dictionary = Shed.items[Shed.item_on(jb, "engine")]
+	engine["fluid"]["age"] = 0.0
+	engine["fluid"]["litres"] = PartsDB.fluid_capacity(str(engine["part"]))
+	for slot in PartsDB.SLOTS:
+		if Shed.item_on(jb, slot) != 0:
+			Shed.items[Shed.item_on(jb, slot)]["dirt"] = 0.0
+	sd = Contracts.screen_data(job)
+	check(int(sd["met"]) == 2 and sd["rows"].all(func(r): return r["done"]), "each job is ticked off as it's done")
+	var profit := int(sd["profit"])
+	var ex := Shed.item_on(jb, "exhaust")
+	var was := str(Shed.items[ex]["part"])
+	Shed.items[ex]["part"] = "full_system" if was != "full_system" else "titanium_race"
+	sd = Contracts.screen_data(job)
+	var cost := Contracts.price(str(Shed.items[ex]["part"]))
+	check(int(sd["spent"]) == cost and int(sd["profit"]) == profit - cost, "new parts show as spent, and come off the profit (%s)" % Contracts.money(cost))
+	Shed.items[ex]["part"] = was
+	# An MOT job lists what failed, to fix.
+	Shed.start_new("Tester", 64)
+	Contracts._st()["reputation"] = 3
+	var mid := Contracts.spawn("mot")
+	Shed.request({"a": "contract_accept", "customer": mid})
+	var mj: Dictionary = Contracts.jobs().values()[0]
+	check(str(Contracts.screen_data(mj)["mot"]).contains("Not tested"), "an MOT job's screen says it hasn't been tested yet")
+	Shed.request({"a": "contract_mot_test", "job": int(mj["id"])})
+	var msd := Contracts.screen_data(mj)
+	check(msd["fixes"].size() == int(mj["mot"]["fails"]) and msd["fixes"].size() > 0 and str(msd["mot"]).contains("FAIL"),
+		"after a test it lists the fails to fix (%d)" % msd["fixes"].size())
+
+
+func _test_customer_save() -> void:
+	Shed.start_new("Tester", 65)
+	var cid := Contracts.spawn("maint")
+	var park := int(Contracts.customers()[cid]["park"])
+	var paint := int(Contracts.customers()[cid]["offer"]["paint"])
+	var done := Contracts.spawn("maint")
+	Shed.request({"a": "contract_accept", "customer": done})
+	var jb := int(Contracts.jobs().values()[0]["bike"])
+	_wheel_bike_to(jb, Workshop.bay_transform(Shed.free_bay(Workshop.bay_count())))
+	Shed.request({"a": "contract_hand_in", "job": int(Contracts.jobs().values()[0]["id"])})
+	var text := var_to_str(Shed.save_snapshot().duplicate(true))
+	Shed.start_new("Tester", 66)
+	Shed.load_state(str_to_var(text), "Tester")
+	check(Contracts.customers().has(cid) and int(Contracts.customers()[cid]["park"]) == park
+		and int(Contracts.customers()[cid]["offer"]["paint"]) == paint and Contracts._st()["leaving"].size() == 1,
+		"a customer's car park bay, their bike's colour and a ride away survive a save")
+	# A save from before customers rode in: nobody has a bike outside, and the jobs still go to a bay.
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	old["contracts"].erase("leaving")
+	for id in old["contracts"]["customers"]:
+		old["contracts"]["customers"][id].erase("park")
+		old["contracts"]["customers"][id]["offer"].erase("paint")
+	Shed.start_new("Tester", 67)
+	Shed.load_state(old, "Tester")
+	check(Contracts._st()["leaving"] == [] and Contracts.customers().has(cid) and not Contracts.rides_in(Contracts.customers()[cid]),
+		"a save from before opens with nobody riding off and its customers on foot")
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0] if not Contracts.jobs().is_empty() else {}
+	var bike := int(job.get("bike", 0))
+	check(Shed.bikes.has(bike) and int(Shed.bikes[bike]["bay"]) >= 0 and Shed.on_paddock(bike),
+		"and their job's bike is delivered to a free bay as before")
+
+
+func _test_customer_ride_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	var view: ContractsView = main.contracts_view
+	Shed.request({"a": "contract_spawn", "kind": "maint"})
+	await get_tree().process_frame
+	var cid := _newest_customer()
+	var cv: CustomerView = view.views.get(cid)
+	check(cv != null and cv.has_bike() and cv.bike_position().z > 120.0, "a customer comes riding in along the road")
+	var park := int(Contracts.customers()[cid]["park"])
+	var arrived := [false]
+	cv.arrived.connect(func(_v): arrived[0] = true)
+	var parked_at := Vector3.INF
+	for i in 6000:
+		cv._process(0.05)
+		if parked_at == Vector3.INF and not cv.riding and cv.has_bike() and cv.bike_position().z < 90.0:
+			parked_at = cv.bike_position()
+		if arrived[0]:
+			break
+	check(parked_at.distance_to(Contracts.park_xf(park).origin) < 0.1 and cv.bike_position().distance_to(Contracts.park_xf(park).origin) < 0.1,
+		"parks in the car park (%s)" % parked_at)
+	check(arrived[0] and cv.at_counter and Vector2(cv.global_position.x, cv.global_position.z).distance_to(
+		Vector2(Contracts.reception().origin.x, Contracts.reception().origin.z)) < 0.2, "and walks in to reception")
+	Shed.request({"a": "contract_accept", "customer": cid})
+	await get_tree().process_frame
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var jb := int(job["bike"])
+	check(not cv.has_bike() and cv.leaving and main.workshop.bike_views.has(jb), "taken on, they walk off and their bike is the shed's")
+	# Turned down, a customer rides away again.
+	Shed.request({"a": "contract_spawn", "kind": "maint"})
+	await get_tree().process_frame
+	var cid2 := _newest_customer()
+	var cv2: CustomerView = view.views.get(cid2)
+	for i in 6000:
+		cv2._process(0.05)
+		if cv2.at_counter:
+			break
+	var p0 := cv2.bike_position()
+	Shed.request({"a": "contract_decline", "customer": cid2})
+	await get_tree().process_frame
+	check(cv2.leaving and cv2.has_bike(), "turned down, they go back to their bike")
+	var far := 0.0
+	for i in 6000:
+		cv2._process(0.05)
+		if cv2.is_queued_for_deletion():
+			break
+		far = maxf(far, cv2.bike_position().distance_to(p0))
+	check(far > 40.0 and cv2.is_queued_for_deletion(), "and ride it away (%.0f m)" % far)
+	# Brought into a bay: its screen shows the job.
+	var bay := Shed.free_bay(Workshop.bay_count())
+	_wheel_bike_to(jb, Workshop.bay_transform(bay))
+	job["goals"] = [{"t": "task", "task": "wash"}]
+	for slot in PartsDB.SLOTS:
+		if Shed.item_on(jb, slot) != 0:
+			Shed.items[Shed.item_on(jb, slot)]["dirt"] = 0.0
+	Shed.changed.emit()
+	main.workshop._dash_timer = 0.0
+	for i in 3:
+		await get_tree().process_frame
+	var dash: Dashboard = main.workshop.screens().get("bay%d" % bay)
+	check(dash != null and dash.data.has("contract") and dash.data["contract"]["rows"].all(func(r): return r["done"]),
+		"the bay's screen shows the job's checklist, ticked off")
+	# Handed back from the bay: the customer walks in, gets on and rides it out of the door.
+	Shed.request({"a": "contract_hand_in", "job": int(job["id"])})
+	await get_tree().process_frame
+	var col = view.collecting.get(int(job["id"]))
+	check(col is CustomerView and (col as CustomerView).has_bike() and not Shed.bikes.has(jb),
+		"handed back, the customer comes to collect it")
+	var door_z := Workshop.CENTER.z + Workshop.HALF.y
+	var outside := false
+	if col is CustomerView:
+		for i in 8000:
+			col._process(0.05)
+			if col.is_queued_for_deletion():
+				break
+			outside = outside or (col.riding and col.bike_position().z > door_z + 2.0)
+	check(outside and col is CustomerView and col.is_queued_for_deletion(), "and rides it out of the shed and away")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame

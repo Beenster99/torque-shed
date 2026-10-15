@@ -159,7 +159,8 @@ static func nobody_data() -> Dictionary:
 	var ready := []
 	for id in Shed.bikes:
 		if Shed.is_complete(id):
-			ready.append("%s  ·  bay %d" % [Shed.bikes[id]["name"], int(Shed.bikes[id]["bay"]) + 1])
+			var bay := int(Shed.bikes[id]["bay"])
+			ready.append("%s  ·  %s" % [Shed.bikes[id]["name"], "bay %d" % (bay + 1) if bay >= 0 else "outside"])
 	return {"ready": ready}
 
 
