@@ -86,9 +86,12 @@ func _ready() -> void:
 			money_set = true
 		if role == "client" and not upgrade_asked and Shed.garage_money >= GarageUpgrades.price("wing"):
 			Shed.request({"a": "buy_upgrade", "id": "wing"})
+			# And an epoxy floor in a colour and effect picked on the client.
+			Shed.request({"a": "buy_upgrade", "id": "epoxy", "looks": {"colour": "blue", "effect": "gloss"}})
 			upgrade_asked = true
 		var ws: Workshop = main.world.workshop if main.world else null
-		var upgrade_ok := GarageUpgrades.owned("wing") and ws != null and ws.get_node_or_null("Upgrades/Built/WingFloor") != null
+		var upgrade_ok := GarageUpgrades.owned("wing") and ws != null and ws.get_node_or_null("Upgrades/Built/WingFloor") != null \
+			and str(Shed.looks.get("epoxy", {}).get("colour", "")) == "blue" and str(ws.upgrades.looks_shown().get("epoxy", {}).get("effect", "")) == "gloss"
 		# XP: the host pays the client for its work, and learns the client's level from its report.
 		if xp_start < 0:
 			xp_start = int(Progress.profile["xp"])
