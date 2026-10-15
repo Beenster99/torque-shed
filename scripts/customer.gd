@@ -4,8 +4,8 @@ extends Node3D
 ## own bike in along the road and across the yard, park it in the sales office car park, get
 ## off and walk in to reception, ring the bell, and wait to be talked to (F). Turned down (or
 ## tired of waiting) they walk back out, get on and ride away; with the job taken on they leave
-## on foot and their bike stays with the shed. A customer collecting a finished job walks up to
-## their bike wherever it was handed back, gets on and rides it off. Drawn from Shed.contracts
+## on foot and their bike stays with the shed. A customer collecting a finished job walks out of
+## the sales office to their bike in the car park, gets on and rides it off. Drawn from Shed.contracts
 ## by ContractsView; nothing here is shared state.
 
 signal arrived(view: CustomerView)
@@ -66,12 +66,13 @@ func setup(data: Dictionary, walk: PackedVector3Array, face: Basis, already_ther
 
 
 ## A customer come to collect their bike (`bike`: {parts, paint, cond}) standing at `bike_xf`:
-## they walk up along `walk`, get on, and ride off along `ride`.
+## they walk up along `walk`, get on, and ride off along `ride`. The bike stands empty until
+## they reach it: only then does the walking figure go and the rider appear on it.
 func setup_collect(data: Dictionary, walk: PackedVector3Array, bike: Dictionary, bike_xf: Transform3D,
 		ride: PackedVector3Array) -> void:
 	_make_figure(data)
 	leaving = true
-	_make_bike(bike, bike_xf, Shed.bay_at(bike_xf.origin) < 0)
+	_make_bike(bike, bike_xf, true)
 	position = walk[0] if walk.size() > 0 else bike_xf.origin
 	if walk.size() >= 2:
 		_queue.append({"mode": "walk", "pts": walk, "then": "mount"})
@@ -236,6 +237,16 @@ func drop_bike() -> void:
 	_bike = null
 	_model = null
 	_sound = null
+
+
+## Whether someone is drawn sitting on their bike (the customer once they've got on it).
+func rider_on_bike() -> bool:
+	return _model != null and is_instance_valid(_model) and _model._rider != null and is_instance_valid(_model._rider)
+
+
+## Whether the customer is drawn on foot.
+func on_foot() -> bool:
+	return _figure != null and _figure.visible
 
 
 ## Where the bike is, or nowhere.

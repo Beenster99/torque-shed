@@ -146,6 +146,9 @@ var blueprints := {}
 var holograms := {}
 const MAX_BLUEPRINTS := 40
 
+## Whether a new shed opens with the old demo bikes (for the tests and screenshot tools; a
+## player's new shed starts empty).
+var demo_bikes := false
 var _next_id := 1
 var _dirty := false
 var _sync_timer := 0.0
@@ -181,7 +184,10 @@ func me() -> int:
 
 # ---------------------------------------------------------------------------- session
 
-## Opens the shed with a few project bikes waiting. Only the host (or a solo player) does this;
+## Opens a brand new shed: no bikes and nothing on the workbench, just the fixed machines (the
+## engine stand, parts washer, repair bench and the rest). Project bikes are bought from the parts
+## computer and customers bring theirs. With `demo_bikes` on (the tests and screenshot tools) it
+## opens with the three old demo bikes instead. Only the host (or a solo player) does this;
 ## joiners receive the host's shed instead.
 func start_new(player_name: String, seed_value := 0) -> void:
 	bikes.clear()
@@ -212,6 +218,24 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	_rng.seed = seed_value if seed_value != 0 else int(Time.get_unix_time_from_system())
 	active = true
 	_add_crew(me(), player_name)
+	var cafe := _demo_bikes_before() if demo_bikes else 0
+	var stand := _new_furniture("stand", Transform3D(Basis(), Workshop.CENTER + Vector3(Workshop.HALF.x - 0.9, 0.0, -0.4)))
+	# The shed's own parts washer and repair bench, against the front wall. They can be moved,
+	# and more bought from the parts computer.
+	_new_furniture("washer", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(Workshop.HALF.x - 1.05, 0.0, Workshop.HALF.y - 0.6)))
+	_new_furniture("repair", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(3.4, 0.0, Workshop.HALF.y - 0.6)))
+	ensure_fixtures()
+	if demo_bikes:
+		_demo_bikes_after(cafe, stand)
+	_set_up_yard()
+	_mark_dirty()
+	changed.emit()
+
+
+## The old demo shed's first bikes (made before the shed's own machines, so the ids stay as they
+## were): the Rusty Ranger, and the Barn Find half stripped onto the workbench. Returns the Barn
+## Find's id.
+func _demo_bikes_before() -> int:
 	_new_bike({"frame": "steel_backbone", "fork": "enduro_usd", "shock": "enduro_mono", "front_wheel": "spoked_21",
 		"rear_wheel": "spoked_18", "front_tyre": "knobbly_mx_90", "rear_tyre": "knobbly_mx", "front_disc": "wave_270",
 		"rear_disc": "wave_270", "front_caliper": "twin_piston", "rear_caliper": "single_piston", "front_pads": "sintered",
@@ -234,12 +258,11 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	for slot in ["exhaust", "chain", "final_drive", "front_tyre"]:
 		_detach(cafe, slot, "spot", "bench_%d" % bench)
 		bench += 1
-	var stand := _new_furniture("stand", Transform3D(Basis(), Workshop.CENTER + Vector3(Workshop.HALF.x - 0.9, 0.0, -0.4)))
-	# The shed's own parts washer and repair bench, against the front wall. They can be moved,
-	# and more bought from the parts computer.
-	_new_furniture("washer", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(Workshop.HALF.x - 1.05, 0.0, Workshop.HALF.y - 0.6)))
-	_new_furniture("repair", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(3.4, 0.0, Workshop.HALF.y - 0.6)))
-	ensure_fixtures()
+	return cafe
+
+
+## The rest of the old demo shed: the Barn Find's engine on the stand, and Old Faithful.
+func _demo_bikes_after(cafe: int, stand: int) -> void:
 	var block := _detach(cafe, "engine", "spot", "stand_%d" % stand)
 	for slot in ["spark_plugs", "air_filter"]:
 		var gone: int = items[block]["slots"][slot]
@@ -254,9 +277,6 @@ func start_new(player_name: String, seed_value := 0) -> void:
 		"engine": "four_1000", "exhaust": "slip_on", "final_drive": "stock_15_45", "head": "four_valve",
 		"fuel": "throttle_bodies", "air_filter": "paper_airbox", "oil_filter": "high_flow_oil", "spark_plugs": "iridium_plugs",
 		"cooling": "single_radiator", "gearbox": "six_close"}, 2, "Old Faithful", 0.35, PAINTS[1])
-	_set_up_yard()
-	_mark_dirty()
-	changed.emit()
 
 
 ## The practice area just past the drag strip starts with a jump line, a slalom and some things
@@ -957,6 +977,8 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 				if strip >= 0.2:
 					_xp(peer, "sandblast", clampf(strip * (1.0 - over * 0.8), 0.1, 1.0), "item:%d" % id)
 				_keep_blast(id, cover, over, masks.get(id, masks.get(str(id), null)), c.get("blast_base", {}).get(id, []))
+			var renewed := _blast_renew(c, engine, stripped)
+			for id in stripped:
 				_check_part(peer, id)
 			c["blaster"] = 0
 			c["blast_fire"] = false
@@ -965,6 +987,8 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 			if done == 0:
 				return ""
 			var text := "Blasted %d part%s: %d%% back to bare metal" % [done, "" if done == 1 else "s", roundi(cover_sum / done * 100.0)]
+			if renewed:
+				return text + ". The whole engine is bare: good as new (100% condition, no wear, dirt or rust)"
 			if not pitted.is_empty():
 				text += ", but you've pitted the %s" % ", ".join(pitted.slice(0, 3))
 			return text
@@ -1013,7 +1037,38 @@ func _blast_strip(c: Dictionary, engine: int, parts: Dictionary) -> Dictionary:
 		it["dirt"] = 0.0 if strip >= 0.999 else minf(float(it["dirt"]), float(was[1]) * (1.0 - strip))
 		it["wear"] = maxf(float(it["wear"]), minf(1.0, float(was[2]) + over * BLAST_WEAR))
 		out[id] = [cover, over]
+	_blast_renew(c, engine, out)
 	return out
+
+
+## An engine blasted back to bare metal all over (every part on it) is as good as new: every
+## part's wear, dirt and rust go, for 100% condition, and stay gone from then on (what it was
+## before is forgotten, so blasting it again starts from new). It stays bare metal until it's
+## coated or painted. `covers` is this spell's coverage (item id -> [covered, over]), on top of
+## what was bare already. Returns whether it was.
+func _blast_renew(c: Dictionary, engine: int, covers: Dictionary) -> bool:
+	var ids := _blast_parts(engine)
+	if ids.is_empty():
+		return false
+	for id in ids:
+		var r = covers.get(id, [])
+		var now := float(r[0]) if r is Array and (r as Array).size() >= 1 else 0.0
+		if maxf(now, blast_cover(items[id])) < BlastGame.DONE:
+			return false
+	var base: Dictionary = c.get("blast_base", {})
+	for id in ids:
+		var it: Dictionary = items[id]
+		it["rust"] = 0.0
+		it["dirt"] = 0.0
+		it["wear"] = 0.0
+		if it.get("blast") is Dictionary:
+			it["blast"]["p"] = 0.0
+		if it.has("blast_base"):
+			it["blast_base"] = [0.0, 0.0, 0.0]
+		base[id] = [0.0, 0.0, 0.0]
+	if not c.is_empty():
+		c["blast_base"] = base
+	return true
 
 
 ## How a part was before any of it was blasted ([rust, dirt, wear]): what's kept from the first
