@@ -114,6 +114,22 @@ Five optional kinds finish a bike in its style, each bolted to the frame, five o
 | Engine guards | chrome engine bars, an adventure crash cage, an alloy bash plate, frame sliders, an MX skid plate |
 | Number boards | MX front plate and side boards, a front race plate, radiator shrouds, oval club-racer plates, flat-track side boards; each carries the bike's race number |
 
+#### Style packs
+
+Each of the fourteen styles has its own **pack** of about thirty parts made for it (425 in all): frames with their own wheelbase and rake, forks, wheels, tyres, tanks, seats, bars, exhausts, headlights, tails, front mudguards, mirrors, the bolt-on style bits, and fairings or bags where the style uses them. They aren't recolours: each part has a **look** that changes its shape and detail, for example:
+
+- Tanks: teardrop, slab-sided, coffin, fat split cruiser tanks with a dash console, slim peanuts, little round tanks, long tanks with knee dents and long low racing tanks. Paint can be two-tone, a band, racing stripes, scallops or pinstripes. Caps can be monza, flush or twin, with oval, roundel or wing badges and knee pads.
+- Seats: brat, stepped two-up, king-and-queen, sprung solo pans, gunfighter, long cafe humps and flat-track seats. They can be tuck-and-roll, ribbed or diamond-stitched with coloured piping, with springs, sissy bars and backrests.
+- Bars: tracker, drag, buckhorn, Z bar, T bar on a centre post, clubman drops and ape hangers, on risers, with an MX brace and pad.
+- Exhausts: fishtails, turnouts, cigar mufflers, trumpets, reverse cones, triangle cans and stubbies. Headers can be chrome, black, blued titanium or heat-wrapped, and some systems fit a pipe each side.
+- Lamps: bullet, oval, quad LED, stacked twins, square lamps and nacelles, with chrome rings, stone grilles, visors and side brackets. Tail lamps can be tombstone, cateye, twin or halo LED.
+- Tails: ducktail, cafe hump, solo cowl, flat-track tail with an oval number board, and sharp sport and race tails, with chrome fender struts.
+- Wheels and tyres: moon discs, split-spoke cast wheels, rim stripes, polished lips, black or chrome spokes, big finned drum hubs and whitewall tyres.
+- Forks: gaiters, chrome or black shrouds, fork braces, wide-glide spreads and fatter legs. Frames come in chrome, nickel and polished finishes.
+- Front mudguards and fairings: ribbed and striped guards, a batwing, a club racer half fairing, a dome cowl and a bare cruiser screen. Bags come as studded leather saddlebags or rounded hard cases.
+
+Each pack part suits its own style first and usually one or two related ones, so a bike built from one pack reads as a proper example of that style.
+
 The parts computer's **Style** filter shows only parts that suit a style (kinds with no style, like engines, aren't filtered), and with a bike picked under **Fits** each part's page says what it would do to that bike's style. New project bikes and customers' bikes come with the bits that suit them; bikes in older saves get the slots empty.
 
 ### Front mudguards

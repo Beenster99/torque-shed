@@ -221,6 +221,7 @@ func _run_all() -> void:
 	print("Bike styles: tags on every part, detection, the bolt-on style bits, contracts, selling and the filter")
 	_test_style_tags()
 	_test_filler_parts()
+	_test_style_packs()
 	_test_filler_shed()
 	await _test_style_contracts_sales()
 	print("Garage upgrade options: colours, effects and styles, preview, changing them later")
@@ -10465,7 +10466,7 @@ func _test_filler_parts() -> void:
 	check(all_ok, "indicators, side panels, rearsets, guards and number boards bolt to the frame and are optional")
 	check(PartsDB.dependents("frame").has("rearsets") and PartsDB.LOW_SLOTS.has("guards"), "they come off before the frame, and you crouch for the low ones")
 	for slot in PartsDB.FILLER_SLOTS:
-		check(PartsDB.by_kind[slot].size() == 5, "%s: five to choose from" % PartsDB.KIND_NAMES[slot])
+		check(PartsDB.by_kind[slot].size() >= 5, "%s: at least five to choose from" % PartsDB.KIND_NAMES[slot])
 		check(Money.part_price(PartsDB.by_kind[slot][0]) > 0 and PartsComputer.group_of(slot) != "Other", "%s are priced and on a shelf" % slot)
 		for id in PartsDB.by_kind[slot]:
 			var m := BikeModel.new()
@@ -12032,3 +12033,83 @@ func _count_world_nodes(n: Node) -> int:
 	for c in n.get_children():
 		total += _count_world_nodes(c)
 	return total
+
+
+## Step 3 style packs: about thirty new parts made for each style, each with a look of its own.
+func _test_style_packs() -> void:
+	var packs := {}
+	var names := {}
+	var dup_names := []
+	for id in PartsDB.parts:
+		var p: Dictionary = PartsDB.get_part(id)
+		var n := str(p.get("name", ""))
+		if names.has(n) and p.has("pack"):
+			dup_names.append(n)
+		names[n] = true
+		if p.has("pack"):
+			packs.get_or_add(str(p["pack"]), []).append(id)
+	check(dup_names.is_empty(), "every pack part has a name of its own %s" % [dup_names])
+	for style in PartsDB.STYLES:
+		var ids: Array = packs.get(style, [])
+		var kinds := {}
+		for id in ids:
+			kinds[PartsDB.kind_of(id)] = true
+		check(ids.size() >= 30 and kinds.size() >= 10, "%s has its own pack: %d parts across %d kinds" % [PartsDB.style_name(style), ids.size(), kinds.size()])
+	var bad := []
+	for style in packs:
+		for id in packs[style]:
+			var p: Dictionary = PartsDB.get_part(id)
+			var look: Dictionary = p.get("look", {})
+			var ok: bool = Money.part_price(id) > 0 and (p["styles"] as Array)[0] == style and p.has("color")
+			if p["kind"] == "tank" and look.has("shape"):
+				ok = ok and BikeModel.TANK_SHAPES.has(look["shape"])
+			if p["kind"] == "saddle" and look.has("shape"):
+				ok = ok and BikeModel.SEAT_SHAPES.has(look["shape"])
+			if not ok:
+				bad.append(id)
+	check(bad.is_empty(), "pack parts are priced, tagged with their style first and use real shapes %s" % [bad])
+	# Every pack part draws on a bike.
+	var undrawn := []
+	var drawn := 0
+	for style in packs:
+		for id in packs[style]:
+			var slot: String = PartsDB.slots_for_kind(PartsDB.kind_of(id))[0]
+			var m := BikeModel.new()
+			add_child(m)
+			m.build_from(BikeBuild.new({slot: id}))
+			var b := m.slot_bounds(slot)
+			if b.size.length() < 0.05 or b.size.length() > 4.0:
+				undrawn.append("%s %s" % [id, b.size])
+			else:
+				drawn += 1
+			m.free()
+	check(undrawn.is_empty(), "all %d pack parts are drawn on the bike %s" % [drawn, undrawn])
+	# Looks make different shapes, not just colours.
+	var shapes := {"bobber_moon_16": ["front_wheel", "MoonDisc"], "cafe_ducktail": ["tail", "TailCowl"], "fishtail_pipes": ["exhaust", "Fishtail"],
+		"cafe_visor_lamp": ["headlight", "Visor"], "cruiser_hard_bags": ["panniers", "Case"], "cruiser_leather_saddlebags": ["panniers", "Saddlebag"]}
+	for id in shapes:
+		var m := BikeModel.new()
+		add_child(m)
+		m.build_from(BikeBuild.new({shapes[id][0]: id}))
+		check(m.find_children(shapes[id][1] + "*", "", true, false).size() > 0, "%s draws its own shape (%s)" % [PartsDB.part_name(id), shapes[id][1]])
+		m.free()
+	var plain := BikeModel.new()
+	add_child(plain)
+	plain.build_from(BikeBuild.new({"tank": "cafe_15"}))
+	var drop := BikeModel.new()
+	add_child(drop)
+	drop.build_from(BikeBuild.new({"tank": "teardrop_classic"}))
+	check(not plain.slot_bounds("tank").size.is_equal_approx(drop.slot_bounds("tank").size), "a teardrop tank is a different shape from the plain cafe tank")
+	plain.free()
+	drop.free()
+	# A bike built from one style's pack reads as that style.
+	for style in PartsDB.STYLES:
+		var b: Dictionary = Contracts.style_build(style).duplicate()
+		for id in packs.get(style, []):
+			for slot in PartsDB.slots_for_kind(PartsDB.kind_of(id)):
+				if slot in ["front_tyre", "rear_tyre"]:
+					continue
+				b[slot] = id
+		var parts := PartsDB.sanitize_build(b)
+		var found := PartsDB.detect_style(parts)
+		check(found.get("style", "") == style, "a bike from the %s pack reads as %s (%s)" % [style, PartsDB.style_text(parts), found.get("style", "")])

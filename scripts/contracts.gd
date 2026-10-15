@@ -592,11 +592,17 @@ static func _shuffle(a: Array, rng: RandomNumberGenerator) -> void:
 		a[j] = t
 
 
+## The share of customers' bikes built mostly in one style.
+const LEAN_CHANCE := 0.7
+
+
 ## A believable random road bike's parts, like a project bike's. `road` keeps it road legal
 ## (no race slicks).
 static func random_parts(rng: RandomNumberGenerator, road := false) -> Dictionary:
 	var parts := {}
 	var pick := {}
+	# Most bikes lean towards one style: where a kind has parts made for it, those are picked.
+	var lean: String = PartsDB.STYLES[rng.randi() % PartsDB.STYLES.size()] if rng.randf() < LEAN_CHANCE else ""
 	for slot in PartsDB.SLOTS:
 		var k: String = PartsDB.SLOT_KIND[slot]
 		if slot == "front_mudguard" or PartsDB.FILLER_SLOTS.has(slot):
@@ -606,6 +612,10 @@ static func random_parts(rng: RandomNumberGenerator, road := false) -> Dictionar
 			var options: Array = PartsDB.by_kind[k].duplicate()
 			if road and k == "tyre":
 				options = options.filter(func(t): return str(PartsDB.get_part(str(t)).get("style", "")) != "slick")
+			if lean != "" and k != "tyre":
+				var suits: Array = options.filter(func(id): return PartsDB.styles_of(str(id)).has(lean))
+				if not suits.is_empty():
+					options = suits
 			if PartsDB.is_optional(slot):
 				options.append("none")
 			pick[key] = options[rng.randi() % options.size()]
