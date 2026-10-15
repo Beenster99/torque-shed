@@ -60,6 +60,9 @@ func _ready() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
 	_bank = UITheme.label("", 17, Color(0.55, 0.95, 0.55))
+	# One line: wrapped in this row it was squeezed to a word per line, which made the header
+	# hundreds of pixels tall and pushed the bottom of every list off the screen.
+	_bank.autowrap_mode = TextServer.AUTOWRAP_OFF
 	head.add_child(_bank)
 	_bike_btn = Button.new()
 	_bike_btn.text = "Order a project bike"
