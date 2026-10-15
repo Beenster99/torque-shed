@@ -297,7 +297,7 @@ func _setup_inputs() -> void:
 	_bind("rotate_left", [KEY_COMMA], [])
 	_bind("rotate_right", [KEY_PERIOD], [JOY_BUTTON_BACK])
 	# Switches the rotate keys between quarter turns and turning freely to any angle.
-	_bind("rotate_free", [KEY_SLASH], [JOY_BUTTON_DPAD_UP])
+	_bind("rotate_free", [KEY_SLASH], [])
 	# Hold to scrap the equipment you're carrying or the part in your hands, for good.
 	_bind("scrap", [KEY_DELETE], [JOY_BUTTON_DPAD_DOWN])
 	# The second work button: drains fluids into a held container.

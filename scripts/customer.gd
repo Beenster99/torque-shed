@@ -219,7 +219,8 @@ func _set_parked(on_stand: bool) -> void:
 			_bike.add_child(_sound)
 			_sound.setup(_build, _model)
 			_sound.set_distant_filter(true)
-		_sound.running = true
+		if _sound:
+			_sound.running = true
 	elif _sound:
 		_sound.running = false
 
