@@ -20,6 +20,7 @@ var _base_mats := {}
 var _base_lights := {}
 var _bay4_y := 0.0
 var _front_sign_base := []   # the TORQUE SHED letters' own [pixel size, position], put back on undo
+var _wing_strips: Array[MeshInstance3D] = []   # the extension's strip light fittings
 var _added_lights: Array[Light3D] = []
 var _added_mats: Array[StandardMaterial3D] = []
 var _room_added: Array = []        # [list, thing] pairs added to the workshop's storage room lists
@@ -114,6 +115,9 @@ func _undo() -> void:
 	if ws.front_sign and not _front_sign_base.is_empty():
 		ws.front_sign.pixel_size = float(_front_sign_base[0])
 		ws.front_sign.position = _front_sign_base[1]
+	for strip in ws.ceiling_strips:
+		strip.visible = true
+	_wing_strips.clear()
 
 
 func _rebuild(have: Dictionary) -> void:
@@ -310,7 +314,7 @@ func _build_wing() -> void:
 	# Strip lights down the walkway, on the shed's switch.
 	var fixture := _shed_fixture()
 	for x in [7.2, 10.4]:
-		_box(Vector3(x, h - 0.06, 57.0), Vector3(1.3, 0.05, 0.2), fixture)
+		_wing_strips.append(_box(Vector3(x, h - 0.06, 57.0), Vector3(1.3, 0.05, 0.2), fixture))
 		var omni := OmniLight3D.new()
 		omni.position = Vector3(x, h - 0.4, 57.0)
 		omni.omni_range = 6.5
@@ -346,7 +350,7 @@ func _build_wing_bay(bay: int) -> void:
 	ws._screen_target(screen, "bay%d" % bay)
 	var fixture := _shed_fixture()
 	var h := GarageUpgrades.WING_HEIGHT
-	_box(Vector3(o.x, h - 0.08, o.z), Vector3(0.2, 0.05, 1.3), fixture)
+	_wing_strips.append(_box(Vector3(o.x, h - 0.08, o.z), Vector3(0.2, 0.05, 1.3), fixture))
 	var spot := SpotLight3D.new()
 	spot.position = Vector3(o.x, h - 0.2, o.z + 0.4)
 	spot.rotation.x = -PI * 0.5
@@ -760,7 +764,12 @@ func _showroom(wing: bool) -> void:
 	m.uv1_scale = Vector3(0.83, 0.83, 0.83)   # 0.6 m tiles
 	m.roughness = 0.06
 	m.metallic = 0.0
-	# Honeycomb LED ceilings, on the shed's light switch.
+	# Honeycomb LED ceilings, on the shed's light switch. They take the place of the strip light
+	# fittings, which would hang right through the tubes (the lamps themselves stay).
+	for strip in ws.ceiling_strips:
+		strip.visible = false
+	for strip in _wing_strips:
+		strip.visible = false
 	var c := Workshop.CENTER
 	var areas := [[Rect2(c.x - Workshop.HALF.x + 0.4, c.z - Workshop.HALF.y + 0.4, Workshop.HALF.x * 2.0 - 0.8, Workshop.HALF.y * 2.0 - 0.8), Workshop.HEIGHT - 0.32]]
 	if wing:

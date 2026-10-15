@@ -8594,6 +8594,32 @@ func _test_room_signs_clear_of_lights() -> void:
 	check(ws.upgrades.built().split(",").size() == GarageUpgrades.CATALOGUE.size(), "every upgrade built (%s)" % ws.upgrades.built())
 	hits = _sign_light_hits(ws)
 	check(hits.is_empty(), "with every upgrade no room sign runs into the LED strips, honeycomb or strip lights %s" % str(hits))
+	# The honeycomb takes the place of the strip light fittings, which would hang through its tubes.
+	var tubes := []
+	var fittings := []
+	var stack: Array = [ws]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if not (n is Node3D) or not (n as Node3D).is_visible_in_tree():
+			continue
+		if n is MultiMeshInstance3D and n.name == "HexLights":
+			var mm: MultiMesh = (n as MultiMeshInstance3D).multimesh
+			for i in mm.instance_count:
+				tubes.append((n as Node3D).global_transform * mm.get_instance_transform(i) * mm.mesh.get_aabb())
+		elif n is MeshInstance3D and (n as MeshInstance3D).material_override is StandardMaterial3D \
+				and ((n as MeshInstance3D).material_override as StandardMaterial3D).emission_enabled:
+			fittings.append((n as Node3D).global_transform * (n as MeshInstance3D).mesh.get_aabb())
+	var through := 0
+	for f in fittings:
+		for t in tubes:
+			if (f as AABB).intersects(t):
+				through += 1
+				break
+	check(not tubes.is_empty() and through == 0, "no light fitting hangs through the honeycomb ceilings (%d did)" % through)
+	Shed.upgrades.erase("showroom")
+	ws.upgrades.sync()
+	check(ws.ceiling_strips.all(func(m): return m.visible), "without the honeycomb the strip lights are back")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

@@ -113,6 +113,8 @@ var _room_shown := {}
 var upgrades: WorkshopUpgrades
 var knock := {"wing": [], "annex": []}
 var front_sign: Label3D      # the TORQUE SHED letters over the roller door
+## The strip light fittings hanging under the shed's roof (the honeycomb ceiling replaces them).
+var ceiling_strips: Array[MeshInstance3D] = []
 
 
 static func bay_transform(bay: int) -> Transform3D:
@@ -1715,7 +1717,7 @@ func _build_lights() -> void:
 	fixture.emission_energy_multiplier = 4.0
 	for bay in BAY_COUNT:
 		var xf := bay_transform(bay)
-		_deco(self, Vector3(xf.origin.x, HEIGHT - 0.35, xf.origin.z), Vector3(0.2, 0.05, 1.3), fixture)
+		ceiling_strips.append(_deco(self, Vector3(xf.origin.x, HEIGHT - 0.35, xf.origin.z), Vector3(0.2, 0.05, 1.3), fixture))
 		var spot := SpotLight3D.new()
 		spot.position = Vector3(xf.origin.x, HEIGHT - 0.45, xf.origin.z + 0.4)
 		spot.rotation.x = -PI * 0.5
@@ -1727,7 +1729,7 @@ func _build_lights() -> void:
 		add_child(spot)
 		_shed_lights.append(spot)
 	for p in [Vector3(-4.2, 0.0, 1.5), Vector3(4.2, 0.0, 1.5), Vector3(0.0, 0.0, 3.5)]:
-		_deco(self, CENTER + p + Vector3(0.0, HEIGHT - 0.35, 0.0), Vector3(0.2, 0.05, 1.3), fixture)
+		ceiling_strips.append(_deco(self, CENTER + p + Vector3(0.0, HEIGHT - 0.35, 0.0), Vector3(0.2, 0.05, 1.3), fixture))
 		var omni := OmniLight3D.new()
 		omni.position = CENTER + p + Vector3(0.0, HEIGHT - 0.6, 0.0)
 		omni.omni_range = 7.0
