@@ -571,16 +571,11 @@ func _sign_shots() -> void:
 	for id in GarageUpgrades.CATALOGUE:
 		Shed.request({"a": "buy_upgrade", "id": id})
 	await _frames(10)
+	await _look_from(Vector3(0.0, 0.0, 79.0), Vector3(0.0, 3.8, 70.8), "s1_front_sign")
 	var c := Workshop.CENTER
 	await _look_from(Vector3(c.x + 2.0, 0.0, Workshop.PAINT_DOOR_Z), Vector3(c.x + Workshop.HALF.x, 3.0, Workshop.PAINT_DOOR_Z), "s3_paint_shop_sign")
 	await _look_from(Vector3(c.x - 2.0, 0.0, Workshop.STORE_DOOR_Z), Vector3(c.x - Workshop.HALF.x, 3.0, Workshop.STORE_DOOR_Z), "s4_storage_sign")
-	await _look_from(Vector3(c.x + 2.5, 0.0, c.z - 2.0), Vector3(c.x + Workshop.HALF.x, 3.5, c.z - 2.0), "s5_shed_neon")
 	var r := GarageUpgrades.WING
 	await _look_from(Vector3(GarageUpgrades.WING_DOOR_X, 0.0, r.position.y + 3.0), Vector3(GarageUpgrades.WING_DOOR_X, 2.9, r.end.y), "s6_workshop_sign")
-	await _look_from(Vector3(8.0, 0.0, 55.6), Vector3(14.6, 2.4, 57.3), "s7_lounge_sign")
 	var a := GarageUpgrades.ANNEX
 	await _look_from(Vector3(GarageUpgrades.ANNEX_DOOR_X, 0.0, a.end.y + 3.0), Vector3(GarageUpgrades.ANNEX_DOOR_X, 3.0, a.end.y), "s8_annex_sign")
-	await _look_from(Vector3(-11.0, 0.0, 53.0), Vector3(-12.0, 2.4, 49.8), "s9_mezzanine_sign")
-	await _look_from(Vector3(c.x - 3.0, 0.0, c.z + 3.0), Vector3(c.x + 3.0, 4.2, c.z - 3.0), "s10_shed_ceiling")
-	await _look_from(Vector3(0.0, 0.0, 79.0), Vector3(0.0, 3.8, 70.8), "s1_front_sign")
-	await _look_from(Vector3(-2.0, 0.0, 76.0), Vector3(0.0, 3.8, 70.8), "s2_front_sign_close")
