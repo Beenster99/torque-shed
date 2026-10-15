@@ -35,6 +35,37 @@ var upgrades_panel: UpgradesPanel
 
 ## The shop's three aisles, so nobody scrolls through everything.
 const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors", "sell": "Sell"}
+## Within an aisle the kinds come under headings, in this order. A kind that isn't listed here
+## (something new in the catalogue) goes under "Other" at the end of its aisle, so it's never lost.
+const GROUPS := [
+	["Engine and drivetrain", ["engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox",
+		"exhaust", "ecu", "final_drive", "chain"]],
+	["Chassis", ["frame", "fork", "shock", "handlebars", "side_stand", "centre_stand"]],
+	["Wheels and brakes", ["wheel", "tyre", "disc", "caliper", "pads", "master"]],
+	["Body and lights", ["tank", "saddle", "front_mudguard", "tail", "fairing", "mirrors", "dashboard", "headlight",
+		"fog_lights", "horn"]],
+	["Luggage", ["panniers", "top_box"]],
+	["Fluids", ["petrol", "oil", "brake_fluid", "chain_lube"]],
+	["Tools and machines", ["eq:stand", "eq:washer", "eq:repair", "eq:blaster", "eq:booth", "eq:changer"]],
+	["Storage and benches", ["eq:shelf", "eq:bench"]],
+	["Comfort and decor", ["eq:seat", "eq:tv", "eq:poster"]],
+	["Jumps", ["eq:ramp", "eq:obstacle"]],
+	["Course", ["eq:barrier", "eq:marker"]],
+	["Sell to the dealer", ["sell:bikes", "sell:parts"]],
+]
+## How a list can be sorted: key -> what the picker says.
+const SORTS := {"shop": "Shop order", "price_up": "Price: low to high", "price_down": "Price: high to low",
+	"name": "Name: A to Z", "light": "Lightest first"}
+
+## The list's sort (a key of SORTS), the bike parts must fit (0 for any), and whether only parts
+## the business can pay for are shown. Kept while the computer is closed.
+var sort_key := "shop"
+var fits_bike := 0
+var affordable_only := false
+var _sort_pick: OptionButton
+var _bike_pick: OptionButton
+var _afford_box: CheckBox
+var _bike_ids: Array = []    # bike id for each entry in the bike picker after "Any bike"
 
 
 func _ready() -> void:
@@ -84,7 +115,7 @@ func _ready() -> void:
 	close.pressed.connect(close_computer)
 	head.add_child(close)
 	root.add_child(head)
-	root.add_child(UITheme.label("Pick a kind of part, then a model. Orders arrive in boxes outside the roller door.", 15, Color(1, 1, 1, 0.6)))
+	root.add_child(UITheme.label("Pick a kind of part, then a model. Sort and filter the list below. Orders arrive in boxes outside the roller door.", 15, Color(1, 1, 1, 0.6)))
 
 	var aisles := HBoxContainer.new()
 	aisles.add_theme_constant_override("separation", 8)
@@ -107,12 +138,42 @@ func _ready() -> void:
 	aisles.add_child(_search)
 	root.add_child(aisles)
 
+	# Sorting and filters for the list of models.
+	var tools := HBoxContainer.new()
+	tools.add_theme_constant_override("separation", 8)
+	tools.add_child(_cell("Sort:", 15, Color(1, 1, 1, 0.7), false))
+	_sort_pick = OptionButton.new()
+	for key in SORTS:
+		_sort_pick.add_item(SORTS[key])
+	_sort_pick.custom_minimum_size = Vector2(200, 0)
+	_sort_pick.item_selected.connect(func(i): set_sort(SORTS.keys()[i]))
+	tools.add_child(_sort_pick)
+	var gap2 := Control.new()
+	gap2.custom_minimum_size = Vector2(16, 0)
+	tools.add_child(gap2)
+	tools.add_child(_cell("Fits:", 15, Color(1, 1, 1, 0.7), false))
+	_bike_pick = OptionButton.new()
+	_bike_pick.custom_minimum_size = Vector2(240, 0)
+	_bike_pick.tooltip_text = "Only show parts that go on this bike as it is now"
+	_bike_pick.item_selected.connect(func(i): set_fits_bike(0 if i == 0 else int(_bike_ids[i - 1])))
+	tools.add_child(_bike_pick)
+	var gap3 := Control.new()
+	gap3.custom_minimum_size = Vector2(16, 0)
+	tools.add_child(gap3)
+	_afford_box = CheckBox.new()
+	_afford_box.text = "Within budget"
+	_afford_box.tooltip_text = "Only show parts the business's account can pay for now"
+	_afford_box.toggled.connect(func(on): set_affordable_only(on))
+	tools.add_child(_afford_box)
+	root.add_child(tools)
+	_fill_bike_pick()
+
 	var cols := HBoxContainer.new()
 	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cols.add_theme_constant_override("separation", 14)
 	root.add_child(cols)
 	_kinds = _column(cols, 220)
-	_variants = _column(cols, 300)
+	_variants = _column(cols, 360)
 	var detail := VBoxContainer.new()
 	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	detail.add_theme_constant_override("separation", 10)
@@ -167,7 +228,11 @@ func _ready() -> void:
 		if _kind == "eq:poster" and _posters_shown != Shed.posters.size() and (_search == null or _search.text == ""):
 			_show_kind(_kind)
 		elif _kind.begins_with("sell:") and _sell_signature(_kind) != _sell_shown:
-			_show_kind(_kind))
+			_show_kind(_kind)
+		elif fits_bike != 0 and not Shed.bikes.has(fits_bike):
+			# The bike the list was filtered for has gone (sold, or delivered back).
+			_fill_bike_pick()
+			set_fits_bike(0))
 	_show_section(_section)
 	upgrades_panel = UpgradesPanel.new()
 	add_child(upgrades_panel)
@@ -198,6 +263,31 @@ static func all_kinds() -> Array:
 	return kinds
 
 
+## An aisle's kinds under their headings: [[heading, [kinds...]], ...], in the order they're
+## listed. Kinds the headings don't name go under "Other" at the end.
+static func groups_of(sec: String) -> Array:
+	var sold: Array = (all_kinds() + SELL_KINDS).filter(func(k): return section_of(str(k)) == sec)
+	var out := []
+	var placed := []
+	for g in GROUPS:
+		var ks: Array = (g[1] as Array).filter(func(k): return sold.has(k))
+		if not ks.is_empty():
+			out.append([str(g[0]), ks])
+			placed.append_array(ks)
+	var rest: Array = sold.filter(func(k): return not placed.has(k))
+	if not rest.is_empty():
+		out.append(["Other", rest])
+	return out
+
+
+## The heading a kind is listed under.
+static func group_of(k: String) -> String:
+	for g in groups_of(section_of(k)):
+		if (g[1] as Array).has(k):
+			return str(g[0])
+	return ""
+
+
 static func kind_title(k: String) -> String:
 	if k == "sell:bikes":
 		return "Whole bikes"
@@ -215,18 +305,23 @@ func _show_section(sec: String) -> void:
 	for c in _kinds.get_children():
 		c.queue_free()
 	var first := ""
-	for k in all_kinds() + SELL_KINDS:
-		if section_of(k) != sec:
-			continue
-		if first == "":
-			first = k
-		var b := Button.new()
-		b.text = kind_title(k)
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.toggle_mode = true
-		b.pressed.connect(_pick_kind.bind(k))
-		b.set_meta("kind", k)
-		_kinds.add_child(b)
+	for g in groups_of(sec):
+		var head := UITheme.label(str(g[0]).to_upper(), 13, UITheme.ACCENT)
+		if _kinds.get_child_count() > 0:
+			head.custom_minimum_size = Vector2(0, 26)
+			head.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		_kinds.add_child(head)
+		for k in g[1]:
+			if first == "":
+				first = k
+			var b := Button.new()
+			# Fluids sit under their own heading, so they don't need "Fluids:" in front.
+			b.text = kind_title(k).trim_prefix("Fluids: ")
+			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.toggle_mode = true
+			b.pressed.connect(_pick_kind.bind(k))
+			b.set_meta("kind", k)
+			_kinds.add_child(b)
 	if _search:
 		_search.text = ""
 	_show_kind(_kind if section_of(_kind) == sec else first)
@@ -242,12 +337,10 @@ func _refresh_list() -> void:
 	var found := search(q)
 	_variants.add_child(UITheme.label("%d FOUND" % found.size(), 14, UITheme.ACCENT))
 	for hit in found.slice(0, 80):
-		var b := Button.new()
-		b.text = "%s  ·  %s" % [hit["name"], kind_title(hit["kind"])]
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.toggle_mode = true
-		b.set_meta("part", hit["id"])
-		b.pressed.connect(func(): _pick_found(hit["kind"], hit["id"]); _order.grab_focus())
+		var k := str(hit["kind"])
+		var id := str(hit["id"])
+		var b := _row(id, str(hit["name"]), price_text(k, id), "%s  ·  %s" % [kind_title(k).trim_prefix("Fluids: "), key_spec(k, id)])
+		b.pressed.connect(func(): _pick_found(k, id); _order.grab_focus())
 		_variants.add_child(b)
 	if not found.is_empty():
 		_pick_found(found[0]["kind"], found[0]["id"])
@@ -256,8 +349,116 @@ func _refresh_list() -> void:
 func _pick_found(k: String, id: String) -> void:
 	_kind = k
 	for b in _kinds.get_children():
-		b.button_pressed = b.get_meta("kind") == k
+		if b is Button:
+			b.button_pressed = b.get_meta("kind", "") == k
 	_show_part(id)
+
+
+## One model in the list: its name and price on top, a line of what matters about it below.
+## The button carries the model's id as its "part" meta.
+func _row(id: String, title: String, price: String, sub: String) -> Button:
+	var b := Button.new()
+	b.toggle_mode = true
+	b.set_meta("part", id)
+	b.tooltip_text = title
+	b.custom_minimum_size = Vector2(0, 50)
+	b.clip_contents = true
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	box.offset_left = 10
+	box.offset_right = -10
+	box.offset_top = 4
+	box.offset_bottom = -4
+	box.add_theme_constant_override("separation", 0)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(box)
+	var top := HBoxContainer.new()
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(top)
+	var name_l := _cell(title, 16, Color.WHITE)
+	name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(name_l)
+	if price != "":
+		top.add_child(_cell(price, 16, Color(0.55, 0.95, 0.55), false))
+	box.add_child(_cell(sub, 13, Color(1, 1, 1, 0.55)))
+	return b
+
+
+## A one-line label: never wrapped (in a row it would be squeezed to a letter per line). With
+## `trim` it can be cut short with "..." to fit; without, it always shows in full.
+func _cell(text: String, font_size: int, color: Color, trim := true) -> Label:
+	var l := UITheme.label(text, font_size, color)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	if trim:
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		l.clip_text = true
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+
+## What a model costs this player, for its row ("" for shed kit, which comes free).
+static func price_text(k: String, id: String) -> String:
+	if k.begins_with("eq:") or design_of(id) != 0:
+		return ""
+	return TvChannels.money_text(Money.buy_price(id, Shed.me()))
+
+
+## The first couple of things that matter about a model, for its row.
+static func key_spec(k: String, id: String) -> String:
+	var line := Equipment.spec_line(id) if k.begins_with("eq:") else PartsDB.spec_line(id)
+	var bits := line.split("  ·  ", false)
+	var out: Array = Array(bits).slice(0, 2)
+	if not k.begins_with("eq:") and PartsDB.is_lightweight(id):
+		out.append("light")
+	elif k.begins_with("eq:") and Equipment.get_model(id).get("compact", false):
+		out.append("compact")
+	var have := owned(id)
+	if have > 0:
+		out.append("%d in the shed" % have)
+	return "  ·  ".join(out)
+
+
+## How many of a part the shed has loose (on a bench, shelf, the floor, still boxed...), not
+## fitted to anything.
+static func owned(id: String) -> int:
+	var n := 0
+	for it in Shed.items.values():
+		if str(it.get("part", "")) == id and not str(it.get("at", "")) in ["bike", "engine", "wheel"]:
+			n += 1
+	return n
+
+
+## Whether a part goes on a bike as it is now: "" if it does, else why not. Tyres have to suit
+## one of its wheels, wheels one of its tyres, a fairing needs a headlight and fairing mirrors a
+## fairing; everything else bolts on any bike.
+static func fit_problem(id: String, bike_id: int) -> String:
+	if not Shed.bikes.has(bike_id) or PartsDB.get_part(id).is_empty():
+		return ""
+	var on := func(slot: String) -> String:
+		var item := Shed.item_on(bike_id, slot)
+		return str(Shed.items[item]["part"]) if item != 0 and Shed.items.has(item) else "none"
+	match PartsDB.kind_of(id):
+		"tyre":
+			var wheels: Array = ["front_wheel", "rear_wheel"].map(func(s): return on.call(s)).filter(func(w): return w != "none")
+			if wheels.is_empty() or wheels.any(func(w): return PartsDB.tyre_fit(id, w) == 0):
+				return ""
+			return PartsDB.tyre_fit_reason(id, wheels[0])
+		"wheel":
+			var tyres: Array = ["front_tyre", "rear_tyre"].map(func(s): return on.call(s)).filter(func(t): return t != "none")
+			if tyres.is_empty() or tyres.any(func(t): return PartsDB.tyre_fit(t, id) == 0):
+				return ""
+			return "Neither of its tyres goes on this wheel: it would need new rubber too."
+	# Mounts every bike ends up with (frame, fork, bars...) don't count, only the extras a bike
+	# may never have: the headlight under a fairing, the fairing under fairing mirrors.
+	for slot in PartsDB.slots_for_kind(PartsDB.kind_of(id)):
+		for m in PartsDB.part_mounts(slot, id):
+			if not PartsDB.is_optional(str(m)):
+				continue
+			if on.call(str(m)) == "none":
+				return "It needs a %s on the bike first." % PartsDB.slot_name(str(m)).to_lower()
+		break
+	return ""
 
 
 ## Everything in the shop whose name, kind or description matches every word typed.
@@ -308,8 +509,11 @@ func open() -> void:
 	if upgrades_panel:
 		upgrades_panel.close()
 	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.delivery_place(Vector3(0.25, 0.15, 0.25)).is_empty() else "yes")
-	if _kind == "eq:poster":
-		_show_kind(_kind)   # whiteboard prints made since it was last open
+	_fill_bike_pick()
+	if not Shed.bikes.has(fits_bike):
+		fits_bike = 0
+	if _kind == "eq:poster" or fits_bike != 0 or affordable_only:
+		_show_kind(_kind)   # whiteboard prints made since it was last open, or what the filters let through now
 	_focus_kind()
 
 
@@ -317,11 +521,11 @@ func open() -> void:
 func _focus_kind() -> void:
 	var first: Control = null
 	for b in _kinds.get_children():
-		if b.is_queued_for_deletion():
+		if b.is_queued_for_deletion() or not b is Button:
 			continue
 		if first == null:
 			first = b
-		if b.get_meta("kind") == _kind:
+		if b.get_meta("kind", "") == _kind:
 			b.grab_focus()
 			return
 	if first:
@@ -347,39 +551,47 @@ func _show_kind(k: String) -> void:
 	if _search and _search.text != "":
 		_search.text = ""
 	for b in _kinds.get_children():
-		b.button_pressed = b.get_meta("kind") == k
+		if b is Button:
+			b.button_pressed = b.get_meta("kind", "") == k
+			if b.button_pressed and not b.is_queued_for_deletion():
+				# Under its heading, the kind picked (by a search, say) may be scrolled out of view.
+				var scroll := _kinds.get_parent() as ScrollContainer
+				(func():
+					if is_instance_valid(b) and b.is_inside_tree() and not b.is_queued_for_deletion():
+						scroll.ensure_control_visible(b)).call_deferred()
 	for c in _variants.get_children():
 		c.queue_free()
 	if k.begins_with("sell:"):
 		_show_sellables(k)
 		return
-	var ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
+	var all_ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
+	var ids := listed(k)
 	var group := ""
-	if k == "engine":
-		ids = ids.duplicate()
-		var order := ["Single", "Twin", "Parallel twin", "V-twin", "Boxer twin", "Inline triple", "Inline four", "Two-stroke"]
-		ids.sort_custom(func(a, b):
-			var pa := PartsDB.get_part(a)
-			var pb := PartsDB.get_part(b)
-			var ta := order.find(str(pa.get("type", "")))
-			var tb := order.find(str(pb.get("type", "")))
-			return ta < tb if ta != tb else float(pa["displacement"]) < float(pb["displacement"]))
+	var head := "%d MODELS" % all_ids.size()
+	if ids.size() < all_ids.size():
+		head = "%d OF %d SHOWN" % [ids.size(), all_ids.size()]
+	var filters := []
+	if fits_bike != 0 and Shed.bikes.has(fits_bike) and not k.begins_with("eq:"):
+		filters.append("fit %s" % str(Shed.bikes[fits_bike]["name"]))
+	if affordable_only and not k.begins_with("eq:"):
+		filters.append("within budget")
+	if not filters.is_empty():
+		head += ": " + " and ".join(filters).to_upper()
+	var count := UITheme.label(head, 13, Color(1, 1, 1, 0.55))
+	_variants.add_child(count)
 	for id in ids:
-		if k == "engine" and str(PartsDB.get_part(id).get("type", "")) != group:
+		if k == "engine" and sort_key == "shop" and str(PartsDB.get_part(id).get("type", "")) != group:
 			# Engines come in families: a heading over each layout's sizes.
 			group = str(PartsDB.get_part(id).get("type", ""))
 			_variants.add_child(UITheme.label(group.to_upper(), 14, UITheme.ACCENT))
-		var b := Button.new()
-		if k.begins_with("eq:"):
-			b.text = str(Equipment.get_model(id)["name"]) + ("  (compact)" if Equipment.get_model(id).get("compact", false) else "")
-		else:
-			b.text = PartsDB.part_name(id) + ("  (light)" if PartsDB.is_lightweight(id) else "")
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.toggle_mode = true
-		b.set_meta("part", id)
+		var title := str(Equipment.get_model(id)["name"]) if k.begins_with("eq:") else PartsDB.part_name(id)
+		var b := _row(id, title, price_text(k, id), key_spec(k, id))
 		b.pressed.connect(_pick_part.bind(id))
 		b.focus_entered.connect(_show_part.bind(id))
 		_variants.add_child(b)
+	if ids.is_empty():
+		var none := UITheme.label("Nothing here %s. Change the filters above to see the rest." % " and ".join(filters), 14, Color(1, 1, 1, 0.5))
+		_variants.add_child(none)
 	_posters_shown = Shed.posters.size()
 	if k == "eq:poster":
 		# The crew's own whiteboard drawings, saved as posters at the board.
@@ -398,7 +610,112 @@ func _show_kind(k: String) -> void:
 			b.pressed.connect(_pick_part.bind(key))
 			b.focus_entered.connect(_show_part.bind(key))
 			_variants.add_child(b)
-	_show_part(ids[0])
+	if ids.is_empty():
+		_show_nothing(kind_title(k))
+	else:
+		_show_part(ids[0] if not ids.has(_part) else _part)
+
+
+## The models of a kind the list shows, filtered and in the order picked (see sort_key,
+## fits_bike and affordable_only). Shed kit is only sorted.
+func listed(k: String) -> Array:
+	var ids: Array = (Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]).duplicate()
+	var eq := k.begins_with("eq:")
+	if not eq:
+		if fits_bike != 0 and Shed.bikes.has(fits_bike):
+			ids = ids.filter(func(id): return fit_problem(str(id), fits_bike) == "")
+		if affordable_only:
+			ids = ids.filter(func(id): return Money.buy_price(str(id), Shed.me()) <= Shed.garage_money)
+	var name_of := func(id) -> String:
+		return str(Equipment.get_model(str(id))["name"]) if eq else PartsDB.part_name(str(id))
+	match sort_key:
+		"name":
+			ids.sort_custom(func(a, b): return name_of.call(a).naturalnocasecmp_to(name_of.call(b)) < 0)
+		"price_up", "price_down":
+			if not eq:
+				var up := sort_key == "price_up"
+				ids.sort_custom(func(a, b):
+					var pa := Money.part_price(str(a))
+					var pb := Money.part_price(str(b))
+					if pa == pb:
+						return name_of.call(a).naturalnocasecmp_to(name_of.call(b)) < 0
+					return pa < pb if up else pa > pb)
+		"light":
+			if not eq:
+				ids.sort_custom(func(a, b):
+					return float(PartsDB.get_part(str(a)).get("mass", 0.0)) < float(PartsDB.get_part(str(b)).get("mass", 0.0)))
+		_:
+			if k == "engine":
+				var order := ["Single", "Twin", "Parallel twin", "V-twin", "Boxer twin", "Inline triple", "Inline four", "Two-stroke"]
+				ids.sort_custom(func(a, b):
+					var pa := PartsDB.get_part(a)
+					var pb := PartsDB.get_part(b)
+					var ta := order.find(str(pa.get("type", "")))
+					var tb := order.find(str(pb.get("type", "")))
+					return ta < tb if ta != tb else float(pa["displacement"]) < float(pb["displacement"]))
+	return ids
+
+
+## Sorts every list by a key of SORTS.
+func set_sort(key: String) -> void:
+	if not SORTS.has(key):
+		return
+	sort_key = key
+	if _sort_pick and _sort_pick.selected != SORTS.keys().find(key):
+		_sort_pick.select(SORTS.keys().find(key))
+	_relist()
+
+
+## Shows only parts that go on this bike (0 for any bike).
+func set_fits_bike(bike_id: int) -> void:
+	fits_bike = bike_id if Shed.bikes.has(bike_id) else 0
+	if _bike_pick:
+		var i := 0 if fits_bike == 0 else _bike_ids.find(fits_bike) + 1
+		if _bike_pick.selected != i and i < _bike_pick.item_count:
+			_bike_pick.select(i)
+	_relist()
+
+
+## Shows only parts the business can pay for now.
+func set_affordable_only(on: bool) -> void:
+	affordable_only = on
+	if _afford_box and _afford_box.button_pressed != on:
+		_afford_box.set_pressed_no_signal(on)
+	_relist()
+
+
+## The bikes in the shed in the Fits picker, after "Any bike".
+func _fill_bike_pick() -> void:
+	if _bike_pick == null:
+		return
+	_bike_pick.clear()
+	_bike_pick.add_item("Any bike")
+	_bike_ids = Shed.bikes.keys()
+	_bike_ids.sort()
+	for id in _bike_ids:
+		_bike_pick.add_item(str(Shed.bikes[id]["name"]))
+	_bike_pick.select(0 if fits_bike == 0 or not _bike_ids.has(fits_bike) else _bike_ids.find(fits_bike) + 1)
+
+
+## Shows the list again after a sort or filter change, keeping the search if there is one.
+func _relist() -> void:
+	if _variants == null or _kind.begins_with("sell:"):
+		return
+	if _search and _search.text.strip_edges() != "":
+		_refresh_list()
+	else:
+		_show_kind(_kind)
+
+
+## An empty detail pane, for a list with nothing in it.
+func _show_nothing(title: String) -> void:
+	_part = ""
+	_title.text = title
+	_desc.text = ""
+	_spec.text = ""
+	_sizes.visible = false
+	_order.text = "Order it"
+	_order.disabled = true
 
 
 ## The whiteboard poster design a "design:<id>" entry in the poster list is, or 0.
@@ -475,6 +792,11 @@ func _show_part(id: String) -> void:
 		return
 	var fits := PartsDB.slots_for_kind(_kind).map(func(s): return PartsDB.slot_name(s).to_lower())
 	_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nFits: " + ", ".join(fits)
+	if fits_bike != 0 and Shed.bikes.has(fits_bike):
+		var why := fit_problem(id, fits_bike)
+		_spec.text += "\n%s: %s" % [str(Shed.bikes[fits_bike]["name"]), "goes on it as it is" if why == "" else why]
+	if owned(id) > 0:
+		_desc.text += " The shed has %d already, not fitted to anything." % owned(id)
 	if _kind == "chain":
 		_spec.text += "\n\nCrouch by the bike with the wrench and hold right mouse to set the tension. Lube it with chain lube."
 

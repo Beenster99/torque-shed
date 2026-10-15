@@ -52,7 +52,12 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"centre_stand": 0.9, "cooling": 0.6, "oil_filter": 0.6, "air_filter": 0.5, "gearbox": 0.5, "rear_master": 0.5,
 	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
 	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6,
-	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2}
+	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2, "front_mudguard": 1.0}
+## Parts in the front wheel's spray. With no front mudguard they get this much more road dirt;
+## a guard takes it back down by how much spray it stops (its "cover").
+const FRONT_SPRAY: Array[String] = ["fork", "engine", "cooling", "exhaust", "headlight", "horn", "fog_lights",
+	"front_caliper", "oil_filter", "air_filter", "frame"]
+const NO_GUARD_SPRAY := 1.8
 ## Litres a second poured from a container, or drained out of a bike.
 const POUR_RATE := {"petrol": 2.0, "oil": 0.8, "brake_fluid": 0.15}
 const SYNC_INTERVAL := 0.1
@@ -351,6 +356,7 @@ func _add_new_slots() -> void:
 			if not bike["slots"].has(slot):
 				bike["slots"][slot] = 0
 				bike["bolted"][slot] = false
+		_add_front_mudguard(id)
 		if bike["slots"].has("tail"):
 			continue
 		var frame := int(bike["slots"].get("frame", 0))
@@ -371,6 +377,39 @@ func _add_new_slots() -> void:
 	for plan in plans:
 		if plan is Dictionary and plan.get("parts") is Dictionary and not plan["parts"].has("tail"):
 			plan["parts"]["tail"] = PartsDB.fitting_tail(PartsDB.sanitize_build(plan["parts"].duplicate()))
+		if plan is Dictionary and plan.get("parts") is Dictionary and not plan["parts"].has("front_mudguard"):
+			plan["parts"]["front_mudguard"] = PartsDB.fitting_front_mudguard(PartsDB.sanitize_build(plan["parts"].duplicate()))
+
+
+## Sheds saved before front mudguards were parts of their own (the fork drew a painted one):
+## each bike gets the guard that suits it, in the same state as its fork, bolted on where the
+## fork is fitted, else waiting on the bench. Scratch builds start with the slot empty.
+func _add_front_mudguard(bike_id: int) -> void:
+	var bike: Dictionary = bikes[bike_id]
+	var original: Dictionary = bike.get("original", {})
+	if not original.has("front_mudguard"):
+		original["front_mudguard"] = PartsDB.fitting_front_mudguard(PartsDB.sanitize_build(original.duplicate()))
+	if bike["slots"].has("front_mudguard"):
+		return
+	bike["slots"]["front_mudguard"] = 0
+	bike["bolted"]["front_mudguard"] = false
+	if bike.get("scratch", false):
+		return
+	var fork := int(bike["slots"].get("fork", 0))
+	var like: Dictionary = items.get(fork, {"rust": 0.3, "dirt": 0.3, "wear": 0.2})
+	var part := str(original["front_mudguard"])
+	var guard := _new_item(part, float(like["rust"]), float(like["dirt"]), float(like["wear"]), _guard_color(part, bike["paint"]))
+	if fork != 0:
+		_move(guard, "bike", bike_id)
+		bike["slots"]["front_mudguard"] = guard
+		bike["bolted"]["front_mudguard"] = true
+	else:
+		_put_on_bench(guard)
+
+
+## A front mudguard's colour on a bike: painted to match where the part says so, else its own.
+static func _guard_color(part: String, paint):
+	return paint if PartsDB.get_part(part).get("paint_match", false) and paint is Color else null
 
 
 func join_remote() -> void:
@@ -3408,19 +3447,33 @@ func _park(bike_id: int) -> void:
 		bike["stand"] = _rest_stand(bike_id)
 
 
+## How much more road dirt the parts behind the front wheel pick up: NO_GUARD_SPRAY with no
+## front mudguard, 1.0 behind a full-length guard, between for the rest (and a cracked one
+## stops less).
+func front_spray(bike_id: int) -> float:
+	var guard := item_on(bike_id, "front_mudguard")
+	if guard == 0:
+		return NO_GUARD_SPRAY
+	var cover := float(PartsDB.get_part(str(items[guard]["part"])).get("cover", 0.7))
+	cover *= lerpf(0.6, 1.0, BikeBuild.part_health(condition_of(items[guard])))
+	return lerpf(NO_GUARD_SPRAY, 1.0, clampf(cover, 0.0, 1.0))
+
+
 ## What a ride does to a bike: road dirt on its parts, petrol used, oil and brake fluid aging,
 ## and engine wear, which climbs steeply when the oil is low or worn out.
 func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 	var km := clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 	var dirty := clampf(float(action.get("dirt_km", 0.0)), 0.0, 5.0)
 	var build := build_of(bike_id)
+	var spray := front_spray(bike_id)
 	for slot in PartsDB.SLOTS:
 		var id := item_on(bike_id, slot)
 		# A protective coat keeps muck from sticking and rust off; bare metal without one
 		# flash-rusts, quicker in the muck. The coat itself wears thinner with the miles.
 		var protect := coat_protect(items[id]) if id != 0 else 0.0
 		if id != 0 and dirty > 0.0:
-			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * float(DIRT_EXPOSURE.get(slot, 0.4)) * (1.0 - 0.6 * protect))
+			var exposure := float(DIRT_EXPOSURE.get(slot, 0.4)) * (spray if FRONT_SPRAY.has(slot) else 1.0)
+			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * exposure * (1.0 - 0.6 * protect))
 		if id != 0 and blast_cover(items[id]) > 0.0 and km + dirty > 0.0:
 			var bare := blast_cover(items[id]) * (1.0 - protect)
 			items[id]["rust"] = minf(1.0, float(items[id]["rust"]) + (km + dirty * 2.0) * BARE_RUST * bare)
@@ -4035,6 +4088,11 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 			# The tail unit has aged with the frame it's bolted to.
 			var frame: Dictionary = items[bike["slots"]["frame"]]
 			item_id = _new_item(parts[slot], frame["rust"], minf(1.0, float(frame["dirt"]) * 1.2), frame["wear"])
+		elif slot == "front_mudguard":
+			# So has the front mudguard with its fork, and the muckier for being in the spray.
+			var fork: Dictionary = items[bike["slots"]["fork"]]
+			item_id = _new_item(parts[slot], fork["rust"], minf(1.0, float(fork["dirt"]) * 1.3), fork["wear"],
+				_guard_color(parts[slot], paint_color))
 		else:
 			item_id = _aged_item(parts[slot], age, paint_color if slot in ["tank", "fairing"] else null)
 		_move(item_id, "bike", id)
@@ -4103,6 +4161,8 @@ func _random_bike(bay: int) -> int:
 	var pick := {}
 	for slot in PartsDB.SLOTS:
 		var k: String = PartsDB.SLOT_KIND[slot]
+		if slot == "front_mudguard":
+			continue   # the one that suits its tail and tyres (sanitize_build picks it)
 		# A random bike wears a matching pair of tyres; everything else is picked per slot.
 		var key: String = k if k == "tyre" else slot
 		if not pick.has(key):

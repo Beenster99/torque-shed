@@ -25,6 +25,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--guards" in OS.get_cmdline_user_args():
+		await _guard_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--weather" in OS.get_cmdline_user_args():
 		await _weather_shots()
 		SaveGame.delete_slot("shots")
@@ -194,6 +199,36 @@ func _tail_shots() -> void:
 		await _frames(5)
 		await _look_from(at - back * 2.2 + side * 1.5, at + Vector3(0.0, 0.7, 0.0) - back * 0.6, "t_fairing_" + id)
 	await _look_from(at + side * 2.6, at + Vector3(0.0, 0.6, 0.0), "t_side_view")
+
+
+## Front mudguards: Old Faithful with each one (from the front quarter), then the parts
+## computer's grouped list, sorted and filtered. `-- --guards` takes just these.
+func _guard_shots() -> void:
+	var bike := _bike_named("Old Faithful")
+	var view: Node3D = main.workshop.bike_views[bike]
+	var at := view.global_position
+	var side := view.global_transform.basis.x
+	var back := view.global_transform.basis.z
+	var pc: PartsComputer = main.computer
+	main._open_computer()
+	await _frames(5)
+	await _shot("fm_computer_bike_aisle")
+	pc._show_kind("front_mudguard")
+	await _frames(5)
+	await _shot("fm_computer_mudguards")
+	pc.set_sort("price_up")
+	pc.set_fits_bike(bike)
+	pc._show_kind("tyre")
+	await _frames(5)
+	await _shot("fm_computer_tyres_fit_sorted")
+	pc._show_section("shed")
+	await _frames(5)
+	await _shot("fm_computer_shed_aisle")
+	pc.close_computer()
+	for id in PartsDB.by_kind["front_mudguard"]:
+		_swap_part(bike, "front_mudguard", id)
+		await _frames(5)
+		await _look_from(at - back * 1.6 + side * 1.6, at + Vector3(0.0, 0.4, 0.0) - back * 0.7, "fm_" + id)
 
 
 func _swap_part(bike: int, slot: String, part: String) -> void:

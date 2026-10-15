@@ -163,6 +163,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_tail(build)
 	_draw_fairing()
 	_draw_mirrors()
+	_draw_front_mudguard(build)
 
 	_apply_visibility()
 	_current_slot = ""
@@ -588,11 +589,7 @@ func _draw_fork(build: BikeBuild) -> void:
 	var clamp_mat := _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
 	_box(Vector3.ZERO, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
 	_box(-_steer_axis * 0.16, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
-	var fender := _mat(paint, 0.25, 0.2, 0.6)
-	if build.tyre_style == "offroad":
-		_box(-_steer_axis * 0.2 + Vector3(0.0, -0.02, -0.12), Vector3(0.13, 0.015, 0.42), fender, _steer_node)
-	else:
-		_box(Vector3(0.0, build.front_radius + 0.04, 0.0), Vector3(0.12, 0.015, 0.36), fender, _front_hub)
+	# The front mudguard is a part of its own now: see _draw_front_mudguard.
 
 
 func _draw_handlebars() -> void:
@@ -1045,20 +1042,110 @@ func tail_light_position() -> Vector3:
 
 ## A mudguard following a wheel: plates round an arc of `radius` about `c`, from angle `a0` to
 ## `a1` (radians from straight up, positive towards the back).
-func _guard(c: Vector3, radius: float, width: float, a0: float, a1: float, mat: Material, segs := 8) -> void:
+func _guard(c: Vector3, radius: float, width: float, a0: float, a1: float, mat: Material, segs := 8, parent: Node3D = self) -> void:
 	var step := (a1 - a0) / segs
 	for i in segs:
 		var a := a0 + step * (i + 0.5)
-		var seg := _box(c + Vector3(0.0, cos(a), sin(a)) * radius, Vector3(width, 0.012, radius * step * 1.1), mat)
+		var seg := _box(c + Vector3(0.0, cos(a), sin(a)) * radius, Vector3(width, 0.012, radius * step * 1.1), mat, parent)
 		seg.rotation.x = a
 
 
 ## A flat plate from `a` to `b` (both on the centre line), `width` across and `thick` deep.
-func _plank(a: Vector3, b: Vector3, width: float, thick: float, mat: Material) -> MeshInstance3D:
+func _plank(a: Vector3, b: Vector3, width: float, thick: float, mat: Material, parent: Node3D = self) -> MeshInstance3D:
 	var d := b - a
-	var plank := _box((a + b) * 0.5, Vector3(width, thick, d.length()), mat)
+	var plank := _box((a + b) * 0.5, Vector3(width, thick, d.length()), mat, parent)
 	plank.rotation.x = atan2(-d.y, d.z)
 	return plank
+
+
+## The front mudguard. Low ones follow the tyre on the fork legs, so they ride up and down with
+## the wheel: a short hugger, a carbon sport hugger, a slim cafe blade, a bobbed blade or a long
+## valanced classic on stays. High ones (MX and enduro) bolt under the bottom yoke and stay put
+## while the wheel moves under them. Painted ones take the part's own colour like the tank.
+func _draw_front_mudguard(build: BikeBuild) -> void:
+	_current_slot = "front_mudguard"
+	var p := _part()
+	if p.is_empty():
+		return
+	var material := str(p.get("material", "plastic"))
+	var col := _col()
+	var mat: StandardMaterial3D
+	match material:
+		"metal":
+			mat = _mat(col, 0.25 if p.get("paint_match", false) else 0.9, 0.2 if p.get("paint_match", false) else 0.15, 0.6 if p.get("paint_match", false) else 0.0)
+		"carbon":
+			mat = _mat(col, 0.2, 0.25, 0.8)
+		_:
+			mat = _mat(col, 0.1, 0.4, 0.5)
+	var stay := _mat(Color(0.82, 0.83, 0.85), 0.95, 0.2)
+	var black := _mat(Color(0.04, 0.04, 0.045), 0.3, 0.6)
+	var r := build.front_radius
+	var w := build.front_tyre_width + 0.03
+	var style := str(p.get("style", "hugger"))
+	if style in ["high", "enduro"]:
+		# Under the bottom yoke, sweeping forward and up into a beak; the enduro one is longer
+		# at the back and has a lip at the front.
+		# A hand's width above the tyre at rest (in steering space), held up off the yoke on stays.
+		var axle := Vector3(0.0, 0.0, -build.wheelbase * 0.5) - _head
+		var top := axle + Vector3(0.0, r + 0.1, 0.0)
+		var yoke := -_steer_axis * 0.16
+		var base := Vector3(0.0, minf(top.y, yoke.y - 0.03), lerpf(top.z, yoke.z, 0.5))
+		var long := style == "enduro"
+		var back := base + Vector3(0.0, -0.04, 0.14 if long else 0.08)
+		var mid := base + Vector3(0.0, 0.0, -0.08)
+		var nose := base + Vector3(0.0, 0.06, -0.3 if long else -0.34)
+		_plank(back, base, w + 0.02, 0.012, mat, _steer_node)
+		_plank(base, mid, w + 0.01, 0.012, mat, _steer_node)
+		_plank(mid, nose, w, 0.012, mat, _steer_node)
+		if long:
+			_plank(nose, nose + Vector3(0.0, -0.05, -0.03), w * 0.8, 0.012, mat, _steer_node)
+		for side in [-1.0, 1.0]:
+			_tube(base + Vector3(0.05 * side, 0.0, 0.0), yoke + Vector3(0.05 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
+		return
+	var gap := 0.03
+	var a0 := -0.5
+	var a1 := 0.75
+	match style:
+		"sport":
+			gap = 0.02
+			a0 = -0.35
+			a1 = 0.65
+			w -= 0.01
+		"cafe":
+			gap = 0.035
+			a0 = -0.75
+			a1 = 0.95
+			w -= 0.02
+		"bobbed":
+			gap = 0.03
+			a0 = -0.3
+			a1 = 0.45
+		"classic":
+			gap = 0.045
+			a0 = -1.0
+			a1 = 1.3
+			w += 0.03
+	var radius := r + gap
+	_guard(Vector3.ZERO, radius, w, a0, a1, mat, 10 if style == "classic" else 6, _front_hub)
+	if style == "classic":
+		# Deep valances down each side of the tyre.
+		for side in [-1.0, 1.0]:
+			var step := (a1 - a0) / 8.0
+			for i in 8:
+				var a := a0 + step * (i + 0.5)
+				var seg := _box(Vector3(w * 0.5 * side, 0.0, 0.0) + Vector3(0.0, cos(a), sin(a)) * (radius - 0.025),
+					Vector3(0.008, 0.05, radius * step * 1.1), mat, _front_hub)
+				seg.rotation.x = a
+	# Bolted to the fork legs either side, just above the tyre.
+	for side in [-1.0, 1.0]:
+		_box(Vector3(0.09 * side, radius * 0.92, 0.0), Vector3(0.03, 0.02, 0.05), black, _front_hub)
+	if style in ["classic", "cafe", "bobbed"]:
+		# Wire stays from the axle out to the guard, front and back.
+		var ends := [a0 + 0.2, a1 - 0.2] if style != "bobbed" else [a1 - 0.1]
+		for side in [-1.0, 1.0]:
+			var x: float = (w * 0.5 + 0.01) * side
+			for a: float in ends:
+				_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) + Vector3(0.0, cos(a), sin(a)) * radius, 0.005, stay, Vector3.ONE, _front_hub)
 
 
 ## A number plate facing backwards, its top leaning back by `tilt` (radians).

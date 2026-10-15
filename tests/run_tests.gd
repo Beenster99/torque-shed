@@ -211,6 +211,11 @@ func _run_all() -> void:
 	await _test_blast_keeps_bare_metal()
 	await _test_blast_scan()
 	await _test_protective_coat()
+	print("Front mudguards, and the parts computer's headings, sorting and filters")
+	_test_front_mudguard_parts()
+	_test_front_mudguard_shed()
+	_test_front_mudguard_old_save()
+	await _test_parts_computer_organised()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -225,7 +230,7 @@ func _merge(a: Dictionary, b: Dictionary) -> Dictionary:
 
 
 func _test_catalogue() -> void:
-	check(PartsDB.KINDS.size() == 35 and PartsDB.parts.size() >= 170, "catalogue has 35 kinds of part (%d parts)" % PartsDB.parts.size())
+	check(PartsDB.KINDS.size() >= 36 and PartsDB.parts.size() >= 170, "catalogue has %d kinds of part (%d parts)" % [PartsDB.KINDS.size(), PartsDB.parts.size()])
 	for k in PartsDB.KINDS:
 		check(PartsDB.by_kind[k].size() >= 5, "%s has at least five variants (%d)" % [k, PartsDB.by_kind[k].size()])
 	var no_colour := []
@@ -233,7 +238,7 @@ func _test_catalogue() -> void:
 		if not PartsDB.parts[id].has("color"):
 			no_colour.append(id)
 	check(no_colour.is_empty(), "every part has a colour %s" % str(no_colour))
-	check(PartsDB.SLOTS.size() == 41, "a bike has 41 slots, 7 of them on the engine")
+	check(PartsDB.SLOTS.size() >= 42 and PartsDB.ENGINE_SLOTS.size() == 7, "a bike has %d slots, 7 of them on the engine" % PartsDB.SLOTS.size())
 	var b := BikeBuild.new()
 	check(b.bike_mass > 120.0 and b.bike_mass < 230.0, "default bike mass is plausible (%.0f kg)" % b.bike_mass)
 	check(b.hp() > 40.0 and b.hp() < 120.0, "default bike power is plausible (%.0f hp)" % b.hp())
@@ -10089,3 +10094,236 @@ func _test_protective_coat() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+func _test_front_mudguard_parts() -> void:
+	var guards: Array = PartsDB.by_kind["front_mudguard"]
+	check(guards.size() >= 5, "the shop has %d front mudguards" % guards.size())
+	var listed := 0
+	for k in PartsDB.by_kind:
+		listed += PartsDB.by_kind[k].size()
+	check(listed == PartsDB.parts.size(), "no two parts in the catalogue share an id (%d listed, %d parts)" % [listed, PartsDB.parts.size()])
+	for id in guards:
+		check(PartsDB.spec_line(id).contains("spray"), "the %s has a spec line" % id)
+	check(PartsDB.is_optional("front_mudguard") and PartsDB.BIKE_SLOTS.has("front_mudguard"), "it has its own slot on the bike, and a bike rides without one")
+	check(PartsDB.slot_name("front_mudguard") == "Front mudguard" and PartsDB.slot_name("front_tyre") == "Front tyre",
+		"its slot reads \"Front mudguard\" (%s)" % PartsDB.slot_name("front_mudguard"))
+	check(PartsDB.dependents("fork").has("front_mudguard") and PartsDB.MOUNTS["front_mudguard"] == ["fork"], "it bolts to the fork, so it comes off before the fork")
+	# Bikes that never had one chosen get one that suits them; a chosen one, or none, stays.
+	var want := {"cafe_tail": "alloy_cafe_blade", "bobber_fender": "bobbed_steel", "sport_tail_tidy": "road_hugger",
+		"enduro_fender": "mx_high_fender", "classic_mudguard": "chrome_classic", "scrambler_loop": "enduro_front_fender"}
+	for tail in want:
+		check(PartsDB.sanitize_build({"tail": tail})["front_mudguard"] == want[tail], "a bike with a %s gets a %s" % [tail, want[tail]])
+	check(PartsDB.sanitize_build({"tail": "sport_tail_tidy", "front_tyre": "knobbly_mx_90"})["front_mudguard"] == "enduro_front_fender",
+		"knobblies get a high fender whatever the tail")
+	check(PartsDB.sanitize_build({"front_mudguard": "carbon_hugger"})["front_mudguard"] == "carbon_hugger"
+		and PartsDB.sanitize_build({"front_mudguard": "none"})["front_mudguard"] == "none", "a chosen guard, or none, stays")
+	# Money, weight and recycling.
+	check(Money.part_price("carbon_hugger") > Money.part_price("chrome_classic") and Money.part_price("chrome_classic") > Money.part_price("road_hugger"),
+		"a carbon hugger costs more than chrome, chrome more than plastic (%d, %d, %d)" % [Money.part_price("carbon_hugger"),
+		Money.part_price("chrome_classic"), Money.part_price("road_hugger")])
+	check(BikeBuild.new({"front_mudguard": "carbon_hugger"}).bike_mass < BikeBuild.new({"front_mudguard": "chrome_classic"}).bike_mass - 1.0
+		and PartsDB.is_lightweight("carbon_hugger"), "the carbon one is the light one")
+	check(PartsDB.bin_for("chrome_classic") == "metal" and PartsDB.bin_for("mx_high_fender") == "plastic" and PartsDB.bin_for("carbon_hugger") == "general",
+		"steel and alloy guards go in metal, plastic in plastic, carbon in general")
+	# Every variant is drawn over the front wheel; the high ones up under the yoke.
+	var tops := {}
+	for id in guards:
+		var m := BikeModel.new()
+		add_child(m)
+		m.build_from(BikeBuild.new({"front_mudguard": id}))
+		var b := m.slot_bounds("front_mudguard")
+		var wheel := m.slot_bounds("front_wheel")
+		check(b.size.length() > 0.1 and b.get_center().z < m.slot_bounds("tank").get_center().z and absf(b.get_center().z - wheel.get_center().z) < 0.35,
+			"the %s is drawn over the front wheel" % id)
+		tops[id] = b.position.y
+		m.free()
+	check(float(tops["mx_high_fender"]) > float(tops["road_hugger"]) + 0.05, "an MX fender sits up high, a hugger down on the tyre")
+	var bare := BikeModel.new()
+	add_child(bare)
+	bare.build_from(BikeBuild.new({"front_mudguard": "none"}))
+	check(bare.slot_bounds("front_mudguard").size == Vector3.ZERO, "with none fitted, nothing is drawn over the wheel")
+	bare.free()
+
+
+func _test_front_mudguard_shed() -> void:
+	Shed.start_new("Tester", 45)
+	var me := Shed.me()
+	var expect := {"Rusty Ranger": "mx_high_fender", "Barn Find": "alloy_cafe_blade", "Old Faithful": "road_hugger"}
+	var sport := 0
+	for id in Shed.bikes:
+		var on := Shed.item_on(id, "front_mudguard")
+		var bike_name := str(Shed.bikes[id]["name"])
+		check(on != 0 and Shed.is_bolted(id, "front_mudguard") and str(Shed.items[on]["part"]) == str(expect.get(bike_name, "")),
+			"%s comes with its %s" % [bike_name, expect.get(bike_name, "")])
+		if bike_name == "Old Faithful":
+			sport = id
+	var guard := Shed.item_on(sport, "front_mudguard")
+	check(Shed.items[guard]["color"] == Shed.bikes[sport]["paint"], "a plastic hugger comes painted to match the bike")
+	check(Shed.condition_text(Shed.items[guard]) != "" and Shed.build_of(sport).condition.has("front_mudguard"), "it has a condition of its own")
+	# It comes off before the fork, and goes back on.
+	Shed.request({"a": "unbolt", "bike": sport, "slot": "fork"})
+	check(Shed.check(me, {"a": "remove", "bike": sport, "slot": "fork"}) != "", "the fork can't come out with the guard on it")
+	Shed.request({"a": "unbolt", "bike": sport, "slot": "front_mudguard"})
+	Shed.request({"a": "remove", "bike": sport, "slot": "front_mudguard"})
+	check(Shed.item_on(sport, "front_mudguard") == 0 and Shed.items[guard]["at"] == "held", "the guard unbolts and comes off in your hands")
+	check(not Shed.missing_slots(sport).has("front_mudguard"), "the bike can still be ridden without one")
+	# Riding without one throws the road all over the engine.
+	check(Shed.front_spray(sport) > 1.5, "no guard: much more spray (%.2f)" % Shed.front_spray(sport))
+	var engine := Shed.item_on(sport, "engine")
+	Shed.items[engine]["dirt"] = 0.0
+	Shed._wear_from_ride(sport, {"km": 1.0, "dirt_km": 1.0})
+	var bare_dirt := float(Shed.items[engine]["dirt"])
+	Shed.request({"a": "install", "bike": sport, "slot": "front_mudguard"})
+	Shed.request({"a": "bolt", "bike": sport, "slot": "front_mudguard"})
+	Shed.request({"a": "bolt", "bike": sport, "slot": "fork"})
+	check(Shed.item_on(sport, "front_mudguard") == guard and Shed.is_bolted(sport, "front_mudguard"), "and it goes back on")
+	Shed.items[engine]["dirt"] = 0.0
+	Shed._wear_from_ride(sport, {"km": 1.0, "dirt_km": 1.0})
+	check(float(Shed.items[engine]["dirt"]) < bare_dirt * 0.85, "with it on, the engine picks up less muck (%.3f vs %.3f)" % [Shed.items[engine]["dirt"], bare_dirt])
+	var classic := Shed._new_item("chrome_classic", 0.0, 0.0, 0.0)
+	check(Shed.front_spray(sport) > 1.0, "a hugger still lets some through")
+	# Painting: any guard can be sprayed like the tank.
+	Shed._move(classic, "spot", "bench_0")
+	Shed.request({"a": "paint", "item": classic, "color": 3, "finish": "gloss"})
+	check(Shed.items[classic]["color"] == Shed.PAINTS[3], "and sprayed a colour of your own")
+	# Blueprints, contracts and the save keep it.
+	var bp := Shed._save_blueprint(sport, "Hugged")
+	check(str(Shed.blueprints[bp]["parts"]["front_mudguard"]) == "road_hugger", "a blueprint stores the front mudguard")
+	check(Shed.plan_rows(Shed.blueprints[bp], 0).any(func(r): return r["slot"] == "front_mudguard"), "so a build from it orders one")
+	check(Contracts.style_build("cafe")["front_mudguard"] == "alloy_cafe_blade" and Contracts.style_build("sport")["front_mudguard"] == "carbon_hugger",
+		"bespoke builds name the guard that suits their style")
+	check(Contracts.goal_text({"t": "fit", "slot": "front_mudguard"}) == "A front mudguard fitted", "a customer can ask for one fitted")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	check(PartsDB.by_kind["front_mudguard"].has(str(Contracts.random_parts(rng)["front_mudguard"])), "customers' bikes come with one")
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.start_new("Tester", 46)
+	Shed.load_state(copy, "Tester")
+	var back := Shed.item_on(sport, "front_mudguard")
+	check(back != 0 and str(Shed.items[back]["part"]) == "road_hugger", "and loads with the guard on")
+
+
+func _test_front_mudguard_old_save() -> void:
+	Shed.start_new("Tester", 47)
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	# Take the shed back to before front mudguards were parts.
+	var no_fork := 0
+	for id in old["bikes"]:
+		var bike: Dictionary = old["bikes"][id]
+		var item := int(bike["slots"].get("front_mudguard", 0))
+		if item != 0:
+			old["items"].erase(item)
+		bike["slots"].erase("front_mudguard")
+		bike["bolted"].erase("front_mudguard")
+		bike["original"].erase("front_mudguard")
+		if bike["name"] == "Old Faithful":
+			no_fork = id
+	var fork := int(old["bikes"][no_fork]["slots"]["fork"])
+	old["bikes"][no_fork]["slots"]["fork"] = 0
+	old["items"][fork]["at"] = "spot"
+	old["items"][fork]["ref"] = "bench_3"
+	var parts := PartsDB.sanitize_build({"tail": "cafe_tail"})
+	parts.erase("front_mudguard")
+	old["blueprints"] = {9100: {"id": 9100, "name": "Old plan", "parts": parts, "colors": {}, "paint": Shed.PAINTS[0], "geo": {}, "from": "x"}}
+	Shed.start_new("Tester", 48)
+	Shed.load_state(old, "Tester")
+	for id in Shed.bikes:
+		var guard := Shed.item_on(id, "front_mudguard")
+		check(Shed.bikes[id]["original"].has("front_mudguard"), "an old save's %s knows its front mudguard" % Shed.bikes[id]["name"])
+		if id == no_fork:
+			var loose := Shed.items.values().filter(func(it): return it["kind"] == "front_mudguard" and it["at"] == "spot")
+			check(guard == 0 and loose.size() == 1 and str(loose[0]["part"]) == "road_hugger", "a bike with no fork gets its guard on the bench")
+		else:
+			check(guard != 0 and Shed.is_bolted(id, "front_mudguard"), "an old save's %s gets a %s fitted" % [Shed.bikes[id]["name"],
+				Shed.items[guard]["part"] if guard != 0 else "nothing"])
+	check(str(Shed.blueprints[9100]["parts"].get("front_mudguard", "")) == "alloy_cafe_blade", "an old blueprint gets a guard that suits it")
+	check(Shed._next_id > Shed.items.keys().max(), "new parts get fresh ids")
+
+
+func _test_parts_computer_organised() -> void:
+	Shed.start_new("Tester", 49)
+	var pc := PartsComputer.new()
+	add_child(pc)
+	await get_tree().process_frame
+	# Every kind sold is under exactly one heading in its own aisle.
+	for sec in PartsComputer.SECTIONS:
+		var listed := []
+		for g in PartsComputer.groups_of(sec):
+			listed.append_array(g[1])
+		var sold: Array = (PartsComputer.all_kinds() + PartsComputer.SELL_KINDS).filter(func(k): return PartsComputer.section_of(k) == sec)
+		check(listed.size() == sold.size() and sold.all(func(k): return listed.has(k)), "the %s aisle lists every kind once under a heading" % sec)
+	check(PartsComputer.group_of("front_mudguard") == "Body and lights" and PartsComputer.group_of("tyre") == "Wheels and brakes"
+		and PartsComputer.group_of("gearbox") == "Engine and drivetrain" and PartsComputer.group_of("oil") == "Fluids"
+		and PartsComputer.group_of("eq:washer") == "Tools and machines", "kinds are grouped the way you'd look for them")
+	pc._show_section("bike")
+	var heads: Array = pc._kinds.get_children().filter(func(c): return c is Label and not c.is_queued_for_deletion())
+	check(heads.size() == PartsComputer.groups_of("bike").size() and str(heads[0].text) == "ENGINE AND DRIVETRAIN", "the kinds list has a heading over each group")
+	var shown := func() -> Array:
+		return pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion()).map(func(c): return str(c.get_meta("part")))
+	# Sorting.
+	pc._show_kind("tyre")
+	pc.set_sort("price_up")
+	var ids: Array = shown.call()
+	var ok: bool = ids.size() == PartsDB.by_kind["tyre"].size()
+	for i in range(1, ids.size()):
+		ok = ok and Money.part_price(ids[i - 1]) <= Money.part_price(ids[i])
+	check(ok, "sorted by price, cheapest first")
+	pc.set_sort("price_down")
+	ids = shown.call()
+	check(Money.part_price(ids[0]) > Money.part_price(ids[-1]), "or dearest first")
+	pc.set_sort("name")
+	ids = shown.call()
+	ok = true
+	for i in range(1, ids.size()):
+		ok = ok and PartsDB.part_name(ids[i - 1]).naturalnocasecmp_to(PartsDB.part_name(ids[i])) <= 0
+	check(ok, "or by name")
+	pc.set_sort("light")
+	ids = shown.call()
+	check(float(PartsDB.get_part(ids[0]).get("mass", 0.0)) <= float(PartsDB.get_part(ids[-1]).get("mass", 0.0)), "or lightest first")
+	# Each row shows the price and a key spec.
+	var row: Button = pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion())[0]
+	var texts: Array = row.find_children("*", "Label", true, false).map(func(l): return str(l.text))
+	check(texts.has(TvChannels.money_text(Money.buy_price(str(row.get_meta("part")), Shed.me())))
+		and texts.any(func(t): return t.contains("compound")), "a row shows its price and what matters about it %s" % str(texts))
+	pc.set_sort("shop")
+	# Filters: parts that fit a bike, and what the business can pay for.
+	var ranger := 0
+	for id in Shed.bikes:
+		if Shed.bikes[id]["name"] == "Rusty Ranger":
+			ranger = id
+	pc.set_fits_bike(ranger)
+	ids = shown.call()
+	check(ids.size() > 0 and ids.size() < PartsDB.by_kind["tyre"].size() and ids.all(func(t): return PartsComputer.fit_problem(t, ranger) == ""),
+		"only the tyres that go on the Rusty Ranger's wheels (%d of %d)" % [ids.size(), PartsDB.by_kind["tyre"].size()])
+	check(pc._spec.text.contains("Rusty Ranger: goes on it"), "and the page says so")
+	pc._show_kind("mirrors")
+	check(not shown.call().has("fairing_mirrors") and PartsComputer.fit_problem("fairing_mirrors", ranger).contains("fairing"),
+		"no fairing mirrors for a bike with no fairing")
+	pc.set_fits_bike(0)
+	check(shown.call().has("fairing_mirrors"), "Any bike shows them all again")
+	Shed.garage_money = 60
+	pc.set_affordable_only(true)
+	pc._show_kind("front_mudguard")
+	ids = shown.call()
+	check(ids.size() > 0 and ids.all(func(g): return Money.buy_price(g, Shed.me()) <= 60) and ids.size() < PartsDB.by_kind["front_mudguard"].size(),
+		"within budget shows only what the business can pay for (%s)" % str(ids))
+	Shed.garage_money = 0
+	pc._show_kind("engine")
+	check(shown.call().is_empty() and pc._order.disabled, "with nothing to show, there's nothing to order")
+	pc.set_affordable_only(false)
+	check(shown.call().size() == PartsDB.by_kind["engine"].size(), "and turning the filter off brings them back")
+	# The search still finds things, with prices on its rows.
+	pc._search.text = "carbon hugger"
+	pc._refresh_list()
+	check(pc._part == "carbon_hugger" and pc._kind == "front_mudguard", "searching finds the carbon hugger")
+	# Laid out: the sort and filter bar is one line, and each row's price shows in full.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var tools: Control = pc.get_child(1).get_child(0).get_child(0).get_child(3)
+	check(tools.size.y < 60.0, "the sort and filter bar is one line (%.0f px)" % tools.size.y)
+	var hit: Button = pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion())[0]
+	var price_l: Label = hit.find_children("*", "Label", true, false).filter(func(l): return str(l.text).begins_with("£"))[0]
+	check(price_l.size.x >= price_l.get_minimum_size().x - 1.0 and price_l.size.x > 20.0, "and each row's price shows in full (%.0f px)" % price_l.size.x)
+	pc.queue_free()
+	await get_tree().process_frame
