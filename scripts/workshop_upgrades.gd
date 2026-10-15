@@ -7,6 +7,10 @@ extends Node3D
 ## again whenever the upgrades change, so every player sees a purchase straight away.
 
 const T := 0.2      # wall thickness of the new buildings
+## The lit sign box over the roller door (width, height), and the clear margin its letters keep
+## inside the neon frame.
+const SIGN_BOX := Vector2(5.6, 1.15)
+const SIGN_MARGIN := 0.25
 
 var ws: Workshop
 var _sig := "?"
@@ -15,6 +19,7 @@ var _root: Node3D
 var _base_mats := {}
 var _base_lights := {}
 var _bay4_y := 0.0
+var _front_sign_base := []   # the TORQUE SHED letters' own [pixel size, position], put back on undo
 var _added_lights: Array[Light3D] = []
 var _added_mats: Array[StandardMaterial3D] = []
 var _room_added: Array = []        # [list, thing] pairs added to the workshop's storage room lists
@@ -35,6 +40,8 @@ func setup(workshop: Workshop) -> void:
 		_base_lights[l] = [l.light_energy, l.light_color]
 	if ws._bay_screens.size() > 3:
 		_bay4_y = ws._bay_screens[3].position.y
+	if ws.front_sign:
+		_front_sign_base = [ws.front_sign.pixel_size, ws.front_sign.position]
 	_make_materials()
 	sync()
 
@@ -104,6 +111,9 @@ func _undo() -> void:
 		(l as Light3D).light_color = _base_lights[l][1]
 	if ws._bay_screens.size() > 3:
 		ws._bay_screens[3].position.y = _bay4_y
+	if ws.front_sign and not _front_sign_base.is_empty():
+		ws.front_sign.pixel_size = float(_front_sign_base[0])
+		ws.front_sign.position = _front_sign_base[1]
 
 
 func _rebuild(have: Dictionary) -> void:
@@ -667,13 +677,18 @@ func _signage() -> void:
 	var front := c.z + Workshop.HALF.y + 0.3
 	var y := Workshop.DOOR_HEIGHT + 0.6
 	# A light box behind the TORQUE SHED letters over the roller door, edged in orange neon.
-	_box(Vector3(c.x, y, front + 0.02), Vector3(5.6, 1.15, 0.03), ws._material(Color(0.05, 0.05, 0.06), 0.3, 0.4)).name = "SignBox"
+	var box := SIGN_BOX
+	_box(Vector3(c.x, y, front + 0.02), Vector3(box.x, box.y, 0.03), ws._material(Color(0.05, 0.05, 0.06), 0.3, 0.4)).name = "SignBox"
 	var edge := _glow(Color(1.0, 0.55, 0.1), 5.0)
 	for s in [-1.0, 1.0]:
-		_box(Vector3(c.x, y + s * 0.58, front + 0.04), Vector3(5.7, 0.05, 0.03), edge)
-		_box(Vector3(c.x + s * 2.83, y, front + 0.04), Vector3(0.05, 1.2, 0.03), edge)
-	var sub := _text("MOTORCYCLE RESTORATION  ·  EST. 2026", Vector3(c.x, y - 0.42, front + 0.07), 0.0, 40, Color(2.2, 1.7, 1.0), 4)
+		_box(Vector3(c.x, y + s * (box.y * 0.5 + 0.005), front + 0.04), Vector3(box.x + 0.1, 0.05, 0.03), edge)
+		_box(Vector3(c.x + s * (box.x * 0.5 + 0.03), y, front + 0.04), Vector3(0.05, box.y + 0.05, 0.03), edge)
+	var sub := _text("MOTORCYCLE RESTORATION  ·  EST. 2026", Vector3(c.x, y - 0.4, front + 0.07), 0.0, 40, Color(2.2, 1.7, 1.0), 4)
+	sub.name = "SignSub"
 	sub.shaded = false
+	# The shed's own TORQUE SHED letters shrink to sit inside the frame with a margin all round,
+	# above the strapline.
+	_fit_front_sign(Vector2(c.x, y), front)
 	for s in [-1.0, 1.0]:
 		var wash := SpotLight3D.new()
 		wash.position = Vector3(c.x + s * 1.8, y + 1.0, front + 0.6)
@@ -694,6 +709,40 @@ func _signage() -> void:
 	blue.light_energy = 0.6
 	blue.light_color = Color(0.4, 0.6, 1.0)
 	_shed_light(blue)
+
+
+## Fits the TORQUE SHED letters over the roller door inside the sign box centred at `mid`
+## (x, height): no wider than the box less SIGN_MARGIN each side, and in the band above the
+## strapline, in front of the box.
+func _fit_front_sign(mid: Vector2, front: float) -> void:
+	var l := ws.front_sign
+	if l == null or _front_sign_base.is_empty():
+		return
+	l.pixel_size = float(_front_sign_base[0])
+	l.position = Vector3(mid.x, mid.y, front + 0.06)
+	var ext := front_sign_extent()
+	var room := Vector2(SIGN_BOX.x - SIGN_MARGIN * 2.0, SIGN_BOX.y * 0.56)
+	var w := float(ext["x"][1]) - float(ext["x"][0])
+	var h := float(ext["y"][1]) - float(ext["y"][0])
+	l.pixel_size *= minf(1.0, minf(room.x / w, room.y / h))
+	# The capitals' middle a little above the box's, clear of the strapline under them.
+	ext = front_sign_extent()
+	var cap_mid := (float(ext["y"][0]) + float(ext["y"][1])) * 0.5
+	l.position.y += mid.y + SIGN_BOX.y * 0.14 - cap_mid
+
+
+## The TORQUE SHED letters' extent on the sign box's face ({x: [left, right], y: [bottom, top]}
+## in world metres), worked out from the font: for tests and to check it fits.
+func front_sign_extent() -> Dictionary:
+	var l := ws.front_sign
+	var size := Workshop.label_size(l)
+	var font: Font = l.font if l.font else ThemeDB.fallback_font
+	var line := (font.get_ascent(l.font_size) + font.get_descent(l.font_size)) * l.pixel_size
+	# Capitals sit on the baseline and reach about 0.72 of the font size up.
+	var base := l.position.y + line * 0.5 - font.get_ascent(l.font_size) * l.pixel_size
+	var pad := l.outline_size * l.pixel_size
+	return {"x": [l.position.x - size.x * 0.5, l.position.x + size.x * 0.5],
+		"y": [base - pad, base + l.font_size * 0.72 * l.pixel_size + pad]}
 
 
 func _showroom(wing: bool) -> void:

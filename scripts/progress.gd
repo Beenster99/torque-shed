@@ -314,7 +314,8 @@ func _read_all() -> Dictionary:
 ## A profile with every field present and the right types (JSON brings numbers back as floats).
 static func _clean_profile(p: Dictionary, player_name: String) -> Dictionary:
 	var out := {"name": player_name, "xp": maxi(0, int(p.get("xp", 0))), "tools": {}, "skills": {}, "stats": {},
-		"records": {}, "goals": [], "money": clampi(int(p.get("money", 0)), 0, MAX_MONEY), "cash_log": []}
+		"records": {}, "goals": [], "money": clampi(int(p.get("money", 0)), 0, MAX_MONEY), "cash_log": [],
+		"series": MoneyGraph.sanitize(p.get("series", {}))}
 	var cash_log = p.get("cash_log", [])
 	if cash_log is Array:
 		for e in cash_log.slice(-CASH_LOG_SIZE):
@@ -368,6 +369,7 @@ func save_profile() -> bool:
 
 
 func _touch() -> void:
+	_note_cash()
 	_dirty_save = true
 	_save_timer = 1.5
 	_report_due = true
@@ -932,6 +934,20 @@ func cash_flow(days := 7) -> Dictionary:
 		else:
 			spent -= int(e["amt"])
 	return {"earned": earned, "spent": spent}
+
+
+## Notes this player's cash in the graph's series when it has moved (see MoneyGraph).
+func _note_cash() -> void:
+	if profile.is_empty():
+		return
+	if not (profile.get("series") is Dictionary):
+		profile["series"] = {}
+	MoneyGraph.record(profile["series"], MoneyGraph.now_hours(), money())
+
+
+## This player's cash over the range's buckets ("minute" .. "year"), oldest first and now last.
+func cash_graph(range_key: String) -> Array:
+	return MoneyGraph.points(profile.get("series", {}), range_key, MoneyGraph.now_hours(), money())
 
 
 ## This player's cash at the end of each of the last six days and now, worked back from the log.

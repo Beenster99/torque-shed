@@ -40,6 +40,7 @@ var _pause_box: VBoxContainer
 var _assist: HSlider
 var _auto: CheckBox
 var _snap: CheckBox
+var _free_rotate: CheckBox
 var _host_info: Label
 var _crew: Label
 var _pad: Label
@@ -178,6 +179,11 @@ func _ready() -> void:
 	_snap.button_pressed = Settings.snap_placement
 	_snap.toggled.connect(func(v): Settings.snap_placement = v)
 	settings.add_child(_snap)
+	_free_rotate = CheckBox.new()
+	_free_rotate.text = "Free rotate: the rotate keys turn what you hold to any angle, not a quarter a press (/ toggles it)"
+	_free_rotate.button_pressed = Settings.free_rotate
+	_free_rotate.toggled.connect(func(v): Settings.free_rotate = v)
+	settings.add_child(_free_rotate)
 	_build_time_settings(settings)
 	settings.add_child(UITheme.label("Sound effects volume", 15))
 	settings.add_child(_volume_slider(Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
@@ -252,6 +258,7 @@ func show_pause() -> void:
 		_host_info.text = "Working solo."
 	_auto.button_pressed = Settings.auto_shift
 	_snap.button_pressed = Settings.snap_placement
+	_free_rotate.button_pressed = Settings.free_rotate
 	_refresh_time_settings(true)
 	show()
 	_resume.grab_focus()

@@ -18,6 +18,8 @@ var time_of_day := 9.0     # hours; kept up to date while playing so the clock c
 var weather := "auto"
 var weather_now := "clear"   # the weather when last played, so it carries on next time
 var snap_placement := true # equipment you carry snaps square and flush to walls and corners
+var money_graph_range := "day"   # the money graphs' time unit: minute, hour, day, week, month or year (see MoneyGraph)
+var free_rotate := false   # the rotate keys turn what you hold freely (5 degree taps, smooth held) rather than a quarter a press
 
 ## Emitted whenever a graphics setting (gfx_*) changes.
 signal graphics_changed
@@ -70,6 +72,7 @@ const ACTIONS := [
 	["spray_colour", "Spray colour", ["spray"]], ["spray_finish", "Spray finish", ["spray"]],
 	["rename", "Name a bike", ["foot"]],
 	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
+	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
 	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot", "ride"]],
 	["stopwatch", "Stopwatch start / stop", ["foot", "ride"]], ["menu", "Menu", ["foot", "ride", "board"]],
@@ -132,6 +135,10 @@ func load_settings() -> void:
 				if _defaults.has(action) and (codes is Array or codes is PackedStringArray):
 					_set_events(action, codes)
 		snap_placement = bool(cfg.get_value("building", "snap", snap_placement))
+		free_rotate = bool(cfg.get_value("building", "free_rotate", free_rotate))
+		money_graph_range = str(cfg.get_value("display", "money_graph", money_graph_range))
+		if not MoneyGraph.RANGES.has(money_graph_range):
+			money_graph_range = MoneyGraph.DEFAULT_RANGE
 		_load_graphics(cfg)
 
 
@@ -156,6 +163,8 @@ func save_settings() -> void:
 		if codes != _codes_of(_defaults.get(a[0], [])):
 			cfg.set_value("bindings", a[0], codes)
 	cfg.set_value("building", "snap", snap_placement)
+	cfg.set_value("building", "free_rotate", free_rotate)
+	cfg.set_value("display", "money_graph", money_graph_range)
 	for k in GFX_KEYS:
 		cfg.set_value("graphics", k, get(k))
 	cfg.save(PATH)
@@ -231,6 +240,12 @@ func apply_preset(preset: String) -> void:
 	graphics_changed.emit()
 
 
+## Whether the rotate keys turn what you hold freely (a 5 degree tap, smooth while held) rather
+## than a quarter turn a press: free rotate is on, or snapping is off.
+func turns_freely() -> bool:
+	return free_rotate or not snap_placement
+
+
 ## Keyboard, mouse and gamepad-button bindings. Gamepad sticks and triggers are read by the
 ## Controls autoload instead, so a stuck or odd axis can't hold an action down.
 func _setup_inputs() -> void:
@@ -272,6 +287,8 @@ func _setup_inputs() -> void:
 	# picture on the whiteboard: , and . (the < and > keys); View on a pad turns it right.
 	_bind("rotate_left", [KEY_COMMA], [])
 	_bind("rotate_right", [KEY_PERIOD], [JOY_BUTTON_BACK])
+	# Switches the rotate keys between quarter turns and turning freely to any angle.
+	_bind("rotate_free", [KEY_SLASH], [JOY_BUTTON_DPAD_UP])
 	# Hold to scrap the equipment you're carrying or the part in your hands, for good.
 	_bind("scrap", [KEY_DELETE], [JOY_BUTTON_DPAD_DOWN])
 	# The second work button: drains fluids into a held container.

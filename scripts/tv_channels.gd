@@ -197,14 +197,18 @@ static func money_data(peer: int) -> Dictionary:
 	var prog := _progress()
 	var cash: int = int(prog.money_of(peer)) if prog and prog.has_method("money_of") else 0
 	var flow := {"earned": 0, "spent": 0}
-	var history := [cash, cash, cash, cash, cash, cash, cash]
+	var range_key := Settings.money_graph_range
+	var history := []
+	for i in int(MoneyGraph.RANGES[range_key]["count"]):
+		history.append(cash)
 	var sold := 0
 	if prog and peer == Shed.me() and prog.has_method("cash_flow"):
 		flow = prog.cash_flow(7)
-		history = prog.cash_history()
+		history = prog.cash_graph(range_key)
 		sold = int(prog.profile.get("stats", {}).get("sell_bike", 0))
 	return {"name": str(Shed.crew.get(peer, {}).get("name", "You")), "cash": cash,
-		"earned_week": int(flow["earned"]), "spent_week": int(flow["spent"]), "sold": sold, "history": history}
+		"earned_week": int(flow["earned"]), "spent_week": int(flow["spent"]), "sold": sold, "history": history,
+		"range": range_key}
 
 
 ## The business's account (Shed.garage_money), what its bikes and loose parts would fetch, the
@@ -214,7 +218,7 @@ static func garage_data() -> Dictionary:
 	var flow := Money.flow(Shed.bank, 7)
 	return {"cash": Shed.garage_money, "bike_value": int(worth["bikes"]), "stock_value": int(worth["stock"]),
 		"income_week": int(flow["in"]), "outgoings_week": int(flow["out"]), "bikes": Shed.bikes.size(),
-		"history": Money.history7(Shed.bank.get("history", []), Shed.garage_money), "debt": Money.debt(Shed.bank)}
+		"history": Money.graph(Settings.money_graph_range), "range": Settings.money_graph_range, "debt": Money.debt(Shed.bank)}
 
 
 ## Things worth saving up for, what they cost the business, and whether this player's cash covers them.
@@ -306,12 +310,20 @@ static func _later(c: Control, font: Font, what: String) -> void:
 
 ## A simple growth chart: a line through `values`, oldest first, with day marks under it.
 static func _chart(c: Control, font: Font, rect: Rect2, values: Array, label: String) -> void:
+	chart(c, font, rect, values, label, "day")
+
+
+## A growth chart over in-game time: a line through `values`, oldest first, one a bucket of
+## `range_key` (see MoneyGraph: minutes up to years), with marks under it ("-3d" .. "now"),
+## thinned out when there are lots of them.
+static func chart(c: Control, font: Font, rect: Rect2, values: Array, label: String, range_key: String) -> void:
 	c.draw_rect(rect, PANEL)
 	_text(c, font, rect.position + Vector2(16, 28), label, 20, Dashboard.DIM)
 	var plot := Rect2(rect.position + Vector2(60, 44), rect.size - Vector2(80, 80))
 	var top := 1.0
 	for v in values:
 		top = maxf(top, absf(float(v)))
+	var every := maxi(1, ceili(values.size() * 64.0 / maxf(plot.size.x, 1.0)))
 	for i in 3:
 		var y := plot.position.y + plot.size.y * i / 2.0
 		c.draw_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y), Color(1, 1, 1, 0.08), 1.0)
@@ -320,15 +332,30 @@ static func _chart(c: Control, font: Font, rect: Rect2, values: Array, label: St
 	for i in values.size():
 		var x := plot.position.x + plot.size.x * i / maxf(1.0, values.size() - 1.0)
 		pts.append(Vector2(x, plot.end.y - plot.size.y * clampf(float(values[i]) / top, 0.0, 1.0)))
-		_text(c, font, Vector2(x - 30, plot.end.y + 26), "today" if i == values.size() - 1 else "-%dd" % (values.size() - 1 - i),
-			15, Dashboard.DIM, 60, HORIZONTAL_ALIGNMENT_CENTER)
+		if (values.size() - 1 - i) % every == 0:
+			var tick := MoneyGraph.tick_text(range_key, i, values.size())
+			_text(c, font, Vector2(x - 30, plot.end.y + 26), "today" if tick == "now" and range_key == "day" else tick,
+				15, Dashboard.DIM, 60, HORIZONTAL_ALIGNMENT_CENTER)
 	if pts.size() > 1:
 		c.draw_polyline(pts, ORANGE, 4.0, true)
 	for p in pts:
-		c.draw_circle(p, 5.0, ORANGE)
+		c.draw_circle(p, 5.0 if pts.size() <= 24 else 2.5, ORANGE)
+	# The top of the scale, so the line reads as money.
+	_text(c, font, Vector2(plot.position.x - 56, plot.position.y + 6), _short_money(top), 13, Dashboard.DIM, 52, HORIZONTAL_ALIGNMENT_RIGHT)
 	if values.all(func(v): return float(v) == 0.0):
 		_text(c, font, plot.position + Vector2(0, plot.size.y * 0.5), "Nothing in or out yet", 22, Dashboard.DIM, plot.size.x,
 			HORIZONTAL_ALIGNMENT_CENTER)
+
+
+## "£12k", "£1.2m", "£800": a short amount for a chart's scale.
+static func _short_money(v: float) -> String:
+	if v >= 1000000.0:
+		return CURRENCY + "%.1fm" % (v / 1000000.0)
+	if v >= 10000.0:
+		return CURRENCY + "%dk" % roundi(v / 1000.0)
+	if v >= 1000.0:
+		return CURRENCY + "%.1fk" % (v / 1000.0)
+	return CURRENCY + "%d" % roundi(v)
 
 
 ## Draws a channel's page (below the orange header bar the Dashboard has already drawn).
@@ -452,7 +479,8 @@ static func _draw_money_me(c: Control, font: Font, data: Dictionary) -> void:
 	_tile(c, font, Rect2(24, 210, 300, 96), "Earned this week", money_text(int(data.get("earned_week", 0))))
 	_tile(c, font, Rect2(24, 318, 300, 96), "Spent this week", money_text(int(data.get("spent_week", 0))))
 	_tile(c, font, Rect2(24, 426, 300, 82), "Bikes sold", str(int(data.get("sold", 0))))
-	_chart(c, font, Rect2(344, 90, 656, 418), data.get("history", []), "Your money over the last week")
+	var key := str(data.get("range", MoneyGraph.DEFAULT_RANGE))
+	chart(c, font, Rect2(344, 90, 656, 418), data.get("history", []), "Your money, %s" % MoneyGraph.span_text(key), key)
 	if data.get("placeholder", false):
 		_later(c, font, "Money arrives with selling bikes. These are placeholders.")
 
@@ -467,7 +495,8 @@ static func _draw_garage(c: Control, font: Font, data: Dictionary) -> void:
 	_tile(c, font, Rect2(266, 318, 230, 96), "Out this week", money_text(int(data.get("outgoings_week", 0))))
 	_tile(c, font, Rect2(24, 426, 230, 82), "Bikes in the shed", str(int(data.get("bikes", 0))))
 	_tile(c, font, Rect2(266, 426, 230, 82), "Owed to the bank", money_text(int(data.get("debt", 0))))
-	_chart(c, font, Rect2(516, 90, 484, 418), data.get("history", []), "Shed account, last week")
+	var key := str(data.get("range", MoneyGraph.DEFAULT_RANGE))
+	chart(c, font, Rect2(516, 90, 484, 418), data.get("history", []), "Shed account, %s" % MoneyGraph.span_text(key), key)
 	if data.get("placeholder", false):
 		_later(c, font, "The shed's account comes with money. These are placeholders.")
 

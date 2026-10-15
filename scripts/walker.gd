@@ -179,6 +179,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if Shed.moving(Shed.me()) != 0 or Shed.held_by(Shed.me()) != 0:
 			get_viewport().set_input_as_handled()
 			turn_step(1 if event.is_action_pressed("rotate_left") else -1)
+	elif event.is_action_pressed("rotate_free"):
+		get_viewport().set_input_as_handled()
+		toggle_free_rotate()
 	elif event.is_action_pressed("scrap") and not scrap_armed.is_empty():
 		get_viewport().set_input_as_handled()
 		confirm_scrap()
@@ -563,7 +566,7 @@ func _update_target() -> void:
 	var held_now := Shed.held_by(Shed.me())
 	if held_now != 0 and tool == "hands" and str(plan.get("action", {}).get("a", "")) in ["drop", "set_down"]:
 		info += "\n%s: turn it before you put it down (%s)%s" % [_keys("rotate_left", "rotate_right"),
-			"a quarter at a time" if Settings.snap_placement else "hold to turn it freely",
+			turn_mode_text(),
 			"  ·  turned %d°" % roundi(rad_to_deg(hold_turn)) if absf(hold_turn) > 0.01 else ""]
 	if held_now != 0:
 		info += "\nHold %s: scrap the %s for good" % [_keys("scrap"), Shed.item_title(held_now).to_lower()]
@@ -625,6 +628,23 @@ func toggle_snap() -> void:
 	Shed.feedback.emit("Snapping to walls and corners %s" % ("on" if Settings.snap_placement else "off"), true)
 
 
+## Switches the rotate keys between quarter turns and turning freely to any angle (kept in
+## the settings). Something turned freely is left as it is; going back to quarter turns, the
+## next press lines it up on a quarter.
+func toggle_free_rotate() -> void:
+	Settings.free_rotate = not Settings.free_rotate
+	Settings.save_settings()
+	Shed.feedback.emit("Free rotate %s: %s" % ["on" if Settings.free_rotate else "off",
+		"tap to turn 5°, hold to turn smoothly" if Settings.free_rotate else "a quarter turn a press"], true)
+
+
+## The rotate keys' mode for the hints: "a quarter at a time" or "hold to turn it freely", and
+## the key that switches it.
+static func turn_mode_text() -> String:
+	return "%s  ·  %s: %s" % ["tap 5°, hold to turn freely" if Settings.turns_freely() else "a quarter at a time",
+		_keys("rotate_free"), "quarter turns" if Settings.turns_freely() else "free rotate"]
+
+
 ## A press of a rotate key (1 left, -1 right): the equipment you carry or the part in your hands
 ## turns a quarter with snapping on, or a nudge with it off (holding the key turns it on, see
 ## _update_turning). A poster turns between portrait and landscape on the wall.
@@ -664,7 +684,7 @@ static func _keys(a: String, b := "") -> String:
 
 
 static func _stepped(angle: float, dir: int) -> float:
-	if Settings.snap_placement:
+	if not Settings.turns_freely():
 		return wrapf(Placement.snap_yaw(angle + dir * PI * 0.5), -PI, PI)
 	return wrapf(angle + dir * TURN_NUDGE, -PI, PI)
 
@@ -678,7 +698,7 @@ func _update_turning(delta: float) -> void:
 		# Something new in your hands starts the way you face.
 		_held_for = held
 		hold_turn = 0.0
-	if Settings.snap_placement or _turn_time < TURN_HOLD:
+	if not Settings.turns_freely() or _turn_time < TURN_HOLD:
 		return
 	var pushed := Shed.moving(Shed.me())
 	if pushed != 0 and not Equipment.is_wall(str(Shed.furniture[pushed].get("model", ""))):
@@ -687,7 +707,8 @@ func _update_turning(delta: float) -> void:
 		hold_turn = wrapf(hold_turn + spin * TURN_RATE * delta, -PI, PI)
 
 
-## What the scrap key would scrap: the equipment you're carrying or the part in your hands, as
+## What the scrap key would scrap: the equipment you're carrying, the part in your hands, or
+## (with your hands empty) the machine, furniture, poster, TV or trinket you're looking at, as
 ## the host's action fields, or {}.
 func _scrap_target() -> Dictionary:
 	var pushed := Shed.moving(Shed.me())
@@ -696,7 +717,26 @@ func _scrap_target() -> Dictionary:
 	var held := Shed.held_by(Shed.me())
 	if held != 0:
 		return {"item": held, "name": Shed.item_title(held).to_lower()}
+	var looked := looked_at_furniture()
+	if looked != 0 and Shed.scrappable(Shed.furniture[looked]):
+		return {"furniture": looked, "name": Shed.furniture_name(Shed.furniture[looked]).to_lower()}
 	return {}
+
+
+## The shed equipment the crosshair is on (its frame, top, label plate, a place on it or a
+## TV's screen), or 0.
+func looked_at_furniture() -> int:
+	var id := 0
+	match str(target.get("kind", "")):
+		"furniture", "label", "top":
+			id = int(target.get("furniture", 0))
+		"spot":
+			id = int(Shed.furniture_of_spot(str(target["spot"])).get("id", 0))
+		"screen":
+			var key := str(target.get("screen", ""))
+			if key.begins_with("f") and key.substr(1).is_valid_int():
+				id = int(key.substr(1))
+	return id if Shed.furniture.has(id) else 0
 
 
 ## Holding the scrap key: once it's been held SCRAP_HOLD seconds, a second press scraps it.
@@ -780,7 +820,8 @@ func _push_transform(id: int) -> Transform3D:
 	if hit and (hit["normal"] as Vector3).y > 0.8:
 		at.y = (hit["position"] as Vector3).y
 	var xf := Transform3D(Basis(Vector3.UP, rotation.y + carry_turn), at)
-	if Settings.snap_placement and not Equipment.is_yard(model):
+	# Free rotate keeps the angle you've turned it to, so it isn't squared up to the walls.
+	if Settings.snap_placement and not Settings.free_rotate and not Equipment.is_yard(model):
 		snap_info = Placement.snap(get_world_3d().direct_space_state, xf, size, ignore)
 		xf = snap_info["xf"]
 	return xf
@@ -1024,8 +1065,7 @@ func _push(id: int, delta: float) -> void:
 		lines.append("Walk to move it and turn to face it the way you want.")
 		lines.append("%s: push it further away or pull it closer" % ("LB / RB" if pad else "Mouse wheel"))
 		lines.append("F: put it down here")
-		lines.append("%s: turn it (%s)" % [_keys("rotate_left", "rotate_right"),
-			"a quarter at a time" if Settings.snap_placement else "hold to turn it freely"])
+		lines.append("%s: turn it (%s)" % [_keys("rotate_left", "rotate_right"), turn_mode_text()])
 	if Shed.furniture[id]["kind"] == "poster":
 		lines.append("%s: turn it (portrait or landscape)" % _keys("rotate_left", "rotate_right"))
 	if Shed.check(Shed.me(), {"a": "scrap", "furniture": id}) == "":
@@ -1282,7 +1322,7 @@ func _set_down_plan(key: String) -> Dictionary:
 		aim = Vector2(local.x, local.z)
 	# Square to the top with snapping on, else just as you've turned it.
 	var yaw := rotation.y + hold_turn - frame.basis.get_euler().y
-	if Settings.snap_placement:
+	if Settings.snap_placement and not Settings.free_rotate:
 		yaw = Placement.snap_yaw(yaw)
 	var ck := "%s:%d:%d:%d:%d:%d" % [key, held, roundi(aim.x * 40.0), roundi(aim.y * 40.0), roundi(yaw / (PI / 36.0)),
 		Shed.surface_items(key).size()]
@@ -1524,6 +1564,9 @@ func _describe() -> String:
 					lines.append("Not in here: " + why)
 				elif which == "general" and PartsDB.bin_for(str(Shed.items[held]["part"])) != "general":
 					lines.append("It could be recycled instead, for more XP.")
+	var looked := looked_at_furniture() if Shed.held_by(Shed.me()) == 0 and Shed.moving(Shed.me()) == 0 else 0
+	if looked != 0 and Shed.scrappable(Shed.furniture[looked]) and Shed.check(Shed.me(), {"a": "scrap", "furniture": looked}) == "":
+		lines.append("Hold %s: scrap it for good%s" % [_keys("scrap"), ", and drop what's on it" if _has_parts_on(looked) else ""])
 	return "\n".join(lines)
 
 

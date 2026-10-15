@@ -2209,18 +2209,19 @@ func bin_check(item_id: int, which: String) -> String:
 	return ""
 
 
-## Why `peer` can't scrap what the action names, or "": {furniture: the equipment they're
-## carrying} or {item: the part in their hands}. The shed's own kit (the spray bay, the tyre
-## changer and the whiteboard) can't be scrapped.
+## Why `peer` can't scrap what the action names, or "": {furniture: any shed machine,
+## furniture, poster, TV or trinket, carried by them or standing where it is} or {item: the
+## part in their hands}. The shed's own kit (the spray bay, the tyre changer and the
+## whiteboard) can't be scrapped.
 func scrap_check(peer: int, action: Dictionary) -> String:
 	if action.has("furniture"):
 		var f: Dictionary = furniture.get(int(action["furniture"]), {})
 		if f.is_empty():
 			return "That has gone."
-		if Equipment.FIXED_KINDS.has(str(f["kind"])) or f["kind"] == "whiteboard":
+		if not scrappable(f):
 			return "The %s is part of the shed: it can't be scrapped." % furniture_name(f).to_lower()
-		if f["mover"] != peer:
-			return "Take hold of it first (F), then hold the scrap key."
+		if int(f["mover"]) != 0 and int(f["mover"]) != peer:
+			return "Someone else is moving that."
 		if blaster_user(int(f["id"])) != 0:
 			return "Someone's working at it."
 		return ""
@@ -2228,6 +2229,15 @@ func scrap_check(peer: int, action: Dictionary) -> String:
 	if item_id == 0 or not items.has(item_id) or held_by(peer) != item_id:
 		return "Hold the part you want to scrap."
 	return ""
+
+
+## Whether a piece of the shed's equipment can be scrapped: everything bought (machines,
+## benches, shelves, stands, seats, posters, TVs, yard kit and trinkets), but not the kit built
+## into the shed that it can't work without and can't buy again: the spray bay, the tyre
+## changer and the crew whiteboard.
+static func scrappable(f: Dictionary) -> bool:
+	var kind := str(f.get("kind", ""))
+	return kind != "" and not Equipment.FIXED_KINDS.has(kind) and kind != "whiteboard"
 
 
 ## Scraps equipment or a part for good (see scrap_check). Whatever was on or in it goes on the
@@ -3969,6 +3979,8 @@ func _mark_dirty() -> void:
 ## The whole shed. The regular syncs leave the whiteboard out: its marks go out one by one
 ## as they're drawn (_board_op), and whole only to players joining.
 func _snapshot(with_board := true) -> Dictionary:
+	if is_authority():
+		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
 		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "upgrades": upgrades}
@@ -4045,6 +4057,7 @@ func _process(delta: float) -> void:
 		return
 	_cool_dyno(delta)
 	_money_clock()
+	Money.record_graph()
 	Contracts.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:

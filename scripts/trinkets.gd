@@ -21,7 +21,11 @@ const MODELS := {
 	"trinket_lava": {"kind": "trinket", "name": "Lava lamp", "price": 35, "size": Vector3(0.14, 0.42, 0.14),
 		"desc": "Orange goo rising and falling in a glowing lamp. Very seventies."},
 	"trinket_clock": {"kind": "trinket", "name": "Workshop wall clock", "price": 40, "size": Vector3(0.42, 0.42, 0.06), "wall": true,
-		"desc": "A big station clock that keeps the shed's time. Hangs on a wall."},
+		"desc": "A big station clock that keeps the shed's time, hour, minute and second hands and all. Hangs on a wall."},
+	"trinket_clock_digital": {"kind": "trinket", "name": "Digital wall clock", "price": 45, "size": Vector3(0.52, 0.2, 0.05), "wall": true,
+		"desc": "A red LED wall clock showing the shed's time, the colon blinking. Hangs on a wall."},
+	"trinket_clock_desk": {"kind": "trinket", "name": "Digital desk clock", "price": 22, "size": Vector3(0.18, 0.09, 0.07),
+		"desc": "A little alarm clock with a green display showing the shed's time. Sits on a bench."},
 	"trinket_trophy": {"kind": "trinket", "name": "Gold race trophy", "price": 60, "size": Vector3(0.2, 0.4, 0.2),
 		"desc": "A gold cup on a wooden plinth. Nobody remembers what it was for."},
 	"trinket_rug": {"kind": "trinket", "name": "Chequered flag rug", "price": 70, "size": Vector3(1.6, 0.012, 1.0),
@@ -170,9 +174,28 @@ static func build(parent: Node3D, id: String) -> void:
 					Vector3(0.012, 0.035 if h % 3 == 0 else 0.02, 0.003), rim)
 				tick.rotation.z = -a
 			var hands := Clock.new()
+			hands.name = "Clock"
 			hands.position = Vector3(0.0, 0.0, 0.05)
 			hands.radius = size.x * 0.44
 			parent.add_child(hands)
+		"trinket_clock_digital":
+			_box(parent, Vector3(0.0, 0.0, size.z * 0.5), size, _mat(Color(0.06, 0.06, 0.07), 0.3, 0.35))
+			_box(parent, Vector3(0.0, 0.0, size.z + 0.001), Vector3(size.x - 0.04, size.y - 0.04, 0.002), _mat(Color(0.03, 0.01, 0.01), 0.0, 0.1))
+			var led := DigitalClock.new()
+			led.name = "Clock"
+			led.position = Vector3(0.0, 0.0, size.z + 0.004)
+			led.color = Color(1.0, 0.12, 0.08)
+			led.font_size = 96
+			parent.add_child(led)
+		"trinket_clock_desk":
+			_box(parent, Vector3(0.0, size.y * 0.5, 0.0), size, _mat(Color(0.12, 0.12, 0.14), 0.2, 0.4))
+			_box(parent, Vector3(0.0, size.y * 0.55, size.z * 0.5 + 0.001), Vector3(size.x - 0.03, size.y - 0.035, 0.002), _mat(Color(0.01, 0.03, 0.01), 0.0, 0.1))
+			var lcd := DigitalClock.new()
+			lcd.name = "Clock"
+			lcd.position = Vector3(0.0, size.y * 0.55, size.z * 0.5 + 0.004)
+			lcd.color = Color(0.35, 1.0, 0.45)
+			lcd.font_size = 34
+			parent.add_child(lcd)
 		"trinket_trophy":
 			var gold := _mat(Color(0.95, 0.7, 0.2), 1.0, 0.2)
 			_box(parent, Vector3(0.0, 0.04, 0.0), Vector3(0.14, 0.08, 0.14), _mat(Color(0.3, 0.18, 0.08), 0.0, 0.4))
@@ -305,30 +328,86 @@ class Bobble extends Node3D:
 		rotation = Vector3(sin(_t * 5.0) * 0.18, 0.0, sin(_t * 3.1) * 0.1)
 
 
-## The wall clock's hands, showing the shed's time of day (Daylight).
+## The shed's time of day in hours (Daylight; on a co-op client the host's), for the clocks.
+static func clock_hours() -> float:
+	return Daylight.time_of_day()
+
+
+## "07:05" for a digital clock at `hours`: the minute it's in (a clock doesn't round up).
+static func digital_text(hours: float) -> String:
+	var mins := int(floor(wrapf(hours, 0.0, 24.0) * 60.0 + 1e-6)) % (24 * 60)
+	return "%02d:%02d" % [mins / 60, mins % 60]
+
+
+## How far round each hand of an analogue clock is at `hours`, clockwise from 12 in radians:
+## (hour, minute, second).
+static func hand_angles(hours: float) -> Vector3:
+	var h := wrapf(hours, 0.0, 24.0)
+	return Vector3(fmod(h, 12.0) / 12.0 * TAU, fmod(h, 1.0) * TAU, fmod(h * 60.0, 1.0) * TAU)
+
+
+## The wall clock's hands, showing the shed's time of day (Daylight) as it goes: the hour and
+## minute hands, and a red second hand sweeping round once a game minute.
 class Clock extends Node3D:
 	var radius := 0.2
 	var _hour: Node3D
 	var _minute: Node3D
+	var _second: Node3D
 
 	func _ready() -> void:
 		var black := StandardMaterial3D.new()
 		black.albedo_color = Color(0.05, 0.05, 0.06)
-		_hour = _hand(radius * 0.55, 0.02, black)
-		_minute = _hand(radius * 0.85, 0.012, black)
+		var red := StandardMaterial3D.new()
+		red.albedo_color = Color(0.85, 0.08, 0.06)
+		_hour = _hand(radius * 0.55, 0.02, black, 0.0)
+		_minute = _hand(radius * 0.85, 0.012, black, 0.003)
+		_second = _hand(radius * 0.9, 0.005, red, 0.006)
+		RiderFigure.mesh(self, RiderFigure.sphere(0.012), red, Vector3(0.0, 0.0, 0.007))
+		_process(0.0)
 
-	func _hand(length: float, width: float, mat: Material) -> Node3D:
+	func _hand(length: float, width: float, mat: Material, z: float) -> Node3D:
 		var pivot := Node3D.new()
+		pivot.position.z = z
 		add_child(pivot)
-		RiderFigure.box(pivot, Vector3(0.0, length * 0.4, 0.0), Vector3(width, length, 0.004), mat)
+		RiderFigure.box(pivot, Vector3(0.0, length * 0.4, 0.0), Vector3(width, length, 0.003), mat)
 		return pivot
 
 	func _process(_delta: float) -> void:
-		var hours := 9.0
-		if Daylight.current:
-			hours = Daylight.current.hours
-		_hour.rotation.z = -fmod(hours, 12.0) / 12.0 * TAU
-		_minute.rotation.z = -fmod(hours, 1.0) * TAU
+		var a := Trinkets.hand_angles(Trinkets.clock_hours())
+		_hour.rotation.z = -a.x
+		_minute.rotation.z = -a.y
+		_second.rotation.z = -a.z
+
+	## The hands' angles now, clockwise from 12 (for tests): (hour, minute, second).
+	func shown() -> Vector3:
+		return Vector3(-_hour.rotation.z, -_minute.rotation.z, -_second.rotation.z)
+
+
+## A digital clock's display: the shed's time as "21:30", the colon blinking every game second
+## (every real half second when time stands still).
+class DigitalClock extends Node3D:
+	var color := Color(1.0, 0.15, 0.1)
+	var font_size := 64
+	var label: Label3D
+
+	func _ready() -> void:
+		label = Label3D.new()
+		label.font_size = font_size
+		label.pixel_size = 0.0012
+		label.modulate = color
+		label.outline_size = 0
+		label.shaded = false
+		label.double_sided = false
+		add_child(label)
+		_process(0.0)
+
+	func _process(_delta: float) -> void:
+		var text := Trinkets.digital_text(Trinkets.clock_hours())
+		# The colon blinks while the clock runs, and stays lit when time stands still.
+		if Daylight.local_rate() > 0.0 and Time.get_ticks_msec() % 1000 >= 500:
+			text = text.replace(":", " ")
+		if label.text != text:
+			label.text = text
 
 
 ## The lava lamp's blobs, rising and falling.
