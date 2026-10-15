@@ -30,6 +30,8 @@ RIDING
 I / D-pad up: start or stop the engine      W / RT: throttle      S / LT: front brake
 Space / B: rear brake      A D / left stick: lean      Shift / LB: weight back      Ctrl / RB: forward
 E Q / A X: gear up / down      T: auto-shift      C / R3: chase or first-person camera
+Mouse / right stick: swing the camera round      V: ride-by camera (watch yourself go past)
+L / L3: headlight (off, low, high, high with fog lights)      S + W / LT + RT: burnout (lean to spin round)
 R / View: reset after a crash      F / Y: get off (when stopped)"""
 
 var _name: LineEdit
@@ -67,6 +69,9 @@ var _resume: Button
 var keybinds: KeybindTab
 var graphics: GraphicsTab
 var blueprints: BlueprintTab
+## Bikes left out on the road, each with a button to have it brought back to the yard.
+var _retrieve_box: VBoxContainer
+var _retrieve_shown := []   # the abandoned bike ids the buttons were made for
 
 
 func _ready() -> void:
@@ -123,6 +128,9 @@ func _ready() -> void:
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
 	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at (F2)", func(): geometry_mode.emit()))
+	_retrieve_box = VBoxContainer.new()
+	_retrieve_box.add_theme_constant_override("separation", 6)
+	_pause_box.add_child(_retrieve_box)
 	_host_info = UITheme.label("", 15, Color(1, 1, 1, 0.75))
 	_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_host_info.custom_minimum_size.x = 560.0
@@ -166,6 +174,11 @@ func _ready() -> void:
 	_auto.button_pressed = Settings.auto_shift
 	_auto.toggled.connect(func(v): Settings.auto_shift = v)
 	settings.add_child(_auto)
+	var recentre := CheckBox.new()
+	recentre.text = "Chase camera swings back behind the bike after you let go of the mouse or right stick"
+	recentre.button_pressed = Settings.camera_recentre
+	recentre.toggled.connect(func(v): Settings.camera_recentre = v)
+	settings.add_child(recentre)
 	settings.add_child(UITheme.label("Units", 15))
 	var units := OptionButton.new()
 	units.add_item("Metric (km/h, km, kg, L/100 km)")
@@ -229,6 +242,8 @@ func _process(_delta: float) -> void:
 		_crew.text = "In the shed: " + ", ".join(names)
 		_save_status.text = SaveGame.status_text()
 		_save_button.visible = not (Net.is_online() and not Net.is_host())
+		if Shed.abandoned_bikes() != _retrieve_shown:
+			refresh_retrieve()
 
 
 func show_title(status := "") -> void:
@@ -253,8 +268,28 @@ func show_pause() -> void:
 	_auto.button_pressed = Settings.auto_shift
 	_snap.button_pressed = Settings.snap_placement
 	_refresh_time_settings(true)
+	refresh_retrieve()
 	show()
 	_resume.grab_focus()
+
+
+## Lists bikes left out on the road (nobody riding them, away from the shed) with a button each
+## to have the recovery truck bring it back to the yard by the roller door, for a small fee.
+func refresh_retrieve() -> void:
+	_retrieve_shown = Shed.abandoned_bikes()
+	for child in _retrieve_box.get_children():
+		child.queue_free()
+	if _retrieve_shown.is_empty():
+		return
+	_retrieve_box.add_child(UITheme.label("Left out on the road:", 14, UITheme.ACCENT))
+	for id in _retrieve_shown:
+		var bike_id: int = id
+		var b := _button("Retrieve %s (recovery truck, %s from the garage)" % [str(Shed.bikes[bike_id]["name"]),
+			TvChannels.money_text(Shed.RETRIEVE_FEE)], func(): Shed.request({"a": "retrieve_bike", "bike": bike_id}))
+		var why := Shed.retrieve_check({"bike": bike_id})
+		b.disabled = why != ""
+		b.tooltip_text = why
+		_retrieve_box.add_child(b)
 
 
 ## On a pad: B goes back to the shed, LB / RB turn the tabs over.

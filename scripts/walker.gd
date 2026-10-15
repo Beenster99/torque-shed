@@ -513,6 +513,8 @@ func _update_target() -> void:
 		var c: Object = hit["collider"]
 		if c.has_meta("bike") and Shed.bikes.has(int(c.get_meta("bike"))):
 			t = {"kind": "part", "bike": int(c.get_meta("bike")), "slot": str(c.get_meta("slot"))}
+			if not Shed.bike_at_work(int(t["bike"])):
+				t["road"] = true   # out on the road: ride it or wheel it, no spanners
 		elif c.has_meta("engine") and Shed.is_engine(int(c.get_meta("engine"))):
 			t = {"kind": "part", "engine": int(c.get_meta("engine")), "slot": str(c.get_meta("slot"))}
 		elif c.has_meta("spot"):
@@ -568,7 +570,8 @@ func _update_target() -> void:
 	if held_now != 0:
 		info += "\nHold %s: scrap the %s for good" % [_keys("scrap"), Shed.item_title(held_now).to_lower()]
 	var geo_key := Settings.binding_text("geometry_mode", false)
-	if str(target.get("kind", "")) == "part" and int(target.get("bike", 0)) != 0 and geo_key != "":
+	if str(target.get("kind", "")) == "part" and int(target.get("bike", 0)) != 0 and geo_key != "" \
+			and not target.get("road", false):
 		info += "\n%s: geometry mode (move, turn and size this bike's parts)" % geo_key
 	if str(target.get("kind", "")) == "spot" and Shed.spot_role(str(target["spot"])) == "blaster" \
 			and Shed.item_at_spot(str(target["spot"])) != 0 and Shed.held_by(Shed.me()) == 0:
@@ -1103,6 +1106,8 @@ func _make_plan() -> Dictionary:
 		if not dp.is_empty():
 			dp["blocked"] = Shed.check(me, dp["action"])
 		return dp
+	if target.get("road", false):
+		return _road_plan(held)
 	if held != 0 and tool == "hands" and PartsDB.is_fluid(Shed.items[held]["part"]):
 		var fp := _fluid_plan(held, kind)
 		if not fp.is_empty() or kind == "part":
@@ -1298,6 +1303,16 @@ func _set_down_plan(key: String) -> Dictionary:
 
 ## With a can or bottle in hand: pour it into the tank, engine or brakes (first button), drain
 ## them into it (second button), or tip what's in it away in the scrap bin.
+## A bike out on the road is only for riding: the one job you can do there is pour a can of
+## petrol into its tank.
+func _road_plan(held: int) -> Dictionary:
+	if held == 0 or tool != "hands" or PartsDB.kind_of(Shed.items[held]["part"]) != "petrol":
+		return {}
+	var fp := _fluid_plan(held, "part")
+	alt_plan = {}
+	return fp if str(fp.get("action", {}).get("a", "")) == "pour" else {}
+
+
 func _fluid_plan(held: int, kind: String) -> Dictionary:
 	var me := Shed.me()
 	var can: Dictionary = Shed.items[held]
@@ -1345,6 +1360,18 @@ func _describe() -> String:
 	var kind := str(target.get("kind", ""))
 	var lines := []
 	match kind:
+		"part" when target.get("road", false):
+			# Out on the road: no inspecting its parts, it's just a bike to ride.
+			var road_id := int(target["bike"])
+			lines.append(str(Shed.bikes[road_id]["name"]))
+			lines.append("Out on the road. Ride it back to the shed to work on it.")
+			var ride_on := Shed.check(Shed.me(), {"a": "mount", "bike": road_id})
+			lines.append("F: ride %s" % Shed.bikes[road_id]["name"] if ride_on == "" else "Can't ride it. " + ride_on)
+			if Shed.check(Shed.me(), {"a": "grab_bike", "bike": road_id}) == "":
+				lines.append("Hold F: wheel it about")
+			var held_can := Shed.held_by(Shed.me())
+			if held_can != 0 and PartsDB.kind_of(Shed.items[held_can]["part"]) == "petrol":
+				lines.append("Hold %s: pour the petrol into its tank" % _keys("act"))
 		"part":
 			var slot := str(target["slot"])
 			var item_id := target_item()

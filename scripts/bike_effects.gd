@@ -38,8 +38,8 @@ const FLOOD_REACH := 0.65
 const CORE_FALLOFF := 0.7
 const FLOOD_FALLOFF := 0.35
 static var _soft_tex: GradientTexture2D
-var beam_mode := 1      # headlight switch: 0 off, 1 dipped (low), 2 main (high)
-const BEAM_NAMES := ["off", "low beam", "high beam"]
+var beam_mode := 1      # headlight switch: 0 off, 1 dipped (low), 2 main (high), 3 main with the fog lights
+const BEAM_NAMES := ["off", "low beam", "high beam", "high beam and fog lights"]
 var _lamp_glow: OmniLight3D
 var _surface := "tarmac"
 var _screech: AudioStreamPlayer3D
@@ -483,7 +483,7 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 		_beam.visible = engine_on and beam_mode > 0
 		# The eye adjusts at night: the same lamp throws a much brighter pool on the road.
 		var night := World.darkness()
-		var high := beam_mode == 2
+		var high := beam_mode >= 2
 		var lumens: float = _beam.get_meta("lumens")
 		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night) * (3.0 if high else 1.2)
 		_beam.spot_angle = 17.0 if high else lerpf(26.0, 32.0, night)

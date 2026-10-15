@@ -58,6 +58,7 @@ const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "l
 	"chain": ["chain", "slack"]}
 const LIGHTEN_WEAR := 0.08     # condition a part gives up to being drilled and trimmed
 const TYRE_WEAR := 0.0002      # tyre wear per km at the right pressure
+const BURNOUT_WEAR := 0.004    # back tyre wear per second of full burnout
 const MAX_PAINT_RUST := 0.2
 ## The tyre slot that goes with each wheel slot: a wheel comes off the bike with its tyre still on.
 const WHEEL_TYRE := {"front_wheel": "front_tyre", "rear_wheel": "rear_tyre"}
@@ -1716,6 +1717,9 @@ func _engine_access(action: Dictionary, slot: String) -> String:
 
 ## Why `peer` can't do `action` right now, or "" when they can.
 func check(peer: int, action: Dictionary) -> String:
+	var road := road_bike_block(action)
+	if road != "":
+		return road
 	var a := str(action.get("a", ""))
 	var held := held_by(peer)
 	var bike_id := int(action.get("bike", 0))
@@ -1742,6 +1746,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return _blast_check(peer, action)
 	if a.begins_with("money_"):
 		return Money.check(peer, action)
+	if a == "retrieve_bike":
+		return retrieve_check(action)
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
 		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
 	match a:
@@ -2375,6 +2381,15 @@ func _apply(peer: int, action: Dictionary) -> void:
 		_mark_dirty()
 		changed.emit()
 		return
+	if a == "retrieve_bike":
+		# The whole crew hears that it's back.
+		var back := _retrieve(peer, action)
+		for p in crew:
+			if back != "":
+				_tell(int(p), back, true)
+		_mark_dirty()
+		changed.emit()
+		return
 	var bike_id := int(action.get("bike", 0))
 	var engine_id := int(action.get("engine", 0))
 	var slot := str(action.get("slot", ""))
@@ -2935,6 +2950,11 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 				var psi := float(tune.get("pressure", build.tune_default(key)))
 				tune["pressure"] = maxf(float(BikeBuild.TUNE_LIMITS[key][0]), psi - km * BEAD_LEAK * (1.0 - bead / BikeBuild.BEAD_OK))
 				items[tyre]["tune"] = tune
+	# Burnouts scrub the back tyre down fast.
+	var spin := clampf(float(action.get("spin", 0.0)), 0.0, 5.0)
+	var rear_tyre := item_on(bike_id, "rear_tyre")
+	if rear_tyre != 0 and spin > 0.0:
+		items[rear_tyre]["wear"] = minf(1.0, float(items[rear_tyre]["wear"]) + spin * BURNOUT_WEAR)
 	var tank := item_on(bike_id, "tank")
 	if tank != 0 and items[tank].has("fluid"):
 		var f: Dictionary = items[tank]["fluid"]
@@ -4239,3 +4259,109 @@ func _park_on_show(bike_id: int) -> bool:
 	bike["xf"] = spot
 	bike["stand"] = ""
 	return true
+
+
+# ---------------------------------------------------------------------------- bikes out on the road
+
+## The ground round the shed where bikes can be worked on: the shed and its rooms, the wash bay,
+## the delivery area, the sales office and its forecourt. Out past it a bike is just for riding.
+const WORK_AREA := Rect2(-22.0, 42.0, 60.0, 44.0)
+## Work that needs the bike at the shed: tools, fitting and taking off parts, fluids (apart from
+## a can of petrol in the tank), chain lube and adjusting, tuning and geometry mode.
+const WORKSHOP_ONLY := ["unbolt", "bolt", "remove", "install", "adjust_chain", "tune", "geo_save", "geo_blueprint",
+	"clean", "clean_many", "repair", "repair_many", "paint", "lube", "drain", "wash"]
+## What the garage pays to have a bike left out on the road brought back to the yard.
+const RETRIEVE_FEE := 40
+## Where retrieved bikes are dropped off: a row in the yard to the west of the roller door.
+const RETRIEVE_ROW := Vector3(-4.0, 0.0, 75.5)
+const RETRIEVE_SLOTS := 8
+
+
+## Whether `at` is on the ground round the shed where bikes can be worked on.
+static func in_work_area(at: Vector3) -> bool:
+	return WORK_AREA.has_point(Vector2(at.x, at.z))
+
+
+## Whether a bike is at the shed (or round it), where it can be worked on.
+func bike_at_work(bike_id: int) -> bool:
+	if not bikes.has(bike_id):
+		return true
+	var xf = bikes[bike_id].get("xf", null)
+	return not (xf is Transform3D) or in_work_area((xf as Transform3D).origin)
+
+
+## Why `action` can't be done because the bike it's on is out on the road, or "".
+func road_bike_block(action: Dictionary) -> String:
+	var a := str(action.get("a", ""))
+	if not WORKSHOP_ONLY.has(a):
+		return ""
+	var on_road := []
+	var bike_id := int(action.get("bike", 0))
+	if bike_id != 0 and int(action.get("engine", 0)) == 0:
+		on_road.append(bike_id)
+	for id in [action.get("item", 0)] + Array(action.get("items", [])):
+		var b := _bike_of(int(id)) if (id is int or id is float) else 0
+		if b != 0:
+			on_road.append(b)
+	for b in on_road:
+		if not bike_at_work(int(b)):
+			return "Out here %s is just a bike to ride. Ride it back to the shed to work on it." % str(bikes[int(b)]["name"])
+	return ""
+
+
+## Bikes left out on the road with nobody riding or wheeling them: their ids, nearest first.
+func abandoned_bikes() -> Array:
+	var out := []
+	for id in bikes:
+		var b: Dictionary = bikes[id]
+		if int(b.get("rider", 0)) == 0 and int(b.get("pusher", 0)) == 0 and not bike_at_work(int(id)):
+			out.append(int(id))
+	out.sort()
+	return out
+
+
+## Where the next retrieved bike is parked in the yard, or null when the row is full.
+func free_retrieve_xf():
+	for i in RETRIEVE_SLOTS:
+		var at := RETRIEVE_ROW + Vector3(-1.2 * i, 0.0, 0.0)
+		if not _clear_at(at, 0.6):
+			continue
+		var taken := false
+		for id in bikes:
+			var xf = bikes[id].get("xf", null)
+			if xf is Transform3D and Vector2((xf as Transform3D).origin.x - at.x, (xf as Transform3D).origin.z - at.z).length() < 0.8:
+				taken = true
+		if not taken:
+			return Transform3D(Basis(Vector3.UP, PI), at)
+	return null
+
+
+## Why a bike can't be retrieved right now, or "".
+func retrieve_check(action: Dictionary) -> String:
+	var bike_id := int(action.get("bike", 0))
+	if not bikes.has(bike_id):
+		return "That bike has gone."
+	if int(bikes[bike_id].get("rider", 0)) != 0:
+		return "Someone is riding it."
+	if int(bikes[bike_id].get("pusher", 0)) != 0:
+		return "Someone is wheeling it about."
+	if bike_at_work(bike_id):
+		return "%s is already at the shed." % str(bikes[bike_id]["name"])
+	if garage_money < RETRIEVE_FEE:
+		return "The garage can't pay the %s to bring it back." % TvChannels.money_text(RETRIEVE_FEE)
+	if free_retrieve_xf() == null:
+		return "There's no room in the yard. Move the bikes by the roller door first."
+	return ""
+
+
+## Host: brings a bike left out on the road back to the yard by the roller door, for a fee.
+func _retrieve(peer: int, action: Dictionary) -> String:
+	var bike_id := int(action["bike"])
+	var b: Dictionary = bikes[bike_id]
+	if not charge_garage(RETRIEVE_FEE, "Recovery truck for %s" % str(b["name"])):
+		return ""
+	b["xf"] = free_retrieve_xf()
+	b["stand"] = ""
+	_park(bike_id)
+	var who := str(crew.get(peer, {}).get("name", "Someone"))
+	return "%s had %s brought back to the yard by the roller door (%s)." % [who, str(b["name"]), TvChannels.money_text(RETRIEVE_FEE)]

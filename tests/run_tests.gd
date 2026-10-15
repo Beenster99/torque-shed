@@ -183,6 +183,13 @@ func _run_all() -> void:
 	await _test_shed_sound_session()
 	print("Recorded sounds: horns, phone, door chime, dyno fan, gear levers, light switches, birds")
 	await _test_recorded_sounds()
+	print("Riding: camera orbit, ride-by camera, circle burnouts, headlight and fog, bikes left on the road")
+	await _test_ride_camera_orbit()
+	await _test_ride_by_camera()
+	await _test_circle_burnout()
+	await _test_headlight_sequence()
+	_test_road_bike_rules()
+	await _test_riding_feedback_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -2759,6 +2766,7 @@ func _test_bike_lights() -> void:
 	check(not bike.model.lights_lit() and not bike.effects.light_on() and bike._fog.all(func(l): return not l.visible),
 		"engine off: no beam, no fog lamps, every lens dark")
 	bike.engine_on = true
+	bike.beam = Bike.BEAM_FOG
 	for i in 3:
 		await get_tree().physics_frame
 	check(bike.model.lights_lit() and bike.effects.light_on() and bike._fog.all(func(l): return l.visible), "engine running: the lights come on")
@@ -8417,3 +8425,316 @@ func _horn(sound: String) -> HornAudio:
 	h.loudness = 1.0
 	add_child(h)
 	return h
+
+
+# ---------------------------------------------------------------------------- riding feedback round
+
+## Third person: the mouse or right stick swings the chase camera round the bike, never
+## through it, and it eases back behind after a moment; first person turns your head.
+func _test_ride_camera_orbit() -> void:
+	var r := await ride({}, 0.5, func(_b, _t): pass)
+	var bike: Bike = r["bike"]
+	var cam := ChaseCamera.new()
+	r["root"].add_child(cam)
+	cam.target = bike
+	cam.set_mode(ChaseCamera.Mode.CHASE)
+	for i in 30:
+		await get_tree().physics_frame
+	var fwd := -bike.global_transform.basis.z
+	var right := bike.global_transform.basis.x
+	var rel := cam.global_position - bike.global_position
+	check(rel.dot(fwd) < -3.5 and absf(rel.dot(right)) < 0.3, "the chase camera starts behind the bike (%s)" % rel)
+	# Swing it round a quarter turn with the mouse (to the bike's right) and watch the path.
+	var closest := 100.0
+	for i in 60:
+		cam.add_orbit(PI * 0.5 / 60.0, 0.0)
+		await get_tree().physics_frame
+		closest = minf(closest, Vector2(cam.global_position.x - bike.global_position.x, cam.global_position.z - bike.global_position.z).length())
+	for i in 30:
+		cam.add_orbit(0.0, 0.0)
+		await get_tree().physics_frame
+	rel = cam.global_position - bike.global_position
+	check(rel.dot(right) > 3.5 and absf(rel.dot(fwd)) < 1.0, "swung a quarter turn, it looks at the bike from its side (%s)" % rel)
+	check(closest > 3.5, "it swings round the bike, never through it (closest %.1f m)" % closest)
+	var to_bike := (bike.global_position - cam.global_position).normalized()
+	check((-cam.global_transform.basis.z).dot(to_bike) > 0.95, "and keeps the bike in the middle of the view")
+	cam.add_orbit(0.0, 0.6)
+	for i in 30:
+		await get_tree().physics_frame
+	check(cam.global_position.y - bike.global_position.y > 3.0, "tilting it up looks down on the bike (%.1f m up)" % (cam.global_position.y - bike.global_position.y))
+	# Hands off: after a moment it eases back behind.
+	for i in int((ChaseCamera.RECENTRE_DELAY + 2.5) * Engine.physics_ticks_per_second):
+		await get_tree().physics_frame
+	rel = cam.global_position - bike.global_position
+	check(rel.dot(fwd) < -3.5 and absf(rel.dot(right)) < 0.6 and not cam.orbiting(), "let go, it eases back behind the bike (%s)" % rel)
+	# With recentring switched off it stays where you left it.
+	cam.recentre = false
+	cam.add_orbit(-PI * 0.5, 0.0)
+	for i in int((ChaseCamera.RECENTRE_DELAY + 2.0) * Engine.physics_ticks_per_second):
+		await get_tree().physics_frame
+	rel = cam.global_position - bike.global_position
+	check(rel.dot(right) < -3.0 and cam.orbiting(), "with the setting off it stays swung round (%s)" % rel)
+	check(Settings.camera_recentre is bool, "the recentre setting is a saved setting")
+	# First person: the head turns, the eye stays put.
+	cam.recentre = true
+	cam.set_mode(ChaseCamera.Mode.HELMET)
+	await get_tree().physics_frame
+	var eye := cam.global_position
+	var ahead := -cam.global_transform.basis.z
+	cam.add_orbit(0.8, 0.0)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var look := -cam.global_transform.basis.z
+	check(cam.global_position.distance_to(eye) < 0.05 and ahead.dot(look) < 0.8 and look.dot(-right) > 0.4,
+		"in first person it turns your head to look round, from the same eye")
+	cam.add_orbit(10.0, 0.0)
+	check(cam.orbit_yaw <= ChaseCamera.HEAD_YAW + 0.001, "but no further than a head turns")
+	await _done(r)
+
+
+## The ride-by camera: dropped at the roadside ahead, it watches the bike come past, then goes
+## back to the view you had.
+func _test_ride_by_camera() -> void:
+	var cam_box := [null]
+	var passed := [false]
+	var steady := [true]
+	var spot := [Vector3.ZERO]
+	var r := await ride({}, 9.0, func(b, t):
+		b.throttle = 0.5 if t < 3.0 else 0.25
+		if t > 2.5 and cam_box[0] == null:
+			var cam := ChaseCamera.new()
+			b.get_parent().add_child(cam)
+			cam.target = b
+			cam.set_mode(ChaseCamera.Mode.CHASE)
+			cam_box[0] = cam
+		elif cam_box[0] != null and t > 2.8:
+			var cam: ChaseCamera = cam_box[0]
+			if spot[0] == Vector3.ZERO:
+				cam.start_ride_by()
+				spot[0] = cam.ride_by_spot()
+			elif cam.mode == ChaseCamera.Mode.RIDE_BY:
+				if cam.global_position.distance_to(spot[0]) > 0.01:
+					steady[0] = false
+				if (b.global_position - spot[0]).dot(-b.global_transform.basis.z) > 2.0:
+					passed[0] = true)
+	var bike: Bike = r["bike"]
+	var cam: ChaseCamera = cam_box[0]
+	check(cam != null and spot[0] != Vector3.ZERO, "V drops a camera at the roadside")
+	check(steady[0] and passed[0], "it stands still while the bike rides past it")
+	check(cam.mode == ChaseCamera.Mode.CHASE and cam.ride_by_left() == 0.0, "after a few seconds it goes back to the chase view")
+	var rel := cam.global_position - bike.global_position
+	check(rel.dot(-bike.global_transform.basis.z) < -3.0, "behind the bike again (%s)" % rel)
+	# Pressing it again ends it early; in first person it comes back to first person.
+	cam.set_mode(ChaseCamera.Mode.HELMET)
+	cam.start_ride_by()
+	check(cam.mode == ChaseCamera.Mode.RIDE_BY and cam.ride_by_left() >= ChaseCamera.RIDE_BY_MIN, "from first person too")
+	cam.start_ride_by()
+	check(cam.mode == ChaseCamera.Mode.HELMET, "pressing it again goes straight back to first person")
+	await _done(r)
+
+
+## Front brake on, throttle open and the bars turned: the back tyre slides round the front
+## wheel in a circle of smoke, and scrubs the tyre down.
+func _test_circle_burnout() -> void:
+	var r := await ride({"engine": "twin_700"}, 6.0, func(b, t):
+		b.front_brake = 1.0
+		b.throttle = 1.0 if t > 0.5 else 0.0
+		b.lean_input = 1.0 if t > 1.5 else 0.0)
+	var bike: Bike = r["bike"]
+	check(not r["crashed"] and bike.burnout > 0.5, "a burnout with the bars turned stays lit and upright (burnout %.2f)" % bike.burnout)
+	check(bike.donut_turn < -PI * 1.5, "leaning right swings it round to the right, in a circle (%.0f degrees)" % rad_to_deg(bike.donut_turn))
+	check(absf(bike.speed) < 1.5, "pivoting round the front wheel, not riding off (%.1f m/s)" % bike.speed)
+	check(bike.effects.tyre_smoke_emitting(), "in a cloud of tyre smoke")
+	var spun := bike.take_burnout_time()
+	check(spun > 2.0 and bike.burnout_time == 0.0, "the bike counts the burnout time for the tyre (%.1f s)" % spun)
+	await _done(r)
+	r = await ride({"engine": "twin_700"}, 4.0, func(b, t):
+		b.front_brake = 1.0
+		b.throttle = 1.0 if t > 0.5 else 0.0
+		b.lean_input = -1.0 if t > 1.5 else 0.0)
+	bike = r["bike"]
+	check(bike.donut_turn > PI * 0.5, "leaning left spins it the other way (%.0f degrees)" % rad_to_deg(bike.donut_turn))
+	await _done(r)
+	r = await ride({"engine": "twin_700"}, 3.0, func(b, t):
+		b.front_brake = 1.0
+		b.throttle = 1.0 if t > 0.5 else 0.0)
+	var straight: Bike = r["bike"]
+	check(absf(straight.donut_turn) < 0.3, "bars straight, it stays pointing the same way (%.0f degrees)" % rad_to_deg(straight.donut_turn))
+	await _done(r)
+	# Back at the shed the burnout seconds wear the back tyre.
+	Shed.start_new("Tester", 7)
+	var faithful := _bike_named("Old Faithful")
+	var tyre := Shed.item_on(faithful, "rear_tyre")
+	var front := Shed.item_on(faithful, "front_tyre")
+	var before := float(Shed.items[tyre]["wear"])
+	var front_before := float(Shed.items[front]["wear"])
+	Shed._wear_from_ride(faithful, {"km": 0.0, "spin": 4.0})
+	check(float(Shed.items[tyre]["wear"]) > before + 0.01 and float(Shed.items[front]["wear"]) == front_before,
+		"burnouts scrub the back tyre down (%.3f -> %.3f), not the front" % [before, float(Shed.items[tyre]["wear"])])
+
+
+## The headlight switch: off, low, high, then high with the fog lights on a bike that has them.
+func _test_headlight_sequence() -> void:
+	var r := await ride({"fog_lights": "rally_lamps"}, 0.3, func(_b, _t): pass)
+	var bike: Bike = r["bike"]
+	bike.beam = 0
+	var names := []
+	for i in 4:
+		names.append(bike.cycle_beam())
+	check(names == ["low beam", "high beam", "high beam and fog lights", "off"], "with fog lights: off, low, high, high and fog, off %s" % str(names))
+	bike.beam = 2
+	for i in 3:
+		await get_tree().physics_frame
+	check(bike._fog.all(func(l): return not l.visible) and not bike.model.fog_lit() and bike.effects.light_on(),
+		"on high beam the fog lamps stay off")
+	bike.cycle_beam()
+	for i in 3:
+		await get_tree().physics_frame
+	check(bike.beam == Bike.BEAM_FOG and bike._fog.all(func(l): return l.visible) and bike.model.fog_lit() and bike.effects.light_on(),
+		"the next press puts the fog lamps on with the high beam")
+	var state := bike.get_net_state()
+	check(int(state[24]) == Bike.BEAM_FOG, "other players see the fog lamps on too")
+	await _done(r)
+	r = await ride({}, 0.3, func(_b, _t): pass)
+	bike = r["bike"]
+	bike.beam = 0
+	names = []
+	for i in 3:
+		names.append(bike.cycle_beam())
+	check(names == ["low beam", "high beam", "off"], "without fog lights: off, low, high, off %s" % str(names))
+	await _done(r)
+
+
+## Away from the shed a bike is just for riding: no tools, no parts, no inspecting. Left out
+## there, the recovery truck brings it back to the yard for a small fee.
+func _test_road_bike_rules() -> void:
+	Shed.start_new("Tester", 7)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	check(Shed.bike_at_work(faithful) and Shed.abandoned_bikes().is_empty(), "bikes in the bays are at the shed")
+	check(Shed.check(me, {"a": "unbolt", "bike": faithful, "slot": "exhaust"}) == "", "in the shed the wrench works")
+	var yard := Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 12.0))
+	Shed.bikes[faithful]["xf"] = yard
+	check(Shed.bike_at_work(faithful), "parked on the drive outside the roller door it's still at the shed")
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Vector3(150.0, 2.0, 20.0))
+	check(not Shed.bike_at_work(faithful) and Shed.abandoned_bikes() == [faithful], "left out on the road it's abandoned")
+	var why := Shed.check(me, {"a": "unbolt", "bike": faithful, "slot": "exhaust"})
+	check(why.contains("ride"), "out there the wrench won't touch it (%s)" % why)
+	for a in ["bolt", "remove", "install", "adjust_chain", "tune", "geo_save"]:
+		check(Shed.check(me, {"a": a, "bike": faithful, "slot": "exhaust", "key": "chain", "value": 30.0, "geo": {}, "crouched": true}).contains("shed"),
+			"no %s out on the road" % a)
+	var tank := Shed.item_on(faithful, "tank")
+	for a in ["clean", "paint", "drain"]:
+		check(Shed.check(me, {"a": a, "item": tank}).contains("shed"), "no %s on its parts out there" % a)
+	check(Shed.check(me, {"a": "clean_many", "items": [tank]}).contains("shed"), "the brush won't scrub it either")
+	check(Shed.road_bike_block({"a": "pour", "item": tank}) == "", "a can of petrol can still go in the tank")
+	check(Shed.check(me, {"a": "mount", "bike": faithful}) == "", "and you can still ride it")
+	# Retrieve it.
+	Shed.garage_money = 1000
+	check(Shed.check(me, {"a": "retrieve_bike", "bike": faithful}) == "", "the recovery truck can fetch it")
+	Shed.request({"a": "retrieve_bike", "bike": faithful})
+	var at: Vector3 = Shed.bikes[faithful]["xf"].origin
+	check(Shed.bike_at_work(faithful) and at.distance_to(Shed.RETRIEVE_ROW) < 10.0 and Shed.abandoned_bikes().is_empty(),
+		"it's brought back to the yard by the roller door (%s)" % at)
+	check(Shed.garage_money == 1000 - Shed.RETRIEVE_FEE, "for a small fee from the garage (%d left)" % Shed.garage_money)
+	check(Shed.check(me, {"a": "unbolt", "bike": faithful, "slot": "exhaust"}) == "", "back at the shed it can be worked on again")
+	check(Shed.check(me, {"a": "retrieve_bike", "bike": faithful}).contains("already"), "a bike at the shed needs no fetching")
+	# Two bikes out: they park side by side, not on top of each other.
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.bikes[ranger]["xf"] = Transform3D(Basis(), Vector3(-200.0, 2.0, -50.0))
+	Shed.request({"a": "retrieve_bike", "bike": ranger})
+	check(Shed.bikes[ranger]["xf"].origin.distance_to(Shed.bikes[faithful]["xf"].origin) > 0.8, "a second bike parks beside the first")
+	# Not while someone is riding it, and not when the garage is broke.
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Vector3(150.0, 2.0, 20.0))
+	Shed.bikes[faithful]["rider"] = 99
+	check(not Shed.abandoned_bikes().has(faithful) and Shed.check(me, {"a": "retrieve_bike", "bike": faithful}).contains("riding"),
+		"a bike someone is out riding isn't abandoned")
+	Shed.bikes[faithful]["rider"] = 0
+	Shed.garage_money = 5
+	check(Shed.check(me, {"a": "retrieve_bike", "bike": faithful}).contains("pay"), "the garage has to be able to pay")
+	# It's all kept in the save: where the bike was left.
+	Shed.garage_money = 1000
+	var saved := Shed.save_snapshot()
+	Shed.load_state(saved, "Tester")
+	check(Shed.abandoned_bikes() == [faithful], "a bike left on the road is still out there after loading")
+
+
+## In the game: swinging the camera with the mouse, the ride-by key, a bike left out on the road
+## that can't be inspected, and the Esc menu's retrieve button.
+func _test_riding_feedback_session() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_riding_feedback_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var faithful := _bike_named("Old Faithful")
+	Shed.request({"a": "mount", "bike": faithful})
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.bike != null, "on the bike")
+	var ev := InputEventMouseMotion.new()
+	ev.relative = Vector2(-150.0, 0.0)
+	main._unhandled_input(ev)
+	check(main.camera.orbit_yaw > 0.3, "moving the mouse swings the chase camera round (%.2f)" % main.camera.orbit_yaw)
+	_press("ride_by")
+	await get_tree().physics_frame
+	check(main.camera.mode == ChaseCamera.Mode.RIDE_BY, "V switches to the ride-by camera")
+	_press("camera")
+	await get_tree().physics_frame
+	check(main.camera.mode == ChaseCamera.Mode.CHASE, "C brings the chase camera straight back")
+	_press("headlight")
+	await get_tree().physics_frame
+	check(main.bike.beam == 2, "L steps the headlight on to high beam")
+	# Ride it out of the shed area and get off.
+	var far := Vector3(150.0, 0.0, 20.0)
+	far.y = main.world.surface_height(far.x, far.z)
+	main.bike.place(far, 0.0)
+	for i in 30:
+		await get_tree().physics_frame
+	main._get_off()
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.bike == null and Shed.abandoned_bikes() == [faithful], "got off out on the road, the bike stays there")
+	# Stand beside it on the hillside and look at its tank.
+	var w: Walker = main.walker
+	var model: BikeModel = main.workshop.bike_model(faithful)
+	var aim: Vector3 = model.global_transform * model.slot_bounds("tank").get_center()
+	var stand: Vector3 = aim + Vector3(1.4, 0.0, 0.0)
+	stand.y = main.world.surface_height(stand.x, stand.z) + 0.05
+	w.place(Transform3D(Basis(), stand))
+	w.rotation.y = PI * 0.5
+	var eye: Vector3 = stand + Vector3.UP * Walker.EYE
+	w._look(0.0, -atan2(eye.y - aim.y, Vector2(eye.x - aim.x, eye.z - aim.z).length()))
+	for i in 5:
+		await get_tree().physics_frame
+	check(int(w.target.get("bike", 0)) == faithful and w.target.get("road", false), "looking at it out there (%s)" % str(w.target))
+	w.set_tool("wrench")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	check(w.plan.is_empty() and w.info.contains("Out on the road") and not w.info.contains("bolted") and not w.info.contains("geometry"),
+		"no wrench work and no part details, just a bike to ride (%s)" % w.info.replace("\n", " / "))
+	w.set_tool("hands")
+	main.open_geometry()
+	check(not main.geometry.active, "and no geometry mode")
+	# Walk back to the shed and fetch it from the Esc menu.
+	w.place(Workshop.walker_spawn(0))
+	Shed.garage_money = 500
+	main.menu.show_pause()
+	await get_tree().process_frame
+	var buttons: Array = main.menu._retrieve_box.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion())
+	check(buttons.size() == 1 and (buttons[0] as Button).text.contains("Old Faithful") and not (buttons[0] as Button).disabled,
+		"the Esc menu offers to retrieve it")
+	if not buttons.is_empty():
+		(buttons[0] as Button).pressed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	check(Shed.bike_at_work(faithful) and main.workshop.bike_views.has(faithful), "the bike is back in the yard")
+	var left: Array = main.menu._retrieve_box.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion())
+	check(left.is_empty(), "and the button goes")
+	main.menu.hide()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	Progress.path = real_path

@@ -7,6 +7,8 @@ var player_name := "Rider"
 var last_ip := "127.0.0.1"
 var assist := 0.5          # 0 = full sim, 1 = maximum riding assistance
 var auto_shift := true
+## The chase camera eases back behind the bike after a moment of not swinging it round.
+var camera_recentre := true
 var high_quality := true
 var sfx_volume := 0.8
 var radio_volume := 0.6
@@ -85,6 +87,7 @@ const ACTIONS := [
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
 	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera", ["ride"]],
 	["horn", "Horn", ["ride"]], ["headlight", "Headlight", ["ride"]],
+	["ride_by", "Ride-by camera", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["geo_move", "Geometry: move", ["geo"]], ["geo_rotate", "Geometry: rotate", ["geo"]],
 	["geo_scale", "Geometry: scale / stretch", ["geo"]], ["geo_snap", "Geometry: snap (hold)", ["geo"]],
@@ -117,6 +120,7 @@ func load_settings() -> void:
 		last_ip = cfg.get_value("player", "last_ip", last_ip)
 		assist = cfg.get_value("riding", "assist", assist)
 		auto_shift = cfg.get_value("riding", "auto_shift", auto_shift)
+		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
 		radio_volume = cfg.get_value("audio", "radio", radio_volume)
@@ -141,6 +145,7 @@ func save_settings() -> void:
 	cfg.set_value("player", "last_ip", last_ip)
 	cfg.set_value("riding", "assist", assist)
 	cfg.set_value("riding", "auto_shift", auto_shift)
+	cfg.set_value("riding", "camera_recentre", camera_recentre)
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("audio", "radio", radio_volume)
@@ -250,6 +255,8 @@ func _setup_inputs() -> void:
 	_bind("ignition", [KEY_I], [JOY_BUTTON_DPAD_UP])
 	_bind("horn", [KEY_H], [JOY_BUTTON_DPAD_DOWN])
 	_bind("headlight", [KEY_L], [JOY_BUTTON_LEFT_STICK])
+	# Drop a camera at the roadside ahead and watch yourself ride past (no pad button spare).
+	_bind("ride_by", [KEY_V], [])
 	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])
 	# On foot in the shed
 	_bind("move_forward", [KEY_W, KEY_UP], [])

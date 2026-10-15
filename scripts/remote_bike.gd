@@ -110,9 +110,10 @@ func _physics_process(delta: float) -> void:
 		audio.gear = int(sb[22])
 	if sb.size() > 23 and _effects.has_method("set_tyre_smoke"):
 		_effects.call("set_tyre_smoke", sb[23], Vector3(0.0, -_build.rear_radius, _build.wheelbase * 0.5))
+	var fog := running and _effects.beam_mode >= Bike.BEAM_FOG
 	for l in _fog:
-		l.visible = running
-	model.set_lights(running, _effects.beam_mode > 0)
+		l.visible = fog
+	model.set_lights(running, _effects.beam_mode > 0, fog)
 
 
 func current_speed() -> float:

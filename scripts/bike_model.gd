@@ -61,8 +61,8 @@ var _dash_label: Label3D
 var _needles := []               # {node, what: "speed" or "rpm"} on dial clocks
 var _leds := []                  # shift lights: {mat, color}
 var _dash_screen := Transform3D()  # where the readout text sits on the clocks, in steering space
-var _lamps: Array = []           # lit lenses and clocks: {mat, albedo, energy, group ("ign" or "head")}
-var _lit := [true, true]         # [ignition, headlight] as last set
+var _lamps: Array = []           # lit lenses and clocks: {mat, albedo, energy, group ("ign", "head" or "fog")}
+var _lit := [true, true, true]   # [ignition, headlight, fog lights] as last set
 ## This bike's own fit for each part, set in geometry mode: slot -> {p, r, s} (see GeoGizmo),
 ## about the part's middle in the model's axes. Set it before build_from, or change it any time
 ## with apply_geometry. Looks only: the physics never see it.
@@ -82,7 +82,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	condition = build.condition if part_condition == null else part_condition
 	_slot_meshes.clear()
 	_lamps.clear()
-	_lit = [true, true]
+	_lit = [true, true, true]
 	_highlighted = ""
 	for slot in PartsDB.SLOTS:
 		_slot_meshes[slot] = []
@@ -890,7 +890,7 @@ func _draw_fog_lights() -> void:
 		return
 	var shell := _mat(_col(), 0.8, 0.25)
 	var b: Array = p.get("beam", [1.0, 0.9, 0.8])
-	var lens := _lamp(Color(b[0], b[1], b[2]), 2.0, "ign")
+	var lens := _lamp(Color(b[0], b[1], b[2]), 2.0, "fog")
 	var style := str(p.get("style", "round"))
 	if style == "bar":
 		var mid := -_steer_axis * 0.2 + Vector3(0.0, 0.0, -0.1)
@@ -2390,8 +2390,8 @@ static func _patina_texture() -> NoiseTexture2D:
 	return _patina_albedo
 
 
-## A lens or lit face that only glows with the ignition on ("ign": tail light, fog lamps,
-## clocks) or the headlight switched on too ("head").
+## A lens or lit face that only glows with the ignition on ("ign": tail light, clocks), the
+## headlight switched on too ("head") or the fog lights switched on ("fog").
 func _lamp(color: Color, energy: float, group: String) -> StandardMaterial3D:
 	var m := _glow(color, energy)
 	_lamps.append({"mat": m, "albedo": m.albedo_color, "energy": energy, "group": group})
@@ -2399,14 +2399,15 @@ func _lamp(color: Color, energy: float, group: String) -> StandardMaterial3D:
 
 
 ## Lights the lenses and clocks: `ignition` for the engine running, `headlight` for the
-## headlight switched on as well. Unlit, the lenses are dull glass.
-func set_lights(ignition: bool, headlight: bool) -> void:
+## headlight switched on as well, `fog` for the fog lamps. Unlit, the lenses are dull glass.
+func set_lights(ignition: bool, headlight: bool, fog := false) -> void:
 	headlight = headlight and ignition
-	if _lit[0] == ignition and _lit[1] == headlight:
+	fog = fog and ignition
+	if _lit[0] == ignition and _lit[1] == headlight and _lit[2] == fog:
 		return
-	_lit = [ignition, headlight]
+	_lit = [ignition, headlight, fog]
 	for l in _lamps:
-		var on: bool = headlight if l["group"] == "head" else ignition
+		var on: bool = headlight if l["group"] == "head" else (fog if l["group"] == "fog" else ignition)
 		var m: StandardMaterial3D = l["mat"]
 		var c: Color = l["albedo"]
 		m.emission_enabled = on
@@ -2416,7 +2417,12 @@ func set_lights(ignition: bool, headlight: bool) -> void:
 
 ## Whether any lens or clock is glowing.
 func lights_lit() -> bool:
-	return _lit[0] or _lit[1]
+	return _lit[0] or _lit[1] or _lit[2]
+
+
+## Whether the fog lamp lenses are glowing.
+func fog_lit() -> bool:
+	return _lit[2]
 
 
 func _glow(color: Color, energy: float) -> StandardMaterial3D:
