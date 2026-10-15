@@ -157,6 +157,7 @@ func _run_all() -> void:
 	await _test_sales_office_session()
 	print("Garage upgrades: extension, bays 5 to 7, storage annex, luxury finishes")
 	_test_upgrade_catalogue()
+	await _test_computer_fits_screen()
 	_test_upgrade_buying()
 	await _test_upgrade_session()
 	print("Rider gear and trinkets from the Shop")
@@ -7318,3 +7319,62 @@ func _test_walker_spawns() -> void:
 	check(stuck.is_empty(), "every start spot in the shed has room to walk %s" % str(stuck))
 	main.queue_free()
 	await get_tree().process_frame
+
+
+## The parts computer and its Garage upgrades page fit on the screen, and every list in them
+## scrolls far enough to show its last entry, in every aisle.
+func _test_computer_fits_screen() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var keep := get_window().size
+	get_window().size = Vector2i(1920, 1080)
+	await get_tree().process_frame
+	var vp := get_viewport().get_visible_rect()
+	var pc: PartsComputer = main.computer
+	pc.open()
+	await get_tree().process_frame
+	var panel: Control = pc.get_child(1).get_child(0)
+	var head: Control = panel.get_child(0).get_child(0)
+	check(head.size.y < 80.0, "the parts computer's header is one row (%.0f px)" % head.size.y)
+	var cut := []
+	var off := []
+	for sec in PartsComputer.SECTIONS:
+		pc._show_section(sec)
+		for k in PartsComputer.all_kinds() + PartsComputer.SELL_KINDS:
+			if PartsComputer.section_of(k) != sec:
+				continue
+			pc._show_kind(k)
+			await get_tree().process_frame
+			if panel.get_global_rect().end.y > vp.end.y + 1.0:
+				off.append(k)
+			for col in [pc._kinds, pc._variants]:
+				if not await _scrolls_to_end(col):
+					cut.append(k)
+	check(off.is_empty(), "the parts computer stays on the screen in every aisle %s" % str(off))
+	check(cut.is_empty(), "every list in the parts computer scrolls to its last entry %s" % str(cut))
+	pc.open_upgrades()
+	await get_tree().process_frame
+	var up: UpgradesPanel = pc.upgrades_panel
+	var up_panel: Control = up.get_child(1).get_child(0)
+	check(up_panel.get_global_rect().end.y <= vp.end.y + 1.0 and await _scrolls_to_end(up._list),
+		"the Garage upgrades page fits and its list scrolls to the end (%s)" % up_panel.get_global_rect())
+	pc.close_computer()
+	get_window().size = keep
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Scrolls the list's ScrollContainer to the bottom: whether its last entry is then in view.
+func _scrolls_to_end(col: Control) -> bool:
+	var sc: ScrollContainer = col.get_parent()
+	await get_tree().process_frame
+	sc.scroll_vertical = 1000000
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var kids: Array = col.get_children().filter(func(c): return not c.is_queued_for_deletion() and c.visible)
+	if kids.is_empty():
+		return true
+	var vis := sc.get_global_rect()
+	return (kids[-1] as Control).get_global_rect().end.y <= vis.end.y + 1.0 and vis.end.y <= get_viewport().get_visible_rect().end.y + 1.0
