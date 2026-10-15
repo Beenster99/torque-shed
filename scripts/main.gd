@@ -548,7 +548,7 @@ func _physics_process(delta: float) -> void:
 ## wheels on the ground, rather than falling forever.
 func _keep_on_map() -> void:
 	var p := bike.global_position
-	var lost := p.y < -25.0 or absf(p.x) > World.MAP_HALF - 1.0 or absf(p.z) > World.MAP_HALF - 1.0
+	var lost := p.y < world.terrain_height(p.x, p.z) - 15.0 or absf(p.x) > World.MAP_HALF - 1.0 or absf(p.z) > World.MAP_HALF - 1.0
 	if lost and _safe_xf != Transform3D():
 		var fwd := -_safe_xf.basis.z
 		bike.place(_safe_xf.origin, atan2(-fwd.x, -fwd.z) + PI)

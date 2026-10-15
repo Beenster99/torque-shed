@@ -1,23 +1,29 @@
 class_name World
 extends Node3D
-## The test map: rolling hills, a 1 km riding loop of tarmac and dirt, and the Build Yard
-## with the shed, drag strip, skid pad and jump ramps. Generated from a seed so every
-## player in a session gets the same map.
+## The riding map, about four kilometres across: the shed and its yard (laid out as a bike test
+## area, see WorldYard), the 1 km tarmac loop round them, a network of tarmac roads out to the
+## villages and farms and over a mountain pass with hairpins, and dirt tracks off them, the
+## hardest up in the mountains. Woods, rocks, fences, barriers, signs, houses and farmyards
+## (WorldProps) fill it in. Generated from a seed so every player in a session gets the same
+## map; the land is WorldTerrain, the roads WorldRoads and the plan WorldLayout.
 
-const MAP_HALF := 400.0
-const GRID := 200
-const ROAD_HALF_WIDTH := 4.0
-const ROAD_STEP := 2.0
-const YARD_CENTER := Vector2(0.0, 100.0)
-const YARD_HALF := Vector2(65.0, 45.0)
-const DIRT_START := 0.55   # fraction of the loop where tarmac turns to dirt
+const MAP_HALF := WorldTerrain.HALF
+const ROAD_HALF_WIDTH := 4.0     # the loop's (other roads are a little narrower)
+const YARD_CENTER := WorldYard.CENTER
+const YARD_HALF := WorldYard.HALF
+## Near terrain (full detail) out to this far, times the draw distance setting; the coarse
+## mesh beyond. Roads, props and markings have their own ranges.
+const TERRAIN_NEAR := 700.0
+const ROAD_CHUNK := 48           # road samples per mesh chunk
 
-var road_points: PackedVector3Array = []     # centre line, every ROAD_STEP metres
-var road_tangents: PackedVector3Array = []
-var _road_length := 0.0
-var _noise := FastNoiseLite.new()
-var _road_grid := {}     # Vector2i cell -> Array of road sample indices
-var _rng := RandomNumberGenerator.new()
+## What generating the same seed again can reuse in this run (the land, the roads and their
+## meshes), so going back to the menu and starting again doesn't make it all over again.
+static var _cache := {}
+
+var terrain: WorldTerrain
+var roads: WorldRoads
+var yard: WorldYard
+var props: WorldProps
 var _sun: DirectionalLight3D
 var _env: WorldEnvironment
 var workshop: Workshop
@@ -26,40 +32,84 @@ var weather: Weather
 var lighting: Lighting
 ## Ground that rain soaks (see Weather): [{mat, color, rough, shine}], shine 0 (stays matt) .. 1.
 var wet_surfaces := []
+## [GeometryInstance3D, range end, range begin] for every node the draw distance scales.
+var _ranged := []
 
 
 func generate(seed_value := 1) -> void:
-	_rng.seed = seed_value
-	_noise.seed = seed_value
-	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_noise.frequency = 0.0045
-	_noise.fractal_octaves = 4
-	_noise.fractal_gain = 0.45
 	_build_environment()
-	_build_road_path()
-	_build_terrain()
-	_build_road_meshes()
-	_build_yard()
+	var data := _data_for(seed_value)
+	terrain = data["terrain"]
+	roads = data["roads"]
+	_build_terrain(data)
+	_build_roads(data)
+	yard = WorldYard.new()
+	add_child(yard)
+	yard.build(self)
 	_build_garage()
 	_build_yard_lights()
-	_build_trees()
+	props = WorldProps.new()
+	props.name = "Props"
+	add_child(props)
+	props.build(self, data)
 	weather = Weather.new()
 	weather.name = "Weather"
 	add_child(weather)
 	weather.setup(self)
+	_apply_draw_distance()
+	if Settings.has_signal("graphics_changed"):
+		Settings.graphics_changed.connect(_apply_draw_distance)
+
+
+## The land, the roads and the meshes for `seed_value`, made once per run.
+static func _data_for(seed_value: int) -> Dictionary:
+	if _cache.has(seed_value):
+		return _cache[seed_value]
+	var t := WorldTerrain.new(seed_value)
+	var r := WorldRoads.new()
+	r.build(t)
+	t.build(r)
+	var data := {"terrain": t, "roads": r, "seed": seed_value}
+	var count := WorldTerrain.chunk_count()
+	var near := []
+	var far := []
+	for cz in count:
+		for cx in count:
+			near.append(t.chunk_mesh(cx, cz, 1))
+			far.append(t.chunk_mesh(cx, cz, WorldTerrain.COARSE))
+	data["near"] = near
+	data["far"] = far
+	data["shape"] = t.make_shape()
+	data["horizon"] = t.horizon_mesh()
+	data["road_chunks"] = _road_chunks(r)
+	data["props"] = WorldProps.plan(t, r, seed_value)
+	_cache.clear()   # only the latest map is kept
+	_cache[seed_value] = data
+	return data
 
 
 # ---------------------------------------------------------------------------- queries
 
+## The length of the 1 km loop, in metres.
 func road_length() -> float:
-	return _road_length
+	return float(roads.roads[0]["length"])
 
 
-## A transform on the road centre line at fraction t (0..1) of the loop, facing along it.
+## A transform on the loop's centre line at fraction t (0..1) of the way round, facing along it.
 func road_transform(t: float) -> Transform3D:
-	var i := int(wrapf(t, 0.0, 1.0) * road_points.size()) % road_points.size()
-	var tan := road_tangents[i]
-	return Transform3D(Basis(Vector3.UP, atan2(-tan.x, -tan.z)), road_points[i] + Vector3.UP * 0.1)
+	var loop: Dictionary = roads.roads[0]
+	var n := (loop["xz"] as PackedVector2Array).size()
+	return road_transform_on("loop", wrapf(t, 0.0, 1.0) * n * WorldRoads.STEP)
+
+
+## A transform on road `road_name`'s centre line `metres` from its start, facing along it.
+func road_transform_on(road_name: String, metres: float) -> Transform3D:
+	var ri := int(roads.by_name[road_name])
+	var r: Dictionary = roads.roads[ri]
+	var n := (r["xz"] as PackedVector2Array).size()
+	var i := clampi(int(metres / WorldRoads.STEP), 0, n - 1)
+	var dir: Vector2 = (r["dir"] as PackedVector2Array)[i]
+	return Transform3D(Basis(Vector3.UP, atan2(-dir.x, -dir.y)), roads.point(ri, i) + Vector3.UP * 0.1)
 
 
 ## Where player number `index` starts: lined up in front of the garage, facing the yard.
@@ -69,11 +119,37 @@ func spawn_point(index: int) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, PI), Vector3(x, 0.05, z))
 
 
+## The height of whatever is solid under (x, z): ground, road, yard or a roof.
 func surface_height(x: float, z: float) -> float:
-	var from := Vector3(x, 500.0, z)
-	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 1000.0, 1)
+	var from := Vector3(x, 1000.0, z)
+	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 2000.0, 1)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	return hit["position"].y if hit else 0.0
+	return hit["position"].y if hit else terrain_height(x, z)
+
+
+## The height of the ground (not roads or buildings) at (x, z), straight off the land's grid.
+func terrain_height(x: float, z: float) -> float:
+	return terrain.height_at(x, z)
+
+
+## Distance to the nearest road's centre line (capped at 40 m) and that road's height there.
+func _road_info(x: float, z: float) -> Vector2:
+	var near := roads.nearest(x, z, 40.0)
+	if near.is_empty():
+		return Vector2(40.0, 0.0)
+	return Vector2(float(near["d"]), float(near["h"]))
+
+
+## The name of the village or farm nearest (x, z) within `reach` metres, or "".
+static func place_near(x: float, z: float, reach := 400.0) -> String:
+	var best := ""
+	var best_d := reach
+	for s in WorldLayout.SITES:
+		var d := (s["at"] as Vector2).distance_to(Vector2(x, z))
+		if d < best_d:
+			best_d = d
+			best = str(s["name"])
+	return best
 
 
 # ---------------------------------------------------------------------------- environment
@@ -150,381 +226,139 @@ static func darkness() -> float:
 	return Daylight.darkness()
 
 
-# ---------------------------------------------------------------------------- terrain height
-
-func _yard_mask(x: float, z: float) -> float:
-	var dx := maxf(absf(x - YARD_CENTER.x) - YARD_HALF.x, 0.0)
-	var dz := maxf(absf(z - YARD_CENTER.y) - YARD_HALF.y, 0.0)
-	return smoothstep(8.0, 70.0, Vector2(dx, dz).length())
-
-
-func _natural_height(x: float, z: float) -> float:
-	var r := Vector2(x, z).length()
-	var amp := 16.0 + 70.0 * smoothstep(250.0, 390.0, r)
-	return _noise.get_noise_2d(x, z) * amp * _yard_mask(x, z) + smoothstep(330.0, 400.0, r) * 25.0
-
-
-# ---------------------------------------------------------------------------- road
-
-func _loop_point(theta: float) -> Vector3:
-	var f := 1.0 + 0.1 * sin(3.0 * theta + 0.5) + 0.05 * sin(5.0 * theta + 2.0)
-	return Vector3(185.0 * f * sin(theta), 0.0, 126.0 * f * cos(theta))
-
-
-func _build_road_path() -> void:
-	# Dense samples by angle, then resample evenly by distance.
-	var dense: Array[Vector3] = []
-	var n := 4000
-	for i in n:
-		dense.append(_loop_point(TAU * i / n))
-	dense.append(dense[0])
-	var total := 0.0
-	for i in n:
-		total += dense[i].distance_to(dense[i + 1])
-	var count := int(total / ROAD_STEP)
-	var step := total / count
-	var pts: Array[Vector3] = []
-	var seg := 0
-	var seg_start := 0.0
-	for k in count:
-		var target := k * step
-		while seg_start + dense[seg].distance_to(dense[seg + 1]) < target:
-			seg_start += dense[seg].distance_to(dense[seg + 1])
-			seg += 1
-		var seg_len := dense[seg].distance_to(dense[seg + 1])
-		pts.append(dense[seg].lerp(dense[seg + 1], (target - seg_start) / seg_len))
-	_road_length = total
-
-	# Heights follow the land, smoothed so climbs and dips stay rideable.
-	var raw: Array[float] = []
-	for p in pts:
-		raw.append(_natural_height(p.x, p.z))
-	var window := 18
-	road_points.resize(count)
-	for i in count:
-		var sum := 0.0
-		for j in range(-window, window + 1):
-			sum += raw[(i + j + count) % count]
-		var p := pts[i]
-		p.y = sum / (2 * window + 1)
-		if _yard_mask(p.x, p.z) == 0.0:
-			p.y = 0.0
-		road_points[i] = p
-	road_tangents.resize(count)
-	for i in count:
-		road_tangents[i] = (road_points[(i + 1) % count] - road_points[(i - 1 + count) % count]).normalized()
-	_road_grid.clear()
-	for i in count:
-		var cell := _cell(road_points[i].x, road_points[i].z)
-		if not _road_grid.has(cell):
-			_road_grid[cell] = []
-		_road_grid[cell].append(i)
-
-
-func _cell(x: float, z: float) -> Vector2i:
-	return Vector2i(floori(x / 20.0), floori(z / 20.0))
-
-
-## Distance to the road centre line (capped at 40 m) and the road height there.
-func _road_info(x: float, z: float) -> Vector2:
-	var c := _cell(x, z)
-	var best := 40.0
-	var height := 0.0
-	for dx in range(-1, 2):
-		for dz in range(-1, 2):
-			var key := Vector2i(c.x + dx, c.y + dz)
-			if not _road_grid.has(key):
-				continue
-			for i in _road_grid[key]:
-				var p: Vector3 = road_points[i]
-				var d := Vector2(p.x - x, p.z - z).length()
-				if d < best:
-					best = d
-					height = p.y
-	return Vector2(best, height)
-
-
-func _build_road_meshes() -> void:
-	var count := road_points.size()
-	var dirt_from := int(count * DIRT_START)
-	_road_strip(0, dirt_from, "tarmac", _wet(_road_material(Color(0.13, 0.13, 0.14), 0.82), 1.0))
-	_road_strip(dirt_from, count, "dirt", _wet(_road_material(Color(0.42, 0.31, 0.2), 1.0), 0.35))
-	var line_mat := StandardMaterial3D.new()
-	line_mat.albedo_color = Color(0.92, 0.92, 0.88)
-	line_mat.roughness = 0.6
-	line_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	for side in [-1.0, 1.0]:
-		_ribbon(0, dirt_from, side * (ROAD_HALF_WIDTH - 0.35), 0.12, 0.065, line_mat)
-	# Kickers on the dirt section.
-	for t in [0.7, 0.86]:
-		var i := int(count * t)
-		var xf := Transform3D(Basis(Vector3.UP, atan2(-road_tangents[i].x, -road_tangents[i].z)), road_points[i])
-		_kicker(xf, 4.5, 1.1, 5.0, "dirt")
-
-
-## Registers `mat` as ground the rain soaks, `shine` (0..1) how glossy it goes wet.
-func _wet(mat: StandardMaterial3D, shine: float) -> StandardMaterial3D:
-	wet_surfaces.append({"mat": mat, "color": mat.albedo_color, "rough": mat.roughness, "shine": shine})
-	return mat
-
-
-func _road_material(color: Color, roughness: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	m.roughness = roughness
-	m.albedo_texture = _noise_texture(0.08, Color(0.75, 0.75, 0.75), Color(1.1, 1.1, 1.1))
-	m.uv1_scale = Vector3(1.0, 1.0, 1.0)
-	return m
-
-
-func _noise_texture(freq: float, dark: Color, light: Color) -> NoiseTexture2D:
-	var tex := NoiseTexture2D.new()
-	tex.width = 512
-	tex.height = 512
-	tex.seamless = true
-	var n := FastNoiseLite.new()
-	n.frequency = freq
-	n.fractal_octaves = 5
-	tex.noise = n
-	var ramp := Gradient.new()
-	ramp.set_color(0, dark)
-	ramp.set_color(1, light)
-	tex.color_ramp = ramp
-	return tex
-
-
-func _road_strip(from: int, to: int, surface: String, mat: Material) -> void:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var count := road_points.size()
-	var dist := 0.0
-	var edges := [-ROAD_HALF_WIDTH - 1.8, -ROAD_HALF_WIDTH, ROAD_HALF_WIDTH, ROAD_HALF_WIDTH + 1.8]
-	var drops := [-0.35, 0.06, 0.06, -0.35]
-	for k in range(from, to + 1):
-		var i := k % count
-		var p := road_points[i]
-		var right := road_tangents[i].cross(Vector3.UP).normalized()
-		for e in edges.size():
-			st.set_uv(Vector2(edges[e] / 8.0, dist / 8.0))
-			st.add_vertex(p + right * edges[e] + Vector3.UP * drops[e])
-		dist += ROAD_STEP
-	var rows := to - from + 1
-	for r in rows - 1:
-		for e in edges.size() - 1:
-			var a := r * 4 + e
-			var b := a + 4
-			st.add_index(a)
-			st.add_index(b)
-			st.add_index(a + 1)
-			st.add_index(a + 1)
-			st.add_index(b)
-			st.add_index(b + 1)
-	st.generate_normals()
-	var mesh := st.commit()
-	_static_mesh(mesh, mat, surface)
-
-
-func _ribbon(from: int, to: int, offset: float, width: float, lift: float, mat: Material) -> void:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
-	st.set_normal(Vector3.UP)
-	for i in range(from, to):
-		var p := road_points[i]
-		var right := road_tangents[i].cross(Vector3.UP).normalized()
-		st.add_vertex(p + right * (offset - width * 0.5) + Vector3.UP * lift)
-		st.add_vertex(p + right * (offset + width * 0.5) + Vector3.UP * lift)
-	var mi := MeshInstance3D.new()
-	mi.mesh = st.commit()
-	mi.material_override = mat
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
-
-
-func _static_mesh(mesh: Mesh, mat: Material, surface: String) -> StaticBody3D:
-	var body := StaticBody3D.new()
-	body.set_meta("surface", surface)
-	body.collision_layer = 1
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.material_override = mat
-	body.add_child(mi)
-	var cs := CollisionShape3D.new()
-	cs.shape = mesh.create_trimesh_shape()
-	body.add_child(cs)
-	add_child(body)
-	return body
-
-
-## A wedge ramp at `xf` (facing its -Z), `length` long and `height` tall at the lip.
-func _kicker(xf: Transform3D, length: float, height: float, width: float, surface: String) -> void:
-	var w := width * 0.5
-	var pts := PackedVector3Array([
-		Vector3(-w, -0.3, length * 0.5), Vector3(w, -0.3, length * 0.5),
-		Vector3(-w, -0.3, -length * 0.5), Vector3(w, -0.3, -length * 0.5),
-		Vector3(-w, 0.06, length * 0.5), Vector3(w, 0.06, length * 0.5),
-		Vector3(-w, height, -length * 0.5), Vector3(w, height, -length * 0.5),
-	])
-	var body := StaticBody3D.new()
-	body.set_meta("surface", surface)
-	body.transform = xf
-	var shape := ConvexPolygonShape3D.new()
-	shape.points = pts
-	var cs := CollisionShape3D.new()
-	cs.shape = shape
-	body.add_child(cs)
-	var mi := MeshInstance3D.new()
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var quads := [[4, 5, 7, 6], [0, 2, 3, 1], [0, 4, 6, 2], [1, 3, 7, 5], [2, 6, 7, 3], [0, 1, 5, 4]]
-	for q in quads:
-		for idx in [q[0], q[1], q[2], q[0], q[2], q[3]]:
-			st.add_vertex(pts[idx])
-	st.generate_normals()
-	mi.mesh = st.commit()
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.45, 0.33, 0.22) if surface == "dirt" else Color(0.55, 0.4, 0.25)
-	mat.roughness = 0.9
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	if surface != "dirt":
-		mat.albedo_texture = _noise_texture(0.2, Color(0.7, 0.7, 0.7), Color(1.0, 1.0, 1.0))
-	mi.material_override = mat
-	body.add_child(mi)
-	add_child(body)
-
 
 # ---------------------------------------------------------------------------- terrain
 
-func _build_terrain() -> void:
-	var size := GRID + 1
-	var spacing := MAP_HALF * 2.0 / GRID
-	var heights := PackedFloat32Array()
-	heights.resize(size * size)
-	var colors := PackedColorArray()
-	colors.resize(size * size)
-	var grass_a := Color(0.24, 0.36, 0.13)
-	var grass_b := Color(0.36, 0.42, 0.18)
-	var dirt := Color(0.36, 0.27, 0.17)
-	var rock := Color(0.3, 0.28, 0.25)
-	for zi in size:
-		for xi in size:
-			var x := -MAP_HALF + xi * spacing
-			var z := -MAP_HALF + zi * spacing
-			var h := _natural_height(x, z) - 0.3 * (1.0 - _yard_mask(x, z))
-			var info := _road_info(x, z)
-			var near := 0.0
-			if info.x < 40.0:
-				var hr := info.y - 0.25
-				near = 1.0 - smoothstep(ROAD_HALF_WIDTH + 1.0, ROAD_HALF_WIDTH + 16.0, info.x)
-				h = lerpf(h, hr, near)
-			var c := grass_a.lerp(grass_b, clampf(_noise.get_noise_2d(x * 7.0, z * 7.0) * 0.8 + 0.5, 0.0, 1.0))
-			c = c.lerp(dirt, clampf(near * 1.3 - 0.2, 0.0, 1.0) * 0.7)
-			heights[zi * size + xi] = h
-			colors[zi * size + xi] = c
-	# Slope colouring after heights are final.
-	for zi in range(1, size - 1):
-		for xi in range(1, size - 1):
-			var dx := heights[zi * size + xi + 1] - heights[zi * size + xi - 1]
-			var dz := heights[(zi + 1) * size + xi] - heights[(zi - 1) * size + xi]
-			var slope := Vector2(dx, dz).length() / (2.0 * spacing)
-			colors[zi * size + xi] = colors[zi * size + xi].lerp(rock, smoothstep(0.45, 0.9, slope))
-
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for zi in size:
-		for xi in size:
-			st.set_color(colors[zi * size + xi])
-			st.set_uv(Vector2(xi, zi) * 0.5)
-			st.add_vertex(Vector3(-MAP_HALF + xi * spacing, heights[zi * size + xi], -MAP_HALF + zi * spacing))
-	for zi in GRID:
-		for xi in GRID:
-			var a := zi * size + xi
-			st.add_index(a)
-			st.add_index(a + 1)
-			st.add_index(a + size)
-			st.add_index(a + 1)
-			st.add_index(a + size + 1)
-			st.add_index(a + size)
-	st.generate_normals()
-	var mesh := st.commit()
+func _build_terrain(data: Dictionary) -> void:
+	var body := StaticBody3D.new()
+	body.name = "Terrain"
+	body.set_meta("surface", "grass")
+	body.collision_layer = 1
+	var cs := CollisionShape3D.new()
+	cs.shape = data["shape"]
+	# The height map is one unit between samples, scaled up (uniformly) to the grid spacing.
+	cs.scale = Vector3.ONE * WorldTerrain.SPACING
+	body.add_child(cs)
+	add_child(body)
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.vertex_color_is_srgb = true
 	mat.roughness = 0.95
-	mat.albedo_texture = _noise_texture(0.05, Color(0.72, 0.72, 0.72), Color(1.12, 1.12, 1.12))
-	mat.uv1_scale = Vector3(1.0, 1.0, 1.0)
+	mat.albedo_texture = _noise_texture(0.05, Color(0.74, 0.74, 0.74), Color(1.12, 1.12, 1.12))
 	_wet(mat, 0.15)
-	var body := _static_mesh(mesh, mat, "grass")
-	body.name = "Terrain"
+	var meshes := Node3D.new()
+	meshes.name = "TerrainMesh"
+	body.add_child(meshes)
+	var count := WorldTerrain.chunk_count()
+	for cz in count:
+		for cx in count:
+			var c := WorldTerrain.chunk_center(cx, cz)
+			for lod in 2:
+				var mi := MeshInstance3D.new()
+				mi.mesh = (data["near"] if lod == 0 else data["far"])[cz * count + cx]
+				mi.material_override = mat
+				mi.position = Vector3(c.x, 0.0, c.y)
+				if lod == 0:
+					_ranged.append([mi, TERRAIN_NEAR, 0.0])
+				else:
+					mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					_ranged.append([mi, 0.0, TERRAIN_NEAR])
+				meshes.add_child(mi)
+	var horizon := MeshInstance3D.new()
+	horizon.name = "Horizon"
+	horizon.mesh = data["horizon"]
+	var hm := StandardMaterial3D.new()
+	hm.vertex_color_use_as_albedo = true
+	hm.vertex_color_is_srgb = true
+	hm.roughness = 1.0
+	horizon.material_override = hm
+	horizon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	meshes.add_child(horizon)
 
 
-# ---------------------------------------------------------------------------- build yard
+## Every node whose visibility range follows the draw distance setting, rescaled to it.
+func _apply_draw_distance() -> void:
+	var scale := clampf(Settings.gfx_draw_distance, 0.5, 2.0)
+	for entry in _ranged:
+		var gi: GeometryInstance3D = entry[0]
+		if not is_instance_valid(gi):
+			continue
+		var end: float = entry[1]
+		var begin: float = entry[2]
+		gi.visibility_range_end = end * scale if end > 0.0 else 0.0
+		gi.visibility_range_end_margin = 30.0 if end > 0.0 else 0.0
+		gi.visibility_range_begin = begin * scale if begin > 0.0 else 0.0
+		gi.visibility_range_begin_margin = 30.0 if begin > 0.0 else 0.0
 
-func _build_yard() -> void:
-	var concrete := StandardMaterial3D.new()
-	concrete.albedo_color = Color(0.38, 0.36, 0.33)
-	concrete.roughness = 0.97
-	concrete.albedo_texture = _noise_texture(0.15, Color(0.82, 0.82, 0.82), Color(1.08, 1.08, 1.08))
-	concrete.uv1_scale = Vector3(12.0, 12.0, 12.0)
-	_wet(concrete, 0.8)
-	var body := StaticBody3D.new()
-	body.set_meta("surface", "tarmac")
-	body.position = Vector3(YARD_CENTER.x, -0.25, YARD_CENTER.y)
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(YARD_HALF.x * 2.0, 0.5, YARD_HALF.y * 2.0)
-	var cs := CollisionShape3D.new()
-	cs.shape = shape
-	body.add_child(cs)
-	var mesh := BoxMesh.new()
-	mesh.size = shape.size
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.material_override = concrete
-	body.add_child(mi)
-	add_child(body)
 
+## Keeps `gi` drawn out to `end` metres away (times the draw distance setting) and no further.
+func ranged(gi: GeometryInstance3D, end: float) -> void:
+	_ranged.append([gi, end, 0.0])
+
+
+# ---------------------------------------------------------------------------- roads
+
+## The meshes of every road in chunks of ROAD_CHUNK samples: [{road, mesh, faces, marks,
+## center}], made once per seed (see _data_for).
+static func _road_chunks(r: WorldRoads) -> Array:
+	var out := []
+	for ri in r.roads.size():
+		var road: Dictionary = r.roads[ri]
+		var n := (road["xz"] as PackedVector2Array).size()
+		var last := n if road["closed"] else n - 1
+		var from := 0
+		while from < last:
+			var to := mini(from + ROAD_CHUNK, last)
+			var surf := WorldRoadMesh.surface(road, from, to)
+			out.append({"road": ri, "mesh": surf[0], "faces": surf[1], "center": surf[2],
+				"marks": WorldRoadMesh.markings(road, from, to, surf[2])})
+			from = to
+	return out
+
+
+func _build_roads(data: Dictionary) -> void:
+	var holder := Node3D.new()
+	holder.name = "Roads"
+	add_child(holder)
+	var tarmac := _wet(_road_material(Color.WHITE, 0.82), 1.0)   # the vertex colours carry the colour
+	var dirt := _wet(_road_material(Color.WHITE, 1.0), 0.35)
+	tarmac.vertex_color_use_as_albedo = true
+	dirt.vertex_color_use_as_albedo = true
 	var paint := StandardMaterial3D.new()
-	paint.albedo_color = Color(0.95, 0.85, 0.2)
+	paint.vertex_color_use_as_albedo = true
 	paint.roughness = 0.6
-	var white := StandardMaterial3D.new()
-	white.albedo_color = Color(0.95, 0.95, 0.93)
-	white.roughness = 0.6
-	# Drag strip: two lanes, start and finish lines.
-	for lane_z in [96.0, 104.0]:
-		_paint_box(Vector3(0.0, 0.0, lane_z), Vector3(110.0, 0.02, 0.2), white)
-	_paint_box(Vector3(0.0, 0.0, 100.0), Vector3(110.0, 0.02, 0.15), paint)
-	_paint_box(Vector3(-52.0, 0.0, 100.0), Vector3(0.6, 0.02, 8.0), white)
-	_paint_box(Vector3(52.0, 0.0, 100.0), Vector3(0.6, 0.02, 8.0), white)
-	var finish := _checker(Vector3(52.0, 0.011, 100.0))
-	finish.name = "FinishLine"
-	# Skid pad ring.
-	var ring := TorusMesh.new()
-	ring.inner_radius = 14.0
-	ring.outer_radius = 14.3
-	ring.rings = 96
-	var ring_mi := MeshInstance3D.new()
-	ring_mi.mesh = ring
-	ring_mi.material_override = paint
-	ring_mi.position = Vector3(36.0, -0.13, 122.0)
-	add_child(ring_mi)
-	# Jump ramps of three sizes along the west edge, facing north.
-	var ramp_xf := Transform3D(Basis(), Vector3.ZERO)
-	_kicker(ramp_xf.translated(Vector3(-50.0, 0.0, 128.0)), 4.0, 0.6, 4.0, "tarmac")
-	_kicker(ramp_xf.translated(Vector3(-40.0, 0.0, 128.0)), 5.5, 1.3, 4.5, "tarmac")
-	_kicker(ramp_xf.translated(Vector3(-28.0, 0.0, 128.0)), 7.0, 2.2, 5.0, "tarmac")
-	# Cones around the skid pad.
-	var cone_mat := StandardMaterial3D.new()
-	cone_mat.albedo_color = Color(1.0, 0.4, 0.05)
-	for i in 12:
-		var a := TAU * i / 12.0
-		var cone := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.03
-		cm.bottom_radius = 0.18
-		cm.height = 0.5
-		cone.mesh = cm
-		cone.material_override = cone_mat
-		cone.position = Vector3(36.0 + cos(a) * 9.0, 0.25, 122.0 + sin(a) * 9.0)
-		add_child(cone)
+	_wet(paint, 0.6)
+	for chunk in data["road_chunks"]:
+		var road: Dictionary = roads.roads[int(chunk["road"])]
+		var kind: String = road["kind"]
+		var body := StaticBody3D.new()
+		body.set_meta("surface", kind)
+		body.set_meta("road", str(road["name"]))
+		body.collision_layer = 1
+		var c: Vector3 = chunk["center"]
+		body.position = c
+		var shape := ConcavePolygonShape3D.new()
+		shape.set_faces(chunk["faces"])
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		body.add_child(cs)
+		var mi := MeshInstance3D.new()
+		mi.mesh = chunk["mesh"]
+		mi.material_override = tarmac if kind == "tarmac" else dirt
+		body.add_child(mi)
+		_ranged.append([mi, 1600.0, 0.0])
+		var marks = chunk["marks"]
+		if marks is Mesh:
+			var mm := MeshInstance3D.new()
+			mm.mesh = marks
+			mm.material_override = paint
+			mm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			body.add_child(mm)
+			_ranged.append([mm, 450.0, 0.0])
+		holder.add_child(body)
+
+
+# ---------------------------------------------------------------------------- yard and shed
 
 
 ## Floodlights on poles around the Build Yard that come on at dusk (Daylight drives them via
@@ -534,8 +368,9 @@ func _build_yard_lights() -> void:
 	pole_mat.albedo_color = Color(0.32, 0.33, 0.34)
 	pole_mat.metallic = 0.6
 	pole_mat.roughness = 0.45
-	var spots: Array[Vector3] = [Vector3(-30.0, 0.0, 88.0), Vector3(30.0, 0.0, 88.0), Vector3(-58.0, 0.0, 112.0),
-		Vector3(0.0, 0.0, 141.0), Vector3(58.0, 0.0, 112.0), Vector3(-36.0, 0.0, 141.0), Vector3(36.0, 0.0, 141.0)]
+	# Round the edge of the test area, clear of the lanes, and across the loop road from it.
+	var spots: Array[Vector3] = [Vector3(-20.0, 0.0, 93.5), Vector3(36.0, 0.0, 90.0), Vector3(-66.0, 0.0, 100.0),
+		Vector3(0.0, 0.0, 146.5), Vector3(66.0, 0.0, 100.0), Vector3(-40.0, 0.0, 146.5), Vector3(40.0, 0.0, 145.5)]
 	var aim := Vector3(YARD_CENTER.x, 0.0, YARD_CENTER.y + 8.0)
 	for p in spots:
 		var pole := MeshInstance3D.new()
@@ -584,36 +419,6 @@ func _build_yard_lights() -> void:
 	daylight._update_lamps()
 
 
-func _paint_box(center: Vector3, size: Vector3, mat: Material) -> void:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	mi.material_override = mat
-	mi.position = center
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
-
-
-func _checker(pos: Vector3) -> Node3D:
-	var root := Node3D.new()
-	root.position = pos
-	var black := StandardMaterial3D.new()
-	black.albedo_color = Color(0.05, 0.05, 0.05)
-	var white := StandardMaterial3D.new()
-	white.albedo_color = Color(0.95, 0.95, 0.95)
-	for i in 16:
-		for j in 2:
-			var mi := MeshInstance3D.new()
-			var bm := BoxMesh.new()
-			bm.size = Vector3(0.5, 0.02, 0.5)
-			mi.mesh = bm
-			mi.material_override = black if (i + j) % 2 == 0 else white
-			mi.position = Vector3(-0.25 + j * 0.5, 0.0, -4.0 + i * 0.5 + 0.25)
-			root.add_child(mi)
-	add_child(root)
-	return root
-
 
 func _build_garage() -> void:
 	workshop = Workshop.new()
@@ -640,77 +445,35 @@ func _solid(parent: Node3D, center: Vector3, size: Vector3, mat: Material) -> St
 	return body
 
 
-# ---------------------------------------------------------------------------- trees
 
-func _build_trees() -> void:
-	var trunk_mesh := CylinderMesh.new()
-	trunk_mesh.top_radius = 0.18
-	trunk_mesh.bottom_radius = 0.3
-	trunk_mesh.height = 3.0
-	trunk_mesh.radial_segments = 8
-	var crown_mesh := CylinderMesh.new()
-	crown_mesh.top_radius = 0.0
-	crown_mesh.bottom_radius = 2.4
-	crown_mesh.height = 7.0
-	crown_mesh.radial_segments = 10
-	var trunk_mat := StandardMaterial3D.new()
-	trunk_mat.albedo_color = Color(0.3, 0.22, 0.15)
-	trunk_mat.roughness = 0.9
-	var crown_mat := StandardMaterial3D.new()
-	crown_mat.albedo_color = Color(0.12, 0.26, 0.12)
-	crown_mat.roughness = 0.85
-	crown_mat.albedo_texture = _noise_texture(0.4, Color(0.7, 0.75, 0.7), Color(1.1, 1.15, 1.05))
+# ---------------------------------------------------------------------------- materials
 
-	var transforms: Array[Transform3D] = []
-	var tries := 0
-	while transforms.size() < 1400 and tries < 20000:
-		tries += 1
-		var x := _rng.randf_range(-MAP_HALF + 10.0, MAP_HALF - 10.0)
-		var z := _rng.randf_range(-MAP_HALF + 10.0, MAP_HALF - 10.0)
-		if _yard_mask(x, z) < 0.3:
-			continue
-		if _road_info(x, z).x < ROAD_HALF_WIDTH + 9.0:
-			continue
-		# Woods in clumps.
-		if _noise.get_noise_2d(x * 2.5 + 500.0, z * 2.5) < -0.05:
-			continue
-		var h := _terrain_height_estimate(x, z)
-		var s := _rng.randf_range(0.7, 1.4)
-		transforms.append(Transform3D(Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(s, s, s)), Vector3(x, h, z)))
-
-	var trunks := MultiMesh.new()
-	trunks.transform_format = MultiMesh.TRANSFORM_3D
-	trunks.mesh = trunk_mesh
-	trunks.instance_count = transforms.size()
-	var crowns := MultiMesh.new()
-	crowns.transform_format = MultiMesh.TRANSFORM_3D
-	crowns.mesh = crown_mesh
-	crowns.instance_count = transforms.size()
-	var tree_body := StaticBody3D.new()
-	tree_body.name = "Trees"
-	tree_body.set_meta("surface", "grass")
-	for i in transforms.size():
-		var t := transforms[i]
-		trunks.set_instance_transform(i, t.translated_local(Vector3(0.0, 1.5, 0.0)))
-		crowns.set_instance_transform(i, t.translated_local(Vector3(0.0, 5.5, 0.0)))
-		var cs := CollisionShape3D.new()
-		var cyl := CylinderShape3D.new()
-		cyl.radius = 0.3 * t.basis.get_scale().x
-		cyl.height = 4.0
-		cs.shape = cyl
-		cs.position = t.origin + Vector3.UP * 2.0
-		tree_body.add_child(cs)
-	add_child(tree_body)
-	for pair in [[trunks, trunk_mat], [crowns, crown_mat]]:
-		var mmi := MultiMeshInstance3D.new()
-		mmi.multimesh = pair[0]
-		mmi.material_override = pair[1]
-		add_child(mmi)
+func _wet(mat: StandardMaterial3D, shine: float) -> StandardMaterial3D:
+	wet_surfaces.append({"mat": mat, "color": mat.albedo_color, "rough": mat.roughness, "shine": shine})
+	return mat
 
 
-func _terrain_height_estimate(x: float, z: float) -> float:
-	var h := _natural_height(x, z)
-	var info := _road_info(x, z)
-	if info.x < 40.0:
-		h = lerpf(h, info.y - 0.25, 1.0 - smoothstep(ROAD_HALF_WIDTH + 1.0, ROAD_HALF_WIDTH + 16.0, info.x))
-	return h - 0.3
+func _road_material(color: Color, roughness: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	m.roughness = roughness
+	m.albedo_texture = _noise_texture(0.08, Color(0.75, 0.75, 0.75), Color(1.1, 1.1, 1.1))
+	m.uv1_scale = Vector3(1.0, 1.0, 1.0)
+	return m
+
+
+func _noise_texture(freq: float, dark: Color, light: Color) -> NoiseTexture2D:
+	var tex := NoiseTexture2D.new()
+	tex.width = 512
+	tex.height = 512
+	tex.seamless = true
+	var n := FastNoiseLite.new()
+	n.frequency = freq
+	n.fractal_octaves = 5
+	tex.noise = n
+	var ramp := Gradient.new()
+	ramp.set_color(0, dark)
+	ramp.set_color(1, light)
+	tex.color_ramp = ramp
+	return tex
+

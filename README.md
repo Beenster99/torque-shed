@@ -84,7 +84,7 @@ Look at any part to see its spec, condition, rust, dirt, wear and colour. With y
 
 Chains stretch and lose their lube as you ride, faster off-road: crouch by the chain with the wrench and hold the second button to set the tension, and spray it with **chain lube** (hold the can, crouch, sweep it along the chain). A slack or dry chain wastes power and the bay screen says so.
 
-**Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the general waste bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt road. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
+**Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the general waste bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt tracks. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
 
 ### Tail units, fairings and mirrors
 
@@ -337,7 +337,35 @@ Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the
 
 **Retrieving a bike**: if you leave a bike out on the road (you got off and walked back, fell off the edge of the map, or a friend left it there), the Esc menu lists it under "Left out on the road". Press **Retrieve** and the recovery truck brings it back to the yard just west of the roller door, for £40 from the garage's account. Anyone in a co-op shed can do it. Ride off the edge of the map and you're put back on the last bit of ground you were on, turned round.
 
-The **yard** past the drag strip has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
+The **yard** has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
+
+### The riding map
+
+The **yard** in front of the shed is laid out as a **test area** for checking the bikes you build. The tarmac runs out level into the grass all round, with no kerb to hop.
+
+- **Acceleration lane**: two painted lanes with a start line and a mark every 10 m up to the **BRAKE** line.
+- **Braking zone**: a line every 5 m over green, amber and red bands, with number boards beside it, so you can see how short a bike stops.
+- **Slalom**: cones and posts on painted spots.
+- **Jump line**: ramps and a tabletop.
+- **Skid pad**: a circle ringed with cones, for steady cornering.
+- **Slow area**: speed humps, a U-turn box and a figure of eight.
+- **Obstacle corner**: barrels, a log, hay bales, tyres, an old car, walls and fences.
+
+The movable kit starts in its places and can be pushed anywhere as before. Kit you order is dropped in the painted **yard kit drop-off** box.
+
+The **1 km loop** leaves the yard under a start gantry. It is all tarmac now, with fast sweepers, tighter corners with red and white kerbs, and gentle rises and dips. There are no jumps on it.
+
+The map is about **4 km across**:
+
+- **Tarmac roads** run off the loop to the villages of **Ashby**, **Thornley**, **Kettle Bridge** and **High Moor**, and to farms with barns, silos, fields, fences and hay bales.
+- **Moor Pass** climbs into the **mountains** to the north on tight hairpin switchbacks, with armco and chevron boards on the bends.
+- **Dirt tracks** branch off the roads and loop back: through the woods, along the river and round the east hills. The **Northfield climb**, the **Ridge run** and the **Peak circuit** are steeper, rockier and harder going.
+- **Signs** at the junctions say where each road goes.
+- Villages and farms have **street lamps** and **lit windows** after dark.
+
+Tarmac grips best, dirt less, and grass least. The bike's dirt and ride stats know which one you're on. Rocks, trees, buildings and barriers are solid, so ride round them. Out at the edge of the map the hills rise up. Ride off it and you're put back where you last had both wheels down.
+
+The **draw distance** graphics setting decides how far away trees, rocks, buildings and the detailed ground are drawn. Turn it down if the frame rate drops out on the map.
 
 ### Engine sound
 
@@ -504,7 +532,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/chase_camera.gd` | The riding cameras: the chase view you can swing round the bike, first person, the ride-by camera and the title screen orbit |
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
-| `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |
+| `scripts/world.gd`, `world_layout.gd`, `world_terrain.gd`, `world_roads.gd`, `world_road_mesh.gd`, `world_yard.gd`, `world_props.gd`, `world_buildings.gd` | The riding map: the layout of roads, villages and farms; the height map, its chunked meshes and collision; road heights (grades, no jumps, flush junctions) and their meshes and markings; the yard's test area; trees, rocks, buildings, fences, armco, signs and lamps in batches |
 | `scripts/daylight.gd`, `weather.gd` | Time of day, sky and lighting; the weather (clouds, fog, rain, wet roads, rain sounds) |
 | `scripts/lighting.gd`, `cloud_sky.gd` | Graphics settings into GI, volumetric fog, fog volumes, shadows, glow and eye adaptation; the raymarched cloud sky shader |
 | `scripts/debug_tab.gd` | The Esc menu's Debug tab: reset or max XP and money, give the garage a million, send a customer, raise the reputation |

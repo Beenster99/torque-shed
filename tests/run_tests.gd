@@ -219,6 +219,8 @@ func _run_all() -> void:
 	print("Garage upgrade options: colours, effects and styles, preview, changing them later")
 	_test_upgrade_options()
 	await _test_upgrade_options_session()
+	print("The riding map: roads, grades, no jumps, land under the roads, spawns, surfaces, counts")
+	await _test_world_map()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1770,11 +1772,11 @@ func _test_world() -> void:
 		if i % 30 == 29:
 			surfaces[bike.surface] = surfaces.get(bike.surface, 0) + 1
 	check(not bike.is_crashed and surfaces.get("tarmac", 0) >= 3, "bike rides on the tarmac loop (%s)" % str(surfaces))
-	road_t = world.road_transform(0.75)
+	road_t = world.road_transform_on("woods", 200.0)
 	bike.place(road_t.origin, road_t.basis.get_euler().y)
 	for i in 60:
 		await get_tree().physics_frame
-	check(bike.surface == "dirt", "the far side of the loop is dirt (on %s)" % bike.surface)
+	check(bike.surface == "dirt", "the woods track is dirt (on %s)" % bike.surface)
 	world.queue_free()
 	await get_tree().physics_frame
 
@@ -10493,3 +10495,270 @@ func _test_upgrade_options_session() -> void:
 	await get_tree().physics_frame
 	SaveGame.delete_slot("test_upgrade_looks")
 	SaveGame.slot_override = ""
+
+
+## The big riding map: the roads join up without steps, keep to their grades, have no jumps on
+## the loop, sit on the land; spawns and the customers' route are clear; surfaces are tagged;
+## and the map stays light enough to draw (counts, visibility ranges, the draw distance).
+func _test_world_map() -> void:
+	var world := World.new()
+	add_child(world)
+	world.generate(1234)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var r := world.roads
+	var t := world.terrain
+	# Every road is an unbroken line of samples about 2 m apart; the loop closes on itself.
+	var gaps := []
+	for road in r.roads:
+		var xz: PackedVector2Array = road["xz"]
+		var n := xz.size()
+		for i in (n if road["closed"] else n - 1):
+			var d := xz[i].distance_to(xz[(i + 1) % n])
+			if d < 1.0 or d > 3.0:
+				gaps.append("%s@%d (%.1f m)" % [road["name"], i, d])
+				break
+	check(gaps.is_empty(), "every road is continuous, samples about 2 m apart %s" % str(gaps))
+	var loop: Dictionary = r.roads[int(r.by_name["loop"])]
+	check(loop["closed"] and loop["kind"] == "tarmac", "the loop is a closed tarmac road")
+	# Branches start and end on the road they leave, at its height (no step).
+	var bad_joins := []
+	for road in r.roads:
+		var xz: PackedVector2Array = road["xz"]
+		var hs: PackedFloat32Array = road["h"]
+		for end in ["start_join", "end_join"]:
+			var j: Dictionary = road[end]
+			if j.is_empty():
+				continue
+			var k := 0 if end == "start_join" else xz.size() - 1
+			var parent := r.point(int(j["road"]), int(j["i"]))
+			var flat := Vector2(parent.x, parent.z).distance_to(xz[k])
+			var step := absf(hs[k] - parent.y)
+			if flat > 0.5 or step > 0.05:
+				bad_joins.append("%s %s (%.2f m off, %.3f m step)" % [road["name"], end, flat, step])
+	check(bad_joins.is_empty(), "branches meet their roads flush %s" % str(bad_joins))
+	# Grades: tarmac no steeper than 10 %, dirt no steeper than 35 %.
+	var steep := []
+	for road in r.roads:
+		var hs: PackedFloat32Array = road["h"]
+		var n := hs.size()
+		var limit := 0.105 if road["kind"] == "tarmac" else 0.355
+		var worst := 0.0
+		for i in (n if road["closed"] else n - 1):
+			worst = maxf(worst, absf(hs[(i + 1) % n] - hs[i]) / WorldRoads.STEP)
+		if worst > limit:
+			steep.append("%s %.1f%%" % [road["name"], worst * 100.0])
+	check(steep.is_empty(), "every road keeps to a rideable grade %s" % str(steep))
+	# No jumps on the loop or any tarmac road: every crest is gentle (radius 150 m or more).
+	var sharp := []
+	for road in r.roads:
+		if road["kind"] != "tarmac":
+			continue
+		var hs: PackedFloat32Array = road["h"]
+		var n := hs.size()
+		var worst := 0.0
+		for i in range(0 if road["closed"] else 1, n if road["closed"] else n - 1):
+			worst = maxf(worst, 2.0 * hs[i] - hs[posmod(i - 1, n)] - hs[(i + 1) % n])
+		var radius := WorldRoads.STEP * WorldRoads.STEP / maxf(worst, 0.0001)
+		if radius < 150.0:
+			sharp.append("%s crest radius %.0f m" % [road["name"], radius])
+	check(sharp.is_empty(), "no jumps: every tarmac crest is gentle %s" % str(sharp))
+	var hs_loop: PackedFloat32Array = loop["h"]
+	var lo := 1e9
+	var hi := -1e9
+	for h in hs_loop:
+		lo = minf(lo, h)
+		hi = maxf(hi, h)
+	check(hi - lo > 6.0, "the loop goes up and down (%.1f m of climb)" % (hi - lo))
+	# The loop is what a bike lands on all the way round: nothing sits on it.
+	var blocked := []
+	var lxz: PackedVector2Array = loop["xz"]
+	for i in range(0, lxz.size(), 5):
+		var top := world.surface_height(lxz[i].x, lxz[i].y)
+		if absf(top - hs_loop[i]) > 0.1:
+			blocked.append("%d (%.2f vs %.2f)" % [i, top, hs_loop[i]])
+	check(blocked.is_empty(), "the loop's surface is clear all the way round %s" % str(blocked.slice(0, 4)))
+	# The land lies just under every road, across its width: never through it, never far below.
+	var poking := []
+	for road in r.roads:
+		var xz: PackedVector2Array = road["xz"]
+		var hs: PackedFloat32Array = road["h"]
+		var dirs: PackedVector2Array = road["dir"]
+		var hw: float = road["hw"]
+		for i in range(0, xz.size(), 3):
+			var side := Vector2(-dirs[i].y, dirs[i].x) * hw * 0.9
+			for p: Vector2 in [xz[i], xz[i] + side, xz[i] - side]:
+				var g := t.height_at(p.x, p.y)
+				if g > hs[i] + (0.03 if road["kind"] == "tarmac" else 0.15) or g < hs[i] - 0.6:
+					poking.append("%s@%d (%.2f under %.2f)" % [road["name"], i, g, hs[i]])
+					break
+			if poking.size() > 0 and poking[-1].begins_with(road["name"]):
+				break
+	check(poking.is_empty(), "the land lies just under every road %s" % str(poking))
+	# Roads only meet where one branches off another: no level crossings or overlaps elsewhere.
+	var crossings := []
+	for ra in r.roads.size():
+		var a: Dictionary = r.roads[ra]
+		var axz: PackedVector2Array = a["xz"]
+		for i in range(0, axz.size(), 3):
+			var cell := Vector2i(floori(axz[i].x / WorldRoads.CELL), floori(axz[i].y / WorldRoads.CELL))
+			for dx in range(-1, 2):
+				for dz in range(-1, 2):
+					for code: int in r._grid.get(cell + Vector2i(dx, dz), []):
+						var rb := code >> 16
+						if rb == ra:
+							continue
+						var b: Dictionary = r.roads[rb]
+						var q := (b["xz"] as PackedVector2Array)[code & 0xFFFF]
+						if q.distance_to(axz[i]) < float(a["hw"]) + float(b["hw"]) + 1.0 and not _roads_joined(r, ra, rb, axz[i]):
+							var pair := "%s/%s" % [a["name"], b["name"]]
+							if not crossings.has(pair):
+								crossings.append(pair)
+	check(crossings.is_empty(), "roads only meet at their junctions %s" % str(crossings))
+	check(r.total_length("tarmac") > 15000.0 and r.total_length("dirt") > 6000.0,
+		"a big network: %.1f km of tarmac, %.1f km of dirt" % [r.total_length("tarmac") / 1000.0, r.total_length("dirt") / 1000.0])
+	var hard := r.roads.filter(func(x): return x["hard"]).size()
+	check(hard >= 2, "some tracks are hard going in the hills (%d)" % hard)
+	# The map is several km across, rises into mountains in the north, and nowhere is low enough
+	# for a bike on the ground to look like it fell out of the world.
+	var ground_lo := 1e9
+	var ground_hi := -1e9
+	for h in t.heights:
+		ground_lo = minf(ground_lo, h)
+		ground_hi = maxf(ground_hi, h)
+	check(World.MAP_HALF * 2.0 >= 4000.0 and ground_hi > 300.0, "a %.0f km map with mountains %.0f m high" % [World.MAP_HALF / 500.0, ground_hi])
+	check(ground_lo > -24.0, "the lowest ground (%.1f m) is above the fall-through line" % ground_lo)
+	var pass_top := 0.0
+	for h in (r.roads[int(r.by_name["pass"])]["h"] as PackedFloat32Array):
+		pass_top = maxf(pass_top, h)
+	check(pass_top > 120.0, "the mountain pass climbs %.0f m" % pass_top)
+	# Spawn points stand on the yard's slab.
+	var spawns_ok := true
+	for i in 14:
+		var sp := world.spawn_point(i)
+		var o := sp.origin
+		var on := Rect2(World.YARD_CENTER - World.YARD_HALF, World.YARD_HALF * 2.0).has_point(Vector2(o.x, o.z))
+		if not on or absf(world.surface_height(o.x, o.z)) > 0.05:
+			spawns_ok = false
+	check(spawns_ok, "the spawn points are on the yard's slab")
+	# The yard blends into the land: no kerb round its edge.
+	var kerb := 0.0
+	var rect := Rect2(World.YARD_CENTER - World.YARD_HALF, World.YARD_HALF * 2.0).grow(1.5)
+	for k in 80:
+		var f := k / 80.0
+		for p: Vector2 in [rect.position + Vector2(rect.size.x * f, 0.0), rect.position + Vector2(0.0, rect.size.y * f),
+				rect.end - Vector2(rect.size.x * f, 0.0), rect.end - Vector2(0.0, rect.size.y * f)]:
+			kerb = maxf(kerb, absf(t.height_at(p.x, p.y)))
+	check(kerb < 0.12, "the ground meets the yard's edge without a kerb (%.2f m at most)" % kerb)
+	# Surfaces: tarmac on the roads, dirt on the tracks, grass off them, metal on the armco.
+	var tags := {}
+	for probe: Array in [["tarmac", world.road_transform(0.6).origin], ["dirt", world.road_transform_on("ridge", 400.0).origin],
+			["grass", Vector3(300.0, 0.0, 300.0)], ["tarmac", Vector3(0.0, 0.0, 100.0)]]:
+		var at: Vector3 = probe[1]
+		var from := Vector3(at.x, at.y + 50.0, at.z)
+		var hit := world.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 100.0, 1))
+		var got := str((hit["collider"] as Object).get_meta("surface", "?")) if hit else "nothing"
+		tags[probe[0]] = tags.get(probe[0], true) and got == probe[0]
+		if got != probe[0]:
+			print("    expected %s at %s, got %s" % [probe[0], str(at), got])
+	check(not tags.values().has(false), "roads are tarmac, tracks dirt and fields grass %s" % str(tags))
+	var barriers := world.find_child("Barriers", true, false)
+	check(barriers != null and str(barriers.get_meta("surface", "")) == "metal", "the armco is tagged metal")
+	# The customers' ride in and out runs on the loop where it crosses the yard, flat with the
+	# slab, and nothing from the yard's test kit stands in the way.
+	var route_ok := true
+	for x: float in [24.0, 40.0, 56.0, 72.0]:
+		var p := Contracts.road_at(x)
+		var near := r.nearest(p.x, p.z, 5.0, "tarmac")
+		if near.is_empty() or int(near["road"]) != int(r.by_name["loop"]) or float(near["d"]) > 1.5 or absf(float(near["h"])) > 0.15:
+			route_ok = false
+	check(route_ok, "the customers' road past the yard is the loop, level with the yard")
+	var in_way := []
+	for k in Contracts.PARK_SLOTS:
+		for path: PackedVector3Array in [Contracts.ride_in_path(k), Contracts.ride_out_path(Contracts.park_xf(k))]:
+			for item: Array in WorldYard.starting_kit():
+				var at: Vector3 = (item[1] as Transform3D).origin
+				for i in path.size() - 1:
+					var c := Geometry3D.get_closest_point_to_segment(at, path[i], path[i + 1])
+					if Vector2(c.x - at.x, c.z - at.z).length() < 2.5 and not in_way.has(item[2]):
+						in_way.append(item[2])
+	check(in_way.is_empty(), "the yard's test kit keeps clear of the customers' route %s" % str(in_way))
+	var on_loop := []
+	for item: Array in WorldYard.starting_kit():
+		var at: Vector3 = (item[1] as Transform3D).origin
+		var near := r.nearest(at.x, at.z, 6.0, "tarmac")
+		if not near.is_empty():
+			on_loop.append(item[2])
+	check(on_loop.is_empty(), "and off the loop %s" % str(on_loop))
+	# Things to see: trees, rocks, villages and farms, barriers and signs.
+	var plan: Dictionary = World._cache[1234]["props"]
+	print("    %d trees, %d rocks, %d track rocks, %d buildings, %d fence runs, %d armco, %d signs" % [plan["trees"].size(),
+		plan["rocks"].size(), plan["track_rocks"].size(), plan["buildings"].size(), plan["fences"].size(), plan["armco"].size(), plan["signs"].size()])
+	check(plan["trees"].size() > 3000 and plan["rocks"].size() > 300 and plan["track_rocks"].size() > 50, "trees and rocks all over")
+	var kinds := {}
+	for b: Dictionary in plan["buildings"]:
+		kinds[str(b["kind"])] = true
+	check(plan["buildings"].size() > 60 and kinds.has("barn") and kinds.has("silo") and kinds.has("church"),
+		"villages and farms have houses, barns, silos and a church (%d buildings)" % plan["buildings"].size())
+	check(plan["armco"].size() > 40 and plan["signs"].size() > 10, "armco on the mountain roads and signs at junctions")
+	# Light enough to draw: trees and rocks in batches, everything far drawn only near.
+	var nodes := _count_world_nodes(world)
+	var batches := 0
+	var instances := 0
+	var unranged := []
+	for node in world.find_children("*", "GeometryInstance3D", true, false):
+		var gi := node as GeometryInstance3D
+		if gi is MultiMeshInstance3D:
+			batches += 1
+			instances += (gi as MultiMeshInstance3D).multimesh.instance_count
+		if gi.visibility_range_end <= 0.0 and gi.global_position.length() > 400.0 and gi.get_parent().name != "TerrainMesh":
+			unranged.append("%s/%s" % [gi.get_parent().name, gi.name])
+	print("    %d nodes, %d multimesh batches holding %d instances" % [nodes, batches, instances])
+	check(nodes < 8000, "the map is under 8000 nodes (%d)" % nodes)
+	check(batches > 20 and instances > 3000, "trees and rocks are drawn in batches")
+	check(unranged.size() < 5, "far things fade out with distance %s" % str(unranged.slice(0, 5)))
+	# The draw distance setting scales every visibility range.
+	var probe_gi: GeometryInstance3D = world.find_children("*", "MultiMeshInstance3D", true, false).filter(
+		func(m): return (m as GeometryInstance3D).visibility_range_end > 0.0)[0]
+	var kept := Settings.gfx_draw_distance
+	Settings.gfx_draw_distance = 1.0
+	world._apply_draw_distance()
+	var base := probe_gi.visibility_range_end
+	Settings.gfx_draw_distance = 2.0
+	world._apply_draw_distance()
+	check(is_equal_approx(probe_gi.visibility_range_end, base * 2.0), "the draw distance setting reaches the trees (%.0f to %.0f m)" % [base, probe_gi.visibility_range_end])
+	Settings.gfx_draw_distance = kept
+	world._apply_draw_distance()
+	world.queue_free()
+	await get_tree().physics_frame
+	# The same map again comes from the cache, quickly.
+	var t0 := Time.get_ticks_msec()
+	var again := World.new()
+	add_child(again)
+	again.generate(1234)
+	var ms := Time.get_ticks_msec() - t0
+	check(ms < 4000, "making the same map again is quick (%d ms)" % ms)
+	again.queue_free()
+	await get_tree().physics_frame
+
+
+## True when roads `a` and `b` meet near `p` (one branches off the other there).
+func _roads_joined(r: WorldRoads, a: int, b: int, p: Vector2) -> bool:
+	for pair: Array in [[a, b], [b, a]]:
+		var child: Dictionary = r.roads[int(pair[0])]
+		for end in ["start_join", "end_join"]:
+			var j: Dictionary = child[end]
+			if j.is_empty() or int(j["road"]) != int(pair[1]):
+				continue
+			var at := r.point(int(pair[1]), int(j["i"]))
+			if Vector2(at.x, at.z).distance_to(p) < 40.0:
+				return true
+	return false
+
+
+## Every node under `n`, counting `n`.
+func _count_world_nodes(n: Node) -> int:
+	var total := 1
+	for c in n.get_children():
+		total += _count_world_nodes(c)
+	return total

@@ -80,6 +80,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--world" in OS.get_cmdline_user_args():
+		await _world_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -732,3 +737,74 @@ func _look_shots() -> void:
 	Shed.request({"a": "buy_upgrade", "id": "showroom", "looks": {"floor": "redblack", "tiles": "large", "ceiling": "hex_big", "glow": "ice", "trim": "gold"}})
 	await _frames(10)
 	await _look_from(Vector3(-4.5, 0.0, 69.5), Vector3(4.0, 1.4, 62.0), "l5_showroom_red_black_gold")
+
+
+## The riding map (`-- --world`): the yard's test area and its blended edge, the loop, the
+## road network from the air, a village, a farm, the mountain pass's hairpins with their
+## barriers, a hard mountain track, the woods, and a bike on the pass and on a track.
+func _world_shots() -> void:
+	Settings.day_night_cycle = false
+	Daylight.current.set_time(13.0)
+	Settings.weather = "clear"
+	Weather.current.change_to("clear", true)
+	var cam := Camera3D.new()
+	cam.far = 6000.0
+	main.world.add_child(cam)
+	cam.current = true
+	var w: World = main.world
+	var views := [
+		["w01_test_area", Vector3(-10.0, 38.0, 165.0), Vector3(0.0, 0.0, 100.0)],
+		["w02_test_area_west", Vector3(-30.0, 14.0, 105.0), Vector3(-45.0, 0.0, 75.0)],
+		["w03_yard_edge_blend", Vector3(92.0, 3.0, 60.0), Vector3(62.0, 0.0, 78.0)],
+		["w04_loop_from_above", Vector3(60.0, 260.0, 420.0), Vector3(0.0, 0.0, -20.0)],
+		["w05_loop_north_crest", Vector3(120.0, 12.0, -100.0), Vector3(20.0, 4.0, -160.0)],
+		["w06_map_aerial", Vector3(0.0, 1400.0, 1700.0), Vector3(0.0, 0.0, -300.0)],
+		["w07_village", Vector3(960.0, 40.0, 560.0), Vector3(860.0, 0.0, 430.0)],
+		["w08_farm", Vector3(560.0, 35.0, -250.0), Vector3(470.0, 0.0, -330.0)],
+		["w09_pass_hairpins", Vector3(-300.0, 320.0, -760.0), Vector3(-540.0, 100.0, -1060.0)],
+		["w10_pass_east", Vector3(1150.0, 300.0, -800.0), Vector3(780.0, 100.0, -1050.0)],
+		["w11_mountains", Vector3(0.0, 120.0, -700.0), Vector3(0.0, 200.0, -1600.0)],
+		["w12_woods_track", Vector3(-180.0, 8.0, 400.0), Vector3(-330.0, 0.0, 300.0)],
+	]
+	for v in views:
+		var at: Vector3 = v[1]
+		var target: Vector3 = v[2]
+		at.y += w.terrain_height(at.x, at.z)
+		target.y += w.terrain_height(target.x, target.z)
+		cam.global_position = at
+		cam.look_at(target)
+		await _frames(30)
+		await _shot(v[0])
+	cam.current = false
+	cam.queue_free()
+	# Riding: on the pass and on the ridge track.
+	main._try_mount(_bike_named("Old Faithful"))
+	await _frames(10)
+	main.bike.start_engine()
+	main.camera.set_mode(ChaseCamera.Mode.CHASE)
+	for spot in [["pass", 2400.0, "w13_ride_pass"], ["ridge", 600.0, "w14_ride_ridge_track"], ["loop", 700.0, "w15_ride_loop"]]:
+		var xf: Transform3D = w.road_transform_on(spot[0], spot[1])
+		main.bike.place(xf.origin, xf.basis.get_euler().y)
+		main.camera.snap()
+		await _frames(40)
+		await _shot(spot[2])
+	# The ridge track from above, where the ride shot stands.
+	var ridge := w.road_transform_on("ridge", 600.0)
+	var top := Camera3D.new()
+	top.far = 3000.0
+	w.add_child(top)
+	top.global_position = ridge.origin + Vector3(6.0, 22.0, 6.0)
+	top.look_at(ridge.origin)
+	top.current = true
+	await _frames(20)
+	await _shot("w17_ridge_from_above")
+	top.current = false
+	main.camera.current = true
+	top.queue_free()
+	Daylight.current.set_time(22.5)
+	var village: Transform3D = w.road_transform_on("east", 1300.0)
+	main.bike.place(village.origin, village.basis.get_euler().y)
+	main.camera.snap()
+	await _frames(40)
+	await _shot("w16_village_night")
+	Daylight.current.set_time(13.0)
