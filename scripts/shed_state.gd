@@ -547,6 +547,12 @@ func condition_of(item: Dictionary) -> Dictionary:
 			cond["lighten_extra"] = float(item["lighten_extra"])
 	if item.has("bead"):
 		cond["bead"] = item["bead"]
+	# Sandblasted bare metal (where, and whether all over) and any protective coat, for drawing it.
+	if item.get("blast") is Dictionary:
+		cond["blast"] = item["blast"]
+		cond["blast_full"] = blast_full(item)
+	if item.has("coat"):
+		cond["coat"] = str(item["coat"])
 	return cond
 
 
@@ -786,6 +792,18 @@ func _cool_dyno(delta: float) -> void:
 # ---------------------------------------------------------------------------- the sandblaster
 
 const BLAST_WEAR := 0.12     # wear a part picks up if every patch of it were blasted too long
+const BARE_RUST := 0.004     # flash rust per km ridden on bare metal with no coat over it (per km of muck, twice that)
+const COAT_WEAR := 0.0005    # a protective coat wears thinner per km ridden
+## Protective coats for bare metal, sprayed with the spray gun on a paint shop hook: clear
+## lacquers keep the blasted metal on show under a gloss (or satin) clear coat; engine enamels
+## paint it. `protect` is how well a perfect coat keeps flash rust off and muck from sticking.
+const COATS := {
+	"clear": {"name": "Clear lacquer", "gloss": 1.0, "protect": 0.85},
+	"satin_clear": {"name": "Satin clear lacquer", "gloss": 0.45, "protect": 0.8},
+	"enamel_black": {"name": "Black engine enamel", "paint": 6, "finish": "gloss", "protect": 1.0},
+	"enamel_silver": {"name": "Silver engine enamel", "paint": 8, "finish": "metallic", "protect": 1.0},
+}
+const COAT_ORDER: Array[String] = ["clear", "satin_clear", "enamel_black", "enamel_silver"]
 
 
 ## The blast cabinet someone is working at (their hands in its gloves), or 0.
@@ -836,6 +854,8 @@ func _blast_check(peer: int, action: Dictionary) -> String:
 				return "The engine has gone."
 			if not (action.get("parts") is Dictionary):
 				return "Nothing was blasted."
+			if action.has("masks") and not (action["masks"] is Dictionary and (action["masks"] as Dictionary).size() <= 16):
+				return "Nothing was blasted."
 		_:
 			return "Unknown action."
 	return ""
@@ -853,11 +873,12 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 				var base := {}
 				var engine := item_at_spot(str(action["spot"]))
 				for id in _blast_parts(engine):
-					base[id] = [float(items[id]["rust"]), float(items[id]["dirt"]), float(items[id]["wear"])]
+					base[id] = _blast_base_of(id)
 				c["blast_base"] = base
-				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse. F to step back."
+				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse, X to scan it. F to step back."
 			c["blaster"] = 0
 			c["blast_fire"] = false
+			c["blast_scan"] = false
 			c.erase("blast_base")
 		"blast_aim":
 			var r = action.get("rot", Vector2.ZERO)
@@ -865,25 +886,32 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 			c["blast_rot"] = r if r is Vector2 else Vector2.ZERO
 			c["blast_fire"] = bool(action.get("fire", false))
 			c["blast_at"] = at if at is Vector3 else Vector3.ZERO
+			c["blast_scan"] = bool(action.get("scan", false))
 		"blast_tick":
 			# Live, while blasting: the rust and muck come off as the metal comes up bare.
 			_blast_strip(c, item_at_spot(str(action["spot"])), action["parts"])
 		"blast":
 			var engine := item_at_spot(str(action["spot"]))
+			var before := {}
+			for id in _blast_parts(engine):
+				before[id] = blast_cover(items[id])
 			var stripped := _blast_strip(c, engine, action["parts"])
 			var done := 0
 			var cover_sum := 0.0
 			var pitted := []
+			var masks: Dictionary = action.get("masks", {}) if action.get("masks") is Dictionary else {}
 			for id in stripped:
 				var cover: float = stripped[id][0]
 				var over: float = stripped[id][1]
-				var strip := clampf(cover / BlastGame.DONE, 0.0, 1.0)
+				# Pay for what came up bare this time, not what was bare already.
+				var strip := clampf((cover - float(before.get(id, 0.0))) / BlastGame.DONE, 0.0, 1.0)
 				if over > 0.08:
 					pitted.append(PartsDB.slot_name(PartsDB.slots_for_kind(str(items[id]["kind"]))[0]).to_lower())
 				cover_sum += cover
 				done += 1
-				if strip >= 0.3:
+				if strip >= 0.2:
 					_xp(peer, "sandblast", clampf(strip * (1.0 - over * 0.8), 0.1, 1.0), "item:%d" % id)
+				_keep_blast(id, cover, over, masks.get(id, masks.get(str(id), null)), c.get("blast_base", {}).get(id, []))
 				_check_part(peer, id)
 			c["blaster"] = 0
 			c["blast_fire"] = false
@@ -930,7 +958,7 @@ func _blast_strip(c: Dictionary, engine: int, parts: Dictionary) -> Dictionary:
 			continue
 		var it: Dictionary = items[id]
 		if not base.has(id):
-			base[id] = [float(it["rust"]), float(it["dirt"]), float(it["wear"])]
+			base[id] = _blast_base_of(id)
 			c["blast_base"] = base
 		var was: Array = base[id]
 		var strip := clampf(cover / BlastGame.DONE, 0.0, 1.0)
@@ -941,6 +969,143 @@ func _blast_strip(c: Dictionary, engine: int, parts: Dictionary) -> Dictionary:
 		it["wear"] = maxf(float(it["wear"]), minf(1.0, float(was[2]) + over * BLAST_WEAR))
 		out[id] = [cover, over]
 	return out
+
+
+## How a part was before any of it was blasted ([rust, dirt, wear]): what's kept from the first
+## time it went in a cabinet, so going back to it strips on from there rather than starting over.
+func _blast_base_of(id: int) -> Array:
+	var it: Dictionary = items[id]
+	var kept = it.get("blast_base")
+	if kept is Array and (kept as Array).size() == 3 and it.has("blast"):
+		return [float(kept[0]), float(kept[1]), float(kept[2])]
+	return [float(it["rust"]), float(it["dirt"]), float(it["wear"])]
+
+
+## Keeps what's bare on a part after a spell at the cabinet: how much ("c"), how much is pitted
+## ("p") and, when sent, the mask of where (BlastMarks.export_part), so the engine stays bare
+## wherever it goes. Blasting takes any protective coat off with the rust.
+func _keep_blast(id: int, cover: float, over: float, mask, base: Array) -> void:
+	var it: Dictionary = items[id]
+	var was: Dictionary = it["blast"] if it.get("blast") is Dictionary else {}
+	var kept := {"c": maxf(cover, float(was.get("c", 0.0))), "p": maxf(over, float(was.get("p", 0.0)))}
+	if mask is Dictionary and BlastMarks.valid(mask):
+		for k in ["o", "d", "v"]:
+			kept[k] = mask[k]
+	elif was.has("v"):
+		for k in ["o", "d", "v"]:
+			kept[k] = was[k]
+	if not it.has("blast"):
+		it["blast_base"] = base.duplicate() if base.size() == 3 else _blast_base_of(id)
+	it["blast"] = kept
+	if cover > float(was.get("c", 0.0)) + 0.02:
+		it.erase("coat")
+		it.erase("coat_q")
+
+
+## A short tag that changes when a part's blasting or coat does, so it's redrawn.
+func blast_sig(item: Dictionary) -> String:
+	var b = item.get("blast")
+	if not (b is Dictionary) and not item.has("coat"):
+		return ""
+	return "b%.3f:%d:%s" % [float(b.get("c", 0.0)) if b is Dictionary else 0.0,
+		str(b.get("v", "")).hash() if b is Dictionary else 0, str(item.get("coat", ""))]
+
+
+## How much of a part has been blasted back to bare metal (0 if it's been painted since).
+func blast_cover(item: Dictionary) -> float:
+	var b = item.get("blast")
+	return clampf(float(b.get("c", 0.0)), 0.0, 1.0) if b is Dictionary else 0.0
+
+
+## Whether a part was blasted all over: it's drawn bare metal all over.
+func blast_full(item: Dictionary) -> bool:
+	return blast_cover(item) >= BlastGame.DONE
+
+
+## Paint over a part hides its bare metal: the blasting it had is forgotten.
+func _paint_over(it: Dictionary) -> void:
+	it.erase("blast")
+	it.erase("blast_base")
+
+
+## How glossy a clear coat makes bare metal (0 for none, or an enamel, which paints it).
+func coat_gloss(coat: String) -> float:
+	return float(COATS.get(coat, {}).get("gloss", 0.0))
+
+
+## How well a part's protective coat keeps rust and muck off it now, 0..1.
+func coat_protect(item: Dictionary) -> float:
+	var kind := str(item.get("coat", ""))
+	if not COATS.has(kind):
+		return 0.0
+	return clampf(float(COATS[kind]["protect"]) * float(item.get("coat_q", 1.0)), 0.0, 1.0)
+
+
+func coat_name(kind: String) -> String:
+	return str(COATS.get(kind, {}).get("name", ""))
+
+
+## "Protective coat: clear lacquer, a good coat (91%)" for coated parts.
+func coat_text(item: Dictionary) -> String:
+	if not COATS.has(str(item.get("coat", ""))):
+		return ""
+	var q := float(item.get("coat_q", 1.0))
+	return "Protective coat: %s, %s (%d%%)" % [coat_name(str(item["coat"])).to_lower(), _job_word(q, 0.0, "paint"), roundi(q * 100.0)]
+
+
+## The parts a protective coat goes on: an engine takes it all over, ancillaries and all.
+func coat_targets(item_id: int) -> Array:
+	return _blast_parts(item_id) if is_engine(item_id) else [item_id]
+
+
+func _coat_check(peer: int, action: Dictionary) -> String:
+	var item_id := int(action.get("item", 0))
+	if not items.has(item_id):
+		return "That part has gone."
+	var it: Dictionary = items[item_id]
+	if it["at"] == "held":
+		return "Put it down first."
+	if it.get("boxed", false):
+		return "Unpack it first."
+	if not COATS.has(str(action.get("coat", ""))):
+		return "That's not a coat the spray gun has."
+	if not (it["at"] == "spot" and spot_role(str(it["ref"])) == "booth"):
+		return "Protective coats go on with the spray gun in the paint shop: hang it on a hook there."
+	for id in coat_targets(item_id):
+		if float(items[id]["rust"]) > MAX_PAINT_RUST:
+			return "Too rusty to coat: sandblast it back to bare metal first." if is_engine(item_id) \
+				else "Too rusty to coat. Get the rust off it first."
+	return ""
+
+
+## A protective coat sprayed on (already checked): on the part, or the whole engine and what's
+## fitted to it. An enamel paints it; a clear coat keeps the bare metal on show.
+func _coat_apply(peer: int, action: Dictionary) -> String:
+	var item_id := int(action["item"])
+	var kind := str(action["coat"])
+	var spec: Dictionary = COATS[kind]
+	var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
+	var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
+	var it: Dictionary = items[item_id]
+	if it["at"] == "spot" and spot_role(str(it["ref"])) == "booth":
+		var booth := furniture_of_spot(str(it["ref"]))
+		q = minf(1.0, q + float(Equipment.get_model(str(booth["model"])).get("finish", 0.05)))
+	for id in coat_targets(item_id):
+		var part: Dictionary = items[id]
+		_note_low(id)
+		part["coat"] = kind
+		part["coat_q"] = q
+		if spec.has("paint"):
+			part["color"] = PAINTS[int(spec["paint"])]
+			part["finish"] = str(spec["finish"])
+			part["paint_quality"] = q
+			part["paint_runs"] = runs
+			_paint_over(part)
+		_check_part(peer, id)
+	_bump(crew.get(peer, {}), "painted")
+	_xp(peer, "protect_coat", q, "item:%d" % item_id)
+	var what := "engine" if is_engine(item_id) else item_title(item_id)
+	return "Gave the %s a coat of %s: %s" % [what, coat_name(kind).to_lower(), _job_word(q, runs, "paint")]
 
 
 ## A stock bike built around an engine on the stand, so its numbers can be compared.
@@ -1025,6 +1190,11 @@ func condition_text(item: Dictionary) -> String:
 		text += "\n" + chain_text(item)
 	if item.has("paint_quality"):
 		text += "\n" + finish_text(item)
+	if blast_cover(item) > 0.0:
+		text += "\nSandblasted: %d%% bare metal%s" % [roundi(blast_cover(item) * 100.0),
+			"" if item.has("coat") or blast_cover(item) < 0.3 else ", unprotected (it'll flash-rust when ridden)"]
+	if item.has("coat"):
+		text += "\n" + coat_text(item)
 	if item.has("bead"):
 		text += "\n" + bead_text(item)
 	return text
@@ -1985,6 +2155,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return _dyno_check(peer, action)
 	if a.begins_with("blast"):
 		return _blast_check(peer, action)
+	if a == "coat":
+		return _coat_check(peer, action)
 	if a.begins_with("money_"):
 		return Money.check(peer, action)
 	if a == "retrieve_bike":
@@ -2666,6 +2838,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 		_mark_dirty()
 		changed.emit()
 		return
+	if a == "coat":
+		_tell(peer, _coat_apply(peer, action), true)
+		_mark_dirty()
+		changed.emit()
+		return
 	if a.begins_with("dyno_") and a != "dyno_run":
 		var said := _dyno_apply(peer, action)
 		if said != "":
@@ -2984,6 +3161,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var it: Dictionary = items[int(action["item"])]
 			it["color"] = PAINTS[idx]
 			it["finish"] = finish
+			# Fresh paint covers bare metal and any coat that was on it.
+			_paint_over(it)
+			it.erase("coat")
+			it.erase("coat_q")
 			# Showroom Shine (a skill) gives a better finish.
 			var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
 			var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
@@ -3235,8 +3416,16 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 	var build := build_of(bike_id)
 	for slot in PartsDB.SLOTS:
 		var id := item_on(bike_id, slot)
+		# A protective coat keeps muck from sticking and rust off; bare metal without one
+		# flash-rusts, quicker in the muck. The coat itself wears thinner with the miles.
+		var protect := coat_protect(items[id]) if id != 0 else 0.0
 		if id != 0 and dirty > 0.0:
-			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * float(DIRT_EXPOSURE.get(slot, 0.4)))
+			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * float(DIRT_EXPOSURE.get(slot, 0.4)) * (1.0 - 0.6 * protect))
+		if id != 0 and blast_cover(items[id]) > 0.0 and km + dirty > 0.0:
+			var bare := blast_cover(items[id]) * (1.0 - protect)
+			items[id]["rust"] = minf(1.0, float(items[id]["rust"]) + (km + dirty * 2.0) * BARE_RUST * bare)
+		if id != 0 and items[id].has("coat"):
+			items[id]["coat_q"] = maxf(0.0, float(items[id].get("coat_q", 1.0)) - (km + dirty) * COAT_WEAR)
 		if id != 0 and items[id].get("lightened", false):
 			items[id]["wear"] = minf(1.0, float(items[id]["wear"]) + km * 0.0003)
 	# Tyres wear, faster at the wrong pressure, and a badly seated bead slowly lets one down.

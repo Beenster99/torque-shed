@@ -6,9 +6,18 @@ extends Node
 ## surface turns to satin metal (aluminium on the castings, bare steel on steel parts) with a
 ## sandblasted grain and a ragged edge, and goes dull grey and pitted where it's had too long.
 ## Missed bits stay rusty, so you can see them. Lives on the engine's BikeModel and turns with it.
+##
+## The cubes line up on a grid measured from the middle of the engine block (the model's
+## `_engine_c`), so what's been blasted can be kept on each part (export_part, as the item's
+## "blast") and drawn again on the same engine anywhere the shed draws it: in the cabinet, carried,
+## on the stand or fitted to a bike (show_saved). A part blasted all over is drawn bare all over.
+## The scan (set_scan) lights the engine up: red where there's still rust to blast, green where
+## it's bare, purple where it's pitted.
 
 const VOXEL := 0.02          # metres per cube of the mask
 const MAX_DIM := 96
+const COAT_MAX := 8.0        # blasting a kept cube can hold (its byte is coats / COAT_MAX)
+const MAX_SAVED := 200000    # longest kept mask, as text
 const ALUMINIUM := Color(0.8, 0.81, 0.83)
 const STEEL := Color(0.6, 0.61, 0.63)
 ## Parts that come up as bare steel rather than aluminium.
@@ -26,6 +35,12 @@ uniform vec3 bare_color : source_color = vec3(0.8, 0.81, 0.83);
 uniform float bare_rough = 0.42;
 uniform float bare_metal = 0.9;
 uniform float flash = 0.0;
+uniform float full = 0.0;      // blasted all over: bare everywhere, missed bits and all
+uniform float rust_amt = 0.0;  // flash rust on bare metal left unprotected
+uniform float dirt_amt = 0.0;
+uniform float lacquer = 0.0;   // a clear protective coat over the bare metal
+uniform float scan = 0.0;      // the sandblaster's scan
+uniform float scan_t = 0.0;
 
 varying vec3 mpos;
 
@@ -56,15 +71,32 @@ void fragment() {
 	vec2 m = texture(mask, uvw).rg;
 	// A ragged, speckled edge where the blasting stops.
 	float edge = vnoise(mpos * 140.0) * 0.6 + vnoise(mpos * 40.0) * 0.4;
-	float a = smoothstep(0.3, 0.8, m.r + (edge - 0.5) * 0.3);
+	float a = max(smoothstep(0.3, 0.8, m.r + (edge - 0.5) * 0.3), full);
 	float grain = hash3(floor(mpos * 2200.0));
 	float grain2 = vnoise(mpos * 600.0);
 	vec3 col = bare_color * (0.9 + grain * 0.1 + grain2 * 0.06);
 	col = mix(col, bare_color * 0.5, m.g * (0.7 + 0.3 * grain2));
+	// Bare steel left out flash-rusts in orange speckles; road muck dulls it.
+	float speck = smoothstep(1.0 - rust_amt, 1.0 - rust_amt * 0.5, vnoise(mpos * 90.0) * 0.7 + grain2 * 0.3);
+	col = mix(col, vec3(0.45, 0.2, 0.08), speck * step(0.001, rust_amt));
+	col = mix(col, vec3(0.16, 0.13, 0.09), dirt_amt * 0.65);
+	vec3 emit = vec3(0.55, 0.75, 1.0) * flash * 1.5;
+	if (scan > 0.0) {
+		// Red where there's rust still to blast, green where it's bare, purple where it's pitted.
+		float bare = step(0.5, max(m.r, full));
+		vec3 sc = mix(vec3(1.0, 0.12, 0.04), vec3(0.15, 1.0, 0.35), bare);
+		sc = mix(sc, vec3(0.75, 0.2, 1.0), step(0.08, m.g));
+		float band = smoothstep(0.92, 1.0, fract(mpos.y * 3.0 - scan_t * 0.8));
+		col = mix(col, sc, 0.55 * scan);
+		emit += sc * scan * (0.35 + 1.4 * band + (1.0 - bare) * 0.5);
+		a = max(a, scan * 0.9);
+	}
 	ALBEDO = col + vec3(flash * 0.5);
-	METALLIC = bare_metal;
-	ROUGHNESS = clamp(bare_rough + grain * 0.12 + m.g * 0.35, 0.0, 1.0);
-	EMISSION = vec3(0.55, 0.75, 1.0) * flash * 1.5;
+	METALLIC = bare_metal * (1.0 - dirt_amt * 0.5);
+	ROUGHNESS = clamp((bare_rough + grain * 0.12 + m.g * 0.35) * (1.0 - 0.75 * lacquer) + dirt_amt * 0.4, 0.0, 1.0);
+	CLEARCOAT = lacquer;
+	CLEARCOAT_ROUGHNESS = 0.08;
+	EMISSION = emit;
 	ALPHA = a;
 }
 """
@@ -73,6 +105,7 @@ static var _shader: Shader
 
 var model: BikeModel
 var origin := Vector3.ZERO       # the mask's corner, in the model's space
+var lattice := Vector3i.ZERO     # the same corner in cubes from the middle of the engine block
 var dims := Vector3i.ONE
 var coats := PackedFloat32Array()  # blasting each cube has had (1 is bare metal)
 var _over := 4.5
@@ -83,6 +116,9 @@ var _since_upload := 0.0
 var _mats := {}                  # slot -> ShaderMaterial
 var _restore := []               # [mesh, its own material] to put back when it's done
 var _flash := {}                 # slot -> seconds of flash left
+var _scan := 0.0                 # how far the scan is lit, 0..1
+var _scan_on := false
+var _scan_t := 0.0
 
 
 static func shader() -> Shader:
@@ -105,9 +141,12 @@ func setup(engine_model: BikeModel, slots: Array, over_level: float) -> void:
 		box = b if first else box.merge(b)
 		first = false
 	box = box.grow(VOXEL * 2.0)
-	origin = box.position
-	dims = Vector3i(clampi(ceili(box.size.x / VOXEL), 2, MAX_DIM), clampi(ceili(box.size.y / VOXEL), 2, MAX_DIM),
-		clampi(ceili(box.size.z / VOXEL), 2, MAX_DIM))
+	# On the grid measured from the middle of the block, so kept masks line up again.
+	var centre := model._engine_c
+	lattice = Vector3i(((box.position - centre) / VOXEL).floor())
+	var top := Vector3i(((box.end - centre) / VOXEL).ceil())
+	origin = centre + Vector3(lattice) * VOXEL
+	dims = Vector3i(clampi(top.x - lattice.x, 2, MAX_DIM), clampi(top.y - lattice.y, 2, MAX_DIM), clampi(top.z - lattice.z, 2, MAX_DIM))
 	coats.resize(dims.x * dims.y * dims.z)
 	coats.fill(0.0)
 	_bytes.resize(coats.size() * 2)
@@ -192,11 +231,22 @@ func _update_transform() -> void:
 		return
 	var inv := model.global_transform.affine_inverse()
 	for slot in _mats:
-		(_mats[slot] as ShaderMaterial).set_shader_parameter("to_model", Projection(inv))
+		# A part moved by the bike's own fit (geometry mode) is read where it was drawn.
+		var rest := Transform3D.IDENTITY
+		if model._geo_nodes.has(slot) and model._geo_pivots.has(slot):
+			rest = GeoGizmo.offset_xform(model.geometry.get(slot, {}), model._geo_pivots[slot]).affine_inverse()
+		(_mats[slot] as ShaderMaterial).set_shader_parameter("to_model", Projection(rest * inv))
 
 
 func _process(delta: float) -> void:
 	_update_transform()
+	var want := 1.0 if _scan_on else 0.0
+	if _scan != want or _scan_on:
+		_scan = move_toward(_scan, want, delta * 3.0)
+		_scan_t += delta
+		for slot in _mats:
+			(_mats[slot] as ShaderMaterial).set_shader_parameter("scan", _scan)
+			(_mats[slot] as ShaderMaterial).set_shader_parameter("scan_t", _scan_t)
 	_since_upload += delta
 	if _dirty and _since_upload >= 1.0 / 30.0:
 		_dirty = false
@@ -236,3 +286,143 @@ func bare_count() -> int:
 
 func patch_count() -> int:
 	return coats.size()
+
+
+## Turns the scan on or off: the engine lights up red where there's still rust to blast.
+func set_scan(on: bool) -> void:
+	_scan_on = on
+
+
+func scanning() -> bool:
+	return _scan_on
+
+
+## How bare a part is drawn all over (1 once it's done), and how it's weathered since.
+func set_look(slot: String, full_bare: float, rust := 0.0, dirt := 0.0, lacquer := 0.0) -> void:
+	var m: ShaderMaterial = _mats.get(slot, null)
+	if m == null:
+		return
+	m.set_shader_parameter("full", full_bare)
+	m.set_shader_parameter("rust_amt", clampf(rust, 0.0, 1.0))
+	m.set_shader_parameter("dirt_amt", clampf(dirt, 0.0, 1.0))
+	m.set_shader_parameter("lacquer", clampf(lacquer, 0.0, 1.0))
+
+
+# ---------------------------------------------------------------------------- keeping it
+
+## What's been blasted on one part, to keep on its item: the cubes round the part's own surface
+## patches (`vox`, their indices in this mask) and one cube either side, packed small:
+## {o: corner in cubes from the middle of the block, d: size in cubes, v: the bytes}.
+func export_part(vox: PackedInt32Array) -> Dictionary:
+	var keep := {}
+	var lo := Vector3i(MAX_DIM * 4, MAX_DIM * 4, MAX_DIM * 4)
+	var hi := -lo
+	for i in vox:
+		if i < 0:
+			continue
+		var v := Vector3i(i % dims.x, (i / dims.x) % dims.y, i / (dims.x * dims.y))
+		for dz in range(-1, 2):
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					var n := v + Vector3i(dx, dy, dz)
+					if n.x < 0 or n.y < 0 or n.z < 0 or n.x >= dims.x or n.y >= dims.y or n.z >= dims.z:
+						continue
+					var k := n.x + dims.x * (n.y + dims.y * n.z)
+					if keep.has(k):
+						continue
+					keep[k] = true
+					lo = Vector3i(mini(lo.x, n.x), mini(lo.y, n.y), mini(lo.z, n.z))
+					hi = Vector3i(maxi(hi.x, n.x), maxi(hi.y, n.y), maxi(hi.z, n.z))
+	if keep.is_empty():
+		return {}
+	var size := hi - lo + Vector3i.ONE
+	var bytes := PackedByteArray()
+	bytes.resize(size.x * size.y * size.z)
+	bytes.fill(0)
+	for k in keep:
+		var ki := int(k)
+		var c := coats[ki]
+		if c <= 0.0:
+			continue
+		var v := Vector3i(ki % dims.x, (ki / dims.x) % dims.y, ki / (dims.x * dims.y)) - lo
+		bytes[v.x + size.x * (v.y + size.y * v.z)] = clampi(roundi(c / COAT_MAX * 255.0), 0, 255)
+	return {"o": lattice + lo, "d": size, "v": Marshalls.raw_to_base64(bytes.compress(FileAccess.COMPRESSION_DEFLATE))}
+
+
+## A kept mask unpacked: {o, d, bytes}, or {} if it's damaged or too big.
+static func unpack(data) -> Dictionary:
+	if not (data is Dictionary) or not (data.get("o") is Vector3i) or not (data.get("d") is Vector3i) or not (data.get("v") is String):
+		return {}
+	var d: Vector3i = data["d"]
+	if d.x < 1 or d.y < 1 or d.z < 1 or d.x > MAX_DIM or d.y > MAX_DIM or d.z > MAX_DIM:
+		return {}
+	var text: String = data["v"]
+	if text.length() > MAX_SAVED or text.is_empty():
+		return {}
+	var packed := Marshalls.base64_to_raw(text)
+	var n := d.x * d.y * d.z
+	var bytes := packed.decompress_dynamic(n, FileAccess.COMPRESSION_DEFLATE) if not packed.is_empty() else PackedByteArray()
+	if bytes.size() != n:
+		return {}
+	return {"o": data["o"], "d": d, "bytes": bytes}
+
+
+## Whether a kept mask is sound (the host checks what it's sent).
+static func valid(data) -> bool:
+	return not unpack(data).is_empty()
+
+
+## Puts a kept mask back into this one (each cube keeps the most blasting either has had).
+## Returns how many cubes it set.
+func import_data(data) -> int:
+	var u := unpack(data)
+	if u.is_empty():
+		return 0
+	var o: Vector3i = u["o"]
+	var d: Vector3i = u["d"]
+	var bytes: PackedByteArray = u["bytes"]
+	var n := 0
+	for z in d.z:
+		for y in d.y:
+			for x in d.x:
+				var b := bytes[x + d.x * (y + d.y * z)]
+				if b == 0:
+					continue
+				var g := o + Vector3i(x, y, z) - lattice
+				if g.x < 0 or g.y < 0 or g.z < 0 or g.x >= dims.x or g.y >= dims.y or g.z >= dims.z:
+					continue
+				var i := g.x + dims.x * (g.y + dims.y * g.z)
+				var c := maxf(coats[i], b / 255.0 * COAT_MAX)
+				coats[i] = c
+				_bytes[i * 2] = clampi(roundi(c * 255.0), 0, 255)
+				_bytes[i * 2 + 1] = clampi(roundi((c - _over) / _over * 255.0), 0, 255)
+				n += 1
+	if _tex and n > 0:
+		_tex.update(_images())
+	return n
+
+
+## Draws what's been blasted on an engine wherever the shed draws it, from what's kept on each
+## part (`looks`: slot -> its condition, with "blast" and "blast_full"). Returns the marks, or null
+## when nothing on it has been blasted.
+static func show_saved(engine_model: BikeModel, looks: Dictionary) -> BlastMarks:
+	var slots := []
+	for slot in looks:
+		var cond = looks[slot]
+		if not (cond is Dictionary) or not engine_model.is_fitted(slot) or (engine_model._slot_meshes.get(slot, []) as Array).is_empty():
+			continue
+		if (cond as Dictionary).has("blast") or bool((cond as Dictionary).get("blast_full", false)):
+			slots.append(slot)
+	if slots.is_empty():
+		return null
+	var marks := BlastMarks.new()
+	marks.name = "BlastSaved"
+	marks.setup(engine_model, slots, BlastGame.OVER)
+	for slot in slots:
+		var cond: Dictionary = looks[slot]
+		if cond.has("blast"):
+			marks.import_data(cond["blast"])
+		marks.set_look(slot, 1.0 if cond.get("blast_full", false) else 0.0, float(cond.get("rust", 0.0)),
+			float(cond.get("dirt", 0.0)), Shed.coat_gloss(str(cond.get("coat", ""))))
+	engine_model.add_child(marks)
+	return marks

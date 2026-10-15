@@ -40,7 +40,7 @@ const LEVELS := {
 	"screech": ["peak", 0.36], "starter": ["peak", 0.61], "chirp": ["peak", 1.0], "gear": ["peak", 0.64], "ping": ["peak", 0.44],
 	"beep": ["peak", 0.18], "levelup": ["peak", 0.37], "bell": ["peak", 0.37], "bell_chime": ["peak", 0.36],
 	"clink": ["peak", 0.6], "clunk": ["peak", 0.75], "pickup": ["peak", 0.45], "scrap": ["peak", 0.6], "switch": ["peak", 0.5],
-	"ting": ["peak", 0.45], "step": ["peak", 0.6], "door_start": ["peak", 0.6], "door_stop": ["peak", 0.6],
+	"ting": ["peak", 0.45], "blast_scan": ["peak", 0.4], "step": ["peak", 0.6], "door_start": ["peak", 0.6], "door_stop": ["peak", 0.6],
 	"grinder_up": ["peak", 0.6], "grinder_down": ["peak", 0.55], "jet_on": ["peak", 0.6], "jet_off": ["peak", 0.55],
 	"gun_on": ["peak", 0.4], "gun_off": ["peak", 0.4], "pump_on": ["peak", 0.5], "pump_off": ["peak", 0.45],
 	"blast_on": ["peak", 0.6], "blast_off": ["peak", 0.6], "comp_on": ["peak", 0.65], "comp_off": ["peak", 0.65],
@@ -134,6 +134,7 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"scrap": return _scrap()
 		"switch": return _switch()
 		"ting": return _ting()
+		"blast_scan": return _blast_scan()
 		"door_start": return _door_tail(true)
 		"door_stop": return _door_tail(false)
 		"grinder_up": return _grinder_tail(true)
@@ -1073,6 +1074,20 @@ func _ting() -> PackedFloat32Array:
 	var f0 := rf(2950.0, 3250.0)
 	hit(d, 0, [[f0, 1.0, 7.0], [f0 * 1.502, 0.6, 9.0], [f0 * 2.23, 0.4, 13.0], [f0 * 2.9, 0.2, 18.0]], 0.00005, 0.8)
 	burst(d, 0, 0.003, 0.3, 1500.0, 2000.0, 15000.0)
+	return d
+
+
+## The sandblaster's scan going on: a soft electronic sweep up, two quick blips at the top.
+func _blast_scan() -> PackedFloat32Array:
+	var d := buf(0.55)
+	var phase := 0.0
+	for i in int(0.32 * R):
+		var t := float(i) / R
+		var f := lerpf(500.0, 1800.0, t / 0.32)
+		phase += TAU * f / R
+		d[i] += sin(phase) * 0.35 * minf(1.0, t * 40.0) * (1.0 - t / 0.32 * 0.4)
+	for k in 2:
+		ring(d, int((0.34 + k * 0.09) * R), 2400.0, 0.3, 30.0)
 	return d
 
 

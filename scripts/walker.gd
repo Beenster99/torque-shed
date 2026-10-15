@@ -47,7 +47,7 @@ var plan := {}              # what the action button would do: {action, time, ve
 var info := ""              # description of the target for the HUD
 var progress := 0.0         # 0..1 of the current hold-to-work action
 var spray_color := 0        # index into Shed.PAINTS loaded in the spray can
-var spray_finish := 0       # index into Shed.FINISHES
+var spray_finish := 0       # index into Shed.FINISHES; past them, the spray gun's protective coats (Shed.COAT_ORDER)
 var crouched := false
 var alt_plan := {}          # what the second work button would do (drain a fluid), same shape as plan
 
@@ -205,7 +205,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		spray_color = (spray_color + 1) % Shed.PAINTS.size()
 		_spray_changed()
 	elif tool in ["spray", "gun"] and event.is_action_pressed("spray_finish"):
-		spray_finish = (spray_finish + 1) % Shed.FINISHES.size()
+		# The spray gun also has the protective coats for bare metal after the paint finishes.
+		spray_finish = (spray_finish + 1) % (Shed.FINISHES.size() + (Shed.COAT_ORDER.size() if tool == "gun" else 0))
 		_spray_changed()
 	elif event.is_action_pressed("ping"):
 		get_viewport().set_input_as_handled()
@@ -382,9 +383,22 @@ func _spray_changed() -> void:
 	Shed.feedback.emit("Spray can: %s" % spray_text(), true)
 
 
-## "Gloss red": what the spray can is loaded with.
+## "Gloss red": what the spray can is loaded with (or "Clear lacquer", a protective coat in the gun).
 func spray_text() -> String:
-	return "%s %s" % [Shed.FINISH_NAMES[Shed.FINISHES[spray_finish]], Shed.PAINT_NAMES[spray_color]]
+	if spray_coat() != "":
+		return Shed.coat_name(spray_coat())
+	return "%s %s" % [Shed.FINISH_NAMES[spray_finish_id()], Shed.PAINT_NAMES[spray_color]]
+
+
+## The paint finish loaded (the first one while a coat is picked).
+func spray_finish_id() -> String:
+	return Shed.FINISHES[spray_finish] if spray_finish < Shed.FINISHES.size() else Shed.FINISHES[0]
+
+
+## The protective coat loaded in the spray gun, or "" for paint.
+func spray_coat() -> String:
+	var k := spray_finish - Shed.FINISHES.size()
+	return Shed.COAT_ORDER[k] if tool == "gun" and k >= 0 and k < Shed.COAT_ORDER.size() else ""
 
 
 func _cycle_tool(step: int) -> void:
@@ -1290,12 +1304,17 @@ func _make_plan() -> Dictionary:
 							Shed.surface_name(str(target["top"])).to_lower()]}
 		"spray":
 			if item_id != 0:
-				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": Shed.FINISHES[spray_finish]},
+				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": spray_finish_id()},
 					"time": 1.5, "coverage": true, "verb": "spray it %s: sweep over all of it, evenly" % spray_text().to_lower()}
 		"gun":
 			if item_id != 0:
-				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": Shed.FINISHES[spray_finish], "gun": true},
+				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": spray_finish_id(), "gun": true},
 					"time": 1.5, "coverage": true, "verb": "spray %s: go along the parts in steady passes" % spray_text().to_lower()}
+				if spray_coat() != "":
+					# A protective coat: on a hung engine it goes on the lot, ancillaries and all.
+					var what := "the engine" if Shed.is_engine(item_id) else "it"
+					p = {"action": {"a": "coat", "item": item_id, "coat": spray_coat(), "gun": true}, "time": 1.5, "coverage": true,
+						"verb": "spray %s with %s: sweep over all of it" % [what, spray_text().to_lower()]}
 		"lance":
 			if target.has("at"):
 				var near := [] if item_id == 0 else [item_id]
@@ -1973,7 +1992,7 @@ func _swing_of(job: Dictionary) -> Swing:
 
 func _cover_key(a: Dictionary) -> String:
 	return str(a.get("a", "")) + ":" + str(int(a["item"])) + ":" + str(a.get("color", "")) + str(a.get("finish", "")) \
-		+ (":gun" if a.get("gun", false) else "")
+		+ str(a.get("coat", "")) + (":gun" if a.get("gun", false) else "")
 
 
 ## A fresh spray job on `item`: the bits of it you can see from where you stand, found by
@@ -2018,6 +2037,10 @@ func _start_cover(item: int, key: String, plan_now: Dictionary) -> Dictionary:
 	var splats := PaintSplats.new()
 	var paint: Color = Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)] if a["a"] == "paint" \
 		else Color(0.22, 0.17, 0.1, 0.8)
+	if a["a"] == "coat":
+		# Enamel shows its colour wet; a clear coat goes on as a glassy sheen.
+		var spec: Dictionary = Shed.COATS.get(str(a.get("coat", "")), {})
+		paint = Shed.PAINTS[int(spec["paint"])] if spec.has("paint") else Color(0.92, 0.9, 0.8, 0.45)
 	splats.setup(xf, points, normals, COVER_CELL, paint, str(a.get("finish", "gloss")))
 	# The wet paint rides on the part, so it stays put if the part swings or the bike moves.
 	var holder: Node3D = frame.get("node", null)
@@ -2036,7 +2059,7 @@ func _start_cover(item: int, key: String, plan_now: Dictionary) -> Dictionary:
 func _cover_tool(a: Dictionary) -> String:
 	if a.get("gun", false):
 		return "gun"
-	return "spray" if str(a.get("a", "")) == "paint" else "hands"
+	return "spray" if str(a.get("a", "")) in ["paint", "coat"] else "hands"
 
 
 ## Shortens a job's hold time for the tool's upgrade stage and the skills that speed it up.
@@ -2091,7 +2114,7 @@ func _activity_text() -> String:
 		var owner := "the engine" if int(target.get("engine", 0)) != 0 else str(Shed.bikes[target["bike"]]["name"])
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
-		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "take": "Picking up a part",
+		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "coat": "Coating", "take": "Picking up a part",
 		"place": "Putting down a part", "set_down": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
@@ -2099,7 +2122,7 @@ func _activity_text() -> String:
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()
-	if a["a"] in ["clean", "repair", "paint"] and what == "":
+	if a["a"] in ["clean", "repair", "paint", "coat"] and what == "":
 		what = "the " + Shed.item_title(int(a["item"]))
 	if a["a"] == "install":
 		what = "the engine" if int(a.get("engine", 0)) != 0 else str(Shed.bikes[int(a.get("bike", 0))]["name"])
@@ -2258,6 +2281,9 @@ func _update_mist() -> void:
 	if on:
 		var a: Dictionary = _cover["plan"]["action"]
 		var c: Color = Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)] if a["a"] == "paint" else Color(0.45, 0.35, 0.2)
+		if a["a"] == "coat":
+			var spec: Dictionary = Shed.COATS.get(str(a.get("coat", "")), {})
+			c = Shed.PAINTS[int(spec["paint"])] if spec.has("paint") else Color(0.9, 0.9, 0.85)
 		_mist.color = c
 		haze.color = c.lightened(0.15)
 		var gun := bool(a.get("gun", false))
@@ -2303,7 +2329,19 @@ func _blast_input(event: InputEvent) -> bool:
 		get_viewport().set_input_as_handled()
 		finish_blast()
 		return true
+	if event.is_action_pressed("blast_scan"):
+		get_viewport().set_input_as_handled()
+		toggle_blast_scan()
+		return true
 	return false
+
+
+## The scan button: lights up what's still to blast on the engine, and lists it on the readout.
+func toggle_blast_scan() -> void:
+	if blast == null:
+		return
+	blast.set_scan(not blast.scanning)
+	Sfx.play_at("blast_scan" if blast.scanning else "switch", camera.global_position, -6.0)
 
 
 ## Starts the game once the host has put our hands in the gloves, runs it, and ends it if the
@@ -2345,6 +2383,7 @@ func _blast_frame(delta: float, input: Vector2) -> void:
 	if cab:
 		var aim: Vector3 = j.get("at", from + dir * 0.9)
 		cab.set_blast(blast.rot, firing, aim, j.get("normal", Vector3.UP), float(j.get("rust", 0.0)), int(j.get("fresh", 0)))
+		cab.set_scan_light(blast.scanning)
 	for id in blast.newly_done():
 		# Ding, a flash on the part and "Bare metal!" on the screen.
 		Sfx.play_at("ting", camera.global_position + dir, -1.0)
@@ -2356,7 +2395,7 @@ func _blast_frame(delta: float, input: Vector2) -> void:
 	_blast_send -= delta
 	if _blast_send <= 0.0:
 		_blast_send = 0.12
-		Shed.request({"a": "blast_aim", "rot": blast.rot, "fire": firing, "at": j.get("at", Vector3.ZERO)})
+		Shed.request({"a": "blast_aim", "rot": blast.rot, "fire": firing, "at": j.get("at", Vector3.ZERO), "scan": blast.scanning})
 	# The rust, muck and wear numbers change as you go: the host is told a few times a second.
 	_blast_tick -= delta
 	if _blast_tick <= 0.0:
@@ -2379,7 +2418,8 @@ func finish_blast() -> void:
 		Shed.request({"a": "blast_use", "on": false})
 		return
 	if blast.total() > 0.0:
-		Shed.request({"a": "blast", "spot": blast.spot, "parts": blast.results()})
+		# With where it's bare on each part, so it stays bare wherever the engine goes.
+		Shed.request({"a": "blast", "spot": blast.spot, "parts": blast.results(), "masks": blast.masks()})
 	else:
 		Shed.request({"a": "blast_use", "on": false})
 	_end_blast()
@@ -2408,5 +2448,5 @@ func _blast_info() -> String:
 
 func blast_controls() -> String:
 	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	return "Hold RT to blast · left stick turns the engine · Y steps back" if pad else \
-		"Hold left mouse to blast · W A S D (or hold right mouse) turns the engine · F steps back"
+	return "Hold RT to blast · left stick turns the engine · D-pad up scans · Y steps back" if pad else \
+		"Hold left mouse to blast · W A S D (or hold right mouse) turns the engine · X scans · F steps back"

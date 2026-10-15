@@ -307,8 +307,9 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 	var gap := 6.0
 	var total := n * (sw + gap) - gap
 	var x0 := size.x * 0.5 - total * 0.5
-	var y := toolbar_y - 120.0
-	draw_rect(Rect2(x0 - 14, y - 32, total + 28, 104), Color(0.05, 0.06, 0.08, 0.7))
+	var gun: bool = walker.tool == "gun"
+	var y := toolbar_y - (152.0 if gun else 120.0)
+	draw_rect(Rect2(x0 - 14, y - 32, total + 28, 136 if gun else 104), Color(0.05, 0.06, 0.08, 0.7))
 	draw_string(font, Vector2(x0, y - 12), "%s  ·  %s" % ["SPRAY GUN (PAINT BOOTH)" if walker.tool == "gun" else "SPRAY CAN",
 		walker.spray_text().to_upper()], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UITheme.ACCENT)
 	for i in n:
@@ -329,9 +330,28 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 			draw_rect(r, UITheme.ACCENT, false, 2.0)
 		draw_string(font, r.position + Vector2(8, 17), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE if on else Color(1, 1, 1, 0.6))
 		fx += w + 6.0
+	var hint_y := y + 90
+	if gun:
+		# The spray gun's protective coats for bare metal, after the finishes.
+		fx = x0
+		draw_string(font, Vector2(fx, y + 91), "COATS", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UITheme.ACCENT)
+		fx += 58.0
+		for k in Shed.COAT_ORDER.size():
+			var label := Shed.coat_name(Shed.COAT_ORDER[k])
+			var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 16.0
+			var r := Rect2(fx, y + 74, w, 24)
+			var on := walker.spray_finish == Shed.FINISHES.size() + k
+			draw_rect(r, Color(1, 1, 1, 0.18) if on else Color(1, 1, 1, 0.05))
+			if on:
+				draw_rect(r, UITheme.ACCENT, false, 2.0)
+			draw_string(font, r.position + Vector2(8, 17), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE if on else Color(1, 1, 1, 0.6))
+			fx += w + 6.0
+		hint_y = y + 122
 	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	var hint := "X: colour   B: finish" if pad else "R or right mouse: colour   T: finish"
-	draw_string(font, Vector2(x0, y + 90), hint, HORIZONTAL_ALIGNMENT_LEFT, total, 14, Color(1, 1, 1, 0.6))
+	var hint := "X: colour   B: finish or coat" if pad else "R or right mouse: colour   T: finish or coat"
+	if not gun:
+		hint = "X: colour   B: finish" if pad else "R or right mouse: colour   T: finish"
+	draw_string(font, Vector2(x0, hint_y), hint, HORIZONTAL_ALIGNMENT_LEFT, total, 14, Color(1, 1, 1, 0.6))
 
 
 ## The speedo shows what the bike's dashboard can: an old analogue clock gives you only speed,

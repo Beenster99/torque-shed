@@ -346,6 +346,11 @@ func sync_state() -> void:
 						if is_instance_valid(fixed):
 							fixed.visible = true)
 				display.transform = Transform3D(hang.basis, Vector3.DOWN * swing.length)
+				if Shed.is_engine(item_id) and not Shed.items[item_id].get("boxed", false):
+					# A whole engine hangs lower, its top just under the hook, on a lifting sling.
+					var drop := _engine_hang_drop(display)
+					display.position.y -= drop
+					_engine_sling(swing, display, swing.length + drop)
 				swing.add_child(display)
 				swing.push(Vector3(randf_range(-0.3, 0.3), 0.0, randf_range(-0.3, 0.3)))
 			else:
@@ -693,10 +698,52 @@ func _near(model: BikeModel, box: AABB, at: Vector3, radius: float) -> bool:
 	return closest.distance_to(local) < radius
 
 
+## How much further down than a part a whole engine hangs from a paint shop hook, so its top
+## sits just under the hook (a part's top hangs at the hook: see EquipmentView.add_hook_wire).
+func _engine_hang_drop(display: Node3D) -> float:
+	var size: Vector3 = display.get_meta("size", Vector3(0.4, 0.4, 0.4))
+	return maxf(0.0, size.y - 0.35)
+
+
+## The lifting sling an engine hangs from on a paint shop hook: a short chain to a ring, and two
+## straps from it down to the engine's lifting eyes, front and back.
+func _engine_sling(swing: Node3D, display: Node3D, depth: float) -> void:
+	var size: Vector3 = display.get_meta("size", Vector3(0.4, 0.4, 0.4))
+	var top_y := -depth + size.y
+	var ring_y := -(swing as Swing).length + 0.55
+	var strap := _material(Color(0.95, 0.55, 0.1), 0.0, 0.8)
+	var steel := _material(Color(0.55, 0.56, 0.58), 0.9, 0.3)
+	var ring := MeshInstance3D.new()
+	var tor := TorusMesh.new()
+	tor.inner_radius = 0.025
+	tor.outer_radius = 0.035
+	ring.mesh = tor
+	ring.material_override = steel
+	ring.position = Vector3(0.0, ring_y - 0.03, 0.0)
+	ring.rotation.x = PI * 0.5
+	ring.name = "EngineSling"
+	swing.add_child(ring)
+	var hang_basis := display.transform.basis
+	for d in [-1.0, 1.0]:
+		var eye: Vector3 = Vector3(0.0, top_y, 0.0) + hang_basis * Vector3(0.0, 0.0, d * size.z * 0.3)
+		var from := Vector3(0.0, ring_y - 0.06, 0.0)
+		var leg := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.03, from.distance_to(eye), 0.004)
+		leg.mesh = bm
+		leg.material_override = strap
+		leg.position = (from + eye) * 0.5
+		var up := (from - eye).normalized()
+		var side := up.cross(Vector3.RIGHT if absf(up.x) < 0.9 else Vector3.FORWARD).normalized()
+		leg.basis = Basis(side.cross(up), up, side)
+		leg.name = "EngineSling"
+		swing.add_child(leg)
+
+
 func _item_signature(item_id: int) -> String:
 	var it: Dictionary = Shed.items[item_id]
-	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
-		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else ""]
+	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
+		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it)]
 	if Shed.is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
@@ -716,7 +763,8 @@ func _bike_signature(id: int) -> String:
 			parts.append("-")
 		else:
 			var it: Dictionary = Shed.items[item_id]
-			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot)])
+			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot),
+				Shed.blast_sig(it)])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),

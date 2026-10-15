@@ -37,7 +37,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Crouch (low parts such as stands, oil filter and chain need it) | C or Ctrl | Right stick click |
 | Pick a tool (hands, wrench, brush, grinder, spray can, pressure washer, spray gun, stopwatch) | 1-8, Q / E, mouse wheel | LB / RB |
 | Work on what you're looking at, or put a held part down anywhere | Hold left mouse | Hold RT or A |
-| Spray colour / finish (can or gun) | R or right mouse / T or the mouse back (side) button | X / B |
+| Spray colour / finish (can or gun); with the spray gun, T also picks a protective coat after the finishes | R or right mouse / T or the mouse back (side) button | X / B |
 | Ping what you're looking at for the crew | G or middle mouse | D-pad right |
 | Stopwatch start / stop (lap or reset: right mouse with the stopwatch out) | P | D-pad left |
 | Name the bike you're looking at | N | |
@@ -48,6 +48,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Dyno room: strap the bike down (at each of the 4 posts), take the extraction hose off its hook and push it over the exhaust | Hold left mouse | Hold RT or A |
 | Sandblaster: put your hands in the gloves / step back | F | Y |
 | Sandblaster: blast where you aim / turn the engine | Hold left mouse / W A S D, or hold right mouse and move the mouse | Hold RT / left stick |
+| Sandblaster: scan the engine for what's still to blast (press again to stop) | X | D-pad up |
 | Drain a fluid (holding a drain pan, empty can or bleed bottle); with the wrench at a chain, set its tension | Hold R or right mouse | Hold X |
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
 | Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
@@ -109,9 +110,24 @@ Changes are only for **that bike**: another bike with the same tank isn't touche
 
 ### The sandblaster
 
-A **sandblasting cabinet** (from the equipment page of the parts computer) strips rust and muck off a whole engine at once, its head, carbs and other ancillaries and all. The cabinets are big enough for the biggest engine with everything fitted, with room to turn it right round and tip it over. Take the engine off the stand and put it in the cabinet: it sits up on the turntable's post, drawn close up with its side covers, fins, bolts and float bowls. Look in through the glass and press F to put your hands in the gloves. One hand turns the engine (W A S D, the left stick, or hold right mouse and move the mouse); the other blasts wherever you aim (hold left mouse or RT). Thousands of fine grains of sand roar out of the nozzle, bounce off the engine and rattle down onto the grate, with dust kicking back off the metal. Wherever the jet goes, the rusty, painted surface turns to **satin bare metal** as you blast (aluminium on the castings, bare steel on steel parts), so the bits you've missed stay rusty and are easy to see. The cabinet has no light of its own: you see in by the shed's light.
+A **sandblasting cabinet** (from the equipment page of the parts computer) strips rust and muck off a whole engine at once, its head, carbs and other ancillaries and all. The cabinets are big enough for the biggest engine with everything fitted, with room to turn it right round and tip it over. Take the engine off the stand and put it in the cabinet: it sits up on the turntable's post, drawn close up with its side covers, fins, bolts and float bowls. Look in through the glass and press F to put your hands in the gloves. One hand turns the engine (W A S D, the left stick, or hold right mouse and move the mouse); the other blasts wherever you aim (hold left mouse or RT). Thousands of fine grains of sand roar out of the nozzle, bounce off the engine and rattle down onto the grate, with dust kicking back off the metal. Wherever the jet goes, the rusty, painted surface turns to **satin bare metal** as you blast (aluminium on the castings, bare steel on steel parts), so the bits you've missed stay rusty and are easy to see. Two strip lights under the cabinet's roof light the chamber.
 
 While you work, a big readout shows a bar for the whole engine across the top and, down the side, each part with how much of it is bare and its **rust, dirt, wear and condition**, which change as you go (the crew sees them change too). When a part comes up bare there's a ding, a flash and "Bare metal!"; when the whole engine is done it says so, and you step back a moment later. Don't linger: blast one spot for too long and it goes dull and pitted, which wears the part. Press F to step back early: each part keeps what you've stripped off it, and pays XP like restoring on the grinder. One person at the gloves at a time; the crew sees the jet, the engine turning and the bare metal coming up.
+
+**The bare metal stays.** When you step back, each part keeps exactly where it's bare: the engine looks the same in the cabinet, in your hands, on the engine stand and fitted to a bike, in co-op too, and it's kept in the save. Put it back in the cabinet and you carry on from where you left off (only the newly bared metal pays XP). A part blasted all over (90% or more) comes out **bare metal all over**, so a finished engine is bare metal from end to end. Fresh paint from the spray can covers it up again. Bare metal with nothing on it **flash-rusts** when the bike is ridden (faster in the muck), so give it a protective coat (below).
+
+**The scan button** (X, or D-pad up on a pad, at the gloves; the green SCAN button on the cabinet lights up) shows what's still to blast: the engine glows red where there's rust left, green where it's bare and purple where it's pitted, with a sweep running up it, and a panel down the right gives the percentage still to blast over the whole engine, on each part and on each side (top, underneath, front, back, left and right). Press it again to turn it off. The crew watching see the glow too.
+
+**Protective coats.** After blasting, hang the engine on one of the paint shop's hooks (carry it in and put it on a hook like any part: a whole engine hangs on an orange lifting sling, just under the hook). Take the **spray gun**, press T past the paint finishes to pick a coat, and sweep it over the engine like a paint job (the panel shows how much is covered; missed patches and runs make a worse coat). One job coats the engine and everything fitted to it:
+
+| Coat | Looks | Protection |
+| --- | --- | --- |
+| Clear lacquer | The blasted metal on show under a gloss clear coat | Very good |
+| Satin clear lacquer | The blasted metal under a soft satin sheen | Good |
+| Black engine enamel | Gloss black paint | Best |
+| Silver engine enamel | Metallic silver paint | Best |
+
+A coat won't go over rust (blast it first). A coated part hardly flash-rusts and picks up less muck when ridden; the better the coat, the better it protects, and it slowly wears thinner with the miles. The part's info shows its coat and how good it is. Blasting a part again strips its coat with the rust.
 
 Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (paid for from the business's account), equipment or a new project bike (also paid for), and its **Sell** aisle sells loose parts and whole bikes (see Money). Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (four or five shelves that take parts anywhere on them), parts washers and repair machines (rated for 1 to 4 parts at full speed, some faster; see below), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted delivery area outside the roller door (see Deliveries below): parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters, TVs and the whiteboard hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
 
@@ -242,7 +258,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Drilling and trimming a part | 8 |
 | Restoring a part on the grinder, sandblasting a part (x how much came up bare), starting a scratch build | 10 |
 | Fitting a tyre (x quality) | 10 |
-| Spraying a part (x how good the paint job is) | 12 |
+| Spraying a part (x how good the paint job is), giving a part or a whole engine a protective coat (x how good the coat is) | 12 |
 | A part brought from tired (under 60%) to like new (95%) | 4, once |
 | The first time a bike starts | 25, once per bike |
 | Rebuilding an engine on the stand | 40, once per engine |
@@ -463,7 +479,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime, and each part's own fit from geometry mode |
 | `scripts/geometry_mode.gd`, `geo_gizmo.gd`, `blueprint_tab.gd` | Geometry mode (fitting a bike's parts with move, rotate and scale handles), the handles and their maths, and the Esc menu's Blueprints tab |
 | `scripts/tyre_game.gd` | The tyre-fitting game on the tyre changer |
-| `scripts/blast_game.gd`, `blast_marks.gd`, `blast_hud.gd`, `blast_detail.gd` | The sandblasting game in the blast cabinet: the coverage, the satin bare-metal mask and its shader, the live readout, and the close-up engine detail |
+| `scripts/blast_game.gd`, `blast_marks.gd`, `blast_hud.gd`, `blast_detail.gd` | The sandblasting game in the blast cabinet: the coverage, the satin bare-metal mask and its shader, the live readout and the scan, the close-up engine detail, and the bare metal kept on each part and drawn wherever the engine goes (protective coats are in `shed_state.gd`) |
 | `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |
 | `scripts/chase_camera.gd` | The riding cameras: the chase view you can swing round the bike, first person, the ride-by camera and the title screen orbit |
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
