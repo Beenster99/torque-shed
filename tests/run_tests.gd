@@ -8306,7 +8306,9 @@ func _test_customer_rides_in() -> void:
 	var slots_ok := true
 	for i in Contracts.PARK_SLOTS:
 		var o := Contracts.park_xf(i).origin
-		slots_ok = slots_ok and SalesOffice.FORECOURT.has_point(Vector2(o.x, o.z)) and Workshop.room_at(o) == ""
+		# Inside the area bikes can be worked on (x -22..38, z 42..86), so a customer's bike can be worked on where it's left.
+		slots_ok = slots_ok and SalesOffice.FORECOURT.has_point(Vector2(o.x, o.z)) and Workshop.room_at(o) == "" \
+			and Rect2(-22.0, 42.0, 60.0, 44.0).grow(-1.0).has_point(Vector2(o.x, o.z))
 		if i > 0:
 			slots_ok = slots_ok and o.distance_to(Contracts.park_xf(i - 1).origin) >= 2.0
 	check(slots_ok, "the car park bays are on the forecourt, outside, with room between them")
