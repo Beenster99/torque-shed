@@ -8,7 +8,8 @@ extends Node
 const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc", "caliper", "pads", "master", "tank",
 	"saddle", "handlebars", "dashboard", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling",
 	"gearbox", "exhaust", "final_drive", "chain", "side_stand", "centre_stand", "headlight", "horn", "ecu",
-	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "front_mudguard"]
+	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels",
+	"rearsets", "guards", "number_boards"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
 const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube"]
 const KIND_NAMES := {
@@ -19,19 +20,24 @@ const KIND_NAMES := {
 	"oil_filter": "Oil filter", "spark_plugs": "Spark plugs", "cooling": "Cooling", "gearbox": "Gearbox",
 	"exhaust": "Exhaust", "final_drive": "Sprockets", "chain": "Chain", "side_stand": "Side stand", "centre_stand": "Centre stand",
 	"headlight": "Headlight", "horn": "Horn", "ecu": "ECU", "panniers": "Panniers", "top_box": "Top box",
-	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "front_mudguard": "Front mudguard", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
+	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "front_mudguard": "Front mudguard", "indicators": "Indicators",
+	"side_panels": "Side panels", "rearsets": "Footpegs and rearsets", "guards": "Engine guards", "number_boards": "Number boards",
+	"petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
 }
 ## Slots on the bike itself.
 const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors",
-	"front_mudguard"]
+	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards"]
 ## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
 const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box",
-	"fog_lights", "fairing", "mirrors", "front_mudguard"]
+	"fog_lights", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards"]
+## The bolt-on bits that finish a bike in its style (indicators, side panels, rearsets, guards and
+## number boards). Bikes saved before they existed get the slots empty.
+const FILLER_SLOTS: Array[String] = ["indicators", "side_panels", "rearsets", "guards", "number_boards"]
 ## Parts low down on a bike that you have to crouch to reach while it's in the frame.
-const LOW_SLOTS: Array[String] = ["side_stand", "centre_stand", "oil_filter", "final_drive", "chain"]
+const LOW_SLOTS: Array[String] = ["side_stand", "centre_stand", "oil_filter", "final_drive", "chain", "rearsets", "guards"]
 ## Slots on an engine block. They travel with the block when it comes out of the frame.
 const ENGINE_SLOTS: Array[String] = ["head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox"]
 ## Engine parts you can change with the engine still in the frame. The rest need the engine stand.
@@ -40,7 +46,7 @@ const SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_whe
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox",
-	"front_mudguard"]
+	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards"]
 const SLOT_KIND := {
 	"frame": "frame", "fork": "fork", "shock": "shock", "front_wheel": "wheel", "rear_wheel": "wheel",
 	"front_tyre": "tyre", "rear_tyre": "tyre", "front_disc": "disc", "rear_disc": "disc",
@@ -51,7 +57,8 @@ const SLOT_KIND := {
 	"oil_filter": "oil_filter", "spark_plugs": "spark_plugs", "cooling": "cooling", "gearbox": "gearbox",
 	"side_stand": "side_stand", "centre_stand": "centre_stand", "headlight": "headlight", "horn": "horn", "ecu": "ecu",
 	"panniers": "panniers", "top_box": "top_box", "fog_lights": "fog_lights", "tail": "tail", "fairing": "fairing",
-	"mirrors": "mirrors", "front_mudguard": "front_mudguard",
+	"mirrors": "mirrors", "front_mudguard": "front_mudguard", "indicators": "indicators", "side_panels": "side_panels",
+	"rearsets": "rearsets", "guards": "guards", "number_boards": "number_boards",
 }
 const DEFAULT_BUILD := {
 	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17_front",
@@ -63,7 +70,8 @@ const DEFAULT_BUILD := {
 	"fuel": "twin_carbs", "air_filter": "paper_airbox", "oil_filter": "paper_oil", "spark_plugs": "iridium_plugs",
 	"cooling": "oil_cooler", "gearbox": "five_wide", "side_stand": "stamped_side", "centre_stand": "none",
 	"headlight": "round_7", "horn": "disc_horn", "ecu": "none", "panniers": "none", "top_box": "none", "fog_lights": "none",
-	"tail": "classic_mudguard", "fairing": "none", "mirrors": "none", "front_mudguard": "chrome_classic",
+	"tail": "classic_mudguard", "fairing": "none", "mirrors": "none", "front_mudguard": "chrome_classic", "indicators": "none",
+	"side_panels": "none", "rearsets": "none", "guards": "none", "number_boards": "none",
 }
 ## What each slot bolts onto. A part can only go on once its mounts are fitted, and has to
 ## come off before any of them can. Engine slots mount on the block ("engine").
@@ -86,6 +94,8 @@ const MOUNTS := {
 	"tail": ["frame"], "fairing": ["headlight"], "mirrors": ["handlebars"],
 	# The front mudguard bolts to the fork legs (or under the bottom yoke, for a high fender).
 	"front_mudguard": ["fork"],
+	# The style bits all bolt to the frame (rearsets replace the frame's own pegs).
+	"indicators": ["frame"], "side_panels": ["frame"], "rearsets": ["frame"], "guards": ["frame"], "number_boards": ["frame"],
 }
 ## Which fluid each part holds, and how much (litres; the tank and engine work theirs out).
 const FLUID_HOLDERS := {"tank": "petrol", "engine": "oil", "master": "brake_fluid"}
@@ -104,6 +114,7 @@ const KIND_MATERIAL := {
 	"final_drive": "metal", "chain": "metal", "side_stand": "metal", "centre_stand": "metal", "headlight": "electronics",
 	"horn": "metal", "ecu": "electronics", "panniers": "fabric", "top_box": "plastic", "fog_lights": "electronics",
 	"tail": "plastic", "fairing": "plastic", "mirrors": "mixed", "front_mudguard": "plastic",
+	"indicators": "electronics", "side_panels": "plastic", "rearsets": "metal", "guards": "metal", "number_boards": "plastic",
 	"petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
 }
 const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
@@ -352,6 +363,10 @@ func spec_line(id: String) -> String:
 		"front_mudguard":
 			bits = [p["type"], "keeps off %d%% of the spray" % roundi(float(p.get("cover", 0.7)) * 100.0),
 				"mounts high under the yoke" if mudguard_high(id) else "mounts low on the fork legs"]
+		"indicators", "side_panels", "guards", "number_boards":
+			bits = [p["type"]]
+		"rearsets":
+			bits = [p["type"], peg_text(id)]
 		"mirrors":
 			bits = [p["type"]]
 			if not p.get("mounts_on", []).is_empty():
@@ -369,6 +384,8 @@ func spec_line(id: String) -> String:
 		bits.append(Units.mass(float(p.get("mass", p.get("mass_per_cyl", 0.0))), 1))
 	if is_lightweight(id):
 		bits.append("Lightweight: saves %s" % Units.mass(weight_saving(id), 1))
+	if not styles_of(id).is_empty():
+		bits.append("Suits: " + styles_text(id))
 	return "  ·  ".join(bits.map(func(b): return str(b)))
 
 
@@ -538,4 +555,138 @@ func part_mounts(slot: String, part_id: String) -> Array:
 	for m in get_part(part_id).get("mounts_on", []):
 		if not out.has(str(m)):
 			out.append(str(m))
+	return out
+
+
+## Where a set of footpegs puts your feet, in words.
+func peg_text(id: String) -> String:
+	var peg: Array = get_part(id).get("peg", [])
+	if peg.size() != 2:
+		return "pegs where the frame puts them"
+	if float(peg[1]) < -0.2:
+		return "feet forward"
+	return "feet up and back" if float(peg[0]) > 0.06 else "feet a little further back"
+
+
+# ---------------------------------------------------------------------------- styles
+
+## The styles of bike the catalogue's parts are tagged with ("styles" in data/parts.json), in
+## the order they're listed. Contracts call a sports bike "sport".
+const STYLES: Array[String] = ["classic", "cafe", "bobber", "chopper", "cruiser", "scrambler", "adventure", "roader",
+	"tourer", "sport", "race", "naked", "supermoto", "mx"]
+const STYLE_NAMES := {"classic": "Classic", "cafe": "Cafe racer", "bobber": "Bobber", "chopper": "Chopper",
+	"cruiser": "Cruiser", "scrambler": "Scrambler", "adventure": "Adventure bike", "roader": "Tall roader",
+	"tourer": "Tourer", "sport": "Sports bike", "race": "Race bike", "naked": "Naked bike", "supermoto": "Supermoto", "mx": "MX bike"}
+## How much each slot's part says about a bike's style: the frame most, then the big shapes
+## you see first (tank, seat, bars, tail, fairing), then the rest.
+const STYLE_WEIGHT := {"frame": 3.0, "tank": 2.0, "saddle": 2.0, "handlebars": 2.0, "tail": 2.0, "fairing": 2.0,
+	"fork": 1.5, "exhaust": 1.5, "front_mudguard": 1.5, "number_boards": 1.5, "front_wheel": 1.0, "rear_wheel": 1.0,
+	"headlight": 1.0, "panniers": 1.0, "side_panels": 1.0, "rearsets": 1.0, "guards": 1.0, "shock": 0.5,
+	"front_tyre": 0.5, "rear_tyre": 0.5, "mirrors": 0.5, "top_box": 0.5, "fog_lights": 0.5, "dashboard": 0.5,
+	"indicators": 0.5}
+## With nothing fitted there, a slot still says something: no fairing is the naked look.
+const EMPTY_STYLES := {"fairing": ["classic", "cafe", "bobber", "chopper", "cruiser", "scrambler", "naked", "supermoto", "mx"]}
+## How much of a bike has to agree on a style for it to be a proper one ("a proper bobber").
+const PROPER_STYLE := 0.7
+
+
+func styles_of(id: String) -> Array:
+	return get_part(id).get("styles", [])
+
+
+func style_name(style: String) -> String:
+	return str(STYLE_NAMES.get(style, style.capitalize()))
+
+
+## A style's name in the middle of a sentence: "cafe racer", but "MX bike".
+func style_noun(style: String) -> String:
+	var nm := style_name(style)
+	return nm if nm.left(2) == nm.left(2).to_upper() else nm.to_lower()
+
+
+## "a cafe racer", "an adventure bike", "an MX bike".
+func style_phrase(style: String) -> String:
+	var nm := style_noun(style)
+	return ("an " if nm.left(1).to_lower() in ["a", "e", "i", "o", "u"] or nm.begins_with("MX") else "a ") + nm
+
+
+## "cafe racer, classic, naked bike" for the info panel.
+func styles_text(id: String) -> String:
+	return ", ".join(styles_of(id).map(func(s): return style_noun(str(s))))
+
+
+## What style a set of parts adds up to: each slot's part votes for the styles it's tagged
+## with, weighted by STYLE_WEIGHT. Returns {style (the best, or "" with nothing to go on),
+## coherence 0..1 (how much of the bike agrees), scores (style -> weight for it), total,
+## proper (coherence at least PROPER_STYLE, on a frame that suits it), odd (slots whose part
+## doesn't suit the style)}.
+func detect_style(parts: Dictionary) -> Dictionary:
+	var scores := {}
+	for st in STYLES:
+		scores[st] = 0.0
+	var total := 0.0
+	var votes := {}
+	for slot in STYLE_WEIGHT:
+		var id := str(parts.get(slot, "none"))
+		var tags: Array = EMPTY_STYLES.get(slot, []) if id == "none" or id == "" else styles_of(id)
+		if tags.is_empty():
+			continue
+		var w := float(STYLE_WEIGHT[slot])
+		total += w
+		votes[slot] = tags
+		for t in tags:
+			if scores.has(t):
+				scores[t] += w
+	var best := ""
+	for st in STYLES:
+		if float(scores[st]) > 0.0 and (best == "" or float(scores[st]) > float(scores[best]) + 0.001):
+			best = st
+	var coherence := float(scores[best]) / total if best != "" and total > 0.0 else 0.0
+	var odd := []
+	for slot in votes:
+		if not (votes[slot] as Array).has(best) and str(parts.get(slot, "none")) != "none":
+			odd.append(slot)
+	# A proper one needs a frame built for it too: no cafe racer was ever built on a chopper frame.
+	var frame := str(parts.get("frame", "none"))
+	var frame_ok := frame == "none" or frame == "" or styles_of(frame).has(best)
+	return {"style": best, "coherence": coherence, "scores": scores, "total": total,
+		"proper": coherence >= PROPER_STYLE - 0.0001 and frame_ok, "odd": odd}
+
+
+## How well a set of parts matches one style, 0..1 (the share of the bike tagged with it).
+func style_fit(style: String, parts: Dictionary) -> float:
+	var d := detect_style(parts)
+	return float(d["scores"].get(style, 0.0)) / float(d["total"]) if float(d["total"]) > 0.0 else 0.0
+
+
+## "A proper bobber", "Mostly a scrambler" or "A mix of styles", for the info panels.
+func style_text(parts: Dictionary) -> String:
+	var d := detect_style(parts)
+	if str(d["style"]) == "":
+		return "No style yet"
+	var pc := roundi(float(d["coherence"]) * 100.0)
+	if d["proper"]:
+		return "A proper %s (%d%%)" % [style_noun(str(d["style"])), pc]
+	if float(d["coherence"]) >= 0.5:
+		return "Mostly %s (%d%%)" % [style_phrase(str(d["style"])), pc]
+	return "A mix of styles, nearest %s (%d%%)" % [style_phrase(str(d["style"])), pc]
+
+
+## The style bits (FILLER_SLOTS) that suit a build, for bikes that turn up already put together:
+## where the bike leans one way, a part tagged with that style in each slot, else nothing. No
+## random draws, so it leaves the caller's dice alone; `seed_value` picks between parts that fit.
+func dress_fillers(parts: Dictionary, seed_value := 0) -> Dictionary:
+	var out := parts.duplicate()
+	for slot in FILLER_SLOTS:
+		out[slot] = "none"
+	var d := detect_style(out)
+	var st := str(d["style"])
+	if st == "" or float(d["coherence"]) < 0.45:
+		return out
+	var i := 0
+	for slot in FILLER_SLOTS:
+		var fits: Array = by_kind.get(SLOT_KIND[slot], []).filter(func(id): return styles_of(str(id)).has(st))
+		if not fits.is_empty():
+			out[slot] = fits[absi(seed_value + i * 7) % fits.size()]
+		i += 1
 	return out

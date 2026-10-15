@@ -241,9 +241,13 @@ static func estimate_bought(bike_id: int) -> int:
 	return _nice(total * Money.SELL_RATE * (1.0 + Money.BONUS_COMPLETE) * Money.PROJECT_MARKUP)
 
 
+## The most a bike's style (see PartsDB.detect_style) adds to its uniqueness score.
+const STYLE_PREMIUM := 0.25
+
+
 ## How much of a one-off a bike is, 0..1, and why: parts changed from how it came, fancy and
 ## light parts, its paint (two-tone, chrome, metallic or patina finishes), built from a bare
-## frame, a name of its own, and nothing like it in the shed.
+## frame, all one style, a name of its own, and nothing like it in the shed.
 static func uniqueness(bike_id: int) -> Dictionary:
 	var bike: Dictionary = Shed.bikes[bike_id]
 	var original: Dictionary = bike.get("original", {})
@@ -290,6 +294,11 @@ static func uniqueness(bike_id: int) -> Dictionary:
 		for f in finishes:
 			names.append(str(Shed.FINISH_NAMES.get(f, f)).to_lower())
 		why.append("%s finish" % " and ".join(names))
+	# A bike that's all one style sells better than a parts-bin mix: buyers want a proper bobber.
+	var look := PartsDB.detect_style(Contracts.current_parts(bike_id))
+	if look["proper"]:
+		score += STYLE_PREMIUM * clampf((float(look["coherence"]) - PartsDB.PROPER_STYLE) / (1.0 - PartsDB.PROPER_STYLE) * 0.5 + 0.5, 0.5, 1.0)
+		why.append("a proper %s" % PartsDB.style_noun(str(look["style"])))
 	var nm := str(bike.get("name", ""))
 	if nm != "" and not Shed.BIKE_NAMES.has(nm) and not nm.begins_with("Scratch build") and not nm.begins_with("Part-ex"):
 		score += 0.03

@@ -40,10 +40,10 @@ const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors", "sell
 const GROUPS := [
 	["Engine and drivetrain", ["engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox",
 		"exhaust", "ecu", "final_drive", "chain"]],
-	["Chassis", ["frame", "fork", "shock", "handlebars", "side_stand", "centre_stand"]],
+	["Chassis", ["frame", "fork", "shock", "handlebars", "rearsets", "guards", "side_stand", "centre_stand"]],
 	["Wheels and brakes", ["wheel", "tyre", "disc", "caliper", "pads", "master"]],
 	["Body and lights", ["tank", "saddle", "front_mudguard", "tail", "fairing", "mirrors", "dashboard", "headlight",
-		"fog_lights", "horn"]],
+		"fog_lights", "horn", "indicators", "side_panels", "number_boards"]],
 	["Luggage", ["panniers", "top_box"]],
 	["Fluids", ["petrol", "oil", "brake_fluid", "chain_lube"]],
 	["Tools and machines", ["eq:stand", "eq:washer", "eq:repair", "eq:blaster", "eq:booth", "eq:changer"]],
@@ -62,6 +62,10 @@ const SORTS := {"shop": "Shop order", "price_up": "Price: low to high", "price_d
 var sort_key := "shop"
 var fits_bike := 0
 var affordable_only := false
+## Only parts tagged with this style (see PartsDB.STYLES), or "" for any. Kinds with no
+## styles at all (engines, brake pads) aren't filtered.
+var style_filter := ""
+var _style_pick: OptionButton
 var _sort_pick: OptionButton
 var _bike_pick: OptionButton
 var _afford_box: CheckBox
@@ -165,6 +169,18 @@ func _ready() -> void:
 	_afford_box.tooltip_text = "Only show parts the business's account can pay for now"
 	_afford_box.toggled.connect(func(on): set_affordable_only(on))
 	tools.add_child(_afford_box)
+	var gap4 := Control.new()
+	gap4.custom_minimum_size = Vector2(16, 0)
+	tools.add_child(gap4)
+	tools.add_child(_cell("Style:", 15, Color(1, 1, 1, 0.7), false))
+	_style_pick = OptionButton.new()
+	_style_pick.custom_minimum_size = Vector2(170, 0)
+	_style_pick.tooltip_text = "Only show parts that suit this style of bike"
+	_style_pick.add_item("Any style")
+	for st in PartsDB.STYLES:
+		_style_pick.add_item(PartsDB.style_name(st))
+	_style_pick.item_selected.connect(func(i): set_style_filter("" if i == 0 else PartsDB.STYLES[i - 1]))
+	tools.add_child(_style_pick)
 	root.add_child(tools)
 	_fill_bike_pick()
 
@@ -575,6 +591,8 @@ func _show_kind(k: String) -> void:
 		filters.append("fit %s" % str(Shed.bikes[fits_bike]["name"]))
 	if affordable_only and not k.begins_with("eq:"):
 		filters.append("within budget")
+	if style_filter != "" and styled_kind(k):
+		filters.append("suit %s" % PartsDB.style_phrase(style_filter))
 	if not filters.is_empty():
 		head += ": " + " and ".join(filters).to_upper()
 	var count := UITheme.label(head, 13, Color(1, 1, 1, 0.55))
@@ -626,6 +644,8 @@ func listed(k: String) -> Array:
 			ids = ids.filter(func(id): return fit_problem(str(id), fits_bike) == "")
 		if affordable_only:
 			ids = ids.filter(func(id): return Money.buy_price(str(id), Shed.me()) <= Shed.garage_money)
+		if style_filter != "" and styled_kind(k):
+			ids = ids.filter(func(id): return PartsDB.styles_of(str(id)).has(style_filter))
 	var name_of := func(id) -> String:
 		return str(Equipment.get_model(str(id))["name"]) if eq else PartsDB.part_name(str(id))
 	match sort_key:
@@ -674,6 +694,21 @@ func set_fits_bike(bike_id: int) -> void:
 		if _bike_pick.selected != i and i < _bike_pick.item_count:
 			_bike_pick.select(i)
 	_relist()
+
+
+## Shows only parts that suit a style of bike ("" for any).
+func set_style_filter(style: String) -> void:
+	style_filter = style if PartsDB.STYLES.has(style) else ""
+	if _style_pick:
+		var i := 0 if style_filter == "" else PartsDB.STYLES.find(style_filter) + 1
+		if _style_pick.selected != i:
+			_style_pick.select(i)
+	_relist()
+
+
+## Whether a kind's parts are tagged with styles, so the style filter means something for it.
+static func styled_kind(k: String) -> bool:
+	return not k.begins_with("eq:") and not k.begins_with("sell:") and PartsDB.by_kind.get(k, []).any(func(id): return not PartsDB.styles_of(str(id)).is_empty())
 
 
 ## Shows only parts the business can pay for now.
@@ -795,6 +830,12 @@ func _show_part(id: String) -> void:
 	if fits_bike != 0 and Shed.bikes.has(fits_bike):
 		var why := fit_problem(id, fits_bike)
 		_spec.text += "\n%s: %s" % [str(Shed.bikes[fits_bike]["name"]), "goes on it as it is" if why == "" else why]
+		var slots := PartsDB.slots_for_kind(_kind)
+		if not PartsDB.styles_of(id).is_empty() and not slots.is_empty():
+			var now := Contracts.current_parts(fits_bike)
+			var with := now.duplicate()
+			with[slots[0]] = id
+			_spec.text += "\nIts style now: %s. With this on: %s." % [PartsDB.style_text(now), PartsDB.style_text(with)]
 	if owned(id) > 0:
 		_desc.text += " The shed has %d already, not fitted to anything." % owned(id)
 	if _kind == "chain":

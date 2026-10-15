@@ -80,7 +80,13 @@ const SERVICES := [
 const MOT_EXTRAS: Array[String] = ["oil", "chain", "wash", "plugs", "filters", "brake_fluid", "pads"]
 ## What each kind of modification goal pays in labour.
 const MOD_PAY := {"top_kmh": 220, "hp": 200, "mass": 240, "style": 320, "fit": 120, "pipes": 140, "paint": 110, "part": 130}
-const STYLES := {"cafe": "Cafe racer", "scrambler": "Scrambler", "tourer": "Tourer", "sport": "Sports bike", "bobber": "Bobber"}
+const STYLES := {"cafe": "Cafe racer", "scrambler": "Scrambler", "tourer": "Tourer", "sport": "Sports bike", "bobber": "Bobber",
+	"chopper": "Chopper", "cruiser": "Cruiser", "adventure": "Adventure bike", "mx": "MX bike", "supermoto": "Supermoto"}
+## For the styles without hand-picked marks: the four slots whose parts have to suit the style
+## (by their tags, see PartsDB.styles_of).
+const STYLE_KEYS := {"chopper": ["frame", "fork", "handlebars", "tail"], "cruiser": ["frame", "exhaust", "handlebars", "saddle"],
+	"adventure": ["frame", "tank", "fairing", "panniers"], "mx": ["frame", "fork", "tank", "number_boards"],
+	"supermoto": ["front_wheel", "rear_wheel", "front_mudguard", "handlebars"]}
 ## Exhausts that count as proper pipes.
 const PIPES: Array[String] = ["full_system", "titanium_race", "straight_pipe"]
 const FIT_SLOTS := {"panniers": "Panniers", "top_box": "A top box", "fairing": "A fairing", "fog_lights": "Fog lights",
@@ -91,7 +97,7 @@ const EST_COST := {"frame": 900, "fork": 450, "shock": 300, "wheel": 280, "tyre"
 	"head": 400, "fuel": 260, "air_filter": 40, "oil_filter": 15, "spark_plugs": 20, "cooling": 180, "gearbox": 500,
 	"exhaust": 380, "final_drive": 90, "chain": 70, "side_stand": 40, "centre_stand": 70, "headlight": 90,
 	"horn": 25, "ecu": 350, "panniers": 220, "top_box": 120, "fog_lights": 110, "tail": 140, "fairing": 420, "mirrors": 45,
-	"front_mudguard": 90}
+	"front_mudguard": 90, "indicators": 60, "side_panels": 90, "rearsets": 160, "guards": 180, "number_boards": 70}
 const FIRST_NAMES := ["Dave", "Sue", "Raj", "Kim", "Gary", "Priya", "Tom", "Jo", "Mick", "Aisha", "Steve", "Lena",
 	"Barry", "Chloe", "Nigel", "Fatima", "Pete", "Grace", "Wayne", "Mei", "Colin", "Zara", "Ian", "Bev"]
 const LAST_NAMES := ["Smith", "Patel", "Jones", "O'Brien", "Taylor", "Khan", "Walsh", "Brown", "Nguyen", "Evans",
@@ -593,8 +599,8 @@ static func random_parts(rng: RandomNumberGenerator, road := false) -> Dictionar
 	var pick := {}
 	for slot in PartsDB.SLOTS:
 		var k: String = PartsDB.SLOT_KIND[slot]
-		if slot == "front_mudguard":
-			continue   # the one that suits its tail and tyres (sanitize_build picks it)
+		if slot == "front_mudguard" or PartsDB.FILLER_SLOTS.has(slot):
+			continue   # the ones that suit the rest of it (sanitize_build and dress_fillers pick them)
 		var key: String = k if k == "tyre" else slot
 		if not pick.has(key):
 			var options: Array = PartsDB.by_kind[k].duplicate()
@@ -623,7 +629,7 @@ static func random_parts(rng: RandomNumberGenerator, road := false) -> Dictionar
 		parts["fairing"] = "none"
 	if parts["mirrors"] != "none" and not PartsDB.part_mounts("mirrors", parts["mirrors"]).all(func(m): return parts.get(m, "none") != "none"):
 		parts["mirrors"] = "round_mirrors"
-	return PartsDB.sanitize_build(parts)
+	return PartsDB.dress_fillers(PartsDB.sanitize_build(parts), int(rng.state % 97))
 
 
 ## What a part costs: the parts computer's price once parts have one, else a rough guess.
@@ -667,7 +673,36 @@ static func style_build(style: String) -> Dictionary:
 			b.merge({"frame": "steel_cradle", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "drag_bar",
 				"tail": "bobber_fender", "engine": "vtwin_1000", "exhaust": "straight_pipe", "front_wheel": "wire_16_bobber",
 				"rear_wheel": "wire_16_bobber", "mirrors": "bar_end_mirrors", "front_mudguard": "bobbed_steel"}, true)
+		"chopper":
+			b.merge({"frame": "chopper_raked", "fork": "springer_long", "tank": "peanut_9", "saddle": "flat_bench",
+				"handlebars": "ape_hangers", "tail": "bobber_fender", "engine": "vtwin_1200", "exhaust": "shotgun_duals",
+				"front_wheel": "wire_19_chrome", "rear_wheel": "wire_16_bobber", "headlight": "bates_cafe", "mirrors": "bar_end_mirrors",
+				"front_mudguard": "none"}, true)
+		"cruiser":
+			b.merge({"frame": "cruiser_cradle", "tank": "peanut_9", "saddle": "touring_comfort", "handlebars": "drag_bar",
+				"tail": "classic_mudguard", "engine": "vtwin_1100", "exhaust": "shotgun_duals", "front_wheel": "cast_19_six",
+				"rear_wheel": "wire_16_bobber", "panniers": "leather_saddlebags", "mirrors": "round_mirrors", "front_mudguard": "chrome_classic"}, true)
+		"adventure":
+			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "touring_23", "saddle": "touring_comfort",
+				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "boxer_1100", "exhaust": "mx_upswept", "front_wheel": "spoked_19_adventure",
+				"rear_wheel": "spoked_18", "front_tyre": "dual_sport_90", "rear_tyre": "dual_sport", "panniers": "aluminium_boxes",
+				"fairing": "touring_fairing", "headlight": "led_projector", "mirrors": "touring_mirrors", "front_mudguard": "enduro_front_fender"}, true)
+		"mx":
+			b.merge({"frame": "mx_twin_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "enduro_12", "saddle": "enduro_seat",
+				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "single_450", "exhaust": "mx_upswept", "front_wheel": "excel_21_black",
+				"rear_wheel": "spoked_18", "front_tyre": "knobbly_mx_80", "rear_tyre": "knobbly_mx", "front_mudguard": "mx_high_fender",
+				"headlight": "rect_enduro", "number_boards": "mx_side_boards"}, true)
+		"supermoto":
+			b.merge({"frame": "mx_twin_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "enduro_12", "saddle": "enduro_seat",
+				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "single_450", "exhaust": "mx_upswept", "front_wheel": "supermoto_17",
+				"rear_wheel": "supermoto_17", "front_tyre": "sport_road_120", "rear_tyre": "sport_road_160", "front_mudguard": "mx_high_fender",
+				"headlight": "rect_enduro", "mirrors": "sport_mirrors"}, true)
 	b = PartsDB.sanitize_build(b)
+	# Finished off with the bolt-on bits that suit it, where the reference doesn't name its own.
+	var dressed := PartsDB.dress_fillers(b)
+	for slot in PartsDB.FILLER_SLOTS:
+		if str(b[slot]) == "none":
+			b[slot] = dressed[slot]
 	for ws in Shed.WHEEL_TYRE:
 		var ts: String = Shed.WHEEL_TYRE[ws]
 		if PartsDB.tyre_fit(str(b[ts]), str(b[ws])) != 0:
@@ -699,14 +734,28 @@ static func style_marks(style: String, parts: Dictionary) -> Array:
 		"bobber":
 			marks = [p.call("tail") == "bobber_fender", p.call("handlebars") in ["drag_bar", "ape_hangers"],
 				st.call("saddle") == "bench", p.call("exhaust") == "straight_pipe" or st.call("tank") == "peanut"]
-	return [marks.count(true), 3]
+		_:
+			for slot in STYLE_KEYS.get(style, []):
+				marks.append(PartsDB.styles_of(p.call(slot)).has(style))
+	var have := marks.count(true)
+	# A bike that's a proper one of the style all over (see PartsDB.detect_style) counts too,
+	# whichever marks it picked to get there.
+	var d := PartsDB.detect_style(parts)
+	if str(d["style"]) == style and d["proper"]:
+		have = maxi(have, 3)
+	return [have, 3]
 
 
 ## What a style's parts look like, for the offer card.
 static func style_hint(style: String) -> String:
 	return {"cafe": "cafe tank and seat, clip-ons, tail hump", "scrambler": "off-road tyres, flat or MX bars, scrambler loop, small tank",
 		"tourer": "panniers, top box, touring seat, big tank or fairing", "sport": "race fairing, sport seat and tank, clip-ons",
-		"bobber": "bobbed fender, drag bars or apes, bench seat, straight pipe or peanut tank"}.get(style, "")
+		"bobber": "bobbed fender, drag bars or apes, bench seat, straight pipe or peanut tank",
+		"chopper": "raked chopper frame, long springer fork, ape hangers, bobbed fender",
+		"cruiser": "long low cruiser frame, shotgun pipes, drag bars, comfy seat",
+		"adventure": "tall adventure frame, big tank, touring screen, panniers",
+		"mx": "MX frame, long-travel fork, small tank, number boards",
+		"supermoto": "supermoto wheels, high front fender, MX bars"}.get(style, "")
 
 
 static func _summary(parts: Dictionary) -> Dictionary:

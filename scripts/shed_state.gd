@@ -52,7 +52,8 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"centre_stand": 0.9, "cooling": 0.6, "oil_filter": 0.6, "air_filter": 0.5, "gearbox": 0.5, "rear_master": 0.5,
 	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
 	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6,
-	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2, "front_mudguard": 1.0}
+	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2, "front_mudguard": 1.0, "indicators": 0.4, "side_panels": 0.4,
+	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5}
 ## Parts in the front wheel's spray. With no front mudguard they get this much more road dirt;
 ## a guard takes it back down by how much spray it stops (its "cover").
 const FRONT_SPRAY: Array[String] = ["fork", "engine", "cooling", "exhaust", "headlight", "horn", "fog_lights",
@@ -355,7 +356,7 @@ func _add_new_slots() -> void:
 		var original: Dictionary = bike.get("original", {})
 		if not original.has("tail"):
 			original["tail"] = PartsDB.fitting_tail(PartsDB.sanitize_build(original.duplicate()))
-		for slot in ["fairing", "mirrors"]:
+		for slot in ["fairing", "mirrors"] + Array(PartsDB.FILLER_SLOTS):
 			if not original.has(slot):
 				original[slot] = "none"
 			if not bike["slots"].has(slot):
@@ -4158,7 +4159,8 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 			item_id = _new_item(parts[slot], fork["rust"], minf(1.0, float(fork["dirt"]) * 1.3), fork["wear"],
 				_guard_color(parts[slot], paint_color))
 		else:
-			item_id = _aged_item(parts[slot], age, paint_color if slot in ["tank", "fairing"] else null)
+			var painted: bool = slot in ["tank", "fairing"] or bool(PartsDB.get_part(parts[slot]).get("paint_match", false))
+			item_id = _aged_item(parts[slot], age, paint_color if painted else null)
 		_move(item_id, "bike", id)
 		bike["slots"][slot] = item_id
 		bike["bolted"][slot] = true
@@ -4225,8 +4227,8 @@ func _random_bike(bay: int) -> int:
 	var pick := {}
 	for slot in PartsDB.SLOTS:
 		var k: String = PartsDB.SLOT_KIND[slot]
-		if slot == "front_mudguard":
-			continue   # the one that suits its tail and tyres (sanitize_build picks it)
+		if slot == "front_mudguard" or PartsDB.FILLER_SLOTS.has(slot):
+			continue   # the ones that suit the rest of it (sanitize_build and dress_fillers pick them)
 		# A random bike wears a matching pair of tyres; everything else is picked per slot.
 		var key: String = k if k == "tyre" else slot
 		if not pick.has(key):
@@ -4254,6 +4256,7 @@ func _random_bike(bay: int) -> int:
 		parts["fairing"] = "none"
 	if parts["mirrors"] != "none" and not PartsDB.part_mounts("mirrors", parts["mirrors"]).all(func(m): return parts.get(m, "none") != "none"):
 		parts["mirrors"] = "round_mirrors"
+	parts = PartsDB.dress_fillers(parts, bay)
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
 	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9))
 

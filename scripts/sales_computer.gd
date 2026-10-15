@@ -279,6 +279,7 @@ func _build_bike(right: VBoxContainer, bike: int) -> void:
 	var state := "Complete and ready to ride" if ap["rideable"] else ("Complete, but no petrol and oil in it" if ap["complete"]
 		else "Not finished: parts missing or loose")
 	right.add_child(UITheme.label("%s  ·  condition %d%%" % [state, roundi(float(ap["condition"]) * 100.0)], 16, DIM))
+	right.add_child(UITheme.label("Style: %s" % PartsDB.style_text(Contracts.current_parts(bike)), 16, DIM))
 	var cost := _card(right)
 	cost.add_child(UITheme.label("WHAT IT'S COST", 14, UITheme.ACCENT))
 	_row(cost, "Bought for" + ("" if ap["bought_known"] else " (about)"), Sales.money(int(ap["bought"])))

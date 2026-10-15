@@ -15,7 +15,14 @@
 			],
 			"cda": 0.58,
 			"style": "cradle",
-			"type": "Steel cradle"
+			"type": "Steel cradle",
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"naked",
+				"scrambler"
+			]
 		},
 		"steel_backbone": {
 			"name": "Steel backbone frame",
@@ -32,7 +39,13 @@
 			],
 			"cda": 0.6,
 			"style": "backbone",
-			"type": "Steel backbone"
+			"type": "Steel backbone",
+			"styles": [
+				"scrambler",
+				"supermoto",
+				"classic",
+				"naked"
+			]
 		},
 		"chromoly_trellis": {
 			"name": "Chromoly trellis frame",
@@ -49,7 +62,14 @@
 			],
 			"cda": 0.55,
 			"style": "trellis",
-			"type": "Chromoly trellis"
+			"type": "Chromoly trellis",
+			"styles": [
+				"naked",
+				"sport",
+				"cafe",
+				"supermoto",
+				"roader"
+			]
 		},
 		"alu_twin_spar": {
 			"name": "Aluminium twin-spar frame",
@@ -66,7 +86,13 @@
 			],
 			"cda": 0.52,
 			"style": "spar",
-			"type": "Twin spar"
+			"type": "Twin spar",
+			"styles": [
+				"sport",
+				"race",
+				"tourer",
+				"roader"
+			]
 		},
 		"carbon_monocoque": {
 			"name": "Carbon monocoque frame",
@@ -85,7 +111,11 @@
 			"style": "spar",
 			"type": "Carbon monocoque",
 			"lightweight": true,
-			"material": "carbon"
+			"material": "carbon",
+			"styles": [
+				"race",
+				"sport"
+			]
 		},
 		"softail_hardtail": {
 			"name": "Hardtail-look softail frame",
@@ -117,7 +147,12 @@
 				],
 				"exhaust": "shotgun",
 				"swingarm": "softail"
-			}
+			},
+			"styles": [
+				"bobber",
+				"chopper",
+				"cruiser"
+			]
 		},
 		"cruiser_cradle": {
 			"name": "Long-low cruiser frame",
@@ -149,7 +184,12 @@
 				],
 				"exhaust": "shotgun",
 				"swingarm": "box"
-			}
+			},
+			"styles": [
+				"cruiser",
+				"bobber",
+				"tourer"
+			]
 		},
 		"chopper_raked": {
 			"name": "Raked chopper frame",
@@ -181,7 +221,10 @@
 				],
 				"exhaust": "shotgun",
 				"swingarm": "softail"
-			}
+			},
+			"styles": [
+				"chopper"
+			]
 		},
 		"alu_perimeter": {
 			"name": "Aluminium perimeter sport frame",
@@ -215,7 +258,12 @@
 				"exhaust": "stubby",
 				"swingarm": "braced"
 			},
-			"lightweight": true
+			"lightweight": true,
+			"styles": [
+				"sport",
+				"race",
+				"naked"
+			]
 		},
 		"adv_trellis": {
 			"name": "Tall adventure trellis frame",
@@ -247,7 +295,12 @@
 				],
 				"exhaust": "upswept",
 				"swingarm": "box"
-			}
+			},
+			"styles": [
+				"adventure",
+				"roader",
+				"tourer"
+			]
 		},
 		"mx_twin_loop": {
 			"name": "MX twin-loop frame",
@@ -280,7 +333,12 @@
 				],
 				"exhaust": "upswept",
 				"swingarm": "braced"
-			}
+			},
+			"styles": [
+				"mx",
+				"supermoto",
+				"scrambler"
+			]
 		}
 	},
 	"fork": {
@@ -301,7 +359,12 @@
 				0.05,
 				0.05
 			],
-			"style": "girder"
+			"style": "girder",
+			"styles": [
+				"classic",
+				"chopper",
+				"bobber"
+			]
 		},
 		"classic_conventional": {
 			"name": "Classic conventional fork",
@@ -320,7 +383,14 @@
 				0.86,
 				0.88
 			],
-			"style": "conventional"
+			"style": "conventional",
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"scrambler",
+				"cruiser"
+			]
 		},
 		"telescopic_road": {
 			"name": "Telescopic road fork",
@@ -339,7 +409,15 @@
 				0.86,
 				0.88
 			],
-			"style": "conventional"
+			"style": "conventional",
+			"styles": [
+				"naked",
+				"roader",
+				"tourer",
+				"classic",
+				"cruiser",
+				"cafe"
+			]
 		},
 		"usd_sport": {
 			"name": "Upside-down sport fork",
@@ -358,7 +436,14 @@
 				0.62,
 				0.18
 			],
-			"style": "usd"
+			"style": "usd",
+			"styles": [
+				"sport",
+				"race",
+				"naked",
+				"supermoto",
+				"roader"
+			]
 		},
 		"enduro_usd": {
 			"name": "Enduro USD fork",
@@ -377,7 +462,12 @@
 				0.08,
 				0.09
 			],
-			"style": "usd"
+			"style": "usd",
+			"styles": [
+				"adventure",
+				"scrambler",
+				"supermoto"
+			]
 		},
 		"long_travel_mx": {
 			"name": "Long-travel MX fork",
@@ -396,7 +486,11 @@
 				0.3,
 				0.75
 			],
-			"style": "usd"
+			"style": "usd",
+			"styles": [
+				"mx",
+				"supermoto"
+			]
 		},
 		"springer_long": {
 			"name": "Extended springer fork",
@@ -416,7 +510,11 @@
 				0.88
 			],
 			"style": "springer",
-			"price": 950
+			"price": 950,
+			"styles": [
+				"chopper",
+				"bobber"
+			]
 		}
 	},
 	"shock": {
@@ -436,6 +534,14 @@
 				0.85,
 				0.86,
 				0.88
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"scrambler",
+				"cruiser",
+				"chopper"
 			]
 		},
 		"twin_shock_gas": {
@@ -454,6 +560,13 @@
 				0.85,
 				0.15,
 				0.1
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"cruiser",
+				"tourer"
 			]
 		},
 		"sport_mono": {
@@ -472,6 +585,13 @@
 				0.85,
 				0.12,
 				0.1
+			],
+			"styles": [
+				"sport",
+				"race",
+				"naked",
+				"roader",
+				"tourer"
 			]
 		},
 		"enduro_mono": {
@@ -490,6 +610,11 @@
 				0.15,
 				0.35,
 				0.8
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"supermoto"
 			]
 		},
 		"mono_shock_mx": {
@@ -508,6 +633,10 @@
 				0.95,
 				0.75,
 				0.1
+			],
+			"styles": [
+				"mx",
+				"supermoto"
 			]
 		}
 	},
@@ -529,6 +658,12 @@
 			"tyres": [
 				80,
 				100
+			],
+			"styles": [
+				"scrambler",
+				"adventure",
+				"mx",
+				"chopper"
 			]
 		},
 		"spoked_18": {
@@ -548,6 +683,12 @@
 			"tyres": [
 				90,
 				130
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler",
+				"bobber"
 			]
 		},
 		"wire_19_chrome": {
@@ -567,6 +708,12 @@
 			"tyres": [
 				90,
 				130
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"chopper",
+				"cruiser"
 			]
 		},
 		"cast_17": {
@@ -586,6 +733,12 @@
 			"tyres": [
 				140,
 				180
+			],
+			"styles": [
+				"naked",
+				"sport",
+				"roader",
+				"tourer"
 			]
 		},
 		"cast_17_front": {
@@ -605,6 +758,12 @@
 			"tyres": [
 				110,
 				130
+			],
+			"styles": [
+				"naked",
+				"sport",
+				"roader",
+				"tourer"
 			]
 		},
 		"supermoto_17": {
@@ -624,6 +783,9 @@
 			"tyres": [
 				130,
 				170
+			],
+			"styles": [
+				"supermoto"
 			]
 		},
 		"carbon_17": {
@@ -645,7 +807,11 @@
 				170,
 				200
 			],
-			"material": "carbon"
+			"material": "carbon",
+			"styles": [
+				"race",
+				"sport"
+			]
 		},
 		"wire_16_bobber": {
 			"name": "16\" fat wire wheel",
@@ -664,6 +830,11 @@
 			"tyres": [
 				130,
 				160
+			],
+			"styles": [
+				"bobber",
+				"cruiser",
+				"chopper"
 			]
 		},
 		"spoked_19_adventure": {
@@ -683,6 +854,10 @@
 			"tyres": [
 				90,
 				130
+			],
+			"styles": [
+				"adventure",
+				"scrambler"
 			]
 		},
 		"excel_21_black": {
@@ -703,6 +878,10 @@
 			"tyres": [
 				80,
 				100
+			],
+			"styles": [
+				"mx",
+				"scrambler"
 			]
 		},
 		"cast_18_three": {
@@ -722,6 +901,11 @@
 			"tyres": [
 				100,
 				140
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"tourer"
 			]
 		},
 		"cast_19_six": {
@@ -741,6 +925,11 @@
 			"tyres": [
 				90,
 				130
+			],
+			"styles": [
+				"cruiser",
+				"tourer",
+				"roader"
 			]
 		},
 		"cast_17_y": {
@@ -760,6 +949,11 @@
 			"tyres": [
 				160,
 				190
+			],
+			"styles": [
+				"sport",
+				"naked",
+				"roader"
 			]
 		},
 		"forged_17_alu": {
@@ -780,6 +974,11 @@
 			"tyres": [
 				170,
 				200
+			],
+			"styles": [
+				"sport",
+				"race",
+				"naked"
 			]
 		},
 		"forged_17_mag": {
@@ -800,6 +999,10 @@
 			"tyres": [
 				180,
 				200
+			],
+			"styles": [
+				"race",
+				"sport"
 			]
 		},
 		"supermoto_16_5": {
@@ -819,6 +1022,9 @@
 			"tyres": [
 				160,
 				190
+			],
+			"styles": [
+				"supermoto"
 			]
 		}
 	},
@@ -850,6 +1056,13 @@
 				16,
 				18,
 				19
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"chopper",
+				"cruiser"
 			]
 		},
 		"vintage_ribbed_90": {
@@ -879,6 +1092,13 @@
 				16,
 				18,
 				19
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"chopper",
+				"cruiser"
 			]
 		},
 		"vintage_ribbed_100": {
@@ -908,6 +1128,13 @@
 				16,
 				18,
 				19
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"chopper",
+				"cruiser"
 			]
 		},
 		"vintage_ribbed_110": {
@@ -937,6 +1164,13 @@
 				16,
 				18,
 				19
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"chopper",
+				"cruiser"
 			]
 		},
 		"vintage_ribbed_150": {
@@ -966,6 +1200,13 @@
 				16,
 				18,
 				19
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"chopper",
+				"cruiser"
 			]
 		},
 		"touring_road": {
@@ -995,6 +1236,13 @@
 				17,
 				18,
 				19
+			],
+			"styles": [
+				"tourer",
+				"roader",
+				"classic",
+				"naked",
+				"cruiser"
 			]
 		},
 		"touring_road_110": {
@@ -1024,6 +1272,13 @@
 				17,
 				18,
 				19
+			],
+			"styles": [
+				"tourer",
+				"roader",
+				"classic",
+				"naked",
+				"cruiser"
 			]
 		},
 		"touring_road_120": {
@@ -1053,6 +1308,13 @@
 				17,
 				18,
 				19
+			],
+			"styles": [
+				"tourer",
+				"roader",
+				"classic",
+				"naked",
+				"cruiser"
 			]
 		},
 		"touring_road_130": {
@@ -1082,6 +1344,13 @@
 				17,
 				18,
 				19
+			],
+			"styles": [
+				"tourer",
+				"roader",
+				"classic",
+				"naked",
+				"cruiser"
 			]
 		},
 		"touring_road_150": {
@@ -1111,6 +1380,13 @@
 				17,
 				18,
 				19
+			],
+			"styles": [
+				"tourer",
+				"roader",
+				"classic",
+				"naked",
+				"cruiser"
 			]
 		},
 		"touring_road_180": {
@@ -1140,6 +1416,13 @@
 				17,
 				18,
 				19
+			],
+			"styles": [
+				"tourer",
+				"roader",
+				"classic",
+				"naked",
+				"cruiser"
 			]
 		},
 		"sport_road": {
@@ -1167,6 +1450,12 @@
 			],
 			"rims": [
 				17
+			],
+			"styles": [
+				"sport",
+				"naked",
+				"roader",
+				"supermoto"
 			]
 		},
 		"sport_road_120": {
@@ -1194,6 +1483,12 @@
 			],
 			"rims": [
 				17
+			],
+			"styles": [
+				"sport",
+				"naked",
+				"roader",
+				"supermoto"
 			]
 		},
 		"sport_road_160": {
@@ -1221,6 +1516,12 @@
 			],
 			"rims": [
 				17
+			],
+			"styles": [
+				"sport",
+				"naked",
+				"roader",
+				"supermoto"
 			]
 		},
 		"sport_road_190": {
@@ -1248,6 +1549,12 @@
 			],
 			"rims": [
 				17
+			],
+			"styles": [
+				"sport",
+				"naked",
+				"roader",
+				"supermoto"
 			]
 		},
 		"sport_road_200": {
@@ -1275,6 +1582,12 @@
 			],
 			"rims": [
 				17
+			],
+			"styles": [
+				"sport",
+				"naked",
+				"roader",
+				"supermoto"
 			]
 		},
 		"dual_sport": {
@@ -1305,6 +1618,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"scrambler",
+				"adventure"
 			]
 		},
 		"dual_sport_90": {
@@ -1335,6 +1652,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"scrambler",
+				"adventure"
 			]
 		},
 		"dual_sport_110": {
@@ -1365,6 +1686,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"scrambler",
+				"adventure"
 			]
 		},
 		"dual_sport_150": {
@@ -1395,6 +1720,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"scrambler",
+				"adventure"
 			]
 		},
 		"dual_sport_170": {
@@ -1425,6 +1754,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"scrambler",
+				"adventure"
 			]
 		},
 		"knobbly_mx": {
@@ -1454,6 +1787,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"mx",
+				"scrambler"
 			]
 		},
 		"knobbly_mx_80": {
@@ -1483,6 +1820,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"mx",
+				"scrambler"
 			]
 		},
 		"knobbly_mx_90": {
@@ -1512,6 +1853,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"mx",
+				"scrambler"
 			]
 		},
 		"knobbly_mx_100": {
@@ -1541,6 +1886,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"mx",
+				"scrambler"
 			]
 		},
 		"knobbly_mx_110": {
@@ -1570,6 +1919,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"mx",
+				"scrambler"
 			]
 		},
 		"knobbly_mx_140": {
@@ -1599,6 +1952,10 @@
 				18,
 				19,
 				21
+			],
+			"styles": [
+				"mx",
+				"scrambler"
 			]
 		},
 		"race_slick": {
@@ -1627,6 +1984,10 @@
 			"rims": [
 				16.5,
 				17
+			],
+			"styles": [
+				"race",
+				"supermoto"
 			]
 		},
 		"race_slick_120": {
@@ -1655,6 +2016,10 @@
 			"rims": [
 				16.5,
 				17
+			],
+			"styles": [
+				"race",
+				"supermoto"
 			]
 		},
 		"race_slick_160": {
@@ -1683,6 +2048,10 @@
 			"rims": [
 				16.5,
 				17
+			],
+			"styles": [
+				"race",
+				"supermoto"
 			]
 		},
 		"race_slick_180": {
@@ -1711,6 +2080,10 @@
 			"rims": [
 				16.5,
 				17
+			],
+			"styles": [
+				"race",
+				"supermoto"
 			]
 		},
 		"race_slick_200": {
@@ -1739,6 +2112,10 @@
 			"rims": [
 				16.5,
 				17
+			],
+			"styles": [
+				"race",
+				"supermoto"
 			]
 		}
 	},
@@ -2027,6 +2404,12 @@
 				0.1,
 				0.1,
 				0.1
+			],
+			"styles": [
+				"bobber",
+				"chopper",
+				"cruiser",
+				"scrambler"
 			]
 		},
 		"enduro_12": {
@@ -2039,6 +2422,12 @@
 				0.95,
 				0.95,
 				0.95
+			],
+			"styles": [
+				"mx",
+				"supermoto",
+				"adventure",
+				"scrambler"
 			]
 		},
 		"cafe_15": {
@@ -2051,6 +2440,11 @@
 				0.75,
 				0.1,
 				0.08
+			],
+			"styles": [
+				"cafe",
+				"classic",
+				"naked"
 			]
 		},
 		"sport_17": {
@@ -2063,6 +2457,12 @@
 				0.1,
 				0.3,
 				0.75
+			],
+			"styles": [
+				"sport",
+				"race",
+				"naked",
+				"roader"
 			]
 		},
 		"touring_23": {
@@ -2075,6 +2475,11 @@
 				0.2,
 				0.2,
 				0.22
+			],
+			"styles": [
+				"tourer",
+				"adventure",
+				"roader"
 			]
 		},
 		"carbon_sport_16": {
@@ -2089,7 +2494,11 @@
 				0.07
 			],
 			"lightweight": true,
-			"material": "carbon"
+			"material": "carbon",
+			"styles": [
+				"race",
+				"sport"
+			]
 		},
 		"alloy_cafe_14": {
 			"name": "Hand-beaten alloy café tank, 14 L",
@@ -2102,7 +2511,11 @@
 				0.83,
 				0.85
 			],
-			"lightweight": true
+			"lightweight": true,
+			"styles": [
+				"cafe",
+				"classic"
+			]
 		}
 	},
 	"saddle": {
@@ -2117,6 +2530,14 @@
 				0.08,
 				0.06,
 				0.05
+			],
+			"styles": [
+				"classic",
+				"scrambler",
+				"bobber",
+				"cruiser",
+				"naked",
+				"chopper"
 			]
 		},
 		"cafe_hump": {
@@ -2130,6 +2551,9 @@
 				0.25,
 				0.12,
 				0.06
+			],
+			"styles": [
+				"cafe"
 			]
 		},
 		"enduro_seat": {
@@ -2143,6 +2567,12 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"styles": [
+				"mx",
+				"supermoto",
+				"adventure",
+				"scrambler"
 			]
 		},
 		"sport_solo": {
@@ -2156,6 +2586,11 @@
 				0.05,
 				0.05,
 				0.06
+			],
+			"styles": [
+				"sport",
+				"naked",
+				"race"
 			]
 		},
 		"touring_comfort": {
@@ -2169,6 +2604,12 @@
 				0.12,
 				0.08,
 				0.05
+			],
+			"styles": [
+				"tourer",
+				"roader",
+				"cruiser",
+				"adventure"
 			]
 		},
 		"carbon_race_seat": {
@@ -2184,7 +2625,11 @@
 				0.07
 			],
 			"lightweight": true,
-			"material": "carbon"
+			"material": "carbon",
+			"styles": [
+				"race",
+				"sport"
+			]
 		}
 	},
 	"handlebars": {
@@ -2200,6 +2645,11 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"styles": [
+				"cafe",
+				"sport",
+				"race"
 			]
 		},
 		"flat_bar": {
@@ -2214,6 +2664,13 @@
 				0.05,
 				0.05,
 				0.05
+			],
+			"styles": [
+				"naked",
+				"roader",
+				"classic",
+				"scrambler",
+				"tourer"
 			]
 		},
 		"drag_bar": {
@@ -2228,6 +2685,11 @@
 				0.85,
 				0.86,
 				0.88
+			],
+			"styles": [
+				"bobber",
+				"cruiser",
+				"naked"
 			]
 		},
 		"mx_tall": {
@@ -2242,6 +2704,12 @@
 				0.8,
 				0.62,
 				0.18
+			],
+			"styles": [
+				"mx",
+				"supermoto",
+				"scrambler",
+				"adventure"
 			]
 		},
 		"ape_hangers": {
@@ -2256,6 +2724,11 @@
 				0.85,
 				0.86,
 				0.88
+			],
+			"styles": [
+				"chopper",
+				"bobber",
+				"cruiser"
 			]
 		},
 		"alloy_clip_ons": {
@@ -2271,7 +2744,12 @@
 				0.3,
 				0.1
 			],
-			"lightweight": true
+			"lightweight": true,
+			"styles": [
+				"cafe",
+				"race",
+				"sport"
+			]
 		},
 		"titanium_flat": {
 			"name": "Titanium flat bar",
@@ -2286,7 +2764,12 @@
 				0.55,
 				0.6
 			],
-			"lightweight": true
+			"lightweight": true,
+			"styles": [
+				"naked",
+				"supermoto",
+				"roader"
+			]
 		}
 	},
 	"dashboard": {
@@ -2302,6 +2785,13 @@
 				0.85,
 				0.86,
 				0.88
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"bobber",
+				"chopper",
+				"scrambler"
 			]
 		},
 		"twin_clocks": {
@@ -2317,6 +2807,13 @@
 				0.85,
 				0.86,
 				0.88
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"roader",
+				"tourer",
+				"naked"
 			]
 		},
 		"lcd_basic": {
@@ -2333,6 +2830,11 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"mx",
+				"supermoto",
+				"naked"
 			]
 		},
 		"tft_colour": {
@@ -2350,6 +2852,12 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"adventure",
+				"tourer",
+				"roader",
+				"sport"
 			]
 		},
 		"race_logger": {
@@ -2368,6 +2876,9 @@
 				0.15,
 				0.15,
 				0.16
+			],
+			"styles": [
+				"race"
 			]
 		}
 	},
@@ -4243,7 +4754,14 @@
 				0.86,
 				0.88
 			],
-			"can": "round"
+			"can": "round",
+			"styles": [
+				"classic",
+				"tourer",
+				"roader",
+				"naked",
+				"cruiser"
+			]
 		},
 		"slip_on": {
 			"name": "Slip-on silencer",
@@ -4257,7 +4775,12 @@
 				0.06,
 				0.07
 			],
-			"can": "oval"
+			"can": "oval",
+			"styles": [
+				"naked",
+				"sport",
+				"roader"
+			]
 		},
 		"straight_pipe": {
 			"name": "Straight pipe",
@@ -4271,7 +4794,12 @@
 				0.86,
 				0.88
 			],
-			"can": "open"
+			"can": "open",
+			"styles": [
+				"bobber",
+				"chopper",
+				"cafe"
+			]
 		},
 		"full_system": {
 			"name": "Full stainless system",
@@ -4285,7 +4813,13 @@
 				0.73,
 				0.68
 			],
-			"can": "megaphone"
+			"can": "megaphone",
+			"styles": [
+				"cafe",
+				"naked",
+				"sport",
+				"classic"
+			]
 		},
 		"titanium_race": {
 			"name": "Titanium race system",
@@ -4300,7 +4834,11 @@
 				0.75
 			],
 			"lightweight": true,
-			"can": "hex"
+			"can": "hex",
+			"styles": [
+				"race",
+				"sport"
+			]
 		},
 		"carbon_slip_on": {
 			"name": "Carbon slip-on silencer",
@@ -4316,7 +4854,12 @@
 			],
 			"lightweight": true,
 			"material": "carbon",
-			"can": "short"
+			"can": "short",
+			"styles": [
+				"sport",
+				"race",
+				"naked"
+			]
 		},
 		"scrambler_high": {
 			"name": "High-level scrambler pipe",
@@ -4332,7 +4875,10 @@
 			],
 			"route": "high",
 			"can": "peashooter",
-			"price": 420
+			"price": 420,
+			"styles": [
+				"scrambler"
+			]
 		},
 		"shotgun_duals": {
 			"name": "Shotgun twin pipes",
@@ -4348,7 +4894,12 @@
 			],
 			"route": "shotgun",
 			"can": "slash",
-			"price": 380
+			"price": 380,
+			"styles": [
+				"cruiser",
+				"chopper",
+				"bobber"
+			]
 		},
 		"underseat_twin": {
 			"name": "Underseat twin cans",
@@ -4364,7 +4915,11 @@
 			],
 			"route": "underseat",
 			"can": "round",
-			"price": 520
+			"price": 520,
+			"styles": [
+				"sport",
+				"roader"
+			]
 		},
 		"mx_upswept": {
 			"name": "Upswept MX system",
@@ -4380,7 +4935,12 @@
 			],
 			"route": "upswept",
 			"can": "oval",
-			"price": 460
+			"price": 460,
+			"styles": [
+				"mx",
+				"supermoto",
+				"adventure"
+			]
 		}
 	},
 	"final_drive": {
@@ -4705,6 +5265,15 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"classic",
+				"naked",
+				"bobber",
+				"cruiser",
+				"scrambler",
+				"cafe",
+				"chopper"
 			]
 		},
 		"bates_cafe": {
@@ -4719,6 +5288,11 @@
 				0.85,
 				0.86,
 				0.88
+			],
+			"styles": [
+				"cafe",
+				"bobber",
+				"chopper"
 			]
 		},
 		"twin_round": {
@@ -4733,6 +5307,12 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"tourer",
+				"roader",
+				"naked",
+				"adventure"
 			]
 		},
 		"rect_enduro": {
@@ -4747,6 +5327,11 @@
 				0.9,
 				0.9,
 				0.88
+			],
+			"styles": [
+				"mx",
+				"supermoto",
+				"scrambler"
 			]
 		},
 		"led_projector": {
@@ -4762,7 +5347,14 @@
 				0.05,
 				0.06
 			],
-			"lightweight": true
+			"lightweight": true,
+			"styles": [
+				"sport",
+				"race",
+				"adventure",
+				"roader",
+				"tourer"
+			]
 		}
 	},
 	"horn": {
@@ -5186,7 +5778,11 @@
 				0.3,
 				0.2
 			],
-			"material": "fabric"
+			"material": "fabric",
+			"styles": [
+				"classic",
+				"scrambler"
+			]
 		},
 		"leather_saddlebags": {
 			"name": "Leather saddlebags",
@@ -5201,7 +5797,12 @@
 				0.13,
 				0.06
 			],
-			"material": "leather"
+			"material": "leather",
+			"styles": [
+				"cruiser",
+				"tourer",
+				"bobber"
+			]
 		},
 		"adventure_soft": {
 			"name": "Adventure soft bags",
@@ -5216,7 +5817,11 @@
 				0.12,
 				0.13
 			],
-			"material": "fabric"
+			"material": "fabric",
+			"styles": [
+				"adventure",
+				"scrambler"
+			]
 		},
 		"plastic_cases": {
 			"name": "Hard plastic cases",
@@ -5231,7 +5836,11 @@
 				0.08,
 				0.09
 			],
-			"material": "plastic"
+			"material": "plastic",
+			"styles": [
+				"tourer",
+				"roader"
+			]
 		},
 		"aluminium_boxes": {
 			"name": "Aluminium adventure boxes",
@@ -5246,7 +5855,11 @@
 				0.73,
 				0.75
 			],
-			"material": "metal"
+			"material": "metal",
+			"styles": [
+				"adventure",
+				"tourer"
+			]
 		}
 	},
 	"top_box": {
@@ -5262,6 +5875,10 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"roader",
+				"tourer"
 			]
 		},
 		"top_box_45": {
@@ -5276,6 +5893,9 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"tourer"
 			]
 		},
 		"alloy_top_box": {
@@ -5291,7 +5911,11 @@
 				0.73,
 				0.75
 			],
-			"material": "metal"
+			"material": "metal",
+			"styles": [
+				"adventure",
+				"tourer"
+			]
 		},
 		"wooden_crate": {
 			"name": "Rack-mounted crate",
@@ -5306,7 +5930,11 @@
 				0.38,
 				0.2
 			],
-			"material": "wood"
+			"material": "wood",
+			"styles": [
+				"scrambler",
+				"classic"
+			]
 		},
 		"leather_trunk": {
 			"name": "Leather tour trunk",
@@ -5321,7 +5949,11 @@
 				0.14,
 				0.07
 			],
-			"material": "leather"
+			"material": "leather",
+			"styles": [
+				"cruiser",
+				"tourer"
+			]
 		}
 	},
 	"fog_lights": {
@@ -5341,6 +5973,11 @@
 				0.85,
 				0.86,
 				0.88
+			],
+			"styles": [
+				"tourer",
+				"cruiser",
+				"classic"
 			]
 		},
 		"led_pods": {
@@ -5360,7 +5997,11 @@
 				0.06,
 				0.07
 			],
-			"lightweight": true
+			"lightweight": true,
+			"styles": [
+				"adventure",
+				"roader"
+			]
 		},
 		"rally_lamps": {
 			"name": "Rally lamps",
@@ -5378,6 +6019,10 @@
 				0.06,
 				0.06,
 				0.07
+			],
+			"styles": [
+				"adventure",
+				"scrambler"
 			]
 		},
 		"amber_fogs": {
@@ -5396,6 +6041,10 @@
 				0.06,
 				0.06,
 				0.07
+			],
+			"styles": [
+				"tourer",
+				"classic"
 			]
 		},
 		"light_bar": {
@@ -5414,6 +6063,10 @@
 				0.06,
 				0.06,
 				0.07
+			],
+			"styles": [
+				"adventure",
+				"mx"
 			]
 		}
 	},
@@ -5434,7 +6087,12 @@
 				0.86,
 				0.88
 			],
-			"material": "metal"
+			"material": "metal",
+			"styles": [
+				"classic",
+				"tourer",
+				"cruiser"
+			]
 		},
 		"cafe_tail": {
 			"name": "Cafe racer tail hump",
@@ -5452,7 +6110,10 @@
 				0.08,
 				0.09
 			],
-			"material": "mixed"
+			"material": "mixed",
+			"styles": [
+				"cafe"
+			]
 		},
 		"scrambler_loop": {
 			"name": "Scrambler loop and short fender",
@@ -5470,7 +6131,10 @@
 				0.07,
 				0.07
 			],
-			"material": "metal"
+			"material": "metal",
+			"styles": [
+				"scrambler"
+			]
 		},
 		"sport_tail_tidy": {
 			"name": "Sport tail tidy",
@@ -5489,7 +6153,13 @@
 				0.06
 			],
 			"material": "plastic",
-			"lightweight": true
+			"lightweight": true,
+			"styles": [
+				"sport",
+				"race",
+				"naked",
+				"roader"
+			]
 		},
 		"bobber_fender": {
 			"name": "Bobber chopped fender",
@@ -5507,7 +6177,11 @@
 				0.08,
 				0.09
 			],
-			"material": "metal"
+			"material": "metal",
+			"styles": [
+				"bobber",
+				"chopper"
+			]
 		},
 		"enduro_fender": {
 			"name": "Enduro high fender",
@@ -5526,7 +6200,12 @@
 				0.9
 			],
 			"material": "plastic",
-			"lightweight": true
+			"lightweight": true,
+			"styles": [
+				"mx",
+				"supermoto",
+				"adventure"
+			]
 		}
 	},
 	"fairing": {
@@ -5542,6 +6221,12 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"naked",
+				"cafe",
+				"scrambler",
+				"supermoto"
 			]
 		},
 		"bikini_fairing": {
@@ -5556,6 +6241,12 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"cafe",
+				"naked",
+				"roader",
+				"classic"
 			]
 		},
 		"half_fairing": {
@@ -5571,6 +6262,11 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"roader",
+				"sport",
+				"tourer"
 			]
 		},
 		"touring_fairing": {
@@ -5586,6 +6282,10 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"tourer",
+				"adventure"
 			]
 		},
 		"race_fairing": {
@@ -5602,7 +6302,11 @@
 				0.92,
 				0.9
 			],
-			"material": "mixed"
+			"material": "mixed",
+			"styles": [
+				"race",
+				"sport"
+			]
 		},
 		"carbon_race_fairing": {
 			"name": "Carbon race fairing",
@@ -5619,7 +6323,10 @@
 				0.13
 			],
 			"material": "carbon",
-			"lightweight": true
+			"lightweight": true,
+			"styles": [
+				"race"
+			]
 		}
 	},
 	"mirrors": {
@@ -5634,6 +6341,13 @@
 				0.85,
 				0.86,
 				0.88
+			],
+			"styles": [
+				"classic",
+				"cruiser",
+				"scrambler",
+				"bobber",
+				"naked"
 			]
 		},
 		"bar_end_mirrors": {
@@ -5647,6 +6361,11 @@
 				0.06,
 				0.06,
 				0.07
+			],
+			"styles": [
+				"cafe",
+				"bobber",
+				"naked"
 			]
 		},
 		"sport_mirrors": {
@@ -5660,6 +6379,12 @@
 				0.06,
 				0.06,
 				0.07
+			],
+			"styles": [
+				"sport",
+				"naked",
+				"supermoto",
+				"roader"
 			]
 		},
 		"touring_mirrors": {
@@ -5673,6 +6398,11 @@
 				0.06,
 				0.06,
 				0.07
+			],
+			"styles": [
+				"tourer",
+				"adventure",
+				"roader"
 			]
 		},
 		"fairing_mirrors": {
@@ -5689,6 +6419,11 @@
 				0.08,
 				0.08,
 				0.09
+			],
+			"styles": [
+				"sport",
+				"tourer",
+				"race"
 			]
 		}
 	},
@@ -5706,7 +6441,12 @@
 				0.1,
 				0.11
 			],
-			"material": "plastic"
+			"material": "plastic",
+			"styles": [
+				"naked",
+				"roader",
+				"sport"
+			]
 		},
 		"mx_high_fender": {
 			"name": "MX high fender",
@@ -5720,7 +6460,11 @@
 				0.94,
 				0.92
 			],
-			"material": "plastic"
+			"material": "plastic",
+			"styles": [
+				"mx",
+				"supermoto"
+			]
 		},
 		"enduro_front_fender": {
 			"name": "Enduro front fender",
@@ -5734,7 +6478,11 @@
 				0.42,
 				0.08
 			],
-			"material": "plastic"
+			"material": "plastic",
+			"styles": [
+				"adventure",
+				"scrambler"
+			]
 		},
 		"bobbed_steel": {
 			"name": "Bobbed steel blade",
@@ -5749,7 +6497,11 @@
 				0.08,
 				0.08
 			],
-			"material": "metal"
+			"material": "metal",
+			"styles": [
+				"bobber",
+				"chopper"
+			]
 		},
 		"alloy_cafe_blade": {
 			"name": "Polished alloy cafe guard",
@@ -5763,7 +6515,11 @@
 				0.83,
 				0.84
 			],
-			"material": "metal"
+			"material": "metal",
+			"styles": [
+				"cafe",
+				"classic"
+			]
 		},
 		"chrome_classic": {
 			"name": "Chrome classic mudguard",
@@ -5777,7 +6533,12 @@
 				0.89,
 				0.9
 			],
-			"material": "metal"
+			"material": "metal",
+			"styles": [
+				"classic",
+				"cruiser",
+				"tourer"
+			]
 		},
 		"carbon_hugger": {
 			"name": "Carbon sport hugger",
@@ -5792,7 +6553,11 @@
 				0.07,
 				0.08
 			],
-			"material": "carbon"
+			"material": "carbon",
+			"styles": [
+				"sport",
+				"race"
+			]
 		}
 	},
 	"petrol": {
@@ -6085,6 +6850,478 @@
 				0.3,
 				0.2
 			]
+		}
+	},
+	"indicators": {
+		"stalk_amber": {
+			"name": "Amber stalk indicators",
+			"description": "Four plain amber indicators on rubber stalks, front and back. What most road bikes left the factory with.",
+			"mass": 0.6,
+			"type": "Amber, on stalks",
+			"style": "stalk",
+			"color": [
+				0.95,
+				0.55,
+				0.08
+			],
+			"styles": [
+				"classic",
+				"tourer",
+				"roader",
+				"naked",
+				"cruiser"
+			]
+		},
+		"bullet_chrome": {
+			"name": "Chrome bullet indicators",
+			"description": "Little chrome bullets with amber lenses. Neat on a café racer or a custom.",
+			"mass": 0.5,
+			"type": "Chrome bullets",
+			"style": "bullet",
+			"color": [
+				0.86,
+				0.87,
+				0.9
+			],
+			"styles": [
+				"cafe",
+				"bobber",
+				"chopper",
+				"cruiser",
+				"classic"
+			],
+			"material": "metal"
+		},
+		"mini_led": {
+			"name": "Mini LED indicators",
+			"description": "Tiny black LED blinkers on short stalks. Clean lines, bright enough to pass.",
+			"mass": 0.2,
+			"type": "LED, mini stalks",
+			"style": "mini",
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			],
+			"styles": [
+				"naked",
+				"sport",
+				"cafe",
+				"scrambler",
+				"supermoto"
+			]
+		},
+		"flush_led": {
+			"name": "Flush-mount LED indicators",
+			"description": "LEDs set into the bodywork and the tail tidy, so there's nothing to snap off in a crash.",
+			"mass": 0.15,
+			"type": "LED, flush mount",
+			"style": "flush",
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			],
+			"styles": [
+				"race",
+				"sport",
+				"mx"
+			]
+		},
+		"touring_large": {
+			"name": "Big touring indicators",
+			"description": "Large square indicators on long stalks, seen from a long way off in the rain.",
+			"mass": 0.9,
+			"type": "Large, square",
+			"style": "touring",
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"styles": [
+				"tourer",
+				"adventure",
+				"roader"
+			]
+		}
+	},
+	"side_panels": {
+		"triangle_classic": {
+			"name": "Classic triangle side panels",
+			"description": "Painted panels filling the triangle under the seat, hiding the battery and the wiring.",
+			"mass": 1.2,
+			"type": "Steel, painted",
+			"style": "triangle",
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"styles": [
+				"classic",
+				"cafe",
+				"scrambler"
+			],
+			"paint_match": true,
+			"material": "metal"
+		},
+		"oval_number": {
+			"name": "Oval number side panels",
+			"description": "Flat-track style oval panels with a white number board. A café or a tracker look.",
+			"mass": 0.8,
+			"type": "Plastic, oval number",
+			"style": "oval",
+			"color": [
+				0.95,
+				0.94,
+				0.9
+			],
+			"styles": [
+				"cafe",
+				"bobber",
+				"scrambler"
+			],
+			"material": "plastic"
+		},
+		"mx_plate": {
+			"name": "MX side plates",
+			"description": "Big plastic side plates over the airbox and shock, one piece with the number boards.",
+			"mass": 0.7,
+			"type": "Plastic, MX",
+			"style": "mx",
+			"color": [
+				0.95,
+				0.95,
+				0.93
+			],
+			"styles": [
+				"mx",
+				"supermoto"
+			],
+			"material": "plastic"
+		},
+		"sport_cowl": {
+			"name": "Sport side cowls",
+			"description": "Sculpted side cowls joining the tank to the tail, the way a sports bike's bodywork flows.",
+			"mass": 1.1,
+			"type": "Plastic, sculpted",
+			"style": "cowl",
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"styles": [
+				"sport",
+				"race",
+				"roader"
+			],
+			"paint_match": true,
+			"material": "plastic"
+		},
+		"battery_cover_chrome": {
+			"name": "Chrome battery cover",
+			"description": "A chrome cover over the battery box and the oil tank. Custom cruiser bling.",
+			"mass": 1.4,
+			"type": "Chrome steel",
+			"style": "chrome",
+			"color": [
+				0.86,
+				0.87,
+				0.9
+			],
+			"styles": [
+				"cruiser",
+				"chopper",
+				"bobber"
+			],
+			"material": "metal"
+		}
+	},
+	"rearsets": {
+		"road_pegs": {
+			"name": "Rubber road footpegs",
+			"description": "Plain rubber-topped pegs on the frame's own hangers, with a brake pedal and gear lever.",
+			"mass": 1.6,
+			"type": "Rubber pegs, stock position",
+			"style": "road",
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"styles": [
+				"classic",
+				"naked",
+				"roader",
+				"tourer",
+				"scrambler",
+				"adventure"
+			],
+			"material": "metal"
+		},
+		"alloy_rearsets": {
+			"name": "Billet alloy rearsets",
+			"description": "Knurled alloy pegs on hanger plates set high and back, for a tucked-in sports riding position.",
+			"mass": 1.2,
+			"type": "Billet alloy, high and back",
+			"style": "rearset",
+			"color": [
+				0.12,
+				0.12,
+				0.14
+			],
+			"styles": [
+				"cafe",
+				"sport",
+				"race"
+			],
+			"peg": [
+				0.12,
+				0.08
+			],
+			"lightweight": true,
+			"material": "metal"
+		},
+		"mx_cleats": {
+			"name": "MX cleated pegs",
+			"description": "Wide steel pegs with teeth, so a muddy boot doesn't slip off standing up.",
+			"mass": 1.8,
+			"type": "Wide cleated steel",
+			"style": "cleat",
+			"color": [
+				0.55,
+				0.56,
+				0.58
+			],
+			"styles": [
+				"mx",
+				"supermoto",
+				"adventure",
+				"scrambler"
+			],
+			"material": "metal"
+		},
+		"forward_controls": {
+			"name": "Forward controls",
+			"description": "Pegs and pedals pushed way out in front on long brackets, so you ride with your feet out.",
+			"mass": 2.6,
+			"type": "Chrome, forward mount",
+			"style": "forward",
+			"color": [
+				0.86,
+				0.87,
+				0.9
+			],
+			"styles": [
+				"cruiser",
+				"chopper",
+				"bobber"
+			],
+			"peg": [
+				0.08,
+				-0.46
+			],
+			"material": "metal"
+		},
+		"floorboards": {
+			"name": "Rider footboards",
+			"description": "Big rubber-topped boards instead of pegs, for miles of comfort on a tourer or cruiser.",
+			"mass": 3.2,
+			"type": "Footboards",
+			"style": "boards",
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"styles": [
+				"tourer",
+				"cruiser"
+			],
+			"peg": [
+				0.04,
+				-0.3
+			],
+			"material": "metal"
+		}
+	},
+	"guards": {
+		"engine_bars": {
+			"name": "Tubular engine bars",
+			"description": "Chrome hoops either side of the engine, so a tip-over in the car park doesn't crack a case.",
+			"mass": 4.2,
+			"type": "Tubular steel",
+			"style": "bars",
+			"color": [
+				0.86,
+				0.87,
+				0.9
+			],
+			"styles": [
+				"classic",
+				"tourer",
+				"cruiser",
+				"roader"
+			],
+			"material": "metal"
+		},
+		"adv_cage": {
+			"name": "Adventure crash cage",
+			"description": "Black tubular bars round the engine and up round the tank, for dropping it off-road far from help.",
+			"mass": 5.8,
+			"type": "Tubular steel, full cage",
+			"style": "cage",
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"styles": [
+				"adventure"
+			],
+			"material": "metal"
+		},
+		"bash_plate": {
+			"name": "Alloy bash plate",
+			"description": "A thick alloy plate under the engine to take the rocks.",
+			"mass": 2.4,
+			"type": "Aluminium plate",
+			"style": "plate",
+			"color": [
+				0.75,
+				0.76,
+				0.78
+			],
+			"styles": [
+				"adventure",
+				"scrambler"
+			],
+			"material": "metal"
+		},
+		"frame_sliders": {
+			"name": "Frame sliders",
+			"description": "Nylon bobbins on the frame bolts. In a low-side they slide instead of the bodywork.",
+			"mass": 0.6,
+			"type": "Nylon bobbins",
+			"style": "sliders",
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			],
+			"styles": [
+				"sport",
+				"race",
+				"naked"
+			],
+			"material": "plastic"
+		},
+		"skid_plate_mx": {
+			"name": "MX skid plate",
+			"description": "A plastic skid plate under the frame rails, light and tough, to slide over logs.",
+			"mass": 0.9,
+			"type": "Plastic, MX",
+			"style": "skid",
+			"color": [
+				0.95,
+				0.95,
+				0.93
+			],
+			"styles": [
+				"mx",
+				"supermoto"
+			],
+			"material": "plastic"
+		}
+	},
+	"number_boards": {
+		"mx_side_boards": {
+			"name": "MX number boards",
+			"description": "A front plate on the bars and two side boards under the seat, all with race numbers.",
+			"mass": 0.9,
+			"type": "Plastic, front and sides",
+			"style": "mx",
+			"color": [
+				0.95,
+				0.95,
+				0.93
+			],
+			"styles": [
+				"mx"
+			],
+			"material": "plastic"
+		},
+		"front_plate_race": {
+			"name": "Front race plate",
+			"description": "A single number plate on the bars, over the headlight. Supermoto and scrambler racers wear one.",
+			"mass": 0.4,
+			"type": "Plastic, front",
+			"style": "front",
+			"color": [
+				0.95,
+				0.85,
+				0.12
+			],
+			"styles": [
+				"supermoto",
+				"mx",
+				"scrambler"
+			],
+			"material": "plastic"
+		},
+		"radiator_shrouds": {
+			"name": "Radiator shrouds",
+			"description": "Plastic wings either side of the tank, steering air through the radiators and your knees off them.",
+			"mass": 0.8,
+			"type": "Plastic, shrouds",
+			"style": "shrouds",
+			"color": [
+				0.95,
+				0.42,
+				0.08
+			],
+			"styles": [
+				"mx",
+				"supermoto"
+			],
+			"material": "plastic"
+		},
+		"oval_race_plates": {
+			"name": "Oval race plates",
+			"description": "White oval number plates on the nose and the tail, like a club racer from the sixties.",
+			"mass": 0.5,
+			"type": "Alloy, oval",
+			"style": "oval",
+			"color": [
+				0.95,
+				0.94,
+				0.9
+			],
+			"styles": [
+				"cafe",
+				"race",
+				"classic"
+			],
+			"material": "metal"
+		},
+		"flat_track_boards": {
+			"name": "Flat-track number boards",
+			"description": "Big side number boards in a tracker's yellow, with the tail cut short behind them.",
+			"mass": 0.7,
+			"type": "Plastic, tracker",
+			"style": "tracker",
+			"color": [
+				0.95,
+				0.82,
+				0.16
+			],
+			"styles": [
+				"scrambler",
+				"supermoto"
+			],
+			"material": "plastic"
 		}
 	}
 }

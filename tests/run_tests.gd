@@ -218,6 +218,11 @@ func _run_all() -> void:
 	_test_front_mudguard_shed()
 	_test_front_mudguard_old_save()
 	await _test_parts_computer_organised()
+	print("Bike styles: tags on every part, detection, the bolt-on style bits, contracts, selling and the filter")
+	_test_style_tags()
+	_test_filler_parts()
+	_test_filler_shed()
+	await _test_style_contracts_sales()
 	print("Garage upgrade options: colours, effects and styles, preview, changing them later")
 	_test_upgrade_options()
 	await _test_upgrade_options_session()
@@ -10407,6 +10412,196 @@ func _test_front_mudguard_old_save() -> void:
 				Shed.items[guard]["part"] if guard != 0 else "nothing"])
 	check(str(Shed.blueprints[9100]["parts"].get("front_mudguard", "")) == "alloy_cafe_blade", "an old blueprint gets a guard that suits it")
 	check(Shed._next_id > Shed.items.keys().max(), "new parts get fresh ids")
+
+
+func _test_style_tags() -> void:
+	var untagged := []
+	for k in ["frame", "fork", "shock", "wheel", "tyre", "tank", "saddle", "handlebars", "exhaust", "headlight", "tail", "fairing",
+			"mirrors", "front_mudguard", "panniers", "top_box", "fog_lights", "dashboard"] + Array(PartsDB.FILLER_SLOTS):
+		for id in PartsDB.by_kind[k]:
+			var tags := PartsDB.styles_of(id)
+			if tags.is_empty() or not tags.all(func(t): return PartsDB.STYLES.has(str(t))):
+				untagged.append(id)
+	check(untagged.is_empty(), "every part you can see on a bike says which styles it suits %s" % str(untagged))
+	for st in PartsDB.STYLES:
+		var frames: Array = PartsDB.by_kind["frame"].filter(func(f): return PartsDB.styles_of(f).has(st))
+		check(not frames.is_empty(), "a %s has a frame to start from (%s)" % [st, ", ".join(frames)])
+	check(PartsDB.spec_line("bobbed_steel").contains("Suits: bobber, chopper"), "the spec line lists the styles (%s)" % PartsDB.spec_line("bobbed_steel"))
+	check(PartsDB.style_phrase("mx") == "an MX bike" and PartsDB.style_phrase("cafe") == "a cafe racer" and PartsDB.style_phrase("adventure") == "an adventure bike",
+		"and names them properly in a sentence")
+	# Detecting a bike's style from its parts.
+	for st in Contracts.STYLES:
+		var ref := Contracts.style_build(st)
+		var d := PartsDB.detect_style(ref)
+		check(str(d["style"]) == st and d["proper"], "a %s built from its own parts reads as %s" % [st, PartsDB.style_text(ref)])
+	var bob := Contracts.style_build("bobber")
+	var mixed := bob.duplicate()
+	mixed.merge({"frame": "carbon_monocoque", "fairing": "race_fairing", "saddle": "carbon_race_seat", "handlebars": "clip_ons", "tank": "sport_17"}, true)
+	var md := PartsDB.detect_style(mixed)
+	check(not md["proper"] and float(md["coherence"]) < float(PartsDB.detect_style(bob)["coherence"]) - 0.2,
+		"half a race bike on a bobber is a mix, not a proper anything (%s)" % PartsDB.style_text(mixed))
+	check((md["odd"] as Array).size() > 2, "and the odd parts out are named %s" % str(md["odd"]))
+	check(PartsDB.style_fit("bobber", bob) > PartsDB.style_fit("bobber", mixed), "a style's fit drops as parts from another go on")
+	check(PartsDB.style_text({"frame": "none", "fairing": "race_fairing"}).contains("proper"), "even a fairing on its own says something")
+	var cafe_on_chop := Contracts.style_build("cafe")
+	cafe_on_chop["frame"] = "chopper_raked"
+	check(str(PartsDB.detect_style(cafe_on_chop)["style"]) == "cafe" and not PartsDB.detect_style(cafe_on_chop)["proper"],
+		"a cafe racer on a chopper frame is mostly a cafe racer, but not a proper one (%s)" % PartsDB.style_text(cafe_on_chop))
+	# Fillers that suit a style.
+	var dressed := PartsDB.dress_fillers(Contracts.style_build("mx"))
+	check(PartsDB.FILLER_SLOTS.all(func(s): return dressed[s] != "none" and PartsDB.styles_of(str(dressed[s])).has("mx")),
+		"an MX bike gets MX bits in every style slot %s" % str(PartsDB.FILLER_SLOTS.map(func(s): return dressed[s])))
+	var mess := {"frame": "chopper_raked", "tank": "sport_17", "saddle": "enduro_seat", "handlebars": "clip_ons", "tail": "scrambler_loop",
+		"fairing": "touring_fairing", "fork": "long_travel_mx", "exhaust": "stock_muffler", "front_mudguard": "alloy_cafe_blade"}
+	var plain := PartsDB.dress_fillers(mess)
+	check(float(PartsDB.detect_style(mess)["coherence"]) < 0.45 and PartsDB.FILLER_SLOTS.all(func(s): return plain[s] == "none"),
+		"a mixed-up bike gets none (%s)" % PartsDB.style_text(mess))
+
+
+func _test_filler_parts() -> void:
+	var all_ok := true
+	for s in PartsDB.FILLER_SLOTS:
+		all_ok = all_ok and PartsDB.is_optional(s) and PartsDB.BIKE_SLOTS.has(s) and PartsDB.MOUNTS[s] == ["frame"] and PartsDB.DEFAULT_BUILD[s] == "none"
+	check(all_ok, "indicators, side panels, rearsets, guards and number boards bolt to the frame and are optional")
+	check(PartsDB.dependents("frame").has("rearsets") and PartsDB.LOW_SLOTS.has("guards"), "they come off before the frame, and you crouch for the low ones")
+	for slot in PartsDB.FILLER_SLOTS:
+		check(PartsDB.by_kind[slot].size() == 5, "%s: five to choose from" % PartsDB.KIND_NAMES[slot])
+		check(Money.part_price(PartsDB.by_kind[slot][0]) > 0 and PartsComputer.group_of(slot) != "Other", "%s are priced and on a shelf" % slot)
+		for id in PartsDB.by_kind[slot]:
+			var m := BikeModel.new()
+			add_child(m)
+			m.build_from(BikeBuild.new({slot: id}))
+			var b := m.slot_bounds(slot)
+			check(b.size.length() > 0.08 and b.size.length() < 2.0, "%s is drawn on the bike (%s)" % [id, str(b.size)])
+			m.free()
+		var bare := BikeModel.new()
+		add_child(bare)
+		bare.build_from(BikeBuild.new())
+		check(bare.slot_bounds(slot).size == Vector3.ZERO, "with no %s fitted, nothing is drawn" % slot)
+		bare.free()
+	# Rearsets move the rider's feet.
+	var stock := BikeModel.new()
+	add_child(stock)
+	stock.build_from(BikeBuild.new())
+	var sets := BikeModel.new()
+	add_child(sets)
+	sets.build_from(BikeBuild.new({"rearsets": "alloy_rearsets"}))
+	var fwd := BikeModel.new()
+	add_child(fwd)
+	fwd.build_from(BikeBuild.new({"rearsets": "forward_controls"}))
+	check(sets._peg.y > stock._peg.y + 0.05 and fwd._peg.z < stock._peg.z - 0.3, "rearsets put the feet up and back, forward controls out in front (%s, %s, %s)" % [
+		stock._peg, sets._peg, fwd._peg])
+	check(sets.find_children("Footpeg*", "", true, false).size() == 2, "and draw their own pegs")
+	for m in [stock, sets, fwd]:
+		m.free()
+	# Number boards wear the race number.
+	var mx := BikeModel.new()
+	add_child(mx)
+	mx.build_from(BikeBuild.new({"number_boards": "mx_side_boards"}))
+	var labels: Array = mx.find_children("*", "Label3D", true, false)
+	check(labels.size() >= 3 and labels.all(func(l): return str(l.text) == str(labels[0].text) and int(str(l.text)) > 0),
+		"MX number boards carry the same race number front and sides (%s)" % str(labels.map(func(l): return l.text)))
+	mx.free()
+	check(BikeBuild.new({"guards": "adv_cage"}).bike_mass > BikeBuild.new().bike_mass + 5.0, "a crash cage weighs what it should")
+
+
+func _test_filler_shed() -> void:
+	Shed.start_new("Tester", 51)
+	var me := Shed.me()
+	var bike := 0
+	for id in Shed.bikes:
+		bike = id
+		check(PartsDB.FILLER_SLOTS.all(func(s): return Shed.bikes[id]["slots"].has(s)), "%s has slots for the style bits" % Shed.bikes[id]["name"])
+	# Fit a set of rearsets, take them off again.
+	var sets := Shed._new_item("alloy_rearsets", 0.0, 0.0, 0.0)
+	var before := Shed.item_on(bike, "rearsets")
+	if before != 0:
+		Shed.request({"a": "unbolt", "bike": bike, "slot": "rearsets", "crouched": true})
+		Shed.request({"a": "remove", "bike": bike, "slot": "rearsets", "crouched": true})
+		Shed._put_on_bench(before)
+	Shed._move(sets, "held", me)
+	check(Shed.check(me, {"a": "install", "bike": bike, "slot": "rearsets"}).contains("Crouch"), "you crouch to fit rearsets")
+	Shed.request({"a": "install", "bike": bike, "slot": "rearsets", "crouched": true})
+	Shed.request({"a": "bolt", "bike": bike, "slot": "rearsets", "crouched": true})
+	check(Shed.item_on(bike, "rearsets") == sets and Shed.is_bolted(bike, "rearsets"), "rearsets go on and bolt up")
+	check(Shed.build_of(bike).parts["rearsets"] == "alloy_rearsets", "and the bike's build has them")
+	Shed.request({"a": "unbolt", "bike": bike, "slot": "frame"})
+	check(Shed.check(me, {"a": "remove", "bike": bike, "slot": "frame"}) != "", "the frame can't come out with them on")
+	Shed.request({"a": "bolt", "bike": bike, "slot": "frame"})
+	# Old saves get empty slots.
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	for id in old["bikes"]:
+		for s in PartsDB.FILLER_SLOTS:
+			var item := int(old["bikes"][id]["slots"].get(s, 0))
+			if item != 0:
+				old["items"].erase(item)
+			old["bikes"][id]["slots"].erase(s)
+			old["bikes"][id]["bolted"].erase(s)
+			old["bikes"][id]["original"].erase(s)
+	Shed.start_new("Tester", 52)
+	Shed.load_state(old, "Tester")
+	for id in Shed.bikes:
+		var empty := true
+		for s in PartsDB.FILLER_SLOTS:
+			empty = empty and Shed.bikes[id]["slots"].has(s) and Shed.item_on(id, s) == 0 and str(Shed.bikes[id]["original"].get(s, "")) == "none"
+		check(empty, "an old save's %s gets the new slots, empty" % Shed.bikes[id]["name"])
+	check(Shed.missing_slots(bike).filter(func(s): return PartsDB.FILLER_SLOTS.has(s)).is_empty(), "and rides without any of them")
+	# Project bikes and customers' bikes turn up with bits that suit them.
+	var rng := RandomNumberGenerator.new()
+	var dressed := 0
+	for i in 40:
+		rng.seed = 100 + i
+		var p := Contracts.random_parts(rng)
+		var d := PartsDB.detect_style(p)
+		var on: Array = PartsDB.FILLER_SLOTS.filter(func(s): return str(p[s]) != "none")
+		if not on.is_empty():
+			dressed += 1
+			check(on.all(func(s): return PartsDB.styles_of(str(p[s])).has(str(d["style"]))), "a customer's %s has bits that suit it" % PartsDB.style_noun(str(d["style"])))
+	check(dressed > 4, "some customers' bikes come dressed in their style (%d of 40)" % dressed)
+
+
+func _test_style_contracts_sales() -> void:
+	Shed.start_new("Tester", 53)
+	# The new styles are things customers ask for, and a proper one counts whichever parts made it.
+	for st in ["chopper", "cruiser", "adventure", "mx", "supermoto"]:
+		check(Contracts.STYLES.has(st) and Contracts.style_hint(st) != "", "customers can ask for %s" % PartsDB.style_phrase(st))
+	var mixed := Contracts.style_build("cafe")
+	mixed.merge({"frame": "softail_hardtail", "handlebars": "ape_hangers", "tail": "bobber_fender"}, true)
+	check(int(Contracts.style_marks("cafe", mixed)[0]) < 3, "a cafe racer with apes and a bobbed fender isn't one")
+	var bob := Contracts.style_build("bobber")
+	bob["handlebars"] = "flat_bar"
+	bob["tail"] = "classic_mudguard"
+	var d := PartsDB.detect_style(bob)
+	if str(d["style"]) == "bobber" and d["proper"]:
+		check(int(Contracts.style_marks("bobber", bob)[0]) >= 3, "a proper bobber all over counts even with plain bars")
+	# Selling: a bike that's all one style is worth more.
+	var proper := Shed._new_bike(Contracts.style_build("chopper"), 3, "Proper chop", 0.2)
+	var uq := Sales.uniqueness(proper)
+	check((uq["why"] as Array).has("a proper chopper"), "a proper chopper is worth more for it %s" % str(uq["why"]))
+	var mess := Contracts.style_build("chopper")
+	mess.merge({"tank": "sport_17", "saddle": "sport_solo", "handlebars": "clip_ons", "fairing": "race_fairing", "frame": "alu_perimeter"}, true)
+	var bitsa := Shed._new_bike(PartsDB.sanitize_build(mess), 4, "Bitsa", 0.2)
+	check(not (Sales.uniqueness(bitsa)["why"] as Array).any(func(w): return str(w).begins_with("a proper")), "a parts-bin special isn't")
+	# The parts computer's style filter.
+	var pc := PartsComputer.new()
+	add_child(pc)
+	pc._show_section("bike")
+	pc._show_kind("handlebars")
+	pc.set_style_filter("chopper")
+	var shown: Array = pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion()).map(func(c): return str(c.get_meta("part")))
+	check(shown.size() > 0 and shown.size() < PartsDB.by_kind["handlebars"].size() and shown.all(func(id): return PartsDB.styles_of(id).has("chopper")),
+		"the style filter shows only bars that suit a chopper %s" % str(shown))
+	pc._show_kind("engine")
+	shown = pc._variants.get_children().filter(func(c): return c is Button and not c.is_queued_for_deletion())
+	check(shown.size() == PartsDB.by_kind["engine"].size(), "and leaves kinds with no style (engines) alone")
+	pc.set_fits_bike(proper)
+	pc._show_kind("handlebars")
+	pc._show_part("drag_bar")
+	check(pc._spec.text.contains("Its style now: A proper chopper"), "with a bike picked, a part says what it does to its style")
+	pc.set_style_filter("")
+	pc.set_fits_bike(0)
+	pc.queue_free()
+	await get_tree().process_frame
 
 
 func _test_parts_computer_organised() -> void:
