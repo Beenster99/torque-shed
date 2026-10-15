@@ -6012,9 +6012,10 @@ func _test_blast_live_session() -> void:
 	var view: EquipmentView = main.workshop.furniture_nodes[cab]
 	var jet: GPUParticles3D = view.get_node("Nozzle/Jet")
 	var grain := (jet.draw_pass_1 as QuadMesh).size
-	var pm := jet.process_material as ParticleProcessMaterial
-	check(jet.amount >= 3000 and grain.x < 0.004 and pm.initial_velocity_min >= 20.0 and pm.collision_mode == ParticleProcessMaterial.COLLISION_RIGID,
-		"the nozzle shoots thousands of tiny, fast grains of sand that bounce off what they hit (%d at %.0f m/s)" % [jet.amount, pm.initial_velocity_min])
+	var pm := jet.process_material as ShaderMaterial
+	var speed: float = float(pm.get_shader_parameter("speed_min")) if pm else 0.0
+	check(jet.amount >= 3000 and grain.x < 0.004 and speed >= 20.0 and float(pm.get_shader_parameter("bounce")) > 0.0,
+		"the nozzle shoots thousands of tiny, fast grains of sand that bounce off what they hit (%d at %.0f m/s)" % [jet.amount, speed])
 	var colliders: int = main.workshop.model_for({"engine": engine}).find_children("SandCollider", "GPUParticlesCollisionBox3D", true, false).size()
 	check(colliders > 3 and view.get_node("SandWalls").get_child_count() >= 5, "the sand bounces off the engine and the chamber (%d shapes on the engine)" % colliders)
 	var post: Node3D = view.get_node("Post")
