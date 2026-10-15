@@ -8559,3 +8559,66 @@ func _test_money_graph() -> void:
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
+
+
+## No sign in the shed (the room names over the doorways, the neon signs, the mezzanine's)
+## runs into a light: the LED strips, the honeycomb ceilings and the strip lights, with no
+## upgrades and with every upgrade built.
+func _test_room_signs_clear_of_lights() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var ws: Workshop = main.workshop
+	var hits := _sign_light_hits(ws)
+	check(hits.is_empty(), "in a plain shed no sign runs into a light %s" % str(hits))
+	Shed.request({"a": "garage_money", "value": 1000000})
+	for id in GarageUpgrades.CATALOGUE:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	await get_tree().process_frame
+	ws.upgrades.sync()
+	check(ws.upgrades.built().split(",").size() == GarageUpgrades.CATALOGUE.size(), "every upgrade built (%s)" % ws.upgrades.built())
+	hits = _sign_light_hits(ws)
+	check(hits.is_empty(), "with every upgrade no room sign runs into the LED strips, honeycomb or strip lights %s" % str(hits))
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The room-name signs: over the doorways, the lounge's and the shed's neon, the mezzanine's.
+const ROOM_SIGNS := ["PAINT SHOP", "STORAGE", "WORKSHOP", "ANNEX", "CREW LOUNGE", "MEZZANINE  ·  STOCK", "WASH BAY", "KITCHEN", "OFFICE"]
+
+
+## "SIGN vs light" for every room-name sign (and the neon TORQUE SHED inside) whose text box
+## comes within 3 cm of a glowing light fitting (a mesh with an emissive material, or one tube
+## of a honeycomb).
+func _sign_light_hits(ws: Workshop) -> Array:
+	var labels := []
+	var lights := []
+	var stack: Array = [ws]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if not (n is Node3D) or not (n as Node3D).is_visible_in_tree():
+			continue
+		if n is Label3D:
+			if ROOM_SIGNS.has((n as Label3D).text) or n.name == "ShedNeon":
+				labels.append(n)
+		elif n is MultiMeshInstance3D and (n as MultiMeshInstance3D).multimesh:
+			var mm: MultiMesh = (n as MultiMeshInstance3D).multimesh
+			for i in mm.instance_count:
+				lights.append([(n as Node3D).global_transform * mm.get_instance_transform(i) * mm.mesh.get_aabb(), str(n.name)])
+		elif n is MeshInstance3D and (n as MeshInstance3D).mesh:
+			var m = (n as MeshInstance3D).material_override
+			if m is StandardMaterial3D and (m as StandardMaterial3D).emission_enabled:
+				lights.append([(n as Node3D).global_transform * (n as MeshInstance3D).mesh.get_aabb(), "light"])
+	var out := []
+	for l in labels:
+		var s := Workshop.label_size(l)
+		var box: AABB = (l as Node3D).global_transform * AABB(Vector3(-s.x * 0.5, -s.y * 0.5, -0.01), Vector3(s.x, s.y, 0.02))
+		for li in lights:
+			if box.grow(0.03).intersects(li[0]):
+				out.append("%s vs %s at %s" % [(l as Label3D).text.replace("\n", " "), li[1], (li[0] as AABB).get_center()])
+	return out
+
+
