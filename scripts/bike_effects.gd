@@ -163,7 +163,7 @@ static func soft_spot_texture() -> GradientTexture2D:
 ## Whether the headlight shows as light scattered in the night air through volumetric fog
 ## (Forward+ with the quality setting on). Otherwise a faint soft glow stands in for it.
 static func volumetric_beams() -> bool:
-	return RenderingServer.get_current_rendering_method() == "forward_plus" and Settings.high_quality
+	return Lighting.forward_plus() and str(Lighting.option("gfx_volumetrics")) != "off"
 
 
 ## The stand-in for the beam where there's no volumetric fog (the compatibility renderer): a
@@ -499,6 +499,10 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 		_flood.spot_angle = minf(_beam.spot_angle + FLOOD_WIDER, 60.0)
 		_flood.spot_range = minf(_beam.spot_range * FLOOD_REACH, 45.0)
 		_flood.light_volumetric_fog_energy = night * (BEAM_FOG_HIGH if high else BEAM_FOG_LOW) / maxf(_flood.light_energy, 1.0)
+		if _cone == null and not volumetric_beams() and night > 0.2:
+			# Volumetric fog switched off while riding: the stand-in glow takes over.
+			_cone = _make_cone(_beam.light_color)
+			_beam.add_child(_cone)
 		if _cone:
 			var length := minf(_beam.spot_range * 0.5, 22.0)
 			var radius := length * tan(deg_to_rad(_beam.spot_angle))
@@ -506,7 +510,7 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 			cyl.height = length
 			cyl.bottom_radius = radius
 			_cone.position = Vector3(0.0, 0.0, -length * 0.5)
-			_cone.visible = night > 0.2
+			_cone.visible = night > 0.2 and not volumetric_beams()
 			(_cone.material_override as ShaderMaterial).set_shader_parameter("strength", beam_glow(night, high))
 		if _motes:
 			# Dust only shows up against the dark: barely there by day, a glittering beam at night.

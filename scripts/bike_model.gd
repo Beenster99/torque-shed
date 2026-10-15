@@ -18,6 +18,9 @@ static var _highlight_mat: StandardMaterial3D
 var paint := Color(0.78, 0.09, 0.08)
 var jacket := Color(0.1, 0.12, 0.16)
 var rider_color := Color(0, 0, 0, 0)   # the rider's own colour; clear means dress to match the bike
+## The rider's gear, slot -> RiderGear item id (see RiderFigure). With it or a rider colour the
+## rider wears that gear (the free defaults where it's empty); with neither they match the bike.
+var rider_gear := {}
 var present := {}                # slot -> bool; missing slots are not drawn
 var condition := {}              # slot -> {rust, dirt, wear, color, finish}
 var stand_pose := ""             # "side" or "centre" draws that stand down on the ground; set before build_from
@@ -1463,6 +1466,9 @@ func _update_struts() -> void:
 func _build_rider() -> void:
 	_rider = Node3D.new()
 	add_child(_rider)
+	if rider_color.a > 0.0 or not rider_gear.is_empty():
+		_build_dressed_rider()
+		return
 	var seat_y := _seat_y
 	# The rider wears their own colours, the same as on foot: overalls in a darker shade, lid in the colour.
 	var mine := rider_color.a > 0.0
@@ -1498,6 +1504,65 @@ func _build_rider() -> void:
 		_tube(hip, knee, 0.075, pants, Vector3.ONE, _rider)
 		_tube(knee, peg, 0.06, pants, Vector3.ONE, _rider)
 		_box(peg + Vector3(0.0, -0.02, -0.06), Vector3(0.09, 0.08, 0.22), gloves, _rider)
+
+
+## The rider in their own gear (see RiderGear and RiderFigure), sat the same way as the plain
+## one in _build_rider: helmet, jacket on the torso and arms, gloves on the grips, trousers on the
+## legs and boots on the pegs.
+func _build_dressed_rider() -> void:
+	var worn := RiderGear.clean_worn(rider_gear)
+	var tint := rider_color if rider_color.a > 0.0 else paint.lightened(0.15)
+	var jacket := str(worn["jacket"])
+	var trousers := str(worn["trousers"])
+	var jm := RiderFigure.material(jacket, tint)
+	var tm := RiderFigure.material(trousers, tint)
+	var jx: Array = RiderGear.get_item(jacket).get("extras", [])
+	var tx: Array = RiderGear.get_item(trousers).get("extras", [])
+	var hidden := 1 << (HELMET_LAYER - 1)   # kept out of the first-person eye, as in _build_rider
+	var seat_y := _seat_y
+	var hips := Vector3(0.0, seat_y + 0.1, lerpf(_seat_front.z, _tail.z, 0.42))
+	var shoulders := hips + Vector3(0.0, 0.5, -0.3)
+	var torso := RiderFigure.limb(_rider, hips, shoulders, 0.15, jm, hidden)
+	torso.basis = torso.basis * Basis.from_scale(Vector3(1.25, 1.0, 0.8))
+	RiderFigure.helmet(_rider, shoulders + Vector3(0.0, 0.2, -0.08), 0.15, str(worn["helmet"]), tint, hidden, true)
+	var back := (shoulders - hips).normalized().cross(Vector3.RIGHT)
+	if jx.has("hump"):
+		var hump := RiderFigure.mesh(_rider, RiderFigure.sphere(0.5), jm, shoulders.lerp(hips, 0.15) - back * 0.13, hidden)
+		hump.scale = Vector3(0.24, 0.18, 0.14)
+	if jx.has("collar"):
+		RiderFigure.tube(_rider, shoulders + Vector3(0.0, 0.04, -0.02), shoulders + Vector3(0.0, 0.09, -0.04), 0.08,
+			RiderFigure.material(jacket, tint, "trim"), hidden)
+	_eye = shoulders + Vector3(0.0, 0.28, 0.28)
+	var grip_l := _head + _grip_l
+	var grip_r := _head + _grip_r
+	for side in [-1.0, 1.0]:
+		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
+		var grip := grip_r if side > 0 else grip_l
+		var elbow := sh.lerp(grip, 0.5) + Vector3(0.08 * side, -0.06, 0.04)
+		RiderFigure.limb(_rider, sh, elbow, 0.05, jm, hidden)
+		RiderFigure.limb(_rider, elbow, grip, 0.045, jm)
+		RiderFigure.glove(_rider, grip, elbow, 0.045, str(worn["gloves"]), tint)
+		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
+		var knee := Vector3(0.19 * side, seat_y - 0.02, hips.z - 0.36)
+		var peg := Vector3(0.17 * side, 0.02, _pivot.z + 0.02)
+		RiderFigure.limb(_rider, hip, knee, 0.075, tm)
+		RiderFigure.limb(_rider, knee, peg, 0.06, tm)
+		if tx.has("knees"):
+			RiderFigure.knee_guard(_rider, knee, hip, peg, 0.065, trousers, tint)
+		RiderFigure.boot(_rider, peg + Vector3(0.0, -0.06, 0.0), knee, Vector3.FORWARD, str(worn["boots"]), tint)
+
+
+## Dresses the rider again in `gear` (when its rider changes their gear mid-ride).
+func redress(gear: Dictionary) -> void:
+	rider_gear = gear
+	if _rider == null:
+		return
+	var xf := _rider.transform
+	var shown := _rider.visible
+	_rider.free()
+	_build_rider()
+	_rider.transform = xf
+	_rider.visible = shown
 
 
 ## A basis whose Y axis points along `up`.

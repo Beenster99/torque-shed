@@ -19,6 +19,13 @@ var _snapshots: Array = []
 var _hand_sig := ""
 var _work_sound: AudioStreamPlayer3D
 var _phones: Node3D     # ear defenders, shown while they wear them (the dyno room's)
+var _body_look: Node3D  # the figure's meshes in their gear, and the head's
+var _head_look: Node3D
+## The rider gear they're drawn in: slot -> item id (see RiderGear).
+var gear := {}
+var _gear_sig := ""
+var _stride := 0.0         # how far they've walked since their last footstep
+var _step_from := Vector3.INF
 
 
 func setup(peer_id: int, rider_name: String, paint: Color) -> void:
@@ -38,19 +45,15 @@ func setup(peer_id: int, rider_name: String, paint: Color) -> void:
 	cs.shape = shape
 	cs.position.y = 0.875
 	_figure.add_child(cs)
-	var overalls := _mat(color.darkened(0.35), 0.0, 0.7)
-	var skin := _mat(Color(0.85, 0.66, 0.52), 0.0, 0.6)
-	var boots := _mat(Color(0.08, 0.07, 0.06), 0.0, 0.6)
-	_part(_figure, CapsuleMesh.new(), Vector3(0.0, 1.15, 0.0), Vector3(0.62, 0.62, 0.5), overalls)
-	for side in [-1.0, 1.0]:
-		_part(_figure, CapsuleMesh.new(), Vector3(0.12 * side, 0.45, 0.0), Vector3(0.24, 0.5, 0.24), overalls)
-		_part(_figure, BoxMesh.new(), Vector3(0.12 * side, 0.06, -0.05), Vector3(0.14, 0.12, 0.28), boots)
 	_head = Node3D.new()
 	_head.position = Vector3(0.0, 1.62, 0.0)
 	_figure.add_child(_head)
-	_part(_head, SphereMesh.new(), Vector3.ZERO, Vector3(0.24, 0.27, 0.25), skin)
-	_part(_head, SphereMesh.new(), Vector3(0.0, 0.07, 0.02), Vector3(0.27, 0.16, 0.28), _mat(color, 0.1, 0.5))  # cap
-	_part(_head, BoxMesh.new(), Vector3(0.0, 0.04, -0.17), Vector3(0.22, 0.02, 0.14), _mat(color, 0.1, 0.5))   # peak
+	# Their rider gear (see RiderGear), drawn again whenever they change it.
+	_body_look = Node3D.new()
+	_figure.add_child(_body_look)
+	_head_look = Node3D.new()
+	_head.add_child(_head_look)
+	_dress()
 	_phones = DynoRoom.headphones_model()
 	_phones.position = Vector3(0.0, 0.035, 0.0)
 	_phones.scale = Vector3(0.95, 0.95, 0.95)
@@ -69,30 +72,6 @@ func setup(peer_id: int, rider_name: String, paint: Color) -> void:
 	_label.pixel_size = 0.005
 	_label.no_depth_test = true
 	_figure.add_child(_label)
-
-
-func _mat(c: Color, metallic: float, roughness: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = c
-	m.metallic = metallic
-	m.roughness = roughness
-	return m
-
-
-func _part(parent: Node3D, mesh: PrimitiveMesh, pos: Vector3, size: Vector3, mat: Material) -> void:
-	if mesh is CapsuleMesh:
-		mesh.radius = 0.5
-		mesh.height = 2.0
-		size.y *= 0.5
-	elif mesh is SphereMesh:
-		mesh.radius = 0.5
-		mesh.height = 1.0
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.material_override = mat
-	mi.position = pos
-	mi.scale = size
-	parent.add_child(mi)
 
 
 ## Feeds a network snapshot: [0, x, y, z, yaw, pitch] on foot, or [1, bike id, bike state...] riding.
@@ -121,6 +100,7 @@ func _start_riding(bike_id: int) -> void:
 		return
 	riding_bike = bike_id
 	bike = RemoteBike.new()
+	bike.rider_gear = gear
 	add_child(bike)
 	bike.setup(player_name, Shed.build_of(bike_id), Shed.bikes[bike_id]["paint"], color)
 	bike.model.apply_geometry(Shed.geometry_of(bike_id))   # the parts as that bike's own fit has them
@@ -156,6 +136,7 @@ func _physics_process(_delta: float) -> void:
 	var f := 1.0 if span <= 0.0 else clampf((render_t - a["t"]) / span, 0.0, 1.0)
 	var pos := Vector3(sa[1], sa[2], sa[3]).lerp(Vector3(sb[1], sb[2], sb[3]), f)
 	_figure.global_transform = Transform3D(Basis(Vector3.UP, lerp_angle(sa[4], sb[4], f)), pos)
+	_footsteps(pos)
 	_head.rotation.x = lerpf(sa[5], sb[5], f) * 0.6
 	_hand.rotation.x = _head.rotation.x
 	# Crouching: squash the figure down to about two thirds of its height.
@@ -163,13 +144,40 @@ func _physics_process(_delta: float) -> void:
 	_figure.scale.y = move_toward(_figure.scale.y, 0.62 if low else 1.0, 0.08)
 
 
+## Their footsteps, by the floor they walk on (a step every 0.7 m or so).
+func _footsteps(pos: Vector3) -> void:
+	if _step_from != Vector3.INF:
+		var moved := Vector2(pos.x - _step_from.x, pos.z - _step_from.z).length()
+		if moved < 2.0:
+			_stride += moved
+	_step_from = pos
+	if _stride > 0.75:
+		_stride = 0.0
+		Sfx.footstep(pos, false, -12.0)
+
+
 ## Whether they've got the dyno room's ear defenders on.
 func wearing_phones() -> bool:
 	return _phones != null and _phones.visible
 
 
+## Dresses the figure in what they wear now (their Progress summary), and their bike's rider.
+func _dress() -> void:
+	gear = RiderGear.worn_of(peer)
+	_gear_sig = RiderGear.sig(gear)
+	for c in _body_look.get_children():
+		c.free()
+	for c in _head_look.get_children():
+		c.free()
+	RiderFigure.standing(_body_look, _head_look, gear, color)
+	if bike and bike.model:
+		bike.model.redress(gear)
+
+
 func _process(_delta: float) -> void:
 	_phones.visible = Shed.wearing_headphones(peer)
+	if RiderGear.sig(RiderGear.worn_of(peer)) != _gear_sig:
+		_dress()
 	# What's in their hand: a part they carry, else their tool.
 	var held := Shed.held_by(peer)
 	var tool := str(Shed.crew.get(peer, {}).get("tool", "hands"))
@@ -185,7 +193,8 @@ func _process(_delta: float) -> void:
 		return
 	_hand_sig = sig
 	for c in _hand.get_children():
-		c.queue_free()
+		if c != _work_sound:
+			c.queue_free()
 	if held != 0:
 		var part := BikeModel.item_display(held)
 		var size: Vector3 = part.get_meta("size", Vector3.ONE)

@@ -6,3 +6,5 @@ build/
 *.translation
 mono_crash.*
 .claude/worktrees/
+*.orig
+*.rej

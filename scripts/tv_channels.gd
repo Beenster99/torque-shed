@@ -8,9 +8,9 @@ extends RefCounted
 ## screens and "crew" for the crew board. What each one is tuned to is shed state
 ## (Shed.screens), changed through the host, so the whole crew sees the same channel.
 ##
-## The money and contracts pages come with later updates: each reads its numbers from one
-## function here (money_data, garage_data, afford_data, contracts_data) that returns
-## placeholders for now, so wiring them up later only touches that function.
+## The money pages read their numbers from one function each here (money_data, garage_data,
+## afford_data, see Money); contracts_data returns placeholders until contracts arrive, so
+## wiring it up later only touches that function.
 
 ## The channels every screen has, in order. A screen's own home channel goes first.
 const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "contracts"]
@@ -72,6 +72,9 @@ const HOWTO := [
 static func screen_exists(key: String) -> bool:
 	if BUILT_IN.has(key):
 		return true
+	if key.begins_with("bay") and key.substr(3).is_valid_int():
+		# Bays the garage's extension added (GarageUpgrades) have screens too.
+		return int(key.substr(3)) < Workshop.bay_count()
 	if key.begins_with("f") and key.substr(1).is_valid_int():
 		var f: Dictionary = Shed.furniture.get(int(key.substr(1)), {})
 		return str(f.get("kind", "")) == "tv"
@@ -188,39 +191,48 @@ static func howto_data() -> Dictionary:
 	return {"page": page}
 
 
-## This player's own money: cash in hand (from their Progress profile), the week's takings and
-## how it's grown. The takings and history are placeholders until money arrives (Milestone C).
+## This player's own money: cash in hand (from their Progress profile), the week's money in and
+## out and how it's grown (from this machine's own log; other players show just their cash).
 static func money_data(peer: int) -> Dictionary:
 	var prog := _progress()
 	var cash: int = int(prog.money_of(peer)) if prog and prog.has_method("money_of") else 0
-	return {"placeholder": true, "name": str(Shed.crew.get(peer, {}).get("name", "You")), "cash": cash,
-		"earned_week": 0, "spent_week": 0, "sold": 0, "history": [0, 0, 0, 0, 0, 0, cash]}
+	var flow := {"earned": 0, "spent": 0}
+	var history := [cash, cash, cash, cash, cash, cash, cash]
+	var sold := 0
+	if prog and peer == Shed.me() and prog.has_method("cash_flow"):
+		flow = prog.cash_flow(7)
+		history = prog.cash_history()
+		sold = int(prog.profile.get("stats", {}).get("sell_bike", 0))
+	return {"name": str(Shed.crew.get(peer, {}).get("name", "You")), "cash": cash,
+		"earned_week": int(flow["earned"]), "spent_week": int(flow["spent"]), "sold": sold, "history": history}
 
 
-## The shed's shared account (Shed.garage_money) and what it's worth. The rest are placeholders
-## until money arrives (Milestone C).
+## The business's account (Shed.garage_money), what its bikes and loose parts would fetch, the
+## last seven days' money in and out (from its ledger) and its balance day by day.
 static func garage_data() -> Dictionary:
-	return {"placeholder": true, "cash": Shed.garage_money, "bike_value": 0, "stock_value": 0, "income_week": 0,
-		"outgoings_week": 0, "bikes": Shed.bikes.size(), "history": [0, 0, 0, 0, 0, 0, 0]}
+	var worth := Money.shed_worth()
+	var flow := Money.flow(Shed.bank, 7)
+	return {"cash": Shed.garage_money, "bike_value": int(worth["bikes"]), "stock_value": int(worth["stock"]),
+		"income_week": int(flow["in"]), "outgoings_week": int(flow["out"]), "bikes": Shed.bikes.size(),
+		"history": Money.history7(Shed.bank.get("history", []), Shed.garage_money), "debt": Money.debt(Shed.bank)}
 
 
-## Things worth saving up for, and whether this player's cash covers them. Prices are
-## placeholders (-1: not priced yet) until money arrives (Milestone C).
+## Things worth saving up for, what they cost the business, and whether this player's cash covers them.
 static func afford_data(peer: int) -> Dictionary:
-	var picks := [["A project bike", "Bikes"], [str(Equipment.get_model("shelf_tall").get("name", "")), "Shed"],
-		[str(Equipment.get_model("repair_pro").get("name", "")), "Shed"], [str(Equipment.get_model("tv_120").get("name", "")), "Shed"],
-		[PartsDB.part_name("sport_ecu"), "Bike"], [PartsDB.part_name("race_slick"), "Bike"],
-		[str(Equipment.get_model("ramp_large").get("name", "")), "Outdoors"]]
+	var picks := [["A project bike", "Bikes", Money.typical_project_price()]]
+	for part in ["sport_ecu", "race_slick", "carbon_monocoque", "four_1000", "tft_colour", "floating_310"]:
+		if not PartsDB.get_part(part).is_empty():
+			picks.append([PartsDB.part_name(part), "Bike", Money.buy_price(part, peer)])
 	var items := []
 	for p in picks:
-		items.append({"name": p[0], "what": p[1], "price": -1})
-	return {"placeholder": true, "cash": int(money_data(peer)["cash"]), "items": items}
+		items.append({"name": p[0], "what": p[1], "price": int(p[2])})
+	return {"cash": int(money_data(peer)["cash"]), "items": items}
 
 
-## Jobs for the shed: offered, being worked on and done. Placeholder until contracts arrive
-## (Milestone D).
+## Jobs for the shed: offered (customers at reception), being worked on (with how far along
+## each is and its deadline) and done. See Contracts.tv_data.
 static func contracts_data() -> Dictionary:
-	return {"placeholder": true, "offered": [], "active": [], "done": [], "reputation": 0}
+	return Contracts.tv_data()
 
 
 ## The data for a channel's page, for the screen `key` on this player's game.
@@ -453,7 +465,8 @@ static func _draw_garage(c: Control, font: Font, data: Dictionary) -> void:
 	_tile(c, font, Rect2(266, 210, 230, 96), "Parts stock", money_text(int(data.get("stock_value", 0))))
 	_tile(c, font, Rect2(24, 318, 230, 96), "In this week", money_text(int(data.get("income_week", 0))))
 	_tile(c, font, Rect2(266, 318, 230, 96), "Out this week", money_text(int(data.get("outgoings_week", 0))))
-	_tile(c, font, Rect2(24, 426, 472, 82), "Bikes in the shed", str(int(data.get("bikes", 0))))
+	_tile(c, font, Rect2(24, 426, 230, 82), "Bikes in the shed", str(int(data.get("bikes", 0))))
+	_tile(c, font, Rect2(266, 426, 230, 82), "Owed to the bank", money_text(int(data.get("debt", 0))))
 	_chart(c, font, Rect2(516, 90, 484, 418), data.get("history", []), "Shed account, last week")
 	if data.get("placeholder", false):
 		_later(c, font, "The shed's account comes with money. These are placeholders.")
@@ -501,7 +514,13 @@ static func _draw_contracts(c: Control, font: Font, data: Dictionary) -> void:
 		for job in list:
 			var line := str(job.get("title", job)) if job is Dictionary else str(job)
 			_text(c, font, Vector2(x + 16, y), line.left(22), 22)
-			y += 36.0
+			if job is Dictionary and job.has("sub"):
+				_text(c, font, Vector2(x + 16, y + 22), str(job["sub"]).left(30), 16,
+					Dashboard.BAD if job.get("late", false) else Dashboard.DIM)
+			if job is Dictionary and job.has("progress"):
+				_bar(c, Rect2(x + 16, y + 30, 280, 8), float(job["progress"]), Dashboard.GOOD)
+				y += 12.0
+			y += 36.0 if not (job is Dictionary and job.has("sub")) else 60.0
 			if y > 480.0:
 				break
 	if data.get("placeholder", false):

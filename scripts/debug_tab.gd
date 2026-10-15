@@ -1,12 +1,13 @@
 class_name DebugTab
 extends ScrollContainer
 ## The Esc menu's Debug tab, for trying things out: reset or max out your XP and money, reset
-## everyone's XP (the host tells every player's game) and empty the garage's account. Every
-## reset asks first.
+## everyone's XP (the host tells every player's game), empty the garage's account or give it
+## a million pounds (host). Every reset asks first.
 
 var _info: Label
 var _all_xp: Button
 var _garage: Button
+var _grant: Button
 var _confirm: ConfirmationDialog
 var _pending := Callable()
 
@@ -42,7 +43,15 @@ func _ready() -> void:
 	]))
 	_garage = _button("Reset garage money", func(): _ask("Reset the garage money?",
 		"The shed's own account goes back to nothing, for everyone.", "Reset garage money", reset_garage_money))
-	box.add_child(_row([_garage]))
+	_grant = _button("Give the garage £1,000,000", give_garage_million)
+	box.add_child(_row([_garage, _grant]))
+
+	box.add_child(UITheme.label("Contracts (host)", 15, UITheme.ACCENT))
+	box.add_child(_row([
+		_button("Send a customer", func(): Shed.request({"a": "contract_spawn"})),
+		_button("Send a bespoke customer", func(): Shed.request({"a": "contract_spawn", "kind": "bespoke"})),
+		_button("Reputation +5", func(): Shed.request({"a": "contract_rep", "value": Contracts.reputation() + 5})),
+	]))
 
 	_confirm = ConfirmationDialog.new()
 	_confirm.confirmed.connect(func():
@@ -59,6 +68,9 @@ func _process(_delta: float) -> void:
 	var host := Shed.is_authority()
 	_all_xp.disabled = not host
 	_all_xp.tooltip_text = "" if host else "Only the host can reset everyone's XP."
+	for b in [_garage, _grant]:
+		b.disabled = not host
+		b.tooltip_text = "" if host else "Only the host can change the garage's money."
 	_info.text = "You: level %d, %d XP, %s     Garage: %s" % [Progress.level(), int(Progress.profile.get("xp", 0)),
 		TvChannels.money_text(Progress.money()), TvChannels.money_text(Shed.garage_money)]
 
@@ -99,15 +111,20 @@ func reset_all_xp() -> void:
 
 
 func reset_my_money() -> void:
-	Progress.set_money(0)
+	Progress.spend(Progress.money(), "Debug: money reset")
 
 
 func max_my_money() -> void:
-	Progress.set_money(Progress.MAX_MONEY)
+	Progress.earn(Progress.MAX_MONEY - Progress.money(), "Debug: maxed out")
 
 
 func reset_garage_money() -> void:
 	Shed.request({"a": "garage_money", "value": 0})
+
+
+## Host: a million pounds into the business's account (see Money.DEBUG_GRANT).
+func give_garage_million() -> void:
+	Shed.request({"a": "money_debug_grant"})
 
 
 ## Presses the button labelled `text` (for tests).

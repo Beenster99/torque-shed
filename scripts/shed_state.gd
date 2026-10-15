@@ -84,13 +84,21 @@ var active := false
 ## The shed radio everyone hears: on or off, and which of `stations` it's tuned to.
 var radio := {"on": false, "station": 0}
 var door_open := true     # the roller door
-## The shed's own shared account (money comes properly with Milestone C; 0 to start).
+## The business's own account, in pounds (see Money: a new shed opens with START_FUNDS).
 var garage_money := 0
+## Garage upgrades bought (GarageUpgrades): upgrade id -> true.
+var upgrades := {}
 const MAX_GARAGE_MONEY := 100000000
+## Everything else about the business's money: wage cut, owner, ledger, loans (see Money.defaults).
+var bank := Money.defaults()
+var _clock_hours := -1.0       # host: the clock last frame, to see midnight pass
+## Customers at reception and the jobs taken on for them (see Contracts).
+var contracts := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
-const LIT_ROOMS: Array[String] = ["paint", "storage"]
+## (The sales office's "sales" switch is saved with them; it starts on, so it isn't listed above.)
+const LIT_ROOMS: Array[String] = ["paint", "storage", "sales"]
 var stations: Array = []    # [{name, genre, url}] from data/radio.json
 var board := BoardData.empty()   # what's drawn and written on the shed whiteboard
 ## Bigger bits of data that go out in chunks (see share_blob): the pictures players put on the
@@ -159,7 +167,12 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	bikes.clear()
 	furniture.clear()
 	radio = {"on": false, "station": 0}
-	garage_money = 0
+	garage_money = Money.START_FUNDS
+	bank = Money.defaults()
+	Money.log_entry(bank, Money.START_FUNDS, "Opening funds", garage_money)
+	Money._mark_milestones(bank, garage_money)
+	contracts = Contracts.empty()
+	upgrades = {}
 	door_open = true
 	lights_on = true
 	room_lights = {"paint": true, "storage": true}
@@ -349,6 +362,9 @@ func _add_new_slots() -> void:
 
 func join_remote() -> void:
 	garage_money = 0
+	bank = Money.defaults()
+	contracts = Contracts.empty()
+	upgrades = {}
 	board = BoardData.empty()
 	_clear_prints()
 	board_changed.emit()
@@ -367,6 +383,10 @@ func join_remote() -> void:
 
 func stop() -> void:
 	garage_money = 0
+	bank = Money.defaults()
+	_clock_hours = -1.0
+	contracts = Contracts.empty()
+	upgrades = {}
 	_washer_by.clear()
 	board = BoardData.empty()
 	_clear_prints()
@@ -1076,7 +1096,7 @@ func bay_is_free(bay: int) -> bool:
 
 ## The bay whose paddock stand is near `at`, or -1.
 func bay_at(at: Vector3) -> int:
-	for bay in Workshop.BAY_COUNT:
+	for bay in Workshop.bay_count():
 		var o := Workshop.bay_transform(bay).origin
 		if Vector2(at.x - o.x, at.z - o.z).length() < 1.6:
 			return bay
@@ -1619,7 +1639,7 @@ func _rest_stand(bike_id: int) -> String:
 
 ## A free bay whose parking spot is close to `xf`, or -1.
 func _bay_near(xf: Transform3D, bike_id: int) -> int:
-	for bay in Workshop.BAY_COUNT:
+	for bay in Workshop.bay_count():
 		var spot := Workshop.bay_transform(bay)
 		if spot.origin.distance_to(xf.origin) > 0.9:
 			continue
@@ -1714,10 +1734,14 @@ func check(peer: int, action: Dictionary) -> String:
 			return "Someone is riding that bike."
 		elif bikes[bike_id].get("pusher", 0) != 0 and bikes[bike_id].get("pusher", 0) != peer:
 			return "Someone is wheeling that bike about."
+	if a.begins_with("contract_"):
+		return Contracts.check(peer, action)
 	if a.begins_with("dyno_") and a != "dyno_run":
 		return _dyno_check(peer, action)
 	if a.begins_with("blast"):
 		return _blast_check(peer, action)
+	if a.begins_with("money_"):
+		return Money.check(peer, action)
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
 		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
 	match a:
@@ -1844,6 +1868,9 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unknown part."
 			if free_delivery_xf() == null:
 				return "The delivery area outside is full. Bring some boxes in first."
+			var cost := Money.buy_price(str(action["part"]), peer)
+			if cost > garage_money:
+				return "The business can't afford it: %s, and it has %s." % [TvChannels.money_text(cost), TvChannels.money_text(garage_money)]
 		"order_furniture":
 			var model := Equipment.current_id(str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), ""))))
 			if Equipment.get_model(model).is_empty():
@@ -2083,14 +2110,14 @@ func check(peer: int, action: Dictionary) -> String:
 			if items[held].get("boxed", false):
 				return "Unpack it first."
 			var bay := int(action.get("bay", -1))
-			if bay < 0 or bay >= Workshop.BAY_COUNT:
+			if bay < 0 or bay >= Workshop.bay_count():
 				return "Take it to one of the bays."
 			if not bay_is_free(bay):
 				return "There's already a bike in bay %d." % (bay + 1)
 		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
 			return _blueprint_check(action)
 		"order":
-			if free_bay(Workshop.BAY_COUNT) < 0:
+			if free_bay(Workshop.bay_count()) < 0:
 				return "Every bay is full. Ride a bike out or strip one down first."
 		"tune":
 			if not bikes.has(bike_id):
@@ -2145,8 +2172,12 @@ func check(peer: int, action: Dictionary) -> String:
 		"status", "ride", "tip":
 			pass
 		"garage_money":
+			if peer != 1:
+				return "Only the host can change the garage's money."
 			if not (action.get("value") is int or action.get("value") is float):
 				return "How much?"
+		"buy_upgrade":
+			return GarageUpgrades.check(str(action.get("id", "")), upgrades, garage_money)
 		_:
 			return "Unknown action."
 	return ""
@@ -2314,11 +2345,22 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("board_"):
 		_board_apply(peer, action)
 		return
+	if str(action.get("a", "")).begins_with("money_"):
+		_money_apply(peer, action)
+		return
 	var why := check(peer, action)
 	if why != "":
 		_tell(peer, why, false)
 		return
 	var a := str(action["a"])
+	Contracts.note_action(peer, action)
+	if a.begins_with("contract_"):
+		var said_c := Contracts.apply(peer, action)
+		if said_c != "":
+			_tell(peer, said_c, true)
+		_mark_dirty()
+		changed.emit()
+		return
 	if a.begins_with("blast"):
 		var told := _blast_apply(peer, action)
 		if told != "":
@@ -2460,11 +2502,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Levered the %s off the %s" % [item_title(tyre), item_title(wheel)]
 		"order_part":
 			var part_id := str(action["part"])
+			var cost := Money.buy_price(part_id, peer)
+			charge_garage(cost, "Bought %s" % PartsDB.part_name(part_id))
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
 			# Parts come boxed; cans and bottles of fluid are left as they are.
 			items[item_id]["boxed"] = not PartsDB.is_fluid(part_id)
 			_move(item_id, "floor", free_delivery_xf())
-			text = "Ordered %s. %s outside by the roller door." % [PartsDB.part_name(part_id),
+			text = "Ordered %s for %s. %s outside by the roller door." % [PartsDB.part_name(part_id), TvChannels.money_text(cost),
 				"The box is" if items[item_id]["boxed"] else "It's"]
 		"order_furniture":
 			var model := Equipment.current_id(str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), ""))))
@@ -2525,8 +2569,12 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Named it %s" % bikes[bike_id]["name"]
 		"garage_money":
 			# The debug tab: set the shed's account (reset to 0).
+			var was := garage_money
 			garage_money = clampi(int(action.get("value", 0)), 0, MAX_GARAGE_MONEY)
+			Money.log_entry(bank, garage_money - was, "Debug: account set", garage_money)
 			text = "Garage money set to %s" % TvChannels.money_text(garage_money)
+		"buy_upgrade":
+			text = _buy_upgrade(peer, str(action["id"]))
 		"door":
 			door_open = bool(action.get("open", not door_open))
 			text = "Roller door %s" % ("going up" if door_open else "coming down")
@@ -2537,7 +2585,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "Lights %s" % ("on" if lights_on else "off")
 			else:
 				room_lights[room] = bool(action.get("on", not room_lit(room)))
-				text = "%s lights %s" % ["Paint shop" if room == "paint" else "Storage room", "on" if room_lights[room] else "off"]
+				text = "%s lights %s" % [{"paint": "Paint shop", "sales": "Sales office"}.get(room, "Storage room"), "on" if room_lights[room] else "off"]
 		"label":
 			furniture[int(action["furniture"])]["label"] = str(action.get("text", "")).strip_edges().left(24)
 			text = "Labelled the shelves \"%s\"" % furniture[int(action["furniture"])]["label"]
@@ -2777,10 +2825,18 @@ func _apply(peer: int, action: Dictionary) -> void:
 				else:
 					bikes[b]["mud_peak"] = peak
 		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
-			text = _blueprint_apply(action)
+			text = _blueprint_apply(action, peer)
 		"order":
-			var id := _random_bike(free_bay(Workshop.BAY_COUNT))
-			text = "%s has been delivered to bay %d" % [bikes[id]["name"], bikes[id]["bay"] + 1]
+			var id := _random_bike(free_bay(Workshop.bay_count()))
+			# A project bike costs a little more than it would fetch as it comes (see Money).
+			var cost := Money.project_price(id)
+			if not charge_garage(cost, "Bought %s" % bikes[id]["name"]):
+				remove_bike(id)
+				_tell(peer, "The business can't afford a project bike: this one was %s, and it has %s." % [
+					TvChannels.money_text(cost), TvChannels.money_text(garage_money)], false)
+				changed.emit()
+				return
+			text = "%s has been delivered to bay %d, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1, TvChannels.money_text(cost)]
 		"radio":
 			radio = {"on": bool(action.get("on", radio["on"])), "station": int(action.get("station", radio["station"]))}
 			text = "Radio: %s" % station_name() if radio["on"] else "Radio off"
@@ -2841,6 +2897,8 @@ func _park(bike_id: int) -> void:
 		# Rolled onto the dyno: square on the drum, ready to strap down.
 		bike["xf"] = rig
 		bike["stand"] = ""
+		return
+	if _park_on_show(bike_id):
 		return
 	var bay := _bay_near(bike["xf"], bike_id)
 	if bay >= 0:
@@ -3638,7 +3696,7 @@ func plan_at(bay: int) -> Dictionary:
 ## Every bay with a blueprint build under way.
 func plan_bays() -> Array:
 	var out := []
-	for bay in Workshop.BAY_COUNT:
+	for bay in Workshop.bay_count():
 		if not plan_at(bay).is_empty():
 			out.append(bay)
 	return out
@@ -3673,9 +3731,9 @@ func plan_rows(plan: Dictionary, bike_id: int) -> Array:
 	return rows
 
 
-## Placeholder until money arrives (Milestone C): every part is free.
-static func part_price(_part_id: String) -> int:
-	return 0
+## What a part costs new, in pounds (see Money.part_price).
+static func part_price(part_id: String) -> int:
+	return Money.part_price(part_id)
 
 
 func _blueprint_check(action: Dictionary) -> String:
@@ -3707,7 +3765,7 @@ func _blueprint_check(action: Dictionary) -> String:
 					return "There's already a blueprint called %s." % n
 			if a == "bp_build":
 				var bay := int(action.get("bay", -1))
-				if bay < 0 or bay >= Workshop.BAY_COUNT:
+				if bay < 0 or bay >= Workshop.bay_count():
 					return "Pick a bay."
 				if not bay_is_free(bay) or holograms.has(bay):
 					return "Bay %d isn't empty. Pick an empty bay." % (bay + 1)
@@ -3723,7 +3781,7 @@ func _blueprint_check(action: Dictionary) -> String:
 	return ""
 
 
-func _blueprint_apply(action: Dictionary) -> String:
+func _blueprint_apply(action: Dictionary, peer := 1) -> String:
 	var a := str(action.get("a", ""))
 	var bike_id := int(action.get("bike", 0))
 	match a:
@@ -3766,15 +3824,22 @@ func _blueprint_apply(action: Dictionary) -> String:
 			var bays: Array = [int(action.get("bay", -1))] if int(action.get("bay", -1)) >= 0 else plan_bays()
 			var sent := 0
 			var left := 0
+			var broke := 0
+			var spent := 0
 			for bay in bays:
-				var got := _order_plan(plan_at(bay), plan_bike(bay))
+				var got := _order_plan(plan_at(bay), plan_bike(bay), peer)
 				sent += int(got[0])
 				left += int(got[1])
-			if sent == 0 and left == 0:
+				broke += int(got[2])
+				spent += int(got[3])
+			if sent == 0 and left == 0 and broke == 0:
 				return "Everything on the blueprint is fitted or already ordered."
-			var said := "Ordered %d part%s for the blueprint (free for now). They're boxed outside the roller door." % [sent, "" if sent == 1 else "s"]
+			var said := "Ordered %d part%s for the blueprint, for %s. They're boxed outside the roller door." % [sent,
+				"" if sent == 1 else "s", TvChannels.money_text(spent)]
 			if left > 0:
 				said += " %d more didn't fit in the delivery area: bring some boxes in and order again." % left
+			if broke > 0:
+				said += " The business couldn't afford %d more." % broke
 			return said
 	return ""
 
@@ -3805,14 +3870,17 @@ func _save_blueprint(bike_id: int, bp_name: String) -> int:
 
 
 ## Orders whatever a blueprint build still needs, boxed outside the roller door in the
-## blueprint's colours. Returns [parts ordered, parts that didn't fit in the delivery area].
-func _order_plan(plan: Dictionary, bike_id: int) -> Array:
+## blueprint's colours, each paid for by the business. Returns [parts ordered, parts that didn't
+## fit in the delivery area, parts the business couldn't afford, pounds spent].
+func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 	if plan.is_empty():
-		return [0, 0]
+		return [0, 0, 0, 0]
 	if not (plan.get("ordered") is Dictionary):
 		plan["ordered"] = {}
 	var sent := 0
 	var left := 0
+	var broke := 0
+	var spent := 0
 	var colors: Dictionary = plan.get("colors", {})
 	for row in plan_rows(plan, bike_id):
 		if row["state"] != "needed":
@@ -3822,6 +3890,11 @@ func _order_plan(plan: Dictionary, bike_id: int) -> Array:
 			left += 1
 			continue
 		var part: String = row["part"]
+		var cost := Money.buy_price(part, peer)
+		if not charge_garage(cost, "Bought %s" % PartsDB.part_name(part)):
+			broke += 1
+			continue
+		spent += cost
 		var look: Dictionary = colors.get(row["slot"], {})
 		var item_id := _new_item(part, 0.0, 0.0, 0.0, look.get("color"))
 		items[item_id]["finish"] = str(look.get("finish", ""))
@@ -3829,7 +3902,7 @@ func _order_plan(plan: Dictionary, bike_id: int) -> Array:
 		_move(item_id, "floor", xf)
 		plan["ordered"][row["slot"]] = item_id
 		sent += 1
-	return [sent, left]
+	return [sent, left, broke, spent]
 
 
 ## A frame has gone on a bay with a hologram waiting: the new bike takes on the blueprint's
@@ -3865,6 +3938,28 @@ func _blueprint_done(bike_id: int) -> bool:
 	return true
 
 
+# ---------------------------------------------------------------------------- garage upgrades
+
+## Buys a garage upgrade with the garage's money (already checked): takes the money, adds the
+## upgrade and anything it comes with (the racking), and pays the buyer XP.
+func _buy_upgrade(peer: int, id: String) -> String:
+	var cost := GarageUpgrades.price(id)
+	var paid := false
+	if has_method("charge_garage"):
+		paid = bool(call("charge_garage", cost, "Garage upgrade: " + GarageUpgrades.title(id)))
+	elif garage_money >= cost:
+		garage_money -= cost
+		paid = true
+	if not paid:
+		return "The garage can't afford the %s." % GarageUpgrades.title(id).to_lower()
+	upgrades[id] = true
+	if id == "racking":
+		for xf in GarageUpgrades.racking_xfs():
+			_new_furniture("shelf", xf, "shelf_racking")
+	_xp(peer, GarageUpgrades.XP_KEY, GarageUpgrades.award_mult(id))
+	return "%s bought for %s" % [GarageUpgrades.title(id), TvChannels.money_text(cost)]
+
+
 # ---------------------------------------------------------------------------- syncing
 
 func _mark_dirty() -> void:
@@ -3876,7 +3971,7 @@ func _mark_dirty() -> void:
 func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money}
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "upgrades": upgrades}
 	if with_board:
 		state["board"] = board
 	return state
@@ -3902,8 +3997,17 @@ func _sync(state: Dictionary) -> void:
 	radio = state.get("radio", radio)
 	door_open = bool(state.get("door", true))
 	lights_on = bool(state.get("lights", true))
-	# Sheds saved before money have an empty account.
 	garage_money = clampi(int(state.get("garage_money", 0)), 0, MAX_GARAGE_MONEY)
+	# Sheds saved before money (no bank yet) open the account with the starting funds.
+	if not state.has("bank"):
+		garage_money = maxi(garage_money, Money.START_FUNDS)
+	bank = Money.sanitize(state.get("bank"))
+	if not state.has("bank"):
+		Money._mark_milestones(bank, garage_money)
+	# Sheds saved before contracts have no customers or jobs.
+	contracts = Contracts.sanitize(state.get("contracts"))
+	# Sheds saved before garage upgrades have none.
+	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the side rooms had switches: their lights start on.
 	room_lights = {"paint": true, "storage": true}
 	var saved_rooms = state.get("room_lights", {})
@@ -3940,6 +4044,8 @@ func _process(delta: float) -> void:
 	if not active or not is_authority():
 		return
 	_cool_dyno(delta)
+	_money_clock()
+	Contracts.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":
@@ -3971,3 +4077,165 @@ func _process(delta: float) -> void:
 		if Net.is_online():
 			_sync.rpc(_snapshot(false))
 		changed.emit()
+
+
+# ---------------------------------------------------------------------------- money (see Money)
+
+## Host: takes `amount` from the business's account for `reason`. False, and nothing taken, when
+## it can't afford it.
+func charge_garage(amount: int, reason: String) -> bool:
+	if not is_authority() or amount < 0:
+		return false
+	if amount == 0:
+		return true
+	if garage_money < amount:
+		return false
+	garage_money -= amount
+	Money.log_entry(bank, -amount, reason, garage_money)
+	_mark_dirty()
+	changed.emit()
+	return true
+
+
+## Host: money into the business's account (sales, contracts, the cut of wages, money sent in).
+## The first time the account reaches each of Money.MILESTONES the whole crew gets XP for it.
+func credit_garage(amount: int, reason: String) -> void:
+	if not is_authority() or amount <= 0:
+		return
+	garage_money = mini(garage_money + amount, MAX_GARAGE_MONEY)
+	Money.log_entry(bank, amount, reason, garage_money)
+	for m in Money._mark_milestones(bank, garage_money):
+		for p in crew:
+			_xp(int(p), "money_milestone", 1.0, "bank:%d" % int(m))
+			_tell(int(p), "The business has reached %s!" % TvChannels.money_text(int(m)), true)
+	_mark_dirty()
+	changed.emit()
+
+
+## Host: pays `peer` a wage of `gross` pounds for a job: the business keeps its cut (bank.cut %),
+## the worker gets the rest in their own cash. A worker who's gone leaves it all to the business.
+func pay_worker(peer: int, gross: int, reason: String) -> void:
+	if not is_authority() or gross <= 0:
+		return
+	var cut := Money.cut_of(gross, int(bank["cut"]))
+	if not give_cash(peer, gross - cut, reason):
+		cut = gross
+	credit_garage(cut, "Cut of %s's wages" % str(crew.get(peer, {}).get("name", "the crew")))
+
+
+## Host: hands a player cash (see Progress.give_cash). False when they couldn't get it.
+func give_cash(peer: int, amount: int, reason: String) -> bool:
+	if amount <= 0:
+		return true
+	var prog := _prog()
+	return bool(prog.give_cash(peer, amount, reason)) if prog else false
+
+
+## Takes a whole bike out of the shed, every part on it with it (sold, or a delivery called off).
+func remove_bike(bike_id: int) -> void:
+	if not bikes.has(bike_id):
+		return
+	for slot in PartsDB.SLOTS:
+		if not PartsDB.is_engine_slot(slot):
+			var id := item_on(bike_id, slot)
+			if id != 0:
+				_erase_item(id)
+	for p in crew:
+		if int(crew[p].get("riding", 0)) == bike_id:
+			crew[p]["riding"] = 0
+	bikes.erase(bike_id)
+	_mark_dirty()
+
+
+## A "money_*" request (see Money.check and Money.apply). Money a player sent that can't be
+## passed on goes back to them.
+func _money_apply(peer: int, action: Dictionary) -> void:
+	var why := Money.check(peer, action)
+	if why != "":
+		if str(action.get("a", "")) == "money_send" and int(action.get("amount", 0)) > 0:
+			give_cash(peer, mini(int(action["amount"]), Progress.MAX_MONEY), "Sent back")
+		_tell(peer, why, false)
+		return
+	var text := Money.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_tidy_dyno()
+	_mark_dirty()
+	changed.emit()
+
+
+## Host: a new day starts when the clock passes midnight: loan repayments come out (see Money.new_day).
+func _money_clock() -> void:
+	if Daylight.current == null:
+		_clock_hours = -1.0
+		return
+	var h := Daylight.time_of_day()
+	if _clock_hours >= 0.0 and h < _clock_hours - 12.0:
+		money_new_day()
+	_clock_hours = h
+
+
+## Host: moves the business on a day (the clock does this at midnight; tests call it).
+func money_new_day() -> void:
+	if not is_authority():
+		return
+	var said := Money.new_day()
+	if said != "":
+		for p in crew:
+			_tell(int(p), said, not said.contains("MISSED"))
+	_mark_dirty()
+	changed.emit()
+
+
+# ---------------------------------------------------------------------------- sales office
+
+## The sales office's door bell rang (everyone hears it: see ring_bell).
+signal bell_rang
+## How many times the bell has rung here this session (for tests).
+var bells_heard := 0
+
+
+## Host-side: rings the sales office's door bell for every player, the shop bell over its doors
+## and the chime in the shed (Sfx.bell). Customers coming in ring it.
+func ring_bell() -> void:
+	if not is_authority():
+		return
+	_bell()
+	if Net.is_online():
+		_bell_rpc.rpc()
+
+
+@rpc("authority", "call_remote", "reliable")
+func _bell_rpc() -> void:
+	_bell()
+
+
+func _bell() -> void:
+	bells_heard += 1
+	Sfx.bell(SalesOffice.BELL_POS)
+	bell_rang.emit()
+
+
+## Which showroom plinth a bike is on, or -1.
+func showroom_spot_of(bike_id: int) -> int:
+	if not bikes.has(bike_id):
+		return -1
+	var i := SalesOffice.spot_near((bikes[bike_id]["xf"] as Transform3D).origin)
+	if i >= 0 and (bikes[bike_id]["xf"] as Transform3D).origin.distance_to(SalesOffice.SHOWROOM_SPOTS[i].origin) < 0.05:
+		return i
+	return -1
+
+
+## A bike let go of by a free showroom plinth goes onto it, square and upright, on show.
+func _park_on_show(bike_id: int) -> bool:
+	var bike: Dictionary = bikes[bike_id]
+	var i := SalesOffice.spot_near((bike["xf"] as Transform3D).origin)
+	if i < 0:
+		return false
+	var spot: Transform3D = SalesOffice.SHOWROOM_SPOTS[i]
+	for id in bikes:
+		if id != bike_id and bikes[id]["rider"] == 0 and (bikes[id]["xf"] as Transform3D).origin.distance_to(spot.origin) < 1.2:
+			return false
+	bike["xf"] = spot
+	bike["stand"] = ""
+	return true

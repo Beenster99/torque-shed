@@ -58,6 +58,15 @@ const BIN_SIZE := Vector3(0.52, 0.9, 0.6)
 ## How far a live TV picture's camera sits behind and above the rider.
 const FEED_BACK := 4.5
 const FEED_UP := 1.8
+## The sales office (SalesOffice, east of the paint shop): where a customer stands at the
+## reception desk (-Z facing it), where a player stands behind the desk to serve them, where
+## customers arrive from (the car park edge, facing the doors), the front doors, and the
+## showroom's display plinths for bikes on show.
+const RECEPTION := SalesOffice.RECEPTION
+const RECEPTION_DESK := SalesOffice.RECEPTION_DESK
+const CUSTOMER_ENTRY := SalesOffice.CUSTOMER_ENTRY
+const SALES_DOOR := SalesOffice.SALES_DOOR
+const SHOWROOM_SPOTS := SalesOffice.SHOWROOM_SPOTS
 
 var bike_views := {}       # bike id -> Node3D holding a BikeModel
 var _view_sigs := {}
@@ -78,6 +87,7 @@ var _dash_dirty := true
 var _mats := {}
 var radio: ShedRadio
 var dyno_room: DynoRoom     # the tuning room through the back wall
+var sales_office: SalesOffice   # the showroom and office east of the paint shop
 ## A live riding picture a TV is showing (the first one, if there are several), or null.
 var tv_feed: SubViewport
 ## Live riding pictures, one per rider being watched: bike node instance id -> {vp, cam, node}.
@@ -97,11 +107,25 @@ var _room_lights := {"paint": [], "storage": []}
 var _room_mats := {"paint": [], "storage": []}
 var _room_probes := {}
 var _room_shown := {}
+## Garage upgrades built onto the shed (WorkshopUpgrades), and the stretches of wall they
+## knock doorways through: "wing" (the shed's back wall behind bay 4), "annex" (the storage
+## room's back wall), each [wall body, inside faces...].
+var upgrades: WorkshopUpgrades
+var knock := {"wing": [], "annex": []}
 
 
 static func bay_transform(bay: int) -> Transform3D:
+	if bay >= BAY_COUNT:
+		# The bays in the garage's extension (GarageUpgrades), facing its back wall.
+		var i := clampi(bay - BAY_COUNT, 0, GarageUpgrades.WING_BAY_X.size() - 1)
+		return Transform3D(Basis(Vector3.UP, PI), Vector3(float(GarageUpgrades.WING_BAY_X[i]), 0.0, GarageUpgrades.WING_BAY_Z))
 	var x := -4.8 + 3.2 * clampi(bay, 0, BAY_COUNT - 1)
 	return Transform3D(Basis(Vector3.UP, PI), CENTER + Vector3(x, 0.0, -3.5))
+
+
+## How many bays there are: the shed's four and any the garage has added (GarageUpgrades).
+static func bay_count() -> int:
+	return BAY_COUNT + GarageUpgrades.extra_bays(Shed.upgrades)
 
 
 ## Where each work spot puts a part, and which way it faces.
@@ -118,20 +142,30 @@ static func spot_transform(spot: String) -> Transform3D:
 	return Transform3D(Basis(), CENTER)
 
 
-## The floor of each room, as x/z rectangles: the shed, the paint shop, the storage room and
-## the dyno room.
+## The floor of each room, as x/z rectangles: the shed, the paint shop, the storage room, the
+## dyno room, and the sales office ("sales", the whole building) with its mezzanine office upstairs
+## ("sales_office", over the west end of it).
 static func rooms() -> Dictionary:
-	return {
+	var out := {
 		"shed": Rect2(CENTER.x - HALF.x, CENTER.z - HALF.y, HALF.x * 2.0, HALF.y * 2.0),
 		"paint": Rect2(BOOTH_ROOM_CENTER.x - BOOTH_ROOM_HALF.x, BOOTH_ROOM_CENTER.z - BOOTH_ROOM_HALF.y, BOOTH_ROOM_HALF.x * 2.0, BOOTH_ROOM_HALF.y * 2.0),
 		"storage": Rect2(STORE_CENTER.x - STORE_HALF.x, STORE_CENTER.z - STORE_HALF.y, STORE_HALF.x * 2.0, STORE_HALF.y * 2.0),
 		"dyno": Rect2(DynoRoom.CENTER.x - DynoRoom.HALF.x, DynoRoom.CENTER.z - DynoRoom.HALF.y, DynoRoom.HALF.x * 2.0, DynoRoom.HALF.y * 2.0),
+		"sales": SalesOffice.footprint(),
+		"sales_office": SalesOffice.office_rect(),
 	}
+	# The extension and storage annex, once the garage has built them.
+	out.merge(GarageUpgrades.rooms(Shed.upgrades))
+	return out
 
 
-## Which room a point is in ("shed", "paint", "storage", "dyno"), or "" outside.
+## Which room a point is in ("shed", "paint", "storage", "dyno", "sales", "sales_office"
+## upstairs in the sales office), or "" outside.
 static func room_at(at: Vector3) -> String:
+	if SalesOffice.office_rect().has_point(Vector2(at.x, at.z)) and at.y > SalesOffice.MEZZ_Y - 0.3:
+		return "sales_office"
 	var all := rooms()
+	all.erase("sales_office")
 	for room in all:
 		if (all[room] as Rect2).has_point(Vector2(at.x, at.z)):
 			return room
@@ -178,11 +212,15 @@ func build() -> void:
 	dyno_room = DynoRoom.new()
 	add_child(dyno_room)
 	dyno_room.build(self)
+	_build_sales_office()
 	_crew_screen = Dashboard.new("crew", CREW_SCREEN)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
 	_crew_screen.rotation.y = PI * 0.5
 	add_child(_crew_screen)
 	_screen_target(_crew_screen, "crew")
+	upgrades = WorkshopUpgrades.new()
+	add_child(upgrades)
+	upgrades.setup(self)
 
 
 ## Lets players look at a built-in screen to change its channel.
@@ -195,6 +233,8 @@ func _screen_target(screen: Dashboard, key: String) -> void:
 
 ## Redraws parked bikes, loose parts and screens to match the Shed state.
 func sync_state() -> void:
+	if upgrades:
+		upgrades.sync()
 	for id in bike_views.keys():
 		if not Shed.bikes.has(id) or Shed.bikes[id]["rider"] != 0:
 			bike_views[id].queue_free()
@@ -1135,16 +1175,20 @@ func _build_shell() -> void:
 	var side_w := hx - DOOR_HALF
 	for side in [-1.0, 1.0]:
 		walls.append([c + Vector3(side * (DOOR_HALF + side_w * 0.5), HEIGHT * 0.5, hz + t * 0.5), Vector3(side_w + t, HEIGHT, t)])
-		walls.append([c + Vector3(side * (DynoRoom.DOOR_HALF + back_w * 0.5), HEIGHT * 0.5, -hz - t * 0.5), Vector3(back_w, HEIGHT, t)])
+		walls.append([c + Vector3(side * (DynoRoom.DOOR_HALF + back_w * 0.5), HEIGHT * 0.5, -hz - t * 0.5), Vector3(back_w, HEIGHT, t), side > 0.0])
 	walls.append([c + Vector3(0.0, (HEIGHT + DOOR_HEIGHT) * 0.5, hz + t * 0.5), Vector3(DOOR_HALF * 2.0, HEIGHT - DOOR_HEIGHT, t)])
 	for w in walls:
-		_solid(w[0], w[1], _mats["cladding"])
+		var body := _solid(w[0], w[1], _mats["cladding"])
+		if w.size() > 2 and w[2]:
+			knock["wing"].append(body)   # the extension's doorway goes through here
 	# Inside faces: painted plaster upper, dark lower band; the back wall's round the doorway.
 	var in_w := hx - DynoRoom.DOOR_HALF
 	for side in [-1.0, 1.0]:
 		var x: float = side * (DynoRoom.DOOR_HALF + in_w * 0.5)
-		_deco(self, c + Vector3(x, HEIGHT * 0.5 + 0.6, -hz + 0.01), Vector3(in_w, HEIGHT - 1.2, 0.02), _mats["wall_in"])
-		_deco(self, c + Vector3(x, 0.6, -hz + 0.01), Vector3(in_w, 1.2, 0.02), _mats["wall_low"])
+		var upper := _deco(self, c + Vector3(x, HEIGHT * 0.5 + 0.6, -hz + 0.01), Vector3(in_w, HEIGHT - 1.2, 0.02), _mats["wall_in"])
+		var lower := _deco(self, c + Vector3(x, 0.6, -hz + 0.01), Vector3(in_w, 1.2, 0.02), _mats["wall_low"])
+		if side > 0.0:
+			knock["wing"].append_array([upper, lower])
 	_deco(self, c + Vector3(0.0, (HEIGHT + DynoRoom.DOOR_HEIGHT) * 0.5, -hz + 0.01), Vector3(DynoRoom.DOOR_HALF * 2.0, HEIGHT - DynoRoom.DOOR_HEIGHT, 0.02), _mats["wall_in"])
 	for side in [-1.0, 1.0]:
 		var door_z: float = STORE_DOOR_Z if side < 0.0 else PAINT_DOOR_Z
@@ -1218,7 +1262,8 @@ func _build_bench() -> void:
 	var z_to := spot_transform("bench_3").origin.z + 0.6
 	var mid := (z_from + z_to) * 0.5
 	var length := z_to - z_from
-	_solid(Vector3(x, 0.45, mid), Vector3(0.9, 0.9, length), _mats["steel"])
+	# Solid up to just under the wooden top, so a trinket put down on it sits on the wood.
+	_solid(Vector3(x, 0.4725, mid), Vector3(0.9, 0.945, length), _mats["steel"])
 	_deco(self, Vector3(x, 0.92, mid), Vector3(0.95, 0.06, length + 0.05), _mats["wood"])
 	for i in 3:
 		_deco(self, Vector3(x + 0.46, 0.25 + i * 0.25, mid), Vector3(0.02, 0.2, length - 0.2), _mats["red"])
@@ -1487,7 +1532,7 @@ func _build_storage_room() -> void:
 	# Its own walls on three sides and the stretch of the fourth behind the shed; the shed's
 	# west wall, with the doorway, closes the rest.
 	var shed_back := CENTER.z - HALF.y - 0.3
-	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
+	knock["annex"].append(_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"]))
 	_solid(c + Vector3(0.0, h * 0.5, hz + 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
 	_solid(c + Vector3(-hx - 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.4), _mats["cladding"])
 	var east_len := shed_back - (c.z - hz - 0.2)
@@ -1504,8 +1549,10 @@ func _build_storage_room() -> void:
 	for f in faces:
 		var face_at: Vector3 = f[0]
 		var size: Vector3 = f[1]
-		_deco(self, face_at + Vector3(0.0, h * 0.5 + 0.6, 0.0), size + Vector3(0.0, h - 1.2, 0.0), _mats["wall_in"])
-		_deco(self, face_at + Vector3(0.0, 0.6, 0.0), size + Vector3(0.0, 1.2, 0.0), _mats["wall_low"])
+		var upper := _deco(self, face_at + Vector3(0.0, h * 0.5 + 0.6, 0.0), size + Vector3(0.0, h - 1.2, 0.0), _mats["wall_in"])
+		var lower := _deco(self, face_at + Vector3(0.0, 0.6, 0.0), size + Vector3(0.0, 1.2, 0.0), _mats["wall_low"])
+		if f == faces[0]:
+			knock["annex"].append_array([upper, lower])   # the back wall: the annex's doorway
 	_deco(self, Vector3(c.x + hx - 0.01, (h + SIDE_DOOR_HEIGHT) * 0.5, STORE_DOOR_Z), Vector3(0.02, h - SIDE_DOOR_HEIGHT, SIDE_DOOR_HALF * 2.0), _mats["wall_in"])
 	_poster("STORAGE", Vector3(c.x - hx + 0.012, 1.7, c.z), PI * 0.5, Vector2(0.5, 0.18))
 	# Strip lights in two rows, a shadowed lamp under each so the shelving throws shadows.
@@ -1692,3 +1739,11 @@ func _build_lights() -> void:
 	add_child(probe)
 	_probe = probe
 	_fixture_mats.append(fixture)
+
+
+# ---------------------------------------------------------------------------- sales office
+
+func _build_sales_office() -> void:
+	sales_office = SalesOffice.new()
+	add_child(sales_office)
+	sales_office.build()

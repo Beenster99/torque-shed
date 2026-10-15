@@ -322,8 +322,7 @@ func _draw_blueprint(font: Font) -> void:
 	_text(font, Vector2(24, 100), hint, 18, blue)
 	_text(font, Vector2(24, 126), "%d needed, %d on order. Order missing parts at the parts computer or Esc, Blueprints." % [needed, ordered], 16, DIM)
 	var price := int(data.get("price", 0))
-	_text(font, Vector2(24, PX.y - 18), "Price of what's needed: %s (parts are free until money arrives)" % (
-		("£%d" % price) if price > 0 else "£--"), 16, DIM)
+	_text(font, Vector2(24, PX.y - 18), "Price of what's needed: %s, from the business's account" % TvChannels.money_text(price), 16, DIM)
 	var per_col := 13
 	for i in rows.size():
 		var r: Dictionary = rows[i]

@@ -74,6 +74,7 @@ func _run_all() -> void:
 	await _test_tyre_smoke()
 	print("Game session")
 	await _test_session()
+	await _test_walker_spawns()
 	print("Tool models, posters and the water jet")
 	await _test_tool_art()
 	print("Saving and loading")
@@ -140,6 +141,46 @@ func _run_all() -> void:
 	_test_blast_detail_and_satin()
 	await _test_blast_live_session()
 	await _test_booth_swing_from_rail()
+	print("Money: wages, transfers, loans, prices and selling")
+	_test_money_pay_and_transfers()
+	_test_money_loans()
+	_test_money_parts_and_selling()
+	print("Contracts: customers, offers, MOT, goals, payouts and saving")
+	_test_contract_customers()
+	_test_contract_mot()
+	_test_contract_goals_and_pay()
+	_test_contract_save()
+	await _test_contract_session()
+	print("Sales office: showroom, reception, kitchen, viewing area, mezzanine office, the bell")
+	_test_sales_office_layout()
+	_test_sales_office_save()
+	await _test_sales_office_session()
+	print("Garage upgrades: extension, bays 5 to 7, storage annex, luxury finishes")
+	_test_upgrade_catalogue()
+	await _test_computer_fits_screen()
+	_test_upgrade_buying()
+	await _test_upgrade_session()
+	print("Rider gear and trinkets from the Shop")
+	_test_gear_catalogue()
+	_test_gear_buying()
+	await _test_gear_seen_by_others()
+	await _test_shop_session()
+	print("Graphics settings: presets, saving, applying, the driver override, the Graphics tab")
+	await _test_graphics_settings()
+	print("Lighting: GI, volumetric fog and clouds, shadows, eye adaptation")
+	_test_lighting_profile()
+	_test_lighting_lamps_and_gi()
+	await _test_lighting_clouds()
+	await _test_lighting_session()
+	print("Engine sound: firing pulses, exhausts, pops, gear shifts")
+	_test_engine_firing()
+	_test_engine_bank()
+	await _test_engine_events()
+	await _test_engine_users()
+	_test_engine_samples()
+	print("Shed sound: variants, impacts by material, footsteps by floor, room acoustics, ambience")
+	await _test_shed_sound_variants()
+	await _test_shed_sound_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1444,15 +1485,11 @@ func _test_round5_models() -> void:
 	boxer.build_from(BikeBuild.new({"engine": "boxer_1000"}))
 	check(boxer.slot_bounds("engine").size.x > 0.5, "a boxer's cylinders stick out either side (%.2f m wide)" % boxer.slot_bounds("engine").size.x)
 	boxer.queue_free()
-	var audio := EngineAudio.new()
 	for case in [["vtwin", 2], ["parallel", 2], ["inline", 4], ["2stroke", 1]]:
-		audio.layout = case[0]
-		audio.cylinders = case[1]
-		check(audio.firing_angles().size() == case[1], "a %s fires %d times a cycle" % case)
-	audio.layout = "vtwin"
-	var v: Array = audio.firing_angles()
-	check(absf(v[1] - 0.5) > 0.03, "a V-twin's beat is uneven")
-	audio.free()
+		var fires := EngineSynth.firing_events(EngineSynth.make_spec(case[0], case[1], 600.0))
+		check(fires.size() == case[1], "a %s fires %d times a cycle" % case)
+	var v: Array = EngineSynth.firing_events(EngineSynth.make_spec("vtwin", 2, 900.0))
+	check(absf(float(v[1][0]) / 720.0 - 0.5) > 0.03, "a V-twin's beat is uneven")
 
 
 func _test_round5_riding() -> void:
@@ -1851,12 +1888,12 @@ func _test_round6_riding() -> void:
 	check(st.size() >= 24 and st[21] > 0.5, "and the other players hear it")
 	await _done(r)
 	# Engine notes: a little 50 and a big 1200 are synthesised differently.
-	var small := EngineAudio.new()
-	small.displacement = 50.0
-	var big := EngineAudio.new()
-	big.displacement = 1200.0
+	var small := EngineSound.new()
+	var big := EngineSound.new()
 	add_child(small)
 	add_child(big)
+	small.setup(BikeBuild.new({"engine": "inline_50"}))
+	big.setup(BikeBuild.new({"engine": "inline_1200"}))
 	await get_tree().process_frame
 	check(is_instance_valid(small) and is_instance_valid(big), "engine notes run for any size of engine")
 	small.queue_free()
@@ -3120,9 +3157,12 @@ func _test_tv_channels() -> void:
 	old.erase("screens")
 	Shed.load_state(old, "Tester")
 	check(Shed.screens.is_empty(), "a save from before channels loads with every screen on its home channel")
-	# Placeholder pages read zeros; the XP page says so when there's no XP system.
-	check(int(TvChannels.money_data(me)["cash"]) == 0 and TvChannels.garage_data()["placeholder"] and TvChannels.contracts_data()["offered"].is_empty()
-		and TvChannels.afford_data(me)["items"].size() > 3, "the money and contracts pages have placeholder data")
+	# The money pages read real numbers; contracts is a list, and the XP page says
+	# so when there's no XP system.
+	check(not TvChannels.garage_data().has("placeholder") and int(TvChannels.garage_data()["cash"]) == Shed.garage_money
+		and not TvChannels.money_data(me).has("placeholder") and TvChannels.contracts_data()["offered"] is Array
+		and TvChannels.afford_data(me)["items"].size() > 3 and int(TvChannels.afford_data(me)["items"][0]["price"]) > 0,
+		"the money pages have real numbers, and the contracts page a list")
 	if get_node_or_null("/root/Progress") == null:
 		check(TvChannels.xp_data().get("offline", false), "with no XP system the XP page says it's starting up")
 	# Every page draws.
@@ -3937,6 +3977,7 @@ func _test_side_rooms() -> void:
 	var wash := Rect2(Workshop.WASH_CENTER.x - Workshop.WASH_HALF.x, Workshop.WASH_CENTER.z - Workshop.WASH_HALF.y,
 		Workshop.WASH_HALF.x * 2.0, Workshop.WASH_HALF.y * 2.0)
 	var names: Array = rooms.keys()
+	names.erase("sales_office")   # upstairs in the sales office: inside "sales" by design
 	var apart := true
 	for i in names.size():
 		var a: Rect2 = rooms[names[i]]
@@ -4657,6 +4698,7 @@ func _fit_direct(bike: int, slot: String, part: String) -> void:
 
 func _test_blueprint_build() -> void:
 	Shed.start_new("Tester", 33)
+	Shed.garage_money = 1000000   # a whole blueprint of parts to pay for
 	var me := Shed.me()
 	var a := 0
 	for id in Shed.bikes:
@@ -5586,7 +5628,7 @@ func _test_debug_tab() -> void:
 	Shed.start_new("Tester", 5)
 	Progress.select("Tester")
 	var me := Shed.me()
-	check(Progress.money() == 0 and Shed.garage_money == 0, "money starts at nothing, yours and the garage's")
+	check(Progress.money() == 0 and Shed.garage_money == Money.START_FUNDS, "money starts at nothing for you, and the starting funds for the garage")
 	var tab := DebugTab.new()
 	add_child(tab)
 	Progress.profile["xp"] = Progress.xp_for_level(6)
@@ -5629,8 +5671,9 @@ func _test_debug_tab() -> void:
 	Shed.load_state(copy, "Tester")
 	check(Shed.garage_money == 5000, "the garage's money is kept in the shed save")
 	copy.erase("garage_money")
+	copy.erase("bank")
 	Shed.load_state(copy, "Tester")
-	check(Shed.garage_money == 0, "a shed saved before money has an empty account")
+	check(Shed.garage_money == Money.START_FUNDS, "a shed saved before money opens with the starting funds")
 	tab.free()
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
@@ -5721,7 +5764,7 @@ func _test_weather_session() -> void:
 	check(Weather.raining_at(Vector3(0.0, 0.0, 85.0)) and not Weather.raining_at(Workshop.CENTER), "it rains in the yard, not in the shed")
 	var shelters: PackedVector4Array = w._rain_mat.get_shader_parameter("shelters")
 	var c := Workshop.CENTER
-	check(shelters.size() == 4 and shelters[0].x < c.x and shelters[0].z > c.x and shelters[0].y < c.z and shelters[0].w > c.z,
+	check(shelters.size() == Weather.SHELTERS and shelters[0].x < c.x and shelters[0].z > c.x and shelters[0].y < c.z and shelters[0].w > c.z,
 		"no drops are drawn inside the shed's rooms")
 	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.1, 1.0)))
 	for i in 90:
@@ -6023,3 +6066,2199 @@ func _test_booth_swing_from_rail() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## Money: wages for jobs with the business's cut, sending money about, who may take money out
+## and change the garage's settings.
+func _test_money_pay_and_transfers() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_money_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	Shed.start_new("Boss", 7)
+	Progress.select("Boss")
+	var me := Shed.me()
+	check(Shed.garage_money == Money.START_FUNDS and Progress.money() == 0 and int(Shed.bank["cut"]) == Money.DEFAULT_CUT
+		and Money.owner_name() == "Boss" and Money.is_owner(me), "a new shed opens with %s in the business, run by the host" % TvChannels.money_text(Money.START_FUNDS))
+	Shed.request({"a": "money_settings", "cut": 25})
+	check(int(Shed.bank["cut"]) == 25, "the host sets the business's cut of wages")
+	var bank_was := Shed.garage_money
+	Progress.award(me, "repair", 1.0, "item:4242")
+	var first := Progress.money()
+	check(first == 6 - Money.cut_of(6, 25) and Shed.garage_money == bank_was + Money.cut_of(6, 25),
+		"a job pays the worker its wage less the cut (%s), the cut going to the business" % TvChannels.money_text(first))
+	Progress.award(me, "repair", 1.0, "item:4242")
+	check(Progress.money() - first < first, "doing the same job again straight away pays less, as the XP does")
+	check(str(Shed.bank["ledger"][-1]["why"]) == "Cut of Boss's wages", "the cut shows in the business's ledger")
+	var cash := Progress.money()
+	bank_was = Shed.garage_money
+	Shed.pay_worker(me, 100, "Test wage")
+	check(Progress.money() == cash + 75 and Shed.garage_money == bank_was + 25, "pay_worker: 75 to the worker, 25 to the business")
+	check(str(Progress.profile["cash_log"][-1]["why"]) == "Test wage", "and the wage shows in your own money log")
+	Progress.award(me, "jump", 1.0)
+	check(Progress.money() == cash + 75, "riding tricks pay XP, not wages")
+	# Sending money.
+	Progress.earn(500, "Test")
+	cash = Progress.money()
+	bank_was = Shed.garage_money
+	check(Money.send(0, 200) == "" and Progress.money() == cash - 200 and Shed.garage_money == bank_was + 200,
+		"anyone can send money to the business")
+	check(str(Shed.bank["ledger"][-1]["why"]) == "From Boss", "and the ledger says who sent it")
+	check(Money.send(0, 1000000) != "" and Progress.money() == cash - 200, "you can't send more than you have")
+	check(Money.send(me, 10) != "", "or send money to yourself")
+	cash = Progress.money()
+	Progress.spend(30, "Test")
+	Shed.request({"a": "money_send", "to": 99, "amount": 30})
+	check(Progress.money() == cash, "money sent to someone who's gone comes back")
+	# A mate in the shed (not really connected here, so it bounces back too).
+	Shed.crew[5] = {"name": "Mate", "tool": "hands", "activity": "", "riding": 0}
+	cash = Progress.money()
+	check(Money.send(5, 40) == "" and Progress.money() == cash, "a mate who can't receive it: the money comes back")
+	# Taking money out: the owner only.
+	cash = Progress.money()
+	bank_was = Shed.garage_money
+	Shed.request({"a": "money_withdraw", "amount": 1000})
+	check(Progress.money() == cash + 1000 and Shed.garage_money == bank_was - 1000, "the owner takes money out of the business")
+	check(Money.check(me, {"a": "money_withdraw", "amount": Shed.garage_money + 1}) != "", "but not more than it has")
+	check(Money.check(5, {"a": "money_withdraw", "amount": 10}) != "" and Money.check(5, {"a": "money_settings", "cut": 5}) != "",
+		"a mate can't take money out or change the settings")
+	Shed.request({"a": "money_settings", "owner": "Mate"})
+	check(Money.owner_name() == "Mate" and Money.is_owner(5) and not Money.is_owner(me), "the host can make someone else the owner")
+	check(Money.check(5, {"a": "money_withdraw", "amount": 10}) == "" and Money.check(me, {"a": "money_withdraw", "amount": 10}) != "",
+		"then only they can take money out")
+	check(Money.check(me, {"a": "money_loan", "offer": 0}) != "", "or take out a loan")
+	Shed.request({"a": "money_settings", "owner": "Boss"})
+	check(str(Shed.bank["owner"]) == "" and Money.is_owner(me), "picking the host again goes back to the default")
+	# The Money tab.
+	var tab := MoneyTab.new()
+	add_child(tab)
+	tab.refresh()
+	check(tab._summary.text.contains(TvChannels.money_text(Shed.garage_money)) and not tab._take.disabled and tab._cut.editable,
+		"the Money tab shows both accounts; the host owner can take out and change the cut")
+	cash = Progress.money()
+	tab.send_money(0, 5)
+	check(Progress.money() == cash - 5, "the tab's Send pays the business")
+	tab.free()
+	Shed.crew.erase(5)
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+## Bank loans: borrowing, a repayment a day with interest, paying off early, missing one, the
+## debt limit, and the bank saved with the shed (old saves get the defaults).
+func _test_money_loans() -> void:
+	Shed.start_new("Boss", 8)
+	var me := Shed.me()
+	var start := Shed.garage_money
+	Shed.request({"a": "money_loan", "offer": 0})
+	var loan: Dictionary = Shed.bank["loans"][0] if not Shed.bank["loans"].is_empty() else {}
+	check(Shed.garage_money == start + 5000 and int(loan.get("owed", 0)) == 5000 and Money.debt(Shed.bank) == 5000,
+		"borrowing 5k puts it in the business's account")
+	var daily := int(loan["daily"])
+	check(daily > 500 and daily < 600, "repaid in 10 days with interest (%s a day)" % TvChannels.money_text(daily))
+	var bal := Shed.garage_money
+	Shed.money_new_day()
+	check(int(loan["owed"]) == 5000 + 40 - daily and Shed.garage_money == bal - daily and int(Shed.bank["day"]) == 1,
+		"a new day: interest on what's owed, then the day's repayment")
+	bal = Shed.garage_money
+	Shed.request({"a": "money_repay", "loan": int(loan["id"]), "amount": 1000})
+	check(int(loan["owed"]) == 5040 - daily - 1000 and Shed.garage_money == bal - 1000, "paying more off early")
+	Shed.request({"a": "money_loan", "offer": 2})
+	check(Shed.bank["loans"].size() == 2, "a second loan")
+	check(Money.check(me, {"a": "money_loan", "offer": 2}) != "", "but the bank won't lend past %s in all" % TvChannels.money_text(Money.MAX_DEBT))
+	# Missing a repayment.
+	Shed.garage_money = 0
+	var owed := int(loan["owed"])
+	Shed.money_new_day()
+	check(int(loan["missed"]) == 1 and int(loan["owed"]) > owed and bool(Shed.bank["blocked"]),
+		"no money for the repayment: missed, a fee added, and no new loans")
+	check(Money.check(me, {"a": "money_loan", "offer": 0}).contains("missed"), "the bank says why")
+	# Save and load.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.request({"a": "money_settings", "cut": 33})
+	Shed.load_state(copy, "Boss")
+	check(Shed.bank["loans"].size() == 2 and bool(Shed.bank["blocked"]) and int(Shed.bank["cut"]) == Money.DEFAULT_CUT
+		and Shed.bank["ledger"].size() > 3 and int(Shed.bank["day"]) == 2, "the bank's loans, ledger, day and settings are saved with the shed")
+	# Clearing every loan lifts the block.
+	Shed.garage_money = 500000
+	for l in Shed.bank["loans"].duplicate():
+		Shed.request({"a": "money_repay", "loan": int(l["id"]), "amount": int(l["owed"])})
+	check(Shed.bank["loans"].is_empty() and not bool(Shed.bank["blocked"]) and Money.check(me, {"a": "money_loan", "offer": 0}) == "",
+		"loans cleared: the bank lends again")
+	var old: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	old.erase("bank")
+	old["garage_money"] = 0
+	Shed.load_state(old, "Boss")
+	check(Shed.garage_money == Money.START_FUNDS and Shed.bank["loans"].is_empty() and int(Shed.bank["cut"]) == Money.DEFAULT_CUT,
+		"a shed saved before money opens with the starting funds and default settings")
+
+
+## Prices: parts cost the business money (Haggler takes some off), the business can run out,
+## selling loose parts and whole bikes, project bikes, the money milestones and the debug million.
+func _test_money_parts_and_selling() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_money_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	Shed.start_new("Boss", 9)
+	Progress.select("Boss")
+	var me := Shed.me()
+	var unpriced := []
+	for id in PartsDB.parts:
+		if Money.part_price(id) <= 0:
+			unpriced.append(id)
+	check(unpriced.is_empty(), "every part has a price %s" % str(unpriced))
+	check(Money.part_price("carbon_monocoque") > Money.part_price("steel_cradle") and Money.part_price("four_1000") > Money.part_price("single_250"),
+		"fancier and bigger parts cost more (carbon frame %s, steel %s)" % [TvChannels.money_text(Money.part_price("carbon_monocoque")),
+		TvChannels.money_text(Money.part_price("steel_cradle"))])
+	check(Shed.part_price("frame_nope") == 0 and Shed.part_price("steel_cradle") == Money.part_price("steel_cradle"), "Shed.part_price is the same price")
+	var price := Money.part_price("chromoly_trellis")
+	var bal := Shed.garage_money
+	var frame := _order("chromoly_trellis")
+	check(frame != 0 and Shed.garage_money == bal - price and str(Shed.bank["ledger"][-1]["why"]).begins_with("Bought"),
+		"ordering a part takes its price from the business (%s)" % TvChannels.money_text(price))
+	Progress.profile["skills"]["haggler"] = 2
+	check(Money.buy_price("chromoly_trellis", me) == roundi(price * 0.9), "Haggler 2: 10% off")
+	Progress.profile["skills"].erase("haggler")
+	Shed.garage_money = 10
+	var count := Shed.items.size()
+	check(Shed.check(me, {"a": "order_part", "part": "chromoly_trellis"}).contains("afford"), "the business can't afford it: it says so")
+	Shed.request({"a": "order_part", "part": "chromoly_trellis"})
+	check(Shed.items.size() == count and Shed.garage_money == 10, "and nothing comes")
+	var bikes := Shed.bikes.size()
+	Shed.request({"a": "order"})
+	check(Shed.bikes.size() == bikes and Shed.items.size() == count, "no money, no project bike")
+	Shed.garage_money = 20000
+	# Selling a loose part: as good as new, it fetches SELL_RATE of its price.
+	var sale := Money.part_sale(frame)
+	check(sale == roundi(price * Money.SELL_RATE), "a new part sells for %d%% of its price" % roundi(Money.SELL_RATE * 100.0))
+	var rusty := _order("chromoly_trellis")
+	Shed.items[rusty]["rust"] = 0.9
+	Shed.items[rusty]["wear"] = 0.6
+	check(Money.part_sale(rusty) < sale / 2, "a worn, rusty one far less (%s)" % TvChannels.money_text(Money.part_sale(rusty)))
+	var sold_was := int(Progress.profile["stats"].get("sell_part", 0))
+	bal = Shed.garage_money
+	Shed.request({"a": "money_sell_part", "item": frame})
+	check(not Shed.items.has(frame) and Shed.garage_money == bal + sale and int(Progress.profile["stats"].get("sell_part", 0)) == sold_was + 1,
+		"selling it: the part goes, the money goes to the business and the seller gets the XP")
+	var on_bike := Shed.item_on(Shed.bikes.keys()[0], "frame")
+	check(Money.check(me, {"a": "money_sell_part", "item": on_bike}) != "", "parts on a bike can't be sold on their own")
+	# Selling a whole bike.
+	var ranger := 0
+	for id in Shed.bikes:
+		if Shed.bikes[id]["name"] == "Rusty Ranger":
+			ranger = id
+	var value := Money.bike_sale(ranger)
+	var parts_on := []
+	for slot in PartsDB.SLOTS:
+		if Shed.item_on(ranger, slot) != 0:
+			parts_on.append(Shed.item_on(ranger, slot))
+	check(value > 0 and Shed.is_complete(ranger), "a complete bike has a price (%s)" % TvChannels.money_text(value))
+	var bare := 0.0
+	for id in parts_on:
+		bare += Money.item_worth(Shed.items[id])
+	check(value > roundi(bare * Money.SELL_RATE * (1.0 + Money.BONUS_COMPLETE)) - 2, "with a bonus for being complete (and more ready to ride)")
+	bal = Shed.garage_money
+	var sold_bikes := int(Progress.profile["stats"].get("sell_bike", 0))
+	Shed.request({"a": "money_sell_bike", "bike": ranger})
+	check(not Shed.bikes.has(ranger) and parts_on.all(func(i): return not Shed.items.has(i)) and Shed.garage_money == bal + value + Money.cut_of(int(Progress.PAY["sell_bike"]), int(Shed.bank["cut"])),
+		"selling the bike: it goes, every part with it, and the business is paid (and takes its cut of the seller's commission)")
+	check(int(Progress.profile["stats"].get("sell_bike", 0)) == sold_bikes + 1 and int(TvChannels.money_data(me)["sold"]) == sold_bikes + 1,
+		"the seller gets the Bike sold XP, and My money counts it")
+	# A project bike costs a bit more than it would fetch.
+	bal = Shed.garage_money
+	Shed.request({"a": "order"})
+	var newest := 0
+	for id in Shed.bikes:
+		newest = maxi(newest, id)
+	check(Shed.bikes.size() == 3 and Shed.garage_money < bal and Shed.garage_money == bal - Money.project_price(newest)
+		and Money.project_price(newest) > Money.bike_sale(newest), "a project bike costs more than it fetches as it comes (%s)" % TvChannels.money_text(bal - Shed.garage_money))
+	# Money milestones: XP for the crew the first time the business gets there.
+	Shed.garage_money = 20000
+	var ms := int(Progress.profile["stats"].get("money_milestone", 0))
+	Shed.credit_garage(6000, "Test sale")
+	check(int(Progress.profile["stats"].get("money_milestone", 0)) == ms + 1 and Shed.bank["milestones"].has(25000),
+		"reaching 25k pays the money milestone XP")
+	Shed.garage_money = 20000
+	Shed.credit_garage(6000, "Test sale")
+	check(int(Progress.profile["stats"].get("money_milestone", 0)) == ms + 1, "only the first time")
+	# The debug million, and the TV pages.
+	var tab := DebugTab.new()
+	add_child(tab)
+	bal = Shed.garage_money
+	tab.press("Give the garage £1,000,000")
+	check(Shed.garage_money == bal + 1000000, "Debug: give the garage £1,000,000")
+	tab.free()
+	var g := TvChannels.garage_data()
+	check(int(g["cash"]) == Shed.garage_money and int(g["bike_value"]) > 0 and int(g["income_week"]) >= 1000000 and int(g["outgoings_week"]) > 0
+		and (g["history"] as Array).size() == 7, "the Garage money page: bikes' worth, the week in and out")
+	var mine := TvChannels.money_data(me)
+	check(int(mine["earned_week"]) > 0 and (mine["history"] as Array).size() == 7 and int((mine["history"] as Array)[-1]) == Progress.money(),
+		"the My money page: what you earned this week")
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+# ---------------------------------------------------------------------------- contracts
+
+## A bike in a known, roadworthy state: new parts, mirrors, fluids full, chain set right.
+func _mot_ready_bike(bay: int) -> int:
+	var parts: Dictionary = PartsDB.DEFAULT_BUILD.duplicate()
+	parts["mirrors"] = "round_mirrors"
+	var id := Shed._new_bike(parts, bay, "Test MOT", 0.0)
+	_make_roadworthy(id)
+	return id
+
+
+## Puts every part on a bike back to like new, fits what the road needs and fills it up.
+func _make_roadworthy(bike_id: int) -> void:
+	var road_kit := {"mirrors": "round_mirrors", "headlight": "round_7", "horn": "disc_horn"}
+	for slot in road_kit:
+		if Shed.item_on(bike_id, slot) == 0:
+			var it := Shed._new_item(str(road_kit[slot]), 0.0, 0.0, 0.0)
+			Shed._move(it, "bike", bike_id)
+			Shed.bikes[bike_id]["slots"][slot] = it
+			Shed.bikes[bike_id]["bolted"][slot] = true
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(bike_id, slot)
+		if id == 0:
+			continue
+		var item: Dictionary = Shed.items[id]
+		item["rust"] = 0.0
+		item["dirt"] = 0.0
+		item["wear"] = 0.0
+		if slot == "exhaust" and str(item["part"]) == "straight_pipe":
+			item["part"] = "stock_muffler"
+		if str(PartsDB.get_part(str(item["part"])).get("style", "")) == "slick":
+			var wheel := str(Shed.items[Shed.item_on(bike_id, slot.replace("tyre", "wheel"))]["part"])
+			item["part"] = PartsDB.tyres_for(wheel).filter(func(t): return str(PartsDB.get_part(str(t)).get("style", "")) != "slick")[0]
+		if item.has("fluid"):
+			item["fluid"]["litres"] = PartsDB.fluid_capacity(str(item["part"]))
+			item["fluid"]["age"] = 0.0
+			if str(item["fluid"]["type"]) == "":
+				item["fluid"]["type"] = {"engine": "semi_10w40", "tank": "unleaded_95"}.get(slot, "dot4")
+		if item.has("slack"):
+			item["slack"] = Shed.CHAIN_SLACK_SET
+			item["lube"] = 1.0
+		if item.has("bead"):
+			item["bead"] = 1.0
+	for slot in PartsDB.BIKE_SLOTS:
+		if Shed.item_on(bike_id, slot) != 0:
+			Shed.bikes[bike_id]["bolted"][slot] = true
+
+
+func _test_contract_customers() -> void:
+	Shed.start_new("Tester", 41)
+	check(Contracts.customers().is_empty() and Contracts.jobs().is_empty() and Contracts.reputation() == 0,
+		"a new shed has no customers, no jobs and no reputation")
+	check(Contracts.unlocked(0) == ["maint"] and Contracts.unlocked(int(Contracts.UNLOCK["mot"])).has("mot")
+		and Contracts.unlocked(10).size() == 4, "reputation unlocks harder jobs: service first, then MOT, mods and bespoke builds")
+	Contracts.advance(Contracts.FIRST_CUSTOMER + 0.05)
+	check(Contracts.customers().size() == 1, "the first customer turns up soon after the shed opens")
+	var c: Dictionary = Contracts.customers().values()[0]
+	check(str(c["offer"]["kind"]) == "maint" and str(c["name"]).contains(" ") and c["look"].get("top") is Color,
+		"with an easy job at no reputation, a name and their own clothes (%s, %s)" % [c["name"], c["offer"]["title"]])
+	var most := 0
+	for i in 12:
+		Contracts.advance(Contracts.SPAWN_HOURS.y * 0.25)
+		most = maxi(most, Contracts.customers().size())
+	check(most <= Contracts.MAX_WAITING and most >= 1, "never more than a couple waiting (at most %d)" % most)
+	Contracts.advance(Contracts.PATIENCE_HOURS + 0.1)
+	var stayed := Contracts.customers().values().filter(func(x): return Contracts.clock() >= float(x["leave_at"]))
+	check(stayed.is_empty(), "ignored customers leave after a while")
+	Contracts._st()["reputation"] = 20
+	for kind in Contracts.KINDS:
+		var id := Contracts.spawn(kind)
+		var o: Dictionary = Contracts.customers()[id]["offer"]
+		var ok: bool = not o["goals"].is_empty() and int(o["pay"]) > 0 and int(o["days"]) >= 2 \
+			and str(o["title"]).begins_with(str(Contracts.KIND_NAMES[kind]))
+		if kind in ["mod", "bespoke"]:
+			ok = ok and int(o["budget"]) > 0 and o["goals"].size() >= 2
+		if kind == "mot":
+			ok = ok and o["goals"] == [{"t": "mot"}]
+		check(ok, "a %s offer: pay %s, budget %s, %d days (%s)" % [kind, Contracts.money(int(o["pay"])),
+			Contracts.money(int(o["budget"])), int(o["days"]), ", ".join(o["goals"].map(func(g): return Contracts.goal_text(g)))])
+		Contracts.customers().erase(id)
+	var bespoke := Contracts.make_offer("bespoke", "Lady Okafor")
+	var maint := Contracts.make_offer("maint", "Dave Smith")
+	check(int(bespoke["pay"]) > int(maint["pay"]) * 5 and int(bespoke["days"]) > int(maint["days"]) * 2,
+		"a bespoke build pays far more and has far longer than a service")
+	var cid := Contracts.spawn("maint")
+	check(Shed.check(2, {"a": "contract_spawn"}) != "" and Shed.check(Shed.me(), {"a": "contract_spawn"}) == "",
+		"only the host can send customers from the Debug tab")
+	Shed.request({"a": "contract_decline", "customer": cid})
+	check(not Contracts.customers().has(cid) and Contracts.reputation() == 20, "turning a job down sends them off, no harm done")
+
+
+func _mot_fail_names(bike: int) -> Array:
+	return MotTest.fails(MotTest.inspect(bike)).map(func(r): return r["name"])
+
+
+func _test_contract_mot() -> void:
+	Shed.start_new("Tester", 42)
+	var bike := _mot_ready_bike(3)
+	var sheet := MotTest.inspect(bike)
+	check(sheet.size() >= 30 and MotTest.fails(sheet).is_empty(), "a sound bike passes all %d MOT checks %s" % [sheet.size(),
+		str(_mot_fail_names(bike))])
+	var areas := {}
+	for r in sheet:
+		areas[r["area"]] = true
+	check(areas.has("Tyres") and areas.has("Brakes") and areas.has("Suspension") and areas.has("Lights") and areas.has("Exhaust")
+		and areas.has("Structure") and areas.has("Fluids") and areas.has("Drive"),
+		"the sheet covers tyres, brakes, suspension, drive, lights, exhaust, frame and fluids")
+	var tyre := Shed.item_on(bike, "front_tyre")
+	Shed.items[tyre]["wear"] = 0.9
+	check(is_equal_approx(MotTest.tread_mm(Shed.items[tyre]), 0.6), "tread depth comes from tyre wear (0.6 mm left at 90% worn)")
+	check(_mot_fail_names(bike).has("Front tyre tread depth"), "under 1 mm of tread fails")
+	Shed.items[tyre]["wear"] = 0.8
+	check(not _mot_fail_names(bike).has("Front tyre tread depth"), "1.2 mm is still legal")
+	Shed.items[Shed.item_on(bike, "rear_pads")]["wear"] = 0.9
+	Shed.items[Shed.item_on(bike, "frame")]["rust"] = 0.7
+	Shed.items[Shed.item_on(bike, "chain")]["slack"] = 60.0
+	Shed._erase_item(Shed.item_on(bike, "mirrors"))
+	Shed.bikes[bike]["slots"]["mirrors"] = 0
+	Shed.items[Shed.item_on(bike, "exhaust")]["part"] = "straight_pipe"
+	var f := _mot_fail_names(bike)
+	check(f.has("Rear pads") and f.has("Frame corrosion and damage") and f.has("Chain tension") and f.has("Mirrors fitted")
+		and f.has("Exhaust noise"), "worn pads, a rusty frame, a slack chain, no mirrors and a straight pipe all fail (%s)" % str(f))
+	# The job: take it on, test it, fix it, test again, hand it back for the certificate.
+	Shed.start_new("Tester", 43)
+	Contracts._st()["reputation"] = 3
+	var cid := Contracts.spawn("mot")
+	var cust: String = Contracts.customers()[cid]["name"]
+	Shed.request({"a": "contract_accept", "customer": cid})
+	check(Contracts.jobs().size() == 1 and not Contracts.customers().has(cid), "accepting takes the job on and the customer goes")
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var jid := int(job["id"])
+	var jb := int(job["bike"])
+	check(Shed.bikes.has(jb) and int(Shed.bikes[jb]["bay"]) >= 0 and str(Shed.bikes[jb]["name"]).contains(cust.get_slice(" ", 0)),
+		"their bike is delivered to a free bay (%s)" % str(Shed.bikes.get(jb, {}).get("name", "")))
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}) != "", "it can't be handed back where it stands")
+	Shed.request({"a": "contract_mot_test", "job": jid})
+	check(job["mot"]["tested"] and int(job["mot"]["fails"]) > 0, "the first test finds faults (%d: %s)" % [int(job["mot"]["fails"]),
+		str(MotTest.fails(job["mot"]["sheet"]).map(func(r): return r["name"]))])
+	check(not Contracts.eval_goal(job, {"t": "mot"})["done"], "a failed test isn't a pass")
+	_make_roadworthy(jb)
+	Shed.request({"a": "contract_mot_test", "job": jid})
+	check(int(job["mot"]["fails"]) == 0 and Contracts.eval_goal(job, {"t": "mot"})["done"] and int(job["mot"]["tests"]) == 2,
+		"fixed and re-tested, it passes %s" % str(MotTest.fails(job["mot"]["sheet"]).map(func(r): return r["name"])))
+	Contracts.note_action(Shed.me(), {"a": "clean", "bike": jb})
+	check(not Contracts.eval_goal(job, {"t": "mot"})["done"] and job["workers"].has(Shed.me()), "work on it after a test means testing it again")
+	Shed.request({"a": "contract_mot_test", "job": jid})
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": jid}).contains("reception"), "it has to go round to reception")
+	Shed.bikes[jb]["xf"] = Contracts.reception()
+	var before := Shed.garage_money
+	var expected := int(Contracts.payout(job)["total"])
+	Shed.request({"a": "contract_hand_in", "job": jid})
+	var done: Dictionary = Contracts._st()["done"][0] if not Contracts._st()["done"].is_empty() else {}
+	check(Contracts.jobs().is_empty() and not Shed.bikes.has(jb)
+		and not Shed.items.values().any(func(it): return str(it["at"]) == "bike" and int(it["ref"]) == jb),
+		"handed back, the customer rides it away")
+	check(not done.is_empty() and not done.get("cert", {}).is_empty() and str(done["cert"]["number"]).begins_with("TS-"),
+		"with an MOT certificate (%s)" % str(done.get("cert", {}).get("number", "")))
+	check(Shed.garage_money > before and Shed.garage_money - before <= expected and Contracts.reputation() == 3 + int(Contracts.REP_GAIN["mot"]),
+		"the garage is paid (%s of %s) and the reputation goes up" % [Contracts.money(Shed.garage_money - before), Contracts.money(expected)])
+
+
+func _test_contract_goals_and_pay() -> void:
+	Shed.start_new("Tester", 44)
+	Contracts._st()["reputation"] = 20
+	# Modifications: known goals on a known bike.
+	var cid := Contracts.spawn("mod")
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var bike := int(job["bike"])
+	var pan := Shed.item_on(bike, "panniers")
+	if pan != 0:
+		Shed._erase_item(pan)
+		Shed.bikes[bike]["slots"]["panniers"] = 0
+	var ex := Shed.item_on(bike, "exhaust")
+	Shed.items[ex]["part"] = "stock_muffler"
+	job["goals"] = [{"t": "fit", "slot": "panniers"}, {"t": "paint", "color": 3}, {"t": "pipes", "from": "stock_muffler"}]
+	job["pay"] = 1000
+	job["budget"] = 500
+	Shed.items[Shed.item_on(bike, "tank")]["color"] = Shed.PAINTS[1]
+	check(Contracts.progress(job) == 0.0, "none of the goals are met to start with")
+	var bag := Shed._new_item("leather_saddlebags", 0.0, 0.0, 0.0)
+	Shed._move(bag, "bike", bike)
+	Shed.bikes[bike]["slots"]["panniers"] = bag
+	Shed.bikes[bike]["bolted"]["panniers"] = true
+	check(is_equal_approx(Contracts.progress(job), 1.0 / 3.0), "panniers on: a third of the way")
+	Shed.items[Shed.item_on(bike, "tank")]["color"] = Shed.PAINTS[3]
+	Shed.items[ex]["part"] = "full_system"
+	check(Contracts.progress(job) == 1.0, "painted %s and a full system on: every goal met" % Shed.PAINT_NAMES[3])
+	job["due"] = Contracts.clock() + 10.0
+	var pay := Contracts.payout(job, 400)
+	check(int(pay["labour"]) == 1000 and int(pay["parts"]) == 400 and int(pay["tip"]) > 0 and int(pay["rep"]) == int(Contracts.REP_GAIN["mod"]),
+		"on time and within budget: the full fee, the parts back and a tip (%s)" % Contracts.money(int(pay["total"])))
+	var over := Contracts.payout(job, 700)
+	check(int(over["over"]) == 200 and int(over["labour"]) == 800 and int(over["parts"]) == 500, "200 over budget comes off the pay")
+	job["due"] = Contracts.clock() - 30.0
+	var late := Contracts.payout(job, 400)
+	check(int(late["late"]) == 2 and int(late["labour"]) == 700 and int(late["tip"]) == 0 and int(late["rep"]) < int(pay["rep"]),
+		"two days late: 30% off, no tip, less reputation")
+	job["goals"].append({"t": "top_kmh", "min": 900.0})
+	var part_met := Contracts.payout(job, 400)
+	check(is_equal_approx(float(part_met["sat"]), 0.75) and int(part_met["labour"]) < int(late["labour"]), "a goal missed pays less")
+	# Bespoke: the targets set from a style's own parts can be met by building it.
+	for style in Contracts.STYLES:
+		var ref := Contracts.style_build(style)
+		check(int(Contracts.style_marks(style, ref)[0]) >= 3, "a %s built from its own parts counts as one" % style)
+	var ref2 := Contracts.style_build("cafe")
+	var built := Shed._new_bike(ref2, 3, "Cafe test", 0.0)
+	_make_roadworthy(built)
+	var goals := Contracts._bespoke_goals("cafe", ref2, Shed._rng)
+	for g in goals:
+		if g["t"] == "paint":
+			g["color"] = Shed.paint_index(Shed.items[Shed.item_on(built, "tank")]["color"])
+	var bj := {"id": 999, "kind": "bespoke", "bike": built, "goals": goals, "pay": 3000, "budget": 4000, "due": Contracts.clock() + 100.0,
+		"start_parts": {"frame": ref2["frame"]}}
+	var rows := Contracts.evaluate(bj)
+	check(rows.all(func(r): return r["done"]), "a bespoke cafe racer's targets are reachable: %s" % str(rows.map(func(r): return "%s %s" % [str(r["text"]).left(24), r["have"]])))
+	# Maintenance: each task reads the bike.
+	Shed.start_new("Tester", 45)
+	cid = Contracts.spawn("maint")
+	Contracts.customers()[cid]["offer"]["goals"] = Contracts.TASKS.keys().map(func(k): return {"t": "task", "task": k})
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var mj: Dictionary = Contracts.jobs().values()[0]
+	var mrows := Contracts.evaluate(mj)
+	check(mrows.all(func(r): return not r["done"]), "a service job's bike comes in needing every task (%s)" % str(mrows.map(func(r): return r["have"])))
+	_make_roadworthy(int(mj["bike"]))
+	mrows = Contracts.evaluate(mj)
+	check(mrows.all(func(r): return r["done"]), "serviced, every task is ticked off (%s)" % str(mrows.map(func(r): return r["have"])))
+	# Paying out: the crew who worked on it and the garage.
+	Contracts.note_action(Shed.me(), {"a": "unbolt", "bike": int(mj["bike"]), "slot": "chain"})
+	check(int(mj["workers"].get(Shed.me(), 0)) == 1, "work on a contract bike counts who did it")
+	Shed.bikes[int(mj["bike"])]["xf"] = Transform3D(Basis(), Contracts.door_front())
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": mj["id"]}) == "", "just outside the roller door counts as handing it back")
+	var xp_before := int(Progress.profile["xp"])
+	var g0 := Shed.garage_money
+	var total := int(Contracts.payout(mj)["total"])
+	Shed.request({"a": "contract_hand_in", "job": mj["id"]})
+	check(Shed.garage_money > g0 and Shed.garage_money - g0 <= total, "the garage gets its share (%s of %s)" % [
+		Contracts.money(Shed.garage_money - g0), Contracts.money(total)])
+	check(int(Progress.profile["xp"]) > xp_before and Progress.XP.has("contract_maint") and Progress.XP.has("contract_bespoke"),
+		"and the crew get contract XP")
+	var tv := TvChannels.contracts_data()
+	check(not tv["placeholder"] and not tv["done"].is_empty() and str(tv["done"][0].get("title", "")) != "", "the Contracts TV channel lists it as done")
+
+
+func _test_contract_save() -> void:
+	Shed.start_new("Tester", 46)
+	Contracts._st()["reputation"] = 12
+	var cid := Contracts.spawn("mod")
+	var cid2 := Contracts.spawn("bespoke")
+	Shed.request({"a": "contract_accept", "customer": cid2})
+	Contracts.advance(1.0)
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var bike := int(job["bike"])
+	check(str(job["kind"]) == "bespoke" and Shed.bikes[bike].get("scratch", false) and Shed.item_on(bike, "frame") != 0
+		and Shed.item_on(bike, "engine") == 0, "a bespoke build starts as a bare frame on a bay")
+	var clock := Contracts.clock()
+	var text := var_to_str(Shed.save_snapshot().duplicate(true))
+	Shed.start_new("Tester", 47)
+	Shed.load_state(str_to_var(text), "Tester")
+	check(Contracts.reputation() == 12 and Contracts.customers().has(cid) and Contracts.jobs().size() == 1
+		and is_equal_approx(Contracts.clock(), clock), "customers, jobs, reputation and the clock survive a save")
+	var back: Dictionary = Contracts.jobs().values()[0]
+	check(int(back["bike"]) == bike and Shed.bikes.has(bike) and back["goals"] == job["goals"], "with the job still on its bike")
+	var nid := Contracts.spawn("maint")
+	check(nid != cid and nid > int(back["id"]), "new customers and jobs get new ids after loading")
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	old.erase("contracts")
+	Shed.start_new("Tester", 48)
+	Shed.load_state(old, "Tester")
+	check(Contracts.customers().is_empty() and Contracts.jobs().is_empty() and Contracts.reputation() == 0 and Contracts.clock() == 0.0,
+		"a save from before contracts opens with none")
+
+
+func _test_contract_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	var view: ContractsView = main.contracts_view
+	Shed.request({"a": "contract_spawn", "kind": "maint"})
+	await get_tree().process_frame
+	check(view.views.size() == 1, "a customer appears in the world")
+	var cv: CustomerView = view.views.values()[0]
+	var start := cv.global_position
+	var arrived := [false]
+	cv.arrived.connect(func(_v): arrived[0] = true)
+	for i in 3000:
+		await get_tree().process_frame
+		if arrived[0]:
+			break
+	var at := Contracts.reception().origin
+	check(arrived[0] and cv.at_counter and Vector2(cv.global_position.x, cv.global_position.z).distance_to(Vector2(at.x, at.z)) < 0.2
+		and start.distance_to(cv.global_position) > 3.0, "they walk to reception and ring the bell")
+	check(cv.is_in_group("sales_visitor"), "and open the sales office's doors as they come")
+	# Look at them and press F.
+	main.walker.global_position = at - Contracts.reception().basis.z * 1.6 + Vector3(0, 0.1, 0)
+	await get_tree().physics_frame
+	main.walker.camera.look_at(cv.global_position + Vector3.UP * 1.4)
+	await get_tree().physics_frame
+	check(view.looked_at() == cv.customer_id, "looking at them picks them out")
+	var ev := InputEventAction.new()
+	ev.action = "interact"
+	ev.pressed = true
+	view._unhandled_input(ev)
+	await get_tree().physics_frame
+	check(main.contract_panel.visible and main.contract_panel.customer_id == cv.customer_id and not main.walker.controls_enabled,
+		"F opens their offer card, and you stand still while it's up")
+	main.contract_panel.press("Accept")
+	await get_tree().process_frame
+	check(not main.contract_panel.visible and Contracts.jobs().size() == 1, "Accept takes the job on")
+	for i in 30:
+		await get_tree().process_frame
+	check(view.views.is_empty(), "and they head off")
+	var tabs: Array = main.menu.find_children("Contracts", "ContractsTab", true, false)
+	if not tabs.is_empty():
+		(tabs[0] as ContractsTab).refresh(true)
+	check(not tabs.is_empty() and tabs[0].find_children("*", "Button", true, false).any(func(b): return (b as Button).text == "Hand back"),
+		"the Esc menu's Contracts tab lists the job")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The sales office's plan: where it stands (clear of the shed's rooms, on the yard, off the road),
+## where its rooms are, and the hooks customers use.
+func _test_sales_office_layout() -> void:
+	var rooms := Workshop.rooms()
+	var sales: Rect2 = rooms["sales"]
+	var office: Rect2 = rooms["sales_office"]
+	check(sales == SalesOffice.footprint() and sales.encloses(office), "the sales office and its mezzanine office are rooms")
+	var wash := Rect2(Workshop.WASH_CENTER.x - Workshop.WASH_HALF.x, Workshop.WASH_CENTER.z - Workshop.WASH_HALF.y,
+		Workshop.WASH_HALF.x * 2.0, Workshop.WASH_HALF.y * 2.0)
+	var clear := not sales.grow(1.0).intersects(wash) and not SalesOffice.FORECOURT.intersects(wash)
+	for room in ["shed", "paint", "storage", "dyno"]:
+		var r: Rect2 = rooms[room]
+		clear = clear and not sales.grow(SalesOffice.WALL + 1.0).intersects(r) and not SalesOffice.FORECOURT.intersects(r.grow(0.3))
+	check(clear, "the building and its forecourt keep clear of the shed, its side rooms and the wash bay")
+	var yard := Rect2(World.YARD_CENTER - World.YARD_HALF, World.YARD_HALF * 2.0)
+	check(yard.encloses(sales.grow(SalesOffice.WALL)) and yard.encloses(SalesOffice.FORECOURT), "it all stands on the flat yard slab")
+	check(SalesOffice.FORECOURT.end.y < 95.0, "the car park stops short of the drag strip")
+	check(Workshop.room_at(Workshop.RECEPTION.origin) == "sales" and Workshop.room_at(Workshop.RECEPTION_DESK.origin) == "sales",
+		"reception is inside")
+	var to_desk := (Workshop.RECEPTION_DESK.origin - Workshop.RECEPTION.origin).normalized()
+	check((-Workshop.RECEPTION.basis.z).dot(to_desk) > 0.99 and (-Workshop.RECEPTION_DESK.basis.z).dot(-to_desk) > 0.99,
+		"the customer faces the desk, and you face the customer")
+	var entry: Vector3 = Workshop.CUSTOMER_ENTRY.origin
+	check(Workshop.room_at(entry) == "" and SalesOffice.FORECOURT.has_point(Vector2(entry.x, entry.z)), "customers arrive at the car park edge")
+	var to_door := (Workshop.SALES_DOOR - entry).normalized()
+	check((-Workshop.CUSTOMER_ENTRY.basis.z).dot(to_door) > 0.99, "facing the doors")
+	# The straight walk in goes through the doors, clear of the plinths.
+	var door_t := (entry.z - Workshop.SALES_DOOR.z) / (entry.z - Workshop.RECEPTION.origin.z)
+	var through := entry.lerp(Workshop.RECEPTION.origin, door_t)
+	check(absf(through.x - Workshop.SALES_DOOR.x) < SalesOffice.DOOR_HALF - 0.4, "the walk from the car park to the desk goes through the doors (x %.2f)" % through.x)
+	var plinths_clear := true
+	for i in 40:
+		var p := Workshop.SALES_DOOR.lerp(Workshop.RECEPTION.origin, i / 39.0)
+		for spot in Workshop.SHOWROOM_SPOTS:
+			plinths_clear = plinths_clear and Vector2(p.x - spot.origin.x, p.z - spot.origin.z).length() > SalesOffice.PLINTH_RADIUS + 0.4
+	check(plinths_clear, "and past the bikes on show")
+	check(Workshop.SHOWROOM_SPOTS.size() == 4 and Workshop.SHOWROOM_SPOTS.all(func(x): return Workshop.room_at(x.origin) == "sales"),
+		"four display plinths in the showroom")
+	var apart := true
+	for i in 4:
+		for j in range(i + 1, 4):
+			apart = apart and Workshop.SHOWROOM_SPOTS[i].origin.distance_to(Workshop.SHOWROOM_SPOTS[j].origin) > SalesOffice.PLINTH_RADIUS * 2.0 + 0.2
+	check(apart, "far enough apart for a bike on each")
+	# Upstairs and downstairs.
+	var mid := office.get_center()
+	check(Workshop.room_at(Vector3(mid.x, 0.0, mid.y)) == "sales" and Workshop.room_at(Vector3(mid.x, SalesOffice.MEZZ_Y + 1.6, mid.y)) == "sales_office",
+		"the office is upstairs, over the ground floor")
+	check(Workshop.room_at(SalesOffice.at(5.0, 4.0, 0.0)) == "sales", "the showroom is double height")
+	check(Weather.shelter_top("sales") > SalesOffice.CEIL_Y and not Weather.raining_at(SalesOffice.CENTER), "its roof keeps the rain off")
+	check(SalesOffice.spot_near(Workshop.SHOWROOM_SPOTS[2].origin + Vector3(0.5, 0.0, 0.3)) == 2 and SalesOffice.spot_near(SalesOffice.CENTER + Vector3(-5.0, 0.0, 0.0)) == -1,
+		"a bike let go of by a plinth goes onto it")
+	var bell := Sfx.stream("bell")
+	var chime := Sfx.stream("bell_chime")
+	check(bell.data.size() > Sfx.RATE * 2 and chime.data.size() > Sfx.RATE * 2 and not Sfx.LOOPS.has("bell"), "the shop bell and the shed chime are one-shot sounds")
+
+
+## Bikes on show and the office lights in a save; a save from before the sales office.
+func _test_sales_office_save() -> void:
+	Shed.start_new("Tester", 31)
+	check(Shed.room_lit("sales"), "a new shed's sales office is lit")
+	var bike := _bike_named("Old Faithful")
+	var spot: Transform3D = Workshop.SHOWROOM_SPOTS[1]
+	check(Shed.check(Shed.me(), {"a": "grab_bike", "bike": bike}) == "", "you can wheel a bike to the showroom")
+	Shed.request({"a": "grab_bike", "bike": bike})
+	Shed.request({"a": "move_bike", "bike": bike, "xf": spot.translated(Vector3(0.4, 0.0, -0.3))})
+	Shed.request({"a": "release_bike", "bike": bike, "xf": Transform3D(Basis(), spot.origin + Vector3(0.4, 0.0, -0.3))})
+	var xf: Transform3D = Shed.bikes[bike]["xf"]
+	check(xf.is_equal_approx(spot) and str(Shed.bikes[bike]["stand"]) == "" and Shed.showroom_spot_of(bike) == 1,
+		"let go of by a plinth, it stands square on it, upright on show")
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.request({"a": "grab_bike", "bike": ranger})
+	Shed.request({"a": "release_bike", "bike": ranger, "xf": Transform3D(Basis(), spot.origin + Vector3(-0.5, 0.0, 0.2))})
+	check(not (Shed.bikes[ranger]["xf"] as Transform3D).is_equal_approx(spot) and Shed.showroom_spot_of(ranger) == -1,
+		"a plinth with a bike on it is taken")
+	Shed.request({"a": "lights", "room": "sales", "on": false})
+	check(not Shed.room_lit("sales") and Shed.room_lit("paint") and Shed.lights_on, "the office lights have their own switch")
+	var snap: Dictionary = Shed._snapshot().duplicate(true)
+	Shed.start_new("Tester", 32)
+	Shed.load_state(snap, "Tester")
+	check((Shed.bikes[bike]["xf"] as Transform3D).is_equal_approx(spot) and not Shed.room_lit("sales"), "and both come back from a save")
+	var old: Dictionary = snap.duplicate(true)
+	(old["room_lights"] as Dictionary).erase("sales")
+	Shed.start_new("Tester", 33)
+	Shed.load_state(old, "Tester")
+	check(Shed.room_lit("sales") and Shed.bikes.size() == (snap["bikes"] as Dictionary).size(),
+		"a save from before the sales office opens with it lit, and nothing else changed")
+	Shed.stop()
+
+
+## Walking it: the floors, the doors, the stairs up to the office and back down, wheeling a
+## bike in onto a plinth, the light switches and the bell.
+func _test_sales_office_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var ws: Workshop = main.workshop
+	var so: SalesOffice = ws.sales_office
+	check(so != null and so.get_parent() == ws, "the sales office is built with the shed")
+	var space: PhysicsDirectSpaceState3D = ws.get_world_3d().direct_space_state
+	var down := func(x: float, z: float, from_y: float) -> Dictionary:
+		var q := PhysicsRayQueryParameters3D.create(Vector3(x, from_y, z), Vector3(x, from_y - 8.0, z), 1)
+		return space.intersect_ray(q)
+	var at := func(lx: float, lz: float) -> Vector2:
+		return Vector2(SalesOffice.CENTER.x + lx, SalesOffice.CENTER.z + lz)
+	# Off the road loop.
+	var road_gap := 999.0
+	for p in [Vector2(SalesOffice.FORECOURT.position.x, SalesOffice.FORECOURT.end.y), SalesOffice.FORECOURT.end, SalesOffice.footprint().position,
+			Vector2(SalesOffice.footprint().end.x, SalesOffice.footprint().position.y)]:
+		road_gap = minf(road_gap, (main.world._road_info(p.x, p.y) as Vector2).x)
+	check(road_gap > World.ROAD_HALF_WIDTH + 10.0, "the sales office and car park are well off the road (%.0f m)" % road_gap)
+	# Floors: the ground floor everywhere (yard level), the mezzanine at its height.
+	var level := true
+	for p in [Vector2(0.0, 4.0), Vector2(3.9, 1.4), Vector2(-3.5, 0.5), Vector2(-4.0, -4.6), Vector2(-5.0, 1.2), Vector2(6.5, -5.4)]:
+		var q: Vector2 = at.call(p.x, p.y)
+		var hit: Dictionary = down.call(q.x, q.y, 2.5)
+		level = level and not hit.is_empty() and absf((hit["position"] as Vector3).y) < 0.02 and (hit["normal"] as Vector3).y > 0.99
+	check(level, "the ground floor is level with the yard")
+	var upstairs := true
+	for p in [Vector2(-3.8, 2.6), Vector2(-5.5, -4.0), Vector2(-2.0, 5.0), Vector2(-6.0, 3.0)]:
+		var q: Vector2 = at.call(p.x, p.y)
+		var hit: Dictionary = down.call(q.x, q.y, SalesOffice.CEIL_Y - 0.2)
+		upstairs = upstairs and not hit.is_empty() and absf((hit["position"] as Vector3).y - SalesOffice.MEZZ_Y) < 0.02
+	check(upstairs, "the mezzanine floor is level")
+	var plinth: Vector3 = Workshop.SHOWROOM_SPOTS[0].origin
+	var top: Dictionary = down.call(plinth.x, plinth.z, 2.0)
+	check(not top.is_empty() and absf((top["position"] as Vector3).y - SalesOffice.PLINTH_TOP) < 0.01, "the plinths are low enough to step and wheel onto")
+	# The stairs: a smooth slope under the steps, at a pitch the walker climbs.
+	var w: Walker = main.walker
+	var ramp_ok := true
+	for k in 9:
+		var lx := lerpf(SalesOffice.STAIR_LOW_X - 0.2, SalesOffice.MEZZ_EDGE + 0.2, k / 8.0)
+		var q: Vector2 = at.call(lx, -5.4)
+		var hit: Dictionary = down.call(q.x, q.y, SalesOffice.CEIL_Y - 0.3)
+		ramp_ok = ramp_ok and not hit.is_empty() and absf((hit["position"] as Vector3).y - SalesOffice.stair_height(lx)) < 0.08 \
+			and (hit["normal"] as Vector3).angle_to(Vector3.UP) < w.floor_max_angle
+	check(ramp_ok, "the stairs climb at %.0f degrees, under the walker's %.0f" % [rad_to_deg(atan2(SalesOffice.MEZZ_Y, SalesOffice.STAIR_LOW_X - SalesOffice.MEZZ_EDGE)),
+		rad_to_deg(w.floor_max_angle)])
+	# The front doors: shut with nobody about, sliding open as you come up.
+	w.set_tool("hands")
+	var door := Workshop.SALES_DOOR
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.1, 2.0)))
+	for i in 120:
+		await get_tree().physics_frame
+	var through := func() -> bool:
+		var q := PhysicsRayQueryParameters3D.create(door + Vector3(0.4, 1.2, 1.0), door + Vector3(0.4, 1.2, -1.0), 1)
+		return space.intersect_ray(q).is_empty()
+	check(so.door_open_amount < 0.01 and not through.call(), "the sales office doors are shut with nobody about")
+	w.place(Transform3D(Basis(), door + Vector3(-0.3, 0.1, 3.5)))
+	Input.action_press("move_forward")
+	var opened := false
+	for i in 360:
+		await get_tree().physics_frame
+		if absf(w.global_position.z - door.z) < 0.6:
+			opened = opened or (so.door_open_amount > 0.9 and through.call())
+	Input.action_release("move_forward")
+	check(Workshop.room_at(w.global_position) == "sales", "they slide open and you walk in (%s)" % str(w.global_position))
+	check(opened, "open wide as you go through them")
+	# Up the stairs to the office, and back down.
+	var foot: Vector2 = at.call(SalesOffice.STAIR_LOW_X + 1.2, -5.4)
+	w.place(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(foot.x, 0.1, foot.y)))
+	Input.action_press("move_forward")
+	for i in 600:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(absf(w.global_position.y - SalesOffice.MEZZ_Y) < 0.1 and Workshop.room_at(w.global_position) == "sales_office",
+		"you can climb the stairs to the mezzanine office (%s)" % str(w.global_position))
+	var landing: Vector2 = at.call(SalesOffice.MEZZ_EDGE - 1.0, -5.4)
+	w.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(landing.x, SalesOffice.MEZZ_Y + 0.1, landing.y)))
+	Input.action_press("move_forward")
+	for i in 600:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(absf(w.global_position.y) < 0.1 and w.global_position.x > SalesOffice.CENTER.x + SalesOffice.STAIR_LOW_X,
+		"and walk back down (%s)" % str(w.global_position))
+	# The balustrade stops you walking off the edge of the mezzanine.
+	var edge: Vector2 = at.call(SalesOffice.MEZZ_EDGE - 1.0, 2.6)
+	w.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(edge.x, SalesOffice.MEZZ_Y + 0.1, edge.y)))
+	Input.action_press("move_forward")
+	for i in 240:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(w.global_position.y > SalesOffice.MEZZ_Y - 0.1, "the glass balustrade keeps you on the mezzanine")
+	# Wheel a bike in through the doors and onto a plinth.
+	var bike := _bike_named("Old Faithful")
+	w.place(Transform3D(Basis(), door + Vector3(-0.75, 0.1, 4.0)))
+	await get_tree().physics_frame
+	Shed.request({"a": "grab_bike", "bike": bike})
+	check(Shed.pushing_bike(Shed.me()) == bike, "you take hold of a bike outside")
+	Input.action_press("move_forward")
+	for i in 300:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	check(Workshop.room_at(w.global_position) == "sales" and Workshop.room_at((Shed.bikes[bike]["xf"] as Transform3D).origin) == "sales",
+		"and wheel it in through the doors")
+	var spot: Transform3D = Workshop.SHOWROOM_SPOTS[0]
+	w.place(Transform3D(Basis(), spot.origin - Vector3(0.55, 0.0, 0.1) + Vector3.UP * 0.1))
+	for i in 20:
+		await get_tree().physics_frame
+	_press("interact")
+	for i in 5:
+		await get_tree().physics_frame
+	check(Shed.pushing_bike(Shed.me()) == 0 and Shed.showroom_spot_of(bike) == 0, "let go of by a plinth, it goes on show (%s)" % str((Shed.bikes[bike]["xf"] as Transform3D).origin))
+	await get_tree().process_frame
+	var view: Node3D = ws.bike_views.get(bike)
+	check(view != null and absf(view.global_position.y - SalesOffice.PLINTH_TOP) < 0.01, "drawn standing on the plinth")
+	# The light switch by the stairs.
+	w.place(Transform3D(Basis(), SalesOffice.CENTER + Vector3(SalesOffice.MEZZ_EDGE + 1.3, 0.1, -2.0)))
+	await _aim_point(w, SalesOffice.at(SalesOffice.MEZZ_EDGE + 0.02, 1.35, -2.0))
+	check(w.target.get("kind", "") == "lights" and w.target.get("room", "") == "sales" and w.info.contains("Sales office lights"),
+		"the sales office light switch (%s)" % str(w.target))
+	_press("interact")
+	for i in 3:
+		await get_tree().process_frame
+	check(not Shed.room_lit("sales") and so._lights.all(func(l): return not (l as Light3D).visible), "turns its lights off")
+	Shed.request({"a": "lights", "room": "sales", "on": true})
+	for i in 3:
+		await get_tree().process_frame
+	check(so._lights.all(func(l): return (l as Light3D).visible) and so.lights_shown(), "and on")
+	# The bell: everyone hears it, and the shop bell swings.
+	var heard := [0]
+	var on_bell := func(): heard[0] += 1
+	Shed.bell_rang.connect(on_bell)
+	var before := Shed.bells_heard
+	Shed.ring_bell()
+	for i in 6:
+		await get_tree().process_frame
+	check(Shed.bells_heard == before + 1 and heard[0] == 1, "the host rings the sales office bell")
+	var bell_s := Sfx.stream("bell")
+	var chime_s := Sfx.stream("bell_chime")
+	var players := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(p): return p.stream == bell_s or p.stream == chime_s)
+	check(players.size() >= 2, "the shop bell rings over its door and the chime in the shed")
+	var chime := players.filter(func(p): return p.stream == chime_s)
+	check(not chime.is_empty() and Workshop.room_at((chime[0] as Node3D).global_position) == "shed", "the chime is in the shed")
+	check(absf((so.get_node("ShopBell") as Node3D).rotation.x) > 0.01, "and the bell over the door swings")
+	Shed.bell_rang.disconnect(on_bell)
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The garage upgrades catalogue: every upgrade named and priced from a few thousand up to
+## hundreds of thousands, and everything it needs listed before it.
+func _test_upgrade_catalogue() -> void:
+	var seen := []
+	var ok := true
+	var top := 0
+	var cheapest := 1000000000
+	for id in GarageUpgrades.CATALOGUE:
+		var u: Dictionary = GarageUpgrades.CATALOGUE[id]
+		ok = ok and str(u.get("name", "")) != "" and str(u.get("desc", "")) != "" and GarageUpgrades.CATEGORIES.has(str(u.get("cat", "")))
+		for n in u["needs"]:
+			ok = ok and seen.has(n)
+		top = maxi(top, int(u["price"]))
+		cheapest = mini(cheapest, int(u["price"]))
+		seen.append(id)
+	check(ok, "every upgrade has a name, a description and a group, and comes after what it needs")
+	check(cheapest >= 1000 and cheapest < 10000 and top >= 100000, "prices run from %s to %s" % [TvChannels.money_text(cheapest), TvChannels.money_text(top)])
+	for key in ["wing", "bays_56", "bay_7", "annex", "racking", "mezzanine", "epoxy", "led", "cladding", "signage", "lounge", "showroom"]:
+		check(GarageUpgrades.exists(key), "the catalogue has %s" % GarageUpgrades.title(key))
+	check(Progress.XP.has(GarageUpgrades.XP_KEY), "buying one is worth XP")
+	# The new buildings stay clear of the shed's rooms, each other and the yard in front.
+	var all := Workshop.rooms()
+	all.merge(GarageUpgrades.rooms({"wing": true, "annex": true}))
+	var clear := true
+	for a in all:
+		for b in all:
+			if a.begins_with("sales") and b.begins_with("sales"):
+				continue   # the mezzanine office is upstairs inside the sales office
+			if a != b and (all[a] as Rect2).grow(-0.01).intersects((all[b] as Rect2).grow(-0.01)):
+				clear = false
+				print("    %s overlaps %s" % [a, b])
+	check(clear, "the extension and the annex don't overlap any room")
+	check(GarageUpgrades.WING.end.y < Workshop.CENTER.z - Workshop.HALF.y and GarageUpgrades.ANNEX.end.y < Workshop.STORE_CENTER.z - Workshop.STORE_HALF.y,
+		"both are behind the shed, away from the yard")
+	var racks_in := true
+	for xf in GarageUpgrades.racking_xfs():
+		var size: Vector3 = Equipment.get_model("shelf_racking")["size"]
+		var foot := Shed.foot_rect(xf, Vector2(size.x, size.z))
+		racks_in = racks_in and GarageUpgrades.ANNEX.encloses(foot)
+	check(racks_in, "the racking stands inside the annex")
+
+
+## Buying upgrades with the garage's money: refused when broke or before what it needs, the
+## money taken, XP paid, more bays that take bikes, holograms and builds, racking that is real
+## shelving, and all of it kept in the save (old saves have none).
+func _test_upgrade_buying() -> void:
+	Shed.start_new("Tester", 9)
+	var me := Shed.me()
+	check(Shed.upgrades.is_empty() and Workshop.bay_count() == Workshop.BAY_COUNT, "a new shed has no upgrades and four bays")
+	Shed.request({"a": "buy_upgrade", "id": "wing"})
+	check(not GarageUpgrades.owned("wing") and Shed.check(me, {"a": "buy_upgrade", "id": "wing"}).contains("afford"), "the garage can't buy one with no money")
+	Shed.request({"a": "garage_money", "value": 100000})
+	check(Shed.check(me, {"a": "buy_upgrade", "id": "bays_56"}).contains("Needs the workshop extension"), "bays 5 and 6 need the extension first")
+	check(Shed.check(me, {"a": "buy_upgrade", "id": "nope"}) != "", "nothing that isn't in the catalogue")
+	var xp := int(Progress.profile.get("xp", 0))
+	Shed.request({"a": "buy_upgrade", "id": "wing"})
+	check(GarageUpgrades.owned("wing") and Shed.garage_money == 70000, "the extension is built and %s comes out of the garage's money" % TvChannels.money_text(30000))
+	check(int(Progress.profile.get("xp", 0)) > xp, "the buyer gets XP")
+	check(Shed.check(me, {"a": "buy_upgrade", "id": "wing"}).contains("already"), "it can't be bought twice")
+	check(Workshop.rooms().has("wing") and not Workshop.rooms().has("annex"), "the extension is a room now (no rain inside)")
+	Shed.request({"a": "buy_upgrade", "id": "bays_56"})
+	check(Workshop.bay_count() == 6, "bays 5 and 6: six bays")
+	Shed.request({"a": "buy_upgrade", "id": "bay_7"})
+	check(Workshop.bay_count() == 7 and Shed.garage_money == 100000 - 30000 - 20000 - 12500, "bay 7: seven bays, and the money's gone down")
+	check(TvChannels.screen_exists("bay6") and not TvChannels.screen_exists("bay7"), "each new bay has a screen with channels")
+	var spots := {}
+	for bay in Workshop.bay_count():
+		spots[Workshop.bay_transform(bay).origin.snapped(Vector3.ONE * 0.1)] = true
+		check(Shed.bay_at(Workshop.bay_transform(bay).origin) == bay, "bay %d's stand is where bay_at finds it" % (bay + 1))
+	check(spots.size() == 7, "every bay has its own spot")
+	var inside := true
+	for i in 3:
+		inside = inside and GarageUpgrades.WING.has_point(Vector2(Workshop.bay_transform(4 + i).origin.x, Workshop.bay_transform(4 + i).origin.z))
+	check(inside, "the new bays are in the extension")
+	# Project bikes go to the new bays once the shed's own are full.
+	Shed.request({"a": "order"})
+	Shed.request({"a": "order"})
+	var in_five := Shed.bike_in_bay(4)
+	check(in_five != 0 and Shed.on_paddock(in_five), "a project bike is delivered to bay 5, on its paddock stand")
+	# A blueprint build waiting in bay 6, and a frame started in bay 7.
+	var bp := Shed._save_blueprint(in_five, "Bay six special")
+	Shed.request({"a": "bp_build", "bp": bp, "bay": 5})
+	check(Shed.holograms.has(5) and Shed.plan_bays().has(5), "a blueprint build can wait in bay 6")
+	var frame := Shed._new_item("steel_cradle", 0.0, 0.0, 0.0)
+	Shed._move(frame, "held", me)
+	Shed.request({"a": "start_build", "bay": 6})
+	check(Shed.bike_in_bay(6) != 0, "a bike can be started from a bare frame in bay 7")
+	check(Shed.free_bay(Workshop.bay_count()) < 0 and Shed.check(me, {"a": "order"}) != "", "with all seven full, no more project bikes")
+	# Storage: the annex, then racking that is real shelving.
+	Shed.request({"a": "buy_upgrade", "id": "racking"})
+	check(not GarageUpgrades.owned("racking"), "racking needs the annex")
+	Shed.request({"a": "garage_money", "value": 500000})
+	var shelves := Shed.furniture.values().filter(func(f): return f["model"] == "shelf_racking").size()
+	Shed.request({"a": "buy_upgrade", "id": "annex"})
+	Shed.request({"a": "buy_upgrade", "id": "racking"})
+	var racks := Shed.furniture.values().filter(func(f): return f["model"] == "shelf_racking")
+	check(racks.size() == shelves + 3 and Shed.furniture_spots(int(racks[0]["id"])).size() > 0, "racking: three runs of heavy-duty shelving in the annex")
+	Shed.request({"a": "buy_upgrade", "id": "showroom"})
+	check(not GarageUpgrades.owned("showroom") and Shed.check(me, {"a": "buy_upgrade", "id": "showroom"}).contains("Needs"), "the showroom needs the other finishes first")
+	# Saved and loaded.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.start_new("Tester", 9)
+	check(Workshop.bay_count() == 4, "a new shed starts without them")
+	Shed.load_state(copy, "Tester")
+	check(GarageUpgrades.owned("bay_7") and GarageUpgrades.owned("racking") and Workshop.bay_count() == 7 and Shed.bike_in_bay(4) != 0,
+		"the upgrades come back with the save, bikes still in the new bays")
+	check(Shed.screen_channel("bay6")["ch"] == "bay", "bay 7's screen shows its bay")
+	copy.erase("upgrades")
+	Shed.load_state(copy, "Tester")
+	check(Shed.upgrades.is_empty() and Workshop.bay_count() == 4, "a shed saved before upgrades has none")
+	copy["upgrades"] = {"wing": true, "gold_toilet": true}
+	Shed.load_state(copy, "Tester")
+	check(Shed.upgrades.keys() == ["wing"], "upgrades that don't exist are dropped from a save")
+	Shed.stop()
+
+
+## In the game: buying rebuilds the shed for everyone straight away. The doorway is knocked
+## through, the new bays have screens and lights, the stairs can be climbed, and nothing new
+## is built through the shed's own walls.
+func _test_upgrade_session() -> void:
+	SaveGame.slot_override = "test_upgrades"
+	SaveGame.delete_slot("test_upgrades")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	var ws: Workshop = main.world.workshop
+	check(ws.upgrades != null and ws.upgrades.built() == "", "the shed starts with nothing built on")
+	var space := ws.get_world_3d().direct_space_state
+	var through := func(from: Vector3, to: Vector3) -> bool:
+		var q := PhysicsRayQueryParameters3D.create(from, to, 1)
+		return space.intersect_ray(q).is_empty()
+	var door_from := Vector3(GarageUpgrades.WING_DOOR_X, 1.2, 60.5)
+	var door_to := Vector3(GarageUpgrades.WING_DOOR_X, 1.2, 57.0)
+	check(not through.call(door_from, door_to), "before the extension the back wall is solid there")
+	var nodes := ws.get_child_count()
+	Shed.request({"a": "garage_money", "value": 1000000})
+	for id in GarageUpgrades.CATALOGUE:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	check(Shed.upgrades.size() == GarageUpgrades.CATALOGUE.size(), "with money enough, everything can be bought in order")
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	check(ws.upgrades.built().contains("showroom") and ws.get_node_or_null("Upgrades/Built/WingFloor") != null
+		and ws.get_node_or_null("Upgrades/Built/AnnexFloor") != null and ws.get_node_or_null("Upgrades/Built/MezzanineDeck") != null,
+		"the shed is rebuilt with the extension, the annex and the mezzanine")
+	check(through.call(door_from, door_to), "a doorway is knocked through the back wall behind bay 4")
+	check(not through.call(Vector3(3.0, 1.2, 60.5), Vector3(3.0, 1.2, 57.0)), "the rest of the back wall is still there")
+	check(through.call(Vector3(GarageUpgrades.ANNEX_DOOR_X, 1.2, 56.0), Vector3(GarageUpgrades.ANNEX_DOOR_X, 1.2, 52.0))
+		and not through.call(Vector3(-14.0, 1.2, 56.0), Vector3(-14.0, 1.2, 52.0)), "and one through the storage room's back wall into the annex")
+	var stairs := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-7.45, 4.0, 51.7), Vector3(-7.45, -1.0, 51.7), 1))
+	check(not stairs.is_empty() and absf(float(stairs["position"].y) - 1.2) < 0.25, "the mezzanine stairs are a slope to walk up (%.2f m half way)" % float(stairs.get("position", Vector3.ZERO).y))
+	var deck := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(-11.5, 4.0, 48.5), Vector3(-11.5, -1.0, 48.5), 1))
+	check(not deck.is_empty() and absf(float(deck["position"].y) - GarageUpgrades.MEZZ_TOP) < 0.05, "the deck is up at %.1f m" % GarageUpgrades.MEZZ_TOP)
+	var all := ws.screens()
+	check(all.has("bay4") and all.has("bay5") and all.has("bay6") and not all.has("bay7"), "the three new bays have screens")
+	check((all["bay6"] as Dashboard).global_position.distance_to(Workshop.bay_transform(6).origin) < 3.5, "bay 7's screen hangs over bay 7")
+	var raised: Dashboard = all["bay3"]
+	check(raised.global_position.y - raised.width * Dashboard.PX.y / Dashboard.PX.x * 0.5 > GarageUpgrades.WING_DOOR_HEIGHT,
+		"bay 4's screen moves up over the new doorway")
+	var shelters: PackedVector4Array = main.world.weather._rain_mat.get_shader_parameter("shelters")
+	var w := GarageUpgrades.WING.get_center()
+	var dry := false
+	for r in shelters:
+		dry = dry or (w.x > r.x and w.x < r.z and w.y > r.y and w.y < r.w)
+	check(dry, "rain isn't drawn inside the extension")
+	check(Workshop.room_at(Vector3(w.x, 0.0, w.y)) == "wing", "and it counts as indoors")
+	# A bike in a new bay is drawn there, on its paddock stand, and its bay screen shows it.
+	Shed.request({"a": "order"})
+	Shed.request({"a": "order"})
+	await get_tree().process_frame
+	var b5 := Shed.bike_in_bay(4)
+	check(b5 != 0 and ws.bike_views.has(b5) and (ws.bike_views[b5] as Node3D).global_position.distance_to(Workshop.bay_transform(4).origin) < 0.1,
+		"a project bike delivered to bay 5 is drawn in the extension")
+	check(str(ws._bay_data(4).get("name", "")) == str(Shed.bikes[b5]["name"]), "bay 5's screen shows its bike")
+	# Rebuilding again changes nothing, and nothing piles up.
+	var count := ws.upgrades.get_child(0).get_child_count()
+	var lights := ws._shed_lights.size()
+	var nodes_now := ws.get_child_count()
+	ws.upgrades._sig = "?"
+	ws.upgrades.sync()
+	await get_tree().process_frame
+	check(ws.upgrades.get_child_count() == 1 and ws.upgrades.get_child(0).get_child_count() == count and ws._shed_lights.size() == lights
+		and ws._bay_screens.size() == 7, "a rebuild replaces what was there")
+	check(ws.get_child_count() == nodes_now, "nothing is left behind on the workshop")
+	# Gone again in a new shed.
+	Shed.upgrades = {}
+	Shed.changed.emit()
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	check(ws.upgrades.built() == "" and not through.call(door_from, door_to) and ws._bay_screens.size() == 4
+		and is_equal_approx(raised.position.y, 2.45), "with none, the shed is back as it was")
+	# The parts computer's Garage upgrades page.
+	Shed.request({"a": "garage_money", "value": 0})
+	main.computer.open()
+	main.computer.open_upgrades()
+	var page: UpgradesPanel = main.computer.upgrades_panel
+	check(page.visible and page._rows.size() == GarageUpgrades.CATALOGUE.size(), "the parts computer lists every upgrade")
+	page.show_upgrade("wing")
+	check(page._buy.disabled and page._status.text.contains("afford"), "Buy is greyed out while the garage can't afford it")
+	check(UpgradesPanel.row_text("bay_7").contains("needs") and UpgradesPanel.row_text("bay_7").contains(TvChannels.money_text(12500)), "each row shows its price and what it needs")
+	Shed.request({"a": "garage_money", "value": 40000})
+	page.refresh()
+	page.show_upgrade("wing")
+	check(not page._buy.disabled, "with the money, it can be bought")
+	page.buy()
+	await get_tree().process_frame
+	check(GarageUpgrades.owned("wing") and UpgradesPanel.row_text("wing").contains("BUILT"), "Buy builds it, and the list says so")
+	main.computer.close_computer()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_upgrades")
+	SaveGame.slot_override = ""
+
+
+# ---------------------------------------------------------------------------- rider gear and trinkets
+
+func _test_gear_catalogue() -> void:
+	for slot in RiderGear.SLOTS:
+		var ids := RiderGear.by_slot(slot)
+		var free := ids.filter(func(id): return RiderGear.price(id) == 0)
+		check(ids.size() >= 6 and free.size() == 1 and free[0] == RiderGear.DEFAULTS[slot] and ids[0] == RiderGear.DEFAULTS[slot],
+			"%s: %d designs, one free default listed first" % [slot, ids.size()])
+	var bad := []
+	var names := {}
+	for id in RiderGear.ITEMS:
+		var it: Dictionary = RiderGear.ITEMS[id]
+		if not RiderGear.SLOTS.has(str(it["slot"])) or str(it.get("name", "")) == "" or str(it.get("desc", "")) == "" \
+				or not RiderFigure.PATTERNS.has(str(it.get("pattern", "plain"))) or not (it["base"] is Color or it["base"] is String):
+			bad.append(id)
+		names[str(it["slot"]) + str(it["name"])] = true
+	check(bad.is_empty(), "every gear item has a slot, name, description, colour and a known pattern (%s)" % str(bad))
+	check(names.size() == RiderGear.ITEMS.size(), "no two items in a slot share a name")
+	var shapes := {}
+	for id in RiderGear.by_slot("helmet"):
+		shapes[str(RiderGear.ITEMS[id]["shape"])] = true
+	check(shapes.size() >= 5, "helmets come in at least five shapes (%s)" % str(shapes.keys()))
+	# Patterns: a stripe runs down the front, hoops go round.
+	var b := Color.WHITE
+	var t := Color.RED
+	check(RiderFigure.pattern_color("stripe", 0.5, 0.3, b, t, b) == t and RiderFigure.pattern_color("stripe", 0.25, 0.3, b, t, b) == b,
+		"a stripe is at the front, not the side")
+	check(RiderFigure.pattern_color("hoops", 0.1, 0.2, b, t, b) != RiderFigure.pattern_color("hoops", 0.1, 0.05, b, t, b), "hoops go round")
+	# Trinkets: sold in the Shop, kit of kind "trinket" once in the shed, not on the parts computer.
+	check(Trinkets.MODELS.size() >= 10, "at least ten trinkets (%d)" % Trinkets.MODELS.size())
+	var odd := []
+	for id in Trinkets.MODELS:
+		var m: Dictionary = Trinkets.MODELS[id]
+		if Equipment.kind_of(id) != "trinket" or int(m["price"]) <= 0 or not (m["size"] is Vector3) or Equipment.get_model(id).is_empty():
+			odd.append(id)
+	check(odd.is_empty(), "every trinket is shed kit of kind trinket with a price and a size (%s)" % str(odd))
+	check(Equipment.is_wall("trinket_clock") and Equipment.is_wall("trinket_neon") and not Equipment.is_wall("trinket_plant"),
+		"the clock and neon sign hang on a wall, the plant stands on the floor")
+	check(not PartsComputer.all_kinds().has("eq:trinket") and PartsComputer.search("lava lamp").is_empty(),
+		"trinkets aren't on the parts computer")
+	# Each trinket draws something.
+	var empty := []
+	for id in Trinkets.MODELS:
+		var n := Node3D.new()
+		Trinkets.build(n, id)
+		if n.get_child_count() == 0:
+			empty.append(id)
+		n.free()
+	check(empty.is_empty(), "every trinket has a model (%s)" % str(empty))
+
+
+func _test_gear_buying() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_gear_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	Shed.start_new("Gear Tester", 5)
+	Progress.select("Gear Tester")
+	var gear: Dictionary = Progress.profile.get("gear", {})
+	check(RiderGear.sig(gear.get("worn", {})) == RiderGear.sig(RiderGear.DEFAULTS) and (gear["owned"] as Array).size() == 5,
+		"a new rider owns and wears the five free defaults")
+	Progress.set_money(100)
+	var why := RiderGear.buy("helmet_sprint")
+	check(why.contains("afford") and not RiderGear.owns("helmet_sprint") and Progress.money() == 100,
+		"too little money: the helmet isn't sold and nothing is taken (%s)" % why)
+	check(RiderGear.wear("helmet_sprint") != "" and RiderGear.worn_of(Shed.me())["helmet"] == "helmet_cap", "you can't wear what you haven't bought")
+	Progress.set_money(500)
+	why = RiderGear.buy("helmet_sprint")
+	check(why == "" and RiderGear.owns("helmet_sprint") and Progress.money() == 500 - RiderGear.price("helmet_sprint"),
+		"with enough money it's bought and paid for (%d left)" % Progress.money())
+	check(RiderGear.buy("helmet_sprint") != "" and Progress.money() == 500 - RiderGear.price("helmet_sprint"), "you can't buy the same thing twice")
+	check(RiderGear.wear("helmet_sprint") == "" and RiderGear.worn_of(Shed.me())["helmet"] == "helmet_sprint", "and then worn")
+	check(RiderGear.buy("no_such_lid") != "", "an unknown item isn't sold")
+	check(Progress.own_summary()["gear"]["helmet"] == "helmet_sprint", "what you wear goes out in your summary")
+	# Kept in the profile, so it goes with you to any shed.
+	Progress.save_profile()
+	Progress.profile = {}
+	Progress.select("Gear Tester")
+	check(RiderGear.owns("helmet_sprint") and RiderGear.worn_of(Shed.me())["helmet"] == "helmet_sprint", "owned and worn gear are kept in the profile")
+	# A profile from before gear gets the defaults; bad entries are dropped.
+	var f := FileAccess.open(Progress.path, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"version": 1, "profiles": {"Old Timer": {"name": "Old Timer", "xp": 10, "money": 40},
+		"Cheat": {"name": "Cheat", "gear": {"owned": ["jacket_kestrel", "rocket_boots"], "worn": {"jacket": "jacket_kestrel", "boots": "rocket_boots", "gloves": "gloves_kestrel"}}}}}))
+	f.close()
+	Progress.select("Old Timer")
+	check(RiderGear.sig(RiderGear.worn_of(Shed.me())) == RiderGear.sig(RiderGear.DEFAULTS) and Progress.money() == 40,
+		"an old profile without gear wears the defaults")
+	Progress.select("Cheat")
+	var worn := RiderGear.worn_of(Shed.me())
+	check(worn["jacket"] == "jacket_kestrel" and worn["boots"] == "boots_work" and worn["gloves"] == "gloves_work"
+		and not RiderGear.owns("rocket_boots"), "unknown gear is dropped, and gear not owned isn't worn (%s)" % str(worn))
+	check(RiderGear.sig(Progress._clean_summary({"gear": {"helmet": "helmet_mx", "jacket": 5, "boots": "helmet_mx"}})["gear"]) ==
+		"helmet_mx|jacket_overalls|trousers_overalls|boots_work|gloves_work", "a reported summary's gear is checked slot by slot")
+	Progress.save_profile()   # into the test file, not the real profile once the path is back
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+func _test_gear_seen_by_others() -> void:
+	# Another player in their gear: their figure, and their rider on a bike.
+	var peer := 777
+	Progress._summaries[peer] = {"name": "Visitor", "gear": RiderGear.clean_worn({"helmet": "helmet_mx", "jacket": "jacket_mx"})}
+	var rp := RemotePlayer.new()
+	add_child(rp)
+	rp.setup(peer, "Visitor", Color(0.2, 0.4, 0.9))
+	check(rp.gear["helmet"] == "helmet_mx" and rp.gear["jacket"] == "jacket_mx" and rp.gear["boots"] == "boots_work",
+		"another player is drawn in the gear their summary says")
+	var meshes := func() -> int: return rp._head_look.get_child_count()
+	var was: int = meshes.call()
+	Progress._summaries[peer]["gear"] = RiderGear.clean_worn({"helmet": "helmet_cap"})
+	for i in 2:
+		await get_tree().process_frame
+	check(rp.gear["helmet"] == "helmet_cap" and meshes.call() != was, "when they change, they're drawn again (%d -> %d meshes)" % [was, meshes.call()])
+	rp.queue_free()
+	Progress._summaries.erase(peer)
+	# The rider on a bike.
+	var plain := BikeModel.new()
+	add_child(plain)
+	plain.build_from(BikeBuild.new())
+	var dressed := BikeModel.new()
+	dressed.rider_gear = RiderGear.clean_worn({"helmet": "helmet_kestrel", "jacket": "jacket_kestrel", "boots": "boots_mx", "trousers": "trousers_kestrel"})
+	add_child(dressed)
+	dressed.build_from(BikeBuild.new())
+	check(dressed._rider != null and dressed._rider.get_child_count() > plain._rider.get_child_count(),
+		"a rider in race gear on a bike is drawn with it (%d meshes, plain %d)" % [dressed._rider.get_child_count(), plain._rider.get_child_count()])
+	var helmeted := 0
+	for c in dressed._rider.get_children():
+		if (c as VisualInstance3D).layers == 1 << (BikeModel.HELMET_LAYER - 1):
+			helmeted += 1
+	check(helmeted >= 4, "the helmet, torso and upper arms stay out of the first-person view (%d)" % helmeted)
+	dressed.redress(RiderGear.clean_worn({}))
+	check(dressed._rider != null and dressed.rider_gear["helmet"] == "helmet_cap", "a rider can be dressed again mid-ride")
+	plain.queue_free()
+	dressed.queue_free()
+	var doll := RiderRagdoll.new()
+	add_child(doll)
+	doll.dress(RiderGear.clean_worn({"helmet": "helmet_sprint"}), Color.RED)
+	check(not (doll.get_node("Helmet") as Node3D).visible and doll.get_child_count() > 4, "a crashed rider wears their own helmet")
+	doll.queue_free()
+	await get_tree().process_frame
+
+
+func _test_shop_session() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_gear_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Progress.select("Gear Tester")
+	var w: Walker = main.walker
+	var shop: ShopTab = main.menu.shop
+	check(shop != null and main.menu._tabs.get_tab_idx_from_control(shop) >= 0, "the Esc menu has a Shop tab")
+	# Gear from the Shop tab.
+	Progress.set_money(0)
+	shop.show_category("boots")
+	shop.select("boots_mx")
+	shop.buy_selected()
+	check(not RiderGear.owns("boots_mx") and shop._status.text.contains("afford"), "broke, the shop says so (%s)" % shop._status.text)
+	Progress.set_money(1000)
+	shop.buy_selected()
+	check(RiderGear.owns("boots_mx") and RiderGear.wearing("boots_mx") and Progress.money() == 1000 - RiderGear.price("boots_mx"),
+		"Buy pays for the boots and puts them on")
+	shop.select("boots_work")
+	shop.wear_selected()
+	check(RiderGear.worn_of(Shed.me())["boots"] == "boots_work", "Wear changes back into the old pair")
+	shop._update_preview()
+	check(shop._turntable.get_child_count() == 1, "the turntable shows the rider")
+	# A trinket: paid for from your own money and delivered to the shed.
+	var cash := Progress.money()
+	shop.show_category("trinket")
+	shop.select("trinket_trophy")
+	shop.buy_selected()
+	var trophy := _first_furniture("trinket_trophy")
+	check(trophy != 0 and Progress.money() == cash - Trinkets.price("trinket_trophy") and Shed.furniture[trophy]["kind"] == "trinket",
+		"a trophy bought in the Shop arrives in the shed, paid for")
+	Progress.set_money(5)
+	check(Trinkets.buy("trinket_neon").contains("afford") and _first_furniture("trinket_neon") == 0 and Progress.money() == 5,
+		"broke, no neon sign")
+	Progress.set_money(1000)
+	check(Trinkets.buy("trinket_neon") == "" and Trinkets.buy("trinket_plant") == "", "the neon sign and a plant")
+	var neon := _first_furniture("trinket_neon")
+	var plant := _first_furniture("trinket_plant")
+	await get_tree().process_frame
+	check(main.workshop.furniture_nodes.has(trophy) and main.workshop.furniture_nodes[trophy].kind == "trinket", "the trophy is drawn in the shed")
+	# Carried and put down on the workbench like any other kit.
+	var bz: float = Workshop.spot_transform("bench_1").origin.z
+	w.place(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(Workshop.CENTER.x - Workshop.HALF.x + 1.5, 0.0, bz)))
+	Shed.request({"a": "grab", "furniture": trophy})
+	for i in 4:
+		await get_tree().physics_frame
+	var xf: Transform3D = w._push_transform(trophy)
+	check(absf(xf.origin.y - 0.945) < 0.03, "held over the workbench, the trophy goes down on its top (%.2f)" % xf.origin.y)
+	Shed.request({"a": "release", "furniture": trophy, "xf": xf})
+	check(Shed.furniture[trophy]["mover"] == 0 and absf((Shed.furniture[trophy]["xf"] as Transform3D).origin.y - 0.945) < 0.03, "and stays there")
+	# The neon sign hangs on a wall.
+	Shed.request({"a": "grab", "furniture": neon})
+	w.place(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(Workshop.CENTER.x - Workshop.HALF.x + 1.2, 0.0, bz + 2.0)))
+	w._pitch = 0.0
+	w.camera.rotation.x = 0.0
+	await get_tree().physics_frame
+	var wall_xf: Transform3D = w._push_transform(neon)
+	check(w._on_wall and absf(wall_xf.origin.x - (Workshop.CENTER.x - Workshop.HALF.x)) < 0.1, "the neon sign goes on the wall (%s)" % str(wall_xf.origin))
+	Shed.request({"a": "release", "furniture": neon, "xf": wall_xf})
+	# Scrapped like other kit.
+	Shed.request({"a": "grab", "furniture": plant})
+	Shed.request({"a": "scrap", "furniture": plant})
+	check(not Shed.furniture.has(plant), "a trinket can be scrapped")
+	# Saved with the shed.
+	Shed.load_state(str_to_var(var_to_str(Shed._snapshot())), "Tester")
+	check(Shed.furniture.has(trophy) and Shed.furniture[trophy]["model"] == "trinket_trophy"
+		and absf((Shed.furniture[trophy]["xf"] as Transform3D).origin.y - 0.945) < 0.03 and Shed.furniture.has(neon),
+		"trinkets are kept with the shed, where they were put")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	Progress.save_profile()   # into the test file, not the real profile once the path is back
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+## Graphics settings: presets set their keys, Custom after a change, saving and loading,
+## applying to the viewport headless, the driver override file and the Graphics tab.
+func _test_graphics_settings() -> void:
+	# Keep the player's own settings file and graphics settings as they were.
+	var had := FileAccess.file_exists(Settings.PATH)
+	var before := FileAccess.get_file_as_string(Settings.PATH) if had else ""
+	var keep := {"high_quality": Settings.high_quality}
+	for k in Settings.GFX_KEYS:
+		keep[k] = Settings.get(k)
+	var changes := [0]
+	var count := func(): changes[0] += 1
+	Settings.graphics_changed.connect(count)
+	# Presets set every key they cover.
+	for preset in ["low", "medium", "high", "ultra"]:
+		Settings.apply_preset(preset)
+		var values: Dictionary = Graphics.PRESETS[preset]
+		var wrong := values.keys().filter(func(k): return Settings.get(k) != values[k])
+		check(wrong.is_empty() and Settings.gfx_preset == preset and Settings.high_quality == (preset != "low"),
+			"the %s preset sets its options %s" % [preset, str(wrong)])
+	check(changes[0] == 4, "every preset change tells the game (%d)" % changes[0])
+	var shared := ["gfx_gi", "gfx_volumetrics", "gfx_clouds", "gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_shadows", "gfx_draw_distance"]
+	check(shared.all(func(k): return Graphics.PRESETS["low"].has(k) and Settings.GFX_KEYS.has(k)), "presets cover the lighting options too")
+	# Custom: changing one option the preset covers.
+	Settings.apply_preset("high")
+	Settings.set_graphics("gfx_fov", 90.0)
+	check(Settings.gfx_preset == "high" and is_equal_approx(Graphics.fov_offset(), 15.0), "field of view isn't part of a preset")
+	Settings.set_graphics("gfx_ssao", false)
+	check(Settings.gfx_preset == "custom" and not Settings.gfx_ssao and Settings.high_quality, "changing one option makes it Custom")
+	var res_before := Settings.gfx_resolution
+	Settings.set_graphics("gfx_msaa", "16x")
+	Settings.set_graphics("gfx_render_scale", 5.0)
+	Settings.set_graphics("gfx_resolution", "1x1")
+	check(Settings.gfx_msaa == "2x" and is_equal_approx(Settings.gfx_render_scale, 2.0) and Settings.gfx_resolution == res_before,
+		"values it can't take are refused or clamped (%s, %.2f, %s)" % [Settings.gfx_msaa, Settings.gfx_render_scale, Settings.gfx_resolution])
+	# Saved and loaded back.
+	Settings.set_graphics("gfx_window_mode", "borderless")
+	Settings.set_graphics("gfx_resolution", "2560x1440")
+	Settings.set_graphics("gfx_render_scale", 0.75)
+	Settings.set_graphics("gfx_upscaler", "fsr1")
+	Settings.set_graphics("gfx_fps_cap", 144)
+	Settings.set_graphics("gfx_gi", "ssil")
+	Settings.set_graphics("gfx_fps_counter", true)
+	var saved := {}
+	for k in Settings.GFX_KEYS:
+		saved[k] = Settings.get(k)
+	Settings.save_settings()
+	Settings.apply_preset("ultra")
+	Settings.gfx_window_mode = "windowed"
+	Settings.gfx_fps_cap = 0
+	Settings.load_settings()
+	var differ := saved.keys().filter(func(k): return Settings.get(k) != saved[k])
+	check(differ.is_empty() and Settings.gfx_preset == "custom", "graphics settings save and load back %s" % str(differ))
+	# An old settings file with high quality off comes up on the Low preset.
+	var old := ConfigFile.new()
+	old.set_value("video", "high_quality", false)
+	old.save(Settings.PATH)
+	Settings.apply_preset("high")
+	Settings.load_settings()
+	check(Settings.gfx_preset == "low" and Settings.gfx_gi == "off" and not Settings.high_quality, "an old 'high quality off' file becomes Low")
+	# Applying to the viewport (headless, so the window itself is left alone).
+	var g: Graphics = null
+	for c in Settings.get_children():
+		if c is Graphics:
+			g = c
+	check(g != null, "Settings has a Graphics node")
+	Settings.apply_preset("low")
+	var vp := get_tree().root
+	check(vp.msaa_3d == Viewport.MSAA_DISABLED and vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR and is_equal_approx(vp.scaling_3d_scale, 0.75)
+		and vp.screen_space_aa == Viewport.SCREEN_SPACE_AA_FXAA, "Low: no MSAA, FSR 1 at 75%%, FXAA (mode %d, %.2f)" % [vp.scaling_3d_mode, vp.scaling_3d_scale])
+	Settings.apply_preset("ultra")
+	check(vp.msaa_3d == Viewport.MSAA_4X and vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_BILINEAR and vp.use_taa
+		and vp.screen_space_aa == Viewport.SCREEN_SPACE_AA_SMAA and vp.mesh_lod_threshold < 0.5, "Ultra: 4x MSAA, TAA, SMAA, native, fine LOD")
+	Settings.set_graphics("gfx_render_scale", 0.5)
+	Settings.set_graphics("gfx_upscaler", "fsr2")
+	check(vp.scaling_3d_mode == Viewport.SCALING_3D_MODE_FSR2 and not vp.use_taa, "FSR 2.2 upscales and takes over from TAA")
+	check(Graphics.scaling_mode("fsr2", 1.5) == Viewport.SCALING_3D_MODE_BILINEAR and Graphics.scaling_mode("fsr1", 1.0) == Viewport.SCALING_3D_MODE_BILINEAR,
+		"supersampling and 100% use plain bilinear")
+	check(Graphics.parse_resolution("3840x2160") == Vector2i(3840, 2160) and Graphics.parse_resolution("7680x4320") == Vector2i(1600, 900)
+		and Graphics.RESOLUTIONS.all(func(r): return r.x <= 3840 and r.y <= 2160), "resolutions go up to 4K")
+	await get_tree().process_frame
+	# The driver override, read by Godot at the next start.
+	check(str(ProjectSettings.get_setting("application/config/project_settings_override")) == Graphics.OVERRIDE_PATH,
+		"the project reads the graphics override file at start-up")
+	var test_path := "user://test_graphics_override.cfg"
+	Graphics.write_driver_override("d3d12", test_path)
+	var ovr := ConfigFile.new()
+	check(ovr.load(test_path) == OK and ovr.get_value("rendering", "rendering_device/driver.windows", "") == "d3d12"
+		and ovr.get_value("rendering", "rendering_device/fallback_to_vulkan", false) == true, "DirectX 12 is written for the next start, falling back to Vulkan")
+	Graphics.write_driver_override("vulkan", test_path)
+	ovr.load(test_path)
+	check(ovr.get_value("rendering", "rendering_device/driver.windows", "") == "vulkan", "and Vulkan back again")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(test_path))
+	# The Graphics tab: picking a preset, and Custom showing after a change.
+	var tab := GraphicsTab.new()
+	add_child(tab)
+	await get_tree().process_frame
+	var preset_box: OptionButton = tab._controls["gfx_preset"]["control"]
+	preset_box.select(0)
+	preset_box.item_selected.emit(0)
+	check(Settings.gfx_preset == "low", "the tab's preset list picks Low")
+	var ssr: CheckBox = tab._controls["gfx_ssr"]["control"]
+	ssr.button_pressed = true
+	check(Settings.gfx_ssr and Settings.gfx_preset == "custom" and preset_box.get_item_text(preset_box.selected) == "Custom",
+		"ticking an option in the tab makes the preset Custom")
+	tab._rt.button_pressed = true
+	check(Settings.gfx_gi == "sdfgi", "the ray-traced lighting switch turns SDFGI on")
+	tab.queue_free()
+	# Put everything back.
+	Settings.graphics_changed.disconnect(count)
+	for k in keep:
+		Settings.set(k, keep[k])
+	Settings.graphics_changed.emit()
+	if had:
+		var f := FileAccess.open(Settings.PATH, FileAccess.WRITE)
+		f.store_string(before)
+		f.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
+	await get_tree().process_frame
+## The Graphics settings turned into the environment: SDFGI or SSIL, SSR, SSAO, glow,
+## volumetric fog, the cloud sky and shadows; and the plainer look on the compatibility renderer.
+func _test_lighting_profile() -> void:
+	var best := {"gfx_gi": "sdfgi", "gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_ssr": true, "gfx_ssao": true,
+		"gfx_glow": true, "gfx_shadows": "ultra", "gfx_draw_distance": 1.0, "gfx_brightness": 1.0}
+	var p := Lighting.profile(best, true)
+	check(p["sdfgi"] and not p["ssil"] and p["ssr"] and p["ssao"] and p["glow"] and p["volumetric_fog"] and p["fog_volumes"],
+		"the best settings: SDFGI, reflections, AO, glow, volumetric fog and fog volumes")
+	check(int(p["sdfgi_cascades"]) == 6 and float(p["sdfgi_min_cell"]) < 0.2, "SDFGI reaches across the map with fine cells near you")
+	check(bool(p["clouds"]["volumetric"]) and str(p["clouds"]["res"]) == "half" and int(p["fog_size"]) >= 128, "raymarched clouds at half resolution")
+	check(int(p["shadow"]["soft"]) == 5 and bool(p["shadow"]["pcss"]), "ultra shadows are the softest, with contact hardening")
+	var ssil := best.duplicate()
+	ssil["gfx_gi"] = "ssil"
+	ssil["gfx_volumetrics"] = "low"
+	ssil["gfx_clouds"] = "low"
+	p = Lighting.profile(ssil, true)
+	check(p["ssil"] and not p["sdfgi"] and int(p["fog_size"]) < 128, "SSIL is the lighter GI; low fog is coarser")
+	check(str(p["clouds"]["res"]) == "quarter" and int(p["clouds"]["steps"]) < 20, "low clouds: quarter resolution, fewer steps")
+	var off := best.duplicate()
+	off["gfx_gi"] = "off"
+	off["gfx_volumetrics"] = "off"
+	off["gfx_clouds"] = "off"
+	off["gfx_shadows"] = "low"
+	p = Lighting.profile(off, true)
+	check(not p["sdfgi"] and not p["ssil"] and not p["volumetric_fog"] and not p["fog_volumes"] and not bool(p["clouds"]["volumetric"]),
+		"everything off: no GI, no volumetric fog, the flat cloud layer")
+	check(not bool(p["shadow"]["omni"]) and int(p["shadow"]["atlas"]) <= 2048, "low shadows: small maps, round lamps don't cast them")
+	# The compatibility renderer: none of the Forward+ extras, the flat clouds at "low".
+	p = Lighting.profile(best, false)
+	check(not p["sdfgi"] and not p["fog_volumes"] and str(p["clouds"]["res"]) == "full", "compatibility: no SDFGI or fog volumes, clouds drawn at full size")
+	check(not bool(CloudSky.quality("low", false)["volumetric"]), "compatibility at low: the old flat clouds")
+	# Missing settings: the defaults, or the low look with the old quality switch off.
+	var hq := Settings.high_quality
+	Lighting.overrides = {}
+	if Settings.get("gfx_gi") == null:
+		Settings.high_quality = true
+		check(str(Lighting.option("gfx_gi")) == "sdfgi" and str(Lighting.option("gfx_shadows")) == "high", "no Graphics settings yet: the high defaults")
+		Settings.high_quality = false
+		check(str(Lighting.option("gfx_gi")) == "off" and str(Lighting.option("gfx_volumetrics")) == "off", "with high quality off: the low look")
+	Settings.high_quality = hq
+	Lighting.overrides = {"gfx_gi": "ssil"}
+	check(str(Lighting.option("gfx_gi")) == "ssil", "overrides win")
+	Lighting.overrides = {}
+	# Every variant of the sky shader compiles (a broken one has no uniforms).
+	for setting in ["off", "low", "high"]:
+		for fp in [true, false]:
+			var sh := CloudSky.make_shader(CloudSky.quality(setting, fp))
+			check(sh.get_shader_uniform_list().size() >= 18, "the %s sky shader compiles (%s)" % [setting, "Forward+" if fp else "compatibility"])
+	var fog := Shader.new()
+	fog.code = Lighting.DUST_SHADER
+	check(fog.get_shader_uniform_list().size() == 5, "the dust fog shader compiles")
+
+
+## Each lamp lights the fog by a sensible amount and casts shadows to suit the quality, and
+## only buildings and big fixed things take part in GI.
+func _test_lighting_lamps_and_gi() -> void:
+	var opts := Lighting.options()
+	opts["gfx_shadows"] = "high"
+	var high := Lighting.profile(opts, true)
+	opts["gfx_shadows"] = "low"
+	var low := Lighting.profile(opts, true)
+	var omni := OmniLight3D.new()
+	omni.shadow_enabled = true
+	var spot := SpotLight3D.new()
+	var flood := SpotLight3D.new()
+	flood.light_volumetric_fog_energy = 2.5
+	flood.add_to_group(Daylight.NIGHT_LIGHTS)
+	add_child(omni)
+	add_child(spot)
+	add_child(flood)
+	for l in [omni, spot, flood]:
+		Lighting.tune_light(l, high)
+	check(is_equal_approx(omni.light_volumetric_fog_energy, Lighting.OMNI_FOG) and is_equal_approx(spot.light_volumetric_fog_energy, Lighting.SPOT_FOG),
+		"lamps nobody tuned get a sensible glow in the fog")
+	check(is_equal_approx(flood.light_volumetric_fog_energy, 2.5) and flood.shadow_enabled, "a tuned floodlight keeps its glow and casts shadows (god rays) at high")
+	for l in [omni, spot, flood]:
+		Lighting.tune_light(l, low)
+	check(not omni.shadow_enabled and not flood.shadow_enabled, "low shadows: the round lamp and floodlight stop casting them")
+	for l in [omni, spot, flood]:
+		Lighting.tune_light(l, high)
+	check(omni.shadow_enabled and is_equal_approx(omni.light_volumetric_fog_energy, Lighting.OMNI_FOG), "and back at high they come back as they were")
+	# The headlight looks after itself (its soft flood is tuned for the fog).
+	var fx := BikeEffects.new()
+	add_child(fx)
+	var beam := SpotLight3D.new()
+	beam.light_volumetric_fog_energy = 0.0
+	fx.add_child(beam)
+	Lighting.tune_light(beam, high)
+	check(beam.has_meta("lighting_skip") and beam.light_volumetric_fog_energy == 0.0, "a bike's lights are left alone")
+	# GI: a building is static, a small part and anything on a moving body are left out.
+	var wall := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(6.0, 3.0, 0.2)
+	wall.mesh = box
+	add_child(wall)
+	var bolt := MeshInstance3D.new()
+	var little := BoxMesh.new()
+	little.size = Vector3(0.1, 0.1, 0.1)
+	bolt.mesh = little
+	add_child(bolt)
+	var body := CharacterBody3D.new()
+	add_child(body)
+	var big_on_body := MeshInstance3D.new()
+	big_on_body.mesh = box
+	body.add_child(big_on_body)
+	var dust := CPUParticles3D.new()
+	add_child(dust)
+	check(Lighting.gi_mode_for(wall) == GeometryInstance3D.GI_MODE_STATIC, "walls bounce light (static GI)")
+	check(Lighting.gi_mode_for(bolt) == GeometryInstance3D.GI_MODE_DISABLED and Lighting.gi_mode_for(big_on_body) == GeometryInstance3D.GI_MODE_DISABLED
+		and Lighting.gi_mode_for(dust) == GeometryInstance3D.GI_MODE_DISABLED, "small props, moving things and particles stay out of GI")
+	# Eye adaptation: a dark room opens your eyes up more than a lit one; outdoors is as is.
+	check(Lighting.eye_target("", false, 0.0) == 1.0 and Lighting.eye_target("shed", false, 0.0) > Lighting.eye_target("shed", true, 0.0),
+		"walking into a dark shed your eyes adjust more than into a lit one")
+	check(Lighting.eye_target("shed", true, 1.0) < 1.0, "at night the lamps are bright after the dark")
+	for n in [omni, spot, flood, fx, wall, bolt, body, dust]:
+		n.queue_free()
+
+
+## The cloud sky follows the weather: more and heavier cloud from clear to cloudy to rain, lit
+## by the moon at night; the cloud setting swaps the shader.
+func _test_lighting_clouds() -> void:
+	var kept := [Settings.weather, Settings.weather_now, Settings.day_night_cycle]
+	Settings.day_night_cycle = false
+	var env := Environment.new()
+	var sun := DirectionalLight3D.new()
+	add_child(sun)
+	var dl := Daylight.new()
+	add_child(dl)
+	var w := Weather.new()
+	add_child(w)
+	dl.setup(env, sun)
+	var covers := {}
+	for st in ["clear", "cloudy", "rain"]:
+		Settings.weather = st
+		w.change_to(st, true)
+		dl.set_time(12.0)
+		covers[st] = float(dl._sky_mat.get_shader_parameter("cloud_cover"))
+	check(covers["clear"] < covers["cloudy"] and covers["cloudy"] < covers["rain"], "cloud cover grows from clear to cloudy to rain (%s)" % [covers])
+	check(float(dl._sky_mat.get_shader_parameter("cloud_rain")) == 1.0, "rain clouds are heavy and dark")
+	var wind: Vector2 = dl._sky_mat.get_shader_parameter("wind")
+	check(wind.length() > CloudSky.wind_for(0.0).length(), "and the wind blows them faster")
+	var lit: Vector3 = dl._sky_mat.get_shader_parameter("cloud_light_dir")
+	check(lit.is_equal_approx(dl.sun_dir), "by day the sun lights the clouds")
+	dl.set_time(0.5)
+	lit = dl._sky_mat.get_shader_parameter("cloud_light_dir")
+	check(not lit.is_equal_approx(dl.sun_dir) and lit.y > 0.0, "at night the moon does")
+	# Changing the setting swaps the shader, and back.
+	dl.set_cloud_quality("off")
+	check(not dl._sky_mat.shader.code.contains("#define VOLUMETRIC"), "clouds off: the flat layer")
+	dl.set_cloud_quality("high")
+	check(dl._sky_mat.shader.code.contains("#define VOLUMETRIC") == bool(CloudSky.quality("high", Lighting.forward_plus())["volumetric"]),
+		"clouds high: raymarched")
+	check(dl._sky_mat.get_shader_parameter("cloud_noise") != null, "the noise survives the swap")
+	Settings.weather = kept[0]
+	Settings.weather_now = kept[1]
+	Settings.day_night_cycle = kept[2]
+	w.queue_free()
+	dl.queue_free()
+	sun.queue_free()
+	await get_tree().process_frame
+
+
+## In a running shed: the World's Lighting sets the environment up, re-applies when the settings
+## change (any mix, without errors), fills the shed with dust (Forward+), the paint shop fills
+## with overspray, and your eyes adjust going into a dark shed.
+func _test_lighting_session() -> void:
+	SaveGame.slot_override = "test_lighting"
+	SaveGame.delete_slot("test_lighting")
+	var kept_cycle := Settings.day_night_cycle
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	var lt: Lighting = main.world.lighting
+	check(lt != null and Lighting.current == lt, "the world has its lighting")
+	var env: Environment = lt.env
+	var combos := [
+		{"gfx_gi": "sdfgi", "gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_shadows": "ultra", "gfx_glow": true, "gfx_ssr": true},
+		{"gfx_gi": "ssil", "gfx_volumetrics": "low", "gfx_clouds": "low", "gfx_shadows": "medium", "gfx_glow": false, "gfx_ssr": false},
+		{"gfx_gi": "off", "gfx_volumetrics": "off", "gfx_clouds": "off", "gfx_shadows": "low", "gfx_glow": true, "gfx_ssr": true},
+	]
+	var fp := Lighting.forward_plus()
+	for c in combos:
+		Lighting.overrides = c
+		lt.apply()
+		await get_tree().process_frame
+		check(env.sdfgi_enabled == (fp and c["gfx_gi"] == "sdfgi") and env.ssil_enabled == (fp and c["gfx_gi"] == "ssil")
+			and env.volumetric_fog_enabled == (c["gfx_volumetrics"] != "off") and env.glow_enabled == c["gfx_glow"] and env.ssr_enabled == c["gfx_ssr"],
+			"settings %s/%s/%s reach the environment" % [c["gfx_gi"], c["gfx_volumetrics"], c["gfx_shadows"]])
+		check(is_instance_valid(lt.dust) == (fp and c["gfx_volumetrics"] != "off"), "the shed's dust is there only with volumetric fog on Forward+")
+		var sky_q: Dictionary = main.world.daylight.cloud_quality()
+		check(bool(sky_q["volumetric"]) == bool(CloudSky.quality(str(c["gfx_clouds"]), fp)["volumetric"]), "the sky follows the cloud setting")
+		var sun: DirectionalLight3D = lt.sun
+		check(is_equal_approx(sun.directional_shadow_max_distance, float(Lighting.SHADOWS[c["gfx_shadows"]]["distance"])),
+			"the sun's shadows reach as far as the setting says")
+	# The polling notices a change without any signal.
+	Lighting.overrides = combos[0]
+	await get_tree().create_timer(0.6).timeout
+	check(env.sdfgi_enabled == fp, "a settings change is picked up by itself")
+	# Every lamp in the shed has been tuned.
+	var tuned := 0
+	for l in lt._lights:
+		if is_instance_valid(l) and (l.has_meta("lighting_orig") or l.has_meta("lighting_skip")):
+			tuned += 1
+	check(lt._lights.size() > 10 and tuned == lt._lights.size(), "every lamp is tuned (%d)" % tuned)
+	# Eyes adjusting: into the shed with the lights off by day.
+	Settings.day_night_cycle = false
+	main.world.daylight.set_time(12.0)
+	Shed.request({"a": "lights", "room": "", "on": false})
+	main.walker.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.1, 0.0)))
+	for i in 5:
+		await get_tree().process_frame
+	var early := lt.adapt
+	for i in 60:
+		await get_tree().process_frame
+	check(lt.adapt > early and lt.adapt > 1.05, "in the dark shed your eyes slowly open up (%.2f to %.2f)" % [early, lt.adapt])
+	Shed.request({"a": "lights", "room": "", "on": true})
+	# Overspray: build it up as if someone were spraying in the paint shop.
+	if is_instance_valid(lt.overspray):
+		lt.overspray_level = 0.8
+		lt._update_overspray(0.0)
+		check(lt.overspray.visible and float((lt.overspray.material as ShaderMaterial).get_shader_parameter("density")) > 0.0, "spraying fills the paint shop with haze")
+		lt._update_overspray(30.0)
+		check(lt.overspray_level < 0.8, "and it clears again")
+	Lighting.overrides = {}
+	lt.apply()
+	Settings.day_night_cycle = kept_cycle
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_lighting")
+	SaveGame.slot_override = ""
+
+
+## Every player's start spot in the shed has room to walk: forward and back from each of the
+## spots a co-op player can be given, nothing pins them in place.
+func _test_walker_spawns() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var stuck := []
+	for i in Net.MAX_PLAYERS:
+		main.walker.place(Workshop.walker_spawn(i))
+		for f in 5:
+			await get_tree().physics_frame
+		var span := AABB(main.walker.global_position, Vector3.ZERO)
+		for dir in ["move_forward", "move_back"]:
+			Input.action_press(dir)
+			for f in 45:
+				await get_tree().physics_frame
+				span = span.expand(main.walker.global_position)
+			Input.action_release(dir)
+		if span.size.length() < 1.0:
+			stuck.append("%d at %s (%.2f m)" % [i, Workshop.walker_spawn(i).origin, span.size.length()])
+	check(stuck.is_empty(), "every start spot in the shed has room to walk %s" % str(stuck))
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Strength of a loop at `hz` (a Goertzel filter over the whole loop).
+func _tone(x: PackedFloat32Array, hz: float) -> float:
+	var w := TAU * hz / EngineSynth.RATE
+	var c := 2.0 * cos(w)
+	var s1 := 0.0
+	var s2 := 0.0
+	for v in x:
+		var s0 := v + c * s1 - s2
+		s2 = s1
+		s1 = s0
+	return sqrt(maxf(s1 * s1 + s2 * s2 - c * s1 * s2, 0.0)) / x.size()
+
+
+func _rms(x: PackedFloat32Array) -> float:
+	var t := 0.0
+	for v in x:
+		t += v * v
+	return sqrt(t / maxf(x.size(), 1))
+
+
+## Strength of each order of the engine cycle (k times the cycle rate), k = 1..count.
+func _orders(spec: Dictionary, x: PackedFloat32Array, rpm: float, count: int) -> PackedFloat32Array:
+	var cycle_hz := rpm / 60.0 * 360.0 / EngineSynth.cycle_degrees(spec)
+	var out := PackedFloat32Array()
+	for k in range(1, count + 1):
+		out.append(_tone(x, cycle_hz * k))
+	return out
+
+
+func _test_engine_firing() -> void:
+	var specs := {
+		"single": EngineSynth.make_spec("single", 1, 450.0, {"idle": 1500.0, "redline": 11000.0}),
+		"twin 360": EngineSynth.make_spec("twin", 2, 750.0, {"idle": 1050.0, "redline": 7700.0}),
+		"parallel 270": EngineSynth.make_spec("parallel", 2, 700.0, {"idle": 1300.0, "redline": 9500.0}),
+		"V-twin": EngineSynth.make_spec("vtwin", 2, 1100.0, {"idle": 1000.0, "redline": 8100.0}),
+		"boxer": EngineSynth.make_spec("boxer", 2, 1200.0, {"idle": 950.0, "redline": 7900.0}),
+		"triple": EngineSynth.make_spec("triple", 3, 850.0, {"idle": 1250.0, "redline": 10500.0}),
+		"inline four": EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0}),
+		"crossplane four": EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "crank": "crossplane"}),
+		"two-stroke single": EngineSynth.make_spec("2stroke", 1, 125.0, {"idle": 1450.0, "redline": 14600.0, "peak": 11250.0}),
+		"two-stroke triple": EngineSynth.make_spec("2stroke", 3, 750.0, {"idle": 1050.0, "redline": 10600.0, "peak": 8150.0}),
+	}
+	var even := ["single", "twin 360", "boxer", "triple", "inline four", "two-stroke single", "two-stroke triple"]
+	var profiles := {}
+	var offbeat := {}
+	for name in specs:
+		var spec: Dictionary = specs[name]
+		var rpm := EngineSynth.loop_rpm(spec, 5000.0)
+		var x := EngineSynth.render_loop(spec, "ex_on", rpm)
+		var events := EngineSynth.firing_events(spec).size()
+		var orders := _orders(spec, x, rpm, 4 * events)
+		check(_rms(x) > 0.01, "a %s makes an audible exhaust note (rms %.3f)" % [name, _rms(x)])
+		if name in even:
+			# Evenly spaced firings: the note is the firing rate, rpm x cylinders / 2 (x cylinders on a two-stroke).
+			var best := 0
+			for k in orders.size():
+				if orders[k] > orders[best]:
+					best = k
+			var fire_hz := EngineSynth.firing_hz(spec, rpm)
+			var expect: float = rpm / 60.0 * spec["cylinders"] * (1.0 if EngineSynth.is_two_stroke(spec) else 0.5)
+			check((best + 1) % events == 0 and absf(fire_hz - expect) < 0.01,
+				"a %s's strongest note is a harmonic of its firing rate, %.0f Hz at %.0f rpm (order %d, %d firings a cycle)" % [name, fire_hz, rpm, best + 1, events])
+		# Its spectral shape: the energy in each octave band up to 8 kHz, in dB of the whole.
+		var cycle_hz := rpm / 60.0 * 360.0 / EngineSynth.cycle_degrees(spec)
+		var bands := PackedFloat32Array()
+		bands.resize(7)
+		var order := 1
+		while order * cycle_hz < 8000.0:
+			var hz := order * cycle_hz
+			var band := clampi(int(log(hz / 62.5) / log(2.0)), 0, 6)
+			var t := _tone(x, hz)
+			bands[band] += t * t
+			order += 1 if hz < 1000.0 else 3
+		var whole := 0.0
+		for v in bands:
+			whole += v
+		for i in bands.size():
+			bands[i] = 10.0 * log(maxf(bands[i] / maxf(whole, 1e-12), 1e-7)) / log(10.0)
+		# And its rhythm: the first 16 orders of the cycle, in dB of the strongest.
+		var top := 0.0
+		for v in orders:
+			top = maxf(top, v)
+		for q in mini(16, orders.size()):
+			bands.append(20.0 * log(maxf(orders[q] / maxf(top, 1e-12), 1e-4)) / log(10.0))
+		profiles[name] = bands
+		# Off-beat engines have strong in-between orders; even ones barely any.
+		var on_beat := 0.0
+		var off_beat := 0.0
+		for k in orders.size():
+			if (k + 1) % events == 0:
+				on_beat += orders[k] * orders[k]
+			else:
+				off_beat += orders[k] * orders[k]
+		offbeat[name] = off_beat / maxf(on_beat, 1e-12)
+	check(offbeat["parallel 270"] > 4.0 * offbeat["twin 360"],
+		"a 270 degree twin lopes where a 360 twin is even (off-beat %.2f vs %.2f)" % [offbeat["parallel 270"], offbeat["twin 360"]])
+	check(offbeat["crossplane four"] > 4.0 * offbeat["inline four"],
+		"a crossplane four growls where a flat-plane four screams evenly (off-beat %.2f vs %.2f)" % [offbeat["crossplane four"], offbeat["inline four"]])
+	# Every layout sounds different from every other: their spectra don't line up.
+	var names: Array = specs.keys()
+	var closest := 1000.0
+	var pair := ""
+	for i in names.size():
+		for j in range(i + 1, names.size()):
+			var a: PackedFloat32Array = profiles[names[i]]
+			var b: PackedFloat32Array = profiles[names[j]]
+			var diff := 0.0
+			for q in mini(a.size(), b.size()):
+				diff += absf(clampf(a[q], -40.0, 0.0) - clampf(b[q], -40.0, 0.0)) / mini(a.size(), b.size())
+			if diff < closest:
+				closest = diff
+				pair = "%s / %s" % [names[i], names[j]]
+	check(closest > 1.5, "every engine layout has its own spectrum and rhythm (closest pair %s, %.1f dB apart per band)" % [pair, closest])
+	# A two-stroke comes on the pipe: much stronger in its powerband than below it.
+	var two: Dictionary = specs["two-stroke single"]
+	var below := EngineSynth.render_loop(two, "ex_on", EngineSynth.loop_rpm(two, two["peak"] * 0.55))
+	var on_pipe := EngineSynth.render_loop(two, "ex_on", EngineSynth.loop_rpm(two, two["peak"]))
+	check(_rms(on_pipe) > 1.4 * _rms(below), "a two-stroke swells on the pipe (rms %.3f in the powerband, %.3f below)" % [_rms(on_pipe), _rms(below)])
+	# Loud pipes are louder and brighter than a stock can.
+	var stock := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "stock"})
+	var straight := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "straight"})
+	var rs := EngineSynth.render_loop(stock, "ex_on", 11000.0)
+	var rr := EngineSynth.render_loop(straight, "ex_on", 11000.0)
+	check(_rms(rr) > 1.5 * _rms(rs), "a straight pipe is louder than the stock can (%.3f vs %.3f)" % [_rms(rr), _rms(rs)])
+	check(_tone(rr, 3000.0) > 2.0 * _tone(rs, 3000.0), "and rasps where the stock can is muffled")
+	# On the throttle it barks; off it, the overrun is quieter.
+	var off := EngineSynth.render_loop(straight, "ex_off", 11000.0)
+	check(_rms(rr) > 2.0 * _rms(off), "on the throttle is louder than the overrun (%.3f vs %.3f)" % [_rms(rr), _rms(off)])
+	# Loops repeat without a click at the seam.
+	var seam_ok := true
+	for layer in EngineSynth.LAYERS:
+		var x := EngineSynth.render_loop(specs["triple"], layer, 4000.0)
+		var step := 0.0
+		for i in range(1, x.size()):
+			step += absf(x[i] - x[i - 1])
+		step /= x.size()
+		seam_ok = seam_ok and absf(x[0] - x[x.size() - 1]) < 6.0 * step + 0.002
+	check(seam_ok, "the loops join up seamlessly")
+	# The CPU budget: baking runs on a worker thread, but it should still be quick.
+	var t0 := Time.get_ticks_usec()
+	var made := 0
+	for layer in EngineSynth.LAYERS:
+		made += EngineSynth.render_loop(specs["inline four"], layer, 9000.0).size()
+	var ms := (Time.get_ticks_usec() - t0) / 1000.0
+	var per_second := ms / (made / float(EngineSynth.RATE))
+	check(per_second < 150.0, "one second of engine sound bakes in %.0f ms (budget 150)" % per_second)
+
+
+func _test_engine_bank() -> void:
+	# The recipe comes from the parts fitted.
+	var race := EngineSynth.spec_from_build(BikeBuild.new({"engine": "four_1000", "exhaust": "titanium_race", "gearbox": "six_race_quickshift"}))
+	check(race["exhaust"] == "race" and race["shift"] == "slick" and race["quickshifter"] and race["dry_clutch"] and race["crank"] == "crossplane",
+		"a race build: race exhaust, slick quickshifter, dry clutch, crossplane crank (%s)" % str([race["exhaust"], race["shift"], race["crank"]]))
+	var sport := EngineSynth.spec_from_build(BikeBuild.new({"gearbox": "six_close", "exhaust": "slip_on"}))
+	var old := EngineSynth.spec_from_build(BikeBuild.new({"gearbox": "four_vintage", "exhaust": "stock_muffler"}))
+	var pipe := EngineSynth.spec_from_build(BikeBuild.new({"exhaust": "straight_pipe"}))
+	check(sport["shift"] == "click" and not sport["quickshifter"] and old["shift"] == "clunk",
+		"a sports box clicks, an old box clunks (%s, %s)" % [sport["shift"], old["shift"]])
+	check(old["exhaust"] == "stock" and sport["exhaust"] == "slip" and pipe["exhaust"] == "straight", "exhausts: stock, slip-on, straight pipe")
+	var kicker := EngineSynth.spec_from_build(BikeBuild.new({"engine": "2stroke_125"}))
+	check(kicker["kick"] and not race["kick"], "a little two-stroke kick starts; the superbike has a starter")
+	# Each gearbox's shift sounds different: slick is short and bright, a clunk long and low.
+	var feel := {}
+	for kind in ["slick", "click", "clunk"]:
+		var x := EngineSynth.render_shift(kind)
+		var energy := 0.0
+		var late := 0.0
+		for i in x.size():
+			energy += x[i] * x[i]
+			if i > EngineSynth.RATE * 0.03:
+				late += x[i] * x[i]
+		feel[kind] = {"bright": _tone(x, 5000.0) / maxf(_tone(x, 150.0), 1e-6), "tail": late / maxf(energy, 1e-9)}
+	check(feel["slick"]["bright"] > feel["click"]["bright"] and feel["click"]["bright"] > feel["clunk"]["bright"],
+		"a quickshifter's shift is crispest, a clunk dullest (%.2f, %.2f, %.2f)" % [feel["slick"]["bright"], feel["click"]["bright"], feel["clunk"]["bright"]])
+	check(feel["clunk"]["tail"] > feel["slick"]["tail"], "and the clunk rings on longer")
+	# A bank bakes the buckets nearest idle first, and everything else after.
+	var spec := EngineSynth.make_spec("triple", 3, 850.0, {"idle": 1250.0, "redline": 10500.0, "exhaust": "full"})
+	var bank := EngineBank.new(spec)
+	var order := bank.bake_order()
+	var nearest := 0
+	for i in bank.rpms.size():
+		if absf(log(bank.rpms[i] / 1250.0)) < absf(log(bank.rpms[nearest] / 1250.0)):
+			nearest = i
+	check(order[0] == nearest and bank.rpms[0] < 1250.0 and bank.rpms[-1] > 10500.0,
+		"buckets run from below idle (%.0f) past the redline (%.0f), idle baked first" % [bank.rpms[0], bank.rpms[-1]])
+	bank.bake_now()
+	check(bank.is_baked() and bank.baked.size() == bank.rpms.size() and bank.streams["ex_on"][0] is AudioStreamWAV
+		and bank.oneshots.has("pop") and bank.oneshots.has("shift") and bank.oneshots.has("starter"),
+		"the bank bakes every loop, the pops, shifts and starter (%d loops in %.0f ms)" % [bank.loop_count(), bank.bake_ms])
+	var w := bank.mix_weights(5000.0, 1.0)
+	var total := 0.0
+	var pitch_ok := true
+	for e in w:
+		if str(e[0]) == "ex_on":
+			total += float(e[2]) * float(e[2])
+			pitch_ok = pitch_ok and absf(bank.rpms[e[1]] * float(e[3]) - 5000.0) < 1.0
+	check(absf(total - 1.0) < 0.01 and pitch_ok, "loops crossfade at equal power, each pitched to the exact revs")
+	var idle_mix := bank.mix_weights(1250.0, 0.0)
+	var only_off := true
+	for e in idle_mix:
+		only_off = only_off and str(e[0]).ends_with("_off")
+	check(only_off and not idle_mix.is_empty(), "with the throttle shut only the off-throttle loops play")
+
+
+func _test_engine_events() -> void:
+	var spec := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "straight", "shift": "click"})
+	var stock := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0, "exhaust": "stock"})
+	check(EngineSound.pop_rate(spec, 10000.0, 0.2) > 4.0 * EngineSound.pop_rate(stock, 10000.0, 0.2),
+		"a straight pipe pops far more than a stock can on the overrun")
+	check(EngineSound.pop_rate(spec, 1500.0, 0.2) == 0.0, "nothing pops at tickover")
+	var es := EngineSound.new()
+	add_child(es)
+	es.setup_spec(spec)
+	es.bank.bake_now()
+	es.running = true
+	es.gear = 3
+	es.rpm = 10000.0
+	es.throttle = 1.0
+	for i in 240:
+		es._process(1.0 / 60.0)
+	check(es.pops == 0, "no pops while the throttle is open")
+	check(es.playing_count() >= 2, "the loops play on the throttle (%d players)" % es.playing_count())
+	es.throttle = 0.0
+	for i in 180:
+		es.rpm = lerpf(10000.0, 6000.0, i / 180.0)
+		es._process(1.0 / 60.0)
+	check(es.pops > 0, "snap the throttle shut at high revs and the pipe pops (%d pops)" % es.pops)
+	es.flame.flash(1.0)
+	check(es.flame.is_lit(), "a backfire lights the exhaust flame")
+	es.rpm = 1300.0
+	var before := es.pops
+	for i in 240:
+		es._process(1.0 / 60.0)
+	check(es.pops == before, "and it settles at idle")
+	# Shifting: an upshift cuts the sound for a blink; a downshift blips (the bark).
+	es.rpm = 9000.0
+	es.throttle = 1.0
+	es.gear = 4
+	es._process(1.0 / 60.0)
+	check(es.shifts == 1 and es.last_shift == "click" and es._cut > 0.0, "an upshift clicks and cuts the drive for a moment")
+	es.gear = 3
+	es.throttle = 0.0
+	es._process(1.0 / 60.0)
+	check(es.shifts == 2 and es._blip > 0.5, "a downshift blips the throttle")
+	es.queue_free()
+	var qs := EngineSound.new()
+	add_child(qs)
+	qs.setup(BikeBuild.new({"engine": "four_1000", "exhaust": "titanium_race", "gearbox": "six_race_quickshift"}))
+	qs.running = true
+	qs.rpm = 9000.0
+	qs.gear = 2
+	qs._process(1.0 / 60.0)
+	qs.gear = 3
+	qs._process(1.0 / 60.0)
+	check(qs.last_shift == "slick" and qs._cut > 0.0 and qs._cut < 0.06, "the quickshifter's cut is crisp and short")
+	# The runtime cost: one bike's sound updating each frame.
+	qs.bank.bake_now()
+	var t0 := Time.get_ticks_usec()
+	for i in 300:
+		qs.rpm = 3000.0 + 20.0 * i
+		qs.throttle = float(i % 50) / 50.0
+		qs._process(1.0 / 60.0)
+	var per := (Time.get_ticks_usec() - t0) / 300.0 / 1000.0
+	check(per < 0.5, "a bike's engine sound costs %.3f ms a frame (budget 0.5)" % per)
+	qs.queue_free()
+	await get_tree().process_frame
+
+
+func _test_engine_users() -> void:
+	# Other players' bikes and the dyno use the same engine sound as your own.
+	var build := BikeBuild.new({"engine": "triple_850"})
+	var rb := RemoteBike.new()
+	add_child(rb)
+	rb.setup("Visitor", build, Color.RED)
+	check(rb.audio is EngineSound and rb.audio.spec["layout"] == "triple" and rb.audio.infer_cranking,
+		"another player's bike plays its own engine sound")
+	check(rb.audio.exhaust_at.position.distance_to(rb.model.exhaust_tip()) < 0.01, "from its exhaust")
+	rb.queue_free()
+	var dyno_src := FileAccess.get_file_as_string("res://scripts/dyno_room.gd")
+	check(dyno_src.contains("EngineSound.new()") and not dyno_src.contains("EngineAudio"), "the dyno room uses the same engine sound")
+	# The starter: a remote bike guesses it from the revs rising with the engine off.
+	var es := EngineSound.new()
+	add_child(es)
+	es.infer_cranking = true
+	es.setup_spec(EngineSynth.make_spec("twin", 2, 750.0, {"idle": 1050.0, "redline": 7700.0}))
+	es.bank.bake_now()
+	es.running = false
+	es.rpm = 0.0
+	es._process(1.0 / 60.0)
+	es.rpm = 120.0
+	es._process(1.0 / 60.0)
+	check(es.cranking, "a remote bike's starter is heard when its revs rise with the engine off")
+	es.queue_free()
+	await get_tree().process_frame
+
+
+func _test_engine_samples() -> void:
+	# Recorded sounds dropped into user://engine_samples/<layout>_<exhaust> replace the synthesised ones.
+	var dir := "user://engine_samples/boxer_straight"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var spec := EngineSynth.make_spec("boxer", 2, 1000.0, {"idle": 1000.0, "redline": 8200.0, "exhaust": "straight"})
+	for r in [2000.0, 5000.0]:
+		EngineSynth.save_wav(EngineSynth.render_loop(spec, "ex_on", r), dir.path_join("ex_on_%d.wav" % int(r)))
+		EngineSynth.save_wav(EngineSynth.render_loop(spec, "ex_off", r), dir.path_join("ex_off_%d.wav" % int(r)))
+	EngineSynth.save_wav(EngineSynth.render_pop(spec, 1.0), dir.path_join("pop_1.wav"))
+	check(EngineBank.sample_folder(spec) == dir, "a folder of recordings is found for the engine")
+	var bank := EngineBank.for_spec(spec)
+	bank.bake_now()
+	check(bank.recorded and bank.rpms.size() == 2 and absf(bank.rpms[1] - 5000.0) < 1.0 and bank.streams["ex_on"][1] is AudioStreamWAV
+		and bank.streams["ex_on"][1].loop_mode == AudioStreamWAV.LOOP_FORWARD, "its loops are used, held at their rpm and looping")
+	check(bank.recorded_shots.has("pop") and bank.oneshots["pop"].size() == 1 and bank.oneshots.has("shift"),
+		"recorded pops are used; the rest is still synthesised")
+	var mix := bank.mix_weights(3500.0, 1.0)
+	check(not mix.is_empty(), "and they crossfade like the synthesised loops")
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir.path_join(f))
+	DirAccess.remove_absolute(dir)
+	DirAccess.remove_absolute("user://engine_samples")
+
+
+
+## Shed sound: every sound and variant made and audible, variants picked without repeats,
+## impacts sounding of their material and surface, footsteps by floor, machine start and stop
+## sounds, and the start-up synthesis kept off the main thread and within budget.
+func _test_shed_sound_variants() -> void:
+	var quiet := []
+	var loops_ok := true
+	for sound in SfxSynth.all_sounds():
+		var list := Sfx.variants(sound)
+		for v in list.size():
+			var wav: AudioStreamWAV = list[v]
+			var loud := 0
+			for i in range(0, wav.data.size() - 1, 32):
+				loud = maxi(loud, absi(wav.data.decode_s16(i)))
+			if wav.data.size() < 1000 or loud < 2000:
+				quiet.append("%s#%d (%d)" % [sound, v, loud])
+			if (wav.loop_mode == AudioStreamWAV.LOOP_FORWARD) != Sfx.LOOPS.has(sound):
+				loops_ok = false
+	check(quiet.is_empty(), "every sound and every variant is made and audible (%d sounds) %s" % [SfxSynth.all_sounds().size(), str(quiet)])
+	check(loops_ok, "loops loop and one-shots don't")
+	check(Sfx.variants("clink").size() >= 4 and Sfx.variants("step_gravel").size() >= 6 and Sfx.variants("impact_metal_concrete").size() >= 4
+		and Sfx.variants("pickup").size() >= 4 and Sfx.variants("scrap").size() >= 4, "one-shots come in several variants")
+	var same := false
+	for sound in ["clink", "step_concrete", "impact_plastic_wood"]:
+		var list := Sfx.variants(sound)
+		for a in list.size():
+			for b in range(a + 1, list.size()):
+				same = same or (list[a] as AudioStreamWAV).data == (list[b] as AudioStreamWAV).data
+	check(not same, "no two variants are the same")
+	# Picked at random, never the same one twice running, and all of them get used.
+	var last: AudioStreamWAV = null
+	var repeats := 0
+	var seen := {}
+	for i in 200:
+		var s := Sfx.pick("clink")
+		if s == last:
+			repeats += 1
+		last = s
+		seen[s] = true
+	check(repeats == 0 and seen.size() == Sfx.variants("clink").size(), "a variant never plays twice running (%d repeats, %d of %d used)" % [repeats, seen.size(), Sfx.variants("clink").size()])
+	check(Sfx.stream("bell") == Sfx.pick("bell"), "a one-variant sound is always the same stream")
+	# Materials and surfaces sound different: brightness (zero crossings) and how long it rings.
+	var metal := _zcr(Sfx.stream("impact_metal_concrete"))
+	var plastic := _zcr(Sfx.stream("impact_plastic_concrete"))
+	var rubber := _zcr(Sfx.stream("impact_rubber_concrete"))
+	check(metal > plastic * 1.5 and plastic > rubber, "steel rings brighter than plastic, plastic than a tyre (%d, %d, %d crossings a second)" % [metal, plastic, rubber])
+	var on_steel := _tail_energy(Sfx.stream("impact_metal_steel"))
+	var on_wood := _tail_energy(Sfx.stream("impact_metal_wood"))
+	var on_ground := _tail_energy(Sfx.stream("impact_metal_ground"))
+	check(on_steel > on_wood * 1.5 and on_wood > on_ground, "on a steel shelf it rings on; on the bench less; outside it's dead (%.5f, %.5f, %.5f)" % [on_steel, on_wood, on_ground])
+	check(_zcr(Sfx.stream("step_gravel")) > _zcr(Sfx.stream("step_concrete")) * 2.0 and _zcr(Sfx.stream("step_carpet")) < _zcr(Sfx.stream("step_tile")),
+		"gravel crunches brighter than concrete, carpet is duller than tiles")
+	check(Sfx.impact_material("fabric") == "soft" and Sfx.impact_material("electronics") == "plastic" and Sfx.impact_material("rubber") == "rubber"
+		and Sfx.impact_material("unknown") == "metal", "parts' materials map onto impact sounds")
+	# Start-up: the main thread only sets up buses and starts the worker.
+	check(Sfx.ready_ms < 100.0, "starting the sound system takes %.1f ms on the main thread" % Sfx.ready_ms)
+	var t0 := Time.get_ticks_msec()
+	for sound in ["grinder", "impact_metal_steel", "step_puddle", "amb_out"]:
+		for v in SfxSynth.variant_count(sound):
+			SfxSynth.make(sound, v)
+	var ms := Time.get_ticks_msec() - t0
+	check(ms < 8000, "the heaviest sounds synthesise in %d ms" % ms)
+	for i in 6000:
+		if Sfx.synth_done:
+			break
+		await get_tree().create_timer(0.05).timeout
+	check(Sfx.synth_done, "the worker has made every sound (%.0f ms, %s)" % [Sfx.synth_ms, "from the cache" if Sfx.loaded_from_cache else "synthesised"])
+	check(Sfx.synth_ms < 60000.0, "within the start-up budget")
+	check(FileAccess.file_exists(Sfx.CACHE_PATH), "and keeps them in a cache for next time")
+
+
+## Zero crossings a second in the first quarter second: a rough measure of brightness.
+func _zcr(wav: AudioStreamWAV) -> int:
+	var n := mini(wav.data.size() / 2, int(wav.mix_rate * 0.25))
+	var count := 0
+	var prev := 0
+	for i in n:
+		var v := wav.data.decode_s16(i * 2)
+		if (v >= 0) != (prev >= 0):
+			count += 1
+		prev = v
+	return int(count / (float(n) / wav.mix_rate))
+
+
+## Mean square level from 0.3 s to 0.8 s: how long a sound rings on.
+func _tail_energy(wav: AudioStreamWAV) -> float:
+	var a := int(wav.mix_rate * 0.3)
+	var b := mini(wav.data.size() / 2, int(wav.mix_rate * 0.8))
+	var sum := 0.0
+	for i in range(a, b):
+		var v := wav.data.decode_s16(i * 2) / 32768.0
+		sum += v * v
+	return sum / maxf(b - a, 1.0)
+
+
+## Room acoustics, routing through walls, footsteps by floor, parts landing by material,
+## machines' start and stop sounds and the ambience, in a running shed.
+func _test_shed_sound_session() -> void:
+	var real_path := Progress.path
+	Progress.path = "user://profile_sound_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	# Reverb follows the room the listener is in.
+	var sizes := {}
+	for room in ["shed", "paint", "sales", ""]:
+		Sfx.set_listener_room(room)
+		sizes[room] = Sfx.room_reverb().room_size
+	check(sizes["sales"] > sizes["shed"] and sizes["shed"] > sizes["paint"] and Sfx.room_reverb().wet < 0.1,
+		"each room has its own reverb: the showroom's biggest, the paint booth's small, outside almost dry (%s)" % str(sizes))
+	var paint_c := Workshop.rooms()["paint"] as Rect2
+	var paint_at := Vector3(paint_c.get_center().x, 0.1, paint_c.get_center().y)
+	w.place(Transform3D(Basis(), paint_at))
+	for i in 10:
+		await get_tree().process_frame
+	check(Sfx.listener_room == "paint", "walking into the paint shop, you hear its room (%s)" % Sfx.listener_room)
+	for i in 120:
+		await get_tree().process_frame
+	check(absf(Sfx.room_reverb().room_size - float(Sfx.ROOM_PRESETS["paint"]["size"])) < 0.05, "and the reverb eases to the booth's (%.2f)" % Sfx.room_reverb().room_size)
+	var shed_at := Workshop.CENTER + Vector3(0.0, 0.1, 0.0)
+	check(Sfx.bus_for(paint_at) == "Room" and Sfx.bus_for(shed_at) == "Far" and Sfx.occlusion_db(shed_at) < 0.0 and Sfx.occlusion_db(paint_at) == 0.0,
+		"a sound in the shed comes through the wall, muffled and quieter; one in the booth doesn't")
+	var outside := SalesOffice.SALES_DOOR + Vector3(0.0, 0.1, 25.0)
+	check(Sfx.occlusion_db(outside) <= Sfx.WALL_DB, "outside is through a wall from the paint shop")
+	var p := Sfx.play_at("clink", shed_at)
+	check(p != null and p.bus == "Far", "a one-shot in another room goes through the far bus")
+	# Footsteps by floor.
+	check(Sfx.step_surface(shed_at) == "concrete" and Sfx.step_surface(paint_at) == "tile", "concrete in the shed, tiles in the paint shop")
+	check(Sfx.step_surface(SalesOffice.at(5.0, 0.0, 0.0) + Vector3.UP * 0.05) == "tile"
+		and Sfx.step_surface(Vector3(SalesOffice.office_rect().get_center().x, SalesOffice.MEZZ_Y + 0.05, SalesOffice.office_rect().get_center().y)) == "carpet",
+		"the showroom's tiles and the office's carpet")
+	Shed.upgrades["epoxy"] = true
+	check(Sfx.step_surface(shed_at) == "epoxy", "with the epoxy floor bought, the shed floor sounds of it")
+	Shed.upgrades.erase("epoxy")
+	var step := Sfx.footstep(paint_at)
+	check(step != null and Sfx.variants("step_tile").has(step.stream), "a footstep in the booth is a step on tiles")
+	# A part put down sounds of its material and what it lands on.
+	var metal_item := 0
+	for id in Shed.items:
+		if PartsDB.material(str(Shed.items[id]["part"])) == "metal" and not Shed.items[id].get("boxed", false):
+			metal_item = id
+			break
+	var before := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).size()
+	Sfx.job_done("drop", {"a": "drop", "xf": Transform3D(Basis(), shed_at)}, metal_item, shed_at)
+	Sfx.job_done("set_down", {"a": "set_down", "top": "bench", "xf": Transform3D(Basis(), shed_at)}, metal_item, shed_at)
+	var players := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false)
+	var on_floor := players.filter(func(q): return Sfx.variants("impact_metal_concrete").has(q.stream))
+	var on_bench := players.filter(func(q): return Sfx.variants("impact_metal_wood").has(q.stream))
+	check(metal_item != 0 and players.size() >= before + 2 and not on_floor.is_empty() and not on_bench.is_empty(),
+		"a steel part dropped on the floor clanks on concrete, set on the bench it knocks on wood")
+	# Machines spin up and run down either side of their loop.
+	var holder := Node3D.new()
+	main.add_child(holder)
+	holder.global_position = shed_at
+	var loop := Sfx.make_loop_player(holder)
+	Sfx.set_loop(loop, "grinder")
+	var ups := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(q): return Sfx.variants("grinder_up").has(q.stream))
+	check(loop.playing and not ups.is_empty(), "the grinder spins up as it starts")
+	Sfx.set_loop(loop, "")
+	var downs := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(q): return Sfx.variants("grinder_down").has(q.stream))
+	check(not loop.playing and not downs.is_empty(), "and runs down when it stops")
+	check(Sfx.WORK_LOOPS["tyre_fit"] == "changer" and Sfx.TOOL_LOOPS["gun"] == "spray_gun" and Sfx.DONE_SOUNDS["tyre_remove"] == "bead_pop",
+		"the tyre changer, the spray gun and the bead have their own sounds")
+	# The ambience: room tone, lights, outdoors and the compressor.
+	for i in 6000:
+		if Sfx.synth_done and Sfx.ambience() != null:
+			break
+		await get_tree().create_timer(0.05).timeout
+	var amb: SfxAmbience = Sfx.ambience()
+	check(amb != null, "the shed has its ambience")
+	if amb:
+		amb.kick_compressor()
+		check(amb.compressor_on and amb._comp.playing and amb._comp.stream == Sfx.stream("compressor"), "the compressor in the corner kicks in")
+		w.place(Transform3D(Basis(), shed_at))
+		for i in 90:
+			await get_tree().process_frame
+		check(amb._tone.playing and amb._hum.playing and amb._wind.playing, "indoors: room tone, the lights' hum and the outdoors muffled through the walls")
+		var lp := AudioServer.get_bus_effect(AudioServer.get_bus_index("AmbOut"), 0) as AudioEffectLowPassFilter
+		check(lp.cutoff_hz < 5000.0, "the outdoor sounds are muffled indoors (%.0f Hz)" % lp.cutoff_hz)
+		check(SfxAmbience.lit("shed") == Shed.lights_on, "the hum follows the shed's lights")
+	main._leave()
+	main.queue_free()
+	await get_tree().create_timer(2.0).timeout
+	# One-shots left here with no listener in the world any more never finish: tidy them up.
+	for q in find_children("*", "AudioStreamPlayer3D", false, false):
+		(q as AudioStreamPlayer3D).stop()
+		q.queue_free()
+	await get_tree().process_frame
+	Sfx.set_listener_room("shed")
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+## The parts computer and its Garage upgrades page fit on the screen, and every list in them
+## scrolls far enough to show its last entry, in every aisle.
+func _test_computer_fits_screen() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var keep := get_window().size
+	get_window().size = Vector2i(1920, 1080)
+	await get_tree().process_frame
+	var vp := get_viewport().get_visible_rect()
+	var pc: PartsComputer = main.computer
+	pc.open()
+	await get_tree().process_frame
+	var panel: Control = pc.get_child(1).get_child(0)
+	var head: Control = panel.get_child(0).get_child(0)
+	check(head.size.y < 80.0, "the parts computer's header is one row (%.0f px)" % head.size.y)
+	var cut := []
+	var off := []
+	for sec in PartsComputer.SECTIONS:
+		pc._show_section(sec)
+		for k in PartsComputer.all_kinds() + PartsComputer.SELL_KINDS:
+			if PartsComputer.section_of(k) != sec:
+				continue
+			pc._show_kind(k)
+			await get_tree().process_frame
+			if panel.get_global_rect().end.y > vp.end.y + 1.0:
+				off.append(k)
+			for col in [pc._kinds, pc._variants]:
+				if not await _scrolls_to_end(col):
+					cut.append(k)
+	check(off.is_empty(), "the parts computer stays on the screen in every aisle %s" % str(off))
+	check(cut.is_empty(), "every list in the parts computer scrolls to its last entry %s" % str(cut))
+	pc.open_upgrades()
+	await get_tree().process_frame
+	var up: UpgradesPanel = pc.upgrades_panel
+	var up_panel: Control = up.get_child(1).get_child(0)
+	check(up_panel.get_global_rect().end.y <= vp.end.y + 1.0 and await _scrolls_to_end(up._list),
+		"the Garage upgrades page fits and its list scrolls to the end (%s)" % up_panel.get_global_rect())
+	pc.close_computer()
+	get_window().size = keep
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Scrolls the list's ScrollContainer to the bottom: whether its last entry is then in view.
+func _scrolls_to_end(col: Control) -> bool:
+	var sc: ScrollContainer = col.get_parent()
+	await get_tree().process_frame
+	sc.scroll_vertical = 1000000
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var kids: Array = col.get_children().filter(func(c): return not c.is_queued_for_deletion() and c.visible)
+	if kids.is_empty():
+		return true
+	var vis := sc.get_global_rect()
+	return (kids[-1] as Control).get_global_rect().end.y <= vis.end.y + 1.0 and vis.end.y <= get_viewport().get_visible_rect().end.y + 1.0

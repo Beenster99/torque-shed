@@ -23,6 +23,7 @@ var _env: WorldEnvironment
 var workshop: Workshop
 var daylight: Daylight
 var weather: Weather
+var lighting: Lighting
 ## Ground that rain soaks (see Weather): [{mat, color, rough, shine}], shine 0 (stays matt) .. 1.
 var wet_surfaces := []
 
@@ -130,6 +131,12 @@ func _build_environment() -> void:
 	daylight.name = "Daylight"
 	add_child(daylight)
 	daylight.setup(env, _sun)
+
+	# The lighting quality (Settings' Graphics options): GI, fog, clouds, shadows, eye adaptation.
+	lighting = Lighting.new()
+	lighting.name = "Lighting"
+	add_child(lighting)
+	lighting.setup(env, _sun, daylight)
 
 
 ## The time of day in hours (0..24), from the session's Daylight. 12 when there's no world.

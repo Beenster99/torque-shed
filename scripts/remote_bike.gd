@@ -7,7 +7,7 @@ const DELAY := 0.1
 
 var player_name := ""
 var model: BikeModel
-var audio: EngineAudio
+var audio: EngineSound
 var _build: BikeBuild
 var _snapshots: Array = []   # [{t, state}]
 var _label: Label3D
@@ -15,6 +15,8 @@ var _last := PackedFloat32Array()
 var _effects: BikeEffects
 var _horn: HornAudio
 var _fog: Array = []
+## The rider's gear (slot -> RiderGear item id); set before setup. Empty dresses them as before.
+var rider_gear := {}
 
 
 func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Color(0, 0, 0, 0)) -> void:
@@ -28,6 +30,7 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 		child.free()
 	model = BikeModel.new()
 	model.rider_color = rider_color
+	model.rider_gear = rider_gear
 	add_child(model)
 	model.build_from(_build, paint)
 	_fog = Bike.make_fog_lights(self, model, _build)
@@ -50,14 +53,12 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 	_label.pixel_size = 0.006
 	_label.no_depth_test = true
 	add_child(_label)
-	audio = EngineAudio.new()
-	audio.cylinders = _build.cylinders
-	audio.layout = _build.layout
-	audio.loudness = _build.exhaust_loudness
-	audio.displacement = _build.displacement
-	audio.whine = _build.gear_whine
-	audio.volume_db = -6.0
+	audio = EngineSound.new()
+	audio.volume_db = -3.0
+	audio.infer_cranking = true
 	add_child(audio)
+	audio.setup(_build, model)
+	audio.set_distant_filter(true)
 	_effects = BikeEffects.new()
 	add_child(_effects)
 	_effects.setup(model.exhaust_tip(), Vector3(0.0, -_build.rear_radius, _build.wheelbase * 0.5), model.lamp_position(),
@@ -99,6 +100,7 @@ func _physics_process(delta: float) -> void:
 	var running := sb.size() < 20 or sb[19] > 0.5
 	audio.running = running
 	var v := Vector3(sb[7], sb[8], sb[9])
+	audio.speed = v.length()
 	_effects.update(delta, v.length(), sb[16], running, _build.overall_health(), "", true, 0.0)
 	_effects.set_screech(sb[20] if sb.size() > 20 else 0.0)
 	_horn.pressed = sb.size() > 21 and sb[21] > 0.5

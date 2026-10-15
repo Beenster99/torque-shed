@@ -75,6 +75,7 @@ var skid := 0.0            # 0..1, how hard the tyres are squealing on tarmac, s
 var horn := false          # horn button held
 var beam := 1              # headlight switch: 0 off, 1 low beam, 2 high beam
 var rider_color := Color(0, 0, 0, 0)   # the rider's own colours; clear uses the bike's paint
+var rider_gear := {}                   # the rider's gear, slot -> RiderGear item id (see RiderFigure)
 var burnout := 0.0         # 0..1, how hard the back tyre is spinning on the spot
 var paddling := false      # walking the bike backwards with the rider's feet
 var horn_audio: HornAudio
@@ -134,6 +135,7 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 
 	model = BikeModel.new()
 	model.rider_color = rider_color
+	model.rider_gear = rider_gear
 	add_child(model)
 	model.build_from(build, paint)
 	for l in _fog:
@@ -727,6 +729,7 @@ func _spawn_ragdoll() -> void:
 	_clear_ragdoll()
 	_ragdoll = RiderRagdoll.new()
 	get_parent().add_child(_ragdoll)
+	_ragdoll.dress(rider_gear, rider_color)
 	_ragdoll.global_transform = global_transform.translated_local(Vector3(0.0, build.seat_height, 0.0))
 	_ragdoll.linear_velocity = linear_velocity * 0.9 + Vector3.UP * 2.0
 	_ragdoll.angular_velocity = Vector3(randf_range(-4, 4), randf_range(-2, 2), randf_range(-4, 4))

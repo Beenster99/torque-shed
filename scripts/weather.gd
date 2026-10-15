@@ -24,6 +24,8 @@ const BLEND_TIME := 40.0     # seconds one kind of weather takes to turn into th
 const SOAK_TIME := 80.0      # seconds of full rain to soak the roads
 const DRY_TIME := 300.0      # seconds for soaked roads to dry out
 const SYNC_INTERVAL := 2.0
+## How many rooms' roofs the rain shader keeps the rain out from under (Workshop.rooms()).
+const SHELTERS := 8
 ## Tyre grip on soaked ground, as a share of dry grip.
 const WET_GRIP := {"tarmac": 0.85, "dirt": 0.9, "grass": 0.9}
 const DROPS := 2400
@@ -298,19 +300,34 @@ func _build_rain() -> void:
 	sh.code = RAIN_SHADER
 	_rain_mat.shader = sh
 	_rain_mat.set_shader_parameter("box", RAIN_BOX)
-	var rects := []
-	var tops := []
-	var all := Workshop.rooms()
-	for room in ["shed", "paint", "storage", "dyno"]:
-		var r: Rect2 = all.get(room, Rect2())
-		r = r.grow(0.6)
-		rects.append(Vector4(r.position.x, r.position.y, r.end.x, r.end.y))
-		tops.append(shelter_top(room))
-	_rain_mat.set_shader_parameter("shelters", PackedVector4Array(rects))
-	_rain_mat.set_shader_parameter("shelter_tops", PackedFloat32Array(tops))
+	refresh_shelters()
 	_rain_mesh.material_override = _rain_mat
 	_rain_mesh.visible = false
 	add_child(_rain_mesh)
+
+
+## Tells the rain shader where the rooms' roofs are (Workshop.rooms()), so no drops are drawn
+## under them. Call again when the rooms change.
+func refresh_shelters() -> void:
+	if _rain_mat == null:
+		return
+	var rects := []
+	var tops := []
+	var all := Workshop.rooms()
+	for room in all:
+		if rects.size() >= SHELTERS:
+			break
+		if room == "sales_office":
+			continue   # upstairs in "sales", under the same roof
+		var r: Rect2 = all[room]
+		r = r.grow(0.6)
+		rects.append(Vector4(r.position.x, r.position.y, r.end.x, r.end.y))
+		tops.append(shelter_top(room))
+	while rects.size() < SHELTERS:
+		rects.append(Vector4.ZERO)
+		tops.append(-1000.0)
+	_rain_mat.set_shader_parameter("shelters", PackedVector4Array(rects))
+	_rain_mat.set_shader_parameter("shelter_tops", PackedFloat32Array(tops))
 
 
 ## The height of a room's roof: no rain is drawn under it.
@@ -320,6 +337,12 @@ static func shelter_top(room: String) -> float:
 			return Workshop.HEIGHT + 0.35
 		"dyno":
 			return DynoRoom.HEIGHT + 0.3
+		"sales", "sales_office":
+			return SalesOffice.CEIL_Y + 0.4
+		"wing":
+			return GarageUpgrades.WING_HEIGHT + 0.3
+		"annex":
+			return GarageUpgrades.ANNEX_HEIGHT + 0.3
 	return Workshop.ROOM_HEIGHT + 0.2
 
 
@@ -332,8 +355,8 @@ uniform float amount = 1.0;
 uniform float speed = 11.0;
 uniform vec3 wind = vec3(0.8, 0.0, 0.4);
 uniform vec4 tint : source_color = vec4(0.75, 0.8, 0.88, 1.0);
-uniform vec4 shelters[4];
-uniform float shelter_tops[4];
+uniform vec4 shelters[8];
+uniform float shelter_tops[8];
 
 varying float fade;
 
@@ -347,7 +370,7 @@ void vertex() {
 	vec3 base = cam - box * vec3(0.5, 0.35, 0.5);
 	p = base + mod(p - base, box);
 	bool hidden = seed.w > amount;
-	for (int i = 0; i < 4; i++) {
+	for (int i = 0; i < 8; i++) {
 		vec4 r = shelters[i];
 		if (p.x > r.x && p.x < r.z && p.z > r.y && p.z < r.w && p.y < shelter_tops[i]) {
 			hidden = true;

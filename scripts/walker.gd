@@ -135,7 +135,8 @@ func _ready() -> void:
 	camera.position.y = EYE
 	camera.near = 0.03
 	camera.far = 2500.0
-	camera.fov = 75.0
+	camera.fov = Settings.gfx_fov
+	camera.add_to_group("gfx_fov")   # follows the field-of-view setting (see Graphics)
 	add_child(camera)
 	_work_sound = Sfx.make_loop_player(camera)
 	_work_sound.position = Vector3(0.0, -0.3, -0.6)
@@ -433,7 +434,7 @@ func _physics_process(delta: float) -> void:
 		_stride += Vector2(velocity.x, velocity.z).length() * delta
 		if _stride > (0.85 if running else 0.7):
 			_stride = 0.0
-			Sfx.play_at("step", global_position, -14.0)
+			Sfx.footstep(global_position, running)
 	if global_position.y < -20.0:
 		place(Workshop.walker_spawn(0))
 	_eye = move_toward(_eye, CROUCH_EYE if crouched else EYE, delta * 4.0)
@@ -1468,7 +1469,7 @@ func _describe() -> String:
 			lines.append("F: %s" % ("close it" if Shed.door_open else "open it"))
 		"lights":
 			var room := str(target.get("room", ""))
-			lines.append({"paint": "Paint shop lights", "storage": "Storage room lights"}.get(room, "Shed lights"))
+			lines.append({"paint": "Paint shop lights", "storage": "Storage room lights", "sales": "Sales office lights"}.get(room, "Shed lights"))
 			lines.append("F: switch them %s" % ("off" if Shed.room_lit(room) else "on"))
 		"board":
 			var board: Node = get_tree().get_first_node_in_group("whiteboard")
@@ -1697,10 +1698,9 @@ func _update_work(delta: float) -> void:
 		elif a_now == "write_label":
 			label_requested.emit(int(target.get("furniture", 0)))
 		else:
+			var held_before := Shed.held_by(Shed.me())
 			Shed.request(plan_now["action"])
-			var done: String = Sfx.DONE_SOUNDS.get(a_now, "")
-			if done != "":
-				Sfx.play_at(done, camera.global_position - camera.global_transform.basis.z * 1.2, -4.0)
+			Sfx.job_done(a_now, plan_now["action"], held_before, camera.global_position - camera.global_transform.basis.z * 1.2)
 		if a_now == "wash":
 			# The jet keeps going for as long as you hold the trigger.
 			_hold = 0.0
@@ -1756,7 +1756,7 @@ func _tyre_game_step(delta: float, plan_now: Dictionary, use_alt: bool) -> bool:
 		_hold = 0.0
 		_send_status("")
 		Sfx.set_loop(_work_sound, "")
-		Sfx.play_at("pickup", camera.global_position - camera.global_transform.basis.z * 1.2, -4.0)
+		Sfx.play_at("bead_pop", camera.global_position - camera.global_transform.basis.z * 1.2, -4.0)
 	return true
 
 
@@ -1778,7 +1778,7 @@ func _coverage_step(delta: float, plan_now: Dictionary) -> void:
 		_cover["live"] = true
 		_active_plan = plan_now
 		_send_status(_activity_text())
-		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get(str(a["a"]), "spray"))
+		Sfx.set_loop(_work_sound, "spray_gun" if gun else Sfx.WORK_LOOPS.get(str(a["a"]), "spray"))
 	var jobs: Array = [_cover]
 	if gun:
 		# Every other part on the booth's hooks gets its own job, so one pass can coat them all.

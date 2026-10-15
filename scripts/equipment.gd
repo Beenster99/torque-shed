@@ -11,7 +11,8 @@ const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "blaster", "
 	"ramp", "obstacle", "barrier", "marker"]
 const KIND_NAMES := {"stand": "Engine stands", "shelf": "Shelving", "washer": "Parts washers",
 	"repair": "Repair machines", "blaster": "Sandblasting cabinets", "bench": "Workbenches", "booth": "Paint booths", "changer": "Tyre changers", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs",
-	"ramp": "Jump ramps", "obstacle": "Things to jump", "barrier": "Walls and fences", "marker": "Cones, posts and flags", "whiteboard": "Whiteboard"}
+	"ramp": "Jump ramps", "obstacle": "Things to jump", "barrier": "Walls and fences", "marker": "Cones, posts and flags", "whiteboard": "Whiteboard",
+	"trinket": "Trinkets"}
 ## Kinds that live outside in the yard, to ride over, round and through.
 const YARD_KINDS: Array[String] = ["ramp", "obstacle", "barrier", "marker"]
 ## Kinds that hang on a wall rather than stand on the floor. The crew whiteboard is one too,
@@ -230,12 +231,13 @@ static func current_id(id: String) -> String:
 	return str(RENAMED.get(id, id))
 
 
+## A model's entry: from MODELS, or a trinket bought in the Esc menu's Shop (Trinkets.MODELS).
 static func get_model(id: String) -> Dictionary:
-	return MODELS.get(id, {})
+	return MODELS.get(id, Trinkets.MODELS.get(id, {}))
 
 
 static func kind_of(id: String) -> String:
-	return str(MODELS.get(id, {}).get("kind", ""))
+	return str(get_model(id).get("kind", ""))
 
 
 ## The models of a kind the shop lists (not the hidden whiteboard print).
@@ -248,7 +250,7 @@ static func by_kind(kind: String) -> Array:
 
 
 static func is_wall(id: String) -> bool:
-	return WALL_KINDS.has(kind_of(id))
+	return WALL_KINDS.has(kind_of(id)) or bool(get_model(id).get("wall", false))
 
 
 static func is_yard(id: String) -> bool:
