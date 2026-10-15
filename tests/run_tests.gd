@@ -10897,7 +10897,10 @@ func _test_sales_pricing() -> void:
 	for id in Shed.items:
 		newest = maxi(newest, int(id))
 	check(int(Shed.items[newest].get("paid", -1)) == Money.buy_price("slip_on", me), "an ordered part notes what it cost")
-	# The crew's wages for work on it are labour sunk in.
+	# The crew's wages for work on it are labour sunk in. Earlier tests' unbolts within the last
+	# real minute would count as repeats and pay next to nothing (on a fast machine, nothing).
+	if Shed._prog():
+		Shed._prog()._recent.clear()
 	var lab := int(Sales.appraise(bike)["labour"])
 	Shed.request({"a": "unbolt", "bike": bike, "slot": "exhaust"})
 	check(not Shed.is_bolted(bike, "exhaust") and int(Sales.appraise(bike)["labour"]) > lab, "wages paid for work on it count as labour")
