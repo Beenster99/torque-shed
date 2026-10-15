@@ -92,6 +92,8 @@ func _ready() -> void:
 	current = self
 	_rng.randomize()
 	Net.weather_received.connect(_on_host_weather)
+	# A player who joins hears the weather straight away, not at the next regular send.
+	Net.player_joined.connect(func(_id: int, _info: Dictionary) -> void: _send_timer = 0.0)
 	var start := Settings.weather if STATES.has(Settings.weather) else Settings.weather_now
 	state = start if STATES.has(start) else "clear"
 	from = state
@@ -124,6 +126,8 @@ func change_to(to: String, instant := false) -> void:
 		from = state if blend >= 0.5 else from
 		state = to
 		blend = 0.0
+		# The crew hear about it at once.
+		_send_timer = 0.0
 	if instant:
 		blend = 1.0
 		from = state
