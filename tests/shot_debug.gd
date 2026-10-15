@@ -778,6 +778,7 @@ func _telemetry_shots() -> void:
 	main.menu.hide()
 	Settings.telemetry_overlay = was
 
+
 ## The riding map (`-- --world`): the yard's test area and its blended edge, the loop, the
 ## road network from the air, a village, a farm, the mountain pass's hairpins with their
 ## barriers, a hard mountain track, the woods, and a bike on the pass and on a track.
