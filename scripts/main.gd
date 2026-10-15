@@ -33,6 +33,8 @@ var _dirt_km := 0.0
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
+## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
+var _safe_xf := Transform3D()
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
 const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7}
 
@@ -271,6 +273,9 @@ func open_geometry() -> void:
 	if id == 0:
 		hud.flash("Walk up to a bike and look at it to fit its parts in geometry mode.", 2.5, true)
 		return
+	if not Shed.bike_at_work(id):
+		hud.flash("Out here it's just a bike to ride. Ride it back to the shed to fit its parts.", 2.5, true)
+		return
 	if not geometry.open(id, workshop, walker.camera):
 		hud.flash("That bike can't be edited right now.", 2.0, true)
 		return
@@ -325,6 +330,7 @@ func _start_riding(bike_id: int) -> void:
 	world.add_child(bike)
 	var xf: Transform3D = data["xf"]
 	bike.place(xf.origin, xf.basis.get_euler().y)
+	_safe_xf = Transform3D()
 	bike.crashed.connect(func(): hud.flash("Crashed!", 1.5, true))
 	# You get on with the engine off and start it yourself.
 	bike.engine_on = false
@@ -444,6 +450,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if menu.visible or computer.visible or tuning.visible or label_dialog.visible or contract_panel.visible or bike == null:
 		return
+	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"):
+		# Swing the chase camera round the bike (or turn your head in first person).
+		var rel: Vector2 = event.relative
+		camera.add_orbit(-rel.x * ChaseCamera.MOUSE_ORBIT, rel.y * ChaseCamera.MOUSE_ORBIT)
+		return
 	if event.is_action_pressed("interact"):
 		if Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
 			_get_off()
@@ -453,6 +464,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("camera"):
 		camera.cycle_mode()
 		_ride_view = camera.mode
+	elif event.is_action_pressed("ride_by"):
+		camera.start_ride_by()
 	elif event.is_action_pressed("ignition"):
 		_ignition()
 	elif event.is_action_pressed("shift_up"):
@@ -488,6 +501,10 @@ func _physics_process(delta: float) -> void:
 			bike.rear_brake = Input.get_action_strength("rear_brake")
 			bike.lean_input = clampf(Input.get_axis("lean_left", "lean_right") + stick.x, -1.0, 1.0)
 			bike.body_shift = clampf(Input.get_axis("body_back", "body_forward") - stick.y, -1.0, 1.0)
+			# The right stick swings the camera round, as the mouse does.
+			var look := Controls.stick(true)
+			if look != Vector2.ZERO:
+				camera.add_orbit(-look.x * ChaseCamera.STICK_ORBIT * delta, look.y * ChaseCamera.STICK_ORBIT * delta)
 		else:
 			bike.throttle = 0.0
 			bike.lean_input = 0.0
@@ -495,6 +512,7 @@ func _physics_process(delta: float) -> void:
 			bike.front_brake = 1.0
 			bike.rear_brake = 1.0
 		bike.auto_shift = Settings.auto_shift
+		camera.recentre = Settings.camera_recentre
 		bike.assist = Settings.assist
 		bike.horn = active and Input.is_action_pressed("horn")
 		audio.rpm = bike.rpm
@@ -515,6 +533,7 @@ func _physics_process(delta: float) -> void:
 			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
 			bike.model.set_grime(clampf(_ride_dirt, 0.0, 0.85))
 		_update_dash()
+		_keep_on_map()
 		_stats_timer += delta
 		if _stats_timer >= 1.0:
 			_stats_timer = 0.0
@@ -525,13 +544,28 @@ func _physics_process(delta: float) -> void:
 		Net.send_state(_net_state())
 
 
+## Off the edge of the map (or through it): the bike goes back to the last place it had its
+## wheels on the ground, rather than falling forever.
+func _keep_on_map() -> void:
+	var p := bike.global_position
+	var lost := p.y < -25.0 or absf(p.x) > World.MAP_HALF - 1.0 or absf(p.z) > World.MAP_HALF - 1.0
+	if lost and _safe_xf != Transform3D():
+		var fwd := -_safe_xf.basis.z
+		bike.place(_safe_xf.origin, atan2(-fwd.x, -fwd.z) + PI)
+		hud.flash("That's the edge of the map. Turned round and put back on the ground.", 3.0, true)
+		camera.snap()
+	elif not lost and bike.wheels[0]["contact"] and bike.wheels[1]["contact"] and not bike.is_crashed \
+			and absf(p.x) < World.MAP_HALF - 12.0 and absf(p.z) < World.MAP_HALF - 12.0:
+		_safe_xf = Transform3D(bike.global_basis, p - Vector3.UP * bike.build.rear_radius)
+
+
 ## Tells the shed how far the bike went, how muddy it got and how much petrol it burnt.
 func _send_ride_stats() -> void:
 	if bike == null:
 		return
 	hud.trip_fuel += bike.fuel_used
 	Shed.request({"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
-		"dirt_km": _dirt_km, "fuel": bike.fuel_used})
+		"dirt_km": _dirt_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()})
 	bike.fuel_used = 0.0
 	_ride_km = 0.0
 	_dirt_km = 0.0

@@ -32,6 +32,8 @@ const FRONT_LOCK_SLIP := 0.1      # the rider (or ABS) eases the brake before a 
 const PADDLE_SPEED := 1.1         # walking pace when the rider paddles backwards with their feet
 const PADDLE_HOLD := 0.45         # hold the front brake this long at a standstill to start paddling back
 const BURNOUT_SPEED := 2.5        # below this, front brake plus throttle lights up the back tyre
+const BEAM_FOG := 3               # the headlight switch's last stop on a bike with fog lights
+const DONUT_RATE := 2.2           # rad/s: how fast a full-lock burnout swings the back round the front wheel
 
 var build: BikeBuild
 
@@ -73,10 +75,14 @@ var _starting := 0.0
 var _shift_from_rpm := 0.0
 var skid := 0.0            # 0..1, how hard the tyres are squealing on tarmac, set by the effects
 var horn := false          # horn button held
-var beam := 1              # headlight switch: 0 off, 1 low beam, 2 high beam
+var beam := 1              # headlight switch: 0 off, 1 low beam, 2 high beam, 3 high beam and fog lights (BEAM_FOG)
 var rider_color := Color(0, 0, 0, 0)   # the rider's own colours; clear uses the bike's paint
 var rider_gear := {}                   # the rider's gear, slot -> RiderGear item id (see RiderFigure)
 var burnout := 0.0         # 0..1, how hard the back tyre is spinning on the spot
+## Seconds of full burnout since the shed last took it (see take_burnout_time): it wears the back tyre.
+var burnout_time := 0.0
+## How far a burnout has spun the bike round, radians (+ to the left), since it lit up.
+var donut_turn := 0.0
 var paddling := false      # walking the bike backwards with the rider's feet
 var horn_audio: HornAudio
 var _stopped_brake := 0.0  # how long the front brake has been held at a standstill
@@ -141,6 +147,7 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	for l in _fog:
 		l.free()
 	_fog = make_fog_lights(self, model, build)
+	beam = mini(beam, beam_stops() - 1)
 	if horn_audio:
 		horn_audio.free()
 	horn_audio = HornAudio.new()
@@ -248,10 +255,11 @@ func _physics_process(delta: float) -> void:
 	if horn_audio:
 		horn_audio.pressed = horn and controls_enabled and not is_crashed
 	# Every lamp, lens and the clocks run off the ignition: a bike that isn't running is dark.
+	var fog_on := engine_on and beam >= BEAM_FOG
 	for l in _fog:
-		l.visible = engine_on
+		l.visible = fog_on
 	if model:
-		model.set_lights(engine_on, beam > 0)
+		model.set_lights(engine_on, beam > 0, fog_on)
 	if effects:
 		effects.beam_mode = beam
 
@@ -298,6 +306,7 @@ func _physics_process(delta: float) -> void:
 	_apply_aero()
 	_apply_rider_balance()
 	_apply_feet()
+	_apply_donut(delta)
 	_check_crash()
 
 	if model:
@@ -500,6 +509,37 @@ func _apply_feet() -> void:
 		apply_central_force(flat * (-PADDLE_SPEED - v) * mass * 2.5)
 
 
+## Circle burnouts: lit up with the bars turned, the rider pivots the bike round the braked
+## front wheel and the spinning back tyre slides round in a circle of smoke. Lean left or right
+## (A / D, left stick) to swing it round; the harder the burnout, the faster it goes.
+func _apply_donut(delta: float) -> void:
+	if burnout <= 0.0:
+		donut_turn = 0.0
+		return
+	burnout_time += burnout * delta
+	var b := global_transform.basis
+	var yaw_rate := angular_velocity.dot(b.y)
+	donut_turn += yaw_rate * delta
+	if not (wheels[0]["contact"] and wheels[1]["contact"]):
+		return
+	# Lean right swings the bike round to the right: the back slides out to the left.
+	var want := -lean_input * DONUT_RATE * clampf(burnout * 1.5, 0.0, 1.0)
+	var wb := build.wheelbase
+	var i_front := inertia.y + mass * wb * wb * 0.25
+	var push := (want - yaw_rate) * i_front * 8.0 / wb
+	var grip: float = float(build.grip_rear.get(str(wheels[1]["surface"]), 0.7)) * float(wheels[1]["load"])
+	push = clampf(push, -grip, grip)
+	var at: Vector3 = wheels[1].get("contact_pos", global_transform * Vector3(0.0, -build.rear_radius, wb * 0.5))
+	apply_force(b.x * push, at - global_position)
+
+
+## Hands over the burnout seconds since the last call, for the shed to wear the back tyre.
+func take_burnout_time() -> float:
+	var t := burnout_time
+	burnout_time = 0.0
+	return t
+
+
 ## How much revs the engine note should carry: the throttle, except while the clutch is in for a shift.
 func sound_load() -> float:
 	return throttle * 0.15 if _shift_timer > 0.0 else throttle
@@ -618,6 +658,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		if total > f_max:
 			omega_new = omega - fx * (1.0 - 0.4 * burnout) * radius * delta / inertia_w
 		fx *= 1.0 - 0.85 * burnout
+		# A spinning tyre has next to no side grip, so the back steps out where the rider pushes it.
+		fy *= 1.0 - 0.8 * burnout
 		slip_ratio = maxf(slip_ratio, burnout)
 	if (w["is_front"] or build.has_aid("abs")) and v_long > 1.0 and w["brake_torque"] > 0.0 \
 			and omega_new * radius < v_long * (1.0 - FRONT_LOCK_SLIP):
@@ -754,9 +796,16 @@ func get_net_state() -> PackedFloat32Array:
 	])
 
 
-## The headlight switch: low beam, high beam, off. Returns the new setting's name.
+## How many stops the headlight switch has: off, low, high, and high with the fog lights on a
+## bike that has them.
+func beam_stops() -> int:
+	return 4 if build and build.fog_lumens > 0.0 else 3
+
+
+## The headlight switch: off, low beam, high beam (then high beam and fog lights, with fog
+## lights fitted), and round to off. Returns the new setting's name.
 func cycle_beam() -> String:
-	beam = (beam + 1) % 3
+	beam = (beam + 1) % beam_stops()
 	if effects:
 		effects.beam_mode = beam
 	Sfx.play_at("switch", global_position, -10.0)

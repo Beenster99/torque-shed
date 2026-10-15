@@ -278,20 +278,31 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Toggle auto-shift | T | |
 | Reset after a crash | R | View |
 | Camera (chase, first person) | C | Right stick click |
+| Swing the camera round the bike (first person: look round) | Mouse | Right stick |
+| Ride-by camera: watch yourself ride past (again to end it) | V | (none; set one in Key bindings) |
 | Horn | H | D-pad down |
-| Headlight: low beam, high beam, off | L | Left stick click |
+| Headlight: off, low beam, high beam (then high beam and fog lights, with fog lights fitted) | L | Left stick click |
 | Paddle backwards with your feet (when stopped) | Hold S | Hold left trigger |
 | Burnout | Hold S, then throttle | Left then right trigger |
+| Circle burnout: spin round on the front wheel | Burnout, then A / D | Burnout, then left stick |
 | Ping / stopwatch | G or middle mouse / P | D-pad right / left |
 | Get off (when stopped) | F | Y |
 
 The suspension now moves visibly over bumps and dirt ruts, the rear shocks stretch and squash with the swingarm, and landings from jumps soak up instead of bouncing. **Tyres come in widths** (for example 120/70, 160/60, 180/55, 190/50): wider tyres grip more on tarmac and less in mud, a wide front tyre steers slower, and each wheel rim takes a range of widths and one rim size (the part info shows it). Tyres and rims are drawn at their real width and profile.
 
-Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L still picks low beam, high beam or off. At night the beam lights the night air softly, a faint glow in the mist rather than a solid cone, a little stronger on high beam, with a few specks drifting through it. The headlight is two lights: a core that lights the road and a wide, dim flood round it. Both fade out gradually from the middle, so the pool of light on the road has no ring round it, and only the soft flood shows in the air, as a haze with no edges. (On the simpler renderer for older graphics cards it's a faint soft glow instead.)
+Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L steps through off, low beam and high beam; on a bike with fog lights the next press after high beam puts the fog lamps on as well, and the one after that switches everything off. At night the beam lights the night air softly, a faint glow in the mist rather than a solid cone, a little stronger on high beam, with a few specks drifting through it. The headlight is two lights: a core that lights the road and a wide, dim flood round it. Both fade out gradually from the middle, so the pool of light on the road has no ring round it, and only the soft flood shows in the air, as a haze with no edges. (On the simpler renderer for older graphics cards it's a faint soft glow instead.)
 
 You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
 
 Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The moment a tyre loses grip it gives a loud, sharp chirp (louder the more suddenly it lets go, from a lock-up, a wheelspin or a burnout), and a skid that goes on settles to a quieter screech. The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
+
+**Cameras**: move the mouse (or the right stick) to swing the chase camera round the bike and look at it from any side, or from above. Let go and after a moment it eases back behind the bike; untick "Chase camera swings back" in the Esc menu's Settings to leave it where you put it. In first person the same moves turn your head. Press **V** for the **ride-by camera**: it drops a camera at the roadside ahead of you, watches you ride past for a few seconds, then goes back to the view you had (V or C ends it early).
+
+**Circle burnouts**: hold the front brake and open the throttle to light up the back tyre, then lean (A / D or the left stick) and the back of the bike slides round the front wheel in a circle of smoke. Burnouts scrub the back tyre down quickly.
+
+**Out on the road a bike is just for riding.** Away from the shed, the yard round it, the wash bay and the sales office forecourt, you can't use tools, fit or take off parts, drain or lube anything, tune it or open geometry mode, and looking at it only shows its name. You can still ride it, wheel it about, name it and pour a can of petrol into the tank. Ride it back to work on it.
+
+**Retrieving a bike**: if you leave a bike out on the road (you got off and walked back, fell off the edge of the map, or a friend left it there), the Esc menu lists it under "Left out on the road". Press **Retrieve** and the recovery truck brings it back to the yard just west of the roller door, for £40 from the garage's account. Anyone in a co-op shed can do it. Ride off the edge of the map and you're put back on the last bit of ground you were on, turned round.
 
 The **yard** past the drag strip has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
 
@@ -438,6 +449,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/tyre_game.gd` | The tyre-fitting game on the tyre changer |
 | `scripts/blast_game.gd`, `blast_marks.gd`, `blast_hud.gd`, `blast_detail.gd` | The sandblasting game in the blast cabinet: the coverage, the satin bare-metal mask and its shader, the live readout, and the close-up engine detail |
 | `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |
+| `scripts/chase_camera.gd` | The riding cameras: the chase view you can swing round the bike, first person, the ride-by camera and the title screen orbit |
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
 | `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |

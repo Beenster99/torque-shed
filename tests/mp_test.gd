@@ -50,6 +50,9 @@ func _ready() -> void:
 	var upgrade_asked := false
 	var gear_asked := false
 	var gear_ok := false
+	var left_out := false
+	var retrieve_asked := false
+	var retrieve_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -148,6 +151,18 @@ func _ready() -> void:
 		elif main.remotes.size() == 1:
 			var other: RemotePlayer = main.remotes.values()[0]
 			gear_ok = other.gear.get("helmet", "") == "helmet_mx" and other._head_look.get_child_count() > 3
+		# A bike left out on the road: the host leaves Old Faithful out there, the client has the
+		# recovery truck bring it back, and both see it back in the yard.
+		var faithful := _bike_named("Old Faithful")
+		if role == "host" and Shed.crew.size() == 2 and faithful != 0 and not left_out and Shed.garage_money >= 1000:
+			Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Vector3(150.0, 2.0, 20.0))
+			Shed._mark_dirty()
+			left_out = true
+		if role == "client" and faithful != 0 and Shed.abandoned_bikes().has(faithful) and not retrieve_asked:
+			Shed.request({"a": "retrieve_bike", "bike": faithful})
+			retrieve_asked = true
+		retrieve_ok = retrieve_ok or ((left_out or retrieve_asked) and faithful != 0 and Shed.bike_at_work(faithful)
+			and (Shed.bikes[faithful]["xf"] as Transform3D).origin.distance_to(Shed.RETRIEVE_ROW) < 10.0)
 		# The host makes a poster of the board once the client's picture is on it.
 		if role == "host" and not postered and _picture_ok():
 			Shed.request({"a": "board_poster", "name": "MP poster"})
@@ -179,7 +194,7 @@ func _ready() -> void:
 			Shed.request({"a": "contract_spawn", "kind": "maint"})
 			customer_sent = true
 		var customer_ok: bool = not Contracts.customers().is_empty() and not main.contracts_view.views.is_empty()
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -195,8 +210,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok])
 	get_tree().quit(0 if ok else 1)
 
 
