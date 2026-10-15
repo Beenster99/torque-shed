@@ -200,6 +200,13 @@ func _run_all() -> void:
 	_test_delivery_packing()
 	_test_bay_lifts()
 	await _test_shed_building_session()
+	print("Shed objects: scrap anything, free rotate, signs, clocks, money graphs")
+	_test_scrap_placed()
+	await _test_scrap_placed_session()
+	await _test_free_rotate()
+	await _test_front_sign_fits()
+	await _test_wall_clocks()
+	await _test_money_graph()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -4908,7 +4915,10 @@ func _test_scrap() -> void:
 		if _set_down_near("f%ds%d" % [shelf, i], Vector2.ZERO):
 			on.append(Shed.items.keys().max())
 	check(on.size() == 3, "three parts go on its shelves")
-	check(Shed.check(me, {"a": "scrap", "furniture": shelf}).contains("Take hold"), "you have to be carrying it to scrap it")
+	check(Shed.check(me, {"a": "scrap", "furniture": shelf}) == "", "standing where it is, it can be scrapped too")
+	Shed.furniture[shelf]["mover"] = me + 7
+	check(Shed.check(me, {"a": "scrap", "furniture": shelf}).contains("Someone else"), "not while someone else is moving it")
+	Shed.furniture[shelf]["mover"] = 0
 	Shed.request({"a": "grab", "furniture": shelf})
 	check(Shed.check(me, {"a": "scrap", "furniture": shelf}) == "", "carrying it, it can be scrapped")
 	Shed.request({"a": "scrap", "furniture": shelf})
@@ -9320,3 +9330,393 @@ func _test_shed_building_session() -> void:
 	await get_tree().physics_frame
 	SaveGame.delete_slot("test_shed_building")
 	SaveGame.slot_override = ""
+
+
+## Delete scraps any shed machine or furniture standing where it is, not only what you carry:
+## benches, washers, repair machines, sandblasters, stands, shelves, seats, posters, TVs, yard
+## kit and trinkets. The spray bay, tyre changer and whiteboard stay.
+func _test_scrap_placed() -> void:
+	Shed.start_new("Tester", 43)
+	var me := Shed.me()
+	var models := []
+	for kind in Equipment.KINDS:
+		if Equipment.FIXED_KINDS.has(kind):
+			continue
+		models.append(Equipment.DEFAULT[kind])
+	models.append_array(["trinket_clock", "trinket_plant", "trinket_clock_digital"])
+	var gone := []
+	for model in models:
+		Shed.request({"a": "order_furniture", "model": model})
+		var fid := 0
+		for id in Shed.furniture:
+			if str(Shed.furniture[id]["model"]) == str(model) and int(Shed.furniture[id]["mover"]) == 0:
+				fid = maxi(fid, int(id))
+		if fid == 0:
+			check(false, "%s ordered" % model)
+			continue
+		var why := Shed.check(me, {"a": "scrap", "furniture": fid})
+		Shed.request({"a": "scrap", "furniture": fid})
+		if why == "" and not Shed.furniture.has(fid):
+			gone.append(model)
+		else:
+			check(false, "the %s can be scrapped where it stands (%s)" % [model, why])
+	check(gone.size() == models.size(), "every machine, seat, poster, TV, yard piece and trinket can be scrapped where it stands (%d)" % gone.size())
+	# An engine on a stand goes to the floor where the stand was.
+	var stand := _first_furniture("engine_stand")
+	var engine := 0
+	for id in Shed.items:
+		if Shed.is_engine(id) and str(Shed.items[id]["at"]) == "spot" and Shed.is_stand_spot(str(Shed.items[id]["ref"])):
+			engine = id
+	if stand != 0 and engine != 0:
+		Shed.request({"a": "scrap", "furniture": stand})
+		check(not Shed.furniture.has(stand) and Shed.items.has(engine) and Shed.items[engine]["at"] == "floor",
+			"scrapping an engine stand leaves its engine on the floor")
+	# A trophy on a bench comes down to the floor with it.
+	Shed.request({"a": "order_furniture", "model": "bench_standard"})
+	var bench := 0
+	for id in Shed.furniture:
+		if str(Shed.furniture[id]["model"]) == "bench_standard":
+			bench = maxi(bench, int(id))
+	var bxf := Transform3D(Basis(Vector3.UP, 0.3), Workshop.CENTER + Vector3(2.0, 0.0, 2.0))
+	Shed.furniture[bench]["xf"] = bxf
+	Shed.request({"a": "order_furniture", "model": "trinket_trophy"})
+	var trophy := _first_furniture("trinket_trophy")
+	Shed.furniture[trophy]["xf"] = Transform3D(Basis(), bxf * Vector3(0.2, Equipment.work_height("bench_standard"), 0.0))
+	Shed.request({"a": "scrap", "furniture": bench})
+	check(not Shed.furniture.has(bench) and absf((Shed.furniture[trophy]["xf"] as Transform3D).origin.y - bxf.origin.y) < 0.001,
+		"a trinket on a scrapped bench ends up on the floor")
+	for kind in ["booth", "changer", "whiteboard"]:
+		var fid := 0
+		for id in Shed.furniture:
+			if Shed.furniture[id]["kind"] == kind:
+				fid = id
+		check(fid != 0 and not Shed.scrappable(Shed.furniture[fid]) and Shed.check(me, {"a": "scrap", "furniture": fid}).contains("part of the shed"),
+			"the %s is built in and stays" % kind)
+
+
+## In the shed: look at a parts washer with empty hands, hold Delete, press it again, and it's gone.
+func _test_scrap_placed_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	Shed.request({"a": "order_furniture", "model": "washer_standard"})
+	var washer := 0
+	for id in Shed.furniture:
+		if str(Shed.furniture[id]["model"]) == "washer_standard":
+			washer = maxi(washer, int(id))
+	var middle := Workshop.CENTER + Vector3(-1.0, 0.0, 1.5)
+	Shed.furniture[washer]["xf"] = Transform3D(Basis(), middle)
+	Shed.changed.emit()
+	w.place(Transform3D(Basis(), middle + Vector3(0.0, 0.0, 1.3)))
+	await _aim_point(w, middle + Vector3(0.0, 0.5, 0.0))
+	check(w.looked_at_furniture() == washer, "looking at the parts washer (%s)" % str(w.target))
+	check(w.info.contains("scrap it"), "the panel says Delete scraps it")
+	Input.action_press("scrap")
+	for i in 160:
+		await get_tree().physics_frame
+		if not w.scrap_armed.is_empty():
+			break
+	Input.action_release("scrap")
+	await get_tree().physics_frame
+	check(int(w.scrap_armed.get("furniture", 0)) == washer and Shed.furniture.has(washer), "held, it asks first")
+	_press("scrap")
+	await get_tree().physics_frame
+	check(not Shed.furniture.has(washer), "pressed again, the washer is scrapped")
+	# The built-in tyre changer can't be.
+	var changer := _first_furniture("tyre_changer")
+	var cxf: Transform3D = Shed.furniture[changer]["xf"]
+	w.place(Transform3D(Basis(), cxf.origin + cxf.basis.z * 1.3))
+	await _aim_point(w, cxf.origin + Vector3(0.0, 0.6, 0.0))
+	check(w.looked_at_furniture() == changer and not w.info.contains("scrap it"), "the tyre changer offers no scrap")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The free rotate key switches the rotate keys between quarter turns and any angle.
+func _test_free_rotate() -> void:
+	var kept_free: bool = Settings.free_rotate
+	var kept_snap: bool = Settings.snap_placement
+	check(Settings.binding_text("rotate_free", false) != "" and Settings.clash_text("rotate_free") == "",
+		"free rotate has a key of its own (%s)" % Settings.binding_text("rotate_free", false))
+	Settings.snap_placement = true
+	Settings.free_rotate = false
+	check(is_equal_approx(Walker._stepped(0.0, 1), PI * 0.5), "free rotate off: a press is a quarter turn")
+	Settings.free_rotate = true
+	check(is_equal_approx(Walker._stepped(0.0, 1), Walker.TURN_NUDGE) and rad_to_deg(Walker.TURN_NUDGE) <= 5.01,
+		"free rotate on: a tap is a 5 degree nudge, snapping or not")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	Settings.free_rotate = false
+	var middle := Workshop.CENTER + Vector3(0.0, 0.0, 1.0)
+	w.place(Transform3D(Basis(), middle))
+	var bar := _in_hands("flat_bar")
+	await _aim_point(w, middle + Vector3(0.0, 0.0, -1.2))
+	check(w.info.contains("a quarter at a time") and w.info.contains("free rotate"), "the panel says the turns are quarters and how to free them")
+	_press("rotate_free")
+	for i in 3:
+		await get_tree().physics_frame
+	check(Settings.free_rotate and w.info.contains("hold to turn freely"), "the free rotate key turns it on, and the panel says so")
+	var was := w.hold_turn
+	Input.action_press("rotate_left")
+	for i in 60:
+		await get_tree().physics_frame
+	Input.action_release("rotate_left")
+	await get_tree().physics_frame
+	var turned := wrapf(w.hold_turn - was, -PI, PI)
+	check(turned > 0.2 and fmod(absf(w.hold_turn), PI * 0.5) > 0.01, "held, the part turns smoothly to any angle (%.0f degrees)" % rad_to_deg(turned))
+	var want := w.rotation.y + w.hold_turn
+	await _hold_act(main)
+	check(Shed.items[bar]["at"] == "floor" and absf(wrapf((Shed.items[bar]["ref"] as Transform3D).basis.get_euler().y - want, -PI, PI)) < 0.02,
+		"put down, it lies at that angle")
+	# Carried equipment keeps its free angle with snapping on (it isn't squared to the walls).
+	Shed.request({"a": "order_furniture", "model": "seat_stool"})
+	var stool := _first_furniture("seat_stool")
+	Shed.furniture[stool]["xf"] = Transform3D(Basis(), middle + Vector3(0.0, 0.0, -1.0))
+	Shed.request({"a": "grab", "furniture": stool})
+	for i in 3:
+		await get_tree().physics_frame
+	w.carry_turn = 0.0
+	_press("rotate_left")
+	await get_tree().physics_frame
+	var sxf: Transform3D = w._push_transform(stool)
+	check(is_equal_approx(w.carry_turn, Walker.TURN_NUDGE) and absf(wrapf(sxf.basis.get_euler().y - w.rotation.y - w.carry_turn, -PI, PI)) < 0.01,
+		"carried equipment nudges 5 degrees and keeps that angle")
+	_press("rotate_free")
+	await get_tree().physics_frame
+	check(not Settings.free_rotate, "pressed again, back to quarter turns")
+	_press("interact")
+	for i in 3:
+		await get_tree().physics_frame
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	Settings.free_rotate = kept_free
+	Settings.snap_placement = kept_snap
+	Settings.save_settings()
+
+
+## The signage upgrade's light box fits the TORQUE SHED letters inside its neon frame, with a
+## margin all round and clear of the strapline, and they go back as they were without it.
+func _test_front_sign_fits() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var ws: Workshop = main.workshop
+	var sign := ws.front_sign
+	var bare := sign.pixel_size
+	Shed.upgrades["signage"] = true
+	ws.upgrades.sync()
+	var ext: Dictionary = ws.upgrades.front_sign_extent()
+	var c := Workshop.CENTER
+	var y := Workshop.DOOR_HEIGHT + 0.6
+	var half := WorkshopUpgrades.SIGN_BOX * 0.5
+	var sub: Label3D = ws.upgrades.find_child("SignSub", true, false)
+	var font: Font = ThemeDB.fallback_font
+	var line := (font.get_ascent(sub.font_size) + font.get_descent(sub.font_size)) * sub.pixel_size
+	var sub_top := sub.position.y + line * 0.5 - font.get_ascent(sub.font_size) * sub.pixel_size + 0.72 * sub.font_size * sub.pixel_size
+	check(float(ext["x"][0]) >= c.x - half.x + 0.2 and float(ext["x"][1]) <= c.x + half.x - 0.2,
+		"the letters fit across the sign box with a margin (%.2f to %.2f in a %.1f m box)" % [float(ext["x"][0]), float(ext["x"][1]), WorkshopUpgrades.SIGN_BOX.x])
+	check(float(ext["y"][1]) <= y + half.y - 0.05 and float(ext["y"][0]) >= sub_top + 0.05,
+		"and between the top of the frame and the strapline (%.2f to %.2f, strapline %.2f, frame top %.2f)" % [float(ext["y"][0]), float(ext["y"][1]), sub_top, y + half.y])
+	check(sign.position.z > c.z + Workshop.HALF.y + 0.3, "in front of the box")
+	Shed.upgrades.erase("signage")
+	ws.upgrades.sync()
+	check(is_equal_approx(sign.pixel_size, bare), "without the upgrade the plain sign is its old size")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## Wall clocks keep the shed's time: the station clock's hands and the digital clocks' display
+## follow the in-game clock as it goes.
+func _test_wall_clocks() -> void:
+	var a := Trinkets.hand_angles(15.5)
+	check(is_equal_approx(a.x, TAU * 3.5 / 12.0) and is_equal_approx(a.y, PI) and is_zero_approx(a.z), "half past three: hour hand past 3, minute hand at 6")
+	check(Trinkets.digital_text(7.0 + 59.9 / 60.0) == "07:59" and Trinkets.digital_text(23.999) == "23:59" and Trinkets.digital_text(0.0) == "00:00",
+		"a digital clock shows the minute it's in")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var ws: Workshop = main.workshop
+	var ids := {}
+	for model in ["trinket_clock", "trinket_clock_digital", "trinket_clock_desk"]:
+		Shed.request({"a": "order_furniture", "model": model})
+		ids[model] = _first_furniture(model)
+	Shed.changed.emit()
+	for t in [9.25, 18.75]:
+		Daylight.current.set_time(t)
+		for i in 3:
+			await get_tree().process_frame
+		var face: Node = ws.furniture_nodes[ids["trinket_clock"]].find_child("Clock", true, false)
+		var shown: Vector3 = face.shown() if face else Vector3(-1, -1, -1)
+		var want := Trinkets.hand_angles(Daylight.time_of_day())
+		check(shown.distance_to(want) < 0.01, "at %s the wall clock's hands show it (%s)" % [Daylight.clock_text(t), str(shown)])
+		for model in ["trinket_clock_digital", "trinket_clock_desk"]:
+			var led: Node = ws.furniture_nodes[ids[model]].find_child("Clock", true, false)
+			var text: String = led.label.text.replace(" ", ":") if led else ""
+			check(text == Trinkets.digital_text(Daylight.time_of_day()), "the %s reads %s" % [Trinkets.MODELS[model]["name"].to_lower(), text])
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The money graphs by the minute, hour, day, week, month and year of in-game time.
+func _test_money_graph() -> void:
+	var s := {}
+	check(MoneyGraph.record(s, 0.0, 100) and MoneyGraph.record(s, 0.5, 150) and MoneyGraph.record(s, 30.0, 80), "money moving goes in the series")
+	check(not MoneyGraph.record(s, 30.1, 80), "and nothing changes while it stays put")
+	var hours := MoneyGraph.points(s, "hour", 30.2, 80)
+	check(hours.size() == 24 and int(hours[-1]) == 80 and int(hours[-2]) == 150 and int(hours[0]) == 150, "by the hour: 24 hours, now last (%s)" % str(hours.slice(-3)))
+	var mins := MoneyGraph.points(s, "minute", 30.2, 80)
+	check(mins.size() == 60 and int(mins[-1]) == 80 and int(mins[47]) == 80 and int(mins[46]) == 150, "by the minute: the last hour (%s)" % str(mins.slice(44, 49)))
+	var days := MoneyGraph.points(s, "day", 30.2, 80)
+	check(days.size() == 7 and int(days[-2]) == 150 and int(days[-1]) == 80, "by the day: a week")
+	for key in MoneyGraph.ORDER:
+		check(MoneyGraph.points(s, key, 30.2, 80).size() == int(MoneyGraph.RANGES[key]["count"]), "%s: %d points" % [key, int(MoneyGraph.RANGES[key]["count"])])
+	var long := {}
+	for i in 400:
+		MoneyGraph.record(long, i / 60.0, i)
+	check((long["minute"] as Array).size() <= 62 and int(MoneyGraph.points(long, "minute", 399.0 / 60.0, 399)[0]) == 340,
+		"old minutes are let go, but the hour shown is right")
+	check(int(MoneyGraph.points(long, "year", 399.0 / 60.0, 399)[0]) == 399 and MoneyGraph.points(long, "year", 0.0, 0).size() == 5,
+		"by the year: five years")
+	var back := MoneyGraph.sanitize(JSON.parse_string(JSON.stringify(s)))
+	check(MoneyGraph.points(back, "hour", 30.2, 80) == hours, "a series survives saving as JSON")
+	check(MoneyGraph.sanitize(null)["day"] == [] and MoneyGraph.sanitize({"day": "junk"})["day"] == [], "an old or broken save has an empty series")
+	# The business: kept in the bank, saved with the shed.
+	Shed.start_new("Tester", 44)
+	Money.record_graph()
+	Shed.credit_garage(2500, "Test sale")
+	Money.record_graph()
+	var g := Money.graph("minute")
+	check(int(g[-1]) == Shed.garage_money, "the business's graph ends at its account now")
+	var saved := Money.sanitize(JSON.parse_string(JSON.stringify(Shed._snapshot(false)["bank"])))
+	check(not (saved["series"]["minute"] as Array).is_empty() and int(saved["series"]["minute"][-1][1]) == Shed.garage_money,
+		"and its series is saved with the shed")
+	check(Money.sanitize({})["series"].has("year"), "an old save's bank gets an empty series")
+	# Your own money, in your profile.
+	var real_path := Progress.path
+	Progress.path = "user://profile_shed_objects_unit.json"
+	Progress.select("Graph Tester")
+	Progress.earn(40, "Test wage")
+	var mine := Progress.cash_graph("hour")
+	check(int(mine[-1]) == Progress.money() and Progress.profile["series"]["hour"] is Array and not (Progress.profile["series"]["hour"] as Array).is_empty(),
+		"your own money's graph follows your cash")
+	Progress.save_profile()
+	Progress.select("Graph Tester")
+	check(not (Progress.profile["series"]["hour"] as Array).is_empty(), "and it's kept in your profile")
+	# The Money tab's range buttons and the TV pages follow the same choice.
+	var kept := Settings.money_graph_range
+	var tab := MoneyTab.new()
+	add_child(tab)
+	await get_tree().process_frame
+	tab.set_graph_range("week")
+	check(Settings.money_graph_range == "week" and tab._graph_mine.values.size() == 12 and tab._graph_garage.values.size() == 12
+		and tab._graph_garage.title.contains("12 weeks"), "the Money tab shows both graphs by the week")
+	check((TvChannels.garage_data()["history"] as Array).size() == 12 and (TvChannels.money_data(Shed.me())["history"] as Array).size() == 12,
+		"and the money TV pages follow it")
+	tab.set_graph_range("minute")
+	check(tab._graph_mine.values.size() == 60, "by the minute")
+	tab.free()
+	Settings.money_graph_range = kept
+	Settings.save_settings()
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+
+
+## No sign in the shed (the room names over the doorways, the neon signs, the mezzanine's)
+## runs into a light: the LED strips, the honeycomb ceilings and the strip lights, with no
+## upgrades and with every upgrade built.
+func _test_room_signs_clear_of_lights() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var ws: Workshop = main.workshop
+	var hits := _sign_light_hits(ws)
+	check(hits.is_empty(), "in a plain shed no sign runs into a light %s" % str(hits))
+	Shed.request({"a": "garage_money", "value": 1000000})
+	for id in GarageUpgrades.CATALOGUE:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	await get_tree().process_frame
+	ws.upgrades.sync()
+	check(ws.upgrades.built().split(",").size() == GarageUpgrades.CATALOGUE.size(), "every upgrade built (%s)" % ws.upgrades.built())
+	hits = _sign_light_hits(ws)
+	check(hits.is_empty(), "with every upgrade no room sign runs into the LED strips, honeycomb or strip lights %s" % str(hits))
+	# The honeycomb takes the place of the strip light fittings, which would hang through its tubes.
+	var tubes := []
+	var fittings := []
+	var stack: Array = [ws]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if not (n is Node3D) or not (n as Node3D).is_visible_in_tree():
+			continue
+		if n is MultiMeshInstance3D and n.name == "HexLights":
+			var mm: MultiMesh = (n as MultiMeshInstance3D).multimesh
+			for i in mm.instance_count:
+				tubes.append((n as Node3D).global_transform * mm.get_instance_transform(i) * mm.mesh.get_aabb())
+		elif n is MeshInstance3D and (n as MeshInstance3D).material_override is StandardMaterial3D \
+				and ((n as MeshInstance3D).material_override as StandardMaterial3D).emission_enabled:
+			fittings.append((n as Node3D).global_transform * (n as MeshInstance3D).mesh.get_aabb())
+	var through := 0
+	for f in fittings:
+		for t in tubes:
+			if (f as AABB).intersects(t):
+				through += 1
+				break
+	check(not tubes.is_empty() and through == 0, "no light fitting hangs through the honeycomb ceilings (%d did)" % through)
+	Shed.upgrades.erase("showroom")
+	ws.upgrades.sync()
+	check(ws.ceiling_strips.all(func(m): return m.visible), "without the honeycomb the strip lights are back")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The room-name signs: over the doorways, the lounge's and the shed's neon, the mezzanine's.
+const ROOM_SIGNS := ["PAINT SHOP", "STORAGE", "WORKSHOP", "ANNEX", "CREW LOUNGE", "MEZZANINE  ·  STOCK", "WASH BAY", "KITCHEN", "OFFICE"]
+
+
+## "SIGN vs light" for every room-name sign (and the neon TORQUE SHED inside) whose text box
+## comes within 3 cm of a glowing light fitting (a mesh with an emissive material, or one tube
+## of a honeycomb).
+func _sign_light_hits(ws: Workshop) -> Array:
+	var labels := []
+	var lights := []
+	var stack: Array = [ws]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if not (n is Node3D) or not (n as Node3D).is_visible_in_tree():
+			continue
+		if n is Label3D:
+			if ROOM_SIGNS.has((n as Label3D).text) or n.name == "ShedNeon":
+				labels.append(n)
+		elif n is MultiMeshInstance3D and (n as MultiMeshInstance3D).multimesh:
+			var mm: MultiMesh = (n as MultiMeshInstance3D).multimesh
+			for i in mm.instance_count:
+				lights.append([(n as Node3D).global_transform * mm.get_instance_transform(i) * mm.mesh.get_aabb(), str(n.name)])
+		elif n is MeshInstance3D and (n as MeshInstance3D).mesh:
+			var m = (n as MeshInstance3D).material_override
+			if m is StandardMaterial3D and (m as StandardMaterial3D).emission_enabled:
+				lights.append([(n as Node3D).global_transform * (n as MeshInstance3D).mesh.get_aabb(), "light"])
+	var out := []
+	for l in labels:
+		var s := Workshop.label_size(l)
+		var box: AABB = (l as Node3D).global_transform * AABB(Vector3(-s.x * 0.5, -s.y * 0.5, -0.01), Vector3(s.x, s.y, 0.02))
+		for li in lights:
+			if box.grow(0.03).intersects(li[0]):
+				out.append("%s vs %s at %s" % [(l as Label3D).text.replace("\n", " "), li[1], (li[0] as AABB).get_center()])
+	return out
+
+

@@ -12,7 +12,8 @@ extends RefCounted
 ##   loans: [{id, amount, owed, daily, rate, days, taken, missed}],
 ##   blocked: a missed repayment stops new loans until that loan is paid off,
 ##   day: in-game days since the shed opened (the clock passing midnight), history: the
-##   account at the end of each day, milestones: account sizes already celebrated.
+##   account at the end of each day, milestones: account sizes already celebrated, series: the
+##   account over in-game time for the graphs (see MoneyGraph).
 ##
 ## Jobs pay wages (Progress.PAY) through Shed.pay_worker: the worker gets the rest after the
 ## business's cut. The business earns from selling parts and bikes (and other helpers' sales and
@@ -58,7 +59,7 @@ const EMPTY_CONTAINER := 8
 
 static func defaults() -> Dictionary:
 	return {"cut": DEFAULT_CUT, "owner": "", "ledger": [], "loans": [], "next_loan": 1, "blocked": false, "day": 0,
-		"history": [], "milestones": []}
+		"history": [], "milestones": [], "series": {}}
 
 
 ## A saved or synced bank with every field present and sane (older saves have none).
@@ -88,6 +89,7 @@ static func sanitize(b) -> Dictionary:
 	if hist is Array:
 		for v in hist.slice(-HISTORY_DAYS):
 			out["history"].append(int(v))
+	out["series"] = MoneyGraph.sanitize(b.get("series", {}))
 	var ms = b.get("milestones", [])
 	if ms is Array:
 		for v in ms:
@@ -328,6 +330,19 @@ static func flow(bank: Dictionary, days := 7) -> Dictionary:
 		else:
 			out -= int(e["amt"])
 	return {"in": income, "out": out}
+
+
+## The business's account over the range's buckets ("minute" .. "year"), oldest first and now
+## last, for the graphs.
+static func graph(range_key: String) -> Array:
+	return MoneyGraph.points(Shed.bank.get("series", {}), range_key, MoneyGraph.now_hours(), Shed.garage_money)
+
+
+## Host: notes the account in the graphs' series when it has moved. True when it had.
+static func record_graph() -> bool:
+	if not (Shed.bank.get("series") is Dictionary):
+		Shed.bank["series"] = {}
+	return MoneyGraph.record(Shed.bank["series"], MoneyGraph.now_hours(), Shed.garage_money)
 
 
 ## The account at the end of each of the last six days and now, for the TV charts.

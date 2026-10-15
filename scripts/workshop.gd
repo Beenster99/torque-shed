@@ -112,6 +112,9 @@ var _room_shown := {}
 ## room's back wall), each [wall body, inside faces...].
 var upgrades: WorkshopUpgrades
 var knock := {"wing": [], "annex": []}
+var front_sign: Label3D      # the TORQUE SHED letters over the roller door
+## The strip light fittings hanging under the shed's roof (the honeycomb ceiling replaces them).
+var ceiling_strips: Array[MeshInstance3D] = []
 
 
 static func bay_transform(bay: int) -> Transform3D:
@@ -1146,6 +1149,13 @@ func _poster(text: String, pos: Vector3, rot_y: float, size := Vector2(0.56, 0.2
 	paper.add_child(ink)
 
 
+## How big `l`'s text is in metres (width, height of a line), outline and all, from its font.
+static func label_size(l: Label3D) -> Vector2:
+	var font: Font = l.font if l.font else ThemeDB.fallback_font
+	var px := font.get_multiline_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, l.font_size)
+	return (px + Vector2.ONE * 2.0 * l.outline_size) * l.pixel_size
+
+
 func _label(text: String, pos: Vector3, rot_y: float, size := 32, color := Color(1, 1, 1)) -> Label3D:
 	var l := Label3D.new()
 	l.text = text
@@ -1233,8 +1243,10 @@ func _build_shell() -> void:
 	drum.rotation.z = PI * 0.5
 	add_child(drum)
 	_deco(self, c + Vector3(0.0, DOOR_HEIGHT + 0.02, hz - 0.08), Vector3(DOOR_HALF * 2.0, 0.08, 0.1), _mats["dark"])
-	# Sign over the door.
+	# Sign over the door (the signage upgrade fits it inside its light box).
 	var sign := Label3D.new()
+	sign.name = "FrontSign"
+	front_sign = sign
 	sign.text = "TORQUE SHED"
 	sign.font_size = 110
 	sign.outline_size = 18
@@ -1722,7 +1734,7 @@ func _build_lights() -> void:
 	fixture.emission_energy_multiplier = 4.0
 	for bay in BAY_COUNT:
 		var xf := bay_transform(bay)
-		_deco(self, Vector3(xf.origin.x, HEIGHT - 0.35, xf.origin.z), Vector3(0.2, 0.05, 1.3), fixture)
+		ceiling_strips.append(_deco(self, Vector3(xf.origin.x, HEIGHT - 0.35, xf.origin.z), Vector3(0.2, 0.05, 1.3), fixture))
 		var spot := SpotLight3D.new()
 		spot.position = Vector3(xf.origin.x, HEIGHT - 0.45, xf.origin.z + 0.4)
 		spot.rotation.x = -PI * 0.5
@@ -1734,7 +1746,7 @@ func _build_lights() -> void:
 		add_child(spot)
 		_shed_lights.append(spot)
 	for p in [Vector3(-4.2, 0.0, 1.5), Vector3(4.2, 0.0, 1.5), Vector3(0.0, 0.0, 3.5)]:
-		_deco(self, CENTER + p + Vector3(0.0, HEIGHT - 0.35, 0.0), Vector3(0.2, 0.05, 1.3), fixture)
+		ceiling_strips.append(_deco(self, CENTER + p + Vector3(0.0, HEIGHT - 0.35, 0.0), Vector3(0.2, 0.05, 1.3), fixture))
 		var omni := OmniLight3D.new()
 		omni.position = CENTER + p + Vector3(0.0, HEIGHT - 0.6, 0.0)
 		omni.omni_range = 7.0

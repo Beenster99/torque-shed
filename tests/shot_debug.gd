@@ -65,6 +65,11 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--signs" in OS.get_cmdline_user_args():
+		await _sign_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--geo" in OS.get_cmdline_user_args():
 		await _geo_shots()
 		SaveGame.delete_slot("shots")
@@ -592,3 +597,24 @@ func _building_shots() -> void:
 	await _look_from(Vector3(5.4, GarageUpgrades.LOFT_FLOOR, 69.6), Vector3(-3.0, GarageUpgrades.LOFT_FLOOR + 0.9, 63.5), "b7_lounge_inside")
 	await _look_from(Vector3(-5.5, GarageUpgrades.LOFT_FLOOR, 60.4), Vector3(3.0, GarageUpgrades.LOFT_FLOOR + 0.8, 67.0), "b8_lounge_back")
 	await _aerial(Vector3(-24.0, 16.0, 30.0), Vector3(-4.0, 0.0, 58.0), "b9_aerial_back")
+
+
+## The shed signs (`-- --signs`): the TORQUE SHED light box over the roller door, and every
+## room-name sign under the LED and honeycomb ceilings, with every upgrade built.
+func _sign_shots() -> void:
+	Settings.weather = "clear"
+	if Weather.current:
+		Weather.current.change_to("clear", true)
+	Daylight.current.set_time(20.5)
+	Shed.request({"a": "garage_money", "value": 1000000})
+	for id in GarageUpgrades.CATALOGUE:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	await _frames(10)
+	await _look_from(Vector3(0.0, 0.0, 79.0), Vector3(0.0, 3.8, 70.8), "s1_front_sign")
+	var c := Workshop.CENTER
+	await _look_from(Vector3(c.x + 2.0, 0.0, Workshop.PAINT_DOOR_Z), Vector3(c.x + Workshop.HALF.x, 3.0, Workshop.PAINT_DOOR_Z), "s3_paint_shop_sign")
+	await _look_from(Vector3(c.x - 2.0, 0.0, Workshop.STORE_DOOR_Z), Vector3(c.x - Workshop.HALF.x, 3.0, Workshop.STORE_DOOR_Z), "s4_storage_sign")
+	var r := GarageUpgrades.WING
+	await _look_from(Vector3(GarageUpgrades.WING_DOOR_X, 0.0, r.position.y + 3.0), Vector3(GarageUpgrades.WING_DOOR_X, 2.9, r.end.y), "s6_workshop_sign")
+	var a := GarageUpgrades.ANNEX
+	await _look_from(Vector3(GarageUpgrades.ANNEX_DOOR_X, 0.0, a.end.y + 3.0), Vector3(GarageUpgrades.ANNEX_DOOR_X, 3.0, a.end.y), "s8_annex_sign")

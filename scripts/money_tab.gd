@@ -3,7 +3,8 @@ extends ScrollContainer
 ## The Esc menu's Money tab: your own cash and the business's account, sending money to a mate
 ## or to the business, taking money out of the business (the garage owner only), the garage's
 ## settings (the host only: the business's cut of wages and who owns it), bank loans and the
-## business's ledger. Everything goes through Money and the host.
+## business's ledger, and graphs of both over in-game time (minutes up to years, see
+## MoneyGraph). Everything goes through Money and the host.
 
 var _box: VBoxContainer
 var _summary: Label
@@ -22,6 +23,10 @@ var _mine: VBoxContainer
 var _shown := ""
 var _crew_shown := ""
 var _filling := false
+var _graph_buttons := {}     # range key -> its Button
+var _graph_mine: MoneyGraph.View
+var _graph_garage: MoneyGraph.View
+var _graph_timer := 0.0
 
 
 func _ready() -> void:
@@ -39,6 +44,26 @@ func _ready() -> void:
 	Shed.feedback.connect(func(text: String, _ok: bool):
 		if is_visible_in_tree():
 			_status.text = text)
+
+	_box.add_child(UITheme.title("Money over time", 20))
+	var range_row := _row()
+	range_row.add_child(UITheme.label("Show it by", 15))
+	var group := ButtonGroup.new()
+	for key in MoneyGraph.ORDER:
+		var k: String = key
+		var b := _button(str(MoneyGraph.RANGES[k]["name"]), func(): set_graph_range(k))
+		b.toggle_mode = true
+		b.button_group = group
+		b.button_pressed = k == Settings.money_graph_range
+		_graph_buttons[k] = b
+		range_row.add_child(b)
+	var graphs := _row()
+	_graph_mine = MoneyGraph.View.new()
+	graphs.add_child(_graph_mine)
+	_graph_garage = MoneyGraph.View.new()
+	graphs.add_child(_graph_garage)
+	_box.add_child(UITheme.label("In-game time: a day lasts as long as the day and night cycle makes it. The money TV channels use the same choice.", 13,
+		Color(1, 1, 1, 0.55)))
 
 	_box.add_child(UITheme.title("Send money", 20))
 	_box.add_child(UITheme.label("From your own cash, to a mate or to the business. Anyone can pay the business.", 14,
@@ -97,9 +122,13 @@ func _ready() -> void:
 	_box.add_child(_mine)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not is_visible_in_tree():
 		return
+	_graph_timer -= delta
+	if _graph_timer <= 0.0:
+		_graph_timer = 0.5
+		refresh_graphs()
 	var crew_names := _crew_signature()
 	if crew_names != _crew_shown:
 		_crew_shown = crew_names
@@ -222,6 +251,28 @@ func refresh() -> void:
 		_mine.add_child(UITheme.label("Nothing yet: jobs in the shed pay wages.", 15))
 	for e in mine:
 		_mine.add_child(_line(int(e["day"]), int(e["amt"]), str(e["why"]), ""))
+
+
+## Shows the money graphs by the minute, hour, day, week, month or year (kept in the settings;
+## the money TV channels follow it too).
+func set_graph_range(range_key: String) -> void:
+	if not MoneyGraph.RANGES.has(range_key):
+		return
+	Settings.money_graph_range = range_key
+	Settings.save_settings()
+	if _graph_buttons.has(range_key) and not (_graph_buttons[range_key] as Button).button_pressed:
+		(_graph_buttons[range_key] as Button).set_pressed_no_signal(true)
+	refresh_graphs()
+
+
+## Redraws both graphs for the chosen range, up to now.
+func refresh_graphs() -> void:
+	if _graph_mine == null:
+		return
+	var key := Settings.money_graph_range
+	var span := MoneyGraph.span_text(key)
+	_graph_mine.show_values(Progress.cash_graph(key), "Your money, %s" % span, key)
+	_graph_garage.show_values(Money.graph(key), "The business, %s" % span, key)
 
 
 func _line(day: int, amt: int, why: String, bal: String) -> Label:

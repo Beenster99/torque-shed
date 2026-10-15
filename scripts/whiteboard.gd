@@ -606,7 +606,7 @@ func _update_carry(p: Vector2, delta: float) -> void:
 	# With snapping off, holding a rotate key turns it freely.
 	var spin := Input.get_axis("rotate_left", "rotate_right")
 	_turn_held = _turn_held + delta if spin != 0.0 else 0.0
-	if spin != 0.0 and not Settings.snap_placement and _turn_held > 0.2:
+	if spin != 0.0 and Settings.turns_freely() and _turn_held > 0.2:
 		_set_turn(BoardData.rotation_of(Shed.board["marks"][i]) + spin * TURN_RATE * delta)
 	_move_here(p - _grab, sz)
 	_carry_timer += delta
@@ -661,7 +661,7 @@ func _turn_carried(dir: int) -> void:
 
 ## `rot` turned one press of a rotate key `dir` (see _turn_carried).
 static func turned(rot: float, dir: int) -> float:
-	if Settings.snap_placement:
+	if not Settings.turns_freely():
 		# On to the next multiple of 15 that way (from 7 degrees: 15 one way, 0 the other).
 		var steps := floorf(rot / TURN_STEP + 0.001) + 1.0 if dir > 0 else ceilf(rot / TURN_STEP - 0.001) - 1.0
 		return wrapf(steps * TURN_STEP, 0.0, 360.0)
@@ -741,7 +741,7 @@ func describe() -> Array:
 		lines.append("Moving a picture: %s or left mouse puts it down, scroll or %s / %s sizes it" % [
 			_k("board_move"), _k("board_bigger"), _k("board_smaller")])
 		lines.append("%s / %s turns it (%s)" % [_k("rotate_left"), _k("rotate_right"),
-			"15 degrees at a time" if Settings.snap_placement else "hold to turn it freely"])
+			"hold to turn it freely" if Settings.turns_freely() else "15 degrees at a time"])
 	elif BoardData.image_at(Shed.board, aim(_local_walker())) != 0:
 		lines.append("On a picture: %s moves it, %s / %s sizes it, %s / %s turns it" % [_k("board_move"), _k("board_bigger"),
 			_k("board_smaller"), _k("rotate_left"), _k("rotate_right")])
