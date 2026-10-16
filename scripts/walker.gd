@@ -1512,7 +1512,7 @@ func _bay_interact() -> bool:
 	match st:
 		"bench", "shaker":
 			if str(h.get("kind", "")) == "tin":
-				Shed.request({"a": "paint_tin_bench"})
+				Shed.request({"a": "paint_tin_bench", "at": PaintBay.station_near(global_position)})
 				return true
 			if Shed.held_by(me) != 0:
 				Shed.feedback.emit("Put the part down first.", false)

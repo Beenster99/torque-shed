@@ -3,7 +3,8 @@ extends RefCounted
 ## The paint mixing bay: a room off the paint shop, behind a glass door, where paint is mixed
 ## by hand (see PaintMix for the maths). Its stations:
 ##   bench      the mixing bench: a tin on the digital scale, bottles tipped over it to pour, a
-##              stick to stir it (F to step up to it; see PaintBench for the game)
+##              stick to stir it (F to step up to it; see PaintBench for the game); the paint
+##              shop has a compact twin of it by the spray bay (SHOP_BENCH), the same bench
 ##   rack       the tint rack over the bench: the stock rack's 16 bottles, and the effects
 ##              rack's 12 (pearls, candies, flakes, chameleons) once the garage buys it
 ##   shaker     drop a tin in for an even mix (the automatic one is quick, and remixes a saved
@@ -41,6 +42,19 @@ const SHAKER_AT := Vector3(16.62, BENCH_TOP, 66.25)
 ## Where you stand at the bench, facing it (+X), and the camera over the scale while mixing.
 const BENCH_STAND := Vector3(15.6, 0.0, 64.6)
 const BENCH_EYE := Vector3(15.95, 1.55, 64.6)
+## The paint shop's own compact mixing bench, against its back wall beside the spray bay: the
+## same bench as the bay's (one tin on the scale, one person mixing at a time, the same stock
+## and recipes), with a scale and a rack of bottles of its own. bench()["at"] says which of the
+## two is in use ("bay" or "shop"); the tin on the scale is drawn there. You stand at it facing
+## the back wall (-Z).
+const SHOP_BENCH := Rect2(7.05, 59.8, 1.8, 0.6)
+const SHOP_SCALE_AT := Vector3(7.75, BENCH_TOP, 60.1)
+const SHOP_STAND := Vector3(7.75, 0.0, 61.0)
+const SHOP_EYE := Vector3(7.75, 1.62, 60.88)
+const SHOP_RACK_Z := 59.86
+const SHOP_RACK_Y := [1.3, 1.6]
+const SHOP_RACK_X0 := 7.14
+const SHOP_RACK_STEP := 0.115
 ## The tint rack over the bench: two shelves of the stock rack, then the effects rack beside it.
 const RACK_X := 16.86
 const RACK_Y := [1.32, 1.72]
@@ -100,7 +114,7 @@ static func empty() -> Dictionary:
 		if str(PaintMix.TINTS[code]["rack"]) == "base":
 			stock[code] = STARTER_TINT
 	return {"stock": stock, "tins": {}, "recipes": {}, "next": 1, "bench": {"by": 0, "tin": 0, "seq": {}, "tilt": 0.0, "tint": "",
-		"recipe": {}, "target": {}, "stir_at": 0.0}, "shaker": {"tin": 0, "left": 0.0}, "test": {}, "cups": {}, "held": {},
+		"recipe": {}, "target": {}, "stir_at": 0.0, "at": "bay", "tare": 0.0, "tare_tin": 0, "pour_n": 0}, "shaker": {"tin": 0, "left": 0.0}, "test": {}, "cups": {}, "held": {},
 		"mixed": 0}
 
 
@@ -164,6 +178,42 @@ static func _next() -> int:
 ## The tin on the bench's scale, or {}.
 static func bench_tin() -> Dictionary:
 	return tins().get(int(bench().get("tin", 0)), {})
+
+
+## Which bench is in use: "bay" (the mixing bay's) or "shop" (the paint shop's compact one).
+static func station() -> String:
+	return "shop" if str(bench().get("at", "bay")) == "shop" else "bay"
+
+
+## The bench nearer `p`: the bay's inside the mixing bay, the paint shop's anywhere else.
+static func station_near(p: Vector3) -> String:
+	return "bay" if in_room(p) else "shop"
+
+
+## Where the scale in use stands (the tin on it sits here).
+static func scale_at(where := "") -> Vector3:
+	return SHOP_SCALE_AT if (where if where != "" else station()) == "shop" else SCALE_AT
+
+
+## What the scale reads for `grams` in the tin on it: the weight since the last tare (Tare
+## zeroes it so the next tint can be weighed on its own; the tin's real total is untouched).
+static func net_grams(tin: Dictionary, grams: float) -> float:
+	var b := bench()
+	if tin.is_empty() or int(b.get("tare_tin", 0)) != int(tin.get("id", -1)):
+		return grams
+	return grams - float(b.get("tare", 0.0))
+
+
+## Whether the scale's been zeroed with the tin on it now.
+static func tared(tin: Dictionary) -> bool:
+	return not tin.is_empty() and int(bench().get("tare_tin", 0)) == int(tin.get("id", -1))
+
+
+## Where a tint's bottle stands on the paint shop bench's little rack (its foot), facing the
+## bench (+Z): two shelves of 14 on the back wall.
+static func shop_bottle_xf(code: String) -> Transform3D:
+	var i := PaintMix.TINT_ORDER.find(code)
+	return Transform3D(Basis(), Vector3(SHOP_RACK_X0 + (i % 14) * SHOP_RACK_STEP, float(SHOP_RACK_Y[clampi(i / 14, 0, 1)]), SHOP_RACK_Z))
 
 
 ## Who's at the bench (0: nobody).
@@ -359,7 +409,10 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "The %s bottle's empty. Order more (Paint supplies)." % item_name(code).to_lower()
 			if float(action.get("g", 0.0)) <= 0.0:
 				return "Nothing poured."
-		"paint_stir", "paint_add_base", "paint_tin_empty", "paint_test", "paint_shake", "paint_tin_save":
+		"paint_pour_stop":
+			if at_bench() != peer:
+				return "Step up to the mixing bench first."
+		"paint_stir", "paint_add_base", "paint_tin_empty", "paint_test", "paint_shake", "paint_tin_save", "paint_tare":
 			if at_bench() != peer:
 				return "Step up to the mixing bench first."
 			if tin.is_empty():
@@ -531,6 +584,9 @@ static func apply(peer: int, action: Dictionary) -> String:
 			if action.get("on", false):
 				b["by"] = peer
 				b["seq"][peer] = int(action.get("seq", 0))
+				b["at"] = "shop" if str(action.get("at", "bay")) == "shop" else "bay"
+				b["tilt"] = 0.0
+				b["tint"] = ""
 				return ""
 			if at_bench() == peer:
 				b["by"] = 0
@@ -561,8 +617,18 @@ static func apply(peer: int, action: Dictionary) -> String:
 			tin["stir"] = PaintMix.unstir(float(tin.get("stir", 1.0)), g, PaintMix.total_grams(tin))
 			b["tilt"] = clampf(float(action.get("tilt", 0.0)), 0.0, 1.0)
 			b["tint"] = code
+			b["pour_n"] = int(b.get("pour_n", 0)) + 1
 			_seq(peer, action)
 			_refresh(tin)
+			return ""
+		"paint_pour_stop":
+			# The bottle goes back on the rack (everyone else stops drawing it over the tin).
+			b["tilt"] = 0.0
+			b["tint"] = ""
+			return ""
+		"paint_tare":
+			b["tare"] = PaintMix.total_grams(tin)
+			b["tare_tin"] = int(tin["id"])
 			return ""
 		"paint_stir":
 			var was := float(tin.get("stir", 1.0))
@@ -661,6 +727,8 @@ static func apply(peer: int, action: Dictionary) -> String:
 			t["ref"] = 0
 			_st()["held"].erase(peer)
 			b["tin"] = int(t["id"])
+			if action.has("at"):
+				b["at"] = "shop" if str(action["at"]) == "shop" else "bay"
 			return "On the scale: %s." % str(t.get("name", "the tin"))
 		"paint_tin_bin":
 			var t := held_tin(peer)

@@ -5,7 +5,8 @@ extends Control
 ##   Mix       put a tin of base on the scale; pick a tint off the rack, then hold the left mouse
 ##             in the view and drag down to tip the bottle (the further, the faster it pours; it
 ##             wobbles less as you level up and on the stainless bench); hold the right mouse and
-##             stir round and round until it's even; read the scale; see the colour live, and
+##             stir round and round until it's even; read the scale (Tare zeroes it, to weigh
+##             the next tint on its own); see the colour live, and
 ##             how close it is to the target; add base to fix an over-pour; spray a test card;
 ##             name it and save it (onto the tin shelf and the swatch wall).
 ##   Recipes   recipe cards: the manufacturer colours, the swatch wall's own and a pasted code. A
@@ -43,6 +44,7 @@ var _opened_at := 0.0
 var _name_edit: LineEdit
 var _code_edit: LineEdit
 var _scale_l: Label
+var _tare_l: Label
 var _match_l: Label
 var _mix_l: Label
 var _stir_bar: ProgressBar
@@ -90,14 +92,18 @@ func _ready() -> void:
 	Progress.changed.connect(func(): if visible: _refresh())
 
 
-## Steps up to the bench: the view goes to the scale.
-func open() -> void:
+## Steps up to the bench: the view goes to the scale. `where` is "bay" (the mixing bay's bench)
+## or "shop" (the paint shop's compact one); left out, it's the one nearer the local player.
+func open(where := "") -> void:
 	var me := Shed.me()
+	if where == "":
+		var w := get_tree().get_first_node_in_group("local_walker") as Node3D if is_inside_tree() else null
+		where = PaintBay.station_near(w.global_position) if w else "bay"
 	if PaintBay.at_bench() != 0 and PaintBay.at_bench() != me:
 		Shed.feedback.emit("%s is at the mixing bench." % Shed.crew.get(PaintBay.at_bench(), {}).get("name", "Someone"), false)
 		return
 	_seq = maxi(_seq, int(PaintBay.bench()["seq"].get(me, 0)))
-	Shed.request({"a": "paint_bench", "on": true, "seq": _seq})
+	Shed.request({"a": "paint_bench", "on": true, "seq": _seq, "at": where})
 	visible = true
 	page = "mix"
 	_sig = ""
@@ -106,8 +112,9 @@ func open() -> void:
 	_stir_g = 0.0
 	_opened_at = Time.get_ticks_msec() / 1000.0
 	var room := _room()
-	if room and room.bench_camera:
-		room.bench_camera.current = true
+	var cam: Camera3D = (room.shop_camera if where == "shop" else room.bench_camera) if room else null
+	if cam:
+		cam.current = true
 	_refresh()
 
 
@@ -191,8 +198,13 @@ func start_pour(y: float) -> void:
 	_tilt = 0.0
 
 
+## The left mouse comes up: the bottle goes back on the rack, for everyone watching too.
 func stop_pour() -> void:
+	if not _pouring:
+		return
 	_pouring = false
+	_flush()
+	Shed.request({"a": "paint_pour_stop"})
 
 
 ## How far the bottle's tipped, 0 upright .. 1 straight down (tests set it directly).
@@ -308,7 +320,10 @@ func _update_live() -> void:
 	if t.is_empty() or _scale_l == null or not is_instance_valid(_scale_l):
 		return
 	var s := PaintMix.spec(t)
-	_scale_l.text = "SCALE  %s" % PaintMix.read_scale(PaintMix.total_grams(t), step)
+	var total := PaintMix.total_grams(t)
+	_scale_l.text = "SCALE  %s" % PaintMix.read_scale(PaintBay.net_grams(t, total), step)
+	if _tare_l and is_instance_valid(_tare_l):
+		_tare_l.text = "tared  ·  the tin's %s in all" % PaintMix.read_scale(total, step) if PaintBay.tared(t) else "the whole tin"
 	_mix_l.text = "%s  ·  %s" % [PaintMix.code_of(t).left(40), PaintMix.effect_name(str(s["effect"]))]
 	_mix_rect.color = s["color"]
 	_stir_bar.value = float(t.get("stir", 1.0)) * 100.0
@@ -366,6 +381,7 @@ func _refresh() -> void:
 	for c in _box.get_children():
 		c.queue_free()
 	_scale_l = null
+	_tare_l = null
 	_box.add_child(UITheme.title("MIXING BENCH", 24))
 	var lv := Progress.level()
 	_box.add_child(UITheme.label("Level %d  ·  scale reads to %s  ·  garage money %s" % [lv, PaintMix.read_scale(PaintMix.scale_step(lv, PaintBay.kit("scale")),
@@ -408,9 +424,22 @@ func _fill_mix(tin: Dictionary) -> void:
 		if not card.is_empty():
 			_box.add_child(UITheme.label("Recipe card on the bench: %s (%s base)" % [str(card.get("name", "")), PaintBay.item_name(str(card.get("tin", {}).get("base", "W"))).to_lower()], 15))
 		return
-	# The scale and the colour.
+	# The scale (with its tare button, to weigh the next tint from 0 g) and the colour.
+	var scale_row := HBoxContainer.new()
+	scale_row.add_theme_constant_override("separation", 10)
+	var reading := VBoxContainer.new()
+	reading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reading.add_theme_constant_override("separation", 0)
 	_scale_l = UITheme.label("", 26, Color(0.6, 1.0, 0.7))
-	_box.add_child(_scale_l)
+	reading.add_child(_scale_l)
+	_tare_l = UITheme.label("", 13, Color(1, 1, 1, 0.55))
+	reading.add_child(_tare_l)
+	scale_row.add_child(reading)
+	var tare := _act("Tare: reset to 0 g", {"a": "paint_tare"})
+	tare.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tare.tooltip_text = "Zero the scale with the tin on it, so the next tint or effect is weighed on its own."
+	scale_row.add_child(tare)
+	_box.add_child(scale_row)
 	_mix_l = UITheme.label("", 14, Color(1, 1, 1, 0.75))
 	_box.add_child(_mix_l)
 	var swatches := HBoxContainer.new()
@@ -447,14 +476,18 @@ func _fill_mix(tin: Dictionary) -> void:
 	_box.add_child(UITheme.label("THE TINT RACK: PICK ONE TO POUR", 14, UITheme.ACCENT))
 	var grid := GridContainer.new()
 	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 4)
 	for code in PaintMix.TINT_ORDER:
 		var c := str(code)
 		if not PaintMix.on_rack(c, PaintBay.kit("effects")):
 			continue
 		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_theme_constant_override("separation", 4)
 		var chip := ColorRect.new()
 		chip.color = PaintMix.TINTS[c]["color"]
-		chip.custom_minimum_size = Vector2(14, 14)
+		chip.custom_minimum_size = Vector2(12, 30)
 		chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(chip)
 		var lock := PaintBay.locked(me, c)
@@ -464,11 +497,14 @@ func _fill_mix(tin: Dictionary) -> void:
 		var tb := Button.new()
 		tb.toggle_mode = true
 		tb.button_pressed = tint == c
-		tb.text = "%s %s  %s" % [c, str(PaintMix.TINTS[c]["name"]).left(16), PaintBay.stock_text(c)]
+		# Two lines, small enough that every name reads in full in half the card's width:
+		# the name, then its code and how much is left.
+		tb.text = "%s\n%s  ·  %s" % [str(PaintMix.TINTS[c]["name"]), c, PaintBay.stock_text(c) if lock == "" else lock.to_lower()]
+		tb.add_theme_font_size_override("font_size", 14)
+		tb.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		tb.disabled = why != "" and tint != c
 		tb.tooltip_text = why
-		tb.custom_minimum_size = Vector2(190, 0)
-		tb.clip_text = true
+		tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		tb.pressed.connect(func():
 			_flush()
 			tint = c

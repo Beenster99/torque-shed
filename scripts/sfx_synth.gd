@@ -34,7 +34,7 @@ const LEVELS := {
 	"ratchet": ["peak", 0.85], "scrub": ["rms", 0.12], "grinder": ["rms", 0.17], "spray": ["rms", 0.13], "spray_gun": ["rms", 0.12],
 	"washer": ["rms", 0.13], "static": ["rms", 0.1], "jet": ["rms", 0.2], "pour": ["rms", 0.12], "door": ["rms", 0.15],
 	"fan": ["rms", 0.15], "blast": ["rms", 0.22], "rain": ["rms", 0.12], "rain_roof": ["rms", 0.14], "changer": ["rms", 0.12],
-	"dyno_roller": ["rms", 0.14], "compressor": ["rms", 0.16], "hum_fluoro": ["rms", 0.05], "hum_led": ["rms", 0.035],
+	"dyno_roller": ["rms", 0.14], "compressor": ["rms", 0.16], "shaker": ["rms", 0.13], "hum_fluoro": ["rms", 0.05], "hum_led": ["rms", 0.035],
 	"tone_shed": ["rms", 0.04], "tone_sales": ["rms", 0.04], "amb_out": ["rms", 0.07], "birds": ["peak", 0.35],
 	"crickets": ["peak", 0.25],
 	"screech": ["peak", 0.36], "starter": ["peak", 0.61], "chirp": ["peak", 1.0], "gear": ["peak", 0.64], "ping": ["peak", 0.44],
@@ -72,7 +72,7 @@ static func variant_count(sound: String) -> int:
 static func all_sounds() -> Array[String]:
 	var out: Array[String] = ["step_concrete", "step_epoxy", "step", "switch", "pickup", "clink", "clunk", "ratchet", "scrub",
 		"impact_metal_concrete", "impact_metal_wood", "impact_metal_steel", "grinder", "spray", "spray_gun", "washer", "jet",
-		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "scrap", "screech", "chirp", "starter",
+		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "shaker", "scrap", "screech", "chirp", "starter",
 		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "desk_bell", "sale_offer", "rain", "rain_roof",
 		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets"]
 	for s in VARIANTS:
@@ -121,6 +121,7 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"changer": return _changer()
 		"dyno_roller": return _dyno_roller()
 		"compressor": return _compressor()
+		"shaker": return _shaker()
 		"hum_fluoro": return _hum(false)
 		"hum_led": return _hum(true)
 		"tone_shed": return _room_tone(false)
@@ -370,7 +371,7 @@ static func is_loop(sound: String) -> bool:
 
 
 const LOOP_SOUNDS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "spray_gun", "washer", "static", "jet", "pour",
-	"screech", "door", "fan", "blast", "rain", "rain_roof", "changer", "dyno_roller", "compressor", "hum_fluoro", "hum_led",
+	"screech", "door", "fan", "blast", "rain", "rain_roof", "changer", "dyno_roller", "compressor", "shaker", "hum_fluoro", "hum_led",
 	"tone_shed", "tone_sales", "amb_out", "birds", "crickets"]
 
 
@@ -795,6 +796,49 @@ func _compressor() -> PackedFloat32Array:
 		hit(d, at, [[rf(62.0, 72.0), 1.0, 22.0], [rf(140.0, 160.0), 0.5, 35.0], [rf(420.0, 480.0), 0.25, 60.0]], 0.002, amp * 0.6, true)
 		ring(d, at + int(0.01 * R), rf(2600.0, 3200.0), amp * 0.06, 300.0, true)
 		burst(d, at, 0.03, amp * 0.15, 60.0, 200.0, 1500.0, true, 0.005)
+	return loopify(d, 0.1)
+
+
+## The paint shaker running: the motor's whirr and the whine of its gearbox, over the rumble of
+## the clamp swinging the tin round on its eccentric (a few times a second, the paint sloshing
+## and the lid chattering with each swing) and a rattle of the cage on its springs.
+func _shaker() -> PackedFloat32Array:
+	var secs := 4.0
+	var d := buf(secs + 0.1)
+	var n := d.size()
+	var rotor := fit(48.0, secs)
+	var swing := fit(9.5, secs)
+	var a := 0.0
+	var a2 := 0.0
+	var b := 0.0
+	var slosh := 0.0
+	var chat := 0.0
+	var wob := 0.0
+	for i in n:
+		var t := float(i) / R
+		wob += (nz() - wob) * 0.0005
+		var p := TAU * rotor * t
+		# The motor: a whirr in its harmonics, the gear mesh's whine riding on it.
+		var motor := sin(p) * 0.22 + sin(2.0 * p) * 0.16 + sin(3.0 * p) * 0.08 + sin(5.0 * p) * 0.04
+		var whine := (sin(23.0 * p) * 0.05 + sin(46.0 * p) * 0.015) * (1.0 + wob * 3.0)
+		# Air through the fan blades and the housing.
+		a += (nz() - a) * 0.25
+		a2 += (a - a2) * 0.25
+		b += (a2 - b) * 0.015
+		var air := (a2 - b) * 0.35
+		# The tin swinging round: a low throb, and the paint sloshing with each swing.
+		var s := sin(TAU * swing * t)
+		var throb := s * 0.18 + sin(2.0 * TAU * swing * t) * 0.06
+		slosh += (nz() - slosh) * 0.01
+		var sw := maxf(0.0, s)
+		d[i] = motor + whine + air + throb + slosh * (0.5 + 1.5 * sw * sw) * 0.9
+		# The lid and cage chattering at the end of each swing.
+		chat *= 0.996
+		d[i] += chat * nz()
+	var swings := int(swing * secs)
+	for k in swings:
+		var at := int((float(k) / swing + 0.25 / swing + rf(-0.004, 0.004)) * R)
+		hit(d, at, [[rf(380.0, 460.0), 0.6, 45.0], [rf(1300.0, 1700.0), 0.3, 90.0], [rf(3200.0, 3800.0), 0.15, 160.0]], 0.0008, rf(0.06, 0.12), true)
 	return loopify(d, 0.1)
 
 

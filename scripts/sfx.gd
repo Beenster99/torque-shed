@@ -34,7 +34,7 @@ const LOOP_TAILS := {"grinder": ["grinder_up", "grinder_down"], "jet": ["jet_on"
 	"door": ["door_start", "door_stop"], "washer": ["pump_on", "pump_off"], "blast": ["blast_on", "blast_off"],
 	"compressor": ["comp_on", "comp_off"]}
 ## How long a loop takes to fade in, for machines that spin up (their start sound covers it).
-const LOOP_FADE_IN := {"grinder": 0.45, "jet": 0.15, "spray_gun": 0.12, "compressor": 0.6, "blast": 0.1, "fan": 1.4}
+const LOOP_FADE_IN := {"shaker": 0.5, "grinder": 0.45, "jet": 0.15, "spray_gun": 0.12, "compressor": 0.6, "blast": 0.1, "fan": 1.4}
 ## Loops that get a small random pitch each time they start (the same tool never quite the same).
 const LOOP_DETUNE := ["ratchet", "scrub", "grinder", "spray", "spray_gun", "jet", "washer", "blast", "changer", "pour"]
 ## The acoustics of each kind of room: AudioEffectReverb settings (room size, damping, wet,

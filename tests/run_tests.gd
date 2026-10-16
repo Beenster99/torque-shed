@@ -288,6 +288,7 @@ func _run_all() -> void:
 	_test_paint_save()
 	_test_paint_contracts()
 	await _test_paint_bay_session()
+	await _test_paint_bench_extras()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -14139,6 +14140,137 @@ func _test_paint_bay_session() -> void:
 		if str(loads[i]["kind"]) == "cup" and str(loads[i]["id"]) == "cup":
 			w.spray_finish = i
 	check(w.spray_text().contains("Session Blue") and w.spray_cup() == "cup", "the gun loaded from the cup: %s" % w.spray_text())
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The bench's extras: the tint rack's names read in full, the scale's tare, the bottle back on
+## the rack once a pour stops (on everyone's screen, stirring or not), the shaker's whirr, and
+## the paint shop's own compact bench, which is the same bench as the bay's.
+func _test_paint_bench_extras() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	Shed.upgrades["paint_effects_rack"] = {"at": 0}
+	Shed.changed.emit()
+	var me := Shed.me()
+	var room: PaintBayRoom = main.workshop.paint_bay
+	var bench: PaintBench = main.paint_bench
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	check(room.find_child("ShopMixingBench", true, false) != null and Workshop.room_at(PaintBay.SHOP_STAND + Vector3(0, 0.5, 0)) == "paint"
+		and not Workshop.booth_footprint().has_point(Vector2(PaintBay.SHOP_BENCH.end.x, PaintBay.SHOP_BENCH.end.y)),
+		"a compact mixing bench in the paint shop itself, beside the spray bay")
+	# Up to it: F at the paint shop's bench opens the same bench, the view on its own scale.
+	w.place(Transform3D(Basis(), PaintBay.SHOP_STAND + Vector3(0, 0.05, 0)))
+	w._look(0.0, -0.7)
+	for i in 6:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(str(w.target.get("kind", "")) == "paint_bay" and str(w.target.get("station", "")) == "bench", "looking at the shop's bench (%s)" % str(w.target))
+	_press("interact")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(bench.visible and PaintBay.at_bench() == me and PaintBay.station() == "shop" and room.shop_camera.current,
+		"F: stepped up to the paint shop's bench, looking down on its scale")
+	bench.press("White base  (%s in stock)" % PaintBay.stock_text("W"))
+	for i in 2:
+		await get_tree().process_frame
+	check(not PaintBay.bench_tin().is_empty() and room._bench_tin != null and room._bench_tin.position.distance_to(PaintBay.SHOP_SCALE_AT) < 0.1,
+		"the tin goes on the shop bench's scale")
+	# The tint rack: every name in full, two to a row in the card.
+	bench.tint = "UB"
+	bench._sig = ""
+	bench._refresh()
+	await get_tree().process_frame
+	var half := (PaintBench.PANEL_W - 40) / 2.0
+	var rack_ok := 0
+	var rack_bad: Array[String] = []
+	for code in PaintBay.rack():
+		var nm := str(PaintMix.TINTS[code]["name"])
+		var found := false
+		for b in bench._box.find_children("*", "Button", true, false):
+			var bt := b as Button
+			if bt.text.begins_with(nm + "\n") and bt.text.contains(str(code)):
+				found = true
+				var fits := not bt.clip_text and bt.get_combined_minimum_size().x <= half
+				if fits:
+					rack_ok += 1
+				else:
+					rack_bad.append("%s %.0f" % [nm, bt.get_combined_minimum_size().x])
+		if not found:
+			rack_bad.append(nm + " missing")
+	check(rack_ok == PaintBay.rack().size() and rack_ok == 28, "every tint's name reads in full on the rack (%d; %s)" % [rack_ok, ", ".join(rack_bad)])
+	# Pouring: the bottle comes off the shop's rack, over the tin; let go and it's back.
+	bench.start_pour(0.0)
+	bench.set_tilt(0.9)
+	for i in 20:
+		await get_tree().process_frame
+	check(room._pour_bottle != null and not (room._rack_bottles["UB"][1] as Node3D).visible and (room._rack_bottles["UB"][0] as Node3D).visible,
+		"the bottle's off the shop rack and over the tin while it pours")
+	bench.stop_pour()
+	for i in 6:
+		await get_tree().process_frame
+	var ub := float(PaintBay.bench_tin()["tints"].get("UB", 0.0))
+	check(ub > 1.0 and room._pour_bottle == null and (room._rack_bottles["UB"][1] as Node3D).visible and float(PaintBay.bench()["tilt"]) == 0.0
+		and str(PaintBay.bench()["tint"]) == "", "let go: back on the rack, and the bench tells everyone (%.1f g poured)" % ub)
+	# Tare: the scale reads 0 g from there, the next tint weighed on its own; the tin's total stays.
+	var total := PaintMix.total_grams(PaintBay.bench_tin())
+	var step := PaintMix.scale_step(Progress.level(), PaintBay.kit("scale"))
+	check("Tare: reset to 0 g" in bench.buttons(), "a Tare button by the scale")
+	bench.press("Tare: reset to 0 g")
+	for i in 3:
+		await get_tree().process_frame
+	check(PaintBay.tared(PaintBay.bench_tin()) and bench._scale_l.text == "SCALE  " + PaintMix.read_scale(0.0, step)
+		and room._shop_scale_label.text == PaintMix.read_scale(0.0, step) and is_equal_approx(PaintMix.total_grams(PaintBay.bench_tin()), total),
+		"tared: the scale reads %s (%s on the bench), the tin's still %.1f g" % [bench._scale_l.text, room._shop_scale_label.text, total])
+	Shed.request({"a": "paint_pour", "tint": "LY", "g": 12.0, "tilt": 0.5, "seq": 900})
+	await get_tree().process_frame
+	check(bench._scale_l.text == "SCALE  " + PaintMix.read_scale(12.0, step) and bench._tare_l.text.contains("in all")
+		and is_equal_approx(float(PaintBay.bench_tin()["tints"]["UB"]), ub), "the next tint weighs on its own: %s" % bench._scale_l.text)
+	Shed.request({"a": "paint_pour_stop"})
+	# Someone else's pour, as the crew see it: up while it pours, back on the rack when it stops,
+	# and not left hanging while they stir.
+	bench.close_dialog()
+	await get_tree().process_frame
+	Shed.crew[77] = {"name": "Mate", "tool": "hands"}
+	PaintBay.apply(77, {"a": "paint_bench", "on": true, "seq": 0, "at": "bay"})
+	PaintBay.apply(77, {"a": "paint_pour", "tint": "PB", "g": 2.0, "tilt": 0.7})
+	for i in 4:
+		await get_tree().process_frame
+	check(room._pour_bottle != null and room._pour_code == "PB" and room._pour_bottle.position.distance_to(PaintBay.SCALE_AT + Vector3(0, 0.3, 0)) < 0.01
+		and room._bench_tin.position.distance_to(PaintBay.SCALE_AT) < 0.1, "a mate's pour at the bay: their bottle tipped over the bay's scale")
+	PaintBay.apply(77, {"a": "paint_pour_stop"})
+	await get_tree().process_frame
+	check(room._pour_bottle == null and (room._rack_bottles["PB"][0] as Node3D).visible, "they let go: the bottle's back on the rack at once")
+	# The old way it stuck: a last pour with the bottle tipped, then stirring (no stop heard).
+	PaintBay.apply(77, {"a": "paint_pour", "tint": "PB", "g": 2.0, "tilt": 0.7})
+	await get_tree().process_frame
+	var t0 := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - t0 < 1200:
+		PaintBay.apply(77, {"a": "paint_stir", "amount": 0.05})
+		await get_tree().process_frame
+	check(room._pour_bottle == null and room._stick != null, "stirring with no more pours: the bottle doesn't hang over the cup")
+	PaintBay.put_back(77)
+	Shed.crew.erase(77)
+	# The shaker whirrs while it runs, from the shaker.
+	PaintBay.apply(me, {"a": "paint_bench", "on": true, "seq": 0})
+	PaintBay.apply(me, {"a": "paint_shake"})
+	for i in 3:
+		await get_tree().process_frame
+	check(room._shaker_sound.playing and room._shaker_sound.get_meta("loop", "") == "shaker"
+		and room._shaker_sound.global_position.distance_to(PaintBay.SHAKER_AT) < 0.5 and SfxSynth.is_loop("shaker"), "the shaker whirrs while it runs")
+	PaintBay._st()["shaker"]["left"] = 0.001
+	for i in 4:
+		await get_tree().process_frame
+	check(not room._shaker_sound.playing, "and stops when it's done")
+	# Old saves: a bench from before has its new fields filled in.
+	var old := PaintBay.sanitize({"tins": {}, "bench": {"by": 0, "tin": 0}})
+	check(str(old["bench"]["at"]) == "bay" and float(old["bench"]["tare"]) == 0.0 and int(old["bench"]["pour_n"]) == 0, "an old save's bench loads")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
