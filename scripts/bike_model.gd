@@ -1008,13 +1008,13 @@ func _draw_spark_plugs() -> void:
 		mid += end
 	mid /= ends.size()
 	var coil := Vector3(0.0, top - 0.015, mid.z + 0.13)
-	var body := _box(coil, Vector3(0.045, 0.035, 0.075), _mat(Color(0.06, 0.06, 0.07), 0.3, 0.5))
+	var body := _bike_only(_box(coil, Vector3(0.045, 0.035, 0.075), _mat(Color(0.06, 0.06, 0.07), 0.3, 0.5)))
 	body.name = "Coil"
 	for i in ends.size():
 		var end: Vector3 = ends[i]
 		var into := coil + Vector3((i - (ends.size() - 1) * 0.5) * 0.012, 0.0, -0.035)
 		var sag := end.lerp(into, 0.5) + Vector3(0.0, -0.03, 0.0)
-		var wire := _bend([end, end + Vector3(0.0, 0.012, 0.02), sag, into], 0.0045, lead, self, 6)
+		var wire := _bike_only(_bend([end, end + Vector3(0.0, 0.012, 0.02), sag, into], 0.0045, lead, self, 6))
 		wire.name = "HTLead"
 
 
@@ -1140,12 +1140,12 @@ func _draw_cooling() -> void:
 				for cy in _cyls:
 					mid += cy["base"] + cy["up"] * 0.13
 				head = mid / _cyls.size() + Vector3(0.0, 0.02, -0.085)
-			_box(head, Vector3(0.04, 0.03, 0.03), mat).name = "Thermostat"
-			_bend([top, top + Vector3(0.0, 0.03, 0.04), head.lerp(top, 0.4) + Vector3(0.0, 0.03, 0.0), head], 0.014, hose, self, 10).name = "CoolantHose"
+			_bike_only(_box(head, Vector3(0.04, 0.03, 0.03), mat)).name = "Thermostat"
+			_bike_only(_bend([top, top + Vector3(0.0, 0.03, 0.04), head.lerp(top, 0.4) + Vector3(0.0, 0.03, 0.0), head], 0.014, hose, self, 10)).name = "CoolantHose"
 			var bottom := c + rb * Vector3(-w * 0.32, -h * 0.5 - 0.005, 0.03)
 			var pump := _engine_c + Vector3(-_block_w * 0.3, -0.05, -0.17)
-			_bend([bottom, bottom + Vector3(0.0, -0.04, 0.03), pump + Vector3(0.0, 0.02, -0.04), pump], 0.015, hose, self, 10).name = "CoolantHose"
-			_mesh_instance(_cylinder(0.025, 0.03), mat, pump).rotation.x = PI * 0.5
+			_bike_only(_bend([bottom, bottom + Vector3(0.0, -0.04, 0.03), pump + Vector3(0.0, 0.02, -0.04), pump], 0.015, hose, self, 10)).name = "CoolantHose"
+			_bike_only(_mesh_instance(_cylinder(0.025, 0.03), mat, pump)).rotation.x = PI * 0.5
 		"twin":
 			for side in [-1.0, 1.0]:
 				var rad := _box(Vector3(0.16 * side, _engine_c.y + 0.24, front_z + 0.08), Vector3(0.05, 0.28, 0.22), core)
@@ -1746,21 +1746,21 @@ func _draw_controls(l_end: Vector3, r_end: Vector3) -> void:
 	# Cables: out of the perch and the throttle, down past the headstock.
 	var j_l := -_steer_axis * 0.24 + Vector3(-0.055, 0.0, 0.035)
 	var j_r := -_steer_axis * 0.24 + Vector3(0.055, 0.0, 0.035)
-	var c1 := _bend([perch + Vector3(0.012, 0.0, -0.05), perch.lerp(j_l, 0.35) + Vector3(0.0, 0.03, -0.14), j_l], 0.0042, cable, _steer_node, 6)
+	var c1 := _bike_only(_bend([perch + Vector3(0.012, 0.0, -0.05), perch.lerp(j_l, 0.35) + Vector3(0.0, 0.03, -0.14), j_l], 0.0042, cable, _steer_node, 6))
 	c1.name = "ClutchCable"
-	var c2 := _bend([thr + Vector3(-0.01, 0.0, -0.02), thr.lerp(j_r, 0.35) + Vector3(0.0, 0.03, -0.14), j_r], 0.0042, cable, _steer_node, 6)
+	var c2 := _bike_only(_bend([thr + Vector3(-0.01, 0.0, -0.02), thr.lerp(j_r, 0.35) + Vector3(0.0, 0.03, -0.14), j_r], 0.0042, cable, _steer_node, 6))
 	c2.name = "ThrottleCable"
 	# ...then on in the frame to the clutch arm and the carbs or throttle bodies.
 	var jl := _head + j_l
 	var jr := _head + j_r
 	var e := _engine_c
 	var clutch_end := e + Vector3(-_block_w * 0.5 - 0.02, 0.07 * _eng_s, 0.15 * _eng_s)
-	_bend([jl, jl + Vector3(-0.01, -0.06, 0.08), clutch_end + Vector3(-0.015, 0.1, -0.08), clutch_end], 0.0042, cable, self, 6)
-	_mesh_instance(_cylinder(0.008, 0.02), steel, clutch_end, self)
+	_bike_only(_bend([jl, jl + Vector3(-0.01, -0.06, 0.08), clutch_end + Vector3(-0.015, 0.1, -0.08), clutch_end], 0.0042, cable, self, 6))
+	_bike_only(_mesh_instance(_cylinder(0.008, 0.02), steel, clutch_end, self))
 	var intake: Array = _intake_points()
 	if not intake.is_empty():
 		var thr_end: Vector3 = intake[0]["port"] + intake[0]["dir"] * 0.05 + Vector3(0.03, 0.045, 0.0)
-		_bend([jr, jr + Vector3(0.01, -0.04, 0.08), thr_end + Vector3(0.0, 0.06, -0.06), thr_end], 0.0042, cable, self, 6)
+		_bike_only(_bend([jr, jr + Vector3(0.01, -0.04, 0.08), thr_end + Vector3(0.0, 0.06, -0.06), thr_end], 0.0042, cable, self, 6))
 
 
 ## How far out the fork legs sit, for the parts that clip to them.
@@ -1805,7 +1805,7 @@ func _draw_front_master() -> void:
 	# The brake hose (or cable, for a drum) from the master down to the fork leg.
 	var line := _mat(Color(0.03, 0.03, 0.035), 0.1, 0.55) if _front_is_drum() else _mat(Color(0.05, 0.05, 0.06), 0.3, 0.4)
 	var j := _brake_line_joint()
-	var hose := _bend([at + Vector3(0.0, -0.01, -0.025), at.lerp(j, 0.3) + Vector3(0.0, 0.0, -0.16), j], 0.005 if not _front_is_drum() else 0.0042, line, _steer_node, 8)
+	var hose := _bike_only(_bend([at + Vector3(0.0, -0.01, -0.025), at.lerp(j, 0.3) + Vector3(0.0, 0.0, -0.16), j], 0.005 if not _front_is_drum() else 0.0042, line, _steer_node, 8))
 	hose.name = "BrakeHose"
 	_mesh_instance(_cylinder(0.0075, 0.016), _mat(Color(0.8, 0.8, 0.82), 1.0, 0.2), at + Vector3(0.0, -0.01, -0.03), _steer_node)
 
@@ -3221,10 +3221,10 @@ func _draw_brake(side: String, wheel: Node3D, hub: Node3D, rim_r: float, rim_w :
 		var j := _brake_line_joint() + _steer_axis * _build.fork_length
 		var fx := _fork_x() + 0.035
 		var slide := Vector3(fx, 0.0, 0.045) + _steer_axis * (_build.fork_length * 0.42)
-		var hose := _bend([j, j.lerp(slide, 0.5) + Vector3(0.012, 0.0, 0.0), slide, cal_at + cal.basis * Vector3(0.0, cal_size.y * 0.5 + 0.004, 0.0)],
-			0.005, _mat(Color(0.05, 0.05, 0.06), 0.3, 0.4), hub, 8)
+		var hose := _bike_only(_bend([j, j.lerp(slide, 0.5) + Vector3(0.012, 0.0, 0.0), slide, cal_at + cal.basis * Vector3(0.0, cal_size.y * 0.5 + 0.004, 0.0)],
+			0.005, _mat(Color(0.05, 0.05, 0.06), 0.3, 0.4), hub, 8))
 		hose.name = "BrakeHose"
-		_box(slide, Vector3(0.012, 0.025, 0.02), _mat(Color(0.2, 0.2, 0.22), 0.6, 0.4), hub)
+		_bike_only(_box(slide, Vector3(0.012, 0.025, 0.02), _mat(Color(0.2, 0.2, 0.22), 0.6, 0.4), hub))
 	_current_slot = side + "_pads"
 	var pad := _box(cal_at + Vector3(0.0, 0.0, 0.0) + cal.basis.y * (cal_size.y * 0.5 + 0.012), Vector3(0.035, 0.024, 0.05), _mat(_col(), 0.4, 0.6), hub)
 	pad.basis = cal.basis
@@ -3277,10 +3277,10 @@ func _draw_drum(side: String, wheel: Node3D, hub: Node3D, rim_r: float, x: float
 		_tube(tips[0], tips[1], 0.004, arm_mat, Vector3.ONE, hub).name = "LinkRod"
 	if front:
 		var j := _brake_line_joint() + _steer_axis * _build.fork_length
-		_bend([j, j.lerp(tips[0], 0.5) + Vector3(0.02, 0.0, 0.03), tips[0]], 0.0042, _mat(Color(0.03, 0.03, 0.035), 0.0, 0.6), hub, 6).name = "BrakeCable"
+		_bike_only(_bend([j, j.lerp(tips[0], 0.5) + Vector3(0.02, 0.0, 0.03), tips[0]], 0.0042, _mat(Color(0.03, 0.03, 0.035), 0.0, 0.6), hub, 6)).name = "BrakeCable"
 	else:
 		# A rod forward to the brake pedal.
-		_tube(tips[0], Vector3(x + 0.02, 0.0, -0.45), 0.004, arm_mat, Vector3.ONE, hub).name = "BrakeRod"
+		_bike_only(_tube(tips[0], Vector3(x + 0.02, 0.0, -0.45), 0.004, arm_mat, Vector3.ONE, hub)).name = "BrakeRod"
 	_current_slot = side + "_pads"
 	# The shoes, hidden in the drum but there to swap.
 	for sx in sides:
@@ -3850,6 +3850,12 @@ static func assembly_display(parts: Dictionary, cond: Dictionary, unseen := {}) 
 	var model := BikeModel.new()
 	model.build_from(BikeBuild.new(build, cond), Color(0.55, 0.56, 0.58), fitted, cond, false)
 	model.strip_to(parts.keys())
+	# Off the bike, a part leaves behind the cables and hoses that ran to the rest of it.
+	for slot in model._slot_meshes:
+		for mi in (model._slot_meshes[slot] as Array).duplicate():
+			if (mi as Node).has_meta("bike_only"):
+				(model._slot_meshes[slot] as Array).erase(mi)
+				mi.free()
 	var bounds := AABB()
 	var first := true
 	for slot in parts:
@@ -4473,6 +4479,13 @@ func _shell(sections: Array, mat: Material, open := false, a0 := 0.0, a1 := TAU,
 ## A round tube bent smoothly through `path` (see ShapeKit.sweep): `radius` a float, or one per point.
 func _bend(path: Array, radius, mat: Material, parent: Node3D = self, sides := 12) -> MeshInstance3D:
 	return _mesh_instance(ShapeKit.sweep(path, radius, sides), mat, Vector3.ZERO, parent)
+
+
+## Marks a mesh that joins the part being drawn to another part (a cable, hose or lead): drawn
+## on the bike, left off when the part is shown loose (see assembly_display).
+func _bike_only(mi: MeshInstance3D) -> MeshInstance3D:
+	mi.set_meta("bike_only", true)
+	return mi
 
 
 ## `m` with one of TextureKit's surface textures on it (knurl, quilt, grain, carbon, brushed,
