@@ -5,6 +5,7 @@ const PATH := "user://settings.cfg"
 
 var player_name := "Rider"
 var last_ip := "127.0.0.1"
+var current_save := ""     # the save game played last (an id under user://saves/, see SaveGame)
 ## Riding realism: 0 = full sim (the front can tuck, a slide can high-side), 0.5 = the rider
 ## protects the front and smooths the throttle, 1 = the easiest, with the most help balancing.
 var assist := 0.5
@@ -128,6 +129,7 @@ func load_settings() -> void:
 	if cfg.load(PATH) == OK:
 		player_name = cfg.get_value("player", "name", player_name)
 		last_ip = cfg.get_value("player", "last_ip", last_ip)
+		current_save = str(cfg.get_value("player", "save", current_save))
 		assist = cfg.get_value("riding", "assist", assist)
 		auto_shift = cfg.get_value("riding", "auto_shift", auto_shift)
 		telemetry_overlay = bool(cfg.get_value("riding", "telemetry", telemetry_overlay))
@@ -158,6 +160,7 @@ func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("player", "name", player_name)
 	cfg.set_value("player", "last_ip", last_ip)
+	cfg.set_value("player", "save", current_save)
 	cfg.set_value("riding", "assist", assist)
 	cfg.set_value("riding", "auto_shift", auto_shift)
 	cfg.set_value("riding", "telemetry", telemetry_overlay)
