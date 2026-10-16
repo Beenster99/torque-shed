@@ -11,9 +11,14 @@ extends Node
 ## The host also sends a customer to reception, whom the client must see riding in on their bike.
 ## The host rings the sales office bell, and the client must hear it.
 ## The client buys bays 5 and 6 and raises bay 5's lift: both must see it go up.
+## The client orders a trolley and a part, loads the box onto the trolley and wheels it into the
+## shed: both must see the box, with its "for" note, ride on the trolley. The client waves and
+## the host must see its figure wave; the host pings and the client must see it point.
 
 var role := "host"
 var main: Node
+## Where the client wheels the trolley to.
+var TROLLEY_XF := Transform3D(Basis(Vector3.UP, 0.5), Workshop.CENTER + Vector3(-1.5, 0.0, 3.0))
 
 
 func _ready() -> void:
@@ -62,6 +67,14 @@ func _ready() -> void:
 	var listed_asked := false
 	var offered := false
 	var sales_ok := false
+	var trolley_asked := false
+	var trolley_box := 0
+	var trolley_took := false
+	var trolley_loaded := false
+	var trolley_moved := false
+	var trolley_ok := false
+	var emote_sent := false
+	var emote_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -239,7 +252,58 @@ func _ready() -> void:
 			offered = Sales.make_offer(barn) != 0
 			Shed._mark_dirty()
 		sales_ok = sales_ok or (barn != 0 and Sales.listings().has(barn) and not Sales.offers().is_empty() and main.sales_view.tills > 0)
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok:
+		# A trolley: the client orders one and a part, loads the box (with its "for" note) onto
+		# the trolley and wheels it into the shed; both see the box ride along on it.
+		var trolley := 0
+		for fid in Shed.furniture:
+			if Shed.furniture[fid]["model"] == "trolley_parts":
+				trolley = fid
+		if role == "client" and Shed.crew.size() == 2 and not trolley_asked:
+			Shed.request({"a": "order_furniture", "model": "trolley_parts"})
+			Shed.request({"a": "order_part", "part": "iridium_plugs"})
+			trolley_asked = true
+		if trolley_box == 0:
+			for iid in Shed.items:
+				if Shed.items[iid]["part"] == "iridium_plugs" and Shed.items[iid].get("boxed", false) and str(Shed.items[iid].get("by", "")) == "Test client":
+					trolley_box = iid
+		var tkey := "f%d" % trolley
+		if role == "client" and trolley != 0 and trolley_box != 0 and Shed.items.has(trolley_box):
+			var tb: Dictionary = Shed.items[trolley_box]
+			if not trolley_took and Shed.held_by(Shed.me()) == 0 and tb["at"] != "held" and not Shed.surface_items(tkey).has(trolley_box):
+				Shed.request({"a": "take", "item": trolley_box} if tb["at"] == "floor" else {"a": "take", "spot": str(tb["ref"])})
+				trolley_took = true
+			elif not trolley_loaded and Shed.held_by(Shed.me()) == trolley_box:
+				var place = Shed.find_room(tkey, trolley_box, Vector2.ZERO)
+				if place is Transform3D:
+					Shed.request({"a": "set_down", "top": tkey, "xf": place})
+					trolley_loaded = true
+			elif trolley_loaded and not trolley_moved and Shed.surface_items(tkey).has(trolley_box):
+				Shed.request({"a": "grab", "furniture": trolley})
+				Shed.request({"a": "move_furniture", "furniture": trolley, "xf": TROLLEY_XF})
+				Shed.request({"a": "release", "furniture": trolley, "xf": TROLLEY_XF})
+				trolley_moved = true
+		if trolley != 0 and trolley_box != 0 and Shed.items.has(trolley_box) and Shed.surface_items(tkey).has(trolley_box) \
+				and (Shed.furniture[trolley]["xf"] as Transform3D).origin.distance_to(TROLLEY_XF.origin) < 0.01 and ws != null:
+			var on_view: Node3D = ws._spot_nodes.get(str(Shed.items[trolley_box]["ref"]))
+			trolley_ok = on_view != null and ws.furniture_nodes.has(trolley) and ws.furniture_nodes[trolley].is_ancestor_of(on_view) \
+				and on_view.get_node_or_null("OrderNote") != null
+		# Emotes: the client waves and the host sees its figure wave; the host pings and the
+		# client sees the host's figure point at it.
+		if Shed.crew.size() == 2 and main.remotes.size() == 1 and not emote_sent:
+			if role == "client":
+				Shed.request({"a": "emote", "e": "wave"})
+			else:
+				Shed.request({"a": "ping", "at": Workshop.CENTER + Vector3(2.0, 1.0, 0.0), "what": "Over here"})
+			emote_sent = true
+		if main.remotes.size() == 1:
+			var seen: Array = main.remotes.values()[0].emotes_seen
+			emote_ok = seen.has("point") if role == "client" else seen.has("wave")
+		if role == "host" and emote_sent and not emote_ok and main.remotes.size() == 1 and Engine.get_process_frames() % 240 == 0:
+			# The client may not have been listening yet: ask again now and then.
+			emote_sent = false
+		if role == "client" and not emote_ok and emote_sent and Engine.get_process_frames() % 240 == 0:
+			emote_sent = false
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -255,8 +319,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok])
 	get_tree().quit(0 if ok else 1)
 
 

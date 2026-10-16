@@ -8,6 +8,8 @@ signal changed
 signal feedback(text: String, ok: bool)
 ## Someone pointed at something for the crew: {at, what, item, furniture, name}.
 signal pinged(peer: int, ping: Dictionary)
+## A player did an emote (see Emotes): {e: which, name: theirs, at: a world point for a point, or absent}.
+signal emoted(peer: int, emote: Dictionary)
 ## The whiteboard's marks changed (see BoardData).
 signal board_changed
 ## A picture or poster print's data arrived (see share_blob).
@@ -2636,6 +2638,9 @@ func check(peer: int, action: Dictionary) -> String:
 		"order":
 			if free_bay(Workshop.bay_count()) < 0:
 				return "Every bay is full. Ride a bike out or strip one down first."
+			var style := str(action.get("style", ""))
+			if style != "" and not PartsDB.STYLES.has(style):
+				return "Nobody deals in that style of bike."
 		"tune":
 			if not bikes.has(bike_id):
 				return "That bike has gone."
@@ -2900,6 +2905,18 @@ func _apply(peer: int, action: Dictionary) -> void:
 		if Net.is_online():
 			_ping.rpc(peer, d)
 		return
+	if str(action.get("a", "")) == "emote":
+		# Nor does an emote: everyone sees the player's figure do it.
+		var e := str(action.get("e", ""))
+		if not Emotes.is_emote(e):
+			return
+		var d := {"e": e, "name": str(crew.get(peer, {}).get("name", "Someone"))}
+		if action.get("at") is Vector3:
+			d["at"] = action["at"]
+		emoted.emit(peer, d)
+		if Net.is_online():
+			_emote.rpc(peer, d)
+		return
 	if str(action.get("a", "")).begins_with("board_"):
 		_board_apply(peer, action)
 		return
@@ -3088,6 +3105,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			items[item_id]["paid"] = cost   # for the cost of a bike it's fitted to (see Sales)
 			# Parts come boxed; cans and bottles of fluid are left as they are.
 			items[item_id]["boxed"] = not PartsDB.is_fluid(part_id)
+			items[item_id]["by"] = orderer_name(peer)   # on a note stuck to the box (see OrderNote)
 			_deliver(item_id)
 			text = "Ordered %s for %s. %s in the delivery area outside the roller door%s." % [PartsDB.part_name(part_id), TvChannels.money_text(cost),
 				"The box is" if items[item_id]["boxed"] else "It's", ", on the racking" if items[item_id]["at"] == "spot" else ""]
@@ -3427,15 +3445,21 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
 			text = _blueprint_apply(action, peer)
 		"order":
-			var id := _random_bike(free_bay(Workshop.bay_count()))
-			# A project bike costs a little more than it would fetch as it comes (see Money).
-			var cost := Money.project_price(id)
+			# Any old project bike, or one found to order in a style ("make me a cruiser").
+			var style := str(action.get("style", ""))
+			var id := _random_bike(free_bay(Workshop.bay_count())) if style == "" else _style_bike(free_bay(Workshop.bay_count()), style)
+			# A project bike costs a little more than it would fetch as it comes (see Money), and
+			# one found in a style a little more again.
+			var cost := Money.project_price(id) if style == "" else Money.style_project_price(id)
 			if not charge_garage(cost, "Bought %s" % bikes[id]["name"]):
 				remove_bike(id)
-				_tell(peer, "The business can't afford a project bike: this one was %s, and it has %s." % [
-					TvChannels.money_text(cost), TvChannels.money_text(garage_money)], false)
+				_tell(peer, "The business can't afford %s: this one was %s, and it has %s." % [
+					"a project bike" if style == "" else PartsDB.style_phrase(style), TvChannels.money_text(cost), TvChannels.money_text(garage_money)], false)
 				changed.emit()
 				return
+			if style != "":
+				bikes[id]["style_order"] = style
+				bikes[id]["ordered_by"] = str(c.get("name", ""))
 			bikes[id]["bought"] = cost   # what it cost, for pricing it when it's sold (see Sales)
 			text = "%s has been delivered to bay %d, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1, TvChannels.money_text(cost)]
 		"radio":
@@ -3941,6 +3965,11 @@ func _ping(peer: int, d: Dictionary) -> void:
 	pinged.emit(peer, d)
 
 
+@rpc("authority", "call_remote", "reliable")
+func _emote(peer: int, d: Dictionary) -> void:
+	emoted.emit(peer, d)
+
+
 func _bump(c: Dictionary, key: String) -> void:
 	c[key] = int(c.get(key, 0)) + 1
 
@@ -4126,6 +4155,12 @@ func _new_item(part: String, rust: float, dirt: float, wear: float, color = null
 	return id
 
 
+## The name that goes on the note on a box `peer` ordered: theirs, as the crew knows them.
+func orderer_name(peer: int) -> String:
+	var n := str(crew.get(peer, {}).get("name", "")).strip_edges()
+	return n.left(24) if n != "" else "the crew"
+
+
 func _aged_item(part: String, age: float, color = null) -> int:
 	var rust := clampf(age * _rng.randf_range(0.4, 1.2), 0.0, 1.0)
 	var dirt := clampf(age * _rng.randf_range(0.8, 1.4), 0.0, 1.0)
@@ -4259,6 +4294,72 @@ func _random_bike(bay: int) -> int:
 	parts = PartsDB.dress_fillers(parts, bay)
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
 	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9))
+
+
+## How many goes _style_parts has at a build, keeping the one most true to the style.
+const STYLE_TRIES := 6
+
+
+## A project bike of one style (see PartsDB.STYLES), found to order: as worn as any project
+## bike, but every part on it made for that style. Named after it ("Cruiser project 2").
+func _style_bike(bay: int, style: String) -> int:
+	var parts := style_parts(style)
+	var base := "%s project" % PartsDB.style_name(style)
+	var n := 1
+	for b in bikes.values():
+		if str(b["name"]).begins_with(base):
+			n += 1
+	return _new_bike(parts, bay, base if n == 1 else "%s %d" % [base, n], _rng.randf_range(0.35, 0.9))
+
+
+## The parts for a bike of `style`: its reference build (Contracts.style_build), with every
+## part that doesn't suit the style swapped for one that does, and now and then one that does
+## swapped for another, the style's own pack ("pack" in data/parts.json) first. Tyres to suit
+## the rims, the bolt-on bits that go with it (PartsDB.dress_fillers). Of a few goes, the one
+## that is most that style.
+func style_parts(style: String) -> Dictionary:
+	var best := {}
+	var best_fit := -1.0
+	for attempt in STYLE_TRIES:
+		var parts := Contracts.style_build(style)
+		for slot in PartsDB.SLOTS:
+			var k: String = PartsDB.SLOT_KIND[slot]
+			if k == "tyre" or PartsDB.FILLER_SLOTS.has(slot) or str(parts.get(slot, "none")) == "none":
+				continue
+			var options: Array = PartsDB.by_kind.get(k, []).filter(func(id): return PartsDB.styles_of(str(id)).has(style))
+			if options.is_empty():
+				continue
+			var suits := PartsDB.styles_of(str(parts[slot])).has(style)
+			if suits and _rng.randf() > 0.4:
+				continue
+			var pack: Array = options.filter(func(id): return str(PartsDB.get_part(str(id)).get("pack", "")) == style)
+			var from: Array = pack if not pack.is_empty() and _rng.randf() < 0.6 else options
+			parts[slot] = from[_rng.randi() % from.size()]
+		# Tyres that go on the rims, made for the style where there are any.
+		for ws in WHEEL_TYRE:
+			var ts: String = WHEEL_TYRE[ws]
+			if PartsDB.tyre_fit(str(parts[ts]), str(parts[ws])) == 0:
+				continue
+			var fits: Array = PartsDB.tyres_for(str(parts[ws]))
+			if fits.is_empty():
+				continue
+			var styled: Array = fits.filter(func(t): return PartsDB.styles_of(str(t)).has(style))
+			var from: Array = styled if not styled.is_empty() else fits
+			parts[ts] = from[_rng.randi() % from.size()]
+		if parts["headlight"] == "none":
+			parts["fairing"] = "none"
+		if parts["mirrors"] != "none" and not PartsDB.part_mounts("mirrors", parts["mirrors"]).all(func(m): return parts.get(m, "none") != "none"):
+			parts["mirrors"] = "round_mirrors"
+		parts = PartsDB.sanitize_build(parts)
+		var dressed := PartsDB.dress_fillers(parts, _rng.randi() % 97)
+		for slot in PartsDB.FILLER_SLOTS:
+			if str(parts.get(slot, "none")) == "none" or not PartsDB.styles_of(str(parts[slot])).has(style):
+				parts[slot] = dressed[slot]
+		var fit := PartsDB.style_fit(style, parts)
+		if fit > best_fit:
+			best = parts
+			best_fit = fit
+	return best
 
 
 func _add_crew(peer: int, player_name: String) -> void:
@@ -4544,6 +4645,7 @@ func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 		items[item_id]["paid"] = cost
 		items[item_id]["finish"] = str(look.get("finish", ""))
 		items[item_id]["boxed"] = not PartsDB.is_fluid(part)
+		items[item_id]["by"] = orderer_name(peer)
 		_deliver(item_id)
 		plan["ordered"][row["slot"]] = item_id
 		sent += 1

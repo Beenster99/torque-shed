@@ -45,6 +45,8 @@ func _build() -> void:
 			_build_blaster()
 		"bench":
 			_build_bench()
+		"trolley":
+			_build_trolley()
 		"booth":
 			_build_booth()
 		"changer":
@@ -357,6 +359,44 @@ func _build_bench() -> void:
 					_deco(Vector3(size.x * 0.25, 0.15 + i * 0.15, size.z * 0.5 - 0.02), Vector3(size.x * 0.4, 0.02, 0.02), _mat("chrome"))
 				_deco(Vector3(0.0, top + 0.5, -size.z * 0.5 + 0.02), Vector3(size.x, 0.85, 0.03), _ws._material(Color(0.3, 0.32, 0.35), 0.4, 0.5))
 	_body(false)
+	_ws._blocker(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z), self)
+
+
+## A trolley: a lipped deck on four castors with a push handle at the front (+Z), the end you
+## push it from. A parts trolley has a second shelf underneath; the flatbed is a low platform.
+func _build_trolley() -> void:
+	var size := _size()
+	var top := Equipment.work_height(model)
+	var frame: Material = _ws._material(Color(0.12, 0.36, 0.62), 0.55, 0.4)
+	var deck: Material = _ws._material(Color(0.32, 0.33, 0.35), 0.7, 0.45) if model != "trolley_flatbed" else _mat("wood")
+	_deco(Vector3(0.0, top - 0.02, 0.0), Vector3(size.x, 0.04, size.z), deck)
+	# A low lip round the deck so things don't slide off.
+	for side in [-1.0, 1.0]:
+		_deco(Vector3(side * (size.x * 0.5 - 0.01), top + 0.015, 0.0), Vector3(0.02, 0.03, size.z), frame)
+		_deco(Vector3(0.0, top + 0.015, side * (size.z * 0.5 - 0.01)), Vector3(size.x, 0.03, 0.02), frame)
+	var wheel_r := 0.06 if top > 0.5 else 0.07
+	var leg_h := top - 0.04 - wheel_r * 2.0
+	for x in [-size.x * 0.5 + 0.06, size.x * 0.5 - 0.06]:
+		for z in [-size.z * 0.5 + 0.08, size.z * 0.5 - 0.08]:
+			if leg_h > 0.04:
+				_deco(Vector3(x, wheel_r * 2.0 + leg_h * 0.5, z), Vector3(0.035, leg_h, 0.035), frame)
+			# The castor: a fork and its wheel.
+			_deco(Vector3(x, wheel_r * 2.0 + 0.01, z), Vector3(0.05, 0.03, 0.05), _mat("chrome"))
+			var w := _cyl(Vector3(x, wheel_r, z), wheel_r, 0.04, _mat("dark"), Vector3.RIGHT)
+			w.name = "Castor"
+	if model != "trolley_flatbed":
+		# A second shelf low down for the heavy things.
+		_deco(Vector3(0.0, 0.24, 0.0), Vector3(size.x - 0.04, 0.03, size.z - 0.04), deck)
+	# The push handle: two uprights at the front and a grip across them.
+	var grip_y := size.y
+	for side in [-1.0, 1.0]:
+		_deco(Vector3(side * (size.x * 0.5 - 0.03), (top + grip_y) * 0.5, size.z * 0.5 - 0.02), Vector3(0.03, grip_y - top, 0.03), frame)
+	var grip := _cyl(Vector3(0.0, grip_y, size.z * 0.5 - 0.02), 0.02, size.x - 0.02, _ws._material(Color(0.08, 0.08, 0.09), 0.0, 0.8), Vector3.RIGHT)
+	grip.name = "Handle"
+	_name_plate("PARTS TROLLEY" if model != "trolley_flatbed" else "FLATBED", Vector3(0.0, top - 0.02, size.z * 0.5 + 0.004), 18)
+	_body(false)
+	# Take hold of it by the handle, too.
+	_ws._target(Vector3(0.0, (top + grip_y) * 0.5 + 0.02, size.z * 0.5 - 0.02), Vector3(size.x, grip_y - top + 0.06, 0.08), {"furniture": id}, self)
 	_ws._blocker(Vector3(0.0, top * 0.5, 0.0), Vector3(size.x, top, size.z), self)
 
 

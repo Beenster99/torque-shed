@@ -557,6 +557,30 @@ The Esc menu's **Shop** tab spends **your own money** (not the garage's). Pick a
 - What you own and wear is kept with your character, so it goes with you to every shed. Everyone sees your gear: walking about the shed, on the bike and when you come off it.
 - **Trinkets** for the shed: a bobblehead racer, a biker gnome, a potted plant, a framed photo, a lava lamp, a station wall clock and digital wall and desk clocks that keep the shed's in-game time (the hands and the display move with the day), a gold trophy, a chequered flag rug, a toolbox radio, a mini bike model and a pink neon TORQUE SHED sign. A trinket you buy is delivered outside the roller door and then belongs to the shed: press **F** on it to pick it up and carry it (the mouse wheel holds it further out, the rotate keys turn it, R toggles snapping), hold it over the workbench or another bench to put it down on top, or against a wall for the clock, photo and neon sign, and **F** puts it down. Hold the scrap key while carrying one to get rid of it. Trinkets are saved with the shed.
 
+### 3D part previews in the shop
+
+Pick a part on the parts computer and it turns slowly in 3D at the top of its page, drawn just as it looks on a bike, so you can see what you're buying. Drag it with the mouse to turn it yourself. In the Sell aisle the loose part you'd be selling is shown as it is now, rust, box and all. Shed kit has no preview.
+
+### Trolleys
+
+The parts computer sells two **trolleys** (Shed aisle, Storage and benches): a **parts trolley** with a waist-high lipped deck and a shelf underneath, and a long, low **flatbed trolley** for the heavy stuff. Load the deck like a workbench: look at it with a part or a box in your hands and put it down, as many as fit. Then take hold of the trolley with F (by its handle or anywhere on it), walk it where you want it and press F to let go: everything on the deck rides along with it, so a whole delivery comes in from the yard in one trip. Take things off again at the other end like off any bench. In co-op everyone sees the trolley move with its load, and the shed saves it where it was left, loaded.
+
+### Who ordered which box
+
+Every box ordered from the parts computer (and from a blueprint) has a yellow sticky note on its lid and front saying who it's **for**: the name of the player who ordered it. Look at a box and the panel says "Ordered by ..." too. In co-op it's easy to see whose boxes are whose in the delivery area. Unpack a box and the note goes with it.
+
+### The parts list in geometry mode
+
+Geometry mode (F2) has a list of the bike's parts down the left: each row is a slot and the part in it ("Fork: Showa USD forks"). Click a row to select that part, the same as clicking it on the bike (handy for small or hidden parts). Clicking a part on the bike lights up its row, and parts you've moved are marked with a *.
+
+### Ordering a bike in a style
+
+Next to **Order a project bike** on the parts computer is a style picker: pick one of the 14 styles (cafe racer, bobber, chopper, cruiser, scrambler, adventure bike, tourer, sports bike and the rest) and the button orders that style ("Order a cruiser"). The bike is found to order: it's built round the style's reference bike, with every part on it made for that style (the style's own parts pack first), tyres to suit its rims and the bolt-on bits that go with it, so it reads as a proper example of the style. It turns up in a free bay as worn as any project bike, named "Cruiser project" and so on, and costs the business 15% more than an ordinary project bike in the same state. Any style orders an ordinary project bike, as before.
+
+### Emotes
+
+On foot, press **B** for the emote bar, then **1** to **6**: **wave**, **thumbs up**, **point**, **shrug**, **cheer** and **dance** (B again closes it). Or do one straight away with **F5** to **F10**. The rest of the crew sees your figure do it, with what you're doing over your head; a point aims at whatever your crosshair is on. When you **ping** something (G or middle mouse), your figure points at it for the crew as well as it lighting up. Every key can be changed in the Key bindings tab.
+
 ### Debug tab
 
 The Esc menu's **Debug** tab is for trying things out: **Reset my XP** (back to level 1 with no upgrades, skills or goals), **Max my XP** (top level, every point to spend), **Reset everyone's XP** (host only: every player in the shed), **Reset my money**, **Max my money**, **Reset garage money** and **Give the garage £1,000,000** (the last two host only); for contracts (host only) **Send a customer**, **Send a bespoke customer** and **Reputation +5**. Every reset asks first. Your money is kept with your character and the garage's with the shed, and both show on the TVs' **My money** and **Garage money** pages.
@@ -599,6 +623,8 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/chase_camera.gd` | The riding cameras: the chase view you can swing round the bike, first person, the ride-by camera and the title screen orbit |
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
+| `scripts/emotes.gd`, `emote_bar.gd` | Emotes: the poses other players see your figure do (and the point when you ping), and the emote bar |
+| `scripts/part_preview.gd`, `order_note.gd` | The parts computer's turning 3D preview of a part; the "for" note on a delivery box naming who ordered it |
 | `scripts/world.gd`, `world_layout.gd`, `world_terrain.gd`, `world_roads.gd`, `world_road_mesh.gd`, `world_yard.gd`, `world_props.gd`, `world_buildings.gd` | The riding map: the layout of roads, villages and farms; the height map, its chunked meshes and collision; road heights (grades, no jumps, flush junctions) and their meshes and markings; the yard's test area; trees, rocks, buildings, fences, armco, signs and lamps in batches |
 | `scripts/daylight.gd`, `weather.gd` | Time of day, sky and lighting; the weather (clouds, fog, rain, wet roads, rain sounds) |
 | `scripts/lighting.gd`, `cloud_sky.gd` | Graphics settings into GI, volumetric fog, fog volumes, shadows, glow and eye adaptation; the raymarched cloud sky shader |

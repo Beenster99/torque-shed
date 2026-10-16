@@ -47,7 +47,7 @@ const GROUPS := [
 	["Luggage", ["panniers", "top_box"]],
 	["Fluids", ["petrol", "oil", "brake_fluid", "chain_lube"]],
 	["Tools and machines", ["eq:stand", "eq:washer", "eq:repair", "eq:blaster", "eq:booth", "eq:changer"]],
-	["Storage and benches", ["eq:shelf", "eq:bench"]],
+	["Storage and benches", ["eq:shelf", "eq:bench", "eq:trolley"]],
 	["Comfort and decor", ["eq:seat", "eq:tv", "eq:poster"]],
 	["Jumps", ["eq:ramp", "eq:obstacle"]],
 	["Course", ["eq:barrier", "eq:marker"]],
@@ -70,6 +70,11 @@ var _sort_pick: OptionButton
 var _bike_pick: OptionButton
 var _afford_box: CheckBox
 var _bike_ids: Array = []    # bike id for each entry in the bike picker after "Any bike"
+## The 3D turntable over the part picked (see PartPreview).
+var preview: PartPreview
+## The style of project bike to order ("" for any old project bike), and its picker.
+var bike_style := ""
+var _bike_style_pick: OptionButton
 
 
 func _ready() -> void:
@@ -84,7 +89,7 @@ func _ready() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(1080, 620)
+	panel.custom_minimum_size = Vector2(1080, 760)
 	center.add_child(panel)
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 12)
@@ -99,9 +104,17 @@ func _ready() -> void:
 	# hundreds of pixels tall and pushed the bottom of every list off the screen.
 	_bank.autowrap_mode = TextServer.AUTOWRAP_OFF
 	head.add_child(_bank)
+	# A project bike: any old one, or one built in a style ("make me a cruiser").
+	_bike_style_pick = OptionButton.new()
+	_bike_style_pick.tooltip_text = "Pick a style to have a project bike of that style found for you"
+	_bike_style_pick.add_item("Any style")
+	for st in PartsDB.STYLES:
+		_bike_style_pick.add_item(PartsDB.style_name(st))
+	_bike_style_pick.item_selected.connect(func(i): set_bike_style("" if i == 0 else PartsDB.STYLES[i - 1]))
+	head.add_child(_bike_style_pick)
 	_bike_btn = Button.new()
 	_bike_btn.text = "Order a project bike"
-	_bike_btn.pressed.connect(func(): Shed.request({"a": "order"}))
+	_bike_btn.pressed.connect(order_bike)
 	head.add_child(_bike_btn)
 	# Blueprint builds under way (Esc, Blueprints): order whatever their holograms still show.
 	var bp_btn := Button.new()
@@ -197,13 +210,22 @@ func _ready() -> void:
 	_title = UITheme.title("", 24, Color.WHITE)
 	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	detail.add_child(_title)
+	# The part picked, turning in 3D (drag it to turn it yourself).
+	preview = PartPreview.new()
+	detail.add_child(preview)
+	# The words under it scroll, so a long description never pushes the page off the screen.
+	var info_scroll := ScrollContainer.new()
+	info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	detail.add_child(info_scroll)
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.add_theme_constant_override("separation", 10)
+	info_scroll.add_child(info)
 	_desc = UITheme.label("", 17)
-	detail.add_child(_desc)
+	info.add_child(_desc)
 	_spec = UITheme.label("", 16, UITheme.ACCENT)
-	detail.add_child(_spec)
-	var fill := Control.new()
-	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	detail.add_child(fill)
+	info.add_child(_spec)
 	_sizes = HBoxContainer.new()
 	_sizes.add_theme_constant_override("separation", 6)
 	_sizes.add_child(UITheme.label("Size:", 16))
@@ -749,6 +771,8 @@ func _show_nothing(title: String) -> void:
 	_desc.text = ""
 	_spec.text = ""
 	_sizes.visible = false
+	if preview:
+		preview.clear()
 	_order.text = "Order it"
 	_order.disabled = true
 
@@ -785,6 +809,11 @@ func _show_part(id: String) -> void:
 		_sizes.visible = false
 		_show_sale(id)
 		return
+	if preview:
+		if _kind.begins_with("eq:") or design_of(id) != 0:
+			preview.clear()
+		else:
+			preview.show_part(id)
 	_order.text = "Order it"
 	_sizes.visible = design_of(id) != 0 or Equipment.kind_of(id) == "poster"
 	if design_of(id) != 0:
@@ -890,7 +919,31 @@ func _refresh_bank() -> void:
 	if _bank == null:
 		return
 	_bank.text = "Business: %s  " % TvChannels.money_text(Shed.garage_money)
-	_bike_btn.tooltip_text = "Around %s, paid by the business" % TvChannels.money_text(Money.typical_project_price())
+	if bike_style == "":
+		_bike_btn.text = "Order a project bike"
+		_bike_btn.tooltip_text = "Around %s, paid by the business" % TvChannels.money_text(Money.typical_project_price())
+	else:
+		_bike_btn.text = "Order %s" % PartsDB.style_phrase(bike_style)
+		_bike_btn.tooltip_text = "A project bike built as %s, found to order: around %s, paid by the business" % [
+			PartsDB.style_phrase(bike_style), TvChannels.money_text(Money.typical_style_price(bike_style))]
+
+
+## Picks the style of project bike the order button gets ("" for any project bike).
+func set_bike_style(style: String) -> void:
+	bike_style = style if PartsDB.STYLES.has(style) else ""
+	if _bike_style_pick:
+		var i := 0 if bike_style == "" else PartsDB.STYLES.find(bike_style) + 1
+		if _bike_style_pick.selected != i:
+			_bike_style_pick.select(i)
+	_refresh_bank()
+
+
+## Orders a project bike, in the style picked if there is one. It turns up in a free bay.
+func order_bike() -> void:
+	if bike_style == "":
+		Shed.request({"a": "order"})
+	else:
+		Shed.request({"a": "order", "style": bike_style})
 
 
 ## What the Sell aisle can sell now: "bike:<id>" for every bike standing on a showroom display
@@ -930,6 +983,8 @@ func _show_sellables(k: String) -> void:
 		_order.text = "Sell it"
 		_order.disabled = true
 		_part = ""
+		if preview:
+			preview.clear()
 		return
 	for key in keys:
 		var b := Button.new()
@@ -962,6 +1017,11 @@ func _show_sale(key: String) -> void:
 	var price := sale_price(key)
 	_order.text = "Sell it: %s" % TvChannels.money_text(price)
 	_order.disabled = price <= 0 and not key.begins_with("bike:")
+	if preview:
+		if key.begins_with("item:"):
+			preview.show_item(id)
+		else:
+			preview.clear()
 	if key.begins_with("bike:"):
 		var missing := Shed.missing_slots(id).size()
 		var loose := Shed.loose_slots(id).size()

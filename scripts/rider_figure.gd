@@ -15,6 +15,9 @@ extends RefCounted
 ## the sides in trim with a thin accent line).
 const PATTERNS: Array[String] = ["plain", "stripe", "twin", "hoops", "panel", "check", "hivis", "carbon", "race"]
 const SKIN := Color(0.85, 0.66, 0.52)
+## Where the standing figure's arms hang at rest: shoulder, elbow and wrist.
+const ARM_R := {"shoulder": Vector3(0.25, 1.38, 0.0), "elbow": Vector3(0.3, 1.1, -0.06), "wrist": Vector3(0.29, 1.0, -0.28)}
+const ARM_L := {"shoulder": Vector3(-0.25, 1.38, 0.0), "elbow": Vector3(-0.32, 1.1, 0.02), "wrist": Vector3(-0.33, 0.86, -0.02)}
 const TEX := 64
 
 static var _textures := {}       # "pattern|base|trim|accent" -> ImageTexture
@@ -347,14 +350,20 @@ static func standing(body: Node3D, head: Node3D, gear: Dictionary, tint: Color) 
 	if jx.has("pockets"):
 		for side in [-1.0, 1.0]:
 			box(body, Vector3(0.12 * side, 1.12, -0.2), Vector3(0.1, 0.08, 0.02), material(jacket, tint, "trim"))
-	# Arms: the right one reaching forward to what's in hand, the left down by the side.
+	# Arms: the right one reaching forward to what's in hand, the left down by the side. Each
+	# hangs from a node at its shoulder ("ArmR", "ArmL") so emotes can swing it (see Emotes).
 	for side in [-1.0, 1.0]:
-		var sh := Vector3(0.25 * side, 1.38, 0.0)
-		var elbow := Vector3(0.3, 1.1, -0.06) if side > 0 else Vector3(-0.32, 1.1, 0.02)
-		var wrist := Vector3(0.29, 1.0, -0.28) if side > 0 else Vector3(-0.33, 0.86, -0.02)
-		limb(body, sh, elbow, 0.058, jm)
-		limb(body, elbow, wrist, 0.052, jm)
-		glove(body, wrist + (wrist - elbow).normalized() * 0.04, elbow, 0.05, str(worn["gloves"]), tint)
+		var arm: Dictionary = ARM_R if side > 0 else ARM_L
+		var sh: Vector3 = arm["shoulder"]
+		var pivot := Node3D.new()
+		pivot.name = "ArmR" if side > 0 else "ArmL"
+		pivot.position = sh
+		body.add_child(pivot)
+		var elbow: Vector3 = arm["elbow"] - sh
+		var wrist: Vector3 = arm["wrist"] - sh
+		limb(pivot, Vector3.ZERO, elbow, 0.058, jm)
+		limb(pivot, elbow, wrist, 0.052, jm)
+		glove(pivot, wrist + (wrist - elbow).normalized() * 0.04, elbow, 0.05, str(worn["gloves"]), tint)
 	# Legs and boots.
 	for side in [-1.0, 1.0]:
 		var hip := Vector3(0.11 * side, 0.82, 0.0)

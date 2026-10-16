@@ -236,6 +236,27 @@ static func typical_project_price() -> int:
 	return _nice(total * 0.36 * SELL_RATE * (1.0 + BONUS_COMPLETE + BONUS_RIDEABLE) * PROJECT_MARKUP)
 
 
+## A project bike found to order in a style costs this much more than one that just turns up.
+const STYLE_PREMIUM := 1.15
+
+
+## What a project bike ordered in a style costs as it comes (see STYLE_PREMIUM).
+static func style_project_price(bike_id: int) -> int:
+	return _nice(bike_sale(bike_id) * PROJECT_MARKUP * STYLE_PREMIUM)
+
+
+## The going rate for a project bike in a style, for the order button: an average wreck of
+## that style's reference build (Contracts.style_build).
+static func typical_style_price(style: String) -> int:
+	var build := Contracts.style_build(style)
+	var total := 0.0
+	for slot in build:
+		var part := str(build[slot])
+		if part != "none" and part != "":
+			total += part_price(part)
+	return _nice(total * 0.36 * SELL_RATE * (1.0 + BONUS_COMPLETE + BONUS_RIDEABLE) * PROJECT_MARKUP * STYLE_PREMIUM)
+
+
 static var _worth := {}
 static var _worth_at := -100000
 

@@ -249,6 +249,15 @@ func _run_all() -> void:
 	await _test_physics_cost()
 	print("The riding map: roads, grades, no jumps, land under the roads, spawns, surfaces, counts")
 	await _test_world_map()
+	print("Shop and crew: part previews, trolleys, box notes, the geometry parts list, styled project bikes, emotes")
+	await _test_part_preview()
+	_test_trolley_shed()
+	await _test_trolley_session()
+	_test_order_notes()
+	await _test_geometry_list()
+	await _test_style_bike_orders()
+	_test_emote_poses()
+	await _test_emotes_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -12113,3 +12122,377 @@ func _test_style_packs() -> void:
 		var parts := PartsDB.sanitize_build(b)
 		var found := PartsDB.detect_style(parts)
 		check(found.get("style", "") == style, "a bike from the %s pack reads as %s (%s)" % [style, PartsDB.style_text(parts), found.get("style", "")])
+
+
+# ---------------------------------------------------------------------------- shop and crew extras
+
+func _test_part_preview() -> void:
+	Shed.start_new("Tester", 64)
+	var pc := PartsComputer.new()
+	add_child(pc)
+	pc.open()
+	await get_tree().process_frame
+	pc._show_section("bike")
+	pc._show_kind("tank")
+	var tank: String = pc.listed("tank")[0]
+	pc._show_part(tank)
+	await get_tree().process_frame
+	var pv: PartPreview = pc.preview
+	check(pv != null and pv.visible and pv.showing == "part:" + tank and pv.pivot.get_child_count() == 1,
+		"picking a part in the shop shows it in 3D on its page (%s)" % pv.showing)
+	var shown: Node3D = pv.pivot.get_child(0)
+	var model: BikeModel = shown.get_meta("model")
+	check(model != null and model.slot_bounds("tank").size.length() > 0.05, "it's the part itself, drawn the way it is on a bike")
+	# The camera is far enough back to see all of it.
+	var size: Vector3 = shown.get_meta("size")
+	var rect := Rect2(Vector2.ZERO, Vector2(pv.viewport.size))
+	var inside := true
+	for i in 8:
+		var corner := Vector3(size.x * ((i & 1) - 0.5), size.y * (((i >> 1) & 1) - 0.5), size.z * (((i >> 2) & 1) - 0.5))
+		inside = inside and rect.has_point(pv.camera.unproject_position(pv.pivot.global_transform * corner))
+	check(inside, "the whole part fits in the picture")
+	var turn0 := pv.pivot.rotation.y
+	for i in 30:
+		await get_tree().process_frame
+	check(absf(pv.pivot.rotation.y - turn0) > 0.05, "it turns round slowly on its own")
+	pc._show_part(pc.listed("tank")[1])
+	await get_tree().process_frame
+	check(pv.showing == "part:" + str(pc.listed("tank")[1]) and pv.pivot.get_child_count() == 1, "picking another part swaps it")
+	pc._show_section("shed")
+	pc._show_kind("eq:trolley")
+	check(not pv.visible, "shed kit has no 3D preview")
+	# The Sell aisle shows the loose part you'd be selling, as it is.
+	var loose := Shed._new_item("iridium_plugs", 0.4, 0.3, 0.2)
+	Shed._move(loose, "floor", Transform3D(Basis(), Workshop.CENTER))
+	pc._show_section("sell")
+	pc._show_kind("sell:parts")
+	pc._show_part("item:%d" % loose)
+	await get_tree().process_frame
+	check(pv.visible and pv.showing == "item:%d" % loose, "and the Sell aisle shows the part being sold")
+	pc.queue_free()
+	await get_tree().process_frame
+	Shed.stop()
+
+
+func _test_trolley_shed() -> void:
+	Shed.start_new("Tester", 63)
+	var me := Shed.me()
+	check(Equipment.by_kind("trolley").size() >= 2 and Equipment.SURFACE_KINDS.has("trolley"), "the shop sells trolleys, with a deck to load")
+	check(PartsComputer.group_of("eq:trolley") == "Storage and benches", "listed with the storage and benches")
+	Shed.request({"a": "order_furniture", "model": "trolley_flatbed"})
+	var fid := _first_furniture("trolley_flatbed")
+	check(fid != 0, "a flatbed trolley can be ordered")
+	var key := "f%d" % fid
+	var s := Shed.surface(key)
+	check(not s.is_empty() and s["kind"] == "trolley" and is_equal_approx(float(s["top"]), Equipment.work_height("trolley_flatbed")),
+		"its deck is a surface parts go down anywhere on")
+	var loaded := []
+	for part in ["iridium_plugs", "stock_muffler", "peanut_9"]:
+		var id := _in_hands(part)
+		if part == "peanut_9":
+			Shed.items[id]["boxed"] = true
+		if _set_down_near(key, Vector2(0.0, -0.4 + loaded.size() * 0.4)):
+			loaded.append(id)
+	check(loaded.size() == 3 and Shed.surface_items(key).size() == 3, "it takes a load: plugs, an exhaust and a boxed tank (%d)" % Shed.surface_items(key).size())
+	var before := {}
+	for id in loaded:
+		before[id] = Shed.spot_transform(str(Shed.items[id]["ref"]))
+	var old_xf: Transform3D = Shed.furniture[fid]["xf"]
+	check(Shed.check(me, {"a": "grab", "furniture": fid}) == "", "a loaded trolley can be taken hold of")
+	Shed.request({"a": "grab", "furniture": fid})
+	var new_xf := Transform3D(Basis(Vector3.UP, 0.8), Workshop.CENTER + Vector3(1.0, 0.0, 2.0))
+	Shed.request({"a": "move_furniture", "furniture": fid, "xf": new_xf})
+	Shed.request({"a": "release", "furniture": fid, "xf": new_xf})
+	var rode := true
+	for id in loaded:
+		var want: Transform3D = new_xf * old_xf.affine_inverse() * (before[id] as Transform3D)
+		rode = rode and Shed.items[id]["at"] == "spot" and Shed.spot_transform(str(Shed.items[id]["ref"])).origin.distance_to(want.origin) < 0.001
+	check(rode, "everything on it moves with it")
+	check(Shed.spot_role(str(Shed.items[loaded[0]]["ref"])) == "trolley", "the parts know they're on a trolley")
+	# Off again where it's needed.
+	Shed.request({"a": "take", "spot": str(Shed.items[loaded[1]]["ref"])})
+	check(Shed.held_by(me) == loaded[1] and Shed.surface_items(key).size() == 2, "and come off again at the other end")
+	# It keeps its load through a save.
+	var snap: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	Shed.load_state(snap, "Tester")
+	check(Shed.surface_items(key).size() == 2 and Shed.furniture[fid]["xf"].origin.is_equal_approx(new_xf.origin), "a saved shed keeps the trolley where it was, loaded")
+	Shed.stop()
+
+
+func _test_trolley_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	var ws: Workshop = main.workshop
+	var w: Walker = main.walker
+	Shed.request({"a": "order_furniture", "model": "trolley_parts"})
+	var fid := _first_furniture("trolley_parts")
+	var key := "f%d" % fid
+	var box := _in_hands("iridium_plugs")
+	Shed.items[box]["boxed"] = true
+	Shed.items[box]["by"] = "Tester"
+	_set_down_near(key)
+	var plugs := _in_hands("iridium_plugs")
+	_set_down_near(key, Vector2(0.0, 0.3))
+	check(Shed.held_by(Shed.me()) == 0 and Shed.surface_items(key).has(plugs), "a box and a loose part go on the parts trolley")
+	Shed.changed.emit()
+	await get_tree().process_frame
+	var view: EquipmentView = ws.furniture_nodes[fid]
+	check(view.find_child("Handle", true, false) != null and view.find_children("Castor*", "", true, false).size() == 4, "the trolley is drawn with a handle and four castors")
+	var shown: Node3D = ws._spot_nodes.get(str(Shed.items[box]["ref"]))
+	check(shown != null and view.is_ancestor_of(shown), "the parts on its deck are drawn riding on it")
+	# Push it: take hold of it and walk.
+	var xf0: Transform3D = Shed.furniture[fid]["xf"]
+	w.place(Transform3D(Basis(), xf0.origin + xf0.basis.z * 1.3))
+	await get_tree().physics_frame
+	Shed.request({"a": "grab", "furniture": fid})
+	var at0 := shown.global_position
+	Input.action_press("move_forward")
+	for i in 90:
+		await get_tree().physics_frame
+	Input.action_release("move_forward")
+	await get_tree().physics_frame
+	var moved := shown.global_position.distance_to(at0)
+	check(moved > 0.5, "pushing it along takes the box with it (%.2f m)" % moved)
+	check((Shed.furniture[fid]["xf"] as Transform3D).origin.distance_to(xf0.origin) > 0.4, "and the shed knows where it's got to")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _test_order_notes() -> void:
+	Shed.start_new("Simon", 62)
+	var me := Shed.me()
+	Shed.request({"a": "order_part", "part": "iridium_plugs"})
+	var box := 0
+	for id in Shed.items:
+		if Shed.items[id].get("boxed", false):
+			box = id
+	check(box != 0 and str(Shed.items[box].get("by", "")) == "Simon", "a box ordered says who ordered it")
+	var shown := BikeModel.item_display(box)
+	var note: Node3D = shown.get_node_or_null("OrderNote")
+	var front: Node3D = shown.get_node_or_null("OrderNoteFront")
+	var size: Vector3 = shown.get_meta("size")
+	check(note != null and front != null and note.position.y > size.y and front.position.z > size.z * 0.5,
+		"a note is stuck on its lid and its front")
+	var texts := []
+	for n in note.get_children():
+		if n is Label3D:
+			texts.append((n as Label3D).text)
+	check(texts.has("FOR") and texts.has("Simon"), "the note says who it's for %s" % str(texts))
+	shown.free()
+	check(OrderNote.line(Shed.items[box]) == "Ordered by Simon  ·  ", "and so does the info panel")
+	# The other player's orders carry their name.
+	Shed._add_crew(77, "Pal")
+	Shed._apply(77, {"a": "order_part", "part": "stock_muffler"})
+	var theirs := 0
+	for id in Shed.items:
+		if Shed.items[id].get("boxed", false) and Shed.items[id]["part"] == "stock_muffler":
+			theirs = id
+	check(theirs != 0 and str(Shed.items[theirs].get("by", "")) == "Pal", "a box the other player ordered has their name on it")
+	# Unpacked, the part has no note; fluids never had a box.
+	Shed._move(box, "floor", Transform3D(Basis(), Workshop.CENTER))
+	Shed.request({"a": "unpack", "item": box})
+	var unboxed := BikeModel.item_display(box)
+	check(unboxed.get_node_or_null("OrderNote") == null, "unpacked, the part has no note")
+	unboxed.free()
+	var snap: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	Shed.load_state(snap, "Simon")
+	check(str(Shed.items[theirs].get("by", "")) == "Pal", "a saved shed keeps whose box is whose")
+	check(me != 77, "the notes go by the player")
+	Shed.stop()
+
+
+func _test_geometry_list() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	var ws: Workshop = main.workshop
+	var w: Walker = main.walker
+	var a := 0
+	for id in Shed.bikes:
+		if Shed.bikes[id]["name"] == "Rusty Ranger":
+			a = id
+	var view: Node3D = ws.bike_views[a]
+	w.place(Transform3D(Basis(), view.global_position + Vector3(1.4, 0.1, 0.0)))
+	await get_tree().physics_frame
+	main.open_geometry()
+	var geo: GeometryMode = main.geometry
+	await get_tree().process_frame
+	var slots := geo.pickable_slots()
+	check(geo._list_panel.visible and slots.has("tank") and slots.has("frame") and slots.has("front_wheel"), "geometry mode lists the bike's parts")
+	check(geo.part_buttons.size() == slots.size(), "a row for each part on it (%d)" % slots.size())
+	var tank_item := Shed.item_on(a, "tank")
+	var row: Button = geo.part_buttons["tank"]
+	check(row.text.contains(PartsDB.slot_name("tank")) and row.text.contains(PartsDB.part_name(str(Shed.items[tank_item]["part"]))),
+		"each row says the slot and the part in it (%s)" % row.text)
+	row.pressed.emit()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(geo.selected == "tank" and row.button_pressed and geo.gizmo.visible, "clicking a row selects that part, handles and all")
+	geo.select("fork")
+	check(geo.part_buttons["fork"].button_pressed and not row.button_pressed, "picking a part on the bike lights up its row instead")
+	geo.set_part_offset("fork", _geo_off(0.02))
+	await get_tree().process_frame
+	check(geo.part_buttons["fork"].text.begins_with("* "), "a moved part is marked in the list")
+	geo.discard_and_close()
+	await get_tree().process_frame
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+func _test_style_bike_orders() -> void:
+	Shed.start_new("Tester", 61)
+	var me := Shed.me()
+	Shed.garage_money = 1000000
+	for id in Shed.bikes.keys():
+		Shed.remove_bike(id)
+	var right := 0
+	var fits := []
+	for style in PartsDB.STYLES:
+		var parts := Shed.style_parts(style)
+		var fit := PartsDB.style_fit(style, parts)
+		fits.append("%s %d%%" % [style, roundi(fit * 100.0)])
+		if str(PartsDB.detect_style(parts)["style"]) == style and fit >= 0.6:
+			right += 1
+		check(PartsDB.sanitize_build(parts) == parts, "a %s found to order is a build that goes together" % PartsDB.style_noun(style))
+	check(right == PartsDB.STYLES.size(), "every style ordered comes out as that style %s" % str(fits))
+	# Order a cruiser: it turns up in a bay, worn like any project bike, paid for by the business.
+	check(Shed.check(me, {"a": "order", "style": "spaceship"}) != "", "a style nobody deals in can't be ordered")
+	var money0 := Shed.garage_money
+	Shed.request({"a": "order", "style": "cruiser"})
+	var bike := 0
+	for id in Shed.bikes:
+		bike = id
+	check(bike != 0 and str(Shed.bikes[bike]["name"]) == "Cruiser project" and str(Shed.bikes[bike].get("style_order", "")) == "cruiser",
+		"ordering a cruiser brings one to a bay (%s)" % (str(Shed.bikes[bike]["name"]) if bike != 0 else "none"))
+	var parts_now := Contracts.current_parts(bike)
+	check(str(PartsDB.detect_style(parts_now)["style"]) == "cruiser", "it's a cruiser: %s" % PartsDB.style_text(parts_now))
+	var worn := 0
+	for slot in ["frame", "tank", "engine"]:
+		var it: Dictionary = Shed.items[Shed.item_on(bike, slot)]
+		if float(it["rust"]) + float(it["dirt"]) + float(it["wear"]) > 0.1:
+			worn += 1
+	check(worn == 3, "it's a project: rusty, dirty and worn like the rest")
+	var paid := money0 - Shed.garage_money
+	check(paid == Money.style_project_price(bike) and paid > Money.project_price(bike), "it costs a little more than any old project bike (%d)" % paid)
+	check(Money.typical_style_price("cruiser") > 0, "the order button has a rough price for one")
+	# From the parts computer.
+	var pc := PartsComputer.new()
+	add_child(pc)
+	pc.open()
+	pc.set_bike_style("chopper")
+	check(pc._bike_btn.text == "Order a chopper" and pc._bike_style_pick.selected == PartsDB.STYLES.find("chopper") + 1,
+		"the parts computer's style picker sets the order button (%s)" % pc._bike_btn.text)
+	pc.order_bike()
+	var chop := 0
+	for id in Shed.bikes:
+		if str(Shed.bikes[id].get("style_order", "")) == "chopper":
+			chop = id
+	check(chop != 0 and str(PartsDB.detect_style(Contracts.current_parts(chop))["style"]) == "chopper", "and orders that style")
+	pc.set_bike_style("")
+	check(pc._bike_btn.text == "Order a project bike", "Any style orders any old project bike")
+	pc.queue_free()
+	await get_tree().process_frame
+	# Not enough money: nothing is delivered.
+	Shed.garage_money = 10
+	var n := Shed.bikes.size()
+	Shed.request({"a": "order", "style": "tourer"})
+	check(Shed.bikes.size() == n and Shed.garage_money == 10, "the business can't buy one it can't afford")
+	Shed.stop()
+
+
+func _test_emote_poses() -> void:
+	for e in Emotes.LIST:
+		var length := float(Emotes.LENGTH[e])
+		check(Emotes.weight(e, 0.0) == 0.0 and Emotes.weight(e, length * 0.5) == 1.0 and Emotes.weight(e, length + 0.1) == 0.0,
+			"%s eases in, holds and eases out" % Emotes.NAMES[e])
+		check(Settings.ACTIONS.any(func(a): return a[0] == Emotes.action_of(e)), "%s has a key of its own" % Emotes.NAMES[e])
+	check(Emotes.pose("wave", 0.5)["r"].y > 0.5 and Emotes.pose("wave", 0.5)["l"] == Vector3.ZERO, "a wave puts the right hand up")
+	check(Emotes.pose("cheer", 0.5)["r"].y > 0.7 and Emotes.pose("cheer", 0.5)["l"].y > 0.7, "a cheer puts both arms up")
+	var right_of := Vector3(3.0, 1.38, -1.0)
+	check((Emotes.pose("point", 1.0, right_of)["r"] as Vector3).is_equal_approx((right_of - RiderFigure.ARM_R["shoulder"]).normalized()),
+		"a point aims at the spot it's told")
+	var left_of := Vector3(-3.0, 1.0, -1.0)
+	check(Emotes.pose("point", 1.0, left_of)["r"] == Vector3.ZERO and (Emotes.pose("point", 1.0, left_of)["l"] as Vector3).x < -0.9,
+		"with the left arm when it's off to the left, not through the body")
+	var d := Vector3(0.3, 0.8, -0.5).normalized()
+	check((Emotes.arm_turn(true, d) * Emotes.rest_dir(true)).is_equal_approx(d), "an arm swings from rest to point the way the pose says")
+	check(Emotes.arm_turn(false, Vector3.ZERO) == Quaternion.IDENTITY, "no direction leaves an arm at rest")
+	var fig := RiderFigure.make({}, Color.RED)
+	check(fig.get_node_or_null("ArmR") != null and fig.get_node_or_null("ArmL") != null, "the figure's arms hang from their shoulders so they can move")
+	fig.free()
+	var emote_clash: Array = Settings.clashes().filter(func(c): return str(c["a"]).begins_with("emote") or str(c["b"]).begins_with("emote"))
+	check(emote_clash.is_empty(), "the emote keys clash with nothing %s" % str(emote_clash))
+
+
+func _test_emotes_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	await get_tree().physics_frame
+	var w: Walker = main.walker
+	var got := []
+	var on_emote := func(p, d): got.append([p, d])
+	Shed.emoted.connect(on_emote)
+	# B opens the bar, and a tool key then picks an emote.
+	var ev := InputEventAction.new()
+	ev.action = "emote_menu"
+	ev.pressed = true
+	check(w._emote_input(ev) and w.emote_menu_open, "B opens the emote bar")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(main.emote_bar.visible, "which shows on screen")
+	check(main.emote_bar.size.x > 500.0 and main.emote_bar.size.y < 80.0, "as one wide row along the bottom, not a narrow column of letters")
+	ev = InputEventAction.new()
+	ev.action = "tool_1"
+	ev.pressed = true
+	check(w._emote_input(ev) and not w.emote_menu_open and w.tool == "hands", "with it open, 1 picks the first emote, not a tool")
+	check(got.size() == 1 and got[0][0] == Shed.me() and got[0][1]["e"] == "wave" and str(got[0][1]["name"]) == str(Shed.crew[Shed.me()]["name"]), "and the crew is told you waved %s" % str(got))
+	ev = InputEventAction.new()
+	ev.action = "emote_point"
+	ev.pressed = true
+	w._emote_input(ev)
+	check(got.size() == 2 and got[1][1]["e"] == "point" and got[1][1].get("at") is Vector3, "F7 points at what you're looking at")
+	Shed.request({"a": "emote", "e": "moonwalk"})
+	check(got.size() == 2, "there's no such emote as a moonwalk")
+	ev = InputEventAction.new()
+	ev.action = "tool_2"
+	ev.pressed = true
+	check(not w._emote_input(ev), "with the bar shut, the tool keys are tools again")
+	Shed.emoted.disconnect(on_emote)
+	# Another player's figure does them.
+	var rp := RemotePlayer.new()
+	main.world.add_child(rp)
+	rp.setup(4242, "Pal", Color(0.2, 0.4, 0.9))
+	main.remotes[4242] = rp
+	await get_tree().process_frame
+	main._on_emote(4242, {"e": "wave", "name": "Pal"})
+	for i in 70:
+		await get_tree().process_frame
+	var arm: Node3D = rp._body_look.get_node("ArmR")
+	var hand_dir: Vector3 = arm.quaternion * Emotes.rest_dir(true)
+	check(rp.emote == "wave" and hand_dir.y > 0.4, "their figure waves, hand up (%s)" % str(hand_dir))
+	check(rp._bubble.visible and rp._bubble.text == "*waves*", "with what they're doing over their head")
+	for i in 300:
+		await get_tree().process_frame
+	check(rp.emote == "" and arm.quaternion.is_equal_approx(Quaternion.IDENTITY) and not rp._bubble.visible, "and goes back to how they were")
+	# A ping: they point at what they pinged as well as it lighting up.
+	var target := rp._figure.global_position + Vector3(3.0, 1.2, -2.0)
+	main._on_ping(4242, {"at": target, "what": "Over here", "name": "Pal", "item": 0, "furniture": 0})
+	for i in 70:
+		await get_tree().process_frame
+	var shoulder: Vector3 = rp._figure.global_transform * (RiderFigure.ARM_R["shoulder"] as Vector3)
+	var pointing: Vector3 = rp._figure.global_basis * (arm.quaternion * Emotes.rest_dir(true))
+	check(rp.emote == "point" and pointing.normalized().dot((target - shoulder).normalized()) > 0.95, "a ping makes their figure point at it")
+	main.remotes.erase(4242)
+	rp.queue_free()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame

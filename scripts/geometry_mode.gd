@@ -45,6 +45,11 @@ var _name_edit: LineEdit
 var _confirm: PanelContainer
 var _confirm_text: Label
 var _panel: PanelContainer
+## The list of the bike's parts down the left, another way to pick one: slot -> its button.
+var _list_panel: PanelContainer
+var _list: VBoxContainer
+var part_buttons := {}
+var _list_sig := ""
 
 
 func _ready() -> void:
@@ -66,7 +71,7 @@ func _ready() -> void:
 	col.add_child(UITheme.title("GEOMETRY MODE", 24))
 	_title = UITheme.label("", 17, Color.WHITE)
 	col.add_child(_title)
-	col.add_child(UITheme.label("Click a part of the bike to select it, then drag the handles. W move, E rotate, R scale "
+	col.add_child(UITheme.label("Click a part of the bike (or pick it in the list on the left) to select it, then drag the handles. W move, E rotate, R scale "
 		+ "(the middle box sizes it all over). Hold Ctrl to snap, Z undo, Backspace resets the part. "
 		+ "Right-drag to orbit, middle-drag to pan, wheel to zoom. Only this bike changes.", 14, Color(1, 1, 1, 0.6)))
 	_part_label = UITheme.label("No part selected", 17, UITheme.ACCENT)
@@ -121,6 +126,29 @@ func _ready() -> void:
 	crow.add_child(_button("Discard changes", discard_and_close))
 	crow.add_child(_button("Keep editing", func(): _confirm.visible = false))
 	cc.add_child(crow)
+	# The bike's parts as a list on the left: click one to select it, same as clicking it on the bike.
+	_list_panel = PanelContainer.new()
+	_list_panel.offset_left = 16.0
+	_list_panel.offset_right = 336.0
+	_list_panel.offset_top = 16.0
+	_list_panel.anchor_bottom = 1.0
+	_list_panel.offset_bottom = -16.0
+	_list_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_list_panel)
+	var lcol := VBoxContainer.new()
+	lcol.add_theme_constant_override("separation", 6)
+	_list_panel.add_child(lcol)
+	lcol.add_child(UITheme.title("PARTS", 20))
+	var lhint := UITheme.label("Click one to select it.", 14, Color(1, 1, 1, 0.6))
+	lcol.add_child(lhint)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	lcol.add_child(scroll)
+	_list = VBoxContainer.new()
+	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list.add_theme_constant_override("separation", 2)
+	scroll.add_child(_list)
 	Shed.feedback.connect(func(text, _ok): if active: _status.text = text)
 
 
@@ -175,6 +203,8 @@ func open(id: int, ws: Workshop, back: Camera3D) -> bool:
 	_title.text = str(Shed.bikes[id]["name"])
 	set_mode(GeoGizmo.Mode.MOVE)
 	_sync_model()
+	_list_sig = ""
+	_refresh_list()
 	return true
 
 
@@ -233,6 +263,62 @@ func select(slot: String) -> void:
 	_drag = {}
 	if _model and is_instance_valid(_model):
 		_model.highlight(slot)
+	for s in part_buttons:
+		var b: Button = part_buttons[s]
+		if is_instance_valid(b):
+			b.set_pressed_no_signal(s == slot)
+			if s == slot and b.is_inside_tree():
+				var scroll := _list.get_parent() as ScrollContainer
+				if scroll:
+					scroll.ensure_control_visible(b)
+
+
+# ---------------------------------------------------------------------------- the parts list
+
+## The slots that can be picked on this bike: every part fitted and drawn, in the catalogue's
+## slot order (the same ones a click on the bike can pick).
+func pickable_slots() -> Array:
+	var out := []
+	if _model == null or not is_instance_valid(_model):
+		return out
+	for slot in PartsDB.SLOTS:
+		if _model.is_fitted(slot) and not (_model._slot_meshes.get(slot, []) as Array).is_empty() and Shed.item_on(bike_id, slot) != 0:
+			out.append(slot)
+	return out
+
+
+## "Fork: Showa USD forks" for a slot's row, with a mark if it's been moved.
+func row_text(slot: String) -> String:
+	var item := Shed.item_on(bike_id, slot)
+	var part := PartsDB.part_name(str(Shed.items[item]["part"])) if item != 0 and Shed.items.has(item) else "(empty)"
+	return "%s%s: %s" % ["* " if draft.has(slot) else "", PartsDB.slot_name(slot), part]
+
+
+## Rebuilds the list when the parts on the bike (or which ones are moved) change.
+func _refresh_list() -> void:
+	var slots := pickable_slots()
+	var sig := ",".join(slots.map(func(s): return row_text(str(s))))
+	if sig == _list_sig:
+		return
+	_list_sig = sig
+	for c in _list.get_children():
+		c.queue_free()
+	part_buttons.clear()
+	for slot in slots:
+		var b := Button.new()
+		b.text = row_text(slot)
+		b.toggle_mode = true
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.clip_text = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_size_override("font_size", 14)
+		b.tooltip_text = b.text
+		b.button_pressed = slot == selected
+		b.pressed.connect(select.bind(slot))
+		_list.add_child(b)
+		part_buttons[slot] = b
+	if slots.is_empty():
+		_list.add_child(UITheme.label("No parts on this bike.", 14, Color(1, 1, 1, 0.5)))
 
 
 ## Changes one part's offset as one undoable step.
@@ -310,6 +396,7 @@ func _process(_delta: float) -> void:
 		close()
 		return
 	_sync_model()
+	_refresh_list()
 	_update_camera()
 	var show_gizmo := selected != "" and _model != null and _model.is_fitted(selected)
 	gizmo.visible = show_gizmo
