@@ -270,6 +270,8 @@ static func uniqueness(bike_id: int) -> Dictionary:
 		var ids: Array = PartsDB.by_kind.get(PartsDB.kind_of(part), [])
 		if PartsDB.is_lightweight(part) or (ids.size() > 2 and ids.find(part) >= int(ids.size() * 0.75)):
 			fancy += 1
+		if it.get("primer_top", false):
+			continue   # in primer: its paint's still to come
 		if slot in ["frame", "tank", "fairing", "tail", "front_mudguard"] and it.get("color") is Color:
 			colours[Shed.paint_index(it["color"])] = true
 		var fin := str(it.get("finish", ""))

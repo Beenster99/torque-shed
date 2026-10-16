@@ -958,6 +958,8 @@ static func eval_goal(job: Dictionary, g: Dictionary) -> Dictionary:
 			var tank := _item(bike_id, "tank")
 			if tank.is_empty():
 				return {"done": false, "have": "no tank"}
+			if tank.get("primer_top", false):
+				return {"done": false, "have": "grey primer"}
 			var idx := Shed.paint_index(tank["color"])
 			return {"done": idx == int(g["color"]), "have": str(Shed.PAINT_NAMES[idx])}
 		"part":

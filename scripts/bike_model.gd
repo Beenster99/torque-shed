@@ -4216,6 +4216,21 @@ func _mat(color: Color, metallic: float, roughness: float, clearcoat := 0.0) -> 
 		m.clearcoat = clearcoat
 		m.clearcoat_roughness = 0.1
 	var cond: Dictionary = condition.get(_current_slot, {}) if _current_slot != "" else {}
+	# The painted surfaces: where a spray job's coat is drawn (SprayMarks), and in grey primer
+	# while that's the top coat (the colour stays underneath until it's painted over).
+	if cond.has("color") and color == cond["color"]:
+		m.set_meta("paint_surface", true)
+		if cond.get("primer", false):
+			m.albedo_color = Shed.PRIMER_COLOR
+			m.metallic = 0.0
+			m.roughness = 0.82
+			m.clearcoat_enabled = false
+			color = Shed.PRIMER_COLOR
+			metallic = 0.0
+			roughness = 0.82
+			cond = cond.duplicate()
+			cond.erase("finish")
+			cond.erase("coat")
 	# A sprayed finish only goes on the painted surfaces, not the rubber or chrome bits.
 	var finish := str(cond.get("finish", ""))
 	if finish != "" and cond.has("color") and color == cond["color"]:

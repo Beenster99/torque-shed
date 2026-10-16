@@ -604,6 +604,8 @@ func condition_of(item: Dictionary) -> Dictionary:
 		cond["blast_full"] = blast_full(item)
 	if item.has("coat"):
 		cond["coat"] = str(item["coat"])
+	if item.get("primer_top", false):
+		cond["primer"] = true
 	return cond
 
 
@@ -855,6 +857,15 @@ const COATS := {
 	"enamel_silver": {"name": "Silver engine enamel", "paint": 8, "finish": "metallic", "protect": 1.0},
 }
 const COAT_ORDER: Array[String] = ["clear", "satin_clear", "enamel_black", "enamel_silver"]
+## The clear lacquers, which can go over paint with a spray can too.
+const LACQUERS: Array[String] = ["clear", "satin_clear"]
+## Grey primer: an optional first coat (the "prime" action) that the colour keys to. A part in
+## primer keeps its colour underneath ("primer_top" while it's the top coat; "primer" is how good
+## it went on, kept under the colour). Paint over primer comes out better by PRIMER_BONUS times the
+## primer's quality, and a clear lacquer over the colour by LACQUER_BONUS times the lacquer's.
+const PRIMER_COLOR := Color(0.42, 0.43, 0.44)
+const PRIMER_BONUS := 0.08
+const LACQUER_BONUS := 0.06
 
 
 ## The blast cabinet someone is working at (their hands in its gloves), or 0.
@@ -1086,15 +1097,19 @@ func _keep_blast(id: int, cover: float, over: float, mask, base: Array) -> void:
 	if cover > float(was.get("c", 0.0)) + 0.02:
 		it.erase("coat")
 		it.erase("coat_q")
+		it.erase("primer")
+		it.erase("primer_top")
 
 
 ## A short tag that changes when a part's blasting or coat does, so it's redrawn.
 func blast_sig(item: Dictionary) -> String:
 	var b = item.get("blast")
+	# Grey primer on top redraws it too.
+	var primer := "primer" if item.get("primer_top", false) else ""
 	if not (b is Dictionary) and not item.has("coat"):
-		return ""
-	return "b%.3f:%d:%s" % [float(b.get("c", 0.0)) if b is Dictionary else 0.0,
-		str(b.get("v", "")).hash() if b is Dictionary else 0, str(item.get("coat", ""))]
+		return primer
+	return "b%.3f:%d:%s%s" % [float(b.get("c", 0.0)) if b is Dictionary else 0.0,
+		str(b.get("v", "")).hash() if b is Dictionary else 0, str(item.get("coat", "")), primer]
 
 
 ## How much of a part has been blasted back to bare metal (0 if it's been painted since).
@@ -1153,9 +1168,15 @@ func _coat_check(peer: int, action: Dictionary) -> String:
 		return "Put it down first."
 	if it.get("boxed", false):
 		return "Unpack it first."
-	if not COATS.has(str(action.get("coat", ""))):
+	var kind := str(action.get("coat", ""))
+	if not COATS.has(kind):
 		return "That's not a coat the spray gun has."
-	if not (it["at"] == "spot" and spot_role(str(it["ref"])) == "booth"):
+	var in_booth: bool = it["at"] == "spot" and spot_role(str(it["ref"])) == "booth"
+	# A rattle can of clear lacquer goes over paint anywhere; the rest is the spray gun's, in the booth.
+	var can_lacquer: bool = LACQUERS.has(kind) and not action.get("gun", false) and it.has("paint_quality")
+	if LACQUERS.has(kind) and it.get("primer_top", false):
+		return "Lacquer goes over the colour, not bare primer. Spray the colour coat on first."
+	if not in_booth and not can_lacquer:
 		return "Protective coats go on with the spray gun in the paint shop: hang it on a hook there."
 	for id in coat_targets(item_id):
 		if float(items[id]["rust"]) > MAX_PAINT_RUST:
@@ -1179,14 +1200,19 @@ func _coat_apply(peer: int, action: Dictionary) -> String:
 	for id in coat_targets(item_id):
 		var part: Dictionary = items[id]
 		_note_low(id)
+		# Clear lacquer over a paint job brings it up (once: a second coat adds nothing more).
+		if not spec.has("paint") and part.has("paint_quality") and not LACQUERS.has(str(part.get("coat", ""))):
+			part["paint_quality"] = minf(1.0, float(part["paint_quality"]) + LACQUER_BONUS * q)
 		part["coat"] = kind
 		part["coat_q"] = q
 		if spec.has("paint"):
+			var under := float(part.get("primer", 0.0)) if part.get("primer_top", false) else 0.0
 			part["color"] = PAINTS[int(spec["paint"])]
 			part["finish"] = str(spec["finish"])
-			part["paint_quality"] = q
+			part["paint_quality"] = minf(1.0, q + PRIMER_BONUS * under)
 			part["paint_runs"] = runs
 			_paint_over(part)
+			part.erase("primer_top")
 		_check_part(peer, id)
 	_bump(crew.get(peer, {}), "painted")
 	_xp(peer, "protect_coat", q, "item:%d" % item_id)
@@ -1246,6 +1272,8 @@ func station_name(index := -1) -> String:
 
 ## "Gloss red", or just "Red" for a part still in its factory finish.
 func paint_text(item: Dictionary) -> String:
+	if item.get("primer_top", false):
+		return "Grey primer"
 	var f: String = item.get("finish", "")
 	var n := paint_name(item["color"])
 	return n.capitalize() if f == "" else "%s %s" % [FINISH_NAMES[f], n]
@@ -1276,6 +1304,8 @@ func condition_text(item: Dictionary) -> String:
 		text += "\n" + chain_text(item)
 	if item.has("paint_quality"):
 		text += "\n" + finish_text(item)
+	elif item.get("primer_top", false):
+		text += "\nIn primer (%d%%): ready for its colour coat" % roundi(float(item.get("primer", 0.0)) * 100.0)
 	if blast_cover(item) > 0.0:
 		text += "\nSandblasted: %d%% bare metal%s" % [roundi(blast_cover(item) * 100.0),
 			"" if item.has("coat") or blast_cover(item) < 0.3 else ", unprotected (it'll flash-rust when ridden)"]
@@ -1301,7 +1331,15 @@ func finish_text(item: Dictionary) -> String:
 	if not item.has("paint_quality"):
 		return ""
 	var q := float(item["paint_quality"])
-	return "Paint job: %s (%d%%)" % [_job_word(q, float(item.get("paint_runs", 0.0)), "paint"), roundi(q * 100.0)]
+	var layers := ""
+	if item.has("primer") and not item.get("primer_top", false):
+		layers += ", over primer"
+	if LACQUERS.has(str(item.get("coat", ""))):
+		layers += ", lacquered"
+	var text := "Paint job: %s (%d%%)%s" % [_job_word(q, float(item.get("paint_runs", 0.0)), "paint"), roundi(q * 100.0), layers]
+	if item.get("primer_top", false):
+		text = "In primer (%d%%): ready for its colour coat, the old paint job (%d%%) under it" % [roundi(float(item.get("primer", 0.0)) * 100.0), roundi(q * 100.0)]
+	return text
 
 
 ## "Slack 52 mm (too slack)  ·  Lube 20% (dry)".
@@ -2511,7 +2549,7 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Crouch down (C) to get at the chain."
 			if float(items[chain].get("lube", 0.0)) > 0.95:
 				return "It's freshly lubed."
-		"clean", "repair", "paint":
+		"clean", "repair", "paint", "prime":
 			var item_id := int(action.get("item", 0))
 			if not items.has(item_id):
 				return "That part has gone."
@@ -2527,11 +2565,13 @@ func check(peer: int, action: Dictionary) -> String:
 					return "Put the part on a repair machine first."
 				if it["rust"] < 0.02 and it["wear"] < 0.02:
 					return "It's already in top condition."
-			if a == "paint" and action.get("gun", false) and not (it["at"] == "spot" and spot_role(str(it["ref"])) == "booth"):
+			if a in ["paint", "prime"] and action.get("gun", false) and not (it["at"] == "spot" and spot_role(str(it["ref"])) == "booth"):
 				return "The spray gun runs off the paint booth's air line. Hang the part in a booth."
-			if a == "paint" and it["rust"] > MAX_PAINT_RUST:
-				return "Too rusty to paint. Grind it back on the repair bench first."
-			if a == "paint" and it.get("finish", "") == str(action.get("finish", "gloss")) \
+			if a in ["paint", "prime"] and it["rust"] > MAX_PAINT_RUST:
+				return "Too rusty to %s. Grind it back on the repair bench first." % a
+			if a == "prime" and it.get("primer_top", false):
+				return "It's already in primer. Spray its colour on."
+			if a == "paint" and not it.get("primer_top", false) and it.get("finish", "") == str(action.get("finish", "gloss")) \
 					and paint_index(it["color"]) == int(action.get("color", 0)) and it["color"] == PAINTS[paint_index(it["color"])]:
 				return "It's already %s." % paint_text(it).to_lower()
 		"pour", "drain":
@@ -3289,11 +3329,33 @@ func _apply(peer: int, action: Dictionary) -> void:
 				# No dust settling in the wet paint: a booth gives a cleaner finish.
 				var booth := furniture_of_spot(str(it["ref"]))
 				q = minf(1.0, q + float(Equipment.get_model(str(booth["model"])).get("finish", 0.05)))
+			# Over a good primer it keys on and comes out better.
+			var primed: bool = it.get("primer_top", false)
+			var xp_q := q
+			if primed:
+				q = minf(1.0, q + PRIMER_BONUS * float(it.get("primer", 0.0)))
+			it.erase("primer_top")
 			it["paint_quality"] = q
 			it["paint_runs"] = runs
 			_bump(c, "painted")
-			text = "Sprayed the %s %s: %s" % [item_title(int(action["item"])), paint_text(it).to_lower(), _job_word(q, runs, "paint")]
-			_xp(peer, "paint", q, "item:%d" % int(action["item"]))
+			text = "Sprayed the %s %s%s: %s" % [item_title(int(action["item"])), paint_text(it).to_lower(), " over primer" if primed else "",
+				_job_word(q, runs, "paint")]
+			_xp(peer, "paint", xp_q, "item:%d" % int(action["item"]))
+		"prime":
+			# Grey primer: the colour that was on it stays underneath for now.
+			var it: Dictionary = items[int(action["item"])]
+			var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
+			var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
+			if it["at"] == "spot" and spot_role(str(it["ref"])) == "booth":
+				var booth := furniture_of_spot(str(it["ref"]))
+				q = minf(1.0, q + float(Equipment.get_model(str(booth["model"])).get("finish", 0.05)))
+			_paint_over(it)
+			it.erase("coat")
+			it.erase("coat_q")
+			it["primer"] = q
+			it["primer_top"] = true
+			text = "Primed the %s: %s" % [item_title(int(action["item"])), _job_word(q, runs, "paint")]
+			_xp(peer, "prime", q, "item:%d" % int(action["item"]))
 		"mount":
 			if bikes[bike_id].get("stand", "") == "down":
 				text = "You heave %s back upright" % bikes[bike_id]["name"]
@@ -5061,7 +5123,7 @@ const WORK_AREA := Rect2(-22.0, 42.0, 60.0, 44.0)
 ## Work that needs the bike at the shed: tools, fitting and taking off parts, fluids (apart from
 ## a can of petrol in the tank), chain lube and adjusting, tuning and geometry mode.
 const WORKSHOP_ONLY := ["unbolt", "bolt", "remove", "install", "adjust_chain", "tune", "geo_save", "geo_blueprint",
-	"clean", "clean_many", "repair", "repair_many", "paint", "lube", "drain", "wash"]
+	"clean", "clean_many", "repair", "repair_many", "paint", "prime", "coat", "lube", "drain", "wash"]
 ## What the garage pays to have a bike left out on the road brought back to the yard.
 const RETRIEVE_FEE := 40
 ## Where retrieved bikes are dropped off: a row in the yard to the west of the roller door.

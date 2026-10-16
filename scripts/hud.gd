@@ -17,6 +17,7 @@ var trip_fuel := 0.0       # litres burnt this ride
 ## "+6 XP Cleaning" popups under the level bar: [{amount, label, age}], newest first.
 var popups: Array = []
 var blast_hud: BlastHud     # the sandblaster's readout, while your hands are in the gloves
+var spray_hud: SprayHud     # the spray readout, while you lay a coat on
 var _banner_level := 0
 var _banner_time := 0.0
 const POPUP_LIFE := 3.0
@@ -65,6 +66,8 @@ func _ready() -> void:
 	col.add_child(_prompt)
 	blast_hud = BlastHud.new()
 	add_child(blast_hud)
+	spray_hud = SprayHud.new()
+	add_child(spray_hud)
 	Progress.xp_gained.connect(add_popup)
 	Progress.cash_changed.connect(add_popup.bind(true))
 	Progress.leveled_up.connect(func(level: int):
@@ -102,7 +105,9 @@ func _process(delta: float) -> void:
 		_message.text = ""
 	var on_foot := walker != null and bike == null
 	blast_hud.walker = walker if on_foot else null
-	_panel.visible = on_foot and walker.blast == null and (walker.info != "" or not walker.plan.is_empty() or walker.crouched)
+	spray_hud.walker = walker if on_foot else null
+	_panel.visible = on_foot and walker.blast == null and not spray_hud.showing() \
+		and (walker.info != "" or not walker.plan.is_empty() or walker.crouched)
 	if on_foot:
 		var lines := walker.info.split("\n")
 		_title.text = lines[0]
@@ -293,7 +298,7 @@ func _draw_toolbar() -> void:
 	var board: Node = get_tree().get_first_node_in_group("whiteboard") if walker.target.get("kind", "") == "board" else null
 	if board:
 		board.draw_picker(self, font, y)
-	elif walker.tool in ["spray", "gun"]:
+	elif walker.tool in ["spray", "gun"] and not spray_hud.showing():
 		_draw_spray_picker(font, y)
 	var held := Shed.held_by(Shed.me())
 	if held != 0:
@@ -308,8 +313,8 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 	var total := n * (sw + gap) - gap
 	var x0 := size.x * 0.5 - total * 0.5
 	var gun: bool = walker.tool == "gun"
-	var y := toolbar_y - (152.0 if gun else 120.0)
-	draw_rect(Rect2(x0 - 14, y - 32, total + 28, 136 if gun else 104), Color(0.05, 0.06, 0.08, 0.7))
+	var y := toolbar_y - 152.0
+	draw_rect(Rect2(x0 - 14, y - 32, total + 28, 136), Color(0.05, 0.06, 0.08, 0.7))
 	draw_string(font, Vector2(x0, y - 12), "%s  ·  %s" % ["SPRAY GUN (PAINT BOOTH)" if walker.tool == "gun" else "SPRAY CAN",
 		walker.spray_text().to_upper()], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UITheme.ACCENT)
 	for i in n:
@@ -330,27 +335,25 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 			draw_rect(r, UITheme.ACCENT, false, 2.0)
 		draw_string(font, r.position + Vector2(8, 17), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE if on else Color(1, 1, 1, 0.6))
 		fx += w + 6.0
-	var hint_y := y + 90
-	if gun:
-		# The spray gun's protective coats for bare metal, after the finishes.
-		fx = x0
-		draw_string(font, Vector2(fx, y + 91), "COATS", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UITheme.ACCENT)
-		fx += 58.0
-		for k in Shed.COAT_ORDER.size():
-			var label := Shed.coat_name(Shed.COAT_ORDER[k])
-			var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 16.0
-			var r := Rect2(fx, y + 74, w, 24)
-			var on := walker.spray_finish == Shed.FINISHES.size() + k
-			draw_rect(r, Color(1, 1, 1, 0.18) if on else Color(1, 1, 1, 0.05))
-			if on:
-				draw_rect(r, UITheme.ACCENT, false, 2.0)
-			draw_string(font, r.position + Vector2(8, 17), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE if on else Color(1, 1, 1, 0.6))
-			fx += w + 6.0
-		hint_y = y + 122
+	var hint_y := y + 122
+	# Then the other coats: grey primer and clear lacquer (and the spray gun's protective coats).
+	fx = x0
+	draw_string(font, Vector2(fx, y + 91), "COATS", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UITheme.ACCENT)
+	fx += 58.0
+	var loads := walker.spray_loads()
+	for k in range(Shed.FINISHES.size(), loads.size()):
+		var l: Dictionary = loads[k]
+		var label := "Grey primer" if l["kind"] == "primer" else Shed.coat_name(str(l["id"]))
+		var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 16.0
+		var r := Rect2(fx, y + 74, w, 24)
+		var on := walker.spray_finish == k
+		draw_rect(r, Color(1, 1, 1, 0.18) if on else Color(1, 1, 1, 0.05))
+		if on:
+			draw_rect(r, UITheme.ACCENT, false, 2.0)
+		draw_string(font, r.position + Vector2(8, 17), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE if on else Color(1, 1, 1, 0.6))
+		fx += w + 6.0
 	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	var hint := "X: colour   B: finish or coat" if pad else "R or right mouse: colour   T: finish or coat"
-	if not gun:
-		hint = "X: colour   B: finish" if pad else "R or right mouse: colour   T: finish"
+	var hint := "X: colour   B: finish or coat   D-pad up: scan" if pad else "R or right mouse: colour   T: finish or coat   X: scan"
 	draw_string(font, Vector2(x0, hint_y), hint, HORIZONTAL_ALIGNMENT_LEFT, total, 14, Color(1, 1, 1, 0.6))
 
 

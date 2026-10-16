@@ -73,6 +73,7 @@ const XP := {
 	"repair": {"xp": 10, "label": "Restoring"},
 	"sandblast": {"xp": 10, "label": "Sandblasting"},
 	"paint": {"xp": 12, "label": "Spraying"},
+	"prime": {"xp": 6, "label": "Primer coat"},
 	"protect_coat": {"xp": 12, "label": "Protective coat"},
 	"lighten": {"xp": 8, "label": "Lightening"},
 	"tyre_remove": {"xp": 4, "label": "Tyre off"},
@@ -122,7 +123,7 @@ const PAY := {
 	"dyno_strap": 0, "dyno_hose": 1, "fluids": 3, "start_build": 10,
 	"bin": 0, "tip": 1, "recycle_plastic": 1, "recycle_metal": 2,
 	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "chain_lube": 3,
-	"repair": 6, "sandblast": 6, "paint": 8, "protect_coat": 8, "lighten": 5, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
+	"repair": 6, "sandblast": 6, "paint": 8, "prime": 4, "protect_coat": 8, "lighten": 5, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
 	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
 	"sell_bike": 50, "sell_part": 2, "px_deal": 20,
 }
@@ -165,7 +166,7 @@ const SKILLS := {
 	"elbow_grease": {"name": "Elbow Grease", "branch": "finisher", "tier": 0, "ranks": 3, "needs": [],
 		"desc": "Scrub 12% faster per rank, and the pressure washer blasts off 15% more muck per rank."},
 	"steady_hand": {"name": "Steady Hand", "branch": "finisher", "tier": 0, "ranks": 3, "needs": [],
-		"desc": "Spray can and gun fans 8% wider per rank, and paint runs take 10% more per rank."},
+		"desc": "Spray can and gun fans 8% wider per rank, paint runs take 10% more per rank, and the sweet spot for an even coat is 5% wider per rank."},
 	"hot_welder": {"name": "Hot Welder", "branch": "finisher", "tier": 1, "ranks": 3, "needs": ["elbow_grease"],
 		"desc": "Grinder and welder restore a batch 12% faster per rank."},
 	"showroom_shine": {"name": "Showroom Shine", "branch": "finisher", "tier": 1, "ranks": 2, "needs": ["steady_hand"],
@@ -777,6 +778,12 @@ func spread_mult(peer: int, tool: String) -> float:
 	if tool in ["spray", "gun"]:
 		m *= 1.0 + 0.08 * skill_rank(peer, "steady_hand")
 	return m
+
+
+## How much wider the spray can's and gun's sweet spot is (the range of distances an even coat
+## goes on from): the tool's upgrades and Steady Hand both help, so practice pays off.
+func spray_band_mult(peer: int, tool: String) -> float:
+	return (1.0 + 0.04 * tool_stage(peer, tool)) * (1.0 + 0.05 * skill_rank(peer, "steady_hand"))
 
 
 ## How many coats a patch takes before it runs, relative to stock: faster tools lay more paint,

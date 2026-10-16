@@ -247,6 +247,13 @@ func _process(delta: float) -> void:
 	var jet := _hand.get_node_or_null("Jet") as CPUParticles3D
 	if jet:
 		jet.emitting = working and tool == "lance"
+	# Their spray can or gun mists while they lay a coat on.
+	var mist := _hand.get_node_or_null("Mist") as CPUParticles3D
+	if mist:
+		var act := str(Shed.crew.get(peer, {}).get("activity", ""))
+		var on := working and (act.begins_with("Spraying") or act.begins_with("Priming") or act.begins_with("Coating"))
+		mist.emitting = on
+		(mist.get_node("Haze") as CPUParticles3D).emitting = on
 	var stage := Progress.tool_stage(peer, tool)
 	var sig := "%d|%s|%d" % [held, tool, stage]
 	if sig == _hand_sig:
@@ -268,6 +275,12 @@ func _process(delta: float) -> void:
 			spray.name = "Jet"
 			spray.position = Vector3(0.0, 0.0, -0.6)
 			_hand.add_child(spray)
+		elif tool in ["spray", "gun"]:
+			var can_mist := Walker.make_mist()
+			can_mist.name = "Mist"
+			can_mist.color = Color(0.85, 0.85, 0.85)
+			can_mist.position = Vector3(0.0, 0.1, -0.15)
+			_hand.add_child(can_mist)
 
 
 func world_position() -> Vector3:

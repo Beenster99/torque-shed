@@ -48,7 +48,7 @@ var plan := {}              # what the action button would do: {action, time, ve
 var info := ""              # description of the target for the HUD
 var progress := 0.0         # 0..1 of the current hold-to-work action
 var spray_color := 0        # index into Shed.PAINTS loaded in the spray can
-var spray_finish := 0       # index into Shed.FINISHES; past them, the spray gun's protective coats (Shed.COAT_ORDER)
+var spray_finish := 0       # index into spray_loads(): the paint finishes, then primer, lacquer and the gun's coats
 var crouched := false
 var alt_plan := {}          # what the second work button would do (drain a fluid), same shape as plan
 
@@ -78,6 +78,14 @@ var coverage := 0.0          # how much of the part being sprayed is covered, 0.
 var _cover := {}             # the spray job under way: {key, plan, item, points, cells, live, splats}
 var _covers := {}            # every part with a spray job on it, by job key, so you can go back to one
 var _mist: CPUParticles3D
+## The coat being sprayed by hand (SprayJob: primer, colour or lacquer, drawn on the part as it
+## goes on), or null; every part with a coat half on, by job key, so you can go back to one.
+var spray: SprayJob
+var _sprays := {}
+## Moments to tell the player while spraying, for the HUD: [{kind, text}] (see SprayJob.cues).
+var spray_cues: Array = []
+var spray_scan := false      # the scan's on: the part lights up where it's missed, thin, run or dry
+var _spray_fx: Node3D        # the fan of paint to the part, its footprint and the droplets landing
 var stopwatch := Stopwatch.new()
 ## The emote bar is up (B): the tool keys 1 to 6 pick an emote instead of a tool (see Emotes).
 var emote_menu_open := false
@@ -215,9 +223,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		spray_color = (spray_color + 1) % Shed.PAINTS.size()
 		_spray_changed()
 	elif tool in ["spray", "gun"] and event.is_action_pressed("spray_finish"):
-		# The spray gun also has the protective coats for bare metal after the paint finishes.
-		spray_finish = (spray_finish + 1) % (Shed.FINISHES.size() + (Shed.COAT_ORDER.size() if tool == "gun" else 0))
+		# After the paint finishes: grey primer and clear lacquer, and the gun's coats for bare metal.
+		spray_finish = (spray_finish + 1) % spray_loads().size()
 		_spray_changed()
+	elif tool in ["spray", "gun"] and event.is_action_pressed("blast_scan"):
+		get_viewport().set_input_as_handled()
+		set_spray_scan(not spray_scan)
 	elif event.is_action_pressed("ping"):
 		get_viewport().set_input_as_handled()
 		ping()
@@ -399,22 +410,61 @@ func _spray_changed() -> void:
 	Shed.feedback.emit("Spray can: %s" % spray_text(), true)
 
 
-## "Gloss red": what the spray can is loaded with (or "Clear lacquer", a protective coat in the gun).
+## "Gloss red": what the spray can is loaded with (or "Grey primer", or "Clear lacquer").
 func spray_text() -> String:
+	if spray_primer():
+		return "Grey primer"
 	if spray_coat() != "":
 		return Shed.coat_name(spray_coat())
 	return "%s %s" % [Shed.FINISH_NAMES[spray_finish_id()], Shed.PAINT_NAMES[spray_color]]
 
 
-## The paint finish loaded (the first one while a coat is picked).
+## What the tool in your hand can be loaded with, in the order T goes through them: each paint
+## finish (in the colour picked with R), then for the spray gun its protective coats, then grey
+## primer; the spray can has primer and clear lacquer. [{kind: "paint", "coat" or "primer", id}]
+func spray_loads(for_tool := "") -> Array:
+	var t := tool if for_tool == "" else for_tool
+	var out := []
+	for f in Shed.FINISHES:
+		out.append({"kind": "paint", "id": f})
+	if t == "gun":
+		for c in Shed.COAT_ORDER:
+			out.append({"kind": "coat", "id": c})
+		out.append({"kind": "primer", "id": "primer"})
+	else:
+		out.append({"kind": "primer", "id": "primer"})
+		out.append({"kind": "coat", "id": "clear"})
+	return out
+
+
+func _spray_load() -> Dictionary:
+	var loads := spray_loads()
+	return loads[spray_finish] if spray_finish >= 0 and spray_finish < loads.size() else loads[0]
+
+
+## The paint finish loaded (the first one while primer or a coat is picked).
 func spray_finish_id() -> String:
-	return Shed.FINISHES[spray_finish] if spray_finish < Shed.FINISHES.size() else Shed.FINISHES[0]
+	var l := _spray_load()
+	return str(l["id"]) if l["kind"] == "paint" else Shed.FINISHES[0]
 
 
-## The protective coat loaded in the spray gun, or "" for paint.
+## The coat loaded (clear lacquer, or one of the spray gun's protective coats), or "".
 func spray_coat() -> String:
-	var k := spray_finish - Shed.FINISHES.size()
-	return Shed.COAT_ORDER[k] if tool == "gun" and k >= 0 and k < Shed.COAT_ORDER.size() else ""
+	var l := _spray_load()
+	return str(l["id"]) if l["kind"] == "coat" else ""
+
+
+## Whether grey primer is loaded.
+func spray_primer() -> bool:
+	return _spray_load()["kind"] == "primer"
+
+
+## Turns the spray scan on or off: the part lights up where the coat's missed, thin, run or dry.
+func set_spray_scan(on: bool) -> void:
+	spray_scan = on
+	for k in _sprays:
+		(_sprays[k] as SprayJob).set_scan(on)
+	Shed.feedback.emit("Scan on: red missed, amber thin, green good, purple runs, blue dry" if on else "Scan off", true)
 
 
 func _cycle_tool(step: int) -> void:
@@ -430,6 +480,8 @@ func set_tool(new_tool: String) -> void:
 	tool = new_tool
 	progress = 0.0
 	_hold = 0.0
+	if tool in ["spray", "gun"] and spray_finish >= spray_loads().size():
+		spray_finish = 0
 	_set_tool_view()
 	_send_status("")
 
@@ -621,7 +673,13 @@ func _update_target() -> void:
 	if str(target.get("kind", "")) == "spot" and Shed.spot_role(str(target["spot"])) == "blaster" \
 			and Shed.item_at_spot(str(target["spot"])) != 0 and Shed.held_by(Shed.me()) == 0:
 		info += "\nF: hands in the gloves and sandblast it back to bare metal"
-	if not _cover.is_empty() and target_item() == int(_cover["item"]):
+	var sj := spray_job_for(target_item())
+	if sj != null:
+		var sst := sj.stats()
+		info += "\n%s so far: %d%% covered, %d%% even%s%s" % [{"primer": "Primer", "clear": "Lacquer"}.get(sj.layer, "Colour coat"),
+			roundi(float(sst["covered"]) * 100.0), roundi(float(sst["even"]) * 100.0),
+			"  ·  runs" if float(sst["runs"]) > 0.02 else "", "  ·  dry in places" if float(sst["dry"]) > 0.03 else ""]
+	elif not _cover.is_empty() and target_item() == int(_cover["item"]):
 		var st := cover_stats()
 		info += "\nSprayed so far: %d%% covered%s" % [roundi(st["covered"] * 100.0),
 			"  ·  overdone in places" if st["over"] > 0.04 else ""]
@@ -1328,11 +1386,20 @@ func _make_plan() -> Dictionary:
 			if item_id != 0:
 				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": spray_finish_id()},
 					"time": 1.5, "coverage": true, "verb": "spray it %s: sweep over all of it, evenly" % spray_text().to_lower()}
+				if spray_primer():
+					p = {"action": {"a": "prime", "item": item_id}, "time": 1.5, "coverage": true,
+						"verb": "prime it: sweep grey primer over all of it"}
+				elif spray_coat() != "":
+					p = {"action": {"a": "coat", "item": item_id, "coat": spray_coat()}, "time": 1.5, "coverage": true,
+						"verb": "lacquer it: sweep %s over the paint" % spray_text().to_lower()}
 		"gun":
 			if item_id != 0:
 				p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": spray_finish_id(), "gun": true},
 					"time": 1.5, "coverage": true, "verb": "spray %s: go along the parts in steady passes" % spray_text().to_lower()}
-				if spray_coat() != "":
+				if spray_primer():
+					p = {"action": {"a": "prime", "item": item_id, "gun": true}, "time": 1.5, "coverage": true,
+						"verb": "prime it: grey primer, in steady passes"}
+				elif spray_coat() != "":
 					# A protective coat: on a hung engine it goes on the lot, ancillaries and all.
 					var what := "the engine" if Shed.is_engine(item_id) else "it"
 					p = {"action": {"a": "coat", "item": item_id, "coat": spray_coat(), "gun": true}, "time": 1.5, "coverage": true,
@@ -1798,12 +1865,18 @@ func _update_work(delta: float) -> void:
 	# Spraying is a skill: sweep the can over the part until it's all covered, without
 	# lingering in one place. The job carries on while the button's held, even off the part.
 	if not use_alt and _acting() and not _need_release:
+		# Once you've started a coat it has the trigger until you let go, wherever the fan wanders.
+		if spray != null and spray.live and tool in ["spray", "gun"]:
+			_spray_step(delta, spray.plan)
+			return
 		if plan_now.get("coverage", false) and plan_now["blocked"] == "":
 			_coverage_step(delta, plan_now)
 			return
 		if not _cover.is_empty() and _cover.get("live", false):
 			_coverage_step(delta, _cover["plan"])
 			return
+	if spray != null and spray.live:
+		_spray_let_go()
 	if not _cover.is_empty() and _cover.get("live", false):
 		_cover["live"] = false
 		Sfx.set_loop(_work_sound, "")
@@ -1908,6 +1981,8 @@ func _tyre_game_step(delta: float, plan_now: Dictionary, use_alt: bool) -> bool:
 ## With the spray gun in a paint booth, the fan coats every part hanging there that it passes.
 func _coverage_step(delta: float, plan_now: Dictionary) -> void:
 	var a: Dictionary = plan_now["action"]
+	if str(a.get("a", "")) in ["paint", "prime", "coat"] and _spray_step(delta, plan_now):
+		return
 	var item := int(a["item"])
 	var gun := bool(a.get("gun", false))
 	var key := _cover_key(a)
@@ -2006,6 +2081,267 @@ func _coverage_step(delta: float, plan_now: Dictionary) -> void:
 				coverage = 0.0
 				progress = 0.0
 				_need_release = true
+
+
+## One frame of laying a coat on by hand (see SprayJob): the fan lands where you aim, as wide
+## and as heavy as the distance makes it, and the coat comes up on the part as it goes. With the
+## spray gun in a paint booth it coats every part hanging there that it passes. False when the
+## part isn't drawn on a model to paint (the patch-by-patch spraying does it then).
+func _spray_step(delta: float, plan_now: Dictionary) -> bool:
+	var a: Dictionary = plan_now["action"]
+	var item := int(a["item"])
+	var gun := bool(a.get("gun", false))
+	var key := _cover_key(a)
+	if spray == null or spray.key != key:
+		if spray != null and spray.live:
+			_spray_let_go(false)
+		spray = _sprays.get(key, null)
+	if spray != null and not _spray_attached(spray):
+		_sprays.erase(key)
+		spray = null
+	if spray == null:
+		spray = _start_spray(item, key, plan_now)
+		if spray == null:
+			return false
+		_sprays[key] = spray
+	if not spray.live:
+		spray.live = true
+		_active_plan = plan_now
+		_send_status(_activity_text())
+		Sfx.set_loop(_work_sound, "spray_gun" if gun else Sfx.WORK_LOOPS.get("paint", "spray"))
+	var jobs: Array = [spray]
+	if gun:
+		# Every other part on the booth's hooks gets its own coat, so one pass can do them all.
+		var it: Dictionary = Shed.items.get(item, {})
+		if not it.is_empty() and it["at"] == "spot":
+			var booth := Shed.furniture_of_spot(str(it["ref"]))
+			if not booth.is_empty():
+				for s in Shed.furniture_spots(int(booth["id"])):
+					var other := Shed.item_at_spot(s)
+					if other == 0 or other == item or Shed.items[other].get("boxed", false):
+						continue
+					var oa := a.duplicate()
+					oa["item"] = other
+					if Shed.check(Shed.me(), oa) != "":
+						continue
+					var ok := _cover_key(oa)
+					var job: SprayJob = _sprays.get(ok, null)
+					if job != null and not _spray_attached(job):
+						job = null
+					if job == null:
+						var op := plan_now.duplicate()
+						op["action"] = oa
+						job = _start_spray(other, ok, op)
+						if job == null:
+							continue
+						_sprays[ok] = job
+					jobs.append(job)
+	var kit := _cover_tool(a)
+	spray_skill = Progress.spread_mult(Shed.me(), kit)
+	var radius := (GUN_RADIUS if gun else SPRAY_RADIUS) * spray_skill
+	var rate := (GUN_RATE if gun else COVER_RATE) * Progress.cover_rate_mult(Shed.me(), kit)
+	var band := Progress.spray_band_mult(Shed.me(), kit)
+	var eye := camera.global_position
+	var dir := -camera.global_transform.basis.z
+	# Where the spray meets a surface: the parts' fitted shapes, not just their rough grab boxes.
+	var sq := PhysicsRayQueryParameters3D.create(eye, eye + dir * 3.2, 1 | 4 | BikeModel.SPRAY_LAYER)
+	sq.exclude = [get_rid()]
+	var surf := get_world_3d().direct_space_state.intersect_ray(sq)
+	var hit := not surf.is_empty()
+	var at: Vector3 = surf["position"] if hit else eye + dir * 3.2
+	var normal: Vector3 = surf["normal"] if hit else -dir
+	# Where the fan meets the parts themselves (their fitted shapes are only boxes round them),
+	# unless something else is in the way first.
+	var near := INF
+	for job in jobs:
+		var sh := (job as SprayJob).surface_hit(eye, dir)
+		if not sh.is_empty() and float(sh["t"]) < near:
+			near = float(sh["t"])
+			var own := false
+			if hit:
+				var by := _item_hit(surf["collider"])
+				for j2 in jobs:
+					own = own or (j2 as SprayJob).items.has(by)
+			if not hit or own or eye.distance_to(surf["position"]) > near - 0.05:
+				at = sh["at"]
+				normal = sh["normal"]
+				hit = true
+	for job in jobs:
+		var j := job as SprayJob
+		j.set_tool(radius, rate, 0.15 if gun else 0.35, band)
+		j.look_over(eye, _spray_sees.bind(eye, j.items))
+		var swing := _swing_of({"node": j.holder})
+		if swing and gun and hit and j.marks and is_instance_valid(j.marks):
+			if j.marks.reaches(j.model.global_transform.affine_inverse() * at, 0.1):
+				swing.push(dir * delta * 0.35)
+		j.step(delta, eye, dir, hit, at, normal)
+	var st: Dictionary = spray.last if not spray.last.is_empty() else spray.stats()
+	coverage = float(st["covered"])
+	progress = clampf(coverage / SprayJob.DONE, 0.0, 1.0)
+	for c in spray.cues:
+		spray_cues.append(c)
+		if str(c["kind"]) == "ready":
+			Sfx.play_at("ting", at, -6.0)
+	spray.cues.clear()
+	for job in jobs:
+		(job as SprayJob).cues.clear()
+		if (job as SprayJob).complete():
+			_finish_spray(job)
+	return true
+
+
+## The work button's let go while spraying: a coat that's on (SprayJob.DONE covered) is done; one
+## that isn't waits, just as you left it, for you to come back to it.
+func _spray_let_go(finish_ready := true) -> void:
+	if spray == null:
+		return
+	spray.live = false
+	Sfx.set_loop(_work_sound, "")
+	_send_status("")
+	progress = 0.0
+	if not finish_ready:
+		return
+	var tail := _job_tail(spray.key)
+	for k in _sprays.keys():
+		var job: SprayJob = _sprays[k]
+		if _job_tail(str(k)) == tail and job.ready():
+			_finish_spray(job)
+
+
+## A job key without its part, so the same coat on the other parts in the booth matches.
+static func _job_tail(key: String) -> String:
+	var bits := key.split(":")
+	if bits.size() > 1:
+		bits.remove_at(1)
+	return ":".join(bits)
+
+
+## A coat's done: it goes to the host (prime, paint or coat, with how good it came out), and the
+## wet coat flashes on the part as it's redrawn in it.
+func _finish_spray(job: SprayJob) -> void:
+	var done := job.result()
+	Shed.request(done)
+	var names := {"primer": "Primer", "clear": "Lacquer"}
+	spray_cues.append({"kind": "done", "text": "%s on: %d%%" % [names.get(job.layer, "Colour coat"), roundi(float(done["quality"]) * 100.0)]})
+	if is_instance_valid(job.model):
+		Sfx.play_at("ting", job.model.global_position, -2.0)
+	job.finish()
+	_sprays.erase(job.key)
+	if job == spray:
+		spray = null
+		coverage = 0.0
+		progress = 0.0
+		Sfx.set_loop(_work_sound, "")
+		_send_status("")
+		_need_release = _acting()
+
+
+## A fresh coat on `item`, painted onto the part where it's drawn. Null if it isn't drawn on a model.
+func _start_spray(item: int, key: String, plan_now: Dictionary) -> SprayJob:
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	if view == null or not view.has_method("item_surface") or not Shed.items.has(item):
+		return null
+	var a: Dictionary = plan_now["action"]
+	var whole := str(a.get("a", "")) == "coat" and Shed.is_engine(item)
+	var surf: Dictionary = view.item_surface(item, whole)
+	if surf.is_empty():
+		return null
+	var job := SprayJob.new()
+	# Upgraded tools lay paint faster, so a patch takes more coats before it runs; Steady Hand more still.
+	var runs := (GUN_RUN_LEVEL if a.get("gun", false) else RUN_LEVEL) * Progress.run_level_mult(Shed.me(), _cover_tool(a))
+	if not job.setup(item, key, plan_now, surf["model"], surf["slots"], SprayJob.look_for(a, Shed.items[item]), runs):
+		return null
+	if whole:
+		job.items = Shed.coat_targets(item)
+	job.holder = surf["node"]
+	job.set_scan(spray_scan)
+	var eye := camera.global_position
+	job.look_over(eye, _spray_sees.bind(eye, job.items), -1)
+	return job
+
+
+## Whether a coat's mask is still on the part as drawn; if the part's been redrawn, it moves to
+## the new model with what's been sprayed so far.
+func _spray_attached(job: SprayJob) -> bool:
+	if job.attached():
+		return true
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	if view == null or not Shed.items.has(job.item):
+		return false
+	var surf: Dictionary = view.item_surface(job.item, job.items.size() > 1)
+	if surf.is_empty() or not job.rebind(surf["model"], surf["slots"]):
+		return false
+	job.holder = surf["node"]
+	return true
+
+
+## Whether you can see a point of a part being sprayed from `eye` (nothing in the way, and close
+## enough to reach), so it counts towards the coat.
+func _spray_sees(p: Vector3, _n: Vector3, eye: Vector3, items: Array) -> bool:
+	var to := p - eye
+	if to.length() > REACH + 1.5:
+		return false
+	var q := PhysicsRayQueryParameters3D.create(eye, p + to.normalized() * 0.02, 1 | 4 | BikeModel.SPRAY_LAYER)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return true
+	# The part's own fitted shapes are only boxes round it: what's in its own way is worked out
+	# from its surface (see SprayJob.look_over). Anything else in the way hides it.
+	return items.has(_item_hit(hit["collider"]))
+
+
+## The coat on `item` you've started, if any (the one you're spraying first).
+func spray_job_for(item: int) -> SprayJob:
+	if item == 0:
+		return null
+	if spray != null and spray.item == item:
+		return spray
+	for k in _sprays:
+		if (_sprays[k] as SprayJob).item == item:
+			return _sprays[k]
+	return null
+
+
+## The colour of the mist for a spray action: the paint, grey primer, a clear coat or chain lube.
+static func mist_color(a: Dictionary) -> Color:
+	match str(a.get("a", "")):
+		"paint":
+			return Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)]
+		"prime":
+			return Shed.PRIMER_COLOR
+		"coat":
+			var spec: Dictionary = Shed.COATS.get(str(a.get("coat", "")), {})
+			return Shed.PAINTS[int(spec["paint"])] if spec.has("paint") else Color(0.9, 0.9, 0.85)
+	return Color(0.45, 0.35, 0.2)
+
+
+## The cone of paint to the part, its footprint and the droplets landing, while you spray.
+func _update_spray_fx() -> void:
+	var on := spray != null and spray.live and _acting() and not spray.jet.is_empty()
+	if _spray_fx == null:
+		if not on:
+			return
+		_spray_fx = SprayFx.new()
+		get_parent().add_child(_spray_fx)
+	if not on:
+		_spray_fx.stop()
+		return
+	var nozzle := camera.global_transform * Vector3(0.2, -0.2, -0.55)
+	if is_instance_valid(_tool_view) and _tool_view.has_meta("nozzle"):
+		nozzle = _tool_view.global_transform * (_tool_view.get_meta("nozzle") as Vector3)
+	var j := spray.jet
+	var to: Vector3 = j["at"]
+	var zone := str(j.get("zone", "out")) if j.get("hit", false) else "out"
+	_spray_fx.update(nozzle, to, j.get("normal", Vector3.UP), float(j.get("radius", SPRAY_RADIUS)), mist_color(spray.plan["action"]), zone)
+
+
+## How to work the spray, for the HUD.
+func spray_controls() -> String:
+	var pad := Controls.device() >= 0 and Controls.active_device >= 0
+	var scan := Settings.binding_text("blast_scan", pad)
+	return "Hold %s and sweep in steady, overlapping passes  ·  %s: show what's missed  ·  let go when it's covered" % [
+		"RT" if pad else "left mouse", scan if scan != "" else "X"]
 
 
 ## Emote keys (see Emotes): B opens and shuts the emote bar, where the tool keys 1 to 6 pick
@@ -2179,7 +2515,8 @@ func _activity_text() -> String:
 		var owner := "the engine" if int(target.get("engine", 0)) != 0 else str(Shed.bikes[target["bike"]]["name"])
 		what = "the %s on %s" % [PartsDB.slot_name(target["slot"]).to_lower(), owner]
 	var verbs := {"unbolt": "Unbolting", "bolt": "Bolting up", "remove": "Removing", "install": "Fitting a part to",
-		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "coat": "Coating", "take": "Picking up a part",
+		"clean": "Cleaning", "clean_many": "Scrubbing", "repair": "Restoring", "paint": "Spraying", "coat": "Coating", "prime": "Priming",
+		"take": "Picking up a part",
 		"place": "Putting down a part", "set_down": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk", "sales_pc": "At the sales PC",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
@@ -2187,7 +2524,7 @@ func _activity_text() -> String:
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()
-	if a["a"] in ["clean", "repair", "paint", "coat"] and what == "":
+	if a["a"] in ["clean", "repair", "paint", "coat", "prime"] and what == "":
 		what = "the " + Shed.item_title(int(a["item"]))
 	if a["a"] == "install":
 		what = "the engine" if int(a.get("engine", 0)) != 0 else str(Shed.bikes[int(a.get("bike", 0))]["name"])
@@ -2336,7 +2673,9 @@ static func _spray_particles(count: int, life: float, size_min: float, size_max:
 
 
 func _update_mist() -> void:
-	var on := not _cover.is_empty() and bool(_cover.get("live", false)) and _acting()
+	_update_spray_fx()
+	var spraying := spray != null and spray.live
+	var on := ((not _cover.is_empty() and bool(_cover.get("live", false))) or spraying) and _acting()
 	if _mist == null:
 		if not on:
 			return
@@ -2344,15 +2683,15 @@ func _update_mist() -> void:
 		camera.add_child(_mist)
 	var haze: CPUParticles3D = _mist.get_node("Haze")
 	if on:
-		var a: Dictionary = _cover["plan"]["action"]
-		var c: Color = Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)] if a["a"] == "paint" else Color(0.45, 0.35, 0.2)
-		if a["a"] == "coat":
-			var spec: Dictionary = Shed.COATS.get(str(a.get("coat", "")), {})
-			c = Shed.PAINTS[int(spec["paint"])] if spec.has("paint") else Color(0.9, 0.9, 0.85)
+		var a: Dictionary = spray.plan["action"] if spraying else _cover["plan"]["action"]
+		var c: Color = mist_color(a)
 		_mist.color = c
 		haze.color = c.lightened(0.15)
 		var gun := bool(a.get("gun", false))
 		_mist.spread = (6.5 if gun else 9.0) * spray_skill
+		if spraying and float(spray.jet.get("dist", 0.0)) > 0.05:
+			# As wide as the fan that lands.
+			_mist.spread = clampf(rad_to_deg(atan(float(spray.jet["radius"]) / float(spray.jet["dist"]))), 2.0, 20.0)
 		haze.spread = 12.0 if gun else 16.0
 		# From the nozzle of the tool in your hand, towards where you're aiming.
 		var nozzle := camera.global_transform * Vector3(0.2, -0.2, -0.55)
