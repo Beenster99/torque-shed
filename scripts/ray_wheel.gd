@@ -117,9 +117,14 @@ static func step(body: RigidBody3D, w: Dictionary, delta: float, space: PhysicsD
 	var vden := maxf(v_abs, LONG_SLIP_SPEED)
 	var r := radius   # a car tyre's rolling radius barely changes with load
 	var omega: float = w["omega"] + w["drive_torque"] * delta / inertia_w
-	var omega_new := Bike._solve_spin(omega, v_long, vden, r, kp, sy, f_peak, inertia_w / delta, tp)
-	# The brake after the road's push: one strong enough holds the wheel locked against it.
-	omega_new = move_toward(omega_new, 0.0, w["brake_torque"] * delta / inertia_w)
+	# The brake before the road's push (as Bike): the tyre's grip then works against the brake in
+	# the same solve, so a light pedal is a light stop, and one strong enough still locks it.
+	omega = move_toward(omega, 0.0, w["brake_torque"] * delta / inertia_w)
+	var omega_new := 0.0
+	# Stopped by the brake and the brake still stronger than the road can turn it: it stays locked.
+	var road_turn := absf(r * f_peak * TyreModel.combined(-v_long / vden / kp, sy, tp).x)
+	if not (omega == 0.0 and float(w["brake_torque"]) >= road_turn and float(w["brake_torque"]) > 0.0):
+		omega_new = Bike._solve_spin(omega, v_long, vden, r, kp, sy, f_peak, inertia_w / delta, tp)
 	if w["abs"] and v_abs > 1.0 and float(w["brake_torque"]) > 0.0:
 		# ABS: the brake is eased before the wheel goes past the grip it has left.
 		var left := maxf(sqrt(maxf(1.0 - sy * sy, 0.0)), 0.25)
