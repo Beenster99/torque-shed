@@ -14,6 +14,7 @@ extends Node
 ## The client orders a trolley and a part, loads the box onto the trolley and wheels it into the
 ## shed: both must see the box, with its "for" note, ride on the trolley. The client waves and
 ## the host must see its figure wave; the host pings and the client must see it point.
+## The host puts a biker out on the roads, and the client must see them riding along.
 
 var role := "host"
 var main: Node
@@ -87,6 +88,8 @@ func _ready() -> void:
 	var spray_ok := false
 	var paint_step := 0
 	var paint_ok := false
+	var traffic_ok := false
+	var traffic_s := -1.0
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -243,6 +246,15 @@ func _ready() -> void:
 			Settings.weather = "fog"
 			Weather.current.change_to("fog", true)
 		var weather_ok := Weather.current != null and Weather.current.state == "fog"
+		# Road traffic: the host puts a biker out on the roads, and the client sees them ride along.
+		var tr: RoadTraffic = main.traffic
+		if role == "host" and Shed.crew.size() == 2 and tr.active_count() == 0:
+			tr.spawn_one(0.0, 600.0)
+		if not traffic_ok and tr.active_count() > 0:
+			var first: Dictionary = tr.riders.filter(func(d): return not d.is_empty())[0]
+			if traffic_s < 0.0:
+				traffic_s = float(first["s"])
+			traffic_ok = absf(float(first["s"]) - traffic_s) > 2.0 and tr._views.any(func(v): return not v.is_empty())
 		# Contracts: the host sends a customer to reception and the client sees them walk in.
 		if role == "host" and Shed.crew.size() == 2 and not customer_sent:
 			Shed.request({"a": "contract_spawn", "kind": "maint"})
@@ -392,7 +404,7 @@ func _ready() -> void:
 			var shelved := PaintBay.tins().values().filter(func(t): return str(t.get("name", "")) == "MP Blue" and str(t["at"]) == "shelf")
 			paint_ok = cards.size() >= 1 and shelved.size() == 1 and float(PaintBay.stock_of("PB")) > PaintBay.STARTER_TINT - 20.0 \
 				and str(mp_blue[0]["code"]).begins_with("W-PB20") and PaintBay.at_bench() == 0
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -408,8 +420,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok])
 	get_tree().quit(0 if ok else 1)
 
 

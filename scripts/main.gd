@@ -19,6 +19,7 @@ var tuning: TuningComputer
 var label_dialog: LabelDialog
 var contract_panel: ContractPanel   # a customer's offer card and the jobs list
 var contracts_view: ContractsView   # the customers walking in to reception
+var traffic: RoadTraffic        # other bikers out on the roads
 var sales_pc: SalesComputer     # the Sales page on the sales office's PC
 var sales_view: SalesView       # part-exchange buyers, buyers collecting, the till, the stands' prices
 var coffee_panel: CoffeePanel   # the cafe counter's menu, and talking to a biker about their bike
@@ -82,6 +83,11 @@ func _ready() -> void:
 	contract_panel.visible = false
 	ui.add_child(contract_panel)
 	contract_panel.closed.connect(func(): _capture_mouse(true))
+	traffic = RoadTraffic.new()
+	traffic.name = "Traffic"
+	traffic.main = self
+	traffic.world = world
+	world.add_child(traffic)
 	contracts_view = ContractsView.new()
 	contracts_view.name = "Customers"
 	contracts_view.main = self
