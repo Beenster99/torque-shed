@@ -76,6 +76,7 @@ static func make_offer(rng: RandomNumberGenerator, level: int) -> Dictionary:
 	var engine := str(b["engines"][rng.randi() % b["engines"].size()])
 	var parts := Contracts.style_build(style)
 	parts["engine"] = engine
+	parts = _fed(parts)
 	var quirks := _pick_quirks(parts, rng, clampi(1 + level / 6, 1, 3))
 	parts = _quirk_parts(parts, quirks)
 	var lib := PaintMix.library_entry(str(b["paint"]))
@@ -98,6 +99,25 @@ static func make_offer(rng: RandomNumberGenerator, level: int) -> Dictionary:
 		"bonus": int(snappedi(roundi(fee * 0.8), 10)), "days": 2 + rng.randi_range(0, 1),
 		"bike_name": "%s prototype" % model,
 		"blurb": "It's our new %s, not out yet. Ride it, put it through the test, and tell us honestly what you think of it. A sharp report earns a bonus." % model}
+
+
+## The parts with a fuel system that keeps up with the engine (the style's own if it does, else
+## the first of the catalogue's that does): a prototype's faults are the ones it's meant to have.
+static func _fed(parts: Dictionary) -> Dictionary:
+	if not _starved(parts):
+		return parts
+	var options: Array = (PartsDB.by_kind.get("fuel", []) as Array).duplicate()
+	options.sort_custom(func(a, b): return float(PartsDB.get_part(str(a)).get("flow", 0.0)) < float(PartsDB.get_part(str(b)).get("flow", 0.0)))
+	for f in options:
+		var p := parts.duplicate()
+		p["fuel"] = str(f)
+		if not _starved(p):
+			return p
+	return parts
+
+
+static func _starved(parts: Dictionary) -> bool:
+	return BikeBuild.new(PartsDB.sanitize_build(parts.duplicate()), {}).notes.any(func(n): return str(n).begins_with("Fuel starved"))
 
 
 ## One to `most` faults for a prototype built from `parts`, of those it can have (a hot engine

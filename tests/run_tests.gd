@@ -7324,14 +7324,18 @@ func _test_contract_test_ride() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
 	var all_quirks := {}
+	var starved: Array[String] = []
 	for i in 60:
 		var o := ContractTestRide.make_offer(rng, 14)
 		seen_brands[o["brand"]] = true
+		if BikeBuild.new(PartsDB.sanitize_build(o["parts"].duplicate()), {}).notes.any(func(n): return str(n).begins_with("Fuel starved")):
+			starved.append(str(o["bike_name"]))
 		for q in o["quirks"]:
 			all_quirks[q] = true
 		if i < 4:
 			check(o["quirks"].size() >= 1 and o["quirks"].size() <= 3 and o["goals"][0]["t"] == "ride_km" and o["goals"][-1]["t"] == "report",
 				"%s: %s, faults %s, tests %s" % [o["bike_name"], o["style"], str(o["quirks"]), str(o["goals"].map(func(g): return g["t"]))])
+	check(starved.is_empty(), "no prototype is fuel starved by accident (%s)" % ", ".join(starved))
 	check(seen_brands.size() >= 8 and seen_brands.has("Ducati") and seen_brands.has("BMW Motorrad"), "from real manufacturers (%s)" % ", ".join(seen_brands.keys()))
 	# The lap counter: every stretch of The Loop, either way round, makes a lap.
 	var seen := []

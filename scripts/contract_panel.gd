@@ -172,6 +172,8 @@ static func where_text(bike: Dictionary) -> String:
 	if bay >= 0:
 		return "bay %d" % (bay + 1)
 	if Contracts.in_car_park(at):
+		if bike.get("proto", false):
+			return "in the car park: the rep collects it from here"
 		return "in the car park: work on it in a bay, hand it back from here"
 	return "out of its bay"
 
@@ -220,6 +222,12 @@ static func _fill_batch(box: VBoxContainer, job: Dictionary) -> void:
 	bar.value = sent
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(0, 14)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.45, 0.85, 0.5)
+	bar.add_theme_stylebox_override("fill", fill)
+	var under := StyleBoxFlat.new()
+	under.bg_color = Color(1, 1, 1, 0.12)
+	bar.add_theme_stylebox_override("background", under)
 	box.add_child(UITheme.label("Dispatched %d / %d  ·  %s a part now  ·  %s paid so far" % [sent, n, Contracts.money(ContractBatch.part_pay(job)),
 		Contracts.money(int(job.get("paid", 0)))], 18, Color(0.5, 0.95, 0.55) if sent >= n else UITheme.ACCENT))
 	box.add_child(bar)
@@ -236,8 +244,8 @@ static func _fill_batch(box: VBoxContainer, job: Dictionary) -> void:
 	for item_id in look:
 		var r := ContractBatch.check_item(spec, int(item_id))
 		var where := "pallet" if ContractBatch.on_pallet(int(item_id)) else "stand"
-		box.add_child(UITheme.label("%s  %s (%s): %s%s" % ["[ok]" if r["ok"] else "[  ]", Shed.item_title(int(item_id)), where, r["have"],
-			"" if r["ok"] else "  ·  " + ", ".join(r["why"])], 14, Color(0.5, 0.95, 0.55) if r["ok"] else Color(0.95, 0.75, 0.5)))
+		box.add_child(UITheme.label("%s  %s (%s): %s" % ["[ok]" if r["ok"] else "[  ]", Shed.item_title(int(item_id)), where,
+			"to spec, " + str(r["have"]) if r["ok"] else ", ".join(r["why"])], 14, Color(0.5, 0.95, 0.55) if r["ok"] else Color(0.95, 0.75, 0.5)))
 	var pay := Contracts.payout(job)
 	box.add_child(UITheme.label("Close now: %s  ·  %s" % [Contracts.money(int(pay["total"])), pay["note"]], 15, UITheme.ACCENT))
 	var row := HBoxContainer.new()
@@ -270,7 +278,10 @@ static func _fill_report(box: VBoxContainer, job: Dictionary) -> void:
 	grid.columns = 6
 	grid.add_theme_constant_override("h_separation", 6)
 	for k in ContractTestRide.RATINGS:
-		grid.add_child(UITheme.label(ContractTestRide.RATING_NAMES[k], 15))
+		var name_l := UITheme.label(ContractTestRide.RATING_NAMES[k], 15)
+		name_l.autowrap_mode = TextServer.AUTOWRAP_OFF
+		name_l.custom_minimum_size = Vector2(110, 0)
+		grid.add_child(name_l)
 		for v in range(1, 6):
 			var b := Button.new()
 			b.text = str(v)
@@ -345,7 +356,8 @@ static func _fill_job(box: VBoxContainer, job: Dictionary) -> void:
 	box.add_child(UITheme.title(str(job["title"]), 20))
 	var bike: Dictionary = Shed.bikes.get(int(job["bike"]), {})
 	var where := ContractPanel.where_text(bike)
-	box.add_child(UITheme.label("For %s  ·  %s  ·  %s" % [job["customer"], where, Contracts.due_text(float(job["due"]))], 15,
+	var who := str(job["customer"]) if str(job.get("brand", "")) == "" else "%s (%s, their rep)" % [job["brand"], job["customer"]]
+	box.add_child(UITheme.label("For %s  ·  %s  ·  %s" % [who, where, Contracts.due_text(float(job["due"]))], 15,
 		Color(1, 0.5, 0.4) if late else Color(1, 1, 1, 0.75)))
 	for r in Contracts.evaluate(job):
 		box.add_child(UITheme.label("%s  %s   (%s)" % ["[x]" if r["done"] else "[  ]", r["text"], r["have"]], 15,
