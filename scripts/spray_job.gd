@@ -294,8 +294,9 @@ func surface_hit(eye: Vector3, dir: Vector3, width := 0.035) -> Dictionary:
 
 
 ## One frame of spraying from `eye` along `dir`, the spray meeting a surface at `at` (`hit`
-## false: it meets nothing, and lands nowhere). Returns the cubes it coated.
-func step(delta: float, eye: Vector3, dir: Vector3, hit: bool, at: Vector3, normal := Vector3.UP) -> int:
+## false: it meets nothing, and lands nowhere). Returns the cubes it coated. Not `firing`, it only
+## works out where the fan would land, how far off and how fast it's going (aiming, trigger off).
+func step(delta: float, eye: Vector3, dir: Vector3, hit: bool, at: Vector3, normal := Vector3.UP, firing := true) -> int:
 	jet = {"hit": hit, "at": at, "normal": normal, "dist": eye.distance_to(at), "zone": "out", "radius": radius, "speed": _speed,
 		"pace": "good"}
 	if not hit or marks == null or not is_instance_valid(marks) or model == null or not is_instance_valid(model):
@@ -320,6 +321,8 @@ func step(delta: float, eye: Vector3, dir: Vector3, hit: bool, at: Vector3, norm
 	jet["speed"] = _speed
 	jet["pace"] = pace
 	jet["dry"] = fan["dry"]
+	if not firing:
+		return 0
 	var inv := model.global_transform.affine_inverse()
 	var local_at: Vector3 = inv * at
 	var along: Vector3 = (inv.basis * dir).normalized()

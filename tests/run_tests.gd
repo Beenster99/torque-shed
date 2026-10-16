@@ -13236,6 +13236,32 @@ func _test_spray_session() -> void:
 	check(w.spray_primer() and w.spray_text() == "Grey primer", "T on to grey primer")
 	await _aim_point(w, centre)
 	check(str(w.plan.get("action", {}).get("a", "")) == "prime" and w.plan["blocked"] == "", "aimed at the tank, the work button primes it (%s)" % str(w.plan))
+	# Painting needs the spray controls up first (F): the trigger alone just says so.
+	Input.action_press("act")
+	for i in 10:
+		await get_tree().physics_frame
+	Input.action_release("act")
+	check(w.spray == null or not w.spray.live, "without the spray controls up, the trigger doesn't spray")
+	await get_tree().physics_frame
+	_press("interact")
+	await get_tree().physics_frame
+	check(not w.spray_mode.is_empty() and int(w.spray_mode["item"]) == tank and w.spray_settling(), "F brings the spray controls up on the tank, and you get set first")
+	Input.action_press("act")
+	for i in 20:
+		await get_tree().physics_frame
+	check(w.spray == null or not w.spray.live, "nothing sprays while you're getting set")
+	check(w._spray_fx != null and w._spray_fx.visible and w._spray_fx.ring.visible and not w._spray_fx.cone.visible,
+		"aiming, the footprint shows where it would land, without spraying")
+	Input.action_release("act")
+	w.spray_mode["settle"] = 0.0
+	await get_tree().physics_frame
+	var held_look := w.rotation.y
+	w.rotation.y += 1.2
+	for i in 3:
+		await get_tree().physics_frame
+	check(int(w.plan.get("action", {}).get("item", 0)) == tank, "the can stays on the tank wherever you look")
+	w.rotation.y = held_look
+	await _aim_point(w, centre)
 	Input.action_press("act")
 	for i in 40:
 		await get_tree().physics_frame
@@ -13259,6 +13285,8 @@ func _test_spray_session() -> void:
 	var fx: SprayFx = w._spray_fx
 	check(fx != null and fx.visible and fx.cone.visible and fx.zone == "good" and fx.droplets.emitting,
 		"you see the spray: a cone to the tank, its footprint in green, droplets landing")
+	check(fx.droplets.scale_amount_max < 0.003 and w._mist != null and w._mist.scale_amount_max < 0.003 and w._mist.amount >= 600,
+		"it's a fine mist of tiny droplets, not blobs")
 	await get_tree().process_frame
 	var hud: SprayHud = main.hud.spray_hud
 	check(hud.visible and hud.showing() and not main.hud._panel.visible, "the spray readout comes up in place of the side panel")
@@ -13298,14 +13326,16 @@ func _test_spray_session() -> void:
 	await _aim_point(w, centre)
 	Input.action_press("act")
 	await _spray_passes(w, xf, box)
-	if w.spray != null:
-		await _spray_passes(w, xf, box)
+	for n in 3:
+		if w.spray != null:
+			await _spray_passes(w, xf, box)
 	Input.action_release("act")
 	for i in 3:
 		await get_tree().physics_frame
 	check(Shed.items[tank].get("primer_top", false) and float(Shed.items[tank].get("primer", 0.0)) > 0.4,
 		"sweeping over all of it puts the primer on (%.0f%%)" % (float(Shed.items[tank].get("primer", 0.0)) * 100.0))
-	check(w.spray == null and hud.cue.get("kind", "") == "done" or w.spray_cues.any(func(c): return c["kind"] == "done"), "and the HUD says it's done")
+	check((w.spray == null or not w.spray.live) and hud.cue.get("kind", "") == "done" or w.spray_cues.any(func(c): return c["kind"] == "done"),
+		"and the HUD says it's done")
 	for i in 4:
 		await get_tree().process_frame
 	# The colour over it.
@@ -13321,8 +13351,9 @@ func _test_spray_session() -> void:
 		"the coats line up on the HUD: primer done, colour now, lacquer to come")
 	check(cj != null and ((cj.look["under"] as Color).a == 0.0), "the missed bits show the grey primer under it")
 	await _spray_passes(w, xf, box)
-	if w.spray != null:
-		await _spray_passes(w, xf, box)
+	for n in 3:
+		if w.spray != null:
+			await _spray_passes(w, xf, box)
 	Input.action_release("act")
 	for i in 3:
 		await get_tree().physics_frame
@@ -13337,13 +13368,17 @@ func _test_spray_session() -> void:
 	var before := float(it["paint_quality"])
 	Input.action_press("act")
 	await _spray_passes(w, xf, box)
-	if w.spray != null:
-		await _spray_passes(w, xf, box)
+	for n in 3:
+		if w.spray != null:
+			await _spray_passes(w, xf, box)
 	Input.action_release("act")
 	for i in 3:
 		await get_tree().physics_frame
 	check(Shed.items[tank].get("coat", "") == "clear" and float(Shed.items[tank]["paint_quality"]) > before,
 		"lacquered, and the finish comes up for it (%.2f to %.2f)" % [before, float(Shed.items[tank].get("paint_quality", 0.0))])
+	_press("interact")
+	await get_tree().physics_frame
+	check(w.spray_mode.is_empty(), "F again steps back from the spray controls")
 	w.set_tool("hands")
 	main._leave()
 	main.queue_free()
@@ -13361,7 +13396,8 @@ func _spray_passes(w: Walker, xf: Transform3D, box: AABB) -> void:
 	var centre := xf * box.get_center()
 	var dist: float = cam.global_position.distance_to(centre)
 	var px_per_m: float = get_viewport().get_visible_rect().size.y / (2.0 * dist * tan(deg_to_rad(cam.fov) * 0.5))
-	var rows := maxi(2, ceili(rect.size.y / (0.1 * px_per_m)))
+	# Rows a fan's width apart, overlapping (the spray controls' fan is tighter than the can's own).
+	var rows := maxi(2, ceili(rect.size.y / (0.075 * px_per_m)))
 	var path: Array[Vector3] = []
 	for r in rows:
 		var y := rect.position.y + (r + 0.5) * rect.size.y / rows

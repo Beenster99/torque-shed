@@ -5,7 +5,9 @@ extends Control
 ## how even it's going on and how much has run, gone on dry or is still thin; under that, gauges
 ## for how far off you're holding it (the sweet spot in green) and how fast you're sweeping; then
 ## the part's coats in order (primer, colour, lacquer) with the one going on now. Runs, dry spray,
-## the coat being on and the coat done pop up in the middle of the screen.
+## the coat being on and the coat done pop up in the middle of the screen. It's up for as long as
+## the spray controls are (F on a part with the can or gun): first a moment to get set, then the
+## trigger works; a breath bar shows how long you can hold your hand steady.
 
 const GOOD := Color(0.45, 0.95, 0.55)
 const BAD := Color(1.0, 0.45, 0.35)
@@ -29,7 +31,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	var w := walker if walker and is_instance_valid(walker) else null
-	var live: SprayJob = w.spray if w and w.spray != null and w.spray.live else null
+	var live: SprayJob = w.spray if w and w.spray != null and (w.spray.live or not w.spray_mode.is_empty()) else null
 	if live != null:
 		job = live
 		_linger = LINGER
@@ -116,6 +118,31 @@ func _draw_panel(font: Font) -> void:
 	_draw_steps(font, Rect2(top.position.x, top.end.y + 8.0, top.size.x, 34.0))
 	draw_string(font, Vector2(0, size.y - 120.0), walker.spray_controls() if walker else "", HORIZONTAL_ALIGNMENT_CENTER, size.x, 15,
 		Color(1, 1, 1, 0.8))
+	if walker and not walker.spray_mode.is_empty():
+		_draw_getting_set(font)
+
+
+## Getting set before the trigger works, then how long you can hold your hand steady.
+func _draw_getting_set(font: Font) -> void:
+	var m: Dictionary = walker.spray_mode
+	var mid := Vector2(size.x * 0.5, size.y * 0.5 + 70.0)
+	if walker.spray_settling():
+		var f := 1.0 - float(m["settle"]) / Walker.SPRAY_SETTLE
+		draw_string_outline(font, Vector2(0, mid.y), "Get set...", HORIZONTAL_ALIGNMENT_CENTER, size.x, 26, 6, Color(0, 0, 0, 0.7))
+		draw_string(font, Vector2(0, mid.y), "Get set...", HORIZONTAL_ALIGNMENT_CENTER, size.x, 26, Color.WHITE)
+		var bar := Rect2(mid.x - 90.0, mid.y + 10.0, 180.0, 6.0)
+		draw_rect(bar, Color(0, 0, 0, 0.55))
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * f, bar.size.y)), UITheme.ACCENT)
+		return
+	if job != null and not job.live:
+		draw_string_outline(font, Vector2(0, mid.y), "Ready: hold to spray", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, 5, Color(0, 0, 0, 0.6))
+		draw_string(font, Vector2(0, mid.y), "Ready: hold to spray", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, GOOD)
+	var breath := float(m.get("breath", 1.0))
+	var steady := bool(m.get("steady", false))
+	var b := Rect2(mid.x - 60.0, mid.y + 14.0, 120.0, 5.0)
+	draw_rect(b, Color(0, 0, 0, 0.5))
+	draw_rect(Rect2(b.position, Vector2(b.size.x * breath, b.size.y)), (GOOD if steady else COOL) if breath > 0.2 else WARN)
+	draw_string(font, Vector2(0, b.end.y + 14.0), "steady" if steady else "breath", HORIZONTAL_ALIGNMENT_CENTER, size.x, 11, DIM)
 
 
 ## The distance gauge: too close (red), the sweet spot (green), too far (blue, dry), out of reach.

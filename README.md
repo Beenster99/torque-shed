@@ -49,6 +49,8 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Sandblaster: put your hands in the gloves / step back | F | Y |
 | Sandblaster: blast where you aim / turn the engine | Hold left mouse / W A S D, or hold right mouse and move the mouse | Hold RT / left stick |
 | Sandblaster: scan the engine for what's still to blast (press again to stop) | X | D-pad up |
+| Spray can or gun on a part: bring up the spray controls (press again to step back) | F | Y |
+| With the spray controls up: hold your breath to steady your hand | right mouse | LT |
 | Spray can or gun: scan the part for missed, thin, dry and run patches (press again to stop) | X | D-pad up |
 | Drain a fluid (holding a drain pan, empty can or bleed bottle); with the wrench at a chain, set its tension | Hold R or right mouse | Hold X |
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
@@ -229,7 +231,7 @@ The **paint shop** is through the doorway in the east wall, between the parts co
 
 #### Spraying by hand: primer, colour and lacquer
 
-Painting works like the sandblaster: hold the button and sweep the can or gun over the part, and the paint goes on exactly where the spray lands. You see the cone of mist and the droplets, a ring on the part shows where the fan is landing (green at the right distance, red too close, blue too far, grey out of reach), and the bits you've missed keep showing the old colour (or the grey primer) until you cover them. A job can take up to three coats, picked with T (the picker shows them as COATS):
+Painting works like the sandblaster: it's a careful mini game of its own. With the can or gun in hand, look at the part and press **F** to bring up the spray controls. They lock on that part (wherever you look) and give you a moment to **get set** before the trigger works, so you can line up, step to the right distance and compose yourself. While they're up you shuffle slowly, the view turns slowly for precise aim, and the paint lays on slower, so it takes steady, overlapping passes. Your hand sways very slightly (more if you walk while spraying); hold **right mouse** (LT) to hold your breath and steady it for a few seconds, shown by the breath bar, which refills as you breathe again. Before you pull the trigger the footprint ring already shows where the fan would land and how far off you are. **F** again steps back. Then hold the button and sweep the can or gun over the part, and the paint goes on exactly where the spray lands. You see a fine mist of paint (tiny droplets, with a faint haze of overspray that drifts and hangs), a ring on the part shows where the fan is landing (green at the right distance, red too close, blue too far, grey out of reach), and the bits you've missed keep showing the old colour (or the grey primer) until you cover them. A job can take up to three coats, picked with T (the picker shows them as COATS):
 
 1. **Grey primer** (optional): a matte grey coat over the bare or old paint. Paint keys on better over it (a better paint job), and the part reads "in primer" until it's painted. Lacquer won't go on bare primer.
 2. **Colour**: the colour and finish shown above the tool bar.
