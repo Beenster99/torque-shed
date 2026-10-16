@@ -158,6 +158,11 @@ func _run_all() -> void:
 	_test_contract_goals_and_pay()
 	_test_contract_save()
 	await _test_contract_session()
+	_test_contract_batch_offers()
+	_test_contract_batch_dispatch()
+	_test_contract_batch_paint()
+	_test_contract_test_ride()
+	_test_contract_new_kinds_save()
 	print("Sales office: showroom, reception, kitchen, viewing area, mezzanine office, the bell")
 	_test_sales_office_layout()
 	_test_sales_office_save()
@@ -6813,7 +6818,7 @@ func _test_contract_customers() -> void:
 	check(Contracts.customers().is_empty() and Contracts.jobs().is_empty() and Contracts.reputation() == 0,
 		"a new shed has no customers, no jobs and no reputation")
 	check(Contracts.unlocked(0) == ["maint"] and Contracts.unlocked(int(Contracts.UNLOCK["mot"])).has("mot")
-		and Contracts.unlocked(10).size() == 5, "reputation unlocks harder jobs: service first, then MOT, colour matches, mods and bespoke builds")
+		and Contracts.unlocked(10).size() == 7, "reputation unlocks harder jobs: service first, then MOT, colour matches, batch orders, mods, test rides and bespoke builds")
 	Contracts.advance(Contracts.FIRST_CUSTOMER + 0.05)
 	check(Contracts.customers().size() == 1, "the first customer turns up soon after the shed opens")
 	var c: Dictionary = Contracts.customers().values()[0]
@@ -7094,6 +7099,351 @@ func _test_contract_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## A batch order customer whose spec is for `item` ("engine", or a painted part's kind; "" any).
+func _batch_customer(item := "") -> int:
+	for i in 60:
+		var cid := Contracts.spawn("batch")
+		var spec: Dictionary = Contracts.customers()[cid]["offer"]["goals"][0]
+		if item == "" or str(spec["item"]) == item or (item == "paint" and str(spec["item"]) != "engine"):
+			return cid
+		Contracts.customers().erase(cid)
+	return 0
+
+
+## Does the work on a donor engine for `spec` by hand: blasted back to bare metal all over (good
+## as new), the finish it wants, any stage one parts, and fresh oil in.
+func _prep_engine(id: int, spec: Dictionary) -> void:
+	Shed.items[id]["boxed"] = false
+	for slot in spec.get("ups", {}):
+		var old := Shed.engine_item(id, str(slot))
+		var nu := Shed._new_item(str(spec["ups"][slot]), 0.0, 0.0, 0.0)
+		Shed._erase_item(old)
+		Shed._move(nu, "engine", id)
+		Shed.items[id]["slots"][slot] = nu
+		Shed.items[id]["bolted"][slot] = true
+	for p in Shed._blast_parts(id):
+		var it: Dictionary = Shed.items[p]
+		it["rust"] = 0.0
+		it["dirt"] = 0.0
+		it["wear"] = 0.0
+		it["blast"] = {"c": 1.0, "p": 0.0}
+		match str(spec["finish"]):
+			"clear":
+				it["coat"] = "clear"
+			"enamel_black", "enamel_silver":
+				it["coat"] = str(spec["finish"])
+	Shed.items[id]["fluid"] = {"type": "semi_10w40", "litres": PartsDB.fluid_capacity(str(Shed.items[id]["part"])), "age": 0.0}
+
+
+## Puts a part down on the dispatch pallet the way a player does (held, then dropped there).
+func _drop_on_pallet(id: int, nudge := 0.0) -> void:
+	Shed._move(id, "held", Shed.me())
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), ContractBatch.pallet_at() + Vector3(nudge, 0.11, 0.0))})
+
+
+func _test_contract_batch_offers() -> void:
+	Shed.start_new("Tester", 701)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var small := []
+	var big := []
+	var kinds := {}
+	var orange := 0
+	var stage := 0
+	for lv in [1, 14]:
+		for i in 40:
+			var o := ContractBatch.make_offer(rng, lv)
+			var spec: Dictionary = o["goals"][0]
+			kinds[str(spec["item"])] = true
+			(small if lv == 1 else big).append(int(o["n"]))
+			if str(spec.get("lib", "")) == ContractBatch.FAVOURITE:
+				orange += 1
+			if spec.has("ups"):
+				stage += 1
+				check(lv >= ContractBatch.STAGE_LEVEL, "stage one engines only for an experienced garage")
+	check(kinds.has("engine") and kinds.has("tank") and (kinds.has("front_mudguard") or kinds.has("side_panels")),
+		"orders for engines, tanks and panels (%s)" % str(kinds.keys()))
+	var avg := func(a: Array) -> float: return float(a.reduce(func(x, y): return x + y, 0)) / maxf(1.0, a.size())
+	check(avg.call(big) > avg.call(small) + 3.0 and small.max() <= 10 and big.max() <= 20,
+		"a bigger garage gets bigger runs (%.1f parts at level 1, %.1f at 14)" % [avg.call(small), avg.call(big)])
+	check(orange > 5 and stage > 0, "Iridium Orange is a favourite (%d orders) and some engines are stage one (%d)" % [orange, stage])
+	var lib := PaintMix.library_entry(ContractBatch.FAVOURITE)
+	check(not lib.is_empty() and str(lib["name"]) == "Iridium Orange" and str(lib["effect"]) == "metallic"
+		and PaintMix.match_of(PaintMix.spec(PaintMix.parse_code(str(lib["code"])))["color"], lib["rgb"], "metallic", "metallic") > 0.95,
+		"Iridium Orange is in the paint library, metallic, and its recipe mixes it")
+	Contracts._st()["reputation"] = 10
+	Progress.profile["xp"] = Progress.xp_for_level(8)
+	var cid := _batch_customer("engine")
+	var o: Dictionary = Contracts.customers()[cid]["offer"]
+	var spec: Dictionary = o["goals"][0]
+	var text := Contracts.goal_text(spec)
+	check(str(o["title"]).begins_with("Batch order") and int(o["per"]) > 0 and int(o["bonus"]) > 0 and int(o["pay"]) == int(o["per"]) * int(o["n"]) + int(o["bonus"])
+		and int(o["days"]) >= 2, "a batch order: %s, %s a part, %s bonus, %d days" % [o["title"], Contracts.money(int(o["per"])),
+		Contracts.money(int(o["bonus"])), int(o["days"])])
+	check(text.contains("%d hp" % roundi(float(spec["hp"]))) and text.contains(PartsDB.part_name(str(spec["part"]))),
+		"the spec reads: %s" % text)
+	check(absf(float(spec["hp"]) - ContractBatch.stock_hp(str(spec["part"]), spec.get("ups", {}))) <= 0.5,
+		"the power asked for is what a fresh one makes (%d hp)" % roundi(float(spec["hp"])))
+	check(int(Contracts.customers()[cid].get("park", -1)) < 0 and not Contracts.rides_in(Contracts.customers()[cid]),
+		"the trade buyer comes in on foot")
+	var tv := Contracts.tv_data()
+	check(tv["offered"].any(func(x): return str(x["title"]).begins_with("Batch order")), "the offer is on the TV's contracts channel")
+	Progress.profile = saved
+
+
+func _test_contract_batch_dispatch() -> void:
+	Shed.start_new("Tester", 702)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.profile["xp"] = Progress.xp_for_level(4)
+	Contracts._st()["reputation"] = 10
+	var cid := _batch_customer("engine")
+	var o: Dictionary = Contracts.customers()[cid]["offer"]
+	o["supply"] = "donors"
+	o["n"] = 3
+	o["pay"] = int(o["per"]) * 3 + int(o["bonus"])
+	var spec: Dictionary = o["goals"][0]
+	var rep0 := Contracts.reputation()
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	check(str(job["kind"]) == "batch" and int(job["bike"]) == 0 and int(job["n"]) == 3, "the order's taken on, with no bike or bay")
+	var donors: Array = Shed.items.keys().filter(func(i): return int(Shed.items[i].get("batch", 0)) == int(job["id"]))
+	var crated := func(i) -> bool: return Shed.items[i].get("boxed", false) and Shed.is_engine(int(i)) and Shed.engine_missing(int(i)).is_empty()
+	check(donors.size() + int(job["owed"]) == 3 and donors.all(crated), "%d donor engines come crated, ancillaries and all (%d to follow)" % [donors.size(), int(job["owed"])])
+	check(donors.all(func(i): return ContractBatch.bench_hp(int(i)) < float(spec["hp"]) - float(spec["tol"])),
+		"tired and drained, they don't make the power")
+	var first := int(donors[0])
+	var r := ContractBatch.check_item(spec, first)
+	check(not r["ok"] and str(r["have"]).contains("crate"), "a crate on the pallet isn't to spec")
+	Shed.items[first]["boxed"] = false
+	r = ContractBatch.check_item(spec, first)
+	check(not r["ok"] and r["why"].any(func(w): return str(w).contains("hp")) and r["why"].any(func(w): return str(w).contains("not")),
+		"unpacked as it came: %s" % ", ".join(r["why"]))
+	_drop_on_pallet(first)
+	check(int(job["sent"]) == 0 and Shed.items.has(first) and ContractBatch.on_pallet(first), "put down on the pallet, it's checked and left there")
+	check(ContractBatch.checkable(job).has(first), "and the card lists it with what's wrong")
+	_prep_engine(first, spec)
+	var hp := ContractBatch.bench_hp(first)
+	r = ContractBatch.check_item(spec, first)
+	check(r["ok"] and absf(hp - float(spec["hp"])) <= float(spec["tol"]), "blasted, finished %s and oiled it makes %.1f hp: to spec" % [spec["finish"], hp])
+	var money0 := Shed.garage_money
+	Shed.request({"a": "contract_dispatch", "job": int(job["id"])})
+	check(int(job["sent"]) == 1 and not Shed.items.has(first) and Shed.garage_money > money0 and int(job["paid"]) == int(job["per"]),
+		"Dispatch takes it and pays %s: 1/3" % Contracts.money(int(job["paid"])))
+	check(str(Contracts.evaluate(job)[0]["have"]) == "1/3 sent" and is_equal_approx(Contracts.progress(job), 0.0),
+		"the checklist counts it (1/3)")
+	# The next goes straight in when it's put down to spec, the wrong engine doesn't.
+	var other := Shed._new_item("single_250" if str(spec["part"]) != "single_250" else "twin_500", 0.0, 0.0, 0.0)
+	for slot in PartsDB.ENGINE_SLOTS:
+		var sub := Shed._new_item(str(PartsDB.DEFAULT_BUILD[slot]), 0.0, 0.0, 0.0)
+		Shed._move(sub, "engine", other)
+		Shed.items[other]["slots"][slot] = sub
+		Shed.items[other]["bolted"][slot] = true
+	_drop_on_pallet(other, 0.6)
+	check(Shed.items.has(other) and int(job["sent"]) == 1, "a different engine isn't taken")
+	Shed._erase_item(other)
+	while int(job["owed"]) > 0:
+		Contracts.advance(0.1)
+	donors = Shed.items.keys().filter(func(i): return int(Shed.items[i].get("batch", 0)) == int(job["id"]))
+	check(donors.size() == 2, "the rest of the donors arrive")
+	var second := int(donors[0])
+	_prep_engine(second, spec)
+	_drop_on_pallet(second)
+	check(int(job["sent"]) == 2 and not Shed.items.has(second), "put down to spec, it's dispatched there and then (2/3)")
+	# Take a spanner to the last: a plug lead off is a part missing.
+	var last := int(donors[1])
+	_prep_engine(last, spec)
+	Shed.items[last]["bolted"]["spark_plugs"] = false
+	check(not ContractBatch.check_item(spec, last)["ok"], "an engine with something not bolted up fails")
+	Shed.items[last]["bolted"]["spark_plugs"] = true
+	var before := Shed.garage_money
+	_drop_on_pallet(last)
+	check(not Contracts.jobs().has(int(job["id"])) and Contracts.reputation() > rep0, "the last one in closes the order, reputation up")
+	var done: Dictionary = Contracts._st()["done"][0]
+	check(int(done["paid"]) == int(job["per"]) * 3 + int(job["bonus"]) and Shed.garage_money - before >= int(job["bonus"]),
+		"all on time: every part paid and the bonus (%s)" % Contracts.money(int(done["paid"])))
+	# A late, half-done order closed early pays for what was sent and costs reputation.
+	cid = _batch_customer("")
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var late: Dictionary = Contracts.jobs().values()[0]
+	Contracts.advance(float(late["due"]) - Contracts.clock() + Contracts.DAY * 2.0)
+	check(ContractBatch.part_pay(late) < int(late["per"]), "late parts pay less")
+	var rep1 := Contracts.reputation()
+	Shed.request({"a": "contract_hand_in", "job": int(late["id"])})
+	check(not Contracts.jobs().has(int(late["id"])) and Contracts.reputation() < rep1
+		and not Shed.items.values().any(func(it): return int(it.get("batch", 0)) == int(late["id"])),
+		"closing it early ends it, reputation down, and the unused donors go back")
+	Progress.profile = saved
+
+
+func _test_contract_batch_paint() -> void:
+	Shed.start_new("Tester", 703)
+	Contracts._st()["reputation"] = 10
+	var cid := _batch_customer("paint")
+	var o: Dictionary = Contracts.customers()[cid]["offer"]
+	var spec: Dictionary = o["goals"][0]
+	spec["sheen"] = "satin"
+	spec["lacquer"] = true
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var part := str(PartsDB.by_kind[str(spec["item"])][0])
+	var id := Shed._new_item(str(job["donor"]) if str(job["donor"]) != "" else part, 0.0, 0.0, 0.0)
+	var r := ContractBatch.check_item(spec, id)
+	check(not r["ok"], "a part in its old paint isn't to spec: %s" % ", ".join(r["why"]))
+	# Sprayed in the bay: the library colour, a good finish, then satin lacquer.
+	var tin := PaintMix.parse_code(str(PaintMix.library_entry(str(spec["lib"])).get("code", "")))
+	var mix := PaintMix.spec(tin)
+	Shed.items[id]["mix"] = mix
+	Shed.items[id]["mix_coats"] = 3
+	Shed.items[id]["color"] = mix["color"]
+	Shed.items[id]["paint_quality"] = float(spec["q"]) + 0.03
+	r = ContractBatch.check_item(spec, id)
+	check(not r["ok"] and r["why"].any(func(w): return str(w).contains("lacquer")) and r["why"].any(func(w): return str(w).contains("gloss")),
+		"the right colour without its lacquer: %s" % ", ".join(r["why"]))
+	Shed.items[id]["flat"] = PaintMix.SHEENS["satin"]
+	r = ContractBatch.check_item(spec, id)
+	check(r["ok"], "under satin lacquer it's to spec: %s" % r["have"])
+	Shed.items[id]["paint_quality"] = float(spec["q"]) - 0.1
+	check(not ContractBatch.check_item(spec, id)["ok"], "a patchy coat isn't")
+	Shed.items[id]["paint_quality"] = 0.99
+	Shed.items[id]["color"] = Color(0.1, 0.6, 0.2) if Color.html(str(spec["rgb"])).g < 0.4 else Color(0.7, 0.05, 0.6)
+	check(not ContractBatch.check_item(spec, id)["ok"], "nor the wrong colour")
+	Shed.items[id]["color"] = mix["color"]
+	_drop_on_pallet(id)
+	check(int(job["sent"]) == 1 and not Shed.items.has(id), "dispatched from the pallet: 1/%d" % int(job["n"]))
+
+
+func _test_contract_test_ride() -> void:
+	Shed.start_new("Tester", 704)
+	Contracts._st()["reputation"] = 10
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.profile["xp"] = Progress.xp_for_level(14)
+	var seen_brands := {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var all_quirks := {}
+	for i in 60:
+		var o := ContractTestRide.make_offer(rng, 14)
+		seen_brands[o["brand"]] = true
+		for q in o["quirks"]:
+			all_quirks[q] = true
+		if i < 4:
+			check(o["quirks"].size() >= 1 and o["quirks"].size() <= 3 and o["goals"][0]["t"] == "ride_km" and o["goals"][-1]["t"] == "report",
+				"%s: %s, faults %s, tests %s" % [o["bike_name"], o["style"], str(o["quirks"]), str(o["goals"].map(func(g): return g["t"]))])
+	check(seen_brands.size() >= 8 and seen_brands.has("Ducati") and seen_brands.has("BMW Motorrad"), "from real manufacturers (%s)" % ", ".join(seen_brands.keys()))
+	# The lap counter: every stretch of The Loop, either way round, makes a lap.
+	var seen := []
+	var laps := 0
+	for k in range(ContractTestRide.LAP_SECTORS * 2 + 3):
+		if ContractTestRide.lap_step(seen, (ContractTestRide.LAP_SECTORS * 3 - k) % ContractTestRide.LAP_SECTORS):
+			laps += 1
+	var short := []
+	var cut := false
+	for k in ContractTestRide.LAP_SECTORS - 1:
+		cut = cut or ContractTestRide.lap_step(short, k)
+	check(laps == 2 and not cut and ContractTestRide.route_name("loop") == "The Loop",
+		"the logger counts laps of The Loop (two and a bit round backwards make 2, a cut short one none)")
+	check(all_quirks.size() == ContractTestRide.ISSUES.size(), "every fault turns up on some prototype (%s)" % str(all_quirks.keys()))
+	# One with a weave, a flat spot and a weak front brake, to check them in the physics.
+	var cid := 0
+	for i in 200:
+		cid = Contracts.spawn("test_ride")
+		var q: Array = Contracts.customers()[cid]["offer"]["quirks"]
+		if q.has("weave") and q.has("flat_spot") and Contracts.rides_in(Contracts.customers()[cid]):
+			break
+		Contracts.customers().erase(cid)
+	var o: Dictionary = Contracts.customers()[cid]["offer"]
+	check(str(o["title"]).begins_with("Test ride") and o.has("paint_rgb") and Contracts.rides_in(Contracts.customers()[cid]),
+		"the rep rides the prototype in: %s" % o["title"])
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var bike := int(job["bike"])
+	check(Shed.bikes[bike].get("proto", false) and Contracts.in_car_park((Shed.bikes[bike]["xf"] as Transform3D).origin) and Shed.is_complete(bike),
+		"it's left whole in the car park")
+	var b := Shed.build_of(bike)
+	var clean := BikeBuild.new(b.parts, {})
+	check(b.trail < BikeBuild.SHORT_TRAIL and clean.trail > b.trail + 0.02, "the weave is real: %d mm of trail (%d mm with stock yokes)" % [
+		roundi(b.trail * 1000.0), roundi(clean.trail * 1000.0)])
+	var rpm := b.peak_torque_rpm * BikeBuild.FLAT_SPOT_AT
+	check(b.engine_torque(rpm) < clean.engine_torque(rpm) * 0.8 and absf(b.engine_torque(b.peak_torque_rpm * 1.3) - clean.engine_torque(b.peak_torque_rpm * 1.3)) < 2.0,
+		"the flat spot is real: %d Nm at %d rpm, %d without" % [roundi(b.engine_torque(rpm)), roundi(rpm), roundi(clean.engine_torque(rpm))])
+	if job["quirks"].has("weak_front"):
+		check(b.front_brake_torque < BikeBuild.new(Contracts.style_build(str(job["style"])), {}).front_brake_torque * 0.6, "and the front brake is weak")
+	check(Shed.check(Shed.me(), {"a": "unbolt", "bike": bike, "slot": "handlebars"}).contains("prototype")
+		and Shed.check(Shed.me(), {"a": "tune", "bike": bike}).contains("prototype") and not Shed.check(Shed.me(), {"a": "sale_list", "bike": bike, "ask": 9000}).is_empty(),
+		"it can't be worked on, tuned or sold")
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": int(job["id"])}).contains("report"), "the rep won't collect it before the report")
+	# Riding the test: the logger's peaks come in with the ride stats.
+	check(Shed.check(Shed.me(), {"a": "mount", "bike": bike}) == "", "you can ride it")
+	Shed.request({"a": "mount", "bike": bike})
+	var top := 0.0
+	var lean := 0.0
+	var brake := 0.0
+	for g in job["goals"]:
+		match str(g["t"]):
+			"ride_top":
+				top = float(g["min"]) + 4.0
+			"ride_lean":
+				lean = float(g["min"]) + 2.0
+			"ride_brake":
+				brake = float(g["min"]) + 0.05
+	Shed.request({"a": "ride", "km": 2.0, "top_kmh": top, "kmh": 50.0, "lean": lean * 0.5, "brake_g": 0.2, "wobble": 3.0})
+	check(not ContractTestRide.tests_done(job).x == ContractTestRide.tests_done(job).y, "a short gentle ride doesn't do the test")
+	for i in 20:
+		Shed.request({"a": "ride", "km": 2.0, "top_kmh": top, "kmh": 80.0, "lean": lean, "brake_g": brake, "wobble": 4.0, "laps": 1 if i < 2 else 0})
+	Shed.request({"a": "dismount", "bike": bike, "xf": Shed.bikes[bike]["xf"]})
+	var d: Dictionary = Shed.bikes[bike].get("dyno", {"n": 0, "runs": []})
+	d["n"] = int(d.get("n", 0)) + 1
+	Shed.bikes[bike]["dyno"] = d
+	var t := ContractTestRide.tests_done(job)
+	check(t.x == t.y and float(job["log"]["km"]) >= 40.0, "the logger shows every test done (%d/%d, %.0f km)" % [t.x, t.y, float(job["log"]["km"])])
+	var truth: Dictionary = job["truth"]
+	var good := ContractTestRide.score(job, truth, job["quirks"].duplicate())
+	var wrong_r := {}
+	for k in ContractTestRide.RATINGS:
+		wrong_r[k] = 5 if int(truth[k]) <= 2 else 1
+	var bad := ContractTestRide.score(job, wrong_r, ["clutch", "gearbox"])
+	var half := ContractTestRide.score(job, truth, [job["quirks"][0], "buzz"])
+	check(is_equal_approx(float(good["score"]), 1.0) and float(bad["score"]) < 0.1 and float(half["score"]) > float(bad["score"]) and float(half["score"]) < 1.0,
+		"a report that spots the faults scores best (%.2f), half right %.2f, wrong %.2f" % [good["score"], half["score"], bad["score"]])
+	check(Shed.check(Shed.me(), {"a": "contract_report", "job": int(job["id"]), "ratings": {"handling": 3}, "issues": []}) != "",
+		"every line has to be rated")
+	var pay_none := int(Contracts.payout(job)["total"])
+	Shed.request({"a": "contract_report", "job": int(job["id"]), "ratings": truth.duplicate(), "issues": job["quirks"].duplicate()})
+	check(job.get("report") is Dictionary and is_equal_approx(float(job["report"]["score"]), 1.0), "the report's in")
+	var pay := Contracts.payout(job)
+	check(int(pay["total"]) >= int(job["pay"]) + int(job["bonus"]) - 1 and int(pay["total"]) > pay_none,
+		"a perfect report on a full test pays the fee and the whole bonus (%s)" % Contracts.money(int(pay["total"])))
+	var money0 := Shed.garage_money
+	Shed.request({"a": "contract_hand_in", "job": int(job["id"])})
+	check(not Shed.bikes.has(bike) and Contracts.jobs().is_empty() and Shed.garage_money > money0
+		and (Contracts._st()["leaving"] as Array).any(func(l): return int(l["id"]) == int(job["id"])),
+		"the rep collects it and rides it away, and the shed is paid")
+	Progress.profile = saved
+
+
+func _test_contract_new_kinds_save() -> void:
+	Shed.start_new("Tester", 705)
+	Contracts._st()["reputation"] = 10
+	var a := _batch_customer("engine")
+	Shed.request({"a": "contract_accept", "customer": a})
+	var b := Contracts.spawn("test_ride")
+	Shed.request({"a": "contract_accept", "customer": b})
+	var jobs := Contracts.jobs().duplicate(true)
+	var text := var_to_str(Shed.save_snapshot().duplicate(true))
+	Shed.start_new("Tester", 706)
+	Shed.load_state(str_to_var(text), "Tester")
+	var kinds: Array = Contracts.jobs().values().map(func(j): return str(j["kind"]))
+	check(kinds.has("batch") and kinds.has("test_ride"), "a batch order and a test ride survive a save")
+	for id in jobs:
+		var j: Dictionary = Contracts.jobs().get(id, {})
+		check(j.get("goals") == jobs[id]["goals"] and int(j.get("n", 0)) == int(jobs[id].get("n", 0)) and j.get("quirks", []) == jobs[id].get("quirks", []),
+			"with its spec or test, count and faults (%s)" % str(j.get("title", "")))
+	var tr: Dictionary = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == "test_ride")[0]
+	var bike := int(tr["bike"])
+	check(Shed.bikes.has(bike) and Shed.bikes[bike].get("proto", false) and Shed.build_of(bike).trail < 0.5, "and the prototype is still theirs")
 
 
 ## The sales office's plan: where it stands (clear of the shed's rooms, on the yard, off the road),

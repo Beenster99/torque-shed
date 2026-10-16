@@ -96,7 +96,20 @@ func _fill_offer(c: Dictionary) -> void:
 			+ "(legal minimum %.0f mm) and condition, wheels, discs, pads, calipers, master cylinders and fluid, fork and shock leaks, "
 			% MotTest.TREAD_LEGAL + "steering, chain and sprockets, tension, lights, horn, dash, mirrors, exhaust, frame rust, oil "
 			+ "and the number plate. Fix every fail and test it again for the certificate.", 14, Color(1, 1, 1, 0.6)))
+	if kind == "batch":
+		_box.add_child(UITheme.label(("Each part is checked as it goes down on the dispatch pallet by the delivery area: an engine is "
+			+ "run on the bench for its power (whole, with oil in), a painted part is checked for its colour, sheen, lacquer and "
+			+ "finish. Parts to spec are taken and paid for there and then."), 14, Color(1, 1, 1, 0.6)))
+	elif kind == "test_ride":
+		_box.add_child(UITheme.label(("The ride logger checks the test was done. Then rate it and tick what you noticed on the "
+			+ "report: the closer it is to the truth, the bigger the bonus. It's their bike: no spanners on it, and it can't be sold."),
+			14, Color(1, 1, 1, 0.6)))
 	var money := "Pays %s" % Contracts.money(int(o["pay"]))
+	if kind == "batch":
+		money = "Pays %s a part (%d parts)  +  %s bonus for all of them on time" % [Contracts.money(int(o.get("per", 0))), int(o.get("n", 0)),
+			Contracts.money(int(o.get("bonus", 0)))]
+	elif kind == "test_ride":
+		money = "Pays %s for the test  +  up to %s for a sharp report" % [Contracts.money(int(o["pay"])), Contracts.money(int(o.get("bonus", 0)))]
 	if int(o.get("budget", 0)) > 0:
 		money += "  +  parts up to a %s budget (spending more comes off the pay)" % Contracts.money(int(o["budget"]))
 	_box.add_child(UITheme.label(money, 18, Color(0.5, 0.95, 0.55)))
@@ -132,6 +145,14 @@ static func button(text: String, cb: Callable) -> Button:
 ## The customer's bike in a line.
 static func bike_text(o: Dictionary) -> String:
 	var parts: Dictionary = o.get("parts", {})
+	match str(o.get("kind", "")):
+		"batch":
+			return "From %s: %s." % [o.get("trade", "the trade"), "they send the donor parts, crated, to the delivery area"
+				if str(o.get("supply", "")) == "donors" else "no donors, you source the parts (%s)" % PartsDB.part_name(str(o.get("donor", "")))]
+		"test_ride":
+			var text := "Their prototype: the %s, a %s with a %s." % [o.get("model", ""), str(Contracts.STYLES.get(str(o.get("style", "")),
+				"bike")).to_lower(), PartsDB.part_name(str(parts.get("engine", "")))]
+			return text + " Ridden in by their rep and parked in the car park."
 	if str(o.get("kind", "")) == "bespoke":
 		return "Starts as a bare %s on a bay, built up from nothing." % PartsDB.part_name(str(parts.get("frame", ""))).to_lower()
 	var text := "Their bike: %s, a %s with a %s." % [o.get("bike_name", ""), PartsDB.part_name(str(parts.get("engine", ""))),
@@ -163,7 +184,129 @@ static func jobs_signature() -> String:
 		bits.append([id, Contracts.evaluate(j).map(func(r): return r["have"]), Contracts.due_text(float(j["due"])),
 			j.get("mot", {}).get("tests", 0), j.get("mot", {}).get("stale", false), Contracts.payout(j)["total"],
 			Shed.check(Shed.me(), {"a": "contract_hand_in", "job": id})])
+		if str(j.get("kind", "")) == "batch":
+			bits.append(ContractBatch.checkable(j).map(func(i): return [i, ContractBatch.check_item(j["goals"][0], int(i))["have"]]))
+			bits.append(int(j.get("owed", 0)))
+		elif str(j.get("kind", "")) == "test_ride":
+			bits.append(j.get("report") is Dictionary)
 	return str(bits)
+
+
+## The report forms being filled in, by job id: {ratings: {key: 1..5}, issues: [keys]}. Kept here
+## so the card can be rebuilt (or reopened) without losing what's been ticked.
+static var drafts := {}
+
+
+static func _draft(job_id: int) -> Dictionary:
+	if not drafts.has(job_id):
+		drafts[job_id] = {"ratings": {}, "issues": []}
+	return drafts[job_id]
+
+
+## A batch order's card: the spec, the count, where the donors are, the parts on the pallet and
+## the engine stands with how each measures up, and Dispatch / Close the order.
+static func _fill_batch(box: VBoxContainer, job: Dictionary) -> void:
+	var id := int(job["id"])
+	var late := Contracts.clock() > float(job["due"])
+	var spec: Dictionary = job["goals"][0]
+	box.add_child(UITheme.title(str(job["title"]), 20))
+	box.add_child(UITheme.label("For %s (%s)  ·  %s" % [job.get("trade", ""), job["customer"], Contracts.due_text(float(job["due"]))], 15,
+		Color(1, 0.5, 0.4) if late else Color(1, 1, 1, 0.75)))
+	box.add_child(UITheme.label("SPEC:  " + ContractBatch.spec_text(spec), 15))
+	var sent := int(job.get("sent", 0))
+	var n := int(job.get("n", 1))
+	var bar := ProgressBar.new()
+	bar.max_value = n
+	bar.value = sent
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(0, 14)
+	box.add_child(UITheme.label("Dispatched %d / %d  ·  %s a part now  ·  %s paid so far" % [sent, n, Contracts.money(ContractBatch.part_pay(job)),
+		Contracts.money(int(job.get("paid", 0)))], 18, Color(0.5, 0.95, 0.55) if sent >= n else UITheme.ACCENT))
+	box.add_child(bar)
+	if str(job.get("supply", "")) == "donors":
+		var owed := int(job.get("owed", 0))
+		box.add_child(UITheme.label("Donors: %s, crated in the delivery area%s." % [PartsDB.part_name(str(job.get("donor", ""))),
+			"" if owed == 0 else " (%d more to come when there's room)" % owed], 14, Color(1, 1, 1, 0.7)))
+	else:
+		box.add_child(UITheme.label("No donors: source each %s yourself." % PartsDB.part_name(str(job.get("donor", ""))).to_lower(), 14, Color(1, 1, 1, 0.7)))
+	var look := ContractBatch.checkable(job)
+	if look.is_empty():
+		box.add_child(UITheme.label("Nothing on the dispatch pallet%s yet." % (" or the engine stands" if str(spec.get("item", "")) == "engine" else ""),
+			14, Color(1, 1, 1, 0.55)))
+	for item_id in look:
+		var r := ContractBatch.check_item(spec, int(item_id))
+		var where := "pallet" if ContractBatch.on_pallet(int(item_id)) else "stand"
+		box.add_child(UITheme.label("%s  %s (%s): %s%s" % ["[ok]" if r["ok"] else "[  ]", Shed.item_title(int(item_id)), where, r["have"],
+			"" if r["ok"] else "  ·  " + ", ".join(r["why"])], 14, Color(0.5, 0.95, 0.55) if r["ok"] else Color(0.95, 0.75, 0.5)))
+	var pay := Contracts.payout(job)
+	box.add_child(UITheme.label("Close now: %s  ·  %s" % [Contracts.money(int(pay["total"])), pay["note"]], 15, UITheme.ACCENT))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var why := Shed.check(Shed.me(), {"a": "contract_dispatch", "job": id})
+	var go := button("Dispatch from pallet", func(): Shed.request({"a": "contract_dispatch", "job": id}))
+	go.disabled = why != ""
+	go.tooltip_text = why
+	row.add_child(go)
+	row.add_child(button("Close the order", func(): Shed.request({"a": "contract_hand_in", "job": id})))
+	box.add_child(row)
+	box.add_child(HSeparator.new())
+
+
+## A test ride's report form: a 1-5 rating for each line, the issues to tick, and Send report.
+static func _fill_report(box: VBoxContainer, job: Dictionary) -> void:
+	var id := int(job["id"])
+	var r = job.get("report")
+	if r is Dictionary:
+		var bits := []
+		for k in ContractTestRide.RATINGS:
+			bits.append("%s %d" % [ContractTestRide.RATING_NAMES[k], int(r["ratings"].get(k, 0))])
+		box.add_child(UITheme.label("REPORT SENT:  " + "  ·  ".join(bits), 15, Color(0.5, 0.95, 0.55)))
+		var noticed: Array = (r.get("issues", []) as Array).map(func(k): return str(ContractTestRide.ISSUES.get(k, ContractTestRide.DECOYS.get(k, k))))
+		box.add_child(UITheme.label("Noticed: %s" % (", ".join(noticed) if not noticed.is_empty() else "nothing wrong"), 14, Color(1, 1, 1, 0.75)))
+		return
+	var d := _draft(id)
+	box.add_child(UITheme.label("TEST REPORT  (rate each 1 = poor .. 5 = excellent)", 15, UITheme.ACCENT))
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 6)
+	for k in ContractTestRide.RATINGS:
+		grid.add_child(UITheme.label(ContractTestRide.RATING_NAMES[k], 15))
+		for v in range(1, 6):
+			var b := Button.new()
+			b.text = str(v)
+			b.toggle_mode = true
+			b.custom_minimum_size = Vector2(40, 0)
+			b.button_pressed = int(d["ratings"].get(k, 0)) == v
+			var key: String = k
+			var val: int = v
+			b.pressed.connect(func():
+				d["ratings"][key] = val
+				for sib in b.get_parent().get_children():
+					if sib is Button and sib.has_meta("rating") and str(sib.get_meta("rating")) == key:
+						(sib as Button).set_pressed_no_signal(int((sib as Button).text) == val))
+			b.set_meta("rating", key)
+			grid.add_child(b)
+	box.add_child(grid)
+	box.add_child(UITheme.label("Issues you noticed:", 15))
+	var issues := GridContainer.new()
+	issues.columns = 2
+	for o in ContractTestRide.report_options():
+		var c := CheckBox.new()
+		c.text = str(o["text"])
+		c.button_pressed = (d["issues"] as Array).has(o["key"])
+		var key := str(o["key"])
+		c.toggled.connect(func(on: bool):
+			var list: Array = d["issues"]
+			list.erase(key)
+			if on:
+				list.append(key))
+		issues.add_child(c)
+	box.add_child(issues)
+	var send := button("Send report", func():
+		Shed.request({"a": "contract_report", "job": id, "ratings": d["ratings"].duplicate(), "issues": (d["issues"] as Array).duplicate()}))
+	var why := Shed.check(Shed.me(), {"a": "contract_report", "job": id, "ratings": d["ratings"], "issues": d["issues"]})
+	send.tooltip_text = why
+	box.add_child(send)
 
 
 ## Fills `box` with the jobs under way and the last few done.
@@ -194,6 +337,9 @@ static func fill_jobs(box: VBoxContainer) -> void:
 
 
 static func _fill_job(box: VBoxContainer, job: Dictionary) -> void:
+	if str(job.get("kind", "")) == "batch":
+		_fill_batch(box, job)
+		return
 	var id := int(job["id"])
 	var late := Contracts.clock() > float(job["due"])
 	box.add_child(UITheme.title(str(job["title"]), 20))
@@ -204,6 +350,8 @@ static func _fill_job(box: VBoxContainer, job: Dictionary) -> void:
 	for r in Contracts.evaluate(job):
 		box.add_child(UITheme.label("%s  %s   (%s)" % ["[x]" if r["done"] else "[  ]", r["text"], r["have"]], 15,
 			Color(0.5, 0.95, 0.55) if r["done"] else Color(0.9, 0.9, 0.9)))
+	if str(job["kind"]) == "test_ride":
+		_fill_report(box, job)
 	var pay := Contracts.payout(job)
 	if int(job.get("budget", 0)) > 0:
 		box.add_child(UITheme.label("Parts spent %s of a %s budget" % [Contracts.money(int(pay["spent"])), Contracts.money(int(job["budget"]))],

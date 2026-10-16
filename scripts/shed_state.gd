@@ -615,6 +615,9 @@ func condition_of(item: Dictionary) -> Dictionary:
 			cond["lighten_extra"] = float(item["lighten_extra"])
 	if item.has("bead"):
 		cond["bead"] = item["bead"]
+	# A manufacturer prototype's built-in quirk (see ContractTestRide).
+	if item.get("proto") is Dictionary:
+		cond["proto"] = item["proto"]
 	# Sandblasted bare metal (where, and whether all over) and any protective coat, for drawing it.
 	if item.get("blast") is Dictionary:
 		cond["blast"] = item["blast"]
@@ -2306,6 +2309,9 @@ func check(peer: int, action: Dictionary) -> String:
 			return "Someone is wheeling that bike about."
 	if a.begins_with("contract_"):
 		return Contracts.check(peer, action)
+	var contract_why := Contracts.guard(action)
+	if contract_why != "":
+		return contract_why
 	if a.begins_with("sale_"):
 		return Sales.check(peer, action)
 	if PaintBay.carrying(peer) and (PaintBay.HANDS_NEEDED.has(a) and not a in ["paint", "coat"] or a in ["coffee_buy", "coffee_tray_take"]):
@@ -3156,6 +3162,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var item_id := held_by(peer)
 			_move(item_id, "floor", action["xf"])
 			_xp(peer, "carry", 1.0, "item:%d" % item_id)
+			# Down on the dispatch pallet: a batch order checks it and takes it if it's to spec.
+			text = Contracts.on_drop(peer, item_id)
 		"place":
 			var item_id := held_by(peer)
 			_move(item_id, "spot", str(action["spot"]))
@@ -3616,6 +3624,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var bike := int(c.get("riding", 0))
 			if bikes.has(bike):
 				_wear_from_ride(bike, action)
+				Contracts.note_ride(bike, action)
 			c["km"] = float(c.get("km", 0.0)) + clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 			c["top_kmh"] = maxf(float(c.get("top_kmh", 0.0)), clampf(float(action.get("top_kmh", 0.0)), 0.0, 400.0))
 			c["kmh"] = clampf(float(action.get("kmh", 0.0)), 0.0, 400.0)

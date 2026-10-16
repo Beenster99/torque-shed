@@ -16,6 +16,58 @@ var _looked := 0
 
 func _ready() -> void:
 	Shed.changed.connect(sync_state)
+	add_child(dispatch_pallet())
+
+
+## The dispatch pallet by the delivery area, where batch orders' finished parts go down (see
+## ContractBatch.DISPATCH): a wooden pallet on the ground with a sign on a post.
+static func dispatch_pallet() -> Node3D:
+	var root := Node3D.new()
+	root.name = "DispatchPallet"
+	var r := ContractBatch.DISPATCH
+	root.position = ContractBatch.pallet_at()
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.62, 0.47, 0.3)
+	wood.roughness = 0.9
+	var dark := wood.duplicate() as StandardMaterial3D
+	dark.albedo_color = Color(0.45, 0.33, 0.2)
+	var box := func(size: Vector3, at: Vector3, mat: Material) -> void:
+		var m := MeshInstance3D.new()
+		var b := BoxMesh.new()
+		b.size = size
+		m.mesh = b
+		m.material_override = mat
+		m.position = at
+		root.add_child(m)
+	# Three bearers, then deck boards across them.
+	for i in 3:
+		box.call(Vector3(0.1, 0.09, r.size.y), Vector3(lerpf(-r.size.x * 0.5 + 0.06, r.size.x * 0.5 - 0.06, i / 2.0), 0.045, 0.0), dark)
+	for i in 9:
+		box.call(Vector3(r.size.x, 0.022, r.size.y / 9.0 - 0.04), Vector3(0.0, 0.1, lerpf(-r.size.y * 0.5, r.size.y * 0.5, (i + 0.5) / 9.0)), wood)
+	# Solid, so parts put down on it sit on its boards.
+	var body := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(r.size.x, 0.111, r.size.y)
+	shape.shape = bs
+	shape.position = Vector3(0.0, 0.0555, 0.0)
+	body.add_child(shape)
+	root.add_child(body)
+	var post := StandardMaterial3D.new()
+	post.albedo_color = Color(0.2, 0.2, 0.22)
+	box.call(Vector3(0.06, 1.3, 0.06), Vector3(r.size.x * 0.5 + 0.15, 0.65, -r.size.y * 0.5 + 0.1), post)
+	var board := StandardMaterial3D.new()
+	board.albedo_color = Color(0.95, 0.75, 0.1)
+	box.call(Vector3(0.9, 0.36, 0.03), Vector3(r.size.x * 0.5 + 0.15, 1.36, -r.size.y * 0.5 + 0.13), board)
+	var sign := Label3D.new()
+	sign.text = "DISPATCH\nbatch orders"
+	sign.font_size = 40
+	sign.pixel_size = 0.004
+	sign.modulate = Color(0.08, 0.08, 0.08)
+	sign.outline_size = 0
+	sign.position = Vector3(r.size.x * 0.5 + 0.15, 1.36, -r.size.y * 0.5 + 0.15)
+	root.add_child(sign)
+	return root
 
 
 ## Brings the figures into line with the customers waiting now, and the ones collecting their
@@ -43,7 +95,10 @@ func sync_state() -> void:
 		var bike := {}
 		if park >= 0:
 			var o: Dictionary = c["offer"]
-			bike = {"parts": o.get("parts", {}), "paint": Shed.PAINTS[int(o.get("paint", 0)) % Shed.PAINTS.size()]}
+			var paint: Color = Shed.PAINTS[int(o.get("paint", 0)) % Shed.PAINTS.size()]
+			if Color.html_is_valid(str(o.get("paint_rgb", ""))):
+				paint = Color.html(str(o["paint_rgb"]))   # a manufacturer's prototype, in its factory colour
+			bike = {"parts": o.get("parts", {}), "paint": paint}
 		var secs := _length(walk) / Contracts.WALK_SPEED + _length(ride) / Contracts.RIDE_SPEED * 1.5 + 2.0
 		var v := CustomerView.new()
 		add_child(v)

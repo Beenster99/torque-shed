@@ -104,6 +104,9 @@ const XP := {
 	"contract_respray": {"xp": 80, "label": "Colour match job done"},
 	"contract_mod": {"xp": 100, "label": "Modification job done"},
 	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
+	"contract_batch": {"xp": 150, "label": "Batch order delivered"},
+	"contract_batch_part": {"xp": 6, "label": "Batch part dispatched", "once": "item"},
+	"contract_test": {"xp": 90, "label": "Test ride report in"},
 	"mot_test": {"xp": 6, "label": "MOT test"},
 	"garage_upgrade": {"xp": 40, "label": "Garage upgrade"},
 	# The coffee shop next door (see CoffeeShop): a break, and a biker's bike bought off them.

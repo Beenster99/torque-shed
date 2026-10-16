@@ -37,6 +37,8 @@ var _ride_km := 0.0
 var _ride_top := 0.0
 var _mounted_at := 0
 var _dirt_km := 0.0
+var _lap_seen := []           # the ride logger's lap counter: stretches of the test route passed (see ContractTestRide.lap_step)
+var _laps := 0               # laps of it since the last ride stats went
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
@@ -440,6 +442,8 @@ func _start_riding(bike_id: int) -> void:
 	_ride_top = 0.0
 	_dirt_km = 0.0
 	_ride_dirt = 0.0
+	_lap_seen = []
+	_laps = 0
 	hud.trip_km = 0.0
 	hud.trip_fuel = 0.0
 	_dash = bike.model.dash_readout()
@@ -622,6 +626,7 @@ func _physics_process(delta: float) -> void:
 		_ride_km += km
 		hud.trip_km += km
 		_ride_top = maxf(_ride_top, absf(bike.speed) * 3.6)
+		_track_lap()
 		if bike.wheels[1]["contact"] or bike.wheels[0]["contact"]:
 			# Loose ground and wheelspin throw muck all over the bike.
 			var muck := km * float(SURFACE_DIRT.get(bike.surface, 0.3)) * (1.0 + float(bike.wheels[1]["slip"]))
@@ -668,11 +673,57 @@ func _send_ride_stats() -> void:
 	if bike == null:
 		return
 	hud.trip_fuel += bike.fuel_used
-	Shed.request({"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
-		"dirt_km": _dirt_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()})
+	var ride := {"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
+		"dirt_km": _dirt_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()}
+	ride.merge(_logger_peaks(), true)
+	if _laps > 0:
+		ride["laps"] = _laps
+		_laps = 0
+	Shed.request(ride)
 	bike.fuel_used = 0.0
 	_ride_km = 0.0
 	_dirt_km = 0.0
+
+
+## The ride logger's lap counter: which stretch of the test route (The Loop) the bike is on, if
+## it's on it, and a lap counted when it's been along all of them.
+func _track_lap() -> void:
+	if world == null or world.roads == null:
+		return
+	var p := bike.global_position
+	var hit := world.roads.nearest(p.x, p.z, 9.0)
+	if hit.is_empty():
+		return
+	var road: Dictionary = world.roads.roads[int(hit["road"])]
+	if str(road["name"]) != ContractTestRide.LAP_ROAD:
+		return
+	var n := maxi(1, (road["xz"] as PackedVector2Array).size())
+	if ContractTestRide.lap_step(_lap_seen, int(hit["i"]) * ContractTestRide.LAP_SECTORS / n):
+		_laps += 1
+		if Shed.bikes.get(riding_id, {}).get("proto", false):
+			hud.flash("Lap of %s logged." % ContractTestRide.route_name(ContractTestRide.LAP_ROAD), 2.0)
+
+
+## The ride logger's peaks since the last ride stats went (a test ride's checks, see
+## ContractTestRide.note_ride): the most lean, the hardest braking, and the worst shake at speed.
+func _logger_peaks() -> Dictionary:
+	var tel := bike.telemetry if bike else null
+	if tel == null or tel.size() == 0:
+		return {}
+	var out := {"lean": 0.0, "brake_g": 0.0, "wobble": 0.0}
+	var t: PackedFloat32Array = tel.data["t"]
+	var v: PackedFloat32Array = tel.data["speed"]
+	for i in range(tel.index_since(1.5), tel.size()):
+		out["lean"] = maxf(out["lean"], absf(tel.data["lean"][i]))
+		# Braking over a quarter of a second or so, so a bump doesn't read as a stop.
+		var j := i
+		while j > 0 and t[i] - t[j] < 0.25:
+			j -= 1
+		if t[i] - t[j] > 0.1:
+			out["brake_g"] = maxf(out["brake_g"], (v[j] - v[i]) / 3.6 / (t[i] - t[j]) / Bike.G)
+		if tel.data["speed"][i] >= ContractTestRide.FAST:
+			out["wobble"] = maxf(out["wobble"], tel.data["wobble"][i])
+	return out
 
 
 ## The rider's view of the clocks: needles for speed and revs on dial clocks, and speed, gear and
