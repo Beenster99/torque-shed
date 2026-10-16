@@ -45,14 +45,19 @@ static func record(series: Dictionary, t: float, balance: int) -> bool:
 			series[key] = []
 		var rows: Array = series[key]
 		var b := bucket_of(key, t)
-		if not rows.is_empty():
-			b = maxi(b, int(rows[-1][0]))
-			if int(rows[-1][1]) == balance:
-				continue
-			if int(rows[-1][0]) == b:
-				rows[-1][1] = balance
-				changed = true
-				continue
+		if rows.is_empty():
+			# The first note is the balance it opened with, put in the bucket before: money
+			# moving later in this bucket then shows as a step up to now, not a flat line.
+			rows.append([b - 1, balance])
+			changed = true
+			continue
+		b = maxi(b, int(rows[-1][0]))
+		if int(rows[-1][1]) == balance:
+			continue
+		if int(rows[-1][0]) == b:
+			rows[-1][1] = balance
+			changed = true
+			continue
 		rows.append([b, balance])
 		changed = true
 		# Keep the window, plus the one before it for the balance it opened with.
