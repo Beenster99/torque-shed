@@ -10,11 +10,13 @@ extends Control
 ##   Part exchange  a buyer who rode in on their own bike: its model, parts, condition,
 ##                  mileage, retail and trade value, what they want for it, and the deal.
 ##   Deals          the last bikes sold and what each made.
+##   Contracts      the jobs under way (as the Contracts card): a batch order's dispatch count, and
+##                  a manufacturer test ride's report form, filled in at the desk.
 ## Everything goes through the Shed (Sales.check/apply on the host), so the whole crew sees it.
 
 signal closed
 
-const TABS: Array[String] = ["Showroom", "Offers", "Part exchange", "Deals"]
+const TABS: Array[String] = ["Showroom", "Offers", "Part exchange", "Deals", "Contracts"]
 const DIM := Color(1, 1, 1, 0.55)
 const GOOD := Color(0.45, 0.9, 0.5)
 const BAD := Color(1.0, 0.45, 0.4)
@@ -151,7 +153,7 @@ func _signature() -> String:
 		stands.append(Sales.bike_on_stand(i))
 	var s := Sales._st()
 	return var_to_str([current_tab(), stand, stands, s["listings"], s["offers"], s["px"], (s["deals"] as Array).size(),
-		(s["news"] as Array).size()])
+		(s["news"] as Array).size(), ContractPanel.jobs_signature() if current_tab() == "Contracts" else ""])
 
 
 func refresh() -> void:
@@ -175,6 +177,8 @@ func refresh() -> void:
 			_build_px(page)
 		"Deals":
 			_build_deals(page)
+		"Contracts":
+			ContractPanel.fill_jobs(page)
 
 
 # ---------------------------------------------------------------------------- helpers

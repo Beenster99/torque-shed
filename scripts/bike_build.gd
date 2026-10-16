@@ -27,6 +27,9 @@ const BEAD_OK := 0.6
 const FORK_OFFSET := {"conventional": 0.045, "usd": 0.032, "girder": 0.045, "springer": 0.08, "leading_link": 0.05}
 ## Trail shorter than this (m) makes for nervous steering: the bike info says so.
 const SHORT_TRAIL := 0.06
+## Where a prototype's flat spot sits (a share of the peak torque revs) and how wide it is.
+const FLAT_SPOT_AT := 0.72
+const FLAT_SPOT_WIDTH := 0.12
 ## The least trail a bike that turns up already built has (see sensible_fork), m.
 const STOCK_TRAIL := 0.075
 ## Every tuning setting and its widest range, [min, max]. A setting missing from a tune is left
@@ -161,6 +164,7 @@ var cooling_capacity := 1.0
 var stock_redline := 9500.0    # where the limiter sits before it's moved
 var tune_low := 0.0            # a rich map fattens the torque below the peak, a lean one thins it
 var tune_high := 0.0           # ignition advance sharpens the top end
+var flat_dip := 0.0            # a manufacturer prototype's flat spot: torque lost in the mid-range (see ContractTestRide)
 var engine_stress := 1.0       # how hard the tune works the engine: multiplies its wear
 var rolling := ROLLING         # rolling resistance; soft tyres drag
 var tyre_wear := {"front": 1.0, "rear": 1.0}   # how fast each tyre wears at its pressure
@@ -195,6 +199,12 @@ static func part_health(cond: Dictionary) -> float:
 
 func _cond(slot: String, key: String) -> float:
 	return float(condition.get(slot, {}).get(key, 0.0))
+
+
+## A prototype's quirk kept on one of its parts (see ContractTestRide), 0 when there's none.
+func _proto(slot: String, key: String) -> float:
+	var p = condition.get(slot, {}).get("proto")
+	return float(p.get(key, 0.0)) if p is Dictionary else 0.0
 
 
 func has_part(slot: String) -> bool:
@@ -474,6 +484,8 @@ func _compute_wheels() -> void:
 	tyre_rear = tyre_params(tr, dev_r)
 	var fork := part("fork")
 	fork_offset = float(fork.get("offset", FORK_OFFSET.get(str(fork.get("style", "")), 0.04)))
+	# A manufacturer's prototype can come with yokes of its own, offset more than the fork's.
+	fork_offset += _proto("fork", "offset")
 	trail = clampf(trail_of(front_radius, rake_deg, fork_offset), -0.05, 0.4)
 	if trail < SHORT_TRAIL:
 		notes.append("The trail is very short (%d mm): the steering will be nervous and may shake its head. Fit a fork with less offset, or a steering damper." % roundi(trail * 1000.0))
@@ -572,6 +584,7 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	var cooling := part("cooling")
 	var exhaust := part("exhaust")
 	layout = block["layout"]
+	flat_dip = clampf(_proto("engine", "dip"), 0.0, 0.6)
 	displacement = block["displacement"]
 	peak_torque = displacement * float(block["torque_per_cc"])
 	peak_torque_rpm = float(block["peak_torque_rpm"]) * float(head["peak_shift"]) * float(fuel["peak_shift"])
@@ -687,6 +700,10 @@ func engine_torque(rpm: float) -> float:
 		t *= 1.0 + tune_low * minf(-x * 2.0, 1.0)
 	else:
 		t *= 1.0 + tune_high * minf(x * 2.0, 1.0)
+	if flat_dip > 0.0:
+		# A flat spot: the torque sags through a band of revs below the peak, then comes back.
+		var d := (rpm / peak_torque_rpm - FLAT_SPOT_AT) / FLAT_SPOT_WIDTH
+		t *= 1.0 - flat_dip * exp(-d * d)
 	return t
 
 
