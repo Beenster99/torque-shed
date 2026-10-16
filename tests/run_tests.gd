@@ -260,6 +260,9 @@ func _run_all() -> void:
 	await _test_steering_steady_turn()
 	await _test_countersteer()
 	await _test_hands_off()
+	await _test_direct_bars()
+	await _test_direct_bars_setting()
+	_test_sprocket_size()
 	await _test_steering_wobble()
 	await _test_turn_in()
 	await _test_steering_telemetry()
@@ -12460,6 +12463,136 @@ func _test_hands_off() -> void:
 			"hands off at %d km/h a stock bike rides out a shove and stays up (worst %.1f deg, now %.1f)"
 			% [roundi(v * 3.6), rad_to_deg(st["worst"]), rad_to_deg(bike.lean_angle)])
 		await _done(r)
+
+
+func _test_direct_bars() -> void:
+	# Direct bars: the steer input is torque on the bars. Hands off it runs upright; a push on the
+	# right grip leans it right and it turns right; a push on the left grip stands it back up.
+	# At a town speed, a brisk one and a fast one, without falling off.
+	for speed in [8.0, 15.0, 30.0]:
+		var st := {"yaw0": 0.0, "lean": 0.0, "straight": 0.0, "end": 0.0, "turned": 0.0, "bar": 0.0}
+		var push: float = {8.0: 0.6, 15.0: 0.8, 30.0: 1.2}[speed]
+		var r := await ride({}, 13.0, func(b, t):
+			b.assist = 0.5
+			b.direct_bars = true
+			_hold_speed(b, speed)
+			if t < 6.0:
+				b.lean_input = 0.0
+				if t > 3.0:
+					st["straight"] = maxf(st["straight"], absf(b.lean_angle))
+				st["yaw0"] = _heading(b)
+			elif t < 6.0 + push:
+				b.lean_input = 1.0
+				st["bar"] = minf(st["bar"], b.bar_torque)
+			elif t < 9.0:
+				b.lean_input = 0.0
+				st["lean"] = maxf(st["lean"], b.lean_angle)
+				st["turned"] = wrapf(_heading(b) - float(st["yaw0"]), -PI, PI)
+			elif t < 9.0 + push:
+				b.lean_input = -1.0
+			else:
+				b.lean_input = 0.0
+				st["end"] = absf(b.lean_angle))
+		var turned: float = st["turned"]
+		check(not r["crashed"] and rad_to_deg(st["straight"]) < 3.0,
+			"Direct bars at %d m/s: hands off it runs upright (lean %.1f deg)" % [speed, rad_to_deg(st["straight"])])
+		# At 30 m/s an 18 degree lean only turns it about 6 degrees a second.
+		check(st["bar"] < -10.0 and rad_to_deg(st["lean"]) > 10.0 and turned < -deg_to_rad(10.0 if speed < 20.0 else 5.0),
+			"Direct bars at %d m/s: pushing the right grip (%.0f N m on the bars) leans it right (%.0f deg) and it turns right (%.0f deg)"
+			% [speed, st["bar"], rad_to_deg(st["lean"]), rad_to_deg(-turned)])
+		check(not r["crashed"] and rad_to_deg(st["end"]) < 10.0,
+			"Direct bars at %d m/s: pushing the left grip stands it back up (lean %.1f deg)" % [speed, rad_to_deg(st["end"])])
+		await _done(r)
+	# Feet down at walking pace the bars just point where you steer.
+	var walk := {"steer": 0.0}
+	var rw := await ride({}, 4.0, func(b, t):
+		b.direct_bars = true
+		_hold_speed(b, 1.0)
+		b.lean_input = 1.0 if t > 2.0 else 0.0
+		walk["steer"] = b.steer)
+	check(not rw["crashed"] and float(walk["steer"]) > deg_to_rad(15.0),
+		"Direct bars feet down: the bars point where you steer (%.0f deg right)" % rad_to_deg(float(walk["steer"])))
+	await _done(rw)
+
+
+func _test_direct_bars_setting() -> void:
+	# Off by default, saved with the settings, in the Settings tab, and it reaches the ridden bike
+	# (the F3 overlay's bar torque strip shows what the hands are doing).
+	var fresh: Node = load("res://scripts/settings.gd").new()
+	check(not fresh.direct_bars, "Direct bars is off by default: lean steering stays the normal way")
+	fresh.free()
+	var was: bool = Settings.direct_bars
+	Settings.direct_bars = true
+	Settings.save_settings()
+	Settings.direct_bars = false
+	Settings.load_settings()
+	check(Settings.direct_bars, "Direct bars is saved with the settings (on)")
+	Settings.direct_bars = false
+	Settings.save_settings()
+	Settings.direct_bars = true
+	Settings.load_settings()
+	check(not Settings.direct_bars, "and off again")
+	check(TelemetryOverlay.STRIPS.any(func(n): return str(n).begins_with("Bar torque")),
+		"the F3 overlay has a bar torque strip")
+	var real_path := Progress.path
+	Progress.path = "user://profile_direct_bars_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	var boxes: Array = main.menu.find_children("*", "CheckBox", true, false).filter(func(c): return (c as CheckBox).text.begins_with("Direct bars"))
+	check(boxes.size() == 1, "the Settings tab has a Direct bars checkbox")
+	main._start_session()
+	Shed.request({"a": "mount", "bike": _bike_named("Old Faithful")})
+	Settings.direct_bars = true
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.bike != null and main.bike.direct_bars, "Direct bars in the settings reaches the bike")
+	# A held key pushes harder the longer it's held; a small stick move is a gentle push.
+	main._kb_bars = 0.0
+	var gentle: float = main._steer_input(0.3, 0.0)
+	Input.action_press("lean_right")
+	var held := []
+	for i in 4:
+		held.append(main._steer_input(0.0, 0.1))
+	Input.action_release("lean_right")
+	main._kb_bars = 0.0
+	check(held[0] > 0.1 and held[0] < 0.4 and held[3] > 0.9,
+		"Direct bars: holding the key pushes harder and harder (%s)" % str(held))
+	check(absf(gentle) < 0.1, "Direct bars: a small stick move is a gentle push (stick 0.3 gives %.2f)" % gentle)
+	Settings.direct_bars = false
+	for i in 2:
+		await get_tree().physics_frame
+	check(not main.bike.direct_bars, "and turning it off goes back to lean steering")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	Progress.path = real_path
+	DirAccess.remove_absolute("user://profile_direct_bars_test.json")
+	Settings.direct_bars = was
+	Settings.save_settings()
+
+
+func _test_sprocket_size() -> void:
+	# Sprockets are their real size for their teeth: a road 45 tooth rear about 23 cm across, an
+	# MX 52 about 27, a 15 tooth front about 8, and the rear well inside the wheel's rim.
+	var r45 := BikeModel.sprocket_radius(45) * 2000.0
+	var r52 := BikeModel.sprocket_radius(52) * 2000.0
+	var f15 := BikeModel.sprocket_radius(15) * 2000.0
+	check(r45 > 200.0 and r45 < 240.0 and r52 > 240.0 and r52 < 275.0 and f15 > 65.0 and f15 < 85.0,
+		"sprockets are a real size: 45T %.0f mm, 52T %.0f mm, front 15T %.0f mm across" % [r45, r52, f15])
+	for style in ["sport", "scrambler"]:
+		var m := BikeModel.new()
+		add_child(m)
+		m.build_from(BikeBuild.new(Contracts.style_build(style)))
+		# The biggest disc in the final drive is the rear sprocket: measure it front to back.
+		var sp := 0.0
+		for mi in m._slot_meshes.get("final_drive", []):
+			sp = maxf(sp, (m._local_xform(mi) * (mi as VisualInstance3D).get_aabb()).size.z)
+		var wheel := m.slot_bounds("rear_wheel").size.y
+		check(sp > 0.18 and sp < 0.29 and sp < wheel * 0.6,
+			"%s: the rear sprocket (%.0f mm across) sits well inside the back wheel (%.0f mm)" % [style, sp * 1000.0, wheel * 1000.0])
+		m.free()
 
 
 func _test_steering_wobble() -> void:

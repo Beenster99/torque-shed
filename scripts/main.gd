@@ -41,6 +41,7 @@ var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing i
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
 var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at the side while riding (F3)
+var _kb_bars := 0.0        # the keyboard's steer in Direct bars mode, ramped like a hand pushing harder
 ## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
 var _safe_xf := Transform3D()
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
@@ -610,6 +611,7 @@ func _physics_process(delta: float) -> void:
 		bike.auto_shift = Settings.auto_shift
 		camera.recentre = Settings.camera_recentre
 		bike.assist = Settings.assist
+		bike.direct_bars = Settings.direct_bars
 		bike.horn = active and Input.is_action_pressed("horn")
 		audio.rpm = bike.rpm
 		audio.gear = bike.gear
@@ -642,10 +644,17 @@ func _physics_process(delta: float) -> void:
 		Net.send_state(_net_state())
 
 
-## The steer input: the lean the rider aims for, from the keys and the stick.
-func _steer_input(stick_x: float, _delta: float) -> float:
+## The steer input: a lean to aim for, or with Direct bars the push on the bars. Keys are all or
+## nothing, so on Direct bars they're ramped up like a hand pushing harder (and let off quicker);
+## the stick is squared there, for fine pushes near the middle.
+func _steer_input(stick_x: float, delta: float) -> float:
 	var keys := Input.get_axis("lean_left", "lean_right")
-	return clampf(keys + stick_x, -1.0, 1.0)
+	if not Settings.direct_bars:
+		_kb_bars = 0.0
+		return clampf(keys + stick_x, -1.0, 1.0)
+	var easing := absf(keys) < absf(_kb_bars) or keys * _kb_bars < 0.0
+	_kb_bars = move_toward(_kb_bars, keys, (6.0 if easing else 2.5) * delta)
+	return clampf(_kb_bars + stick_x * absf(stick_x), -1.0, 1.0)
 
 
 ## Off the edge of the map (or through it): the bike goes back to the last place it had its

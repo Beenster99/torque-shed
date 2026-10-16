@@ -24,6 +24,10 @@ const ARM_INERTIA := 0.35         # kg m^2: the rider's hands and forearms swing
 const ARM_HOLD := 120.0           # Nm per rad: how firmly the rider's arms hold the bars where they aim them, riding
 const ARM_HOLD_SLOW := 500.0      # and at walking pace, feet down, steering by hand
 const MAX_BAR_TORQUE := 45.0      # Nm: the most a rider pushes through 720 mm bars (wider bars, more leverage)
+const DIRECT_BAR_TORQUE := 20.0   # Nm: a full push on the bars in Direct bars mode, 720 mm bars
+const DIRECT_BODY_LEAN := 1.0     # Direct bars, riding: N m per radian of lean per kg the rider's body sits it up with
+const DIRECT_BODY_RATE := 1.0     # ... and N m s per radian per kg against the bike falling
+const DIRECT_BODY_MAX := 250.0    # N m: the most the rider's body does
 const PNEUMATIC_TRAIL := 0.022    # m: how far behind the contact patch a gripping tyre's side force acts
 const BODY_SWAY := 0.5            # N m s per rad per kg: the rider's body damping a quick rocking of the bike
 const NO_HANDS_LEAN := 2.0        # riding no-handed: N m per radian of lean per kg the rider's hips push back with
@@ -66,6 +70,9 @@ var auto_shift := true
 ## throw you off), 0.5 and up the rider protects the front tyre and smooths the throttle, 1 also
 ## balances the bike for you. Kept as "assist" for the settings file and tests.
 var assist := 0.5
+## Direct bars: the steer input is the rider's push on the handlebars (push the right grip to lean
+## right) instead of a lean the virtual rider steers for. The front end's own geometry does the rest.
+var direct_bars := false
 ## Records the ride for the telemetry overlay and the dyno desk; only the local player's bike has one.
 var telemetry: RideTelemetry
 var controls_enabled := true
@@ -473,7 +480,11 @@ func _update_steering(delta: float) -> void:
 	_seen[3] = lerpf(_seen[3], _seen[2], k)
 	var cmd: float
 	var steer_eq := 0.0
-	if v < 2.0:
+	if direct_bars:
+		# Direct bars: no lean to aim for. The aim is only used feet down, pointing the bars.
+		cmd = lean_input * _max_steer()
+		_lean_i = 0.0
+	elif v < 2.0:
 		# Feet down at walking pace: the bars just point where the rider steers them.
 		cmd = lean_input * _max_steer()
 		_lean_i = 0.0
@@ -515,7 +526,14 @@ func _update_steering(delta: float) -> void:
 		_pull_felt = lerpf(_pull_felt, self_t, 1.0 - exp(-delta / PULL_FEEL))
 		var feel := (_front_stiffness(v) * (_steer_aim - steer_eq) - _pull_felt) * 0.5 * riding
 		var most := MAX_BAR_TORQUE * lever
-		bar_torque = clampf(feel + hold * (_steer_aim - steer), -most, most)
+		if direct_bars:
+			# The input is the push itself: the right grip forward (steer right) turns the bars
+			# left, which leans the bike right, and the trail then swings the front into the lean.
+			# Feet down the hands just point the bars.
+			var push := -lean_input * DIRECT_BAR_TORQUE * lever
+			bar_torque = clampf(lerpf(hold * (_steer_aim - steer), push, riding), -most, most)
+		else:
+			bar_torque = clampf(feel + hold * (_steer_aim - steer), -most, most)
 	bar_torque += push_bars
 	var vel := (steer_vel + delta * (self_t + bar_torque) / i_s) / (1.0 + delta * c / i_s)
 	var dyn := steer + vel * delta
@@ -1095,6 +1113,16 @@ func _apply_rider_balance() -> void:
 		strength = lerpf(1.0, strength, clampf(absf(speed) - 2.0, 0.0, 1.0))
 	var err := _target_lean() - lean_angle
 	var tau := (22.0 * err - 4.0 * lean_rate) * mass * strength
+	if direct_bars:
+		# No lean to aim for: the bars do the balancing. Feet down at a crawl the rider holds the
+		# bike up; riding, their body only calms the roll a little (more with realism turned up).
+		var feet := 1.0 - clampf((absf(speed) - 2.0) / 2.5, 0.0, 1.0)
+		tau = (-22.0 * lean_angle * feet - (4.0 * feet + 0.8 * assist * (1.0 - feet)) * lean_rate) * mass
+		if any_contact and not is_crashed:
+			# Riding, they sit it up gently with their hips and knees, as a real bike rights itself
+			# at a steady speed: let go of the bars and a lean slowly comes back up.
+			tau += clampf((-DIRECT_BODY_LEAN * lean_angle - DIRECT_BODY_RATE * lean_rate) * mass,
+				-DIRECT_BODY_MAX, DIRECT_BODY_MAX) * (1.0 - feet)
 	# The rider's body isn't bolted on: it sways on their hips and soaks up a quick rocking of the
 	# bike (a weave), though not the bike leaning into a turn. Hands on or off, at any realism.
 	var dt := get_physics_process_delta_time()

@@ -247,6 +247,11 @@ func _build_riding_settings(settings: VBoxContainer) -> void:
 	show.call(Settings.assist)
 	settings.add_child(_assist)
 	settings.add_child(value)
+	var bars := CheckBox.new()
+	bars.text = "Direct bars: steering pushes on the handlebars (push right to lean right)"
+	bars.button_pressed = Settings.direct_bars
+	bars.toggled.connect(func(v): Settings.direct_bars = v)
+	settings.add_child(bars)
 	var tele := CheckBox.new()
 	tele.text = "Telemetry overlay while riding (F3)"
 	tele.button_pressed = Settings.telemetry_overlay
