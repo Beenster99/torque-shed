@@ -18,7 +18,22 @@ const LONG_SLIP_SPEED := 3.0      # m/s: slip ratios are taken against at least 
 const LAT_SLIP_SPEED := 2.5       # and slip angles against at least this one
 const RELAX_SPEED := 4.0          # grip builds over the relaxation length, timed at no less than this speed
 const STEER_LOCK := deg_to_rad(38.0)
-const STEER_DAMPING := 2.5        # Nm per rad/s: the bearings, the tyre scrubbing and the rider's arms
+const HEAD_DAMPING := 1.2         # Nm per rad/s: the head bearings and the fork seals
+const ARM_DAMPING := 2.5          # Nm per rad/s: the rider's hands on the bars soak up a shake
+const ARM_INERTIA := 0.35         # kg m^2: the rider's hands and forearms swing with the bars
+const ARM_HOLD := 120.0           # Nm per rad: how firmly the rider's arms hold the bars where they aim them, riding
+const ARM_HOLD_SLOW := 500.0      # and at walking pace, feet down, steering by hand
+const MAX_BAR_TORQUE := 45.0      # Nm: the most a rider pushes through 720 mm bars (wider bars, more leverage)
+const PNEUMATIC_TRAIL := 0.022    # m: how far behind the contact patch a gripping tyre's side force acts
+const BODY_SWAY := 0.5            # N m s per rad per kg: the rider's body damping a quick rocking of the bike
+const NO_HANDS_LEAN := 2.0        # riding no-handed: N m per radian of lean per kg the rider's hips push back with
+const NO_HANDS_RATE := 1.0        # ... and N m s per radian per kg against the bike falling
+const NO_HANDS_MAX := 70.0        # N m: as much as a few centimetres of body shift can do
+const RIDER_FEEL := 0.035        # s: how quickly the rider feels the bike's lean change
+const PULL_FEEL := 0.12          # s: how quickly the rider's arms feel the front's steady pull on the bars
+## Riding realism below this gets no helping push towards the lean: the bars balance the bike.
+const BALANCE_FROM := 0.35
+const HANG_OFF := 0.12           # m: how far the rider moves their body to the inside, full lean asked for
 const CRASH_LEAN := deg_to_rad(78.0)
 const CRASH_PITCH := deg_to_rad(72.0)
 const AUTO_RESPAWN_TIME := 3.5
@@ -64,6 +79,14 @@ var gear := 1
 var rpm := 1000.0
 var steer := 0.0            # radians, + bars turned right
 var steer_vel := 0.0        # how fast the bars are turning, rad/s
+var bar_torque := 0.0       # Nm the rider is putting through the bars, + towards turning them right
+## The rider has let go of the bars: nothing but the front end's own geometry steers it.
+var hands_off := false
+## A push on the bars from outside the virtual rider (N m, + towards turning them right): tests,
+## and a hand that wants to try counter-steering for itself.
+var push_bars := 0.0
+var trail_now := 0.1        # the trail as it is right now, with the fork dived, the bars turned and the bike leaned, m
+var wobble := 0.0           # how far the bars are shaking either way about where they're pointing, rad
 var speed := 0.0           # forward speed, m/s
 var lean_angle := 0.0      # radians, positive = leaning right
 var lean_rate := 0.0
@@ -97,6 +120,18 @@ var horn_audio: HornAudio
 var _stopped_brake := 0.0  # how long the front brake has been held at a standstill
 var _throttle_eff := 0.0   # the throttle as the rider's wrist actually turns it (smoothed with realism up)
 var _fog: Array = []
+var _steer_axis := Vector3.UP       # the steering axis, bike space (raked back)
+var _steer_pivot := Vector3.ZERO    # a point on it, bike space
+var _offset_arm := Vector3.ZERO     # from the axis out to the front axle, square to it, bike space
+var _steer_aim := 0.0               # where the rider is aiming the bars, rad
+var _steer_slow := 0.0              # the bars' angle smoothed, to tell a shake from a steer
+var _lean_i := 0.0                  # the rider's memory of a lean that keeps falling short (rad s)
+var _hang := 0.0                    # how far the rider is hanging off, m (+ to the right)
+var _rate_slow := 0.0               # the lean rate smoothed over half a second
+var _pull_felt := 0.0               # the front's pull on the bars as the rider's arms feel it, N m
+var _prev_w := Vector3.ZERO          # the frame's spin and velocity last tick, for its accelerations
+var _prev_v := Vector3.INF
+var _seen := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])   # the lean and lean rate as the rider feels them (two stages each)
 ## The rider's riding skills (see Progress.rider_skills): balance, throttle_control, airtime, quick_reset.
 var skills := {}
 ## Works out riding XP as the bike is ridden; only the local player's bike has one.
@@ -108,12 +143,23 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	build = new_build
 	mass = build.total_mass
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	_base_com = Vector3(0.0, build.com_height - build.rear_radius, 0.06)
+	# Where the parts sit moves the centre of mass (see BikeBuild._compute_mass_spread).
+	_base_com = Vector3(0.0, build.com_height - build.rear_radius, 0.06 + build.com_offset.z)
 	center_of_mass = _base_com
-	# Rough rider-plus-bike inertia (pitch, yaw, roll).
+	# Rough rider-plus-bike inertia (pitch, yaw, roll), plus the spread of the parts on it.
 	var m := build.total_mass
 	var wb := build.wheelbase
-	inertia = Vector3(m * wb * wb * 0.16, m * wb * wb * 0.13, m * 0.11)
+	var rough := Vector3(m * wb * wb * 0.16, m * wb * wb * 0.13, m * 0.11)
+	inertia = (rough + build.inertia_add).max(rough * 0.6)
+	# The steering axis, raked back through the steering head, and the front axle the fork's
+	# offset ahead of it, taken with the fork sagged under the bike's weight.
+	var rake := deg_to_rad(build.rake_deg)
+	_steer_axis = Vector3(0.0, cos(rake), sin(rake))
+	var ahead := Vector3(0.0, sin(rake), -cos(rake))
+	var sag := clampf(m * G * 0.5 / maxf(build.front_spring, 1.0), 0.0, build.front_travel)
+	_offset_arm = ahead * build.fork_offset
+	_steer_pivot = Vector3(0.0, sag, -wb * 0.5) - _offset_arm
+	trail_now = build.trail
 	can_sleep = false
 	continuous_cd = true
 	contact_monitor = true
@@ -193,6 +239,9 @@ func _make_wheel(is_front: bool, mount: Vector3, radius: float, travel: float, s
 		# side force along the bike's right (N), rolling radius, and whether the rider eased the brake.
 		"kappa": 0.0, "alpha": 0.0, "sy": 0.0, "camber": 0.0, "grip_used": 0.0, "mu": 0.0,
 		"f_side": 0.0, "r_eff": radius, "eased": false, "gx": 0.0, "gy": 0.0,
+		# The whole push of the road on the tyre (load and grip, world space), the side force on
+		# its own, and the way the tyre is rolling: the front's steering works out its torque from them.
+		"force": Vector3.ZERO, "f_lat": Vector3.ZERO, "long_dir": Vector3.FORWARD,
 	}
 
 
@@ -216,6 +265,16 @@ func place(pos: Vector3, heading: float) -> void:
 	angular_velocity = Vector3.ZERO
 	steer = 0.0
 	steer_vel = 0.0
+	bar_torque = 0.0
+	wobble = 0.0
+	_steer_aim = 0.0
+	_steer_slow = 0.0
+	_prev_w = Vector3.ZERO
+	_prev_v = Vector3.INF
+	_pull_felt = 0.0
+	_lean_i = 0.0
+	_hang = 0.0
+	_seen = PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
 	gear = 1
 	rpm = build.idle_rpm
 	for w in wheels:
@@ -301,7 +360,11 @@ func _physics_process(delta: float) -> void:
 		rear_brake = 1.0
 
 	var shift := body_shift * 0.13
-	center_of_mass = _base_com + Vector3(0.0, 0.0, -shift)
+	# Hanging off: riding, the rider moves their body to the inside of the turn they're asking
+	# for, which carries the centre of mass over so the bike itself needs a little less lean.
+	var hang_to := lean_input * HANG_OFF * clampf((absf(speed) - 3.0) / 5.0, 0.0, 1.0) if controls_enabled else 0.0
+	_hang = move_toward(_hang, hang_to, delta * 0.4)
+	center_of_mass = _base_com + Vector3(_hang * BikeBuild.RIDER_MASS / mass, 0.0, -shift)
 
 	_update_feet(delta)
 	_update_steering(delta)
@@ -326,6 +389,7 @@ func _physics_process(delta: float) -> void:
 	for w in wheels:
 		_wheel_forces(w, delta, space)
 	surface = wheels[1]["surface"] if wheels[1]["contact"] else wheels[0]["surface"]
+	_apply_wheel_gyro()
 	_apply_aero()
 	_apply_rider_balance()
 	_apply_feet()
@@ -387,24 +451,172 @@ func _max_steer() -> float:
 	return lerpf(deg_to_rad(35.0), deg_to_rad(3.5), clampf(absf(speed) / 45.0, 0.0, 1.0))
 
 
-## The rider steers to reach the lean they want: counter-steer to start the lean,
-## then hold the steady-turn steering angle for the current lean and speed.
+## The front end turns about its raked steering axis, a real part of the bike with its own
+## weight to swing: the road's push on the tyre (the trail turns it into a lean and lines it up
+## with where it's rolling), the spinning wheel (it steers into a fall), the head bearings, any
+## steering damper and the rider's hands all act on it. The rider steers by pushing on the bars:
+## they aim the bars where the lean they want needs them (counter-steering to start a lean, then
+## the steady-turn angle), and push as hard as they feel it takes to hold them there, their arms
+## giving a little. At walking pace, feet down, they just point the bars.
 func _update_steering(delta: float) -> void:
 	var v := absf(speed)
 	var before := steer
 	var target := _target_lean()
+	var rake := deg_to_rad(build.rake_deg)
+	# The rider feels the lean through the seat and their inner ear, not instantly: a shake at the
+	# bars is too quick for them to steer against (two smoothing stages of RIDER_FEEL seconds).
+	var k := 1.0 - exp(-delta / RIDER_FEEL)
+	_seen[0] = lerpf(_seen[0], lean_angle, k)
+	_seen[1] = lerpf(_seen[1], _seen[0], k)
+	_seen[2] = lerpf(_seen[2], lean_rate, k)
+	_seen[3] = lerpf(_seen[3], _seen[2], k)
 	var cmd: float
+	var steer_eq := 0.0
 	if v < 2.0:
 		# Feet down at walking pace: the bars just point where the rider steers them.
 		cmd = lean_input * _max_steer()
+		_lean_i = 0.0
 	else:
-		var steer_eq := atan(build.wheelbase * G * tan(_balance_lean(lean_angle)) / (v * v))
+		# The bars for a steady turn at this lean: the turn the front wheel makes on the road, seen
+		# through the raked axis of a leaned bike.
+		var turn := atan(build.wheelbase * G * tan(_balance_lean(_seen[1])) / (v * v))
+		steer_eq = atan(tan(turn) * cos(_seen[1]) / cos(rake))
 		var gain := clampf(8.0 / v, 0.25, 2.5)
-		var err := target - lean_angle
-		cmd = steer_eq - 0.22 * gain * err + 0.06 * gain * lean_rate
+		var err := target - _seen[1]
+		# They trim out a lean that's held a little short, not one they're still getting into.
+		if absf(err) < 0.12:
+			_lean_i = clampf(_lean_i + err * delta, -0.25, 0.25)
+		else:
+			_lean_i = move_toward(_lean_i, 0.0, delta * 0.5)
+		# They steer by how hard they push: a front with long trail fights back harder, so the same
+		# push turns it less and the bike is slower to tip in (a short-trail front is twitchy).
+		var push := clampf(pow(0.09 / maxf(build.trail * cos(rake), 0.02), 2.0), 0.5, 1.3)
+		cmd = steer_eq - push * gain * (0.22 * err + 0.25 * _lean_i) + 0.06 * gain * _seen[3]
 	cmd = clampf(cmd, -_max_steer(), _max_steer())
-	steer = move_toward(steer, cmd, build.steer_rate * delta)
+	_steer_aim = move_toward(_steer_aim, cmd, build.steer_rate * delta)
+	var riding := clampf((v - 2.0) / 2.5, 0.0, 1.0)   # 0 feet down .. 1 riding
+
+	var self_t := _front_self_torque()
+	self_t += _front_carried_torque(delta)
+	var hands := not hands_off
+	var i_s := build.steer_inertia + (ARM_INERTIA if hands else 0.0)
+	var c := HEAD_DAMPING + build.damper_damping + (ARM_DAMPING if hands else 0.0)
+	# A friction damper holds the bars until they're pushed past its grip.
+	c += build.damper_friction / maxf(absf(steer_vel), 0.08)
+	bar_torque = 0.0
+	if hands:
+		# What the rider pushes with: what they feel it takes to hold the front off where it would
+		# point on its own, and their arms holding the bars on their aim.
+		var lever := float(build.part("handlebars").get("width", 720.0)) / 720.0
+		var hold := lerpf(ARM_HOLD_SLOW, ARM_HOLD, riding) * lever
+		# Half what they expect of the front from riding it, half the steady pull they feel
+		# through the grips (too slowly to fight a shake).
+		_pull_felt = lerpf(_pull_felt, self_t, 1.0 - exp(-delta / PULL_FEEL))
+		var feel := (_front_stiffness(v) * (_steer_aim - steer_eq) - _pull_felt) * 0.5 * riding
+		var most := MAX_BAR_TORQUE * lever
+		bar_torque = clampf(feel + hold * (_steer_aim - steer), -most, most)
+	bar_torque += push_bars
+	var vel := (steer_vel + delta * (self_t + bar_torque) / i_s) / (1.0 + delta * c / i_s)
+	var dyn := steer + vel * delta
+	if absf(dyn) > STEER_LOCK:
+		dyn = clampf(dyn, -STEER_LOCK, STEER_LOCK)
+	steer = lerpf(_steer_aim, dyn, riding) if hands else dyn
+	var vel_was := steer_vel
 	steer_vel = (steer - before) / delta
+	# The road's push on the front tyre went to the whole bike; what swung the front end round
+	# its axis didn't turn the rest of it.
+	apply_torque(global_transform.basis * _steer_axis * (i_s * (steer_vel - vel_was) / delta * riding))
+	# A shake is the bars moving quickly about where they're pointing on the whole.
+	_steer_slow = lerpf(_steer_slow, steer, 1.0 - exp(-delta / 0.08))
+	wobble = maxf(absf(steer - _steer_slow), wobble * exp(-delta / 0.3))
+
+
+## The front end rides on the frame: when the frame swings or is shoved sideways, the front's
+## own weight out ahead of the axis (on the fork offset) and its inertia about the axis lag
+## behind, and gravity pulls that offset weight down into a lean. N m, + turning the bars right.
+func _front_carried_torque(delta: float) -> float:
+	var w_now := angular_velocity
+	var v_now := linear_velocity
+	if _prev_v == Vector3.INF:
+		_prev_w = w_now
+		_prev_v = v_now
+	var w_dot := (w_now - _prev_w) / delta
+	var a_cm := (v_now - _prev_v) / delta
+	_prev_w = w_now
+	_prev_v = v_now
+	var b := global_transform.basis
+	var axis := b * _steer_axis
+	var r_piv := b * (_steer_pivot - center_of_mass)
+	var a_piv := a_cm + w_dot.cross(r_piv) + w_now.cross(w_now.cross(r_piv))
+	var r := b * (Basis(_steer_axis, -steer) * _offset_arm)
+	return build.steer_mass * r.cross(a_piv + Vector3.UP * G).dot(axis) + build.steer_inertia * w_dot.dot(axis)
+
+
+## What the road and the spinning front wheel put on the bars, N m, + turning them right: the
+## ground's whole push on the tyre (load and grip) about the steering axis, the side force from
+## its slip angle (not its camber thrust) acting a little behind the contact patch while it grips
+## (pneumatic trail), and the wheel's spin fighting being tipped over (it steers the front into a
+## fall). Also measures the trail as it is right now.
+func _front_self_torque() -> float:
+	var f: Dictionary = wheels[0]
+	var b := global_transform.basis
+	var t := _front_gyro().dot(b * _steer_axis)
+	if not f["contact"] or not f.has("contact_local"):
+		trail_now = build.trail
+		return t
+	# All in the bike's own space, where the steering axis is fixed.
+	var axis := _steer_axis
+	var pivot := _steer_pivot
+	var at: Vector3 = f["contact_local"]
+	var long_dir: Vector3 = f["long_dir"]
+	var tq := (at - pivot).cross(f["force"])
+	var pt := PNEUMATIC_TRAIL * clampf(1.0 - absf(float(f["sy"])), 0.0, 1.0) * float(f.get("slip_share", 1.0))
+	tq += (-long_dir * pt).cross(f["f_lat"])
+	# Where the steering axis meets the road, against the contact patch.
+	var n: Vector3 = f["normal_local"]
+	var along := axis.dot(n)
+	if absf(along) > 0.2:
+		var meet := pivot + axis * ((at - pivot).dot(n) / along)
+		trail_now = (meet - at).dot(long_dir)
+	return t - tq.dot(axis)
+
+
+## The torque the front wheel's spin needs to be turned with the bike and the bars (world): it
+## comes from the fork, which takes it from the frame, all but the part along the steering axis,
+## which turns the bars.
+func _front_gyro() -> Vector3:
+	var b := global_transform.basis
+	var axis := b * _steer_axis
+	var h := -b.x.rotated(axis, -steer) * build.front_inertia * float(wheels[0]["omega"])
+	return (angular_velocity - axis * steer_vel).cross(h)
+
+
+## The spinning wheels fight being tipped: leaning in yaws the bike a touch into the turn, and
+## turning stands it up a little, more the faster they spin. The bike's rigid body doesn't know
+## its wheels spin, so the frame gets their reaction here (the front's along the steering axis
+## turns the bars instead, see _front_self_torque).
+func _apply_wheel_gyro() -> void:
+	var b := global_transform.basis
+	var axis := b * _steer_axis
+	var front := _front_gyro()
+	var h_rear := -b.x * build.rear_inertia * float(wheels[1]["omega"])
+	apply_torque(-(front - axis * front.dot(axis)) - angular_velocity.cross(h_rear))
+
+
+## How hard the front pulls back towards where it would point on its own, N m per radian the
+## bars are turned from there: the front tyre's cornering stiffness on the trail, the rider's
+## feel for the bars. Grip builds in as the wheel rolls.
+func _front_stiffness(v: float) -> float:
+	var tp: Dictionary = build.tyre_front
+	var mu := float(build.grip_front.get("tarmac", 1.0))
+	var fz := build.total_mass * G * 0.5
+	var c_alpha := mu * fz * TyreModel.stiffness_at_zero(tp) / tan(float(tp["alpha_peak"]))
+	return maxf(build.trail, 0.0) * cos(deg_to_rad(build.rake_deg)) * c_alpha * clampf(v / 6.0, 0.15, 1.0)
+
+
+## A shove on the bars (N m s, + towards turning them right), as a hand or a pothole gives them.
+func kick_bars(impulse: float) -> void:
+	steer_vel += impulse / maxf(build.steer_inertia + (0.0 if hands_off else ARM_INERTIA), 0.05)
 
 
 func _update_engine(delta: float) -> void:
@@ -605,7 +817,11 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var tp: Dictionary = build.tyre_front if is_front else build.tyre_rear
 	var radius: float = w["radius"]
 	var crown := minf(float(tp.get("crown", 0.0)), radius * 0.6)
-	var mount: Vector3 = global_transform * w["mount"]
+	var mount_at: Vector3 = w["mount"]
+	if is_front:
+		# The front axle swings round the steering axis with the bars, on the fork's offset.
+		mount_at += Basis(_steer_axis, -steer) * _offset_arm - _offset_arm
+	var mount: Vector3 = global_transform * mount_at
 	var travel: float = w["travel"]
 	# Leaned over, a round tyre sits lower than a thin disc would: look a little further.
 	var ray_len := travel + radius + crown * 2.0
@@ -617,8 +833,11 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var heading := -b.z
 	var axle := b.x
 	if is_front:
-		heading = heading.rotated(up, -steer)
-		axle = axle.rotated(up, -steer)
+		# The front wheel turns about the raked steering axis, not straight up: turned, it leans
+		# over a little too.
+		var axis := b * _steer_axis
+		heading = heading.rotated(axis, -steer)
+		axle = axle.rotated(axis, -steer)
 	var raw_comp := -1.0
 	var n := Vector3.UP
 	var cos_cam := 1.0
@@ -653,6 +872,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		w["sy"] = 0.0
 		w["f_side"] = 0.0
 		w["eased"] = false
+		w["force"] = Vector3.ZERO
+		w["f_lat"] = Vector3.ZERO
 		return
 
 	var comp := clampf(raw_comp, 0.0, travel)
@@ -702,6 +923,10 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var long_dir := (heading - n * heading.dot(n)).normalized()
 	var lat_dir := n.cross(long_dir)
 	var v_contact := linear_velocity + angular_velocity.cross(arm)
+	if is_front:
+		# Turning the bars swings the contact patch sideways round the steering axis, trail and
+		# all: the tyre fights that, which damps a shake.
+		v_contact += (b * _steer_axis * -steer_vel).cross(contact - global_transform * _steer_pivot)
 	var v_long := v_contact.dot(long_dir)
 	var v_lat := v_contact.dot(lat_dir)
 	var v_abs := absf(v_long)
@@ -729,6 +954,10 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		var keep := exp(-maxf(v_abs, RELAX_SPEED) * delta / float(tp["relax"]))
 		sy = sy_now + (float(w["sy"]) - sy_now) * keep
 	w["sy"] = sy
+	# How much of the side force is the tyre being steered across its path, rather than leaned
+	# (camber thrust): only that part acts behind the contact patch (pneumatic trail).
+	var sy_slip := -tan(clampf(alpha, -TyreModel.MAX_SLIP_ANGLE, TyreModel.MAX_SLIP_ANGLE)) / tan(ap)
+	w["slip_share"] = clampf(sy_slip / sy_now, 0.0, 1.0) if absf(sy_now) > 1e-4 else 1.0
 
 	# Longitudinal: the wheel's new spin is solved implicitly against the tyre's own curve, so a
 	# stiff tyre on a light wheel stays stable at the physics rate and a locked wheel stays locked.
@@ -774,6 +1003,13 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	w["spin"] = fmod(w["spin"] + omega_new * delta, TAU)
 	var force := long_dir * fx + lat_dir * fy
 	w["f_side"] = force.dot(b.x)
+	# Kept in the bike's own space: by the time the steering reads them the bike has moved on.
+	var to_bike := b.inverse()
+	w["force"] = to_bike * (force + n * fz)
+	w["f_lat"] = to_bike * (lat_dir * fy)
+	w["long_dir"] = to_bike * long_dir
+	w["contact_local"] = global_transform.affine_inverse() * contact
+	w["normal_local"] = to_bike * n
 	apply_force(force, arm)
 
 
@@ -843,17 +1079,29 @@ func _apply_aero() -> void:
 	apply_central_force(drag)
 
 
-## The rider's body balances the bike: strong when crawling with feet down, light at speed.
+## The rider's feet balance the bike when crawling, feet down. Riding, the bars do the balancing
+## (see _update_steering); only with Riding realism turned well up does a helping hand
+## (BALANCE_FROM and up) push the bike towards the lean asked for.
 func _apply_rider_balance() -> void:
 	var b := global_transform.basis
 	var fwd := -b.z
 	var fwd_flat := Vector3(fwd.x, 0.0, fwd.z).normalized()
 	var any_contact: bool = wheels[0]["contact"] or wheels[1]["contact"]
-	var strength := lerpf(0.15, 1.0, assist)
+	var strength := clampf((assist - BALANCE_FROM) / (1.0 - BALANCE_FROM), 0.0, 1.0)
 	if absf(speed) < 3.0:
-		strength = 1.0
+		strength = lerpf(1.0, strength, clampf(absf(speed) - 2.0, 0.0, 1.0))
 	var err := _target_lean() - lean_angle
 	var tau := (22.0 * err - 4.0 * lean_rate) * mass * strength
+	# The rider's body isn't bolted on: it sways on their hips and soaks up a quick rocking of the
+	# bike (a weave), though not the bike leaning into a turn. Hands on or off, at any realism.
+	var dt := get_physics_process_delta_time()
+	_rate_slow = lerpf(_rate_slow, lean_rate, 1.0 - exp(-dt / 0.5))
+	if any_contact and not is_crashed:
+		tau -= BODY_SWAY * mass * (lean_rate - _rate_slow)
+	if hands_off and push_bars == 0.0 and any_contact and not is_crashed and absf(speed) > 3.0:
+		# Riding no-handed the rider keeps it up with their hips, gently: the bike, left to itself,
+		# slowly falls into a turn on its round tyres.
+		tau += clampf((NO_HANDS_LEAN * err - NO_HANDS_RATE * lean_rate) * mass, -NO_HANDS_MAX, NO_HANDS_MAX)
 	if build.has_aid("stability") and any_contact:
 		# Stability control calms a tank-slapper or a twitchy slide.
 		tau -= lean_rate * mass * 3.0 * build.ecu_aid

@@ -9,7 +9,7 @@ const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc",
 	"saddle", "handlebars", "dashboard", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling",
 	"gearbox", "exhaust", "final_drive", "chain", "side_stand", "centre_stand", "headlight", "horn", "ecu",
 	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels",
-	"rearsets", "guards", "number_boards", "swingarm"]
+	"rearsets", "guards", "number_boards", "swingarm", "steering_damper"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
 const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube"]
 const KIND_NAMES := {
@@ -22,18 +22,18 @@ const KIND_NAMES := {
 	"headlight": "Headlight", "horn": "Horn", "ecu": "ECU", "panniers": "Panniers", "top_box": "Top box",
 	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "front_mudguard": "Front mudguard", "indicators": "Indicators",
 	"side_panels": "Side panels", "rearsets": "Footpegs and rearsets", "guards": "Engine guards", "number_boards": "Number boards",
-	"swingarm": "Swingarm", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
+	"swingarm": "Swingarm", "steering_damper": "Steering damper", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
 }
 ## Slots on the bike itself.
 const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors",
-	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm"]
+	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper"]
 ## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
 const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box",
 	"fog_lights", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards",
-	"swingarm"]
+	"swingarm", "steering_damper"]
 ## The bolt-on bits that finish a bike in its style (indicators, side panels, rearsets, guards,
 ## number boards and a swingarm of its own in place of the frame's). Bikes saved before they
 ## existed get the slots empty.
@@ -48,7 +48,7 @@ const SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_whe
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox",
-	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm"]
+	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper"]
 const SLOT_KIND := {
 	"frame": "frame", "fork": "fork", "shock": "shock", "front_wheel": "wheel", "rear_wheel": "wheel",
 	"front_tyre": "tyre", "rear_tyre": "tyre", "front_disc": "disc", "rear_disc": "disc",
@@ -61,6 +61,7 @@ const SLOT_KIND := {
 	"panniers": "panniers", "top_box": "top_box", "fog_lights": "fog_lights", "tail": "tail", "fairing": "fairing",
 	"mirrors": "mirrors", "front_mudguard": "front_mudguard", "indicators": "indicators", "side_panels": "side_panels",
 	"rearsets": "rearsets", "guards": "guards", "number_boards": "number_boards", "swingarm": "swingarm",
+	"steering_damper": "steering_damper",
 }
 const DEFAULT_BUILD := {
 	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17_front",
@@ -74,6 +75,7 @@ const DEFAULT_BUILD := {
 	"headlight": "round_7", "horn": "disc_horn", "ecu": "none", "panniers": "none", "top_box": "none", "fog_lights": "none",
 	"tail": "classic_mudguard", "fairing": "none", "mirrors": "none", "front_mudguard": "chrome_classic", "indicators": "none",
 	"side_panels": "none", "rearsets": "none", "guards": "none", "number_boards": "none", "swingarm": "none",
+	"steering_damper": "none",
 }
 ## What each slot bolts onto. A part can only go on once its mounts are fitted, and has to
 ## come off before any of them can. Engine slots mount on the block ("engine").
@@ -100,6 +102,8 @@ const MOUNTS := {
 	"indicators": ["frame"], "side_panels": ["frame"], "rearsets": ["frame"], "guards": ["frame"], "number_boards": ["frame"],
 	# A swingarm of its own pivots in the frame in place of the one the frame comes with.
 	"swingarm": ["frame"],
+	# A steering damper links the frame to the fork's yokes.
+	"steering_damper": ["fork"],
 }
 ## Which fluid each part holds, and how much (litres; the tank and engine work theirs out).
 const FLUID_HOLDERS := {"tank": "petrol", "engine": "oil", "master": "brake_fluid"}
@@ -119,7 +123,7 @@ const KIND_MATERIAL := {
 	"horn": "metal", "ecu": "electronics", "panniers": "fabric", "top_box": "plastic", "fog_lights": "electronics",
 	"tail": "plastic", "fairing": "plastic", "mirrors": "mixed", "front_mudguard": "plastic",
 	"indicators": "electronics", "side_panels": "plastic", "rearsets": "metal", "guards": "metal", "number_boards": "plastic",
-	"swingarm": "metal", "petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
+	"swingarm": "metal", "steering_damper": "metal", "petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
 }
 const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
 	"mixed": "Mixed materials", "electronics": "Electronics", "fabric": "Fabric", "leather": "Leather", "wood": "Wood"}
@@ -287,6 +291,8 @@ func spec_line(id: String) -> String:
 		"fork", "shock":
 			bits = [p["type"], "%d mm travel" % roundi(p["travel"] * 1000.0), "bump %d" % roundi(p["bump"]),
 				"rebound %d" % roundi(p["rebound"]), "adjust: " + str(p["adjust_name"])]
+			if p.has("offset"):
+				bits.insert(2, "%d mm offset" % roundi(float(p["offset"]) * 1000.0))
 		"wheel":
 			var dia := float(p["diameter"])
 			bits = [p["type"], ("%d\"" % roundi(dia)) if is_equal_approx(dia, roundf(dia)) else ("%.1f\"" % dia)]
@@ -369,6 +375,12 @@ func spec_line(id: String) -> String:
 				"mounts high under the yoke" if mudguard_high(id) else "mounts low on the fork legs"]
 		"indicators", "side_panels", "guards", "number_boards", "swingarm":
 			bits = [p["type"]]
+		"steering_damper":
+			bits = [p["type"], "damping %.0f N·m·s" % float(p.get("damping", 0.0))]
+			if float(p.get("friction", 0.0)) > 0.0:
+				bits.append("%.1f N·m friction" % float(p["friction"]))
+			if int(p.get("adjust", 0)) > 0:
+				bits.append("adjustable on the dyno desk")
 		"rearsets":
 			bits = [p["type"], peg_text(id)]
 		"mirrors":

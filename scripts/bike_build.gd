@@ -22,8 +22,13 @@ const DRIVETRAIN_EFFICIENCY := 0.92
 const ROLLING := 0.015
 ## A tyre bead seated at least this well on the tyre changer (0..1) holds its pressure and grips fully.
 const BEAD_OK := 0.6
-## The fork's offset ahead of the steering axis, m: with the rake and the front wheel's size it sets the trail.
-const FORK_OFFSET := 0.03
+## The fork's offset ahead of the steering axis (m) for a fork in the catalogue without one, by
+## its style: with the rake and the front wheel's size it sets the trail.
+const FORK_OFFSET := {"conventional": 0.045, "usd": 0.032, "girder": 0.045, "springer": 0.08, "leading_link": 0.05}
+## Trail shorter than this (m) makes for nervous steering: the bike info says so.
+const SHORT_TRAIL := 0.06
+## The least trail a bike that turns up already built has (see sensible_fork), m.
+const STOCK_TRAIL := 0.075
 ## Every tuning setting and its widest range, [min, max]. A setting missing from a tune is left
 ## stock. The ECU narrows the map and ignition and caps the limiter (see tune_range), and the
 ## suspension clickers only work on parts with that adjuster (see tune_block).
@@ -37,6 +42,7 @@ const TUNE_LIMITS := {
 	"sprocket_f": [12.0, 18.0], "sprocket_r": [36.0, 56.0],
 	"spread": [-1.0, 1.0],         # cassette gearboxes: closer .. wider ratios
 	"chain": [10.0, 70.0],         # chain slack, mm (kept on the chain itself)
+	"damper": [-1.0, 1.0],         # steering damper clicker: softer .. firmer
 }
 ## The pressures each style of tyre works best at, front and rear, in bar.
 const PSI_BEST := {"road": [2.3, 2.5], "offroad": [1.0, 1.0], "slick": [2.1, 1.8]}
@@ -120,6 +126,17 @@ var tyre_rear := {}
 var trail := 0.1
 ## How heavy the steering is to swing: the front wheel, fork and bars about the steering axis, kg m^2.
 var steer_inertia := 0.3
+## The weight out on the fork offset that swings with the bars (wheel, tyre, disc, caliper), kg.
+var steer_mass := 20.0
+## How far the front axle sits ahead of the steering axis (the yokes and fork feet together), m.
+var fork_offset := 0.045
+## The steering damper: viscous damping (N m per rad/s) and friction (N m), 0 with none fitted.
+var damper_damping := 0.0
+var damper_friction := 0.0
+## Where the parts sit moves the centre of mass from the frame's own figure (bike space, m: +y up,
+## +z back), and their spread adds to (or takes from) the pitch, yaw and roll inertia, kg m^2.
+var com_offset := Vector3.ZERO
+var inertia_add := Vector3.ZERO
 
 # Engine
 var cylinders := 2
@@ -291,6 +308,54 @@ func _compute() -> void:
 	shift_time = float(gearbox.get("shift_time", 0.12))
 	drivetrain_efficiency = DRIVETRAIN_EFFICIENCY * lerpf(0.8, 1.0, health["gearbox"]) * lerpf(0.88, 1.0, health["final_drive"])
 	_compute_chain()
+	_compute_mass_spread()
+
+
+## Where each slot's part sits on a bike: [share of the wheelbase back from the front axle,
+## height above the ground in m]. Slots not listed sit in the middle of the bike.
+const PART_SPOT := {
+	"frame": [0.45, 0.55], "fork": [0.06, 0.62], "shock": [0.72, 0.5], "front_wheel": [0.0, 0.3], "rear_wheel": [1.0, 0.31],
+	"front_tyre": [0.0, 0.3], "rear_tyre": [1.0, 0.31], "front_disc": [0.0, 0.3], "rear_disc": [1.0, 0.31],
+	"front_caliper": [0.0, 0.35], "rear_caliper": [1.0, 0.33], "front_master": [0.14, 1.0], "rear_master": [0.68, 0.38],
+	"tank": [0.32, 0.86], "saddle": [0.62, 0.82], "handlebars": [0.14, 1.0], "dashboard": [0.12, 1.02],
+	"engine": [0.45, 0.42], "head": [0.4, 0.66], "fuel": [0.42, 0.62], "air_filter": [0.45, 0.68], "oil_filter": [0.4, 0.28],
+	"spark_plugs": [0.4, 0.7], "cooling": [0.22, 0.52], "gearbox": [0.55, 0.38], "exhaust": [0.72, 0.38],
+	"final_drive": [0.62, 0.32], "chain": [0.8, 0.32], "side_stand": [0.58, 0.2], "centre_stand": [0.62, 0.2],
+	"headlight": [-0.04, 0.95], "horn": [0.1, 0.55], "ecu": [0.65, 0.65], "panniers": [0.92, 0.62], "top_box": [1.02, 0.98],
+	"fog_lights": [-0.02, 0.6], "tail": [0.9, 0.8], "fairing": [0.06, 0.98], "mirrors": [0.14, 1.12],
+	"front_mudguard": [0.0, 0.62], "indicators": [0.5, 0.85], "side_panels": [0.6, 0.65], "rearsets": [0.68, 0.38],
+	"guards": [0.38, 0.4], "number_boards": [0.75, 0.75], "swingarm": [0.82, 0.35], "steering_damper": [0.16, 0.92],
+}
+
+
+## The parts' own spread: each slot's part weighs more or less than the stock part there
+## (PartsDB.DEFAULT_BUILD), at its spot on the bike, and so does the petrol against a 15 litre tank.
+## The frame's own centre of mass height is for a stock set of parts with a rider on; this moves
+## it, so a top box and full panniers sit the weight high and back and a big lump of an engine
+## sits it low, and adds their spread to the inertia (luggage out the back makes it slow to turn).
+func _compute_mass_spread() -> void:
+	com_offset = Vector3.ZERO
+	inertia_add = Vector3.ZERO
+	var base := Vector3(0.0, com_height, 0.06)
+	var extra := []   # [mass difference, position]
+	for slot in PartsDB.SLOTS:
+		var stock := PartsDB.get_part(str(PartsDB.DEFAULT_BUILD.get(slot, "none")))
+		var m0 := float(stock.get("mass", float(stock.get("mass_per_cyl", 0.0)) * 2.0))
+		var dm := (_part_mass(slot) if has_part(slot) else 0.0) - m0
+		if absf(dm) < 0.01:
+			continue
+		var spot: Array = PART_SPOT.get(slot, [0.5, 0.5])
+		extra.append([dm, Vector3(0.0, float(spot[1]), (float(spot[0]) - 0.5) * wheelbase)])
+	var spot_tank: Array = PART_SPOT["tank"]
+	extra.append([(fuel_litres - 15.0) * FUEL_DENSITY, Vector3(0.0, float(spot_tank[1]), (float(spot_tank[0]) - 0.5) * wheelbase)])
+	for e in extra:
+		com_offset += float(e[0]) * ((e[1] as Vector3) - base) / maxf(total_mass, 1.0)
+	com_offset = com_offset.clamp(Vector3(0.0, -0.1, -0.12), Vector3(0.0, 0.1, 0.12))
+	var com := base + com_offset
+	for e in extra:
+		var d: Vector3 = (e[1] as Vector3) - com
+		inertia_add += float(e[0]) * Vector3(d.y * d.y + d.z * d.z, d.z * d.z, d.y * d.y)
+	com_height += com_offset.y
 
 
 ## The chain soaks up some power on its own; a dry one more, and a slack or tight one more again.
@@ -382,9 +447,66 @@ func _compute_wheels() -> void:
 	rear_inertia = 0.8 * mass_r * rear_radius * rear_radius + 0.15  # plus spinning drivetrain
 	tyre_front = tyre_params(tf, dev_f)
 	tyre_rear = tyre_params(tr, dev_r)
+	var fork := part("fork")
+	fork_offset = float(fork.get("offset", FORK_OFFSET.get(str(fork.get("style", "")), 0.04)))
+	trail = clampf(trail_of(front_radius, rake_deg, fork_offset), -0.05, 0.4)
+	if trail < SHORT_TRAIL:
+		notes.append("The trail is very short (%d mm): the steering will be nervous and may shake its head. Fit a fork with less offset, or a steering damper." % roundi(trail * 1000.0))
+	# What swings with the bars, about the steering axis: the wheel (about its diameter, and
+	# carried round on the offset), the fork legs either side, and what's bolted to the front end.
+	steer_mass = mass_f + _part_mass("front_disc") + _part_mass("front_caliper")
+	steer_inertia = 0.5 * front_inertia + (mass_f + _part_mass("front_disc")) * fork_offset * fork_offset + 0.012 * float(fork.get("mass", 9.0))
+	for spot in [["handlebars", 0.3], ["dashboard", 0.22], ["headlight", 0.26], ["fog_lights", 0.2], ["front_mudguard", 0.2],
+			["front_caliper", 0.16], ["front_master", 0.3], ["mirrors", 0.4]]:
+		if has_part(spot[0]):
+			steer_inertia += _part_mass(spot[0]) * float(spot[1]) * float(spot[1])
+	# The steering damper: a worn, leaky one damps less, and its clicker firms it up or softens it.
+	var damper := part("steering_damper")
+	var dh := float(health.get("steering_damper", 1.0))
+	var click := 1.0 + 0.6 * tune_value("damper")
+	damper_damping = float(damper.get("damping", 0.0)) * lerpf(0.4, 1.0, dh) * click
+	damper_friction = float(damper.get("friction", 0.0)) * lerpf(0.5, 1.0, dh) * click
+
+
+## The trail a set of parts gives (m), straight from the catalogue: the frame's rake, the fork's
+## offset and the front wheel and tyre's size.
+static func parts_trail(build: Dictionary) -> float:
+	var frame := PartsDB.get_part(str(build.get("frame", "")))
+	var fork := PartsDB.get_part(str(build.get("fork", "")))
+	var wheel := PartsDB.get_part(str(build.get("front_wheel", "")))
+	var tyre := PartsDB.get_part(str(build.get("front_tyre", "")))
+	var radius := float(wheel.get("diameter", 17.0)) * 0.0127 + float(tyre.get("width", 120.0)) / 1000.0 * float(tyre.get("aspect", 0.7))
+	var offset := float(fork.get("offset", FORK_OFFSET.get(str(fork.get("style", "")), 0.04)))
+	return trail_of(radius, float(frame.get("rake_deg", 25.0)), offset)
+
+
+## Bikes that turn up already built (project bikes, customers' bikes) were put together by
+## someone who knew what they were doing: a fork that leaves the trail under STOCK_TRAIL is
+## swapped for one that suits the frame. Only a player can build a bike that shakes its head.
+static func sensible_fork(build: Dictionary, seed_value := 0) -> Dictionary:
+	if parts_trail(build) >= STOCK_TRAIL:
+		return build
+	var out := build.duplicate()
+	var frame_styles: Array = PartsDB.styles_of(str(build.get("frame", "")))
+	var fits := []
+	var any := []
+	for id in PartsDB.by_kind.get("fork", []):
+		out["fork"] = id
+		if parts_trail(out) >= STOCK_TRAIL:
+			any.append(id)
+			if PartsDB.styles_of(str(id)).any(func(s): return frame_styles.has(s)):
+				fits.append(id)
+	var from: Array = fits if not fits.is_empty() else any
+	out["fork"] = from[absi(seed_value) % from.size()] if not from.is_empty() else build.get("fork", "")
+	return out
+
+
+## Mechanical trail (m) for a front wheel of rolling radius `radius` on a steering head raked back
+## `rake_deg`, with the axle `offset` ahead of the steering axis: how far the contact patch trails
+## the point where the axis meets the road.
+static func trail_of(radius: float, rake_deg: float, offset: float) -> float:
 	var rake := deg_to_rad(rake_deg)
-	trail = clampf((front_radius * sin(rake) - FORK_OFFSET) / cos(rake), 0.05, 0.16)
-	steer_inertia = 0.5 * front_inertia + 0.06 + 0.02 * float(part("handlebars").get("width", 720.0)) / 720.0
+	return (radius * sin(rake) - offset) / cos(rake)
 
 
 ## A tyre's Magic Formula numbers (TyreModel.params_of) at a pressure `dev` off its best: soft
@@ -656,6 +778,11 @@ func tune_block(key: String) -> String:
 			return "The %s has no %s adjuster." % [str(p.get("name", "suspension")).to_lower(), what]
 	elif key == "spread" and not part("gearbox").get("cassette", false):
 		return "Only a cassette gearbox lets you respace the ratios."
+	elif key == "damper":
+		if not has_part("steering_damper"):
+			return "There's no steering damper fitted."
+		if int(part("steering_damper").get("adjust", 0)) < 1:
+			return "This steering damper has no adjuster."
 	return ""
 
 
