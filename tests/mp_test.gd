@@ -467,7 +467,7 @@ func _ready() -> void:
 				Shed.request({"a": "wash_aim", "fire": true, "bike": ranger, "at": (Shed.bikes[ranger]["xf"] as Transform3D).origin + Vector3.UP * 0.5, "n": Vector3.RIGHT})
 				Shed.request({"a": "wash_cells", "bike": ranger, "parts": {w_fork: all_cells.call(0.5)}, "clean": [w_engine]})
 				wash_step = 1
-			var seen_water := role == "client" or (main.remotes.size() == 1 and ws != null and ws._wash_fx.has(int(main.remotes.keys()[0])))
+			var seen_water: bool = role == "client" or (main.remotes.size() == 1 and ws != null and ws._wash_fx.has(int(main.remotes.keys()[0])))
 			wash_ok = wash_ok or (w_tyre != 0 and absf(float(Shed.items[w_tyre]["dirt"]) - 0.4) < 0.01 and absf(float(Shed.items[w_fork]["dirt"]) - 0.4) < 0.01
 				and float(Shed.items[w_engine]["dirt"]) == 0.0 and Dirt.side(Dirt.cells(Shed.items[w_fork], "fork"), 0) < 0.41 and seen_water)
 		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and wash_ok:
