@@ -33,8 +33,21 @@ const CATALOGUE := {
 		"desc": "A room of its own upstairs, on top of the workshop, up an outside staircase: leather sofa, coffee table, drinks fridge, pool table, rug, a lamp and an arcade machine."},
 	"showroom": {"name": "Showroom finish", "cat": "luxury", "price": 250000, "needs": ["epoxy", "led", "cladding", "lounge"],
 		"desc": "The works: a gloss black and white chequered floor, a honeycomb LED ceiling over the shed and the extension, and chrome trim."},
+	# Kit for the paint mixing bay off the paint shop (see PaintBay).
+	"paint_stainless": {"name": "Stainless mixing bench", "cat": "paint", "price": 1800, "needs": [],
+		"desc": "A stainless steel top for the mixing bench, steadier to pour on, with racks under it for the tins of base."},
+	"paint_effects_rack": {"name": "Effects tint rack", "cat": "paint", "price": 4000, "needs": [],
+		"desc": "A second rack over the mixing bench for the effect tints: pearls, candy dyes, flakes and chameleons (each unlocks at its level)."},
+	"paint_fine_scale": {"name": "Precision scale", "cat": "paint", "price": 1500, "needs": [],
+		"desc": "The mixing bench's digital scale reads to 0.1 g."},
+	"paint_auto_shaker": {"name": "Automatic paint shaker", "cat": "paint", "price": 3500, "needs": [],
+		"desc": "Mixes a tin even in seconds, no stirring, and remixes a saved colour from the swatch wall in one go."},
+	"paint_meter": {"name": "Colour meter", "cat": "paint", "price": 6000, "needs": [],
+		"desc": "Reads the paint on any part (right mouse with empty hands) and sets it as the mixing bench's target, for matching."},
+	"paint_curved_panel": {"name": "Curved spray-out panel", "cat": "paint", "price": 800, "needs": [],
+		"desc": "Test cards on a curved panel, to see a metallic, pearl or chameleon's flop from every angle at once."},
 }
-const CATEGORIES := {"build": "Building work", "storage": "Storage", "luxury": "Luxury"}
+const CATEGORIES := {"build": "Building work", "storage": "Storage", "luxury": "Luxury", "paint": "Paint mixing bay"}
 ## XP for buying one, scaled up with its price (see award_mult).
 const XP_KEY := "garage_upgrade"
 

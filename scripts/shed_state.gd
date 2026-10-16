@@ -38,7 +38,7 @@ const PAINT_NAMES := ["red", "blue", "orange", "green", "purple", "white", "blac
 ## How the paint looks: "" is the part's factory finish, the rest come out of the spray can.
 const FINISHES: Array[String] = ["gloss", "matte", "metallic", "chrome", "patina"]
 const FINISH_NAMES := {"gloss": "Gloss", "matte": "Matte", "metallic": "Metallic flake", "chrome": "Chrome",
-	"patina": "Old patina"}
+	"patina": "Old patina", "pearl": "Pearl", "candy": "Candy", "flake": "Flake", "chameleon": "Chameleon"}
 const BIKE_NAMES := ["Barn Find", "Rusty Ranger", "Basket Case", "Old Faithful", "The Widowmaker", "Rattler",
 	"Hedge Hopper", "Midnight Special", "Scrapyard Dog", "Grandad's Pride", "Mud Puppy", "Iron Maiden"]
 ## Chains: slack in mm. Adjusted right it sits between these; lube 0 (dry) .. 1 (just done).
@@ -121,6 +121,8 @@ var contracts := {}
 var sales := {}
 ## The coffee shop next door: its bikers and the trays out (see CoffeeShop).
 var coffee := {}
+## The paint mixing bay off the paint shop: its stock, tins, recipes and bench (see PaintBay).
+var paint_bay := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -207,6 +209,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	contracts = Contracts.empty()
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
+	paint_bay = PaintBay.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -324,6 +327,8 @@ func load_state(state: Dictionary, player_name: String) -> void:
 			items[id]["place"] = item_place(id)
 	# Nor carrying a tray from the cafe: any that were go back on its counter.
 	CoffeeShop.after_load()
+	# Nor at the mixing bench or holding a tin: tins go back on the shelf.
+	PaintBay.after_load()
 	# Nobody is holding the hose or wearing the ear defenders in a new session.
 	if dyno["hose"] == "held":
 		dyno["hose"] = "hook"
@@ -431,6 +436,7 @@ func join_remote() -> void:
 	contracts = Contracts.empty()
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
+	paint_bay = PaintBay.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -457,6 +463,7 @@ func stop() -> void:
 	contracts = Contracts.empty()
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
+	paint_bay = PaintBay.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -613,6 +620,15 @@ func condition_of(item: Dictionary) -> Dictionary:
 		cond["coat"] = str(item["coat"])
 	if item.get("primer_top", false):
 		cond["primer"] = true
+	# Paint mixed in the mixing bay: its effect, a masked stripe or fade, tape still on, the
+	# lacquer's flattener (see PaintMix.apply).
+	for key in ["mix", "mask", "tape"]:
+		if item.get(key) is Dictionary and not item.get("primer_top", false):
+			cond[key] = item[key]
+	if float(item.get("flat", 0.0)) > 0.0:
+		cond["flat"] = float(item["flat"])
+	if item.get("mix") is Dictionary:
+		cond["paint_q"] = float(item.get("paint_quality", 1.0))
 	return cond
 
 
@@ -1282,8 +1298,13 @@ func paint_text(item: Dictionary) -> String:
 	if item.get("primer_top", false):
 		return "Grey primer"
 	var f: String = item.get("finish", "")
+	var mix = item.get("mix")
+	if mix is Dictionary and str(mix.get("name", "")) != "":
+		# Mixed paint goes by its name: "Midnight Blue (metallic, 2 coats)".
+		return "%s (%s, %d coat%s)" % [mix["name"], PaintMix.effect_name(str(mix.get("effect", "solid"))).to_lower(),
+			int(item.get("mix_coats", 1)), "" if int(item.get("mix_coats", 1)) == 1 else "s"]
 	var n := paint_name(item["color"])
-	return n.capitalize() if f == "" else "%s %s" % [FINISH_NAMES[f], n]
+	return n.capitalize() if f == "" else "%s %s" % [str(FINISH_NAMES.get(f, f.capitalize())), n]
 
 
 ## The palette colour closest to `c`.
@@ -2284,6 +2305,10 @@ func check(peer: int, action: Dictionary) -> String:
 		return Contracts.check(peer, action)
 	if a.begins_with("sale_"):
 		return Sales.check(peer, action)
+	if PaintBay.carrying(peer) and (PaintBay.HANDS_NEEDED.has(a) and not a in ["paint", "coat"] or a in ["coffee_buy", "coffee_tray_take"]):
+		return "Put the %s down first." % ("tin" if not PaintBay.held_tin(peer).is_empty() else "tape")
+	if a.begins_with("paint_"):
+		return PaintBay.check(peer, action)
 	if a.begins_with("coffee_"):
 		return CoffeeShop.check(peer, action)
 	if CoffeeShop.carrying(peer) and CoffeeShop.HANDS_NEEDED.has(a):
@@ -2582,8 +2607,24 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Too rusty to %s. Grind it back on the repair bench first." % a
 			if a == "prime" and it.get("primer_top", false):
 				return "It's already in primer. Spray its colour on."
-			if a == "paint" and not it.get("primer_top", false) and it.get("finish", "") == str(action.get("finish", "gloss")) \
-					and paint_index(it["color"]) == int(action.get("color", 0)) and it["color"] == PAINTS[paint_index(it["color"])]:
+			if a == "paint" and action.get("cup", false):
+				# Paint mixed in the mixing bay, from the spray gun's cup (see PaintBay).
+				var cup := PaintBay.cup_of(peer)
+				if cup.is_empty():
+					return "The gun's cup is empty. Fill it from a tin of mixed paint (hold the tin, right click)."
+				if PaintBay.cup_use(peer, it, float(action.get("waste", 0.0))) < 0.0:
+					return "Not enough %s left in the cup for that. Top it up from the tin." % str(cup.get("name", "paint"))
+				var fade := str(action.get("fade", ""))
+				if fade != "":
+					if not PaintMix.FADE_PATTERNS.has(fade):
+						return "There's no fade like that."
+					if PaintBay.level_of(peer) < int(PaintMix.PATTERNS[fade]["level"]):
+						return "Fades need level %d." % int(PaintMix.PATTERNS[fade]["level"])
+					if it.get("primer_top", false) or not it.has("paint_quality"):
+						return "Paint its first colour on before fading a second one in."
+			elif a == "paint" and not it.get("primer_top", false) and it.get("finish", "") == str(action.get("finish", "gloss")) \
+					and paint_index(it["color"]) == int(action.get("color", 0)) and it["color"] == PAINTS[paint_index(it["color"])] \
+					and not (it.get("mix") is Dictionary) and not (it.get("tape") is Dictionary):
 				return "It's already %s." % paint_text(it).to_lower()
 		"pour", "drain":
 			if held == 0 or not PartsDB.is_fluid(items[held]["part"]):
@@ -2977,6 +3018,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("coffee_"):
 		_coffee_apply(peer, action)
 		return
+	if str(action.get("a", "")).begins_with("paint_"):
+		_paint_bay_apply(peer, action)
+		return
 	var why := check(peer, action)
 	if why != "":
 		_tell(peer, why, false)
@@ -3325,13 +3369,28 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Lubed the chain with %s: %s" % [PartsDB.part_name(str(can["type"])), _job_word(q, waste, "lube")]
 			_xp(peer, "chain_lube", q, "item:%d" % chain)
 		"paint":
-			var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
-			var finish := str(action.get("finish", "gloss"))
-			if not FINISHES.has(finish):
-				finish = "gloss"
 			var it: Dictionary = items[int(action["item"])]
-			it["color"] = PAINTS[idx]
-			it["finish"] = finish
+			var coats_q := 1.0
+			if action.get("cup", false):
+				# Mixed paint from the gun's cup: its colour and effect, coats building up, a
+				# mask where tape was or a fade over the colour under it (see PaintBay).
+				coats_q = PaintBay.spray_from_cup(peer, it, float(action.get("waste", 0.0)), str(action.get("fade", "")))
+			else:
+				var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
+				var finish := str(action.get("finish", "gloss"))
+				if not FINISHES.has(finish):
+					finish = "gloss"
+				if it.get("tape") is Dictionary and not it.get("primer_top", false):
+					# Over masking tape the colour under it stays where the stripe goes.
+					it["mask"] = {"pattern": str(it["tape"]["pattern"]), "color": it["color"], "q": float(it["tape"].get("q", 1.0)),
+						"mix": it.get("mix", {})}
+				else:
+					it.erase("mask")
+				it.erase("mix")
+				it.erase("mix_coats")
+				it.erase("flat")
+				it["color"] = PAINTS[idx]
+				it["finish"] = finish
 			# Fresh paint covers bare metal and any coat that was on it.
 			_paint_over(it)
 			it.erase("coat")
@@ -3349,6 +3408,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			if primed:
 				q = minf(1.0, q + PRIMER_BONUS * float(it.get("primer", 0.0)))
 			it.erase("primer_top")
+			q *= coats_q
 			it["paint_quality"] = q
 			it["paint_runs"] = runs
 			_bump(c, "painted")
@@ -3366,6 +3426,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_paint_over(it)
 			it.erase("coat")
 			it.erase("coat_q")
+			it.erase("mix")
+			it.erase("mix_coats")
+			it.erase("mask")
+			it.erase("flat")
 			it["primer"] = q
 			it["primer_top"] = true
 			text = "Primed the %s: %s" % [item_title(int(action["item"])), _job_word(q, runs, "paint")]
@@ -4467,6 +4531,7 @@ func _on_player_left(id: int) -> void:
 	if held != 0:
 		_move(held, "spot", _free_spot())
 	CoffeeShop.put_back(id)
+	PaintBay.put_back(id)
 	var bike_id := riding(id)
 	if bike_id != 0:
 		bikes[bike_id]["rider"] = 0
@@ -4819,7 +4884,7 @@ func _snapshot(with_board := true) -> Dictionary:
 		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "upgrades": upgrades,
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "upgrades": upgrades,
 		"lifts": lifts, "looks": looks}
 	if with_board:
 		state["board"] = board
@@ -4859,6 +4924,8 @@ func _sync(state: Dictionary) -> void:
 	sales = Sales.sanitize(state.get("sales"))
 	# Sheds saved before the coffee shop next door have nobody in it.
 	coffee = CoffeeShop.sanitize(state.get("coffee"))
+	# Sheds saved before the paint mixing bay get its starter stock.
+	paint_bay = PaintBay.sanitize(state.get("paint_bay"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.
@@ -4906,6 +4973,7 @@ func _process(delta: float) -> void:
 	Contracts.process(delta)
 	Sales.process(delta)
 	CoffeeShop.process(delta)
+	PaintBay.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":
@@ -5035,6 +5103,19 @@ func _coffee_apply(peer: int, action: Dictionary) -> void:
 		_tell(peer, why, false)
 		return
 	var text := CoffeeShop.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## A "paint_*" request for the mixing bay (see PaintBay.check and PaintBay.apply).
+func _paint_bay_apply(peer: int, action: Dictionary) -> void:
+	var why := check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var text := PaintBay.apply(peer, action)
 	if text != "":
 		_tell(peer, text, true)
 	_mark_dirty()

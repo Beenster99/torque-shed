@@ -390,6 +390,8 @@ static func room_lit(room: String) -> bool:
 			return Shed.lights_on
 		"dyno":
 			return bool(Shed.dyno.get("lights", true))
+		"mixing":
+			return Shed.room_lit("paint")   # the mixing bay is on the paint shop's switch
 		"sales_office":
 			return Shed.room_lit("sales")
 	return Shed.room_lit(room)

@@ -25,14 +25,15 @@ extends RefCounted
 ## ask for changes with Shed.request({"a": "contract_..."}), which Shed hands to check()/apply().
 ## Everything here is static, working on the Shed autoload.
 
-const KINDS: Array[String] = ["maint", "mot", "mod", "bespoke"]
-const KIND_NAMES := {"maint": "Maintenance", "mot": "MOT", "mod": "Modifications", "bespoke": "Bespoke build"}
+const KINDS: Array[String] = ["maint", "mot", "respray", "mod", "bespoke"]
+const KIND_NAMES := {"maint": "Maintenance", "mot": "MOT", "respray": "Colour match", "mod": "Modifications", "bespoke": "Bespoke build"}
 ## Reputation the garage needs before customers bring each kind of job.
-const UNLOCK := {"maint": 0, "mot": 2, "mod": 5, "bespoke": 10}
+const UNLOCK := {"maint": 0, "mot": 2, "respray": 3, "mod": 5, "bespoke": 10}
 ## How the kind's job counts in the player's XP (see Progress.XP).
-const XP_KEYS := {"maint": "contract_maint", "mot": "contract_mot", "mod": "contract_mod", "bespoke": "contract_bespoke"}
+const XP_KEYS := {"maint": "contract_maint", "mot": "contract_mot", "respray": "contract_respray", "mod": "contract_mod",
+	"bespoke": "contract_bespoke"}
 ## Reputation earned by a job done to the letter.
-const REP_GAIN := {"maint": 1, "mot": 2, "mod": 3, "bespoke": 5}
+const REP_GAIN := {"maint": 1, "mot": 2, "respray": 2, "mod": 3, "bespoke": 5}
 const FIRST_CUSTOMER := 0.4          # game hours into a new shed before the first customer
 const SPAWN_HOURS := Vector2(2.0, 5.0)
 const MAX_WAITING := 2               # customers at reception at once
@@ -81,7 +82,16 @@ const SERVICES := [
 ## Tasks an MOT customer sometimes adds while the bike's in.
 const MOT_EXTRAS: Array[String] = ["oil", "chain", "wash", "plugs", "filters", "brake_fluid", "pads"]
 ## What each kind of modification goal pays in labour.
-const MOD_PAY := {"top_kmh": 220, "hp": 200, "mass": 240, "style": 320, "fit": 120, "pipes": 140, "paint": 110, "part": 130}
+const MOD_PAY := {"top_kmh": 220, "hp": 200, "mass": 240, "style": 320, "fit": 120, "pipes": 140, "paint": 110, "part": 130, "match": 170,
+	"stripe": 120}
+## Colour match goals (see PaintMix.match_of): the least match a customer takes, and what a spot-on
+## match adds to the labour on top (in proportion between the least and 100%).
+const MATCH_MIN := 0.85
+const STRIPE_MIN := 0.8
+const MATCH_BONUS := 0.45
+## Stripe colours customers ask for, with a name.
+const STRIPE_COLOURS := {"gold": Color(0.78, 0.6, 0.2), "white": Color(0.92, 0.92, 0.9), "black": Color(0.04, 0.04, 0.045),
+	"red": Color(0.72, 0.06, 0.06), "silver": Color(0.7, 0.71, 0.73), "cream": Color(0.9, 0.85, 0.7), "orange": Color(0.9, 0.38, 0.05)}
 const STYLES := {"cafe": "Cafe racer", "scrambler": "Scrambler", "tourer": "Tourer", "sport": "Sports bike", "bobber": "Bobber",
 	"chopper": "Chopper", "cruiser": "Cruiser", "adventure": "Adventure bike", "mx": "MX bike", "supermoto": "Supermoto"}
 ## For the styles without hand-picked marks: the four slots whose parts have to suit the style
@@ -533,7 +543,7 @@ static func spawn(kind := "") -> int:
 	if kind == "" or not KINDS.has(kind):
 		var open := unlocked()
 		# Harder jobs come less often than easy ones.
-		var weights := {"maint": 4.0, "mot": 3.0, "mod": 2.0, "bespoke": 1.0}
+		var weights := {"maint": 4.0, "mot": 3.0, "respray": 2.0, "mod": 2.0, "bespoke": 1.0}
 		var total := 0.0
 		for k in open:
 			total += float(weights[k])
@@ -614,6 +624,21 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 				offer["blurb"] = "It's been off the road a while and the MOT's long run out. Test it, fix what fails, and get me the certificate."
 			if not extra.is_empty():
 				offer["blurb"] += " And while it's in: %s." % ", ".join(extra.map(func(k): return str(TASKS[k]).to_lower()))
+		"respray":
+			var parts := random_parts(rng, true)
+			offer["parts"] = parts
+			var m := _match_goal(rng, rng.randf() < 0.35)
+			offer["goals"] = [m]
+			if rng.randf() < 0.4:
+				offer["goals"].append(_stripe_goal(rng))
+			offer["budget"] = int(snappedi(rng.randi_range(120, 220), 10))
+			offer["pay"] = int(snappedi(140 + offer["goals"].size() * rng.randi_range(60, 110), 10))
+			offer["days"] = 2 + offer["goals"].size() + rng.randi_range(0, 1)
+			if m.has("lib"):
+				offer["blurb"] = "I want the tank in %s, like it left the factory. Get as close as you can: I'll pay more the closer it is." % str(m["name"])
+			else:
+				offer["blurb"] = ["The tank got scratched. Here's a panel of the old paint: match it so nobody can tell. Closer is better.",
+					"Can you match this sample? It's the colour it's always been. The closer you get, the more it's worth to me."][rng.randi() % 2]
 		"mod":
 			var parts := random_parts(rng, true)
 			offer["parts"] = parts
@@ -912,7 +937,10 @@ static func _mod_goals(parts: Dictionary, rng: RandomNumberGenerator) -> Array:
 		pool.append({"t": "part", "slot": "front_caliper", "part": "four_piston_radial"})
 	if not str(parts.get("exhaust", "")) in PIPES:
 		pool.append({"t": "pipes", "from": str(parts.get("exhaust", ""))})
-	pool.append({"t": "paint", "color": rng.randi() % Shed.PAINTS.size()})
+	if rng.randf() < 0.3:
+		pool.append(_match_goal(rng, false))
+	else:
+		pool.append({"t": "paint", "color": rng.randi() % Shed.PAINTS.size()})
 	_shuffle(pool, rng)
 	# A tourer and a fairing goal, or a lighter bike and luggage, can fight each other: keep it simple.
 	var goals := pool.slice(0, rng.randi_range(2, mini(5, pool.size())))
@@ -942,6 +970,10 @@ static func _goal_cost(g: Dictionary, parts: Dictionary) -> int:
 			return est_cost("full_system")
 		"paint":
 			return 60
+		"match":
+			return 90
+		"stripe":
+			return 30
 	return 0
 
 
@@ -965,10 +997,61 @@ static func _bespoke_goals(style: String, ref: Dictionary, rng: RandomNumberGene
 	_shuffle(signature, rng)
 	for slot in signature.slice(0, 1 if rng.randf() < 0.6 else 2):
 		goals.append({"t": "part", "slot": slot, "part": str(ref[slot])})
-	if rng.randf() < 0.8:
+	var paint := rng.randf()
+	if paint < 0.4:
 		goals.append({"t": "paint", "color": rng.randi() % Shed.PAINTS.size()})
+	elif paint < 0.8:
+		goals.append(_match_goal(rng, false))
+		if rng.randf() < 0.6:
+			goals.append(_stripe_goal(rng))
 	goals.append({"t": "health", "min": [0.9, 0.95, 0.98][rng.randi() % 3]})
 	return goals
+
+
+## A colour match goal for the tank: a manufacturer colour from the library the crew can mix
+## (its effect unlocked at the host's level), or with `sample` a colour off a panel of the
+## customer's old paint. {t: "match", name, rgb (hex), effect, min[, lib]}.
+static func _match_goal(rng: RandomNumberGenerator, sample: bool) -> Dictionary:
+	var lv := PaintBay.level_of(Shed.me())
+	if not sample:
+		var can: Array = PaintMix.library().filter(func(e): return int(PaintMix.EFFECTS.get(str(e["effect"]), {}).get("level", 99)) <= lv)
+		if not can.is_empty():
+			var e: Dictionary = can[rng.randi() % can.size()]
+			var c: Color = e["rgb"]
+			return {"t": "match", "name": PaintMix.library_name(e), "lib": str(e["id"]), "rgb": c.to_html(false),
+				"effect": "solid" if str(e["effect"]) == "lacquer" else str(e["effect"]), "min": MATCH_MIN}
+	var col := Color.from_hsv(rng.randf(), rng.randf_range(0.3, 0.85), rng.randf_range(0.25, 0.85))
+	return {"t": "match", "name": "their sample panel", "rgb": col.to_html(false),
+		"effect": "solid", "min": MATCH_MIN}
+
+
+## A masked stripe (or, from level 12, a fade) on the tank in a named colour:
+## {t: "stripe", pattern, colour, rgb, min}.
+static func _stripe_goal(rng: RandomNumberGenerator) -> Dictionary:
+	var pats: Array = ["pin", "stripe", "twin", "two_tone"]
+	if PaintBay.level_of(Shed.me()) >= int(PaintMix.PATTERNS["fade_top"]["level"]):
+		pats.append("fade_top")
+	var names: Array = STRIPE_COLOURS.keys()
+	var nm := str(names[rng.randi() % names.size()])
+	var c: Color = STRIPE_COLOURS[nm]
+	return {"t": "stripe", "pattern": str(pats[rng.randi() % pats.size()]), "colour": nm, "rgb": c.to_html(false), "min": STRIPE_MIN}
+
+
+## A goal's colour: kept as a hex string (so it saves exactly), or [r, g, b].
+static func _rgb(g: Dictionary) -> Color:
+	var a = g.get("rgb", "")
+	if a is String and Color.html_is_valid(a):
+		return Color.html(a)
+	if a is Array and a.size() >= 3:
+		return Color(float(a[0]), float(a[1]), float(a[2]))
+	return Color.WHITE
+
+
+## How close a tank's paint is to a match goal, 0..1 (see PaintMix.match_of): its colour and effect.
+static func tank_match(tank: Dictionary, g: Dictionary) -> float:
+	var s = tank.get("mix")
+	var effect := str(s.get("effect", "solid")) if s is Dictionary else ("metallic" if str(tank.get("finish", "")) == "metallic" else "solid")
+	return PaintMix.match_of(tank.get("color", Color.WHITE), _rgb(g), effect, str(g.get("effect", "solid")))
 
 
 # ---------------------------------------------------------------------------- goals
@@ -996,6 +1079,18 @@ static func goal_text(g: Dictionary) -> String:
 			return "Tank painted %s" % Shed.PAINT_NAMES[clampi(int(g["color"]), 0, Shed.PAINT_NAMES.size() - 1)]
 		"part":
 			return "%s: %s" % [PartsDB.slot_name(str(g["slot"])), PartsDB.part_name(str(g["part"]))]
+		"match":
+			var fx := str(g.get("effect", "solid"))
+			return "Tank matched to %s%s (at least %d%%; they pay more the closer it is)" % [g.get("name", "the sample"),
+				"" if fx == "solid" else " (%s)" % PaintMix.effect_name(fx).to_lower(), roundi(float(g.get("min", MATCH_MIN)) * 100.0)]
+		"stripe":
+			var pat := str(g.get("pattern", "pin"))
+			var what := "a %s %s" % [g.get("colour", ""), str(PaintMix.PATTERNS.get(pat, {}).get("name", pat)).to_lower()]
+			if pat == "two_tone":
+				what = "a two-tone tank, its lower half %s" % g.get("colour", "")
+			elif pat.begins_with("fade"):
+				what = "a fade from %s" % g.get("colour", "")
+			return "On the tank, %s (masked first, then the main colour over it)" % what
 		"health":
 			return "Condition at least %d%%" % roundi(float(g["min"]) * 100.0)
 	return str(g)
@@ -1063,6 +1158,25 @@ static func eval_goal(job: Dictionary, g: Dictionary) -> Dictionary:
 				return {"done": false, "have": "grey primer"}
 			var idx := Shed.paint_index(tank["color"])
 			return {"done": idx == int(g["color"]), "have": str(Shed.PAINT_NAMES[idx])}
+		"match":
+			var tank := _item(bike_id, "tank")
+			if tank.is_empty():
+				return {"done": false, "have": "no tank", "match": 0.0}
+			if tank.get("primer_top", false):
+				return {"done": false, "have": "grey primer", "match": 0.0}
+			var m := tank_match(tank, g)
+			return {"done": m >= float(g.get("min", MATCH_MIN)) - 0.0001, "have": "%s match" % PaintMix.match_text(m), "match": m}
+		"stripe":
+			var tank := _item(bike_id, "tank")
+			var mask = tank.get("mask")
+			if tank.is_empty() or tank.get("primer_top", false) or not (mask is Dictionary):
+				return {"done": false, "have": "no stripe" if tank.get("tape") == null else "taped, not sprayed over yet"}
+			var m := PaintMix.match_of(mask.get("color", Color.WHITE), _rgb(g))
+			var pat := str(mask.get("pattern", ""))
+			var pat_name := str(PaintMix.PATTERNS.get(pat, {}).get("name", pat)).to_lower()
+			if pat != str(g.get("pattern", "")):
+				return {"done": false, "have": "a %s" % pat_name}
+			return {"done": m >= float(g.get("min", STRIPE_MIN)) - 0.0001, "have": "a %s, %s on colour" % [pat_name, PaintMix.match_text(m)]}
 		"part":
 			var p := str(parts.get(str(g["slot"]), "none"))
 			return {"done": p == str(g["part"]), "have": PartsDB.part_name(p) if p != "none" else "none"}
@@ -1138,7 +1252,11 @@ static func evaluate(job: Dictionary) -> Array:
 	var rows := []
 	for g in job.get("goals", []):
 		var e := eval_goal(job, g)
-		rows.append({"text": goal_text(g), "done": bool(e["done"]), "have": str(e["have"])})
+		var row := {"text": goal_text(g), "done": bool(e["done"]), "have": str(e["have"])}
+		if e.has("match"):
+			row["match"] = float(e["match"])
+			row["min"] = float(g.get("min", MATCH_MIN))
+		rows.append(row)
 	return rows
 
 
@@ -1186,6 +1304,10 @@ static func payout(job: Dictionary, spend_override := -1) -> Dictionary:
 	if str(job.get("kind", "")) == "mot" and not _mot_passed(job, rows):
 		labour = fee * 0.25
 		note = "No MOT pass: they only pay for the test."
+	var bonus := match_bonus(fee, rows)
+	if bonus > 0:
+		labour += bonus
+		note += " Colour match %s: %s extra." % [PaintMix.match_text(_best_match(rows)), money(bonus)]
 	labour *= maxf(0.5, 1.0 - 0.15 * late)
 	var spend := spent(job) if spend_override < 0 else spend_override
 	var budget := int(job.get("budget", 0))
@@ -1203,7 +1325,25 @@ static func payout(job: Dictionary, spend_override := -1) -> Dictionary:
 	if over > 0:
 		note += " %s over budget." % money(over)
 	return {"labour": roundi(labour), "parts": parts, "tip": tip, "over": over, "late": late, "sat": sat,
-		"total": roundi(labour) + parts + tip, "rep": rep, "note": note, "spent": spend}
+		"total": roundi(labour) + parts + tip, "rep": rep, "note": note, "spent": spend, "match_bonus": bonus}
+
+
+## The extra a job's colour matches earn (`rows` from evaluate): for each match goal met, up to
+## MATCH_BONUS of the fee, more the closer it is between the least they'd take and spot on.
+static func match_bonus(fee: int, rows: Array) -> int:
+	var extra := 0.0
+	for r in rows:
+		if r.has("match") and r["done"]:
+			var lo := float(r.get("min", MATCH_MIN))
+			extra += float(fee) * MATCH_BONUS * clampf((float(r["match"]) - lo) / maxf(1.0 - lo, 0.01), 0.0, 1.0)
+	return roundi(extra)
+
+
+static func _best_match(rows: Array) -> float:
+	var best := 0.0
+	for r in rows:
+		best = maxf(best, float(r.get("match", 0.0)))
+	return best
 
 
 # ---------------------------------------------------------------------------- requests

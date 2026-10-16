@@ -343,7 +343,7 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 	var loads := walker.spray_loads()
 	for k in range(Shed.FINISHES.size(), loads.size()):
 		var l: Dictionary = loads[k]
-		var label := "Grey primer" if l["kind"] == "primer" else Shed.coat_name(str(l["id"]))
+		var label := walker.load_label(l)
 		var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 16.0
 		var r := Rect2(fx, y + 74, w, 24)
 		var on := walker.spray_finish == k

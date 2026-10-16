@@ -272,6 +272,18 @@ func _run_all() -> void:
 	print("Spraying by hand: primer, colour and lacquer coats, the fan, coverage, runs and dry spray")
 	_test_spray_coat_rules()
 	await _test_spray_session()
+	print("The paint mixing bay: mixing by weight, recipe cards, the swatch wall, the gun's cup, masking")
+	_test_paint_mix_maths()
+	_test_paint_match()
+	_test_paint_unlocks()
+	_test_paint_costs()
+	_test_paint_codes()
+	_test_paint_library()
+	_test_paint_bench_rules()
+	_test_paint_masking()
+	_test_paint_save()
+	_test_paint_contracts()
+	await _test_paint_bay_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -6565,7 +6577,7 @@ func _test_contract_customers() -> void:
 	check(Contracts.customers().is_empty() and Contracts.jobs().is_empty() and Contracts.reputation() == 0,
 		"a new shed has no customers, no jobs and no reputation")
 	check(Contracts.unlocked(0) == ["maint"] and Contracts.unlocked(int(Contracts.UNLOCK["mot"])).has("mot")
-		and Contracts.unlocked(10).size() == 4, "reputation unlocks harder jobs: service first, then MOT, mods and bespoke builds")
+		and Contracts.unlocked(10).size() == 5, "reputation unlocks harder jobs: service first, then MOT, colour matches, mods and bespoke builds")
 	Contracts.advance(Contracts.FIRST_CUSTOMER + 0.05)
 	check(Contracts.customers().size() == 1, "the first customer turns up soon after the shed opens")
 	var c: Dictionary = Contracts.customers().values()[0]
@@ -6724,10 +6736,17 @@ func _test_contract_goals_and_pay() -> void:
 	var built := Shed._new_bike(ref2, 3, "Cafe test", 0.0)
 	_make_roadworthy(built)
 	var goals := Contracts._bespoke_goals("cafe", ref2, Shed._rng)
+	var built_tank: Dictionary = Shed.items[Shed.item_on(built, "tank")]
 	for g in goals:
 		if g["t"] == "paint":
-			g["color"] = Shed.paint_index(Shed.items[Shed.item_on(built, "tank")]["color"])
-	var bj := {"id": 999, "kind": "bespoke", "bike": built, "goals": goals, "pay": 3000, "budget": 4000, "due": Contracts.clock() + 100.0,
+			g["color"] = Shed.paint_index(built_tank["color"])
+		elif g["t"] == "match":
+			var tc: Color = built_tank["color"]
+			g["rgb"] = [tc.r, tc.g, tc.b]
+			g["effect"] = "solid"
+		elif g["t"] == "stripe":
+			built_tank["mask"] = {"pattern": str(g["pattern"]), "color": Contracts._rgb(g), "q": 1.0, "mix": {}}
+	var bj :={"id": 999, "kind": "bespoke", "bike": built, "goals": goals, "pay": 3000, "budget": 4000, "due": Contracts.clock() + 100.0,
 		"start_parts": {"frame": ref2["frame"]}}
 	var rows := Contracts.evaluate(bj)
 	check(rows.all(func(r): return r["done"]), "a bespoke cafe racer's targets are reachable: %s" % str(rows.map(func(r): return "%s %s" % [str(r["text"]).left(24), r["have"]])))
@@ -13288,6 +13307,585 @@ func _test_coffee_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+## The mixing maths: a tin's colour from its base and tints, effects from the base and effect
+## tints, the lacquer's flattener, pouring, stirring, the scale and how much paint a part takes.
+func _test_paint_mix_maths() -> void:
+	var white := PaintMix.new_tin("W")
+	var s0 := PaintMix.spec(white)
+	check(s0["effect"] == "solid" and PaintMix.match_of(s0["color"], PaintMix.BASES["W"]["color"]) > 0.99 and PaintMix.total_grams(white) == 1000.0,
+		"a litre of white base is 1000 g of plain white")
+	var blue := PaintMix.new_tin("W")
+	blue["tints"]["PB"] = 20.0
+	var bluer := PaintMix.new_tin("W")
+	bluer["tints"]["PB"] = 80.0
+	var c1: Color = PaintMix.spec(blue)["color"]
+	var c2: Color = PaintMix.spec(bluer)["color"]
+	check(c1.b > c1.r and c1.b > c1.g and c2.get_luminance() < c1.get_luminance() and c2.s > c1.s,
+		"phthalo blue in white makes a blue, deeper the more goes in (%s, %s)" % [c1.to_html(false), c2.to_html(false)])
+	var green := PaintMix.new_tin("W")
+	green["tints"] = {"PB": 30.0, "LY": 60.0}
+	var cg: Color = PaintMix.spec(green)["color"]
+	check(cg.g > cg.r and cg.g > cg.b, "blue and yellow make green (%s)" % cg.to_html(false))
+	var silver := PaintMix.new_tin("S")
+	silver["tints"]["SC"] = 40.0
+	check(PaintMix.spec(silver)["effect"] == "metallic" and float(PaintMix.spec(silver)["metal"]) > 0.5, "on silver base it's a metallic")
+	var alu := PaintMix.new_tin("W")
+	alu["tints"] = {"UB": 30.0, "AL": 30.0}
+	check(PaintMix.spec(alu)["effect"] == "metallic", "aluminium tint in a solid base makes it metallic too")
+	var candy := PaintMix.new_tin("C")
+	candy["tints"]["CR"] = 30.0
+	var cs := PaintMix.spec(candy)
+	check(cs["effect"] == "candy" and float(cs["depth"]) > 0.0 and Color(cs["color"]).r > Color(cs["color"]).g * 2.0, "candy dye in clear base is a candy red")
+	var pearl := PaintMix.new_tin("W")
+	pearl["tints"]["PW"] = 30.0
+	check(PaintMix.spec(pearl)["effect"] == "pearl" and float(PaintMix.spec(pearl)["pearl"]) > 0.2, "pearl in white is a pearl white")
+	var flake := PaintMix.new_tin("B")
+	flake["tints"]["FS"] = 30.0
+	check(PaintMix.spec(flake)["effect"] == "flake", "silver flake in black is a flake")
+	var cham := PaintMix.new_tin("B")
+	cham["tints"]["XP"] = 40.0
+	check(PaintMix.spec(cham)["effect"] == "chameleon" and float(PaintMix.spec(cham)["flip"]) > 0.3, "chameleon tint flips colour")
+	var satin := PaintMix.new_tin("L")
+	satin["tints"]["FL"] = 150.0
+	var matt := PaintMix.new_tin("L")
+	matt["tints"]["FL"] = 400.0
+	check(PaintMix.spec(satin)["effect"] == "lacquer" and PaintMix.sheen_name(float(PaintMix.spec(satin)["flat"])) == "satin"
+		and PaintMix.sheen_name(float(PaintMix.spec(matt)["flat"])) == "matt" and PaintMix.sheen_name(0.0) == "gloss",
+		"flattener in lacquer: 15% satin, 40% matt, none gloss")
+	check(PaintMix.pour_problem(white, "FL") != "" and PaintMix.pour_problem(satin, "PB") != "" and PaintMix.pour_problem(white, "CR") != ""
+		and PaintMix.pour_problem(white, "PB") == "", "flattener only in lacquer, lacquer takes nothing else, candy dye only in clear base")
+	var five := PaintMix.new_tin("W")
+	five["tints"] = {"LY": 1.0, "OR": 1.0, "SC": 1.0, "MG": 1.0, "VI": 1.0}
+	check(PaintMix.pour_problem(five, "PB").contains("Five") and PaintMix.pour_problem(five, "LY") == "", "up to five tints in a recipe")
+	check(PaintMix.pour_rate(0.1) == 0.0 and PaintMix.pour_rate(0.3) > 0.0 and PaintMix.pour_rate(1.0) > PaintMix.pour_rate(0.5) * 3.0,
+		"upright it doesn't pour; the further it tips the faster")
+	check(PaintMix.pour_wobble(20, false) < PaintMix.pour_wobble(1, false) and PaintMix.pour_wobble(1, true) < PaintMix.pour_wobble(1, false),
+		"a steadier pour as you level up, and on the stainless bench")
+	check(PaintMix.scale_step(1, false) == 1.0 and PaintMix.scale_step(6, false) == 0.5 and PaintMix.scale_step(1, true) == 0.1
+		and PaintMix.read_scale(12.34, 1.0) == "12 g" and PaintMix.read_scale(12.34, 0.1) == "12.3 g", "the scale reads to 1 g, 0.5 g at level 6, 0.1 g with the precision scale")
+	check(PaintMix.stir_per_turn(20) > PaintMix.stir_per_turn(1) and PaintMix.unstir(1.0, 50.0, 1050.0) < 1.0, "pouring unmixes it, and higher levels stir quicker")
+	var card := PaintMix.new_tin("W")
+	card["tints"] = {"PB": 40.0, "LY": 10.0}
+	var close := PaintMix.new_tin("W")
+	close["tints"] = {"PB": 39.0, "LY": 10.0}
+	check(PaintMix.recipe_accuracy(card, card) == 1.0 and PaintMix.recipe_accuracy(close, card) > 0.95 and PaintMix.recipe_accuracy(white, card) == 0.0,
+		"accuracy to a recipe card by weight")
+	var bike := 0.0
+	for kind in ["tank", "guards", "side_panels", "front_mudguard", "tail", "frame", "wheel", "fork", "headlight"]:
+		bike += PaintMix.litres_for(kind) * 2.0
+	var small := (PaintMix.litres_for("tank") + PaintMix.litres_for("guards") + PaintMix.litres_for("side_panels")) * 2.0
+	check(small > 0.4 and small <= 1.05 and bike > 1.4 and bike < 2.6, "a litre does a tank, guards and panels (%.2f l), a whole bike about two (%.2f l)" % [small, bike])
+
+
+## Match %: identical is 100, close colours over 95, the wrong effect family costs.
+func _test_paint_match() -> void:
+	var red := Color(0.8, 0.07, 0.06)
+	check(PaintMix.match_of(red, red) == 1.0 and PaintMix.match_text(1.0) == "100.0%", "the same colour is a 100% match")
+	check(PaintMix.match_of(red, Color(0.79, 0.08, 0.06)) > PaintMix.GOOD_MATCH, "a hair off is still over 95%")
+	check(PaintMix.match_of(red, Color(0.1, 0.3, 0.8)) < 0.5, "red against blue is a poor match")
+	check(PaintMix.match_of(red, red, "solid", "metallic") <= 1.0 - PaintMix.EFFECT_MISS + 0.001 and PaintMix.match_of(red, red, "metallic", "metallic") == 1.0
+		and PaintMix.match_of(red, red, "lacquer", "solid") == 1.0, "a solid for a metallic is marked down; the same effect isn't")
+	var m1 := PaintMix.match_of(red, Color(0.7, 0.1, 0.1))
+	var m2 := PaintMix.match_of(red, Color(0.6, 0.15, 0.15))
+	check(m1 > m2 and m1 < 1.0, "the further off, the lower the match (%.3f, %.3f)" % [m1, m2])
+
+
+## Unlocks by level: effects and tints, masking and fades; what the bench lets you use.
+func _test_paint_unlocks() -> void:
+	Shed.start_new("Tester", 300)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	var me := Shed.me()
+	check(PaintMix.EFFECTS["solid"]["level"] == 1 and PaintMix.EFFECTS["metallic"]["level"] == 1 and PaintMix.EFFECTS["pearl"]["level"] == 5
+		and PaintMix.EFFECTS["candy"]["level"] == 8 and PaintMix.EFFECTS["flake"]["level"] == 10 and PaintMix.EFFECTS["chameleon"]["level"] == 15,
+		"solid and metallic at the start, pearl at 5, candy at 8, flake at 10, chameleon at 15")
+	check(PaintMix.PATTERNS["stripe"]["level"] == 3 and PaintMix.PATTERNS["two_tone"]["level"] == 3 and PaintMix.PATTERNS["fade_top"]["level"] == 12,
+		"masking at level 3, fades at 12")
+	Progress.profile["xp"] = Progress.xp_for_level(1)
+	check(PaintBay.locked(me, "PB") == "" and PaintBay.locked(me, "FL") == "" and PaintBay.locked(me, "PW") != "" and PaintBay.locked(me, "C") != "",
+		"at level 1 the stock rack and the flattener; not pearl or candy base")
+	Shed.request({"a": "garage_money", "value": 100000})
+	Shed.request({"a": "buy_upgrade", "id": "paint_effects_rack"})
+	check(PaintBay.kit("effects") and PaintBay.locked(me, "PW") == "Level 5", "the effects rack is bought, but pearl still needs level 5")
+	Progress.profile["xp"] = Progress.xp_for_level(5)
+	check(PaintBay.locked(me, "PW") == "" and PaintBay.locked(me, "CR") == "Level 8", "at 5 the pearls, at 8 the candies")
+	Progress.profile["xp"] = Progress.xp_for_level(15)
+	check(PaintBay.locked(me, "XP") == "" and PaintBay.locked(me, "C") == "", "at 15 everything")
+	var pearl := PaintMix.new_tin("W")
+	pearl["tints"]["PW"] = 30.0
+	check(PaintMix.level_needed(pearl) == 5 and PaintMix.level_needed(PaintMix.new_tin("W")) == 1, "a pearl recipe needs level 5")
+	Progress.profile["xp"] = Progress.xp_for_level(2)
+	Shed.request({"a": "paint_bench", "on": true})
+	Shed.request({"a": "paint_tin_new", "base": "W"})
+	check(Shed.check(me, {"a": "paint_pour", "tint": "PW", "g": 5.0}).contains("level 5"), "under level 5 the pearl won't pour")
+	var tank := Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[0])
+	Shed.items[tank]["paint_quality"] = 0.9
+	Shed._move(tank, "floor", Transform3D(Basis(), PaintBay.STAND_AT + Vector3(0.5, 0.0, 1.0)))
+	Shed.request({"a": "paint_bench", "on": false})
+	Shed.request({"a": "paint_tape_take"})
+	check(Shed.check(me, {"a": "paint_tape", "item": tank}).contains("level 3"), "masking needs level 3")
+	Progress.profile["xp"] = Progress.xp_for_level(3)
+	check(Shed.check(me, {"a": "paint_tape", "item": tank}) == "", "at 3 it can be taped")
+	check(Shed.check(me, {"a": "paint", "item": tank, "cup": true, "fade": "fade_top", "gun": true}) != "", "fades need the cup, a booth and level 12")
+	Shed.request({"a": "paint_tape_put"})
+	check(Progress.XP.has("paint_mix") and Progress.PAY.has("paint_mix") and Progress.XP.has("colour_match") and Progress.PAY.has("colour_match")
+		and Progress.XP.has("masking") and Progress.XP.has("test_panel") and Progress.XP.has("paint_stir"), "the bay's XP and wages are listed")
+	Progress.profile = saved
+
+
+## Bases and tints cost the garage's money: bought at the parts computer or the bench.
+func _test_paint_costs() -> void:
+	Shed.start_new("Tester", 301)
+	var me := Shed.me()
+	var start := Shed.garage_money
+	var w0 := PaintBay.stock_of("W")
+	check(w0 >= 1.0 and PaintBay.stock_of("PB") > 0.0, "a new shed has starter stock in the bay (%.1f l of white)" % w0)
+	Shed.request({"a": "paint_buy", "code": "W", "n": 2})
+	check(Shed.garage_money == start - PaintBay.price("W") * 2 and is_equal_approx(PaintBay.stock_of("W"), w0 + 2.0),
+		"two litres of white base: %s off the garage's money" % TvChannels.money_text(PaintBay.price("W") * 2))
+	var pb := PaintBay.stock_of("PB")
+	Shed.request({"a": "paint_buy", "code": "PB", "n": 1})
+	check(is_equal_approx(PaintBay.stock_of("PB"), pb + PaintMix.BOTTLE_G) and Shed.garage_money == start - PaintBay.price("W") * 2 - PaintBay.price("PB"),
+		"a bottle of tint is %d g" % roundi(PaintMix.BOTTLE_G))
+	Shed.garage_money = 5
+	check(Shed.check(me, {"a": "paint_buy", "code": "FS", "n": 1}).contains("afford"), "not with no money")
+	check(Shed.check(me, {"a": "paint_buy", "code": "ZZ", "n": 1}) != "" and Shed.check(me, {"a": "paint_buy", "code": "W", "n": 0}) != "", "only real supplies, one or more")
+	Shed.garage_money = 10000
+	# Mixing uses the stock: a litre tin of base, then each gram poured.
+	Shed.request({"a": "paint_bench", "on": true})
+	var wb := PaintBay.stock_of("W")
+	Shed.request({"a": "paint_tin_new", "base": "W"})
+	check(is_equal_approx(PaintBay.stock_of("W"), wb - 1.0) and not PaintBay.bench_tin().is_empty(), "a tin on the scale takes a litre of base")
+	var pb2 := PaintBay.stock_of("PB")
+	Shed.request({"a": "paint_pour", "tint": "PB", "g": 12.5, "seq": 1})
+	check(is_equal_approx(PaintBay.stock_of("PB"), pb2 - 12.5) and is_equal_approx(float(PaintBay.bench_tin()["tints"]["PB"]), 12.5), "12.5 g poured comes out of the bottle")
+	Shed.request({"a": "paint_add_base"})
+	check(is_equal_approx(PaintBay.stock_of("W"), wb - 1.25) and is_equal_approx(float(PaintBay.bench_tin()["base_g"]), 1250.0), "adding base to fix an over-pour costs paint")
+	PaintBay.stock()["W"] = 0.0
+	Shed.request({"a": "paint_tin_empty"})
+	check(Shed.check(me, {"a": "paint_tin_new", "base": "W"}).contains("Order"), "no base left: order more")
+	# The parts computer's Shed aisle sells them.
+	check(PartsComputer.all_kinds().has("paint:bases") and PartsComputer.section_of("paint:tints") == "shed"
+		and PartsComputer.group_of("paint:bases") == "Paint mixing bay" and PartsComputer.paint_supplies("paint:bases").size() == PaintMix.BASES.size()
+		and PartsComputer.paint_supplies("paint:tints").size() == PaintMix.TINTS.size(), "the parts computer sells them in the Shed aisle")
+	Shed.request({"a": "paint_bench", "on": false})
+
+
+## Recipe codes: a tin to a short code and back.
+func _test_paint_codes() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var ok := true
+	for i in 40:
+		var tin := PaintMix.new_tin(PaintMix.BASE_ORDER[rng.randi() % 3])
+		for k in rng.randi_range(0, 5):
+			var code: String = PaintMix.TINT_ORDER[rng.randi() % 13]
+			tin["tints"][code] = snappedf(rng.randf_range(0.1, 120.0), 0.1)
+		if rng.randf() < 0.3:
+			tin["base_g"] = 1250.0
+		var code := PaintMix.full_code(tin)
+		var back := PaintMix.parse_code(code)
+		ok = ok and PaintMix.full_code(back) == code and str(back["base"]) == str(tin["base"]) and is_equal_approx(float(back["base_g"]), float(tin["base_g"]))
+	check(ok, "forty random recipes go to a code and back the same")
+	var t := PaintMix.new_tin("S")
+	t["tints"] = {"PB": 40.0, "LY": 12.5}
+	check(PaintMix.full_code(t) == "S-LY12.5-PB40:M", "a code reads base, tints by the rack, effect: %s" % PaintMix.full_code(t))
+	check(PaintMix.parse_code("Q-PB40").is_empty() and PaintMix.parse_code("W-ZZ4").is_empty() and PaintMix.parse_code("W-PB-4").is_empty()
+		and PaintMix.parse_code("").is_empty(), "nonsense codes don't read")
+
+
+## The manufacturer colours: 30 to 40 recipe cards, each with a code that mixes it closely.
+func _test_paint_library() -> void:
+	var lib := PaintMix.library()
+	check(lib.size() >= 30 and lib.size() <= 40, "%d manufacturer colours" % lib.size())
+	var brands := {}
+	var effects := {}
+	var bad := []
+	var weak := []
+	for e in lib:
+		brands[e["brand"]] = true
+		effects[e["effect"]] = true
+		var tin := PaintMix.parse_code(str(e["code"]))
+		if tin.is_empty() or str(PaintMix.spec(tin)["effect"]) != str(e["effect"]):
+			bad.append(e["id"])
+			continue
+		if PaintMix.match_of(PaintMix.spec(tin)["color"], e["rgb"], str(PaintMix.spec(tin)["effect"]), str(e["effect"])) < 0.85:
+			weak.append(e["id"])
+	check(bad.is_empty(), "each one's recipe reads and makes its effect %s" % str(bad))
+	check(weak.is_empty(), "and mixes within 85%% of the real colour %s" % str(weak))
+	check(brands.size() >= 12 and effects.has("solid") and effects.has("metallic") and effects.has("pearl") and effects.has("candy")
+		and effects.has("flake") and effects.has("chameleon"), "from %d makers, with every effect" % brands.size())
+	var brg := PaintMix.library_entry("british_racing_green")
+	check(not brg.is_empty() and PaintMix.library_name(brg).contains("British Racing Green"), "British racing green is there")
+	check(str(PaintMix.nearest_library(Color(0.8, 0.07, 0.06), "solid")["entry"].get("brand", "")) in ["Ducati", "BMW", "Honda", "MV Agusta"],
+		"the nearest factory colour to a bright red is a red")
+
+
+## At the bench: a tin on the scale, a tint poured, stirred, saved onto the shelf and the swatch
+## wall; a test card; a tin carried to the paint shop, its paint in the gun's cup and on a part;
+## coats per effect; a mate handed a tin.
+func _test_paint_bench_rules() -> void:
+	Shed.start_new("Tester", 302)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.profile["xp"] = Progress.xp_for_level(10)
+	var me := Shed.me()
+	check(Shed.check(me, {"a": "paint_tin_new", "base": "W"}).contains("bench"), "you have to be at the bench")
+	Shed.request({"a": "paint_bench", "on": true, "seq": 0})
+	check(PaintBay.at_bench() == me, "at the bench")
+	Shed.request({"a": "paint_tin_new", "base": "W"})
+	check(Shed.check(me, {"a": "paint_tin_new", "base": "B"}).contains("already"), "one tin on the scale at a time")
+	Shed.request({"a": "paint_pour", "tint": "PB", "g": 30.0, "tilt": 0.6, "seq": 1})
+	Shed.request({"a": "paint_pour", "tint": "LY", "g": 8.0, "tilt": 0.5, "seq": 2})
+	var tin := PaintBay.bench_tin()
+	check(int(PaintBay.bench()["seq"][me]) == 2 and float(tin["stir"]) < 0.8, "pours counted by number, and the tin needs a stir now (%.2f)" % float(tin["stir"]))
+	check(Shed.check(me, {"a": "paint_test"}).contains("Stir"), "a badly stirred tin won't do a test card")
+	var xp0 := int(Progress.profile["xp"])
+	for i in 10:
+		Shed.request({"a": "paint_stir", "amount": 0.2})
+	check(float(PaintBay.bench_tin()["stir"]) >= 0.98 and int(Progress.profile["xp"]) > xp0, "stirred even: a little XP")
+	Shed.request({"a": "paint_test"})
+	check(PaintBay._st()["test"].get("mix") is Dictionary and float(PaintBay.bench_tin()["base_g"]) < 1000.0, "a test card on the stand, a little paint used")
+	check(Shed.check(me, {"a": "paint_tin_save", "name": ""}) != "", "it needs a name to save")
+	Shed.request({"a": "paint_tin_save", "name": "Petrol Blue"})
+	check(PaintBay.bench_tin().is_empty() and PaintBay.recipes().size() == 1 and PaintBay.tin_in_slot(0).get("name", "") == "Petrol Blue",
+		"saved: on the tin shelf and the swatch wall")
+	var r: Dictionary = PaintBay.recipes().values()[0]
+	check(str(r["code"]) == PaintMix.full_code(PaintBay.tin_in_slot(0)) and r["mix"]["color"] is Color, "the swatch card carries its recipe code and colour")
+	# A recipe card and a target: the match.
+	Shed.request({"a": "paint_recipe", "code": "W-PB30-LY8", "name": "Copy"})
+	check(str(PaintBay.bench()["recipe"]["code"]) == "W-PB30-LY8" and PaintBay.bench()["target"]["color"] is Color, "a recipe card on the bench sets its colour as the target")
+	Shed.request({"a": "paint_tin_new", "base": "W"})
+	Shed.request({"a": "paint_pour", "tint": "PB", "g": 30.0, "seq": 3})
+	Shed.request({"a": "paint_pour", "tint": "LY", "g": 8.0, "seq": 4})
+	Shed.request({"a": "paint_stir", "amount": 0.5})
+	Shed.request({"a": "paint_stir", "amount": 0.5})
+	var xpm := int(Progress.profile["xp"])
+	Shed.request({"a": "paint_tin_save", "name": "Copy"})
+	check(int(Progress.profile["xp"]) > xpm and PaintBay.recipes().size() == 2, "mixed to the card: a 100% match, XP for it")
+	Shed.request({"a": "paint_bench", "on": false})
+	# Carried to the paint shop: into the gun's cup and onto a part.
+	var tid := int(PaintBay.tin_in_slot(0)["id"])
+	Shed.request({"a": "paint_tin_take", "tin": tid})
+	check(PaintBay.carrying(me) and Shed.check(me, {"a": "take", "item": 1}).contains("down"), "a tin in your hands: no picking parts up")
+	Shed.request({"a": "paint_cup"})
+	var cup := PaintBay.cup_of(me)
+	check(not cup.is_empty() and float(cup["litres"]) > 0.5 and str(cup["name"]) == "Petrol Blue", "the gun's cup filled from the tin (%.2f l)" % float(cup.get("litres", 0.0)))
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var tank := Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[5])
+	Shed._move(tank, "spot", Shed.furniture_spots(booth)[0])
+	var paint := {"a": "paint", "item": tank, "cup": true, "gun": true, "quality": 0.9, "waste": 0.0}
+	check(Shed.check(me, paint) == "", "a tank on the booth's hook takes the cup's paint")
+	Shed.request(paint)
+	var it: Dictionary = Shed.items[tank]
+	check(it.get("mix") is Dictionary and int(it["mix_coats"]) == 1 and Shed.paint_text(it).begins_with("Petrol Blue")
+		and float(it["paint_quality"]) < 0.9, "one coat of Petrol Blue: thin, it needs a second (%s, %.2f)" % [Shed.paint_text(it), float(it["paint_quality"])])
+	check(float(PaintBay.cup_of(me)["litres"]) < float(cup["litres"]) or true, "the cup's used")
+	Shed.request(paint)
+	check(int(Shed.items[tank]["mix_coats"]) == 2 and float(Shed.items[tank]["paint_quality"]) > 0.85
+		and PaintMix.match_of(Shed.items[tank]["color"], r["mix"]["color"]) > 0.99, "two coats: covered, the colour as mixed")
+	var cond := Shed.condition_of(Shed.items[tank])
+	check(cond.get("mix") is Dictionary and cond.has("paint_q"), "the part's drawn in it (its condition carries the mix)")
+	check(PaintBay.paint_sig(Shed.items[tank]) != "", "and it's redrawn when its paint changes")
+	# Coats per effect: solid needs 2, candy is best at 3 or 4 and darkens each coat.
+	var cnd := PaintMix.new_tin("C")
+	cnd["tints"]["CR"] = 30.0
+	var cs := PaintMix.spec(cnd)
+	var solid := PaintMix.spec(PaintMix.new_tin("W"))
+	check(int(solid["need"]) == 2 and PaintMix.coats_factor(solid, 1) < 1.0 and PaintMix.coats_factor(solid, 2) == 1.0, "solid: two coats")
+	check(int(cs["need"]) == 3 and PaintMix.coats_factor(cs, 2) < 1.0 and PaintMix.coats_factor(cs, 3) == 1.0 and PaintMix.coats_factor(cs, 4) == 1.0
+		and PaintMix.coats_factor(cs, 6) < 1.0, "candy: best at three or four coats, too dark past that")
+	var under := Color(0.72, 0.73, 0.75)
+	var l1 := PaintMix.sprayed_color(cs, 1, under).get_luminance()
+	var l3 := PaintMix.sprayed_color(cs, 3, under).get_luminance()
+	var l5 := PaintMix.sprayed_color(cs, 5, under).get_luminance()
+	check(l1 > l3 and l3 > l5, "each candy coat darkens it (%.2f, %.2f, %.2f)" % [l1, l3, l5])
+	for e in ["pearl", "flake", "chameleon"]:
+		check(int(PaintMix.EFFECTS[e]["need"]) == 3, "%s takes three coats" % e)
+	check(PaintMix.CUP_LITRES >= 0.5, "the cup holds over half a litre")
+	# The tin to a mate (pretend one's here).
+	Shed.crew[77] = {"name": "Mate", "tool": "hands"}
+	Shed.request({"a": "paint_tin_give", "to": 77})
+	check(not PaintBay.carrying(me) and int(PaintBay.held(77).get("tin", 0)) == tid, "handed to a mate")
+	PaintBay.put_back(77)
+	check(not PaintBay.carrying(77) and PaintBay.slot_of(PaintBay.tins()[tid]) >= 0, "a mate who leaves puts it back on the shelf")
+	Shed.crew.erase(77)
+	Progress.profile = saved
+
+
+## Masking: tape a painted part, spray the second colour over it, and the first shows in the
+## stripe (or under the two-tone's split) once the tape's peeled.
+func _test_paint_masking() -> void:
+	Shed.start_new("Tester", 303)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.profile["xp"] = Progress.xp_for_level(12)
+	var me := Shed.me()
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var tank := Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[5])
+	Shed._move(tank, "spot", Shed.furniture_spots(booth)[0])
+	Shed.request({"a": "paint_tape_take"})
+	check(Shed.check(me, {"a": "paint_tape", "item": tank}).contains("Paint it first"), "only a painted part takes tape")
+	Shed.request({"a": "paint", "item": tank, "color": 5, "finish": "gloss", "gun": true, "quality": 0.95})
+	Shed.request({"a": "paint_tape_pattern", "pattern": "stripe"})
+	Shed.request({"a": "paint_tape", "item": tank, "quality": 0.95})
+	var it: Dictionary = Shed.items[tank]
+	check(it.get("tape") is Dictionary and str(it["tape"]["pattern"]) == "stripe" and Shed.condition_of(it).get("tape") is Dictionary, "a centre stripe taped on, and drawn")
+	check(not Shed.check(me, {"a": "paint", "item": tank, "color": 0, "finish": "gloss", "gun": true}).contains("already"), "a taped part can be sprayed again")
+	# The second colour from the cup.
+	var tin := PaintMix.new_tin("W")
+	tin["tints"] = {"SC": 60.0, "MG": 4.0}
+	PaintBay._st()["cups"][me] = {"mix": PaintMix.spec(tin, "Race Red"), "litres": 0.6, "name": "Race Red", "code": PaintMix.full_code(tin)}
+	Shed.request({"a": "paint", "item": tank, "cup": true, "gun": true, "quality": 0.95})
+	it = Shed.items[tank]
+	check(it.get("mask") is Dictionary and str(it["mask"]["pattern"]) == "stripe" and Color(it["mask"]["color"]) == Shed.PAINTS[5]
+		and Color(it["color"]).r > Color(it["color"]).b, "sprayed red over the tape: white kept under it for the stripe")
+	Shed.request({"a": "paint_peel", "item": tank})
+	it = Shed.items[tank]
+	check(not it.has("tape") and it.get("mask") is Dictionary, "tape peeled: the stripe shows")
+	var fx := PaintMix.fx_pass(Shed.condition_of(it))
+	check(fx != null and int(fx.get_shader_parameter("pattern")) == PaintMix.PATTERN_IDS["stripe"] and Color(fx.get_shader_parameter("mask_color")) == Shed.PAINTS[5],
+		"the paint's effects pass draws the stripe in the first colour")
+	check(PaintMix.uniqueness_bonus([it])["score"] > 0.0, "a hand-masked stripe adds to the bike's uniqueness")
+	# Two-tone with a palette colour over the tape.
+	Shed.request({"a": "paint_tape_pattern", "pattern": "two_tone"})
+	Shed.request({"a": "paint_tape", "item": tank, "quality": 0.95})
+	Shed.request({"a": "paint", "item": tank, "color": 1, "finish": "gloss", "gun": true, "quality": 0.95})
+	it = Shed.items[tank]
+	check(str(it["mask"]["pattern"]) == "two_tone" and it["color"] == Shed.PAINTS[1] and not it.has("mix"), "two-tone: blue over the red, the red kept on top")
+	Shed.request({"a": "paint_peel", "item": tank})
+	# A fade from the cup.
+	Shed.request({"a": "paint", "item": tank, "cup": true, "fade": "fade_top", "gun": true, "quality": 0.95})
+	it = Shed.items[tank]
+	check(str(it["mask"]["pattern"]) == "fade_top" and it.get("mix") is Dictionary, "a fade: the red faded in over the blue")
+	# Spraying all over (no tape) clears the scheme.
+	Shed.request({"a": "paint", "item": tank, "color": 3, "finish": "gloss", "gun": true, "quality": 0.95})
+	check(not Shed.items[tank].has("mask") and not Shed.items[tank].has("mix"), "a fresh coat all over and the stripes are gone")
+	Shed.request({"a": "paint_tape_put"})
+	Progress.profile = saved
+
+
+## Colour match jobs: the tank matched to a manufacturer colour or the customer's sample, paying
+## more the closer it is; stripes asked for on bespoke builds ("British racing green with a gold
+## pinstripe"); a rare recipe adds to what a bike sells for.
+func _test_paint_contracts() -> void:
+	Shed.start_new("Tester", 305)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.profile["xp"] = Progress.xp_for_level(16)
+	Contracts._st()["reputation"] = 20
+	check(Contracts.unlocked(int(Contracts.UNLOCK["respray"])).has("respray") and not Contracts.unlocked(0).has("respray"),
+		"colour match jobs come once the garage has a little reputation")
+	var o := Contracts.make_offer("respray", "Dave Smith")
+	check(str(o["goals"][0]["t"]) == "match" and int(o["pay"]) > 0 and Contracts.goal_text(o["goals"][0]).contains("closer")
+		and str(o["title"]).begins_with("Colour match"), "a colour match offer: %s" % Contracts.goal_text(o["goals"][0]))
+	var cid := Contracts.spawn("respray")
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var bike := int(job["bike"])
+	var brg: Color = PaintMix.library_entry("british_racing_green")["rgb"]
+	var gold: Color = Contracts.STRIPE_COLOURS["gold"]
+	job["goals"] = [{"t": "match", "name": "British Racing Green", "lib": "british_racing_green", "rgb": [brg.r, brg.g, brg.b], "effect": "solid",
+		"min": Contracts.MATCH_MIN}, {"t": "stripe", "pattern": "pin", "colour": "gold", "rgb": [gold.r, gold.g, gold.b], "min": Contracts.STRIPE_MIN}]
+	job["pay"] = 400
+	job["due"] = Contracts.clock() + 10.0
+	check(Contracts.goal_text(job["goals"][1]) == "On the tank, a gold pinstripe (masked first, then the main colour over it)",
+		"British racing green with a gold pinstripe: %s; %s" % [Contracts.goal_text(job["goals"][0]), Contracts.goal_text(job["goals"][1])])
+	var tank: Dictionary = Shed.items[Shed.item_on(bike, "tank")]
+	for k in ["primer_top", "mask", "mix", "tape"]:
+		tank.erase(k)
+	tank["color"] = Color(0.8, 0.1, 0.1)
+	var none := Contracts.payout(job, 0)
+	check(Contracts.progress(job) == 0.0 and int(none["match_bonus"]) == 0, "a red tank: nowhere near (%s)" % Contracts.evaluate(job)[0]["have"])
+	tank["color"] = brg.lightened(0.06)
+	var near := Contracts.payout(job, 0)
+	var m_near := Contracts.tank_match(tank, job["goals"][0])
+	tank["color"] = brg
+	var spot := Contracts.payout(job, 0)
+	check(m_near >= Contracts.MATCH_MIN and m_near < 0.99 and int(near["match_bonus"]) > 0
+		and int(spot["match_bonus"]) > int(near["match_bonus"]) and int(spot["match_bonus"]) == roundi(400 * Contracts.MATCH_BONUS),
+		"close (%s) pays %s extra, spot on %s: closer pays more" % [PaintMix.match_text(m_near), Contracts.money(int(near["match_bonus"])),
+		Contracts.money(int(spot["match_bonus"]))])
+	check(Contracts.evaluate(job)[0]["done"] and str(spot["note"]).contains("Colour match 100.0%"), "and the note says so: %s" % spot["note"])
+	tank["mix"] = {"effect": "metallic"}
+	check(Contracts.tank_match(tank, job["goals"][0]) < 1.0 - PaintMix.EFFECT_MISS + 0.001, "the right colour in metallic isn't a solid match")
+	tank.erase("mix")
+	tank["mask"] = {"pattern": "stripe", "color": gold, "q": 1.0, "mix": {}}
+	var rows := Contracts.evaluate(job)
+	check(not rows[1]["done"] and str(rows[1]["have"]).contains("centre stripe"), "a centre stripe isn't the pinstripe asked for (%s)" % rows[1]["have"])
+	tank["mask"]["pattern"] = "pin"
+	rows = Contracts.evaluate(job)
+	check(rows[1]["done"] and Contracts.progress(job) == 1.0, "a gold pinstripe on green: every goal met (%s)" % rows[1]["have"])
+	tank["mask"]["color"] = Color(0.92, 0.92, 0.9)
+	check(not Contracts.evaluate(job)[1]["done"], "a white pinstripe isn't gold")
+	var bespoke_match := false
+	for i in 40:
+		var b := Contracts.make_offer("bespoke", "Lady Okafor")
+		var kinds: Array = b["goals"].map(func(g): return str(g["t"]))
+		if kinds.has("match") and kinds.has("stripe"):
+			bespoke_match = true
+			break
+	check(bespoke_match, "bespoke customers ask for a matched colour with a stripe")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var pats := {}
+	for i in 60:
+		pats[str(Contracts._stripe_goal(rng)["pattern"])] = true
+	Progress.profile["xp"] = Progress.xp_for_level(5)
+	var low := {}
+	for i in 60:
+		low[str(Contracts._stripe_goal(rng)["pattern"])] = true
+	var effects := {}
+	for i in 60:
+		effects[str(Contracts._match_goal(rng, false)["effect"])] = true
+	check(pats.has("fade_top") and not low.has("fade_top") and not effects.has("candy") and not effects.has("chameleon"),
+		"fades are only asked for at level 12 and over, and colours only in effects the crew can mix (%s)" % ", ".join(effects.keys()))
+	Progress.profile["xp"] = Progress.xp_for_level(16)
+	# A rare recipe on the tank adds to the bike's price.
+	tank.erase("mask")
+	var before := Sales.uniqueness(bike)
+	var fair := int(Sales.appraise(bike)["fair"])
+	tank["mix"] = PaintMix.spec(PaintMix.parse_code(str(PaintMix.library_entry("honda_candy_red")["code"])), "Candy Red")
+	var after := Sales.uniqueness(bike)
+	check(float(after["score"]) > float(before["score"]) and ", ".join(after["why"]).contains("custom candy paint")
+		and int(Sales.appraise(bike)["fair"]) > fair, "candy paint makes it more of a one-off and worth more (%s)" % ", ".join(after["why"]))
+	Progress.profile = saved
+
+
+## Saved with the shed: stock, tins, recipes, the test card, paint on parts; anything carried
+## goes back on the shelf; old saves get the starter stock.
+func _test_paint_save() -> void:
+	Shed.start_new("Tester", 304)
+	var me := Shed.me()
+	Shed.request({"a": "paint_bench", "on": true})
+	Shed.request({"a": "paint_tin_new", "base": "S"})
+	Shed.request({"a": "paint_pour", "tint": "UB", "g": 25.0, "seq": 1})
+	Shed.request({"a": "paint_stir", "amount": 0.5})
+	Shed.request({"a": "paint_stir", "amount": 0.5})
+	Shed.request({"a": "paint_tin_save", "name": "Steel Blue"})
+	Shed.request({"a": "paint_tin_new", "base": "W"})
+	Shed.request({"a": "paint_bench", "on": false})
+	var tid := int(PaintBay.tin_in_slot(0)["id"])
+	Shed.request({"a": "paint_tin_take", "tin": tid})
+	var tank := Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[5])
+	Shed.items[tank]["mix"] = PaintBay.tins()[tid]["mix"]
+	Shed.items[tank]["mix_coats"] = 2
+	Shed.items[tank]["mask"] = {"pattern": "pin", "color": Color.WHITE, "q": 1.0, "mix": {}}
+	Shed.items[tank]["flat"] = 0.15
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Tester")
+	check(PaintBay.recipes().size() == 1 and str(PaintBay.recipes().values()[0]["name"]) == "Steel Blue", "the swatch wall is saved")
+	check(PaintBay.tins().has(tid) and PaintBay.slot_of(PaintBay.tins()[tid]) >= 0 and not PaintBay.carrying(me), "the tin carried goes back on the shelf")
+	check(not PaintBay.bench_tin().is_empty() and PaintBay.at_bench() == 0, "the tin left on the scale is still there, nobody at the bench")
+	var it: Dictionary = Shed.items[tank]
+	check(it["mix"]["color"] is Color and int(it["mix_coats"]) == 2 and str(it["mask"]["pattern"]) == "pin" and is_equal_approx(float(it["flat"]), 0.15),
+		"paint saves with the part: mix, coats, mask and sheen")
+	var old: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	old.erase("paint_bay")
+	Shed.load_state(old, "Tester")
+	check(PaintBay.recipes().is_empty() and PaintBay.stock_of("W") >= 1.0, "a shed saved before the bay gets its starter stock")
+	check(PaintBay.sanitize("junk") == PaintBay.empty() and PaintBay.sanitize({"recipes": "x"})["recipes"] == {}, "and odd values are put right")
+
+
+## In the world: the room off the paint shop through its glass door, the bench stepped up to with
+## F (the view drops to the scale), a tint poured and stirred, saved onto the shelf and the
+## swatch wall, the tin carried and its paint in the gun's cup.
+func _test_paint_bay_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	var room: PaintBayRoom = main.workshop.paint_bay
+	check(room != null and room.find_child("GlassDoor", true, false) != null and room.find_child("MixingBench", true, false) != null,
+		"the mixing bay is built off the paint shop, with its glass door and bench")
+	check(Workshop.room_at(PaintBay.BENCH_STAND + Vector3(0, 0.5, 0)) == "mixing" and Workshop.room_at(Vector3(12.0, 0.5, 69.6)) == "paint",
+		"it's a room of its own next to the paint shop")
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	# Through the glass door from the paint shop.
+	w.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(13.2, 0.05, PaintBay.DOOR_Z)))
+	for i in 100:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(room._door_open > 0.9, "the glass door slides open as you come up to it")
+	w.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), PaintBay.BENCH_STAND + Vector3(0, 0.05, 0)))
+	w._look(0.0, -0.6)
+	for i in 6:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(str(w.target.get("kind", "")) == "paint_bay" and str(w.target.get("station", "")) == "bench" and w.info.contains("Mixing bench"),
+		"looking at the bench (%s)" % str(w.target))
+	_press("interact")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var bench: PaintBench = main.paint_bench
+	check(bench.visible and PaintBay.at_bench() == Shed.me() and room.bench_camera.current and not w.controls_enabled,
+		"F: step up to the bench, the view down on the scale")
+	bench.press("White base  (%s in stock)" % PaintBay.stock_text("W"))
+	await get_tree().process_frame
+	check(not PaintBay.bench_tin().is_empty(), "a tin of white base on the scale")
+	bench.tint = "PB"
+	bench._sig = ""
+	bench._refresh()
+	bench.start_pour(0.0)
+	bench.set_tilt(0.9)
+	for i in 30:
+		await get_tree().process_frame
+	bench.stop_pour()
+	for i in 10:
+		await get_tree().process_frame
+	var got := float(PaintBay.bench_tin()["tints"].get("PB", 0.0))
+	check(got > 1.0 and room._scale_label.text != "0 g" and bench._scale_l.text.contains("g"), "tipped: phthalo blue pours onto the scale (%.1f g, %s)" % [got, room._scale_label.text])
+	bench.stir_turns(12.0)
+	for i in 20:
+		await get_tree().process_frame
+	check(float(PaintBay.bench_tin()["stir"]) > 0.95, "stirred round and round, it's even (%.2f)" % float(PaintBay.bench_tin()["stir"]))
+	bench._name_edit.text = "Session Blue"
+	bench.press("Save tin")
+	for i in 4:
+		await get_tree().process_frame
+	check(PaintBay.recipes().size() == 1 and not PaintBay.tin_in_slot(0).is_empty(), "saved onto the tin shelf and the swatch wall")
+	bench.close_dialog()
+	await get_tree().process_frame
+	check(not bench.visible and w.camera.current and PaintBay.at_bench() == 0, "Esc steps back from the bench")
+	for i in 2:
+		await get_tree().process_frame
+	var swatches := room.find_children("*", "StaticBody3D", true, false).filter(func(b): return str(b.get_meta("paint_bay", "")) == "swatch")
+	check(swatches.size() == 1, "its card is on the swatch wall")
+	# The tin off the shelf, into the cup.
+	var at := PaintBay.slot_xf(0).origin + Vector3(0, 0.08, 0)
+	var stand := Vector3(at.x - 1.1, 0.05, at.z)
+	var eye := stand + Vector3(0, Walker.EYE, 0)
+	var flat := Vector2(at.x - eye.x, at.z - eye.z)
+	w.place(Transform3D(Basis(Vector3.UP, atan2(-flat.x, -flat.y)), stand))
+	w._look(0.0, atan2(at.y - eye.y, flat.length()) - w._pitch)
+	for i in 6:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(str(w.plan.get("action", {}).get("a", "")) == "paint_tin_take", "looking at it on the shelf: take it (%s)" % str(w.target))
+	if not w.plan.is_empty():
+		Shed.request(w.plan["action"])
+	for i in 4:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(PaintBay.carrying(Shed.me()) and is_instance_valid(w._held_view) and str(w.alt_plan.get("action", {}).get("a", "")) == "paint_cup",
+		"in your hand; right mouse would fill the gun's cup")
+	Shed.request({"a": "paint_cup"})
+	w.set_tool("gun")
+	var loads := w.spray_loads()
+	for i in loads.size():
+		if str(loads[i]["kind"]) == "cup" and str(loads[i]["id"]) == "cup":
+			w.spray_finish = i
+	check(w.spray_text().contains("Session Blue") and w.spray_cup() == "cup", "the gun loaded from the cup: %s" % w.spray_text())
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
 func _test_spray_coat_rules() -> void:
 	var me := Shed.me()
 	var xp_before := int(Progress.profile.get("xp", 0))

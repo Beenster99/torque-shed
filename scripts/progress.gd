@@ -76,6 +76,14 @@ const XP := {
 	"prime": {"xp": 6, "label": "Primer coat"},
 	"protect_coat": {"xp": 12, "label": "Protective coat"},
 	"lighten": {"xp": 8, "label": "Lightening"},
+	# The paint mixing bay (see PaintBay): a tin mixed and saved (more for close to its recipe
+	# card and an even stir), a test card, a tin stirred even, a colour matched (over 95%) and
+	# a part masked off for a stripe or two-tone.
+	"paint_mix": {"xp": 10, "label": "Paint mixed"},
+	"test_panel": {"xp": 2, "label": "Test card"},
+	"paint_stir": {"xp": 2, "label": "Even stir"},
+	"colour_match": {"xp": 14, "label": "Colour matched"},
+	"masking": {"xp": 6, "label": "Masking"},
 	"tyre_remove": {"xp": 4, "label": "Tyre off"},
 	"tyre_fit": {"xp": 10, "label": "Tyre fitting"},
 	"restore_part": {"xp": 4, "label": "Part like new", "once": "item"},
@@ -93,6 +101,7 @@ const XP := {
 	# Contracts (see Contracts): paid to the crew who worked on the job when it's handed back.
 	"contract_maint": {"xp": 40, "label": "Service job done"},
 	"contract_mot": {"xp": 60, "label": "MOT job done"},
+	"contract_respray": {"xp": 80, "label": "Colour match job done"},
 	"contract_mod": {"xp": 100, "label": "Modification job done"},
 	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
 	"mot_test": {"xp": 6, "label": "MOT test"},
@@ -126,7 +135,8 @@ const PAY := {
 	"dyno_strap": 0, "dyno_hose": 1, "fluids": 3, "start_build": 10,
 	"bin": 0, "tip": 1, "recycle_plastic": 1, "recycle_metal": 2,
 	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "chain_lube": 3,
-	"repair": 6, "sandblast": 6, "paint": 8, "prime": 4, "protect_coat": 8, "lighten": 5, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
+	"repair": 6, "sandblast": 6, "paint": 8, "prime": 4, "protect_coat": 8, "lighten": 5, "paint_mix": 5, "test_panel": 1, "paint_stir": 1, "colour_match": 8,
+	"masking": 3, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
 	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
 	"sell_bike": 50, "sell_part": 2, "px_deal": 20,
 }
