@@ -308,6 +308,8 @@ func _run_all() -> void:
 	await _test_recovery_winch()
 	await _test_recovery_dolly()
 	await _test_recovery_straps()
+	await _test_recovery_assess()
+	await _test_recovery_save()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -15257,3 +15259,11 @@ func _test_recovery_dolly() -> void:
 
 func _test_recovery_straps() -> void:
 	await _recovery().test_straps()
+
+
+func _test_recovery_assess() -> void:
+	await _recovery().test_assess()
+
+
+func _test_recovery_save() -> void:
+	await _recovery().test_save()

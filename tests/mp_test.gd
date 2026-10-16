@@ -15,6 +15,9 @@ extends Node
 ## shed: both must see the box, with its "for" note, ride on the trolley. The client waves and
 ## the host must see its figure wave; the host pings and the client must see it point.
 ## The host puts a biker out on the roads, and the client must see them riding along.
+## Recovery: the host gives the garage the recovery rig and puts a crash rescue on the phone; the
+## client takes the job on, gets in the truck (the host must see it driving) and parks it
+## somewhere new: both must see the job's bike out at its site and the truck where it was left.
 
 var role := "host"
 var main: Node
@@ -96,6 +99,11 @@ func _ready() -> void:
 	var tare_seen := false      # the scale zeroed, on both sides
 	var avatar_ok := false
 	var graph_ok := false
+	var rec_step := 0
+	var rec_t := 0
+	var rec_drove := false      # the host saw the client at the wheel; the client was driving
+	var rec_ok := false
+	var REC_PARK := Recovery.PARK.translated(Vector3(-6.0, 0.0, 2.0))
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -439,7 +447,39 @@ func _ready() -> void:
 			var shelved := PaintBay.tins().values().filter(func(t): return str(t.get("name", "")) == "MP Blue" and str(t["at"]) == "shelf")
 			paint_ok = cards.size() >= 1 and shelved.size() == 1 and float(PaintBay.stock_of("PB")) > PaintBay.STARTER_TINT - 20.0 \
 				and str(mp_blue[0]["code"]).begins_with("W-PB20") and PaintBay.at_bench() == 0 and tare_seen and (role != "host" or bottle_back)
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok:
+		# Recovery (see the top): the host grants the rig and a job, the client drives off with it.
+		if Shed.crew.size() == 2 and main.remotes.size() == 1:
+			if role == "host" and rec_step == 0:
+				Shed.request({"a": "recovery_grant"})
+				Shed.request({"a": "recovery_spawn", "kind": "crash"})
+				rec_step = 1
+			if role == "client":
+				match rec_step:
+					0:
+						if Recovery.owned() and not Recovery.offers().is_empty():
+							Shed.request({"a": "recovery_accept", "offer": int(Recovery.offers().keys()[0])})
+							rec_step = 1
+					1:
+						if not Recovery.jobs().is_empty() and Recovery.driver() == 0:
+							Shed.request({"a": "recovery_enter"})
+							rec_step = 2
+					2:
+						if main.recovery.driving:
+							rec_drove = true
+							rec_t += 1
+							if rec_t > 90:
+								main.recovery.car.place(REC_PARK)
+								main.recovery.trailer.place(Recovery.trailer_park(REC_PARK))
+								main.recovery.stop_driving()
+								rec_step = 3
+			if role == "host" and Recovery.driver() != 0 and (main.remotes.values()[0] as RemotePlayer).driving:
+				rec_drove = true
+		var rv: RecoveryView = main.recovery
+		var rec_job_ok := Recovery.jobs().size() == 1 and Shed.bikes.has(int(Recovery.jobs().values()[0]["bike"]))
+		rec_ok = rec_ok or (rec_drove and rec_job_ok and Recovery.driver() == 0 and rv.car != null
+			and (Recovery.car()["xf"] as Transform3D).origin.distance_to(REC_PARK.origin) < 0.3
+			and rv.car.global_position.distance_to(REC_PARK.origin) < 0.3)
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -455,8 +495,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok])
 	get_tree().quit(0 if ok else 1)
 
 

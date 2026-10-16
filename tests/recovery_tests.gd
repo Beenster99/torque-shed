@@ -388,3 +388,126 @@ func test_straps() -> void:
 	check(scuffed > 0 and (Shed.bikes[bike]["xf"] as Transform3D).origin.distance_to(drop.origin) < 0.01, "where it fell, scuffed (%d parts)" % scuffed)
 	Shed.request({"a": "recovery_exit"})
 	Shed.stop()
+
+
+# ---------------------------------------------------------------------------- back in the yard
+
+## A job's bike let down in the yard (beside the parked trailer): delivered, call-out paid.
+func _deliver(job: Dictionary) -> void:
+	var bike := int(job["bike"])
+	Shed.bikes[bike]["xf"] = Recovery.trailer_xf() * Transform3D(Basis(), Vector3(0.0, 0.0, Trailer.start_z() + 1.0))
+	Shed.bikes[bike]["stand"] = "side"
+	Recovery.process(0.01)
+
+
+## The assessment of a crashed bike, then each of the three choices: buy it, break it for parts,
+## or repair it for the insurer, who won't collect it till it's up to their spec.
+func test_assess() -> void:
+	_shed_with_rig()
+	_park_at(Recovery.PARK)
+	var me := Shed.me()
+	var job := _job("crash", true)
+	var bike := int(job["bike"])
+	check(Shed.check(me, {"a": "recovery_buy", "job": int(job["id"])}).contains("yard"), "it can't be bought before it's brought in")
+	var m0 := Shed.garage_money
+	_deliver(job)
+	check(str(job["state"]) == "delivered" and Shed.garage_money == m0 + int(job["fee"]), "stood in the yard it's delivered and the call-out paid")
+	check(Shed.check(me, {"a": "mount", "bike": bike}).contains("Assess"), "it can't be ridden off before it's assessed")
+	var a := Recovery.assess(bike, job)
+	var bad: Array = a["rows"].filter(func(r): return str(r["fix"]) != "ok")
+	check(a["rows"].size() > 10 and bad.size() >= 3, "every part is looked over and the crash damage found (%d of %d need work)" % [bad.size(), a["rows"].size()])
+	check(int(a["repair"]) > 0 and int(a["repair"]) == bad.reduce(func(acc, r): return acc + int(r["cost"]), 0),
+		"the repair estimate is what those parts cost to put right (%s)" % Recovery.money(int(a["repair"])))
+	check(int(a["salvage"]) < int(a["buy"]) and int(a["insurer"]) > int(a["repair"]),
+		"breaking it costs less than buying it, and the insurer pays more than the parts (%s, %s, %s)" % [
+			Recovery.money(int(a["buy"])), Recovery.money(int(a["salvage"])), Recovery.money(int(a["insurer"]))])
+	# Buy it.
+	var m1 := Shed.garage_money
+	Shed.request({"a": "recovery_buy", "job": int(job["id"])})
+	check(Shed.garage_money == m1 - int(a["buy"]) and not Recovery.jobs().has(int(job["id"])) and Shed.bikes.has(bike),
+		"bought: the owner's paid and it's the garage's bike")
+	check(Shed.check(me, {"a": "mount", "bike": bike}) == "" or not Shed.check(me, {"a": "mount", "bike": bike}).contains("Assess"),
+		"and it's no longer held up by the job")
+	check(str(Recovery._st()["done"][0]["outcome"]).begins_with("Bought"), "the job's in the done list")
+	# Break one for parts.
+	var job2 := _job("barn", true)
+	var bike2 := int(job2["bike"])
+	_deliver(job2)
+	var parts_on := 0
+	for slot in PartsDB.BIKE_SLOTS:
+		if Shed.item_on(bike2, slot) != 0 and slot != "frame":
+			parts_on += 1
+	var items0 := Shed.items.size()
+	var a2 := Recovery.assess(bike2, job2)
+	var m2 := Shed.garage_money
+	Shed.request({"a": "recovery_salvage", "job": int(job2["id"])})
+	check(not Shed.bikes.has(bike2) and not Recovery.jobs().has(int(job2["id"])), "broken for parts: the bike's gone")
+	check(Shed.items.size() == items0 - 1 and Shed.garage_money < m2 and Shed.garage_money > m2 - int(a2["salvage"]),
+		"its %d parts are spares now, the frame scrapped for a little back (%s paid)" % [parts_on, Recovery.money(int(a2["salvage"]))])
+	# Do the work for the insurer.
+	var job3 := _job("crash", true)
+	var bike3 := int(job3["bike"])
+	_deliver(job3)
+	Shed.request({"a": "recovery_insurer", "job": int(job3["id"])})
+	check(str(job3["state"]) == "insurer" and not (job3["spec"] as Array).is_empty() and int(job3["pay"]) > 0,
+		"for the insurer: the damaged parts are listed and the pay agreed (%s)" % Recovery.money(int(job3["pay"])))
+	var why := Shed.check(me, {"a": "recovery_collect", "job": int(job3["id"])})
+	check(why.contains("spec"), "they won't collect it as it is (%s)" % why)
+	for slot in job3["spec"]:
+		var id := Shed.item_on(bike3, str(slot))
+		if id != 0:
+			for k in ["wear", "rust", "dirt"]:
+				Shed.items[id][k] = 0.0
+			Shed.items[id]["scuff"] = false
+	why = Shed.check(me, {"a": "recovery_collect", "job": int(job3["id"])})
+	check(why == "", "put right, it's up to spec (%s)" % why)
+	var m3 := Shed.garage_money
+	Shed.request({"a": "recovery_collect", "job": int(job3["id"])})
+	check(not Shed.bikes.has(bike3) and Shed.garage_money == m3 + int(job3["pay"]), "the insurer collects it and pays")
+	check(Recovery._st()["done"].size() == 3, "all three in the done list")
+	Shed.stop()
+
+
+## Saved and loaded: the rig, the jobs, what's on the trailer with its straps, the dolly and the
+## offers all come back; nobody's in the cab and a bike halfway up the winch finishes going up.
+## A save from before the rig loads with none.
+func test_save() -> void:
+	_shed_with_rig()
+	var job := _job("barn", true)
+	var bike := int(job["bike"])
+	Shed.request({"a": "recovery_ramp", "down": true})
+	_to_ramp(bike)
+	Shed.request({"a": "recovery_winch", "bike": bike})
+	await _seconds(11.0)
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 0})
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 1})
+	var job2 := _job("crash", true)
+	var bike2 := int(job2["bike"])
+	_to_ramp(bike2, -0.4)
+	Shed.request({"a": "recovery_winch", "bike": bike2})
+	await _seconds(1.0)
+	Shed.request({"a": "recovery_dolly_off"})
+	Recovery.spawn("barn")
+	Recovery.car()["driver"] = Shed.me()
+	var car_xf := Recovery.car()["xf"] as Transform3D
+	var offers := Recovery.offers().size()
+	var state: Dictionary = Shed._snapshot().duplicate(true)
+	SaveGame.write("test_recovery_save", {"version": SaveGame.VERSION, "shed": state})
+	var back := SaveGame.read("test_recovery_save")
+	SaveGame.delete_slot("test_recovery_save")
+	Shed.start_new("Someone else", 7)
+	check(not Recovery.owned() and Recovery.jobs().is_empty(), "a new shed has no rig")
+	Shed.load_state(back["shed"], "Tester")
+	check(Recovery.owned() and Recovery.jobs().size() == 2 and Recovery.offers().size() == offers, "the rig, its jobs and offers come back")
+	check((Recovery.car()["xf"] as Transform3D).is_equal_approx(car_xf) and bool(Recovery.car()["ramp"]), "the truck where it was left, ramp down")
+	check(Recovery.on_bed(bike) and Recovery.secure(bike), "the strapped bike still on the bed, strapped")
+	check(Recovery.on_bed(bike2) and int(Recovery.car()["winch"]) == 0, "the one on the winch finished going up")
+	check(Recovery.driver() == 0, "nobody's in the cab")
+	check(str(Recovery.dolly()["at"]) == "ground", "the dolly tray where it was put down")
+	check(Recovery.job_of(bike) == Recovery.jobs()[int(job["id"])], "the bikes still know their jobs")
+	var old := Shed._snapshot().duplicate(true)
+	old.erase("recovery")
+	Shed.load_state(old, "Tester")
+	check(Recovery.jobs().is_empty() and Recovery.loads().is_empty() and str(Recovery.dolly()["at"]) == "trailer",
+		"a save from before the recovery rig loads with no jobs out")
+	Shed.stop()
