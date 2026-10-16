@@ -81,6 +81,9 @@ const ACTIONS := [
 	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
 	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot", "ride"]],
+	["emote_menu", "Emotes: open the bar (then 1 to 6)", ["foot"]], ["emote_wave", "Emote: wave", ["foot"]],
+	["emote_thumbs", "Emote: thumbs up", ["foot"]], ["emote_point", "Emote: point", ["foot"]],
+	["emote_shrug", "Emote: shrug", ["foot"]], ["emote_cheer", "Emote: cheer", ["foot"]], ["emote_dance", "Emote: dance", ["foot"]],
 	["stopwatch", "Stopwatch start / stop", ["foot", "ride"]], ["menu", "Menu", ["foot", "ride", "board"]],
 	["board_text", "Whiteboard: write text", ["board"]], ["board_undo", "Whiteboard: undo", ["board"]],
 	["board_wipe", "Whiteboard: wipe (hold)", ["board"]], ["board_colour", "Whiteboard: next colour", ["board"]],
@@ -296,6 +299,14 @@ func _setup_inputs() -> void:
 	_bind("spray_finish", [KEY_T], [JOY_BUTTON_B], [MOUSE_BUTTON_XBUTTON1])
 	# Point at something and ping it for the crew to see.
 	_bind("ping", [KEY_G], [JOY_BUTTON_DPAD_RIGHT], [MOUSE_BUTTON_MIDDLE])
+	# Emotes the rest of the crew sees: B opens the bar, F5 to F10 do one straight away.
+	_bind("emote_menu", [KEY_B], [])
+	_bind("emote_wave", [KEY_F5], [])
+	_bind("emote_thumbs", [KEY_F6], [])
+	_bind("emote_point", [KEY_F7], [])
+	_bind("emote_shrug", [KEY_F8], [])
+	_bind("emote_cheer", [KEY_F9], [])
+	_bind("emote_dance", [KEY_F10], [])
 	_bind("rename", [KEY_N], [])
 	# At the sandblaster's gloves: scan the engine for what's still to blast.
 	_bind("blast_scan", [KEY_X], [JOY_BUTTON_DPAD_UP])

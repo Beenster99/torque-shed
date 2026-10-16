@@ -22,6 +22,7 @@ var contracts_view: ContractsView   # the customers walking in to reception
 var sales_pc: SalesComputer     # the Sales page on the sales office's PC
 var sales_view: SalesView       # part-exchange buyers, buyers collecting, the till, the stands' prices
 var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
+var emote_bar: EmoteBar         # the emotes and their keys, while the bar is open (B)
 var audio: EngineSound
 var saver: SaveGame
 var remotes := {}     # peer id -> RemotePlayer
@@ -60,6 +61,8 @@ func _ready() -> void:
 	telemetry_overlay = TelemetryOverlay.new()
 	telemetry_overlay.visible = false
 	ui.add_child(telemetry_overlay)
+	emote_bar = EmoteBar.new()
+	ui.add_child(emote_bar)
 	computer = PartsComputer.new()
 	computer.visible = false
 	ui.add_child(computer)
@@ -126,6 +129,7 @@ func _ready() -> void:
 	Shed.changed.connect(_on_shed_changed)
 	Shed.feedback.connect(func(text, ok): hud.flash(text, 2.5 if ok else 2.0, not ok))
 	Shed.pinged.connect(_on_ping)
+	Shed.emoted.connect(_on_emote)
 	menu.show_title()
 
 
@@ -202,6 +206,7 @@ func _start_session() -> void:
 		_capture_mouse(false))
 	walker.camera.current = true
 	hud.walker = walker
+	emote_bar.walker = walker
 	hud.visible = true
 	for id in Net.players:
 		if not remotes.has(id):
@@ -702,6 +707,24 @@ func _on_ping(peer: int, d: Dictionary) -> void:
 	PingMarker.show_ping(world, d, color)
 	if peer != Shed.me():
 		hud.flash("%s pinged %s" % [d.get("name", "Someone"), str(d.get("what", "something")).to_lower()], 2.0)
+		# And their figure points at it.
+		if remotes.has(peer):
+			remotes[peer].play_emote("point", d.get("at"))
+
+
+## Someone did an emote (see Emotes): their figure does it here, and the HUD says so.
+func _on_emote(peer: int, d: Dictionary) -> void:
+	if not in_session:
+		return
+	var e := str(d.get("e", ""))
+	if not Emotes.is_emote(e):
+		return
+	if peer == Shed.me():
+		hud.flash(str(Emotes.YOU[e]), 1.2)
+		return
+	if remotes.has(peer):
+		remotes[peer].play_emote(e, d.get("at"))
+	hud.flash("%s %s" % [d.get("name", "Someone"), Emotes.VERBS[e]], 1.5)
 
 
 func _on_state(id: int, state: PackedFloat32Array) -> void:

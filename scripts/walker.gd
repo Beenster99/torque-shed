@@ -79,6 +79,8 @@ var _cover := {}             # the spray job under way: {key, plan, item, points
 var _covers := {}            # every part with a spray job on it, by job key, so you can go back to one
 var _mist: CPUParticles3D
 var stopwatch := Stopwatch.new()
+## The emote bar is up (B): the tool keys 1 to 6 pick an emote instead of a tool (see Emotes).
+var emote_menu_open := false
 ## The tyre-fitting game under way on the tyre changer (see TyreGame), or null. While it runs the
 ## mouse (or right stick) works the tyre lever instead of looking about.
 var tyre_game: TyreGame
@@ -170,6 +172,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not controls_enabled:
 		return
 	if blast and _blast_input(event):
+		return
+	if _emote_input(event):
+		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		if tyre_game:
@@ -1503,7 +1508,7 @@ func _describe() -> String:
 				lines.append(Shed.condition_text(it))
 				lines.append(PartsDB.bin_text(str(it["part"])))
 				if it.get("boxed", false):
-					lines.append("F: unpack it")
+					lines.append(OrderNote.line(it) + "F: unpack it")
 				if it.has("fluid") and not PartsDB.is_fluid(it["part"]):
 					lines.append(Shed.fluid_text(it))
 				if Shed.is_engine(item_id) and Shed.is_stand_spot(spot) and not it.get("boxed", false):
@@ -1546,7 +1551,7 @@ func _describe() -> String:
 			lines.append(Shed.condition_text(it))
 			lines.append(PartsDB.bin_text(str(it["part"])))
 			if it.get("boxed", false):
-				lines.append("F: unpack it")
+				lines.append(OrderNote.line(it) + "F: unpack it")
 		"radio":
 			lines.append("Shed radio (everyone hears it)")
 			var view: Node = get_tree().get_first_node_in_group("workshop")
@@ -2001,6 +2006,38 @@ func _coverage_step(delta: float, plan_now: Dictionary) -> void:
 				coverage = 0.0
 				progress = 0.0
 				_need_release = true
+
+
+## Emote keys (see Emotes): B opens and shuts the emote bar, where the tool keys 1 to 6 pick
+## one; F5 to F10 do one straight away. Returns whether the event was one of them.
+func _emote_input(event: InputEvent) -> bool:
+	if event.is_action_pressed("emote_menu"):
+		emote_menu_open = not emote_menu_open
+		return true
+	for i in Emotes.LIST.size():
+		var e: String = Emotes.LIST[i]
+		if event.is_action_pressed(Emotes.action_of(e)) or (emote_menu_open and event.is_action_pressed("tool_%d" % (i + 1))):
+			emote(e)
+			return true
+	if emote_menu_open and (event.is_action_pressed("tool_7") or event.is_action_pressed("tool_8")):
+		emote_menu_open = false
+		return true
+	return false
+
+
+## Does an emote for the crew to see; a point aims at whatever the crosshair is on.
+func emote(e: String) -> void:
+	emote_menu_open = false
+	if not Emotes.is_emote(e):
+		return
+	var action := {"a": "emote", "e": e}
+	if e == "point" and camera:
+		var from := camera.global_position
+		var q := PhysicsRayQueryParameters3D.create(from, from - camera.global_transform.basis.z * PING_REACH, 1 | 2 | 4 | Workshop.INTERACT_LAYER)
+		q.exclude = [get_rid()]
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		action["at"] = hit["position"] if not hit.is_empty() else from - camera.global_transform.basis.z * 10.0
+	Shed.request(action)
 
 
 ## Middle mouse: point something out to the crew.

@@ -3890,7 +3890,7 @@ static func part_display(part_id: String, cond: Dictionary) -> Node3D:
 static func item_display(item_id: int) -> Node3D:
 	var it: Dictionary = Shed.items[item_id]
 	if it.get("boxed", false):
-		return box_display(str(it["part"]), item_id)
+		return OrderNote.attach(box_display(str(it["part"]), item_id), it)
 	if PartsDB.is_fluid(str(it["part"])):
 		var f: Dictionary = it.get("fluid", {})
 		return fluid_display(str(it["part"]), float(f.get("litres", 0.0)) / maxf(PartsDB.fluid_capacity(str(it["part"])), 0.01))
