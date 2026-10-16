@@ -16403,6 +16403,38 @@
 			"pack": "race",
 			"price": 360
 		},
+		"race_red_winged": {
+			"mass": 6.5,
+			"type": "Fibreglass, full",
+			"style": "race",
+			"cda": -0.09,
+			"screen": 0.1,
+			"frame_mount": true,
+			"material": "mixed",
+			"name": "Red works fairing",
+			"description": "Red MotoGP-style fairing with stacked winglets and a blank nose.",
+			"color": [
+				0.72,
+				0.07,
+				0.05
+			],
+			"look": {
+				"accent": [
+					0.93,
+					0.93,
+					0.92
+				],
+				"lamps": false,
+				"wings": 2,
+				"tall": 0.8,
+				"n": 2.3
+			},
+			"styles": [
+				"race"
+			],
+			"pack": "race",
+			"price": 390
+		},
 		"race_carbon_winged": {
 			"mass": 3.2,
 			"type": "Carbon fibre, full",
@@ -16461,10 +16493,10 @@
 				"roundel": true
 			},
 			"styles": [
-				"race",
-				"cafe"
+				"cafe",
+				"race"
 			],
-			"pack": "race",
+			"pack": "cafe",
 			"price": 360
 		},
 		"naked_flyscreen": {

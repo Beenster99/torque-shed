@@ -117,7 +117,7 @@ Five optional kinds finish a bike in its style, each bolted to the frame, five o
 
 #### Style packs
 
-Each of the fourteen styles has its own **pack** of about thirty parts made for it (430 in all): frames with their own wheelbase and rake, forks, wheels, tyres, tanks, seats, bars, exhausts, headlights, tails, front mudguards, mirrors, the bolt-on style bits, and fairings or bags where the style uses them. They aren't recolours: each part has a **look** that changes its shape and detail, for example:
+Each of the fourteen styles has its own **pack** of about thirty parts made for it (436 in all): frames with their own wheelbase and rake, forks, wheels, tyres, tanks, seats, bars, exhausts, headlights, tails, front mudguards, mirrors, the bolt-on style bits, and fairings or bags where the style uses them. They aren't recolours: each part has a **look** that changes its shape and detail, for example:
 
 - Tanks: teardrop, slab-sided, coffin, fat split cruiser tanks with a dash console, slim peanuts, little round tanks, long tanks with knee dents and long low racing tanks. Paint can be two-tone, a band, racing stripes, scallops or pinstripes. Caps can be monza, flush or twin, with oval, roundel or wing badges and knee pads.
 - Seats: brat, stepped two-up, king-and-queen, sprung solo pans, gunfighter, long cafe humps and flat-track seats. They can be tuck-and-roll, ribbed or diamond-stitched with coloured piping, with springs, sissy bars and backrests.
@@ -132,6 +132,15 @@ Each of the fourteen styles has its own **pack** of about thirty parts made for 
 Each pack part suits its own style first and usually one or two related ones, so a bike built from one pack reads as a proper example of that style.
 
 The parts computer's **Style** filter shows only parts that suit a style (kinds with no style, like engines, aren't filtered), and with a bike picked under **Fits** each part's page says what it would do to that bike's style. New project bikes and customers' bikes come with the bits that suit them; bikes in older saves get the slots empty.
+
+#### Style refinements (Simon's notes, 16 Oct)
+
+- **Sports and race bikes** wear a full fairing: one shell from a sharp nose round the lamps, under the tank and round the engine to a belly pan, with side panels back to the tail. Race fairings have a blank nose (no headlight), stacked winglets and a lower, flatter screen; some sports fairings have a winglet a side. Whatever is behind the bodywork is left undrawn while it's on. The red sports frame and the white race frame have a single-sided swingarm.
+- **Adventure bikes** get a beak-nosed, creased half fairing with a tall screen, and an angular tank; **supermotos** a low flat tank with radiator shrouds.
+- **Tanks sit level**: the nose can't rise more than 13° (6° on cruiser frames), and the classic and cruiser tanks are smaller and flatter.
+- Plug caps come off the head sideways and the coil sits low; a V-twin's air cleaner is on the right of the vee; airboxes stay under the tank; twin shocks tuck under the seat on low frames, and a softail's lie flat under the gearbox.
+- Whitewalls and wall stripes are on the outside of the sidewall.
+- Classics and scramblers lose the race number boards; classic side covers are domed, with a badge.
 
 #### The detail pass
 
