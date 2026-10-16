@@ -71,13 +71,16 @@ func _build_dialogs() -> void:
 	_name_dialog = ConfirmationDialog.new()
 	_name_dialog.dialog_hide_on_ok = false
 	var box := VBoxContainer.new()
-	box.add_child(UITheme.label("Name this save:", 15))
+	var ask := UITheme.label("Name this save:", 15)
+	ask.autowrap_mode = TextServer.AUTOWRAP_OFF
+	box.add_child(ask)
 	_name_edit = LineEdit.new()
 	_name_edit.max_length = SaveGame.NAME_LENGTH
 	_name_edit.custom_minimum_size.x = 360.0
 	_name_edit.text_submitted.connect(func(_t): _name_ok(false))
 	box.add_child(_name_edit)
 	_name_error = UITheme.label("", 14, Color(1, 0.6, 0.5))
+	_name_error.autowrap_mode = TextServer.AUTOWRAP_OFF   # a wrapping label made the dialog very tall
 	box.add_child(_name_error)
 	_name_dialog.add_child(box)
 	_name_dialog.confirmed.connect(func(): _name_ok(false))
@@ -158,6 +161,8 @@ func _row(meta: Dictionary, client: bool) -> Control:
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.add_theme_constant_override("separation", 4)
 	var title := UITheme.label(str(meta["name"]), 21, UITheme.ACCENT if here else Color(1, 1, 1, 0.95))
+	title.autowrap_mode = TextServer.AUTOWRAP_OFF   # one line, trimmed (wrapping hid it altogether)
+	title.clip_text = true
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	info.add_child(title)
 	if here:
@@ -241,6 +246,7 @@ func ask_name(title: String, ok: String, initial: String, except_id: String, act
 		_name_alt = null
 	if alt_text != "":
 		_name_alt = _name_dialog.add_button(alt_text, true, "alt")
+	_name_dialog.reset_size()
 	_name_dialog.popup_centered()
 	_name_edit.grab_focus()
 	_name_edit.select_all()
