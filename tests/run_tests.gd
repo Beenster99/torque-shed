@@ -1787,6 +1787,8 @@ func _session_round5(main: Node) -> void:
 	w.spray_color = 4
 	await _aim_point(w, centre)
 	check(w.plan.get("coverage", false) and w.plan["blocked"] == "", "the spray can wants sweeping over the part (%s %s)" % [str(w.plan.get("verb", "")), str(w.plan.get("blocked", ""))])
+	w.enter_spray_mode()   # F: the spray controls up
+	w.spray_mode["settle"] = 0.0
 	Input.action_press("act")
 	for i in 90:
 		await get_tree().physics_frame
@@ -1809,7 +1811,7 @@ func _session_round5(main: Node) -> void:
 			var x := lerpf(rect.position.x, rect.end.x, f if r % 2 == 0 else 1.0 - f)
 			path.append(cam.project_position(Vector2(x, y), dist))
 	# A second pass over it where the first left it thin, as a painter would.
-	for pass_n in 2:
+	for pass_n in 4:
 		if w.spray != null and w.spray.ready():
 			break
 		for p in path:
@@ -1827,6 +1829,7 @@ func _session_round5(main: Node) -> void:
 	check(Shed.items[pipe]["color"] == Shed.PAINTS[4] and Shed.items[pipe].has("paint_quality"),
 		"sweeping the can over all of it finishes the paint job (quality %.0f%%)" % (float(Shed.items[pipe].get("paint_quality", 0.0)) * 100.0))
 	check(Shed.condition_text(Shed.items[pipe]).contains("Paint job"), "the info panel says how good the paint job is")
+	w.leave_spray_mode()
 	w.set_tool("hands")
 	w.set_crouched(false)
 	# The yard: a bike ridden at a ramp goes up it.
