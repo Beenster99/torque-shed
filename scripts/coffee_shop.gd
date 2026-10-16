@@ -258,22 +258,57 @@ static func seat_way(s: int) -> PackedVector3Array:
 	return PackedVector3Array([Vector3(WALK_X, 0.0, AISLE_Z), Vector3(WALK_X, 0.0, lane), Vector3(seat.x, 0.0, lane), seat])
 
 
-## The ride in from the road into bay `park`.
-static func ride_in(park: int) -> PackedVector3Array:
+## The ride in from the road into bay `park`. With a `rider` (an id every machine has, >= 0)
+## it's their own way, the same for every player: along the road from either end and on their
+## own line up the yard, in to the bay square-on. Without, the classic way in from the west.
+static func ride_in(park: int, rider := -1) -> PackedVector3Array:
+	var xf := park_xf(park)
+	var slot := xf.origin
 	var pts := PackedVector3Array(ROAD_IN)
-	var slot := park_xf(park).origin
+	if rider >= 0:
+		var rng := Contracts.route_rng(rider, 3)
+		var east := rng.randf() < 0.45
+		pts = _road(east, rng.randf_range(1.4, 2.2), true)
+		pts.append_array(_yard_way(rng))
 	pts.append(Vector3(slot.x + 1.5, 0.0, AISLE_Z))
+	if rider >= 0:
+		pts.append(slot + xf.basis.z * 1.3)
 	pts.append(slot)
 	return pts
 
 
-## The ride away: backing out of bay `park` into the aisle, out along it and back to the road.
-static func ride_out(park: int) -> PackedVector3Array:
+## The ride away: backing out of bay `park` into the aisle, out along it and back to the road
+## (their own way, either way along the road, with a `rider` id).
+static func ride_out(park: int, rider := -1) -> PackedVector3Array:
 	var slot := park_xf(park).origin
 	var pts := PackedVector3Array([slot, Vector3(slot.x, 0.0, AISLE_Z)])
+	if rider >= 0:
+		var rng := Contracts.route_rng(rider, 4)
+		var east := rng.randf() < 0.45
+		var lane := rng.randf_range(1.4, 2.2)
+		pts.append_array(_reversed(_yard_way(rng)))
+		pts.append_array(_road(east, lane, false))
+		return pts
 	for i in range(ROAD_IN.size() - 1, -1, -1):
 		pts.append(ROAD_IN[i])
 	return pts
+
+
+## The road past the yard to (or from, not `inbound`) the turn up to the cafe, from the `east`
+## end or the west, keeping `lane` metres left of its middle.
+static func _road(east: bool, lane: float, inbound: bool) -> PackedVector3Array:
+	var turn: float = ROAD_IN[2].x
+	var xs := [Contracts.ROAD_FAR_X, 56.0, 40.0, 24.0, 0.0, -14.0, turn] if east else [ROAD_IN[0].x, ROAD_IN[1].x, turn]
+	if not inbound:
+		xs.reverse()
+	return Contracts.road_line(xs, lane)
+
+
+## A rider's own line up the yard from the road to the end of the aisle: up past the slalom's
+## gate (where there's no room to wander) and across to the car park.
+static func _yard_way(rng: RandomNumberGenerator) -> PackedVector3Array:
+	return PackedVector3Array([Vector3(ROAD_IN[3].x + rng.randf_range(-0.3, 0.3), 0.0, ROAD_IN[3].z + rng.randf_range(-2.0, 3.0)),
+		Vector3(ROAD_IN[4].x + rng.randf_range(-1.0, 1.0), 0.0, ROAD_IN[4].z + rng.randf_range(-2.0, 2.0)), ROAD_IN[5]])
 
 
 ## From beside the bike in bay `park` to chair `seat`.

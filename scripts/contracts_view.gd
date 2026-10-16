@@ -39,7 +39,7 @@ func sync_state() -> void:
 		if views.has(id):
 			(views[id] as CustomerView).move_to(walk[walk.size() - 1])
 			continue
-		var ride := Contracts.ride_in_path(park) if park >= 0 else PackedVector3Array()
+		var ride := Contracts.ride_in_path(park, id) if park >= 0 else PackedVector3Array()
 		var bike := {}
 		if park >= 0:
 			var o: Dictionary = c["offer"]
@@ -64,7 +64,7 @@ func _sync_leaving() -> void:
 			continue
 		var xf: Transform3D = d["xf"]
 		var walk := Contracts.collect_path(xf)
-		var ride := Contracts.ride_out_path(xf)
+		var ride := Contracts.ride_out_path(xf, id)
 		var secs := _length(walk) / Contracts.WALK_SPEED + _length(ride) / Contracts.RIDE_SPEED * 1.5 + 2.0
 		if _since(float(d.get("at", 0.0))) > secs:
 			collecting[id] = null

@@ -50,6 +50,8 @@ const PARK_FROM := Vector2(3.3, 11.6)
 ## Where the road runs past the yard, by x: customers ride along it between these.
 const ROAD_FAR_X := 72.0
 const ROAD_TURN_X := 24.0
+## The loop's line past the west of the yard (see _west_road), worked out once.
+static var _west := PackedVector2Array()
 ## How long a finished job's ride away is kept (game hours), for players arriving to see it.
 const LEAVING_HOURS := 2.0
 const MAX_LEAVING := 6
@@ -289,8 +291,15 @@ static func free_park() -> int:
 	return -1
 
 
-## The point on the ring road where it passes the yard at `x` (the road is flat there).
+## The point on the ring road where it passes the yard at `x` (the road is flat there). East of
+## the shed that's the loop's own curve; west of it, the line World lays the loop along.
 static func road_at(x: float) -> Vector3:
+	if x < 0.0:
+		var west := _west_road()
+		for i in range(1, west.size()):
+			if west[i].x >= x or i == west.size() - 1:
+				var f := clampf(inverse_lerp(west[i - 1].x, west[i].x, x), 0.0, 1.0)
+				return Vector3(x, 0.0, lerpf(west[i - 1].y, west[i].y, f))
 	var lo := 0.0
 	var hi := 0.8
 	for i in 32:
@@ -303,28 +312,115 @@ static func road_at(x: float) -> Vector3:
 	return Vector3(p.x, 0.0, p.z)
 
 
-## The ring road's centre line by angle (the same loop World lays the road along).
+## The ring road's centre line by angle (the same loop World lays the road along east of the shed).
 static func _loop(theta: float) -> Vector3:
 	var f := 1.0 + 0.1 * sin(3.0 * theta + 0.5) + 0.05 * sin(5.0 * theta + 2.0)
 	return Vector3(185.0 * f * sin(theta), 0.0, 126.0 * f * cos(theta))
 
 
-## The ride in: along the road past the yard, up across it and into car park bay `park`.
-static func ride_in_path(park: int) -> PackedVector3Array:
+## The loop's line past the west half of the yard (x -90..0), west to east: its smooth curve
+## through WorldLayout's points, as World lays it.
+static func _west_road() -> PackedVector2Array:
+	if _west.is_empty():
+		var pts := []
+		for r: Dictionary in WorldLayout.ROADS:
+			if r["name"] == "loop":
+				for p in WorldRoads._spline(PackedVector2Array(r["pts"]), true):
+					if p.x > -90.0 and p.x < 1.0 and p.y > 110.0:
+						pts.append(p)
+		pts.sort_custom(func(a, b): return a.x < b.x)
+		_west = PackedVector2Array(pts)
+	return _west
+
+
+## A rider's own dice for their way in or out (`salt` tells the two apart): seeded from
+## `rider`, an id every machine has, so all the players see them take the same way.
+static func route_rng(rider: int, salt: int) -> RandomNumberGenerator:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (rider * 73856093) ^ (salt * 19349663) ^ 0x5bd1e995
+	return rng
+
+
+## Which end of the road past the yard a rider comes from (or goes off to) and how they come off
+## it: {east: that end, turn: the x they come off the road at, lane: how far left of the middle
+## of the road they keep (it's a left-hand road), mid: a nudge to their line across the yard,
+## swing: they sweep in from that side of the car park}. From `rng`, or with none the classic
+## way: from the east along the middle of the road and straight up the yard.
+static func _route(rng: RandomNumberGenerator) -> Dictionary:
+	if rng == null:
+		return {"east": true, "turn": ROAD_TURN_X, "lane": 0.0, "mid": Vector2.ZERO, "swing": 0.0}
+	var east := rng.randf() < 0.55
+	# From the west they come off short of the tabletop's corner of the yard.
+	var turn := rng.randf_range(22.0, 32.0) if east else rng.randf_range(12.0, 22.0)
+	var swing := 0.0
+	if rng.randf() < 0.25:
+		swing = 7.0 if rng.randf() < 0.5 else -7.0
+	return {"east": east, "turn": turn, "lane": rng.randf_range(1.4, 2.4),
+		"mid": Vector2(rng.randf_range(-4.0, 4.0), rng.randf_range(-4.0, 6.0)), "swing": swing}
+
+
+## The road past the yard at each x of `xs` in turn, kept `lane` metres left of its middle going
+## that way.
+static func road_line(xs: Array, lane: float) -> PackedVector3Array:
 	var pts := PackedVector3Array()
-	for x in [ROAD_FAR_X, 56.0, 40.0, ROAD_TURN_X]:
-		pts.append(road_at(x))
-	var slot := park_xf(park).origin
-	pts.append(Vector3(ROAD_TURN_X - 3.0, 0.0, 116.0))
-	pts.append(Vector3(slot.x, 0.0, 94.0))
-	pts.append(Vector3(slot.x, 0.0, slot.z + 6.0))
-	pts.append(slot)
+	for x in xs:
+		pts.append(road_at(float(x)))
+	if lane != 0.0 and pts.size() >= 2:
+		var mid := pts.duplicate()
+		for i in pts.size():
+			var d := mid[mini(i + 1, pts.size() - 1)] - mid[maxi(i - 1, 0)]
+			pts[i] += Vector3.UP.cross(d.normalized()) * lane
+	return pts
+
+
+## The road leg of route `r`'s way in, ending where they come off it.
+static func _road_in(r: Dictionary) -> PackedVector3Array:
+	if r["east"]:
+		return road_line([ROAD_FAR_X, 56.0, 40.0, r["turn"]], r["lane"])
+	return road_line([-ROAD_FAR_X, -45.0, -20.0, 0.0, r["turn"]], r["lane"])
+
+
+## The road leg of route `r`'s way off, from where they join it.
+static func _road_out(r: Dictionary) -> PackedVector3Array:
+	if r["east"]:
+		return road_line([r["turn"], 40.0, 56.0, ROAD_FAR_X], r["lane"])
+	return road_line([r["turn"], 0.0, -20.0, -45.0, -ROAD_FAR_X], r["lane"])
+
+
+## Where route `r`'s way across the yard meets the road.
+static func _yard_gate(r: Dictionary) -> Vector3:
+	return Vector3(float(r["turn"]) + (-3.0 if r["east"] else 3.0), 0.0, 116.0)
+
+
+## The ride in: along the road past the yard, up across it and into car park bay `park`. With a
+## `rider` (an id every machine has, >= 0) it's their own way: from either end of the road, off
+## it at their own spot and on their own line across the yard. Without, the classic way.
+static func ride_in_path(park: int, rider := -1) -> PackedVector3Array:
+	return ride_in_to(park_xf(park).origin, rider)
+
+
+## The ride in to `spot` (see ride_in_path), ending with a straight 6 m nose-in (-Z) to it.
+static func ride_in_to(spot: Vector3, rider := -1) -> PackedVector3Array:
+	var r := _route(route_rng(rider, 1) if rider >= 0 else null)
+	var pts := _road_in(r)
+	pts.append(_yard_gate(r))
+	var mid: Vector2 = r["mid"]
+	var swing := float(r["swing"])
+	if swing != 0.0:
+		# Up the yard off to one side of the bay, then sweeping round into it.
+		pts.append(Vector3(clampf(spot.x + swing + mid.x * 0.3, 14.0, 39.0), 0.0, 96.0 + mid.y))
+		pts.append(Vector3(spot.x + swing * 0.45, 0.0, spot.z + 9.5))
+	else:
+		pts.append(Vector3(clampf(spot.x + mid.x, 14.0, 39.0), 0.0, 94.0 + mid.y))
+	pts.append(Vector3(spot.x, 0.0, spot.z + 6.0))
+	pts.append(spot)
 	return pts
 
 
 ## The ride away from where a bike stands: out of its bay and the roller door (through the
-## extension's doorway from its bays), across the yard to the road and off along it.
-static func ride_out_path(from: Transform3D) -> PackedVector3Array:
+## extension's doorway from its bays), across the yard to the road and off along it. With a
+## `rider` (>= 0) they go their own way, off either way along the road (see ride_in_path).
+static func ride_out_path(from: Transform3D, rider := -1) -> PackedVector3Array:
 	var pts := PackedVector3Array()
 	var at := Vector3(from.origin.x, 0.0, from.origin.z)
 	pts.append(at)
@@ -345,9 +441,9 @@ static func ride_out_path(from: Transform3D) -> PackedVector3Array:
 		# From the car park or the forecourt: back out of the bay first.
 		pts.append(Vector3(at.x, 0.0, at.z + 2.0))
 		pts.append(Vector3(at.x, 0.0, SalesOffice.FORECOURT.end.y + 4.0))
-	pts.append(Vector3(ROAD_TURN_X - 3.0, 0.0, 116.0))
-	for x in [ROAD_TURN_X, 40.0, 56.0, ROAD_FAR_X]:
-		pts.append(road_at(x))
+	var r := _route(route_rng(rider, 2) if rider >= 0 else null)
+	pts.append(_yard_gate(r))
+	pts.append_array(_road_out(r))
 	return pts
 
 

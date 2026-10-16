@@ -199,6 +199,8 @@ func _run_all() -> void:
 	_test_customer_bay_screen()
 	_test_customer_save()
 	await _test_customer_ride_session()
+	_test_customer_lean()
+	_test_customer_routes()
 	print("Shed building: packed deliveries and racking, bay lifts, the big annex, the crew lounge upstairs")
 	_test_delivery_packing()
 	_test_bay_lifts()
@@ -9307,6 +9309,184 @@ func _test_customer_ride_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## A customer riding in leans into each turn (left for a left-hander, right for a right), about
+## as far as atan(v * yaw rate / g) says, eased in and out and never too far, slowing for the
+## corner; the rider leans with the bike; none while paddling backwards out of a bay.
+func _test_customer_lean() -> void:
+	Shed.start_new("Tester", 63)
+	var bike := {"parts": PartsDB.DEFAULT_BUILD.duplicate(), "paint": Color.RED}
+	for side: float in [-1.0, 1.0]:
+		# Well away from the buildings: north 40 m, then a 90 degree corner off to `side`.
+		var o := Vector3(150.0, 0.0, 0.0)
+		var ride := PackedVector3Array([o, o + Vector3(0.0, 0.0, -40.0), o + Vector3(side * 40.0, 0.0, -40.0),
+			o + Vector3(side * 46.0, 0.0, -40.0)])
+		var cv := CustomerView.new()
+		add_child(cv)
+		cv.set_process(false)
+		cv.setup({"id": 31, "name": "Leaner"}, PackedVector3Array([ride[3], ride[3] + Vector3.BACK]), Basis(), false, ride, bike)
+		var dt := 1.0 / 60.0
+		var most := 0.0
+		var wrong := 0.0
+		var jump := 0.0
+		var prev := 0.0
+		var prev_yaw := cv._yaw
+		var match_ok := true
+		var straight_v := 0.0
+		var corner_v := INF
+		var with_rider := cv._model != null and cv._lean.is_ancestor_of(cv._model._rider)
+		var rider_side := 0.0
+		for i in 3000:
+			cv._process(dt)
+			if not cv.riding:
+				break
+			var up := cv._lean.basis.y
+			var lean := atan2(up.x, up.y)   # + to the right, in the bike's own frame
+			var yaw_rate := wrapf(cv._yaw - prev_yaw, -PI, PI) / dt
+			prev_yaw = cv._yaw
+			jump = maxf(jump, absf(lean - prev))
+			prev = lean
+			if lean * side > absf(most):
+				most = lean
+				var expect := -atan(cv._speed * yaw_rate / Bike.G)
+				# The lean leads the turn a little, so mid-corner it's about what the turn needs.
+				match_ok = absf(yaw_rate) > 0.2 and absf(lean - expect) < maxf(absf(expect) * 0.45, 0.06)
+				var rider_up: Vector3 = cv._model._rider.global_basis.y
+				rider_side = rider_up.dot(cv._bike.global_basis.x)
+			if absf(yaw_rate) > 0.3 and cv._speed > 3.0:
+				wrong = maxf(wrong, lean * yaw_rate / absf(yaw_rate))   # leaning out of the turn it's making
+			var p := cv.bike_position() - o
+			if p.z > -25.0 and p.z < -15.0:
+				straight_v = maxf(straight_v, cv._speed)
+			if absf(p.x) > 1.0 and absf(p.x) < 4.0:
+				corner_v = minf(corner_v, cv._speed)
+		var turn_name := "left" if side < 0.0 else "right"
+		check(most * side > deg_to_rad(8.0) and absf(most) <= CustomerView.MAX_LEAN + 0.001 and wrong < 0.02,
+			"a %s turn leans the bike %s, into the turn (%.0f deg, never out of it: %.1f)" % [turn_name, turn_name, rad_to_deg(most), rad_to_deg(wrong)])
+		check(match_ok, "about as far as atan(v * yaw rate / g) at the height of the %s turn" % turn_name)
+		check(jump < 1.6 / 60.0 + 0.001, "eased in and out, never snapping over (%.3f rad a frame at most)" % jump)
+		check(with_rider and rider_side * side > 0.0, "and the rider leans with it")
+		check(corner_v < straight_v - 1.0, "slowing for the corner (%.1f m/s, from %.1f)" % [corner_v, straight_v])
+		check(not cv.riding and cv.bike_position().distance_to(ride[3]) < 0.01, "and parks exactly at the end of the way")
+		cv.queue_free()
+	# Backing out of a car park bay: upright while paddling back.
+	var spot := Contracts.park_xf(2)
+	var cv := CustomerView.new()
+	add_child(cv)
+	cv.set_process(false)
+	cv.setup_collect({"id": 32, "name": "Backer"}, PackedVector3Array([spot.origin + Vector3(0.75, 0.0, 0.3), spot.origin]),
+		bike, spot, Contracts.ride_out_path(spot, 32))
+	var back_lean := 0.0
+	var backed := false
+	var swung := 0.0
+	for i in 2000:
+		cv._process(1.0 / 60.0)
+		if cv.riding and cv._line.size() > 1 and cv._at < cv._back:
+			backed = true
+			back_lean = maxf(back_lean, absf(cv._roll))
+			swung = maxf(swung, absf(wrapf(cv._yaw, -PI, PI)))
+		if cv.riding and cv._at > cv._back + 5.0:
+			break
+	check(backed and back_lean < 0.001, "paddling backwards out of the bay, it stays upright (%.3f)" % back_lean)
+	check(swung > 0.5, "swinging the tail round as they go towards the way out (%.0f deg)" % rad_to_deg(swung))
+	cv.queue_free()
+
+
+## Every rider has their own way in and out, the same on every machine: in from either end of the
+## road and keeping left on it, on their own line up the yard and into the bay, at their own
+## pace; clear of the yard's kit, and out of the shed through its doors.
+func _test_customer_routes() -> void:
+	Shed.start_new("Tester", 64)
+	check(Contracts.ride_in_path(3, 17) == Contracts.ride_in_path(3, 17)
+		and CustomerView.ride_line(Contracts.ride_in_path(3, 17), 17) == CustomerView.ride_line(Contracts.ride_in_path(3, 17), 17)
+		and CoffeeShop.ride_in(5, 17) == CoffeeShop.ride_in(5, 17) and CustomerView.rider_traits(17) == CustomerView.rider_traits(17),
+		"the same rider takes the same way every time (it's worked out from their id)")
+	var loop := PackedVector2Array()
+	for r: Dictionary in WorldLayout.ROADS:
+		if r["name"] == "loop":
+			loop = WorldRoads._spline(PackedVector2Array(r["pts"]), true)
+	var off_road := func(p: Vector3) -> float:
+		var best := INF
+		for q in loop:
+			best = minf(best, Vector2(p.x, p.z).distance_to(q))
+		return best
+	var kit := []
+	for item: Array in WorldYard.starting_kit():
+		kit.append([(item[1] as Transform3D).origin, item[2]])
+	var near_kit := func(path: PackedVector3Array, gap: float) -> Array:
+		var hit := []
+		for k: Array in kit:
+			var at: Vector3 = k[0]
+			for i in path.size() - 1:
+				var c := Geometry3D.get_closest_point_to_segment(at, path[i], path[i + 1])
+				if Vector2(c.x - at.x, c.z - at.z).length() < gap and not hit.has(k[1]):
+					hit.append(k[1])
+		return hit
+	var ways := {}
+	var ends := {"in_east": 0, "in_west": 0, "out_east": 0, "out_west": 0, "cafe_east": 0, "cafe_west": 0}
+	var in_bay := true
+	var on_road := true
+	var in_way := []
+	var cruise := []
+	var straight_in := true
+	for id in 40:
+		var park := id % Contracts.PARK_SLOTS
+		var slot := Contracts.park_xf(park).origin
+		var ride := Contracts.ride_in_path(park, id)
+		var out := Contracts.ride_out_path(Contracts.park_xf(park), id)
+		ways[str(ride)] = true
+		ends["in_east" if ride[0].x > 60.0 else "in_west"] += 1
+		ends["out_east" if out[out.size() - 1].x > 60.0 else "out_west"] += 1
+		var line := CustomerView.ride_line(ride, id)
+		var last := ride[ride.size() - 1] - ride[ride.size() - 2]
+		in_bay = in_bay and ride[ride.size() - 1] == slot and line[line.size() - 1] == slot and last.normalized().dot(Vector3.FORWARD) > 0.99
+		for p in line:
+			if p.distance_to(slot) < 3.0:
+				straight_in = straight_in and absf(p.x - slot.x) < 0.01
+		for p in [ride[0], ride[1], out[out.size() - 1], out[out.size() - 2]]:
+			on_road = on_road and off_road.call(p) < 3.0
+		for k in near_kit.call(ride, 2.5) + near_kit.call(out, 2.5) + near_kit.call(line, 1.8) \
+				+ near_kit.call(CustomerView.ride_line(out, id), 1.8):
+			if not in_way.has(k):
+				in_way.append(k)
+		var cafe := CoffeeShop.ride_in(id % CoffeeShop.PARK_SLOTS, id)
+		var cafe_out := CoffeeShop.ride_out(id % CoffeeShop.PARK_SLOTS, id)
+		ends["cafe_east" if cafe[0].x > 60.0 else "cafe_west"] += 1
+		in_bay = in_bay and cafe[cafe.size() - 1] == CoffeeShop.park_xf(id % CoffeeShop.PARK_SLOTS).origin
+		on_road = on_road and off_road.call(cafe[0]) < 3.0 and off_road.call(cafe_out[cafe_out.size() - 1]) < 3.0
+		for k in near_kit.call(cafe, 2.5) + near_kit.call(cafe_out, 2.5) + near_kit.call(CustomerView.ride_line(cafe, id), 1.8) \
+				+ near_kit.call(CustomerView.ride_line(cafe_out, id), 1.8):
+			if not in_way.has(k):
+				in_way.append(k)
+		cruise.append(float(CustomerView.rider_traits(id)["cruise"]))
+	check(ways.size() >= 35, "different riders take different ways in (%d different of 40)" % ways.size())
+	check(ends.values().all(func(n): return n >= 8), "in from both ends of the road and off either way, to the shed and the cafe %s" % str(ends))
+	check(in_bay and straight_in, "and always end up exactly in their bay, the last few metres straight in")
+	check(on_road, "keeping to the road (on the left) along the way")
+	check(in_way.is_empty(), "the yard's test kit keeps clear of all of them %s" % str(in_way))
+	check(cruise.min() < Contracts.RIDE_SPEED * 0.85 and cruise.max() > Contracts.RIDE_SPEED * 1.1,
+		"some cruise, some are quicker (%.1f..%.1f m/s)" % [cruise.min(), cruise.max()])
+	# Out of the shed's and the extension's bays the line keeps to the doors.
+	Shed.upgrades["wing"] = true
+	var walls := []
+	for bay in Workshop.bay_count():
+		var raw := Contracts.ride_out_path(Workshop.bay_transform(bay), 5 + bay)
+		var rooms := {}
+		for i in range(1, raw.size()):
+			for k in 20:
+				rooms[Workshop.room_at(raw[i - 1].lerp(raw[i], k / 20.0))] = true
+		for p in CustomerView.ride_line(raw, 5 + bay):
+			var gap := CustomerView._room_gap(p, Workshop.rooms().values())
+			var d := INF
+			for i in range(1, raw.size()):
+				var c := Geometry3D.get_closest_point_to_segment(p, raw[i - 1], raw[i])
+				d = minf(d, c.distance_to(p))
+			if not rooms.has(Workshop.room_at(p)) or (gap < 0.5 and d > 0.5):
+				if not walls.has(bay):
+					walls.append(bay)
+	Shed.upgrades.erase("wing")
+	check(walls.is_empty(), "riding out of the shed's bays and the extension's, the line keeps to the doors %s" % str(walls))
 
 
 # ---------------------------------------------------------------------------- shed building: deliveries, lifts, annex, lounge
