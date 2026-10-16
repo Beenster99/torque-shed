@@ -39,6 +39,8 @@ const DEBUG_GRANT := 1000000
 const SELL_RATE := 0.7
 const BONUS_COMPLETE := 0.15
 const BONUS_RIDEABLE := 0.15
+## A little more for a bike that's been washed spotless (every part clean, see Dirt): it shows well.
+const BONUS_CLEAN := 0.03
 ## A project bike costs this much more than it would fetch as it comes, so restoring it is where
 ## the profit is.
 const PROJECT_MARKUP := 1.25
@@ -218,7 +220,15 @@ static func bike_sale(bike_id: int, peer := 0) -> int:
 		bonus += BONUS_COMPLETE
 		if rideable(bike_id):
 			bonus += BONUS_RIDEABLE
+	bonus += clean_bonus(bike_id)
 	return roundi(total * SELL_RATE * bonus * (1.0 + HAGGLE_SELL * _haggle(peer)))
+
+
+## BONUS_CLEAN for a bike with every part washed clean, else nothing.
+static func clean_bonus(bike_id: int) -> float:
+	if not Shed.bikes.has(bike_id) or Shed.item_on(bike_id, "frame") == 0:
+		return 0.0
+	return BONUS_CLEAN if Shed._bike_dirt(bike_id, true) <= Dirt.CLEAN else 0.0
 
 
 ## What a project bike costs to buy as it comes (see PROJECT_MARKUP).

@@ -80,6 +80,8 @@ var _spot_sigs := {}
 var furniture_nodes := {} # furniture id -> EquipmentView
 var _furniture_sigs := {}
 var _floor_nodes := {}     # item id -> Node3D for parts put down anywhere
+var _dirt_sigs := {}       # bike id -> its dirt as last drawn (Dirt.sig_of_bike)
+var _wash_fx := {}         # peer -> WashFx where someone else's pressure washer jet is landing
 var _floor_sigs := {}
 var _holo_views := {}      # bay -> Node3D: the hologram of a blueprint build waiting for its frame
 var _holo_sigs := {}
@@ -218,6 +220,7 @@ func build() -> void:
 	_build_bin()
 	_build_radio()
 	_build_wash_bay()
+	_build_drain()
 	_build_booth_room()
 	_build_paint_bay()
 	_build_storage_room()
@@ -275,6 +278,8 @@ func sync_state() -> void:
 			if bike_views.has(id):
 				bike_views[id].free()
 			bike_views[id] = _make_bike_view(id)
+			_dirt_sigs[id] = Dirt.sig_of_bike(id)
+		_sync_dirt(id)
 		# Moving a bike only moves its view; the one you're wheeling follows you directly.
 		if bike.get("pusher", 0) != Shed.me() or bike.get("pusher", 0) == 0:
 			bike_views[id].transform = bike["xf"]
@@ -853,12 +858,48 @@ func _bike_signature(id: int) -> String:
 			parts.append("-")
 		else:
 			var it: Dictionary = Shed.items[item_id]
-			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot),
+			# Its dirt isn't in it: that's drawn over the bike as it changes (see _sync_dirt).
+			parts.append("%s:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot),
 				Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
 		str(bike.get("blueprint", {}).get("parts", "")) if bike.get("blueprint") is Dictionary else ""]
+
+
+## A parked bike's road dirt, redrawn over it as it changes (riding, washing) without rebuilding it.
+func _sync_dirt(id: int) -> void:
+	var sig := Dirt.sig_of_bike(id)
+	if _dirt_sigs.get(id, "") == sig:
+		return
+	_dirt_sigs[id] = sig
+	var model := bike_model(id)
+	if model:
+		model.show_dirt(Dirt.of_bike(id))
+
+
+## Everyone else's pressure washer: the splash and run-off where their jet is landing.
+func _update_wash_fx(delta: float) -> void:
+	var live := {}
+	for j in Wash.jets():
+		if int(j["peer"]) != Shed.me():
+			live[int(j["peer"])] = j
+	var peers := live.keys()
+	for peer in _wash_fx:
+		if not peers.has(peer):
+			peers.append(peer)
+	for peer in peers:
+		if not _wash_fx.has(peer):
+			var made := WashFx.new()
+			add_child(made)
+			_wash_fx[peer] = made
+		var fx: WashFx = _wash_fx[peer]
+		var j: Dictionary = live.get(peer, {})
+		var from := (j["at"] as Vector3) + Vector3.UP if not j.is_empty() else Vector3.ZERO
+		for rp in get_tree().get_nodes_in_group("remote_players"):
+			if rp is RemotePlayer and (rp as RemotePlayer).peer == int(peer):
+				from = (rp as RemotePlayer).world_position() + Vector3.UP * 1.3
+		fx.update(delta, from, j.get("at", Vector3.ZERO), j.get("normal", Vector3.UP), not j.is_empty())
 
 
 func _make_bike_view(id: int) -> Node3D:
@@ -980,6 +1021,7 @@ func _paddock_stand(parent: Node3D, build: BikeBuild) -> void:
 
 func _process(delta: float) -> void:
 	_flicker_holograms()
+	_update_wash_fx(delta)
 	_update_tv_feed(delta)
 	_update_door(delta)
 	spin_changers(delta)
@@ -1579,6 +1621,22 @@ func _build_wash_bay() -> void:
 	light.light_energy = 1.0
 	light.light_color = Color(1.0, 0.95, 0.88)
 	add_child(light)
+
+
+## The drain in the middle of the shed floor (Wash.SHED_DRAIN) that washing water runs into: a
+## square steel grate in a shallow dished apron of floor.
+func _build_drain() -> void:
+	var at := Wash.SHED_DRAIN
+	var apron := _material(Color(0.33, 0.34, 0.35), 0.0, 0.5)
+	var dish := _deco(self, at + Vector3(0.0, 0.003, 0.0), Vector3(1.1, 0.004, 1.1), apron)
+	dish.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var frame := _material(Color(0.25, 0.26, 0.27), 0.8, 0.45)
+	var hole := _material(Color(0.02, 0.02, 0.025), 0.0, 0.9)
+	_deco(self, at + Vector3(0.0, 0.006, 0.0), Vector3(0.42, 0.006, 0.42), frame).name = "ShedDrain"
+	_deco(self, at + Vector3(0.0, 0.0065, 0.0), Vector3(0.36, 0.006, 0.36), hole)
+	for i in 7:
+		var bar := _deco(self, at + Vector3(-0.15 + i * 0.05, 0.009, 0.0), Vector3(0.018, 0.006, 0.36), frame)
+		bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Splits a wall running from `from` to `to` round a doorway at `door` (half width `half`):

@@ -120,6 +120,19 @@ var tyre_game: TyreGame
 var _game_key := ""
 var _jet: CPUParticles3D
 var blast: BlastGame         # hands in a sandblaster's gloves (see BlastGame), or null
+## Pressure washing a bike with the wash controls up (F, or the trigger, with the pressure washer
+## on a bike; see WashJob): {bike}, or {}. The job itself, the moments to celebrate for the HUD
+## ([{kind: "part" or "bike", name}]), the scan, and the splash and run-off where the jet lands.
+var wash_mode := {}
+var wash: WashJob
+var wash_cues: Array = []
+var wash_scan := false
+var wash_firing := false
+var _wash_fx: WashFx
+var _wash_send := 0.0
+var _wash_aim_send := 0.0
+var _wash_aim_sig := ""
+var _wash_resync := 0.0
 var _blast_send := 0.0
 var _blast_tick := 0.0
 var _blast_done_for := 0.0
@@ -298,6 +311,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("interact") and not spray_mode.is_empty():
 		get_viewport().set_input_as_handled()
 		leave_spray_mode()
+	elif event.is_action_pressed("interact") and not wash_mode.is_empty():
+		get_viewport().set_input_as_handled()
+		leave_wash_mode()
+	elif event.is_action_pressed("interact") and tool == "lance" and wash_target() != 0 and Shed.held_by(Shed.me()) == 0:
+		# The pressure washer on a bike: F brings up the wash controls.
+		get_viewport().set_input_as_handled()
+		enter_wash_mode(wash_target())
+	elif tool == "lance" and not wash_mode.is_empty() and event.is_action_pressed("blast_scan"):
+		get_viewport().set_input_as_handled()
+		set_wash_scan(not wash_scan)
 	elif event.is_action_pressed("interact") and _tin_fills_cup():
 		# Holding a tin from the mixing bay: F decants it into the spray gun's cup.
 		get_viewport().set_input_as_handled()
@@ -552,6 +575,8 @@ func set_tool(new_tool: String) -> void:
 		return
 	if not spray_mode.is_empty():
 		leave_spray_mode()
+	if not wash_mode.is_empty():
+		leave_wash_mode()
 	tool = new_tool
 	progress = 0.0
 	_hold = 0.0
@@ -653,6 +678,8 @@ func _physics_process(delta: float) -> void:
 	_update_held_view()
 	_update_jet()
 	_update_mist()
+	if _wash_fx and wash_mode.is_empty():
+		_wash_fx.update(delta, Vector3.ZERO, Vector3.ZERO, Vector3.UP, false)
 	if tool == "watch" and is_instance_valid(_tool_view):
 		ToolModels.set_hand_seconds(_tool_view, stopwatch.elapsed())
 
@@ -1331,6 +1358,12 @@ func _make_plan() -> Dictionary:
 		if not sp.is_empty():
 			sp["blocked"] = Shed.check(me, sp["action"])
 		return sp
+	if not wash_mode.is_empty():
+		# The wash controls are up: the jet's on that bike, wherever you aim.
+		var wp := {"action": {"a": "wash_cells", "bike": int(wash_mode["bike"]), "parts": {}, "clean": []}, "time": 0.0,
+			"verb": "wash it"}
+		wp["blocked"] = Shed.check(me, wp["action"])
+		return wp
 	var held := Shed.held_by(me)
 	var kind := str(target.get("kind", ""))
 	if CoffeeShop.carrying(me) or kind == "tray":
@@ -2224,6 +2257,13 @@ func _update_work(delta: float) -> void:
 	if not spray_mode.is_empty():
 		_spray_mode_step(delta)
 		return
+	if not wash_mode.is_empty():
+		_wash_mode_step(delta)
+		return
+	if not use_alt and _acting() and not _need_release and tool == "lance" and wash_target() != 0 and Shed.held_by(Shed.me()) == 0:
+		# The trigger on a bike brings the wash controls straight up, and the jet with them.
+		enter_wash_mode(wash_target(), false)
+		return
 	if not use_alt and _acting() and not _need_release and tool in ["spray", "gun"] and plan_now.get("coverage", false) \
 			and str(plan_now.get("action", {}).get("a", "")) in ["paint", "prime", "coat"]:
 		# Painting's done with the spray controls up: F first, then take your time.
@@ -2849,6 +2889,171 @@ func spray_controls() -> String:
 		"RT" if pad else "left mouse", "LT" if pad else "right mouse", scan if scan != "" else "X", _keys("interact")]
 
 
+# ---------------------------------------------------------------------------- pressure washing
+
+## The bike the crosshair's on, if the pressure washer could wash it (nobody's riding it), or 0.
+func wash_target() -> int:
+	if str(target.get("kind", "")) != "part" or int(target.get("bike", 0)) == 0 or target.get("road", false):
+		return 0
+	var bike := int(target["bike"])
+	if not Shed.bikes.has(bike) or int(Shed.bikes[bike].get("rider", 0)) != 0:
+		return 0
+	return bike
+
+
+## F (or the trigger) with the pressure washer on a bike: the wash controls come up on that bike
+## and the screen shows how clean it's getting (WashHud). The jet works on it, wherever you aim,
+## until F again steps back. `wait_release`: a trigger already held doesn't count until it's let go.
+func enter_wash_mode(bike: int, wait_release := true) -> void:
+	if not Shed.bikes.has(bike):
+		return
+	var at: Vector3 = (Shed.bikes[bike]["xf"] as Transform3D).origin
+	if not Wash.reaches(at):
+		Shed.feedback.emit("The hose doesn't reach. Wash it in the shed or the wash bay.", false)
+		_need_release = true
+		return
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	var model: BikeModel = view.bike_model(bike) if view and view.has_method("bike_model") else null
+	if model == null:
+		return
+	var job := WashJob.new()
+	if not job.setup(bike, model):
+		Shed.feedback.emit("There's nothing on it to wash.", false)
+		_need_release = true
+		return
+	job.layer.set_scan(wash_scan)
+	wash = job
+	wash_mode = {"bike": bike}
+	wash_cues.clear()
+	_need_release = wait_release and _main_button()
+	_plan_key = ""
+	_wash_send = 0.0
+	_wash_resync = 0.0
+	plan = _make_plan()
+	Sfx.play_at("switch", camera.global_position, -8.0)
+
+
+## F again (or putting the washer away, or the bike going): the wash controls go, and what's been
+## washed goes to the shed.
+func leave_wash_mode() -> void:
+	if wash_mode.is_empty():
+		return
+	var bike := int(wash_mode["bike"])
+	wash_mode = {}
+	if wash_firing:
+		Sfx.set_loop(_work_sound, "")
+	wash_firing = false
+	if wash != null:
+		_send_wash(bike)
+		wash.finish()
+	wash = null
+	if _wash_fx:
+		_wash_fx.stop()
+	Shed.request({"a": "wash_aim", "fire": false})
+	_wash_aim_sig = ""
+	progress = 0.0
+	_need_release = _main_button()
+	_plan_key = ""
+	_send_status("")
+
+
+## The scan: lights up what's still dirty on the bike.
+func set_wash_scan(on: bool) -> void:
+	wash_scan = on
+	if wash != null and wash.layer != null and is_instance_valid(wash.layer):
+		wash.layer.set_scan(on)
+	Sfx.play_at("blast_scan" if on else "switch", camera.global_position, -6.0)
+
+
+## One frame with the wash controls up: getting ready, then the trigger fires the jet where you
+## aim (see WashJob), the HUD keeps count and the crew see it.
+func _wash_mode_step(delta: float) -> void:
+	var bike := int(wash_mode["bike"])
+	if not Shed.bikes.has(bike) or int(Shed.bikes[bike].get("rider", 0)) != 0 or tool != "lance" or Shed.held_by(Shed.me()) != 0:
+		leave_wash_mode()
+		return
+	var view: Node = get_tree().get_first_node_in_group("workshop")
+	var model: BikeModel = view.bike_model(bike) if view and view.has_method("bike_model") else null
+	if model == null or camera.global_position.distance_to(model.global_position) > WashJob.OUT + 3.0:
+		Shed.feedback.emit("Too far from the bike: the wash controls are down.", false)
+		leave_wash_mode()
+		return
+	if wash == null or not wash.attached():
+		# The bike was redrawn (a part taken off, say): start again on it as it is now.
+		var job := WashJob.new()
+		if not job.setup(bike, model):
+			leave_wash_mode()
+			return
+		job.layer.set_scan(wash_scan)
+		wash = job
+	wash.prepare()
+	var pressed := controls_enabled and _main_button()
+	if not pressed:
+		_need_release = false
+	var firing := pressed and not _need_release and wash.ready and str(plan.get("blocked", "")) == ""
+	if pressed and not _need_release and str(plan.get("blocked", "")) != "":
+		Shed.feedback.emit(plan["blocked"], false)
+		_need_release = true
+	var eye := camera.global_position
+	var dir := -camera.global_transform.basis.z
+	var q := PhysicsRayQueryParameters3D.create(eye, eye + dir * WashJob.OUT, 1)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	wash.step(delta, eye, dir, firing, not hit.is_empty(), hit.get("position", eye + dir * WashJob.OUT), hit.get("normal", Vector3.UP),
+		Progress.jet_clean_mult(Shed.me()), Progress.spread_mult(Shed.me(), "lance"))
+	if firing != wash_firing:
+		wash_firing = firing
+		Sfx.set_loop(_work_sound, "jet" if firing else "")
+		_send_status("Pressure washing" if firing else "")
+	progress = float(wash.stats()["clean"]) if wash.ready else 0.0
+	for c in wash.cues:
+		wash_cues.append(c)
+		Sfx.play_ui("wash_clean" if str(c["kind"]) == "bike" else "wash_ding", -3.0 if str(c["kind"]) == "bike" else -5.0)
+	wash.cues.clear()
+	# Where the water goes: the splash and mist off the bike, the run-off to the drain.
+	if _wash_fx == null:
+		_wash_fx = WashFx.new()
+		get_parent().add_child(_wash_fx)
+	var j := wash.jet
+	var lit: bool = firing and j.get("hit", false) and str(j.get("zone", "out")) != "out"
+	var nozzle := camera.global_transform * Vector3(0.2, -0.2, -0.6)
+	var on := int(j.get("slot", -1))
+	var muck := 1.0 - wash.clean_of(on) if on >= 0 else 0.3
+	_wash_fx.update(delta, nozzle, j.get("at", eye + dir), j.get("normal", Vector3.UP), lit, muck)
+	_wash_aim_send -= delta
+	var sig := "%s|%s" % [lit, str(Vector3i((j.get("at", Vector3.ZERO) as Vector3) * 20.0))]
+	if _wash_aim_send <= 0.0 and sig != _wash_aim_sig:
+		_wash_aim_send = 0.1
+		_wash_aim_sig = sig
+		Shed.request({"a": "wash_aim", "fire": lit, "at": j.get("at", Vector3.ZERO), "n": j.get("normal", Vector3.UP), "bike": bike})
+	_wash_send -= delta
+	if _wash_send <= 0.0:
+		_wash_send = 0.15
+		_send_wash(bike)
+	_wash_resync -= delta
+	if _wash_resync <= 0.0:
+		_wash_resync = 0.25
+		wash.resync()
+
+
+## What's been washed since the last time goes to the shed.
+func _send_wash(bike: int) -> void:
+	if wash == null:
+		return
+	var news := wash.take_updates()
+	if news.is_empty():
+		return
+	Shed.request({"a": "wash_cells", "bike": bike, "parts": news["parts"], "clean": news["clean"]})
+
+
+## How to work the pressure washer, for the HUD.
+func wash_controls() -> String:
+	var pad := Controls.device() >= 0 and Controls.active_device >= 0
+	var scan := Settings.binding_text("blast_scan", pad)
+	return "Hold %s to wash where you aim; go round it for the far side and crouch for underneath  ·  %s: show what's still dirty  ·  %s: step back" % [
+		"RT" if pad else "left mouse", scan if scan != "" else "X", _keys("interact")]
+
+
 ## Emote keys (see Emotes): B opens and shuts the emote bar, where the tool keys 1 to 6 pick
 ## one; F5 to F10 do one straight away. Returns whether the event was one of them.
 func _emote_input(event: InputEvent) -> bool:
@@ -3238,7 +3443,8 @@ func _update_jet() -> void:
 	if _jet == null:
 		return
 	var a := str(_active_plan.get("action", {}).get("a", ""))
-	_jet.emitting = tool == "lance" and _acting() and a == "wash" and str(_active_plan.get("blocked", "")) in ["", "It's already clean."]
+	_jet.emitting = tool == "lance" and (wash_firing or (wash_mode.is_empty() and _acting() and a == "wash"
+		and str(_active_plan.get("blocked", "")) in ["", "It's already clean."]))
 
 
 ## A simple mesh of a tool, held in the hand, at its upgrade stage (0..5, see ToolModels).

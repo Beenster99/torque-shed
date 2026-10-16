@@ -604,6 +604,9 @@ func is_complete(bike_id: int) -> bool:
 func condition_of(item: Dictionary) -> Dictionary:
 	var cond := {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"],
 		"finish": item.get("finish", "")}
+	# Where the dirt is on it, region by region (see Dirt).
+	if item.get("grime") is PackedByteArray:
+		cond["grime"] = item["grime"]
 	if item.has("fluid"):
 		cond["fluid"] = item["fluid"]
 	if item.has("slack"):
@@ -2320,6 +2323,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return _dyno_check(peer, action)
 	if a.begins_with("blast"):
 		return _blast_check(peer, action)
+	if a.begins_with("wash_"):
+		return Wash.check(peer, action)
 	if a == "coat":
 		return _coat_check(peer, action)
 	if a.begins_with("money_"):
@@ -2655,8 +2660,8 @@ func check(peer: int, action: Dictionary) -> String:
 					return "Your %s is full. Tip it in the scrap bin." % PartsDB.get_part(items[held]["part"])["container"].to_lower()
 		"wash":
 			var at = action.get("at", null)
-			if not (at is Vector3) or (at as Vector3).distance_to(Workshop.WASH_POS) > Workshop.WASH_REACH:
-				return "The hose doesn't reach. Bring the bike to the wash bay beside the shed."
+			if not (at is Vector3) or not Wash.reaches(at):
+				return "The hose doesn't reach. Wash it in the shed or the wash bay beside it."
 			var any := false
 			for id in action.get("items", []):
 				if items.has(int(id)) and items[int(id)]["dirt"] >= 0.005 and not items[int(id)].get("boxed", false):
@@ -3049,6 +3054,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		var told := _blast_apply(peer, action)
 		if told != "":
 			_tell(peer, told, true)
+		_mark_dirty()
+		changed.emit()
+		return
+	if a.begins_with("wash_"):
+		var washed := Wash.apply(peer, action)
+		if washed != "":
+			_tell(peer, washed, true)
 		_mark_dirty()
 		changed.emit()
 		return
@@ -3691,11 +3703,13 @@ func front_spray(bike_id: int) -> float:
 	return lerpf(NO_GUARD_SPRAY, 1.0, clampf(cover, 0.0, 1.0))
 
 
-## What a ride does to a bike: road dirt on its parts, petrol used, oil and brake fluid aging,
-## and engine wear, which climbs steeply when the oil is low or worn out.
+## What a ride does to a bike: road dirt on its parts (where it really goes, see Dirt.accrue,
+## dead flies on the front at speed), petrol used, oil and brake fluid aging, and engine wear,
+## which climbs steeply when the oil is low or worn out.
 func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 	var km := clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 	var dirty := clampf(float(action.get("dirt_km", 0.0)), 0.0, 5.0)
+	var flies := clampf(float(action.get("fly_km", 0.0)), 0.0, 5.0)
 	var build := build_of(bike_id)
 	var spray := front_spray(bike_id)
 	for slot in PartsDB.SLOTS:
@@ -3703,9 +3717,9 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 		# A protective coat keeps muck from sticking and rust off; bare metal without one
 		# flash-rusts, quicker in the muck. The coat itself wears thinner with the miles.
 		var protect := coat_protect(items[id]) if id != 0 else 0.0
-		if id != 0 and dirty > 0.0:
+		if id != 0 and (dirty > 0.0 or flies > 0.0):
 			var exposure := float(DIRT_EXPOSURE.get(slot, 0.4)) * (spray if FRONT_SPRAY.has(slot) else 1.0)
-			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * exposure * (1.0 - 0.6 * protect))
+			Dirt.accrue(items[id], slot, dirty, flies, exposure, spray, protect)
 		if id != 0 and blast_cover(items[id]) > 0.0 and km + dirty > 0.0:
 			var bare := blast_cover(items[id]) * (1.0 - protect)
 			items[id]["rust"] = minf(1.0, float(items[id]["rust"]) + (km + dirty * 2.0) * BARE_RUST * bare)
