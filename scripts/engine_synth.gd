@@ -74,7 +74,7 @@ static func spec_from_build(build: BikeBuild) -> Dictionary:
 		"exhaust": exhaust_style(ex), "loud": float(ex.get("loudness", 0.8)) if not ex.is_empty() else 1.4,
 		"intake": str(air.get("style", "airbox")) if not air.is_empty() else "cone",
 		"shift": shift_feel(box), "quickshifter": bool(box.get("quickshifter", false)),
-		"dry_clutch": bool(box.get("dry_clutch", false)), "whine": build.gear_whine,
+		"dry_clutch": bool(box.get("dry_clutch", false)),
 		"rust": clampf(float(build.condition.get("exhaust", {}).get("rust", 0.0)), 0.0, 1.0),
 		"misfire": clampf((0.6 - plugs) * 0.6, 0.0, 0.3),
 		"kick": str(block.get("layout", "")) == "2stroke" and int(block.get("cylinders", 1)) == 1
@@ -101,7 +101,7 @@ static func make_spec(layout: String, cylinders: int, displacement: float, opts 
 		"idle": idle, "redline": maxf(redline, idle * 2.0), "peak": float(opts.get("peak", redline * 0.75)),
 		"exhaust": exhaust, "loud": float(opts.get("loud", 0.8)), "intake": str(opts.get("intake", "airbox")),
 		"shift": str(opts.get("shift", "click")), "quickshifter": bool(opts.get("quickshifter", false)),
-		"dry_clutch": bool(opts.get("dry_clutch", false)), "whine": float(opts.get("whine", 0.3)),
+		"dry_clutch": bool(opts.get("dry_clutch", false)),
 		"rust": float(opts.get("rust", 0.0)), "misfire": float(opts.get("misfire", 0.0)), "kick": bool(opts.get("kick", false)),
 	}
 
@@ -791,18 +791,6 @@ static func _limit(out: PackedFloat32Array) -> void:
 	for i in out.size():
 		var v := out[i]
 		out[i] = v / (1.0 + absf(v) * 0.5) * 1.0
-
-
-## A whine for the gearbox: a tone at 1 kHz with a little second harmonic, looped; played
-## pitched to the gears' mesh frequency.
-static func whine_loop() -> PackedFloat32Array:
-	var n := RATE / 10
-	var out := PackedFloat32Array()
-	out.resize(n)
-	for i in n:
-		var ph := TAU * 1000.0 * i / RATE
-		out[i] = sin(ph) * 0.6 + sin(ph * 2.0) * 0.18
-	return out
 
 
 # ---------------------------------------------------------------------------- streams

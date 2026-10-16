@@ -26,6 +26,12 @@ var gear := {}
 var _gear_sig := ""
 var _stride := 0.0         # how far they've walked since their last footstep
 var _step_from := Vector3.INF
+## The emote they're doing (see Emotes), how far into it they are, and for a point where at.
+var emote := ""
+var emote_time := 0.0
+var emote_at = null        # a world point to point at, or null for straight ahead
+var emotes_seen: Array[String] = []   # every emote they've done here, in order
+var _bubble: Label3D       # what they're doing, over their head
 
 
 func setup(peer_id: int, rider_name: String, paint: Color) -> void:
@@ -72,6 +78,59 @@ func setup(peer_id: int, rider_name: String, paint: Color) -> void:
 	_label.pixel_size = 0.005
 	_label.no_depth_test = true
 	_figure.add_child(_label)
+	_bubble = Label3D.new()
+	_bubble.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_bubble.position = Vector3(0.0, 2.28, 0.0)
+	_bubble.font_size = 40
+	_bubble.outline_size = 10
+	_bubble.pixel_size = 0.005
+	_bubble.modulate = Color(1.0, 0.85, 0.35)
+	_bubble.visible = false
+	_figure.add_child(_bubble)
+
+
+## Plays an emote (see Emotes) on their figure. `at` is a world point for a point, or null.
+func play_emote(e: String, at = null) -> void:
+	if not Emotes.is_emote(e) or riding_bike != 0:
+		return
+	emote = e
+	emote_time = 0.0
+	emotes_seen.append(e)
+	if emotes_seen.size() > 20:
+		emotes_seen.pop_front()
+	emote_at = at if at is Vector3 else null
+	_bubble.text = "*%s*" % Emotes.VERBS[e]
+	_bubble.visible = true
+
+
+## Swings their arms, head and body through the emote under way, and back to rest after.
+func _animate_emote(delta: float) -> void:
+	var arm_r := _body_look.get_node_or_null("ArmR") as Node3D
+	var arm_l := _body_look.get_node_or_null("ArmL") as Node3D
+	var w := 0.0
+	var p := {}
+	if emote != "":
+		emote_time += delta
+		w = Emotes.weight(emote, emote_time)
+		var aim := Vector3.ZERO
+		if emote_at is Vector3:
+			aim = _figure.global_transform.affine_inverse() * (emote_at as Vector3)
+			if aim.length() < 0.01:
+				aim = Vector3(0.0, 0.0, -0.02)
+		p = Emotes.pose(emote, emote_time, aim)
+		if emote_time >= float(Emotes.LENGTH.get(emote, 2.0)):
+			emote = ""
+			_bubble.visible = false
+	if arm_r:
+		arm_r.quaternion = Quaternion.IDENTITY.slerp(Emotes.arm_turn(true, p.get("r", Vector3.ZERO)), w)
+	if arm_l:
+		arm_l.quaternion = Quaternion.IDENTITY.slerp(Emotes.arm_turn(false, p.get("l", Vector3.ZERO)), w)
+	_body_look.position.y = float(p.get("bob", 0.0)) * w
+	_body_look.rotation.y = float(p.get("twist", 0.0)) * w
+	_head_look.position.y = float(p.get("bob", 0.0)) * w
+	_head_look.rotation = Vector3(float(p.get("nod", 0.0)) * w, float(p.get("twist", 0.0)) * w, float(p.get("tilt", 0.0)) * w)
+	# The tool in their hand would float off when the arm goes up: it's put away meanwhile.
+	_hand.visible = w < 0.05
 
 
 ## Feeds a network snapshot: [0, x, y, z, yaw, pitch] on foot, or [1, bike id, bike state...] riding.
@@ -174,11 +233,12 @@ func _dress() -> void:
 		bike.model.redress(gear)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_animate_emote(delta)
 	_phones.visible = Shed.wearing_headphones(peer)
 	if RiderGear.sig(RiderGear.worn_of(peer)) != _gear_sig:
 		_dress()
-	# What's in their hand: a part they carry, else their tool.
+	# What's in their hand: a part they carry, a tray from the cafe, else their tool.
 	var held := Shed.held_by(peer)
 	var tool := str(Shed.crew.get(peer, {}).get("tool", "hands"))
 	# You hear their tools while they work.
@@ -187,8 +247,17 @@ func _process(_delta: float) -> void:
 	var jet := _hand.get_node_or_null("Jet") as CPUParticles3D
 	if jet:
 		jet.emitting = working and tool == "lance"
+	# Their spray can or gun mists while they lay a coat on.
+	var mist := _hand.get_node_or_null("Mist") as CPUParticles3D
+	if mist:
+		var act := str(Shed.crew.get(peer, {}).get("activity", ""))
+		var on := working and (act.begins_with("Spraying") or act.begins_with("Priming") or act.begins_with("Coating"))
+		mist.emitting = on
+		(mist.get_node("Haze") as CPUParticles3D).emitting = on
 	var stage := Progress.tool_stage(peer, tool)
-	var sig := "%d|%s|%d" % [held, tool, stage]
+	var tray := CoffeeShop.tray_of(peer)
+	var bay := PaintBay.held(peer)
+	var sig := "%d|%s|%d|%s|%s" % [held, tool, stage, str(tray.get("items", "-")), str(bay) + str(PaintBay.held_tin(peer).get("code", ""))]
 	if sig == _hand_sig:
 		return
 	_hand_sig = sig
@@ -201,6 +270,17 @@ func _process(_delta: float) -> void:
 		part.scale = Vector3.ONE * clampf(0.6 / maxf(size.x, maxf(size.y, size.z)), 0.2, 1.0)
 		part.position = Vector3(-0.28, -0.1, -0.1)
 		_hand.add_child(part)
+	elif not tray.is_empty():
+		var t := CoffeeView.tray_model(tray["items"])
+		t.name = "Tray"
+		t.position = Vector3(-0.28, 0.0, -0.2)
+		_hand.add_child(t)
+	elif not bay.is_empty():
+		# A tin of paint or the masking tape from the mixing bay (see PaintBay).
+		var b := PaintBayRoom.tin_model(PaintBay.held_tin(peer)) if str(bay.get("kind", "")) == "tin" else PaintBayRoom.tape_model()
+		b.name = "PaintBay"
+		b.position = Vector3(-0.2, -0.05, -0.1)
+		_hand.add_child(b)
 	else:
 		_hand.add_child(Walker.make_tool_mesh(tool, Color(0.9, 0.75, 0.1), stage))
 		if tool == "lance":
@@ -208,6 +288,12 @@ func _process(_delta: float) -> void:
 			spray.name = "Jet"
 			spray.position = Vector3(0.0, 0.0, -0.6)
 			_hand.add_child(spray)
+		elif tool in ["spray", "gun"]:
+			var can_mist := Walker.make_mist()
+			can_mist.name = "Mist"
+			can_mist.color = Color(0.85, 0.85, 0.85)
+			can_mist.position = Vector3(0.0, 0.1, -0.15)
+			_hand.add_child(can_mist)
 
 
 func world_position() -> Vector3:

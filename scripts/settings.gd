@@ -5,8 +5,14 @@ const PATH := "user://settings.cfg"
 
 var player_name := "Rider"
 var last_ip := "127.0.0.1"
-var assist := 0.5          # 0 = full sim, 1 = maximum riding assistance
+## Riding realism: 0 = full sim (the front can tuck, a slide can high-side), 0.5 = the rider
+## protects the front and smooths the throttle, 1 = the easiest, with the most help balancing.
+var assist := 0.5
+## The telemetry overlay at the side of the screen while riding (F3 toggles it).
+var telemetry_overlay := false
 var auto_shift := true
+## The chase camera eases back behind the bike after a moment of not swinging it round.
+var camera_recentre := true
 var high_quality := true
 var sfx_volume := 0.8
 var radio_volume := 0.6
@@ -18,6 +24,8 @@ var time_of_day := 9.0     # hours; kept up to date while playing so the clock c
 var weather := "auto"
 var weather_now := "clear"   # the weather when last played, so it carries on next time
 var snap_placement := true # equipment you carry snaps square and flush to walls and corners
+var money_graph_range := "day"   # the money graphs' time unit: minute, hour, day, week, month or year (see MoneyGraph)
+var free_rotate := false   # the rotate keys turn what you hold freely (5 degree taps, smooth held) rather than a quarter a press
 
 ## Emitted whenever a graphics setting (gfx_*) changes.
 signal graphics_changed
@@ -68,10 +76,14 @@ const ACTIONS := [
 	["tool_6", "Pressure washer", ["foot", "board"]], ["tool_7", "Spray gun", ["foot", "board"]],
 	["tool_8", "Stopwatch", ["foot", "board"]],
 	["spray_colour", "Spray colour", ["spray"]], ["spray_finish", "Spray finish", ["spray"]],
-	["rename", "Name a bike", ["foot"]],
+	["rename", "Name a bike", ["foot"]], ["blast_scan", "Sandblaster: scan the engine", ["foot"]],
 	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
+	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
 	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot", "ride"]],
+	["emote_menu", "Emotes: open the bar (then 1 to 6)", ["foot"]], ["emote_wave", "Emote: wave", ["foot"]],
+	["emote_thumbs", "Emote: thumbs up", ["foot"]], ["emote_point", "Emote: point", ["foot"]],
+	["emote_shrug", "Emote: shrug", ["foot"]], ["emote_cheer", "Emote: cheer", ["foot"]], ["emote_dance", "Emote: dance", ["foot"]],
 	["stopwatch", "Stopwatch start / stop", ["foot", "ride"]], ["menu", "Menu", ["foot", "ride", "board"]],
 	["board_text", "Whiteboard: write text", ["board"]], ["board_undo", "Whiteboard: undo", ["board"]],
 	["board_wipe", "Whiteboard: wipe (hold)", ["board"]], ["board_colour", "Whiteboard: next colour", ["board"]],
@@ -83,8 +95,9 @@ const ACTIONS := [
 	["body_back", "Weight back", ["ride"]], ["body_forward", "Weight forward", ["ride"]],
 	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down", ["ride"]],
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
-	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera", ["ride"]],
+	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera: third person, first person, fly-by", ["ride"]],
 	["horn", "Horn", ["ride"]], ["headlight", "Headlight", ["ride"]],
+	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["geo_move", "Geometry: move", ["geo"]], ["geo_rotate", "Geometry: rotate", ["geo"]],
 	["geo_scale", "Geometry: scale / stretch", ["geo"]], ["geo_snap", "Geometry: snap (hold)", ["geo"]],
@@ -117,6 +130,8 @@ func load_settings() -> void:
 		last_ip = cfg.get_value("player", "last_ip", last_ip)
 		assist = cfg.get_value("riding", "assist", assist)
 		auto_shift = cfg.get_value("riding", "auto_shift", auto_shift)
+		telemetry_overlay = bool(cfg.get_value("riding", "telemetry", telemetry_overlay))
+		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
 		radio_volume = cfg.get_value("audio", "radio", radio_volume)
@@ -132,6 +147,10 @@ func load_settings() -> void:
 				if _defaults.has(action) and (codes is Array or codes is PackedStringArray):
 					_set_events(action, codes)
 		snap_placement = bool(cfg.get_value("building", "snap", snap_placement))
+		free_rotate = bool(cfg.get_value("building", "free_rotate", free_rotate))
+		money_graph_range = str(cfg.get_value("display", "money_graph", money_graph_range))
+		if not MoneyGraph.RANGES.has(money_graph_range):
+			money_graph_range = MoneyGraph.DEFAULT_RANGE
 		_load_graphics(cfg)
 
 
@@ -141,6 +160,8 @@ func save_settings() -> void:
 	cfg.set_value("player", "last_ip", last_ip)
 	cfg.set_value("riding", "assist", assist)
 	cfg.set_value("riding", "auto_shift", auto_shift)
+	cfg.set_value("riding", "telemetry", telemetry_overlay)
+	cfg.set_value("riding", "camera_recentre", camera_recentre)
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("audio", "radio", radio_volume)
@@ -156,6 +177,8 @@ func save_settings() -> void:
 		if codes != _codes_of(_defaults.get(a[0], [])):
 			cfg.set_value("bindings", a[0], codes)
 	cfg.set_value("building", "snap", snap_placement)
+	cfg.set_value("building", "free_rotate", free_rotate)
+	cfg.set_value("display", "money_graph", money_graph_range)
 	for k in GFX_KEYS:
 		cfg.set_value("graphics", k, get(k))
 	cfg.save(PATH)
@@ -231,6 +254,12 @@ func apply_preset(preset: String) -> void:
 	graphics_changed.emit()
 
 
+## Whether the rotate keys turn what you hold freely (a 5 degree tap, smooth while held) rather
+## than a quarter turn a press: free rotate is on, or snapping is off.
+func turns_freely() -> bool:
+	return free_rotate or not snap_placement
+
+
 ## Keyboard, mouse and gamepad-button bindings. Gamepad sticks and triggers are read by the
 ## Controls autoload instead, so a stuck or odd axis can't hold an action down.
 func _setup_inputs() -> void:
@@ -250,6 +279,9 @@ func _setup_inputs() -> void:
 	_bind("ignition", [KEY_I], [JOY_BUTTON_DPAD_UP])
 	_bind("horn", [KEY_H], [JOY_BUTTON_DPAD_DOWN])
 	_bind("headlight", [KEY_L], [JOY_BUTTON_LEFT_STICK])
+	# Drop a camera at the roadside ahead and watch yourself ride past (no pad button spare).
+	_bind("ride_by", [KEY_V], [])
+	_bind("telemetry", [KEY_F3], [])
 	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])
 	# On foot in the shed
 	_bind("move_forward", [KEY_W, KEY_UP], [])
@@ -267,11 +299,23 @@ func _setup_inputs() -> void:
 	_bind("spray_finish", [KEY_T], [JOY_BUTTON_B], [MOUSE_BUTTON_XBUTTON1])
 	# Point at something and ping it for the crew to see.
 	_bind("ping", [KEY_G], [JOY_BUTTON_DPAD_RIGHT], [MOUSE_BUTTON_MIDDLE])
+	# Emotes the rest of the crew sees: B opens the bar, F5 to F10 do one straight away.
+	_bind("emote_menu", [KEY_B], [])
+	_bind("emote_wave", [KEY_F5], [])
+	_bind("emote_thumbs", [KEY_F6], [])
+	_bind("emote_point", [KEY_F7], [])
+	_bind("emote_shrug", [KEY_F8], [])
+	_bind("emote_cheer", [KEY_F9], [])
+	_bind("emote_dance", [KEY_F10], [])
 	_bind("rename", [KEY_N], [])
+	# At the sandblaster's gloves: scan the engine for what's still to blast.
+	_bind("blast_scan", [KEY_X], [JOY_BUTTON_DPAD_UP])
 	# Turn a part in your hands, equipment you're carrying, a poster before you hang it or a
 	# picture on the whiteboard: , and . (the < and > keys); View on a pad turns it right.
 	_bind("rotate_left", [KEY_COMMA], [])
 	_bind("rotate_right", [KEY_PERIOD], [JOY_BUTTON_BACK])
+	# Switches the rotate keys between quarter turns and turning freely to any angle.
+	_bind("rotate_free", [KEY_SLASH], [])
 	# Hold to scrap the equipment you're carrying or the part in your hands, for good.
 	_bind("scrap", [KEY_DELETE], [JOY_BUTTON_DPAD_DOWN])
 	# The second work button: drains fluids into a held container.

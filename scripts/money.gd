@@ -12,7 +12,8 @@ extends RefCounted
 ##   loans: [{id, amount, owed, daily, rate, days, taken, missed}],
 ##   blocked: a missed repayment stops new loans until that loan is paid off,
 ##   day: in-game days since the shed opened (the clock passing midnight), history: the
-##   account at the end of each day, milestones: account sizes already celebrated.
+##   account at the end of each day, milestones: account sizes already celebrated, series: the
+##   account over in-game time for the graphs (see MoneyGraph).
 ##
 ## Jobs pay wages (Progress.PAY) through Shed.pay_worker: the worker gets the rest after the
 ## business's cut. The business earns from selling parts and bikes (and other helpers' sales and
@@ -50,7 +51,8 @@ const KIND_PRICE := {"frame": 900, "fork": 450, "shock": 350, "wheel": 250, "tyr
 	"pads": 30, "master": 70, "tank": 220, "saddle": 110, "handlebars": 70, "dashboard": 150, "engine": 1800, "head": 400,
 	"fuel": 300, "air_filter": 30, "oil_filter": 15, "spark_plugs": 20, "cooling": 200, "gearbox": 600, "exhaust": 350,
 	"final_drive": 80, "chain": 60, "side_stand": 40, "centre_stand": 70, "headlight": 80, "horn": 30, "ecu": 300,
-	"panniers": 250, "top_box": 120, "fog_lights": 90, "tail": 90, "fairing": 300, "mirrors": 40}
+	"panniers": 250, "top_box": 120, "fog_lights": 90, "tail": 90, "fairing": 300, "mirrors": 40,
+	"front_mudguard": 80, "indicators": 60, "side_panels": 90, "rearsets": 160, "guards": 180, "number_boards": 70, "swingarm": 260, "steering_damper": 220}
 ## Fluids by the litre; empty cans and pans are a flat price.
 const FLUID_LITRE := {"petrol": 1.6, "oil": 6.0, "brake_fluid": 12.0, "chain_lube": 25.0}
 const EMPTY_CONTAINER := 8
@@ -58,7 +60,7 @@ const EMPTY_CONTAINER := 8
 
 static func defaults() -> Dictionary:
 	return {"cut": DEFAULT_CUT, "owner": "", "ledger": [], "loans": [], "next_loan": 1, "blocked": false, "day": 0,
-		"history": [], "milestones": []}
+		"history": [], "milestones": [], "series": {}}
 
 
 ## A saved or synced bank with every field present and sane (older saves have none).
@@ -88,6 +90,7 @@ static func sanitize(b) -> Dictionary:
 	if hist is Array:
 		for v in hist.slice(-HISTORY_DAYS):
 			out["history"].append(int(v))
+	out["series"] = MoneyGraph.sanitize(b.get("series", {}))
 	var ms = b.get("milestones", [])
 	if ms is Array:
 		for v in ms:
@@ -121,9 +124,10 @@ static func part_price(part_id: String) -> int:
 	return _nice(price)
 
 
-## 0 for the first part of its kind in the catalogue, 1 for the last.
+## 0 for the first part of its kind in the catalogue, 1 for the last. Parts with a price of
+## their own don't count, so adding them to the catalogue leaves the others' prices alone.
 static func _rank_in_kind(part_id: String, kind: String) -> float:
-	var ids: Array = PartsDB.by_kind.get(kind, [])
+	var ids: Array = PartsDB.by_kind.get(kind, []).filter(func(id): return not PartsDB.get_part(str(id)).has("price"))
 	if ids.size() <= 1:
 		return 0.5
 	return float(maxi(ids.find(part_id), 0)) / float(ids.size() - 1)
@@ -199,7 +203,7 @@ static func rideable(bike_id: int) -> bool:
 	return build.fuel_litres >= 0.05 and build.oil_litres >= 0.1
 
 
-## What a whole bike fetches: what its parts are worth, plus BONUS_COMPLETE when nothing is
+## What a whole bike fetches from the trade (the dealer; see Sales for private buyers): what its parts are worth, plus BONUS_COMPLETE when nothing is
 ## missing or loose and BONUS_RIDEABLE more when it's ready to ride.
 static func bike_sale(bike_id: int, peer := 0) -> int:
 	if not Shed.bikes.has(bike_id):
@@ -230,6 +234,27 @@ static func typical_project_price() -> int:
 		if part != "none":
 			total += part_price(part)
 	return _nice(total * 0.36 * SELL_RATE * (1.0 + BONUS_COMPLETE + BONUS_RIDEABLE) * PROJECT_MARKUP)
+
+
+## A project bike found to order in a style costs this much more than one that just turns up.
+const STYLE_PREMIUM := 1.15
+
+
+## What a project bike ordered in a style costs as it comes (see STYLE_PREMIUM).
+static func style_project_price(bike_id: int) -> int:
+	return _nice(bike_sale(bike_id) * PROJECT_MARKUP * STYLE_PREMIUM)
+
+
+## The going rate for a project bike in a style, for the order button: an average wreck of
+## that style's reference build (Contracts.style_build).
+static func typical_style_price(style: String) -> int:
+	var build := Contracts.style_build(style)
+	var total := 0.0
+	for slot in build:
+		var part := str(build[slot])
+		if part != "none" and part != "":
+			total += part_price(part)
+	return _nice(total * 0.36 * SELL_RATE * (1.0 + BONUS_COMPLETE + BONUS_RIDEABLE) * PROJECT_MARKUP * STYLE_PREMIUM)
 
 
 static var _worth := {}
@@ -330,6 +355,19 @@ static func flow(bank: Dictionary, days := 7) -> Dictionary:
 	return {"in": income, "out": out}
 
 
+## The business's account over the range's buckets ("minute" .. "year"), oldest first and now
+## last, for the graphs.
+static func graph(range_key: String) -> Array:
+	return MoneyGraph.points(Shed.bank.get("series", {}), range_key, MoneyGraph.now_hours(), Shed.garage_money)
+
+
+## Host: notes the account in the graphs' series when it has moved. True when it had.
+static func record_graph() -> bool:
+	if not (Shed.bank.get("series") is Dictionary):
+		Shed.bank["series"] = {}
+	return MoneyGraph.record(Shed.bank["series"], MoneyGraph.now_hours(), Shed.garage_money)
+
+
 ## The account at the end of each of the last six days and now, for the TV charts.
 static func history7(hist: Array, now: int) -> Array:
 	var out := []
@@ -423,6 +461,11 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "Someone is wheeling that bike about."
 			if Shed.on_dyno(b) and Shed.strapped():
 				return "Unstrap it from the dyno first."
+			# Bikes are sold from the showroom (see Sales): the trade buys it off its display stand.
+			if Shed.showroom_spot_of(b) < 0:
+				return "Bikes are sold from the showroom: put it on a display stand in the sales office, then use the office PC."
+			if Sales.is_customer_bike(b):
+				return "That's a customer's bike: it isn't the shed's to sell."
 		"money_debug_grant":
 			if peer != 1:
 				return "Only the host can do that."
@@ -487,6 +530,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var b := int(action["bike"])
 			var price := bike_sale(b, peer)
 			var what := str(Shed.bikes[b]["name"])
+			Sales.note_trade(b, price)
 			Shed._xp(peer, "sell_bike", 1.0, "bike:%d" % b)
 			Shed.remove_bike(b)
 			Shed.credit_garage(price, "Sold %s" % what)

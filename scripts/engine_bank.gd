@@ -10,7 +10,6 @@ const MAX_BANKS := 10
 const SAMPLE_ROOTS := ["user://engine_samples", "res://audio/engines"]
 
 static var _banks := {}       # signature -> EngineBank
-static var _whine: AudioStreamWAV
 
 var spec: Dictionary
 var signature := ""
@@ -133,13 +132,6 @@ static func _load_wav(path: String, loop: bool) -> AudioStreamWAV:
 		wav.loop_begin = 0
 		wav.loop_end = int(wav.get_length() * wav.mix_rate)
 	return wav
-
-
-## The gearbox whine, shared by every bike.
-static func whine_stream() -> AudioStreamWAV:
-	if _whine == null:
-		_whine = EngineSynth.to_stream(EngineSynth.to_bytes(EngineSynth.whine_loop()), true)
-	return _whine
 
 
 func _init(engine_spec: Dictionary) -> void:

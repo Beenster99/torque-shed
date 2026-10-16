@@ -19,7 +19,7 @@ const TEST_SLOT := "test"
 const AUTOSAVE_INTERVAL := 60.0
 const NOTE_INTERVAL := 1.0
 ## Crew fields that belong to the moment rather than the player, so aren't carried over.
-const TRANSIENT_CREW := ["name", "tool", "activity", "riding", "kmh", "slot", "blaster", "blast_rot", "blast_fire", "blast_at", "blast_base"]
+const TRANSIENT_CREW := ["name", "tool", "activity", "riding", "kmh", "slot", "blaster", "blast_rot", "blast_fire", "blast_at", "blast_base", "blast_scan"]
 
 ## Saves and loads go here instead of the default slot when set.
 static var slot_override := ""

@@ -19,7 +19,14 @@ var tuning: TuningComputer
 var label_dialog: LabelDialog
 var contract_panel: ContractPanel   # a customer's offer card and the jobs list
 var contracts_view: ContractsView   # the customers walking in to reception
+var traffic: RoadTraffic        # other bikers out on the roads
+var sales_pc: SalesComputer     # the Sales page on the sales office's PC
+var sales_view: SalesView       # part-exchange buyers, buyers collecting, the till, the stands' prices
+var coffee_panel: CoffeePanel   # the cafe counter's menu, and talking to a biker about their bike
+var coffee_view: CoffeeView     # the bikers at the cafe, its barista and the trays put down
+var paint_bench: PaintBench     # the paint mixing bay's bench, stepped up to (see PaintBay)
 var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
+var emote_bar: EmoteBar         # the emotes and their keys, while the bar is open (B)
 var audio: EngineSound
 var saver: SaveGame
 var remotes := {}     # peer id -> RemotePlayer
@@ -33,6 +40,9 @@ var _dirt_km := 0.0
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
+var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at the side while riding (F3)
+## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
+var _safe_xf := Transform3D()
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
 const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7}
 
@@ -52,6 +62,11 @@ func _ready() -> void:
 	hud = HUD.new()
 	hud.visible = false
 	ui.add_child(hud)
+	telemetry_overlay = TelemetryOverlay.new()
+	telemetry_overlay.visible = false
+	ui.add_child(telemetry_overlay)
+	emote_bar = EmoteBar.new()
+	ui.add_child(emote_bar)
 	computer = PartsComputer.new()
 	computer.visible = false
 	ui.add_child(computer)
@@ -68,12 +83,49 @@ func _ready() -> void:
 	contract_panel.visible = false
 	ui.add_child(contract_panel)
 	contract_panel.closed.connect(func(): _capture_mouse(true))
+	traffic = RoadTraffic.new()
+	traffic.name = "Traffic"
+	traffic.main = self
+	traffic.world = world
+	world.add_child(traffic)
 	contracts_view = ContractsView.new()
 	contracts_view.name = "Customers"
 	contracts_view.main = self
 	world.add_child(contracts_view)
 	contracts_view.talk_requested.connect(func(id):
 		contract_panel.open_offer(id)
+		_capture_mouse(false))
+	sales_pc = SalesComputer.new()
+	sales_pc.visible = false
+	ui.add_child(sales_pc)
+	sales_pc.closed.connect(func(): _capture_mouse(true))
+	sales_view = SalesView.new()
+	sales_view.name = "SalesVisitors"
+	sales_view.main = self
+	world.add_child(sales_view)
+	sales_view.talk_requested.connect(func(id):
+		sales_pc.open_px(id)
+		_capture_mouse(false))
+	coffee_panel = CoffeePanel.new()
+	coffee_panel.visible = false
+	ui.add_child(coffee_panel)
+	coffee_panel.closed.connect(func(): _capture_mouse(true))
+	paint_bench = PaintBench.new()
+	paint_bench.visible = false
+	ui.add_child(paint_bench)
+	paint_bench.closed.connect(func():
+		if walker:
+			walker.camera.current = true
+		_capture_mouse(true))
+	coffee_view = CoffeeView.new()
+	coffee_view.name = "CafeVisitors"
+	coffee_view.main = self
+	world.add_child(coffee_view)
+	coffee_view.talk_requested.connect(func(id):
+		coffee_panel.open_visitor(id)
+		_capture_mouse(false))
+	coffee_view.order_requested.connect(func():
+		coffee_panel.open_menu()
 		_capture_mouse(false))
 	geometry = GeometryMode.new()
 	ui.add_child(geometry)
@@ -107,6 +159,7 @@ func _ready() -> void:
 	Shed.changed.connect(_on_shed_changed)
 	Shed.feedback.connect(func(text, ok): hud.flash(text, 2.5 if ok else 2.0, not ok))
 	Shed.pinged.connect(_on_ping)
+	Shed.emoted.connect(_on_emote)
 	menu.show_title()
 
 
@@ -174,6 +227,11 @@ func _start_session() -> void:
 	walker.mount_requested.connect(_try_mount)
 	walker.computer_requested.connect(_open_computer)
 	walker.tuning_requested.connect(_open_tuning)
+	walker.sales_requested.connect(_open_sales)
+	walker.paint_bench_requested.connect(func():
+		paint_bench.open()
+		if paint_bench.visible:
+			_capture_mouse(false))
 	walker.label_requested.connect(func(id):
 		label_dialog.open(id)
 		_capture_mouse(false))
@@ -182,6 +240,7 @@ func _start_session() -> void:
 		_capture_mouse(false))
 	walker.camera.current = true
 	hud.walker = walker
+	emote_bar.walker = walker
 	hud.visible = true
 	for id in Net.players:
 		if not remotes.has(id):
@@ -203,8 +262,12 @@ func _end_session() -> void:
 	in_session = false
 	computer.visible = false
 	tuning.visible = false
+	sales_pc.visible = false
 	label_dialog.visible = false
 	contract_panel.visible = false
+	coffee_panel.visible = false
+	paint_bench.visible = false
+	PaintBayRoom.live = {}
 	if geometry.active:
 		geometry.close()
 	_stop_riding()
@@ -229,6 +292,12 @@ func _capture_mouse(on: bool) -> void:
 
 func _open_computer() -> void:
 	computer.open()
+	_capture_mouse(false)
+
+
+## The sales office PC: the Sales page.
+func _open_sales() -> void:
+	sales_pc.open()
 	_capture_mouse(false)
 
 
@@ -271,6 +340,9 @@ func open_geometry() -> void:
 	if id == 0:
 		hud.flash("Walk up to a bike and look at it to fit its parts in geometry mode.", 2.5, true)
 		return
+	if not Shed.bike_at_work(id):
+		hud.flash("Out here it's just a bike to ride. Ride it back to the shed to fit its parts.", 2.5, true)
+		return
 	if not geometry.open(id, workshop, walker.camera):
 		hud.flash("That bike can't be edited right now.", 2.0, true)
 		return
@@ -304,11 +376,28 @@ func _on_shed_changed() -> void:
 	if not in_session:
 		return
 	workshop.sync_state()
+	_refit_ridden_bikes()
 	var mine := Shed.riding(Shed.me())
 	if mine != 0 and bike == null:
 		_start_riding(mine)
 	elif mine == 0 and bike != null and riding_id != 0:
 		_stop_riding()
+
+
+## A fit saved in geometry mode shows at once on the bikes out riding too (yours and the
+## crew's), not only on the next ride.
+func _refit_ridden_bikes() -> void:
+	if bike != null and riding_id != 0 and Shed.bikes.has(riding_id):
+		_refit_model(bike.model, Shed.geometry_of(riding_id))
+	for peer in remotes:
+		var rp = remotes[peer]
+		if is_instance_valid(rp) and rp.bike != null and Shed.bikes.has(rp.riding_bike):
+			_refit_model(rp.bike.model, Shed.geometry_of(rp.riding_bike))
+
+
+static func _refit_model(model: BikeModel, geo: Dictionary) -> void:
+	if model != null and str(model.geometry) != str(geo):
+		model.apply_geometry(geo.duplicate(true))
 
 
 func _start_riding(bike_id: int) -> void:
@@ -319,12 +408,14 @@ func _start_riding(bike_id: int) -> void:
 	bike.rider_gear = RiderGear.worn_of(Shed.me())
 	bike.skills = Progress.rider_skills()
 	bike.ride_xp = RideXP.new(bike_id)
+	bike.telemetry = RideTelemetry.new(str(data.get("name", "")))
 	bike.setup(Shed.build_of(bike_id), data["paint"])
 	bike.model.apply_geometry(Shed.geometry_of(bike_id))
 	bike.set_meta("shed_bike", bike_id)   # so the shed TVs know whose ride this is
 	world.add_child(bike)
 	var xf: Transform3D = data["xf"]
 	bike.place(xf.origin, xf.basis.get_euler().y)
+	_safe_xf = Transform3D()
 	bike.crashed.connect(func(): hud.flash("Crashed!", 1.5, true))
 	# You get on with the engine off and start it yourself.
 	bike.engine_on = false
@@ -422,7 +513,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not in_session or geometry.active:
 		return   # geometry mode takes its own keys, Esc and F2 included
 	if event.is_action_pressed("geometry_mode") and bike == null and walker and not menu.visible and not computer.visible \
-			and not tuning.visible and not label_dialog.visible and not contract_panel.visible:
+			and not tuning.visible and not sales_pc.visible and not label_dialog.visible and not contract_panel.visible and not coffee_panel.visible \
+			and not paint_bench.visible:
 		get_viewport().set_input_as_handled()
 		open_geometry()
 		return
@@ -431,10 +523,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			label_dialog.close_dialog()
 		elif contract_panel.visible:
 			contract_panel.close_dialog()
+		elif coffee_panel.visible:
+			coffee_panel.close_dialog()
+		elif paint_bench.visible:
+			paint_bench.close_dialog()
 		elif computer.visible:
 			computer.close_computer()
 		elif tuning.visible:
 			tuning.close_computer()
+		elif sales_pc.visible:
+			sales_pc.close_computer()
 		elif menu.visible:
 			_close_menu()
 		else:
@@ -442,7 +540,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			_capture_mouse(false)
 		get_viewport().set_input_as_handled()
 		return
-	if menu.visible or computer.visible or tuning.visible or label_dialog.visible or contract_panel.visible or bike == null:
+	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or coffee_panel.visible \
+			or paint_bench.visible or bike == null:
+		return
+	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"):
+		# Swing the chase camera round the bike (or turn your head in first person).
+		var rel: Vector2 = event.relative
+		camera.add_orbit(-rel.x * ChaseCamera.MOUSE_ORBIT, rel.y * ChaseCamera.MOUSE_ORBIT)
 		return
 	if event.is_action_pressed("interact"):
 		if Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
@@ -453,6 +557,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("camera"):
 		camera.cycle_mode()
 		_ride_view = camera.mode
+	elif event.is_action_pressed("ride_by"):
+		camera.start_ride_by()
 	elif event.is_action_pressed("ignition"):
 		_ignition()
 	elif event.is_action_pressed("shift_up"):
@@ -466,6 +572,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("stopwatch") and walker:
 		walker.stopwatch.start_stop()
 		Sfx.play_at("beep", camera.global_position, -6.0)
+	elif event.is_action_pressed("telemetry"):
+		Settings.telemetry_overlay = not Settings.telemetry_overlay
+		hud.flash("Telemetry %s" % ("on" if Settings.telemetry_overlay else "off"), 1.2)
 	elif event.is_action_pressed("toggle_auto_shift"):
 		Settings.auto_shift = not Settings.auto_shift
 		hud.flash("Auto-shift %s" % ("on" if Settings.auto_shift else "off"), 1.5)
@@ -474,8 +583,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
-	var active := not menu.visible and not computer.visible and not tuning.visible and not label_dialog.visible \
-		and not contract_panel.visible and not geometry.active
+	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
+		and not contract_panel.visible and not coffee_panel.visible and not paint_bench.visible and not geometry.active
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:
@@ -486,8 +595,12 @@ func _physics_process(delta: float) -> void:
 			bike.throttle = maxf(Input.get_action_strength("throttle"), Controls.trigger(true))
 			bike.front_brake = maxf(Input.get_action_strength("front_brake"), Controls.trigger(false))
 			bike.rear_brake = Input.get_action_strength("rear_brake")
-			bike.lean_input = clampf(Input.get_axis("lean_left", "lean_right") + stick.x, -1.0, 1.0)
+			bike.lean_input = _steer_input(stick.x, delta)
 			bike.body_shift = clampf(Input.get_axis("body_back", "body_forward") - stick.y, -1.0, 1.0)
+			# The right stick swings the camera round, as the mouse does.
+			var look := Controls.stick(true)
+			if look != Vector2.ZERO:
+				camera.add_orbit(-look.x * ChaseCamera.STICK_ORBIT * delta, look.y * ChaseCamera.STICK_ORBIT * delta)
 		else:
 			bike.throttle = 0.0
 			bike.lean_input = 0.0
@@ -495,6 +608,7 @@ func _physics_process(delta: float) -> void:
 			bike.front_brake = 1.0
 			bike.rear_brake = 1.0
 		bike.auto_shift = Settings.auto_shift
+		camera.recentre = Settings.camera_recentre
 		bike.assist = Settings.assist
 		bike.horn = active and Input.is_action_pressed("horn")
 		audio.rpm = bike.rpm
@@ -515,14 +629,38 @@ func _physics_process(delta: float) -> void:
 			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
 			bike.model.set_grime(clampf(_ride_dirt, 0.0, 0.85))
 		_update_dash()
+		_keep_on_map()
 		_stats_timer += delta
 		if _stats_timer >= 1.0:
 			_stats_timer = 0.0
 			_send_ride_stats()
+	telemetry_overlay.bike = bike
+	telemetry_overlay.visible = bike != null and Settings.telemetry_overlay and not menu.visible
 	_send_timer += delta
 	if _send_timer >= 1.0 / 30.0:
 		_send_timer = 0.0
 		Net.send_state(_net_state())
+
+
+## The steer input: the lean the rider aims for, from the keys and the stick.
+func _steer_input(stick_x: float, _delta: float) -> float:
+	var keys := Input.get_axis("lean_left", "lean_right")
+	return clampf(keys + stick_x, -1.0, 1.0)
+
+
+## Off the edge of the map (or through it): the bike goes back to the last place it had its
+## wheels on the ground, rather than falling forever.
+func _keep_on_map() -> void:
+	var p := bike.global_position
+	var lost := p.y < world.terrain_height(p.x, p.z) - 15.0 or absf(p.x) > World.MAP_HALF - 1.0 or absf(p.z) > World.MAP_HALF - 1.0
+	if lost and _safe_xf != Transform3D():
+		var fwd := -_safe_xf.basis.z
+		bike.place(_safe_xf.origin, atan2(-fwd.x, -fwd.z) + PI)
+		hud.flash("That's the edge of the map. Turned round and put back on the ground.", 3.0, true)
+		camera.snap()
+	elif not lost and bike.wheels[0]["contact"] and bike.wheels[1]["contact"] and not bike.is_crashed \
+			and absf(p.x) < World.MAP_HALF - 12.0 and absf(p.z) < World.MAP_HALF - 12.0:
+		_safe_xf = Transform3D(bike.global_basis, p - Vector3.UP * bike.build.rear_radius)
 
 
 ## Tells the shed how far the bike went, how muddy it got and how much petrol it burnt.
@@ -531,7 +669,7 @@ func _send_ride_stats() -> void:
 		return
 	hud.trip_fuel += bike.fuel_used
 	Shed.request({"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
-		"dirt_km": _dirt_km, "fuel": bike.fuel_used})
+		"dirt_km": _dirt_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()})
 	bike.fuel_used = 0.0
 	_ride_km = 0.0
 	_dirt_km = 0.0
@@ -612,6 +750,24 @@ func _on_ping(peer: int, d: Dictionary) -> void:
 	PingMarker.show_ping(world, d, color)
 	if peer != Shed.me():
 		hud.flash("%s pinged %s" % [d.get("name", "Someone"), str(d.get("what", "something")).to_lower()], 2.0)
+		# And their figure points at it.
+		if remotes.has(peer):
+			remotes[peer].play_emote("point", d.get("at"))
+
+
+## Someone did an emote (see Emotes): their figure does it here, and the HUD says so.
+func _on_emote(peer: int, d: Dictionary) -> void:
+	if not in_session:
+		return
+	var e := str(d.get("e", ""))
+	if not Emotes.is_emote(e):
+		return
+	if peer == Shed.me():
+		hud.flash(str(Emotes.YOU[e]), 1.2)
+		return
+	if remotes.has(peer):
+		remotes[peer].play_emote(e, d.get("at"))
+	hud.flash("%s %s" % [d.get("name", "Someone"), Emotes.VERBS[e]], 1.5)
 
 
 func _on_state(id: int, state: PackedFloat32Array) -> void:

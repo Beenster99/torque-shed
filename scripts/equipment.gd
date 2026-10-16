@@ -7,10 +7,10 @@ extends RefCounted
 ## Each model has a kind, a footprint `size` (width, height, depth in metres) and, for the ones
 ## that hold parts, a number of places. Compact models are for a shed that's filling up.
 
-const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "blaster", "bench", "booth", "changer", "poster", "seat", "tv",
+const KINDS: Array[String] = ["stand", "shelf", "washer", "repair", "blaster", "bench", "trolley", "booth", "changer", "poster", "seat", "tv",
 	"ramp", "obstacle", "barrier", "marker"]
 const KIND_NAMES := {"stand": "Engine stands", "shelf": "Shelving", "washer": "Parts washers",
-	"repair": "Repair machines", "blaster": "Sandblasting cabinets", "bench": "Workbenches", "booth": "Paint booths", "changer": "Tyre changers", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs",
+	"repair": "Repair machines", "blaster": "Sandblasting cabinets", "bench": "Workbenches", "trolley": "Trolleys", "booth": "Paint booths", "changer": "Tyre changers", "poster": "Wall posters", "seat": "Seats", "tv": "Wall TVs",
 	"ramp": "Jump ramps", "obstacle": "Things to jump", "barrier": "Walls and fences", "marker": "Cones, posts and flags", "whiteboard": "Whiteboard",
 	"trinket": "Trinkets"}
 ## Kinds that live outside in the yard, to ride over, round and through.
@@ -20,18 +20,19 @@ const YARD_KINDS: Array[String] = ["ramp", "obstacle", "barrier", "marker"]
 const WALL_KINDS: Array[String] = ["poster", "tv", "whiteboard"]
 ## Kinds whose top is a free surface: parts go down anywhere on it there's room for them, as
 ## many as fit, rather than in a set number of places (see Shed.surface). Each board of a
-## shelving unit is a surface of its own.
-const SURFACE_KINDS: Array[String] = ["washer", "repair", "bench", "shelf"]
+## shelving unit is a surface of its own. A trolley's deck is one too: what's on it rolls along
+## with it when it's pushed.
+const SURFACE_KINDS: Array[String] = ["washer", "repair", "bench", "shelf", "trolley"]
 ## Kept clear round the edge of a surface, in metres.
 const SURFACE_MARGIN := 0.05
 ## What the places on each kind are called in spot names: "<prefix>_<furniture id>_<n>".
 ## Kinds built into the shed: not sold, and can't be moved.
 const FIXED_KINDS: Array[String] = ["booth", "changer"]
-const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb", "booth": "booth", "changer": "changer",
+const SPOT_PREFIX := {"shelf": "shelf", "washer": "washer", "repair": "repair", "bench": "wb", "trolley": "trolley", "booth": "booth", "changer": "changer",
 	"blaster": "blast"}
 ## The model each kind defaults to (and what an order without a model gets).
 const DEFAULT := {"stand": "engine_stand", "shelf": "shelf_standard", "washer": "washer_standard",
-	"repair": "repair_standard", "blaster": "blaster_cabinet", "bench": "bench_standard", "booth": "booth_standard", "changer": "tyre_changer", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_120",
+	"repair": "repair_standard", "blaster": "blaster_cabinet", "bench": "bench_standard", "trolley": "trolley_parts", "booth": "booth_standard", "changer": "tyre_changer", "poster": "poster_tt", "seat": "seat_stool", "tv": "tv_120",
 	"ramp": "ramp_medium", "obstacle": "barrels", "barrier": "wall_concrete", "marker": "cone", "whiteboard": "whiteboard"}
 
 const MODELS := {
@@ -52,6 +53,9 @@ const MODELS := {
 		"cols": 4, "levels": 4, "desc": "Long boltless shelving for a whole bike's worth of parts."},
 	"shelf_racking": {"kind": "shelf", "name": "Heavy-duty racking", "size": Vector3(2.4, 2.2, 0.6),
 		"cols": 5, "levels": 4, "desc": "Warehouse pallet racking cut down for the shed. Holds engines and frames without bowing."},
+	# The delivery racking fixed in the delivery area outside (Shed.DELIVERY_RACK): not sold.
+	"shelf_delivery": {"kind": "shelf", "name": "Delivery racking", "size": Vector3(3.6, 2.2, 0.7), "hidden": true,
+		"cols": 6, "levels": 4, "desc": "Racking in the delivery area: deliveries go on it when the floor's full."},
 
 	# Parts washers: everything in one gets cleaned on its own, `rate` dirt a second.
 	"washer_compact": {"kind": "washer", "name": "Benchtop parts washer", "compact": true, "size": Vector3(0.7, 1.0, 0.6),
@@ -96,6 +100,13 @@ const MODELS := {
 		"places": 4, "desc": "Room to lay out a whole top end. Four places."},
 	"bench_pro": {"kind": "bench", "name": "Pro workstation", "size": Vector3(2.4, 0.95, 0.8),
 		"places": 4, "desc": "Drawers, pegboard and a stainless top. Four places, and it looks the business."},
+
+	# Trolleys: pushed about with F like other floor equipment, carrying whatever is on the deck.
+	# The handle is at the front (+Z), the end you push from; `top` is the deck's height.
+	"trolley_parts": {"kind": "trolley", "name": "Parts trolley", "compact": true, "size": Vector3(0.62, 0.95, 1.0), "places": 3,
+		"top": 0.78, "desc": "A steel shop trolley on castors with a lipped deck. Load it up with parts and boxes and wheel them where they're needed."},
+	"trolley_flatbed": {"kind": "trolley", "name": "Flatbed trolley", "size": Vector3(0.9, 0.95, 1.6), "places": 6,
+		"top": 0.3, "desc": "A long, low platform truck for the heavy stuff: a whole delivery of boxes, an engine or a frame in one trip."},
 
 	# Paint booths: parts hang from hooks on a rail, to be sprayed all over with the spray gun.
 	"booth_compact": {"kind": "booth", "name": "Pop-up spray tent", "compact": true, "size": Vector3(1.6, 2.2, 1.4),
@@ -287,6 +298,9 @@ static func spec_line(id: String) -> String:
 			bits.append("Speed x%.1f" % float(m["speed"]))
 		"bench":
 			bits.append("Parts go anywhere on top, as many as fit")
+		"trolley":
+			bits.append("Parts and boxes go anywhere on the deck and ride along when you push it")
+			bits.append("Deck %.2f m high" % work_height(id))
 		"whiteboard":
 			bits.append("Draw, write and plan on it")
 		"changer":
@@ -344,7 +358,7 @@ static func local_place(model_id: String, n: int) -> Transform3D:
 		"changer":
 			# The wheel lies flat on the turntable (see Workshop), its hub on the centre post.
 			return Transform3D(Basis(), Vector3(0.0, work_height(model_id), 0.08))
-		"washer", "repair", "bench":
+		"washer", "repair", "bench", "trolley":
 			var count := maxi(1, places(model_id))
 			var top := work_height(model_id)
 			var w := size.x - 0.2
@@ -409,6 +423,8 @@ static func work_height(model_id: String) -> float:
 			return 0.86
 		"bench":
 			return float(get_model(model_id)["size"].y) + 0.01
+		"trolley":
+			return float(get_model(model_id).get("top", 0.8))
 	return 0.9
 
 

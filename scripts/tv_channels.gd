@@ -13,9 +13,10 @@ extends RefCounted
 ## wiring it up later only touches that function.
 
 ## The channels every screen has, in order. A screen's own home channel goes first.
-const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "contracts"]
+const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts"]
 const NAMES := {"bay": "Bay", "live": "Live riding", "crew": "Crew board", "xp": "XP goals", "howto": "How to play",
-	"money_me": "My money", "money_garage": "Garage money", "afford": "What you can afford", "contracts": "Contracts"}
+	"money_me": "My money", "money_garage": "Garage money", "afford": "What you can afford", "contracts": "Contracts",
+	"sales": "Sales"}
 const BUILT_IN: Array[String] = ["crew", "bay0", "bay1", "bay2", "bay3"]
 ## The how-to-play pages turn over on their own, this many seconds each.
 const HOWTO_PAGE_TIME := 9.0
@@ -159,7 +160,8 @@ static func nobody_data() -> Dictionary:
 	var ready := []
 	for id in Shed.bikes:
 		if Shed.is_complete(id):
-			ready.append("%s  ·  bay %d" % [Shed.bikes[id]["name"], int(Shed.bikes[id]["bay"]) + 1])
+			var bay := int(Shed.bikes[id]["bay"])
+			ready.append("%s  ·  %s" % [Shed.bikes[id]["name"], "bay %d" % (bay + 1) if bay >= 0 else "outside"])
 	return {"ready": ready}
 
 
@@ -197,14 +199,18 @@ static func money_data(peer: int) -> Dictionary:
 	var prog := _progress()
 	var cash: int = int(prog.money_of(peer)) if prog and prog.has_method("money_of") else 0
 	var flow := {"earned": 0, "spent": 0}
-	var history := [cash, cash, cash, cash, cash, cash, cash]
+	var range_key := Settings.money_graph_range
+	var history := []
+	for i in int(MoneyGraph.RANGES[range_key]["count"]):
+		history.append(cash)
 	var sold := 0
 	if prog and peer == Shed.me() and prog.has_method("cash_flow"):
 		flow = prog.cash_flow(7)
-		history = prog.cash_history()
+		history = prog.cash_graph(range_key)
 		sold = int(prog.profile.get("stats", {}).get("sell_bike", 0))
 	return {"name": str(Shed.crew.get(peer, {}).get("name", "You")), "cash": cash,
-		"earned_week": int(flow["earned"]), "spent_week": int(flow["spent"]), "sold": sold, "history": history}
+		"earned_week": int(flow["earned"]), "spent_week": int(flow["spent"]), "sold": sold, "history": history,
+		"range": range_key}
 
 
 ## The business's account (Shed.garage_money), what its bikes and loose parts would fetch, the
@@ -214,7 +220,7 @@ static func garage_data() -> Dictionary:
 	var flow := Money.flow(Shed.bank, 7)
 	return {"cash": Shed.garage_money, "bike_value": int(worth["bikes"]), "stock_value": int(worth["stock"]),
 		"income_week": int(flow["in"]), "outgoings_week": int(flow["out"]), "bikes": Shed.bikes.size(),
-		"history": Money.history7(Shed.bank.get("history", []), Shed.garage_money), "debt": Money.debt(Shed.bank)}
+		"history": Money.graph(Settings.money_graph_range), "range": Settings.money_graph_range, "debt": Money.debt(Shed.bank)}
 
 
 ## Things worth saving up for, what they cost the business, and whether this player's cash covers them.
@@ -250,6 +256,8 @@ static func page_data(ch: String) -> Dictionary:
 			return afford_data(Shed.me())
 		"contracts":
 			return contracts_data()
+		"sales":
+			return Sales.tv_data()
 		"live":
 			return nobody_data()
 	return {}
@@ -306,29 +314,85 @@ static func _later(c: Control, font: Font, what: String) -> void:
 
 ## A simple growth chart: a line through `values`, oldest first, with day marks under it.
 static func _chart(c: Control, font: Font, rect: Rect2, values: Array, label: String) -> void:
+	chart(c, font, rect, values, label, "day")
+
+
+## A growth chart over in-game time: a line through `values`, oldest first, one a bucket of
+## `range_key` (see MoneyGraph: minutes up to years), with marks under it ("-3d" .. "now"),
+## thinned out when there are lots of them. The scale is zoomed to where the money is (see
+## chart_scale), so a few hundred in or out of an account of thousands still shows.
+static func chart(c: Control, font: Font, rect: Rect2, values: Array, label: String, range_key: String) -> void:
 	c.draw_rect(rect, PANEL)
 	_text(c, font, rect.position + Vector2(16, 28), label, 20, Dashboard.DIM)
 	var plot := Rect2(rect.position + Vector2(60, 44), rect.size - Vector2(80, 80))
-	var top := 1.0
-	for v in values:
-		top = maxf(top, absf(float(v)))
+	var span := chart_scale(values)
+	var lo: float = span.x
+	var hi: float = span.y
+	var every := maxi(1, ceili(values.size() * 64.0 / maxf(plot.size.x, 1.0)))
 	for i in 3:
 		var y := plot.position.y + plot.size.y * i / 2.0
 		c.draw_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y), Color(1, 1, 1, 0.08), 1.0)
 	c.draw_line(Vector2(plot.position.x, plot.end.y), plot.end, Color(1, 1, 1, 0.3), 2.0)
-	var pts := PackedVector2Array()
+	var pts := chart_points(values, plot, lo, hi)
 	for i in values.size():
-		var x := plot.position.x + plot.size.x * i / maxf(1.0, values.size() - 1.0)
-		pts.append(Vector2(x, plot.end.y - plot.size.y * clampf(float(values[i]) / top, 0.0, 1.0)))
-		_text(c, font, Vector2(x - 30, plot.end.y + 26), "today" if i == values.size() - 1 else "-%dd" % (values.size() - 1 - i),
-			15, Dashboard.DIM, 60, HORIZONTAL_ALIGNMENT_CENTER)
+		if (values.size() - 1 - i) % every == 0:
+			var tick := MoneyGraph.tick_text(range_key, i, values.size())
+			_text(c, font, Vector2(pts[i].x - 30, plot.end.y + 26), "today" if tick == "now" and range_key == "day" else tick,
+				15, Dashboard.DIM, 60, HORIZONTAL_ALIGNMENT_CENTER)
 	if pts.size() > 1:
 		c.draw_polyline(pts, ORANGE, 4.0, true)
 	for p in pts:
-		c.draw_circle(p, 5.0, ORANGE)
+		c.draw_circle(p, 5.0 if pts.size() <= 24 else 2.5, ORANGE)
+	# The top and bottom of the scale, so the line reads as money.
+	_text(c, font, Vector2(plot.position.x - 56, plot.position.y + 6), _short_money(hi), 13, Dashboard.DIM, 52, HORIZONTAL_ALIGNMENT_RIGHT)
+	_text(c, font, Vector2(plot.position.x - 56, plot.end.y + 4), _short_money(lo), 13, Dashboard.DIM, 52, HORIZONTAL_ALIGNMENT_RIGHT)
 	if values.all(func(v): return float(v) == 0.0):
-		_text(c, font, plot.position + Vector2(0, plot.size.y * 0.5), "Nothing in or out yet", 22, Dashboard.DIM, plot.size.x,
+		_text(c, font, plot.position + Vector2(0, plot.size.y * 0.5 - 16), "Nothing in or out yet", 22, Dashboard.DIM, plot.size.x,
 			HORIZONTAL_ALIGNMENT_CENTER)
+	elif values.all(func(v): return float(v) == float(values[0])):
+		_text(c, font, plot.position + Vector2(0, plot.size.y * 0.5 - 16), "No money in or out in the %s" % MoneyGraph.span_text(range_key),
+			18, Dashboard.DIM, plot.size.x, HORIZONTAL_ALIGNMENT_CENTER)
+
+
+## The bottom and top of a money chart's scale (x, y) for `values`: a little under the lowest
+## to a little over the highest, from nothing when the money has come up from near nothing, and
+## a band round the line when it's flat.
+static func chart_scale(values: Array) -> Vector2:
+	if values.is_empty():
+		return Vector2(0.0, 1.0)
+	var lo := INF
+	var hi := -INF
+	for v in values:
+		lo = minf(lo, float(v))
+		hi = maxf(hi, float(v))
+	var pad := maxf((hi - lo) * 0.15, maxf(absf(hi) * 0.02, 10.0))
+	var bottom := lo - pad
+	if lo >= 0.0 and (bottom < 0.0 or lo <= (hi - lo) * 0.5):
+		bottom = 0.0
+	return Vector2(bottom, maxf(hi + pad, bottom + 1.0))
+
+
+## Where each of `values` goes in `plot` on the scale from `lo` to `hi`.
+static func chart_points(values: Array, plot: Rect2, lo: float, hi: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in values.size():
+		var x := plot.position.x + plot.size.x * i / maxf(1.0, values.size() - 1.0)
+		var f := clampf((float(values[i]) - lo) / maxf(hi - lo, 0.001), 0.0, 1.0)
+		pts.append(Vector2(x, plot.end.y - plot.size.y * f))
+	return pts
+
+
+## "£12k", "£1.2m", "£800": a short amount for a chart's scale.
+static func _short_money(v: float) -> String:
+	if v < 0.0:
+		return "-" + _short_money(-v)
+	if v >= 1000000.0:
+		return CURRENCY + "%.1fm" % (v / 1000000.0)
+	if v >= 100000.0:
+		return CURRENCY + "%dk" % roundi(v / 1000.0)
+	if v >= 1000.0:
+		return CURRENCY + "%.1fk" % (v / 1000.0)
+	return CURRENCY + "%d" % roundi(v)
 
 
 ## Draws a channel's page (below the orange header bar the Dashboard has already drawn).
@@ -348,6 +412,8 @@ static func draw_page(c: Control, font: Font, kind: String, data: Dictionary) ->
 			_draw_afford(c, font, data)
 		"contracts":
 			_draw_contracts(c, font, data)
+		"sales":
+			Sales.draw_tv(c, font, data)
 		_:
 			_title(c, font, "NO SIGNAL")
 
@@ -452,7 +518,8 @@ static func _draw_money_me(c: Control, font: Font, data: Dictionary) -> void:
 	_tile(c, font, Rect2(24, 210, 300, 96), "Earned this week", money_text(int(data.get("earned_week", 0))))
 	_tile(c, font, Rect2(24, 318, 300, 96), "Spent this week", money_text(int(data.get("spent_week", 0))))
 	_tile(c, font, Rect2(24, 426, 300, 82), "Bikes sold", str(int(data.get("sold", 0))))
-	_chart(c, font, Rect2(344, 90, 656, 418), data.get("history", []), "Your money over the last week")
+	var key := str(data.get("range", MoneyGraph.DEFAULT_RANGE))
+	chart(c, font, Rect2(344, 90, 656, 418), data.get("history", []), "Your money, %s" % MoneyGraph.span_text(key), key)
 	if data.get("placeholder", false):
 		_later(c, font, "Money arrives with selling bikes. These are placeholders.")
 
@@ -467,7 +534,8 @@ static func _draw_garage(c: Control, font: Font, data: Dictionary) -> void:
 	_tile(c, font, Rect2(266, 318, 230, 96), "Out this week", money_text(int(data.get("outgoings_week", 0))))
 	_tile(c, font, Rect2(24, 426, 230, 82), "Bikes in the shed", str(int(data.get("bikes", 0))))
 	_tile(c, font, Rect2(266, 426, 230, 82), "Owed to the bank", money_text(int(data.get("debt", 0))))
-	_chart(c, font, Rect2(516, 90, 484, 418), data.get("history", []), "Shed account, last week")
+	var key := str(data.get("range", MoneyGraph.DEFAULT_RANGE))
+	chart(c, font, Rect2(516, 90, 484, 418), data.get("history", []), "Shed account, %s" % MoneyGraph.span_text(key), key)
 	if data.get("placeholder", false):
 		_later(c, font, "The shed's account comes with money. These are placeholders.")
 

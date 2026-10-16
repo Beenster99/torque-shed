@@ -34,18 +34,18 @@ const LEVELS := {
 	"ratchet": ["peak", 0.85], "scrub": ["rms", 0.12], "grinder": ["rms", 0.17], "spray": ["rms", 0.13], "spray_gun": ["rms", 0.12],
 	"washer": ["rms", 0.13], "static": ["rms", 0.1], "jet": ["rms", 0.2], "pour": ["rms", 0.12], "door": ["rms", 0.15],
 	"fan": ["rms", 0.15], "blast": ["rms", 0.22], "rain": ["rms", 0.12], "rain_roof": ["rms", 0.14], "changer": ["rms", 0.12],
-	"dyno_roller": ["rms", 0.14], "compressor": ["rms", 0.16], "hum_fluoro": ["rms", 0.05], "hum_led": ["rms", 0.035],
+	"dyno_roller": ["rms", 0.14], "compressor": ["rms", 0.16], "shaker": ["rms", 0.13], "hum_fluoro": ["rms", 0.05], "hum_led": ["rms", 0.035],
 	"tone_shed": ["rms", 0.04], "tone_sales": ["rms", 0.04], "amb_out": ["rms", 0.07], "birds": ["peak", 0.35],
 	"crickets": ["peak", 0.25],
 	"screech": ["peak", 0.36], "starter": ["peak", 0.61], "chirp": ["peak", 1.0], "gear": ["peak", 0.64], "ping": ["peak", 0.44],
 	"beep": ["peak", 0.18], "levelup": ["peak", 0.37], "bell": ["peak", 0.37], "bell_chime": ["peak", 0.36],
 	"clink": ["peak", 0.6], "clunk": ["peak", 0.75], "pickup": ["peak", 0.45], "scrap": ["peak", 0.6], "switch": ["peak", 0.5],
-	"ting": ["peak", 0.45], "step": ["peak", 0.6], "door_start": ["peak", 0.6], "door_stop": ["peak", 0.6],
+	"ting": ["peak", 0.45], "blast_scan": ["peak", 0.4], "step": ["peak", 0.6], "door_start": ["peak", 0.6], "door_stop": ["peak", 0.6],
 	"grinder_up": ["peak", 0.6], "grinder_down": ["peak", 0.55], "jet_on": ["peak", 0.6], "jet_off": ["peak", 0.55],
 	"gun_on": ["peak", 0.4], "gun_off": ["peak", 0.4], "pump_on": ["peak", 0.5], "pump_off": ["peak", 0.45],
 	"blast_on": ["peak", 0.6], "blast_off": ["peak", 0.6], "comp_on": ["peak", 0.65], "comp_off": ["peak", 0.65],
 	"bead_pop": ["peak", 0.8], "slide_open": ["peak", 0.45], "slide_close": ["peak", 0.45], "slide_shut": ["peak", 0.5],
-	"tube_start": ["peak", 0.4], "creak": ["peak", 0.5],
+	"tube_start": ["peak", 0.4], "creak": ["peak", 0.5], "sale_offer": ["peak", 0.55], "desk_bell": ["peak", 0.5],
 }
 ## Footstep loudness by floor (concrete is the reference).
 const STEP_PEAK := {"concrete": 0.5, "epoxy": 0.5, "wood": 0.55, "metal": 0.55, "gravel": 0.5, "grass": 0.35, "tarmac": 0.45,
@@ -72,8 +72,8 @@ static func variant_count(sound: String) -> int:
 static func all_sounds() -> Array[String]:
 	var out: Array[String] = ["step_concrete", "step_epoxy", "step", "switch", "pickup", "clink", "clunk", "ratchet", "scrub",
 		"impact_metal_concrete", "impact_metal_wood", "impact_metal_steel", "grinder", "spray", "spray_gun", "washer", "jet",
-		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "scrap", "screech", "chirp", "starter",
-		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "rain", "rain_roof",
+		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "shaker", "scrap", "screech", "chirp", "starter",
+		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "desk_bell", "sale_offer", "rain", "rain_roof",
 		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets"]
 	for s in VARIANTS:
 		if not out.has(s):
@@ -121,6 +121,7 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"changer": return _changer()
 		"dyno_roller": return _dyno_roller()
 		"compressor": return _compressor()
+		"shaker": return _shaker()
 		"hum_fluoro": return _hum(false)
 		"hum_led": return _hum(true)
 		"tone_shed": return _room_tone(false)
@@ -134,6 +135,7 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"scrap": return _scrap()
 		"switch": return _switch()
 		"ting": return _ting()
+		"blast_scan": return _blast_scan()
 		"door_start": return _door_tail(true)
 		"door_stop": return _door_tail(false)
 		"grinder_up": return _grinder_tail(true)
@@ -163,6 +165,8 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"levelup": return _levelup()
 		"bell": return _shop_bell()
 		"bell_chime": return _door_chime()
+		"desk_bell": return _desk_bell()
+		"sale_offer": return _till()
 	return buf(0.1)
 
 
@@ -367,7 +371,7 @@ static func is_loop(sound: String) -> bool:
 
 
 const LOOP_SOUNDS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "spray_gun", "washer", "static", "jet", "pour",
-	"screech", "door", "fan", "blast", "rain", "rain_roof", "changer", "dyno_roller", "compressor", "hum_fluoro", "hum_led",
+	"screech", "door", "fan", "blast", "rain", "rain_roof", "changer", "dyno_roller", "compressor", "shaker", "hum_fluoro", "hum_led",
 	"tone_shed", "tone_sales", "amb_out", "birds", "crickets"]
 
 
@@ -795,6 +799,49 @@ func _compressor() -> PackedFloat32Array:
 	return loopify(d, 0.1)
 
 
+## The paint shaker running: the motor's whirr and the whine of its gearbox, over the rumble of
+## the clamp swinging the tin round on its eccentric (a few times a second, the paint sloshing
+## and the lid chattering with each swing) and a rattle of the cage on its springs.
+func _shaker() -> PackedFloat32Array:
+	var secs := 4.0
+	var d := buf(secs + 0.1)
+	var n := d.size()
+	var rotor := fit(48.0, secs)
+	var swing := fit(9.5, secs)
+	var a := 0.0
+	var a2 := 0.0
+	var b := 0.0
+	var slosh := 0.0
+	var chat := 0.0
+	var wob := 0.0
+	for i in n:
+		var t := float(i) / R
+		wob += (nz() - wob) * 0.0005
+		var p := TAU * rotor * t
+		# The motor: a whirr in its harmonics, the gear mesh's whine riding on it.
+		var motor := sin(p) * 0.22 + sin(2.0 * p) * 0.16 + sin(3.0 * p) * 0.08 + sin(5.0 * p) * 0.04
+		var whine := (sin(23.0 * p) * 0.05 + sin(46.0 * p) * 0.015) * (1.0 + wob * 3.0)
+		# Air through the fan blades and the housing.
+		a += (nz() - a) * 0.25
+		a2 += (a - a2) * 0.25
+		b += (a2 - b) * 0.015
+		var air := (a2 - b) * 0.35
+		# The tin swinging round: a low throb, and the paint sloshing with each swing.
+		var s := sin(TAU * swing * t)
+		var throb := s * 0.18 + sin(2.0 * TAU * swing * t) * 0.06
+		slosh += (nz() - slosh) * 0.01
+		var sw := maxf(0.0, s)
+		d[i] = motor + whine + air + throb + slosh * (0.5 + 1.5 * sw * sw) * 0.9
+		# The lid and cage chattering at the end of each swing.
+		chat *= 0.996
+		d[i] += chat * nz()
+	var swings := int(swing * secs)
+	for k in swings:
+		var at := int((float(k) / swing + 0.25 / swing + rf(-0.004, 0.004)) * R)
+		hit(d, at, [[rf(380.0, 460.0), 0.6, 45.0], [rf(1300.0, 1700.0), 0.3, 90.0], [rf(3200.0, 3800.0), 0.15, 160.0]], 0.0008, rf(0.06, 0.12), true)
+	return loopify(d, 0.1)
+
+
 ## The ceiling lights: a fluorescent's magnetic ballast humming at twice the mains frequency
 ## with a buzzy edge, or an LED driver's faint high whine.
 func _hum(led: bool) -> PackedFloat32Array:
@@ -1073,6 +1120,20 @@ func _ting() -> PackedFloat32Array:
 	var f0 := rf(2950.0, 3250.0)
 	hit(d, 0, [[f0, 1.0, 7.0], [f0 * 1.502, 0.6, 9.0], [f0 * 2.23, 0.4, 13.0], [f0 * 2.9, 0.2, 18.0]], 0.00005, 0.8)
 	burst(d, 0, 0.003, 0.3, 1500.0, 2000.0, 15000.0)
+	return d
+
+
+## The sandblaster's scan going on: a soft electronic sweep up, two quick blips at the top.
+func _blast_scan() -> PackedFloat32Array:
+	var d := buf(0.55)
+	var phase := 0.0
+	for i in int(0.32 * R):
+		var t := float(i) / R
+		var f := lerpf(500.0, 1800.0, t / 0.32)
+		phase += TAU * f / R
+		d[i] += sin(phase) * 0.35 * minf(1.0, t * 40.0) * (1.0 - t / 0.32 * 0.4)
+	for k in 2:
+		ring(d, int((0.34 + k * 0.09) * R), 2400.0, 0.3, 30.0)
 	return d
 
 
@@ -1556,6 +1617,50 @@ func _shop_bell() -> PackedFloat32Array:
 			ring(d, at, float(p[0]), float(p[1]) * h * 0.6, float(p[2]))
 			ring(d, at, float(p[0]) * 1.0015, float(p[1]) * h * 0.4, float(p[2]))
 		burst(d, at, 0.01, 0.3 * h, 600.0, 1000.0, 16000.0)
+	return d
+
+
+## The chrome service bell on the reception counter: the plunger's click, then one bright
+## "ding" from the dome, its partials beating slowly as it rings away.
+func _desk_bell() -> PackedFloat32Array:
+	var d := buf(2.2)
+	var f0 := rf(2580.0, 2640.0)
+	burst(d, 0, 0.004, 0.35, 2500.0, 3000.0, 14000.0)
+	for p in [[1.0, 1.0, 1.6], [2.76, 0.42, 3.4], [5.4, 0.2, 6.0], [8.9, 0.08, 9.0], [0.5, 0.12, 2.4]]:
+		ring(d, 0, f0 * float(p[0]), float(p[1]) * 0.55, float(p[2]))
+		ring(d, 0, f0 * float(p[0]) * 1.0021, float(p[1]) * 0.4, float(p[2]) * 1.1)
+	return d
+
+
+## An old cash till (an offer in at the sales office): two keys clacked down, the bright
+## "ching" of its bell, and the drawer rolling out to thump against its stop.
+func _till() -> PackedFloat32Array:
+	var d := buf(1.6)
+	# The keys: plastic-capped levers bottoming out on the frame.
+	for kk in 2:
+		var at := int((0.02 + kk * 0.11) * R)
+		hit(d, at, [[rf(1700.0, 2100.0), 0.7, 90.0], [rf(3800.0, 4400.0), 0.4, 160.0], [rf(420.0, 520.0), 0.6, 60.0]], 0.0001, 0.6)
+		burst(d, at, 0.012, 0.35, 400.0, 600.0, 9000.0)
+	# The bell: a small domed bell, struck once hard with a quick second bounce of the hammer.
+	var bell_at := 0.27
+	var f0 := rf(2550.0, 2650.0)
+	for st in [[0.0, 1.0], [0.035, 0.35]]:
+		var at := int((bell_at + float(st[0])) * R)
+		var h := float(st[1])
+		for pp in [[1.0, 1.0, 3.0], [2.31, 0.5, 4.5], [3.08, 0.32, 6.0], [4.2, 0.2, 8.0], [0.52, 0.18, 2.5]]:
+			ring(d, at, f0 * float(pp[0]), float(pp[1]) * h * 0.55, float(pp[2]))
+			ring(d, at, f0 * float(pp[0]) * 1.002, float(pp[1]) * h * 0.4, float(pp[2]))
+		burst(d, at, 0.008, 0.3 * h, 700.0, 1500.0, 16000.0)
+	# The drawer: a rattling roll out on its runners, then the thump at the end of its travel.
+	var roll := int((bell_at + 0.04) * R)
+	band(d, roll, 0.28, 900.0, 0.35, 0.22, 4.0, 0.01)
+	burst(d, roll, 0.28, 0.08, 3.0, 150.0, 2500.0, false, 0.02)
+	for r in 7:
+		var at := roll + int(rf(0.01, 0.26) * R)
+		hit(d, at, [[rf(1200.0, 2600.0), 0.3, 120.0]], 0.0002, 0.25)
+	var stop := roll + int(0.3 * R)
+	hit(d, stop, [[rf(140.0, 170.0), 0.9, 30.0], [rf(380.0, 440.0), 0.5, 45.0], [rf(1100.0, 1300.0), 0.3, 80.0]], 0.0008, 0.8)
+	burst(d, stop, 0.02, 0.3, 200.0, 120.0, 4000.0)
 	return d
 
 

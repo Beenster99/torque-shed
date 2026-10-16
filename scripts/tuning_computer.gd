@@ -3,7 +3,8 @@ extends Control
 ## The dyno desk in the tuning room: tune the bike on the rig (or any bike close by) and run
 ## it on the dyno. Engine map, ignition and rev limiter; suspension clickers where the parts
 ## have them; tyre pressures and chain tension; sprockets and, with a cassette gearbox, the
-## ratio spacing; and drilling and trimming parts for lightness. Every change goes through the
+## ratio spacing; the fitted ECU's rider aids (traction control, stability control and
+## anti-wheelie, those it has: off or a level each); and drilling and trimming parts for lightness. Every change goes through the
 ## Shed so the whole crew sees the same tune, and riding uses it too.
 
 signal closed
@@ -14,9 +15,18 @@ const SEND_EVERY := 0.12      # seconds between slider updates sent to the host
 const TABS := {
 	"Engine": [["map", "Fuel map", 0.05], ["ignition", "Ignition timing", 0.05], ["limiter", "Rev limiter", 100.0]],
 	"Suspension": [["f_preload", "Front preload", 0.1], ["f_bump", "Front compression", 0.1], ["f_rebound", "Front rebound", 0.1],
-		["r_preload", "Rear preload", 0.1], ["r_bump", "Rear compression", 0.1], ["r_rebound", "Rear rebound", 0.1]],
+		["r_preload", "Rear preload", 0.1], ["r_bump", "Rear compression", 0.1], ["r_rebound", "Rear rebound", 0.1],
+		["damper", "Steering damper", 0.1]],
 	"Tyres & chain": [["psi_f", "Front tyre pressure", 0.05], ["psi_r", "Rear tyre pressure", 0.05], ["chain", "Chain slack", 1.0]],
 	"Gearing": [["sprocket_f", "Front sprocket", 1.0], ["sprocket_r", "Rear sprocket", 1.0], ["spread", "Ratio spacing", 0.1]],
+	"Rider aids": [["aid_traction", "Traction control", 1.0], ["aid_stability", "Stability control", 1.0],
+		["aid_anti_wheelie", "Anti-wheelie", 1.0]],
+}
+## What each of the ECU's rider aids does, under its slider.
+const AID_HELP := {
+	"aid_traction": "Cuts the power when the back tyre spins up. Higher steps in sooner and harder; off lets it slide.",
+	"aid_stability": "Damps a weave, a tank-slapper or a twitchy slide. Higher holds the bike steadier.",
+	"aid_anti_wheelie": "Trims the power to keep the front wheel down. Lower lets it lift further; off for wheelies.",
 }
 
 var bike_id := 0
@@ -25,8 +35,12 @@ var _bikes: OptionButton
 var _tabs: TabContainer
 var _rows := {}               # key -> {slider, value, why, reset}
 var _weight: VBoxContainer
+var _aids_note: Label         # the Rider aids tab's line on what this bike's ECU offers
 var _summary: Label
 var _graph: DynoGraph
+var _ride_graph: TelemetryGraph   # the last ride's telemetry, shown while the Last ride tab is open
+var _ride_text: Label
+var _ride_wait := 0.0            # seconds till the Last ride page is redrawn
 var _run: Button
 var _status: Label
 var _pending := {}            # key -> value waiting to be sent
@@ -107,6 +121,10 @@ func _ready() -> void:
 		list.add_theme_constant_override("separation", 6)
 		scroll.add_child(list)
 		_tabs.add_child(scroll)
+		if tab == "Rider aids":
+			_aids_note = UITheme.label("", 15, Color(1, 1, 1, 0.6))
+			_aids_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			list.add_child(_aids_note)
 		for row in TABS[tab]:
 			_add_row(list, str(row[0]), str(row[1]), float(row[2]))
 	var wscroll := ScrollContainer.new()
@@ -118,6 +136,7 @@ func _ready() -> void:
 	_weight.add_theme_constant_override("separation", 6)
 	wscroll.add_child(_weight)
 	_tabs.add_child(wscroll)
+	_build_ride_tab()
 	_summary = UITheme.label("", 15, UITheme.ACCENT)
 	left.add_child(_summary)
 
@@ -129,6 +148,11 @@ func _ready() -> void:
 	_graph.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_graph.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_child(_graph)
+	_ride_graph = TelemetryGraph.new()
+	_ride_graph.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_ride_graph.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ride_graph.visible = false
+	right.add_child(_ride_graph)
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 12)
 	_run = Button.new()
@@ -174,9 +198,11 @@ func _add_row(list: VBoxContainer, key: String, title: String, step: float) -> v
 	slider.drag_ended.connect(func(_changed): _dragging = "")
 	box.add_child(slider)
 	var why := UITheme.label("", 14, Color(1, 1, 1, 0.5))
+	if AID_HELP.has(key):
+		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(why)
 	list.add_child(box)
-	_rows[key] = {"slider": slider, "value": value, "why": why, "reset": reset}
+	_rows[key] = {"slider": slider, "value": value, "why": why, "reset": reset, "box": box}
 
 
 func open(from := Vector3.ZERO) -> void:
@@ -304,6 +330,10 @@ func _refresh() -> void:
 			why = "Can't be changed with this ECU."
 		if why == "" and key in ["map", "ignition", "limiter"]:
 			why = _ecu_text(build, key)
+		if AID_HELP.has(key):
+			# Only the aids this bike's ECU has are shown.
+			(row["box"] as Control).visible = why == ""
+			why = AID_HELP[key] if why == "" else why
 		(row["why"] as Label).text = why
 		slider.min_value = r.x
 		slider.max_value = maxf(r.y, r.x + 0.001)
@@ -314,6 +344,7 @@ func _refresh() -> void:
 		if _dragging != key and not _pending.has(key):
 			slider.set_value_no_signal(v)
 		_show_value(key, slider.value if (_dragging == key or _pending.has(key)) else v, build)
+	_aids_note.text = aids_note(build)
 	_run.disabled = not Shed.on_dyno(bike_id)
 	_run.text = "Run the dyno" if Shed.on_dyno(bike_id) else "Put it on the dyno to run it"
 	_refresh_weight()
@@ -353,6 +384,21 @@ static func dyno_reader_text(build: BikeBuild, rank: int) -> String:
 	return text
 
 
+## The Rider aids tab's line: which aids the fitted ECU has that can be set here, or that it has none.
+static func aids_note(build: BikeBuild) -> String:
+	var ecu := PartsDB.part_name(build.parts["ecu"]) if build.has_part("ecu") else ""
+	var names: Array[String] = []
+	for aid in BikeBuild.AID_KEYS:
+		if build.has_aid(aid):
+			names.append(str(PartsDB.ECU_AID_NAMES.get(aid, aid)))
+	if names.is_empty():
+		return ("%s: no rider aids to set. A sport or race ECU brings traction control, anti-wheelie and stability control." % ecu) \
+			if ecu != "" else "No ECU fitted, so no rider aids. A sport or race ECU brings traction control, anti-wheelie and stability control."
+	return "%s: set its %s here. Each goes from off to level %d; level %d is how it comes from the factory. Riding uses them." % [
+		ecu, " and ".join(names) if names.size() <= 2 else ", ".join(names.slice(0, names.size() - 1)) + " and " + names[-1],
+		BikeBuild.AID_LEVELS, BikeBuild.AID_STOCK]
+
+
 func _ecu_text(build: BikeBuild, key: String) -> String:
 	var ecu := PartsDB.part_name(build.parts["ecu"]) if build.has_part("ecu") else "No ECU (jets and timing plate)"
 	if key == "limiter":
@@ -389,6 +435,11 @@ static func value_text(key: String, v: float, build: BikeBuild) -> String:
 			return "%d teeth (%.2f:1)" % [roundi(v), r / f]
 		"spread":
 			return "Stock" if absf(v) < 0.01 else "%s %d%%" % ["Wider" if v > 0.0 else "Closer", roundi(absf(v) * 100.0)]
+		"aid_traction", "aid_stability", "aid_anti_wheelie":
+			var level := roundi(v)
+			if level <= 0:
+				return "Off"
+			return "Level %d of %d%s" % [level, BikeBuild.AID_LEVELS, " (factory)" if level == BikeBuild.AID_STOCK else ""]
 	var clicks := roundi(v * 10.0)
 	return "Stock" if clicks == 0 else "%+d clicks (%s)" % [clicks, "firmer" if clicks > 0 else "softer"]
 
@@ -461,9 +512,54 @@ func _flush() -> void:
 	_pending.clear()
 
 
+## The Last ride tab: what the telemetry recorded on your last ride (RideTelemetry.last), drawn
+## as strip charts in place of the dyno graph while the tab is open.
+func _build_ride_tab() -> void:
+	var scroll := ScrollContainer.new()
+	scroll.name = "Last ride"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_ride_text = UITheme.label("", 15)
+	_ride_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ride_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_ride_text)
+	_tabs.add_child(scroll)
+
+
+## Whether the Last ride tab is the one open.
+func showing_ride() -> bool:
+	var tab := _tabs.get_current_tab_control()
+	return tab != null and tab.name == "Last ride"
+
+
+func _update_ride() -> void:
+	var tel := RideTelemetry.last
+	_ride_graph.telemetry = tel
+	_ride_graph.queue_redraw()
+	if tel == null or tel.size() < 2:
+		_ride_text.text = "No ride recorded yet. Ride a bike and come back: the telemetry logs every ride."
+		return
+	var s := tel.summary()
+	_ride_text.text = ("%s\n\n%d:%02d ridden, top speed %s\nMost lean %.0f°\nHardest braking %.2f g, hardest cornering %.2f g\n"
+		+ "Past the grip: front %.1f s, rear %.1f s\nWorst shake at the bars %.1f°%s\n\nThe charts show speed, lean, steering, "
+		+ "bar torque (what the rider pushed through the bars), steering shake, the trail as it changed, each tyre's "
+		+ "slip ratio and slip angle, how much of its grip it used (1 is the limit: above it the tyre slides), "
+		+ "the loads on the tyres, the throttle and brakes, the gear and the revs. Front tyre blue, rear orange. "
+		+ "F3 shows the same live at the side of the screen while you ride.") % [
+		tel.bike_name if tel.bike_name != "" else "Last ride", int(s["duration"]) / 60, int(s["duration"]) % 60,
+		Units.kmh(float(s["top_kmh"])), s["max_lean"], s["max_brake_g"], s["max_lat_g"], s["front_over"], s["rear_over"],
+		s["max_wobble"], " (a tank-slapper: a steering damper calms it)" if float(s["max_wobble"]) > 4.0 else ""]
+
+
 func _process(delta: float) -> void:
 	if not visible:
 		return
+	var ride := showing_ride()
+	_ride_graph.visible = ride
+	_graph.visible = not ride
+	_ride_wait -= delta
+	if ride and _ride_wait <= 0.0:
+		_ride_wait = 0.5
+		_update_ride()
 	_send_timer -= delta
 	if _send_timer <= 0.0 and not _pending.is_empty():
 		_send_timer = SEND_EVERY

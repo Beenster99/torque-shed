@@ -73,7 +73,17 @@ const XP := {
 	"repair": {"xp": 10, "label": "Restoring"},
 	"sandblast": {"xp": 10, "label": "Sandblasting"},
 	"paint": {"xp": 12, "label": "Spraying"},
+	"prime": {"xp": 6, "label": "Primer coat"},
+	"protect_coat": {"xp": 12, "label": "Protective coat"},
 	"lighten": {"xp": 8, "label": "Lightening"},
+	# The paint mixing bay (see PaintBay): a tin mixed and saved (more for close to its recipe
+	# card and an even stir), a test card, a tin stirred even, a colour matched (over 95%) and
+	# a part masked off for a stripe or two-tone.
+	"paint_mix": {"xp": 10, "label": "Paint mixed"},
+	"test_panel": {"xp": 2, "label": "Test card"},
+	"paint_stir": {"xp": 2, "label": "Even stir"},
+	"colour_match": {"xp": 14, "label": "Colour matched"},
+	"masking": {"xp": 6, "label": "Masking"},
 	"tyre_remove": {"xp": 4, "label": "Tyre off"},
 	"tyre_fit": {"xp": 10, "label": "Tyre fitting"},
 	"restore_part": {"xp": 4, "label": "Part like new", "once": "item"},
@@ -83,17 +93,22 @@ const XP := {
 	"build_complete": {"xp": 150, "label": "Bike build complete", "once": "bike", "tag": "builder"},
 	"scratch_build": {"xp": 100, "label": "Built from scratch", "once": "bike", "tag": "builder"},
 	"max_health": {"xp": 300, "label": "Restored to max health", "once": "bike", "tag": "builder"},
-	# Money: selling at the parts computer, and the business's account growing.
+	# Money: selling bikes from the showroom and parts at the parts computer, and the business growing.
 	"sell_bike": {"xp": 100, "label": "Bike sold"},
 	"sell_part": {"xp": 5, "label": "Part sold"},
+	"px_deal": {"xp": 40, "label": "Part-exchange deal"},
 	"money_milestone": {"xp": 50, "label": "Money milestone"},
 	# Contracts (see Contracts): paid to the crew who worked on the job when it's handed back.
 	"contract_maint": {"xp": 40, "label": "Service job done"},
 	"contract_mot": {"xp": 60, "label": "MOT job done"},
+	"contract_respray": {"xp": 80, "label": "Colour match job done"},
 	"contract_mod": {"xp": 100, "label": "Modification job done"},
 	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
 	"mot_test": {"xp": 6, "label": "MOT test"},
 	"garage_upgrade": {"xp": 40, "label": "Garage upgrade"},
+	# The coffee shop next door (see CoffeeShop): a break, and a biker's bike bought off them.
+	"coffee_break": {"xp": 3, "label": "Coffee break"},
+	"cafe_bike": {"xp": 30, "label": "Bought a biker's bike"},
 	# Riding: worked out on the rider's own machine (RideXP) and paid by the host.
 	"jump": {"xp": 12, "label": "Jump", "tag": "air", "rider": true},
 	"jump_record": {"xp": 25, "label": "Longest jump", "tag": "air", "rider": true},
@@ -120,9 +135,10 @@ const PAY := {
 	"dyno_strap": 0, "dyno_hose": 1, "fluids": 3, "start_build": 10,
 	"bin": 0, "tip": 1, "recycle_plastic": 1, "recycle_metal": 2,
 	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "chain_lube": 3,
-	"repair": 6, "sandblast": 6, "paint": 8, "lighten": 5, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
+	"repair": 6, "sandblast": 6, "paint": 8, "prime": 4, "protect_coat": 8, "lighten": 5, "paint_mix": 5, "test_panel": 1, "paint_stir": 1, "colour_match": 8,
+	"masking": 3, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
 	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
-	"sell_bike": 50, "sell_part": 2,
+	"sell_bike": 50, "sell_part": 2, "px_deal": 20,
 }
 
 ## Hand tool upgrade stages: the level each needs, its look, and what it does.
@@ -163,7 +179,7 @@ const SKILLS := {
 	"elbow_grease": {"name": "Elbow Grease", "branch": "finisher", "tier": 0, "ranks": 3, "needs": [],
 		"desc": "Scrub 12% faster per rank, and the pressure washer blasts off 15% more muck per rank."},
 	"steady_hand": {"name": "Steady Hand", "branch": "finisher", "tier": 0, "ranks": 3, "needs": [],
-		"desc": "Spray can and gun fans 8% wider per rank, and paint runs take 10% more per rank."},
+		"desc": "Spray can and gun fans 8% wider per rank, paint runs take 10% more per rank, and the sweet spot for an even coat is 5% wider per rank."},
 	"hot_welder": {"name": "Hot Welder", "branch": "finisher", "tier": 1, "ranks": 3, "needs": ["elbow_grease"],
 		"desc": "Grinder and welder restore a batch 12% faster per rank."},
 	"showroom_shine": {"name": "Showroom Shine", "branch": "finisher", "tier": 1, "ranks": 2, "needs": ["steady_hand"],
@@ -298,6 +314,7 @@ func select(player_name: String) -> void:
 	var all := _read_all()
 	var p = all.get(player_name, {})
 	profile = _clean_profile(p if p is Dictionary else {}, player_name)
+	_note_cash()   # what it opens with, so the first money in or out shows on the graph as a step
 	_report_due = true
 	changed.emit()
 
@@ -314,7 +331,8 @@ func _read_all() -> Dictionary:
 ## A profile with every field present and the right types (JSON brings numbers back as floats).
 static func _clean_profile(p: Dictionary, player_name: String) -> Dictionary:
 	var out := {"name": player_name, "xp": maxi(0, int(p.get("xp", 0))), "tools": {}, "skills": {}, "stats": {},
-		"records": {}, "goals": [], "money": clampi(int(p.get("money", 0)), 0, MAX_MONEY), "cash_log": []}
+		"records": {}, "goals": [], "money": clampi(int(p.get("money", 0)), 0, MAX_MONEY), "cash_log": [],
+		"series": MoneyGraph.sanitize(p.get("series", {}))}
 	var cash_log = p.get("cash_log", [])
 	if cash_log is Array:
 		for e in cash_log.slice(-CASH_LOG_SIZE):
@@ -368,6 +386,7 @@ func save_profile() -> bool:
 
 
 func _touch() -> void:
+	_note_cash()
 	_dirty_save = true
 	_save_timer = 1.5
 	_report_due = true
@@ -775,6 +794,12 @@ func spread_mult(peer: int, tool: String) -> float:
 	return m
 
 
+## How much wider the spray can's and gun's sweet spot is (the range of distances an even coat
+## goes on from): the tool's upgrades and Steady Hand both help, so practice pays off.
+func spray_band_mult(peer: int, tool: String) -> float:
+	return (1.0 + 0.04 * tool_stage(peer, tool)) * (1.0 + 0.05 * skill_rank(peer, "steady_hand"))
+
+
 ## How many coats a patch takes before it runs, relative to stock: faster tools lay more paint,
 ## so the runs level rises with them, and Steady Hand lifts it further.
 func run_level_mult(peer: int, tool: String) -> float:
@@ -932,6 +957,20 @@ func cash_flow(days := 7) -> Dictionary:
 		else:
 			spent -= int(e["amt"])
 	return {"earned": earned, "spent": spent}
+
+
+## Notes this player's cash in the graph's series when it has moved (see MoneyGraph).
+func _note_cash() -> void:
+	if profile.is_empty():
+		return
+	if not (profile.get("series") is Dictionary):
+		profile["series"] = {}
+	MoneyGraph.record(profile["series"], MoneyGraph.now_hours(), money())
+
+
+## This player's cash over the range's buckets ("minute" .. "year"), oldest first and now last.
+func cash_graph(range_key: String) -> Array:
+	return MoneyGraph.points(profile.get("series", {}), range_key, MoneyGraph.now_hours(), money())
 
 
 ## This player's cash at the end of each of the last six days and now, worked back from the log.

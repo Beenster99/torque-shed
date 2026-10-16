@@ -30,7 +30,9 @@ RIDING
 I / D-pad up: start or stop the engine      W / RT: throttle      S / LT: front brake
 Space / B: rear brake      A D / left stick: lean      Shift / LB: weight back      Ctrl / RB: forward
 E Q / A X: gear up / down      T: auto-shift      C / R3: chase or first-person camera
-R / View: reset after a crash      F / Y: get off (when stopped)"""
+Mouse / right stick: swing the camera round      V: ride-by camera (watch yourself go past)
+L / L3: headlight (off, low, high, high with fog lights)      S + W / LT + RT: burnout (lean to spin round)
+R / View: reset after a crash      F / Y: get off (when stopped)      F3: telemetry overlay"""
 
 var _name: LineEdit
 var _ip: LineEdit
@@ -40,6 +42,7 @@ var _pause_box: VBoxContainer
 var _assist: HSlider
 var _auto: CheckBox
 var _snap: CheckBox
+var _free_rotate: CheckBox
 var _host_info: Label
 var _crew: Label
 var _pad: Label
@@ -67,6 +70,9 @@ var _resume: Button
 var keybinds: KeybindTab
 var graphics: GraphicsTab
 var blueprints: BlueprintTab
+## Bikes left out on the road, each with a button to have it brought back to the yard.
+var _retrieve_box: VBoxContainer
+var _retrieve_shown := []   # the abandoned bike ids the buttons were made for
 
 
 func _ready() -> void:
@@ -123,6 +129,9 @@ func _ready() -> void:
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
 	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at (F2)", func(): geometry_mode.emit()))
+	_retrieve_box = VBoxContainer.new()
+	_retrieve_box.add_theme_constant_override("separation", 6)
+	_pause_box.add_child(_retrieve_box)
 	_host_info = UITheme.label("", 15, Color(1, 1, 1, 0.75))
 	_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_host_info.custom_minimum_size.x = 560.0
@@ -153,19 +162,17 @@ func _ready() -> void:
 	settings.name = "Settings"
 	settings.add_theme_constant_override("separation", 10)
 	_tabs.add_child(settings)
-	settings.add_child(UITheme.label("Rider assist (0 = full sim)", 15))
-	_assist = HSlider.new()
-	_assist.min_value = 0.0
-	_assist.max_value = 1.0
-	_assist.step = 0.05
-	_assist.value = Settings.assist
-	_assist.value_changed.connect(func(v): Settings.assist = v)
-	settings.add_child(_assist)
+	_build_riding_settings(settings)
 	_auto = CheckBox.new()
 	_auto.text = "Automatic gearbox"
 	_auto.button_pressed = Settings.auto_shift
 	_auto.toggled.connect(func(v): Settings.auto_shift = v)
 	settings.add_child(_auto)
+	var recentre := CheckBox.new()
+	recentre.text = "Chase camera swings back behind the bike after you let go of the mouse or right stick"
+	recentre.button_pressed = Settings.camera_recentre
+	recentre.toggled.connect(func(v): Settings.camera_recentre = v)
+	settings.add_child(recentre)
 	settings.add_child(UITheme.label("Units", 15))
 	var units := OptionButton.new()
 	units.add_item("Metric (km/h, km, kg, L/100 km)")
@@ -178,6 +185,11 @@ func _ready() -> void:
 	_snap.button_pressed = Settings.snap_placement
 	_snap.toggled.connect(func(v): Settings.snap_placement = v)
 	settings.add_child(_snap)
+	_free_rotate = CheckBox.new()
+	_free_rotate.text = "Free rotate: the rotate keys turn what you hold to any angle, not a quarter a press (/ toggles it)"
+	_free_rotate.button_pressed = Settings.free_rotate
+	_free_rotate.toggled.connect(func(v): Settings.free_rotate = v)
+	settings.add_child(_free_rotate)
 	_build_time_settings(settings)
 	settings.add_child(UITheme.label("Sound effects volume", 15))
 	settings.add_child(_volume_slider(Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
@@ -217,6 +229,42 @@ func _ready() -> void:
 	_tabs.add_child(debug)
 
 
+## The riding rows of the Settings tab: the Riding realism slider (what each end means shows
+## under it) and the telemetry overlay.
+func _build_riding_settings(settings: VBoxContainer) -> void:
+	settings.add_child(UITheme.label("Riding realism (0 = full sim, 1 = easy)", 15))
+	_assist = HSlider.new()
+	_assist.min_value = 0.0
+	_assist.max_value = 1.0
+	_assist.step = 0.05
+	var value := UITheme.label("", 14, UITheme.ACCENT)
+	var show := func(v: float) -> void:
+		value.text = "%.2f: %s" % [v, realism_text(v)]
+	_assist.value_changed.connect(func(v):
+		Settings.assist = v
+		show.call(v))
+	_assist.value = Settings.assist
+	show.call(Settings.assist)
+	settings.add_child(_assist)
+	settings.add_child(value)
+	var tele := CheckBox.new()
+	tele.text = "Telemetry overlay while riding (F3)"
+	tele.button_pressed = Settings.telemetry_overlay
+	tele.toggled.connect(func(v): Settings.telemetry_overlay = v)
+	settings.add_child(tele)
+
+
+## What a Riding realism setting does, in a few words.
+static func realism_text(v: float) -> String:
+	if v < 0.15:
+		return "full sim: nothing saves the front, slides can high-side"
+	if v < 0.45:
+		return "mostly sim: the rider barely saves the front"
+	if v < 0.8:
+		return "the rider protects the front and smooths the throttle"
+	return "easy: the rider also balances the bike for you"
+
+
 func _process(_delta: float) -> void:
 	if visible and _tabs.get_current_tab_control() == _pad.get_parent():
 		_pad.text = Controls.diagnostics()
@@ -229,6 +277,8 @@ func _process(_delta: float) -> void:
 		_crew.text = "In the shed: " + ", ".join(names)
 		_save_status.text = SaveGame.status_text()
 		_save_button.visible = not (Net.is_online() and not Net.is_host())
+		if Shed.abandoned_bikes() != _retrieve_shown:
+			refresh_retrieve()
 
 
 func show_title(status := "") -> void:
@@ -252,9 +302,30 @@ func show_pause() -> void:
 		_host_info.text = "Working solo."
 	_auto.button_pressed = Settings.auto_shift
 	_snap.button_pressed = Settings.snap_placement
+	_free_rotate.button_pressed = Settings.free_rotate
 	_refresh_time_settings(true)
+	refresh_retrieve()
 	show()
 	_resume.grab_focus()
+
+
+## Lists bikes left out on the road (nobody riding them, away from the shed) with a button each
+## to have the recovery truck bring it back to the yard by the roller door, for a small fee.
+func refresh_retrieve() -> void:
+	_retrieve_shown = Shed.abandoned_bikes()
+	for child in _retrieve_box.get_children():
+		child.queue_free()
+	if _retrieve_shown.is_empty():
+		return
+	_retrieve_box.add_child(UITheme.label("Left out on the road:", 14, UITheme.ACCENT))
+	for id in _retrieve_shown:
+		var bike_id: int = id
+		var b := _button("Retrieve %s (recovery truck, %s from the garage)" % [str(Shed.bikes[bike_id]["name"]),
+			TvChannels.money_text(Shed.RETRIEVE_FEE)], func(): Shed.request({"a": "retrieve_bike", "bike": bike_id}))
+		var why := Shed.retrieve_check({"bike": bike_id})
+		b.disabled = why != ""
+		b.tooltip_text = why
+		_retrieve_box.add_child(b)
 
 
 ## On a pad: B goes back to the shed, LB / RB turn the tabs over.

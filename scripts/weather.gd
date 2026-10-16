@@ -25,7 +25,7 @@ const SOAK_TIME := 80.0      # seconds of full rain to soak the roads
 const DRY_TIME := 300.0      # seconds for soaked roads to dry out
 const SYNC_INTERVAL := 2.0
 ## How many rooms' roofs the rain shader keeps the rain out from under (Workshop.rooms()).
-const SHELTERS := 8
+const SHELTERS := 10
 ## Tyre grip on soaked ground, as a share of dry grip.
 const WET_GRIP := {"tarmac": 0.85, "dirt": 0.9, "grass": 0.9}
 const DROPS := 2400
@@ -92,6 +92,8 @@ func _ready() -> void:
 	current = self
 	_rng.randomize()
 	Net.weather_received.connect(_on_host_weather)
+	# A player who joins hears the weather straight away, not at the next regular send.
+	Net.player_joined.connect(func(_id: int, _info: Dictionary) -> void: _send_timer = 0.0)
 	var start := Settings.weather if STATES.has(Settings.weather) else Settings.weather_now
 	state = start if STATES.has(start) else "clear"
 	from = state
@@ -124,6 +126,8 @@ func change_to(to: String, instant := false) -> void:
 		from = state if blend >= 0.5 else from
 		state = to
 		blend = 0.0
+		# The crew hear about it at once.
+		_send_timer = 0.0
 	if instant:
 		blend = 1.0
 		from = state
@@ -355,8 +359,8 @@ uniform float amount = 1.0;
 uniform float speed = 11.0;
 uniform vec3 wind = vec3(0.8, 0.0, 0.4);
 uniform vec4 tint : source_color = vec4(0.75, 0.8, 0.88, 1.0);
-uniform vec4 shelters[8];
-uniform float shelter_tops[8];
+uniform vec4 shelters[10];
+uniform float shelter_tops[10];
 
 varying float fade;
 
@@ -370,7 +374,7 @@ void vertex() {
 	vec3 base = cam - box * vec3(0.5, 0.35, 0.5);
 	p = base + mod(p - base, box);
 	bool hidden = seed.w > amount;
-	for (int i = 0; i < 8; i++) {
+	for (int i = 0; i < 10; i++) {
 		vec4 r = shelters[i];
 		if (p.x > r.x && p.x < r.z && p.z > r.y && p.z < r.w && p.y < shelter_tops[i]) {
 			hidden = true;

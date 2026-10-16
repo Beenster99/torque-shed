@@ -4,6 +4,8 @@ extends "res://tests/screenshots.gd"
 
 
 func _ready() -> void:
+	# The old demo bikes these were written round (a player's new shed starts empty).
+	Shed.demo_bikes = true
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):
 			out_dir = a.trim_prefix("--out=")
@@ -22,6 +24,11 @@ func _ready() -> void:
 		return
 	if "--tails" in OS.get_cmdline_user_args():
 		await _tail_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
+	if "--guards" in OS.get_cmdline_user_args():
+		await _guard_shots()
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
@@ -45,8 +52,18 @@ func _ready() -> void:
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
+	if "--looks" in OS.get_cmdline_user_args():
+		await _look_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
 	if "--upgrades" in OS.get_cmdline_user_args():
 		await _upgrade_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
+	if "--building" in OS.get_cmdline_user_args():
+		await _building_shots()
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
@@ -57,6 +74,18 @@ func _ready() -> void:
 		return
 	if "--lighting" in OS.get_cmdline_user_args():
 		await _lighting_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
+	if "--signs" in OS.get_cmdline_user_args():
+		await _sign_shots()
+		SaveGame.delete_slot("shots")
+		get_tree().quit()
+		return
+	if "--telemetry" in OS.get_cmdline_user_args():
+		await _telemetry_shots()
+	if "--world" in OS.get_cmdline_user_args():
+		await _world_shots()
 		SaveGame.delete_slot("shots")
 		get_tree().quit()
 		return
@@ -186,6 +215,36 @@ func _tail_shots() -> void:
 	await _look_from(at + side * 2.6, at + Vector3(0.0, 0.6, 0.0), "t_side_view")
 
 
+## Front mudguards: Old Faithful with each one (from the front quarter), then the parts
+## computer's grouped list, sorted and filtered. `-- --guards` takes just these.
+func _guard_shots() -> void:
+	var bike := _bike_named("Old Faithful")
+	var view: Node3D = main.workshop.bike_views[bike]
+	var at := view.global_position
+	var side := view.global_transform.basis.x
+	var back := view.global_transform.basis.z
+	var pc: PartsComputer = main.computer
+	main._open_computer()
+	await _frames(5)
+	await _shot("fm_computer_bike_aisle")
+	pc._show_kind("front_mudguard")
+	await _frames(5)
+	await _shot("fm_computer_mudguards")
+	pc.set_sort("price_up")
+	pc.set_fits_bike(bike)
+	pc._show_kind("tyre")
+	await _frames(5)
+	await _shot("fm_computer_tyres_fit_sorted")
+	pc._show_section("shed")
+	await _frames(5)
+	await _shot("fm_computer_shed_aisle")
+	pc.close_computer()
+	for id in PartsDB.by_kind["front_mudguard"]:
+		_swap_part(bike, "front_mudguard", id)
+		await _frames(5)
+		await _look_from(at - back * 1.6 + side * 1.6, at + Vector3(0.0, 0.4, 0.0) - back * 0.7, "fm_" + id)
+
+
 func _swap_part(bike: int, slot: String, part: String) -> void:
 	var old := Shed.item_on(bike, slot)
 	if old != 0:
@@ -266,19 +325,48 @@ func _blast_shots() -> void:
 	await _frames(5)
 	# Sweep the jet over one side in bands, turning the engine a little between them.
 	Input.action_press("act")
-	for i in 900:
+	for i in 260:
 		await get_tree().physics_frame
 		if w.blast:
 			w.blast.turn(Vector2(0.004 * sin(i * 0.01), 0.0))
 		w._look(0.0025 * sin(i * 0.09), 0.0012 * cos(i * 0.011))
-		if i == 700:
+		if i == 220:
 			await _shot("c8_sandblaster_mid_blast")
 	Input.action_release("act")
 	await _frames(10)
 	await _shot("c9_sandblaster_bare_patches")
 	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9b_sandblaster_satin_closeup")
+	# The scan: red where there's still rust to blast, and the readout of what's left.
+	if w.blast:
+		w.toggle_blast_scan()
+	await _frames(40)
+	await _shot("c9c_sandblaster_scan")
+	if w.blast:
+		w.toggle_blast_scan()
 	w.finish_blast()
 	await _frames(10)
+	# Stepped back: the bare patches stay.
+	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9d_sandblaster_after_step_back")
+	# Blasted bare all over, hung in the paint shop and given a clear coat.
+	Shed.request({"a": "blast_use", "spot": spot, "on": true})
+	var res := {}
+	for id in rusty:
+		res[id] = [0.95, 0.0]
+	Shed.request({"a": "blast", "spot": spot, "parts": res})
+	await _frames(5)
+	await _look_from(at + Vector3(0.7, 0.0, 1.25), pivot.global_position, "c9e_sandblaster_all_bare")
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var hook: String = Shed.furniture_spots(booth)[2]
+	Shed.request({"a": "take", "spot": spot})
+	Shed.request({"a": "place", "spot": hook})
+	Shed.request({"a": "coat", "item": engine, "coat": "clear", "gun": true, "quality": 0.95})
+	await _frames(20)
+	var hung: Node3D = main.workshop._spot_nodes[hook]
+	var mid := hung.global_position + Vector3.UP * 0.3
+	await _look_from(mid + Vector3(-1.6, -mid.y, 0.4), mid, "c9f_engine_hung_clear_coat")
 
 
 ## The sales office: from the car park by day and lit up at night, the showroom with bikes on its
@@ -553,3 +641,210 @@ func _lighting_shots() -> void:
 	Shed.request({"a": "lights", "room": "", "on": true})
 	Lighting.overrides = {}
 	Settings.weather = "auto"
+
+
+
+## Shed building (`-- --building`): a whole bike's parts packed in the delivery area, a bike up
+## on a bay lift, the big annex and its mezzanine stairs, and the crew lounge upstairs with its
+## outside stairs.
+func _building_shots() -> void:
+	Settings.weather = "clear"
+	if Weather.current:
+		Weather.current.change_to("clear", true)
+	Daylight.current.set_time(13.0)
+	Shed.request({"a": "garage_money", "value": 2000000})
+	for id in GarageUpgrades.CATALOGUE:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	var bp := Shed._save_blueprint(_bike_named("Old Faithful"), "Whole bike")
+	Shed.request({"a": "bp_build", "bp": bp, "bay": 3})
+	Shed.request({"a": "bp_order", "bay": 3})
+	for i in 60:
+		Shed.request({"a": "order_part", "part": "sport_17" if i % 2 == 0 else "copper_plugs"})
+	Shed.request({"a": "order"})
+	Shed.request({"a": "order"})
+	Shed.request({"a": "lift", "bay": 4, "up": true})
+	await _frames(10)
+	await _aerial(Vector3(6.8, 7.0, 84.0), Vector3(6.8, 0.0, 74.5), "b1_delivery_area")
+	await _look_from(Vector3(12.0, 0.0, 79.5), Vector3(6.0, 0.6, 75.5), "b2_delivery_racking")
+	for i in 240:
+		await get_tree().physics_frame
+	await _look_from(Vector3(9.0, 0.0, 56.5), Vector3(6.6, 1.0, 52.4), "b3_bay_lift_up")
+	await _look_from(Vector3(-8.0, 0.0, 53.2), Vector3(-12.5, 2.2, 42.0), "b4_annex")
+	await _look_from(Vector3(-8.8, 0.0, 52.0), Vector3(-6.25, 1.6, 45.5), "b5_mezzanine_stairs")
+	await _aerial(Vector3(20.0, 6.0, 82.0), Vector3(8.0, 3.0, 71.0), "b6_lounge_stairs")
+	await _look_from(Vector3(5.4, GarageUpgrades.LOFT_FLOOR, 69.6), Vector3(-3.0, GarageUpgrades.LOFT_FLOOR + 0.9, 63.5), "b7_lounge_inside")
+	await _look_from(Vector3(-5.5, GarageUpgrades.LOFT_FLOOR, 60.4), Vector3(3.0, GarageUpgrades.LOFT_FLOOR + 0.8, 67.0), "b8_lounge_back")
+	await _aerial(Vector3(-24.0, 16.0, 30.0), Vector3(-4.0, 0.0, 58.0), "b9_aerial_back")
+
+
+## The shed signs (`-- --signs`): the TORQUE SHED light box over the roller door, and every
+## room-name sign under the LED and honeycomb ceilings, with every upgrade built.
+func _sign_shots() -> void:
+	Settings.weather = "clear"
+	if Weather.current:
+		Weather.current.change_to("clear", true)
+	Daylight.current.set_time(20.5)
+	Shed.request({"a": "garage_money", "value": 1000000})
+	for id in GarageUpgrades.CATALOGUE:
+		Shed.request({"a": "buy_upgrade", "id": id})
+	await _frames(10)
+	await _look_from(Vector3(0.0, 0.0, 79.0), Vector3(0.0, 3.8, 70.8), "s1_front_sign")
+	var c := Workshop.CENTER
+	await _look_from(Vector3(c.x + 2.0, 0.0, Workshop.PAINT_DOOR_Z), Vector3(c.x + Workshop.HALF.x, 3.0, Workshop.PAINT_DOOR_Z), "s3_paint_shop_sign")
+	await _look_from(Vector3(c.x - 2.0, 0.0, Workshop.STORE_DOOR_Z), Vector3(c.x - Workshop.HALF.x, 3.0, Workshop.STORE_DOOR_Z), "s4_storage_sign")
+	var r := GarageUpgrades.WING
+	await _look_from(Vector3(GarageUpgrades.WING_DOOR_X, 0.0, r.position.y + 3.0), Vector3(GarageUpgrades.WING_DOOR_X, 2.9, r.end.y), "s6_workshop_sign")
+	var a := GarageUpgrades.ANNEX
+	await _look_from(Vector3(GarageUpgrades.ANNEX_DOOR_X, 0.0, a.end.y + 3.0), Vector3(GarageUpgrades.ANNEX_DOOR_X, 3.0, a.end.y), "s8_annex_sign")
+
+
+## Garage upgrade colours and styles (`-- --looks`): every finish bought, then the inside in a
+## few different choices, and the upgrades page with its swatches and preview room.
+func _look_shots() -> void:
+	Settings.weather = "clear"
+	if Weather.current:
+		Weather.current.change_to("clear", true)
+	Daylight.current.set_time(13.0)
+	Shed.request({"a": "garage_money", "value": 5000000})
+	for id in GarageUpgrades.CATALOGUE:
+		if id != "showroom":
+			Shed.request({"a": "buy_upgrade", "id": id})
+	await _frames(10)
+	main.computer.open()
+	main.computer.open_upgrades()
+	var page: UpgradesPanel = main.computer.upgrades_panel
+	page.show_upgrade("epoxy")
+	page.choose("colour", "blue")
+	page.choose("effect", "gloss")
+	await _frames(10)
+	await _shot("l6_page_epoxy")
+	page.show_upgrade("showroom")
+	page.choose("floor", "bluewhite")
+	await _frames(10)
+	await _shot("l7_page_showroom")
+	page.start_peek()
+	await _frames(10)
+	await _shot("l8_peek")
+	main.computer.close_computer()
+	await _frames(5)
+	await _look_from(Vector3(-4.5, 0.0, 69.5), Vector3(4.0, 1.4, 62.0), "l1_standard_looks")
+	Shed.request({"a": "restyle_upgrade", "id": "epoxy", "looks": {"colour": "red", "effect": "metallic"}})
+	Shed.request({"a": "restyle_upgrade", "id": "cladding", "looks": {"upper": "anthracite", "lower": "black", "stripe": "yellow"}})
+	Shed.request({"a": "restyle_upgrade", "id": "led", "looks": {"tone": "warm", "strip": "purple"}})
+	Shed.request({"a": "restyle_upgrade", "id": "signage", "looks": {"neon": "pink"}})
+	await _frames(10)
+	await _look_from(Vector3(-4.5, 0.0, 69.5), Vector3(4.0, 1.4, 62.0), "l2_red_metallic_anthracite_warm")
+	await _look_from(Vector3(-2.0, 0.0, 66.0), Vector3(7.0, 2.8, 64.0), "l3_pink_neon")
+	Shed.request({"a": "restyle_upgrade", "id": "lounge", "looks": {"sofa": "tan", "rug": "navy", "neon": "blue"}})
+	await _frames(5)
+	await _look_from(Vector3(8.0, 0.0, 55.6), Vector3(13.6, 1.0, 58.2), "l4_lounge_tan_navy")
+	Shed.request({"a": "buy_upgrade", "id": "showroom", "looks": {"floor": "redblack", "tiles": "large", "ceiling": "hex_big", "glow": "ice", "trim": "gold"}})
+	await _frames(10)
+	await _look_from(Vector3(-4.5, 0.0, 69.5), Vector3(4.0, 1.4, 62.0), "l5_showroom_red_black_gold")
+
+
+## Handling phase 1 (`-- --telemetry`): the telemetry overlay while riding a bend, the dyno
+## desk's Last ride page, and the riding rows of the Settings tab.
+func _telemetry_shots() -> void:
+	var was := Settings.telemetry_overlay
+	Settings.telemetry_overlay = true
+	main._try_mount(_bike_named("Old Faithful"))
+	await _frames(10)
+	var road_t: Transform3D = main.world.road_transform(0.12)
+	main.bike.place(road_t.origin, road_t.basis.get_euler().y)
+	main.bike.engine_on = true
+	main.camera.set_mode(ChaseCamera.Mode.CHASE)
+	for i in 600:
+		Input.action_press("throttle", 0.6 if i < 300 else 0.35)
+		if i > 300:
+			Input.action_press("lean_right", 0.5)
+		await get_tree().physics_frame
+	Input.action_release("throttle")
+	Input.action_release("lean_right")
+	await _shot("t1_telemetry_overlay")
+	main._get_off()
+	await _frames(10)
+	main._open_tuning()
+	await _frames(5)
+	for i in main.tuning._tabs.get_tab_count():
+		if main.tuning._tabs.get_tab_control(i).name == "Last ride":
+			main.tuning._tabs.current_tab = i
+	await _frames(40)
+	await _shot("t2_dyno_desk_last_ride")
+	main.tuning.close_computer()
+	main.menu.show_pause()
+	await _frames(10)
+	await _shot("t3_settings_riding_rows")
+	main.menu.hide()
+	Settings.telemetry_overlay = was
+
+
+## The riding map (`-- --world`): the yard's test area and its blended edge, the loop, the
+## road network from the air, a village, a farm, the mountain pass's hairpins with their
+## barriers, a hard mountain track, the woods, and a bike on the pass and on a track.
+func _world_shots() -> void:
+	Settings.day_night_cycle = false
+	Daylight.current.set_time(13.0)
+	Settings.weather = "clear"
+	Weather.current.change_to("clear", true)
+	var cam := Camera3D.new()
+	cam.far = 6000.0
+	main.world.add_child(cam)
+	cam.current = true
+	var w: World = main.world
+	var views := [
+		["w01_test_area", Vector3(-10.0, 38.0, 165.0), Vector3(0.0, 0.0, 100.0)],
+		["w02_test_area_west", Vector3(-30.0, 14.0, 105.0), Vector3(-45.0, 0.0, 75.0)],
+		["w03_yard_edge_blend", Vector3(92.0, 3.0, 60.0), Vector3(62.0, 0.0, 78.0)],
+		["w04_loop_from_above", Vector3(60.0, 260.0, 420.0), Vector3(0.0, 0.0, -20.0)],
+		["w05_loop_north_crest", Vector3(120.0, 12.0, -100.0), Vector3(20.0, 4.0, -160.0)],
+		["w06_map_aerial", Vector3(0.0, 1400.0, 1700.0), Vector3(0.0, 0.0, -300.0)],
+		["w07_village", Vector3(960.0, 40.0, 560.0), Vector3(860.0, 0.0, 430.0)],
+		["w08_farm", Vector3(560.0, 35.0, -250.0), Vector3(470.0, 0.0, -330.0)],
+		["w09_pass_hairpins", Vector3(-300.0, 320.0, -760.0), Vector3(-540.0, 100.0, -1060.0)],
+		["w10_pass_east", Vector3(1150.0, 300.0, -800.0), Vector3(780.0, 100.0, -1050.0)],
+		["w11_mountains", Vector3(0.0, 120.0, -700.0), Vector3(0.0, 200.0, -1600.0)],
+		["w12_woods_track", Vector3(-180.0, 8.0, 400.0), Vector3(-330.0, 0.0, 300.0)],
+	]
+	for v in views:
+		var at: Vector3 = v[1]
+		var target: Vector3 = v[2]
+		at.y += w.terrain_height(at.x, at.z)
+		target.y += w.terrain_height(target.x, target.z)
+		cam.global_position = at
+		cam.look_at(target)
+		await _frames(30)
+		await _shot(v[0])
+	cam.current = false
+	cam.queue_free()
+	# Riding: on the pass and on the ridge track.
+	main._try_mount(_bike_named("Old Faithful"))
+	await _frames(10)
+	main.bike.start_engine()
+	main.camera.set_mode(ChaseCamera.Mode.CHASE)
+	for spot in [["pass", 2400.0, "w13_ride_pass"], ["ridge", 600.0, "w14_ride_ridge_track"], ["loop", 700.0, "w15_ride_loop"]]:
+		var xf: Transform3D = w.road_transform_on(spot[0], spot[1])
+		main.bike.place(xf.origin, xf.basis.get_euler().y)
+		main.camera.snap()
+		await _frames(40)
+		await _shot(spot[2])
+	# The ridge track from above, where the ride shot stands.
+	var ridge := w.road_transform_on("ridge", 600.0)
+	var top := Camera3D.new()
+	top.far = 3000.0
+	w.add_child(top)
+	top.global_position = ridge.origin + Vector3(6.0, 22.0, 6.0)
+	top.look_at(ridge.origin)
+	top.current = true
+	await _frames(20)
+	await _shot("w17_ridge_from_above")
+	top.current = false
+	main.camera.current = true
+	top.queue_free()
+	Daylight.current.set_time(22.5)
+	var village: Transform3D = w.road_transform_on("east", 1300.0)
+	main.bike.place(village.origin, village.basis.get_euler().y)
+	main.camera.snap()
+	await _frames(40)
+	await _shot("w16_village_night")
+	Daylight.current.set_time(13.0)

@@ -13,6 +13,11 @@ const DOOR_HALF := 2.3
 const DOOR_HEIGHT := 3.2
 const BAY_COUNT := 4
 const INTERACT_LAYER := 8
+## A paint booth hook's tip, above the place a part hangs (the hook's 0.55 m above it, see
+## EquipmentView.add_hook_wire; a part hangs touching the bottom of its ring), and the closest
+## a hung part's bottom comes to the booth floor.
+const HOOK_TIP := 0.53
+const HOOK_FLOOR := 0.12
 ## The wash bay: a lean-to on the west wall, open to the yard, with a pressure washer whose
 ## hose reaches anywhere inside it and a little way out.
 const WASH_CENTER := Vector3(-9.3, 0.0, 66.0)
@@ -88,6 +93,8 @@ var _mats := {}
 var radio: ShedRadio
 var dyno_room: DynoRoom     # the tuning room through the back wall
 var sales_office: SalesOffice   # the showroom and office east of the paint shop
+var coffee_shop: CoffeeShopBuilding   # the cafe next door, west of the storage room
+var paint_bay: PaintBayRoom   # the paint mixing bay off the paint shop
 ## A live riding picture a TV is showing (the first one, if there are several), or null.
 var tv_feed: SubViewport
 ## Live riding pictures, one per rider being watched: bike node instance id -> {vp, cam, node}.
@@ -112,6 +119,9 @@ var _room_shown := {}
 ## room's back wall), each [wall body, inside faces...].
 var upgrades: WorkshopUpgrades
 var knock := {"wing": [], "annex": []}
+var front_sign: Label3D      # the TORQUE SHED letters over the roller door
+## The strip light fittings hanging under the shed's roof (the honeycomb ceiling replaces them).
+var ceiling_strips: Array[MeshInstance3D] = []
 
 
 static func bay_transform(bay: int) -> Transform3D:
@@ -143,8 +153,8 @@ static func spot_transform(spot: String) -> Transform3D:
 
 
 ## The floor of each room, as x/z rectangles: the shed, the paint shop, the storage room, the
-## dyno room, and the sales office ("sales", the whole building) with its mezzanine office upstairs
-## ("sales_office", over the west end of it).
+## dyno room, the sales office ("sales", the whole building) with its mezzanine office upstairs
+## ("sales_office", over the west end of it), and the coffee shop next door ("cafe").
 static func rooms() -> Dictionary:
 	var out := {
 		"shed": Rect2(CENTER.x - HALF.x, CENTER.z - HALF.y, HALF.x * 2.0, HALF.y * 2.0),
@@ -153,17 +163,21 @@ static func rooms() -> Dictionary:
 		"dyno": Rect2(DynoRoom.CENTER.x - DynoRoom.HALF.x, DynoRoom.CENTER.z - DynoRoom.HALF.y, DynoRoom.HALF.x * 2.0, DynoRoom.HALF.y * 2.0),
 		"sales": SalesOffice.footprint(),
 		"sales_office": SalesOffice.office_rect(),
+		"cafe": CoffeeShop.footprint(),
+		"mixing": PaintBay.ROOM,
 	}
 	# The extension and storage annex, once the garage has built them.
 	out.merge(GarageUpgrades.rooms(Shed.upgrades))
 	return out
 
 
-## Which room a point is in ("shed", "paint", "storage", "dyno", "sales", "sales_office"
-## upstairs in the sales office), or "" outside.
+## Which room a point is in ("shed", "paint", "mixing", "storage", "dyno", "sales", "sales_office"
+## upstairs in the sales office, "lounge" upstairs on the shed, "cafe"), or "" outside.
 static func room_at(at: Vector3) -> String:
 	if SalesOffice.office_rect().has_point(Vector2(at.x, at.z)) and at.y > SalesOffice.MEZZ_Y - 0.3:
 		return "sales_office"
+	if Shed.upgrades.has("lounge") and GarageUpgrades.LOFT.has_point(Vector2(at.x, at.z)) and at.y > GarageUpgrades.LOFT_FLOOR - 0.3:
+		return "lounge"   # the crew lounge, upstairs on top of the shed
 	var all := rooms()
 	all.erase("sales_office")
 	for room in all:
@@ -205,6 +219,7 @@ func build() -> void:
 	_build_radio()
 	_build_wash_bay()
 	_build_booth_room()
+	_build_paint_bay()
 	_build_storage_room()
 	_build_lights()
 	_build_door_and_switches()
@@ -213,6 +228,7 @@ func build() -> void:
 	add_child(dyno_room)
 	dyno_room.build(self)
 	_build_sales_office()
+	_build_coffee_shop()
 	_crew_screen = Dashboard.new("crew", CREW_SCREEN)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
 	_crew_screen.rotation.y = PI * 0.5
@@ -231,6 +247,10 @@ func _screen_target(screen: Dashboard, key: String) -> void:
 
 # ---------------------------------------------------------------------------- state
 
+## The bike open in geometry mode here, whose model shows the draft fit instead (see GeometryMode).
+var editing_bike := 0
+
+
 ## Redraws parked bikes, loose parts and screens to match the Shed state.
 func sync_state() -> void:
 	if upgrades:
@@ -245,6 +265,11 @@ func sync_state() -> void:
 		if bike["rider"] != 0:
 			continue
 		var sig := _bike_signature(id)
+		# A fit saved in geometry mode (by anyone) is put on the parked bike as soon as it arrives.
+		if _view_sigs.get(id, "") == sig and bike_views.has(id) and id != editing_bike:
+			var shown := bike_model(id)
+			if shown and str(shown.geometry) != str(Shed.geometry_of(id)):
+				sig += "|refit"
 		if _view_sigs.get(id, "") != sig:
 			_view_sigs[id] = sig
 			if bike_views.has(id):
@@ -332,7 +357,13 @@ func sync_state() -> void:
 				swing.length = maxf(0.3, Equipment.rail_height(str(f.get("model", ""))) - hang.origin.y)
 				swing.position = hang.origin + Vector3.UP * swing.length
 				booth.add_child(swing)
-				booth.add_hook_wire(swing, swing.length)
+				var engine: bool = Shed.is_engine(item_id) and not Shed.items[item_id].get("boxed", false)
+				# A part hangs by its top from the tip of the hook, touching it (an engine hangs
+				# lower, on its sling). Its bottom: how far above the hanging place it comes.
+				var lift := _hook_lift(display, hang.origin.y)
+				var size: Vector3 = display.get_meta("size", Vector3(0.3, 0.3, 0.3))
+				# A part too long to hang there without reaching the floor has its hook pulled up for it.
+				booth.add_hook_wire(swing, swing.length if engine else swing.length - lift - size.y + HOOK_TIP)
 				var fixed: Node3D = booth.get_node_or_null("Hanger_" + spot)
 				if fixed:
 					# The empty hook's wire is hidden while this one swings in its place.
@@ -341,6 +372,13 @@ func sync_state() -> void:
 						if is_instance_valid(fixed):
 							fixed.visible = true)
 				display.transform = Transform3D(hang.basis, Vector3.DOWN * swing.length)
+				if not engine:
+					display.position.y += lift
+				else:
+					# A whole engine hangs lower, its top just under the hook, on a lifting sling.
+					var drop := _engine_hang_drop(display)
+					display.position.y -= drop
+					_engine_sling(swing, display, swing.length + drop)
 				swing.add_child(display)
 				swing.push(Vector3(randf_range(-0.3, 0.3), 0.0, randf_range(-0.3, 0.3)))
 			else:
@@ -607,6 +645,52 @@ func item_frame(item_id: int) -> Dictionary:
 	return {}
 
 
+## The model a part is drawn on and its slots there, for painting a spray job's coat onto it
+## (SprayJob): {model, slots, node (what it's drawn in)}, or {} when it isn't drawn on a model.
+## `whole` takes in everything drawn with it (an engine's ancillaries, for a coat on the lot).
+func item_surface(item_id: int, whole := false) -> Dictionary:
+	if not Shed.items.has(item_id):
+		return {}
+	var it: Dictionary = Shed.items[item_id]
+	match str(it["at"]):
+		"bike":
+			var bike := int(it["ref"])
+			if not bike_views.has(bike):
+				return {}
+			for slot in PartsDB.BIKE_SLOTS:
+				if Shed.item_on(bike, slot) == item_id:
+					return {"model": bike_model(bike), "slots": [slot], "node": bike_model(bike)}
+		"engine":
+			var block := int(it["ref"])
+			var model := model_for({"engine": block})
+			if model == null:
+				return {}
+			for slot in PartsDB.ENGINE_SLOTS:
+				if Shed.engine_item(block, slot) == item_id:
+					return {"model": model, "slots": [slot], "node": model}
+		"spot", "floor":
+			var node: Node3D = _spot_nodes.get(str(it["ref"])) if str(it["at"]) == "spot" else _floor_nodes.get(item_id)
+			if node == null or not is_instance_valid(node) or not node.has_meta("model"):
+				return {}
+			var model: BikeModel = node.get_meta("model")
+			var slots := []
+			for slot in model._slot_meshes:
+				if (model._slot_meshes[slot] as Array).is_empty():
+					continue
+				# The part itself: a block without its ancillaries, a wheel without its tyre.
+				if not whole and ((Shed.is_engine(item_id) and slot != "engine") or (slot == "front_tyre" and str(it.get("kind", "")) != "tyre")):
+					continue
+				slots.append(slot)
+			return {"model": model, "slots": slots, "node": node} if not slots.is_empty() else {}
+		"wheel":
+			var on := item_surface(int(it["ref"]), true)
+			if on.is_empty():
+				return {}
+			on["slots"] = ["front_tyre"] if (on["model"] as BikeModel)._slot_meshes.has("front_tyre") else []
+			return on if not (on["slots"] as Array).is_empty() else {}
+	return {}
+
+
 ## {xf, box} round a piece of equipment, for pings.
 func furniture_frame(id: int) -> Dictionary:
 	if furniture_nodes.has(id):
@@ -688,10 +772,59 @@ func _near(model: BikeModel, box: AABB, at: Vector3, radius: float) -> bool:
 	return closest.distance_to(local) < radius
 
 
+## How much further down than a part a whole engine hangs from a paint shop hook, so its top
+## sits just under the hook (a part's top hangs at the hook: see EquipmentView.add_hook_wire).
+## Where a part hung on a booth hook comes to: how far above the hanging place its bottom is, for
+## its top to touch the hook's tip, but never closer to the booth floor than HOOK_FLOOR.
+func _hook_lift(display: Node3D, hang_y: float) -> float:
+	var size: Vector3 = display.get_meta("size", Vector3(0.3, 0.3, 0.3))
+	return maxf(HOOK_TIP - size.y, HOOK_FLOOR - hang_y)
+
+
+func _engine_hang_drop(display: Node3D) -> float:
+	var size: Vector3 = display.get_meta("size", Vector3(0.4, 0.4, 0.4))
+	return maxf(0.0, size.y - 0.35)
+
+
+## The lifting sling an engine hangs from on a paint shop hook: a short chain to a ring, and two
+## straps from it down to the engine's lifting eyes, front and back.
+func _engine_sling(swing: Node3D, display: Node3D, depth: float) -> void:
+	var size: Vector3 = display.get_meta("size", Vector3(0.4, 0.4, 0.4))
+	var top_y := -depth + size.y
+	var ring_y := -(swing as Swing).length + 0.55
+	var strap := _material(Color(0.95, 0.55, 0.1), 0.0, 0.8)
+	var steel := _material(Color(0.55, 0.56, 0.58), 0.9, 0.3)
+	var ring := MeshInstance3D.new()
+	var tor := TorusMesh.new()
+	tor.inner_radius = 0.025
+	tor.outer_radius = 0.035
+	ring.mesh = tor
+	ring.material_override = steel
+	ring.position = Vector3(0.0, ring_y - 0.03, 0.0)
+	ring.rotation.x = PI * 0.5
+	ring.name = "EngineSling"
+	swing.add_child(ring)
+	var hang_basis := display.transform.basis
+	for d in [-1.0, 1.0]:
+		var eye: Vector3 = Vector3(0.0, top_y, 0.0) + hang_basis * Vector3(0.0, 0.0, d * size.z * 0.3)
+		var from := Vector3(0.0, ring_y - 0.06, 0.0)
+		var leg := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.03, from.distance_to(eye), 0.004)
+		leg.mesh = bm
+		leg.material_override = strap
+		leg.position = (from + eye) * 0.5
+		var up := (from - eye).normalized()
+		var side := up.cross(Vector3.RIGHT if absf(up.x) < 0.9 else Vector3.FORWARD).normalized()
+		leg.basis = Basis(side.cross(up), up, side)
+		leg.name = "EngineSling"
+		swing.add_child(leg)
+
+
 func _item_signature(item_id: int) -> String:
 	var it: Dictionary = Shed.items[item_id]
-	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
-		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else ""]
+	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
+		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)]
 	if Shed.is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
@@ -700,6 +833,15 @@ func _item_signature(item_id: int) -> String:
 	if tyre != 0:
 		sig += "|tyre " + _item_signature(tyre)
 	return sig
+
+
+## Each coat sprayed on a part changes this, so the part's redrawn in it even when it's the same
+## colour again (the wet coat's pass comes off with the old drawing; see SprayMarks).
+static func _coat_sig(it: Dictionary) -> String:
+	if not it.has("paint_quality") and not it.has("primer") and not it.has("coat_q"):
+		return ""
+	return "|q%.3f:%.3f:%.3f:%.3f" % [float(it.get("paint_quality", 0.0)), float(it.get("paint_runs", 0.0)), float(it.get("primer", 0.0)),
+		float(it.get("coat_q", 0.0))]
 
 
 func _bike_signature(id: int) -> String:
@@ -711,7 +853,8 @@ func _bike_signature(id: int) -> String:
 			parts.append("-")
 		else:
 			var it: Dictionary = Shed.items[item_id]
-			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot)])
+			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot),
+				Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
@@ -974,8 +1117,13 @@ func _bay_data(bay: int) -> Dictionary:
 		["Brake F", build.brake_fluid["front"], 0.0],
 		["Brake R", build.brake_fluid["rear"], 0.0],
 	]
-	return {"name": bike["name"], "status": status, "now": build.summary(), "delivered": bike["delivered"], "parts": parts,
+	var data := {"name": bike["name"], "status": status, "now": build.summary(), "delivered": bike["delivered"], "parts": parts,
 		"notes": build.notes, "fluids": fluids, "range_km": build.range_km()}
+	# A customer's bike: the screen shows the job's checklist, deadline and money instead.
+	var job := Contracts.job_for_bike(bike_id)
+	if not job.is_empty():
+		data["contract"] = Contracts.screen_data(job)
+	return data
 
 
 ## A bay screen's blueprint page: the parts the build needs and how far it's got.
@@ -1139,6 +1287,13 @@ func _poster(text: String, pos: Vector3, rot_y: float, size := Vector2(0.56, 0.2
 	paper.add_child(ink)
 
 
+## How big `l`'s text is in metres (width, height of a line), outline and all, from its font.
+static func label_size(l: Label3D) -> Vector2:
+	var font: Font = l.font if l.font else ThemeDB.fallback_font
+	var px := font.get_multiline_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, l.font_size)
+	return (px + Vector2.ONE * 2.0 * l.outline_size) * l.pixel_size
+
+
 func _label(text: String, pos: Vector3, rot_y: float, size := 32, color := Color(1, 1, 1)) -> Label3D:
 	var l := Label3D.new()
 	l.text = text
@@ -1197,18 +1352,21 @@ func _build_shell() -> void:
 			_deco(self, Vector3(wx, HEIGHT * 0.5 + 0.6, seg[0]), Vector3(0.02, HEIGHT - 1.2, seg[1]), _mats["wall_in"])
 			_deco(self, Vector3(wx, 0.6, seg[0]), Vector3(0.02, 1.2, seg[1]), _mats["wall_low"])
 		_deco(self, Vector3(wx, (HEIGHT + SIDE_DOOR_HEIGHT) * 0.5, door_z), Vector3(0.02, HEIGHT - SIDE_DOOR_HEIGHT, SIDE_DOOR_HALF * 2.0), _mats["wall_in"])
-		# Hazard-yellow frame round the doorway, through the wall's thickness.
+		# Hazard-yellow frame round the doorway, through the wall's thickness. It stands a
+		# centimetre proud into the opening so its faces don't sit in the same plane as the
+		# wall's (and its plaster's) edges and flicker against them.
 		var fx: float = c.x + side * (hx + t * 0.5)
 		for end in [-1.0, 1.0]:
-			_deco(self, Vector3(fx, SIDE_DOOR_HEIGHT * 0.5, door_z + end * (SIDE_DOOR_HALF + 0.05)), Vector3(t + 0.06, SIDE_DOOR_HEIGHT, 0.1), _mats["yellow"])
-		_deco(self, Vector3(fx, SIDE_DOOR_HEIGHT + 0.05, door_z), Vector3(t + 0.06, 0.1, SIDE_DOOR_HALF * 2.0 + 0.2), _mats["yellow"])
+			_deco(self, Vector3(fx, (SIDE_DOOR_HEIGHT - 0.01) * 0.5, door_z + end * (SIDE_DOOR_HALF + 0.045)), Vector3(t + 0.06, SIDE_DOOR_HEIGHT - 0.01, 0.11), _mats["yellow"])
+		_deco(self, Vector3(fx, SIDE_DOOR_HEIGHT + 0.045, door_z), Vector3(t + 0.06, 0.11, SIDE_DOOR_HALF * 2.0 + 0.2), _mats["yellow"])
 		var door_sign := _label("STORAGE" if side < 0.0 else "PAINT SHOP", Vector3(c.x + side * (hx - 0.03), SIDE_DOOR_HEIGHT + 0.35, door_z),
 			-side * PI * 0.5, 44, Color(0.08, 0.08, 0.08))
 		door_sign.outline_size = 0
 		_deco(self, c + Vector3(side * (DOOR_HALF + side_w * 0.5), HEIGHT * 0.5 + 0.6, hz - 0.01), Vector3(side_w, HEIGHT - 1.2, 0.02), _mats["wall_in"])
 		_deco(self, c + Vector3(side * (DOOR_HALF + side_w * 0.5), 0.6, hz - 0.01), Vector3(side_w, 1.2, 0.02), _mats["wall_low"])
-		# Hazard-yellow door posts.
-		_deco(self, c + Vector3(side * (DOOR_HALF + 0.08), DOOR_HEIGHT * 0.5, hz + 0.02), Vector3(0.16, DOOR_HEIGHT, t + 0.08), _mats["yellow"])
+		# Hazard-yellow door posts, a centimetre proud into the opening so they don't share a
+		# face with the wall's edge.
+		_deco(self, c + Vector3(side * (DOOR_HALF + 0.075), DOOR_HEIGHT * 0.5, hz + 0.02), Vector3(0.17, DOOR_HEIGHT, t + 0.08), _mats["yellow"])
 	# Roof with steel trusses.
 	_solid(c + Vector3(0.0, HEIGHT + 0.15, 0.0), Vector3(hx * 2.0 + 1.0, 0.3, hz * 2.0 + 1.0), _mats["roof"])
 	for i in 5:
@@ -1226,8 +1384,10 @@ func _build_shell() -> void:
 	drum.rotation.z = PI * 0.5
 	add_child(drum)
 	_deco(self, c + Vector3(0.0, DOOR_HEIGHT + 0.02, hz - 0.08), Vector3(DOOR_HALF * 2.0, 0.08, 0.1), _mats["dark"])
-	# Sign over the door.
+	# Sign over the door (the signage upgrade fits it inside its light box).
 	var sign := Label3D.new()
+	sign.name = "FrontSign"
+	front_sign = sign
 	sign.text = "TORQUE SHED"
 	sign.font_size = 110
 	sign.outline_size = 18
@@ -1292,16 +1452,26 @@ func _build_computer() -> void:
 	_target(pos + Vector3(0.0, 1.0, 0.0), Vector3(0.8, 0.6, 1.3), {"pc": true})
 
 
-## Deliveries are left outside, to the side of the roller door: a painted bay on the yard.
+## Deliveries are left outside, to the side of the roller door: a painted bay on the yard (see
+## Shed.DELIVERY_AREA), boxes packed on its front part and the delivery racking (equipment the
+## shed comes with) along the back, with a hatched aisle in front of the racking.
 func _build_delivery_area() -> void:
 	var paint := _material(Color(0.85, 0.7, 0.2), 0.0, 0.8)
-	var c := CENTER + Vector3(3.2 + 1.5 * 0.85, 0.0, HALF.y + 1.3 + 0.9)
-	var w := 4.0 * 0.85 + 0.4
-	var d := 3.0 * 0.9 + 0.4
+	var area: Rect2 = Shed.DELIVERY_AREA
+	var c := Vector3(area.get_center().x, 0.0, area.get_center().y)
+	var w := area.size.x + 0.2
+	var d := area.size.y + 0.2
 	for side in [-1.0, 1.0]:
 		_deco(self, c + Vector3(side * w * 0.5, 0.005, 0.0), Vector3(0.08, 0.01, d), paint)
 		_deco(self, c + Vector3(0.0, 0.005, side * d * 0.5), Vector3(w, 0.01, 0.08), paint)
-	var mark := _label("DELIVERIES", c + Vector3(0.0, 0.012, d * 0.5 + 0.35), 0.0, 48, Color(0.85, 0.7, 0.2, 0.8))
+	# The aisle in front of the racking, kept clear: hatched.
+	var floor_end: float = Shed.DELIVERY_FLOOR.end.y + 0.05
+	_deco(self, Vector3(c.x, 0.005, floor_end), Vector3(w, 0.01, 0.06), paint)
+	var aisle := Shed.DELIVERY_RACK_XFS[0].origin.z - 0.35 - floor_end
+	for i in int(area.size.x / 0.6):
+		var stripe := _deco(self, Vector3(area.position.x + 0.3 + i * 0.6, 0.005, floor_end + aisle * 0.5), Vector3(0.06, 0.01, aisle * 1.2), paint)
+		stripe.rotation.y = 0.6
+	var mark := _label("DELIVERIES", Vector3(c.x, 0.012, area.position.y - 0.45), 0.0, 64, Color(0.85, 0.7, 0.2, 0.8))
 	mark.rotation = Vector3(-PI * 0.5, PI, 0.0)
 	mark.outline_size = 0
 
@@ -1437,12 +1607,20 @@ func _build_booth_room() -> void:
 	# this room's west side).
 	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
 	_solid(c + Vector3(0.0, h * 0.5, hz + 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
-	_solid(c + Vector3(hx + 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.4), _mats["cladding"])
+	# The east wall, with the glass door through to the paint mixing bay (PaintBayRoom) near
+	# its front end.
+	for seg in _wall_runs(c.z - hz - 0.2, c.z + hz + 0.2, PaintBay.DOOR_Z, PaintBay.DOOR_HALF):
+		_solid(Vector3(c.x + hx + 0.1, h * 0.5, seg[0]), Vector3(0.2, h, seg[1]), _mats["cladding"])
+	_solid(Vector3(c.x + hx + 0.1, (h + PaintBay.DOOR_HEIGHT) * 0.5, PaintBay.DOOR_Z), Vector3(0.2, h - PaintBay.DOOR_HEIGHT, PaintBay.DOOR_HALF * 2.0),
+		_mats["cladding"])
 	_solid(c + Vector3(0.0, h + 0.08, 0.0), Vector3(hx * 2.0 + 0.4, 0.12, hz * 2.0 + 0.4), _mats["roof"])
 	var white := _material(Color(0.9, 0.91, 0.92), 0.0, 0.35)
 	_deco(self, c + Vector3(0.0, h * 0.5, -hz + 0.005), Vector3(hx * 2.0, h, 0.01), white)
 	_deco(self, c + Vector3(0.0, h * 0.5, hz - 0.005), Vector3(hx * 2.0, h, 0.01), white)
-	_deco(self, c + Vector3(hx - 0.005, h * 0.5, 0.0), Vector3(0.01, h, hz * 2.0), white)
+	for seg in _wall_runs(c.z - hz, c.z + hz, PaintBay.DOOR_Z, PaintBay.DOOR_HALF):
+		_deco(self, Vector3(c.x + hx - 0.005, h * 0.5, seg[0]), Vector3(0.01, h, seg[1]), white)
+	_deco(self, Vector3(c.x + hx - 0.005, (h + PaintBay.DOOR_HEIGHT) * 0.5, PaintBay.DOOR_Z), Vector3(0.01, h - PaintBay.DOOR_HEIGHT,
+		PaintBay.DOOR_HALF * 2.0), white)
 	var wx := c.x - hx + 0.005
 	for seg in _wall_runs(c.z - hz, c.z + hz, PAINT_DOOR_Z, SIDE_DOOR_HALF):
 		_deco(self, Vector3(wx, h * 0.5, seg[0]), Vector3(0.01, h, seg[1]), white)
@@ -1705,7 +1883,7 @@ func _build_lights() -> void:
 	fixture.emission_energy_multiplier = 4.0
 	for bay in BAY_COUNT:
 		var xf := bay_transform(bay)
-		_deco(self, Vector3(xf.origin.x, HEIGHT - 0.35, xf.origin.z), Vector3(0.2, 0.05, 1.3), fixture)
+		ceiling_strips.append(_deco(self, Vector3(xf.origin.x, HEIGHT - 0.35, xf.origin.z), Vector3(0.2, 0.05, 1.3), fixture))
 		var spot := SpotLight3D.new()
 		spot.position = Vector3(xf.origin.x, HEIGHT - 0.45, xf.origin.z + 0.4)
 		spot.rotation.x = -PI * 0.5
@@ -1717,7 +1895,7 @@ func _build_lights() -> void:
 		add_child(spot)
 		_shed_lights.append(spot)
 	for p in [Vector3(-4.2, 0.0, 1.5), Vector3(4.2, 0.0, 1.5), Vector3(0.0, 0.0, 3.5)]:
-		_deco(self, CENTER + p + Vector3(0.0, HEIGHT - 0.35, 0.0), Vector3(0.2, 0.05, 1.3), fixture)
+		ceiling_strips.append(_deco(self, CENTER + p + Vector3(0.0, HEIGHT - 0.35, 0.0), Vector3(0.2, 0.05, 1.3), fixture))
 		var omni := OmniLight3D.new()
 		omni.position = CENTER + p + Vector3(0.0, HEIGHT - 0.6, 0.0)
 		omni.omni_range = 7.0
@@ -1747,3 +1925,18 @@ func _build_sales_office() -> void:
 	sales_office = SalesOffice.new()
 	add_child(sales_office)
 	sales_office.build()
+
+
+## The paint mixing bay off the paint shop, behind the glass door (PaintBayRoom; see PaintBay).
+func _build_paint_bay() -> void:
+	paint_bay = PaintBayRoom.new()
+	paint_bay.name = "PaintBay"
+	add_child(paint_bay)
+	paint_bay.build(self)
+
+
+## The coffee shop next door, west of the storage room (CoffeeShopBuilding; see CoffeeShop).
+func _build_coffee_shop() -> void:
+	coffee_shop = CoffeeShopBuilding.new()
+	add_child(coffee_shop)
+	coffee_shop.build()

@@ -1,7 +1,9 @@
 extends Node
-## Shed sounds, made from scratch so there are no audio files to ship (SfxSynth has the
-## synthesis): tools, machines, footsteps by floor, parts landing by material, the building's
-## ambience. Sets up the SFX and Radio buses that the Esc menu volume sliders control, and the
+## Shed sounds, mostly made from scratch (SfxSynth has the synthesis): tools, machines,
+## footsteps by floor, parts landing by material, the building's ambience. A few are recordings
+## (RECORDED: the ratchet, sandblaster, dyno fan, roller door, door chime, phone, light switches,
+## gear levers and horns), which play in place of the made ones when their files are there.
+## Sets up the SFX and Radio buses that the Esc menu volume sliders control, and the
 ## buses under SFX that give each room its acoustics:
 ##   Room: sounds in the room you're in, through that room's reverb (the shed's hard concrete,
 ##         the small tiled paint booth, the cluttered store, the showroom's glass, outside's
@@ -26,13 +28,13 @@ const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder",
 ## The one-shot when a job is done (putting a part down plays an impact instead, see job_done).
 const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "install": "clunk", "take": "pickup",
 	"place": "clunk", "drop": "clunk", "set_down": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink",
-	"tyre_remove": "bead_pop"}
+	"tyre_remove": "bead_pop", "coffee_tray_take": "pickup", "coffee_tray_down": "clunk"}
 ## The sounds a machine makes starting up and stopping, either side of its loop.
 const LOOP_TAILS := {"grinder": ["grinder_up", "grinder_down"], "jet": ["jet_on", "jet_off"], "spray_gun": ["gun_on", "gun_off"],
 	"door": ["door_start", "door_stop"], "washer": ["pump_on", "pump_off"], "blast": ["blast_on", "blast_off"],
 	"compressor": ["comp_on", "comp_off"]}
 ## How long a loop takes to fade in, for machines that spin up (their start sound covers it).
-const LOOP_FADE_IN := {"grinder": 0.45, "jet": 0.15, "spray_gun": 0.12, "compressor": 0.6, "blast": 0.1}
+const LOOP_FADE_IN := {"shaker": 0.5, "grinder": 0.45, "jet": 0.15, "spray_gun": 0.12, "compressor": 0.6, "blast": 0.1, "fan": 1.4}
 ## Loops that get a small random pitch each time they start (the same tool never quite the same).
 const LOOP_DETUNE := ["ratchet", "scrub", "grinder", "spray", "spray_gun", "jet", "washer", "blast", "changer", "pour"]
 ## The acoustics of each kind of room: AudioEffectReverb settings (room size, damping, wet,
@@ -48,16 +50,53 @@ const ROOM_PRESETS := {
 }
 ## Which acoustics each room (Workshop.room_at) has.
 const ROOM_KIND := {"shed": "shed", "wing": "shed", "paint": "paint", "storage": "storage", "annex": "storage", "dyno": "dyno",
-	"sales": "sales", "sales_office": "office", "": "outside"}
+	"sales": "sales", "sales_office": "office", "cafe": "sales", "": "outside"}
 ## How much quieter a sound is through a wall than in the room (dB), and muffled to this cutoff.
 const WALL_DB := -7.0
 const DOORWAY_DB := -3.5
 const FAR_CUTOFF := 1100.0
+## Recorded sounds (res://audio/sfx/<file>.ogg, mono) that play in place of the synthesised
+## ones: each file is a variant, picked without repeats like the made ones. A sound with no
+## recording (or whose files are missing) is synthesised as before.
+const RECORDINGS_DIR := "res://audio/sfx/"
+const RECORDED := {
+	"ratchet": ["wrench1", "wrench2", "wrench3", "wrench4"],
+	"blast": ["sandblaster1", "sandblaster2", "sandblaster3", "sandblaster4"],
+	"fan": ["dynofan1", "dynofan2", "dynofan3"],
+	"fan_build": ["dynofanbuild1", "dynofanbuild2", "dynofanbuild3"],
+	"door": ["rollerdoor"],
+	"bell_chime": ["doorbellchime"],
+	"phone_ring": ["telephone1", "telephone2", "telephone3"],
+	"light_switch": ["lightswitch1a", "lightswitch1b", "lightswitch2", "lightswitch3"],
+	"shift_slick": ["gearshift1a", "gearshift1b", "gearshift1c"],
+	"shift_click": ["gearshift3", "gearshift4a", "gearshift1c"],
+	"shift_clunk": ["gearshift2", "gearshift4b"],
+	"horn_disc": ["horn2", "horn4", "horn7"],
+	"horn_low": ["horn1"],
+	"horn_snail": ["horn3", "horn5"],
+	"horn_high": ["horn6"],
+	"horn_pip": ["horn8"],
+	"horn_air": ["airhorn10", "airhorn12"],
+	"horn_truck": ["airhorn9"],
+	"horn_train": ["airhorn11"],
+	"horn_police": ["policehorn17", "policehorn18", "policehorn19", "policehorn20"],
+	"horn_ship": ["shiphorn13", "shiphorn15", "shiphorn16"],
+	"horn_tug": ["shiphorn14"],
+}
+## Sounds that are only ever recordings: without their files they borrow a synthesised one
+## ("" for silence).
+const STAND_INS := {"light_switch": "switch", "phone_ring": "bell_chime", "fan_build": "", "shift_slick": "", "shift_click": "",
+	"shift_clunk": ""}
+## The phone: how many times it rings, and the seconds from one ring to the next.
+const PHONE_RINGS := 3
+const PHONE_GAP := 2.2
 ## Bump to throw away the sound cache (the synthesis source's hash is checked too).
 const CACHE_VERSION := "shed-sound-1"
 const CACHE_PATH := "user://sfx_cache.bin"
 
 var muffled := false
+## Times the sales office phone has rung (tests).
+var phone_calls := 0
 ## The room the listener is in now ("" outside), and the acoustics shown for it.
 var listener_room := ""
 var listener_pos := Vector3.ZERO
@@ -69,6 +108,7 @@ var loaded_from_cache := false
 var ready_ms := 0.0
 
 var _streams := {}      # sound -> Array[AudioStreamWAV], variant order
+var _recorded := {}     # sound -> Array[AudioStream], its recordings
 var _pcm := {}          # "sound#v" -> PackedByteArray (16-bit), filled by the worker
 var _mutex := Mutex.new()
 var _thread: Thread
@@ -112,12 +152,41 @@ func apply_volumes() -> void:
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Radio"), linear_to_db(maxf(Settings.radio_volume, 0.0001)))
 
 
-## The first variant of `sound` (a loop has only the one).
+## The first synthesised variant of `sound` (a loop has only the one).
 func stream(sound: String) -> AudioStreamWAV:
 	return variants(sound)[0]
 
 
-## Every variant of `sound`.
+## The recordings of `sound` (RECORDED), loaded once; empty if it has none.
+func recordings(sound: String) -> Array:
+	if not _recorded.has(sound):
+		var list := []
+		for file in RECORDED.get(sound, []):
+			var path := RECORDINGS_DIR + str(file) + ".ogg"
+			if not ResourceLoader.exists(path):
+				continue
+			var s := load(path) as AudioStream
+			if s == null:
+				continue
+			if LOOPS.has(sound) and s is AudioStreamOggVorbis:
+				(s as AudioStreamOggVorbis).loop = true
+			list.append(s)
+		_recorded[sound] = list
+	return _recorded[sound]
+
+
+## What `sound` plays: its recordings if it has any, else its synthesised variants (or what
+## stands in for it, STAND_INS). Empty for a sound with nothing to play.
+func sounds(sound: String) -> Array:
+	var rec := recordings(sound)
+	if not rec.is_empty():
+		return rec
+	if STAND_INS.has(sound):
+		return [] if str(STAND_INS[sound]) == "" else sounds(str(STAND_INS[sound]))
+	return variants(sound)
+
+
+## Every synthesised variant of `sound`.
 func variants(sound: String) -> Array:
 	if not _streams.has(sound):
 		var list := []
@@ -127,9 +196,12 @@ func variants(sound: String) -> Array:
 	return _streams[sound]
 
 
-## A variant of `sound` picked at random, never the same one twice running.
-func pick(sound: String) -> AudioStreamWAV:
-	var list := variants(sound)
+## A variant of `sound` (a recording if it has them) picked at random, never the same one twice
+## running. Null for a sound with nothing to play.
+func pick(sound: String) -> AudioStream:
+	var list := sounds(sound)
+	if list.is_empty():
+		return null
 	if list.size() == 1:
 		return list[0]
 	var last := int(_last_pick.get(sound, -1))
@@ -179,8 +251,11 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null)
 	var host: Node = parent if parent else get_tree().current_scene
 	if host == null:
 		return null
+	var s := pick(sound)
+	if s == null:
+		return null
 	var p := AudioStreamPlayer3D.new()
-	p.stream = pick(sound)
+	p.stream = s
 	p.volume_db = volume_db + _rng.randf_range(-1.2, 1.2) + occlusion_db(pos)
 	p.pitch_scale = _rng.randf_range(0.95, 1.05)
 	p.unit_size = 4.0
@@ -265,11 +340,11 @@ func step_surface(pos: Vector3) -> String:
 			return "epoxy" if epoxy else "concrete"
 		"annex":
 			return "metal" if pos.y > 0.3 else ("epoxy" if epoxy else "concrete")
-		"paint":
+		"paint", "mixing":
 			return "tile"
 		"sales":
 			return "wood" if pos.y > 0.25 else "tile"
-		"sales_office":
+		"sales_office", "lounge":
 			return "carpet"
 	var ground := ground_at(pos)
 	var wet := Weather.current.wet if Weather.current else 0.0
@@ -318,9 +393,12 @@ func bell(at: Vector3) -> void:
 	if host == null:
 		return
 	var pairs := [["bell", at, 2.0, 9.0, 140.0], ["bell_chime", SalesOffice.SHED_CHIME_POS, -2.0, 5.0, 60.0]]
+	if not recordings("bell_chime").is_empty():
+		# The recorded door chime is the arrival bell; the brass bell just tinkles along.
+		pairs = [["bell_chime", at, 0.0, 9.0, 140.0], ["bell", at, -8.0, 6.0, 60.0], ["bell_chime", SalesOffice.SHED_CHIME_POS, -2.0, 5.0, 60.0]]
 	for p in pairs:
 		var player := AudioStreamPlayer3D.new()
-		player.stream = stream(str(p[0]))
+		player.stream = pick(str(p[0]))
 		player.bus = bus_for(p[1])
 		player.volume_db = float(p[2]) + occlusion_db(p[1]) * 0.5
 		player.unit_size = float(p[3])
@@ -336,13 +414,31 @@ func bell(at: Vector3) -> void:
 		office.ring()
 
 
+## The sales office phone ringing at `at`: a few rings a couple of seconds apart, a different
+## take each time, with the extension bell on the shed's wall (by the door chime) ringing along
+## so the crew hear it at work. Only plays here: SfxAmbience rings it on every player's PC
+## when a new customer calls ahead.
+func ring_phone(at: Vector3, rings := PHONE_RINGS) -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	phone_calls += 1
+	for i in rings:
+		tree.create_timer(i * PHONE_GAP).timeout.connect(func():
+			play_at("phone_ring", at, -3.0)
+			play_at("phone_ring", SalesOffice.SHED_CHIME_POS, -12.0))
+
+
 ## Plays a one-shot that isn't anywhere in the world: menu and HUD sounds.
 func play_ui(sound: String, volume_db := 0.0) -> void:
 	var host: Node = get_tree().current_scene if get_tree() else null
 	if host == null:
 		return
+	var st := pick(sound)
+	if st == null:
+		return
 	var p := AudioStreamPlayer.new()
-	p.stream = pick(sound)
+	p.stream = st
 	p.bus = "SFX"
 	p.volume_db = volume_db
 	host.add_child(p)
@@ -360,8 +456,10 @@ func set_loop(p: AudioStreamPlayer3D, sound: String) -> void:
 			p.stop()
 			_tail(p, was, 1)
 		return
-	var s := stream(sound)
-	if p.stream == s and p.playing:
+	if p.playing and was == sound:
+		return
+	var s := pick(sound)
+	if s == null:
 		return
 	if not p.has_meta("base_db"):
 		p.set_meta("base_db", p.volume_db)
@@ -403,6 +501,8 @@ func occlusion_db(pos: Vector3) -> float:
 		return DOORWAY_DB
 	if pair.has("sales") and pair.has("sales_office"):
 		return DOORWAY_DB
+	if pair.has("cafe") and pair.has(""):
+		return DOORWAY_DB   # the coffee shop's door stands open
 	return WALL_DB
 
 

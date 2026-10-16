@@ -237,6 +237,9 @@ func _draw_bike(font: Font) -> void:
 	if data.has("blueprint"):
 		_draw_blueprint(font)
 		return
+	if data.has("contract"):
+		_draw_contract(font)
+		return
 	if data.is_empty():
 		_text(font, Vector2(24, 50), "EMPTY BAY", 40, Color(0.05, 0.05, 0.05))
 		_text(font, Vector2(24, 160), "Order a project bike from the Esc menu,", 28, DIM)
@@ -306,6 +309,71 @@ func _draw_bike(font: Font) -> void:
 				_text(font, Vector2(px + 152, py + 26), "LOOSE", 11, Color(1, 0.85, 0.3))
 		else:
 			_text(font, Vector2(px + 150, py + 14), "MISSING", 12, BAD)
+
+
+## A customer's bike: the job's checklist ticked off as the work gets done (an MOT's fails to
+## fix under it), and on the right the deadline, the fee, the parts spent against the budget,
+## what handing it back now pays and the profit after the parts.
+func _draw_contract(font: Font) -> void:
+	var job: Dictionary = data["contract"]
+	var ink := Color(0.02, 0.08, 0.06)
+	_page.draw_rect(Rect2(0, 0, PX.x, 70), Color(0.25, 0.8, 0.55, 0.95))
+	_text(font, Vector2(24, 50), ("JOB: " + str(job.get("title", data.get("name", "")))).to_upper().left(28), 36, ink)
+	_text(font, Vector2(560, 48), str(data.get("status", "")), 22, ink, 440, HORIZONTAL_ALIGNMENT_RIGHT)
+	_text(font, Vector2(24, 102), "%s for %s" % [job.get("kind", ""), job.get("customer", "")], 20, Color(0.6, 1.0, 0.8), 600)
+	var rows: Array = job.get("rows", [])
+	var met := int(job.get("met", 0))
+	var frac := float(met) / maxf(1.0, rows.size())
+	_page.draw_rect(Rect2(24, 114, 520, 14), Color(1, 1, 1, 0.1))
+	_page.draw_rect(Rect2(24, 114, 520 * frac, 14), GOOD if met == rows.size() else Color(1.0, 0.75, 0.3))
+	_text(font, Vector2(556, 127), "%d of %d done" % [met, rows.size()], 15, DIM)
+	var y := 172.0
+	for r in rows:
+		var done := bool(r.get("done", false))
+		var box := Rect2(24, y - 21, 24, 24)
+		_page.draw_rect(box, GOOD if done else Color(1, 1, 1, 0.08))
+		_page.draw_rect(box, GOOD if done else Color(1, 1, 1, 0.5), false, 2.0)
+		if done:
+			_page.draw_polyline(PackedVector2Array([Vector2(29, y - 9), Vector2(35, y - 3), Vector2(44, y - 17)]), BG, 3.5)
+		_text(font, Vector2(60, y), str(r.get("text", "")).left(44), 19, Color(0.75, 0.95, 0.8) if done else Color.WHITE, 400)
+		_text(font, Vector2(470, y), str(r.get("have", "")).left(22), 15, GOOD if done else DIM, 150, HORIZONTAL_ALIGNMENT_RIGHT)
+		y += 38.0
+		if y > PX.y - 60:
+			break
+	if str(job.get("mot", "")) != "" and y < PX.y - 60:
+		var fixes: Array = job.get("fixes", [])
+		_text(font, Vector2(24, y), str(job["mot"]), 17, BAD if not fixes.is_empty() else Color(1.0, 0.75, 0.3), 600)
+		y += 26.0
+		for f in fixes:
+			if y > PX.y - 46:
+				break
+			_text(font, Vector2(40, y), "FAIL  %s: %s" % [f.get("text", ""), f.get("fix", "")], 14, Color(1.0, 0.6, 0.5), 580)
+			y += 22.0
+	# The deadline and the money, on the right.
+	_page.draw_rect(Rect2(640, 86, 370, 430), Color(1, 1, 1, 0.04))
+	var late := bool(job.get("late", false))
+	_text(font, Vector2(656, 116), "DEADLINE", 15, DIM)
+	_text(font, Vector2(656, 154), str(job.get("due", "")), 30, BAD if late else Color.WHITE, 340)
+	_text(font, Vector2(656, 178), "due on day %d" % int(job.get("due_day", 1)), 15, DIM)
+	var lines := [["Fee", int(job.get("fee", 0)), Color.WHITE]]
+	if int(job.get("budget", 0)) > 0:
+		lines.append(["Parts budget", int(job["budget"]), Color.WHITE])
+	lines.append(["Parts spent so far", int(job.get("spent", 0)), BAD if int(job.get("over", 0)) > 0 else Color.WHITE])
+	lines.append(["Hand back now pays", int(job.get("payout", 0)), Color(0.6, 1.0, 0.8)])
+	var my := 226.0
+	for l in lines:
+		_text(font, Vector2(656, my), str(l[0]), 18, DIM)
+		_text(font, Vector2(850, my), TvChannels.money_text(int(l[1])), 22, l[2], 150, HORIZONTAL_ALIGNMENT_RIGHT)
+		my += 36.0
+	var profit := int(job.get("profit", 0))
+	_page.draw_line(Vector2(656, my - 18), Vector2(1000, my - 18), Color(1, 1, 1, 0.25), 1.0)
+	_text(font, Vector2(656, my + 10), "Profit", 22, Color.WHITE)
+	_text(font, Vector2(800, my + 10), TvChannels.money_text(profit), 30, GOOD if profit > 0 else BAD, 200, HORIZONTAL_ALIGNMENT_RIGHT)
+	_page.draw_multiline_string(font, Vector2(656, my + 44), str(job.get("note", "")), HORIZONTAL_ALIGNMENT_LEFT, 344, 15, 3, DIM)
+	if bool(job.get("ready", false)):
+		_text(font, Vector2(24, PX.y - 16), "Ready: Esc, Contracts, Hand back. The customer comes out for it.", 17, GOOD, 600)
+	else:
+		_text(font, Vector2(24, PX.y - 16), str(job.get("why", "")).left(70), 16, DIM, 600)
 
 
 ## A blueprint build's checklist: every part the blueprint needs, ticked off as it goes on.

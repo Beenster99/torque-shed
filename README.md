@@ -2,7 +2,7 @@
 
 A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 41 parts from 35 kinds (stands, headlight, horn, ECU, panniers, top box, fog lights, fairing and mirrors are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree, and a wage; the business buys parts and project bikes, sells parts and bikes, and can borrow from the bank (see Money below), and the garage's money buys upgrades to the shed itself.
+Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 48 parts from 42 kinds (stands, headlight, horn, ECU, panniers, top box, fog lights, fairing, mirrors, front mudguard, indicators, side panels, rearsets, engine guards, number boards and a swingarm of its own are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree, and a wage; the business buys parts and project bikes, sells parts and bikes, and can borrow from the bank (see Money below), and the garage's money buys upgrades to the shed itself.
 
 ### What a bike is made of
 
@@ -11,9 +11,9 @@ Current milestone, **The Shed**: a snug first-person workshop with four bike bay
 | Chassis | Frame, front fork, rear suspension (type, travel, bump and rebound damping, adjustability) |
 | Wheels | Front and rear wheel (spoked, wire, cast, carbon; 17" to 21"), front and rear tyre (type, compound, width) |
 | Brakes, front and rear | Disc (type, diameter), caliper (pistons), pads (compound), master cylinder (axial or radial) |
-| Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens), horn (10 types, from a disc horn to a train horn or a musical one), fog lights |
+| Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens), horn (17 types, from a disc horn or a courtesy pip to a truck air horn, a police yelp, a ship's foghorn or a musical one), fog lights |
 | Electronics | ECU (stock, remap, ABS, sport with traction control, race with all of it): more power and revs, and rider aids for ABS, traction control, stability and anti-wheelie |
-| Tail and front | Tail unit (6 kinds: long classic mudguard, café racer hump, scrambler loop, sport tail tidy, bobber chopped fender, enduro high fender), which carries the rear light, mudguard and number plate; fairing (headlight flyscreen, bikini, half, touring with a tall screen, full race in fibreglass or carbon), which cuts drag for a higher top speed but adds weight; mirrors (round chrome, bar-end, sport stalk, wide touring, fairing-mount) |
+| Tail and front | Tail unit (6 kinds: long classic mudguard, café racer hump, scrambler loop, sport tail tidy, bobber chopped fender, enduro high fender), which carries the rear light, mudguard and number plate; fairing (headlight flyscreen, bikini, half, touring with a tall screen, full race in fibreglass or carbon), which cuts drag for a higher top speed but adds weight; mirrors (round chrome, bar-end, sport stalk, wide touring, fairing-mount); front mudguard (road hugger, MX high, enduro, bobbed steel, alloy café, chrome classic, carbon hugger) |
 | Luggage | Panniers and top boxes; they add drag |
 | Stands | Side stand (length, lean), centre stand (lift). Without either, a bike left anywhere but a paddock stand falls over |
 | Fluids | Petrol in the tank, oil in the engine, brake fluid in each master cylinder. Each has 3 grades and ages with use |
@@ -26,7 +26,7 @@ Engine parts have to suit each other: one carb can't feed a big four, a race hea
 
 Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 
-**Saving**: the shed saves itself every minute, when you leave to the title and when you close the game, and the Esc menu has a **Save now** button. Everything is kept: the bikes and every part, where things were left (bikes out on the road included), equipment, the time of day and where you stood. The title screen's solo and host buttons **Continue** the saved shed; **New shed** starts again (after asking). In co-op the host's shed is the one saved. Saves live in `%APPDATA%\Godot\app_userdata\Torque Shed\saves`.
+**Saving**: the shed saves itself every minute, when you leave to the title and when you close the game, and the Esc menu has a **Save now** button. Everything is kept: the bikes and every part, where things were left (bikes out on the road included), equipment, the time of day and where you stood. The title screen's solo and host buttons **Continue** the saved shed; **New shed** starts again (after asking). A **new shed starts empty**: no bikes, nothing on the workbench and the engine stand bare, just the shed's own machines (stand, parts washer, repair bench, tyre changer, paint shop) and the business's opening money. Buy a project bike from the parts computer, or take on a customer's job, to get started. In co-op the host's shed is the one saved. Saves live in `%APPDATA%\Godot\app_userdata\Torque Shed\saves`.
 
 ### In the shed
 
@@ -37,26 +37,39 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Crouch (low parts such as stands, oil filter and chain need it) | C or Ctrl | Right stick click |
 | Pick a tool (hands, wrench, brush, grinder, spray can, pressure washer, spray gun, stopwatch) | 1-8, Q / E, mouse wheel | LB / RB |
 | Work on what you're looking at, or put a held part down anywhere | Hold left mouse | Hold RT or A |
-| Spray colour / finish (can or gun) | R or right mouse / T or the mouse back (side) button | X / B |
+| Spray colour / finish (can or gun); with the spray gun, T also picks a protective coat after the finishes | R or right mouse / T or the mouse back (side) button | X / B |
 | Ping what you're looking at for the crew | G or middle mouse | D-pad right |
 | Stopwatch start / stop (lap or reset: right mouse with the stopwatch out) | P | D-pad left |
 | Name the bike you're looking at | N | |
 | Roller door, shed lights (switches by the door); paint shop and storage room lights (switch inside each door) | F | Y |
 | Dyno room: its lights and the cooling fan (switches inside its door), put on or hang up the ear defenders | F | Y |
 | Sales office lights (switches by the foot of the stairs and at the top) | F | Y |
+| Raise or lower a bay's bike lift (bays 5 to 7: look at the yellow button post beside the bay) | F | Y |
 | Dyno room: strap the bike down (at each of the 4 posts), take the extraction hose off its hook and push it over the exhaust | Hold left mouse | Hold RT or A |
 | Sandblaster: put your hands in the gloves / step back | F | Y |
 | Sandblaster: blast where you aim / turn the engine | Hold left mouse / W A S D, or hold right mouse and move the mouse | Hold RT / left stick |
+| Sandblaster: scan the engine for what's still to blast (press again to stop) | X | D-pad up |
+| Spray can or gun on a part: bring up the spray controls (press again to step back) | F | Y |
+| With the spray controls up: hold your breath to steady your hand | right mouse | LT |
+| Spray can or gun: scan the part for missed, thin, dry and run patches (press again to stop) | X | D-pad up |
 | Drain a fluid (holding a drain pan, empty can or bleed bottle); with the wrench at a chain, set its tension | Hold R or right mouse | Hold X |
 | Get on a finished bike (tap), or wheel it about on foot (hold) | F | Y |
 | Use the parts computer or the dyno desk, switch the radio on or off | F | Y |
-| Sell a loose part or a whole bike (parts computer, Sell aisle); send money, take money out, loans (Esc, Money tab) | F at the computer / Esc | Y / Start |
+| Sort the parts computer's list, or show only parts that fit a bike, are within budget or suit a style | Sort / Fits / Within budget / Style, under the aisles | d-pad up to them, A |
+| Sell a loose part, or a bike on a showroom stand to the trade (parts computer, Sell aisle); send money, take money out, loans (Esc, Money tab) | F at the computer / Esc | Y / Start |
+| Garage upgrades (parts computer): pick a finish's colour or style, see it in the shed, back to the page | Click a swatch, **See it in the shed**, Esc | D-pad to a swatch and A, B |
 | Talk to a customer waiting at reception (their offer card: Accept, Decline) | F | Y |
+| Put a bike up for sale: ride or wheel it onto a showroom display stand and get off or let go | F (tap or hold) | Y |
+| Use the sales PC (upstairs office): Showroom, Offers, Part exchange and Deals pages | F at the PC; Esc to close | Y; B or Start |
+| Answer a buyer's offer (sales PC, Offers): **Accept**, **Turn it down**, or type a figure and **Counter-offer** | Click | d-pad to it, A |
+| Talk to a part-exchange buyer in the showroom (opens their page on the sales PC) | F | Y |
+| Bring a customer's bike in from the car park: get on and ride it (tap), or walk it in by the handlebars (hold) | F | Y |
 | Unpack a delivery box; take hold of or let go of equipment (posters, TVs and the whiteboard hang on the wall you look at) | F | Y |
 | Carrying equipment: push it further away / pull it closer | Mouse wheel up / down (or Q / E) | LB / RB |
 | Carrying equipment: snapping to walls and corners on or off | R or right mouse | X |
-| Turn the part in your hands or the equipment you're carrying before you put it down (a quarter turn a press with snapping on; with it off, hold to turn it freely). Posters turn portrait or landscape | , / . (the < and > keys) | View (turns it right) |
-| Scrap the equipment you're carrying or the part in your hands, for good: hold, then press again to confirm | Hold Delete, then Delete | Hold D-pad down, then D-pad down |
+| Turn the part in your hands or the equipment you're carrying before you put it down (a quarter turn a press; with free rotate on, or snapping off, a tap turns it 5 degrees and holding turns it smoothly). Posters turn portrait or landscape | , / . (the < and > keys) | View (turns it right) |
+| Free rotate on / off: the turn keys go a quarter at a time, or to any angle | / | (none: use the Settings tab switch) |
+| Scrap any machine, bench, shelf, stand, seat, poster, TV or trinket you're looking at (hands empty), the equipment you're carrying or the part in your hands, for good: hold, then press again to confirm | Hold Delete, then Delete | Hold D-pad down, then D-pad down |
 | Sit on a seat (tap), or move it (hold) | F | Y |
 | Change radio station | Hold left mouse on the radio | Hold RT or A |
 | Tyre changer: fit the tyre you're holding (keep the lever on the marker) | Hold left mouse, steer the lever with the mouse | Hold RT or A, steer with the right stick |
@@ -65,20 +78,20 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Throw away or recycle a part (hold it, look at a bin) | Hold left mouse | Hold RT or A |
 | Whiteboard: draw / rub out; pen colour, eraser, thickness; text; undo; wipe it all | Hold left / right mouse; 1-6, 7, wheel; T; Z; hold X | Hold RT / LT; B colour; LB / RB thickness; D-pad left undo |
 | Whiteboard: add a picture from your PC; move a picture (again to put it down); size it; make a poster of the board | U; M; + / - (or the wheel while moving it); K | (no picture upload); D-pad up; LB / RB while moving it; D-pad down |
-| Whiteboard: turn a picture (15 degrees a press with snapping on; hold to turn it freely with snapping off) | , / . while moving it or looking at it | View |
+| Whiteboard: turn a picture (15 degrees a press; with free rotate on or snapping off, hold to turn it freely) | , / . while moving it or looking at it | View |
 | Geometry mode: fit the parts of the bike you're looking at (again, or Esc, to leave) | F2 | |
 | Geometry mode: select a part / drag a handle; orbit; pan; zoom | Left mouse; right drag; middle drag; wheel | |
 | Geometry mode: move, rotate, scale handles; snap (hold); undo; reset the part | W, E, R; Ctrl; Z; Backspace | |
 | Menu (your level, tool upgrades and skills are in its Character tab; rider gear and trinkets in its Shop tab; change any key in its Key bindings tab) | Esc | Start |
 | In menus and on the computers: move, press, back; next / previous tab or aisle | Mouse, Esc | D-pad or left stick, A, B; LB / RB |
 
-**Building from scratch**: hold a frame and look at an empty bay floor (bay 4 is free in a new shed), then hold the work button to stand the frame up in the bay. Fit the fork, wheels, engine and the rest onto it from there. Taking the bare frame off again frees the bay.
+**Building from scratch**: hold a frame and look at an empty bay floor (every bay is free in a new shed), then hold the work button to stand the frame up in the bay. Fit the fork, wheels, engine and the rest onto it from there. Taking the bare frame off again frees the bay.
 
 Look at any part to see its spec, condition, rust, dirt, wear and colour. With your **hands** you take parts off (once unbolted and once the parts mounted on them are off), carry them, fit them and put them down anywhere: the floor, a bench top, a shelf or an engine stand. The **wrench** bolts and unbolts. The **brush** scrubs off dirt from every part around where it lands; the parts washer does it on its own. The **grinder and welder** restores rust and wear on a repair machine, every part on the machine at once. The **spray can** paints a part in the colour and finish shown above the tool bar (16 colours; gloss, matte, metallic flake, chrome or old patina); the part has to be free of rust first. Painting and chain lube are hand work: hold the button and sweep the can over the whole part. The panel shows how much is covered; missed patches make a patchy job and going over one spot too long leaves runs (or flings lube off), and the part's info shows how good the job was. Hold a part while looking at a bike or engine to see how fitting it would change power, top speed, weight and braking.
 
 Chains stretch and lose their lube as you ride, faster off-road: crouch by the chain with the wrench and hold the second button to set the tension, and spray it with **chain lube** (hold the can, crouch, sweep it along the chain). A slack or dry chain wastes power and the bay screen says so.
 
-**Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the general waste bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt road. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
+**Fluids** come in containers from the parts computer. Hold one and look at a bike's tank, engine or brake master cylinder to pour it in; hold an empty container (jerry can, drain pan, bleed bottle) and hold the alt button to drain it out, then tip old fluid away at the general waste bin. Draining the oil means crouching under the bike. Low or old oil costs power and wears the engine, stale fuel loses power, and old brake fluid makes the brakes spongy. Bikes pick up dirt as they're ridden, more on the dirt tracks. Wheel a muddy bike into the **wash bay** beside the shed and use the **pressure washer** (tool 6). With your hands, look at a bike with a stand bolted on to put it on its side or centre stand.
 
 ### Tail units, fairings and mirrors
 
@@ -89,6 +102,68 @@ A **fairing** is an extra, like panniers. It goes on over the headlight, so the 
 **Mirrors** bolt to the handlebars (take them off before the bars), except fairing-mount mirrors, which need a fairing fitted and have to come off before it. They add a touch of drag. From the saddle the glass is a real mirror finish, catching the sky and what's round you.
 
 All three are ordinary parts: order them at the parts computer (Bike aisle), clean, repair, paint and recycle them (steel guards go in metal recycling, plastic fenders and fairings in plastic, fibreglass and carbon ones and mirrors in general waste), and blueprints and saves keep them.
+
+### Bike styles and the bolt-on style bits
+
+Every part you can see on a bike says which **styles** it suits (classic, cafe racer, bobber, chopper, cruiser, scrambler, adventure, tall roader, tourer, sports, race, naked, supermoto, MX); the parts computer lists them under "Suits". Put the parts together and the bike has a style of its own: the frame says most, then the tank, seat, bars, tail and fairing, then the fork, exhaust, front mudguard and the rest. When most of the bike agrees (70% or more) it's **a proper** one ("A proper bobber"); less, and it's "mostly" one or a mix. The showroom computer shows each bike's style, and a proper one is worth more to a buyer. Customers can ask for a style (cafe racer, scrambler, tourer, sports bike, bobber, chopper, cruiser, adventure, MX or supermoto): the job counts it from the marks on its card, or from the bike being a proper one of the style all over.
+
+Six optional kinds finish a bike in its style, each bolted to the frame, five or more of each:
+
+| Kind | Models |
+|---|---|
+| Indicators | amber stalks, chrome bullets, mini LEDs, flush-mount LEDs, big touring indicators |
+| Side panels | classic painted triangles, oval number panels, MX side plates, sculpted sports cowls, a chrome battery cover |
+| Footpegs and rearsets | rubber road pegs, billet alloy rearsets (feet up and back), cleated MX pegs, forward controls (feet out in front), footboards. Rearsets move where the rider's feet go |
+| Engine guards | chrome engine bars, an adventure crash cage, an alloy bash plate, frame sliders, an MX skid plate |
+| Number boards | MX front plate and side boards, a front race plate, radiator shrouds, oval club-racer plates, flat-track side boards; each carries the bike's race number |
+| Swingarm | in place of the one the frame comes with: steel or polished alloy **box-section** arms, steel or gold anodised **banana** arms bowed up over the exhaust, alloy or black **braced MX** arms with the truss under each side, a chain slider and guide, chrome or black **hardtail** rear ends (rigid stays, the shocks hidden away) and alloy or black **single-sided** arms. Take it off and the frame's own arm goes back on when the bike is rebuilt |
+
+#### Style packs
+
+Each of the fourteen styles has its own **pack** of about thirty parts made for it (436 in all): frames with their own wheelbase and rake, forks, wheels, tyres, tanks, seats, bars, exhausts, headlights, tails, front mudguards, mirrors, the bolt-on style bits, and fairings or bags where the style uses them. They aren't recolours: each part has a **look** that changes its shape and detail, for example:
+
+- Tanks: teardrop, slab-sided, coffin, fat split cruiser tanks with a dash console, slim peanuts, little round tanks, long tanks with knee dents and long low racing tanks. Paint can be two-tone, a band, racing stripes, scallops or pinstripes. Caps can be monza, flush or twin, with oval, roundel or wing badges and knee pads.
+- Seats: brat, stepped two-up, king-and-queen, sprung solo pans, gunfighter, long cafe humps and flat-track seats. They can be tuck-and-roll, ribbed or diamond-stitched with coloured piping, with springs, sissy bars and backrests.
+- Bars: tracker, drag, buckhorn, Z bar, T bar on a centre post, clubman drops and ape hangers, on risers, with an MX brace and pad.
+- Exhausts: fishtails, turnouts, cigar mufflers, trumpets, reverse cones, triangle cans and stubbies. Headers can be chrome, black, blued titanium or heat-wrapped, and some systems fit a pipe each side.
+- Lamps: bullet, oval, quad LED, stacked twins, square lamps and nacelles, with chrome rings, stone grilles, visors and side brackets. Tail lamps can be tombstone, cateye, twin or halo LED.
+- Tails: ducktail, cafe hump, solo cowl, flat-track tail with an oval number board, and sharp sport and race tails, with chrome fender struts.
+- Wheels and tyres: moon discs, split-spoke cast wheels, rim stripes, polished lips, black or chrome spokes, big finned drum hubs and whitewall tyres.
+- Forks: gaiters, chrome or black shrouds, fork braces, wide-glide spreads and fatter legs. Frames come in chrome, nickel and polished finishes.
+- Front mudguards and fairings: ribbed and striped guards, a batwing, a club racer half fairing, a dome cowl and a bare cruiser screen. Bags come as studded leather saddlebags or rounded hard cases.
+
+Each pack part suits its own style first and usually one or two related ones, so a bike built from one pack reads as a proper example of that style.
+
+The parts computer's **Style** filter shows only parts that suit a style (kinds with no style, like engines, aren't filtered), and with a bike picked under **Fits** each part's page says what it would do to that bike's style. New project bikes and customers' bikes come with the bits that suit them; bikes in older saves get the slots empty.
+
+#### Style refinements (Simon's notes, 16 Oct)
+
+- **Sports and race bikes** wear a full fairing: one shell from a sharp nose round the lamps, under the tank and round the engine to a belly pan, with side panels back to the tail. Race fairings have a blank nose (no headlight), stacked winglets and a lower, flatter screen; some sports fairings have a winglet a side. Whatever is behind the bodywork is left undrawn while it's on. The red sports frame and the white race frame have a single-sided swingarm.
+- **Adventure bikes** get a beak-nosed, creased half fairing with a tall screen, and an angular tank; **supermotos** a low flat tank with radiator shrouds.
+- **Tanks sit level**: the nose can't rise more than 13° (6° on cruiser frames), and the classic and cruiser tanks are smaller and flatter.
+- Plug caps come off the head sideways and the coil sits low; a V-twin's air cleaner is on the right of the vee; airboxes stay under the tank; twin shocks tuck under the seat on low frames, and a softail's lie flat under the gearbox.
+- Whitewalls and wall stripes are on the outside of the sidewall.
+- Classics and scramblers lose the race number boards; classic side covers are domed, with a badge.
+
+#### The detail pass
+
+Up close, every bike now carries the small parts that make it read as a real machine:
+
+- **Engines you can tell apart.** Every engine has a rounded crankcase (crinkle black when it's painted dark, brushed cast alloy when it's bare), a round alternator cover on the left held by a ring of bolts, an ignition cover on the right and a finned sump. A V-twin has its chrome nose cone and pushrod tubes up to both heads; a boxer's finned valve covers stick out into the wind; an inline four or triple has one wide cam cover across the head with its bolts and cam-end caps; a two-stroke has deep fins on its barrel and head and no cam cover. HT leads run from every plug cap back to the coil.
+- **Bars and cables.** Knurled grips with bar-end weights, switch gear both sides, the throttle housing, a clutch lever on its perch and a shaped brake lever with a ball end. The clutch and throttle cables run down past the headstock to the engine, and the brake hose runs from the master cylinder to the bottom yoke and down the back of the fork leg to the caliper.
+- **Drum brakes.** Three new brakes fit either wheel in place of a disc: a 180 mm single leading shoe, a 200 mm twin leading shoe (two cams on a link rod, with an air scoop) and a 230 mm four leading shoe (a drum each side). Each has a finned drum, a backplate, a brake arm and a torque stay, with a cable at the front and a rod at the back. A drum bites less than a disc its size.
+- **Seats** are piped along their edges, grained (or quilted, on a diamond-stitched seat), and a two-up seat has a grab rail and pillion pegs on hangers.
+- **Forks** end in axle clamps with pinch bolts and axle nuts; classic shrouded and gaitered forks carry the headlamp on ears. Two new forks: a **leading-link** fork and an **Earles** fork, each with its links and spring units out in the open.
+- **Wheels.** Cast spokes are shaped and taper to the rim, the rear has a cush drive, every wheel has a valve, and the tyre walls carry the maker's name and size ("TORQUE RADIAL", "120/70 ZR17"). Sprockets have teeth and lightening holes; discs have their bolts and floating buttons.
+- **Radiators** have a finned core behind a grille, side tanks, a fan, shrouds and the top and bottom coolant hoses to the thermostat and the pump.
+- **Bodywork.** Full and race fairings have twin headlamp eyes that light with the headlight, half fairings have side vents, sports tanks have a grip pad, and silencers have a clamp band and a riveted end cap. A kickstart folds up on singles, two-strokes and classic twins.
+- **Surfaces.** Carbon parts show a twill weave, brushed alloy and titanium parts show their grain, grips and pegs are knurled, and engine covers are crinkle finished. A rusty part shows its rust instead.
+
+### Front mudguards
+
+The **front mudguard** is a part of its own, in its own slot, bolted to the fork (so it comes off before the fork does). There are seven: a **short road hugger** and a **bobbed steel blade** (both come painted to match the bike), a **polished alloy café guard** on wire stays, a long valanced **chrome classic**, a light **carbon sport hugger**, and two that bolt up under the bottom yoke clear of the mud: the **MX high fender** and the longer **enduro fender**. The low ones ride up and down with the wheel; the high ones stay put while the wheel moves under them. Each has its own condition, rust, dirt and wear, and can be cleaned, repaired, painted (spray can or the paint shop) and recycled like any part.
+
+A bike can be ridden without one, but the front wheel then throws road muck all over the fork, engine, radiator, exhaust and lights, so they get dirty much faster. The more of the tyre a guard covers, the more spray it stops (the parts computer shows how much); a cracked one stops less. New project bikes come with the guard that suits them, and bikes in saves from before front mudguards get one too (on the bench if their fork is off). Customers can ask for one fitted, and bespoke builds name the one that suits their style.
 
 ### Geometry mode and blueprints
 
@@ -102,15 +177,30 @@ Hold **Ctrl** to snap (1 cm, 5 degrees, 5%), or tick "Always snap". **Z** undoes
 
 Changes are only for **that bike**: another bike with the same tank isn't touched. While you work they're a draft; **Save to this bike** keeps them (the host saves them with the shed, and everyone in co-op sees them, riding too). **Save + blueprint** saves them to the bike and also keeps the bike as a **blueprint** with the name you type: its parts, paint, each part's colour and finish, and your fit. Leaving with changes not saved asks whether to save or discard them. If you swap a part, the new one in that slot keeps the slot's fit. It's only looks: power, weight and handling don't change.
 
-**Building from a blueprint**: in the Esc menu press **Build from blueprint** (the **Blueprints** tab, where blueprints can also be renamed and deleted). Pick a blueprint and an empty bay, and a flickering blue **hologram** of the finished bike appears in that bay. The bay screen shows the checklist of every part it needs (fitted, on order or needed, with what the parts still needed cost). **Order missing parts** (in the Blueprints tab, or **Order blueprint parts** on the parts computer) delivers what's still needed in boxes outside the roller door, in the blueprint's colours, each paid for by the business (it stops when the money runs out); if the delivery area fills up, bring boxes in and order again. Then put the frame on the bay's stand as for any scratch build: the bike takes the blueprint's name, paint and fit. Each ghost part vanishes as the real one goes on, and when the last part is on the hologram is gone. A project bike is never delivered into a bay with a hologram in it. Cancel in the Blueprints tab takes a hologram away.
+**Building from a blueprint**: in the Esc menu press **Build from blueprint** (the **Blueprints** tab, where blueprints can also be renamed and deleted). Pick a blueprint and an empty bay, and a flickering blue **hologram** of the finished bike appears in that bay. The bay screen shows the checklist of every part it needs (fitted, on order or needed, with what the parts still needed cost). **Order missing parts** (in the Blueprints tab, or **Order blueprint parts** on the parts computer) delivers what's still needed in boxes to the delivery area outside the roller door, in the blueprint's colours, each paid for by the business (it stops when the money runs out). A whole bike's worth of parts fits in one go; if the delivery area and its racking ever fill up, bring boxes in and order again. Then put the frame on the bay's stand as for any scratch build: the bike takes the blueprint's name, paint and fit. Each ghost part vanishes as the real one goes on, and when the last part is on the hologram is gone. A project bike is never delivered into a bay with a hologram in it. Cancel in the Blueprints tab takes a hologram away.
 
 ### The sandblaster
 
-A **sandblasting cabinet** (from the equipment page of the parts computer) strips rust and muck off a whole engine at once, its head, carbs and other ancillaries and all. The cabinets are big enough for the biggest engine with everything fitted, with room to turn it right round and tip it over. Take the engine off the stand and put it in the cabinet: it sits up on the turntable's post, drawn close up with its side covers, fins, bolts and float bowls. Look in through the glass and press F to put your hands in the gloves. One hand turns the engine (W A S D, the left stick, or hold right mouse and move the mouse); the other blasts wherever you aim (hold left mouse or RT). Thousands of fine grains of sand roar out of the nozzle, bounce off the engine and rattle down onto the grate, with dust kicking back off the metal. Wherever the jet goes, the rusty, painted surface turns to **satin bare metal** as you blast (aluminium on the castings, bare steel on steel parts), so the bits you've missed stay rusty and are easy to see. The cabinet has no light of its own: you see in by the shed's light.
+A **sandblasting cabinet** (from the equipment page of the parts computer) strips rust and muck off a whole engine at once, its head, carbs and other ancillaries and all. The cabinets are big enough for the biggest engine with everything fitted, with room to turn it right round and tip it over. Take the engine off the stand and put it in the cabinet: it sits up on the turntable's post, drawn close up with its side covers, fins, bolts and float bowls. Look in through the glass and press F to put your hands in the gloves. One hand turns the engine (W A S D, the left stick, or hold right mouse and move the mouse); the other blasts wherever you aim (hold left mouse or RT). Thousands of fine grains of sand roar out of the nozzle, bounce off the engine and the cabinet's walls and glass and rattle down onto the grate, with dust kicking back off the metal. The sand never leaves the cabinet. Wherever the jet goes, the rusty, painted surface turns to **satin bare metal** as you blast (aluminium on the castings, bare steel on steel parts), so the bits you've missed stay rusty and are easy to see. Two strip lights under the cabinet's roof light the chamber.
 
-While you work, a big readout shows a bar for the whole engine across the top and, down the side, each part with how much of it is bare and its **rust, dirt, wear and condition**, which change as you go (the crew sees them change too). When a part comes up bare there's a ding, a flash and "Bare metal!"; when the whole engine is done it says so, and you step back a moment later. Don't linger: blast one spot for too long and it goes dull and pitted, which wears the part. Press F to step back early: each part keeps what you've stripped off it, and pays XP like restoring on the grinder. One person at the gloves at a time; the crew sees the jet, the engine turning and the bare metal coming up.
+While you work, a big readout shows a bar for the whole engine across the top and, down the side, each part with how much of it is bare and its **rust, dirt, wear and condition**, which change as you go (the crew sees them change too). When a part comes up bare there's a ding, a flash and "Bare metal!"; when the whole engine is done it says so, and you step back a moment later. Don't linger: blast one spot for too long and it goes dull and pitted, which wears the part (until the whole engine is done, below). Press F to step back early: each part keeps what you've stripped off it, and pays XP like restoring on the grinder. One person at the gloves at a time; the crew sees the jet, the engine turning and the bare metal coming up.
 
-Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (paid for from the business's account), equipment or a new project bike (also paid for), and its **Sell** aisle sells loose parts and whole bikes (see Money). Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (four or five shelves that take parts anywhere on them), parts washers and repair machines (rated for 1 to 4 parts at full speed, some faster; see below), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted bay outside the roller door: parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters, TVs and the whiteboard hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
+**The bare metal stays.** When you step back, each part keeps exactly where it's bare: the engine looks the same in the cabinet, in your hands, on the engine stand and fitted to a bike, in co-op too, and it's kept in the save. Put it back in the cabinet and you carry on from where you left off (only the newly bared metal pays XP). A part blasted all over (90% or more) comes out **bare metal all over**, so a finished engine is bare metal from end to end. **A fully blasted engine is as good as new**: the moment every part on it is bare all over, every one of them goes to **100% condition with no wear, dirt or rust** (any pitting goes too), and the readout shows it; it says so when you step back. It stays new if you put it back in the cabinet later, and it's still bare metal, ready for a protective coat. Fresh paint from the spray can covers it up again. Bare metal with nothing on it **flash-rusts** when the bike is ridden (faster in the muck), so give it a protective coat (below).
+
+**The scan button** (X, or D-pad up on a pad, at the gloves; the green SCAN button on the cabinet lights up) shows what's still to blast: the engine glows red where there's rust left, green where it's bare and purple where it's pitted, with a sweep running up it, and a panel down the right gives the percentage still to blast over the whole engine, on each part and on each side (top, underneath, front, back, left and right). Press it again to turn it off. The crew watching see the glow too.
+
+**Protective coats.** After blasting, hang the engine on one of the paint shop's hooks (carry it in and put it on a hook like any part: a whole engine hangs on an orange lifting sling, just under the hook). Take the **spray gun**, press T past the paint finishes to pick a coat, and sweep it over the engine like a paint job (the panel shows how much is covered; missed patches and runs make a worse coat). One job coats the engine and everything fitted to it:
+
+| Coat | Looks | Protection |
+| --- | --- | --- |
+| Clear lacquer | The blasted metal on show under a gloss clear coat | Very good |
+| Satin clear lacquer | The blasted metal under a soft satin sheen | Good |
+| Black engine enamel | Gloss black paint | Best |
+| Silver engine enamel | Metallic silver paint | Best |
+
+A coat won't go over rust (blast it first). A coated part hardly flash-rusts and picks up less muck when ridden; the better the coat, the better it protects, and it slowly wears thinner with the miles. The part's info shows its coat and how good it is. Blasting a part again strips its coat with the rust.
+
+Filters and spark plugs can be changed with the engine in the frame. Everything else on the engine needs it on the **engine stand**: take the exhaust and chain off, unbolt the engine, carry it to the stand, and work on it there. The **parts computer** orders any part (paid for from the business's account), equipment or a new project bike (also paid for), and its **Sell** aisle sells loose parts and whole bikes (see Money). Equipment comes in several models, with compact ones for a full shed: engine stands, shelving (four or five shelves that take parts anywhere on them), parts washers and repair machines (rated for 1 to 4 parts at full speed, some faster; see below), workbenches, wall posters, seats (stool, creeper, camp chair, bench, sofa) and big wall TVs with channels (see below). Parts marked "light" save weight; the bay screens show power to weight. Deliveries are left in the painted delivery area outside the roller door (see Deliveries below): parts come boxed (F unpacks a box, and boxed stock can go straight onto shelves), equipment comes ready to push in. Take hold of equipment with F, walk it where you want it (it turns with you) and press F to let go; whatever is on it goes with it. Posters, TVs and the whiteboard hang flat on whichever wall you look at. Write on a shelving unit's label plate by holding the work button on it. What you're looking at is described in the panel on the right. A bike can be ridden once every slot is filled and bolted up. What the speedo shows depends on the dashboard fitted.
 
 ### Placing equipment and parts
 
@@ -120,11 +210,13 @@ Filters and spark plugs can be changed with the engine in the frame. Everything 
 
 **Benches, washers, repair machines and shelves take as many parts as fit**: there are no set places any more. Look anywhere on the top of the workbench, a bought bench, a parts washer, a repair machine or any shelf of a shelving unit with a part in your hands and put it down; it goes where you're looking, or the nearest clear spot to it, turned the way you face (and however you've turned it, see below). Each part takes up its real size, so you can line up a row of spark plugs, but a frame won't go in a small washer, and parts can't go on top of one another. The washer cleans everything in it and the grinder restores everything on the machine at once. Each machine works at full speed up to its rated number of parts (shown in its info); pile on more and each one goes a little slower, so a big load saves walking rather than time. Parts left in the old places in an older save stay where they were. Each shelf of a shelving unit works the same way: boxed stock and parts go anywhere along it, side by side, and parts left in a shelf's old numbered places in an older save stay just where they were.
 
-**Turning things before you put them down**: with a part in your hands or a piece of equipment in your arms, press , or . (the < and > keys; View on a pad) to turn it left or right. With snapping on each press is a quarter turn; with snapping off a press nudges it and holding the key turns it smoothly, to any angle. The outline on the floor (or on the bench or shelf) shows where it'll go and which way round, red if it won't fit there, and the panel shows how far it's turned. It's put down that way on the floor, a bench, a washer, a repair machine or a shelf (square to a bench or shelf with snapping on). The next part you pick up starts the way you face.
+**Turning things before you put them down**: with a part in your hands or a piece of equipment in your arms, press , or . (the < and > keys; View on a pad) to turn it left or right. Each press is a quarter turn. Press **/** (or the Settings tab switch on a pad) for **free rotate**: then a tap nudges it 5 degrees and holding the key turns it smoothly, to any angle; press / again to go back to quarter turns. The panel says which it's on and shows the key, and the choice is kept with your settings (the Esc menu's Settings tab has the same switch). Free rotate keeps the angle you set, so carried equipment isn't squared up to the walls while it's on. Turning snapping off (R while carrying) also turns things freely, as before. The outline on the floor (or on the bench or shelf) shows where it'll go and which way round, red if it won't fit there, and the panel shows how far it's turned. It's put down that way on the floor, a bench, a washer, a repair machine or a shelf (square to a bench or shelf with snapping on). The next part you pick up starts the way you face.
 
-**Scrapping kit and parts**: anything the bins won't take, or that you just don't want, can be scrapped. Carry a piece of equipment (F) or hold a part, and hold Delete (D-pad down on a pad) for a second: the panel asks if you're sure, and pressing Delete again within a few seconds scraps it for good. Whatever was on a shelf or bench you scrap goes on the floor where it stood, and the parts bolted to an engine or the tyre on a wheel go on the floor in front of you. The shed's own kit (the spray bay, the tyre changer and the whiteboard) can't be scrapped.
+**Scrapping kit and parts**: anything the bins won't take, or that you just don't want, can be scrapped. Look at any machine or piece of furniture with your hands empty (a parts washer, workbench, repair machine, sandblaster, engine stand, shelving, seat, poster, TV, yard ramp or a trinket), or carry one (F), or hold a part, and hold Delete (D-pad down on a pad) for a second: the panel asks if you're sure, and pressing Delete again within a few seconds scraps it for good. Nothing is refunded. Whatever was on a shelf, bench or stand you scrap goes on the floor where it stood, and the parts bolted to an engine or the tyre on a wheel go on the floor in front of you. You can't scrap something a mate is carrying or someone is working at. The shed's own built-in kit (the spray bay, the tyre changer and the whiteboard) can't be scrapped: they can't be bought again and the shed needs them.
 
 **The whiteboard can move**: press F on it to take it down and hang it on any wall, drawing and all. Where it hangs is kept with the shed; an older save has it in its usual place on the front wall.
+
+**Deliveries** go to the big painted delivery area in the yard, to the right of the roller door as you come out. Each part comes in a box sized to fit it (a spark plug in a little one, a frame in a long one), and the boxes are packed tight in rows from the front of the area, so a whole bike's worth of parts from a blueprint fits easily. When the floor is full, boxes go onto the orange **delivery racking** along the back of the area (four shelves on each of two units, with a hatched aisle in front to walk along), and after that small boxes are stacked on top of the ones on the floor, no more than about chest high. Pick up a box from the bottom of a stack and the ones on top drop down. Equipment you order is left on the floor of the area where there's room for it. The racking is fixed down there: it can't be moved or scrapped, but anything on it can be taken off like any shelf.
 
 **Delivery boxes** carry a shipping label from one of several made-up courier firms, with its logo, what's inside and a tracking number, on the lid (reading along the box's longer side) and on the front, so boxed stock on a shelf is easy to read. A box always comes from the same courier.
 
@@ -134,9 +226,19 @@ Tyres are changed on the **tyre changer**, built into the shed against the west 
 
 To change one: unbolt the wheel and take it off the bike (any brake disc, caliper and pads on it come off first). The tyre comes off with it. Put the wheel on the changer. With empty hands, hold the work button to break the bead and lever the old tyre off, or hold the alt button to lift the wheel off whole. Then hold the new tyre and hold the work button: a marker runs round the rim, and you keep your tyre lever on it with the mouse (or right stick) until it has gone all the way round. Let go early and the bead slips off. How closely you follow it decides how well the bead is seated. A badly seated bead grips a little less and slowly lets the tyre down as you ride, and the part info and bay screen say so; do it again to put it right. Put the wheel back in the bike and it goes in with its new tyre. Everyone in the crew sees the changer turn while someone works on it, and a wheel left on it is kept with the shed.
 
-The **parts computer** is split into three aisles, **Shed**, **Bike** and **Outdoors**, and has a search box that finds any part or piece of kit by name, kind or spec.
+The **parts computer** is split into three aisles, **Shed**, **Bike** and **Outdoors**, and has a search box that finds any part or piece of kit by name, kind or spec. In each aisle the kinds are listed under headings: the Bike aisle has **Engine and drivetrain**, **Chassis**, **Wheels and brakes**, **Body and lights**, **Luggage** and **Fluids**; the Shed aisle **Tools and machines**, **Storage and benches** and **Comfort and decor**; Outdoors **Jumps** and **Course**. Every model's row shows its price and the couple of numbers that matter most (and how many the shed already has loose, if any). The bar under the aisles sorts the list (**Sort**: shop order, price low to high or high to low, name, lightest first) and filters it: **Fits** picks one of the shed's bikes and shows only parts that go on it as it is now (tyres that suit its wheels, wheels its tyres take, fairing mirrors only with a fairing, a fairing only with a headlight), **Within budget** shows only what the business can pay for now, and **Style** only the parts that suit a style of bike. The part's page says whether it fits the chosen bike, and why not.
 
 The **paint shop** is through the doorway in the east wall, between the parts computer and the parts washer; it's only reachable from inside the shed. It's a white-walled room with a ceiling of bright white **hexagon LED tiles** and its own light switch just inside the door. Its built-in **downdraft spray bay** has **ten hooks** on two rails, spaced so you can walk right round every part, with a walkway between the bay and the door. Hang parts on its hooks and sweep the **spray gun** over them. Hung parts swing, wire, hook and all, from the rail on the ceiling when you (or a mate) walk into them or spray them, and keep swinging for a few seconds before they settle. The gun's fine mist coats every part it passes, and the bay adds a better finish. With the can or the gun, the wet paint shows on the part as you go, so you can see the patches you've missed, and too much in one place runs. Fluid containers are see-through or have a sight strip, so you can see how full they are. In a shed saved before the paint shop got bigger, parts on the old booth's hooks stay on the same hooks.
+
+#### Spraying by hand: primer, colour and lacquer
+
+Painting works like the sandblaster: it's a careful mini game of its own. With the can or gun in hand, look at the part and press **F** to bring up the spray controls. They lock on that part (wherever you look) and give you a moment to **get set** before the trigger works, so you can line up, step to the right distance and compose yourself. While they're up you shuffle slowly, the view turns slowly for precise aim, and the paint lays on slower, so it takes steady, overlapping passes. Your hand sways very slightly (more if you walk while spraying); hold **right mouse** (LT) to hold your breath and steady it for a few seconds, shown by the breath bar, which refills as you breathe again. Before you pull the trigger the footprint ring already shows where the fan would land and how far off you are. **F** again steps back. Then hold the button and sweep the can or gun over the part, and the paint goes on exactly where the spray lands. You see a fine mist of paint (tiny droplets, with a faint haze of overspray that drifts and hangs), a ring on the part shows where the fan is landing (green at the right distance, red too close, blue too far, grey out of reach), and the bits you've missed keep showing the old colour (or the grey primer) until you cover them. A job can take up to three coats, picked with T (the picker shows them as COATS):
+
+1. **Grey primer** (optional): a matte grey coat over the bare or old paint. Paint keys on better over it (a better paint job), and the part reads "in primer" until it's painted. Lacquer won't go on bare primer.
+2. **Colour**: the colour and finish shown above the tool bar.
+3. **Clear lacquer** (optional): with the spray can anywhere, or the gun in the booth, over the colour. It shines the paint and brings the job up a little, once.
+
+**Distance and pace matter.** Hold the can about half a metre to a metre and a quarter off the part (Steady Hand and the tool's stage widen that): too close and the paint piles up and **runs** (they drip down the part); too far and it goes on **dry** and speckled; move steadily, as too fast leaves it thin and lingering piles it on. A panel at the top shows the coat's **coverage** (with the 90% mark), **evenness** (runs, dry and thin patches), a distance gauge and a pace gauge, the coat steps (Primer, Colour, Lacquer) and cues as you go. Once it's covered, let go of the button to finish the coat; it finishes itself if you cover it all. The coat's quality (coverage less runs and dry spray) sets the paint job's quality and the part's value, and pays XP. **X** scans the part: red where it's missed, amber where it's thin, green where it's good, blue where it's dry and purple where it's run. The spray gun in the booth coats every hooked part its mist reaches. In co-op each coat is checked by the host, and the crew see your mist.
 
 The **storage room** is through the doorway in the west wall, by the back corner next to bay 1. It's an empty 8 by 8 metre room with its own lights and a switch just inside the door: room for three or more rows of shelving with aisles to walk between them. Push shelving in (F to take hold of it, F to let go) and line it up however you like.
 
@@ -152,6 +254,7 @@ The **storage room** is through the doorway in the west wall, by the back corner
 - **My money**: your cash, what you earned and spent this in-game week, bikes you've sold and a chart of your cash day by day.
 - **Garage money**: the business's account, what its bikes and loose parts would fetch, money in and out this week, what it owes the bank and a chart of the account day by day.
 - **What you can afford**: a project bike and some fancy parts, at what they cost now, and whether your cash would cover them.
+- **Sales**: the bikes on the showroom stands with their prices, buyers' offers waiting for an answer (with the margin on each), part-exchange buyers in the showroom, and the latest deals.
 - **Contracts**: laid out now; customers' jobs arrive in a later update.
 
 Bay screens start on their bay's bike and the crew board starts on the crew list. The channel each screen is on is kept with the shed, and everyone in co-op sees the same channel. The money pages show your own figures on your own screen.
@@ -170,18 +273,51 @@ The **whiteboard** on the front wall, left of the roller door, is for the crew's
 
 The **radio** on the shelf above the workbench streams internet radio stations (SomaFM and Radio Paradise). Everyone in the shed hears the same station; each player's PC streams it, so it needs an internet connection. The Esc menu has volume sliders for sound effects and the radio. Stations live in `data/radio.json`.
 
+### The paint mixing bay
+
+The **paint mixing bay** is a narrow white room of its own off the paint shop, behind a **sliding glass door** in the paint shop's east wall near the front (the door slides open as you come up to it). It's lit with the paint shop's light switch. Along its walls:
+
+| Station | What it does | Controls |
+| --- | --- | --- |
+| **Mixing bench** with the **digital scale** | Step up to it and the view drops to the scale. Put a 1 litre tin of base on (white, black, silver metallic, clear candy or lacquer), pick a tint, then tip the bottle: hold left mouse on the left of the screen and drag down to tilt it, and the further it tips the faster it pours. Circle the mouse with right held to stir. The panel shows the weight on the scale, the colour in the tin, the match against a target, add 250 g of base (to fix an over-pour, which uses more paint), spray a test card, the shaker, tip it away, and a name box to **Save tin**. Tabs for **Recipes** (codes, swatch wall, the manufacturer cards) and **Supplies**. | F to step up, F, Esc or Done to step back |
+| **Tint rack** | 16 bottles of solid tints, with flattener. The **effects rack** upgrade adds pearl, candy dye, flake and chameleon bottles. | (from the bench) |
+| **Tin shelf** | Saved tins wait here with their names on. | Left mouse: take a tin. Holding one: left mouse puts it on the shelf, on the scale, in the bin or in a mate's hands; right mouse pours it into the spray gun's cup |
+| **Swatch wall** | A card for every saved colour, with its recipe code. | Left mouse: put its recipe card on the bench. F: pin the card to the whiteboard. Right mouse (with the automatic shaker): remix it |
+| **Shaker** | Shakes a tin even in 20 s, or 4 s once it's the **automatic shaker**, which also remixes a saved colour from its card by itself. | (from the bench) |
+| **Spray-out stand** and **daylight booth** | The last test card hangs on the stand and in the booth under daylight, the shop's strip light and a sunset, side by side, with the closest factory colour. The **curved panel** upgrade shows it on a curve, so a metallic, pearl or chameleon flips. | Look at it |
+| **Masking tape** | On its hook by the door. | F or left mouse to take it; R picks centre stripe, twin stripes, pinstripe or two-tone; hold left mouse on a painted part to tape it, right mouse to peel |
+
+**Mixing.** A tin takes up to 5 tints, weighed in grams. The scale reads to 1 g (0.1 g with the **0.1 g scale**). Your hand steadies as you level up (and on the stainless bench), the scale reads finer, and stirring takes fewer turns. A badly stirred tin sprays blotchy and won't make a test card. Give it a name and **Save tin**: it goes on the shelf and onto the swatch wall, and from then on the spray gun can load it: pour the tin into its cup and pick **Cup** with T. A litre does a tank, the guards and the side panels; a whole bike takes about two. Each part takes its share out of the cup. Every colour has a **recipe code** like `W-SC60-MG4:S` (base, then each tint and its grams, then the effect), which you can copy from the Recipes tab and paste into a mate's bench.
+
+**Manufacturer colours.** The Recipes tab has 38 real factory colours as recipe cards, from 18 makers (Triumph, Ducati, Kawasaki, Honda, Yamaha, Suzuki, BMW, KTM, Harley-Davidson, Norton, MV Agusta, Moto Guzzi, Royal Enfield, Indian, Aprilia, classic British colours and custom paint shops): British Racing Green, Kawasaki Lime Green, Ducati Rosso, Honda Candy Red, Harley Hot Rod Red Flake and more. **Card** puts it on the bench to weigh out yourself (the accuracy pays XP), and **By eye** sets it as the target to mix by eye. You can mix anything you like freely as well.
+
+**Effects** unlock by level: solid and metallic at the start, **pearl** at 5, **candy** at 8, **flake** at 10, **chameleon** at 15. Flattener in lacquer makes **matt**, **satin** or **gloss** (40%, 15% or none). **Masking** (two-tone and stripes) comes at level 3 and **fades** at 12. Candy goes on over a base colour and **darkens with each coat**: 3 or 4 is right, and a missed patch shows lighter. Solid and metallic need 2 coats, the effects 3. The gun's cup decides the coats: each pass with the same tin adds one.
+
+**Masking and fades.** Tape a painted part (R picks the pattern), spray the second colour over it, then peel the tape: the first colour shows as the stripe, the pinstripe or the top of a two-tone. With the gun's **fade top** or **fade rear** load, the cup's colour fades in over what's there.
+
+**Paying for it.** Bases and tints are bought with **garage money**, from the parts computer's **Shed aisle, Paint mixing bay** (Bases and Tints) or the bench's Supplies tab. A new shed starts with a few tins and part bottles. The bay's upgrades are in the parts computer's **Garage upgrades** (Paint mixing bay): stainless bench and tin racks, effects rack, 0.1 g scale, automatic shaker, colour meter and curved spray-out panel.
+
+**XP.** You earn XP for accurate pours against a card, for a match over 95%, for an even stir, for test cards and for masking.
+
+**Colour match jobs.** At reputation 3, customers bring **Colour match** jobs. They want the tank in a factory colour, or matched to a panel of their old paint. They need at least 85%, and they pay more the closer you get (up to 45% of the fee on top for a perfect match). Modification and bespoke customers sometimes ask for one too, and bespoke builds can add a stripe: "British Racing Green, with a gold pinstripe". Fades only come up once you're level 12. The **colour meter** upgrade lets you read a painted part's colour (right mouse on it) as the bench's target, from anywhere. Custom paint on a bike adds to its sale price: pearl, candy, flake, chameleon and hand-masked stripes make it more of a one-off.
+
+**Co-op and saves.** The host checks every pour, stir and save. Only one player can be at the bench at a time, but anyone can carry a tin, hand it to a mate or fill their own cup from it. Stock, tins, the swatch wall, the test card, each player's cup and the paint on every part (its recipe, coats and stripes) are kept with the shed. If someone leaves with a tin, it goes back on the shelf.
+
 ### Contracts: customers at reception
 
-Customers come to the **sales office reception** (just outside the roller door until the shed has a sales office) every few in-game hours, a couple at most at once; a **bell** rings as each one reaches the counter. Look at them and press **F** to see their offer card: who they are, the job, their bike, what they want, the budget, the pay and the deadline in in-game days. **Accept** and their bike is delivered to a free bay; **Decline** and they leave. Ignore them and they give up after about three in-game hours.
+Customers come to the **sales office reception** every few in-game hours, a couple at most at once. They **ride their own bike in** along the road and across the yard, park it in one of the marked bays of the sales office **car park**, get off and walk in; a **door chime** rings as each one reaches the counter, and the **phone** at reception rings as a new one calls ahead to say they're on the way (an extension bell by the chime in the shed rings with it, so the crew hear it at work). Look at them and press **F** to see their offer card: who they are, the job, their bike, what they want, the budget, the pay and the deadline in in-game days. **Accept** and they leave you the keys and walk off: their bike stays in the car park until you bring it into the shed, either riding it in (tap **F** to get on) or walking it in by the handlebars (hold **F**), and let go of it in any free bay to put it on the paddock stand. **Decline** and they walk back to their bike and ride away. Ignore them and they give up after about three in-game hours. The exclusive customer of a bespoke build arrives on foot: their bare frame goes straight onto a free bay. (Customers already waiting in a shed saved before they rode in came on foot, and their bikes still go straight to a bay.) Every rider has their own way of riding, the same for every player in co-op: some cruise and some are quicker, they come along the road from either end (keeping left) and take their own line across the yard, slow for the tight corners and lean into them, and paddle back out of a bay swinging round to ride off.
 
 | Job | Unlocks at reputation | What it is |
 | --- | --- | --- |
-| Maintenance | 0 | A service: oil change, chain lubed and tensioned, brake pads, air and oil filters, spark plugs, brake fluid, a wash (3 to 5 of them). 2-3 days |
-| MOT | 2 | The full inspection: tyre tread depth (legal minimum 1 mm), tyre condition and bead, wheels and rims, brake discs (thickness), pads (mm left), calipers, master cylinders, brake fluid level and age, fork and shock leaks, handlebars, chain and sprocket wear and tension, headlight, rear light, number plate (the tail unit), horn, dash, mirrors, exhaust condition and noise (a straight pipe is too loud), frame rust, the tank, the seat, engine oil and everything bolted up. 3-4 days |
-| Modifications | 5 | 2 to 4 goals (a top speed, a weight, a style such as cafe racer or scrambler, panniers or a fairing fitted, new pipes, a paint colour) and a parts budget. 5-7 days |
-| Bespoke build | 10 | An exclusive customer: a bare frame on a bay, built up to their targets (style, top speed or power, weight, a particular part, colour, condition 95% or better). Big pay, 10-14 days |
+| Maintenance | 0 | A quick job (1 or 2 tasks), a service (3 or 4) or the works (5 or 6), from: oil change, chain lubed and tensioned, brake pads, air and oil filters, spark plugs, brake fluid, a wash, a new front or rear tyre, a new chain and sprockets, a new front brake disc, a fork service. Each task pays its own labour, and jobs that renew parts come with a parts budget for them. 2-4 days |
+| MOT | 2 | The full inspection: tyre tread depth (legal minimum 1 mm), tyre condition and bead, wheels and rims, brake discs (thickness), pads (mm left), calipers, master cylinders, brake fluid level and age, fork and shock leaks, handlebars, chain and sprocket wear and tension, headlight, rear light, number plate (the tail unit), horn, dash, mirrors, exhaust condition and noise (a straight pipe is too loud), frame rust, the tank, the seat, engine oil and everything bolted up. A bike can come in with anything from a couple of faults to seven (the worse it is, the more it pays and the longer you get), and about half the customers add a job or two to do while it's in (an oil change, a wash, new plugs...). 2-5 days |
+| Colour match | 3 | The tank resprayed in a factory colour or matched to a panel of their old paint (at least 85%), sometimes with a stripe, a pinstripe, two-tone or a fade in a named colour. Mixed in the paint mixing bay; the closer the match, the more it pays (up to 45% on top). 3-5 days |
+| Modifications | 5 | 2 to 5 goals (a top speed, more power, a weight, a style such as cafe racer, scrambler, chopper or MX, one or two of panniers, a top box, a fairing, fog lights or a front mudguard fitted, radial four-pot front brakes, new pipes, a paint colour) and a parts budget. Pay and time go up with each goal. 5-10 days |
+| Bespoke build | 10 | An exclusive customer: a bare frame on a bay, built up to their targets: the style always, and their own mix of top speed and/or power, a weight, one or two particular parts, a colour, and a finish of 90%, 95% or 98% condition or better. Big pay, more for more targets, 11-18 days |
 
-The **Contracts** tab in the Esc menu lists every job with its goals ticked off as you meet them, the deadline, the parts spent against the budget and what handing it back now would pay. For an MOT job, **Run MOT test** fills in the pass/fail sheet with what to fix; fix the fails and test again (any work on the bike after a test needs a re-test). When the bike is finished, wheel it round to reception (or just out of the roller door) and press **Hand back**: the customer rides it away and pays. A pass on an MOT issues an **MOT certificate**.
+The **Contracts** tab in the Esc menu lists every job with its goals ticked off as you meet them, the deadline, the parts spent against the budget and what handing it back now would pay. For an MOT job, **Run MOT test** fills in the pass/fail sheet with what to fix; fix the fails and test again (any work on the bike after a test needs a re-test). When the bike is finished, ride it or wheel it out to the **customer car park** in front of the sales office (any of its marked bays, or anywhere on that tarmac) and press **Hand back**: it can't be handed back from a bay in the shed (the Contracts tab and the bay screen say where to leave it). The customer pays, walks out of the sales office to it, gets on (only once they've reached it) and rides off along the road. A pass on an MOT issues an **MOT certificate**.
+
+**The job on the bay screen**: while a customer's bike is in a bay, the screen over it shows the job instead of the usual numbers: a checklist of everything the customer asked for, each ticked off as soon as it's done (with what it reads now, and for an MOT the fails still to fix), how far through it you are, the deadline (red once it's late), and the money: the fee, the parts budget, what's been spent on parts so far, what handing it back now would pay, and the **profit** once the parts are paid for. The bottom line says what's left to do, or, once it's finished, to leave it in the car park outside the sales office to hand it back.
 
 **Pay**: the fee, plus the parts back up to the budget; spending over the budget comes off the fee. Missing goals pays less (an MOT that never passed pays only the test fee), each day late takes 15% off (up to half), and a job done to the letter on time earns a tip, bigger for a bike in great condition. The garage's account gets the parts money and half the labour and tip; the other half is shared out to the players who worked on the bike, by how much each did. Good jobs raise the garage's **reputation** (1 for a service up to 5 for a bespoke build); late or poor ones lower it. The **Contracts** TV channel shows who's waiting, the jobs in progress with their deadlines, and what's done.
 
@@ -192,7 +328,7 @@ Through the doorway in the back wall, between bays 2 and 3, is the **dyno room**
 Wheel a bike in (hold F on it) and let go of it near the drum: it snaps onto the rig. Before it will run it has to be **strapped down**: hold the work button at each of the four strap posts until the strap is done up (hold it again to undo one). Undo all four and take the hose off before you wheel it out.
 
 - **Extraction hose**: it hangs on its hook on the east wall. Hold the work button at the hook to take it, then at the bike's exhaust to push it on; it stays drawn on the tailpipe. Hold the button on it again to take it off and hang it back up. Run the bike without it and the room fills with exhaust haze, which clears slowly.
-- **Cooling fan**: switch it on and it spins up with a roar. Without it the engine heats up run after run and makes less power; the graph shows the engine temperature. The fan cools it down again between runs.
+- **Cooling fan**: switch it on and it winds up with a roar. During a run it's pushed harder as the roller speeds up, louder and higher, and winds up again as each run starts. Without it the engine heats up run after run and makes less power; the graph shows the engine temperature. The fan cools it down again between runs.
 - **Ear defenders**: they hang by the door. Press F to put them on and the shed goes quiet and muffled; the badge in the corner says you're wearing them, and the crew sees them on your head. F at the hook hangs them back up.
 
 Press F at the **dyno desk** to tune the bike on the rig, or any bike within about 10 m. Every change goes through the host, so the whole crew sees the same tune, and riding uses it too:
@@ -201,21 +337,47 @@ Press F at the **dyno desk** to tune the bike on the rig, or any bike within abo
 - **Suspension**: preload, compression and rebound, front and rear, only where the fork or shock has that adjuster.
 - **Tyres and chain**: pressures (off a tyre's best pressure it grips less; soft tyres drag and wear faster, though a knobbly a touch soft finds more grip in the dirt) and chain slack.
 - **Gearing**: front and rear sprocket teeth, and with a cassette gearbox (the close-ratio and race boxes) the spacing of the ratios.
+- **Last ride**: charts of your last ride's telemetry (see Handling below).
 - **Weight**: drill and trim parts (frame, wheels, discs, sprockets, seat, bars, exhaust and more) to save weight. Each part can be done once; it costs it some condition and it wears a little faster after.
 
 **Run the dyno** and the bike revs up through the gears on the drum, then sweeps one gear to the limiter. The desk and the wall screen plot power and torque at the rear wheel against rpm, the speed in each gear, and the peak power and torque, top speed, power to weight and a 0-100 km/h estimate. The previous run stays on the graph, dashed, with the change in each number, so you can see what a change did.
 
 ### The sales office
 
-East of the paint shop, across a block-paved forecourt with a small car park, is the **sales office**: a two-storey building with a full glass front. Its **doors slide open** as you walk up to them, and a brass **shop bell** over them rings when someone comes in. You hear it across the yard, and a chime box high on the shed's front wall (inside, right of the roller door) goes ding-dong so the crew hear it at work. Customers coming to the office ring it.
+East of the paint shop, across a block-paved forecourt with a small car park, is the **sales office**: a two-storey building with a full glass front. Its **doors slide open** as you walk up to them, and a **door chime** (with the little brass shop bell over them tinkling along) rings when someone comes in. You hear it across the yard, and a chime box high on the shed's front wall (inside, right of the roller door) goes ding-dong so the crew hear it at work. Customers coming to the office ring it.
 
 - **Showroom**: double height behind the glass, with four lit **display plinths**. Wheel a bike in through the doors (hold F on it) and let go of it on a plinth: it stands square and upright on it, on show. Each plinth takes one bike.
 - **Reception**: the desk facing the doors, with helmets on the shelves behind it. Customers stand in front of it, and you stand behind it to talk to them.
 - **Viewing area**: sofas round a low table, looking out over the showroom.
 - **Kitchen**: through the door behind reception, with the kettle, a fridge and a table.
-- **Office**: up the stairs along the back wall, on a **mezzanine** that looks down over the showroom, with a desk, a computer and a meeting table.
+- **Office**: up the stairs along the back wall, on a **mezzanine** that looks down over the showroom, with a desk, the big-screened **sales PC** (see Selling bikes below) and a meeting table. The PC's screen shows the stands and any offers waiting, and each display plinth has a price card.
 
 The office has **its own light switch** (one at the foot of the stairs, one at the top); it's saved with the shed. The sign, canopy, bollards and car park lamps come on by themselves at dusk.
+
+### Selling bikes
+
+Bikes are sold from the **showroom**. Ride or wheel a bike in through the sales office doors and let go of it (or get off) on one of the four **display stands**: it's on show, and its price card says it's waiting for a price. Customers' bikes can't be sold.
+
+Go up to the office and use the **sales PC** (F). It has four pages:
+
+- **Showroom**: pick a stand. The page shows what's **sunk** into the bike (what it was bought for, the parts bought for it and the wages paid for work on it), what it's **worth** (its parts as they are, more for complete and ready to ride, and more again for being **unusual**: changed and top-spec parts, two-tone or chrome, metallic or patina paint, a scratch build, its own name, nothing like it in stock), and a **recommended price** for the target **margin** you pick (10% to 40%): at least the fair price, and no more than 15% over it. It says so when the bike is worth less than what's gone into it. Type an asking price (or **Use recommended**): the page shows the profit and margin at that price and how many buyers to expect. **Put it up for sale**, change the price later, or take it off sale. **Sell to the trade now** still pays 70% of its worth straight away.
+- **Offers**: buyers find the bike online. Priced near or under what it's worth, a couple a day get in touch; well over, hardly anyone. Each offer rings the **till** (heard by everyone, and shown on the TVs' **Sales** channel) and waits about 8 in-game hours. **Accept** it, **Turn it down**, or **Counter-offer**: each figure shows its profit and margin. The buyer answers a counter-offer within a quarter of an hour: they take it if it's within what they'd pay (a little more with the Haggler skill), meet you halfway, or walk away if it's far too much or you keep pushing. A sold bike leaves its stand when the buyer comes to collect it and rides it away; the money goes to the garage's account and the seller gets the XP.
+- **Part exchange**: now and then (sooner once a bike goes up for sale) a buyer **rides their own bike** into the forecourt, parks it and waits in the showroom by the bike they're after. Talk to them (F) or open the page: it shows their bike's model, colour, mileage, condition and each part's wear and rust, what it's worth to a buyer and to the trade, and what they want for it. **Accept their figure**, offer your own **allowance** (the page shows what the deal is worth: their cash plus their bike's trade value, against what ours cost), or **Send them away**. Offer too little or haggle too long and they leave. On a deal they pay the difference, ride ours away, and their bike is ours, parked outside the showroom.
+- **Deals**: what's been sold, to whom, for how much and at what margin.
+
+Everything is kept with the shed, and in co-op the host runs the buyers: everyone sees the same offers and hears the same till.
+
+### The coffee shop next door
+
+West of the storage room is the **Pit Stop Cafe**: a small brick cafe with a striped awning, a counter with a coffee machine and a cake display, the kitchen through a hatch behind it, four tables inside on a black and white floor, eight more out on the **terrace** under umbrellas, and a marked **car park for twenty bikes** in front. It's **open from 08:00 to 18:00**: the sign, the pendant lights and the festoon bulbs are lit and a barista is behind the counter. The rest of the time it's dark and the **CLOSED** signs are up in the window and on the pylon by the car park.
+
+- **Bikers** ride in during the day along the road from either end and up the yard's west side, each on their own line and at their own pace, **on their own or in groups of two to five**, on bikes of every style (and the odd parts-bin special). They park in the bays, sit down inside or out on the terrace with a coffee, chat, and after an hour or two walk back to their bikes and ride off. At closing time they drink up and go.
+- **Look at a parked bike** for its basics: style, engine, power, condition and roughly what it's worth.
+- **Talk to its owner** (F, on them or on their bike) for a chat and to **make an offer** for it from the business's account. They almost always say no (a lowball gets laughed at; offering over the odds helps a little, never a lot) and hear you out three times at most. A yes buys the bike: it's the shed's, parked where it stands in the cafe car park, and they walk off down the yard to get a lift home.
+- Now and then one **wanders over to the sales office** to look at a bike on show, and once in a while makes an offer on it (it comes in on the Sales PC's Offers page like any other buyer's).
+- **The counter** (F on it or the barista) sells **coffee** (£3), **tea** (£2), **cake** (£3) and **sandwiches** (£5) from your own money, up to four things on a **tray** you carry in both hands (other players see it too). With a tray in your hands you can't work: put it down on anything flat (left mouse), the workbench in the shed included, and pick it up again later. Have what's on it with the right mouse button, for a little XP. Hand an empty tray back on the counter and it's cleared away.
+
+The cafe, its bikers and the trays are kept with the shed (sheds saved before it simply start with an empty cafe), and in co-op the host runs it: everyone sees the same bikers and the same trays.
 
 ### XP, levels, tool upgrades and skills
 
@@ -235,7 +397,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Drilling and trimming a part | 8 |
 | Restoring a part on the grinder, sandblasting a part (x how much came up bare), starting a scratch build | 10 |
 | Fitting a tyre (x quality) | 10 |
-| Spraying a part (x how good the paint job is) | 12 |
+| Spraying a part (x how good the paint job is), giving a part or a whole engine a protective coat (x how good the coat is) | 12 |
 | A part brought from tired (under 60%) to like new (95%) | 4, once |
 | The first time a bike starts | 25, once per bike |
 | Rebuilding an engine on the stand | 40, once per engine |
@@ -244,6 +406,7 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | A project bike restored to max health (every part 95% or better) | 300, once per bike |
 | Riding: a jump of half a second or more (more for longer, half again for a clean landing), wheelies (3 per 10 m), stoppies (4 per 5 m), burnouts, knee-down corners, every km ridden, new top speeds (50, 80, 100 ... 320 km/h), 0-100 km/h times, and beating your longest jump, wheelie or stoppie | 2 to 60 |
 | Selling a bike, selling a part (at the parts computer) | 100, 5 |
+| A part-exchange deal (on top of selling the bike) | 40 |
 | The business's account reaching 10k, 25k, 50k, 100k, 250k, 500k and 1 million (everyone in the shed, once each) | 50 |
 | Running an MOT test on a contract bike | 6 |
 | A contract handed back: a service, an MOT, modifications, a bespoke build (x how many goals were met; to everyone who worked on it) | 40, 60, 100, 250 |
@@ -277,32 +440,74 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Shift up / down | E / Q | A / X |
 | Toggle auto-shift | T | |
 | Reset after a crash | R | View |
-| Camera (chase, first person) | C | Right stick click |
-| Horn | H | D-pad down |
-| Headlight: low beam, high beam, off | L | Left stick click |
+| Camera (third person, first person, fly-by) | C | Right stick click |
+| Swing the camera round the bike (first person: look round) | Mouse | Right stick |
+| Ride-by camera: watch yourself ride past (again to end it) | V | (none; set one in Key bindings) |
+| Telemetry overlay on / off | F3 | (none; set one in Key bindings) |
+| Horn (hold it; other players hear it where your bike is) | H | D-pad down |
+| Headlight: off, low beam, high beam (then high beam and fog lights, with fog lights fitted) | L | Left stick click |
 | Paddle backwards with your feet (when stopped) | Hold S | Hold left trigger |
 | Burnout | Hold S, then throttle | Left then right trigger |
+| Circle burnout: spin round on the front wheel | Burnout, then A / D | Burnout, then left stick |
 | Ping / stopwatch | G or middle mouse / P | D-pad right / left |
 | Get off (when stopped) | F | Y |
 
 The suspension now moves visibly over bumps and dirt ruts, the rear shocks stretch and squash with the swingarm, and landings from jumps soak up instead of bouncing. **Tyres come in widths** (for example 120/70, 160/60, 180/55, 190/50): wider tyres grip more on tarmac and less in mud, a wide front tyre steers slower, and each wheel rim takes a range of widths and one rim size (the part info shows it). Tyres and rims are drawn at their real width and profile.
 
-Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L still picks low beam, high beam or off. At night the beam lights the night air softly, a faint glow in the mist rather than a solid cone, a little stronger on high beam, with a few specks drifting through it. The headlight is two lights: a core that lights the road and a wide, dim flood round it. Both fade out gradually from the middle, so the pool of light on the road has no ring round it, and only the soft flood shows in the air, as a haze with no edges. (On the simpler renderer for older graphics cards it's a faint soft glow instead.)
+Lights run off the ignition: with the engine off the headlight, tail light, fog lamps and clocks are all dark, on your bike and everyone else's. With the engine running, L steps through off, low beam and high beam; on a bike with fog lights the next press after high beam puts the fog lamps on as well, and the one after that switches everything off. At night the beam lights the night air softly, a faint glow in the mist rather than a solid cone, a little stronger on high beam, with a few specks drifting through it. The headlight is two lights: a core that lights the road and a wide, dim flood round it. Both fade out gradually from the middle, so the pool of light on the road has no ring round it, and only the soft flood shows in the air, as a haze with no edges. (On the simpler renderer for older graphics cards it's a faint soft glow instead.)
 
-You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. The front tyre doesn't lock or skid any more; the back one does unless the ECU has ABS. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
+You get on with the engine off: press I to start it. The speedo shows a fuel gauge, and economy and range are on the bay screens. If the tank runs dry the engine stalls. Getting off puts the bike on its side stand (or centre stand), unless you stop by a bay's paddock stand. Bikes have no reverse gear: stopped, hold the front brake for a moment and you paddle backwards with your feet, steering as you go (or hold F next to a bike to wheel it about on foot). Hold the front brake and open the throttle to light up a burnout. With Riding realism at 0.5 or more the rider won't let the front tyre lock; at full sim it can, and the back one can lock at any setting unless the ECU has ABS. The Esc menu switches units between metric (km/h, km, kg, L/100 km) and imperial (mph, miles, lb, UK mpg).
+
+**Horns** are recorded from real ones: the stock disc horn, low-tone and high-tone discs, snail horns, the twin trumpet and truck air horns and the freight train horn sound for as long as you hold H and stop when you let go; the courtesy pip horn gives one short pip however long you hold it; the **police yelp horn** keeps whooping and yelping while you hold it, a different yelp each time; and, as a joke, the **ship's foghorn** and the **tugboat horn** blow their whole blast on every press. The twin-tone, klaxon, bulb, scooter beeper, musical and goose horns are still made by the game. Fit one from the parts computer's Horn aisle. Other players hear your horn from where your bike is, quieter and duller further off.
 
 Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The moment a tyre loses grip it gives a loud, sharp chirp (louder the more suddenly it lets go, from a lock-up, a wheelspin or a burnout), and a skid that goes on settles to a quieter screech. The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
 
-The **yard** past the drag strip has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
+**Cameras**: move the mouse (or the right stick) to swing the chase camera round the bike and look at it from any side, or from above. Let go and after a moment it eases back behind the bike; untick "Chase camera swings back" in the Esc menu's Settings to leave it where you put it. In first person the same moves turn your head. Press **V** for the **ride-by camera**: it drops a camera at the roadside ahead of you, watches you ride past for a few seconds, then goes back to the view you had (V or C ends it early). **C** steps through the views: third person, first person, then **fly-by** (the roadside camera stays on, hopping ahead each time you've gone past).
+
+**Circle burnouts**: hold the front brake and open the throttle to light up the back tyre, then lean (A / D or the left stick) and the back of the bike slides round the front wheel in a circle of smoke. Burnouts scrub the back tyre down quickly.
+
+**Out on the road a bike is just for riding.** Away from the shed, the yard round it, the wash bay and the sales office forecourt, you can't use tools, fit or take off parts, drain or lube anything, tune it or open geometry mode, and looking at it only shows its name. You can still ride it, wheel it about, name it and pour a can of petrol into the tank. Ride it back to work on it.
+
+**Retrieving a bike**: if you leave a bike out on the road (you got off and walked back, fell off the edge of the map, or a friend left it there), the Esc menu lists it under "Left out on the road". Press **Retrieve** and the recovery truck brings it back to the yard just west of the roller door, for £40 from the garage's account. Anyone in a co-op shed can do it. Ride off the edge of the map and you're put back on the last bit of ground you were on, turned round.
+
+The **yard** has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
+
+### The riding map
+
+The **yard** in front of the shed is laid out as a **test area** for checking the bikes you build. The tarmac runs out level into the grass all round, with no kerb to hop.
+
+- **Acceleration lane**: two painted lanes with a start line and a mark every 10 m up to the **BRAKE** line.
+- **Braking zone**: a line every 5 m over green, amber and red bands, with number boards beside it, so you can see how short a bike stops.
+- **Slalom**: cones and posts on painted spots.
+- **Jump line**: ramps and a tabletop.
+- **Skid pad**: a circle ringed with cones, for steady cornering.
+- **Slow area**: speed humps, a U-turn box and a figure of eight.
+- **Obstacle corner**: barrels, a log, hay bales, tyres, an old car, walls and fences.
+
+The movable kit starts in its places and can be pushed anywhere as before. Kit you order is dropped in the painted **yard kit drop-off** box.
+
+The **1 km loop** leaves the yard under a start gantry. It is all tarmac now, with fast sweepers, tighter corners with red and white kerbs, and gentle rises and dips. There are no jumps on it.
+
+The map is about **4 km across**:
+
+- **Tarmac roads** run off the loop to the villages of **Ashby**, **Thornley**, **Kettle Bridge** and **High Moor**, and to farms with barns, silos, fields, fences and hay bales.
+- **Moor Pass** climbs into the **mountains** to the north on tight hairpin switchbacks, with armco and chevron boards on the bends.
+- **Dirt tracks** branch off the roads and loop back: through the woods, along the river and round the east hills. The **Northfield climb**, the **Ridge run** and the **Peak circuit** are steeper, rockier and harder going.
+- **Signs** at the junctions say where each road goes.
+- Villages and farms have **street lamps** and **lit windows** after dark.
+
+Tarmac grips best, dirt less, and grass least. The bike's dirt and ride stats know which one you're on. Rocks, trees, buildings and barriers are solid, so ride round them. Out at the edge of the map the hills rise up. Ride off it and you're put back where you last had both wheels down.
+
+The **draw distance** graphics setting decides how far away trees, rocks, buildings and the detailed ground are drawn. Turn it down if the frame rate drops out on the map.
 
 ### Engine sound
 
-Every bike sounds like the parts it's built from. Nothing is a recording: the sound is worked out from how the engine runs. Each cylinder fires on its own crank angle, so a single thumps, a 360 degree twin beats evenly, a 270 degree parallel twin and a 90 degree V-twin lope, a boxer burbles, a triple warbles with its airbox howling and rasping, a flat-plane four screams evenly and the crossplane 1000 cc four growls. Two-strokes ring-ding at tickover, rattle, and come "on the pipe" in their powerband with a swelling, screaming note. Each firing goes down the header pipes and through the silencer: the **exhaust** decides how much gets out (stock can: quiet and boomy; slip-on; full system; titanium race system; straight pipe: loud and raspy). An open **air filter** (cotton cone, pods, velocity stacks) lets you hear the intake roar. A rusty exhaust blows and rasps, and worn plugs misfire.
+Every bike sounds like the parts it's built from. The engine itself isn't a recording: the sound is worked out from how the engine runs. Each cylinder fires on its own crank angle, so a single thumps, a 360 degree twin beats evenly, a 270 degree parallel twin and a 90 degree V-twin lope, a boxer burbles, a triple warbles with its airbox howling and rasping, a flat-plane four screams evenly and the crossplane 1000 cc four growls. Two-strokes ring-ding at tickover, rattle, and come "on the pipe" in their powerband with a swelling, screaming note. Each firing goes down the header pipes and through the silencer: the **exhaust** decides how much gets out (stock can: quiet and boomy; slip-on; full system; titanium race system; straight pipe: loud and raspy). An open **air filter** (cotton cone, pods, velocity stacks) lets you hear the intake roar. A rusty exhaust blows and rasps, and worn plugs misfire.
 
 - You hear the **exhaust** from the tail pipe and the **engine and intake** from the airbox. In the helmet view you hear more airbox and induction; on the chase camera, more exhaust. Other riders' bikes lose their top end with distance, and their pitch shifts (doppler) as they go past.
 - Snap the throttle shut at high revs and the pipe **pops and burbles** on the overrun, most just after you roll off, then the odd crackle as the revs fall. Loud pipes pop far more than a stock can. Now and then a big backfire cracks with a lick of **flame** from the tail pipe.
 - **Downshifts** blip the throttle with a bark, often followed by a bang from a loud pipe.
-- **Gear changes** sound like the gearbox: the race box's **quickshifter** cuts the engine for a blink with a crisp, slick tick (and a crack from a loud pipe); a close-ratio or enduro box gives a positive click; a vintage or wide-ratio box a basic clunk. Dropping into first at a standstill clunks. The race box has a dry clutch, which rattles at tickover, and its straight-cut gears whine.
+- **Gear changes** sound like the gearbox: the race box's **quickshifter** cuts the engine for a blink with a crisp, slick tick (and a crack from a loud pipe); a close-ratio or enduro box gives a positive click; a vintage or wide-ratio box a basic clunk. On top of that you hear a recording of a real gear lever and selector, a different take each change: light and high for the quickshifter's tick, as it is for a click, low and heavy for a clunk. Dropping into first at a standstill clunks. The race box has a dry clutch, which rattles at tickover, and its straight-cut gears whine.
 - Press I and you hear the **starter motor** crank the engine over before it catches with a bark; a small two-stroke single, or a single with the vintage four-speed box, is **kick-started**.
 - The dyno room and other players' bikes use the same sound.
 
@@ -310,7 +515,28 @@ Each new engine's sound is worked out in the background when you get on (about a
 
 **Recorded sounds** can replace the synthesised ones. Put .wav files in a folder named after the engine and exhaust, in `engine_samples` in the game's user folder (no import needed) or in `res://audio/engines` to ship them: the folder is `<layout>_<cylinders>_<exhaust>`, `<layout>_<exhaust>` or just `<layout>` (layouts: single, twin, parallel, vtwin, boxer, triple, inline, 2stroke; exhausts: stock, slip, full, race, straight). Loops are named by side, throttle and revs, each a seamless loop held at those revs: `ex_on_6000.wav` (exhaust, on the throttle, 6000 rpm), `ex_off_6000.wav` (overrun), `in_on_6000.wav` and `in_off_6000.wav` (engine and intake side). One-shots: `pop*.wav`, `bang*.wav`, `crack*.wav`, `shift*.wav`, `neutral*.wav` and `starter*.wav`. Anything left out is synthesised as usual.
 
-You steer by leaning: the rider counter-steers for you, like on a real bike. The **rider assist** setting goes from 0 (full sim) to 1 (most help with balance, wheelspin and wheelies). The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
+You steer by leaning: the rider counter-steers for you, like on a real bike. The Esc menu has a **Controller check** tab that shows exactly what the game reads from your pad.
+
+### Handling: tyres, riding realism and telemetry
+
+**Tyres work like real ones now.** Each tyre has a grip curve: grip builds as it starts to slip, peaks, then falls away to a slide. Braking or accelerating uses up grip the tyre could have used for cornering, so braking hard while leaned over leaves less to hold the line. A tyre loaded harder grips more, but not in proportion (a front tyre squashed under hard braking has a little less grip for its load). A leaned tyre pushes towards the lean (camber thrust), and grip builds over a short roll rather than all at once. The contact patch rolls round the tyre's round profile as you lean, so on fat tyres the bike leans a few degrees further for the same corner. Each tyre in the parts computer has a construction (radial or bias ply), a profile, a stiffness and how much grip is left once it slides: sport tyres and slicks are sharp and let go suddenly, touring tyres are softer, knobblies and old bias-ply tyres slide progressively. Tyre pressures change it too: a soft tyre slips further before it grips and is lazier to respond.
+
+**Riding realism** (Esc menu, Settings) is a slider from 0 to 1:
+- **0, full sim**: nothing hidden helps. Grab a handful of front brake leaned over and the front locks and tucks under, and you're down. Spin the back tyre up in a corner and snap the throttle shut and the slide grips all at once and throws you over the high side. The throttle goes exactly where you put it.
+- **About 0.5**: the rider protects the front (eases the brake before it locks, leaving grip for the corner), rolls the throttle on and off smoothly and feathers it when the back spins.
+- **1, easy**: as before this update, with the most help balancing, with wheelspin and with wheelies.
+
+**Telemetry**: press **F3** while riding (or tick it in Settings) for the telemetry overlay at the right of the screen: each tyre's friction circle (the dot is where its force is against its grip: past the ring it's sliding, and it turns red) with its load, the throttle and brakes, and the last 8 seconds of lean, steering, slip ratios, slip angles, grip used and tyre loads. Every ride is recorded; the **dyno desk's Last ride tab** shows the whole of your last ride as charts (speed, lean, steering, slips, grip used, loads, throttle and brakes, gear and revs) with the top speed, most lean, hardest braking and cornering, and how long each tyre spent sliding.
+
+### Handling: real steering and geometry
+
+**The front end steers itself, like a real one.** The forks turn about a steering axis raked back through the steering head. How far the front tyre's contact patch trails behind where that axis meets the road (the **trail**) comes from the frame's rake, the fork's **offset** (in the parts computer's fork specs) and the size of the front wheel: about 100 mm on a sports bike, 120 to 180 mm on cruisers and choppers. The trail and the spinning front wheel turn the front into a lean and line it up with where it's rolling, so a bike all but holds itself up: ridden no-handed at normal speeds it rides on upright, the rider's hips only nudging it (on round tyres a bike left wholly to itself slowly falls into a turn). The front's own weight, out ahead of the axis on the offset, swings it into a lean too, and the wheel's spin fights it being tipped. The rider steers by pushing on the bars (you still choose the lean with A / D or the stick): push the right grip and the bars turn left for a moment, the bike leans right and turns right. That's **counter-steering**, and it really happens now. At walking pace your feet are down and the bars just point where you steer.
+
+- **Feel**: a long, raked chopper with lots of trail is slow and steady to turn in; a sports frame flicks in. A light bike with a steep head angle can shake its head on a bumpy road, and the shake dies away.
+- **Weave, wobble and tank-slappers**: put a fork with a lot of offset on a steep frame (a chopper's springer on a sports frame) and the trail all but disappears: the bike info warns you, and a shove at the bars grows into a tank-slapper. A **steering damper** (its own part, five of them: friction, linear, adjustable linear, rotary race and off-road) calms the front end; adjustable ones have a clicker on the dyno desk's Suspension tab. Bikes that turn up already built (project bikes, customers') always have a fork that suits the frame.
+- **Weight**: where the parts sit moves the centre of mass. Luggage and a top box put weight high and out the back, a big engine sits it low, and a full tank weighs more than an empty one. Leaning into a turn, the rider hangs off to the inside.
+- **Riding realism**: below 0.35 there is no helping hand pushing the bike over; the bars alone balance it, the rider pushing as hard as they feel the front needs (more on a long-trail front, so it tips in slower). From 0.35 up an invisible push helps, more the higher you set it.
+- **Telemetry** (F3 and the dyno desk) adds the bar torque, the steering shake and the trail as it changes (it shortens as the fork dives under braking).
 
 ### Garage upgrades
 
@@ -319,19 +545,36 @@ The garage's money (the **Garage money** channel on any screen) buys a bigger, s
 | Upgrade | Price | Needs | What you get |
 | --- | --- | --- | --- |
 | Workshop extension | £30,000 | | A new wing behind the paint shop, through a doorway knocked in the back wall behind bay 4 (bay 4's screen moves up over it). Lots of floor room for more kit |
-| Bays 5 and 6 | £20,000 | Extension | Two more work bays in the extension with lift plates, lights and their own screens. Project bikes, blueprint builds and scratch builds all use them |
-| Bay 7 | £12,500 | Bays 5 and 6 | A seventh bay at the far end |
-| Storage annex | £15,000 | | A tall storage building behind the storage room, through a wide doorway in its back wall. Lit from the storage room's switch |
+| Bays 5 and 6 | £20,000 | Extension | Two more work bays in the extension, each with a bike lift, a light and its own screen. Project bikes, blueprint builds and scratch builds all use them |
+| Bay 7 | £12,500 | Bays 5 and 6 | A seventh bay at the far end, with its own lift |
+| Storage annex | £15,000 | | A big, tall storage building (about 11 by 14 metres, 6 metres high) behind the storage room, through a wide doorway in its back wall. Lit from the storage room's switch |
 | Pallet racking | £4,500 | Annex | Three runs of heavy-duty racking in the annex: real shelving that takes parts and can be moved |
-| Mezzanine floor | £35,000 | Annex | A steel deck across the back of the annex, with stairs up the side, stacked with stock; room for the racking underneath |
+| Mezzanine floor | £35,000 | Annex | A steel deck across the back of the annex, with stairs up the east wall from a clear space at the bottom, stacked with stock; room for the racking underneath |
 | Painted epoxy floor | £3,500 | | A glossy charcoal flake floor |
 | LED lighting | £6,000 | | Brighter cool-white lights and an LED strip round the walls |
 | Wall cladding | £9,000 | | White wall panels over aluminium chequer plate with a red pinstripe |
 | Branded signage | £5,000 | | A lit sign box over the roller door and a neon TORQUE SHED inside |
-| Crew lounge | £22,000 | Extension | Leather sofa, coffee table, drinks fridge, arcade machine, rug, lamp and a neon sign in the extension |
+| Crew lounge | £22,000 | | A room of its own upstairs on top of the workshop, with windows, up a steel staircase outside along the front of the paint shop: leather sofa, coffee table, drinks fridge, pool table, arcade machine, rug, lamp and a neon sign |
 | Showroom finish | £250,000 | Epoxy, LED, cladding, lounge | A gloss black and white chequered floor, honeycomb LED ceilings and chrome trim |
 
-Upgrades are kept in the shed's save; older saves start with none. Everything is built behind the shed, away from the yard.
+Upgrades are kept in the shed's save; older saves start with none. With branded signage, the shed's own TORQUE SHED letters shrink to fit inside the light box's neon frame, above the strapline. Everything is built behind the shed, away from the yard, apart from the crew lounge on its roof.
+
+**Bike lifts**: bays 5, 6 and 7 each have a motorbike lift. Look at the yellow post beside the bay (it has a green and a red button) and press **F**: the platform rises smoothly on its scissor arms to about waist height, carrying the bike on its paddock stand, so you can work on it standing up. Press **F** again to bring it down. Everyone in the crew sees it go up and down, and a lift left up stays up in the save. A bike can't be wheeled off or ridden while its lift is up, and you can't wheel a bike onto a raised lift.
+
+**The crew lounge** is upstairs: walk round to the steel staircase that climbs the front of the paint shop (a sign at the bottom says UP TO THE CREW LOUNGE), up to the landing and in through the door. Its lights are on the shed's switch.
+
+**The storage annex mezzanine**: the stairs run up the annex's east wall, from a clear space at the bottom, onto the deck across the back.
+
+**Colours and styles**: the finishes come in your choice of looks. Pick one in the list and click the swatches (colours) or named buttons (effects and styles) under its description before you press **Buy**; a little preview room beside them shows it with everything you've already built, and the shed itself changes to match on your screen while you pick (nobody else sees it until it's bought). Press **See it in the shed** to hide the page and look, then **Back to the upgrades** (or Esc). Closing the page, or picking another upgrade, puts the shed back as it is. Colours cost nothing extra when you buy; to change a finish you already have, pick new choices and press **Change it**, which costs 5% of its price (at least £250, at most £5,000) from the garage's money. In co-op the looks are the host's shed's and everyone sees them, and they're kept in the save (older saves keep the standard looks).
+
+| Finish | Choices (standard first) |
+| --- | --- |
+| Painted epoxy floor | Colour: charcoal, slate grey, racing red, garage blue, racing green, sand, gloss white, jet black. Effect: speckled flake, metallic swirl, plain gloss, satin |
+| LED lighting | Light colour: cool white, daylight, neutral white, warm white. Wall strip: the lights' colour, red, amber, green, blue, purple or pink. Strip effect: steady, slow pulse, colour cycle |
+| Wall cladding | Wall panels: white, light grey, cream, anthracite, garage blue, racing red, racing green. Chequer plate: brushed aluminium, black, copper, painted red. Pinstripe: red, blue, yellow, green, white, black or none |
+| Branded signage | Neon colour (blue, red, pink, green, orange, purple, white), light box edge colour, neon effect: steady, old flicker or slow pulse |
+| Crew lounge | Sofa leather, rug and neon sign colours |
+| Showroom finish | Floor: black and white, red and black, grey and white or blue and white chequer, mirror black, gallery white. Tile size: 30 cm, 60 cm, 1.2 m. Ceiling: honeycomb, fine or giant honeycomb. Ceiling light colour. Trim: chrome, gold, black chrome, red |
 
 ### Weather
 
@@ -369,14 +612,14 @@ Your eyes adjust too: walk out of the bright yard into the shed with the lights 
 
 ### Sound
 
-Every sound is made by the game itself as it starts (there are no audio files), modelled on how the real thing makes its noise, and kept in a cache file so later starts are quick. Nothing to set up: the Esc menu's sound effects slider covers all of it.
+Most sounds are made by the game itself as it starts, modelled on how the real thing makes its noise, and kept in a cache file so later starts are quick. A few are **recordings** (in `audio/sfx`): the wrench ratcheting, the sandblaster, the dyno room's cooling fan winding up and running, the roller door's motor, the sales office door chime and phone, the light switches, the gear levers and the horns. Each has several takes, picked at random and never the same one twice running; if a recording's file is missing the game makes its own sound instead. The sales PC's **cash till** (a buyer's offer or answer) is made by the game for now, until a recording is added as `sale_offer`. Nothing to set up: the Esc menu's sound effects slider covers all of it.
 
 - **Variety**: every knock, clink, footstep and part going down comes in several versions, played at random with a touch of pitch and level, and never the same one twice running. Tools pick up their loop at a different point each time.
 - **Parts landing**: putting a part down sounds of what it's made of and what it lands on: steel clanks and rings on the concrete floor, knocks on the wooden bench top, rings on for a while on a steel shelf or machine, and thuds dead on the grass outside; plastic clacks, tyres thump and bounce, seats and gear flop, delivery boxes thud.
 - **Tools and machines**: the ratchet's pawl clicking on the backswing and the bolt creaking round; the grinder spinning up, dropping in pitch as it bites with a rasp and spark crackle, and winding down; the pressure washer's pump pulse and jet; the parts washer's pump, splash and bubbles; the spray can's sputtering hiss and the spray gun's air rush; the sandblaster's roar and grit hiss; the tyre changer's motor and the rubber groaning, then the bead popping on; the dyno drum whining with its speed; the roller door's motor, chain and slats with a clunk at each end.
 - **Footsteps** sound of the floor: concrete (or the epoxy floor once it's bought, with the odd squeak), tiles in the paint shop and the showroom, wooden stairs and carpet upstairs in the sales office, the steel mezzanine, and outside tarmac, gravel on the dirt, grass, and splashes in puddles when it's wet. You hear other players' footsteps too.
 - **Rooms**: each room has its own acoustics: the shed's hard concrete, the small tiled paint booth, the cluttered store, the dyno room, the showroom's glass, the carpeted office, and outside nearly dry with an echo back off the shed wall. Sounds from another room come through muffled and quieter.
-- **Ambience**: a low room tone indoors (the showroom's air conditioning), the strip lights humming (the LED upgrade's are quieter) and ticking on when switched on, the roof creaking now and then, and the air compressor in the shed's back corner cycling on and off (sooner while the spray gun or sandblaster is drawing air). Outside there's wind, distant traffic, birdsong by day and crickets at night, quieter in the rain and muffled from indoors. The sales office's front doors whirr open and thump shut.
+- **Ambience**: a low room tone indoors (the showroom's air conditioning), the strip lights humming (the LED upgrade's are quieter) and ticking on when switched on, the roof creaking now and then, and the air compressor in the shed's back corner cycling on and off (sooner while the spray gun or sandblaster is drawing air). Outside there's wind, distant traffic, a burst of birdsong now and then by day (a few seconds of it, then quiet for a minute or so, and less round midday than morning and evening) and crickets at night, quieter in the rain and muffled from indoors. The sales office's front doors whirr open and thump shut.
 
 ### Money
 
@@ -384,13 +627,14 @@ There are two kinds of money: **your own cash**, kept with your character like y
 
 **Wages**: every job that earns XP also pays a small wage (a few pounds for spanner work, more for restoring, spraying and fitting tyres, and a good lump for finishing a build or restoring a bike to max health). Like the XP, doing the same job again straight away pays less and less, and the one-offs pay once. The business takes its **cut** of every wage (20% to start); you get the rest. Riding pays XP, not wages. The real money is in selling bikes (and, later, contracts).
 
-**Buying and selling**: parts cost money now, from the business's account: plain parts are cheap, fancy and light ones dear, engines by their size. If the business can't afford a part, the parts computer says so and nothing comes. A **project bike** costs a bit more than it would fetch as it comes, so the profit is in restoring it. The parts computer's **Sell** aisle sells **loose parts** (on the floor, a bench or shelf, or in your hands; an engine goes with whatever is fitted to it) and **whole bikes**. A dealer pays 70% of what a thing is worth now, and worn, rusty parts are worth far less than good ones, so restore before you sell. A complete bike fetches 15% more, and 15% more again with petrol and oil in it, ready to ride. The money goes to the business; whoever sells gets the XP and a small commission.
+**Buying and selling**: parts cost money now, from the business's account: plain parts are cheap, fancy and light ones dear, engines by their size. If the business can't afford a part, the parts computer says so and nothing comes. A **project bike** costs a bit more than it would fetch as it comes, so the profit is in restoring it. The parts computer's **Sell** aisle sells **loose parts** (on the floor, a bench or shelf, or in your hands; an engine goes with whatever is fitted to it) and, to the trade, **whole bikes standing on a showroom display stand** (see Selling bikes for buyers who pay more). A dealer pays 70% of what a thing is worth now, and worn, rusty parts are worth far less than good ones, so restore before you sell. A complete bike fetches 15% more, and 15% more again with petrol and oil in it, ready to ride. The money goes to the business; whoever sells gets the XP and a small commission.
 
 **The Money tab** (Esc menu): your cash and the business's, and:
 - **Send money**: pick a mate or the business and an amount: it comes out of your own cash. Anyone can pay the business.
 - **Take money out**: only the **garage owner** can move money from the business into their own cash.
 - **Garage settings** (the host only; greyed for everyone else, and saved with the shed): the business's **cut** of wages (0 to 100%) and who the **garage owner** is (the host to start).
 - **Bank loans**: the owner can borrow £5,000 (10 days), £20,000 (20 days) or £50,000 (30 days), up to £100,000 owed in all. Every in-game day (when the clock passes midnight) the bank adds a little interest to what's owed and takes the day's repayment from the business. **Pay** a thousand off, or **Clear it**, any time: paying early saves interest. If the business can't make a repayment it's **missed**: a fee goes on the loan and the bank won't lend again until that loan is paid off. With the day and night cycle off, days don't pass and nothing is due.
+- **Money over time**: graphs of your own cash and of the business's account. Pick **Minutes**, **Hours**, **Days**, **Weeks**, **Months** or **Years** of in-game time (the last hour, 24 hours, week, 12 weeks, 12 months or 5 years); a month is 30 in-game days and a year 365. The choice is kept with your settings and the My money and Garage money TV channels show the same range. Graphs start from when you first play this version: older saves have no earlier history.
 - **The ledger**: the business's last 100 movements (sales, purchases, cuts of wages, money sent in, repayments), newest first, and your own money's recent log.
 
 In co-op the host keeps the books: everyone's wages, transfers and the business are checked by the host, and your cash is kept on your own PC.
@@ -401,7 +645,31 @@ The Esc menu's **Shop** tab spends **your own money** (not the garage's). Pick a
 
 - **Rider gear**: helmets, jackets, trousers, boots and gloves, six to eight designs of each from made-up brands (Kestrel race leathers, Mudlark motocross kit, Ironside leathers, Fenway waxed cotton, Beacon hi-vis, Strata adventure gear and more), from £20 gloves to a £620 carbon race helmet. Helmets come as full-face, race (with a spoiler), open-face, pudding basin with goggles and motocross (peak, chin bar and goggles); jackets and trousers come in stripes, hoops, panels, chequers, hi-vis bands and carbon. **Buy and wear** pays and puts it on; **Wear** changes into something you already own. Everyone starts in free shed overalls in their crew colour, work boots, work gloves and a cap (a plain lid in your colour on the bike).
 - What you own and wear is kept with your character, so it goes with you to every shed. Everyone sees your gear: walking about the shed, on the bike and when you come off it.
-- **Trinkets** for the shed: a bobblehead racer, a biker gnome, a potted plant, a framed photo, a lava lamp, a wall clock that keeps the shed's time, a gold trophy, a chequered flag rug, a toolbox radio, a mini bike model and a pink neon TORQUE SHED sign. A trinket you buy is delivered outside the roller door and then belongs to the shed: press **F** on it to pick it up and carry it (the mouse wheel holds it further out, the rotate keys turn it, R toggles snapping), hold it over the workbench or another bench to put it down on top, or against a wall for the clock, photo and neon sign, and **F** puts it down. Hold the scrap key while carrying one to get rid of it. Trinkets are saved with the shed.
+- **Trinkets** for the shed: a bobblehead racer, a biker gnome, a potted plant, a framed photo, a lava lamp, a station wall clock and digital wall and desk clocks that keep the shed's in-game time (the hands and the display move with the day), a gold trophy, a chequered flag rug, a toolbox radio, a mini bike model and a pink neon TORQUE SHED sign. A trinket you buy is delivered outside the roller door and then belongs to the shed: press **F** on it to pick it up and carry it (the mouse wheel holds it further out, the rotate keys turn it, R toggles snapping), hold it over the workbench or another bench to put it down on top, or against a wall for the clock, photo and neon sign, and **F** puts it down. Hold the scrap key while carrying one to get rid of it. Trinkets are saved with the shed.
+
+### 3D part previews in the shop
+
+Pick a part on the parts computer and it turns slowly in 3D at the top of its page, drawn just as it looks on a bike, so you can see what you're buying. Drag it with the mouse to turn it yourself. In the Sell aisle the loose part you'd be selling is shown as it is now, rust, box and all. Shed kit has no preview.
+
+### Trolleys
+
+The parts computer sells two **trolleys** (Shed aisle, Storage and benches): a **parts trolley** with a waist-high lipped deck and a shelf underneath, and a long, low **flatbed trolley** for the heavy stuff. Load the deck like a workbench: look at it with a part or a box in your hands and put it down, as many as fit. Then take hold of the trolley with F (by its handle or anywhere on it), walk it where you want it and press F to let go: everything on the deck rides along with it, so a whole delivery comes in from the yard in one trip. Take things off again at the other end like off any bench. In co-op everyone sees the trolley move with its load, and the shed saves it where it was left, loaded.
+
+### Who ordered which box
+
+Every box ordered from the parts computer (and from a blueprint) has a yellow sticky note on its lid and front saying who it's **for**: the name of the player who ordered it. Look at a box and the panel says "Ordered by ..." too. In co-op it's easy to see whose boxes are whose in the delivery area. Unpack a box and the note goes with it.
+
+### The parts list in geometry mode
+
+Geometry mode (F2) has a list of the bike's parts down the left: each row is a slot and the part in it ("Fork: Showa USD forks"). Click a row to select that part, the same as clicking it on the bike (handy for small or hidden parts). Clicking a part on the bike lights up its row, and parts you've moved are marked with a *.
+
+### Ordering a bike in a style
+
+Next to **Order a project bike** on the parts computer is a style picker: pick one of the 14 styles (cafe racer, bobber, chopper, cruiser, scrambler, adventure bike, tourer, sports bike and the rest) and the button orders that style ("Order a cruiser"). The bike is found to order: it's built round the style's reference bike, with every part on it made for that style (the style's own parts pack first), tyres to suit its rims and the bolt-on bits that go with it, so it reads as a proper example of the style. It turns up in a free bay as worn as any project bike, named "Cruiser project" and so on, and costs the business 15% more than an ordinary project bike in the same state. Any style orders an ordinary project bike, as before.
+
+### Emotes
+
+On foot, press **B** for the emote bar, then **1** to **6**: **wave**, **thumbs up**, **point**, **shrug**, **cheer** and **dance** (B again closes it). Or do one straight away with **F5** to **F10**. The rest of the crew sees your figure do it, with what you're doing over your head; a point aims at whatever your crosshair is on. When you **ping** something (G or middle mouse), your figure points at it for the crew as well as it lighting up. Every key can be changed in the Key bindings tab.
 
 ### Debug tab
 
@@ -423,7 +691,8 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `data/parts.json` | Every part and its numbers, which feed the physics directly |
 | `scripts/shed_state.gd` | The shared shed: bikes, parts, who holds what. The host checks and applies every action |
 | `scripts/workshop.gd` | Builds the shed, the paint shop and storage room, its stations and dashboards, and draws parked bikes and loose parts |
-| `scripts/garage_upgrades.gd`, `workshop_upgrades.gd`, `upgrades_panel.gd` | Garage upgrades: the catalogue and rules, building them onto the shed, and the parts computer's Garage upgrades page |
+| `scripts/garage_upgrades.gd`, `workshop_upgrades.gd`, `upgrades_panel.gd` | Garage upgrades: the catalogue and rules, building them onto the shed (the extension bays and their bike lifts, the annex and its mezzanine, the crew lounge upstairs), and the parts computer's Garage upgrades page |
+| `scripts/upgrade_looks.gd`, `look_preview.gd` | Garage upgrade colours and styles: how each choice looks on the shed, and the preview room on the Garage upgrades page |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
 | `scripts/placement.gd` | Snapping equipment square and flush to walls and corners |
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |
@@ -431,28 +700,37 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/settings.gd`, `keybind_tab.gd` | Settings, every key binding and rebinding them in the Esc menu |
 | `scripts/graphics.gd`, `graphics_tab.gd` | Graphics settings: presets, putting them on the window, viewport and cameras, the driver override and FPS counter; the Esc menu's Graphics tab |
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
-| `scripts/sales_office.gd` | The sales office: its forecourt, showroom plinths, reception, viewing area, kitchen, stairs and mezzanine office, the sliding doors and the shop bell |
+| `scripts/sales_office.gd` | The sales office: its forecourt, showroom plinths, reception, viewing area, kitchen, stairs and mezzanine office with the sales PC, the sliding doors and the shop bell |
+| `scripts/coffee_shop.gd`, `coffee_shop_building.gd`, `coffee_view.gd`, `coffee_visitor.gd`, `coffee_panel.gd` | The coffee shop next door: its opening hours, bikers and their bikes, offers on them and the counter's trays (host-run, saved with the shed); the building, terrace and car park; the bikers riding in, sitting and leaving, the barista and the trays put down; the menu and offer card |
+| `scripts/sales.gd`, `sales_view.gd`, `sales_computer.gd` | Selling bikes: pricing and appraisal, online buyers' offers and counter-offers, part-exchange buyers and deals (host-run, saved with the shed); the buyers and their bikes in the showroom, the till and the price cards; the sales PC's pages |
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime, and each part's own fit from geometry mode |
 | `scripts/geometry_mode.gd`, `geo_gizmo.gd`, `blueprint_tab.gd` | Geometry mode (fitting a bike's parts with move, rotate and scale handles), the handles and their maths, and the Esc menu's Blueprints tab |
 | `scripts/tyre_game.gd` | The tyre-fitting game on the tyre changer |
-| `scripts/blast_game.gd`, `blast_marks.gd`, `blast_hud.gd`, `blast_detail.gd` | The sandblasting game in the blast cabinet: the coverage, the satin bare-metal mask and its shader, the live readout, and the close-up engine detail |
-| `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, slip-based tyres, engine, clutch and gearbox |
+| `scripts/blast_game.gd`, `blast_marks.gd`, `blast_hud.gd`, `blast_detail.gd`, `blast_grit.gd` | The sandblasting game in the blast cabinet: the coverage, the satin bare-metal mask and its shader, the live readout and the scan, the close-up engine detail, and the bare metal kept on each part and drawn wherever the engine goes, and the sand particles held inside the cabinet (protective coats, and a fully blasted engine coming out as new, are in `shed_state.gd`) |
+| `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, the tyres on the road, the front end turning about its raked steering axis, the rider (steering by bar torque, riding realism), engine, clutch and gearbox |
+| `scripts/tyre_model.gd` | The tyres: a Magic Formula with combined slip, load sensitivity, camber thrust, relaxation length and the round profile, from each tyre's catalogue numbers |
+| `scripts/ride_telemetry.gd`, `telemetry_overlay.gd`, `telemetry_graph.gd` | The ride's telemetry recorder, the F3 overlay while riding, and the strip charts (the overlay's and the dyno desk's Last ride tab) |
+| `scripts/chase_camera.gd` | The riding cameras: the chase view you can swing round the bike, first person, the ride-by camera and the title screen orbit |
 | `scripts/controls.gd` | Gamepad sticks and triggers, calibrated against stuck axes |
 | `scripts/net.gd`, `remote_player.gd`, `remote_bike.gd` | Multiplayer and other players |
-| `scripts/world.gd` | The map outside: terrain, road loop, Build Yard, trees |
+| `scripts/emotes.gd`, `emote_bar.gd` | Emotes: the poses other players see your figure do (and the point when you ping), and the emote bar |
+| `scripts/part_preview.gd`, `order_note.gd` | The parts computer's turning 3D preview of a part; the "for" note on a delivery box naming who ordered it |
+| `scripts/world.gd`, `world_layout.gd`, `world_terrain.gd`, `world_roads.gd`, `world_road_mesh.gd`, `world_yard.gd`, `world_props.gd`, `world_buildings.gd` | The riding map: the layout of roads, villages and farms; the height map, its chunked meshes and collision; road heights (grades, no jumps, flush junctions) and their meshes and markings; the yard's test area; trees, rocks, buildings, fences, armco, signs and lamps in batches |
 | `scripts/daylight.gd`, `weather.gd` | Time of day, sky and lighting; the weather (clouds, fog, rain, wet roads, rain sounds) |
 | `scripts/lighting.gd`, `cloud_sky.gd` | Graphics settings into GI, volumetric fog, fog volumes, shadows, glow and eye adaptation; the raymarched cloud sky shader |
 | `scripts/debug_tab.gd` | The Esc menu's Debug tab: reset or max XP and money, give the garage a million, send a customer, raise the reputation |
-| `scripts/money.gd`, `money_tab.gd` | Money: part and bike prices, selling, the business's bank (cut, owner, ledger, loans) and its requests; the Esc menu's Money tab |
+| `scripts/money.gd`, `money_tab.gd`, `money_graph.gd` | Money: part and bike prices, selling, the business's bank (cut, owner, ledger, loans) and its requests; the Esc menu's Money tab; the money graphs over in-game time |
 | `scripts/contracts.gd`, `mot.gd` | Contracts: customers, offers, goals, payouts and reputation (kept in `Shed.contracts`); the MOT inspection sheet |
-| `scripts/customer.gd`, `contracts_view.gd`, `contract_panel.gd`, `contracts_tab.gd` | The customers walking in to reception, the offer card and jobs list, and the Esc menu's Contracts tab |
+| `scripts/customer.gd`, `contracts_view.gd`, `contract_panel.gd`, `contracts_tab.gd` | The customers riding in, parking and walking in to reception (and collecting finished bikes), the offer card and jobs list, and the Esc menu's Contracts tab |
 | `scripts/progress.gd`, `ride_xp.gd`, `character_tab.gd`, `skill_tree_view.gd` | XP, levels, tool upgrades, skills and goals, kept in your own profile; riding XP; the Character tab |
 | `scripts/rider_gear.gd`, `rider_figure.gd`, `trinkets.gd`, `shop_tab.gd` | Rider gear (catalogue, owned and worn in your profile), drawing the avatar in it on foot and on the bike, trinkets for the shed, and the Esc menu's Shop tab |
 | `scripts/engine_synth.gd`, `engine_bank.gd`, `engine_sound.gd`, `exhaust_flame.gd` | Engine sound: the synthesis (firing order and crank phasing, header and silencer resonances, intake and airbox, valve train, clutch rattle, two-stroke ring-ding), the per-engine bank of seamless loops baked on a worker thread, and the 3D player that crossfades and pitches them and adds pops, bangs, shifts, the starter and the backfire flame. `tests/engine_render.tscn` renders them to .wav files |
-| `scripts/sfx.gd` | Playing the shed's sounds: variants without repeats, impacts by material, footsteps by floor, machine start and stop sounds, room reverb and through-wall muffling, the volume buses and the sound cache |
+| `scripts/sfx.gd` | Playing the shed's sounds: the recordings that stand in for made ones (`audio/sfx`), variants without repeats, impacts by material, footsteps by floor, machine start and stop sounds, room reverb and through-wall muffling, the volume buses and the sound cache |
 | `scripts/sfx_synth.gd` | Synthesising every shed sound from physical models (modal metal, contact impacts, motors under load, water and bubbles) |
-| `scripts/sfx_ambience.gd` | The shed's ambience: room tone, light hum, the compressor's cycle, creaks, the sliding doors, wind, traffic, birds and crickets |
+| `scripts/sfx_ambience.gd` | The shed's ambience: room tone, light hum, the compressor's cycle, creaks, the sliding doors, the phone ringing for a new customer, wind, traffic, birds in bursts and crickets |
+| `scripts/horn_audio.gd` | Bike horns: playing a horn's recordings (held, once or repeating), or synthesising the rest |
+| `audio/sfx/` | The recorded sounds: mono Ogg Vorbis, trimmed, loops crossfaded so they repeat without a seam |
 | `scripts/shed_radio.gd`, `radio_stream.gd`, `mp3_stream_decoder.gd` | The shed radio: streams an MP3 station over HTTP(S) and decodes it gaplessly |
 
 Built with [Godot 4.6](https://godotengine.org) and Jolt physics.

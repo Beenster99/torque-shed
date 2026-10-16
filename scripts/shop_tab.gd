@@ -7,7 +7,7 @@ extends VBoxContainer
 ## outside the roller door, then carried and placed like any other shed kit.
 
 const CATEGORIES: Array[String] = ["helmet", "jacket", "trousers", "boots", "gloves", "trinket"]
-const PREVIEW_SIZE := Vector2i(300, 330)
+const PREVIEW_SIZE := Vector2i(300, 280)
 
 var category := "helmet"
 var selected := ""
@@ -56,9 +56,12 @@ func _ready() -> void:
 	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	cols.add_theme_constant_override("separation", 12)
 	add_child(cols)
+	# The items scroll: there are more trinkets than fit.
 	var scroll := ScrollContainer.new()
+	scroll.name = "List"
 	scroll.custom_minimum_size = Vector2(330, 420)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.follow_focus = true
 	cols.add_child(scroll)
 	_list = VBoxContainer.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -69,11 +72,11 @@ func _ready() -> void:
 	detail.add_theme_constant_override("separation", 6)
 	cols.add_child(detail)
 	detail.add_child(_make_preview())
+	# The name, price and Buy come straight under the turntable, before the description, so
+	# Buy is always in sight however long the list or the text gets.
 	_name = UITheme.title("", 19, Color.WHITE)
 	_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	detail.add_child(_name)
-	_desc = UITheme.label("", 14, Color(1, 1, 1, 0.75))
-	detail.add_child(_desc)
 	_price = UITheme.label("", 16, UITheme.ACCENT)
 	detail.add_child(_price)
 	var buttons := HBoxContainer.new()
@@ -88,6 +91,8 @@ func _ready() -> void:
 	detail.add_child(buttons)
 	_status = UITheme.label("", 14, Color(1, 0.8, 0.6))
 	detail.add_child(_status)
+	_desc = UITheme.label("", 14, Color(1, 1, 1, 0.75))
+	detail.add_child(_desc)
 	Progress.changed.connect(func(): _due = true)
 	visibility_changed.connect(func(): _due = true)
 	show_category("helmet")

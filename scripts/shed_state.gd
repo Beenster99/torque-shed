@@ -8,6 +8,8 @@ signal changed
 signal feedback(text: String, ok: bool)
 ## Someone pointed at something for the crew: {at, what, item, furniture, name}.
 signal pinged(peer: int, ping: Dictionary)
+## A player did an emote (see Emotes): {e: which, name: theirs, at: a world point for a point, or absent}.
+signal emoted(peer: int, emote: Dictionary)
 ## The whiteboard's marks changed (see BoardData).
 signal board_changed
 ## A picture or poster print's data arrived (see share_blob).
@@ -16,8 +18,17 @@ signal blob_arrived(id: int)
 ## The fixed workbench along the wall. Equipment adds its own places: engine stands
 ## ("stand_<id>") and the rest "<prefix>_<id>_<n>" (see Equipment.SPOT_PREFIX).
 const SPOTS: Array[String] = ["bench_0", "bench_1", "bench_2", "bench_3"]
-const DELIVERY_ROWS := 3
-const DELIVERY_COLS := 4
+## The delivery area outside, east of the roller door (x/z): boxes are packed tight on its front
+## part (DELIVERY_FLOOR), sized by what's in them, and the delivery racking stands along the back
+## with an aisle in front of it. When the floor is full boxes go on the racking, then stack up.
+const DELIVERY_AREA := Rect2(3.0, 72.6, 7.6, 4.8)
+const DELIVERY_FLOOR := Rect2(3.0, 72.6, 7.6, 3.0)
+const DELIVERY_RACK := "shelf_delivery"
+const DELIVERY_RACK_XFS: Array[Transform3D] = [Transform3D(Basis(Vector3.UP, PI), Vector3(4.9, 0.0, 77.05)),
+	Transform3D(Basis(Vector3.UP, PI), Vector3(8.7, 0.0, 77.05))]
+const DELIVERY_GAP := 0.04      # left between boxes
+const DELIVERY_STACK := 1.3     # how high boxes are stacked on the floor, at most
+const PACK_CELL := 0.05         # the grid boxes are packed on
 const PAINTS := [Color(0.78, 0.09, 0.08), Color(0.1, 0.35, 0.8), Color(0.95, 0.6, 0.05), Color(0.1, 0.6, 0.3),
 	Color(0.55, 0.15, 0.7), Color(0.9, 0.9, 0.9), Color(0.06, 0.06, 0.06), Color(0.0, 0.6, 0.7),
 	Color(0.72, 0.73, 0.75), Color(0.8, 0.62, 0.2), Color(0.95, 0.85, 0.1), Color(0.95, 0.4, 0.6),
@@ -27,7 +38,7 @@ const PAINT_NAMES := ["red", "blue", "orange", "green", "purple", "white", "blac
 ## How the paint looks: "" is the part's factory finish, the rest come out of the spray can.
 const FINISHES: Array[String] = ["gloss", "matte", "metallic", "chrome", "patina"]
 const FINISH_NAMES := {"gloss": "Gloss", "matte": "Matte", "metallic": "Metallic flake", "chrome": "Chrome",
-	"patina": "Old patina"}
+	"patina": "Old patina", "pearl": "Pearl", "candy": "Candy", "flake": "Flake", "chameleon": "Chameleon"}
 const BIKE_NAMES := ["Barn Find", "Rusty Ranger", "Basket Case", "Old Faithful", "The Widowmaker", "Rattler",
 	"Hedge Hopper", "Midnight Special", "Scrapyard Dog", "Grandad's Pride", "Mud Puppy", "Iron Maiden"]
 ## Chains: slack in mm. Adjusted right it sits between these; lube 0 (dry) .. 1 (just done).
@@ -43,21 +54,31 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"centre_stand": 0.9, "cooling": 0.6, "oil_filter": 0.6, "air_filter": 0.5, "gearbox": 0.5, "rear_master": 0.5,
 	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
 	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6,
-	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2}
+	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2, "front_mudguard": 1.0, "indicators": 0.4, "side_panels": 0.4,
+	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8, "steering_damper": 0.2}
+## Parts in the front wheel's spray. With no front mudguard they get this much more road dirt;
+## a guard takes it back down by how much spray it stops (its "cover").
+const FRONT_SPRAY: Array[String] = ["fork", "engine", "cooling", "exhaust", "headlight", "horn", "fog_lights",
+	"front_caliper", "oil_filter", "air_filter", "frame"]
+const NO_GUARD_SPRAY := 1.8
 ## Litres a second poured from a container, or drained out of a bike.
 const POUR_RATE := {"petrol": 2.0, "oil": 0.8, "brake_fluid": 0.15}
 const SYNC_INTERVAL := 0.1
 ## Tuning (the dyno room): where each setting is kept. The engine's calibration belongs to the
 ## bike ("bike": its tune{}); the rest live on the part they adjust, in its tune{}, so they go
-## with it when it's swapped. Chain tension is the chain's own slack.
+## with it when it's swapped. Chain tension is the chain's own slack. The ECU's rider aid levels
+## are the bike's too (the rider's choice for that bike, kept if the ECU is changed).
 const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "limiter": ["bike", "limiter"],
+	"aid_traction": ["bike", "aid_traction"], "aid_stability": ["bike", "aid_stability"],
+	"aid_anti_wheelie": ["bike", "aid_anti_wheelie"],
 	"f_preload": ["fork", "preload"], "f_bump": ["fork", "bump"], "f_rebound": ["fork", "rebound"],
 	"r_preload": ["shock", "preload"], "r_bump": ["shock", "bump"], "r_rebound": ["shock", "rebound"],
 	"psi_f": ["front_tyre", "pressure"], "psi_r": ["rear_tyre", "pressure"],
 	"sprocket_f": ["final_drive", "front"], "sprocket_r": ["final_drive", "rear"], "spread": ["gearbox", "spread"],
-	"chain": ["chain", "slack"]}
+	"chain": ["chain", "slack"], "damper": ["steering_damper", "clicks"]}
 const LIGHTEN_WEAR := 0.08     # condition a part gives up to being drilled and trimmed
 const TYRE_WEAR := 0.0002      # tyre wear per km at the right pressure
+const BURNOUT_WEAR := 0.004    # back tyre wear per second of full burnout
 const MAX_PAINT_RUST := 0.2
 ## The tyre slot that goes with each wheel slot: a wheel comes off the bike with its tyre still on.
 const WHEEL_TYRE := {"front_wheel": "front_tyre", "rear_wheel": "rear_tyre"}
@@ -88,12 +109,23 @@ var door_open := true     # the roller door
 var garage_money := 0
 ## Garage upgrades bought (GarageUpgrades): upgrade id -> true.
 var upgrades := {}
+## The extension bays' bike lifts that are up: bay -> true (the rest are down).
+var lifts := {}
+## The looks chosen for the finishes bought (GarageUpgrades.OPTIONS): upgrade id -> {option: choice}.
+## A finish with none here looks as it always did.
+var looks := {}
 const MAX_GARAGE_MONEY := 100000000
 ## Everything else about the business's money: wage cut, owner, ledger, loans (see Money.defaults).
 var bank := Money.defaults()
 var _clock_hours := -1.0       # host: the clock last frame, to see midnight pass
 ## Customers at reception and the jobs taken on for them (see Contracts).
 var contracts := {}
+## Bikes for sale on the showroom stands, buyers' offers and part-exchanges (see Sales).
+var sales := {}
+## The coffee shop next door: its bikers and the trays out (see CoffeeShop).
+var coffee := {}
+## The paint mixing bay off the paint shop: its stock, tins, recipes and bench (see PaintBay).
+var paint_bay := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -126,6 +158,9 @@ var blueprints := {}
 var holograms := {}
 const MAX_BLUEPRINTS := 40
 
+## Whether a new shed opens with the old demo bikes (for the tests and screenshot tools; a
+## player's new shed starts empty).
+var demo_bikes := false
 var _next_id := 1
 var _dirty := false
 var _sync_timer := 0.0
@@ -161,7 +196,10 @@ func me() -> int:
 
 # ---------------------------------------------------------------------------- session
 
-## Opens the shed with a few project bikes waiting. Only the host (or a solo player) does this;
+## Opens a brand new shed: no bikes and nothing on the workbench, just the fixed machines (the
+## engine stand, parts washer, repair bench and the rest). Project bikes are bought from the parts
+## computer and customers bring theirs. With `demo_bikes` on (the tests and screenshot tools) it
+## opens with the three old demo bikes instead. Only the host (or a solo player) does this;
 ## joiners receive the host's shed instead.
 func start_new(player_name: String, seed_value := 0) -> void:
 	bikes.clear()
@@ -172,7 +210,12 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	Money.log_entry(bank, Money.START_FUNDS, "Opening funds", garage_money)
 	Money._mark_milestones(bank, garage_money)
 	contracts = Contracts.empty()
+	sales = Sales.empty()
+	coffee = CoffeeShop.empty()
+	paint_bay = PaintBay.empty()
 	upgrades = {}
+	lifts = {}
+	looks = {}
 	door_open = true
 	lights_on = true
 	room_lights = {"paint": true, "storage": true}
@@ -190,6 +233,24 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	_rng.seed = seed_value if seed_value != 0 else int(Time.get_unix_time_from_system())
 	active = true
 	_add_crew(me(), player_name)
+	var cafe := _demo_bikes_before() if demo_bikes else 0
+	var stand := _new_furniture("stand", Transform3D(Basis(), Workshop.CENTER + Vector3(Workshop.HALF.x - 0.9, 0.0, -0.4)))
+	# The shed's own parts washer and repair bench, against the front wall. They can be moved,
+	# and more bought from the parts computer.
+	_new_furniture("washer", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(Workshop.HALF.x - 1.05, 0.0, Workshop.HALF.y - 0.6)))
+	_new_furniture("repair", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(3.4, 0.0, Workshop.HALF.y - 0.6)))
+	ensure_fixtures()
+	if demo_bikes:
+		_demo_bikes_after(cafe, stand)
+	_set_up_yard()
+	_mark_dirty()
+	changed.emit()
+
+
+## The old demo shed's first bikes (made before the shed's own machines, so the ids stay as they
+## were): the Rusty Ranger, and the Barn Find half stripped onto the workbench. Returns the Barn
+## Find's id.
+func _demo_bikes_before() -> int:
 	_new_bike({"frame": "steel_backbone", "fork": "enduro_usd", "shock": "enduro_mono", "front_wheel": "spoked_21",
 		"rear_wheel": "spoked_18", "front_tyre": "knobbly_mx_90", "rear_tyre": "knobbly_mx", "front_disc": "wave_270",
 		"rear_disc": "wave_270", "front_caliper": "twin_piston", "rear_caliper": "single_piston", "front_pads": "sintered",
@@ -212,12 +273,11 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	for slot in ["exhaust", "chain", "final_drive", "front_tyre"]:
 		_detach(cafe, slot, "spot", "bench_%d" % bench)
 		bench += 1
-	var stand := _new_furniture("stand", Transform3D(Basis(), Workshop.CENTER + Vector3(Workshop.HALF.x - 0.9, 0.0, -0.4)))
-	# The shed's own parts washer and repair bench, against the front wall. They can be moved,
-	# and more bought from the parts computer.
-	_new_furniture("washer", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(Workshop.HALF.x - 1.05, 0.0, Workshop.HALF.y - 0.6)))
-	_new_furniture("repair", Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(3.4, 0.0, Workshop.HALF.y - 0.6)))
-	ensure_fixtures()
+	return cafe
+
+
+## The rest of the old demo shed: the Barn Find's engine on the stand, and Old Faithful.
+func _demo_bikes_after(cafe: int, stand: int) -> void:
 	var block := _detach(cafe, "engine", "spot", "stand_%d" % stand)
 	for slot in ["spark_plugs", "air_filter"]:
 		var gone: int = items[block]["slots"][slot]
@@ -232,39 +292,14 @@ func start_new(player_name: String, seed_value := 0) -> void:
 		"engine": "four_1000", "exhaust": "slip_on", "final_drive": "stock_15_45", "head": "four_valve",
 		"fuel": "throttle_bodies", "air_filter": "paper_airbox", "oil_filter": "high_flow_oil", "spark_plugs": "iridium_plugs",
 		"cooling": "single_radiator", "gearbox": "six_close"}, 2, "Old Faithful", 0.35, PAINTS[1])
-	_set_up_yard()
-	_mark_dirty()
-	changed.emit()
 
 
-## The practice area just past the drag strip starts with a jump line, a slalom and some things
-## to jump. Everything can be pushed about with F, and more ordered from the parts computer.
+## The yard's test area starts with a jump line, a slalom and an obstacle corner of things to
+## ride round and over (WorldYard.starting_kit). Everything can be pushed about with F, and
+## more ordered from the parts computer.
 func _set_up_yard() -> void:
-	var north := Basis()                     # a ramp's deck rises towards its back (-Z)
-	var south := Basis(Vector3.UP, PI)       # turned round: ridden heading south, away from the drag strip
-	# A jump line along x = -2, ridden south off the drag strip: the big ramp onto a landing.
-	_new_furniture("ramp", Transform3D(south, Vector3(-2.0, 0.0, 118.0)), "ramp_large")
-	_new_furniture("ramp", Transform3D(north, Vector3(-2.0, 0.0, 132.0)), "ramp_landing")
-	_new_furniture("marker", Transform3D(north, Vector3(0.5, 0.0, 137.0)), "flag_chequered")
-	_new_furniture("ramp", Transform3D(south, Vector3(-9.0, 0.0, 114.0)), "ramp_small")
-	_new_furniture("ramp", Transform3D(south, Vector3(-15.0, 0.0, 116.0)), "ramp_medium")
-	_new_furniture("obstacle", Transform3D(south, Vector3(12.0, 0.0, 124.0)), "tabletop")
-	# A slalom of cones and posts, with flags at the gate.
-	_new_furniture("marker", Transform3D(north, Vector3(4.6, 0.0, 109.0)), "flag_red")
-	_new_furniture("marker", Transform3D(north, Vector3(8.4, 0.0, 109.0)), "flag_blue")
-	for i in 6:
-		_new_furniture("marker", Transform3D(north, Vector3(5.8 + (i % 2) * 1.5, 0.0, 113.0 + i * 4.0)), "cone" if i % 3 != 2 else "post")
-	# Things to jump, and a short wall and fence.
-	_new_furniture("obstacle", Transform3D(north, Vector3(-15.0, 0.0, 126.0)), "barrels")
-	_new_furniture("obstacle", Transform3D(north, Vector3(-9.0, 0.0, 124.0)), "log")
-	_new_furniture("obstacle", Transform3D(north, Vector3(-9.0, 0.0, 130.0)), "hay_bales")
-	_new_furniture("obstacle", Transform3D(north, Vector3(18.5, 0.0, 140.0)), "tyre_stack")
-	_new_furniture("obstacle", Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-15.0, 0.0, 136.0)), "car_wreck")
-	_new_furniture("barrier", Transform3D(north, Vector3(15.0, 0.0, 136.0)), "wall_concrete")
-	_new_furniture("barrier", Transform3D(north, Vector3(17.2, 0.0, 136.0)), "wall_concrete")
-	_new_furniture("barrier", Transform3D(north, Vector3(6.0, 0.0, 142.0)), "fence_wood")
-	_new_furniture("barrier", Transform3D(north, Vector3(10.0, 0.0, 142.0)), "fence_mesh")
-	_new_furniture("barrier", Transform3D(north, Vector3(-8.0, 0.0, 142.0)), "wall_brick")
+	for k in WorldYard.starting_kit():
+		_new_furniture(str(k[0]), k[1], str(k[2]))
 
 
 ## Opens a saved shed (see SaveGame): the host's side of _sync. Nothing is held, ridden, pushed
@@ -293,6 +328,10 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	for id in items:
 		if items[id]["at"] == "spot" and not (items[id].get("place") is Transform3D) and spot_role(str(items[id]["ref"])) == "shelf":
 			items[id]["place"] = item_place(id)
+	# Nor carrying a tray from the cafe: any that were go back on its counter.
+	CoffeeShop.after_load()
+	# Nor at the mixing bench or holding a tin: tins go back on the shelf.
+	PaintBay.after_load()
 	# Nobody is holding the hose or wearing the ear defenders in a new session.
 	if dyno["hose"] == "held":
 		dyno["hose"] = "hook"
@@ -332,12 +371,13 @@ func _add_new_slots() -> void:
 		var original: Dictionary = bike.get("original", {})
 		if not original.has("tail"):
 			original["tail"] = PartsDB.fitting_tail(PartsDB.sanitize_build(original.duplicate()))
-		for slot in ["fairing", "mirrors"]:
+		for slot in ["fairing", "mirrors"] + Array(PartsDB.FILLER_SLOTS):
 			if not original.has(slot):
 				original[slot] = "none"
 			if not bike["slots"].has(slot):
 				bike["slots"][slot] = 0
 				bike["bolted"][slot] = false
+		_add_front_mudguard(id)
 		if bike["slots"].has("tail"):
 			continue
 		var frame := int(bike["slots"].get("frame", 0))
@@ -358,13 +398,51 @@ func _add_new_slots() -> void:
 	for plan in plans:
 		if plan is Dictionary and plan.get("parts") is Dictionary and not plan["parts"].has("tail"):
 			plan["parts"]["tail"] = PartsDB.fitting_tail(PartsDB.sanitize_build(plan["parts"].duplicate()))
+		if plan is Dictionary and plan.get("parts") is Dictionary and not plan["parts"].has("front_mudguard"):
+			plan["parts"]["front_mudguard"] = PartsDB.fitting_front_mudguard(PartsDB.sanitize_build(plan["parts"].duplicate()))
+
+
+## Sheds saved before front mudguards were parts of their own (the fork drew a painted one):
+## each bike gets the guard that suits it, in the same state as its fork, bolted on where the
+## fork is fitted, else waiting on the bench. Scratch builds start with the slot empty.
+func _add_front_mudguard(bike_id: int) -> void:
+	var bike: Dictionary = bikes[bike_id]
+	var original: Dictionary = bike.get("original", {})
+	if not original.has("front_mudguard"):
+		original["front_mudguard"] = PartsDB.fitting_front_mudguard(PartsDB.sanitize_build(original.duplicate()))
+	if bike["slots"].has("front_mudguard"):
+		return
+	bike["slots"]["front_mudguard"] = 0
+	bike["bolted"]["front_mudguard"] = false
+	if bike.get("scratch", false):
+		return
+	var fork := int(bike["slots"].get("fork", 0))
+	var like: Dictionary = items.get(fork, {"rust": 0.3, "dirt": 0.3, "wear": 0.2})
+	var part := str(original["front_mudguard"])
+	var guard := _new_item(part, float(like["rust"]), float(like["dirt"]), float(like["wear"]), _guard_color(part, bike["paint"]))
+	if fork != 0:
+		_move(guard, "bike", bike_id)
+		bike["slots"]["front_mudguard"] = guard
+		bike["bolted"]["front_mudguard"] = true
+	else:
+		_put_on_bench(guard)
+
+
+## A front mudguard's colour on a bike: painted to match where the part says so, else its own.
+static func _guard_color(part: String, paint):
+	return paint if PartsDB.get_part(part).get("paint_match", false) and paint is Color else null
 
 
 func join_remote() -> void:
 	garage_money = 0
 	bank = Money.defaults()
 	contracts = Contracts.empty()
+	sales = Sales.empty()
+	coffee = CoffeeShop.empty()
+	paint_bay = PaintBay.empty()
 	upgrades = {}
+	lifts = {}
+	looks = {}
 	board = BoardData.empty()
 	_clear_prints()
 	board_changed.emit()
@@ -386,7 +464,12 @@ func stop() -> void:
 	bank = Money.defaults()
 	_clock_hours = -1.0
 	contracts = Contracts.empty()
+	sales = Sales.empty()
+	coffee = CoffeeShop.empty()
+	paint_bay = PaintBay.empty()
 	upgrades = {}
+	lifts = {}
+	looks = {}
 	_washer_by.clear()
 	board = BoardData.empty()
 	_clear_prints()
@@ -532,6 +615,23 @@ func condition_of(item: Dictionary) -> Dictionary:
 			cond["lighten_extra"] = float(item["lighten_extra"])
 	if item.has("bead"):
 		cond["bead"] = item["bead"]
+	# Sandblasted bare metal (where, and whether all over) and any protective coat, for drawing it.
+	if item.get("blast") is Dictionary:
+		cond["blast"] = item["blast"]
+		cond["blast_full"] = blast_full(item)
+	if item.has("coat"):
+		cond["coat"] = str(item["coat"])
+	if item.get("primer_top", false):
+		cond["primer"] = true
+	# Paint mixed in the mixing bay: its effect, a masked stripe or fade, tape still on, the
+	# lacquer's flattener (see PaintMix.apply).
+	for key in ["mix", "mask", "tape"]:
+		if item.get(key) is Dictionary and not item.get("primer_top", false):
+			cond[key] = item[key]
+	if float(item.get("flat", 0.0)) > 0.0:
+		cond["flat"] = float(item["flat"])
+	if item.get("mix") is Dictionary:
+		cond["paint_q"] = float(item.get("paint_quality", 1.0))
 	return cond
 
 
@@ -771,6 +871,27 @@ func _cool_dyno(delta: float) -> void:
 # ---------------------------------------------------------------------------- the sandblaster
 
 const BLAST_WEAR := 0.12     # wear a part picks up if every patch of it were blasted too long
+const BARE_RUST := 0.004     # flash rust per km ridden on bare metal with no coat over it (per km of muck, twice that)
+const COAT_WEAR := 0.0005    # a protective coat wears thinner per km ridden
+## Protective coats for bare metal, sprayed with the spray gun on a paint shop hook: clear
+## lacquers keep the blasted metal on show under a gloss (or satin) clear coat; engine enamels
+## paint it. `protect` is how well a perfect coat keeps flash rust off and muck from sticking.
+const COATS := {
+	"clear": {"name": "Clear lacquer", "gloss": 1.0, "protect": 0.85},
+	"satin_clear": {"name": "Satin clear lacquer", "gloss": 0.45, "protect": 0.8},
+	"enamel_black": {"name": "Black engine enamel", "paint": 6, "finish": "gloss", "protect": 1.0},
+	"enamel_silver": {"name": "Silver engine enamel", "paint": 8, "finish": "metallic", "protect": 1.0},
+}
+const COAT_ORDER: Array[String] = ["clear", "satin_clear", "enamel_black", "enamel_silver"]
+## The clear lacquers, which can go over paint with a spray can too.
+const LACQUERS: Array[String] = ["clear", "satin_clear"]
+## Grey primer: an optional first coat (the "prime" action) that the colour keys to. A part in
+## primer keeps its colour underneath ("primer_top" while it's the top coat; "primer" is how good
+## it went on, kept under the colour). Paint over primer comes out better by PRIMER_BONUS times the
+## primer's quality, and a clear lacquer over the colour by LACQUER_BONUS times the lacquer's.
+const PRIMER_COLOR := Color(0.42, 0.43, 0.44)
+const PRIMER_BONUS := 0.08
+const LACQUER_BONUS := 0.06
 
 
 ## The blast cabinet someone is working at (their hands in its gloves), or 0.
@@ -821,6 +942,8 @@ func _blast_check(peer: int, action: Dictionary) -> String:
 				return "The engine has gone."
 			if not (action.get("parts") is Dictionary):
 				return "Nothing was blasted."
+			if action.has("masks") and not (action["masks"] is Dictionary and (action["masks"] as Dictionary).size() <= 16):
+				return "Nothing was blasted."
 		_:
 			return "Unknown action."
 	return ""
@@ -838,11 +961,12 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 				var base := {}
 				var engine := item_at_spot(str(action["spot"]))
 				for id in _blast_parts(engine):
-					base[id] = [float(items[id]["rust"]), float(items[id]["dirt"]), float(items[id]["wear"])]
+					base[id] = _blast_base_of(id)
 				c["blast_base"] = base
-				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse. F to step back."
+				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse, X to scan it. F to step back."
 			c["blaster"] = 0
 			c["blast_fire"] = false
+			c["blast_scan"] = false
 			c.erase("blast_base")
 		"blast_aim":
 			var r = action.get("rot", Vector2.ZERO)
@@ -850,25 +974,34 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 			c["blast_rot"] = r if r is Vector2 else Vector2.ZERO
 			c["blast_fire"] = bool(action.get("fire", false))
 			c["blast_at"] = at if at is Vector3 else Vector3.ZERO
+			c["blast_scan"] = bool(action.get("scan", false))
 		"blast_tick":
 			# Live, while blasting: the rust and muck come off as the metal comes up bare.
 			_blast_strip(c, item_at_spot(str(action["spot"])), action["parts"])
 		"blast":
 			var engine := item_at_spot(str(action["spot"]))
+			var before := {}
+			for id in _blast_parts(engine):
+				before[id] = blast_cover(items[id])
 			var stripped := _blast_strip(c, engine, action["parts"])
 			var done := 0
 			var cover_sum := 0.0
 			var pitted := []
+			var masks: Dictionary = action.get("masks", {}) if action.get("masks") is Dictionary else {}
 			for id in stripped:
 				var cover: float = stripped[id][0]
 				var over: float = stripped[id][1]
-				var strip := clampf(cover / BlastGame.DONE, 0.0, 1.0)
+				# Pay for what came up bare this time, not what was bare already.
+				var strip := clampf((cover - float(before.get(id, 0.0))) / BlastGame.DONE, 0.0, 1.0)
 				if over > 0.08:
 					pitted.append(PartsDB.slot_name(PartsDB.slots_for_kind(str(items[id]["kind"]))[0]).to_lower())
 				cover_sum += cover
 				done += 1
-				if strip >= 0.3:
+				if strip >= 0.2:
 					_xp(peer, "sandblast", clampf(strip * (1.0 - over * 0.8), 0.1, 1.0), "item:%d" % id)
+				_keep_blast(id, cover, over, masks.get(id, masks.get(str(id), null)), c.get("blast_base", {}).get(id, []))
+			var renewed := _blast_renew(c, engine, stripped)
+			for id in stripped:
 				_check_part(peer, id)
 			c["blaster"] = 0
 			c["blast_fire"] = false
@@ -877,6 +1010,8 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 			if done == 0:
 				return ""
 			var text := "Blasted %d part%s: %d%% back to bare metal" % [done, "" if done == 1 else "s", roundi(cover_sum / done * 100.0)]
+			if renewed:
+				return text + ". The whole engine is bare: good as new (100% condition, no wear, dirt or rust)"
 			if not pitted.is_empty():
 				text += ", but you've pitted the %s" % ", ".join(pitted.slice(0, 3))
 			return text
@@ -915,7 +1050,7 @@ func _blast_strip(c: Dictionary, engine: int, parts: Dictionary) -> Dictionary:
 			continue
 		var it: Dictionary = items[id]
 		if not base.has(id):
-			base[id] = [float(it["rust"]), float(it["dirt"]), float(it["wear"])]
+			base[id] = _blast_base_of(id)
 			c["blast_base"] = base
 		var was: Array = base[id]
 		var strip := clampf(cover / BlastGame.DONE, 0.0, 1.0)
@@ -925,7 +1060,190 @@ func _blast_strip(c: Dictionary, engine: int, parts: Dictionary) -> Dictionary:
 		it["dirt"] = 0.0 if strip >= 0.999 else minf(float(it["dirt"]), float(was[1]) * (1.0 - strip))
 		it["wear"] = maxf(float(it["wear"]), minf(1.0, float(was[2]) + over * BLAST_WEAR))
 		out[id] = [cover, over]
+	_blast_renew(c, engine, out)
 	return out
+
+
+## An engine blasted back to bare metal all over (every part on it) is as good as new: every
+## part's wear, dirt and rust go, for 100% condition, and stay gone from then on (what it was
+## before is forgotten, so blasting it again starts from new). It stays bare metal until it's
+## coated or painted. `covers` is this spell's coverage (item id -> [covered, over]), on top of
+## what was bare already. Returns whether it was.
+func _blast_renew(c: Dictionary, engine: int, covers: Dictionary) -> bool:
+	var ids := _blast_parts(engine)
+	if ids.is_empty():
+		return false
+	for id in ids:
+		var r = covers.get(id, [])
+		var now := float(r[0]) if r is Array and (r as Array).size() >= 1 else 0.0
+		if maxf(now, blast_cover(items[id])) < BlastGame.DONE:
+			return false
+	var base: Dictionary = c.get("blast_base", {})
+	for id in ids:
+		var it: Dictionary = items[id]
+		it["rust"] = 0.0
+		it["dirt"] = 0.0
+		it["wear"] = 0.0
+		if it.get("blast") is Dictionary:
+			it["blast"]["p"] = 0.0
+		if it.has("blast_base"):
+			it["blast_base"] = [0.0, 0.0, 0.0]
+		base[id] = [0.0, 0.0, 0.0]
+	if not c.is_empty():
+		c["blast_base"] = base
+	return true
+
+
+## How a part was before any of it was blasted ([rust, dirt, wear]): what's kept from the first
+## time it went in a cabinet, so going back to it strips on from there rather than starting over.
+func _blast_base_of(id: int) -> Array:
+	var it: Dictionary = items[id]
+	var kept = it.get("blast_base")
+	if kept is Array and (kept as Array).size() == 3 and it.has("blast"):
+		return [float(kept[0]), float(kept[1]), float(kept[2])]
+	return [float(it["rust"]), float(it["dirt"]), float(it["wear"])]
+
+
+## Keeps what's bare on a part after a spell at the cabinet: how much ("c"), how much is pitted
+## ("p") and, when sent, the mask of where (BlastMarks.export_part), so the engine stays bare
+## wherever it goes. Blasting takes any protective coat off with the rust.
+func _keep_blast(id: int, cover: float, over: float, mask, base: Array) -> void:
+	var it: Dictionary = items[id]
+	var was: Dictionary = it["blast"] if it.get("blast") is Dictionary else {}
+	var kept := {"c": maxf(cover, float(was.get("c", 0.0))), "p": maxf(over, float(was.get("p", 0.0)))}
+	if mask is Dictionary and BlastMarks.valid(mask):
+		for k in ["o", "d", "v"]:
+			kept[k] = mask[k]
+	elif was.has("v"):
+		for k in ["o", "d", "v"]:
+			kept[k] = was[k]
+	if not it.has("blast"):
+		it["blast_base"] = base.duplicate() if base.size() == 3 else _blast_base_of(id)
+	it["blast"] = kept
+	if cover > float(was.get("c", 0.0)) + 0.02:
+		it.erase("coat")
+		it.erase("coat_q")
+		it.erase("primer")
+		it.erase("primer_top")
+
+
+## A short tag that changes when a part's blasting or coat does, so it's redrawn.
+func blast_sig(item: Dictionary) -> String:
+	var b = item.get("blast")
+	# Grey primer on top redraws it too.
+	var primer := "primer" if item.get("primer_top", false) else ""
+	if not (b is Dictionary) and not item.has("coat"):
+		return primer
+	return "b%.3f:%d:%s%s" % [float(b.get("c", 0.0)) if b is Dictionary else 0.0,
+		str(b.get("v", "")).hash() if b is Dictionary else 0, str(item.get("coat", "")), primer]
+
+
+## How much of a part has been blasted back to bare metal (0 if it's been painted since).
+func blast_cover(item: Dictionary) -> float:
+	var b = item.get("blast")
+	return clampf(float(b.get("c", 0.0)), 0.0, 1.0) if b is Dictionary else 0.0
+
+
+## Whether a part was blasted all over: it's drawn bare metal all over.
+func blast_full(item: Dictionary) -> bool:
+	return blast_cover(item) >= BlastGame.DONE
+
+
+## Paint over a part hides its bare metal: the blasting it had is forgotten.
+func _paint_over(it: Dictionary) -> void:
+	it.erase("blast")
+	it.erase("blast_base")
+
+
+## How glossy a clear coat makes bare metal (0 for none, or an enamel, which paints it).
+func coat_gloss(coat: String) -> float:
+	return float(COATS.get(coat, {}).get("gloss", 0.0))
+
+
+## How well a part's protective coat keeps rust and muck off it now, 0..1.
+func coat_protect(item: Dictionary) -> float:
+	var kind := str(item.get("coat", ""))
+	if not COATS.has(kind):
+		return 0.0
+	return clampf(float(COATS[kind]["protect"]) * float(item.get("coat_q", 1.0)), 0.0, 1.0)
+
+
+func coat_name(kind: String) -> String:
+	return str(COATS.get(kind, {}).get("name", ""))
+
+
+## "Protective coat: clear lacquer, a good coat (91%)" for coated parts.
+func coat_text(item: Dictionary) -> String:
+	if not COATS.has(str(item.get("coat", ""))):
+		return ""
+	var q := float(item.get("coat_q", 1.0))
+	return "Protective coat: %s, %s (%d%%)" % [coat_name(str(item["coat"])).to_lower(), _job_word(q, 0.0, "paint"), roundi(q * 100.0)]
+
+
+## The parts a protective coat goes on: an engine takes it all over, ancillaries and all.
+func coat_targets(item_id: int) -> Array:
+	return _blast_parts(item_id) if is_engine(item_id) else [item_id]
+
+
+func _coat_check(peer: int, action: Dictionary) -> String:
+	var item_id := int(action.get("item", 0))
+	if not items.has(item_id):
+		return "That part has gone."
+	var it: Dictionary = items[item_id]
+	if it["at"] == "held":
+		return "Put it down first."
+	if it.get("boxed", false):
+		return "Unpack it first."
+	var kind := str(action.get("coat", ""))
+	if not COATS.has(kind):
+		return "That's not a coat the spray gun has."
+	var in_booth: bool = it["at"] == "spot" and spot_role(str(it["ref"])) == "booth"
+	# A rattle can of clear lacquer goes over paint anywhere; the rest is the spray gun's, in the booth.
+	var can_lacquer: bool = LACQUERS.has(kind) and not action.get("gun", false) and it.has("paint_quality")
+	if LACQUERS.has(kind) and it.get("primer_top", false):
+		return "Lacquer goes over the colour, not bare primer. Spray the colour coat on first."
+	if not in_booth and not can_lacquer:
+		return "Protective coats go on with the spray gun in the paint shop: hang it on a hook there."
+	for id in coat_targets(item_id):
+		if float(items[id]["rust"]) > MAX_PAINT_RUST:
+			return "Too rusty to coat: sandblast it back to bare metal first." if is_engine(item_id) \
+				else "Too rusty to coat. Get the rust off it first."
+	return ""
+
+
+## A protective coat sprayed on (already checked): on the part, or the whole engine and what's
+## fitted to it. An enamel paints it; a clear coat keeps the bare metal on show.
+func _coat_apply(peer: int, action: Dictionary) -> String:
+	var item_id := int(action["item"])
+	var kind := str(action["coat"])
+	var spec: Dictionary = COATS[kind]
+	var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
+	var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
+	var it: Dictionary = items[item_id]
+	if it["at"] == "spot" and spot_role(str(it["ref"])) == "booth":
+		var booth := furniture_of_spot(str(it["ref"]))
+		q = minf(1.0, q + float(Equipment.get_model(str(booth["model"])).get("finish", 0.05)))
+	for id in coat_targets(item_id):
+		var part: Dictionary = items[id]
+		_note_low(id)
+		# Clear lacquer over a paint job brings it up (once: a second coat adds nothing more).
+		if not spec.has("paint") and part.has("paint_quality") and not LACQUERS.has(str(part.get("coat", ""))):
+			part["paint_quality"] = minf(1.0, float(part["paint_quality"]) + LACQUER_BONUS * q)
+		part["coat"] = kind
+		part["coat_q"] = q
+		if spec.has("paint"):
+			var under := float(part.get("primer", 0.0)) if part.get("primer_top", false) else 0.0
+			part["color"] = PAINTS[int(spec["paint"])]
+			part["finish"] = str(spec["finish"])
+			part["paint_quality"] = minf(1.0, q + PRIMER_BONUS * under)
+			part["paint_runs"] = runs
+			_paint_over(part)
+			part.erase("primer_top")
+		_check_part(peer, id)
+	_bump(crew.get(peer, {}), "painted")
+	_xp(peer, "protect_coat", q, "item:%d" % item_id)
+	var what := "engine" if is_engine(item_id) else item_title(item_id)
+	return "Gave the %s a coat of %s: %s" % [what, coat_name(kind).to_lower(), _job_word(q, runs, "paint")]
 
 
 ## A stock bike built around an engine on the stand, so its numbers can be compared.
@@ -980,9 +1298,16 @@ func station_name(index := -1) -> String:
 
 ## "Gloss red", or just "Red" for a part still in its factory finish.
 func paint_text(item: Dictionary) -> String:
+	if item.get("primer_top", false):
+		return "Grey primer"
 	var f: String = item.get("finish", "")
+	var mix = item.get("mix")
+	if mix is Dictionary and str(mix.get("name", "")) != "":
+		# Mixed paint goes by its name: "Midnight Blue (metallic, 2 coats)".
+		return "%s (%s, %d coat%s)" % [mix["name"], PaintMix.effect_name(str(mix.get("effect", "solid"))).to_lower(),
+			int(item.get("mix_coats", 1)), "" if int(item.get("mix_coats", 1)) == 1 else "s"]
 	var n := paint_name(item["color"])
-	return n.capitalize() if f == "" else "%s %s" % [FINISH_NAMES[f], n]
+	return n.capitalize() if f == "" else "%s %s" % [str(FINISH_NAMES.get(f, f.capitalize())), n]
 
 
 ## The palette colour closest to `c`.
@@ -1010,6 +1335,13 @@ func condition_text(item: Dictionary) -> String:
 		text += "\n" + chain_text(item)
 	if item.has("paint_quality"):
 		text += "\n" + finish_text(item)
+	elif item.get("primer_top", false):
+		text += "\nIn primer (%d%%): ready for its colour coat" % roundi(float(item.get("primer", 0.0)) * 100.0)
+	if blast_cover(item) > 0.0:
+		text += "\nSandblasted: %d%% bare metal%s" % [roundi(blast_cover(item) * 100.0),
+			"" if item.has("coat") or blast_cover(item) < 0.3 else ", unprotected (it'll flash-rust when ridden)"]
+	if item.has("coat"):
+		text += "\n" + coat_text(item)
 	if item.has("bead"):
 		text += "\n" + bead_text(item)
 	return text
@@ -1030,7 +1362,15 @@ func finish_text(item: Dictionary) -> String:
 	if not item.has("paint_quality"):
 		return ""
 	var q := float(item["paint_quality"])
-	return "Paint job: %s (%d%%)" % [_job_word(q, float(item.get("paint_runs", 0.0)), "paint"), roundi(q * 100.0)]
+	var layers := ""
+	if item.has("primer") and not item.get("primer_top", false):
+		layers += ", over primer"
+	if LACQUERS.has(str(item.get("coat", ""))):
+		layers += ", lacquered"
+	var text := "Paint job: %s (%d%%)%s" % [_job_word(q, float(item.get("paint_runs", 0.0)), "paint"), roundi(q * 100.0), layers]
+	if item.get("primer_top", false):
+		text = "In primer (%d%%): ready for its colour coat, the old paint job (%d%%) under it" % [roundi(float(item.get("primer", 0.0)) * 100.0), roundi(q * 100.0)]
+	return text
 
 
 ## "Slack 52 mm (too slack)  ·  Lube 20% (dry)".
@@ -1103,18 +1443,219 @@ func bay_at(at: Vector3) -> int:
 	return -1
 
 
-## Where the next delivery is left outside the roller door, beside the drive so bikes can still
-## get out. Returns null when the delivery area is full.
-func free_delivery_xf():
-	for row in DELIVERY_ROWS:
-		for col in DELIVERY_COLS:
-			var at := Workshop.CENTER + Vector3(3.2 + col * 0.85, 0.0, Workshop.HALF.y + 1.3 + row * 0.9)
-			if _clear_at(at, 0.5):
-				return Transform3D(Basis(Vector3.UP, PI), at)
-	return null
+## Where the next piece of equipment `size` big (width, height, depth) is left outside the
+## roller door: on the delivery area's floor, beside the drive so bikes can still get out.
+## Returns null when there's no room on the floor for it.
+func free_delivery_xf(size := Vector3(0.9, 0.5, 0.9)):
+	var spot = _pack(DELIVERY_FLOOR, Vector2(size.x, size.z), _delivery_floor_rects(), true)
+	if spot == null:
+		return null
+	var at: Vector3 = spot
+	return Transform3D(Basis(Vector3.UP, PI), Vector3(at.x, 0.0, at.z))
 
 
-## Where yard kit is dropped off: the west end of the yard just past the drag strip, clear of the
+## Where a delivered box (or can) `size` big (width, height, depth) goes: packed onto the delivery
+## area's floor, else onto the delivery racking, else stacked on a box on the floor. Returns
+## {at: "floor", xf} or {at: "spot", key (the rack's board), place (on it)}, or {} when it's full.
+func delivery_place(size: Vector3) -> Dictionary:
+	var foot := Vector2(size.x, size.z)
+	var spot = _pack(DELIVERY_FLOOR, foot, _delivery_floor_rects(), false)
+	if spot != null:
+		var at: Vector3 = spot
+		return {"at": "floor", "xf": Transform3D(Basis(Vector3.UP, at.y), Vector3(at.x, 0.0, at.z))}
+	for id in _delivery_racks():
+		var model := str(furniture[id]["model"])
+		var levels := int(Equipment.get_model(model).get("levels", 1))
+		for level in levels:
+			if level < levels - 1 and size.y > Equipment.shelf_pitch(model) - 0.06:
+				continue   # too tall to go under the board above
+			var key := "f%ds%d" % [id, level]
+			var s := surface(key)
+			var others := []
+			for o in _surface_rects(key):
+				others.append(o[1])
+			var on = _pack(s["rect"], foot, others, false)
+			if on != null:
+				var p: Vector3 = on
+				return {"at": "spot", "key": key, "place": Transform3D(Basis(Vector3.UP, p.y), Vector3(p.x, float(s["top"]), p.z))}
+	# Last of all, on top of a box already on the floor, lowest first.
+	var best := {}
+	var best_y := INF
+	for id in _delivery_floor_items():
+		var it: Dictionary = items[id]
+		if not it.get("boxed", false):
+			continue
+		var xf: Transform3D = it["ref"]
+		var top := xf.origin.y + _item_height(id)
+		if top + size.y > DELIVERY_STACK or top >= best_y:
+			continue
+		var under := item_footprint(id)
+		var turn := 0.0
+		if foot.x > under.x + 0.05 or foot.y > under.y + 0.05:
+			if foot.y > under.x + 0.05 or foot.x > under.y + 0.05:
+				continue
+			turn = PI * 0.5
+		if _box_on(id) != 0:
+			continue
+		best = {"at": "floor", "xf": Transform3D(xf.basis * Basis(Vector3.UP, turn), Vector3(xf.origin.x, top, xf.origin.z))}
+		best_y = top
+	return best
+
+
+## Puts a new part where delivery_place says. False (and it isn't moved) when there's no room.
+func _deliver(item_id: int) -> bool:
+	var where := delivery_place(_delivered_size(item_id))
+	if where.is_empty():
+		return false
+	if where["at"] == "floor":
+		_move(item_id, "floor", where["xf"])
+	else:
+		_move(item_id, "spot", _free_surface_spot(str(where["key"])))
+		items[item_id]["place"] = where["place"]
+	return true
+
+
+## How much room a part takes up in the delivery area: its box, or the can as it is.
+func _delivered_size(item_id: int) -> Vector3:
+	var foot := item_footprint(item_id)
+	return Vector3(foot.x, _item_height(item_id), foot.y)
+
+
+func _item_height(item_id: int) -> float:
+	var it: Dictionary = items[item_id]
+	return BikeModel.footprint(str(it["part"]), bool(it.get("boxed", false))).y
+
+
+## Whether there's room for a part `part_id` in the delivery area (see delivery_place).
+func delivery_room(part_id: String) -> bool:
+	return not delivery_place(BikeModel.footprint(part_id, not PartsDB.is_fluid(part_id))).is_empty()
+
+
+## The delivery racking units (fixed in the delivery area, see ensure_fixtures).
+func _delivery_racks() -> Array:
+	var out := []
+	for id in furniture:
+		if str(furniture[id]["model"]) == DELIVERY_RACK:
+			out.append(id)
+	out.sort()
+	return out
+
+
+## Parts lying on the ground in the delivery area (and stacked there).
+func _delivery_floor_items() -> Array:
+	var out := []
+	var area := DELIVERY_AREA.grow(0.5)
+	for id in items:
+		if items[id]["at"] == "floor":
+			var at: Vector3 = (items[id]["ref"] as Transform3D).origin
+			if area.has_point(Vector2(at.x, at.z)):
+				out.append(id)
+	return out
+
+
+## What takes up the delivery area's floor: the bottom box of each stack, equipment, and bikes.
+func _delivery_floor_rects() -> Array:
+	var out := []
+	for id in _delivery_floor_items():
+		var xf: Transform3D = items[id]["ref"]
+		if xf.origin.y < 0.05:
+			out.append(foot_rect(xf, item_footprint(id)))
+	var area := DELIVERY_AREA.grow(3.0)
+	for id in furniture:
+		var f: Dictionary = furniture[id]
+		var at: Vector3 = (f["xf"] as Transform3D).origin
+		if area.has_point(Vector2(at.x, at.z)):
+			var size := furniture_size(f)
+			out.append(foot_rect(f["xf"], Vector2(size.x, size.z)))
+	for id in bikes:
+		var at: Vector3 = (bikes[id]["xf"] as Transform3D).origin
+		if area.has_point(Vector2(at.x, at.z)):
+			out.append(foot_rect(bikes[id]["xf"], Vector2(0.9, 2.3)))
+	return out
+
+
+## The box sitting on top of box `item_id` in the delivery area, or 0.
+func _box_on(item_id: int) -> int:
+	var xf: Transform3D = items[item_id]["ref"]
+	var top := xf.origin.y + _item_height(item_id)
+	var r := foot_rect(xf, item_footprint(item_id)).grow(-0.02)
+	for id in _delivery_floor_items():
+		var o: Transform3D = items[id]["ref"]
+		if id != item_id and absf(o.origin.y - top) < 0.03 and foot_rect(o, item_footprint(id)).intersects(r):
+			return id
+	return 0
+
+
+## Packs a box with footprint `foot` (x by z) into `area` clear of `others` (Rect2s, kept
+## DELIVERY_GAP away from): the free spot nearest the area's front (low z), then its left (low
+## x), the box's long side along x, or turned across where only that fits (unless `fixed`).
+## Works on a 5 cm grid of what's taken. Returns Vector3(centre x, turn, centre z), or null
+## when there's no room.
+func _pack(area: Rect2, foot: Vector2, others: Array, fixed: bool):
+	var nx := int(area.size.x / PACK_CELL)
+	var ny := int(area.size.y / PACK_CELL)
+	if nx <= 0 or ny <= 0:
+		return null
+	var taken := PackedByteArray()
+	taken.resize(nx * ny)
+	for o in others:
+		var r := (o as Rect2).grow(DELIVERY_GAP)
+		var i0 := maxi(0, int(floor((r.position.x - area.position.x) / PACK_CELL + 0.001)))
+		var i1 := mini(nx, int(ceil((r.end.x - area.position.x) / PACK_CELL - 0.001)))
+		var j0 := maxi(0, int(floor((r.position.y - area.position.y) / PACK_CELL + 0.001)))
+		var j1 := mini(ny, int(ceil((r.end.y - area.position.y) / PACK_CELL - 0.001)))
+		for j in range(j0, j1):
+			for i in range(i0, i1):
+				taken[j * nx + i] = 1
+	# Running totals of the taken cells, so any block is checked in four lookups.
+	var w := nx + 1
+	var sums := PackedInt32Array()
+	sums.resize(w * (ny + 1))
+	for j in ny:
+		var row := 0
+		for i in nx:
+			row += taken[j * nx + i]
+			sums[(j + 1) * w + i + 1] = sums[j * w + i + 1] + row
+	var sizes: Array[Vector2] = [foot]
+	if not fixed:
+		# Long side along x first, then turned across.
+		sizes = [Vector2(maxf(foot.x, foot.y), minf(foot.x, foot.y)), Vector2(minf(foot.x, foot.y), maxf(foot.x, foot.y))]
+	var best = null
+	var best_at := Vector2i(nx, ny)
+	for size in sizes:
+		var cw := int(ceil(size.x / PACK_CELL - 0.001))
+		var ch := int(ceil(size.y / PACK_CELL - 0.001))
+		for j in range(0, ny - ch + 1):
+			if j > best_at.y:
+				break
+			for i in range(0, nx - cw + 1):
+				if sums[(j + ch) * w + i + cw] - sums[j * w + i + cw] - sums[(j + ch) * w + i] + sums[j * w + i] == 0:
+					if j < best_at.y or (j == best_at.y and i < best_at.x):
+						best_at = Vector2i(i, j)
+						var turn := 0.0 if size == foot else PI * 0.5
+						best = Vector3(area.position.x + i * PACK_CELL + size.x * 0.5, turn, area.position.y + j * PACK_CELL + size.y * 0.5)
+					break
+	return best
+
+
+## Boxes left stacked in the delivery area drop down onto whatever is under them now, once one
+## under them has been taken away.
+func _settle_delivery() -> void:
+	var stacked := _delivery_floor_items().filter(func(id): return (items[id]["ref"] as Transform3D).origin.y > 0.01)
+	stacked.sort_custom(func(a, b): return (items[a]["ref"] as Transform3D).origin.y < (items[b]["ref"] as Transform3D).origin.y)
+	for id in stacked:
+		var xf: Transform3D = items[id]["ref"]
+		var r := foot_rect(xf, item_footprint(id)).grow(-0.02)
+		var rest := 0.0
+		for other in _delivery_floor_items():
+			var o: Transform3D = items[other]["ref"]
+			if other != id and o.origin.y < xf.origin.y - 0.01 and foot_rect(o, item_footprint(other)).intersects(r):
+				rest = maxf(rest, o.origin.y + _item_height(other))
+		if rest < xf.origin.y - 0.005:
+			items[id]["ref"] = Transform3D(xf.basis, Vector3(xf.origin.x, rest, xf.origin.z))
+
+
+## Where yard kit is dropped off: the painted drop-off box at the west end of the yard, clear of the
 ## jumps already set up. Returns null when it's all taken.
 func free_yard_xf(model: String):
 	var size: Vector3 = Equipment.get_model(model).get("size", Vector3.ONE)
@@ -1505,6 +2046,15 @@ func ensure_fixtures() -> void:
 				_move(hung[i], "floor", Transform3D(Basis(), at))
 	if not have.has("changer"):
 		_new_furniture("changer", Workshop.CHANGER_XF, "tyre_changer")
+	# The delivery racking along the back of the delivery area (sheds from before it get it too).
+	var racks := _delivery_racks()
+	for i in DELIVERY_RACK_XFS.size():
+		if i < racks.size():
+			furniture[racks[i]]["xf"] = DELIVERY_RACK_XFS[i]
+			furniture[racks[i]]["mover"] = 0
+		else:
+			var rack := _new_furniture("shelf", DELIVERY_RACK_XFS[i], DELIVERY_RACK)
+			furniture[rack]["label"] = "DELIVERIES"
 	# The crew whiteboard can be hung on any wall; a save from before that keeps it where it was.
 	if whiteboard_id() == 0:
 		_new_furniture("whiteboard", Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT), "whiteboard")
@@ -1652,6 +2202,23 @@ func _bay_near(xf: Transform3D, bike_id: int) -> int:
 	return -1
 
 
+## The bay of the lift a bike stands on (an extension bay's, see GarageUpgrades), or -1.
+func lift_of(bike_id: int) -> int:
+	if not bikes.has(bike_id):
+		return -1
+	var at: Vector3 = (bikes[bike_id]["xf"] as Transform3D).origin
+	for bay in GarageUpgrades.lift_bays(upgrades):
+		if at.distance_to(Workshop.bay_transform(bay).origin) < 0.5:
+			return bay
+	return -1
+
+
+## Whether a bike is up on a raised lift (it can't be wheeled off or ridden till it's down).
+func lift_raised(bike_id: int) -> bool:
+	var bay := lift_of(bike_id)
+	return bay >= 0 and lifts.has(bay)
+
+
 ## Where a held part would go on a target, or why it can't: {slot} or {error}.
 ## Prefers the slot being looked at, then the same side (front or rear), then any free slot.
 func install_slot(action: Dictionary, item_id: int) -> Dictionary:
@@ -1716,6 +2283,9 @@ func _engine_access(action: Dictionary, slot: String) -> String:
 
 ## Why `peer` can't do `action` right now, or "" when they can.
 func check(peer: int, action: Dictionary) -> String:
+	var road := road_bike_block(action)
+	if road != "":
+		return road
 	var a := str(action.get("a", ""))
 	var held := held_by(peer)
 	var bike_id := int(action.get("bike", 0))
@@ -1736,12 +2306,26 @@ func check(peer: int, action: Dictionary) -> String:
 			return "Someone is wheeling that bike about."
 	if a.begins_with("contract_"):
 		return Contracts.check(peer, action)
+	if a.begins_with("sale_"):
+		return Sales.check(peer, action)
+	if PaintBay.carrying(peer) and (PaintBay.HANDS_NEEDED.has(a) and not a in ["paint", "coat"] or a in ["coffee_buy", "coffee_tray_take"]):
+		return "Put the %s down first." % ("tin" if not PaintBay.held_tin(peer).is_empty() else "tape")
+	if a.begins_with("paint_"):
+		return PaintBay.check(peer, action)
+	if a.begins_with("coffee_"):
+		return CoffeeShop.check(peer, action)
+	if CoffeeShop.carrying(peer) and CoffeeShop.HANDS_NEEDED.has(a):
+		return "Put your tray down first."
 	if a.begins_with("dyno_") and a != "dyno_run":
 		return _dyno_check(peer, action)
 	if a.begins_with("blast"):
 		return _blast_check(peer, action)
+	if a == "coat":
+		return _coat_check(peer, action)
 	if a.begins_with("money_"):
 		return Money.check(peer, action)
+	if a == "retrieve_bike":
+		return retrieve_check(action)
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
 		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
 	match a:
@@ -1866,8 +2450,8 @@ func check(peer: int, action: Dictionary) -> String:
 		"order_part":
 			if PartsDB.get_part(str(action.get("part", ""))).is_empty():
 				return "Unknown part."
-			if free_delivery_xf() == null:
-				return "The delivery area outside is full. Bring some boxes in first."
+			if not delivery_room(str(action["part"])):
+				return "The delivery area outside is full, racking and all. Bring some boxes in first."
 			var cost := Money.buy_price(str(action["part"]), peer)
 			if cost > garage_money:
 				return "The business can't afford it: %s, and it has %s." % [TvChannels.money_text(cost), TvChannels.money_text(garage_money)]
@@ -1877,6 +2461,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unknown equipment."
 			if Equipment.FIXED_KINDS.has(Equipment.kind_of(model)):
 				return "The paint booth is built into the shed: it's in the paint shop on the east side."
+			if model == DELIVERY_RACK:
+				return "The delivery racking comes with the shed: it's in the delivery area outside."
 			if model == Equipment.BOARD_POSTER and not posters.has(int(action.get("design", 0))):
 				return "That whiteboard poster isn't in the shop any more."
 			if str(action.get("psize", "")) != "" and (Equipment.kind_of(model) != "poster" or not Equipment.POSTER_SIZES.has(str(action["psize"]))):
@@ -1885,9 +2471,9 @@ func check(peer: int, action: Dictionary) -> String:
 				return "The shed has its whiteboard already. Press F on it to hang it somewhere else."
 			if Equipment.is_yard(model):
 				if free_yard_xf(model) == null:
-					return "The drop-off by the drag strip is full. Move some of the yard kit first."
-			elif free_delivery_xf() == null:
-				return "The delivery area outside is full. Bring some boxes in first."
+					return "The yard kit drop-off is full. Move some of the yard kit first."
+			elif free_delivery_xf(Equipment.get_model(model).get("size", Vector3.ONE)) == null:
+				return "There's no room for it in the delivery area outside. Bring some boxes in first."
 		"unpack":
 			var box := int(action.get("item", 0))
 			if not items.has(box) or not items[box].get("boxed", false):
@@ -1900,6 +2486,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "That has gone."
 			if Equipment.FIXED_KINDS.has(str(f["kind"])):
 				return "The %s is built in." % furniture_name(f).to_lower()
+			if str(f["model"]) == DELIVERY_RACK:
+				return "The delivery racking is fixed down in the delivery area."
 			if f["mover"] != 0 and f["mover"] != peer:
 				return "Someone else is moving that."
 			if blaster_user(int(f["id"])) != 0:
@@ -2000,7 +2588,7 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Crouch down (C) to get at the chain."
 			if float(items[chain].get("lube", 0.0)) > 0.95:
 				return "It's freshly lubed."
-		"clean", "repair", "paint":
+		"clean", "repair", "paint", "prime":
 			var item_id := int(action.get("item", 0))
 			if not items.has(item_id):
 				return "That part has gone."
@@ -2016,12 +2604,30 @@ func check(peer: int, action: Dictionary) -> String:
 					return "Put the part on a repair machine first."
 				if it["rust"] < 0.02 and it["wear"] < 0.02:
 					return "It's already in top condition."
-			if a == "paint" and action.get("gun", false) and not (it["at"] == "spot" and spot_role(str(it["ref"])) == "booth"):
+			if a in ["paint", "prime"] and action.get("gun", false) and not (it["at"] == "spot" and spot_role(str(it["ref"])) == "booth"):
 				return "The spray gun runs off the paint booth's air line. Hang the part in a booth."
-			if a == "paint" and it["rust"] > MAX_PAINT_RUST:
-				return "Too rusty to paint. Grind it back on the repair bench first."
-			if a == "paint" and it.get("finish", "") == str(action.get("finish", "gloss")) \
-					and paint_index(it["color"]) == int(action.get("color", 0)) and it["color"] == PAINTS[paint_index(it["color"])]:
+			if a in ["paint", "prime"] and it["rust"] > MAX_PAINT_RUST:
+				return "Too rusty to %s. Grind it back on the repair bench first." % a
+			if a == "prime" and it.get("primer_top", false):
+				return "It's already in primer. Spray its colour on."
+			if a == "paint" and action.get("cup", false):
+				# Paint mixed in the mixing bay, from the spray gun's cup (see PaintBay).
+				var cup := PaintBay.cup_of(peer)
+				if cup.is_empty():
+					return "The gun's cup is empty. Fill it from a tin of mixed paint (hold the tin, right click)."
+				if PaintBay.cup_use(peer, it, float(action.get("waste", 0.0))) < 0.0:
+					return "Not enough %s left in the cup for that. Top it up from the tin." % str(cup.get("name", "paint"))
+				var fade := str(action.get("fade", ""))
+				if fade != "":
+					if not PaintMix.FADE_PATTERNS.has(fade):
+						return "There's no fade like that."
+					if PaintBay.level_of(peer) < int(PaintMix.PATTERNS[fade]["level"]):
+						return "Fades need level %d." % int(PaintMix.PATTERNS[fade]["level"])
+					if it.get("primer_top", false) or not it.has("paint_quality"):
+						return "Paint its first colour on before fading a second one in."
+			elif a == "paint" and not it.get("primer_top", false) and it.get("finish", "") == str(action.get("finish", "gloss")) \
+					and paint_index(it["color"]) == int(action.get("color", 0)) and it["color"] == PAINTS[paint_index(it["color"])] \
+					and not (it.get("mix") is Dictionary) and not (it.get("tape") is Dictionary):
 				return "It's already %s." % paint_text(it).to_lower()
 		"pour", "drain":
 			if held == 0 or not PartsDB.is_fluid(items[held]["part"]):
@@ -2061,6 +2667,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var why := _wheel_check(bike_id)
 			if why != "":
 				return why
+			if lift_raised(bike_id):
+				return "It's up on the lift. Lower the lift first (F on the button post)."
 			if on_dyno(bike_id) and straps_done() > 0:
 				return "Undo the straps first (hold the work button at each one)."
 			if on_dyno(bike_id) and dyno["hose"] == "bike":
@@ -2074,6 +2682,10 @@ func check(peer: int, action: Dictionary) -> String:
 				return "You're not holding that bike."
 			if not (action.get("xf") is Transform3D):
 				return "You can't put it there."
+			if action["a"] == "release_bike":
+				var bay := _bay_near(action["xf"], bike_id)
+				if bay >= 0 and lifts.has(bay):
+					return "Bay %d's lift is up. Lower it first, then wheel the bike on." % (bay + 1)
 		"set_stand":
 			var which := str(action.get("stand", ""))
 			if not which in ["side", "centre"]:
@@ -2089,6 +2701,8 @@ func check(peer: int, action: Dictionary) -> String:
 		"mount":
 			if riding(peer) != 0:
 				return "You're already riding."
+			if lift_raised(bike_id):
+				return "It's up on the lift. Lower the lift first (F on the button post)."
 			if pushing_bike(peer) != 0:
 				return "Let go of the bike first, then get on it."
 			if held != 0:
@@ -2119,6 +2733,9 @@ func check(peer: int, action: Dictionary) -> String:
 		"order":
 			if free_bay(Workshop.bay_count()) < 0:
 				return "Every bay is full. Ride a bike out or strip one down first."
+			var style := str(action.get("style", ""))
+			if style != "" and not PartsDB.STYLES.has(style):
+				return "Nobody deals in that style of bike."
 		"tune":
 			if not bikes.has(bike_id):
 				return "That bike has gone."
@@ -2178,6 +2795,15 @@ func check(peer: int, action: Dictionary) -> String:
 				return "How much?"
 		"buy_upgrade":
 			return GarageUpgrades.check(str(action.get("id", "")), upgrades, garage_money)
+		"lift":
+			var bay := int(action.get("bay", -1))
+			if not GarageUpgrades.lift_bays(upgrades).has(bay):
+				return "There's no lift there."
+			var on := bike_in_bay(bay)
+			if on != 0 and (bikes[on]["rider"] != 0 or bikes[on].get("pusher", 0) != 0):
+				return "Someone's moving the bike in bay %d." % (bay + 1)
+		"restyle_upgrade":
+			return GarageUpgrades.check_restyle(str(action.get("id", "")), action.get("looks"), upgrades, looks, garage_money)
 		_:
 			return "Unknown action."
 	return ""
@@ -2209,18 +2835,19 @@ func bin_check(item_id: int, which: String) -> String:
 	return ""
 
 
-## Why `peer` can't scrap what the action names, or "": {furniture: the equipment they're
-## carrying} or {item: the part in their hands}. The shed's own kit (the spray bay, the tyre
-## changer and the whiteboard) can't be scrapped.
+## Why `peer` can't scrap what the action names, or "": {furniture: any shed machine,
+## furniture, poster, TV or trinket, carried by them or standing where it is} or {item: the
+## part in their hands}. The shed's own kit (the spray bay, the tyre changer and the
+## whiteboard) can't be scrapped.
 func scrap_check(peer: int, action: Dictionary) -> String:
 	if action.has("furniture"):
 		var f: Dictionary = furniture.get(int(action["furniture"]), {})
 		if f.is_empty():
 			return "That has gone."
-		if Equipment.FIXED_KINDS.has(str(f["kind"])) or f["kind"] == "whiteboard":
+		if not scrappable(f):
 			return "The %s is part of the shed: it can't be scrapped." % furniture_name(f).to_lower()
-		if f["mover"] != peer:
-			return "Take hold of it first (F), then hold the scrap key."
+		if int(f["mover"]) != 0 and int(f["mover"]) != peer:
+			return "Someone else is moving that."
 		if blaster_user(int(f["id"])) != 0:
 			return "Someone's working at it."
 		return ""
@@ -2228,6 +2855,36 @@ func scrap_check(peer: int, action: Dictionary) -> String:
 	if item_id == 0 or not items.has(item_id) or held_by(peer) != item_id:
 		return "Hold the part you want to scrap."
 	return ""
+
+
+## Trinkets standing on top of equipment `id` (a bobblehead on a bench) go down to the floor
+## under where they stood, before it goes. How many moved.
+func _drop_trinkets_off(id: int) -> int:
+	var f: Dictionary = furniture[id]
+	var xf: Transform3D = f["xf"]
+	var half := furniture_size(f) * 0.5
+	var n := 0
+	for other in furniture:
+		var t: Dictionary = furniture[other]
+		if other == id or str(t["kind"]) != "trinket" or Equipment.is_wall(str(t["model"])):
+			continue
+		var at: Vector3 = (t["xf"] as Transform3D).origin
+		var local := xf.affine_inverse() * at
+		if absf(local.x) <= half.x + 0.02 and absf(local.z) <= half.z + 0.02 and at.y > xf.origin.y + 0.05:
+			var moved: Transform3D = t["xf"]
+			moved.origin.y = xf.origin.y
+			t["xf"] = moved
+			n += 1
+	return n
+
+
+## Whether a piece of the shed's equipment can be scrapped: everything bought (machines,
+## benches, shelves, stands, seats, posters, TVs, yard kit and trinkets), but not the kit built
+## into the shed that it can't work without and can't buy again: the spray bay, the tyre
+## changer and the crew whiteboard.
+static func scrappable(f: Dictionary) -> bool:
+	var kind := str(f.get("kind", ""))
+	return kind != "" and not Equipment.FIXED_KINDS.has(kind) and kind != "whiteboard" and str(f.get("model", "")) != DELIVERY_RACK
 
 
 ## Scraps equipment or a part for good (see scrap_check). Whatever was on or in it goes on the
@@ -2249,6 +2906,7 @@ func _scrap(_peer: int, action: Dictionary) -> String:
 			_washer_by.erase(on)
 			dropped += 1
 		screens.erase("f%d" % id)
+		dropped += _drop_trinkets_off(id)
 		furniture.erase(id)
 		if dropped > 0:
 			return "Scrapped the %s. What was on it is on the floor." % what
@@ -2342,11 +3000,29 @@ func _apply(peer: int, action: Dictionary) -> void:
 		if Net.is_online():
 			_ping.rpc(peer, d)
 		return
+	if str(action.get("a", "")) == "emote":
+		# Nor does an emote: everyone sees the player's figure do it.
+		var e := str(action.get("e", ""))
+		if not Emotes.is_emote(e):
+			return
+		var d := {"e": e, "name": str(crew.get(peer, {}).get("name", "Someone"))}
+		if action.get("at") is Vector3:
+			d["at"] = action["at"]
+		emoted.emit(peer, d)
+		if Net.is_online():
+			_emote.rpc(peer, d)
+		return
 	if str(action.get("a", "")).begins_with("board_"):
 		_board_apply(peer, action)
 		return
 	if str(action.get("a", "")).begins_with("money_"):
 		_money_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("coffee_"):
+		_coffee_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("paint_"):
+		_paint_bay_apply(peer, action)
 		return
 	var why := check(peer, action)
 	if why != "":
@@ -2354,6 +3030,14 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	var a := str(action["a"])
 	Contracts.note_action(peer, action)
+	Sales.note_action(action)
+	if a.begins_with("sale_"):
+		var said_s := Sales.apply(peer, action)
+		if said_s != "":
+			_tell(peer, said_s, true)
+		_mark_dirty()
+		changed.emit()
+		return
 	if a.begins_with("contract_"):
 		var said_c := Contracts.apply(peer, action)
 		if said_c != "":
@@ -2368,10 +3052,24 @@ func _apply(peer: int, action: Dictionary) -> void:
 		_mark_dirty()
 		changed.emit()
 		return
+	if a == "coat":
+		_tell(peer, _coat_apply(peer, action), true)
+		_mark_dirty()
+		changed.emit()
+		return
 	if a.begins_with("dyno_") and a != "dyno_run":
 		var said := _dyno_apply(peer, action)
 		if said != "":
 			_tell(peer, said, true)
+		_mark_dirty()
+		changed.emit()
+		return
+	if a == "retrieve_bike":
+		# The whole crew hears that it's back.
+		var back := _retrieve(peer, action)
+		for p in crew:
+			if back != "":
+				_tell(int(p), back, true)
 		_mark_dirty()
 		changed.emit()
 		return
@@ -2505,11 +3203,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var cost := Money.buy_price(part_id, peer)
 			charge_garage(cost, "Bought %s" % PartsDB.part_name(part_id))
 			var item_id := _new_item(part_id, 0.0, 0.0, 0.0)
+			items[item_id]["paid"] = cost   # for the cost of a bike it's fitted to (see Sales)
 			# Parts come boxed; cans and bottles of fluid are left as they are.
 			items[item_id]["boxed"] = not PartsDB.is_fluid(part_id)
-			_move(item_id, "floor", free_delivery_xf())
-			text = "Ordered %s for %s. %s outside by the roller door." % [PartsDB.part_name(part_id), TvChannels.money_text(cost),
-				"The box is" if items[item_id]["boxed"] else "It's"]
+			items[item_id]["by"] = orderer_name(peer)   # on a note stuck to the box (see OrderNote)
+			_deliver(item_id)
+			text = "Ordered %s for %s. %s in the delivery area outside the roller door%s." % [PartsDB.part_name(part_id), TvChannels.money_text(cost),
+				"The box is" if items[item_id]["boxed"] else "It's", ", on the racking" if items[item_id]["at"] == "spot" else ""]
 		"order_furniture":
 			var model := Equipment.current_id(str(action.get("model", Equipment.DEFAULT.get(str(action.get("kind", "")), ""))))
 			var kind := Equipment.kind_of(model)
@@ -2518,7 +3218,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "Ordered the %s. It's in the yard by the drag strip: press F on it to move it where you want it." % \
 					Equipment.get_model(model)["name"].to_lower()
 			else:
-				var fid := _new_furniture(kind, free_delivery_xf(), model)
+				var fid := _new_furniture(kind, free_delivery_xf(Equipment.get_model(model).get("size", Vector3.ONE)), model)
 				var what := str(Equipment.get_model(model)["name"]).to_lower()
 				if kind == "poster":
 					# Printed A2, A1, A0 or as a big banner (A1 unless the order says).
@@ -2545,6 +3245,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = _start_blueprint(id, int(action["bay"]))
 		"unpack":
 			items[int(action["item"])]["boxed"] = false
+			_settle_delivery()
 			text = "Unpacked the %s" % item_title(int(action["item"]))
 			_xp(peer, "unbox", 1.0, "item:%d" % int(action["item"]))
 		"grab":
@@ -2574,7 +3275,17 @@ func _apply(peer: int, action: Dictionary) -> void:
 			Money.log_entry(bank, garage_money - was, "Debug: account set", garage_money)
 			text = "Garage money set to %s" % TvChannels.money_text(garage_money)
 		"buy_upgrade":
-			text = _buy_upgrade(peer, str(action["id"]))
+			text = _buy_upgrade(peer, str(action["id"]), action.get("looks"))
+		"lift":
+			var bay := int(action["bay"])
+			var up := bool(action.get("up", not lifts.has(bay)))
+			if up:
+				lifts[bay] = true
+			else:
+				lifts.erase(bay)
+			text = "Bay %d's lift going %s" % [bay + 1, "up" if up else "down"]
+		"restyle_upgrade":
+			text = _restyle_upgrade(str(action["id"]), action.get("looks"))
 		"door":
 			door_open = bool(action.get("open", not door_open))
 			text = "Roller door %s" % ("going up" if door_open else "coming down")
@@ -2661,13 +3372,32 @@ func _apply(peer: int, action: Dictionary) -> void:
 			text = "Lubed the chain with %s: %s" % [PartsDB.part_name(str(can["type"])), _job_word(q, waste, "lube")]
 			_xp(peer, "chain_lube", q, "item:%d" % chain)
 		"paint":
-			var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
-			var finish := str(action.get("finish", "gloss"))
-			if not FINISHES.has(finish):
-				finish = "gloss"
 			var it: Dictionary = items[int(action["item"])]
-			it["color"] = PAINTS[idx]
-			it["finish"] = finish
+			var coats_q := 1.0
+			if action.get("cup", false):
+				# Mixed paint from the gun's cup: its colour and effect, coats building up, a
+				# mask where tape was or a fade over the colour under it (see PaintBay).
+				coats_q = PaintBay.spray_from_cup(peer, it, float(action.get("waste", 0.0)), str(action.get("fade", "")))
+			else:
+				var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
+				var finish := str(action.get("finish", "gloss"))
+				if not FINISHES.has(finish):
+					finish = "gloss"
+				if it.get("tape") is Dictionary and not it.get("primer_top", false):
+					# Over masking tape the colour under it stays where the stripe goes.
+					it["mask"] = {"pattern": str(it["tape"]["pattern"]), "color": it["color"], "q": float(it["tape"].get("q", 1.0)),
+						"mix": it.get("mix", {})}
+				else:
+					it.erase("mask")
+				it.erase("mix")
+				it.erase("mix_coats")
+				it.erase("flat")
+				it["color"] = PAINTS[idx]
+				it["finish"] = finish
+			# Fresh paint covers bare metal and any coat that was on it.
+			_paint_over(it)
+			it.erase("coat")
+			it.erase("coat_q")
 			# Showroom Shine (a skill) gives a better finish.
 			var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
 			var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
@@ -2675,11 +3405,38 @@ func _apply(peer: int, action: Dictionary) -> void:
 				# No dust settling in the wet paint: a booth gives a cleaner finish.
 				var booth := furniture_of_spot(str(it["ref"]))
 				q = minf(1.0, q + float(Equipment.get_model(str(booth["model"])).get("finish", 0.05)))
+			# Over a good primer it keys on and comes out better.
+			var primed: bool = it.get("primer_top", false)
+			var xp_q := q
+			if primed:
+				q = minf(1.0, q + PRIMER_BONUS * float(it.get("primer", 0.0)))
+			it.erase("primer_top")
+			q *= coats_q
 			it["paint_quality"] = q
 			it["paint_runs"] = runs
 			_bump(c, "painted")
-			text = "Sprayed the %s %s: %s" % [item_title(int(action["item"])), paint_text(it).to_lower(), _job_word(q, runs, "paint")]
-			_xp(peer, "paint", q, "item:%d" % int(action["item"]))
+			text = "Sprayed the %s %s%s: %s" % [item_title(int(action["item"])), paint_text(it).to_lower(), " over primer" if primed else "",
+				_job_word(q, runs, "paint")]
+			_xp(peer, "paint", xp_q, "item:%d" % int(action["item"]))
+		"prime":
+			# Grey primer: the colour that was on it stays underneath for now.
+			var it: Dictionary = items[int(action["item"])]
+			var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
+			var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
+			if it["at"] == "spot" and spot_role(str(it["ref"])) == "booth":
+				var booth := furniture_of_spot(str(it["ref"]))
+				q = minf(1.0, q + float(Equipment.get_model(str(booth["model"])).get("finish", 0.05)))
+			_paint_over(it)
+			it.erase("coat")
+			it.erase("coat_q")
+			it.erase("mix")
+			it.erase("mix_coats")
+			it.erase("mask")
+			it.erase("flat")
+			it["primer"] = q
+			it["primer_top"] = true
+			text = "Primed the %s: %s" % [item_title(int(action["item"])), _job_word(q, runs, "paint")]
+			_xp(peer, "prime", q, "item:%d" % int(action["item"]))
 		"mount":
 			if bikes[bike_id].get("stand", "") == "down":
 				text = "You heave %s back upright" % bikes[bike_id]["name"]
@@ -2693,6 +3450,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_park(bike_id)
 			if bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over. Fit a side stand."
+			elif showroom_spot_of(bike_id) >= 0:
+				text = _on_stand_text(bike_id)
 		"grab_bike":
 			bikes[bike_id]["pusher"] = peer
 			bikes[bike_id]["stand"] = ""
@@ -2703,7 +3462,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 			bikes[bike_id]["pusher"] = 0
 			bikes[bike_id]["xf"] = action["xf"]
 			_park(bike_id)
-			if on_dyno(bike_id):
+			if showroom_spot_of(bike_id) >= 0:
+				text = _on_stand_text(bike_id)
+			elif on_dyno(bike_id):
 				text = "%s is on the dyno. Strap it down at the four posts (hold the work button), then tune and run it at the desk." % bikes[bike_id]["name"]
 			elif bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over."
@@ -2827,15 +3588,22 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
 			text = _blueprint_apply(action, peer)
 		"order":
-			var id := _random_bike(free_bay(Workshop.bay_count()))
-			# A project bike costs a little more than it would fetch as it comes (see Money).
-			var cost := Money.project_price(id)
+			# Any old project bike, or one found to order in a style ("make me a cruiser").
+			var style := str(action.get("style", ""))
+			var id := _random_bike(free_bay(Workshop.bay_count())) if style == "" else _style_bike(free_bay(Workshop.bay_count()), style)
+			# A project bike costs a little more than it would fetch as it comes (see Money), and
+			# one found in a style a little more again.
+			var cost := Money.project_price(id) if style == "" else Money.style_project_price(id)
 			if not charge_garage(cost, "Bought %s" % bikes[id]["name"]):
 				remove_bike(id)
-				_tell(peer, "The business can't afford a project bike: this one was %s, and it has %s." % [
-					TvChannels.money_text(cost), TvChannels.money_text(garage_money)], false)
+				_tell(peer, "The business can't afford %s: this one was %s, and it has %s." % [
+					"a project bike" if style == "" else PartsDB.style_phrase(style), TvChannels.money_text(cost), TvChannels.money_text(garage_money)], false)
 				changed.emit()
 				return
+			if style != "":
+				bikes[id]["style_order"] = style
+				bikes[id]["ordered_by"] = str(c.get("name", ""))
+			bikes[id]["bought"] = cost   # what it cost, for pricing it when it's sold (see Sales)
 			text = "%s has been delivered to bay %d, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1, TvChannels.money_text(cost)]
 		"radio":
 			radio = {"on": bool(action.get("on", radio["on"])), "station": int(action.get("station", radio["station"]))}
@@ -2911,16 +3679,38 @@ func _park(bike_id: int) -> void:
 		bike["stand"] = _rest_stand(bike_id)
 
 
+## How much more road dirt the parts behind the front wheel pick up: NO_GUARD_SPRAY with no
+## front mudguard, 1.0 behind a full-length guard, between for the rest (and a cracked one
+## stops less).
+func front_spray(bike_id: int) -> float:
+	var guard := item_on(bike_id, "front_mudguard")
+	if guard == 0:
+		return NO_GUARD_SPRAY
+	var cover := float(PartsDB.get_part(str(items[guard]["part"])).get("cover", 0.7))
+	cover *= lerpf(0.6, 1.0, BikeBuild.part_health(condition_of(items[guard])))
+	return lerpf(NO_GUARD_SPRAY, 1.0, clampf(cover, 0.0, 1.0))
+
+
 ## What a ride does to a bike: road dirt on its parts, petrol used, oil and brake fluid aging,
 ## and engine wear, which climbs steeply when the oil is low or worn out.
 func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 	var km := clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 	var dirty := clampf(float(action.get("dirt_km", 0.0)), 0.0, 5.0)
 	var build := build_of(bike_id)
+	var spray := front_spray(bike_id)
 	for slot in PartsDB.SLOTS:
 		var id := item_on(bike_id, slot)
+		# A protective coat keeps muck from sticking and rust off; bare metal without one
+		# flash-rusts, quicker in the muck. The coat itself wears thinner with the miles.
+		var protect := coat_protect(items[id]) if id != 0 else 0.0
 		if id != 0 and dirty > 0.0:
-			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * float(DIRT_EXPOSURE.get(slot, 0.4)))
+			var exposure := float(DIRT_EXPOSURE.get(slot, 0.4)) * (spray if FRONT_SPRAY.has(slot) else 1.0)
+			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * exposure * (1.0 - 0.6 * protect))
+		if id != 0 and blast_cover(items[id]) > 0.0 and km + dirty > 0.0:
+			var bare := blast_cover(items[id]) * (1.0 - protect)
+			items[id]["rust"] = minf(1.0, float(items[id]["rust"]) + (km + dirty * 2.0) * BARE_RUST * bare)
+		if id != 0 and items[id].has("coat"):
+			items[id]["coat_q"] = maxf(0.0, float(items[id].get("coat_q", 1.0)) - (km + dirty) * COAT_WEAR)
 		if id != 0 and items[id].get("lightened", false):
 			items[id]["wear"] = minf(1.0, float(items[id]["wear"]) + km * 0.0003)
 	# Tyres wear, faster at the wrong pressure, and a badly seated bead slowly lets one down.
@@ -2935,6 +3725,11 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 				var psi := float(tune.get("pressure", build.tune_default(key)))
 				tune["pressure"] = maxf(float(BikeBuild.TUNE_LIMITS[key][0]), psi - km * BEAD_LEAK * (1.0 - bead / BikeBuild.BEAD_OK))
 				items[tyre]["tune"] = tune
+	# Burnouts scrub the back tyre down fast.
+	var spin := clampf(float(action.get("spin", 0.0)), 0.0, 5.0)
+	var rear_tyre := item_on(bike_id, "rear_tyre")
+	if rear_tyre != 0 and spin > 0.0:
+		items[rear_tyre]["wear"] = minf(1.0, float(items[rear_tyre]["wear"]) + spin * BURNOUT_WEAR)
 	var tank := item_on(bike_id, "tank")
 	if tank != 0 and items[tank].has("fluid"):
 		var f: Dictionary = items[tank]["fluid"]
@@ -3313,6 +4108,11 @@ func _ping(peer: int, d: Dictionary) -> void:
 	pinged.emit(peer, d)
 
 
+@rpc("authority", "call_remote", "reliable")
+func _emote(peer: int, d: Dictionary) -> void:
+	emoted.emit(peer, d)
+
+
 func _bump(c: Dictionary, key: String) -> void:
 	c[key] = int(c.get(key, 0)) + 1
 
@@ -3425,10 +4225,13 @@ func _was_project(bike_id: int) -> bool:
 
 
 func _move(item_id: int, at: String, ref) -> void:
+	var was_floor: bool = items[item_id].get("at", "") == "floor"
 	items[item_id]["at"] = at
 	items[item_id]["ref"] = ref
 	# Where it sat on a surface goes with it (set_down gives it a new one).
 	items[item_id].erase("place")
+	if was_floor and at != "floor":
+		_settle_delivery()
 
 
 ## Takes a part off a bike (whatever is mounted on it stays put) and puts it somewhere.
@@ -3450,7 +4253,10 @@ func _erase_item(item_id: int) -> void:
 			var sub := engine_item(item_id, slot)
 			if sub != 0:
 				items.erase(sub)
+	var was_floor: bool = items.get(item_id, {}).get("at", "") == "floor"
 	items.erase(item_id)
+	if was_floor:
+		_settle_delivery()
 
 
 func _free_spot() -> String:
@@ -3492,8 +4298,18 @@ func _new_item(part: String, rust: float, dirt: float, wear: float, color = null
 	return id
 
 
+## The name that goes on the note on a box `peer` ordered: theirs, as the crew knows them.
+func orderer_name(peer: int) -> String:
+	var n := str(crew.get(peer, {}).get("name", "")).strip_edges()
+	return n.left(24) if n != "" else "the crew"
+
+
 func _aged_item(part: String, age: float, color = null) -> int:
-	var rust := clampf(age * _rng.randf_range(0.4, 1.2), 0.0, 1.0)
+	# Most parts on an old bike have only a bloom of surface rust; about one in seven has
+	# gone properly bad. One roll decides both, so the rest of the bike's rolls are unchanged.
+	var r := _rng.randf()
+	var rust_scale := lerpf(0.1, 0.45, r / 0.85) if r < 0.85 else lerpf(0.7, 1.1, (r - 0.85) / 0.15)
+	var rust := clampf(age * rust_scale, 0.0, 1.0)
 	var dirt := clampf(age * _rng.randf_range(0.8, 1.4), 0.0, 1.0)
 	var wear := clampf(age * _rng.randf_range(0.2, 1.0), 0.0, 1.0)
 	return _new_item(part, rust, dirt, wear, color)
@@ -3519,8 +4335,14 @@ func _new_bike(parts: Dictionary, bay: int, bike_name: String, age: float, paint
 			# The tail unit has aged with the frame it's bolted to.
 			var frame: Dictionary = items[bike["slots"]["frame"]]
 			item_id = _new_item(parts[slot], frame["rust"], minf(1.0, float(frame["dirt"]) * 1.2), frame["wear"])
+		elif slot == "front_mudguard":
+			# So has the front mudguard with its fork, and the muckier for being in the spray.
+			var fork: Dictionary = items[bike["slots"]["fork"]]
+			item_id = _new_item(parts[slot], fork["rust"], minf(1.0, float(fork["dirt"]) * 1.3), fork["wear"],
+				_guard_color(parts[slot], paint_color))
 		else:
-			item_id = _aged_item(parts[slot], age, paint_color if slot in ["tank", "fairing"] else null)
+			var painted: bool = slot in ["tank", "fairing"] or bool(PartsDB.get_part(parts[slot]).get("paint_match", false))
+			item_id = _aged_item(parts[slot], age, paint_color if painted else null)
 		_move(item_id, "bike", id)
 		bike["slots"][slot] = item_id
 		bike["bolted"][slot] = true
@@ -3587,6 +4409,8 @@ func _random_bike(bay: int) -> int:
 	var pick := {}
 	for slot in PartsDB.SLOTS:
 		var k: String = PartsDB.SLOT_KIND[slot]
+		if slot == "front_mudguard" or PartsDB.FILLER_SLOTS.has(slot):
+			continue   # the ones that suit the rest of it (sanitize_build and dress_fillers pick them)
 		# A random bike wears a matching pair of tyres; everything else is picked per slot.
 		var key: String = k if k == "tyre" else slot
 		if not pick.has(key):
@@ -3614,8 +4438,75 @@ func _random_bike(bay: int) -> int:
 		parts["fairing"] = "none"
 	if parts["mirrors"] != "none" and not PartsDB.part_mounts("mirrors", parts["mirrors"]).all(func(m): return parts.get(m, "none") != "none"):
 		parts["mirrors"] = "round_mirrors"
+	parts = PartsDB.dress_fillers(parts, bay)
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
 	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9))
+
+
+## How many goes _style_parts has at a build, keeping the one most true to the style.
+const STYLE_TRIES := 6
+
+
+## A project bike of one style (see PartsDB.STYLES), found to order: as worn as any project
+## bike, but every part on it made for that style. Named after it ("Cruiser project 2").
+func _style_bike(bay: int, style: String) -> int:
+	var parts := style_parts(style)
+	var base := "%s project" % PartsDB.style_name(style)
+	var n := 1
+	for b in bikes.values():
+		if str(b["name"]).begins_with(base):
+			n += 1
+	return _new_bike(parts, bay, base if n == 1 else "%s %d" % [base, n], _rng.randf_range(0.35, 0.9))
+
+
+## The parts for a bike of `style`: its reference build (Contracts.style_build), with every
+## part that doesn't suit the style swapped for one that does, and now and then one that does
+## swapped for another, the style's own pack ("pack" in data/parts.json) first. Tyres to suit
+## the rims, the bolt-on bits that go with it (PartsDB.dress_fillers). Of a few goes, the one
+## that is most that style.
+func style_parts(style: String) -> Dictionary:
+	var best := {}
+	var best_fit := -1.0
+	for attempt in STYLE_TRIES:
+		var parts := Contracts.style_build(style)
+		for slot in PartsDB.SLOTS:
+			var k: String = PartsDB.SLOT_KIND[slot]
+			if k == "tyre" or PartsDB.FILLER_SLOTS.has(slot) or str(parts.get(slot, "none")) == "none":
+				continue
+			var options: Array = PartsDB.by_kind.get(k, []).filter(func(id): return PartsDB.styles_of(str(id)).has(style))
+			if options.is_empty():
+				continue
+			var suits := PartsDB.styles_of(str(parts[slot])).has(style)
+			if suits and _rng.randf() > 0.4:
+				continue
+			var pack: Array = options.filter(func(id): return str(PartsDB.get_part(str(id)).get("pack", "")) == style)
+			var from: Array = pack if not pack.is_empty() and _rng.randf() < 0.6 else options
+			parts[slot] = from[_rng.randi() % from.size()]
+		# Tyres that go on the rims, made for the style where there are any.
+		for ws in WHEEL_TYRE:
+			var ts: String = WHEEL_TYRE[ws]
+			if PartsDB.tyre_fit(str(parts[ts]), str(parts[ws])) == 0:
+				continue
+			var fits: Array = PartsDB.tyres_for(str(parts[ws]))
+			if fits.is_empty():
+				continue
+			var styled: Array = fits.filter(func(t): return PartsDB.styles_of(str(t)).has(style))
+			var from: Array = styled if not styled.is_empty() else fits
+			parts[ts] = from[_rng.randi() % from.size()]
+		if parts["headlight"] == "none":
+			parts["fairing"] = "none"
+		if parts["mirrors"] != "none" and not PartsDB.part_mounts("mirrors", parts["mirrors"]).all(func(m): return parts.get(m, "none") != "none"):
+			parts["mirrors"] = "round_mirrors"
+		parts = PartsDB.sanitize_build(BikeBuild.sensible_fork(parts, str(parts["frame"]).hash()))
+		var dressed := PartsDB.dress_fillers(parts, _rng.randi() % 97)
+		for slot in PartsDB.FILLER_SLOTS:
+			if str(parts.get(slot, "none")) == "none" or not PartsDB.styles_of(str(parts[slot])).has(style):
+				parts[slot] = dressed[slot]
+		var fit := PartsDB.style_fit(style, parts)
+		if fit > best_fit:
+			best = parts
+			best_fit = fit
+	return best
 
 
 func _add_crew(peer: int, player_name: String) -> void:
@@ -3642,6 +4533,8 @@ func _on_player_left(id: int) -> void:
 	var held := held_by(id)
 	if held != 0:
 		_move(held, "spot", _free_spot())
+	CoffeeShop.put_back(id)
+	PaintBay.put_back(id)
 	var bike_id := riding(id)
 	if bike_id != 0:
 		bikes[bike_id]["rider"] = 0
@@ -3787,6 +4680,7 @@ func _blueprint_apply(action: Dictionary, peer := 1) -> String:
 	match a:
 		"geo_save":
 			bikes[bike_id]["geo"] = GeoGizmo.sanitize(action["geo"])
+			_sync_timer = 0.0   # out to the crew straight away
 			return "Saved the fit of %s's parts." % bikes[bike_id]["name"]
 		"geo_blueprint":
 			bikes[bike_id]["geo"] = GeoGizmo.sanitize(action["geo"])
@@ -3869,8 +4763,9 @@ func _save_blueprint(bike_id: int, bp_name: String) -> int:
 	return id
 
 
-## Orders whatever a blueprint build still needs, boxed outside the roller door in the
-## blueprint's colours, each paid for by the business. Returns [parts ordered, parts that didn't
+## Orders whatever a blueprint build still needs, boxed in the delivery area outside the roller
+## door (packed tight, then on the racking) in the blueprint's colours, each paid for by the
+## business. Returns [parts ordered, parts that didn't
 ## fit in the delivery area, parts the business couldn't afford, pounds spent].
 func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 	if plan.is_empty():
@@ -3885,11 +4780,10 @@ func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 	for row in plan_rows(plan, bike_id):
 		if row["state"] != "needed":
 			continue
-		var xf = free_delivery_xf()
-		if xf == null:
+		var part: String = row["part"]
+		if not delivery_room(part):
 			left += 1
 			continue
-		var part: String = row["part"]
 		var cost := Money.buy_price(part, peer)
 		if not charge_garage(cost, "Bought %s" % PartsDB.part_name(part)):
 			broke += 1
@@ -3897,9 +4791,11 @@ func _order_plan(plan: Dictionary, bike_id: int, peer := 1) -> Array:
 		spent += cost
 		var look: Dictionary = colors.get(row["slot"], {})
 		var item_id := _new_item(part, 0.0, 0.0, 0.0, look.get("color"))
+		items[item_id]["paid"] = cost
 		items[item_id]["finish"] = str(look.get("finish", ""))
 		items[item_id]["boxed"] = not PartsDB.is_fluid(part)
-		_move(item_id, "floor", xf)
+		items[item_id]["by"] = orderer_name(peer)
+		_deliver(item_id)
 		plan["ordered"][row["slot"]] = item_id
 		sent += 1
 	return [sent, left, broke, spent]
@@ -3942,7 +4838,7 @@ func _blueprint_done(bike_id: int) -> bool:
 
 ## Buys a garage upgrade with the garage's money (already checked): takes the money, adds the
 ## upgrade and anything it comes with (the racking), and pays the buyer XP.
-func _buy_upgrade(peer: int, id: String) -> String:
+func _buy_upgrade(peer: int, id: String, chosen = null) -> String:
 	var cost := GarageUpgrades.price(id)
 	var paid := false
 	if has_method("charge_garage"):
@@ -3953,11 +4849,29 @@ func _buy_upgrade(peer: int, id: String) -> String:
 	if not paid:
 		return "The garage can't afford the %s." % GarageUpgrades.title(id).to_lower()
 	upgrades[id] = true
+	if GarageUpgrades.has_options(id):
+		looks[id] = GarageUpgrades.clean_looks(id, chosen)
 	if id == "racking":
 		for xf in GarageUpgrades.racking_xfs():
 			_new_furniture("shelf", xf, "shelf_racking")
 	_xp(peer, GarageUpgrades.XP_KEY, GarageUpgrades.award_mult(id))
 	return "%s bought for %s" % [GarageUpgrades.title(id), TvChannels.money_text(cost)]
+
+
+## Changes the look of a finish already bought (already checked), for a small fee.
+func _restyle_upgrade(id: String, chosen) -> String:
+	var fee := GarageUpgrades.restyle_fee(id)
+	var paid := false
+	if has_method("charge_garage"):
+		paid = bool(call("charge_garage", fee, "Restyled: " + GarageUpgrades.title(id)))
+	elif garage_money >= fee:
+		garage_money -= fee
+		paid = true
+	if not paid:
+		return "The garage can't afford to change the %s." % GarageUpgrades.title(id).to_lower()
+	looks[id] = GarageUpgrades.clean_looks(id, chosen)
+	return "%s changed to %s for %s" % [GarageUpgrades.title(id), GarageUpgrades.looks_text(id, looks[id]).to_lower(),
+		TvChannels.money_text(fee)]
 
 
 # ---------------------------------------------------------------------------- syncing
@@ -3969,9 +4883,12 @@ func _mark_dirty() -> void:
 ## The whole shed. The regular syncs leave the whiteboard out: its marks go out one by one
 ## as they're drawn (_board_op), and whole only to players joining.
 func _snapshot(with_board := true) -> Dictionary:
+	if is_authority():
+		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "upgrades": upgrades}
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "upgrades": upgrades,
+		"lifts": lifts, "looks": looks}
 	if with_board:
 		state["board"] = board
 	return state
@@ -4006,8 +4923,18 @@ func _sync(state: Dictionary) -> void:
 		Money._mark_milestones(bank, garage_money)
 	# Sheds saved before contracts have no customers or jobs.
 	contracts = Contracts.sanitize(state.get("contracts"))
+	# Sheds saved before selling from the showroom have nothing listed.
+	sales = Sales.sanitize(state.get("sales"))
+	# Sheds saved before the coffee shop next door have nobody in it.
+	coffee = CoffeeShop.sanitize(state.get("coffee"))
+	# Sheds saved before the paint mixing bay get its starter stock.
+	paint_bay = PaintBay.sanitize(state.get("paint_bay"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
+	# Sheds saved before the bays had working lifts: all down.
+	lifts = GarageUpgrades.sanitize_lifts(state.get("lifts", {}), upgrades)
+	# Sheds saved before the finishes had choices keep their looks as they were.
+	looks = GarageUpgrades.sanitize_looks(state.get("looks", {}), upgrades)
 	# Sheds saved before the side rooms had switches: their lights start on.
 	room_lights = {"paint": true, "storage": true}
 	var saved_rooms = state.get("room_lights", {})
@@ -4045,7 +4972,11 @@ func _process(delta: float) -> void:
 		return
 	_cool_dyno(delta)
 	_money_clock()
+	Money.record_graph()
 	Contracts.process(delta)
+	Sales.process(delta)
+	CoffeeShop.process(delta)
+	PaintBay.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":
@@ -4117,6 +5048,7 @@ func credit_garage(amount: int, reason: String) -> void:
 func pay_worker(peer: int, gross: int, reason: String) -> void:
 	if not is_authority() or gross <= 0:
 		return
+	Sales.add_labour(gross)
 	var cut := Money.cut_of(gross, int(bank["cut"]))
 	if not give_cash(peer, gross - cut, reason):
 		cut = gross
@@ -4160,6 +5092,35 @@ func _money_apply(peer: int, action: Dictionary) -> void:
 	if text != "":
 		_tell(peer, text, true)
 	_tidy_dyno()
+	_mark_dirty()
+	changed.emit()
+
+
+## A "coffee_*" request (see CoffeeShop.check and CoffeeShop.apply). Money a player paid at the
+## counter for something they can't have goes back to them.
+func _coffee_apply(peer: int, action: Dictionary) -> void:
+	var why := check(peer, action)
+	if why != "":
+		if str(action.get("a", "")) == "coffee_buy" and int(action.get("paid", 0)) > 0:
+			give_cash(peer, mini(int(action["paid"]), 100), "Cafe refund")
+		_tell(peer, why, false)
+		return
+	var text := CoffeeShop.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## A "paint_*" request for the mixing bay (see PaintBay.check and PaintBay.apply).
+func _paint_bay_apply(peer: int, action: Dictionary) -> void:
+	var why := check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var text := PaintBay.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
 	_mark_dirty()
 	changed.emit()
 
@@ -4210,6 +5171,28 @@ func _bell_rpc() -> void:
 	_bell()
 
 
+## The service bell on the reception counter was dinged (by anyone: everyone hears it).
+signal desk_bell_rang
+var desk_bells := 0
+
+
+## Dings the reception counter's service bell, here and for the rest of the crew.
+func ding_desk_bell() -> void:
+	_desk_bell()
+	if Net.is_online():
+		_desk_bell_rpc.rpc()
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _desk_bell_rpc() -> void:
+	_desk_bell()
+
+
+func _desk_bell() -> void:
+	desk_bells += 1
+	desk_bell_rang.emit()
+
+
 func _bell() -> void:
 	bells_heard += 1
 	Sfx.bell(SalesOffice.BELL_POS)
@@ -4226,6 +5209,15 @@ func showroom_spot_of(bike_id: int) -> int:
 	return -1
 
 
+## What a player is told putting a bike on a display stand: price it at the office PC to sell it.
+func _on_stand_text(bike_id: int) -> String:
+	var stand := showroom_spot_of(bike_id) + 1
+	if Sales.listings().has(bike_id):
+		return "%s is back on display stand %d, for sale at %s." % [bikes[bike_id]["name"], stand,
+			TvChannels.money_text(int(Sales.listings()[bike_id]["ask"]))]
+	return "%s is on display stand %d. Price it at the PC in the office upstairs to put it up for sale." % [bikes[bike_id]["name"], stand]
+
+
 ## A bike let go of by a free showroom plinth goes onto it, square and upright, on show.
 func _park_on_show(bike_id: int) -> bool:
 	var bike: Dictionary = bikes[bike_id]
@@ -4239,3 +5231,110 @@ func _park_on_show(bike_id: int) -> bool:
 	bike["xf"] = spot
 	bike["stand"] = ""
 	return true
+
+
+# ---------------------------------------------------------------------------- bikes out on the road
+
+## The ground round the shed where bikes can be worked on: the shed and its rooms, the wash bay,
+## the delivery area, the sales office and its forecourt. Out past it a bike is just for riding.
+const WORK_AREA := Rect2(-22.0, 42.0, 60.0, 44.0)
+## Work that needs the bike at the shed: tools, fitting and taking off parts, fluids (apart from
+## a can of petrol in the tank), chain lube and adjusting, tuning and geometry mode.
+const WORKSHOP_ONLY := ["unbolt", "bolt", "remove", "install", "adjust_chain", "tune", "geo_save", "geo_blueprint",
+	"clean", "clean_many", "repair", "repair_many", "paint", "prime", "coat", "lube", "drain", "wash"]
+## What the garage pays to have a bike left out on the road brought back to the yard.
+const RETRIEVE_FEE := 40
+## Where retrieved bikes are dropped off: a row in the yard to the west of the roller door.
+const RETRIEVE_ROW := Vector3(-4.0, 0.0, 75.5)
+const RETRIEVE_SLOTS := 8
+
+
+## Whether `at` is on the ground round the shed where bikes can be worked on (the coffee shop
+## next door, its terrace and its car park count too: a bike bought there is in the yard).
+static func in_work_area(at: Vector3) -> bool:
+	return WORK_AREA.has_point(Vector2(at.x, at.z)) or CoffeeShop.footprint().grow(0.5).merge(CoffeeShop.CAR_PARK).has_point(Vector2(at.x, at.z))
+
+
+## Whether a bike is at the shed (or round it), where it can be worked on.
+func bike_at_work(bike_id: int) -> bool:
+	if not bikes.has(bike_id):
+		return true
+	var xf = bikes[bike_id].get("xf", null)
+	return not (xf is Transform3D) or in_work_area((xf as Transform3D).origin)
+
+
+## Why `action` can't be done because the bike it's on is out on the road, or "".
+func road_bike_block(action: Dictionary) -> String:
+	var a := str(action.get("a", ""))
+	if not WORKSHOP_ONLY.has(a):
+		return ""
+	var on_road := []
+	var bike_id := int(action.get("bike", 0))
+	if bike_id != 0 and int(action.get("engine", 0)) == 0:
+		on_road.append(bike_id)
+	for id in [action.get("item", 0)] + Array(action.get("items", [])):
+		var b := _bike_of(int(id)) if (id is int or id is float) else 0
+		if b != 0:
+			on_road.append(b)
+	for b in on_road:
+		if not bike_at_work(int(b)):
+			return "Out here %s is just a bike to ride. Ride it back to the shed to work on it." % str(bikes[int(b)]["name"])
+	return ""
+
+
+## Bikes left out on the road with nobody riding or wheeling them: their ids, nearest first.
+func abandoned_bikes() -> Array:
+	var out := []
+	for id in bikes:
+		var b: Dictionary = bikes[id]
+		if int(b.get("rider", 0)) == 0 and int(b.get("pusher", 0)) == 0 and not bike_at_work(int(id)):
+			out.append(int(id))
+	out.sort()
+	return out
+
+
+## Where the next retrieved bike is parked in the yard, or null when the row is full.
+func free_retrieve_xf():
+	for i in RETRIEVE_SLOTS:
+		var at := RETRIEVE_ROW + Vector3(-1.2 * i, 0.0, 0.0)
+		if not _clear_at(at, 0.6):
+			continue
+		var taken := false
+		for id in bikes:
+			var xf = bikes[id].get("xf", null)
+			if xf is Transform3D and Vector2((xf as Transform3D).origin.x - at.x, (xf as Transform3D).origin.z - at.z).length() < 0.8:
+				taken = true
+		if not taken:
+			return Transform3D(Basis(Vector3.UP, PI), at)
+	return null
+
+
+## Why a bike can't be retrieved right now, or "".
+func retrieve_check(action: Dictionary) -> String:
+	var bike_id := int(action.get("bike", 0))
+	if not bikes.has(bike_id):
+		return "That bike has gone."
+	if int(bikes[bike_id].get("rider", 0)) != 0:
+		return "Someone is riding it."
+	if int(bikes[bike_id].get("pusher", 0)) != 0:
+		return "Someone is wheeling it about."
+	if bike_at_work(bike_id):
+		return "%s is already at the shed." % str(bikes[bike_id]["name"])
+	if garage_money < RETRIEVE_FEE:
+		return "The garage can't pay the %s to bring it back." % TvChannels.money_text(RETRIEVE_FEE)
+	if free_retrieve_xf() == null:
+		return "There's no room in the yard. Move the bikes by the roller door first."
+	return ""
+
+
+## Host: brings a bike left out on the road back to the yard by the roller door, for a fee.
+func _retrieve(peer: int, action: Dictionary) -> String:
+	var bike_id := int(action["bike"])
+	var b: Dictionary = bikes[bike_id]
+	if not charge_garage(RETRIEVE_FEE, "Recovery truck for %s" % str(b["name"])):
+		return ""
+	b["xf"] = free_retrieve_xf()
+	b["stand"] = ""
+	_park(bike_id)
+	var who := str(crew.get(peer, {}).get("name", "Someone"))
+	return "%s had %s brought back to the yard by the roller door (%s)." % [who, str(b["name"]), TvChannels.money_text(RETRIEVE_FEE)]

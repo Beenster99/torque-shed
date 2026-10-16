@@ -6,7 +6,10 @@ extends RefCounted
 ## the surface turns to satin bare metal as you blast (BlastMarks), so the bits you've missed
 ## stay rusty; stay on one patch too long and it pits the metal. Each part's coverage is sent to
 ## the host a few times a second ("blast_tick"), which strips that much rust and muck off it
-## there and then, so its numbers fall as you work; stepping back (F) settles it ("blast").
+## there and then, so its numbers fall as you work; stepping back (F) settles it ("blast"), and
+## what's bare is kept on each part (its "blast" mask, see BlastMarks.export_part), so it stays
+## bare wherever the engine goes and comes back the same next time it's in a cabinet. The scan
+## (X or D-pad up) lights up what's still to blast and lists it part by part and side by side.
 
 const CELL := 0.03           # the coverage map samples each part's surface this far apart
 const RADIUS := 0.07         # how wide the jet strips, metres
@@ -34,6 +37,11 @@ var jet := {}
 var _done_parts := {}
 var _engine_done := false
 var _sent := {}              # what the host was last told: item id -> [covered, over]
+var scanning := false        # the scan's on: the engine glows where there's rust still to blast
+
+## The sides of the engine the scan reports on, by the way a patch faces (the bike's front is -z).
+const SIDES := [["Top", Vector3.UP], ["Underneath", Vector3.DOWN], ["Front", Vector3.FORWARD], ["Back", Vector3.BACK],
+	["Left side", Vector3.LEFT], ["Right side", Vector3.RIGHT]]
 
 
 ## Starts on the engine in a blast cabinet's place. False if it isn't drawn yet.
@@ -64,17 +72,38 @@ func start(furniture_id: int, spot_name: String, engine_model: BikeModel) -> boo
 		used.append(slot)
 	if parts.is_empty():
 		return false
+	# The engine as it was drawn (what's kept of earlier blasting) gives way to the live mask,
+	# which starts from that same kept blasting.
+	for old in ["BlastSaved", "BlastMarks"]:
+		var saved := model.get_node_or_null(old)
+		if saved:
+			saved.free()
 	marks = BlastMarks.new()
 	marks.name = "BlastMarks"
 	marks.setup(model, used, OVER)
 	model.add_child(marks)
 	for id in parts:
+		var it: Dictionary = Shed.items.get(int(id), {})
+		if it.has("blast"):
+			marks.import_data(it["blast"])
+		var full := Shed.blast_full(it)
+		marks.set_look(str(parts[id]["slot"]), 1.0 if full else 0.0)
+	for id in parts:
 		var pts: PackedVector3Array = parts[id]["points"]
 		var vox := PackedInt32Array()
 		vox.resize(pts.size())
+		var cells: PackedFloat32Array = parts[id]["cells"]
 		for i in pts.size():
 			vox[i] = marks.index_of(pts[i])
+			if vox[i] >= 0:
+				cells[i] = marks.coats[vox[i]]
 		parts[id]["vox"] = vox
+		parts[id]["cells"] = cells
+		# Parts already done don't cheer again.
+		if float(stats(int(id))["covered"]) >= DONE:
+			_done_parts[id] = true
+	_engine_done = all_done()
+	_sent = results()
 	return true
 
 
@@ -229,9 +258,73 @@ func lines() -> Array:
 	return out
 
 
-## Takes the bare-metal look off the engine (the job's done or abandoned).
+## Stepping back: the bare metal stays on the engine as it is (the host keeps it on each part and
+## the engine is redrawn from that), only the scan goes off.
 func clear() -> void:
 	if is_instance_valid(marks):
-		marks.restore()
-		marks.queue_free()
+		marks.set_scan(false)
+	scanning = false
 	marks = null
+
+
+## What's bare on each part, to keep on it: item id -> {o, d, v (the mask), c (bare), p (pitted)}.
+func masks() -> Dictionary:
+	var out := {}
+	if marks == null or not is_instance_valid(marks):
+		return out
+	for id in parts:
+		var data := marks.export_part(parts[id]["vox"])
+		if data.is_empty():
+			continue
+		var st := stats(int(id))
+		data["c"] = snappedf(float(st["covered"]), 0.001)
+		data["p"] = snappedf(float(st["over"]), 0.001)
+		out[int(id)] = data
+	return out
+
+
+## Turns the scan on or off.
+func set_scan(on: bool) -> void:
+	scanning = on
+	if marks and is_instance_valid(marks):
+		marks.set_scan(on)
+
+
+## What the scan shows: how much is still to blast over the whole engine ("left"), on each part
+## ("parts": [{name, left}]) and on each side of it ("sides": [{name, left}], by which way each
+## patch faces), as fractions of their patches.
+func scan() -> Dictionary:
+	var side_n := []
+	var side_left := []
+	for s in SIDES:
+		side_n.append(0)
+		side_left.append(0)
+	var part_rows := []
+	var n := 0
+	var left := 0
+	for id in parts:
+		var cells: PackedFloat32Array = parts[id]["cells"]
+		var normals: PackedVector3Array = parts[id]["normals"]
+		var p_left := 0
+		for i in cells.size():
+			var still := cells[i] < 1.0
+			if still:
+				p_left += 1
+			var best := 0
+			var best_d := -2.0
+			for k in SIDES.size():
+				var d := normals[i].dot(SIDES[k][1])
+				if d > best_d:
+					best_d = d
+					best = k
+			side_n[best] += 1
+			if still:
+				side_left[best] += 1
+		n += cells.size()
+		left += p_left
+		part_rows.append({"id": int(id), "name": str(parts[id]["name"]), "left": float(p_left) / maxf(cells.size(), 1)})
+	var sides := []
+	for k in SIDES.size():
+		if int(side_n[k]) > 0:
+			sides.append({"name": str(SIDES[k][0]), "left": float(side_left[k]) / float(side_n[k])})
+	return {"left": float(left) / maxf(n, 1), "parts": part_rows, "sides": sides}
