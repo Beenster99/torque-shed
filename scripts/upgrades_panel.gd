@@ -209,6 +209,8 @@ static func row_text(id: String) -> String:
 		state = "BUILT"
 	elif not GarageUpgrades.missing_needs(id, Shed.upgrades).is_empty():
 		state = "needs " + ", ".join(GarageUpgrades.missing_needs(id, Shed.upgrades).map(func(n): return GarageUpgrades.title(n)))
+	elif GarageUpgrades.level_needed(id) > Progress.level():
+		state = "level %d" % GarageUpgrades.level_needed(id)
 	elif GarageUpgrades.has_options(id):
 		state = "pick colours"
 	return "%s  ·  %s%s" % [GarageUpgrades.title(id), TvChannels.money_text(GarageUpgrades.price(id)), "  ·  " + state if state != "" else ""]

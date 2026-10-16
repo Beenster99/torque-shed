@@ -10,6 +10,7 @@ var player_name := ""
 var color := Color(0.8, 0.1, 0.1)
 var riding_bike := 0
 var bike: RemoteBike
+var driving := false    # in the recovery truck
 
 var _figure: AnimatableBody3D
 var _head: Node3D
@@ -137,6 +138,18 @@ func _animate_emote(delta: float) -> void:
 func push_state(state: PackedFloat32Array) -> void:
 	if state.is_empty():
 		return
+	if state[0] > 1.5:
+		# Driving the recovery truck (see RecoveryView): the figure's in the cab.
+		if riding_bike != 0:
+			_stop_riding()
+		driving = true
+		_figure.visible = false
+		if RecoveryView.current:
+			RecoveryView.current.remote_state(peer, state)
+		return
+	if driving:
+		driving = false
+		_figure.visible = true
 	if state[0] > 0.5 and state.size() >= 21:
 		var bike_id := int(state[1])
 		if bike_id != riding_bike or bike == null:
@@ -297,6 +310,8 @@ func _process(delta: float) -> void:
 
 
 func world_position() -> Vector3:
+	if driving and RecoveryView.current and RecoveryView.current.remote_transform(peer) != null:
+		return (RecoveryView.current.remote_transform(peer) as Transform3D).origin
 	return bike.global_position if bike else _figure.global_position
 
 

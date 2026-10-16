@@ -126,6 +126,8 @@ var sales := {}
 var coffee := {}
 ## The paint mixing bay off the paint shop: its stock, tins, recipes and bench (see PaintBay).
 var paint_bay := {}
+## The recovery truck and trailer, what's on it, and the barn find and crash rescue jobs (see Recovery).
+var recovery := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -213,6 +215,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
 	paint_bay = PaintBay.empty()
+	recovery = Recovery.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -332,6 +335,8 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	CoffeeShop.after_load()
 	# Nor at the mixing bench or holding a tin: tins go back on the shelf.
 	PaintBay.after_load()
+	# Nor driving the recovery truck, or halfway up its ramp.
+	Recovery.after_load()
 	# Nobody is holding the hose or wearing the ear defenders in a new session.
 	if dyno["hose"] == "held":
 		dyno["hose"] = "hook"
@@ -440,6 +445,7 @@ func join_remote() -> void:
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
 	paint_bay = PaintBay.empty()
+	recovery = Recovery.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -467,6 +473,7 @@ func stop() -> void:
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
 	paint_bay = PaintBay.empty()
+	recovery = Recovery.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -2306,6 +2313,11 @@ func check(peer: int, action: Dictionary) -> String:
 			return "Someone is wheeling that bike about."
 	if a.begins_with("contract_"):
 		return Contracts.check(peer, action)
+	if a.begins_with("recovery_"):
+		return Recovery.check(peer, action)
+	var recovering := Recovery.block(peer, action)
+	if recovering != "":
+		return recovering
 	if a.begins_with("sale_"):
 		return Sales.check(peer, action)
 	if PaintBay.carrying(peer) and (PaintBay.HANDS_NEEDED.has(a) and not a in ["paint", "coat"] or a in ["coffee_buy", "coffee_tray_take"]):
@@ -2794,6 +2806,9 @@ func check(peer: int, action: Dictionary) -> String:
 			if not (action.get("value") is int or action.get("value") is float):
 				return "How much?"
 		"buy_upgrade":
+			var need_lv := GarageUpgrades.level_needed(str(action.get("id", "")))
+			if need_lv > int(Progress.summary(peer).get("level", 1)):
+				return "Needs character level %d (you're level %d)." % [need_lv, int(Progress.summary(peer).get("level", 1))]
 			return GarageUpgrades.check(str(action.get("id", "")), upgrades, garage_money)
 		"lift":
 			var bay := int(action.get("bay", -1))
@@ -3042,6 +3057,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		var said_c := Contracts.apply(peer, action)
 		if said_c != "":
 			_tell(peer, said_c, true)
+		_mark_dirty()
+		changed.emit()
+		return
+	if a.begins_with("recovery_"):
+		var said_r := Recovery.apply(peer, action)
+		if said_r != "":
+			_tell(peer, said_r, true)
 		_mark_dirty()
 		changed.emit()
 		return
@@ -4887,7 +4909,7 @@ func _snapshot(with_board := true) -> Dictionary:
 		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "upgrades": upgrades,
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
 		"lifts": lifts, "looks": looks}
 	if with_board:
 		state["board"] = board
@@ -4929,6 +4951,8 @@ func _sync(state: Dictionary) -> void:
 	coffee = CoffeeShop.sanitize(state.get("coffee"))
 	# Sheds saved before the paint mixing bay get its starter stock.
 	paint_bay = PaintBay.sanitize(state.get("paint_bay"))
+	# Sheds saved before the recovery truck have no jobs out.
+	recovery = Recovery.sanitize(state.get("recovery"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.
@@ -4977,6 +5001,7 @@ func _process(delta: float) -> void:
 	Sales.process(delta)
 	CoffeeShop.process(delta)
 	PaintBay.process(delta)
+	Recovery.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":

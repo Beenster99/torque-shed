@@ -305,6 +305,9 @@ func _run_all() -> void:
 	print("Recovery: the truck and trailer, barn finds and crash rescues, winch, dolly, straps, assessment")
 	await _test_recovery_car()
 	await _test_recovery_trailer()
+	await _test_recovery_winch()
+	await _test_recovery_dolly()
+	await _test_recovery_straps()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -15242,3 +15245,15 @@ func _test_recovery_car() -> void:
 
 func _test_recovery_trailer() -> void:
 	await _recovery().test_trailer()
+
+
+func _test_recovery_winch() -> void:
+	await _recovery().test_winch()
+
+
+func _test_recovery_dolly() -> void:
+	await _recovery().test_dolly()
+
+
+func _test_recovery_straps() -> void:
+	await _recovery().test_straps()

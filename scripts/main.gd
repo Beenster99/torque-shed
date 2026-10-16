@@ -27,6 +27,8 @@ var coffee_view: CoffeeView     # the bikers at the cafe, its barista and the tr
 var paint_bench: PaintBench     # the paint mixing bay's bench, stepped up to (see PaintBay)
 var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
 var emote_bar: EmoteBar         # the emotes and their keys, while the bar is open (B)
+var recovery: RecoveryView      # the recovery truck and trailer, and driving it (see Recovery)
+var recovery_panel: RecoveryPanel   # the recovery jobs clipboard and a recovered bike's assessment
 var audio: EngineSound
 var saver: SaveGame
 var remotes := {}     # peer id -> RemotePlayer
@@ -127,6 +129,13 @@ func _ready() -> void:
 	coffee_view.order_requested.connect(func():
 		coffee_panel.open_menu()
 		_capture_mouse(false))
+	recovery = RecoveryView.new()
+	recovery.main = self
+	world.add_child(recovery)
+	recovery_panel = RecoveryPanel.new()
+	recovery_panel.visible = false
+	ui.add_child(recovery_panel)
+	recovery_panel.closed.connect(func(): _capture_mouse(true))
 	geometry = GeometryMode.new()
 	ui.add_child(geometry)
 	geometry.closed.connect(_geometry_closed)
@@ -265,9 +274,11 @@ func _end_session() -> void:
 	sales_pc.visible = false
 	label_dialog.visible = false
 	contract_panel.visible = false
+	recovery_panel.visible = false
 	coffee_panel.visible = false
 	paint_bench.visible = false
 	PaintBayRoom.live = {}
+	recovery.stop_driving(false)
 	if geometry.active:
 		geometry.close()
 	_stop_riding()
@@ -304,6 +315,12 @@ func _open_sales() -> void:
 ## The dyno desk: tune the bike on the rig, or one close by, and run it.
 func _open_tuning() -> void:
 	tuning.open(walker.global_position if walker else Vector3.ZERO)
+	_capture_mouse(false)
+
+
+## The recovery jobs clipboard (see RecoveryPanel).
+func open_recovery() -> void:
+	recovery_panel.open_list()
 	_capture_mouse(false)
 
 
@@ -377,6 +394,10 @@ func _on_shed_changed() -> void:
 		return
 	workshop.sync_state()
 	_refit_ridden_bikes()
+	if Recovery.driver() == Shed.me() and not recovery.driving and bike == null:
+		recovery.start_driving()
+	elif recovery.driving and Recovery.driver() != Shed.me():
+		recovery.stop_driving(false)
 	var mine := Shed.riding(Shed.me())
 	if mine != 0 and bike == null:
 		_start_riding(mine)
@@ -523,6 +544,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			label_dialog.close_dialog()
 		elif contract_panel.visible:
 			contract_panel.close_dialog()
+		elif recovery_panel.visible:
+			recovery_panel.close_dialog()
 		elif coffee_panel.visible:
 			coffee_panel.close_dialog()
 		elif paint_bench.visible:
@@ -541,7 +564,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or coffee_panel.visible \
-			or paint_bench.visible or bike == null:
+			or paint_bench.visible or recovery_panel.visible or (bike == null and not recovery.driving):
+		return
+	if recovery.driving:
+		if recovery.drive_input(event):
+			get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("ping"):
+			PingMarker.ping_from(camera, [recovery.car.get_rid()])
 		return
 	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"):
 		# Swing the chase camera round the bike (or turn your head in first person).
@@ -584,7 +613,8 @@ func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
-		and not contract_panel.visible and not coffee_panel.visible and not paint_bench.visible and not geometry.active
+		and not contract_panel.visible and not coffee_panel.visible and not paint_bench.visible and not geometry.active \
+		and not recovery_panel.visible
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:
@@ -634,6 +664,7 @@ func _physics_process(delta: float) -> void:
 		if _stats_timer >= 1.0:
 			_stats_timer = 0.0
 			_send_ride_stats()
+	recovery.drive_physics(delta, active)
 	telemetry_overlay.bike = bike
 	telemetry_overlay.visible = bike != null and Settings.telemetry_overlay and not menu.visible
 	_send_timer += delta
@@ -704,6 +735,8 @@ func _update_dash() -> void:
 
 ## [0, x, y, z, yaw, pitch, crouched] on foot, or [1, bike id, bike state...] riding.
 func _net_state() -> PackedFloat32Array:
+	if recovery and recovery.driving:
+		return recovery.net_state()
 	if bike:
 		var s := PackedFloat32Array([1.0, float(riding_id)])
 		s.append_array(bike.get_net_state())

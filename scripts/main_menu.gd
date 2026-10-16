@@ -225,6 +225,7 @@ func _ready() -> void:
 	_tabs.add_child(shop)
 	# Testing helpers: reset or max out XP and money.
 	_tabs.add_child(ContractsTab.new())
+	_tabs.add_child(RecoveryTab.new())
 	debug = DebugTab.new()
 	_tabs.add_child(debug)
 

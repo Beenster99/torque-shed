@@ -176,3 +176,215 @@ func test_trailer() -> void:
 	check(float(s["max_speed"]) > v_with, "the truck pulls away quicker without it (%.0f vs %.0f km/h in 8 s)" % [float(s["max_speed"]) * 3.6, v_with * 3.6])
 	solo["root"].queue_free()
 	await _ticks(2)
+
+
+# ---------------------------------------------------------------------------- on site (shed state)
+
+## Out in the country, away from the yard, so a bike standing by the trailer isn't delivered.
+const SITE := Transform3D(Basis(Vector3.UP, 0.4), Vector3(320.0, 0.0, -240.0))
+
+
+func _seconds(s: float) -> void:
+	for i in int(s * 120.0):
+		await t.get_tree().process_frame
+
+
+## A new shed with the recovery rig bought and parked out at SITE.
+func _shed_with_rig() -> void:
+	Shed.start_new("Recovery tester", 4242)
+	Shed.garage_money = 60000
+	Shed.request({"a": "recovery_grant"})
+	_park_at(SITE)
+
+
+func _park_at(xf: Transform3D) -> void:
+	Recovery.car()["xf"] = xf
+	Recovery.car()["trailer_xf"] = Recovery.trailer_park(xf)
+
+
+## A recovery job taken on (the newest), its bike rolling or not, uncovered.
+func _job(kind: String, rolls: bool) -> Dictionary:
+	var oid := Recovery.spawn(kind)
+	Recovery.offers()[oid]["rolls"] = rolls
+	Shed.request({"a": "recovery_accept", "offer": oid})
+	var best := {}
+	for jid in Recovery.jobs():
+		if best.is_empty() or int(jid) > int(best["id"]):
+			best = Recovery.jobs()[jid]
+	best["tarp"] = false
+	return best
+
+
+## Stands a bike at the foot of the ramp (`dx` across), facing up it (or away when `back`).
+func _to_ramp(bike: int, dx := 0.0, back := false) -> void:
+	var b := Basis(Vector3.UP, PI) if back else Basis()
+	Shed.bikes[bike]["xf"] = Recovery.trailer_xf() * Transform3D(b, Vector3(dx, 0.0, Trailer.start_z() + 0.2))
+	Shed.bikes[bike]["stand"] = "side"
+
+
+## A rolling bike: lower the ramp, winch it up the ramp, strap it, and let it down again; a
+## second goes in the other channel and there's no room for a third.
+func test_winch() -> void:
+	_shed_with_rig()
+	var me := Shed.me()
+	check(Recovery.owned() and Shed.check(me, {"a": "recovery_enter"}) == "", "with the rig bought the truck can be got into")
+	var job := _job("barn", true)
+	var bike := int(job["bike"])
+	check(Recovery.job_of(bike) == job and str(job["state"]) == "collect", "accepting a job puts its bike out at the site")
+	check(Shed.check(me, {"a": "mount", "bike": bike}) != "", "a recovery bike can't be ridden home")
+	_to_ramp(bike)
+	check(Shed.check(me, {"a": "recovery_winch", "bike": bike}).contains("ramp"), "the winch wants the ramp down first")
+	Shed.request({"a": "recovery_ramp", "down": true})
+	check(bool(Recovery.car()["ramp"]) and Shed.check(me, {"a": "recovery_enter"}) != "", "the ramp goes down, and you can't drive off with it down")
+	Shed.bikes[bike]["stand"] = "down"
+	check(Shed.check(me, {"a": "recovery_winch", "bike": bike}).contains("Stand it up"), "a bike lying down has to be stood up")
+	_to_ramp(bike, 0.0, true)
+	check(Shed.check(me, {"a": "recovery_winch", "bike": bike}).contains("face"), "it has to face up the ramp")
+	Shed.bikes[bike]["xf"] = Recovery.trailer_xf() * Transform3D(Basis(), Vector3(0.0, 0.0, Trailer.start_z() + 6.0))
+	check(Shed.check(me, {"a": "recovery_winch", "bike": bike}).contains("foot of the ramp"), "and stand at the foot of it")
+	_to_ramp(bike, 0.4)
+	check(Shed.check(me, {"a": "recovery_winch", "bike": bike}) == "", "stood at the foot of the ramp, it can be winched")
+	Shed.request({"a": "recovery_winch", "bike": bike})
+	check(Recovery.is_loaded(bike) and int(Recovery.car()["winch"]) == bike, "the winch starts pulling")
+	check(Shed.check(me, {"a": "grab_bike", "bike": bike}) != "", "nobody can wheel it off while it's on the winch")
+	await _seconds(2.0)
+	var s := float(Recovery.loads()[bike]["s"])
+	check(s > 0.6 and s < 1.6 and not Recovery.on_bed(bike), "two seconds in it's part way up the ramp (%.2f m)" % s)
+	await _seconds(10.0)
+	var at := Recovery.trailer_xf().affine_inverse() * (Shed.bikes[bike]["xf"] as Transform3D).origin
+	check(Recovery.on_bed(bike) and int(Recovery.car()["winch"]) == 0, "the winch stops with it on the bed")
+	check(absf(at.y - Trailer.BED_Y) < 0.02 and absf(at.z - Trailer.SLOT_Z) < 0.05 and absf(at.x - Trailer.SLOTS_X[1]) < 0.01,
+		"standing on the bed in the right-hand channel (%.2f, %.2f, %.2f)" % [at.x, at.y, at.z])
+	check(not Recovery.secure(bike), "it isn't secure until it's strapped")
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 0})
+	check(Recovery.straps_on(bike) == 1 and not Recovery.secure(bike), "one strap tight isn't enough")
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 1})
+	check(Recovery.secure(bike), "the front pair hold it")
+	check(Shed.check(me, {"a": "recovery_unload", "bike": bike}).contains("straps"), "it can't be let down with its straps on")
+	var job2 := _job("crash", true)
+	var bike2 := int(job2["bike"])
+	_to_ramp(bike2, -0.4)
+	Shed.bikes[bike2]["stand"] = "side"
+	Shed.request({"a": "recovery_winch", "bike": bike2})
+	await _seconds(11.0)
+	check(Recovery.on_bed(bike2) and int(Recovery.loads()[bike2]["slot"]) == 0, "a second bike goes up beside it")
+	check(Shed.check(me, {"a": "recovery_accept", "offer": Recovery.spawn("barn")}).contains("already"),
+		"two to fetch at once is the most it takes on")
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 0, "on": false})
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 1, "on": false})
+	Shed.request({"a": "recovery_unload", "bike": bike})
+	await _seconds(11.0)
+	check(not Recovery.is_loaded(bike) and str(Shed.bikes[bike]["stand"]) != "", "let down the ramp, it stands behind the trailer")
+	check(str(job["state"]) == "collect", "out in the country that isn't a delivery")
+	Shed.stop()
+
+
+## A bike that won't roll can't be wheeled or winched; it goes on the dolly tray, up the ramp
+## on that, home, and down again in the yard, where the call-out is paid.
+func test_dolly() -> void:
+	_shed_with_rig()
+	var me := Shed.me()
+	var job := _job("barn", false)
+	var bike := int(job["bike"])
+	var beside := Recovery.trailer_xf() * Transform3D(Basis(), Vector3(6.0, 0.0, 2.0))
+	Shed.bikes[bike]["xf"] = beside
+	Shed.bikes[bike]["stand"] = "side"
+	check(Recovery.seized(bike) and Shed.check(me, {"a": "grab_bike", "bike": bike}).contains("seized"),
+		"a barn find with seized brakes can't be wheeled about")
+	Shed.request({"a": "recovery_ramp", "down": true})
+	_to_ramp(bike)
+	check(Shed.check(me, {"a": "recovery_winch", "bike": bike}).contains("dolly"), "or winched: it needs the dolly")
+	Shed.bikes[bike]["xf"] = beside
+	Shed.request({"a": "recovery_dolly_off", "bike": bike})
+	var dxf: Transform3D = Recovery.dolly()["xf"]
+	check(str(Recovery.dolly()["at"]) == "ground" and dxf.origin.distance_to(beside.origin) < 1.5,
+		"the dolly tray comes off the side rail and goes down beside the bike")
+	check(Shed.check(me, {"a": "recovery_dolly_stow"}) == "", "it could go back on the rail")
+	Shed.request({"a": "recovery_dolly_load", "bike": bike})
+	check(Recovery.on_dolly(bike) and not Recovery.seized(bike) and Shed.check(me, {"a": "grab_bike", "bike": bike}) == "",
+		"up on the dolly it can be pushed")
+	_to_ramp(bike)
+	Shed.bikes[bike]["stand"] = ""
+	Shed.request({"a": "recovery_winch", "bike": bike})
+	check(Recovery.is_loaded(bike) and str(Recovery.dolly()["at"]) == "load", "the dolly goes up the ramp under it")
+	await _seconds(9.6)
+	check(not Recovery.on_bed(bike), "pushing it up on the dolly is slower than winching a rolling bike")
+	await _seconds(4.0)
+	check(Recovery.on_bed(bike), "but it gets there")
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 0})
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 1})
+	Shed.request({"a": "recovery_ramp", "down": false})
+	Shed.request({"a": "recovery_enter"})
+	check(Recovery.driver() == me, "into the cab")
+	var money0 := Shed.garage_money
+	Shed.request({"a": "recovery_exit", "xf": Recovery.PARK, "trailer_xf": Recovery.trailer_park(Recovery.PARK)})
+	var at := (Shed.bikes[bike]["xf"] as Transform3D).origin
+	check(Recovery.driver() == 0 and at.distance_to(Recovery.trailer_park(Recovery.PARK).origin) < 2.0,
+		"driven home, the bike on the trailer comes with it")
+	await _seconds(0.5)
+	check(str(job["state"]) == "collect", "still on the trailer in the yard isn't delivered yet")
+	Shed.request({"a": "recovery_ramp", "down": true})
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 0, "on": false})
+	Shed.request({"a": "recovery_strap", "bike": bike, "point": 1, "on": false})
+	Shed.request({"a": "recovery_unload", "bike": bike})
+	await _seconds(14.0)
+	check(not Recovery.is_loaded(bike) and str(Recovery.dolly()["at"]) == "bike", "let down the ramp in the yard, still on its dolly")
+	check(str(job["state"]) == "delivered" and Shed.garage_money == money0 + int(job["fee"]),
+		"that's a delivery: the call-out fee is paid (%s)" % Recovery.money(int(job["fee"])))
+	Shed.request({"a": "recovery_dolly_unload"})
+	check(str(Recovery.dolly()["at"]) == "ground" and int(Recovery.dolly()["bike"]) == 0, "off the dolly")
+	Shed.request({"a": "recovery_dolly_stow"})
+	check(str(Recovery.dolly()["at"]) == "trailer", "and the dolly goes back on its rail")
+	Shed.stop()
+
+
+## Loads on the moving trailer: hard braking throws an unstrapped bike into the chock and over
+## the side; a strapped one stays put; a gentle stop only rolls a loose one forward. A bike
+## that comes off lands on its side, scuffed.
+func test_straps() -> void:
+	var r := _rig(true)
+	var car: Car = r["car"]
+	var tr: Trailer = r["trailer"]
+	await _ticks(240)
+	var fell := {}
+	tr.load_fell.connect(func(id, _side, _v): fell[id] = true)
+	tr.load_sim = {101: {"z": 0.0, "v": 0.0, "straps": 0, "secure": false}, 102: {"z": 0.0, "v": 0.0, "straps": 2, "secure": true}}
+	await _drive(car, 6.0, func(c, _t): c.throttle = 0.9)
+	check(not fell.has(101) and float(tr.load_sim[101]["z"]) > 0.1, "pulling away a loose bike rolls back to the tailgate (%.2f m)" % float(tr.load_sim.get(101, {}).get("z", -9.0)))
+	await _drive(car, 5.0, func(c, _t):
+		c.throttle = 0.0
+		c.brake = 1.0 if absf(c.speed) > 0.3 else 0.0)
+	check(fell.has(101), "braking hard throws the unstrapped bike into the chock and off the side")
+	check(not fell.has(102) and absf(float(tr.load_sim[102]["z"])) < 0.001, "the strapped bike doesn't move")
+	await _drive(car, 6.0, func(c, _t):
+		c.brake = 0.0
+		c.throttle = 0.9 if c.speed < 12.0 else 0.0)
+	tr.load_sim[104] = {"z": 0.0, "v": 0.0, "straps": 0, "secure": false}
+	await _drive(car, 12.0, func(c, _t):
+		c.throttle = 0.0
+		c.brake = 0.3 if absf(c.speed) > 0.3 else 0.0)
+	check(not fell.has(104) and float(tr.load_sim.get(104, {}).get("z", 9.0)) < -0.05,
+		"a gentle stop only rolls a loose bike forwards against the chock (%.2f m)" % float(tr.load_sim.get(104, {}).get("z", 9.0)))
+	r["root"].queue_free()
+	await _ticks(2)
+	# The shed's side of a fall.
+	_shed_with_rig()
+	var job := _job("barn", true)
+	var bike := int(job["bike"])
+	Shed.request({"a": "recovery_ramp", "down": true})
+	_to_ramp(bike)
+	Shed.request({"a": "recovery_winch", "bike": bike})
+	await _seconds(11.0)
+	Shed.request({"a": "recovery_ramp", "down": false})
+	Shed.request({"a": "recovery_enter"})
+	var drop := Recovery.trailer_xf() * Transform3D(Basis(), Vector3(2.0, 0.0, 0.0))
+	Shed.request({"a": "recovery_fall", "bike": bike, "xf": drop})
+	var scuffed := 0
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(bike, slot)
+		if id != 0 and bool(Shed.items[id].get("scuff", false)):
+			scuffed += 1
+	check(not Recovery.is_loaded(bike) and str(Shed.bikes[bike]["stand"]) == "down", "a bike that comes off lies on its side on the road")
+	check(scuffed > 0 and (Shed.bikes[bike]["xf"] as Transform3D).origin.distance_to(drop.origin) < 0.01, "where it fell, scuffed (%d parts)" % scuffed)
+	Shed.request({"a": "recovery_exit"})
+	Shed.stop()
