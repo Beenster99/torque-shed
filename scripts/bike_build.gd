@@ -505,8 +505,11 @@ func _side_brake(side: String) -> float:
 		* lerpf(1.0, 0.82, fluid["age"])
 	if level < 0.6:
 		notes.append("%s brake is spongy: top up the brake fluid." % side.capitalize())
+	# A drum bites less than a disc its size: one cam (single leading shoe) least, two or four
+	# leading shoes nearly as well.
+	var drum := float({"sls": 0.7, "tls": 0.85, "4ls": 0.95}.get(str(disc.get("shoes", "sls")), 0.7)) if str(disc.get("style", "")) == "drum" else 1.0
 	return 1600.0 * float(disc["diameter"]) / 300.0 * float(caliper["force"]) * float(pads["mu"]) / 0.42 \
-		* float(master["ratio"]) * lerpf(0.5, 1.0, h) * fluid_mult
+		* float(master["ratio"]) * lerpf(0.5, 1.0, h) * fluid_mult * drum
 
 
 func _compute_brakes() -> void:

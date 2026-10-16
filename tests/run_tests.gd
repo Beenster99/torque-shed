@@ -222,6 +222,7 @@ func _run_all() -> void:
 	_test_style_tags()
 	_test_filler_parts()
 	_test_style_packs()
+	_test_detail_pass()
 	_test_filler_shed()
 	await _test_style_contracts_sales()
 	print("Garage upgrade options: colours, effects and styles, preview, changing them later")
@@ -10499,11 +10500,99 @@ func _test_filler_parts() -> void:
 	var mx := BikeModel.new()
 	add_child(mx)
 	mx.build_from(BikeBuild.new({"number_boards": "mx_side_boards"}))
-	var labels: Array = mx.find_children("*", "Label3D", true, false)
+	var labels: Array = mx.find_children("*", "Label3D", true, false).filter(func(l): return l.get_parent().name != "TyreLettering")
 	check(labels.size() >= 3 and labels.all(func(l): return str(l.text) == str(labels[0].text) and int(str(l.text)) > 0),
 		"MX number boards carry the same race number front and sides (%s)" % str(labels.map(func(l): return l.text)))
 	mx.free()
 	check(BikeBuild.new({"guards": "adv_cage"}).bike_mass > BikeBuild.new().bike_mass + 5.0, "a crash cage weighs what it should")
+
+
+
+## Step 4 of the style work: the small details that make a bike read as real at a glance.
+func _test_detail_pass() -> void:
+	var made := []
+	var bike := func(parts: Dictionary) -> BikeModel:
+		var m := BikeModel.new()
+		add_child(m)
+		m.build_from(BikeBuild.new(parts))
+		made.append(m)
+		return m
+	var count := func(m: BikeModel, name: String) -> int:
+		return m.find_children(name + "*", "", true, false).size()
+	# Engines you can tell apart.
+	var vt: BikeModel = bike.call({"engine": "vtwin_900"})
+	var bx: BikeModel = bike.call({"engine": "boxer_1000"})
+	var i4: BikeModel = bike.call({"engine": "four_1000"})
+	var ts: BikeModel = bike.call({"engine": "2stroke_125"})
+	for m in [vt, bx, i4, ts]:
+		check(count.call(m, "Crankcase") == 1 and count.call(m, "AlternatorCover") == 1, "every engine has a rounded crankcase and an alternator cover")
+	check(count.call(vt, "Pushrod") == 4 and count.call(vt, "NoseCone") == 1, "a V-twin has pushrod tubes to both heads and a nose cone")
+	check(count.call(bx, "ValveCover") == 2, "a boxer's valve covers stick out either side")
+	var cam: Array = i4.find_children("CamCover*", "", true, false)
+	check(cam.size() == 1 and ((cam[0] as MeshInstance3D).mesh as BoxMesh).size.x > 0.4, "an inline four has one wide cam cover across the head")
+	check(count.call(ts, "CamCover") == 0 and count.call(ts, "Sump") == 0, "a two-stroke has no cam cover and no sump")
+	check(count.call(i4, "HTLead") == 4 and count.call(vt, "HTLead") == 2, "an HT lead runs from every plug to the coil")
+	# Bars, levers and cables.
+	var std: BikeModel = bike.call({})
+	for n in ["ClutchLever", "BrakeLever", "SwitchGear", "Throttle", "ClutchCable", "ThrottleCable", "BarEnd"]:
+		check(count.call(std, n) >= 1, "the bars carry a %s" % n)
+	check(count.call(std, "BrakeHose") == 2, "the front brake hose runs from the master to the bottom yoke, then down the leg to the caliper")
+	var grip: MeshInstance3D = std.find_children("Grip*", "", true, false)[0]
+	check((grip.material_override as StandardMaterial3D).normal_texture != null, "the grips are knurled")
+	# Drum brakes: drawn as drums and a little weaker than a disc the same size.
+	var drums: BikeModel = bike.call({"front_disc": "drum_tls_200", "rear_disc": "drum_sls_180"})
+	check(count.call(drums, "BrakeDrum") == 2 and count.call(drums, "LinkRod") == 1 and count.call(drums, "BrakeCable") == 1,
+		"drum brakes have finned drums, a twin leading shoe link rod and a cable")
+	check(drums.slot_bounds("front_disc").size.length() > 0.1, "the drum is drawn in the disc's place")
+	var disc_b := BikeBuild.new({"front_disc": "solid_240"})
+	var drum_b := BikeBuild.new({"front_disc": "drum_tls_200"})
+	check(drum_b.front_brake_torque < disc_b.front_brake_torque, "a 200 mm drum stops less hard than a 240 mm disc (%.0f vs %.0f)" % [drum_b.front_brake_torque, disc_b.front_brake_torque])
+	check(BikeBuild.new({"front_disc": "drum_4ls_230"}).front_brake_torque > BikeBuild.new({"front_disc": "drum_sls_180"}).front_brake_torque, "a four leading shoe drum beats a single")
+	# Seats: grab rail and pillion pegs on a two-up seat, quilting on a diamond seat.
+	var two: BikeModel = bike.call({"saddle": "flat_bench"})
+	check(count.call(two, "GrabRail") == 1 and count.call(two, "PillionPeg") == 2, "a two-up seat has a grab rail and pillion pegs")
+	var solo: BikeModel = bike.call({"saddle": "cafe_hump"})
+	check(count.call(solo, "PillionPeg") == 0, "a cafe hump seat has no pillion pegs")
+	check(count.call(two, "Piping") == 2, "the seat edges are piped")
+	# Forks: axle clamps on a telescopic fork, links on a leading-link fork.
+	check(count.call(std, "AxleClamp") == 2, "telescopic fork sliders end in axle clamps")
+	var ll: BikeModel = bike.call({"fork": "classic_leading_link"})
+	check(count.call(ll, "Link") == 2 and count.call(ll, "Damper") == 2, "a leading-link fork has a link and a damper each side")
+	var ear: BikeModel = bike.call({"fork": "shrouded_classic_fork"})
+	check(count.call(ear, "HeadlampEar") == 2, "a shrouded classic fork carries the headlamp on ears")
+	# Wheels: lettered tyres, shaped cast spokes, a cush drive and a valve.
+	var letters: Array = std.find_children("TyreLettering", "", true, false)
+	check(letters.size() == 2, "both tyres have lettering on their walls")
+	var text := ""
+	for l in letters[0].get_children():
+		text += (l as Label3D).text
+	check(text.begins_with("TORQUE"), "the tyre wall reads the maker's name (%s)" % text.left(20))
+	var cast: BikeModel = bike.call({"front_wheel": "cast_17_front", "rear_wheel": "cast_17"})
+	check(count.call(cast, "CastSpoke") >= 5 and count.call(cast, "CushDrive") == 1 and count.call(cast, "Valve") == 2, "cast wheels have shaped spokes, the rear a cush drive, both a valve")
+	# Radiators: a textured core behind a grille, shrouds and hoses.
+	var rad: BikeModel = bike.call({"engine": "four_1000", "cooling": "race_radiator"})
+	var core: MeshInstance3D = rad.find_children("RadiatorCore", "", true, false)[0]
+	check((core.material_override as StandardMaterial3D).normal_texture != null and count.call(rad, "RadiatorGrille") > 3
+		and count.call(rad, "RadiatorShroud") == 2 and count.call(rad, "CoolantHose") == 2, "a radiator has a finned core, a grille, shrouds and coolant hoses")
+	# Bodywork: twin lamps in a race fairing, vents in a half one, a pad on a sports tank.
+	var race: BikeModel = bike.call({"fairing": "carbon_race_fairing", "tank": "carbon_sport_16"})
+	check(count.call(race, "FairingLamp") == 2 and count.call(race, "TankPad") == 1, "a race fairing has twin lamp eyes and a sports tank a grip pad")
+	var shell: MeshInstance3D = race.find_children("FairingShell", "", true, false)[0]
+	check((shell.material_override as StandardMaterial3D).albedo_texture != null, "a carbon fairing shows its weave")
+	var half: BikeModel = bike.call({"fairing": "half_fairing"})
+	check(count.call(half, "FairingVent") == 8, "a half fairing has side vents")
+	var can: BikeModel = bike.call({"exhaust": "stock_muffler"})
+	check(count.call(can, "EndCap") >= 1 and count.call(can, "CanClamp") >= 1, "a silencer has a clamp band and a riveted end cap")
+	# Rust covers the fine finish: a rusty engine shows rust, not crinkle.
+	var rusty := BikeModel.new()
+	add_child(rusty)
+	var cond := {"engine": {"rust": 0.6}}
+	rusty.build_from(BikeBuild.new({}), Color.RED, {}, cond)
+	made.append(rusty)
+	var case_mat: StandardMaterial3D = (rusty.find_children("Crankcase", "", true, false)[0] as MeshInstance3D).material_override
+	check(case_mat.detail_enabled and case_mat.normal_texture == null, "a rusty case shows its rust rather than its finish")
+	for m in made:
+		m.free()
 
 
 func _test_filler_shed() -> void:

@@ -270,7 +270,7 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 	_current_slot = "frame"
 	var style := str(_part().get("style", "cradle"))
 	var carbon := _part_id() == "carbon_monocoque"
-	var frame_mat := _mat(_col(), 0.2 if carbon else 0.7, 0.25 if carbon else 0.35, 0.8 if carbon else 0.0)
+	var frame_mat := _skin(_mat(_col(), 0.2 if carbon else 0.7, 0.25 if carbon else 0.35, 0.8 if carbon else 0.0))
 	frame_mat = _look_finish(str(_look().get("finish", "")), frame_mat)
 	var black := _mat(Color(0.03, 0.03, 0.03), 0.0, 0.7)
 	var hb := _head_bottom
@@ -494,7 +494,7 @@ func _draw_tank() -> void:
 	_current_slot = "tank"
 	var p := _part()
 	var look := _look()
-	var mat := _mat(_col(), 0.25, 0.2, 0.6)
+	var mat := _skin(_mat(_col(), 0.25, 0.2, 0.6))
 	var style := str(p.get("style", "cafe"))
 	var shape_key := str(look.get("shape", style))
 	var shape: Dictionary = TANK_SHAPES.get(shape_key, TANK_SHAPES.get(style, TANK_SHAPES["cafe"]))
@@ -592,11 +592,16 @@ func _draw_tank() -> void:
 	var pads := bool(look.get("pads", style in ["cafe", "peanut"] and not p.get("lightweight", false)))
 	if pads:
 		var pad_s: Dictionary = secs[roundi(steps * 0.72)]
-		var rubber := _mat(Color(0.05, 0.05, 0.05), 0.0, 0.85)
+		var rubber := _tex(_mat(Color(0.05, 0.05, 0.05), 0.0, 0.85), "grain", 18.0, 1.4)
 		for side in [-1.0, 1.0]:
 			var at: Vector3 = pad_s["c"] + Vector3(float(pad_s["w"]) * 0.93 * side, -float(pad_s["down"]) * 0.1, 0.0)
 			var pad := _mesh_instance(_sphere(0.05), rubber, at, self)
 			pad.scale = Vector3(0.18, 0.75, 1.3)
+	if style == "sport" and not look.get("no_pad", false):
+		# A grippy pad over the back of a sports tank, where the rider's chest lands.
+		var pad_mat := _tex(_mat(Color(0.06, 0.06, 0.065), 0.0, 0.8), "grain", 22.0, 1.5)
+		var top_pad := _shell(_grown(secs, 1.01, roundi(steps * 0.62), steps - 1), pad_mat, true, PI * 0.5 - 0.55, PI * 0.5 + 0.55)
+		top_pad.name = "TankPad"
 	if style == "enduro":
 		# Radiator shrouds flaring forward either side of the tank.
 		for side in [-1.0, 1.0]:
@@ -701,6 +706,8 @@ func _draw_saddle() -> void:
 	var p := _part()
 	var look := _look()
 	var mat := _mat(_col(), 0.0, 0.6)
+	# The cover: diamond quilting, or leather or vinyl grain.
+	_tex(mat, "quilt" if str(look.get("pattern", "")) == "diamond" else "grain")
 	var y := _seat_y
 	var style := str(p.get("style", "bench"))
 	var shape: Dictionary = SEAT_SHAPES.get(str(look.get("shape", style)), SEAT_SHAPES.get(style, SEAT_SHAPES["bench"]))
@@ -746,9 +753,43 @@ func _draw_saddle() -> void:
 				for k in 3:
 					var a := lerpf(0.9, PI - 0.9, k / 2.0)
 					_bend([_on_loft(secs[i], a - 0.25, 1.006), _on_loft(secs[i + 1], a, 1.006), _on_loft(secs[i + 2], a - 0.25, 1.006)], 0.003, seam, self, 4)
-	# The seam round the edge, a shade darker (or the piping colour).
+	# Piping round the edge, a shade darker (or the piping colour), and the front seam.
 	var mid: Dictionary = secs[roundi(steps * 0.3)]
 	_box(mid["c"] + Vector3(0.0, float(mid["up"]) * 0.2, 0.0), Vector3(float(mid["w"]) * 2.02, 0.006, 0.006), seam)
+	for a in [0.12, PI - 0.12]:
+		var path := []
+		for sec in secs.slice(1, steps):
+			path.append(_on_loft(sec, a, 1.01))
+		_bend(path, 0.0038, seam, self, 5).name = "Piping"
+	# A two-up seat has a grab rail round the back and pillion pegs on hangers.
+	var two_up: bool = str(look.get("shape", style)) in ["bench", "touring", "stepped", "king_queen", "hump_long"] and float(look.get("sissy", 0.0)) <= 0.0
+	if two_up and not p.get("solo", false):
+		var rail_mat := _tex(_mat(Color(0.12, 0.12, 0.13), 0.8, 0.35), "brushed", -1.0, 0.5) if not look.has("accent") else chrome
+		var back: Dictionary = secs[steps - 1]
+		var front_s: Dictionary = secs[roundi(steps * 0.55)]
+		var ry: float = (back["c"] as Vector3).y - float(back["down"]) * 0.3
+		var loop := []
+		for side in [1.0, -1.0]:
+			var w0: float = float(front_s["w"]) + 0.03
+			var w1: float = float(back["w"]) + 0.028
+			var pts := [Vector3(w0 * side, ry - 0.01, (front_s["c"] as Vector3).z), Vector3(w1 * side, ry, (back["c"] as Vector3).z),
+				Vector3(w1 * 0.55 * side, ry + 0.005, (back["c"] as Vector3).z + 0.07)]
+			if side < 0.0:
+				pts.reverse()
+			loop.append_array(pts)
+		loop.insert(3, Vector3(0.0, ry + 0.008, (back["c"] as Vector3).z + 0.085))
+		_bend(loop, 0.011, rail_mat, self, 10).name = "GrabRail"
+		for side in [-1.0, 1.0]:
+			var at: Vector3 = loop[0 if side > 0.0 else loop.size() - 1]
+			_tube(at, at + Vector3(-0.02 * side, -0.09, 0.02), 0.009, rail_mat)
+		var hanger := _mat(Color(0.1, 0.1, 0.11), 0.7, 0.4)
+		var grip := _tex(_mat(Color(0.05, 0.05, 0.05), 0.0, 0.85), "knurl", 50.0)
+		for side in [-1.0, 1.0]:
+			# Behind the swingarm pivot, whatever the rider's own pegs are doing (forward controls).
+			var peg := Vector3((_peg.x + 0.02) * side, maxf(_peg.y + 0.07, _pivot.y + 0.06), maxf(_peg.z + 0.3, _pivot.z + 0.16))
+			_plank(peg + Vector3(-0.02 * side, 0.0, 0.0), Vector3((_peg.x - 0.02) * side, _seat_y - 0.12, peg.z - 0.06), 0.03, 0.008, hanger)
+			var pp := _tube(peg + Vector3(-0.015 * side, 0.0, 0.0), peg + Vector3(0.065 * side, 0.0, 0.0), 0.011, grip)
+			pp.name = "PillionPeg"
 	# A sprung solo seat sits on a pair of coil springs at the back.
 	if look.get("springs", false):
 		var rear: Dictionary = secs[steps]
@@ -787,43 +828,194 @@ static func _seat_key_at(keys: Array, u: float) -> Array:
 
 func _draw_engine() -> void:
 	_current_slot = "engine"
-	var mat := _mat(_col(), 0.8, 0.4)
-	_box(_engine_c, Vector3(_block_w, 0.26 * _eng_s, 0.34 * _eng_s), mat)
+	var col := _col()
+	var mat := _mat(col, 0.8, 0.4)
+	var s := _eng_s
+	var e := _engine_c
+	var half := _block_w * 0.5
+	# The crankcase: a rounded cast case rather than a box, with a crinkle finish when it's
+	# painted dark and a brushed cast-alloy look when it's bare.
+	var case_mat := _tex(_mat(col, 0.8, 0.45), "crinkle" if col.get_luminance() < 0.3 else "brushed", -1.0, 0.8)
+	var secs := []
+	for k in [[0.0, 0.78], [0.07, 0.95], [0.25, 1.0], [0.75, 1.0], [0.93, 0.95], [1.0, 0.78]]:
+		var f: float = k[0]
+		var g: float = k[1]
+		secs.append({"c": e + Vector3(0.0, 0.0, lerpf(-0.17, 0.17, f) * s), "w": half * g, "up": 0.13 * s * g, "down": 0.13 * s * g, "n": 3.6})
+	var crank := _shell(secs, case_mat)
+	crank.name = "Crankcase"
 	var fins := _build.layout in ["boxer", "twin", "2stroke"]
 	for c in _cyls:
 		_tube(c["base"] - c["up"] * 0.1, c["base"] + c["up"] * 0.09, _bore_r, mat)
 		if fins:
 			# Deep cooling fins round the barrel.
-			for k in 4:
-				var at: Vector3 = c["base"] + c["up"] * (-0.06 + k * 0.045)
-				var fin := _mesh_instance(_cylinder(_bore_r * 1.45, 0.008), mat, at)
+			for k in 5:
+				var at: Vector3 = c["base"] + c["up"] * (-0.07 + k * 0.036)
+				var fin := _mesh_instance(_cylinder(_bore_r * (1.55 if _build.layout == "2stroke" else 1.45), 0.007), mat, at)
 				fin.basis = _basis_up(c["up"])
+	var chrome := _mat(Color(0.86, 0.87, 0.89), 1.0, 0.12)
+	var bolt := _mat(Color(0.62, 0.63, 0.66), 1.0, 0.3)
+	# The alternator cover bulging out of the left side, held on by a ring of bolts.
+	var alt_r := 0.085 * s
+	var alt_at := e + Vector3(-half - 0.012, -0.015 * s, -0.06 * s)
+	var alt := _mesh_instance(_cylinder(alt_r, 0.026, alt_r * 0.9), case_mat, alt_at)
+	alt.rotation.z = PI * 0.5
+	alt.name = "AlternatorCover"
+	_bolt_ring(alt_at + Vector3(-0.014, 0.0, 0.0), Vector3.LEFT, alt_r * 0.82, 6, bolt)
+	# A small points / ignition cover on the right.
+	var pts_at := e + Vector3(half + 0.008, -0.03 * s, -0.12 * s)
+	var pts := _mesh_instance(_cylinder(0.042 * s, 0.018), case_mat, pts_at)
+	pts.rotation.z = PI * 0.5
+	_bolt_ring(pts_at + Vector3(0.01, 0.0, 0.0), Vector3.RIGHT, 0.033 * s, 3, bolt)
 	if _build.layout == "2stroke":
 		# Expansion chamber bulge under the engine instead of a sump.
-		_box(_engine_c + Vector3(0.0, -0.16 * _eng_s, 0.02), Vector3(_block_w * 0.7, 0.06, 0.24 * _eng_s), mat)
+		_box(e + Vector3(0.0, -0.16 * s, 0.02), Vector3(_block_w * 0.7, 0.06, 0.24 * s), mat)
+	else:
+		# A finned sump under the cases.
+		var sump_w := minf(_block_w * 0.55, 0.16)
+		var sump_y := e.y - 0.13 * s - 0.016
+		_box(Vector3(e.x, sump_y, e.z - 0.01), Vector3(sump_w, 0.032, 0.22 * s), case_mat).name = "Sump"
+		for k in 4:
+			var x := lerpf(-sump_w * 0.38, sump_w * 0.38, k / 3.0)
+			_box(Vector3(e.x + x, sump_y - 0.02, e.z - 0.01), Vector3(0.005, 0.012, 0.2 * s), case_mat)
+		_mesh_instance(_cylinder(0.011, 0.012), bolt, Vector3(e.x, sump_y - 0.022, e.z + 0.07 * s))
+	match _build.layout:
+		"vtwin":
+			# The cam chest on the right: a chrome teardrop nose cone, and a pair of pushrod
+			# tubes from it up to each head.
+			var cone := _mesh_instance(_sphere(0.07 * s), chrome, e + Vector3(half + 0.006, 0.03 * s, -0.02 * s))
+			cone.scale = Vector3(0.28, 0.85, 1.35)
+			cone.rotation.x = 0.5
+			cone.name = "NoseCone"
+			var chest := e + Vector3(half * 0.55, 0.11 * s, -0.01 * s)
+			for c in _cyls:
+				var head: Vector3 = c["base"] + c["up"] * 0.125 + Vector3(half * 0.55, 0.0, 0.0)
+				for dz in [-0.013, 0.013]:
+					var tube := _tube(chest + Vector3(0.0, 0.0, dz), head + Vector3(0.0, 0.0, dz), 0.008, chrome)
+					tube.name = "Pushrod"
+		"inline", "triple":
+			# A wide crankcase with the cam chain tunnel up the middle and a starter cover.
+			_box(e + Vector3(0.0, 0.1 * s, -0.12 * s), Vector3(0.06, 0.08 * s, 0.04), case_mat)
+			var starter := _mesh_instance(_cylinder(0.03, 0.12), case_mat, e + Vector3(-half * 0.4, 0.14 * s, 0.12 * s))
+			starter.rotation.z = PI * 0.5
+
+
+## A ring of `count` bolt heads facing `normal`, `radius` out from `at`.
+func _bolt_ring(at: Vector3, normal: Vector3, radius: float, count: int, mat: Material, parent: Node3D = self) -> void:
+	var b := _basis_up(normal)
+	for k in count:
+		var a := TAU * k / count + 0.3
+		var head := _mesh_instance(_cylinder(0.0055, 0.008, -1.0, 6), mat, at + b * Vector3(cos(a) * radius, 0.0, sin(a) * radius), parent)
+		head.basis = b
 
 
 func _draw_head() -> void:
 	_current_slot = "head"
-	var mat := _mat(_col(), 0.85, 0.3)
+	var col := _col()
+	var mat := _mat(col, 0.85, 0.3)
 	var gasket := _mat(Color(0.15, 0.15, 0.16), 0.5, 0.5)
+	# Rocker and cam covers: crinkle black, or polished when they're bright.
+	var cover_mat := _tex(_mat(col, 0.85, 0.3), "crinkle") if col.get_luminance() < 0.3 else _mat(col, 0.95, 0.18)
+	var bolt := _mat(Color(0.62, 0.63, 0.66), 1.0, 0.3)
 	var valves := int(_part().get("valves", 4))
+	match _build.layout:
+		"2stroke":
+			# No valves, no cam cover: just a deeply finned head round the plug.
+			for c in _cyls:
+				var top: Vector3 = c["base"] + c["up"] * 0.12
+				var h := _mesh_instance(_cylinder(_bore_r * 1.3, 0.05), mat, top)
+				h.basis = _basis_up(c["up"])
+				for k in 4:
+					var fin := _mesh_instance(_cylinder(_bore_r * 1.8, 0.006), mat, top + c["up"] * (-0.018 + k * 0.013))
+					fin.basis = _basis_up(c["up"])
+			return
+		"boxer":
+			# The heads stick right out into the wind: big finned rocker covers on each side.
+			for c in _cyls:
+				var top: Vector3 = c["base"] + c["up"] * 0.13
+				var b := _basis_up(c["up"])
+				_box(top, Vector3(0.13, 0.08, 0.15), gasket).basis = b
+				for k in 3:
+					_box(top + c["up"] * (-0.025 + k * 0.025), Vector3(0.16, 0.006, 0.17), mat).basis = b
+				var cover := _mesh_instance(_cylinder(0.07, 0.06, 0.062), cover_mat, top + c["up"] * 0.07)
+				cover.basis = b
+				cover.scale = Vector3(1.0, 1.0, 1.15)
+				cover.name = "ValveCover"
+				_bolt_ring(top + c["up"] * 0.101, c["up"], 0.045, 4, bolt)
+			return
+		"vtwin":
+			for c in _cyls:
+				var top: Vector3 = c["base"] + c["up"] * 0.13
+				var b := _basis_up(c["up"])
+				_box(top, Vector3(0.12, 0.08, 0.15), gasket).basis = b
+				for k in 3:
+					_box(top + c["up"] * (-0.025 + k * 0.022), Vector3(0.15, 0.005, 0.17), mat).basis = b
+				_box(top + c["up"] * 0.06, Vector3(0.11, 0.05, 0.14), cover_mat).basis = b
+				# The rocker box seam, a chrome strip round the cover.
+				_box(top + c["up"] * 0.045, Vector3(0.115, 0.008, 0.145), _mat(Color(0.86, 0.87, 0.89), 1.0, 0.12)).basis = b
+			return
+	if _cyls.size() > 1:
+		# One head and one long cam cover across the whole row of cylinders.
+		var first: Vector3 = _cyls[0]["base"] + _cyls[0]["up"] * 0.13
+		var last: Vector3 = _cyls[_cyls.size() - 1]["base"] + _cyls[_cyls.size() - 1]["up"] * 0.13
+		var up: Vector3 = _cyls[0]["up"]
+		var b := _basis_up(up)
+		var mid := (first + last) * 0.5
+		var span := absf(last.x - first.x) + 0.12
+		_box(mid, Vector3(span, 0.08, 0.15), gasket).basis = b
+		var cover := _box(mid + up * 0.06, Vector3(span - 0.01, 0.05, 0.14 if valves > 2 else 0.1), cover_mat)
+		cover.basis = b
+		cover.name = "CamCover"
+		# Bolts along both long edges, and the cam-end caps.
+		for k in _cyls.size() + 1:
+			var x := lerpf(-span * 0.44, span * 0.44, float(k) / _cyls.size())
+			for z in [-0.06, 0.06]:
+				_mesh_instance(_cylinder(0.006, 0.01, -1.0, 6), bolt, mid + up * 0.087 + b * Vector3(x, 0.0, z)).basis = b
+		for side in [-1.0, 1.0]:
+			var cap := _mesh_instance(_cylinder(0.03, 0.02), cover_mat, mid + up * 0.06 + b * Vector3((span * 0.5 + 0.005) * side, 0.0, 0.0))
+			cap.basis = b * Basis(Vector3.BACK, PI * 0.5)
+		return
 	for c in _cyls:
 		var top: Vector3 = c["base"] + c["up"] * 0.13
 		var h := _box(top, Vector3(0.12, 0.08, 0.15), gasket)
 		h.basis = _basis_up(c["up"])
-		var cover := _box(top + c["up"] * 0.06, Vector3(0.11, 0.05, 0.14 if valves > 2 else 0.1), mat)
+		var cover := _box(top + c["up"] * 0.06, Vector3(0.11, 0.05, 0.14 if valves > 2 else 0.1), cover_mat)
 		cover.basis = _basis_up(c["up"])
+		cover.name = "CamCover"
+		for x in [-0.045, 0.045]:
+			for z in [-0.055, 0.055]:
+				_mesh_instance(_cylinder(0.006, 0.01, -1.0, 6), bolt, top + c["up"] * 0.087 + h.basis * Vector3(x, 0.0, z)).basis = h.basis
 
 
 func _draw_spark_plugs() -> void:
 	_current_slot = "spark_plugs"
 	var ceramic := _mat(_col(), 0.0, 0.3)
 	var cap := _mat(Color(0.05, 0.05, 0.05), 0.0, 0.6)
+	var lead := _mat(Color(0.42, 0.05, 0.04), 0.0, 0.55)
+	var ends := []
 	for c in _cyls:
 		var at: Vector3 = c["base"] + c["up"] * 0.2 + Vector3(0.0, 0.0, 0.02)
 		_tube(at, at + c["up"] * 0.05, 0.011, ceramic)
-		_tube(at + c["up"] * 0.05, at + c["up"] * 0.08 + Vector3(0.0, 0.0, 0.03), 0.016, cap)
+		var end: Vector3 = at + c["up"] * 0.08 + Vector3(0.0, 0.0, 0.03)
+		_tube(at + c["up"] * 0.05, end, 0.016, cap)
+		ends.append(end)
+	if ends.is_empty():
+		return
+	# HT leads from the plug caps back to the coil tucked under the tank.
+	var top := -INF
+	var mid := Vector3.ZERO
+	for end in ends:
+		top = maxf(top, end.y)
+		mid += end
+	mid /= ends.size()
+	var coil := Vector3(0.0, top - 0.015, mid.z + 0.13)
+	var body := _box(coil, Vector3(0.045, 0.035, 0.075), _mat(Color(0.06, 0.06, 0.07), 0.3, 0.5))
+	body.name = "Coil"
+	for i in ends.size():
+		var end: Vector3 = ends[i]
+		var into := coil + Vector3((i - (ends.size() - 1) * 0.5) * 0.012, 0.0, -0.035)
+		var sag := end.lerp(into, 0.5) + Vector3(0.0, -0.03, 0.0)
+		var wire := _bend([end, end + Vector3(0.0, 0.012, 0.02), sag, into], 0.0045, lead, self, 6)
+		wire.name = "HTLead"
 
 
 ## Where the intake meets each cylinder, and where the fuel system hands over to the air filter.
@@ -914,11 +1106,46 @@ func _draw_cooling() -> void:
 		"radiator", "race":
 			var big: bool = _part().get("style") == "race"
 			var w := 0.42 if big else 0.3
-			var rad := _box(Vector3(0.0, _engine_c.y + 0.25, front_z), Vector3(w, 0.34 if big else 0.28, 0.05), core)
-			rad.rotation.x = -0.25
-			var frame := _box(Vector3(0.0, _engine_c.y + 0.25, front_z - 0.03), Vector3(w + 0.03, 0.04, 0.02), mat)
-			frame.rotation.x = -0.25
-			_tube(Vector3(0.0, _engine_c.y + 0.12, front_z + 0.03), _engine_c + Vector3(0.0, -0.05, -0.17), 0.015, mat)
+			var h := 0.34 if big else 0.28
+			var c := Vector3(0.0, _engine_c.y + 0.25, front_z)
+			var rb := Basis(Vector3.RIGHT, -0.25)
+			# The core: fine fins and tubes.
+			var rad := _box(c, Vector3(w, h, 0.05), _tex(core, "core", 14.0))
+			rad.basis = rb
+			rad.name = "RadiatorCore"
+			# The side tanks and the top and bottom of the surround.
+			for sx in [-1.0, 1.0]:
+				_box(c + rb * Vector3((w * 0.5 + 0.012) * sx, 0.0, 0.0), Vector3(0.024, h + 0.02, 0.055), mat).basis = rb
+			for sy in [-1.0, 1.0]:
+				_box(c + rb * Vector3(0.0, (h * 0.5 + 0.01) * sy, 0.0), Vector3(w + 0.03, 0.02, 0.05), mat).basis = rb
+			# A grille in front: slim slats across the core.
+			var grille := _mat(Color(0.12, 0.12, 0.13), 0.7, 0.4)
+			for k in 7:
+				var slat := _box(c + rb * Vector3(0.0, lerpf(-h * 0.42, h * 0.42, k / 6.0), -0.032), Vector3(w - 0.01, 0.006, 0.012), grille)
+				slat.basis = rb
+				slat.name = "RadiatorGrille"
+			# The fan behind, and the shrouds that steer air through the core.
+			var fan := _mesh_instance(_cylinder(minf(w, h) * 0.38, 0.03), _mat(Color(0.06, 0.06, 0.06), 0.3, 0.5), c + rb * Vector3(0.0, 0.0, 0.045))
+			fan.basis = rb * Basis(Vector3.RIGHT, PI * 0.5)
+			for sx in [-1.0, 1.0]:
+				var shroud := _box(c + rb * Vector3((w * 0.5 + 0.035) * sx, 0.0, -0.02), Vector3(0.008, h * 0.95, 0.12), mat)
+				shroud.basis = rb * Basis(Vector3.UP, -0.45 * sx)
+				shroud.name = "RadiatorShroud"
+			# Coolant hoses: the top one to the thermostat on the head, the bottom one to the pump.
+			var hose := _mat(Color(0.05, 0.05, 0.055), 0.0, 0.7)
+			var top := c + rb * Vector3(w * 0.32, h * 0.5 + 0.005, 0.03)
+			var head := _engine_c + Vector3(0.0, 0.3 * _eng_s, -0.04)
+			if not _cyls.is_empty():
+				var mid := Vector3.ZERO
+				for cy in _cyls:
+					mid += cy["base"] + cy["up"] * 0.13
+				head = mid / _cyls.size() + Vector3(0.0, 0.02, -0.085)
+			_box(head, Vector3(0.04, 0.03, 0.03), mat).name = "Thermostat"
+			_bend([top, top + Vector3(0.0, 0.03, 0.04), head.lerp(top, 0.4) + Vector3(0.0, 0.03, 0.0), head], 0.014, hose, self, 10).name = "CoolantHose"
+			var bottom := c + rb * Vector3(-w * 0.32, -h * 0.5 - 0.005, 0.03)
+			var pump := _engine_c + Vector3(-_block_w * 0.3, -0.05, -0.17)
+			_bend([bottom, bottom + Vector3(0.0, -0.04, 0.03), pump + Vector3(0.0, 0.02, -0.04), pump], 0.015, hose, self, 10).name = "CoolantHose"
+			_mesh_instance(_cylinder(0.025, 0.03), mat, pump).rotation.x = PI * 0.5
 		"twin":
 			for side in [-1.0, 1.0]:
 				var rad := _box(Vector3(0.16 * side, _engine_c.y + 0.24, front_z + 0.08), Vector3(0.05, 0.28, 0.22), core)
@@ -934,6 +1161,18 @@ func _draw_gearbox() -> void:
 	var clutch := _mesh_instance(_cylinder(0.1, 0.04), case_mat, _engine_c + Vector3(_block_w * 0.5 + 0.02, -0.02, 0.1))
 	clutch.rotation.z = PI * 0.5
 	_tube(_engine_c + Vector3(-_block_w * 0.5 - 0.06, -0.09, 0.2), _engine_c + Vector3(-_block_w * 0.5 - 0.14, -0.13, 0.12), 0.008, chrome)
+	# The clutch cover's bolt ring and the oil filler cap.
+	_bolt_ring(clutch.position + Vector3(0.021, 0.0, 0.0), Vector3.RIGHT, 0.085, 8, _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3))
+	_mesh_instance(_cylinder(0.016, 0.018, -1.0, 8), _mat(Color(0.05, 0.05, 0.05), 0.2, 0.5), clutch.position + Vector3(0.0, 0.095, 0.03))
+	if _build.layout in ["single", "2stroke", "twin"]:
+		# A kickstart lever folded up behind the right footpeg.
+		var shaft := _engine_c + Vector3(_block_w * 0.5 + 0.035, -0.04, 0.2)
+		_mesh_instance(_cylinder(0.012, 0.03), chrome, shaft).rotation.z = PI * 0.5
+		var pedal := shaft + Vector3(0.02, 0.1, 0.13)
+		var arm := _tube(shaft + Vector3(0.015, 0.0, 0.0), pedal, 0.009, chrome)
+		arm.name = "Kickstart"
+		var foot := _mesh_instance(_cylinder(0.011, 0.05), _tex(_mat(Color(0.05, 0.05, 0.05), 0.0, 0.85), "knurl", 50.0), pedal + Vector3(0.025, 0.0, 0.0))
+		foot.rotation.z = PI * 0.5
 
 
 ## The exhaust: a header from each cylinder bent round the frame along a route, then the can.
@@ -966,6 +1205,9 @@ func _draw_exhaust(zr: float) -> void:
 		if _build.layout == "vtwin" and i == 1:
 			port = c["base"] + c["up"] * 0.1 + Vector3(0.07, 0.0, 0.0)
 		ports.append(port)
+		# The header flange bolted to the port.
+		var flange := _mesh_instance(_cylinder(0.03, 0.01), _mat(Color(0.55, 0.56, 0.58), 1.0, 0.3), port)
+		flange.basis = _basis_up(Vector3(0.0, -0.05, -0.05).normalized() if not (_build.layout == "vtwin" and i == 1) else Vector3.RIGHT)
 	var e := _engine_c
 	var s := _eng_s
 	var under := e.y - 0.19 * s
@@ -1114,6 +1356,7 @@ func _can(a: Vector3, b: Vector3, shape: String, mat: Material, r: float) -> Vec
 		"hex":
 			_bend([a, a.lerp(b, 0.12), a.lerp(b, 0.85), b], [r * 0.55, r * 0.95, r, r * 0.9], mat, self, 6)
 			_tip(b, dir, r * 0.6, dark)
+			_can_details(a.lerp(b, 0.12), b, dir, r * 0.95, r * 0.9)
 			return b + dir * 0.01
 		"short":
 			var bb := a.lerp(b, 0.6)
@@ -1127,11 +1370,25 @@ func _can(a: Vector3, b: Vector3, shape: String, mat: Material, r: float) -> Vec
 		"oval":
 			_bend([a, a.lerp(b, 0.12), a.lerp(b, 0.88), b], [r * 0.55, r, r, r * 0.8], mat, self, 14)
 			_tip(b, dir, r * 0.5, dark)
+			_can_details(a.lerp(b, 0.12), b, dir, r, r * 0.8)
 			return b + dir * 0.01
 		_:
 			_bend([a, a.lerp(b, 0.1), a.lerp(b, 0.9), b], [r * 0.55, r, r, r * 0.85], mat, self, 16)
 			_tip(b, dir, r * 0.45, dark)
+			_can_details(a.lerp(b, 0.1), b, dir, r, r * 0.85)
 			return b + dir * 0.01
+
+
+## A silencer's fittings: the clamp band where it slips on, and the riveted end cap.
+func _can_details(inlet: Vector3, end: Vector3, dir: Vector3, r_in: float, r_end: float) -> void:
+	var steel := _mat(Color(0.8, 0.81, 0.83), 1.0, 0.2)
+	var band := _mesh_instance(_torus(r_in * 0.62, 0.006), steel, inlet)
+	band.basis = _basis_up(dir)
+	band.name = "CanClamp"
+	var cap := _mesh_instance(_torus(r_end * 0.98, 0.0055), steel, end - dir * 0.004)
+	cap.basis = _basis_up(dir)
+	cap.name = "EndCap"
+	_bolt_ring(end - dir * 0.006, dir, r_end * 0.7, 6, steel)
 
 
 ## The dark tailpipe end in the middle of a can's end cap.
@@ -1172,6 +1429,28 @@ func _draw_fork(build: BikeBuild) -> void:
 					ring.basis = _basis_up(_steer_axis)
 			var spring := _tube(Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.02, Vector3(0.0, 0.0, -0.06) - _steer_axis * 0.22, 0.006, chrome, Vector3.ONE, _steer_node)
 			spring.name = "Spring"
+		"leading_link":
+			# Fixed legs down past the wheel to a pivot behind the axle, a short link forward
+			# to the axle (or, on an Earles fork, a long swinging arm from a pivot behind the
+			# tyre) and a spring and damper unit each side.
+			var earles := bool(lk.get("earles", false))
+			var pivot_off := Vector3(0.0, 0.07, 0.3) if earles else Vector3(0.0, 0.035, 0.1)
+			var at_rest := -_steer_axis * fl
+			for side in [-1.0, 1.0]:
+				var x: float = 0.085 * side
+				var pivot := at_rest + pivot_off + Vector3(x, 0.0, 0.0)
+				var knee := Vector3(x, 0.0, 0.0) - _steer_axis * (fl * 0.55) + Vector3(0.0, 0.0, 0.1 if earles else 0.03)
+				_bend([Vector3(x, 0.02, 0.0), knee, pivot], 0.017, main_mat, _steer_node, 10).name = "Leg"
+				_mesh_instance(_cylinder(0.02, 0.03), main_mat, pivot, _steer_node).rotation.z = PI * 0.5
+				var link := _tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) + pivot_off, 0.016, main_mat, Vector3(1.0, 1.0, 1.6), _front_hub)
+				link.name = "Link"
+				var top := knee.lerp(pivot, 0.2) + Vector3(0.0, 0.0, -0.06)
+				_tube(top, at_rest + pivot_off * 0.45 + Vector3(x, 0.03, -0.01), 0.02, chrome, Vector3.ONE, _steer_node).name = "Damper"
+				for k in 6:
+					var ring := _mesh_instance(_torus(0.026, 0.005), chrome, top.lerp(at_rest + pivot_off * 0.45 + Vector3(x, 0.03, -0.01), 0.15 + k * 0.12), _steer_node)
+					ring.basis = _basis_up((top - at_rest).normalized())
+			var spring := _box(at_rest + pivot_off + Vector3(0.0, 0.0, 0.0), Vector3(0.17, 0.025, 0.03), main_mat, _steer_node)
+			spring.name = "Spring"
 		_:
 			# A look can spread the legs ("wide", a wide glide), fatten them ("leg"), change the
 			# sliders' finish ("lowers"), add rubber gaiters, chrome shrouds over the stanchions
@@ -1194,6 +1473,23 @@ func _draw_fork(build: BikeBuild) -> void:
 					_tube(Vector3(x, 0.0, 0.0), Vector3(x, 0.0, 0.0) - _steer_axis * 0.2, 0.038 * lr, cover, Vector3.ONE, _steer_node)
 			if lk.get("brace", false):
 				_box(Vector3(0.0, 0.0, 0.0) + _steer_axis * (fl * 0.25), Vector3(lx * 2.0, 0.03, 0.05), main_mat, _front_hub)
+			# Axle clamps at the foot of each slider, pinched by two bolts, and the axle nuts.
+			var bolt := _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)
+			for side in [-1.0, 1.0]:
+				var x: float = lx * side
+				var foot := _box(Vector3(x, 0.0, 0.0), Vector3(0.05 * lr, 0.06, 0.075), lowers, _front_hub)
+				foot.basis = _basis_up(_steer_axis)
+				foot.name = "AxleClamp"
+				for k in [-0.014, 0.014]:
+					_mesh_instance(_cylinder(0.006, 0.014, -1.0, 6), bolt, Vector3(x, 0.0, 0.0) + _steer_axis * k + Vector3(0.0, 0.0, 0.042), _front_hub).rotation.x = PI * 0.5
+				var nut := _mesh_instance(_cylinder(0.014, 0.012, -1.0, 6), bolt, Vector3(x + side * (0.025 * lr + 0.006), 0.0, 0.0), _front_hub)
+				nut.rotation.z = PI * 0.5
+			# Headlamp ears: the lamp brackets of a classic fork, down from the top yoke.
+			if not usd and lk.get("ears", lk.get("shrouds", lk.get("gaiters", false))):
+				for side in [-1.0, 1.0]:
+					var ear := _bend([Vector3(lx * side, -0.03, -0.01) - _steer_axis * 0.04, Vector3((lx + 0.01) * side, -0.07, -0.06), Vector3(0.1 * side, -0.08, -0.115)],
+						0.011, _look_finish(str(lk.get("shroud_finish", "chrome")), chrome), _steer_node, 10)
+					ear.name = "HeadlampEar"
 	var clamp_mat := _mat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
 	_box(Vector3.ZERO, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
 	_box(-_steer_axis * 0.16, Vector3(0.24, 0.04, 0.08), clamp_mat, _steer_node)
@@ -1203,7 +1499,7 @@ func _draw_fork(build: BikeBuild) -> void:
 func _draw_handlebars() -> void:
 	_current_slot = "handlebars"
 	var p := _part()
-	var mat := _mat(_col(), 0.6, 0.35)
+	var mat := _skin(_mat(_col(), 0.6, 0.35))
 	var rubber := _mat(Color(0.05, 0.05, 0.05), 0.0, 0.92)
 	var hw := float(p.get("width", 720)) / 2000.0
 	var rise := float(p.get("rise", 0.08))
@@ -1239,11 +1535,16 @@ func _draw_handlebars() -> void:
 			for side in [-1.0, 1.0]:
 				_tube(Vector3(0.04 * side, 0.0, 0.0), Vector3(0.04 * side, rise, 0.06), 0.014, mat, Vector3.ONE, _steer_node)
 				ends.append(Vector3(hw * side, rise, 0.06))
+	_tex(rubber, "knurl", 70.0)
 	for end in ends:
 		var inward := Vector3(-signf(end.x) * 0.1, 0.0, 0.0)
-		_tube(end, end + inward, 0.018, rubber, Vector3.ONE, _steer_node)
+		_tube(end, end + inward, 0.018, rubber, Vector3.ONE, _steer_node).name = "Grip"
+		# The grip's flange at the inner end.
+		var flange := _mesh_instance(_cylinder(0.022, 0.006), rubber, end + inward, _steer_node)
+		flange.rotation.z = PI * 0.5
 	_grip_l = ends[0] + Vector3(0.05, 0.0, 0.0)
 	_grip_r = ends[1] + Vector3(-0.05, 0.0, 0.0)
+	_draw_controls(ends[0], ends[1])
 
 
 ## A one-piece bar bent to the shape its look names in "bend": tracker, moto, drag, buckhorn,
@@ -1308,15 +1609,15 @@ func _look_finish(name: String, fallback: Material) -> Material:
 		"black":
 			return _mat(Color(0.05, 0.05, 0.05), 0.6, 0.45)
 		"brushed":
-			return _mat(Color(0.7, 0.71, 0.73), 1.0, 0.38)
+			return _tex(_mat(Color(0.7, 0.71, 0.73), 1.0, 0.38), "brushed")
 		"titanium":
-			return _mat(Color(0.42, 0.44, 0.62), 1.0, 0.22)
+			return _tex(_mat(Color(0.42, 0.44, 0.62), 1.0, 0.22), "brushed", -1.0, 0.6)
 		"gold":
 			return _mat(Color(0.82, 0.66, 0.25), 1.0, 0.18)
 		"copper":
 			return _mat(Color(0.72, 0.42, 0.25), 1.0, 0.25)
 		"carbon":
-			return _mat(Color(0.07, 0.07, 0.08), 0.2, 0.25, 0.8)
+			return _tex(_mat(Color(0.07, 0.07, 0.08), 0.25, 0.3, 1.0), "carbon")
 		"wrap":
 			return _mat(Color(0.74, 0.69, 0.58), 0.0, 0.95)
 		"wrap_black":
@@ -1408,14 +1709,105 @@ func set_gauges(speed_frac: float, rpm_frac: float) -> void:
 		_update_geometry()
 
 
+## The bits on the bars round the grips: the clutch lever on its perch, switch gear both sides,
+## the throttle housing, bar-end weights, and the clutch and throttle cables. Each cable runs
+## from the bars to just under the bottom yoke (turning with the steering), then on to the
+## engine side of the frame.
+func _draw_controls(l_end: Vector3, r_end: Vector3) -> void:
+	var alloy := _tex(_mat(Color(0.7, 0.71, 0.73), 1.0, 0.3), "brushed")
+	var black := _mat(Color(0.05, 0.05, 0.055), 0.2, 0.5)
+	var cable := _mat(Color(0.03, 0.03, 0.035), 0.0, 0.6)
+	var steel := _mat(Color(0.82, 0.83, 0.85), 1.0, 0.2)
+	var inward_l := Vector3(1.0, 0.0, 0.0)
+	# Switch gear housings just inboard of each grip, and the throttle tube on the right.
+	var sw_l := l_end + inward_l * 0.118
+	_box(sw_l, Vector3(0.03, 0.042, 0.048), black, _steer_node).name = "SwitchGear"
+	_box(sw_l + Vector3(0.0, 0.005, -0.026), Vector3(0.016, 0.01, 0.006), _mat(Color(0.85, 0.1, 0.06), 0.1, 0.4), _steer_node)
+	var thr := r_end - inward_l * 0.103
+	var housing := _mesh_instance(_cylinder(0.022, 0.022), black, thr, _steer_node)
+	housing.rotation.z = PI * 0.5
+	housing.name = "Throttle"
+	_box(thr + Vector3(0.0, 0.02, 0.0), Vector3(0.02, 0.016, 0.03), black, _steer_node)
+	# Bar-end weights.
+	for be in [l_end, r_end]:
+		var out := Vector3(signf(be.x), 0.0, 0.0)
+		var w := _mesh_instance(_cylinder(0.017, 0.022), steel, be + out * 0.008, _steer_node)
+		w.rotation.z = PI * 0.5
+		w.name = "BarEnd"
+	# The clutch lever: a clamp on the bar, the blade sweeping out in front of the grip.
+	var perch := l_end + inward_l * 0.152
+	var clamp := _mesh_instance(_cylinder(0.019, 0.026), alloy, perch, _steer_node)
+	clamp.rotation.z = PI * 0.5
+	_box(perch + Vector3(0.0, 0.0, -0.026), Vector3(0.026, 0.02, 0.028), alloy, _steer_node)
+	var blade := _bend([perch + Vector3(0.0, -0.004, -0.04), perch + Vector3(-0.04, -0.008, -0.05), l_end + Vector3(0.025, -0.012, -0.045)],
+		0.0055, alloy, _steer_node, 6)
+	blade.name = "ClutchLever"
+	_mesh_instance(_sphere(0.009), alloy, l_end + Vector3(0.023, -0.012, -0.045), _steer_node)
+	# Cables: out of the perch and the throttle, down past the headstock.
+	var j_l := -_steer_axis * 0.24 + Vector3(-0.055, 0.0, 0.035)
+	var j_r := -_steer_axis * 0.24 + Vector3(0.055, 0.0, 0.035)
+	var c1 := _bend([perch + Vector3(0.012, 0.0, -0.05), perch.lerp(j_l, 0.35) + Vector3(0.0, 0.03, -0.14), j_l], 0.0042, cable, _steer_node, 6)
+	c1.name = "ClutchCable"
+	var c2 := _bend([thr + Vector3(-0.01, 0.0, -0.02), thr.lerp(j_r, 0.35) + Vector3(0.0, 0.03, -0.14), j_r], 0.0042, cable, _steer_node, 6)
+	c2.name = "ThrottleCable"
+	# ...then on in the frame to the clutch arm and the carbs or throttle bodies.
+	var jl := _head + j_l
+	var jr := _head + j_r
+	var e := _engine_c
+	var clutch_end := e + Vector3(-_block_w * 0.5 - 0.02, 0.07 * _eng_s, 0.15 * _eng_s)
+	_bend([jl, jl + Vector3(-0.01, -0.06, 0.08), clutch_end + Vector3(-0.015, 0.1, -0.08), clutch_end], 0.0042, cable, self, 6)
+	_mesh_instance(_cylinder(0.008, 0.02), steel, clutch_end, self)
+	var intake: Array = _intake_points()
+	if not intake.is_empty():
+		var thr_end: Vector3 = intake[0]["port"] + intake[0]["dir"] * 0.05 + Vector3(0.03, 0.045, 0.0)
+		_bend([jr, jr + Vector3(0.01, -0.04, 0.08), thr_end + Vector3(0.0, 0.06, -0.06), thr_end], 0.0042, cable, self, 6)
+
+
+## How far out the fork legs sit, for the parts that clip to them.
+func _fork_x() -> float:
+	var fork := PartsDB.get_part(str(_build.parts.get("fork", "")))
+	match str(fork.get("style", "conventional")):
+		"girder":
+			return 0.09
+		"springer", "leading_link":
+			return 0.085
+	return 0.09 * float((fork.get("look", {}) as Dictionary).get("wide", 1.0))
+
+
+## Where the front brake line hands over from the bars to the fork leg, in steering space.
+func _brake_line_joint() -> Vector3:
+	return Vector3(_fork_x() + 0.035, 0.0, 0.04) - _steer_axis * 0.3
+
+
+func _front_is_drum() -> bool:
+	return str(PartsDB.get_part(str(_build.parts.get("front_disc", ""))).get("style", "")) == "drum"
+
+
+func _rear_is_drum() -> bool:
+	return str(PartsDB.get_part(str(_build.parts.get("rear_disc", ""))).get("style", "")) == "drum"
+
+
 func _draw_front_master() -> void:
 	_current_slot = "front_master"
-	var mat := _mat(_col(), 0.6, 0.35)
+	var mat := _tex(_mat(_col(), 0.6, 0.35), "brushed", -1.0, 0.6)
 	var radial := str(_part().get("type", "")).begins_with("Radial")
 	var at := _grip_r + Vector3(-0.08, 0.0, 0.0)
 	_box(at, Vector3(0.04, 0.04, 0.05) if radial else Vector3(0.035, 0.035, 0.035), mat, _steer_node)
-	_mesh_instance(_cylinder(0.022 if radial else 0.018, 0.03), mat, at + Vector3(0.0, 0.04, 0.0), _steer_node)
-	_tube(at + Vector3(0.0, 0.0, -0.03), _grip_r + Vector3(0.08, 0.0, -0.05), 0.006, _mat(Color(0.7, 0.71, 0.73), 1.0, 0.3), Vector3.ONE, _steer_node)
+	var res := _mesh_instance(_cylinder(0.022 if radial else 0.018, 0.03), mat, at + Vector3(0.0, 0.04, 0.0), _steer_node)
+	res.name = "Reservoir"
+	_mesh_instance(_cylinder(0.02 if radial else 0.016, 0.004), _mat(Color(0.05, 0.05, 0.05), 0.2, 0.5), at + Vector3(0.0, 0.057, 0.0), _steer_node)
+	# The lever: a shaped blade with a ball end, in front of the grip.
+	var tip := _grip_r + Vector3(0.06, -0.012, -0.05)
+	var blade := _bend([at + Vector3(0.0, -0.004, -0.03), at + Vector3(0.04, -0.008, -0.05), tip], 0.0055,
+		_tex(_mat(Color(0.7, 0.71, 0.73), 1.0, 0.3), "brushed"), _steer_node, 6)
+	blade.name = "BrakeLever"
+	_mesh_instance(_sphere(0.009), _mat(Color(0.7, 0.71, 0.73), 1.0, 0.3), tip, _steer_node)
+	# The brake hose (or cable, for a drum) from the master down to the fork leg.
+	var line := _mat(Color(0.03, 0.03, 0.035), 0.1, 0.55) if _front_is_drum() else _mat(Color(0.05, 0.05, 0.06), 0.3, 0.4)
+	var j := _brake_line_joint()
+	var hose := _bend([at + Vector3(0.0, -0.01, -0.025), at.lerp(j, 0.3) + Vector3(0.0, 0.0, -0.16), j], 0.005 if not _front_is_drum() else 0.0042, line, _steer_node, 8)
+	hose.name = "BrakeHose"
+	_mesh_instance(_cylinder(0.0075, 0.016), _mat(Color(0.8, 0.8, 0.82), 1.0, 0.2), at + Vector3(0.0, -0.01, -0.03), _steer_node)
 
 
 func _draw_rear_master() -> void:
@@ -1587,7 +1979,7 @@ func _draw_panniers(build: BikeBuild, zr: float) -> void:
 	var p := _part()
 	if p.is_empty():
 		return
-	var mat := _mat(_col(), 0.9 if p.get("style", "") == "alloy" else 0.0, 0.35 if p.get("style", "") in ["alloy", "hard"] else 0.8)
+	var mat := _skin(_mat(_col(), 0.9 if p.get("style", "") == "alloy" else 0.0, 0.35 if p.get("style", "") in ["alloy", "hard"] else 0.8))
 	var rack := _mat(Color(0.1, 0.1, 0.11), 0.6, 0.4)
 	var litres := float(p.get("litres", 40.0))
 	var k := pow(litres / 60.0, 0.33)
@@ -1642,7 +2034,7 @@ func _draw_top_box() -> void:
 	if p.is_empty():
 		return
 	var style := str(p.get("style", "small"))
-	var mat := _mat(_col(), 0.9 if style == "alloy" else 0.0, 0.35 if style in ["alloy", "small", "large"] else 0.85)
+	var mat := _skin(_mat(_col(), 0.9 if style == "alloy" else 0.0, 0.35 if style in ["alloy", "small", "large"] else 0.85))
 	var rack := _mat(Color(0.75, 0.76, 0.78) if style == "trunk" else Color(0.1, 0.1, 0.11), 0.8, 0.3)
 	var k := pow(float(p.get("litres", 35.0)) / 35.0, 0.33)
 	var base := Vector3(0.0, _seat_y + 0.04, _tail.z + 0.1)
@@ -1676,7 +2068,7 @@ func _draw_fog_lights() -> void:
 	var p := _part()
 	if p.is_empty():
 		return
-	var shell := _mat(_col(), 0.8, 0.25)
+	var shell := _skin(_mat(_col(), 0.8, 0.25))
 	var b: Array = p.get("beam", [1.0, 0.9, 0.8])
 	var lens := _lamp(Color(b[0], b[1], b[2]), 2.0, "fog")
 	var style := str(p.get("style", "round"))
@@ -1724,7 +2116,7 @@ func _draw_tail(build: BikeBuild) -> void:
 	if p.is_empty():
 		return
 	var metal := str(p.get("material", "")) == "metal"
-	var mat := _mat(_col(), 0.85 if metal else 0.1, 0.25 if metal else 0.45, 0.0 if metal else 0.4)
+	var mat := _skin(_mat(_col(), 0.85 if metal else 0.1, 0.25 if metal else 0.45, 0.0 if metal else 0.4))
 	var black := _mat(Color(0.04, 0.04, 0.045), 0.3, 0.6)
 	var plate := _mat(Color(0.95, 0.82, 0.16), 0.0, 0.5)
 	var lamp := tail_light_position()
@@ -1922,6 +2314,8 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 			mat = _mat(col, 0.2, 0.25, 0.8)
 		_:
 			mat = _mat(col, 0.1, 0.4, 0.5)
+	if not p.get("paint_match", false):
+		mat = _skin(mat)
 	var stay := _mat(Color(0.82, 0.83, 0.85), 0.95, 0.2)
 	var black := _mat(Color(0.04, 0.04, 0.045), 0.3, 0.6)
 	var r := build.front_radius
@@ -2029,7 +2423,7 @@ func _draw_fairing() -> void:
 	if p.is_empty():
 		return
 	var carbon := str(p.get("material", "")) == "carbon"
-	var mat := _mat(_col(), 0.2 if carbon else 0.15, 0.25 if carbon else 0.2, 0.8 if carbon else 0.6)
+	var mat := _skin(_mat(_col(), 0.2 if carbon else 0.15, 0.25 if carbon else 0.2, 0.8 if carbon else 0.6))
 	var glass := _mat(Color(0.5, 0.58, 0.66), 0.2, 0.05)
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass.albedo_color.a = 0.35
@@ -2096,6 +2490,20 @@ func _draw_fairing() -> void:
 			var disc := _mesh_instance(_cylinder(0.06, 0.004), _mat(Color(0.95, 0.95, 0.92), 0.0, 0.5), (nose["c"] as Vector3) + Vector3(float(nose["w"]) * 0.93 * side, -0.02, 0.02))
 			disc.rotation.z = PI * 0.5
 	shell.name = "FairingShell"
+	# Twin headlamp "eyes" set into the nose, lit with the headlight.
+	var eye_s: Dictionary = secs[1] if race else secs[0]
+	var bezel := _mat(Color(0.03, 0.03, 0.035), 0.4, 0.3)
+	var lens := _lamp(Color(1.0, 0.97, 0.9), 3.0, "head")
+	for side in [-1.0, 1.0]:
+		var at := _on_loft(eye_s, (0.25 if race else -0.1) if side > 0.0 else PI - (0.25 if race else -0.1), 1.0)
+		at.z -= 0.012
+		var b := _mesh_instance(_sphere(0.04 if not touring else 0.05), bezel, at)
+		b.scale = Vector3(1.0, 0.5, 0.35)
+		b.rotation.y = 0.35 * side
+		var eye := _mesh_instance(_sphere(0.034 if not touring else 0.044), lens, at + Vector3(0.0, 0.0, -0.006))
+		eye.scale = Vector3(1.0, 0.42, 0.3)
+		eye.rotation.y = 0.35 * side
+		eye.name = "FairingLamp"
 	var crown: Dictionary = secs[1]
 	_screen(crown["c"] + Vector3(0.0, float(crown["up"]) - 0.015, 0.02), float(crown["w"]) * 0.8, screen,
 		{"race": 0.85, "touring": 0.3}.get(style, 0.55) as float, glass)
@@ -2124,7 +2532,16 @@ func _draw_fairing() -> void:
 			for v in 3:
 				var at := Vector3(side_x * 0.97 * side, mid_y + 0.02 - v * 0.035, lerpf(z0, z1, 0.3) + v * 0.02)
 				_box(at, Vector3(0.006, 0.012, 0.09), dark)
-	elif touring:
+	elif not touring:
+		# Side vents in a half fairing, letting the engine heat out.
+		var flank: Dictionary = secs[2]
+		for side in [-1.0, 1.0]:
+			for v in 4:
+				var at := _on_loft(flank, (-0.45 if side > 0.0 else PI + 0.45), 1.004) + Vector3(0.0, 0.02 - v * 0.022, -0.02 + v * 0.012)
+				var slat := _box(at, Vector3(0.006, 0.008, 0.07), dark)
+				slat.rotation.y = 0.2 * side
+				slat.name = "FairingVent"
+	if touring:
 		# Knee wings to keep the rain off the rider's legs.
 		for side in [-1.0, 1.0]:
 			_shell([{"c": h + Vector3((wide + 0.0) * side, -0.22, 0.1), "w": 0.015, "up": 0.08, "down": 0.08, "n": 3.0},
@@ -2329,7 +2746,7 @@ func _draw_rearsets() -> void:
 	if p.is_empty():
 		return
 	var style := str(p.get("style", "road"))
-	var mat := _mat(_col(), 0.9 if style in ["rearset", "forward", "cleat"] else 0.3, 0.2 if style != "boards" else 0.7)
+	var mat := _skin(_mat(_col(), 0.9 if style in ["rearset", "forward", "cleat"] else 0.3, 0.2 if style != "boards" else 0.7))
 	var black := _mat(Color(0.04, 0.04, 0.045), 0.1, 0.8)
 	var hanger := _mat(Color(0.12, 0.12, 0.13), 0.8, 0.3)
 	for side in [-1.0, 1.0]:
@@ -2379,7 +2796,7 @@ func _draw_guards() -> void:
 		return
 	var style := str(p.get("style", "bars"))
 	var shiny := style == "bars"
-	var mat := _mat(_col(), 1.0 if shiny else (0.85 if style == "plate" else 0.2), 0.12 if shiny else 0.35)
+	var mat := _skin(_mat(_col(), 1.0 if shiny else (0.85 if style == "plate" else 0.2), 0.12 if shiny else 0.35))
 	var s := _eng_s
 	var out := _block_w * 0.5 + 0.07
 	if _build.layout == "boxer":
@@ -2522,7 +2939,9 @@ static func rim_width_of(wheel: Dictionary) -> float:
 func _draw_rim(wheel: Node3D, rim_r: float, rim_w: float) -> void:
 	var p := _part()
 	var style := str(p.get("style", "cast"))
-	var rim_mat := _mat(_col(), 0.9 if style != "carbon" else 0.2, 0.25, 0.8 if style == "carbon" else 0.0)
+	var rim_mat := _skin(_mat(_col(), 0.9 if style != "carbon" else 0.2, 0.25, 0.8 if style == "carbon" else 0.0))
+	if style == "carbon" and _surface() == "":
+		_tex(rim_mat, "carbon")
 	var chrome := _mat(Color(0.85, 0.86, 0.88), 1.0, 0.12)
 	# A look can polish the rim lip, change the spokes' finish, cover the wheel in a moon disc,
 	# split cast spokes into pairs, add a rim stripe or a big finned drum hub.
@@ -2586,8 +3005,24 @@ func _draw_rim(wheel: Node3D, rim_r: float, rim_w: float) -> void:
 						Vector3(depth * 0.5, rim_r * 0.45, 0.016), rim_mat, wheel)
 					arm.rotation.x = -(a + split * 0.5)
 			else:
-				var spoke := _box(Vector3(0.0, cos(a), sin(a)) * rim_r * 0.5, Vector3(depth, rim_r * 0.95, thick), rim_mat, wheel)
-				spoke.rotation.x = -a
+				# A cast spoke: thick at the hub, tapering and sweeping a touch as it reaches the
+				# rim, with a fillet where it meets each end.
+				var path := []
+				for f in [0.0, 0.3, 0.65, 1.0]:
+					var b: float = a + 0.07 * sin(f * PI)
+					path.append(Vector3(0.0, cos(b), sin(b)) * lerpf(0.045, rim_r - 0.01, f))
+				var spoke := _bend(path, [thick * 0.85, thick * 0.6, thick * 0.5, thick * 0.62], rim_mat, wheel, 10)
+				spoke.scale = Vector3(depth / thick * 0.7, 1.0, 1.0)
+				spoke.name = "CastSpoke%d" % i
+	if _current_slot == "rear_wheel":
+		# The cush drive carrying the sprocket: rubber blocks in a cast carrier.
+		var carrier := _mesh_instance(_cylinder(0.07, 0.03), rim_mat, Vector3(-0.092, 0.0, 0.0), wheel)
+		carrier.rotation.z = PI * 0.5
+		carrier.name = "CushDrive"
+		_bolt_ring(Vector3(-0.108, 0.0, 0.0), Vector3.LEFT, 0.052, 6, _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3), wheel)
+	# The tyre valve poking through the rim.
+	var valve := _tube(Vector3(0.0, rim_r - 0.012, 0.0), Vector3(0.0, rim_r - 0.05, 0.0), 0.004, _mat(Color(0.05, 0.05, 0.05), 0.0, 0.7), Vector3.ONE, wheel)
+	valve.name = "Valve"
 	var hub_kind := str(lk.get("hub", ""))
 	var hub := _mesh_instance(_cylinder(0.09 if hub_kind == "drum" else 0.05, 0.14 if hub_kind != "drum" else 0.12), _look_finish(str(lk.get("hub_finish", "")), chrome), Vector3.ZERO, wheel)
 	hub.rotation.z = PI * 0.5
@@ -2619,6 +3054,7 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 			var band := _mesh_instance(_torus(mid, (radius - rim_r) * float(_look().get("wall_w", 0.18))), wm, Vector3(side * width * 0.42, 0.0, 0.0), wheel)
 			band.rotation.z = PI * 0.5
 			band.scale = Vector3(1.0, 0.25, 1.0)
+	_tyre_lettering(tyre_mi, rim_r, radius, width)
 	if style != "offroad":
 		return
 	var knobs := MultiMesh.new()
@@ -2637,6 +3073,52 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	mmi.material_override = rubber
 	wheel.add_child(mmi)
 	_slot_meshes[_current_slot].append(mmi)
+
+
+## The maker's name and the size moulded into both sidewalls, in raised rubber a shade lighter
+## than the tyre: "TORQUE RADIAL" over the top, "120/70 ZR17" under it.
+func _tyre_lettering(tyre_mi: MeshInstance3D, rim_r: float, radius: float, width: float) -> void:
+	var p := _part()
+	var brand := str((p.get("look", {}) as Dictionary).get("brand", "TORQUE " + {"offroad": "TRAX", "slick": "RACE"}.get(str(p.get("style", "road")), "RADIAL")))
+	var size := "%d/%d %sR%d" % [roundi(width * 1000.0), roundi((radius - rim_r) / maxf(width, 0.01) * 100.0 / 5.0) * 5,
+		"Z" if str(p.get("style", "road")) != "offroad" else "", roundi(rim_r / 0.0127)]
+	var ink := _col().lightened(0.28)
+	var at_r := lerpf(rim_r, radius, 0.5)
+	var holder := Node3D.new()
+	holder.name = "TyreLettering"
+	# Hung off the tyre itself, so the lettering shows, hides and moves with it, but laid out
+	# in the wheel's own space.
+	tyre_mi.add_child(holder)
+	holder.transform = tyre_mi.transform.affine_inverse()
+	for side in [-1.0, 1.0]:
+		for line in [[brand, 0.0, 0.026], [size, PI, 0.018]]:
+			var text: String = line[0]
+			var centre: float = line[1]
+			var px: float = line[2]
+			var step := px * 0.75 / at_r
+			for i in text.length():
+				var ch := text.substr(i, 1)
+				if ch == " ":
+					continue
+				# Laid round the wall: the top line reads left to right over the top, the
+				# size line under the wheel the same way up.
+				var off := (i - (text.length() - 1) * 0.5) * step
+				var top_line: bool = centre == 0.0
+				var a: float = centre + off * (-side if top_line else side)
+				var l := Label3D.new()
+				l.text = ch
+				l.pixel_size = px / 64.0
+				l.font_size = 64
+				l.outline_size = 0
+				l.modulate = ink
+				l.double_sided = false
+				l.shaded = true
+				l.visibility_range_end = 9.0
+				l.position = Vector3(side * (width * 0.5 + 0.0015), cos(a) * at_r, sin(a) * at_r)
+				var up := Vector3(0.0, cos(a), sin(a)) * (1.0 if top_line else -1.0)
+				var out := Vector3(side, 0.0, 0.0)
+				l.basis = Basis(up.cross(out), up, out)
+				holder.add_child(l)
 
 
 ## A tyre as a solid of revolution round local Y, like a TorusMesh: its cross-section rises
@@ -2697,25 +3179,104 @@ func _draw_brake(side: String, wheel: Node3D, hub: Node3D, rim_r: float, rim_w :
 	_current_slot = side + "_disc"
 	var disc := _part()
 	var disc_r := minf(float(disc.get("diameter", 280)) / 2000.0, rim_r - 0.03)
-	var steel := _mat(_col(), 1.0, 0.3)
 	var style := str(disc.get("style", "round"))
+	if style == "drum":
+		_draw_drum(side, wheel, hub, rim_r, x)
+		return
+	var steel := _tex(_mat(_col(), 1.0, 0.3), "brushed", 30.0, 0.5)
 	var d := _mesh_instance(_cylinder(disc_r, 0.006, -1.0, 10 if style == "wave" else 32), steel, Vector3(x, 0.0, 0.0), wheel)
 	d.rotation.z = PI * 0.5
+	var bolt := _mat(Color(0.6, 0.61, 0.64), 1.0, 0.3)
 	if style == "floating":
 		var carrier := _mesh_instance(_cylinder(disc_r * 0.62, 0.008), _mat(Color(0.8, 0.62, 0.2), 0.9, 0.3), Vector3(x + 0.002, 0.0, 0.0), wheel)
 		carrier.rotation.z = PI * 0.5
+		# The floating buttons joining rotor to carrier.
+		_bolt_ring(Vector3(x + 0.006, 0.0, 0.0), Vector3.RIGHT, disc_r * 0.66, 10, bolt, wheel)
 	elif style == "drilled":
 		var ring := _mesh_instance(_cylinder(disc_r * 0.55, 0.008), _mat(Color(0.2, 0.2, 0.22), 0.8, 0.4), Vector3(x + 0.002, 0.0, 0.0), wheel)
 		ring.rotation.z = PI * 0.5
+	_bolt_ring(Vector3(x + 0.004, 0.0, 0.0), Vector3.RIGHT, 0.045, 5, bolt, wheel)
 	_current_slot = side + "_caliper"
 	var pistons := int(_part().get("pistons", 2))
 	var cal_size := Vector3(0.045, 0.06 + 0.008 * pistons, 0.07 + 0.01 * pistons)
 	var cal_at := Vector3(x + 0.012, disc_r * 0.62, disc_r * 0.62 if front else -disc_r * 0.62)
 	var cal := _box(cal_at, cal_size, _mat(_col(), 0.5, 0.35), hub)
 	cal.rotation.x = -PI * 0.25 if front else PI * 0.25
+	# Bleed nipple and the two mounting bolts.
+	_mesh_instance(_cylinder(0.005, 0.016), bolt, cal_at + cal.basis * Vector3(0.012, cal_size.y * 0.5 + 0.006, 0.0), hub).basis = cal.basis
+	for k in [-1.0, 1.0]:
+		var b := _mesh_instance(_cylinder(0.008, 0.012), bolt, cal_at + cal.basis * Vector3(cal_size.x * 0.5 + 0.004, 0.0, cal_size.z * 0.35 * k), hub)
+		b.basis = cal.basis * Basis(Vector3.BACK, PI * 0.5)
+	if front:
+		# The hose from the bottom yoke down the back of the fork leg to the caliper.
+		var j := _brake_line_joint() + _steer_axis * _build.fork_length
+		var fx := _fork_x() + 0.035
+		var slide := Vector3(fx, 0.0, 0.045) + _steer_axis * (_build.fork_length * 0.42)
+		var hose := _bend([j, j.lerp(slide, 0.5) + Vector3(0.012, 0.0, 0.0), slide, cal_at + cal.basis * Vector3(0.0, cal_size.y * 0.5 + 0.004, 0.0)],
+			0.005, _mat(Color(0.05, 0.05, 0.06), 0.3, 0.4), hub, 8)
+		hose.name = "BrakeHose"
+		_box(slide, Vector3(0.012, 0.025, 0.02), _mat(Color(0.2, 0.2, 0.22), 0.6, 0.4), hub)
 	_current_slot = side + "_pads"
 	var pad := _box(cal_at + Vector3(0.0, 0.0, 0.0) + cal.basis.y * (cal_size.y * 0.5 + 0.012), Vector3(0.035, 0.024, 0.05), _mat(_col(), 0.4, 0.6), hub)
 	pad.basis = cal.basis
+
+
+## A drum brake: a finned drum cast into the hub (turning with the wheel), and a backplate
+## that stays still with the brake arm, the cable or rod to it and the torque stay that stops
+## it turning. A twin leading shoe ("tls") has two cams joined by a link rod; a four leading
+## shoe ("4ls") a drum each side. The caliper and pad slots draw the arm and the shoes.
+func _draw_drum(side: String, wheel: Node3D, hub: Node3D, rim_r: float, x: float) -> void:
+	var front := side == "front"
+	var p := _part()
+	var r := clampf(float(p.get("diameter", 180)) / 2000.0 * 1.1, 0.07, rim_r - 0.05)
+	var shoes := str(p.get("shoes", "sls"))
+	var alloy := _tex(_mat(_col(), 0.9, 0.3), "brushed", 20.0, 0.6)
+	var dark := _mat(Color(0.08, 0.08, 0.09), 0.6, 0.45)
+	var sides := [1.0, -1.0] if shoes == "4ls" else [1.0]
+	for sx in sides:
+		var drum := _mesh_instance(_cylinder(r, 0.07), alloy, Vector3(0.018 * sx, 0.0, 0.0), wheel)
+		drum.rotation.z = PI * 0.5
+		drum.name = "BrakeDrum"
+		for k in 5:
+			var fin := _mesh_instance(_torus(r + 0.003, 0.004), alloy, Vector3((-0.012 + k * 0.012) * sx, 0.0, 0.0), wheel)
+			fin.rotation.z = PI * 0.5
+		var plate := _mesh_instance(_cylinder(r * 0.98, 0.012, r * 0.85), alloy, Vector3((x - 0.012) * sx, 0.0, 0.0), hub)
+		plate.rotation.z = -PI * 0.5 * sx
+		plate.name = "Backplate"
+		# An air scoop on the front of a racing backplate.
+		if shoes != "sls":
+			var scoop := _box(Vector3((x - 0.006) * sx, r * 0.35, -r * 0.55 if front else r * 0.55), Vector3(0.012, r * 0.35, r * 0.25), dark, hub)
+			scoop.name = "AirScoop"
+	# The torque stay: to the fork leg at the front, forward along the swingarm at the back.
+	var stay_mat := _mat(Color(0.75, 0.76, 0.78), 1.0, 0.25)
+	if front:
+		_tube(Vector3(x, -r * 0.6, -r * 0.2), Vector3(x, 0.05, 0.02), 0.007, stay_mat, Vector3.ONE, hub)
+	else:
+		_tube(Vector3(x, -r * 0.5, -r * 0.3), Vector3(x, -0.03, -0.32), 0.008, stay_mat, Vector3.ONE, hub)
+	_current_slot = side + "_caliper"
+	# The brake arm (two on a twin leading shoe, with the link rod between them).
+	var arm_mat := _mat(_col(), 0.9, 0.3)
+	var cams := [[r * 0.6, r * 0.5]] if shoes == "sls" else [[r * 0.6, r * 0.5], [-r * 0.6, -r * 0.5]]
+	var tips := []
+	for cam in cams:
+		var at := Vector3(x + 0.01, float(cam[0]), float(cam[1]) * (1.0 if front else -1.0))
+		var tip := at + Vector3(0.0, 0.07, 0.03 if front else -0.03)
+		_mesh_instance(_cylinder(0.012, 0.016), arm_mat, at, hub).rotation.z = PI * 0.5
+		_tube(at, tip, 0.007, arm_mat, Vector3(1.0, 1.0, 1.8), hub).name = "BrakeArm"
+		tips.append(tip)
+	if tips.size() > 1:
+		_tube(tips[0], tips[1], 0.004, arm_mat, Vector3.ONE, hub).name = "LinkRod"
+	if front:
+		var j := _brake_line_joint() + _steer_axis * _build.fork_length
+		_bend([j, j.lerp(tips[0], 0.5) + Vector3(0.02, 0.0, 0.03), tips[0]], 0.0042, _mat(Color(0.03, 0.03, 0.035), 0.0, 0.6), hub, 6).name = "BrakeCable"
+	else:
+		# A rod forward to the brake pedal.
+		_tube(tips[0], Vector3(x + 0.02, 0.0, -0.45), 0.004, arm_mat, Vector3.ONE, hub).name = "BrakeRod"
+	_current_slot = side + "_pads"
+	# The shoes, hidden in the drum but there to swap.
+	for sx in sides:
+		for k in [-1.0, 1.0]:
+			_box(Vector3((x - 0.022) * sx, r * 0.6 * k, 0.0), Vector3(0.025, 0.02, r * 0.9), _mat(_col(), 0.3, 0.7), hub)
 
 
 func _draw_final_drive(zr: float) -> void:
@@ -2724,10 +3285,16 @@ func _draw_final_drive(zr: float) -> void:
 	var front_r := 0.0045 * float(fd.get("front", 15))
 	var rear_r := 0.0042 * float(fd.get("rear", 45))
 	var sprocket_mat := _mat(_col(), 0.9, 0.35)
-	var front_sp := _mesh_instance(_cylinder(front_r, 0.012), sprocket_mat, Vector3(-0.13, 0.0, 0.0), _swingarm)
+	var front_sp := _mesh_instance(_cylinder(front_r, 0.012, -1.0, int(fd.get("front", 15))), sprocket_mat, Vector3(-0.13, 0.0, 0.0), _swingarm)
 	front_sp.rotation.z = PI * 0.5
-	var rear_sp := _mesh_instance(_cylinder(rear_r, 0.008), sprocket_mat, Vector3(-0.12, 0.0, 0.0), _rear_wheel)
+	var rear_sp := _mesh_instance(_cylinder(rear_r, 0.008, -1.0, int(fd.get("rear", 45))), sprocket_mat, Vector3(-0.12, 0.0, 0.0), _rear_wheel)
 	rear_sp.rotation.z = PI * 0.5
+	# Lightening holes and the bolts holding it to the cush drive.
+	var holes := _mat(Color(0.06, 0.06, 0.06), 0.2, 0.7)
+	for k in 5:
+		var a := TAU * k / 5.0
+		var hole := _mesh_instance(_cylinder(rear_r * 0.16, 0.0085), holes, Vector3(-0.12, cos(a) * rear_r * 0.6, sin(a) * rear_r * 0.6), _rear_wheel)
+		hole.rotation.z = PI * 0.5
 	_current_slot = "chain"
 	if _part_id() == "" or _part_id() == "none":
 		return
@@ -3897,3 +4464,44 @@ func _shell(sections: Array, mat: Material, open := false, a0 := 0.0, a1 := TAU,
 ## A round tube bent smoothly through `path` (see ShapeKit.sweep): `radius` a float, or one per point.
 func _bend(path: Array, radius, mat: Material, parent: Node3D = self, sides := 12) -> MeshInstance3D:
 	return _mesh_instance(ShapeKit.sweep(path, radius, sides), mat, Vector3.ZERO, parent)
+
+
+## `m` with one of TextureKit's surface textures on it (knurl, quilt, grain, carbon, brushed,
+## crinkle, core).
+func _tex(m: StandardMaterial3D, kind: String, scale := -1.0, strength := 1.0) -> StandardMaterial3D:
+	TextureKit.apply(m, kind, scale, strength)
+	return m
+
+
+## The surface the part being drawn is made of, from its "surface" (in its look) or its name:
+## carbon fibre weave, brushed alloy or titanium, or nothing special.
+func _surface() -> String:
+	var p := _part()
+	var lk: Dictionary = p.get("look", {})
+	if lk.has("surface"):
+		return str(lk["surface"])
+	var words := (_part_id() + " " + str(p.get("name", "")) + " " + str(p.get("type", "")) + " " + str(p.get("material", ""))).to_lower()
+	# A painted carbon part (a white race fairing) shows its paint, not the weave.
+	if "carbon" in words and not ("white" in words or "painted" in words):
+		return "carbon"
+	for w in ["brushed", "alloy", "alumin", "titanium", "billet"]:
+		if w in words and not ("black" in words or "painted" in words or "gold" in words):
+			return "brushed"
+	return ""
+
+
+## `m` in the part's own surface (see _surface).
+func _skin(m: StandardMaterial3D) -> StandardMaterial3D:
+	match _surface():
+		"carbon":
+			m.metallic = 0.25
+			m.roughness = 0.3
+			m.clearcoat_enabled = true
+			m.clearcoat = 1.0
+			m.clearcoat_roughness = 0.04
+			return _tex(m, "carbon")
+		"brushed":
+			m.metallic = maxf(m.metallic, 0.9)
+			m.roughness = clampf(m.roughness, 0.28, 0.42)
+			return _tex(m, "brushed")
+	return m

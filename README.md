@@ -116,7 +116,7 @@ Five optional kinds finish a bike in its style, each bolted to the frame, five o
 
 #### Style packs
 
-Each of the fourteen styles has its own **pack** of about thirty parts made for it (425 in all): frames with their own wheelbase and rake, forks, wheels, tyres, tanks, seats, bars, exhausts, headlights, tails, front mudguards, mirrors, the bolt-on style bits, and fairings or bags where the style uses them. They aren't recolours: each part has a **look** that changes its shape and detail, for example:
+Each of the fourteen styles has its own **pack** of about thirty parts made for it (430 in all): frames with their own wheelbase and rake, forks, wheels, tyres, tanks, seats, bars, exhausts, headlights, tails, front mudguards, mirrors, the bolt-on style bits, and fairings or bags where the style uses them. They aren't recolours: each part has a **look** that changes its shape and detail, for example:
 
 - Tanks: teardrop, slab-sided, coffin, fat split cruiser tanks with a dash console, slim peanuts, little round tanks, long tanks with knee dents and long low racing tanks. Paint can be two-tone, a band, racing stripes, scallops or pinstripes. Caps can be monza, flush or twin, with oval, roundel or wing badges and knee pads.
 - Seats: brat, stepped two-up, king-and-queen, sprung solo pans, gunfighter, long cafe humps and flat-track seats. They can be tuck-and-roll, ribbed or diamond-stitched with coloured piping, with springs, sissy bars and backrests.
@@ -131,6 +131,20 @@ Each of the fourteen styles has its own **pack** of about thirty parts made for 
 Each pack part suits its own style first and usually one or two related ones, so a bike built from one pack reads as a proper example of that style.
 
 The parts computer's **Style** filter shows only parts that suit a style (kinds with no style, like engines, aren't filtered), and with a bike picked under **Fits** each part's page says what it would do to that bike's style. New project bikes and customers' bikes come with the bits that suit them; bikes in older saves get the slots empty.
+
+#### The detail pass
+
+Up close, every bike now carries the small parts that make it read as a real machine:
+
+- **Engines you can tell apart.** Every engine has a rounded crankcase (crinkle black when it's painted dark, brushed cast alloy when it's bare), a round alternator cover on the left held by a ring of bolts, an ignition cover on the right and a finned sump. A V-twin has its chrome nose cone and pushrod tubes up to both heads; a boxer's finned valve covers stick out into the wind; an inline four or triple has one wide cam cover across the head with its bolts and cam-end caps; a two-stroke has deep fins on its barrel and head and no cam cover. HT leads run from every plug cap back to the coil.
+- **Bars and cables.** Knurled grips with bar-end weights, switch gear both sides, the throttle housing, a clutch lever on its perch and a shaped brake lever with a ball end. The clutch and throttle cables run down past the headstock to the engine, and the brake hose runs from the master cylinder to the bottom yoke and down the back of the fork leg to the caliper.
+- **Drum brakes.** Three new brakes fit either wheel in place of a disc: a 180 mm single leading shoe, a 200 mm twin leading shoe (two cams on a link rod, with an air scoop) and a 230 mm four leading shoe (a drum each side). Each has a finned drum, a backplate, a brake arm and a torque stay, with a cable at the front and a rod at the back. A drum bites less than a disc its size.
+- **Seats** are piped along their edges, grained (or quilted, on a diamond-stitched seat), and a two-up seat has a grab rail and pillion pegs on hangers.
+- **Forks** end in axle clamps with pinch bolts and axle nuts; classic shrouded and gaitered forks carry the headlamp on ears. Two new forks: a **leading-link** fork and an **Earles** fork, each with its links and spring units out in the open.
+- **Wheels.** Cast spokes are shaped and taper to the rim, the rear has a cush drive, every wheel has a valve, and the tyre walls carry the maker's name and size ("TORQUE RADIAL", "120/70 ZR17"). Sprockets have teeth and lightening holes; discs have their bolts and floating buttons.
+- **Radiators** have a finned core behind a grille, side tanks, a fan, shrouds and the top and bottom coolant hoses to the thermostat and the pump.
+- **Bodywork.** Full and race fairings have twin headlamp eyes that light with the headlight, half fairings have side vents, sports tanks have a grip pad, and silencers have a clamp band and a riveted end cap. A kickstart folds up on singles, two-strokes and classic twins.
+- **Surfaces.** Carbon parts show a twill weave, brushed alloy and titanium parts show their grain, grips and pegs are knurled, and engine covers are crinkle finished. A rusty part shows its rust instead.
 
 ### Front mudguards
 

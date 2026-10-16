@@ -2249,6 +2249,60 @@
 			],
 			"pack": "tourer",
 			"price": 540
+		},
+		"classic_leading_link": {
+			"mass": 11.0,
+			"type": "Leading link",
+			"travel": 0.1,
+			"spring": 32000.0,
+			"bump": 1500.0,
+			"rebound": 2200.0,
+			"adjust": 0,
+			"adjust_name": "None",
+			"length": 0.72,
+			"style": "leading_link",
+			"name": "Leading-link fork",
+			"description": "Short links ahead of fixed legs, with open spring units. Stays level under braking.",
+			"color": [
+				0.04,
+				0.04,
+				0.045
+			],
+			"styles": [
+				"classic",
+				"chopper",
+				"bobber"
+			],
+			"pack": "classic",
+			"price": 580
+		},
+		"classic_earles": {
+			"mass": 11.0,
+			"type": "Earles",
+			"travel": 0.11,
+			"spring": 32000.0,
+			"bump": 1500.0,
+			"rebound": 2200.0,
+			"adjust": 0,
+			"adjust_name": "None",
+			"length": 0.72,
+			"style": "leading_link",
+			"name": "Earles fork",
+			"description": "A long swinging arm from behind the wheel. Superb with a sidecar or a heavy twin.",
+			"color": [
+				0.04,
+				0.04,
+				0.045
+			],
+			"look": {
+				"earles": true
+			},
+			"styles": [
+				"classic",
+				"tourer"
+			],
+			"pack": "classic",
+			"price": 630
 		}
 	},
 	"shock": {
@@ -5349,6 +5403,69 @@
 				0.73
 			],
 			"lightweight": true
+		},
+		"drum_sls_180": {
+			"mass": 1.6,
+			"type": "Drum (SLS)",
+			"diameter": 180,
+			"style": "drum",
+			"name": "180 mm single leading shoe drum",
+			"description": "A finned alloy drum with one cam. Period correct, gentle bite.",
+			"shoes": "sls",
+			"color": [
+				0.8,
+				0.8,
+				0.8
+			],
+			"styles": [
+				"classic",
+				"bobber",
+				"scrambler",
+				"cafe"
+			],
+			"pack": "classic",
+			"price": 120
+		},
+		"drum_tls_200": {
+			"mass": 2.0,
+			"type": "Drum (TLS)",
+			"diameter": 200,
+			"style": "drum",
+			"name": "200 mm twin leading shoe drum",
+			"description": "Two cams on a link rod and an air scoop: the best drum of the sixties.",
+			"shoes": "tls",
+			"color": [
+				0.8,
+				0.8,
+				0.8
+			],
+			"styles": [
+				"cafe",
+				"classic",
+				"bobber"
+			],
+			"pack": "cafe",
+			"price": 190
+		},
+		"drum_4ls_230": {
+			"mass": 2.8,
+			"type": "Drum (4LS)",
+			"diameter": 230,
+			"style": "drum",
+			"name": "230 mm four leading shoe drum",
+			"description": "A drum each side of the hub, four shoes in all. Grand Prix stopping, 1970.",
+			"shoes": "4ls",
+			"color": [
+				0.8,
+				0.8,
+				0.8
+			],
+			"styles": [
+				"cafe",
+				"classic"
+			],
+			"pack": "cafe",
+			"price": 290
 		}
 	},
 	"caliper": {
