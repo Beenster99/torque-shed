@@ -394,6 +394,11 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 		if along > 0.0 and along < 40.0 and (off - fwd * along).length() < 2.4 and absf(off.y) < 3.0:
 			allow = minf(allow, maxf(0.0, (along - 7.0) * 0.8))
 	v = move_toward(v, allow, (BRAKE * 1.6 if allow < v else ACCEL) * delta)
+	# A kink it couldn't see coming (just round a junction onto a new road): scrub off what it
+	# must so it never corners harder than a rider would.
+	var k_now := absf(kk[i0])
+	if v * v * k_now > GRIP * 1.5:
+		v = sqrt(GRIP * 1.5 / k_now)
 	d["v"] = v
 	var s := float(d["s"]) + dir * v * delta
 	# The junction it's turning off at: onto the other road there.
