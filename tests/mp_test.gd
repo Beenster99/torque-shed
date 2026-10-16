@@ -87,6 +87,10 @@ func _ready() -> void:
 	var spray_ok := false
 	var paint_step := 0
 	var paint_ok := false
+	var paint_t := 0
+	var bottle_seen := false    # the host saw the client's bottle tipped over the tin
+	var bottle_back := false    # and back on the rack once the client let go (and stirred)
+	var tare_seen := false      # the scale zeroed, on both sides
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -377,21 +381,35 @@ func _ready() -> void:
 						paint_step = 2
 				2:
 					if not PaintBay.bench_tin().is_empty():
-						Shed.request({"a": "paint_pour", "tint": "PB", "g": 20.0, "seq": 1})
+						Shed.request({"a": "paint_pour", "tint": "PB", "g": 20.0, "tilt": 0.6, "seq": 1})
+						paint_t = Engine.get_physics_frames()
+						paint_step = 5
+				5:
+					# Holding the bottle tipped a moment, then letting go, zeroing the scale and stirring.
+					if Engine.get_physics_frames() - paint_t > 20:
+						Shed.request({"a": "paint_pour_stop"})
+						Shed.request({"a": "paint_tare"})
 						Shed.request({"a": "paint_stir", "amount": 0.5})
 						Shed.request({"a": "paint_stir", "amount": 0.5})
 						paint_step = 3
 				3:
-					if float(PaintBay.bench_tin().get("stir", 0.0)) > 0.95 and float(PaintBay.bench_tin().get("tints", {}).get("PB", 0.0)) > 19.0:
+					if float(PaintBay.bench_tin().get("stir", 0.0)) > 0.95 and float(PaintBay.bench_tin().get("tints", {}).get("PB", 0.0)) > 19.0 and tare_seen:
 						Shed.request({"a": "paint_tin_save", "name": "MP Blue"})
 						Shed.request({"a": "paint_bench", "on": false})
 						paint_step = 4
+		if PaintBay.tared(PaintBay.bench_tin()) and absf(PaintBay.net_grams(PaintBay.bench_tin(), PaintMix.total_grams(PaintBay.bench_tin()))) < 0.01:
+			tare_seen = true
+		if role == "host" and ws != null and ws.paint_bay != null and PaintBay.at_bench() != 0 and PaintBay.at_bench() != Shed.me():
+			if ws.paint_bay._pour_bottle != null and ws.paint_bay._pour_code == "PB":
+				bottle_seen = true
+			elif bottle_seen and tare_seen and ws.paint_bay._pour_bottle == null and (ws.paint_bay._rack_bottles["PB"][0] as Node3D).visible:
+				bottle_back = true
 		var mp_blue := PaintBay.recipes().values().filter(func(r): return str(r["name"]) == "MP Blue")
 		if not mp_blue.is_empty() and ws != null and ws.paint_bay != null:
 			var cards := ws.paint_bay.find_children("*", "StaticBody3D", true, false).filter(func(b): return str(b.get_meta("paint_bay", "")) == "swatch")
 			var shelved := PaintBay.tins().values().filter(func(t): return str(t.get("name", "")) == "MP Blue" and str(t["at"]) == "shelf")
 			paint_ok = cards.size() >= 1 and shelved.size() == 1 and float(PaintBay.stock_of("PB")) > PaintBay.STARTER_TINT - 20.0 \
-				and str(mp_blue[0]["code"]).begins_with("W-PB20") and PaintBay.at_bench() == 0
+				and str(mp_blue[0]["code"]).begins_with("W-PB20") and PaintBay.at_bench() == 0 and tare_seen and (role != "host" or bottle_back)
 		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
