@@ -258,6 +258,7 @@ static func uniqueness(bike_id: int) -> Dictionary:
 	var fancy := 0
 	var colours := {}
 	var finishes := {}
+	var mixed := []
 	for slot in PartsDB.SLOTS:
 		var id := Shed.item_on(bike_id, slot)
 		if id == 0 or not Shed.items.has(id):
@@ -277,6 +278,8 @@ static func uniqueness(bike_id: int) -> Dictionary:
 		var fin := str(it.get("finish", ""))
 		if fin in ["chrome", "metallic", "patina"]:
 			finishes[fin] = true
+		if it.get("mix") is Dictionary or it.get("mask") is Dictionary:
+			mixed.append(it)
 	if bike.get("scratch", false):
 		score += 0.15
 		why.append("built from a bare frame")
@@ -296,6 +299,11 @@ static func uniqueness(bike_id: int) -> Dictionary:
 		for f in finishes:
 			names.append(str(Shed.FINISH_NAMES.get(f, f)).to_lower())
 		why.append("%s finish" % " and ".join(names))
+	# Paint mixed in the mixing bay: rarer effects (pearl, candy, flake, chameleon) and hand-masked stripes.
+	var custom := PaintMix.uniqueness_bonus(mixed)
+	if float(custom["score"]) > 0.0:
+		score += float(custom["score"])
+		why.append("custom %s paint" % " and ".join(custom["names"]))
 	# A bike that's all one style sells better than a parts-bin mix: buyers want a proper bobber.
 	var look := PartsDB.detect_style(Contracts.current_parts(bike_id))
 	if look["proper"]:

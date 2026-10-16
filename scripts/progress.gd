@@ -101,6 +101,7 @@ const XP := {
 	# Contracts (see Contracts): paid to the crew who worked on the job when it's handed back.
 	"contract_maint": {"xp": 40, "label": "Service job done"},
 	"contract_mot": {"xp": 60, "label": "MOT job done"},
+	"contract_respray": {"xp": 80, "label": "Colour match job done"},
 	"contract_mod": {"xp": 100, "label": "Modification job done"},
 	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
 	"mot_test": {"xp": 6, "label": "MOT test"},

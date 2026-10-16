@@ -280,6 +280,7 @@ func _run_all() -> void:
 	_test_paint_bench_rules()
 	_test_paint_masking()
 	_test_paint_save()
+	_test_paint_contracts()
 	await _test_paint_bay_session()
 
 
@@ -6571,7 +6572,7 @@ func _test_contract_customers() -> void:
 	check(Contracts.customers().is_empty() and Contracts.jobs().is_empty() and Contracts.reputation() == 0,
 		"a new shed has no customers, no jobs and no reputation")
 	check(Contracts.unlocked(0) == ["maint"] and Contracts.unlocked(int(Contracts.UNLOCK["mot"])).has("mot")
-		and Contracts.unlocked(10).size() == 4, "reputation unlocks harder jobs: service first, then MOT, mods and bespoke builds")
+		and Contracts.unlocked(10).size() == 5, "reputation unlocks harder jobs: service first, then MOT, colour matches, mods and bespoke builds")
 	Contracts.advance(Contracts.FIRST_CUSTOMER + 0.05)
 	check(Contracts.customers().size() == 1, "the first customer turns up soon after the shed opens")
 	var c: Dictionary = Contracts.customers().values()[0]
@@ -6730,10 +6731,17 @@ func _test_contract_goals_and_pay() -> void:
 	var built := Shed._new_bike(ref2, 3, "Cafe test", 0.0)
 	_make_roadworthy(built)
 	var goals := Contracts._bespoke_goals("cafe", ref2, Shed._rng)
+	var built_tank: Dictionary = Shed.items[Shed.item_on(built, "tank")]
 	for g in goals:
 		if g["t"] == "paint":
-			g["color"] = Shed.paint_index(Shed.items[Shed.item_on(built, "tank")]["color"])
-	var bj := {"id": 999, "kind": "bespoke", "bike": built, "goals": goals, "pay": 3000, "budget": 4000, "due": Contracts.clock() + 100.0,
+			g["color"] = Shed.paint_index(built_tank["color"])
+		elif g["t"] == "match":
+			var tc: Color = built_tank["color"]
+			g["rgb"] = [tc.r, tc.g, tc.b]
+			g["effect"] = "solid"
+		elif g["t"] == "stripe":
+			built_tank["mask"] = {"pattern": str(g["pattern"]), "color": Contracts._rgb(g), "q": 1.0, "mix": {}}
+	var bj :={"id": 999, "kind": "bespoke", "bike": built, "goals": goals, "pay": 3000, "budget": 4000, "due": Contracts.clock() + 100.0,
 		"start_parts": {"frame": ref2["frame"]}}
 	var rows := Contracts.evaluate(bj)
 	check(rows.all(func(r): return r["done"]), "a bespoke cafe racer's targets are reachable: %s" % str(rows.map(func(r): return "%s %s" % [str(r["text"]).left(24), r["have"]])))
@@ -13457,6 +13465,92 @@ func _test_paint_masking() -> void:
 	Shed.request({"a": "paint", "item": tank, "color": 3, "finish": "gloss", "gun": true, "quality": 0.95})
 	check(not Shed.items[tank].has("mask") and not Shed.items[tank].has("mix"), "a fresh coat all over and the stripes are gone")
 	Shed.request({"a": "paint_tape_put"})
+	Progress.profile = saved
+
+
+## Colour match jobs: the tank matched to a manufacturer colour or the customer's sample, paying
+## more the closer it is; stripes asked for on bespoke builds ("British racing green with a gold
+## pinstripe"); a rare recipe adds to what a bike sells for.
+func _test_paint_contracts() -> void:
+	Shed.start_new("Tester", 305)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.profile["xp"] = Progress.xp_for_level(16)
+	Contracts._st()["reputation"] = 20
+	check(Contracts.unlocked(int(Contracts.UNLOCK["respray"])).has("respray") and not Contracts.unlocked(0).has("respray"),
+		"colour match jobs come once the garage has a little reputation")
+	var o := Contracts.make_offer("respray", "Dave Smith")
+	check(str(o["goals"][0]["t"]) == "match" and int(o["pay"]) > 0 and Contracts.goal_text(o["goals"][0]).contains("closer")
+		and str(o["title"]).begins_with("Colour match"), "a colour match offer: %s" % Contracts.goal_text(o["goals"][0]))
+	var cid := Contracts.spawn("respray")
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var bike := int(job["bike"])
+	var brg: Color = PaintMix.library_entry("british_racing_green")["rgb"]
+	var gold: Color = Contracts.STRIPE_COLOURS["gold"]
+	job["goals"] = [{"t": "match", "name": "British Racing Green", "lib": "british_racing_green", "rgb": [brg.r, brg.g, brg.b], "effect": "solid",
+		"min": Contracts.MATCH_MIN}, {"t": "stripe", "pattern": "pin", "colour": "gold", "rgb": [gold.r, gold.g, gold.b], "min": Contracts.STRIPE_MIN}]
+	job["pay"] = 400
+	job["due"] = Contracts.clock() + 10.0
+	check(Contracts.goal_text(job["goals"][1]) == "On the tank, a gold pinstripe (masked first, then the main colour over it)",
+		"British racing green with a gold pinstripe: %s; %s" % [Contracts.goal_text(job["goals"][0]), Contracts.goal_text(job["goals"][1])])
+	var tank: Dictionary = Shed.items[Shed.item_on(bike, "tank")]
+	for k in ["primer_top", "mask", "mix", "tape"]:
+		tank.erase(k)
+	tank["color"] = Color(0.8, 0.1, 0.1)
+	var none := Contracts.payout(job, 0)
+	check(Contracts.progress(job) == 0.0 and int(none["match_bonus"]) == 0, "a red tank: nowhere near (%s)" % Contracts.evaluate(job)[0]["have"])
+	tank["color"] = brg.lightened(0.06)
+	var near := Contracts.payout(job, 0)
+	var m_near := Contracts.tank_match(tank, job["goals"][0])
+	tank["color"] = brg
+	var spot := Contracts.payout(job, 0)
+	check(m_near >= Contracts.MATCH_MIN and m_near < 0.99 and int(near["match_bonus"]) > 0
+		and int(spot["match_bonus"]) > int(near["match_bonus"]) and int(spot["match_bonus"]) == roundi(400 * Contracts.MATCH_BONUS),
+		"close (%s) pays %s extra, spot on %s: closer pays more" % [PaintMix.match_text(m_near), Contracts.money(int(near["match_bonus"])),
+		Contracts.money(int(spot["match_bonus"]))])
+	check(Contracts.evaluate(job)[0]["done"] and str(spot["note"]).contains("Colour match 100.0%"), "and the note says so: %s" % spot["note"])
+	tank["mix"] = {"effect": "metallic"}
+	check(Contracts.tank_match(tank, job["goals"][0]) < 1.0 - PaintMix.EFFECT_MISS + 0.001, "the right colour in metallic isn't a solid match")
+	tank.erase("mix")
+	tank["mask"] = {"pattern": "stripe", "color": gold, "q": 1.0, "mix": {}}
+	var rows := Contracts.evaluate(job)
+	check(not rows[1]["done"] and str(rows[1]["have"]).contains("centre stripe"), "a centre stripe isn't the pinstripe asked for (%s)" % rows[1]["have"])
+	tank["mask"]["pattern"] = "pin"
+	rows = Contracts.evaluate(job)
+	check(rows[1]["done"] and Contracts.progress(job) == 1.0, "a gold pinstripe on green: every goal met (%s)" % rows[1]["have"])
+	tank["mask"]["color"] = Color(0.92, 0.92, 0.9)
+	check(not Contracts.evaluate(job)[1]["done"], "a white pinstripe isn't gold")
+	var bespoke_match := false
+	for i in 40:
+		var b := Contracts.make_offer("bespoke", "Lady Okafor")
+		var kinds: Array = b["goals"].map(func(g): return str(g["t"]))
+		if kinds.has("match") and kinds.has("stripe"):
+			bespoke_match = true
+			break
+	check(bespoke_match, "bespoke customers ask for a matched colour with a stripe")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var pats := {}
+	for i in 60:
+		pats[str(Contracts._stripe_goal(rng)["pattern"])] = true
+	Progress.profile["xp"] = Progress.xp_for_level(5)
+	var low := {}
+	for i in 60:
+		low[str(Contracts._stripe_goal(rng)["pattern"])] = true
+	var effects := {}
+	for i in 60:
+		effects[str(Contracts._match_goal(rng, false)["effect"])] = true
+	check(pats.has("fade_top") and not low.has("fade_top") and not effects.has("candy") and not effects.has("chameleon"),
+		"fades are only asked for at level 12 and over, and colours only in effects the crew can mix (%s)" % ", ".join(effects.keys()))
+	Progress.profile["xp"] = Progress.xp_for_level(16)
+	# A rare recipe on the tank adds to the bike's price.
+	tank.erase("mask")
+	var before := Sales.uniqueness(bike)
+	var fair := int(Sales.appraise(bike)["fair"])
+	tank["mix"] = PaintMix.spec(PaintMix.parse_code(str(PaintMix.library_entry("honda_candy_red")["code"])), "Candy Red")
+	var after := Sales.uniqueness(bike)
+	check(float(after["score"]) > float(before["score"]) and ", ".join(after["why"]).contains("custom candy paint")
+		and int(Sales.appraise(bike)["fair"]) > fair, "candy paint makes it more of a one-off and worth more (%s)" % ", ".join(after["why"]))
 	Progress.profile = saved
 
 
