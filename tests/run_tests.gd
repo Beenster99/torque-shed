@@ -1183,13 +1183,13 @@ func _test_radio_stream() -> void:
 
 
 ## Stands the walker beside a bike slot and points the crosshair at it.
-func _aim_at(main: Node, bike_id: int, slot: String) -> void:
+func _aim_at(main: Node, bike_id: int, slot: String, from := Vector3(1.4, 0.0, 0.0)) -> void:
 	var model: BikeModel = main.workshop.bike_model(bike_id)
 	var aim: Vector3 = model.global_transform * model.slot_bounds(slot).get_center()
-	var stand: Vector3 = aim + Vector3(1.4, 0.0, 0.0)
+	var stand: Vector3 = aim + from
 	stand.y = 0.0
 	main.walker.place(Transform3D(Basis(), stand))
-	main.walker.rotation.y = PI * 0.5
+	main.walker.rotation.y = atan2(from.x, from.z)
 	var eye: Vector3 = stand + Vector3.UP * Walker.EYE
 	main.walker._look(0.0, -atan2(eye.y - aim.y, Vector2(eye.x - aim.x, eye.z - aim.z).length()))
 	for i in 5:
@@ -1387,8 +1387,8 @@ func _test_session() -> void:
 	# so take aim again until the bike itself is what you're looking at.
 	var parked_at: Vector3 = Shed.bikes[faithful]["xf"].origin
 	var aimed_at := {}
-	for attempt in 3:
-		await _aim_at(main, faithful, "tank")
+	for attempt in 4:
+		await _aim_at(main, faithful, "tank", [Vector3(1.4, 0, 0), Vector3(-1.4, 0, 0), Vector3(0, 0, 1.4), Vector3(0, 0, -1.4)][attempt])
 		aimed_at = main.walker.target
 		if int(aimed_at.get("bike", 0)) == faithful:
 			break
@@ -1830,10 +1830,11 @@ func _session_round5(main: Node) -> void:
 	# Work over it like a painter: steady passes across it, from one side and then the other (the
 	# paint only lands on what faces the can), and again where it's still thin.
 	var to_mid := (Workshop.CENTER - Vector3(centre.x, 0.0, centre.z)).normalized()
-	for pass_n in 8:
+	var round_sides := [to_mid, -to_mid, to_mid.cross(Vector3.UP), -to_mid.cross(Vector3.UP)]
+	for pass_n in 16:
 		if Shed.items[pipe]["color"] == Shed.PAINTS[4] or (w.spray != null and w.spray.ready()):
 			break
-		var side := to_mid if pass_n % 2 == 0 else -to_mid
+		var side: Vector3 = round_sides[pass_n % round_sides.size()]
 		w.place(Transform3D(Basis(), Vector3(centre.x, 0.0, centre.z) + side * 0.6))
 		await _aim_point(w, centre)
 		await _spray_passes(w, xf, box)
@@ -1842,7 +1843,7 @@ func _session_round5(main: Node) -> void:
 	for i in 3:
 		await get_tree().physics_frame
 	check(Shed.items[pipe]["color"] == Shed.PAINTS[4] and Shed.items[pipe].has("paint_quality"),
-		"sweeping the can over all of it finishes the paint job (quality %.0f%%)" % (float(Shed.items[pipe].get("paint_quality", 0.0)) * 100.0))
+		"sweeping the can over all of it finishes the paint job (quality %.0f%%, covered %.0f%%)" % [float(Shed.items[pipe].get("paint_quality", 0.0)) * 100.0, w.coverage * 100.0])
 	check(Shed.condition_text(Shed.items[pipe]).contains("Paint job"), "the info panel says how good the paint job is")
 	w.leave_spray_mode()
 	w.set_tool("hands")
