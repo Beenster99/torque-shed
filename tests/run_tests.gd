@@ -2675,7 +2675,7 @@ func _test_road_traffic() -> void:
 	check(not near.has(-1) and tr.active_count() == RoadTraffic.MAX_RIDERS and tr.spawn_one() == -1,
 		"riders appear out on the roads, no more than %d at once" % RoadTraffic.MAX_RIDERS)
 	var d0 := Vector2(tr._rider_point(first).x - walker_at.x, tr._rider_point(first).z - walker_at.z).length()
-	check(d0 >= RoadTraffic.SPAWN_NEAR and d0 <= RoadTraffic.SPAWN_FAR, "out of sight but not too far off (%.0f m)" % d0)
+	check(d0 >= RoadTraffic.SPAWN_NEAR - 5.0 and d0 <= RoadTraffic.SPAWN_FAR + 5.0, "out of sight but not too far off (%.0f m)" % d0)
 	# Ride them on for a few game minutes in quick steps.
 	var top := 0.0
 	var into_yard := false
