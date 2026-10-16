@@ -194,7 +194,7 @@ func _finish_prep() -> void:
 	# Parts that are clean already (or the jet can't get at) are done, without a ding.
 	var cleans := _part_cleans()
 	for si in slots.size():
-		if part_n[si] == 0 or float(cleans[si]) >= PART_DONE:
+		if part_n[si] == 0 or _clean_enough(si, float(cleans[si])):
 			done[si] = true
 			dinged[si] = true
 	bike_done = done.size() >= slots.size()
@@ -364,7 +364,7 @@ func _check_done(touched := {}) -> void:
 	for si in slots.size():
 		if done.get(si, false):
 			continue
-		if float(cleans[si]) >= PART_DONE:
+		if _clean_enough(si, float(cleans[si])):
 			done[si] = true
 			to_call_clean.append(items[si])
 			# The last specks go with it.
@@ -384,6 +384,12 @@ func _check_done(touched := {}) -> void:
 		if not bike_dinged:
 			bike_dinged = true
 			cues.append({"kind": "bike", "name": str(Shed.bikes.get(bike, {}).get("name", "The bike"))})
+
+
+## Whether a part `clean` (0..1) clean is done: PART_DONE of it, or on a small part all but
+## two patches at most (a speck in a fold the jet can't quite get square on to shouldn't hold it up).
+func _clean_enough(si: int, clean: float) -> bool:
+	return clean >= PART_DONE or (1.0 - clean) * part_n[si] <= 2.0
 
 
 ## How clean every part is: [one per slot index].

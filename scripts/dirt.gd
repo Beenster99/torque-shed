@@ -225,13 +225,13 @@ static func rest_pattern(slot: String) -> PackedFloat32Array:
 	var mud := mud_pattern(slot, 1.4, 1.0)
 	var out := PackedFloat32Array()
 	out.resize(CELLS)
-	var dust: Array = [1.0, 1.0, 2.0, 0.6, 1.0, 1.0]
+	var dust: Array = [1.0, 1.0, 2.4, 0.4, 1.0, 1.0]
 	var sum := 0.0
 	for d in DIRS:
 		for iy in NY:
 			for ix in NX:
 				var i := index(d, ix, iy)
-				out[i] = 0.6 * mud[i] + 0.4 * float(dust[d])
+				out[i] = 0.5 * mud[i] + 0.5 * float(dust[d])
 				sum += out[i]
 	for i in CELLS:
 		out[i] *= CELLS / maxf(sum, 1e-5)

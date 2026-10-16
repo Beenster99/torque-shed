@@ -15442,9 +15442,10 @@ func _test_wash_session() -> void:
 		return
 	var job: WashJob = w.wash
 	job.prepare_all()
-	await get_tree().process_frame
+	for i in 3:
+		await get_tree().process_frame
 	var hud: WashHud = main.hud.wash_hud
-	check(hud.showing() and not main.hud._panel.visible, "the wash readout comes up in place of the side panel")
+	check(hud.showing() and not main.hud._panel.visible, "the wash readout comes up in place of the side panel (%s, %s)" % [hud.showing(), main.hud._panel.visible])
 	var st0: Dictionary = job.stats()
 	check(job.e_pos.size() > 500 and float(st0["clean"]) < 0.6, "the bike's dirty to start with (%.0f%% clean, %d surface points)" % [float(st0["clean"]) * 100.0, job.e_pos.size()])
 	var ei := job.slots.find("engine")
@@ -15491,19 +15492,27 @@ func _test_wash_session() -> void:
 			break
 	var si := job.slots.find(small)
 	var xf := model.global_transform
-	for rep in 2:
+	for rep in 3:
 		for i in job.e_pos.size():
 			if job.e_slot[i] != si or job.e_w[i] >= 1.0:
 				continue
 			var n: Vector3 = (xf.basis * job.e_n[i]).normalized()
 			var p: Vector3 = xf * job.e_pos[i]
-			job.step(0.25, p + n * 0.5, -n, true)
+			# Square on if nothing's in the way, else from a little round about (as you'd aim it).
+			for t in [Vector3.ZERO] + Array(WashJob.tilts()):
+				var from: Vector3 = (n + (xf.basis * t) * 0.8).normalized()
+				if from.dot(n) < 0.3:
+					continue
+				var sh := job.surface_hit(p + from * 0.3, -from)
+				if not sh.is_empty() and (sh["at"] as Vector3).distance_to(p) < 0.02:
+					job.step(0.25, p + from * 0.3, -from, true)
+					break
 	var dings := job.cues.filter(func(c): return str(c["kind"]) == "part" and str(c["slot"]) == small).size()
 	job.cues.clear()
 	for i in 20:
 		job.step(0.25, xf * job.e_pos[0] + Vector3.UP * 0.5, Vector3.DOWN, true)
 	var again := job.cues.filter(func(c): return str(c["kind"]) == "part" and str(c["slot"]) == small).size()
-	check(si >= 0 and job.done.get(si, false) and dings == 1 and again == 0, "washed all over, the %s comes clean with one ding (%d, then %d)" % [small, dings, again])
+	check(si >= 0 and job.done.get(si, false) and dings == 1 and again == 0, "washed all over, the %s comes clean with one ding (%d, then %d; %.2f clean)" % [small, dings, again, job.part_clean(si) if si >= 0 else -1.0])
 	check(Sfx.stream("wash_ding") != null and Sfx.stream("wash_clean") != null, "there's a ding for a part and a bigger one for the bike")
 	# The rest of it, and the whole bike's clean.
 	for i in job.e_pos.size():
