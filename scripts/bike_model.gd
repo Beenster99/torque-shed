@@ -26,6 +26,9 @@ var condition := {}              # slot -> {rust, dirt, wear, color, finish}
 var stand_pose := ""             # "side" or "centre" draws that stand down on the ground; set before build_from
 ## The rider's helmet is on its own render layer so the first-person camera can leave it out.
 const HELMET_LAYER := 2
+## Whether this is your own ride: only then do the rider's helmet, torso and upper arms go on
+## HELMET_LAYER, out of your first-person eye. Everyone else's riders stay whole in it.
+var own_rider := false
 
 var _build: BikeBuild
 var _slot_meshes := {}           # slot -> Array of GeometryInstance3D
@@ -3812,6 +3815,12 @@ func _update_struts() -> void:
 		mi.basis = _basis_up(dir / maxf(length, 0.001)) * Basis.from_scale(Vector3(1.0, length / float(s["rest"]), 1.0))
 
 
+## The render layers of the rider's parts that would block the first-person eye: HELMET_LAYER
+## on your own ride, the ordinary layer on anyone else's.
+func eye_layers() -> int:
+	return 1 << (HELMET_LAYER - 1) if own_rider else 1
+
+
 func _build_rider() -> void:
 	_rider = Node3D.new()
 	add_child(_rider)
@@ -3836,15 +3845,16 @@ func _build_rider() -> void:
 	var grip_r := _head + _grip_r
 	# The first-person eye is the rider's own, inside the helmet, looking down the road over the
 	# bars; the torso, helmet and upper arms, which would be in the way, are hidden from it.
+	var hidden := eye_layers()
 	for mi in [torso, lid, v]:
-		(mi as GeometryInstance3D).layers = 1 << (HELMET_LAYER - 1)
+		(mi as GeometryInstance3D).layers = hidden
 	_eye = shoulders + Vector3(0.0, 0.28, 0.28)
 	for side in [-1.0, 1.0]:
 		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
 		var grip := grip_r if side > 0 else grip_l
 		var elbow := sh.lerp(grip, 0.5) + Vector3(0.08 * side, -0.06, 0.04)
 		var upper := _tube(sh, elbow, 0.05, suit, Vector3.ONE, _rider)
-		upper.layers = 1 << (HELMET_LAYER - 1)
+		upper.layers = hidden
 		_tube(elbow, grip, 0.045, suit, Vector3.ONE, _rider)
 		_mesh_instance(_sphere(0.045), gloves, grip, _rider)
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
@@ -3867,7 +3877,7 @@ func _build_dressed_rider() -> void:
 	var tm := RiderFigure.material(trousers, tint)
 	var jx: Array = RiderGear.get_item(jacket).get("extras", [])
 	var tx: Array = RiderGear.get_item(trousers).get("extras", [])
-	var hidden := 1 << (HELMET_LAYER - 1)   # kept out of the first-person eye, as in _build_rider
+	var hidden := eye_layers()   # kept out of your own first-person eye, as in _build_rider
 	var seat_y := _seat_y
 	var hips := Vector3(0.0, seat_y + 0.1, lerpf(_seat_front.z, _tail.z, 0.42))
 	var shoulders := hips + Vector3(0.0, 0.5, -0.3)
