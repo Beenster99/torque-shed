@@ -88,6 +88,8 @@ func _run_all() -> void:
 	await _test_tuning()
 	await _test_ecu_aid_settings()
 	_test_bike_paint_panels()
+	print("Road traffic")
+	await _test_road_traffic()
 	print("XP, levels, tool upgrades and skills")
 	_test_progress()
 	print("Bike lights, tyres and the tyre changer")
@@ -2649,6 +2651,128 @@ func _test_ecu_aid_settings() -> void:
 		pitches.append(pitch[0])
 		await _done(r)
 	check(pitches[0] > pitches[1] + 5.0, "anti-wheelie off lets it wheelie (%.0f deg) where the factory level keeps it near level (%.0f deg)" % pitches)
+
+
+## Other bikers on the roads: they appear out of sight, ride the tarmac in their lane at a
+## sensible pace, lean into the bends, keep off the yard, go when nobody's near, reach the crew
+## as a few numbers, and you crash if you ride into one.
+func _test_road_traffic() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var tr: RoadTraffic = main.traffic
+	tr.setup_roads()
+	var loop_blocked := 0
+	for b in (tr._blocked[0] as PackedByteArray):
+		loop_blocked += b
+	check(tr._ready_roads and tr._tarmac.size() >= 5 and loop_blocked > 20,
+		"the tarmac roads are mapped, with the loop's stretch across the yard out of bounds (%d samples)" % loop_blocked)
+	tr._spawn_timer = 1000.0   # only the riders this test puts out
+	var near := []
+	for i in RoadTraffic.MAX_RIDERS:
+		near.append(tr.spawn_one())
+	var walker_at: Vector3 = main.walker.global_position
+	var first: Dictionary = tr.riders[0]
+	check(not near.has(-1) and tr.active_count() == RoadTraffic.MAX_RIDERS and tr.spawn_one() == -1,
+		"riders appear out on the roads, no more than %d at once" % RoadTraffic.MAX_RIDERS)
+	var d0 := Vector2(tr._rider_point(first).x - walker_at.x, tr._rider_point(first).z - walker_at.z).length()
+	check(d0 >= RoadTraffic.SPAWN_NEAR and d0 <= RoadTraffic.SPAWN_FAR, "out of sight but not too far off (%.0f m)" % d0)
+	# Ride them on for a few game minutes in quick steps.
+	var top := 0.0
+	var into_yard := false
+	var off_road := 0.0
+	var switched := false
+	var roads_before := tr.riders.map(func(d): return int(d["road"]))
+	var lean := 0.0
+	for step in 3000:
+		for slot in RoadTraffic.MAX_RIDERS:
+			var d: Dictionary = tr.riders[slot]
+			if d.is_empty():
+				tr.spawn_one(0.0, 600.0)
+				continue
+			tr._drive(slot, d, 0.05)
+			d = tr.riders[slot]
+			if d.is_empty():
+				continue
+			top = maxf(top, float(d["v"]))
+			var p := tr._rider_point(d)
+			if RoadTraffic.KEEP_OUT.has_point(Vector2(p.x, p.z)):
+				into_yard = true
+			var near_road: Dictionary = main.world.roads.nearest(p.x, p.z, 20.0)
+			off_road = maxf(off_road, float(near_road.get("d", 20.0)))
+			if int(d["road"]) != int(roads_before[slot]):
+				switched = true
+			var k := float((tr._k[int(d["road"])] as PackedFloat32Array)[tr._i(int(d["road"]), float(d["s"]))])
+			lean = maxf(lean, absf(atan(float(d["v"]) * float(d["v"]) * k / Bike.G)))
+	check(top > 10.0 and top <= 20.5, "they ride at a sensible pace (top %.0f km/h)" % (top * 3.6))
+	check(off_road < 3.0, "in their lane, on the road (at most %.1f m off its middle)" % off_road)
+	check(not into_yard, "and never into the yard, the test area or the cafe car park")
+	check(switched, "they turn off at junctions onto other roads")
+	check(lean > deg_to_rad(10.0) and lean < deg_to_rad(30.0), "and lean into the bends, slowing for the tight ones (up to %.0f deg)" % rad_to_deg(lean))
+	# Far from everyone, they go.
+	var gone: Dictionary = tr.riders[0]
+	if not gone.is_empty():
+		main.walker.global_position = Vector3(5000.0, 0.0, 5000.0)
+		tr._drive(0, gone, 0.05)
+		check((tr.riders[0] as Dictionary).is_empty(), "a rider far from everyone leaves the roads")
+		main.walker.global_position = walker_at
+	# The crew get them as a few numbers each, and ride them the same.
+	var packed := tr.pack()
+	check(packed.size() == 1 + RoadTraffic.MAX_RIDERS * 5, "the crew get %d numbers for the lot" % packed.size())
+	var other := RoadTraffic.new()
+	other.world = main.world
+	add_child(other)
+	other.setup_roads()
+	other.unpack(packed)
+	var same := true
+	for slot in RoadTraffic.MAX_RIDERS:
+		var a: Dictionary = tr.riders[slot]
+		var b: Dictionary = other.riders[slot]
+		if a.is_empty() != b.is_empty() or (not a.is_empty() and (int(a["road"]) != int(b["road"]) or absf(float(a["s"]) - float(b["s"])) > 0.01)):
+			same = false
+	check(same and RoadTraffic.look_of(1234)["parts"] == RoadTraffic.look_of(1234)["parts"], "and draw the same riders on the same bikes")
+	other.free()
+	# Ride into one stopped in the lane ahead: you crash.
+	for slot in RoadTraffic.MAX_RIDERS:
+		tr.riders[slot] = {}
+	await get_tree().physics_frame
+	var east := int(main.world.roads.by_name["east"])
+	var s := 300.0
+	var best := INF
+	for t in range(60, 400, 10):
+		var kk := absf(float((tr._k[east] as PackedFloat32Array)[tr._i(east, float(t))]))
+		if kk < best and not tr._heads_into_yard(east, float(t), 1):
+			best = kk
+			s = float(t)
+	tr.riders[0] = {"road": east, "s": s, "dir": 1, "v": 0.0, "seed": 77, "cruise": 0.0, "turn": {}, "round": -1.0}
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var view_body: Node3D = tr._views[0]["body"]
+	check(view_body != null and view_body.is_in_group("road_traffic") and (view_body as CollisionObject3D).collision_layer & 2 != 0,
+		"the rider is solid, with the bikes")
+	var bike := Bike.new()
+	bike.setup(BikeBuild.new())
+	main.world.add_child(bike)
+	var from := tr._rider_point({"road": east, "s": s - 30.0, "dir": 1})
+	var fwd := tr.road_dir(east, s - 30.0)
+	bike.place(from + Vector3.UP * 0.3, atan2(-fwd.x, -fwd.y))
+	var crashed := false
+	for i in int(6.0 * Engine.physics_ticks_per_second):
+		tr.riders[0]["v"] = 0.0
+		bike.throttle = 1.0
+		await get_tree().physics_frame
+		if bike.is_crashed:
+			crashed = true
+			break
+	check(crashed, "riding into one at speed crashes you (%.0f km/h, %.1f m short of it)" % [
+		absf(bike.speed) * 3.6, bike.global_position.distance_to(view_body.global_position)])
+	bike.queue_free()
+	main._end_session()
+	await get_tree().physics_frame
+	check(tr.active_count() == 0, "and they're off the roads when the session ends")
+	main.queue_free()
+	await get_tree().process_frame
 
 
 ## The bike details pages list the paint panel by panel: each panel's own colour or mix (name
