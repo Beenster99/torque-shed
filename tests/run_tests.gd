@@ -39,6 +39,7 @@ func _run_all() -> void:
 	print("Bike physics")
 	await _test_settle()
 	await _test_acceleration()
+	await _test_performance()
 	await _test_turning()
 	await _test_braking()
 	await _test_low_speed()
@@ -418,6 +419,36 @@ func _test_acceleration() -> void:
 	await _done(r)
 
 
+## Full-throttle runs on the flat against real-world figures. A ~50 hp 500 cc twin on stock
+## sprockets gets to 100 km/h in five or six seconds and pulls all the way into top gear and on
+## to about 155 km/h; a 1000 cc four with a race fairing and tall gearing does 0-100 in about three
+## and a half and goes on past 250. Before the bike's body stopped picking up the physics
+## engine's default damping on top of its own drag, the twin stalled out in third or fourth
+## at about 120 km/h.
+func _test_performance() -> void:
+	var twin := {"engine": "twin_500", "final_drive": "stock_15_45"}
+	var four := {"frame": "alu_twin_spar", "fork": "usd_sport", "shock": "sport_mono", "front_caliper": "four_piston_radial",
+		"front_master": "radial_19x20", "tank": "sport_17", "saddle": "sport_solo", "handlebars": "clip_ons",
+		"engine": "four_1000", "exhaust": "slip_on", "fuel": "throttle_bodies", "cooling": "twin_radiators",
+		"gearbox": "six_close", "final_drive": "tall_15_42", "fairing": "race_fairing"}
+	for run in [[twin, 25.0, 4.5, 7.0, 145.0, 190.0], [four, 30.0, 2.5, 4.0, 255.0, 310.0]]:
+		var b := BikeBuild.new(run[0])
+		var t100 := [-1.0]
+		var r := await ride(run[0], run[1], func(bike, t):
+			bike.throttle = 1.0
+			bike.body_shift = 0.6   # tucked in, weight over the tank to keep the front down
+			if t100[0] < 0.0 and bike.speed * 3.6 >= 100.0:
+				t100[0] = t)
+		var bike: Bike = r["bike"]
+		var top: float = r["max_speed"] * 3.6
+		var what := "%s (%.0f hp, %.0f kg with rider)" % [str(run[0]["engine"]), b.hp(), b.total_mass]
+		check(not r["crashed"], "%s: the flat-out run does not crash" % what)
+		check(t100[0] >= run[2] and t100[0] <= run[3], "%s: 0-100 km/h in %.1f s (%.1f-%.1f s expected)" % [what, t100[0], run[2], run[3]])
+		check(top >= run[4] and top <= run[5], "%s: reaches %.0f km/h (%.0f-%.0f expected)" % [what, top, run[4], run[5]])
+		check(bike.gear == b.gear_count(), "%s: pulls through every gear into top (gear %d of %d)" % [what, bike.gear, b.gear_count()])
+		await _done(r)
+
+
 func _test_turning() -> void:
 	for dir in [1.0, -1.0]:
 		var yaw0 := [0.0]
@@ -557,6 +588,8 @@ func _test_shed_rules() -> void:
 	Shed._process(2.0)
 	check(Shed.items[pipe]["dirt"] < dirt_before, "the parts washer cleans what's in it")
 	check(Shed.check(me, {"a": "repair", "item": pipe}) != "", "repairs need the repair bench")
+	# Project bikes mostly carry light surface rust now, so make sure this pipe is a bad one.
+	Shed.items[pipe]["rust"] = maxf(float(Shed.items[pipe]["rust"]), 0.5)
 	check(Shed.check(me, {"a": "paint", "item": pipe, "color": 3}).contains("rust"), "rusty parts can't be painted")
 	Shed.request({"a": "take", "spot": washer})
 	Shed.request({"a": "place", "spot": repair})
@@ -1637,8 +1670,10 @@ func _test_round5_riding() -> void:
 	await _done(r)
 	# A stoppie: hard on the front brake from speed lifts the back without throwing you over the bars.
 	var stoppie := [false]
+	# A short run up: with nothing but its own drag holding it back, the big four is going
+	# far too fast after five seconds for the front brake to stop it in the five left.
 	r = await ride({"engine": "four_1000", "front_caliper": "four_piston_radial", "front_pads": "sintered"}, 10.0, func(b, t):
-		if t < 5.0:
+		if t < 3.5:
 			b.throttle = 0.8
 		else:
 			b.throttle = 0.0
@@ -1984,7 +2019,7 @@ func _test_round6_riding() -> void:
 	# The front brake slows the wheel hard but never locks it.
 	var worst := [1.0]
 	r = await ride({}, 9.0, func(b, t):
-		if t < 6.0:
+		if t < 4.5:   # about 100 km/h, then four and a half seconds on the front brake
 			b.throttle = 1.0
 		else:
 			b.throttle = 0.0

@@ -375,8 +375,10 @@ func _build_shell() -> void:
 		var x: float = side * (DOOR_HALF + w * 0.5)
 		_deco(self, c + Vector3(x, HEIGHT * 0.5 + 0.6, hz - 0.01), Vector3(w, HEIGHT - 1.2, 0.02), _mats["wall_in"])
 		_deco(self, c + Vector3(x, 0.6, hz - 0.01), Vector3(w, 1.2, 0.02), _mats["wall_low"])
-		_deco(self, c + Vector3(side * (DOOR_HALF + 0.06), DOOR_HEIGHT * 0.5, hz + 0.15), Vector3(0.12, DOOR_HEIGHT, 0.36), _mats["yellow"])
-	_deco(self, c + Vector3(0.0, DOOR_HEIGHT + 0.06, hz + 0.15), Vector3(DOOR_HALF * 2.0 + 0.24, 0.12, 0.36), _mats["yellow"])
+		# The yellow door frame stands a centimetre proud into the opening, so its faces
+		# don't sit in the same plane as the wall's edges and flicker against them.
+		_deco(self, c + Vector3(side * (DOOR_HALF + 0.055), (DOOR_HEIGHT - 0.01) * 0.5, hz + 0.15), Vector3(0.13, DOOR_HEIGHT - 0.01, 0.36), _mats["yellow"])
+	_deco(self, c + Vector3(0.0, DOOR_HEIGHT + 0.055, hz + 0.15), Vector3(DOOR_HALF * 2.0 + 0.24, 0.13, 0.36), _mats["yellow"])
 	_deco(self, c + Vector3(0.0, (HEIGHT + DOOR_HEIGHT) * 0.5 + 0.06, hz - 0.01), Vector3(DOOR_HALF * 2.0, HEIGHT - DOOR_HEIGHT - 0.12, 0.02), _mats["wall_in"])
 	for i in 3:
 		_deco(self, c + Vector3(0.0, HEIGHT - 0.15, -hz + 1.2 + i * (hz * 2.0 - 2.4) / 2.0), Vector3(hx * 2.0, 0.14, 0.1), _mats["steel"])

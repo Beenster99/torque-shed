@@ -307,11 +307,12 @@ func _faces(along_x: bool, a: float, b: float, at: float, h: float, y0 := 0.0) -
 
 
 ## A hazard-yellow frame round a doorway in a wall running along x, the wall's middle at `z`,
-## on a floor at `y0`.
+## on a floor at `y0`. It stands a centimetre proud into the opening so its faces don't sit in
+## the same plane as the wall's edges and flicker against them.
 func _door_frame(x: float, half: float, h: float, z: float, depth: float, y0 := 0.0) -> void:
 	for end in [-1.0, 1.0]:
-		_box(Vector3(x + end * (half + 0.05), y0 + h * 0.5, z), Vector3(0.1, h, depth + 0.06), _mats["hazard"])
-	_box(Vector3(x, y0 + h + 0.05, z), Vector3(half * 2.0 + 0.2, 0.1, depth + 0.06), _mats["hazard"])
+		_box(Vector3(x + end * (half + 0.045), y0 + (h - 0.01) * 0.5, z), Vector3(0.11, h - 0.01, depth + 0.06), _mats["hazard"])
+	_box(Vector3(x, y0 + h + 0.045, z), Vector3(half * 2.0 + 0.2, 0.11, depth + 0.06), _mats["hazard"])
 
 
 # ---------------------------------------------------------------------------- the extension

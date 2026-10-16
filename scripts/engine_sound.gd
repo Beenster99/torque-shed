@@ -4,7 +4,7 @@ extends Node3D
 ## exhaust side at the tail pipe and the engine/intake side at the airbox, crossfaded and pitched
 ## to the revs and the throttle. On top: pops and burbles when the throttle snaps shut at high
 ## revs (more from loud pipes), a blip-and-bang on downshifts, the quickshifter's crisp cut or a
-## clutch shift, the gearbox's own shift sound with a recorded gear lever on top, its whine, the starter or kick start, and the
+## clutch shift, the gearbox's own shift sound with a recorded gear lever on top, the starter or kick start, and the
 ## backfire's flame. Used by the ridden bike, other players' bikes and the dyno.
 
 signal backfired(strength: float)
@@ -47,7 +47,6 @@ var _oneshot_ex: Array = []
 var _oneshot_en: Array = []
 var _next_ex := 0
 var _next_en := 0
-var _whine: AudioStreamPlayer3D
 var _lever: AudioStreamPlayer3D
 var _rng := RandomNumberGenerator.new()
 var _load := 0.0              # smoothed throttle as the sound hears it
@@ -92,8 +91,6 @@ func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
 			_oneshot_ex.append(_make_player(exhaust_at, 14.0))
 		for i in 2:
 			_oneshot_en.append(_make_player(engine_at, 6.0))
-		_whine = _make_player(engine_at, 6.0)
-		_whine.stream = EngineBank.whine_stream()
 		_lever = _make_player(engine_at, 4.0)
 		flame = ExhaustFlame.new()
 		exhaust_at.add_child(flame)
@@ -182,7 +179,6 @@ func _process(delta: float) -> void:
 		wanted[w[0]][w[1]] = [g * loud, float(w[3])]
 	for layer in EngineSynth.LAYERS:
 		_drive_layer(layer, wanted[layer])
-	_drive_whine(life)
 
 
 ## Points this layer's players at the buckets wanted, at their volume and pitch; frees the rest.
@@ -214,21 +210,6 @@ func _drive_layer(layer: String, want: Dictionary) -> void:
 			p.play(_rng.randf() * stream.get_length())
 		p.volume_db = linear_to_db(maxf(gain, 0.00001)) + volume_db
 		p.pitch_scale = clampf(pitch, 0.05, 4.0)
-
-
-## The gears' whine: pitched to their mesh, loudest off the throttle on a straight-cut race box.
-func _drive_whine(life: float) -> void:
-	var amount: float = spec["whine"]
-	var hz := rpm / 60.0 * 21.0 * (1.0 + gear * 0.06)
-	var gain := amount * (0.03 + 0.06 * (1.0 - _load)) * clampf(rpm / 6000.0, 0.0, 1.0) * life
-	if gain < 0.002 or hz < 60.0:
-		if _whine.playing:
-			_whine.stop()
-		return
-	if not _whine.playing:
-		_whine.play()
-	_whine.pitch_scale = clampf(hz / 1000.0, 0.05, 4.0)
-	_whine.volume_db = linear_to_db(gain) + volume_db
 
 
 ## Gear changes, pops, bangs, the starter: the things that happen rather than hum.

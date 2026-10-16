@@ -1271,18 +1271,21 @@ func _build_shell() -> void:
 			_deco(self, Vector3(wx, HEIGHT * 0.5 + 0.6, seg[0]), Vector3(0.02, HEIGHT - 1.2, seg[1]), _mats["wall_in"])
 			_deco(self, Vector3(wx, 0.6, seg[0]), Vector3(0.02, 1.2, seg[1]), _mats["wall_low"])
 		_deco(self, Vector3(wx, (HEIGHT + SIDE_DOOR_HEIGHT) * 0.5, door_z), Vector3(0.02, HEIGHT - SIDE_DOOR_HEIGHT, SIDE_DOOR_HALF * 2.0), _mats["wall_in"])
-		# Hazard-yellow frame round the doorway, through the wall's thickness.
+		# Hazard-yellow frame round the doorway, through the wall's thickness. It stands a
+		# centimetre proud into the opening so its faces don't sit in the same plane as the
+		# wall's (and its plaster's) edges and flicker against them.
 		var fx: float = c.x + side * (hx + t * 0.5)
 		for end in [-1.0, 1.0]:
-			_deco(self, Vector3(fx, SIDE_DOOR_HEIGHT * 0.5, door_z + end * (SIDE_DOOR_HALF + 0.05)), Vector3(t + 0.06, SIDE_DOOR_HEIGHT, 0.1), _mats["yellow"])
-		_deco(self, Vector3(fx, SIDE_DOOR_HEIGHT + 0.05, door_z), Vector3(t + 0.06, 0.1, SIDE_DOOR_HALF * 2.0 + 0.2), _mats["yellow"])
+			_deco(self, Vector3(fx, (SIDE_DOOR_HEIGHT - 0.01) * 0.5, door_z + end * (SIDE_DOOR_HALF + 0.045)), Vector3(t + 0.06, SIDE_DOOR_HEIGHT - 0.01, 0.11), _mats["yellow"])
+		_deco(self, Vector3(fx, SIDE_DOOR_HEIGHT + 0.045, door_z), Vector3(t + 0.06, 0.11, SIDE_DOOR_HALF * 2.0 + 0.2), _mats["yellow"])
 		var door_sign := _label("STORAGE" if side < 0.0 else "PAINT SHOP", Vector3(c.x + side * (hx - 0.03), SIDE_DOOR_HEIGHT + 0.35, door_z),
 			-side * PI * 0.5, 44, Color(0.08, 0.08, 0.08))
 		door_sign.outline_size = 0
 		_deco(self, c + Vector3(side * (DOOR_HALF + side_w * 0.5), HEIGHT * 0.5 + 0.6, hz - 0.01), Vector3(side_w, HEIGHT - 1.2, 0.02), _mats["wall_in"])
 		_deco(self, c + Vector3(side * (DOOR_HALF + side_w * 0.5), 0.6, hz - 0.01), Vector3(side_w, 1.2, 0.02), _mats["wall_low"])
-		# Hazard-yellow door posts.
-		_deco(self, c + Vector3(side * (DOOR_HALF + 0.08), DOOR_HEIGHT * 0.5, hz + 0.02), Vector3(0.16, DOOR_HEIGHT, t + 0.08), _mats["yellow"])
+		# Hazard-yellow door posts, a centimetre proud into the opening so they don't share a
+		# face with the wall's edge.
+		_deco(self, c + Vector3(side * (DOOR_HALF + 0.075), DOOR_HEIGHT * 0.5, hz + 0.02), Vector3(0.17, DOOR_HEIGHT, t + 0.08), _mats["yellow"])
 	# Roof with steel trusses.
 	_solid(c + Vector3(0.0, HEIGHT + 0.15, 0.0), Vector3(hx * 2.0 + 1.0, 0.3, hz * 2.0 + 1.0), _mats["roof"])
 	for i in 5:

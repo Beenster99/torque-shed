@@ -3040,8 +3040,17 @@ func _draw_rim(wheel: Node3D, rim_r: float, rim_w: float) -> void:
 ## beads sit inside the rim's flanges, `rim_w` apart.
 func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w: float) -> void:
 	var style := str(_part().get("style", "road"))
-	var rubber := _mat(_col(), 0.0, 0.92)
+	var rubber := _mat(_col(), 0.0, 0.88)
 	rubber.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Rubber never rusts, and road grime on a tyre dulls it to a dusty charcoal rather than
+	# the brown it gives painted parts, so a tired tyre still reads black in a low warm sun.
+	# A little less specular than the default keeps the sunset's glow off the sidewalls.
+	var dirt := float(condition.get(_current_slot, {}).get("dirt", 0.0))
+	rubber.detail_enabled = false
+	rubber.albedo_color = _col().lerp(Color(0.1, 0.1, 0.1), clampf(dirt, 0.0, 1.0) * 0.5)
+	rubber.roughness = lerpf(0.88, 0.95, clampf(dirt, 0.0, 1.0))
+	rubber.metallic = 0.0
+	rubber.metallic_specular = 0.3
 	var tyre_mi := _mesh_instance(tyre_mesh(rim_r, radius, width, rim_w, style), rubber, Vector3.ZERO, wheel)
 	tyre_mi.rotation.z = PI * 0.5
 	tyre_mi.set_meta("hoop", Vector3(rim_r, radius, width))

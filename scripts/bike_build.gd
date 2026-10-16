@@ -72,7 +72,6 @@ var horn_sound := ""           # the horn's recordings (an Sfx sound), "" for a 
 var ecu_features: Array = []   # rider aids the ECU gives: traction, abs, anti_wheelie, stability
 var ecu_aid := 0.0             # how firmly those aids step in, 0..1
 var luggage_litres := 0.0
-var gear_whine := 0.3          # how loudly the gearbox sings
 var has_side_stand := false
 var has_centre_stand := false
 var centre_lift := 0.04
@@ -290,7 +289,6 @@ func _compute() -> void:
 	gear_ratios = _spread(gearbox["ratios"], tune_value("spread"))
 	final_drive = tune_value("sprocket_r") / tune_value("sprocket_f")
 	shift_time = float(gearbox.get("shift_time", 0.12))
-	gear_whine = float(gearbox.get("whine", 0.3))
 	drivetrain_efficiency = DRIVETRAIN_EFFICIENCY * lerpf(0.8, 1.0, health["gearbox"]) * lerpf(0.88, 1.0, health["final_drive"])
 	_compute_chain()
 

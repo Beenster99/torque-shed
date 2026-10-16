@@ -4127,7 +4127,11 @@ func _new_item(part: String, rust: float, dirt: float, wear: float, color = null
 
 
 func _aged_item(part: String, age: float, color = null) -> int:
-	var rust := clampf(age * _rng.randf_range(0.4, 1.2), 0.0, 1.0)
+	# Most parts on an old bike have only a bloom of surface rust; about one in seven has
+	# gone properly bad. One roll decides both, so the rest of the bike's rolls are unchanged.
+	var r := _rng.randf()
+	var rust_scale := lerpf(0.1, 0.45, r / 0.85) if r < 0.85 else lerpf(0.7, 1.1, (r - 0.85) / 0.15)
+	var rust := clampf(age * rust_scale, 0.0, 1.0)
 	var dirt := clampf(age * _rng.randf_range(0.8, 1.4), 0.0, 1.0)
 	var wear := clampf(age * _rng.randf_range(0.2, 1.0), 0.0, 1.0)
 	return _new_item(part, rust, dirt, wear, color)

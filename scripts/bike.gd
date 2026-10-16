@@ -118,6 +118,12 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	continuous_cd = true
 	contact_monitor = true
 	max_contacts_reported = 8
+	# Air drag and rolling resistance are worked out properly (_apply_aero, _wheel_forces), so
+	# the body must not also get the physics engine's default damping on top. Left combined,
+	# the project default (0.1 a second) pulls on the bike like a second, far bigger, drag: at
+	# 130 km/h it costs a 50 hp bike about 15 hp, and it's why bikes ran out of puff in the
+	# middle gears.
+	linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
 	linear_damp = 0.0
 	angular_damp = 0.05
 	collision_layer = 2
