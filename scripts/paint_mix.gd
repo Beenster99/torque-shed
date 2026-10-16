@@ -110,6 +110,7 @@ const PATTERN_IDS := {"stripe": 1, "twin": 2, "pin": 3, "two_tone": 4, "fade_top
 const TAPE_PATTERNS: Array[String] = ["stripe", "twin", "pin", "two_tone"]
 const FADE_PATTERNS: Array[String] = ["fade_top", "fade_rear"]
 const TAPE_COLOR := Color(0.18, 0.42, 0.85)
+const TAPE_CREAM := Color(0.86, 0.79, 0.58)   # the cream sort, on a part too near the blue for that to show
 ## Paint a coat takes on each kind of part, in litres (a litre does about a tank, the guards and
 ## the side panels in two coats; a whole bike needs about two litres).
 const LITRES := {"tank": 0.12, "fairing": 0.2, "side_panels": 0.07, "front_mudguard": 0.05, "guards": 0.06, "tail": 0.08,
@@ -902,9 +903,15 @@ static func fx_pass(cond: Dictionary) -> ShaderMaterial:
 			pid = int(PATTERN_IDS.get(str(tape.get("pattern", "")), 0))
 			p.set_shader_parameter("mask_color", color)
 		p.set_shader_parameter("tape", 1.0)
-		p.set_shader_parameter("tape_color", TAPE_COLOR)
+		p.set_shader_parameter("tape_color", tape_color_on(color))
 	p.set_shader_parameter("pattern", pid)
 	return p
+
+
+## The masking tape that shows up on paint `under`: blue, or cream on a blue part.
+static func tape_color_on(under: Color) -> Color:
+	var d := Vector3(under.r - TAPE_COLOR.r, under.g - TAPE_COLOR.g, under.b - TAPE_COLOR.b).length()
+	return TAPE_CREAM if d < 0.4 else TAPE_COLOR
 
 
 ## Puts a mesh's place in its model's space (`xf`) and the part's box there onto the mesh, for

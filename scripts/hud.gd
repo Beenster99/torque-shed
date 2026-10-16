@@ -122,6 +122,8 @@ func _process(delta: float) -> void:
 		var alt := walker.alt_plan
 		if not alt.is_empty() and alt["blocked"] == "":
 			prompts.append("Hold %s to %s" % [_alt_key(), alt["verb"]])
+		if walker.tap_prompt != "":
+			prompts.append(walker.tap_prompt)
 		if walker.crouched:
 			prompts.append("Crouching (C to stand up)")
 		_prompt.add_theme_color_override("font_color", Color(1, 0.5, 0.4) if blocked and prompts.size() == 1 else UITheme.ACCENT)

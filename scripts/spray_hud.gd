@@ -4,7 +4,9 @@ extends Control
 ## across the top, how much of the part is covered (with the mark where the coat counts as on),
 ## how even it's going on and how much has run, gone on dry or is still thin; under that, gauges
 ## for how far off you're holding it (the sweet spot in green) and how fast you're sweeping; then
-## the part's coats in order (primer, colour, lacquer) with the one going on now. Runs, dry spray,
+## how much of each side of it is covered (the side facing you, the far side, the top and
+## underneath: paint only lands on what faces the gun, so you have to go round it); then the
+## part's coats in order (primer, colour, lacquer) with the one going on now. Runs, dry spray,
 ## the coat being on and the coat done pop up in the middle of the screen. It's up for as long as
 ## the spray controls are (F on a part with the can or gun): first a moment to get set, then the
 ## trigger works; a breath bar shows how long you can hold your hand steady.
@@ -77,7 +79,7 @@ func _draw_panel(font: Font) -> void:
 	var what: String = {"primer": "PRIMER", "clear": "LACQUER"}.get(job.layer, "COLOUR")
 	var load_name := walker.spray_text().to_upper() if walker else ""
 	var w := minf(660.0, size.x - 48.0)
-	var top := Rect2((size.x - w) * 0.5, 96.0, w, 196.0)
+	var top := Rect2((size.x - w) * 0.5, 96.0, w, 220.0)
 	draw_rect(top, Color(0.03, 0.04, 0.06, 0.8))
 	draw_rect(Rect2(top.position, Vector2(top.size.x, 3.0)), UITheme.ACCENT)
 	var title := "SPRAYING %s  ·  %s" % [what, load_name] if job.layer != "paint" or str(a.get("a", "")) == "coat" else "SPRAYING  ·  %s" % load_name
@@ -114,6 +116,7 @@ func _draw_panel(font: Font) -> void:
 	var half := (inner - 20.0) * 0.5
 	_draw_distance(font, Rect2(x, y, half, 54.0))
 	_draw_pace(font, Rect2(x + half + 20.0, y, half, 54.0))
+	_draw_sides(font, Rect2(x, top.end.y - 26.0, inner, 18.0), st.get("sides", {}))
 	# The coats in order, under the panel.
 	_draw_steps(font, Rect2(top.position.x, top.end.y + 8.0, top.size.x, 34.0))
 	draw_string(font, Vector2(0, size.y - 120.0), walker.spray_controls() if walker else "", HORIZONTAL_ALIGNMENT_CENTER, size.x, 15,
@@ -192,6 +195,31 @@ func _draw_pace(font: Font, r: Rect2) -> void:
 	_marker(px.call(speed), g)
 	draw_string(font, Vector2(g.position.x, g.end.y + 14), "slow", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, DIM)
 	draw_string(font, Vector2(g.position.x, g.end.y + 14), "fast", HORIZONTAL_ALIGNMENT_RIGHT, g.size.x, 11, DIM)
+
+
+## How much of each side of the part is covered: the side facing you, the far side, the top and
+## underneath (a side with none of the part on it is left out). The worst still to do is lit.
+func _draw_sides(font: Font, r: Rect2, sides: Dictionary) -> void:
+	var names := [["near", "THIS SIDE"], ["far", "FAR SIDE"], ["top", "TOP"], ["under", "UNDERNEATH"]]
+	var shown := []
+	var worst := ""
+	var low := 2.0
+	for n in names:
+		var v := float(sides.get(n[0], -1.0))
+		if v < 0.0:
+			continue
+		shown.append([n[1], v])
+		if v < low:
+			low = v
+			worst = n[1]
+	if shown.is_empty():
+		return
+	var w := r.size.x / shown.size()
+	for i in shown.size():
+		var v: float = shown[i][1]
+		var c := GOOD if v >= SprayJob.DONE else (WARN if shown[i][0] == worst else Color.WHITE)
+		draw_string(font, Vector2(r.position.x + i * w, r.end.y), "%s %d%%" % [shown[i][0], roundi(v * 100.0)],
+			HORIZONTAL_ALIGNMENT_CENTER if shown.size() > 1 else HORIZONTAL_ALIGNMENT_LEFT, w, 14, c)
 
 
 func _marker(at_x: float, g: Rect2) -> void:
