@@ -6,6 +6,7 @@ extends Node3D
 ## part its own click target. Shared by ridden, parked and other players' bikes.
 
 const PICK_LAYER := 4
+const CHAIN_PITCH := 0.015875   # m: a 5/8" chain, the pitch of every 520, 525 and 530 chain
 const SPRAY_LAYER := 16   # fitted shapes on loose parts, only for the spray to land on
 
 static var _rust_masks := {}     # rust level (1..10) -> NoiseTexture2D mask
@@ -4030,11 +4031,18 @@ func _draw_drum(side: String, wheel: Node3D, hub: Node3D, rim_r: float, x: float
 			_box(Vector3((x - 0.022) * sx, r * 0.6 * k, 0.0), Vector3(0.025, 0.02, r * 0.9), _mat(_col(), 0.3, 0.7), hub)
 
 
+## A sprocket's radius out to its tooth tips, m: the pitch circle of a 5/8" chain (every road and
+## MX chain, 520 to 530) round `teeth` teeth, plus the tips. A 45 tooth rear is about 23 cm across,
+## a 15 tooth front about 8.
+static func sprocket_radius(teeth: int) -> float:
+	return CHAIN_PITCH / (2.0 * sin(PI / maxf(teeth, 6))) + 0.003
+
+
 func _draw_final_drive(zr: float) -> void:
 	_current_slot = "final_drive"
 	var fd := _part()
-	var front_r := 0.0045 * float(fd.get("front", 15))
-	var rear_r := 0.0042 * float(fd.get("rear", 45))
+	var front_r := sprocket_radius(int(fd.get("front", 15)))
+	var rear_r := sprocket_radius(int(fd.get("rear", 45)))
 	var sprocket_mat := _mat(_col(), 0.9, 0.35)
 	var front_sp := _mesh_instance(_cylinder(front_r, 0.012, -1.0, int(fd.get("front", 15))), sprocket_mat, Vector3(-0.13, 0.0, 0.0), _swingarm)
 	front_sp.rotation.z = PI * 0.5
@@ -4044,7 +4052,7 @@ func _draw_final_drive(zr: float) -> void:
 	var holes := _mat(Color(0.06, 0.06, 0.06), 0.2, 0.7)
 	for k in 5:
 		var a := TAU * k / 5.0
-		var hole := _mesh_instance(_cylinder(rear_r * 0.16, 0.0085), holes, Vector3(-0.12, cos(a) * rear_r * 0.6, sin(a) * rear_r * 0.6), _rear_wheel)
+		var hole := _mesh_instance(_cylinder(rear_r * 0.12, 0.0085), holes, Vector3(-0.12, cos(a) * rear_r * 0.72, sin(a) * rear_r * 0.72), _rear_wheel)
 		hole.rotation.z = PI * 0.5
 	_current_slot = "chain"
 	if _part_id() == "" or _part_id() == "none":
@@ -4053,8 +4061,8 @@ func _draw_final_drive(zr: float) -> void:
 	var lube := float(condition.get("chain", {}).get("lube", 1.0))
 	var slack := float(condition.get("chain", {}).get("slack", 30.0))
 	var chain_mat := _mat(_col().lerp(Color(0.4, 0.22, 0.1), clampf(0.7 - lube, 0.0, 0.7)), 0.8, lerpf(0.75, 0.4, lube))
-	var mid_r := lerpf(front_r, rear_r, 0.5)
-	_box(Vector3(-0.125, mid_r, _arm_len * 0.5), Vector3(0.012, 0.012, _arm_len), chain_mat, _swingarm)
+	# The top run, tight from the top of one sprocket to the top of the other.
+	_tube(Vector3(-0.125, front_r, 0.0), Vector3(-0.125, rear_r, _arm_len), 0.006, chain_mat, Vector3.ONE, _swingarm)
 	var sag := clampf((slack - 20.0) / 1000.0, 0.0, 0.07)
 	var a := Vector3(-0.125, -front_r, 0.0)
 	var b := Vector3(-0.125, -rear_r, _arm_len)
