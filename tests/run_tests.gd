@@ -82,6 +82,7 @@ func _run_all() -> void:
 	await _test_tool_art()
 	print("Saving and loading")
 	await _test_save_load()
+	await _test_save_games()
 	print("Whiteboard")
 	await _test_whiteboard()
 	print("Tuning room and dyno")
@@ -2453,6 +2454,148 @@ func _test_save_load() -> void:
 	Settings.time_of_day = kept[0]
 	Settings.day_night_cycle = kept[1]
 	Settings.day_length = kept[2]
+
+
+## Save games: each holds its own garage and its own character, the Load screen lists them,
+## Save as / Rename / Delete work, and the old single save and profile.json become a first save
+## game. Uses its own folder and profile file, so real saves are never touched.
+func _test_save_games() -> void:
+	var kept_dir := SaveGame.dir
+	var kept_path := Progress.path
+	SaveGame.dir = "user://saves_unit_test/"
+	_clear_save_dir(SaveGame.dir)
+	Progress.path = "user://profile_savegames_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	# The old profile.json and single save become the first save game.
+	var gear := RiderGear.clean_gear({})
+	var extra := ""
+	for id in RiderGear.ITEMS:
+		if not gear["owned"].has(str(id)):
+			extra = str(id)
+			break
+	gear["owned"].append(extra)
+	var old_char := {"xp": Progress.xp_for_level(9) + 10, "money": 777, "tools": {"wrench": 2}, "skills": {"quick_hands": 1}, "gear": gear}
+	var f := FileAccess.open(Progress.path, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"version": 1, "profiles": {"Mig": old_char}}))
+	f.close()
+	SaveGame.slot_override = "anything"
+	var legacy := {"version": 1, "game": "Torque Shed", "saved_at": 1700000000, "host": "Mig", "time": 10.0,
+		"shed": {"bikes": {5: {"name": "Old Bike"}}, "garage_money": 4321}, "players": {}}
+	check(SaveGame.write(SaveGame.SLOT, legacy) == OK, "an old-style single save is written")
+	DirAccess.remove_absolute(SaveGame.meta_path(SaveGame.SLOT))
+	check(SaveGame.migrate("Mig") == SaveGame.SLOT and SaveGame.active_slot() == SaveGame.SLOT, "the old save becomes a save game, the one in play")
+	var listed := SaveGame.list_saves()
+	var first: Dictionary = listed[0] if listed.size() == 1 else {}
+	check(str(first.get("name", "")) == "Mig's shed" and int(first.get("level", 0)) == 9 and int(first.get("garage_money", 0)) == 4321
+		and int(first.get("bikes", 0)) == 1 and int(first.get("saved_at", 0)) == 1700000000,
+		"it's listed by name with the old character's level and the garage's money (%s)" % str(first))
+	var migrated := SaveGame.read(SaveGame.SLOT)
+	check(int(migrated.get("profile", {}).get("xp", 0)) == int(old_char["xp"]) and int(migrated["profile"]["money"]) == 777
+		and migrated["profile"]["gear"]["owned"].has(extra) and int(migrated["profile"]["tools"]["wrench"]) == 2,
+		"the save holds the old character: XP, money, tools and rider gear")
+	check(FileAccess.file_exists(Progress.path) and not Progress.stored_profile("Mig").is_empty(), "profile.json is kept for joining other sheds")
+	check(SaveGame.migrate("Mig") == "" and SaveGame.list_saves().size() == 1, "migrating twice changes nothing")
+	# A character with no shed saved gets a save game with a new shed waiting.
+	_clear_save_dir(SaveGame.dir)
+	check(SaveGame.migrate("Mig") != "" and SaveGame.list_saves().size() == 1 and bool(SaveGame.list_saves()[0]["fresh"])
+		and int(SaveGame.list_saves()[0]["level"]) == 9, "a character with no saved shed becomes a save game of its own")
+	_clear_save_dir(SaveGame.dir)
+	check(SaveGame.list_saves().is_empty() and SaveGame.migrate("Nobody") == "", "with nothing old there's nothing to migrate")
+
+	# New game A: a fresh character and garage, saved under its name.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main.menu.new_name = "Garage A"
+	main._start_session()
+	await get_tree().process_frame
+	check(SaveGame.active_slot() == "save_garage_a" and main.saver.save_name == "Garage A" and Progress.save_bound
+		and Progress.level() == 1 and Progress.money() == 0, "New game starts a fresh character in a save called Garage A")
+	Progress.profile["xp"] = Progress.xp_for_level(6)
+	Progress.set_money(1234)
+	Progress.profile["tools"]["brush"] = 3
+	Progress.profile["skills"]["torque_feel"] = 2
+	RiderGear.mine()["owned"].append(extra)
+	Shed.garage_money = 55555
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.request({"a": "rename_bike", "bike": ranger, "name": "Ranger A"})
+	main.saver.play_time = 3720.0
+	check(main.saver.save_now(), "Garage A saves")
+	check(not FileAccess.file_exists(Progress.path) or Progress.stored_profile(Settings.player_name).get("xp", 0) != Progress.profile["xp"],
+		"its character isn't written to profile.json")
+	# Save as B, then B goes its own way.
+	check(main.saver.save_as("Garage B") and SaveGame.active_slot() == "save_garage_b" and main.saver.save_name == "Garage B",
+		"Save as makes Garage B, the save in play")
+	check(not main.saver.save_as("garage a"), "Save as won't take a name already used")
+	Progress.profile["xp"] = Progress.xp_for_level(2)
+	Progress.set_money(5)
+	Shed.garage_money = 111
+	Shed.request({"a": "rename_bike", "bike": ranger, "name": "Ranger B"})
+	main._leave()
+	check(not Progress.save_bound, "back at the title the character isn't the save's any more")
+	var metas := {}
+	for m in SaveGame.list_saves():
+		metas[m["id"]] = m
+	check(metas.size() == 2 and int(metas["save_garage_a"]["level"]) == 6 and int(metas["save_garage_a"]["garage_money"]) == 55555
+		and int(metas["save_garage_b"]["level"]) == 2 and int(metas["save_garage_b"]["garage_money"]) == 111
+		and absf(float(metas["save_garage_a"]["play_time"]) - 3720.0) < 5.0,
+		"the Load screen lists both with their own level, garage money and play time")
+	check(SaveGame.play_time_text(3720.0) == "1 h 02 min" and SaveGame.summary_text(metas["save_garage_a"]).begins_with("Level 6, garage"),
+		"play time and the title line read well (%s)" % SaveGame.summary_text(metas["save_garage_a"]))
+	# Load A: its garage and its character come back.
+	main.load_game("save_garage_a", false)
+	await get_tree().process_frame
+	check(main.in_session and main.saver.save_name == "Garage A" and _bike_named("Ranger A") == ranger and Shed.garage_money == 55555,
+		"loading Garage A brings back its garage")
+	check(Progress.level() == 6 and Progress.money() == 1234 and Progress.tool_stage(Shed.me(), "brush") == 3
+		and Progress.skill_rank(Shed.me(), "torque_feel") == 2 and RiderGear.mine()["owned"].has(extra),
+		"and its character: level, personal money, tools, skills and rider gear")
+	check(absf(main.saver.play_time - 3720.0) < 5.0, "the play time carries on")
+	# Load B from the Esc menu: A is saved first.
+	Progress.profile["xp"] = Progress.xp_for_level(7)
+	main.load_game("save_garage_b", false)
+	await get_tree().process_frame
+	check(Progress.level() == 2 and Progress.money() == 5 and Shed.garage_money == 111 and _bike_named("Ranger B") == ranger,
+		"loading Garage B from the game gives B's garage and character")
+	check(int(SaveGame.read_meta("save_garage_a")["level"]) == 7, "and Garage A was saved on the way out")
+	# The Esc menu's save games screen.
+	main.menu.show_pause()
+	main.menu.show_saves(true)
+	await get_tree().process_frame
+	var rows: Array = main.menu.saves._list.get_children().filter(func(c): return not c.is_queued_for_deletion())
+	check(main.menu.saves.visible and not main.menu._tabs.visible and rows.size() == 2, "the Esc menu's Save games screen lists both")
+	main._leave()
+	# Rename and delete.
+	check(SaveGame.rename_slot("save_garage_a", "Renamed A") and SaveGame.read_meta("save_garage_a")["name"] == "Renamed A"
+		and SaveGame.read("save_garage_a")["name"] == "Renamed A", "a save can be renamed")
+	check(SaveGame.name_problem("renamed a") != "" and SaveGame.name_problem("renamed a", "save_garage_a") == ""
+		and SaveGame.name_problem("  ") != "", "names must be new and not blank")
+	main.menu.show_title()
+	main.menu.show_saves(false)
+	await get_tree().process_frame
+	main.menu.saves.delete_save("save_garage_b")
+	await get_tree().process_frame
+	rows = main.menu.saves._list.get_children().filter(func(c): return not c.is_queued_for_deletion())
+	check(SaveGame.list_saves().size() == 1 and not SaveGame.has_save("save_garage_b") and not FileAccess.file_exists(SaveGame.meta_path("save_garage_b"))
+		and rows.size() == 1 and SaveGame.active_slot() == "save_garage_a", "deleting B removes its files, and A is the game in play")
+	check(main.menu._solo.visible and main.menu._solo.text.contains("Renamed A"), "the title offers to continue Renamed A (%s)" % main.menu._solo.text)
+	main.queue_free()
+	await get_tree().process_frame
+	_clear_save_dir(SaveGame.dir)
+	SaveGame.dir = kept_dir
+	SaveGame.slot_override = ""
+	SaveGame.last_saved = 0
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = kept_path
+	Progress.select(Settings.player_name)
+
+
+func _clear_save_dir(path: String) -> void:
+	if not DirAccess.dir_exists_absolute(path):
+		return
+	for f in DirAccess.get_files_at(path):
+		DirAccess.remove_absolute(path + f)
 
 
 func _test_whiteboard() -> void:

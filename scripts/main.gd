@@ -140,6 +140,11 @@ func _ready() -> void:
 	menu.join_game.connect(_join)
 	menu.resume.connect(_close_menu)
 	menu.leave_session.connect(_leave)
+	menu.load_game.connect(load_game)
+	menu.save_as.connect(func(called): saver.save_as(called))
+	menu.save_renamed.connect(func(id, called):
+		if in_session and id == SaveGame.active_slot():
+			saver.save_name = called)
 	menu.order_bike.connect(func():
 		Shed.request({"a": "order"})
 		_close_menu())
@@ -217,13 +222,25 @@ func _start_session() -> void:
 		return
 	in_session = true
 	menu.hide()
-	Progress.select(Settings.player_name)
 	Net.update_local_info(_local_info())
 	if Net.is_online() and not Net.is_host():
+		# Joining someone else's shed: your character comes from your own profile.json.
+		Progress.select(Settings.player_name)
 		Shed.join_remote()
-	elif menu.new_shed or not saver.continue_shed():
-		Shed.start_new(Settings.player_name)
+	else:
+		# Solo or hosting: the save game holds your character (outside the test scenes).
+		if not SaveGame.characters_in_saves():
+			Progress.select(Settings.player_name)
+		if menu.new_shed:
+			if menu.new_name != "":
+				SaveGame.use_slot(SaveGame.new_id(menu.new_name))
+			Shed.start_new(Settings.player_name)
+			saver.begin_new(menu.new_name)
+		elif not saver.continue_shed():
+			Shed.start_new(Settings.player_name)
+			saver.begin_new()
 	menu.new_shed = false
+	menu.new_name = ""
 	walker = Walker.new()
 	world.add_child(walker)
 	walker.place(Workshop.walker_spawn(Net.local_slot()))
@@ -252,6 +269,23 @@ func _start_session() -> void:
 	_capture_mouse(true)
 	hud.flash("Welcome to the shed. Esc for the menu.", 4.0)
 	saver.session_started()
+	if SaveGame.last_saved == 0 and SaveGame.characters_in_saves():
+		saver.save_soon()   # a new game shows on the Load screen (with its picture) in a moment
+
+
+## Plays the save game `id`: saves and closes the one in play first (a co-op host's crew is
+## sent back to their title screens), then opens it solo or hosted.
+func load_game(id: String, as_host: bool) -> void:
+	if in_session:
+		saver.save_now()
+		Net.leave()
+		_end_session()
+	SaveGame.use_slot(id)
+	menu.new_shed = false
+	if as_host:
+		_host()
+	else:
+		_start_session()
 
 
 func _leave() -> void:
@@ -281,6 +315,7 @@ func _end_session() -> void:
 		walker.queue_free()
 		walker = null
 	Shed.stop()
+	Progress.release(Settings.player_name)
 	hud.walker = null
 	hud.visible = false
 	_title_camera()
@@ -541,6 +576,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif menu.visible:
 			_close_menu()
 		else:
+			saver.grab_thumbnail()   # before the menu covers the shed
 			menu.show_pause()
 			_capture_mouse(false)
 		get_viewport().set_input_as_handled()
