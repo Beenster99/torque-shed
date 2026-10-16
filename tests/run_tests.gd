@@ -86,6 +86,8 @@ func _run_all() -> void:
 	await _test_whiteboard()
 	print("Tuning room and dyno")
 	await _test_tuning()
+	await _test_ecu_aid_settings()
+	_test_bike_paint_panels()
 	print("XP, levels, tool upgrades and skills")
 	_test_progress()
 	print("Bike lights, tyres and the tyre changer")
@@ -2581,6 +2583,109 @@ func _test_whiteboard() -> void:
 	main._end_session()
 	main.queue_free()
 	await get_tree().process_frame
+
+## The ECU's rider aids on the dyno desk: only those the fitted ECU has, off or a level each,
+## kept on the bike (and through a save), and riding uses them.
+func _test_ecu_aid_settings() -> void:
+	var sport := BikeBuild.new({"ecu": "sport_ecu"})
+	var race := BikeBuild.new({"ecu": "race_ecu"})
+	check(sport.tune_block("aid_traction") == "" and sport.tune_block("aid_anti_wheelie") == ""
+		and sport.tune_block("aid_stability").contains("no stability control") and race.tune_block("aid_stability") == ""
+		and BikeBuild.new({"ecu": "stock_ecu"}).tune_block("aid_traction").contains("no traction"),
+		"only the aids the ECU has can be set (sport: traction and anti-wheelie; race: stability too)")
+	check(is_equal_approx(race.aid_strength("traction"), race.ecu_aid) and is_equal_approx(sport.aid_strength("anti_wheelie"), sport.ecu_aid)
+		and sport.aid_strength("stability") == 0.0, "untouched, each aid works as the ECU came from the factory")
+	var off := BikeBuild.new({"ecu": "race_ecu"}, {}, {"aid_traction": 0.0, "aid_stability": 1.0, "aid_anti_wheelie": 5.0})
+	check(not off.aid_on("traction") and off.aid_strength("stability") < race.aid_strength("stability") * 0.5
+		and off.aid_strength("anti_wheelie") > race.aid_strength("anti_wheelie"), "off, gentle and firm levels change how hard they step in")
+	check(TuningComputer.value_text("aid_traction", 0.0, race) == "Off" and TuningComputer.value_text("aid_traction", 3.0, race).contains("factory"),
+		"the desk reads them as off or a level (%s)" % TuningComputer.value_text("aid_traction", 3.0, race))
+	check(TuningComputer.aids_note(BikeBuild.new()).contains("no rider aids") and TuningComputer.aids_note(sport).contains("traction control")
+		and not TuningComputer.aids_note(sport).contains("stability"), "the Rider aids tab says what this ECU has")
+
+	# Set from the desk, through the Shed: kept on the bike, through a save and co-op sync.
+	Shed.start_new("Tester", 7)
+	var bike := _bike_named("Old Faithful")
+	var me := Shed.me()
+	check(Shed.check(me, {"a": "tune", "bike": bike, "key": "aid_traction", "value": 0}).contains("ECU"),
+		"a bike with no aids on its ECU can't have them set")
+	var ecu := Shed._new_item("race_ecu", 0.0, 0.0, 0.0)
+	Shed._move(ecu, "bike", bike)
+	Shed.bikes[bike]["slots"]["ecu"] = ecu
+	Shed.bikes[bike]["bolted"]["ecu"] = true
+	Shed.request({"a": "tune", "bike": bike, "key": "aid_traction", "value": 0})
+	Shed.request({"a": "tune", "bike": bike, "key": "aid_anti_wheelie", "value": 1})
+	check(is_equal_approx(float(Shed.bikes[bike]["tune"].get("aid_traction", -1.0)), 0.0), "the setting is kept on the bike")
+	var copy: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	Shed._sync(copy)
+	var b := Shed.build_of(bike)
+	check(not b.aid_on("traction") and b.aid_on("anti_wheelie") and b.aid_strength("anti_wheelie") < b.ecu_aid
+		and is_equal_approx(b.aid_strength("stability"), b.ecu_aid), "and survives a save, so the ride uses it")
+
+	# Riding: full gas on loose dirt with no rider help, traction control off and then at its firmest.
+	var spins := []
+	for level in [0.0, 5.0]:
+		var spin := [0.0, 0]
+		var r := await ride({"engine": "four_1000", "ecu": "race_ecu"}, 3.0, func(bk, t):
+			bk.build.tune["aid_traction"] = level
+			bk.build.tune["aid_anti_wheelie"] = 5.0
+			bk.assist = 0.0
+			bk.throttle = 1.0 if t > 0.3 else 0.0
+			if t > 0.6 and bk.wheels[1]["contact"]:
+				spin[0] += (float(bk.wheels[1]["omega"]) * bk.build.rear_radius - bk.speed) / maxf(bk.speed, 1.0)
+				spin[1] += 1, "dirt")
+		spins.append(spin[0] / maxf(1.0, float(spin[1])))
+		await _done(r)
+	check(spins[0] > spins[1] * 1.15, "traction control off lets the back tyre spin up on dirt; at level 5 it holds it (slip %.2f vs %.2f)" % spins)
+	# Anti-wheelie off lets the front come up that the factory setting keeps down.
+	var pitches := []
+	for level in [0.0, 3.0]:
+		var pitch := [0.0]
+		var r := await ride({"engine": "four_1000", "ecu": "race_ecu"}, 5.0, func(bk, t):
+			bk.build.tune["aid_anti_wheelie"] = level
+			bk.body_shift = -1.0
+			bk.throttle = 1.0 if t > 0.5 else 0.0
+			pitch[0] = maxf(pitch[0], rad_to_deg(bk.pitch_angle)))
+		pitches.append(pitch[0])
+		await _done(r)
+	check(pitches[0] > pitches[1] + 5.0, "anti-wheelie off lets it wheelie (%.0f deg) where the factory level keeps it near level (%.0f deg)" % pitches)
+
+
+## The bike details pages list the paint panel by panel: each panel's own colour or mix (name
+## and code), finish, coats, lacquer, job quality and stripe.
+func _test_bike_paint_panels() -> void:
+	Shed.start_new("Tester", 7)
+	var bike := _bike_named("Old Faithful")
+	var tank: Dictionary = Shed.items[Shed.item_on(bike, "tank")]
+	var tin := PaintMix.new_tin("W")
+	tin["tints"] = {"PB": 40.0, "AL": 12.0}
+	tank["mix"] = PaintMix.spec(tin, "Midnight Blue")
+	tank["mix_coats"] = 2
+	tank["paint_quality"] = 0.91
+	tank["coat"] = "clear"
+	tank["coat_q"] = 0.88
+	tank["mask"] = {"pattern": "stripe", "color": Color(0.9, 0.9, 0.9), "q": 1.0, "mix": {}}
+	var list := BikePaintInfo.panels(bike)
+	check(not list.is_empty() and str(list[0]["slot"]) == "tank", "the tank heads the list of painted panels")
+	var t := BikePaintInfo.line(list[0])
+	check(t.contains("Midnight Blue") and t.contains(str(tank["mix"]["code"])) and t.contains("2 coats") and t.contains("job 91%")
+		and t.contains("clear lacquer") and t.contains("Centre stripe in white"),
+		"each panel has its own paint: mix name and code, coats, lacquer, quality and stripe (%s)" % t)
+	var slots := list.map(func(e): return str(e["slot"]))
+	var other: Dictionary = list[slots.find("frame")] if slots.has("frame") else {}
+	check(slots.size() >= 2 and not other.is_empty() and str(other["colour"]) != "Midnight Blue",
+		"other panels show their own paint, not the tank's (%s)" % ", ".join(slots))
+	check(not slots.has("engine") and not slots.has("chain"), "unpainted mechanical parts aren't listed")
+	var text := BikePaintInfo.text(bike)
+	check(text.begins_with("Fuel tank: Midnight Blue") or text.begins_with("Tank: Midnight Blue"), "the Sell aisle's text lists it too: %s" % text.get_slice("\n", 0))
+	var pc := SalesComputer.new()
+	var box := VBoxContainer.new()
+	pc._paint_card(box, bike)
+	check(box.get_child_count() == 1 and box.get_child(0).get_child(0).get_child_count() == list.size() + 1,
+		"the showroom page gets a paint card with a row per panel")
+	box.free()
+	pc.free()
+
 
 func _test_tuning() -> void:
 	Shed.start_new("Tester", 7)

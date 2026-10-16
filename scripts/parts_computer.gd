@@ -1088,7 +1088,8 @@ func _show_sale(key: String) -> void:
 			if Money.rideable(id) else ("Complete, but needs petrol and oil to fetch the best price." if Shed.is_complete(id)
 			else "%d part%s missing and %d loose: a complete bike fetches more." % [missing, "" if missing == 1 else "s", loose])
 		_desc.text = "Sells the whole bike to the trade, off its display stand, with every part on it. %s" % state
-		_spec.text = "The money goes into the business's account. Private buyers pay more: price it at the sales office PC. Bikes sold: XP for whoever sells it."
+		_spec.text = "The money goes into the business's account. Private buyers pay more: price it at the sales office PC. Bikes sold: XP for whoever sells it." \
+			+ "\n\nPaint, panel by panel:\n" + BikePaintInfo.text(id)
 		return
 	var it: Dictionary = Shed.items.get(id, {})
 	var health := BikeBuild.part_health(Shed.condition_of(it)) if not it.is_empty() else 0.0
