@@ -26,7 +26,7 @@ func setup_visitor(v: Dictionary, bike: Dictionary, parked: bool) -> void:
 	_make_figure({"id": CoffeeShop.ID_BASE + visitor_id, "name": v.get("name", "Biker"), "look": v.get("look", {})})
 	name = "CafeVisitor%d" % visitor_id
 	_park_xf = CoffeeShop.park_xf(int(v.get("park", 0)))
-	var ride := CoffeeShop.ride_in(int(v.get("park", 0)))
+	var ride := CoffeeShop.ride_in(int(v.get("park", 0)), visitor_id)
 	if parked:
 		_make_bike(bike, _park_xf, true)
 		_add_bike_body()

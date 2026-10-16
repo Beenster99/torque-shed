@@ -116,7 +116,7 @@ func _spawn(v: Dictionary) -> void:
 	var seat := int(v.get("seat", 0))
 	if st == "sold" or (st == "out" and _since(float(v.get("since", 0.0))) > LATE):
 		return
-	var ride := CoffeeShop.ride_in(park)
+	var ride := CoffeeShop.ride_in(park, id)
 	var walk := CoffeeShop.walk_to_seat(park, seat)
 	var ride_secs := SalesView._length(ride) / Contracts.RIDE_SPEED * 1.5 + 2.0
 	var walk_secs := SalesView._length(walk) / Contracts.WALK_SPEED + 1.0
@@ -134,7 +134,7 @@ func _spawn(v: Dictionary) -> void:
 		"browse":
 			cv.look_now(int(v.get("stand", 0)), int(v.get("look_k", 0)))
 		"out":
-			cv.go(PackedVector3Array(), "mount", CoffeeShop.ride_out(park))
+			cv.go(PackedVector3Array(), "mount", CoffeeShop.ride_out(park, int(v["id"])))
 
 
 ## A visitor drawn already does what they're doing now.
@@ -151,7 +151,7 @@ func _move_on(cv: CoffeeVisitor, v: Dictionary, prev: String) -> void:
 		"out":
 			cv.leaving = true
 			var back := CoffeeShop.walk_showroom_to_bike(stand, park, k) if prev == "browse" else CoffeeShop.walk_from_seat(seat, park)
-			cv.go(back, "mount", CoffeeShop.ride_out(park))
+			cv.go(back, "mount", CoffeeShop.ride_out(park, int(v["id"])))
 		"sold":
 			# Their bike's the shed's now (drawn by the shed): they walk off for a lift home.
 			cv.leaving = true

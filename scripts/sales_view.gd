@@ -91,17 +91,9 @@ static func viewing_xf(i: int) -> Transform3D:
 
 
 ## A part-exchange buyer's ride in: along the road past the yard and up onto the forecourt,
-## into their spot by the glass.
-static func px_ride_in(park: int) -> PackedVector3Array:
-	var pts := PackedVector3Array()
-	for x in [Contracts.ROAD_FAR_X, 56.0, 40.0, Contracts.ROAD_TURN_X]:
-		pts.append(Contracts.road_at(x))
-	var spot := Sales.PX_SPOTS[clampi(park, 0, Sales.PX_SPOTS.size() - 1)].origin
-	pts.append(Vector3(Contracts.ROAD_TURN_X - 3.0, 0.0, 116.0))
-	pts.append(Vector3(spot.x, 0.0, 94.0))
-	pts.append(Vector3(spot.x, 0.0, spot.z + 6.0))
-	pts.append(spot)
-	return pts
+## into their spot by the glass (their own way, with a `rider` id: see Contracts.ride_in_path).
+static func px_ride_in(park: int, rider := -1) -> PackedVector3Array:
+	return Contracts.ride_in_to(Sales.PX_SPOTS[clampi(park, 0, Sales.PX_SPOTS.size() - 1)].origin, rider)
 
 
 ## Their walk from their bike in through the doors to the bike they're after.
@@ -124,11 +116,11 @@ static func collect_walk(xf: Transform3D, from := Vector3.INF) -> PackedVector3A
 
 
 ## The ride away from a stand: out through the doors, across the forecourt clear of the car
-## park bays, and off along the road.
-static func ride_out(xf: Transform3D) -> PackedVector3Array:
+## park bays, and off along the road (their own way, with a `rider` id).
+static func ride_out(xf: Transform3D, rider := -1) -> PackedVector3Array:
 	var pts := PackedVector3Array([Vector3(xf.origin.x, 0.0, xf.origin.z), door_in() + Vector3(0.0, 0.0, -0.6), door_out() + Vector3(0.0, 0.0, 1.0),
 		Vector3(SalesOffice.SALES_DOOR.x + 3.0, 0.0, 77.0)])
-	var away := Contracts.ride_out_path(Transform3D(Basis(), Vector3(SalesOffice.FORECOURT.end.x + 1.0, 0.0, 77.0)))
+	var away := Contracts.ride_out_path(Transform3D(Basis(), Vector3(SalesOffice.FORECOURT.end.x + 1.0, 0.0, 77.0)), rider)
 	for p in away:
 		pts.append(p)
 	return pts
@@ -178,7 +170,7 @@ func _sync_px() -> void:
 			continue
 		var p: Dictionary = Sales.px()[id]
 		var walk := px_walk(p)
-		var ride := px_ride_in(int(p.get("park", 0)))
+		var ride := px_ride_in(int(p.get("park", 0)), Sales.PX_ID_BASE + int(id))
 		var paint: Color = Shed.PAINTS[int(p.get("paint", 0)) % Shed.PAINTS.size()]
 		var secs := _length(walk) / Contracts.WALK_SPEED + _length(ride) / Contracts.RIDE_SPEED * 1.5 + 2.0
 		var v := CustomerView.new()
@@ -204,7 +196,7 @@ func _sync_collect() -> void:
 		if not (d is Dictionary) or not (d.get("xf") is Transform3D) or collecting.has(int(d.get("id", 0))):
 			continue
 		var walk := collect_walk(d["xf"])
-		var ride := ride_out(d["xf"])
+		var ride := ride_out(d["xf"], Sales.BUYER_ID_BASE + int(d.get("id", 0)))
 		var secs := _length(walk) / Contracts.WALK_SPEED + _length(ride) / Contracts.RIDE_SPEED * 1.5 + 2.0
 		if _since(float(d.get("at", 0.0))) > secs:
 			collecting[int(d["id"])] = null
@@ -222,7 +214,7 @@ func _start_collect(d: Dictionary, from := Vector3.INF) -> void:
 	var v := CustomerView.new()
 	add_child(v)
 	v.setup_collect({"id": Sales.BUYER_ID_BASE + id, "name": d.get("name", ""), "look": d.get("look", {})}, collect_walk(xf, from),
-		{"parts": d.get("parts", {}), "paint": d.get("paint"), "cond": d.get("cond", {})}, xf, ride_out(xf))
+		{"parts": d.get("parts", {}), "paint": d.get("paint"), "cond": d.get("cond", {})}, xf, ride_out(xf, Sales.BUYER_ID_BASE + id))
 	collecting[id] = v
 
 
