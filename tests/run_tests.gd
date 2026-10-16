@@ -1372,8 +1372,15 @@ func _test_session() -> void:
 		await get_tree().physics_frame
 	check(not main.walker.crouched and main.walker.camera.position.y > 1.5, "C again stands you up")
 	# Hold F on the parked bike to take hold of it, wheel it backwards, and let go.
-	await _aim_at(main, faithful, "tank")
+	# Something passing through (a visitor riding in) can get between you and the bike for a frame,
+	# so take aim again until the bike itself is what you're looking at.
 	var parked_at: Vector3 = Shed.bikes[faithful]["xf"].origin
+	var aimed_at := {}
+	for attempt in 3:
+		await _aim_at(main, faithful, "tank")
+		aimed_at = main.walker.target
+		if int(aimed_at.get("bike", 0)) == faithful:
+			break
 	var down := InputEventAction.new()
 	down.action = "interact"
 	down.pressed = true
@@ -1385,7 +1392,8 @@ func _test_session() -> void:
 	up.pressed = false
 	get_viewport().push_input(up)
 	await get_tree().physics_frame
-	check(Shed.pushing_bike(Shed.me()) == faithful and main.bike == null, "holding F on a bike takes hold of it instead of getting on")
+	check(Shed.pushing_bike(Shed.me()) == faithful and main.bike == null,
+		"holding F on a bike takes hold of it instead of getting on (aimed at %s, riding %s)" % [str(aimed_at), str(main.bike != null)])
 	Input.action_press("move_back")
 	for i in 90:
 		await get_tree().physics_frame
