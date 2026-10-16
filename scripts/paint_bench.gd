@@ -66,7 +66,11 @@ func _ready() -> void:
 	_pad.gui_input.connect(_pad_input)
 	add_child(_pad)
 	_hint = UITheme.label("", 16, Color(1, 1, 1, 0.85))
-	_hint.position = Vector2(24, 20)
+	# Across the top of the bench view (a label left unsized would wrap a letter a line).
+	_hint.anchor_right = 1.0
+	_hint.offset_left = 24
+	_hint.offset_right = -24
+	_hint.offset_top = 20
 	_hint.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
 	_pad.add_child(_hint)
 	var panel := PanelContainer.new()
@@ -418,12 +422,15 @@ func _fill_mix(tin: Dictionary) -> void:
 	_target_rect.custom_minimum_size = Vector2(150, 56)
 	swatches.add_child(_target_rect)
 	var legend := UITheme.label("mix\ntarget", 13, Color(1, 1, 1, 0.55))
+	legend.autowrap_mode = TextServer.AUTOWRAP_OFF
 	swatches.add_child(legend)
 	_box.add_child(swatches)
 	_match_l = UITheme.label("", 16)
 	_box.add_child(_match_l)
 	var stir_row := HBoxContainer.new()
-	stir_row.add_child(UITheme.label("Stirred", 14))
+	var stirred := UITheme.label("Stirred", 14)
+	stirred.autowrap_mode = TextServer.AUTOWRAP_OFF
+	stir_row.add_child(stirred)
 	_stir_bar = ProgressBar.new()
 	_stir_bar.custom_minimum_size = Vector2(300, 18)
 	_stir_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -460,7 +467,8 @@ func _fill_mix(tin: Dictionary) -> void:
 		tb.text = "%s %s  %s" % [c, str(PaintMix.TINTS[c]["name"]).left(16), PaintBay.stock_text(c)]
 		tb.disabled = why != "" and tint != c
 		tb.tooltip_text = why
-		tb.custom_minimum_size = Vector2(200, 0)
+		tb.custom_minimum_size = Vector2(190, 0)
+		tb.clip_text = true
 		tb.pressed.connect(func():
 			_flush()
 			tint = c
@@ -511,7 +519,7 @@ func _act(label: String, action: Dictionary) -> Button:
 func _note(t: String) -> Label:
 	var l := UITheme.label(t, 13, Color(1, 1, 1, 0.55))
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.custom_minimum_size = Vector2(PANEL_W - 40, 0)
+	l.custom_minimum_size = Vector2(PANEL_W - 70, 0)
 	return l
 
 
@@ -571,7 +579,7 @@ func _recipe_row(title: String, code: String, color: Color, note: String, effect
 	var l := UITheme.label("%s  ·  %s%s" % [title, PaintMix.effect_name(effect).to_lower(), "\n" + note if note != "" else ""], 14)
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.custom_minimum_size = Vector2(200, 0)
+	l.custom_minimum_size = Vector2(170, 0)
 	row.add_child(l)
 	var load_b := ContractPanel.button("Card", func(): Shed.request({"a": "paint_recipe", "code": code, "name": title.left(32)}))
 	load_b.tooltip_text = code
