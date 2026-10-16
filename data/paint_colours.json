@@ -1,0 +1,496 @@
+[
+	{
+		"brand": "Triumph",
+		"code": "B-LY0.3-BR4-BK8-WH16:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "triumph_jet_black",
+		"name": "Jet Black",
+		"rgb": [
+			0.035,
+			0.035,
+			0.04
+		]
+	},
+	{
+		"brand": "Triumph",
+		"code": "W-PG0.3-BR3.3-WH28:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "triumph_crystal_white",
+		"name": "Crystal White",
+		"rgb": [
+			0.92,
+			0.92,
+			0.9
+		]
+	},
+	{
+		"brand": "Triumph",
+		"code": "S-SC72-MG16-VI16-BR192-BK4:M",
+		"effect": "metallic",
+		"finish": "gloss",
+		"id": "triumph_cranberry_red",
+		"name": "Cranberry Red",
+		"rgb": [
+			0.48,
+			0.07,
+			0.1
+		]
+	},
+	{
+		"brand": "Triumph",
+		"code": "W-LY60.5-UB7.5-PB7-BK48.8-WH172:S",
+		"effect": "solid",
+		"finish": "matt",
+		"id": "triumph_matt_khaki",
+		"name": "Matt Khaki Green",
+		"rgb": [
+			0.34,
+			0.35,
+			0.25
+		]
+	},
+	{
+		"brand": "Triumph",
+		"code": "W-LY256-OR44:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "triumph_racing_yellow",
+		"name": "Racing Yellow",
+		"rgb": [
+			0.96,
+			0.8,
+			0.06
+		]
+	},
+	{
+		"brand": "Ducati",
+		"code": "W-SC236-OX64:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "ducati_rosso_corsa",
+		"name": "Rosso Corsa",
+		"rgb": [
+			0.8,
+			0.07,
+			0.06
+		]
+	},
+	{
+		"brand": "Ducati",
+		"code": "W-LY232-OR68:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "ducati_giallo",
+		"name": "Giallo Ducati",
+		"rgb": [
+			0.98,
+			0.77,
+			0.02
+		]
+	},
+	{
+		"brand": "Ducati",
+		"code": "S-OX0.3-PG0.3-BR8-BK64-WH9:M",
+		"effect": "metallic",
+		"finish": "matt",
+		"id": "ducati_dark_stealth",
+		"name": "Dark Stealth",
+		"rgb": [
+			0.13,
+			0.13,
+			0.14
+		]
+	},
+	{
+		"brand": "Ducati",
+		"code": "W-PB0.3-BR4.8:S",
+		"effect": "solid",
+		"finish": "satin",
+		"id": "ducati_arctic_white_silk",
+		"name": "Arctic White Silk",
+		"rgb": [
+			0.9,
+			0.9,
+			0.88
+		]
+	},
+	{
+		"brand": "Kawasaki",
+		"code": "W-LY240-PG60:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "kawasaki_lime_green",
+		"name": "Lime Green",
+		"rgb": [
+			0.38,
+			0.73,
+			0.12
+		]
+	},
+	{
+		"brand": "Kawasaki",
+		"code": "C-LY11-OR6-CG17:C",
+		"effect": "candy",
+		"finish": "gloss",
+		"id": "kawasaki_candy_lime",
+		"name": "Candy Lime Green",
+		"rgb": [
+			0.22,
+			0.52,
+			0.1
+		]
+	},
+	{
+		"brand": "Kawasaki",
+		"code": "S-OX1-BK132-WH3:M",
+		"effect": "metallic",
+		"finish": "gloss",
+		"id": "kawasaki_spark_black",
+		"name": "Metallic Spark Black",
+		"rgb": [
+			0.07,
+			0.07,
+			0.08
+		]
+	},
+	{
+		"brand": "Honda",
+		"code": "W-SC204-OX80-BR16:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "honda_hrc_red",
+		"name": "HRC Tricolour Red",
+		"rgb": [
+			0.78,
+			0.06,
+			0.09
+		]
+	},
+	{
+		"brand": "Honda",
+		"code": "W-MG96-UB64-PB140:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "honda_hrc_blue",
+		"name": "HRC Tricolour Blue",
+		"rgb": [
+			0.06,
+			0.15,
+			0.55
+		]
+	},
+	{
+		"brand": "Honda",
+		"code": "W-UB1-WH12-PW40:P",
+		"effect": "pearl",
+		"finish": "gloss",
+		"id": "honda_hrc_white",
+		"name": "HRC Tricolour White",
+		"rgb": [
+			0.93,
+			0.93,
+			0.94
+		]
+	},
+	{
+		"brand": "Honda",
+		"code": "C-VI2-CR27:C",
+		"effect": "candy",
+		"finish": "gloss",
+		"id": "honda_candy_red",
+		"name": "Candy Chromosphere Red",
+		"rgb": [
+			0.55,
+			0.04,
+			0.06
+		]
+	},
+	{
+		"brand": "Yamaha",
+		"code": "W-VI36-UB104-PB128:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "yamaha_racing_blue",
+		"name": "Racing Blue",
+		"rgb": [
+			0.06,
+			0.24,
+			0.66
+		]
+	},
+	{
+		"brand": "Yamaha",
+		"code": "W-BK129-WH85:S",
+		"effect": "solid",
+		"finish": "satin",
+		"id": "yamaha_tech_black",
+		"name": "Tech Black",
+		"rgb": [
+			0.1,
+			0.1,
+			0.11
+		]
+	},
+	{
+		"brand": "Yamaha",
+		"code": "W-LY264-OR36:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "yamaha_speed_yellow",
+		"name": "Speed Block Yellow",
+		"rgb": [
+			0.97,
+			0.82,
+			0.08
+		]
+	},
+	{
+		"brand": "Suzuki",
+		"code": "W-UB0.8-WH14-PW40:P",
+		"effect": "pearl",
+		"finish": "gloss",
+		"id": "suzuki_pearl_glacier",
+		"name": "Pearl Glacier White",
+		"rgb": [
+			0.93,
+			0.94,
+			0.95
+		]
+	},
+	{
+		"brand": "Suzuki",
+		"code": "S-OX4-MG20-VI16-UB44-PB216:M",
+		"effect": "metallic",
+		"finish": "gloss",
+		"id": "suzuki_triton_blue",
+		"name": "Metallic Triton Blue",
+		"rgb": [
+			0.07,
+			0.22,
+			0.58
+		]
+	},
+	{
+		"brand": "Suzuki",
+		"code": "W-LY285-OR15:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "suzuki_champion_yellow",
+		"name": "Champion Yellow No.2",
+		"rgb": [
+			0.98,
+			0.86,
+			0.05
+		]
+	},
+	{
+		"brand": "BMW",
+		"code": "S-UB73-PB32-WH20:M",
+		"effect": "metallic",
+		"finish": "gloss",
+		"id": "bmw_racing_blue",
+		"name": "Racing Blue Metallic",
+		"rgb": [
+			0.1,
+			0.32,
+			0.72
+		]
+	},
+	{
+		"brand": "BMW",
+		"code": "W-BR0.8:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "bmw_light_white",
+		"name": "Light White",
+		"rgb": [
+			0.94,
+			0.94,
+			0.93
+		]
+	},
+	{
+		"brand": "BMW",
+		"code": "W-SC204-OX64-MG16-BR16:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "bmw_racing_red",
+		"name": "Racing Red",
+		"rgb": [
+			0.8,
+			0.09,
+			0.11
+		]
+	},
+	{
+		"brand": "KTM",
+		"code": "W-LY64-OR177-SC59:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "ktm_orange",
+		"name": "Orange",
+		"rgb": [
+			0.97,
+			0.42,
+			0.02
+		]
+	},
+	{
+		"brand": "Harley-Davidson",
+		"code": "B-BK256:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "harley_vivid_black",
+		"name": "Vivid Black",
+		"rgb": [
+			0.02,
+			0.02,
+			0.025
+		]
+	},
+	{
+		"brand": "Harley-Davidson",
+		"code": "W-YO1-VI1-PG2-BK48-WH248:S",
+		"effect": "solid",
+		"finish": "satin",
+		"id": "harley_gunship_grey",
+		"name": "Gunship Grey",
+		"rgb": [
+			0.31,
+			0.32,
+			0.33
+		]
+	},
+	{
+		"brand": "Harley-Davidson",
+		"code": "B-SC260-FS40:F",
+		"effect": "flake",
+		"finish": "gloss",
+		"id": "harley_hot_rod_red_flake",
+		"name": "Hot Rod Red Flake",
+		"rgb": [
+			0.58,
+			0.06,
+			0.06
+		]
+	},
+	{
+		"brand": "Classic",
+		"code": "B-LY51-PB10-PG76:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "british_racing_green",
+		"name": "British Racing Green",
+		"rgb": [
+			0.0,
+			0.26,
+			0.15
+		]
+	},
+	{
+		"brand": "Norton",
+		"code": "S-UB0.3-WH58.3:M",
+		"effect": "metallic",
+		"finish": "gloss",
+		"id": "norton_silver",
+		"name": "Silver",
+		"rgb": [
+			0.76,
+			0.77,
+			0.79
+		]
+	},
+	{
+		"brand": "MV Agusta",
+		"code": "W-SC204-OX16-VI16-BR64:S",
+		"effect": "solid",
+		"finish": "gloss",
+		"id": "mv_agusta_red",
+		"name": "Rosso",
+		"rgb": [
+			0.74,
+			0.05,
+			0.09
+		]
+	},
+	{
+		"brand": "Moto Guzzi",
+		"code": "S-SC72-OX80-MG16-BR128-BK4:M",
+		"effect": "metallic",
+		"finish": "gloss",
+		"id": "moto_guzzi_legnano",
+		"name": "Rosso Legnano",
+		"rgb": [
+			0.52,
+			0.08,
+			0.08
+		]
+	},
+	{
+		"brand": "Royal Enfield",
+		"code": "W-LY1-YO53.3-PG1-BR62.8-WH117:S",
+		"effect": "solid",
+		"finish": "matt",
+		"id": "royal_enfield_desert_sand",
+		"name": "Desert Sand",
+		"rgb": [
+			0.74,
+			0.66,
+			0.48
+		]
+	},
+	{
+		"brand": "Indian",
+		"code": "S-SC40-OX192-VI44-BK24:M",
+		"effect": "metallic",
+		"finish": "gloss",
+		"id": "indian_burgundy",
+		"name": "Burgundy Metallic",
+		"rgb": [
+			0.38,
+			0.06,
+			0.1
+		]
+	},
+	{
+		"brand": "Aprilia",
+		"code": "B-BR48-FS40:F",
+		"effect": "flake",
+		"finish": "gloss",
+		"id": "aprilia_black_flake",
+		"name": "Black Gold Flake",
+		"rgb": [
+			0.06,
+			0.05,
+			0.04
+		]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "C-LY4-VI14-CB20.3:C",
+		"effect": "candy",
+		"finish": "gloss",
+		"id": "custom_kandy_blue",
+		"name": "Kandy Oriental Blue",
+		"rgb": [
+			0.05,
+			0.14,
+			0.5
+		]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "B-MG128-VI16-UB96-XP60:X",
+		"effect": "chameleon",
+		"finish": "gloss",
+		"id": "custom_purple_green",
+		"name": "Chameleon Purple-Green",
+		"rgb": [
+			0.3,
+			0.08,
+			0.4
+		]
+	}
+]

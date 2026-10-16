@@ -256,7 +256,8 @@ func _process(delta: float) -> void:
 		(mist.get_node("Haze") as CPUParticles3D).emitting = on
 	var stage := Progress.tool_stage(peer, tool)
 	var tray := CoffeeShop.tray_of(peer)
-	var sig := "%d|%s|%d|%s" % [held, tool, stage, str(tray.get("items", "-"))]
+	var bay := PaintBay.held(peer)
+	var sig := "%d|%s|%d|%s|%s" % [held, tool, stage, str(tray.get("items", "-")), str(bay) + str(PaintBay.held_tin(peer).get("code", ""))]
 	if sig == _hand_sig:
 		return
 	_hand_sig = sig
@@ -274,6 +275,12 @@ func _process(delta: float) -> void:
 		t.name = "Tray"
 		t.position = Vector3(-0.28, 0.0, -0.2)
 		_hand.add_child(t)
+	elif not bay.is_empty():
+		# A tin of paint or the masking tape from the mixing bay (see PaintBay).
+		var b := PaintBayRoom.tin_model(PaintBay.held_tin(peer)) if str(bay.get("kind", "")) == "tin" else PaintBayRoom.tape_model()
+		b.name = "PaintBay"
+		b.position = Vector3(-0.2, -0.05, -0.1)
+		_hand.add_child(b)
 	else:
 		_hand.add_child(Walker.make_tool_mesh(tool, Color(0.9, 0.75, 0.1), stage))
 		if tool == "lance":

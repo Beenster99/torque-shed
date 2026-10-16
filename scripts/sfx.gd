@@ -340,7 +340,7 @@ func step_surface(pos: Vector3) -> String:
 			return "epoxy" if epoxy else "concrete"
 		"annex":
 			return "metal" if pos.y > 0.3 else ("epoxy" if epoxy else "concrete")
-		"paint":
+		"paint", "mixing":
 			return "tile"
 		"sales":
 			return "wood" if pos.y > 0.25 else "tile"

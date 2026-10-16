@@ -23,6 +23,7 @@ var sales_pc: SalesComputer     # the Sales page on the sales office's PC
 var sales_view: SalesView       # part-exchange buyers, buyers collecting, the till, the stands' prices
 var coffee_panel: CoffeePanel   # the cafe counter's menu, and talking to a biker about their bike
 var coffee_view: CoffeeView     # the bikers at the cafe, its barista and the trays put down
+var paint_bench: PaintBench     # the paint mixing bay's bench, stepped up to (see PaintBay)
 var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
 var emote_bar: EmoteBar         # the emotes and their keys, while the bar is open (B)
 var audio: EngineSound
@@ -103,6 +104,13 @@ func _ready() -> void:
 	coffee_panel.visible = false
 	ui.add_child(coffee_panel)
 	coffee_panel.closed.connect(func(): _capture_mouse(true))
+	paint_bench = PaintBench.new()
+	paint_bench.visible = false
+	ui.add_child(paint_bench)
+	paint_bench.closed.connect(func():
+		if walker:
+			walker.camera.current = true
+		_capture_mouse(true))
 	coffee_view = CoffeeView.new()
 	coffee_view.name = "CafeVisitors"
 	coffee_view.main = self
@@ -214,6 +222,10 @@ func _start_session() -> void:
 	walker.computer_requested.connect(_open_computer)
 	walker.tuning_requested.connect(_open_tuning)
 	walker.sales_requested.connect(_open_sales)
+	walker.paint_bench_requested.connect(func():
+		paint_bench.open()
+		if paint_bench.visible:
+			_capture_mouse(false))
 	walker.label_requested.connect(func(id):
 		label_dialog.open(id)
 		_capture_mouse(false))
@@ -248,6 +260,8 @@ func _end_session() -> void:
 	label_dialog.visible = false
 	contract_panel.visible = false
 	coffee_panel.visible = false
+	paint_bench.visible = false
+	PaintBayRoom.live = {}
 	if geometry.active:
 		geometry.close()
 	_stop_riding()
@@ -493,7 +507,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not in_session or geometry.active:
 		return   # geometry mode takes its own keys, Esc and F2 included
 	if event.is_action_pressed("geometry_mode") and bike == null and walker and not menu.visible and not computer.visible \
-			and not tuning.visible and not sales_pc.visible and not label_dialog.visible and not contract_panel.visible and not coffee_panel.visible:
+			and not tuning.visible and not sales_pc.visible and not label_dialog.visible and not contract_panel.visible and not coffee_panel.visible \
+			and not paint_bench.visible:
 		get_viewport().set_input_as_handled()
 		open_geometry()
 		return
@@ -504,6 +519,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			contract_panel.close_dialog()
 		elif coffee_panel.visible:
 			coffee_panel.close_dialog()
+		elif paint_bench.visible:
+			paint_bench.close_dialog()
 		elif computer.visible:
 			computer.close_computer()
 		elif tuning.visible:
@@ -518,7 +535,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or coffee_panel.visible \
-			or bike == null:
+			or paint_bench.visible or bike == null:
 		return
 	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"):
 		# Swing the chase camera round the bike (or turn your head in first person).
@@ -561,7 +578,7 @@ func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
-		and not contract_panel.visible and not coffee_panel.visible and not geometry.active
+		and not contract_panel.visible and not coffee_panel.visible and not paint_bench.visible and not geometry.active
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:

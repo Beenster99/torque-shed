@@ -201,6 +201,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	set_lights(false, false)
 	# Before the bike's own fit moves anything: the mask is laid out where the parts were drawn.
 	_show_blasted()
+	_show_paint_fx()
 	if not geometry.is_empty():
 		apply_geometry(geometry)
 
@@ -223,6 +224,22 @@ func _show_blasted() -> void:
 		looks[slot] = look
 	if not looks.is_empty():
 		BlastMarks.show_saved(self, looks)
+
+
+## Mixed paint's effects pass (PaintMix.fx_pass) needs to know where each painted mesh sits in
+## the part, for stripes, a two-tone split or a fade to line up across all of it.
+func _show_paint_fx() -> void:
+	for slot in _slot_meshes:
+		var box := AABB()
+		var found := false
+		for mi in _slot_meshes[slot]:
+			var g := mi as GeometryInstance3D
+			if g == null or not is_instance_valid(g) or g.material_override == null or not g.material_override.has_meta("paint_fx"):
+				continue
+			if not found:
+				box = slot_bounds(str(slot))
+				found = true
+			PaintMix.place_fx(g, _local_xform(g), box)
 
 
 ## Where each cylinder's barrel sits and which way it points, for the engine layout. Barrels
@@ -4568,7 +4585,14 @@ func _mat(color: Color, metallic: float, roughness: float, clearcoat := 0.0) -> 
 			cond.erase("coat")
 	# A sprayed finish only goes on the painted surfaces, not the rubber or chrome bits.
 	var finish := str(cond.get("finish", ""))
-	if finish != "" and cond.has("color") and color == cond["color"]:
+	var mixed: bool = not cond.get("primer", false) and ((cond.get("mix") is Dictionary) or (cond.get("mask") is Dictionary) \
+		or (cond.get("tape") is Dictionary) or float(cond.get("flat", 0.0)) > 0.0)
+	if mixed and cond.has("color") and color == cond["color"]:
+		# Paint mixed in the mixing bay: its effect, masked stripes, tape and sheen (PaintMix).
+		PaintMix.apply(m, cond)
+		metallic = m.metallic
+		roughness = m.roughness
+	elif finish != "" and cond.has("color") and color == cond["color"]:
 		_apply_finish(m, color, finish)
 		metallic = m.metallic
 		roughness = m.roughness

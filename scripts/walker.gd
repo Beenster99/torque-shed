@@ -11,6 +11,7 @@ signal tuning_requested
 signal sales_requested
 signal label_requested(furniture_id: int)
 signal rename_requested(bike_id: int)
+signal paint_bench_requested
 
 const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair", "spray", "lance", "gun", "watch"]
 const TOOL_NAMES := {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder and welder",
@@ -235,6 +236,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Looking at a TV or one of the shed's screens: R for the next channel, T for the one before.
 		get_viewport().set_input_as_handled()
 		_change_channel(_screen_key(), 1 if event.is_action_pressed("alt_act") else -1)
+	elif str(PaintBay.held(Shed.me()).get("kind", "")) == "tape" and event.is_action_pressed("spray_colour"):
+		# Holding the masking tape: R picks what it masks off.
+		get_viewport().set_input_as_handled()
+		var pats := PaintMix.TAPE_PATTERNS
+		var now := pats.find(str(PaintBay.held(Shed.me()).get("pattern", "stripe")))
+		var next := pats[(now + 1) % pats.size()]
+		Shed.request({"a": "paint_tape_pattern", "pattern": next})
+		Shed.feedback.emit("Masking tape: %s" % str(PaintMix.PATTERNS[next]["name"]).to_lower(), true)
 	elif tool in ["spray", "gun"] and event.is_action_pressed("spray_colour"):
 		spray_color = (spray_color + 1) % Shed.PAINTS.size()
 		_spray_changed()
@@ -331,6 +340,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif target.get("kind", "") == "sales_pc":
 			get_viewport().set_input_as_handled()
 			sales_requested.emit()
+		elif target.get("kind", "") == "paint_bay" and _bay_interact():
+			get_viewport().set_input_as_handled()
 		elif target.get("kind", "") == "desk_bell":
 			get_viewport().set_input_as_handled()
 			Shed.ding_desk_bell()
@@ -433,8 +444,14 @@ func _spray_changed() -> void:
 	Shed.feedback.emit("Spray can: %s" % spray_text(), true)
 
 
-## "Gloss red": what the spray can is loaded with (or "Grey primer", or "Clear lacquer").
+## "Gloss red": what the spray can is loaded with (or "Grey primer", or "Clear lacquer", or the
+## spray gun's cup of mixed paint).
 func spray_text() -> String:
+	if spray_cup() != "":
+		var cup := PaintBay.cup_of(Shed.me())
+		var what := "empty (hold a tin of mixed paint, right mouse)" if cup.is_empty() else "%s, %.2f l" % [str(cup.get("name", "mixed paint")),
+			float(cup.get("litres", 0.0))]
+		return ("Cup: %s" if spray_cup() == "cup" else str(PaintMix.PATTERNS[spray_cup()]["name"]) + ": %s") % what
 	if spray_primer():
 		return "Grey primer"
 	if spray_coat() != "":
@@ -454,6 +471,10 @@ func spray_loads(for_tool := "") -> Array:
 		for c in Shed.COAT_ORDER:
 			out.append({"kind": "coat", "id": c})
 		out.append({"kind": "primer", "id": "primer"})
+		# The cup of paint mixed in the mixing bay (see PaintBay), all over or faded in.
+		out.append({"kind": "cup", "id": "cup"})
+		for f in PaintMix.FADE_PATTERNS:
+			out.append({"kind": "cup", "id": f})
 	else:
 		out.append({"kind": "primer", "id": "primer"})
 		out.append({"kind": "coat", "id": "clear"})
@@ -475,6 +496,22 @@ func spray_finish_id() -> String:
 func spray_coat() -> String:
 	var l := _spray_load()
 	return str(l["id"]) if l["kind"] == "coat" else ""
+
+
+## The spray gun's cup of mixed paint if that's loaded: "cup", or a fade ("fade_top"...); else "".
+func spray_cup() -> String:
+	var l := _spray_load()
+	return str(l["id"]) if l["kind"] == "cup" else ""
+
+
+## A short name for a load on the spray picker (HUD).
+func load_label(l: Dictionary) -> String:
+	match str(l.get("kind", "")):
+		"primer":
+			return "Grey primer"
+		"cup":
+			return {"cup": "Cup", "fade_top": "Fade top", "fade_rear": "Fade rear"}.get(str(l["id"]), "Cup")
+	return Shed.coat_name(str(l["id"]))
 
 
 ## Whether grey primer is loaded.
@@ -665,6 +702,10 @@ func _update_target() -> void:
 			t = {"kind": "dyno_kit", "kit": str(c.get_meta("dyno_kit")), "point": int(c.get_meta("point", 0))}
 		elif c.has_meta("whiteboard"):
 			t = {"kind": "board"}   # the Whiteboard handles drawing on it itself
+		elif c.has_meta("paint_bay"):
+			# The paint mixing bay's stations (PaintBayRoom).
+			t = {"kind": "paint_bay", "station": str(c.get_meta("paint_bay")), "slot": int(c.get_meta("slot", -1)),
+				"recipe": int(c.get_meta("recipe", 0))}
 		elif c.has_meta("top"):
 			# The top of a workbench, washer or repair machine: parts go anywhere on it.
 			t = {"kind": "top", "top": str(c.get_meta("top")), "furniture": int(c.get_meta("furniture", 0))}
@@ -1278,6 +1319,8 @@ func _make_plan() -> Dictionary:
 	var kind := str(target.get("kind", ""))
 	if CoffeeShop.carrying(me) or kind == "tray":
 		return _tray_plan()
+	if PaintBay.carrying(me) or kind == "paint_bay":
+		return _bay_plan()
 	if kind == "":
 		return {}
 	if kind == "dyno_kit" or Shed.hose_holder() == me:
@@ -1434,10 +1477,128 @@ func _make_plan() -> Dictionary:
 							near.append(id)
 				if not near.is_empty() or item_id != 0:
 					p = {"action": {"a": "wash", "items": near, "at": target["at"]}, "time": 0.2, "verb": "blast the muck off"}
+	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0:
+		_bay_alt(item_id)
 	if p.is_empty():
 		return {}
 	p["blocked"] = "" if p["action"]["a"] in ["computer", "tuning", "sales_pc", "write_label"] else Shed.check(me, p["action"])
 	return p
+
+
+## Empty hands on a part: right mouse peels masking tape off it, or (with the colour meter)
+## reads its paint for the mixing bench to match.
+func _bay_alt(item_id: int) -> void:
+	var me := Shed.me()
+	var it: Dictionary = Shed.items[item_id]
+	if it.get("tape") is Dictionary:
+		var peel := {"a": "paint_peel", "item": item_id}
+		alt_plan = {"action": peel, "time": 1.2, "verb": "peel the masking tape off", "blocked": Shed.check(me, peel)}
+	elif PaintBay.kit("meter") and it.has("paint_quality") and not it.get("primer_top", false):
+		var mix = it.get("mix")
+		var effect := str(mix.get("effect", "solid")) if mix is Dictionary else ("metallic" if str(it.get("finish", "")) == "metallic" else "solid")
+		var nm := str(mix.get("name", "")) if mix is Dictionary else ""
+		if nm == "":
+			nm = "the %s" % Shed.item_title(item_id).to_lower()
+		var read := {"a": "paint_target", "meter": true, "color": it["color"], "effect": effect, "name": nm.left(32)}
+		alt_plan = {"action": read, "time": 0.8, "verb": "read its colour with the colour meter (the bench's target)", "blocked": Shed.check(me, read)}
+
+
+## F at the paint mixing bay: step up to the bench (or put the tin in your hands on its scale),
+## take or hang up the masking tape, pin a swatch card to the whiteboard. Whether F did anything.
+func _bay_interact() -> bool:
+	var me := Shed.me()
+	var st := str(target.get("station", ""))
+	var h := PaintBay.held(me)
+	match st:
+		"bench", "shaker":
+			if str(h.get("kind", "")) == "tin":
+				Shed.request({"a": "paint_tin_bench"})
+				return true
+			if Shed.held_by(me) != 0:
+				Shed.feedback.emit("Put the part down first.", false)
+				return true
+			paint_bench_requested.emit()
+			return true
+		"tape":
+			Shed.request({"a": "paint_tape_put"} if str(h.get("kind", "")) == "tape" else {"a": "paint_tape_take"})
+			Sfx.play_at("pickup", camera.global_position, -6.0)
+			return true
+		"swatch":
+			Shed.request({"a": "paint_pin", "recipe": int(target.get("recipe", 0))})
+			return true
+	return false
+
+
+## In the paint mixing bay, or carrying a tin or the masking tape from it (see PaintBay).
+func _bay_plan() -> Dictionary:
+	var me := Shed.me()
+	var h := PaintBay.held(me)
+	var st := str(target.get("station", ""))
+	var p := {}
+	match str(h.get("kind", "")):
+		"tin":
+			var cup := {"a": "paint_cup"}
+			alt_plan = {"action": cup, "time": 1.0, "verb": "pour it into the spray gun's cup", "blocked": Shed.check(me, cup)}
+			match st:
+				"slot":
+					p = {"action": {"a": "paint_tin_put", "slot": int(target["slot"])}, "time": 0.3, "verb": "put the tin on the shelf"}
+				"bench", "shaker":
+					p = {"action": {"a": "paint_tin_bench"}, "time": 0.3, "verb": "put it on the scale"}
+				"bin":
+					p = {"action": {"a": "paint_tin_bin"}, "time": 0.6, "verb": "bin the tin"}
+			if p.is_empty():
+				var mate := _mate_ahead()
+				if mate != 0:
+					p = {"action": {"a": "paint_tin_give", "to": mate}, "time": 0.4,
+						"verb": "hand %s the tin" % str(Shed.crew.get(mate, {}).get("name", "them"))}
+		"tape":
+			var item := target_item()
+			if st == "tape":
+				p = {"action": {"a": "paint_tape_put"}, "time": 0.3, "verb": "hang the tape back on its hook"}
+			elif item != 0:
+				var pattern := str(h.get("pattern", "stripe"))
+				var q := clampf(0.8 + Progress.level() * 0.01 + (0.05 if crouched else 0.0), 0.3, 1.0)
+				p = {"action": {"a": "paint_tape", "item": item, "quality": q}, "time": 2.5,
+					"verb": "mask it off: %s (R picks)" % str(PaintMix.PATTERNS[pattern]["name"]).to_lower()}
+				if Shed.items[item].get("tape") is Dictionary:
+					var peel := {"a": "paint_peel", "item": item}
+					alt_plan = {"action": peel, "time": 1.2, "verb": "peel the masking tape off", "blocked": Shed.check(me, peel)}
+		_:
+			match st:
+				"slot":
+					var t := PaintBay.tin_in_slot(int(target["slot"]))
+					if not t.is_empty():
+						p = {"action": {"a": "paint_tin_take", "tin": int(t["id"])}, "time": 0.3, "verb": "take the tin"}
+				"tape":
+					p = {"action": {"a": "paint_tape_take"}, "time": 0.3, "verb": "take the masking tape"}
+				"bench":
+					p = {"action": {"a": "paint_bench_ui"}, "time": 0.15, "verb": "use the mixing bench", "blocked": ""}
+				"swatch":
+					var r: Dictionary = PaintBay.recipes().get(int(target.get("recipe", 0)), {})
+					if not r.is_empty():
+						p = {"action": {"a": "paint_recipe", "code": str(r["code"]), "name": str(r["name"])}, "time": 0.4,
+							"verb": "put its recipe card on the mixing bench"}
+						if PaintBay.kit("shaker"):
+							var remix := {"a": "paint_remix", "code": str(r["code"]), "name": str(r["name"])}
+							alt_plan = {"action": remix, "time": 0.6, "verb": "remix it in the automatic shaker", "blocked": Shed.check(me, remix)}
+	if p.is_empty():
+		return {}
+	if not p.has("blocked"):
+		p["blocked"] = Shed.check(me, p["action"])
+	return p
+
+
+## A crewmate you're looking at, close enough to hand something to, or 0.
+func _mate_ahead() -> int:
+	var from := camera.global_position
+	var q := PhysicsRayQueryParameters3D.create(from, from - camera.global_transform.basis.z * 2.0, 16)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return 0
+	var n: Node = hit["collider"]
+	while n != null and not n.is_in_group("remote_players"):
+		n = n.get_parent()
+	return int(n.get("peer")) if n != null else 0
 
 
 ## What the spray can or spray gun does aimed at `item_id`: its colour, primer or a coat, as loaded
@@ -1459,7 +1620,13 @@ func _spray_plan(item_id: int) -> Dictionary:
 		"gun":
 			p = {"action": {"a": "paint", "item": item_id, "color": spray_color, "finish": spray_finish_id(), "gun": true},
 				"time": 1.5, "coverage": true, "verb": "spray %s: go along the parts in steady passes" % spray_text().to_lower()}
-			if spray_primer():
+			if spray_cup() != "":
+				# Mixed paint from the cup (PaintBay): all over, or faded in over the colour on it.
+				var ca := {"a": "paint", "item": item_id, "cup": true, "gun": true}
+				if spray_cup() != "cup":
+					ca["fade"] = spray_cup()
+				p = {"action": ca, "time": 1.5, "coverage": true, "verb": "spray %s: go along the parts in steady passes" % spray_text().to_lower()}
+			elif spray_primer():
 				p = {"action": {"a": "prime", "item": item_id, "gun": true}, "time": 1.5, "coverage": true,
 					"verb": "prime it: grey primer, in steady passes"}
 			elif spray_coat() != "":
@@ -1594,7 +1761,17 @@ func _describe() -> String:
 		lines.append("On it: %s" % CoffeeShop.items_text(tray["items"]))
 		lines.append("Put it down to use your hands. An empty one goes back on the cafe counter.")
 		return "\n".join(lines)
+	var bay_held := PaintBay.held(Shed.me())
+	if str(bay_held.get("kind", "")) == "tin":
+		var tin := PaintBay.held_tin(Shed.me())
+		lines.append(PaintBay.tin_text(tin))
+		lines.append("Right mouse: pour it into the spray gun's cup  ·  on the shelf, the scale or the bin: left mouse  ·  at a mate: hand it over")
+	elif str(bay_held.get("kind", "")) == "tape":
+		lines.append("Masking tape: %s (R for another)" % str(PaintMix.PATTERNS[str(bay_held.get("pattern", "stripe"))]["name"]).to_lower())
+		lines.append("Hold left mouse on a painted part to mask it off; spray the second colour over, then peel it (right mouse).")
 	match kind:
+		"paint_bay":
+			lines.append_array(_bay_lines())
 		"tray":
 			var t: Dictionary = CoffeeShop.trays()[int(target["tray"])]
 			lines.append("Tray from the cafe")
@@ -1821,6 +1998,48 @@ func _describe() -> String:
 
 ## Engine Whisperer (a skill): how much power a worn or grimy engine part is costing, worked
 ## out by comparing the engine with that part as new.
+## What the crosshair's on in the paint mixing bay.
+func _bay_lines() -> Array:
+	var out := []
+	match str(target.get("station", "")):
+		"bench":
+			var tin := PaintBay.bench_tin()
+			out.append("Mixing bench")
+			out.append(PaintBay.tin_text(tin) if not tin.is_empty() else "Nothing on the scale.")
+			var by := PaintBay.at_bench()
+			out.append("F: step up to the bench and mix" if by == 0 or by == Shed.me() else "%s is mixing." % Shed.crew.get(by, {}).get("name", "Someone"))
+		"slot":
+			var t := PaintBay.tin_in_slot(int(target.get("slot", -1)))
+			out.append("Tin shelf")
+			out.append(PaintBay.tin_text(t) if not t.is_empty() else "An empty place on the shelf.")
+		"swatch":
+			var r: Dictionary = PaintBay.recipes().get(int(target.get("recipe", 0)), {})
+			if not r.is_empty():
+				out.append("Swatch: %s" % str(r["name"]))
+				out.append("%s  ·  %s  ·  mixed by %s" % [str(r["code"]), PaintMix.effect_name(str(r.get("mix", {}).get("effect", "solid"))), str(r.get("by", "the crew"))])
+				out.append("F: pin the card to the whiteboard")
+		"tape":
+			out.append("Masking tape")
+			out.append("For stripes, pinstripes and two-tone (level %d). F or left mouse: take it." % int(PaintMix.PATTERNS["stripe"]["level"]))
+		"shaker":
+			var sh: Dictionary = PaintBay._st()["shaker"]
+			out.append("Automatic shaker" if PaintBay.kit("shaker") else "Paint shaker")
+			out.append("Shaking: %d s to go" % ceili(float(sh["left"])) if int(sh.get("tin", 0)) != 0 else "Put a tin in it from the bench.")
+		"booth", "stand":
+			var test: Dictionary = PaintBay._st()["test"]
+			out.append("Daylight booth: daylight, the shop's strip light and a sunset, side by side" if str(target["station"]) == "booth" else "Spray-out panel stand")
+			if test.get("mix") is Dictionary:
+				out.append("Test card: %s" % PaintMix.describe(test["mix"]))
+				var near := PaintMix.nearest_library(test["mix"]["color"], str(test["mix"].get("effect", "")))
+				if not near["entry"].is_empty():
+					out.append("Closest factory colour: %s (%s)" % [PaintMix.library_name(near["entry"]), PaintMix.match_text(float(near["match"]))])
+			else:
+				out.append("No test card yet: spray one from the mixing bench.")
+		"bin":
+			out.append("Bin for empty tins")
+	return out
+
+
 func _whisper(slot: String, engine_id: int) -> String:
 	if Progress.skill_rank(Shed.me(), "engine_whisperer") <= 0:
 		return ""
@@ -2006,6 +2225,8 @@ func _update_work(delta: float) -> void:
 			sales_requested.emit()
 		elif a_now == "write_label":
 			label_requested.emit(int(target.get("furniture", 0)))
+		elif a_now == "paint_bench_ui":
+			paint_bench_requested.emit()
 		else:
 			var held_before := Shed.held_by(Shed.me())
 			Shed.request(plan_now["action"])
@@ -2512,6 +2733,9 @@ func spray_job_for(item: int) -> SprayJob:
 static func mist_color(a: Dictionary) -> Color:
 	match str(a.get("a", "")):
 		"paint":
+			if a.get("cup", false):
+				var cup := PaintBay.cup_of(Shed.me())
+				return cup.get("mix", {}).get("color", Color(0.8, 0.8, 0.8)) if cup.get("mix") is Dictionary else Color(0.8, 0.8, 0.8)
 			return Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)]
 		"prime":
 			return Shed.PRIMER_COLOR
@@ -2643,8 +2867,7 @@ func _start_cover(item: int, key: String, plan_now: Dictionary) -> Dictionary:
 	cells.resize(points.size())
 	var a: Dictionary = plan_now["action"]
 	var splats := PaintSplats.new()
-	var paint: Color = Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)] if a["a"] == "paint" \
-		else Color(0.22, 0.17, 0.1, 0.8)
+	var paint: Color = mist_color(a) if a["a"] == "paint" else Color(0.22, 0.17, 0.1, 0.8)
 	if a["a"] == "coat":
 		# Enamel shows its colour wet; a clear coat goes on as a glassy sheen.
 		var spec: Dictionary = Shed.COATS.get(str(a.get("coat", "")), {})
@@ -2765,6 +2988,9 @@ func _update_held_view() -> void:
 	var tray := CoffeeShop.tray_of(Shed.me())
 	if not tray.is_empty():
 		sig = "tray:%s" % str(tray["items"])
+	var bay := PaintBay.held(Shed.me())
+	if not bay.is_empty():
+		sig = "bay:%s:%s" % [str(bay), str(PaintBay.held_tin(Shed.me()).get("code", ""))]
 	if is_instance_valid(_held_view) and held != 0:
 		_held_view.rotation.y = 0.5 + hold_turn   # turned in your hands as you turn it
 	if sig == _held_sig:
@@ -2780,6 +3006,13 @@ func _update_held_view() -> void:
 		_held_view = CoffeeView.tray_model(tray["items"])
 		_held_view.position = Vector3(0.0, -0.44, -0.62)
 		_held_view.rotation = Vector3(0.0, 0.0, 0.0)
+		camera.add_child(_held_view)
+		return
+	if not bay.is_empty():
+		# A tin of paint or the roll of masking tape, in your other hand.
+		_held_view = PaintBayRoom.tin_model(PaintBay.held_tin(Shed.me())) if str(bay.get("kind", "")) == "tin" else PaintBayRoom.tape_model()
+		_held_view.position = Vector3(-0.26, -0.36, -0.5)
+		_held_view.rotation = Vector3(0.0, 0.4, 0.0)
 		camera.add_child(_held_view)
 		return
 	if held == 0:
@@ -2799,7 +3032,10 @@ func _set_tool_view() -> void:
 	_jet = null
 	var stage := Progress.tool_stage(Shed.me(), tool)
 	_tool_sig = "%s:%d" % [tool, stage]
-	_tool_view = make_tool_mesh(tool, Shed.PAINTS[spray_color], stage)
+	var load_col: Color = Shed.PAINTS[spray_color]
+	if tool == "gun" and spray_cup() != "" and PaintBay.cup_of(Shed.me()).get("mix") is Dictionary:
+		load_col = PaintBay.cup_of(Shed.me())["mix"].get("color", load_col)
+	_tool_view = make_tool_mesh(tool, load_col, stage)
 	_tool_view.position = Vector3(0.28, -0.28, -0.5)
 	_tool_view.rotation = Vector3(0.25, -0.3, 0.0)
 	if tool == "lance":

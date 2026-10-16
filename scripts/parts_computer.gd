@@ -27,9 +27,12 @@ var _size_btns := {}
 var _bank: Label
 var _bike_btn: Button
 var _sell_shown := ""
+var _paint_shown := ""
 
 ## The Sell aisle's two lists.
 const SELL_KINDS := ["sell:bikes", "sell:parts"]
+## The mixing bay's supplies (PaintBay), in the Shed aisle: tins of base, and bottles of tint.
+const PAINT_KINDS := ["paint:bases", "paint:tints"]
 ## The Garage upgrades page (UpgradesPanel), opened from the button at the top.
 var upgrades_panel: UpgradesPanel
 
@@ -49,6 +52,7 @@ const GROUPS := [
 	["Tools and machines", ["eq:stand", "eq:washer", "eq:repair", "eq:blaster", "eq:booth", "eq:changer"]],
 	["Storage and benches", ["eq:shelf", "eq:bench", "eq:trolley"]],
 	["Comfort and decor", ["eq:seat", "eq:tv", "eq:poster"]],
+	["Paint mixing bay", ["paint:bases", "paint:tints"]],
 	["Jumps", ["eq:ramp", "eq:obstacle"]],
 	["Course", ["eq:barrier", "eq:marker"]],
 	["Sell to the dealer", ["sell:bikes", "sell:parts"]],
@@ -247,6 +251,8 @@ func _ready() -> void:
 	_order.pressed.connect(func():
 		if _kind.begins_with("sell:"):
 			sell(_part)
+		elif _kind.begins_with("paint:"):
+			Shed.request({"a": "paint_buy", "code": _part, "n": 1})
 		elif design_of(_part) != 0:
 			Shed.request({"a": "order_furniture", "model": Equipment.BOARD_POSTER, "design": design_of(_part), "psize": poster_size})
 		elif Equipment.kind_of(_part) == "poster":
@@ -264,6 +270,8 @@ func _ready() -> void:
 			return
 		_refresh_bank()
 		if _kind == "eq:poster" and _posters_shown != Shed.posters.size() and (_search == null or _search.text == ""):
+			_show_kind(_kind)
+		elif _kind.begins_with("paint:") and str(PaintBay.stock()) != _paint_shown:
 			_show_kind(_kind)
 		elif _kind.begins_with("sell:") and _sell_signature(_kind) != _sell_shown:
 			_show_kind(_kind)
@@ -285,6 +293,8 @@ func open_upgrades() -> void:
 static func section_of(k: String) -> String:
 	if k.begins_with("sell:"):
 		return "sell"
+	if k.begins_with("paint:"):
+		return "shed"
 	if k.begins_with("eq:"):
 		return "outdoors" if Equipment.YARD_KINDS.has(k.trim_prefix("eq:")) else "shed"
 	return "bike"
@@ -296,6 +306,7 @@ static func all_kinds() -> Array:
 	for k in Equipment.KINDS:
 		if not Equipment.FIXED_KINDS.has(k):
 			kinds.append("eq:" + k)
+	kinds.append_array(PAINT_KINDS)
 	kinds.append_array(PartsDB.FLUID_KINDS)
 	kinds.append_array(PartsDB.KINDS)
 	return kinds
@@ -331,6 +342,10 @@ static func kind_title(k: String) -> String:
 		return "Whole bikes"
 	if k == "sell:parts":
 		return "Loose parts"
+	if k == "paint:bases":
+		return "Paint bases"
+	if k == "paint:tints":
+		return "Tints and effects"
 	if k.begins_with("eq:"):
 		return Equipment.KIND_NAMES[k.trim_prefix("eq:")]
 	return ("Fluids: " if PartsDB.FLUID_KINDS.has(k) else "") + str(PartsDB.KIND_NAMES[k])
@@ -504,6 +519,8 @@ static func search(q: String) -> Array:
 	var words := q.to_lower().split(" ", false)
 	var out: Array = []
 	for k in all_kinds():
+		if str(k).begins_with("paint:"):
+			continue   # the mixing bay's supplies aren't parts
 		var ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
 		for id in ids:
 			var name := ""
@@ -601,6 +618,9 @@ func _show_kind(k: String) -> void:
 		c.queue_free()
 	if k.begins_with("sell:"):
 		_show_sellables(k)
+		return
+	if k.begins_with("paint:"):
+		_show_paint_supplies(k)
 		return
 	var all_ids: Array = Equipment.by_kind(k.trim_prefix("eq:")) if k.begins_with("eq:") else PartsDB.by_kind[k]
 	var ids := listed(k)
@@ -756,7 +776,7 @@ func _fill_bike_pick() -> void:
 
 ## Shows the list again after a sort or filter change, keeping the search if there is one.
 func _relist() -> void:
-	if _variants == null or _kind.begins_with("sell:"):
+	if _variants == null or _kind.begins_with("sell:") or _kind.begins_with("paint:"):
 		return
 	if _search and _search.text.strip_edges() != "":
 		_refresh_list()
@@ -808,6 +828,10 @@ func _show_part(id: String) -> void:
 	if _kind.begins_with("sell:"):
 		_sizes.visible = false
 		_show_sale(id)
+		return
+	if _kind.begins_with("paint:"):
+		_sizes.visible = false
+		_show_supply(id)
 		return
 	if preview:
 		if _kind.begins_with("eq:") or design_of(id) != 0:
@@ -944,6 +968,41 @@ func order_bike() -> void:
 		Shed.request({"a": "order"})
 	else:
 		Shed.request({"a": "order", "style": bike_style})
+
+
+## The mixing bay's supplies of a kind: "paint:bases" or "paint:tints" (PaintBay.supplies).
+static func paint_supplies(k: String) -> Array:
+	return PaintBay.supplies().filter(func(c): return PaintMix.BASES.has(str(c)) == (k == "paint:bases"))
+
+
+func _show_paint_supplies(k: String) -> void:
+	var codes := paint_supplies(k)
+	_paint_shown = str(PaintBay.stock())
+	_variants.add_child(UITheme.label("FOR THE MIXING BAY, FROM THE GARAGE'S MONEY", 13, Color(1, 1, 1, 0.55)))
+	for code in codes:
+		var c := str(code)
+		var lock := PaintBay.locked(Shed.me(), c)
+		var sub := "In the bay: %s%s" % [PaintBay.stock_text(c), "  ·  needs %s" % lock.to_lower() if lock != "" else ""]
+		var b := _row(c, PaintBay.item_name(c), TvChannels.money_text(PaintBay.price(c)), sub)
+		b.pressed.connect(_pick_part.bind(c))
+		b.focus_entered.connect(_show_part.bind(c))
+		_variants.add_child(b)
+	_show_part(codes[0] if not codes.has(_part) else _part)
+
+
+## One of the mixing bay's supplies in the detail pane.
+func _show_supply(code: String) -> void:
+	if preview:
+		preview.clear()
+	_title.text = PaintBay.item_name(code)
+	var base := PaintMix.BASES.has(code)
+	var what := "A 1 litre tin of %s, for the mixing bench." % PaintBay.item_name(code).to_lower() if base else \
+		"A %d g bottle of %s for the tint rack over the mixing bench." % [roundi(PaintMix.BOTTLE_G), PaintBay.item_name(code).to_lower()]
+	var lock := PaintBay.locked(Shed.me(), code)
+	_desc.text = "%s\n\n%s from the business's account. It goes straight onto the bay's shelves." % [what, TvChannels.money_text(PaintBay.price(code))]
+	_spec.text = "In the bay now: %s%s" % [PaintBay.stock_text(code), "\nYou can't use it yet: it needs %s." % lock.to_lower() if lock != "" else ""]
+	_order.text = "Order it: %s" % TvChannels.money_text(PaintBay.price(code))
+	_order.disabled = false
 
 
 ## What the Sell aisle can sell now: "bike:<id>" for every bike standing on a showroom display

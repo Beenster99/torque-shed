@@ -89,6 +89,7 @@ var radio: ShedRadio
 var dyno_room: DynoRoom     # the tuning room through the back wall
 var sales_office: SalesOffice   # the showroom and office east of the paint shop
 var coffee_shop: CoffeeShopBuilding   # the cafe next door, west of the storage room
+var paint_bay: PaintBayRoom   # the paint mixing bay off the paint shop
 ## A live riding picture a TV is showing (the first one, if there are several), or null.
 var tv_feed: SubViewport
 ## Live riding pictures, one per rider being watched: bike node instance id -> {vp, cam, node}.
@@ -158,13 +159,14 @@ static func rooms() -> Dictionary:
 		"sales": SalesOffice.footprint(),
 		"sales_office": SalesOffice.office_rect(),
 		"cafe": CoffeeShop.footprint(),
+		"mixing": PaintBay.ROOM,
 	}
 	# The extension and storage annex, once the garage has built them.
 	out.merge(GarageUpgrades.rooms(Shed.upgrades))
 	return out
 
 
-## Which room a point is in ("shed", "paint", "storage", "dyno", "sales", "sales_office"
+## Which room a point is in ("shed", "paint", "mixing", "storage", "dyno", "sales", "sales_office"
 ## upstairs in the sales office, "lounge" upstairs on the shed, "cafe"), or "" outside.
 static func room_at(at: Vector3) -> String:
 	if SalesOffice.office_rect().has_point(Vector2(at.x, at.z)) and at.y > SalesOffice.MEZZ_Y - 0.3:
@@ -212,6 +214,7 @@ func build() -> void:
 	_build_radio()
 	_build_wash_bay()
 	_build_booth_room()
+	_build_paint_bay()
 	_build_storage_room()
 	_build_lights()
 	_build_door_and_switches()
@@ -801,7 +804,7 @@ func _engine_sling(swing: Node3D, display: Node3D, depth: float) -> void:
 func _item_signature(item_id: int) -> String:
 	var it: Dictionary = Shed.items[item_id]
 	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
-		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it)]
+		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it)]
 	if Shed.is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
@@ -822,7 +825,7 @@ func _bike_signature(id: int) -> String:
 		else:
 			var it: Dictionary = Shed.items[item_id]
 			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot),
-				Shed.blast_sig(it)])
+				Shed.blast_sig(it) + PaintBay.paint_sig(it)])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
@@ -1575,12 +1578,20 @@ func _build_booth_room() -> void:
 	# this room's west side).
 	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
 	_solid(c + Vector3(0.0, h * 0.5, hz + 0.1), Vector3(hx * 2.0 + 0.4, h, 0.2), _mats["cladding"])
-	_solid(c + Vector3(hx + 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.4), _mats["cladding"])
+	# The east wall, with the glass door through to the paint mixing bay (PaintBayRoom) near
+	# its front end.
+	for seg in _wall_runs(c.z - hz - 0.2, c.z + hz + 0.2, PaintBay.DOOR_Z, PaintBay.DOOR_HALF):
+		_solid(Vector3(c.x + hx + 0.1, h * 0.5, seg[0]), Vector3(0.2, h, seg[1]), _mats["cladding"])
+	_solid(Vector3(c.x + hx + 0.1, (h + PaintBay.DOOR_HEIGHT) * 0.5, PaintBay.DOOR_Z), Vector3(0.2, h - PaintBay.DOOR_HEIGHT, PaintBay.DOOR_HALF * 2.0),
+		_mats["cladding"])
 	_solid(c + Vector3(0.0, h + 0.08, 0.0), Vector3(hx * 2.0 + 0.4, 0.12, hz * 2.0 + 0.4), _mats["roof"])
 	var white := _material(Color(0.9, 0.91, 0.92), 0.0, 0.35)
 	_deco(self, c + Vector3(0.0, h * 0.5, -hz + 0.005), Vector3(hx * 2.0, h, 0.01), white)
 	_deco(self, c + Vector3(0.0, h * 0.5, hz - 0.005), Vector3(hx * 2.0, h, 0.01), white)
-	_deco(self, c + Vector3(hx - 0.005, h * 0.5, 0.0), Vector3(0.01, h, hz * 2.0), white)
+	for seg in _wall_runs(c.z - hz, c.z + hz, PaintBay.DOOR_Z, PaintBay.DOOR_HALF):
+		_deco(self, Vector3(c.x + hx - 0.005, h * 0.5, seg[0]), Vector3(0.01, h, seg[1]), white)
+	_deco(self, Vector3(c.x + hx - 0.005, (h + PaintBay.DOOR_HEIGHT) * 0.5, PaintBay.DOOR_Z), Vector3(0.01, h - PaintBay.DOOR_HEIGHT,
+		PaintBay.DOOR_HALF * 2.0), white)
 	var wx := c.x - hx + 0.005
 	for seg in _wall_runs(c.z - hz, c.z + hz, PAINT_DOOR_Z, SIDE_DOOR_HALF):
 		_deco(self, Vector3(wx, h * 0.5, seg[0]), Vector3(0.01, h, seg[1]), white)
@@ -1885,6 +1896,14 @@ func _build_sales_office() -> void:
 	sales_office = SalesOffice.new()
 	add_child(sales_office)
 	sales_office.build()
+
+
+## The paint mixing bay off the paint shop, behind the glass door (PaintBayRoom; see PaintBay).
+func _build_paint_bay() -> void:
+	paint_bay = PaintBayRoom.new()
+	paint_bay.name = "PaintBay"
+	add_child(paint_bay)
+	paint_bay.build(self)
 
 
 ## The coffee shop next door, west of the storage room (CoffeeShopBuilding; see CoffeeShop).

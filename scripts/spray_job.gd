@@ -174,6 +174,14 @@ static func look_for(a: Dictionary, it: Dictionary) -> Dictionary:
 			var c := old.darkened(0.12)
 			return {"color": old, "rough": 0.04, "metal": 0.0, "clear": true, "under": Color(c.r, c.g, c.b, 0.0 if bare else 0.35),
 				"under_rough": 0.9}
+	if a.get("cup", false):
+		# Paint mixed in the mixing bay, from the gun's cup: what this coat leaves (PaintBay.cup_look).
+		var wet := PaintBay.cup_look(it)
+		if not wet.is_empty():
+			var below := flatted
+			if it.get("primer_top", false):
+				below.a = 0.0
+			return {"color": wet["color"], "rough": wet["rough"], "metal": wet["metal"], "under": below, "under_rough": 0.95}
 	var col: Color = Shed.PAINTS[clampi(int(a.get("color", 0)), 0, Shed.PAINTS.size() - 1)]
 	var finish := str(a.get("finish", "gloss"))
 	if str(a.get("a", "")) == "coat":
