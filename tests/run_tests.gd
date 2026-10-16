@@ -10870,6 +10870,26 @@ func _test_detail_pass() -> void:
 	check(count.call(race, "FairingLamp") == 2 and count.call(race, "TankPad") == 1, "a race fairing has twin lamp eyes and a sports tank a grip pad")
 	var shell: MeshInstance3D = race.find_children("FairingShell", "", true, false)[0]
 	check((shell.material_override as StandardMaterial3D).albedo_texture != null, "a carbon fairing shows its weave")
+	# A full fairing is flat panels with crisp creases, not a round blob: where two facets meet,
+	# the same point carries two normals well apart.
+	var arrays := (shell.mesh as ArrayMesh).surface_get_arrays(0)
+	var normals_at := {}
+	var creased := 0
+	for k in (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size():
+		var key := str(((arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array)[k] * 1000.0).round())
+		var nrm: Vector3 = (arrays[Mesh.ARRAY_NORMAL] as PackedVector3Array)[k]
+		if normals_at.has(key) and (normals_at[key] as Vector3).angle_to(nrm) > deg_to_rad(12.0) and (normals_at[key] as Vector3).angle_to(-nrm) > deg_to_rad(12.0):
+			creased += 1
+		normals_at[key] = nrm
+	check(creased > 60, "a full fairing's panels meet at sharp creases (%d crease points)" % creased)
+	check(count.call(race, "SideCover") == 2 and count.call(race, "LowerFairing") == 1 and count.call(race, "Screen") == 1
+		and count.call(race, "RamAir") == 1 and count.call(race, "FairingVent") >= 4,
+		"it has layered side covers with vent gaps, a keeled belly pan, a screen and a ram-air mouth")
+	var gp: BikeModel = bike.call({"fairing": "race_red_winged"})
+	check(count.call(gp, "FairingLamp") == 0 and count.call(gp, "NoseCap") == 1 and count.call(gp, "Winglet") == 6,
+		"a race-only fairing has a blank nose and two winglets a side with endplates")
+	var winged: BikeModel = bike.call({"fairing": "sport_grey_winged"})
+	check(count.call(winged, "FairingLamp") == 2 and count.call(winged, "Winglet") == 4, "a winged sports fairing keeps its lamps and has one winglet a side")
 	var half: BikeModel = bike.call({"fairing": "half_fairing"})
 	check(count.call(half, "FairingVent") == 8, "a half fairing has side vents")
 	var can: BikeModel = bike.call({"exhaust": "stock_muffler"})

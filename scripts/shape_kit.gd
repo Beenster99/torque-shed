@@ -230,3 +230,133 @@ static func _commit(verts: PackedVector3Array, normals: PackedVector3Array, uvs:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+
+## A faceted shell: flat panels with crisp creases between them, for angular bodywork (a sports
+## bike's fairing) where a loft would come out round. `rows` holds one PackedVector3Array per
+## section, nose to tail (Z increasing): the profile's points in order, each crease a point. With
+## `mirror` each row is the right half, from its free edge in to the centre line, and the left half
+## is mirrored to match (left edge, centre, right edge). The panels are smooth along the length and
+## sharp across each crease; both faces are drawn. `flip` turns the outside round for a profile
+## that runs the other way (a belly pan, edge down to keel).
+static func facets(rows: Array, mirror := true, flip := false) -> ArrayMesh:
+	var full := []
+	for r in rows:
+		var pts: PackedVector3Array = r
+		var row := PackedVector3Array()
+		if mirror:
+			for k in pts.size() - 1:
+				row.append(Vector3(-pts[k].x, pts[k].y, pts[k].z))
+			row.append(pts[pts.size() - 1])
+			for k in range(pts.size() - 2, -1, -1):
+				row.append(pts[k])
+		else:
+			row = pts
+		full.append(row)
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var idx := PackedInt32Array()
+	var count := full.size()
+	if count < 2:
+		return ArrayMesh.new()
+	var width: int = (full[0] as PackedVector3Array).size()
+	for k in width - 1:
+		var base := verts.size()
+		for i in count:
+			var row: PackedVector3Array = full[i]
+			var prev: PackedVector3Array = full[maxi(i - 1, 0)]
+			var next: PackedVector3Array = full[mini(i + 1, count - 1)]
+			var along := (next[k] + next[k + 1]) - (prev[k] + prev[k + 1])
+			if along.length() < 0.0001:
+				along = Vector3.BACK   # where a patch's slanted end pinches its rows together
+			var nrm := along.cross(row[k + 1] - row[k]).normalized() * (-1.0 if flip else 1.0)
+			for p in [row[k], row[k + 1]]:
+				verts.append(p)
+				normals.append(nrm)
+				uvs.append(Vector2(float(k) / maxf(width - 1, 1), float(i) / (count - 1)))
+		for i in count - 1:
+			var a := base + i * 2
+			_tri(idx, verts, normals, a, a + 2, a + 1)
+			_tri(idx, verts, normals, a + 1, a + 2, a + 3)
+	_inside_face(verts, normals, uvs, idx)
+	return _commit(verts, normals, uvs, idx)
+
+
+## A flat polygon (a nose cap or a mouth), fanned from its middle, facing `out`; both faces drawn.
+static func fan(points: PackedVector3Array, out: Vector3) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var idx := PackedInt32Array()
+	var mid := Vector3.ZERO
+	for p in points:
+		mid += p
+	mid /= maxf(points.size(), 1)
+	verts.append(mid)
+	for p in points:
+		verts.append(p)
+	for k in verts.size():
+		normals.append(out.normalized())
+		uvs.append(Vector2.ZERO)
+	for j in points.size() - 1:
+		_tri_facing(idx, verts, 0, 1 + j, 2 + j, out)
+	_inside_face(verts, normals, uvs, idx)
+	return _commit(verts, normals, uvs, idx)
+
+
+## A thin flat slab with sharp edges: the polygon `outline` (roughly flat, convex) thickened by
+## `thick` either side of its plane. Winglets, endplates, lamp slits, vents.
+static func plate(outline: PackedVector3Array, thick: float) -> ArrayMesh:
+	var n := Vector3.ZERO
+	var mid := Vector3.ZERO
+	var count := outline.size()
+	for k in count:
+		var a := outline[k]
+		var b := outline[(k + 1) % count]
+		n += Vector3((a.y - b.y) * (a.z + b.z), (a.z - b.z) * (a.x + b.x), (a.x - b.x) * (a.y + b.y))
+		mid += a
+	n = n.normalized() if n.length() > 0.000001 else Vector3.UP
+	mid /= maxf(count, 1)
+	var off := n * thick * 0.5
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var idx := PackedInt32Array()
+	for face in [1.0, -1.0]:
+		var base := verts.size()
+		verts.append(mid + off * face)
+		normals.append(n * face)
+		for p in outline:
+			verts.append(p + off * face)
+			normals.append(n * face)
+		for k in count:
+			_tri_facing(idx, verts, base, base + 1 + k, base + 1 + (k + 1) % count, n * face)
+	for k in count:
+		var a := outline[k]
+		var b := outline[(k + 1) % count]
+		var side := (b - a).cross(n).normalized()
+		if side.dot((a + b) * 0.5 - mid) < 0.0:
+			side = -side
+		var base := verts.size()
+		for p in [a + off, b + off, a - off, b - off]:
+			verts.append(p)
+			normals.append(side)
+		_tri_facing(idx, verts, base, base + 1, base + 2, side)
+		_tri_facing(idx, verts, base + 1, base + 3, base + 2, side)
+	var uvs := PackedVector2Array()
+	uvs.resize(verts.size())
+	return _commit(verts, normals, uvs, idx)
+
+
+## Adds the inside face of an open surface: the same triangles wound the other way, normals in.
+static func _inside_face(verts: PackedVector3Array, normals: PackedVector3Array, uvs: PackedVector2Array, idx: PackedInt32Array) -> void:
+	var base := verts.size()
+	for k in base:
+		verts.append(verts[k])
+		normals.append(-normals[k])
+		uvs.append(uvs[k])
+	var n_idx := idx.size()
+	for k in range(0, n_idx, 3):
+		idx.append(idx[k] + base)
+		idx.append(idx[k + 2] + base)
+		idx.append(idx[k + 1] + base)

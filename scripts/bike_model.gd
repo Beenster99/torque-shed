@@ -2751,13 +2751,14 @@ func _draw_fairing() -> void:
 				{"c": h + Vector3((wide - 0.02) * side, -0.34, 0.3), "w": 0.012, "up": 0.06, "down": 0.05, "n": 3.0}], mat)
 
 
-## A curved screen rising from `base`, `half` wide, `height` tall, leaning back by `tilt`.
-## A modern full fairing (a Panigale, an S1000RR, a MotoGP bike) as one continuous shell: a
-## sharp nose round the lamps, a small laid-back screen, then flanks that run back under the
-## tank and drop down round the engine to a belly pan, cut away in an arc to clear the front
-## wheel. "n" under 2 creases the sections into a sharper, faceted look; "wings" adds that many
-## winglets a side; "lamps": false leaves the nose blank (a race bike has no headlight) with a
-## big ram-air mouth instead.
+## A modern full fairing (a Panigale, an S1000RR, a ZX-10R, a MotoGP bike), built from flat
+## panels with crisp creases rather than round lofts: a sharp nose (slim headlight slits on a
+## road bike; a blank number-plate nose with a ram-air slot on a race bike), a straight raked
+## top line up to a short laid-back screen, faceted flanks with a character line running back
+## from the nose, a layered side cover with a dark vent gap in front of it, a narrow V belly pan
+## under the engine, and side panels carried on back under the seat. Its look can ask for
+## "wings" (winglets a side; two on a race bike unless it says), "lamps": false (a race nose),
+## "tall" (how high the nose stands), "wide", and "n" (lower is a sharper, deeper crease).
 func _full_fairing(mat: Material, glass: Material, dark: Material, screen: float, lk: Dictionary) -> void:
 	var h := lamp_position()
 	var zf := -_build.wheelbase * 0.5
@@ -2775,33 +2776,103 @@ func _full_fairing(mat: Material, glass: Material, dark: Material, screen: float
 			if (mi as Node).name.begins_with("Crankcase"):
 				case_x = maxf(case_x, maxf(absf(box.position.x), absf(box.end.x)))
 	var side_x := clampf(maxf(case_x, _block_w * 0.4) + 0.04, 0.22, 0.29) * float(lk.get("wide", 1.0))
-	var nose_z := h.z - 0.09
 	var z1 := clampf(body.end.z + 0.03, lerpf(_engine_c.z, _pivot.z, 0.6), _pivot.z - 0.02)
 	var belly := minf(_engine_c.y - 0.24 * _eng_s, body.position.y) - 0.025
-	var n := float(lk.get("n", 2.7))
-	var secs := []
-	var steps := 16
-	for k in steps + 1:
-		var f := float(k) / steps
-		var z := lerpf(nose_z, z1, f)
-		# The top edge: up over the lamps to the screen, then down to run under the tank.
-		var under_tank := tank_base_y(z) + 0.02
-		var crown := h.y + 0.15 * low * smoothstep(0.0, 0.25, f)
-		var top := lerpf(crown, under_tank, smoothstep(0.25, 0.5, f))
-		# The bottom edge: the chin under the nose, swept back round the front wheel (with room
-		# for the fork to compress), then the belly under the engine.
-		var dz := z - zf
-		var wheel_r := rf + 0.11
-		var clear := sqrt(maxf(wheel_r * wheel_r - dz * dz, 0.0)) if absf(dz) < wheel_r else -INF
-		var chin := h.y - 0.07 - f * 1.6
-		var bottom := maxf(maxf(chin, clear), belly)
-		bottom = minf(bottom, top - 0.08)
-		var w := lerpf(0.06, side_x, smoothstep(0.0, 0.4, f)) * lerpf(1.0, 0.85, smoothstep(0.75, 1.0, f))
-		var mid := (top + bottom) * 0.5
-		secs.append({"c": Vector3(0.0, mid, z), "w": w, "up": top - mid, "down": mid - bottom,
-			"n": lerpf(1.5, n, smoothstep(0.0, 0.25, f)), "bw": 0.92})
-	var shell := _shell(secs, mat, true, -1.2, PI + 1.2)
+	var crease := clampf((3.0 - float(lk.get("n", 2.6))) / 0.7, 0.0, 1.0)
+	# The outline side on, all straight runs: the top line from the tip up to the screen and down
+	# under the tank, the lower edge from the chin round the front wheel in three cuts to the
+	# belly, and the width, each as a function of z.
+	var nose_z := h.z - (0.17 if lamps else 0.19)
+	var tip_y := h.y - (0.04 if lamps else 0.07)
+	var crown := Vector2(h.z + 0.04, h.y + 0.16 * low)
+	var tank_z := _head.z + 0.1
+	var top_line := [Vector2(nose_z - 0.1, tip_y), Vector2(nose_z, tip_y), crown]
+	for k in 5:
+		var z := lerpf(tank_z, z1 + 0.3, k / 4.0)
+		top_line.append(Vector2(z, tank_base_y(z) + 0.02))
+	var wheel_r := (rf + 0.06) * 1.04
+	var chin := Vector2(nose_z + 0.08, h.y - (0.12 if lamps else 0.14))
+	var cut := [Vector2(nose_z - 0.1, tip_y - 0.03), chin]
+	var chin_a := atan2(chin.x - zf, chin.y)
+	for a in [lerpf(chin_a, PI * 0.5, 0.4), lerpf(chin_a, PI * 0.5, 0.75), PI * 0.5]:
+		cut.append(Vector2(zf + sin(a) * wheel_r, cos(a) * wheel_r))
+	# Behind the wheel the edge slants on down to the belly, then rises a little to the back.
+	var pan_z := zf + wheel_r + 0.1
+	cut.append(Vector2(pan_z, belly + 0.03))
+	cut.append(Vector2(z1, belly + 0.13))
+	cut.append(Vector2(z1 + 0.5, belly + 0.13))
+	var wide := [Vector2(nose_z - 0.1, 0.03), Vector2(nose_z, 0.035), Vector2(nose_z + 0.1, side_x * 0.55),
+		Vector2(h.z + 0.16, side_x * 0.93), Vector2(_engine_c.z, side_x), Vector2(z1, side_x * 0.9)]
+	# The profile, edge to centre line: the lower edge, the lower crease, the character line
+	# (the widest), the shoulder, the top edge and the spine. The nose is narrower and more
+	# pointed; each line starts a little further back than the one above it (the nose rakes
+	# back to the chin) and ends a little further forward (the trailing edge slants up).
+	var r_nose := [0.0, 0.2, 0.45, 0.72, 0.92, 1.0]
+	var x_nose := [0.5, 0.85, 1.0, 0.82, 0.42, 0.0]
+	var r_body := [0.0, 0.22, 0.5, 0.78, 0.94, 1.0]
+	var x_body := [0.62, 0.87 - 0.05 * crease, 1.0, 0.76 - 0.06 * crease, 0.42, 0.0]
+	var z_in := [0.08, 0.05, 0.02, 0.008, 0.002, 0.0]
+	var z_out := [0.0, -0.06, -0.15, -0.22, -0.26, -0.26]
+	var rows := []
+	var steps := 18
+	for i in steps + 1:
+		var f := float(i) / steps
+		var t := smoothstep(0.0, 0.35, f)
+		var row := PackedVector3Array()
+		for j in 6:
+			var z := lerpf(nose_z + float(z_in[j]), z1 + float(z_out[j]), f)
+			var top := _pwl(top_line, z)
+			var bottom := minf(_pwl(cut, z), top - 0.06)
+			var y := lerpf(bottom, top, lerpf(float(r_nose[j]), float(r_body[j]), t))
+			row.append(Vector3(_pwl(wide, z) * lerpf(float(x_nose[j]), float(x_body[j]), t), y, z))
+		rows.append(row)
+	var shell := _facets(rows, mat)
 	shell.name = "FairingShell"
+	# The nose: a dark ram-air mouth on a road bike, or blank paint with a slot under it on a
+	# race bike.
+	var front := _mirror_row(rows[0])
+	var cap := _mesh_instance(ShapeKit.fan(front, Vector3.FORWARD), dark if lamps else mat, Vector3.ZERO)
+	cap.name = "RamAir" if lamps else "NoseCap"
+	if not lamps:
+		var tip3: Vector3 = (rows[0] as PackedVector3Array)[5]
+		var chin3: Vector3 = (rows[0] as PackedVector3Array)[0]
+		var d := (chin3 - tip3).normalized()
+		var fwd := Vector3(0.0, d.z, -d.y) * (1.0 if d.y < 0.0 else -1.0)
+		var c := tip3.lerp(chin3, 0.7) + fwd * 0.004
+		var slot := _mesh_instance(ShapeKit.plate(PackedVector3Array([c + Vector3(-0.035, 0.0, 0.0) - d * 0.01, c + Vector3(0.035, 0.0, 0.0) - d * 0.01,
+			c + Vector3(0.025, 0.0, 0.0) + d * 0.012, c + Vector3(-0.025, 0.0, 0.0) + d * 0.012]), 0.004), dark, Vector3.ZERO)
+		slot.name = "RamAir"
+	if lamps:
+		# Slim LED slits swept back and up along the nose's upper facets.
+		var lens := _lamp(Color(0.92, 0.96, 1.0), 3.0, "head")
+		for eye in _grid_patch(rows, [0.07, 0.03, 0.25, 0.32], 2.2, 2.75, 0.003, lens):
+			eye.name = "FairingLamp"
+	# The layered side cover, standing proud of the flank, with the dark vent gap ahead of it
+	# where the hot air from the radiator gets out, and a vent in each shoulder.
+	for cover in _grid_patch(rows, [0.62, 0.42, 0.98, 0.9], 0.45, 2.0, 0.012, mat):
+		cover.name = "SideCover"
+	for vent in _grid_patch(rows, [0.53, 0.33, 0.62, 0.42], 0.45, 2.0, 0.004, dark):
+		vent.name = "FairingVent"
+	for vent in _grid_patch(rows, [0.3, 0.28, 0.4, 0.38], 3.15, 3.75, 0.003, dark):
+		vent.name = "FairingVent"
+	if lk.has("accent"):
+		# A stripe that runs along the top of the character line, the way race liveries do.
+		_grid_patch(rows, [0.08, 0.08, 0.98, 0.9], 2.08, 2.42, 0.004, _mat(_accent(), 0.1, 0.35, 0.6))
+	if lk.get("roundel", false):
+		var plate := _mat(Color(0.95, 0.95, 0.92), 0.0, 0.5)
+		for side in [-1.0, 1.0]:
+			_disc_on(rows, 0.74 * steps, 1.3, 0.016, 0.055, side, plate)
+		# And the number board across the front of the nose.
+		_grid_patch(rows, [0.0, 0.0, 0.12, 0.1], 3.0, 5.0, 0.003, plate)
+	# A narrow belly pan under the engine with a sharp keel, tucked inside the lower edge.
+	var pan := []
+	for i in 9:
+		var f := i / 8.0
+		var z := lerpf(pan_z - 0.08, z1 + 0.02, f)
+		var w := _pwl(wide, z) * lerpf(0.62, 0.5, f) * minf(1.0, 0.35 + f * 4.0)
+		var y := belly + 0.1 * f
+		pan.append(PackedVector3Array([Vector3(w, y + 0.09, z), Vector3(w * 0.62, y - 0.005, z), Vector3(0.0, y - 0.04 - 0.012 * crease, z)]))
+	_facets(pan, mat, true, true).name = "LowerFairing"
 	# Side panels carry the bodywork on back under the seat to the tail, hiding the battery
 	# and the subframe.
 	var rear := []
@@ -2812,72 +2883,177 @@ func _full_fairing(mat: Material, glass: Material, dark: Material, screen: float
 		var z := lerpf(r0, r1, f)
 		var top := lerpf(tank_base_y(z) + 0.01, _tail.y - 0.01, smoothstep(0.0, 1.0, f))
 		var bottom := lerpf(_pivot.y + 0.1, _tail.y - 0.12, f)
-		var mid := (top + bottom) * 0.5
-		rear.append({"c": Vector3(0.0, mid, z), "w": lerpf(0.19, 0.13, f), "up": top - mid, "down": mid - bottom, "n": n, "bw": 0.9})
-	_shell(rear, mat, true, -1.0, PI + 1.0).name = "SidePanel"
+		var w := lerpf(0.19, 0.12, f)
+		rear.append(PackedVector3Array([Vector3(w * 0.88, bottom, z), Vector3(w, lerpf(bottom, top, 0.45), z), Vector3(w * 0.84, lerpf(bottom, top, 0.82), z),
+			Vector3(w * 0.4, top, z), Vector3(0.0, top + 0.005, z)]))
+	_facets(rear, mat).name = "SidePanel"
 	# Whatever sits wholly behind the panels, side on, is out of sight (see _hide_covered).
 	var top_y := -INF
-	for sec in secs:
-		if float(sec["c"].z) > _head.z + 0.1:
-			top_y = maxf(top_y, float(sec["c"].y) + float(sec["up"]))
+	for row: PackedVector3Array in rows:
+		for p in row:
+			if p.z > _head.z + 0.1:
+				top_y = maxf(top_y, p.y)
 	var cover_z0 := _head.z + 0.05
 	_covered = [AABB(Vector3(-1.0, belly - 0.03, cover_z0), Vector3(2.0, top_y - belly + 0.03, z1 - cover_z0)),
 		AABB(Vector3(-1.0, _pivot.y + 0.12, r0), Vector3(2.0, _tail.y - _pivot.y - 0.12, r1 - r0))]
-	var nose: Dictionary = secs[0]
-	var cheek: Dictionary = secs[2]
-	if lamps:
-		# Slim LED eyes swept back along the sides of the nose.
-		var lens := _lamp(Color(0.92, 0.96, 1.0), 3.0, "head")
-		for side in [-1.0, 1.0]:
-			var at := _on_loft(cheek, -0.35 if side > 0.0 else PI + 0.35, 1.01)
-			var eye := _box(at, Vector3(0.014, 0.022, 0.1), lens)
-			eye.rotation = Vector3(-0.25, 0.45 * side, 0.3 * side)
-			eye.name = "FairingLamp"
-	# The ram-air mouth in the nose.
-	var mouth := _mesh_instance(_sphere(0.045), dark, (nose["c"] as Vector3) + Vector3(0.0, -float(nose["down"]) * 0.2, -0.004))
-	mouth.scale = Vector3(1.1 if lamps else 1.5, 0.5 if lamps else 0.75, 0.3)
-	mouth.name = "RamAir"
-	# A small screen laid back over the clocks.
-	var crown_s: Dictionary = secs[4]
-	_screen(crown_s["c"] + Vector3(0.0, float(crown_s["up"]) - 0.012, -0.02), float(crown_s["w"]) * 0.75, minf(screen, 0.14 if lamps else 0.11),
-		0.95 if not lamps else 0.8, glass)
-	# Winglets off the flanks: one deck on a road bike that asks for it, two on a race bike.
+	# A short screen laid well back from the crown, creased down the middle like the nose.
+	var tilt := 0.95 if lamps else 1.1
+	var dir := Vector3(0.0, cos(tilt), sin(tilt))
+	var up := Vector3(0.0, sin(tilt), -cos(tilt))
+	var base := Vector3(0.0, crown.y - 0.012, crown.x - 0.006)
+	var half := _pwl(wide, crown.x) * 0.56
+	var tall := clampf(screen, 0.1, 0.17) * (1.0 if lamps else 0.85)
+	var pane := []
+	for k in 4:
+		var f := k / 3.0
+		var at := base + dir * tall * f
+		var hw := half * lerpf(1.0, 0.7, f)
+		var bulge := 0.04 * lerpf(1.0, 0.75, f)
+		pane.append(PackedVector3Array([at + Vector3(hw, 0.0, 0.0), at + Vector3(hw * 0.6, 0.0, 0.0) + up * bulge * 0.8, at + up * bulge]))
+	_facets(pane, glass).name = "Screen"
+	# Winglets off the nose: one deck on a road bike that asks for them, two on a race bike, each
+	# a thin swept blade out to a tall slim endplate.
 	var wings := int(lk.get("wings", 0 if lamps else 2))
-	var wing_s: Dictionary = secs[6]
-	for side in [-1.0, 1.0]:
+	if wings > 0:
+		var roots := []
+		var reach := 0.0
 		for i in wings:
-			var root := _on_loft(wing_s, (0.12 - i * 0.28) if side > 0.0 else PI - (0.12 - i * 0.28), 1.0)
-			var wing := _box(root + Vector3(0.045 * side, -0.005 * i, 0.01 * i), Vector3(0.09, 0.006, 0.11 - i * 0.015), mat)
-			wing.rotation = Vector3(0.12, 0.25 * side, -0.18 * side)
-			wing.name = "Winglet"
-		if wings > 0:
-			var tip := _on_loft(wing_s, 0.0 if side > 0.0 else PI, 1.0) + Vector3(0.09 * side, -0.02, 0.0)
-			var plate := _box(tip, Vector3(0.005, 0.035 + 0.03 * (wings - 1), 0.08), mat)
-			plate.rotation.y = 0.2 * side
-		# Vents cut into the flank behind the front wheel to let the radiator breathe out.
-		var flank: Dictionary = secs[11]
-		for v in 3:
-			var at := _on_loft(flank, (-0.25 if side > 0.0 else PI + 0.25), 1.006) + Vector3(0.0, -v * 0.03, -0.03 + v * 0.025)
-			var slat := _box(at, Vector3(0.006, 0.01, 0.1), dark)
-			slat.rotation = Vector3(0.35, 0.15 * side, 0.0)
-			slat.name = "FairingVent"
-	if lk.has("accent"):
-		# A stripe that kicks along the flank, the way race liveries run.
-		var stripe := []
-		for k in range(2, secs.size()):
-			var sec: Dictionary = secs[k]
-			stripe.append(_on_loft(sec, -0.15, 1.004))
-		_bend(stripe, 0.011, _mat(_accent(), 0.1, 0.35, 0.6))
-		var stripe_l := []
-		for k in range(2, secs.size()):
-			stripe_l.append(_on_loft(secs[k], PI + 0.15, 1.004))
-		_bend(stripe_l, 0.011, _mat(_accent(), 0.1, 0.35, 0.6))
-	if lk.get("roundel", false):
-		var plate_s: Dictionary = secs[10]
+			var jw := 2.45 if wings == 1 else lerpf(2.2, 2.75, float(i) / maxf(wings - 1, 1))
+			var fa := (0.14 + 0.02 * i) * steps
+			var le := _grid_at(rows, fa, jw)
+			var te := _grid_at(rows, fa + (0.15 if lamps else 0.18) * steps, jw)
+			roots.append([le, te])
+			reach = maxf(reach, maxf(le.x, te.x))
+		# The tips all reach out to the one endplate.
+		reach += 0.075 if lamps else 0.1
 		for side in [-1.0, 1.0]:
-			var disc := _mesh_instance(_cylinder(0.055, 0.004), _mat(Color(0.95, 0.95, 0.92), 0.0, 0.5),
-				_on_loft(plate_s, 0.0 if side > 0.0 else PI, 1.01))
-			disc.rotation.z = PI * 0.5
+			var lo := INF
+			var hi := -INF
+			var za := INF
+			var zb := -INF
+			for r in roots:
+				var le: Vector3 = r[0]
+				var te: Vector3 = r[1]
+				var tip_le := Vector3(reach, le.y - 0.012, le.z + 0.06)
+				var tip_te := Vector3(reach, te.y - 0.012, te.z + 0.015)
+				var outline := PackedVector3Array()
+				for p in [le, tip_le, tip_te, te]:
+					outline.append(p * Vector3(side, 1.0, 1.0))
+				_mesh_instance(ShapeKit.plate(outline, 0.006), mat, Vector3.ZERO).name = "Winglet"
+				lo = minf(lo, minf(tip_le.y, tip_te.y))
+				hi = maxf(hi, maxf(tip_le.y, tip_te.y))
+				za = minf(za, tip_le.z)
+				zb = maxf(zb, tip_te.z)
+			# A tall slim endplate standing across the tips.
+			lo -= 0.04
+			hi += 0.015
+			var x: float = reach * side
+			var endplate := _mesh_instance(ShapeKit.plate(PackedVector3Array([Vector3(x, lo, za + 0.01), Vector3(x, hi, za + 0.025),
+				Vector3(x, hi, zb), Vector3(x, lo, zb - 0.01)]), 0.005), mat, Vector3.ZERO)
+			endplate.name = "Winglet"
+
+
+## A faceted shell (see ShapeKit.facets) for the part being drawn.
+func _facets(rows: Array, mat: Material, mirror := true, flip := false, parent: Node3D = self) -> MeshInstance3D:
+	return _mesh_instance(ShapeKit.facets(rows, mirror, flip), mat, Vector3.ZERO, parent)
+
+
+## A row's right half mirrored into the whole profile, left edge round to right edge.
+static func _mirror_row(half: PackedVector3Array) -> PackedVector3Array:
+	var row := PackedVector3Array()
+	for k in half.size() - 1:
+		row.append(half[k] * Vector3(-1.0, 1.0, 1.0))
+	row.append(half[half.size() - 1])
+	for k in range(half.size() - 2, -1, -1):
+		row.append(half[k])
+	return row
+
+
+## A point on a faceted shell's right half (rows as for ShapeKit.facets): `fi` along the rows,
+## `ji` across the profile's points, both fractional.
+static func _grid_at(rows: Array, fi: float, ji: float) -> Vector3:
+	var i := clampi(floori(fi), 0, rows.size() - 2)
+	var w: int = (rows[0] as PackedVector3Array).size()
+	var j := clampi(floori(ji), 0, w - 2)
+	var a: PackedVector3Array = rows[i]
+	var b: PackedVector3Array = rows[i + 1]
+	var tf := clampf(fi - i, 0.0, 1.0)
+	var tj := clampf(ji - j, 0.0, 1.0)
+	return a[j].lerp(a[j + 1], tj).lerp(b[j].lerp(b[j + 1], tj), tf)
+
+
+## Which way is out from a faceted shell's right half at (`fi`, `ji`); on a crease, the two
+## facets' average.
+static func _grid_normal(rows: Array, fi: float, ji: float) -> Vector3:
+	var df := _grid_at(rows, fi + 0.2, ji) - _grid_at(rows, fi - 0.2, ji)
+	var dj := _grid_at(rows, fi, ji + 0.01) - _grid_at(rows, fi, ji - 0.01)
+	return dj.cross(df).normalized()
+
+
+## A panel laid over a faceted shell, both sides: a patch of its skin from `ji0` to `ji1` across
+## the profile, lifted `lift` off it, keeping the shell's creases. `f` is [front at ji0, front
+## at ji1, back at ji0, back at ji1] as shares of the shell's length, so a patch can have
+## slanted ends. Returns the right and left patches.
+func _grid_patch(rows: Array, f: Array, ji0: float, ji1: float, lift: float, mat: Material) -> Array:
+	var steps := rows.size() - 1
+	var js := [ji0]
+	for k in range(ceili(ji0 + 0.001), ceili(ji1 - 0.001)):
+		js.append(float(k))
+	js.append(ji1)
+	# Rows at the shell's own rows (held at the patch's slanted ends), so the patch lies on the
+	# shell's facets rather than cutting through them.
+	var i0 := floori(minf(float(f[0]), float(f[1])) * steps)
+	var i1 := ceili(maxf(float(f[2]), float(f[3])) * steps)
+	var right := []
+	var left := []
+	for i in range(i0, i1 + 1):
+		var row := PackedVector3Array()
+		var mirrored := PackedVector3Array()
+		for jv: float in js:
+			var tj := (jv - ji0) / maxf(ji1 - ji0, 0.0001)
+			var fi := clampf(float(i), lerpf(float(f[0]), float(f[1]), tj) * steps, lerpf(float(f[2]), float(f[3]), tj) * steps)
+			# The ends take their own facet's normal; a crease inside takes the two facets' average.
+			var jn := jv
+			if is_equal_approx(jv, ji0):
+				jn = jv + 0.02
+			elif is_equal_approx(jv, ji1):
+				jn = jv - 0.02
+			var p := _grid_at(rows, fi, jv) + _grid_normal(rows, fi, jn) * lift
+			mirrored.append(p * Vector3(-1.0, 1.0, 1.0))
+			# The right half runs centre to edge, the way the shell's own right half does.
+			row.insert(0, p)
+		right.append(row)
+		left.append(mirrored)
+	return [_facets(right, mat, false, false), _facets(left, mat, false, false)]
+
+
+## A flat round disc (a racing number roundel) on a faceted shell's flank, lifted `lift` off it,
+## on the right (`side` 1) or the left (-1).
+func _disc_on(rows: Array, fi: float, ji: float, lift: float, radius: float, side: float, mat: Material) -> MeshInstance3D:
+	var c := _grid_at(rows, fi, ji)
+	var n := _grid_normal(rows, fi, ji)
+	var along := (_grid_at(rows, fi + 0.5, ji) - _grid_at(rows, fi - 0.5, ji)).normalized()
+	var across := n.cross(along).normalized()
+	var ring := PackedVector3Array()
+	for k in 16:
+		var a := TAU * k / 16.0
+		ring.append((c + n * lift + (along * cos(a) + across * sin(a)) * radius) * Vector3(side, 1.0, 1.0))
+	var disc := _mesh_instance(ShapeKit.plate(ring, 0.003), mat, Vector3.ZERO)
+	disc.name = "Roundel"
+	return disc
+
+
+## The height of a polyline of (z, y) points at `z`, held flat past either end.
+static func _pwl(points: Array, z: float) -> float:
+	var first: Vector2 = points[0]
+	if z <= first.x:
+		return first.y
+	for k in range(1, points.size()):
+		var a: Vector2 = points[k - 1]
+		var b: Vector2 = points[k]
+		if z <= b.x:
+			return lerpf(a.y, b.y, (z - a.x) / maxf(b.x - a.x, 0.0001))
+	return (points[points.size() - 1] as Vector2).y
 
 
 ## An adventure bike's beak-nosed half fairing (a Multistrada, a GS, a Tracer): a tall, creased
@@ -2971,6 +3147,7 @@ func _full_fairing_fitted() -> bool:
 	return str(f.get("style", "")) == "race" and shape != "seeley" or shape == "adventure"
 
 
+## A curved screen rising from `base`, `half` wide, `height` tall, leaning back by `tilt`.
 func _screen(base: Vector3, half: float, height: float, tilt: float, glass: Material, parent: Node3D = self) -> void:
 	var dir := Vector3(0.0, cos(tilt), sin(tilt))
 	var secs := []
