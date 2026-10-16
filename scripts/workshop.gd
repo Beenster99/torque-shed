@@ -629,6 +629,52 @@ func item_frame(item_id: int) -> Dictionary:
 	return {}
 
 
+## The model a part is drawn on and its slots there, for painting a spray job's coat onto it
+## (SprayJob): {model, slots, node (what it's drawn in)}, or {} when it isn't drawn on a model.
+## `whole` takes in everything drawn with it (an engine's ancillaries, for a coat on the lot).
+func item_surface(item_id: int, whole := false) -> Dictionary:
+	if not Shed.items.has(item_id):
+		return {}
+	var it: Dictionary = Shed.items[item_id]
+	match str(it["at"]):
+		"bike":
+			var bike := int(it["ref"])
+			if not bike_views.has(bike):
+				return {}
+			for slot in PartsDB.BIKE_SLOTS:
+				if Shed.item_on(bike, slot) == item_id:
+					return {"model": bike_model(bike), "slots": [slot], "node": bike_model(bike)}
+		"engine":
+			var block := int(it["ref"])
+			var model := model_for({"engine": block})
+			if model == null:
+				return {}
+			for slot in PartsDB.ENGINE_SLOTS:
+				if Shed.engine_item(block, slot) == item_id:
+					return {"model": model, "slots": [slot], "node": model}
+		"spot", "floor":
+			var node: Node3D = _spot_nodes.get(str(it["ref"])) if str(it["at"]) == "spot" else _floor_nodes.get(item_id)
+			if node == null or not is_instance_valid(node) or not node.has_meta("model"):
+				return {}
+			var model: BikeModel = node.get_meta("model")
+			var slots := []
+			for slot in model._slot_meshes:
+				if (model._slot_meshes[slot] as Array).is_empty():
+					continue
+				# The part itself: a block without its ancillaries, a wheel without its tyre.
+				if not whole and ((Shed.is_engine(item_id) and slot != "engine") or (slot == "front_tyre" and str(it.get("kind", "")) != "tyre")):
+					continue
+				slots.append(slot)
+			return {"model": model, "slots": slots, "node": node} if not slots.is_empty() else {}
+		"wheel":
+			var on := item_surface(int(it["ref"]), true)
+			if on.is_empty():
+				return {}
+			on["slots"] = ["front_tyre"] if (on["model"] as BikeModel)._slot_meshes.has("front_tyre") else []
+			return on if not (on["slots"] as Array).is_empty() else {}
+	return {}
+
+
 ## {xf, box} round a piece of equipment, for pings.
 func furniture_frame(id: int) -> Dictionary:
 	if furniture_nodes.has(id):

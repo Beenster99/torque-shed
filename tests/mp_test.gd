@@ -21,6 +21,7 @@ var main: Node
 var TROLLEY_XF := Transform3D(Basis(Vector3.UP, 0.5), Workshop.CENTER + Vector3(-1.5, 0.0, 3.0))
 ## Where the client puts its tray from the coffee shop down: on the cafe's floor.
 var CAFE_TRAY_XF := Transform3D(Basis(), CoffeeShop.CENTER + Vector3(0.0, 0.0, 3.0))
+var SPRAY_XF := Transform3D(Basis(), Workshop.CENTER + Vector3(-2.5, 0.0, 1.0))   # where the tank to spray is left
 
 
 func _ready() -> void:
@@ -81,6 +82,9 @@ func _ready() -> void:
 	var cafe_bought := false
 	var cafe_down := false
 	var cafe_ok := false
+	var spray_made := false
+	var spray_step := 0
+	var spray_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -328,7 +332,35 @@ func _ready() -> void:
 			emote_sent = false
 		if role == "client" and not emote_ok and emote_sent and Engine.get_process_frames() % 240 == 0:
 			emote_sent = false
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok:
+		# Hand spraying: the host leaves a bare tank on the floor; the client primes it, paints
+		# it and lacquers it with spray cans, every coat checked by the host, and both see the
+		# three coats on it.
+		if role == "host" and Shed.crew.size() == 2 and not spray_made:
+			var st := Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[0])
+			Shed._move(st, "floor", SPRAY_XF)
+			Shed._mark_dirty()
+			spray_made = true
+		var spray_tank := 0
+		for iid in Shed.items:
+			var si: Dictionary = Shed.items[iid]
+			if si["part"] == "cafe_15" and si["at"] == "floor" and si["ref"] is Transform3D and (si["ref"] as Transform3D).origin.distance_to(SPRAY_XF.origin) < 0.01:
+				spray_tank = iid
+		if role == "client" and spray_tank != 0:
+			var sit: Dictionary = Shed.items[spray_tank]
+			if spray_step == 0:
+				Shed.request({"a": "prime", "item": spray_tank, "quality": 0.9, "waste": 0.0})
+				spray_step = 1
+			elif spray_step == 1 and sit.get("primer_top", false):
+				Shed.request({"a": "paint", "item": spray_tank, "color": 2, "finish": "gloss", "quality": 0.8, "waste": 0.0})
+				spray_step = 2
+			elif spray_step == 2 and sit.has("paint_quality") and not sit.get("primer_top", false):
+				Shed.request({"a": "coat", "item": spray_tank, "coat": "clear", "quality": 0.9, "waste": 0.0})
+				spray_step = 3
+		if spray_tank != 0:
+			var sd: Dictionary = Shed.items[spray_tank]
+			spray_ok = float(sd.get("primer", 0.0)) > 0.5 and float(sd.get("paint_quality", 0.0)) > 0.8 \
+				and str(sd.get("coat", "")) == "clear" and not sd.get("primer_top", false) and sd["color"] == Shed.PAINTS[2]
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -344,8 +376,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok])
 	get_tree().quit(0 if ok else 1)
 
 

@@ -267,6 +267,9 @@ func _run_all() -> void:
 	_test_coffee_trays()
 	_test_coffee_save()
 	await _test_coffee_session()
+	print("Spraying by hand: primer, colour and lacquer coats, the fan, coverage, runs and dry spray")
+	_test_spray_coat_rules()
+	await _test_spray_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1777,7 +1780,9 @@ func _session_round5(main: Node) -> void:
 	var box: AABB = frame_info["box"]
 	var xf: Transform3D = frame_info["xf"]
 	var centre: Vector3 = xf * box.get_center()
-	w.place(Transform3D(Basis(), Vector3(centre.x, 0.0, centre.z) + (Workshop.CENTER - Vector3(centre.x, 0.0, centre.z)).normalized() * 1.0))
+	# Down on your haunches for a part on the floor, so the can's the right distance off it.
+	w.place(Transform3D(Basis(), Vector3(centre.x, 0.0, centre.z) + (Workshop.CENTER - Vector3(centre.x, 0.0, centre.z)).normalized() * 0.6))
+	w.set_crouched(true)
 	w.set_tool("spray")
 	w.spray_color = 4
 	await _aim_point(w, centre)
@@ -1803,20 +1808,27 @@ func _session_round5(main: Node) -> void:
 			var f := float(k) / (frames - 1)
 			var x := lerpf(rect.position.x, rect.end.x, f if r % 2 == 0 else 1.0 - f)
 			path.append(cam.project_position(Vector2(x, y), dist))
-	for p in path:
-		var d: Vector3 = p - w.camera.global_position
-		w.rotation.y = atan2(-d.x, -d.z)
-		w._pitch = 0.0
-		w._look(0.0, atan2(d.y, Vector2(d.x, d.z).length()))
-		await get_tree().physics_frame
-		if Shed.items[pipe]["color"] == Shed.PAINTS[4]:
+	# A second pass over it where the first left it thin, as a painter would.
+	for pass_n in 2:
+		if w.spray != null and w.spray.ready():
 			break
+		for p in path:
+			var d: Vector3 = p - w.camera.global_position
+			w.rotation.y = atan2(-d.x, -d.z)
+			w._pitch = 0.0
+			w._look(0.0, atan2(d.y, Vector2(d.x, d.z).length()))
+			await get_tree().physics_frame
+			if Shed.items[pipe]["color"] == Shed.PAINTS[4]:
+				break
+	# Letting go once it's covered finishes the coat.
 	Input.action_release("act")
-	await get_tree().physics_frame
+	for i in 3:
+		await get_tree().physics_frame
 	check(Shed.items[pipe]["color"] == Shed.PAINTS[4] and Shed.items[pipe].has("paint_quality"),
 		"sweeping the can over all of it finishes the paint job (quality %.0f%%)" % (float(Shed.items[pipe].get("paint_quality", 0.0)) * 100.0))
 	check(Shed.condition_text(Shed.items[pipe]).contains("Paint job"), "the info panel says how good the paint job is")
 	w.set_tool("hands")
+	w.set_crouched(false)
 	# The yard: a bike ridden at a ramp goes up it.
 	var ramp := 0
 	for id in Shed.furniture:
@@ -13076,3 +13088,293 @@ func _test_coffee_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+func _test_spray_coat_rules() -> void:
+	var me := Shed.me()
+	var xp_before := int(Progress.profile.get("xp", 0))
+	# Primer: an optional first coat, grey, with the old colour kept under it.
+	var tank := Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[0])
+	Shed._move(tank, "floor", Transform3D(Basis(), Workshop.CENTER + Vector3(2.0, 0.0, 2.0)))
+	var rusty := Shed._new_item("cafe_15", 0.6, 0.0, 0.0)
+	Shed._move(rusty, "floor", Transform3D(Basis(), Workshop.CENTER + Vector3(2.5, 0.0, 2.0)))
+	check(Shed.check(me, {"a": "prime", "item": rusty}).contains("rusty"), "rusty parts can't be primed")
+	check(Shed.check(me, {"a": "prime", "item": tank, "gun": true}).contains("booth"), "the spray gun's primer still needs the booth")
+	check(Shed.check(me, {"a": "prime", "item": tank}) == "", "a spray can of primer goes on anywhere")
+	Shed.request({"a": "prime", "item": tank, "quality": 0.9, "waste": 0.0})
+	var it: Dictionary = Shed.items[tank]
+	check(it.get("primer_top", false) and is_equal_approx(float(it["primer"]), 0.9) and it["color"] == Shed.PAINTS[0],
+		"primed: grey on top, the old colour kept under it (%s)" % str(it.get("primer", "-")))
+	check(Shed.paint_text(it) == "Grey primer" and Shed.condition_of(it).get("primer", false) and Shed.condition_text(it).contains("In primer"),
+		"it reads as grey primer, and is drawn in it")
+	check(int(Progress.profile.get("xp", 0)) > xp_before and Progress.XP.has("prime") and Progress.PAY.has("prime"), "priming pays XP and a wage")
+	check(Shed.check(me, {"a": "prime", "item": tank}).contains("already"), "it can't be primed twice over")
+	check(Shed.check(me, {"a": "coat", "item": tank, "coat": "clear"}).contains("primer"), "lacquer won't go on bare primer")
+	var model := BikeModel.item_display(tank).get_meta("model") as BikeModel
+	var greys := 0
+	for mi in model._slot_meshes.get("tank", []):
+		var m := (mi as GeometryInstance3D).material_override as StandardMaterial3D
+		if m and m.has_meta("paint_surface") and m.albedo_color.is_equal_approx(Shed.PRIMER_COLOR):
+			greys += 1
+	check(greys > 0, "a primed tank is drawn grey where it's painted (%d surfaces)" % greys)
+	model.get_parent().free()
+	# The colour over the primer comes out better than without it.
+	var bare := Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[0])
+	Shed._move(bare, "floor", Transform3D(Basis(), Workshop.CENTER + Vector3(3.0, 0.0, 2.0)))
+	check(Shed.check(me, {"a": "paint", "item": tank, "color": 0, "finish": "gloss"}) == "", "a primed part can be painted its old colour again")
+	Shed.request({"a": "paint", "item": tank, "color": 1, "finish": "gloss", "quality": 0.8, "waste": 0.0})
+	Shed.request({"a": "paint", "item": bare, "color": 1, "finish": "gloss", "quality": 0.8, "waste": 0.0})
+	var pq := float(Shed.items[tank]["paint_quality"])
+	check(pq > float(Shed.items[bare]["paint_quality"]) + 0.05 and is_equal_approx(pq, 0.8 + Shed.PRIMER_BONUS * 0.9),
+		"paint over primer keys on better (%.3f against %.3f)" % [pq, float(Shed.items[bare]["paint_quality"])])
+	check(not Shed.items[tank].has("primer_top") and Shed.items[tank].has("primer") and Shed.paint_text(Shed.items[tank]) == "Gloss blue"
+		and Shed.finish_text(Shed.items[tank]).contains("over primer"), "the primer's under the colour now: %s" % Shed.finish_text(Shed.items[tank]))
+	# Clear lacquer over the colour: with a rattle can anywhere, once.
+	var clear := {"a": "coat", "item": tank, "coat": "clear", "quality": 1.0}
+	check(Shed.check(me, clear) == "", "a can of clear lacquer goes over paint anywhere")
+	check(Shed.check(me, {"a": "coat", "item": tank, "coat": "enamel_black"}).contains("paint shop"), "engine enamel still needs the gun in the booth")
+	Shed.request(clear)
+	var lq := float(Shed.items[tank]["paint_quality"])
+	check(is_equal_approx(lq, minf(1.0, pq + Shed.LACQUER_BONUS)) and Shed.coat_gloss(str(Shed.items[tank]["coat"])) > 0.9
+		and Shed.finish_text(Shed.items[tank]).contains("lacquered"), "lacquer brings the paint job up and shines it: %s" % Shed.finish_text(Shed.items[tank]))
+	Shed.request(clear)
+	check(is_equal_approx(float(Shed.items[tank]["paint_quality"]), lq), "a second coat of lacquer adds nothing more")
+	check(Shed.condition_of(Shed.items[tank]).get("coat", "") == "clear", "the lacquer is drawn on it (its condition's coat)")
+	# Primer over a lacquered part takes the lacquer off; blasting it bare takes the primer off.
+	Shed.request({"a": "prime", "item": tank, "quality": 1.0})
+	check(not Shed.items[tank].has("coat") and Shed.items[tank].get("primer_top", false), "priming over lacquer covers it")
+	# A contract wanting a tank colour doesn't count grey primer as that colour.
+	var on_bike := 0
+	for id in Shed.bikes:
+		if Shed.item_on(id, "tank") != 0:
+			on_bike = id
+			break
+	if on_bike != 0:
+		var t2 := Shed.item_on(on_bike, "tank")
+		var was: Color = Shed.items[t2]["color"]
+		Shed.items[t2]["primer_top"] = true
+		var g := Contracts.eval_goal({"bike": on_bike}, {"t": "paint", "color": Shed.paint_index(was)})
+		check(not g["done"] and str(g["have"]) == "grey primer", "a tank in primer isn't the colour a job wants yet (%s)" % str(g))
+		Shed.items[t2].erase("primer_top")
+	# Old saves: parts without any primer or lacquer draw and read as before.
+	var old := Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[2])
+	check(not Shed.condition_of(Shed.items[old]).has("primer") and Shed.blast_sig(Shed.items[old]) == "" and Shed.paint_text(Shed.items[old]) == "Orange",
+		"a part from an old save, with no primer, is as it was")
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Tester")
+	check(Shed.items[tank].get("primer_top", false) and is_equal_approx(float(Shed.items[tank]["primer"]), 1.0), "primer is kept in the save")
+	for id in [tank, rusty, bare, old]:
+		Shed.items.erase(id)
+	# The fan: how it lands with distance, and the sweet spot widening with skill.
+	var job := SprayJob.new()
+	job.set_tool(0.1, 10.0, 0.35, 1.0)
+	var close := job.fan_at(0.3)
+	var good := job.fan_at(0.8)
+	var far := job.fan_at(1.6)
+	var out := job.fan_at(2.6)
+	check(close["zone"] == "close" and good["zone"] == "good" and far["zone"] == "far" and out["zone"] == "out",
+		"too close, the sweet spot, too far and out of reach (%s %s %s %s)" % [close["zone"], good["zone"], far["zone"], out["zone"]])
+	check(float(close["flow"]) > float(good["flow"]) * 2.0 and float(close["radius"]) < float(good["radius"]),
+		"close up it piles on in a tight spot (%.1f vs %.1f coats a second)" % [float(close["flow"]), float(good["flow"])])
+	check(float(good["dry"]) == 0.0 and float(far["dry"]) > 0.3 and float(far["radius"]) > float(good["radius"]) and float(out["flow"]) == 0.0,
+		"further off it spreads, lands dry (%.2f) and then doesn't reach at all" % float(far["dry"]))
+	job.set_tool(0.1, 10.0, 0.35, 1.2)
+	check(job.sweet().x < SprayJob.NEAR and job.sweet().y > SprayJob.FAR, "a better hand widens the sweet spot both ways")
+	var ranks: int = int(Progress.profile["skills"].get("steady_hand", 0))
+	Progress.profile["skills"]["steady_hand"] = 2
+	check(Progress.spray_band_mult(me, "spray") > 1.05, "Steady Hand widens it (%.2f)" % Progress.spray_band_mult(me, "spray"))
+	Progress.profile["skills"]["steady_hand"] = ranks
+	check(is_equal_approx(job.quality({"covered": 1.0, "runs": 0.0, "dry": 0.0}), 1.0)
+		and job.quality({"covered": 1.0, "runs": 0.2, "dry": 0.0}) < 0.9 and job.quality({"covered": 1.0, "runs": 0.0, "dry": 0.3}) < 0.92,
+		"runs and dry spray take the shine off the quality")
+	check(SprayJob.layer_of({"a": "prime"}) == "primer" and SprayJob.layer_of({"a": "coat", "coat": "clear"}) == "clear"
+		and SprayJob.layer_of({"a": "coat", "coat": "enamel_black"}) == "paint" and SprayJob.layer_of({"a": "paint"}) == "paint",
+		"primer, colour (an enamel's a colour) and lacquer coats")
+	var look := SprayJob.look_for({"a": "paint", "color": 1, "finish": "gloss"}, {"color": Shed.PAINTS[0], "primer_top": true})
+	var look2 := SprayJob.look_for({"a": "paint", "color": 1, "finish": "gloss"}, {"color": Shed.PAINTS[0]})
+	check((look["under"] as Color).a == 0.0 and (look2["under"] as Color).a > 0.5, "missed bits show the primer, or the old paint flatted back")
+	# What the can and gun are loaded with.
+	var w := Walker.new()
+	var can: Array = w.spray_loads("spray")
+	var gun: Array = w.spray_loads("gun")
+	check(can.any(func(l): return l["kind"] == "primer") and can.any(func(l): return l["kind"] == "coat" and l["id"] == "clear")
+		and not can.any(func(l): return l["id"] == "enamel_black"), "the spray can has primer and clear lacquer, and no enamels")
+	check(gun.size() == Shed.FINISHES.size() + Shed.COAT_ORDER.size() + 1 and gun[-1]["kind"] == "primer"
+		and gun[Shed.FINISHES.size()]["id"] == "clear", "the gun's coats follow its finishes, primer last")
+	w.free()
+
+
+func _test_spray_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var ws: Workshop = main.workshop
+	var booth := 0
+	for id in Shed.furniture:
+		if Shed.furniture[id]["kind"] == "booth":
+			booth = id
+	var hook: String = Shed.furniture_spots(booth)[4]
+	var tank := Shed._new_item("cafe_15", 0.0, 0.0, 0.0, Shed.PAINTS[0])
+	Shed.items[tank]["finish"] = "gloss"
+	Shed._move(tank, "spot", hook)
+	Shed.changed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	var disp: Node3D = ws._spot_nodes.get(hook, null)
+	if disp and disp.get_parent() is Swing:
+		disp.get_parent().set_physics_process(false)   # hold it still for the test
+	var surf := ws.item_surface(tank)
+	check(not surf.is_empty() and surf["slots"] == ["tank"] and surf["model"] is BikeModel, "a hung tank has a surface to spray onto (%s)" % str(surf.get("slots", [])))
+	var fr: Dictionary = ws.item_frame(tank)
+	var box: AABB = fr["box"]
+	var xf: Transform3D = fr["xf"]
+	var centre: Vector3 = xf * box.get_center()
+	var away := Vector3(Workshop.BOOTH_XF.basis.z.x, 0.0, Workshop.BOOTH_XF.basis.z.z).normalized()
+	w.place(Transform3D(Basis(), Vector3(centre.x, 0.0, centre.z) + away * 0.85))
+	w.set_tool("spray")
+	w.spray_finish = Shed.FINISHES.size()
+	check(w.spray_primer() and w.spray_text() == "Grey primer", "T on to grey primer")
+	await _aim_point(w, centre)
+	check(str(w.plan.get("action", {}).get("a", "")) == "prime" and w.plan["blocked"] == "", "aimed at the tank, the work button primes it (%s)" % str(w.plan))
+	Input.action_press("act")
+	for i in 40:
+		await get_tree().physics_frame
+	var job: SprayJob = w.spray
+	check(job != null and job.live and job.layer == "primer", "holding it starts a primer coat by hand")
+	if job == null:
+		Input.action_release("act")
+		main._leave()
+		main.queue_free()
+		await get_tree().physics_frame
+		return
+	var marks := job.marks
+	check(is_instance_valid(marks) and marks.get_parent() == job.model and marks.mesh_count() > 0 and marks.painted_count() > 0,
+		"the primer goes on the tank itself, on its painted surfaces (%d meshes, %d cubes coated)" % [marks.mesh_count() if marks else 0, marks.painted_count() if marks else 0])
+	var mat := marks.material_for("tank")
+	check(mat != null and (mat.get_shader_parameter("coat_color") as Color).is_equal_approx(Color(Shed.PRIMER_COLOR, 1.0)), "drawn in primer grey")
+	var st := job.stats()
+	check(job.seen_n > 50 and float(st["covered"]) > 0.0 and float(st["covered"]) < SprayJob.DONE,
+		"one spot covers some of what you can see, the rest still bare (%.0f%% of %d points)" % [float(st["covered"]) * 100.0, job.seen_n])
+	check(job.jet.get("hit", false) and str(job.jet["zone"]) == "good", "from 0.85 m off it's in the sweet spot (%.2f m, %s)" % [float(job.jet.get("dist", 0.0)), str(job.jet.get("zone", ""))])
+	var fx: SprayFx = w._spray_fx
+	check(fx != null and fx.visible and fx.cone.visible and fx.zone == "good" and fx.droplets.emitting,
+		"you see the spray: a cone to the tank, its footprint in green, droplets landing")
+	await get_tree().process_frame
+	var hud: SprayHud = main.hud.spray_hud
+	check(hud.visible and hud.showing() and not main.hud._panel.visible, "the spray readout comes up in place of the side panel")
+	# Lingering on one spot: it runs, and says so.
+	w.set_crouched(true)
+	w.place(Transform3D(Basis(), Vector3(centre.x, 0.0, centre.z) + away * 0.4))
+	for i in 30:
+		await get_tree().physics_frame
+	var eye: Vector3 = w.camera.global_position
+	var d := centre - eye
+	w.rotation.y = atan2(-d.x, -d.z)
+	w._pitch = 0.0
+	w._look(0.0, atan2(d.y, Vector2(d.x, d.z).length()))
+	w.spray_cues.clear()
+	for i in 150:
+		await get_tree().physics_frame
+	st = job.stats()
+	check(str(job.jet.get("zone", "")) == "close" and float(st["runs"]) > 0.0, "up close and lingering it runs (%.0f%% run, %s)" % [float(st["runs"]) * 100.0, str(job.jet.get("zone", ""))])
+	check(w.spray_cues.any(func(c): return c["kind"] == "runs") or hud.cue.get("kind", "") == "runs", "and the HUD shouts about it")
+	check(str(job.jet.get("pace", "")) == "slow", "the pace gauge says you're lingering")
+	w.set_crouched(false)
+	# The scan lights up what's missed.
+	_press("blast_scan")
+	await get_tree().process_frame
+	check(w.spray_scan and marks.scanning(), "X lights up what's missed")
+	_press("blast_scan")
+	await get_tree().process_frame
+	check(not marks.scanning(), "and X again turns it off")
+	# Let go before it's covered: the coat waits, as it was.
+	Input.action_release("act")
+	for i in 3:
+		await get_tree().physics_frame
+	check(w.spray == job and not job.live and not Shed.items[tank].get("primer_top", false) and is_instance_valid(marks),
+		"let go half done and the coat waits for you, just as you left it")
+	# Back at the right distance, steady passes all over it finish it.
+	w.place(Transform3D(Basis(), Vector3(centre.x, 0.0, centre.z) + away * 0.85))
+	await _aim_point(w, centre)
+	Input.action_press("act")
+	await _spray_passes(w, xf, box)
+	if w.spray != null:
+		await _spray_passes(w, xf, box)
+	Input.action_release("act")
+	for i in 3:
+		await get_tree().physics_frame
+	check(Shed.items[tank].get("primer_top", false) and float(Shed.items[tank].get("primer", 0.0)) > 0.4,
+		"sweeping over all of it puts the primer on (%.0f%%)" % (float(Shed.items[tank].get("primer", 0.0)) * 100.0))
+	check(w.spray == null and hud.cue.get("kind", "") == "done" or w.spray_cues.any(func(c): return c["kind"] == "done"), "and the HUD says it's done")
+	for i in 4:
+		await get_tree().process_frame
+	# The colour over it.
+	w.spray_finish = 0
+	w.spray_color = 1
+	await _aim_point(w, centre)
+	check(str(w.plan.get("action", {}).get("a", "")) == "paint" and w.plan["blocked"] == "", "then the colour goes on over it")
+	Input.action_press("act")
+	for i in 20:
+		await get_tree().physics_frame
+	var cj: SprayJob = w.spray
+	check(cj != null and cj.layer == "paint" and cj.steps()[0]["state"] == "done" and cj.steps()[1]["state"] == "now",
+		"the coats line up on the HUD: primer done, colour now, lacquer to come")
+	check(cj != null and ((cj.look["under"] as Color).a == 0.0), "the missed bits show the grey primer under it")
+	await _spray_passes(w, xf, box)
+	if w.spray != null:
+		await _spray_passes(w, xf, box)
+	Input.action_release("act")
+	for i in 3:
+		await get_tree().physics_frame
+	var it: Dictionary = Shed.items[tank]
+	check(Shed.paint_index(it["color"]) == 1 and not it.get("primer_top", false) and it.has("paint_quality") and Shed.finish_text(it).contains("over primer"),
+		"painted blue over primer: %s" % Shed.finish_text(it))
+	# And clear lacquer from the can on top.
+	w.spray_finish = Shed.FINISHES.size() + 1
+	check(w.spray_coat() == "clear", "T on to clear lacquer")
+	await _aim_point(w, centre)
+	check(str(w.plan.get("action", {}).get("a", "")) == "coat" and w.plan["blocked"] == "", "then lacquer over the colour (%s)" % str(w.plan.get("blocked", "")))
+	var before := float(it["paint_quality"])
+	Input.action_press("act")
+	await _spray_passes(w, xf, box)
+	if w.spray != null:
+		await _spray_passes(w, xf, box)
+	Input.action_release("act")
+	for i in 3:
+		await get_tree().physics_frame
+	check(Shed.items[tank].get("coat", "") == "clear" and float(Shed.items[tank]["paint_quality"]) > before,
+		"lacquered, and the finish comes up for it (%.2f to %.2f)" % [before, float(Shed.items[tank].get("paint_quality", 0.0))])
+	w.set_tool("hands")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## Steady, overlapping passes over a part's box, like a painter, at about a metre a second.
+func _spray_passes(w: Walker, xf: Transform3D, box: AABB) -> void:
+	for i in 2:
+		await get_tree().physics_frame
+	var cam: Camera3D = w.camera
+	var rect := Rect2(cam.unproject_position(xf * box.position), Vector2.ZERO)
+	for c in 8:
+		rect = rect.expand(cam.unproject_position(xf * box.get_endpoint(c)))
+	var centre := xf * box.get_center()
+	var dist: float = cam.global_position.distance_to(centre)
+	var px_per_m: float = get_viewport().get_visible_rect().size.y / (2.0 * dist * tan(deg_to_rad(cam.fov) * 0.5))
+	var rows := maxi(2, ceili(rect.size.y / (0.1 * px_per_m)))
+	var path: Array[Vector3] = []
+	for r in rows:
+		var y := rect.position.y + (r + 0.5) * rect.size.y / rows
+		var frames := maxi(30, ceili(rect.size.x / px_per_m * 120.0))
+		for k in frames:
+			var f := float(k) / (frames - 1)
+			var x := lerpf(rect.position.x, rect.end.x, f if r % 2 == 0 else 1.0 - f)
+			path.append(cam.project_position(Vector2(x, y), dist))
+	for p in path:
+		var d: Vector3 = p - cam.global_position
+		w.rotation.y = atan2(-d.x, -d.z)
+		w._pitch = 0.0
+		w._look(0.0, atan2(d.y, Vector2(d.x, d.z).length()))
+		await get_tree().physics_frame
+		if w.spray == null:
+			return
