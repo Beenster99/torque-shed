@@ -157,6 +157,8 @@ static func lit(room: String) -> bool:
 			return Shed.room_lit("sales")
 		"dyno":
 			return bool(Shed.dyno.get("lights", true))
+		"cafe":
+			return CoffeeShop.is_open()   # the coffee shop's lights are on while it's open
 	return false
 
 

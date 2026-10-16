@@ -593,7 +593,10 @@ func _update_target() -> void:
 			t = {"kind": "label", "furniture": int(c.get_meta("label"))}
 		elif c.has_meta("item") and Shed.items.has(int(c.get_meta("item"))):
 			t = {"kind": "item", "item": int(c.get_meta("item"))}
-		elif Shed.held_by(Shed.me()) != 0 and (c is CollisionObject3D) and (c as CollisionObject3D).collision_layer & 1:
+		elif c.has_meta("coffee_tray") and CoffeeShop.trays().has(int(c.get_meta("coffee_tray"))):
+			t = {"kind": "tray", "tray": int(c.get_meta("coffee_tray"))}   # a tray from the cafe, put down
+		elif (Shed.held_by(Shed.me()) != 0 or CoffeeShop.carrying(Shed.me())) and (c is CollisionObject3D) \
+				and (c as CollisionObject3D).collision_layer & 1:
 			t = {"kind": "surface"}
 		if not t.is_empty():
 			t["at"] = hit["position"]
@@ -1180,6 +1183,8 @@ func _make_plan() -> Dictionary:
 	var me := Shed.me()
 	var held := Shed.held_by(me)
 	var kind := str(target.get("kind", ""))
+	if CoffeeShop.carrying(me) or kind == "tray":
+		return _tray_plan()
 	if kind == "":
 		return {}
 	if kind == "dyno_kit" or Shed.hose_holder() == me:
@@ -1445,10 +1450,43 @@ func _fluid_plan(held: int, kind: String) -> Dictionary:
 	return pour
 
 
+## Carrying a tray from the cafe: put it down on anything flat (or hand it back over the
+## counter once it's empty). Looking at one put down: pick it up. Either way the second button
+## has what's on it.
+func _tray_plan() -> Dictionary:
+	var me := Shed.me()
+	var mine := CoffeeShop.tray_of(me)
+	var t: Dictionary = mine if not mine.is_empty() else CoffeeShop.trays().get(int(target.get("tray", 0)), {})
+	if t.is_empty():
+		return {}
+	if not (t["items"] as Array).is_empty():
+		var eat := {"a": "coffee_eat", "tray": int(t["id"])}
+		alt_plan = {"action": eat, "time": 1.2, "verb": CoffeeShop.eat_verb(t), "blocked": Shed.check(me, eat)}
+	if mine.is_empty():
+		var take := {"a": "coffee_tray_take", "tray": int(t["id"])}
+		return {"action": take, "time": 0.3, "verb": "pick the tray up", "blocked": Shed.check(me, take)}
+	if not target.has("drop"):
+		return {}
+	var down := {"a": "coffee_tray_down", "xf": target["drop"]}
+	var back := (mine["items"] as Array).is_empty() and CoffeeShop.on_counter((target["drop"] as Transform3D).origin)
+	return {"action": down, "time": 0.3, "verb": "hand the empty tray back" if back else "put the tray down",
+		"blocked": Shed.check(me, down)}
+
+
 func _describe() -> String:
 	var kind := str(target.get("kind", ""))
 	var lines := []
+	var tray := CoffeeShop.tray_of(Shed.me())
+	if not tray.is_empty():
+		lines.append("Your tray from the cafe")
+		lines.append("On it: %s" % CoffeeShop.items_text(tray["items"]))
+		lines.append("Put it down to use your hands. An empty one goes back on the cafe counter.")
+		return "\n".join(lines)
 	match kind:
+		"tray":
+			var t: Dictionary = CoffeeShop.trays()[int(target["tray"])]
+			lines.append("Tray from the cafe")
+			lines.append("On it: %s" % CoffeeShop.items_text(t["items"]))
 		"part" when target.get("road", false):
 			# Out on the road: no inspecting its parts, it's just a bike to ride.
 			var road_id := int(target["bike"])
@@ -1812,7 +1850,7 @@ func _update_work(delta: float) -> void:
 	_active_plan = plan_now
 	var key := ("alt:" if use_alt else "") + str(plan_now.get("action", {}))
 	var a_now := str(plan_now.get("action", {}).get("a", ""))
-	if a_now in ["drop", "wash", "set_down"]:
+	if a_now in ["drop", "wash", "set_down", "coffee_tray_down"]:
 		key = a_now  # the spot moves with the crosshair; keep the hold going
 	if not _acting():
 		_need_release = false
@@ -2218,7 +2256,10 @@ func _update_held_view() -> void:
 		if tool != "hands":
 			tool = "hands"
 			_set_tool_view()
-	if is_instance_valid(_held_view):
+	var tray := CoffeeShop.tray_of(Shed.me())
+	if not tray.is_empty():
+		sig = "tray:%s" % str(tray["items"])
+	if is_instance_valid(_held_view) and held != 0:
 		_held_view.rotation.y = 0.5 + hold_turn   # turned in your hands as you turn it
 	if sig == _held_sig:
 		return
@@ -2227,7 +2268,14 @@ func _update_held_view() -> void:
 		_held_view.queue_free()
 		_held_view = null
 	if _tool_view:
-		_tool_view.visible = held == 0
+		_tool_view.visible = held == 0 and tray.is_empty()
+	if not tray.is_empty():
+		# A tray from the cafe, carried in both hands in front of you.
+		_held_view = CoffeeView.tray_model(tray["items"])
+		_held_view.position = Vector3(0.0, -0.44, -0.62)
+		_held_view.rotation = Vector3(0.0, 0.0, 0.0)
+		camera.add_child(_held_view)
+		return
 	if held == 0:
 		return
 	_held_view = BikeModel.item_display(held)

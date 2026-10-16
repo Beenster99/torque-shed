@@ -88,6 +88,7 @@ var _mats := {}
 var radio: ShedRadio
 var dyno_room: DynoRoom     # the tuning room through the back wall
 var sales_office: SalesOffice   # the showroom and office east of the paint shop
+var coffee_shop: CoffeeShopBuilding   # the cafe next door, west of the storage room
 ## A live riding picture a TV is showing (the first one, if there are several), or null.
 var tv_feed: SubViewport
 ## Live riding pictures, one per rider being watched: bike node instance id -> {vp, cam, node}.
@@ -146,8 +147,8 @@ static func spot_transform(spot: String) -> Transform3D:
 
 
 ## The floor of each room, as x/z rectangles: the shed, the paint shop, the storage room, the
-## dyno room, and the sales office ("sales", the whole building) with its mezzanine office upstairs
-## ("sales_office", over the west end of it).
+## dyno room, the sales office ("sales", the whole building) with its mezzanine office upstairs
+## ("sales_office", over the west end of it), and the coffee shop next door ("cafe").
 static func rooms() -> Dictionary:
 	var out := {
 		"shed": Rect2(CENTER.x - HALF.x, CENTER.z - HALF.y, HALF.x * 2.0, HALF.y * 2.0),
@@ -156,6 +157,7 @@ static func rooms() -> Dictionary:
 		"dyno": Rect2(DynoRoom.CENTER.x - DynoRoom.HALF.x, DynoRoom.CENTER.z - DynoRoom.HALF.y, DynoRoom.HALF.x * 2.0, DynoRoom.HALF.y * 2.0),
 		"sales": SalesOffice.footprint(),
 		"sales_office": SalesOffice.office_rect(),
+		"cafe": CoffeeShop.footprint(),
 	}
 	# The extension and storage annex, once the garage has built them.
 	out.merge(GarageUpgrades.rooms(Shed.upgrades))
@@ -163,7 +165,7 @@ static func rooms() -> Dictionary:
 
 
 ## Which room a point is in ("shed", "paint", "storage", "dyno", "sales", "sales_office"
-## upstairs in the sales office, "lounge" upstairs on the shed), or "" outside.
+## upstairs in the sales office, "lounge" upstairs on the shed, "cafe"), or "" outside.
 static func room_at(at: Vector3) -> String:
 	if SalesOffice.office_rect().has_point(Vector2(at.x, at.z)) and at.y > SalesOffice.MEZZ_Y - 0.3:
 		return "sales_office"
@@ -218,6 +220,7 @@ func build() -> void:
 	add_child(dyno_room)
 	dyno_room.build(self)
 	_build_sales_office()
+	_build_coffee_shop()
 	_crew_screen = Dashboard.new("crew", CREW_SCREEN)
 	_crew_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.55, 0.6)
 	_crew_screen.rotation.y = PI * 0.5
@@ -1836,3 +1839,10 @@ func _build_sales_office() -> void:
 	sales_office = SalesOffice.new()
 	add_child(sales_office)
 	sales_office.build()
+
+
+## The coffee shop next door, west of the storage room (CoffeeShopBuilding; see CoffeeShop).
+func _build_coffee_shop() -> void:
+	coffee_shop = CoffeeShopBuilding.new()
+	add_child(coffee_shop)
+	coffee_shop.build()

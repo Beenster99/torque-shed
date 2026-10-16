@@ -19,6 +19,8 @@ var role := "host"
 var main: Node
 ## Where the client wheels the trolley to.
 var TROLLEY_XF := Transform3D(Basis(Vector3.UP, 0.5), Workshop.CENTER + Vector3(-1.5, 0.0, 3.0))
+## Where the client puts its tray from the coffee shop down: on the cafe's floor.
+var CAFE_TRAY_XF := Transform3D(Basis(), CoffeeShop.CENTER + Vector3(0.0, 0.0, 3.0))
 
 
 func _ready() -> void:
@@ -75,6 +77,10 @@ func _ready() -> void:
 	var trolley_ok := false
 	var emote_sent := false
 	var emote_ok := false
+	var cafe_spawned := false
+	var cafe_bought := false
+	var cafe_down := false
+	var cafe_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -287,6 +293,25 @@ func _ready() -> void:
 			var on_view: Node3D = ws._spot_nodes.get(str(Shed.items[trolley_box]["ref"]))
 			trolley_ok = on_view != null and ws.furniture_nodes.has(trolley) and ws.furniture_nodes[trolley].is_ancestor_of(on_view) \
 				and on_view.get_node_or_null("OrderNote") != null
+		# The coffee shop: a group of bikers rides in to the host's cafe and the client sees them on
+		# their bikes; the client buys a coffee and puts its tray down, and the host sees it there.
+		if role == "host" and Shed.crew.size() == 2 and not CoffeeShop.is_open() and Daylight.current:
+			Daylight.current.set_time(10.0)
+		if role == "host" and Shed.crew.size() == 2 and CoffeeShop.is_open() and not cafe_spawned:
+			cafe_spawned = not CoffeeShop.spawn_group(3).is_empty()
+			Shed.changed.emit()
+		if role == "client" and Shed.crew.size() == 2 and CoffeeShop.is_open() and trolley_ok and scrap_ok and retrieve_ok and not cafe_bought \
+				and Shed.held_by(Shed.me()) == 0:
+			Progress.earn(10, "Test")
+			cafe_bought = CoffeeShop.buy("coffee") == ""
+		if role == "client" and cafe_bought and not cafe_down and CoffeeShop.carrying(Shed.me()):
+			Shed.request({"a": "coffee_tray_down", "xf": CAFE_TRAY_XF})
+			cafe_down = true
+		var tray_seen := false
+		for ct in CoffeeShop.trays().values():
+			tray_seen = tray_seen or (int(ct["holder"]) == 0 and ct["items"] == ["coffee"] and (ct["xf"] as Transform3D).origin.distance_to(CAFE_TRAY_XF.origin) < 0.01)
+		var bikers_seen: bool = main.coffee_view.views.values().any(func(v): return is_instance_valid(v) and (v as CoffeeVisitor).has_bike())
+		cafe_ok = cafe_ok or (tray_seen and main.coffee_view.trays.size() >= 1 and bikers_seen)
 		# Emotes: the client waves and the host sees its figure wave; the host pings and the
 		# client sees the host's figure point at it.
 		if Shed.crew.size() == 2 and main.remotes.size() == 1 and not emote_sent:
@@ -303,7 +328,7 @@ func _ready() -> void:
 			emote_sent = false
 		if role == "client" and not emote_ok and emote_sent and Engine.get_process_frames() % 240 == 0:
 			emote_sent = false
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -319,8 +344,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok])
 	get_tree().quit(0 if ok else 1)
 
 

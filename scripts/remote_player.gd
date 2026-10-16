@@ -238,7 +238,7 @@ func _process(delta: float) -> void:
 	_phones.visible = Shed.wearing_headphones(peer)
 	if RiderGear.sig(RiderGear.worn_of(peer)) != _gear_sig:
 		_dress()
-	# What's in their hand: a part they carry, else their tool.
+	# What's in their hand: a part they carry, a tray from the cafe, else their tool.
 	var held := Shed.held_by(peer)
 	var tool := str(Shed.crew.get(peer, {}).get("tool", "hands"))
 	# You hear their tools while they work.
@@ -248,7 +248,8 @@ func _process(delta: float) -> void:
 	if jet:
 		jet.emitting = working and tool == "lance"
 	var stage := Progress.tool_stage(peer, tool)
-	var sig := "%d|%s|%d" % [held, tool, stage]
+	var tray := CoffeeShop.tray_of(peer)
+	var sig := "%d|%s|%d|%s" % [held, tool, stage, str(tray.get("items", "-"))]
 	if sig == _hand_sig:
 		return
 	_hand_sig = sig
@@ -261,6 +262,11 @@ func _process(delta: float) -> void:
 		part.scale = Vector3.ONE * clampf(0.6 / maxf(size.x, maxf(size.y, size.z)), 0.2, 1.0)
 		part.position = Vector3(-0.28, -0.1, -0.1)
 		_hand.add_child(part)
+	elif not tray.is_empty():
+		var t := CoffeeView.tray_model(tray["items"])
+		t.name = "Tray"
+		t.position = Vector3(-0.28, 0.0, -0.2)
+		_hand.add_child(t)
 	else:
 		_hand.add_child(Walker.make_tool_mesh(tool, Color(0.9, 0.75, 0.1), stage))
 		if tool == "lance":
