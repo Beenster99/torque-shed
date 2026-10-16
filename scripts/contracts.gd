@@ -1654,7 +1654,9 @@ static func on_drop(peer: int, item_id: int) -> String:
 		var r := ContractBatch.check_item(job["goals"][0], item_id)
 		if r["ok"]:
 			return ContractBatch.dispatch(peer, job, item_id)
-		said = "On the dispatch pallet, but not to spec for %s: %s." % [job.get("trade", ""), ", ".join(r["why"])]
+		# The first couple of reasons: the Contracts card lists the lot.
+		var why: Array = r["why"]
+		said = "Not to spec for %s: %s%s." % [job.get("trade", ""), ", ".join(why.slice(0, 2)), " (and more: see the Contracts card)" if why.size() > 2 else ""]
 	return said
 
 
