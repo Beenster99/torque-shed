@@ -7,7 +7,7 @@ extends RefCounted
 ## master cylinder, how much there is and how old it is. A part's condition can carry its
 ## "fluid" as {type, litres, age}; without one the bike is taken as freshly serviced.
 ## A tune (see TUNE_LIMITS) adjusts it in the dyno room: fuel map, ignition, rev limiter,
-## suspension clickers, tyre pressures and gearing. Parts drilled and trimmed for lightness
+## suspension clickers, tyre pressures, gearing and the ECU's rider aids. Parts drilled and trimmed for lightness
 ## carry "lightened" in their condition.
 
 const RIDER_MASS := 75.0
@@ -37,7 +37,15 @@ const TUNE_LIMITS := {
 	"sprocket_f": [12.0, 18.0], "sprocket_r": [36.0, 56.0],
 	"spread": [-1.0, 1.0],         # cassette gearboxes: closer .. wider ratios
 	"chain": [10.0, 70.0],         # chain slack, mm (kept on the chain itself)
+	# The ECU's rider aids, where it has them: 0 off, then level 1 (gentle) .. AID_LEVELS (firm).
+	"aid_traction": [0.0, 5.0], "aid_stability": [0.0, 5.0], "aid_anti_wheelie": [0.0, 5.0],
 }
+## The rider aids the dyno desk sets, aid -> its tune key (see TUNE_LIMITS). Level AID_STOCK is
+## how the ECU comes from the factory; AID_SCALE is how firmly each level steps in next to that.
+const AID_KEYS := {"traction": "aid_traction", "stability": "aid_stability", "anti_wheelie": "aid_anti_wheelie"}
+const AID_LEVELS := 5
+const AID_STOCK := 3
+const AID_SCALE: Array[float] = [0.0, 0.4, 0.7, 1.0, 1.25, 1.5]
 ## The pressures each style of tyre works best at, front and rear, in bar.
 const PSI_BEST := {"road": [2.3, 2.5], "offroad": [1.0, 1.0], "slick": [2.1, 1.8]}
 ## How much drilling and trimming takes off each kind of part, as a fraction of its mass.
@@ -316,6 +324,23 @@ func _compute_chain() -> void:
 ## Whether the ECU gives this rider aid: "traction", "abs", "anti_wheelie" or "stability".
 func has_aid(aid: String) -> bool:
 	return ecu_features.has(aid)
+
+
+## How firmly an aid steps in as it's set on the dyno desk: 0 when the ECU hasn't got it or it's
+## switched off, the ECU's own `ecu_aid` at the factory level, up to 1.2 at the firmest. Aids
+## the desk doesn't set (ABS) are always at the factory level.
+func aid_strength(aid: String) -> float:
+	if not has_aid(aid):
+		return 0.0
+	if not AID_KEYS.has(aid):
+		return ecu_aid
+	var level := clampi(roundi(tune_value(str(AID_KEYS[aid]))), 0, AID_LEVELS)
+	return clampf(ecu_aid * AID_SCALE[level], 0.0, 1.2)
+
+
+## Whether the ECU has this aid and it's switched on.
+func aid_on(aid: String) -> bool:
+	return aid_strength(aid) > 0.0
 
 
 func power_to_weight() -> float:
@@ -656,6 +681,8 @@ func tune_block(key: String) -> String:
 			return "The %s has no %s adjuster." % [str(p.get("name", "suspension")).to_lower(), what]
 	elif key == "spread" and not part("gearbox").get("cassette", false):
 		return "Only a cassette gearbox lets you respace the ratios."
+	elif key.begins_with("aid_") and not has_aid(key.trim_prefix("aid_")):
+		return "This ECU has no %s." % str(PartsDB.ECU_AID_NAMES.get(key.trim_prefix("aid_"), "rider aid"))
 	return ""
 
 
@@ -692,6 +719,8 @@ func tune_default(key: String) -> float:
 			return float(part("final_drive").get("rear", 45.0))
 		"chain":
 			return 30.0
+		"aid_traction", "aid_stability", "aid_anti_wheelie":
+			return float(AID_STOCK)
 	return 0.0
 
 

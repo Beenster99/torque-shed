@@ -66,8 +66,11 @@ const POUR_RATE := {"petrol": 2.0, "oil": 0.8, "brake_fluid": 0.15}
 const SYNC_INTERVAL := 0.1
 ## Tuning (the dyno room): where each setting is kept. The engine's calibration belongs to the
 ## bike ("bike": its tune{}); the rest live on the part they adjust, in its tune{}, so they go
-## with it when it's swapped. Chain tension is the chain's own slack.
+## with it when it's swapped. Chain tension is the chain's own slack. The ECU's rider aid levels
+## are the bike's too (the rider's choice for that bike, kept if the ECU is changed).
 const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "limiter": ["bike", "limiter"],
+	"aid_traction": ["bike", "aid_traction"], "aid_stability": ["bike", "aid_stability"],
+	"aid_anti_wheelie": ["bike", "aid_anti_wheelie"],
 	"f_preload": ["fork", "preload"], "f_bump": ["fork", "bump"], "f_rebound": ["fork", "rebound"],
 	"r_preload": ["shock", "preload"], "r_bump": ["shock", "bump"], "r_rebound": ["shock", "rebound"],
 	"psi_f": ["front_tyre", "pressure"], "psi_r": ["rear_tyre", "pressure"],

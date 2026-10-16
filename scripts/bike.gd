@@ -437,8 +437,9 @@ func _update_engine(delta: float) -> void:
 	var spin_ratio: float = (rear["omega"] * float(rear.get("r_eff", build.rear_radius)) - v_ground) / v_ground
 	var tc_target := 1.0
 	# Throttle Control (a riding skill) feathers it as if there were more assist.
-	var tc := maxf(minf(1.0, assist + 0.15 * float(skills.get("throttle_control", 0))), build.ecu_aid if build.has_aid("traction") else 0.0)
-	var tc_from := 0.08 if build.has_aid("traction") else 0.12
+	# The ECU's traction control, at the level set on the dyno desk (off: the rider alone).
+	var tc := maxf(minf(1.0, assist + 0.15 * float(skills.get("throttle_control", 0))), build.aid_strength("traction"))
+	var tc_from := lerpf(0.1, 0.06, clampf(build.aid_strength("traction"), 0.0, 1.0)) if build.aid_on("traction") else 0.12
 	if tc > 0.05 and spin_ratio > tc_from and rear["contact"] and burnout <= 0.0:
 		tc_target = clampf(1.0 - (spin_ratio - tc_from) * 4.0 * tc, 0.15, 1.0)
 	# In a wheelie the rider feathers the throttle to hold the front up at the balance angle
@@ -448,9 +449,10 @@ func _update_engine(delta: float) -> void:
 		var rising := angular_velocity.dot(global_transform.basis.x)
 		var hands := _steadiness()
 		tc_target = minf(tc_target, clampf(1.0 - (over * 8.0 + rising * 1.2) * hands, 0.0, 1.0))
-	if build.has_aid("anti_wheelie") and pitch_angle > deg_to_rad(2.0):
-		# The ECU's anti-wheelie trims the power to keep the front wheel skimming the road.
-		var cap := deg_to_rad(lerpf(20.0, 4.0, build.ecu_aid))
+	if build.aid_on("anti_wheelie") and pitch_angle > deg_to_rad(2.0):
+		# The ECU's anti-wheelie trims the power to keep the front wheel skimming the road
+		# (a gentle level lets it come up further).
+		var cap := deg_to_rad(lerpf(20.0, 4.0, minf(build.aid_strength("anti_wheelie"), 1.0)))
 		tc_target = minf(tc_target, clampf(1.0 - (pitch_angle - cap) * 12.0, 0.05, 1.0))
 	_traction = lerpf(_traction, tc_target, 1.0 - exp(-25.0 * delta))
 	var torque := build.engine_torque(rpm) * _throttle_eff * _traction
@@ -515,8 +517,8 @@ func wheelie_target() -> float:
 	var t := deg_to_rad(6.0)
 	if body_shift <= -0.25:
 		t = WHEELIE_PITCH + deg_to_rad(10.0) * clampf((-body_shift - 0.25) / 0.75, 0.0, 1.0)
-	if build and build.has_aid("anti_wheelie"):
-		t = minf(t, deg_to_rad(lerpf(20.0, 4.0, build.ecu_aid)))
+	if build and build.aid_on("anti_wheelie"):
+		t = minf(t, deg_to_rad(lerpf(20.0, 4.0, minf(build.aid_strength("anti_wheelie"), 1.0))))
 	return t
 
 
@@ -854,10 +856,11 @@ func _apply_rider_balance() -> void:
 		strength = 1.0
 	var err := _target_lean() - lean_angle
 	var tau := (22.0 * err - 4.0 * lean_rate) * mass * strength
-	if build.has_aid("stability") and any_contact:
-		# Stability control calms a tank-slapper or a twitchy slide.
-		tau -= lean_rate * mass * 3.0 * build.ecu_aid
-		apply_torque(-b.y * angular_velocity.dot(b.y) * mass * 0.8 * build.ecu_aid)
+	var stab := build.aid_strength("stability")
+	if stab > 0.0 and any_contact:
+		# Stability control calms a tank-slapper or a twitchy slide, as firmly as it's set.
+		tau -= lean_rate * mass * 3.0 * stab
+		apply_torque(-b.y * angular_velocity.dot(b.y) * mass * 0.8 * stab)
 	if not any_contact:
 		tau *= 0.4
 	apply_torque(fwd_flat * tau)

@@ -3,7 +3,8 @@ extends Control
 ## The dyno desk in the tuning room: tune the bike on the rig (or any bike close by) and run
 ## it on the dyno. Engine map, ignition and rev limiter; suspension clickers where the parts
 ## have them; tyre pressures and chain tension; sprockets and, with a cassette gearbox, the
-## ratio spacing; and drilling and trimming parts for lightness. Every change goes through the
+## ratio spacing; the fitted ECU's rider aids (traction control, stability control and
+## anti-wheelie, those it has: off or a level each); and drilling and trimming parts for lightness. Every change goes through the
 ## Shed so the whole crew sees the same tune, and riding uses it too.
 
 signal closed
@@ -17,6 +18,14 @@ const TABS := {
 		["r_preload", "Rear preload", 0.1], ["r_bump", "Rear compression", 0.1], ["r_rebound", "Rear rebound", 0.1]],
 	"Tyres & chain": [["psi_f", "Front tyre pressure", 0.05], ["psi_r", "Rear tyre pressure", 0.05], ["chain", "Chain slack", 1.0]],
 	"Gearing": [["sprocket_f", "Front sprocket", 1.0], ["sprocket_r", "Rear sprocket", 1.0], ["spread", "Ratio spacing", 0.1]],
+	"Rider aids": [["aid_traction", "Traction control", 1.0], ["aid_stability", "Stability control", 1.0],
+		["aid_anti_wheelie", "Anti-wheelie", 1.0]],
+}
+## What each of the ECU's rider aids does, under its slider.
+const AID_HELP := {
+	"aid_traction": "Cuts the power when the back tyre spins up. Higher steps in sooner and harder; off lets it slide.",
+	"aid_stability": "Damps a weave, a tank-slapper or a twitchy slide. Higher holds the bike steadier.",
+	"aid_anti_wheelie": "Trims the power to keep the front wheel down. Lower lets it lift further; off for wheelies.",
 }
 
 var bike_id := 0
@@ -25,6 +34,7 @@ var _bikes: OptionButton
 var _tabs: TabContainer
 var _rows := {}               # key -> {slider, value, why, reset}
 var _weight: VBoxContainer
+var _aids_note: Label         # the Rider aids tab's line on what this bike's ECU offers
 var _summary: Label
 var _graph: DynoGraph
 var _ride_graph: TelemetryGraph   # the last ride's telemetry, shown while the Last ride tab is open
@@ -110,6 +120,10 @@ func _ready() -> void:
 		list.add_theme_constant_override("separation", 6)
 		scroll.add_child(list)
 		_tabs.add_child(scroll)
+		if tab == "Rider aids":
+			_aids_note = UITheme.label("", 15, Color(1, 1, 1, 0.6))
+			_aids_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			list.add_child(_aids_note)
 		for row in TABS[tab]:
 			_add_row(list, str(row[0]), str(row[1]), float(row[2]))
 	var wscroll := ScrollContainer.new()
@@ -183,9 +197,11 @@ func _add_row(list: VBoxContainer, key: String, title: String, step: float) -> v
 	slider.drag_ended.connect(func(_changed): _dragging = "")
 	box.add_child(slider)
 	var why := UITheme.label("", 14, Color(1, 1, 1, 0.5))
+	if AID_HELP.has(key):
+		why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(why)
 	list.add_child(box)
-	_rows[key] = {"slider": slider, "value": value, "why": why, "reset": reset}
+	_rows[key] = {"slider": slider, "value": value, "why": why, "reset": reset, "box": box}
 
 
 func open(from := Vector3.ZERO) -> void:
@@ -313,6 +329,10 @@ func _refresh() -> void:
 			why = "Can't be changed with this ECU."
 		if why == "" and key in ["map", "ignition", "limiter"]:
 			why = _ecu_text(build, key)
+		if AID_HELP.has(key):
+			# Only the aids this bike's ECU has are shown.
+			(row["box"] as Control).visible = why == ""
+			why = AID_HELP[key] if why == "" else why
 		(row["why"] as Label).text = why
 		slider.min_value = r.x
 		slider.max_value = maxf(r.y, r.x + 0.001)
@@ -323,6 +343,7 @@ func _refresh() -> void:
 		if _dragging != key and not _pending.has(key):
 			slider.set_value_no_signal(v)
 		_show_value(key, slider.value if (_dragging == key or _pending.has(key)) else v, build)
+	_aids_note.text = aids_note(build)
 	_run.disabled = not Shed.on_dyno(bike_id)
 	_run.text = "Run the dyno" if Shed.on_dyno(bike_id) else "Put it on the dyno to run it"
 	_refresh_weight()
@@ -362,6 +383,21 @@ static func dyno_reader_text(build: BikeBuild, rank: int) -> String:
 	return text
 
 
+## The Rider aids tab's line: which aids the fitted ECU has that can be set here, or that it has none.
+static func aids_note(build: BikeBuild) -> String:
+	var ecu := PartsDB.part_name(build.parts["ecu"]) if build.has_part("ecu") else ""
+	var names: Array[String] = []
+	for aid in BikeBuild.AID_KEYS:
+		if build.has_aid(aid):
+			names.append(str(PartsDB.ECU_AID_NAMES.get(aid, aid)))
+	if names.is_empty():
+		return ("%s: no rider aids to set. A sport or race ECU brings traction control, anti-wheelie and stability control." % ecu) \
+			if ecu != "" else "No ECU fitted, so no rider aids. A sport or race ECU brings traction control, anti-wheelie and stability control."
+	return "%s: set its %s here. Each goes from off to level %d; level %d is how it comes from the factory. Riding uses them." % [
+		ecu, " and ".join(names) if names.size() <= 2 else ", ".join(names.slice(0, names.size() - 1)) + " and " + names[-1],
+		BikeBuild.AID_LEVELS, BikeBuild.AID_STOCK]
+
+
 func _ecu_text(build: BikeBuild, key: String) -> String:
 	var ecu := PartsDB.part_name(build.parts["ecu"]) if build.has_part("ecu") else "No ECU (jets and timing plate)"
 	if key == "limiter":
@@ -398,6 +434,11 @@ static func value_text(key: String, v: float, build: BikeBuild) -> String:
 			return "%d teeth (%.2f:1)" % [roundi(v), r / f]
 		"spread":
 			return "Stock" if absf(v) < 0.01 else "%s %d%%" % ["Wider" if v > 0.0 else "Closer", roundi(absf(v) * 100.0)]
+		"aid_traction", "aid_stability", "aid_anti_wheelie":
+			var level := roundi(v)
+			if level <= 0:
+				return "Off"
+			return "Level %d of %d%s" % [level, BikeBuild.AID_LEVELS, " (factory)" if level == BikeBuild.AID_STOCK else ""]
 	var clicks := roundi(v * 10.0)
 	return "Stock" if clicks == 0 else "%+d clicks (%s)" % [clicks, "firmer" if clicks > 0 else "softer"]
 
