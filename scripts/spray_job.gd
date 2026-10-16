@@ -9,8 +9,10 @@ extends RefCounted
 ## sweet spot (NEAR to FAR away, wider with the tool's upgrades and Steady Hand) a steady pass
 ## lays an even coat; too close and it piles on in a tight spot and runs; too far and it lands
 ## dry and rough, and past OUT it doesn't reach at all. Sweep too fast and it goes on thin; linger
-## and it runs. A point counts once you've seen it (the side facing you, not hidden behind
-## something), so walking round a hung part brings its back into the job.
+## and it runs. Paint only lands on the surfaces facing the gun (see SprayMarks), so the job is
+## all of the part's outside a spray could get to (not the faces down on the floor or hidden
+## inside it): one side of a tank is only about half of it, and you have to walk round to do the
+## far side and get down to spray underneath.
 ##
 ## The coats, in order: an optional grey primer ("primer"), the colour ("paint"; an engine enamel
 ## is a colour too) and an optional clear lacquer ("clear"). The finished coat goes to the host as
@@ -19,7 +21,7 @@ extends RefCounted
 const CELL := 0.03           # the coverage map samples the surface this far apart
 const MAX_POINTS := 5000
 const FULL := 0.8            # coats for a full film (wet paint flows out to fill a thin patch)
-const DONE := 0.9            # this much of what you can see covered and the coat's on
+const DONE := 0.9            # this much of it covered and the coat's on
 const AUTO_DONE := 0.995     # all of it: done there and then, without letting go
 const FLOW := 0.9            # of the tool's stock rate: steady passes, half overlapping, make a good coat
 const D_REF := 0.8           # the fan's stock width and flow are at this distance, metres
@@ -29,7 +31,9 @@ const DRY_SPAN := 0.55       # all of it dry this far past FAR
 const OUT := 1.1             # and none of it reaches this far past FAR
 const SLOW := 0.15           # sweeping slower than this (m/s) and it piles on
 const FAST := 2.2            # faster than this and it goes on thin
-const SEEN_BUDGET := 160     # points checked for line of sight a frame
+const WAY_OUT := 0.6         # metres clear of the part itself, out from a point, and a spray can get to it
+## The ways out from a point that are tried to see if a spray could get to it (all 26 round a cube).
+static var _ways: Array[Vector3] = []
 
 var key := ""
 var plan := {}               # the walker's plan for it (its "action" goes to the host)
@@ -40,11 +44,13 @@ var model: BikeModel
 var slots: Array = []
 var marks: SprayMarks
 var holder: Node3D           # what the part is drawn in (its hook swing, the floor, a bike)
+## The job's points on the part's outside (model space), each with the way its surface faces
+## out; a thin sheet (open both sides) has a point for each side.
 var points := PackedVector3Array()
 var normals := PackedVector3Array()
 var vox := PackedInt32Array()
-var seen := PackedByteArray()
-var seen_n := 0
+var seen_n := 0              # how many points the job has
+var dropped := 0             # points of the part no spray could reach (inside it, down on the floor)
 var live := false
 var look := {}
 ## The tool: fan radius at D_REF, flow (coats a second at D_REF), falloff to the fan's edge,
@@ -59,15 +65,18 @@ var jet := {}
 var last := {}               # stats() as of the last step
 var cues: Array = []         # things to tell the player: {kind, text}
 var _last_at := Vector3.INF
+var _eye := Vector3.INF      # where the last spray came from
+var _mid := Vector3.INF
 var _speed := 0.0
-var _check_from := 0
 var _told := {}
 var _occupied := PackedByteArray()   # the mask's cubes with some of the part's surface in them
 
 
 ## Starts on `item_id` drawn on `part_model` in `part_slots`. False if there's nothing to spray.
+## `open_way`, if given, says whether anything else (the floor, the bench, the rest of a bike) is
+## in the way of spraying a point of it from a direction: open_way.call(world_point, world_dir) -> bool.
 func setup(item_id: int, job_key: String, walker_plan: Dictionary, part_model: BikeModel, part_slots: Array,
-		coat_look: Dictionary, run_level: float) -> bool:
+		coat_look: Dictionary, run_level: float, open_way := Callable()) -> bool:
 	item = item_id
 	key = job_key
 	plan = walker_plan
@@ -103,20 +112,23 @@ func setup(item_id: int, job_key: String, walker_plan: Dictionary, part_model: B
 		marks = null
 		return false
 	model.add_child(marks)
-	vox.resize(points.size())
 	_index_points()
-	seen.resize(points.size())
-	seen.fill(0)
-	seen_n = 0
+	_expose(open_way)
+	if points.is_empty():
+		marks.restore()
+		marks.queue_free()
+		marks = null
+		return false
 	return true
 
 
 ## Finds each point's cube in the mask, and which cubes the part's surface passes through (sampled
 ## finer than the cubes, so the shell has no holes for a line of sight to slip through).
 func _index_points() -> void:
+	vox.resize(points.size())
 	for i in points.size():
 		vox[i] = marks.index_of(points[i])
-	_occupied.resize(marks.coats.size())
+	_occupied.resize(marks.dry.size())
 	_occupied.fill(0)
 	for slot in slots:
 		var fine: PackedVector3Array = model.surface_points(slot, marks.voxel * 0.6)[0]
@@ -126,18 +138,14 @@ func _index_points() -> void:
 				_occupied[k] = 1
 
 
-## Whether nothing of the part itself is in the way between a point on it and `eye` (model
-## space): a walk back along the line through the cubes its surface is in.
-func _clear_to(p: Vector3, eye: Vector3) -> bool:
-	var to := eye - p
-	var length := to.length()
-	if length < 0.01:
-		return true
-	var d := to / length
-	var step := marks.voxel * 0.5
+## Whether nothing of the part itself is in the way going out from a point on it along `d` (model
+## space, unit): a walk out along the line through the cubes its surface is in, to the mask's edge
+## (or WAY_OUT, past which there's room for a spray to come in at it).
+func _clear_way(p: Vector3, d: Vector3) -> bool:
+	var step := marks.voxel * 0.6
 	var t := marks.voxel * 2.5
 	var box := AABB(marks.origin, Vector3(marks.dims) * marks.voxel)
-	while t < length:
+	while t < WAY_OUT:
 		var q := p + d * t
 		if not box.has_point(q):
 			return true
@@ -146,6 +154,71 @@ func _clear_to(p: Vector3, eye: Vector3) -> bool:
 			return false
 		t += step
 	return true
+
+
+static func ways() -> Array[Vector3]:
+	if _ways.is_empty():
+		for x in [-1, 0, 1]:
+			for y in [-1, 0, 1]:
+				for z in [-1, 0, 1]:
+					if x != 0 or y != 0 or z != 0:
+						_ways.append(Vector3(x, y, z).normalized())
+	return _ways
+
+
+## Whether a spray could get to a point from the side `n` faces (model space, unit): straight out
+## along it, or failing that from round about it, with nothing of the part or (`open_way`) of
+## anything else in the way.
+func _open_side(p: Vector3, n: Vector3, xf: Transform3D, open_way: Callable, look_round := true) -> bool:
+	var tries: Array[Vector3] = [n]
+	if look_round:
+		for w in ways():
+			if w.dot(n) >= 0.45:
+				tries.append(w)
+	var world_tries := 0
+	for d in tries:
+		if not _clear_way(p, d):
+			continue
+		if not open_way.is_valid():
+			return true
+		if open_way.call(xf * p, (xf.basis * d).normalized()):
+			return true
+		world_tries += 1
+		if world_tries >= 3:
+			return false
+	return false
+
+
+## Works out which of the part's surface a spray could get to, and which way each bit of it faces
+## out (a mesh's faces don't all wind the same way, so a normal may point in or out): the job is
+## what can be reached. A thin sheet open both sides is two points, one for each side, and the
+## faces down on the floor or shut inside the part are left out.
+func _expose(open_way: Callable) -> void:
+	var xf := model.global_transform
+	var out_p := PackedVector3Array()
+	var out_n := PackedVector3Array()
+	var count := points.size()
+	for i in count:
+		var p := points[i]
+		var n := normals[i].normalized()
+		if n == Vector3.ZERO:
+			continue
+		var front := _open_side(p, n, xf, open_way)
+		# Straight through the other way first: inside a closed shell it meets the far wall.
+		var back := _open_side(p, -n, xf, open_way, not front)
+		if front:
+			out_p.append(p)
+			out_n.append(n)
+		if back:
+			out_p.append(p)
+			out_n.append(-n)
+	dropped = count - mini(count, out_p.size())
+	points = out_p
+	normals = out_n
+	seen_n = points.size()
+	vox.resize(points.size())
+	for i in points.size():
+		vox[i] = marks.index_of(points[i])
 
 
 ## Which coat an action lays on.
@@ -165,18 +238,21 @@ static func look_for(a: Dictionary, it: Dictionary) -> Dictionary:
 	var bare := Shed.blast_full(it)
 	# The old paint, flatted back for the new coat to key to: dull and matte (no gloss left on it),
 	# so a missed bit shows against the wet new coat.
-	var flatted := Color.from_hsv(old.h, old.s * 0.8, clampf(old.v * 0.8, 0.0, 1.0), 0.0 if bare else 0.85)
+	# Masking tape on it stays in sight until it's sprayed over: the part's drawn as it is.
+	var taped: bool = it.get("tape") is Dictionary and not it.get("primer_top", false)
+	var flatted := Color.from_hsv(old.h, old.s * 0.8, clampf(old.v * 0.8, 0.0, 1.0), 0.0 if bare or taped else 0.85)
 	match lay:
 		"primer":
 			return {"color": Shed.PRIMER_COLOR, "rough": 0.75, "metal": 0.0, "under": flatted, "under_rough": 0.95}
 		"clear":
-			# Without its lacquer the colour looks flat; with it, a wet clear gloss.
-			var c := old.darkened(0.12)
-			return {"color": old, "rough": 0.04, "metal": 0.0, "clear": true, "under": Color(c.r, c.g, c.b, 0.0 if bare else 0.35),
-				"under_rough": 0.9}
+			return _clear_look(it, 0.04)
 	if a.get("cup", false):
 		# Paint mixed in the mixing bay, from the gun's cup: what this coat leaves (PaintBay.cup_look).
 		var wet := PaintBay.cup_look(it)
+		var cup: Dictionary = PaintBay.cup_of(Shed.me())
+		if cup.get("mix") is Dictionary and str(cup["mix"].get("effect", "")) == "lacquer" and not wet.is_empty():
+			# Lacquer from the cup is clear: the colours under it (stripes, flake) stay as they are.
+			return _clear_look(it, float(wet["rough"]))
 		if not wet.is_empty():
 			var below := flatted
 			if it.get("primer_top", false):
@@ -213,6 +289,17 @@ static func look_for(a: Dictionary, it: Dictionary) -> Dictionary:
 	return {"color": col, "rough": rough, "metal": metal, "under": under, "under_rough": 0.95}
 
 
+## Clear lacquer going on over `it`: a wet gloss over the colour, which stays as it is (stripes,
+## two-tones and effects too). Missed bits of a plain colour look a little flat without it.
+static func _clear_look(it: Dictionary, rough: float) -> Dictionary:
+	var old: Color = it.get("color", Color(0.5, 0.5, 0.5))
+	var c := old.darkened(0.12)
+	var plain: bool = not Shed.blast_full(it) and not (it.get("mix") is Dictionary) and not (it.get("mask") is Dictionary) \
+		and not (it.get("tape") is Dictionary)
+	return {"color": old, "rough": rough, "metal": 0.0, "clear": true, "under": Color(c.r, c.g, c.b, 0.35 if plain else 0.0),
+		"under_rough": 0.9, "keep": not plain}
+
+
 ## Sets the tool: fan radius and flow at D_REF, falloff to the edge, and how much wider the
 ## sweet spot is.
 func set_tool(fan_radius: float, flow: float, edge_falloff: float, sweet_mult := 1.0) -> void:
@@ -245,33 +332,6 @@ func fan_at(dist: float) -> Dictionary:
 	elif d > s.y:
 		zone = "far"
 	return {"zone": zone, "radius": r, "flow": flow, "dry": dryness}
-
-
-## Marks the points you can see from `eye` as part of the job, a few at a time (all of them with
-## `budget` < 0). `visible` is called as visible.call(world_point, world_normal) -> bool.
-func look_over(eye: Vector3, visible: Callable, budget := SEEN_BUDGET) -> void:
-	if model == null or not is_instance_valid(model) or points.is_empty():
-		return
-	var xf := model.global_transform
-	var inv := xf.affine_inverse()
-	var n := points.size()
-	var count := n if budget < 0 else mini(budget, n)
-	for k in count:
-		var i := (_check_from + k) % n
-		if seen[i] != 0:
-			continue
-		var p := xf * points[i]
-		var nw := (xf.basis * normals[i]).normalized()
-		# (A mesh's faces don't all wind the same way, so a normal may point in or out.)
-		# Side on, the spray skims off: it counts once you've seen it more face on.
-		if absf(nw.dot((eye - p).normalized())) < 0.2:
-			continue
-		if not _clear_to(points[i], inv * eye):
-			continue
-		if visible.call(p, nw):
-			seen[i] = 1
-			seen_n += 1
-	_check_from = (_check_from + count) % n
 
 
 ## Where the line from `eye` along `dir` first meets the part's own surface (its fitted shapes are
@@ -307,6 +367,7 @@ func surface_hit(eye: Vector3, dir: Vector3, width := 0.035) -> Dictionary:
 func step(delta: float, eye: Vector3, dir: Vector3, hit: bool, at: Vector3, normal := Vector3.UP, firing := true) -> int:
 	jet = {"hit": hit, "at": at, "normal": normal, "dist": eye.distance_to(at), "zone": "out", "radius": radius, "speed": _speed,
 		"pace": "good"}
+	_eye = eye
 	if not hit or marks == null or not is_instance_valid(marks) or model == null or not is_instance_valid(model):
 		_last_at = Vector3.INF
 		_speed = 0.0
@@ -356,10 +417,12 @@ func _note() -> void:
 		cues.append({"kind": "ready", "text": "Coat on! Let go to finish, or fill the last gaps"})
 
 
-## How the coat's going over what you've seen of the part, as fractions of it: {covered (a full
-## film), thin (paint, but not enough), runs (over the run level), dry (a full film, but mostly
-## landed dry), even (of what's been sprayed, how much is a good coat), seen (points in the job),
-## coats (average)}.
+## How the coat's going over all of the part a spray can get to, as fractions of it: {covered (a
+## full film), thin (paint, but not enough), runs (over the run level), dry (a full film, but
+## mostly landed dry), even (of what's been sprayed, how much is a good coat), seen (points in the
+## job), coats (average), sides (how much is covered on the side facing you, the far side, the
+## top and underneath, -1 for a side with none of the part on it: {near, far, top, under}, as of
+## where you last sprayed from)}.
 func stats() -> Dictionary:
 	var covered := 0
 	var thin := 0
@@ -368,20 +431,35 @@ func stats() -> Dictionary:
 	var good := 0
 	var touched := 0
 	var total := 0.0
-	var coats := marks.coats if marks != null and is_instance_valid(marks) else PackedFloat32Array()
-	var dry := marks.dry if marks != null and is_instance_valid(marks) else PackedFloat32Array()
-	if coats.is_empty():
-		return {"covered": 0.0, "thin": 0.0, "runs": 0.0, "dry": 0.0, "even": 1.0, "seen": 0, "coats": 0.0}
+	if marks == null or not is_instance_valid(marks) or marks.coats.is_empty() or points.is_empty():
+		return {"covered": 0.0, "thin": 0.0, "runs": 0.0, "dry": 0.0, "even": 1.0, "seen": 0, "coats": 0.0,
+			"sides": {"near": -1.0, "far": -1.0, "top": -1.0, "under": -1.0}}
+	# Which side of the part each point's on, seen from where you are.
+	var basis := model.global_transform.basis if model != null and is_instance_valid(model) else Basis()
+	var toward := Vector2.ZERO
+	if _eye != Vector3.INF and model != null and is_instance_valid(model):
+		var t := _eye - model.global_transform * _middle()
+		toward = Vector2(t.x, t.z).normalized()
+	var side_n := {"near": 0, "far": 0, "top": 0, "under": 0}
+	var side_c := {"near": 0, "far": 0, "top": 0, "under": 0}
 	for i in points.size():
-		if seen[i] == 0:
-			continue
-		var c := coats[vox[i]] if vox[i] >= 0 else 0.0
-		var d := dry[vox[i]] / maxf(c, 0.001) if vox[i] >= 0 and c > 0.0 else 0.0
+		var c := marks.coats_facing(vox[i], normals[i])
+		var d := marks.dry_of(vox[i]) if c > 0.0 else 0.0
 		total += c
 		if c > 0.05:
 			touched += 1
+		var nw := (basis * normals[i]).normalized()
+		var side := "near"
+		if nw.y > 0.6:
+			side = "top"
+		elif nw.y < -0.6:
+			side = "under"
+		elif toward != Vector2.ZERO and Vector2(nw.x, nw.z).dot(toward) < 0.0:
+			side = "far"
+		side_n[side] += 1
 		if c >= FULL:
 			covered += 1
+			side_c[side] += 1
 			if c < runs and d < 0.5:
 				good += 1
 			if d >= 0.5:
@@ -391,8 +469,21 @@ func stats() -> Dictionary:
 		if c >= runs:
 			run += 1
 	var n := maxf(seen_n, 1)
+	var sides := {}
+	for k in side_n:
+		sides[k] = float(side_c[k]) / side_n[k] if side_n[k] > 0 else -1.0
 	return {"covered": covered / n, "thin": thin / n, "runs": run / n, "dry": dried / n,
-		"even": float(good) / touched if touched > 0 else 1.0, "seen": seen_n, "coats": total / n}
+		"even": float(good) / touched if touched > 0 else 1.0, "seen": seen_n, "coats": total / n, "sides": sides}
+
+
+## The middle of the job's points (model space).
+func _middle() -> Vector3:
+	if _mid == Vector3.INF:
+		var sum := Vector3.ZERO
+		for p in points:
+			sum += p
+		_mid = sum / maxf(points.size(), 1)
+	return _mid
 
 
 ## How good the coat is, 0..1: how much of it is covered, less for runs and dry spray.

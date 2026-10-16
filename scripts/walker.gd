@@ -35,7 +35,7 @@ const SPRAY_RADIUS := 0.1   # how wide the spray lands, in metres; skill will wi
 const SPRAY_SETTLE := 1.2
 const SPRAY_WALK := 0.6
 const SPRAY_LOOK := 0.45
-const SPRAY_FLOW := 0.6
+const SPRAY_FLOW := 0.38
 const SPRAY_SWAY := 0.0035   # radians at rest
 const SPRAY_BREATH := 4.0    # seconds you can hold your breath to steady the can
 const COVER_CELL := 0.06     # parts are sprayed a patch this size at a time
@@ -67,6 +67,10 @@ var spray_color := 0        # index into Shed.PAINTS loaded in the spray can
 var spray_finish := 0       # index into spray_loads(): the paint finishes, then primer, lacquer and the gun's coats
 var crouched := false
 var alt_plan := {}          # what the second work button would do (drain a fluid), same shape as plan
+## A one-press action shown with the work prompts, as "F: fill the spray gun's cup" (or ""): what a
+## tap of the interact key does right now that isn't a hold of either work button.
+var tap_prompt := ""
+var _want_cup := false      # the cup's just been filled: the gun picks it when it next comes out
 
 var _pitch := 0.0
 var _hold := 0.0
@@ -294,6 +298,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("interact") and not spray_mode.is_empty():
 		get_viewport().set_input_as_handled()
 		leave_spray_mode()
+	elif event.is_action_pressed("interact") and _tin_fills_cup():
+		# Holding a tin from the mixing bay: F decants it into the spray gun's cup.
+		get_viewport().set_input_as_handled()
+		fill_cup()
 	elif event.is_action_pressed("interact") and tool in ["spray", "gun"] and _spray_plan(target_item()).size() > 0 \
 			and Shed.held_by(Shed.me()) == 0:
 		get_viewport().set_input_as_handled()
@@ -549,6 +557,8 @@ func set_tool(new_tool: String) -> void:
 	_hold = 0.0
 	if tool in ["spray", "gun"] and spray_finish >= spray_loads().size():
 		spray_finish = 0
+	if tool == "gun" and _want_cup:
+		_pick_cup()
 	_set_tool_view()
 	_send_status("")
 
@@ -1313,6 +1323,7 @@ func target_item() -> int:
 
 func _make_plan() -> Dictionary:
 	alt_plan = {}
+	tap_prompt = ""
 	var me := Shed.me()
 	if not spray_mode.is_empty():
 		# The spray controls are up: the can stays on that part, wherever you look.
@@ -1508,6 +1519,43 @@ func _bay_alt(item_id: int) -> void:
 		alt_plan = {"action": read, "time": 0.8, "verb": "read its colour with the colour meter (the bench's target)", "blocked": Shed.check(me, read)}
 
 
+## Whether a tap of F decants the tin in your hands into the spray gun's cup: anywhere but at
+## the mixing bench or the shaker (where F puts the tin on the scale).
+func _tin_fills_cup() -> bool:
+	if str(PaintBay.held(Shed.me()).get("kind", "")) != "tin":
+		return false
+	return not (str(target.get("kind", "")) == "paint_bay" and str(target.get("station", "")) in ["bench", "shaker"])
+
+
+## Fills the spray gun's cup from the tin in your hands, and loads the gun with it (now if it's
+## in your hand, or when you next pick it up), so there's nothing more to pick.
+func fill_cup() -> void:
+	var why := Shed.check(Shed.me(), {"a": "paint_cup"})
+	if why != "":
+		Shed.feedback.emit(why, false)
+		return
+	Shed.request({"a": "paint_cup"})
+	Sfx.play_at("pickup", camera.global_position + Vector3.DOWN * 0.3, -6.0)
+	_want_cup = true
+	if tool == "gun":
+		_pick_cup()
+
+
+## Loads the spray gun with its cup of mixed paint.
+func _pick_cup() -> void:
+	_want_cup = false
+	var loads := spray_loads("gun")
+	for i in loads.size():
+		if loads[i]["kind"] == "cup" and loads[i]["id"] == "cup":
+			spray_finish = i
+			return
+
+
+## The work button's name for the controls in use: "left mouse" or "RT".
+static func _act_name() -> String:
+	return "RT" if Controls.device() >= 0 and Controls.active_device >= 0 else "left mouse"
+
+
 ## F at the paint mixing bay: step up to the bench (or put the tin in your hands on its scale),
 ## take or hang up the masking tape, pin a swatch card to the whiteboard. Whether F did anything.
 func _bay_interact() -> bool:
@@ -1542,8 +1590,11 @@ func _bay_plan() -> Dictionary:
 	var p := {}
 	match str(h.get("kind", "")):
 		"tin":
-			var cup := {"a": "paint_cup"}
-			alt_plan = {"action": cup, "time": 1.0, "verb": "pour it into the spray gun's cup", "blocked": Shed.check(me, cup)}
+			if _tin_fills_cup():
+				var why := Shed.check(me, {"a": "paint_cup"})
+				tap_prompt = "%s: fill the spray gun's cup" % _keys("interact") if why == "" else why
+			else:
+				tap_prompt = "%s: put the tin on the scale" % _keys("interact")
 			match st:
 				"slot":
 					p = {"action": {"a": "paint_tin_put", "slot": int(target["slot"])}, "time": 0.3, "verb": "put the tin on the shelf"}
@@ -1770,7 +1821,8 @@ func _describe() -> String:
 	if str(bay_held.get("kind", "")) == "tin":
 		var tin := PaintBay.held_tin(Shed.me())
 		lines.append(PaintBay.tin_text(tin))
-		lines.append("Right mouse: pour it into the spray gun's cup  ·  on the shelf, the scale or the bin: left mouse  ·  at a mate: hand it over")
+		lines.append("%s: fill the spray gun's cup  ·  %s on the shelf, the scale or the bin  ·  at a mate: hand it over" % [
+			_keys("interact"), _act_name()])
 	elif str(bay_held.get("kind", "")) == "tape":
 		lines.append("Masking tape: %s (R for another)" % str(PaintMix.PATTERNS[str(bay_held.get("pattern", "stripe"))]["name"]).to_lower())
 		lines.append("Hold left mouse on a painted part to mask it off; spray the second colour over, then peel it (right mouse).")
@@ -2491,7 +2543,6 @@ func _spray_step(delta: float, plan_now: Dictionary, firing := true) -> bool:
 	for job in jobs:
 		var j := job as SprayJob
 		j.set_tool(radius, rate, 0.15 if gun else 0.35, band)
-		j.look_over(eye, _spray_sees.bind(eye, j.items))
 		var swing := _swing_of({"node": j.holder})
 		if swing and gun and firing and hit and j.marks and is_instance_valid(j.marks):
 			if j.marks.reaches(j.model.global_transform.affine_inverse() * at, 0.1):
@@ -2559,6 +2610,14 @@ func leave_spray_mode() -> void:
 	spray_mode = {}
 	if spray != null and spray.live:
 		_spray_let_go()
+	# A coat only aimed at, with no paint on it yet, isn't kept waiting.
+	for k in _sprays.keys():
+		var job: SprayJob = _sprays[k]
+		if not job.live and (job.marks == null or not is_instance_valid(job.marks) or job.marks.painted_count() == 0):
+			job.finish(false)
+			_sprays.erase(k)
+			if job == spray:
+				spray = null
 	if not _cover.is_empty() and _cover.get("live", false):
 		_cover["live"] = false
 		Sfx.set_loop(_work_sound, "")
@@ -2677,17 +2736,25 @@ func _start_spray(item: int, key: String, plan_now: Dictionary) -> SprayJob:
 	var surf: Dictionary = view.item_surface(item, whole)
 	if surf.is_empty():
 		return null
+	# A different coat started on it and left half done (another colour, say) comes off first,
+	# so the two wet coats can't show through each other.
+	for k in _sprays.keys():
+		var old: SprayJob = _sprays[k]
+		if k != key and old.item == item:
+			old.finish(false)
+			_sprays.erase(k)
+			if old == spray:
+				spray = null
 	var job := SprayJob.new()
 	# Upgraded tools lay paint faster, so a patch takes more coats before it runs; Steady Hand more still.
 	var runs := (GUN_RUN_LEVEL if a.get("gun", false) else RUN_LEVEL) * Progress.run_level_mult(Shed.me(), _cover_tool(a))
-	if not job.setup(item, key, plan_now, surf["model"], surf["slots"], SprayJob.look_for(a, Shed.items[item]), runs):
+	var items := Shed.coat_targets(item) if whole else [item]
+	if not job.setup(item, key, plan_now, surf["model"], surf["slots"], SprayJob.look_for(a, Shed.items[item]), runs,
+			_spray_open.bind(items)):
 		return null
-	if whole:
-		job.items = Shed.coat_targets(item)
+	job.items = items
 	job.holder = surf["node"]
 	job.set_scan(spray_scan)
-	var eye := camera.global_position
-	job.look_over(eye, _spray_sees.bind(eye, job.items), -1)
 	return job
 
 
@@ -2706,20 +2773,22 @@ func _spray_attached(job: SprayJob) -> bool:
 	return true
 
 
-## Whether you can see a point of a part being sprayed from `eye` (nothing in the way, and close
-## enough to reach), so it counts towards the coat.
-func _spray_sees(p: Vector3, _n: Vector3, eye: Vector3, items: Array) -> bool:
-	var to := p - eye
-	if to.length() > REACH + 1.5:
-		return false
-	var q := PhysicsRayQueryParameters3D.create(eye, p + to.normalized() * 0.02, 1 | 4 | BikeModel.SPRAY_LAYER)
+## Whether a spray could get to a point of a part from `dir` (world space): nothing else (the
+## floor, a bench, the rest of the bike) in the way for a good way out from it, so it counts
+## towards the coat. The part's own fitted shapes are only boxes round it: what's in its own
+## way is worked out from its surface (see SprayJob).
+func _spray_open(p: Vector3, dir: Vector3, items: Array) -> bool:
+	var space := get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(p + dir * 0.025, p + dir * 0.7, 1 | 4 | BikeModel.SPRAY_LAYER)
 	q.exclude = [get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	if hit.is_empty():
-		return true
-	# The part's own fitted shapes are only boxes round it: what's in its own way is worked out
-	# from its surface (see SprayJob.look_over). Anything else in the way hides it.
-	return items.has(_item_hit(hit["collider"]))
+	for attempt in 4:
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
+			return true
+		if not items.has(_item_hit(hit["collider"])):
+			return false
+		q.exclude = q.exclude + [hit["rid"]]
+	return true
 
 
 ## The coat on `item` you've started, if any (the one you're spraying first).
@@ -2776,7 +2845,7 @@ func _update_spray_fx() -> void:
 func spray_controls() -> String:
 	var pad := Controls.device() >= 0 and Controls.active_device >= 0
 	var scan := Settings.binding_text("blast_scan", pad)
-	return "Hold %s and sweep in steady, overlapping passes  ·  hold %s to steady your hand  ·  %s: show what's missed  ·  %s: step back" % [
+	return "Hold %s and sweep in steady, overlapping passes; go round it for the far side and crouch for underneath  ·  hold %s to steady your hand  ·  %s: show what's missed  ·  %s: step back" % [
 		"RT" if pad else "left mouse", "LT" if pad else "right mouse", scan if scan != "" else "X", _keys("interact")]
 
 

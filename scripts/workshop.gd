@@ -13,6 +13,11 @@ const DOOR_HALF := 2.3
 const DOOR_HEIGHT := 3.2
 const BAY_COUNT := 4
 const INTERACT_LAYER := 8
+## A paint booth hook's tip, above the place a part hangs (the hook's 0.55 m above it, see
+## EquipmentView.add_hook_wire; a part hangs touching the bottom of its ring), and the closest
+## a hung part's bottom comes to the booth floor.
+const HOOK_TIP := 0.53
+const HOOK_FLOOR := 0.12
 ## The wash bay: a lean-to on the west wall, open to the yard, with a pressure washer whose
 ## hose reaches anywhere inside it and a little way out.
 const WASH_CENTER := Vector3(-9.3, 0.0, 66.0)
@@ -352,7 +357,13 @@ func sync_state() -> void:
 				swing.length = maxf(0.3, Equipment.rail_height(str(f.get("model", ""))) - hang.origin.y)
 				swing.position = hang.origin + Vector3.UP * swing.length
 				booth.add_child(swing)
-				booth.add_hook_wire(swing, swing.length)
+				var engine: bool = Shed.is_engine(item_id) and not Shed.items[item_id].get("boxed", false)
+				# A part hangs by its top from the tip of the hook, touching it (an engine hangs
+				# lower, on its sling). Its bottom: how far above the hanging place it comes.
+				var lift := _hook_lift(display, hang.origin.y)
+				var size: Vector3 = display.get_meta("size", Vector3(0.3, 0.3, 0.3))
+				# A part too long to hang there without reaching the floor has its hook pulled up for it.
+				booth.add_hook_wire(swing, swing.length if engine else swing.length - lift - size.y + HOOK_TIP)
 				var fixed: Node3D = booth.get_node_or_null("Hanger_" + spot)
 				if fixed:
 					# The empty hook's wire is hidden while this one swings in its place.
@@ -361,7 +372,9 @@ func sync_state() -> void:
 						if is_instance_valid(fixed):
 							fixed.visible = true)
 				display.transform = Transform3D(hang.basis, Vector3.DOWN * swing.length)
-				if Shed.is_engine(item_id) and not Shed.items[item_id].get("boxed", false):
+				if not engine:
+					display.position.y += lift
+				else:
 					# A whole engine hangs lower, its top just under the hook, on a lifting sling.
 					var drop := _engine_hang_drop(display)
 					display.position.y -= drop
@@ -761,6 +774,13 @@ func _near(model: BikeModel, box: AABB, at: Vector3, radius: float) -> bool:
 
 ## How much further down than a part a whole engine hangs from a paint shop hook, so its top
 ## sits just under the hook (a part's top hangs at the hook: see EquipmentView.add_hook_wire).
+## Where a part hung on a booth hook comes to: how far above the hanging place its bottom is, for
+## its top to touch the hook's tip, but never closer to the booth floor than HOOK_FLOOR.
+func _hook_lift(display: Node3D, hang_y: float) -> float:
+	var size: Vector3 = display.get_meta("size", Vector3(0.3, 0.3, 0.3))
+	return maxf(HOOK_TIP - size.y, HOOK_FLOOR - hang_y)
+
+
 func _engine_hang_drop(display: Node3D) -> float:
 	var size: Vector3 = display.get_meta("size", Vector3(0.4, 0.4, 0.4))
 	return maxf(0.0, size.y - 0.35)
@@ -804,7 +824,7 @@ func _engine_sling(swing: Node3D, display: Node3D, depth: float) -> void:
 func _item_signature(item_id: int) -> String:
 	var it: Dictionary = Shed.items[item_id]
 	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
-		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it)]
+		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)]
 	if Shed.is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
@@ -813,6 +833,15 @@ func _item_signature(item_id: int) -> String:
 	if tyre != 0:
 		sig += "|tyre " + _item_signature(tyre)
 	return sig
+
+
+## Each coat sprayed on a part changes this, so the part's redrawn in it even when it's the same
+## colour again (the wet coat's pass comes off with the old drawing; see SprayMarks).
+static func _coat_sig(it: Dictionary) -> String:
+	if not it.has("paint_quality") and not it.has("primer") and not it.has("coat_q"):
+		return ""
+	return "|q%.3f:%.3f:%.3f:%.3f" % [float(it.get("paint_quality", 0.0)), float(it.get("paint_runs", 0.0)), float(it.get("primer", 0.0)),
+		float(it.get("coat_q", 0.0))]
 
 
 func _bike_signature(id: int) -> String:
@@ -825,7 +854,7 @@ func _bike_signature(id: int) -> String:
 		else:
 			var it: Dictionary = Shed.items[item_id]
 			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot),
-				Shed.blast_sig(it) + PaintBay.paint_sig(it)])
+				Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
