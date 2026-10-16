@@ -54,6 +54,7 @@ func _ready() -> void:
 	head.add_theme_constant_override("separation", 14)
 	head.add_child(UITheme.title("SALES"))
 	_money = UITheme.label("", 18, GOOD)
+	_money.autowrap_mode = TextServer.AUTOWRAP_OFF   # a wrapping label in a row squeezes to one letter wide
 	head.add_child(_money)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -256,6 +257,12 @@ func _paint_card(parent: Container, bike: int) -> void:
 		card.add_child(h)
 
 
+## A label that keeps to one line, for a row of controls (a wrapping one squeezes to nothing).
+static func _nowrap(l: Label) -> Label:
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	return l
+
+
 static func _margin_color(amount: int, sunk: int) -> Color:
 	return GOOD if amount >= sunk else BAD
 
@@ -330,7 +337,7 @@ func _build_bike(right: VBoxContainer, bike: int) -> void:
 	price.add_child(UITheme.label("PRICING IT", 14, UITheme.ACCENT))
 	var mrow := HBoxContainer.new()
 	mrow.add_theme_constant_override("separation", 8)
-	mrow.add_child(UITheme.label("Target margin", 17, DIM))
+	mrow.add_child(_nowrap(UITheme.label("Target margin", 17, DIM)))
 	for m in Sales.MARGINS:
 		var mb := Button.new()
 		mb.text = "%d%%" % roundi(m * 100.0)
@@ -351,7 +358,7 @@ func _build_bike(right: VBoxContainer, bike: int) -> void:
 		interest.text = "Buyers: " + Sales.interest_text(Sales.interest(bike, v))
 	var arow := HBoxContainer.new()
 	arow.add_theme_constant_override("separation", 10)
-	arow.add_child(UITheme.label("Asking price", 17, DIM))
+	arow.add_child(_nowrap(UITheme.label("Asking price", 17, DIM)))
 	var box := _money_box(ask, func(v: int):
 		_ask_edit[bike] = v
 		show.call(v))
