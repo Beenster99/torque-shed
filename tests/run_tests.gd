@@ -260,6 +260,13 @@ func _run_all() -> void:
 	await _test_style_bike_orders()
 	_test_emote_poses()
 	await _test_emotes_session()
+	print("The coffee shop next door: bikers on all sorts of bikes, offers on them, coffee and cake on a tray")
+	_test_coffee_layout()
+	_test_coffee_visitors()
+	_test_coffee_offers()
+	_test_coffee_trays()
+	_test_coffee_save()
+	await _test_coffee_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -12056,6 +12063,15 @@ func _test_world_map() -> void:
 		if not near.is_empty():
 			on_loop.append(item[2])
 	check(on_loop.is_empty(), "and off the loop %s" % str(on_loop))
+	# The bikers coming to the coffee shop ride in from the west along the same loop.
+	var cafe_ok := true
+	for i in 3:
+		var p: Vector3 = CoffeeShop.ROAD_IN[i]
+		var near := r.nearest(p.x, p.z, 5.0, "tarmac")
+		if near.is_empty() or int(near["road"]) != int(r.by_name["loop"]) or float(near["d"]) > 1.5 or absf(float(near["h"])) > 0.15:
+			cafe_ok = false
+			print("    cafe road point %s: %s" % [str(p), str(near)])
+	check(cafe_ok, "the cafe's bikers ride in along the loop past the yard, level with it")
 	# Things to see: trees, rocks, villages and farms, barriers and signs.
 	var plan: Dictionary = World._cache[1234]["props"]
 	print("    %d trees, %d rocks, %d track rocks, %d buildings, %d fence runs, %d armco, %d signs" % [plan["trees"].size(),
@@ -12617,6 +12633,446 @@ func _test_emotes_session() -> void:
 	check(rp.emote == "point" and pointing.normalized().dot((target - shoulder).normalized()) > 0.95, "a ping makes their figure point at it")
 	main.remotes.erase(4242)
 	rp.queue_free()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+# ---------------------------------------------------------------------------- the coffee shop
+
+## The cafe next door: its building, terrace and car park keep clear of the shed's rooms, the
+## yard's markings and kit and the sales office; twenty bays and plenty of chairs in and out.
+func _test_coffee_layout() -> void:
+	var cafe := CoffeeShop.footprint()
+	var site := cafe.grow(CoffeeShop.WALL + 0.3).merge(CoffeeShop.TERRACE).merge(CoffeeShop.CAR_PARK)
+	var all := Workshop.rooms()
+	all.merge(GarageUpgrades.rooms({"wing": true, "annex": true}))
+	all.erase("cafe")
+	all["wash"] = Rect2(Workshop.WASH_CENTER.x - Workshop.WASH_HALF.x, Workshop.WASH_CENTER.z - Workshop.WASH_HALF.y,
+		Workshop.WASH_HALF.x * 2.0, Workshop.WASH_HALF.y * 2.0)
+	all["forecourt"] = SalesOffice.FORECOURT
+	all["u_turn"] = WorldYard.UTURN
+	all["drop_off"] = WorldYard.DROP_OFF
+	for k in WorldYard.FIGURE_EIGHT.size():
+		var c: Vector2 = WorldYard.FIGURE_EIGHT[k]
+		all["eight%d" % k] = Rect2(c - Vector2.ONE * WorldYard.FIGURE_EIGHT_R, Vector2.ONE * WorldYard.FIGURE_EIGHT_R * 2.0)
+	var hits := []
+	for room in all:
+		if site.intersects(all[room] as Rect2):
+			hits.append(room)
+	check(hits.is_empty(), "the cafe, its terrace and car park keep clear of the shed's rooms, the wash bay and the yard's markings %s" % str(hits))
+	check(Workshop.room_at(CoffeeShop.CENTER) == "cafe" and Shed.in_work_area(CoffeeShop.park_xf(0).origin)
+		and Shed.in_work_area(CoffeeShop.CENTER), "the cafe is a room, and you can work and put things down there")
+	# Twenty marked bays, apart and in the car park, off the aisle.
+	var apart := true
+	var inside := true
+	for i in CoffeeShop.PARK_SLOTS:
+		var a := CoffeeShop.park_xf(i).origin
+		inside = inside and CoffeeShop.CAR_PARK.grow(-0.3).has_point(Vector2(a.x, a.z)) and absf(a.z - CoffeeShop.AISLE_Z) > 2.0
+		for j in range(i + 1, CoffeeShop.PARK_SLOTS):
+			apart = apart and a.distance_to(CoffeeShop.park_xf(j).origin) >= 1.2
+	check(CoffeeShop.PARK_SLOTS == 20 and apart and inside, "twenty bike bays, at least 1.2 m apart, in the car park")
+	# Chairs inside and out, enough for a full car park.
+	var indoors := 0
+	var outdoors := 0
+	var placed := true
+	for s in CoffeeShop.seat_count():
+		var at := CoffeeShop.seat_xf(s).origin
+		if CoffeeShop.seat_outdoors(s):
+			outdoors += 1
+			placed = placed and CoffeeShop.TERRACE.has_point(Vector2(at.x, at.z))
+		else:
+			indoors += 1
+			placed = placed and cafe.grow(-0.2).has_point(Vector2(at.x, at.z))
+	check(indoors >= 12 and outdoors >= 20 and indoors + outdoors >= CoffeeShop.PARK_SLOTS and placed,
+		"seats inside (%d) and out on the terrace (%d)" % [indoors, outdoors])
+	# Every way to a chair runs up the walkway and its table's lane, clear of the other tables.
+	var through := []
+	for s in CoffeeShop.seat_count():
+		var way := CoffeeShop.seat_way(s)
+		for i in way.size() - 2:
+			for t in CoffeeShop.TABLES.size():
+				var c: Vector2 = CoffeeShop.TABLES[t][0]
+				var p := Geometry3D.get_closest_point_to_segment(Vector3(c.x, 0.0, c.y), way[i], way[i + 1])
+				if Vector2(p.x - c.x, p.z - c.y).length() < 0.75 and not through.has(s):
+					through.append(s)
+	check(through.is_empty(), "the walk to each chair goes round the tables %s" % str(through))
+	# The bikers' route in and out, and over to the sales office, misses the yard's kit.
+	var in_way := []
+	var routes: Array[PackedVector3Array] = [PackedVector3Array(CoffeeShop.TO_SALES)]
+	for k in CoffeeShop.PARK_SLOTS:
+		routes.append(CoffeeShop.ride_in(k))
+		routes.append(CoffeeShop.ride_out(k))
+	for path in routes:
+		for item: Array in WorldYard.starting_kit():
+			var at: Vector3 = (item[1] as Transform3D).origin
+			for i in path.size() - 1:
+				var c := Geometry3D.get_closest_point_to_segment(at, path[i], path[i + 1])
+				if Vector2(c.x - at.x, c.z - at.z).length() < 2.5 and not in_way.has(item[2]):
+					in_way.append(item[2])
+	check(in_way.is_empty(), "the yard's test kit keeps clear of the bikers' route %s" % str(in_way))
+	var near_humps := false
+	for x in WorldYard.HUMPS_X:
+		for i in CoffeeShop.ROAD_IN.size() - 1:
+			var c := Geometry3D.get_closest_point_to_segment(Vector3(x, 0.0, WorldYard.HUMPS_Z), CoffeeShop.ROAD_IN[i], CoffeeShop.ROAD_IN[i + 1])
+			near_humps = near_humps or Vector2(c.x - x, c.z - WorldYard.HUMPS_Z).length() < 3.0
+	check(not near_humps, "and the speed humps")
+
+
+## Opening hours, bikers coming and going on all sorts of bikes, wandering over to the showroom.
+func _test_coffee_visitors() -> void:
+	Shed.start_new("Tester", 91)
+	CoffeeShop.advance(0.0, 7.0)
+	check(not CoffeeShop.is_open(), "before 8:00 the cafe is shut")
+	CoffeeShop.advance(1.0, 7.5)
+	check(CoffeeShop.visitors().is_empty(), "and nobody comes while it is")
+	CoffeeShop.advance(0.0, 8.5)
+	CoffeeShop.advance(0.1, 8.6)
+	check(CoffeeShop.is_open() and CoffeeShop.visitors().is_empty(), "it opens at 8:00, and the first bikers aren't there straight away")
+	CoffeeShop.advance(CoffeeShop.FIRST_VISIT, 9.0)
+	check(not CoffeeShop.visitors().is_empty(), "then they come")
+	# Groups, solo riders, and their bikes.
+	var styles := {}
+	var sizes := {}
+	var group_ok := true
+	for n in 40:
+		Shed.coffee["visitors"] = {}
+		var ids := CoffeeShop.spawn_group()
+		sizes[ids.size()] = true
+		var leave := -1.0
+		var parks := {}
+		var seats := {}
+		for id in ids:
+			var v: Dictionary = CoffeeShop.visitors()[id]
+			styles[str(v["bike"]["style_text"])] = true
+			if leave < 0.0:
+				leave = float(v["leave_at"])
+			group_ok = group_ok and float(v["leave_at"]) == leave and not parks.has(v["park"]) and not seats.has(v["seat"])
+			parks[v["park"]] = true
+			seats[v["seat"]] = true
+	check(sizes.has(1) and sizes.keys().any(func(k): return k >= 3) and sizes.keys().all(func(k): return k >= 1 and k <= CoffeeShop.GROUP_MAX),
+		"they come on their own or in groups of up to five %s" % str(sizes.keys()))
+	check(group_ok, "a group leaves together, each in their own bay and chair")
+	check(styles.size() >= 5, "on all sorts of bikes (%d styles: %s)" % [styles.size(), ", ".join(styles.keys().slice(0, 6))])
+	var v0: Dictionary = CoffeeShop.visitors().values()[0]
+	var line := CoffeeShop.bike_line(v0)
+	check(line.contains(" hp") and line.contains("% condition") and line.contains("worth about £") and line.contains(str(v0["bike"]["model"])),
+		"its info line: style, engine, power, condition, roughly its worth (%s)" % line)
+	check(not (v0["bike"]["parts"] as Dictionary).is_empty() and PartsDB.sanitize_build(v0["bike"]["parts"]) == v0["bike"]["parts"]
+		and (str(v0["bike"]["parts"].get("side_stand", "none")) != "none" or str(v0["bike"]["parts"].get("centre_stand", "none")) != "none"),
+		"a real bike, with a stand to park on")
+	# A full car park.
+	Shed.coffee["visitors"] = {}
+	for n in 12:
+		CoffeeShop.spawn_group(5)
+	var used := {}
+	for v in CoffeeShop.visitors().values():
+		used[v["park"]] = true
+	check(CoffeeShop.visitors().size() == CoffeeShop.PARK_SLOTS and used.size() == CoffeeShop.PARK_SLOTS and CoffeeShop.spawn_group(2).is_empty(),
+		"twenty bikes fill the car park, and nobody else stops")
+	# Closing time: they drink up and go, and nobody new comes.
+	CoffeeShop.advance(0.01, 18.2)
+	check(not CoffeeShop.is_open() and CoffeeShop.hours_text().contains("08:00"), "it shuts at 18:00 (%s)" % CoffeeShop.hours_text())
+	CoffeeShop.advance(CoffeeShop.CLOSING_HOURS + 0.01, 18.5)
+	check(CoffeeShop.visitors().values().all(func(v): return str(v["state"]) == "out"), "everyone drinks up and goes")
+	CoffeeShop.advance(CoffeeShop.LEAVING_HOURS + 0.1, 19.0)
+	CoffeeShop.advance(3.0, 21.0)
+	check(CoffeeShop.visitors().is_empty(), "and nobody comes in the evening")
+	# Wandering over to look at a bike on show, and now and then making an offer on it.
+	CoffeeShop.advance(0.0, 10.0)
+	var bike := _bike_named("Old Faithful")
+	Shed.bikes[bike]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.request({"a": "sale_list", "bike": bike, "ask": 5000})
+	Shed.coffee["visitors"] = {}
+	var ids := CoffeeShop.spawn_group(1)
+	var v: Dictionary = CoffeeShop.visitors()[ids[0]]
+	v["browse_at"] = CoffeeShop.clock()
+	v["leave_at"] = CoffeeShop.clock() + 1.0
+	Shed.coffee["next_at"] = CoffeeShop.clock() + 50.0
+	CoffeeShop.advance(0.01, 10.0)
+	check(str(v["state"]) == "browse" and int(v["stand"]) == 0 and Sales.bike_on_stand(0) == bike, "a biker wanders over to look at the bike on show")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var offers := Sales.offers().size()
+	for n in 200:
+		if Sales.offers().size() == offers:
+			CoffeeShop._maybe_buyer(v, 0, rng)
+	var o: Dictionary = Sales.offers().values()[Sales.offers().size() - 1] if Sales.offers().size() > offers else {}
+	check(not o.is_empty() and str(o["buyer"]) == str(v["name"]) and str(o["said"]).contains("cafe") and int(o["bike"]) == bike,
+		"and now and then makes an offer on it, like a buyer online")
+	CoffeeShop.advance(1.1, 11.0)
+	check(str(v["state"]) == "out", "then they go back to their bike and leave")
+
+
+## Making an offer on a biker's bike: hardly ever taken, more often for more, a sale that brings
+## the bike into the yard as the shed's.
+func _test_coffee_offers() -> void:
+	Shed.start_new("Tester", 92)
+	var me := Shed.me()
+	CoffeeShop.advance(0.0, 12.0)
+	check(CoffeeShop.accept_chance(500, 1000) == 0.0 and CoffeeShop.accept_chance(1000, 1000) <= 0.05
+		and CoffeeShop.accept_chance(1500, 1000) > CoffeeShop.accept_chance(1000, 1000)
+		and CoffeeShop.accept_chance(100000, 1000) == CoffeeShop.ACCEPT_MAX and CoffeeShop.ACCEPT_MAX <= 0.35,
+		"the chance an offer's taken is low, a bit higher for more, and capped (%.2f, %.2f, %.2f)" % [CoffeeShop.accept_chance(1000, 1000),
+		CoffeeShop.accept_chance(1500, 1000), CoffeeShop.accept_chance(100000, 1000)])
+	var ids := CoffeeShop.spawn_group(2)
+	var v: Dictionary = CoffeeShop.visitors()[ids[0]]
+	var value := int(v["bike"]["value"])
+	Shed.garage_money = value * 3
+	check(Shed.check(me, {"a": "coffee_offer", "visitor": ids[0], "amount": 0}) != ""
+		and Shed.check(me, {"a": "coffee_offer", "visitor": ids[0], "amount": value * 4}).contains("business only has")
+		and Shed.check(me, {"a": "coffee_offer", "visitor": 999, "amount": 100}).contains("gone"), "an offer needs a price the business can pay")
+	CoffeeShop.test_roll = 0.99
+	Shed.request({"a": "coffee_offer", "visitor": ids[0], "amount": value})
+	check(str(v["state"]) == "in" and str(v["said"]) != "" and int(v["offers"]) == 1 and Shed.garage_money == value * 3,
+		"turned down: \"%s\"" % str(v["said"]))
+	Shed.request({"a": "coffee_offer", "visitor": ids[0], "amount": value / 3})
+	check(str(v["said"]).contains("worth a lot more"), "a lowball gets laughed at")
+	Shed.request({"a": "coffee_offer", "visitor": ids[0], "amount": value * 2})
+	check(Shed.check(me, {"a": "coffee_offer", "visitor": ids[0], "amount": value * 2}).contains("isn't selling"),
+		"after three offers they won't hear any more")
+	# A yes.
+	CoffeeShop.test_roll = 0.0
+	var v2: Dictionary = CoffeeShop.visitors()[ids[1]]
+	var amount := int(v2["bike"]["value"]) + 200
+	Shed.garage_money = amount + 1000
+	var bikes_before := Shed.bikes.size()
+	var xp_got := []
+	var on_xp := func(_amount, label): xp_got.append(label)
+	Progress.xp_gained.connect(on_xp)
+	Shed.request({"a": "coffee_offer", "visitor": ids[1], "amount": amount})
+	Progress.xp_gained.disconnect(on_xp)
+	CoffeeShop.test_roll = -1.0
+	var bid := int(v2.get("bike_id", 0))
+	check(str(v2["state"]) == "sold" and Shed.bikes.has(bid) and Shed.bikes.size() == bikes_before + 1 and Shed.garage_money == 1000,
+		"taken: the business pays and the bike's the shed's")
+	if Shed.bikes.has(bid):
+		var b: Dictionary = Shed.bikes[bid]
+		var at: Vector3 = (b["xf"] as Transform3D).origin
+		check(at.distance_to(CoffeeShop.park_xf(int(v2["park"])).origin) < 0.01 and Shed.in_work_area(at) and int(b["bay"]) == -1
+			and str(b["name"]).begins_with(CoffeeShop.first_name(v2)) and int(b["bought"]) == amount and Shed.bike_at_work(bid),
+			"parked where it stood in the cafe car park: %s" % str(b["name"]))
+		check(Shed.build_of(bid).parts.get("engine", "") == v2["bike"]["parts"]["engine"], "the very bike they rode in on")
+	check(xp_got.has(Progress.XP[CoffeeShop.BUY_XP_KEY]["label"]), "and a bit of XP for the deal %s" % str(xp_got))
+	check(not CoffeeShop.free_parks().has(int(v2["park"])), "its bay isn't free while it stands there")
+	check(Shed.check(me, {"a": "coffee_offer", "visitor": ids[1], "amount": amount}).contains("gone"), "sold, there's nothing more to offer for")
+
+
+## The counter: coffee, tea, cake and sandwiches on a tray you carry, put down, pick up and have.
+func _test_coffee_trays() -> void:
+	Shed.start_new("Tester", 93)
+	var me := Shed.me()
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.set_money(100)
+	CoffeeShop.advance(0.0, 6.0)
+	check(CoffeeShop.buy("coffee").contains("closed") and Progress.money() == 100, "nothing to buy while it's shut")
+	CoffeeShop.advance(0.0, 9.0)
+	check(CoffeeShop.buy("coffee") == "" and Progress.money() == 97 and CoffeeShop.carrying(me)
+		and CoffeeShop.tray_of(me)["items"] == ["coffee"], "a coffee: £3 of your own money, on a tray in your hands")
+	check(CoffeeShop.buy("cake") == "" and CoffeeShop.buy("tea") == "" and CoffeeShop.buy("sandwich") == "" and Progress.money() == 87
+		and (CoffeeShop.tray_of(me)["items"] as Array).size() == 4, "cake, tea and a sandwich on the same tray")
+	check(CoffeeShop.buy("coffee").contains("full") and Progress.money() == 87, "four things fill a tray")
+	check(Shed.check(me, {"a": "coffee_buy", "item": "tea", "paid": 0}) != "" and Shed.check(me, {"a": "coffee_buy", "item": "beer", "paid": 3}) != "",
+		"it has to be on the menu and paid for")
+	# A refused order is refunded.
+	Progress.spend(2, "test")
+	Shed.request({"a": "coffee_buy", "item": "tea", "paid": 2})
+	check(Progress.money() == 87, "a refused order gives the money back (%d)" % Progress.money())
+	# Hands full.
+	check(Shed.check(me, {"a": "grab_bike", "bike": _bike_named("Old Faithful")}).contains("tray")
+		and Shed.check(me, {"a": "take", "spot": "bench_0"}).contains("tray"), "with a tray in your hands you can't pick things up or work")
+	# Having it.
+	var xp_got := []
+	var on_xp := func(_amount, label): xp_got.append(label)
+	Progress.xp_gained.connect(on_xp)
+	var tray := CoffeeShop.tray_of(me)
+	Shed.request({"a": "coffee_eat", "tray": int(tray["id"])})
+	Progress.xp_gained.disconnect(on_xp)
+	check((tray["items"] as Array).size() == 3 and tray["items"][0] == "cake" and xp_got.has(Progress.XP[CoffeeShop.XP_KEY]["label"]),
+		"drinking the coffee: a little XP %s" % str(xp_got))
+	# Putting it down: in the shed, not out on the road.
+	var bench := Workshop.CENTER + Vector3(0.0, 0.92, 2.0)
+	check(Shed.check(me, {"a": "coffee_tray_down", "xf": Transform3D(Basis(), Vector3(300.0, 0.0, 300.0))}) != "",
+		"you can't leave it out in the fields")
+	Shed.request({"a": "coffee_tray_down", "xf": Transform3D(Basis(Vector3.UP, 0.4), bench)})
+	check(not CoffeeShop.carrying(me) and int(tray["holder"]) == 0 and (tray["xf"] as Transform3D).origin == bench
+		and Shed.check(me, {"a": "take", "spot": "bench_0"}).find("tray") < 0, "put down on the bench in the shed, your hands are free")
+	Shed.request({"a": "coffee_eat", "tray": int(tray["id"])})
+	check((tray["items"] as Array).size() == 2, "and you can still have what's on it")
+	Shed.request({"a": "coffee_tray_take", "tray": int(tray["id"])})
+	check(CoffeeShop.tray_of(me).get("id", 0) == tray["id"], "and pick it up again")
+	for n in 3:
+		Shed.request({"a": "coffee_eat", "tray": int(tray["id"])})
+	check((tray["items"] as Array).is_empty() and Shed.check(me, {"a": "coffee_eat", "tray": int(tray["id"])}).contains("nothing left"),
+		"eaten up")
+	var top := CoffeeShop.COUNTER + Vector3(0.3, CoffeeShop.COUNTER_SIZE.y, 0.0)
+	Shed.request({"a": "coffee_tray_down", "xf": Transform3D(Basis(), top)})
+	check(not CoffeeShop.trays().has(int(tray["id"])), "an empty tray put back on the counter is cleared away")
+	# Leaving the game with one: it goes back on the counter.
+	CoffeeShop.buy("tea")
+	CoffeeShop.put_back(me)
+	var t2: Dictionary = CoffeeShop.trays().values()[0]
+	check(not CoffeeShop.carrying(me) and CoffeeShop.on_counter((t2["xf"] as Transform3D).origin), "a tray someone leaves with goes back on the counter")
+	# Only so many trays lying about.
+	Progress.set_money(1000)
+	for n in CoffeeShop.MAX_TRAYS + 3:
+		CoffeeShop.buy("tea")
+		Shed.request({"a": "coffee_tray_down", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(n * 0.5 - 4.0, 0.92, 2.0))})
+	check(CoffeeShop.trays().size() <= CoffeeShop.MAX_TRAYS, "the oldest trays are cleared away (%d out)" % CoffeeShop.trays().size())
+	Progress.profile = saved
+
+
+## The cafe in the save: its bikers and trays kept, a tray in someone's hands back on the
+## counter, and sheds from before the cafe opening with an empty one.
+func _test_coffee_save() -> void:
+	Shed.start_new("Tester", 94)
+	var me := Shed.me()
+	CoffeeShop.advance(0.0, 11.0)
+	var ids := CoffeeShop.spawn_group(3)
+	Shed.coffee["trays"][50] = {"id": 50, "items": ["cake"], "holder": me, "xf": Transform3D()}
+	Shed.coffee["trays"][51] = {"id": 51, "items": ["tea", "coffee"], "holder": 0, "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(0, 0.92, 0))}
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Tester")
+	check(CoffeeShop.visitors().size() == 3 and ids.all(func(id): return CoffeeShop.visitors().has(id))
+		and CoffeeShop.visitors()[ids[0]]["bike"]["parts"] is Dictionary, "the bikers and their bikes are saved")
+	check(CoffeeShop.trays()[51]["items"] == ["tea", "coffee"] and int(CoffeeShop.trays()[50]["holder"]) == 0
+		and CoffeeShop.on_counter((CoffeeShop.trays()[50]["xf"] as Transform3D).origin), "trays are saved, and one carried goes back on the counter")
+	var old: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	old.erase("coffee")
+	Shed.load_state(old, "Tester")
+	check(CoffeeShop.visitors().is_empty() and CoffeeShop.trays().is_empty() and CoffeeShop.clock() == 0.0, "a shed saved before the cafe opens fine")
+	check(CoffeeShop.sanitize("junk") == CoffeeShop.empty() and CoffeeShop.sanitize({"clock": 5})["clock"] == 5.0
+		and CoffeeShop.sanitize({"visitors": "x"})["visitors"] == {}, "and odd values are put right")
+
+
+## In the world: the building with its lit sign, bikers riding in, sitting down and parked, their
+## bikes' basics on a look, F to talk to them and make an offer, and the counter's menu.
+func _test_coffee_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	var shop: CoffeeShopBuilding = main.workshop.coffee_shop
+	check(shop != null and shop.find_child("CafeCounter", true, false) != null and shop.find_child("CafeSign", true, false) != null,
+		"the cafe is built next to the shed, with its counter and sign")
+	var was_time: float = Settings.time_of_day
+	Daylight.current.set_time(7.0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(not shop.open_shown() and not shop.lights_shown() and shop.find_child("ClosedSign", true, false).visible, "shut: dark, CLOSED up")
+	Daylight.current.set_time(10.0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(shop.open_shown() and shop.lights_shown(), "open: lit, OPEN up")
+	var view: CoffeeView = main.coffee_view
+	check(is_instance_valid(view.barista), "the barista is behind the counter while it's open")
+	var ids := CoffeeShop.spawn_group(3)
+	Shed.changed.emit()
+	await get_tree().process_frame
+	check(ids.all(func(id): return view.views.has(id) and (view.views[id] as CoffeeVisitor).has_bike() and (view.views[id] as CoffeeVisitor).riding),
+		"a group rides in on their bikes")
+	# Someone joining later sees them parked up and sitting down.
+	for id in ids:
+		CoffeeShop.visitors()[id]["arrived"] = CoffeeShop.clock() - 1.0
+	var late := CoffeeView.new()
+	late.main = main
+	main.world.add_child(late)
+	late.sync_state()
+	await get_tree().process_frame
+	var seated := ids.all(func(id): return late.views.has(id) and (late.views[id] as CoffeeVisitor).seated and (late.views[id] as CoffeeVisitor).bike_parked())
+	check(seated, "joining later, they're sat down with their bikes parked in their bays")
+	late.queue_free()
+	for id in ids:
+		(view.views[id] as CoffeeVisitor).sit_now(int(CoffeeShop.visitors()[id]["seat"]))
+	await get_tree().physics_frame
+	# Looking at a parked bike, then at its owner.
+	var v: Dictionary = CoffeeShop.visitors()[ids[0]]
+	var cv: CoffeeVisitor = view.views[ids[0]]
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	var bay := CoffeeShop.park_xf(int(v["park"])).origin
+	var stand_at := bay + Vector3(0.0, 0.0, 1.9 if int(v["park"]) < CoffeeShop.ROW_A_X.size() else -1.9)
+	w.place(Transform3D(Basis(Vector3.UP, 0.0 if stand_at.z > bay.z else PI), stand_at))
+	w._look(0.0, -0.45)
+	for i in 6:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(view.hint_text() == "bike:%d" % ids[0] and cv.bike_hint_shown() and cv._bike_label.text.contains(" hp"),
+		"looking at a parked bike shows its basics (%s)" % view.hint_text())
+	_press("interact")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var panel: CoffeePanel = main.coffee_panel
+	check(panel.visible and panel.visitor_id == ids[0] and panel.text().contains(CoffeeShop.bike_line(v)) and panel.buttons().has("Offer")
+		and not w.controls_enabled, "F on it: talk to its owner about it")
+	Shed.garage_money = int(v["bike"]["value"]) * 3
+	CoffeeShop.test_roll = 0.99
+	panel.offer_amount = int(v["bike"]["value"])
+	panel._sig = ""
+	panel._refresh()
+	panel.press("Offer")
+	await get_tree().process_frame
+	check(int(v["offers"]) == 1 and str(v["said"]) != "" and panel.text().contains(str(v["said"])) and str(v["state"]) == "in",
+		"an offer, turned down, and what they say")
+	CoffeeShop.test_roll = 0.0
+	panel.press("Offer")
+	CoffeeShop.test_roll = -1.0
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var bid := int(v.get("bike_id", 0))
+	check(str(v["state"]) == "sold" and Shed.bikes.has(bid) and not cv.has_bike() and cv.leaving, "a yes: the bike's ours, and they walk off")
+	panel.close_dialog()
+	await get_tree().process_frame
+	# The counter.
+	w.place(Transform3D(Basis(), CoffeeShop.ORDER_SPOT + Vector3(0.0, 0.0, 0.5)))
+	w._look(0.0, -0.5)
+	for i in 6:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(view.hint_text() == "counter" and view._counter_label.visible and view._counter_label.text.contains("Coffee"),
+		"the counter shows the menu (%s)" % view.hint_text())
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.set_money(50)
+	_press("interact")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(panel.visible and panel.visitor_id == 0 and panel.buttons().has("Buy coffee") and panel.buttons().has("Buy sandwich"),
+		"F on it: the menu %s" % str(panel.buttons()))
+	panel.press("Buy coffee")
+	panel.press("Buy cake")
+	await get_tree().process_frame
+	check(CoffeeShop.tray_of(Shed.me()).get("items", []) == ["coffee", "cake"] and Progress.money() == 44, "coffee and cake on your tray")
+	panel.close_dialog()
+	for i in 4:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(is_instance_valid(w._held_view) and int(w._held_view.get_meta("items", 0)) == 2 and not w._tool_view.visible,
+		"the tray's in your hands, with them on it")
+	# Down on a terrace table, and up again.
+	var table: Vector2 = CoffeeShop.TABLES[5][0]
+	w.place(Transform3D(Basis(), Vector3(table.x, 0.0, table.y + 1.4)))
+	w._look(0.0, -0.6)
+	for i in 6:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(str(w.plan.get("action", {}).get("a", "")) == "coffee_tray_down" and str(w.plan.get("blocked", "?")) == ""
+		and str(w.alt_plan.get("verb", "")) == "drink the coffee", "on a table: put it down, or drink the coffee (%s)" % str(w.plan.get("verb", "")))
+	if not w.plan.is_empty():
+		Shed.request(w.plan["action"])
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var tid := int(CoffeeShop.trays().keys()[0]) if not CoffeeShop.trays().is_empty() else 0
+	check(not CoffeeShop.carrying(Shed.me()) and view.trays.has(tid) and is_instance_valid(view.trays[tid]) and not is_instance_valid(w._held_view),
+		"put down, it's on the table")
+	for i in 4:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(str(w.target.get("kind", "")) == "tray" and str(w.plan.get("action", {}).get("a", "")) == "coffee_tray_take",
+		"looking at it: pick it up (%s)" % str(w.target.get("kind", "")))
+	Progress.profile = saved
+	Settings.time_of_day = was_time
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

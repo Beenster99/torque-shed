@@ -96,6 +96,9 @@ const XP := {
 	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
 	"mot_test": {"xp": 6, "label": "MOT test"},
 	"garage_upgrade": {"xp": 40, "label": "Garage upgrade"},
+	# The coffee shop next door (see CoffeeShop): a break, and a biker's bike bought off them.
+	"coffee_break": {"xp": 3, "label": "Coffee break"},
+	"cafe_bike": {"xp": 30, "label": "Bought a biker's bike"},
 	# Riding: worked out on the rider's own machine (RideXP) and paid by the host.
 	"jump": {"xp": 12, "label": "Jump", "tag": "air", "rider": true},
 	"jump_record": {"xp": 25, "label": "Longest jump", "tag": "air", "rider": true},

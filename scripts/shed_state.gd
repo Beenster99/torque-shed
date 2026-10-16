@@ -119,6 +119,8 @@ var _clock_hours := -1.0       # host: the clock last frame, to see midnight pas
 var contracts := {}
 ## Bikes for sale on the showroom stands, buyers' offers and part-exchanges (see Sales).
 var sales := {}
+## The coffee shop next door: its bikers and the trays out (see CoffeeShop).
+var coffee := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -204,6 +206,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	Money._mark_milestones(bank, garage_money)
 	contracts = Contracts.empty()
 	sales = Sales.empty()
+	coffee = CoffeeShop.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -319,6 +322,8 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	for id in items:
 		if items[id]["at"] == "spot" and not (items[id].get("place") is Transform3D) and spot_role(str(items[id]["ref"])) == "shelf":
 			items[id]["place"] = item_place(id)
+	# Nor carrying a tray from the cafe: any that were go back on its counter.
+	CoffeeShop.after_load()
 	# Nobody is holding the hose or wearing the ear defenders in a new session.
 	if dyno["hose"] == "held":
 		dyno["hose"] = "hook"
@@ -425,6 +430,7 @@ func join_remote() -> void:
 	bank = Money.defaults()
 	contracts = Contracts.empty()
 	sales = Sales.empty()
+	coffee = CoffeeShop.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -450,6 +456,7 @@ func stop() -> void:
 	_clock_hours = -1.0
 	contracts = Contracts.empty()
 	sales = Sales.empty()
+	coffee = CoffeeShop.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -2239,6 +2246,10 @@ func check(peer: int, action: Dictionary) -> String:
 		return Contracts.check(peer, action)
 	if a.begins_with("sale_"):
 		return Sales.check(peer, action)
+	if a.begins_with("coffee_"):
+		return CoffeeShop.check(peer, action)
+	if CoffeeShop.carrying(peer) and CoffeeShop.HANDS_NEEDED.has(a):
+		return "Put your tray down first."
 	if a.begins_with("dyno_") and a != "dyno_run":
 		return _dyno_check(peer, action)
 	if a.begins_with("blast"):
@@ -2922,6 +2933,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	if str(action.get("a", "")).begins_with("money_"):
 		_money_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("coffee_"):
+		_coffee_apply(peer, action)
 		return
 	var why := check(peer, action)
 	if why != "":
@@ -4390,6 +4404,7 @@ func _on_player_left(id: int) -> void:
 	var held := held_by(id)
 	if held != 0:
 		_move(held, "spot", _free_spot())
+	CoffeeShop.put_back(id)
 	var bike_id := riding(id)
 	if bike_id != 0:
 		bikes[bike_id]["rider"] = 0
@@ -4742,7 +4757,7 @@ func _snapshot(with_board := true) -> Dictionary:
 		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "upgrades": upgrades,
+		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "upgrades": upgrades,
 		"lifts": lifts, "looks": looks}
 	if with_board:
 		state["board"] = board
@@ -4780,6 +4795,8 @@ func _sync(state: Dictionary) -> void:
 	contracts = Contracts.sanitize(state.get("contracts"))
 	# Sheds saved before selling from the showroom have nothing listed.
 	sales = Sales.sanitize(state.get("sales"))
+	# Sheds saved before the coffee shop next door have nobody in it.
+	coffee = CoffeeShop.sanitize(state.get("coffee"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.
@@ -4826,6 +4843,7 @@ func _process(delta: float) -> void:
 	Money.record_graph()
 	Contracts.process(delta)
 	Sales.process(delta)
+	CoffeeShop.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":
@@ -4941,6 +4959,22 @@ func _money_apply(peer: int, action: Dictionary) -> void:
 	if text != "":
 		_tell(peer, text, true)
 	_tidy_dyno()
+	_mark_dirty()
+	changed.emit()
+
+
+## A "coffee_*" request (see CoffeeShop.check and CoffeeShop.apply). Money a player paid at the
+## counter for something they can't have goes back to them.
+func _coffee_apply(peer: int, action: Dictionary) -> void:
+	var why := check(peer, action)
+	if why != "":
+		if str(action.get("a", "")) == "coffee_buy" and int(action.get("paid", 0)) > 0:
+			give_cash(peer, mini(int(action["paid"]), 100), "Cafe refund")
+		_tell(peer, why, false)
+		return
+	var text := CoffeeShop.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
 	_mark_dirty()
 	changed.emit()
 
@@ -5069,9 +5103,10 @@ const RETRIEVE_ROW := Vector3(-4.0, 0.0, 75.5)
 const RETRIEVE_SLOTS := 8
 
 
-## Whether `at` is on the ground round the shed where bikes can be worked on.
+## Whether `at` is on the ground round the shed where bikes can be worked on (the coffee shop
+## next door, its terrace and its car park count too: a bike bought there is in the yard).
 static func in_work_area(at: Vector3) -> bool:
-	return WORK_AREA.has_point(Vector2(at.x, at.z))
+	return WORK_AREA.has_point(Vector2(at.x, at.z)) or CoffeeShop.footprint().grow(0.5).merge(CoffeeShop.CAR_PARK).has_point(Vector2(at.x, at.z))
 
 
 ## Whether a bike is at the shed (or round it), where it can be worked on.

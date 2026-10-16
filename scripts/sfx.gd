@@ -28,7 +28,7 @@ const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder",
 ## The one-shot when a job is done (putting a part down plays an impact instead, see job_done).
 const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "install": "clunk", "take": "pickup",
 	"place": "clunk", "drop": "clunk", "set_down": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink",
-	"tyre_remove": "bead_pop"}
+	"tyre_remove": "bead_pop", "coffee_tray_take": "pickup", "coffee_tray_down": "clunk"}
 ## The sounds a machine makes starting up and stopping, either side of its loop.
 const LOOP_TAILS := {"grinder": ["grinder_up", "grinder_down"], "jet": ["jet_on", "jet_off"], "spray_gun": ["gun_on", "gun_off"],
 	"door": ["door_start", "door_stop"], "washer": ["pump_on", "pump_off"], "blast": ["blast_on", "blast_off"],
@@ -50,7 +50,7 @@ const ROOM_PRESETS := {
 }
 ## Which acoustics each room (Workshop.room_at) has.
 const ROOM_KIND := {"shed": "shed", "wing": "shed", "paint": "paint", "storage": "storage", "annex": "storage", "dyno": "dyno",
-	"sales": "sales", "sales_office": "office", "": "outside"}
+	"sales": "sales", "sales_office": "office", "cafe": "sales", "": "outside"}
 ## How much quieter a sound is through a wall than in the room (dB), and muffled to this cutoff.
 const WALL_DB := -7.0
 const DOORWAY_DB := -3.5
@@ -501,6 +501,8 @@ func occlusion_db(pos: Vector3) -> float:
 		return DOORWAY_DB
 	if pair.has("sales") and pair.has("sales_office"):
 		return DOORWAY_DB
+	if pair.has("cafe") and pair.has(""):
+		return DOORWAY_DB   # the coffee shop's door stands open
 	return WALL_DB
 
 

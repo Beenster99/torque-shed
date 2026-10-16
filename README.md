@@ -313,6 +313,18 @@ Go up to the office and use the **sales PC** (F). It has four pages:
 
 Everything is kept with the shed, and in co-op the host runs the buyers: everyone sees the same offers and hears the same till.
 
+### The coffee shop next door
+
+West of the storage room is the **Pit Stop Cafe**: a small brick cafe with a striped awning, a counter with a coffee machine and a cake display, the kitchen through a hatch behind it, four tables inside on a black and white floor, eight more out on the **terrace** under umbrellas, and a marked **car park for twenty bikes** in front. It's **open from 08:00 to 18:00**: the sign, the pendant lights and the festoon bulbs are lit and a barista is behind the counter. The rest of the time it's dark and the **CLOSED** signs are up in the window and on the pylon by the car park.
+
+- **Bikers** ride in during the day along the road and up the yard's west side, **on their own or in groups of two to five**, on bikes of every style (and the odd parts-bin special). They park in the bays, sit down inside or out on the terrace with a coffee, chat, and after an hour or two walk back to their bikes and ride off. At closing time they drink up and go.
+- **Look at a parked bike** for its basics: style, engine, power, condition and roughly what it's worth.
+- **Talk to its owner** (F, on them or on their bike) for a chat and to **make an offer** for it from the business's account. They almost always say no (a lowball gets laughed at; offering over the odds helps a little, never a lot) and hear you out three times at most. A yes buys the bike: it's the shed's, parked where it stands in the cafe car park, and they walk off down the yard to get a lift home.
+- Now and then one **wanders over to the sales office** to look at a bike on show, and once in a while makes an offer on it (it comes in on the Sales PC's Offers page like any other buyer's).
+- **The counter** (F on it or the barista) sells **coffee** (£3), **tea** (£2), **cake** (£3) and **sandwiches** (£5) from your own money, up to four things on a **tray** you carry in both hands (other players see it too). With a tray in your hands you can't work: put it down on anything flat (left mouse), the workbench in the shed included, and pick it up again later. Have what's on it with the right mouse button, for a little XP. Hand an empty tray back on the counter and it's cleared away.
+
+The cafe, its bikers and the trays are kept with the shed (sheds saved before it simply start with an empty cafe), and in co-op the host runs it: everyone sees the same bikers and the same trays.
+
 ### XP, levels, tool upgrades and skills
 
 Everything you do earns **XP**, one pool for the lot: work in the shed, riding, and selling. Each job pops up a small "+6 XP Cleaning" under the level bar at the top right. Doing the same job to the same part again straight away pays half as much each time (so unbolting and bolting one bolt over and over soon pays nothing), and the big one-offs pay once per bike or part.
@@ -625,6 +637,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/graphics.gd`, `graphics_tab.gd` | Graphics settings: presets, putting them on the window, viewport and cameras, the driver override and FPS counter; the Esc menu's Graphics tab |
 | `scripts/bike_build.gd` | Turns parts, their condition and the tune into stats: mass, torque curve, grip, brakes, top speed, dyno runs |
 | `scripts/sales_office.gd` | The sales office: its forecourt, showroom plinths, reception, viewing area, kitchen, stairs and mezzanine office with the sales PC, the sliding doors and the shop bell |
+| `scripts/coffee_shop.gd`, `coffee_shop_building.gd`, `coffee_view.gd`, `coffee_visitor.gd`, `coffee_panel.gd` | The coffee shop next door: its opening hours, bikers and their bikes, offers on them and the counter's trays (host-run, saved with the shed); the building, terrace and car park; the bikers riding in, sitting and leaving, the barista and the trays put down; the menu and offer card |
 | `scripts/sales.gd`, `sales_view.gd`, `sales_computer.gd` | Selling bikes: pricing and appraisal, online buyers' offers and counter-offers, part-exchange buyers and deals (host-run, saved with the shed); the buyers and their bikes in the showroom, the till and the price cards; the sales PC's pages |
 | `scripts/dyno_room.gd`, `dyno_graph.gd`, `tuning_computer.gd` | The tuning room and its rolling road, the dyno graphs, and the tuning desk |
 | `scripts/bike_model.gd` | Builds the visible bike part by part, with rust and grime, and each part's own fit from geometry mode |
