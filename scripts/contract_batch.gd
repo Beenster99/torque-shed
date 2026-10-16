@@ -142,7 +142,7 @@ static func spec_text(spec: Dictionary, n := 0) -> String:
 			FINISHES.get(str(spec.get("finish", "bare")), {}).get("name", ""), roundi(float(spec["hp"])), roundi(float(spec.get("tol", HP_TOL))), ups]
 	var sheen := str(spec.get("sheen", "gloss"))
 	var fx := str(spec.get("effect", "solid"))
-	return "%s%s in %s%s, %s%s, a %d%% finish or better" % [count, str(PAINT_KINDS.get(str(spec["item"]), "parts")).capitalize(),
+	return "%s%s in %s%s, %s%s, finished to %d%% or better" % [count, str(PAINT_KINDS.get(str(spec["item"]), "parts")).capitalize(),
 		spec.get("name", ""), "" if fx == "solid" else " (%s)" % PaintMix.effect_name(fx).to_lower(), sheen,
 		" under lacquer" if spec.get("lacquer", false) else "", roundi(float(spec.get("q", 0.85)) * 100.0)]
 
