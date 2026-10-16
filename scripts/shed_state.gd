@@ -55,7 +55,7 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
 	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6,
 	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2, "front_mudguard": 1.0, "indicators": 0.4, "side_panels": 0.4,
-	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8}
+	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8, "steering_damper": 0.2}
 ## Parts in the front wheel's spray. With no front mudguard they get this much more road dirt;
 ## a guard takes it back down by how much spray it stops (its "cover").
 const FRONT_SPRAY: Array[String] = ["fork", "engine", "cooling", "exhaust", "headlight", "horn", "fog_lights",
@@ -75,7 +75,7 @@ const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "l
 	"r_preload": ["shock", "preload"], "r_bump": ["shock", "bump"], "r_rebound": ["shock", "rebound"],
 	"psi_f": ["front_tyre", "pressure"], "psi_r": ["rear_tyre", "pressure"],
 	"sprocket_f": ["final_drive", "front"], "sprocket_r": ["final_drive", "rear"], "spread": ["gearbox", "spread"],
-	"chain": ["chain", "slack"]}
+	"chain": ["chain", "slack"], "damper": ["steering_damper", "clicks"]}
 const LIGHTEN_WEAR := 0.08     # condition a part gives up to being drilled and trimmed
 const TYRE_WEAR := 0.0002      # tyre wear per km at the right pressure
 const BURNOUT_WEAR := 0.004    # back tyre wear per second of full burnout
@@ -4497,7 +4497,7 @@ func style_parts(style: String) -> Dictionary:
 			parts["fairing"] = "none"
 		if parts["mirrors"] != "none" and not PartsDB.part_mounts("mirrors", parts["mirrors"]).all(func(m): return parts.get(m, "none") != "none"):
 			parts["mirrors"] = "round_mirrors"
-		parts = PartsDB.sanitize_build(parts)
+		parts = PartsDB.sanitize_build(BikeBuild.sensible_fork(parts, str(parts["frame"]).hash()))
 		var dressed := PartsDB.dress_fillers(parts, _rng.randi() % 97)
 		for slot in PartsDB.FILLER_SLOTS:
 			if str(parts.get(slot, "none")) == "none" or not PartsDB.styles_of(str(parts[slot])).has(style):

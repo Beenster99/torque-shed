@@ -188,6 +188,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_rearsets()
 	_draw_guards()
 	_draw_number_boards()
+	_draw_steering_damper()
 
 	# A full fairing carries its own lamps: the plain headlight is tucked away inside it.
 	if _full_fairing_fitted():
@@ -3574,6 +3575,40 @@ func _draw_number_boards() -> void:
 			var back := _mesh_instance(_cylinder(0.08, 0.008), mat, _tail + Vector3(0.0, 0.06, 0.2), self)
 			back.basis = Basis(Vector3.RIGHT, PI * 0.5 - 0.25) * Basis.from_scale(Vector3(1.25, 1.0, 1.0))
 			_number_on(back, Vector3(0.0, 0.25, 1.0).normalized(), 0.09)
+
+
+## The steering damper: a linear one is an oil-filled body along the left of the frame with its
+## rod out to the bottom yoke; a rotary one sits on the top yoke with a link back to the frame;
+## an old friction damper is a knob under the steering head.
+func _draw_steering_damper() -> void:
+	_current_slot = "steering_damper"
+	var p := _part()
+	if p.is_empty():
+		return
+	var mat := _mat(_col(), 0.7, 0.3)
+	var rod_mat := _mat(Color(0.82, 0.83, 0.85), 0.9, 0.15)
+	var dark := _mat(Color(0.05, 0.05, 0.06), 0.3, 0.5)
+	match str(p.get("style", "linear")):
+		"linear":
+			# The body sits along the frame under the tank's edge, the rod's eye on the bottom yoke
+			# turns with the bars.
+			var back := _head_bottom + Vector3(0.14, -0.025, 0.25)
+			var front := _head_bottom + Vector3(0.14, -0.02, 0.1)
+			_tube(back, front, 0.016, mat)
+			_mesh_instance(_sphere(0.013), dark, back)
+			var to_steer := _steer_node.transform.affine_inverse()
+			var eye_at := to_steer * (_head_bottom + Vector3(0.11, -0.02, -0.03))
+			_tube(to_steer * front, eye_at, 0.006, rod_mat, Vector3.ONE, _steer_node)
+			_mesh_instance(_sphere(0.011), dark, eye_at, _steer_node)
+		"rotary":
+			var puck := _mesh_instance(_cylinder(0.035, 0.022), mat, Vector3(0.0, 0.04, 0.05), _steer_node)
+			puck.basis = Basis(Vector3.RIGHT, atan2(_steer_axis.z, _steer_axis.y))   # flat on the yoke
+			_mesh_instance(_cylinder(0.008, 0.012), dark, Vector3(0.0, 0.057, 0.05), _steer_node)
+			# The link back to its bracket on the frame.
+			_tube(_head + Vector3(0.0, 0.02, 0.06), _head + Vector3(0.0, 0.0, 0.16), 0.006, rod_mat)
+		_:
+			_mesh_instance(_cylinder(0.022, 0.018), mat, _head_bottom + Vector3(0.0, -0.05, 0.02))
+			_mesh_instance(_cylinder(0.006, 0.05), rod_mat, _head_bottom + Vector3(0.0, -0.02, 0.02))
 
 
 ## The side stand on the left, under the footpeg: tucked up along the frame, or down on the

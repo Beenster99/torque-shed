@@ -7,8 +7,8 @@ extends Control
 
 const WIDTH := 400.0
 const WINDOW := 8.0            # seconds of history in the strips
-const STRIPS := ["Lean (+ right)", "Steering (+ right)", "Slip ratio", "Slip angle",
-	"Grip used (1 = the limit)", "Tyre load"]
+const STRIPS := ["Lean (+ right)", "Steering (+ right)", "Bar torque (+ right)", "Steering shake", "Slip ratio",
+	"Slip angle", "Grip used (1 = the limit)", "Tyre load"]
 
 var bike: Bike
 

@@ -15,7 +15,8 @@ const SEND_EVERY := 0.12      # seconds between slider updates sent to the host
 const TABS := {
 	"Engine": [["map", "Fuel map", 0.05], ["ignition", "Ignition timing", 0.05], ["limiter", "Rev limiter", 100.0]],
 	"Suspension": [["f_preload", "Front preload", 0.1], ["f_bump", "Front compression", 0.1], ["f_rebound", "Front rebound", 0.1],
-		["r_preload", "Rear preload", 0.1], ["r_bump", "Rear compression", 0.1], ["r_rebound", "Rear rebound", 0.1]],
+		["r_preload", "Rear preload", 0.1], ["r_bump", "Rear compression", 0.1], ["r_rebound", "Rear rebound", 0.1],
+		["damper", "Steering damper", 0.1]],
 	"Tyres & chain": [["psi_f", "Front tyre pressure", 0.05], ["psi_r", "Rear tyre pressure", 0.05], ["chain", "Chain slack", 1.0]],
 	"Gearing": [["sprocket_f", "Front sprocket", 1.0], ["sprocket_r", "Rear sprocket", 1.0], ["spread", "Ratio spacing", 0.1]],
 	"Rider aids": [["aid_traction", "Traction control", 1.0], ["aid_stability", "Stability control", 1.0],
@@ -539,12 +540,14 @@ func _update_ride() -> void:
 		return
 	var s := tel.summary()
 	_ride_text.text = ("%s\n\n%d:%02d ridden, top speed %s\nMost lean %.0f°\nHardest braking %.2f g, hardest cornering %.2f g\n"
-		+ "Past the grip: front %.1f s, rear %.1f s\n\nThe charts show speed, lean, steering, bar torque, each tyre's "
+		+ "Past the grip: front %.1f s, rear %.1f s\nWorst shake at the bars %.1f°%s\n\nThe charts show speed, lean, steering, "
+		+ "bar torque (what the rider pushed through the bars), steering shake, the trail as it changed, each tyre's "
 		+ "slip ratio and slip angle, how much of its grip it used (1 is the limit: above it the tyre slides), "
 		+ "the loads on the tyres, the throttle and brakes, the gear and the revs. Front tyre blue, rear orange. "
 		+ "F3 shows the same live at the side of the screen while you ride.") % [
 		tel.bike_name if tel.bike_name != "" else "Last ride", int(s["duration"]) / 60, int(s["duration"]) % 60,
-		Units.kmh(float(s["top_kmh"])), s["max_lean"], s["max_brake_g"], s["max_lat_g"], s["front_over"], s["rear_over"]]
+		Units.kmh(float(s["top_kmh"])), s["max_lean"], s["max_brake_g"], s["max_lat_g"], s["front_over"], s["rear_over"],
+		s["max_wobble"], " (a tank-slapper: a steering damper calms it)" if float(s["max_wobble"]) > 4.0 else ""]
 
 
 func _process(delta: float) -> void:

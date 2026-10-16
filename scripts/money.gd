@@ -52,7 +52,7 @@ const KIND_PRICE := {"frame": 900, "fork": 450, "shock": 350, "wheel": 250, "tyr
 	"fuel": 300, "air_filter": 30, "oil_filter": 15, "spark_plugs": 20, "cooling": 200, "gearbox": 600, "exhaust": 350,
 	"final_drive": 80, "chain": 60, "side_stand": 40, "centre_stand": 70, "headlight": 80, "horn": 30, "ecu": 300,
 	"panniers": 250, "top_box": 120, "fog_lights": 90, "tail": 90, "fairing": 300, "mirrors": 40,
-	"front_mudguard": 80, "indicators": 60, "side_panels": 90, "rearsets": 160, "guards": 180, "number_boards": 70, "swingarm": 260}
+	"front_mudguard": 80, "indicators": 60, "side_panels": 90, "rearsets": 160, "guards": 180, "number_boards": 70, "swingarm": 260, "steering_damper": 220}
 ## Fluids by the litre; empty cans and pans are a flat price.
 const FLUID_LITRE := {"petrol": 1.6, "oil": 6.0, "brake_fluid": 12.0, "chain_lube": 25.0}
 const EMPTY_CONTAINER := 8

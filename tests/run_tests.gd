@@ -255,6 +255,14 @@ func _run_all() -> void:
 	await _test_tyre_old_save()
 	await _test_telemetry()
 	await _test_physics_cost()
+	print("Handling phase 2: real steering, geometry, steering dampers")
+	_test_steering_geometry()
+	await _test_steering_steady_turn()
+	await _test_countersteer()
+	await _test_hands_off()
+	await _test_steering_wobble()
+	await _test_turn_in()
+	await _test_steering_telemetry()
 	print("The riding map: roads, grades, no jumps, land under the roads, spawns, surfaces, counts")
 	await _test_world_map()
 	print("Shop and crew: part previews, trolleys, box notes, the geometry parts list, styled project bikes, emotes")
@@ -12274,6 +12282,246 @@ func _test_tyre_old_save() -> void:
 	await _done(r)
 	for id in keep:
 		PartsDB.parts[id].merge(keep[id], true)
+
+
+## A sports frame with a chopper's long-offset springer fork: next to no trail.
+const SHORT_TRAIL_BIKE := {"frame": "sport_perimeter_red", "fork": "springer_long"}
+
+
+func _test_steering_geometry() -> void:
+	# Trail from the frame's rake, the fork's offset and the front wheel's size.
+	var sport := BikeBuild.new(Contracts.style_build("sport"))
+	var race := BikeBuild.new(Contracts.style_build("race"))
+	var chop := BikeBuild.new(Contracts.style_build("chopper"))
+	var cruise := BikeBuild.new(Contracts.style_build("cruiser"))
+	check(sport.trail > 0.09 and sport.trail < 0.11 and race.trail > 0.09 and race.trail < 0.11,
+		"a sports bike has about 100 mm of trail (sport %d mm, race %d mm)" % [roundi(sport.trail * 1000), roundi(race.trail * 1000)])
+	check(chop.trail > 0.12 and cruise.trail > 0.12, "choppers and cruisers have long trail (chopper %d mm, cruiser %d mm)"
+		% [roundi(chop.trail * 1000), roundi(cruise.trail * 1000)])
+	var all_forks: bool = PartsDB.by_kind["fork"].all(func(id): return float(PartsDB.get_part(str(id)).get("offset", 0.0)) > 0.0)
+	check(all_forks, "every fork in the catalogue has its offset")
+	check(BikeBuild.trail_of(0.3, 25.0, 0.03) > BikeBuild.trail_of(0.3, 25.0, 0.06) and BikeBuild.trail_of(0.3, 30.0, 0.04) > BikeBuild.trail_of(0.3, 24.0, 0.04),
+		"more rake gives more trail, more offset less")
+	# An old catalogue fork with no offset gets its style's.
+	var fork: Dictionary = PartsDB.parts["telescopic_road"]
+	var kept: float = fork["offset"]
+	fork.erase("offset")
+	var old := BikeBuild.new({})
+	check(is_equal_approx(old.fork_offset, float(BikeBuild.FORK_OFFSET["conventional"])) and old.trail > 0.08,
+		"a fork from an old catalogue gets a sensible offset (%d mm trail)" % roundi(old.trail * 1000))
+	fork["offset"] = kept
+	# A short-trail bike is something only a player builds, and the bike info warns of it.
+	var bad := BikeBuild.new(SHORT_TRAIL_BIKE)
+	check(bad.trail < BikeBuild.SHORT_TRAIL and bad.notes.any(func(n): return n.contains("trail")),
+		"a chopper fork on a sports frame leaves %d mm of trail, and the bike info says so" % roundi(bad.trail * 1000))
+	var fixed: Dictionary = BikeBuild.sensible_fork(PartsDB.sanitize_build(SHORT_TRAIL_BIKE))
+	check(BikeBuild.parts_trail(fixed) >= BikeBuild.STOCK_TRAIL and fixed["fork"] != "springer_long",
+		"a ready-built bike gets a fork that suits its frame (%s)" % fixed["fork"])
+	var rng := RandomNumberGenerator.new()
+	var worst := 1.0
+	for i in 150:
+		rng.seed = 900 + i
+		worst = minf(worst, BikeBuild.parts_trail(Contracts.random_parts(rng, i % 2 == 0)))
+	for st in PartsDB.STYLES:
+		worst = minf(worst, BikeBuild.parts_trail(Shed.style_parts(st)))
+	Shed.start_new("Tester", 61)
+	for id in Shed.bikes:
+		worst = minf(worst, Shed.build_of(id).trail)
+	check(worst >= BikeBuild.STOCK_TRAIL, "no project or customer bike turns up with short trail (least %d mm)" % roundi(worst * 1000))
+	# The steering damper: its own kind and slot, five of them, adjustable ones on the dyno desk.
+	check(PartsDB.KINDS.has("steering_damper") and PartsDB.by_kind["steering_damper"].size() >= 5 and PartsDB.is_optional("steering_damper")
+		and PartsDB.DEFAULT_BUILD["steering_damper"] == "none", "steering dampers are parts of their own, five of them, and a bike rides without one")
+	var plain := BikeBuild.new({})
+	var damped := BikeBuild.new({"steering_damper": "damper_linear_adj"})
+	var firm := BikeBuild.new({"steering_damper": "damper_linear_adj"}, {}, {"damper": 1.0})
+	var fixed_d := BikeBuild.new({"steering_damper": "damper_linear"}, {}, {"damper": 1.0})
+	check(plain.damper_damping == 0.0 and damped.damper_damping > 5.0 and firm.damper_damping > damped.damper_damping * 1.4,
+		"a damper damps the steering and its clicker firms it up (%.0f, %.0f firm)" % [damped.damper_damping, firm.damper_damping])
+	check(plain.tune_block("damper") != "" and fixed_d.tune_block("damper") != "" and damped.tune_block("damper") == ""
+		and is_equal_approx(fixed_d.damper_damping, float(PartsDB.get_part("damper_linear")["damping"])),
+		"only an adjustable damper has a setting on the dyno desk")
+	check(TuningComputer.TABS["Suspension"].any(func(r): return r[0] == "damper") and Shed.TUNE_HOME.has("damper"),
+		"the dyno desk's Suspension tab has the steering damper")
+	var worn := BikeBuild.new({"steering_damper": "damper_linear_adj"}, {"steering_damper": {"wear": 1.0}})
+	check(worn.damper_damping < damped.damper_damping * 0.8, "a worn damper damps less")
+	# Mass distribution: where the parts sit moves the centre of mass and adds inertia.
+	var loaded := BikeBuild.new({"top_box": "alloy_top_box", "panniers": "aluminium_boxes"})
+	check(loaded.com_offset.z > 0.005 and loaded.inertia_add.y > 1.0 and plain.com_offset.is_zero_approx(),
+		"luggage moves the weight back (%.0f mm) and makes it slower to turn (+%.1f kg m^2 of yaw inertia)"
+		% [loaded.com_offset.z * 1000.0, loaded.inertia_add.y])
+	var spec := PartsDB.spec_line("usd_sport")
+	check(spec.contains("mm offset"), "the fork's spec gives its offset (%s)" % spec)
+
+
+## Rides `build` at `v` m/s, gives the bars a shove and returns how the shake dies away:
+## {freq (Hz), at (shake in degrees 0.1, 0.5, 1 and 2 s after), crashed}.
+func _bar_kick(build: Dictionary, v: float, hands_off: bool, kick := 1.0) -> Dictionary:
+	var st := {"prev": 0.0, "cross": [], "at": [0.0, 0.0, 0.0, 0.0]}
+	var marks := [0.1, 0.5, 1.0, 2.0]
+	var r := await ride(build, 7.2, func(b, t):
+		b.assist = 0.5
+		if t < 0.001:
+			_roll_at(b, v)
+		_hold_speed(b, v)
+		b.hands_off = hands_off and t > 4.0
+		if absf(t - 5.0) < 0.001:
+			b.kick_bars(kick)
+		if t > 5.0 and t < 5.8:
+			var x: float = b.steer - b._steer_slow
+			if absf(x) > 2e-4 and (x > 0.0) != (st["prev"] > 0.0):
+				st["cross"].append(t)
+			if absf(x) > 2e-4:
+				st["prev"] = x
+		for i in marks.size():
+			if absf(t - 5.0 - marks[i]) < 0.004:
+				st["at"][i] = rad_to_deg(b.wobble))
+	var c: Array = st["cross"]
+	var out := {"freq": (c.size() - 1) / 2.0 / (float(c[-1]) - float(c[0])) if c.size() > 3 else 0.0, "at": st["at"], "crashed": r["crashed"]}
+	await _done(r)
+	return out
+
+
+## Starts the bike already rolling at v m/s, so a test at motorway speed isn't still pulling
+## hard through the gears when it looks.
+func _roll_at(b: Bike, v: float) -> void:
+	b.linear_velocity = -b.global_transform.basis.z * v
+	for w in b.wheels:
+		w["omega"] = v / float(w["radius"])
+
+
+func _test_steering_steady_turn() -> void:
+	# At full sim, no help at all, the bars alone hold a steady turn, near the textbook lean.
+	var acc := {"n": 0, "lean": 0.0, "v": 0.0, "yaw": 0.0, "bar": 0.0}
+	var r := await ride({}, 11.0, func(b, t):
+		b.assist = 0.0
+		_hold_speed(b, 15.0)
+		b.lean_input = 0.0 if t < 3.0 else 0.6
+		if t > 7.0:
+			acc["n"] += 1
+			acc["lean"] += absf(b.lean_angle)
+			acc["v"] += b.linear_velocity.length()
+			acc["yaw"] += absf(b.angular_velocity.y)
+			acc["bar"] += absf(b.bar_torque))
+	var n := maxf(float(acc["n"]), 1.0)
+	var lean := float(acc["lean"]) / n
+	var v := float(acc["v"]) / n
+	var radius := v / maxf(float(acc["yaw"]) / n, 1e-3)
+	var textbook := rad_to_deg(atan(v * v / (Bike.G * radius)))
+	var balance := rad_to_deg((r["bike"] as Bike)._balance_lean(lean))
+	check(not r["crashed"] and absf(balance - textbook) < 4.0,
+		"realism 0: steering alone holds a steady turn, %.1f deg from the tyres to the centre of mass against the textbook %.1f deg (%.0f m radius)"
+		% [balance, textbook, radius])
+	check(float(acc["bar"]) / n < Bike.MAX_BAR_TORQUE, "holding the turn takes %.1f N m on the bars" % (float(acc["bar"]) / n))
+	await _done(r)
+
+
+func _test_countersteer() -> void:
+	# Hands off at 20 m/s, a push on the right grip (turning the bars left): the bars go left
+	# for a moment, then the bike leans right and turns right.
+	var st := {"steer_min": 0.0, "lean": 0.0, "yaw0": 0.0, "turned": 0.0}
+	var r := await ride({}, 6.6, func(b, t):
+		b.assist = 0.0
+		_hold_speed(b, 20.0)
+		b.hands_off = t > 4.0
+		b.push_bars = -12.0 if t > 5.0 and t < 5.4 else 0.0
+		if absf(t - 5.0) < 0.001:
+			st["yaw0"] = _heading(b)
+		if t > 5.0 and t < 5.15:
+			st["steer_min"] = minf(st["steer_min"], b.steer)
+		if t > 5.0 and t < 6.5:
+			st["lean"] = maxf(st["lean"], b.lean_angle)
+			st["turned"] = wrapf(_heading(b) - float(st["yaw0"]), -PI, PI))
+	var turned: float = st["turned"]
+	check(not r["crashed"] and st["steer_min"] < -deg_to_rad(0.2) and st["lean"] > deg_to_rad(4.0) and turned < -deg_to_rad(1.5),
+		"counter-steering: pushing the right grip turns the bars left (%.1f deg), the bike leans right (%.0f deg) and turns right (%.0f deg)"
+		% [rad_to_deg(st["steer_min"]), rad_to_deg(st["lean"]), rad_to_deg(-turned)])
+	await _done(r)
+
+
+func _test_hands_off() -> void:
+	# A stock bike ridden no-handed at normal road speeds stays up: the trail and the spinning
+	# front wheel steer it back under itself, the rider's hips only nudging it.
+	for v in [12.0, 20.0, 28.0]:
+		var st := {"worst": 0.0}
+		var r := await ride({}, 11.0, func(b, t):
+			b.assist = 0.0
+			if t < 4.0:
+				_hold_speed(b, v)
+				return
+			b.hands_off = true
+			b.throttle = 0.25
+			b.front_brake = 0.0
+			if absf(t - 4.5) < 0.001:
+				b.apply_torque_impulse(-b.global_transform.basis.z * 25.0)
+			if t > 4.5:
+				st["worst"] = maxf(st["worst"], absf(b.lean_angle)))
+		var bike: Bike = r["bike"]
+		check(not r["crashed"] and absf(bike.lean_angle) < deg_to_rad(6.0) and st["worst"] < deg_to_rad(20.0),
+			"hands off at %d km/h a stock bike rides out a shove and stays up (worst %.1f deg, now %.1f)"
+			% [roundi(v * 3.6), rad_to_deg(st["worst"]), rad_to_deg(bike.lean_angle)])
+		await _done(r)
+
+
+func _test_steering_wobble() -> void:
+	# A shove on the bars: on a stock bike the front shakes its head at its wobble frequency (or
+	# just settles, too damped to swing) and the shake dies away: hands on up to motorway speeds
+	# and beyond, hands off at normal road speeds.
+	for c in [[{}, 15.0, false], [{}, 30.0, false], [{}, 45.0, false], [{}, 15.0, true], [{}, 30.0, true],
+			[Contracts.style_build("sport"), 45.0, false], [Contracts.style_build("sport"), 30.0, true],
+			[Contracts.style_build("chopper"), 30.0, false], [Contracts.style_build("chopper"), 45.0, false]]:
+		var k := await _bar_kick(c[0], c[1], c[2])
+		var f: float = k["freq"]
+		check(not k["crashed"] and (f == 0.0 or (f > 3.0 and f < 13.0)) and k["at"][3] < k["at"][0] * 0.3,
+			"%s at %d km/h, hands %s: the bars shake at %.1f Hz and settle (%.2f deg after 0.1 s, %.2f after 2 s)"
+			% [str(c[0].get("frame", "stock bike")), roundi(c[1] * 3.6), "off" if c[2] else "on", f, k["at"][0], k["at"][3]])
+	# A steering damper makes it settle sooner.
+	var plain := await _bar_kick({}, 30.0, true)
+	var damped := await _bar_kick({"steering_damper": "damper_linear_adj"}, 30.0, true)
+	var left_plain: float = plain["at"][1] + plain["at"][2]
+	var left_damped: float = damped["at"][1] + damped["at"][2]
+	check(left_damped < left_plain * 0.8, "a steering damper settles it quicker (%.3f deg against %.3f after 0.5 s, %.3f against %.3f after 1 s)"
+		% [damped["at"][1], plain["at"][1], damped["at"][2], plain["at"][2]])
+	# A genuinely bad setup, next to no trail: the shake grows into a tank-slapper; a damper cures it.
+	var bad := await _bar_kick(SHORT_TRAIL_BIKE, 40.0, false)
+	check(bad["at"][2] > 3.0, "with next to no trail a shove at the bars at %d km/h grows into a tank-slapper (%.1f deg after 1 s)" % [roundi(40.0 * 3.6), bad["at"][2]])
+	var cured := await _bar_kick(_merge(SHORT_TRAIL_BIKE, {"steering_damper": "damper_rotary_race"}), 40.0, false)
+	check(not cured["crashed"] and cured["at"][2] < cured["at"][0], "a steering damper on it calms it (%.2f deg after 1 s)" % cured["at"][2])
+
+
+func _test_turn_in() -> void:
+	# A long, raked chopper is slower to flick into a lean than a sports bike, steering alone.
+	var times := {}
+	for st in ["sport", "chopper"]:
+		var mark := {"t": -1.0}
+		var r := await ride(Contracts.style_build(st), 7.0, func(b, t):
+			b.assist = 0.0
+			_hold_speed(b, 15.0)
+			b.lean_input = 0.0 if t < 4.0 else 0.5
+			if mark["t"] < 0.0 and b.lean_angle > deg_to_rad(20.0):
+				mark["t"] = t - 4.0)
+		times[st] = mark["t"]
+		check(not r["crashed"] and mark["t"] > 0.0, "the %s leans into the turn (20 deg in %.2f s)" % [st, mark["t"]])
+		await _done(r)
+	check(float(times["chopper"]) > float(times["sport"]) * 1.15, "the chopper is slower to turn in than the sports bike (%.2f s against %.2f s)"
+		% [times["chopper"], times["sport"]])
+
+
+func _test_steering_telemetry() -> void:
+	# The F3 overlay and the dyno desk get the steering: bar torque, trail and shake.
+	var tel := RideTelemetry.new("Steering")
+	var r := await ride({}, 5.0, func(b, t):
+		b.telemetry = tel
+		b.throttle = 0.6
+		b.lean_input = 0.5 if t > 2.5 else 0.0)
+	var bike: Bike = r["bike"]
+	var keys: Array = RideTelemetry.CHANNELS.map(func(c): return c[0])
+	check(keys.has("bar") and keys.has("trail") and keys.has("wobble"), "the telemetry records bar torque, trail and steering shake")
+	check(absf(tel.latest("trail") - bike.build.trail * 1000.0) < 40.0 and absf(tel.latest("bar")) > 0.0,
+		"the trail reads about the bike's own (%.0f mm against %.0f)" % [tel.latest("trail"), bike.build.trail * 1000.0])
+	check(TelemetryOverlay.STRIPS.has("Bar torque (+ right)") and TelemetryOverlay.STRIPS.has("Steering shake")
+		and TelemetryGraph.STRIPS.any(func(s): return s[0] == "Trail"), "the overlay and the dyno desk chart them")
+	check(tel.summary().has("max_wobble"), "the ride's summary has the worst shake")
+	await _done(r)
 
 
 func _test_physics_cost() -> void:

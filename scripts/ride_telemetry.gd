@@ -11,7 +11,7 @@ const MAX_SAMPLES := 36000     # 20 minutes at the full rate before it starts th
 ## Every channel: [key, label, unit]. Slip angles and lean are in degrees.
 const CHANNELS := [
 	["t", "Time", "s"], ["speed", "Speed", "km/h"], ["lean", "Lean", "°"], ["steer", "Steering", "°"],
-	["kappa_f", "Front slip ratio", ""], ["kappa_r", "Rear slip ratio", ""],
+	["bar", "Bar torque", "Nm"], ["trail", "Trail", "mm"], ["wobble", "Steering shake", "°"], ["kappa_f", "Front slip ratio", ""], ["kappa_r", "Rear slip ratio", ""],
 	["alpha_f", "Front slip angle", "°"], ["alpha_r", "Rear slip angle", "°"], ["load_f", "Front load", "N"],
 	["load_r", "Rear load", "N"], ["grip_f", "Front grip used", ""], ["grip_r", "Rear grip used", ""],
 	["throttle", "Throttle", ""], ["brake_f", "Front brake", ""], ["brake_r", "Rear brake", ""],
@@ -57,7 +57,7 @@ func step(bike: Bike, delta: float) -> void:
 	_last_speed = bike.speed
 	add({
 		"t": time, "speed": absf(bike.speed) * 3.6, "lean": rad_to_deg(bike.lean_angle), "steer": rad_to_deg(bike.steer),
-		"kappa_f": f["kappa"], "kappa_r": r["kappa"],
+		"bar": bike.bar_torque, "trail": bike.trail_now * 1000.0, "wobble": rad_to_deg(bike.wobble), "kappa_f": f["kappa"], "kappa_r": r["kappa"],
 		"alpha_f": rad_to_deg(float(f["alpha"])), "alpha_r": rad_to_deg(float(r["alpha"])),
 		"load_f": f["load"], "load_r": r["load"], "grip_f": f["grip_used"], "grip_r": r["grip_used"],
 		"throttle": bike.throttle, "brake_f": bike.front_brake, "brake_r": bike.rear_brake,
@@ -110,7 +110,7 @@ func index_since(seconds: float) -> int:
 ## The ride's headline numbers for the dyno desk.
 func summary() -> Dictionary:
 	var out := {"duration": time, "top_kmh": 0.0, "max_lean": 0.0, "max_brake_g": 0.0, "max_lat_g": 0.0,
-		"front_over": 0.0, "rear_over": 0.0}
+		"front_over": 0.0, "rear_over": 0.0, "max_wobble": 0.0}
 	if size() == 0:
 		return out
 	var dt := interval
@@ -119,6 +119,7 @@ func summary() -> Dictionary:
 		out["max_lean"] = maxf(out["max_lean"], absf(data["lean"][i]))
 		out["max_brake_g"] = maxf(out["max_brake_g"], -float(data["long_g"][i]))
 		out["max_lat_g"] = maxf(out["max_lat_g"], absf(data["lat_g"][i]))
+		out["max_wobble"] = maxf(out["max_wobble"], data["wobble"][i])
 		# Seconds spent past the peak of grip: sliding or spinning.
 		if data["grip_f"][i] > 1.0:
 			out["front_over"] += dt
