@@ -5978,7 +5978,8 @@ func _test_weather_session() -> void:
 	Settings.weather = "rain"
 	w.change_to("rain", true)
 	main.walker.place(Transform3D(Basis(), Vector3(0.0, 0.1, 85.0)))
-	for i in 6:
+	# Long enough for the drumming on the roof to fade out (it eases across at the door).
+	for i in 90:
 		await get_tree().process_frame
 	check(not w.indoors and w._rain_mesh.visible and w._outside.playing and not w._roof.playing, "outside in the rain: rain falls round you and you hear it")
 	check(Weather.raining_at(Vector3(0.0, 0.0, 85.0)) and not Weather.raining_at(Workshop.CENTER), "it rains in the yard, not in the shed")
@@ -13995,8 +13996,10 @@ func _test_spray_coat_rules() -> void:
 	var gun: Array = w.spray_loads("gun")
 	check(can.any(func(l): return l["kind"] == "primer") and can.any(func(l): return l["kind"] == "coat" and l["id"] == "clear")
 		and not can.any(func(l): return l["id"] == "enamel_black"), "the spray can has primer and clear lacquer, and no enamels")
-	check(gun.size() == Shed.FINISHES.size() + Shed.COAT_ORDER.size() + 1 and gun[-1]["kind"] == "primer"
-		and gun[Shed.FINISHES.size()]["id"] == "clear", "the gun's coats follow its finishes, primer last")
+	var cups := 1 + PaintMix.FADE_PATTERNS.size()
+	check(gun.size() == Shed.FINISHES.size() + Shed.COAT_ORDER.size() + 1 + cups and gun[-1 - cups]["kind"] == "primer"
+		and gun.slice(gun.size() - cups).all(func(l): return l["kind"] == "cup")
+		and gun[Shed.FINISHES.size()]["id"] == "clear", "the gun's coats follow its finishes, then primer, then the mixing bay's cup")
 	w.free()
 
 
