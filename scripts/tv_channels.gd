@@ -319,43 +319,76 @@ static func _chart(c: Control, font: Font, rect: Rect2, values: Array, label: St
 
 ## A growth chart over in-game time: a line through `values`, oldest first, one a bucket of
 ## `range_key` (see MoneyGraph: minutes up to years), with marks under it ("-3d" .. "now"),
-## thinned out when there are lots of them.
+## thinned out when there are lots of them. The scale is zoomed to where the money is (see
+## chart_scale), so a few hundred in or out of an account of thousands still shows.
 static func chart(c: Control, font: Font, rect: Rect2, values: Array, label: String, range_key: String) -> void:
 	c.draw_rect(rect, PANEL)
 	_text(c, font, rect.position + Vector2(16, 28), label, 20, Dashboard.DIM)
 	var plot := Rect2(rect.position + Vector2(60, 44), rect.size - Vector2(80, 80))
-	var top := 1.0
-	for v in values:
-		top = maxf(top, absf(float(v)))
+	var span := chart_scale(values)
+	var lo: float = span.x
+	var hi: float = span.y
 	var every := maxi(1, ceili(values.size() * 64.0 / maxf(plot.size.x, 1.0)))
 	for i in 3:
 		var y := plot.position.y + plot.size.y * i / 2.0
 		c.draw_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y), Color(1, 1, 1, 0.08), 1.0)
 	c.draw_line(Vector2(plot.position.x, plot.end.y), plot.end, Color(1, 1, 1, 0.3), 2.0)
-	var pts := PackedVector2Array()
+	var pts := chart_points(values, plot, lo, hi)
 	for i in values.size():
-		var x := plot.position.x + plot.size.x * i / maxf(1.0, values.size() - 1.0)
-		pts.append(Vector2(x, plot.end.y - plot.size.y * clampf(float(values[i]) / top, 0.0, 1.0)))
 		if (values.size() - 1 - i) % every == 0:
 			var tick := MoneyGraph.tick_text(range_key, i, values.size())
-			_text(c, font, Vector2(x - 30, plot.end.y + 26), "today" if tick == "now" and range_key == "day" else tick,
+			_text(c, font, Vector2(pts[i].x - 30, plot.end.y + 26), "today" if tick == "now" and range_key == "day" else tick,
 				15, Dashboard.DIM, 60, HORIZONTAL_ALIGNMENT_CENTER)
 	if pts.size() > 1:
 		c.draw_polyline(pts, ORANGE, 4.0, true)
 	for p in pts:
 		c.draw_circle(p, 5.0 if pts.size() <= 24 else 2.5, ORANGE)
-	# The top of the scale, so the line reads as money.
-	_text(c, font, Vector2(plot.position.x - 56, plot.position.y + 6), _short_money(top), 13, Dashboard.DIM, 52, HORIZONTAL_ALIGNMENT_RIGHT)
+	# The top and bottom of the scale, so the line reads as money.
+	_text(c, font, Vector2(plot.position.x - 56, plot.position.y + 6), _short_money(hi), 13, Dashboard.DIM, 52, HORIZONTAL_ALIGNMENT_RIGHT)
+	_text(c, font, Vector2(plot.position.x - 56, plot.end.y + 4), _short_money(lo), 13, Dashboard.DIM, 52, HORIZONTAL_ALIGNMENT_RIGHT)
 	if values.all(func(v): return float(v) == 0.0):
-		_text(c, font, plot.position + Vector2(0, plot.size.y * 0.5), "Nothing in or out yet", 22, Dashboard.DIM, plot.size.x,
+		_text(c, font, plot.position + Vector2(0, plot.size.y * 0.5 - 16), "Nothing in or out yet", 22, Dashboard.DIM, plot.size.x,
 			HORIZONTAL_ALIGNMENT_CENTER)
+	elif values.all(func(v): return float(v) == float(values[0])):
+		_text(c, font, plot.position + Vector2(0, plot.size.y * 0.5 - 16), "No money in or out in the %s" % MoneyGraph.span_text(range_key),
+			18, Dashboard.DIM, plot.size.x, HORIZONTAL_ALIGNMENT_CENTER)
+
+
+## The bottom and top of a money chart's scale (x, y) for `values`: a little under the lowest
+## to a little over the highest, from nothing when the money has come up from near nothing, and
+## a band round the line when it's flat.
+static func chart_scale(values: Array) -> Vector2:
+	if values.is_empty():
+		return Vector2(0.0, 1.0)
+	var lo := INF
+	var hi := -INF
+	for v in values:
+		lo = minf(lo, float(v))
+		hi = maxf(hi, float(v))
+	var pad := maxf((hi - lo) * 0.15, maxf(absf(hi) * 0.02, 10.0))
+	var bottom := lo - pad
+	if lo >= 0.0 and (bottom < 0.0 or lo <= (hi - lo) * 0.5):
+		bottom = 0.0
+	return Vector2(bottom, maxf(hi + pad, bottom + 1.0))
+
+
+## Where each of `values` goes in `plot` on the scale from `lo` to `hi`.
+static func chart_points(values: Array, plot: Rect2, lo: float, hi: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in values.size():
+		var x := plot.position.x + plot.size.x * i / maxf(1.0, values.size() - 1.0)
+		var f := clampf((float(values[i]) - lo) / maxf(hi - lo, 0.001), 0.0, 1.0)
+		pts.append(Vector2(x, plot.end.y - plot.size.y * f))
+	return pts
 
 
 ## "£12k", "£1.2m", "£800": a short amount for a chart's scale.
 static func _short_money(v: float) -> String:
+	if v < 0.0:
+		return "-" + _short_money(-v)
 	if v >= 1000000.0:
 		return CURRENCY + "%.1fm" % (v / 1000000.0)
-	if v >= 10000.0:
+	if v >= 100000.0:
 		return CURRENCY + "%dk" % roundi(v / 1000.0)
 	if v >= 1000.0:
 		return CURRENCY + "%.1fk" % (v / 1000.0)

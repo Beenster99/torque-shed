@@ -289,6 +289,10 @@ func _run_all() -> void:
 	_test_paint_contracts()
 	await _test_paint_bay_session()
 	await _test_paint_bench_extras()
+	print("Simon's 16 October UI round: the Sales PC's headings, the shop's Buy, the money graphs, the cafe bikers")
+	await _test_sales_pc_headings()
+	await _test_shop_buy_in_view()
+	await _test_money_graph_moves()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1333,7 +1337,8 @@ func _test_session() -> void:
 	await get_tree().physics_frame
 	var rider_eye: Vector3 = main.bike.model.global_transform * main.bike.model.eye_transform().origin
 	check(main.camera.mode == ChaseCamera.Mode.HELMET and main.camera.global_position.distance_to(rider_eye) < 0.05
-		and not main.camera.get_cull_mask_value(BikeModel.HELMET_LAYER), "C switches to first person, from the rider's eyes inside the helmet")
+		and not main.camera.get_cull_mask_value(BikeModel.HELMET_LAYER) and main.bike.model.own_rider,
+		"C switches to first person, from the rider's eyes inside the helmet (your own, left out of the view)")
 	# The forearms reaching down to the bars, just above the gloves (low clip-ons sit under the view, as they do).
 	var grips: Vector3 = main.camera.to_local(main.bike.model.global_transform * (main.bike.model._head + main.bike.model._grip_l + Vector3(0.0, 0.12, 0.1)))
 	var dash: Vector3 = main.camera.to_local(main.bike.model.global_transform * (main.bike.model._head + Vector3(0.0, 0.1, -0.06)))
@@ -7694,6 +7699,7 @@ func _test_gear_seen_by_others() -> void:
 	add_child(plain)
 	plain.build_from(BikeBuild.new())
 	var dressed := BikeModel.new()
+	dressed.own_rider = true
 	dressed.rider_gear = RiderGear.clean_worn({"helmet": "helmet_kestrel", "jacket": "jacket_kestrel", "boots": "boots_mx", "trousers": "trousers_kestrel"})
 	add_child(dressed)
 	dressed.build_from(BikeBuild.new())
@@ -7703,7 +7709,17 @@ func _test_gear_seen_by_others() -> void:
 	for c in dressed._rider.get_children():
 		if (c as VisualInstance3D).layers == 1 << (BikeModel.HELMET_LAYER - 1):
 			helmeted += 1
-	check(helmeted >= 4, "the helmet, torso and upper arms stay out of the first-person view (%d)" % helmeted)
+	check(helmeted >= 4, "your own helmet, torso and upper arms stay out of the first-person view (%d)" % helmeted)
+	# Someone else's rider: all of them in your first-person view, plain or in gear.
+	var theirs := BikeModel.new()
+	theirs.rider_gear = dressed.rider_gear
+	add_child(theirs)
+	theirs.build_from(BikeBuild.new())
+	var hidden_theirs := [plain, theirs].map(func(m: BikeModel) -> int:
+		return m._rider.find_children("*", "VisualInstance3D", true, false).filter(func(c):
+			return (c as VisualInstance3D).layers & (1 << (BikeModel.HELMET_LAYER - 1)) != 0).size())
+	check(hidden_theirs == [0, 0], "another rider is whole in your first-person view, waist up and all (%s on the eye's hidden layer)" % str(hidden_theirs))
+	theirs.queue_free()
 	dressed.redress(RiderGear.clean_worn({}))
 	check(dressed._rider != null and dressed.rider_gear["helmet"] == "helmet_cap", "a rider can be dressed again mid-ride")
 	plain.queue_free()
@@ -10274,8 +10290,8 @@ func _test_money_graph() -> void:
 		MoneyGraph.record(long, i / 60.0, i)
 	check((long["minute"] as Array).size() <= 62 and int(MoneyGraph.points(long, "minute", 399.0 / 60.0, 399)[0]) == 340,
 		"old minutes are let go, but the hour shown is right")
-	check(int(MoneyGraph.points(long, "year", 399.0 / 60.0, 399)[0]) == 399 and MoneyGraph.points(long, "year", 0.0, 0).size() == 5,
-		"by the year: five years")
+	check(int(MoneyGraph.points(long, "year", 399.0 / 60.0, 399)[0]) == 0 and MoneyGraph.points(long, "year", 0.0, 0).size() == 5,
+		"by the year: five years, from what it opened with")
 	var back := MoneyGraph.sanitize(JSON.parse_string(JSON.stringify(s)))
 	check(MoneyGraph.points(back, "hour", 30.2, 80) == hours, "a series survives saving as JSON")
 	check(MoneyGraph.sanitize(null)["day"] == [] and MoneyGraph.sanitize({"day": "junk"})["day"] == [], "an old or broken save has an empty series")
@@ -13519,8 +13535,14 @@ func _test_coffee_session() -> void:
 	for i in 6:
 		await get_tree().physics_frame
 		await get_tree().process_frame
-	check(view.hint_text() == "bike:%d" % ids[0] and cv.bike_hint_shown() and cv._bike_label.text.contains(" hp"),
-		"looking at a parked bike shows its basics (%s)" % view.hint_text())
+	check(view.hint_text() == "bike:%d" % ids[0] and cv.bike_hint_shown() and w.look_info.contains(" hp") and w.look_info.begins_with(CoffeeShop.first_name(v))
+		and w.look_prompt.contains("talk to"), "looking at a parked bike shows its basics in the look panel (%s: %s)" % [view.hint_text(), w.look_info.replace("\n", " / ")])
+	await get_tree().process_frame
+	var hud: HUD = main.hud
+	check(hud._panel.visible and hud._title.text == "%s's bike" % CoffeeShop.first_name(v) and hud._info.text.contains("worth about")
+		and hud._prompt.text.contains("make an offer"), "in the HUD's side panel, like anything else you look at (%s / %s)" % [hud._title.text, hud._prompt.text])
+	var floating := cv.find_children("*", "Label3D", true, false).filter(func(l): return (l as Label3D).visible and (l as Label3D).no_depth_test)
+	check(floating.is_empty(), "nothing floats over the biker or their bike (%s)" % str(floating.map(func(l): return (l as Label3D).text)))
 	_press("interact")
 	await get_tree().process_frame
 	await get_tree().process_frame
@@ -13551,8 +13573,8 @@ func _test_coffee_session() -> void:
 	for i in 6:
 		await get_tree().physics_frame
 		await get_tree().process_frame
-	check(view.hint_text() == "counter" and view._counter_label.visible and view._counter_label.text.contains("Coffee"),
-		"the counter shows the menu (%s)" % view.hint_text())
+	check(view.hint_text() == "counter" and w.look_info.contains("Coffee") and w.look_prompt.contains("order"),
+		"the counter shows the menu in the look panel (%s)" % view.hint_text())
 	var saved: Dictionary = Progress.profile.duplicate(true)
 	Progress.set_money(50)
 	_press("interact")
@@ -14634,3 +14656,115 @@ func _spray_passes(w: Walker, xf: Transform3D, box: AABB) -> void:
 		await get_tree().physics_frame
 		if w.spray == null:
 			return
+
+
+## The Sales PC's header (SALES, the business account and Close) is one line across the top, and
+## every tab has its page in view below it, whatever's on the stands.
+func _test_sales_pc_headings() -> void:
+	Shed.start_new("Tester", 61)
+	var bike := _bike_named("Old Faithful")
+	Shed.bikes[bike]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.request({"a": "sale_list", "bike": bike, "ask": 6500})
+	Sales.make_offer(bike)
+	Sales.spawn_px(bike)
+	var pc := SalesComputer.new()
+	add_child(pc)
+	await get_tree().process_frame
+	var screen := get_viewport().get_visible_rect()
+	for tab in SalesComputer.TABS:
+		pc.open(tab)
+		for i in 3:
+			await get_tree().process_frame
+		var page: Control = pc._pages[tab]
+		var tabs_top := pc._tabs.get_global_rect().position.y
+		check(pc._money.get_global_rect().size.y < 40.0 and tabs_top < 200.0 and pc._tabs.get_global_rect().end.y <= screen.end.y
+			and page.get_global_rect().size.x > 600.0,
+			"%s: the heading is one line (%.0f px high), the page starts under it at %.0f px and is %.0f px wide" % [tab,
+			pc._money.get_global_rect().size.y, tabs_top, page.get_global_rect().size.x])
+	# Every label in a row of controls keeps to one line.
+	var squashed := pc.find_children("*", "Label", true, false).filter(func(l):
+		return (l as Label).is_visible_in_tree() and (l as Label).text.length() > 3 and (l as Label).get_line_count() > (l as Label).text.length() / 3)
+	check(squashed.is_empty(), "no label is squashed to a letter a line (%s)" % str(squashed.map(func(l): return (l as Label).text.left(20))))
+	pc.queue_free()
+	await get_tree().process_frame
+
+
+## The rider shop's Buy button is on screen whichever trinket (or bit of gear) is picked, however
+## long the list.
+func _test_shop_buy_in_view() -> void:
+	var menu := MainMenu.new()
+	add_child(menu)
+	await get_tree().process_frame
+	menu.show_pause()
+	menu._tabs.current_tab = menu.shop.get_index()
+	var screen := get_viewport().get_visible_rect()
+	var off := []
+	for c in ShopTab.CATEGORIES:
+		menu.shop.show_category(c)
+		for id in ShopTab.items_of(c):
+			menu.shop.select(id)
+			await get_tree().process_frame
+			var r: Rect2 = menu.shop._buy.get_global_rect()
+			if not menu.shop._buy.is_visible_in_tree() or not screen.encloses(r) or r.size.y < 20.0:
+				off.append("%s %s" % [id, r])
+	check(off.is_empty() and ShopTab.items_of("trinket").size() >= 10, "Buy is on screen for every one of %d trinkets and all the gear %s" % [
+		ShopTab.items_of("trinket").size(), str(off.slice(0, 4))])
+	var list := menu.shop.find_child("List", true, false) as ScrollContainer
+	check(list != null and list.get_global_rect().end.y <= screen.end.y, "the list scrolls, inside the screen")
+	menu.queue_free()
+	await get_tree().process_frame
+
+
+## The money graphs move when money does: the first note keeps the balance it opened with, so
+## money in or out in the first hour (or day, or week) shows; the TV's scale is zoomed to the
+## money, so a sale of a few hundred on an account of thousands shows; and both TV channels plot it.
+func _test_money_graph_moves() -> void:
+	var s := {}
+	MoneyGraph.record(s, 10.2, 20000)
+	MoneyGraph.record(s, 10.5, 21500)
+	MoneyGraph.record(s, 10.9, 20800)
+	var hours := MoneyGraph.points(s, "hour", 10.95, 20800)
+	var days := MoneyGraph.points(s, "day", 10.95, 20800)
+	check(int(hours[-2]) == 20000 and int(hours[-1]) == 20800 and int(days[0]) == 20000 and int(days[-1]) == 20800,
+		"money moving within the first hour and day shows as a step from what it opened with (%s, %s)" % [hours.slice(-2), days])
+	var span := TvChannels.chart_scale([20000, 20000, 21500, 20800])
+	var plot := Rect2(0, 0, 400, 300)
+	var pts := TvChannels.chart_points([20000, 20000, 21500, 20800], plot, span.x, span.y)
+	check(span.x > 15000.0 and span.y < 23000.0 and pts[0].y - pts[2].y > 150.0,
+		"the scale is zoomed to the money (%.0f to %.0f): £1,500 in is half the chart high (%.0f px)" % [span.x, span.y, pts[0].y - pts[2].y])
+	var flat := TvChannels.chart_scale([5000, 5000, 5000])
+	check(flat.x < 5000.0 and flat.y > 5000.0, "a flat line sits in the middle of its scale")
+	check(TvChannels.chart_scale([0, 100, 400]).x == 0.0 and TvChannels.chart_scale([-300, 200]).x < -300.0,
+		"money up from nothing is scaled from nothing; an overdraft shows below the line")
+	# The shed's account and your own on the TVs: a sale and a wage this hour show on both.
+	Shed.start_new("Tester", 62)
+	Shed.bank["series"] = {}
+	Money.record_graph()
+	var was := Shed.garage_money
+	Shed.credit_garage(900, "Test sale")
+	Money.record_graph()
+	var kept := Settings.money_graph_range
+	Settings.money_graph_range = "day"
+	var garage: Array = TvChannels.page_data("money_garage")["history"]
+	check(int(garage[0]) == was and int(garage[-1]) == was + 900, "the garage TV's graph goes from %d up to %d today" % [int(garage[0]), int(garage[-1])])
+	var real_path := Progress.path
+	Progress.path = "user://profile_graph_moves.json"
+	Progress.select("Graph Mover")
+	var mine_was := Progress.money()
+	Progress.earn(250, "Test wage")
+	var mine: Array = TvChannels.page_data("money_me")["history"]
+	check(int(mine[0]) == mine_was and int(mine[-1]) == mine_was + 250, "your own money's TV graph goes from %d up to %d" % [int(mine[0]), int(mine[-1])])
+	# Drawn: the line on the page climbs.
+	var dash := Dashboard.new("crew", 2.0)
+	add_child(dash)
+	dash.show_page("money_garage", TvChannels.page_data("money_garage"))
+	await get_tree().process_frame
+	var g_span := TvChannels.chart_scale(garage)
+	var g_pts := TvChannels.chart_points(garage, Rect2(0, 0, 400, 330), g_span.x, g_span.y)
+	check(g_pts[0].y - g_pts[-1].y > 100.0, "the garage line climbs %.0f px on the TV" % (g_pts[0].y - g_pts[-1].y))
+	dash.queue_free()
+	Settings.money_graph_range = kept
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)
+	await get_tree().process_frame

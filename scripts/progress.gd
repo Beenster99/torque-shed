@@ -314,6 +314,7 @@ func select(player_name: String) -> void:
 	var all := _read_all()
 	var p = all.get(player_name, {})
 	profile = _clean_profile(p if p is Dictionary else {}, player_name)
+	_note_cash()   # what it opens with, so the first money in or out shows on the graph as a step
 	_report_due = true
 	changed.emit()
 

@@ -53,14 +53,15 @@ func _ready() -> void:
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 14)
 	head.add_child(UITheme.title("SALES"))
-	_money = UITheme.label("", 18, GOOD)
-	_money.autowrap_mode = TextServer.AUTOWRAP_OFF   # a wrapping label in a row squeezes to one letter wide
+	_money = _tag("", 18, GOOD)
+	_money.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(_money)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
 	var close := Button.new()
 	close.text = "Close (Esc)"
+	close.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	close.pressed.connect(close_computer)
 	head.add_child(close)
 	root.add_child(head)
@@ -178,6 +179,14 @@ func refresh() -> void:
 
 # ---------------------------------------------------------------------------- helpers
 
+## A one-line label for a row of controls: it keeps to its text's width (a wrapping label in a
+## row has no width of its own and runs down the page a letter a line).
+static func _tag(text: String, size := 17, color := DIM) -> Label:
+	var l := UITheme.label(text, size, color)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	return l
+
+
 func _row(parent: Container, label: String, value: String, color := Color.WHITE, size := 17) -> void:
 	var h := HBoxContainer.new()
 	var l := UITheme.label(label, size, DIM)
@@ -225,42 +234,6 @@ func _card(parent: Container) -> VBoxContainer:
 	v.add_theme_constant_override("separation", 6)
 	p.add_child(v)
 	return v
-
-
-## The bike's paint, panel by panel (see BikePaintInfo): a swatch of each panel's colour, its
-## name, and its paint, finish, coats, lacquer, how the job came out and any stripe.
-func _paint_card(parent: Container, bike: int) -> void:
-	var card := _card(parent)
-	card.add_child(UITheme.label("PAINT, PANEL BY PANEL", 14, UITheme.ACCENT))
-	var list := BikePaintInfo.panels(bike)
-	if list.is_empty():
-		card.add_child(UITheme.label("No painted panels fitted.", 16, DIM))
-		return
-	for e in list:
-		var h := HBoxContainer.new()
-		h.add_theme_constant_override("separation", 10)
-		var swatch := ColorRect.new()
-		swatch.color = e["color"] if e["color"] is Color else Color.WHITE
-		swatch.custom_minimum_size = Vector2(18, 18)
-		swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		h.add_child(swatch)
-		var l := UITheme.label(str(e["name"]), 16, DIM)
-		l.custom_minimum_size = Vector2(170, 0)
-		l.autowrap_mode = TextServer.AUTOWRAP_OFF
-		l.tooltip_text = str(e["part"])
-		l.mouse_filter = Control.MOUSE_FILTER_PASS
-		h.add_child(l)
-		var v := UITheme.label(BikePaintInfo.line(e), 16, Color.WHITE)
-		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		v.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		h.add_child(v)
-		card.add_child(h)
-
-
-## A label that keeps to one line, for a row of controls (a wrapping one squeezes to nothing).
-static func _nowrap(l: Label) -> Label:
-	l.autowrap_mode = TextServer.AUTOWRAP_OFF
-	return l
 
 
 static func _margin_color(amount: int, sunk: int) -> Color:
@@ -317,7 +290,6 @@ func _build_bike(right: VBoxContainer, bike: int) -> void:
 		else "Not finished: parts missing or loose")
 	right.add_child(UITheme.label("%s  ·  condition %d%%" % [state, roundi(float(ap["condition"]) * 100.0)], 16, DIM))
 	right.add_child(UITheme.label("Style: %s" % PartsDB.style_text(Contracts.current_parts(bike)), 16, DIM))
-	_paint_card(right, bike)
 	var cost := _card(right)
 	cost.add_child(UITheme.label("WHAT IT'S COST", 14, UITheme.ACCENT))
 	_row(cost, "Bought for" + ("" if ap["bought_known"] else " (about)"), Sales.money(int(ap["bought"])))
@@ -337,7 +309,7 @@ func _build_bike(right: VBoxContainer, bike: int) -> void:
 	price.add_child(UITheme.label("PRICING IT", 14, UITheme.ACCENT))
 	var mrow := HBoxContainer.new()
 	mrow.add_theme_constant_override("separation", 8)
-	mrow.add_child(_nowrap(UITheme.label("Target margin", 17, DIM)))
+	mrow.add_child(_tag("Target margin"))
 	for m in Sales.MARGINS:
 		var mb := Button.new()
 		mb.text = "%d%%" % roundi(m * 100.0)
@@ -358,7 +330,7 @@ func _build_bike(right: VBoxContainer, bike: int) -> void:
 		interest.text = "Buyers: " + Sales.interest_text(Sales.interest(bike, v))
 	var arow := HBoxContainer.new()
 	arow.add_theme_constant_override("separation", 10)
-	arow.add_child(_nowrap(UITheme.label("Asking price", 17, DIM)))
+	arow.add_child(_tag("Asking price"))
 	var box := _money_box(ask, func(v: int):
 		_ask_edit[bike] = v
 		show.call(v))
@@ -524,7 +496,7 @@ func _build_one_px(page: VBoxContainer, id: int) -> void:
 	var box := _money_box(allow, func(v: int):
 		_px_edit[id] = v
 		show.call(v))
-	row.add_child(UITheme.label("Offer", 17, DIM))
+	row.add_child(_tag("Offer"))
 	row.add_child(box)
 	_button(row, "Offer this for it", func(): Shed.request({"a": "sale_px_offer", "px": id, "amount": int(box.value)}))
 	_button(row, "Send them away", func(): Shed.request({"a": "sale_px_decline", "px": id}))

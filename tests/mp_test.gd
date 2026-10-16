@@ -94,6 +94,8 @@ func _ready() -> void:
 	var bottle_seen := false    # the host saw the client's bottle tipped over the tin
 	var bottle_back := false    # and back on the rack once the client let go (and stirred)
 	var tare_seen := false      # the scale zeroed, on both sides
+	var avatar_ok := false
+	var graph_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -204,6 +206,21 @@ func _ready() -> void:
 		elif main.remotes.size() == 1:
 			var other: RemotePlayer = main.remotes.values()[0]
 			gear_ok = other.gear.get("helmet", "") == "helmet_mx" and other._head_look.get_child_count() > 3
+		# The other player is drawn whole for this side's first-person eye: on foot, and riding
+		# (only your own rider's helmet and torso are left out of it).
+		if main.remotes.size() == 1 and not avatar_ok and ranger != 0:
+			var them: RemotePlayer = main.remotes.values()[0]
+			var eye_hidden := func(n: Node) -> int:
+				return n.find_children("*", "VisualInstance3D", true, false).filter(func(c):
+					return (c as VisualInstance3D).layers & (1 << (BikeModel.HELMET_LAYER - 1)) != 0).size()
+			if them.riding_bike == 0:
+				var on_foot: int = eye_hidden.call(them._figure)
+				them._start_riding(ranger)
+				avatar_ok = on_foot == 0 and them.bike != null and not them.bike.model.own_rider and eye_hidden.call(them.bike) == 0
+				them._stop_riding()
+		# The money graphs: the business's series goes out with the shed, so both sides draw it.
+		var rows: Array = Shed.bank.get("series", {}).get("minute", [])
+		graph_ok = rows.size() >= 2 and int(Money.graph("minute")[-1]) == Shed.garage_money
 		# A bike left out on the road: the host leaves Old Faithful out there, the client has the
 		# recovery truck bring it back, and both see it back in the yard.
 		var faithful := _bike_named("Old Faithful")
@@ -422,7 +439,7 @@ func _ready() -> void:
 			var shelved := PaintBay.tins().values().filter(func(t): return str(t.get("name", "")) == "MP Blue" and str(t["at"]) == "shelf")
 			paint_ok = cards.size() >= 1 and shelved.size() == 1 and float(PaintBay.stock_of("PB")) > PaintBay.STARTER_TINT - 20.0 \
 				and str(mp_blue[0]["code"]).begins_with("W-PB20") and PaintBay.at_bench() == 0 and tare_seen and (role != "host" or bottle_back)
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -438,8 +455,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok])
 	get_tree().quit(0 if ok else 1)
 
 
