@@ -4,8 +4,9 @@ extends Node3D
 ## game; nothing here is shared state.
 ##   - The bikers (CoffeeVisitor): riding in and parking, sitting over a coffee, wandering over to
 ##     the showroom, walking back to their bikes and riding off, or walking away from a bike
-##     they've sold to the shed. Look at one, or at their parked bike (its basics show over it),
-##     and press F to talk to them about it (CoffeePanel).
+##     they've sold to the shed. Look at one, or at their parked bike, and the HUD's look panel
+##     says who they are and what the bike is (like anything else you look at: see tooltip());
+##     press F to talk to them about it and make an offer (CoffeePanel).
 ##   - The barista behind the counter while it's open. Look at the counter or them and press F
 ##     to order.
 ##   - Trays put down about the place, with whatever's still on them.
@@ -26,21 +27,11 @@ var barista: CustomerView
 var _states := {}              # visitor id -> the state last drawn
 var _tray_sigs := {}
 var _looked := {}
-var _counter_label: Label3D
+var _tip := ["", ""]           # the look panel's text and prompt last handed to the walker
 
 
 func _ready() -> void:
 	Shed.changed.connect(sync_state)
-	_counter_label = Label3D.new()
-	_counter_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_counter_label.position = CoffeeShop.COUNTER + Vector3(0.0, CoffeeShop.COUNTER_SIZE.y + 0.55, 0.0)
-	_counter_label.font_size = 40
-	_counter_label.outline_size = 10
-	_counter_label.pixel_size = 0.003
-	_counter_label.no_depth_test = true
-	_counter_label.modulate = Color(1.0, 0.92, 0.7)
-	_counter_label.visible = false
-	add_child(_counter_label)
 
 
 ## Brings the bikers, the barista and the trays into line with Shed.coffee.
@@ -316,41 +307,56 @@ func _talkable(id: int) -> bool:
 
 func _process(_delta: float) -> void:
 	var now := looked_at() if main and main.walker and main.walker.controls_enabled else {}
-	if now == _looked:
-		return
-	_show_hint(_looked, false)
-	_show_hint(now, true)
-	_looked = now
+	if now != _looked:
+		_show_hint(_looked, false)
+		_show_hint(now, true)
+		_looked = now
+	# What they're looking at goes in the HUD's look panel, the same as everything else.
+	var tip := tooltip(now)
+	if tip != _tip and main and main.walker:
+		_tip = tip
+		main.walker.look_info = tip[0]
+		main.walker.look_prompt = tip[1]
 
 
 func _show_hint(at: Dictionary, on: bool) -> void:
-	if at.get("counter", false):
-		_counter_label.visible = on
-		if on:
-			_counter_label.text = counter_text()
-		return
 	var id := int(at.get("visitor", 0))
 	if not views.has(id) or not is_instance_valid(views[id]):
 		return
 	var cv: CoffeeVisitor = views[id]
 	if at.get("bike", false):
-		var v: Dictionary = CoffeeShop.visitors().get(id, {})
-		var key := Settings.binding_text("interact", false)
-		cv.set_bike_hint(on, "%s's bike\n%s\n%s: talk to %s about it" % [CoffeeShop.first_name(v), CoffeeShop.bike_line(v).replace("  ·  ", "\n"),
-			key if key != "" else "F", CoffeeShop.first_name(v)] if on else "")
+		cv.set_bike_hint(on)
 	else:
 		cv.set_hint(on)
 
 
-## What the counter says when you look at it.
-static func counter_text() -> String:
+## The look panel for what's under the crosshair here (see looked_at): [title and lines, the
+## key prompt], or two empty strings for nothing of ours.
+static func tooltip(at: Dictionary) -> Array:
 	var key := Settings.binding_text("interact", false)
-	if not CoffeeShop.is_open():
-		return "PIT STOP CAFE\n%s" % CoffeeShop.hours_text()
-	var menu := []
-	for item in CoffeeShop.MENU_ORDER:
-		menu.append("%s %s" % [CoffeeShop.item_name(item), CoffeeShop.money(CoffeeShop.price(item))])
-	return "PIT STOP CAFE  ·  %s\n%s\n%s: order" % [CoffeeShop.hours_text(), "  ·  ".join(menu), key if key != "" else "F"]
+	key = key if key != "" else "F"
+	if at.get("counter", false):
+		if not CoffeeShop.is_open():
+			return ["Pit Stop Cafe\n%s" % CoffeeShop.hours_text(), ""]
+		var menu := []
+		for item in CoffeeShop.MENU_ORDER:
+			menu.append("%s %s" % [CoffeeShop.item_name(item), CoffeeShop.money(CoffeeShop.price(item))])
+		return ["Pit Stop Cafe\n%s\n%s" % [CoffeeShop.hours_text(), "  ·  ".join(menu)], "%s: order" % key]
+	if not at.has("visitor"):
+		return ["", ""]
+	var v: Dictionary = CoffeeShop.visitors().get(int(at["visitor"]), {})
+	var who := CoffeeShop.first_name(v)
+	var b: Dictionary = v.get("bike", {})
+	var lines := []
+	if at.get("bike", false):
+		lines.append("%s's bike" % who)
+	else:
+		lines.append(str(v.get("name", who)))
+		lines.append("Looking round the showroom" if str(v.get("state", "")) == "browse" else "Stopped for a coffee, on their own bike")
+	lines.append("%s  ·  %s" % [str(b.get("style_text", "A bike")), str(b.get("model", ""))])
+	lines.append("%d hp  ·  %d%% condition  ·  worth about %s" % [int(b.get("hp", 0)), roundi(float(b.get("condition", 0.0)) * 100.0),
+		CoffeeShop.money(CoffeeShop.rough_value(v))])
+	return ["\n".join(lines), "%s: talk to %s about the bike (make an offer)" % [key, who]]
 
 
 ## The hint showing now (tests): "counter", "bike:<id>", "visitor:<id>" or "".

@@ -107,14 +107,21 @@ func _process(delta: float) -> void:
 	blast_hud.walker = walker if on_foot else null
 	spray_hud.walker = walker if on_foot else null
 	_panel.visible = on_foot and walker.blast == null and not spray_hud.showing() \
-		and (walker.info != "" or not walker.plan.is_empty() or walker.crouched)
+		and (walker.info != "" or walker.look_info != "" or not walker.plan.is_empty() or walker.crouched)
 	if on_foot:
-		var lines := walker.info.split("\n")
+		# What the cafe's bikers and the like say (Walker.look_info) comes first, over what the
+		# walker's own targeting has to say.
+		var text := walker.info
+		if walker.look_info != "":
+			text = walker.look_info + ("\n" + walker.info if walker.info != "" else "")
+		var lines := text.split("\n")
 		_title.text = lines[0]
 		_info.text = "\n".join(lines.slice(1))
 		_info.visible = _info.text != ""
 		var plan := walker.plan
 		var prompts := []
+		if walker.look_prompt != "":
+			prompts.append(walker.look_prompt)
 		var blocked := false
 		if not plan.is_empty():
 			blocked = plan["blocked"] != ""
