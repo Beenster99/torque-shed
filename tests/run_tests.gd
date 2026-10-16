@@ -11120,6 +11120,36 @@ func _test_detail_pass() -> void:
 		"a race-only fairing has a blank nose and two winglets a side with endplates")
 	var winged: BikeModel = bike.call({"fairing": "sport_grey_winged"})
 	check(count.call(winged, "FairingLamp") == 2 and count.call(winged, "Winglet") == 4, "a winged sports fairing keeps its lamps and has one winglet a side")
+	# Under it the frame beams stay inside the bodywork, the radiator and headers are out of
+	# sight through the wheel cut, and the clocks sit below the screen's top.
+	var sport_parts := Contracts.style_build("sport")
+	var sb: BikeModel = bike.call(sport_parts)
+	var bare_parts := sport_parts.duplicate()
+	bare_parts["fairing"] = "none"
+	var bare: BikeModel = bike.call(bare_parts)
+	check(sb.slot_bounds("frame").size.x < bare.slot_bounds("frame").size.x - 0.1 and sb.slot_bounds("frame").end.x < sb.slot_bounds("fairing").end.x,
+		"a perimeter frame's beams tuck inside a full fairing (%.2f m wide, %.2f bare)" % [sb.slot_bounds("frame").size.x, bare.slot_bounds("frame").size.x])
+	var hidden := func(m: BikeModel, slot: String) -> bool:
+		for mi in m._slot_meshes.get(slot, []):
+			if not (mi as Node).get_meta("under_fairing", false):
+				return false
+		return true
+	check(hidden.call(sb, "cooling") and not hidden.call(bare, "cooling"), "the radiator is hidden behind a full fairing, not on a bare bike")
+	var screen_mi: MeshInstance3D = sb.find_children("Screen", "", true, false)[0]
+	check(sb._model_aabb(screen_mi).end.y > sb.slot_bounds("dashboard").end.y, "the clocks sit below the top of the screen")
+	var faceted := func(mi: MeshInstance3D) -> bool:
+		var arr := (mi.mesh as ArrayMesh).surface_get_arrays(0)
+		var seen := {}
+		for k in (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size():
+			var key := str(((arr[Mesh.ARRAY_VERTEX] as PackedVector3Array)[k] * 1000.0).round())
+			var nrm: Vector3 = (arr[Mesh.ARRAY_NORMAL] as PackedVector3Array)[k]
+			if seen.has(key) and (seen[key] as Vector3).angle_to(nrm) > 0.2 and (seen[key] as Vector3).angle_to(-nrm) > 0.2:
+				return true
+			seen[key] = nrm
+		return false
+	check(faceted.call(sb.find_children("TailCowl", "", true, false)[0]), "a sports tail is creased panels too")
+	var hf: BikeModel = bike.call({"fairing": "sport_black_half"})
+	check(faceted.call(hf.find_children("FairingShell", "", true, false)[0]), "and so is a sports half fairing")
 	var half: BikeModel = bike.call({"fairing": "half_fairing"})
 	check(count.call(half, "FairingVent") == 8, "a half fairing has side vents")
 	var can: BikeModel = bike.call({"exhaust": "stock_muffler"})

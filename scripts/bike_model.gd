@@ -366,9 +366,14 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 			# Two big cast beams wrapped round the engine from the head stock to the pivot, deep
 			# pivot plates, and a light subframe kicking up to the tail.
 			var wide := maxf(0.15, _block_w * 0.5 + 0.05)
+			# Under a full race fairing the beams tuck in along the tank (the engine they'd wrap
+			# is out of sight), so they don't stick out of the bodywork.
+			var beam := minf(wide, 0.2) if _race_fairing_fitted() else wide
+			if beam < wide:
+				wide = minf(wide, 0.25)
 			for side in [-1.0, 1.0]:
-				var path := [hb + Vector3(0.045 * side, 0.04, 0.03), hb.lerp(_pivot, 0.25) + Vector3(wide * side, 0.09, 0.0),
-					hb.lerp(_pivot, 0.65) + Vector3(wide * side, 0.1, 0.0), _pivot + Vector3((wide - 0.02) * side, 0.11, -0.06)]
+				var path := [hb + Vector3(0.045 * side, 0.04, 0.03), hb.lerp(_pivot, 0.25) + Vector3(beam * side, 0.09, 0.0),
+					hb.lerp(_pivot, 0.65) + Vector3(beam * side, 0.1, 0.0), _pivot + Vector3((wide - 0.02) * side, 0.11, -0.06)]
 				var smooth := ShapeKit.smooth(path, 4)
 				var secs := []
 				for k in smooth.size():
@@ -1833,6 +1838,9 @@ func _draw_dashboard() -> void:
 	var p := _part()
 	var housing := _mat(_col(), 0.6, 0.35)
 	var at := Vector3(0.0, 0.1, -0.06)
+	if _race_fairing_fitted():
+		# Tucked down behind a full fairing's screen.
+		at = Vector3(0.0, 0.01, 0.02)
 	# The clocks lean back towards the rider, so their faces look up and back at the eyes.
 	var tilt := Basis(Vector3.RIGHT, 0.9)
 	var face_mat := _lamp(Color(0.95, 0.9, 0.75), 1.2, "ign")
@@ -2444,6 +2452,9 @@ func _tail_cowl(kind: String, mat: Material, lk: Dictionary) -> void:
 			keys = [[-0.14, 0.13, 0.03, 0.05, 0.0, 2.6], [0.0, 0.13, 0.12, 0.06, 0.02, 2.6], [0.16, 0.1, 0.09, 0.06, 0.06, 2.6], [0.32, 0.03, 0.02, 0.03, 0.12, 2.4]]
 		_:
 			return
+	if kind in ["sport", "racing"]:
+		_facet_cowl(keys, ln, mat, lk)
+		return
 	var secs := []
 	for k in keys:
 		secs.append({"c": t + Vector3(0.0, float(k[4]), float(k[0]) * ln), "w": k[1], "up": k[2], "down": k[3], "n": k[5]})
@@ -2461,6 +2472,31 @@ func _tail_cowl(kind: String, mat: Material, lk: Dictionary) -> void:
 		for sec in secs:
 			stripe.append((sec["c"] as Vector3) + Vector3(0.0, float(sec["up"]) + 0.002, 0.0))
 		_bend(stripe, 0.012, _mat(_accent(), 0.1, 0.35, 0.6))
+
+
+## A sports or race tail (keys as in _tail_cowl) built from flat panels to match the full
+## fairings: a tucked-in underside, a sharp crease along each flank, a ridged top, tapering to
+## a point, with the accent colour as a stripe along the upper flank.
+func _facet_cowl(keys: Array, ln: float, mat: Material, lk: Dictionary) -> void:
+	var rows := []
+	for k in keys.size():
+		var a: Array = keys[k]
+		var b: Array = keys[mini(k + 1, keys.size() - 1)]
+		for step in (3 if k < keys.size() - 1 else 1):
+			var f := step / 3.0
+			var z := lerpf(float(a[0]), float(b[0]), f) * ln
+			var w := lerpf(float(a[1]), float(b[1]), f)
+			var up := lerpf(float(a[2]), float(b[2]), f)
+			var down := lerpf(float(a[3]), float(b[3]), f)
+			var c := _tail + Vector3(0.0, lerpf(float(a[4]), float(b[4]), f), z)
+			rows.append(PackedVector3Array([c + Vector3(0.0, -down, 0.0), c + Vector3(w * 0.62, -down, 0.0), c + Vector3(w, lerpf(-down, up, 0.4), 0.0),
+				c + Vector3(w * 0.72, up * 0.82, 0.0), c + Vector3(w * 0.3, up, 0.0), c + Vector3(0.0, up + 0.008, 0.0)]))
+	var cowl := _facets(rows, mat)
+	cowl.name = "TailCowl"
+	for end in [0, rows.size() - 1]:
+		_mesh_instance(ShapeKit.fan(_mirror_row(rows[end]), Vector3.FORWARD if end == 0 else Vector3.BACK), mat, Vector3.ZERO)
+	if lk.has("accent"):
+		_grid_patch(rows, [0.0, 0.0, 1.0, 1.0], 3.15, 3.7, 0.003, _mat(_accent(), 0.1, 0.35, 0.6))
 
 
 ## Where the rear light sits, in the bike's own space: the tail unit's "light_at" (up and back
@@ -2679,7 +2715,23 @@ func _draw_fairing() -> void:
 	for k in keys:
 		secs.append({"c": h + Vector3(0.0, float(k[4]) * tall, float(k[0])), "w": float(k[1]) * wide / 0.2, "up": float(k[2]) * tall,
 			"down": float(k[3]) * (1.6 if touring else 1.0), "n": float(lk.get("n", (2.0 if shape == "seeley" else (2.5 if race else 2.8))))})
-	var shell := _shell(secs, mat, true, -0.75, PI + 0.75)
+	# A modern half fairing is flat panels with creases, like the full ones: each section's
+	# outline taken at a few points round it and joined straight (the old round shell stays for
+	# a club racer's Seeley-style half and the touring ones).
+	var faceted := style == "half" and shape != "seeley"
+	var shell: MeshInstance3D
+	if faceted:
+		var rows := []
+		for sec: Dictionary in secs:
+			if not lk.has("n"):
+				sec["n"] = 2.4
+			var row := PackedVector3Array()
+			for a: float in [-0.75, -0.45, -0.1, 0.4, 0.95, PI * 0.5]:
+				row.append(_on_loft(sec, a))
+			rows.append(row)
+		shell = _facets(rows, mat)
+	else:
+		shell = _shell(secs, mat, true, -0.75, PI + 0.75)
 	if lk.has("accent"):
 		var stripe := []
 		for sec in secs:
@@ -2707,8 +2759,11 @@ func _draw_fairing() -> void:
 		eye.rotation.y = 0.35 * side
 		eye.name = "FairingLamp"
 	var crown: Dictionary = secs[1]
-	_screen(crown["c"] + Vector3(0.0, float(crown["up"]) - 0.015, 0.02), float(crown["w"]) * 0.8, screen,
-		{"race": 0.85, "touring": 0.3}.get(style, 0.55) as float, glass)
+	if faceted:
+		_facet_screen(crown["c"] + Vector3(0.0, float(crown["up"]) - 0.045, 0.02), float(crown["w"]) * 0.8, screen, 0.55, glass)
+	else:
+		_screen(crown["c"] + Vector3(0.0, float(crown["up"]) - 0.015, 0.02), float(crown["w"]) * 0.8, screen,
+			{"race": 0.85, "touring": 0.3}.get(style, 0.55) as float, glass)
 	if race:
 		# A ram-air intake under the nose.
 		var nose: Dictionary = secs[0]
@@ -2828,6 +2883,14 @@ func _full_fairing(mat: Material, glass: Material, dark: Material, screen: float
 		rows.append(row)
 	var shell := _facets(rows, mat)
 	shell.name = "FairingShell"
+	# A dark lining just inside, as real bodywork's inner faces are, seen through the wheel cut.
+	var lining := []
+	for i in rows.size():
+		var row := PackedVector3Array()
+		for j in 6:
+			row.append((rows[i] as PackedVector3Array)[j] - _grid_normal(rows, i, clampf(j, 0.02, 4.98)) * 0.004)
+		lining.append(row)
+	_facets(lining, dark).name = "FairingLiner"
 	# The nose: a dark ram-air mouth on a road bike, or blank paint with a slot under it on a
 	# race bike.
 	var front := _mirror_row(rows[0])
@@ -2893,24 +2956,29 @@ func _full_fairing(mat: Material, glass: Material, dark: Material, screen: float
 		for p in row:
 			if p.z > _head.z + 0.1:
 				top_y = maxf(top_y, p.y)
-	var cover_z0 := _head.z + 0.05
+	# From the nose back, so the radiator and the headers behind the wheel cut go too.
+	var cover_z0 := nose_z - 0.02
 	_covered = [AABB(Vector3(-1.0, belly - 0.03, cover_z0), Vector3(2.0, top_y - belly + 0.03, z1 - cover_z0)),
 		AABB(Vector3(-1.0, _pivot.y + 0.12, r0), Vector3(2.0, _tail.y - _pivot.y - 0.12, r1 - r0))]
-	# A short screen laid well back from the crown, creased down the middle like the nose.
+	# A short screen laid well back from the crown, stood up and stretched only as far as it
+	# takes for the clocks to sit below its top line.
 	var tilt := 0.95 if lamps else 1.1
-	var dir := Vector3(0.0, cos(tilt), sin(tilt))
-	var up := Vector3(0.0, sin(tilt), -cos(tilt))
 	var base := Vector3(0.0, crown.y - 0.012, crown.x - 0.006)
-	var half := _pwl(wide, crown.x) * 0.56
 	var tall := clampf(screen, 0.1, 0.17) * (1.0 if lamps else 0.85)
-	var pane := []
-	for k in 4:
-		var f := k / 3.0
-		var at := base + dir * tall * f
-		var hw := half * lerpf(1.0, 0.7, f)
-		var bulge := 0.04 * lerpf(1.0, 0.75, f)
-		pane.append(PackedVector3Array([at + Vector3(hw, 0.0, 0.0), at + Vector3(hw * 0.6, 0.0, 0.0) + up * bulge * 0.8, at + up * bulge]))
-	_facets(pane, glass).name = "Screen"
+	var clock_end := -INF
+	for mi in _slot_meshes.get("dashboard", []):
+		var box := _model_aabb(mi as VisualInstance3D)
+		var dy := box.end.y + 0.02 - base.y
+		if dy <= 0.0:
+			continue
+		for z in [box.position.z, box.end.z]:
+			if z > base.z:
+				tilt = minf(tilt, atan2(z - base.z, dy))
+		clock_end = maxf(clock_end, box.end.z + 0.01)
+	tilt = maxf(tilt, 0.75)
+	if clock_end > base.z:
+		tall = clampf((clock_end - base.z) / sin(tilt), tall, 0.2)
+	_facet_screen(base, _pwl(wide, crown.x) * 0.56, tall, tilt, glass)
 	# Winglets off the nose: one deck on a road bike that asks for them, two on a race bike, each
 	# a thin swept blade out to a tall slim endplate.
 	var wings := int(lk.get("wings", 0 if lamps else 2))
@@ -2951,6 +3019,23 @@ func _full_fairing(mat: Material, glass: Material, dark: Material, screen: float
 			var endplate := _mesh_instance(ShapeKit.plate(PackedVector3Array([Vector3(x, lo, za + 0.01), Vector3(x, hi, za + 0.025),
 				Vector3(x, hi, zb), Vector3(x, lo, zb - 0.01)]), 0.005), mat, Vector3.ZERO)
 			endplate.name = "Winglet"
+
+
+## A screen rising from `base`, `half` wide, `height` long, leaning back by `tilt` (radians
+## from upright): flat panes creased down the middle and either side, tapering to the top.
+func _facet_screen(base: Vector3, half: float, height: float, tilt: float, glass: Material, parent: Node3D = self) -> MeshInstance3D:
+	var dir := Vector3(0.0, cos(tilt), sin(tilt))
+	var up := Vector3(0.0, sin(tilt), -cos(tilt))
+	var pane := []
+	for k in 4:
+		var f := k / 3.0
+		var at := base + dir * height * f
+		var hw := half * lerpf(1.0, 0.7, f)
+		var bulge := 0.04 * lerpf(1.0, 0.75, f)
+		pane.append(PackedVector3Array([at + Vector3(hw, 0.0, 0.0), at + Vector3(hw * 0.6, 0.0, 0.0) + up * bulge * 0.8, at + up * bulge]))
+	var mi := _facets(pane, glass, true, false, parent)
+	mi.name = "Screen"
+	return mi
 
 
 ## A faceted shell (see ShapeKit.facets) for the part being drawn.
@@ -3104,14 +3189,15 @@ func _adventure_fairing(mat: Material, glass: Material, dark: Material, screen: 
 
 ## Under a full fairing the engine's covers, the airbox, the coil and the electrics are out of
 ## sight: anything of theirs that sits wholly inside the bodywork, seen side on, is left
-## undrawn while the fairing is on (it shows again with the fairing off).
-const COVERED_SLOTS := ["engine", "head", "gearbox", "cooling", "air_filter", "fuel", "spark_plugs", "oil_filter", "ecu", "horn"]
+## undrawn while the fairing is on (it shows again with the fairing off). So are the exhaust's
+## headers under the front of it, though not the silencer.
+const COVERED_SLOTS := ["engine", "head", "gearbox", "cooling", "air_filter", "fuel", "spark_plugs", "oil_filter", "ecu", "horn", "exhaust"]
 
 func _hide_covered() -> void:
 	for slot in COVERED_SLOTS:
 		for mi in _slot_meshes.get(slot, []):
 			var box := _model_aabb(mi as VisualInstance3D)
-			for c in _covered:
+			for c in (_covered.slice(0, 1) if slot == "exhaust" else _covered):
 				var inner: AABB = c
 				# A little give at the ends: the fairing's own edge hides the last few cm.
 				if box.position.y >= inner.position.y - 0.02 and box.end.y <= inner.end.y + 0.02 \
@@ -3136,6 +3222,14 @@ func tank_base_y(z: float) -> float:
 	if _tank_b == _tank_a:
 		return _seat_y
 	return lerpf(_tank_a.y, _tank_b.y, clampf((z - _tank_a.z) / maxf(_tank_b.z - _tank_a.z, 0.01), 0.0, 1.0))
+
+
+## Whether the fitted fairing is a full sports or race one (see _full_fairing).
+func _race_fairing_fitted() -> bool:
+	var f := PartsDB.get_part(str(_build.parts.get("fairing", "none")))
+	if f.is_empty() or not is_fitted("fairing"):
+		return false
+	return str(f.get("style", "")) == "race" and str((f.get("look", {}) as Dictionary).get("shape", "race")) != "seeley"
 
 
 ## Whether the fitted fairing is a full race-style one that hides the headlight inside it.
