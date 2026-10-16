@@ -666,7 +666,7 @@ static func style_build(style: String) -> Dictionary:
 				"rear_tyre": "vintage_ribbed", "mirrors": "bar_end_mirrors", "front_mudguard": "alloy_cafe_blade"}, true)
 		"scrambler":
 			b.merge({"frame": "steel_backbone", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "mx_tall",
-				"tail": "scrambler_loop", "engine": "twin_500", "exhaust": "full_system", "front_wheel": "spoked_19_adventure",
+				"tail": "scrambler_loop", "engine": "twin_500", "exhaust": "scrambler_high_twin", "front_wheel": "spoked_19_adventure",
 				"rear_wheel": "spoked_18", "front_tyre": "dual_sport_90", "rear_tyre": "dual_sport", "fork": "enduro_usd",
 				"mirrors": "round_mirrors", "front_mudguard": "enduro_front_fender"}, true)
 		"tourer":
@@ -675,12 +675,17 @@ static func style_build(style: String) -> Dictionary:
 				"fairing": "touring_fairing", "mirrors": "fairing_mirrors", "headlight": "led_projector",
 				"rear_tyre": "touring_road", "front_tyre": "touring_road_120", "front_mudguard": "chrome_classic"}, true)
 		"sport":
-			b.merge({"frame": "chromoly_trellis", "tank": "sport_17", "saddle": "sport_solo", "handlebars": "clip_ons",
-				"tail": "sport_tail_tidy", "engine": "inline_1000", "exhaust": "titanium_race", "fairing": "race_fairing",
+			b.merge({"frame": "sport_perimeter_red", "tank": "sport_17", "saddle": "sport_solo", "handlebars": "clip_ons",
+				"tail": "sport_pointed_tail", "engine": "inline_1000", "exhaust": "race_underseat_ti", "fairing": "sport_red_fairing",
 				"fork": "usd_sport", "shock": "sport_mono", "ecu": "sport_ecu", "mirrors": "fairing_mirrors",
 				"headlight": "led_projector", "front_mudguard": "carbon_hugger"}, true)
+		"race":
+			b.merge({"frame": "race_alu_perimeter", "tank": "race_white_red", "saddle": "race_foam_seat", "handlebars": "race_black_clips",
+				"tail": "race_hump", "engine": "inline_1000", "exhaust": "race_hex_carbon", "fairing": "race_white_fairing",
+				"fork": "race_works_usd", "shock": "sport_mono", "ecu": "sport_ecu", "mirrors": "none", "front_wheel": "race_mag_gold",
+				"rear_wheel": "race_mag_gold", "headlight": "led_projector", "front_mudguard": "race_white_hugger"}, true)
 		"bobber":
-			b.merge({"frame": "steel_cradle", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "drag_bar",
+			b.merge({"frame": "softail_hardtail", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "drag_bar",
 				"tail": "bobber_fender", "engine": "vtwin_1000", "exhaust": "straight_pipe", "front_wheel": "wire_16_bobber",
 				"rear_wheel": "wire_16_bobber", "mirrors": "bar_end_mirrors", "front_mudguard": "bobbed_steel"}, true)
 		"chopper":
@@ -693,17 +698,17 @@ static func style_build(style: String) -> Dictionary:
 				"tail": "classic_mudguard", "engine": "vtwin_1100", "exhaust": "shotgun_duals", "front_wheel": "cast_19_six",
 				"rear_wheel": "wire_16_bobber", "panniers": "leather_saddlebags", "mirrors": "round_mirrors", "front_mudguard": "chrome_classic"}, true)
 		"adventure":
-			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "touring_23", "saddle": "touring_comfort",
+			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "adv_big_tank", "saddle": "adv_comfort_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "boxer_1100", "exhaust": "mx_upswept", "front_wheel": "spoked_19_adventure",
 				"rear_wheel": "spoked_18", "front_tyre": "dual_sport_90", "rear_tyre": "dual_sport", "panniers": "aluminium_boxes",
-				"fairing": "touring_fairing", "headlight": "led_projector", "mirrors": "touring_mirrors", "front_mudguard": "enduro_front_fender"}, true)
+				"fairing": "adv_beak_red", "headlight": "led_projector", "mirrors": "touring_mirrors", "front_mudguard": "enduro_front_fender"}, true)
 		"mx":
 			b.merge({"frame": "mx_twin_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "enduro_12", "saddle": "enduro_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "single_450", "exhaust": "mx_upswept", "front_wheel": "excel_21_black",
 				"rear_wheel": "spoked_18", "front_tyre": "knobbly_mx_80", "rear_tyre": "knobbly_mx", "front_mudguard": "mx_high_fender",
 				"headlight": "rect_enduro", "number_boards": "mx_side_boards"}, true)
 		"supermoto":
-			b.merge({"frame": "mx_twin_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "enduro_12", "saddle": "enduro_seat",
+			b.merge({"frame": "mx_twin_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "sm_orange_tank", "saddle": "sm_flat_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "single_450", "exhaust": "mx_upswept", "front_wheel": "supermoto_17",
 				"rear_wheel": "supermoto_17", "front_tyre": "sport_road_120", "rear_tyre": "sport_road_160", "front_mudguard": "mx_high_fender",
 				"headlight": "rect_enduro", "mirrors": "sport_mirrors"}, true)

@@ -146,7 +146,8 @@
 					-0.4
 				],
 				"exhaust": "shotgun",
-				"swingarm": "softail"
+				"swingarm": "softail",
+				"tank_slope": 6.0
 			},
 			"styles": [
 				"bobber",
@@ -183,7 +184,8 @@
 					-0.44
 				],
 				"exhaust": "shotgun",
-				"swingarm": "box"
+				"swingarm": "box",
+				"tank_slope": 6.0
 			},
 			"styles": [
 				"cruiser",
@@ -461,7 +463,8 @@
 					-0.4
 				],
 				"exhaust": "shotgun",
-				"swingarm": "softail"
+				"swingarm": "softail",
+				"tank_slope": 6.0
 			},
 			"name": "True rigid bobber frame",
 			"description": "No rear suspension at all, just a lowered rigid rear. Your spine is the shock.",
@@ -498,7 +501,8 @@
 					-0.4
 				],
 				"exhaust": "shotgun",
-				"swingarm": "softail"
+				"swingarm": "softail",
+				"tank_slope": 6.0
 			},
 			"name": "Matt black softail bobber frame",
 			"description": "A low softail in matt black with gold pinstripe gussets.",
@@ -614,7 +618,8 @@
 					-0.44
 				],
 				"exhaust": "shotgun",
-				"swingarm": "box"
+				"swingarm": "box",
+				"tank_slope": 6.0
 			},
 			"name": "Low glide cruiser frame",
 			"description": "Even longer and lower, with a little more rake. A boulevard bike.",
@@ -651,7 +656,8 @@
 					-0.44
 				],
 				"exhaust": "shotgun",
-				"swingarm": "box"
+				"swingarm": "box",
+				"tank_slope": 6.0
 			},
 			"name": "Bagger touring cradle",
 			"description": "A stiffer cradle built to carry bags and a fairing two-up.",
@@ -950,7 +956,7 @@
 					0.08
 				],
 				"exhaust": "stubby",
-				"swingarm": "braced"
+				"swingarm": "single"
 			},
 			"lightweight": true,
 			"name": "Red perimeter frame",
@@ -1003,6 +1009,21 @@
 			"material": "carbon",
 			"name": "White carbon race frame",
 			"description": "Carbon monocoque in white lacquer.",
+			"geo": {
+				"arm": 0.6,
+				"pivot_y": 0.2,
+				"engine_at": 0.45,
+				"engine_y": 0.1,
+				"seat_drop": 0.1,
+				"tail_back": 0.02,
+				"tail_y": 0.04,
+				"peg": [
+					0.12,
+					0.08
+				],
+				"exhaust": "stubby",
+				"swingarm": "single"
+			},
 			"color": [
 				0.93,
 				0.93,
@@ -1030,7 +1051,7 @@
 				"engine_y": 0.1,
 				"seat_drop": 0.1,
 				"tail_back": 0.02,
-				"tail_y": 0.06,
+				"tail_y": 0.04,
 				"peg": [
 					0.12,
 					0.08
@@ -1206,7 +1227,8 @@
 					-0.44
 				],
 				"exhaust": "shotgun",
-				"swingarm": "box"
+				"swingarm": "box",
+				"tank_slope": 6.0
 			},
 			"name": "Touring double cradle",
 			"description": "Upright touring cradle.",
@@ -5797,7 +5819,12 @@
 				0.05
 			],
 			"look": {
-				"shape": "teardrop",
+				"shape": "bonnie",
+				"scale": [
+					0.92,
+					0.95,
+					0.9
+				],
 				"paint": "two_tone",
 				"accent": [
 					0.9,
@@ -5827,6 +5854,11 @@
 			],
 			"look": {
 				"shape": "slab",
+				"scale": [
+					0.9,
+					0.92,
+					0.8
+				],
 				"paint": "pin",
 				"accent": [
 					0.82,
@@ -5854,7 +5886,12 @@
 				0.89
 			],
 			"look": {
-				"shape": "teardrop",
+				"shape": "bonnie",
+				"scale": [
+					0.9,
+					0.95,
+					0.88
+				],
 				"paint": "band",
 				"accent": [
 					0.04,
@@ -5883,6 +5920,11 @@
 			],
 			"look": {
 				"shape": "slab",
+				"scale": [
+					0.92,
+					0.9,
+					0.78
+				],
 				"console": true,
 				"paint": "pin",
 				"accent": [
@@ -6257,6 +6299,11 @@
 			],
 			"look": {
 				"shape": "fatbob",
+				"scale": [
+					0.95,
+					0.88,
+					0.8
+				],
 				"console": true,
 				"cap": "twin",
 				"badge": "wing"
@@ -6281,6 +6328,11 @@
 			],
 			"look": {
 				"shape": "fatbob",
+				"scale": [
+					0.95,
+					0.88,
+					0.8
+				],
 				"paint": "scallop",
 				"accent": [
 					0.95,
@@ -6309,6 +6361,11 @@
 			],
 			"look": {
 				"shape": "fatbob",
+				"scale": [
+					0.95,
+					0.88,
+					0.8
+				],
 				"paint": "two_tone",
 				"accent": [
 					0.93,
@@ -6338,6 +6395,11 @@
 			],
 			"look": {
 				"shape": "sportster",
+				"scale": [
+					1.12,
+					1.15,
+					0.95
+				],
 				"paint": "pin",
 				"accent": [
 					0.28,
@@ -6365,11 +6427,11 @@
 				0.13
 			],
 			"look": {
-				"shape": "teardrop",
+				"shape": "bonnie",
 				"scale": [
-					0.9,
-					0.95,
-					1.0
+					0.85,
+					0.92,
+					0.85
 				],
 				"paint": "two_tone",
 				"accent": [
@@ -6400,6 +6462,11 @@
 			],
 			"look": {
 				"shape": "slab",
+				"scale": [
+					0.88,
+					0.92,
+					0.8
+				],
 				"paint": "racing",
 				"accent": [
 					0.04,
@@ -6453,7 +6520,12 @@
 				0.14
 			],
 			"look": {
-				"shape": "teardrop",
+				"shape": "bonnie",
+				"scale": [
+					0.88,
+					0.92,
+					0.85
+				],
 				"paint": "band",
 				"accent": [
 					0.9,
@@ -6576,6 +6648,8 @@
 				0.04
 			],
 			"look": {
+				"shape": "sm",
+				"shrouds": true,
 				"paint": "two_tone",
 				"accent": [
 					0.04,
@@ -6602,6 +6676,8 @@
 				0.92
 			],
 			"look": {
+				"shape": "sm",
+				"shrouds": true,
 				"paint": "racing",
 				"accent": [
 					0.72,
@@ -6611,8 +6687,7 @@
 				"badge": "none"
 			},
 			"styles": [
-				"supermoto",
-				"mx"
+				"supermoto"
 			],
 			"pack": "supermoto",
 			"price": 265
@@ -6629,6 +6704,8 @@
 				0.08
 			],
 			"look": {
+				"shape": "sm",
+				"shrouds": true,
 				"paint": "racing",
 				"accent": [
 					0.93,
@@ -6638,8 +6715,7 @@
 				"badge": "none"
 			},
 			"styles": [
-				"supermoto",
-				"mx"
+				"supermoto"
 			],
 			"pack": "supermoto",
 			"price": 265
@@ -6689,11 +6765,11 @@
 				0.92
 			],
 			"look": {
-				"shape": "touring",
+				"shape": "adv",
 				"scale": [
 					1.0,
-					1.08,
-					0.92
+					0.95,
+					0.85
 				],
 				"paint": "racing",
 				"accent": [
@@ -6721,6 +6797,7 @@
 				0.04
 			],
 			"look": {
+				"shape": "adv",
 				"paint": "two_tone",
 				"accent": [
 					0.04,
@@ -6747,6 +6824,7 @@
 				0.4
 			],
 			"look": {
+				"shape": "adv",
 				"paint": "band",
 				"accent": [
 					0.04,
@@ -6756,8 +6834,7 @@
 				"badge": "none"
 			},
 			"styles": [
-				"adventure",
-				"scrambler"
+				"adventure"
 			],
 			"pack": "adventure",
 			"price": 265
@@ -6774,6 +6851,7 @@
 				0.8
 			],
 			"look": {
+				"shape": "adv",
 				"cap": "flush",
 				"badge": "none"
 			},
@@ -16024,7 +16102,7 @@
 			"type": "Frame-mounted, upper",
 			"style": "half",
 			"cda": -0.05,
-			"screen": 0.3,
+			"screen": 0.32,
 			"frame_mount": true,
 			"name": "Rally tower fairing",
 			"description": "Tall narrow rally fairing with a big screen.",
@@ -16034,7 +16112,8 @@
 				0.92
 			],
 			"look": {
-				"wide": 0.85,
+				"shape": "adventure",
+				"wide": 0.9,
 				"tall": 1.15,
 				"accent": [
 					0.08,
@@ -16044,6 +16123,99 @@
 			},
 			"styles": [
 				"adventure"
+			],
+			"pack": "adventure",
+			"price": 360
+		},
+		"adv_beak_red": {
+			"mass": 4.5,
+			"type": "Frame-mounted, upper",
+			"style": "half",
+			"cda": -0.05,
+			"screen": 0.3,
+			"frame_mount": true,
+			"name": "Beak-nosed adventure fairing, red",
+			"description": "Creased red half fairing with twin LED eyes and a tall screen, Multistrada style.",
+			"color": [
+				0.72,
+				0.07,
+				0.05
+			],
+			"look": {
+				"shape": "adventure",
+				"wide": 1.05,
+				"accent": [
+					0.93,
+					0.93,
+					0.92
+				]
+			},
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"pack": "adventure",
+			"price": 390
+		},
+		"adv_beak_grey": {
+			"mass": 4.5,
+			"type": "Frame-mounted, upper",
+			"style": "half",
+			"cda": -0.05,
+			"screen": 0.34,
+			"frame_mount": true,
+			"name": "Expedition fairing, grey and blue",
+			"description": "Angular grey fairing with blue flashes and a big screen, GS style.",
+			"color": [
+				0.3,
+				0.3,
+				0.32
+			],
+			"look": {
+				"shape": "adventure",
+				"wide": 1.1,
+				"tall": 1.05,
+				"accent": [
+					0.08,
+					0.22,
+					0.62
+				]
+			},
+			"styles": [
+				"adventure",
+				"roader"
+			],
+			"pack": "adventure",
+			"price": 390
+		},
+		"adv_tracer_black": {
+			"mass": 4.5,
+			"type": "Frame-mounted, upper",
+			"style": "half",
+			"cda": -0.05,
+			"screen": 0.26,
+			"frame_mount": true,
+			"name": "Sport adventure fairing, black",
+			"description": "Sharp black fairing with a short screen, Tracer style.",
+			"color": [
+				0.04,
+				0.04,
+				0.045
+			],
+			"look": {
+				"shape": "adventure",
+				"wide": 1.0,
+				"tall": 0.92,
+				"accent": [
+					0.35,
+					0.6,
+					0.85
+				]
+			},
+			"styles": [
+				"adventure",
+				"roader",
+				"sport"
 			],
 			"pack": "adventure",
 			"price": 360
@@ -16068,7 +16240,8 @@
 					0.93,
 					0.93,
 					0.92
-				]
+				],
+				"n": 2.6
 			},
 			"styles": [
 				"sport"
@@ -16085,7 +16258,7 @@
 			"frame_mount": true,
 			"material": "mixed",
 			"name": "Full sport fairing, blue",
-			"description": "Blue full fairing with white stripe and roundels.",
+			"description": "Blue full fairing with white stripe and winglets.",
 			"color": [
 				0.08,
 				0.22,
@@ -16097,11 +16270,42 @@
 					0.93,
 					0.92
 				],
-				"roundel": true
+				"n": 2.5,
+				"wings": 1
 			},
 			"styles": [
 				"sport",
 				"race"
+			],
+			"pack": "sport",
+			"price": 360
+		},
+		"sport_grey_winged": {
+			"mass": 6.5,
+			"type": "Fibreglass, full",
+			"style": "race",
+			"cda": -0.09,
+			"screen": 0.16,
+			"frame_mount": true,
+			"material": "mixed",
+			"name": "Winged sport fairing, grey",
+			"description": "Grey and red full fairing with a winglet a side.",
+			"color": [
+				0.3,
+				0.3,
+				0.32
+			],
+			"look": {
+				"accent": [
+					0.72,
+					0.07,
+					0.05
+				],
+				"n": 2.4,
+				"wings": 1
+			},
+			"styles": [
+				"sport"
 			],
 			"pack": "sport",
 			"price": 360
@@ -16137,12 +16341,12 @@
 			"type": "Carbon fibre, full",
 			"style": "race",
 			"cda": -0.095,
-			"screen": 0.16,
+			"screen": 0.1,
 			"frame_mount": true,
 			"material": "carbon",
 			"lightweight": true,
 			"name": "White race fairing, red stripe",
-			"description": "White race fairing with a red stripe and roundels.",
+			"description": "White race fairing with a red stripe, winglets and no lamps.",
 			"color": [
 				0.93,
 				0.93,
@@ -16154,7 +16358,11 @@
 					0.07,
 					0.05
 				],
-				"roundel": true
+				"roundel": true,
+				"lamps": false,
+				"wings": 2,
+				"tall": 0.8,
+				"n": 2.3
 			},
 			"styles": [
 				"race"
@@ -16167,11 +16375,11 @@
 			"type": "Fibreglass, full",
 			"style": "race",
 			"cda": -0.09,
-			"screen": 0.16,
+			"screen": 0.1,
 			"frame_mount": true,
 			"material": "mixed",
 			"name": "Yellow race fairing",
-			"description": "Yellow race fairing with black stripe.",
+			"description": "Yellow race fairing with black stripe, winglets and no lamps.",
 			"color": [
 				0.95,
 				0.74,
@@ -16183,13 +16391,50 @@
 					0.04,
 					0.045
 				],
-				"roundel": true
+				"roundel": true,
+				"lamps": false,
+				"wings": 2,
+				"tall": 0.8,
+				"n": 2.3
 			},
 			"styles": [
 				"race"
 			],
 			"pack": "race",
 			"price": 360
+		},
+		"race_carbon_winged": {
+			"mass": 3.2,
+			"type": "Carbon fibre, full",
+			"style": "race",
+			"cda": -0.095,
+			"screen": 0.09,
+			"frame_mount": true,
+			"material": "carbon",
+			"lightweight": true,
+			"name": "Carbon works fairing",
+			"description": "Bare carbon MotoGP-style fairing, stacked winglets, blank nose.",
+			"color": [
+				0.05,
+				0.05,
+				0.06
+			],
+			"look": {
+				"accent": [
+					0.92,
+					0.38,
+					0.04
+				],
+				"lamps": false,
+				"wings": 2,
+				"tall": 0.78,
+				"n": 2.3
+			},
+			"styles": [
+				"race"
+			],
+			"pack": "race",
+			"price": 420
 		},
 		"race_dustbin": {
 			"mass": 6.5,
@@ -17761,8 +18006,7 @@
 			],
 			"styles": [
 				"cafe",
-				"bobber",
-				"scrambler"
+				"bobber"
 			],
 			"material": "plastic"
 		},
@@ -17862,12 +18106,13 @@
 			"price": 110
 		},
 		"scrambler_oval_panels": {
-			"mass": 0.8,
-			"type": "Plastic, oval number",
-			"style": "oval",
-			"material": "plastic",
-			"name": "Oval number panels, white",
-			"description": "White oval number panels on the sides.",
+			"mass": 1.2,
+			"type": "Steel, painted",
+			"style": "triangle",
+			"paint_match": true,
+			"material": "metal",
+			"name": "Scrambler side covers, white",
+			"description": "Plain white side covers with a little badge.",
 			"color": [
 				0.93,
 				0.93,
@@ -17875,7 +18120,7 @@
 			],
 			"styles": [
 				"scrambler",
-				"supermoto"
+				"classic"
 			],
 			"pack": "scrambler",
 			"price": 110
@@ -18452,8 +18697,7 @@
 			],
 			"styles": [
 				"supermoto",
-				"mx",
-				"scrambler"
+				"mx"
 			],
 			"material": "plastic"
 		},
@@ -18486,9 +18730,7 @@
 				0.9
 			],
 			"styles": [
-				"cafe",
-				"race",
-				"classic"
+				"cafe"
 			],
 			"material": "metal"
 		},
@@ -18504,7 +18746,6 @@
 				0.16
 			],
 			"styles": [
-				"scrambler",
 				"supermoto"
 			],
 			"material": "plastic"
@@ -18522,8 +18763,7 @@
 				0.74
 			],
 			"styles": [
-				"cafe",
-				"classic"
+				"cafe"
 			],
 			"pack": "cafe",
 			"price": 85
@@ -18541,10 +18781,9 @@
 				0.08
 			],
 			"styles": [
-				"scrambler",
 				"supermoto"
 			],
-			"pack": "scrambler",
+			"pack": "supermoto",
 			"price": 85
 		},
 		"mx_yellow_boards": {
@@ -18615,9 +18854,9 @@
 				0.92
 			],
 			"styles": [
-				"race"
+				"supermoto"
 			],
-			"pack": "race",
+			"pack": "supermoto",
 			"price": 85
 		}
 	}
