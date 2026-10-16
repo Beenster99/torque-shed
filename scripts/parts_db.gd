@@ -9,7 +9,7 @@ const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc",
 	"saddle", "handlebars", "dashboard", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling",
 	"gearbox", "exhaust", "final_drive", "chain", "side_stand", "centre_stand", "headlight", "horn", "ecu",
 	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels",
-	"rearsets", "guards", "number_boards"]
+	"rearsets", "guards", "number_boards", "swingarm"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
 const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube"]
 const KIND_NAMES := {
@@ -22,20 +22,22 @@ const KIND_NAMES := {
 	"headlight": "Headlight", "horn": "Horn", "ecu": "ECU", "panniers": "Panniers", "top_box": "Top box",
 	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "front_mudguard": "Front mudguard", "indicators": "Indicators",
 	"side_panels": "Side panels", "rearsets": "Footpegs and rearsets", "guards": "Engine guards", "number_boards": "Number boards",
-	"petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
+	"swingarm": "Swingarm", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
 }
 ## Slots on the bike itself.
 const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors",
-	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards"]
+	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm"]
 ## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
 const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box",
-	"fog_lights", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards"]
-## The bolt-on bits that finish a bike in its style (indicators, side panels, rearsets, guards and
-## number boards). Bikes saved before they existed get the slots empty.
-const FILLER_SLOTS: Array[String] = ["indicators", "side_panels", "rearsets", "guards", "number_boards"]
+	"fog_lights", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards",
+	"swingarm"]
+## The bolt-on bits that finish a bike in its style (indicators, side panels, rearsets, guards,
+## number boards and a swingarm of its own in place of the frame's). Bikes saved before they
+## existed get the slots empty.
+const FILLER_SLOTS: Array[String] = ["indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm"]
 ## Parts low down on a bike that you have to crouch to reach while it's in the frame.
 const LOW_SLOTS: Array[String] = ["side_stand", "centre_stand", "oil_filter", "final_drive", "chain", "rearsets", "guards"]
 ## Slots on an engine block. They travel with the block when it comes out of the frame.
@@ -46,7 +48,7 @@ const SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_whe
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox",
-	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards"]
+	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm"]
 const SLOT_KIND := {
 	"frame": "frame", "fork": "fork", "shock": "shock", "front_wheel": "wheel", "rear_wheel": "wheel",
 	"front_tyre": "tyre", "rear_tyre": "tyre", "front_disc": "disc", "rear_disc": "disc",
@@ -58,7 +60,7 @@ const SLOT_KIND := {
 	"side_stand": "side_stand", "centre_stand": "centre_stand", "headlight": "headlight", "horn": "horn", "ecu": "ecu",
 	"panniers": "panniers", "top_box": "top_box", "fog_lights": "fog_lights", "tail": "tail", "fairing": "fairing",
 	"mirrors": "mirrors", "front_mudguard": "front_mudguard", "indicators": "indicators", "side_panels": "side_panels",
-	"rearsets": "rearsets", "guards": "guards", "number_boards": "number_boards",
+	"rearsets": "rearsets", "guards": "guards", "number_boards": "number_boards", "swingarm": "swingarm",
 }
 const DEFAULT_BUILD := {
 	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17_front",
@@ -71,7 +73,7 @@ const DEFAULT_BUILD := {
 	"cooling": "oil_cooler", "gearbox": "five_wide", "side_stand": "stamped_side", "centre_stand": "none",
 	"headlight": "round_7", "horn": "disc_horn", "ecu": "none", "panniers": "none", "top_box": "none", "fog_lights": "none",
 	"tail": "classic_mudguard", "fairing": "none", "mirrors": "none", "front_mudguard": "chrome_classic", "indicators": "none",
-	"side_panels": "none", "rearsets": "none", "guards": "none", "number_boards": "none",
+	"side_panels": "none", "rearsets": "none", "guards": "none", "number_boards": "none", "swingarm": "none",
 }
 ## What each slot bolts onto. A part can only go on once its mounts are fitted, and has to
 ## come off before any of them can. Engine slots mount on the block ("engine").
@@ -96,6 +98,8 @@ const MOUNTS := {
 	"front_mudguard": ["fork"],
 	# The style bits all bolt to the frame (rearsets replace the frame's own pegs).
 	"indicators": ["frame"], "side_panels": ["frame"], "rearsets": ["frame"], "guards": ["frame"], "number_boards": ["frame"],
+	# A swingarm of its own pivots in the frame in place of the one the frame comes with.
+	"swingarm": ["frame"],
 }
 ## Which fluid each part holds, and how much (litres; the tank and engine work theirs out).
 const FLUID_HOLDERS := {"tank": "petrol", "engine": "oil", "master": "brake_fluid"}
@@ -115,7 +119,7 @@ const KIND_MATERIAL := {
 	"horn": "metal", "ecu": "electronics", "panniers": "fabric", "top_box": "plastic", "fog_lights": "electronics",
 	"tail": "plastic", "fairing": "plastic", "mirrors": "mixed", "front_mudguard": "plastic",
 	"indicators": "electronics", "side_panels": "plastic", "rearsets": "metal", "guards": "metal", "number_boards": "plastic",
-	"petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
+	"swingarm": "metal", "petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
 }
 const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
 	"mixed": "Mixed materials", "electronics": "Electronics", "fabric": "Fabric", "leather": "Leather", "wood": "Wood"}
@@ -363,7 +367,7 @@ func spec_line(id: String) -> String:
 		"front_mudguard":
 			bits = [p["type"], "keeps off %d%% of the spray" % roundi(float(p.get("cover", 0.7)) * 100.0),
 				"mounts high under the yoke" if mudguard_high(id) else "mounts low on the fork legs"]
-		"indicators", "side_panels", "guards", "number_boards":
+		"indicators", "side_panels", "guards", "number_boards", "swingarm":
 			bits = [p["type"]]
 		"rearsets":
 			bits = [p["type"], peg_text(id)]
@@ -583,7 +587,7 @@ const STYLE_WEIGHT := {"frame": 3.0, "tank": 2.0, "saddle": 2.0, "handlebars": 2
 	"fork": 1.5, "exhaust": 1.5, "front_mudguard": 1.5, "number_boards": 1.5, "front_wheel": 1.0, "rear_wheel": 1.0,
 	"headlight": 1.0, "panniers": 1.0, "side_panels": 1.0, "rearsets": 1.0, "guards": 1.0, "shock": 0.5,
 	"front_tyre": 0.5, "rear_tyre": 0.5, "mirrors": 0.5, "top_box": 0.5, "fog_lights": 0.5, "dashboard": 0.5,
-	"indicators": 0.5}
+	"indicators": 0.5, "swingarm": 1.0}
 ## With nothing fitted there, a slot still says something: no fairing is the naked look.
 const EMPTY_STYLES := {"fairing": ["classic", "cafe", "bobber", "chopper", "cruiser", "scrambler", "naked", "supermoto", "mx"]}
 ## How much of a bike has to agree on a style for it to be a proper one ("a proper bobber").

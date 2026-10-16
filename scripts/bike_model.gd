@@ -406,8 +406,20 @@ func _draw_frame(build: BikeBuild, zr: float) -> void:
 	_draw_swingarm(build, zr, frame_mat)
 
 
+## Which swingarm the bike has: its own (a swingarm part, see SWINGARM_TYPES) if one's fitted,
+## else the one its frame comes with ("box", "braced", "softail" or "single").
+func _arm_type() -> String:
+	var own := PartsDB.get_part(str(_build.parts.get("swingarm", "none"))) if _build else {}
+	if not own.is_empty() and is_fitted("swingarm"):
+		return str(own.get("arm", "box_section"))
+	return str(_frame_geo.get("swingarm", "box"))
+
+
 ## The swingarm, hung off the pivot: plain box arms, tall braced beams, or (on a softail) a
 ## triangulated rear end that looks rigid but moves as one with the shocks hidden underneath.
+## A swingarm part of its own replaces it: a deep box-section arm, a banana arm curving up over
+## the exhaust, a braced MX arm with its truss underneath and chain slider, a rigid hardtail rear
+## end, or a single-sided arm.
 func _draw_swingarm(build: BikeBuild, zr: float, frame_mat: Material) -> void:
 	_swingarm = Node3D.new()
 	_swingarm.position = _pivot
@@ -415,7 +427,16 @@ func _draw_swingarm(build: BikeBuild, zr: float, frame_mat: Material) -> void:
 	_arm_len = Vector3(0.0, 0.0, zr).distance_to(_pivot)
 	# The arms clear the back tyre and rim, however fat they are.
 	var arm_x := maxf(0.11, maxf(build.rear_tyre_width, rim_width_of(PartsDB.get_part(str(build.parts.get("rear_wheel", ""))))) * 0.5 + 0.035)
-	match str(_frame_geo.get("swingarm", "box")):
+	var kind := _arm_type()
+	var own := PartsDB.get_part(str(build.parts.get("swingarm", "none")))
+	if not own.is_empty() and is_fitted("swingarm"):
+		_current_slot = "swingarm"
+		var col: Array = own.get("color", [0.1, 0.1, 0.11])
+		frame_mat = _mat(Color(col[0], col[1], col[2]), float(own.get("metal", 0.6)), float(own.get("rough", 0.4)))
+		if _draw_own_swingarm(kind, arm_x, frame_mat):
+			_current_slot = "frame"
+			return
+	match kind:
 		"braced":
 			for side in [-1.0, 1.0]:
 				var x: float = arm_x * side
@@ -445,6 +466,7 @@ func _draw_swingarm(build: BikeBuild, zr: float, frame_mat: Material) -> void:
 				Vector3(arm_x - 0.02, 0.0, _arm_len), _swingarm)
 			nut.rotation.z = PI * 0.5
 			_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x + 0.03, 0.07, 0.05), frame_mat, _swingarm).position.x = -arm_x * 0.5
+			_current_slot = "frame"
 			return
 		"softail":
 			for side in [-1.0, 1.0]:
@@ -462,6 +484,78 @@ func _draw_swingarm(build: BikeBuild, zr: float, frame_mat: Material) -> void:
 			for side in [-1.0, 1.0]:
 				_box(Vector3(arm_x * side, 0.0, _arm_len * 0.5), Vector3(0.035, 0.07, _arm_len), frame_mat, _swingarm)
 	_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x * 2.0 + 0.02, 0.07, 0.05), frame_mat, _swingarm)
+	_current_slot = "frame"
+
+
+## The swingarm parts' own shapes (see _draw_swingarm). False for one drawn the frame's way.
+func _draw_own_swingarm(kind: String, arm_x: float, mat: Material) -> bool:
+	var dark := _mat(Color(0.05, 0.05, 0.06), 0.1, 0.7)
+	var steel := _mat(Color(0.75, 0.76, 0.78), 1.0, 0.25)
+	match kind:
+		"box_section":
+			# Deep, tapered box-section arms (an extrusion, welded at the pivot), with the axle
+			# in slotted end blocks and a chain adjuster bolt behind each.
+			for side in [-1.0, 1.0]:
+				var x: float = arm_x * side
+				var secs := []
+				for k in 7:
+					var f := k / 6.0
+					secs.append({"c": Vector3(x, 0.012 * sin(f * PI), lerpf(0.0, _arm_len - 0.02, f)), "w": 0.022,
+						"up": lerpf(0.055, 0.032, f), "down": lerpf(0.05, 0.03, f), "n": 7.0})
+				_shell(secs, mat, false, 0.0, TAU, _swingarm).name = "BoxArm"
+				_box(Vector3(x, 0.0, _arm_len), Vector3(0.05, 0.06, 0.09), mat, _swingarm)
+				_tube(Vector3(x, 0.0, _arm_len + 0.045), Vector3(x, 0.0, _arm_len + 0.075), 0.006, steel, Vector3.ONE, _swingarm)
+			_tube(Vector3(-arm_x, 0.0, _arm_len * 0.36), Vector3(arm_x, 0.0, _arm_len * 0.36), 0.016, mat, Vector3.ONE, _swingarm)
+		"banana":
+			# The banana arm (a two-stroke racer's, an RD's): the arms bow up in a long curve so
+			# the expansion chambers tuck in underneath, the right-hand one the most.
+			for side in [-1.0, 1.0]:
+				var x: float = arm_x * side
+				var bow := 0.11 if side > 0.0 else 0.07
+				var secs := []
+				for k in 9:
+					var f := k / 8.0
+					secs.append({"c": Vector3(x, bow * sin(pow(f, 0.85) * PI) * (1.0 - 0.25 * f), lerpf(0.0, _arm_len, f)), "w": 0.02,
+						"up": lerpf(0.045, 0.03, f), "down": lerpf(0.04, 0.028, f), "n": 4.0})
+				_shell(secs, mat, false, 0.0, TAU, _swingarm).name = "BananaArm"
+				_box(Vector3(x, 0.0, _arm_len), Vector3(0.04, 0.055, 0.075), mat, _swingarm)
+			_tube(Vector3(-arm_x, 0.06, _arm_len * 0.4), Vector3(arm_x, 0.08, _arm_len * 0.4), 0.014, mat, Vector3.ONE, _swingarm)
+		"braced_mx":
+			# A motocrosser's arm: tall alloy box arms with a truss braced underneath each one,
+			# a rubber chain slider over the front of the left arm and a chain guide at the back.
+			for side in [-1.0, 1.0]:
+				var x: float = arm_x * side
+				var secs := []
+				for k in 7:
+					var f := k / 6.0
+					secs.append({"c": Vector3(x, 0.0, lerpf(0.0, _arm_len - 0.02, f)), "w": 0.02,
+						"up": lerpf(0.05, 0.03, f), "down": lerpf(0.06, 0.03, f), "n": 6.0})
+				_shell(secs, mat, false, 0.0, TAU, _swingarm).name = "MxArm"
+				var low := [Vector3(x, -0.05, 0.06), Vector3(x, -0.1, _arm_len * 0.38), Vector3(x, -0.05, _arm_len * 0.78)]
+				_bend(low, 0.013, mat, _swingarm)
+				for f in [0.22, 0.42, 0.62]:
+					var y := -0.05 - 0.05 * sin(clampf(f / 0.78, 0.0, 1.0) * PI)
+					_tube(Vector3(x, -0.03, _arm_len * f), Vector3(x, y + 0.005, _arm_len * f), 0.007, mat, Vector3.ONE, _swingarm)
+				_box(Vector3(x, 0.0, _arm_len), Vector3(0.045, 0.06, 0.08), mat, _swingarm)
+			_box(Vector3(-arm_x, 0.04, _arm_len * 0.22), Vector3(0.03, 0.025, _arm_len * 0.4), dark, _swingarm).name = "ChainSlider"
+			_box(Vector3(-arm_x - 0.005, -0.07, _arm_len * 0.8), Vector3(0.03, 0.06, 0.12), dark, _swingarm).name = "ChainGuide"
+		"hardtail":
+			# No swingarm at all: a rigid rear end, chain stays straight back from the frame to
+			# the axle plates and seat stays up to the frame under the seat, bobber-style. The
+			# shocks hide (see _draw_shock), so it rides as a hardtail looks.
+			for side in [-1.0, 1.0]:
+				var x: float = arm_x * side
+				var axle := Vector3(x, 0.0, _arm_len)
+				var top := _to_arm(Vector3(0.1 * side, _seat_front.y - 0.02, _pivot.z + 0.05))
+				_tube(Vector3(0.09 * side, 0.0, 0.0), axle, 0.019, mat, Vector3.ONE, _swingarm)
+				_tube(axle, top, 0.018, mat, Vector3.ONE, _swingarm).name = "SeatStay"
+				_box(axle, Vector3(0.016, 0.075, 0.09), mat, _swingarm)   # the axle plate
+			var cross := _to_arm(Vector3(0.0, _seat_front.y - 0.06, _pivot.z + 0.12))
+			_tube(cross - Vector3(arm_x * 0.85, 0.0, 0.0), cross + Vector3(arm_x * 0.85, 0.0, 0.0), 0.013, mat, Vector3.ONE, _swingarm)
+		_:
+			return false
+	_box(Vector3(0.0, 0.0, 0.04), Vector3(arm_x * 2.0 + 0.02, 0.07, 0.05), mat, _swingarm)
+	return true
 
 
 ## A point in the model's space, at rest, as seen from the swingarm (whose +Z runs to the axle).
@@ -3652,7 +3746,7 @@ func _draw_shock() -> void:
 	if shock.get("layout", "mono") == "twin":
 		var gas: bool = _part_id() == "twin_shock_gas"
 		var spring_mat := _mat(col, 0.6, 0.3)
-		var softail := str(_frame_geo.get("swingarm", "")) == "softail"
+		var softail := _arm_type() in ["softail", "hardtail"]
 		for side in [-1.0, 1.0]:
 			if softail:
 				# A softail hides its shocks: they lie flat under the gearbox, between the frame

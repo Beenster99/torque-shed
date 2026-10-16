@@ -40,7 +40,7 @@ const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors", "sell
 const GROUPS := [
 	["Engine and drivetrain", ["engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox",
 		"exhaust", "ecu", "final_drive", "chain"]],
-	["Chassis", ["frame", "fork", "shock", "handlebars", "rearsets", "guards", "side_stand", "centre_stand"]],
+	["Chassis", ["frame", "fork", "shock", "swingarm", "handlebars", "rearsets", "guards", "side_stand", "centre_stand"]],
 	["Wheels and brakes", ["wheel", "tyre", "disc", "caliper", "pads", "master"]],
 	["Body and lights", ["tank", "saddle", "front_mudguard", "tail", "fairing", "mirrors", "dashboard", "headlight",
 		"fog_lights", "horn", "indicators", "side_panels", "number_boards"]],

@@ -10544,6 +10544,23 @@ func _test_filler_parts() -> void:
 		bare.build_from(BikeBuild.new())
 		check(bare.slot_bounds(slot).size == Vector3.ZERO, "with no %s fitted, nothing is drawn" % slot)
 		bare.free()
+	# A swingarm of its own replaces the frame's, in each of its shapes.
+	var arms := {}
+	for id in PartsDB.by_kind["swingarm"]:
+		var am := BikeModel.new()
+		add_child(am)
+		am.build_from(BikeBuild.new({"swingarm": id}))
+		arms[str(PartsDB.get_part(id)["arm"])] = true
+		check(am._arm_type() == str(PartsDB.get_part(id)["arm"]) and am.slot_bounds("swingarm").size.z > 0.3,
+			"%s hangs off the pivot as its own swingarm (%s)" % [id, str(am.slot_bounds("swingarm").size)])
+		am.free()
+	check(arms.has("box_section") and arms.has("banana") and arms.has("braced_mx") and arms.has("hardtail") and arms.has("single"),
+		"box-section, banana, braced MX, hardtail and single-sided swingarms (%s)" % str(arms.keys()))
+	var ht := BikeModel.new()
+	add_child(ht)
+	ht.build_from(BikeBuild.new({"swingarm": "hardtail_chrome"}))
+	check(ht.find_children("SeatStay*", "", true, false).size() == 2, "a hardtail rear end has its seat stays up to the frame")
+	ht.free()
 	# Rearsets move the rider's feet.
 	var stock := BikeModel.new()
 	add_child(stock)

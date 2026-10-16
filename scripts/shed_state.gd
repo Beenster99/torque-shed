@@ -55,7 +55,7 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
 	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6,
 	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2, "front_mudguard": 1.0, "indicators": 0.4, "side_panels": 0.4,
-	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5}
+	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8}
 ## Parts in the front wheel's spray. With no front mudguard they get this much more road dirt;
 ## a guard takes it back down by how much spray it stops (its "cover").
 const FRONT_SPRAY: Array[String] = ["fork", "engine", "cooling", "exhaust", "headlight", "horn", "fog_lights",

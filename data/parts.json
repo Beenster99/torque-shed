@@ -18891,5 +18891,209 @@
 			"pack": "supermoto",
 			"price": 85
 		}
+	},
+	"swingarm": {
+		"box_steel_black": {
+			"name": "Steel box-section swingarm",
+			"description": "Deep tapered box-section steel arms in black, with slotted axle blocks and bolt-up chain adjusters. Stiffer than the frame's flat bars.",
+			"mass": 6.8,
+			"type": "Box-section steel",
+			"arm": "box_section",
+			"color": [
+				0.07,
+				0.07,
+				0.08
+			],
+			"metal": 0.4,
+			"rough": 0.5,
+			"styles": [
+				"classic",
+				"naked",
+				"roader",
+				"tourer",
+				"cafe"
+			],
+			"material": "metal"
+		},
+		"box_alloy_polished": {
+			"name": "Polished alloy box-section arm",
+			"description": "A polished aluminium box-section arm, the classic upgrade for a café racer or a naked: lighter and stiffer, and it shines.",
+			"mass": 4.6,
+			"type": "Box-section aluminium",
+			"arm": "box_section",
+			"color": [
+				0.82,
+				0.83,
+				0.85
+			],
+			"metal": 1.0,
+			"rough": 0.18,
+			"styles": [
+				"cafe",
+				"naked",
+				"classic",
+				"sport"
+			],
+			"material": "metal"
+		},
+		"banana_steel": {
+			"name": "Banana swingarm",
+			"description": "Steel arms bowed up in a long curve so the exhaust can tuck in underneath, as on the two-stroke racers of the seventies.",
+			"mass": 6.2,
+			"type": "Curved steel",
+			"arm": "banana",
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"metal": 0.5,
+			"rough": 0.45,
+			"styles": [
+				"race",
+				"cafe",
+				"sport"
+			],
+			"material": "metal"
+		},
+		"banana_alloy_gold": {
+			"name": "Gold anodised banana arm",
+			"description": "A gold anodised alloy banana arm: the right-hand side curves high over the pipe. Light, stiff and loud to look at.",
+			"mass": 4.4,
+			"type": "Curved aluminium",
+			"arm": "banana",
+			"color": [
+				0.78,
+				0.6,
+				0.22
+			],
+			"metal": 0.9,
+			"rough": 0.3,
+			"styles": [
+				"race",
+				"sport",
+				"supermoto"
+			],
+			"material": "metal"
+		},
+		"braced_mx_alloy": {
+			"name": "Braced MX swingarm",
+			"description": "A tall alloy motocross arm with a truss braced underneath, a rubber chain slider and a chain guide. Built to take landings.",
+			"mass": 5.2,
+			"type": "Braced aluminium",
+			"arm": "braced_mx",
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"metal": 0.9,
+			"rough": 0.35,
+			"styles": [
+				"mx",
+				"supermoto",
+				"scrambler"
+			],
+			"material": "metal"
+		},
+		"braced_mx_black": {
+			"name": "Black braced enduro arm",
+			"description": "A black braced arm for an enduro or adventure bike: the truss under each side keeps it straight when it's loaded up off-road.",
+			"mass": 5.9,
+			"type": "Braced aluminium, black",
+			"arm": "braced_mx",
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			],
+			"metal": 0.5,
+			"rough": 0.5,
+			"styles": [
+				"adventure",
+				"mx",
+				"scrambler"
+			],
+			"material": "metal"
+		},
+		"hardtail_chrome": {
+			"name": "Chrome hardtail rear end",
+			"description": "No suspension at all: chromed chain stays and seat stays bolted rigid to the frame, for the low, hard look of a proper bobber or chopper.",
+			"mass": 5.5,
+			"type": "Rigid, chromed tube",
+			"arm": "hardtail",
+			"color": [
+				0.88,
+				0.89,
+				0.92
+			],
+			"metal": 1.0,
+			"rough": 0.08,
+			"styles": [
+				"bobber",
+				"chopper"
+			],
+			"material": "metal"
+		},
+		"hardtail_black": {
+			"name": "Black hardtail rear end",
+			"description": "A rigid rear triangle in satin black. The shocks are hidden away under the seat, so it looks like the old hardtails but rides a little kinder.",
+			"mass": 5.7,
+			"type": "Rigid steel tube",
+			"arm": "hardtail",
+			"color": [
+				0.05,
+				0.05,
+				0.06
+			],
+			"metal": 0.3,
+			"rough": 0.6,
+			"styles": [
+				"bobber",
+				"chopper",
+				"cruiser"
+			],
+			"material": "metal"
+		},
+		"single_sided_alloy": {
+			"name": "Single-sided alloy swingarm",
+			"description": "A deep cast alloy single-sided arm with the wheel on one big centre nut, the right-hand side of the wheel left bare. Quick wheel changes and that look.",
+			"mass": 6.0,
+			"type": "Single-sided cast aluminium",
+			"arm": "single",
+			"color": [
+				0.7,
+				0.71,
+				0.73
+			],
+			"metal": 0.9,
+			"rough": 0.35,
+			"styles": [
+				"sport",
+				"race",
+				"naked"
+			],
+			"material": "metal"
+		},
+		"single_sided_black": {
+			"name": "Black single-sided arm",
+			"description": "A black single-sided arm for a modern naked or a sports tourer: the whole rear wheel on show from the right.",
+			"mass": 6.3,
+			"type": "Single-sided cast aluminium, black",
+			"arm": "single",
+			"color": [
+				0.06,
+				0.06,
+				0.07
+			],
+			"metal": 0.5,
+			"rough": 0.45,
+			"styles": [
+				"naked",
+				"sport",
+				"roader"
+			],
+			"material": "metal"
+		}
 	}
 }

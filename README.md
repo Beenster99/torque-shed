@@ -2,7 +2,7 @@
 
 A co-op motorbike restoration game: walk round the shed with friends, strip rusty project bikes down, clean and restore every part, fit better ones, then ride them out of the roller door.
 
-Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 47 parts from 41 kinds (stands, headlight, horn, ECU, panniers, top box, fog lights, fairing, mirrors, front mudguard, indicators, side panels, rearsets, engine guards and number boards are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree, and a wage; the business buys parts and project bikes, sells parts and bikes, and can borrow from the bank (see Money below), and the garage's money buys upgrades to the shed itself.
+Current milestone, **The Shed**: a snug first-person workshop with four bike bays, a workbench, a wheeled engine stand, a parts computer that orders parts and equipment, a parts washer, a repair bench, posters, seats and TVs to buy, wall dashboards for every bike and the crew, a radio everyone hears, a wash bay with a pressure washer beside the shed, and the riding map outside. Bikes are made of 48 parts from 42 kinds (stands, headlight, horn, ECU, panniers, top box, fog lights, fairing, mirrors, front mudguard, indicators, side panels, rearsets, engine guards, number boards and a swingarm of its own are optional), at least 5 of each and 16 wheels, plus petrol, oil, brake fluid and chain lube, and every part has its own colour, rust, dirt and wear. Everything you do earns XP towards levels, tool upgrades and a skills tree, and a wage; the business buys parts and project bikes, sells parts and bikes, and can borrow from the bank (see Money below), and the garage's money buys upgrades to the shed itself.
 
 ### What a bike is made of
 
@@ -107,7 +107,7 @@ All three are ordinary parts: order them at the parts computer (Bike aisle), cle
 
 Every part you can see on a bike says which **styles** it suits (classic, cafe racer, bobber, chopper, cruiser, scrambler, adventure, tall roader, tourer, sports, race, naked, supermoto, MX); the parts computer lists them under "Suits". Put the parts together and the bike has a style of its own: the frame says most, then the tank, seat, bars, tail and fairing, then the fork, exhaust, front mudguard and the rest. When most of the bike agrees (70% or more) it's **a proper** one ("A proper bobber"); less, and it's "mostly" one or a mix. The showroom computer shows each bike's style, and a proper one is worth more to a buyer. Customers can ask for a style (cafe racer, scrambler, tourer, sports bike, bobber, chopper, cruiser, adventure, MX or supermoto): the job counts it from the marks on its card, or from the bike being a proper one of the style all over.
 
-Five optional kinds finish a bike in its style, each bolted to the frame, five of each:
+Six optional kinds finish a bike in its style, each bolted to the frame, five or more of each:
 
 | Kind | Models |
 |---|---|
@@ -116,6 +116,7 @@ Five optional kinds finish a bike in its style, each bolted to the frame, five o
 | Footpegs and rearsets | rubber road pegs, billet alloy rearsets (feet up and back), cleated MX pegs, forward controls (feet out in front), footboards. Rearsets move where the rider's feet go |
 | Engine guards | chrome engine bars, an adventure crash cage, an alloy bash plate, frame sliders, an MX skid plate |
 | Number boards | MX front plate and side boards, a front race plate, radiator shrouds, oval club-racer plates, flat-track side boards; each carries the bike's race number |
+| Swingarm | in place of the one the frame comes with: steel or polished alloy **box-section** arms, steel or gold anodised **banana** arms bowed up over the exhaust, alloy or black **braced MX** arms with the truss under each side, a chain slider and guide, chrome or black **hardtail** rear ends (rigid stays, the shocks hidden away) and alloy or black **single-sided** arms. Take it off and the frame's own arm goes back on when the bike is rebuilt |
 
 #### Style packs
 

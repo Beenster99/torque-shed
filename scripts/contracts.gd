@@ -97,7 +97,7 @@ const EST_COST := {"frame": 900, "fork": 450, "shock": 300, "wheel": 280, "tyre"
 	"head": 400, "fuel": 260, "air_filter": 40, "oil_filter": 15, "spark_plugs": 20, "cooling": 180, "gearbox": 500,
 	"exhaust": 380, "final_drive": 90, "chain": 70, "side_stand": 40, "centre_stand": 70, "headlight": 90,
 	"horn": 25, "ecu": 350, "panniers": 220, "top_box": 120, "fog_lights": 110, "tail": 140, "fairing": 420, "mirrors": 45,
-	"front_mudguard": 90, "indicators": 60, "side_panels": 90, "rearsets": 160, "guards": 180, "number_boards": 70}
+	"front_mudguard": 90, "indicators": 60, "side_panels": 90, "rearsets": 160, "guards": 180, "number_boards": 70, "swingarm": 240}
 const FIRST_NAMES := ["Dave", "Sue", "Raj", "Kim", "Gary", "Priya", "Tom", "Jo", "Mick", "Aisha", "Steve", "Lena",
 	"Barry", "Chloe", "Nigel", "Fatima", "Pete", "Grace", "Wayne", "Mei", "Colin", "Zara", "Ian", "Bev"]
 const LAST_NAMES := ["Smith", "Patel", "Jones", "O'Brien", "Taylor", "Khan", "Walsh", "Brown", "Nguyen", "Evans",
