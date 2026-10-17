@@ -708,3 +708,95 @@ func test_model() -> void:
 	var tm := tr.model.find_children("*", "MeshInstance3D", false, false)
 	check(tm.size() <= 3 and tr.model.get_node_or_null("Merged") != null, "the trailer's fixed parts are one mesh (%d left)" % tm.size())
 	tr.free()
+
+
+## A real press and release of an action through the viewport, as a key would send it.
+func _press(action: String) -> void:
+	for pressed in [true, false]:
+		var ev := InputEventAction.new()
+		ev.action = action
+		ev.pressed = pressed
+		t.get_viewport().push_input(ev)
+
+
+## Simon's 17 October round: the truck starts, reverses and lights up like the bikes. You get in
+## with the engine off and start it on I (the starter turning it over first); L works the
+## headlamps through off, dipped and main beam, real lights on the road; Q at a standstill puts
+## the automatic in reverse, where W backs it up and the reversing lamps light, and E is drive
+## again; the dash in the corner shows the gear; and the crew see the lamps, the brake lamps and
+## the starter through the network snapshot.
+func test_controls() -> void:
+	var main := await _main_with_rig()
+	var rv: RecoveryView = main.recovery
+	Settings.auto_shift = true
+	Shed.request({"a": "recovery_enter"})
+	await _ticks(10)
+	var car := rv.car
+	check(rv.driving and not car.engine_on and main.hud.car == car, "you get in with the engine off, and the HUD shows the truck's dash")
+	Input.action_press("throttle")
+	await _ticks(60)
+	Input.action_release("throttle")
+	check(absf(car.speed) < 0.2, "with the engine off the throttle does nothing (%.2f m/s)" % car.speed)
+	_press("ignition")
+	await _ticks(20)
+	check(car.is_starting() and not car.engine_on and rv.audio.cranking, "I turns it over on the starter (the starter sound plays)")
+	await _ticks(Engine.physics_ticks_per_second * 1)
+	check(car.engine_on and car.rpm > Car.IDLE_RPM * 0.8, "then it catches and idles (%.0f rpm)" % car.rpm)
+	# The headlamps.
+	var hl := car._head_lights[0] as SpotLight3D
+	check(car.beam == 1 and hl.visible, "the headlamps come on dipped with the engine, as a bike's do")
+	var dipped := hl.spot_range
+	_press("headlight")
+	await _ticks(2)
+	check(car.beam == 2 and hl.visible and hl.spot_range > dipped * 1.5 and hl.rotation.x > deg_to_rad(-3.0),
+		"L: main beam, reaching further up the road (%.0f m, dipped %.0f m)" % [hl.spot_range, dipped])
+	_press("headlight")
+	await _ticks(2)
+	check(car.beam == 0 and not hl.visible, "L again: off")
+	_press("headlight")
+	await _ticks(2)
+	check(car.beam == 1 and hl.visible and hl.light_projector != null, "and round to dipped, a soft-edged pool like the bikes'")
+	# Reverse on the lever.
+	_press("shift_down")
+	await _ticks(2)
+	check(car.gear == -1 and car.reverse_selected and not car.pedals_swapped(), "Q at a standstill: reverse")
+	check(car._reverse_mat.emission_energy_multiplier > 0.0, "the reversing lamps light")
+	Input.action_press("throttle")
+	await _ticks(Engine.physics_ticks_per_second * 2)
+	check(car.gear == -1 and car.speed < -0.8, "W backs it up, staying in reverse (%.1f m/s)" % car.speed)
+	Input.action_release("throttle")
+	Input.action_press("front_brake")
+	await _ticks(10)
+	check(car.braking and car._brake_mat.emission_energy_multiplier > 2.0, "S brakes it, the brake lamps bright")
+	# What the crew see: another truck shown from this one's snapshot.
+	var other := Car.new()
+	t.add_child(other)
+	other.freeze = true
+	other.set_net_state(car.get_net_state())
+	other._update_model(0.0)
+	check(other.gear == -1 and other.braking and other.beam == 1 and (other._head_lights[0] as SpotLight3D).visible
+		and other._reverse_mat.emission_energy_multiplier > 0.0 and other._brake_mat.emission_energy_multiplier > 2.0,
+		"the crew see the reverse, brake and headlamps")
+	await _ticks(Engine.physics_ticks_per_second * 2)
+	Input.action_release("front_brake")
+	_press("shift_up")
+	await _ticks(2)
+	check(car.gear == 1 and not car.reverse_selected, "E: back in drive")
+	# Holding the brake at a standstill still finds reverse, the brake pedal backing it up.
+	Input.action_press("front_brake")
+	await _ticks(Engine.physics_ticks_per_second * 1)
+	check(car.gear == -1 and car.pedals_swapped(), "holding S at a standstill finds reverse too")
+	Input.action_release("front_brake")
+	# Engine off on the key; the crew hear the starter when it's turned over again.
+	_press("ignition")
+	await _ticks(5)
+	check(not car.engine_on and not hl.visible, "I again: engine off, and the lamps go out")
+	car.start_engine()
+	other.set_net_state(car.get_net_state())
+	check(other.is_starting() and not other.engine_on, "the crew's copy knows the starter is turning")
+	other.queue_free()
+	rv.stop_driving()
+	check(main.hud.car == null, "out of the truck, the dash goes")
+	main.queue_free()
+	await t.get_tree().process_frame
+	Shed.stop()

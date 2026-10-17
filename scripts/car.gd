@@ -5,13 +5,16 @@ extends RigidBody3D
 ## the bikes' Magic Formula tyres), a 2.4 litre turbo diesel with its torque curve, a six-speed
 ## gearbox (automatic, or manual with the auto-shift setting off) and reverse, rack steering with
 ## Ackermann geometry that tightens up with speed, ABS brakes biased to the front, a handbrake on
-## the back wheels, and rear-wheel drive through an open differential.
+## the back wheels, and rear-wheel drive through an open differential. You get in with the engine
+## off and start it on the key (I, as on the bikes); the headlamps switch through off, dipped and
+## main beam (L), and light the road ahead at night.
 ##
 ## Local axes: forward is -Z, up is +Y, right is +X. The body's origin is on the ground under the
 ## middle of the truck when it sits on its springs. Frozen, it's a parked truck (or another
 ## player's, moved by their network state); unfrozen, the local driver's.
 
 signal gear_changed(gear: int)
+signal engine_changed(running: bool)
 
 const G := 9.81
 const MASS := 1950.0
@@ -48,6 +51,9 @@ const STEER_RATE := 1.4         # rad/s at the road wheels
 const CDA := 1.4                # drag area, m^2: a pickup is a brick
 const EYE := Vector3(0.4, 1.58, -0.2)   # the driver's eyes (right-hand drive)
 const STEER_RATIO := 16.0       # steering wheel turns to road wheel angle
+const START_TIME := 0.9         # seconds on the starter before the diesel catches
+## The headlamp switch's stops, as on the bikes (but no fog stop: the fog lamps ride with dipped).
+const BEAM_NAMES := ["off", "dipped beam", "main beam"]
 
 var throttle := 0.0
 var brake := 0.0
@@ -55,8 +61,14 @@ var handbrake := 0.0
 var steer_input := 0.0          # -1 left .. 1 right
 var auto_shift := true
 var controls_enabled := true
-var engine_on := true
+var engine_on := true            # tests drive it running; you get in with it off (RecoveryView)
 var horn := false
+var beam := 1                    # headlamp switch: 0 off, 1 dipped, 2 main beam
+## Reverse picked with the gear lever (shift down at a standstill): the pedals stay where they
+## are, the throttle backing it up. Reverse the automatic finds itself, holding the brake at a
+## standstill, swaps them instead, so the brake pedal backs you up.
+var reverse_selected := false
+var braking := false             # the brake lamps' switch, worked out each tick (sent to the crew)
 
 var speed := 0.0                # forward speed, m/s
 var rpm := IDLE_RPM
@@ -67,6 +79,7 @@ var model: Node3D
 var _shift_timer := 0.0
 var _since_shift := 0.0
 var _rev_hold := 0.0
+var _starting := 0.0
 var _wheel_nodes: Array = []
 var _steering_wheel: Node3D
 var _head_lights: Array = []
@@ -124,6 +137,7 @@ func place(xf: Transform3D) -> void:
 	angular_velocity = Vector3.ZERO
 	steer = 0.0
 	gear = 1
+	reverse_selected = false
 	for w in wheels:
 		w["omega"] = 0.0
 		w["sy"] = 0.0
@@ -169,17 +183,59 @@ func shift_up() -> void:
 	if gear < GEARS.size():
 		if gear < 0 and absf(speed) > 1.0:
 			return
-		gear += 1
+		# The automatic goes from reverse straight to drive (there's no neutral to stop in).
+		gear = 1 if gear < 0 and auto_shift else gear + 1
 		_shifted()
 
 
+## Down a gear; at a standstill, down from first (through neutral on the manual box) into
+## reverse. The automatic's lever goes from drive straight to reverse.
 func shift_down() -> void:
-	if gear > (-1 if absf(speed) < 1.0 else 1):
-		gear -= 1
+	if auto_shift and gear == 1 and absf(speed) < 1.0:
+		gear = -1
+		reverse_selected = true
 		_shifted()
+	elif gear > (-1 if absf(speed) < 1.0 else 1):
+		gear -= 1
+		reverse_selected = gear < 0
+		_shifted()
+
+
+## In the automatic's own reverse (found by holding the brake at a standstill): the pedals swap
+## round, the brake pedal backing it up and the throttle stopping it.
+func pedals_swapped() -> bool:
+	return gear < 0 and auto_shift and not reverse_selected
+
+
+## Turns the key: the starter turns it over for a moment, then it catches.
+func start_engine() -> void:
+	if engine_on or _starting > 0.0:
+		return
+	_starting = START_TIME
+
+
+func stop_engine() -> void:
+	_starting = 0.0
+	if not engine_on:
+		return
+	engine_on = false
+	engine_changed.emit(false)
+
+
+func is_starting() -> bool:
+	return _starting > 0.0
+
+
+## The headlamp switch: off, dipped, main beam and round to off. Returns the new stop's name.
+func cycle_beam() -> String:
+	beam = (beam + 1) % BEAM_NAMES.size()
+	Sfx.play_at("switch", global_position + global_basis * EYE, -10.0)
+	return BEAM_NAMES[beam]
 
 
 func _shifted() -> void:
+	if gear >= 0:
+		reverse_selected = false
 	_shift_timer = SHIFT_TIME
 	_since_shift = 0.0
 	gear_changed.emit(gear)
@@ -195,12 +251,20 @@ func _physics_process(delta: float) -> void:
 		throttle = 0.0
 		brake = 0.0
 		handbrake = 1.0
+	if _starting > 0.0:
+		_starting -= delta
+		if _starting <= 0.0:
+			_starting = 0.0
+			engine_on = true
+			rpm = IDLE_RPM * 1.3
+			engine_changed.emit(true)
 	_update_gear_choice(delta)
 	_update_steering(delta)
 	var drive := _update_engine(delta)
-	# Going forwards the pedal on the right is the throttle and the left the brake; in reverse
-	# (the automatic) they swap round, so S backs you up and W stops you.
-	var pedal_brake := brake if gear >= 0 or not auto_shift else throttle
+	# Going forwards the pedal on the right is the throttle and the left the brake; in the
+	# automatic's own reverse they swap round, so S backs you up and W stops you.
+	var pedal_brake := throttle if pedals_swapped() else brake
+	braking = pedal_brake > 0.1
 	for w in wheels:
 		var front: bool = w["front"]
 		w["brake_torque"] = pedal_brake * (BRAKE_FRONT if front else BRAKE_REAR)
@@ -237,7 +301,7 @@ func _update_gear_choice(delta: float) -> void:
 			gear = -1
 			_rev_hold = 0.0
 			_shifted()
-	elif gear < 0 and absf(speed) < 0.6 and throttle > 0.3 and brake < 0.1:
+	elif pedals_swapped() and absf(speed) < 0.6 and throttle > 0.3 and brake < 0.1:
 		_rev_hold += delta
 		if _rev_hold > 0.2:
 			gear = 1
@@ -275,7 +339,7 @@ func _update_engine(delta: float) -> float:
 	var wheel_omega := (float(wheels[2]["omega"]) + float(wheels[3]["omega"])) * 0.5
 	var wheel_rpm := wheel_omega * ratio * 60.0 / TAU
 	var engaged := ratio != 0.0 and wheel_rpm >= IDLE_RPM + 350.0
-	var accel := throttle if gear >= 0 or not auto_shift else brake
+	var accel := brake if pedals_swapped() else throttle
 	if not engine_on:
 		accel = 0.0
 	if _shift_timer > 0.0:
@@ -285,7 +349,9 @@ func _update_engine(delta: float) -> float:
 	else:
 		var launch := lerpf(IDLE_RPM, 2100.0, accel)
 		rpm = lerpf(rpm, maxf(launch, wheel_rpm), 1.0 - exp(-8.0 * delta))
-	if not engine_on:
+	if _starting > 0.0:
+		rpm = lerpf(rpm, IDLE_RPM * 0.3, 0.2)   # the starter turning it over
+	elif not engine_on:
 		rpm = move_toward(rpm, 0.0, 2500.0 * delta)
 	var torque := engine_torque(rpm) * accel
 	if rpm >= REDLINE or (gear < 0 and rpm >= REVERSE_LIMIT):
@@ -313,7 +379,7 @@ func _update_engine(delta: float) -> float:
 func sound_load() -> float:
 	if _shift_timer > 0.0:
 		return 0.1
-	return throttle if gear >= 0 or not auto_shift else brake
+	return brake if pedals_swapped() else throttle
 
 
 ## The engine note's recipe: a four-cylinder turbo diesel on a quiet standard pipe.
@@ -324,20 +390,22 @@ static func engine_spec() -> Dictionary:
 
 # ---------------------------------------------------------------------------- network
 
-## Snapshot for the network: where it is, its wheels, revs and gear.
+## Snapshot for the network: where it is, its wheels, revs and gear, then its lamps and starter.
 func get_net_state() -> PackedFloat32Array:
 	var q := global_basis.get_rotation_quaternion()
 	var p := global_position
 	var v := linear_velocity
 	var s := PackedFloat32Array([p.x, p.y, p.z, q.x, q.y, q.z, q.w, v.x, v.y, v.z, steer, rpm, sound_load(), float(gear),
-		1.0 if engine_on else 0.0, 1.0 if brake > 0.1 else 0.0])
+		1.0 if engine_on else 0.0, 1.0 if braking else 0.0])
 	for w in wheels:
 		s.append(float(w["spin"]))
 		s.append(float(w["compression"]))
+	s.append(float(beam))
+	s.append(1.0 if is_starting() else 0.0)
 	return s
 
 
-const NET_SIZE := 24
+const NET_SIZE := 26
 
 
 ## Shows another player's truck as their snapshot has it (frozen, kinematic).
@@ -350,10 +418,12 @@ func set_net_state(s: PackedFloat32Array, at := 0) -> void:
 	rpm = s[at + 11]
 	gear = int(s[at + 13])
 	engine_on = s[at + 14] > 0.5
-	brake = s[at + 15]
+	braking = s[at + 15] > 0.5
 	for i in 4:
 		wheels[i]["spin"] = s[at + 16 + i * 2]
 		wheels[i]["compression"] = s[at + 17 + i * 2]
+	beam = int(s[at + 24])
+	_starting = START_TIME if s[at + 25] > 0.5 else 0.0
 	wheels[0]["steer"] = steer
 	wheels[1]["steer"] = steer
 
@@ -380,14 +450,32 @@ func _update_model(_delta: float) -> void:
 		spin.rotation.x = -float(w["spin"])
 	if _steering_wheel:
 		_steering_wheel.rotation.y = -steer * STEER_RATIO
-	var braking := brake > 0.1 if (gear >= 0 or not auto_shift) else throttle > 0.1
+	# Every lamp runs off the ignition, as on the bikes: a truck that isn't running is dark. The
+	# tail lamps are on with the headlamps, brighter on the brakes.
+	var lamps := engine_on and beam > 0
 	if _brake_mat:
-		_brake_mat.emission_energy_multiplier = 3.0 if braking and engine_on else (0.6 if engine_on else 0.0)
+		_brake_mat.emission_energy_multiplier = 3.0 if braking and engine_on else (0.6 if lamps else 0.0)
 	if _lamp_mat:
-		_lamp_mat.emission_energy_multiplier = 2.5 if engine_on else 0.0
+		_lamp_mat.emission_energy_multiplier = (3.5 if beam >= 2 else 2.5) if lamps else (0.3 if engine_on else 0.0)
 	if _reverse_mat:
 		_reverse_mat.emission_energy_multiplier = 2.0 if engine_on and gear < 0 else 0.0
 	if _dash_mat:
 		_dash_mat.emission_energy_multiplier = 0.8 if engine_on else 0.0
-	for l in _head_lights:
-		(l as SpotLight3D).visible = engine_on
+	_update_beams(lamps)
+
+
+## The headlamp beams: dipped, a wide pool down on the road just ahead; main beam, a long narrow
+## reach up the road. The eye adjusts at night, so the same lamps throw a brighter pool then
+## (and light the night air a little, as the bikes' do).
+func _update_beams(on: bool) -> void:
+	var night := World.darkness()
+	var high := beam >= 2
+	for l: SpotLight3D in _head_lights:
+		l.visible = on
+		if not on:
+			continue
+		l.light_energy = (1.0 + 3.0 * night) * (2.6 if high else 1.4)
+		l.spot_angle = 20.0 if high else lerpf(30.0, 36.0, night)
+		l.spot_range = 95.0 if high else 42.0
+		l.rotation.x = deg_to_rad(-1.0 if high else -5.5)
+		l.light_volumetric_fog_energy = night * (0.5 if high else 0.3)

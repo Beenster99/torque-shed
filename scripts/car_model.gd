@@ -795,16 +795,24 @@ func _steering_wheel() -> void:
 	car._steering_wheel = spin
 
 
-## The headlamps' beams (on with the engine).
+## The headlamps' beams: one from each lamp, soft edged like the bikes' (Car._update_beams sets
+## dipped or main beam and switches them with the engine and the switch).
 func _lights() -> void:
 	for x in [-0.72, 0.72]:
 		var sl := SpotLight3D.new()
+		sl.name = "Headlamp"
 		sl.position = Vector3(x, 0.94, -2.72)
-		sl.spot_range = 45.0
+		sl.spot_range = 42.0
 		sl.spot_angle = 32.0
-		sl.light_energy = 3.0
-		sl.rotation.x = deg_to_rad(-6.0)
+		sl.light_energy = 1.4
+		sl.rotation.x = deg_to_rad(-5.5)
+		sl.light_color = Color(0.96, 0.95, 1.0)   # LED headlamps: a cool white
 		sl.shadow_enabled = false
+		sl.spot_angle_attenuation = BikeEffects.CORE_FALLOFF
+		sl.light_projector = BikeEffects.soft_spot_texture()   # a pool on the road with no ring round it
+		sl.light_specular = 0.4
+		sl.set_meta("lighting_skip", true)   # the graphics settings leave it be: Car looks after it
+		sl.visible = false
 		car.model.add_child(sl)
 		car._head_lights.append(sl)
 
