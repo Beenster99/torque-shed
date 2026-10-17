@@ -642,7 +642,7 @@ func _physics_process(delta: float) -> void:
 	if Shed.pushing_bike(Shed.me()) != 0:
 		pace = minf(pace, 2.4)   # a bike is heavy to wheel about
 	var wish := (transform.basis * Vector3(input.x, 0.0, input.y)) * pace
-	var grip := 30.0 if is_on_floor() else AIR_CONTROL
+	var grip := AIR_CONTROL if jumping and not is_on_floor() else 30.0   # only a jump cuts your steering
 	velocity.x = move_toward(velocity.x, wish.x, grip * delta)
 	velocity.z = move_toward(velocity.z, wish.z, grip * delta)
 	var hop := _jump_wanted and can_jump()
