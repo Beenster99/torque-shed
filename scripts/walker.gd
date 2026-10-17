@@ -2277,10 +2277,12 @@ func _preview(item_id: int, at := {}) -> String:
 		roundi(before["brake"]), roundi(after["brake"]), Units.economy(before["economy"]), Units.economy(after["economy"])]
 
 
+## Glows the bike part you're looking at; never with the pressure washer in hand, where the glow
+## would hide which bits are clean and which are still dirty.
 func _highlight() -> void:
 	var model: BikeModel = null
 	var slot := ""
-	if target.get("kind", "") == "part":
+	if target.get("kind", "") == "part" and tool != "lance" and wash_mode.is_empty():
 		var view: Node = get_tree().get_first_node_in_group("workshop")
 		if view:
 			model = view.model_for(target)
