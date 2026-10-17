@@ -76,6 +76,16 @@ var _dash_label: Label3D
 var _needles := []               # {node, what: "speed" or "rpm"} on dial clocks
 var _leds := []                  # shift lights: {mat, color}
 var _dash_screen := Transform3D()  # where the readout text sits on the clocks, in steering space
+var _dash_face := PackedVector3Array()   # points over the clocks' faces, in steering space (see dash_hidden)
+var _rear_guard: Array[MeshInstance3D] = []   # the rear mudguard's pieces (see _draw_tail)
+var _plates: Array[MeshInstance3D] = []       # the number plate on the tail
+var _bars_tm: TriangleMesh = null             # the bars as triangles, for the clocks' sight lines
+var _dash_raised := 0.0                       # m: how far the clocks were raised to clear the bars
+var _fit_only := false                        # drawing just what the fit checks look at (see build_fit_parts)
+const DASH_LIFT_MAX := 0.25   # m: the most the clocks rise to be seen past the bars
+const DASH_EYE_SPARE := 0.03  # m: how far under the rider's eye the clocks still clear the bars from
+const GUARD_GAP := 0.015      # m: from the rear tyre, shock fully compressed, to the middle of its mudguard
+const PLATE_GAP := 0.004      # m: kept between the number plate and the rear mudguard
 var _lamps: Array = []           # lit lenses and clocks: {mat, albedo, energy, group ("ign", "head" or "fog")}
 var _lit := [true, true, true]   # [ignition, headlight, fog lights] as last set
 ## This bike's own fit for each part, set in geometry mode: slot -> {p, r, s} (see GeoGizmo),
@@ -109,30 +119,11 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_geo_nodes.clear()
 	_geo_pivots.clear()
 	_geo_anchors.clear()
+	_rear_guard.clear()
+	_plates.clear()
+	_dash_face = PackedVector3Array()
 
-	var wb := build.wheelbase
-	var zf := -wb * 0.5
-	var zr := wb * 0.5
-	var rake := deg_to_rad(build.rake_deg)
-	_steer_axis = Vector3(0.0, cos(rake), sin(rake))
-	_head = Vector3(0.0, 0.0, zf) + _steer_axis * build.fork_length
-	_head_bottom = _head - _steer_axis * 0.16
-	_seat_y = build.seat_height - build.rear_radius
-	# Each frame has its own mounting points (its "geo"): where the swingarm pivots, where the
-	# engine hangs, how far the seat rails run, where the footpegs go. Everything else is
-	# placed from these, so a long, low cruiser frame and a tall MX frame give different bikes.
-	_frame_geo = PartsDB.get_part(str(build.parts.get("frame", ""))).get("geo", {})
-	_pivot = Vector3(0.0, _geo("pivot_y", 0.16), zr - _geo("arm", 0.6))
-	# The seat starts over the swingarm pivot, leaving the tank its own space behind the bars.
-	_seat_front = Vector3(0.0, _seat_y - _geo("seat_drop", 0.1), _pivot.z + 0.02)
-	_tail = Vector3(0.0, build.seat_height - build.rear_radius - 0.02 + _geo("tail_y", 0.0), zr - _geo("tail_back", 0.12))
-	_engine_c = Vector3(0.0, _geo("engine_y", 0.1), lerpf(_head_bottom.z, _pivot.z, _geo("engine_at", 0.48)))
-	var peg: Array = _frame_geo.get("peg", [0.02, 0.02])
-	# Rearsets and forward controls put the feet where they say, wherever the frame had them.
-	var sets := PartsDB.get_part(str(build.parts.get("rearsets", "none")))
-	if sets.get("peg") is Array and is_fitted("rearsets"):
-		peg = sets["peg"]
-	_peg = Vector3(0.17, float(peg[0]), _pivot.z + float(peg[1]))
+	var zr := _lay_out(build)
 	_layout_cylinders(build)
 
 	_draw_frame(build, zr)
@@ -148,23 +139,17 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_gearbox()
 	_draw_exhaust(zr)
 
-	_steer_node = Node3D.new()
-	_steer_node.position = _head
-	add_child(_steer_node)
-	_front_hub = Node3D.new()
-	_steer_node.add_child(_front_hub)
+	_add_steer_node()
 	_draw_fork(build)
 	_draw_handlebars()
 	_draw_dashboard()
+	_bars_tm = null   # only wanted again by the fit checks, which make it afresh
 	_draw_front_master()
 	_draw_headlight()
 
 	_front_wheel = Node3D.new()
 	_front_hub.add_child(_front_wheel)
-	_rear_hub = Node3D.new()
-	add_child(_rear_hub)
-	_rear_wheel = Node3D.new()
-	_rear_hub.add_child(_rear_wheel)
+	_add_rear_hub()
 	for side in ["front", "rear"]:
 		var front: bool = side == "front"
 		var wheel := _front_wheel if front else _rear_wheel
@@ -218,6 +203,60 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_show_dirt()
 	if not geometry.is_empty():
 		apply_geometry(geometry)
+
+
+## Where everything is placed from, for `build`: the steering head, the swingarm pivot, the seat
+## and tail, the engine, the footpegs and the rider's eye. Returns the rear axle's z.
+func _lay_out(build: BikeBuild) -> float:
+	_build = build
+	var wb := build.wheelbase
+	var zf := -wb * 0.5
+	var zr := wb * 0.5
+	var rake := deg_to_rad(build.rake_deg)
+	_steer_axis = Vector3(0.0, cos(rake), sin(rake))
+	_head = Vector3(0.0, 0.0, zf) + _steer_axis * build.fork_length
+	_head_bottom = _head - _steer_axis * 0.16
+	_seat_y = build.seat_height - build.rear_radius
+	# Each frame has its own mounting points (its "geo"): where the swingarm pivots, where the
+	# engine hangs, how far the seat rails run, where the footpegs go. Everything else is
+	# placed from these, so a long, low cruiser frame and a tall MX frame give different bikes.
+	_frame_geo = PartsDB.get_part(str(build.parts.get("frame", ""))).get("geo", {})
+	_pivot = Vector3(0.0, _geo("pivot_y", 0.16), zr - _geo("arm", 0.6))
+	# The seat starts over the swingarm pivot, leaving the tank its own space behind the bars.
+	_seat_front = Vector3(0.0, _seat_y - _geo("seat_drop", 0.1), _pivot.z + 0.02)
+	_tail = Vector3(0.0, build.seat_height - build.rear_radius - 0.02 + _geo("tail_y", 0.0), zr - _geo("tail_back", 0.12))
+	_engine_c = Vector3(0.0, _geo("engine_y", 0.1), lerpf(_head_bottom.z, _pivot.z, _geo("engine_at", 0.48)))
+	var peg: Array = _frame_geo.get("peg", [0.02, 0.02])
+	# Rearsets and forward controls put the feet where they say, wherever the frame had them.
+	var sets := PartsDB.get_part(str(build.parts.get("rearsets", "none")))
+	if sets.get("peg") is Array and is_fitted("rearsets"):
+		peg = sets["peg"]
+	_peg = Vector3(0.17, float(peg[0]), _pivot.z + float(peg[1]))
+	_eye = _eye_point()
+	return zr
+
+
+## The rider's eyes, sat on the seat (as _build_rider sits them) looking down over the bars.
+func _eye_point() -> Vector3:
+	var hips := Vector3(0.0, _seat_y + 0.1, lerpf(_seat_front.z, _tail.z, 0.42))
+	return hips + Vector3(0.0, 0.5, -0.3) + Vector3(0.0, 0.28, 0.28)
+
+
+## The node the bars, clocks, fork and front wheel hang from, turning about the steering axis.
+func _add_steer_node() -> void:
+	_steer_node = Node3D.new()
+	_steer_node.position = _head
+	add_child(_steer_node)
+	_front_hub = Node3D.new()
+	_steer_node.add_child(_front_hub)
+
+
+## The node the rear wheel hangs from, moving up and down with the shock.
+func _add_rear_hub() -> void:
+	_rear_hub = Node3D.new()
+	add_child(_rear_hub)
+	_rear_wheel = Node3D.new()
+	_rear_hub.add_child(_rear_wheel)
 
 
 ## Road dirt over every dirty part, region by region (see Dirt and DirtLayer), from each part's
@@ -1788,6 +1827,7 @@ func _draw_fork(build: BikeBuild) -> void:
 
 func _draw_handlebars() -> void:
 	_current_slot = "handlebars"
+	_bars_tm = null
 	var p := _part()
 	var mat := _skin(_mat(_col(), 0.6, 0.35))
 	var rubber := _mat(Color(0.05, 0.05, 0.05), 0.0, 0.92)
@@ -1924,6 +1964,7 @@ func _draw_dashboard() -> void:
 	_needles.clear()
 	_leds.clear()
 	_dash_screen = Transform3D()
+	_dash_raised = 0.0
 	var p := _part()
 	var housing := _mat(_col(), 0.6, 0.35)
 	var at := Vector3(0.0, 0.1, -0.06)
@@ -1944,6 +1985,7 @@ func _draw_dashboard() -> void:
 				dial.basis = tilt
 				var face := _mesh_instance(_cylinder(0.043, 0.004), face_mat, c + tilt.y * 0.026, _steer_node)
 				face.basis = tilt
+				_add_face(c + tilt.y * 0.028, tilt, 0.04, 0.04, true)
 				# Tick marks round the dial.
 				for i in 9:
 					var a := lerpf(-2.35, 2.35, i / 8.0)
@@ -1965,6 +2007,7 @@ func _draw_dashboard() -> void:
 			var screen := _box(at + tilt.y * 0.016, Vector3(size.x - 0.02, 0.004, size.z - 0.02),
 				_lamp(Color(0.05, 0.12, 0.25) if tft else Color(0.42, 0.55, 0.42), 1.0, "ign"), _steer_node)
 			screen.basis = tilt
+			_add_face(at + tilt.y * 0.018, tilt, size.x * 0.5 - 0.01, size.z * 0.5 - 0.01)
 			_dash_screen = Transform3D(tilt, at + tilt.y * 0.019)
 			if tft:
 				_add_leds(at + tilt.y * 0.017 + tilt * Vector3(0.0, 0.0, -size.z * 0.5 - 0.008), tilt, 0.14)
@@ -1974,8 +2017,93 @@ func _draw_dashboard() -> void:
 			var screen := _box(at + tilt.y * 0.016 + tilt * Vector3(0.0, 0.0, 0.012), Vector3(0.18, 0.004, 0.05),
 				_lamp(Color(0.03, 0.03, 0.04), 0.6, "ign"), _steer_node)
 			screen.basis = tilt
+			_add_face(at + tilt.y * 0.018 + tilt * Vector3(0.0, 0.0, 0.012), tilt, 0.09, 0.025)
 			_dash_screen = Transform3D(tilt, at + tilt.y * 0.019 + tilt * Vector3(0.0, 0.0, 0.012))
 			_add_leds(at + tilt.y * 0.017 + tilt * Vector3(0.0, 0.0, -0.028), tilt, 0.18)
+	_lift_clear_of_bars(at)
+
+
+## Raises the clocks, if need be, until the bars (and what's on them) hide none of their faces
+## from the rider's eye, nor from a little below it for a rider sat lower: tall, braced and
+## T-bars all rise across the middle, right where the clocks sit. Clocks raised more than a
+## little stand on a stalk from the top yoke (the clocks sit at `at` before they're raised).
+func _lift_clear_of_bars(at: Vector3) -> void:
+	if _dash_face.is_empty():
+		return
+	var bars := _bars_mesh()
+	if bars == null:
+		return
+	var lift := _dash_lift(bars, _eye - _head)
+	if lift == 0.0:
+		return
+	_dash_raised = lift
+	for mi in _slot_meshes["dashboard"]:
+		if (mi as Node).get_parent() == _steer_node:
+			(mi as Node3D).position.y += lift
+	for n in _needles:
+		(n["node"] as Node3D).position.y += lift
+	_dash_screen.origin.y += lift
+	for i in _dash_face.size():
+		_dash_face[i] += Vector3(0.0, lift, 0.0)
+	if lift > 0.02:
+		_tube(Vector3(0.0, 0.0, at.z), at + Vector3(0.0, lift - 0.012, 0.0), 0.009, _mat(Color(0.06, 0.06, 0.065), 0.5, 0.4), Vector3.ONE, _steer_node)
+
+
+## How far the clocks have to rise (m, in 5 mm steps up to DASH_LIFT_MAX) for none of their
+## faces to be hidden by `bars` from `eye` (in steering space) or from DASH_EYE_SPARE below it.
+func _dash_lift(bars: TriangleMesh, eye: Vector3) -> float:
+	var low := eye + Vector3(0.0, -DASH_EYE_SPARE, 0.0)
+	var lift := 0.0
+	while lift < DASH_LIFT_MAX and (_face_hidden(bars, eye, lift - _dash_raised) > 0 or _face_hidden(bars, low, lift - _dash_raised) > 0):
+		lift += 0.005
+	return lift
+
+
+## The bars and everything on them, as triangles in steering space (for _face_hidden).
+func _bars_mesh() -> TriangleMesh:
+	if _bars_tm != null:
+		return _bars_tm
+	var faces := PackedVector3Array()
+	for mi in _slot_meshes.get("handlebars", []):
+		var xf := Transform3D.IDENTITY
+		var n: Node = mi
+		while n != null and n != _steer_node and n is Node3D:
+			xf = (n as Node3D).transform * xf
+			n = n.get_parent()
+		faces.append_array(xf * (mi as MeshInstance3D).mesh.get_faces())
+	if faces.is_empty():
+		return null
+	_bars_tm = TriangleMesh.new()
+	_bars_tm.create_from_faces(faces)
+	return _bars_tm
+
+
+## How many of the points over the clocks' faces (raised `lift`) the bars hide from `eye`, all
+## in steering space.
+func _face_hidden(bars: TriangleMesh, eye: Vector3, lift := 0.0) -> int:
+	var hidden := 0
+	for q in _dash_face:
+		var from: Vector3 = q + Vector3(0.0, lift, 0.0)
+		from += (eye - from).normalized() * 0.002
+		if not bars.intersect_segment(from, eye).is_empty():
+			hidden += 1
+	return hidden
+
+
+## Records a dial or screen of the clocks for dash_hidden: points over a face `hx` by `hz`
+## across (half sizes, in the face's own plane), a 5 by 5 grid, or on two rings and the middle
+## of a round one, close enough that no bar can pass between them.
+func _add_face(center: Vector3, tilt: Basis, hx: float, hz: float, round := false) -> void:
+	if round:
+		_dash_face.append(center)
+		for ring in [[0.5, 8], [1.0, 12]]:
+			for i in ring[1]:
+				var a: float = TAU * i / float(ring[1])
+				_dash_face.append(center + tilt * Vector3(cos(a) * hx, 0.0, sin(a) * hz) * float(ring[0]))
+		return
+	for i in 5:
+		for j in 5:
+			_dash_face.append(center + tilt * Vector3((i * 0.5 - 1.0) * hx, 0.0, (j * 0.5 - 1.0) * hz))
 
 
 ## A row of shift lights across the top of the clocks, green to amber to red.
@@ -2701,7 +2829,7 @@ func _draw_tail(build: BikeBuild) -> void:
 	var r := build.rear_radius
 	var w := build.rear_tyre_width + 0.05
 	var lk := _look()
-	if lk.has("cowl"):
+	if lk.has("cowl") and not _fit_only:
 		_tail_cowl(str(lk["cowl"]), mat, lk)
 	if lk.get("struts", false):
 		# Chrome struts from the axle up to the guard.
@@ -2716,7 +2844,7 @@ func _draw_tail(build: BikeBuild) -> void:
 			cowl.rotation.x = -0.08
 			var hump := _box(_tail + Vector3(0.0, 0.08, 0.1), Vector3(0.2, 0.07, 0.24), mat)
 			hump.rotation.x = 0.22
-			_guard(axle, r + 0.03, w, -0.25, 0.75, black, 5)
+			_rear_guard.append_array(_rear_arc(r + 0.03, w, -0.25, 0.75, black, 5))
 			_tube(_tail + Vector3(0.0, -0.05, 0.24), _tail + Vector3(0.0, -0.15, 0.31), 0.008, black)
 			_number_plate(_tail + Vector3(0.0, -0.2, 0.32), Vector2(0.18, 0.12), -0.2, plate)
 		"loop":
@@ -2724,17 +2852,19 @@ func _draw_tail(build: BikeBuild) -> void:
 				_tube(_tail + Vector3(0.07 * side, 0.0, -0.08), _tail + Vector3(0.07 * side, 0.01, 0.2), 0.012, mat)
 				_tube(_tail + Vector3(0.07 * side, 0.01, 0.2), _tail + Vector3(0.04 * side, 0.04, 0.25), 0.012, mat)
 			_tube(_tail + Vector3(-0.04, 0.04, 0.25), _tail + Vector3(0.04, 0.04, 0.25), 0.012, mat)
-			_guard(axle, r + 0.04, w, -0.3, 0.8, mat, 5)
+			_rear_guard.append_array(_rear_arc(r + 0.04, w, -0.3, 0.8, mat, 5))
 			_tube(_tail + Vector3(0.0, 0.01, 0.2), lamp, 0.008, black)
 			_number_plate(lamp + Vector3(0.0, -0.09, 0.0), Vector2(0.16, 0.11), -0.1, plate)
 		"tidy":
 			var tray := _box(_tail + Vector3(0.0, -0.05, 0.1), Vector3(0.18, 0.025, 0.28), mat)
 			tray.rotation.x = -0.15
+			_rear_guard.append(tray)
+			_lift_clear_of_tyre(tray)
 			_box(lamp - Vector3(0.0, 0.0, 0.012), Vector3(0.16, 0.035, 0.02), mat)
 			_tube(_tail + Vector3(0.0, -0.06, 0.2), _tail + Vector3(0.0, -0.15, 0.33), 0.01, black)
 			_number_plate(_tail + Vector3(0.0, -0.2, 0.34), Vector2(0.17, 0.11), -0.35, plate)
 		"bobber":
-			_guard(axle, r + 0.035, w, -0.55, 1.05, mat, 6)
+			_rear_guard.append_array(_rear_arc(r + 0.035, w, -0.55, 1.05, mat, 6))
 			var plate_at := axle + Vector3(-(w * 0.5 + 0.06), 0.14, 0.04)
 			_tube(axle + Vector3(-(w * 0.5 + 0.02), 0.04, 0.0), plate_at, 0.008, black)
 			var side_plate := _number_plate(plate_at, Vector2(0.17, 0.12), 0.0, plate)
@@ -2743,16 +2873,21 @@ func _draw_tail(build: BikeBuild) -> void:
 			var a := _tail + Vector3(0.0, -0.05, -0.12)
 			var b := _tail + Vector3(0.0, -0.02, 0.2)
 			var c := _tail + Vector3(0.0, 0.06, 0.46)
-			_plank(a, b, w + 0.02, 0.012, mat)
-			_plank(b, c, w, 0.012, mat)
+			for plank in [_plank(a, b, w + 0.02, 0.012, mat), _plank(b, c, w, 0.012, mat)]:
+				_rear_guard.append(plank)
+				_lift_clear_of_tyre(plank)
 			_number_plate(lamp + Vector3(0.0, -0.07, -0.01), Vector2(0.13, 0.08), -0.3, plate)
 		_:
-			_guard(axle, r + 0.05, w + 0.02, -0.45, 2.0, mat, 10)
+			_rear_guard.append_array(_rear_arc(r + 0.05, w + 0.02, -0.45, 2.0, mat, 10))
 			# The lamp on a bracket off the guard, the plate below it.
 			var a := atan2(lamp.z - axle.z, lamp.y - axle.y)
-			_tube(lamp, axle + Vector3(0.0, cos(a), sin(a)) * (r + 0.05), 0.01, mat)
+			_tube(lamp, _rear_guard_at(a, r + 0.05), 0.01, mat)
 			var below := a + 0.4
-			_number_plate(axle + Vector3(0.0, cos(below), sin(below)) * (r + 0.08), Vector2(0.2, 0.13), -0.25, plate)
+			_number_plate(_rear_guard_at(below, r + 0.05) + Vector3(0.0, cos(below), sin(below)) * 0.03, Vector2(0.2, 0.13), -0.25, plate)
+	_rear_guard = _rear_guard.filter(func(piece): return is_instance_valid(piece))
+	_clear_plates(black)
+	if _fit_only:
+		return
 	# The rear light, lit with the ignition.
 	var lens := _lamp(Color(1.0, 0.05, 0.02), 2.0, "ign")
 	var face: MeshInstance3D
@@ -2884,12 +3019,108 @@ func tail_light_position() -> Vector3:
 
 ## A mudguard following a wheel: plates round an arc of `radius` about `c`, from angle `a0` to
 ## `a1` (radians from straight up, positive towards the back).
-func _guard(c: Vector3, radius: float, width: float, a0: float, a1: float, mat: Material, segs := 8, parent: Node3D = self) -> void:
+func _guard(c: Vector3, radius: float, width: float, a0: float, a1: float, mat: Material, segs := 8, parent: Node3D = self) -> Array[MeshInstance3D]:
 	var step := (a1 - a0) / segs
+	var out: Array[MeshInstance3D] = []
 	for i in segs:
 		var a := a0 + step * (i + 0.5)
 		var seg := _box(c + Vector3(0.0, cos(a), sin(a)) * radius, Vector3(width, 0.012, radius * step * 1.1), mat, parent)
 		seg.rotation.x = a
+		out.append(seg)
+	return out
+
+
+## How far from the rear axle (as drawn, at rest) the rear mudguard sits at angle `a` (as in
+## _guard), for a guard drawn `radius` out: never nearer than clears the tyre with the shock
+## fully compressed, so the tyre can't show through it. Over the top that raises it by about
+## the travel less the gap it had; round the back the tyre moves along the guard, so it stays.
+func _rear_guard_r(a: float, radius: float) -> float:
+	var t := _build.rear_travel
+	var need := _build.rear_radius + GUARD_GAP
+	var s := t * sin(a)
+	return maxf(radius, t * cos(a) + sqrt(maxf(need * need - s * s, 0.0)))
+
+
+## The point on the rear mudguard at angle `a` (see _rear_guard_r), in the model's space.
+func _rear_guard_at(a: float, radius: float) -> Vector3:
+	return Vector3(0.0, 0.0, _build.wheelbase * 0.5) + Vector3(0.0, cos(a), sin(a)) * _rear_guard_r(a, radius)
+
+
+## The rear mudguard as plates round the rear wheel (as _guard), each far enough out to clear
+## the tyre with the shock fully compressed (see _rear_guard_r). A plate that would have to go
+## up into the seat to clear it is left out: the seat covers the tyre there.
+func _rear_arc(radius: float, width: float, a0: float, a1: float, mat: Material, segs: int) -> Array[MeshInstance3D]:
+	var step := (a1 - a0) / segs
+	var out: Array[MeshInstance3D] = []
+	for i in segs:
+		var a := a0 + step * (i + 0.5)
+		var at := _rear_guard_at(a, radius)
+		if _rear_guard_r(a, radius) > radius + 0.002 and _in_seat(at):
+			continue
+		var d := _rear_guard_at(a + step * 0.5, radius) - _rear_guard_at(a - step * 0.5, radius)
+		var seg := _box(at, Vector3(width, 0.012, d.length() * 1.1), mat)
+		seg.rotation.x = atan2(-d.y, d.z)
+		out.append(seg)
+	return out
+
+
+## Whether `at` (model space) is up in the seat: above the tail's rail and ahead of its end.
+func _in_seat(at: Vector3) -> bool:
+	return at.y > _tail.y - 0.02 and at.z < _tail.z + 0.04
+
+
+## Raises a flat piece of the rear mudguard (a tray or a fender blade) until the tyre, with the
+## shock fully compressed, is clear of it. One that would end up in the seat is left out.
+func _lift_clear_of_tyre(piece: MeshInstance3D) -> void:
+	var start := piece.position.y
+	for i in 40:
+		var depth := _tyre_depth(piece)
+		if depth <= 0.0:
+			break
+		piece.position.y += depth + 0.003
+	if piece.position.y > start + 0.002 and _in_seat(piece.position + Vector3(0.0, -0.02, 0.0)):
+		_slot_meshes["tail"].erase(piece)
+		piece.free()
+
+
+## Moves each number plate off the rear mudguard where they'd cut into each other (with
+## PLATE_GAP to spare), the shortest way out of all its pieces: straight out through its own
+## face either way, out from the wheel, back or down. It hangs on a short bracket from where it was.
+func _clear_plates(mat: Material) -> void:
+	var axle := Vector3(0.0, 0.0, _build.wheelbase * 0.5)
+	for plate in _plates:
+		var start := plate.position
+		var face := plate.basis.z.normalized()
+		var best := Vector3.ZERO
+		var best_d := INF
+		for way in [face, -face, Vector3(0.0, start.y - axle.y, start.z - axle.z).normalized(), Vector3.BACK, Vector3.DOWN]:
+			# In 1 cm steps, then back in 2 mm ones to the nearest clear spot.
+			for i in 16:
+				var d := i * 0.01
+				if d >= best_d:
+					break
+				plate.position = start + way * d
+				if _plate_clear(plate):
+					while d > 0.0:
+						plate.position = start + way * (d - 0.002)
+						if not _plate_clear(plate):
+							break
+						d -= 0.002
+					best = way * d
+					best_d = d
+					break
+		plate.position = start + best
+		if best.length() > 0.01:
+			_tube(start, plate.position, 0.006, mat)
+
+
+## Whether a number plate is clear of every piece of the rear mudguard, PLATE_GAP to spare.
+func _plate_clear(plate: MeshInstance3D) -> bool:
+	var a := _obb(plate, PLATE_GAP)
+	for piece in _rear_guard:
+		if _obb_push(a, _obb(piece)) != Vector3.ZERO:
+			return false
+	return true
 
 
 ## A flat plate from `a` to `b` (both on the centre line), `width` across and `thick` deep.
@@ -3015,6 +3246,8 @@ func _draw_front_mudguard(build: BikeBuild) -> void:
 func _number_plate(at: Vector3, size: Vector2, tilt: float, mat: Material) -> MeshInstance3D:
 	var plate := _box(at, Vector3(size.x, size.y, 0.005), mat)
 	plate.rotation.x = tilt
+	plate.name = "NumberPlate"
+	_plates.append(plate)
 	return plate
 
 
@@ -4533,7 +4766,7 @@ func _build_rider() -> void:
 	var hidden := eye_layers()
 	for mi in [torso, lid, v]:
 		(mi as GeometryInstance3D).layers = hidden
-	_eye = shoulders + Vector3(0.0, 0.28, 0.28)
+	_eye = _eye_point()
 	for side in [-1.0, 1.0]:
 		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
 		var grip := grip_r if side > 0 else grip_l
@@ -4576,7 +4809,7 @@ func _build_dressed_rider() -> void:
 	if jx.has("collar"):
 		RiderFigure.tube(_rider, shoulders + Vector3(0.0, 0.04, -0.02), shoulders + Vector3(0.0, 0.09, -0.04), 0.08,
 			RiderFigure.material(jacket, tint, "trim"), hidden)
-	_eye = shoulders + Vector3(0.0, 0.28, 0.28)
+	_eye = _eye_point()
 	var grip_l := _head + _grip_l
 	var grip_r := _head + _grip_r
 	for side in [-1.0, 1.0]:
@@ -5335,6 +5568,139 @@ func clear_pickers() -> void:
 	for child in get_children():
 		if child is StaticBody3D:
 			child.free()
+
+
+# ---------------------------------------------------------------------------- fit checks
+
+## Draws only what the fit checks look at, placed as build_from places them: the bars and the
+## clocks (`tail` false) or the tail unit's guard and plate (`tail` true, without its cowl or lamp). Much quicker than a whole bike, for
+## running the checks over every build the style builder can come up with.
+func build_fit_parts(build: BikeBuild, tail: bool) -> void:
+	_build = build
+	present = {}
+	condition = build.condition
+	for child in get_children():
+		child.free()
+	_rider = null
+	for slot in PartsDB.SLOTS:
+		_slot_meshes[slot] = []
+	_rear_guard.clear()
+	_plates.clear()
+	_dash_face = PackedVector3Array()
+	_lay_out(build)
+	_layout_cylinders(build)
+	_add_steer_node()
+	_add_rear_hub()
+	_fit_only = true
+	if tail:
+		_draw_tail(build)
+	else:
+		_draw_handlebars()
+		_draw_dashboard()
+	_fit_only = false
+	_current_slot = ""
+
+
+## How far a number plate cuts into the rear mudguard (m; 0 when it's clear): the deepest
+## overlap of a plate's box with any piece of the guard.
+func plate_cut() -> float:
+	var worst := 0.0
+	for plate in _plates:
+		var a := _obb(plate)
+		for piece in _rear_guard:
+			worst = maxf(worst, _obb_push(a, _obb(piece)).length())
+	return worst
+
+
+## How far the rear tyre comes up through the rear mudguard with the shock compressed by
+## `travel` (all of its travel by default), in m: the deepest point of a guard piece inside the
+## tyre's own section (see tyre_mesh).
+func tyre_through_guard(travel := -1.0) -> float:
+	var worst := 0.0
+	for piece in _rear_guard:
+		worst = maxf(worst, _tyre_depth(piece, travel))
+	return worst
+
+
+## How deep into the rear tyre one piece of the mudguard goes (m; 0 or less when clear), with
+## the shock compressed by `travel` (all of it by default): over a grid of points on both faces.
+func _tyre_depth(piece: MeshInstance3D, travel := -1.0) -> float:
+	var t := _build.rear_travel if travel < 0.0 else travel
+	var axle := Vector3(0.0, t, _build.wheelbase * 0.5)
+	var r := _build.rear_radius
+	var half := _build.rear_tyre_width * 0.5
+	var bulge := _build.rear_rim_radius + (r - _build.rear_rim_radius) * 0.4
+	var style := str(PartsDB.get_part(str(_build.parts.get("rear_tyre", ""))).get("style", "road"))
+	var p := 2.0 if style in ["slick", "road"] else 2.8
+	var o := _obb(piece)
+	var worst := -INF
+	for i in 5:
+		for j in 5:
+			for k in [-1.0, 1.0]:
+				var at: Vector3 = o[0] + o[1] * (i * 0.5 - 1.0) + o[2] * k + o[3] * (j * 0.5 - 1.0)
+				var x := absf(at.x) / half
+				if x >= 1.0:
+					continue
+				var crown := bulge + (r - bulge) * pow(1.0 - pow(x, p), 1.0 / p)
+				worst = maxf(worst, crown - Vector2(at.y - axle.y, at.z - axle.z).length())
+	return worst
+
+
+## The share (0..1) of the clocks' faces the bars and what's on them hide from the rider's eye,
+## sat on the seat with the bars straight.
+func dash_hidden() -> float:
+	var bars := _bars_mesh()
+	if _dash_face.is_empty() or bars == null:
+		return 0.0
+	return float(_face_hidden(bars, _local_xform(_steer_node).affine_inverse() * _eye)) / _dash_face.size()
+
+
+## As dash_hidden, for the rider's eye at `eye` (in steering space) with the clocks raised as
+## they would be for it (see _lift_clear_of_bars): for the fit checks to try one set of bars and
+## clocks from every seat they could be ridden from without drawing them again.
+func dash_hidden_from(eye: Vector3) -> float:
+	var bars := _bars_mesh()
+	if _dash_face.is_empty() or bars == null:
+		return 0.0
+	var lift := _dash_lift(bars, eye)
+	return float(_face_hidden(bars, eye, lift - _dash_raised)) / _dash_face.size()
+
+
+## A mesh's box in the model's space, grown by `grow` all round: [centre, and the three
+## half-size axes].
+func _obb(mi: MeshInstance3D, grow := 0.0) -> Array:
+	var xf := _local_xform(mi)
+	var box := mi.mesh.get_aabb().grow(grow)
+	return [xf * box.get_center(), xf.basis.x * box.size.x * 0.5, xf.basis.y * box.size.y * 0.5, xf.basis.z * box.size.z * 0.5]
+
+
+## How far, and which way, box `a` has to move to come out of box `b` (both as _obb gives
+## them): the shortest way out along the axes that could part them, Vector3.ZERO when they
+## don't overlap.
+static func _obb_push(a: Array, b: Array) -> Vector3:
+	var axes: Array[Vector3] = []
+	for i in 3:
+		axes.append((a[i + 1] as Vector3).normalized())
+		axes.append((b[i + 1] as Vector3).normalized())
+	for i in 3:
+		for j in 3:
+			var n := (a[i + 1] as Vector3).cross(b[j + 1])
+			if n.length() > 1e-6:
+				axes.append(n.normalized())
+	var least := INF
+	var way := Vector3.ZERO
+	var gap: Vector3 = a[0] - b[0]
+	for n in axes:
+		var reach := 0.0
+		for i in 3:
+			reach += absf((a[i + 1] as Vector3).dot(n)) + absf((b[i + 1] as Vector3).dot(n))
+		var overlap := reach - absf(gap.dot(n))
+		if overlap <= 0.0:
+			return Vector3.ZERO
+		if overlap < least:
+			least = overlap
+			way = n * (overlap if gap.dot(n) >= 0.0 else -overlap)
+	return way
 
 
 func _local_xform(node: Node3D) -> Transform3D:
