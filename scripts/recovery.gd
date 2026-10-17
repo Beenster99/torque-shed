@@ -592,7 +592,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			text = "Turned it down."
 		"recovery_enter":
 			c["driver"] = peer
-			text = "In the truck. W and S to drive (hold S stopped for reverse), Space the handbrake, C the camera, F to get out."
+			text = "In the truck. I starts it, W and S to drive,\nQ when stopped for reverse (or hold S), L the headlamps, Space the handbrake, F to get out."
 		"recovery_exit", "recovery_move":
 			if action.get("xf") is Transform3D:
 				c["xf"] = action["xf"]

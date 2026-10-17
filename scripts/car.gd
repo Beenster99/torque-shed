@@ -342,17 +342,17 @@ func _update_engine(delta: float) -> float:
 	var accel := brake if pedals_swapped() else throttle
 	if not engine_on:
 		accel = 0.0
-	if _shift_timer > 0.0:
+	if _starting > 0.0:
+		rpm = lerpf(rpm, IDLE_RPM * 0.3, 0.2)   # the starter turning it over
+	elif not engine_on:
+		rpm = move_toward(rpm, 0.0, 2500.0 * delta)   # switched off: the revs die away to nothing
+	elif _shift_timer > 0.0:
 		rpm = lerpf(rpm, maxf(wheel_rpm, IDLE_RPM), 0.25)
 	elif engaged:
 		rpm = wheel_rpm
 	else:
 		var launch := lerpf(IDLE_RPM, 2100.0, accel)
 		rpm = lerpf(rpm, maxf(launch, wheel_rpm), 1.0 - exp(-8.0 * delta))
-	if _starting > 0.0:
-		rpm = lerpf(rpm, IDLE_RPM * 0.3, 0.2)   # the starter turning it over
-	elif not engine_on:
-		rpm = move_toward(rpm, 0.0, 2500.0 * delta)
 	var torque := engine_torque(rpm) * accel
 	if rpm >= REDLINE or (gear < 0 and rpm >= REVERSE_LIMIT):
 		torque = 0.0
