@@ -72,6 +72,24 @@ func _ready() -> void:
 		add_child(ball)
 		_balls.append(ball)
 		_last_at.append(Vector2.ZERO)
+	# The pockets: dark holes in the felt and through the rails' corners over them.
+	var hole := StandardMaterial3D.new()
+	hole.albedo_color = Color(0.02, 0.02, 0.02)
+	hole.roughness = 1.0
+	for k in PoolGame.POCKETS.size():
+		var pk: Vector2 = PoolGame.POCKETS[k]
+		for y in [0.001, 0.0655]:
+			var disc := MeshInstance3D.new()
+			var dm := CylinderMesh.new()
+			dm.top_radius = PoolGame.POCKET_R[k] * 0.85
+			dm.bottom_radius = dm.top_radius
+			dm.height = 0.002
+			dm.radial_segments = 20
+			disc.mesh = dm
+			disc.material_override = hole
+			disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			disc.position = Vector3(pk.x, y, pk.y)
+			add_child(disc)
 	# The cue: a tapered ash shaft with a dark butt and a pale tip end.
 	_cue = MeshInstance3D.new()
 	_cue.name = "Cue"
@@ -551,8 +569,8 @@ func _make_hud() -> void:
 	box.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	box.offset_left = -330.0
 	box.offset_right = 330.0
-	box.offset_top = -150.0
-	box.offset_bottom = -24.0
+	box.offset_top = -260.0
+	box.offset_bottom = -104.0   # clear of the tool bar
 	box.alignment = BoxContainer.ALIGNMENT_END
 	_hud.add_child(box)
 	_hud_text = UITheme.label("", 16)

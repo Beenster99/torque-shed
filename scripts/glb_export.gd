@@ -9,14 +9,20 @@ extends RefCounted
 ## and dirt and paint-effect shader passes (left off: the exports are clean bikes).
 
 ## The bikes a release exports: a style, a name, the seed its parts are drawn with (Shed.style_parts),
-## and the paint on its painted parts ({slot: [paint index, finish]}; others keep their catalogue colour).
+## the paint on its painted parts ({slot: [paint index, finish]}; others keep their catalogue
+## colour), and the stand it's posed on as it would be parked in the shed: "side" (leaning over
+## on its side stand), "centre" (up on its centre stand) or "paddock" (on a bay's paddock stand).
+## v0.6.0 was a classic, a cafe racer, a sports bike, an MX bike and a chopper, all upright.
 const BIKES := [
-	{"style": "classic", "name": "Burgundy Twin", "seed": 7, "paint": {"tank": [12, "gloss"], "side_panels": [12, "gloss"]}},
-	{"style": "cafe", "name": "Green Ton-Up", "seed": 7, "paint": {"tank": [3, "gloss"], "tail": [3, "gloss"], "side_panels": [14, "gloss"]}},
-	{"style": "sport", "name": "Blue Thousand", "seed": 7, "paint": {"tank": [1, "metallic"]}},
-	{"style": "mx", "name": "Gold Dirt", "seed": 7, "paint": {}},
-	{"style": "chopper", "name": "Purple Rake", "seed": 7, "paint": {"tank": [4, "metallic"], "tail": [4, "metallic"]}},
+	{"style": "scrambler", "name": "Orange Scrambler", "seed": 11, "paint": {"tank": [2, "gloss"]}, "stand": "side"},
+	{"style": "naked", "name": "Teal Streetfighter", "seed": 11, "paint": {"tank": [7, "metallic"]}, "stand": "side"},
+	{"style": "bobber", "name": "Black Bobber", "seed": 11, "paint": {"tank": [6, "matte"], "front_mudguard": [6, "matte"]}, "stand": "side"},
+	{"style": "tourer", "name": "Silver Tourer", "seed": 11, "paint": {"tank": [8, "metallic"], "fairing": [8, "metallic"]}, "stand": "centre"},
+	{"style": "race", "name": "Red Racer", "seed": 11, "paint": {"tank": [0, "gloss"], "fairing": [0, "gloss"], "tail": [0, "gloss"]}, "stand": "paddock"},
 ]
+## The stand fitted to a bike posed on one that its parts came without.
+const STAND_PART := {"side": ["side_stand", "spring_side"], "centre": ["centre_stand", "basic_centre"]}
+const STAND_NAMES := {"side": "leaning on its side stand", "centre": "up on its centre stand", "paddock": "on a paddock stand", "": "upright"}
 
 
 ## Slots the README leaves out of a bike's part list (hidden or too small to matter in a model).
@@ -38,14 +44,21 @@ static func pick_bikes() -> Array:
 			cond[slot] = {"color": Shed.PAINTS[int(p[0])], "finish": str(p[1])}
 		var body: Color = cond.get("tank", {}).get("color", PartsDB.default_color(str(parts.get("tank", ""))))
 		var file := "%s_%s" % [b["style"], str(b["name"]).to_lower().replace(" ", "_").replace("-", "_")]
-		out.append({"style": b["style"], "name": b["name"], "file": file, "parts": parts, "cond": cond, "paint": body})
+		var stand := str(b.get("stand", ""))
+		if STAND_PART.has(stand) and str(parts.get(STAND_PART[stand][0], "none")) == "none":
+			parts[STAND_PART[stand][0]] = STAND_PART[stand][1]
+		out.append({"style": b["style"], "name": b["name"], "file": file, "parts": parts, "cond": cond, "paint": body, "stand": stand})
 	rng.state = saved
 	return out
 
 
-## The in-game model of `bike` (from pick_bikes), riderless and not in the tree.
+## The in-game model of `bike` (from pick_bikes), riderless and not in the tree, its side or
+## centre stand down if it's posed on one (scene_for leans it over or lifts it).
 static func bike_model(bike: Dictionary) -> BikeModel:
 	var model := BikeModel.new()
+	var stand := str(bike.get("stand", ""))
+	model.stand_pose = stand if stand in ["side", "centre"] else ""
+	model.set_meta("paddock", stand == "paddock")
 	model.build_from(BikeBuild.new(bike["parts"], bike["cond"]), bike["paint"], {}, bike["cond"], false)
 	return model
 
@@ -58,6 +71,8 @@ static func export_release(dir: String) -> Dictionary:
 	var readme := PackedStringArray(["Torque Shed bikes as .glb", "",
 		"Each file is one bike in metres, Y up, the front facing +Z, the origin on the ground halfway",
 		"between the wheels. One mesh per part (frame, tank, engine, ...), plain PBR materials.",
+		"Each is posed on its stand as it would be parked in the shed: leaning over to the left on",
+		"its side stand, up on its centre stand, or on a paddock stand (its own mesh, paddock_stand).",
 		"Not carried over: clear coat (comes out as plain gloss), rust/patina layers, dirt.", ""])
 	for bike in pick_bikes():
 		var model := bike_model(bike)
@@ -65,8 +80,8 @@ static func export_release(dir: String) -> Dictionary:
 		var rep := export_model(model, path, str(bike["name"]))
 		model.free()
 		reports[bike["file"]] = rep
-		readme.append("%s.glb  %s, %s (%d meshes, %d materials)" % [bike["file"], bike["name"],
-			PartsDB.style_name(str(bike["style"])), rep["meshes"], rep["materials"]])
+		readme.append("%s.glb  %s, %s, %s (%d meshes, %d materials)" % [bike["file"], bike["name"],
+			PartsDB.style_name(str(bike["style"])), STAND_NAMES.get(str(bike.get("stand", "")), "upright"), rep["meshes"], rep["materials"]])
 		for slot in PartsDB.SLOTS:
 			var id := str(bike["parts"].get(slot, "none"))
 			if id == "none" or PartsDB.ENGINE_SLOTS.has(slot) or README_SKIP.has(slot):
@@ -110,9 +125,22 @@ static func export_model(model: BikeModel, path: String, root_name := "Bike") ->
 
 ## A plain scene of `model` ready for glTF: a Node3D holding one MeshInstance3D per part, every
 ## mesh baked into the export's space (ground origin, front to +Z), materials as baked
-## StandardMaterial3Ds, text labels as text geometry.
+## StandardMaterial3Ds, text labels as text geometry. Posed as the shed parks it (see
+## stand_pose): leant over on its side stand, lifted on its centre stand, or up on a paddock
+## stand (meta "paddock"), which goes out as a part of its own.
 static func scene_for(model: BikeModel, root_name := "Bike") -> Node3D:
-	var to_out := Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, model._build.rear_radius, 0.0))
+	var build := model._build
+	var lean := Basis()
+	var lift := 0.0
+	var paddock: bool = model.get_meta("paddock", false)
+	if paddock:
+		lift = 0.06
+	elif model.stand_pose == "centre":
+		lift = build.centre_lift
+	elif model.stand_pose == "side":
+		lean = Basis(Vector3.BACK, deg_to_rad(float(PartsDB.get_part(str(build.parts.get("side_stand", ""))).get("lean", 12.0))))
+	var turn := Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO)
+	var to_out := turn * Transform3D(lean, Vector3.ZERO) * Transform3D(Basis(), Vector3(0.0, build.rear_radius + lift, 0.0))
 	var slot_of := {}
 	for slot in model._slot_meshes:
 		for mi in model._slot_meshes[slot]:
@@ -166,6 +194,8 @@ static func scene_for(model: BikeModel, root_name := "Bike") -> Node3D:
 			if not mats.has(key):
 				mats[key] = baked
 			_append(groups, slot, key, mats[key], mesh, s, xf)
+	if paddock:
+		_paddock_stand(groups, mats, build, turn, rep)
 	var root := Node3D.new()
 	root.name = root_name.validate_node_name()
 	for slot in groups:
@@ -194,6 +224,29 @@ static func scene_for(model: BikeModel, root_name := "Bike") -> Node3D:
 	rep["materials"] = mats.size()
 	root.set_meta("report", rep)
 	return root
+
+
+## The bay's paddock stand (as Workshop draws it) under a bike, as the "paddock_stand" part:
+## a cross bar at each wheel with a post up each side, and a spine between them.
+static func _paddock_stand(groups: Dictionary, mats: Dictionary, build: BikeBuild, turn: Transform3D, rep: Dictionary) -> void:
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.85, 0.35, 0.05)
+	steel.metallic = 0.5
+	steel.roughness = 0.4
+	var baked := bake_material(steel, rep)
+	var key := _mat_key(baked)
+	if not mats.has(key):
+		mats[key] = baked
+	var boxes := []
+	for z in [-build.wheelbase * 0.5 + 0.12, build.wheelbase * 0.5 - 0.15]:
+		boxes.append([Vector3(0.0, 0.03, z), Vector3(0.5, 0.06, 0.08)])
+		for side in [-1.0, 1.0]:
+			boxes.append([Vector3(0.22 * side, build.rear_radius * 0.5, z), Vector3(0.04, build.rear_radius, 0.04)])
+	boxes.append([Vector3(0.0, build.rear_radius - 0.06, 0.0), Vector3(0.12, 0.12, build.wheelbase * 0.55)])
+	for b in boxes:
+		var bm := BoxMesh.new()
+		bm.size = b[1]
+		_append(groups, "paddock_stand", key, mats[key], bm, 0, turn * Transform3D(Basis(), b[0]))
 
 
 ## Every node under `n`, depth first.

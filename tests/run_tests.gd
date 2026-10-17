@@ -335,6 +335,7 @@ func _run_all() -> void:
 	print("Simon's 17 October round: top boxes that are boxes, roll bags that are roll bags, bikes out as .glb")
 	_test_luggage_looks()
 	_test_glb_export()
+	_test_glb_stands()
 	print("Simon's 17 October round: a stronger jet, the wash bay lift, and dirt where it collects")
 	_test_dirt_concentration()
 	_test_wash_lift_rules()
@@ -16570,12 +16571,46 @@ func _test_glb_export() -> void:
 				paint_found = true
 	check(meshes >= 25 and unpainted == 0, "it has %d part meshes, every surface with a material" % meshes)
 	check(paint_found, "the tank's paint came through")
-	check(absf(bounds.position.y) < 0.03 and bounds.size.y > 0.8 and bounds.size.y < 1.6, "it stands on the ground at y = 0, %.2f m tall" % bounds.size.y)
+	check(absf(bounds.position.y) < 0.03 and bounds.size.y > 0.8 and bounds.size.y < 1.75, "it stands on the ground at y = 0, %.2f m tall (to the mirrors)" % bounds.size.y)
 	check(bounds.size.z > build.wheelbase + 0.4 and bounds.size.z < build.wheelbase + 1.2 and absf(bounds.get_center().z) < 0.3,
 		"%.2f m long, centred between the wheels" % bounds.size.z)
 	check(front > build.wheelbase * 0.4, "the front wheel is towards +Z")
 	scene.free()
 	DirAccess.remove_absolute(path)
+
+
+## v0.7.0's export bikes stand on their stands, as parked in the shed: leant over to their left
+## with the side stand's foot on the ground, up on the centre stand with the back wheel clear,
+## or on a paddock stand (a part of its own) with both wheels clear.
+func _test_glb_stands() -> void:
+	var stands := {}
+	for bike in GlbExport.pick_bikes():
+		var model := GlbExport.bike_model(bike)
+		var scene := GlbExport.scene_for(model, str(bike["name"]))
+		model.free()
+		var low := {}
+		var mid := {}
+		for mi in scene.get_children():
+			var box: AABB = (mi as MeshInstance3D).get_aabb()
+			low[str(mi.name)] = box.position.y
+			mid[str(mi.name)] = box.get_center()
+		var stand := str(bike["stand"])
+		stands[stand] = int(stands.get(stand, 0)) + 1
+		match stand:
+			"side":
+				check(low.has("side_stand") and absf(float(low["side_stand"])) < 0.03 and (mid["tank"] as Vector3).x > 0.04
+					and absf(float(low["rear_tyre"])) < 0.02,
+					"%s leans over to its left onto its side stand, the foot on the ground (tank %.2f m over, foot at %.3f m)" % [
+						bike["name"], (mid["tank"] as Vector3).x, float(low.get("side_stand", 9.0))])
+			"centre":
+				check(low.has("centre_stand") and absf(float(low["centre_stand"])) < 0.02 and float(low["rear_tyre"]) > 0.01,
+					"%s is up on its centre stand, the back wheel off the ground (%.3f m)" % [bike["name"], float(low["rear_tyre"])])
+			"paddock":
+				check(low.has("paddock_stand") and absf(float(low["paddock_stand"])) < 0.01 and float(low["rear_tyre"]) > 0.03
+					and float(low["front_tyre"]) > 0.03 and absf((mid["frame"] as Vector3).x) < 0.02,
+					"%s stands upright on a paddock stand, both wheels clear" % bike["name"])
+		scene.free()
+	check(stands.get("side", 0) >= 2 and stands.has("centre") and stands.has("paddock"), "the release has side, centre and paddock stands (%s)" % str(stands))
 ## Simon's 17 October round: the dirt's mainly where it collects (behind the front wheel, under
 ## the guards, the lower sides, flies on the front), not a coat of dust all over: after a normal
 ## ride on tarmac, after an off-road ride, and on a bike delivered dirty.
