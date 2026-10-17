@@ -504,8 +504,8 @@ func _place_camera(at: Vector2) -> void:
 	var d := PoolGame.aim_dir(aim)
 	var dir := global_transform.basis * Vector3(d.x, 0.0, d.y)
 	var ball := to_global(Vector3(at.x, PoolGame.R, at.y))
-	var elev := lerpf(0.2, 1.15, pitch)
-	var dist := lerpf(0.75, 1.5, pitch)
+	var elev := lerpf(0.2, 1.05, pitch)
+	var dist := lerpf(0.75, 1.25, pitch)   # under the lamp shades over the table
 	var eye := ball - dir * cos(elev) * dist + Vector3.UP * (sin(elev) * dist + 0.06)
 	_cam.global_position = eye
 	_cam.look_at(ball + dir * lerpf(0.45, 0.2, pitch), Vector3.UP)
