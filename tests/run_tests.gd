@@ -3053,8 +3053,13 @@ func _test_perf_steady() -> void:
 	Shed.request({"a": "wash_aim", "fire": true, "at": Workshop.WASH_CENTER, "n": Vector3.UP, "bike": faithful})
 	var aimed: int = told[0]
 	Shed.changed.disconnect(on_change)
-	check(aimed == 0 and Wash.jets().size() == 1, "aiming the jet doesn't make the whole shed redraw (%d)" % aimed)
+	check(aimed == 0 and Wash.jets().size() == 1, "aiming the jet doesn't make the whole shed redraw there and then (%d)" % aimed)
 	Shed.request({"a": "wash_aim", "fire": false})
+	Shed.changed.connect(on_change)
+	for i in int(Shed.SYNC_INTERVAL * 120.0) + 6:
+		await get_tree().process_frame
+	Shed.changed.disconnect(on_change)
+	check(told[0] >= 1, "it's told with the next sync instead (%d)" % told[0])
 	# The autosave: written in the background, then it's there.
 	var kept_dir := SaveGame.dir
 	SaveGame.dir = "user://saves_perf_test/"
