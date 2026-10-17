@@ -128,6 +128,8 @@ var coffee := {}
 var paint_bay := {}
 ## The recovery truck and trailer, what's on it, and the barn find and crash rescue jobs (see Recovery).
 var recovery := {}
+## The pool table in the crew lounge: the balls, who's playing and whose shot (see PoolGame).
+var pool := PoolGame.empty()
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -216,6 +218,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	coffee = CoffeeShop.empty()
 	paint_bay = PaintBay.empty()
 	recovery = Recovery.empty()
+	pool = PoolGame.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -446,6 +449,7 @@ func join_remote() -> void:
 	coffee = CoffeeShop.empty()
 	paint_bay = PaintBay.empty()
 	recovery = Recovery.empty()
+	pool = PoolGame.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -474,6 +478,7 @@ func stop() -> void:
 	coffee = CoffeeShop.empty()
 	paint_bay = PaintBay.empty()
 	recovery = Recovery.empty()
+	pool = PoolGame.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -3060,6 +3065,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("paint_"):
 		_paint_bay_apply(peer, action)
 		return
+	if str(action.get("a", "")).begins_with("pool_"):
+		_pool_apply(peer, action)
+		return
 	var why := check(peer, action)
 	if why != "":
 		_tell(peer, why, false)
@@ -4950,7 +4958,7 @@ func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
 		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
-		"lifts": lifts, "looks": looks}
+		"lifts": lifts, "looks": looks, "pool": pool}
 	if with_board:
 		state["board"] = board
 	return state
@@ -4993,6 +5001,8 @@ func _sync(state: Dictionary) -> void:
 	paint_bay = PaintBay.sanitize(state.get("paint_bay"))
 	# Sheds saved before the recovery truck have no jobs out.
 	recovery = Recovery.sanitize(state.get("recovery"))
+	# Sheds saved before the pool table was playable have no game on.
+	pool = PoolGame.sanitize(state.get("pool"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.
@@ -5042,6 +5052,7 @@ func _process(delta: float) -> void:
 	CoffeeShop.process(delta)
 	PaintBay.process(delta)
 	Recovery.process(delta)
+	PoolGame.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":
@@ -5184,6 +5195,19 @@ func _paint_bay_apply(peer: int, action: Dictionary) -> void:
 		_tell(peer, why, false)
 		return
 	var text := PaintBay.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## A "pool_*" request for the lounge's pool table (see PoolGame.check and PoolGame.apply).
+func _pool_apply(peer: int, action: Dictionary) -> void:
+	var why := PoolGame.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var text := PoolGame.apply(peer, action)
 	if text != "":
 		_tell(peer, text, true)
 	_mark_dirty()

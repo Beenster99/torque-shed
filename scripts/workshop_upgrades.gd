@@ -717,30 +717,18 @@ func _build_lounge_kit(y0: float) -> void:
 	marquee.pixel_size = 0.0028
 	_arcade_text = _text("INSERT COIN", Vector3(ax, 1.3, -0.37), PI, 24, Color(1.0, 0.95, 0.4), 4, unit)
 	_arcade_text.pixel_size = 0.0025
-	# A pool table in the middle of the room, with the balls racked and a cue on it.
-	var pool := Vector3(1.6, y0, sz)
+	# A pool table in the middle of the room, with the balls racked and a cue on it, to play on.
+	var pool := Vector3(PoolGame.TABLE_AT.x, y0, PoolGame.TABLE_AT.z)
 	var felt := ws._material(Color(0.05, 0.4, 0.18), 0.0, 0.9)
 	ws._solid(pool + Vector3(0.0, 0.42, 0.0), Vector3(1.3, 0.84, 2.4), ws._mats["wood"], _root).name = "LoungePoolTable"
 	_box(pool + Vector3(0.0, 0.845, 0.0), Vector3(1.12, 0.01, 2.22), felt)
 	for s in [-1.0, 1.0]:
 		_box(pool + Vector3(s * 0.6, 0.88, 0.0), Vector3(0.1, 0.07, 2.4), ws._mats["wood"])
 		_box(pool + Vector3(0.0, 0.88, s * 1.15), Vector3(1.3, 0.07, 0.1), ws._mats["wood"])
-	var colors := [Color(0.95, 0.8, 0.1), Color(0.1, 0.2, 0.8), Color(0.85, 0.1, 0.1), Color(0.4, 0.1, 0.5), Color(0.95, 0.45, 0.05),
-		Color(0.05, 0.45, 0.15), Color(0.5, 0.1, 0.1), Color(0.05, 0.05, 0.05)]
-	var n := 0
-	for row in 4:
-		for k in row + 1:
-			var ball := MeshInstance3D.new()
-			var sphere := SphereMesh.new()
-			sphere.radius = 0.028
-			sphere.height = 0.056
-			ball.mesh = sphere
-			ball.material_override = _glow(colors[n % colors.size()], 0.05)
-			ball.position = pool + Vector3((k - row * 0.5) * 0.058, 0.878, -0.5 - row * 0.05)
-			_root.add_child(ball)
-			n += 1
-	var cue := _box(pool + Vector3(0.25, 0.88, 0.45), Vector3(0.025, 0.025, 1.4), ws._mats["wood"])
-	cue.rotation.y = 0.3
+	# The balls and the cue: a game of pool anyone can play (see PoolView and PoolGame).
+	var table := PoolView.new()
+	table.position = pool + Vector3(0.0, 0.85, 0.0)
+	_root.add_child(table)
 	var shade := _glow(Color(0.2, 0.6, 0.3), 0.8)
 	for dz in [-0.6, 0.6]:
 		_box(pool + Vector3(0.0, GarageUpgrades.LOFT_HEIGHT - 0.6, dz), Vector3(0.36, 0.14, 0.36), shade)
