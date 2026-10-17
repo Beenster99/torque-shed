@@ -25,11 +25,11 @@ var firing := false
 
 func _ready() -> void:
 	# Fine droplets flung off fast, mostly out along the surface, not big drops.
-	_splash = _particles(180, 0.3, false)
+	_splash = _particles(160, 0.22, false)
 	_splash.spread = 70.0
 	_splash.flatness = 0.3
-	_splash.initial_velocity_min = 2.5
-	_splash.initial_velocity_max = 6.5
+	_splash.initial_velocity_min = 1.8
+	_splash.initial_velocity_max = 4.2
 	_splash.gravity = Vector3(0.0, -9.8, 0.0)
 	_splash.damping_min = 2.0
 	_splash.damping_max = 5.0
@@ -145,7 +145,7 @@ func update(delta: float, from: Vector3, at: Vector3, normal: Vector3, fire: boo
 		var n := normal.normalized() if normal != Vector3.ZERO else -d
 		var back := (d - 2.0 * d.dot(n) * n).normalized()
 		_splash.global_position = at
-		_splash.direction = (back * 0.6 + n * 0.6).normalized()
+		_splash.direction = (back * 0.3 + n * 0.8).normalized()
 		_mist.global_position = at + n * 0.05
 		_mist.direction = (n + Vector3.UP * 0.6).normalized()
 		var below := Vector3(at.x, FLOOR_Y, at.z)
