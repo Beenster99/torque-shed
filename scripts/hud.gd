@@ -427,7 +427,7 @@ func _draw_truck_dash() -> void:
 	# The headlamp telltale: green dipped, blue main beam.
 	if car.engine_on and car.beam > 0:
 		var main_beam := car.beam >= 2
-		draw_string(font, r.position + Vector2(160, 34), "MAIN" if main_beam else "DIP", HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+		draw_string(font, r.position + Vector2(176, 34), "MAIN" if main_beam else "DIP", HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
 			Color(0.35, 0.6, 1.0) if main_beam else Color(0.35, 0.9, 0.45))
 	var stops: Array = ["R", "N", "D"] if car.auto_shift else ["R", "N", "1", "2", "3", "4", "5", "6"]
 	var lit := "R" if car.gear < 0 else ("N" if car.gear == 0 else ("D" if car.auto_shift else str(car.gear)))
