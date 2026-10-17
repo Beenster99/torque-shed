@@ -353,6 +353,8 @@ func _run_all() -> void:
 	await _test_pool_session()
 	print("Simon's 17 October round: plates clear of the rear mudguard, the tyre under it, the clocks over the bars")
 	_test_tail_and_dash_fit()
+	print("Simon's 17 October round (v0.8.0): third person on foot")
+	await _test_walk_third_person()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -17706,3 +17708,173 @@ func _test_tail_and_dash_fit() -> void:
 	check(whole.is_empty(), "a whole bike of every style passes the same checks %s" % [whole])
 	times.append(Time.get_ticks_msec() - t0)
 	print("    (fit checks: builds listed %.1f s, tails by %.1f s, clocks by %.1f s, whole bikes by %.1f s)" % [times[0] / 1000.0, times[1] / 1000.0, times[2] / 1000.0, times[3] / 1000.0])
+
+
+## A key press (or release) of `key`, as the player would make it.
+func _key_event(key: Key, pressed: bool) -> void:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = key
+	ev.keycode = key
+	ev.pressed = pressed
+	Input.parse_input_event(ev)
+
+
+## Simon's 17 October round (v0.8.0): third person on foot. V (View on a pad) switches to a
+## camera behind your shoulder with your own figure in view; it keeps out of walls, comes in
+## closer under a roof, aims from the crosshair to what you can reach, hands spraying and the
+## like back to first person, still jumps, and is remembered in the settings.
+func _test_walk_third_person() -> void:
+	var was := Settings.walk_third_person
+	Settings.walk_third_person = false
+	var listed := Settings.ACTIONS.filter(func(a): return a[0] == "walk_camera")
+	check(listed.size() == 1 and listed[0][2].has("foot") and Settings.binding_codes("walk_camera").has("key:%d" % KEY_V)
+		and Settings.binding_codes("walk_camera").has("joy:%d" % JOY_BUTTON_BACK),
+		"the Key bindings tab lists the on-foot camera toggle: V, or View on a pad (%s)" % str(Settings.binding_codes("walk_camera")))
+	check(Settings.clashes().filter(func(c): return "walk_camera" in [c["a"], c["b"]]).is_empty(), "and it clashes with nothing")
+	# Remembered in the settings file.
+	Settings.walk_third_person = true
+	Settings.save_settings()
+	Settings.walk_third_person = false
+	Settings.load_settings()
+	check(Settings.walk_third_person, "third person on foot is remembered in the settings")
+	Settings.walk_third_person = false
+	Settings.save_settings()
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var v: WalkerView = w.view
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 0.5)))
+	for i in 20:
+		await get_tree().physics_frame
+	check(not v.active() and w.camera.current and not v.body.visible, "first person to start with, and your own figure's hidden")
+	_key_event(KEY_V, true)
+	_key_event(KEY_V, false)
+	for i in 10:
+		await get_tree().process_frame
+	var eye := v.eye_point()
+	var space := w.get_world_3d().direct_space_state
+	var back := v.camera.global_position - eye
+	var clear := PhysicsRayQueryParameters3D.create(eye, v.camera.global_position, 1)
+	clear.exclude = [w.get_rid()]
+	check(Settings.walk_third_person and v.active() and v.camera.current and v.body.visible and not w.camera.visible,
+		"V switches to third person: the shoulder camera's in use, your figure shows and the first-person tool's put away")
+	check(back.dot(w.global_basis.z) > 0.8 and back.dot(w.global_basis.x) > 0.2 and back.length() <= WalkerView.ARM_IN + 0.5
+		and space.intersect_ray(clear).is_empty(),
+		"it sits behind your right shoulder, closer in under the shed roof (%.2f m) with nothing between it and you" % back.length())
+	# Backed up against a wall, it comes in rather than looking through it.
+	var squeezed := []
+	var walls := 0
+	for k in 8:
+		var yaw := TAU * k / 8.0
+		var dir := Basis(Vector3.UP, yaw) * Vector3.BACK
+		var probe := PhysicsRayQueryParameters3D.create(Workshop.CENTER + Vector3.UP * 1.6, Workshop.CENTER + Vector3.UP * 1.6 + dir * 40.0, 1)
+		var wall := space.intersect_ray(probe)
+		if wall.is_empty():
+			continue
+		walls += 1
+		var spot: Vector3 = wall["position"] - dir * 0.45
+		w.place(Transform3D(Basis(Vector3.UP, yaw), Vector3(spot.x, Workshop.CENTER.y, spot.z)))
+		for i in 8:
+			await get_tree().physics_frame
+		await get_tree().process_frame
+		eye = v.arm_start()
+		var ray := PhysicsRayQueryParameters3D.create(eye, v.camera.global_position + (v.camera.global_position - eye).normalized() * 0.15, 1)
+		ray.exclude = [w.get_rid()]
+		if not space.intersect_ray(ray).is_empty() or eye.distance_to(v.camera.global_position) > 1.2:
+			squeezed.append("%d deg %.2f m" % [roundi(rad_to_deg(yaw)), eye.distance_to(v.camera.global_position)])
+	check(walls > 2 and squeezed.is_empty(), "backed up to a wall %d ways round the shed, the camera comes in and never sees through it %s" % [walls, str(squeezed)])
+	# Aiming: the eye looks where the crosshair is, and works on a bike in reach as in first person.
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 0.5)))
+	for i in 5:
+		await get_tree().physics_frame
+	var c_from := v.camera.global_position
+	var c_dir := -v.camera.global_basis.z
+	var cq := PhysicsRayQueryParameters3D.create(c_from + c_dir * maxf(0.0, (v.eye_point() - c_from).dot(c_dir)), c_from + c_dir * 60.0, 1 | 2 | 4 | Workshop.INTERACT_LAYER)
+	cq.exclude = [w.get_rid()]
+	var c_hit := space.intersect_ray(cq)
+	var eq := PhysicsRayQueryParameters3D.create(w.camera.global_position, w.camera.global_position - w.camera.global_basis.z * 80.0, 1 | 2 | 4 | Workshop.INTERACT_LAYER)
+	eq.exclude = [w.get_rid()]
+	var e_hit := space.intersect_ray(eq)
+	check(not c_hit.is_empty() and not e_hit.is_empty() and (c_hit["position"] as Vector3).distance_to(e_hit["position"]) < 0.1,
+		"your eye's turned to look at the very spot under the crosshair")
+	var reached := []
+	for id in main.workshop.bike_views:
+		if reached.size() > 0:
+			break
+		var bpos: Vector3 = (main.workshop.bike_views[id] as Node3D).global_position
+		for k in 8:
+			var dir := Basis(Vector3.UP, TAU * k / 8.0) * Vector3.FORWARD
+			var at := bpos - dir * 1.3
+			w.place(Transform3D(Basis.looking_at(dir, Vector3.UP), Vector3(at.x, Workshop.CENTER.y, at.z)))
+			w._pitch = -0.3
+			Settings.walk_third_person = false
+			for i in 6:
+				await get_tree().physics_frame
+			if str(w.target.get("kind", "")) != "part":
+				continue
+			var first := w.target.duplicate()
+			Settings.walk_third_person = true
+			for i in 6:
+				await get_tree().physics_frame
+			reached = [first, w.target.duplicate()]
+			break
+	check(reached.size() == 2 and str(reached[1].get("kind", "")) == "part" and int(reached[1].get("bike", 0)) == int(reached[0].get("bike", -1)),
+		"looking at a bike within reach, third person picks the same bike to work on as first person %s" % str(reached))
+	# Spraying, washing and sitting down are first person.
+	Settings.walk_third_person = true
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 0.5)))
+	for i in 5:
+		await get_tree().physics_frame
+	var forced := {}
+	for job in ["spray", "wash", "seat"]:
+		match job:
+			"spray": w.spray_mode = {"item": 0, "settle": 1.0, "breath": 1.0}
+			"wash": w.wash_mode = {"bike": 0}
+			"seat": w.seat = -1
+		v.update(0.0)
+		forced[job] = [v.active(), w.camera.current, v.forced_reason()]
+		w.spray_mode = {}
+		w.wash_mode = {}
+		w.seat = 0
+		v.update(0.0)
+	check(not forced["spray"][0] and forced["spray"][1] and not forced["wash"][0] and forced["wash"][1] and not forced["seat"][0],
+		"spraying, washing and sitting down switch to first person by themselves %s" % str(forced))
+	check(v.active() and v.camera.current, "and back to third person after")
+	# Your figure walks and crouches as the crew see it.
+	Input.action_press("move_forward")
+	var swing := 0.0
+	for i in 40:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+		var leg := v.body.find_child("LegR", true, false) as Node3D
+		if leg:
+			swing = maxf(swing, absf(leg.rotation.x))
+	Input.action_release("move_forward")
+	check(swing > 0.15, "walking, your figure's legs swing (%.2f rad)" % swing)
+	w.set_crouched(true)
+	for i in 30:
+		await get_tree().process_frame
+	check(v.body.scale.y < 0.7, "crouching, it squats down as the crew see it (%.2f)" % v.body.scale.y)
+	w.set_crouched(false)
+	for i in 30:
+		await get_tree().physics_frame
+	# Still jumps.
+	var y0 := w.global_position.y
+	var top := y0
+	_key_event(KEY_SPACE, true)
+	_key_event(KEY_SPACE, false)
+	for i in 60:
+		await get_tree().physics_frame
+		top = maxf(top, w.global_position.y)
+	check(top - y0 > 0.38 and v.active(), "Space still jumps in third person (%.2f m)" % (top - y0))
+	_key_event(KEY_V, true)
+	_key_event(KEY_V, false)
+	for i in 5:
+		await get_tree().process_frame
+	check(not v.active() and w.camera.current and w.camera.visible and not v.body.visible, "V again: back to first person, your figure hidden")
+	main.queue_free()
+	await get_tree().process_frame
+	Settings.walk_third_person = was
+	Settings.save_settings()

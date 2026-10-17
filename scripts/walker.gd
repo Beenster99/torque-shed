@@ -59,6 +59,8 @@ const CARRY_MIN := -0.15     # metres closer than arm's length it can come
 const CARRY_MAX := 3.0       # and further out
 
 var camera: Camera3D
+## The third-person view on foot and your own figure in it (see WalkerView).
+var view: WalkerView
 var tool := "hands"
 var controls_enabled := true
 var target := {}            # what the crosshair is on: {kind, bike, engine, slot, spot}
@@ -205,6 +207,8 @@ func _ready() -> void:
 	_work_sound = Sfx.make_loop_player(camera)
 	_work_sound.position = Vector3(0.0, -0.3, -0.6)
 	_set_tool_view()
+	view = WalkerView.new(self)
+	add_child(view)
 	stopwatch.max_laps = Progress.stopwatch_laps(Shed.me())
 	# A tool upgrade bought in the Character tab shows in your hand straight away.
 	Progress.changed.connect(func():
@@ -243,6 +247,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			var sens := MOUSE_SENS * (SPRAY_LOOK if not spray_mode.is_empty() else 1.0)
 			_look(-event.relative.x * sens, -event.relative.y * sens)
+	elif event.is_action_pressed("walk_camera") and not (event.is_action_pressed("rotate_right")
+			and (Shed.moving(Shed.me()) != 0 or Shed.held_by(Shed.me()) != 0)):
+		# First or third person (on a pad it's View, which turns what you hold while you hold it).
+		get_viewport().set_input_as_handled()
+		view.toggle()
 	elif event.is_action_pressed("rotate_left") or event.is_action_pressed("rotate_right"):
 		if Shed.moving(Shed.me()) != 0 or Shed.held_by(Shed.me()) != 0:
 			get_viewport().set_input_as_handled()
@@ -679,6 +688,8 @@ func _physics_process(delta: float) -> void:
 		_eye = SEATED_EYE
 	camera.position.y = _eye
 	_update_sway(delta)
+	# In third person the eye turns to what the crosshair is over, before anything aims with it.
+	view.update(delta, true)
 	if _f_bike != 0:
 		_f_time += delta
 		if _f_time >= HOLD_TO_PUSH:

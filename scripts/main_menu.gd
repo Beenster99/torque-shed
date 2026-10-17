@@ -19,6 +19,7 @@ signal quitting
 
 const CONTROLS_TEXT := """ON FOOT
 W A S D / left stick: walk      Shift: run      Mouse / right stick: look      C / Ctrl / R3: crouch
+V / View: first or third person (spraying, washing, the sandblaster and the tyre changer are always first person)
 1-6, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can, pressure washer)
 Hold left mouse / RT / A: work on what you're looking at, or put a held part down anywhere
 Holding a can of fluid: left mouse pours it in, right mouse / LT drains into it
@@ -47,6 +48,7 @@ var _assist: HSlider
 var _auto: CheckBox
 var _snap: CheckBox
 var _free_rotate: CheckBox
+var _third_person: CheckBox
 var _host_info: Label
 var _crew: Label
 var _pad: Label
@@ -195,6 +197,11 @@ func _ready() -> void:
 	recentre.button_pressed = Settings.camera_recentre
 	recentre.toggled.connect(func(v): Settings.camera_recentre = v)
 	settings.add_child(recentre)
+	_third_person = CheckBox.new()
+	_third_person.text = "Third person on foot: the camera behind your shoulder, your whole figure in view (V / View toggles it)"
+	_third_person.button_pressed = Settings.walk_third_person
+	_third_person.toggled.connect(func(v): Settings.walk_third_person = v)
+	settings.add_child(_third_person)
 	settings.add_child(UITheme.label("Units", 15))
 	var units := OptionButton.new()
 	units.add_item("Metric (km/h, km, kg, L/100 km)")
@@ -349,6 +356,7 @@ func show_pause() -> void:
 	_auto.button_pressed = Settings.auto_shift
 	_snap.button_pressed = Settings.snap_placement
 	_free_rotate.button_pressed = Settings.free_rotate
+	_third_person.button_pressed = Settings.walk_third_person
 	_refresh_time_settings(true)
 	refresh_retrieve()
 	show()

@@ -16,6 +16,9 @@ var telemetry_overlay := false
 var auto_shift := true
 ## The chase camera eases back behind the bike after a moment of not swinging it round.
 var camera_recentre := true
+## On foot, the view from behind your shoulder with your whole figure in it, instead of from
+## your eyes (V, or View on a pad, toggles it; see WalkerView).
+var walk_third_person := false
 var high_quality := true
 var sfx_volume := 0.8
 var radio_volume := 0.6
@@ -72,6 +75,7 @@ const ACTIONS := [
 	["move_forward", "Walk forward", ["foot"]], ["move_back", "Walk back", ["foot"]],
 	["move_left", "Walk left", ["foot"]], ["move_right", "Walk right", ["foot"]],
 	["sprint", "Run", ["foot"]], ["crouch", "Crouch", ["foot"]], ["jump", "Jump", ["foot"]],
+	["walk_camera", "Camera on foot: first or third person", ["foot"]],
 	["act", "Work / use (hold)", ["foot", "board"]], ["alt_act", "Second work button (hold)", ["foot", "board"]],
 	["tool_next", "Next tool", ["foot", "board"]], ["tool_prev", "Previous tool", ["foot", "board"]],
 	["tool_1", "Hands", ["foot", "board"]], ["tool_2", "Wrench", ["foot", "board"]], ["tool_3", "Brush", ["foot", "board"]],
@@ -110,7 +114,8 @@ const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding or driving", "spray":
 	"geo": "in geometry mode"}
 ## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
 ## B on a pad jumps on foot, but with a spray can or gun out it's the finish (the spray comes first).
-const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"]]
+## View on a pad turns what you hold or carry; with nothing in hand it switches the camera.
+const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rotate_right", "walk_camera"]]
 ## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
 const CONTEXT_ALSO := {"spray": ["foot"]}
 
@@ -138,6 +143,7 @@ func load_settings() -> void:
 		direct_bars = bool(cfg.get_value("riding", "direct_bars", direct_bars))
 		telemetry_overlay = bool(cfg.get_value("riding", "telemetry", telemetry_overlay))
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
+		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
 		radio_volume = cfg.get_value("audio", "radio", radio_volume)
@@ -170,6 +176,7 @@ func save_settings() -> void:
 	cfg.set_value("riding", "direct_bars", direct_bars)
 	cfg.set_value("riding", "telemetry", telemetry_overlay)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
+	cfg.set_value("walking", "third_person", walk_third_person)
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("audio", "radio", radio_volume)
@@ -331,6 +338,9 @@ func _setup_inputs() -> void:
 	# The second work button: drains fluids into a held container.
 	_bind("alt_act", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	_bind("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])
+	# First or third person on foot. C (the riding camera key) crouches on foot, so it's the key
+	# beside it; on a pad it's View, which only turns things while you hold or carry them.
+	_bind("walk_camera", [KEY_V], [JOY_BUTTON_BACK])
 	# At the whiteboard: write a line of text, undo your last mark (Z or Ctrl+Z), hold to wipe it.
 	_bind("board_text", [KEY_T], [])
 	_bind("board_undo", [KEY_Z], [JOY_BUTTON_DPAD_LEFT])
