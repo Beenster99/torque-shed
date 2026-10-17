@@ -466,6 +466,10 @@ func _ready() -> void:
 							Shed.request({"a": "recovery_enter"})
 							rec_step = 2
 					2:
+						# Asked again now and then: the host turns it down while this player's still busy
+						# with an earlier step (just as a player would press F again).
+						if not main.recovery.driving and Recovery.driver() == 0 and Engine.get_process_frames() % 60 == 0:
+							Shed.request({"a": "recovery_enter"})
 						if main.recovery.driving:
 							rec_drove = true
 							rec_t += 1
