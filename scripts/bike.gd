@@ -13,6 +13,10 @@ signal engine_changed(running: bool, reason: String)
 
 const G := 9.81
 const MAX_LEAN := deg_to_rad(52.0)
+## About as far as anyone leans riding on the road (racers on a track go on further), and the
+## share of the steer input that asks for it (see lean_for_input).
+const ROAD_LEAN := deg_to_rad(30.0)
+const ROAD_INPUT := 0.75
 const ROLLING_RESISTANCE := 0.015
 const LONG_SLIP_SPEED := 3.0      # m/s: slip ratios are taken against at least this speed, so a crawl stays calm
 const LAT_SLIP_SPEED := 2.5       # and slip angles against at least this one
@@ -114,6 +118,10 @@ var hands_off := false
 ## and a hand that wants to try counter-steering for itself.
 var push_bars := 0.0
 var trail_now := 0.1        # the trail as it is right now, with the fork dived, the bars turned and the bike leaned, m
+var trail_seen := 0.1       # ... smoothed over a few hundredths of a second, as the front's feel follows it
+var rake_now := 0.4         # the rake against the road right now, rad: less with the fork dived and the back up
+var dive := 0.0             # how far the suspension has pitched the bike nose down from level, rad
+var trail_springs := 0.1    # the trail with the bike pitched on its springs as it is now (upright, bars straight), m
 var wobble := 0.0           # how far the bars are shaking either way about where they're pointing, rad
 var speed := 0.0           # forward speed, m/s
 var lean_angle := 0.0      # radians, positive = leaning right
@@ -181,14 +189,17 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	var rough := Vector3(m * wb * wb * 0.16, m * wb * wb * 0.13, m * 0.11)
 	inertia = (rough + build.inertia_add).max(rough * 0.6)
 	# The steering axis, raked back through the steering head, and the front axle the fork's
-	# offset ahead of it, taken with the fork sagged under the bike's weight.
+	# offset ahead of it. A telescopic fork's axle slides up its legs, parallel to the axis, so
+	# the offset stays put as it compresses (see _wheel_forces).
 	var rake := deg_to_rad(build.rake_deg)
 	_steer_axis = Vector3(0.0, cos(rake), sin(rake))
 	var ahead := Vector3(0.0, sin(rake), -cos(rake))
-	var sag := clampf(m * G * 0.5 / maxf(build.front_spring, 1.0), 0.0, build.front_travel)
 	_offset_arm = ahead * build.fork_offset
-	_steer_pivot = Vector3(0.0, sag, -wb * 0.5) - _offset_arm
+	_steer_pivot = Vector3(0.0, 0.0, -wb * 0.5) - _offset_arm
 	trail_now = build.trail
+	trail_seen = build.trail
+	trail_springs = build.trail
+	rake_now = rake
 	can_sleep = false
 	continuous_cd = true
 	contact_monitor = true
@@ -214,6 +225,8 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 		_make_wheel(false, Vector3(0.0, build.rear_travel, wb * 0.5), build.rear_radius,
 			build.rear_travel, build.rear_spring, build.rear_bump, build.rear_rebound, build.rear_inertia),
 	]
+	wheels[0].merge({"prog": build.front_progression, "preload": build.front_preload, "knee": build.front_knee}, true)
+	wheels[1].merge({"prog": build.rear_progression, "preload": build.rear_preload, "knee": build.rear_knee}, true)
 	gear = 1
 	rpm = build.idle_rpm
 
@@ -272,6 +285,11 @@ func _make_wheel(is_front: bool, mount: Vector3, radius: float, travel: float, s
 		# The whole push of the road on the tyre (load and grip, world space), the side force on
 		# its own, and the way the tyre is rolling: the front's steering works out its torque from them.
 		"force": Vector3.ZERO, "f_lat": Vector3.ZERO, "long_dir": Vector3.FORWARD,
+		# The suspension: the axle fully extended (bike space), the tyre's grip forces as shares of
+		# its load last step (they push the wheel up or down its travel too), the spring and
+		# damper's push along the travel (N), and whether it's on the bump stop.
+		"axle": Vector3(0.0, mount.y - travel, mount.z), "rx": 0.0, "ry": 0.0, "f_susp": 0.0, "bottomed": false,
+		"prog": 0.0, "preload": 0.0, "knee": 1.0,
 	}
 
 
@@ -312,6 +330,8 @@ func place(pos: Vector3, heading: float) -> void:
 		w["omega"] = 0.0
 		w["compression"] = 0.0
 		w["sy"] = 0.0
+		w["rx"] = 0.0
+		w["ry"] = 0.0
 		w.erase("road_h")
 	if model:
 		model.set_rider_visible(true)
@@ -420,7 +440,8 @@ func _physics_process(delta: float) -> void:
 	wheels[1]["brake_torque"] = 0.0 if burnout > 0.0 else rear_grip * build.rear_brake_torque
 	for w in wheels:
 		_wheel_forces(w, delta, space)
-	surface = wheels[1]["surface"] if wheels[1]["contact"] else wheels[0]["surface"]
+	_measure_geometry(delta)
+	surface =wheels[1]["surface"] if wheels[1]["contact"] else wheels[0]["surface"]
 	_apply_wheel_gyro()
 	_apply_aero()
 	_apply_rider_balance()
@@ -456,11 +477,32 @@ func _measure_attitude() -> void:
 	pitch_angle = asin(clampf(fwd.y, -1.0, 1.0))
 
 
+## How the suspension has pitched the bike and so changed its steering geometry: the fork diving
+## under braking (or the back squatting under power) tips the steering axis up, which takes rake
+## and trail off and quickens the steering; the back sinking or the front rising puts them back on.
+func _measure_geometry(delta: float) -> void:
+	var rake := deg_to_rad(build.rake_deg)
+	var f: Dictionary = wheels[0]
+	# How far each axle has risen into the bike from fully extended: the bike's pitch on its springs.
+	var rise_f := float(f["compression"]) * build.fork_path.y
+	var rise_r := build.rear_axle_at(float(wheels[1]["compression"])).y - build.rear_axle_at(0.0).y
+	dive = atan2(rise_f - rise_r, build.wheelbase)
+	rake_now = rake - dive
+	# The trail that leaves (bike upright, bars straight). A linked fork's axle also moves ahead of
+	# the steering axis as it compresses, which takes off a little more.
+	var offset := build.fork_offset + float(f["compression"]) * build.fork_path.dot(Vector3(0.0, sin(rake), -cos(rake)))
+	trail_springs = (build.front_radius * sin(rake_now) - offset) / cos(rake_now)
+	trail_seen = lerpf(trail_seen, trail_now, 1.0 - exp(-delta / 0.04))
+
+
+## The fork's and shock's travel used, 0 (fully extended) .. 1 (bottomed).
+func travel_used(i: int) -> float:
+	return clampf(float(wheels[i]["compression"]) / maxf(float(wheels[i]["travel"]), 0.01), 0.0, 1.0)
+
+
 func _target_lean() -> float:
 	var speed_factor := clampf((absf(speed) - 1.0) / 8.0, 0.15, 1.0)
-	var want := lean_input * MAX_LEAN * speed_factor
-	# No more than the tyres will hold with a margin in hand: a key held down asks for full lean.
-	want = clampf(want, -_grip_lean(), _grip_lean())
+	var want := signf(lean_input) * lean_for_input(absf(lean_input)) * speed_factor
 	# That's the lean of the line from the tyres to the centre of mass, which sets the turn; the
 	# bike itself leans a little further, as the contact patch rolls in round the tyre's crown.
 	var rc := _crown()
@@ -468,12 +510,30 @@ func _target_lean() -> float:
 	return want + asin(clampf(rc * sin(want) / arm, -1.0, 1.0))
 
 
+## The lean asked for (of the line from the tyres to the centre of mass, rad) by `x` (0..1) of
+## the steer input, at speed. Riding on the road nobody leans much past ROAD_LEAN: most of the
+## input's range (up to ROAD_INPUT) covers ordinary road riding, and only the last of it goes on
+## to what the tyres will hold (with a margin in hand), the way a racer leans.
+func lean_for_input(x: float) -> float:
+	var top := _grip_lean()
+	var road := minf(_balance_lean(ROAD_LEAN), top * 0.85)
+	x = clampf(x, 0.0, 1.0)
+	if x <= ROAD_INPUT:
+		return road * x / ROAD_INPUT
+	# Past it, on the same slope at first, curving round to the most the tyres hold at full input.
+	var t := (x - ROAD_INPUT) / (1.0 - ROAD_INPUT)
+	var s := road / ROAD_INPUT * (1.0 - ROAD_INPUT)
+	return minf(road + s * t + (top - road - s) * t * t, top)
+
+
 ## The most lean (of the line from the tyres to the centre of mass) the tyres' grip on the road
-## under them holds in a steady turn, less a margin a rider keeps in hand.
+## under them holds in a steady turn, less a margin a rider keeps in hand, or the bike's ground
+## clearance allows.
 func _grip_lean() -> float:
 	var surf := str(wheels[1]["surface"]) if not wheels.is_empty() else "tarmac"
 	var mu := minf(float(build.grip_front.get(surf, 0.7)), float(build.grip_rear.get(surf, 0.7))) * Weather.grip_mult(surf)
-	return minf(atan(mu * GRIP_IN_HAND), MAX_LEAN)
+	# And no further than the bike leans before it grounds out.
+	return minf(minf(atan(mu * GRIP_IN_HAND), MAX_LEAN), _balance_lean(build.lean_clearance))
 
 
 ## The tyres' average crown radius (see TyreModel), m.
@@ -505,7 +565,8 @@ func _update_steering(delta: float) -> void:
 	var v := absf(speed)
 	var before := steer
 	var target := _target_lean()
-	var rake := deg_to_rad(build.rake_deg)
+	# The rake as it is now, the fork dived or not (see _measure_geometry).
+	var rake := rake_now
 	# The rider feels the lean through the seat and their inner ear, not instantly: a shake at the
 	# bars is too quick for them to steer against (two smoothing stages of RIDER_FEEL seconds).
 	var k := 1.0 - exp(-delta / RIDER_FEEL)
@@ -691,13 +752,17 @@ func _apply_wheel_gyro() -> void:
 
 ## How hard the front pulls back towards where it would point on its own, N m per radian the
 ## bars are turned from there: the front tyre's cornering stiffness on the trail, the rider's
-## feel for the bars. Grip builds in as the wheel rolls.
-func _front_stiffness(v: float) -> float:
+## feel for the bars. Grip builds in as the wheel rolls. `live` takes the geometry as the springs
+## have it now (diving on the brakes, the shorter trail and steeper head lighten it; squatting
+## under power, the longer trail firms it up), otherwise as the bike stands.
+func _front_stiffness(v: float, live := true) -> float:
 	var tp: Dictionary = build.tyre_front
 	var mu := float(build.grip_front.get("tarmac", 1.0))
 	var fz := build.total_mass * G * 0.5
+	var trail := trail_springs if live else build.trail
+	var rake := rake_now if live else deg_to_rad(build.rake_deg)
 	var c_alpha := mu * fz * TyreModel.stiffness_at_zero(tp) / tan(float(tp["alpha_peak"]))
-	return maxf(build.trail, 0.0) * cos(deg_to_rad(build.rake_deg)) * c_alpha * clampf(v / 6.0, 0.15, 1.0)
+	return maxf(trail, 0.0) * cos(rake) * c_alpha * clampf(v / 6.0, 0.15, 1.0)
 
 
 ## Direct bars: the push a full input puts on 720 mm bars at speed v, N m. A faster bike takes a
@@ -705,7 +770,7 @@ func _front_stiffness(v: float) -> float:
 ## A front that turns easily (light, on soft knobblies) takes less of a push to turn the same, a
 ## heavier bike more.
 func _direct_push(v: float) -> float:
-	var front := clampf(_front_stiffness(DIRECT_PUSH_SPEED) / DIRECT_FRONT_REF * build.total_mass / DIRECT_MASS_REF, 0.35, 1.4)
+	var front := clampf(_front_stiffness(DIRECT_PUSH_SPEED, false) / DIRECT_FRONT_REF * build.total_mass / DIRECT_MASS_REF, 0.35, 1.4)
 	return DIRECT_BAR_TORQUE * front * clampf(pow(maxf(v, 0.0) / DIRECT_PUSH_SPEED, 0.75), DIRECT_PUSH_LEAST, DIRECT_PUSH_MOST)
 
 
@@ -914,12 +979,22 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var tp: Dictionary = build.tyre_front if is_front else build.tyre_rear
 	var radius: float = w["radius"]
 	var crown := minf(float(tp.get("crown", 0.0)), radius * 0.6)
-	var mount_at: Vector3 = w["mount"]
-	if is_front:
-		# The front axle swings round the steering axis with the bars, on the fork's offset.
-		mount_at += Basis(_steer_axis, -steer) * _offset_arm - _offset_arm
-	var mount: Vector3 = global_transform * mount_at
 	var travel: float = w["travel"]
+	var q_was: float = w["compression"]
+	# Where the axle would sit with the suspension fully extended, and the way it moves as the
+	# suspension squashes (bike space). The front slides up the fork legs (raked back, so it
+	# moves back as well as up), swinging round the steering axis with the bars on the fork's
+	# offset; the back swings up round the swingarm pivot, taken straight for this one step.
+	var axle0: Vector3
+	var path: Vector3
+	if is_front:
+		var turn := Basis(_steer_axis, -steer)
+		axle0 = w["axle"] + turn * _offset_arm - _offset_arm
+		path = turn * build.fork_path
+	else:
+		path = build.rear_path_at(q_was)
+		axle0 = build.rear_axle_at(q_was) - path * q_was
+	var mount: Vector3 = global_transform * (axle0 + path * travel)
 	# Leaned over, a round tyre sits lower than a thin disc would: look a little further.
 	var ray_len := travel + radius + crown * 2.0
 	var query := PhysicsRayQueryParameters3D.create(mount, mount - up * ray_len, 1)
@@ -939,6 +1014,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var n := Vector3.UP
 	var cos_cam := 1.0
 	var hit_surf := "grass"
+	var path_w := b * path
+	var slide := 1.0   # how far the axle rises from the road per metre along its travel
 	if not hit.is_empty():
 		n = hit["normal"]
 		if hit["collider"] and (hit["collider"] as Object).has_meta("surface"):
@@ -947,8 +1024,9 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		# (radius - crown) * cos(camber) + crown above the ground.
 		var sin_cam := clampf(axle.dot(n), -0.95, 0.95)
 		cos_cam = sqrt(1.0 - sin_cam * sin_cam)
+		slide = maxf(path_w.dot(n), 0.2)
 		var h_mount: float = (mount - hit["position"]).dot(n)
-		var hang := (h_mount - crown - (radius - crown) * cos_cam) / maxf(up.dot(n), 0.2)
+		var hang := (h_mount - crown - (radius - crown) * cos_cam) / slide
 		# The ground isn't a billiard table: ripples, ruts and stones under the tyre work the suspension.
 		# The tyre's own spring sits between the road and the suspension, and it wraps round a short
 		# ripple: one too quick for it is soaked up by the tyre flexing, not jammed straight into the
@@ -978,42 +1056,54 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		w["eased"] = false
 		w["force"] = Vector3.ZERO
 		w["f_lat"] = Vector3.ZERO
+		w["f_susp"] = 0.0
+		w["bottomed"] = false
 		return
 
-	var comp := clampf(raw_comp, 0.0, travel)
+	# The spring is preloaded: until the road pushes harder than that, the suspension stays
+	# topped out and only the tyre squashes.
+	var rate: float = w["spring"]
+	var pre_gap := rate * float(w["preload"]) / TYRE_RATE
+	var comp := clampf(raw_comp - pre_gap, 0.0, travel)
 	var was_touching: bool = w["contact"]
-	# How fast the wheel is being pushed up into the bike. On the first frame of touchdown the
+	# How fast the wheel is being pushed up its travel. On the first frame of touchdown the
 	# wheel was hanging free, so take the bike's own closing speed instead of the jump in travel.
-	var closing := -(linear_velocity + angular_velocity.cross(mount - global_position)).dot(up)
-	var comp_vel: float = (comp - w["compression"]) / delta if was_touching else closing
+	var closing := -(linear_velocity + angular_velocity.cross(mount - global_position)).dot(n) / slide
+	var comp_vel: float = (comp - q_was) / delta if was_touching else closing
 	var raw_vel: float = (raw_comp - float(w.get("raw", raw_comp))) / delta if was_touching else closing
 	w["raw"] = raw_comp
 	w["compression"] = comp
 	# Bump damping resists the wheel coming up, rebound damping resists it going back down. Fast
-	# hits blow the compression valving open a little, as real dampers do, so a big landing is
-	# soaked up rather than kicked back.
+	# hits blow the compression valving open (sooner on a damper with high-speed valving), as real
+	# dampers do, so a big landing or a pothole is soaked up rather than kicked back.
 	var damp_force: float
 	if comp_vel > 0.0:
 		var bump: float = w["bump"]
-		damp_force = bump * (comp_vel if comp_vel < 1.0 else 1.0 + (comp_vel - 1.0) * 0.45)
+		var knee: float = w["knee"]
+		damp_force = bump * (comp_vel if comp_vel < knee else knee + (comp_vel - knee) * 0.45)
 	else:
 		damp_force = float(w["rebound"]) * comp_vel
-	var fz: float = w["spring"] * comp + damp_force
-	if raw_comp > travel:
+	var f_susp: float
+	if raw_comp <= pre_gap:
+		f_susp = TYRE_RATE * raw_comp
+	else:
+		f_susp = BikeBuild.spring_force(rate, comp, travel, float(w["prog"]), float(w["preload"])) + damp_force
+	w["bottomed"] = raw_comp - pre_gap > travel
+	if w["bottomed"]:
 		# Bottomed out: a firm, heavily damped rubber stop that eats the energy it takes, both
 		# squashing and coming back off it, so it never kicks the bike back up.
-		var over := raw_comp - travel
-		fz += over * 160000.0 + raw_vel * (9000.0 if raw_vel > 0.0 else 14000.0)
-	fz = clampf(fz, 0.0, mass * G * 6.0)
+		var over := raw_comp - pre_gap - travel
+		f_susp += over * 160000.0 + raw_vel * (9000.0 if raw_vel > 0.0 else 14000.0)
+	f_susp = maxf(f_susp, 0.0)
+	w["f_susp"] = f_susp
 	w["contact"] = true
-	w["load"] = fz
 	w["surface"] = hit_surf
 
 	# Where the crown touches: from the wheel centre, down the wheel's plane to the crown's
 	# centre, then straight down onto the road.
 	var down := -n - axle * (-n).dot(axle)
 	down = down.normalized() if down.length() > 0.01 else -up
-	var centre := mount - up * (travel - comp)
+	var centre := global_transform * (axle0 + path * comp)
 	var contact := centre + down * (radius - crown) - n * crown
 	contact -= n * (contact - hit["position"]).dot(n)
 	var r_eff := (radius - crown) + crown * cos_cam    # the rolling radius at this camber
@@ -1021,7 +1111,6 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	w["contact_pos"] = contact
 	w["normal"] = n
 	var arm := contact - global_position
-	apply_force(n * fz, arm)
 
 	# Tyre frame on the ground plane. lat_dir points to the wheel's left. The tyre rolls along the
 	# line where its own plane meets the road (square to its axle), not along its heading laid flat:
@@ -1029,6 +1118,35 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var long_dir := n.cross(axle)
 	long_dir = long_dir.normalized() if long_dir.length() > 0.1 else (heading - n * heading.dot(n)).normalized()
 	var lat_dir := n.cross(long_dir)
+
+	# The tyre's load. The suspension only pushes along its own travel; what the road pushes the
+	# wheel with along that line is the load and the tyre's grip forces together (the rest goes
+	# into the fork legs or the swingarm). Braking drives a telescopic fork down its raked legs as
+	# well as loading it, so it dives more than the weight coming forward alone would make it;
+	# leaned into a turn the side force works the springs too. At the back, the chain's pull
+	# and a rear brake caliper working against the swingarm move it up or down as well
+	# (anti-squat: see BikeBuild.anti_squat_at).
+	var push := f_susp
+	if not is_front:
+		var dt: float = w["drive_torque"]
+		var pull := b * build.chain_pull_at(axle0 + path * comp, dt >= 0.0)
+		push -= absf(dt) / build.sprocket_r_rear * pull.dot(path_w)
+		if w["brake_torque"] > 0.0 and absf(float(w["omega"])) > 0.5:
+			var held := minf(float(w["brake_torque"]), maxf(-float(w["rx"]) * float(w["load"]), 0.0) * r_eff)
+			push -= held / build.swing_length * signf(float(w["omega"]))
+	elif build.fork_link > 0.0 and w["brake_torque"] > 0.0 and absf(float(w["omega"])) > 0.5:
+		# A leading-link fork's brake works against its arm, which pivots behind the axle: braking
+		# pushes the arm down and holds the front up.
+		var held := minf(float(w["brake_torque"]), maxf(-float(w["rx"]) * float(w["load"]), 0.0) * r_eff)
+		push += held / build.fork_link * signf(float(w["omega"]))
+	var along := n.dot(path_w) + clampf(float(w["rx"]), -1.6, 1.6) * long_dir.dot(path_w) \
+		+ clampf(float(w["ry"]), -1.6, 1.6) * lat_dir.dot(path_w)
+	# Where the road's push comes close to square to the travel (hard on the power in a big
+	# wheelie) the spring carries little of it and the tyre's own give sets the load; the
+	# suspension then jacks right out, so the load is held to twice the spring's.
+	var fz := clampf(push / maxf(along, 0.5), 0.0, mass * G * 6.0)
+	w["load"] = fz
+	apply_force(n * fz, arm)
 	var v_contact := linear_velocity + angular_velocity.cross(arm)
 	if is_front:
 		# Turning the bars swings the contact patch sideways round the steering axis, trail and
@@ -1106,6 +1224,11 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		fy *= 1.0 - 0.8 * burnout
 		slip_ratio = maxf(slip_ratio, burnout)
 	w["slip"] = slip_ratio
+	w["rx"] = fx / maxf(fz, 1.0)
+	# The side force's share works the springs as the tyre's carcass and the wheel's own weight
+	# take it up, over a moment rather than at once (taken straight, a tyre near its limit would
+	# unload itself the instant it slipped a little more).
+	w["ry"] = lerpf(float(w["ry"]), fy / maxf(fz, 1.0), 1.0 - exp(-delta / 0.15))
 	w["omega"] = omega_new
 	w["spin"] = fmod(w["spin"] + omega_new * delta, TAU)
 	var force := long_dir * fx + lat_dir * fy

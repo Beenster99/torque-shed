@@ -4629,10 +4629,12 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 		return
 	var wb := _build.wheelbase
 	_steer_node.basis = Basis(_steer_axis, -steer)
-	var front_axle := Vector3(0.0, comp_f, -wb * 0.5)
+	# The front axle slides up the fork legs, the back one swings up round the swingarm pivot
+	# (the same paths the riding physics uses: see BikeBuild.fork_path and rear_axle_at).
+	var front_axle := Vector3(0.0, 0.0, -wb * 0.5) + _build.fork_path * comp_f
 	_front_hub.position = _steer_node.transform.affine_inverse() * front_axle
 	_front_wheel.rotation.x = -spin_f
-	var rear_axle := Vector3(0.0, comp_r, wb * 0.5)
+	var rear_axle := _build.rear_axle_at(comp_r)
 	_rear_hub.position = rear_axle
 	_rear_wheel.rotation.x = -spin_r
 	var to_axle := rear_axle - _pivot

@@ -3,12 +3,14 @@ extends Control
 ## The live telemetry at the right of the screen while riding (F3, or Settings): speed, gear and
 ## revs; each tyre's friction circle (where its force sits against its grip: a dot past the
 ## ring is sliding) with its load; the throttle and brakes; and strip charts of the last few
-## seconds (lean, steering, bar torque, slip, grip used, loads). Reads the bike's RideTelemetry.
+## seconds (lean, steering, bar torque, slip, grip used, loads). Under each circle, how far that
+## end's suspension is squashed (red on the bump stop), and the geometry as the springs have it
+## now: the pitch on them, the rake and the trail. Reads the bike's RideTelemetry.
 
 const WIDTH := 400.0
 const WINDOW := 8.0            # seconds of history in the strips
 const STRIPS := ["Lean (+ right)", "Steering (+ right)", "Bar torque (+ right)", "Steering shake", "Slip ratio",
-	"Slip angle", "Grip used (1 = the limit)", "Tyre load"]
+	"Slip angle", "Grip used (1 = the limit)", "Tyre load", "Suspension travel used", "Trail"]
 
 var bike: Bike
 
@@ -58,7 +60,12 @@ func _draw() -> void:
 		draw_rect(Rect2(bx, by + 16.0, size.x - bx - 10.0, 8.0), Color(1, 1, 1, 0.08))
 		draw_rect(Rect2(bx, by + 16.0, (size.x - bx - 10.0) * clampf(float(b[1]), 0.0, 1.0), 8.0), b[2])
 		by += 36.0
-	y += d + 30.0
+	# The geometry as the springs have it.
+	draw_string(font, Vector2(bx, by + 12.0), "Pitch %+.1f°  rake %.1f°" % [rad_to_deg(bike.dive), rad_to_deg(bike.rake_now)],
+		HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, dim)
+	draw_string(font, Vector2(bx, by + 28.0), "Trail %d mm (%d standing)" % [roundi(bike.trail_springs * 1000.0), roundi(bike.build.trail * 1000.0)],
+		HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, dim)
+	y += d + 46.0
 	# The last few seconds as strips.
 	var shown := TelemetryGraph.STRIPS.filter(func(s): return STRIPS.has(s[0]))
 	var gap := 5.0
@@ -88,3 +95,10 @@ func _circle(c: Vector2, r: float, w: Dictionary, name: String, color: Color) ->
 	draw_string(font, c + Vector2(-r, r + 14.0), load_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, TelemetryGraph.INK)
 	if over:
 		draw_string(font, c + Vector2(r - 34.0, r + 14.0), "SLIDE", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, TelemetryGraph.OVER)
+	# The suspension at this end: how far it's squashed of its travel.
+	var travel := float(w.get("travel", 0.1))
+	var q := float(w.get("compression", 0.0))
+	var stop: bool = w.get("bottomed", false)
+	var susp := "%s %d/%d mm" % ["fork" if w.get("is_front", false) else "shock", roundi(q * 1000.0), roundi(travel * 1000.0)]
+	draw_string(font, c + Vector2(-r, r + 30.0), "BOTTOMED" if stop else susp, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+		TelemetryGraph.OVER if stop else TelemetryGraph.INK_DIM)

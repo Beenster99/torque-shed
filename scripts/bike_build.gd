@@ -25,6 +25,31 @@ const BEAD_OK := 0.6
 ## The fork's offset ahead of the steering axis (m) for a fork in the catalogue without one, by
 ## its style: with the rake and the front wheel's size it sets the trail.
 const FORK_OFFSET := {"conventional": 0.045, "usd": 0.032, "girder": 0.045, "springer": 0.08, "leading_link": 0.05}
+## How a fork's axle travels as it compresses, by its style (degrees tipped forward from its
+## legs): a telescopic fork slides straight up its raked legs, so braking pushes it down them as
+## well as loading it (it dives); the links of a girder, springer or leading-link fork swing the
+## axle up more nearly straight, which holds the nose up on the brakes (anti-dive).
+const FORK_PATH_TILT := {"conventional": 0.0, "usd": 0.0, "girder": 14.0, "springer": 10.0, "leading_link": 30.0}
+## A leading-link (Earles) fork's swinging arm, m, by style: its brake is mounted on the arm, so
+## braking also pushes the arm down, which holds the fork up (the bike barely dives).
+const FORK_LINK := {"leading_link": 0.3}
+## How far each frame style leans before something hard touches down (footboards, pipes, the
+## frame), degrees: a low cruiser grounds out long before its tyres give up.
+const LEAN_CLEARANCE := {"softail": 31.0, "cruiser": 32.0, "chopper": 30.0}
+## How much stiffer a spring gets towards the end of its travel, for a part in the catalogue
+## without its own "progression": the rate at the bottom is (1 + 3 x this) times the rate at the top.
+## Forks by style, shocks by their type (air springs ramp up hardest, linkages next).
+const FORK_PROGRESSION := {"conventional": 0.2, "usd": 0.25, "girder": 0.05, "springer": 0.05, "leading_link": 0.1}
+const SHOCK_PROGRESSION := {"air": 0.7, "linkage": 0.45, "mono": 0.3, "twin": 0.1}
+## Stock spring preload, at the wheel along its travel (m), and how far a preload clicker moves it
+## either way: preload pre-squashes the spring, so the bike sags less without the spring getting
+## any stiffer.
+const PRELOAD_STOCK := 0.008
+const PRELOAD_CLICK := 0.008
+## Chain pitch (520/525/530 chain, 5/8 in), m: with the teeth it sets each sprocket's size.
+const CHAIN_PITCH := 0.015875
+## Where the gearbox sprocket sits from the swingarm pivot (bike space, m: +y up, +z back).
+const COUNTERSHAFT := Vector3(0.0, 0.03, -0.075)
 ## Trail shorter than this (m) makes for nervous steering: the bike info says so.
 const SHORT_TRAIL := 0.06
 ## Where a prototype's flat spot sits (a share of the peak torque revs) and how wide it is.
@@ -115,6 +140,34 @@ var rear_travel := 0.11
 var rear_spring := 36000.0
 var rear_bump := 2300.0
 var rear_rebound := 3500.0
+## How much each spring firms up towards the bottom (see FORK_PROGRESSION), its preload (m, see
+## PRELOAD_STOCK), and the wheel speed (m/s) past which the bump damping's valving blows off.
+var front_progression := 0.2
+var rear_progression := 0.2
+var front_preload := PRELOAD_STOCK
+var rear_preload := PRELOAD_STOCK
+var front_knee := 1.0
+var rear_knee := 1.0
+## The way the front axle moves as the fork compresses, bike space (up its legs for a telescopic
+## fork, tipped forward for linked forks: see FORK_PATH_TILT).
+var fork_path := Vector3(0.0, 0.9, 0.42)
+## A leading-link fork's arm (see FORK_LINK), m, 0 for any other fork.
+var fork_link := 0.0
+## How far the bike leans before it grounds out (see LEAN_CLEARANCE), rad.
+var lean_clearance := deg_to_rad(52.0)
+## The swingarm: its pivot (bike space, the back wheel fully extended at (0, 0, wheelbase / 2)),
+## and its length, m. The back axle swings up round it.
+var swing_pivot := Vector3(0.0, 0.16, 0.1)
+var swing_length := 0.6
+## The gearbox and rear sprockets' pitch radii, m.
+var sprocket_r_front := 0.05
+var sprocket_r_rear := 0.11
+## How much of the squat from the weight going back under power the swingarm and chain pull hold
+## off, at the bike's sag (1 holds it level, more lifts the back): see anti_squat_at.
+var anti_squat := 1.0
+## How far each end sags under the bike and rider standing still, m along its travel.
+var front_sag := 0.03
+var rear_sag := 0.03
 
 # Wheels and tyres
 var front_radius := 0.3
@@ -306,13 +359,29 @@ func _compute() -> void:
 	rear_spring = shock["spring"] * lerpf(0.85, 1.0, health["shock"])
 	rear_bump = shock["bump"] * lerpf(0.45, 1.0, health["shock"])
 	rear_rebound = shock["rebound"] * lerpf(0.45, 1.0, health["shock"])
-	# The clickers: preload firms the spring up, bump and rebound the damping.
-	front_spring *= 1.0 + 0.18 * tune_value("f_preload")
+	# The clickers: preload pre-squashes the spring (less sag, the same rate), bump and rebound
+	# the damping.
+	front_preload = maxf(float(fork.get("preload", PRELOAD_STOCK)) + PRELOAD_CLICK * tune_value("f_preload"), 0.0)
 	front_bump *= 1.0 + 0.45 * tune_value("f_bump")
 	front_rebound *= 1.0 + 0.45 * tune_value("f_rebound")
-	rear_spring *= 1.0 + 0.18 * tune_value("r_preload")
+	rear_preload = maxf(float(shock.get("preload", PRELOAD_STOCK)) + PRELOAD_CLICK * tune_value("r_preload"), 0.0)
 	rear_bump *= 1.0 + 0.45 * tune_value("r_bump")
 	rear_rebound *= 1.0 + 0.45 * tune_value("r_rebound")
+	var fork_style := str(fork.get("style", "conventional"))
+	front_progression = float(fork.get("progression", FORK_PROGRESSION.get(fork_style, 0.2)))
+	rear_progression = float(shock.get("progression", _shock_progression(str(shock.get("type", "")))))
+	# Top-spec dampers (the ones with every adjuster) have proper high-speed valving that opens
+	# sooner on a sharp hit.
+	front_knee = float(fork.get("knee", 0.6 if int(fork.get("adjust", 0)) >= 4 else 1.0))
+	rear_knee = float(shock.get("knee", 0.6 if int(shock.get("adjust", 0)) >= 4 else 1.0))
+	var path_rake := deg_to_rad(float(frame["rake_deg"]) - float(FORK_PATH_TILT.get(fork_style, 0.0)))
+	fork_path = Vector3(0.0, cos(path_rake), sin(path_rake))
+	fork_link = float(fork.get("link", FORK_LINK.get(fork_style, 0.0)))
+	lean_clearance = deg_to_rad(float(frame.get("clearance", LEAN_CLEARANCE.get(str(frame.get("style", "")), 52.0))))
+	# The swingarm pivots where the frame says (the same point the bike's drawn with).
+	var geo: Dictionary = frame.get("geo", {})
+	swing_pivot = Vector3(0.0, float(geo.get("pivot_y", 0.16)), float(frame["wheelbase"]) * 0.5 - float(geo.get("arm", 0.6)))
+	swing_length = (Vector3(0.0, 0.0, float(frame["wheelbase"]) * 0.5) - swing_pivot).length()
 
 	_compute_wheels()
 	_compute_engine(block, head)
@@ -327,6 +396,7 @@ func _compute() -> void:
 	drivetrain_efficiency = DRIVETRAIN_EFFICIENCY * lerpf(0.8, 1.0, health["gearbox"]) * lerpf(0.88, 1.0, health["final_drive"])
 	_compute_chain()
 	_compute_mass_spread()
+	_compute_squat()
 
 
 ## Where each slot's part sits on a bike: [share of the wheelbase back from the front axle,
@@ -393,6 +463,88 @@ func _compute_chain() -> void:
 	if chain_lube < 0.3:
 		notes.append("The chain is dry and rusty-sounding. Give it some chain lube.")
 	drivetrain_efficiency *= (1.0 - loss) * lerpf(0.9, 1.0, health["chain"])
+
+
+## A shock's progression from its type, for one in the catalogue without its own.
+static func _shock_progression(kind: String) -> float:
+	var t := kind.to_lower()
+	for key in ["air", "linkage", "mono", "twin"]:
+		if t.contains(key):
+			return float(SHOCK_PROGRESSION[key])
+	return 0.2
+
+
+## The spring's push at the wheel (N) squashed `q` m into its `travel`, preloaded `pre` m.
+static func spring_force(rate: float, q: float, travel: float, progression: float, pre: float) -> float:
+	var x := q / maxf(travel, 0.01)
+	return rate * (q + pre + progression * q * x * x)
+
+
+## Where the back axle is (bike space) with the shock squashed `q` m along the wheel's travel:
+## swung up round the swingarm pivot.
+func rear_axle_at(q: float) -> Vector3:
+	var arm := Vector3(0.0, 0.0, wheelbase * 0.5) - swing_pivot
+	return swing_pivot + arm.rotated(Vector3.RIGHT, -q / maxf(swing_length, 0.2))
+
+
+## The way the back axle moves as the shock squashes further from `q` (bike space, unit): square
+## to the swingarm, up and a little back (forward once the arm's swung past level).
+func rear_path_at(q: float) -> Vector3:
+	var arm := rear_axle_at(q) - swing_pivot
+	return Vector3(0.0, arm.z, -arm.y).normalized()
+
+
+## The way the chain pulls the back sprocket (bike space, unit, towards the gearbox sprocket)
+## with the back axle at `axle`: the top run under power, the bottom run on the over-run
+## (engine braking).
+func chain_pull_at(axle: Vector3, top := true) -> Vector3:
+	var front := swing_pivot + COUNTERSHAFT
+	var d := axle - front
+	var dist := maxf(d.length(), 0.1)
+	var dn := d / dist
+	var side := Vector3(0.0, dn.z, -dn.y) * (1.0 if top else -1.0)
+	# The run is the line touching both sprockets on that side.
+	var s := clampf(-(sprocket_r_rear - sprocket_r_front) / dist, -0.9, 0.9)
+	var m := side * sqrt(1.0 - s * s) + dn * s
+	return -((axle + m * sprocket_r_rear) - (front + m * sprocket_r_front)).normalized()
+
+
+## Anti-squat with the back squashed `q` m: how much of the extra load the back tyre takes under
+## power (the weight going back) the swingarm's angle and the chain's pull hold off the shock. 1
+## is 100%: the back neither squats nor rises as it drives.
+func anti_squat_at(q: float) -> float:
+	var t := rear_path_at(q)
+	var axle := rear_axle_at(q)
+	var forward := Vector3(0.0, 0.0, -1.0)
+	# Per newton of drive at the road: the push along the road and the chain's pull (both lift
+	# the back on a sloping arm) against the weight coming onto the back wheel.
+	var hold := -(forward.dot(t) + rear_radius / sprocket_r_rear * chain_pull_at(axle).dot(t))
+	var gain := com_height / wheelbase * t.y
+	return hold / maxf(gain, 1e-3)
+
+
+## The sag at each end, the sprockets' sizes and the anti-squat at sag.
+func _compute_squat() -> void:
+	sprocket_r_front = CHAIN_PITCH / (2.0 * sin(PI / maxf(tune_value("sprocket_f"), 8.0)))
+	sprocket_r_rear = CHAIN_PITCH / (2.0 * sin(PI / maxf(tune_value("sprocket_r"), 8.0)))
+	# The weight on each wheel standing still, from where the centre of mass sits.
+	var behind := clampf(0.5 + (0.06 + com_offset.z) / wheelbase, 0.2, 0.8)
+	front_sag = _sag(total_mass * 9.81 * (1.0 - behind) * fork_path.y, front_spring, front_travel, front_progression, front_preload)
+	rear_sag = _sag(total_mass * 9.81 * behind * rear_path_at(0.0).y, rear_spring, rear_travel, rear_progression, rear_preload)
+	anti_squat = anti_squat_at(rear_sag)
+
+
+## How far a spring squashes (m) under `weight` N along its travel.
+static func _sag(weight: float, rate: float, travel: float, progression: float, pre: float) -> float:
+	var lo := 0.0
+	var hi := travel
+	for i in 30:
+		var mid := (lo + hi) * 0.5
+		if spring_force(rate, mid, travel, progression, pre) > weight:
+			hi = mid
+		else:
+			lo = mid
+	return lo
 
 
 ## Power per kilo with the rider on: the number weight-saving parts improve.

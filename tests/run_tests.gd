@@ -278,6 +278,11 @@ func _run_all() -> void:
 	await _test_steering_telemetry()
 	await _test_bars_no_wiggle()
 	await _test_direct_bars_course()
+	print("Handling phase 3: suspension (sag, dive, squat, geometry) and road leans")
+	await _test_suspension_sag()
+	await _test_suspension_dive()
+	await _test_suspension_squat_and_turn()
+	await _test_road_lean()
 	print("The riding map: roads, grades, no jumps, land under the roads, spawns, surfaces, counts")
 	await _test_world_map()
 	print("Shop and crew: part previews, trolleys, box notes, the geometry parts list, styled project bikes, emotes")
@@ -3265,13 +3270,13 @@ func _test_tuning() -> void:
 	check(Shed.check(me, {"a": "tune", "bike": ranger, "key": "f_bump", "value": 0.5}).contains("no bump adjuster")
 		and Shed.check(me, {"a": "tune", "bike": ranger, "key": "f_rebound", "value": 0.5}) == "",
 		"a 2-way fork adjusts rebound but not compression")
-	check(BikeBuild.new({"fork": "classic_conventional"}, {}, {"f_preload": 1.0}).front_spring == BikeBuild.new({"fork": "classic_conventional"}).front_spring,
+	check(BikeBuild.new({"fork": "classic_conventional"}, {}, {"f_preload": 1.0}).front_preload == BikeBuild.new({"fork": "classic_conventional"}).front_preload,
 		"a setting the part can't take is ignored")
 	var before := Shed.build_of(faithful)
 	Shed.request({"a": "tune", "bike": faithful, "key": "f_bump", "value": 0.5})
 	Shed.request({"a": "tune", "bike": faithful, "key": "r_preload", "value": 1.0})
 	var after := Shed.build_of(faithful)
-	check(after.front_bump > before.front_bump * 1.1 and after.rear_spring > before.rear_spring * 1.1
+	check(after.front_bump > before.front_bump * 1.1 and after.rear_preload > before.rear_preload + 0.005 and after.rear_sag < before.rear_sag
 		and Shed.items[Shed.item_on(faithful, "fork")]["tune"].has("bump"), "clicking the USD fork and shock firms them up")
 
 	# Chain tension from the desk is the chain's own slack.
@@ -12935,7 +12940,8 @@ func _test_tyre_highside() -> void:
 		b.auto_shift = t < 4.8
 		if t >= 4.8:
 			b.gear = 2
-		b.lean_input = 0.0 if t < 2.5 else 0.5
+		# Leaned a bit past a road rider's lean (about 33°: see Bike.lean_for_input).
+		b.lean_input = 0.0 if t < 2.5 else 0.8
 		if t < 5.0:
 			_hold_speed(b, 13.0)
 		elif t < 5.75:
@@ -13363,7 +13369,7 @@ func _test_turn_in() -> void:
 		var r := await ride(Contracts.style_build(st), 7.0, func(b, t):
 			b.assist = 0.0
 			_hold_speed(b, 15.0)
-			b.lean_input = 0.0 if t < 4.0 else 0.5
+			b.lean_input = 0.0 if t < 4.0 else Bike.ROAD_INPUT
 			if mark["t"] < 0.0 and b.lean_angle > deg_to_rad(20.0):
 				mark["t"] = t - 4.0)
 		times[st] = mark["t"]
@@ -16948,3 +16954,191 @@ func _test_direct_bars_course() -> void:
 			line.append("%d km/h %s, %.1f m off line" % [int(kmh), "fell off" if k["crashed"] else ("round" if k["done"] else "didn't finish"), float(k["off"])])
 		check(ok, "Direct bars on %s, %s: a rider with a reaction time rounds the bends and stays on the road (%s)"
 			% ["keys" if run[1] else "a stick", run[0] if run[0] != "" else "default bike", ", ".join(line)])
+
+
+
+## Handling phase 3, the suspension standing still: each style sags a sensible share of its
+## travel under bike and rider (what BikeBuild works out is what the ridden bike does), the
+## swingarm and chain hold off most of the squat under power, more preload sags less on the same
+## spring, and a bigger rear sprocket (the chain's top run higher at the back) lifts the back harder.
+func _test_suspension_sag() -> void:
+	var lines := []
+	var ok := true
+	var squat_ok := true
+	for style in ["", "sport", "mx", "chopper", "tourer", "classic"]:
+		var b := BikeBuild.new({} if style == "" else Contracts.style_build(style))
+		var f := b.front_sag / b.front_travel
+		var r := b.rear_sag / b.rear_travel
+		ok = ok and f > 0.15 and f < 0.45 and r > 0.15 and r < 0.45
+		squat_ok = squat_ok and b.anti_squat > 0.5 and b.anti_squat < 1.6
+		lines.append("%s %d%%/%d%%, anti-squat %d%%" % [style if style != "" else "stock", roundi(f * 100.0), roundi(r * 100.0), roundi(b.anti_squat * 100.0)])
+	check(ok, "every style sags 15-45%% of its travel, front/rear (%s)" % ", ".join(lines))
+	check(squat_ok, "the swingarm and chain hold off most of the squat under power (50-160%% anti-squat)")
+	var stock := BikeBuild.new({"shock": "sport_mono"})
+	var firm := BikeBuild.new({"shock": "sport_mono"}, {}, {"r_preload": 1.0})
+	check(firm.rear_sag < stock.rear_sag - 0.006 and firm.rear_spring == stock.rear_spring,
+		"more preload sags less on the same spring (%d mm vs %d mm)" % [roundi(firm.rear_sag * 1000.0), roundi(stock.rear_sag * 1000.0)])
+	var short := BikeBuild.new({}, {}, {"sprocket_r": 40.0})
+	var tall := BikeBuild.new({}, {}, {"sprocket_r": 52.0})
+	check(tall.anti_squat > short.anti_squat + 0.02,
+		"a bigger back sprocket lifts the back harder under power (%d%% with 52 teeth, %d%% with 40)" % [roundi(tall.anti_squat * 100.0), roundi(short.anti_squat * 100.0)])
+	# The ridden bike settles where the sums say.
+	var r2 := await ride({}, 3.0, func(_b, _t): pass)
+	var bike: Bike = r2["bike"]
+	var qf: float = bike.wheels[0]["compression"]
+	var qr: float = bike.wheels[1]["compression"]
+	check(absf(qf - bike.build.front_sag) < 0.008 and absf(qr - bike.build.rear_sag) < 0.008,
+		"standing, it sits on its springs where the sums say (fork %d mm vs %d, shock %d vs %d)"
+		% [roundi(qf * 1000.0), roundi(bike.build.front_sag * 1000.0), roundi(qr * 1000.0), roundi(bike.build.rear_sag * 1000.0)])
+	await _done(r2)
+
+
+## Hard on the front brake from 25 m/s: the weight comes forward and the fork dives down its raked
+## legs, pitching the bike nose down, which takes rake and trail off the steering. A leading-link
+## (Earles) fork's axle swings up more nearly straight, so the same stop dives it less.
+func _test_suspension_dive() -> void:
+	var res := {}
+	for fork in ["usd_sport", "classic_earles"]:
+		var st := {"used": 0.0, "dive": 0.0, "trail": 1.0, "rake": 1.0, "load": 0.0, "stiff": 0.0, "stiff0": 0.0}
+		var r := await ride({"fork": fork}, 11.0, func(b, t):
+			b.assist = 0.5
+			if t < 8.0:
+				_hold_speed(b, 25.0)
+				return
+			b.throttle = 0.0
+			b.front_brake = 1.0
+			b.rear_brake = 0.0
+			if b.speed > 5.0:
+				st["used"] = maxf(st["used"], b.travel_used(0))
+				if b.dive > float(st["dive"]):
+					st["stiff"] = b._front_stiffness(20.0)
+					st["stiff0"] = b._front_stiffness(20.0, false)
+				st["dive"] = maxf(st["dive"], b.dive)
+				st["trail"] = minf(st["trail"], b.trail_springs)
+				st["rake"] = minf(st["rake"], b.rake_now)
+				st["load"] = maxf(st["load"], float(b.wheels[0]["load"])))
+		var bike: Bike = r["bike"]
+		st["crashed"] = r["crashed"]
+		st["static"] = bike.build.total_mass * Bike.G * 0.5
+		st["trail0"] = bike.build.trail
+		st["rake0"] = deg_to_rad(bike.build.rake_deg)
+		res[fork] = st
+		await _done(r)
+	var u: Dictionary = res["usd_sport"]
+	check(not u["crashed"] and float(u["used"]) > 0.5 and float(u["used"]) < 1.0 and float(u["dive"]) > deg_to_rad(1.5),
+		"braking hard, the fork dives (%d%% of its travel, the bike pitches %.1f° nose down)" % [roundi(float(u["used"]) * 100.0), rad_to_deg(u["dive"])])
+	check(float(u["load"]) > 1.6 * float(u["static"]),
+		"the weight comes onto the front tyre (%.1f kN against %.1f standing)" % [float(u["load"]) / 1000.0, float(u["static"]) / 1000.0])
+	check(float(u["trail"]) < 0.9 * float(u["trail0"]) and float(u["rake"]) < float(u["rake0"]) - deg_to_rad(1.0),
+		"diving takes rake and trail off the steering (rake %.1f° from %.1f°, trail %d mm from %d)"
+		% [rad_to_deg(u["rake"]), rad_to_deg(u["rake0"]), roundi(float(u["trail"]) * 1000.0), roundi(float(u["trail0"]) * 1000.0)])
+	check(absf(float(u["stiff"]) - float(u["stiff0"])) > 0.05 * float(u["stiff0"]),
+		"and the steering feels it: the front's pull on the bars goes from %d to %d N m per rad" % [roundi(u["stiff0"]), roundi(u["stiff"])])
+	var e: Dictionary = res["classic_earles"]
+	check(not e["crashed"] and float(e["dive"]) < float(u["dive"]) * 0.8,
+		"a leading-link fork dives less on the same stop (%.1f° against %.1f°)" % [rad_to_deg(e["dive"]), rad_to_deg(u["dive"])])
+
+
+## Under power the weight goes back, but the swingarm and the chain's pull hold the back up:
+## it squats far less than the extra load alone would squash it. Leaned over in a steady turn,
+## the springs carry the cornering load too and sit lower. Landing a drop hard enough finds the
+## bump stop without throwing the rider off.
+func _test_suspension_squat_and_turn() -> void:
+	var st := {"q0": 0.0, "q": 0.0, "load0": 0.0, "load": 0.0}
+	var r := await ride({}, 6.0, func(b, t):
+		if t < 3.0:
+			if t < 0.01:
+				_roll_at(b, 8.0)
+			_hold_speed(b, 8.0)
+			st["q0"] = float(b.wheels[1]["compression"])
+			st["load0"] = float(b.wheels[1]["load"])
+			return
+		b.throttle = 1.0
+		b.front_brake = 0.0
+		if t < 4.0 and b.wheels[0]["contact"]:
+			st["q"] = maxf(st["q"], float(b.wheels[1]["compression"]))
+			st["load"] = maxf(st["load"], float(b.wheels[1]["load"])))
+	var bike: Bike = r["bike"]
+	var plain := (float(st["load"]) - float(st["load0"])) / bike.build.rear_spring
+	var squat := float(st["q"]) - float(st["q0"])
+	check(squat < plain * 0.6,
+		"pulling away hard the back squats %d mm, not the %d mm the weight going back alone would (anti-squat %d%%)"
+		% [roundi(squat * 1000.0), roundi(plain * 1000.0), roundi(bike.build.anti_squat * 100.0)])
+	await _done(r)
+	var acc := {"n": 0, "qf": 0.0, "qr": 0.0, "lean": 0.0}
+	var still := {"qf": 0.0, "qr": 0.0}
+	r = await ride({}, 10.0, func(b, t):
+		b.assist = 0.5
+		_hold_speed(b, 15.0)
+		b.lean_input = 0.0 if t < 3.0 else 0.75
+		if t > 2.0 and t < 3.0:
+			still["qf"] = float(b.wheels[0]["compression"])
+			still["qr"] = float(b.wheels[1]["compression"])
+		if t > 7.0:
+			acc["n"] += 1
+			acc["qf"] += float(b.wheels[0]["compression"])
+			acc["qr"] += float(b.wheels[1]["compression"])
+			acc["lean"] += absf(b.lean_angle))
+	var n := maxf(acc["n"], 1)
+	var lean: float = acc["lean"] / n
+	var qf: float = acc["qf"] / n
+	var qr: float = acc["qr"] / n
+	check(not r["crashed"] and qf > float(still["qf"]) * 1.05 and qr > float(still["qr"]) * 1.05,
+		"leaned %.0f° in a steady turn the springs carry the cornering load too (fork %d mm from %d, shock %d from %d)"
+		% [rad_to_deg(lean), roundi(qf * 1000.0), roundi(float(still["qf"]) * 1000.0), roundi(qr * 1000.0), roundi(float(still["qr"]) * 1000.0)])
+	await _done(r)
+	var land := {"stop": false, "used": 0.0}
+	r = await ride({}, 4.0, func(b, t):
+		if t < 0.01:
+			b.global_position += Vector3.UP * 1.0
+			_roll_at(b, 10.0)
+			b.linear_velocity += Vector3.DOWN * 1.5
+		b.throttle = 0.2
+		land["stop"] = land["stop"] or b.wheels[0]["bottomed"] or b.wheels[1]["bottomed"]
+		land["used"] = maxf(land["used"], maxf(b.travel_used(0), b.travel_used(1))))
+	check(not r["crashed"] and land["used"] > 0.8,
+		"landing a metre's drop uses the travel (%d%%%s) and the rider stays on" % [roundi(float(land["used"]) * 100.0), ", on the bump stop" if land["stop"] else ""])
+	await _done(r)
+
+
+## Riding on the road nobody leans much past 30°: most of the steer input covers ordinary road
+## leans, and only the last of it goes on to all the tyres will hold, the way racers lean. A lean
+## key held asks for a road lean at once and only creeps further if it's kept held. Customers
+## riding in keep to road leans (and so does the traffic: see _test_road_traffic).
+func _test_road_lean() -> void:
+	var b := Bike.new()
+	b.setup(BikeBuild.new({}))
+	var at := func(x: float) -> float: return rad_to_deg(b.lean_for_input(x))
+	var road := rad_to_deg(b._balance_lean(Bike.ROAD_LEAN))
+	var top := rad_to_deg(b._grip_lean())
+	check(absf(at.call(0.5) - road * 2.0 / 3.0) < 0.5 and absf(at.call(Bike.ROAD_INPUT) - road) < 0.1 and absf(at.call(1.0) - top) < 0.1
+		and at.call(0.9) > at.call(0.8) and at.call(0.8) > at.call(Bike.ROAD_INPUT),
+		"the steer input: half asks for %.0f°, three quarters a road rider's %.0f°, full the %.0f° the tyres hold (line to the centre of mass)"
+		% [at.call(0.5), at.call(Bike.ROAD_INPUT), at.call(1.0)])
+	b.free()
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var held := 0.0
+	var seen := []
+	for i in 20:
+		held = main_script.ramp_lean(held, 1.0, 0.1)
+		seen.append(held)
+	var let_go: float = main_script.ramp_lean(1.0, 0.0, 0.1)
+	check(absf(float(seen[1]) - Bike.ROAD_INPUT) < 0.01 and float(seen[5]) < 0.95 and is_equal_approx(float(seen[19]), 1.0) and let_go < 0.3,
+		"a lean key: a road lean at once (%.2f after 0.2 s), all the way only held on (%.2f at 0.6 s, %.2f at 2 s), back at once let go"
+		% [seen[1], seen[5], seen[19]])
+	var leans := {}
+	for x in [Bike.ROAD_INPUT, 1.0]:
+		var r := await ride({}, 9.0, func(bk, t):
+			bk.assist = 0.5
+			_hold_speed(bk, 20.0)
+			bk.lean_input = 0.0 if t < 3.0 else x)
+		leans[x] = rad_to_deg(r["max_lean"])
+		check(not r["crashed"], "riding at %d%% steer input stays up" % roundi(x * 100.0))
+		await _done(r)
+	check(float(leans[Bike.ROAD_INPUT]) > 26.0 and float(leans[Bike.ROAD_INPUT]) < 33.0 and float(leans[1.0]) > 36.0,
+		"ridden: three-quarter input leans the bike %.0f°, full input %.0f°" % [leans[Bike.ROAD_INPUT], leans[1.0]])
+	check(CustomerView.MAX_LEAN <= Bike.ROAD_LEAN + 0.001, "customers riding in lean no more than a road rider (%.0f°)" % rad_to_deg(CustomerView.MAX_LEAN))
+
+
+
+

@@ -17,8 +17,9 @@ const LINE_STEP := 0.5
 const CORNER_REACH := 8.0
 const TIGHT_REACH := 0.8
 const NEAR_ROOM := 3.0
-## The furthest a rider leans over (rad), and how hard they brake for a corner or a bay (m/s^2).
-const MAX_LEAN := 0.6
+## The furthest a rider leans over (rad: a road rider's lean, see Bike.ROAD_LEAN), and how hard
+## they brake for a corner or a bay (m/s^2).
+const MAX_LEAN := Bike.ROAD_LEAN
 const BRAKING := 2.5
 
 var customer_id := 0

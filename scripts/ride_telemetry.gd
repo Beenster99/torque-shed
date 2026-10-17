@@ -16,6 +16,8 @@ const CHANNELS := [
 	["load_r", "Rear load", "N"], ["grip_f", "Front grip used", ""], ["grip_r", "Rear grip used", ""],
 	["throttle", "Throttle", ""], ["brake_f", "Front brake", ""], ["brake_r", "Rear brake", ""],
 	["gear", "Gear", ""], ["rpm", "Revs", "rpm"], ["long_g", "Braking / drive", "g"], ["lat_g", "Cornering", "g"],
+	["susp_f", "Fork travel used", "%"], ["susp_r", "Shock travel used", "%"], ["dive", "Pitch on the springs (+ nose down)", "°"],
+	["rake", "Rake", "°"],
 ]
 
 ## The ride being recorded now, or the last one; the dyno desk shows it.
@@ -62,6 +64,8 @@ func step(bike: Bike, delta: float) -> void:
 		"load_f": f["load"], "load_r": r["load"], "grip_f": f["grip_used"], "grip_r": r["grip_used"],
 		"throttle": bike.throttle, "brake_f": bike.front_brake, "brake_r": bike.rear_brake,
 		"gear": float(bike.gear), "rpm": bike.rpm, "long_g": long_g, "lat_g": -bike.speed * yaw_rate / Bike.G,
+		"susp_f": bike.travel_used(0) * 100.0, "susp_r": bike.travel_used(1) * 100.0, "dive": rad_to_deg(bike.dive),
+		"rake": rad_to_deg(bike.rake_now),
 	})
 
 
