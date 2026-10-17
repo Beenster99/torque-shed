@@ -16973,7 +16973,7 @@ func _test_suspension_sag() -> void:
 		squat_ok = squat_ok and b.anti_squat > 0.5 and b.anti_squat < 1.6
 		lines.append("%s %d%%/%d%%, anti-squat %d%%" % [style if style != "" else "stock", roundi(f * 100.0), roundi(r * 100.0), roundi(b.anti_squat * 100.0)])
 	check(ok, "every style sags 15-45%% of its travel, front/rear (%s)" % ", ".join(lines))
-	check(squat_ok, "the swingarm and chain hold off most of the squat under power (50-160%% anti-squat)")
+	check(squat_ok, "the swingarm and chain hold off most of the squat under power (50-160% anti-squat)")
 	var stock := BikeBuild.new({"shock": "sport_mono"})
 	var firm := BikeBuild.new({"shock": "sport_mono"}, {}, {"r_preload": 1.0})
 	check(firm.rear_sag < stock.rear_sag - 0.006 and firm.rear_spring == stock.rear_spring,
@@ -17138,7 +17138,3 @@ func _test_road_lean() -> void:
 	check(float(leans[Bike.ROAD_INPUT]) > 26.0 and float(leans[Bike.ROAD_INPUT]) < 33.0 and float(leans[1.0]) > 36.0,
 		"ridden: three-quarter input leans the bike %.0f°, full input %.0f°" % [leans[Bike.ROAD_INPUT], leans[1.0]])
 	check(CustomerView.MAX_LEAN <= Bike.ROAD_LEAN + 0.001, "customers riding in lean no more than a road rider (%.0f°)" % rad_to_deg(CustomerView.MAX_LEAN))
-
-
-
-

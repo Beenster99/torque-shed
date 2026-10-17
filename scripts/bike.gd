@@ -1131,16 +1131,18 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		var dt: float = w["drive_torque"]
 		var pull := b * build.chain_pull_at(axle0 + path * comp, dt >= 0.0)
 		push -= absf(dt) / build.sprocket_r_rear * pull.dot(path_w)
-		if w["brake_torque"] > 0.0 and absf(float(w["omega"])) > 0.5:
-			var held := minf(float(w["brake_torque"]), maxf(-float(w["rx"]) * float(w["load"]), 0.0) * r_eff)
-			push -= held / build.swing_length * signf(float(w["omega"]))
-	elif build.fork_link > 0.0 and w["brake_torque"] > 0.0 and absf(float(w["omega"])) > 0.5:
-		# A leading-link fork's brake works against its arm, which pivots behind the axle: braking
-		# pushes the arm down and holds the front up.
-		var held := minf(float(w["brake_torque"]), maxf(-float(w["rx"]) * float(w["load"]), 0.0) * r_eff)
-		push += held / build.fork_link * signf(float(w["omega"]))
 	var along := n.dot(path_w) + clampf(float(w["rx"]), -1.6, 1.6) * long_dir.dot(path_w) \
 		+ clampf(float(w["ry"]), -1.6, 1.6) * lat_dir.dot(path_w)
+	# The brake's reaction. The rear caliper rides on the swingarm, so braking pulls the arm up
+	# and squats the back; a leading-link fork's brake works against its arm, which pivots behind
+	# the axle, so braking holds the front up. Both scale with the load itself, so they go in
+	# with the travel's share of the load rather than lagging a step behind it.
+	if w["brake_torque"] > 0.0 and absf(float(w["omega"])) > 0.5:
+		var react := maxf(-clampf(float(w["rx"]), -1.6, 1.6), 0.0) * r_eff * signf(float(w["omega"]))
+		if not is_front:
+			along += react / build.swing_length
+		elif build.fork_link > 0.0:
+			along -= react / build.fork_link
 	# Where the road's push comes close to square to the travel (hard on the power in a big
 	# wheelie) the spring carries little of it and the tyre's own give sets the load; the
 	# suspension then jacks right out, so the load is held to twice the spring's.
