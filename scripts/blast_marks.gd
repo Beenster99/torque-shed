@@ -28,9 +28,9 @@ shader_type spatial;
 render_mode blend_mix, depth_draw_never, cull_back, diffuse_burley, specular_schlick_ggx;
 
 uniform sampler3D mask : filter_linear, repeat_disable;
-uniform mat4 to_model;
+uniform mat4 to_model = mat4(1.0);
 uniform vec3 mask_origin;
-uniform vec3 mask_size;
+uniform vec3 mask_size = vec3(1.0);
 uniform vec3 bare_color : source_color = vec3(0.8, 0.81, 0.83);
 uniform float bare_rough = 0.42;
 uniform float bare_metal = 0.9;
@@ -43,6 +43,11 @@ uniform float scan = 0.0;      // the sandblaster's scan
 uniform float scan_t = 0.0;
 
 varying vec3 mpos;
+
+// Whether a colour is a real one in range: false for NaN or infinite (comparisons with NaN fail).
+bool sane(vec3 v, float top) {
+	return all(greaterThanEqual(v, vec3(0.0))) && all(lessThanEqual(v, vec3(top)));
+}
 
 float hash3(vec3 p) {
 	p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
@@ -67,7 +72,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 uvw = (mpos - mask_origin) / mask_size;
+	vec3 uvw = (mpos - mask_origin) / max(mask_size, vec3(1e-4));
 	vec2 m = texture(mask, uvw).rg;
 	// A ragged, speckled edge where the blasting stops.
 	float edge = vnoise(mpos * 140.0) * 0.6 + vnoise(mpos * 40.0) * 0.4;
@@ -91,13 +96,17 @@ void fragment() {
 		emit += sc * scan * (0.35 + 1.4 * band + (1.0 - bare) * 0.5);
 		a = max(a, scan * 0.9);
 	}
-	ALBEDO = col + vec3(flash * 0.5);
+	vec3 shown = col + vec3(flash * 0.5);
+	if (!sane(shown, 2.0) || !sane(emit, 8.0) || !(a >= 0.0)) {
+		discard;   // never a NaN or a blinding value to the screen
+	}
+	ALBEDO = min(shown, vec3(1.0));
 	METALLIC = bare_metal * (1.0 - dirt_amt * 0.5);
 	ROUGHNESS = clamp((bare_rough + grain * 0.12 + m.g * 0.35) * (1.0 - 0.75 * lacquer) + dirt_amt * 0.4, 0.0, 1.0);
 	CLEARCOAT = lacquer;
 	CLEARCOAT_ROUGHNESS = 0.08;
 	EMISSION = emit;
-	ALPHA = a;
+	ALPHA = clamp(a, 0.0, 1.0);
 }
 """
 

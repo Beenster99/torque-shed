@@ -94,6 +94,7 @@ func _run_all() -> void:
 	await _test_road_traffic()
 	print("Simon's 17 October round: the game had got slow")
 	await _test_perf_steady()
+	await _test_no_glare()
 	print("XP, levels, tool upgrades and skills")
 	_test_progress()
 	print("Bike lights, tyres and the tyre changer")
@@ -3076,6 +3077,64 @@ func _test_perf_steady() -> void:
 	SaveGame.dir = kept_dir
 	main._leave()
 	main.queue_free()
+	await get_tree().process_frame
+
+
+## Simon's 17 October round: bikes riding off from the cafe showed as big white glow balls
+## speckled black, the mark of a NaN or an overflowing value on screen. No bike surface is smooth
+## enough for a sun glint to overflow, the dirt, paint and blasting passes never work out a
+## facing from a zero normal or hand the screen a value that isn't a number, and the dirt's
+## place on a bike isn't thrown off by a bike squashed flat.
+func _test_no_glare() -> void:
+	var holder := Node3D.new()
+	add_child(holder)
+	var rng := RandomNumberGenerator.new()
+	var smoothest := 1.0
+	var clear_smoothest := 1.0
+	var dirty := 0
+	for i in 6:
+		rng.seed = 1700 + i
+		var b := CoffeeShop._make_bike(rng)
+		var look := CoffeeView.bike_look({"bike": b})
+		var build := BikeBuild.new(PartsDB.sanitize_build((look["parts"] as Dictionary).duplicate()), look["cond"])
+		var m := BikeModel.new()
+		holder.add_child(m)
+		m.build_from(build, look["paint"], {}, null, true)
+		if m.dirt_layer and m.dirt_layer.mesh_count() > 0:
+			dirty += 1
+		var stack: Array[Node] = [m]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			stack.append_array(n.get_children())
+			var mi := n as MeshInstance3D
+			if mi == null or mi.mesh == null:
+				continue
+			for si in mi.mesh.get_surface_count():
+				var mat := mi.get_active_material(si)
+				while mat != null:
+					if mat is BaseMaterial3D:
+						smoothest = minf(smoothest, (mat as BaseMaterial3D).roughness)
+						if (mat as BaseMaterial3D).clearcoat_enabled:
+							clear_smoothest = minf(clear_smoothest, (mat as BaseMaterial3D).clearcoat_roughness)
+					mat = mat.next_pass
+	check(dirty > 0 and smoothest >= BikeModel.MIN_ROUGHNESS - 1e-6 and clear_smoothest >= BikeModel.MIN_CLEARCOAT_ROUGHNESS - 1e-6,
+		"the cafe's bikes (%d dirty) have no surface smooth enough to glare (smoothest %.3f, clear coat %.3f)" % [dirty, smoothest, clear_smoothest])
+	var guarded := true
+	for code in [DirtLayer.SHADER_CODE, SprayMarks.SHADER_CODE, BlastMarks.SHADER_CODE, PaintMix.FX_CODE]:
+		guarded = guarded and not (code as String).contains("normalize(mnorm)") and not (code as String).contains("normalize(NORMAL)") \
+			and not (code as String).contains("/ mask_size;") and ((code as String).contains("sane(") or code == PaintMix.FX_CODE)
+	check(guarded, "the dirt, paint and blasting passes never normalize a zero normal or let a NaN through")
+	var model: BikeModel = holder.get_child(0)
+	var layer := model.dirt_layer
+	var slot: String = layer._mats.keys()[0]
+	var mat: ShaderMaterial = layer._mats[slot]
+	var good: Projection = mat.get_shader_parameter("to_model")
+	model.scale = Vector3(1.0, 0.0, 1.0)
+	layer._update_transform()
+	var kept: Projection = mat.get_shader_parameter("to_model")
+	model.scale = Vector3.ONE
+	check(kept == good and good.x.is_finite() and good.w.is_finite(), "a bike squashed flat doesn't throw its dirt off to NaN")
+	holder.queue_free()
 	await get_tree().process_frame
 
 
@@ -6164,7 +6223,7 @@ func _test_tail_fairing_mirrors_parts() -> void:
 		m.build_from(BikeBuild.new({"mirrors": id}))
 		var glass: Node = m.find_child("MirrorGlass*", true, false)
 		var mat: StandardMaterial3D = (glass as MeshInstance3D).material_override if glass is MeshInstance3D else null
-		check(m.slot_bounds("mirrors").size.x > 0.3 and mat != null and mat.metallic > 0.9 and mat.roughness < 0.05,
+		check(m.slot_bounds("mirrors").size.x > 0.3 and mat != null and mat.metallic > 0.9 and mat.roughness <= BikeModel.MIN_ROUGHNESS,
 			"the %s are drawn, with mirror glass" % id)
 		m.free()
 	var bare := BikeModel.new()

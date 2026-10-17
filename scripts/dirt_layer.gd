@@ -27,7 +27,7 @@ const int NY = 4;
 uniform float cells[144];
 uniform vec3 box_origin;
 uniform vec3 box_size = vec3(1.0);
-uniform mat4 to_model;
+uniform mat4 to_model = mat4(1.0);
 // The wash mask: how much has been washed off, per facing (a = +x, -x, +y, -y; b = +z, -z).
 uniform sampler3D wash_a : filter_linear, repeat_disable;
 uniform sampler3D wash_b : filter_linear, repeat_disable;
@@ -56,6 +56,18 @@ float vnoise(vec3 x) {
 			mix(hash3(i + vec3(0.0, 1.0, 0.0)), hash3(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
 		mix(mix(hash3(i + vec3(0.0, 0.0, 1.0)), hash3(i + vec3(1.0, 0.0, 1.0)), f.x),
 			mix(hash3(i + vec3(0.0, 1.0, 1.0)), hash3(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
+}
+
+// A surface's facing, or straight up where it has none (a zero normal would make NaN, which
+// the glow spreads into white blobs speckled black).
+vec3 facing_of(vec3 v) {
+	float l = length(v);
+	return l > 1e-6 ? v / l : vec3(0.0, 1.0, 0.0);
+}
+
+// Whether a colour is a real one in range: false for NaN or infinite (comparisons with NaN fail).
+bool sane(vec3 v, float top) {
+	return all(greaterThanEqual(v, vec3(0.0))) && all(lessThanEqual(v, vec3(top)));
 }
 
 // One facing's level at `g` (in cells along and up), blended between the four nearest.
@@ -93,12 +105,16 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 n = normalize(mnorm);
+	vec3 n = facing_of(mnorm);
 	vec3 cam = (to_model * INV_VIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	if (dot(n, cam - mpos) < 0.0) {
 		n = -n;
 	}
-	float lvl = clamp(level_at(mpos, n), 0.0, 1.0);
+	float lvl = level_at(mpos, n);
+	if (!(lvl > 0.0)) {
+		lvl = 0.0;   // none, or not a number
+	}
+	lvl = min(lvl, 1.0);
 	float washed = 0.0;
 	if (has_mask > 0.5) {
 		washed = clamp(washed_at((mpos - mask_origin) / mask_size, n), 0.0, 1.0);
@@ -169,11 +185,14 @@ void fragment() {
 		emit = sc * scan * (dirty * (0.8 + 1.2 * pulse) + (1.0 - dirty) * 0.06);
 		alpha = max(alpha, scan * mix(0.12, 0.85, dirty));
 	}
+	if (!sane(col, 1.0) || !sane(emit, 4.0) || !(alpha >= 0.0 && alpha <= 1.0)) {
+		discard;   // never a NaN or a blinding value to the screen
+	}
 	ALBEDO = col;
-	ALPHA = clamp(alpha, 0.0, 1.0);
-	ROUGHNESS = rough;
+	ALPHA = alpha;
+	ROUGHNESS = clamp(rough, 0.08, 1.0);   // no smoother than BikeModel.MIN_ROUGHNESS
 	METALLIC = 0.0;
-	SPECULAR = spec;
+	SPECULAR = clamp(spec, 0.0, 1.0);
 	EMISSION = emit;
 }
 """
@@ -517,13 +536,17 @@ func _update_transform() -> void:
 	_xf_stale = false
 	_shown_xf = xf
 	_shown_geo = geo
+	if not xf.is_finite() or is_zero_approx(xf.basis.determinant()):
+		return   # a bike squashed flat or lost somewhere: keep the last good one, never NaN
 	var inv := xf.affine_inverse()
 	for slot in _mats:
 		# A part moved by the bike's own fit (geometry mode) is read where it was drawn.
 		var rest := Transform3D.IDENTITY
 		if model._geo_nodes.has(slot) and model._geo_pivots.has(slot):
 			rest = GeoGizmo.offset_xform(model.geometry.get(slot, {}), model._geo_pivots[slot]).affine_inverse()
-		(_mats[slot] as ShaderMaterial).set_shader_parameter("to_model", Projection(rest * inv))
+		var to_model := rest * inv
+		if to_model.is_finite():
+			(_mats[slot] as ShaderMaterial).set_shader_parameter("to_model", Projection(to_model))
 
 
 func _param(key: String, value) -> void:
