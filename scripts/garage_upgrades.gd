@@ -419,13 +419,13 @@ static func lift_bays(have: Dictionary) -> Array:
 	return out
 
 
-## A save's lifts that are up (bay -> true), kept to bays that have one.
+## A save's lifts that are up (bay -> true), kept to bays that have one (and the wash bay's).
 static func sanitize_lifts(saved, have: Dictionary) -> Dictionary:
 	var out := {}
 	var bays := lift_bays(have)
 	if saved is Dictionary:
 		for bay in saved:
-			if str(bay).is_valid_int() and bays.has(int(bay)) and bool(saved[bay]):
+			if str(bay).is_valid_int() and (bays.has(int(bay)) or int(bay) == Wash.LIFT) and bool(saved[bay]):
 				out[int(bay)] = true
 	return out
 

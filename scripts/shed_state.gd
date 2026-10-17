@@ -2215,7 +2215,8 @@ func _bay_near(xf: Transform3D, bike_id: int) -> int:
 	return -1
 
 
-## The bay of the lift a bike stands on (an extension bay's, see GarageUpgrades), or -1.
+## The bay of the lift a bike stands on (an extension bay's, see GarageUpgrades, or the wash
+## bay's: Wash.LIFT), or -1.
 func lift_of(bike_id: int) -> int:
 	if not bikes.has(bike_id):
 		return -1
@@ -2223,13 +2224,15 @@ func lift_of(bike_id: int) -> int:
 	for bay in GarageUpgrades.lift_bays(upgrades):
 		if at.distance_to(Workshop.bay_transform(bay).origin) < 0.5:
 			return bay
+	if Wash.on_lift(at):
+		return Wash.LIFT
 	return -1
 
 
 ## Whether a bike is up on a raised lift (it can't be wheeled off or ridden till it's down).
 func lift_raised(bike_id: int) -> bool:
 	var bay := lift_of(bike_id)
-	return bay >= 0 and lifts.has(bay)
+	return bay != -1 and lifts.has(bay)
 
 
 ## Where a held part would go on a target, or why it can't: {slot} or {error}.
@@ -2709,6 +2712,8 @@ func check(peer: int, action: Dictionary) -> String:
 				var bay := _bay_near(action["xf"], bike_id)
 				if bay >= 0 and lifts.has(bay):
 					return "Bay %d's lift is up. Lower it first, then wheel the bike on." % (bay + 1)
+				if lifts.has(Wash.LIFT) and Wash.near_lift((action["xf"] as Transform3D).origin):
+					return "The wash bay lift is up. Lower it first, then wheel the bike on."
 		"set_stand":
 			var which := str(action.get("stand", ""))
 			if not which in ["side", "centre"]:
@@ -2823,6 +2828,11 @@ func check(peer: int, action: Dictionary) -> String:
 			return GarageUpgrades.check(str(action.get("id", "")), upgrades, garage_money)
 		"lift":
 			var bay := int(action.get("bay", -1))
+			if bay == Wash.LIFT:
+				var washing := Wash.bike_on_lift()
+				if washing != 0 and (bikes[washing]["rider"] != 0 or bikes[washing].get("pusher", 0) != 0):
+					return "Someone's moving the bike on the wash bay lift."
+				return ""
 			if not GarageUpgrades.lift_bays(upgrades).has(bay):
 				return "There's no lift there."
 			var on := bike_in_bay(bay)
@@ -3325,7 +3335,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				lifts[bay] = true
 			else:
 				lifts.erase(bay)
-			text = "Bay %d's lift going %s" % [bay + 1, "up" if up else "down"]
+			text = "%s going %s" % [Wash.lift_name(bay), "up" if up else "down"]
 		"restyle_upgrade":
 			text = _restyle_upgrade(str(action["id"]), action.get("looks"))
 		"door":
@@ -3710,6 +3720,11 @@ func _park(bike_id: int) -> void:
 		bike["stand"] = ""
 		return
 	if _park_on_show(bike_id):
+		return
+	if Wash.near_lift((bike["xf"] as Transform3D).origin) and Wash.bike_on_lift(bike_id) == 0:
+		# Wheeled onto the wash bay's lift: square on it, clamped upright in its wheel chock.
+		bike["xf"] = Wash.lift_xf()
+		bike["stand"] = ""
 		return
 	var bay := _bay_near(bike["xf"], bike_id)
 	if bay >= 0:

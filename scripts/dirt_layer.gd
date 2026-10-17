@@ -113,14 +113,15 @@ void fragment() {
 	// Mud: clumps that join up as it gets thicker, splatter round them, a dirty haze between.
 	float big = vnoise(mpos * 14.0) * 0.6 + vnoise(mpos * 37.0) * 0.4;
 	float clump = smoothstep(big - 0.06, big + 0.06, s * 1.15 - 0.08);
-	float speck = step(1.0 - s * 0.55, hash3(floor(mpos * 160.0)));
-	float mud_a = max(max(clump * 0.95, speck * 0.85), s * 0.4);
+	float speck = step(1.0 - s * 0.45, hash3(floor(mpos * 160.0)));
+	float mud_a = max(max(clump * 0.95, speck * 0.85), smoothstep(0.03, 1.0, s) * 0.45);
 	vec3 mud_c = mix(vec3(0.16, 0.11, 0.065), vec3(0.42, 0.33, 0.21), vnoise(mpos * 22.0 + vec3(3.1)));
-	// Dust: a dull, grainy film, thicker in patches.
+	// Dust: a light dulling of the finish (a faint, slightly grainy grey film, a little thicker
+	// in patches), only building to a real coat where it's heavy.
 	float grain = vnoise(mpos * 95.0);
 	float patchy = vnoise(mpos * 9.0);
-	float dust_a = smoothstep(0.0, 0.8, s) * (0.45 + 0.3 * grain + 0.25 * patchy);
-	vec3 dust_c = mix(vec3(0.46, 0.42, 0.35), vec3(0.6, 0.56, 0.47), grain);
+	float dust_a = smoothstep(0.03, 1.0, s) * (0.3 + 0.15 * grain + 0.2 * patchy);
+	vec3 dust_c = mix(vec3(0.47, 0.46, 0.43), vec3(0.56, 0.54, 0.5), grain);
 	// Flies: dark squashed bugs, each in a yellowish smear, on a greasy haze.
 	vec3 fp = mpos * 70.0;
 	vec3 fi = floor(fp);

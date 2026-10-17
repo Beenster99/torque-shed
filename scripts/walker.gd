@@ -2049,8 +2049,8 @@ func _describe() -> String:
 			lines.append("F: %s" % ("close it" if Shed.door_open else "open it"))
 		"lift":
 			var bay := int(target["bay"])
-			var on := Shed.bike_in_bay(bay)
-			lines.append("Bay %d bike lift: %s" % [bay + 1, "up" if Shed.lifts.has(bay) else "down"])
+			var on := Wash.bike_on_lift() if bay == Wash.LIFT else Shed.bike_in_bay(bay)
+			lines.append("%s: %s" % ["Wash bay bike lift" if bay == Wash.LIFT else "Bay %d bike lift" % (bay + 1), "up" if Shed.lifts.has(bay) else "down"])
 			if on != 0:
 				lines.append("%s is on it" % Shed.bikes[on]["name"])
 			lines.append("F: %s" % ("lower it" if Shed.lifts.has(bay) else "raise it"))
@@ -3042,6 +3042,10 @@ func _wash_mode_step(delta: float) -> void:
 	var dir := -camera.global_transform.basis.z
 	var q := PhysicsRayQueryParameters3D.create(eye, eye + dir * WashJob.OUT, 1)
 	q.exclude = [get_rid()]
+	# The wash bay lift's runway is a grating: the jet goes straight through it to underneath.
+	var grate: CollisionObject3D = view.get_node_or_null("Upgrades/Built/WashLiftBase/WashLift") if view else null
+	if grate:
+		q.exclude = [get_rid(), grate.get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	wash.step(delta, eye, dir, firing, not hit.is_empty(), hit.get("position", eye + dir * WashJob.OUT), hit.get("normal", Vector3.UP),
 		Progress.jet_clean_mult(Shed.me()), Progress.spread_mult(Shed.me(), "lance"))
@@ -3064,6 +3068,9 @@ func _wash_mode_step(delta: float) -> void:
 	var on := int(j.get("slot", -1))
 	var muck := 1.0 - wash.clean_of(on) if on >= 0 else 0.3
 	_wash_fx.update(delta, nozzle, j.get("at", eye + dir), j.get("normal", Vector3.UP), lit, muck)
+	if _jet is WaterSpray:
+		# The water stops where it lands instead of flying on through the bike.
+		(_jet as WaterSpray).set_reach(_jet.global_position.distance_to(j["at"]) if j.get("hit", false) else WaterSpray.REACH)
 	_wash_aim_send -= delta
 	var sig := "%s|%s" % [lit, str(Vector3i((j.get("at", Vector3.ZERO) as Vector3) * 20.0))]
 	if _wash_aim_send <= 0.0 and sig != _wash_aim_sig:
@@ -3094,7 +3101,7 @@ func _send_wash(bike: int) -> void:
 func wash_controls() -> String:
 	var pad := Controls.device() >= 0 and Controls.active_device >= 0
 	var scan := Settings.binding_text("blast_scan", pad)
-	return "Hold %s to wash where you aim; go round it for the far side and crouch for underneath  ·  %s: show what's still dirty  ·  %s: step back" % [
+	return "Hold %s to wash where you aim; go round it for the far side, and for underneath raise the wash bay lift (its post) and crouch  ·  %s: show what's still dirty  ·  %s: step back" % [
 		"RT" if pad else "left mouse", scan if scan != "" else "X", _keys("interact")]
 
 

@@ -183,6 +183,8 @@ func _rebuild(have: Dictionary) -> void:
 		var bays := GarageUpgrades.extra_bays(have)
 		for i in bays:
 			_build_wing_bay(Workshop.BAY_COUNT + i)
+	# The wash bay's lift is there from the start (it isn't an upgrade), but lives with the rest.
+	_build_lift(Wash.LIFT, Wash.lift_xf())
 	if have.has("lounge"):
 		_build_loft()
 	if have.has("annex"):
@@ -415,16 +417,18 @@ func _build_wing_bay(bay: int) -> void:
 
 ## A bay's bike lift: a pit frame flush in the floor, the platform (which moves, carrying the
 ## bike on its paddock stand and anyone standing on it), scissor arms under it, and a post with
-## up and down buttons. Look at the post and press F to raise or lower it (Shed "lift").
+## up and down buttons. Look at the post and press F to raise or lower it (Shed "lift"). The wash
+## bay's (Wash.LIFT) is a narrow grated runway instead, so the jet gets through to underneath.
 func _build_lift(bay: int, xf: Transform3D) -> void:
+	var washing := bay == Wash.LIFT
 	var base := Node3D.new()
-	base.name = "LiftBase%d" % bay
+	base.name = "WashLiftBase" if washing else "LiftBase%d" % bay
 	base.transform = xf
 	_root.add_child(base)
-	var plate := Vector3(0.9, 0.024, 2.5)
+	var plate := Vector3(0.3, 0.03, 2.3) if washing else Vector3(0.9, 0.024, 2.5)
 	ws._deco(base, Vector3(0.0, 0.003, 0.0), Vector3(plate.x + 0.16, 0.006, plate.z + 0.16), ws._mats["dark"])
 	var body := AnimatableBody3D.new()
-	body.name = "Lift%d" % bay
+	body.name = "WashLift" if washing else "Lift%d" % bay
 	body.set_meta("surface", "metal")
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(plate.x, 0.06, plate.z)
@@ -433,7 +437,12 @@ func _build_lift(bay: int, xf: Transform3D) -> void:
 	cs.position.y = -0.03     # its top is the platform's height
 	body.add_child(cs)
 	base.add_child(body)
-	ws._deco(body, Vector3(0.0, plate.y * 0.5, 0.0), plate, _mats["plate"])
+	if washing:
+		# A grating: cross bars between the side rails, open between them.
+		for i in 24:
+			ws._deco(body, Vector3(0.0, plate.y * 0.5, -plate.z * 0.5 + 0.05 + i * (plate.z - 0.1) / 23.0), Vector3(plate.x, plate.y, 0.02), _mats["grate"])
+	else:
+		ws._deco(body, Vector3(0.0, plate.y * 0.5, 0.0), plate, _mats["plate"])
 	for side in [-1.0, 1.0]:
 		ws._deco(body, Vector3(side * (plate.x * 0.5 + 0.02), plate.y * 0.5 + 0.002, 0.0), Vector3(0.05, plate.y + 0.004, plate.z + 0.05), _mats["hazard"])
 	# A wheel chock at the front of the platform.
@@ -442,7 +451,7 @@ func _build_lift(bay: int, xf: Transform3D) -> void:
 	var arms := []
 	for side in [-1.0, 1.0]:
 		for lean in [-1.0, 1.0]:
-			var arm := ws._deco(base, Vector3(side * 0.3, 0.0, 0.0), Vector3(0.05, 0.04, LIFT_ARM), ws._mats["steel"])
+			var arm := ws._deco(base, Vector3(side * (0.12 if washing else 0.3), 0.0, 0.0), Vector3(0.05, 0.04, LIFT_ARM), ws._mats["steel"])
 			arm.set_meta("lean", lean)
 			arms.append(arm)
 	# The control post beside the bay, with its buttons: F on it raises or lowers the lift.
@@ -455,9 +464,9 @@ func _build_lift(bay: int, xf: Transform3D) -> void:
 	ws._target(post + Vector3(0.0, 0.8, 0.0), Vector3(0.4, 0.8, 0.4), {"lift": bay}, base)
 	var motor := Sfx.make_loop_player(base)
 	motor.position = Vector3(0.0, 0.3, 0.0)
-	_lifts[bay] = {"body": body, "arms": arms, "motor": motor}
+	_lifts[bay] = {"body": body, "arms": arms, "motor": motor, "xf": xf, "top": Wash.LIFT_TOP if washing else GarageUpgrades.LIFT_TOP}
 	if not _lift_h.has(bay):
-		_lift_h[bay] = GarageUpgrades.LIFT_TOP if Shed.lifts.has(bay) else 0.0
+		_lift_h[bay] = float(_lifts[bay]["top"]) if Shed.lifts.has(bay) else 0.0
 	_pose_lift(bay, float(_lift_h[bay]))
 
 
@@ -475,7 +484,7 @@ func _pose_lift(bay: int, h: float) -> void:
 ## How far up the lift a bike at `at` is standing on is right now (0 off a lift, or with it down).
 func lift_height_at(at: Vector3) -> float:
 	for bay in _lifts:
-		var o := Workshop.bay_transform(int(bay)).origin
+		var o: Vector3 = (_lifts[bay]["xf"] as Transform3D).origin
 		if Vector2(at.x - o.x, at.z - o.z).length() < 0.5:
 			return float(_lift_h.get(bay, 0.0))
 	return 0.0
@@ -485,7 +494,7 @@ func lift_height_at(at: Vector3) -> float:
 ## go up and down smoothly for everyone.
 func _physics_process(delta: float) -> void:
 	for bay in _lifts:
-		var want := GarageUpgrades.LIFT_TOP if Shed.lifts.has(bay) else 0.0
+		var want := float(_lifts[bay]["top"]) if Shed.lifts.has(bay) else 0.0
 		var was := float(_lift_h.get(bay, 0.0))
 		var h := move_toward(was, want, GarageUpgrades.LIFT_SPEED * delta)
 		_lift_h[bay] = h

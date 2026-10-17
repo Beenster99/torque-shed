@@ -1,7 +1,8 @@
 class_name Wash
 extends RefCounted
 ## Pressure washing bikes, on the host's side: where the hose reaches (only the wash bay beside
-## the shed, whose floor drains into the grate in the middle of it), the jet
+## the shed, whose floor drains into the grate in the middle of it, with a bike lift over it to
+## raise a bike and wash it underneath), the jet
 ## each washer is firing and where it lands (so the whole crew sees the water: "wash_aim"), and
 ## the dirt their WashJob has washed off each part, region by region ("wash_cells": each region's
 ## dirt times a factor, so two people washing the same bike both count), with the parts it calls
@@ -14,6 +15,42 @@ const BAY_DRAIN := Vector3(-9.3, 0.0, 66.0)
 const BAY_APRON := 0.8
 ## What the player's told when a bike's anywhere else.
 const NO_REACH := "Pressure washing is done in the wash bay. Wheel it in there first."
+## The wash bay's bike lift: a narrow grated runway over the drain with a wheel chock, its key in
+## Shed.lifts (alongside the extension bays' lifts; it's up when that has it), where it stands, how
+## high it raises a bike (high enough to crouch beside it and wash underneath) and how close a
+## bike has to be let go of to be wheeled onto it.
+const LIFT := -2
+const LIFT_AT := Vector3(-9.3, 0.0, 65.3)
+const LIFT_TOP := 1.25
+const LIFT_SNAP := 0.9
+
+
+## Where a bike stands on the wash bay lift: square on it, facing the back wall.
+static func lift_xf() -> Transform3D:
+	return Transform3D(Basis(), LIFT_AT)
+
+
+## Whether a bike at `at` is standing on the wash bay lift.
+static func on_lift(at: Vector3) -> bool:
+	return Vector2(at.x - LIFT_AT.x, at.z - LIFT_AT.z).length() < 0.5
+
+
+## Whether a bike let go of at `at` goes onto the wash bay lift.
+static func near_lift(at: Vector3) -> bool:
+	return Vector2(at.x - LIFT_AT.x, at.z - LIFT_AT.z).length() < LIFT_SNAP
+
+
+## The bike on the wash bay lift (other than `besides`), or 0.
+static func bike_on_lift(besides := 0) -> int:
+	for id in Shed.bikes:
+		if int(id) != besides and int(Shed.bikes[id].get("rider", 0)) == 0 and on_lift((Shed.bikes[id]["xf"] as Transform3D).origin):
+			return int(id)
+	return 0
+
+
+## What a lift's called, for the player: the wash bay's, or a bay's.
+static func lift_name(bay: int) -> String:
+	return "The wash bay lift" if bay == LIFT else "Bay %d's lift" % (bay + 1)
 
 
 ## Whether the hose reaches a bike at `at`: inside the wash bay, or just out of its open front.

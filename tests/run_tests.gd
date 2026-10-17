@@ -330,6 +330,10 @@ func _run_all() -> void:
 	print("Simon's 17 October round: top boxes that are boxes, roll bags that are roll bags, bikes out as .glb")
 	_test_luggage_looks()
 	_test_glb_export()
+	print("Simon's 17 October round: a stronger jet, the wash bay lift, and dirt where it collects")
+	_test_dirt_concentration()
+	_test_wash_lift_rules()
+	await _test_wash_lift_reach()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1450,9 +1454,10 @@ func _test_session() -> void:
 	var wheeled: float = Shed.bikes[faithful]["xf"].origin.distance_to(parked_at)
 	check(Shed.pushing_bike(Shed.me()) == 0 and wheeled > 1.0 and Shed.bikes[faithful]["stand"] == "side",
 		"you can pull it backwards, and let go it goes back on its stand (%.1f m)" % wheeled)
-	# Into the wash bay with it, and blast the mud off with the pressure washer.
+	# Into the wash bay with it (on its stand at the front, off the lift), and blast the mud off
+	# with the pressure washer.
 	Shed.request({"a": "grab_bike", "bike": faithful})
-	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(), Workshop.WASH_CENTER)})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(), Workshop.WASH_CENTER + Vector3(0.0, 0.0, 1.6))})
 	for washed in ["front_tyre", "front_wheel", "fork"]:
 		Shed.items[Shed.item_on(faithful, washed)]["dirt"] = 0.9
 	Shed.changed.emit()
@@ -15943,7 +15948,8 @@ func _test_dirt_accrual() -> void:
 			if id != 0:
 				sum += float(Shed.items[id]["dirt"])
 		return sum
-	# A delivered bike's dirty to start with, and not evenly: dust on top, muck underneath.
+	# A delivered bike's dirty to start with, and not evenly: the muck low down and underneath,
+	# and a part up high (the tank) only takes its share of the bike's figure, mostly not on top.
 	var tank := Shed.item_on(faithful, "tank")
 	var old: Dictionary = Shed.items[tank].duplicate(true)
 	old.erase("grime")
@@ -15953,8 +15959,13 @@ func _test_dirt_accrual() -> void:
 	for v in settled:
 		mean += v
 	mean /= Dirt.CELLS
-	check(absf(mean - 0.5) < 0.01 and Dirt.side(settled, 2) > Dirt.side(settled, 3) * 1.5,
-		"a part from an old save (or just delivered) keeps its dirt, settled as dust on top (top %.2f, underneath %.2f)" % [Dirt.side(settled, 2), Dirt.side(settled, 3)])
+	var fork_old := {"part": str(Shed.items[Shed.item_on(faithful, "fork")]["part"]), "dirt": 0.5}
+	var fork_mean := 0.0
+	for v in Dirt.cells(fork_old, "fork"):
+		fork_mean += v / Dirt.CELLS
+	check(absf(mean - 0.5 * Dirt.settle_share("tank")) < 0.01 and mean < 0.25 and absf(fork_mean - 0.5 * Dirt.settle_share("fork")) < 0.01
+		and fork_mean > mean * 2.0 and Dirt.side(settled, 2) < Dirt.side(settled, 3),
+		"a part from an old save (or just delivered) keeps its dirt where it collects: the tank far less than the fork (%.2f / %.2f), little on top (top %.2f, underneath %.2f)" % [mean, fork_mean, Dirt.side(settled, 2), Dirt.side(settled, 3)])
 	var guard_old := {"part": "steel_front_mudguard", "dirt": 0.5}
 	check(PartsDB.parts.has("steel_front_mudguard") == false or Dirt.side(Dirt.cells(guard_old, "front_mudguard"), 3) > Dirt.side(Dirt.cells(guard_old, "front_mudguard"), 2),
 		"and a mudguard's caked underneath")
@@ -16032,7 +16043,11 @@ func _test_dirt_accrual() -> void:
 	sum = 0.0
 	for v in mucked:
 		sum += v
-	check(absf(sum / Dirt.CELLS - 0.6) < 0.01, "mucked up by a contract, the regions take it on (%.2f)" % (sum / Dirt.CELLS))
+	var had := 0.0
+	for v in levels:
+		had += v / Dirt.CELLS
+	check(absf(sum / Dirt.CELLS - (had + (0.6 - had) * Dirt.settle_share("engine"))) < 0.01,
+		"mucked up by a contract, the regions take on the engine's share of it (%.2f)" % (sum / Dirt.CELLS))
 	Dirt.store(Shed.items[eid], engine)
 	# It all survives a save, and a save from before regions loads with its dirt.
 	var text := var_to_str(Shed.save_snapshot().duplicate(true))
@@ -16351,3 +16366,209 @@ func _test_glb_export() -> void:
 	check(front > build.wheelbase * 0.4, "the front wheel is towards +Z")
 	scene.free()
 	DirAccess.remove_absolute(path)
+## Simon's 17 October round: the dirt's mainly where it collects (behind the front wheel, under
+## the guards, the lower sides, flies on the front), not a coat of dust all over: after a normal
+## ride on tarmac, after an off-road ride, and on a bike delivered dirty.
+func _test_dirt_concentration() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	var tops := ["tank", "saddle", "fairing", "side_panels", "tail"]
+	var lows := {"front_mudguard": [3, 5], "fork": [5, 0, 1], "engine": [5, 3], "exhaust": [3, 0, 1], "frame": [3, 5]}
+	# How dirty the tops of the parts up top are, and the faces in the muck's way low down.
+	var measure := func() -> Vector2:
+		var top := 0.0
+		var top_n := 0
+		var low := 0.0
+		var low_n := 0
+		for slot in tops:
+			var id := Shed.item_on(faithful, slot)
+			if id != 0:
+				top += Dirt.side(Dirt.cells(Shed.items[id], slot), 2)
+				top_n += 1
+		for slot in lows:
+			var id := Shed.item_on(faithful, slot)
+			if id != 0:
+				for d in lows[slot]:
+					low += Dirt.side(Dirt.cells(Shed.items[id], slot), d)
+					low_n += 1
+		return Vector2(top / maxf(top_n, 1), low / maxf(low_n, 1))
+	var ride := func(km: float, dirt_km: float, fly_km: float) -> void:
+		for slot in PartsDB.SLOTS:
+			var id := Shed.item_on(faithful, slot)
+			if id != 0:
+				Dirt.clear(Shed.items[id])
+		Shed.bikes[faithful]["rider"] = me
+		Shed.crew[me]["riding"] = faithful
+		for k in int(km):
+			Shed._wear_from_ride(faithful, {"km": 1.0, "dirt_km": dirt_km / km, "fly_km": fly_km / km})
+		Shed.bikes[faithful]["rider"] = 0
+		Shed.crew[me]["riding"] = 0
+	# 10 km on tarmac: hardly any on top, the muck low down, flies on the front.
+	ride.call(10.0, 0.6, 7.0)
+	var tarmac: Vector2 = measure.call()
+	check(tarmac.x < 0.02 and tarmac.y > tarmac.x * 8.0,
+		"10 km on tarmac: the tops of the tank, seat and panels are near enough clean (%.3f), the muck's low down in the spray (%.3f)" % [tarmac.x, tarmac.y])
+	var lamp := Shed.item_on(faithful, "headlight")
+	if lamp != 0:
+		var l := Dirt.cells(Shed.items[lamp], "headlight")
+		check(Dirt.side(l, 5) > Dirt.side(l, 2) * 4.0, "and the flies are on the front of the headlight (%.2f front, %.2f top)" % [Dirt.side(l, 5), Dirt.side(l, 2)])
+	# Off-road: filthy low down, still much less on top.
+	ride.call(10.0, 13.0, 1.0)
+	var mud: Vector2 = measure.call()
+	check(mud.y > 0.6 and mud.x < mud.y * 0.4, "off-road: caked low down (%.2f), the tops much less (%.2f)" % [mud.y, mud.x])
+	# Delivered "50% dirty" (no regions yet): the muck's still where it collects, the tops dulled.
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(faithful, slot)
+		if id != 0:
+			Shed.items[id].erase("grime")
+			Shed.items[id]["dirt"] = 0.5
+	var delivered: Vector2 = measure.call()
+	check(delivered.x < 0.12 and delivered.y > delivered.x * 4.0,
+		"a delivered dirty bike: a light dust on top (%.3f), the muck low down and underneath (%.3f)" % [delivered.x, delivered.y])
+	Shed.stop()
+
+
+## The wash bay lift: wheel a bike onto it and it's clamped square on it; F on its post raises it
+## (nor can a bike be wheeled onto it raised, nor off it); it stays up in a save.
+func _test_wash_lift_rules() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	check(Shed.check(me, {"a": "lift", "bay": Wash.LIFT, "up": true}) == "" and Wash.reaches(Wash.LIFT_AT), "the wash bay has a lift of its own, in reach of the hose")
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(Vector3.UP, 0.3), Wash.LIFT_AT + Vector3(0.3, 0.0, 0.4))})
+	check((Shed.bikes[faithful]["xf"] as Transform3D).is_equal_approx(Wash.lift_xf()) and Shed.lift_of(faithful) == Wash.LIFT and Wash.bike_on_lift() == faithful,
+		"let go of near the lift, it's wheeled square onto it")
+	Shed.request({"a": "lift", "bay": Wash.LIFT, "up": true})
+	check(Shed.lifts.has(Wash.LIFT) and Shed.lift_raised(faithful), "F on the post raises it")
+	check(Shed.check(me, {"a": "grab_bike", "bike": faithful}).contains("lift") and Shed.check(me, {"a": "mount", "bike": faithful}).contains("lift"),
+		"raised, it can't be wheeled or ridden off")
+	check(Shed.check(me, {"a": "wash_cells", "bike": faithful, "parts": {}, "clean": []}) == "", "and it can be washed up there")
+	var other := 0
+	for id in Shed.bikes:
+		if int(id) != faithful:
+			other = int(id)
+			break
+	Shed.request({"a": "grab_bike", "bike": other})
+	check(Shed.check(me, {"a": "release_bike", "bike": other, "xf": Wash.lift_xf()}).contains("lift is up"), "nothing else can be wheeled onto it while it's up")
+	Shed.request({"a": "release_bike", "bike": other, "xf": Shed.bikes[other]["xf"]})
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Tester")
+	check(Shed.lifts.has(Wash.LIFT), "left up, it's still up in the save")
+	Shed.request({"a": "lift", "bay": Wash.LIFT, "up": false})
+	check(not Shed.lifts.has(Wash.LIFT) and Shed.check(me, {"a": "grab_bike", "bike": faithful}) == "", "lowered, the bike can be wheeled off again")
+	Shed.stop()
+
+
+## Washes everything on the bike the jet can get to from where a player can stand (on the floor,
+## standing or crouched, not inside the bike), square on as near as it can, a little at a time
+## until each patch is clean. Returns {spent (seconds firing), missed (patches it can't get to)}.
+func _wash_round(job: WashJob, model: BikeModel) -> Dictionary:
+	var xf := model.global_transform
+	var inv := xf.affine_inverse()
+	var spent := 0.0
+	var missed := 0
+	var ways: Array = [Vector3.ZERO] + Array(WashJob.tilts())
+	for i in job.e_pos.size():
+		if job.e_w[i] >= 0.98 or job.done.get(job.e_slot[i], false) or job.bike_done:
+			continue
+		var p: Vector3 = xf * job.e_pos[i]
+		var n: Vector3 = (xf.basis * job.e_n[i]).normalized()
+		var eye := Vector3.INF
+		for t in ways:
+			var from: Vector3 = (n + (t as Vector3) * 0.8).normalized()
+			if from.dot(n) < 0.3:
+				continue
+			var e: Vector3 = p + from * 0.6
+			e.y = clampf(e.y, Walker.CROUCH_EYE, Walker.EYE)
+			var local: Vector3 = inv * e
+			if absf(local.x) < 0.5 and absf(local.z) < 1.3:
+				local.x = 0.5 if local.x >= 0.0 else -0.5
+				e = xf * local
+			var d := (p - e).normalized()
+			if WashJob.take(-n.dot(d)) < 0.25 or e.distance_to(p) > WashJob.FAR:
+				continue
+			var sh := job.surface_hit(e, d)
+			if not sh.is_empty() and (sh["at"] as Vector3).distance_to(p) < 0.03:
+				eye = e
+				break
+		if eye == Vector3.INF:
+			missed += 1
+			continue
+		var dir := (p - eye).normalized()
+		var k := 0
+		while job.e_w[i] < 0.98 and k < 60 and not job.done.get(job.e_slot[i], false):
+			job.step(0.05, eye, dir, true)
+			spent += 0.05
+			k += 1
+	return {"spent": spent, "missed": missed}
+
+
+## Pressure washing a normal muddy bike on the wash bay lift: the jet's strong and wide enough
+## that it's a couple of minutes' work; with the lift down the underneath can't be got at, raised
+## (crouched beside it, aiming up) it can, and every part comes clean, so the bike can always be
+## finished. The jet's water is a fine fast fan, and stops where it lands.
+func _test_wash_lift_reach() -> void:
+	# A patch of caked mud square on at the right distance goes in a couple of passes, and the
+	# footprint's a good stripe wide.
+	var at := WashJob.jet_at(WashJob.D_REF)
+	var caked := 1.0 / (WashJob.RATE / WashJob.grip(1.0))
+	check(float(at["radius"]) >= 0.1 and caked < 0.2, "the jet's wide (%.0f mm across) and strong: caked mud goes in %.2f s square on" % [float(at["radius"]) * 2000.0, caked])
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var ws: Workshop = main.workshop
+	var faithful := _bike_named("Old Faithful")
+	var me := Shed.me()
+	Shed.bikes[faithful]["rider"] = me
+	Shed.crew[me]["riding"] = faithful
+	Shed._wear_from_ride(faithful, {"km": 6.0, "dirt_km": 3.0, "fly_km": 3.0})
+	Shed.bikes[faithful]["rider"] = 0
+	Shed.crew[me]["riding"] = 0
+	Shed.bikes[faithful]["xf"] = Wash.lift_xf()
+	Shed.bikes[faithful]["stand"] = ""
+	Shed.changed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	check(ws.get_node_or_null("Upgrades/Built/WashLiftBase/WashLift") != null, "the wash bay has its lift, a grated runway")
+	var model := ws.bike_model(faithful)
+	var job := WashJob.new()
+	check(model != null and job.setup(faithful, model), "a muddy bike on the wash bay lift")
+	if model == null or job.slots.is_empty():
+		main._leave()
+		main.queue_free()
+		await get_tree().physics_frame
+		return
+	job.prepare_all()
+	var start := float(job.stats()["clean"])
+	var down := _wash_round(job, model)
+	var st: Dictionary = job.stats()
+	check(not job.bike_done and float(st["sides"]["under"]) < 0.9,
+		"with the lift down, all but underneath washes off (%.0f%% to %.0f%% clean, underneath %.0f%%, %d patches out of reach)" % [start * 100.0, float(st["clean"]) * 100.0, float(st["sides"]["under"]) * 100.0, int(down["missed"])])
+	Shed.request({"a": "lift", "bay": Wash.LIFT, "up": true})
+	var y0 := model.global_position.y
+	for i in 900:
+		await get_tree().physics_frame
+		if model.global_position.y > y0 + Wash.LIFT_TOP - 0.01:
+			break
+	check(model.global_position.y > y0 + Wash.LIFT_TOP - 0.02, "F on the post raises it, bike and all (%.2f m up)" % (model.global_position.y - y0))
+	var up := _wash_round(job, model)
+	st = job.stats()
+	var spent := float(down["spent"]) + float(up["spent"])
+	check(job.bike_done and float(st["clean"]) >= 0.999, "raised, crouched beside it and aiming up, the underneath comes clean too: the whole bike's done (%.0f%% clean, %d patches the jet can't get square on to)" % [float(st["clean"]) * 100.0, int(up["missed"])])
+	check(spent < 100.0, "a normal muddy bike's a couple of minutes' washing, not much more (%.0f s with the jet on, going straight round it)" % spent)
+	# The water: a fine fast fan that stops where it lands.
+	var jet := WaterSpray.make()
+	add_child(jet)
+	check(jet.initial_velocity_min >= 20.0 and (jet.mesh as CylinderMesh).bottom_radius < 0.003 and jet.amount >= 300,
+		"the jet's a fine, fast fan of water (%.0f m/s, %.1f mm streaks, %d of them)" % [jet.initial_velocity_min, (jet.mesh as CylinderMesh).bottom_radius * 2000.0, jet.amount])
+	jet.set_reach(0.6)
+	check(absf(jet.lifetime * WaterSpray.SPEED - 0.6) < 0.05, "and it stops where it lands (%.2f m)" % (jet.lifetime * WaterSpray.SPEED))
+	jet.queue_free()
+	Shed.request({"a": "lift", "bay": Wash.LIFT, "up": false})
+	job.finish()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
