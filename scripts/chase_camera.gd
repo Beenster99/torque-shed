@@ -200,10 +200,12 @@ func _chase(delta: float) -> void:
 	var t := target.global_transform
 	var flat := _flat_forward(t)
 	var speed := 0.0
-	if target is Bike:
+	if target is Bike or target is Car:
 		speed = absf(target.speed)
-	var dist := 4.6 + speed * 0.04
-	var height := 1.7 + speed * 0.008
+	# A bigger thing to follow (the recovery truck and its trailer) is followed from further back.
+	var scale: float = float(target.get_meta("chase_scale", 1.0))
+	var dist := (4.6 + speed * 0.04) * scale
+	var height := (1.7 + speed * 0.008) * sqrt(scale)
 	var radius := sqrt(dist * dist + height * height)
 	var want_heading := atan2(-flat.x, -flat.z) + orbit_yaw
 	var want_elev := clampf(atan2(height, dist) + orbit_pitch, -0.12, 1.35)
@@ -244,6 +246,8 @@ func _helmet(delta := 0.0) -> void:
 	if target is Bike and target.model:
 		var model: BikeModel = target.model
 		global_transform = model.global_transform * model.eye_transform()
+	elif target.has_method("eye_transform"):
+		global_transform = target.global_transform * target.eye_transform()
 	else:
 		global_transform = target.global_transform.translated_local(Vector3(0.0, 1.5, 0.0))
 	if orbiting():

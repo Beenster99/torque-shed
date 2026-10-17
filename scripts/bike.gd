@@ -1037,7 +1037,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 ## The wheel speed at the end of the step: where the wheel's spin change balances the tyre's
 ## grip on the road, I (w - w0) / dt = -r Fx(w). Fx follows the Magic Formula, so this is solved
 ## (regula falsi, Illinois) between w0 and rolling speed, where the answer always lies.
-func _solve_spin(omega0: float, v_long: float, vden: float, r: float, kp: float, sy: float, f_peak: float,
+## Static so the recovery truck and its trailer (RayWheel) solve their tyres the same way.
+static func _solve_spin(omega0: float, v_long: float, vden: float, r: float, kp: float, sy: float, f_peak: float,
 		i_dt: float, tp: Dictionary) -> float:
 	var roll := v_long / r
 	var a := omega0

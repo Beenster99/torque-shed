@@ -46,8 +46,12 @@ const CATALOGUE := {
 		"desc": "Reads the paint on any part (right mouse with empty hands) and sets it as the mixing bench's target, for matching."},
 	"paint_curved_panel": {"name": "Curved spray-out panel", "cat": "paint", "price": 1000, "needs": [],
 		"desc": "Test cards on a curved panel, to see a metallic, pearl or chameleon's flop from every angle at once."},
+	# The recovery rig (see Recovery): a level gate as well as a price.
+	"recovery_rig": {"name": "Recovery truck and bike trailer", "cat": "vehicles", "price": 14500, "needs": [], "level": 8,
+		"desc": "A double-cab pickup and a two-bike trailer with a ramp, winch, ratchet straps and a dolly tray, parked in the yard. The phone starts ringing with barn finds and crash rescues to fetch. Needs character level 8."},
 }
-const CATEGORIES := {"build": "Building work", "storage": "Storage", "luxury": "Luxury", "paint": "Paint mixing bay"}
+const CATEGORIES := {"build": "Building work", "storage": "Storage", "luxury": "Luxury", "paint": "Paint mixing bay",
+	"vehicles": "Vehicles"}
 ## XP for buying one, scaled up with its price (see award_mult).
 const XP_KEY := "garage_upgrade"
 
@@ -58,6 +62,11 @@ static func exists(id: String) -> bool:
 
 static func owned(id: String) -> bool:
 	return Shed.upgrades.has(id)
+
+
+## The character level the buyer needs for `id` (1 for most).
+static func level_needed(id: String) -> int:
+	return int(CATALOGUE.get(id, {}).get("level", 1))
 
 
 static func price(id: String) -> int:

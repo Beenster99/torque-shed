@@ -311,6 +311,14 @@ func _run_all() -> void:
 	await _test_sales_pc_headings()
 	await _test_shop_buy_in_view()
 	await _test_money_graph_moves()
+	print("Recovery: the truck and trailer, barn finds and crash rescues, winch, dolly, straps, assessment")
+	await _test_recovery_car()
+	await _test_recovery_trailer()
+	await _test_recovery_winch()
+	await _test_recovery_dolly()
+	await _test_recovery_straps()
+	await _test_recovery_assess()
+	await _test_recovery_save()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -15855,3 +15863,37 @@ func _test_money_graph_moves() -> void:
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
 	await get_tree().process_frame
+
+
+# ---------------------------------------------------------------------------- recovery (tests/recovery_tests.gd)
+
+func _recovery() -> RefCounted:
+	return load("res://tests/recovery_tests.gd").new(self)
+
+
+func _test_recovery_car() -> void:
+	await _recovery().test_car()
+
+
+func _test_recovery_trailer() -> void:
+	await _recovery().test_trailer()
+
+
+func _test_recovery_winch() -> void:
+	await _recovery().test_winch()
+
+
+func _test_recovery_dolly() -> void:
+	await _recovery().test_dolly()
+
+
+func _test_recovery_straps() -> void:
+	await _recovery().test_straps()
+
+
+func _test_recovery_assess() -> void:
+	await _recovery().test_assess()
+
+
+func _test_recovery_save() -> void:
+	await _recovery().test_save()

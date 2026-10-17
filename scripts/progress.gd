@@ -110,6 +110,9 @@ const XP := {
 	"contract_batch_part": {"xp": 6, "label": "Batch part dispatched", "once": "item"},
 	"contract_test": {"xp": 90, "label": "Test ride report in"},
 	"mot_test": {"xp": 6, "label": "MOT test"},
+	# Recovery jobs (see Recovery): a bike brought in on the trailer, and an insurer's repair collected.
+	"recovery_delivered": {"xp": 60, "label": "Bike recovered"},
+	"recovery_insurer": {"xp": 120, "label": "Insurer repair done"},
 	"garage_upgrade": {"xp": 40, "label": "Garage upgrade"},
 	# The coffee shop next door (see CoffeeShop): a break, and a biker's bike bought off them.
 	"coffee_break": {"xp": 3, "label": "Coffee break"},

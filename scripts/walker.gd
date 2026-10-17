@@ -344,6 +344,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			_f_bike = int(target["bike"])
 			_f_time = 0.0
+		elif target.get("kind", "") == "use":
+			get_viewport().set_input_as_handled()
+			target["node"].use(target)
 		elif target.get("kind", "") == "pc":
 			get_viewport().set_input_as_handled()
 			computer_requested.emit()
@@ -730,6 +733,9 @@ func _update_target() -> void:
 			t = {"kind": "label", "furniture": int(c.get_meta("label"))}
 		elif c.has_meta("item") and Shed.items.has(int(c.get_meta("item"))):
 			t = {"kind": "item", "item": int(c.get_meta("item"))}
+		elif c.has_meta("use_node") and is_instance_valid(c.get_meta("use_node")):
+			# Something on the recovery rig (RecoveryView): its door, ramp, winch, straps, dolly.
+			t = {"kind": "use", "node": c.get_meta("use_node"), "use": c.get_meta("use", {})}
 		elif c.has_meta("coffee_tray") and CoffeeShop.trays().has(int(c.get_meta("coffee_tray"))):
 			t = {"kind": "tray", "tray": int(c.get_meta("coffee_tray"))}   # a tray from the cafe, put down
 		elif (Shed.held_by(Shed.me()) != 0 or CoffeeShop.carrying(Shed.me())) and (c is CollisionObject3D) \
@@ -1827,6 +1833,8 @@ func _describe() -> String:
 		lines.append("Masking tape: %s (R for another)" % str(PaintMix.PATTERNS[str(bay_held.get("pattern", "stripe"))]["name"]).to_lower())
 		lines.append("Hold left mouse on a painted part to mask it off; spray the second colour over, then peel it (right mouse).")
 	match kind:
+		"use":
+			lines.append(str(target["node"].use_text(target)))
 		"paint_bay":
 			lines.append_array(_bay_lines())
 		"tray":
@@ -1837,9 +1845,12 @@ func _describe() -> String:
 			# Out on the road: no inspecting its parts, it's just a bike to ride.
 			var road_id := int(target["bike"])
 			lines.append(str(Shed.bikes[road_id]["name"]))
-			lines.append("Out on the road. Ride it back to the shed to work on it.")
+			if Recovery.job_of(road_id).is_empty():
+				lines.append("Out on the road. Ride it back to the shed to work on it.")
+			else:
+				lines.append("A recovery job: it goes back to the yard on the trailer.")
 			var ride_on := Shed.check(Shed.me(), {"a": "mount", "bike": road_id})
-			lines.append("F: ride %s" % Shed.bikes[road_id]["name"] if ride_on == "" else "Can't ride it. " + ride_on)
+			lines.append("F: ride %s" % Shed.bikes[road_id]["name"] if ride_on == "" else ride_on)
 			if Shed.check(Shed.me(), {"a": "grab_bike", "bike": road_id}) == "":
 				lines.append("Hold F: wheel it about")
 			var held_can := Shed.held_by(Shed.me())
