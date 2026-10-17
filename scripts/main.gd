@@ -731,9 +731,15 @@ func _steer_input(stick_x: float, delta: float) -> float:
 	if not Settings.direct_bars:
 		_kb_bars = 0.0
 		return clampf(keys + stick_x, -1.0, 1.0)
-	var easing := absf(keys) < absf(_kb_bars) or keys * _kb_bars < 0.0
-	_kb_bars = move_toward(_kb_bars, keys, (6.0 if easing else 2.5) * delta)
+	_kb_bars = ramp_bars(_kb_bars, keys, delta)
 	return clampf(_kb_bars + stick_x * absf(stick_x), -1.0, 1.0)
+
+
+## Direct bars on keys: the push `held` so far moves towards the keys' `keys` (-1, 0 or 1),
+## building up over 0.4 s and let off quicker.
+static func ramp_bars(held: float, keys: float, delta: float) -> float:
+	var easing := absf(keys) < absf(held) or keys * held < 0.0
+	return move_toward(held, keys, (6.0 if easing else 2.5) * delta)
 
 
 ## Off the edge of the map (or through it): the bike goes back to the last place it had its

@@ -26,9 +26,18 @@ const ARM_INERTIA := 0.35         # kg m^2: the rider's hands and forearms swing
 const ARM_HOLD := 120.0           # Nm per rad: how firmly the rider's arms hold the bars where they aim them, riding
 const ARM_HOLD_SLOW := 500.0      # and at walking pace, feet down, steering by hand
 const MAX_BAR_TORQUE := 45.0      # Nm: the most a rider pushes through 720 mm bars (wider bars, more leverage)
-const DIRECT_BAR_TORQUE := 20.0   # Nm: a full push on the bars in Direct bars mode, 720 mm bars
-const DIRECT_BODY_LEAN := 1.0     # Direct bars, riding: N m per radian of lean per kg the rider's body sits it up with
-const DIRECT_BODY_RATE := 1.0     # ... and N m s per radian per kg against the bike falling
+const DIRECT_BAR_TORQUE := 35.0   # Nm: a full push on the bars in Direct bars mode, 720 mm bars, at DIRECT_PUSH_SPEED
+const DIRECT_PUSH_SPEED := 10.0   # m/s: ... growing as the speed to the power 3/4
+const DIRECT_PUSH_LEAST := 0.7    # ... from no less than this share at a crawl
+const DIRECT_PUSH_MOST := 2.5     # ... to no more than this at speed
+const DIRECT_FRONT_REF := 3800.0  # N m per rad: the front stiffness (see _front_stiffness) of a stock road bike the push is set for
+const DIRECT_MASS_REF := 260.0     # kg: ... and its weight (a heavier bike takes more to tip in)
+const DIRECT_CATCH := 30.0        # N m s per rad: Direct bars, not pushing, the hands steering into a roll they feel (at DIRECT_PUSH_SPEED)
+const DIRECT_KEEP := 60.0          # N m per rad: ... and against the lean straying from the one they let go at
+const DIRECT_HAND_HOLD := 20.0     # N m per rad: Direct bars, the hands' light hold against a quick shake of the bars
+const DIRECT_HAND_FRONT := 0.25    # ... plus this share of the front's stiffness
+const DIRECT_BODY_GIVE := 0.6     # how much of their hold on the lean the rider lets go of while pushing the bars at town speeds (all of it from 80 km/h)
+const DIRECT_BODY_RATE := 1.0     # Direct bars, riding, not pushing: N m s per radian per kg the rider's body steadies a roll with
 const DIRECT_BODY_MAX := 250.0    # N m: the most the rider's body does
 const TYRE_RATE := 180000.0       # N/m: how stiffly a tyre's carcass springs back from a ripple in the road
 const TYRE_ENVELOPE := 0.1        # m: the tyre wraps round a ripple shorter than about this
@@ -148,6 +157,7 @@ var _lean_i := 0.0                  # the rider's memory of a lean that keeps fa
 var _hang := 0.0                    # how far the rider is hanging off, m (+ to the right)
 var _rate_slow := 0.0               # the lean rate smoothed over half a second
 var _trim := 0.0                    # the steady push the rider's arms have settled into, N m
+var _direct_hold := 0.0              # Direct bars: the lean the rider let go of the bars at, rad
 var _prev_w := Vector3.ZERO          # the frame's spin and velocity last tick, for its accelerations
 var _prev_v := Vector3.INF
 var _seen := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])   # the lean and lean rate as the rider feels them (two stages each)
@@ -292,6 +302,7 @@ func place(pos: Vector3, heading: float) -> void:
 	_prev_w = Vector3.ZERO
 	_prev_v = Vector3.INF
 	_trim = 0.0
+	_direct_hold = 0.0
 	_lean_i = 0.0
 	_hang = 0.0
 	_seen = PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
@@ -561,7 +572,19 @@ func _update_steering(delta: float) -> void:
 			# The input is the push itself: the right grip forward (steer right) turns the bars
 			# left, which leans the bike right, and the trail then swings the front into the lean.
 			# Feet down the hands just point the bars.
-			var push := -lean_input * DIRECT_BAR_TORQUE * lever
+			var push := -lean_input * _direct_push(v) * lever
+			# Not pushing, their hands still steer a little into a fall they feel, as anyone's do
+			# without thinking: the bike holds the lean it's at rather than tipping further in.
+			# The lean they let go at is the one they keep.
+			var easy := 1.0 - minf(absf(lean_input), 1.0)
+			_direct_hold = lerpf(_direct_hold, _seen[1], 1.0 - exp(-absf(lean_input) * delta / 0.05)) if riding > 0.0 else lean_angle
+			var catch := _direct_push(v) / DIRECT_BAR_TORQUE * clampf(DIRECT_PUSH_SPEED / maxf(v, 1.0), 0.3, 1.5) * lever
+			push += easy * catch * (DIRECT_CATCH * _seen[3] + DIRECT_KEEP * (_seen[1] - _direct_hold))
+			# However they push, their hands keep a light hold on the bars and soak up a quick
+			# shake about where they're steering.
+			var k_hand := (DIRECT_HAND_HOLD + DIRECT_HAND_FRONT * _front_stiffness(v)) * riding
+			push += k_hand * (_steer_slow - steer)
+			k_s = k_hand * riding
 			bar_torque = clampf(lerpf(hold * (_steer_aim - steer), push, riding), -most, most)
 		else:
 			# The arms hold the bars on their aim as firmly as the front pulls (half its stiffness
@@ -675,6 +698,15 @@ func _front_stiffness(v: float) -> float:
 	var fz := build.total_mass * G * 0.5
 	var c_alpha := mu * fz * TyreModel.stiffness_at_zero(tp) / tan(float(tp["alpha_peak"]))
 	return maxf(build.trail, 0.0) * cos(deg_to_rad(build.rake_deg)) * c_alpha * clampf(v / 6.0, 0.15, 1.0)
+
+
+## Direct bars: the push a full input puts on 720 mm bars at speed v, N m. A faster bike takes a
+## firmer push to tip in at the same pace, so the rider pushes harder as the speed rises.
+## A front that turns easily (light, on soft knobblies) takes less of a push to turn the same, a
+## heavier bike more.
+func _direct_push(v: float) -> float:
+	var front := clampf(_front_stiffness(DIRECT_PUSH_SPEED) / DIRECT_FRONT_REF * build.total_mass / DIRECT_MASS_REF, 0.35, 1.4)
+	return DIRECT_BAR_TORQUE * front * clampf(pow(maxf(v, 0.0) / DIRECT_PUSH_SPEED, 0.75), DIRECT_PUSH_LEAST, DIRECT_PUSH_MOST)
 
 
 ## A shove on the bars (N m s, + towards turning them right), as a hand or a pothole gives them.
@@ -1180,14 +1212,13 @@ func _apply_rider_balance() -> void:
 	tau = lerpf(tau, (22.0 * err - 4.0 * lean_rate) * mass, feet_down)
 	if direct_bars:
 		# No lean to aim for: the bars do the balancing. Feet down at a crawl the rider holds the
-		# bike up; riding, their body only calms the roll a little (more with realism turned up).
+		# bike up. Riding, while they push on the bars their body goes with the bike; let go and
+		# it steadies the bike on the lean it's at (a little more with realism turned up).
 		var feet := 1.0 - clampf((absf(speed) - 2.0) / 2.5, 0.0, 1.0)
-		tau = (-22.0 * lean_angle * feet - (4.0 * feet + 0.8 * assist * (1.0 - feet)) * lean_rate) * mass
+		var going_with := 1.0 - lerpf(DIRECT_BODY_GIVE, 1.0, clampf((absf(speed) - 10.0) / 12.0, 0.0, 1.0)) * minf(absf(lean_input), 1.0)
+		tau = (-22.0 * lean_angle * feet - (4.0 * feet + (0.4 + 0.4 * assist) * going_with * (1.0 - feet)) * lean_rate) * mass
 		if any_contact and not is_crashed:
-			# Riding, they sit it up gently with their hips and knees, as a real bike rights itself
-			# at a steady speed: let go of the bars and a lean slowly comes back up.
-			tau += clampf((-DIRECT_BODY_LEAN * lean_angle - DIRECT_BODY_RATE * lean_rate) * mass,
-				-DIRECT_BODY_MAX, DIRECT_BODY_MAX) * (1.0 - feet)
+			tau -= clampf(DIRECT_BODY_RATE * going_with * lean_rate * mass, -DIRECT_BODY_MAX, DIRECT_BODY_MAX) * (1.0 - feet)
 	# The rider's body isn't bolted on: it sways on their hips and soaks up a quick rocking of the
 	# bike (a weave), though not the bike leaning into a turn. Hands on or off, at any realism.
 	var dt := get_physics_process_delta_time()
