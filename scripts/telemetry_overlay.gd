@@ -70,14 +70,16 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, dim)
 	var h_ := bike.heat
 	if h_:
-		draw_string(font, Vector2(bx, by + 44.0), "Discs %d / %d°C%s" % [roundi(h_.discs[0]), roundi(h_.discs[1]),
-			"  FADING" if h_.brakes_fading() else ""], HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12,
-			TelemetryGraph.OVER if h_.brakes_fading() else dim)
+		var fading := h_.brakes_fading()
+		draw_string(font, Vector2(bx, by + 44.0), "Discs %d / %d°C" % [roundi(h_.discs[0]), roundi(h_.discs[1])],
+			HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, TelemetryGraph.OVER if fading else dim)
 		var eng := h_.engine_state()
-		draw_string(font, Vector2(bx, by + 60.0), "%s %d°C  oil %d  air %d" % [h_.engine_label().capitalize(), roundi(h_.engine),
-			roundi(h_.oil), roundi(h_.air)], HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12,
+		draw_string(font, Vector2(bx, by + 60.0), "%s %d°C" % [h_.engine_label().capitalize(), roundi(h_.engine)],
+			HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12,
 			TelemetryGraph.OVER if eng == "hot" else (TelemetryGraph.FRONT_PALE if eng == "cold" else dim))
-	y += d + 76.0
+		draw_string(font, Vector2(bx, by + 76.0), "Oil %d°C · air %d°C" % [roundi(h_.oil), roundi(h_.air)],
+			HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, dim)
+	y += d + 92.0
 	# The last few seconds as strips.
 	var shown := TelemetryGraph.STRIPS.filter(func(s): return STRIPS.has(s[0]))
 	var gap := 5.0
