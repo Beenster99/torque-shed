@@ -233,6 +233,12 @@ var held_by_job := false
 var _shown_xf := Transform3D()
 var _shown_geo := 0
 var _xf_stale := true
+## Past this far from the camera the dirt isn't drawn (each dirty part costs a second draw, and
+## you can't make out muck that far off); it comes back a little closer in, so it doesn't flicker.
+const FAR := 30.0
+const NEAR := 26.0
+var _far := false
+var _far_check := 0.0
 
 
 static func shader() -> Shader:
@@ -346,8 +352,8 @@ func _add_slot(slot: String) -> void:
 				tail = tail.next_pass
 			tail.next_pass = m
 			copies[own] = mine
-		_restore.append([g, own])
-		g.material_override = mine
+		_restore.append([g, own, mine])
+		g.material_override = own if _far else mine
 	_xf_stale = true
 	_update_transform()
 
@@ -555,7 +561,28 @@ func _param(key: String, value) -> void:
 		(_mats[slot] as ShaderMaterial).set_shader_parameter(key, value)
 
 
+## Draws the dirt only when the camera is near enough to see it.
+func _check_far(delta: float) -> void:
+	_far_check -= delta
+	if _far_check > 0.0 or model == null or not is_instance_valid(model) or not model.is_inside_tree():
+		return
+	_far_check = 0.25
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return
+	var d := cam.global_position.distance_to(model.global_position)
+	var far := d > (NEAR if _far else FAR)
+	if far == _far:
+		return
+	_far = far
+	for r in _restore:
+		var g := r[0] as GeometryInstance3D
+		if is_instance_valid(g):
+			g.material_override = r[1] if _far else r[2]
+
+
 func _process(delta: float) -> void:
+	_check_far(delta)
 	_update_transform()
 	var want := 1.0 if _scan_on else 0.0
 	if _scan != want or _scan_on:

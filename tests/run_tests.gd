@@ -3015,7 +3015,10 @@ func _test_perf_steady() -> void:
 	for i in 3:
 		await get_tree().process_frame
 	check(mat.get_shader_parameter("to_model") == marker, "a parked bike's dirt isn't re-sent each frame")
-	ws.bike_views[faithful].position += Vector3(0.0, 0.0, 0.2)
+	# (Moved in the shed, as the views are put where the shed has them, on a lift or not.)
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER + Vector3(0.0, 0.0, 0.2))
+	Shed.changed.emit()
+	await get_tree().process_frame
 	await get_tree().process_frame
 	check(mat.get_shader_parameter("to_model") != marker, "but it follows the bike when it moves")
 	ws.bike_views[faithful].position -= Vector3(0.0, 0.0, 0.2)
