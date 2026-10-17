@@ -325,7 +325,7 @@ func use_text(_t: Dictionary) -> String:
 			var g := PoolGame.group_of_player(i)
 			who.append("%s%s" % [PoolGame.player_name(int(players[i])), " (%s)" % g if g != "" else ""])
 		lines.append("Playing: %s" % ", ".join(who) if not who.is_empty() else "Nobody playing")
-		if str(st["msg"]) != "":
+		if str(st["msg"]) != "" and _sim.is_empty():
 			lines.append(str(st["msg"]))
 		if not _sim.is_empty():
 			lines.append("The balls are rolling...")
@@ -597,7 +597,7 @@ func _update_hud() -> void:
 	var me_at: int = (st["players"] as Array).find(Shed.me())
 	var g := PoolGame.group_of_player(me_at) if me_at >= 0 else ""
 	var lines := []
-	if str(st["msg"]) != "":
+	if str(st["msg"]) != "" and _sim.is_empty():   # not till the balls have done what it says
 		lines.append(str(st["msg"]))
 	if mode == "aim":
 		var on_black := g != "" and PoolGame.left_of(st["balls"], g) == 0
