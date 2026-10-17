@@ -24,41 +24,46 @@ var firing := false
 
 
 func _ready() -> void:
-	_splash = _particles(150, 0.45, false)
-	_splash.spread = 55.0
-	_splash.initial_velocity_min = 1.5
-	_splash.initial_velocity_max = 4.5
+	# Fine droplets flung off fast, mostly out along the surface, not big drops.
+	_splash = _particles(180, 0.3, false)
+	_splash.spread = 70.0
+	_splash.flatness = 0.3
+	_splash.initial_velocity_min = 2.5
+	_splash.initial_velocity_max = 6.5
 	_splash.gravity = Vector3(0.0, -9.8, 0.0)
+	_splash.damping_min = 2.0
+	_splash.damping_max = 5.0
 	_splash.scale_amount_min = 0.5
-	_splash.scale_amount_max = 1.1
+	_splash.scale_amount_max = 1.0
 	_splash.particle_flag_align_y = true
 	var drop := CylinderMesh.new()
-	drop.top_radius = 0.0025
-	drop.bottom_radius = 0.004
-	drop.height = 0.07
+	drop.top_radius = 0.001
+	drop.bottom_radius = 0.0018
+	drop.height = 0.05
 	drop.radial_segments = 4
 	drop.rings = 1
 	drop.material = _water_mat(Color(0.85, 0.93, 1.0, 0.55), false)
 	_splash.mesh = drop
 	_splash.color_ramp = _fade(Color(1, 1, 1, 0.8))
 	add_child(_splash)
-	_mist = _particles(70, 1.8, false)
-	_mist.spread = 75.0
-	_mist.initial_velocity_min = 0.3
-	_mist.initial_velocity_max = 1.4
-	_mist.damping_min = 1.0
-	_mist.damping_max = 2.5
-	_mist.gravity = Vector3(0.0, 0.18, 0.0)
+	# A fine mist cloud hanging round where it lands: lots of small, faint puffs, not blobs.
+	_mist = _particles(110, 1.0, false)
+	_mist.spread = 80.0
+	_mist.initial_velocity_min = 0.6
+	_mist.initial_velocity_max = 2.2
+	_mist.damping_min = 2.5
+	_mist.damping_max = 4.5
+	_mist.gravity = Vector3(0.0, 0.12, 0.0)
 	_mist.angle_min = 0.0
 	_mist.angle_max = 360.0
-	_mist.scale_amount_min = 0.18
-	_mist.scale_amount_max = 0.55
+	_mist.scale_amount_min = 0.04
+	_mist.scale_amount_max = 0.12
 	var grow := Curve.new()
-	grow.add_point(Vector2(0.0, 0.3))
+	grow.add_point(Vector2(0.0, 0.4))
 	grow.add_point(Vector2(1.0, 1.0))
 	_mist.scale_amount_curve = grow
 	var puff := QuadMesh.new()
-	var pm := _water_mat(Color(0.92, 0.95, 1.0, 0.13), true)
+	var pm := _water_mat(Color(0.92, 0.95, 1.0, 0.1), true)
 	pm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	pm.billboard_keep_scale = true
 	pm.albedo_texture = WaterSpray._soft_dot()

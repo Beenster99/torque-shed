@@ -19,7 +19,10 @@ extends RefCounted
 ## parts washer, the brush, a contract's mucky bike, a save from before regions) has its regions
 ## brought into line with it when they're read: scaled down evenly, or the extra laid on in the
 ## part's usual pattern. A part with no regions yet gets that pattern too: a delivered bike is
-## dusty on top and muddy underneath, not evenly tinted.
+## muddy low down, behind the front wheel and underneath, with only a light dulling of dust up
+## top, not evenly tinted. Laid on like that, a part takes its share by where it sits on the bike
+## (SETTLE: the tank and bars of a bike that came in "50% dirty" are nothing like as mucky as its
+## fork and tyres), so the overall figure comes down to match when it's next kept.
 
 const NX := 6
 const NY := 4
@@ -46,6 +49,15 @@ const GUARD_UNDERSIDE := {"front_mudguard": 3.0, "tail": 2.4, "guards": 1.5, "sw
 const FLY_SLOTS := {"headlight": 1.0, "fairing": 1.0, "fog_lights": 0.9, "mirrors": 0.6, "front_mudguard": 0.7, "fork": 0.55,
 	"indicators": 0.5, "number_boards": 0.6, "handlebars": 0.35, "dashboard": 0.35, "tank": 0.3, "front_master": 0.3,
 	"horn": 0.5, "cooling": 0.45, "steering_damper": 0.3}
+
+## A part laid on with dirt by only an overall figure (see the top) takes this share of it per
+## unit of its usual exposure (Shed.DIRT_EXPOSURE), at least SETTLE_MIN and at most all of it.
+const SETTLE := 1.0 / 0.8
+const SETTLE_MIN := 0.2
+## How much of a stood bike's dirt is dust that's settled on it (the rest is its ride muck), and
+## which faces it settles on most (+x, -x, +y, -y, +z, -z).
+const DUST_SHARE := 0.12
+const DUST_FACES: Array[float] = [0.6, 0.6, 1.6, 0.15, 0.6, 0.6]
 
 static var _mud_cache := {}
 static var _rest_cache := {}
@@ -96,12 +108,21 @@ static func cells(it: Dictionary, slot := "") -> PackedFloat32Array:
 			for i in CELLS:
 				out[i] *= k
 			return out
-		return _lay_on(out, rest_pattern(_slot_of(it, slot)), dirt)
+		var s := _slot_of(it, slot)
+		return _lay_on(out, rest_pattern(s), mean + (dirt - mean) * settle_share(s))
 	var none := PackedFloat32Array()
 	none.resize(CELLS)
 	if dirt <= 0.0:
 		return none
-	return _lay_on(none, rest_pattern(_slot_of(it, slot)), dirt)
+	var s2 := _slot_of(it, slot)
+	return _lay_on(none, rest_pattern(s2), dirt * settle_share(s2))
+
+
+## The share of an overall dirt figure a part takes when it's laid on (see SETTLE).
+static func settle_share(slot: String) -> float:
+	if slot == "":
+		return 1.0
+	return clampf(float(Shed.DIRT_EXPOSURE.get(slot, 0.4)) * SETTLE, SETTLE_MIN, 1.0)
 
 
 ## Keeps `levels` on an item: its regions, and its overall dirt as their mean.
@@ -174,21 +195,24 @@ static func where(slot: String, ix: int, iy: int) -> Vector2:
 
 ## How much of the road muck a cell catches on a ride, relative to the rest of the bike: the
 ## front tyre's spray, the rear tyre's, what it kicks forward, the road spray along the lower
-## sides and underneath, and a little everywhere. `spray` is how much more of the front tyre's
-## spray gets past the front mudguard (Shed.front_spray: 1 behind a full guard).
+## sides and underneath, and only a trace anywhere else (thinning out with height, least of all on
+## top faces: the muck's where the wheels throw it, not a coat all over). `spray` is how much more
+## of the front tyre's spray gets past the front mudguard (Shed.front_spray: 1 behind a full guard).
 static func _muck(slot: String, d: int, z: float, y: float, spray: float) -> float:
 	if ROTATING.has(slot):
 		return 1.0
 	# Facing: +x, -x, +y, -y, +z (back), -z (front).
-	var f_front: float = [0.45, 0.45, 0.1, 0.8, 0.15, 1.0][d]
-	var f_rear: float = [0.4, 0.4, 0.05, 1.0, 0.2, 0.8][d]
-	var f_kick: float = [0.3, 0.3, 0.05, 0.4, 0.9, 0.1][d]
-	var f_low: float = [1.0, 1.0, 0.1, 1.0, 0.4, 0.6][d]
+	var f_front: float = [0.45, 0.45, 0.05, 0.8, 0.1, 1.0][d]
+	var f_rear: float = [0.4, 0.4, 0.03, 1.0, 0.2, 0.8][d]
+	var f_kick: float = [0.3, 0.3, 0.03, 0.4, 0.9, 0.1][d]
+	var f_low: float = [1.0, 1.0, 0.05, 1.0, 0.4, 0.6][d]
+	var f_rest: float = [1.0, 1.0, 0.25, 0.8, 0.6, 0.9][d]
 	var front := exp(-pow((z - 0.25) / 0.25, 2.0)) * clampf(1.1 - y / 0.8, 0.0, 1.0)
 	var rear := exp(-pow((z - 1.08) / 0.25, 2.0)) * clampf(1.2 - y, 0.0, 1.0)
 	var kick := exp(-pow((z - 0.72) / 0.2, 2.0)) * clampf(1.0 - y / 0.7, 0.0, 1.0)
 	var low := pow(clampf(1.0 - y / 0.75, 0.0, 1.0), 1.5)
-	var r := 0.15 + 1.8 * front * f_front * spray + 0.9 * rear * f_rear + 0.5 * kick * f_kick + 0.8 * low * f_low
+	var rest := (0.02 + 0.1 * pow(clampf(1.0 - y / 1.2, 0.0, 1.0), 2.0)) * f_rest
+	var r := rest + 1.8 * front * f_front * spray + 0.9 * rear * f_rear + 0.5 * kick * f_kick + 0.8 * low * f_low
 	if d == 3 and GUARD_UNDERSIDE.has(slot):
 		r *= float(GUARD_UNDERSIDE[slot])
 	return r
@@ -218,20 +242,19 @@ static func mud_pattern(slot: String, spray: float, exposure: float) -> PackedFl
 
 
 ## How dirt sits on a part that's been stood about after its last ride (a delivered bike, a part
-## from a scrapyard): its ride pattern, under dust that's settled mostly on top. Mean 1.
+## from a scrapyard): its ride pattern, under a little dust that's settled mostly on top. Mean 1.
 static func rest_pattern(slot: String) -> PackedFloat32Array:
 	if _rest_cache.has(slot):
 		return _rest_cache[slot]
 	var mud := mud_pattern(slot, 1.4, 1.0)
 	var out := PackedFloat32Array()
 	out.resize(CELLS)
-	var dust: Array = [1.0, 1.0, 2.4, 0.4, 1.0, 1.0]
 	var sum := 0.0
 	for d in DIRS:
 		for iy in NY:
 			for ix in NX:
 				var i := index(d, ix, iy)
-				out[i] = 0.5 * mud[i] + 0.5 * float(dust[d])
+				out[i] = (1.0 - DUST_SHARE) * mud[i] + DUST_SHARE * DUST_FACES[d]
 				sum += out[i]
 	for i in CELLS:
 		out[i] *= CELLS / maxf(sum, 1e-5)

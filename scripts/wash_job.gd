@@ -6,9 +6,9 @@ extends RefCounted
 ## tank or the faces shut away behind something), each in one of its part's dirt regions (Dirt).
 ##
 ## Where the jet lands it washes the dirt off the surfaces facing it (a surface side on to it
-## barely gets wet, one facing away not at all, so you have to go round the bike and crouch for
-## underneath), as wide as the distance makes it and weaker the further off you are; caked muck
-## takes longer than a film of dust. What's washed off shows on the bike there and then, exactly
+## barely gets wet, one facing away not at all, so you have to go round the bike, and raise it on
+## the wash bay's lift and crouch for underneath), as wide as the distance makes it and weaker the
+## further off you are; caked muck takes longer than a film of dust. What's washed off shows on the bike there and then, exactly
 ## where the jet went (DirtLayer's wash mask), and the shed hears every few moments how much of
 ## each region has come off, as a share of what was there (`take_updates`), so the rest of the
 ## crew see it come clean too, and two of you can wash the same bike at once.
@@ -20,16 +20,19 @@ const CELL := 0.045          # the surface is sampled this far apart
 const OCC := 0.035           # cubes for working out which sides of the surface the jet can get to
 const WAY_OUT := 0.4         # metres clear of the bike out from a point, and the jet can get to it
 const PREP_POINTS := 250     # points a frame worked through getting ready
-const RADIUS := 0.07         # the jet's footprint at D_REF
+const RADIUS := 0.12         # the jet's footprint at D_REF (a fan tip: a good wide stripe)
 const D_REF := 0.6
-const RATE := 6.0            # washed off a second in the middle of the jet (less for caked muck)
-const FALLOFF := 0.45        # weaker to the edge of the footprint
+const RATE := 14.0           # washed off a second in the middle of the jet (less for caked muck)
+const FALLOFF := 0.35        # weaker to the edge of the footprint
+const CAKED := 1.0           # how much longer caked muck takes than a film of dust (see grip())
 const NEAR := 0.15           # closer than this the footprint's tiny
 const FAR := 1.2             # further than this it starts to lose its bite
 const OUT := 2.6             # and past this it doesn't reach at all
 const SKIM := 0.1            # how square on the jet has to meet a surface: none at all this side on,
 const FACE_ON := 0.5         # all of it by this (cosines)
-const PART_DONE := 0.985     # this much of a part clean and it's done
+const PART_DONE := 0.975     # this much of a part clean and it's done
+const SPECKS := 0.02         # or all but this share of its patches (at least SPECKS_MIN), see _clean_enough
+const SPECKS_MIN := 3
 const CREDIT_SPAN := 0.3     # a patch this much dirtier than clean counts for nothing
 
 var bike := 0
@@ -82,6 +85,12 @@ static var _tilts: Array[Vector3] = []
 ## them): none side on, all of it square on.
 static func take(facing: float) -> float:
 	return clampf((facing - SKIM) / (FACE_ON - SKIM), 0.0, 1.0)
+
+
+## How hard dirt as thick as `level` (0..1) holds on: the jet's rate is divided by this, so a
+## film of dust goes in a flash and caked mud takes a couple of passes.
+static func grip(level: float) -> float:
+	return 0.4 + CAKED * level
 
 
 ## Starts on bike `bike_id` drawn as `bike_model`. False if there's nothing of it to wash.
@@ -331,11 +340,11 @@ func step(delta: float, eye: Vector3, dir: Vector3, firing: bool, hit := false, 
 		var lvl := start[k]
 		if e_slot[i] == hs:
 			hit_level = lvl
-		var add := minf(1.0 - e_w[i], delta * RATE * power * tk * (1.0 - FALLOFF * sqrt(l2) / r) / (0.25 + 1.5 * lvl))
+		var add := minf(1.0 - e_w[i], delta * RATE * power * tk * (1.0 - FALLOFF * sqrt(l2) / r) / grip(lvl))
 		e_w[i] += add
 		wsum[k] += add
 		touched[e_slot[i]] = true
-	layer.wash(a, d, r, delta * RATE * power / (0.25 + 1.5 * hit_level), FALLOFF)
+	layer.wash(a, d, r, delta * RATE * power / grip(hit_level), FALLOFF)
 	_stats_age = 1.0
 	_check_done(touched)
 	_show(touched)
@@ -386,10 +395,10 @@ func _check_done(touched := {}) -> void:
 			cues.append({"kind": "bike", "name": str(Shed.bikes.get(bike, {}).get("name", "The bike"))})
 
 
-## Whether a part `clean` (0..1) clean is done: PART_DONE of it, or on a small part all but
-## two patches at most (a speck in a fold the jet can't quite get square on to shouldn't hold it up).
+## Whether a part `clean` (0..1) clean is done: PART_DONE of it, or all but a few patches (SPECKS:
+## a speck in a fold the jet can't quite get square on to shouldn't hold it up).
 func _clean_enough(si: int, clean: float) -> bool:
-	return clean >= PART_DONE or (1.0 - clean) * part_n[si] <= 2.0
+	return clean >= PART_DONE or (1.0 - clean) * part_n[si] <= maxf(SPECKS_MIN, SPECKS * part_n[si])
 
 
 ## How clean every part is: [one per slot index].
