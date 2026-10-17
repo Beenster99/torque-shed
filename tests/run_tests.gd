@@ -324,6 +324,8 @@ func _run_all() -> void:
 	_test_dirt_accrual()
 	_test_wash_rules()
 	await _test_wash_session()
+	print("Simon's 17 October round: top boxes that are boxes, roll bags that are roll bags")
+	_test_luggage_looks()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -16224,3 +16226,65 @@ func _test_wash_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## The names of the meshes a model drew for `slot`, without the number Godot adds to a name
+## a sibling already has (a second "Lid" is "Lid2").
+func _slot_mesh_names(model: BikeModel, slot: String) -> Array:
+	var out := []
+	for mi in model._slot_meshes[slot]:
+		var n := str(mi.name)
+		while n.length() > 1 and n[-1] in "0123456789":
+			n = n.left(-1)
+		out.append(n)
+	return out
+
+
+## Top boxes are boxes: a plastic case is a tub and a lid with a seam, an alloy case has its
+## latches, and the roll bag (and the roll-top panniers) have their rolled-down ends. None is
+## the old pill shape, and each sits on the rack behind the seat.
+func _test_luggage_looks() -> void:
+	check(PartsDB.get_part("roll_bag").get("style", "") == "roll", "there's a roll bag to strap on the rack")
+	for id in PartsDB.by_kind["top_box"]:
+		var parts := Contracts.style_build("tourer")
+		parts["top_box"] = id
+		var model := BikeModel.new()
+		add_child(model)
+		model.build_from(BikeBuild.new(parts), Color(0.1, 0.35, 0.8), {}, null, false)
+		var names := _slot_mesh_names(model, "top_box")
+		var pill: bool = model._slot_meshes["top_box"].any(func(mi): return mi is MeshInstance3D and mi.mesh is CapsuleMesh)
+		var box := model.slot_bounds("top_box")
+		var style := str(PartsDB.get_part(id).get("style", ""))
+		var shaped := false
+		match style:
+			"small", "large":
+				shaped = names.has("Tub") and names.has("Lid") and (style == "small" or names.has("Backrest"))
+			"alloy":
+				shaped = names.has("Body") and names.has("Lid") and names.count("Latch") == 2
+			"roll":
+				shaped = names.has("RollBag") and names.count("RolledEnd") == 2
+			"crate":
+				shaped = names.size() >= 14
+			"trunk":
+				shaped = names.has("Trunk") and names.has("Lid")
+		check(shaped and not pill and box.get_center().z > model._tail.z and box.size.y > 0.15,
+			"the %s looks the part, on the rack behind the seat (%s)" % [id, ", ".join(names.filter(func(n): return not n.begins_with("@")))])
+		model.queue_free()
+	for id in PartsDB.by_kind["panniers"]:
+		var parts := Contracts.style_build("tourer")
+		parts["panniers"] = id
+		var model := BikeModel.new()
+		add_child(model)
+		model.build_from(BikeBuild.new(parts), Color(0.1, 0.35, 0.8), {}, null, false)
+		var names := _slot_mesh_names(model, "panniers")
+		var pill: bool = model._slot_meshes["panniers"].any(func(mi): return mi is MeshInstance3D and mi.mesh is CapsuleMesh)
+		var ok := not pill
+		match str(PartsDB.get_part(id).get("style", "")):
+			"roll":
+				ok = ok and names.count("RolledTop") == 2 and names.count("RollBag") == 2
+			"alloy":
+				ok = ok and names.count("Latch") == 4
+			"soft":
+				ok = ok and names.count("Bag") == 2
+		check(ok, "the %s pannier looks like what it is" % id)
+		model.queue_free()

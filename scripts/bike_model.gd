@@ -2228,7 +2228,8 @@ func _draw_ecu() -> void:
 	_tube(at + Vector3(0.0, 0.04, -0.06), at + Vector3(-0.08, 0.1, -0.16), 0.006, _mat(Color(0.05, 0.05, 0.05), 0.0, 0.7))
 
 
-## Panniers either side of the back wheel, hung off a rack: soft bags or hard boxes.
+## Panniers either side of the back wheel, hung off a rack: canvas throw-overs, roll-top dry
+## bags, leather saddlebags, rounded plastic cases or riveted aluminium boxes.
 func _draw_panniers(build: BikeBuild, zr: float) -> void:
 	_current_slot = "panniers"
 	var p := _part()
@@ -2253,20 +2254,19 @@ func _draw_panniers(build: BikeBuild, zr: float) -> void:
 				_box(c + Vector3(side * 0.005, 0.15 * k, 0.0), Vector3(depth + 0.02, 0.03, 0.42 * k), _mat(_col().darkened(0.25), 0.0, 0.7))
 				for z in [-0.1, 0.1]:
 					_box(c + Vector3(side * (depth * 0.5 + 0.008), 0.05 * k, z * k), Vector3(0.006, 0.14 * k, 0.025), _mat(_accent(Color(0.8, 0.7, 0.4)), 0.9, 0.3))
-			"hard_top":
+			"hard_top", "hard":
 				# Touring hard cases with a rounded top and a lid seam.
 				var body := _shell([{"c": c + Vector3(0.0, 0.0, -0.22 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.17 * k, "n": 4.0},
 					{"c": c, "w": depth * 0.5, "up": 0.18 * k, "down": 0.17 * k, "n": 4.0},
 					{"c": c + Vector3(0.0, 0.0, 0.22 * k), "w": depth * 0.5, "up": 0.15 * k, "down": 0.17 * k, "n": 4.0}], mat)
 				body.name = "Case"
 				_box(c + Vector3(side * (depth * 0.5 + 0.002), 0.06 * k, 0.0), Vector3(0.006, 0.012, 0.42 * k), _mat(_accent(Color(0.1, 0.1, 0.11)), 0.5, 0.4))
-			"soft", "roll":
-				var bag := _mesh_instance(_capsule(0.12 * k, 0.42 * k), mat, c)
-				bag.rotation.x = PI * 0.5
-				bag.scale = Vector3(depth / (0.24 * k), 1.25, 1.0)
-				if p.get("style", "") == "roll":
-					var roll := _mesh_instance(_cylinder(0.035, 0.3 * k), mat, c + Vector3(0.0, 0.17 * k, 0.0))
-					roll.rotation.x = PI * 0.5
+			"roll":
+				_roll_pannier(c, depth, k, mat, side, Vector3(side * w, top, c.z))
+			"soft":
+				_throw_over(c, depth, k, mat, side, Vector3(side * w, top, c.z))
+			"alloy":
+				_alu_case(c, Vector3(depth, 0.34 * k, 0.46 * k), mat, Vector3(side, 0.0, 0.0))
 			"leather":
 				_box(c, Vector3(depth, 0.3 * k, 0.4 * k), mat)
 				var flap := _box(c + Vector3(side * 0.01, 0.1 * k, 0.0), Vector3(depth + 0.02, 0.12 * k, 0.42 * k), mat)
@@ -2282,7 +2282,9 @@ func _draw_panniers(build: BikeBuild, zr: float) -> void:
 		_tube(Vector3(side * w, top, zr + 0.16), Vector3(side * w, top - 0.3 * k, zr + 0.12), 0.008, rack)
 
 
-## A top box on a rack behind the seat: plastic, alloy, a wooden crate or a leather trunk.
+## A top box on a rack behind the seat, on a mounting plate: a rounded plastic case (a 30 L, or
+## a 45 L with a pillion backrest), a riveted alloy case, a wooden crate, a leather trunk, or a
+## waterproof roll bag strapped across the rack.
 func _draw_top_box() -> void:
 	_current_slot = "top_box"
 	var p := _part()
@@ -2292,29 +2294,311 @@ func _draw_top_box() -> void:
 	var mat := _skin(_mat(_col(), 0.9 if style == "alloy" else 0.0, 0.35 if style in ["alloy", "small", "large"] else 0.85))
 	var rack := _mat(Color(0.75, 0.76, 0.78) if style == "trunk" else Color(0.1, 0.1, 0.11), 0.8, 0.3)
 	var k := pow(float(p.get("litres", 35.0)) / 35.0, 0.33)
-	var base := Vector3(0.0, _seat_y + 0.04, _tail.z + 0.1)
-	_box(base, Vector3(0.24, 0.015, 0.3), rack)
 	var size := Vector3(0.36, 0.26, 0.34) * k
-	var c := base + Vector3(0.0, size.y * 0.5 + 0.01, 0.0)
+	if style == "roll":
+		size = Vector3(0.56, 0.24, 0.27) * k
+	# The rack runs back off the subframe past the seat, so the box sits behind the pillion.
+	var base := Vector3(0.0, _seat_y + 0.04, _tail.z + 0.03 + size.z * 0.5)
+	_top_rack(base, size, rack)
 	match style:
 		"crate":
-			for i in 4:
-				_box(c + Vector3(0.0, -size.y * 0.5 + (i + 0.5) * size.y / 4.0, 0.0), Vector3(size.x, size.y / 4.0 - 0.012, size.z), mat)
-			for x in [-1.0, 1.0]:
-				for z in [-1.0, 1.0]:
-					_box(c + Vector3(x * size.x * 0.48, 0.0, z * size.z * 0.48), Vector3(0.02, size.y, 0.02), _mat(_col().darkened(0.25), 0.0, 0.9))
+			_crate(base + Vector3(0.0, 0.012, 0.0), size, mat)
 		"trunk":
-			_box(c, size, mat)
-			_box(c + Vector3(0.0, size.y * 0.3, 0.0), Vector3(size.x + 0.01, 0.02, size.z + 0.01), _mat(_col().darkened(0.35), 0.0, 0.8))
-			_box(c + Vector3(0.0, 0.03, -size.z * 0.5 - 0.004), Vector3(0.04, 0.05, 0.006), _mat(Color(0.8, 0.7, 0.4), 0.9, 0.3))
+			_trunk(base + Vector3(0.0, 0.012, 0.0), size, mat)
+		"alloy":
+			_alu_case(base + Vector3(0.0, 0.016 + size.y * 0.5, 0.0), size, mat, Vector3.BACK)
+		"roll":
+			_roll_bag(base, size, mat)
 		_:
-			var shell := _mesh_instance(_capsule(size.y * 0.5, size.x), mat, c)
-			shell.rotation.z = PI * 0.5
-			shell.scale = Vector3(1.0, 1.0, size.z / size.y)
-			if style == "large":
-				var pad := _box(c + Vector3(0.0, 0.0, -size.z * 0.5 - 0.01), Vector3(0.22, 0.12, 0.03), _mat(Color(0.08, 0.08, 0.08), 0.0, 0.8))
-				pad.rotation.x = 0.15
-			_box(c + Vector3(0.0, size.y * 0.05, size.z * 0.5), Vector3(0.12, 0.04, 0.01), _lamp(Color(0.9, 0.1, 0.05), 0.6, "ign"))
+			_plastic_case(base + Vector3(0.0, 0.016, 0.0), size, mat, style == "large")
+
+
+## The top box's rack: rails back from the subframe either side, stays down to it, a cross bar at
+## the back and the mounting plate the box clicks onto (or a flat carrier for a soft bag).
+func _top_rack(base: Vector3, size: Vector3, mat: Material) -> void:
+	var back := base.z + size.z * 0.42
+	for x in [-1.0, 1.0]:
+		var rail := Vector3(0.1 * x, base.y - 0.012, 0.0)
+		_bend([_tail + Vector3(0.08 * x, -0.02, -0.12), _tail + Vector3(0.1 * x, rail.y - _tail.y, 0.02),
+			Vector3(rail.x, rail.y, back)], 0.009, mat)
+		_tube(Vector3(rail.x, rail.y, base.z - size.z * 0.1), _tail + Vector3(0.085 * x, -0.13, 0.04), 0.008, mat)
+	_bend([Vector3(-0.1, base.y - 0.012, back), Vector3(0.0, base.y - 0.012, back + 0.025), Vector3(0.1, base.y - 0.012, back)], 0.009, mat)
+	_tube(Vector3(-0.1, base.y - 0.012, base.z - size.z * 0.3), Vector3(0.1, base.y - 0.012, base.z - size.z * 0.3), 0.008, mat)
+	var plate := _mat(Color(0.05, 0.05, 0.055), 0.1, 0.6)
+	_box(base, Vector3(0.24, 0.014, minf(size.z * 0.86, 0.32)), plate)
+	_box(base + Vector3(0.0, -0.004, 0.0), Vector3(0.05, 0.018, minf(size.z * 0.7, 0.26)), plate)
+
+
+## A plastic top case: a tub and a domed lid with a seam between them, hinged at the front and
+## latched with a key lock at the back, a red reflector across the back and (`backrest`) a pad
+## on the front for the pillion. `at` is the middle of its base.
+func _plastic_case(at: Vector3, size: Vector3, lid_mat: Material, backrest: bool) -> void:
+	var w := size.x * 0.5
+	var d := size.z * 0.5
+	var h := size.y
+	var tub_mat := _mat(Color(0.05, 0.05, 0.055), 0.0, 0.55)
+	var dark := _mat(Color(0.02, 0.02, 0.022), 0.0, 0.8)
+	var seam := 0.5 * h
+	var tub := []
+	for s in [[0.0, 0.86, 0.84], [0.04, 0.95, 0.94], [0.12, 1.0, 1.0], [0.5, 1.0, 1.0]]:
+		tub.append({"c": at + Vector3(0.0, s[0] * h, 0.0), "w": w * s[1], "up": d * s[2], "down": d * s[2] * 1.03, "n": 3.6})
+	_shell(tub, tub_mat).name = "Tub"
+	var lid := []
+	for s in [[0.52, 1.015, 1.015], [0.62, 1.01, 1.0], [0.78, 0.97, 0.95], [0.9, 0.88, 0.84], [0.97, 0.72, 0.66], [1.0, 0.5, 0.42]]:
+		lid.append({"c": at + Vector3(0.0, s[0] * h, 0.0), "w": w * s[1], "up": d * s[2], "down": d * s[2] * 1.03, "n": 3.2})
+	_shell(lid, lid_mat).name = "Lid"
+	_shell([{"c": at + Vector3(0.0, seam, 0.0), "w": w * 1.006, "up": d * 1.006, "down": d * 1.036, "n": 3.6},
+		{"c": at + Vector3(0.0, seam + 0.02 * h, 0.0), "w": w * 1.006, "up": d * 1.006, "down": d * 1.036, "n": 3.6}], dark).name = "Seam"
+	var bz := d * 1.03
+	# A wide red reflector across the back of the tub, and the lock and latch over the seam.
+	_box(at + Vector3(0.0, seam - 0.09 * h, bz + 0.002), Vector3(w * 1.3, 0.035 * h / 0.26, 0.008), _lamp(Color(0.9, 0.1, 0.05), 0.6, "ign"))
+	_box(at + Vector3(0.0, seam + 0.01 * h, bz + 0.006), Vector3(0.08, 0.045, 0.014), _mat(Color(0.12, 0.12, 0.13), 0.3, 0.5))
+	var lock := _mesh_instance(_cylinder(0.009, 0.01, -1.0, 12), _mat(Color(0.82, 0.83, 0.85), 1.0, 0.2), at + Vector3(0.0, seam + 0.012 * h, bz + 0.014))
+	lock.rotation.x = PI * 0.5
+	for x in [-1.0, 1.0]:
+		var hinge := _mesh_instance(_cylinder(0.008, 0.05, -1.0, 10), dark, at + Vector3(x * w * 0.5, seam + 0.01 * h, -d - 0.004))
+		hinge.rotation.z = PI * 0.5
+	if backrest:
+		var pad := _shell([{"c": at + Vector3(0.0, 0.46 * h, -d - 0.012), "w": 0.12, "up": 0.0, "down": 0.03, "n": 3.0},
+			{"c": at + Vector3(0.0, 0.62 * h, -d - 0.016), "w": 0.125, "up": 0.0, "down": 0.034, "n": 3.0},
+			{"c": at + Vector3(0.0, 0.78 * h, -d - 0.008), "w": 0.11, "up": 0.0, "down": 0.03, "n": 3.0}],
+			_tex(_mat(Color(0.07, 0.07, 0.07), 0.0, 0.8), "grain"))
+		pad.name = "Backrest"
+
+
+## An aluminium adventure case centred on `c`: flat riveted panels with rolled edges, a pressed
+## rib round the middle, black corner protectors, a lid on top with a seal under it, a carry
+## handle, and two latches with a reflector on the face pointing along `face` (the back of a
+## top case, the outside of a pannier).
+func _alu_case(c: Vector3, size: Vector3, mat: Material, face: Vector3) -> void:
+	var h := size.y
+	var body_h := h * 0.66
+	var lid_h := h - body_h - 0.01
+	var bottom := c.y - h * 0.5
+	var corner := _mat(Color(0.03, 0.03, 0.035), 0.0, 0.6)
+	var steel := _mat(Color(0.8, 0.81, 0.83), 1.0, 0.25)
+	_box(Vector3(c.x, bottom + body_h * 0.5, c.z), Vector3(size.x, body_h, size.z), mat).name = "Body"
+	_box(Vector3(c.x, bottom + body_h + 0.005, c.z), Vector3(size.x - 0.006, 0.012, size.z - 0.006), corner)
+	var lid_y := bottom + body_h + 0.01 + lid_h * 0.5
+	_box(Vector3(c.x, lid_y, c.z), Vector3(size.x + 0.008, lid_h, size.z + 0.008), mat).name = "Lid"
+	var hx := size.x * 0.5 + 0.002
+	var hz := size.z * 0.5 + 0.002
+	# Rolled edges up every corner and round the lid and the base.
+	for x in [-1.0, 1.0]:
+		for z in [-1.0, 1.0]:
+			var e := Vector3(c.x + x * hx, 0.0, c.z + z * hz)
+			_tube(e + Vector3(0.0, bottom + 0.02, 0.0), e + Vector3(0.0, bottom + body_h - 0.01, 0.0), 0.007, mat)
+			_tube(e + Vector3(0.0, lid_y - lid_h * 0.5 + 0.01, 0.0), e + Vector3(0.0, lid_y + lid_h * 0.5 - 0.01, 0.0), 0.007, mat)
+	for y in [bottom + 0.004, lid_y + lid_h * 0.5 + 0.002, bottom + body_h - 0.004]:
+		for z in [-1.0, 1.0]:
+			_tube(Vector3(c.x - hx, y, c.z + z * hz), Vector3(c.x + hx, y, c.z + z * hz), 0.006, mat)
+		for x in [-1.0, 1.0]:
+			_tube(Vector3(c.x + x * hx, y, c.z - hz), Vector3(c.x + x * hx, y, c.z + hz), 0.006, mat)
+	# A pressed rib round the body, a hand's width up.
+	_box(Vector3(c.x, bottom + body_h * 0.45, c.z), Vector3(size.x + 0.006, 0.018, size.z + 0.006), mat)
+	# Black plastic corners top and bottom.
+	for x in [-1.0, 1.0]:
+		for z in [-1.0, 1.0]:
+			for y in [bottom + 0.022, lid_y + lid_h * 0.5 - 0.018]:
+				_box(Vector3(c.x + x * (hx - 0.012), y, c.z + z * (hz - 0.012)), Vector3(0.05, 0.048, 0.05), corner)
+	# Rivets along the base and under the lid on the faces.
+	var rivet := _mat(Color(0.86, 0.87, 0.89), 1.0, 0.2)
+	for f in [Vector3.RIGHT, Vector3.LEFT, Vector3.BACK, Vector3.FORWARD]:
+		var span := size.z if absf(f.x) > 0.5 else size.x
+		var along := Vector3.BACK if absf(f.x) > 0.5 else Vector3.RIGHT
+		var out := Vector3(f.x * hx, 0.0, f.z * hz)
+		var n := maxi(3, roundi(span / 0.07))
+		for i in n:
+			var t := (i + 0.5) / n - 0.5
+			for y in [bottom + 0.035, bottom + body_h - 0.02]:
+				var r := _mesh_instance(_cylinder(0.004, 0.004, -1.0, 6), rivet, Vector3(c.x, y, c.z) + out + along * t * (span - 0.08) + f * 0.002)
+				r.basis = _basis_up(f)
+	# Latches over the seam and a reflector, on the face that opens.
+	var fo := Vector3(face.x * hx, 0.0, face.z * hz)
+	var side := Vector3(face.z, 0.0, face.x).abs()
+	var fspan := size.z if absf(face.x) > 0.5 else size.x
+	for s in [-1.0, 1.0]:
+		var at: Vector3 = Vector3(c.x, bottom + body_h + 0.004, c.z) + fo + side * s * fspan * 0.3
+		var latch := _box(at + face * 0.007, Vector3(0.04, 0.07, 0.04) * (side + Vector3.UP) + face.abs() * 0.012, _mat(Color(0.1, 0.1, 0.11), 0.4, 0.4))
+		latch.name = "Latch"
+		_box(at + face * 0.016 + Vector3(0.0, -0.012, 0.0), Vector3(0.025, 0.04, 0.025) * (side + Vector3.UP) + face.abs() * 0.006, steel)
+	_box(Vector3(c.x, bottom + body_h * 0.72, c.z) + fo + face * 0.003, side * fspan * 0.4 + Vector3(0.0, 0.022, 0.0) + face.abs() * 0.005,
+		_lamp(Color(0.9, 0.1, 0.05), 0.4, "ign"))
+	# A folding carry handle on the lid.
+	var top := lid_y + lid_h * 0.5
+	var hs := Vector3(face.x, 0.0, face.z).abs()
+	var hl := (Vector3(1.0, 0.0, 1.0) - hs) * minf(size.x, size.z) * 0.22 + hs * 0.0
+	_bend([Vector3(c.x, top, c.z) - hl, Vector3(c.x, top + 0.022, c.z) - hl * 0.8, Vector3(c.x, top + 0.022, c.z) + hl * 0.8,
+		Vector3(c.x, top, c.z) + hl], 0.008, corner)
+
+
+## A wooden crate on the rack, `at` the middle of its base: corner posts, slatted sides with gaps
+## between the boards, a solid floor and an open top.
+func _crate(at: Vector3, size: Vector3, mat: Material) -> void:
+	var dark := _mat(_col().darkened(0.25), 0.0, 0.9)
+	var w := size.x * 0.5
+	var d := size.z * 0.5
+	_box(at + Vector3(0.0, 0.008, 0.0), Vector3(size.x, 0.016, size.z), dark)
+	for x in [-1.0, 1.0]:
+		for z in [-1.0, 1.0]:
+			_box(at + Vector3(x * (w - 0.012), size.y * 0.5, z * (d - 0.012)), Vector3(0.026, size.y, 0.026), dark)
+	var slats := 3
+	var gap := 0.022
+	var sh := (size.y - gap * (slats - 1)) / slats
+	for i in slats:
+		var y := (i + 0.5) * (sh + gap) - gap * 0.5
+		for z in [-1.0, 1.0]:
+			_box(at + Vector3(0.0, y, z * (d - 0.006)), Vector3(size.x - 0.05, sh, 0.012), mat)
+		for x in [-1.0, 1.0]:
+			_box(at + Vector3(x * (w - 0.006), y, 0.0), Vector3(0.012, sh, size.z - 0.05), mat)
+	# A stencilled band of darker wood across the back, like an old fruit crate.
+	_box(at + Vector3(0.0, (sh + gap) * 1.0 + sh * 0.5, d + 0.0005), Vector3(size.x * 0.4, sh * 0.5, 0.002), _mat(_col().darkened(0.5), 0.0, 0.9))
+
+
+## A leather trunk, `at` the middle of its base: a rounded body and a domed lid with a welt round
+## the seam, two straps over the lid with buckles at the back, a lock plate and a carry handle.
+func _trunk(at: Vector3, size: Vector3, mat: Material) -> void:
+	var w := size.x * 0.5
+	var d := size.z * 0.5
+	var h := size.y
+	var welt := _mat(_col().darkened(0.35), 0.0, 0.8)
+	var brass := _mat(_accent(Color(0.8, 0.66, 0.3)), 0.9, 0.3)
+	var body := []
+	for s in [[0.0, 0.95], [0.03, 1.0], [0.66, 1.0]]:
+		body.append({"c": at + Vector3(0.0, s[0] * h, 0.0), "w": w * s[1], "up": d * s[1], "down": d * s[1], "n": 6.0})
+	_shell(body, mat).name = "Trunk"
+	var lid := []
+	for s in [[0.68, 1.01], [0.88, 1.0], [0.97, 0.93], [1.0, 0.8]]:
+		lid.append({"c": at + Vector3(0.0, s[0] * h, 0.0), "w": w * s[1], "up": d * s[1], "down": d * s[1], "n": 6.0})
+	_shell(lid, mat).name = "Lid"
+	_shell([{"c": at + Vector3(0.0, 0.655 * h, 0.0), "w": w * 1.02, "up": d * 1.02, "down": d * 1.02, "n": 6.0},
+		{"c": at + Vector3(0.0, 0.69 * h, 0.0), "w": w * 1.02, "up": d * 1.02, "down": d * 1.02, "n": 6.0}], welt)
+	var strap := _mat(_col().darkened(0.45), 0.0, 0.75)
+	for x in [-1.0, 1.0]:
+		var sx: float = x * w * 0.55
+		_box(at + Vector3(sx, h + 0.003, 0.0), Vector3(0.04, 0.006, size.z * 0.86), strap)
+		for z in [-1.0, 1.0]:
+			_box(at + Vector3(sx, h * 0.72, z * (d + 0.003)), Vector3(0.04, h * 0.56, 0.006), strap)
+		_box(at + Vector3(sx, h * 0.58, d + 0.008), Vector3(0.05, 0.04, 0.006), brass)
+	_box(at + Vector3(0.0, 0.66 * h, d + 0.008), Vector3(0.05, 0.06, 0.006), brass)
+	_bend([at + Vector3(-0.06, h, 0.0), at + Vector3(-0.045, h + 0.03, 0.0), at + Vector3(0.045, h + 0.03, 0.0), at + Vector3(0.06, h, 0.0)], 0.009, strap)
+	for x in [-1.0, 1.0]:
+		for z in [-1.0, 1.0]:
+			_box(at + Vector3(x * (w - 0.01), 0.02, z * (d - 0.01)), Vector3(0.035, 0.04, 0.035), brass)
+
+
+## A waterproof roll bag lying across the rack: a fabric cylinder with each end rolled down
+## three times and clipped, compression straps round it with buckles on top, a carry handle, a
+## reflective patch on the back and two cargo straps down to the rack rails.
+func _roll_bag(base: Vector3, size: Vector3, mat: Material) -> void:
+	var r := size.y * 0.5
+	var half := size.x * 0.5 - 0.06
+	var c := base + Vector3(0.0, r * 0.92 + 0.008, 0.0)
+	var web := _mat(Color(0.06, 0.06, 0.065), 0.0, 0.9)
+	var clip := _mat(Color(0.02, 0.02, 0.02), 0.0, 0.4)
+	# The bag is lofted along its own Z and turned to lie across the bike: a fat oval middle that
+	# pinches at each end into the flat strip of fabric the closure is rolled from.
+	var dz := size.z * 0.5
+	var secs := []
+	for s in [[-1.0, 0.03, 0.72], [-0.92, 0.4, 0.86], [-0.8, 0.9, 0.97], [-0.6, 1.0, 1.0], [0.0, 1.03, 1.02], [0.6, 1.0, 1.0],
+			[0.8, 0.9, 0.97], [0.92, 0.4, 0.86], [1.0, 0.03, 0.72]]:
+		secs.append({"c": Vector3(0.0, 0.0, s[0] * (half + 0.05)), "w": dz * s[1], "up": r * s[2], "down": r * s[2], "n": 2.3})
+	var body := _mesh_instance(ShapeKit.loft(secs), mat, c)
+	body.basis = Basis(Vector3.UP, PI * 0.5)
+	body.name = "RollBag"
+	for x in [-1.0, 1.0]:
+		# Each end's flat strip rolled down three times into a tube across the end, clipped top and bottom.
+		var roll := _mesh_instance(_cylinder(0.026, r * 1.5, -1.0, 16), mat, c + Vector3(x * (half + 0.072), 0.0, 0.0))
+		roll.name = "RolledEnd"
+		_mesh_instance(_cylinder(0.02, r * 1.5 + 0.01, -1.0, 12), _mat(_col().darkened(0.3), 0.0, 0.6), c + Vector3(x * (half + 0.08), 0.0, 0.0))
+		for y in [-1.0, 1.0]:
+			_box(c + Vector3(x * (half + 0.075), y * (r * 0.75 + 0.012), 0.0), Vector3(0.034, 0.022, 0.034), clip)
+		# A strap from the rolled end back over the top to a buckle, holding it down.
+		_box(c + Vector3(x * (half - 0.02), r * 0.98, 0.0), Vector3(0.16, 0.006, 0.025), web)
+		_box(c + Vector3(x * (half - 0.07), r + 0.006, 0.0), Vector3(0.035, 0.012, 0.03), clip)
+	# Compression straps round the middle, each with a side-release buckle on top.
+	for x in [-1.0, 1.0]:
+		var bx: float = x * half * 0.5
+		var band := _mesh_instance(_cylinder(r + 0.004, 0.028, -1.0, 28), web, c + Vector3(bx, 0.0, 0.0))
+		band.rotation.z = PI * 0.5
+		band.scale = Vector3(1.0, 1.0, (size.z * 0.5 + 0.004) / (r + 0.004))
+		_box(c + Vector3(bx, r + 0.008, 0.0), Vector3(0.034, 0.014, 0.05), clip)
+		# Cargo straps down to the rack rails, front and back, hooked on.
+		for z in [-1.0, 1.0]:
+			var top := c + Vector3(bx, r * 0.55, z * size.z * 0.42)
+			var foot := Vector3(0.1 * signf(bx), base.y - 0.012, c.z + z * (size.z * 0.5 + 0.015))
+			_strip(top, foot, 0.022, 0.004, _mat(Color(0.75, 0.32, 0.08), 0.0, 0.8))
+			_box(foot + Vector3(0.0, 0.008, 0.0), Vector3(0.012, 0.025, 0.02), _mat(Color(0.7, 0.71, 0.73), 0.9, 0.3))
+	_bend([c + Vector3(-0.06, r * 0.98, 0.0), c + Vector3(-0.04, r + 0.03, 0.0), c + Vector3(0.04, r + 0.03, 0.0),
+		c + Vector3(0.06, r * 0.98, 0.0)], 0.008, web)
+	_box(c + Vector3(0.0, 0.0, size.z * 0.5 + 0.002), Vector3(half * 0.6, r * 0.35, 0.004), _mat(Color(0.82, 0.83, 0.85), 0.6, 0.25))
+
+
+## A flat strap or band from `a` to `b`, `width` wide and `thick` thick, lying as flat as it can.
+func _strip(a: Vector3, b: Vector3, width: float, thick: float, mat: Material) -> MeshInstance3D:
+	var along := b - a
+	var mi := _box((a + b) * 0.5, Vector3(width, thick, along.length()), mat)
+	var z := along.normalized()
+	var x := Vector3.UP.cross(z)
+	if x.length() < 0.01:
+		x = Vector3.RIGHT
+	x = x.normalized()
+	mi.basis = Basis(x, z.cross(x), z)
+	return mi
+
+
+## A roll-top soft pannier centred on `c`, on the `side` of the bike: a rounded fabric bag whose
+## top is rolled down into a tube and clipped to two straps down its outside, a compression strap
+## round it, a reflective patch and straps up to the rack rail (`rail`).
+func _roll_pannier(c: Vector3, depth: float, k: float, mat: Material, side: float, rail: Vector3) -> void:
+	var hb := 0.3 * k
+	var half_l := 0.21 * k
+	var y0 := c.y - hb * 0.5
+	var web := _mat(Color(0.06, 0.06, 0.065), 0.0, 0.9)
+	var clip := _mat(Color(0.02, 0.02, 0.02), 0.0, 0.4)
+	var secs := []
+	for s in [[0.0, 0.75, 0.85], [0.06, 0.96, 0.97], [0.5, 1.0, 1.0], [0.86, 0.9, 0.97], [1.0, 0.45, 0.95]]:
+		secs.append({"c": Vector3(c.x, y0 + s[0] * hb, c.z), "w": depth * 0.5 * s[1], "up": half_l * s[2], "down": half_l * s[2], "n": 2.8})
+	_shell(secs, mat).name = "RollBag"
+	# The top rolled down three turns into a tube along the bag, folded over to the outside.
+	var roll_at := Vector3(c.x + side * depth * 0.12, y0 + hb + 0.022, c.z)
+	var roll := _mesh_instance(_cylinder(0.03, half_l * 1.9, -1.0, 16), mat, roll_at)
+	roll.rotation.x = PI * 0.5
+	roll.name = "RolledTop"
+	var outer := c.x + side * (depth * 0.5 + 0.004)
+	for z in [-1.0, 1.0]:
+		var sz: float = c.z + z * half_l * 0.6
+		_box(Vector3(c.x + side * depth * 0.32, roll_at.y + 0.028, sz), Vector3(depth * 0.4, 0.006, 0.024), web)
+		_box(Vector3(outer, y0 + hb * 0.62, sz), Vector3(0.006, hb * 0.62, 0.024), web)
+		_box(Vector3(outer + side * 0.006, y0 + hb * 0.42, sz), Vector3(0.014, 0.04, 0.034), clip)
+		# Up to the rack rail and round it.
+		_strip(Vector3(c.x - side * depth * 0.3, y0 + hb * 0.92, sz), rail + Vector3(0.0, 0.0, z * 0.08), 0.022, 0.004, web)
+	_shell([{"c": Vector3(c.x, y0 + hb * 0.25, c.z), "w": depth * 0.5 + 0.004, "up": half_l + 0.004, "down": half_l + 0.004, "n": 2.8},
+		{"c": Vector3(c.x, y0 + hb * 0.25 + 0.026, c.z), "w": depth * 0.5 + 0.004, "up": half_l + 0.004, "down": half_l + 0.004, "n": 2.8}], web)
+	_box(Vector3(outer + side * 0.006, y0 + hb * 0.25 + 0.013, c.z), Vector3(0.014, 0.034, 0.04), clip)
+	_box(Vector3(outer, y0 + hb * 0.72, c.z), Vector3(0.004, hb * 0.16, half_l * 0.5), _mat(Color(0.82, 0.83, 0.85), 0.6, 0.25))
+
+
+## A canvas throw-over pannier centred on `c`, on the `side`: a soft rounded bag with a flap
+## buckled down over its top, slung from a yoke over the rack (`rail`) to the middle.
+func _throw_over(c: Vector3, depth: float, k: float, mat: Material, side: float, rail: Vector3) -> void:
+	var hb := 0.3 * k
+	var half_l := 0.2 * k
+	var y0 := c.y - hb * 0.5
+	var secs := []
+	for s in [[0.0, 0.7, 0.8], [0.08, 0.95, 0.96], [0.55, 1.0, 1.0], [1.0, 0.85, 0.97]]:
+		secs.append({"c": Vector3(c.x, y0 + s[0] * hb, c.z), "w": depth * 0.5 * s[1], "up": half_l * s[2], "down": half_l * s[2], "n": 3.0})
+	_shell(secs, mat).name = "Bag"
+	var flap_mat := _mat(_col().darkened(0.2), 0.0, 0.9)
+	_box(Vector3(c.x, y0 + hb + 0.004, c.z), Vector3(depth * 0.9, 0.008, half_l * 2.0), flap_mat)
+	var outer := c.x + side * (depth * 0.5 + 0.004)
+	_box(Vector3(outer, y0 + hb * 0.8, c.z), Vector3(0.008, hb * 0.4, half_l * 2.0), flap_mat)
+	var leather := _mat(Color(0.25, 0.13, 0.06), 0.0, 0.7)
+	for z in [-1.0, 1.0]:
+		_box(Vector3(outer + side * 0.005, y0 + hb * 0.62, c.z + z * half_l * 0.55), Vector3(0.006, hb * 0.34, 0.022), leather)
+		_box(Vector3(outer + side * 0.009, y0 + hb * 0.5, c.z + z * half_l * 0.55), Vector3(0.006, 0.026, 0.03), _mat(Color(0.8, 0.7, 0.4), 0.9, 0.3))
+	# The yoke: a canvas band from the bag's inside edge up over the rack to the middle.
+	_strip(Vector3(c.x - side * depth * 0.4, y0 + hb, c.z), Vector3(0.0, rail.y + 0.012, c.z), half_l * 1.4, 0.006, flap_mat)
 
 
 ## Fog or spot lamps on the fork legs, or an LED bar across the fork.
@@ -3860,12 +4144,16 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	knob.size = Vector3(width * 0.36, 0.022, 0.03)
 	knobs.mesh = knob
 	knobs.instance_count = 80
+	var placed: Array[Transform3D] = []
 	for i in 80:
 		var a := TAU * (i / 2) / 40.0 + (PI / 40.0 if i % 2 else 0.0)
 		var t := Transform3D(Basis(Vector3.RIGHT, a), Vector3(0.0, cos(a), sin(a)) * (radius - 0.008))
 		t = t.translated_local(Vector3((width * 0.19 if i % 2 == 0 else -width * 0.19), 0.0, 0.0))
 		knobs.set_instance_transform(i, t)
+		placed.append(t)
 	var mmi := MultiMeshInstance3D.new()
+	# Kept on the node too: a headless run (the .glb exporter, GlbExport) can't read them back.
+	mmi.set_meta("instances", placed)
 	mmi.multimesh = knobs
 	mmi.material_override = rubber
 	wheel.add_child(mmi)
