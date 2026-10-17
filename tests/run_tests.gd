@@ -324,8 +324,9 @@ func _run_all() -> void:
 	_test_dirt_accrual()
 	_test_wash_rules()
 	await _test_wash_session()
-	print("Simon's 17 October round: top boxes that are boxes, roll bags that are roll bags")
+	print("Simon's 17 October round: top boxes that are boxes, roll bags that are roll bags, bikes out as .glb")
 	_test_luggage_looks()
+	_test_glb_export()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -16288,3 +16289,50 @@ func _test_luggage_looks() -> void:
 				ok = ok and names.count("Bag") == 2
 		check(ok, "the %s pannier looks like what it is" % id)
 		model.queue_free()
+
+
+## A bike exports to a .glb that loads back with its parts' meshes and materials, the paint
+## on them, in metres with the origin on the ground between the wheels and the front to +Z.
+func _test_glb_export() -> void:
+	var bike: Dictionary = GlbExport.pick_bikes()[0]
+	check(GlbExport.pick_bikes().size() == 5 and str(bike["file"]).begins_with(str(bike["style"]) + "_"), "five release bikes, named <style>_<name>")
+	var model := GlbExport.bike_model(bike)
+	var path := OS.get_user_data_dir() + "/zz_glb_test.glb"
+	var rep := GlbExport.export_model(model, path, str(bike["name"]))
+	var build: BikeBuild = model._build
+	model.free()
+	check(rep["error"] == OK and FileAccess.file_exists(path), "the bike exports to a .glb (%d meshes, %d materials)" % [rep["meshes"], rep["materials"]])
+	var doc := GLTFDocument.new()
+	var state := GLTFState.new()
+	check(doc.append_from_file(path, state) == OK, "and the file loads back")
+	var scene := doc.generate_scene(state) as Node3D
+	var meshes := 0
+	var unpainted := 0
+	var paint_found := false
+	var paint: Color = bike["paint"]
+	var bounds := AABB()
+	var front := 0.0
+	for n in GlbExport._walk(scene):
+		if not n is MeshInstance3D:
+			continue
+		var mi := n as MeshInstance3D
+		meshes += 1
+		var box: AABB = mi.transform * mi.get_aabb()
+		bounds = box if meshes == 1 else bounds.merge(box)
+		if str(mi.name) == "front_wheel":
+			front = box.get_center().z
+		for s in mi.mesh.get_surface_count():
+			var m := mi.mesh.surface_get_material(s)
+			if not m is BaseMaterial3D:
+				unpainted += 1
+			elif (m as BaseMaterial3D).albedo_color.is_equal_approx(paint) or ((m as BaseMaterial3D).albedo_color - paint).get_luminance() < 0.02 \
+					and absf((m as BaseMaterial3D).albedo_color.r - paint.r) < 0.03 and absf((m as BaseMaterial3D).albedo_color.g - paint.g) < 0.03:
+				paint_found = true
+	check(meshes >= 25 and unpainted == 0, "it has %d part meshes, every surface with a material" % meshes)
+	check(paint_found, "the tank's paint came through")
+	check(absf(bounds.position.y) < 0.03 and bounds.size.y > 0.8 and bounds.size.y < 1.6, "it stands on the ground at y = 0, %.2f m tall" % bounds.size.y)
+	check(bounds.size.z > build.wheelbase + 0.4 and bounds.size.z < build.wheelbase + 1.2 and absf(bounds.get_center().z) < 0.3,
+		"%.2f m long, centred between the wheels" % bounds.size.z)
+	check(front > build.wheelbase * 0.4, "the front wheel is towards +Z")
+	scene.free()
+	DirAccess.remove_absolute(path)

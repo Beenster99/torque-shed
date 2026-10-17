@@ -14,7 +14,7 @@ Current milestone, **The Shed**: a snug first-person workshop with four bike bay
 | Body and controls | Fuel tank (capacity, style), saddle, handlebars (style, width), dashboard, headlight (style, lumens), horn (17 types, from a disc horn or a courtesy pip to a truck air horn, a police yelp, a ship's foghorn or a musical one), fog lights |
 | Electronics | ECU (stock, remap, ABS, sport with traction control, race with all of it): more power and revs, and rider aids for ABS, traction control, stability and anti-wheelie |
 | Tail and front | Tail unit (6 kinds: long classic mudguard, café racer hump, scrambler loop, sport tail tidy, bobber chopped fender, enduro high fender), which carries the rear light, mudguard and number plate; fairing (headlight flyscreen, bikini, half, touring with a tall screen, full race in fibreglass or carbon), which cuts drag for a higher top speed but adds weight; mirrors (round chrome, bar-end, sport stalk, wide touring, fairing-mount); front mudguard (road hugger, MX high, enduro, bobbed steel, alloy café, chrome classic, carbon hugger) |
-| Luggage | Panniers and top boxes; they add drag |
+| Luggage | Panniers (canvas throw-overs, roll-top dry bags, leather saddlebags, rounded plastic cases, riveted aluminium boxes) and top boxes (30 L and 45 L plastic cases, an aluminium case, a wooden crate, a leather trunk, a waterproof roll bag strapped across the rack); they add drag |
 | Stands | Side stand (length, lean), centre stand (lift). Without either, a bike left anywhere but a paddock stand falls over |
 | Fluids | Petrol in the tank, oil in the engine, brake fluid in each master cylinder. Each has 3 grades and ages with use |
 | Engine, built on the stand | Block (single, twin, parallel twin, V-twin, boxer, two-stroke or inline four; 50 to 1200 cc), cylinder head, fuel system, air filter, oil filter, spark plugs, cooling, gearbox |
@@ -765,4 +765,5 @@ godot --headless --path . --import
 godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn   # physics, world and session tests
 tests/mp_test.sh                                                          # host and client on one machine
 godot --headless --path . --export-release "Windows Desktop" build/windows/TorqueShed.exe
+godot --headless --path . res://tools/export_glb.tscn -- --out=DIR             # five finished bikes as .glb (GlbExport)
 ```
