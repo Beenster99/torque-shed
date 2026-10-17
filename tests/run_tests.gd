@@ -341,10 +341,15 @@ func _run_all() -> void:
 	print("Simon's 17 October round: top boxes that are boxes, roll bags that are roll bags, bikes out as .glb")
 	_test_luggage_looks()
 	_test_glb_export()
+	_test_glb_stands()
 	print("Simon's 17 October round: a stronger jet, the wash bay lift, and dirt where it collects")
 	_test_dirt_concentration()
 	_test_wash_lift_rules()
 	await _test_wash_lift_reach()
+	print("Simon's 17 October round (v0.7.0): the lounge's pool table, playable")
+	_test_pool_physics()
+	_test_pool_rules()
+	await _test_pool_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -16597,12 +16602,46 @@ func _test_glb_export() -> void:
 				paint_found = true
 	check(meshes >= 25 and unpainted == 0, "it has %d part meshes, every surface with a material" % meshes)
 	check(paint_found, "the tank's paint came through")
-	check(absf(bounds.position.y) < 0.03 and bounds.size.y > 0.8 and bounds.size.y < 1.6, "it stands on the ground at y = 0, %.2f m tall" % bounds.size.y)
+	check(absf(bounds.position.y) < 0.03 and bounds.size.y > 0.8 and bounds.size.y < 1.75, "it stands on the ground at y = 0, %.2f m tall (to the mirrors)" % bounds.size.y)
 	check(bounds.size.z > build.wheelbase + 0.4 and bounds.size.z < build.wheelbase + 1.2 and absf(bounds.get_center().z) < 0.3,
 		"%.2f m long, centred between the wheels" % bounds.size.z)
 	check(front > build.wheelbase * 0.4, "the front wheel is towards +Z")
 	scene.free()
 	DirAccess.remove_absolute(path)
+
+
+## v0.7.0's export bikes stand on their stands, as parked in the shed: leant over to their left
+## with the side stand's foot on the ground, up on the centre stand with the back wheel clear,
+## or on a paddock stand (a part of its own) with both wheels clear.
+func _test_glb_stands() -> void:
+	var stands := {}
+	for bike in GlbExport.pick_bikes():
+		var model := GlbExport.bike_model(bike)
+		var scene := GlbExport.scene_for(model, str(bike["name"]))
+		model.free()
+		var low := {}
+		var mid := {}
+		for mi in scene.get_children():
+			var box: AABB = (mi as MeshInstance3D).get_aabb()
+			low[str(mi.name)] = box.position.y
+			mid[str(mi.name)] = box.get_center()
+		var stand := str(bike["stand"])
+		stands[stand] = int(stands.get(stand, 0)) + 1
+		match stand:
+			"side":
+				check(low.has("side_stand") and absf(float(low["side_stand"])) < 0.03 and (mid["tank"] as Vector3).x > 0.04
+					and absf(float(low["rear_tyre"])) < 0.02,
+					"%s leans over to its left onto its side stand, the foot on the ground (tank %.2f m over, foot at %.3f m)" % [
+						bike["name"], (mid["tank"] as Vector3).x, float(low.get("side_stand", 9.0))])
+			"centre":
+				check(low.has("centre_stand") and absf(float(low["centre_stand"])) < 0.02 and float(low["rear_tyre"]) > 0.01,
+					"%s is up on its centre stand, the back wheel off the ground (%.3f m)" % [bike["name"], float(low["rear_tyre"])])
+			"paddock":
+				check(low.has("paddock_stand") and absf(float(low["paddock_stand"])) < 0.01 and float(low["rear_tyre"]) > 0.03
+					and float(low["front_tyre"]) > 0.03 and absf((mid["frame"] as Vector3).x) < 0.02,
+					"%s stands upright on a paddock stand, both wheels clear" % bike["name"])
+		scene.free()
+	check(stands.get("side", 0) >= 2 and stands.has("centre") and stands.has("paddock"), "the release has side, centre and paddock stands (%s)" % str(stands))
 ## Simon's 17 October round: the dirt's mainly where it collects (behind the front wheel, under
 ## the guards, the lower sides, flies on the front), not a coat of dust all over: after a normal
 ## ride on tarmac, after an off-road ride, and on a bike delivered dirty.
@@ -17163,3 +17202,206 @@ func _test_road_lean() -> void:
 	check(float(leans[Bike.ROAD_INPUT]) > 26.0 and float(leans[Bike.ROAD_INPUT]) < 33.0 and float(leans[1.0]) > 36.0,
 		"ridden: three-quarter input leans the bike %.0f°, full input %.0f°" % [leans[Bike.ROAD_INPUT], leans[1.0]])
 	check(CustomerView.MAX_LEAN <= Bike.ROAD_LEAN + 0.001, "customers riding in lean no more than a road rider (%.0f°)" % rad_to_deg(CustomerView.MAX_LEAN))
+
+
+# ---------------------------------------------------------------------------- the lounge's pool table
+
+## Lays out a table for a test: the balls in `at` ({ball: Vector2}), the rest potted already.
+func _pool_lay(at: Dictionary) -> Array:
+	var balls := []
+	for i in 16:
+		balls.append([at[i].x, at[i].y, true] if at.has(i) else [0.0, 0.0, false])
+	return balls
+
+
+## The angle that sends the cue ball from `from` to `to`.
+func _pool_angle(from: Vector2, to: Vector2) -> float:
+	var d := to - from
+	return atan2(d.x, -d.y)
+
+
+## The simulation: the same shot comes out the same every time, the break spreads the pack and
+## everything stops on the table, balls drop in the pockets, and cushions bounce.
+func _test_pool_physics() -> void:
+	var rack := PoolGame.rack(3)
+	var a := PoolGame.simulate(rack, 0.003, 1.0)
+	var b := PoolGame.simulate(rack, 0.003, 1.0)
+	check(PoolGame.balls_of(a) == PoolGame.balls_of(b) and a["potted"] == b["potted"] and float(a["t"]) == float(b["t"]),
+		"the same shot from the same rack comes out exactly the same (so every table plays it out alike)")
+	check(int(a["first"]) == 1, "breaking straight down the table hits the apex ball first (%d)" % int(a["first"]))
+	var moved := 0
+	var inside := true
+	for i in 16:
+		var was := Vector2(float(rack[i][0]), float(rack[i][1]))
+		var now: Vector2 = a["p"][i]
+		if now.distance_to(was) > 0.05:
+			moved += 1
+		if a["on"][i] and (absf(now.x) > PoolGame.HX or absf(now.y) > PoolGame.HZ):
+			inside = false
+	check(moved >= 10 and inside, "a full-power break spreads the pack (%d balls moved) and every ball left is on the felt" % moved)
+	check(not PoolGame.moving(a) and float(a["t"]) > 2.0 and float(a["t"]) < PoolGame.MAX_TIME,
+		"and it all comes to rest (in %.1f s, %d potted)" % [float(a["t"]), (a["potted"] as Array).size()])
+	var soft := PoolGame.simulate(PoolGame.rack(3), 0.003, 0.0)
+	var soft_at: Vector2 = soft["p"][0]
+	check(soft_at.distance_to(PoolGame.HEAD) < 0.6 and not PoolGame.moving(soft), "a gentle tap only rolls a little way (%.2f m)" % soft_at.distance_to(PoolGame.HEAD))
+	# A ball lined up on the corner pocket goes in.
+	var pocket := PoolGame.POCKETS[1]
+	var u := Vector2(-1.0, 1.0).normalized()
+	var obj := pocket + u * 0.2
+	var cue := obj + u * 0.35
+	var pot := PoolGame.simulate(_pool_lay({0: cue, 1: obj, 8: Vector2(-0.3, 0.6)}), _pool_angle(cue, obj), 0.5)
+	check((pot["potted"] as Array).has(1) and int(pot["first"]) == 1, "a ball hit straight at a corner pocket drops in (%s)" % str(pot["potted"]))
+	var mid := PoolGame.simulate(_pool_lay({0: Vector2(0.0, 0.0), 8: Vector2(-0.4, -0.6)}), PI * 0.5, 0.4)
+	check((mid["potted"] as Array).has(0), "and the cue ball rolled across into a middle pocket drops in too")
+	var rail := PoolGame.simulate(_pool_lay({0: Vector2(0.0, 0.3), 8: Vector2(-0.4, -0.6)}), PI * 0.5 + 0.6, 0.6)
+	var rail_at: Vector2 = rail["p"][0]
+	check(not (rail["potted"] as Array).has(0) and int(rail["rails"]) > 0 and absf(rail_at.x) < PoolGame.HX,
+		"off the middle of a cushion it bounces back onto the table (%d cushions)" % int(rail["rails"]))
+
+
+## The game: racking needs the lounge, turns, groups, fouls, the black, a mate joining, and the
+## state saving.
+func _test_pool_rules() -> void:
+	Shed.start_new("Tester", 44)
+	Shed.garage_money = 5000000
+	var me := Shed.me()
+	PoolGame._busy_until = 0
+	check(Shed.pool == PoolGame.empty() and not PoolGame.playing(), "a new shed has no game of pool on")
+	check(PoolGame.check(me, {"a": "pool_rack"}) != "", "no pool without the crew lounge")
+	Shed.request({"a": "buy_upgrade", "id": "lounge"})
+	Shed.request({"a": "pool_rack"})
+	check(PoolGame.playing() and Shed.pool["balls"].size() == 16 and Shed.pool["players"] == [me] and PoolGame.shooter() == me,
+		"F on the table racks them up, and it's your break")
+	Shed.request({"a": "pool_shot", "angle": 0.003, "power": 1.0})
+	check(int(Shed.pool["shots"]) == 1 and int(Shed.pool["last"]["n"]) == 0 and (Shed.pool["last"]["from"] as Array).size() == 16,
+		"the break is played out by the host and kept with the balls it started from")
+	check(PoolGame.check(me, {"a": "pool_shot", "angle": 0.0, "power": 0.5}).contains("stop"), "no shot till the balls have stopped")
+	PoolGame._busy_until = 0
+	# A mate joins; the table's open; pot a stripe and they're yours, and you go again.
+	Shed._add_crew(77, "Mate")
+	check(PoolGame.check(77, {"a": "pool_join"}) == "", "a mate can join a game of one")
+	PoolGame.apply(77, {"a": "pool_join"})
+	check(Shed.pool["players"] == [me, 77], "and does")
+	check(PoolGame.check(55, {"a": "pool_join"}) != "", "a third waits for the next game")
+	var pocket := PoolGame.POCKETS[1]
+	var u := Vector2(-1.0, 1.0).normalized()
+	var obj := pocket + u * 0.2
+	var cue := obj + u * 0.35
+	Shed.pool["balls"] = _pool_lay({0: cue, 11: obj, 3: Vector2(-0.3, 0.6), 12: Vector2(0.3, 0.7), 8: Vector2(0.2, -0.3)})
+	Shed.pool["turn"] = 0
+	check(PoolGame.check(77, {"a": "pool_shot", "angle": 0.0, "power": 0.5}).contains("shot"), "it's not the mate's shot")
+	Shed.request({"a": "pool_shot", "angle": _pool_angle(cue, obj), "power": 0.5})
+	PoolGame._busy_until = 0
+	check(PoolGame.group_of_player(0) == "stripes" and PoolGame.group_of_player(1) == "solids" and PoolGame.shooter() == me,
+		"potting a stripe off an open table makes them yours, and you go again (%s)" % str(Shed.pool["msg"]))
+	# Hit their ball first: a foul, and it's their shot.
+	var c2 := Vector2(-0.3, 0.9)
+	Shed.pool["balls"] = _pool_lay({0: c2, 3: Vector2(-0.3, 0.6), 12: Vector2(0.3, 0.7), 8: Vector2(0.2, -0.3)})
+	Shed.request({"a": "pool_shot", "angle": _pool_angle(c2, Vector2(-0.3, 0.6)), "power": 0.3})
+	PoolGame._busy_until = 0
+	check(PoolGame.shooter() == 77 and str(Shed.pool["msg"]).contains("Foul"), "hitting the other group first is a foul and passes the table (%s)" % str(Shed.pool["msg"]))
+	# The mate sinks the cue ball: a foul, it comes back on the spot, and it's your shot.
+	Shed.pool["balls"][0] = [0.0, 0.0, true]
+	PoolGame.apply(77, {"a": "pool_shot", "angle": PI * 0.5, "power": 0.4})
+	PoolGame._busy_until = 0
+	var spot := Vector2(float(Shed.pool["balls"][0][0]), float(Shed.pool["balls"][0][1]))
+	check(PoolGame.shooter() == me and bool(Shed.pool["balls"][0][2]) and spot.distance_to(PoolGame.HEAD) < 0.2 and str(Shed.pool["msg"]).contains("cue ball"),
+		"the cue ball in the pocket is a foul: it's back on the spot and it's your shot (%s)" % str(Shed.pool["msg"]))
+	# The black too early loses; the black after your group wins.
+	var w8 := Vector2(1.0, 1.0).normalized()
+	var b8 := PoolGame.POCKETS[0] + w8 * 0.2
+	var c8 := b8 + w8 * 0.35
+	Shed.pool["balls"] = _pool_lay({0: c8, 8: b8, 9: Vector2(0.3, 0.7)})
+	Shed.request({"a": "pool_shot", "angle": _pool_angle(c8, b8), "power": 0.5})
+	PoolGame._busy_until = 0
+	check(bool(Shed.pool["over"]) and int(Shed.pool["winner"]) == 77, "potting the black with a stripe still on loses the game (%s)" % str(Shed.pool["msg"]))
+	check(PoolGame.check(me, {"a": "pool_shot", "angle": 0.0, "power": 0.5}) != "" and PoolGame.check(55, {"a": "pool_rack"}) == "",
+		"the game's over: no more shots, and anyone can rack up the next")
+	Shed.request({"a": "pool_rack"})
+	PoolGame.apply(77, {"a": "pool_join"})
+	Shed.pool["solids"] = 0
+	Shed.pool["shots"] = 5
+	Shed.pool["balls"] = _pool_lay({0: c8, 8: b8, 9: Vector2(0.3, 0.7)})
+	Shed.request({"a": "pool_shot", "angle": _pool_angle(c8, b8), "power": 0.5})
+	PoolGame._busy_until = 0
+	check(bool(Shed.pool["over"]) and int(Shed.pool["winner"]) == me and str(Shed.pool["msg"]).contains("won"),
+		"with your solids cleared, the black wins it (%s)" % str(Shed.pool["msg"]))
+	# Saved and loaded; and a save from before the pool table plays has no game on.
+	Shed.request({"a": "pool_rack"})
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	var back := PoolGame.sanitize(copy.get("pool"))
+	var kept := back.keys().all(func(k): return k == "balls" or back[k] == Shed.pool[k])
+	for i in 16:
+		kept = kept and Vector2(float(back["balls"][i][0]), float(back["balls"][i][1])).distance_to(
+			Vector2(float(Shed.pool["balls"][i][0]), float(Shed.pool["balls"][i][1]))) < 0.000001
+	check(kept, "the game saves with the shed")
+	copy.erase("pool")
+	check(PoolGame.sanitize(copy.get("pool")) == PoolGame.empty(), "an old save loads with no game on")
+	# A player who leaves the session leaves the game.
+	PoolGame.apply(77, {"a": "pool_join"})
+	Shed.crew.erase(77)
+	PoolGame.process(0.1)
+	check(Shed.pool["players"] == [me], "a mate who leaves the session leaves the game")
+
+
+## In the game: walk up to the table, F racks them up and steps you up to the cue (the view
+## drops behind the cue ball), a shot plays out on the felt and ends where the host has it, and
+## F steps back.
+func _test_pool_session() -> void:
+	SaveGame.slot_override = "test_pool"
+	SaveGame.delete_slot("test_pool")
+	PoolGame._busy_until = 0
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	var ws: Workshop = main.world.workshop
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	Shed.request({"a": "garage_money", "value": 1000000})
+	Shed.request({"a": "buy_upgrade", "id": "lounge"})
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	var table: PoolView = ws.get_node_or_null("Upgrades/Built/PoolTable")
+	check(table != null and table.get_node_or_null("Ball15") != null, "the lounge's pool table has its balls (a PoolView)")
+	if table == null:
+		main._leave()
+		main.queue_free()
+		return
+	var felt := table.global_position
+	w.place(Transform3D(Basis(), Vector3(felt.x, GarageUpgrades.LOFT_FLOOR + 0.05, felt.z + 1.7)))
+	await _aim_point(w, felt + Vector3(0.0, 0.02, 0.9))
+	check(w.target.get("kind", "") == "use" and w.info.contains("rack them up"), "looking at the table: F racks them up (%s)" % w.info.replace("\n", " / "))
+	_press("interact")
+	for i in 5:
+		await get_tree().process_frame
+	check(PoolGame.playing() and table.mode == "aim" and table._cam.current and w.process_mode == Node.PROCESS_MODE_DISABLED,
+		"F racks them up and steps you up to the cue: the view's down the cue, the walker stands still")
+	table.aim = 0.003
+	table.power = 1.0
+	var before := (table.get_node("Ball5") as Node3D).position
+	table.shoot()
+	for i in 90:
+		await get_tree().process_frame
+	var moving: bool = (table.get_node("Ball5") as Node3D).position.distance_to(before) > 0.01 and not table._sim.is_empty()
+	check(int(Shed.pool["shots"]) == 1 and moving and table.mode == "watch", "the break plays out on the felt, the balls rolling (you watch from the cue)")
+	for i in 3000:
+		await get_tree().process_frame
+		if table._sim.is_empty() and table.mode == "aim":
+			break
+	var same := true
+	for i in 16:
+		var b: Array = Shed.pool["balls"][i]
+		if bool(b[2]) and (table.get_node("Ball%d" % i) as Node3D).position.distance_to(Vector3(float(b[0]), PoolGame.R, float(b[1]))) > 0.001:
+			same = false
+	check(same and table.mode == "aim", "they stop where the host has them, and it's your shot again (practice)")
+	_press("interact")
+	for i in 3:
+		await get_tree().process_frame
+	check(table.mode == "" and w.camera.current and w.process_mode != Node.PROCESS_MODE_DISABLED, "F steps back from the table")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_pool")

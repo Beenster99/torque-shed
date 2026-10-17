@@ -18,6 +18,8 @@ extends Node
 ## Recovery: the host gives the garage the recovery rig and puts a crash rescue on the phone; the
 ## client takes the job on, gets in the truck (the host must see it driving) and parks it
 ## somewhere new: both must see the job's bike out at its site and the truck where it was left.
+## Pool: the host racks up in the crew lounge and the client joins; each must see a shot the
+## other took played out on its own table, and its own come back from the host.
 
 var role := "host"
 var main: Node
@@ -106,6 +108,10 @@ func _ready() -> void:
 	var REC_PARK := Recovery.PARK.translated(Vector3(-6.0, 0.0, 2.0))
 	var wash_step := 0
 	var wash_ok := false
+	var pool_t := 0             # when this side last tried to shoot, msec
+	var pool_own := false        # a shot this side took came back from the host
+	var pool_other := false      # and one the other side took arrived here
+	var pool_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -516,7 +522,43 @@ func _ready() -> void:
 			var seen_water: bool = role == "client" or (main.remotes.size() == 1 and ws != null and ws._wash_fx.has(int(main.remotes.keys()[0])))
 			wash_ok = wash_ok or (w_tyre != 0 and absf(float(Shed.items[w_tyre]["dirt"]) - 0.4) < 0.01 and absf(float(Shed.items[w_fork]["dirt"]) - 0.4) < 0.01
 				and float(Shed.items[w_engine]["dirt"]) == 0.0 and Dirt.side(Dirt.cells(Shed.items[w_fork], "fork"), 0) < 0.41 and seen_water)
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and wash_ok:
+		# Pool in the crew lounge: the host gives the garage the lounge and racks up, the client
+		# joins, and they take turns at the table until each has seen a shot the other took
+		# played out on its own table.
+		if Shed.crew.size() == 2:
+			if role == "host" and not GarageUpgrades.owned("lounge"):
+				Shed.request({"a": "garage_money", "value": Shed.garage_money + GarageUpgrades.price("lounge")})
+				Shed.request({"a": "buy_upgrade", "id": "lounge"})
+			if role == "host" and GarageUpgrades.owned("lounge") and not PoolGame.playing() and Time.get_ticks_msec() > pool_t + 1000:
+				pool_t = Time.get_ticks_msec()
+				Shed.request({"a": "pool_rack"})
+			var pool_players: Array = Shed.pool["players"]
+			if role == "client" and PoolGame.playing() and not pool_players.has(Shed.me()) and pool_players.size() < 2 \
+					and Time.get_ticks_msec() > pool_t + 1000:
+				pool_t = Time.get_ticks_msec()
+				Shed.request({"a": "pool_join"})
+			var pool_view: PoolView = ws.get_node_or_null("Upgrades/Built/PoolTable") if ws else null
+			if PoolGame.shooter() == Shed.me() and pool_players.size() == 2 and Time.get_ticks_msec() > pool_t + 1500 \
+					and pool_view != null and pool_view._sim.is_empty():
+				# At whichever ball's still on the table, or a full-power break.
+				pool_t = Time.get_ticks_msec()
+				var pb: Array = Shed.pool["balls"]
+				var angle := 0.003
+				if int(Shed.pool["shots"]) > 0:
+					for bi in range(1, 16):
+						if bool(pb[bi][2]) and bi != 8:
+							angle = atan2(float(pb[bi][0]) - float(pb[0][0]), -(float(pb[bi][1]) - float(pb[0][1])))
+							break
+				Shed.request({"a": "pool_shot", "angle": angle, "power": 1.0 if int(Shed.pool["shots"]) == 0 else 0.6})
+			var pool_by := int(Shed.pool["last"].get("by", 0))
+			var played_out: bool = pool_view != null and pool_view._shown == int(Shed.pool["last"].get("n", -2)) \
+				and pool_view._sim.is_empty()
+			if pool_by == Shed.me() and played_out:
+				pool_own = true
+			elif pool_by != 0 and played_out:
+				pool_other = true
+			pool_ok = pool_own and pool_other
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and wash_ok and pool_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -532,8 +574,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, washing %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, wash_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, washing %s, pool shots each way %s/%s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, wash_ok, pool_own, pool_other])
 	get_tree().quit(0 if ok else 1)
 
 
