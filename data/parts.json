@@ -14845,6 +14845,26 @@
 				"cruiser",
 				"tourer"
 			]
+		},
+		"roll_bag": {
+			"name": "Waterproof roll bag",
+			"description": "A 40 L dry bag strapped across the rack, both ends rolled down and clipped. Light, and shrugs off the rain.",
+			"mass": 1.6,
+			"type": "Soft, roll-top",
+			"style": "roll",
+			"litres": 40,
+			"cda": 0.02,
+			"color": [
+				0.85,
+				0.6,
+				0.08
+			],
+			"material": "fabric",
+			"styles": [
+				"adventure",
+				"scrambler",
+				"roader"
+			]
 		}
 	},
 	"fog_lights": {

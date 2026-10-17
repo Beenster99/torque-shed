@@ -612,9 +612,10 @@ func _update_views(delta: float) -> void:
 		view["yaw"] = yaw
 		var ri := int(d["road"])
 		var v := float(d["v"])
-		# Leaning into the bend just ahead, atan(v^2 k / g); pitched with the road's slope.
+		# Leaning into the bend just ahead, atan(v^2 k / g), no further than a road rider would
+		# (Bike.ROAD_LEAN); pitched with the road's slope.
 		var k := float((_k[ri] as PackedFloat32Array)[_i(ri, float(d["s"]) + int(d["dir"]) * maxf(v * 0.3, 1.0))]) * int(d["dir"])
-		var want := clampf(atan(v * v * k / Bike.G), -0.7, 0.7)
+		var want := clampf(atan(v * v * k / Bike.G), -Bike.ROAD_LEAN, Bike.ROAD_LEAN)
 		var roll := lerpf(float(view["roll"]), want, 1.0 - exp(-4.0 * delta))
 		view["roll"] = roll
 		var ahead := road_point(ri, float(d["s"]) + int(d["dir"]) * 2.0)

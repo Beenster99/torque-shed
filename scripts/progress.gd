@@ -7,8 +7,10 @@ extends Node
 ## gives one tool point (a stage on a hand tool: faster, wider, better looking) and one skill
 ## point (a rank in the skills tree, see SKILLS).
 ##
-## The character lives on the player's own machine, in user://profile.json keyed by player name,
-## apart from the shed save, so it goes with them between sheds and co-op sessions. Clients
+## Playing solo or hosting, the character belongs to the save game (see SaveGame and
+## use_profile): each save holds its own, written with the shed. Joining someone else's shed,
+## the character comes from user://profile.json on the player's own machine, keyed by player
+## name, so it goes with them between co-op sessions. Clients
 ## report their summary (level, XP, tool stages, skills, goals) to the host, which passes
 ## everyone's on to everyone, so the host can apply skills that work host-side and TVs can show
 ## the crew's levels.
@@ -104,7 +106,13 @@ const XP := {
 	"contract_respray": {"xp": 80, "label": "Colour match job done"},
 	"contract_mod": {"xp": 100, "label": "Modification job done"},
 	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
+	"contract_batch": {"xp": 150, "label": "Batch order delivered"},
+	"contract_batch_part": {"xp": 6, "label": "Batch part dispatched", "once": "item"},
+	"contract_test": {"xp": 90, "label": "Test ride report in"},
 	"mot_test": {"xp": 6, "label": "MOT test"},
+	# Recovery jobs (see Recovery): a bike brought in on the trailer, and an insurer's repair collected.
+	"recovery_delivered": {"xp": 60, "label": "Bike recovered"},
+	"recovery_insurer": {"xp": 120, "label": "Insurer repair done"},
 	"garage_upgrade": {"xp": 40, "label": "Garage upgrade"},
 	# The coffee shop next door (see CoffeeShop): a break, and a biker's bike bought off them.
 	"coffee_break": {"xp": 3, "label": "Coffee break"},
@@ -242,6 +250,9 @@ var _save_timer := 0.0
 var _report_due := false
 var _relay_due := false
 var _report_timer := 0.0
+## The character came from a save game (use_profile): SaveGame writes it with the shed, and
+## profile.json is left alone.
+var save_bound := false
 
 
 func _ready() -> void:
@@ -305,10 +316,11 @@ func skill_points() -> int:
 
 # ---------------------------------------------------------------------------- the profile on disk
 
-## Loads the character for `player_name` (a new one if there's none yet).
+## Loads the character for `player_name` (a new one if there's none yet) from profile.json.
 func select(player_name: String) -> void:
 	if _dirty_save:
 		save_profile()
+	save_bound = false
 	if path == PATH or path.begins_with("user://profile_test_"):
 		path = _default_path(player_name)
 	var all := _read_all()
@@ -317,6 +329,39 @@ func select(player_name: String) -> void:
 	_note_cash()   # what it opens with, so the first money in or out shows on the graph as a step
 	_report_due = true
 	changed.emit()
+
+
+## Plays on with the character a save game holds (an empty one for a new game). It's kept in
+## memory and saved with the shed from now on, until release().
+func use_profile(p: Dictionary, player_name: String) -> void:
+	if _dirty_save:
+		save_profile()
+	save_bound = true
+	_dirty_save = false
+	profile = _clean_profile(p, player_name)
+	_note_cash()
+	_report_due = true
+	changed.emit()
+
+
+## The save game is closed: back to the profile.json character for `player_name`.
+func release(player_name: String) -> void:
+	if not save_bound:
+		return
+	save_bound = false
+	_dirty_save = false
+	select(player_name)
+
+
+## A copy of the character for a save game, with the right types.
+func save_copy() -> Dictionary:
+	return _clean_profile(profile, str(profile.get("name", Settings.player_name)))
+
+
+## The character for `player_name` stored in profile.json, or {} when there's none.
+func stored_profile(player_name: String) -> Dictionary:
+	var p = _read_all().get(player_name, {})
+	return p if p is Dictionary else {}
 
 
 func _read_all() -> Dictionary:
@@ -372,6 +417,8 @@ func save_profile() -> bool:
 	_dirty_save = false
 	if profile.is_empty():
 		return false
+	if save_bound:
+		return true   # saved with the shed
 	var all := _read_all()
 	all[str(profile["name"])] = profile
 	var tmp := "%s.%d.tmp" % [path, OS.get_process_id()]

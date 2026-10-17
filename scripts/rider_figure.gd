@@ -364,16 +364,21 @@ static func standing(body: Node3D, head: Node3D, gear: Dictionary, tint: Color) 
 		limb(pivot, Vector3.ZERO, elbow, 0.058, jm)
 		limb(pivot, elbow, wrist, 0.052, jm)
 		glove(pivot, wrist + (wrist - elbow).normalized() * 0.04, elbow, 0.05, str(worn["gloves"]), tint)
-	# Legs and boots.
+	# Legs and boots, each hanging from a node at its hip ("LegR", "LegL") so walking can swing
+	# it (see walk_pose).
 	for side in [-1.0, 1.0]:
 		var hip := Vector3(0.11 * side, 0.82, 0.0)
-		var knee := Vector3(0.115 * side, 0.47, -0.02)
-		var ankle := Vector3(0.12 * side, 0.1, 0.0)
-		limb(body, hip, knee, 0.095, tm)
-		limb(body, knee, ankle, 0.08, tm)
+		var leg := Node3D.new()
+		leg.name = "LegR" if side > 0 else "LegL"
+		leg.position = hip
+		body.add_child(leg)
+		var knee := Vector3(0.115 * side, 0.47, -0.02) - hip
+		var ankle := Vector3(0.12 * side, 0.1, 0.0) - hip
+		limb(leg, Vector3.ZERO, knee, 0.095, tm)
+		limb(leg, knee, ankle, 0.08, tm)
 		if tx.has("knees"):
-			knee_guard(body, knee, hip, ankle, 0.08, trousers, tint)
-		boot(body, Vector3(0.12 * side, 0.0, -0.02), knee, Vector3.FORWARD, str(worn["boots"]), tint)
+			knee_guard(leg, knee, Vector3.ZERO, ankle, 0.08, trousers, tint)
+		boot(leg, Vector3(0.12 * side, 0.0, -0.02) - hip, knee, Vector3.FORWARD, str(worn["boots"]), tint)
 	# The head, and the helmet or cap on it.
 	var face := mesh(head, sphere(0.5), _skin(), Vector3.ZERO)
 	face.scale = Vector3(0.24, 0.27, 0.25)
@@ -383,6 +388,17 @@ static func standing(body: Node3D, head: Node3D, gear: Dictionary, tint: Color) 
 		helmet(head, Vector3(0.0, 0.0, 0.0), 0.15, lid, tint)
 	else:
 		helmet(head, Vector3(0.0, 0.03, 0.0), 0.165, lid, tint)
+
+
+## Swings a standing figure's legs (and bobs it a touch) for walking: `phase` is how far
+## through the stride it is, in radians (one stride, left and right, a turn), and `amount`
+## 0 (stood still) to 1 (a full stride), more for a run.
+static func walk_pose(body: Node3D, phase: float, amount: float) -> void:
+	var swing := sin(phase) * 0.45 * amount
+	for leg_name in ["LegR", "LegL"]:
+		var leg := body.get_node_or_null(leg_name) as Node3D
+		if leg:
+			leg.rotation.x = swing if leg_name == "LegR" else -swing
 
 
 static func _skin() -> StandardMaterial3D:

@@ -15,7 +15,8 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--only="):
 			# Run a single test method, e.g. --only=_test_acceleration
-			await call(a.trim_prefix("--only="))
+			for m in a.trim_prefix("--only=").split(","):
+				await call(m)
 			print("\n%d checks, %d failed" % [checks, failures])
 			get_tree().quit(1 if failures > 0 else 0)
 			return
@@ -82,6 +83,7 @@ func _run_all() -> void:
 	await _test_tool_art()
 	print("Saving and loading")
 	await _test_save_load()
+	await _test_save_games()
 	print("Whiteboard")
 	await _test_whiteboard()
 	print("Tuning room and dyno")
@@ -90,6 +92,9 @@ func _run_all() -> void:
 	_test_bike_paint_panels()
 	print("Road traffic")
 	await _test_road_traffic()
+	print("Simon's 17 October round: the game had got slow")
+	await _test_perf_steady()
+	await _test_no_glare()
 	print("XP, levels, tool upgrades and skills")
 	_test_progress()
 	print("Bike lights, tyres and the tyre changer")
@@ -103,6 +108,8 @@ func _run_all() -> void:
 	print("Key bindings, the pad in menus, whiteboard pictures and posters")
 	await _test_key_bindings()
 	await _test_pad_menus()
+	await _test_hints_follow_device()
+	await _test_hints_name_no_keys()
 	await _test_board_posters()
 	await _test_board_images()
 	print("Carrying, snapping, free surfaces, the whiteboard and delivery boxes")
@@ -158,6 +165,11 @@ func _run_all() -> void:
 	_test_contract_goals_and_pay()
 	_test_contract_save()
 	await _test_contract_session()
+	_test_contract_batch_offers()
+	_test_contract_batch_dispatch()
+	_test_contract_batch_paint()
+	_test_contract_test_ride()
+	_test_contract_new_kinds_save()
 	print("Sales office: showroom, reception, kitchen, viewing area, mezzanine office, the bell")
 	_test_sales_office_layout()
 	_test_sales_office_save()
@@ -179,6 +191,7 @@ func _run_all() -> void:
 	_test_lighting_lamps_and_gi()
 	await _test_lighting_clouds()
 	await _test_lighting_session()
+	await _test_shed_render_cost()
 	print("Engine sound: firing pulses, exhausts, pops, gear shifts")
 	_test_engine_firing()
 	_test_engine_bank()
@@ -260,9 +273,27 @@ func _run_all() -> void:
 	await _test_steering_steady_turn()
 	await _test_countersteer()
 	await _test_hands_off()
+	await _test_direct_bars()
+	await _test_direct_bars_setting()
+	_test_sprocket_size()
 	await _test_steering_wobble()
 	await _test_turn_in()
 	await _test_steering_telemetry()
+	await _test_bars_no_wiggle()
+	await _test_direct_bars_course()
+	print("Handling phase 3: suspension (sag, dive, squat, geometry) and road leans")
+	await _test_suspension_sag()
+	await _test_suspension_dive()
+	await _test_suspension_squat_and_turn()
+	await _test_road_lean()
+	print("Handling phase 4: heat (tyre, brake and engine temperatures)")
+	_test_heat_grip_window()
+	_test_heat_warmup()
+	_test_heat_brake_fade()
+	await _test_heat_cold_tyres()
+	await _test_heat_brakes_ride()
+	await _test_heat_engine_ride()
+	_test_heat_carry_over()
 	print("The riding map: roads, grades, no jumps, land under the roads, spawns, surfaces, counts")
 	await _test_world_map()
 	print("Shop and crew: part previews, trolleys, box notes, the geometry parts list, styled project bikes, emotes")
@@ -302,6 +333,40 @@ func _run_all() -> void:
 	await _test_sales_pc_headings()
 	await _test_shop_buy_in_view()
 	await _test_money_graph_moves()
+	print("Recovery: the truck and trailer, barn finds and crash rescues, winch, dolly, straps, assessment")
+	await _test_recovery_car()
+	await _test_recovery_trailer()
+	await _test_recovery_winch()
+	await _test_recovery_dolly()
+	await _test_recovery_straps()
+	await _test_recovery_assess()
+	await _test_recovery_save()
+	await _test_recovery_walk_on()
+	await _test_walker_jump()
+	_test_recovery_model()
+	await _test_recovery_controls()
+	await _test_recovery_horn()
+	print("Simon's 16 October round: dirt where it really goes, and pressure washing it off")
+	_test_dirt_accrual()
+	_test_wash_rules()
+	await _test_wash_session()
+	print("Simon's 17 October round: top boxes that are boxes, roll bags that are roll bags, bikes out as .glb")
+	_test_luggage_looks()
+	_test_glb_export()
+	_test_glb_stands()
+	print("Simon's 17 October round: a stronger jet, the wash bay lift, and dirt where it collects")
+	_test_dirt_concentration()
+	_test_wash_lift_rules()
+	await _test_wash_lift_reach()
+	await _test_wash_mist()
+	print("Simon's 17 October round (v0.7.0): the lounge's pool table, playable")
+	_test_pool_physics()
+	_test_pool_rules()
+	await _test_pool_session()
+	print("Simon's 17 October round: plates clear of the rear mudguard, the tyre under it, the clocks over the bars")
+	_test_tail_and_dash_fit()
+	print("Simon's 17 October round (v0.8.0): third person on foot")
+	await _test_walk_third_person()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1037,7 +1102,7 @@ func _test_garage_life() -> void:
 		var id := Shed.item_on(faithful, slot)
 		Shed.items[id]["dirt"] = 0.8
 		muddy.append(id)
-	check(Shed.check(me, {"a": "wash", "items": muddy, "at": Workshop.CENTER}).contains("hose"), "the hose only reaches around the wash bay")
+	check(Shed.check(me, {"a": "wash", "items": muddy, "at": Workshop.CENTER + Vector3(0.0, 0.0, 40.0)})== Wash.NO_REACH, "the hose only reaches the wash bay")
 	for i in 5:
 		Shed.request({"a": "wash", "items": muddy, "at": Workshop.WASH_CENTER})
 	check(muddy.all(func(id): return Shed.items[id]["dirt"] < 0.5), "the pressure washer blasts the muck off")
@@ -1422,9 +1487,10 @@ func _test_session() -> void:
 	var wheeled: float = Shed.bikes[faithful]["xf"].origin.distance_to(parked_at)
 	check(Shed.pushing_bike(Shed.me()) == 0 and wheeled > 1.0 and Shed.bikes[faithful]["stand"] == "side",
 		"you can pull it backwards, and let go it goes back on its stand (%.1f m)" % wheeled)
-	# Into the wash bay with it, and blast the mud off with the pressure washer.
+	# Into the wash bay with it (on its stand at the front, off the lift), and blast the mud off
+	# with the pressure washer.
 	Shed.request({"a": "grab_bike", "bike": faithful})
-	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(), Workshop.WASH_CENTER)})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(), Workshop.WASH_CENTER + Vector3(0.0, 0.0, 1.6))})
 	for washed in ["front_tyre", "front_wheel", "fork"]:
 		Shed.items[Shed.item_on(faithful, washed)]["dirt"] = 0.9
 	Shed.changed.emit()
@@ -1432,14 +1498,18 @@ func _test_session() -> void:
 	await _aim_at(main, faithful, "front_tyre")
 	main.walker.set_tool("lance")
 	await get_tree().physics_frame
-	check(main.walker.plan.get("action", {}).get("a", "") == "wash" and main.walker.plan["blocked"] == "",
+	check(str(main.walker.plan.get("action", {}).get("a", "")).begins_with("wash") and main.walker.plan["blocked"] == "",
 		"the pressure washer is ready in the wash bay (%s / %s)" % [str(main.walker.plan.get("blocked", main.walker.plan)), str(main.walker.target)])
 	Input.action_press("act")
 	for i in 180:
 		await get_tree().physics_frame
 	Input.action_release("act")
-	var tyre_dirt: float = Shed.items[Shed.item_on(faithful, "front_tyre")]["dirt"]
-	check(tyre_dirt < 0.5, "holding the trigger keeps the jet going and washes the tyre (%.2f dirt left)" % tyre_dirt)
+	# Aimed at the middle of the tyre, the jet lands on the wheel or the tyre round it.
+	var tyre_dirt := 0.0
+	for washed in ["front_tyre", "front_wheel", "fork"]:
+		tyre_dirt += float(Shed.items[Shed.item_on(faithful, washed)]["dirt"]) / 3.0
+	check(not main.walker.wash_mode.is_empty() and tyre_dirt < 0.895,
+		"holding the trigger brings up the wash controls and the jet washes the front wheel where it lands (%.3f dirt left)" % tyre_dirt)
 	main.walker.set_tool("hands")
 	await get_tree().physics_frame
 	check(main.workshop.tvs().size() == 1 and not main.workshop.tvs()[0].is_live(), "with nobody riding, the TV goes back to the crew board")
@@ -2147,7 +2217,7 @@ func _test_tool_art() -> void:
 	jet.emitting = true
 	for i in 3:   # the mist and core follow on the jet's next _process
 		await get_tree().process_frame
-	var mist := jet.get_node_or_null("Mist") as CPUParticles3D
+	var mist := jet.get_node_or_null("Mist") as GPUParticles3D
 	check(jet is WaterSpray and mist != null and mist.emitting and (jet.get_node("Core") as Node3D).visible, "water jet emits with its mist and core")
 	jet.queue_free()
 	for model in Equipment.MODELS:
@@ -2445,6 +2515,148 @@ func _test_save_load() -> void:
 	Settings.time_of_day = kept[0]
 	Settings.day_night_cycle = kept[1]
 	Settings.day_length = kept[2]
+
+
+## Save games: each holds its own garage and its own character, the Load screen lists them,
+## Save as / Rename / Delete work, and the old single save and profile.json become a first save
+## game. Uses its own folder and profile file, so real saves are never touched.
+func _test_save_games() -> void:
+	var kept_dir := SaveGame.dir
+	var kept_path := Progress.path
+	SaveGame.dir = "user://saves_unit_test/"
+	_clear_save_dir(SaveGame.dir)
+	Progress.path = "user://profile_savegames_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	# The old profile.json and single save become the first save game.
+	var gear := RiderGear.clean_gear({})
+	var extra := ""
+	for id in RiderGear.ITEMS:
+		if not gear["owned"].has(str(id)):
+			extra = str(id)
+			break
+	gear["owned"].append(extra)
+	var old_char := {"xp": Progress.xp_for_level(9) + 10, "money": 777, "tools": {"wrench": 2}, "skills": {"quick_hands": 1}, "gear": gear}
+	var f := FileAccess.open(Progress.path, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"version": 1, "profiles": {"Mig": old_char}}))
+	f.close()
+	SaveGame.slot_override = "anything"
+	var legacy := {"version": 1, "game": "Torque Shed", "saved_at": 1700000000, "host": "Mig", "time": 10.0,
+		"shed": {"bikes": {5: {"name": "Old Bike"}}, "garage_money": 4321}, "players": {}}
+	check(SaveGame.write(SaveGame.SLOT, legacy) == OK, "an old-style single save is written")
+	DirAccess.remove_absolute(SaveGame.meta_path(SaveGame.SLOT))
+	check(SaveGame.migrate("Mig") == SaveGame.SLOT and SaveGame.active_slot() == SaveGame.SLOT, "the old save becomes a save game, the one in play")
+	var listed := SaveGame.list_saves()
+	var first: Dictionary = listed[0] if listed.size() == 1 else {}
+	check(str(first.get("name", "")) == "Mig's shed" and int(first.get("level", 0)) == 9 and int(first.get("garage_money", 0)) == 4321
+		and int(first.get("bikes", 0)) == 1 and int(first.get("saved_at", 0)) == 1700000000,
+		"it's listed by name with the old character's level and the garage's money (%s)" % str(first))
+	var migrated := SaveGame.read(SaveGame.SLOT)
+	check(int(migrated.get("profile", {}).get("xp", 0)) == int(old_char["xp"]) and int(migrated["profile"]["money"]) == 777
+		and migrated["profile"]["gear"]["owned"].has(extra) and int(migrated["profile"]["tools"]["wrench"]) == 2,
+		"the save holds the old character: XP, money, tools and rider gear")
+	check(FileAccess.file_exists(Progress.path) and not Progress.stored_profile("Mig").is_empty(), "profile.json is kept for joining other sheds")
+	check(SaveGame.migrate("Mig") == "" and SaveGame.list_saves().size() == 1, "migrating twice changes nothing")
+	# A character with no shed saved gets a save game with a new shed waiting.
+	_clear_save_dir(SaveGame.dir)
+	check(SaveGame.migrate("Mig") != "" and SaveGame.list_saves().size() == 1 and bool(SaveGame.list_saves()[0]["fresh"])
+		and int(SaveGame.list_saves()[0]["level"]) == 9, "a character with no saved shed becomes a save game of its own")
+	_clear_save_dir(SaveGame.dir)
+	check(SaveGame.list_saves().is_empty() and SaveGame.migrate("Nobody") == "", "with nothing old there's nothing to migrate")
+
+	# New game A: a fresh character and garage, saved under its name.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main.menu.new_name = "Garage A"
+	main._start_session()
+	await get_tree().process_frame
+	check(SaveGame.active_slot() == "save_garage_a" and main.saver.save_name == "Garage A" and Progress.save_bound
+		and Progress.level() == 1 and Progress.money() == 0, "New game starts a fresh character in a save called Garage A")
+	Progress.profile["xp"] = Progress.xp_for_level(6)
+	Progress.set_money(1234)
+	Progress.profile["tools"]["brush"] = 3
+	Progress.profile["skills"]["torque_feel"] = 2
+	RiderGear.mine()["owned"].append(extra)
+	Shed.garage_money = 55555
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.request({"a": "rename_bike", "bike": ranger, "name": "Ranger A"})
+	main.saver.play_time = 3720.0
+	check(main.saver.save_now(), "Garage A saves")
+	check(not FileAccess.file_exists(Progress.path) or Progress.stored_profile(Settings.player_name).get("xp", 0) != Progress.profile["xp"],
+		"its character isn't written to profile.json")
+	# Save as B, then B goes its own way.
+	check(main.saver.save_as("Garage B") and SaveGame.active_slot() == "save_garage_b" and main.saver.save_name == "Garage B",
+		"Save as makes Garage B, the save in play")
+	check(not main.saver.save_as("garage a"), "Save as won't take a name already used")
+	Progress.profile["xp"] = Progress.xp_for_level(2)
+	Progress.set_money(5)
+	Shed.garage_money = 111
+	Shed.request({"a": "rename_bike", "bike": ranger, "name": "Ranger B"})
+	main._leave()
+	check(not Progress.save_bound, "back at the title the character isn't the save's any more")
+	var metas := {}
+	for m in SaveGame.list_saves():
+		metas[m["id"]] = m
+	check(metas.size() == 2 and int(metas["save_garage_a"]["level"]) == 6 and int(metas["save_garage_a"]["garage_money"]) == 55555
+		and int(metas["save_garage_b"]["level"]) == 2 and int(metas["save_garage_b"]["garage_money"]) == 111
+		and absf(float(metas["save_garage_a"]["play_time"]) - 3720.0) < 5.0,
+		"the Load screen lists both with their own level, garage money and play time")
+	check(SaveGame.play_time_text(3720.0) == "1 h 02 min" and SaveGame.summary_text(metas["save_garage_a"]).begins_with("Level 6, garage"),
+		"play time and the title line read well (%s)" % SaveGame.summary_text(metas["save_garage_a"]))
+	# Load A: its garage and its character come back.
+	main.load_game("save_garage_a", false)
+	await get_tree().process_frame
+	check(main.in_session and main.saver.save_name == "Garage A" and _bike_named("Ranger A") == ranger and Shed.garage_money == 55555,
+		"loading Garage A brings back its garage")
+	check(Progress.level() == 6 and Progress.money() == 1234 and Progress.tool_stage(Shed.me(), "brush") == 3
+		and Progress.skill_rank(Shed.me(), "torque_feel") == 2 and RiderGear.mine()["owned"].has(extra),
+		"and its character: level, personal money, tools, skills and rider gear")
+	check(absf(main.saver.play_time - 3720.0) < 5.0, "the play time carries on")
+	# Load B from the Esc menu: A is saved first.
+	Progress.profile["xp"] = Progress.xp_for_level(7)
+	main.load_game("save_garage_b", false)
+	await get_tree().process_frame
+	check(Progress.level() == 2 and Progress.money() == 5 and Shed.garage_money == 111 and _bike_named("Ranger B") == ranger,
+		"loading Garage B from the game gives B's garage and character")
+	check(int(SaveGame.read_meta("save_garage_a")["level"]) == 7, "and Garage A was saved on the way out")
+	# The Esc menu's save games screen.
+	main.menu.show_pause()
+	main.menu.show_saves(true)
+	await get_tree().process_frame
+	var rows: Array = main.menu.saves._list.get_children().filter(func(c): return not c.is_queued_for_deletion())
+	check(main.menu.saves.visible and not main.menu._tabs.visible and rows.size() == 2, "the Esc menu's Save games screen lists both")
+	main._leave()
+	# Rename and delete.
+	check(SaveGame.rename_slot("save_garage_a", "Renamed A") and SaveGame.read_meta("save_garage_a")["name"] == "Renamed A"
+		and SaveGame.read("save_garage_a")["name"] == "Renamed A", "a save can be renamed")
+	check(SaveGame.name_problem("renamed a") != "" and SaveGame.name_problem("renamed a", "save_garage_a") == ""
+		and SaveGame.name_problem("  ") != "", "names must be new and not blank")
+	main.menu.show_title()
+	main.menu.show_saves(false)
+	await get_tree().process_frame
+	main.menu.saves.delete_save("save_garage_b")
+	await get_tree().process_frame
+	rows = main.menu.saves._list.get_children().filter(func(c): return not c.is_queued_for_deletion())
+	check(SaveGame.list_saves().size() == 1 and not SaveGame.has_save("save_garage_b") and not FileAccess.file_exists(SaveGame.meta_path("save_garage_b"))
+		and rows.size() == 1 and SaveGame.active_slot() == "save_garage_a", "deleting B removes its files, and A is the game in play")
+	check(main.menu._solo.visible and main.menu._solo.text.contains("Renamed A"), "the title offers to continue Renamed A (%s)" % main.menu._solo.text)
+	main.queue_free()
+	await get_tree().process_frame
+	_clear_save_dir(SaveGame.dir)
+	SaveGame.dir = kept_dir
+	SaveGame.slot_override = ""
+	SaveGame.last_saved = 0
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = kept_path
+	Progress.select(Settings.player_name)
+
+
+func _clear_save_dir(path: String) -> void:
+	if not DirAccess.dir_exists_absolute(path):
+		return
+	for f in DirAccess.get_files_at(path):
+		DirAccess.remove_absolute(path + f)
 
 
 func _test_whiteboard() -> void:
@@ -2773,6 +2985,203 @@ func _test_road_traffic() -> void:
 	await get_tree().process_frame
 
 
+## Simon's 17 October round: the game had got slow. Nothing in the shed is rebuilt or re-sent to
+## the GPU when nothing has changed, the node count stays flat however often the shed changes,
+## the pressure washer only looks at the bit of the bike the jet is on (and finds just what
+## going over all of it would), and the autosave writes the file in the background.
+func _test_perf_steady() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var ws: Workshop = main.workshop
+	var faithful := _bike_named("Old Faithful")
+	var me := Shed.me()
+	Shed.bikes[faithful]["rider"] = me
+	Shed.crew[me]["riding"] = faithful
+	Shed._wear_from_ride(faithful, {"km": 6.0, "dirt_km": 3.0, "fly_km": 3.0})
+	Shed.bikes[faithful]["rider"] = 0
+	Shed.crew[me]["riding"] = 0
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+	Shed.changed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	# The shed changing over and over, with nothing to redraw: the same views, no more nodes.
+	var views := {}
+	for id in ws.bike_views:
+		views[id] = (ws.bike_views[id] as Node).get_instance_id()
+	var nodes0 := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+	var models := [0]
+	var count_models := func(n: Node):
+		if n is BikeModel:
+			models[0] += 1
+	get_tree().node_added.connect(count_models)
+	for i in 30:
+		Shed.changed.emit()
+		await get_tree().process_frame
+	get_tree().node_added.disconnect(count_models)
+	var same := views.size() == ws.bike_views.size()
+	for id in views:
+		same = same and ws.bike_views.has(id) and (ws.bike_views[id] as Node).get_instance_id() == views[id]
+	var nodes1 := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+	check(same and models[0] == 0 and absf(nodes1 - nodes0) < 20,
+		"the shed changing 30 times with nothing new rebuilds no bike (%d models built, nodes %d -> %d)" % [models[0], nodes0, nodes1])
+	# The dirt drawn on a parked bike isn't sent to the GPU again every frame, only when it moves.
+	var model := ws.bike_model(faithful)
+	var layer: DirtLayer = model.dirt_layer if model else null
+	var mat: ShaderMaterial = layer.material_for("engine") if layer else null
+	check(mat != null and layer.mesh_count() > 20, "the muddy bike has its dirt drawn on (%d meshes)" % (layer.mesh_count() if layer else 0))
+	if mat == null:
+		main._leave()
+		main.queue_free()
+		await get_tree().process_frame
+		return
+	var mine := {}
+	for r in layer._restore:
+		mine[(r[0] as GeometryInstance3D).material_override] = true
+	check(mine.size() < layer.mesh_count() / 2, "a part's meshes share their dirty materials (%d for %d meshes)" % [mine.size(), layer.mesh_count()])
+	var marker := Projection(Vector4(2, 0, 0, 0), Vector4(0, 2, 0, 0), Vector4(0, 0, 2, 0), Vector4(0, 0, 0, 1))
+	mat.set_shader_parameter("to_model", marker)
+	for i in 3:
+		await get_tree().process_frame
+	check(mat.get_shader_parameter("to_model") == marker, "a parked bike's dirt isn't re-sent each frame")
+	# (Moved in the shed, as the views are put where the shed has them, on a lift or not.)
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER + Vector3(0.0, 0.0, 0.2))
+	Shed.changed.emit()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(mat.get_shader_parameter("to_model") != marker, "but it follows the bike when it moves")
+	ws.bike_views[faithful].position -= Vector3(0.0, 0.0, 0.2)
+	# The washer: where the jet lands and what it reaches, found from the bit of the bike it's on.
+	var job := WashJob.new()
+	check(job.setup(faithful, model), "the pressure washer gets ready on the bike")
+	job.prepare_all()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 17
+	var mid: Vector3 = job._mid
+	var hits := 0
+	var agree := 0
+	var near_ok := true
+	for k in 120:
+		var e := mid + Vector3(rng.randf_range(-1.5, 1.5), rng.randf_range(-0.2, 1.4), rng.randf_range(-1.5, 1.5))
+		var to := mid + Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(-0.4, 0.5), rng.randf_range(-0.9, 0.9))
+		var d := (to - e).normalized()
+		var bi := -1
+		var best := INF
+		for i in job.e_pos.size():
+			var v := job.e_pos[i] - e
+			var t := v.dot(d)
+			if t <= 0.0 or t >= best or job.e_n[i].dot(d) > 0.0:
+				continue
+			if (v - d * t).length_squared() < 0.03 * 0.03:
+				best = t
+				bi = i
+		var xf := model.global_transform
+		var sh := job.surface_hit(xf * e, xf.basis * d)
+		if bi >= 0:
+			hits += 1
+		if (bi < 0 and sh.is_empty()) or (bi >= 0 and not sh.is_empty() and (sh["at"] as Vector3).distance_to(xf * (e + d * best)) < 1e-4):
+			agree += 1
+		var p := job.e_pos[rng.randi() % job.e_pos.size()]
+		var r := rng.randf_range(0.03, 0.2)
+		var found := job._entries_near(p, r)
+		for i in job.e_pos.size():
+			if job.e_pos[i].distance_to(p) <= r and not found.has(i):
+				near_ok = false
+	check(hits > 20 and agree == 120, "the jet lands just where going over every point says it would (%d of 120 rays, %d hit the bike)" % [agree, hits])
+	check(near_ok, "and reaches every point it would")
+	job.finish()
+	# Where the jet's aimed goes out with the next sync, without the shed being gone over for it.
+	var told := [0]
+	var on_change := func(): told[0] += 1
+	Shed.changed.connect(on_change)
+	Shed.request({"a": "wash_aim", "fire": true, "at": Workshop.WASH_CENTER, "n": Vector3.UP, "bike": faithful})
+	var aimed: int = told[0]
+	Shed.changed.disconnect(on_change)
+	check(aimed == 0 and Wash.jets().size() == 1, "aiming the jet doesn't make the whole shed redraw there and then (%d)" % aimed)
+	Shed.request({"a": "wash_aim", "fire": false})
+	Shed.changed.connect(on_change)
+	for i in int(Shed.SYNC_INTERVAL * 120.0) + 6:
+		await get_tree().process_frame
+	Shed.changed.disconnect(on_change)
+	check(told[0] >= 1, "it's told with the next sync instead (%d)" % told[0])
+	# The autosave: written in the background, then it's there.
+	var kept_dir := SaveGame.dir
+	SaveGame.dir = "user://saves_perf_test/"
+	_clear_save_dir(SaveGame.dir)
+	var saver: SaveGame = main.saver
+	var under_way := saver.save_now(false, true)
+	var waited := 0
+	while saver._task >= 0 and waited < 600:
+		await get_tree().process_frame
+		waited += 1
+	check(under_way and saver._task < 0 and SaveGame.has_save(SaveGame.active_slot()) and SaveGame.last_error == ""
+		and not SaveGame.read(SaveGame.active_slot()).is_empty(), "the autosave is written in the background (%d frames)" % waited)
+	_clear_save_dir(SaveGame.dir)
+	SaveGame.dir = kept_dir
+	main._leave()
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Simon's 17 October round: bikes riding off from the cafe showed as big white glow balls
+## speckled black, the mark of a NaN or an overflowing value on screen. No bike surface is smooth
+## enough for a sun glint to overflow, the dirt, paint and blasting passes never work out a
+## facing from a zero normal or hand the screen a value that isn't a number, and the dirt's
+## place on a bike isn't thrown off by a bike squashed flat.
+func _test_no_glare() -> void:
+	var holder := Node3D.new()
+	add_child(holder)
+	var rng := RandomNumberGenerator.new()
+	var smoothest := 1.0
+	var clear_smoothest := 1.0
+	var dirty := 0
+	for i in 6:
+		rng.seed = 1700 + i
+		var b := CoffeeShop._make_bike(rng)
+		var look := CoffeeView.bike_look({"bike": b})
+		var build := BikeBuild.new(PartsDB.sanitize_build((look["parts"] as Dictionary).duplicate()), look["cond"])
+		var m := BikeModel.new()
+		holder.add_child(m)
+		m.build_from(build, look["paint"], {}, null, true)
+		if m.dirt_layer and m.dirt_layer.mesh_count() > 0:
+			dirty += 1
+		var stack: Array[Node] = [m]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			stack.append_array(n.get_children())
+			var mi := n as MeshInstance3D
+			if mi == null or mi.mesh == null:
+				continue
+			for si in mi.mesh.get_surface_count():
+				var mat := mi.get_active_material(si)
+				while mat != null:
+					if mat is BaseMaterial3D:
+						smoothest = minf(smoothest, (mat as BaseMaterial3D).roughness)
+						if (mat as BaseMaterial3D).clearcoat_enabled:
+							clear_smoothest = minf(clear_smoothest, (mat as BaseMaterial3D).clearcoat_roughness)
+					mat = mat.next_pass
+	check(dirty > 0 and smoothest >= BikeModel.MIN_ROUGHNESS - 1e-6 and clear_smoothest >= BikeModel.MIN_CLEARCOAT_ROUGHNESS - 1e-6,
+		"the cafe's bikes (%d dirty) have no surface smooth enough to glare (smoothest %.3f, clear coat %.3f)" % [dirty, smoothest, clear_smoothest])
+	var guarded := true
+	for code in [DirtLayer.SHADER_CODE, SprayMarks.SHADER_CODE, BlastMarks.SHADER_CODE, PaintMix.FX_CODE]:
+		guarded = guarded and not (code as String).contains("normalize(mnorm)") and not (code as String).contains("normalize(NORMAL)") \
+			and not (code as String).contains("/ mask_size;") and ((code as String).contains("sane(") or code == PaintMix.FX_CODE)
+	check(guarded, "the dirt, paint and blasting passes never normalize a zero normal or let a NaN through")
+	var model: BikeModel = holder.get_child(0)
+	var layer := model.dirt_layer
+	var slot: String = layer._mats.keys()[0]
+	var mat: ShaderMaterial = layer._mats[slot]
+	var good: Projection = mat.get_shader_parameter("to_model")
+	model.scale = Vector3(1.0, 0.0, 1.0)
+	layer._update_transform()
+	var kept: Projection = mat.get_shader_parameter("to_model")
+	model.scale = Vector3.ONE
+	check(kept == good and good.x.is_finite() and good.w.is_finite(), "a bike squashed flat doesn't throw its dirt off to NaN")
+	holder.queue_free()
+	await get_tree().process_frame
+
+
 ## The bike details pages list the paint panel by panel: each panel's own colour or mix (name
 ## and code), finish, coats, lacquer, job quality and stripe.
 func _test_bike_paint_panels() -> void:
@@ -2884,13 +3293,13 @@ func _test_tuning() -> void:
 	check(Shed.check(me, {"a": "tune", "bike": ranger, "key": "f_bump", "value": 0.5}).contains("no bump adjuster")
 		and Shed.check(me, {"a": "tune", "bike": ranger, "key": "f_rebound", "value": 0.5}) == "",
 		"a 2-way fork adjusts rebound but not compression")
-	check(BikeBuild.new({"fork": "classic_conventional"}, {}, {"f_preload": 1.0}).front_spring == BikeBuild.new({"fork": "classic_conventional"}).front_spring,
+	check(BikeBuild.new({"fork": "classic_conventional"}, {}, {"f_preload": 1.0}).front_preload == BikeBuild.new({"fork": "classic_conventional"}).front_preload,
 		"a setting the part can't take is ignored")
 	var before := Shed.build_of(faithful)
 	Shed.request({"a": "tune", "bike": faithful, "key": "f_bump", "value": 0.5})
 	Shed.request({"a": "tune", "bike": faithful, "key": "r_preload", "value": 1.0})
 	var after := Shed.build_of(faithful)
-	check(after.front_bump > before.front_bump * 1.1 and after.rear_spring > before.rear_spring * 1.1
+	check(after.front_bump > before.front_bump * 1.1 and after.rear_preload > before.rear_preload + 0.005 and after.rear_sag < before.rear_sag
 		and Shed.items[Shed.item_on(faithful, "fork")]["tune"].has("bump"), "clicking the USD fork and shock firms them up")
 
 	# Chain tension from the desk is the chain's own slack.
@@ -3861,6 +4270,133 @@ func _test_pad_menus() -> void:
 	await get_tree().physics_frame
 	# Back to the keyboard and mouse for the tests after this one.
 	Controls.active_device = -1
+	Controls.set_using_pad(false)
+
+
+## The hints name the keys of whatever the player last used: keyboard and mouse, or the pad.
+func _test_hints_follow_device() -> void:
+	var had := FileAccess.file_exists(Settings.PATH)
+	var before := FileAccess.get_file_as_string(Settings.PATH) if had else ""
+	Settings.reset_bindings()
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	for i in 3:
+		await get_tree().physics_frame
+	var w: Walker = main.walker
+	get_viewport().push_input(_key(KEY_W))
+	check(not Controls.using_pad, "a key press means keyboard and mouse")
+	var kb := {"interact": Controls.key("interact"), "work": Controls.key("work"), "move": Controls.key("move"),
+		"back": Controls.key("back"), "tools": Controls.keys("tool_prev", "tool_next")}
+	check(kb == {"interact": "F", "work": "Left mouse", "move": "W A S D", "back": "Esc", "tools": "Mouse wheel"},
+		"on the keyboard: F, the left mouse, W A S D, Esc, the wheel (%s)" % str(kb))
+	check(Controls.hint("{interact}: ride it  ·  {rotate_left|rotate_right}: turn it  ·  {nope} stays") == "F: ride it  ·  , / .: turn it  ·  {nope} stays",
+		"a hint swaps each {action} for its key and leaves other braces (%s)" % Controls.hint("{interact}: ride it  ·  {rotate_left|rotate_right}: turn it  ·  {nope} stays"))
+	# A sample of hints across the game, on the keyboard.
+	var label := UITheme.label("Close ({back})")
+	main.hud.flash("Press {interact} to get up.", 5.0)
+	var samples := func() -> Array:
+		return [main.hud._message.text, label.text, w.spray_controls(), w.wash_controls(), w.blast_controls(),
+			Controls.hint(TvChannels.HOWTO[3][1][0][0]), Controls.hint(TvChannels.HOWTO[1][1][0][0])]
+	await get_tree().process_frame
+	var on_keys: Array = samples.call()
+	check(on_keys[0] == "Press F to get up." and on_keys[1] == "Close (Esc)" and str(on_keys[2]).contains("Hold Left mouse")
+		and str(on_keys[3]).contains(": step back") and str(on_keys[4]).contains("W A S D") and on_keys[5] == "I" and on_keys[6] == "W A S D",
+		"keyboard hints: %s" % " | ".join(on_keys))
+	# Pick up the pad: a button press switches every hint, the ones already up too.
+	var pad := InputEventJoypadButton.new()
+	pad.button_index = JOY_BUTTON_A
+	pad.pressed = true
+	get_viewport().push_input(pad)
+	pad = pad.duplicate()
+	pad.pressed = false
+	get_viewport().push_input(pad)
+	await get_tree().process_frame
+	check(Controls.using_pad, "a pad button means the pad")
+	var on_pad: Array = samples.call()
+	check(on_pad[0] == "Press Y to get up." and on_pad[1] == "Close (B)" and str(on_pad[2]).contains("Hold RT")
+		and str(on_pad[3]).contains("Y: step back") and str(on_pad[4]).contains("Left stick") and on_pad[5] == "D-pad up" and on_pad[6] == "Left stick",
+		"pad hints, the flash and the label already up changed too: %s" % " | ".join(on_pad))
+	var changed := 0
+	for i in on_keys.size():
+		if on_keys[i] != on_pad[i]:
+			changed += 1
+	check(changed == on_keys.size(), "every sampled hint changed (%d of %d)" % [changed, on_keys.size()])
+	check(Controls.key("throttle") == "RT" and Controls.key("front_brake") == "LT" and Controls.key("ignition") == "D-pad up"
+		and Controls.key("rename") == "N", "riding keys on the pad, and a key with no pad button still shows its key (%s)" % Controls.key("rename"))
+	# A small nudge of the mouse doesn't switch back; moving it does, and so does a stick past its deadzone.
+	var nudge := InputEventMouseMotion.new()
+	nudge.relative = Vector2(1, 1)
+	nudge.screen_relative = Vector2(1, 1)
+	get_viewport().push_input(nudge)
+	check(Controls.using_pad, "a nudge of the mouse leaves the pad's hints up")
+	var move := InputEventMouseMotion.new()
+	move.relative = Vector2(40, 0)
+	move.screen_relative = Vector2(40, 0)
+	get_viewport().push_input(move)
+	check(not Controls.using_pad and Controls.key("interact") == "F", "moving the mouse switches back to the keys")
+	var drift := InputEventJoypadMotion.new()
+	drift.axis = JOY_AXIS_LEFT_X
+	drift.axis_value = 0.1
+	get_viewport().push_input(drift)
+	check(not Controls.using_pad, "a stick inside its deadzone doesn't switch")
+	var stick := InputEventJoypadMotion.new()
+	stick.axis = JOY_AXIS_LEFT_X
+	stick.axis_value = 0.9
+	get_viewport().push_input(stick)
+	check(Controls.using_pad, "a stick pushed over switches to the pad")
+	# The player's own bindings: rebinding use to G shows G.
+	get_viewport().push_input(_key(KEY_W))
+	Settings.rebind("interact", _key(KEY_G))
+	check(Controls.key("interact") == "G" and Controls.hint("{interact}: talk") == "G: talk", "a rebound key shows in the hints (%s)" % Controls.key("interact"))
+	Settings.reset_bindings()
+	main._leave()
+	main.queue_free()
+	label.free()
+	await get_tree().physics_frame
+	Controls.active_device = -1
+	Controls.set_using_pad(false)
+	if had:
+		var f := FileAccess.open(Settings.PATH, FileAccess.WRITE)
+		f.store_string(before)
+		f.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
+
+
+## No hint in the game hard-codes a key: they all name an action (Controls.hint / Controls.key),
+## so they follow the device in use and the player's bindings. Lines marked "hint-ok" are the
+## few that describe the mouse or triggers themselves, which can't be rebound.
+func _test_hints_name_no_keys() -> void:
+	var skip := ["settings.gd", "controls.gd", "keybind_tab.gd"]
+	var strings := RegEx.create_from_string("\"((?:[^\"\\\\]|\\\\.)*)\"")
+	var bad: Array[RegEx] = []
+	for p in [
+		"(?:^|[\\s·(])[A-Z]: ",                                     # "F: ride it"
+		"(?:^|[\\s·(])[A-Z0-9] / [A-Z0-9](?![a-z])",                # "Q / E"
+		"[Pp]ress [A-Z](?![a-z])", "[Hh]old [A-Z](?![a-z])",       # "press I", "hold F"
+		"\\([A-Z]\\)", "\\(or [A-Z]\\b",                            # "(C)", "(or D-pad up)"
+		"\\b[B-HJ-Z] (to|for|on|picks|starts|again|the|when|backs|brakes)\\b",
+		"\\b(with|then|or|and) [B-HJ-Z](?![A-Za-z'])", "(?i)\\bI starts\\b",
+		"(?i)\\b(left|right|middle) mouse|mouse wheel|\\bscroll\\b|\\b(left|right) click\\b",
+		"\\b(Esc|Space|Shift|Ctrl|Backspace|D-pad|RT|LT|LB|RB|F[1-9]|F1[0-2]|WASD|W A S D)\\b"]:
+		bad.append(RegEx.create_from_string(p))
+	var found := []
+	var dir := DirAccess.open("res://scripts")
+	for file in dir.get_files():
+		if not file.ends_with(".gd") or skip.has(file):
+			continue
+		var n := 0
+		for line in FileAccess.get_file_as_string("res://scripts/" + file).split("\n"):
+			n += 1
+			if line.strip_edges().begins_with("#") or line.contains("hint-ok"):
+				continue
+			for m in strings.search_all(line):
+				var s := m.get_string(1)
+				if bad.any(func(r: RegEx): return r.search(s) != null):
+					found.append("%s:%d %s" % [file, n, s.left(60)])
+	check(found.is_empty(), "no hint names a key outright (%d found) %s" % [found.size(), str(found.slice(0, 6))])
 
 
 func _test_board_posters() -> void:
@@ -5858,7 +6394,7 @@ func _test_tail_fairing_mirrors_parts() -> void:
 		m.build_from(BikeBuild.new({"mirrors": id}))
 		var glass: Node = m.find_child("MirrorGlass*", true, false)
 		var mat: StandardMaterial3D = (glass as MeshInstance3D).material_override if glass is MeshInstance3D else null
-		check(m.slot_bounds("mirrors").size.x > 0.3 and mat != null and mat.metallic > 0.9 and mat.roughness < 0.05,
+		check(m.slot_bounds("mirrors").size.x > 0.3 and mat != null and mat.metallic > 0.9 and mat.roughness <= BikeModel.MIN_ROUGHNESS,
 			"the %s are drawn, with mirror glass" % id)
 		m.free()
 	var bare := BikeModel.new()
@@ -6813,7 +7349,7 @@ func _test_contract_customers() -> void:
 	check(Contracts.customers().is_empty() and Contracts.jobs().is_empty() and Contracts.reputation() == 0,
 		"a new shed has no customers, no jobs and no reputation")
 	check(Contracts.unlocked(0) == ["maint"] and Contracts.unlocked(int(Contracts.UNLOCK["mot"])).has("mot")
-		and Contracts.unlocked(10).size() == 5, "reputation unlocks harder jobs: service first, then MOT, colour matches, mods and bespoke builds")
+		and Contracts.unlocked(10).size() == 7, "reputation unlocks harder jobs: service first, then MOT, colour matches, batch orders, mods, test rides and bespoke builds")
 	Contracts.advance(Contracts.FIRST_CUSTOMER + 0.05)
 	check(Contracts.customers().size() == 1, "the first customer turns up soon after the shed opens")
 	var c: Dictionary = Contracts.customers().values()[0]
@@ -7094,6 +7630,362 @@ func _test_contract_session() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## A batch order customer whose spec is for `item` ("engine", or a painted part's kind; "" any).
+func _batch_customer(item := "") -> int:
+	for i in 60:
+		var cid := Contracts.spawn("batch")
+		var spec: Dictionary = Contracts.customers()[cid]["offer"]["goals"][0]
+		if item == "" or str(spec["item"]) == item or (item == "paint" and str(spec["item"]) != "engine"):
+			return cid
+		Contracts.customers().erase(cid)
+	return 0
+
+
+## Does the work on a donor engine for `spec` by hand: blasted back to bare metal all over (good
+## as new), the finish it wants, any stage one parts, and fresh oil in.
+func _prep_engine(id: int, spec: Dictionary) -> void:
+	Shed.items[id]["boxed"] = false
+	for slot in spec.get("ups", {}):
+		var old := Shed.engine_item(id, str(slot))
+		var nu := Shed._new_item(str(spec["ups"][slot]), 0.0, 0.0, 0.0)
+		Shed._erase_item(old)
+		Shed._move(nu, "engine", id)
+		Shed.items[id]["slots"][slot] = nu
+		Shed.items[id]["bolted"][slot] = true
+	for p in Shed._blast_parts(id):
+		var it: Dictionary = Shed.items[p]
+		it["rust"] = 0.0
+		it["dirt"] = 0.0
+		it["wear"] = 0.0
+		it["blast"] = {"c": 1.0, "p": 0.0}
+		match str(spec["finish"]):
+			"clear":
+				it["coat"] = "clear"
+			"enamel_black", "enamel_silver":
+				it["coat"] = str(spec["finish"])
+	Shed.items[id]["fluid"] = {"type": "semi_10w40", "litres": PartsDB.fluid_capacity(str(Shed.items[id]["part"])), "age": 0.0}
+
+
+## Puts a part down on the dispatch pallet the way a player does (held, then dropped there).
+func _drop_on_pallet(id: int, nudge := 0.0) -> void:
+	Shed._move(id, "held", Shed.me())
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), ContractBatch.pallet_at() + Vector3(nudge, 0.11, 0.0))})
+
+
+func _test_contract_batch_offers() -> void:
+	Shed.start_new("Tester", 701)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var small := []
+	var big := []
+	var kinds := {}
+	var orange := 0
+	var stage := 0
+	for lv in [1, 14]:
+		for i in 40:
+			var o := ContractBatch.make_offer(rng, lv)
+			var spec: Dictionary = o["goals"][0]
+			kinds[str(spec["item"])] = true
+			(small if lv == 1 else big).append(int(o["n"]))
+			if str(spec.get("lib", "")) == ContractBatch.FAVOURITE:
+				orange += 1
+			if spec.has("ups"):
+				stage += 1
+				check(lv >= ContractBatch.STAGE_LEVEL, "stage one engines only for an experienced garage")
+	check(kinds.has("engine") and kinds.has("tank") and (kinds.has("front_mudguard") or kinds.has("side_panels")),
+		"orders for engines, tanks and panels (%s)" % str(kinds.keys()))
+	var avg := func(a: Array) -> float: return float(a.reduce(func(x, y): return x + y, 0)) / maxf(1.0, a.size())
+	check(avg.call(big) > avg.call(small) + 3.0 and small.max() <= 10 and big.max() <= 20,
+		"a bigger garage gets bigger runs (%.1f parts at level 1, %.1f at 14)" % [avg.call(small), avg.call(big)])
+	check(orange > 5 and stage > 0, "Iridium Orange is a favourite (%d orders) and some engines are stage one (%d)" % [orange, stage])
+	var lib := PaintMix.library_entry(ContractBatch.FAVOURITE)
+	check(not lib.is_empty() and str(lib["name"]) == "Iridium Orange" and str(lib["effect"]) == "metallic"
+		and PaintMix.match_of(PaintMix.spec(PaintMix.parse_code(str(lib["code"])))["color"], lib["rgb"], "metallic", "metallic") > 0.95,
+		"Iridium Orange is in the paint library, metallic, and its recipe mixes it")
+	Contracts._st()["reputation"] = 10
+	Progress.profile["xp"] = Progress.xp_for_level(8)
+	var cid := _batch_customer("engine")
+	var o: Dictionary = Contracts.customers()[cid]["offer"]
+	var spec: Dictionary = o["goals"][0]
+	var text := Contracts.goal_text(spec)
+	check(str(o["title"]).begins_with("Batch order") and int(o["per"]) > 0 and int(o["bonus"]) > 0 and int(o["pay"]) == int(o["per"]) * int(o["n"]) + int(o["bonus"])
+		and int(o["days"]) >= 2, "a batch order: %s, %s a part, %s bonus, %d days" % [o["title"], Contracts.money(int(o["per"])),
+		Contracts.money(int(o["bonus"])), int(o["days"])])
+	check(text.contains("%d hp" % roundi(float(spec["hp"]))) and text.contains(PartsDB.part_name(str(spec["part"]))),
+		"the spec reads: %s" % text)
+	check(absf(float(spec["hp"]) - ContractBatch.stock_hp(str(spec["part"]), spec.get("ups", {}))) <= 0.5,
+		"the power asked for is what a fresh one makes (%d hp)" % roundi(float(spec["hp"])))
+	check(int(Contracts.customers()[cid].get("park", -1)) < 0 and not Contracts.rides_in(Contracts.customers()[cid]),
+		"the trade buyer comes in on foot")
+	var tv := Contracts.tv_data()
+	check(tv["offered"].any(func(x): return str(x["title"]).begins_with("Batch order")), "the offer is on the TV's contracts channel")
+	Progress.profile = saved
+
+
+func _test_contract_batch_dispatch() -> void:
+	Shed.start_new("Tester", 702)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.profile["xp"] = Progress.xp_for_level(4)
+	Contracts._st()["reputation"] = 10
+	var cid := _batch_customer("engine")
+	var o: Dictionary = Contracts.customers()[cid]["offer"]
+	o["supply"] = "donors"
+	o["n"] = 3
+	o["pay"] = int(o["per"]) * 3 + int(o["bonus"])
+	var spec: Dictionary = o["goals"][0]
+	var rep0 := Contracts.reputation()
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	check(str(job["kind"]) == "batch" and int(job["bike"]) == 0 and int(job["n"]) == 3, "the order's taken on, with no bike or bay")
+	var donors: Array = Shed.items.keys().filter(func(i): return int(Shed.items[i].get("batch", 0)) == int(job["id"]))
+	var crated := func(i) -> bool: return Shed.items[i].get("boxed", false) and Shed.is_engine(int(i)) and Shed.engine_missing(int(i)).is_empty()
+	check(donors.size() + int(job["owed"]) == 3 and donors.all(crated), "%d donor engines come crated, ancillaries and all (%d to follow)" % [donors.size(), int(job["owed"])])
+	check(donors.all(func(i): return ContractBatch.bench_hp(int(i)) < float(spec["hp"]) - float(spec["tol"])),
+		"tired and drained, they don't make the power")
+	var first := int(donors[0])
+	var r := ContractBatch.check_item(spec, first)
+	check(not r["ok"] and str(r["have"]).contains("crate"), "a crate on the pallet isn't to spec")
+	Shed.items[first]["boxed"] = false
+	r = ContractBatch.check_item(spec, first)
+	check(not r["ok"] and r["why"].any(func(w): return str(w).contains("hp")) and r["why"].any(func(w): return str(w).contains("not")),
+		"unpacked as it came: %s" % ", ".join(r["why"]))
+	var pallet := ContractsView.dispatch_pallet()
+	var d := ContractBatch.DISPATCH
+	var wall_face := Workshop.BOOTH_ROOM_CENTER.z + Workshop.BOOTH_ROOM_HALF.y + 0.2   # the paint shop's front wall, outside
+	check(pallet.find_children("*", "Label3D", true, false).is_empty() and d.position.y - wall_face > 0.0 and d.position.y - wall_face < 0.15
+		and d.position.x > Workshop.BOOTH_ROOM_CENTER.x - Workshop.BOOTH_ROOM_HALF.x and not d.intersects(Shed.DELIVERY_AREA.grow(0.1)),
+		"the dispatch pallet's up against the shed wall, behind the deliveries, with no sign (%s)" % str(d))
+	pallet.free()
+	_drop_on_pallet(first)
+	check(int(job["sent"]) == 0 and Shed.items.has(first) and ContractBatch.on_pallet(first), "put down on the pallet, it's checked and left there")
+	check(ContractBatch.checkable(job).has(first), "and the card lists it with what's wrong")
+	_prep_engine(first, spec)
+	var hp := ContractBatch.bench_hp(first)
+	r = ContractBatch.check_item(spec, first)
+	check(r["ok"] and absf(hp - float(spec["hp"])) <= float(spec["tol"]), "blasted, finished %s and oiled it makes %.1f hp: to spec" % [spec["finish"], hp])
+	var money0 := Shed.garage_money
+	Shed.request({"a": "contract_dispatch", "job": int(job["id"])})
+	check(int(job["sent"]) == 1 and not Shed.items.has(first) and Shed.garage_money > money0 and int(job["paid"]) == int(job["per"]),
+		"Dispatch takes it and pays %s: 1/3" % Contracts.money(int(job["paid"])))
+	check(str(Contracts.evaluate(job)[0]["have"]) == "1/3 sent" and is_equal_approx(Contracts.progress(job), 0.0),
+		"the checklist counts it (1/3)")
+	# The next goes straight in when it's put down to spec, the wrong engine doesn't.
+	var other := Shed._new_item("single_250" if str(spec["part"]) != "single_250" else "twin_500", 0.0, 0.0, 0.0)
+	for slot in PartsDB.ENGINE_SLOTS:
+		var sub := Shed._new_item(str(PartsDB.DEFAULT_BUILD[slot]), 0.0, 0.0, 0.0)
+		Shed._move(sub, "engine", other)
+		Shed.items[other]["slots"][slot] = sub
+		Shed.items[other]["bolted"][slot] = true
+	_drop_on_pallet(other, 0.6)
+	check(Shed.items.has(other) and int(job["sent"]) == 1, "a different engine isn't taken")
+	Shed._erase_item(other)
+	while int(job["owed"]) > 0:
+		Contracts.advance(0.1)
+	donors = Shed.items.keys().filter(func(i): return int(Shed.items[i].get("batch", 0)) == int(job["id"]))
+	check(donors.size() == 2, "the rest of the donors arrive")
+	var second := int(donors[0])
+	_prep_engine(second, spec)
+	_drop_on_pallet(second)
+	check(int(job["sent"]) == 2 and not Shed.items.has(second), "put down to spec, it's dispatched there and then (2/3)")
+	# Take a spanner to the last: a plug lead off is a part missing.
+	var last := int(donors[1])
+	_prep_engine(last, spec)
+	Shed.items[last]["bolted"]["spark_plugs"] = false
+	check(not ContractBatch.check_item(spec, last)["ok"], "an engine with something not bolted up fails")
+	Shed.items[last]["bolted"]["spark_plugs"] = true
+	var before := Shed.garage_money
+	_drop_on_pallet(last)
+	check(not Contracts.jobs().has(int(job["id"])) and Contracts.reputation() > rep0, "the last one in closes the order, reputation up")
+	var done: Dictionary = Contracts._st()["done"][0]
+	check(int(done["paid"]) == int(job["per"]) * 3 + int(job["bonus"]) and Shed.garage_money - before >= int(job["bonus"]),
+		"all on time: every part paid and the bonus (%s)" % Contracts.money(int(done["paid"])))
+	# A late, half-done order closed early pays for what was sent and costs reputation.
+	cid = _batch_customer("")
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var late: Dictionary = Contracts.jobs().values()[0]
+	Contracts.advance(float(late["due"]) - Contracts.clock() + Contracts.DAY * 2.0)
+	check(ContractBatch.part_pay(late) < int(late["per"]), "late parts pay less")
+	var rep1 := Contracts.reputation()
+	Shed.request({"a": "contract_hand_in", "job": int(late["id"])})
+	check(not Contracts.jobs().has(int(late["id"])) and Contracts.reputation() < rep1
+		and not Shed.items.values().any(func(it): return int(it.get("batch", 0)) == int(late["id"])),
+		"closing it early ends it, reputation down, and the unused donors go back")
+	Progress.profile = saved
+
+
+func _test_contract_batch_paint() -> void:
+	Shed.start_new("Tester", 703)
+	Contracts._st()["reputation"] = 10
+	var cid := _batch_customer("paint")
+	var o: Dictionary = Contracts.customers()[cid]["offer"]
+	var spec: Dictionary = o["goals"][0]
+	spec["sheen"] = "satin"
+	spec["lacquer"] = true
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var part := str(PartsDB.by_kind[str(spec["item"])][0])
+	var id := Shed._new_item(str(job["donor"]) if str(job["donor"]) != "" else part, 0.0, 0.0, 0.0)
+	var r := ContractBatch.check_item(spec, id)
+	check(not r["ok"], "a part in its old paint isn't to spec: %s" % ", ".join(r["why"]))
+	# Sprayed in the bay: the library colour, a good finish, then satin lacquer.
+	var tin := PaintMix.parse_code(str(PaintMix.library_entry(str(spec["lib"])).get("code", "")))
+	var mix := PaintMix.spec(tin)
+	Shed.items[id]["mix"] = mix
+	Shed.items[id]["mix_coats"] = 3
+	Shed.items[id]["color"] = mix["color"]
+	Shed.items[id]["paint_quality"] = float(spec["q"]) + 0.03
+	r = ContractBatch.check_item(spec, id)
+	check(not r["ok"] and r["why"].any(func(w): return str(w).contains("lacquer")) and r["why"].any(func(w): return str(w).contains("gloss")),
+		"the right colour without its lacquer: %s" % ", ".join(r["why"]))
+	Shed.items[id]["flat"] = PaintMix.SHEENS["satin"]
+	r = ContractBatch.check_item(spec, id)
+	check(r["ok"], "under satin lacquer it's to spec: %s" % r["have"])
+	Shed.items[id]["paint_quality"] = float(spec["q"]) - 0.1
+	check(not ContractBatch.check_item(spec, id)["ok"], "a patchy coat isn't")
+	Shed.items[id]["paint_quality"] = 0.99
+	Shed.items[id]["color"] = Color(0.1, 0.6, 0.2) if Color.html(str(spec["rgb"])).g < 0.4 else Color(0.7, 0.05, 0.6)
+	check(not ContractBatch.check_item(spec, id)["ok"], "nor the wrong colour")
+	Shed.items[id]["color"] = mix["color"]
+	_drop_on_pallet(id)
+	check(int(job["sent"]) == 1 and not Shed.items.has(id), "dispatched from the pallet: 1/%d" % int(job["n"]))
+
+
+func _test_contract_test_ride() -> void:
+	Shed.start_new("Tester", 704)
+	Contracts._st()["reputation"] = 10
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.profile["xp"] = Progress.xp_for_level(14)
+	var seen_brands := {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var all_quirks := {}
+	var starved: Array[String] = []
+	for i in 60:
+		var o := ContractTestRide.make_offer(rng, 14)
+		seen_brands[o["brand"]] = true
+		if BikeBuild.new(PartsDB.sanitize_build(o["parts"].duplicate()), {}).notes.any(func(n): return str(n).begins_with("Fuel starved")):
+			starved.append(str(o["bike_name"]))
+		for q in o["quirks"]:
+			all_quirks[q] = true
+		if i < 4:
+			check(o["quirks"].size() >= 1 and o["quirks"].size() <= 3 and o["goals"][0]["t"] == "ride_km" and o["goals"][-1]["t"] == "report",
+				"%s: %s, faults %s, tests %s" % [o["bike_name"], o["style"], str(o["quirks"]), str(o["goals"].map(func(g): return g["t"]))])
+	check(starved.is_empty(), "no prototype is fuel starved by accident (%s)" % ", ".join(starved))
+	check(seen_brands.size() >= 8 and seen_brands.has("Ducati") and seen_brands.has("BMW Motorrad"), "from real manufacturers (%s)" % ", ".join(seen_brands.keys()))
+	# The lap counter: every stretch of The Loop, either way round, makes a lap.
+	var seen := []
+	var laps := 0
+	for k in range(ContractTestRide.LAP_SECTORS * 2 + 3):
+		if ContractTestRide.lap_step(seen, (ContractTestRide.LAP_SECTORS * 3 - k) % ContractTestRide.LAP_SECTORS):
+			laps += 1
+	var short := []
+	var cut := false
+	for k in ContractTestRide.LAP_SECTORS - 1:
+		cut = cut or ContractTestRide.lap_step(short, k)
+	check(laps == 2 and not cut and ContractTestRide.route_name("loop") == "The Loop",
+		"the logger counts laps of The Loop (two and a bit round backwards make 2, a cut short one none)")
+	check(all_quirks.size() == ContractTestRide.ISSUES.size(), "every fault turns up on some prototype (%s)" % str(all_quirks.keys()))
+	# One with a weave, a flat spot and a weak front brake, to check them in the physics.
+	var cid := 0
+	for i in 200:
+		cid = Contracts.spawn("test_ride")
+		var q: Array = Contracts.customers()[cid]["offer"]["quirks"]
+		if q.has("weave") and q.has("flat_spot") and Contracts.rides_in(Contracts.customers()[cid]):
+			break
+		Contracts.customers().erase(cid)
+	var o: Dictionary = Contracts.customers()[cid]["offer"]
+	check(str(o["title"]).begins_with("Test ride") and o.has("paint_rgb") and Contracts.rides_in(Contracts.customers()[cid]),
+		"the rep rides the prototype in: %s" % o["title"])
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var job: Dictionary = Contracts.jobs().values()[0]
+	var bike := int(job["bike"])
+	check(Shed.bikes[bike].get("proto", false) and Contracts.in_car_park((Shed.bikes[bike]["xf"] as Transform3D).origin) and Shed.is_complete(bike),
+		"it's left whole in the car park")
+	var b := Shed.build_of(bike)
+	var clean := BikeBuild.new(b.parts, {})
+	check(b.trail < BikeBuild.SHORT_TRAIL and clean.trail > b.trail + 0.02, "the weave is real: %d mm of trail (%d mm with stock yokes)" % [
+		roundi(b.trail * 1000.0), roundi(clean.trail * 1000.0)])
+	var rpm := b.peak_torque_rpm * BikeBuild.FLAT_SPOT_AT
+	check(b.engine_torque(rpm) < clean.engine_torque(rpm) * 0.8 and absf(b.engine_torque(b.peak_torque_rpm * 1.3) - clean.engine_torque(b.peak_torque_rpm * 1.3)) < 2.0,
+		"the flat spot is real: %d Nm at %d rpm, %d without" % [roundi(b.engine_torque(rpm)), roundi(rpm), roundi(clean.engine_torque(rpm))])
+	if job["quirks"].has("weak_front"):
+		check(b.front_brake_torque < BikeBuild.new(Contracts.style_build(str(job["style"])), {}).front_brake_torque * 0.6, "and the front brake is weak")
+	check(Shed.check(Shed.me(), {"a": "unbolt", "bike": bike, "slot": "handlebars"}).contains("prototype")
+		and Shed.check(Shed.me(), {"a": "tune", "bike": bike}).contains("prototype") and not Shed.check(Shed.me(), {"a": "sale_list", "bike": bike, "ask": 9000}).is_empty(),
+		"it can't be worked on, tuned or sold")
+	check(Shed.check(Shed.me(), {"a": "contract_hand_in", "job": int(job["id"])}).contains("report"), "the rep won't collect it before the report")
+	# Riding the test: the logger's peaks come in with the ride stats.
+	check(Shed.check(Shed.me(), {"a": "mount", "bike": bike}) == "", "you can ride it")
+	Shed.request({"a": "mount", "bike": bike})
+	var top := 0.0
+	var lean := 0.0
+	var brake := 0.0
+	for g in job["goals"]:
+		match str(g["t"]):
+			"ride_top":
+				top = float(g["min"]) + 4.0
+			"ride_lean":
+				lean = float(g["min"]) + 2.0
+			"ride_brake":
+				brake = float(g["min"]) + 0.05
+	Shed.request({"a": "ride", "km": 2.0, "top_kmh": top, "kmh": 50.0, "lean": lean * 0.5, "brake_g": 0.2, "wobble": 3.0})
+	check(not ContractTestRide.tests_done(job).x == ContractTestRide.tests_done(job).y, "a short gentle ride doesn't do the test")
+	for i in 20:
+		Shed.request({"a": "ride", "km": 2.0, "top_kmh": top, "kmh": 80.0, "lean": lean, "brake_g": brake, "wobble": 4.0, "laps": 1 if i < 2 else 0})
+	Shed.request({"a": "dismount", "bike": bike, "xf": Shed.bikes[bike]["xf"]})
+	var d: Dictionary = Shed.bikes[bike].get("dyno", {"n": 0, "runs": []})
+	d["n"] = int(d.get("n", 0)) + 1
+	Shed.bikes[bike]["dyno"] = d
+	var t := ContractTestRide.tests_done(job)
+	check(t.x == t.y and float(job["log"]["km"]) >= 40.0, "the logger shows every test done (%d/%d, %.0f km)" % [t.x, t.y, float(job["log"]["km"])])
+	var truth: Dictionary = job["truth"]
+	var good := ContractTestRide.score(job, truth, job["quirks"].duplicate())
+	var wrong_r := {}
+	for k in ContractTestRide.RATINGS:
+		wrong_r[k] = 5 if int(truth[k]) <= 2 else 1
+	var bad := ContractTestRide.score(job, wrong_r, ["clutch", "gearbox"])
+	var half := ContractTestRide.score(job, truth, [job["quirks"][0], "buzz"])
+	check(is_equal_approx(float(good["score"]), 1.0) and float(bad["score"]) < 0.1 and float(half["score"]) > float(bad["score"]) and float(half["score"]) < 1.0,
+		"a report that spots the faults scores best (%.2f), half right %.2f, wrong %.2f" % [good["score"], half["score"], bad["score"]])
+	check(Shed.check(Shed.me(), {"a": "contract_report", "job": int(job["id"]), "ratings": {"handling": 3}, "issues": []}) != "",
+		"every line has to be rated")
+	var pay_none := int(Contracts.payout(job)["total"])
+	Shed.request({"a": "contract_report", "job": int(job["id"]), "ratings": truth.duplicate(), "issues": job["quirks"].duplicate()})
+	check(job.get("report") is Dictionary and is_equal_approx(float(job["report"]["score"]), 1.0), "the report's in")
+	var pay := Contracts.payout(job)
+	check(int(pay["total"]) >= int(job["pay"]) + int(job["bonus"]) - 1 and int(pay["total"]) > pay_none,
+		"a perfect report on a full test pays the fee and the whole bonus (%s)" % Contracts.money(int(pay["total"])))
+	var money0 := Shed.garage_money
+	Shed.request({"a": "contract_hand_in", "job": int(job["id"])})
+	check(not Shed.bikes.has(bike) and Contracts.jobs().is_empty() and Shed.garage_money > money0
+		and (Contracts._st()["leaving"] as Array).any(func(l): return int(l["id"]) == int(job["id"])),
+		"the rep collects it and rides it away, and the shed is paid")
+	Progress.profile = saved
+
+
+func _test_contract_new_kinds_save() -> void:
+	Shed.start_new("Tester", 705)
+	Contracts._st()["reputation"] = 10
+	var a := _batch_customer("engine")
+	Shed.request({"a": "contract_accept", "customer": a})
+	var b := Contracts.spawn("test_ride")
+	Shed.request({"a": "contract_accept", "customer": b})
+	var jobs := Contracts.jobs().duplicate(true)
+	var text := var_to_str(Shed.save_snapshot().duplicate(true))
+	Shed.start_new("Tester", 706)
+	Shed.load_state(str_to_var(text), "Tester")
+	var kinds: Array = Contracts.jobs().values().map(func(j): return str(j["kind"]))
+	check(kinds.has("batch") and kinds.has("test_ride"), "a batch order and a test ride survive a save")
+	for id in jobs:
+		var j: Dictionary = Contracts.jobs().get(id, {})
+		check(j.get("goals") == jobs[id]["goals"] and int(j.get("n", 0)) == int(jobs[id].get("n", 0)) and j.get("quirks", []) == jobs[id].get("quirks", []),
+			"with its spec or test, count and faults (%s)" % str(j.get("title", "")))
+	var tr: Dictionary = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == "test_ride")[0]
+	var bike := int(tr["bike"])
+	check(Shed.bikes.has(bike) and Shed.bikes[bike].get("proto", false) and Shed.build_of(bike).trail < 0.5, "and the prototype is still theirs")
 
 
 ## The sales office's plan: where it stands (clear of the shed's rooms, on the yard, off the road),
@@ -7490,9 +8382,12 @@ func _test_upgrade_session() -> void:
 	check(not through.call(door_from, door_to), "before the extension the back wall is solid there")
 	var nodes := ws.get_child_count()
 	Shed.request({"a": "garage_money", "value": 1000000})
+	var xp_was = Progress.profile.get("xp", 0)
+	Progress.profile["xp"] = maxi(int(xp_was), Progress.xp_for_level(20))
 	for id in GarageUpgrades.CATALOGUE:
 		Shed.request({"a": "buy_upgrade", "id": id})
-	check(Shed.upgrades.size() == GarageUpgrades.CATALOGUE.size(), "with money enough, everything can be bought in order")
+	Progress.profile["xp"] = xp_was
+	check(Shed.upgrades.size() == GarageUpgrades.CATALOGUE.size(), "with money and level enough, everything can be bought in order")
 	await get_tree().process_frame
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -8157,6 +9052,121 @@ func _test_lighting_session() -> void:
 	main.queue_free()
 	await get_tree().physics_frame
 	SaveGame.delete_slot("test_lighting")
+	SaveGame.slot_override = ""
+
+
+## Simon's 17 October round: the frame rate dropped inside the shed. The walls hide what's
+## behind them from the renderer, lamps in rooms you can't see into are left out, lamps in the
+## next room don't light your fog (below ultra), tiny things and what you hold cast no shadows,
+## the wall screens draw their pages only when they change, and the TV's live picture skips
+## the costly extras.
+func _test_shed_render_cost() -> void:
+	SaveGame.slot_override = "test_render_cost"
+	SaveGame.delete_slot("test_render_cost")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.upgrades["lounge"] = true
+	Shed.upgrades["wing"] = true
+	Shed.lights_on = true
+	Shed.changed.emit()
+	for i in 6:
+		await get_tree().process_frame
+	var ws: Workshop = main.workshop
+	var lt: Lighting = main.world.lighting
+	check(bool(ProjectSettings.get_setting("rendering/occlusion_culling/use_occlusion_culling", false)), "occlusion culling is on")
+	var occ := ws.find_children("*", "OccluderInstance3D", true, false)
+	var shown := occ.filter(func(o): return (o as Node3D).is_visible_in_tree())
+	check(occ.size() >= 20, "the walls and roofs hide what's behind them (%d occluders)" % occ.size())
+	var knocked := 0
+	for n in ws.knock["wing"]:
+		for o in (n as Node).find_children("*", "OccluderInstance3D", false, false):
+			if not (o as Node3D).is_visible_in_tree():
+				knocked += 1
+	check(knocked >= 1 and shown.size() < occ.size(), "a wall knocked through for the extension doesn't hide anything any more")
+	# Lamps left out by room.
+	var in_room := func(room: String) -> Array:
+		return lt._lights.filter(func(l): return is_instance_valid(l) and l.is_inside_tree() and Workshop.room_at(l.global_position) == room)
+	var lounge_lamps: Array = in_room.call("lounge")
+	var shed_lamps: Array = in_room.call("shed")
+	var paint_lamps: Array = in_room.call("paint")
+	check(lounge_lamps.size() >= 2 and shed_lamps.size() >= 5 and paint_lamps.size() >= 2, "lamps in the lounge, shed and paint shop (%d, %d, %d)"
+		% [lounge_lamps.size(), shed_lamps.size(), paint_lamps.size()])
+	var walk_to := func(at: Vector3) -> void:
+		main.walker.place(Transform3D(Basis(), at))
+		for i in 3:
+			await get_tree().process_frame
+	await walk_to.call(Workshop.CENTER + Vector3(0.0, 0.1, 1.0))
+	check(lounge_lamps.all(func(l): return Lighting.culled_by_room(l)) and not shed_lamps.any(func(l): return Lighting.culled_by_room(l)),
+		"in the shed the lounge's lamps upstairs are left out, the shed's aren't")
+	await walk_to.call(Vector3(0.0, GarageUpgrades.LOFT_FLOOR + 0.1, 65.0))
+	check(Workshop.room_at(main.walker.camera.global_position) == "lounge" and shed_lamps.all(func(l): return Lighting.culled_by_room(l))
+		and not lounge_lamps.any(func(l): return Lighting.culled_by_room(l)), "up in the lounge it's the other way round")
+	# A light switch still works on a lamp that's left out, and it comes back as switched.
+	Shed.lights_on = false
+	for i in 3:
+		await get_tree().process_frame
+	await walk_to.call(Workshop.CENTER + Vector3(0.0, 0.1, 16.0))
+	check(Workshop.room_at(main.walker.camera.global_position) == "" and not lt._lights.any(func(l): return is_instance_valid(l) and Lighting.culled_by_room(l)),
+		"outdoors no lamp is left out")
+	check(not ws._shed_lights[0].visible, "and the shed's lamps are as the switch left them (off)")
+	Shed.lights_on = true
+	for i in 3:
+		await get_tree().process_frame
+	check(ws._shed_lights[0].visible and int(ws._shed_lights[0].get_meta("room_cull", -1)) == 1, "switched back on, they're on")
+	# The fog: in the paint shop, below ultra, the storage room's lamps don't light it; the shed's do.
+	var store_lamps: Array = in_room.call("storage")
+	for tier in ["high", "ultra"]:
+		Lighting.overrides = {"gfx_shadows": tier, "gfx_volumetrics": "high"}
+		lt.apply()
+		await walk_to.call(Workshop.BOOTH_ROOM_CENTER + Vector3(0.0, 0.1, 2.0))
+		var cut: bool = store_lamps.all(func(l): return (l as Light3D).light_volumetric_fog_energy == 0.0)
+		var lit: bool = shed_lamps.all(func(l): return (l as Light3D).light_volumetric_fog_energy > 0.0) \
+			and paint_lamps.all(func(l): return (l as Light3D).light_volumetric_fog_energy > 0.0)
+		check(store_lamps.size() >= 1 and cut == (tier != "ultra") and lit,
+			"%s: the storage room's lamps %s the paint shop's fog; the paint shop's and the shed's do" % [tier, "don't light" if tier != "ultra" else "light"])
+	# Shadows: a tiny mesh casts one only at ultra; a part in your hands never does.
+	var bolt := MeshInstance3D.new()
+	var little := BoxMesh.new()
+	little.size = Vector3(0.07, 0.03, 0.03)
+	bolt.mesh = little
+	ws.add_child(bolt)
+	var held := MeshInstance3D.new()
+	held.mesh = BoxMesh.new()
+	main.walker.camera.add_child(held)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(bolt.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON and held.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF,
+		"ultra: a 7 cm bolt casts a shadow; what you hold doesn't")
+	Lighting.overrides = {"gfx_shadows": "high"}
+	lt.apply()
+	check(bolt.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "high: the bolt's shadow is too small to bother with")
+	Lighting.overrides = {"gfx_shadows": "ultra"}
+	lt.apply()
+	check(bolt.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON, "and back at ultra it casts one again")
+	bolt.queue_free()
+	held.queue_free()
+	# The wall screens draw their page once when it changes, not every frame.
+	var screens: Array = ws.screens().values()
+	var every_frame := 0
+	for d in screens:
+		var mode: int = (d as Dashboard)._viewport.render_target_update_mode
+		if mode == SubViewport.UPDATE_WHEN_VISIBLE or mode == SubViewport.UPDATE_ALWAYS:
+			every_frame += 1
+	check(not screens.is_empty() and every_frame == 0, "the wall screens only redraw their pages when they change (%d screens)" % screens.size())
+	# The TV's live picture: the world's sky and light, none of the costly extras.
+	var look := ws._feed_environment(1.0)
+	check(look != null and look.sky == lt.env.sky and not look.sdfgi_enabled and not look.volumetric_fog_enabled and not look.ssr_enabled,
+		"the live TV picture has the world's sky without GI, fog or reflections")
+	Lighting.overrides = {}
+	lt.apply()
+	Shed.upgrades.erase("lounge")
+	Shed.upgrades.erase("wing")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_render_cost")
 	SaveGame.slot_override = ""
 
 
@@ -10020,6 +11030,8 @@ func _test_shed_building_session() -> void:
 	check(Sfx.step_surface(w.global_position) == "carpet", "the lounge is carpeted underfoot")
 	check(ws.get_node_or_null("Upgrades/Built/LoungeSofa") != null and (ws.get_node("Upgrades/Built/LoungeSofa") as Node3D).global_position.y > GarageUpgrades.LOFT_FLOOR,
 		"the lounge's furniture is up there")
+	var up_signs := ws.find_children("*", "Label3D", true, false).filter(func(l): return (l as Label3D).text.contains("UP TO THE\nCREW"))
+	check(up_signs.is_empty() and ws.find_child("LoungeStairsPost", true, false) == null, "no 'up to the crew lounge' sign at the foot of the stairs")
 	check(Workshop.room_at(Vector3(0.0, 1.0, 65.0)) == "shed", "downstairs is still the shed")
 	main._leave()
 	main.queue_free()
@@ -12202,10 +13214,11 @@ func _test_tyre_highside() -> void:
 		b.auto_shift = t < 4.8
 		if t >= 4.8:
 			b.gear = 2
-		b.lean_input = 0.0 if t < 2.5 else 0.5
+		# Leaned a bit past a road rider's lean (about 33°: see Bike.lean_for_input).
+		b.lean_input = 0.0 if t < 2.5 else 0.8
 		if t < 5.0:
 			_hold_speed(b, 13.0)
-		elif t < 5.6:
+		elif t < 5.75:
 			b.throttle = 1.0
 			b.front_brake = 0.0
 			st["slide"] = maxf(st["slide"], absf(rad_to_deg(float(b.wheels[1]["alpha"]))))
@@ -12462,6 +13475,138 @@ func _test_hands_off() -> void:
 		await _done(r)
 
 
+func _test_direct_bars() -> void:
+	# Direct bars: the steer input is torque on the bars. Hands off it runs upright; a push on the
+	# right grip leans it right and it turns right; a push on the left grip stands it back up.
+	# At a town speed, a brisk one and a fast one, without falling off.
+	for speed in [8.0, 15.0, 30.0]:
+		var st := {"yaw0": 0.0, "lean": 0.0, "straight": 0.0, "end": 0.0, "turned": 0.0, "bar": 0.0}
+		var push: float = {8.0: 0.6, 15.0: 0.8, 30.0: 1.2}[speed]
+		var r := await ride({}, 13.0, func(b, t):
+			b.assist = 0.5
+			b.direct_bars = true
+			_hold_speed(b, speed)
+			if t < 6.0:
+				b.lean_input = 0.0
+				if t > 3.0:
+					st["straight"] = maxf(st["straight"], absf(b.lean_angle))
+				st["yaw0"] = _heading(b)
+			elif t < 6.0 + push:
+				b.lean_input = 0.5
+				st["bar"] = minf(st["bar"], b.bar_torque)
+			elif t < 9.0:
+				b.lean_input = 0.0
+				st["lean"] = maxf(st["lean"], b.lean_angle)
+				st["turned"] = wrapf(_heading(b) - float(st["yaw0"]), -PI, PI)
+			elif t < 11.0 and not st.get("up", false):
+				# Like a rider, they push it back up until it's near enough upright, then let go.
+				b.lean_input = -0.5
+				st["up"] = b.lean_angle < deg_to_rad(3.0)
+			else:
+				b.lean_input = 0.0
+				st["end"] = absf(b.lean_angle))
+		var turned: float = st["turned"]
+		check(not r["crashed"] and rad_to_deg(st["straight"]) < 3.0,
+			"Direct bars at %d m/s: hands off it runs upright (lean %.1f deg)" % [speed, rad_to_deg(st["straight"])])
+		# At 30 m/s an 18 degree lean only turns it about 6 degrees a second.
+		check(st["bar"] < -10.0 and rad_to_deg(st["lean"]) > 10.0 and turned < -deg_to_rad(10.0 if speed < 20.0 else 5.0),
+			"Direct bars at %d m/s: pushing the right grip (%.0f N m on the bars) leans it right (%.0f deg) and it turns right (%.0f deg)"
+			% [speed, st["bar"], rad_to_deg(st["lean"]), rad_to_deg(-turned)])
+		check(not r["crashed"] and rad_to_deg(st["end"]) < 10.0,
+			"Direct bars at %d m/s: pushing the left grip stands it back up (lean %.1f deg)" % [speed, rad_to_deg(st["end"])])
+		await _done(r)
+	# Feet down at walking pace the bars just point where you steer.
+	var walk := {"steer": 0.0}
+	var rw := await ride({}, 4.0, func(b, t):
+		b.direct_bars = true
+		_hold_speed(b, 1.0)
+		b.lean_input = 1.0 if t > 2.0 else 0.0
+		walk["steer"] = b.steer)
+	check(not rw["crashed"] and float(walk["steer"]) > deg_to_rad(15.0),
+		"Direct bars feet down: the bars point where you steer (%.0f deg right)" % rad_to_deg(float(walk["steer"])))
+	await _done(rw)
+
+
+func _test_direct_bars_setting() -> void:
+	# Off by default, saved with the settings, in the Settings tab, and it reaches the ridden bike
+	# (the F3 overlay's bar torque strip shows what the hands are doing).
+	var fresh: Node = load("res://scripts/settings.gd").new()
+	check(not fresh.direct_bars, "Direct bars is off by default: lean steering stays the normal way")
+	fresh.free()
+	var was: bool = Settings.direct_bars
+	Settings.direct_bars = true
+	Settings.save_settings()
+	Settings.direct_bars = false
+	Settings.load_settings()
+	check(Settings.direct_bars, "Direct bars is saved with the settings (on)")
+	Settings.direct_bars = false
+	Settings.save_settings()
+	Settings.direct_bars = true
+	Settings.load_settings()
+	check(not Settings.direct_bars, "and off again")
+	check(TelemetryOverlay.STRIPS.any(func(n): return str(n).begins_with("Bar torque")),
+		"the F3 overlay has a bar torque strip")
+	var real_path := Progress.path
+	Progress.path = "user://profile_direct_bars_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	var boxes: Array = main.menu.find_children("*", "CheckBox", true, false).filter(func(c): return (c as CheckBox).text.begins_with("Direct bars"))
+	check(boxes.size() == 1, "the Settings tab has a Direct bars checkbox")
+	main._start_session()
+	Shed.request({"a": "mount", "bike": _bike_named("Old Faithful")})
+	Settings.direct_bars = true
+	for i in 5:
+		await get_tree().physics_frame
+	check(main.bike != null and main.bike.direct_bars, "Direct bars in the settings reaches the bike")
+	# A held key pushes harder the longer it's held; a small stick move is a gentle push.
+	main._kb_bars = 0.0
+	var gentle: float = main._steer_input(0.3, 0.0)
+	Input.action_press("lean_right")
+	var held := []
+	for i in 4:
+		held.append(main._steer_input(0.0, 0.1))
+	Input.action_release("lean_right")
+	main._kb_bars = 0.0
+	check(held[0] > 0.1 and held[0] < 0.4 and held[3] > 0.9,
+		"Direct bars: holding the key pushes harder and harder (%s)" % str(held))
+	check(absf(gentle) < 0.1, "Direct bars: a small stick move is a gentle push (stick 0.3 gives %.2f)" % gentle)
+	Settings.direct_bars = false
+	for i in 2:
+		await get_tree().physics_frame
+	check(not main.bike.direct_bars, "and turning it off goes back to lean steering")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	Progress.path = real_path
+	DirAccess.remove_absolute("user://profile_direct_bars_test.json")
+	Settings.direct_bars = was
+	Settings.save_settings()
+
+
+func _test_sprocket_size() -> void:
+	# Sprockets are their real size for their teeth: a road 45 tooth rear about 23 cm across, an
+	# MX 52 about 27, a 15 tooth front about 8, and the rear well inside the wheel's rim.
+	var r45 := BikeModel.sprocket_radius(45) * 2000.0
+	var r52 := BikeModel.sprocket_radius(52) * 2000.0
+	var f15 := BikeModel.sprocket_radius(15) * 2000.0
+	check(r45 > 200.0 and r45 < 240.0 and r52 > 240.0 and r52 < 275.0 and f15 > 65.0 and f15 < 85.0,
+		"sprockets are a real size: 45T %.0f mm, 52T %.0f mm, front 15T %.0f mm across" % [r45, r52, f15])
+	for style in ["sport", "scrambler"]:
+		var m := BikeModel.new()
+		add_child(m)
+		m.build_from(BikeBuild.new(Contracts.style_build(style)))
+		# The biggest disc in the final drive is the rear sprocket: measure it front to back.
+		var sp := 0.0
+		for mi in m._slot_meshes.get("final_drive", []):
+			sp = maxf(sp, (m._local_xform(mi) * (mi as VisualInstance3D).get_aabb()).size.z)
+		var wheel := m.slot_bounds("rear_wheel").size.y
+		check(sp > 0.18 and sp < 0.29 and sp < wheel * 0.6,
+			"%s: the rear sprocket (%.0f mm across) sits well inside the back wheel (%.0f mm)" % [style, sp * 1000.0, wheel * 1000.0])
+		m.free()
+
+
 func _test_steering_wobble() -> void:
 	# A shove on the bars: on a stock bike the front shakes its head at its wobble frequency (or
 	# just settles, too damped to swing) and the shake dies away: hands on up to motorway speeds
@@ -12483,7 +13628,9 @@ func _test_steering_wobble() -> void:
 		% [damped["at"][1], plain["at"][1], damped["at"][2], plain["at"][2]])
 	# A genuinely bad setup, next to no trail: the shake grows into a tank-slapper; a damper cures it.
 	var bad := await _bar_kick(SHORT_TRAIL_BIKE, 40.0, false)
-	check(bad["at"][2] > 3.0, "with next to no trail a shove at the bars at %d km/h grows into a tank-slapper (%.1f deg after 1 s)" % [roundi(40.0 * 3.6), bad["at"][2]])
+	# (The rider's arms only soak it up a little at speed, so it grows rather than settles.)
+	check(bad["at"][3] > 3.0 and bad["at"][3] > bad["at"][0] * 2.0,
+		"with next to no trail a shove at the bars at %d km/h grows into a tank-slapper (%.1f deg after 0.1 s, %.1f after 2 s)" % [roundi(40.0 * 3.6), bad["at"][0], bad["at"][3]])
 	var cured := await _bar_kick(_merge(SHORT_TRAIL_BIKE, {"steering_damper": "damper_rotary_race"}), 40.0, false)
 	check(not cured["crashed"] and cured["at"][2] < cured["at"][0], "a steering damper on it calms it (%.2f deg after 1 s)" % cured["at"][2])
 
@@ -12496,7 +13643,7 @@ func _test_turn_in() -> void:
 		var r := await ride(Contracts.style_build(st), 7.0, func(b, t):
 			b.assist = 0.0
 			_hold_speed(b, 15.0)
-			b.lean_input = 0.0 if t < 4.0 else 0.5
+			b.lean_input = 0.0 if t < 4.0 else Bike.ROAD_INPUT
 			if mark["t"] < 0.0 and b.lean_angle > deg_to_rad(20.0):
 				mark["t"] = t - 4.0)
 		times[st] = mark["t"]
@@ -14449,26 +15596,32 @@ func _test_paint_bench_extras() -> void:
 	var bench: PaintBench = main.paint_bench
 	var w: Walker = main.walker
 	w.set_tool("hands")
-	check(room.find_child("ShopMixingBench", true, false) != null and Workshop.room_at(PaintBay.SHOP_STAND + Vector3(0, 0.5, 0)) == "paint"
-		and not Workshop.booth_footprint().has_point(Vector2(PaintBay.SHOP_BENCH.end.x, PaintBay.SHOP_BENCH.end.y)),
-		"a compact mixing bench in the paint shop itself, beside the spray bay")
-	# Up to it: F at the paint shop's bench opens the same bench, the view on its own scale.
+	var big := PaintBay.BENCH
+	var booth := PaintBay.BOOTH
+	var stand := Rect2(PaintBay.STAND_AT.x - 0.2, PaintBay.STAND_AT.z - 0.2, 0.4, 0.4)
+	check(room.find_child("ShopMixingBench", true, false) != null and PaintBay.ROOM.encloses(PaintBay.SHOP_BENCH)
+		and PaintBay.ROOM.has_point(Vector2(PaintBay.SHOP_STAND.x, PaintBay.SHOP_STAND.z))
+		and not PaintBay.SHOP_BENCH.intersects(big) and not PaintBay.SHOP_BENCH.intersects(booth) and not stand.grow(0.25).has_point(Vector2(PaintBay.SHOP_STAND.x, PaintBay.SHOP_STAND.z))
+		and PaintBay.station_near(PaintBay.SHOP_STAND) == "shop" and PaintBay.station_near(PaintBay.BENCH_STAND) == "bay",
+		"the compact mixing bench is in the paint mixing bay, beside the big one, clear of the booth and the stand")
+	# Up to it: F at the compact bench opens the same bench, the view on its own scale.
 	w.place(Transform3D(Basis(), PaintBay.SHOP_STAND + Vector3(0, 0.05, 0)))
+	w.rotation.y = -PI * 0.5   # facing the east wall and the bench
 	w._look(0.0, -0.7)
 	for i in 6:
 		await get_tree().physics_frame
 		await get_tree().process_frame
-	check(str(w.target.get("kind", "")) == "paint_bay" and str(w.target.get("station", "")) == "bench", "looking at the shop's bench (%s)" % str(w.target))
+	check(str(w.target.get("kind", "")) == "paint_bay" and str(w.target.get("station", "")) == "bench", "looking at the compact bench (%s)" % str(w.target))
 	_press("interact")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	check(bench.visible and PaintBay.at_bench() == me and PaintBay.station() == "shop" and room.shop_camera.current,
-		"F: stepped up to the paint shop's bench, looking down on its scale")
+		"F: stepped up to the compact bench, looking down on its scale")
 	bench.press("White base  (%s in stock)" % PaintBay.stock_text("W"))
 	for i in 2:
 		await get_tree().process_frame
 	check(not PaintBay.bench_tin().is_empty() and room._bench_tin != null and room._bench_tin.position.distance_to(PaintBay.SHOP_SCALE_AT) < 0.1,
-		"the tin goes on the shop bench's scale")
+		"the tin goes on the compact bench's scale")
 	# The tint rack: every name in full, two to a row in the card.
 	bench.tint = "UB"
 	bench._sig = ""
@@ -15225,3 +16378,2008 @@ func _test_money_graph_moves() -> void:
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
 	await get_tree().process_frame
+
+
+# ---------------------------------------------------------------------------- recovery (tests/recovery_tests.gd)
+
+func _recovery() -> RefCounted:
+	return load("res://tests/recovery_tests.gd").new(self)
+
+
+func _test_recovery_car() -> void:
+	await _recovery().test_car()
+
+
+func _test_recovery_trailer() -> void:
+	await _recovery().test_trailer()
+
+
+func _test_recovery_winch() -> void:
+	await _recovery().test_winch()
+
+
+func _test_recovery_dolly() -> void:
+	await _recovery().test_dolly()
+
+
+func _test_recovery_straps() -> void:
+	await _recovery().test_straps()
+
+
+func _test_recovery_assess() -> void:
+	await _recovery().test_assess()
+
+
+func _test_recovery_save() -> void:
+	await _recovery().test_save()
+
+
+func _test_recovery_walk_on() -> void:
+	await _recovery().test_walk_on()
+
+
+func _test_walker_jump() -> void:
+	await _recovery().test_jump()
+
+
+func _test_recovery_model() -> void:
+	_recovery().test_model()
+
+
+func _test_recovery_controls() -> void:
+	await _recovery().test_controls()
+
+
+func _test_recovery_horn() -> void:
+	await _recovery().test_horn()
+
+
+## Simon's 16 October round: road dirt builds up where it really goes as a bike's ridden (more
+## with distance, heaviest behind the front wheel and under the mudguards, flies on the front at
+## speed), old saves and delivered bikes get a sensible pattern, and it all survives a save.
+func _test_dirt_accrual() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	var all_dirt := func() -> float:
+		var sum := 0.0
+		for slot in PartsDB.SLOTS:
+			var id := Shed.item_on(faithful, slot)
+			if id != 0:
+				sum += float(Shed.items[id]["dirt"])
+		return sum
+	# A delivered bike's dirty to start with, and not evenly: the muck low down and underneath,
+	# and a part up high (the tank) only takes its share of the bike's figure, mostly not on top.
+	var tank := Shed.item_on(faithful, "tank")
+	var old: Dictionary = Shed.items[tank].duplicate(true)
+	old.erase("grime")
+	old["dirt"] = 0.5
+	var settled := Dirt.cells(old, "tank")
+	var mean := 0.0
+	for v in settled:
+		mean += v
+	mean /= Dirt.CELLS
+	var fork_old := {"part": str(Shed.items[Shed.item_on(faithful, "fork")]["part"]), "dirt": 0.5}
+	var fork_mean := 0.0
+	for v in Dirt.cells(fork_old, "fork"):
+		fork_mean += v / Dirt.CELLS
+	check(absf(mean - 0.5 * Dirt.settle_share("tank")) < 0.01 and mean < 0.25 and absf(fork_mean - 0.5 * Dirt.settle_share("fork")) < 0.01
+		and fork_mean > mean * 2.0 and Dirt.side(settled, 2) < Dirt.side(settled, 3),
+		"a part from an old save (or just delivered) keeps its dirt where it collects: the tank far less than the fork (%.2f / %.2f), little on top (top %.2f, underneath %.2f)" % [mean, fork_mean, Dirt.side(settled, 2), Dirt.side(settled, 3)])
+	var guard_old := {"part": "steel_front_mudguard", "dirt": 0.5}
+	check(PartsDB.parts.has("steel_front_mudguard") == false or Dirt.side(Dirt.cells(guard_old, "front_mudguard"), 3) > Dirt.side(Dirt.cells(guard_old, "front_mudguard"), 2),
+		"and a mudguard's caked underneath")
+	# Wipe it clean, then ride it.
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(faithful, slot)
+		if id != 0:
+			Dirt.clear(Shed.items[id])
+	Shed.bikes[faithful]["rider"] = me
+	Shed.crew[me]["riding"] = faithful
+	Shed.request({"a": "ride", "km": 1.0, "dirt_km": 0.3, "fly_km": 0.0, "fuel": 0.0})
+	var short := float(all_dirt.call())
+	Shed.request({"a": "ride", "km": 2.0, "dirt_km": 1.2, "fly_km": 0.0, "fuel": 0.0})
+	var longer := float(all_dirt.call())
+	check(short > 0.0 and longer > short * 2.0, "the further it's ridden, the dirtier it gets (%.2f, then %.2f)" % [short, longer])
+	# Where it went: the dirtiest patch off the wheels is behind the front wheel or under a guard,
+	# the front of the engine is muckier than the top of the tank, a guard's underside more than its top.
+	var best := -1.0
+	var best_at := ""
+	var best_where := Vector2.ZERO
+	var best_d := -1
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(faithful, slot)
+		if id == 0 or Dirt.ROTATING.has(slot):
+			continue
+		var l := Dirt.cells(Shed.items[id], slot)
+		for d in Dirt.DIRS:
+			for iy in Dirt.NY:
+				for ix in Dirt.NX:
+					var v: float = l[Dirt.index(d, ix, iy)]
+					if v > best:
+						best = v
+						best_at = slot
+						best_d = d
+						best_where = Dirt.where(slot, ix, iy)
+	check(best > 0.0 and best_where.x < 0.6 and best_where.y < 0.75 and best_d in [3, 5],
+		"the dirtiest patch is behind the front wheel, facing it or underneath (%s, facing %d, %.2f of the way back, %.2f m up: %.2f)" % [best_at, best_d, best_where.x, best_where.y, best])
+	var engine := Dirt.cells(Shed.items[Shed.item_on(faithful, "engine")], "engine")
+	var tank_l := Dirt.cells(Shed.items[tank], "tank")
+	check(Dirt.side(engine, 5) > Dirt.side(tank_l, 2) * 3.0, "the front of the engine's far muckier than the top of the tank (%.3f / %.3f)" % [Dirt.side(engine, 5), Dirt.side(tank_l, 2)])
+	var fork := Dirt.cells(Shed.items[Shed.item_on(faithful, "fork")], "fork")
+	var low := 0.0
+	var high := 0.0
+	for ix in Dirt.NX:
+		low += fork[Dirt.index(0, ix, 0)] + fork[Dirt.index(1, ix, 0)]
+		high += fork[Dirt.index(0, ix, Dirt.NY - 1)] + fork[Dirt.index(1, ix, Dirt.NY - 1)]
+	check(low > high * 1.5, "the lower sides take the road spray: the fork legs' sides are muckier low down (%.2f / %.2f)" % [low, high])
+	var guard_id := Shed.item_on(faithful, "front_mudguard")
+	if guard_id != 0:
+		var g := Dirt.cells(Shed.items[guard_id], "front_mudguard")
+		check(Dirt.side(g, 3) > Dirt.side(g, 2) * 2.0, "the front mudguard catches it underneath (%.3f under, %.3f on top)" % [Dirt.side(g, 3), Dirt.side(g, 2)])
+	# Flies: on the front of the headlight at speed, not the back of it.
+	var lamp := Shed.item_on(faithful, "headlight")
+	if lamp != 0:
+		var before := Dirt.cells(Shed.items[lamp], "headlight")
+		Shed.request({"a": "ride", "km": 3.0, "dirt_km": 0.0, "fly_km": 3.0, "fuel": 0.0})
+		var after := Dirt.cells(Shed.items[lamp], "headlight")
+		check(Dirt.side(after, 5) > Dirt.side(before, 5) + 0.05 and absf(Dirt.side(after, 4) - Dirt.side(before, 4)) < 0.001,
+			"dead flies build up on the front of the headlight at speed, none on the back (%.3f to %.3f)" % [Dirt.side(before, 5), Dirt.side(after, 5)])
+	Shed.bikes[faithful]["rider"] = 0
+	Shed.crew[me]["riding"] = 0
+	# The overall figure everything else uses is always the regions' mean, and things that only
+	# know that figure (the brush, a contract's mucky bike) bring the regions into line.
+	var eid := Shed.item_on(faithful, "engine")
+	var levels := Dirt.cells(Shed.items[eid], "engine")
+	var sum := 0.0
+	for v in levels:
+		sum += v
+	check(absf(sum / Dirt.CELLS - float(Shed.items[eid]["dirt"])) < 0.004 and Shed.condition_of(Shed.items[eid]).has("grime"),
+		"a part's dirt is the mean of its regions, and its condition carries where it is (for drawing it)")
+	Shed.items[eid]["dirt"] = 0.0
+	check(Dirt.is_clean(Dirt.cells(Shed.items[eid], "engine")), "brushed clean, every region's clean")
+	Shed.items[eid]["dirt"] = 0.6
+	var mucked := Dirt.cells(Shed.items[eid], "engine")
+	sum = 0.0
+	for v in mucked:
+		sum += v
+	var had := 0.0
+	for v in levels:
+		had += v / Dirt.CELLS
+	check(absf(sum / Dirt.CELLS - (had + (0.6 - had) * Dirt.settle_share("engine"))) < 0.01,
+		"mucked up by a contract, the regions take on the engine's share of it (%.2f)" % (sum / Dirt.CELLS))
+	Dirt.store(Shed.items[eid], engine)
+	# It all survives a save, and a save from before regions loads with its dirt.
+	var text := var_to_str(Shed.save_snapshot().duplicate(true))
+	Shed.start_new("Tester", 12)
+	Shed.load_state(str_to_var(text), "Tester")
+	var back := Dirt.cells(Shed.items[eid], "engine")
+	var same := true
+	for i in Dirt.CELLS:
+		same = same and absf(back[i] - engine[i]) < 0.005
+	check(same and Shed.items[eid]["grime"] is PackedByteArray, "where the dirt is survives a save")
+	var snap: Dictionary = Shed._snapshot().duplicate(true)
+	for id in snap["items"]:
+		(snap["items"][id] as Dictionary).erase("grime")
+	var dirt_was := float(snap["items"][eid]["dirt"])
+	Shed.start_new("Tester", 13)
+	Shed.load_state(snap, "Tester")
+	check(not Shed.items[eid].has("grime") and absf(float(Shed.items[eid]["dirt"]) - dirt_was) < 0.001
+		and absf(Dirt.side(Dirt.cells(Shed.items[eid], "engine"), 5) - 0.0) > 0.0, "a save from before regions loads with its dirt, laid on in the usual pattern")
+
+
+## Washing on the host: the hose reaches the wash bay and the shed (not outside), the regions
+## washed come down by the share washed off, a part called clean is worth its XP once, the
+## whole bike clean the bike-washed XP, and a spotless bike sells for a little more.
+func _test_wash_rules() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	check(Shed.check(me, {"a": "wash_cells", "bike": faithful, "parts": {}, "clean": []}) == Wash.NO_REACH, "in the shed it can't be pressure washed: that's done in the wash bay")
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+	check(Wash.reaches(Workshop.WASH_CENTER) and Wash.reaches(Workshop.WASH_CENTER + Vector3(0.0, 0.0, Workshop.WASH_HALF.y + 0.5))
+		and not Wash.reaches(Workshop.CENTER) and not Wash.reaches(Workshop.CENTER + Vector3(0.0, 0.0, 40.0)),
+		"the hose reaches the wash bay and just out of its open front, not the shed or the road")
+	check(Wash.drain_near(Workshop.WASH_CENTER).distance_to(Wash.BAY_DRAIN) < 0.01, "the water runs to the drain in the middle of the wash bay")
+	var full := PackedFloat32Array()
+	full.resize(Dirt.CELLS)
+	full.fill(0.8)
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(faithful, slot)
+		if id != 0:
+			Dirt.store(Shed.items[id], full)
+	var tyre := Shed.item_on(faithful, "front_tyre")
+	var fork := Shed.item_on(faithful, "fork")
+	var half := {}
+	for c in Dirt.CELLS:
+		if c < Dirt.NX * Dirt.NY:
+			half[c] = 0.5   # the +x side only
+	Shed.request({"a": "wash_cells", "bike": faithful, "parts": {tyre: half}, "clean": []})
+	var l := Dirt.cells(Shed.items[tyre], "front_tyre")
+	check(absf(Dirt.side(l, 0) - 0.4) < 0.01 and absf(Dirt.side(l, 1) - 0.8) < 0.01, "washing one side halves it there and leaves the other (%.2f / %.2f)" % [Dirt.side(l, 0), Dirt.side(l, 1)])
+	Shed.request({"a": "wash_cells", "bike": faithful, "parts": {tyre: half}, "clean": []})
+	check(absf(Dirt.side(Dirt.cells(Shed.items[tyre], "front_tyre"), 0) - 0.2) < 0.01, "and a second washer's share comes off what's left")
+	var xp0 := int(Progress.profile["xp"])
+	Shed.request({"a": "wash_cells", "bike": faithful, "parts": {}, "clean": [fork]})
+	var xp1 := int(Progress.profile["xp"])
+	Shed.request({"a": "wash_cells", "bike": faithful, "parts": {}, "clean": [fork]})
+	check(float(Shed.items[fork]["dirt"]) == 0.0 and xp1 > xp0 and int(Progress.profile["xp"]) == xp1, "a part called clean is clean, and worth its XP once (%d, %d, %d)" % [xp0, xp1, int(Progress.profile["xp"])])
+	var price := Money.bike_sale(faithful)
+	check(Money.clean_bonus(faithful) == 0.0, "not spotless yet: no bonus")
+	var rest := []
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(faithful, slot)
+		if id != 0:
+			rest.append(id)
+	Shed.request({"a": "wash_cells", "bike": faithful, "parts": {}, "clean": rest})
+	check(Shed._bike_dirt(faithful, true) == 0.0 and int(Progress.profile["xp"]) > xp1 + 5, "the whole bike clean: the bike-washed XP (%d)" % (int(Progress.profile["xp"]) - xp1))
+	check(Money.clean_bonus(faithful) == Money.BONUS_CLEAN and Money.bike_sale(faithful) > price, "a spotless bike sells for a little more (%d to %d)" % [price, Money.bike_sale(faithful)])
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 40.0))
+	check(Shed.check(me, {"a": "wash_cells", "bike": faithful, "parts": {}, "clean": []}) == Wash.NO_REACH, "out on the road, the hose doesn't reach")
+
+
+## Pressure washing a bike by hand: F with the pressure washer on it brings up the wash
+## controls and the wash readout; the dirt's drawn on the bike; the jet washes off the side facing
+## it (not the far side) where it lands, the shed hears, a part coming clean dings once, the whole
+## bike clean dings bigger; the water splashes and runs off to the drain.
+func _test_wash_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var ws: Workshop = main.workshop
+	var faithful := _bike_named("Old Faithful")
+	var me := Shed.me()
+	Shed.bikes[faithful]["rider"] = me
+	Shed.crew[me]["riding"] = faithful
+	Shed._wear_from_ride(faithful, {"km": 6.0, "dirt_km": 3.0, "fly_km": 3.0})
+	Shed.bikes[faithful]["rider"] = 0
+	Shed.crew[me]["riding"] = 0
+	# Wheeled into the wash bay.
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+	Shed.changed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	var model := ws.bike_model(faithful)
+	check(model != null and model.dirt_layer != null and model.dirt_layer.material_for("engine") != null and model.dirt_layer.mesh_count() > 20,
+		"the muck from a ride is drawn on the bike, part by part (%d meshes)" % (model.dirt_layer.mesh_count() if model and model.dirt_layer else 0))
+	check(ws.get_node_or_null("WashDrain") != null, "there's a drain in the middle of the wash bay floor")
+	w.set_tool("lance")
+	await _aim_at(main, faithful, "engine")
+	check(w.wash_target() == faithful, "the pressure washer's on the bike")
+	check(str(w.target.get("kind", "")) == "part" and model._highlighted == "",
+		"looking at a part with the pressure washer, it isn't highlighted, so clean and dirty bits show (%s)" % model._highlighted)
+	_press("interact")
+	await get_tree().physics_frame
+	check(not w.wash_mode.is_empty() and w.wash != null, "F brings up the wash controls on it")
+	for i in 3:
+		await get_tree().physics_frame
+	check(model._highlighted == "", "nor while washing")
+	if w.wash == null:
+		main._leave()
+		main.queue_free()
+		await get_tree().physics_frame
+		return
+	var job: WashJob = w.wash
+	job.prepare_all()
+	for i in 3:
+		await get_tree().process_frame
+	var hud: WashHud = main.hud.wash_hud
+	check(hud.showing() and not main.hud._panel.visible, "the wash readout comes up in place of the side panel (%s, %s)" % [hud.showing(), main.hud._panel.visible])
+	var st0: Dictionary = job.stats()
+	check(job.e_pos.size() > 500 and float(st0["clean"]) < 0.6, "the bike's dirty to start with (%.0f%% clean, %d surface points)" % [float(st0["clean"]) * 100.0, job.e_pos.size()])
+	var ei := job.slots.find("engine")
+	var engine_id := Shed.item_on(faithful, "engine")
+	var toward: Vector3 = (w.global_position - model.global_position)
+	toward.y = 0.0
+	var near_d := Dirt.facing_of(model.global_transform.basis.inverse() * toward.normalized())
+	var far_d := near_d + (1 if near_d % 2 == 0 else -1)
+	var before := Dirt.cells(Shed.items[engine_id], "engine")
+	Input.action_press("act")
+	for i in 90:
+		await get_tree().physics_frame
+	Input.action_release("act")
+	for i in 30:
+		await get_tree().physics_frame
+	var near_w := 0.0
+	var near_n := 0
+	var far_w := 0.0
+	var far_n := 0
+	var b := model.global_transform.basis
+	for i in job.e_pos.size():
+		if job.e_slot[i] != ei:
+			continue
+		var nw: Vector3 = (b * job.e_n[i]).normalized()
+		if nw.dot(toward.normalized()) > 0.6:
+			near_w += job.e_w[i]
+			near_n += 1
+		elif nw.dot(toward.normalized()) < -0.6:
+			far_w += job.e_w[i]
+			far_n += 1
+	check(near_n > 10 and near_w / near_n > 0.05 and far_n > 10 and far_w / far_n < 0.005,
+		"the jet washes the side of the engine facing it, not the far side (%.2f / %.3f washed)" % [near_w / maxf(near_n, 1), far_w / maxf(far_n, 1)])
+	var after := Dirt.cells(Shed.items[engine_id], "engine")
+	check(Dirt.side(after, near_d) < Dirt.side(before, near_d) - 0.01 and absf(Dirt.side(after, far_d) - Dirt.side(before, far_d)) < 0.005,
+		"and the shed hears: that side's cleaner, the far side's as it was (%.3f to %.3f; far %.3f)" % [Dirt.side(before, near_d), Dirt.side(after, near_d), Dirt.side(after, far_d)])
+	check(model.dirt_layer.dims != Vector3i.ZERO and float(model.dirt_layer.material_for("engine").get_shader_parameter("has_mask")) == 1.0,
+		"you see exactly where it went: the wash mask's on the bike")
+	check(w._wash_fx != null and w._wash_fx._puddle.visible, "the water's run off onto the floor")
+	var bay_mist: WashMist = main.workshop.wash_mist if main.workshop else null
+	check(bay_mist != null and bay_mist.showing() and bay_mist._haze.emitting, "and mist is starting to hang in the wash bay (%.2f)" % (bay_mist.level if bay_mist else 0.0))
+	# One part washed all over: it dings once, and only once.
+	var small := ""
+	for s in ["front_mudguard", "headlight", "tank", "front_disc"]:
+		if job.slots.has(s) and not job.done.get(job.slots.find(s), false):
+			small = s
+			break
+	var si := job.slots.find(small)
+	var xf := model.global_transform
+	for rep in 3:
+		for i in job.e_pos.size():
+			if job.e_slot[i] != si or job.e_w[i] >= 1.0:
+				continue
+			var n: Vector3 = (xf.basis * job.e_n[i]).normalized()
+			var p: Vector3 = xf * job.e_pos[i]
+			# Square on if nothing's in the way, else from a little round about (as you'd aim it).
+			for t in [Vector3.ZERO] + Array(WashJob.tilts()):
+				var from: Vector3 = (n + (xf.basis * t) * 0.8).normalized()
+				if from.dot(n) < 0.3:
+					continue
+				var sh := job.surface_hit(p + from * 0.3, -from)
+				if not sh.is_empty() and (sh["at"] as Vector3).distance_to(p) < 0.02:
+					job.step(0.25, p + from * 0.3, -from, true)
+					break
+	var dings := job.cues.filter(func(c): return str(c["kind"]) == "part" and str(c["slot"]) == small).size()
+	job.cues.clear()
+	for i in 20:
+		job.step(0.25, xf * job.e_pos[0] + Vector3.UP * 0.5, Vector3.DOWN, true)
+	var again := job.cues.filter(func(c): return str(c["kind"]) == "part" and str(c["slot"]) == small).size()
+	check(si >= 0 and job.done.get(si, false) and dings == 1 and again == 0, "washed all over, the %s comes clean with one ding (%d, then %d; %.2f clean)" % [small, dings, again, job.part_clean(si) if si >= 0 else -1.0])
+	check(Sfx.stream("wash_ding") != null and Sfx.stream("wash_clean") != null, "there's a ding for a part and a bigger one for the bike")
+	# The rest of it, and the whole bike's clean.
+	for i in job.e_pos.size():
+		job.wsum[job.e_slot[i] * Dirt.CELLS + job.e_cell[i]] += 1.0 - job.e_w[i]
+		job.e_w[i] = 1.0
+	job._check_done()
+	var bikes := job.cues.filter(func(c): return str(c["kind"]) == "bike").size()
+	job._check_done()
+	check(job.bike_done and bikes == 1 and job.cues.filter(func(c): return str(c["kind"]) == "bike").size() == 1, "the whole bike clean: the big ding, once")
+	w._send_wash(faithful)
+	await get_tree().physics_frame
+	check(Shed._bike_dirt(faithful, true) == 0.0 and Money.clean_bonus(faithful) > 0.0, "and the shed has it spotless")
+	_press("interact")
+	await get_tree().physics_frame
+	check(w.wash_mode.is_empty() and not Shed.crew[me].get("wash_fire", false), "F again steps back, and the jet's off")
+	# The trigger alone on a bike brings the wash controls straight up.
+	await _aim_at(main, faithful, "engine")
+	Input.action_press("act")
+	for i in 3:
+		await get_tree().physics_frame
+	Input.action_release("act")
+	check(not w.wash_mode.is_empty(), "the trigger on a bike brings the wash controls up too")
+	w.set_tool("hands")
+	await get_tree().physics_frame
+	check(w.wash_mode.is_empty(), "putting the washer away steps back")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The names of the meshes a model drew for `slot`, without the number Godot adds to a name
+## a sibling already has (a second "Lid" is "Lid2").
+func _slot_mesh_names(model: BikeModel, slot: String) -> Array:
+	var out := []
+	for mi in model._slot_meshes[slot]:
+		var n := str(mi.name)
+		while n.length() > 1 and n[-1] in "0123456789":
+			n = n.left(-1)
+		out.append(n)
+	return out
+
+
+## Top boxes are boxes: a plastic case is a tub and a lid with a seam, an alloy case has its
+## latches, and the roll bag (and the roll-top panniers) have their rolled-down ends. None is
+## the old pill shape, and each sits on the rack behind the seat.
+func _test_luggage_looks() -> void:
+	check(PartsDB.get_part("roll_bag").get("style", "") == "roll", "there's a roll bag to strap on the rack")
+	for id in PartsDB.by_kind["top_box"]:
+		var parts := Contracts.style_build("tourer")
+		parts["top_box"] = id
+		var model := BikeModel.new()
+		add_child(model)
+		model.build_from(BikeBuild.new(parts), Color(0.1, 0.35, 0.8), {}, null, false)
+		var names := _slot_mesh_names(model, "top_box")
+		var pill: bool = model._slot_meshes["top_box"].any(func(mi): return mi is MeshInstance3D and mi.mesh is CapsuleMesh)
+		var box := model.slot_bounds("top_box")
+		var style := str(PartsDB.get_part(id).get("style", ""))
+		var shaped := false
+		match style:
+			"small", "large":
+				shaped = names.has("Tub") and names.has("Lid") and (style == "small" or names.has("Backrest"))
+			"alloy":
+				shaped = names.has("Body") and names.has("Lid") and names.count("Latch") == 2
+			"roll":
+				shaped = names.has("RollBag") and names.count("RolledEnd") == 2
+			"crate":
+				shaped = names.size() >= 14
+			"trunk":
+				shaped = names.has("Trunk") and names.has("Lid")
+		check(shaped and not pill and box.get_center().z > model._tail.z and box.size.y > 0.15,
+			"the %s looks the part, on the rack behind the seat (%s)" % [id, ", ".join(names.filter(func(n): return not n.begins_with("@")))])
+		model.queue_free()
+	for id in PartsDB.by_kind["panniers"]:
+		var parts := Contracts.style_build("tourer")
+		parts["panniers"] = id
+		var model := BikeModel.new()
+		add_child(model)
+		model.build_from(BikeBuild.new(parts), Color(0.1, 0.35, 0.8), {}, null, false)
+		var names := _slot_mesh_names(model, "panniers")
+		var pill: bool = model._slot_meshes["panniers"].any(func(mi): return mi is MeshInstance3D and mi.mesh is CapsuleMesh)
+		var ok := not pill
+		match str(PartsDB.get_part(id).get("style", "")):
+			"roll":
+				ok = ok and names.count("RolledTop") == 2 and names.count("RollBag") == 2
+			"alloy":
+				ok = ok and names.count("Latch") == 4
+			"soft":
+				ok = ok and names.count("Bag") == 2
+		check(ok, "the %s pannier looks like what it is" % id)
+		model.queue_free()
+
+
+## A bike exports to a .glb that loads back with its parts' meshes and materials, the paint
+## on them, in metres with the origin on the ground between the wheels and the front to +Z.
+func _test_glb_export() -> void:
+	var bike: Dictionary = GlbExport.pick_bikes()[0]
+	check(GlbExport.pick_bikes().size() == 5 and str(bike["file"]).begins_with(str(bike["style"]) + "_"), "five release bikes, named <style>_<name>")
+	var model := GlbExport.bike_model(bike)
+	var path := OS.get_user_data_dir() + "/zz_glb_test.glb"
+	var rep := GlbExport.export_model(model, path, str(bike["name"]))
+	var build: BikeBuild = model._build
+	model.free()
+	check(rep["error"] == OK and FileAccess.file_exists(path), "the bike exports to a .glb (%d meshes, %d materials)" % [rep["meshes"], rep["materials"]])
+	var doc := GLTFDocument.new()
+	var state := GLTFState.new()
+	check(doc.append_from_file(path, state) == OK, "and the file loads back")
+	var scene := doc.generate_scene(state) as Node3D
+	var meshes := 0
+	var unpainted := 0
+	var paint_found := false
+	var paint: Color = bike["paint"]
+	var bounds := AABB()
+	var front := 0.0
+	for n in GlbExport._walk(scene):
+		if not n is MeshInstance3D:
+			continue
+		var mi := n as MeshInstance3D
+		meshes += 1
+		var box: AABB = mi.transform * mi.get_aabb()
+		bounds = box if meshes == 1 else bounds.merge(box)
+		if str(mi.name) == "front_wheel":
+			front = box.get_center().z
+		for s in mi.mesh.get_surface_count():
+			var m := mi.mesh.surface_get_material(s)
+			if not m is BaseMaterial3D:
+				unpainted += 1
+			elif (m as BaseMaterial3D).albedo_color.is_equal_approx(paint) or ((m as BaseMaterial3D).albedo_color - paint).get_luminance() < 0.02 \
+					and absf((m as BaseMaterial3D).albedo_color.r - paint.r) < 0.03 and absf((m as BaseMaterial3D).albedo_color.g - paint.g) < 0.03:
+				paint_found = true
+	check(meshes >= 25 and unpainted == 0, "it has %d part meshes, every surface with a material" % meshes)
+	check(paint_found, "the tank's paint came through")
+	check(absf(bounds.position.y) < 0.03 and bounds.size.y > 0.8 and bounds.size.y < 1.75, "it stands on the ground at y = 0, %.2f m tall (to the mirrors)" % bounds.size.y)
+	check(bounds.size.z > build.wheelbase + 0.4 and bounds.size.z < build.wheelbase + 1.2 and absf(bounds.get_center().z) < 0.3,
+		"%.2f m long, centred between the wheels" % bounds.size.z)
+	check(front > build.wheelbase * 0.4, "the front wheel is towards +Z")
+	scene.free()
+	DirAccess.remove_absolute(path)
+
+
+## v0.7.0's export bikes stand on their stands, as parked in the shed: leant over to their left
+## with the side stand's foot on the ground, up on the centre stand with the back wheel clear,
+## or on a paddock stand (a part of its own) with both wheels clear.
+func _test_glb_stands() -> void:
+	var stands := {}
+	for bike in GlbExport.pick_bikes():
+		var model := GlbExport.bike_model(bike)
+		var scene := GlbExport.scene_for(model, str(bike["name"]))
+		model.free()
+		var low := {}
+		var mid := {}
+		for mi in scene.get_children():
+			var box: AABB = (mi as MeshInstance3D).get_aabb()
+			low[str(mi.name)] = box.position.y
+			mid[str(mi.name)] = box.get_center()
+		var stand := str(bike["stand"])
+		stands[stand] = int(stands.get(stand, 0)) + 1
+		match stand:
+			"side":
+				check(low.has("side_stand") and absf(float(low["side_stand"])) < 0.03 and (mid["tank"] as Vector3).x > 0.04
+					and absf(float(low["rear_tyre"])) < 0.02,
+					"%s leans over to its left onto its side stand, the foot on the ground (tank %.2f m over, foot at %.3f m)" % [
+						bike["name"], (mid["tank"] as Vector3).x, float(low.get("side_stand", 9.0))])
+			"centre":
+				check(low.has("centre_stand") and absf(float(low["centre_stand"])) < 0.02 and float(low["rear_tyre"]) > 0.01,
+					"%s is up on its centre stand, the back wheel off the ground (%.3f m)" % [bike["name"], float(low["rear_tyre"])])
+			"paddock":
+				check(low.has("paddock_stand") and absf(float(low["paddock_stand"])) < 0.01 and float(low["rear_tyre"]) > 0.03
+					and float(low["front_tyre"]) > 0.03 and absf((mid["frame"] as Vector3).x) < 0.02,
+					"%s stands upright on a paddock stand, both wheels clear" % bike["name"])
+		scene.free()
+	check(stands.get("side", 0) >= 2 and stands.has("centre") and stands.has("paddock"), "the release has side, centre and paddock stands (%s)" % str(stands))
+## Simon's 17 October round: the dirt's mainly where it collects (behind the front wheel, under
+## the guards, the lower sides, flies on the front), not a coat of dust all over: after a normal
+## ride on tarmac, after an off-road ride, and on a bike delivered dirty.
+func _test_dirt_concentration() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	var tops := ["tank", "saddle", "fairing", "side_panels", "tail"]
+	var lows := {"front_mudguard": [3, 5], "fork": [5, 0, 1], "engine": [5, 3], "exhaust": [3, 0, 1], "frame": [3, 5]}
+	# How dirty the tops of the parts up top are, and the faces in the muck's way low down.
+	var measure := func() -> Vector2:
+		var top := 0.0
+		var top_n := 0
+		var low := 0.0
+		var low_n := 0
+		for slot in tops:
+			var id := Shed.item_on(faithful, slot)
+			if id != 0:
+				top += Dirt.side(Dirt.cells(Shed.items[id], slot), 2)
+				top_n += 1
+		for slot in lows:
+			var id := Shed.item_on(faithful, slot)
+			if id != 0:
+				for d in lows[slot]:
+					low += Dirt.side(Dirt.cells(Shed.items[id], slot), d)
+					low_n += 1
+		return Vector2(top / maxf(top_n, 1), low / maxf(low_n, 1))
+	var ride := func(km: float, dirt_km: float, fly_km: float) -> void:
+		for slot in PartsDB.SLOTS:
+			var id := Shed.item_on(faithful, slot)
+			if id != 0:
+				Dirt.clear(Shed.items[id])
+		Shed.bikes[faithful]["rider"] = me
+		Shed.crew[me]["riding"] = faithful
+		for k in int(km):
+			Shed._wear_from_ride(faithful, {"km": 1.0, "dirt_km": dirt_km / km, "fly_km": fly_km / km})
+		Shed.bikes[faithful]["rider"] = 0
+		Shed.crew[me]["riding"] = 0
+	# 10 km on tarmac: hardly any on top, the muck low down, flies on the front.
+	ride.call(10.0, 0.6, 7.0)
+	var tarmac: Vector2 = measure.call()
+	check(tarmac.x < 0.02 and tarmac.y > tarmac.x * 8.0,
+		"10 km on tarmac: the tops of the tank, seat and panels are near enough clean (%.3f), the muck's low down in the spray (%.3f)" % [tarmac.x, tarmac.y])
+	var lamp := Shed.item_on(faithful, "headlight")
+	if lamp != 0:
+		var l := Dirt.cells(Shed.items[lamp], "headlight")
+		check(Dirt.side(l, 5) > Dirt.side(l, 2) * 4.0, "and the flies are on the front of the headlight (%.2f front, %.2f top)" % [Dirt.side(l, 5), Dirt.side(l, 2)])
+	# Off-road: filthy low down, still much less on top.
+	ride.call(10.0, 13.0, 1.0)
+	var mud: Vector2 = measure.call()
+	check(mud.y > 0.6 and mud.x < mud.y * 0.4, "off-road: caked low down (%.2f), the tops much less (%.2f)" % [mud.y, mud.x])
+	# Delivered "50% dirty" (no regions yet): the muck's still where it collects, the tops dulled.
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(faithful, slot)
+		if id != 0:
+			Shed.items[id].erase("grime")
+			Shed.items[id]["dirt"] = 0.5
+	var delivered: Vector2 = measure.call()
+	check(delivered.x < 0.12 and delivered.y > delivered.x * 4.0,
+		"a delivered dirty bike: a light dust on top (%.3f), the muck low down and underneath (%.3f)" % [delivered.x, delivered.y])
+	Shed.stop()
+
+
+## The wash bay lift: wheel a bike onto it and it's clamped square on it; F on its post raises it
+## (nor can a bike be wheeled onto it raised, nor off it); it stays up in a save.
+func _test_wash_lift_rules() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	check(Shed.check(me, {"a": "lift", "bay": Wash.LIFT, "up": true}) == "" and Wash.reaches(Wash.LIFT_AT), "the wash bay has a lift of its own, in reach of the hose")
+	Shed.request({"a": "grab_bike", "bike": faithful})
+	Shed.request({"a": "release_bike", "bike": faithful, "xf": Transform3D(Basis(Vector3.UP, 0.3), Wash.LIFT_AT + Vector3(0.3, 0.0, 0.4))})
+	check((Shed.bikes[faithful]["xf"] as Transform3D).is_equal_approx(Wash.lift_xf()) and Shed.lift_of(faithful) == Wash.LIFT and Wash.bike_on_lift() == faithful,
+		"let go of near the lift, it's wheeled square onto it")
+	Shed.request({"a": "lift", "bay": Wash.LIFT, "up": true})
+	check(Shed.lifts.has(Wash.LIFT) and Shed.lift_raised(faithful), "F on the post raises it")
+	check(Shed.check(me, {"a": "grab_bike", "bike": faithful}).contains("lift") and Shed.check(me, {"a": "mount", "bike": faithful}).contains("lift"),
+		"raised, it can't be wheeled or ridden off")
+	check(Shed.check(me, {"a": "wash_cells", "bike": faithful, "parts": {}, "clean": []}) == "", "and it can be washed up there")
+	var other := 0
+	for id in Shed.bikes:
+		if int(id) != faithful:
+			other = int(id)
+			break
+	Shed.request({"a": "grab_bike", "bike": other})
+	check(Shed.check(me, {"a": "release_bike", "bike": other, "xf": Wash.lift_xf()}).contains("lift is up"), "nothing else can be wheeled onto it while it's up")
+	Shed.request({"a": "release_bike", "bike": other, "xf": Shed.bikes[other]["xf"]})
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Tester")
+	check(Shed.lifts.has(Wash.LIFT), "left up, it's still up in the save")
+	Shed.request({"a": "lift", "bay": Wash.LIFT, "up": false})
+	check(not Shed.lifts.has(Wash.LIFT) and Shed.check(me, {"a": "grab_bike", "bike": faithful}) == "", "lowered, the bike can be wheeled off again")
+	Shed.stop()
+
+
+## Washes everything on the bike the jet can get to from where a player can stand (on the floor,
+## standing or crouched, not inside the bike), square on as near as it can, a little at a time
+## until each patch is clean. Returns {spent (seconds firing), missed (patches it can't get to)}.
+func _wash_round(job: WashJob, model: BikeModel) -> Dictionary:
+	var xf := model.global_transform
+	var inv := xf.affine_inverse()
+	var spent := 0.0
+	var missed := 0
+	var ways: Array = [Vector3.ZERO] + Array(WashJob.tilts())
+	for i in job.e_pos.size():
+		if job.e_w[i] >= 0.98 or job.done.get(job.e_slot[i], false) or job.bike_done:
+			continue
+		var p: Vector3 = xf * job.e_pos[i]
+		var n: Vector3 = (xf.basis * job.e_n[i]).normalized()
+		var eye := Vector3.INF
+		for t in ways:
+			var from: Vector3 = (n + (t as Vector3) * 0.8).normalized()
+			if from.dot(n) < 0.3:
+				continue
+			var e: Vector3 = p + from * 0.6
+			e.y = clampf(e.y, Walker.CROUCH_EYE, Walker.EYE)
+			var local: Vector3 = inv * e
+			if absf(local.x) < 0.5 and absf(local.z) < 1.3:
+				local.x = 0.5 if local.x >= 0.0 else -0.5
+				e = xf * local
+			var d := (p - e).normalized()
+			if WashJob.take(-n.dot(d)) < 0.25 or e.distance_to(p) > WashJob.FAR:
+				continue
+			var sh := job.surface_hit(e, d)
+			if not sh.is_empty() and (sh["at"] as Vector3).distance_to(p) < 0.03:
+				eye = e
+				break
+		if eye == Vector3.INF:
+			missed += 1
+			continue
+		var dir := (p - eye).normalized()
+		var k := 0
+		while job.e_w[i] < 0.98 and k < 60 and not job.done.get(job.e_slot[i], false):
+			job.step(0.05, eye, dir, true)
+			spent += 0.05
+			k += 1
+	return {"spent": spent, "missed": missed}
+
+
+## Pressure washing a normal muddy bike on the wash bay lift: the jet's strong and wide enough
+## that it's a couple of minutes' work; with the lift down the underneath can't be got at, raised
+## (crouched beside it, aiming up) it can, and every part comes clean, so the bike can always be
+## finished. The jet's water is a fine fast fan, and stops where it lands.
+## Simon's 17 October (21:18) round: even more mist in the wash bay and fewer drips. A thick
+## cloud of fine mist all along the jet and billowing off where it lands (GPU particles, so lots
+## of them cheaply), only a few faint, fine droplets flicked off, and a haze that slowly fills the
+## bay while anyone's washing (from the shed's state, so the crew see it too) and clears after.
+func _test_wash_mist() -> void:
+	var jet := WaterSpray.make()
+	add_child(jet)
+	var jm := jet.get_node("Mist") as GPUParticles3D
+	check(jm != null and jm.amount >= 1000 and jm.lifetime >= 1.0, "the jet trails a thick, lingering mist (%d puffs, %.1f s)" % [jm.amount, jm.lifetime])
+	jet.set_reach(1.0)
+	var box := (jm.process_material as ParticleProcessMaterial).emission_box_extents
+	check(absf(box.z - 0.5) < 0.05, "lying all along the water, as far as it reaches (%.2f m)" % (box.z * 2.0))
+	jet.queue_free()
+	var fx := WashFx.new()
+	add_child(fx)
+	await get_tree().process_frame
+	check(fx._mist is GPUParticles3D and fx._mist.amount >= 1500 and fx._mist.lifetime >= 2.0, "a big, hanging cloud of mist where it lands (%d puffs)" % fx._mist.amount)
+	var drop := fx._splash.mesh as CylinderMesh
+	check(fx._splash.amount <= 40 and drop.height <= 0.03 and fx._splash.lifetime <= 0.15,
+		"and only a few short, fine droplets flicked off, not drips (%d, %.0f mm)" % [fx._splash.amount, drop.height * 1000.0])
+	fx.update(0.1, Workshop.WASH_CENTER + Vector3(0.0, 1.5, 1.5), Workshop.WASH_CENTER + Vector3.UP * 0.6, Vector3.BACK, true)
+	check(fx._mist.emitting and fx._mist.global_position.distance_to(Workshop.WASH_CENTER + Vector3.UP * 0.6) < 0.2, "the mist comes off where the jet lands")
+	fx.stop()
+	check(not fx._mist.emitting, "and stops with the jet")
+	fx.queue_free()
+	# The bay haze.
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var bay := WashMist.new()
+	add_child(bay)
+	check(not WashMist.anyone_washing() and not bay.showing(), "no washing, no haze")
+	Shed.request({"a": "wash_aim", "fire": true, "at": Workshop.WASH_CENTER + Vector3.UP * 0.5, "n": Vector3.UP, "bike": 0})
+	check(WashMist.anyone_washing(), "the shed knows someone's washing in the bay")
+	for i in 50:
+		bay.update(0.1, WashMist.anyone_washing())
+	var after5 := bay.level
+	check(after5 > 0.1 and after5 < 0.4 and bay._haze.emitting and bay._haze_mat.albedo_color.a > 0.0, "the haze builds up slowly while washing (%.2f after 5 s)" % after5)
+	for i in 300:
+		bay.update(0.1, WashMist.anyone_washing())
+	check(is_equal_approx(bay.level, 1.0) and bay._haze.amount >= 100, "until the bay's full of it")
+	Shed.request({"a": "wash_aim", "fire": false})
+	for i in 100:
+		bay.update(0.1, WashMist.anyone_washing())
+	check(bay.level < 0.9 and bay.level > 0.5 and bay._haze.emitting, "stop, and it slowly thins (%.2f after 10 s)" % bay.level)
+	for i in 400:
+		bay.update(0.1, WashMist.anyone_washing())
+	check(not bay.showing() and not bay._haze.emitting and bay._haze_mat.albedo_color.a < 0.001, "and clears")
+	Shed.crew[me]["wash_fire"] = true
+	Shed.crew[me]["wash_at"] = Workshop.CENTER
+	check(not WashMist.anyone_washing(), "a jet anywhere but the bay doesn't fill it")
+	Shed.crew[me]["wash_fire"] = false
+	bay.queue_free()
+	Shed.stop()
+
+
+func _test_wash_lift_reach() -> void:
+	# A patch of caked mud square on at the right distance goes in a couple of passes, and the
+	# footprint's a good stripe wide.
+	var at := WashJob.jet_at(WashJob.D_REF)
+	var caked := 1.0 / (WashJob.RATE / WashJob.grip(1.0))
+	check(float(at["radius"]) >= 0.1 and caked < 0.2, "the jet's wide (%.0f mm across) and strong: caked mud goes in %.2f s square on" % [float(at["radius"]) * 2000.0, caked])
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var ws: Workshop = main.workshop
+	var faithful := _bike_named("Old Faithful")
+	var me := Shed.me()
+	Shed.bikes[faithful]["rider"] = me
+	Shed.crew[me]["riding"] = faithful
+	Shed._wear_from_ride(faithful, {"km": 6.0, "dirt_km": 3.0, "fly_km": 3.0})
+	Shed.bikes[faithful]["rider"] = 0
+	Shed.crew[me]["riding"] = 0
+	Shed.bikes[faithful]["xf"] = Wash.lift_xf()
+	Shed.bikes[faithful]["stand"] = ""
+	Shed.changed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	check(ws.get_node_or_null("Upgrades/Built/WashLiftBase/WashLift") != null, "the wash bay has its lift, a grated runway")
+	var model := ws.bike_model(faithful)
+	var job := WashJob.new()
+	check(model != null and job.setup(faithful, model), "a muddy bike on the wash bay lift")
+	if model == null or job.slots.is_empty():
+		main._leave()
+		main.queue_free()
+		await get_tree().physics_frame
+		return
+	job.prepare_all()
+	var start := float(job.stats()["clean"])
+	var down := _wash_round(job, model)
+	var st: Dictionary = job.stats()
+	check(not job.bike_done and float(st["sides"]["under"]) < 0.9,
+		"with the lift down, all but underneath washes off (%.0f%% to %.0f%% clean, underneath %.0f%%, %d patches out of reach)" % [start * 100.0, float(st["clean"]) * 100.0, float(st["sides"]["under"]) * 100.0, int(down["missed"])])
+	Shed.request({"a": "lift", "bay": Wash.LIFT, "up": true})
+	var y0 := model.global_position.y
+	for i in 900:
+		await get_tree().physics_frame
+		if model.global_position.y > y0 + Wash.LIFT_TOP - 0.01:
+			break
+	check(model.global_position.y > y0 + Wash.LIFT_TOP - 0.02, "F on the post raises it, bike and all (%.2f m up)" % (model.global_position.y - y0))
+	var up := _wash_round(job, model)
+	st = job.stats()
+	var spent := float(down["spent"]) + float(up["spent"])
+	check(job.bike_done and float(st["clean"]) >= 0.999, "raised, crouched beside it and aiming up, the underneath comes clean too: the whole bike's done (%.0f%% clean, %d patches the jet can't get square on to)" % [float(st["clean"]) * 100.0, int(up["missed"])])
+	check(spent < 100.0, "a normal muddy bike's a couple of minutes' washing, not much more (%.0f s with the jet on, going straight round it)" % spent)
+	# The water: a fine fast fan that stops where it lands.
+	var jet := WaterSpray.make()
+	add_child(jet)
+	check(jet.initial_velocity_min >= 20.0 and (jet.mesh as CylinderMesh).bottom_radius < 0.003 and jet.amount >= 300,
+		"the jet's a fine, fast fan of water (%.0f m/s, %.1f mm streaks, %d of them)" % [jet.initial_velocity_min, (jet.mesh as CylinderMesh).bottom_radius * 2000.0, jet.amount])
+	jet.set_reach(0.6)
+	check(absf(jet.lifetime * WaterSpray.SPEED - 0.6) < 0.05, "and it stops where it lands (%.2f m)" % (jet.lifetime * WaterSpray.SPEED))
+	jet.queue_free()
+	Shed.request({"a": "lift", "bay": Wash.LIFT, "up": false})
+	job.finish()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The stock bikes riders start out on: the default build and the ready-built styles.
+const STOCK_STYLES := ["", "sport", "classic", "cruiser", "mx"]
+
+
+## How much the bars shake about where they're being steered on stock bike `style` at `kmh`
+## and Riding realism `realism`, steered `kind` ("gentle": a small stick move held, "hold": a
+## lean key held down 2.5 s then let go), with a little gusting side wind. The shake is the
+## steer less its 0.12 s average, looked at only once the input has been steady for a second.
+## Degrees: {"peak", "rms", "crashed"}.
+func _bar_shake(style: String, kmh: float, realism: float, kind: String) -> Dictionary:
+	var v := kmh / 3.6
+	var st := {"avg": 0.0, "peak": 0.0, "ss": 0.0, "n": 0, "last": 0.0, "since": 0.0, "gust": 0.0}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var dt := 1.0 / Engine.physics_ticks_per_second
+	var r := await ride({} if style == "" else Contracts.style_build(style), 6.5, func(b: Bike, t: float):
+		b.assist = realism
+		if t < 0.001:
+			_roll_at(b, v)
+		_hold_speed(b, v)
+		var u := t - 2.0
+		if u < 0.0:
+			b.lean_input = 0.0
+		elif kind == "gentle":
+			b.lean_input = 0.3 * clampf(u / 0.5, 0.0, 1.0) if u < 3.0 else 0.0
+		else:
+			b.lean_input = 1.0 if u < 2.5 else 0.0
+		st["gust"] = lerpf(float(st["gust"]), rng.randf_range(-1.0, 1.0), 0.05)
+		b.apply_torque(-b.global_transform.basis.z * float(st["gust"]) * 25.0)
+		if b.lean_input != float(st["last"]):
+			st["since"] = 0.0
+			st["last"] = b.lean_input
+		st["since"] = float(st["since"]) + dt
+		st["avg"] = lerpf(float(st["avg"]), b.steer, 1.0 - exp(-dt / 0.12))
+		if t > 2.0 and float(st["since"]) > 1.0:
+			var x: float = b.steer - float(st["avg"])
+			st["peak"] = maxf(float(st["peak"]), absf(x))
+			st["ss"] = float(st["ss"]) + x * x
+			st["n"] = int(st["n"]) + 1
+		elif t <= 2.0:
+			st["avg"] = b.steer)
+	var out := {"peak": rad_to_deg(float(st["peak"])), "rms": rad_to_deg(sqrt(float(st["ss"]) / maxf(float(st["n"]), 1.0))),
+		"crashed": r["crashed"]}
+	await _done(r)
+	return out
+
+
+func _test_bars_no_wiggle() -> void:
+	# Bar wiggle on stock bikes below full Riding realism: the rider's arms used to cancel the
+	# front's pull through a lag, which fed a shake (several degrees on a gentle stick move at
+	# town speeds, tens of degrees with a key held). Now on every stock bike, at realism 0 and
+	# 0.5, from town speeds to a fast road, the bars stay steady about where they're steered.
+	var worst := {"gentle": [0.0, ""], "hold": [0.0, ""]}
+	var fell := []
+	for style in STOCK_STYLES:
+		for realism in [0.0, 0.5]:
+			for kmh in [20.0, 50.0, 80.0]:
+				for kind in ["gentle", "hold"]:
+					var k := await _bar_shake(style, kmh, realism, kind)
+					var label := "%s, realism %.1f, %d km/h" % [style if style != "" else "default", realism, int(kmh)]
+					if k["crashed"]:
+						fell.append(label + " " + kind)
+					if float(k["peak"]) > float(worst[kind][0]):
+						worst[kind] = [float(k["peak"]), label]
+	check(fell.is_empty(), "stock bikes stay up steered gently or with a key held, at realism 0 and 0.5 %s" % str(fell))
+	check(float(worst["gentle"][0]) < 1.0,
+		"a gentle stick move: the bars don't shake on any stock bike (worst %.2f deg, %s)" % worst["gentle"])
+	check(float(worst["hold"][0]) < 3.0,
+		"a lean key held then let go: no more than a small twitch at the bars (worst %.2f deg, %s)" % worst["hold"])
+
+
+## A winding course on the flat for `kmh`: a run-up, then `bends` quarter-turn bends, left and
+## right in turn, as tight as about `lean_deg` of lean takes at that speed, with short straights
+## between. Points a metre apart, from the origin heading -Z: {"xz", "dir"}.
+func _winding_course(kmh: float, bends := 4, lean_deg := 22.0) -> Dictionary:
+	var v := kmh / 3.6
+	var radius := v * v / (Bike.G * tan(deg_to_rad(lean_deg)))
+	var xz := PackedVector2Array()
+	var dirs := PackedVector2Array()
+	var p := Vector2.ZERO
+	var head := 0.0
+	var segs := [[40.0, 0.0]]
+	for i in bends:
+		segs.append([radius * PI * 0.5, (1.0 if i % 2 == 0 else -1.0) / radius])
+		segs.append([maxf(v, 10.0), 0.0])
+	for s in segs:
+		for k in int(ceil(float(s[0]))):
+			var d := Vector2(sin(head), -cos(head))
+			xz.append(p)
+			dirs.append(d)
+			p += d
+			head += float(s[1])
+	return {"xz": xz, "dir": dirs}
+
+
+## A scripted rider on Direct bars round the winding course: they pick the lean the bend ahead
+## wants (and a little more or less to get back on line), see the bike's lean 150 ms late, and
+## push the bars by how far it's off and how fast it's moving (a PD). On a stick, or with keys as
+## all-or-nothing presses through the game's own key ramp. {"crashed", "done", "off" (m)}.
+func _direct_rider(style: String, kmh: float, keys: bool, realism := 0.5) -> Dictionary:
+	var v := kmh / 3.6
+	var c := _winding_course(kmh)
+	var xz: PackedVector2Array = c["xz"]
+	var dirs: PackedVector2Array = c["dir"]
+	var n := xz.size()
+	var st := {"i": 0, "off": 0.0, "done": false, "want": 0.0, "seen": [], "held": 0.0}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var dt := 1.0 / Engine.physics_ticks_per_second
+	var r := await ride({} if style == "" else Contracts.style_build(style), float(n) / v + 4.0, func(b: Bike, t: float):
+		b.assist = realism
+		b.direct_bars = true
+		if t < 0.001:
+			_roll_at(b, v)
+		_hold_speed(b, v)
+		if st["done"]:
+			b.lean_input = 0.0
+			return
+		var p2 := Vector2(b.global_position.x, b.global_position.z)
+		var bi: int = st["i"]
+		var bd := INF
+		for k in range(-2, 8):
+			var j := clampi(int(st["i"]) + k, 0, n - 1)
+			if xz[j].distance_squared_to(p2) < bd:
+				bd = xz[j].distance_squared_to(p2)
+				bi = j
+		st["i"] = bi
+		st["done"] = bi >= n - 3
+		var d: Vector2 = dirs[bi]
+		var right := Vector2(-d.y, d.x)
+		var off := (p2 - xz[bi]).dot(right)
+		st["off"] = maxf(float(st["off"]), absf(off))
+		# The bend 0.4 s ahead, and back towards the line and along it.
+		var vv := maxf(absf(b.speed), 1.0)
+		var a := mini(bi + int(vv * 0.4) + 1, n - 3)
+		var bend := (dirs[a + 2] - dirs[a]).dot(Vector2(-dirs[a].y, dirs[a].x)) / 2.0
+		var f3 := -b.global_transform.basis.z
+		var heading := atan2(Vector2(f3.x, f3.z).normalized().dot(right), Vector2(f3.x, f3.z).normalized().dot(d))
+		var turn := vv * bend - 1.0 * heading - 0.25 * off / vv
+		st["want"] = lerpf(float(st["want"]), atan(vv * turn / Bike.G), 1.0 - exp(-dt / 0.15))
+		var seen: Array = st["seen"]
+		seen.append([float(st["want"]), b.lean_angle, b.lean_rate])
+		var late: Array = seen.pop_front() if seen.size() > 18 else [0.0, 0.0, 0.0]
+		var u := clampf(5.0 * (float(late[0]) - float(late[1])) - 1.0 * float(late[2]), -1.0, 1.0)
+		if keys:
+			st["held"] = main_script.ramp_bars(float(st["held"]), 1.0 if u > 0.25 else (-1.0 if u < -0.25 else 0.0), dt)
+			b.lean_input = st["held"]
+		else:
+			var stick := signf(u) * sqrt(absf(u))   # they've learned the stick's curve
+			b.lean_input = stick * absf(stick))
+	var out := {"crashed": r["crashed"], "done": st["done"], "off": st["off"]}
+	await _done(r)
+	return out
+
+
+func _test_direct_bars_course() -> void:
+	# Direct bars, for a person: a scripted rider with human reaction time and plain PD steering
+	# (on/off presses on keys) rides S-bends at 30, 60 and 100 km/h and stays up and on a road
+	# 4 m either side of its line.
+	var runs := [["", false], ["", true], ["cruiser", true], ["mx", true]]
+	for run in runs:
+		var line := []
+		var ok := true
+		for kmh in [30.0, 60.0, 100.0]:
+			var k := await _direct_rider(run[0], kmh, run[1])
+			ok = ok and not k["crashed"] and k["done"] and float(k["off"]) < 4.0
+			line.append("%d km/h %s, %.1f m off line" % [int(kmh), "fell off" if k["crashed"] else ("round" if k["done"] else "didn't finish"), float(k["off"])])
+		check(ok, "Direct bars on %s, %s: a rider with a reaction time rounds the bends and stays on the road (%s)"
+			% ["keys" if run[1] else "a stick", run[0] if run[0] != "" else "default bike", ", ".join(line)])
+
+
+
+## Handling phase 3, the suspension standing still: each style sags a sensible share of its
+## travel under bike and rider (what BikeBuild works out is what the ridden bike does), the
+## swingarm and chain hold off most of the squat under power, more preload sags less on the same
+## spring, and a bigger rear sprocket (the chain's top run higher at the back) lifts the back harder.
+func _test_suspension_sag() -> void:
+	var lines := []
+	var ok := true
+	var squat_ok := true
+	for style in ["", "sport", "mx", "chopper", "tourer", "classic"]:
+		var b := BikeBuild.new({} if style == "" else Contracts.style_build(style))
+		var f := b.front_sag / b.front_travel
+		var r := b.rear_sag / b.rear_travel
+		ok = ok and f > 0.15 and f < 0.45 and r > 0.15 and r < 0.45
+		squat_ok = squat_ok and b.anti_squat > 0.5 and b.anti_squat < 1.6
+		lines.append("%s %d%%/%d%%, anti-squat %d%%" % [style if style != "" else "stock", roundi(f * 100.0), roundi(r * 100.0), roundi(b.anti_squat * 100.0)])
+	check(ok, "every style sags 15-45%% of its travel, front/rear (%s)" % ", ".join(lines))
+	check(squat_ok, "the swingarm and chain hold off most of the squat under power (50-160% anti-squat)")
+	var stock := BikeBuild.new({"shock": "sport_mono"})
+	var firm := BikeBuild.new({"shock": "sport_mono"}, {}, {"r_preload": 1.0})
+	check(firm.rear_sag < stock.rear_sag - 0.006 and firm.rear_spring == stock.rear_spring,
+		"more preload sags less on the same spring (%d mm vs %d mm)" % [roundi(firm.rear_sag * 1000.0), roundi(stock.rear_sag * 1000.0)])
+	var short := BikeBuild.new({}, {}, {"sprocket_r": 40.0})
+	var tall := BikeBuild.new({}, {}, {"sprocket_r": 52.0})
+	check(tall.anti_squat > short.anti_squat + 0.02,
+		"a bigger back sprocket lifts the back harder under power (%d%% with 52 teeth, %d%% with 40)" % [roundi(tall.anti_squat * 100.0), roundi(short.anti_squat * 100.0)])
+	# The ridden bike settles where the sums say.
+	var r2 := await ride({}, 3.0, func(_b, _t): pass)
+	var bike: Bike = r2["bike"]
+	var qf: float = bike.wheels[0]["compression"]
+	var qr: float = bike.wheels[1]["compression"]
+	check(absf(qf - bike.build.front_sag) < 0.008 and absf(qr - bike.build.rear_sag) < 0.008,
+		"standing, it sits on its springs where the sums say (fork %d mm vs %d, shock %d vs %d)"
+		% [roundi(qf * 1000.0), roundi(bike.build.front_sag * 1000.0), roundi(qr * 1000.0), roundi(bike.build.rear_sag * 1000.0)])
+	await _done(r2)
+
+
+## Hard on the front brake from 25 m/s: the weight comes forward and the fork dives down its raked
+## legs, pitching the bike nose down, which takes rake and trail off the steering. A leading-link
+## (Earles) fork's axle swings up more nearly straight, so the same stop dives it less.
+func _test_suspension_dive() -> void:
+	var res := {}
+	for fork in ["usd_sport", "classic_earles"]:
+		var st := {"used": 0.0, "dive": 0.0, "trail": 1.0, "rake": 1.0, "load": 0.0, "stiff": 0.0, "stiff0": 0.0}
+		var r := await ride({"fork": fork}, 11.0, func(b, t):
+			b.assist = 0.5
+			if t < 8.0:
+				_hold_speed(b, 25.0)
+				return
+			b.throttle = 0.0
+			b.front_brake = 1.0
+			b.rear_brake = 0.0
+			if b.speed > 5.0:
+				st["used"] = maxf(st["used"], b.travel_used(0))
+				if b.dive > float(st["dive"]):
+					st["stiff"] = b._front_stiffness(20.0)
+					st["stiff0"] = b._front_stiffness(20.0, false)
+				st["dive"] = maxf(st["dive"], b.dive)
+				st["trail"] = minf(st["trail"], b.trail_springs)
+				st["rake"] = minf(st["rake"], b.rake_now)
+				st["load"] = maxf(st["load"], float(b.wheels[0]["load"])))
+		var bike: Bike = r["bike"]
+		st["crashed"] = r["crashed"]
+		st["static"] = bike.build.total_mass * Bike.G * 0.5
+		st["trail0"] = bike.build.trail
+		st["rake0"] = deg_to_rad(bike.build.rake_deg)
+		res[fork] = st
+		await _done(r)
+	var u: Dictionary = res["usd_sport"]
+	check(not u["crashed"] and float(u["used"]) > 0.5 and float(u["used"]) < 1.0 and float(u["dive"]) > deg_to_rad(1.5),
+		"braking hard, the fork dives (%d%% of its travel, the bike pitches %.1f° nose down)" % [roundi(float(u["used"]) * 100.0), rad_to_deg(u["dive"])])
+	check(float(u["load"]) > 1.6 * float(u["static"]),
+		"the weight comes onto the front tyre (%.1f kN against %.1f standing)" % [float(u["load"]) / 1000.0, float(u["static"]) / 1000.0])
+	check(float(u["trail"]) < 0.9 * float(u["trail0"]) and float(u["rake"]) < float(u["rake0"]) - deg_to_rad(1.0),
+		"diving takes rake and trail off the steering (rake %.1f° from %.1f°, trail %d mm from %d)"
+		% [rad_to_deg(u["rake"]), rad_to_deg(u["rake0"]), roundi(float(u["trail"]) * 1000.0), roundi(float(u["trail0"]) * 1000.0)])
+	check(absf(float(u["stiff"]) - float(u["stiff0"])) > 0.05 * float(u["stiff0"]),
+		"and the steering feels it: the front's pull on the bars goes from %d to %d N m per rad" % [roundi(u["stiff0"]), roundi(u["stiff"])])
+	var e: Dictionary = res["classic_earles"]
+	check(not e["crashed"] and float(e["dive"]) < float(u["dive"]) * 0.8,
+		"a leading-link fork dives less on the same stop (%.1f° against %.1f°)" % [rad_to_deg(e["dive"]), rad_to_deg(u["dive"])])
+
+
+## Under power the weight goes back, but the swingarm and the chain's pull hold the back up:
+## it squats far less than the extra load alone would squash it. Leaned over in a steady turn,
+## the springs carry the cornering load too and sit lower. Landing a drop hard enough finds the
+## bump stop without throwing the rider off.
+func _test_suspension_squat_and_turn() -> void:
+	var st := {"q0": 0.0, "q": 0.0, "load0": 0.0, "load": 0.0}
+	var r := await ride({}, 6.0, func(b, t):
+		if t < 3.0:
+			if t < 0.01:
+				_roll_at(b, 8.0)
+			_hold_speed(b, 8.0)
+			st["q0"] = float(b.wheels[1]["compression"])
+			st["load0"] = float(b.wheels[1]["load"])
+			return
+		b.throttle = 1.0
+		b.front_brake = 0.0
+		if t < 4.0 and b.wheels[0]["contact"]:
+			st["q"] = maxf(st["q"], float(b.wheels[1]["compression"]))
+			st["load"] = maxf(st["load"], float(b.wheels[1]["load"])))
+	var bike: Bike = r["bike"]
+	var plain := (float(st["load"]) - float(st["load0"])) / bike.build.rear_spring
+	var squat := float(st["q"]) - float(st["q0"])
+	check(squat < plain * 0.6,
+		"pulling away hard the back squats %d mm, not the %d mm the weight going back alone would (anti-squat %d%%)"
+		% [roundi(squat * 1000.0), roundi(plain * 1000.0), roundi(bike.build.anti_squat * 100.0)])
+	await _done(r)
+	var acc := {"n": 0, "qf": 0.0, "qr": 0.0, "lean": 0.0}
+	var still := {"qf": 0.0, "qr": 0.0}
+	r = await ride({}, 10.0, func(b, t):
+		b.assist = 0.5
+		_hold_speed(b, 15.0)
+		b.lean_input = 0.0 if t < 3.0 else 0.75
+		if t > 2.0 and t < 3.0:
+			still["qf"] = float(b.wheels[0]["compression"])
+			still["qr"] = float(b.wheels[1]["compression"])
+		if t > 7.0:
+			acc["n"] += 1
+			acc["qf"] += float(b.wheels[0]["compression"])
+			acc["qr"] += float(b.wheels[1]["compression"])
+			acc["lean"] += absf(b.lean_angle))
+	var n := maxf(acc["n"], 1)
+	var lean: float = acc["lean"] / n
+	var qf: float = acc["qf"] / n
+	var qr: float = acc["qr"] / n
+	check(not r["crashed"] and qf > float(still["qf"]) * 1.05 and qr > float(still["qr"]) * 1.05,
+		"leaned %.0f° in a steady turn the springs carry the cornering load too (fork %d mm from %d, shock %d from %d)"
+		% [rad_to_deg(lean), roundi(qf * 1000.0), roundi(float(still["qf"]) * 1000.0), roundi(qr * 1000.0), roundi(float(still["qr"]) * 1000.0)])
+	await _done(r)
+	var land := {"stop": false, "used": 0.0}
+	r = await ride({}, 4.0, func(b, t):
+		if t < 0.01:
+			b.global_position += Vector3.UP * 1.0
+			_roll_at(b, 10.0)
+			b.linear_velocity += Vector3.DOWN * 1.5
+		b.throttle = 0.2
+		land["stop"] = land["stop"] or b.wheels[0]["bottomed"] or b.wheels[1]["bottomed"]
+		land["used"] = maxf(land["used"], maxf(b.travel_used(0), b.travel_used(1))))
+	check(not r["crashed"] and land["used"] > 0.8,
+		"landing a metre's drop uses the travel (%d%%%s) and the rider stays on" % [roundi(float(land["used"]) * 100.0), ", on the bump stop" if land["stop"] else ""])
+	await _done(r)
+
+
+## Riding on the road nobody leans much past 30°: most of the steer input covers ordinary road
+## leans, and only the last of it goes on to all the tyres will hold, the way racers lean. A lean
+## key held asks for a road lean at once and only creeps further if it's kept held. Customers
+## riding in keep to road leans (and so does the traffic: see _test_road_traffic).
+func _test_road_lean() -> void:
+	var b := Bike.new()
+	b.setup(BikeBuild.new({}))
+	var at := func(x: float) -> float: return rad_to_deg(b.lean_for_input(x))
+	var road := rad_to_deg(b._balance_lean(Bike.ROAD_LEAN))
+	var top := rad_to_deg(b._grip_lean())
+	check(absf(at.call(0.5) - road * 2.0 / 3.0) < 0.5 and absf(at.call(Bike.ROAD_INPUT) - road) < 0.1 and absf(at.call(1.0) - top) < 0.1
+		and at.call(0.9) > at.call(0.8) and at.call(0.8) > at.call(Bike.ROAD_INPUT),
+		"the steer input: half asks for %.0f°, three quarters a road rider's %.0f°, full the %.0f° the tyres hold (line to the centre of mass)"
+		% [at.call(0.5), at.call(Bike.ROAD_INPUT), at.call(1.0)])
+	b.free()
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var held := 0.0
+	var seen := []
+	for i in 20:
+		held = main_script.ramp_lean(held, 1.0, 0.1)
+		seen.append(held)
+	var let_go: float = main_script.ramp_lean(1.0, 0.0, 0.1)
+	check(absf(float(seen[1]) - Bike.ROAD_INPUT) < 0.01 and float(seen[5]) < 0.95 and is_equal_approx(float(seen[19]), 1.0) and let_go < 0.3,
+		"a lean key: a road lean at once (%.2f after 0.2 s), all the way only held on (%.2f at 0.6 s, %.2f at 2 s), back at once let go"
+		% [seen[1], seen[5], seen[19]])
+	var leans := {}
+	for x in [Bike.ROAD_INPUT, 1.0]:
+		var r := await ride({}, 9.0, func(bk, t):
+			bk.assist = 0.5
+			_hold_speed(bk, 20.0)
+			bk.lean_input = 0.0 if t < 3.0 else x)
+		leans[x] = rad_to_deg(r["max_lean"])
+		check(not r["crashed"], "riding at %d%% steer input stays up" % roundi(x * 100.0))
+		await _done(r)
+	check(float(leans[Bike.ROAD_INPUT]) > 26.0 and float(leans[Bike.ROAD_INPUT]) < 33.0 and float(leans[1.0]) > 36.0,
+		"ridden: three-quarter input leans the bike %.0f°, full input %.0f°" % [leans[Bike.ROAD_INPUT], leans[1.0]])
+	check(CustomerView.MAX_LEAN <= Bike.ROAD_LEAN + 0.001, "customers riding in lean no more than a road rider (%.0f°)" % rad_to_deg(CustomerView.MAX_LEAN))
+
+
+# ---------------------------------------------------------------------------- the lounge's pool table
+
+## Lays out a table for a test: the balls in `at` ({ball: Vector2}), the rest potted already.
+func _pool_lay(at: Dictionary) -> Array:
+	var balls := []
+	for i in 16:
+		balls.append([at[i].x, at[i].y, true] if at.has(i) else [0.0, 0.0, false])
+	return balls
+
+
+## The angle that sends the cue ball from `from` to `to`.
+func _pool_angle(from: Vector2, to: Vector2) -> float:
+	var d := to - from
+	return atan2(d.x, -d.y)
+
+
+## The simulation: the same shot comes out the same every time, the break spreads the pack and
+## everything stops on the table, balls drop in the pockets, and cushions bounce.
+func _test_pool_physics() -> void:
+	var rack := PoolGame.rack(3)
+	var a := PoolGame.simulate(rack, 0.003, 1.0)
+	var b := PoolGame.simulate(rack, 0.003, 1.0)
+	check(PoolGame.balls_of(a) == PoolGame.balls_of(b) and a["potted"] == b["potted"] and float(a["t"]) == float(b["t"]),
+		"the same shot from the same rack comes out exactly the same (so every table plays it out alike)")
+	check(int(a["first"]) == 1, "breaking straight down the table hits the apex ball first (%d)" % int(a["first"]))
+	var moved := 0
+	var inside := true
+	for i in 16:
+		var was := Vector2(float(rack[i][0]), float(rack[i][1]))
+		var now: Vector2 = a["p"][i]
+		if now.distance_to(was) > 0.05:
+			moved += 1
+		if a["on"][i] and (absf(now.x) > PoolGame.HX or absf(now.y) > PoolGame.HZ):
+			inside = false
+	check(moved >= 10 and inside, "a full-power break spreads the pack (%d balls moved) and every ball left is on the felt" % moved)
+	check(not PoolGame.moving(a) and float(a["t"]) > 2.0 and float(a["t"]) < PoolGame.MAX_TIME,
+		"and it all comes to rest (in %.1f s, %d potted)" % [float(a["t"]), (a["potted"] as Array).size()])
+	var soft := PoolGame.simulate(PoolGame.rack(3), 0.003, 0.0)
+	var soft_at: Vector2 = soft["p"][0]
+	check(soft_at.distance_to(PoolGame.HEAD) < 0.6 and not PoolGame.moving(soft), "a gentle tap only rolls a little way (%.2f m)" % soft_at.distance_to(PoolGame.HEAD))
+	# A ball lined up on the corner pocket goes in.
+	var pocket := PoolGame.POCKETS[1]
+	var u := Vector2(-1.0, 1.0).normalized()
+	var obj := pocket + u * 0.2
+	var cue := obj + u * 0.35
+	var pot := PoolGame.simulate(_pool_lay({0: cue, 1: obj, 8: Vector2(-0.3, 0.6)}), _pool_angle(cue, obj), 0.5)
+	check((pot["potted"] as Array).has(1) and int(pot["first"]) == 1, "a ball hit straight at a corner pocket drops in (%s)" % str(pot["potted"]))
+	var mid := PoolGame.simulate(_pool_lay({0: Vector2(0.0, 0.0), 8: Vector2(-0.4, -0.6)}), PI * 0.5, 0.4)
+	check((mid["potted"] as Array).has(0), "and the cue ball rolled across into a middle pocket drops in too")
+	var rail := PoolGame.simulate(_pool_lay({0: Vector2(0.0, 0.3), 8: Vector2(-0.4, -0.6)}), PI * 0.5 + 0.6, 0.6)
+	var rail_at: Vector2 = rail["p"][0]
+	check(not (rail["potted"] as Array).has(0) and int(rail["rails"]) > 0 and absf(rail_at.x) < PoolGame.HX,
+		"off the middle of a cushion it bounces back onto the table (%d cushions)" % int(rail["rails"]))
+
+
+## The game: racking needs the lounge, turns, groups, fouls, the black, a mate joining, and the
+## state saving.
+func _test_pool_rules() -> void:
+	Shed.start_new("Tester", 44)
+	Shed.garage_money = 5000000
+	var me := Shed.me()
+	PoolGame._busy_until = 0
+	check(Shed.pool == PoolGame.empty() and not PoolGame.playing(), "a new shed has no game of pool on")
+	check(PoolGame.check(me, {"a": "pool_rack"}) != "", "no pool without the crew lounge")
+	Shed.request({"a": "buy_upgrade", "id": "lounge"})
+	Shed.request({"a": "pool_rack"})
+	check(PoolGame.playing() and Shed.pool["balls"].size() == 16 and Shed.pool["players"] == [me] and PoolGame.shooter() == me,
+		"F on the table racks them up, and it's your break")
+	Shed.request({"a": "pool_shot", "angle": 0.003, "power": 1.0})
+	check(int(Shed.pool["shots"]) == 1 and int(Shed.pool["last"]["n"]) == 0 and (Shed.pool["last"]["from"] as Array).size() == 16,
+		"the break is played out by the host and kept with the balls it started from")
+	check(PoolGame.check(me, {"a": "pool_shot", "angle": 0.0, "power": 0.5}).contains("stop"), "no shot till the balls have stopped")
+	PoolGame._busy_until = 0
+	# A mate joins; the table's open; pot a stripe and they're yours, and you go again.
+	Shed._add_crew(77, "Mate")
+	check(PoolGame.check(77, {"a": "pool_join"}) == "", "a mate can join a game of one")
+	PoolGame.apply(77, {"a": "pool_join"})
+	check(Shed.pool["players"] == [me, 77], "and does")
+	check(PoolGame.check(55, {"a": "pool_join"}) != "", "a third waits for the next game")
+	var pocket := PoolGame.POCKETS[1]
+	var u := Vector2(-1.0, 1.0).normalized()
+	var obj := pocket + u * 0.2
+	var cue := obj + u * 0.35
+	Shed.pool["balls"] = _pool_lay({0: cue, 11: obj, 3: Vector2(-0.3, 0.6), 12: Vector2(0.3, 0.7), 8: Vector2(0.2, -0.3)})
+	Shed.pool["turn"] = 0
+	check(PoolGame.check(77, {"a": "pool_shot", "angle": 0.0, "power": 0.5}).contains("shot"), "it's not the mate's shot")
+	Shed.request({"a": "pool_shot", "angle": _pool_angle(cue, obj), "power": 0.5})
+	PoolGame._busy_until = 0
+	check(PoolGame.group_of_player(0) == "stripes" and PoolGame.group_of_player(1) == "solids" and PoolGame.shooter() == me,
+		"potting a stripe off an open table makes them yours, and you go again (%s)" % str(Shed.pool["msg"]))
+	# Hit their ball first: a foul, and it's their shot.
+	var c2 := Vector2(-0.3, 0.9)
+	Shed.pool["balls"] = _pool_lay({0: c2, 3: Vector2(-0.3, 0.6), 12: Vector2(0.3, 0.7), 8: Vector2(0.2, -0.3)})
+	Shed.request({"a": "pool_shot", "angle": _pool_angle(c2, Vector2(-0.3, 0.6)), "power": 0.3})
+	PoolGame._busy_until = 0
+	check(PoolGame.shooter() == 77 and str(Shed.pool["msg"]).contains("Foul"), "hitting the other group first is a foul and passes the table (%s)" % str(Shed.pool["msg"]))
+	# The mate sinks the cue ball: a foul, it comes back on the spot, and it's your shot.
+	Shed.pool["balls"][0] = [0.0, 0.0, true]
+	PoolGame.apply(77, {"a": "pool_shot", "angle": PI * 0.5, "power": 0.4})
+	PoolGame._busy_until = 0
+	var spot := Vector2(float(Shed.pool["balls"][0][0]), float(Shed.pool["balls"][0][1]))
+	check(PoolGame.shooter() == me and bool(Shed.pool["balls"][0][2]) and spot.distance_to(PoolGame.HEAD) < 0.2 and str(Shed.pool["msg"]).contains("cue ball"),
+		"the cue ball in the pocket is a foul: it's back on the spot and it's your shot (%s)" % str(Shed.pool["msg"]))
+	# The black too early loses; the black after your group wins.
+	var w8 := Vector2(1.0, 1.0).normalized()
+	var b8 := PoolGame.POCKETS[0] + w8 * 0.2
+	var c8 := b8 + w8 * 0.35
+	Shed.pool["balls"] = _pool_lay({0: c8, 8: b8, 9: Vector2(0.3, 0.7)})
+	Shed.request({"a": "pool_shot", "angle": _pool_angle(c8, b8), "power": 0.5})
+	PoolGame._busy_until = 0
+	check(bool(Shed.pool["over"]) and int(Shed.pool["winner"]) == 77, "potting the black with a stripe still on loses the game (%s)" % str(Shed.pool["msg"]))
+	check(PoolGame.check(me, {"a": "pool_shot", "angle": 0.0, "power": 0.5}) != "" and PoolGame.check(55, {"a": "pool_rack"}) == "",
+		"the game's over: no more shots, and anyone can rack up the next")
+	Shed.request({"a": "pool_rack"})
+	PoolGame.apply(77, {"a": "pool_join"})
+	Shed.pool["solids"] = 0
+	Shed.pool["shots"] = 5
+	Shed.pool["balls"] = _pool_lay({0: c8, 8: b8, 9: Vector2(0.3, 0.7)})
+	Shed.request({"a": "pool_shot", "angle": _pool_angle(c8, b8), "power": 0.5})
+	PoolGame._busy_until = 0
+	check(bool(Shed.pool["over"]) and int(Shed.pool["winner"]) == me and str(Shed.pool["msg"]).contains("won"),
+		"with your solids cleared, the black wins it (%s)" % str(Shed.pool["msg"]))
+	# Saved and loaded; and a save from before the pool table plays has no game on.
+	Shed.request({"a": "pool_rack"})
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	var back := PoolGame.sanitize(copy.get("pool"))
+	var kept := back.keys().all(func(k): return k == "balls" or back[k] == Shed.pool[k])
+	for i in 16:
+		kept = kept and Vector2(float(back["balls"][i][0]), float(back["balls"][i][1])).distance_to(
+			Vector2(float(Shed.pool["balls"][i][0]), float(Shed.pool["balls"][i][1]))) < 0.000001
+	check(kept, "the game saves with the shed")
+	copy.erase("pool")
+	check(PoolGame.sanitize(copy.get("pool")) == PoolGame.empty(), "an old save loads with no game on")
+	# A player who leaves the session leaves the game.
+	PoolGame.apply(77, {"a": "pool_join"})
+	Shed.crew.erase(77)
+	PoolGame.process(0.1)
+	check(Shed.pool["players"] == [me], "a mate who leaves the session leaves the game")
+
+
+## In the game: walk up to the table, F racks them up and steps you up to the cue (the view
+## drops behind the cue ball), a shot plays out on the felt and ends where the host has it, and
+## F steps back.
+func _test_pool_session() -> void:
+	SaveGame.slot_override = "test_pool"
+	SaveGame.delete_slot("test_pool")
+	PoolGame._busy_until = 0
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	var ws: Workshop = main.world.workshop
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	Shed.request({"a": "garage_money", "value": 1000000})
+	Shed.request({"a": "buy_upgrade", "id": "lounge"})
+	await get_tree().process_frame
+	await get_tree().physics_frame
+	var table: PoolView = ws.get_node_or_null("Upgrades/Built/PoolTable")
+	check(table != null and table.get_node_or_null("Ball15") != null, "the lounge's pool table has its balls (a PoolView)")
+	if table == null:
+		main._leave()
+		main.queue_free()
+		return
+	var felt := table.global_position
+	w.place(Transform3D(Basis(), Vector3(felt.x, GarageUpgrades.LOFT_FLOOR + 0.05, felt.z + 1.7)))
+	await _aim_point(w, felt + Vector3(0.0, 0.02, 0.9))
+	check(w.target.get("kind", "") == "use" and w.info.contains("rack them up"), "looking at the table: F racks them up (%s)" % w.info.replace("\n", " / "))
+	_press("interact")
+	for i in 5:
+		await get_tree().process_frame
+	check(PoolGame.playing() and table.mode == "aim" and table._cam.current and w.process_mode == Node.PROCESS_MODE_DISABLED,
+		"F racks them up and steps you up to the cue: the view's down the cue, the walker stands still")
+	table.aim = 0.003
+	table.power = 1.0
+	var before := (table.get_node("Ball5") as Node3D).position
+	table.shoot()
+	for i in 90:
+		await get_tree().process_frame
+	var moving: bool = (table.get_node("Ball5") as Node3D).position.distance_to(before) > 0.01 and not table._sim.is_empty()
+	check(int(Shed.pool["shots"]) == 1 and moving and table.mode == "watch", "the break plays out on the felt, the balls rolling (you watch from the cue)")
+	for i in 3000:
+		await get_tree().process_frame
+		if table._sim.is_empty() and table.mode == "aim":
+			break
+	var same := true
+	for i in 16:
+		var b: Array = Shed.pool["balls"][i]
+		if bool(b[2]) and (table.get_node("Ball%d" % i) as Node3D).position.distance_to(Vector3(float(b[0]), PoolGame.R, float(b[1]))) > 0.001:
+			same = false
+	check(same and table.mode == "aim", "they stop where the host has them, and it's your shot again (practice)")
+	_press("interact")
+	for i in 3:
+		await get_tree().process_frame
+	check(table.mode == "" and w.camera.current and w.process_mode != Node.PROCESS_MODE_DISABLED, "F steps back from the table")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_pool")
+## Parts the style builder (Shed.style_parts) can fit in `slot` on a bike of `style`: the
+## style's reference part (Contracts.style_build) and every part of that kind made for it.
+static func _style_options(style: String, slot: String) -> Array:
+	var out := [str(Contracts.style_build(style).get(slot, "none"))]
+	for id in PartsDB.by_kind.get(PartsDB.SLOT_KIND[slot], []):
+		if PartsDB.styles_of(str(id)).has(style) and not out.has(id):
+			out.append(id)
+	return out
+
+
+## Every build the style builder can come up with, as far as the tail unit and the clocks go,
+## for BikeModel's fit checks (see _test_tail_and_dash_fit). Builds that put the same shapes in
+## the same places (to within 1 cm, or 2 cm for the rider's eye) are taken once, and so are
+## tails that differ only in their cowl or lamp (the guard and plate go by the tail's "style"
+## and "light_at"). "tail": [{build, parts, nums}] with every tail of a style over every frame
+## and seat (the tail's height), rear wheel and tyre (its size) and shock (its travel) the
+## style can have. "dash": [{build, parts, eyes}], one per bars,
+## clocks and fairing (race or not), with every place the rider's eye can be against the
+## steering head ({eye in steering space: the parts that put it there}) over every frame, seat,
+## fork (any fork, as BikeBuild.sensible_fork can fit one) and rear wheel and tyre.
+static func fit_cases() -> Dictionary:
+	var tail_cases := {}
+	var dash_groups := {}
+	var seat_builds := {}   # "frame|saddle" -> BikeBuild
+	var wheel_nums := {}    # "wheel|tyre" -> the rear wheel's numbers
+	var travel_of := {}
+	var forks := {}         # length -> a fork that long
+	for id in PartsDB.by_kind["fork"]:
+		forks[snappedf(BikeBuild.new({"fork": id}).fork_length, 0.005)] = id
+	var probe := BikeModel.new()
+	for style in PartsDB.STYLES:
+		var ref: Dictionary = Contracts.style_build(style)
+		var seats := []
+		for f in _style_options(style, "frame"):
+			for s in _style_options(style, "saddle"):
+				var k: String = f + "|" + s
+				if not seat_builds.has(k):
+					seat_builds[k] = BikeBuild.new({"frame": f, "saddle": s})
+				seats.append(k)
+		var wheels := {}
+		for w in _style_options(style, "rear_wheel"):
+			var fits: Array = PartsDB.tyres_for(w)
+			var styled: Array = fits.filter(func(x): return PartsDB.styles_of(str(x)).has(style))
+			var tyres: Array = (styled if not styled.is_empty() else fits).duplicate()
+			if PartsDB.tyre_fit(str(ref["rear_tyre"]), w) == 0 and not tyres.has(ref["rear_tyre"]):
+				tyres.append(ref["rear_tyre"])
+			for ty in tyres:
+				var k: String = w + "|" + ty
+				if not wheel_nums.has(k):
+					var b := BikeBuild.new({"rear_wheel": w, "rear_tyre": ty})
+					wheel_nums[k] = {"rear_radius": b.rear_radius, "rear_rim_radius": b.rear_rim_radius, "rear_tyre_width": b.rear_tyre_width}
+				wheels[k] = true
+		var shocks := {}
+		for sh in _style_options(style, "shock"):
+			if not travel_of.has(sh):
+				travel_of[sh] = BikeBuild.new({"shock": sh}).rear_travel
+			shocks[travel_of[sh]] = sh
+		# The tail: how high and far back it sits over the axle, the tyre under it and its travel.
+		for tail in _style_options(style, "tail"):
+			if tail == "none":
+				continue
+			var tp := PartsDB.get_part(tail)
+			var shape := "%s %s" % [tp.get("style", "classic"), tp.get("light_at", [])]
+			for sk in seats:
+				var sb: BikeBuild = seat_builds[sk]
+				var geo: Dictionary = PartsDB.get_part(str(sb.parts["frame"])).get("geo", {})
+				for wk in wheels:
+					var nums: Dictionary = wheel_nums[wk]
+					var tyre_style := str(PartsDB.get_part(wk.get_slice("|", 1)).get("style", "road"))
+					for tr in shocks:
+						var key := "%s|%.3f|%.3f|%.3f|%.3f|%.3f|%s|%.3f" % [shape, snappedf(sb.seat_height + float(geo.get("tail_y", 0.0)) - float(nums["rear_radius"]), 0.01),
+							float(geo.get("tail_back", 0.12)), snappedf(nums["rear_radius"], 0.01), snappedf(nums["rear_rim_radius"], 0.01),
+							snappedf(nums["rear_tyre_width"], 0.01), tyre_style in ["slick", "road"], tr]
+						if tail_cases.has(key):
+							continue
+						var n: Dictionary = nums.duplicate()
+						n["rear_travel"] = tr
+						tail_cases[key] = {"build": sb, "nums": n, "parts": {"tail": tail, "frame": sb.parts["frame"], "saddle": sb.parts["saddle"],
+							"rear_wheel": wk.get_slice("|", 0), "rear_tyre": wk.get_slice("|", 1), "shock": shocks[tr], "style": style}}
+		# The rider's eye against the steering head.
+		var radii := {}
+		for wk in wheels:
+			radii[snappedf(wheel_nums[wk]["rear_radius"], 0.005)] = wk
+		var eyes := {}
+		for sk in seats:
+			var sb: BikeBuild = seat_builds[sk]
+			var keep := [sb.fork_length, sb.rear_radius]
+			for fl in forks:
+				for r in radii:
+					sb.fork_length = fl
+					sb.rear_radius = r
+					probe._lay_out(sb)
+					var rel: Vector3 = (probe._eye - probe._head).snappedf(0.02)
+					if not eyes.has(rel):
+						eyes[rel] = {"frame": sb.parts["frame"], "saddle": sb.parts["saddle"], "fork": forks[fl], "wheel": radii[r]}
+			sb.fork_length = keep[0]
+			sb.rear_radius = keep[1]
+		var fairings := {}
+		for fa in _style_options(style, "fairing"):
+			var f := PartsDB.get_part(fa)
+			fairings[str(f.get("style", "")) == "race" and str((f.get("look", {}) as Dictionary).get("shape", "race")) != "seeley"] = fa
+		for bar in _style_options(style, "handlebars"):
+			for dash in _style_options(style, "dashboard"):
+				if dash == "none":
+					continue
+				for race in fairings:
+					var gk := "%s|%s|%s" % [bar, dash, race]
+					if not dash_groups.has(gk):
+						dash_groups[gk] = {"build": seat_builds[seats[0]], "eyes": {},
+							"parts": {"handlebars": bar, "dashboard": dash, "fairing": fairings[race] if race else "none", "style": style}}
+					(dash_groups[gk]["eyes"] as Dictionary).merge(eyes)
+	probe.free()
+	return {"tail": tail_cases.values(), "dash": dash_groups.values()}
+
+
+## A fit case's build (see fit_cases): its parts and numbers put on its BikeBuild.
+static func fit_build(c: Dictionary) -> BikeBuild:
+	var b: BikeBuild = c["build"]
+	for slot in c["parts"]:
+		if slot != "style":
+			b.parts[slot] = c["parts"][slot]
+	for f in c.get("nums", {}):
+		b.set(f, c["nums"][f])
+	return b
+
+
+func _test_tail_and_dash_fit() -> void:
+	# Over every tail, frame, seat, rear wheel, tyre and shock the style builder can put
+	# together: the number plate never cuts into the rear mudguard, and the tyre, with the shock
+	# right up, never comes through it. Over every bars, clocks, frame, seat and fork: the bars
+	# never hide the clocks' faces from the rider's eye.
+	var t0 := Time.get_ticks_msec()
+	var cases := fit_cases()
+	var times := [Time.get_ticks_msec() - t0]
+	var m := BikeModel.new()
+	add_child(m)
+	var plates := {}
+	var tyres := {}
+	var worst := [0.0, 0.0, 0.0]
+	for c in cases["tail"]:
+		m.build_fit_parts(fit_build(c), true)
+		var cut := m.plate_cut()
+		var through := m.tyre_through_guard()
+		var p: Dictionary = c["parts"]
+		var name := "%s (%s, %s, %s on %s, %s)" % [p["tail"], p["frame"], p["saddle"], p["rear_tyre"], p["rear_wheel"], p["shock"]]
+		if cut > 0.001 and not plates.has(p["tail"]):
+			plates[p["tail"]] = name
+		if through > 0.001 and not tyres.has(p["tail"]):
+			tyres[p["tail"]] = name
+		worst[0] = maxf(worst[0], cut)
+		worst[1] = maxf(worst[1], through)
+	check(plates.is_empty(), "no number plate cuts into its rear mudguard over %d tail builds (deepest %.1f mm) %s"
+		% [cases["tail"].size(), worst[0] * 1000.0, plates.values()])
+	check(tyres.is_empty(), "no rear tyre comes through its mudguard with the shock fully compressed over %d tail builds (deepest %.1f mm) %s"
+		% [cases["tail"].size(), worst[1] * 1000.0, tyres.values()])
+	times.append(Time.get_ticks_msec() - t0)
+	var hidden := {}
+	var eyes := 0
+	for g in cases["dash"]:
+		m.build_fit_parts(fit_build(g), false)
+		for rel in g["eyes"]:
+			var h := m.dash_hidden_from(rel)
+			worst[2] = maxf(worst[2], h)
+			eyes += 1
+			var key := "%s + %s%s" % [g["parts"]["handlebars"], g["parts"]["dashboard"], " in a race fairing" if g["parts"]["fairing"] != "none" else ""]
+			if h > 0.0 and not hidden.has(key):
+				hidden[key] = "%s (%d%% hidden, %s)" % [key, roundi(h * 100.0), g["eyes"][rel]]
+	check(hidden.is_empty(), "the bars never hide the clocks from the rider's eye over %d bars and clocks from %d eye points (worst %d%%) %s"
+		% [cases["dash"].size(), eyes, roundi(worst[2] * 100.0), hidden.values()])
+	m.free()
+	times.append(Time.get_ticks_msec() - t0)
+	# The quick fit drawing is the bike's own: whole bikes from the style builder pass too.
+	var whole := []
+	for style in PartsDB.STYLES:
+		var bm := BikeModel.new()
+		add_child(bm)
+		bm.build_from(BikeBuild.new(Shed.style_parts(style)))
+		if bm.plate_cut() > 0.001 or bm.tyre_through_guard() > 0.001 or bm.dash_hidden() > 0.0:
+			whole.append("%s %.3f %.3f %.2f" % [style, bm.plate_cut(), bm.tyre_through_guard(), bm.dash_hidden()])
+		bm.free()
+	check(whole.is_empty(), "a whole bike of every style passes the same checks %s" % [whole])
+	times.append(Time.get_ticks_msec() - t0)
+	print("    (fit checks: builds listed %.1f s, tails by %.1f s, clocks by %.1f s, whole bikes by %.1f s)" % [times[0] / 1000.0, times[1] / 1000.0, times[2] / 1000.0, times[3] / 1000.0])
+
+
+## A key press (or release) of `key`, as the player would make it.
+func _key_event(key: Key, pressed: bool) -> void:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = key
+	ev.keycode = key
+	ev.pressed = pressed
+	Input.parse_input_event(ev)
+
+
+## Simon's 17 October round (v0.8.0): third person on foot. V (View on a pad) switches to a
+## camera behind your shoulder with your own figure in view; it keeps out of walls, comes in
+## closer under a roof, aims from the crosshair to what you can reach, hands spraying and the
+## like back to first person, still jumps, and is remembered in the settings.
+func _test_walk_third_person() -> void:
+	var was := Settings.walk_third_person
+	Settings.walk_third_person = false
+	var listed := Settings.ACTIONS.filter(func(a): return a[0] == "walk_camera")
+	check(listed.size() == 1 and listed[0][2].has("foot") and Settings.binding_codes("walk_camera").has("key:%d" % KEY_V)
+		and Settings.binding_codes("walk_camera").has("joy:%d" % JOY_BUTTON_BACK),
+		"the Key bindings tab lists the on-foot camera toggle: V, or View on a pad (%s)" % str(Settings.binding_codes("walk_camera")))
+	check(Settings.clashes().filter(func(c): return "walk_camera" in [c["a"], c["b"]]).is_empty(), "and it clashes with nothing")
+	# Remembered in the settings file.
+	Settings.walk_third_person = true
+	Settings.save_settings()
+	Settings.walk_third_person = false
+	Settings.load_settings()
+	check(Settings.walk_third_person, "third person on foot is remembered in the settings")
+	Settings.walk_third_person = false
+	Settings.save_settings()
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var v: WalkerView = w.view
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 0.5)))
+	for i in 20:
+		await get_tree().physics_frame
+	check(not v.active() and w.camera.current and not v.body.visible, "first person to start with, and your own figure's hidden")
+	_key_event(KEY_V, true)
+	_key_event(KEY_V, false)
+	for i in 10:
+		await get_tree().process_frame
+	var eye := v.eye_point()
+	var space := w.get_world_3d().direct_space_state
+	var back := v.camera.global_position - eye
+	var clear := PhysicsRayQueryParameters3D.create(eye, v.camera.global_position, 1)
+	clear.exclude = [w.get_rid()]
+	check(Settings.walk_third_person and v.active() and v.camera.current and v.body.visible and not w.camera.visible,
+		"V switches to third person: the shoulder camera's in use, your figure shows and the first-person tool's put away")
+	check(back.dot(w.global_basis.z) > 0.8 and back.dot(w.global_basis.x) > 0.2 and back.length() <= WalkerView.ARM_IN + 0.5
+		and space.intersect_ray(clear).is_empty(),
+		"it sits behind your right shoulder, closer in under the shed roof (%.2f m) with nothing between it and you" % back.length())
+	# Backed up against a wall, it comes in rather than looking through it.
+	var squeezed := []
+	var walls := 0
+	for k in 8:
+		var yaw := TAU * k / 8.0
+		var dir := Basis(Vector3.UP, yaw) * Vector3.BACK
+		var probe := PhysicsRayQueryParameters3D.create(Workshop.CENTER + Vector3.UP * 1.6, Workshop.CENTER + Vector3.UP * 1.6 + dir * 40.0, 1)
+		var wall := space.intersect_ray(probe)
+		if wall.is_empty():
+			continue
+		walls += 1
+		var spot: Vector3 = wall["position"] - dir * 0.45
+		w.place(Transform3D(Basis(Vector3.UP, yaw), Vector3(spot.x, Workshop.CENTER.y, spot.z)))
+		for i in 8:
+			await get_tree().physics_frame
+		await get_tree().process_frame
+		eye = v.arm_start()
+		var ray := PhysicsRayQueryParameters3D.create(eye, v.camera.global_position + (v.camera.global_position - eye).normalized() * 0.15, 1)
+		ray.exclude = [w.get_rid()]
+		if not space.intersect_ray(ray).is_empty() or eye.distance_to(v.camera.global_position) > 1.2:
+			squeezed.append("%d deg %.2f m" % [roundi(rad_to_deg(yaw)), eye.distance_to(v.camera.global_position)])
+	check(walls > 2 and squeezed.is_empty(), "backed up to a wall %d ways round the shed, the camera comes in and never sees through it %s" % [walls, str(squeezed)])
+	# Aiming: the eye looks where the crosshair is, and works on a bike in reach as in first person.
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 0.5)))
+	for i in 5:
+		await get_tree().physics_frame
+	var c_from := v.camera.global_position
+	var c_dir := -v.camera.global_basis.z
+	var cq := PhysicsRayQueryParameters3D.create(c_from + c_dir * maxf(0.0, (v.eye_point() - c_from).dot(c_dir)), c_from + c_dir * 60.0, 1 | 2 | 4 | Workshop.INTERACT_LAYER)
+	cq.exclude = [w.get_rid()]
+	var c_hit := space.intersect_ray(cq)
+	var eq := PhysicsRayQueryParameters3D.create(w.camera.global_position, w.camera.global_position - w.camera.global_basis.z * 80.0, 1 | 2 | 4 | Workshop.INTERACT_LAYER)
+	eq.exclude = [w.get_rid()]
+	var e_hit := space.intersect_ray(eq)
+	check(not c_hit.is_empty() and not e_hit.is_empty() and (c_hit["position"] as Vector3).distance_to(e_hit["position"]) < 0.1,
+		"your eye's turned to look at the very spot under the crosshair")
+	var reached := []
+	for id in main.workshop.bike_views:
+		if reached.size() > 0:
+			break
+		var bpos: Vector3 = (main.workshop.bike_views[id] as Node3D).global_position
+		for k in 8:
+			var dir := Basis(Vector3.UP, TAU * k / 8.0) * Vector3.FORWARD
+			var at := bpos - dir * 1.3
+			w.place(Transform3D(Basis.looking_at(dir, Vector3.UP), Vector3(at.x, Workshop.CENTER.y, at.z)))
+			w._pitch = -0.3
+			Settings.walk_third_person = false
+			for i in 6:
+				await get_tree().physics_frame
+			if str(w.target.get("kind", "")) != "part":
+				continue
+			var first := w.target.duplicate()
+			Settings.walk_third_person = true
+			for i in 6:
+				await get_tree().physics_frame
+			reached = [first, w.target.duplicate()]
+			break
+	check(reached.size() == 2 and str(reached[1].get("kind", "")) == "part" and int(reached[1].get("bike", 0)) == int(reached[0].get("bike", -1)),
+		"looking at a bike within reach, third person picks the same bike to work on as first person %s" % str(reached))
+	# Spraying, washing and sitting down are first person.
+	Settings.walk_third_person = true
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 0.5)))
+	for i in 5:
+		await get_tree().physics_frame
+	var forced := {}
+	for job in ["spray", "wash", "seat"]:
+		match job:
+			"spray": w.spray_mode = {"item": 0, "settle": 1.0, "breath": 1.0}
+			"wash": w.wash_mode = {"bike": 0}
+			"seat": w.seat = -1
+		v.update(0.0)
+		forced[job] = [v.active(), w.camera.current, v.forced_reason()]
+		w.spray_mode = {}
+		w.wash_mode = {}
+		w.seat = 0
+		v.update(0.0)
+	check(not forced["spray"][0] and forced["spray"][1] and not forced["wash"][0] and forced["wash"][1] and not forced["seat"][0],
+		"spraying, washing and sitting down switch to first person by themselves %s" % str(forced))
+	check(v.active() and v.camera.current, "and back to third person after")
+	# Your figure walks and crouches as the crew see it.
+	Input.action_press("move_forward")
+	var swing := 0.0
+	for i in 40:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+		var leg := v.body.find_child("LegR", true, false) as Node3D
+		if leg:
+			swing = maxf(swing, absf(leg.rotation.x))
+	Input.action_release("move_forward")
+	check(swing > 0.15, "walking, your figure's legs swing (%.2f rad)" % swing)
+	w.set_crouched(true)
+	for i in 30:
+		await get_tree().process_frame
+	check(v.body.scale.y < 0.7, "crouching, it squats down as the crew see it (%.2f)" % v.body.scale.y)
+	w.set_crouched(false)
+	for i in 30:
+		await get_tree().physics_frame
+	# Still jumps.
+	var y0 := w.global_position.y
+	var top := y0
+	_key_event(KEY_SPACE, true)
+	_key_event(KEY_SPACE, false)
+	for i in 60:
+		await get_tree().physics_frame
+		top = maxf(top, w.global_position.y)
+	check(top - y0 > 0.38 and v.active(), "Space still jumps in third person (%.2f m)" % (top - y0))
+	_key_event(KEY_V, true)
+	_key_event(KEY_V, false)
+	for i in 5:
+		await get_tree().process_frame
+	check(not v.active() and w.camera.current and w.camera.visible and not v.body.visible, "V again: back to first person, your figure hidden")
+	main.queue_free()
+	await get_tree().process_frame
+	Settings.walk_third_person = was
+	Settings.save_settings()
+
+
+# ---------------------------------------------------------------------------- handling phase 4: heat
+
+## Runs a bike's heat model on its own for `seconds`: riding at `v` m/s with `p_slip` W of tyre
+## sliding on each tyre, the engine at `rpm` making `kw`, and `brake_w` W into the front brake
+## (a third of it into the back).
+func _heat_run(h: BikeHeat, b: BikeBuild, seconds: float, v: float, p_slip: float, rpm: float, kw: float,
+		brake_w := 0.0, running := true, dt := 0.1) -> void:
+	var fz := b.total_mass * Bike.G * 0.5
+	var t := 0.0
+	while t < seconds - 1e-6:
+		for i in 2:
+			h._tyre_step(i, dt, v, p_slip, b.rolling * fz * v, v > 0.0, 0.0)
+			h._brake_step(i, dt, v, brake_w * (1.0 if i == 0 else 0.3))
+		h._engine_step(dt, v, rpm, kw, running)
+		t += dt
+	h._update_effects(0.0, dt)
+
+
+## A bike's heat model on its own, soaked at `air` °C: [BikeHeat, BikeBuild].
+func _heat_of(build: Dictionary, air: float) -> Array:
+	var b := BikeBuild.new(build)
+	var h := BikeHeat.new()
+	h.setup(b)
+	h.air = air
+	h.road = air
+	h.soak(air)
+	return [h, b]
+
+
+var table_heat := {}
+
+
+func _test_heat_grip_window() -> void:
+	# Each compound's grip against its temperature: slicks need heat, touring and dual-sport tyres
+	# work cold, anything overcooked goes greasy. The pressure rises with the air in the tyre.
+	var temps := [0.0, 8.0, 20.0, 40.0, 70.0, 100.0, 130.0]
+	var table := {}
+	for id in ["race_slick", "sport_road", "touring_road", "dual_sport", "knobbly_mx", "vintage_ribbed"]:
+		var hb := _heat_of({"front_tyre": id, "rear_tyre": id}, 10.0)
+		var h: BikeHeat = hb[0]
+		var row := []
+		for t in temps:
+			h.soak(t)
+			row.append(h.temp_grip(1))
+		table[id] = row
+		print("    %-15s grip at %s °C: %s" % [id, str(temps), ", ".join(row.map(func(g): return "%.2f" % g))])
+	check(table["race_slick"][1] < 0.65 and table["race_slick"][4] >= 0.99, "a race slick is hopeless cold (%.2f at 8 °C) and full at 70 °C" % table["race_slick"][1])
+	check(table["sport_road"][1] > 0.8 and table["sport_road"][1] < 0.9 and table["sport_road"][3] >= 0.99,
+		"a sport road tyre is noticeably down cold (%.2f at 8 °C), full by 40 °C" % table["sport_road"][1])
+	check(table["touring_road"][1] > 0.97 and table["dual_sport"][1] > 0.94 and table["knobbly_mx"][1] > 0.94,
+		"touring, dual-sport and knobbly tyres work cold (%.2f, %.2f, %.2f at 8 °C)" % [table["touring_road"][1], table["dual_sport"][1], table["knobbly_mx"][1]])
+	check(table["sport_road"][6] < 0.95 and table["touring_road"][6] < 0.98, "overcooked at 130 °C they go greasy (%.2f sport)" % table["sport_road"][6])
+	# Pressure: set cold in the shed at 20 °C, it rises as the air inside warms.
+	var hb2 := _heat_of({}, 20.0)
+	var h2: BikeHeat = hb2[0]
+	var b2: BikeBuild = hb2[1]
+	var p20 := h2.pressure(1)
+	h2.soak(80.0)
+	var p80 := h2.pressure(1)
+	h2.soak(5.0)
+	var p5 := h2.pressure(1)
+	print("    rear pressure set %.2f bar: %.2f at 5 °C, %.2f at 20 °C, %.2f at 80 °C" % [b2.tune_value("psi_r"), p5, p20, p80])
+	check(absf(p20 - b2.tune_value("psi_r")) < 0.01 and p80 > p20 * 1.18 and p5 < p20 * 0.96, "the tyre pressure rises from the cold setting as it heats")
+	# Riding realism softens what the cold does; realism 0 keeps all of it, and off the road it matters less.
+	h2.soak(8.0)
+	h2._update_effects(0.0, 0.1)
+	var g0 := h2.tyre_grip(1, "tarmac")
+	var dirt0 := h2.tyre_grip(1, "dirt")
+	h2._update_effects(1.0, 0.1)
+	var g1 := h2.tyre_grip(1, "tarmac")
+	check(g0 < 0.88 and g1 > g0 + 0.07 and g1 < 1.0 and dirt0 > g0, "cold sport tyres: grip %.2f at realism 0, %.2f at 1, %.2f on dirt" % [g0, g1, dirt0])
+
+
+func _test_heat_warmup() -> void:
+	# Warm-up curves on a cold morning (8 °C): tyres on a gentle road ride and at track pace, the
+	# engine (air and oil cooled, air cooled and liquid cooled) from cold, and the choke's fast idle.
+	for c in [["sport_road", 400.0, "road pace"], ["sport_road", 3000.0, "track pace"], ["race_slick", 400.0, "road pace"],
+			["race_slick", 3000.0, "track pace"]]:
+		var hb := _heat_of({"front_tyre": c[0], "rear_tyre": c[0]}, 8.0)
+		var h: BikeHeat = hb[0]
+		var curve := []
+		var last := 0.0
+		for minute in [1, 3, 5, 10]:
+			_heat_run(h, hb[1], minute * 60.0 - last, 25.0, c[1], 5000.0, 7.0)
+			last = minute * 60.0
+			curve.append("%d min %d°C (x%.2f)" % [minute, roundi(h.tyre_temp(1)), h.temp_grip(1)])
+		print("    %s at %s: %s" % [c[0], c[2], ", ".join(curve)])
+		table_heat[c[0] + c[2]] = [h.tyre_temp(1), h.temp_grip(1)]
+	check(table_heat["sport_roadroad pace"][0] > 20.0, "sport tyres warm up on the road (%d °C after 10 min)" % roundi(table_heat["sport_roadroad pace"][0]))
+	check(table_heat["sport_roadtrack pace"][1] >= 0.99, "at track pace they're fully in their window (%d °C)" % roundi(table_heat["sport_roadtrack pace"][0]))
+	check(table_heat["race_slickroad pace"][1] < 0.85 and table_heat["race_slicktrack pace"][1] > 0.95,
+		"slicks never get going on the road (x%.2f) but work at track pace (x%.2f)" % [table_heat["race_slickroad pace"][1], table_heat["race_slicktrack pace"][1]])
+	for cool in ["oil_cooler", "air_fins", "single_radiator"]:
+		var hb := _heat_of({"cooling": cool}, 8.0)
+		var h: BikeHeat = hb[0]
+		var idle0 := h.idle
+		var power0 := h.power
+		var warm_at := -1.0
+		var t := 0.0
+		var marks := []
+		while t < 900.0:
+			_heat_run(h, hb[1], 10.0, 25.0, 400.0, 5000.0, 7.0)
+			t += 10.0
+			if warm_at < 0.0 and h.engine_state() == "warm":
+				warm_at = t
+			if int(t) % 120 == 0:
+				marks.append("%d min %d/%d°C" % [int(t / 60.0), roundi(h.engine), roundi(h.oil)])
+		print("    %s: %s/oil %s; warm after %d s; cold idle x%.2f, cold power x%.2f" % [cool, h.engine_label(),
+			", ".join(marks), int(warm_at), idle0, power0])
+		check(warm_at > 30.0 and warm_at < 480.0 and h.engine_state() == "warm" and h.power >= 0.99,
+			"%s: the engine warms up riding in %d s and stays warm" % [cool, int(warm_at)])
+		check(idle0 > 1.3 and power0 < 0.92, "%s: stone cold it idles fast on the choke (x%.2f) and is down on power (x%.2f)" % [cool, idle0, power0])
+	# Idling hot with no air through the fins: an air-cooled engine keeps climbing until it's
+	# overheating; a liquid-cooled one's fan holds it.
+	for cool in ["air_fins", "single_radiator"]:
+		var hb := _heat_of({"cooling": cool}, 18.0)
+		var h: BikeHeat = hb[0]
+		h.warm_through()
+		_heat_run(h, hb[1], 300.0, 30.0, 400.0, 6000.0, 15.0)
+		var ridden := h.engine
+		var hot_at := -1.0
+		var t := 0.0
+		while t < 1800.0 and hot_at < 0.0:
+			_heat_run(h, hb[1], 10.0, 0.0, 0.0, (hb[1] as BikeBuild).idle_rpm, 0.0)
+			t += 10.0
+			if h.engine_state() == "hot":
+				hot_at = t
+		print("    %s idling after a ride: %d°C ridden, %s" % [cool, roundi(ridden),
+			"hot after %d s (%d°C, power x%.2f)" % [int(hot_at), roundi(h.engine), h.power] if hot_at > 0.0 else "never hot (%d°C after 30 min)" % roundi(h.engine)])
+		if cool == "air_fins":
+			check(hot_at > 60.0 and hot_at < 1200.0, "air-cooled, idling hot with no airflow it overheats (after %d s)" % int(hot_at))
+		else:
+			check(hot_at < 0.0 and h.engine < 108.0, "liquid-cooled, the fan holds it (%d °C after 30 min)" % roundi(h.engine))
+	# Overheating costs power.
+	var hot := _heat_of({"cooling": "air_fins"}, 18.0)
+	var hh: BikeHeat = hot[0]
+	hh.engine = 250.0
+	hh.oil = 180.0
+	hh._update_effects(0.0, 0.1)
+	var p0 := hh.power
+	hh._update_effects(1.0, 0.1)
+	check(p0 < 0.85 and hh.power > p0, "an overheating engine loses power (x%.2f, x%.2f at realism 1)" % [p0, hh.power])
+
+
+func _test_heat_brake_fade() -> void:
+	# Brake fade: repeated hard stops from 30 m/s with 20 s of riding between, organic pads (which
+	# fade soonest) against sintered; then what cold does to race carbon pads.
+	for pad in ["organic", "sintered"]:
+		var hb := _heat_of({"front_pads": pad}, 15.0)
+		var h: BikeHeat = hb[0]
+		var b: BikeBuild = hb[1]
+		h.warm_through()
+		var line := []
+		var worst := 1.0
+		for stop in 10:
+			# One stop at about 1 g (less as it fades), the front brake doing 85% of it.
+			var v := 30.0
+			while v > 0.0:
+				var dt := 0.05
+				var decel := Bike.G * h.brake_temp_mult(0)
+				_heat_run(h, b, dt, v, 600.0, 4000.0, 0.0, b.total_mass * decel * 0.85 * v, true, dt)
+				v -= decel * dt
+			line.append("%d°C x%.2f" % [roundi(h.discs[0]), h.brake_temp_mult(0)])
+			worst = minf(worst, h.brake_temp_mult(0))
+			_heat_run(h, b, 20.0, 25.0, 400.0, 5000.0, 7.0)
+		print("    %s pads, front disc after each stop: %s" % [pad, ", ".join(line)])
+		table_heat[pad] = worst
+		_heat_run(h, b, 300.0, 25.0, 400.0, 5000.0, 7.0)
+		table_heat[pad + "_cooled"] = h.brake_temp_mult(0)
+		print("    ... and after 5 min riding gently: %d°C x%.2f" % [roundi(h.discs[0]), h.brake_temp_mult(0)])
+	check(table_heat["organic"] < 0.8, "organic pads fade after repeated hard stops (bite x%.2f)" % table_heat["organic"])
+	check(table_heat["sintered"] > table_heat["organic"] + 0.1, "sintered pads hold on far longer (x%.2f)" % table_heat["sintered"])
+	check(table_heat["organic_cooled"] > 0.98, "the brakes come back once they cool (x%.2f)" % table_heat["organic_cooled"])
+	var hb := _heat_of({"front_pads": "carbon_race"}, 10.0)
+	var h: BikeHeat = hb[0]
+	var cold := h.brake_temp_mult(0)
+	h.discs[0] = 300.0
+	h.pads[0] = 300.0
+	var hot := h.brake_temp_mult(0)
+	var semi: BikeHeat = _heat_of({}, 10.0)[0]
+	check(cold < 0.75 and hot > 0.99 and semi.brake_temp_mult(0) > 0.94,
+		"race carbon pads barely bite cold (x%.2f), fully at 300 °C; semi-metallic bite cold (x%.2f)" % [cold, semi.brake_temp_mult(0)])
+
+
+## A hard stop from 25 m/s on the front brake, the bike's heat set up by `prep` first.
+## Returns [distance m (-1 if it crashed), [front tyre, rear tyre, front disc °C after], v0].
+func _heat_stop(build: Dictionary, assist: float, prep: Callable, lever := 1.0, seconds := 13.0) -> Array:
+	var st := {"x0": Vector3.ZERO, "v0": 0.0, "dist": -1.0, "prepped": false, "temps": [0.0, 0.0, 0.0]}
+	var r := await ride(build, seconds, func(b, t):
+		b.assist = assist
+		if not st["prepped"]:
+			st["prepped"] = true
+			prep.call(b.heat)
+		if t < 8.0:
+			_hold_speed(b, 25.0)
+			b.front_brake = 0.0
+			return
+		b.throttle = 0.0
+		b.front_brake = lever
+		b.rear_brake = 0.0
+		if st["v0"] == 0.0:
+			st["v0"] = b.speed
+			st["x0"] = b.global_position
+		elif st["dist"] < 0.0 and b.speed < 0.3:
+			st["dist"] = (b.global_position - st["x0"]).length()
+			st["temps"] = [b.heat.tyres[0]["surface"], b.heat.tyres[1]["surface"], b.heat.discs[0]])
+	var out := [st["dist"] if not r["crashed"] else -1.0, st["temps"], st["v0"]]
+	await _done(r)
+	return out
+
+
+func _test_heat_cold_tyres() -> void:
+	# A cold morning: the same hard stop on stone cold tyres stops longer than on warm ones, and
+	# race slicks cold are far worse. Riding realism softens it.
+	BikeHeat.fixed_air = 6.0
+	var warm := await _heat_stop({}, 0.5, func(_h): pass)
+	var cold := await _heat_stop({}, 0.5, func(h): h.soak(6.0))
+	var warm_easy := await _heat_stop({}, 1.0, func(_h): pass)
+	var cold_easy := await _heat_stop({}, 1.0, func(h): h.soak(6.0))
+	var slick_warm := await _heat_stop(SLICK, 0.5, func(_h): pass)
+	var slick_cold := await _heat_stop(SLICK, 0.5, func(h): h.soak(6.0))
+	BikeHeat.fixed_air = NAN
+	print("    stop from 25 m/s, sport tyres: warm %.1f m, cold %.1f m (realism 0.5); %.1f vs %.1f m at realism 1" % [warm[0], cold[0], warm_easy[0], cold_easy[0]])
+	print("    race slicks: warm %.1f m, cold %.1f m; the cold sport tyres after the stop: front %d°C, rear %d°C, disc %d°C" % [slick_warm[0], slick_cold[0],
+		roundi(cold[1][0]), roundi(cold[1][1]), roundi(cold[1][2])])
+	check(warm[0] > 0.0 and cold[0] > warm[0] * 1.05, "cold sport tyres stop noticeably longer (%.1f m against %.1f m)" % [cold[0], warm[0]])
+	check(slick_warm[0] > 0.0 and slick_cold[0] > slick_warm[0] * 1.15, "cold slicks far longer (%.1f m against %.1f m)" % [slick_cold[0], slick_warm[0]])
+	check(warm_easy[0] > 0.0 and cold_easy[0] / warm_easy[0] < cold[0] / warm[0],
+		"Riding realism 1 softens the cold (x%.2f against x%.2f)" % [cold_easy[0] / maxf(warm_easy[0], 0.1), cold[0] / maxf(warm[0], 0.1)])
+	check(cold[1][0] > 6.5 and cold[1][2] > 25.0, "the ride and the stop warmed the tyres and the disc")
+
+
+func _test_heat_brakes_ride() -> void:
+	# Overcooked brakes fade: the same squeeze on discs at 650 °C stops far longer at realism 0.
+	var lever := 0.45
+	var normal := await _heat_stop({"front_pads": "organic"}, 0.0, func(_h): pass, lever)
+	var faded := await _heat_stop({"front_pads": "organic"}, 0.0, func(h):
+		h.discs[0] = 650.0
+		h.pads[0] = 600.0, lever, 22.0)
+	var normal_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(_h): pass, lever)
+	var faded_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(h):
+		h.discs[0] = 650.0
+		h.pads[0] = 600.0, lever, 22.0)
+	print("    organic pads, the same squeeze from 25 m/s: %.1f m normal, %.1f m faded (realism 0); %.1f vs %.1f m at realism 1" % [normal[0], faded[0], normal_easy[0], faded_easy[0]])
+	check(normal[0] > 0.0 and faded[0] > normal[0] * 1.3, "faded brakes stop far longer (%.1f m against %.1f m)" % [faded[0], normal[0]])
+	check(normal_easy[0] > 0.0 and faded_easy[0] / normal_easy[0] < faded[0] / normal[0], "Riding realism 1 softens the fade")
+
+
+func _test_heat_engine_ride() -> void:
+	# A cold engine on the bike: it idles fast on the choke and is down on power until the oil warms.
+	BikeHeat.fixed_air = 6.0
+	var st := {"cold_rpm": 0.0, "warm_rpm": 0.0, "cold_power": 1.0, "telemetry": false}
+	for cold in [true, false]:
+		var tel := RideTelemetry.new("Heat")
+		var r := await ride({}, 3.0, func(b, t):
+			b.assist = 0.0
+			b.telemetry = tel
+			if t == 0.0 and cold:
+				b.heat.soak(6.0)
+			b.throttle = 0.0
+			b.front_brake = 1.0)
+		var bike: Bike = r["bike"]
+		st["cold_rpm" if cold else "warm_rpm"] = bike.rpm
+		if cold:
+			st["cold_power"] = bike.heat.power
+			st["telemetry"] = absf(tel.latest("engine_t") - bike.heat.engine) < 1.0 and tel.latest("psi_r") > 1.0 \
+				and tel.latest("tyre_f") > 0.0 and tel.latest("air_t") == 6.0
+		await _done(r)
+	BikeHeat.fixed_air = NAN
+	print("    idle: %d rpm stone cold, %d rpm warm; cold power x%.2f" % [roundi(st["cold_rpm"]), roundi(st["warm_rpm"]), st["cold_power"]])
+	check(st["cold_rpm"] > st["warm_rpm"] * 1.25, "a cold engine idles fast (%d against %d rpm)" % [roundi(st["cold_rpm"]), roundi(st["warm_rpm"])])
+	check(st["cold_power"] < 0.92, "and is down on power until it warms (x%.2f)" % st["cold_power"])
+	check(st["telemetry"], "the telemetry records the temperatures, pressures and the air")
+
+
+func _test_heat_carry_over() -> void:
+	# Get off and back on a minute later: still warm. Leave it for hours: shed temperature.
+	# Nothing about heat is saved, so old saves load as they always did.
+	BikeHeat.fixed_air = 10.0
+	var hb := _heat_of({}, 10.0)
+	var ridden: BikeHeat = hb[0]
+	ridden.warm_through()
+	BikeHeat.park(-77, ridden)
+	BikeHeat.parked[-77]["at"] = Time.get_ticks_msec() - 60000
+	var back := BikeHeat.new()
+	back.setup(hb[1])
+	BikeHeat.resume(-77, back)
+	var minute := back.engine
+	BikeHeat.parked[-77]["at"] = Time.get_ticks_msec() - 5 * 3600 * 1000
+	BikeHeat.resume(-77, back)
+	var hours := back.engine
+	var fresh := BikeHeat.new()
+	fresh.setup(hb[1])
+	BikeHeat.resume(-78, fresh)
+	BikeHeat.parked.erase(-77)
+	BikeHeat.fixed_air = NAN
+	print("    engine back on after a minute %d°C, after 5 hours %d°C, a bike not ridden %d°C (shed 13°C)" % [roundi(minute), roundi(hours), roundi(fresh.engine)])
+	check(minute > 80.0 and absf(hours - 13.0) < 0.5 and absf(fresh.engine - 13.0) < 0.01,
+		"a bike ridden a minute ago is still warm; one left for hours, or not ridden, is at shed temperature")
+	check(fresh.tyre_state() == "cold" and fresh.engine_state() == "cold" and ridden.engine_state() == "warm",
+		"the HUD says cold tyres and engine on a cold bike, warm on a ridden one")
+	var save := BikeBuild.new({}).to_dict()
+	check(not str(save).contains("heat") and not str(save).contains("carcass"), "heat isn't part of a saved bike")

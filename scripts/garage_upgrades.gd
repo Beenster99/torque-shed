@@ -43,11 +43,15 @@ const CATALOGUE := {
 	"paint_auto_shaker": {"name": "Automatic paint shaker", "cat": "paint", "price": 3500, "needs": [],
 		"desc": "Mixes a tin even in seconds, no stirring, and remixes a saved colour from the swatch wall in one go."},
 	"paint_meter": {"name": "Colour meter", "cat": "paint", "price": 6000, "needs": [],
-		"desc": "Reads the paint on any part (right mouse with empty hands) and sets it as the mixing bench's target, for matching."},
+		"desc": "Reads the paint on any part ({work2} with empty hands) and sets it as the mixing bench's target, for matching."},
 	"paint_curved_panel": {"name": "Curved spray-out panel", "cat": "paint", "price": 1000, "needs": [],
 		"desc": "Test cards on a curved panel, to see a metallic, pearl or chameleon's flop from every angle at once."},
+	# The recovery rig (see Recovery): a level gate as well as a price.
+	"recovery_rig": {"name": "Recovery truck and bike trailer", "cat": "vehicles", "price": 14500, "needs": [], "level": 8,
+		"desc": "A double-cab pickup and a two-bike trailer with a ramp, winch, ratchet straps and a dolly tray, parked in the yard. The phone starts ringing with barn finds and crash rescues to fetch. Needs character level 8."},
 }
-const CATEGORIES := {"build": "Building work", "storage": "Storage", "luxury": "Luxury", "paint": "Paint mixing bay"}
+const CATEGORIES := {"build": "Building work", "storage": "Storage", "luxury": "Luxury", "paint": "Paint mixing bay",
+	"vehicles": "Vehicles"}
 ## XP for buying one, scaled up with its price (see award_mult).
 const XP_KEY := "garage_upgrade"
 
@@ -58,6 +62,11 @@ static func exists(id: String) -> bool:
 
 static func owned(id: String) -> bool:
 	return Shed.upgrades.has(id)
+
+
+## The character level the buyer needs for `id` (1 for most).
+static func level_needed(id: String) -> int:
+	return int(CATALOGUE.get(id, {}).get("level", 1))
 
 
 static func price(id: String) -> int:
@@ -410,13 +419,13 @@ static func lift_bays(have: Dictionary) -> Array:
 	return out
 
 
-## A save's lifts that are up (bay -> true), kept to bays that have one.
+## A save's lifts that are up (bay -> true), kept to bays that have one (and the wash bay's).
 static func sanitize_lifts(saved, have: Dictionary) -> Dictionary:
 	var out := {}
 	var bays := lift_bays(have)
 	if saved is Dictionary:
 		for bay in saved:
-			if str(bay).is_valid_int() and bays.has(int(bay)) and bool(saved[bay]):
+			if str(bay).is_valid_int() and (bays.has(int(bay)) or int(bay) == Wash.LIFT) and bool(saved[bay]):
 				out[int(bay)] = true
 	return out
 

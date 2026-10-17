@@ -363,6 +363,10 @@ class Clock extends Node3D:
 		_minute = _hand(radius * 0.85, 0.012, black, 0.003)
 		_second = _hand(radius * 0.9, 0.005, red, 0.006)
 		RiderFigure.mesh(self, RiderFigure.sphere(0.012), red, Vector3(0.0, 0.0, 0.007))
+		# The hands move every frame: a shadow from them would have the lamps over the clock
+		# draw their shadow maps again every frame, for a shadow too thin to see.
+		for g in find_children("*", "GeometryInstance3D", true, false):
+			(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_process(0.0)
 
 	func _hand(length: float, width: float, mat: Material, z: float) -> Node3D:
@@ -398,6 +402,9 @@ class DigitalClock extends Node3D:
 		label.outline_size = 0
 		label.shaded = false
 		label.double_sided = false
+		# Glowing digits cast no shadow (and changing every half second, one would have the
+		# lamps nearby draw their shadow maps again each time).
+		label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(label)
 		_process(0.0)
 

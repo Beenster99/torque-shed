@@ -780,8 +780,8 @@ static func apply(peer: int, action: Dictionary) -> String:
 				t = _new_tray(peer)
 			(t["items"] as Array).append(item)
 			_st()["served"] = int(_st()["served"]) + 1
-			return "%s on your tray (%s). Hold %s to %s it." % [item_name(item), money(price(item)),
-				"right mouse", str(MENU[item]["verb"])]
+			return "%s on your tray (%s). Hold {work2} to %s it." % [item_name(item), money(price(item)),
+				str(MENU[item]["verb"])]
 		"coffee_tray_down":
 			var t := tray_of(peer)
 			var xf: Transform3D = action["xf"]

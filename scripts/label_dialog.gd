@@ -40,7 +40,7 @@ func _ready() -> void:
 	save.pressed.connect(_save)
 	row.add_child(save)
 	var cancel := Button.new()
-	cancel.text = "Cancel (Esc)"
+	Controls.bind_text(cancel, "Cancel ({back})")
 	cancel.pressed.connect(close_dialog)
 	row.add_child(cancel)
 	col.add_child(row)
@@ -80,7 +80,7 @@ func open_board(board: Node, at: Vector2) -> void:
 	furniture_id = 0
 	_title.text = "WRITE ON THE WHITEBOARD"
 	_edit.max_length = BoardData.MAX_TEXT
-	_edit.placeholder_text = "Enter puts the line up and starts the next. Esc when done."
+	Controls.bind_text(_edit, "Enter puts the line up and starts the next. {back} when done.", "placeholder_text")
 	_edit.text = ""
 	_edit.keep_editing_on_text_submit = true
 	_show()

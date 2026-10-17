@@ -231,7 +231,7 @@ func update_signs() -> void:
 			tag.text = stand_card(i)
 	var screen: Label3D = office.screen_text()
 	if screen:
-		screen.text = screen_lines()
+		Controls.bind_text(screen, screen_lines())
 
 
 ## What stand `i`'s price card says.
@@ -261,7 +261,7 @@ static func screen_lines() -> String:
 	for p in Sales.px().values():
 		lines.append("Part-ex: %s, by %s" % [str(p["name"]), str(p["target_name"]).left(16)])
 	lines.append("")
-	lines.append("F: open the Sales page")
+	lines.append("{interact}: open the Sales page")
 	return "\n".join(lines)
 
 

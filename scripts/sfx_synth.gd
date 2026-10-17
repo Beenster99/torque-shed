@@ -19,6 +19,7 @@ const VARIANTS := {
 	"door_start": 2, "door_stop": 3, "grinder_up": 3, "grinder_down": 3, "jet_on": 2, "jet_off": 3,
 	"gun_on": 3, "gun_off": 3, "pump_on": 2, "pump_off": 2, "blast_on": 2, "blast_off": 2, "comp_on": 2, "comp_off": 3,
 	"bead_pop": 4, "slide_open": 3, "slide_close": 3, "slide_shut": 3, "tube_start": 3, "creak": 5,
+	"wash_ding": 3,
 }
 const STEP_VARIANTS := 8
 const IMPACT_VARIANTS := 4
@@ -46,6 +47,7 @@ const LEVELS := {
 	"blast_on": ["peak", 0.6], "blast_off": ["peak", 0.6], "comp_on": ["peak", 0.65], "comp_off": ["peak", 0.65],
 	"bead_pop": ["peak", 0.8], "slide_open": ["peak", 0.45], "slide_close": ["peak", 0.45], "slide_shut": ["peak", 0.5],
 	"tube_start": ["peak", 0.4], "creak": ["peak", 0.5], "sale_offer": ["peak", 0.55], "desk_bell": ["peak", 0.5],
+	"wash_ding": ["peak", 0.5], "wash_clean": ["peak", 0.55],
 }
 ## Footstep loudness by floor (concrete is the reference).
 const STEP_PEAK := {"concrete": 0.5, "epoxy": 0.5, "wood": 0.55, "metal": 0.55, "gravel": 0.5, "grass": 0.35, "tarmac": 0.45,
@@ -73,7 +75,7 @@ static func all_sounds() -> Array[String]:
 	var out: Array[String] = ["step_concrete", "step_epoxy", "step", "switch", "pickup", "clink", "clunk", "ratchet", "scrub",
 		"impact_metal_concrete", "impact_metal_wood", "impact_metal_steel", "grinder", "spray", "spray_gun", "washer", "jet",
 		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "shaker", "scrap", "screech", "chirp", "starter",
-		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "desk_bell", "sale_offer", "rain", "rain_roof",
+		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "desk_bell", "sale_offer", "wash_ding", "wash_clean", "rain", "rain_roof",
 		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets"]
 	for s in VARIANTS:
 		if not out.has(s):
@@ -167,6 +169,8 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"bell_chime": return _door_chime()
 		"desk_bell": return _desk_bell()
 		"sale_offer": return _till()
+		"wash_ding": return _wash_ding(v)
+		"wash_clean": return _wash_clean()
 	return buf(0.1)
 
 
@@ -1629,6 +1633,44 @@ func _desk_bell() -> PackedFloat32Array:
 	for p in [[1.0, 1.0, 1.6], [2.76, 0.42, 3.4], [5.4, 0.2, 6.0], [8.9, 0.08, 9.0], [0.5, 0.12, 2.4]]:
 		ring(d, 0, f0 * float(p[0]), float(p[1]) * 0.55, float(p[2]))
 		ring(d, 0, f0 * float(p[0]) * 1.0021, float(p[1]) * 0.4, float(p[2]) * 1.1)
+	return d
+
+
+## A part washed clean: a bright, glassy little bell, struck once, with a sparkle of a higher
+## one just after it. The variants climb a major chord, so a run of parts coming clean rings up.
+func _wash_ding(v: int) -> PackedFloat32Array:
+	var d := buf(1.3)
+	var f0: float = [1318.5, 1661.2, 1975.5][posmod(v, 3)]
+	burst(d, 0, 0.003, 0.22, 2200.0, 2500.0, 15000.0)
+	for p in [[1.0, 1.0, 3.6], [2.0, 0.42, 5.0], [3.0, 0.2, 7.5], [4.18, 0.12, 11.0], [5.43, 0.05, 15.0]]:
+		ring(d, 0, f0 * float(p[0]), float(p[1]) * 0.6, float(p[2]))
+		ring(d, 0, f0 * float(p[0]) * 1.0016, float(p[1]) * 0.35, float(p[2]) * 1.1)
+	var at := int(0.065 * R)
+	ring(d, at, f0 * 2.0, 0.22, 6.0)
+	ring(d, at, f0 * 3.0, 0.1, 9.0)
+	return d
+
+
+## The whole bike washed clean: a rising run of bells up a major chord to the octave, a held
+## shimmering chord, and glints of high pings scattered over it.
+func _wash_clean() -> PackedFloat32Array:
+	var d := buf(2.6)
+	var notes := [1046.5, 1318.5, 1568.0, 2093.0]
+	for i in notes.size():
+		var at := int(i * 0.1 * R)
+		var f: float = notes[i]
+		var last := i == notes.size() - 1
+		burst(d, at, 0.003, 0.18, 2200.0, 2500.0, 15000.0)
+		for p in [[1.0, 1.0, 2.2 if last else 3.2], [2.0, 0.4, 4.0], [3.0, 0.18, 6.0], [4.18, 0.1, 9.0]]:
+			ring(d, at, f * float(p[0]), float(p[1]) * (0.6 if last else 0.45), float(p[2]))
+			ring(d, at, f * float(p[0]) * 1.002, float(p[1]) * 0.3, float(p[2]) * 1.1)
+	var chord := int(0.42 * R)
+	for f in [523.25, 659.25, 783.99, 1046.5]:
+		ring(d, chord, float(f), 0.2, 1.4)
+		ring(d, chord, float(f) * 1.003, 0.14, 1.5)
+	for k in 14:
+		var at := int(rf(0.35, 1.6) * R)
+		ring(d, at, rf(3500.0, 6500.0), rf(0.04, 0.1), rf(14.0, 24.0))
 	return d
 
 

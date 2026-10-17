@@ -27,6 +27,8 @@ var coffee_view: CoffeeView     # the bikers at the cafe, its barista and the tr
 var paint_bench: PaintBench     # the paint mixing bay's bench, stepped up to (see PaintBay)
 var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
 var emote_bar: EmoteBar         # the emotes and their keys, while the bar is open (B)
+var recovery: RecoveryView      # the recovery truck and trailer, and driving it (see Recovery)
+var recovery_panel: RecoveryPanel   # the recovery jobs clipboard and a recovered bike's assessment
 var audio: EngineSound
 var saver: SaveGame
 var remotes := {}     # peer id -> RemotePlayer
@@ -37,10 +39,17 @@ var _ride_km := 0.0
 var _ride_top := 0.0
 var _mounted_at := 0
 var _dirt_km := 0.0
+var _lap_seen := []           # the ride logger's lap counter: stretches of the test route passed (see ContractTestRide.lap_step)
+var _laps := 0               # laps of it since the last ride stats went
+var _fly_km := 0.0         # distance at speed since the last stats, for dead flies on the front
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
 var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at the side while riding (F3)
+var _kb_bars := 0.0        # the keyboard's steer in Direct bars mode, ramped like a hand pushing harder
+var _kb_lean := 0.0        # the keyboard's lean asked for, ramped (see ramp_lean)
+## Seconds a lean key has to be held past a road rider's lean to ask for all the tyres will give.
+const KEY_LEAN_ON := 1.25
 ## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
 var _safe_xf := Transform3D()
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
@@ -127,6 +136,13 @@ func _ready() -> void:
 	coffee_view.order_requested.connect(func():
 		coffee_panel.open_menu()
 		_capture_mouse(false))
+	recovery = RecoveryView.new()
+	recovery.main = self
+	world.add_child(recovery)
+	recovery_panel = RecoveryPanel.new()
+	recovery_panel.visible = false
+	ui.add_child(recovery_panel)
+	recovery_panel.closed.connect(func(): _capture_mouse(true))
 	geometry = GeometryMode.new()
 	ui.add_child(geometry)
 	geometry.closed.connect(_geometry_closed)
@@ -137,6 +153,11 @@ func _ready() -> void:
 	menu.join_game.connect(_join)
 	menu.resume.connect(_close_menu)
 	menu.leave_session.connect(_leave)
+	menu.load_game.connect(load_game)
+	menu.save_as.connect(func(called): saver.save_as(called))
+	menu.save_renamed.connect(func(id, called):
+		if in_session and id == SaveGame.active_slot():
+			saver.save_name = called)
 	menu.order_bike.connect(func():
 		Shed.request({"a": "order"})
 		_close_menu())
@@ -185,7 +206,7 @@ func _host() -> void:
 		menu.set_status("Could not host on port %d (error %d)." % [Net.PORT, err])
 		return
 	_start_session()
-	hud.flash("Hosting. Opening the port on your router... the Esc menu shows the address to give friends.", 6.0)
+	hud.flash("Hosting. Opening the port on your router... the {menu} menu shows the address to give friends.", 6.0)
 
 
 func _on_internet_status() -> void:
@@ -194,7 +215,7 @@ func _on_internet_status() -> void:
 	if Net.internet_status == "open":
 		hud.flash("Friends over the internet can join with %s" % (Net.external_ip if Net.external_ip != "" else "your public IP"), 8.0)
 	elif Net.internet_status == "closed":
-		hud.flash("Your router didn't open port %d automatically. See the Esc menu for how to let friends in." % Net.PORT, 8.0, true)
+		hud.flash("Your router didn't open port %d automatically. See the {menu} menu for how to let friends in." % Net.PORT, 8.0, true)
 	if menu.visible:
 		menu.show_pause()
 
@@ -214,13 +235,25 @@ func _start_session() -> void:
 		return
 	in_session = true
 	menu.hide()
-	Progress.select(Settings.player_name)
 	Net.update_local_info(_local_info())
 	if Net.is_online() and not Net.is_host():
+		# Joining someone else's shed: your character comes from your own profile.json.
+		Progress.select(Settings.player_name)
 		Shed.join_remote()
-	elif menu.new_shed or not saver.continue_shed():
-		Shed.start_new(Settings.player_name)
+	else:
+		# Solo or hosting: the save game holds your character (outside the test scenes).
+		if not SaveGame.characters_in_saves():
+			Progress.select(Settings.player_name)
+		if menu.new_shed:
+			if menu.new_name != "":
+				SaveGame.use_slot(SaveGame.new_id(menu.new_name))
+			Shed.start_new(Settings.player_name)
+			saver.begin_new(menu.new_name)
+		elif not saver.continue_shed():
+			Shed.start_new(Settings.player_name)
+			saver.begin_new()
 	menu.new_shed = false
+	menu.new_name = ""
 	walker = Walker.new()
 	world.add_child(walker)
 	walker.place(Workshop.walker_spawn(Net.local_slot()))
@@ -247,8 +280,25 @@ func _start_session() -> void:
 			_on_player_joined(id, Net.players[id])
 	workshop.sync_state()
 	_capture_mouse(true)
-	hud.flash("Welcome to the shed. Esc for the menu.", 4.0)
+	hud.flash("Welcome to the shed. {menu} for the menu.", 4.0)
 	saver.session_started()
+	if SaveGame.last_saved == 0 and SaveGame.characters_in_saves():
+		saver.save_soon()   # a new game shows on the Load screen (with its picture) in a moment
+
+
+## Plays the save game `id`: saves and closes the one in play first (a co-op host's crew is
+## sent back to their title screens), then opens it solo or hosted.
+func load_game(id: String, as_host: bool) -> void:
+	if in_session:
+		saver.save_now()
+		Net.leave()
+		_end_session()
+	SaveGame.use_slot(id)
+	menu.new_shed = false
+	if as_host:
+		_host()
+	else:
+		_start_session()
 
 
 func _leave() -> void:
@@ -265,9 +315,11 @@ func _end_session() -> void:
 	sales_pc.visible = false
 	label_dialog.visible = false
 	contract_panel.visible = false
+	recovery_panel.visible = false
 	coffee_panel.visible = false
 	paint_bench.visible = false
 	PaintBayRoom.live = {}
+	recovery.stop_driving(false)
 	if geometry.active:
 		geometry.close()
 	_stop_riding()
@@ -278,6 +330,7 @@ func _end_session() -> void:
 		walker.queue_free()
 		walker = null
 	Shed.stop()
+	Progress.release(Settings.player_name)
 	hud.walker = null
 	hud.visible = false
 	_title_camera()
@@ -304,6 +357,12 @@ func _open_sales() -> void:
 ## The dyno desk: tune the bike on the rig, or one close by, and run it.
 func _open_tuning() -> void:
 	tuning.open(walker.global_position if walker else Vector3.ZERO)
+	_capture_mouse(false)
+
+
+## The recovery jobs clipboard (see RecoveryPanel).
+func open_recovery() -> void:
+	recovery_panel.open_list()
 	_capture_mouse(false)
 
 
@@ -377,6 +436,10 @@ func _on_shed_changed() -> void:
 		return
 	workshop.sync_state()
 	_refit_ridden_bikes()
+	if Recovery.driver() == Shed.me() and not recovery.driving and bike == null:
+		recovery.start_driving()
+	elif recovery.driving and Recovery.driver() != Shed.me():
+		recovery.stop_driving(false)
 	var mine := Shed.riding(Shed.me())
 	if mine != 0 and bike == null:
 		_start_riding(mine)
@@ -410,6 +473,8 @@ func _start_riding(bike_id: int) -> void:
 	bike.ride_xp = RideXP.new(bike_id)
 	bike.telemetry = RideTelemetry.new(str(data.get("name", "")))
 	bike.setup(Shed.build_of(bike_id), data["paint"])
+	# Tyres, brakes and engine as cold as the shed, or still warm from a ride a moment ago.
+	BikeHeat.resume(bike_id, bike.heat)
 	bike.model.apply_geometry(Shed.geometry_of(bike_id))
 	bike.set_meta("shed_bike", bike_id)   # so the shed TVs know whose ride this is
 	world.add_child(bike)
@@ -440,6 +505,8 @@ func _start_riding(bike_id: int) -> void:
 	_ride_top = 0.0
 	_dirt_km = 0.0
 	_ride_dirt = 0.0
+	_lap_seen = []
+	_laps = 0
 	hud.trip_km = 0.0
 	hud.trip_fuel = 0.0
 	_dash = bike.model.dash_readout()
@@ -490,6 +557,8 @@ func _ignition() -> void:
 
 
 func _stop_riding() -> void:
+	if bike:
+		BikeHeat.park(riding_id, bike.heat)
 	riding_id = 0
 	if bike:
 		bike.queue_free()
@@ -523,6 +592,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			label_dialog.close_dialog()
 		elif contract_panel.visible:
 			contract_panel.close_dialog()
+		elif recovery_panel.visible:
+			recovery_panel.close_dialog()
 		elif coffee_panel.visible:
 			coffee_panel.close_dialog()
 		elif paint_bench.visible:
@@ -536,12 +607,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif menu.visible:
 			_close_menu()
 		else:
+			saver.grab_thumbnail()   # before the menu covers the shed
 			menu.show_pause()
 			_capture_mouse(false)
 		get_viewport().set_input_as_handled()
 		return
 	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or coffee_panel.visible \
-			or paint_bench.visible or bike == null:
+			or paint_bench.visible or recovery_panel.visible or (bike == null and not recovery.driving):
+		return
+	if recovery.driving:
+		if recovery.drive_input(event):
+			get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("ping"):
+			PingMarker.ping_from(camera, [recovery.car.get_rid()])
 		return
 	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"):
 		# Swing the chase camera round the bike (or turn your head in first person).
@@ -584,7 +662,8 @@ func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
-		and not contract_panel.visible and not coffee_panel.visible and not paint_bench.visible and not geometry.active
+		and not contract_panel.visible and not coffee_panel.visible and not paint_bench.visible and not geometry.active \
+		and not recovery_panel.visible
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:
@@ -610,6 +689,7 @@ func _physics_process(delta: float) -> void:
 		bike.auto_shift = Settings.auto_shift
 		camera.recentre = Settings.camera_recentre
 		bike.assist = Settings.assist
+		bike.direct_bars = Settings.direct_bars
 		bike.horn = active and Input.is_action_pressed("horn")
 		audio.rpm = bike.rpm
 		audio.gear = bike.gear
@@ -622,18 +702,26 @@ func _physics_process(delta: float) -> void:
 		_ride_km += km
 		hud.trip_km += km
 		_ride_top = maxf(_ride_top, absf(bike.speed) * 3.6)
+		_track_lap()
 		if bike.wheels[1]["contact"] or bike.wheels[0]["contact"]:
-			# Loose ground and wheelspin throw muck all over the bike.
-			var muck := km * float(SURFACE_DIRT.get(bike.surface, 0.3)) * (1.0 + float(bike.wheels[1]["slip"]))
+			# Loose ground and wheelspin throw muck all over the bike, more of it the faster you go,
+			# and a wet road throws up a lot more spray (mud more still: see Dirt.accrue).
+			var wet := Weather.wetness()
+			var paved: bool = bike.surface in ["tarmac", "concrete"]
+			var pace := 0.7 + 0.3 * minf(absf(bike.speed) * 3.6 / 50.0, 2.0)
+			var muck := km * float(SURFACE_DIRT.get(bike.surface, 0.3)) * (1.0 + float(bike.wheels[1]["slip"])) \
+				* (1.0 + wet * (3.0 if paved else 1.0)) * pace
 			_dirt_km += muck
 			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
-			bike.model.set_grime(clampf(_ride_dirt, 0.0, 0.85))
+		# Dead flies on the front at speed (fewer in the rain).
+		_fly_km += km * clampf((absf(bike.speed) * 3.6 - 30.0) / 70.0, 0.0, 1.5) * (1.0 - 0.6 * Weather.rain_level())
 		_update_dash()
 		_keep_on_map()
 		_stats_timer += delta
 		if _stats_timer >= 1.0:
 			_stats_timer = 0.0
 			_send_ride_stats()
+	recovery.drive_physics(delta, active)
 	telemetry_overlay.bike = bike
 	telemetry_overlay.visible = bike != null and Settings.telemetry_overlay and not menu.visible
 	_send_timer += delta
@@ -642,10 +730,42 @@ func _physics_process(delta: float) -> void:
 		Net.send_state(_net_state())
 
 
-## The steer input: the lean the rider aims for, from the keys and the stick.
-func _steer_input(stick_x: float, _delta: float) -> float:
+## The steer input: a lean to aim for, or with Direct bars the push on the bars. Keys are all or
+## nothing, so on Direct bars they're ramped up like a hand pushing harder (and let off quicker);
+## the stick is squared there, for fine pushes near the middle. Leaning on keys, a key held asks
+## for a road rider's lean straight away and only creeps on towards the most the tyres hold if
+## it's kept held (see ramp_lean).
+func _steer_input(stick_x: float, delta: float) -> float:
 	var keys := Input.get_axis("lean_left", "lean_right")
-	return clampf(keys + stick_x, -1.0, 1.0)
+	if not Settings.direct_bars:
+		_kb_bars = 0.0
+		_kb_lean = ramp_lean(_kb_lean, keys, delta)
+		return clampf(_kb_lean + stick_x, -1.0, 1.0)
+	_kb_lean = 0.0
+	_kb_bars = ramp_bars(_kb_bars, keys, delta)
+	return clampf(_kb_bars + stick_x * absf(stick_x), -1.0, 1.0)
+
+
+## Leaning on keys: the lean input `held` so far for the keys' `keys` (-1, 0 or 1). Pressed, it
+## goes straight to Bike.ROAD_INPUT (an ordinary road lean); held on, it creeps the rest of the
+## way over KEY_LEAN_ON seconds, so only a long, committed press leans the bike right over.
+## Let go, it comes back at once.
+static func ramp_lean(held: float, keys: float, delta: float) -> float:
+	if keys == 0.0:
+		return move_toward(held, 0.0, 8.0 * delta)
+	var a := absf(held) if keys * held > 0.0 else 0.0
+	if a < Bike.ROAD_INPUT:
+		a = minf(a + 6.0 * delta, Bike.ROAD_INPUT)
+	else:
+		a = minf(a + (1.0 - Bike.ROAD_INPUT) / KEY_LEAN_ON * delta, 1.0)
+	return a * signf(keys)
+
+
+## Direct bars on keys: the push `held` so far moves towards the keys' `keys` (-1, 0 or 1),
+## building up over 0.4 s and let off quicker.
+static func ramp_bars(held: float, keys: float, delta: float) -> float:
+	var easing := absf(keys) < absf(held) or keys * held < 0.0
+	return move_toward(held, keys, (6.0 if easing else 2.5) * delta)
 
 
 ## Off the edge of the map (or through it): the bike goes back to the last place it had its
@@ -668,11 +788,62 @@ func _send_ride_stats() -> void:
 	if bike == null:
 		return
 	hud.trip_fuel += bike.fuel_used
-	Shed.request({"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
-		"dirt_km": _dirt_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()})
+	var ride := {"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
+		"dirt_km": _dirt_km, "fly_km": _fly_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()}
+	ride.merge(_logger_peaks(), true)
+	if _laps > 0:
+		ride["laps"] = _laps
+		_laps = 0
+	Shed.request(ride)
 	bike.fuel_used = 0.0
 	_ride_km = 0.0
 	_dirt_km = 0.0
+	_fly_km = 0.0
+	# The muck builds up on the bike as you ride (as the shed has it: a moment behind online).
+	var riding := Shed.riding(Shed.me())
+	if riding != 0 and Shed.bikes.has(riding) and bike.model:
+		bike.model.show_dirt(Dirt.of_bike(riding))
+
+
+## The ride logger's lap counter: which stretch of the test route (The Loop) the bike is on, if
+## it's on it, and a lap counted when it's been along all of them.
+func _track_lap() -> void:
+	if world == null or world.roads == null:
+		return
+	var p := bike.global_position
+	var hit := world.roads.nearest(p.x, p.z, 9.0)
+	if hit.is_empty():
+		return
+	var road: Dictionary = world.roads.roads[int(hit["road"])]
+	if str(road["name"]) != ContractTestRide.LAP_ROAD:
+		return
+	var n := maxi(1, (road["xz"] as PackedVector2Array).size())
+	if ContractTestRide.lap_step(_lap_seen, int(hit["i"]) * ContractTestRide.LAP_SECTORS / n):
+		_laps += 1
+		if Shed.bikes.get(riding_id, {}).get("proto", false):
+			hud.flash("Lap of %s logged." % ContractTestRide.route_name(ContractTestRide.LAP_ROAD), 2.0)
+
+
+## The ride logger's peaks since the last ride stats went (a test ride's checks, see
+## ContractTestRide.note_ride): the most lean, the hardest braking, and the worst shake at speed.
+func _logger_peaks() -> Dictionary:
+	var tel := bike.telemetry if bike else null
+	if tel == null or tel.size() == 0:
+		return {}
+	var out := {"lean": 0.0, "brake_g": 0.0, "wobble": 0.0}
+	var t: PackedFloat32Array = tel.data["t"]
+	var v: PackedFloat32Array = tel.data["speed"]
+	for i in range(tel.index_since(1.5), tel.size()):
+		out["lean"] = maxf(out["lean"], absf(tel.data["lean"][i]))
+		# Braking over a quarter of a second or so, so a bump doesn't read as a stop.
+		var j := i
+		while j > 0 and t[i] - t[j] < 0.25:
+			j -= 1
+		if t[i] - t[j] > 0.1:
+			out["brake_g"] = maxf(out["brake_g"], (v[j] - v[i]) / 3.6 / (t[i] - t[j]) / Bike.G)
+		if tel.data["speed"][i] >= ContractTestRide.FAST:
+			out["wobble"] = maxf(out["wobble"], tel.data["wobble"][i])
+	return out
 
 
 ## The rider's view of the clocks: needles for speed and revs on dial clocks, and speed, gear and
@@ -704,6 +875,8 @@ func _update_dash() -> void:
 
 ## [0, x, y, z, yaw, pitch, crouched] on foot, or [1, bike id, bike state...] riding.
 func _net_state() -> PackedFloat32Array:
+	if recovery and recovery.driving:
+		return recovery.net_state()
 	if bike:
 		var s := PackedFloat32Array([1.0, float(riding_id)])
 		s.append_array(bike.get_net_state())

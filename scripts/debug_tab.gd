@@ -50,6 +50,8 @@ func _ready() -> void:
 	box.add_child(_row([
 		_button("Send a customer", func(): Shed.request({"a": "contract_spawn"})),
 		_button("Send a bespoke customer", func(): Shed.request({"a": "contract_spawn", "kind": "bespoke"})),
+		_button("Send a batch order", func(): Shed.request({"a": "contract_spawn", "kind": "batch"})),
+		_button("Send a test ride", func(): Shed.request({"a": "contract_spawn", "kind": "test_ride"})),
 		_button("Reputation +5", func(): Shed.request({"a": "contract_rep", "value": Contracts.reputation() + 5})),
 	]))
 

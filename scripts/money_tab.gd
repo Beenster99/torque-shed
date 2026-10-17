@@ -237,7 +237,7 @@ func refresh() -> void:
 		var b := _button(Money.offer_text(i), func(): take_loan(offer))
 		var why := Money.check(Shed.me(), {"a": "money_loan", "offer": i})
 		b.disabled = why != ""
-		b.tooltip_text = why
+		b.tooltip_text = Controls.hint(why)
 		_loans.add_child(b)
 	for c in _ledger.get_children():
 		c.queue_free()

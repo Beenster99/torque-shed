@@ -492,5 +492,18 @@
 			0.08,
 			0.4
 		]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "S-OR240-SC60:M",
+		"effect": "metallic",
+		"finish": "gloss",
+		"id": "custom_iridium_orange",
+		"name": "Iridium Orange",
+		"rgb": [
+			0.91,
+			0.37,
+			0.1
+		]
 	}
 ]

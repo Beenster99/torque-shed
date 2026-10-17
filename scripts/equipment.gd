@@ -175,7 +175,7 @@ const MODELS := {
 	# The crew whiteboard: one comes with the shed, on the front wall. F takes it down to hang it
 	# on another wall, drawing and all (see Whiteboard). Not sold.
 	"whiteboard": {"kind": "whiteboard", "name": "Crew whiteboard", "size": Vector3(2.47, 1.27, 0.05),
-		"desc": "The crew's whiteboard for plans, lists and sketches. Take it down with F and hang it on any wall."},
+		"desc": "The crew's whiteboard for plans, lists and sketches. Take it down with {interact} and hang it on any wall."},
 
 	# Yard kit: pushed about with F like the shed equipment. Ramps rise away from their front (+Z),
 	# so ride at the low end. `solid` ones stop a bike; markers you can ride straight past.
@@ -309,7 +309,7 @@ static func spec_line(id: String) -> String:
 			bits.append("%d hooks" % places(id))
 			bits.append("Spray gun finish +%d%%" % roundi(float(m["finish"]) * 100.0))
 		"seat":
-			bits.append("F: sit down  ·  hold F: move it")
+			bits.append("{interact}: sit down  ·  hold {interact}: move it")
 		"tv":
 			bits.append("%d inch" % int(m["inches"]))
 		"ramp":

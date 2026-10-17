@@ -32,9 +32,9 @@ render_mode blend_mix, depth_draw_never, cull_back, diffuse_burley, specular_sch
 // Coats per facing, each cube: mask_a = +x, -x, +y, -y; mask_b = +z, -z, how much landed dry.
 uniform sampler3D mask_a : filter_linear, repeat_disable;
 uniform sampler3D mask_b : filter_linear, repeat_disable;
-uniform mat4 to_model;
+uniform mat4 to_model = mat4(1.0);
 uniform vec3 mask_origin;
-uniform vec3 mask_size;
+uniform vec3 mask_size = vec3(1.0);
 uniform float voxel = 0.02;
 uniform vec4 coat_color : source_color = vec4(0.8, 0.1, 0.1, 1.0);
 uniform float coat_rough = 0.15;
@@ -69,6 +69,18 @@ float vnoise(vec3 x) {
 			mix(hash3(i + vec3(0.0, 1.0, 1.0)), hash3(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
 }
 
+// A surface's facing, or straight up where it has none (a zero normal would make NaN, which
+// the glow spreads into white blobs speckled black).
+vec3 facing_of(vec3 v) {
+	float l = length(v);
+	return l > 1e-6 ? v / l : vec3(0.0, 1.0, 0.0);
+}
+
+// Whether a colour is a real one in range: false for NaN or infinite (comparisons with NaN fail).
+bool sane(vec3 v, float top) {
+	return all(greaterThanEqual(v, vec3(0.0))) && all(lessThanEqual(v, vec3(top)));
+}
+
 // The coats on a surface facing `n` (model space, outwards) at `uvw` in the mask.
 float coats_at(vec3 uvw, vec3 n) {
 	vec4 a = texture(mask_a, uvw);
@@ -87,9 +99,9 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 uvw = (mpos - mask_origin) / mask_size;
+	vec3 uvw = (mpos - mask_origin) / max(mask_size, vec3(1e-4));
 	// The side of the surface you're looking at is its outside (not every mesh winds the same way).
-	vec3 n = normalize(mnorm);
+	vec3 n = facing_of(mnorm);
 	vec3 cam = (to_model * INV_VIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	if (dot(n, cam - mpos) < 0.0) {
 		n = -n;
@@ -100,7 +112,7 @@ void fragment() {
 	float streak = smoothstep(0.35, 0.75, vnoise(vec3(mpos.x * 70.0, mpos.y * 4.0, mpos.z * 70.0)));
 	float run = smoothstep(0.0, 1.2, coats - run_level);
 	for (int k = 1; k <= 5; k++) {
-		vec3 up = vec3(0.0, float(k) * voxel * 0.8, 0.0) / mask_size;
+		vec3 up = vec3(0.0, float(k) * voxel * 0.8, 0.0) / max(mask_size, vec3(1e-4));
 		float above = coats_at(uvw + up, n);
 		run = max(run, smoothstep(0.0, 1.2, above - run_level) * streak * (1.0 - float(k) / 6.0));
 	}
@@ -152,11 +164,15 @@ void fragment() {
 		metal *= 1.0 - scan * bad;
 		alpha = max(alpha, scan * mix(0.5, 1.0, bad));
 	}
-	ALBEDO = albedo + vec3(flash * 0.4);
-	METALLIC = metal;
-	ROUGHNESS = clamp(rough + grain * 0.04, 0.0, 1.0);
+	vec3 shown = albedo + vec3(flash * 0.4);
+	if (!sane(shown, 2.0) || !sane(emit, 8.0) || !(alpha >= 0.0)) {
+		discard;   // never a NaN or a blinding value to the screen
+	}
+	ALBEDO = min(shown, vec3(1.0));
+	METALLIC = clamp(metal, 0.0, 1.0);
+	ROUGHNESS = clamp(rough + grain * 0.04, 0.08, 1.0);   // no smoother than BikeModel.MIN_ROUGHNESS
 	CLEARCOAT = film * (1.0 - dry) * mix(0.4, 1.0, max(wet, clear_layer));
-	CLEARCOAT_ROUGHNESS = 0.05;
+	CLEARCOAT_ROUGHNESS = 0.1;
 	EMISSION = emit;
 	ALPHA = clamp(alpha, 0.0, 1.0);
 }

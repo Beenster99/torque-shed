@@ -5,8 +5,10 @@ extends Control
 
 var walker: Walker
 var bike: Bike
+var car: Car               # the recovery truck, while you're at the wheel (RecoveryView sets it)
 var _message: Label
 var _message_timer := 0.0
+var _flash_raw := ""   # the message as sent, with its {action}s still in
 var _panel: PanelContainer
 var _title: Label
 var _info: Label
@@ -18,6 +20,7 @@ var trip_fuel := 0.0       # litres burnt this ride
 var popups: Array = []
 var blast_hud: BlastHud     # the sandblaster's readout, while your hands are in the gloves
 var spray_hud: SprayHud     # the spray readout, while you lay a coat on
+var wash_hud: WashHud       # the pressure washing readout, while the wash controls are up
 var _banner_level := 0
 var _banner_time := 0.0
 const POPUP_LIFE := 3.0
@@ -68,6 +71,8 @@ func _ready() -> void:
 	add_child(blast_hud)
 	spray_hud = SprayHud.new()
 	add_child(spray_hud)
+	wash_hud = WashHud.new()
+	add_child(wash_hud)
 	Progress.xp_gained.connect(add_popup)
 	Progress.cash_changed.connect(add_popup.bind(true))
 	Progress.leveled_up.connect(func(level: int):
@@ -89,8 +94,11 @@ func add_popup(amount: int, label: String, cash := false) -> void:
 		popups.pop_back()
 
 
+## Shows a message for a few seconds. Any {action} in it shows that action's key on the
+## device in use, and changes with it (see Controls.hint).
 func flash(text: String, seconds := 2.5, bad := false) -> void:
-	_message.text = text
+	_flash_raw = text
+	_message.text = Controls.hint(text)
 	_message.add_theme_color_override("font_color", Color(1, 0.55, 0.45) if bad else Color(1, 0.85, 0.7))
 	_message_timer = seconds
 
@@ -103,10 +111,16 @@ func _process(delta: float) -> void:
 	_banner_time = maxf(0.0, _banner_time - delta)
 	if _message_timer <= 0.0 and _message.text != "":
 		_message.text = ""
-	var on_foot := walker != null and bike == null
+		_flash_raw = ""
+	elif _message_timer > 0.0:
+		_message.text = Controls.hint(_flash_raw)
+	if car != null and not is_instance_valid(car):
+		car = null
+	var on_foot := walker != null and bike == null and car == null
 	blast_hud.walker = walker if on_foot else null
 	spray_hud.walker = walker if on_foot else null
-	_panel.visible = on_foot and walker.blast == null and not spray_hud.showing() \
+	wash_hud.walker = walker if on_foot else null
+	_panel.visible = on_foot and walker.blast == null and not spray_hud.showing() and not wash_hud.showing() \
 		and (walker.info != "" or walker.look_info != "" or not walker.plan.is_empty() or walker.crouched)
 	if on_foot:
 		# What the cafe's bikers and the like say (Walker.look_info) comes first, over what the
@@ -114,44 +128,47 @@ func _process(delta: float) -> void:
 		var text := walker.info
 		if walker.look_info != "":
 			text = walker.look_info + ("\n" + walker.info if walker.info != "" else "")
-		var lines := text.split("\n")
+		var lines := Controls.hint(text).split("\n")
 		_title.text = lines[0]
 		_info.text = "\n".join(lines.slice(1))
 		_info.visible = _info.text != ""
 		var plan := walker.plan
 		var prompts := []
 		if walker.look_prompt != "":
-			prompts.append(walker.look_prompt)
+			prompts.append(Controls.hint(walker.look_prompt))
 		var blocked := false
 		if not plan.is_empty():
 			blocked = plan["blocked"] != ""
-			prompts.append(plan["blocked"] if blocked else "Hold %s to %s" % [_act_key(), plan["verb"]])
+			prompts.append(Controls.hint(plan["blocked"] if blocked else "Hold %s to %s" % [_act_key(), plan["verb"]]))
 		var alt := walker.alt_plan
 		if not alt.is_empty() and alt["blocked"] == "":
 			prompts.append("Hold %s to %s" % [_alt_key(), alt["verb"]])
 		if walker.tap_prompt != "":
-			prompts.append(walker.tap_prompt)
+			prompts.append(Controls.hint(walker.tap_prompt))
 		if walker.crouched:
-			prompts.append("Crouching (C to stand up)")
+			prompts.append(Controls.hint("Crouching ({crouch} to stand up)"))
 		_prompt.add_theme_color_override("font_color", Color(1, 0.5, 0.4) if blocked and prompts.size() == 1 else UITheme.ACCENT)
 		_prompt.text = "\n".join(prompts)
 	if bike and bike.is_crashed:
-		_message.text = "Crashed! Press R to get back on"
+		_flash_raw = "Crashed! Press {respawn} to get back on"
+		_message.text = Controls.hint(_flash_raw)
 		_message_timer = 0.1
 	queue_redraw()
 
 
 func _act_key() -> String:
-	return "RT" if Controls.device() >= 0 and Controls.active_device >= 0 else "left mouse"
+	return Controls.key("work")
 
 
 func _alt_key() -> String:
-	return "LT" if Controls.device() >= 0 and Controls.active_device >= 0 else "right mouse"
+	return Controls.key("work2")
 
 
 func _draw() -> void:
 	if bike:
 		_draw_speedo()
+	elif car:
+		_draw_truck_dash()
 	elif walker:
 		_draw_crosshair()
 		_draw_toolbar()
@@ -168,7 +185,7 @@ func _draw() -> void:
 func _draw_badges() -> void:
 	var badges := []
 	if Shed.wearing_headphones(Shed.me()):
-		badges.append(["EAR DEFENDERS ON", "Everything's muffled. F at their hook to hang them up."])
+		badges.append(["EAR DEFENDERS ON", Controls.hint("Everything's muffled. {interact} at their hook to hang them up.")])
 	if Shed.hose_holder() == Shed.me():
 		badges.append(["CARRYING THE EXHAUST HOSE", "Hold %s on the exhaust to fit it." % _act_key()])
 	var font := get_theme_default_font()
@@ -198,7 +215,7 @@ func _draw_level() -> void:
 	var pts := int(s["tool_points"]) + int(s["skill_points"])
 	var right := "%d / %d XP" % [int(s["xp"]), int(s["xp_next"])]
 	if pts > 0:
-		right = "%d point%s to spend (Esc)" % [pts, "" if pts == 1 else "s"]
+		right = "%d point%s to spend (%s)" % [pts, "" if pts == 1 else "s", Controls.key("menu")]
 	draw_string(font, r.position + Vector2(60, 18), right, HORIZONTAL_ALIGNMENT_RIGHT, w - 70.0, 12,
 		UITheme.ACCENT if pts > 0 else Color(1, 1, 1, 0.65))
 	var span := maxf(1.0, float(int(s["xp_next"]) - int(s["xp_level_start"])))
@@ -223,7 +240,7 @@ func _draw_level() -> void:
 		var y := size.y * 0.3
 		draw_rect(Rect2(0, y - 52, size.x, 84), Color(0, 0, 0, 0.45 * a))
 		draw_string(font, Vector2(0, y), "LEVEL %d" % _banner_level, HORIZONTAL_ALIGNMENT_CENTER, size.x, 44, Color(UITheme.ACCENT, a))
-		draw_string(font, Vector2(0, y + 24), "A tool point and a skill point to spend: Esc, then the Character tab",
+		draw_string(font, Vector2(0, y + 24), Controls.hint("A tool point and a skill point to spend: {menu}, then the Character tab"),
 			HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.85 * a))
 
 
@@ -241,8 +258,7 @@ func _draw_stopwatch() -> void:
 		draw_string(font, r.position + Vector2(14, 82 + 22 * i), "Lap %d   %s" % [i + 1, Stopwatch.format(sw.laps[i])],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UITheme.ACCENT)
 	if bike == null and walker.tool == "watch":
-		var pad := Controls.device() >= 0 and Controls.active_device >= 0
-		var hint := "RT: start / stop   LT: lap / reset" if pad else "Left mouse: start / stop   Right mouse: lap / reset   P: start / stop anywhere"
+		var hint := Controls.hint("{act}: start / stop   {alt_act}: lap / reset   {stopwatch}: start / stop anywhere")
 		draw_string(font, Vector2(r.position.x, r.end.y + 20), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.6))
 
 
@@ -267,8 +283,7 @@ func _draw_tyre_game(game: TyreGame) -> void:
 	var on := game.on_target()
 	draw_line(c, lever, Color(1, 1, 1, 0.35), 3.0, true)
 	draw_circle(lever, 7.0, Color(1, 1, 1).lerp(Color(0.3, 1.0, 0.4), on))
-	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	var hint := "Keep the lever on the marker with the right stick" if pad else "Keep the lever on the marker with the mouse"
+	var hint := Controls.hint("Keep the lever on the marker with the {aim}")
 	draw_string(font, Vector2(0, c.y - r - 48), "WORK THE TYRE ON", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
 	draw_string(font, Vector2(0, c.y + r + 52), "%s  ·  bead %d%%" % [hint, roundi(game.quality() * 100.0)],
 		HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
@@ -361,8 +376,7 @@ func _draw_spray_picker(font: Font, toolbar_y: float) -> void:
 			draw_rect(r, UITheme.ACCENT, false, 2.0)
 		draw_string(font, r.position + Vector2(8, 17), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE if on else Color(1, 1, 1, 0.6))
 		fx += w + 6.0
-	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	var hint := "X: colour   B: finish or coat   D-pad up: scan" if pad else "R or right mouse: colour   T: finish or coat   X: scan"
+	var hint := Controls.hint("{spray_colour}: colour   {spray_finish}: finish or coat   {blast_scan}: scan")
 	draw_string(font, Vector2(x0, hint_y), hint, HORIZONTAL_ALIGNMENT_LEFT, total, 14, Color(1, 1, 1, 0.6))
 
 
@@ -397,10 +411,82 @@ func _draw_speedo() -> void:
 	var used := trip_fuel + bike.fuel_used
 	var economy := Units.economy(trip_km / used) if used > 0.01 and trip_km > 0.05 else "-- " + Units.economy_unit()
 	draw_string(font, r.position + Vector2(12, 130), "%.1f L  ·  %s" % [bike.fuel_litres, economy], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.8))
+	_draw_heat_hints(r)
 	var hint := ""
 	if not bike.engine_on and not bike.is_crashed:
-		hint = "Starting..." if bike.is_starting() else "Engine off: press I (or D-pad up) to start it"
+		hint = "Starting..." if bike.is_starting() else Controls.hint("Engine off: press {ignition} to start it")
 	elif absf(bike.speed) < 2.0 and not bike.is_crashed:
-		hint = "F (or Y): get off   ·   I: engine off   ·   hold S: paddle back   ·   S + throttle: burnout"
+		hint = Controls.hint("{interact}: get off   ·   {ignition}: engine off   ·   hold {front_brake}: paddle back   ·   {front_brake} + {throttle}: burnout")
+	if hint != "":
+		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))
+
+
+## Beside the speedo, how warm the tyres and the engine are (cold, warm or hot), and a warning
+## while the brakes are fading (see BikeHeat).
+func _draw_heat_hints(panel: Rect2) -> void:
+	var h := bike.heat
+	if h == null:
+		return
+	var font := get_theme_default_font()
+	var rows := [["TYRES", h.tyre_state()], ["ENGINE", h.engine_state()]]
+	if h.brakes_fading():
+		rows.append(["BRAKES", "fading"])
+	var colours := {"cold": Color(0.45, 0.72, 1.0), "warm": Color(0.45, 0.85, 0.45), "hot": Color(1.0, 0.35, 0.25),
+		"fading": Color(1.0, 0.35, 0.25)}
+	var y := panel.position.y
+	for row in rows:
+		var box := Rect2(panel.position.x - 138.0, y, 130.0, 28.0)
+		draw_rect(box, Color(0.03, 0.03, 0.04, 0.6))
+		var col: Color = colours.get(row[1], Color.WHITE)
+		draw_circle(box.position + Vector2(12.0, 14.0), 5.0, col)
+		draw_string(font, box.position + Vector2(24.0, 19.0), str(row[0]), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
+		draw_string(font, box.position + Vector2(82.0, 19.0), str(row[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+		y += 34.0
+
+
+## The truck's dash, in the corner where a bike's speedo goes: the speed, the gear lever's
+## positions with the one it's in lit (R N D on the automatic, R N 1-6 on the manual), the revs,
+## the headlamp telltale, and what to press when it's stopped or not running.
+func _draw_truck_dash() -> void:
+	var font := get_theme_default_font()
+	var r := Rect2(size.x - 250, size.y - 150, 226, 126)
+	draw_rect(r, Color(0.03, 0.03, 0.04, 0.6))
+	draw_string(font, r.position + Vector2(12, 58), "%d" % Units.speed_value(absf(car.speed)), HORIZONTAL_ALIGNMENT_LEFT, -1, 50, Color.WHITE)
+	draw_string(font, r.position + Vector2(120, 34), Units.speed_unit(), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.6))
+	# The headlamp telltale: green dipped, blue main beam.
+	if car.engine_on and car.beam > 0:
+		var main_beam := car.beam >= 2
+		draw_string(font, r.position + Vector2(176, 34), "MAIN" if main_beam else "DIP", HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+			Color(0.35, 0.6, 1.0) if main_beam else Color(0.35, 0.9, 0.45))
+	var stops: Array = ["R", "N", "D"] if car.auto_shift else ["R", "N", "1", "2", "3", "4", "5", "6"]
+	var lit := "R" if car.gear < 0 else ("N" if car.gear == 0 else ("D" if car.auto_shift else str(car.gear)))
+	var x := 12.0
+	for stop: String in stops:
+		var on := stop == lit
+		var label: String = stop + (str(car.gear) if on and stop == "D" else "")
+		var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 10.0
+		if on:
+			draw_rect(Rect2(r.position + Vector2(x, 66), Vector2(w, 24)), Color(1, 0.3, 0.2) if stop == "R" else UITheme.ACCENT)
+		draw_string(font, r.position + Vector2(x + 5, 85), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 18,
+			Color(0.05, 0.05, 0.05) if on else Color(1, 1, 1, 0.45))
+		x += w + 2.0
+	var frac := clampf(car.rpm / Car.REDLINE, 0.0, 1.0)
+	draw_rect(Rect2(r.position + Vector2(12, 100), Vector2(202, 8)), Color(1, 1, 1, 0.12))
+	draw_rect(Rect2(r.position + Vector2(12, 100), Vector2(202 * frac, 8)), UITheme.ACCENT if frac < 0.9 else Color(1, 0.2, 0.15))
+	draw_string(font, r.position + Vector2(12, 120), "%d rpm" % (roundi(car.rpm / 50.0) * 50), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
+	var hint := ""
+	if not car.engine_on:
+		hint = "Starting..." if car.is_starting() else Controls.hint("Engine off: press {ignition} to start it")
+	elif absf(car.speed) < 1.0:
+		var rev := ""
+		if car.gear < 0:
+			rev = "{throttle} or {shift_up}: drive" if car.pedals_swapped() else ("{shift_up}: drive" if car.auto_shift else "{shift_up}: neutral")
+		elif car.auto_shift:
+			rev = "hold {front_brake} or press {shift_down}: reverse"
+		elif car.gear == 0:
+			rev = "{shift_down}: reverse   ·   {shift_up}: first"
+		else:
+			rev = "{shift_down}: down to neutral, then reverse"
+		hint = Controls.hint("{interact}: get out   ·   %s   ·   {headlight}: headlamps   ·   {ignition}: engine off" % rev)
 	if hint != "":
 		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))

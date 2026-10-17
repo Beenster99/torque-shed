@@ -5,14 +5,20 @@ const PATH := "user://settings.cfg"
 
 var player_name := "Rider"
 var last_ip := "127.0.0.1"
+var current_save := ""     # the save game played last (an id under user://saves/, see SaveGame)
 ## Riding realism: 0 = full sim (the front can tuck, a slide can high-side), 0.5 = the rider
 ## protects the front and smooths the throttle, 1 = the easiest, with the most help balancing.
 var assist := 0.5
+## Direct bars: the steer input turns into torque on the handlebars instead of a lean to aim for.
+var direct_bars := false
 ## The telemetry overlay at the side of the screen while riding (F3 toggles it).
 var telemetry_overlay := false
 var auto_shift := true
 ## The chase camera eases back behind the bike after a moment of not swinging it round.
 var camera_recentre := true
+## On foot, the view from behind your shoulder with your whole figure in it, instead of from
+## your eyes (V, or View on a pad, toggles it; see WalkerView).
+var walk_third_person := false
 var high_quality := true
 var sfx_volume := 0.8
 var radio_volume := 0.6
@@ -68,7 +74,8 @@ const GFX_KEYS := ["gfx_preset", "gfx_window_mode", "gfx_resolution", "gfx_monit
 const ACTIONS := [
 	["move_forward", "Walk forward", ["foot"]], ["move_back", "Walk back", ["foot"]],
 	["move_left", "Walk left", ["foot"]], ["move_right", "Walk right", ["foot"]],
-	["sprint", "Run", ["foot"]], ["crouch", "Crouch", ["foot"]],
+	["sprint", "Run", ["foot"]], ["crouch", "Crouch", ["foot"]], ["jump", "Jump", ["foot"]],
+	["walk_camera", "Camera on foot: first or third person", ["foot"]],
 	["act", "Work / use (hold)", ["foot", "board"]], ["alt_act", "Second work button (hold)", ["foot", "board"]],
 	["tool_next", "Next tool", ["foot", "board"]], ["tool_prev", "Previous tool", ["foot", "board"]],
 	["tool_1", "Hands", ["foot", "board"]], ["tool_2", "Wrench", ["foot", "board"]], ["tool_3", "Brush", ["foot", "board"]],
@@ -90,23 +97,25 @@ const ACTIONS := [
 	["board_image", "Whiteboard: add a picture", ["board"]], ["board_move", "Whiteboard: move a picture", ["board"]],
 	["board_bigger", "Whiteboard: picture bigger", ["board"]], ["board_smaller", "Whiteboard: picture smaller", ["board"]],
 	["board_poster", "Whiteboard: make a poster", ["board"]],
-	["throttle", "Throttle", ["ride"]], ["front_brake", "Front brake", ["ride"]], ["rear_brake", "Rear brake", ["ride"]],
+	["throttle", "Throttle", ["ride"]], ["front_brake", "Front brake (truck: brake, hold when stopped to reverse)", ["ride"]], ["rear_brake", "Rear brake (truck: handbrake)", ["ride"]],
 	["lean_left", "Lean left", ["ride"]], ["lean_right", "Lean right", ["ride"]],
 	["body_back", "Weight back", ["ride"]], ["body_forward", "Weight forward", ["ride"]],
-	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down", ["ride"]],
+	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down (truck: into reverse when stopped)", ["ride"]],
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
 	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera: third person, first person, fly-by", ["ride"]],
-	["horn", "Horn", ["ride"]], ["headlight", "Headlight", ["ride"]],
+	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["geo_move", "Geometry: move", ["geo"]], ["geo_rotate", "Geometry: rotate", ["geo"]],
 	["geo_scale", "Geometry: scale / stretch", ["geo"]], ["geo_snap", "Geometry: snap (hold)", ["geo"]],
 	["geo_undo", "Geometry: undo", ["geo"]], ["geo_reset", "Geometry: reset the part", ["geo"]],
 ]
-const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding", "spray": "with a spray can or gun", "board": "at the whiteboard",
+const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding or driving", "spray": "with a spray can or gun", "board": "at the whiteboard",
 	"geo": "in geometry mode"}
 ## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
-const SHARED_OK := [["alt_act", "spray_colour"]]
+## B on a pad jumps on foot, but with a spray can or gun out it's the finish (the spray comes first).
+## View on a pad turns what you hold or carry; with nothing in hand it switches the camera.
+const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rotate_right", "walk_camera"]]
 ## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
 const CONTEXT_ALSO := {"spray": ["foot"]}
 
@@ -128,10 +137,13 @@ func load_settings() -> void:
 	if cfg.load(PATH) == OK:
 		player_name = cfg.get_value("player", "name", player_name)
 		last_ip = cfg.get_value("player", "last_ip", last_ip)
+		current_save = str(cfg.get_value("player", "save", current_save))
 		assist = cfg.get_value("riding", "assist", assist)
 		auto_shift = cfg.get_value("riding", "auto_shift", auto_shift)
+		direct_bars = bool(cfg.get_value("riding", "direct_bars", direct_bars))
 		telemetry_overlay = bool(cfg.get_value("riding", "telemetry", telemetry_overlay))
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
+		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
 		radio_volume = cfg.get_value("audio", "radio", radio_volume)
@@ -158,10 +170,13 @@ func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("player", "name", player_name)
 	cfg.set_value("player", "last_ip", last_ip)
+	cfg.set_value("player", "save", current_save)
 	cfg.set_value("riding", "assist", assist)
 	cfg.set_value("riding", "auto_shift", auto_shift)
+	cfg.set_value("riding", "direct_bars", direct_bars)
 	cfg.set_value("riding", "telemetry", telemetry_overlay)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
+	cfg.set_value("walking", "third_person", walk_third_person)
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("audio", "radio", radio_volume)
@@ -289,6 +304,8 @@ func _setup_inputs() -> void:
 	_bind("move_left", [KEY_A, KEY_LEFT], [])
 	_bind("move_right", [KEY_D, KEY_RIGHT], [])
 	_bind("sprint", [KEY_SHIFT], [JOY_BUTTON_LEFT_STICK])
+	# Space is the handbrake in the truck and the back brake on a bike; on foot it jumps.
+	_bind("jump", [KEY_SPACE], [JOY_BUTTON_B])
 	_bind("act", [], [JOY_BUTTON_A], [MOUSE_BUTTON_LEFT])
 	_bind("tool_next", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [MOUSE_BUTTON_WHEEL_DOWN])
 	_bind("tool_prev", [KEY_Q], [JOY_BUTTON_LEFT_SHOULDER], [MOUSE_BUTTON_WHEEL_UP])
@@ -321,6 +338,9 @@ func _setup_inputs() -> void:
 	# The second work button: drains fluids into a held container.
 	_bind("alt_act", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	_bind("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])
+	# First or third person on foot. C (the riding camera key) crouches on foot, so it's the key
+	# beside it; on a pad it's View, which only turns things while you hold or carry them.
+	_bind("walk_camera", [KEY_V], [JOY_BUTTON_BACK])
 	# At the whiteboard: write a line of text, undo your last mark (Z or Ctrl+Z), hold to wipe it.
 	_bind("board_text", [KEY_T], [])
 	_bind("board_undo", [KEY_Z], [JOY_BUTTON_DPAD_LEFT])

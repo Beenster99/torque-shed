@@ -22,12 +22,34 @@ const LOW := {"gfx_gi": "off", "gfx_volumetrics": "off", "gfx_clouds": "low", "g
 ## Shadows at each quality: the sun's shadow map size and soft filter (0 hard .. 5 ultra), its
 ## splits and reach, the size of the lamps' shadow atlas, whether round lamps (omni) cast
 ## shadows, whether the yard floodlights do (god rays through the night air), and soft
-## contact-hardening shadows (PCSS) from the size of each lamp.
+## contact-hardening shadows (PCSS) from the size of each lamp, and the smallest thing (its
+## longest side, metres) that still casts a shadow: bolts, labels and the like throw shadows
+## too small to see, and with a shed full of bikes there are hundreds of them in every lamp's
+## shadow map.
 const SHADOWS := {
-	"low": {"atlas": 2048, "soft": 1, "splits": 2, "distance": 90.0, "positional": 2048, "omni": false, "floods": false, "pcss": false},
-	"medium": {"atlas": 4096, "soft": 2, "splits": 4, "distance": 150.0, "positional": 4096, "omni": true, "floods": false, "pcss": false},
-	"high": {"atlas": 8192, "soft": 3, "splits": 4, "distance": 220.0, "positional": 4096, "omni": true, "floods": true, "pcss": false},
-	"ultra": {"atlas": 8192, "soft": 5, "splits": 4, "distance": 320.0, "positional": 8192, "omni": true, "floods": true, "pcss": true},
+	"low": {"atlas": 2048, "soft": 1, "splits": 2, "distance": 90.0, "positional": 2048, "omni": false, "floods": false, "pcss": false, "caster_min": 0.3},
+	"medium": {"atlas": 4096, "soft": 2, "splits": 4, "distance": 150.0, "positional": 4096, "omni": true, "floods": false, "pcss": false, "caster_min": 0.18},
+	"high": {"atlas": 8192, "soft": 3, "splits": 4, "distance": 220.0, "positional": 4096, "omni": true, "floods": true, "pcss": false, "caster_min": 0.1},
+	"ultra": {"atlas": 8192, "soft": 5, "splits": 4, "distance": 320.0, "positional": 8192, "omni": true, "floods": true, "pcss": true, "caster_min": 0.05},
+}
+## The biggest of those (anything this size or more always keeps its shadow).
+const CASTER_MAX := 0.3
+## The rooms whose lamps can't shine on anything you can see from a room, so they are left
+## out while you're in it (outdoors nothing is). Each room listed is sealed off from it, or
+## three doorways away: the lounge upstairs is only reached by the outside stairs, and the
+## ground-floor rooms off the shed only open into the shed. Lamps outdoors are never left out.
+const HIDDEN_FROM := {
+	"shed": ["lounge"],
+	"paint": ["lounge", "annex"],
+	"mixing": ["lounge", "storage", "annex", "wing", "dyno"],
+	"storage": ["lounge", "mixing"],
+	"annex": ["lounge", "mixing", "paint", "wing", "dyno"],
+	"wing": ["lounge", "mixing", "annex"],
+	"dyno": ["lounge", "mixing", "annex"],
+	"lounge": ["shed", "paint", "mixing", "storage", "annex", "wing", "dyno"],
+	"sales": ["paint", "mixing", "storage", "annex", "wing", "dyno"],
+	"sales_office": ["paint", "mixing", "storage", "annex", "wing", "dyno"],
+	"cafe": ["paint", "mixing", "storage", "annex", "wing", "dyno"],
 }
 ## How much of the volumetric fog a lamp lights when nobody chose: a round lamp lights the air a
 ## little, a downlight more (a cone of light in the shed's dust).
@@ -63,6 +85,13 @@ var _opts := {}
 var _pending: Array[Node] = []
 var _lights: Array[Light3D] = []
 var _probes: Array[ReflectionProbe] = []
+## Small meshes whose shadow depends on the quality (see tune_caster()).
+var _casters: Array[GeometryInstance3D] = []
+## Which room each lamp is in (looked at again now and then), and the room you're in.
+var _light_rooms := {}
+var _rooms_in := 0.0
+var _lights_seen := 0
+var _cam_room := ""
 var _poll := 0.0
 var _hq := true
 var _adapted := false
@@ -121,6 +150,9 @@ static func profile(opts: Dictionary, fp: bool) -> Dictionary:
 		"shadow_tier": tier,
 		"shadow": SHADOWS[tier],
 		"probe_shadows": best,
+		# Below ultra, only the lamps of the room you're in (and the shed's, which has the dust
+		# in its air, and the ones outdoors) light the volumetric fog: see _cull_room_lights().
+		"fog_all_rooms": tier == "ultra",
 		"draw_distance": clampf(float(opts.get("gfx_draw_distance", 1.0)), 0.5, 2.0),
 		"brightness": clampf(float(opts.get("gfx_brightness", 1.0)), 0.5, 1.5),
 	}
@@ -134,6 +166,11 @@ func _enter_tree() -> void:
 
 
 func _exit_tree() -> void:
+	# Any lamp left out for the room you were in is put back.
+	for l in _light_rooms:
+		if is_instance_valid(l) and culled_by_room(l):
+			(l as Light3D).remove_meta("room_cull")
+			RenderingServer.instance_set_visible((l as Light3D).get_instance(), (l as Light3D).is_visible_in_tree())
 	if get_tree().node_added.is_connected(_on_node_added):
 		get_tree().node_added.disconnect(_on_node_added)
 	if current == self:
@@ -185,6 +222,9 @@ func apply() -> void:
 	for probe in _probes:
 		if is_instance_valid(probe):
 			probe.enable_shadows = bool(p["probe_shadows"])
+	_casters = _casters.filter(func(g): return is_instance_valid(g))
+	for g in _casters:
+		tune_caster(g, p)
 	if daylight and daylight.has_method("set_cloud_quality"):
 		daylight.set_cloud_quality(str(_opts["gfx_clouds"]))
 	_build_fog_volumes(p)
@@ -304,7 +344,7 @@ static func tune_light(l: Light3D, p: Dictionary) -> void:
 	var fog: float = orig[1]
 	if is_equal_approx(fog, 1.0):   # Godot's own default: nobody chose
 		fog = OMNI_FOG if l is OmniLight3D else SPOT_FOG
-	l.light_volumetric_fog_energy = fog
+	l.light_volumetric_fog_energy = 0.0 if l.get_meta("fog_cut", false) else fog
 	var shadow: bool = orig[0]
 	if l is OmniLight3D and not bool(sh["omni"]):
 		shadow = false
@@ -312,6 +352,43 @@ static func tune_light(l: Light3D, p: Dictionary) -> void:
 		shadow = true
 	l.shadow_enabled = shadow
 	l.light_size = 0.06 if bool(sh["pcss"]) and shadow else float(orig[2])
+
+
+## What never casts a shadow at any quality: what you hold in front of you (it hangs off your
+## camera, and you have no body for it to belong to) and particles (smoke, spray, water). Both
+## change every frame, and anything casting a shadow that moves makes every lamp it's near
+## draw its shadow map again, every frame: walking round the shed with a spanner in your hand
+## redrew the shadows of every lamp in reach.
+static func casts_no_shadow(g: GeometryInstance3D) -> bool:
+	if g is CPUParticles3D or g is GPUParticles3D:
+		return true
+	var n := g.get_parent()
+	while n:
+		if n is Camera3D:
+			return true
+		n = n.get_parent()
+	return false
+
+
+## Whether a small mesh (under CASTER_MAX across) casts a shadow at the quality `p`: only when
+## it's at least the quality's "caster_min". Its size is noted the first time, so a better
+## setting later gives its shadow back. Returns false for anything this leaves alone (bigger
+## things, and meshes whose shadow was set on purpose: off, double-sided or shadow only).
+static func tune_caster(g: GeometryInstance3D, p: Dictionary) -> bool:
+	if not g.has_meta("lighting_caster"):
+		if g.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_ON or not (g is MeshInstance3D or g is Label3D):
+			return false
+		var box := g.get_aabb()
+		var size := box.size * (g.global_basis.get_scale().abs() if g.is_inside_tree() else Vector3.ONE)
+		var longest := maxf(size.x, maxf(size.y, size.z))
+		if longest >= CASTER_MAX or longest <= 0.0:
+			return false
+		g.set_meta("lighting_caster", longest)
+	if p.is_empty():
+		return true
+	var small: bool = float(g.get_meta("lighting_caster")) < float((p["shadow"] as Dictionary).get("caster_min", 0.0))
+	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if small else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	return true
 
 
 ## How a mesh takes part in global illumination: buildings and big fixed things are static
@@ -351,6 +428,51 @@ func _process(delta: float) -> void:
 			apply()
 	_update_exposure(delta)
 	_update_overspray(delta)
+	_cull_room_lights(delta)
+
+
+## The lamps of rooms you can't see into from the room you're in (HIDDEN_FROM) are left out
+## of the picture: they light nothing you can see, but each still costs the GPU (in the fog,
+## the GI and, shadowed, a shadow map of everything in its reach). It's done on the
+## renderer's side of the lamp, so the light switches (which show and hide lamps) work as ever.
+func _cull_room_lights(delta: float) -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() and get_viewport() else null
+	_rooms_in -= delta
+	if _rooms_in <= 0.0 or _lights_seen != _lights.size():
+		_rooms_in = 0.5
+		_lights_seen = _lights.size()
+		_light_rooms.clear()
+		for l in _lights:
+			if is_instance_valid(l) and l.is_inside_tree():
+				_light_rooms[l] = Workshop.room_at(l.global_position)
+	# The room you're in, every frame, so walking through a doorway catches up straight away.
+	_cam_room = Workshop.room_at(cam.global_position) if cam else ""
+	var hidden: Array = HIDDEN_FROM.get(_cam_room, [])
+	var fog_all := bool(profile_now.get("fog_all_rooms", true)) or _cam_room == ""
+	for l in _light_rooms:
+		if not is_instance_valid(l):
+			continue
+		var light := l as Light3D
+		var room: String = _light_rooms[l]
+		var shown := light.is_visible_in_tree()
+		var out := hidden.has(room)
+		var key := int(shown) + 2 * int(out)
+		if int(light.get_meta("room_cull", -1)) != key:
+			light.set_meta("room_cull", key)
+			RenderingServer.instance_set_visible(light.get_instance(), shown and not out)
+		# Working out how every lamp lights the fog is a big part of drawing a frame indoors,
+		# where dozens are in reach; a lamp in the next room only lights its air through the
+		# doorway.
+		var cut := not fog_all and room != _cam_room and room != "" and room != "shed"
+		if bool(light.get_meta("fog_cut", false)) != cut and not light.has_meta("lighting_skip"):
+			light.set_meta("fog_cut", cut)
+			if not profile_now.is_empty():
+				tune_light(light, profile_now)
+
+
+## Whether a lamp is left out of the picture for the room you're in (see _cull_room_lights()).
+static func culled_by_room(l: Light3D) -> bool:
+	return int(l.get_meta("room_cull", 0)) >= 2
 
 
 func _drain_pending() -> void:
@@ -377,6 +499,12 @@ func _drain_pending() -> void:
 				(n as ReflectionProbe).enable_shadows = bool(p["probe_shadows"])
 		elif n is GeometryInstance3D:
 			(n as GeometryInstance3D).gi_mode = gi_mode_for(n)
+			if casts_no_shadow(n):
+				(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				continue
+			var tracked := n.has_meta("lighting_caster")
+			if tune_caster(n, p) and not tracked:
+				_casters.append(n)
 	_lights = _lights.filter(func(l): return is_instance_valid(l))
 	_probes = _probes.filter(func(pr): return is_instance_valid(pr))
 

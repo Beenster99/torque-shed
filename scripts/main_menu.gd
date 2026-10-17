@@ -11,10 +11,15 @@ signal leave_session
 signal order_bike
 signal geometry_mode
 signal save_requested
+## A save game picked on the Load screen, to play solo or host (see SaveBrowser).
+signal load_game(id: String, as_host: bool)
+signal save_as(called: String)
+signal save_renamed(id: String, called: String)
 signal quitting
 
 const CONTROLS_TEXT := """ON FOOT
 W A S D / left stick: walk      Shift: run      Mouse / right stick: look      C / Ctrl / R3: crouch
+V / View: first or third person (spraying, washing, the sandblaster and the tyre changer are always first person)
 1-6, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can, pressure washer)
 Hold left mouse / RT / A: work on what you're looking at, or put a held part down anywhere
 Holding a can of fluid: left mouse pours it in, right mouse / LT drains into it
@@ -43,6 +48,7 @@ var _assist: HSlider
 var _auto: CheckBox
 var _snap: CheckBox
 var _free_rotate: CheckBox
+var _third_person: CheckBox
 var _host_info: Label
 var _crew: Label
 var _pad: Label
@@ -57,15 +63,22 @@ var _weather_now: Label
 var debug: DebugTab
 var money: MoneyTab
 var shop: ShopTab
-## Set when the player chose "New shed": the next solo or hosted start begins a fresh shed.
+## Set when the player chose New game: the next solo or hosted start begins a fresh shed (and
+## character), saved as `new_name`.
 var new_shed := false
+var new_name := ""
 var _solo: Button
 var _host: Button
 var _save_line: Label
-var _new_shed: Button
-var _confirm: ConfirmationDialog
+var _new_game: Button
+var _load_button: Button
 var _save_status: Label
 var _save_button: Button
+var _save_as_button: Button
+var _saves_button: Button
+## The Load screen, in place of the tabs while it's open.
+var saves: SaveBrowser
+var _row: HBoxContainer
 var _resume: Button
 var keybinds: KeybindTab
 var graphics: GraphicsTab
@@ -84,6 +97,7 @@ func _ready() -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
 	var row := HBoxContainer.new()
+	_row = row
 	row.position = Vector2(60, 60)
 	row.add_theme_constant_override("separation", 24)
 	add_child(row)
@@ -110,7 +124,11 @@ func _ready() -> void:
 	_start_box.add_child(_solo)
 	_host = _button("Host a co-op shed", func(): _save(); host_game.emit())
 	_start_box.add_child(_host)
-	_start_box.add_child(_new_shed)
+	var game_row := HBoxContainer.new()
+	game_row.add_theme_constant_override("separation", 10)
+	game_row.add_child(_new_game)
+	game_row.add_child(_load_button)
+	_start_box.add_child(game_row)
 	var join_row := HBoxContainer.new()
 	_ip = LineEdit.new()
 	_ip.text = Settings.last_ip
@@ -128,7 +146,7 @@ func _ready() -> void:
 	_pause_box.add_child(_resume)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
-	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at (F2)", func(): geometry_mode.emit()))
+	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
 	_retrieve_box = VBoxContainer.new()
 	_retrieve_box.add_theme_constant_override("separation", 6)
 	_pause_box.add_child(_retrieve_box)
@@ -142,6 +160,12 @@ func _ready() -> void:
 	save_row.add_theme_constant_override("separation", 16)
 	_save_button = _button("Save now", func(): save_requested.emit())
 	save_row.add_child(_save_button)
+	_save_as_button = _button("Save as...", func():
+		saves.ask_name("Save as a new game", "Save", SaveGame.unique_name(saves._current_name() + " copy"), "",
+			func(called, _alt): save_as.emit(called)))
+	save_row.add_child(_save_as_button)
+	_saves_button = _button("Save games...", func(): show_saves(true))
+	save_row.add_child(_saves_button)
 	_save_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
 	_save_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_save_status.custom_minimum_size.x = 260.0
@@ -173,6 +197,11 @@ func _ready() -> void:
 	recentre.button_pressed = Settings.camera_recentre
 	recentre.toggled.connect(func(v): Settings.camera_recentre = v)
 	settings.add_child(recentre)
+	_third_person = CheckBox.new()
+	_third_person.text = "Third person on foot: the camera behind your shoulder, your whole figure in view (V / View toggles it)"
+	_third_person.button_pressed = Settings.walk_third_person
+	_third_person.toggled.connect(func(v): Settings.walk_third_person = v)
+	settings.add_child(_third_person)
 	settings.add_child(UITheme.label("Units", 15))
 	var units := OptionButton.new()
 	units.add_item("Metric (km/h, km, kg, L/100 km)")
@@ -186,7 +215,7 @@ func _ready() -> void:
 	_snap.toggled.connect(func(v): Settings.snap_placement = v)
 	settings.add_child(_snap)
 	_free_rotate = CheckBox.new()
-	_free_rotate.text = "Free rotate: the rotate keys turn what you hold to any angle, not a quarter a press (/ toggles it)"
+	Controls.bind_text(_free_rotate, "Free rotate: the rotate keys turn what you hold to any angle, not a quarter a press ({rotate_free} toggles it)")
 	_free_rotate.button_pressed = Settings.free_rotate
 	_free_rotate.toggled.connect(func(v): Settings.free_rotate = v)
 	settings.add_child(_free_rotate)
@@ -225,8 +254,21 @@ func _ready() -> void:
 	_tabs.add_child(shop)
 	# Testing helpers: reset or max out XP and money.
 	_tabs.add_child(ContractsTab.new())
+	_tabs.add_child(RecoveryTab.new())
 	debug = DebugTab.new()
 	_tabs.add_child(debug)
+	# The Load screen: save games to load, save as, rename and delete (see SaveBrowser).
+	saves = SaveBrowser.new()
+	saves.visible = false
+	row.add_child(saves)
+	saves.load_game.connect(func(id, as_host):
+		_save()
+		load_game.emit(id, as_host))
+	saves.save_now.connect(func(): save_requested.emit())
+	saves.save_as.connect(func(called): save_as.emit(called))
+	saves.save_renamed.connect(func(id, called): save_renamed.emit(id, called))
+	saves.changed.connect(_refresh_save_choice)
+	saves.closed.connect(func(): _tabs.visible = true)
 
 
 ## The riding rows of the Settings tab: the Riding realism slider (what each end means shows
@@ -247,8 +289,13 @@ func _build_riding_settings(settings: VBoxContainer) -> void:
 	show.call(Settings.assist)
 	settings.add_child(_assist)
 	settings.add_child(value)
+	var bars := CheckBox.new()
+	bars.text = "Direct bars: steering pushes on the handlebars (push right to lean right)"
+	bars.button_pressed = Settings.direct_bars
+	bars.toggled.connect(func(v): Settings.direct_bars = v)
+	settings.add_child(bars)
 	var tele := CheckBox.new()
-	tele.text = "Telemetry overlay while riding (F3)"
+	Controls.bind_text(tele, "Telemetry overlay while riding ({telemetry})")
 	tele.button_pressed = Settings.telemetry_overlay
 	tele.toggled.connect(func(v): Settings.telemetry_overlay = v)
 	settings.add_child(tele)
@@ -276,7 +323,10 @@ func _process(_delta: float) -> void:
 			names.append(Shed.crew[peer]["name"] + (" (you)" if peer == Shed.me() else ""))
 		_crew.text = "In the shed: " + ", ".join(names)
 		_save_status.text = SaveGame.status_text()
-		_save_button.visible = not (Net.is_online() and not Net.is_host())
+		var client := Net.is_online() and not Net.is_host()
+		_save_button.visible = not client
+		_save_as_button.visible = not client
+		_saves_button.visible = not client
 		if Shed.abandoned_bikes() != _retrieve_shown:
 			refresh_retrieve()
 
@@ -285,15 +335,18 @@ func show_title(status := "") -> void:
 	_start_box.visible = true
 	_pause_box.visible = false
 	_status.text = status
+	SaveGame.migrate(Settings.player_name)
+	_hide_saves()
 	_refresh_save_choice()
 	show()
-	_solo.grab_focus()
+	(_solo if _solo.visible else _new_game).grab_focus()
 
 
 func show_pause() -> void:
 	_start_box.visible = false
 	_pause_box.visible = true
 	_status.text = ""
+	_hide_saves()
 	if Net.is_host():
 		_host_info.text = "Hosting on port %d.\n%s" % [Net.PORT, Net.join_instructions()]
 	elif Net.is_online():
@@ -303,6 +356,7 @@ func show_pause() -> void:
 	_auto.button_pressed = Settings.auto_shift
 	_snap.button_pressed = Settings.snap_placement
 	_free_rotate.button_pressed = Settings.free_rotate
+	_third_person.button_pressed = Settings.walk_third_person
 	_refresh_time_settings(true)
 	refresh_retrieve()
 	show()
@@ -324,7 +378,7 @@ func refresh_retrieve() -> void:
 			TvChannels.money_text(Shed.RETRIEVE_FEE)], func(): Shed.request({"a": "retrieve_bike", "bike": bike_id}))
 		var why := Shed.retrieve_check({"bike": bike_id})
 		b.disabled = why != ""
-		b.tooltip_text = why
+		b.tooltip_text = Controls.hint(why)
 		_retrieve_box.add_child(b)
 
 
@@ -437,40 +491,57 @@ func _refresh_time_settings(move_slider: bool) -> void:
 		_time.set_value_no_signal(h)
 
 
-## "Continue" or "New shed" when there's a saved shed: the start buttons carry on with it unless
-## the player confirms starting again.
+## The game the start buttons carry on with (the one played last), with New game (it asks for
+## the new save's name) and Load game (the Load screen) under them.
 func _build_save_choice() -> void:
 	_save_line = UITheme.label("", 14, Color(1, 1, 1, 0.7))
 	_save_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_save_line.custom_minimum_size.x = 400.0
 	_start_box.add_child(_save_line)
-	_new_shed = _button("New shed", func():
-		if new_shed:
-			new_shed = false
-			_refresh_save_choice()
-		else:
-			_confirm.popup_centered())
-	_confirm = ConfirmationDialog.new()
-	_confirm.title = "Start a new shed?"
-	_confirm.dialog_text = "Your saved shed will be replaced by a new one\nthe next time the game saves."
-	_confirm.ok_button_text = "New shed"
-	_confirm.confirmed.connect(func():
+	_new_game = _button("New game...", func(): ask_new_game())
+	_load_button = _button("Load game...", func(): show_saves(false))
+
+
+## New game: asks for the save's name, then opens a new shed with a new character solo, or hosted.
+func ask_new_game() -> void:
+	saves.ask_name("New game", "Start solo", SaveGame.unique_name("%s's shed" % player_name()), "", func(called, as_host):
 		new_shed = true
-		_refresh_save_choice())
-	add_child(_confirm)
+		new_name = called
+		_save()
+		if as_host:
+			host_game.emit()
+		else:
+			ride_solo.emit(), "Host co-op")
+
+
+## Opens the Load screen in place of the tabs; `in_game` from the Esc menu.
+func show_saves(in_game: bool) -> void:
+	_tabs.visible = false
+	saves.open(in_game)
+
+
+func _hide_saves() -> void:
+	if saves:
+		saves.visible = false
+	_tabs.visible = true
 
 
 func _refresh_save_choice() -> void:
+	var all := SaveGame.list_saves()
+	if not SaveGame.has_save(SaveGame.active_slot()) and not all.is_empty() and SaveGame.characters_in_saves():
+		SaveGame.use_slot(str(all[0]["id"]))
 	var saved := SaveGame.can_continue()
-	var info := SaveGame.describe(SaveGame.read(SaveGame.active_slot())) if saved else ""
-	var going_on := saved and not new_shed
-	_solo.text = "Continue (solo)" if going_on else "Open a new shed (solo)" if saved else "Open the shed (solo)"
-	_host.text = "Continue as a co-op host" if going_on else "Host a new co-op shed"
+	var meta := SaveGame.read_meta(SaveGame.active_slot()) if saved else {}
+	var called := str(meta.get("name", "the saved shed"))
+	_solo.text = "Continue %s (solo)" % called if saved else "Open a new shed (solo)"
+	_host.text = "Host %s as co-op" % called if saved else "Host a new co-op shed"
+	_solo.visible = saved
+	_host.visible = saved
 	_save_line.visible = saved
-	_save_line.text = ("Saved shed: %s" % info if info != "" else "The saved shed can't be read; a new one will be opened.") \
-		if going_on else "Starting a new shed. The saved one is replaced when this one saves."
-	_new_shed.visible = saved
-	_new_shed.text = "Keep the saved shed" if new_shed else "New shed"
+	_save_line.text = "%s: %s" % [called, SaveGame.summary_text(meta)] if not meta.is_empty() \
+		else "The saved shed can't be read; a new one will be opened."
+	_load_button.text = "Load game... (%d)" % all.size() if all.size() > 0 else "Load game..."
+	_load_button.disabled = all.is_empty()
 
 
 func set_status(text: String) -> void:
@@ -500,7 +571,7 @@ func _volume_slider(value: float, cb: Callable) -> HSlider:
 
 func _button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
-	b.text = text
+	Controls.bind_text(b, text)
 	b.pressed.connect(cb)
 	return b
 
