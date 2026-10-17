@@ -1583,7 +1583,6 @@ func _build_wash_bay() -> void:
 	var pad := _material(Color(0.42, 0.44, 0.45), 0.0, 0.25, _noise(0.3, 0.85, 1.05), 4.0)
 	var floor_mi := _deco(self, c + Vector3(0.0, 0.006, 0.0), Vector3(hx * 2.0, 0.012, hz * 2.0), pad)
 	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_deco(self, c + Vector3(0.0, 0.014, 0.6), Vector3(1.6, 0.006, 0.2), _mats["dark"]).name = "Drain"
 	# Back and outer walls (the shed wall is the inner side); open to the yard at the front.
 	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.2, h, 0.2), _mats["cladding"])
 	_solid(c + Vector3(-hx - 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.2), _mats["cladding"])
@@ -1623,16 +1622,16 @@ func _build_wash_bay() -> void:
 	add_child(light)
 
 
-## The drain in the middle of the shed floor (Wash.SHED_DRAIN) that washing water runs into: a
-## square steel grate in a shallow dished apron of floor.
+## The drain in the middle of the wash bay's floor (Wash.BAY_DRAIN) that washing water runs into:
+## a square steel grate in a shallow dished apron of floor.
 func _build_drain() -> void:
-	var at := Wash.SHED_DRAIN
+	var at := Wash.BAY_DRAIN + Vector3(0.0, 0.012, 0.0)
 	var apron := _material(Color(0.33, 0.34, 0.35), 0.0, 0.5)
 	var dish := _deco(self, at + Vector3(0.0, 0.003, 0.0), Vector3(1.1, 0.004, 1.1), apron)
 	dish.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var frame := _material(Color(0.25, 0.26, 0.27), 0.8, 0.45)
 	var hole := _material(Color(0.02, 0.02, 0.025), 0.0, 0.9)
-	_deco(self, at + Vector3(0.0, 0.006, 0.0), Vector3(0.42, 0.006, 0.42), frame).name = "ShedDrain"
+	_deco(self, at + Vector3(0.0, 0.006, 0.0), Vector3(0.42, 0.006, 0.42), frame).name = "WashDrain"
 	_deco(self, at + Vector3(0.0, 0.0065, 0.0), Vector3(0.36, 0.006, 0.36), hole)
 	for i in 7:
 		var bar := _deco(self, at + Vector3(-0.15 + i * 0.05, 0.009, 0.0), Vector3(0.018, 0.006, 0.36), frame)

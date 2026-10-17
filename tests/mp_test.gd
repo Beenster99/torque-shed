@@ -503,6 +503,8 @@ func _ready() -> void:
 				muck.fill(0.8)
 				for wid in [w_tyre, w_fork, w_engine]:
 					Dirt.store(Shed.items[wid], muck)
+				# Washing's done in the wash bay, so the Ranger goes in there first.
+				Shed.bikes[ranger]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
 				Shed._mark_dirty()
 				Shed.request({"a": "wash_cells", "bike": ranger, "parts": {w_tyre: all_cells.call(0.5)}, "clean": []})
 				wash_step = 1

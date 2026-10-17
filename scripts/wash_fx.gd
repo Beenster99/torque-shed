@@ -19,7 +19,7 @@ var _puddle_mat: StandardMaterial3D
 var _gurgle: AudioStreamPlayer3D
 var _wet := 0.0               # how big the wet patch is, 0..1
 var _flow := 0.0              # how much water's running to the drain, 0..1
-var _drain := Wash.SHED_DRAIN
+var _drain := Wash.BAY_DRAIN
 var firing := false
 
 

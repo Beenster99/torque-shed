@@ -2679,7 +2679,7 @@ func check(peer: int, action: Dictionary) -> String:
 		"wash":
 			var at = action.get("at", null)
 			if not (at is Vector3) or not Wash.reaches(at):
-				return "The hose doesn't reach. Wash it in the shed or the wash bay beside it."
+				return Wash.NO_REACH
 			var any := false
 			for id in action.get("items", []):
 				if items.has(int(id)) and items[int(id)]["dirt"] >= 0.005 and not items[int(id)].get("boxed", false):

@@ -1059,7 +1059,7 @@ func _test_garage_life() -> void:
 		var id := Shed.item_on(faithful, slot)
 		Shed.items[id]["dirt"] = 0.8
 		muddy.append(id)
-	check(Shed.check(me, {"a": "wash", "items": muddy, "at": Workshop.CENTER + Vector3(0.0, 0.0, 40.0)}).contains("hose"), "the hose only reaches the wash bay and the shed")
+	check(Shed.check(me, {"a": "wash", "items": muddy, "at": Workshop.CENTER + Vector3(0.0, 0.0, 40.0)})== Wash.NO_REACH, "the hose only reaches the wash bay")
 	for i in 5:
 		Shed.request({"a": "wash", "items": muddy, "at": Workshop.WASH_CENTER})
 	check(muddy.all(func(id): return Shed.items[id]["dirt"] < 0.5), "the pressure washer blasts the muck off")
@@ -16042,10 +16042,12 @@ func _test_wash_rules() -> void:
 	Shed.start_new("Tester", 11)
 	var me := Shed.me()
 	var faithful := _bike_named("Old Faithful")
-	var at: Vector3 = (Shed.bikes[faithful]["xf"] as Transform3D).origin
-	check(Wash.reaches(at) and Wash.reaches(Workshop.WASH_CENTER) and Wash.reaches(Workshop.CENTER) and not Wash.reaches(Workshop.CENTER + Vector3(0.0, 0.0, 40.0)),
-		"the hose reaches the shed and the wash bay, not the road")
-	check(Wash.drain_near(Workshop.CENTER + Vector3(2.0, 0.0, -2.0)).distance_to(Wash.SHED_DRAIN) < 0.01, "water in the shed runs to the drain in the middle of it")
+	check(Shed.check(me, {"a": "wash_cells", "bike": faithful, "parts": {}, "clean": []}) == Wash.NO_REACH, "in the shed it can't be pressure washed: that's done in the wash bay")
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+	check(Wash.reaches(Workshop.WASH_CENTER) and Wash.reaches(Workshop.WASH_CENTER + Vector3(0.0, 0.0, Workshop.WASH_HALF.y + 0.5))
+		and not Wash.reaches(Workshop.CENTER) and not Wash.reaches(Workshop.CENTER + Vector3(0.0, 0.0, 40.0)),
+		"the hose reaches the wash bay and just out of its open front, not the shed or the road")
+	check(Wash.drain_near(Workshop.WASH_CENTER).distance_to(Wash.BAY_DRAIN) < 0.01, "the water runs to the drain in the middle of the wash bay")
 	var full := PackedFloat32Array()
 	full.resize(Dirt.CELLS)
 	full.fill(0.8)
@@ -16080,7 +16082,7 @@ func _test_wash_rules() -> void:
 	check(Shed._bike_dirt(faithful, true) == 0.0 and int(Progress.profile["xp"]) > xp1 + 5, "the whole bike clean: the bike-washed XP (%d)" % (int(Progress.profile["xp"]) - xp1))
 	check(Money.clean_bonus(faithful) == Money.BONUS_CLEAN and Money.bike_sale(faithful) > price, "a spotless bike sells for a little more (%d to %d)" % [price, Money.bike_sale(faithful)])
 	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 40.0))
-	check(Shed.check(me, {"a": "wash_cells", "bike": faithful, "parts": {}, "clean": []}).contains("reach"), "out on the road, the hose doesn't reach")
+	check(Shed.check(me, {"a": "wash_cells", "bike": faithful, "parts": {}, "clean": []}) == Wash.NO_REACH, "out on the road, the hose doesn't reach")
 
 
 ## Pressure washing a bike by hand: F with the pressure washer on it brings up the wash
@@ -16101,13 +16103,15 @@ func _test_wash_session() -> void:
 	Shed._wear_from_ride(faithful, {"km": 6.0, "dirt_km": 3.0, "fly_km": 3.0})
 	Shed.bikes[faithful]["rider"] = 0
 	Shed.crew[me]["riding"] = 0
+	# Wheeled into the wash bay.
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
 	Shed.changed.emit()
 	for i in 5:
 		await get_tree().process_frame
 	var model := ws.bike_model(faithful)
 	check(model != null and model.dirt_layer != null and model.dirt_layer.material_for("engine") != null and model.dirt_layer.mesh_count() > 20,
 		"the muck from a ride is drawn on the bike, part by part (%d meshes)" % (model.dirt_layer.mesh_count() if model and model.dirt_layer else 0))
-	check(ws.get_node_or_null("ShedDrain") != null, "there's a drain in the middle of the shed floor")
+	check(ws.get_node_or_null("WashDrain") != null, "there's a drain in the middle of the wash bay floor")
 	w.set_tool("lance")
 	await _aim_at(main, faithful, "engine")
 	check(w.wash_target() == faithful, "the pressure washer's on the bike")

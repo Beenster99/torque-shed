@@ -1,26 +1,31 @@
 class_name Wash
 extends RefCounted
-## Pressure washing bikes, on the host's side: where the hose reaches (the wash bay beside the
-## shed, and the shed itself, whose floor drains into the drain in the middle of it), the jet
+## Pressure washing bikes, on the host's side: where the hose reaches (only the wash bay beside
+## the shed, whose floor drains into the grate in the middle of it), the jet
 ## each washer is firing and where it lands (so the whole crew sees the water: "wash_aim"), and
 ## the dirt their WashJob has washed off each part, region by region ("wash_cells": each region's
 ## dirt times a factor, so two people washing the same bike both count), with the parts it calls
 ## clean. A part gone clean is worth its XP once; the whole bike clean, the bike-washed XP (more
 ## for a muddier one), as the quick wash always was.
 
-## The drain in the middle of the shed floor, and the wash bay's.
-const SHED_DRAIN := Vector3(0.0, 0.0, 65.0)
-const BAY_DRAIN := Vector3(-9.3, 0.0, 66.6)
+## The drain in the middle of the wash bay's floor.
+const BAY_DRAIN := Vector3(-9.3, 0.0, 66.0)
+## How far out of the open front of the bay a bike can stand and still be reached.
+const BAY_APRON := 0.8
+## What the player's told when a bike's anywhere else.
+const NO_REACH := "Pressure washing is done in the wash bay. Wheel it in there first."
 
 
-## Whether the hose reaches a bike at `at`: in the wash bay (or just outside it), or in the shed.
+## Whether the hose reaches a bike at `at`: inside the wash bay, or just out of its open front.
 static func reaches(at: Vector3) -> bool:
-	return at.distance_to(Workshop.WASH_POS) <= Workshop.WASH_REACH or Workshop.room_at(at) in ["shed", "wing"]
+	var c := Workshop.WASH_CENTER
+	var half := Workshop.WASH_HALF
+	return Rect2(c.x - half.x, c.z - half.y, half.x * 2.0, half.y * 2.0 + BAY_APRON).has_point(Vector2(at.x, at.z))
 
 
-## The drain the water from washing at `at` runs into.
-static func drain_near(at: Vector3) -> Vector3:
-	return BAY_DRAIN if at.distance_to(BAY_DRAIN) < at.distance_to(SHED_DRAIN) and Workshop.room_at(at) == "" else SHED_DRAIN
+## The drain the water from washing at `at` runs into: always the wash bay's.
+static func drain_near(_at: Vector3) -> Vector3:
+	return BAY_DRAIN
 
 
 ## Who is firing the jet and where it lands: [{peer, at, normal, from}] (see "wash_aim").
@@ -44,7 +49,7 @@ static func check(peer: int, action: Dictionary) -> String:
 			if int(Shed.bikes[bike].get("rider", 0)) != 0:
 				return "Someone is riding that bike."
 			if not reaches((Shed.bikes[bike]["xf"] as Transform3D).origin):
-				return "The hose doesn't reach. Wash it in the shed or the wash bay."
+				return NO_REACH
 			if not (action.get("parts", {}) is Dictionary) or (action.get("parts", {}) as Dictionary).size() > PartsDB.SLOTS.size():
 				return "Nothing was washed."
 			if not (action.get("clean", []) is Array):

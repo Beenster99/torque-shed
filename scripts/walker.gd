@@ -2920,7 +2920,7 @@ func enter_wash_mode(bike: int, wait_release := true) -> void:
 		return
 	var at: Vector3 = (Shed.bikes[bike]["xf"] as Transform3D).origin
 	if not Wash.reaches(at):
-		Shed.feedback.emit("The hose doesn't reach. Wash it in the shed or the wash bay.", false)
+		Shed.feedback.emit(Wash.NO_REACH, false)
 		_need_release = true
 		return
 	var view: Node = get_tree().get_first_node_in_group("workshop")
