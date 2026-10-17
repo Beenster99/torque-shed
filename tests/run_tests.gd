@@ -15,7 +15,8 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--only="):
 			# Run a single test method, e.g. --only=_test_acceleration
-			await call(a.trim_prefix("--only="))
+			for m in a.trim_prefix("--only=").split(","):
+				await call(m)
 			print("\n%d checks, %d failed" % [checks, failures])
 			get_tree().quit(1 if failures > 0 else 0)
 			return
@@ -8006,9 +8007,12 @@ func _test_upgrade_session() -> void:
 	check(not through.call(door_from, door_to), "before the extension the back wall is solid there")
 	var nodes := ws.get_child_count()
 	Shed.request({"a": "garage_money", "value": 1000000})
+	var xp_was = Progress.profile.get("xp", 0)
+	Progress.profile["xp"] = maxi(int(xp_was), Progress.xp_for_level(20))
 	for id in GarageUpgrades.CATALOGUE:
 		Shed.request({"a": "buy_upgrade", "id": id})
-	check(Shed.upgrades.size() == GarageUpgrades.CATALOGUE.size(), "with money enough, everything can be bought in order")
+	Progress.profile["xp"] = xp_was
+	check(Shed.upgrades.size() == GarageUpgrades.CATALOGUE.size(), "with money and level enough, everything can be bought in order")
 	await get_tree().process_frame
 	await get_tree().physics_frame
 	await get_tree().physics_frame

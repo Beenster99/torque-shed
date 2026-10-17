@@ -287,6 +287,8 @@ func test_dolly() -> void:
 	var job := _job("barn", false)
 	var bike := int(job["bike"])
 	var beside := Recovery.trailer_xf() * Transform3D(Basis(), Vector3(6.0, 0.0, 2.0))
+	# On the ground there (a session earlier in the run leaves the map's terrain loaded).
+	beside.origin.y = Recovery.ground_y(beside.origin.x, beside.origin.z)
 	Shed.bikes[bike]["xf"] = beside
 	Shed.bikes[bike]["stand"] = "side"
 	check(Recovery.seized(bike) and Shed.check(me, {"a": "grab_bike", "bike": bike}).contains("seized"),
