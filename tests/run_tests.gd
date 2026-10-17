@@ -189,6 +189,7 @@ func _run_all() -> void:
 	_test_lighting_lamps_and_gi()
 	await _test_lighting_clouds()
 	await _test_lighting_session()
+	await _test_shed_render_cost()
 	print("Engine sound: firing pulses, exhausts, pops, gear shifts")
 	_test_engine_firing()
 	_test_engine_bank()
@@ -8890,6 +8891,121 @@ func _test_lighting_session() -> void:
 	main.queue_free()
 	await get_tree().physics_frame
 	SaveGame.delete_slot("test_lighting")
+	SaveGame.slot_override = ""
+
+
+## Simon's 17 October round: the frame rate dropped inside the shed. The walls hide what's
+## behind them from the renderer, lamps in rooms you can't see into are left out, lamps in the
+## next room don't light your fog (below ultra), tiny things and what you hold cast no shadows,
+## the wall screens draw their pages only when they change, and the TV's live picture skips
+## the costly extras.
+func _test_shed_render_cost() -> void:
+	SaveGame.slot_override = "test_render_cost"
+	SaveGame.delete_slot("test_render_cost")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.upgrades["lounge"] = true
+	Shed.upgrades["wing"] = true
+	Shed.lights_on = true
+	Shed.changed.emit()
+	for i in 6:
+		await get_tree().process_frame
+	var ws: Workshop = main.workshop
+	var lt: Lighting = main.world.lighting
+	check(bool(ProjectSettings.get_setting("rendering/occlusion_culling/use_occlusion_culling", false)), "occlusion culling is on")
+	var occ := ws.find_children("*", "OccluderInstance3D", true, false)
+	var shown := occ.filter(func(o): return (o as Node3D).is_visible_in_tree())
+	check(occ.size() >= 20, "the walls and roofs hide what's behind them (%d occluders)" % occ.size())
+	var knocked := 0
+	for n in ws.knock["wing"]:
+		for o in (n as Node).find_children("*", "OccluderInstance3D", false, false):
+			if not (o as Node3D).is_visible_in_tree():
+				knocked += 1
+	check(knocked >= 1 and shown.size() < occ.size(), "a wall knocked through for the extension doesn't hide anything any more")
+	# Lamps left out by room.
+	var in_room := func(room: String) -> Array:
+		return lt._lights.filter(func(l): return is_instance_valid(l) and l.is_inside_tree() and Workshop.room_at(l.global_position) == room)
+	var lounge_lamps: Array = in_room.call("lounge")
+	var shed_lamps: Array = in_room.call("shed")
+	var paint_lamps: Array = in_room.call("paint")
+	check(lounge_lamps.size() >= 2 and shed_lamps.size() >= 5 and paint_lamps.size() >= 2, "lamps in the lounge, shed and paint shop (%d, %d, %d)"
+		% [lounge_lamps.size(), shed_lamps.size(), paint_lamps.size()])
+	var walk_to := func(at: Vector3) -> void:
+		main.walker.place(Transform3D(Basis(), at))
+		for i in 3:
+			await get_tree().process_frame
+	await walk_to.call(Workshop.CENTER + Vector3(0.0, 0.1, 1.0))
+	check(lounge_lamps.all(func(l): return Lighting.culled_by_room(l)) and not shed_lamps.any(func(l): return Lighting.culled_by_room(l)),
+		"in the shed the lounge's lamps upstairs are left out, the shed's aren't")
+	await walk_to.call(Vector3(0.0, GarageUpgrades.LOFT_FLOOR + 0.1, 65.0))
+	check(Workshop.room_at(main.walker.camera.global_position) == "lounge" and shed_lamps.all(func(l): return Lighting.culled_by_room(l))
+		and not lounge_lamps.any(func(l): return Lighting.culled_by_room(l)), "up in the lounge it's the other way round")
+	# A light switch still works on a lamp that's left out, and it comes back as switched.
+	Shed.lights_on = false
+	for i in 3:
+		await get_tree().process_frame
+	await walk_to.call(Workshop.CENTER + Vector3(0.0, 0.1, 16.0))
+	check(Workshop.room_at(main.walker.camera.global_position) == "" and not lt._lights.any(func(l): return is_instance_valid(l) and Lighting.culled_by_room(l)),
+		"outdoors no lamp is left out")
+	check(not ws._shed_lights[0].visible, "and the shed's lamps are as the switch left them (off)")
+	Shed.lights_on = true
+	for i in 3:
+		await get_tree().process_frame
+	check(ws._shed_lights[0].visible and int(ws._shed_lights[0].get_meta("room_cull", -1)) == 1, "switched back on, they're on")
+	# The fog: in the paint shop, below ultra, the storage room's lamps don't light it; the shed's do.
+	var store_lamps: Array = in_room.call("storage")
+	for tier in ["high", "ultra"]:
+		Lighting.overrides = {"gfx_shadows": tier, "gfx_volumetrics": "high"}
+		lt.apply()
+		await walk_to.call(Workshop.BOOTH_ROOM_CENTER + Vector3(0.0, 0.1, 2.0))
+		var cut: bool = store_lamps.all(func(l): return (l as Light3D).light_volumetric_fog_energy == 0.0)
+		var lit: bool = shed_lamps.all(func(l): return (l as Light3D).light_volumetric_fog_energy > 0.0) \
+			and paint_lamps.all(func(l): return (l as Light3D).light_volumetric_fog_energy > 0.0)
+		check(store_lamps.size() >= 1 and cut == (tier != "ultra") and lit,
+			"%s: the storage room's lamps %s the paint shop's fog; the paint shop's and the shed's do" % [tier, "don't light" if tier != "ultra" else "light"])
+	# Shadows: a tiny mesh casts one only at ultra; a part in your hands never does.
+	var bolt := MeshInstance3D.new()
+	var little := BoxMesh.new()
+	little.size = Vector3(0.07, 0.03, 0.03)
+	bolt.mesh = little
+	ws.add_child(bolt)
+	var held := MeshInstance3D.new()
+	held.mesh = BoxMesh.new()
+	main.walker.camera.add_child(held)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(bolt.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON and held.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF,
+		"ultra: a 7 cm bolt casts a shadow; what you hold doesn't")
+	Lighting.overrides = {"gfx_shadows": "high"}
+	lt.apply()
+	check(bolt.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "high: the bolt's shadow is too small to bother with")
+	Lighting.overrides = {"gfx_shadows": "ultra"}
+	lt.apply()
+	check(bolt.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON, "and back at ultra it casts one again")
+	bolt.queue_free()
+	held.queue_free()
+	# The wall screens draw their page once when it changes, not every frame.
+	var screens: Array = ws.screens().values()
+	var every_frame := 0
+	for d in screens:
+		var mode: int = (d as Dashboard)._viewport.render_target_update_mode
+		if mode == SubViewport.UPDATE_WHEN_VISIBLE or mode == SubViewport.UPDATE_ALWAYS:
+			every_frame += 1
+	check(not screens.is_empty() and every_frame == 0, "the wall screens only redraw their pages when they change (%d screens)" % screens.size())
+	# The TV's live picture: the world's sky and light, none of the costly extras.
+	var look := ws._feed_environment(1.0)
+	check(look != null and look.sky == lt.env.sky and not look.sdfgi_enabled and not look.volumetric_fog_enabled and not look.ssr_enabled,
+		"the live TV picture has the world's sky without GI, fog or reflections")
+	Lighting.overrides = {}
+	lt.apply()
+	Shed.upgrades.erase("lounge")
+	Shed.upgrades.erase("wing")
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_render_cost")
 	SaveGame.slot_override = ""
 
 
