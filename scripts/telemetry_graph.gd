@@ -2,7 +2,9 @@ class_name TelemetryGraph
 extends Control
 ## Strip charts of a ride's telemetry (see RideTelemetry), one measure per strip on a shared
 ## time axis: speed, lean and steering, bar torque, slip ratio, slip angle, grip used, loads and
-## the controls. Front tyre in blue, rear in orange. The dyno desk shows the whole of the last
+## the controls, and the heat: tyre, brake and engine temperatures, tyre pressures, and what the
+## heat does to the grip, the brakes and the power. Front in blue, rear in orange (a tyre's
+## carcass and a brake's pads in the paler shade). The dyno desk shows the whole of the last
 ## ride; the ride overlay (TelemetryOverlay) uses the same strips for the last few seconds.
 
 const BG := Color(0.035, 0.045, 0.06)
@@ -14,6 +16,8 @@ const FRONT := Color("#3b8fe0")    # the dyno graph's validated pair for the dar
 const REAR := Color("#d9771f")
 const ONE := Color(0.85, 0.87, 0.9)
 const OVER := Color(1.0, 0.42, 0.32)
+const FRONT_PALE := Color("#9cc6ef")
+const REAR_PALE := Color("#efbb8a")
 ## The strips: [title, [[channel, colour, name]...], min, max, unit]. A range of [0, 0] fits the data.
 const STRIPS := [
 	["Speed", [["speed", ONE, ""]], 0.0, 0.0, "km/h"],
@@ -31,6 +35,14 @@ const STRIPS := [
 	["Throttle and brakes", [["throttle", ONE, "throttle"], ["brake_f", FRONT, "front brake"], ["brake_r", REAR, "rear brake"]], 0.0, 1.0, ""],
 	["Gear", [["gear", ONE, ""]], 0.0, 6.0, ""],
 	["Revs", [["rpm", ONE, ""]], 0.0, 0.0, "rpm"],
+	["Tyre temperature", [["tyre_f", FRONT, "front"], ["tyre_r", REAR, "rear"], ["carcass_f", FRONT_PALE, "carcass"],
+		["carcass_r", REAR_PALE, "carcass"]], 0.0, 0.0, "°C"],
+	["Tyre pressure", [["psi_f", FRONT, "front"], ["psi_r", REAR, "rear"]], 0.0, 0.0, "bar"],
+	["Brake temperature", [["disc_f", FRONT, "front disc"], ["disc_r", REAR, "rear disc"], ["pad_f", FRONT_PALE, "pads"],
+		["pad_r", REAR_PALE, "pads"]], 0.0, 0.0, "°C"],
+	["Engine temperature", [["engine_t", OVER, "engine"], ["oil_t", ONE, "oil"], ["air_t", INK_DIM, "air"]], 0.0, 0.0, "°C"],
+	["Heat: grip, brakes, power (1 = full)", [["heat_grip_f", FRONT, "front grip"], ["heat_grip_r", REAR, "rear grip"],
+		["bite_f", FRONT_PALE, "front brake"], ["bite_r", REAR_PALE, "rear brake"], ["power_heat", ONE, "power"]], 0.4, 1.1, ""],
 ]
 
 var telemetry: RideTelemetry
@@ -113,6 +125,10 @@ static func draw_strip(ci: CanvasItem, r: Rect2, tel: RideTelemetry, strip: Arra
 static func _fmt(v: float, unit: String) -> String:
 	if unit == "N" or unit == "rpm" or unit == "km/h":
 		return "%d %s" % [roundi(v), unit]
+	if unit == "°C":
+		return "%d°C" % roundi(v)
+	if unit == "bar":
+		return "%.2f bar" % v
 	if unit == "":
 		return "%.2f" % v
 	return "%.1f %s" % [v, unit]

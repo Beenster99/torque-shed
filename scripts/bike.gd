@@ -100,6 +100,10 @@ var assist := 0.5
 var direct_bars := false
 ## Records the ride for the telemetry overlay and the dyno desk; only the local player's bike has one.
 var telemetry: RideTelemetry
+## The tyres', brakes' and engine's temperatures and what they do to the bike (see BikeHeat).
+var heat: BikeHeat
+## The power the engine is making right now, kW (it heats the engine).
+var engine_kw := 0.0
 var controls_enabled := true
 var engine_on := true      # a parked bike you get on starts with it off; tests ride with it running
 var fuel_litres := 15.0    # petrol left in the tank
@@ -229,6 +233,10 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	wheels[1].merge({"prog": build.rear_progression, "preload": build.rear_preload, "knee": build.rear_knee}, true)
 	gear = 1
 	rpm = build.idle_rpm
+	# Starts warmed through, as a bike that's been ridden; the game cools it to the shed's
+	# temperature (or what's left of its last ride) when someone gets on (see BikeHeat.resume).
+	heat = BikeHeat.new()
+	heat.setup(build)
 
 	# Collision: frame and engine box, rider, and wheel bumpers that only touch walls and ramps edges.
 	var frame_shape := BoxShape3D.new()
@@ -383,7 +391,7 @@ func _physics_process(delta: float) -> void:
 		if _starting <= 0.0:
 			_starting = 0.0
 			engine_on = true
-			rpm = build.idle_rpm * 1.3
+			rpm = idle_now() * 1.3
 			engine_changed.emit(true, "")
 
 	if horn_audio:
@@ -397,6 +405,8 @@ func _physics_process(delta: float) -> void:
 	if effects:
 		effects.beam_mode = beam
 
+	if heat:
+		heat.step(self, delta)
 	if is_crashed:
 		throttle = 0.0
 		_crash_timer += delta
@@ -436,8 +446,9 @@ func _physics_process(delta: float) -> void:
 		front_grip *= clampf(1.0 - (over * 5.0 + falling * 0.8) * _steadiness(), 0.0, 1.0)
 	if paddling:
 		front_grip = 0.0
-	wheels[0]["brake_torque"] = front_grip * build.front_brake_torque
-	wheels[1]["brake_torque"] = 0.0 if burnout > 0.0 else rear_grip * build.rear_brake_torque
+	# Cold pads bite a little less, overcooked ones fade (see BikeHeat).
+	wheels[0]["brake_torque"] = front_grip * build.front_brake_torque * _bite(0)
+	wheels[1]["brake_torque"] = 0.0 if burnout > 0.0 else rear_grip * build.rear_brake_torque * _bite(1)
 	for w in wheels:
 		_wheel_forces(w, delta, space)
 	_measure_geometry(delta)
@@ -532,6 +543,10 @@ func lean_for_input(x: float) -> float:
 func _grip_lean() -> float:
 	var surf := str(wheels[1]["surface"]) if not wheels.is_empty() else "tarmac"
 	var mu := minf(float(build.grip_front.get(surf, 0.7)), float(build.grip_rear.get(surf, 0.7))) * Weather.grip_mult(surf)
+	# With Riding realism up, the rider knows cold (or overcooked) tyres hold less and leans less on
+	# them; at 0 they lean as far as warm tyres would hold, and find out.
+	if heat:
+		mu *= lerpf(1.0, minf(heat.tyre_grip(0, surf), heat.tyre_grip(1, surf)), clampf(assist * 2.0, 0.0, 1.0))
 	# And no further than the bike leans before it grounds out.
 	return minf(minf(atan(mu * GRIP_IN_HAND), MAX_LEAN), _balance_lean(build.lean_clearance))
 
@@ -783,7 +798,8 @@ func _update_engine(delta: float) -> void:
 	var rear: Dictionary = wheels[1]
 	var ratio := build.overall_ratio(gear)
 	var wheel_rpm: float = rear["omega"] * ratio * 60.0 / TAU
-	var clutch_rpm := build.idle_rpm + 900.0
+	var idle_rpm := idle_now()
+	var clutch_rpm := idle_rpm + 900.0
 	var engaged := wheel_rpm >= clutch_rpm
 	var shifting := _shift_timer > 0.0
 	_shift_timer -= delta
@@ -791,12 +807,12 @@ func _update_engine(delta: float) -> void:
 	if shifting and engine_on:
 		# The clutch is in: the revs fall (or blip up) to the new gear's speed instead of jumping.
 		var f := clampf(1.0 - _shift_timer / maxf(build.shift_time, 0.01), 0.0, 1.0)
-		rpm = lerpf(_shift_from_rpm, maxf(wheel_rpm, build.idle_rpm), f * f)
+		rpm = lerpf(_shift_from_rpm, maxf(wheel_rpm, idle_rpm), f * f)
 	elif engaged:
 		rpm = wheel_rpm
 	else:
 		# Slipping clutch: the engine holds launch revs while the wheel catches up.
-		var launch := lerpf(build.idle_rpm, build.peak_torque_rpm * 0.75, _throttle_eff)
+		var launch := lerpf(idle_rpm, build.peak_torque_rpm * 0.75, _throttle_eff)
 		rpm = lerpf(rpm, maxf(launch, wheel_rpm), 1.0 - exp(-10.0 * delta))
 
 	# Rider throttle control: with assist on, roll off when the rear tyre spins up.
@@ -828,6 +844,8 @@ func _update_engine(delta: float) -> void:
 		tc_target = minf(tc_target, clampf(1.0 - (pitch_angle - cap) * 12.0, 0.05, 1.0))
 	_traction = lerpf(_traction, tc_target, 1.0 - exp(-25.0 * delta))
 	var torque := build.engine_torque(rpm) * _throttle_eff * _traction
+	if heat:
+		torque *= heat.power   # a cold engine is a little down on power, an overheating one more so
 	if rpm >= build.redline:
 		torque = 0.0  # rev limiter
 	var made := maxf(torque, 0.0)
@@ -841,17 +859,19 @@ func _update_engine(delta: float) -> void:
 		# Engine off: the bike just rolls. The revs fall away to nothing.
 		torque = 0.0
 		made = 0.0
+		engine_kw = 0.0
 		if _starting <= 0.0:
 			rpm = wheel_rpm if engaged else move_toward(rpm, 0.0, 3000.0 * delta)
 	else:
-		var burnt := build.fuel_rate(made * rpm * TAU / 60.0 / 1000.0, rpm) / 3600.0 * delta
+		engine_kw = made * rpm * TAU / 60.0 / 1000.0
+		var burnt := build.fuel_rate(engine_kw, rpm) / 3600.0 * delta
 		fuel_litres -= burnt
 		fuel_used += burnt
 		if fuel_litres <= 0.0:
 			fuel_litres = 0.0
 			stop_engine("Out of petrol! Push it home or bring it a can.")
 	rear["drive_torque"] = torque * ratio * build.drivetrain_efficiency
-	rpm = clampf(rpm, build.idle_rpm * 0.9 if engine_on else 0.0, build.redline * 1.02)
+	rpm = clampf(rpm, idle_rpm * 0.9 if engine_on else 0.0, build.redline * 1.02)
 
 	_since_shift += delta
 	if auto_shift and not shifting and _since_shift > 0.6:
@@ -863,6 +883,16 @@ func _update_engine(delta: float) -> void:
 			var lower_rpm := road_rpm * build.overall_ratio(gear - 1) / ratio
 			if road_rpm < build.peak_torque_rpm * 0.5 and lower_rpm < build.redline * 0.8:
 				shift_down()
+
+
+## The revs the engine idles at now: higher on the choke while it's cold.
+func idle_now() -> float:
+	return build.idle_rpm * (heat.idle if heat else 1.0)
+
+
+## A brake's bite from its heat (1 = full).
+func _bite(i: int) -> float:
+	return heat.bite[i] if heat else 1.0
 
 
 func shift_up() -> void:
@@ -1046,6 +1076,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		w["omega"] = omega_air * 0.999
 		w["spin"] = fmod(w["spin"] + w["omega"] * delta, TAU)
 		w["slip"] = 0.0
+		w["p_slip"] = 0.0
+		w["p_roll"] = 0.0
 		w["grip_used"] = 0.0
 		w["gx"] = 0.0
 		w["gy"] = 0.0
@@ -1159,6 +1191,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var v_abs := absf(v_long)
 	var mu_surf: float = float((build.grip_front if is_front else build.grip_rear).get(hit_surf, 0.7))
 	mu_surf *= Weather.grip_mult(hit_surf)   # wet roads after rain grip a little less
+	if heat:
+		mu_surf *= heat.tyre_grip(0 if is_front else 1, hit_surf)   # a cold tyre (or a cooked one) grips less
 	var mu := TyreModel.mu_at(mu_surf, fz, build.total_mass * G * 0.5, tp)
 	var f_peak := mu * fz
 	var bc := TyreModel.stiffness_at_zero(tp)
@@ -1218,6 +1252,9 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	# At a crawl the tyre can't push harder sideways than it takes to stop the sideways creep.
 	var fy_cap := absf(v_lat) * mass * 0.5 / delta
 	fy = clampf(fy, -fy_cap, fy_cap)
+	# The work of the tyre sliding over the road and flexing as it rolls heats it (see BikeHeat).
+	w["p_slip"] = absf(fx * (omega_new * r_eff - v_long)) + absf(fy * v_lat)
+	w["p_roll"] = build.rolling * fz * v_abs
 	fx -= signf(v_long) * build.rolling * fz
 	if burnout > 0.0 and not is_front:
 		# Lit up: the tyre spins free against the road, smoking, while the feet hold the bike.

@@ -1,7 +1,9 @@
 class_name RideTelemetry
 extends RefCounted
 ## A data logger for the ridden bike: speed, lean, steering and bar torque, each tyre's slip,
-## load and how much of its grip is in use, the controls, gear and revs, sampled RATE times a
+## load and how much of its grip is in use, the controls, gear and revs, and the heat (tyre
+## surface and carcass temperatures and pressures, brake discs and pads, engine and oil, and what
+## each does to the grip, the brakes and the power: see BikeHeat), sampled RATE times a
 ## second for the whole ride. The ride overlay draws the last few seconds live, and the dyno
 ## desk shows the last ride (RideTelemetry.last). A long ride keeps every other sample once
 ## it fills up, so the whole ride always fits.
@@ -18,6 +20,14 @@ const CHANNELS := [
 	["gear", "Gear", ""], ["rpm", "Revs", "rpm"], ["long_g", "Braking / drive", "g"], ["lat_g", "Cornering", "g"],
 	["susp_f", "Fork travel used", "%"], ["susp_r", "Shock travel used", "%"], ["dive", "Pitch on the springs (+ nose down)", "°"],
 	["rake", "Rake", "°"],
+	["tyre_f", "Front tyre surface", "°C"], ["tyre_r", "Rear tyre surface", "°C"],
+	["carcass_f", "Front tyre carcass", "°C"], ["carcass_r", "Rear tyre carcass", "°C"],
+	["psi_f", "Front tyre pressure", "bar"], ["psi_r", "Rear tyre pressure", "bar"],
+	["heat_grip_f", "Front grip from heat", ""], ["heat_grip_r", "Rear grip from heat", ""],
+	["disc_f", "Front disc", "°C"], ["disc_r", "Rear disc", "°C"], ["pad_f", "Front pads", "°C"], ["pad_r", "Rear pads", "°C"],
+	["bite_f", "Front brake bite from heat", ""], ["bite_r", "Rear brake bite from heat", ""],
+	["engine_t", "Engine (coolant, or head if air-cooled)", "°C"], ["oil_t", "Oil", "°C"], ["air_t", "Air", "°C"],
+	["power_heat", "Engine power from heat", ""],
 ]
 
 ## The ride being recorded now, or the last one; the dyno desk shows it.
@@ -57,7 +67,14 @@ func step(bike: Bike, delta: float) -> void:
 	var yaw_rate := bike.angular_velocity.dot(Vector3.UP)
 	var long_g := (bike.speed - _last_speed) / maxf(dt, 1e-3) / Bike.G if size() > 0 else 0.0
 	_last_speed = bike.speed
-	add({
+	var h := bike.heat
+	var hot := {}
+	if h:
+		hot = {"tyre_f": h.tyres[0]["surface"], "tyre_r": h.tyres[1]["surface"], "carcass_f": h.tyres[0]["carcass"],
+			"carcass_r": h.tyres[1]["carcass"], "psi_f": h.pressure(0), "psi_r": h.pressure(1), "heat_grip_f": h.grip[0],
+			"heat_grip_r": h.grip[1], "disc_f": h.discs[0], "disc_r": h.discs[1], "pad_f": h.pads[0], "pad_r": h.pads[1],
+			"bite_f": h.bite[0], "bite_r": h.bite[1], "engine_t": h.engine, "oil_t": h.oil, "air_t": h.air, "power_heat": h.power}
+	add(hot.merged({
 		"t": time, "speed": absf(bike.speed) * 3.6, "lean": rad_to_deg(bike.lean_angle), "steer": rad_to_deg(bike.steer),
 		"bar": bike.bar_torque, "trail": bike.trail_now * 1000.0, "wobble": rad_to_deg(bike.wobble), "kappa_f": f["kappa"], "kappa_r": r["kappa"],
 		"alpha_f": rad_to_deg(float(f["alpha"])), "alpha_r": rad_to_deg(float(r["alpha"])),
@@ -66,7 +83,7 @@ func step(bike: Bike, delta: float) -> void:
 		"gear": float(bike.gear), "rpm": bike.rpm, "long_g": long_g, "lat_g": -bike.speed * yaw_rate / Bike.G,
 		"susp_f": bike.travel_used(0) * 100.0, "susp_r": bike.travel_used(1) * 100.0, "dive": rad_to_deg(bike.dive),
 		"rake": rad_to_deg(bike.rake_now),
-	})
+	}))
 
 
 ## Adds one sample (channel -> value; missing channels read 0).
@@ -114,7 +131,7 @@ func index_since(seconds: float) -> int:
 ## The ride's headline numbers for the dyno desk.
 func summary() -> Dictionary:
 	var out := {"duration": time, "top_kmh": 0.0, "max_lean": 0.0, "max_brake_g": 0.0, "max_lat_g": 0.0,
-		"front_over": 0.0, "rear_over": 0.0, "max_wobble": 0.0}
+		"front_over": 0.0, "rear_over": 0.0, "max_wobble": 0.0, "max_tyre": 0.0, "max_disc": 0.0, "max_engine": 0.0}
 	if size() == 0:
 		return out
 	var dt := interval
@@ -124,6 +141,9 @@ func summary() -> Dictionary:
 		out["max_brake_g"] = maxf(out["max_brake_g"], -float(data["long_g"][i]))
 		out["max_lat_g"] = maxf(out["max_lat_g"], absf(data["lat_g"][i]))
 		out["max_wobble"] = maxf(out["max_wobble"], data["wobble"][i])
+		out["max_tyre"] = maxf(out["max_tyre"], maxf(data["tyre_f"][i], data["tyre_r"][i]))
+		out["max_disc"] = maxf(out["max_disc"], maxf(data["disc_f"][i], data["disc_r"][i]))
+		out["max_engine"] = maxf(out["max_engine"], data["engine_t"][i])
 		# Seconds spent past the peak of grip: sliding or spinning.
 		if data["grip_f"][i] > 1.0:
 			out["front_over"] += dt
