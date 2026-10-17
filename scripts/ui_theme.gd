@@ -43,15 +43,16 @@ static func make() -> Theme:
 
 static func title(text: String, font_size := 28, color := ACCENT) -> Label:
 	var l := Label.new()
-	l.text = text
+	Controls.bind_text(l, text)
 	l.add_theme_font_size_override("font_size", font_size)
 	l.add_theme_color_override("font_color", color)
 	return l
 
 
+## A wrapping label. Any {action} in `text` shows its key and follows the device (Controls.bind_text).
 static func label(text: String, font_size := 16, color := Color(0.85, 0.87, 0.9)) -> Label:
 	var l := Label.new()
-	l.text = text
+	Controls.bind_text(l, text)
 	l.add_theme_font_size_override("font_size", font_size)
 	l.add_theme_color_override("font_color", color)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

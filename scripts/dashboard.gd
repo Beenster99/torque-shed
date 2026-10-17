@@ -125,6 +125,15 @@ func _init(page_kind := "bike", screen_width := 2.0) -> void:
 	add_child(_osd_bg)
 
 
+func _ready() -> void:
+	# The pages' key hints read again when the player picks up the other controls.
+	Controls.device_changed.connect(_on_device_changed)
+
+
+func _on_device_changed(_pad: bool) -> void:
+	show_data(data)
+
+
 func show_data(new_data: Dictionary) -> void:
 	data = new_data
 	_page.queue_redraw()
@@ -189,7 +198,7 @@ func _draw_page() -> void:
 
 
 func _text(font: Font, pos: Vector2, text: String, size: int, color := Color.WHITE, width := -1.0, align := HORIZONTAL_ALIGNMENT_LEFT) -> void:
-	_page.draw_string(font, pos, text, align, width, size, color)
+	_page.draw_string(font, pos, Controls.hint(text), align, width, size, color)
 
 
 func _draw_crew(font: Font) -> void:
@@ -245,7 +254,7 @@ func _draw_bike(font: Font) -> void:
 		return
 	if data.is_empty():
 		_text(font, Vector2(24, 50), "EMPTY BAY", 40, Color(0.05, 0.05, 0.05))
-		_text(font, Vector2(24, 160), "Order a project bike from the Esc menu,", 28, DIM)
+		_text(font, Vector2(24, 160), "Order a project bike from the {menu} menu,", 28, DIM)
 		_text(font, Vector2(24, 200), "or ride one in and park it here.", 28, DIM)
 		return
 	_text(font, Vector2(24, 50), str(data["name"]).to_upper(), 40, Color(0.05, 0.05, 0.05))
@@ -374,7 +383,7 @@ func _draw_contract(font: Font) -> void:
 	_text(font, Vector2(800, my + 10), TvChannels.money_text(profit), 30, GOOD if profit > 0 else BAD, 200, HORIZONTAL_ALIGNMENT_RIGHT)
 	_page.draw_multiline_string(font, Vector2(656, my + 44), str(job.get("note", "")), HORIZONTAL_ALIGNMENT_LEFT, 344, 15, 3, DIM)
 	if bool(job.get("ready", false)):
-		_text(font, Vector2(24, PX.y - 16), "Ready: Esc, Contracts, Hand back. The customer comes out for it.", 17, GOOD, 600)
+		_text(font, Vector2(24, PX.y - 16), "Ready: {menu}, Contracts, Hand back. The customer comes out for it.", 17, GOOD, 600)
 	else:
 		_text(font, Vector2(24, PX.y - 16), str(job.get("why", "")).left(70), 16, DIM, 600)
 
@@ -391,7 +400,7 @@ func _draw_blueprint(font: Font) -> void:
 	var hint := "Hold a frame and put it on this bay's stand to start." if not data.get("framed", false) else \
 		"Fit the parts the hologram shows. Ghost parts go as the real ones go on."
 	_text(font, Vector2(24, 100), hint, 18, blue)
-	_text(font, Vector2(24, 126), "%d needed, %d on order. Order missing parts at the parts computer or Esc, Blueprints." % [needed, ordered], 16, DIM)
+	_text(font, Vector2(24, 126), "%d needed, %d on order. Order missing parts at the parts computer or {menu}, Blueprints." % [needed, ordered], 16, DIM)
 	var price := int(data.get("price", 0))
 	_text(font, Vector2(24, PX.y - 18), "Price of what's needed: %s, from the business's account" % TvChannels.money_text(price), 16, DIM)
 	var per_col := 13

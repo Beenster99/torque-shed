@@ -753,10 +753,10 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var pour := minf(PaintMix.CUP_LITRES - have, float(t["litres"]))
 			t["litres"] = maxf(0.0, float(t["litres"]) - pour)
 			_st()["cups"][peer] = {"mix": spec_of(t), "litres": have + pour, "name": str(t.get("name", "")), "code": str(t.get("code", ""))}
-			return "Spray gun's cup filled with %s (%.2f l). Pick it with R on the spray gun." % [str(t.get("name", "")), have + pour]
+			return "Spray gun's cup filled with %s (%.2f l). Pick it with {spray_colour} on the spray gun." % [str(t.get("name", "")), have + pour]
 		"paint_tape_take":
 			_st()["held"][peer] = {"kind": "tape", "pattern": "stripe"}
-			return "Masking tape. R picks the pattern; hold left mouse on a painted part to tape it."
+			return "Masking tape. {spray_colour} picks the pattern; hold {work} on a painted part to tape it."
 		"paint_tape_put":
 			_st()["held"].erase(peer)
 			return ""

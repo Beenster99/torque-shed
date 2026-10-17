@@ -290,12 +290,11 @@ static func _look_along(from: Vector3, to: Vector3) -> Transform3D:
 
 # ---------------------------------------------------------------------------- walking about
 
-## Shows "F: talk" under the name while someone looks at them.
+## Shows "F: talk" (or "Y: talk" on a pad) under the name while someone looks at them.
 func set_hint(on: bool) -> void:
 	if _label == null:
 		return
-	var key := Settings.binding_text("interact", false)
-	_label.text = customer_name + ("\n%s: talk" % (key if key != "" else "F") if on and at_counter and not leaving else "")
+	Controls.bind_text(_label, customer_name + ("\n{interact}: talk" if on and at_counter and not leaving else ""))
 
 
 ## Walks to a new place in the queue.

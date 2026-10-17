@@ -981,7 +981,7 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 				for id in _blast_parts(engine):
 					base[id] = _blast_base_of(id)
 				c["blast_base"] = base
-				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse, X to scan it. F to step back."
+				return "Hands in the gloves. Turn the engine with {move} (or hold {work2}), blast with {work}, {blast_scan} to scan it. {interact} to step back."
 			c["blaster"] = 0
 			c["blast_fire"] = false
 			c["blast_scan"] = false
@@ -2314,7 +2314,7 @@ func check(peer: int, action: Dictionary) -> String:
 	var slot := str(action.get("slot", ""))
 	if a in ["unbolt", "bolt", "remove"] and engine_id == 0 and PartsDB.LOW_SLOTS.has(slot) \
 			and not action.get("crouched", false):
-		return "Crouch down to reach it (C)."
+		return "Crouch down to reach it ({crouch})."
 	if a in ["unbolt", "bolt", "remove", "install", "mount", "grab_bike", "set_stand", "adjust_chain"]:
 		if engine_id != 0:
 			if not is_engine(engine_id):
@@ -2400,7 +2400,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if where.has("error"):
 				return where["error"]
 			if engine_id == 0 and PartsDB.LOW_SLOTS.has(where["slot"]) and not action.get("crouched", false):
-				return "Crouch down to reach it (C)."
+				return "Crouch down to reach it ({crouch})."
 			var access := _engine_access(action, where["slot"])
 			if access != "":
 				return access
@@ -2499,7 +2499,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if str(action.get("psize", "")) != "" and (Equipment.kind_of(model) != "poster" or not Equipment.POSTER_SIZES.has(str(action["psize"]))):
 				return "That size isn't sold."
 			if Equipment.kind_of(model) == "whiteboard":
-				return "The shed has its whiteboard already. Press F on it to hang it somewhere else."
+				return "The shed has its whiteboard already. Press {interact} on it to hang it somewhere else."
 			if Equipment.is_yard(model):
 				if free_yard_xf(model) == null:
 					return "The yard kit drop-off is full. Move some of the yard kit first."
@@ -2601,7 +2601,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if chain == 0:
 				return "There's no chain on it."
 			if not action.get("crouched", false):
-				return "Crouch down (C) to get at the chain adjusters."
+				return "Crouch down ({crouch}) to get at the chain adjusters."
 			if bikes[bike_id]["rider"] != 0:
 				return "Someone's riding it."
 			var slack := float(items[chain].get("slack", CHAIN_SLACK_SET))
@@ -2616,7 +2616,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if not items.has(chain) or items[chain]["kind"] != "chain":
 				return "Aim at a chain."
 			if items[chain]["at"] == "bike" and not action.get("crouched", false):
-				return "Crouch down (C) to get at the chain."
+				return "Crouch down ({crouch}) to get at the chain."
 			if float(items[chain].get("lube", 0.0)) > 0.95:
 				return "It's freshly lubed."
 		"clean", "repair", "paint", "prime":
@@ -2645,7 +2645,7 @@ func check(peer: int, action: Dictionary) -> String:
 				# Paint mixed in the mixing bay, from the spray gun's cup (see PaintBay).
 				var cup := PaintBay.cup_of(peer)
 				if cup.is_empty():
-					return "The gun's cup is empty. Fill it from a tin of mixed paint (hold the tin, right click)."
+					return "The gun's cup is empty. Fill it from a tin of mixed paint (hold the tin, {alt_act})."
 				if PaintBay.cup_use(peer, it, float(action.get("waste", 0.0))) < 0.0:
 					return "Not enough %s left in the cup for that. Top it up from the tin." % str(cup.get("name", "paint"))
 				var fade := str(action.get("fade", ""))
@@ -2679,7 +2679,7 @@ func check(peer: int, action: Dictionary) -> String:
 					return "It's already full."
 			else:
 				if k == "oil" and items[into]["at"] == "bike" and not action.get("crouched", false):
-					return "Crouch down to get at the drain plug (C)."
+					return "Crouch down to get at the drain plug ({crouch})."
 				if float(items[into]["fluid"]["litres"]) <= 0.001:
 					return "There's nothing to drain."
 				if can_room <= 0.005:
@@ -2699,7 +2699,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if why != "":
 				return why
 			if lift_raised(bike_id):
-				return "It's up on the lift. Lower the lift first (F on the button post)."
+				return "It's up on the lift. Lower the lift first ({interact} on the button post)."
 			if on_dyno(bike_id) and straps_done() > 0:
 				return "Undo the straps first (hold the work button at each one)."
 			if on_dyno(bike_id) and dyno["hose"] == "bike":
@@ -2735,7 +2735,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if riding(peer) != 0:
 				return "You're already riding."
 			if lift_raised(bike_id):
-				return "It's up on the lift. Lower the lift first (F on the button post)."
+				return "It's up on the lift. Lower the lift first ({interact} on the button post)."
 			if pushing_bike(peer) != 0:
 				return "Let go of the bike first, then get on it."
 			if held != 0:
@@ -3277,7 +3277,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var kind := Equipment.kind_of(model)
 			if Equipment.is_yard(model):
 				_new_furniture(kind, free_yard_xf(model), model)
-				text = "Ordered the %s. It's in the yard by the drag strip: press F on it to move it where you want it." % \
+				text = "Ordered the %s. It's in the yard by the drag strip: press {interact} on it to move it where you want it." % \
 					Equipment.get_model(model)["name"].to_lower()
 			else:
 				var fid := _new_furniture(kind, free_delivery_xf(Equipment.get_model(model).get("size", Vector3.ONE)), model)
@@ -3292,8 +3292,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 					var design := int(action.get("design", 0))
 					furniture[fid]["design"] = design
 					what = "\"%s\" poster" % str(posters[design]["name"])
-				var how := "press F on it to carry it in and hang it on a wall" if Equipment.is_wall(model) else \
-					("hold F on it to move it" if kind == "seat" else "press F on it to push it in")
+				var how := "press {interact} on it to carry it in and hang it on a wall" if Equipment.is_wall(model) else \
+					("hold {interact} on it to move it" if kind == "seat" else "press {interact} on it to push it in")
 				if kind == "poster":
 					what = "%s %s" % [Equipment.POSTER_SIZES[furniture[fid]["psize"]]["name"], what]
 				text = "Ordered the %s. It's outside by the roller door: %s." % [what, how]
@@ -3517,7 +3517,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"grab_bike":
 			bikes[bike_id]["pusher"] = peer
 			bikes[bike_id]["stand"] = ""
-			text = "Got hold of %s. F to let go." % bikes[bike_id]["name"]
+			text = "Got hold of %s. {interact} to let go." % bikes[bike_id]["name"]
 		"move_bike":
 			bikes[bike_id]["xf"] = action["xf"]
 		"release_bike":
@@ -4715,7 +4715,7 @@ func _blueprint_check(action: Dictionary) -> String:
 				if n == "":
 					return "Give the blueprint a name."
 				if blueprints.size() >= MAX_BLUEPRINTS and blueprint_named(n) == 0:
-					return "There are %d blueprints already. Delete one first (Esc, Blueprints)." % MAX_BLUEPRINTS
+					return "There are %d blueprints already. Delete one first ({menu}, Blueprints)." % MAX_BLUEPRINTS
 		"bp_rename", "bp_delete", "bp_build":
 			if not blueprints.has(int(action.get("bp", 0))):
 				return "That blueprint has gone."
@@ -4740,7 +4740,7 @@ func _blueprint_check(action: Dictionary) -> String:
 			if bay >= 0 and plan_at(bay).is_empty():
 				return "There's no blueprint build in that bay."
 			if bay < 0 and plan_bays().is_empty():
-				return "No blueprint builds under way. Start one from the Esc menu: Build from blueprint."
+				return "No blueprint builds under way. Start one from the {menu} menu: Build from blueprint."
 	return ""
 
 
@@ -4755,7 +4755,7 @@ func _blueprint_apply(action: Dictionary, peer := 1) -> String:
 		"geo_blueprint":
 			bikes[bike_id]["geo"] = GeoGizmo.sanitize(action["geo"])
 			var bp := _save_blueprint(bike_id, str(action["name"]).strip_edges().left(28))
-			return "Saved the fit of %s's parts, and the blueprint \"%s\" (Esc, Build from blueprint)." % [
+			return "Saved the fit of %s's parts, and the blueprint \"%s\" ({menu}, Build from blueprint)." % [
 				bikes[bike_id]["name"], blueprints[bp]["name"]]
 		"bp_rename":
 			blueprints[int(action["bp"])]["name"] = str(action["name"]).strip_edges().left(28)

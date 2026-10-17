@@ -567,7 +567,7 @@ func add_image(img: Image, at: Vector2) -> int:
 	sz = sz.max(Vector2(BoardData.IMAGE_MIN, BoardData.IMAGE_MIN))
 	var id := Shed.board_add_image(data, at - sz * 0.5, sz)
 	if id != 0:
-		Shed.feedback.emit("Picture up. Look at it and press M to move it, + or - to size it.", true)
+		Shed.feedback.emit("Picture up. Look at it and press {board_move} to move it, {board_bigger} or {board_smaller} to size it.", true)
 	return id
 
 
@@ -723,28 +723,19 @@ func pen_text() -> String:
 	return "%s %s pen" % [BoardData.COLOR_NAMES[pen], str(BoardData.WIDTH_NAMES[width]).to_lower()]
 
 
-## The first key (or pad button) on `action`, for the hints.
-static func _k(action: String, pad := false) -> String:
-	var t := Settings.binding_text(action, pad)
-	return t.get_slice(" / ", 0) if t != "" else "-"
-
-
 ## The side panel's lines while you're looking at the board.
 func describe() -> Array:
 	var marks: Array = Shed.board.get("marks", [])
 	var lines := ["Whiteboard", "Holding: %s" % pen_text()]
-	lines.append("Hold left mouse: draw  ·  hold right mouse: rub out")
-	lines.append("%s: write a line of text  ·  %s: undo your last mark" % [_k("board_text"), _k("board_undo")])
-	lines.append("Hold %s: wipe the whole board clean" % _k("board_wipe"))
-	lines.append("%s: add a picture from your PC  ·  %s: make a poster of the board" % [_k("board_image"), _k("board_poster")])
+	lines.append(Controls.hint("Hold {work}: draw  ·  hold {work2}: rub out"))
+	lines.append(Controls.hint("{board_text}: write a line of text  ·  {board_undo}: undo your last mark"))
+	lines.append(Controls.hint("Hold {board_wipe}: wipe the whole board clean"))
+	lines.append(Controls.hint("{board_image}: add a picture from your PC  ·  {board_poster}: make a poster of the board"))
 	if carrying != 0:
-		lines.append("Moving a picture: %s or left mouse puts it down, scroll or %s / %s sizes it" % [
-			_k("board_move"), _k("board_bigger"), _k("board_smaller")])
-		lines.append("%s / %s turns it (%s)" % [_k("rotate_left"), _k("rotate_right"),
-			"hold to turn it freely" if Settings.turns_freely() else "15 degrees at a time"])
+		lines.append(Controls.hint("Moving a picture: {board_move} or {act} puts it down, {tool_prev|tool_next} or {board_bigger} / {board_smaller} sizes it"))
+		lines.append(Controls.hint("{rotate_left|rotate_right} turns it (%s)") % ("hold to turn it freely" if Settings.turns_freely() else "15 degrees at a time"))
 	elif BoardData.image_at(Shed.board, aim(_local_walker())) != 0:
-		lines.append("On a picture: %s moves it, %s / %s sizes it, %s / %s turns it" % [_k("board_move"), _k("board_bigger"),
-			_k("board_smaller"), _k("rotate_left"), _k("rotate_right")])
+		lines.append(Controls.hint("On a picture: {board_move} moves it, {board_bigger} / {board_smaller} sizes it, {rotate_left|rotate_right} turns it"))
 	if marks.is_empty():
 		lines.append("The board is clean.")
 	else:
@@ -759,17 +750,15 @@ func draw_picker(hud: Control, font: Font, toolbar_y: float) -> void:
 	var gap := 8.0
 	var widths := BoardData.WIDTHS.size()
 	var swatches := n * (sw + gap) + 24.0 + widths * (sw + gap) - gap
-	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	var hint := "RT: draw   LT: rub out   %s: colour   LB / RB: thickness   %s: undo   %s: move picture   %s: poster" % [
-		_k("board_colour", true), _k("board_undo", true), _k("board_move", true), _k("board_poster", true)] if pad else \
-		"1-6: colour   7: eraser   scroll: thickness   %s: text   %s: undo   hold %s: wipe   %s: picture   %s: poster" % [
-		_k("board_text"), _k("board_undo"), _k("board_wipe"), _k("board_image"), _k("board_poster")]
+	var pad := Controls.using_pad
+	var hint := "{work}: draw   {work2}: rub out   {board_colour}: colour   {tool_prev|tool_next}: thickness   {board_undo}: undo   {board_move}: move picture   {board_poster}: poster" if pad else \
+		"{tool_1}-{tool_6}: colour   {tool_7}: eraser   {tool_prev|tool_next}: thickness   {board_text}: text   {board_undo}: undo   hold {board_wipe}: wipe   {board_image}: picture   {board_poster}: poster"
 	if carrying != 0:
-		hint = ("D-pad up or A puts it down   LB / RB: size   %s: turn" % _k("rotate_right", true) if pad else \
-			"%s or left mouse puts it down   scroll or %s / %s: size   %s / %s: turn" % [
-			_k("board_move"), _k("board_bigger"), _k("board_smaller"), _k("rotate_left"), _k("rotate_right")])
+		hint = "{board_move} or {act} puts it down   {tool_prev|tool_next}: size   {rotate_right}: turn" if pad else \
+			"{board_move} or {act} puts it down   {tool_prev|tool_next} or {board_bigger} / {board_smaller}: size   {rotate_left|rotate_right}: turn"
 	if wipe > 0.0:
-		hint = "Wiping the whole board... keep holding X"
+		hint = "Wiping the whole board... keep holding {board_wipe}"
+	hint = Controls.hint(hint)
 	var total := maxf(swatches, font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x)
 	var x0 := hud.size.x * 0.5 - total * 0.5
 	var y := toolbar_y - 112.0

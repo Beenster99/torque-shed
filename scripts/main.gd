@@ -206,7 +206,7 @@ func _host() -> void:
 		menu.set_status("Could not host on port %d (error %d)." % [Net.PORT, err])
 		return
 	_start_session()
-	hud.flash("Hosting. Opening the port on your router... the Esc menu shows the address to give friends.", 6.0)
+	hud.flash("Hosting. Opening the port on your router... the {menu} menu shows the address to give friends.", 6.0)
 
 
 func _on_internet_status() -> void:
@@ -215,7 +215,7 @@ func _on_internet_status() -> void:
 	if Net.internet_status == "open":
 		hud.flash("Friends over the internet can join with %s" % (Net.external_ip if Net.external_ip != "" else "your public IP"), 8.0)
 	elif Net.internet_status == "closed":
-		hud.flash("Your router didn't open port %d automatically. See the Esc menu for how to let friends in." % Net.PORT, 8.0, true)
+		hud.flash("Your router didn't open port %d automatically. See the {menu} menu for how to let friends in." % Net.PORT, 8.0, true)
 	if menu.visible:
 		menu.show_pause()
 
@@ -280,7 +280,7 @@ func _start_session() -> void:
 			_on_player_joined(id, Net.players[id])
 	workshop.sync_state()
 	_capture_mouse(true)
-	hud.flash("Welcome to the shed. Esc for the menu.", 4.0)
+	hud.flash("Welcome to the shed. {menu} for the menu.", 4.0)
 	saver.session_started()
 	if SaveGame.last_saved == 0 and SaveGame.characters_in_saves():
 		saver.save_soon()   # a new game shows on the Load screen (with its picture) in a moment

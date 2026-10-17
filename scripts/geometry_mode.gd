@@ -71,27 +71,27 @@ func _ready() -> void:
 	col.add_child(UITheme.title("GEOMETRY MODE", 24))
 	_title = UITheme.label("", 17, Color.WHITE)
 	col.add_child(_title)
-	col.add_child(UITheme.label("Click a part of the bike (or pick it in the list on the left) to select it, then drag the handles. W move, E rotate, R scale "
-		+ "(the middle box sizes it all over). Hold Ctrl to snap, Z undo, Backspace resets the part. "
+	col.add_child(UITheme.label("Click a part of the bike (or pick it in the list on the left) to select it, then drag the handles. {geo_move} move, {geo_rotate} rotate, {geo_scale} scale "
+		+ "(the middle box sizes it all over). Hold {geo_snap} to snap, {geo_undo} undo, {geo_reset} resets the part. "
 		+ "Right-drag to orbit, middle-drag to pan, wheel to zoom. Only this bike changes.", 14, Color(1, 1, 1, 0.6)))
 	_part_label = UITheme.label("No part selected", 17, UITheme.ACCENT)
 	col.add_child(_part_label)
 	var modes := HBoxContainer.new()
 	for m in 3:
-		var b := _button("%s (%s)" % [GeoGizmo.MODE_NAMES[m], ["W", "E", "R"][m]], set_mode.bind(m))
+		var b := _button("%s ({%s})" % [GeoGizmo.MODE_NAMES[m], ["geo_move", "geo_rotate", "geo_scale"][m]], set_mode.bind(m))
 		b.toggle_mode = true
 		modes.add_child(b)
 		_mode_btns.append(b)
 	col.add_child(modes)
 	_snap_box = CheckBox.new()
-	_snap_box.text = "Always snap (or hold Ctrl)"
+	Controls.bind_text(_snap_box, "Always snap (or hold {geo_snap})")
 	_snap_box.focus_mode = Control.FOCUS_NONE
 	_snap_box.toggled.connect(func(v): snap_always = v)
 	col.add_child(_snap_box)
 	_readout = UITheme.label("", 15, Color(0.85, 0.95, 1.0))
 	col.add_child(_readout)
 	var edits := HBoxContainer.new()
-	edits.add_child(_button("Undo (Z)", undo))
+	edits.add_child(_button("Undo ({geo_undo})", undo))
 	edits.add_child(_button("Reset part", reset_part))
 	edits.add_child(_button("Reset all", reset_all))
 	col.add_child(edits)
@@ -105,7 +105,7 @@ func _ready() -> void:
 	bp_row.add_child(_name_edit)
 	bp_row.add_child(_button("Save + blueprint", func(): save_blueprint(_name_edit.text)))
 	col.add_child(bp_row)
-	col.add_child(_button("Exit (F2 / Esc)", request_exit))
+	col.add_child(_button("Exit ({geometry_mode} / {menu})", request_exit))
 	_status = UITheme.label("", 14, Color(1, 0.8, 0.55))
 	col.add_child(_status)
 	_confirm = PanelContainer.new()
@@ -149,12 +149,12 @@ func _ready() -> void:
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 2)
 	scroll.add_child(_list)
-	Shed.feedback.connect(func(text, _ok): if active: _status.text = text)
+	Shed.feedback.connect(func(text, _ok): if active: _status.text = Controls.hint(text))
 
 
 func _button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
-	b.text = text
+	Controls.bind_text(b, text)
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
 	return b

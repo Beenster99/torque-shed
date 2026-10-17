@@ -36,12 +36,12 @@ const HOWTO := [
 		["Co-op", "everyone works on the same bikes, live"],
 	]],
 	["On foot", [
-		["WASD", "walk  ·  mouse: look  ·  Shift: run  ·  C: crouch"],
-		["1-8", "pick a tool (or Q / E, the mouse wheel, LB / RB)"],
-		["L mouse", "hold to work (RT or A on a pad)"],
-		["F", "use, ride, unpack, pick up kit (Y on a pad)"],
-		["G", "ping what you're looking at for the crew"],
-		["R", "next TV channel when you look at a screen (X)"],
+		["{move}", "walk  ·  {look}: look  ·  {sprint}: run  ·  {crouch}: crouch"],
+		["{tool_next}", "next tool  ·  {tool_prev}: the one before (or the number keys)"],
+		["{work}", "hold to work"],
+		["{interact}", "use, ride, unpack, pick up kit"],
+		["{ping}", "ping what you're looking at for the crew"],
+		["{alt_act}", "next TV channel when you look at a screen"],
 	]],
 	["Restoring a bike", [
 		["Wrench", "unbolt the part, then take it off with your hands"],
@@ -51,11 +51,11 @@ const HOWTO := [
 		["Fit", "hold the part, look at the bike, then bolt it up"],
 	]],
 	["Riding", [
-		["I", "engine on or off  ·  W: throttle  ·  S: front brake"],
-		["Space", "rear brake  ·  A / D: lean  ·  E / Q: gears"],
-		["Shift", "weight back for a wheelie  ·  Ctrl: forward"],
-		["R", "reset after a crash  ·  C: camera"],
-		["F", "get off when you've stopped"],
+		["{ignition}", "engine on or off  ·  {throttle}: throttle  ·  {front_brake}: front brake"],
+		["{rear_brake}", "rear brake  ·  {lean}: lean  ·  {shift_up|shift_down}: gears"],
+		["{body_back}", "weight back for a wheelie  ·  {body_forward}: forward"],
+		["{respawn}", "reset after a crash  ·  {camera}: camera"],
+		["{interact}", "get off when you've stopped"],
 	]],
 	["Keep the shed tidy", [
 		["General", "the black bin takes anything, and old fluid"],
@@ -279,9 +279,10 @@ static func money_text(v: int) -> String:
 
 # ---------------------------------------------------------------------------- drawing
 
+## Any {action} in `text` shows that action's key on the device in use (see Controls.hint).
 static func _text(c: Control, font: Font, pos: Vector2, text: String, size: int, color := Color.WHITE, width := -1.0,
 		align := HORIZONTAL_ALIGNMENT_LEFT) -> void:
-	c.draw_string(font, pos, text, align, width, size, color)
+	c.draw_string(font, pos, Controls.hint(text), align, width, size, color)
 
 
 static func _title(c: Control, font: Font, title: String, right := "") -> void:
@@ -423,7 +424,7 @@ static func _draw_nobody(c: Control, font: Font, data: Dictionary) -> void:
 	c.draw_circle(Vector2(1000 - 120, 35), 9.0, Color(0.6, 0.05, 0.05))
 	_text(c, font, Vector2(1000 - 100, 44), "OFF AIR", 22, HEADER_INK)
 	_text(c, font, Vector2(24, 150), "Nobody's out riding", 52)
-	_text(c, font, Vector2(24, 200), "Get on a finished bike (F) and you're live on every TV tuned here.", 22, Dashboard.DIM)
+	_text(c, font, Vector2(24, 200), "Get on a finished bike ({interact}) and you're live on every TV tuned here.", 22, Dashboard.DIM)
 	var ready: Array = data.get("ready", [])
 	_text(c, font, Vector2(24, 270), "READY TO RIDE", 22, ORANGE)
 	if ready.is_empty():
@@ -502,7 +503,8 @@ static func _draw_howto(c: Control, font: Font, data: Dictionary) -> void:
 			var chip := Rect2(24, y - 32, 150, 44)
 			c.draw_rect(chip, Color(ORANGE, 0.15))
 			c.draw_rect(chip, ORANGE, false, 2.0)
-			_text(c, font, Vector2(24, y - 1), key, 24, ORANGE, 150, HORIZONTAL_ALIGNMENT_CENTER)
+			var shown := Controls.hint(key)
+			_text(c, font, Vector2(24, y - 1), shown, 24 if shown.length() <= 10 else 18, ORANGE, 150, HORIZONTAL_ALIGNMENT_CENTER)
 			_text(c, font, Vector2(196, y), str(row[1]), 27)
 		y += 64.0
 	# Dots for the pages, filled for this one.

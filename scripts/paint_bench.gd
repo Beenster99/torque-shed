@@ -35,6 +35,7 @@ var _stir_g := 0.0             # stirred since the last send
 var _send_t := 0.0
 var _tilt := 0.0
 var _pouring := false
+var _pad_pour := false   # the pour is RT on a pad, not the mouse
 var _press_y := 0.0
 var _stirring := false
 var _stir_seen := 0.0
@@ -241,6 +242,8 @@ func _process(delta: float) -> void:
 		Shed.feedback.emit("You've stepped away from the mixing bench.", false)
 		close_dialog()
 		return
+	if Controls.using_pad:
+		_pad_mix()
 	var tin := PaintBay.bench_tin()
 	if tin.is_empty():
 		_pouring = false
@@ -265,6 +268,33 @@ func _process(delta: float) -> void:
 	_pending = _pending.filter(func(p): return int(p["seq"]) > acked and now - float(p["t"]) < 2.0)
 	PaintBayRoom.live = {"g": _pending_g() + _pour_g, "code": tint, "tilt": _tilt if _pouring else 0.0, "stirring": _stir_seen > 0.0}
 	_update_live()
+
+
+## How to tip the bottle and stir, for the hint: the mouse on the mixing view, or the triggers.
+static func _pour_how() -> String:
+	return "squeeze RT further to tip it further" if Controls.using_pad else "hold the left mouse here and drag down" # hint-ok
+
+
+static func _stir_how() -> String:
+	return "hold LT and circle the right stick" if Controls.using_pad else "hold the right mouse and circle" # hint-ok
+
+
+## On a pad, RT tips the bottle as far as it's squeezed and LT with the right stick circling stirs.
+func _pad_mix() -> void:
+	var rt := Controls.trigger(true)
+	if rt > 0.05 and not _pouring and tint != "" and not PaintBay.bench_tin().is_empty():
+		_pouring = true
+		_pad_pour = true
+		_tilt = 0.0
+	if _pouring and _pad_pour:
+		if rt <= 0.05:
+			_pad_pour = false
+			stop_pour()
+		else:
+			set_tilt(rt)
+	var circle := Controls.stick(true)
+	if Controls.trigger(false) > 0.5 and circle.length() > 0.6:
+		stir_motion(circle * 4.0)
 
 
 func _pending_g() -> float:
@@ -312,11 +342,11 @@ func _update_live() -> void:
 		if t.is_empty():
 			_hint.text = "Put a tin of base on the scale (right)."
 		elif tint == "":
-			_hint.text = "Pick a tint off the rack (right), then hold left mouse here and drag down to tip it."
+			_hint.text = "Pick a tint off the rack (right), then %s to tip it." % _pour_how()
 		else:
-			_hint.text = "%s: hold left mouse and drag down to pour (%s)  ·  hold right mouse and circle to stir" % [
-				PaintBay.item_name(tint), "pouring %.1f g/s" % PaintMix.pour_rate(_tilt) if _pouring and PaintMix.pour_rate(_tilt) > 0.0
-				else ("tip it further" if _pouring else "not pouring")]
+			_hint.text = "%s: %s to pour (%s)  ·  %s to stir" % [
+				PaintBay.item_name(tint), _pour_how(), "pouring %.1f g/s" % PaintMix.pour_rate(_tilt) if _pouring and PaintMix.pour_rate(_tilt) > 0.0
+				else ("tip it further" if _pouring else "not pouring"), _stir_how()]
 	if t.is_empty() or _scale_l == null or not is_instance_valid(_scale_l):
 		return
 	var s := PaintMix.spec(t)
@@ -394,7 +424,7 @@ func _refresh() -> void:
 			_sig = ""
 			_refresh())
 		tabs.add_child(tb)
-	tabs.add_child(ContractPanel.button("Done (Esc)", close_dialog))
+	tabs.add_child(ContractPanel.button("Done ({back})", close_dialog))
 	_box.add_child(tabs)
 	match page:
 		"mix":
@@ -416,10 +446,10 @@ func _fill_mix(tin: Dictionary) -> void:
 				Shed.request({"a": "paint_tin_new", "base": base})
 				tint = "")
 			bb.disabled = why != ""
-			bb.tooltip_text = why
+			bb.tooltip_text = Controls.hint(why)
 			_box.add_child(bb)
 		_box.add_child(_note("White, black or silver base for solid and metallic colours; clear base for candy (level 8); clear lacquer "
-			+ "with flattener for satin (15%) or matt (40%). A tin from the shelf goes on the scale too: hold it and press F here."))
+			+ "with flattener for satin (15%) or matt (40%). A tin from the shelf goes on the scale too: hold it and press {interact} here."))
 		var card: Dictionary = PaintBay.bench().get("recipe", {})
 		if not card.is_empty():
 			_box.add_child(UITheme.label("Recipe card on the bench: %s (%s base)" % [str(card.get("name", "")), PaintBay.item_name(str(card.get("tin", {}).get("base", "W"))).to_lower()], 15))
@@ -503,7 +533,7 @@ func _fill_mix(tin: Dictionary) -> void:
 		tb.add_theme_font_size_override("font_size", 14)
 		tb.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		tb.disabled = why != "" and tint != c
-		tb.tooltip_text = why
+		tb.tooltip_text = Controls.hint(why)
 		tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		tb.pressed.connect(func():
 			_flush()
@@ -539,7 +569,7 @@ func _fill_mix(tin: Dictionary) -> void:
 		tint = "")
 	name_row.add_child(save)
 	_box.add_child(name_row)
-	_box.add_child(_note("Saved tins go on the tin shelf (take one to the paint shop, right mouse fills the spray gun's cup) and the recipe on the swatch wall."))
+	_box.add_child(_note("Saved tins go on the tin shelf (take one to the paint shop, {alt_act} fills the spray gun's cup) and the recipe on the swatch wall."))
 
 
 func _act(label: String, action: Dictionary) -> Button:
@@ -548,7 +578,7 @@ func _act(label: String, action: Dictionary) -> Button:
 		_flush()
 		Shed.request(action))
 	b.disabled = why != ""
-	b.tooltip_text = why
+	b.tooltip_text = Controls.hint(why)
 	return b
 
 
@@ -628,7 +658,7 @@ func _recipe_row(title: String, code: String, color: Color, note: String, effect
 		var why := Shed.check(Shed.me(), act)
 		var rb := ContractPanel.button("Remix", func(): Shed.request(act))
 		rb.disabled = why != ""
-		rb.tooltip_text = why
+		rb.tooltip_text = Controls.hint(why)
 		row.add_child(rb)
 	return row
 
@@ -651,7 +681,7 @@ func _fill_supplies() -> void:
 		var why := Shed.check(Shed.me(), act)
 		var bb := ContractPanel.button("Buy %s" % TvChannels.money_text(PaintBay.price(c)), func(): Shed.request(act))
 		bb.disabled = why != ""
-		bb.tooltip_text = why
+		bb.tooltip_text = Controls.hint(why)
 		row.add_child(bb)
 		_box.add_child(row)
 	_box.add_child(_note("A tin of base is a litre; a bottle of tint %d g. A litre covers about a tank, the guards and the side panels; a whole bike takes about two." % roundi(PaintMix.BOTTLE_G)))
