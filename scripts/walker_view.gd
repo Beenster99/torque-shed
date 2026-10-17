@@ -21,9 +21,9 @@ extends Node3D
 ## eye, outdoors and under a roof (the shed's rooms are small, so it comes in closer).
 const ARM_OUT := 2.7
 const ARM_IN := 1.7
-const SHOULDER_OUT := 0.45
-const SHOULDER_IN := 0.38
-const LIFT := 0.12
+const SHOULDER_OUT := 0.75
+const SHOULDER_IN := 0.62
+const LIFT := 0.22
 ## The camera stays this far off walls and ceilings, so it never sees through them.
 const MARGIN := 0.2
 ## Closer to your head than this and your figure is hidden, so it doesn't fill the screen.
