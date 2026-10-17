@@ -3090,7 +3090,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 		if washed != "":
 			_tell(peer, washed, true)
 		_mark_dirty()
-		changed.emit()
+		# Where someone's jet is landing is read every frame (Wash.jets) and goes out with the
+		# next sync: the whole shed needn't be gone over for it, many times a second.
+		if a != "wash_aim":
+			changed.emit()
 		return
 	if a == "coat":
 		_tell(peer, _coat_apply(peer, action), true)

@@ -31,6 +31,7 @@ const SKIM := 0.1            # how square on the jet has to meet a surface: none
 const FACE_ON := 0.5         # all of it by this (cosines)
 const PART_DONE := 0.985     # this much of a part clean and it's done
 const CREDIT_SPAN := 0.3     # a patch this much dirtier than clean counts for nothing
+const GRID := 0.1            # the entries are filed in cubes this size, to find those near the jet
 
 var bike := 0
 var model: BikeModel
@@ -76,6 +77,11 @@ var _stats_age := 1.0
 var _eye := Vector3.INF
 var _mid := Vector3.ZERO
 static var _tilts: Array[Vector3] = []
+## The entries filed by cube (Vector3i -> [entry indices]), the box round them all, and each
+## part's entries (by slot index): the jet only looks at the ones it can reach.
+var _grid := {}
+var _grid_box := AABB()
+var _slot_entries: Array = []
 
 
 ## How much of the jet lands on a surface it meets at `facing` (the cosine of the angle between
@@ -191,6 +197,7 @@ func _finish_prep() -> void:
 	_occ = PackedByteArray()
 	for k in sent.size():
 		sent[k] = wsum[k] / count[k] if count[k] > 0.0 else 0.0
+	_build_grid()
 	# Parts that are clean already (or the jet can't get at) are done, without a ding.
 	var cleans := _part_cleans()
 	for si in slots.size():
@@ -200,6 +207,85 @@ func _finish_prep() -> void:
 	bike_done = done.size() >= slots.size()
 	bike_dinged = bike_done
 	_show()
+
+
+## Files every entry in its cube of the grid, and under its part.
+func _build_grid() -> void:
+	_grid.clear()
+	_slot_entries.clear()
+	var per_part := []
+	for si in slots.size():
+		per_part.append([])
+	for i in e_pos.size():
+		var p := e_pos[i]
+		_grid_box = AABB(p, Vector3.ZERO) if i == 0 else _grid_box.expand(p)
+		var c := Vector3i((p / GRID).floor())
+		var list: Array = _grid.get(c, [])
+		if list.is_empty():
+			_grid[c] = list
+		list.append(i)
+		(per_part[e_slot[i]] as Array).append(i)
+	for list in per_part:
+		_slot_entries.append(PackedInt32Array(list))
+
+
+## The entries within `r` of `p` (model space) and perhaps a few more, in order.
+func _entries_near(p: Vector3, r: float) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var lo := Vector3i(((p - Vector3.ONE * r) / GRID).floor())
+	var hi := Vector3i(((p + Vector3.ONE * r) / GRID).floor())
+	for z in range(lo.z, hi.z + 1):
+		for y in range(lo.y, hi.y + 1):
+			for x in range(lo.x, hi.x + 1):
+				var list = _grid.get(Vector3i(x, y, z))
+				if list != null:
+					out.append_array(PackedInt32Array(list))
+	out.sort()
+	return out
+
+
+## The entries within `width` of the line from `e` along `d` (model space, d of unit length)
+## and perhaps a few more, in order.
+func _entries_along(e: Vector3, d: Vector3, width: float) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var box := _grid_box.grow(width + 0.01)
+	# Where the line is in the box round the entries.
+	var t0 := 0.0
+	var t1 := INF
+	for axis in 3:
+		if absf(d[axis]) < 1e-9:
+			if e[axis] < box.position[axis] or e[axis] > box.end[axis]:
+				return out
+			continue
+		var ta := (box.position[axis] - e[axis]) / d[axis]
+		var tb := (box.end[axis] - e[axis]) / d[axis]
+		t0 = maxf(t0, minf(ta, tb))
+		t1 = minf(t1, maxf(ta, tb))
+	if t1 < t0:
+		return out
+	var step := GRID * 0.5
+	var m := sqrt(width * width + step * step * 0.25) + 0.001
+	var seen := {}
+	var t := t0
+	while true:
+		var q := e + d * minf(t, t1)
+		var lo := Vector3i(((q - Vector3.ONE * m) / GRID).floor())
+		var hi := Vector3i(((q + Vector3.ONE * m) / GRID).floor())
+		for z in range(lo.z, hi.z + 1):
+			for y in range(lo.y, hi.y + 1):
+				for x in range(lo.x, hi.x + 1):
+					var c := Vector3i(x, y, z)
+					if seen.has(c):
+						continue
+					seen[c] = true
+					var list = _grid.get(c)
+					if list != null:
+						out.append_array(PackedInt32Array(list))
+		if t >= t1:
+			break
+		t += step
+	out.sort()
+	return out
 
 
 ## Marks which cubes round the bike have some of it in them (a little fattened, so the jet can't
@@ -263,7 +349,7 @@ func surface_hit(eye: Vector3, dir: Vector3, width := 0.03) -> Dictionary:
 	var d: Vector3 = (inv.basis * dir).normalized()
 	var best := INF
 	var bi := -1
-	for i in e_pos.size():
+	for i in _entries_along(e, d, width):
 		var v := e_pos[i] - e
 		var t := v.dot(d)
 		if t <= 0.0 or t >= best or e_n[i].dot(d) > 0.0:
@@ -319,7 +405,7 @@ func step(delta: float, eye: Vector3, dir: Vector3, firing: bool, hit := false, 
 	var hit_level := 0.3
 	var hs := int(sh["slot"])
 	var touched := {}
-	for i in e_pos.size():
+	for i in _entries_near(a, r):
 		var v := e_pos[i] - a
 		var l2 := v.length_squared()
 		if l2 > r2:
@@ -360,9 +446,11 @@ func part_clean(si: int) -> float:
 
 
 func _check_done(touched := {}) -> void:
-	var cleans := _part_cleans()
+	# Only the parts the jet's just been on can have come clean (all of them after a resync).
+	var only := touched.duplicate()
+	var cleans := _part_cleans(only)
 	for si in slots.size():
-		if done.get(si, false):
+		if done.get(si, false) or (not only.is_empty() and not only.has(si)):
 			continue
 		if _clean_enough(si, float(cleans[si])):
 			done[si] = true
@@ -392,17 +480,25 @@ func _clean_enough(si: int, clean: float) -> bool:
 	return clean >= PART_DONE or (1.0 - clean) * part_n[si] <= 2.0
 
 
-## How clean every part is: [one per slot index].
-func _part_cleans() -> Array:
+## How clean every part is: [one per slot index]. With `only` (slot index -> true), just those
+## parts are gone over (the rest aren't, and come back as clean).
+func _part_cleans(only := {}) -> Array:
 	var sums := PackedFloat32Array()
 	sums.resize(slots.size())
 	var ns := PackedInt32Array()
 	ns.resize(slots.size())
-	for i in e_pos.size():
-		var si := e_slot[i]
-		ns[si] += 1
-		var lp := start[si * Dirt.CELLS + e_cell[i]] * (1.0 - e_w[i])
-		sums[si] += 1.0 if lp <= Dirt.CLEAN else clampf(1.0 - (lp - Dirt.CLEAN) / CREDIT_SPAN, 0.0, 1.0)
+	if only.is_empty() or _slot_entries.size() != slots.size():
+		for i in e_pos.size():
+			var si := e_slot[i]
+			ns[si] += 1
+			var lp := start[si * Dirt.CELLS + e_cell[i]] * (1.0 - e_w[i])
+			sums[si] += 1.0 if lp <= Dirt.CLEAN else clampf(1.0 - (lp - Dirt.CLEAN) / CREDIT_SPAN, 0.0, 1.0)
+	else:
+		for si in only:
+			for i in (_slot_entries[si] as PackedInt32Array):
+				ns[si] += 1
+				var lp := start[si * Dirt.CELLS + e_cell[i]] * (1.0 - e_w[i])
+				sums[si] += 1.0 if lp <= Dirt.CLEAN else clampf(1.0 - (lp - Dirt.CLEAN) / CREDIT_SPAN, 0.0, 1.0)
 	var out := []
 	for si in slots.size():
 		out.append(1.0 if done.get(si, false) or ns[si] == 0 else sums[si] / ns[si])
@@ -421,27 +517,33 @@ func stats() -> Dictionary:
 	if _eye != Vector3.INF and model != null and is_instance_valid(model):
 		var t := _eye - model.global_transform * _mid
 		toward = Vector2(t.x, t.z).normalized()
-	var side_n := {"near": 0, "far": 0, "top": 0, "under": 0}
-	var side_c := {"near": 0.0, "far": 0.0, "top": 0.0, "under": 0.0}
+	# Tallied by side (near, far, top, under) in arrays: this goes through every point.
+	var side_n := PackedInt32Array([0, 0, 0, 0])
+	var side_c := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
+	var is_done := PackedByteArray()
+	is_done.resize(slots.size())
+	for si in slots.size():
+		is_done[si] = 1 if done.get(si, false) else 0
 	var total := 0.0
 	for i in e_pos.size():
 		var si := e_slot[i]
-		var lp := 0.0 if done.get(si, false) else start[si * Dirt.CELLS + e_cell[i]] * (1.0 - e_w[i])
+		var lp := 0.0 if is_done[si] == 1 else start[si * Dirt.CELLS + e_cell[i]] * (1.0 - e_w[i])
 		var credit := 1.0 if lp <= Dirt.CLEAN else clampf(1.0 - (lp - Dirt.CLEAN) / CREDIT_SPAN, 0.0, 1.0)
 		total += credit
 		var nw := (basis * e_n[i]).normalized()
-		var side := "near"
+		var side := 0
 		if nw.y > 0.6:
-			side = "top"
+			side = 2
 		elif nw.y < -0.6:
-			side = "under"
+			side = 3
 		elif toward != Vector2.ZERO and Vector2(nw.x, nw.z).dot(toward) < 0.0:
-			side = "far"
+			side = 1
 		side_n[side] += 1
 		side_c[side] += credit
 	var sides := {}
-	for k in side_n:
-		sides[k] = float(side_c[k]) / side_n[k] if side_n[k] > 0 else -1.0
+	var names := ["near", "far", "top", "under"]
+	for k in 4:
+		sides[names[k]] = float(side_c[k]) / side_n[k] if side_n[k] > 0 else -1.0
 	var parts := []
 	for si in slots.size():
 		if part_n[si] > 0:

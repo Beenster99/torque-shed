@@ -855,18 +855,29 @@ static func _coat_sig(it: Dictionary) -> String:
 		float(it.get("coat_q", 0.0))]
 
 
+## The engine's own slots, to look up quickly.
+static var _engine_slot_set := {}
+
+
 func _bike_signature(id: int) -> String:
+	if _engine_slot_set.is_empty():
+		for slot in PartsDB.ENGINE_SLOTS:
+			_engine_slot_set[slot] = true
 	var bike: Dictionary = Shed.bikes[id]
 	var parts := []
+	# What's fitted where, read straight off the bike and its engine (as Shed.item_on and
+	# is_bolted have it): this runs for every bike each time anything in the shed changes.
+	var block: Dictionary = Shed.items.get(int(bike["slots"].get("engine", 0)), {})
 	for slot in PartsDB.SLOTS:
-		var item_id := Shed.item_on(id, slot)
+		var host: Dictionary = block if _engine_slot_set.has(slot) else bike
+		var item_id := int(host.get("slots", {}).get(slot, 0))
 		if item_id == 0:
 			parts.append("-")
 		else:
 			var it: Dictionary = Shed.items[item_id]
 			# Its dirt isn't in it: that's drawn over the bike as it changes (see _sync_dirt).
-			parts.append("%s:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot),
-				Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)])
+			parts.append("%s:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", ""),
+				bool(host.get("bolted", {}).get(slot, false)), Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),

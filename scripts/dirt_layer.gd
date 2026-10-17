@@ -424,9 +424,18 @@ func wash(at: Vector3, along: Vector3, reach: float, amount: float, falloff := 0
 	for axis in 3:
 		var f := -a[axis]
 		take[axis * 2 + (0 if f > 0.0 else 1)] = WashJob.take(absf(f))
-	var span := reach + 0.1
-	var lo := Vector3i(((at - Vector3.ONE * span - mask_origin) / voxel).floor()).clamp(Vector3i.ZERO, dims - Vector3i.ONE)
-	var hi := Vector3i(((at + Vector3.ONE * span - mask_origin) / voxel).floor()).clamp(Vector3i.ZERO, dims - Vector3i.ONE)
+	# Only the cubes round the slab of jet that can be in it: a disc `reach` wide from a little
+	# in front of the surface to a little way in (its corners rounded up to whole cubes).
+	var lo_f := Vector3.ZERO
+	var hi_f := Vector3.ZERO
+	for axis in 3:
+		var w := reach * sqrt(maxf(0.0, 1.0 - a[axis] * a[axis])) + voxel
+		var e0 := at[axis] - a[axis] * 0.05
+		var e1 := at[axis] + a[axis] * 0.1
+		lo_f[axis] = minf(e0, e1) - w
+		hi_f[axis] = maxf(e0, e1) + w
+	var lo := Vector3i(((lo_f - mask_origin) / voxel).floor()).clamp(Vector3i.ZERO, dims - Vector3i.ONE)
+	var hi := Vector3i(((hi_f - mask_origin) / voxel).floor()).clamp(Vector3i.ZERO, dims - Vector3i.ONE)
 	for z in range(lo.z, hi.z + 1):
 		for y in range(lo.y, hi.y + 1):
 			for x in range(lo.x, hi.x + 1):
