@@ -62,7 +62,7 @@ func _ready() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
 	var close := Button.new()
-	close.text = "Close (Esc)"
+	Controls.bind_text(close, "Close ({back})")
 	close.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	close.pressed.connect(close_computer)
 	head.add_child(close)
@@ -86,7 +86,7 @@ func _ready() -> void:
 	_tabs.tab_changed.connect(func(_i): _sig = ""; refresh())
 	_status = UITheme.label("", 15, Color(1, 1, 1, 0.75))
 	root.add_child(_status)
-	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
+	Shed.feedback.connect(func(text, _ok): if visible: _status.text = Controls.hint(text))
 	Shed.changed.connect(func(): if visible: refresh())
 
 
@@ -306,7 +306,7 @@ func _build_showroom(page: VBoxContainer) -> void:
 	var bike := Sales.bike_on_stand(stand)
 	if bike == 0:
 		right.add_child(UITheme.title("Stand %d is free" % (stand + 1), 24, Color.WHITE))
-		right.add_child(UITheme.label("Ride a bike into the showroom through the front doors, or wheel it in (hold F on it), "
+		right.add_child(UITheme.label("Ride a bike into the showroom through the front doors, or wheel it in (hold {interact} on it), "
 			+ "and stop or let go of it on a display stand. Then price it here.", 17, DIM))
 		return
 	_build_bike(right, bike)
@@ -473,7 +473,7 @@ func _build_px(page: VBoxContainer) -> void:
 	if Sales.px().is_empty():
 		page.add_child(UITheme.title("Nobody waiting", 24, Color.WHITE))
 		page.add_child(UITheme.label("Now and then a buyer rides up on their own bike, parks out front and comes in to the bike "
-			+ "they're after, wanting to part-exchange. Talk to them (F) or deal with them here.", 17, DIM))
+			+ "they're after, wanting to part-exchange. Talk to them ({interact}) or deal with them here.", 17, DIM))
 	for id in Sales.px():
 		_build_one_px(page, int(id))
 

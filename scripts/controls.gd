@@ -6,8 +6,18 @@ extends Node
 const STICK_DEADZONE := 0.2
 const TRIGGER_DEADZONE := 0.06
 
+## Mouse moves smaller than this (pixels) don't count as switching back to keyboard and mouse.
+const MOUSE_SWITCH_PX := 6.0
+
+## The input device a player used last changed: true for a controller, false for keyboard and mouse.
+signal device_changed(pad: bool)
+
 var active_device := -1
+## Whether the hints show controller buttons: the last real input was a pad button or a stick or
+## trigger past its deadzone (true), or a key, mouse button or mouse move (false).
+var using_pad := false
 var _rest := {}          # device -> {axis: resting value}
+var _bound := []         # [weakref to a node, property] whose text follows the device (see bind_text)
 
 
 func _ready() -> void:
@@ -15,7 +25,12 @@ func _ready() -> void:
 		if connected:
 			_rest.erase(device)
 		elif device == active_device:
-			active_device = -1)
+			active_device = -1
+			if Input.get_connected_joypads().is_empty():
+				set_using_pad(false))
+	# Every event passes the window before any node sees it, so a handled key still counts.
+	get_tree().root.window_input.connect(_note_device)
+	device_changed.connect(_rebind_texts)
 
 
 func _input(event: InputEvent) -> void:
@@ -25,6 +40,160 @@ func _input(event: InputEvent) -> void:
 		var rest := _rest_value(event.device, event.axis)
 		if absf(event.axis_value - rest) > 0.5:
 			active_device = event.device
+	_note_device(event)
+
+
+## Switches the hints between the controller and keyboard and mouse on real input.
+func _note_device(event: InputEvent) -> void:
+	if event is InputEventJoypadButton:
+		if event.pressed:
+			set_using_pad(true)
+	elif event is InputEventJoypadMotion:
+		var trig: bool = event.axis == JOY_AXIS_TRIGGER_LEFT or event.axis == JOY_AXIS_TRIGGER_RIGHT
+		var rest := _rest_value(event.device, event.axis)
+		var v: float = event.axis_value - rest
+		if trig and rest < -0.5:
+			v *= 0.5
+		if absf(v) > (TRIGGER_DEADZONE * 4.0 if trig else STICK_DEADZONE * 1.5):
+			set_using_pad(true)
+	elif event is InputEventKey or event is InputEventMouseButton:
+		if event.pressed:
+			set_using_pad(false)
+	elif event is InputEventMouseMotion:
+		if (event as InputEventMouseMotion).relative.length() > MOUSE_SWITCH_PX:
+			set_using_pad(false)
+
+
+func set_using_pad(pad: bool) -> void:
+	if pad == using_pad:
+		return
+	using_pad = pad
+	device_changed.emit(pad)
+
+
+# ---------------------------------------------------------------------------- hint labels
+
+## What the pad does for an action without a button of its own: the triggers are the throttle
+## and front brake; the left stick walks and leans.
+const PAD_FIXED := {"throttle": "RT", "front_brake": "LT"}
+const PAD_STICKS := {"move_forward": "Left stick", "move_back": "Left stick", "move_left": "Left stick",
+	"move_right": "Left stick", "lean_left": "Left stick", "lean_right": "Left stick"}
+## Hint names that aren't one rebindable action: [keyboard and mouse, controller].
+const VIRTUAL := {"look": ["Mouse", "Right stick"], "aim": ["Mouse", "Right stick"],
+	"scroll": ["Mouse wheel", "LB / RB"]}
+## Holding work (or work-two) is the right (left) trigger on a pad as well as its button; a tap
+## is the button. "work" and "work2" name the hold: the act and alt_act keys, or RT and LT.
+const HOLDS := {"work": ["act", "RT"], "work2": ["alt_act", "LT"]}
+
+
+## The key, mouse button or pad button that does `action` on the device in use, as a player
+## reads it ("F", "Left mouse", "Y", "RT"), from the player's own bindings (Key bindings tab).
+## Also takes "work" and "work2" (holding act or alt_act), "move" (W A S D or the left stick),
+## "lean" (A / D or the left stick), "back" (closing a screen: the menu key, or B), "look", "aim"
+## and "scroll".
+func key(action: String, pad := using_pad) -> String:
+	match action:
+		"move":
+			if pad:
+				return "Left stick"
+			return " ".join(["move_forward", "move_left", "move_back", "move_right"].map(func(a): return key(a, false)))
+		"lean":
+			return "Left stick" if pad else keys("lean_left", "lean_right", false)
+		"back":
+			return key("ui_cancel", true) if pad else key("menu", false)
+	if HOLDS.has(action):
+		return HOLDS[action][1] if pad else key(HOLDS[action][0], false)
+	if VIRTUAL.has(action):
+		return VIRTUAL[action][1 if pad else 0]
+	if pad and PAD_FIXED.has(action):
+		return PAD_FIXED[action]
+	var label := _first_label(action, pad)
+	if label == "" and pad:
+		label = str(PAD_STICKS.get(action, ""))
+	if label == "":
+		# Nothing on this device: the other device's binding is still the way to do it.
+		label = _first_label(action, not pad)
+	return label if label != "" else "-"
+
+
+## Two actions' labels for a pair of hints: "Q / E", "LB / RB".
+func keys(a: String, b: String, pad := using_pad) -> String:
+	var ka := key(a, pad)
+	var kb := key(b, pad)
+	if [ka, kb] in [["Wheel up", "Wheel down"], ["Wheel down", "Wheel up"]]:
+		return "Mouse wheel"
+	return ka if ka == kb else "%s / %s" % [ka, kb]
+
+
+## A hint with each {action} (or {action|action} for a pair) swapped for its key on the device
+## in use: "{interact}: get on" reads "F: get on" or "Y: get on". Braces round anything that
+## isn't an action stay as they are. Messages the host sends keep their {action}s, so each
+## player reads their own keys: the HUD and the computers' status lines run them through this.
+func hint(text: String, pad := using_pad) -> String:
+	if text.find("{") < 0:
+		return text
+	var out := ""
+	var i := 0
+	while i < text.length():
+		var open := text.find("{", i)
+		var close := text.find("}", open + 1) if open >= 0 else -1
+		if close < 0:
+			out += text.substr(i)
+			break
+		var bits := text.substr(open + 1, close - open - 1).split("|")
+		if bits.size() > 2 or not Array(bits).all(_known):
+			out += text.substr(i, open + 1 - i)
+			i = open + 1
+			continue
+		out += text.substr(i, open - i)
+		out += keys(bits[0], bits[1], pad) if bits.size() == 2 else key(bits[0], pad)
+		i = close + 1
+	return out
+
+
+## Sets a label's or button's text from a hint (see hint) and keeps it in step with the
+## device: it reads again whenever the player switches between pad and keyboard.
+func bind_text(node: Object, template: String, prop := "text") -> void:
+	var meta := "hint_" + prop
+	if template.find("{") < 0 and not node.has_meta(meta):
+		node.set(prop, template)
+		return
+	if not node.has_meta(meta):
+		_bound.append([weakref(node), prop])
+	node.set_meta(meta, template)
+	node.set(prop, hint(template))
+
+
+func _rebind_texts(_pad: bool) -> void:
+	var keep := []
+	for b in _bound:
+		var node: Object = b[0].get_ref()
+		if node != null:
+			node.set(b[1], hint(str(node.get_meta("hint_" + b[1], ""))))
+			keep.append(b)
+	_bound = keep
+
+
+func _known(action: String) -> bool:
+	return action in ["move", "lean", "back"] or HOLDS.has(action) or VIRTUAL.has(action) or (action != "" and InputMap.has_action(action))
+
+
+## The action's first binding on the device; the mouse's main buttons and wheel come before keys
+## (work is the left mouse, the wheel picks tools), but G beats the middle button for ping.
+func _first_label(action: String, pad: bool) -> String:
+	if not InputMap.has_action(action):
+		return ""
+	var evs := Settings.events_of(action, pad)
+	if evs.is_empty():
+		return ""
+	var pick: InputEvent = evs[0]
+	for e in evs:
+		if e is InputEventMouseButton and (e as InputEventMouseButton).button_index in [MOUSE_BUTTON_LEFT,
+				MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			pick = e
+			break
+	var label := Settings.code_text(Settings.code_of(pick))
+	return "Esc" if label == "Escape" else label
 
 
 ## The controller to read: the last one used, else the first one with a standard layout.

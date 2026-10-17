@@ -78,7 +78,7 @@ func _refresh() -> void:
 	else:
 		_box.add_child(UITheme.title("CONTRACTS", 24))
 		ContractPanel.fill_jobs(_box)
-		_box.add_child(ContractPanel.button("Close (Esc)", close_dialog))
+		_box.add_child(ContractPanel.button("Close ({back})", close_dialog))
 
 
 func _fill_offer(c: Dictionary) -> void:
@@ -92,7 +92,7 @@ func _fill_offer(c: Dictionary) -> void:
 	for g in o.get("goals", []):
 		_box.add_child(UITheme.label("•  " + Contracts.goal_text(g), 16))
 	if kind == "mot":
-		_box.add_child(UITheme.label("Run the test from the job list (Esc > Contracts, or here once taken on): it checks tyre tread "
+		_box.add_child(UITheme.label("Run the test from the job list ({menu} > Contracts, or here once taken on): it checks tyre tread "
 			+ "(legal minimum %.0f mm) and condition, wheels, discs, pads, calipers, master cylinders and fluid, fork and shock leaks, "
 			% MotTest.TREAD_LEGAL + "steering, chain and sprockets, tension, lights, horn, dash, mirrors, exhaust, frame rust, oil "
 			+ "and the number plate. Fix every fail and test it again for the certificate.", 14, Color(1, 1, 1, 0.6)))
@@ -129,7 +129,7 @@ func _fill_offer(c: Dictionary) -> void:
 		Shed.request({"a": "contract_decline", "customer": customer_id})
 		close_dialog()))
 	row.add_child(ContractPanel.button("Jobs list", open_jobs))
-	row.add_child(ContractPanel.button("Later (Esc)", close_dialog))
+	row.add_child(ContractPanel.button("Later ({back})", close_dialog))
 	_box.add_child(row)
 
 
@@ -137,7 +137,7 @@ func _fill_offer(c: Dictionary) -> void:
 
 static func button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
-	b.text = text
+	Controls.bind_text(b, text)
 	b.pressed.connect(cb)
 	return b
 
@@ -253,7 +253,7 @@ static func _fill_batch(box: VBoxContainer, job: Dictionary) -> void:
 	var why := Shed.check(Shed.me(), {"a": "contract_dispatch", "job": id})
 	var go := button("Dispatch from pallet", func(): Shed.request({"a": "contract_dispatch", "job": id}))
 	go.disabled = why != ""
-	go.tooltip_text = why
+	go.tooltip_text = Controls.hint(why)
 	row.add_child(go)
 	row.add_child(button("Close the order", func(): Shed.request({"a": "contract_hand_in", "job": id})))
 	box.add_child(row)
@@ -316,7 +316,7 @@ static func _fill_report(box: VBoxContainer, job: Dictionary) -> void:
 	var send := button("Send report", func():
 		Shed.request({"a": "contract_report", "job": id, "ratings": d["ratings"].duplicate(), "issues": (d["issues"] as Array).duplicate()}))
 	var why := Shed.check(Shed.me(), {"a": "contract_report", "job": id, "ratings": d["ratings"], "issues": d["issues"]})
-	send.tooltip_text = why
+	send.tooltip_text = Controls.hint(why)
 	box.add_child(send)
 
 
@@ -332,7 +332,7 @@ static func fill_jobs(box: VBoxContainer) -> void:
 		box.add_child(UITheme.label("Harder jobs unlock with reputation: " + ", ".join(next_up) + ".", 14, Color(1, 1, 1, 0.6)))
 	if Contracts.jobs().is_empty():
 		box.add_child(UITheme.label("No jobs under way. Customers come to the sales office reception: a bell rings when one "
-			+ "arrives. Look at them and press F to hear what they want.", 15, Color(1, 1, 1, 0.7)))
+			+ "arrives. Look at them and press {interact} to hear what they want.", 15, Color(1, 1, 1, 0.7)))
 	for id in Contracts.jobs():
 		_fill_job(box, Contracts.jobs()[id])
 	var done: Array = Contracts._st()["done"]
@@ -391,7 +391,7 @@ static func _fill_job(box: VBoxContainer, job: Dictionary) -> void:
 	var why := Shed.check(Shed.me(), {"a": "contract_hand_in", "job": id})
 	var hand := button("Hand back", func(): Shed.request({"a": "contract_hand_in", "job": id}))
 	hand.disabled = why != ""
-	hand.tooltip_text = why
+	hand.tooltip_text = Controls.hint(why)
 	row.add_child(hand)
 	box.add_child(row)
 	if why != "":

@@ -602,11 +602,10 @@ func _update_hud() -> void:
 	if mode == "aim":
 		var on_black := g != "" and PoolGame.left_of(st["balls"], g) == 0
 		lines.append("Your shot%s" % (": on the black" if on_black else (" (%s)" % g if g != "" else ": the table's open")))
-		lines.append("Mouse: aim (Shift: fine)  ·  up/down: view  ·  hold %s: power, let go to shoot  ·  %s twice: new game  ·  %s: step back" % [
-			"left mouse" if Controls.active_device < 0 else "RT", Walker._keys("alt_act"), Walker._keys("interact")])
+		lines.append("{aim}: aim ({sprint}: fine)  ·  up/down: view  ·  hold {work}: power, let go to shoot  ·  {alt_act} twice: new game  ·  {interact}: step back")
 	else:
-		lines.append("%s: step back" % Walker._keys("interact"))
-	_hud_text.text = "\n".join(lines)
+		lines.append("{interact}: step back")
+	_hud_text.text = Controls.hint("\n".join(lines))
 	_power_back.visible = mode == "aim"
 	_power_bar.size = Vector2(316.0 * power, 10.0)
 	_power_bar.color = UITheme.ACCENT.lerp(Color(1.0, 0.25, 0.15), power)

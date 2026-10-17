@@ -132,7 +132,7 @@ func _ready() -> void:
 	up_btn.pressed.connect(open_upgrades)
 	head.add_child(up_btn)
 	var close := Button.new()
-	close.text = "Close (Esc)"
+	Controls.bind_text(close, "Close ({back})")
 	close.pressed.connect(close_computer)
 	head.add_child(close)
 	root.add_child(head)
@@ -263,7 +263,7 @@ func _ready() -> void:
 			Shed.request({"a": "order_part", "part": _part}))
 	detail.add_child(_order)
 
-	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
+	Shed.feedback.connect(func(text, _ok): if visible: _status.text = Controls.hint(text))
 	# A poster made at the whiteboard while the list is up joins it.
 	Shed.changed.connect(func():
 		if not visible:
@@ -657,7 +657,7 @@ func _show_kind(k: String) -> void:
 		# The crew's own whiteboard drawings, saved as posters at the board.
 		_variants.add_child(UITheme.label("FROM THE WHITEBOARD", 14, UITheme.ACCENT))
 		if Shed.posters.is_empty():
-			var none := UITheme.label("None yet: press K at the whiteboard to make one.", 14, Color(1, 1, 1, 0.5))
+			var none := UITheme.label("None yet: press {board_poster} at the whiteboard to make one.", 14, Color(1, 1, 1, 0.5))
 			none.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			_variants.add_child(none)
 		for d in Shed.posters:
@@ -814,12 +814,19 @@ func pick_poster_size(key: String) -> void:
 ## "Size: A1, 0.60 x 0.84 m. Turn it with , and . before you hang it." for the poster being shown.
 func _size_text(model: String) -> String:
 	var art := Equipment.poster_size(model, poster_size)
-	var keys := Walker._keys("rotate_left", "rotate_right")
+	var keys := "{rotate_left|rotate_right}"   # read as keys when shown (see _show_part)
 	return "\n\nSize: %s, %.2f x %.2f m. Carrying it, %s turns it portrait or landscape before you hang it." % [
 		str(Equipment.POSTER_SIZES[poster_size]["name"]), art.x, art.y, keys]
 
 
+## Shows a part's details; their key hints follow the device in use (see Controls.bind_text).
 func _show_part(id: String) -> void:
+	_fill_part(id)
+	Controls.bind_text(_desc, _desc.text)
+	Controls.bind_text(_spec, _spec.text)
+
+
+func _fill_part(id: String) -> void:
 	_part = id
 	for b in _variants.get_children():
 		if b.has_meta("part"):
@@ -846,16 +853,16 @@ func _show_part(id: String) -> void:
 		_title.text = str(d.get("name", "Whiteboard poster"))
 		_desc.text = "%s Saved from the whiteboard by %s." % [m["desc"], str(d.get("by", "the crew"))]
 		_spec.text = "Hangs on a wall." + _size_text(Equipment.BOARD_POSTER) \
-			+ "\n\nArrives outside the roller door. Press F on it to carry it in, look at a wall and press F to hang it."
+			+ "\n\nArrives outside the roller door. Press {interact} on it to carry it in, look at a wall and press {interact} to hang it."
 		return
 	if _kind.begins_with("eq:"):
 		var m := Equipment.get_model(id)
 		_title.text = str(m["name"])
 		_desc.text = str(m["desc"])
-		var how := "Left in the yard by the drag strip. Press F on it to push it, F again to put it down." if Equipment.is_yard(id) else \
-			"Arrives outside the roller door. Press F on it to carry it in, look at a wall and press F to hang it." \
-			if Equipment.is_wall(id) else ("Arrives outside the roller door. Hold F on it to move it." if m["kind"] == "seat"
-			else "Arrives outside the roller door. Press F on it to push it in and F again to put it down.")
+		var how := "Left in the yard by the drag strip. Press {interact} on it to push it, {interact} again to put it down." if Equipment.is_yard(id) else \
+			"Arrives outside the roller door. Press {interact} on it to carry it in, look at a wall and press {interact} to hang it." \
+			if Equipment.is_wall(id) else ("Arrives outside the roller door. Hold {interact} on it to move it." if m["kind"] == "seat"
+			else "Arrives outside the roller door. Press {interact} on it to push it in and {interact} again to put it down.")
 		_spec.text = Equipment.spec_line(id).replace("  ·  ", "\n") + "\n\n" + how
 		if m["kind"] == "poster":
 			_spec.text = how + _size_text(id)
@@ -868,14 +875,14 @@ func _show_part(id: String) -> void:
 	_desc.text += "\n\n%s from the business's account%s." % [TvChannels.money_text(cost),
 		" (Haggler discount)" if cost < Money.part_price(id) else ""]
 	if _kind == "chain_lube":
-		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it, crouch by a bike's chain and hold left mouse to lube it." \
+		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it, crouch by a bike's chain and hold {work} to lube it." \
 			+ " A dry chain wastes power and wears out.\nDelivered outside, no box to unpack."
 		return
 	if PartsDB.FLUID_KINDS.has(_kind):
 		var into: String = {"petrol": "the fuel tank", "oil": "the engine", "brake_fluid": "the front and rear brake master cylinders"}[_kind]
-		var how := "Hold it and aim at %s: left mouse pours it in, right mouse drains into it." % into
+		var how := "Hold it and aim at %s: {work} pours it in, {work2} drains into it." % into
 		if p.get("empty", false):
-			how = "Hold it and aim at %s, then hold right mouse to drain into it. Tip it out in the scrap bin." % into
+			how = "Hold it and aim at %s, then hold {work2} to drain into it. Tip it out in the scrap bin." % into
 		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\n" + how + "\nDelivered outside, no box to unpack."
 		return
 	var fits := PartsDB.slots_for_kind(_kind).map(func(s): return PartsDB.slot_name(s).to_lower())
@@ -892,7 +899,7 @@ func _show_part(id: String) -> void:
 	if owned(id) > 0:
 		_desc.text += " The shed has %d already, not fitted to anything." % owned(id)
 	if _kind == "chain":
-		_spec.text += "\n\nCrouch by the bike with the wrench and hold right mouse to set the tension. Lube it with chain lube."
+		_spec.text += "\n\nCrouch by the bike with the wrench and hold {work2} to set the tension. Lube it with chain lube."
 
 
 ## A kind picked (A on a pad, or a click): its parts list, with the pad's focus on the first.

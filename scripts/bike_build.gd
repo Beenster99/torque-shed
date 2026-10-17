@@ -455,7 +455,7 @@ func _compute_chain() -> void:
 	var loss := float(chain.get("friction", 0.025)) * (1.0 + (1.0 - chain_lube) * 2.5)
 	if chain_slack > 40.0:
 		loss += (chain_slack - 40.0) * 0.0012
-		notes.append("The chain is slapping about: tighten it (crouch, wrench, right mouse)." if chain_slack < 65.0
+		notes.append("The chain is slapping about: tighten it (crouch, wrench, {work2})." if chain_slack < 65.0
 			else "The chain is so slack it could jump off! Tighten it.")
 	elif chain_slack < 20.0:
 		loss += (20.0 - chain_slack) * 0.002

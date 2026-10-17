@@ -333,8 +333,7 @@ func _show_hint(at: Dictionary, on: bool) -> void:
 ## The look panel for what's under the crosshair here (see looked_at): [title and lines, the
 ## key prompt], or two empty strings for nothing of ours.
 static func tooltip(at: Dictionary) -> Array:
-	var key := Settings.binding_text("interact", false)
-	key = key if key != "" else "F"
+	var key := Controls.key("interact")
 	if at.get("counter", false):
 		if not CoffeeShop.is_open():
 			return ["Pit Stop Cafe\n%s" % CoffeeShop.hours_text(), ""]

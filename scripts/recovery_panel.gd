@@ -78,7 +78,7 @@ func _refresh() -> void:
 	else:
 		_box.add_child(UITheme.title("RECOVERY JOBS", 24))
 		fill(_box, func(id): self_ref.open_assessment(id))
-	_box.add_child(ContractPanel.button("Close (Esc)", close_dialog))
+	_box.add_child(ContractPanel.button("Close ({back})", close_dialog))
 
 
 ## Changes to anything the list shows, so it's only rebuilt when they happen.
@@ -114,7 +114,7 @@ static func fill(box: VBoxContainer, assess: Callable) -> void:
 		row.add_theme_constant_override("separation", 8)
 		var acc := ContractPanel.button("Accept", func(): Shed.request({"a": "recovery_accept", "offer": int(id)}))
 		acc.disabled = why != ""
-		acc.tooltip_text = why
+		acc.tooltip_text = Controls.hint(why)
 		row.add_child(acc)
 		row.add_child(ContractPanel.button("Decline", func(): Shed.request({"a": "recovery_decline", "offer": int(id)})))
 		box.add_child(row)
@@ -144,7 +144,7 @@ static func fill(box: VBoxContainer, assess: Callable) -> void:
 				var why2 := Shed.check(me, {"a": "recovery_collect", "job": int(id)})
 				var col := ContractPanel.button("Insurer collects", func(): Shed.request({"a": "recovery_collect", "job": int(id)}))
 				col.disabled = why2 != ""
-				col.tooltip_text = why2
+				col.tooltip_text = Controls.hint(why2)
 				box.add_child(col)
 	var done: Array = Recovery._st()["done"]
 	if not done.is_empty():
@@ -205,6 +205,6 @@ static func fill_assessment(box: VBoxContainer, job: Dictionary, after: Callable
 			Shed.request(act)
 			after.call())
 		b.disabled = why != ""
-		b.tooltip_text = why
+		b.tooltip_text = Controls.hint(why)
 		box.add_child(b)
 		box.add_child(UITheme.label(str(c[2]) if why == "" else why, 13, Color(1, 1, 1, 0.6) if why == "" else Color(1, 0.5, 0.4)))

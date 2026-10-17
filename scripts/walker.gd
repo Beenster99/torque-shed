@@ -481,7 +481,7 @@ func sit(id: int) -> void:
 	_seat_spot = best + Vector3.UP * SEATED_EYE
 	rotation.y = (f["xf"] as Transform3D).basis.get_euler().y
 	_shape_node.disabled = true
-	Shed.feedback.emit("Sitting down. Move or press F to get up.", true)
+	Shed.feedback.emit("Sitting down. Move or press {interact} to get up.", true)
 
 
 func stand_up() -> void:
@@ -513,7 +513,7 @@ func _spray_changed() -> void:
 func spray_text() -> String:
 	if spray_cup() != "":
 		var cup := PaintBay.cup_of(Shed.me())
-		var what := "empty (hold a tin of mixed paint, right mouse)" if cup.is_empty() else "%s, %.2f l" % [str(cup.get("name", "mixed paint")),
+		var what := Controls.hint("empty (hold a tin of mixed paint, {alt_act})") if cup.is_empty() else "%s, %.2f l" % [str(cup.get("name", "mixed paint")),
 			float(cup.get("litres", 0.0))]
 		return ("Cup: %s" if spray_cup() == "cup" else str(PaintMix.PATTERNS[spray_cup()]["name"]) + ": %s") % what
 	if spray_primer():
@@ -825,7 +825,7 @@ func _update_target() -> void:
 		_described = _describe()
 		_described_for = for_what
 		_described_frame = Engine.get_process_frames()
-	info = _described
+	info = Controls.hint(_described)
 	_update_part_ghost()
 	var held_now := Shed.held_by(Shed.me())
 	if held_now != 0 and tool == "hands" and str(plan.get("action", {}).get("a", "")) in ["drop", "set_down"]:
@@ -837,10 +837,10 @@ func _update_target() -> void:
 	var geo_key := Settings.binding_text("geometry_mode", false)
 	if str(target.get("kind", "")) == "part" and int(target.get("bike", 0)) != 0 and geo_key != "" \
 			and not target.get("road", false):
-		info += "\n%s: geometry mode (move, turn and size this bike's parts)" % geo_key
+		info += "\n%s: geometry mode (move, turn and size this bike's parts)" % _keys("geometry_mode")
 	if str(target.get("kind", "")) == "spot" and Shed.spot_role(str(target["spot"])) == "blaster" \
 			and Shed.item_at_spot(str(target["spot"])) != 0 and Shed.held_by(Shed.me()) == 0:
-		info += "\nF: hands in the gloves and sandblast it back to bare metal"
+		info += Controls.hint("\n{interact}: hands in the gloves and sandblast it back to bare metal")
 	var sj := spray_job_for(target_item())
 	if sj != null:
 		var sst := sj.stats()
@@ -942,16 +942,9 @@ static func _has_parts_on(furniture_id: int) -> bool:
 	return false
 
 
-## The keys (or pad buttons, with a pad in use) on actions, for the hints: ", / .".
+## The keys (or pad buttons, with a pad in use) on actions, for the hints: ", / ." (see Controls.key).
 static func _keys(a: String, b := "") -> String:
-	var pad := Controls.active_device >= 0
-	var out := []
-	for action in [a, b]:
-		if action != "":
-			var t := Settings.binding_text(action, pad)
-			if t != "":
-				out.append(t.get_slice(" / ", 0))
-	return " / ".join(out) if not out.is_empty() else "-"
+	return Controls.key(a) if b == "" else Controls.keys(a, b)
 
 
 static func _stepped(angle: float, dir: int) -> float:
@@ -1039,8 +1032,7 @@ func _update_scrap(delta: float) -> void:
 		progress = 0.0
 		scrap_armed = what.duplicate()
 		scrap_armed["until"] = Time.get_ticks_msec() + int(SCRAP_CONFIRM * 1000.0)
-		var key := Settings.binding_text("scrap", Controls.active_device >= 0).get_slice(" / ", 0)
-		Shed.feedback.emit("Scrap the %s for good? Press %s again in the next few seconds to scrap it." % [what["name"], key], false)
+		Shed.feedback.emit("Scrap the %s for good? Press {scrap} again in the next few seconds to scrap it." % what["name"], false)
 
 
 ## The second press after holding the scrap key: it goes for good.
@@ -1325,17 +1317,16 @@ func _push(id: int, delta: float) -> void:
 		Shed.request({"a": "move_furniture", "furniture": id, "xf": xf})
 	target = {}
 	plan = {}
-	var pad := Controls.active_device >= 0
 	var lines := []
 	var what := Shed.furniture_name(Shed.furniture[id]).to_lower()
 	if Equipment.is_wall(str(Shed.furniture[id].get("model", ""))):
 		lines.append("Carrying the %s" % what)
-		lines.append("F: hang it here" if _on_wall else "Look at a wall to hang it up.")
+		lines.append("{interact}: hang it here" if _on_wall else "Look at a wall to hang it up.")
 	else:
 		lines.append("Moving the %s" % what)
 		lines.append("Walk to move it and turn to face it the way you want.")
-		lines.append("%s: push it further away or pull it closer" % ("LB / RB" if pad else "Mouse wheel"))
-		lines.append("F: put it down here")
+		lines.append("{tool_prev|tool_next}: push it further away or pull it closer")
+		lines.append("{interact}: put it down here")
 		lines.append("%s: turn it (%s)" % [_keys("rotate_left", "rotate_right"), turn_mode_text()])
 	if Shed.furniture[id]["kind"] == "poster":
 		lines.append("%s: turn it (portrait or landscape)" % _keys("rotate_left", "rotate_right"))
@@ -1343,10 +1334,10 @@ func _push(id: int, delta: float) -> void:
 		lines.append("Hold %s: scrap it for good%s" % [_keys("scrap"), ", and drop what's on it" if _has_parts_on(id) else ""])
 	var snap := snap_text()
 	if Settings.snap_placement:
-		lines.append("%s%s: snapping off" % [snap + "  ·  " if snap != "" else "Snapping to walls and corners  ·  ", "X" if pad else "R / right mouse"])
+		lines.append("%s{alt_act}: snapping off" % (snap + "  ·  " if snap != "" else "Snapping to walls and corners  ·  "))
 	else:
-		lines.append("Snapping off  ·  %s: snap to walls and corners" % ("X" if pad else "R / right mouse"))
-	info = "\n".join(lines)
+		lines.append("Snapping off  ·  {alt_act}: snap to walls and corners")
+	info = Controls.hint("\n".join(lines))
 	_highlight()
 
 
@@ -1377,7 +1368,7 @@ func _push_bike(id: int, delta: float) -> void:
 	target = {}
 	plan = {}
 	alt_plan = {}
-	info = "Wheeling %s\nWalk to push it, back up to pull it. Bikes don't have reverse.\nF: let go (it goes on its stand, or into a bay's paddock stand)" % \
+	info = Controls.hint("Wheeling %s\nWalk to push it, back up to pull it. Bikes don't have reverse.\n{interact}: let go (it goes on its stand, or into a bay's paddock stand)") % \
 		str(Shed.bikes[id]["name"])
 	_highlight()
 
@@ -1637,9 +1628,9 @@ func _pick_cup() -> void:
 			return
 
 
-## The work button's name for the controls in use: "left mouse" or "RT".
+## The work button's name for the controls in use: "Left mouse" or "RT" (holding it).
 static func _act_name() -> String:
-	return "RT" if Controls.device() >= 0 and Controls.active_device >= 0 else "left mouse"
+	return Controls.key("work")
 
 
 ## F at the paint mixing bay: step up to the bench (or put the tin in your hands on its scale),
@@ -1701,7 +1692,7 @@ func _bay_plan() -> Dictionary:
 				var pattern := str(h.get("pattern", "stripe"))
 				var q := clampf(0.8 + Progress.level() * 0.01 + (0.05 if crouched else 0.0), 0.3, 1.0)
 				p = {"action": {"a": "paint_tape", "item": item, "quality": q}, "time": 2.5,
-					"verb": "mask it off: %s (R picks)" % str(PaintMix.PATTERNS[pattern]["name"]).to_lower()}
+					"verb": "mask it off: %s ({spray_colour} picks)" % str(PaintMix.PATTERNS[pattern]["name"]).to_lower()}
 				if Shed.items[item].get("tape") is Dictionary:
 					var peel := {"a": "paint_peel", "item": item}
 					alt_plan = {"action": peel, "time": 1.2, "verb": "peel the masking tape off", "blocked": Shed.check(me, peel)}
@@ -1910,8 +1901,8 @@ func _describe() -> String:
 		lines.append("%s: fill the spray gun's cup  ·  %s on the shelf, the scale or the bin  ·  at a mate: hand it over" % [
 			_keys("interact"), _act_name()])
 	elif str(bay_held.get("kind", "")) == "tape":
-		lines.append("Masking tape: %s (R for another)" % str(PaintMix.PATTERNS[str(bay_held.get("pattern", "stripe"))]["name"]).to_lower())
-		lines.append("Hold left mouse on a painted part to mask it off; spray the second colour over, then peel it (right mouse).")
+		lines.append("Masking tape: %s ({spray_colour} for another)" % str(PaintMix.PATTERNS[str(bay_held.get("pattern", "stripe"))]["name"]).to_lower())
+		lines.append("Hold {work} on a painted part to mask it off; spray the second colour over, then peel it ({work2}).")
 	match kind:
 		"use":
 			lines.append(str(target["node"].use_text(target)))
@@ -1930,12 +1921,12 @@ func _describe() -> String:
 			else:
 				lines.append("A recovery job: it goes back to the yard on the trailer.")
 			var ride_on := Shed.check(Shed.me(), {"a": "mount", "bike": road_id})
-			lines.append("F: ride %s" % Shed.bikes[road_id]["name"] if ride_on == "" else ride_on)
+			lines.append("{interact}: ride %s" % Shed.bikes[road_id]["name"] if ride_on == "" else ride_on)
 			if Shed.check(Shed.me(), {"a": "grab_bike", "bike": road_id}) == "":
-				lines.append("Hold F: wheel it about")
+				lines.append("Hold {interact}: wheel it about")
 			var held_can := Shed.held_by(Shed.me())
 			if held_can != 0 and PartsDB.kind_of(Shed.items[held_can]["part"]) == "petrol":
-				lines.append("Hold %s: pour the petrol into its tank" % _keys("act"))
+				lines.append("Hold %s: pour the petrol into its tank" % _keys("work"))
 		"part":
 			var slot := str(target["slot"])
 			var item_id := target_item()
@@ -1963,12 +1954,12 @@ func _describe() -> String:
 				var bike_id := int(target["bike"])
 				for note in Shed.build_of(bike_id).notes:
 					lines.append("! " + note)
-				lines.append("N: give it a name")
+				lines.append("{rename}: give it a name")
 				var ride := Shed.check(Shed.me(), {"a": "mount", "bike": bike_id})
-				lines.append("F: ride %s" % Shed.bikes[bike_id]["name"] if ride == "" else "Can't ride yet. " + ride)
+				lines.append("{interact}: ride %s" % Shed.bikes[bike_id]["name"] if ride == "" else "Can't ride yet. " + ride)
 				var wheel := Shed.check(Shed.me(), {"a": "grab_bike", "bike": bike_id})
 				if wheel == "":
-					lines.append("Hold F: wheel it about")
+					lines.append("Hold {interact}: wheel it about")
 		"spot":
 			var spot := str(target["spot"])
 			var item_id := Shed.item_at_spot(spot)
@@ -1983,7 +1974,7 @@ func _describe() -> String:
 				lines.append(Shed.condition_text(it))
 				lines.append(PartsDB.bin_text(str(it["part"])))
 				if it.get("boxed", false):
-					lines.append(OrderNote.line(it) + "F: unpack it")
+					lines.append(OrderNote.line(it) + "{interact}: unpack it")
 				if it.has("fluid") and not PartsDB.is_fluid(it["part"]):
 					lines.append(Shed.fluid_text(it))
 				if Shed.is_engine(item_id) and Shed.is_stand_spot(spot) and not it.get("boxed", false):
@@ -2017,7 +2008,7 @@ func _describe() -> String:
 				if not f.is_empty():
 					lines.append(Equipment.spec_line(str(f["model"])))
 					if not Equipment.FIXED_KINDS.has(str(f["kind"])) and str(f["model"]) != Shed.DELIVERY_RACK:
-						lines.append("F: move it somewhere else")
+						lines.append("{interact}: move it somewhere else")
 		"item":
 			var it: Dictionary = Shed.items[int(target["item"])]
 			lines.append(PartsDB.part_name(it["part"]))
@@ -2026,61 +2017,61 @@ func _describe() -> String:
 			lines.append(Shed.condition_text(it))
 			lines.append(PartsDB.bin_text(str(it["part"])))
 			if it.get("boxed", false):
-				lines.append(OrderNote.line(it) + "F: unpack it")
+				lines.append(OrderNote.line(it) + "{interact}: unpack it")
 		"radio":
 			lines.append("Shed radio (everyone hears it)")
 			var view: Node = get_tree().get_first_node_in_group("workshop")
 			if view and view.radio:
 				lines.append(view.radio.now_playing())
-			lines.append("F: switch %s" % ("off" if Shed.radio["on"] else "on"))
+			lines.append("{interact}: switch %s" % ("off" if Shed.radio["on"] else "on"))
 		"furniture", "label":
 			var f: Dictionary = Shed.furniture[int(target["furniture"])]
 			lines.append(Shed.furniture_name(f))
 			lines.append(Equipment.spec_line(str(f["model"])))
 			match str(f["kind"]):
 				"seat":
-					lines.append("F: sit down   Hold F: move it")
+					lines.append("{interact}: sit down   Hold {interact}: move it")
 				"tv":
 					lines.append_array(_channel_lines(_screen_key()))
-					lines.append("F: take it down to hang somewhere else")
+					lines.append("{interact}: take it down to hang somewhere else")
 				"poster":
-					lines.append("F: take it down to hang somewhere else")
+					lines.append("{interact}: take it down to hang somewhere else")
 				"booth", "changer":
 					lines.append("Built into the shed")
 				_:
 					if str(f["model"]) == Shed.DELIVERY_RACK:
 						lines.append("Fixed down in the delivery area")
 					else:
-						lines.append("F: move it somewhere else")
+						lines.append("{interact}: move it somewhere else")
 			if kind == "label":
-				lines.append("Hold %s on the label to write on it" % ("RT" if Controls.active_device >= 0 else "left mouse"))
+				lines.append("Hold {work} on the label to write on it")
 		"screen":
 			var key := _screen_key()
 			lines.append("Crew board screen" if key == "crew" else "Bay %d screen" % (int(key.trim_prefix("bay")) + 1))
 			lines.append_array(_channel_lines(key))
 		"door":
 			lines.append("Roller door")
-			lines.append("F: %s" % ("close it" if Shed.door_open else "open it"))
+			lines.append("{interact}: %s" % ("close it" if Shed.door_open else "open it"))
 		"lift":
 			var bay := int(target["bay"])
 			var on := Wash.bike_on_lift() if bay == Wash.LIFT else Shed.bike_in_bay(bay)
 			lines.append("%s: %s" % ["Wash bay bike lift" if bay == Wash.LIFT else "Bay %d bike lift" % (bay + 1), "up" if Shed.lifts.has(bay) else "down"])
 			if on != 0:
 				lines.append("%s is on it" % Shed.bikes[on]["name"])
-			lines.append("F: %s" % ("lower it" if Shed.lifts.has(bay) else "raise it"))
+			lines.append("{interact}: %s" % ("lower it" if Shed.lifts.has(bay) else "raise it"))
 			var why := Shed.check(Shed.me(), {"a": "lift", "bay": bay, "up": not Shed.lifts.has(bay)})
 			if why != "":
 				lines.append(why)
 		"lights":
 			var room := str(target.get("room", ""))
 			lines.append({"paint": "Paint shop lights", "storage": "Storage room lights", "sales": "Sales office lights"}.get(room, "Shed lights"))
-			lines.append("F: switch them %s" % ("off" if Shed.room_lit(room) else "on"))
+			lines.append("{interact}: switch them %s" % ("off" if Shed.room_lit(room) else "on"))
 		"board":
 			var board: Node = get_tree().get_first_node_in_group("whiteboard")
 			if board:
 				lines.append_array(board.describe())
 			if Shed.whiteboard_id() != 0:
-				lines.append("F: take it down to hang it on another wall")
+				lines.append("{interact}: take it down to hang it on another wall")
 		"top":
 			var key := str(target["top"])
 			var s := Shed.surface(key)
@@ -2101,7 +2092,7 @@ func _describe() -> String:
 			if fid != 0 and Shed.furniture.has(fid):
 				lines.append(Equipment.spec_line(str(Shed.furniture[fid]["model"])))
 				if str(Shed.furniture[fid]["model"]) != Shed.DELIVERY_RACK:
-					lines.append("F: move it somewhere else")
+					lines.append("{interact}: move it somewhere else")
 		"pc":
 			lines.append("Parts computer")
 			lines.append("Order parts and equipment. Deliveries are left outside by the roller door.")
@@ -2109,17 +2100,17 @@ func _describe() -> String:
 			lines.append_array(DynoRoom.describe(target, Shed.me()))
 		"desk_bell":
 			lines.append("Reception bell")
-			lines.append("Click or F: ding it")
+			lines.append("{act} or {interact}: ding it")
 		"sales_pc":
 			lines.append("Sales PC")
-			lines.append("F: price the bikes on the showroom stands, answer buyers' offers and part-exchanges.")
+			lines.append("{interact}: price the bikes on the showroom stands, answer buyers' offers and part-exchanges.")
 			var waiting := Sales.offers().values().filter(func(o): return str(o["state"]) == "open").size() + Sales.px().size()
 			if waiting > 0:
 				lines.append("%d buyer%s waiting for an answer" % [waiting, "" if waiting == 1 else "s"])
 		"dyno":
 			lines.append("Dyno desk")
 			var on := Shed.dyno_bike()
-			lines.append("F: tune %s and run the dyno" % (Shed.bikes[on]["name"] if on != 0 else "a bike"))
+			lines.append("{interact}: tune %s and run the dyno" % (Shed.bikes[on]["name"] if on != 0 else "a bike"))
 		"bin":
 			var which := str(target.get("bin", "general"))
 			lines.append(str(PartsDB.BIN_NAMES.get(which, "Bin")))
@@ -2155,7 +2146,7 @@ func _bay_lines() -> Array:
 			out.append("Mixing bench")
 			out.append(PaintBay.tin_text(tin) if not tin.is_empty() else "Nothing on the scale.")
 			var by := PaintBay.at_bench()
-			out.append("F: step up to the bench and mix" if by == 0 or by == Shed.me() else "%s is mixing." % Shed.crew.get(by, {}).get("name", "Someone"))
+			out.append("{interact}: step up to the bench and mix" if by == 0 or by == Shed.me() else "%s is mixing." % Shed.crew.get(by, {}).get("name", "Someone"))
 		"slot":
 			var t := PaintBay.tin_in_slot(int(target.get("slot", -1)))
 			out.append("Tin shelf")
@@ -2165,10 +2156,10 @@ func _bay_lines() -> Array:
 			if not r.is_empty():
 				out.append("Swatch: %s" % str(r["name"]))
 				out.append("%s  ·  %s  ·  mixed by %s" % [str(r["code"]), PaintMix.effect_name(str(r.get("mix", {}).get("effect", "solid"))), str(r.get("by", "the crew"))])
-				out.append("F: pin the card to the whiteboard")
+				out.append("{interact}: pin the card to the whiteboard")
 		"tape":
 			out.append("Masking tape")
-			out.append("For stripes, pinstripes and two-tone (level %d). F or left mouse: take it." % int(PaintMix.PATTERNS["stripe"]["level"]))
+			out.append("For stripes, pinstripes and two-tone (level %d). {interact} or {act}: take it." % int(PaintMix.PATTERNS["stripe"]["level"]))
 		"shaker":
 			var sh: Dictionary = PaintBay._st()["shaker"]
 			out.append("Automatic shaker" if PaintBay.kit("shaker") else "Paint shaker")
@@ -2216,7 +2207,7 @@ func _changer_lines(wheel: int) -> Array:
 		out.append("Tyre on it: %s" % PartsDB.part_name(it["part"]))
 		if it.has("bead"):
 			out.append(Shed.bead_text(it))
-		out.append("Hold %s: lift the wheel off, tyre and all" % ("LT" if Controls.active_device >= 0 else "right mouse"))
+		out.append("Hold {work2}: lift the wheel off, tyre and all")
 	else:
 		out.append("No tyre on it. Tyres that fit: %d to %d mm wide, made for %s rims" % [PartsDB.tyre_range(wheel_part).x,
 			PartsDB.tyre_range(wheel_part).y, PartsDB.inch_text(float(PartsDB.get_part(wheel_part).get("diameter", 17.0)))])
@@ -2244,9 +2235,7 @@ func _channel_lines(key: String) -> Array:
 		return []
 	var state := Shed.screen_channel(key)
 	var label := TvChannels.osd_label(key, state, Shed.riders())
-	var pad := Controls.active_device >= 0
-	return ["Showing " + label,
-		"%s: next channel   %s: previous" % ["X" if pad else "R / right mouse", "B" if pad else "T"]]
+	return ["Showing " + label, "{alt_act}: next channel   {spray_finish}: previous"]
 
 
 ## Changes the channel on the screen you're looking at, through the host.
@@ -2327,7 +2316,7 @@ func _update_work(delta: float) -> void:
 	if not use_alt and _acting() and not _need_release and tool in ["spray", "gun"] and plan_now.get("coverage", false) \
 			and str(plan_now.get("action", {}).get("a", "")) in ["paint", "prime", "coat"]:
 		# Painting's done with the spray controls up: F first, then take your time.
-		Shed.feedback.emit("Press %s to bring up the spray controls, get set, then spray." % _keys("interact"), false)
+		Shed.feedback.emit("Press {interact} to bring up the spray controls, get set, then spray.", false)
 		_need_release = true
 		return
 	# Spraying is a skill: sweep the can over the part until it's all covered, without
@@ -2943,10 +2932,7 @@ func _update_spray_fx() -> void:
 
 ## How to work the spray, for the HUD.
 func spray_controls() -> String:
-	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	var scan := Settings.binding_text("blast_scan", pad)
-	return "Hold %s and sweep in steady, overlapping passes; go round it for the far side and crouch for underneath  ·  hold %s to steady your hand  ·  %s: show what's missed  ·  %s: step back" % [
-		"RT" if pad else "left mouse", "LT" if pad else "right mouse", scan if scan != "" else "X", _keys("interact")]
+	return Controls.hint("Hold {work} and sweep in steady, overlapping passes; go round it for the far side and crouch for underneath  ·  hold {work2} to steady your hand  ·  {blast_scan}: show what's missed  ·  {interact}: step back")
 
 
 # ---------------------------------------------------------------------------- pressure washing
@@ -3115,10 +3101,7 @@ func _send_wash(bike: int) -> void:
 
 ## How to work the pressure washer, for the HUD.
 func wash_controls() -> String:
-	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	var scan := Settings.binding_text("blast_scan", pad)
-	return "Hold %s to wash where you aim; go round it for the far side, and for underneath raise the wash bay lift (its post) and crouch  ·  %s: show what's still dirty  ·  %s: step back" % [
-		"RT" if pad else "left mouse", scan if scan != "" else "X", _keys("interact")]
+	return Controls.hint("Hold {work} to wash where you aim; go round it for the far side, and for underneath raise the wash bay lift (its post) and crouch  ·  {blast_scan}: show what's still dirty  ·  {interact}: step back")
 
 
 ## Emote keys (see Emotes): B opens and shuts the emote bar, where the tool keys 1 to 6 pick
@@ -3652,6 +3635,5 @@ func _blast_info() -> String:
 
 
 func blast_controls() -> String:
-	var pad := Controls.device() >= 0 and Controls.active_device >= 0
-	return "Hold RT to blast · left stick turns the engine · D-pad up scans · Y steps back" if pad else \
-		"Hold left mouse to blast · W A S D (or hold right mouse) turns the engine · X scans · F steps back"
+	return Controls.hint("Hold {work} to blast · {move}%s turns the engine · {blast_scan} scans · {interact} steps back"
+		% ("" if Controls.using_pad else " (or hold {work2})"))

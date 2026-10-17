@@ -346,7 +346,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			st["over"] = false
 			st["winner"] = 0
 			st["msg"] = "%s racked them up. %s to break." % [player_name(peer), player_name(peer)]
-			return "Racked up. Walk up to the table and press F to break; a mate can press F to join."
+			return "Racked up. Walk up to the table and press {interact} to break; a mate can press {interact} to join."
 		"pool_join":
 			players.append(peer)
 			st["msg"] = "%s joined the game." % player_name(peer)
@@ -406,7 +406,7 @@ static func _shoot(peer: int, angle: float, power: float) -> String:
 		elif players.size() > 1:
 			st["msg"] = "%s potted the black %s: %s wins." % [name, "too early" if not on_black else "on a foul", player_name(int(st["winner"]))]
 		else:
-			st["msg"] = "The black went in %s: game over. Press F to rack again." % ("too early" if not on_black else "on a foul")
+			st["msg"] = "The black went in %s: game over. Press {interact} to rack again." % ("too early" if not on_black else "on a foul")
 		_finish(st, sim, after, before, angle, power, peer)
 		return str(st["msg"])
 	if potted.has(8) and breaking:

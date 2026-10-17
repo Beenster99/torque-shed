@@ -408,7 +408,7 @@ func _ring_for_offers() -> void:
 			if newest.is_empty() or int(id) > int(newest["id"]):
 				newest = Recovery.offers()[id]
 		Sfx.play_at("phone_ring", main.camera.global_position if not (main.walker and main.walker.camera.current) else main.walker.camera.global_position, -6.0)
-		main.hud.flash("Phone: a recovery job, %s (%s). Esc, Recovery or the clipboard in the truck." % [
+		main.hud.flash("Phone: a recovery job, %s (%s). {menu}, Recovery or the clipboard in the truck." % [
 			str(newest.get("name", "")).capitalize(), Recovery.money(int(newest.get("fee", 0)))], 6.0)
 	_offers_seen = n
 
@@ -439,13 +439,13 @@ func use_text(t: Dictionary) -> String:
 	match str(u.get("what", "")):
 		"drive":
 			var why := Shed.check(me, {"a": "recovery_enter"})
-			return "Recovery truck\n" + ("F: get in and drive" if why == "" else why)
+			return "Recovery truck\n" + ("{interact}: get in and drive" if why == "" else why)
 		"jobs":
-			return "Recovery jobs clipboard\nF: see the jobs on offer and the ones under way"
+			return "Recovery jobs clipboard\n{interact}: see the jobs on offer and the ones under way"
 		"ramp":
 			var down := bool(Recovery.car()["ramp"])
 			var why := Shed.check(me, {"a": "recovery_ramp", "down": not down})
-			return "Trailer ramp\n" + (("F: raise the ramp" if down else "F: lower the ramp") if why == "" else why)
+			return "Trailer ramp\n" + (("{interact}: raise the ramp" if down else "{interact}: lower the ramp") if why == "" else why)
 		"winch":
 			return "Winch\n" + _winch_prompt()[0]
 		"dolly":
@@ -457,9 +457,9 @@ func use_text(t: Dictionary) -> String:
 			var on: bool = (Recovery.loads()[id]["straps"] as Array)[int(u["point"])]
 			var why := Shed.check(me, {"a": "recovery_strap", "bike": id, "point": int(u["point"])})
 			return "Ratchet strap, %s, on %s (%d of 4 tight)\n%s" % [Recovery.STRAP_NAMES[int(u["point"])], Shed.bikes[id]["name"],
-				Recovery.straps_on(id), ("F: undo it" if on else "F: ratchet it tight") if why == "" else why]
+				Recovery.straps_on(id), ("{interact}: undo it" if on else "{interact}: ratchet it tight") if why == "" else why]
 		"tarp":
-			return "A bike under a tarp\nF: pull the tarp off"
+			return "A bike under a tarp\n{interact}: pull the tarp off"
 	return ""
 
 
@@ -510,17 +510,17 @@ func _bike_in_slot(slot: int) -> int:
 func _winch_prompt() -> Array:
 	var me := Shed.me()
 	if int(Recovery.car()["winch"]) != 0:
-		return ["F: stop the winch", {"a": "recovery_winch_stop"}]
+		return ["{interact}: stop the winch", {"a": "recovery_winch_stop"}]
 	var near := nearest_at_ramp()
 	if near != 0:
 		var why := Shed.check(me, {"a": "recovery_winch", "bike": near})
 		var verb := "push %s up on the dolly" if Recovery.on_dolly(near) else "winch %s up the ramp"
-		return [("F: " + verb % Shed.bikes[near]["name"]) if why == "" else why, {"a": "recovery_winch", "bike": near} if why == "" else {}]
+		return [("{interact}: " + verb % Shed.bikes[near]["name"]) if why == "" else why, {"a": "recovery_winch", "bike": near} if why == "" else {}]
 	for id in Recovery.loads():
 		if Recovery.on_bed(int(id)):
 			var why2 := Shed.check(me, {"a": "recovery_unload", "bike": int(id)})
 			if why2 == "":
-				return ["F: let %s down the ramp" % Shed.bikes[int(id)]["name"], {"a": "recovery_unload", "bike": int(id)}]
+				return ["{interact}: let %s down the ramp" % Shed.bikes[int(id)]["name"], {"a": "recovery_unload", "bike": int(id)}]
 			return [why2, {}]
 	if not bool(Recovery.car()["ramp"]):
 		return ["Lower the ramp, then wheel a bike to its foot to winch it up.", {}]
@@ -556,7 +556,7 @@ func _dolly_prompt() -> Array:
 			var why := Shed.check(me, a)
 			if why != "":
 				return [why, {}]
-			return ["F: carry it over to %s" % Shed.bikes[target]["name"] if target != 0 else "F: take it off the side rail", a]
+			return ["{interact}: carry it over to %s" % Shed.bikes[target]["name"] if target != 0 else "{interact}: take it off the side rail", a]
 		"ground":
 			var near := 0
 			var best := Recovery.DOLLY_REACH
@@ -568,12 +568,12 @@ func _dolly_prompt() -> Array:
 			if near != 0:
 				var a2 := {"a": "recovery_dolly_load", "bike": near}
 				var why2 := Shed.check(me, a2)
-				return [("F: get %s up on the dolly" % Shed.bikes[near]["name"]) if why2 == "" else why2, a2 if why2 == "" else {}]
+				return [("{interact}: get %s up on the dolly" % Shed.bikes[near]["name"]) if why2 == "" else why2, a2 if why2 == "" else {}]
 			var why3 := Shed.check(me, {"a": "recovery_dolly_stow"})
-			return ["F: hang it back on the trailer's side rail" if why3 == "" else why3, {"a": "recovery_dolly_stow"} if why3 == "" else {}]
+			return ["{interact}: hang it back on the trailer's side rail" if why3 == "" else why3, {"a": "recovery_dolly_stow"} if why3 == "" else {}]
 		"bike":
 			var why4 := Shed.check(me, {"a": "recovery_dolly_unload"})
-			return ["F: lift the bike off the dolly" if why4 == "" else why4, {"a": "recovery_dolly_unload"} if why4 == "" else {}]
+			return ["{interact}: lift the bike off the dolly" if why4 == "" else why4, {"a": "recovery_dolly_unload"} if why4 == "" else {}]
 	return ["It's on the trailer with the bike.", {}]
 
 
@@ -637,9 +637,9 @@ func _on_gear_changed(g: int) -> void:
 	if not driving or g >= 0:
 		return
 	if car.pedals_swapped():
-		main.hud.flash("Reverse: hold S to back up, W to stop", 2.0)
+		main.hud.flash("Reverse: hold {front_brake} to back up, {throttle} to stop", 2.0)
 	else:
-		main.hud.flash("Reverse: W backs up, S brakes, E for drive", 2.0)
+		main.hud.flash("Reverse: {throttle} backs up, {front_brake} brakes, {shift_up} for drive", 2.0)
 
 
 ## Out of the truck: it's parked where it stands (the host is told, unless `tell` is off), and

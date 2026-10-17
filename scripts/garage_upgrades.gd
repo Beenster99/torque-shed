@@ -43,7 +43,7 @@ const CATALOGUE := {
 	"paint_auto_shaker": {"name": "Automatic paint shaker", "cat": "paint", "price": 3500, "needs": [],
 		"desc": "Mixes a tin even in seconds, no stirring, and remixes a saved colour from the swatch wall in one go."},
 	"paint_meter": {"name": "Colour meter", "cat": "paint", "price": 6000, "needs": [],
-		"desc": "Reads the paint on any part (right mouse with empty hands) and sets it as the mixing bench's target, for matching."},
+		"desc": "Reads the paint on any part ({work2} with empty hands) and sets it as the mixing bench's target, for matching."},
 	"paint_curved_panel": {"name": "Curved spray-out panel", "cat": "paint", "price": 1000, "needs": [],
 		"desc": "Test cards on a curved panel, to see a metallic, pearl or chameleon's flop from every angle at once."},
 	# The recovery rig (see Recovery): a level gate as well as a price.

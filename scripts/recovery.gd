@@ -543,7 +543,7 @@ static func _winch_check(bike_id: int) -> String:
 	if loads().has(bike_id):
 		return "It's already on."
 	if str(b.get("stand", "")) == "down":
-		return "Stand it up first (hold F on it)."
+		return "Stand it up first (hold {interact} on it)."
 	if seized(bike_id):
 		return "It won't roll: the %s. Take the dolly tray off the trailer's side rail and get it on that." % (
 			"brakes are seized solid" if str(job_of(bike_id).get("kind", "")) == "barn" else "front wheel's buckled")
@@ -592,7 +592,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			text = "Turned it down."
 		"recovery_enter":
 			c["driver"] = peer
-			text = "In the truck. I starts it, W and S to drive,\nQ when stopped for reverse (or hold S), L the headlamps, Space the handbrake, F to get out."
+			text = "In the truck. {ignition} starts it, {throttle} and {front_brake} to drive,\n{shift_down} when stopped for reverse (or hold {front_brake}), {headlight} the headlamps, {rear_brake} the handbrake, {interact} to get out."
 		"recovery_exit", "recovery_move":
 			if action.get("xf") is Transform3D:
 				c["xf"] = action["xf"]
@@ -658,7 +658,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 				if _world_data().has("terrain"):
 					dx.origin.y = ground_y(dx.origin.x, dx.origin.z)
 				dolly()["xf"] = dx
-				text = "Dolly tray down beside %s. F on the dolly to get the bike up on it." % Shed.bikes[bike_id]["name"]
+				text = "Dolly tray down beside %s. {interact} on the dolly to get the bike up on it." % Shed.bikes[bike_id]["name"]
 			else:
 				dolly()["xf"] = trailer_xf() * Transform3D(Basis(), Vector3(1.6, 0.0, Trailer.start_z()))
 				text = "Dolly tray down behind the trailer."
@@ -673,7 +673,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			b["stand"] = ""
 			dolly()["at"] = "bike"
 			dolly()["bike"] = bike_id
-			text = "%s is up on the dolly. Hold F to push it to the foot of the ramp, then winch it up." % b["name"]
+			text = "%s is up on the dolly. Hold {interact} to push it to the foot of the ramp, then winch it up." % b["name"]
 		"recovery_dolly_unload":
 			var on := int(dolly()["bike"])
 			dolly()["at"] = "ground"
@@ -785,7 +785,7 @@ static func _delivered(job: Dictionary) -> void:
 	var crew: Array = Shed.crew.keys()
 	for p in crew:
 		Shed._xp(int(p), "recovery_delivered", 1.0, "recovery:%d" % int(job["id"]))
-	_tell_all("%s delivered to the yard: %s call-out paid. Assess it from the Recovery list (Esc, Recovery)." % [
+	_tell_all("%s delivered to the yard: %s call-out paid. Assess it from the Recovery list ({menu}, Recovery)." % [
 		str(job["name"]).capitalize(), money(fee)], true)
 
 
@@ -978,12 +978,12 @@ static func block(_peer: int, action: Dictionary) -> String:
 		return ""
 	if a == "mount" and str(job["state"]) in ["collect", "delivered"]:
 		return "It's not roadworthy. Winch it onto the trailer and take it back to the yard." if str(job["state"]) == "collect" \
-			else "Assess it first (Esc, Recovery): buy it, break it or fix it for the insurer."
+			else "Assess it first ({menu}, Recovery): buy it, break it or fix it for the insurer."
 	if a == "grab_bike" and seized(bike_id):
 		return "It won't roll: the %s. Get it on the dolly tray (it hangs on the trailer's side rail)." % (
 			"brakes are seized solid" if str(job["kind"]) == "barn" else "front wheel's buckled")
 	if a == "grab_bike" and bool(job.get("tarp", false)):
-		return "Pull the tarp off it first (F)."
+		return "Pull the tarp off it first ({interact})."
 	return ""
 
 

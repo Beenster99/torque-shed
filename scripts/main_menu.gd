@@ -144,7 +144,7 @@ func _ready() -> void:
 	_pause_box.add_child(_resume)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
-	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at (F2)", func(): geometry_mode.emit()))
+	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
 	_retrieve_box = VBoxContainer.new()
 	_retrieve_box.add_theme_constant_override("separation", 6)
 	_pause_box.add_child(_retrieve_box)
@@ -208,7 +208,7 @@ func _ready() -> void:
 	_snap.toggled.connect(func(v): Settings.snap_placement = v)
 	settings.add_child(_snap)
 	_free_rotate = CheckBox.new()
-	_free_rotate.text = "Free rotate: the rotate keys turn what you hold to any angle, not a quarter a press (/ toggles it)"
+	Controls.bind_text(_free_rotate, "Free rotate: the rotate keys turn what you hold to any angle, not a quarter a press ({rotate_free} toggles it)")
 	_free_rotate.button_pressed = Settings.free_rotate
 	_free_rotate.toggled.connect(func(v): Settings.free_rotate = v)
 	settings.add_child(_free_rotate)
@@ -288,7 +288,7 @@ func _build_riding_settings(settings: VBoxContainer) -> void:
 	bars.toggled.connect(func(v): Settings.direct_bars = v)
 	settings.add_child(bars)
 	var tele := CheckBox.new()
-	tele.text = "Telemetry overlay while riding (F3)"
+	Controls.bind_text(tele, "Telemetry overlay while riding ({telemetry})")
 	tele.button_pressed = Settings.telemetry_overlay
 	tele.toggled.connect(func(v): Settings.telemetry_overlay = v)
 	settings.add_child(tele)
@@ -370,7 +370,7 @@ func refresh_retrieve() -> void:
 			TvChannels.money_text(Shed.RETRIEVE_FEE)], func(): Shed.request({"a": "retrieve_bike", "bike": bike_id}))
 		var why := Shed.retrieve_check({"bike": bike_id})
 		b.disabled = why != ""
-		b.tooltip_text = why
+		b.tooltip_text = Controls.hint(why)
 		_retrieve_box.add_child(b)
 
 
@@ -563,7 +563,7 @@ func _volume_slider(value: float, cb: Callable) -> HSlider:
 
 func _button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
-	b.text = text
+	Controls.bind_text(b, text)
 	b.pressed.connect(cb)
 	return b
 

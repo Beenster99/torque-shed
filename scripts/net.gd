@@ -270,7 +270,7 @@ func _on_peer_disconnected(id: int) -> void:
 
 func _on_connection_failed() -> void:
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
-	connection_failed.emit("Could not reach the host. Check the address, that the host has forwarded UDP port %d on their router (the host's Esc menu says whether it's open), and that Windows Firewall lets Torque Shed through." % PORT)
+	connection_failed.emit("Could not reach the host. Check the address, that the host has forwarded UDP port %d on their router (the host's pause menu says whether it's open), and that Windows Firewall lets Torque Shed through." % PORT)
 
 
 func _on_server_disconnected() -> void:

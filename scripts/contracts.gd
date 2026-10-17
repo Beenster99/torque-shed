@@ -1595,7 +1595,7 @@ static func _accept(_peer: int, cid: int) -> String:
 			+ "checks it), fill in the report from the Contracts card, and leave it in the car park for them to collect.") % [
 			offer["model"], int(offer["days"]), "in the car park" if parked else "on bay %d" % (bay + 1)]
 	if parked:
-		return ("Job taken on: %s, due in %d days. They've left it in the car park with the keys: ride it or wheel it (F) into a bay. "
+		return ("Job taken on: %s, due in %d days. They've left it in the car park with the keys: ride it or wheel it ({interact}) into a bay. "
 			+ "When it's done, leave it back in the car park and hand it back.") % [offer["bike_name"], int(offer["days"])]
 	var where := "a bare %s on bay %d" % [PartsDB.part_name(str(offer["parts"]["frame"])).to_lower(), bay + 1] if kind == "bespoke" \
 		else "bay %d" % (bay + 1)
@@ -1939,7 +1939,7 @@ static func screen_data(job: Dictionary) -> Dictionary:
 	var m: Dictionary = job["mot"] if job.get("mot") is Dictionary else {}
 	if str(job.get("kind", "")) == "mot":
 		if not m.get("tested", false):
-			mot_line = "Not tested yet: run the MOT test from Esc, Contracts."
+			mot_line = "Not tested yet: run the MOT test from {menu}, Contracts."
 		else:
 			var f: Array = MotTest.fails(m.get("sheet", []))
 			mot_line = "MOT test %d: %s%s" % [int(m.get("tests", 1)), "PASS" if f.is_empty() else "FAIL on %d" % f.size(),

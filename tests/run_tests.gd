@@ -4256,6 +4256,7 @@ func _test_pad_menus() -> void:
 	await get_tree().physics_frame
 	# Back to the keyboard and mouse for the tests after this one.
 	Controls.active_device = -1
+	Controls.set_using_pad(false)
 
 
 func _test_board_posters() -> void:
