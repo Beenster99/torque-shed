@@ -1,8 +1,8 @@
 class_name WashFx
 extends Node3D
 ## Where a pressure washer's jet lands, for whoever's washing (yours, and everyone else's from
-## where the shed says their jet is landing): water splashing back off the surface, a fine mist
-## drifting up off it, dirty water running off across the floor to the nearest drain, and a wet
+## where the shed says their jet is landing): a few fine droplets flicked back off the surface, a
+## thick cloud of fine mist billowing up off it, dirty water running off across the floor to the nearest drain, and a wet
 ## patch on the floor that spreads while you wash and dries off slowly after. The drain gurgles
 ## while water's running into it.
 
@@ -10,9 +10,10 @@ const FLOOR_Y := 0.015
 const RUN_SPEED := 0.9        # m/s the water runs across the floor
 const PUDDLE_MAX := 1.3       # metres across the wet patch gets
 const DRY_TIME := 50.0        # seconds the wet patch takes to dry off
+const MIST_AMOUNT := 1600     # mist puffs alive at once where the jet lands
 
 var _splash: CPUParticles3D
-var _mist: CPUParticles3D
+var _mist: GPUParticles3D
 var _runoff: CPUParticles3D
 var _puddle: MeshInstance3D
 var _puddle_mat: StandardMaterial3D
@@ -24,52 +25,46 @@ var firing := false
 
 
 func _ready() -> void:
-	# Fine droplets flung off fast, mostly out along the surface, not big drops.
-	_splash = _particles(160, 0.22, false)
+	# A few fine droplets flicked off, short-lived and faint: the water mostly goes to mist, not
+	# drops raining down (Simon: more mist, fewer drips).
+	_splash = _particles(36, 0.14, false)
 	_splash.spread = 70.0
 	_splash.flatness = 0.3
-	_splash.initial_velocity_min = 1.8
-	_splash.initial_velocity_max = 4.2
+	_splash.initial_velocity_min = 1.2
+	_splash.initial_velocity_max = 2.8
 	_splash.gravity = Vector3(0.0, -9.8, 0.0)
-	_splash.damping_min = 2.0
-	_splash.damping_max = 5.0
-	_splash.scale_amount_min = 0.5
-	_splash.scale_amount_max = 1.0
+	_splash.damping_min = 3.0
+	_splash.damping_max = 6.0
+	_splash.scale_amount_min = 0.3
+	_splash.scale_amount_max = 0.6
 	_splash.particle_flag_align_y = true
 	var drop := CylinderMesh.new()
-	drop.top_radius = 0.001
-	drop.bottom_radius = 0.0018
-	drop.height = 0.05
+	drop.top_radius = 0.0008
+	drop.bottom_radius = 0.0012
+	drop.height = 0.025
 	drop.radial_segments = 4
 	drop.rings = 1
-	drop.material = _water_mat(Color(0.85, 0.93, 1.0, 0.55), false)
+	drop.material = _water_mat(Color(0.85, 0.93, 1.0, 0.4), false)
 	_splash.mesh = drop
-	_splash.color_ramp = _fade(Color(1, 1, 1, 0.8))
+	_splash.color_ramp = _fade(Color(1, 1, 1, 0.5))
 	add_child(_splash)
-	# A fine mist cloud hanging round where it lands: lots of small, faint puffs, not blobs.
-	_mist = _particles(110, 1.0, false)
-	_mist.spread = 80.0
-	_mist.initial_velocity_min = 0.6
-	_mist.initial_velocity_max = 2.2
-	_mist.damping_min = 2.5
-	_mist.damping_max = 4.5
-	_mist.gravity = Vector3(0.0, 0.12, 0.0)
-	_mist.angle_min = 0.0
-	_mist.angle_max = 360.0
-	_mist.scale_amount_min = 0.04
-	_mist.scale_amount_max = 0.12
-	var grow := Curve.new()
-	grow.add_point(Vector2(0.0, 0.4))
-	grow.add_point(Vector2(1.0, 1.0))
-	_mist.scale_amount_curve = grow
-	var puff := QuadMesh.new()
-	var pm := _water_mat(Color(0.92, 0.95, 1.0, 0.1), true)
-	pm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	pm.billboard_keep_scale = true
-	pm.albedo_texture = WaterSpray._soft_dot()
-	puff.material = pm
-	_mist.mesh = puff
-	_mist.color_ramp = _fade(Color(1, 1, 1, 1))
+	# A thick cloud of fine mist billowing off where it lands and hanging there, drifting on the
+	# air and swelling as it thins: lots of soft, faint puffs (on the GPU), not blobs.
+	_mist = WaterSpray.make_mist(MIST_AMOUNT, 2.6, Vector2(0.05, 0.16), 2.4, 0.09)
+	var mp := _mist.process_material as ParticleProcessMaterial
+	mp.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	mp.emission_sphere_radius = 0.12
+	mp.spread = 75.0
+	mp.initial_velocity_min = 0.5
+	mp.initial_velocity_max = 2.6
+	mp.damping_min = 1.8
+	mp.damping_max = 3.5
+	mp.gravity = Vector3(0.0, 0.1, 0.0)
+	mp.turbulence_enabled = true
+	mp.turbulence_noise_strength = 0.8
+	mp.turbulence_noise_scale = 2.5
+	mp.turbulence_influence_min = 0.03
+	mp.turbulence_influence_max = 0.1
 	add_child(_mist)
 	_runoff = _particles(90, 3.0, false)
 	_runoff.spread = 12.0
@@ -146,8 +141,8 @@ func update(delta: float, from: Vector3, at: Vector3, normal: Vector3, fire: boo
 		var back := (d - 2.0 * d.dot(n) * n).normalized()
 		_splash.global_position = at
 		_splash.direction = (back * 0.3 + n * 0.8).normalized()
-		_mist.global_position = at + n * 0.05
-		_mist.direction = (n + Vector3.UP * 0.6).normalized()
+		_mist.global_position = at + n * 0.08
+		(_mist.process_material as ParticleProcessMaterial).direction = (n + Vector3.UP * 0.6).normalized()
 		var below := Vector3(at.x, FLOOR_Y, at.z)
 		_drain = Wash.drain_near(at)
 		var to_drain := _drain - below

@@ -9,7 +9,7 @@ extends CPUParticles3D
 const SPEED := 30.0          # m/s out of the nozzle (a real one's faster still, but this reads)
 const REACH := 3.0           # metres it flies when it doesn't hit anything
 
-var _mist: CPUParticles3D
+var _mist: GPUParticles3D
 var _core: MeshInstance3D
 var _reach := REACH
 
@@ -34,7 +34,7 @@ static func make() -> WaterSpray:
 	grow.add_point(Vector2(0.3, 1.0))
 	grow.add_point(Vector2(1.0, 1.0))
 	jet.scale_amount_curve = grow
-	jet.color_ramp = _fade(Color(0.92, 0.97, 1.0, 0.7), Color(0.88, 0.94, 1.0, 0.25))
+	jet.color_ramp = _fade(Color(0.92, 0.97, 1.0, 0.7), Color(0.88, 0.94, 1.0, 0.1))
 	# A hair-thin rod reads the same from every side, unlike a flat quad; long, as fast water
 	# blurs into a line.
 	var streak := CylinderMesh.new()
@@ -63,44 +63,21 @@ static func make() -> WaterSpray:
 	jet.mesh = streak
 	jet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	var mist := CPUParticles3D.new()
+	# A cloud of fine mist hanging all along the jet, drifting out round it (on the GPU, so
+	# there can be plenty of it): it lies along the water as far as it reaches (set_reach).
+	var mist := make_mist(1200, 1.3, Vector2(0.03, 0.09), 2.2, 0.11)
 	mist.name = "Mist"
-	mist.emitting = false
-	mist.amount = 220
-	mist.lifetime = 0.45
-	mist.local_coords = false
-	mist.direction = Vector3(0.0, 0.0, -1.0)
-	mist.spread = 5.0
-	mist.flatness = 0.6
-	mist.initial_velocity_min = 10.0
-	mist.initial_velocity_max = 22.0
-	mist.damping_min = 30.0
-	mist.damping_max = 45.0
-	mist.gravity = Vector3(0.0, -0.8, 0.0)
-	mist.angle_min = 0.0
-	mist.angle_max = 360.0
-	# Fine: a centimetre or two across, never puffs.
-	mist.scale_amount_min = 0.012
-	mist.scale_amount_max = 0.035
-	var puff := Curve.new()
-	puff.add_point(Vector2(0.0, 0.4))
-	puff.add_point(Vector2(1.0, 1.0))
-	mist.scale_amount_curve = puff
-	mist.color_ramp = _fade(Color(0.92, 0.96, 1.0, 0.16), Color(0.92, 0.96, 1.0, 0.0))
-	var quad := QuadMesh.new()
-	quad.size = Vector2(1.0, 1.0)
-	var mm := StandardMaterial3D.new()
-	mm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	mm.billboard_keep_scale = true
-	mm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mm.vertex_color_use_as_albedo = true
-	mm.albedo_texture = _soft_dot()
-	mm.disable_receive_shadows = true
-	quad.material = mm
-	mist.mesh = quad
-	mist.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mist.position = Vector3(0.0, 0.0, -0.05)
+	var mp := mist.process_material as ParticleProcessMaterial
+	mp.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	mp.emission_box_extents = Vector3(0.03, 0.02, REACH * 0.5)
+	mp.emission_shape_offset = Vector3(0.0, 0.0, -REACH * 0.5)
+	mp.direction = Vector3(0.0, 0.0, -1.0)
+	mp.spread = 180.0
+	mp.initial_velocity_min = 0.15
+	mp.initial_velocity_max = 1.4
+	mp.damping_min = 1.0
+	mp.damping_max = 2.5
+	mp.gravity = Vector3(0.0, 0.04, 0.0)
 	jet.add_child(mist)
 	jet._mist = mist
 	jet._core = _make_core()
@@ -167,7 +144,9 @@ func set_reach(metres: float) -> void:
 	_reach = d
 	lifetime = d / SPEED
 	if _mist:
-		_mist.lifetime = clampf(d / SPEED * 4.0, 0.12, 0.45)
+		var mp := _mist.process_material as ParticleProcessMaterial
+		mp.emission_box_extents = Vector3(0.03, 0.02, d * 0.5)
+		mp.emission_shape_offset = Vector3(0.0, 0.0, -d * 0.5)
 	if _core:
 		var len := minf(0.4, d * 0.5)
 		_core.scale = Vector3(1.0, len / 0.4, 1.0)
@@ -180,6 +159,56 @@ static func _fade(from: Color, to: Color) -> Gradient:
 	g.set_color(1, to)
 	g.add_point(0.6, Color(from, from.a * 0.8))
 	return g
+
+
+## A cloud of fine mist: soft, faint dots drawn on the GPU, so there can be lots of them for
+## little cost. `amount` alive at once, each living about `life` seconds, `size` metres across
+## (smallest, largest) and growing `grow` times over its life, at most `alpha` opaque, fading in
+## and out. It sits in the world (not dragged along with whatever it's on). Set the direction,
+## speeds and emission shape on its process material.
+static func make_mist(amount: int, life: float, size: Vector2, grow: float, alpha: float) -> GPUParticles3D:
+	var p := GPUParticles3D.new()
+	p.emitting = false
+	p.amount = amount
+	p.lifetime = life
+	p.local_coords = false
+	p.visibility_aabb = AABB(Vector3(-6.0, -4.0, -6.0), Vector3(12.0, 8.0, 12.0))
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var pm := ParticleProcessMaterial.new()
+	pm.angle_min = 0.0
+	pm.angle_max = 360.0
+	pm.scale_min = size.x
+	pm.scale_max = size.y
+	pm.lifetime_randomness = 0.35
+	var curve := Curve.new()
+	curve.max_value = maxf(grow, 1.0)
+	curve.add_point(Vector2(0.0, 1.0))
+	curve.add_point(Vector2(1.0, grow))
+	var ct := CurveTexture.new()
+	ct.curve = curve
+	pm.scale_curve = ct
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.15, 0.6, 1.0])
+	g.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(1, 1, 1, 1.0), Color(1, 1, 1, 0.6), Color(1, 1, 1, 0.0)])
+	var gt := GradientTexture1D.new()
+	gt.gradient = g
+	pm.color_ramp = gt
+	p.process_material = pm
+	var quad := QuadMesh.new()
+	var m := StandardMaterial3D.new()
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.billboard_keep_scale = true
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(0.93, 0.96, 1.0, alpha)
+	m.albedo_texture = _soft_dot()
+	m.disable_receive_shadows = true
+	m.proximity_fade_enabled = true   # no hard edge where a puff meets the bike or a wall
+	m.proximity_fade_distance = 0.25
+	quad.material = m
+	p.draw_pass_1 = quad
+	return p
 
 
 static var _dot: Texture2D

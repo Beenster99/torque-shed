@@ -348,6 +348,7 @@ func _run_all() -> void:
 	_test_dirt_concentration()
 	_test_wash_lift_rules()
 	await _test_wash_lift_reach()
+	await _test_wash_mist()
 	print("Simon's 17 October round (v0.7.0): the lounge's pool table, playable")
 	_test_pool_physics()
 	_test_pool_rules()
@@ -2204,7 +2205,7 @@ func _test_tool_art() -> void:
 	jet.emitting = true
 	for i in 3:   # the mist and core follow on the jet's next _process
 		await get_tree().process_frame
-	var mist := jet.get_node_or_null("Mist") as CPUParticles3D
+	var mist := jet.get_node_or_null("Mist") as GPUParticles3D
 	check(jet is WaterSpray and mist != null and mist.emitting and (jet.get_node("Core") as Node3D).visible, "water jet emits with its mist and core")
 	jet.queue_free()
 	for model in Equipment.MODELS:
@@ -16565,6 +16566,8 @@ func _test_wash_session() -> void:
 	check(model.dirt_layer.dims != Vector3i.ZERO and float(model.dirt_layer.material_for("engine").get_shader_parameter("has_mask")) == 1.0,
 		"you see exactly where it went: the wash mask's on the bike")
 	check(w._wash_fx != null and w._wash_fx._puddle.visible, "the water's run off onto the floor")
+	var bay_mist: WashMist = main.workshop.wash_mist if main.workshop else null
+	check(bay_mist != null and bay_mist.showing() and bay_mist._haze.emitting, "and mist is starting to hang in the wash bay (%.2f)" % (bay_mist.level if bay_mist else 0.0))
 	# One part washed all over: it dings once, and only once.
 	var small := ""
 	for s in ["front_mudguard", "headlight", "tank", "front_disc"]:
@@ -16908,6 +16911,61 @@ func _wash_round(job: WashJob, model: BikeModel) -> Dictionary:
 ## that it's a couple of minutes' work; with the lift down the underneath can't be got at, raised
 ## (crouched beside it, aiming up) it can, and every part comes clean, so the bike can always be
 ## finished. The jet's water is a fine fast fan, and stops where it lands.
+## Simon's 17 October (21:18) round: even more mist in the wash bay and fewer drips. A thick
+## cloud of fine mist all along the jet and billowing off where it lands (GPU particles, so lots
+## of them cheaply), only a few faint, fine droplets flicked off, and a haze that slowly fills the
+## bay while anyone's washing (from the shed's state, so the crew see it too) and clears after.
+func _test_wash_mist() -> void:
+	var jet := WaterSpray.make()
+	add_child(jet)
+	var jm := jet.get_node("Mist") as GPUParticles3D
+	check(jm != null and jm.amount >= 1000 and jm.lifetime >= 1.0, "the jet trails a thick, lingering mist (%d puffs, %.1f s)" % [jm.amount, jm.lifetime])
+	jet.set_reach(1.0)
+	var box := (jm.process_material as ParticleProcessMaterial).emission_box_extents
+	check(absf(box.z - 0.5) < 0.05, "lying all along the water, as far as it reaches (%.2f m)" % (box.z * 2.0))
+	jet.queue_free()
+	var fx := WashFx.new()
+	add_child(fx)
+	await get_tree().process_frame
+	check(fx._mist is GPUParticles3D and fx._mist.amount >= 1500 and fx._mist.lifetime >= 2.0, "a big, hanging cloud of mist where it lands (%d puffs)" % fx._mist.amount)
+	var drop := fx._splash.mesh as CylinderMesh
+	check(fx._splash.amount <= 40 and drop.height <= 0.03 and fx._splash.lifetime <= 0.15,
+		"and only a few short, fine droplets flicked off, not drips (%d, %.0f mm)" % [fx._splash.amount, drop.height * 1000.0])
+	fx.update(0.1, Workshop.WASH_CENTER + Vector3(0.0, 1.5, 1.5), Workshop.WASH_CENTER + Vector3.UP * 0.6, Vector3.BACK, true)
+	check(fx._mist.emitting and fx._mist.global_position.distance_to(Workshop.WASH_CENTER + Vector3.UP * 0.6) < 0.2, "the mist comes off where the jet lands")
+	fx.stop()
+	check(not fx._mist.emitting, "and stops with the jet")
+	fx.queue_free()
+	# The bay haze.
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var bay := WashMist.new()
+	add_child(bay)
+	check(not WashMist.anyone_washing() and not bay.showing(), "no washing, no haze")
+	Shed.request({"a": "wash_aim", "fire": true, "at": Workshop.WASH_CENTER + Vector3.UP * 0.5, "n": Vector3.UP, "bike": 0})
+	check(WashMist.anyone_washing(), "the shed knows someone's washing in the bay")
+	for i in 50:
+		bay.update(0.1, WashMist.anyone_washing())
+	var after5 := bay.level
+	check(after5 > 0.1 and after5 < 0.4 and bay._haze.emitting and bay._haze_mat.albedo_color.a > 0.0, "the haze builds up slowly while washing (%.2f after 5 s)" % after5)
+	for i in 300:
+		bay.update(0.1, WashMist.anyone_washing())
+	check(is_equal_approx(bay.level, 1.0) and bay._haze.amount >= 100, "until the bay's full of it")
+	Shed.request({"a": "wash_aim", "fire": false})
+	for i in 100:
+		bay.update(0.1, WashMist.anyone_washing())
+	check(bay.level < 0.9 and bay.level > 0.5 and bay._haze.emitting, "stop, and it slowly thins (%.2f after 10 s)" % bay.level)
+	for i in 400:
+		bay.update(0.1, WashMist.anyone_washing())
+	check(not bay.showing() and not bay._haze.emitting and bay._haze_mat.albedo_color.a < 0.001, "and clears")
+	Shed.crew[me]["wash_fire"] = true
+	Shed.crew[me]["wash_at"] = Workshop.CENTER
+	check(not WashMist.anyone_washing(), "a jet anywhere but the bay doesn't fill it")
+	Shed.crew[me]["wash_fire"] = false
+	bay.queue_free()
+	Shed.stop()
+
+
 func _test_wash_lift_reach() -> void:
 	# A patch of caked mud square on at the right distance goes in a couple of passes, and the
 	# footprint's a good stripe wide.
