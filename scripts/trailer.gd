@@ -33,6 +33,8 @@ const SLOTS_X := [-0.47, 0.47]
 const SLOT_Z := -0.15
 const RAMP_LEN := 1.9
 const RAMP_ANGLE := 0.33   # radians down from the bed when it's lowered onto the ground
+const RAMP_W := 1.28       # across both channels and the walkway between them
+const RAMP_TOP := 0.02     # the deck's top above the hinge line
 const WINCH := Vector3(0.0, BED_Y + 0.5, -1.48)
 ## How far a loose bike can roll along its channel: forward into the chock, back to the tailgate.
 const CHOCK_GAP := 0.25
@@ -56,6 +58,7 @@ var model: Node3D
 var load_sim := {}
 var _ramp_pivot: Node3D
 var _ramp_angle := -PI * 0.5
+var _ramp_shape: CollisionShape3D
 var _wheel_nodes: Array = []
 var _v_prev := Vector3.INF
 var _acc := Vector3.ZERO       # the bed's acceleration, its own axes, smoothed
@@ -92,6 +95,28 @@ func _init() -> void:
 	cs2.shape = bar
 	cs2.position = Vector3(0.0, 0.52, -2.35)
 	add_child(cs2)
+	# The front board, so you don't walk off the front of the bed onto the drawbar.
+	var board := BoxShape3D.new()
+	board.size = Vector3(BED_HALF_W * 2.0, 0.5, 0.06)
+	var cs3 := CollisionShape3D.new()
+	cs3.shape = board
+	cs3.position = Vector3(0.0, BED_Y + 0.25, BED_FRONT - 0.02)
+	add_child(cs3)
+	# The lowered ramp, to walk up onto the bed: a slab whose top is the ramp's deck, running
+	# from the hinge to just past its foot (so it meets the ground without a lip). Only there
+	# while the ramp is down.
+	var ramp := BoxShape3D.new()
+	var len := RAMP_LEN + 0.12
+	ramp.size = Vector3(RAMP_W, 0.06, len)
+	_ramp_shape = CollisionShape3D.new()
+	_ramp_shape.name = "RampShape"
+	_ramp_shape.shape = ramp
+	var along := Vector3(0.0, -sin(RAMP_ANGLE), cos(RAMP_ANGLE))
+	var up := Vector3(0.0, cos(RAMP_ANGLE), sin(RAMP_ANGLE))
+	_ramp_shape.transform = Transform3D(Basis(Vector3.RIGHT, RAMP_ANGLE),
+		Vector3(0.0, BED_Y, BED_REAR) + along * len * 0.5 + up * (RAMP_TOP - 0.03))
+	_ramp_shape.disabled = true
+	add_child(_ramp_shape)
 	_build_model()
 
 
@@ -125,6 +150,18 @@ func unhitch() -> void:
 	if joint:
 		joint.queue_free()
 		joint = null
+
+
+## Whether the ramp is down and can be walked up.
+func ramp_walkable() -> bool:
+	return not _ramp_shape.disabled
+
+
+## Whether `p` (a world point: someone's feet) is up on the bed or the ramp.
+func carries(p: Vector3) -> bool:
+	var l := global_transform.affine_inverse() * p
+	return absf(l.x) < BED_HALF_W + 0.15 and l.z > BED_FRONT - 0.3 and l.z < ramp_foot_z() - 0.4 \
+		and l.y > _surface_at(l.z) - 0.1 and l.y < BED_Y + 2.5 and l.y > 0.15
 
 
 func place(xf: Transform3D) -> void:
@@ -192,6 +229,9 @@ static func _surface_at(z: float) -> float:
 
 func _physics_process(delta: float) -> void:
 	_ramp_angle = move_toward(_ramp_angle, RAMP_ANGLE if ramp_down else -PI * 0.5, delta * 2.5)
+	var walkable := ramp_down and absf(_ramp_angle - RAMP_ANGLE) < 0.02
+	if _ramp_shape.disabled == walkable:
+		_ramp_shape.set_deferred("disabled", not walkable)
 	if freeze:
 		_update_model()
 		return

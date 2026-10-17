@@ -35,6 +35,7 @@ Unzip `TorqueShed-windows.zip` and run `TorqueShed.exe`. No install is needed.
 | Walk / look | W A S D / mouse | Left stick / right stick |
 | Run | Shift | Left stick click |
 | Crouch (low parts such as stands, oil filter and chain need it) | C or Ctrl | Right stick click |
+| Jump (a small hop; walk up the trailer's ramp to get on its bed) | Space | B |
 | Pick a tool (hands, wrench, brush, grinder, spray can, pressure washer, spray gun, stopwatch) | 1-8, Q / E, mouse wheel | LB / RB |
 | Work on what you're looking at, or put a held part down anywhere | Hold left mouse | Hold RT or A |
 | Spray colour / finish (can or gun); with the spray gun, T also picks a protective coat after the finishes | R or right mouse / T or the mouse back (side) button | X / B |

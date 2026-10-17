@@ -71,7 +71,7 @@ const GFX_KEYS := ["gfx_preset", "gfx_window_mode", "gfx_resolution", "gfx_monit
 const ACTIONS := [
 	["move_forward", "Walk forward", ["foot"]], ["move_back", "Walk back", ["foot"]],
 	["move_left", "Walk left", ["foot"]], ["move_right", "Walk right", ["foot"]],
-	["sprint", "Run", ["foot"]], ["crouch", "Crouch", ["foot"]],
+	["sprint", "Run", ["foot"]], ["crouch", "Crouch", ["foot"]], ["jump", "Jump", ["foot"]],
 	["act", "Work / use (hold)", ["foot", "board"]], ["alt_act", "Second work button (hold)", ["foot", "board"]],
 	["tool_next", "Next tool", ["foot", "board"]], ["tool_prev", "Previous tool", ["foot", "board"]],
 	["tool_1", "Hands", ["foot", "board"]], ["tool_2", "Wrench", ["foot", "board"]], ["tool_3", "Brush", ["foot", "board"]],
@@ -109,7 +109,8 @@ const ACTIONS := [
 const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding", "spray": "with a spray can or gun", "board": "at the whiteboard",
 	"geo": "in geometry mode"}
 ## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
-const SHARED_OK := [["alt_act", "spray_colour"]]
+## B on a pad jumps on foot, but with a spray can or gun out it's the finish (the spray comes first).
+const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"]]
 ## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
 const CONTEXT_ALSO := {"spray": ["foot"]}
 
@@ -296,6 +297,8 @@ func _setup_inputs() -> void:
 	_bind("move_left", [KEY_A, KEY_LEFT], [])
 	_bind("move_right", [KEY_D, KEY_RIGHT], [])
 	_bind("sprint", [KEY_SHIFT], [JOY_BUTTON_LEFT_STICK])
+	# Space is the handbrake in the truck and the back brake on a bike; on foot it jumps.
+	_bind("jump", [KEY_SPACE], [JOY_BUTTON_B])
 	_bind("act", [], [JOY_BUTTON_A], [MOUSE_BUTTON_LEFT])
 	_bind("tool_next", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [MOUSE_BUTTON_WHEEL_DOWN])
 	_bind("tool_prev", [KEY_Q], [JOY_BUTTON_LEFT_SHOULDER], [MOUSE_BUTTON_WHEEL_UP])
