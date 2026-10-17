@@ -291,8 +291,14 @@ func sync_state() -> void:
 			_drop_spot_node(_spot_nodes[spot]).queue_free()
 			_spot_nodes.erase(spot)
 			_spot_sigs.erase(spot)
+	# What's in each spot, looked up once (Shed.item_at_spot goes through every item each time).
+	var at_spot := {}
+	for id in Shed.items:
+		var it: Dictionary = Shed.items[id]
+		if it["at"] == "spot" and not at_spot.has(it["ref"]):
+			at_spot[it["ref"]] = id
 	for spot in spots:
-		var item_id := Shed.item_at_spot(spot)
+		var item_id: int = at_spot.get(spot, 0)
 		var sig := "" if item_id == 0 else _item_signature(item_id) + str(Shed.items[item_id].get("place", ""))
 		if _spot_sigs.get(spot, "") == sig:
 			continue
@@ -405,7 +411,7 @@ func sync_state() -> void:
 		if view.washer_sound:
 			var busy := false
 			for spot in Shed.furniture_spots(id):
-				var washing := Shed.item_at_spot(spot)
+				var washing: int = at_spot.get(spot, 0)
 				busy = busy or (washing != 0 and float(Shed.items[washing]["dirt"]) > 0.0)
 			Sfx.set_loop(view.washer_sound, "washer" if busy else "")
 	_dash_dirty = true

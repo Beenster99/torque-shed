@@ -105,34 +105,52 @@ void fragment() {
 	}
 	// Washed right off by the mask (a crisp edge where the jet went), else the region's level.
 	float s = lvl * (1.0 - smoothstep(0.55, 0.98, washed)) * (1.0 - 0.45 * washed);
+	// Nothing to draw here (clean, not just washed, no scan): skip the rest of it. Each kind of
+	// dirt below is only worked out where it shows, as most surfaces carry just the one.
+	if (s <= 0.004 && scan <= 0.0 && (wet <= 0.0 || washed <= 0.15)) {
+		discard;
+	}
 	// Which kind of dirt: flies on the forward faces up front, mud low down and underneath,
 	// dust everywhere else.
 	float flyw = smoothstep(0.45, 0.8, -n.z) * smoothstep(0.12, 0.4, mpos.y);
 	float mudw = clamp((1.0 - smoothstep(-0.12, 0.35, mpos.y)) + smoothstep(0.2, 0.9, -n.y) * 0.6, 0.0, 1.0) * (1.0 - flyw);
 	float dustw = max(0.0, 1.0 - mudw - flyw);
-	// Mud: clumps that join up as it gets thicker, splatter round them, a dirty haze between.
-	float big = vnoise(mpos * 14.0) * 0.6 + vnoise(mpos * 37.0) * 0.4;
-	float clump = smoothstep(big - 0.06, big + 0.06, s * 1.15 - 0.08);
-	float speck = step(1.0 - s * 0.55, hash3(floor(mpos * 160.0)));
-	float mud_a = max(max(clump * 0.95, speck * 0.85), s * 0.4);
-	vec3 mud_c = mix(vec3(0.16, 0.11, 0.065), vec3(0.42, 0.33, 0.21), vnoise(mpos * 22.0 + vec3(3.1)));
-	// Dust: a dull, grainy film, thicker in patches.
-	float grain = vnoise(mpos * 95.0);
-	float patchy = vnoise(mpos * 9.0);
-	float dust_a = smoothstep(0.0, 0.8, s) * (0.45 + 0.3 * grain + 0.25 * patchy);
-	vec3 dust_c = mix(vec3(0.46, 0.42, 0.35), vec3(0.6, 0.56, 0.47), grain);
-	// Flies: dark squashed bugs, each in a yellowish smear, on a greasy haze.
-	vec3 fp = mpos * 70.0;
-	vec3 fi = floor(fp);
-	float bug = step(1.0 - s * 0.5, hash3(fi));
-	vec3 off = vec3(hash3(fi + vec3(1.7)), hash3(fi + vec3(4.3)), hash3(fi + vec3(7.9))) - 0.5;
-	float r = length(fract(fp) - 0.5 - off * 0.4);
-	float body = bug * (1.0 - smoothstep(0.12, 0.22, r));
-	float smear = bug * (1.0 - smoothstep(0.18, 0.5, r * (0.8 + 0.4 * vnoise(mpos * 300.0))));
-	float fly_a = max(max(body, smear * 0.6), s * 0.3);
-	vec3 fly_c = mix(mix(vec3(0.44, 0.42, 0.36), vec3(0.62, 0.56, 0.26), smear), vec3(0.05, 0.04, 0.03), body);
-	float alpha = mud_a * mudw + dust_a * dustw + fly_a * flyw;
-	vec3 col = (mud_c * mud_a * mudw + dust_c * dust_a * dustw + fly_c * fly_a * flyw) / max(alpha, 0.001);
+	float alpha = 0.0;
+	vec3 col = vec3(0.0);
+	if (mudw > 0.0) {
+		// Mud: clumps that join up as it gets thicker, splatter round them, a dirty haze between.
+		float big = vnoise(mpos * 14.0) * 0.6 + vnoise(mpos * 37.0) * 0.4;
+		float clump = smoothstep(big - 0.06, big + 0.06, s * 1.15 - 0.08);
+		float speck = step(1.0 - s * 0.55, hash3(floor(mpos * 160.0)));
+		float mud_a = max(max(clump * 0.95, speck * 0.85), s * 0.4);
+		vec3 mud_c = mix(vec3(0.16, 0.11, 0.065), vec3(0.42, 0.33, 0.21), vnoise(mpos * 22.0 + vec3(3.1)));
+		alpha += mud_a * mudw;
+		col += mud_c * mud_a * mudw;
+	}
+	if (dustw > 0.0) {
+		// Dust: a dull, grainy film, thicker in patches.
+		float grain = vnoise(mpos * 95.0);
+		float patchy = vnoise(mpos * 9.0);
+		float dust_a = smoothstep(0.0, 0.8, s) * (0.45 + 0.3 * grain + 0.25 * patchy);
+		vec3 dust_c = mix(vec3(0.46, 0.42, 0.35), vec3(0.6, 0.56, 0.47), grain);
+		alpha += dust_a * dustw;
+		col += dust_c * dust_a * dustw;
+	}
+	if (flyw > 0.0) {
+		// Flies: dark squashed bugs, each in a yellowish smear, on a greasy haze.
+		vec3 fp = mpos * 70.0;
+		vec3 fi = floor(fp);
+		float bug = step(1.0 - s * 0.5, hash3(fi));
+		vec3 off = vec3(hash3(fi + vec3(1.7)), hash3(fi + vec3(4.3)), hash3(fi + vec3(7.9))) - 0.5;
+		float r = length(fract(fp) - 0.5 - off * 0.4);
+		float body = bug * (1.0 - smoothstep(0.12, 0.22, r));
+		float smear = bug * (1.0 - smoothstep(0.18, 0.5, r * (0.8 + 0.4 * vnoise(mpos * 300.0))));
+		float fly_a = max(max(body, smear * 0.6), s * 0.3);
+		vec3 fly_c = mix(mix(vec3(0.44, 0.42, 0.36), vec3(0.62, 0.56, 0.26), smear), vec3(0.05, 0.04, 0.03), body);
+		alpha += fly_a * flyw;
+		col += fly_c * fly_a * flyw;
+	}
+	col /= max(alpha, 0.001);
 	alpha *= smoothstep(0.004, 0.03, s);
 	float rough = 0.95;
 	float spec = 0.25;
@@ -167,6 +185,7 @@ var model: BikeModel
 var _mats := {}               # slot -> ShaderMaterial
 var _boxes := {}              # slot -> its bounds in the model, as the regions are laid over it
 var _restore := []            # [mesh, its own material]
+var _covered := {}            # instance id -> true for each mesh carrying the pass
 ## Each part's regions as last set (slot -> Dirt levels), and how much of each region the wash
 ## mask has washed (slot -> share per cell, from WashJob), which the drawn level is evened out by.
 var levels := {}
@@ -189,6 +208,11 @@ var _scan_on := false
 var _scan_t := 0.0
 ## Something else (a WashJob) is setting the levels drawn; the shed's own updates wait.
 var held_by_job := false
+## Where the model was (and its fit) when the passes were last told: a parked bike's passes
+## aren't touched again till it moves, so they aren't re-sent to the GPU every frame.
+var _shown_xf := Transform3D()
+var _shown_geo := 0
+var _xf_stale := true
 
 
 static func shader() -> Shader:
@@ -280,21 +304,31 @@ func _add_slot(slot: String) -> void:
 	m.set_shader_parameter("clean_level", Dirt.CLEAN)
 	_bind_mask(m)
 	_mats[slot] = m
+	# Meshes of the part that share a material share its copy too (one material each, not one
+	# per mesh, so the renderer has far fewer to switch between).
+	var copies := {}
 	for mi in model._slot_meshes.get(slot, []):
 		var g := mi as GeometryInstance3D
 		if g == null or not is_instance_valid(g) or g.material_override == null:
 			continue
 		var own := g.material_override
-		var mine := own.duplicate() as Material
-		# Over anything already drawn on top of it (bare metal, paint effects, tape), each pass
-		# copied so the part's own stays as it was.
-		var tail: Material = mine
-		while tail.next_pass != null:
-			tail.next_pass = tail.next_pass.duplicate()
-			tail = tail.next_pass
-		tail.next_pass = m
+		if _covered.has(g.get_instance_id()):
+			continue   # a mesh listed under two parts carries the first one's pass only
+		_covered[g.get_instance_id()] = true
+		var mine: Material = copies.get(own)
+		if mine == null:
+			mine = own.duplicate() as Material
+			# Over anything already drawn on top of it (bare metal, paint effects, tape), each pass
+			# copied so the part's own stays as it was.
+			var tail: Material = mine
+			while tail.next_pass != null:
+				tail.next_pass = tail.next_pass.duplicate()
+				tail = tail.next_pass
+			tail.next_pass = m
+			copies[own] = mine
 		_restore.append([g, own])
 		g.material_override = mine
+	_xf_stale = true
 	_update_transform()
 
 
@@ -467,7 +501,14 @@ func scanning() -> bool:
 func _update_transform() -> void:
 	if model == null or not is_instance_valid(model) or not model.is_inside_tree():
 		return
-	var inv := model.global_transform.affine_inverse()
+	var xf := model.global_transform
+	var geo := model.geometry.hash()
+	if not _xf_stale and xf == _shown_xf and geo == _shown_geo:
+		return
+	_xf_stale = false
+	_shown_xf = xf
+	_shown_geo = geo
+	var inv := xf.affine_inverse()
 	for slot in _mats:
 		# A part moved by the bike's own fit (geometry mode) is read where it was drawn.
 		var rest := Transform3D.IDENTITY
@@ -503,4 +544,5 @@ func restore() -> void:
 		if is_instance_valid(r[0]) and (r[0] as GeometryInstance3D).material_override != r[1]:
 			(r[0] as GeometryInstance3D).material_override = r[1]
 	_restore.clear()
+	_covered.clear()
 	_mats.clear()
