@@ -38,6 +38,7 @@ var _move_timer := 0.0
 var _view := ChaseCamera.Mode.CHASE
 var _entered_at := 0
 var _offers_seen := -1
+var _lifted := 0               # the bike raised up on the dolly on the ground
 var _strap_mat: StandardMaterial3D
 var _cable_mat: StandardMaterial3D
 
@@ -50,7 +51,7 @@ func _ready() -> void:
 	add_child(layer)
 	hud_label = Label.new()
 	hud_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	hud_label.position.y = 46.0
+	hud_label.position.y = 84.0   # under the flash messages
 	hud_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hud_label.add_theme_font_size_override("font_size", 18)
 	hud_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
@@ -212,12 +213,26 @@ func _place_loads() -> void:
 		trailer.set_loads(masses)
 
 
+## Raises the model inside bike `id`'s view by `h` (0 puts it back down).
+func _lift(id: int, h: float) -> void:
+	var view := _bike_view(id)
+	if view and view.get_child_count() > 0 and view.get_child(0) is Node3D:
+		(view.get_child(0) as Node3D).position.y = h
+
+
 ## The dolly tray: on its rail, on the ground, or under the bike on it.
 func _place_dolly() -> void:
 	var d := Recovery.dolly()
 	var at := str(d["at"])
 	trailer.dolly_stowed.visible = at == "trailer"
 	_dolly.visible = at != "trailer"
+	# The bike stood on the dolly on the ground is raised inside its view (the view itself is
+	# where Shed, or the one pushing it, puts it); on the trailer _place_loads raises it.
+	var lifted := int(d["bike"]) if at == "bike" else 0
+	if _lifted != lifted:
+		_lift(_lifted, 0.0)
+		_lifted = lifted
+	_lift(lifted, Recovery.DOLLY_LIFT)
 	match at:
 		"ground":
 			_dolly.global_transform = d["xf"]
@@ -225,11 +240,7 @@ func _place_dolly() -> void:
 			var view := _bike_view(int(d["bike"]))
 			if view:
 				var xf := view.global_transform
-				if at == "bike":
-					view.global_transform = xf.translated(xf.basis.y * Recovery.DOLLY_LIFT)
-					_dolly.global_transform = xf
-				else:
-					_dolly.global_transform = xf.translated(-xf.basis.y * Recovery.DOLLY_LIFT)
+				_dolly.global_transform = xf if at == "bike" else xf.translated(-xf.basis.y * Recovery.DOLLY_LIFT)
 			else:
 				_dolly.global_transform = d["xf"]
 	if at == "trailer":
@@ -358,7 +369,14 @@ func _sync_markers() -> void:
 				m.add_child(label)
 				_markers[jid] = m
 			var b: Dictionary = Shed.bikes[int(j["bike"])]
-			(_markers[jid] as Node3D).global_position = (b["xf"] as Transform3D).origin
+			var m: Node3D = _markers[jid]
+			m.global_position = (b["xf"] as Transform3D).origin
+			# The beam fades out as you get there, so it isn't in the way of the work.
+			var cam := get_viewport().get_camera_3d()
+			var near := 1.0 if cam == null else clampf((cam.global_position.distance_to(m.global_position) - 12.0) / 30.0, 0.0, 1.0)
+			var beam := m.get_child(0) as MeshInstance3D
+			(beam.material_override as StandardMaterial3D).albedo_color.a = 0.35 * near
+			beam.visible = near > 0.01
 	for jid in _markers.keys():
 		if not want.has(jid):
 			_markers[jid].queue_free()

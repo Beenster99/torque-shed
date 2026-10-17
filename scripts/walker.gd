@@ -1845,9 +1845,12 @@ func _describe() -> String:
 			# Out on the road: no inspecting its parts, it's just a bike to ride.
 			var road_id := int(target["bike"])
 			lines.append(str(Shed.bikes[road_id]["name"]))
-			lines.append("Out on the road. Ride it back to the shed to work on it.")
+			if Recovery.job_of(road_id).is_empty():
+				lines.append("Out on the road. Ride it back to the shed to work on it.")
+			else:
+				lines.append("A recovery job: it goes back to the yard on the trailer.")
 			var ride_on := Shed.check(Shed.me(), {"a": "mount", "bike": road_id})
-			lines.append("F: ride %s" % Shed.bikes[road_id]["name"] if ride_on == "" else "Can't ride it. " + ride_on)
+			lines.append("F: ride %s" % Shed.bikes[road_id]["name"] if ride_on == "" else ride_on)
 			if Shed.check(Shed.me(), {"a": "grab_bike", "bike": road_id}) == "":
 				lines.append("Hold F: wheel it about")
 			var held_can := Shed.held_by(Shed.me())

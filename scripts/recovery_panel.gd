@@ -165,12 +165,17 @@ static func fill_assessment(box: VBoxContainer, job: Dictionary, after: Callable
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 14)
 	box.add_child(grid)
+	# Grid cells don't wrap (a wrapping label in a grid squeezes to a letter wide).
+	var cell := func(text: String, col := Color(0.85, 0.87, 0.9)) -> Label:
+		var l := UITheme.label(text, 13, col)
+		l.autowrap_mode = TextServer.AUTOWRAP_OFF
+		return l
 	for h in ["Part", "Condition", "Needs", "Cost"]:
-		grid.add_child(UITheme.label(h, 13, UITheme.ACCENT))
+		grid.add_child(cell.call(h, UITheme.ACCENT))
 	for r in a["rows"]:
 		var hp := float(r["health"])
 		var col := Color(0.5, 0.95, 0.55) if hp >= 0.8 else (Color(1.0, 0.8, 0.35) if hp >= 0.4 else Color(1.0, 0.45, 0.35))
-		grid.add_child(UITheme.label(str(r["name"]), 13))
+		grid.add_child(cell.call(str(r["name"])))
 		var bar := ProgressBar.new()
 		bar.custom_minimum_size = Vector2(110, 14)
 		bar.max_value = 100.0
@@ -179,8 +184,8 @@ static func fill_assessment(box: VBoxContainer, job: Dictionary, after: Callable
 		bar.modulate = col
 		bar.tooltip_text = str(r["text"])
 		grid.add_child(bar)
-		grid.add_child(UITheme.label({"ok": "fine", "restore": "restore", "replace": "REPLACE"}[str(r["fix"])], 13, col))
-		grid.add_child(UITheme.label(Recovery.money(int(r["cost"])) if int(r["cost"]) > 0 else "-", 13))
+		grid.add_child(cell.call({"ok": "fine", "restore": "restore", "replace": "REPLACE"}[str(r["fix"])], col))
+		grid.add_child(cell.call(Recovery.money(int(r["cost"])) if int(r["cost"]) > 0 else "-"))
 	box.add_child(UITheme.label("Estimated repair: %s  ·  worth %s as it stands, about %s put right." % [Recovery.money(int(a["repair"])),
 		Recovery.money(int(a["now"])), Recovery.money(int(a["fixed"]))], 17, Color(1, 1, 1, 0.9)))
 	var me := Shed.me()

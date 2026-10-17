@@ -361,9 +361,15 @@ func _build_model() -> void:
 	_ramp_pivot = Node3D.new()
 	_ramp_pivot.position = Vector3(0.0, BED_Y, BED_REAR)
 	model.add_child(_ramp_pivot)
-	_box(_ramp_pivot, Vector3(1.4, 0.04, RAMP_LEN), Vector3(0.0, 0.0, RAMP_LEN * 0.5), deck)
-	for i in 8:
-		_box(_ramp_pivot, Vector3(1.38, 0.02, 0.03), Vector3(0.0, 0.03, 0.15 + i * 0.22), galv)
+	# A channel ramp for each wheel channel, with grip bars, joined by a cross bar at the top: it
+	# stows upright as the tailgate and you can still see past it.
+	for x in SLOTS_X:
+		_box(_ramp_pivot, Vector3(0.34, 0.04, RAMP_LEN), Vector3(float(x), 0.0, RAMP_LEN * 0.5), deck)
+		for side in [-1.0, 1.0]:
+			_box(_ramp_pivot, Vector3(0.025, 0.06, RAMP_LEN), Vector3(float(x) + side * 0.17, 0.03, RAMP_LEN * 0.5), galv)
+		for i in 8:
+			_box(_ramp_pivot, Vector3(0.32, 0.02, 0.03), Vector3(float(x), 0.03, 0.15 + i * 0.22), galv)
+	_box(_ramp_pivot, Vector3(1.3, 0.04, 0.05), Vector3(0.0, 0.0, 0.05), galv)
 	# The dolly tray, hung on the left-hand rail.
 	dolly_stowed = Node3D.new()
 	dolly_stowed.position = Vector3(-BED_HALF_W - 0.06, BED_Y - 0.05, -0.1)

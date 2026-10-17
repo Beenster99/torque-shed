@@ -386,9 +386,9 @@ func _build_model() -> void:
 	var paint := _mat(_paint, 0.35, 0.35)
 	var dark := _mat(Color(0.06, 0.06, 0.065), 0.0, 0.8)
 	var chrome := _mat(Color(0.75, 0.76, 0.78), 1.0, 0.15)
-	var glass := _mat(Color(0.05, 0.07, 0.09), 0.2, 0.05)
+	var glass := _mat(Color(0.12, 0.15, 0.18), 0.2, 0.05)
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass.albedo_color.a = 0.75
+	glass.albedo_color.a = 0.4   # tinted, but you can see out of it from the cab
 	var trim := _mat(Color(0.14, 0.14, 0.15), 0.1, 0.7)
 	# Chassis rails and the sills.
 	_box(model, Vector3(1.1, 0.18, 5.0), Vector3(0.0, 0.52, 0.15), dark)
@@ -426,8 +426,10 @@ func _build_model() -> void:
 	_box(model, Vector3(1.86, 0.6, 2.35), Vector3(0.0, 0.92, -0.25), paint)
 	_box(model, Vector3(1.74, 0.62, 2.1), Vector3(0.0, 1.53, -0.2), glass)
 	_box(model, Vector3(1.78, 0.07, 2.12), Vector3(0.0, 1.87, -0.2), paint)
+	# The pillars either side (A at the windscreen, B between the doors, C at the back window).
 	for z in [-1.24, 0.0, 0.84]:
-		_box(model, Vector3(1.78, 0.62, 0.08), Vector3(0.0, 1.53, z), paint)
+		for x in [-0.86, 0.86]:
+			_box(model, Vector3(0.07, 0.62, 0.08), Vector3(x, 1.53, z), paint)
 	_box(model, Vector3(1.75, 0.62, 0.05), Vector3(0.0, 1.53, -1.27), glass, Vector3(deg_to_rad(-22.0), 0.0, 0.0))
 	# The load bed: floor, sides and tailgate, with a headache rack behind the cab.
 	_box(model, Vector3(1.8, 0.08, 1.85), Vector3(0.0, 0.72, 1.85), dark)
