@@ -333,6 +333,7 @@ func _run_all() -> void:
 	await _test_recovery_walk_on()
 	await _test_walker_jump()
 	_test_recovery_model()
+	await _test_recovery_controls()
 	print("Simon's 16 October round: dirt where it really goes, and pressure washing it off")
 	_test_dirt_accrual()
 	_test_wash_rules()
@@ -16159,6 +16160,10 @@ func _test_walker_jump() -> void:
 
 func _test_recovery_model() -> void:
 	_recovery().test_model()
+
+
+func _test_recovery_controls() -> void:
+	await _recovery().test_controls()
 
 
 ## Simon's 16 October round: road dirt builds up where it really goes as a bike's ridden (more

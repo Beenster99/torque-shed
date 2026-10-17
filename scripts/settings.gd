@@ -93,20 +93,20 @@ const ACTIONS := [
 	["board_image", "Whiteboard: add a picture", ["board"]], ["board_move", "Whiteboard: move a picture", ["board"]],
 	["board_bigger", "Whiteboard: picture bigger", ["board"]], ["board_smaller", "Whiteboard: picture smaller", ["board"]],
 	["board_poster", "Whiteboard: make a poster", ["board"]],
-	["throttle", "Throttle", ["ride"]], ["front_brake", "Front brake", ["ride"]], ["rear_brake", "Rear brake", ["ride"]],
+	["throttle", "Throttle", ["ride"]], ["front_brake", "Front brake (truck: brake, hold when stopped to reverse)", ["ride"]], ["rear_brake", "Rear brake (truck: handbrake)", ["ride"]],
 	["lean_left", "Lean left", ["ride"]], ["lean_right", "Lean right", ["ride"]],
 	["body_back", "Weight back", ["ride"]], ["body_forward", "Weight forward", ["ride"]],
-	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down", ["ride"]],
+	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down (truck: into reverse when stopped)", ["ride"]],
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
 	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera: third person, first person, fly-by", ["ride"]],
-	["horn", "Horn", ["ride"]], ["headlight", "Headlight", ["ride"]],
+	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["geo_move", "Geometry: move", ["geo"]], ["geo_rotate", "Geometry: rotate", ["geo"]],
 	["geo_scale", "Geometry: scale / stretch", ["geo"]], ["geo_snap", "Geometry: snap (hold)", ["geo"]],
 	["geo_undo", "Geometry: undo", ["geo"]], ["geo_reset", "Geometry: reset the part", ["geo"]],
 ]
-const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding", "spray": "with a spray can or gun", "board": "at the whiteboard",
+const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding or driving", "spray": "with a spray can or gun", "board": "at the whiteboard",
 	"geo": "in geometry mode"}
 ## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
 ## B on a pad jumps on foot, but with a spray can or gun out it's the finish (the spray comes first).

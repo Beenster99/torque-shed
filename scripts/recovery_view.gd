@@ -87,7 +87,7 @@ func _process(delta: float) -> void:
 			_parked_sig = sig
 			car.global_transform = c["xf"]
 			trailer.global_transform = c["trailer_xf"]
-		car.engine_on = false
+		car.stop_engine()
 		if is_instance_valid(_remote_audio):
 			_remote_audio.running = false
 	trailer.ramp_down = bool(Recovery.car()["ramp"])
@@ -420,8 +420,7 @@ func _update_hud() -> void:
 	if not site.is_empty():
 		lines.append("RECOVERY  %s  ·  %s" % [site["name"], Recovery.distance_text(from, site["at"])])
 	if driving:
-		var g := "R" if car.gear < 0 else ("N" if car.gear == 0 else ("D%d" % car.gear if car.auto_shift else "M%d" % car.gear))
-		lines.append("%d %s   %s   %d rpm" % [Units.speed_value(car.speed), Units.speed_unit(), g, roundi(car.rpm / 50.0) * 50])
+		# The speed, gears and lamps are on the truck's dash in the corner (Hud._draw_truck_dash).
 		var loose := 0
 		for id in Recovery.loads():
 			if not Recovery.secure(int(id)):
@@ -602,7 +601,9 @@ func start_driving() -> void:
 	car.place(c["xf"])
 	trailer.place(c["trailer_xf"])
 	trailer.attach()
-	car.engine_on = true
+	# You get in with the engine off and start it on the key, as on a bike.
+	car.engine_on = false
+	car.rpm = 0.0
 	car.controls_enabled = true
 	trailer.load_sim.clear()
 	for id in Recovery.loads():
@@ -619,7 +620,26 @@ func start_driving() -> void:
 	main.camera.snap()
 	main.camera.current = true
 	main._set_walker_active(false)
+	main.hud.car = car
+	if not car.engine_changed.is_connected(_on_engine_changed):
+		car.engine_changed.connect(_on_engine_changed)
+		car.gear_changed.connect(_on_gear_changed)
 	Sfx.play_at("door", car.global_position, -12.0)
+
+
+func _on_engine_changed(running: bool) -> void:
+	if driving and running:
+		main.hud.flash("Engine running", 1.2)
+
+
+## Into reverse: say which pedal backs it up, since that depends on how you got there.
+func _on_gear_changed(g: int) -> void:
+	if not driving or g >= 0:
+		return
+	if car.pedals_swapped():
+		main.hud.flash("Reverse: hold S to back up, W to stop", 2.0)
+	else:
+		main.hud.flash("Reverse: W backs up, S brakes, E for drive", 2.0)
 
 
 ## Out of the truck: it's parked where it stands (the host is told, unless `tell` is off), and
@@ -628,6 +648,7 @@ func stop_driving(tell := true) -> void:
 	if not driving:
 		return
 	driving = false
+	main.hud.car = null
 	if tell:
 		Shed.request({"a": "recovery_exit", "xf": _settled(car.global_transform), "trailer_xf": _settled(trailer.global_transform)})
 	trailer.unhitch()
@@ -669,6 +690,12 @@ func drive_input(event: InputEvent) -> bool:
 		_view = ChaseCamera.Mode.HELMET if main.camera.mode == ChaseCamera.Mode.CHASE else ChaseCamera.Mode.CHASE
 		main.camera.set_mode(_view)
 		return true
+	if event.is_action_pressed("ignition"):
+		_ignition()
+		return true
+	if event.is_action_pressed("headlight"):
+		main.hud.flash("Headlamps: %s" % car.cycle_beam(), 1.2)
+		return true
 	if event.is_action_pressed("shift_up"):
 		car.shift_up()
 		return true
@@ -687,6 +714,18 @@ func drive_input(event: InputEvent) -> bool:
 		main.camera.add_orbit(-rel.x * ChaseCamera.MOUSE_ORBIT, rel.y * ChaseCamera.MOUSE_ORBIT)
 		return true
 	return false
+
+
+## Starts or stops the engine on the key, as on the bikes.
+func _ignition() -> void:
+	var at := car.global_transform * Car.EYE
+	if car.engine_on or car.is_starting():
+		car.stop_engine()
+		main.hud.flash("Engine off", 1.2)
+		Sfx.play_at("switch", at, -6.0)
+		return
+	car.start_engine()
+	Sfx.play_at("switch", at, -10.0)   # the starter itself is the engine sound's
 
 
 ## Stuck on its roof or its side: back on its wheels where it is, trailer and all.
@@ -722,6 +761,7 @@ func drive_physics(_delta: float, active: bool) -> void:
 		audio.gear = maxi(car.gear, 1)
 		audio.throttle = car.sound_load()
 		audio.running = car.engine_on
+		audio.cranking = car.is_starting()
 		audio.speed = car.speed
 		audio.view = "rider" if main.camera.mode == ChaseCamera.Mode.HELMET else "chase"
 	if active and Input.is_action_just_pressed("horn"):
@@ -823,6 +863,7 @@ func _follow_remote(peer: int) -> void:
 		_remote_audio.set_distant_filter(true)
 	_remote_audio.rpm = car.rpm
 	_remote_audio.running = car.engine_on
+	_remote_audio.cranking = car.is_starting()
 	_remote_audio.throttle = sb[1 + 12]
 	_remote_audio.gear = maxi(car.gear, 1)
 	_remote_audio.speed = Vector3(sb[1 + 7], sb[1 + 8], sb[1 + 9]).length()

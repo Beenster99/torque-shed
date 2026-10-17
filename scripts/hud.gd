@@ -5,6 +5,7 @@ extends Control
 
 var walker: Walker
 var bike: Bike
+var car: Car               # the recovery truck, while you're at the wheel (RecoveryView sets it)
 var _message: Label
 var _message_timer := 0.0
 var _panel: PanelContainer
@@ -106,7 +107,9 @@ func _process(delta: float) -> void:
 	_banner_time = maxf(0.0, _banner_time - delta)
 	if _message_timer <= 0.0 and _message.text != "":
 		_message.text = ""
-	var on_foot := walker != null and bike == null
+	if car != null and not is_instance_valid(car):
+		car = null
+	var on_foot := walker != null and bike == null and car == null
 	blast_hud.walker = walker if on_foot else null
 	spray_hud.walker = walker if on_foot else null
 	wash_hud.walker = walker if on_foot else null
@@ -156,6 +159,8 @@ func _alt_key() -> String:
 func _draw() -> void:
 	if bike:
 		_draw_speedo()
+	elif car:
+		_draw_truck_dash()
 	elif walker:
 		_draw_crosshair()
 		_draw_toolbar()
@@ -406,5 +411,53 @@ func _draw_speedo() -> void:
 		hint = "Starting..." if bike.is_starting() else "Engine off: press I (or D-pad up) to start it"
 	elif absf(bike.speed) < 2.0 and not bike.is_crashed:
 		hint = "F (or Y): get off   ·   I: engine off   ·   hold S: paddle back   ·   S + throttle: burnout"
+	if hint != "":
+		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))
+
+
+## The truck's dash, in the corner where a bike's speedo goes: the speed, the gear lever's
+## positions with the one it's in lit (R N D on the automatic, R N 1-6 on the manual), the revs,
+## the headlamp telltale, and what to press when it's stopped or not running.
+func _draw_truck_dash() -> void:
+	var font := get_theme_default_font()
+	var r := Rect2(size.x - 250, size.y - 150, 226, 126)
+	draw_rect(r, Color(0.03, 0.03, 0.04, 0.6))
+	draw_string(font, r.position + Vector2(12, 58), "%d" % Units.speed_value(absf(car.speed)), HORIZONTAL_ALIGNMENT_LEFT, -1, 50, Color.WHITE)
+	draw_string(font, r.position + Vector2(120, 34), Units.speed_unit(), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.6))
+	# The headlamp telltale: green dipped, blue main beam.
+	if car.engine_on and car.beam > 0:
+		var main_beam := car.beam >= 2
+		draw_string(font, r.position + Vector2(176, 34), "MAIN" if main_beam else "DIP", HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+			Color(0.35, 0.6, 1.0) if main_beam else Color(0.35, 0.9, 0.45))
+	var stops: Array = ["R", "N", "D"] if car.auto_shift else ["R", "N", "1", "2", "3", "4", "5", "6"]
+	var lit := "R" if car.gear < 0 else ("N" if car.gear == 0 else ("D" if car.auto_shift else str(car.gear)))
+	var x := 12.0
+	for stop: String in stops:
+		var on := stop == lit
+		var label: String = stop + (str(car.gear) if on and stop == "D" else "")
+		var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 10.0
+		if on:
+			draw_rect(Rect2(r.position + Vector2(x, 66), Vector2(w, 24)), Color(1, 0.3, 0.2) if stop == "R" else UITheme.ACCENT)
+		draw_string(font, r.position + Vector2(x + 5, 85), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 18,
+			Color(0.05, 0.05, 0.05) if on else Color(1, 1, 1, 0.45))
+		x += w + 2.0
+	var frac := clampf(car.rpm / Car.REDLINE, 0.0, 1.0)
+	draw_rect(Rect2(r.position + Vector2(12, 100), Vector2(202, 8)), Color(1, 1, 1, 0.12))
+	draw_rect(Rect2(r.position + Vector2(12, 100), Vector2(202 * frac, 8)), UITheme.ACCENT if frac < 0.9 else Color(1, 0.2, 0.15))
+	draw_string(font, r.position + Vector2(12, 120), "%d rpm" % (roundi(car.rpm / 50.0) * 50), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
+	var hint := ""
+	if not car.engine_on:
+		hint = "Starting..." if car.is_starting() else "Engine off: press I (or D-pad up) to start it"
+	elif absf(car.speed) < 1.0:
+		var rev := ""
+		if car.gear < 0:
+			rev = "W or E: drive" if car.pedals_swapped() else ("E: drive" if car.auto_shift else "E: neutral")
+		elif car.auto_shift:
+			rev = "hold S or press Q: reverse"
+		elif car.gear == 0:
+			rev = "Q: reverse   ·   E: first"
+		else:
+			rev = "Q: down to neutral, then reverse"
+		hint = "F (or Y): get out   ·   %s   ·   L: headlamps   ·   I: engine off" % rev
 	if hint != "":
 		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))
