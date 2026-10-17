@@ -513,3 +513,198 @@ func test_save() -> void:
 	check(Recovery.jobs().is_empty() and Recovery.loads().is_empty() and str(Recovery.dolly()["at"]) == "trailer",
 		"a save from before the recovery rig loads with no jobs out")
 	Shed.stop()
+
+
+# ---------------------------------------------------------------------------- on foot
+
+## The game with a session started, the rig bought and parked in the yard.
+func _main_with_rig() -> Node:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	t.add_child(main)
+	await t.get_tree().process_frame
+	main._start_session()
+	Shed.garage_money = 60000
+	Shed.request({"a": "recovery_grant"})
+	await _ticks(10)
+	return main
+
+
+## Holds `action` down for `seconds`, or until `until` says stop.
+func _hold(action: String, seconds: float, until := Callable()) -> void:
+	Input.action_press(action)
+	for i in int(seconds * Engine.physics_ticks_per_second):
+		await t.get_tree().physics_frame
+		if until.is_valid() and until.call():
+			break
+	Input.action_release(action)
+
+
+## A real Space bar press (or release), through the viewport as the keyboard sends it.
+func _space(pressed: bool) -> void:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = KEY_SPACE
+	ev.keycode = KEY_SPACE
+	ev.pressed = pressed
+	Input.parse_input_event(ev)
+
+
+## Walking onto the trailer: with the ramp down you walk up it onto the bed and about on it
+## (the front board stops you walking off onto the drawbar); with it up there's no ramp to walk
+## up. While someone drives off you're put down beside it, not carried away on the bed.
+func test_walk_on() -> void:
+	var main := await _main_with_rig()
+	var rv: RecoveryView = main.recovery
+	var tr := rv.trailer
+	var w: Walker = main.walker
+	check(tr != null and not tr.ramp_walkable(), "the rig is parked in the yard with its ramp up")
+	var behind := tr.global_transform * Transform3D(Basis(), Vector3(0.0, 0.0, Trailer.ramp_foot_z() + 1.2))
+	w.place(behind)
+	await _ticks(20)
+	var local := func() -> Vector3: return tr.global_transform.affine_inverse() * w.global_position
+	await _hold("move_forward", 2.0)
+	check((local.call() as Vector3).y < 0.2 and (local.call() as Vector3).z > Trailer.BED_REAR,
+		"with the ramp up you can't get up on the bed (%s)" % str(local.call()))
+	Shed.request({"a": "recovery_ramp", "down": true})
+	await _seconds(1.2)
+	check(tr.ramp_walkable(), "lowered, the ramp can be walked on")
+	w.place(behind)
+	await _ticks(20)
+	await _hold("move_forward", 3.0, func(): return (local.call() as Vector3).z < -0.4)
+	await _ticks(30)
+	var l: Vector3 = local.call()
+	check(w.is_on_floor() and absf(l.y - Trailer.BED_Y) < 0.06 and l.z < Trailer.BED_REAR and tr.carries(w.global_position),
+		"you walk up the ramp onto the bed (stood %.2f m up, %.2f m along)" % [l.y, l.z])
+	await _hold("move_left", 0.25)
+	await _hold("move_right", 0.5)
+	await _ticks(30)
+	l = local.call()
+	check(w.is_on_floor() and absf(l.y - Trailer.BED_Y) < 0.06, "and walk about on it (%.2f m up, %.2f m across)" % [l.y, l.x])
+	await _hold("move_forward", 1.5)
+	await _ticks(20)
+	l = local.call()
+	check(l.z > Trailer.BED_FRONT and absf(l.y - Trailer.BED_Y) < 0.06, "the front board keeps you on the bed (%.2f m along)" % l.z)
+	# Someone else drives off: you're stepped off the side.
+	Recovery.car()["driver"] = 999
+	await t.get_tree().process_frame
+	await _ticks(10)
+	l = local.call()
+	check(not tr.carries(w.global_position) and absf(l.x) > Trailer.BED_HALF_W and l.y < 0.2,
+		"when it's driven off you're put down beside it, not carried on the bed (%s)" % str(l))
+	Recovery.car()["driver"] = 0
+	main.queue_free()
+	await t.get_tree().process_frame
+	Shed.stop()
+
+
+## Space jumps on foot: a hop of about 0.45 m that lands again. Jumping about the shed, at
+## the walls and the benches, gets you nowhere walking wouldn't (no standing on anything high,
+## nothing through a wall). In the truck Space is still the handbrake, and doesn't jump.
+func test_jump() -> void:
+	var main := await _main_with_rig()
+	var w: Walker = main.walker
+	w.place(Transform3D(Basis(), Workshop.CENTER + Vector3(0.0, 0.0, 0.5)))
+	await _ticks(40)
+	var y0 := w.global_position.y
+	var top := y0
+	_space(true)
+	_space(false)
+	var landed := -1
+	for i in 150:
+		await t.get_tree().physics_frame
+		top = maxf(top, w.global_position.y)
+		if i > 10 and w.is_on_floor() and landed < 0:
+			landed = i
+	check(top - y0 > 0.38 and top - y0 < 0.52, "Space jumps about 0.45 m (%.2f m)" % (top - y0))
+	check(landed > 0 and absf(w.global_position.y - y0) < 0.03 and not w.jumping,
+		"and you land again (after %.2f s)" % (landed / float(Engine.physics_ticks_per_second)))
+	w.set_crouched(true)
+	await _ticks(5)
+	_space(true)
+	_space(false)
+	top = y0
+	for i in 40:
+		await t.get_tree().physics_frame
+		top = maxf(top, w.global_position.y)
+	check(top - y0 < 0.05, "crouched, you don't jump")
+	w.set_crouched(false)
+	await _ticks(5)
+	# Run every way across the shed from the middle, jumping all the way: into the walls, the
+	# benches, the bikes, out of the doors. A ray at waist height from each tick's spot to the
+	# next would catch going through a wall.
+	var worst := 0.0
+	var through := []
+	var space := w.get_world_3d().direct_space_state
+	for k in 16:
+		var yaw := TAU * k / 16.0
+		w.place(Transform3D(Basis(Vector3.UP, yaw), Workshop.CENTER + Vector3(0.0, 0.0, 0.5)))
+		await _ticks(30)
+		Input.action_press("move_forward")
+		Input.action_press("sprint")
+		var was := w.global_position
+		for i in 360:
+			if i % 20 == 0:
+				w._jump_wanted = true
+			await t.get_tree().physics_frame
+			var now := w.global_position
+			if w.is_on_floor():
+				worst = maxf(worst, now.y - y0)
+			var q := PhysicsRayQueryParameters3D.create(was + Vector3.UP * 0.9, now + Vector3.UP * 0.9, 1)
+			q.exclude = [w.get_rid()]
+			if not space.intersect_ray(q).is_empty() and through.size() < 3:
+				through.append("%d deg at %s" % [roundi(rad_to_deg(yaw)), str(now)])
+			was = now
+		Input.action_release("move_forward")
+		Input.action_release("sprint")
+		await _ticks(60)
+	check(worst < 0.5, "jumping about the shed you never land on anything higher than a step (%.2f m)" % worst)
+	check(through.is_empty(), "and it never takes you through a wall %s" % str(through))
+	# In the truck: Space is the handbrake, and you don't jump.
+	Shed.request({"a": "recovery_enter"})
+	await _ticks(10)
+	var rv: RecoveryView = main.recovery
+	check(rv.driving, "into the truck")
+	var at := w.global_position
+	_space(true)
+	await _ticks(10)
+	check(rv.car.handbrake > 0.9 and w.global_position.distance_to(at) < 0.01, "in the truck Space is the handbrake (%.1f), and doesn't jump" % rv.car.handbrake)
+	_space(false)
+	await _ticks(10)
+	check(rv.car.handbrake < 0.1, "and lets it off")
+	rv.stop_driving()
+	main.queue_free()
+	await t.get_tree().process_frame
+	Shed.stop()
+
+
+## The truck's model: a handful of meshes (the fixed body merged by material), glass you can see
+## out of, the lamps lit only with the engine running (the reversing lamps in reverse), and the
+## steering wheel turning with the front wheels. The trailer's fixed parts are merged too.
+func test_model() -> void:
+	var car := Car.new()
+	var meshes := car.model.find_children("*", "MeshInstance3D", true, false)
+	var body: MeshInstance3D = car.model.get_node("Body")
+	var mats := []
+	for s in body.mesh.get_surface_count():
+		mats.append(body.mesh.surface_get_material(s))
+	var glass := mats.any(func(mt): return mt is StandardMaterial3D and (mt as StandardMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED)
+	check(meshes.size() <= 14 and body.mesh.get_surface_count() <= 30, "the truck is a handful of meshes (%d, the body %d surfaces)" % [meshes.size(), body.mesh.get_surface_count()])
+	check(glass and body.get_aabb().size.y > 1.4 and body.get_aabb().end.y > 1.75 and body.get_aabb().size.z > 5.3, "with see-through glass, full size (%s)" % str(body.get_aabb().size))
+	car.engine_on = false
+	car._update_model(0.0)
+	check(car._lamp_mat.emission_energy_multiplier == 0.0 and car._brake_mat.emission_energy_multiplier == 0.0 and not (car._head_lights[0] as Light3D).visible,
+		"parked with the engine off its lights are off")
+	car.engine_on = true
+	car.gear = 1
+	car._update_model(0.0)
+	check(car._lamp_mat.emission_energy_multiplier > 1.0 and car._brake_mat.emission_energy_multiplier > 0.0
+		and car._reverse_mat.emission_energy_multiplier == 0.0 and (car._head_lights[0] as Light3D).visible, "running, the head and tail lights are on")
+	car.gear = -1
+	car.steer = 0.3
+	car._update_model(0.0)
+	check(car._reverse_mat.emission_energy_multiplier > 0.0, "in reverse the reversing lamps light")
+	check(absf(car._steering_wheel.rotation.y + 0.3 * Car.STEER_RATIO) < 0.01, "the steering wheel turns with the front wheels")
+	car.free()
+	var tr := Trailer.new()
+	var tm := tr.model.find_children("*", "MeshInstance3D", false, false)
+	check(tm.size() <= 3 and tr.model.get_node_or_null("Merged") != null, "the trailer's fixed parts are one mesh (%d left)" % tm.size())
+	tr.free()

@@ -91,6 +91,8 @@ func _process(delta: float) -> void:
 		if is_instance_valid(_remote_audio):
 			_remote_audio.running = false
 	trailer.ramp_down = bool(Recovery.car()["ramp"])
+	if drv != 0:
+		_keep_off_trailer()
 	_place_loads()
 	_place_dolly()
 	_draw_cable()
@@ -104,6 +106,20 @@ func _process(delta: float) -> void:
 		if _move_timer >= MOVE_EVERY:
 			_move_timer = 0.0
 			Shed.request({"a": "recovery_move", "xf": car.global_transform, "trailer_xf": trailer.global_transform})
+
+
+## Nobody rides on the trailer: while someone's driving, a walker stood on its bed or ramp is
+## put down on the ground beside it, on the side they were nearer.
+func _keep_off_trailer() -> void:
+	var w: Walker = main.walker
+	if w == null or w.process_mode == Node.PROCESS_MODE_DISABLED or not trailer.carries(w.global_position):
+		return
+	var l := trailer.global_transform.affine_inverse() * w.global_position
+	var side := 1.0 if l.x >= 0.0 else -1.0
+	var at := trailer.global_transform * Vector3(side * (Trailer.BED_HALF_W + 0.9), 0.0, clampf(l.z, Trailer.BED_FRONT, Trailer.BED_REAR))
+	at.y = trailer.global_position.y
+	w.place(Transform3D(w.global_basis, at))
+	main.hud.flash("No riding on the trailer: you hop off as it pulls away.", 2.5, true)
 
 
 func _ensure_rig() -> void:

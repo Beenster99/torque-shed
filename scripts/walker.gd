@@ -21,6 +21,13 @@ const CROUCH_EYE := 0.95
 const WALK := 3.2
 const RUN := 5.5
 const CROUCH_WALK := 1.5
+## A jump (Space, or B on a pad): an ordinary person's hop, about 0.45 m off the floor. It's
+## not enough to get up on a bench, the trailer's bed (that's what its ramp is for) or anything
+## higher; in the air you can only steer a little, and you have to land before the next one.
+const JUMP_HEIGHT := 0.45
+const JUMP_SPEED := 2.97          # sqrt(2 g JUMP_HEIGHT)
+const AIR_CONTROL := 4.0          # m/s^2 of steering in the air (30 on the ground)
+const JUMP_REST := 0.2            # seconds on your feet between one jump and the next
 const HOLD_TO_PUSH := 0.35   # hold F this long on a bike to wheel it instead of getting on
 const SEATED_EYE := 0.75     # eye height above the seat when sitting down
 const JET_REACH := 0.3       # the pressure washer cleans every part this close to where it hits
@@ -86,6 +93,9 @@ var _stride := 0.0
 var _push_timer := 0.0
 var _shape: CapsuleShape3D
 var _shape_node: CollisionShape3D
+var _jump_wanted := false    # Space went down: jump on the next physics tick, if you can
+var _grounded := 0.0         # seconds on your feet since you last landed
+var jumping := false         # in the air from a jump (not from walking off a step)
 var _eye := EYE
 var _f_bike := 0            # bike F went down on, waiting to see if it's a tap (ride) or a hold (push)
 var _f_seat := 0            # seat F went down on: a tap sits you down, a hold picks it up to move
@@ -292,6 +302,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		rename_requested.emit(int(target["bike"]))
 	elif event.is_action_pressed("crouch"):
 		set_crouched(not crouched)
+	elif event.is_action_pressed("jump"):
+		_jump_wanted = true
 	elif event.is_action_released("interact") and _f_seat != 0:
 		get_viewport().set_input_as_handled()
 		var chair := _f_seat
@@ -411,6 +423,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		for i in TOOLS.size():
 			if event.is_action_pressed("tool_%d" % (i + 1)):
 				set_tool(TOOLS[i])
+
+
+## Whether Space would jump now: on your feet (and have been a moment), standing up, hands free
+## of anything you're wheeling, carrying or sat on, and not at a job that has you planted.
+func can_jump() -> bool:
+	return controls_enabled and is_on_floor() and _grounded >= JUMP_REST and not crouched and seat == 0 \
+		and not blast and Shed.blasting(Shed.me()) == 0 and spray_mode.is_empty() and wash_mode.is_empty() \
+		and tyre_game == null and Shed.pushing_bike(Shed.me()) == 0 and Shed.moving(Shed.me()) == 0
 
 
 func set_crouched(on: bool) -> void:
@@ -622,14 +642,27 @@ func _physics_process(delta: float) -> void:
 	if Shed.pushing_bike(Shed.me()) != 0:
 		pace = minf(pace, 2.4)   # a bike is heavy to wheel about
 	var wish := (transform.basis * Vector3(input.x, 0.0, input.y)) * pace
-	velocity.x = move_toward(velocity.x, wish.x, 30.0 * delta)
-	velocity.z = move_toward(velocity.z, wish.z, 30.0 * delta)
-	if not is_on_floor():
+	var grip := 30.0 if is_on_floor() else AIR_CONTROL
+	velocity.x = move_toward(velocity.x, wish.x, grip * delta)
+	velocity.z = move_toward(velocity.z, wish.z, grip * delta)
+	var hop := _jump_wanted and can_jump()
+	_jump_wanted = false
+	if hop:
+		velocity.y = JUMP_SPEED
+		jumping = true
+		_grounded = 0.0
+	elif not is_on_floor():
 		velocity.y -= 9.81 * delta
 	else:
 		velocity.y = -0.5
+	var was_up := not is_on_floor()
 	move_and_slide()
+	if is_on_floor() and was_up and not hop:
+		if jumping:
+			Sfx.footstep(global_position, true)   # landing
+		jumping = false
 	if is_on_floor():
+		_grounded += delta
 		_stride += Vector2(velocity.x, velocity.z).length() * delta
 		if _stride > (0.85 if running else 0.7):
 			_stride = 0.0

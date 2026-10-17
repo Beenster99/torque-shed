@@ -47,6 +47,7 @@ const MAX_STEER := deg_to_rad(34.0)
 const STEER_RATE := 1.4         # rad/s at the road wheels
 const CDA := 1.4                # drag area, m^2: a pickup is a brick
 const EYE := Vector3(0.4, 1.58, -0.2)   # the driver's eyes (right-hand drive)
+const STEER_RATIO := 16.0       # steering wheel turns to road wheel angle
 
 var throttle := 0.0
 var brake := 0.0
@@ -68,9 +69,11 @@ var _since_shift := 0.0
 var _rev_hold := 0.0
 var _wheel_nodes: Array = []
 var _steering_wheel: Node3D
-var _brake_lights: Array = []
 var _head_lights: Array = []
 var _brake_mat: StandardMaterial3D
+var _lamp_mat: StandardMaterial3D      # headlamps and fog lamps, lit with the engine
+var _reverse_mat: StandardMaterial3D   # the reversing lamps
+var _dash_mat: StandardMaterial3D      # the instruments and screen
 var _paint := Color(0.12, 0.27, 0.2)
 
 
@@ -357,155 +360,12 @@ func set_net_state(s: PackedFloat32Array, at := 0) -> void:
 
 # ---------------------------------------------------------------------------- model
 
-func _mat(c: Color, metal := 0.0, rough := 0.6) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = c
-	m.metallic = metal
-	m.roughness = rough
-	return m
-
-
-func _box(parent: Node3D, size: Vector3, at: Vector3, mat: Material, rot := Vector3.ZERO) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	mi.material_override = mat
-	mi.position = at
-	mi.rotation = rot
-	parent.add_child(mi)
-	return mi
-
-
-## A boxy double-cab pickup in garage green, with a chrome grille, a tow bar, a ladder rack and
-## the garage's name on the doors.
+## The truck's looks: see CarModel.
 func _build_model() -> void:
 	model = Node3D.new()
 	model.name = "Model"
 	add_child(model)
-	var paint := _mat(_paint, 0.35, 0.35)
-	var dark := _mat(Color(0.06, 0.06, 0.065), 0.0, 0.8)
-	var chrome := _mat(Color(0.75, 0.76, 0.78), 1.0, 0.15)
-	var glass := _mat(Color(0.12, 0.15, 0.18), 0.2, 0.05)
-	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass.albedo_color.a = 0.4   # tinted, but you can see out of it from the cab
-	var trim := _mat(Color(0.14, 0.14, 0.15), 0.1, 0.7)
-	# Chassis rails and the sills.
-	_box(model, Vector3(1.1, 0.18, 5.0), Vector3(0.0, 0.52, 0.15), dark)
-	# Front end: wings and bonnet.
-	_box(model, Vector3(1.86, 0.62, 1.55), Vector3(0.0, 0.92, -1.85), paint)
-	_box(model, Vector3(1.8, 0.06, 1.5), Vector3(0.0, 1.24, -1.82), paint, Vector3(deg_to_rad(-3.0), 0.0, 0.0))
-	# Grille, bumpers, lights.
-	_box(model, Vector3(1.3, 0.34, 0.05), Vector3(0.0, 0.98, -2.63), chrome)
-	for i in 4:
-		_box(model, Vector3(1.24, 0.03, 0.06), Vector3(0.0, 0.86 + i * 0.08, -2.645), dark)
-	_box(model, Vector3(1.92, 0.2, 0.18), Vector3(0.0, 0.62, -2.68), trim)
-	_box(model, Vector3(1.92, 0.2, 0.18), Vector3(0.0, 0.62, 2.82), trim)
-	var lamp := _mat(Color(1.0, 0.97, 0.85), 0.0, 0.2)
-	lamp.emission_enabled = true
-	lamp.emission = Color(1.0, 0.95, 0.8)
-	lamp.emission_energy_multiplier = 0.4
-	for x in [-0.72, 0.72]:
-		_box(model, Vector3(0.3, 0.16, 0.05), Vector3(x, 1.02, -2.64), lamp)
-		var sl := SpotLight3D.new()
-		sl.position = Vector3(x, 1.0, -2.7)
-		sl.spot_range = 45.0
-		sl.spot_angle = 32.0
-		sl.light_energy = 3.0
-		sl.rotation.x = deg_to_rad(-6.0)
-		sl.shadow_enabled = false
-		model.add_child(sl)
-		_head_lights.append(sl)
-	_brake_mat = _mat(Color(0.5, 0.03, 0.03), 0.0, 0.3)
-	_brake_mat.emission_enabled = true
-	_brake_mat.emission = Color(1.0, 0.05, 0.02)
-	_brake_mat.emission_energy_multiplier = 0.2
-	for x in [-0.86, 0.86]:
-		_brake_lights.append(_box(model, Vector3(0.1, 0.3, 0.06), Vector3(x, 1.05, 2.74), _brake_mat))
-	# The double cab: lower body, glass house and roof.
-	_box(model, Vector3(1.86, 0.6, 2.35), Vector3(0.0, 0.92, -0.25), paint)
-	_box(model, Vector3(1.74, 0.62, 2.1), Vector3(0.0, 1.53, -0.2), glass)
-	_box(model, Vector3(1.78, 0.07, 2.12), Vector3(0.0, 1.87, -0.2), paint)
-	# The pillars either side (A at the windscreen, B between the doors, C at the back window).
-	for z in [-1.24, 0.0, 0.84]:
-		for x in [-0.86, 0.86]:
-			_box(model, Vector3(0.07, 0.62, 0.08), Vector3(x, 1.53, z), paint)
-	_box(model, Vector3(1.75, 0.62, 0.05), Vector3(0.0, 1.53, -1.27), glass, Vector3(deg_to_rad(-22.0), 0.0, 0.0))
-	# The load bed: floor, sides and tailgate, with a headache rack behind the cab.
-	_box(model, Vector3(1.8, 0.08, 1.85), Vector3(0.0, 0.72, 1.85), dark)
-	for x in [-0.9, 0.9]:
-		_box(model, Vector3(0.06, 0.55, 1.9), Vector3(x, 0.98, 1.85), paint)
-	_box(model, Vector3(1.86, 0.55, 0.06), Vector3(0.0, 0.98, 2.8), paint)
-	_box(model, Vector3(1.7, 0.05, 0.05), Vector3(0.0, 1.95, 0.95), chrome)
-	for x in [-0.82, 0.82]:
-		_box(model, Vector3(0.05, 0.75, 0.05), Vector3(x, 1.58, 0.95), chrome)
-	# The tow bar and ball.
-	_box(model, Vector3(0.08, 0.08, 0.32), Vector3(0.0, 0.5, 2.85), dark)
-	var ball := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.04
-	sm.height = 0.08
-	ball.mesh = sm
-	ball.material_override = chrome
-	ball.position = HITCH + Vector3(0.0, 0.04, 0.0)
-	model.add_child(ball)
-	# Door signs.
-	for side: float in [-1.0, 1.0]:
-		var sign := Label3D.new()
-		sign.text = "TORQUE SHED\nRECOVERY"
-		sign.font_size = 46
-		sign.pixel_size = 0.0025
-		sign.modulate = Color(0.95, 0.85, 0.35)
-		sign.outline_size = 0
-		sign.position = Vector3(side * 0.94, 0.98, -0.25)
-		sign.rotation.y = side * PI * 0.5
-		model.add_child(sign)
-	# Inside: the dashboard and the steering wheel (right-hand drive).
-	_box(model, Vector3(1.7, 0.2, 0.35), Vector3(0.0, 1.18, -1.05), dark)
-	_steering_wheel = Node3D.new()
-	_steering_wheel.position = Vector3(EYE.x, 1.3, -0.8)
-	_steering_wheel.rotation.x = deg_to_rad(-62.0)
-	model.add_child(_steering_wheel)
-	var rim := MeshInstance3D.new()
-	var tm := TorusMesh.new()
-	tm.inner_radius = 0.17
-	tm.outer_radius = 0.2
-	rim.mesh = tm
-	rim.material_override = dark
-	_steering_wheel.add_child(rim)
-	_box(_steering_wheel, Vector3(0.34, 0.03, 0.04), Vector3.ZERO, dark)
-	# The wheels: tyre, rim and hub, turned and spun in _update_model.
-	var tyre_mat := _mat(Color(0.05, 0.05, 0.05), 0.0, 0.9)
-	var rim_mat := _mat(Color(0.55, 0.56, 0.58), 0.8, 0.3)
-	for w in wheels:
-		var holder := Node3D.new()
-		model.add_child(holder)
-		var spin := Node3D.new()
-		holder.add_child(spin)
-		var tyre := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = RADIUS
-		cm.bottom_radius = RADIUS
-		cm.height = 0.26
-		cm.radial_segments = 24
-		tyre.mesh = cm
-		tyre.material_override = tyre_mat
-		tyre.rotation.z = PI * 0.5
-		spin.add_child(tyre)
-		var hub := MeshInstance3D.new()
-		var hm := CylinderMesh.new()
-		hm.top_radius = RADIUS * 0.62
-		hm.bottom_radius = RADIUS * 0.62
-		hm.height = 0.27
-		hm.radial_segments = 6
-		hub.mesh = hm
-		hub.material_override = rim_mat
-		hub.rotation.z = PI * 0.5
-		spin.add_child(hub)
-		_wheel_nodes.append([holder, spin])
-		# Arches over each wheel, in black plastic.
-		var x: float = (w["mount"] as Vector3).x
-		_box(model, Vector3(0.12, 0.08, 1.0), Vector3(x * 1.13, 1.0 + 0.04, (w["mount"] as Vector3).z), trim)
+	CarModel.new(self).build()
 	_update_model(0.0)
 
 
@@ -519,10 +379,15 @@ func _update_model(_delta: float) -> void:
 		holder.rotation = Vector3(0.0, -float(w["steer"]), 0.0)
 		spin.rotation.x = -float(w["spin"])
 	if _steering_wheel:
-		_steering_wheel.rotation.y = 0.0
-		_steering_wheel.rotation.z = steer * 14.0
+		_steering_wheel.rotation.y = -steer * STEER_RATIO
 	var braking := brake > 0.1 if (gear >= 0 or not auto_shift) else throttle > 0.1
 	if _brake_mat:
 		_brake_mat.emission_energy_multiplier = 3.0 if braking and engine_on else (0.6 if engine_on else 0.0)
+	if _lamp_mat:
+		_lamp_mat.emission_energy_multiplier = 2.5 if engine_on else 0.0
+	if _reverse_mat:
+		_reverse_mat.emission_energy_multiplier = 2.0 if engine_on and gear < 0 else 0.0
+	if _dash_mat:
+		_dash_mat.emission_energy_multiplier = 0.8 if engine_on else 0.0
 	for l in _head_lights:
 		(l as SpotLight3D).visible = engine_on
