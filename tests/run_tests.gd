@@ -284,6 +284,14 @@ func _run_all() -> void:
 	await _test_suspension_dive()
 	await _test_suspension_squat_and_turn()
 	await _test_road_lean()
+	print("Handling phase 4: heat (tyre, brake and engine temperatures)")
+	_test_heat_grip_window()
+	_test_heat_warmup()
+	_test_heat_brake_fade()
+	await _test_heat_cold_tyres()
+	await _test_heat_brakes_ride()
+	await _test_heat_engine_ride()
+	_test_heat_carry_over()
 	print("The riding map: roads, grades, no jumps, land under the roads, spawns, surfaces, counts")
 	await _test_world_map()
 	print("Shop and crew: part previews, trolleys, box notes, the geometry parts list, styled project bikes, emotes")
@@ -17706,3 +17714,308 @@ func _test_tail_and_dash_fit() -> void:
 	check(whole.is_empty(), "a whole bike of every style passes the same checks %s" % [whole])
 	times.append(Time.get_ticks_msec() - t0)
 	print("    (fit checks: builds listed %.1f s, tails by %.1f s, clocks by %.1f s, whole bikes by %.1f s)" % [times[0] / 1000.0, times[1] / 1000.0, times[2] / 1000.0, times[3] / 1000.0])
+
+
+# ---------------------------------------------------------------------------- handling phase 4: heat
+
+## Runs a bike's heat model on its own for `seconds`: riding at `v` m/s with `p_slip` W of tyre
+## sliding on each tyre, the engine at `rpm` making `kw`, and `brake_w` W into the front brake
+## (a third of it into the back).
+func _heat_run(h: BikeHeat, b: BikeBuild, seconds: float, v: float, p_slip: float, rpm: float, kw: float,
+		brake_w := 0.0, running := true, dt := 0.1) -> void:
+	var fz := b.total_mass * Bike.G * 0.5
+	var t := 0.0
+	while t < seconds - 1e-6:
+		for i in 2:
+			h._tyre_step(i, dt, v, p_slip, b.rolling * fz * v, v > 0.0, 0.0)
+			h._brake_step(i, dt, v, brake_w * (1.0 if i == 0 else 0.3))
+		h._engine_step(dt, v, rpm, kw, running)
+		t += dt
+	h._update_effects(0.0, dt)
+
+
+## A bike's heat model on its own, soaked at `air` °C: [BikeHeat, BikeBuild].
+func _heat_of(build: Dictionary, air: float) -> Array:
+	var b := BikeBuild.new(build)
+	var h := BikeHeat.new()
+	h.setup(b)
+	h.air = air
+	h.road = air
+	h.soak(air)
+	return [h, b]
+
+
+var table_heat := {}
+
+
+func _test_heat_grip_window() -> void:
+	# Each compound's grip against its temperature: slicks need heat, touring and dual-sport tyres
+	# work cold, anything overcooked goes greasy. The pressure rises with the air in the tyre.
+	var temps := [0.0, 8.0, 20.0, 40.0, 70.0, 100.0, 130.0]
+	var table := {}
+	for id in ["race_slick", "sport_road", "touring_road", "dual_sport", "knobbly_mx", "vintage_ribbed"]:
+		var hb := _heat_of({"front_tyre": id, "rear_tyre": id}, 10.0)
+		var h: BikeHeat = hb[0]
+		var row := []
+		for t in temps:
+			h.soak(t)
+			row.append(h.temp_grip(1))
+		table[id] = row
+		print("    %-15s grip at %s °C: %s" % [id, str(temps), ", ".join(row.map(func(g): return "%.2f" % g))])
+	check(table["race_slick"][1] < 0.65 and table["race_slick"][4] >= 0.99, "a race slick is hopeless cold (%.2f at 8 °C) and full at 70 °C" % table["race_slick"][1])
+	check(table["sport_road"][1] > 0.8 and table["sport_road"][1] < 0.9 and table["sport_road"][3] >= 0.99,
+		"a sport road tyre is noticeably down cold (%.2f at 8 °C), full by 40 °C" % table["sport_road"][1])
+	check(table["touring_road"][1] > 0.97 and table["dual_sport"][1] > 0.94 and table["knobbly_mx"][1] > 0.94,
+		"touring, dual-sport and knobbly tyres work cold (%.2f, %.2f, %.2f at 8 °C)" % [table["touring_road"][1], table["dual_sport"][1], table["knobbly_mx"][1]])
+	check(table["sport_road"][6] < 0.95 and table["touring_road"][6] < 0.98, "overcooked at 130 °C they go greasy (%.2f sport)" % table["sport_road"][6])
+	# Pressure: set cold in the shed at 20 °C, it rises as the air inside warms.
+	var hb2 := _heat_of({}, 20.0)
+	var h2: BikeHeat = hb2[0]
+	var b2: BikeBuild = hb2[1]
+	var p20 := h2.pressure(1)
+	h2.soak(80.0)
+	var p80 := h2.pressure(1)
+	h2.soak(5.0)
+	var p5 := h2.pressure(1)
+	print("    rear pressure set %.2f bar: %.2f at 5 °C, %.2f at 20 °C, %.2f at 80 °C" % [b2.tune_value("psi_r"), p5, p20, p80])
+	check(absf(p20 - b2.tune_value("psi_r")) < 0.01 and p80 > p20 * 1.18 and p5 < p20 * 0.96, "the tyre pressure rises from the cold setting as it heats")
+	# Riding realism softens what the cold does; realism 0 keeps all of it, and off the road it matters less.
+	h2.soak(8.0)
+	h2._update_effects(0.0, 0.1)
+	var g0 := h2.tyre_grip(1, "tarmac")
+	var dirt0 := h2.tyre_grip(1, "dirt")
+	h2._update_effects(1.0, 0.1)
+	var g1 := h2.tyre_grip(1, "tarmac")
+	check(g0 < 0.88 and g1 > g0 + 0.07 and g1 < 1.0 and dirt0 > g0, "cold sport tyres: grip %.2f at realism 0, %.2f at 1, %.2f on dirt" % [g0, g1, dirt0])
+
+
+func _test_heat_warmup() -> void:
+	# Warm-up curves on a cold morning (8 °C): tyres on a gentle road ride and at track pace, the
+	# engine (air and oil cooled, air cooled and liquid cooled) from cold, and the choke's fast idle.
+	for c in [["sport_road", 400.0, "road pace"], ["sport_road", 3000.0, "track pace"], ["race_slick", 400.0, "road pace"],
+			["race_slick", 3000.0, "track pace"]]:
+		var hb := _heat_of({"front_tyre": c[0], "rear_tyre": c[0]}, 8.0)
+		var h: BikeHeat = hb[0]
+		var curve := []
+		var last := 0.0
+		for minute in [1, 3, 5, 10]:
+			_heat_run(h, hb[1], minute * 60.0 - last, 25.0, c[1], 5000.0, 7.0)
+			last = minute * 60.0
+			curve.append("%d min %d°C (x%.2f)" % [minute, roundi(h.tyre_temp(1)), h.temp_grip(1)])
+		print("    %s at %s: %s" % [c[0], c[2], ", ".join(curve)])
+		table_heat[c[0] + c[2]] = [h.tyre_temp(1), h.temp_grip(1)]
+	check(table_heat["sport_roadroad pace"][0] > 20.0, "sport tyres warm up on the road (%d °C after 10 min)" % roundi(table_heat["sport_roadroad pace"][0]))
+	check(table_heat["sport_roadtrack pace"][1] >= 0.99, "at track pace they're fully in their window (%d °C)" % roundi(table_heat["sport_roadtrack pace"][0]))
+	check(table_heat["race_slickroad pace"][1] < 0.85 and table_heat["race_slicktrack pace"][1] > 0.95,
+		"slicks never get going on the road (x%.2f) but work at track pace (x%.2f)" % [table_heat["race_slickroad pace"][1], table_heat["race_slicktrack pace"][1]])
+	for cool in ["oil_cooler", "air_fins", "single_radiator"]:
+		var hb := _heat_of({"cooling": cool}, 8.0)
+		var h: BikeHeat = hb[0]
+		var idle0 := h.idle
+		var power0 := h.power
+		var warm_at := -1.0
+		var t := 0.0
+		var marks := []
+		while t < 900.0:
+			_heat_run(h, hb[1], 10.0, 25.0, 400.0, 5000.0, 7.0)
+			t += 10.0
+			if warm_at < 0.0 and h.engine_state() == "warm":
+				warm_at = t
+			if int(t) % 120 == 0:
+				marks.append("%d min %d/%d°C" % [int(t / 60.0), roundi(h.engine), roundi(h.oil)])
+		print("    %s: %s/oil %s; warm after %d s; cold idle x%.2f, cold power x%.2f" % [cool, h.engine_label(),
+			", ".join(marks), int(warm_at), idle0, power0])
+		check(warm_at > 30.0 and warm_at < 480.0 and h.engine_state() == "warm" and h.power >= 0.99,
+			"%s: the engine warms up riding in %d s and stays warm" % [cool, int(warm_at)])
+		check(idle0 > 1.3 and power0 < 0.92, "%s: stone cold it idles fast on the choke (x%.2f) and is down on power (x%.2f)" % [cool, idle0, power0])
+	# Idling hot with no air through the fins: an air-cooled engine keeps climbing until it's
+	# overheating; a liquid-cooled one's fan holds it.
+	for cool in ["air_fins", "single_radiator"]:
+		var hb := _heat_of({"cooling": cool}, 18.0)
+		var h: BikeHeat = hb[0]
+		h.warm_through()
+		_heat_run(h, hb[1], 300.0, 30.0, 400.0, 6000.0, 15.0)
+		var ridden := h.engine
+		var hot_at := -1.0
+		var t := 0.0
+		while t < 1800.0 and hot_at < 0.0:
+			_heat_run(h, hb[1], 10.0, 0.0, 0.0, (hb[1] as BikeBuild).idle_rpm, 0.0)
+			t += 10.0
+			if h.engine_state() == "hot":
+				hot_at = t
+		print("    %s idling after a ride: %d°C ridden, %s" % [cool, roundi(ridden),
+			"hot after %d s (%d°C, power x%.2f)" % [int(hot_at), roundi(h.engine), h.power] if hot_at > 0.0 else "never hot (%d°C after 30 min)" % roundi(h.engine)])
+		if cool == "air_fins":
+			check(hot_at > 60.0 and hot_at < 1200.0, "air-cooled, idling hot with no airflow it overheats (after %d s)" % int(hot_at))
+		else:
+			check(hot_at < 0.0 and h.engine < 108.0, "liquid-cooled, the fan holds it (%d °C after 30 min)" % roundi(h.engine))
+	# Overheating costs power.
+	var hot := _heat_of({"cooling": "air_fins"}, 18.0)
+	var hh: BikeHeat = hot[0]
+	hh.engine = 250.0
+	hh.oil = 180.0
+	hh._update_effects(0.0, 0.1)
+	var p0 := hh.power
+	hh._update_effects(1.0, 0.1)
+	check(p0 < 0.85 and hh.power > p0, "an overheating engine loses power (x%.2f, x%.2f at realism 1)" % [p0, hh.power])
+
+
+func _test_heat_brake_fade() -> void:
+	# Brake fade: repeated hard stops from 30 m/s with 20 s of riding between, organic pads (which
+	# fade soonest) against sintered; then what cold does to race carbon pads.
+	for pad in ["organic", "sintered"]:
+		var hb := _heat_of({"front_pads": pad}, 15.0)
+		var h: BikeHeat = hb[0]
+		var b: BikeBuild = hb[1]
+		h.warm_through()
+		var line := []
+		var worst := 1.0
+		for stop in 10:
+			# One stop at about 1 g (less as it fades), the front brake doing 85% of it.
+			var v := 30.0
+			while v > 0.0:
+				var dt := 0.05
+				var decel := Bike.G * h.brake_temp_mult(0)
+				_heat_run(h, b, dt, v, 600.0, 4000.0, 0.0, b.total_mass * decel * 0.85 * v, true, dt)
+				v -= decel * dt
+			line.append("%d°C x%.2f" % [roundi(h.discs[0]), h.brake_temp_mult(0)])
+			worst = minf(worst, h.brake_temp_mult(0))
+			_heat_run(h, b, 20.0, 25.0, 400.0, 5000.0, 7.0)
+		print("    %s pads, front disc after each stop: %s" % [pad, ", ".join(line)])
+		table_heat[pad] = worst
+		_heat_run(h, b, 300.0, 25.0, 400.0, 5000.0, 7.0)
+		table_heat[pad + "_cooled"] = h.brake_temp_mult(0)
+		print("    ... and after 5 min riding gently: %d°C x%.2f" % [roundi(h.discs[0]), h.brake_temp_mult(0)])
+	check(table_heat["organic"] < 0.8, "organic pads fade after repeated hard stops (bite x%.2f)" % table_heat["organic"])
+	check(table_heat["sintered"] > table_heat["organic"] + 0.1, "sintered pads hold on far longer (x%.2f)" % table_heat["sintered"])
+	check(table_heat["organic_cooled"] > 0.98, "the brakes come back once they cool (x%.2f)" % table_heat["organic_cooled"])
+	var hb := _heat_of({"front_pads": "carbon_race"}, 10.0)
+	var h: BikeHeat = hb[0]
+	var cold := h.brake_temp_mult(0)
+	h.discs[0] = 300.0
+	h.pads[0] = 300.0
+	var hot := h.brake_temp_mult(0)
+	var semi: BikeHeat = _heat_of({}, 10.0)[0]
+	check(cold < 0.75 and hot > 0.99 and semi.brake_temp_mult(0) > 0.94,
+		"race carbon pads barely bite cold (x%.2f), fully at 300 °C; semi-metallic bite cold (x%.2f)" % [cold, semi.brake_temp_mult(0)])
+
+
+## A hard stop from 25 m/s on the front brake, the bike's heat set up by `prep` first.
+## Returns [distance m (-1 if it crashed), [front tyre, rear tyre, front disc °C after], v0].
+func _heat_stop(build: Dictionary, assist: float, prep: Callable, lever := 1.0, seconds := 13.0) -> Array:
+	var st := {"x0": Vector3.ZERO, "v0": 0.0, "dist": -1.0, "prepped": false, "temps": [0.0, 0.0, 0.0]}
+	var r := await ride(build, seconds, func(b, t):
+		b.assist = assist
+		if not st["prepped"]:
+			st["prepped"] = true
+			prep.call(b.heat)
+		if t < 8.0:
+			_hold_speed(b, 25.0)
+			b.front_brake = 0.0
+			return
+		b.throttle = 0.0
+		b.front_brake = lever
+		b.rear_brake = 0.0
+		if st["v0"] == 0.0:
+			st["v0"] = b.speed
+			st["x0"] = b.global_position
+		elif st["dist"] < 0.0 and b.speed < 0.3:
+			st["dist"] = (b.global_position - st["x0"]).length()
+			st["temps"] = [b.heat.tyres[0]["surface"], b.heat.tyres[1]["surface"], b.heat.discs[0]])
+	var out := [st["dist"] if not r["crashed"] else -1.0, st["temps"], st["v0"]]
+	await _done(r)
+	return out
+
+
+func _test_heat_cold_tyres() -> void:
+	# A cold morning: the same hard stop on stone cold tyres stops longer than on warm ones, and
+	# race slicks cold are far worse. Riding realism softens it.
+	BikeHeat.fixed_air = 6.0
+	var warm := await _heat_stop({}, 0.5, func(_h): pass)
+	var cold := await _heat_stop({}, 0.5, func(h): h.soak(6.0))
+	var warm_easy := await _heat_stop({}, 1.0, func(_h): pass)
+	var cold_easy := await _heat_stop({}, 1.0, func(h): h.soak(6.0))
+	var slick_warm := await _heat_stop(SLICK, 0.5, func(_h): pass)
+	var slick_cold := await _heat_stop(SLICK, 0.5, func(h): h.soak(6.0))
+	BikeHeat.fixed_air = NAN
+	print("    stop from 25 m/s, sport tyres: warm %.1f m, cold %.1f m (realism 0.5); %.1f vs %.1f m at realism 1" % [warm[0], cold[0], warm_easy[0], cold_easy[0]])
+	print("    race slicks: warm %.1f m, cold %.1f m; the cold sport tyres after the stop: front %d°C, rear %d°C, disc %d°C" % [slick_warm[0], slick_cold[0],
+		roundi(cold[1][0]), roundi(cold[1][1]), roundi(cold[1][2])])
+	check(warm[0] > 0.0 and cold[0] > warm[0] * 1.05, "cold sport tyres stop noticeably longer (%.1f m against %.1f m)" % [cold[0], warm[0]])
+	check(slick_warm[0] > 0.0 and slick_cold[0] > slick_warm[0] * 1.15, "cold slicks far longer (%.1f m against %.1f m)" % [slick_cold[0], slick_warm[0]])
+	check(warm_easy[0] > 0.0 and cold_easy[0] / warm_easy[0] < cold[0] / warm[0],
+		"Riding realism 1 softens the cold (x%.2f against x%.2f)" % [cold_easy[0] / maxf(warm_easy[0], 0.1), cold[0] / maxf(warm[0], 0.1)])
+	check(cold[1][0] > 6.5 and cold[1][2] > 25.0, "the ride and the stop warmed the tyres and the disc")
+
+
+func _test_heat_brakes_ride() -> void:
+	# Overcooked brakes fade: the same squeeze on discs at 650 °C stops far longer at realism 0.
+	var lever := 0.45
+	var normal := await _heat_stop({"front_pads": "organic"}, 0.0, func(_h): pass, lever)
+	var faded := await _heat_stop({"front_pads": "organic"}, 0.0, func(h):
+		h.discs[0] = 650.0
+		h.pads[0] = 600.0, lever, 22.0)
+	var normal_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(_h): pass, lever)
+	var faded_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(h):
+		h.discs[0] = 650.0
+		h.pads[0] = 600.0, lever, 22.0)
+	print("    organic pads, the same squeeze from 25 m/s: %.1f m normal, %.1f m faded (realism 0); %.1f vs %.1f m at realism 1" % [normal[0], faded[0], normal_easy[0], faded_easy[0]])
+	check(normal[0] > 0.0 and faded[0] > normal[0] * 1.3, "faded brakes stop far longer (%.1f m against %.1f m)" % [faded[0], normal[0]])
+	check(normal_easy[0] > 0.0 and faded_easy[0] / normal_easy[0] < faded[0] / normal[0], "Riding realism 1 softens the fade")
+
+
+func _test_heat_engine_ride() -> void:
+	# A cold engine on the bike: it idles fast on the choke and is down on power until the oil warms.
+	BikeHeat.fixed_air = 6.0
+	var st := {"cold_rpm": 0.0, "warm_rpm": 0.0, "cold_power": 1.0, "telemetry": false}
+	for cold in [true, false]:
+		var tel := RideTelemetry.new("Heat")
+		var r := await ride({}, 3.0, func(b, t):
+			b.assist = 0.0
+			b.telemetry = tel
+			if t == 0.0 and cold:
+				b.heat.soak(6.0)
+			b.throttle = 0.0
+			b.front_brake = 1.0)
+		var bike: Bike = r["bike"]
+		st["cold_rpm" if cold else "warm_rpm"] = bike.rpm
+		if cold:
+			st["cold_power"] = bike.heat.power
+			st["telemetry"] = absf(tel.latest("engine_t") - bike.heat.engine) < 1.0 and tel.latest("psi_r") > 1.0 \
+				and tel.latest("tyre_f") > 0.0 and tel.latest("air_t") == 6.0
+		await _done(r)
+	BikeHeat.fixed_air = NAN
+	print("    idle: %d rpm stone cold, %d rpm warm; cold power x%.2f" % [roundi(st["cold_rpm"]), roundi(st["warm_rpm"]), st["cold_power"]])
+	check(st["cold_rpm"] > st["warm_rpm"] * 1.25, "a cold engine idles fast (%d against %d rpm)" % [roundi(st["cold_rpm"]), roundi(st["warm_rpm"])])
+	check(st["cold_power"] < 0.92, "and is down on power until it warms (x%.2f)" % st["cold_power"])
+	check(st["telemetry"], "the telemetry records the temperatures, pressures and the air")
+
+
+func _test_heat_carry_over() -> void:
+	# Get off and back on a minute later: still warm. Leave it for hours: shed temperature.
+	# Nothing about heat is saved, so old saves load as they always did.
+	BikeHeat.fixed_air = 10.0
+	var hb := _heat_of({}, 10.0)
+	var ridden: BikeHeat = hb[0]
+	ridden.warm_through()
+	BikeHeat.park(-77, ridden)
+	BikeHeat.parked[-77]["at"] = Time.get_ticks_msec() - 60000
+	var back := BikeHeat.new()
+	back.setup(hb[1])
+	BikeHeat.resume(-77, back)
+	var minute := back.engine
+	BikeHeat.parked[-77]["at"] = Time.get_ticks_msec() - 5 * 3600 * 1000
+	BikeHeat.resume(-77, back)
+	var hours := back.engine
+	var fresh := BikeHeat.new()
+	fresh.setup(hb[1])
+	BikeHeat.resume(-78, fresh)
+	BikeHeat.parked.erase(-77)
+	BikeHeat.fixed_air = NAN
+	print("    engine back on after a minute %d°C, after 5 hours %d°C, a bike not ridden %d°C (shed 13°C)" % [roundi(minute), roundi(hours), roundi(fresh.engine)])
+	check(minute > 80.0 and absf(hours - 13.0) < 0.5 and absf(fresh.engine - 13.0) < 0.01,
+		"a bike ridden a minute ago is still warm; one left for hours, or not ridden, is at shed temperature")
+	check(fresh.tyre_state() == "cold" and fresh.engine_state() == "cold" and ridden.engine_state() == "warm",
+		"the HUD says cold tyres and engine on a cold bike, warm on a ridden one")
+	var save := BikeBuild.new({}).to_dict()
+	check(not str(save).contains("heat") and not str(save).contains("carcass"), "heat isn't part of a saved bike")

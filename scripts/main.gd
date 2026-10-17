@@ -473,6 +473,8 @@ func _start_riding(bike_id: int) -> void:
 	bike.ride_xp = RideXP.new(bike_id)
 	bike.telemetry = RideTelemetry.new(str(data.get("name", "")))
 	bike.setup(Shed.build_of(bike_id), data["paint"])
+	# Tyres, brakes and engine as cold as the shed, or still warm from a ride a moment ago.
+	BikeHeat.resume(bike_id, bike.heat)
 	bike.model.apply_geometry(Shed.geometry_of(bike_id))
 	bike.set_meta("shed_bike", bike_id)   # so the shed TVs know whose ride this is
 	world.add_child(bike)
@@ -555,6 +557,8 @@ func _ignition() -> void:
 
 
 func _stop_riding() -> void:
+	if bike:
+		BikeHeat.park(riding_id, bike.heat)
 	riding_id = 0
 	if bike:
 		bike.queue_free()

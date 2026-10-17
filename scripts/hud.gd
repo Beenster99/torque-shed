@@ -406,6 +406,7 @@ func _draw_speedo() -> void:
 	var used := trip_fuel + bike.fuel_used
 	var economy := Units.economy(trip_km / used) if used > 0.01 and trip_km > 0.05 else "-- " + Units.economy_unit()
 	draw_string(font, r.position + Vector2(12, 130), "%.1f L  ·  %s" % [bike.fuel_litres, economy], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.8))
+	_draw_heat_hints(r)
 	var hint := ""
 	if not bike.engine_on and not bike.is_crashed:
 		hint = "Starting..." if bike.is_starting() else "Engine off: press I (or D-pad up) to start it"
@@ -413,6 +414,29 @@ func _draw_speedo() -> void:
 		hint = "F (or Y): get off   ·   I: engine off   ·   hold S: paddle back   ·   S + throttle: burnout"
 	if hint != "":
 		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))
+
+
+## Beside the speedo, how warm the tyres and the engine are (cold, warm or hot), and a warning
+## while the brakes are fading (see BikeHeat).
+func _draw_heat_hints(panel: Rect2) -> void:
+	var h := bike.heat
+	if h == null:
+		return
+	var font := get_theme_default_font()
+	var rows := [["TYRES", h.tyre_state()], ["ENGINE", h.engine_state()]]
+	if h.brakes_fading():
+		rows.append(["BRAKES", "fading"])
+	var colours := {"cold": Color(0.45, 0.72, 1.0), "warm": Color(0.45, 0.85, 0.45), "hot": Color(1.0, 0.35, 0.25),
+		"fading": Color(1.0, 0.35, 0.25)}
+	var y := panel.position.y
+	for row in rows:
+		var box := Rect2(panel.position.x - 138.0, y, 130.0, 28.0)
+		draw_rect(box, Color(0.03, 0.03, 0.04, 0.6))
+		var col: Color = colours.get(row[1], Color.WHITE)
+		draw_circle(box.position + Vector2(12.0, 14.0), 5.0, col)
+		draw_string(font, box.position + Vector2(24.0, 19.0), str(row[0]), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
+		draw_string(font, box.position + Vector2(82.0, 19.0), str(row[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+		y += 34.0
 
 
 ## The truck's dash, in the corner where a bike's speedo goes: the speed, the gear lever's

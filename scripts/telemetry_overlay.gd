@@ -5,12 +5,15 @@ extends Control
 ## ring is sliding) with its load; the throttle and brakes; and strip charts of the last few
 ## seconds (lean, steering, bar torque, slip, grip used, loads). Under each circle, how far that
 ## end's suspension is squashed (red on the bump stop), and the geometry as the springs have it
-## now: the pitch on them, the rake and the trail. Reads the bike's RideTelemetry.
+## now: the pitch on them, the rake and the trail. The heat: each tyre's temperature and
+## pressure, the brake discs, and the engine, oil and air (see BikeHeat), with strips of each.
+## Reads the bike's RideTelemetry.
 
 const WIDTH := 400.0
 const WINDOW := 8.0            # seconds of history in the strips
 const STRIPS := ["Lean (+ right)", "Steering (+ right)", "Bar torque (+ right)", "Steering shake", "Slip ratio",
-	"Slip angle", "Grip used (1 = the limit)", "Tyre load", "Suspension travel used", "Trail"]
+	"Slip angle", "Grip used (1 = the limit)", "Tyre load", "Suspension travel used", "Trail", "Tyre temperature",
+	"Brake temperature", "Engine temperature"]
 
 var bike: Bike
 
@@ -65,7 +68,16 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, dim)
 	draw_string(font, Vector2(bx, by + 28.0), "Trail %d mm (%d standing)" % [roundi(bike.trail_springs * 1000.0), roundi(bike.build.trail * 1000.0)],
 		HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, dim)
-	y += d + 46.0
+	var h_ := bike.heat
+	if h_:
+		draw_string(font, Vector2(bx, by + 44.0), "Discs %d / %d°C%s" % [roundi(h_.discs[0]), roundi(h_.discs[1]),
+			"  FADING" if h_.brakes_fading() else ""], HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12,
+			TelemetryGraph.OVER if h_.brakes_fading() else dim)
+		var eng := h_.engine_state()
+		draw_string(font, Vector2(bx, by + 60.0), "%s %d°C  oil %d  air %d" % [h_.engine_label().capitalize(), roundi(h_.engine),
+			roundi(h_.oil), roundi(h_.air)], HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12,
+			TelemetryGraph.OVER if eng == "hot" else (TelemetryGraph.FRONT_PALE if eng == "cold" else dim))
+	y += d + 76.0
 	# The last few seconds as strips.
 	var shown := TelemetryGraph.STRIPS.filter(func(s): return STRIPS.has(s[0]))
 	var gap := 5.0
@@ -102,3 +114,14 @@ func _circle(c: Vector2, r: float, w: Dictionary, name: String, color: Color) ->
 	var susp := "%s %d/%d mm" % ["fork" if w.get("is_front", false) else "shock", roundi(q * 1000.0), roundi(travel * 1000.0)]
 	draw_string(font, c + Vector2(-r, r + 30.0), "BOTTOMED" if stop else susp, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
 		TelemetryGraph.OVER if stop else TelemetryGraph.INK_DIM)
+	# Its heat: the tread (and carcass) temperature and the pressure that's brought, pale blue cold
+	# and red overcooked.
+	var h := bike.heat
+	if h:
+		var i := 0 if w.get("is_front", false) else 1
+		var g := h.temp_grip(i)
+		var t := h.tyre_temp(i)
+		var hot := g < 1.0 and t > h.working(i)
+		var col := TelemetryGraph.OVER if hot else (TelemetryGraph.FRONT_PALE if g < 0.97 else TelemetryGraph.INK)
+		draw_string(font, c + Vector2(-r, r + 46.0), "%d/%d°C %.2f bar" % [roundi(float(h.tyres[i]["surface"])),
+			roundi(float(h.tyres[i]["carcass"])), h.pressure(i)], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
