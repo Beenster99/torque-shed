@@ -37,8 +37,10 @@ const PAINT_DONORS := {"tank": ["peanut_9", "cafe_15", "sport_17", "teardrop_cla
 	"side_panels": ["triangle_classic", "oval_number"]}
 ## The library colour Simon asked for by name: trade customers often want it.
 const FAVOURITE := "custom_iridium_orange"
-## The dispatch pallet, just along from the delivery area (x/z): finished parts go down on it.
-const DISPATCH := Rect2(11.3, 72.7, 2.4, 2.0)
+## The dispatch pallet (x/z), against the paint shop's front wall just behind the delivery area
+## (under the high end of the lounge's outside stairs, once they're built): finished parts go
+## down on it.
+const DISPATCH := Rect2(7.7, 70.45, 2.4, 1.8)
 const LATE_CUT := 0.15          # a part's pay lost for each day late (to half at most)
 const BONUS_SHARE := 0.25       # the bonus for the lot on time, of what the parts pay
 

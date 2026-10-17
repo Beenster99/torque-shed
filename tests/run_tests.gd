@@ -7597,6 +7597,13 @@ func _test_contract_batch_dispatch() -> void:
 	r = ContractBatch.check_item(spec, first)
 	check(not r["ok"] and r["why"].any(func(w): return str(w).contains("hp")) and r["why"].any(func(w): return str(w).contains("not")),
 		"unpacked as it came: %s" % ", ".join(r["why"]))
+	var pallet := ContractsView.dispatch_pallet()
+	var d := ContractBatch.DISPATCH
+	var wall_face := Workshop.BOOTH_ROOM_CENTER.z + Workshop.BOOTH_ROOM_HALF.y + 0.2   # the paint shop's front wall, outside
+	check(pallet.find_children("*", "Label3D", true, false).is_empty() and d.position.y - wall_face > 0.0 and d.position.y - wall_face < 0.15
+		and d.position.x > Workshop.BOOTH_ROOM_CENTER.x - Workshop.BOOTH_ROOM_HALF.x and not d.intersects(Shed.DELIVERY_AREA.grow(0.1)),
+		"the dispatch pallet's up against the shed wall, behind the deliveries, with no sign (%s)" % str(d))
+	pallet.free()
 	_drop_on_pallet(first)
 	check(int(job["sent"]) == 0 and Shed.items.has(first) and ContractBatch.on_pallet(first), "put down on the pallet, it's checked and left there")
 	check(ContractBatch.checkable(job).has(first), "and the card lists it with what's wrong")
@@ -10753,6 +10760,8 @@ func _test_shed_building_session() -> void:
 	check(Sfx.step_surface(w.global_position) == "carpet", "the lounge is carpeted underfoot")
 	check(ws.get_node_or_null("Upgrades/Built/LoungeSofa") != null and (ws.get_node("Upgrades/Built/LoungeSofa") as Node3D).global_position.y > GarageUpgrades.LOFT_FLOOR,
 		"the lounge's furniture is up there")
+	var up_signs := ws.find_children("*", "Label3D", true, false).filter(func(l): return (l as Label3D).text.contains("UP TO THE\nCREW"))
+	check(up_signs.is_empty() and ws.find_child("LoungeStairsPost", true, false) == null, "no 'up to the crew lounge' sign at the foot of the stairs")
 	check(Workshop.room_at(Vector3(0.0, 1.0, 65.0)) == "shed", "downstairs is still the shed")
 	main._leave()
 	main.queue_free()
@@ -16360,9 +16369,14 @@ func _test_wash_session() -> void:
 	w.set_tool("lance")
 	await _aim_at(main, faithful, "engine")
 	check(w.wash_target() == faithful, "the pressure washer's on the bike")
+	check(str(w.target.get("kind", "")) == "part" and model._highlighted == "",
+		"looking at a part with the pressure washer, it isn't highlighted, so clean and dirty bits show (%s)" % model._highlighted)
 	_press("interact")
 	await get_tree().physics_frame
 	check(not w.wash_mode.is_empty() and w.wash != null, "F brings up the wash controls on it")
+	for i in 3:
+		await get_tree().physics_frame
+	check(model._highlighted == "", "nor while washing")
 	if w.wash == null:
 		main._leave()
 		main.queue_free()

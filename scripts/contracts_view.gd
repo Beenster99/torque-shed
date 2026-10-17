@@ -20,7 +20,7 @@ func _ready() -> void:
 
 
 ## The dispatch pallet by the delivery area, where batch orders' finished parts go down (see
-## ContractBatch.DISPATCH): a wooden pallet on the ground with a sign on a post.
+## ContractBatch.DISPATCH): a wooden pallet on the ground against the shed wall.
 static func dispatch_pallet() -> Node3D:
 	var root := Node3D.new()
 	root.name = "DispatchPallet"
@@ -53,20 +53,6 @@ static func dispatch_pallet() -> Node3D:
 	shape.position = Vector3(0.0, 0.0555, 0.0)
 	body.add_child(shape)
 	root.add_child(body)
-	var post := StandardMaterial3D.new()
-	post.albedo_color = Color(0.2, 0.2, 0.22)
-	box.call(Vector3(0.06, 1.3, 0.06), Vector3(r.size.x * 0.5 + 0.15, 0.65, -r.size.y * 0.5 + 0.1), post)
-	var board := StandardMaterial3D.new()
-	board.albedo_color = Color(0.95, 0.75, 0.1)
-	box.call(Vector3(0.9, 0.36, 0.03), Vector3(r.size.x * 0.5 + 0.15, 1.36, -r.size.y * 0.5 + 0.13), board)
-	var sign := Label3D.new()
-	sign.text = "DISPATCH\nbatch orders"
-	sign.font_size = 40
-	sign.pixel_size = 0.004
-	sign.modulate = Color(0.08, 0.08, 0.08)
-	sign.outline_size = 0
-	sign.position = Vector3(r.size.x * 0.5 + 0.15, 1.36, -r.size.y * 0.5 + 0.15)
-	root.add_child(sign)
 	return root
 
 

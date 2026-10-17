@@ -841,12 +841,6 @@ func _build_loft_stairs() -> void:
 	var sign_y := top + GarageUpgrades.LOFT_DOOR_HEIGHT + 0.3
 	_box(Vector3(GarageUpgrades.LOFT_DOOR_X, sign_y, wall_face + 0.01), Vector3(1.5, 0.32, 0.02), _mats["hazard"]).name = "LoungeSignBoard"
 	_text("CREW LOUNGE", Vector3(GarageUpgrades.LOFT_DOOR_X, sign_y, wall_face + 0.025), 0.0, 44, Color(0.08, 0.08, 0.08), 0).name = "LoungeSign"
-	# And at the foot of the stairs, on a post beside them, facing the yard.
-	var post_at := Vector3(sx.x + 0.3, 0.0, sz.y + 0.35)
-	ws._solid(post_at + Vector3(0.0, 0.75, 0.0), Vector3(0.08, 1.5, 0.08), _mats["hazard"], _root).name = "LoungeStairsPost"
-	_box(post_at + Vector3(0.0, 1.3, 0.05), Vector3(1.1, 0.42, 0.03), ws._mats["dark"]).name = "LoungeStairsBoard"
-	var up := _text("UP TO THE\nCREW LOUNGE", post_at + Vector3(0.0, 1.3, 0.07), 0.0, 28, Color(0.95, 0.8, 0.2), 4)
-	up.name = "LoungeStairsSign"
 	var lamp := OmniLight3D.new()
 	lamp.position = Vector3(GarageUpgrades.LOFT_DOOR_X, top + GarageUpgrades.LOFT_DOOR_HEIGHT + 0.2, front + 0.5)
 	lamp.omni_range = 4.0
