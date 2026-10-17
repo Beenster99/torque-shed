@@ -3099,8 +3099,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 		var washed := Wash.apply(peer, action)
 		if washed != "":
 			_tell(peer, washed, true)
+		# Where the jet's landing is read every frame (Wash.jets), and the washer's own bike is
+		# drawn by their wash job meanwhile: the shed's told with the next sync (a moment later,
+		# SYNC_INTERVAL), not gone over again for each of these, many times a second.
 		_mark_dirty()
-		changed.emit()
 		return
 	if a == "coat":
 		_tell(peer, _coat_apply(peer, action), true)

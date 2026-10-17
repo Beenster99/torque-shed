@@ -32,6 +32,10 @@ const AUTOSAVE_INTERVAL := 60.0
 const NOTE_INTERVAL := 1.0
 ## The Load screen's picture of each game.
 const THUMB_SIZE := Vector2i(240, 135)
+## Play seconds between new pictures for the autosave: reading the screen back holds up a frame,
+## so the minute's autosave keeps the last one unless it's this old (a save by hand, or on the
+## way out, always takes a new one).
+const THUMB_EVERY := 300.0
 const NAME_LENGTH := 32
 ## Crew fields that belong to the moment rather than the player, so aren't carried over.
 const TRANSIENT_CREW := ["name", "tool", "activity", "riding", "kmh", "slot", "blaster", "blast_rot", "blast_fire", "blast_at", "blast_base", "blast_scan"]
@@ -59,6 +63,11 @@ var _notice := ""
 var _autosave := 0.0
 var _note_timer := 0.0
 var _thumb: Image           # the latest picture of the game, taken while no menu was up
+var _thumb_at := -INF       # play_time when it was taken
+## The autosave being written out in the background (a WorkerThreadPool task), or -1, and what
+## came of it ({err}).
+var _task := -1
+var _task_job := {}
 
 
 func _ready() -> void:
@@ -73,7 +82,13 @@ func _notification(what: int) -> void:
 		save_now()
 
 
+func _exit_tree() -> void:
+	_finish_background()
+
+
 func _process(delta: float) -> void:
+	if _task >= 0 and WorkerThreadPool.is_task_completed(_task):
+		_finish_background()
 	if not can_save():
 		_autosave = 0.0
 		return
@@ -84,7 +99,7 @@ func _process(delta: float) -> void:
 		_note_players()
 	_autosave += delta
 	if _autosave >= AUTOSAVE_INTERVAL:
-		save_now()
+		save_now(false, true)
 
 
 # ---------------------------------------------------------------------------- slots and files
@@ -422,19 +437,51 @@ func can_save() -> bool:
 
 
 ## Saves the session to the active slot. Does nothing on a co-op client. `manual` says so on screen.
-func save_now(manual := false) -> bool:
+## `background` (the autosave): the game's taken as it is now, but written out to the file on
+## another thread so the game doesn't stop for it, and it keeps the last picture unless that's
+## THUMB_EVERY old; true once it's under way.
+func save_now(manual := false, background := false) -> bool:
 	if not can_save():
 		return false
+	_finish_background()
 	_autosave = 0.0
-	if not (main.menu and main.menu.visible):
+	if not (main.menu and main.menu.visible) and (not background or _thumb == null or play_time - _thumb_at >= THUMB_EVERY):
 		grab_thumbnail()
 	var slot := active_slot()
-	var err := write(slot, capture())
+	var data := capture()
+	if background:
+		_task_job = {"err": OK}
+		_task = WorkerThreadPool.add_task(SaveGame._write_with_thumb.bind(slot, data, _thumb.duplicate() if _thumb else null, _task_job),
+			false, "Autosave")
+		return true
+	var err := write(slot, data)
+	if err == OK and _thumb:
+		_thumb.save_png(thumb_path(slot))
+	return _saved(err, manual)
+
+
+## The save file and its picture written out (on the autosave's thread): what came of it in `job`.
+static func _write_with_thumb(slot: String, data: Dictionary, thumb: Image, job: Dictionary) -> void:
+	var err := write(slot, data)
+	if err == OK and thumb:
+		thumb.save_png(thumb_path(slot))
+	job["err"] = err
+
+
+## Waits for the autosave being written in the background, if there is one, and tells of it.
+func _finish_background() -> void:
+	if _task < 0:
+		return
+	WorkerThreadPool.wait_for_task_completion(_task)
+	_task = -1
+	if is_inside_tree():
+		_saved(int(_task_job.get("err", FAILED)), false)
+
+
+func _saved(err: Error, manual: bool) -> bool:
 	last_error = "" if err == OK else error_string(err)
 	if err == OK:
 		last_saved = int(Time.get_unix_time_from_system())
-		if _thumb:
-			_thumb.save_png(thumb_path(slot))
 	if manual and main.hud:
 		main.hud.flash(("Saved %s." % save_name if save_name != "" else "Shed saved.") if err == OK
 			else "Couldn't save the shed (%s)." % last_error, 2.0, err != OK)
@@ -480,6 +527,7 @@ func grab_thumbnail() -> void:
 	img = img.get_region(Rect2i((img.get_width() - w) / 2, (img.get_height() - h) / 2, w, h))
 	img.resize(THUMB_SIZE.x, THUMB_SIZE.y, Image.INTERPOLATE_BILINEAR)
 	_thumb = img
+	_thumb_at = play_time
 
 
 ## Everything a save holds: the whole Shed snapshot (bikes being ridden are put where they are

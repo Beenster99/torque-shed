@@ -92,6 +92,9 @@ func _run_all() -> void:
 	_test_bike_paint_panels()
 	print("Road traffic")
 	await _test_road_traffic()
+	print("Simon's 17 October round: the game had got slow")
+	await _test_perf_steady()
+	await _test_no_glare()
 	print("XP, levels, tool upgrades and skills")
 	_test_progress()
 	print("Bike lights, tyres and the tyre changer")
@@ -2949,6 +2952,200 @@ func _test_road_traffic() -> void:
 	await get_tree().physics_frame
 	check(tr.active_count() == 0, "and they're off the roads when the session ends")
 	main.queue_free()
+	await get_tree().process_frame
+
+
+## Simon's 17 October round: the game had got slow. Nothing in the shed is rebuilt or re-sent to
+## the GPU when nothing has changed, the node count stays flat however often the shed changes,
+## the pressure washer only looks at the bit of the bike the jet is on (and finds just what
+## going over all of it would), and the autosave writes the file in the background.
+func _test_perf_steady() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var ws: Workshop = main.workshop
+	var faithful := _bike_named("Old Faithful")
+	var me := Shed.me()
+	Shed.bikes[faithful]["rider"] = me
+	Shed.crew[me]["riding"] = faithful
+	Shed._wear_from_ride(faithful, {"km": 6.0, "dirt_km": 3.0, "fly_km": 3.0})
+	Shed.bikes[faithful]["rider"] = 0
+	Shed.crew[me]["riding"] = 0
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+	Shed.changed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	# The shed changing over and over, with nothing to redraw: the same views, no more nodes.
+	var views := {}
+	for id in ws.bike_views:
+		views[id] = (ws.bike_views[id] as Node).get_instance_id()
+	var nodes0 := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+	var models := [0]
+	var count_models := func(n: Node):
+		if n is BikeModel:
+			models[0] += 1
+	get_tree().node_added.connect(count_models)
+	for i in 30:
+		Shed.changed.emit()
+		await get_tree().process_frame
+	get_tree().node_added.disconnect(count_models)
+	var same := views.size() == ws.bike_views.size()
+	for id in views:
+		same = same and ws.bike_views.has(id) and (ws.bike_views[id] as Node).get_instance_id() == views[id]
+	var nodes1 := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+	check(same and models[0] == 0 and absf(nodes1 - nodes0) < 20,
+		"the shed changing 30 times with nothing new rebuilds no bike (%d models built, nodes %d -> %d)" % [models[0], nodes0, nodes1])
+	# The dirt drawn on a parked bike isn't sent to the GPU again every frame, only when it moves.
+	var model := ws.bike_model(faithful)
+	var layer: DirtLayer = model.dirt_layer if model else null
+	var mat: ShaderMaterial = layer.material_for("engine") if layer else null
+	check(mat != null and layer.mesh_count() > 20, "the muddy bike has its dirt drawn on (%d meshes)" % (layer.mesh_count() if layer else 0))
+	if mat == null:
+		main._leave()
+		main.queue_free()
+		await get_tree().process_frame
+		return
+	var mine := {}
+	for r in layer._restore:
+		mine[(r[0] as GeometryInstance3D).material_override] = true
+	check(mine.size() < layer.mesh_count() / 2, "a part's meshes share their dirty materials (%d for %d meshes)" % [mine.size(), layer.mesh_count()])
+	var marker := Projection(Vector4(2, 0, 0, 0), Vector4(0, 2, 0, 0), Vector4(0, 0, 2, 0), Vector4(0, 0, 0, 1))
+	mat.set_shader_parameter("to_model", marker)
+	for i in 3:
+		await get_tree().process_frame
+	check(mat.get_shader_parameter("to_model") == marker, "a parked bike's dirt isn't re-sent each frame")
+	ws.bike_views[faithful].position += Vector3(0.0, 0.0, 0.2)
+	await get_tree().process_frame
+	check(mat.get_shader_parameter("to_model") != marker, "but it follows the bike when it moves")
+	ws.bike_views[faithful].position -= Vector3(0.0, 0.0, 0.2)
+	# The washer: where the jet lands and what it reaches, found from the bit of the bike it's on.
+	var job := WashJob.new()
+	check(job.setup(faithful, model), "the pressure washer gets ready on the bike")
+	job.prepare_all()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 17
+	var mid: Vector3 = job._mid
+	var hits := 0
+	var agree := 0
+	var near_ok := true
+	for k in 120:
+		var e := mid + Vector3(rng.randf_range(-1.5, 1.5), rng.randf_range(-0.2, 1.4), rng.randf_range(-1.5, 1.5))
+		var to := mid + Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(-0.4, 0.5), rng.randf_range(-0.9, 0.9))
+		var d := (to - e).normalized()
+		var bi := -1
+		var best := INF
+		for i in job.e_pos.size():
+			var v := job.e_pos[i] - e
+			var t := v.dot(d)
+			if t <= 0.0 or t >= best or job.e_n[i].dot(d) > 0.0:
+				continue
+			if (v - d * t).length_squared() < 0.03 * 0.03:
+				best = t
+				bi = i
+		var xf := model.global_transform
+		var sh := job.surface_hit(xf * e, xf.basis * d)
+		if bi >= 0:
+			hits += 1
+		if (bi < 0 and sh.is_empty()) or (bi >= 0 and not sh.is_empty() and (sh["at"] as Vector3).distance_to(xf * (e + d * best)) < 1e-4):
+			agree += 1
+		var p := job.e_pos[rng.randi() % job.e_pos.size()]
+		var r := rng.randf_range(0.03, 0.2)
+		var found := job._entries_near(p, r)
+		for i in job.e_pos.size():
+			if job.e_pos[i].distance_to(p) <= r and not found.has(i):
+				near_ok = false
+	check(hits > 20 and agree == 120, "the jet lands just where going over every point says it would (%d of 120 rays, %d hit the bike)" % [agree, hits])
+	check(near_ok, "and reaches every point it would")
+	job.finish()
+	# Where the jet's aimed goes out with the next sync, without the shed being gone over for it.
+	var told := [0]
+	var on_change := func(): told[0] += 1
+	Shed.changed.connect(on_change)
+	Shed.request({"a": "wash_aim", "fire": true, "at": Workshop.WASH_CENTER, "n": Vector3.UP, "bike": faithful})
+	var aimed: int = told[0]
+	Shed.changed.disconnect(on_change)
+	check(aimed == 0 and Wash.jets().size() == 1, "aiming the jet doesn't make the whole shed redraw there and then (%d)" % aimed)
+	Shed.request({"a": "wash_aim", "fire": false})
+	Shed.changed.connect(on_change)
+	for i in int(Shed.SYNC_INTERVAL * 120.0) + 6:
+		await get_tree().process_frame
+	Shed.changed.disconnect(on_change)
+	check(told[0] >= 1, "it's told with the next sync instead (%d)" % told[0])
+	# The autosave: written in the background, then it's there.
+	var kept_dir := SaveGame.dir
+	SaveGame.dir = "user://saves_perf_test/"
+	_clear_save_dir(SaveGame.dir)
+	var saver: SaveGame = main.saver
+	var under_way := saver.save_now(false, true)
+	var waited := 0
+	while saver._task >= 0 and waited < 600:
+		await get_tree().process_frame
+		waited += 1
+	check(under_way and saver._task < 0 and SaveGame.has_save(SaveGame.active_slot()) and SaveGame.last_error == ""
+		and not SaveGame.read(SaveGame.active_slot()).is_empty(), "the autosave is written in the background (%d frames)" % waited)
+	_clear_save_dir(SaveGame.dir)
+	SaveGame.dir = kept_dir
+	main._leave()
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Simon's 17 October round: bikes riding off from the cafe showed as big white glow balls
+## speckled black, the mark of a NaN or an overflowing value on screen. No bike surface is smooth
+## enough for a sun glint to overflow, the dirt, paint and blasting passes never work out a
+## facing from a zero normal or hand the screen a value that isn't a number, and the dirt's
+## place on a bike isn't thrown off by a bike squashed flat.
+func _test_no_glare() -> void:
+	var holder := Node3D.new()
+	add_child(holder)
+	var rng := RandomNumberGenerator.new()
+	var smoothest := 1.0
+	var clear_smoothest := 1.0
+	var dirty := 0
+	for i in 6:
+		rng.seed = 1700 + i
+		var b := CoffeeShop._make_bike(rng)
+		var look := CoffeeView.bike_look({"bike": b})
+		var build := BikeBuild.new(PartsDB.sanitize_build((look["parts"] as Dictionary).duplicate()), look["cond"])
+		var m := BikeModel.new()
+		holder.add_child(m)
+		m.build_from(build, look["paint"], {}, null, true)
+		if m.dirt_layer and m.dirt_layer.mesh_count() > 0:
+			dirty += 1
+		var stack: Array[Node] = [m]
+		while not stack.is_empty():
+			var n: Node = stack.pop_back()
+			stack.append_array(n.get_children())
+			var mi := n as MeshInstance3D
+			if mi == null or mi.mesh == null:
+				continue
+			for si in mi.mesh.get_surface_count():
+				var mat := mi.get_active_material(si)
+				while mat != null:
+					if mat is BaseMaterial3D:
+						smoothest = minf(smoothest, (mat as BaseMaterial3D).roughness)
+						if (mat as BaseMaterial3D).clearcoat_enabled:
+							clear_smoothest = minf(clear_smoothest, (mat as BaseMaterial3D).clearcoat_roughness)
+					mat = mat.next_pass
+	check(dirty > 0 and smoothest >= BikeModel.MIN_ROUGHNESS - 1e-6 and clear_smoothest >= BikeModel.MIN_CLEARCOAT_ROUGHNESS - 1e-6,
+		"the cafe's bikes (%d dirty) have no surface smooth enough to glare (smoothest %.3f, clear coat %.3f)" % [dirty, smoothest, clear_smoothest])
+	var guarded := true
+	for code in [DirtLayer.SHADER_CODE, SprayMarks.SHADER_CODE, BlastMarks.SHADER_CODE, PaintMix.FX_CODE]:
+		guarded = guarded and not (code as String).contains("normalize(mnorm)") and not (code as String).contains("normalize(NORMAL)") \
+			and not (code as String).contains("/ mask_size;") and ((code as String).contains("sane(") or code == PaintMix.FX_CODE)
+	check(guarded, "the dirt, paint and blasting passes never normalize a zero normal or let a NaN through")
+	var model: BikeModel = holder.get_child(0)
+	var layer := model.dirt_layer
+	var slot: String = layer._mats.keys()[0]
+	var mat: ShaderMaterial = layer._mats[slot]
+	var good: Projection = mat.get_shader_parameter("to_model")
+	model.scale = Vector3(1.0, 0.0, 1.0)
+	layer._update_transform()
+	var kept: Projection = mat.get_shader_parameter("to_model")
+	model.scale = Vector3.ONE
+	check(kept == good and good.x.is_finite() and good.w.is_finite(), "a bike squashed flat doesn't throw its dirt off to NaN")
+	holder.queue_free()
 	await get_tree().process_frame
 
 
@@ -6037,7 +6234,7 @@ func _test_tail_fairing_mirrors_parts() -> void:
 		m.build_from(BikeBuild.new({"mirrors": id}))
 		var glass: Node = m.find_child("MirrorGlass*", true, false)
 		var mat: StandardMaterial3D = (glass as MeshInstance3D).material_override if glass is MeshInstance3D else null
-		check(m.slot_bounds("mirrors").size.x > 0.3 and mat != null and mat.metallic > 0.9 and mat.roughness < 0.05,
+		check(m.slot_bounds("mirrors").size.x > 0.3 and mat != null and mat.metallic > 0.9 and mat.roughness <= BikeModel.MIN_ROUGHNESS,
 			"the %s are drawn, with mirror glass" % id)
 		m.free()
 	var bare := BikeModel.new()

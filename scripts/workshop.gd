@@ -291,8 +291,14 @@ func sync_state() -> void:
 			_drop_spot_node(_spot_nodes[spot]).queue_free()
 			_spot_nodes.erase(spot)
 			_spot_sigs.erase(spot)
+	# What's in each spot, looked up once (Shed.item_at_spot goes through every item each time).
+	var at_spot := {}
+	for id in Shed.items:
+		var it: Dictionary = Shed.items[id]
+		if it["at"] == "spot" and not at_spot.has(it["ref"]):
+			at_spot[it["ref"]] = id
 	for spot in spots:
-		var item_id := Shed.item_at_spot(spot)
+		var item_id: int = at_spot.get(spot, 0)
 		var sig := "" if item_id == 0 else _item_signature(item_id) + str(Shed.items[item_id].get("place", ""))
 		if _spot_sigs.get(spot, "") == sig:
 			continue
@@ -405,7 +411,7 @@ func sync_state() -> void:
 		if view.washer_sound:
 			var busy := false
 			for spot in Shed.furniture_spots(id):
-				var washing := Shed.item_at_spot(spot)
+				var washing: int = at_spot.get(spot, 0)
 				busy = busy or (washing != 0 and float(Shed.items[washing]["dirt"]) > 0.0)
 			Sfx.set_loop(view.washer_sound, "washer" if busy else "")
 	_dash_dirty = true
@@ -849,18 +855,29 @@ static func _coat_sig(it: Dictionary) -> String:
 		float(it.get("coat_q", 0.0))]
 
 
+## The engine's own slots, to look up quickly.
+static var _engine_slot_set := {}
+
+
 func _bike_signature(id: int) -> String:
+	if _engine_slot_set.is_empty():
+		for slot in PartsDB.ENGINE_SLOTS:
+			_engine_slot_set[slot] = true
 	var bike: Dictionary = Shed.bikes[id]
 	var parts := []
+	# What's fitted where, read straight off the bike and its engine (as Shed.item_on and
+	# is_bolted have it): this runs for every bike each time anything in the shed changes.
+	var block: Dictionary = Shed.items.get(int(bike["slots"].get("engine", 0)), {})
 	for slot in PartsDB.SLOTS:
-		var item_id := Shed.item_on(id, slot)
+		var host: Dictionary = block if _engine_slot_set.has(slot) else bike
+		var item_id := int(host.get("slots", {}).get(slot, 0))
 		if item_id == 0:
 			parts.append("-")
 		else:
 			var it: Dictionary = Shed.items[item_id]
 			# Its dirt isn't in it: that's drawn over the bike as it changes (see _sync_dirt).
-			parts.append("%s:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot),
-				Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)])
+			parts.append("%s:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", ""),
+				bool(host.get("bolted", {}).get(slot, false)), Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),

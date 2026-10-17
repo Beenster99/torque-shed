@@ -64,6 +64,11 @@ var controls_enabled := true
 var target := {}            # what the crosshair is on: {kind, bike, engine, slot, spot}
 var plan := {}              # what the action button would do: {action, time, verb, blocked}
 var info := ""              # description of the target for the HUD
+## The target's description as last worked out, what it was for, and the frame it was worked
+## out in (see _update_target).
+var _described := ""
+var _described_for := ""
+var _described_frame := -1
 ## What something the walker's own targeting doesn't know about says while it's under the
 ## crosshair (the cafe's bikers and their bikes, its counter: see CoffeeView): a title line and
 ## more lines, like `info`, and its key prompt ("F: talk..."). Shown in the same HUD panel.
@@ -811,7 +816,16 @@ func _update_target() -> void:
 	plan = _make_plan()
 	_scale_time(plan)
 	_scale_time(alt_plan)
-	info = _describe()
+	# The description is only shown once a frame (the HUD) and some of it takes a while to work
+	# out (a bike's build, a part's effect on it), while this runs on every physics tick, two or
+	# more a frame: it's worked out once a frame, or again if the crosshair's on something else.
+	var for_what := "%s|%s|%d" % [str(t.get("kind", "")), ",".join(t.keys().filter(func(k): return k != "at" and k != "drop")
+		.map(func(k): return "%s=%s" % [k, str(t[k])])), Shed.held_by(Shed.me())] + "|" + tool
+	if for_what != _described_for or Engine.get_process_frames() != _described_frame:
+		_described = _describe()
+		_described_for = for_what
+		_described_frame = Engine.get_process_frames()
+	info = _described
 	_update_part_ghost()
 	var held_now := Shed.held_by(Shed.me())
 	if held_now != 0 and tool == "hands" and str(plan.get("action", {}).get("a", "")) in ["drop", "set_down"]:

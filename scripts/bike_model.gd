@@ -7,6 +7,11 @@ extends Node3D
 
 const PICK_LAYER := 4
 const CHAIN_PITCH := 0.015875   # m: a 5/8" chain, the pitch of every 520, 525 and 530 chain
+## The glossiest any surface of a bike is drawn (roughness), and its clear coat: the sun glinting
+## off a smoother mirror or chrome is brighter than the screen's HDR can hold, which comes out as
+## NaN that the glow spreads into big white blobs speckled black (see _floor_shine).
+const MIN_ROUGHNESS := 0.08
+const MIN_CLEARCOAT_ROUGHNESS := 0.1
 const SPRAY_LAYER := 16   # fitted shapes on loose parts, only for the spray to land on
 
 static var _rust_masks := {}     # rust level (1..10) -> NoiseTexture2D mask
@@ -206,6 +211,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	set_gauges(0.0, 0.0)
 	# Parked, every lamp and the clocks are dark until the engine runs (see set_lights).
 	set_lights(false, false)
+	_floor_shine()
 	# Before the bike's own fit moves anything: the mask is laid out where the parts were drawn.
 	_show_blasted()
 	_show_paint_fx()
@@ -235,6 +241,38 @@ func ensure_dirt_layer() -> DirtLayer:
 		add_child(dirt_layer)
 		dirt_layer.setup(self, {})
 	return dirt_layer
+
+
+## Keeps every surface of the bike at least MIN_ROUGHNESS rough (and its clear coat
+## MIN_CLEARCOAT_ROUGHNESS): a mirror-smooth one catching the sun puts out more light than the
+## HDR picture holds. Dirt used to dull a ridden bike's mirrors and chrome; now it's drawn over
+## them (DirtLayer) they stay as smooth as new, which is how the cafe's bikes came to glare.
+func _floor_shine() -> void:
+	var seen := {}
+	var stack: Array[Node] = [self]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		var g := n as GeometryInstance3D
+		if g == null:
+			continue
+		var mats: Array = [g.material_override, g.material_overlay]
+		var mi := g as MeshInstance3D
+		if mi != null and mi.mesh != null:
+			for si in mi.mesh.get_surface_count():
+				mats.append(mi.get_surface_override_material(si))
+				mats.append(mi.mesh.surface_get_material(si))
+		for m in mats:
+			var at: Material = m
+			while at != null and not seen.has(at):
+				seen[at] = true
+				if at is BaseMaterial3D:
+					var b := at as BaseMaterial3D
+					if b.roughness < MIN_ROUGHNESS:
+						b.roughness = MIN_ROUGHNESS
+					if b.clearcoat_enabled and b.clearcoat_roughness < MIN_CLEARCOAT_ROUGHNESS:
+						b.clearcoat_roughness = MIN_CLEARCOAT_ROUGHNESS
+				at = at.next_pass
 
 
 ## Shows each part's dirt as it is now (slot -> Dirt levels, see Dirt.of_bike), without redrawing

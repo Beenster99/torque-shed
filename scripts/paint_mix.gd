@@ -703,6 +703,13 @@ float vn(vec3 x) {
 		mix(mix(h3(i + vec3(0.0, 0.0, 1.0)), h3(i + vec3(1.0, 0.0, 1.0)), f.x), mix(h3(i + vec3(0.0, 1.0, 1.0)), h3(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
 }
 
+// A surface's facing, or the way you're looking from where it has none (a zero normal would
+// make NaN, which the glow spreads into white blobs speckled black).
+vec3 facing_of(vec3 v, vec3 none) {
+	float l = length(v);
+	return l > 1e-6 ? v / l : none;
+}
+
 void vertex() {
 	VERTEX += NORMAL * 0.0006;
 	vec4 v = vec4(VERTEX, 1.0);
@@ -733,7 +740,7 @@ float masked() {
 }
 
 void fragment() {
-	vec3 n = normalize(NORMAL);
+	vec3 n = facing_of(NORMAL, VIEW);
 	float facing = clamp(abs(dot(n, normalize(VIEW))), 0.0, 1.0);
 	float glance = 1.0 - facing;
 	vec3 col = base_color.rgb;
@@ -769,7 +776,7 @@ void fragment() {
 		float on = step(1.0 - flake * 0.55, r);
 		if (on > 0.0) {
 			vec3 tilt = vec3(h3(cell + 3.1), h3(cell + 7.7), h3(cell + 1.3)) - 0.5;
-			NORMAL = normalize(n + tilt * 1.6);
+			NORMAL = facing_of(n + tilt * 1.6, n);
 			vec3 fc = flake_color.rgb;
 			if (holo > 0.5) {
 				fc = 0.6 + 0.4 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + r * 3.0));
