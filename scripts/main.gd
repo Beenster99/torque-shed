@@ -47,6 +47,9 @@ var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
 var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at the side while riding (F3)
 var _kb_bars := 0.0        # the keyboard's steer in Direct bars mode, ramped like a hand pushing harder
+var _kb_lean := 0.0        # the keyboard's lean asked for, ramped (see ramp_lean)
+## Seconds a lean key has to be held past a road rider's lean to ask for all the tyres will give.
+const KEY_LEAN_ON := 1.25
 ## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
 var _safe_xf := Transform3D()
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
@@ -725,14 +728,33 @@ func _physics_process(delta: float) -> void:
 
 ## The steer input: a lean to aim for, or with Direct bars the push on the bars. Keys are all or
 ## nothing, so on Direct bars they're ramped up like a hand pushing harder (and let off quicker);
-## the stick is squared there, for fine pushes near the middle.
+## the stick is squared there, for fine pushes near the middle. Leaning on keys, a key held asks
+## for a road rider's lean straight away and only creeps on towards the most the tyres hold if
+## it's kept held (see ramp_lean).
 func _steer_input(stick_x: float, delta: float) -> float:
 	var keys := Input.get_axis("lean_left", "lean_right")
 	if not Settings.direct_bars:
 		_kb_bars = 0.0
-		return clampf(keys + stick_x, -1.0, 1.0)
+		_kb_lean = ramp_lean(_kb_lean, keys, delta)
+		return clampf(_kb_lean + stick_x, -1.0, 1.0)
+	_kb_lean = 0.0
 	_kb_bars = ramp_bars(_kb_bars, keys, delta)
 	return clampf(_kb_bars + stick_x * absf(stick_x), -1.0, 1.0)
+
+
+## Leaning on keys: the lean input `held` so far for the keys' `keys` (-1, 0 or 1). Pressed, it
+## goes straight to Bike.ROAD_INPUT (an ordinary road lean); held on, it creeps the rest of the
+## way over KEY_LEAN_ON seconds, so only a long, committed press leans the bike right over.
+## Let go, it comes back at once.
+static func ramp_lean(held: float, keys: float, delta: float) -> float:
+	if keys == 0.0:
+		return move_toward(held, 0.0, 8.0 * delta)
+	var a := absf(held) if keys * held > 0.0 else 0.0
+	if a < Bike.ROAD_INPUT:
+		a = minf(a + 6.0 * delta, Bike.ROAD_INPUT)
+	else:
+		a = minf(a + (1.0 - Bike.ROAD_INPUT) / KEY_LEAN_ON * delta, 1.0)
+	return a * signf(keys)
 
 
 ## Direct bars on keys: the push `held` so far moves towards the keys' `keys` (-1, 0 or 1),

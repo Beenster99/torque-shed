@@ -26,6 +26,8 @@ const STRIPS := [
 	["Slip angle", [["alpha_f", FRONT, "front"], ["alpha_r", REAR, "rear"]], -15.0, 15.0, "°"],
 	["Grip used (1 = the limit)", [["grip_f", FRONT, "front"], ["grip_r", REAR, "rear"]], 0.0, 1.5, ""],
 	["Tyre load", [["load_f", FRONT, "front"], ["load_r", REAR, "rear"]], 0.0, 0.0, "N"],
+	["Suspension travel used", [["susp_f", FRONT, "fork"], ["susp_r", REAR, "shock"]], 0.0, 100.0, "%"],
+	["Pitch on the springs (+ nose down)", [["dive", ONE, ""]], -4.0, 6.0, "°"],
 	["Throttle and brakes", [["throttle", ONE, "throttle"], ["brake_f", FRONT, "front brake"], ["brake_r", REAR, "rear brake"]], 0.0, 1.0, ""],
 	["Gear", [["gear", ONE, ""]], 0.0, 6.0, ""],
 	["Revs", [["rpm", ONE, ""]], 0.0, 0.0, "rpm"],
