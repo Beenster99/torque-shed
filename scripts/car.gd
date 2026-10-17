@@ -62,7 +62,9 @@ var steer_input := 0.0          # -1 left .. 1 right
 var auto_shift := true
 var controls_enabled := true
 var engine_on := true            # tests drive it running; you get in with it off (RecoveryView)
-var horn := false
+var horn := false                # the horn button held (yours, or the driver's for the crew)
+## The horn: sounds while `horn` is held and stops when it's let go, riding along on the truck.
+var horn_audio: HornAudio
 var beam := 1                    # headlamp switch: 0 off, 1 dipped, 2 main beam
 ## Reverse picked with the gear lever (shift down at a standstill): the pedals stay where they
 ## are, the throttle backing it up. Reverse the automatic finds itself, holding the brake at a
@@ -117,6 +119,7 @@ func _init() -> void:
 	_box_shape(Vector3(1.86, 0.62, 5.3), Vector3(0.0, 0.78, 0.15))
 	_box_shape(Vector3(1.8, 0.75, 2.4), Vector3(0.0, 1.45, -0.55))
 	_build_model()
+	_make_horn()
 
 
 func _box_shape(size: Vector3, at: Vector3) -> void:
@@ -386,6 +389,24 @@ func sound_load() -> float:
 static func engine_spec() -> Dictionary:
 	return EngineSynth.make_spec("inline", 4, 2400.0, {"idle": IDLE_RPM, "redline": REDLINE, "peak": 1800.0,
 		"exhaust": "stock", "loud": 0.45, "intake": "airbox", "shift": "clunk"})
+
+
+## The truck's horn, behind the grille: a pair of disc horns, the same recordings the bikes'
+## disc horns use. A child of the truck, so it goes where the truck goes.
+func _make_horn() -> void:
+	horn_audio = HornAudio.new()
+	horn_audio.name = "Horn"
+	horn_audio.style = "disc"
+	horn_audio.tones = [400.0, 500.0]
+	horn_audio.loudness = 0.85
+	horn_audio.sound = "horn_disc"
+	horn_audio.position = Vector3(0.0, 0.75, -2.45)
+	add_child(horn_audio)
+
+
+func _process(_delta: float) -> void:
+	if horn_audio:
+		horn_audio.pressed = horn
 
 
 # ---------------------------------------------------------------------------- network
