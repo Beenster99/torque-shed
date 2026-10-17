@@ -13133,7 +13133,9 @@ func _test_steering_wobble() -> void:
 		% [damped["at"][1], plain["at"][1], damped["at"][2], plain["at"][2]])
 	# A genuinely bad setup, next to no trail: the shake grows into a tank-slapper; a damper cures it.
 	var bad := await _bar_kick(SHORT_TRAIL_BIKE, 40.0, false)
-	check(bad["at"][2] > 3.0, "with next to no trail a shove at the bars at %d km/h grows into a tank-slapper (%.1f deg after 1 s)" % [roundi(40.0 * 3.6), bad["at"][2]])
+	# (The rider's arms only soak it up a little at speed, so it grows rather than settles.)
+	check(bad["at"][3] > 3.0 and bad["at"][3] > bad["at"][0] * 2.0,
+		"with next to no trail a shove at the bars at %d km/h grows into a tank-slapper (%.1f deg after 0.1 s, %.1f after 2 s)" % [roundi(40.0 * 3.6), bad["at"][0], bad["at"][3]])
 	var cured := await _bar_kick(_merge(SHORT_TRAIL_BIKE, {"steering_damper": "damper_rotary_race"}), 40.0, false)
 	check(not cured["crashed"] and cured["at"][2] < cured["at"][0], "a steering damper on it calms it (%.2f deg after 1 s)" % cured["at"][2])
 
