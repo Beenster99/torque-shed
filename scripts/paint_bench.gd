@@ -93,7 +93,7 @@ func _ready() -> void:
 
 
 ## Steps up to the bench: the view goes to the scale. `where` is "bay" (the mixing bay's bench)
-## or "shop" (the paint shop's compact one); left out, it's the one nearer the local player.
+## or "shop" (the compact one beside it); left out, it's the one nearer the local player.
 func open(where := "") -> void:
 	var me := Shed.me()
 	if where == "":

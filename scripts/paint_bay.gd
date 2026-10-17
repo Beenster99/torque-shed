@@ -3,8 +3,8 @@ extends RefCounted
 ## The paint mixing bay: a room off the paint shop, behind a glass door, where paint is mixed
 ## by hand (see PaintMix for the maths). Its stations:
 ##   bench      the mixing bench: a tin on the digital scale, bottles tipped over it to pour, a
-##              stick to stir it (F to step up to it; see PaintBench for the game); the paint
-##              shop has a compact twin of it by the spray bay (SHOP_BENCH), the same bench
+##              stick to stir it (F to step up to it; see PaintBench for the game); a compact
+##              twin of it along the same wall (SHOP_BENCH) is the same bench
 ##   rack       the tint rack over the bench: the stock rack's 16 bottles, and the effects
 ##              rack's 12 (pearls, candies, flakes, chameleons) once the garage buys it
 ##   shaker     drop a tin in for an even mix (the automatic one is quick, and remixes a saved
@@ -42,18 +42,19 @@ const SHAKER_AT := Vector3(16.62, BENCH_TOP, 66.25)
 ## Where you stand at the bench, facing it (+X), and the camera over the scale while mixing.
 const BENCH_STAND := Vector3(15.6, 0.0, 64.6)
 const BENCH_EYE := Vector3(15.95, 1.55, 64.6)
-## The paint shop's own compact mixing bench, against its back wall beside the spray bay: the
-## same bench as the bay's (one tin on the scale, one person mixing at a time, the same stock
-## and recipes), with a scale and a rack of bottles of its own. bench()["at"] says which of the
-## two is in use ("bay" or "shop"); the tin on the scale is drawn there. You stand at it facing
-## the back wall (-Z).
-const SHOP_BENCH := Rect2(7.05, 59.8, 1.8, 0.6)
-const SHOP_SCALE_AT := Vector3(7.75, BENCH_TOP, 60.1)
-const SHOP_STAND := Vector3(7.75, 0.0, 61.0)
-const SHOP_EYE := Vector3(7.75, 1.62, 60.88)
-const SHOP_RACK_Z := 59.86
+## The bay's second, compact mixing bench, on the east wall between the daylight booth and the
+## big bench (it stood in the paint shop at first, hence "shop"): the same bench as the big one
+## (one tin on the scale, one person mixing at a time, the same stock and recipes), with a scale
+## and a rack of bottles of its own. bench()["at"] says which of the two is in use ("bay" or
+## "shop", the key kept for old saves); the tin on the scale is drawn there. You stand at it
+## facing the east wall (+X), as at the big bench.
+const SHOP_BENCH := Rect2(16.4, 60.6, 0.6, 1.8)
+const SHOP_SCALE_AT := Vector3(16.66, BENCH_TOP, 61.5)
+const SHOP_STAND := Vector3(15.65, 0.0, 61.5)
+const SHOP_EYE := Vector3(15.98, 1.55, 61.5)
+const SHOP_RACK_X := 16.94
 const SHOP_RACK_Y := [1.3, 1.6]
-const SHOP_RACK_X0 := 7.14
+const SHOP_RACK_Z0 := 60.75
 const SHOP_RACK_STEP := 0.115
 ## The tint rack over the bench: two shelves of the stock rack, then the effects rack beside it.
 const RACK_X := 16.86
@@ -73,8 +74,9 @@ const SWATCH_ROWS := 4
 const SWATCH_STEP := Vector2(0.78, 0.46)
 const SWATCH_TOP := 2.35
 const MAX_SWATCHES := 32
-## The spray-out panel stand and the daylight booth at the far (north) end.
-const STAND_AT := Vector3(15.5, 0.0, 61.4)
+## The spray-out panel stand and the daylight booth at the far (north) end (the stand to the
+## west side, clear of the compact bench).
+const STAND_AT := Vector3(15.0, 0.0, 60.95)
 const BOOTH := Rect2(14.6, 59.8, 2.2, 0.62)
 const BOOTH_Y := Vector2(0.95, 1.85)
 ## The masking tape roll's hook, by the door.
@@ -180,14 +182,15 @@ static func bench_tin() -> Dictionary:
 	return tins().get(int(bench().get("tin", 0)), {})
 
 
-## Which bench is in use: "bay" (the mixing bay's) or "shop" (the paint shop's compact one).
+## Which bench is in use: "bay" (the big one) or "shop" (the compact one beside it).
 static func station() -> String:
 	return "shop" if str(bench().get("at", "bay")) == "shop" else "bay"
 
 
-## The bench nearer `p`: the bay's inside the mixing bay, the paint shop's anywhere else.
+## The bench nearer `p`: the big one ("bay") or the compact one ("shop").
 static func station_near(p: Vector3) -> String:
-	return "bay" if in_room(p) else "shop"
+	var flat := Vector2(p.x, p.z)
+	return "shop" if flat.distance_to(Vector2(SHOP_STAND.x, SHOP_STAND.z)) < flat.distance_to(Vector2(BENCH_STAND.x, BENCH_STAND.z)) else "bay"
 
 
 ## Where the scale in use stands (the tin on it sits here).
@@ -209,11 +212,11 @@ static func tared(tin: Dictionary) -> bool:
 	return not tin.is_empty() and int(bench().get("tare_tin", 0)) == int(tin.get("id", -1))
 
 
-## Where a tint's bottle stands on the paint shop bench's little rack (its foot), facing the
-## bench (+Z): two shelves of 14 on the back wall.
+## Where a tint's bottle stands on the compact bench's little rack (its foot), facing the room
+## (-X): two shelves of 14 on the east wall.
 static func shop_bottle_xf(code: String) -> Transform3D:
 	var i := PaintMix.TINT_ORDER.find(code)
-	return Transform3D(Basis(), Vector3(SHOP_RACK_X0 + (i % 14) * SHOP_RACK_STEP, float(SHOP_RACK_Y[clampi(i / 14, 0, 1)]), SHOP_RACK_Z))
+	return Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(SHOP_RACK_X, float(SHOP_RACK_Y[clampi(i / 14, 0, 1)]), SHOP_RACK_Z0 + (i % 14) * SHOP_RACK_STEP))
 
 
 ## Who's at the bench (0: nobody).

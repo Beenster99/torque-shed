@@ -15316,26 +15316,32 @@ func _test_paint_bench_extras() -> void:
 	var bench: PaintBench = main.paint_bench
 	var w: Walker = main.walker
 	w.set_tool("hands")
-	check(room.find_child("ShopMixingBench", true, false) != null and Workshop.room_at(PaintBay.SHOP_STAND + Vector3(0, 0.5, 0)) == "paint"
-		and not Workshop.booth_footprint().has_point(Vector2(PaintBay.SHOP_BENCH.end.x, PaintBay.SHOP_BENCH.end.y)),
-		"a compact mixing bench in the paint shop itself, beside the spray bay")
-	# Up to it: F at the paint shop's bench opens the same bench, the view on its own scale.
+	var big := PaintBay.BENCH
+	var booth := PaintBay.BOOTH
+	var stand := Rect2(PaintBay.STAND_AT.x - 0.2, PaintBay.STAND_AT.z - 0.2, 0.4, 0.4)
+	check(room.find_child("ShopMixingBench", true, false) != null and PaintBay.ROOM.encloses(PaintBay.SHOP_BENCH)
+		and PaintBay.ROOM.has_point(Vector2(PaintBay.SHOP_STAND.x, PaintBay.SHOP_STAND.z))
+		and not PaintBay.SHOP_BENCH.intersects(big) and not PaintBay.SHOP_BENCH.intersects(booth) and not stand.grow(0.25).has_point(Vector2(PaintBay.SHOP_STAND.x, PaintBay.SHOP_STAND.z))
+		and PaintBay.station_near(PaintBay.SHOP_STAND) == "shop" and PaintBay.station_near(PaintBay.BENCH_STAND) == "bay",
+		"the compact mixing bench is in the paint mixing bay, beside the big one, clear of the booth and the stand")
+	# Up to it: F at the compact bench opens the same bench, the view on its own scale.
 	w.place(Transform3D(Basis(), PaintBay.SHOP_STAND + Vector3(0, 0.05, 0)))
+	w.rotation.y = -PI * 0.5   # facing the east wall and the bench
 	w._look(0.0, -0.7)
 	for i in 6:
 		await get_tree().physics_frame
 		await get_tree().process_frame
-	check(str(w.target.get("kind", "")) == "paint_bay" and str(w.target.get("station", "")) == "bench", "looking at the shop's bench (%s)" % str(w.target))
+	check(str(w.target.get("kind", "")) == "paint_bay" and str(w.target.get("station", "")) == "bench", "looking at the compact bench (%s)" % str(w.target))
 	_press("interact")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	check(bench.visible and PaintBay.at_bench() == me and PaintBay.station() == "shop" and room.shop_camera.current,
-		"F: stepped up to the paint shop's bench, looking down on its scale")
+		"F: stepped up to the compact bench, looking down on its scale")
 	bench.press("White base  (%s in stock)" % PaintBay.stock_text("W"))
 	for i in 2:
 		await get_tree().process_frame
 	check(not PaintBay.bench_tin().is_empty() and room._bench_tin != null and room._bench_tin.position.distance_to(PaintBay.SHOP_SCALE_AT) < 0.1,
-		"the tin goes on the shop bench's scale")
+		"the tin goes on the compact bench's scale")
 	# The tint rack: every name in full, two to a row in the card.
 	bench.tint = "UB"
 	bench._sig = ""
