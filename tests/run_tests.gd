@@ -276,6 +276,8 @@ func _run_all() -> void:
 	await _test_steering_wobble()
 	await _test_turn_in()
 	await _test_steering_telemetry()
+	await _test_bars_no_wiggle()
+	await _test_direct_bars_course()
 	print("The riding map: roads, grades, no jumps, land under the roads, spawns, surfaces, counts")
 	await _test_world_map()
 	print("Shop and crew: part previews, trolleys, box notes, the geometry parts list, styled project bikes, emotes")
@@ -12936,7 +12938,7 @@ func _test_tyre_highside() -> void:
 		b.lean_input = 0.0 if t < 2.5 else 0.5
 		if t < 5.0:
 			_hold_speed(b, 13.0)
-		elif t < 5.6:
+		elif t < 5.75:
 			b.throttle = 1.0
 			b.front_brake = 0.0
 			st["slide"] = maxf(st["slide"], absf(rad_to_deg(float(b.wheels[1]["alpha"]))))
@@ -13210,14 +13212,16 @@ func _test_direct_bars() -> void:
 					st["straight"] = maxf(st["straight"], absf(b.lean_angle))
 				st["yaw0"] = _heading(b)
 			elif t < 6.0 + push:
-				b.lean_input = 1.0
+				b.lean_input = 0.5
 				st["bar"] = minf(st["bar"], b.bar_torque)
 			elif t < 9.0:
 				b.lean_input = 0.0
 				st["lean"] = maxf(st["lean"], b.lean_angle)
 				st["turned"] = wrapf(_heading(b) - float(st["yaw0"]), -PI, PI)
-			elif t < 9.0 + push:
-				b.lean_input = -1.0
+			elif t < 11.0 and not st.get("up", false):
+				# Like a rider, they push it back up until it's near enough upright, then let go.
+				b.lean_input = -0.5
+				st["up"] = b.lean_angle < deg_to_rad(3.0)
 			else:
 				b.lean_input = 0.0
 				st["end"] = absf(b.lean_angle))
@@ -13344,7 +13348,9 @@ func _test_steering_wobble() -> void:
 		% [damped["at"][1], plain["at"][1], damped["at"][2], plain["at"][2]])
 	# A genuinely bad setup, next to no trail: the shake grows into a tank-slapper; a damper cures it.
 	var bad := await _bar_kick(SHORT_TRAIL_BIKE, 40.0, false)
-	check(bad["at"][2] > 3.0, "with next to no trail a shove at the bars at %d km/h grows into a tank-slapper (%.1f deg after 1 s)" % [roundi(40.0 * 3.6), bad["at"][2]])
+	# (The rider's arms only soak it up a little at speed, so it grows rather than settles.)
+	check(bad["at"][3] > 3.0 and bad["at"][3] > bad["at"][0] * 2.0,
+		"with next to no trail a shove at the bars at %d km/h grows into a tank-slapper (%.1f deg after 0.1 s, %.1f after 2 s)" % [roundi(40.0 * 3.6), bad["at"][0], bad["at"][3]])
 	var cured := await _bar_kick(_merge(SHORT_TRAIL_BIKE, {"steering_damper": "damper_rotary_race"}), 40.0, false)
 	check(not cured["crashed"] and cured["at"][2] < cured["at"][0], "a steering damper on it calms it (%.2f deg after 1 s)" % cured["at"][2])
 
@@ -16772,3 +16778,173 @@ func _test_wash_lift_reach() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## The stock bikes riders start out on: the default build and the ready-built styles.
+const STOCK_STYLES := ["", "sport", "classic", "cruiser", "mx"]
+
+
+## How much the bars shake about where they're being steered on stock bike `style` at `kmh`
+## and Riding realism `realism`, steered `kind` ("gentle": a small stick move held, "hold": a
+## lean key held down 2.5 s then let go), with a little gusting side wind. The shake is the
+## steer less its 0.12 s average, looked at only once the input has been steady for a second.
+## Degrees: {"peak", "rms", "crashed"}.
+func _bar_shake(style: String, kmh: float, realism: float, kind: String) -> Dictionary:
+	var v := kmh / 3.6
+	var st := {"avg": 0.0, "peak": 0.0, "ss": 0.0, "n": 0, "last": 0.0, "since": 0.0, "gust": 0.0}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var dt := 1.0 / Engine.physics_ticks_per_second
+	var r := await ride({} if style == "" else Contracts.style_build(style), 6.5, func(b: Bike, t: float):
+		b.assist = realism
+		if t < 0.001:
+			_roll_at(b, v)
+		_hold_speed(b, v)
+		var u := t - 2.0
+		if u < 0.0:
+			b.lean_input = 0.0
+		elif kind == "gentle":
+			b.lean_input = 0.3 * clampf(u / 0.5, 0.0, 1.0) if u < 3.0 else 0.0
+		else:
+			b.lean_input = 1.0 if u < 2.5 else 0.0
+		st["gust"] = lerpf(float(st["gust"]), rng.randf_range(-1.0, 1.0), 0.05)
+		b.apply_torque(-b.global_transform.basis.z * float(st["gust"]) * 25.0)
+		if b.lean_input != float(st["last"]):
+			st["since"] = 0.0
+			st["last"] = b.lean_input
+		st["since"] = float(st["since"]) + dt
+		st["avg"] = lerpf(float(st["avg"]), b.steer, 1.0 - exp(-dt / 0.12))
+		if t > 2.0 and float(st["since"]) > 1.0:
+			var x: float = b.steer - float(st["avg"])
+			st["peak"] = maxf(float(st["peak"]), absf(x))
+			st["ss"] = float(st["ss"]) + x * x
+			st["n"] = int(st["n"]) + 1
+		elif t <= 2.0:
+			st["avg"] = b.steer)
+	var out := {"peak": rad_to_deg(float(st["peak"])), "rms": rad_to_deg(sqrt(float(st["ss"]) / maxf(float(st["n"]), 1.0))),
+		"crashed": r["crashed"]}
+	await _done(r)
+	return out
+
+
+func _test_bars_no_wiggle() -> void:
+	# Bar wiggle on stock bikes below full Riding realism: the rider's arms used to cancel the
+	# front's pull through a lag, which fed a shake (several degrees on a gentle stick move at
+	# town speeds, tens of degrees with a key held). Now on every stock bike, at realism 0 and
+	# 0.5, from town speeds to a fast road, the bars stay steady about where they're steered.
+	var worst := {"gentle": [0.0, ""], "hold": [0.0, ""]}
+	var fell := []
+	for style in STOCK_STYLES:
+		for realism in [0.0, 0.5]:
+			for kmh in [20.0, 50.0, 80.0]:
+				for kind in ["gentle", "hold"]:
+					var k := await _bar_shake(style, kmh, realism, kind)
+					var label := "%s, realism %.1f, %d km/h" % [style if style != "" else "default", realism, int(kmh)]
+					if k["crashed"]:
+						fell.append(label + " " + kind)
+					if float(k["peak"]) > float(worst[kind][0]):
+						worst[kind] = [float(k["peak"]), label]
+	check(fell.is_empty(), "stock bikes stay up steered gently or with a key held, at realism 0 and 0.5 %s" % str(fell))
+	check(float(worst["gentle"][0]) < 1.0,
+		"a gentle stick move: the bars don't shake on any stock bike (worst %.2f deg, %s)" % worst["gentle"])
+	check(float(worst["hold"][0]) < 3.0,
+		"a lean key held then let go: no more than a small twitch at the bars (worst %.2f deg, %s)" % worst["hold"])
+
+
+## A winding course on the flat for `kmh`: a run-up, then `bends` quarter-turn bends, left and
+## right in turn, as tight as about `lean_deg` of lean takes at that speed, with short straights
+## between. Points a metre apart, from the origin heading -Z: {"xz", "dir"}.
+func _winding_course(kmh: float, bends := 4, lean_deg := 22.0) -> Dictionary:
+	var v := kmh / 3.6
+	var radius := v * v / (Bike.G * tan(deg_to_rad(lean_deg)))
+	var xz := PackedVector2Array()
+	var dirs := PackedVector2Array()
+	var p := Vector2.ZERO
+	var head := 0.0
+	var segs := [[40.0, 0.0]]
+	for i in bends:
+		segs.append([radius * PI * 0.5, (1.0 if i % 2 == 0 else -1.0) / radius])
+		segs.append([maxf(v, 10.0), 0.0])
+	for s in segs:
+		for k in int(ceil(float(s[0]))):
+			var d := Vector2(sin(head), -cos(head))
+			xz.append(p)
+			dirs.append(d)
+			p += d
+			head += float(s[1])
+	return {"xz": xz, "dir": dirs}
+
+
+## A scripted rider on Direct bars round the winding course: they pick the lean the bend ahead
+## wants (and a little more or less to get back on line), see the bike's lean 150 ms late, and
+## push the bars by how far it's off and how fast it's moving (a PD). On a stick, or with keys as
+## all-or-nothing presses through the game's own key ramp. {"crashed", "done", "off" (m)}.
+func _direct_rider(style: String, kmh: float, keys: bool, realism := 0.5) -> Dictionary:
+	var v := kmh / 3.6
+	var c := _winding_course(kmh)
+	var xz: PackedVector2Array = c["xz"]
+	var dirs: PackedVector2Array = c["dir"]
+	var n := xz.size()
+	var st := {"i": 0, "off": 0.0, "done": false, "want": 0.0, "seen": [], "held": 0.0}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var dt := 1.0 / Engine.physics_ticks_per_second
+	var r := await ride({} if style == "" else Contracts.style_build(style), float(n) / v + 4.0, func(b: Bike, t: float):
+		b.assist = realism
+		b.direct_bars = true
+		if t < 0.001:
+			_roll_at(b, v)
+		_hold_speed(b, v)
+		if st["done"]:
+			b.lean_input = 0.0
+			return
+		var p2 := Vector2(b.global_position.x, b.global_position.z)
+		var bi: int = st["i"]
+		var bd := INF
+		for k in range(-2, 8):
+			var j := clampi(int(st["i"]) + k, 0, n - 1)
+			if xz[j].distance_squared_to(p2) < bd:
+				bd = xz[j].distance_squared_to(p2)
+				bi = j
+		st["i"] = bi
+		st["done"] = bi >= n - 3
+		var d: Vector2 = dirs[bi]
+		var right := Vector2(-d.y, d.x)
+		var off := (p2 - xz[bi]).dot(right)
+		st["off"] = maxf(float(st["off"]), absf(off))
+		# The bend 0.4 s ahead, and back towards the line and along it.
+		var vv := maxf(absf(b.speed), 1.0)
+		var a := mini(bi + int(vv * 0.4) + 1, n - 3)
+		var bend := (dirs[a + 2] - dirs[a]).dot(Vector2(-dirs[a].y, dirs[a].x)) / 2.0
+		var f3 := -b.global_transform.basis.z
+		var heading := atan2(Vector2(f3.x, f3.z).normalized().dot(right), Vector2(f3.x, f3.z).normalized().dot(d))
+		var turn := vv * bend - 1.0 * heading - 0.25 * off / vv
+		st["want"] = lerpf(float(st["want"]), atan(vv * turn / Bike.G), 1.0 - exp(-dt / 0.15))
+		var seen: Array = st["seen"]
+		seen.append([float(st["want"]), b.lean_angle, b.lean_rate])
+		var late: Array = seen.pop_front() if seen.size() > 18 else [0.0, 0.0, 0.0]
+		var u := clampf(5.0 * (float(late[0]) - float(late[1])) - 1.0 * float(late[2]), -1.0, 1.0)
+		if keys:
+			st["held"] = main_script.ramp_bars(float(st["held"]), 1.0 if u > 0.25 else (-1.0 if u < -0.25 else 0.0), dt)
+			b.lean_input = st["held"]
+		else:
+			var stick := signf(u) * sqrt(absf(u))   # they've learned the stick's curve
+			b.lean_input = stick * absf(stick))
+	var out := {"crashed": r["crashed"], "done": st["done"], "off": st["off"]}
+	await _done(r)
+	return out
+
+
+func _test_direct_bars_course() -> void:
+	# Direct bars, for a person: a scripted rider with human reaction time and plain PD steering
+	# (on/off presses on keys) rides S-bends at 30, 60 and 100 km/h and stays up and on a road
+	# 4 m either side of its line.
+	var runs := [["", false], ["", true], ["cruiser", true], ["mx", true]]
+	for run in runs:
+		var line := []
+		var ok := true
+		for kmh in [30.0, 60.0, 100.0]:
+			var k := await _direct_rider(run[0], kmh, run[1])
+			ok = ok and not k["crashed"] and k["done"] and float(k["off"]) < 4.0
+			line.append("%d km/h %s, %.1f m off line" % [int(kmh), "fell off" if k["crashed"] else ("round" if k["done"] else "didn't finish"), float(k["off"])])
+		check(ok, "Direct bars on %s, %s: a rider with a reaction time rounds the bends and stays on the road (%s)"
+			% ["keys" if run[1] else "a stick", run[0] if run[0] != "" else "default bike", ", ".join(line)])
