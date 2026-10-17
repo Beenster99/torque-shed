@@ -2,11 +2,16 @@ extends Node
 ## Gamepad sticks and triggers. Reads whichever controller was used last, and measures each
 ## axis at rest so a controller (or a stray device such as a wheel or RGB hub) that reports an
 ## axis stuck at one end can't hold the bike leaned over or the throttle open.
+##
+## It also knows whether the player is on keyboard and mouse or a pad right now (using_pad),
+## and names the key for any action on that device (key, hint): every prompt in the game asks
+## here, so the hints follow the player's own bindings and switch the moment they pick up the
+## other controls.
 
 const STICK_DEADZONE := 0.2
 const TRIGGER_DEADZONE := 0.06
 
-## Mouse moves smaller than this (pixels) don't count as switching back to keyboard and mouse.
+## Mouse moves smaller than this (screen pixels) don't count as switching back to keyboard and mouse.
 const MOUSE_SWITCH_PX := 6.0
 
 ## The input device a player used last changed: true for a controller, false for keyboard and mouse.
@@ -49,6 +54,10 @@ func _note_device(event: InputEvent) -> void:
 		if event.pressed:
 			set_using_pad(true)
 	elif event is InputEventJoypadMotion:
+		# A stray device (a wheel, an RGB hub) that chatters an axis mustn't flip the hints: only
+		# a standard pad, or one whose buttons have been pressed, counts.
+		if not (Input.is_joy_known(event.device) or event.device == active_device):
+			return
 		var trig: bool = event.axis == JOY_AXIS_TRIGGER_LEFT or event.axis == JOY_AXIS_TRIGGER_RIGHT
 		var rest := _rest_value(event.device, event.axis)
 		var v: float = event.axis_value - rest
@@ -60,7 +69,7 @@ func _note_device(event: InputEvent) -> void:
 		if event.pressed:
 			set_using_pad(false)
 	elif event is InputEventMouseMotion:
-		if (event as InputEventMouseMotion).relative.length() > MOUSE_SWITCH_PX:
+		if (event as InputEventMouseMotion).screen_relative.length() > MOUSE_SWITCH_PX:
 			set_using_pad(false)
 
 
@@ -193,7 +202,12 @@ func _first_label(action: String, pad: bool) -> String:
 			pick = e
 			break
 	var label := Settings.code_text(Settings.code_of(pick))
-	return "Esc" if label == "Escape" else label
+	return str(SHORT_NAMES.get(label, label))
+
+
+## Key names as they read best in a hint: ", / ." to turn, not "Comma / Period".
+const SHORT_NAMES := {"Escape": "Esc", "Comma": ",", "Period": ".", "Slash": "/", "Equal": "=", "Minus": "-",
+	"Kp Add": "Num +", "Kp Subtract": "Num -"}
 
 
 ## The controller to read: the last one used, else the first one with a standard layout.

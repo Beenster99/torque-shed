@@ -108,6 +108,8 @@ func _run_all() -> void:
 	print("Key bindings, the pad in menus, whiteboard pictures and posters")
 	await _test_key_bindings()
 	await _test_pad_menus()
+	await _test_hints_follow_device()
+	await _test_hints_name_no_keys()
 	await _test_board_posters()
 	await _test_board_images()
 	print("Carrying, snapping, free surfaces, the whiteboard and delivery boxes")
@@ -4257,6 +4259,132 @@ func _test_pad_menus() -> void:
 	# Back to the keyboard and mouse for the tests after this one.
 	Controls.active_device = -1
 	Controls.set_using_pad(false)
+
+
+## The hints name the keys of whatever the player last used: keyboard and mouse, or the pad.
+func _test_hints_follow_device() -> void:
+	var had := FileAccess.file_exists(Settings.PATH)
+	var before := FileAccess.get_file_as_string(Settings.PATH) if had else ""
+	Settings.reset_bindings()
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	for i in 3:
+		await get_tree().physics_frame
+	var w: Walker = main.walker
+	get_viewport().push_input(_key(KEY_W))
+	check(not Controls.using_pad, "a key press means keyboard and mouse")
+	var kb := {"interact": Controls.key("interact"), "work": Controls.key("work"), "move": Controls.key("move"),
+		"back": Controls.key("back"), "tools": Controls.keys("tool_prev", "tool_next")}
+	check(kb == {"interact": "F", "work": "Left mouse", "move": "W A S D", "back": "Esc", "tools": "Mouse wheel"},
+		"on the keyboard: F, the left mouse, W A S D, Esc, the wheel (%s)" % str(kb))
+	check(Controls.hint("{interact}: ride it  ·  {rotate_left|rotate_right}: turn it  ·  {nope} stays") == "F: ride it  ·  , / .: turn it  ·  {nope} stays",
+		"a hint swaps each {action} for its key and leaves other braces (%s)" % Controls.hint("{interact}: ride it  ·  {rotate_left|rotate_right}: turn it  ·  {nope} stays"))
+	# A sample of hints across the game, on the keyboard.
+	var label := UITheme.label("Close ({back})")
+	main.hud.flash("Press {interact} to get up.", 5.0)
+	var samples := func() -> Array:
+		return [main.hud._message.text, label.text, w.spray_controls(), w.wash_controls(), w.blast_controls(),
+			Controls.hint(TvChannels.HOWTO[3][1][0][0]), Controls.hint(TvChannels.HOWTO[1][1][0][0])]
+	await get_tree().process_frame
+	var on_keys: Array = samples.call()
+	check(on_keys[0] == "Press F to get up." and on_keys[1] == "Close (Esc)" and str(on_keys[2]).contains("Hold Left mouse")
+		and str(on_keys[3]).contains(": step back") and str(on_keys[4]).contains("W A S D") and on_keys[5] == "I" and on_keys[6] == "W A S D",
+		"keyboard hints: %s" % " | ".join(on_keys))
+	# Pick up the pad: a button press switches every hint, the ones already up too.
+	var pad := InputEventJoypadButton.new()
+	pad.button_index = JOY_BUTTON_A
+	pad.pressed = true
+	get_viewport().push_input(pad)
+	pad = pad.duplicate()
+	pad.pressed = false
+	get_viewport().push_input(pad)
+	await get_tree().process_frame
+	check(Controls.using_pad, "a pad button means the pad")
+	var on_pad: Array = samples.call()
+	check(on_pad[0] == "Press Y to get up." and on_pad[1] == "Close (B)" and str(on_pad[2]).contains("Hold RT")
+		and str(on_pad[3]).contains("Y: step back") and str(on_pad[4]).contains("Left stick") and on_pad[5] == "D-pad up" and on_pad[6] == "Left stick",
+		"pad hints, the flash and the label already up changed too: %s" % " | ".join(on_pad))
+	var changed := 0
+	for i in on_keys.size():
+		if on_keys[i] != on_pad[i]:
+			changed += 1
+	check(changed == on_keys.size(), "every sampled hint changed (%d of %d)" % [changed, on_keys.size()])
+	check(Controls.key("throttle") == "RT" and Controls.key("front_brake") == "LT" and Controls.key("ignition") == "D-pad up"
+		and Controls.key("rename") == "N", "riding keys on the pad, and a key with no pad button still shows its key (%s)" % Controls.key("rename"))
+	# A small nudge of the mouse doesn't switch back; moving it does, and so does a stick past its deadzone.
+	var nudge := InputEventMouseMotion.new()
+	nudge.relative = Vector2(1, 1)
+	nudge.screen_relative = Vector2(1, 1)
+	get_viewport().push_input(nudge)
+	check(Controls.using_pad, "a nudge of the mouse leaves the pad's hints up")
+	var move := InputEventMouseMotion.new()
+	move.relative = Vector2(40, 0)
+	move.screen_relative = Vector2(40, 0)
+	get_viewport().push_input(move)
+	check(not Controls.using_pad and Controls.key("interact") == "F", "moving the mouse switches back to the keys")
+	var drift := InputEventJoypadMotion.new()
+	drift.axis = JOY_AXIS_LEFT_X
+	drift.axis_value = 0.1
+	get_viewport().push_input(drift)
+	check(not Controls.using_pad, "a stick inside its deadzone doesn't switch")
+	var stick := InputEventJoypadMotion.new()
+	stick.axis = JOY_AXIS_LEFT_X
+	stick.axis_value = 0.9
+	get_viewport().push_input(stick)
+	check(Controls.using_pad, "a stick pushed over switches to the pad")
+	# The player's own bindings: rebinding use to G shows G.
+	get_viewport().push_input(_key(KEY_W))
+	Settings.rebind("interact", _key(KEY_G))
+	check(Controls.key("interact") == "G" and Controls.hint("{interact}: talk") == "G: talk", "a rebound key shows in the hints (%s)" % Controls.key("interact"))
+	Settings.reset_bindings()
+	main._leave()
+	main.queue_free()
+	label.free()
+	await get_tree().physics_frame
+	Controls.active_device = -1
+	Controls.set_using_pad(false)
+	if had:
+		var f := FileAccess.open(Settings.PATH, FileAccess.WRITE)
+		f.store_string(before)
+		f.close()
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(Settings.PATH))
+
+
+## No hint in the game hard-codes a key: they all name an action (Controls.hint / Controls.key),
+## so they follow the device in use and the player's bindings. Lines marked "hint-ok" are the
+## few that describe the mouse or triggers themselves, which can't be rebound.
+func _test_hints_name_no_keys() -> void:
+	var skip := ["settings.gd", "controls.gd", "keybind_tab.gd"]
+	var strings := RegEx.create_from_string("\"((?:[^\"\\\\]|\\\\.)*)\"")
+	var bad: Array[RegEx] = []
+	for p in [
+		"(?:^|[\\s·(])[A-Z]: ",                                     # "F: ride it"
+		"(?:^|[\\s·(])[A-Z0-9] / [A-Z0-9](?![a-z])",                # "Q / E"
+		"[Pp]ress [A-Z](?![a-z])", "[Hh]old [A-Z](?![a-z])",       # "press I", "hold F"
+		"\\([A-Z]\\)", "\\(or [A-Z]\\b",                            # "(C)", "(or D-pad up)"
+		"\\b[B-HJ-Z] (to|for|on|picks|starts|again|the|when|backs|brakes)\\b",
+		"\\b(with|then|or|and) [B-HJ-Z](?![A-Za-z'])", "(?i)\\bI starts\\b",
+		"(?i)\\b(left|right|middle) mouse|mouse wheel|\\bscroll\\b|\\b(left|right) click\\b",
+		"\\b(Esc|Space|Shift|Ctrl|Backspace|D-pad|RT|LT|LB|RB|F[1-9]|F1[0-2]|WASD|W A S D)\\b"]:
+		bad.append(RegEx.create_from_string(p))
+	var found := []
+	var dir := DirAccess.open("res://scripts")
+	for file in dir.get_files():
+		if not file.ends_with(".gd") or skip.has(file):
+			continue
+		var n := 0
+		for line in FileAccess.get_file_as_string("res://scripts/" + file).split("\n"):
+			n += 1
+			if line.strip_edges().begins_with("#") or line.contains("hint-ok"):
+				continue
+			for m in strings.search_all(line):
+				var s := m.get_string(1)
+				if bad.any(func(r: RegEx): return r.search(s) != null):
+					found.append("%s:%d %s" % [file, n, s.left(60)])
+	check(found.is_empty(), "no hint names a key outright (%d found) %s" % [found.size(), str(found.slice(0, 6))])
 
 
 func _test_board_posters() -> void:
