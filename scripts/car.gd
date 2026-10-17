@@ -474,7 +474,7 @@ func _update_beams(on: bool) -> void:
 		l.visible = on
 		if not on:
 			continue
-		l.light_energy = (1.0 + 3.0 * night) * (2.6 if high else 1.4)
+		l.light_energy = (1.0 + 3.0 * night) * (6.0 if high else 3.5)
 		l.spot_angle = 20.0 if high else lerpf(30.0, 36.0, night)
 		l.spot_range = 95.0 if high else 42.0
 		l.rotation.x = deg_to_rad(-1.0 if high else -5.5)
