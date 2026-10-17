@@ -674,3 +674,37 @@ func test_jump() -> void:
 	main.queue_free()
 	await t.get_tree().process_frame
 	Shed.stop()
+
+
+## The truck's model: a handful of meshes (the fixed body merged by material), glass you can see
+## out of, the lamps lit only with the engine running (the reversing lamps in reverse), and the
+## steering wheel turning with the front wheels. The trailer's fixed parts are merged too.
+func test_model() -> void:
+	var car := Car.new()
+	var meshes := car.model.find_children("*", "MeshInstance3D", true, false)
+	var body: MeshInstance3D = car.model.get_node("Body")
+	var mats := []
+	for s in body.mesh.get_surface_count():
+		mats.append(body.mesh.surface_get_material(s))
+	var glass := mats.any(func(mt): return mt is StandardMaterial3D and (mt as StandardMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED)
+	check(meshes.size() <= 14 and body.mesh.get_surface_count() <= 30, "the truck is a handful of meshes (%d, the body %d surfaces)" % [meshes.size(), body.mesh.get_surface_count()])
+	check(glass and body.get_aabb().size.y > 1.4 and body.get_aabb().end.y > 1.75 and body.get_aabb().size.z > 5.3, "with see-through glass, full size (%s)" % str(body.get_aabb().size))
+	car.engine_on = false
+	car._update_model(0.0)
+	check(car._lamp_mat.emission_energy_multiplier == 0.0 and car._brake_mat.emission_energy_multiplier == 0.0 and not (car._head_lights[0] as Light3D).visible,
+		"parked with the engine off its lights are off")
+	car.engine_on = true
+	car.gear = 1
+	car._update_model(0.0)
+	check(car._lamp_mat.emission_energy_multiplier > 1.0 and car._brake_mat.emission_energy_multiplier > 0.0
+		and car._reverse_mat.emission_energy_multiplier == 0.0 and (car._head_lights[0] as Light3D).visible, "running, the head and tail lights are on")
+	car.gear = -1
+	car.steer = 0.3
+	car._update_model(0.0)
+	check(car._reverse_mat.emission_energy_multiplier > 0.0, "in reverse the reversing lamps light")
+	check(absf(car._steering_wheel.rotation.y + 0.3 * Car.STEER_RATIO) < 0.01, "the steering wheel turns with the front wheels")
+	car.free()
+	var tr := Trailer.new()
+	var tm := tr.model.find_children("*", "MeshInstance3D", false, false)
+	check(tm.size() <= 3 and tr.model.get_node_or_null("Merged") != null, "the trailer's fixed parts are one mesh (%d left)" % tm.size())
+	tr.free()

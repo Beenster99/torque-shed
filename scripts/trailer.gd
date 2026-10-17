@@ -64,6 +64,7 @@ var _v_prev := Vector3.INF
 var _acc := Vector3.ZERO       # the bed's acceleration, its own axes, smoothed
 var dolly_stowed: Node3D       # the dolly hung on the side rail (RecoveryView shows or hides it)
 var winch_drum: Node3D
+var _tail_mat: StandardMaterial3D
 
 
 func _init() -> void:
@@ -342,7 +343,9 @@ static func _box(parent: Node3D, size: Vector3, at: Vector3, mat: Material, rot 
 
 
 ## A galvanised flatbed: chequer-plate deck, two wheel channels with chocks, side rails with the
-## strap anchors, mudguards, an A-frame drawbar with a jockey wheel, the winch post, and the ramp.
+## strap anchors, curved mudguards, an A-frame drawbar with a jockey wheel, the winch post, the
+## lights board and plate, and the ramp with a walkway between its channels. The fixed parts are
+## merged into one mesh at the end (see CarModel.merge_children).
 func _build_model() -> void:
 	model = Node3D.new()
 	model.name = "Model"
@@ -352,14 +355,29 @@ func _build_model() -> void:
 	var dark := _mat(Color(0.07, 0.07, 0.075), 0.0, 0.8)
 	var yellow := _mat(Color(0.9, 0.7, 0.1), 0.2, 0.5)
 	var red := _mat(Color(0.8, 0.05, 0.03), 0.0, 0.3)
+	var amber := _mat(Color(0.95, 0.5, 0.05), 0.1, 0.25)
+	_tail_mat = _mat(Color(0.5, 0.03, 0.03), 0.1, 0.25)
+	_tail_mat.emission_enabled = true
+	_tail_mat.emission = Color(1.0, 0.05, 0.02)
+	_tail_mat.emission_energy_multiplier = 0.0
 	var len := BED_REAR - BED_FRONT
 	var mid := (BED_REAR + BED_FRONT) * 0.5
 	_box(model, Vector3(BED_HALF_W * 2.0, 0.06, len), Vector3(0.0, BED_Y - 0.03, mid), deck)
 	_box(model, Vector3(BED_HALF_W * 2.0, 0.1, 0.08), Vector3(0.0, BED_Y - 0.09, BED_FRONT), galv)
 	for x in [-BED_HALF_W, BED_HALF_W]:
 		_box(model, Vector3(0.06, 0.16, len), Vector3(x, BED_Y + 0.05, mid), galv)
-		# Mudguards over the wheels.
-		_box(model, Vector3(0.3, 0.04, 0.8), Vector3(x * 0.97, BED_Y + 0.02, AXLE_Z), dark)
+		# Mudguards: a curved black guard over each wheel on a pair of stays, a reflector on its front.
+		var guard := []
+		for k in 9:
+			var a := lerpf(deg_to_rad(15.0), deg_to_rad(165.0), k / 8.0)
+			guard.append({"c": Vector3(float(x) * 0.97, 0.3 + sin(a) * 0.35, AXLE_Z + cos(a) * 0.35), "w": 0.13, "up": 0.008, "n": 6.0})
+		var gm := MeshInstance3D.new()
+		gm.mesh = ShapeKit.loft(guard, 12)
+		gm.material_override = dark
+		model.add_child(gm)
+		for dz in [-0.22, 0.22]:
+			_box(model, Vector3(0.12, 0.03, 0.03), Vector3(float(x) * 0.91, BED_Y - 0.06, AXLE_Z + dz), galv)
+		_box(model, Vector3(0.05, 0.03, 0.012), Vector3(float(x) * 0.97, 0.42, AXLE_Z - 0.345), amber)
 	for sx in SLOTS_X:
 		# A channel either side of each wheel line and a chock at the front.
 		for dx in [-0.07, 0.07]:
@@ -378,7 +396,36 @@ func _build_model() -> void:
 		var bar := _box(model, Vector3(0.08, 0.08, d.length()), (from + to) * 0.5, galv)
 		bar.rotation.y = atan2(-d.x, -d.z) + PI
 	_box(model, Vector3(0.12, 0.12, 0.3), COUPLER + Vector3(0.0, 0.0, 0.1), dark)
-	_box(model, Vector3(0.05, 0.4, 0.05), Vector3(0.2, 0.3, -2.6), dark)
+	# The jockey wheel: its post in a clamp on the drawbar, a small wheel in a fork at the bottom
+	# and the winding handle on top.
+	var jx := 0.16
+	var jz := -2.55
+	_box(model, Vector3(0.1, 0.1, 0.1), Vector3(jx, 0.52, jz), dark)
+	var post := MeshInstance3D.new()
+	var pc := CylinderMesh.new()
+	pc.top_radius = 0.028
+	pc.bottom_radius = 0.028
+	pc.height = 0.6
+	post.mesh = pc
+	post.material_override = galv
+	post.position = Vector3(jx, 0.48, jz)
+	model.add_child(post)
+	_box(model, Vector3(0.09, 0.14, 0.03), Vector3(jx, 0.14, jz - 0.03), galv)
+	var jw := MeshInstance3D.new()
+	var jc := CylinderMesh.new()
+	jc.top_radius = 0.09
+	jc.bottom_radius = 0.09
+	jc.height = 0.06
+	jw.mesh = jc
+	jw.material_override = dark
+	jw.rotation.z = PI * 0.5
+	jw.position = Vector3(jx, 0.09, jz - 0.06)
+	model.add_child(jw)
+	var crank := MeshInstance3D.new()
+	crank.mesh = ShapeKit.sweep([Vector3(jx, 0.78, jz), Vector3(jx + 0.06, 0.8, jz), Vector3(jx + 0.12, 0.79, jz),
+		Vector3(jx + 0.12, 0.86, jz)], 0.012, 6)
+	crank.material_override = galv
+	model.add_child(crank)
 	# The winch post and drum.
 	_box(model, Vector3(0.1, 0.55, 0.1), Vector3(0.0, BED_Y + 0.27, WINCH.z), galv)
 	winch_drum = Node3D.new()
@@ -394,9 +441,24 @@ func _build_model() -> void:
 	drum.rotation.z = PI * 0.5
 	winch_drum.add_child(drum)
 	_box(winch_drum, Vector3(0.03, 0.03, 0.25), Vector3(0.14, 0.0, 0.1), dark)
-	# Rear lamps.
-	for x in [-0.8, 0.8]:
-		_box(model, Vector3(0.18, 0.08, 0.05), Vector3(x, BED_Y - 0.1, BED_REAR + 0.02), red)
+	# The lights board under the back of the bed: a lamp cluster each end (stop and tail, the
+	# indicator, a triangle reflector), the number plate in the middle and its lamp.
+	_box(model, Vector3(BED_HALF_W * 2.0 - 0.1, 0.14, 0.03), Vector3(0.0, BED_Y - 0.22, BED_REAR - 0.02), dark)
+	for side in [-1.0, 1.0]:
+		var lx: float = side * (BED_HALF_W - 0.17)
+		_box(model, Vector3(0.24, 0.12, 0.05), Vector3(lx, BED_Y - 0.22, BED_REAR + 0.01), dark)
+		_box(model, Vector3(0.11, 0.08, 0.02), Vector3(lx + side * 0.05, BED_Y - 0.22, BED_REAR + 0.04), _tail_mat)
+		_box(model, Vector3(0.07, 0.08, 0.02), Vector3(lx - side * 0.05, BED_Y - 0.22, BED_REAR + 0.04), amber)
+		_box(model, Vector3(0.08, 0.08, 0.012), Vector3(lx - side * 0.16, BED_Y - 0.22, BED_REAR + 0.02), red, Vector3(0.0, 0.0, PI * 0.25))
+	_box(model, Vector3(0.52, 0.115, 0.012), Vector3(0.0, BED_Y - 0.22, BED_REAR + 0.005), _mat(Color(0.98, 0.8, 0.1), 0.0, 0.4))
+	var plate := Label3D.new()
+	plate.text = "TQ19 RCV"
+	plate.font_size = 64
+	plate.pixel_size = 0.0011
+	plate.modulate = Color(0.02, 0.02, 0.02)
+	plate.outline_size = 0
+	plate.position = Vector3(0.0, BED_Y - 0.22, BED_REAR + 0.012)
+	model.add_child(plate)
 	# The ramp, hinged at the back of the bed.
 	_ramp_pivot = Node3D.new()
 	_ramp_pivot.position = Vector3(0.0, BED_Y, BED_REAR)
@@ -410,6 +472,10 @@ func _build_model() -> void:
 		for i in 8:
 			_box(_ramp_pivot, Vector3(0.32, 0.02, 0.03), Vector3(float(x), 0.03, 0.15 + i * 0.22), galv)
 	_box(_ramp_pivot, Vector3(1.3, 0.04, 0.05), Vector3(0.0, 0.0, 0.05), galv)
+	# The walkway between the channels, to walk up and down by the bike.
+	_box(_ramp_pivot, Vector3(0.56, 0.03, RAMP_LEN), Vector3(0.0, 0.0, RAMP_LEN * 0.5), deck)
+	for i in 8:
+		_box(_ramp_pivot, Vector3(0.52, 0.015, 0.025), Vector3(0.0, 0.02, 0.15 + i * 0.22), galv)
 	# The dolly tray, hung on the left-hand rail.
 	dolly_stowed = Node3D.new()
 	dolly_stowed.position = Vector3(-BED_HALF_W - 0.06, BED_Y - 0.05, -0.1)
@@ -444,6 +510,7 @@ func _build_model() -> void:
 		hub.rotation.z = PI * 0.5
 		spin.add_child(hub)
 		_wheel_nodes.append([holder, spin])
+	CarModel.merge_children(model)
 	_update_model()
 
 
@@ -472,6 +539,11 @@ static func build_dolly(parent: Node3D) -> void:
 func _update_model() -> void:
 	if _ramp_pivot:
 		_ramp_pivot.rotation.x = _ramp_angle
+	if _tail_mat:
+		# On with the truck's lights; brighter on the brakes.
+		var on := car != null and car.engine_on
+		var braking := on and (car.brake > 0.1 if (car.gear >= 0 or not car.auto_shift) else car.throttle > 0.1)
+		_tail_mat.emission_energy_multiplier = 3.0 if braking else (0.6 if on else 0.0)
 	for i in wheels.size():
 		var w: Dictionary = wheels[i]
 		var m: Vector3 = w["mount"]
