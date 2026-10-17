@@ -41,6 +41,7 @@ var _mounted_at := 0
 var _dirt_km := 0.0
 var _lap_seen := []           # the ride logger's lap counter: stretches of the test route passed (see ContractTestRide.lap_step)
 var _laps := 0               # laps of it since the last ride stats went
+var _fly_km := 0.0         # distance at speed since the last stats, for dead flies on the front
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
@@ -696,11 +697,17 @@ func _physics_process(delta: float) -> void:
 		_ride_top = maxf(_ride_top, absf(bike.speed) * 3.6)
 		_track_lap()
 		if bike.wheels[1]["contact"] or bike.wheels[0]["contact"]:
-			# Loose ground and wheelspin throw muck all over the bike.
-			var muck := km * float(SURFACE_DIRT.get(bike.surface, 0.3)) * (1.0 + float(bike.wheels[1]["slip"]))
+			# Loose ground and wheelspin throw muck all over the bike, more of it the faster you go,
+			# and a wet road throws up a lot more spray (mud more still: see Dirt.accrue).
+			var wet := Weather.wetness()
+			var paved: bool = bike.surface in ["tarmac", "concrete"]
+			var pace := 0.7 + 0.3 * minf(absf(bike.speed) * 3.6 / 50.0, 2.0)
+			var muck := km * float(SURFACE_DIRT.get(bike.surface, 0.3)) * (1.0 + float(bike.wheels[1]["slip"])) \
+				* (1.0 + wet * (3.0 if paved else 1.0)) * pace
 			_dirt_km += muck
 			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
-			bike.model.set_grime(clampf(_ride_dirt, 0.0, 0.85))
+		# Dead flies on the front at speed (fewer in the rain).
+		_fly_km += km * clampf((absf(bike.speed) * 3.6 - 30.0) / 70.0, 0.0, 1.5) * (1.0 - 0.6 * Weather.rain_level())
 		_update_dash()
 		_keep_on_map()
 		_stats_timer += delta
@@ -750,7 +757,7 @@ func _send_ride_stats() -> void:
 		return
 	hud.trip_fuel += bike.fuel_used
 	var ride := {"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
-		"dirt_km": _dirt_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()}
+		"dirt_km": _dirt_km, "fly_km": _fly_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()}
 	ride.merge(_logger_peaks(), true)
 	if _laps > 0:
 		ride["laps"] = _laps
@@ -759,6 +766,11 @@ func _send_ride_stats() -> void:
 	bike.fuel_used = 0.0
 	_ride_km = 0.0
 	_dirt_km = 0.0
+	_fly_km = 0.0
+	# The muck builds up on the bike as you ride (as the shed has it: a moment behind online).
+	var riding := Shed.riding(Shed.me())
+	if riding != 0 and Shed.bikes.has(riding) and bike.model:
+		bike.model.show_dirt(Dirt.of_bike(riding))
 
 
 ## The ride logger's lap counter: which stretch of the test route (The Loop) the bike is on, if

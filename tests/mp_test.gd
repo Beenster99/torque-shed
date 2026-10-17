@@ -104,6 +104,8 @@ func _ready() -> void:
 	var rec_drove := false      # the host saw the client at the wheel; the client was driving
 	var rec_ok := false
 	var REC_PARK := Recovery.PARK.translated(Vector3(-6.0, 0.0, 2.0))
+	var wash_step := 0
+	var wash_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -479,7 +481,36 @@ func _ready() -> void:
 		rec_ok = rec_ok or (rec_drove and rec_job_ok and Recovery.driver() == 0 and rv.car != null
 			and (Recovery.car()["xf"] as Transform3D).origin.distance_to(REC_PARK.origin) < 0.3
 			and rv.car.global_position.distance_to(REC_PARK.origin) < 0.3)
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok:
+		# Pressure washing together: the host mucks up the Ranger's front tyre, fork and engine and
+		# washes half the dirt off the tyre; the client washes half off the fork and calls the
+		# engine clean, with its jet firing; both see all three, and the host sees the client's water.
+		if ranger != 0 and Shed.crew.size() == 2:
+			var w_tyre := Shed.item_on(ranger, "front_tyre")
+			var w_fork := Shed.item_on(ranger, "fork")
+			var w_engine := Shed.item_on(ranger, "engine")
+			var all_cells := func(f: float) -> Dictionary:
+				var d := {}
+				for k in Dirt.CELLS:
+					d[k] = f
+				return d
+			if role == "host" and wash_step == 0 and w_tyre != 0 and w_fork != 0 and w_engine != 0:
+				var muck := PackedFloat32Array()
+				muck.resize(Dirt.CELLS)
+				muck.fill(0.8)
+				for wid in [w_tyre, w_fork, w_engine]:
+					Dirt.store(Shed.items[wid], muck)
+				Shed._mark_dirty()
+				Shed.request({"a": "wash_cells", "bike": ranger, "parts": {w_tyre: all_cells.call(0.5)}, "clean": []})
+				wash_step = 1
+			if role == "client" and wash_step == 0 and w_fork != 0 and absf(float(Shed.items[w_fork]["dirt"]) - 0.8) < 0.01 \
+					and absf(float(Shed.items[w_tyre]["dirt"]) - 0.4) < 0.01:
+				Shed.request({"a": "wash_aim", "fire": true, "bike": ranger, "at": (Shed.bikes[ranger]["xf"] as Transform3D).origin + Vector3.UP * 0.5, "n": Vector3.RIGHT})
+				Shed.request({"a": "wash_cells", "bike": ranger, "parts": {w_fork: all_cells.call(0.5)}, "clean": [w_engine]})
+				wash_step = 1
+			var seen_water: bool = role == "client" or (main.remotes.size() == 1 and ws != null and ws._wash_fx.has(int(main.remotes.keys()[0])))
+			wash_ok = wash_ok or (w_tyre != 0 and absf(float(Shed.items[w_tyre]["dirt"]) - 0.4) < 0.01 and absf(float(Shed.items[w_fork]["dirt"]) - 0.4) < 0.01
+				and float(Shed.items[w_engine]["dirt"]) == 0.0 and Dirt.side(Dirt.cells(Shed.items[w_fork], "fork"), 0) < 0.41 and seen_water)
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and wash_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -495,8 +526,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, washing %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, wash_ok])
 	get_tree().quit(0 if ok else 1)
 
 

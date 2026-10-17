@@ -1,6 +1,6 @@
 class_name WaterSpray
 extends CPUParticles3D
-## The pressure washer jet: fast streaks of water stretched along their flight, fanned out a
+## The pressure washer jet: a fast, full jet of streaks of water stretched along their flight, fanned out a
 ## little and drooping under gravity, with a glassy rod of water at the nozzle (the "Core"
 ## child) and a fine mist halo (the "Mist" child).
 ## Fires along -Z from where it sits. Set `emitting` like any CPUParticles3D; the mist follows.
@@ -12,7 +12,7 @@ var _core: MeshInstance3D
 static func make() -> WaterSpray:
 	var jet := WaterSpray.new()
 	jet.emitting = false
-	jet.amount = 240
+	jet.amount = 380
 	jet.lifetime = 0.32
 	jet.local_coords = false
 	jet.direction = Vector3(0.0, 0.0, -1.0)
@@ -61,11 +61,11 @@ static func make() -> WaterSpray:
 	var mist := CPUParticles3D.new()
 	mist.name = "Mist"
 	mist.emitting = false
-	mist.amount = 110
+	mist.amount = 190
 	mist.lifetime = 0.7
 	mist.local_coords = false
 	mist.direction = Vector3(0.0, 0.0, -1.0)
-	mist.spread = 7.0
+	mist.spread = 9.0
 	mist.flatness = 0.4
 	mist.initial_velocity_min = 3.0
 	mist.initial_velocity_max = 8.0

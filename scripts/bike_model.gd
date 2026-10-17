@@ -66,6 +66,7 @@ var _highlighted := ""
 var _exhaust_tip := Vector3.ZERO
 var _eye := Vector3.ZERO
 var _grime: StandardMaterial3D
+var dirt_layer: DirtLayer        # the road dirt drawn over the parts (see show_dirt)
 var _dash_label: Label3D
 var _needles := []               # {node, what: "speed" or "rpm"} on dial clocks
 var _leds := []                  # shift lights: {mat, color}
@@ -99,6 +100,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	for child in get_children():
 		child.free()
 	_rider = null
+	dirt_layer = null
 	_geo_nodes.clear()
 	_geo_pivots.clear()
 	_geo_anchors.clear()
@@ -207,8 +209,52 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	# Before the bike's own fit moves anything: the mask is laid out where the parts were drawn.
 	_show_blasted()
 	_show_paint_fx()
+	_show_dirt()
 	if not geometry.is_empty():
 		apply_geometry(geometry)
+
+
+## Road dirt over every dirty part, region by region (see Dirt and DirtLayer), from each part's
+## condition (its "dirt" and "grime").
+func _show_dirt() -> void:
+	var levels := {}
+	for slot in _slot_meshes:
+		var cond = condition.get(slot)
+		if not (cond is Dictionary) or float((cond as Dictionary).get("dirt", 0.0)) <= 0.003 or (_slot_meshes[slot] as Array).is_empty():
+			continue
+		levels[slot] = Dirt.cells(cond, str(slot))
+	if not levels.is_empty():
+		ensure_dirt_layer().set_levels(levels)
+
+
+## The layer the dirt's drawn in (made if it hasn't been yet).
+func ensure_dirt_layer() -> DirtLayer:
+	if dirt_layer == null or not is_instance_valid(dirt_layer):
+		dirt_layer = DirtLayer.new()
+		dirt_layer.name = "DirtLayer"
+		add_child(dirt_layer)
+		dirt_layer.setup(self, {})
+	return dirt_layer
+
+
+## Shows each part's dirt as it is now (slot -> Dirt levels, see Dirt.of_bike), without redrawing
+## the bike. Not while someone's washing it here (their WashJob draws it as it goes).
+func show_dirt(levels: Dictionary) -> void:
+	if dirt_layer != null and is_instance_valid(dirt_layer) and dirt_layer.held_by_job:
+		return
+	var any := false
+	for slot in levels:
+		if DirtLayer._any(levels[slot]):
+			any = true
+			break
+	if not any and (dirt_layer == null or not is_instance_valid(dirt_layer)):
+		return
+	var shown := {}
+	for slot in levels:
+		if (_slot_meshes.get(slot, []) as Array).is_empty():
+			continue
+		shown[slot] = levels[slot]
+	ensure_dirt_layer().set_levels(shown)
 
 
 ## Sandblasted bare metal on the engine, wherever it's drawn (see BlastMarks.show_saved). A part
@@ -3781,13 +3827,12 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	var style := str(_part().get("style", "road"))
 	var rubber := _mat(_col(), 0.0, 0.88)
 	rubber.cull_mode = BaseMaterial3D.CULL_DISABLED
-	# Rubber never rusts, and road grime on a tyre dulls it to a dusty charcoal rather than
-	# the brown it gives painted parts, so a tired tyre still reads black in a low warm sun.
-	# A little less specular than the default keeps the sunset's glow off the sidewalls.
-	var dirt := float(condition.get(_current_slot, {}).get("dirt", 0.0))
+	# Rubber never rusts (its road dirt is drawn over it, see DirtLayer), so a tired tyre still
+	# reads black in a low warm sun. A little less specular than the default keeps the sunset's
+	# glow off the sidewalls.
 	rubber.detail_enabled = false
-	rubber.albedo_color = _col().lerp(Color(0.1, 0.1, 0.1), clampf(dirt, 0.0, 1.0) * 0.5)
-	rubber.roughness = lerpf(0.88, 0.95, clampf(dirt, 0.0, 1.0))
+	rubber.albedo_color = _col()
+	rubber.roughness = 0.88
 	rubber.metallic = 0.0
 	rubber.metallic_specular = 0.3
 	var tyre_mi := _mesh_instance(tyre_mesh(rim_r, radius, width, rim_w, style), rubber, Vector3.ZERO, wheel)
@@ -5022,8 +5067,8 @@ func _mat(color: Color, metallic: float, roughness: float, clearcoat := 0.0) -> 
 		m.clearcoat_roughness = 0.05
 		m.roughness = m.roughness * (1.0 - 0.4 * lacquer)
 		roughness = m.roughness
+	# Road dirt isn't tinted in: it's drawn over the part where it really is (see DirtLayer).
 	var rust := float(cond.get("rust", 0.0))
-	var dirt := float(cond.get("dirt", 0.0))
 	if rust > 0.05:
 		# Rust creeps in as patches: a blotchy mask that grows with the rust level.
 		m.detail_enabled = true
@@ -5035,10 +5080,6 @@ func _mat(color: Color, metallic: float, roughness: float, clearcoat := 0.0) -> 
 		m.metallic = metallic * (1.0 - rust * 0.7)
 		m.roughness = lerpf(roughness, 0.95, rust)
 		m.clearcoat_enabled = m.clearcoat_enabled and rust < 0.4
-	if dirt > 0.05:
-		m.albedo_color = m.albedo_color.lerp(Color(0.16, 0.13, 0.09), dirt * 0.65)
-		m.roughness = lerpf(m.roughness, 1.0, dirt * 0.8)
-		m.metallic *= 1.0 - dirt * 0.5
 	return m
 
 

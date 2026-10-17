@@ -18,6 +18,7 @@ var trip_fuel := 0.0       # litres burnt this ride
 var popups: Array = []
 var blast_hud: BlastHud     # the sandblaster's readout, while your hands are in the gloves
 var spray_hud: SprayHud     # the spray readout, while you lay a coat on
+var wash_hud: WashHud       # the pressure washing readout, while the wash controls are up
 var _banner_level := 0
 var _banner_time := 0.0
 const POPUP_LIFE := 3.0
@@ -68,6 +69,8 @@ func _ready() -> void:
 	add_child(blast_hud)
 	spray_hud = SprayHud.new()
 	add_child(spray_hud)
+	wash_hud = WashHud.new()
+	add_child(wash_hud)
 	Progress.xp_gained.connect(add_popup)
 	Progress.cash_changed.connect(add_popup.bind(true))
 	Progress.leveled_up.connect(func(level: int):
@@ -106,7 +109,8 @@ func _process(delta: float) -> void:
 	var on_foot := walker != null and bike == null
 	blast_hud.walker = walker if on_foot else null
 	spray_hud.walker = walker if on_foot else null
-	_panel.visible = on_foot and walker.blast == null and not spray_hud.showing() \
+	wash_hud.walker = walker if on_foot else null
+	_panel.visible = on_foot and walker.blast == null and not spray_hud.showing() and not wash_hud.showing() \
 		and (walker.info != "" or walker.look_info != "" or not walker.plan.is_empty() or walker.crouched)
 	if on_foot:
 		# What the cafe's bikers and the like say (Walker.look_info) comes first, over what the
