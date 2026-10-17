@@ -28,6 +28,10 @@ const WASH_REACH := 8.0
 const SIDE_DOOR_HALF := 0.65
 const SIDE_DOOR_HEIGHT := 2.4
 const ROOM_HEIGHT := 3.4
+## A solid this thin one way and at least this big the other two is a wall or a roof, and hides
+## what's behind it from the renderer (see _occluder()).
+const OCCLUDER_THICK := 0.4
+const OCCLUDER_MIN := 1.0
 ## The paint shop: a room off the east wall, entered through a doorway from inside the shed,
 ## with the shed's own open-topped downdraft spray bay (ten hooks on two rails) built into it
 ## and a ceiling of hexagon LED tiles. Interior x 6.8..14.0, z 59.8..70.2.
@@ -101,6 +105,10 @@ var paint_bay: PaintBayRoom   # the paint mixing bay off the paint shop
 var tv_feed: SubViewport
 ## Live riding pictures, one per rider being watched: bike node instance id -> {vp, cam, node}.
 var _feeds := {}
+## The live pictures' own lighter copy of the world's look (see _feed_environment()), and how
+## long until it's taken again.
+var _feed_env: Environment
+var _feed_env_in := 0.0
 var _screen_shown := {}    # screen key -> the channel it last drew, to flash the name on a change
 var _screens_sig := ""
 var door_open_amount := 1.0   # the roller door: 0 down, 1 rolled up
@@ -542,7 +550,9 @@ func _update_tv_feed(delta: float) -> void:
 		if fresh:
 			var vp := SubViewport.new()
 			vp.size = Vector2i(640, 360)
-			vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+			# Drawn only while a screen showing it is in view, without the lamps' shadow maps.
+			vp.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+			vp.positional_shadow_atlas_size = 0
 			add_child(vp)
 			var cam := Camera3D.new()
 			cam.fov = 60.0
@@ -557,11 +567,33 @@ func _update_tv_feed(delta: float) -> void:
 		cam.global_position = at if fresh else cam.global_position.lerp(at, 1.0 - exp(-4.0 * delta))
 		if not cam.global_position.is_equal_approx(bxf.origin + Vector3.UP * 0.8):
 			cam.look_at(bxf.origin + Vector3.UP * 0.8, Vector3.UP)
+		var look := _feed_environment(delta)
+		if cam.environment != look:
+			cam.environment = look
 		var vp: SubViewport = _feeds[nid]["vp"]
 		if tv_feed == null:
 			tv_feed = vp
 		for s in want[nid]["screens"]:
 			(s[0] as Dashboard).show_feed(vp.get_texture(), s[1])
+
+
+## The look the live pictures are drawn with: the world's own (sky, time of day, exposure),
+## copied once a second, less the costly extras a small TV picture doesn't show (global
+## illumination, volumetric fog, reflections, AO): each viewport works those out all over again.
+func _feed_environment(delta: float) -> Environment:
+	_feed_env_in -= delta
+	var world := Lighting.current.env if Lighting.current else null
+	if world == null:
+		return null
+	if _feed_env == null or _feed_env_in <= 0.0:
+		_feed_env_in = 1.0
+		_feed_env = world.duplicate()
+		_feed_env.sdfgi_enabled = false
+		_feed_env.volumetric_fog_enabled = false
+		_feed_env.ssr_enabled = false
+		_feed_env.ssil_enabled = false
+		_feed_env.ssao_enabled = false
+	return _feed_env
 
 
 ## Parts put down anywhere, each with a box around it to aim at and pick it up by.
@@ -1282,8 +1314,25 @@ func _solid(center: Vector3, size: Vector3, mat: Material, parent: Node3D = self
 	mi.mesh = bm
 	mi.material_override = mat
 	body.add_child(mi)
+	if not (mat is BaseMaterial3D and (mat as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED):
+		_occluder(body, size)
 	parent.add_child(body)
 	return body
+
+
+## A wall or roof (`size`: thin one way, at least OCCLUDER_MIN the other two) hides what's
+## behind it from the renderer (occlusion culling), so from inside a room the rooms and the yard
+## beyond its walls aren't drawn. It goes with the wall: knock the wall out and it's gone too.
+func _occluder(body: Node3D, size: Vector3) -> void:
+	var dims := [size.x, size.y, size.z]
+	dims.sort()
+	if dims[0] > OCCLUDER_THICK or dims[1] < OCCLUDER_MIN:
+		return
+	var occ := OccluderInstance3D.new()
+	var box := BoxOccluder3D.new()
+	box.size = size
+	occ.occluder = box
+	body.add_child(occ)
 
 
 func _deco(parent: Node3D, center: Vector3, size: Vector3, mat: Material) -> MeshInstance3D:

@@ -30,7 +30,9 @@ func _init(page_kind := "bike", screen_width := 2.0) -> void:
 	width = screen_width
 	_viewport = SubViewport.new()
 	_viewport.size = PX
-	_viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	# The page is drawn once each time it changes (show_data()), not every frame it's in view:
+	# a shed full of screens otherwise redrew a dozen pages sixty times a second indoors.
+	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_viewport.transparent_bg = false
 	add_child(_viewport)
 	_page = Control.new()
@@ -126,6 +128,7 @@ func _init(page_kind := "bike", screen_width := 2.0) -> void:
 func show_data(new_data: Dictionary) -> void:
 	data = new_data
 	_page.queue_redraw()
+	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 ## Switches to another page (see TvChannels.PAGES) with its data.
