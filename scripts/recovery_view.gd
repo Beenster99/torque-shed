@@ -11,6 +11,8 @@ extends Node3D
 const EXIT_SPEED := 1.5
 const MOVE_EVERY := 1.5        # seconds between telling the host where the truck has got to
 const REMOTE_DELAY := 0.12
+## Where the horn sits in a snapshot from net_state().
+const NET_HORN := 1 + Car.NET_SIZE + Trailer.NET_SIZE
 const STRAP_ANCHORS := [Vector3(-0.42, 0.03, -0.95), Vector3(0.42, 0.03, -0.95), Vector3(-0.42, 0.03, 0.85),
 	Vector3(0.42, 0.03, 0.85)]
 ## Where each strap meets the bike (its view's own space): the bars, then the rear footpegs.
@@ -88,6 +90,7 @@ func _process(delta: float) -> void:
 			car.global_transform = c["xf"]
 			trailer.global_transform = c["trailer_xf"]
 		car.stop_engine()
+		car.horn = false
 		if is_instance_valid(_remote_audio):
 			_remote_audio.running = false
 	trailer.ramp_down = bool(Recovery.car()["ramp"])
@@ -648,6 +651,7 @@ func stop_driving(tell := true) -> void:
 	if not driving:
 		return
 	driving = false
+	car.horn = false
 	main.hud.car = null
 	if tell:
 		Shed.request({"a": "recovery_exit", "xf": _settled(car.global_transform), "trailer_xf": _settled(trailer.global_transform)})
@@ -764,8 +768,9 @@ func drive_physics(_delta: float, active: bool) -> void:
 		audio.cranking = car.is_starting()
 		audio.speed = car.speed
 		audio.view = "rider" if main.camera.mode == ChaseCamera.Mode.HELMET else "chase"
-	if active and Input.is_action_just_pressed("horn"):
-		Sfx.play_at("horn_disc", car.global_position, -2.0)
+	# The horn sounds while it's held, from the truck itself (it used to fire a one-off sound
+	# into the scene where you pressed it, which a looping take never let finish).
+	car.horn = active and Input.is_action_pressed("horn")
 	var p := car.global_position
 	if p.y < main.world.terrain_height(p.x, p.z) - 15.0 or absf(p.x) > World.MAP_HALF - 1.0 or absf(p.z) > World.MAP_HALF - 1.0:
 		trailer.unhitch()
@@ -774,11 +779,13 @@ func drive_physics(_delta: float, active: bool) -> void:
 		main.hud.flash("Lost the truck off the map: it's back in the yard.", 3.0, true)
 
 
-## [2, truck..., trailer...] for the network while you drive.
+## [2, truck..., trailer..., horn] for the network while you drive. The horn goes on the end so
+## a snapshot from an older build still reads.
 func net_state() -> PackedFloat32Array:
 	var s := PackedFloat32Array([2.0])
 	s.append_array(car.get_net_state())
 	s.append_array(trailer.get_net_state())
+	s.append(1.0 if car.horn else 0.0)
 	return s
 
 
@@ -833,6 +840,7 @@ func _follow_remote(peer: int) -> void:
 	var list: Array = _remote[peer]
 	var now := Time.get_ticks_msec() / 1000.0
 	if now - float(list[-1]["t"]) > 3.0:
+		car.horn = false
 		return   # stale: leave it where it was
 	var render_t := now - REMOTE_DELAY
 	var a: Dictionary = list[0]
@@ -856,6 +864,8 @@ func _follow_remote(peer: int) -> void:
 		trailer.set_net_state(sa, 1 + Car.NET_SIZE)
 		trailer.global_transform = trailer.global_transform.interpolate_with(ta, f)
 	_parked_sig = ""
+	# Their horn, from the newest snapshot: it stops when they let go (or the snapshots stop).
+	car.horn = sb.size() > NET_HORN and sb[NET_HORN] > 0.5 and now - float(list[-1]["t"]) < 0.5
 	if _remote_audio == null or not is_instance_valid(_remote_audio):
 		_remote_audio = EngineSound.new()
 		car.add_child(_remote_audio)

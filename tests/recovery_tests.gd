@@ -800,3 +800,112 @@ func test_controls() -> void:
 	main.queue_free()
 	await t.get_tree().process_frame
 	Shed.stop()
+
+
+## The horn players in the scene still sounding one of `sound`'s recordings, but `skip`.
+func _horns_playing(sound: String, skip: Node = null) -> Array:
+	var takes := Sfx.recordings(sound)
+	return t.get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(
+		func(p): return p != skip and p.playing and takes.has(p.stream))
+
+
+## Simon's 17 October (21:18) round: the truck's horn kept playing, stuck where he'd honked it.
+## It fired a one-off sound into the scene, and a disc horn's takes are set to loop once a bike
+## with one has been ridden, so it never finished. Now the horn is on the truck: it sounds while
+## held, moves with the truck, stops when you let go, get out or the truck goes, and the crew
+## hear it the same way through the snapshot.
+func test_horn() -> void:
+	var main := await _main_with_rig()
+	var rv: RecoveryView = main.recovery
+	# A ride on a bike with a disc horn first, as in the game: its takes now loop.
+	var bike_horn := HornAudio.new()
+	bike_horn.sound = "horn_disc"
+	bike_horn.tones = [400.0]
+	t.add_child(bike_horn)
+	await t.get_tree().process_frame
+	check(bike_horn.is_recorded() and (Sfx.recordings("horn_disc")[0] as AudioStreamOggVorbis).loop, "a disc horn's takes loop after a ride")
+	Shed.request({"a": "recovery_enter"})
+	await _ticks(10)
+	var car := rv.car
+	var horn: HornAudio = car.get("horn_audio")
+	check(horn != null and horn.get_parent() == car and horn.is_recorded(), "the truck has its own horn, on the truck")
+	car.start_engine()
+	await _ticks(Engine.physics_ticks_per_second * 1)
+	Input.action_press("horn")
+	await _ticks(12)
+	var honked_at := car.global_position
+	check(car.horn and horn != null and horn.pressed and horn.playing, "held, the horn sounds")
+	check(rv.net_state()[-1] > 0.5 and rv.net_state().size() == 2 + Car.NET_SIZE + Trailer.NET_SIZE, "and the crew's snapshot says so")
+	Input.action_press("throttle")
+	await _ticks(Engine.physics_ticks_per_second * 2)
+	Input.action_release("throttle")
+	var moved := car.global_position.distance_to(honked_at)
+	check(horn != null and horn.playing and moved > 2.0 and horn.global_position.distance_to(car.global_position) < 3.5,
+		"it goes with the truck (%.1f m from where it was honked)" % moved)
+	Input.action_release("horn")
+	await _ticks(40)
+	check(not car.horn and (horn == null or not horn.playing), "let go, it stops")
+	check(_horns_playing("horn_disc", bike_horn).is_empty(), "and nothing's left sounding where it was honked (%d)" % _horns_playing("horn_disc", bike_horn).size())
+	check(rv.net_state()[-1] < 0.5, "and the crew are told")
+	# Out of the truck with the horn held.
+	Input.action_press("horn")
+	await _ticks(12)
+	check(horn != null and horn.playing, "honking again")
+	rv.stop_driving()
+	await _ticks(40)
+	check(_horns_playing("horn_disc", bike_horn).is_empty(), "getting out stops it")
+	Input.action_release("horn")
+	# The crew's copy: the driver's snapshots, horn on, then off, then stopped coming.
+	var snap := PackedFloat32Array([2.0])
+	snap.append_array(car.get_net_state())
+	snap.append_array(rv.trailer.get_net_state())
+	snap.append(1.0)
+	var peer := 99
+	rv._remote[peer] = [{"t": Time.get_ticks_msec() / 1000.0, "s": snap}]
+	rv._follow_remote(peer)
+	car._process(0.0)
+	check(car.horn and horn != null and horn.pressed, "the crew hear the driver's horn while it's held")
+	var off := snap.duplicate()
+	off[-1] = 0.0
+	rv._remote[peer] = [{"t": Time.get_ticks_msec() / 1000.0, "s": off}]
+	rv._follow_remote(peer)
+	car._process(0.0)
+	check(not car.horn and horn != null and not horn.pressed, "and it stops when they let go")
+	rv._remote[peer] = [{"t": Time.get_ticks_msec() / 1000.0 - 1.0, "s": snap}]
+	rv._follow_remote(peer)
+	check(not car.horn, "or when their snapshots stop coming")
+	rv._remote[peer] = [{"t": Time.get_ticks_msec() / 1000.0, "s": snap.slice(0, snap.size() - 1)}]
+	rv._follow_remote(peer)
+	check(not car.horn and car.global_position.is_finite(), "an older build's snapshot (no horn) still reads")
+	rv._remote.erase(peer)
+	# Honking when the truck goes away.
+	Shed.request({"a": "recovery_enter"})
+	await _ticks(10)
+	Input.action_press("horn")
+	await _ticks(12)
+	check(rv.driving and _horns_playing("horn_disc", bike_horn).size() >= 1, "honking again at the wheel")
+	rv._free_rig()
+	await _ticks(5)
+	Input.action_release("horn")
+	check(_horns_playing("horn_disc", bike_horn).is_empty(), "the truck going takes its horn with it")
+	# A crew member's bike: its horn sounds while their snapshot says held, and stops if the
+	# snapshots stop coming (it used to sound on for good after a dropped connection).
+	var rb := RemoteBike.new()
+	t.add_child(rb)
+	rb.setup("Crew", BikeBuild.new({"engine": "twin_700", "horn": "disc_horn"}), Color.RED)
+	var bs := PackedFloat32Array()
+	bs.resize(25)
+	bs[6] = 1.0
+	bs[21] = 1.0
+	rb.push_state(bs)
+	await _ticks(2)
+	check(rb._horn.pressed, "a crew member's bike horn sounds while they hold it")
+	var since := Time.get_ticks_msec()   # snapshots are timed on the clock, not the game's ticks
+	while Time.get_ticks_msec() - since < 800:
+		await _ticks(1)
+	check(not rb._horn.pressed, "and stops if their snapshots stop coming")
+	rb.queue_free()
+	bike_horn.queue_free()
+	main.queue_free()
+	await t.get_tree().process_frame
+	Shed.stop()

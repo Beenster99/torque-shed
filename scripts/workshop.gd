@@ -86,6 +86,7 @@ var _furniture_sigs := {}
 var _floor_nodes := {}     # item id -> Node3D for parts put down anywhere
 var _dirt_sigs := {}       # bike id -> its dirt as last drawn (Dirt.sig_of_bike)
 var _wash_fx := {}         # peer -> WashFx where someone else's pressure washer jet is landing
+var wash_mist: WashMist    # the haze that fills the wash bay while anyone's washing
 var _floor_sigs := {}
 var _holo_views := {}      # bay -> Node3D: the hologram of a blueprint build waiting for its frame
 var _holo_sigs := {}
@@ -927,8 +928,11 @@ func _sync_dirt(id: int) -> void:
 		model.show_dirt(Dirt.of_bike(id))
 
 
-## Everyone else's pressure washer: the splash and run-off where their jet is landing.
+## Everyone else's pressure washer: the splash and run-off where their jet is landing. And the
+## haze in the wash bay, building up while anyone (you too) is washing.
 func _update_wash_fx(delta: float) -> void:
+	if wash_mist:
+		wash_mist.update(delta, WashMist.anyone_washing())
 	var live := {}
 	for j in Wash.jets():
 		if int(j["peer"]) != Shed.me():
@@ -1686,6 +1690,9 @@ func _build_wash_bay() -> void:
 	light.light_energy = 1.0
 	light.light_color = Color(1.0, 0.95, 0.88)
 	add_child(light)
+	wash_mist = WashMist.new()
+	wash_mist.name = "WashMist"
+	add_child(wash_mist)
 
 
 ## The drain in the middle of the wash bay's floor (Wash.BAY_DRAIN) that washing water runs into:
