@@ -49,6 +49,7 @@ static func title(text: String, font_size := 28, color := ACCENT) -> Label:
 	return l
 
 
+## A wrapping label. Any {action} in `text` shows its key and follows the device (Controls.bind_text).
 static func label(text: String, font_size := 16, color := Color(0.85, 0.87, 0.9)) -> Label:
 	var l := Label.new()
 	Controls.bind_text(l, text)
