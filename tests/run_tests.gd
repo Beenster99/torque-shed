@@ -339,6 +339,8 @@ func _run_all() -> void:
 	_test_dirt_concentration()
 	_test_wash_lift_rules()
 	await _test_wash_lift_reach()
+	print("Simon's 17 October round: plates clear of the rear mudguard, the tyre under it, the clocks over the bars")
+	_test_tail_and_dash_fit()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -16948,3 +16950,188 @@ func _test_direct_bars_course() -> void:
 			line.append("%d km/h %s, %.1f m off line" % [int(kmh), "fell off" if k["crashed"] else ("round" if k["done"] else "didn't finish"), float(k["off"])])
 		check(ok, "Direct bars on %s, %s: a rider with a reaction time rounds the bends and stays on the road (%s)"
 			% ["keys" if run[1] else "a stick", run[0] if run[0] != "" else "default bike", ", ".join(line)])
+
+
+## Parts the style builder (Shed.style_parts) can fit in `slot` on a bike of `style`: the
+## style's reference part (Contracts.style_build) and every part of that kind made for it.
+static func _style_options(style: String, slot: String) -> Array:
+	var out := [str(Contracts.style_build(style).get(slot, "none"))]
+	for id in PartsDB.by_kind.get(PartsDB.SLOT_KIND[slot], []):
+		if PartsDB.styles_of(str(id)).has(style) and not out.has(id):
+			out.append(id)
+	return out
+
+
+## Every build the style builder can come up with, as far as the tail unit and the clocks go,
+## for BikeModel's fit checks (see _test_tail_and_dash_fit). Builds that put the same shapes in
+## the same places (to within 1 cm, or 2 cm for the rider's eye) are taken once, and so are
+## tails that differ only in their cowl or lamp (the guard and plate go by the tail's "style"
+## and "light_at"). "tail": [{build, parts, nums}] with every tail of a style over every frame
+## and seat (the tail's height), rear wheel and tyre (its size) and shock (its travel) the
+## style can have. "dash": [{build, parts, eyes}], one per bars,
+## clocks and fairing (race or not), with every place the rider's eye can be against the
+## steering head ({eye in steering space: the parts that put it there}) over every frame, seat,
+## fork (any fork, as BikeBuild.sensible_fork can fit one) and rear wheel and tyre.
+static func fit_cases() -> Dictionary:
+	var tail_cases := {}
+	var dash_groups := {}
+	var seat_builds := {}   # "frame|saddle" -> BikeBuild
+	var wheel_nums := {}    # "wheel|tyre" -> the rear wheel's numbers
+	var travel_of := {}
+	var forks := {}         # length -> a fork that long
+	for id in PartsDB.by_kind["fork"]:
+		forks[snappedf(BikeBuild.new({"fork": id}).fork_length, 0.005)] = id
+	var probe := BikeModel.new()
+	for style in PartsDB.STYLES:
+		var ref: Dictionary = Contracts.style_build(style)
+		var seats := []
+		for f in _style_options(style, "frame"):
+			for s in _style_options(style, "saddle"):
+				var k: String = f + "|" + s
+				if not seat_builds.has(k):
+					seat_builds[k] = BikeBuild.new({"frame": f, "saddle": s})
+				seats.append(k)
+		var wheels := {}
+		for w in _style_options(style, "rear_wheel"):
+			var fits: Array = PartsDB.tyres_for(w)
+			var styled: Array = fits.filter(func(x): return PartsDB.styles_of(str(x)).has(style))
+			var tyres: Array = (styled if not styled.is_empty() else fits).duplicate()
+			if PartsDB.tyre_fit(str(ref["rear_tyre"]), w) == 0 and not tyres.has(ref["rear_tyre"]):
+				tyres.append(ref["rear_tyre"])
+			for ty in tyres:
+				var k: String = w + "|" + ty
+				if not wheel_nums.has(k):
+					var b := BikeBuild.new({"rear_wheel": w, "rear_tyre": ty})
+					wheel_nums[k] = {"rear_radius": b.rear_radius, "rear_rim_radius": b.rear_rim_radius, "rear_tyre_width": b.rear_tyre_width}
+				wheels[k] = true
+		var shocks := {}
+		for sh in _style_options(style, "shock"):
+			if not travel_of.has(sh):
+				travel_of[sh] = BikeBuild.new({"shock": sh}).rear_travel
+			shocks[travel_of[sh]] = sh
+		# The tail: how high and far back it sits over the axle, the tyre under it and its travel.
+		for tail in _style_options(style, "tail"):
+			if tail == "none":
+				continue
+			var tp := PartsDB.get_part(tail)
+			var shape := "%s %s" % [tp.get("style", "classic"), tp.get("light_at", [])]
+			for sk in seats:
+				var sb: BikeBuild = seat_builds[sk]
+				var geo: Dictionary = PartsDB.get_part(str(sb.parts["frame"])).get("geo", {})
+				for wk in wheels:
+					var nums: Dictionary = wheel_nums[wk]
+					var tyre_style := str(PartsDB.get_part(wk.get_slice("|", 1)).get("style", "road"))
+					for tr in shocks:
+						var key := "%s|%.3f|%.3f|%.3f|%.3f|%.3f|%s|%.3f" % [shape, snappedf(sb.seat_height + float(geo.get("tail_y", 0.0)) - float(nums["rear_radius"]), 0.01),
+							float(geo.get("tail_back", 0.12)), snappedf(nums["rear_radius"], 0.01), snappedf(nums["rear_rim_radius"], 0.01),
+							snappedf(nums["rear_tyre_width"], 0.01), tyre_style in ["slick", "road"], tr]
+						if tail_cases.has(key):
+							continue
+						var n: Dictionary = nums.duplicate()
+						n["rear_travel"] = tr
+						tail_cases[key] = {"build": sb, "nums": n, "parts": {"tail": tail, "frame": sb.parts["frame"], "saddle": sb.parts["saddle"],
+							"rear_wheel": wk.get_slice("|", 0), "rear_tyre": wk.get_slice("|", 1), "shock": shocks[tr], "style": style}}
+		# The rider's eye against the steering head.
+		var radii := {}
+		for wk in wheels:
+			radii[snappedf(wheel_nums[wk]["rear_radius"], 0.005)] = wk
+		var eyes := {}
+		for sk in seats:
+			var sb: BikeBuild = seat_builds[sk]
+			var keep := [sb.fork_length, sb.rear_radius]
+			for fl in forks:
+				for r in radii:
+					sb.fork_length = fl
+					sb.rear_radius = r
+					probe._lay_out(sb)
+					var rel: Vector3 = (probe._eye - probe._head).snappedf(0.02)
+					if not eyes.has(rel):
+						eyes[rel] = {"frame": sb.parts["frame"], "saddle": sb.parts["saddle"], "fork": forks[fl], "wheel": radii[r]}
+			sb.fork_length = keep[0]
+			sb.rear_radius = keep[1]
+		var fairings := {}
+		for fa in _style_options(style, "fairing"):
+			var f := PartsDB.get_part(fa)
+			fairings[str(f.get("style", "")) == "race" and str((f.get("look", {}) as Dictionary).get("shape", "race")) != "seeley"] = fa
+		for bar in _style_options(style, "handlebars"):
+			for dash in _style_options(style, "dashboard"):
+				if dash == "none":
+					continue
+				for race in fairings:
+					var gk := "%s|%s|%s" % [bar, dash, race]
+					if not dash_groups.has(gk):
+						dash_groups[gk] = {"build": seat_builds[seats[0]], "eyes": {},
+							"parts": {"handlebars": bar, "dashboard": dash, "fairing": fairings[race] if race else "none", "style": style}}
+					(dash_groups[gk]["eyes"] as Dictionary).merge(eyes)
+	probe.free()
+	return {"tail": tail_cases.values(), "dash": dash_groups.values()}
+
+
+## A fit case's build (see fit_cases): its parts and numbers put on its BikeBuild.
+static func fit_build(c: Dictionary) -> BikeBuild:
+	var b: BikeBuild = c["build"]
+	for slot in c["parts"]:
+		if slot != "style":
+			b.parts[slot] = c["parts"][slot]
+	for f in c.get("nums", {}):
+		b.set(f, c["nums"][f])
+	return b
+
+
+func _test_tail_and_dash_fit() -> void:
+	# Over every tail, frame, seat, rear wheel, tyre and shock the style builder can put
+	# together: the number plate never cuts into the rear mudguard, and the tyre, with the shock
+	# right up, never comes through it. Over every bars, clocks, frame, seat and fork: the bars
+	# never hide the clocks' faces from the rider's eye.
+	var t0 := Time.get_ticks_msec()
+	var cases := fit_cases()
+	var times := [Time.get_ticks_msec() - t0]
+	var m := BikeModel.new()
+	add_child(m)
+	var plates := {}
+	var tyres := {}
+	var worst := [0.0, 0.0, 0.0]
+	for c in cases["tail"]:
+		m.build_fit_parts(fit_build(c), true)
+		var cut := m.plate_cut()
+		var through := m.tyre_through_guard()
+		var p: Dictionary = c["parts"]
+		var name := "%s (%s, %s, %s on %s, %s)" % [p["tail"], p["frame"], p["saddle"], p["rear_tyre"], p["rear_wheel"], p["shock"]]
+		if cut > 0.001 and not plates.has(p["tail"]):
+			plates[p["tail"]] = name
+		if through > 0.001 and not tyres.has(p["tail"]):
+			tyres[p["tail"]] = name
+		worst[0] = maxf(worst[0], cut)
+		worst[1] = maxf(worst[1], through)
+	check(plates.is_empty(), "no number plate cuts into its rear mudguard over %d tail builds (deepest %.1f mm) %s"
+		% [cases["tail"].size(), worst[0] * 1000.0, plates.values()])
+	check(tyres.is_empty(), "no rear tyre comes through its mudguard with the shock fully compressed over %d tail builds (deepest %.1f mm) %s"
+		% [cases["tail"].size(), worst[1] * 1000.0, tyres.values()])
+	times.append(Time.get_ticks_msec() - t0)
+	var hidden := {}
+	var eyes := 0
+	for g in cases["dash"]:
+		m.build_fit_parts(fit_build(g), false)
+		for rel in g["eyes"]:
+			var h := m.dash_hidden_from(rel)
+			worst[2] = maxf(worst[2], h)
+			eyes += 1
+			var key := "%s + %s%s" % [g["parts"]["handlebars"], g["parts"]["dashboard"], " in a race fairing" if g["parts"]["fairing"] != "none" else ""]
+			if h > 0.0 and not hidden.has(key):
+				hidden[key] = "%s (%d%% hidden, %s)" % [key, roundi(h * 100.0), g["eyes"][rel]]
+	check(hidden.is_empty(), "the bars never hide the clocks from the rider's eye over %d bars and clocks from %d eye points (worst %d%%) %s"
+		% [cases["dash"].size(), eyes, roundi(worst[2] * 100.0), hidden.values()])
+	m.free()
+	times.append(Time.get_ticks_msec() - t0)
+	# The quick fit drawing is the bike's own: whole bikes from the style builder pass too.
+	var whole := []
+	for style in PartsDB.STYLES:
+		var bm := BikeModel.new()
+		add_child(bm)
+		bm.build_from(BikeBuild.new(Shed.style_parts(style)))
+		if bm.plate_cut() > 0.001 or bm.tyre_through_guard() > 0.001 or bm.dash_hidden() > 0.0:
+			whole.append("%s %.3f %.3f %.2f" % [style, bm.plate_cut(), bm.tyre_through_guard(), bm.dash_hidden()])
+		bm.free()
+	check(whole.is_empty(), "a whole bike of every style passes the same checks %s" % [whole])
+	times.append(Time.get_ticks_msec() - t0)
+	print("    (fit checks: builds listed %.1f s, tails by %.1f s, clocks by %.1f s, whole bikes by %.1f s)" % [times[0] / 1000.0, times[1] / 1000.0, times[2] / 1000.0, times[3] / 1000.0])
