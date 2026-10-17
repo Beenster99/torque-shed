@@ -537,7 +537,9 @@ func _ready() -> void:
 					and Time.get_ticks_msec() > pool_t + 1000:
 				pool_t = Time.get_ticks_msec()
 				Shed.request({"a": "pool_join"})
-			if PoolGame.shooter() == Shed.me() and pool_players.size() == 2 and Time.get_ticks_msec() > pool_t + 1500:
+			var pool_view: PoolView = ws.get_node_or_null("Upgrades/Built/PoolTable") if ws else null
+			if PoolGame.shooter() == Shed.me() and pool_players.size() == 2 and Time.get_ticks_msec() > pool_t + 1500 \
+					and pool_view != null and pool_view._sim.is_empty():
 				# At whichever ball's still on the table, or a full-power break.
 				pool_t = Time.get_ticks_msec()
 				var pb: Array = Shed.pool["balls"]
@@ -549,7 +551,6 @@ func _ready() -> void:
 							break
 				Shed.request({"a": "pool_shot", "angle": angle, "power": 1.0 if int(Shed.pool["shots"]) == 0 else 0.6})
 			var pool_by := int(Shed.pool["last"].get("by", 0))
-			var pool_view: PoolView = ws.get_node_or_null("Upgrades/Built/PoolTable") if ws else null
 			var played_out: bool = pool_view != null and pool_view._shown == int(Shed.pool["last"].get("n", -2)) \
 				and pool_view._sim.is_empty()
 			if pool_by == Shed.me() and played_out:
