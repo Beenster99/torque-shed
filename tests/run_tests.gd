@@ -7453,6 +7453,10 @@ func _test_debug_contracts() -> void:
 	check(Recovery.offers().values().any(func(o): return str(o["kind"]) == "crash"), "Debug: a crash rescue offer rings in")
 	var focusable := tab.find_children("start_*", "Button", true, false).filter(func(b): return (b as Button).focus_mode == Control.FOCUS_ALL)
 	check(focusable.size() == Contracts.KINDS.size() + Recovery.KIND_NAMES.size(), "every start button takes the controller's focus")
+	var day := int(Shed.bank["day"])
+	var bal := Shed.garage_money
+	tab.press("Pay tonight's bills now")
+	check(int(Shed.bank["day"]) == day + 1 and Shed.garage_money < bal, "Debug: pay tonight's bills now")
 	tab.free()
 
 

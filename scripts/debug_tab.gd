@@ -2,7 +2,7 @@ class_name DebugTab
 extends ScrollContainer
 ## The Esc menu's Debug tab, for trying things out: reset or max out your XP and money, reset
 ## everyone's XP (the host tells every player's game), empty the garage's account or give it
-## a million pounds (host), and start any kind of contract there and then for testing (host):
+## a million pounds or pay tonight's bills now (host), and start any kind of contract there and then for testing (host):
 ## a customer arriving at reception, or the job taken on at once, at a chosen difficulty, and
 ## the recovery jobs with the truck granted if the garage hasn't got it. Every reset asks first.
 
@@ -10,6 +10,7 @@ var _info: Label
 var _all_xp: Button
 var _garage: Button
 var _grant: Button
+var _night: Button
 var _tier: OptionButton
 var _host_only: Array[Control] = []    # the contract buttons, for the host only
 var _confirm: ConfirmationDialog
@@ -48,7 +49,9 @@ func _ready() -> void:
 	_garage = _button("Reset garage money", func(): _ask("Reset the garage money?",
 		"The shed's own account goes back to nothing, for everyone.", "Reset garage money", reset_garage_money))
 	_grant = _button("Give the garage £1,000,000", give_garage_million)
-	box.add_child(_row([_garage, _grant]))
+	# Midnight now: the night's running costs and loan repayments come out (see Money.new_day).
+	_night = _button("Pay tonight's bills now", func(): Shed.money_new_day())
+	box.add_child(_row([_garage, _grant, _night]))
 
 	box.add_child(UITheme.label("Contracts (host)", 15, UITheme.ACCENT))
 	box.add_child(UITheme.label("Any kind of job, whatever the reputation or level: a customer arriving at reception, or the job taken on there and then.",
@@ -62,6 +65,7 @@ func _ready() -> void:
 		_button("Reputation +5", func(): Shed.request({"a": "contract_rep", "value": Contracts.reputation() + 5}))])
 	var tier_label := UITheme.label("Difficulty", 15)
 	tier_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	tier_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	top.add_child(tier_label)
 	top.add_child(_tier)
 	box.add_child(top)
@@ -114,7 +118,7 @@ func _process(_delta: float) -> void:
 	var host := Shed.is_authority()
 	_all_xp.disabled = not host
 	_all_xp.tooltip_text = "" if host else "Only the host can reset everyone's XP."
-	for b in [_garage, _grant]:
+	for b in [_garage, _grant, _night]:
 		b.disabled = not host
 		b.tooltip_text = "" if host else "Only the host can change the garage's money."
 	for c in _host_only:
