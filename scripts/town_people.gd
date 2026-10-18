@@ -89,6 +89,8 @@ var _mover_car := PackedByteArray()
 var _mover_count := 0
 var _mover_last := {}          # instance id -> [Vector2, time]
 var _mover_in := 0.0
+var _mover_age := 0.0          # how long ago they were gathered (they're carried on since)
+var _clock := 0.0              # game time, for the movers' speeds
 var _dog_owner := PackedInt32Array()
 var _dog_phase := PackedFloat32Array()
 ## Pigeons: where each is, its heading, flying velocity (zero on the ground), peck phase, and how
@@ -175,6 +177,7 @@ func _hide_all() -> void:
 
 func _process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
+	_clock += delta
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
@@ -204,8 +207,10 @@ func _process(delta: float) -> void:
 	var dt := minf(_skipped, 0.1)
 	_skipped = 0.0
 	_mover_in -= dt
+	_mover_age += dt
 	if _mover_in <= 0.0:
 		_mover_in = 0.1
+		_mover_age = 0.0
 		_gather_movers()
 	_keep_numbers(dt)
 	for i in MAX_PEOPLE:
@@ -369,6 +374,13 @@ func _step(i: int, p: Person, dt: float) -> void:
 func _think(i: int, p: Person) -> void:
 	for cx in WorldTown.CROSSINGS:
 		if absf(p.pos.x - cx) < 1.6 and _rng.randf() < 0.5:
+			if not _road_clear(cx):
+				# Something's coming: wait at the kerb a moment, then perhaps try again.
+				p.state = STAND
+				p.timer = _rng.randf_range(1.5, 3.0)
+				p.face = 0.0 if p.lane > WorldTown.STREET_Z else PI
+				p.walked = p.next_think - 0.3
+				return
 			var other := WorldTown.SOUTH_WALK if p.lane < WorldTown.STREET_Z else WorldTown.NORTH_WALK
 			p.pos.x = cx + _rng.randf_range(-0.8, 0.8)
 			p.target = Vector2(p.pos.x, other)
@@ -397,6 +409,17 @@ func _think(i: int, p: Person) -> void:
 			p.state = INSIDE
 			p.target = Vector2(d.x, d.z + (-0.9 if d.z < WorldTown.STREET_Z else 0.9))
 			return
+
+
+## Whether nothing riding or driving is coming at the crossing at `x` within a few seconds.
+func _road_clear(x: float) -> bool:
+	for k in _mover_count:
+		if _mover_car[k] == 0 or absf(_mover_pos[k].y - WorldTown.STREET_Z) > WorldTown.ROAD_HW + 1.5:
+			continue
+		var dx := x - _mover_pos[k].x
+		if absf(dx) < 6.0 or (dx * _mover_vel[k].x > 0.0 and absf(dx) < 4.0 + absf(_mover_vel[k].x) * 4.0):
+			return false
+	return true
 
 
 ## Two people meeting on the pavement: now and then they stop for a chat; otherwise they edge
@@ -435,9 +458,10 @@ func _meet() -> void:
 func _avoid(p: Person, dt: float) -> void:
 	p.avoid = move_toward(p.avoid, 0.0, dt * 0.3)
 	for k in _mover_count:
-		var rel := p.pos - _mover_pos[k]
-		var d2 := rel.length_squared()
 		var v := _mover_vel[k]
+		var at := _mover_pos[k] + v * _mover_age
+		var rel := p.pos - at
+		var d2 := rel.length_squared()
 		var sp := v.length()
 		var reach := 2.5 + sp * DODGE_AHEAD
 		if d2 > reach * reach:
@@ -458,14 +482,14 @@ func _avoid(p: Person, dt: float) -> void:
 		# Never inside anyone or anything.
 		var r := _mover_r[k] + 0.32
 		if d2 < r * r:
-			p.pos = _mover_pos[k] + (rel / sqrt(d2) if d2 > 0.0001 else Vector2(0.0, 1.0)) * r
+			p.pos = at + (rel / sqrt(d2) if d2 > 0.0001 else Vector2(0.0, 1.0)) * r
 
 
 ## Finds the players, the bikes being ridden (by players, customers, cafe bikers, traffic) and the
 ## recovery truck, with how fast each is going.
 func _gather_movers() -> void:
 	_mover_count = 0
-	var now := Time.get_ticks_msec() / 1000.0
+	var now := _clock
 	for group: String in ["local_walker", "remote_players", "ridden_bike", "road_traffic", "customers", "town_movers"]:
 		for n in get_tree().get_nodes_in_group(group):
 			var node := n as Node3D

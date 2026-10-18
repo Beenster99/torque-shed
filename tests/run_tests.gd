@@ -376,6 +376,9 @@ func _run_all() -> void:
 	await _test_neutral_gear()
 	await _test_burnout_marks()
 	await _test_go_home()
+	print("Simon's 18 October round (v0.9.0): the shed on a town High Street, its yard behind")
+	_test_town_plan()
+	await _test_town_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -18743,6 +18746,178 @@ func _test_go_home() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame
+
+
+## The town round the shed (WorldTown): its plan keeps clear of the roads, the yard and the shed;
+## old saves' things move out of the old yard in front to the yard behind and out of buildings;
+## the street's sound fades away from it and indoors.
+func _test_town_plan() -> void:
+	var plots := WorldTown.plan()
+	var shops := plots.filter(func(p): return str(p["kind"]) == "shop").size()
+	var houses := plots.filter(func(p): return str(p["kind"]) == "house").size()
+	check(plots.size() >= 30 and shops >= 10 and houses >= 6, "the High Street has %d buildings: %d shops, %d houses and more" % [plots.size(), shops, houses])
+	WorldTown._plan = []
+	check(WorldTown.plan().size() == plots.size() and WorldTown.rect(WorldTown.plan()[5]) == WorldTown.rect(plots[5]), "and it's the same town every time")
+	plots = WorldTown.plan()
+	# Nothing built on a road, the pavements, the yard, the forecourt or the shed's rooms.
+	var why := ""
+	var rooms := Workshop.rooms()
+	for p: Dictionary in plots:
+		var r := WorldTown.rect(p)
+		if r.end.y > WorldTown.NORTH_FRONT + 0.01 and r.position.y < WorldTown.SOUTH_FRONT - 0.01:
+			why = "on the street"
+		for g: Rect2 in WorldYard.GROUND:
+			if r.intersects(g.grow(-0.5)):
+				why = "on the yard"
+		for room in rooms:
+			if r.intersects(rooms[room]):
+				why = "on the %s" % room
+		for def: Dictionary in WorldLayout.ROADS:
+			if str(def["name"]) == "high":
+				continue
+			for q in WorldRoads._spline(PackedVector2Array(def["pts"]), bool(def.get("closed", false))):
+				if r.grow(float(def["hw"]) + 1.0).has_point(q):
+					why = "on the %s road" % def["name"]
+	check(why == "", "no building stands on a road, the pavement, the yard or the shed %s" % why)
+	var p0: Dictionary = plots[0]
+	var mid := WorldTown.rect(p0).get_center()
+	check(WorldTown.building_at(Vector3(mid.x, 0.0, mid.y)) == p0 and WorldTown.building_at(Vector3(0.0, 0.0, WorldTown.STREET_Z)).is_empty()
+		and WorldTown.building_at(WorldTown.door_spot(p0)).is_empty(), "building_at finds a building by its footprint; the street and its doorsteps aren't in one")
+	# Old saves: the old yard's things go to the same place in the yard behind; the shed and
+	# forecourt stay; anything that would be in a building comes out onto the pavement.
+	var old_yard := WorldTown.migrate_xf(Transform3D(Basis(Vector3.UP, 1.0), Vector3(12.0, 0.0, 100.0)))
+	var shed := WorldTown.migrate_xf(Transform3D(Basis(), Vector3(3.0, 0.0, 65.0)))
+	var far := WorldTown.migrate_xf(Transform3D(Basis(), Vector3(300.0, 4.0, -200.0)))
+	check(old_yard.origin.is_equal_approx(Vector3(12.0, 0.0, -10.0)) and old_yard.basis.is_equal_approx(Basis(Vector3.UP, 1.0))
+		and shed.origin == Vector3(3.0, 0.0, 65.0) and far.origin == Vector3(300.0, 4.0, -200.0),
+		"an old save's yard kit moves to the yard behind, as it stood; the shed and the rest of the map stay put")
+	var lost := Vector3.ZERO
+	for p: Dictionary in plots:
+		var c := WorldTown.rect(p).get_center()
+		if absf(c.x) > 70.0:
+			lost = Vector3(c.x, 0.0, c.y)
+			break
+	var out := WorldTown.migrate_xf(Transform3D(Basis(), lost)).origin
+	check(not WorldTown.building_at(lost).is_empty() and WorldTown.building_at(out, 0.2).is_empty()
+		and absf(out.z - WorldTown.STREET_Z) < WorldTown.ROAD_HW + WorldTown.PAVE_W,
+		"something left in a building's footprint comes out onto the pavement (%.1f, %.1f)" % [out.x, out.z])
+	var data := {"bikes": {3: {"xf": Transform3D(Basis(), Vector3(0.0, 0.0, 120.0))}}, "kit": [Transform3D(Basis(), Vector3(-30.0, 0.0, 110.0)), 5]}
+	WorldTown.migrate(data)
+	check(is_equal_approx((data["bikes"][3]["xf"] as Transform3D).origin.z, 10.0) and is_zero_approx((data["kit"][0] as Transform3D).origin.z) and data["kit"][1] == 5,
+		"migrate reaches every transform in a save, however deep")
+	# The street's sound: full on it, gone a long way off, quieter at night and in the rain.
+	var on := SfxAmbience.town_level(Vector3(0.0, 1.6, WorldTown.STREET_Z), 0.0, 0.0)
+	var away := SfxAmbience.town_level(Vector3(0.0, 1.6, -150.0), 0.0, 0.0)
+	var night := SfxAmbience.town_level(Vector3(0.0, 1.6, WorldTown.STREET_Z), 1.0, 0.0)
+	var wet := SfxAmbience.town_level(Vector3(0.0, 1.6, WorldTown.STREET_Z), 0.0, 1.0)
+	var yard := SfxAmbience.town_level(Vector3(0.0, 1.6, -10.0), 0.0, 0.0)
+	check(is_equal_approx(on, 1.0) and away == 0.0 and night < 0.5 and wet < 0.75 and yard > 0.0 and yard < 0.6,
+		"the town's hubbub is full on the street, faint in the yard (%.2f), gone far off, softer at night and in rain" % yard)
+
+
+## The town in a session: its buildings and people cost a handful of draws, the people come and go
+## with the player, keep out of a bike's way and are never ridden through; an old save moves
+## what was in the old yard to the yard behind.
+func _test_town_session() -> void:
+	SaveGame.slot_override = "test_town"
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.start_new("Tester", 21)
+	Settings.day_night_cycle = false
+	Daylight.current.set_time(12.0)
+	var town: WorldTown = main.world.town
+	var tp: TownPeople = get_tree().get_first_node_in_group("town_people")
+	check(town != null and tp != null and tp.get_parent() == town, "the shed's world has its town, with townsfolk")
+	# Merged meshes and MultiMeshes: a few draws for the whole street.
+	var geo := 0
+	var lights := 0
+	var multi := 0
+	var labels := 0
+	var stack: Array[Node] = [town]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		stack.append_array(n.get_children())
+		if n is MultiMeshInstance3D:
+			multi += 1
+		elif n is Label3D:
+			labels += 1
+			if (n as Label3D).visibility_range_end <= 0.0 or (n as Label3D).visibility_range_end > 100.0:
+				labels += 1000
+		elif n is GeometryInstance3D:
+			geo += 1
+		if n is Light3D:
+			lights += 1
+	print("    town nodes: %d meshes, %d multimeshes, %d labels, %d lights" % [geo, multi, labels, lights])
+	check(geo <= 40 and multi <= 4 and lights <= 3, "the town draws as %d merged meshes and %d MultiMeshes, with %d lights" % [geo, multi, lights])
+	check(labels <= 40, "its %d signs only draw close to (within 100 m)" % labels)
+	check(tp.people.size() == TownPeople.MAX_PEOPLE, "the townsfolk are a fixed pool of %d" % TownPeople.MAX_PEOPLE)
+	for i in 90:
+		await get_tree().process_frame
+	var out := tp.people.filter(func(p): return p.state != TownPeople.GONE).size()
+	check(tp.active and out >= 10 and out <= TownPeople.MAX_PEOPLE, "by day there are people about on the street (%d)" % out)
+	var on_path := true
+	for p: TownPeople.Person in tp.people:
+		if p.state == TownPeople.GONE:
+			continue
+		var on_walk := absf(p.pos.y - WorldTown.STREET_Z) > WorldTown.ROAD_HW - 0.3
+		if (not on_walk and p.state != TownPeople.CROSS) or not WorldTown.building_at(Vector3(p.pos.x, 0.0, p.pos.y), -0.3).is_empty():
+			on_path = false
+	check(on_path, "they keep to the pavements (but for crossing) and out of the buildings")
+	# A bike down the middle of the street at 12 m/s with someone stepping out in front of it.
+	var bike := Node3D.new()
+	bike.add_to_group("ridden_bike")
+	main.world.add_child(bike)
+	bike.global_position = Vector3(-95.0, 0.5, WorldTown.STREET_Z)
+	var p0: TownPeople.Person = tp.people[0]
+	p0.state = TownPeople.CROSS
+	p0.pos = Vector2(-60.0, WorldTown.STREET_Z - 0.6)
+	p0.target = Vector2(-60.0, WorldTown.SOUTH_WALK)
+	p0.speed = 1.0
+	var closest := INF
+	var dodged := false
+	for i in 120 * 6:
+		bike.global_position.x += 12.0 / 120.0
+		await get_tree().process_frame
+		dodged = dodged or p0.dodge_t > 0.0
+		for p: TownPeople.Person in tp.people:
+			if p.state != TownPeople.GONE and p.state != TownPeople.INSIDE:
+				closest = minf(closest, Vector2(bike.global_position.x, bike.global_position.z).distance_to(p.pos))
+	check(dodged and closest > 1.0, "someone in the road jumps out of the bike's way, and nobody is ridden through (%.2f m at closest)" % closest)
+	bike.queue_free()
+	var cost := 0.0
+	for i in 60:
+		await get_tree().process_frame
+		cost += tp.process_usec
+	check(cost / 60.0 < 1500.0, "the townsfolk cost %.2f ms a frame" % (cost / 60000.0))
+	# Away from town they stop and vanish; at night fewer come out.
+	main.walker.place(Transform3D(Basis(), main.world.road_transform_on("ridge", 400.0).origin))
+	for i in 90:
+		await get_tree().process_frame
+	check(not tp.active and tp.process_usec == 0 and tp._holders.all(func(h): return not h.visible),
+		"out of town they stop moving, cost nothing and aren't drawn")
+	Daylight.current.set_time(23.5)
+	main.walker.place(Workshop.walker_spawn(0))
+	for i in 90:
+		await get_tree().process_frame
+	check(tp.active and tp._target() <= TownPeople.NIGHT_PEOPLE + 2, "late at night only a few are about (%d wanted)" % tp._target())
+	# An old save: a bike in the old yard in front moves to the yard behind.
+	var id: int = Shed.bikes.keys()[0]
+	Shed.bikes[id]["xf"] = Transform3D(Basis(), Vector3(20.0, 0.0, 104.0))
+	Shed.bikes[id]["bay"] = -1
+	var data: Dictionary = main.saver.capture()
+	check(int(data.get("town", 0)) == SaveGame.TOWN_LAYOUT, "saves record the town layout")
+	data.erase("town")
+	main.saver.restore(data)
+	var at: Vector3 = (Shed.bikes[id]["xf"] as Transform3D).origin
+	check(at.is_equal_approx(Vector3(20.0, 0.0, -6.0)), "an old save's bike in the old yard is in the yard behind (%.1f, %.1f)" % [at.x, at.z])
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+	SaveGame.delete_slot("test_town")
+	SaveGame.slot_override = ""
+	Settings.day_night_cycle = true
 
 
 ## Punctures (see Puncture): a punctured tyre loses air, grips less and goes flat; the plug kit
