@@ -7324,6 +7324,8 @@ func _make_roadworthy(bike_id: int) -> void:
 		if id == 0:
 			continue
 		var item: Dictionary = Shed.items[id]
+		item.erase("puncture")   # plugged and pumped up (see Puncture)
+		item.erase("deflate")
 		item["rust"] = 0.0
 		item["dirt"] = 0.0
 		item["wear"] = 0.0
