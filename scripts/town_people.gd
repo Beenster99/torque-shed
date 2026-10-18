@@ -23,7 +23,7 @@ const PIGEONS := 16
 const ACTIVE_RANGE := 330.0
 const DRAW_RANGE := 170.0
 ## Past this the people are moved every third frame.
-const NEAR_RANGE := 120.0
+const NEAR_RANGE := 60.0
 const WALK_SPEED := Vector2(1.0, 1.45)
 ## How far off the middle of the pavement people keep to its left (m).
 const KEEP_LEFT := 0.45
