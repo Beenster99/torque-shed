@@ -18853,6 +18853,20 @@ func _test_town_session() -> void:
 	print("    town nodes: %d meshes, %d multimeshes, %d labels, %d lights" % [geo, multi, labels, lights])
 	check(geo <= 40 and multi <= 4 and lights <= 3, "the town draws as %d merged meshes and %d MultiMeshes, with %d lights" % [geo, multi, lights])
 	check(labels <= 40, "its %d signs only draw close to (within 100 m)" % labels)
+	# The windows at night: a warm light behind the glass, never past where the glow starts
+	# blooming at the night exposure; the shops brighter than the houses; some dim, some dark.
+	var glows := {}
+	for nm in ["Windows", "WindowsDim", "WindowsDark", "ShopGlass", "ShopGlassDim"]:
+		var mi := town.get_node_or_null(nm) as MeshInstance3D
+		var tris := 0 if mi == null or mi.mesh == null else (mi.mesh as ArrayMesh).surface_get_array_len(0)
+		glows[nm] = float(mi.get_meta("night_emission", 0.0)) if mi != null and tris > 0 else -1.0
+	var night_exposure := 1.35
+	print("    town window glow at night: %s" % str(glows))
+	check(glows.values().all(func(e): return e >= 0.0 and e * night_exposure < 1.0),
+		"lit windows and shop fronts glow below the bloom threshold at night (%s)" % str(glows))
+	check(glows["ShopGlass"] > glows["Windows"] and glows["Windows"] > glows["WindowsDim"] and glows["WindowsDim"] > 0.0
+		and glows["WindowsDark"] == 0.0 and glows["ShopGlassDim"] < glows["ShopGlass"],
+		"shops are brighter than houses, and windows vary: lit, dim and dark")
 	check(tp.people.size() == TownPeople.MAX_PEOPLE, "the townsfolk are a fixed pool of %d" % TownPeople.MAX_PEOPLE)
 	for i in 90:
 		await get_tree().process_frame

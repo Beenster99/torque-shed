@@ -9,7 +9,7 @@ extends Node3D
 ## loop behind the far side, and people walking about (TownPeople) with pigeons pecking round.
 ##
 ## Kept cheap to draw: the plan is fixed (plan(), the same for every seed and every player),
-## every building goes into four merged meshes (walls, roofs, upper windows, shop glass), all
+## every building goes into a few merged meshes (walls, roofs, windows lit, dim and dark, shop glass), all
 ## the street furniture and parked cars are one more, the lamp heads another; the only real
 ## lights are three shadowless lamps by the shed that come on at night. Collision is one
 ## static body with its shapes added straight to the physics server.
@@ -66,6 +66,17 @@ const DOORS := [Color(0.5, 0.06, 0.06), Color(0.08, 0.14, 0.32), Color(0.08, 0.2
 	Color(0.85, 0.85, 0.82)]
 const CARS := [Color(0.75, 0.75, 0.78), Color(0.1, 0.1, 0.12), Color(0.55, 0.06, 0.07), Color(0.12, 0.2, 0.42),
 	Color(0.85, 0.85, 0.85), Color(0.3, 0.32, 0.34), Color(0.18, 0.32, 0.22), Color(0.7, 0.55, 0.2)]
+## How bright the windows glow at night (emission energy; the night exposure is about 1.35 and glow
+## starts at 1.0, so these stay a warm light behind the glass with no bloom): an upper or house
+## window with the light on, one lit dimly from further in (a landing, a telly), and the shop
+## windows, open late or with just the display lights on. Some windows stay dark.
+const WINDOW_LIT := 0.4
+const WINDOW_DIM := 0.12
+const SHOP_LIT := 0.6
+const SHOP_DIM := 0.26
+## The shares of windows with the light on and dimly lit (the rest are dark), and of shops open late.
+const WINDOW_SHARES := Vector2(0.4, 0.3)
+const SHOP_OPEN_SHARE := 0.6
 const STONE := Color(0.72, 0.71, 0.67)
 const PAVING := Color(0.56, 0.55, 0.52)
 
@@ -335,23 +346,38 @@ static func _begin() -> SurfaceTool:
 func _build_buildings() -> void:
 	var walls := _begin()
 	var roofs := _begin()
-	var windows := _begin()
-	var glass := _begin()
+	# Windows go into three meshes (lit, dimly lit, dark) and shop glass into two (open late, just
+	# the display lights on), so the street isn't one even glow at night.
+	var windows: Array[SurfaceTool] = [_begin(), _begin(), _begin()]
+	var glass: Array[SurfaceTool] = [_begin(), _begin()]
 	for p: Dictionary in plan():
 		_add_building(p, walls, roofs, windows, glass)
 	_mesh(walls, "Walls", _mat("walls", Color.WHITE, 0.9), BUILDING_RANGE)
 	_mesh(roofs, "Roofs", _mat("roofs", Color.WHITE, 0.8), BUILDING_RANGE)
-	var win := _glow_mat("windows", Color(0.16, 0.19, 0.23), Color(1.0, 0.78, 0.48), 0.9)
-	win.metallic = 0.3
-	_mesh(windows, "Windows", win, WINDOW_RANGE, false, 0.9)
-	var shop := _glow_mat("shop_glass", Color(0.2, 0.24, 0.27), Color(1.0, 0.82, 0.56), 1.1)
-	shop.metallic = 0.35
-	shop.roughness = 0.08
-	_mesh(glass, "ShopGlass", shop, WINDOW_RANGE, false, 1.1)
+	var looks := [["Windows", Color(1.0, 0.76, 0.46), WINDOW_LIT], ["WindowsDim", Color(1.0, 0.66, 0.38), WINDOW_DIM],
+		["WindowsDark", Color.BLACK, 0.0]]
+	for k in 3:
+		var win := _glow_mat(str(looks[k][0]).to_snake_case(), Color(0.16, 0.19, 0.23), looks[k][1], looks[k][2])
+		win.metallic = 0.3
+		win.emission_enabled = float(looks[k][2]) > 0.0
+		_mesh(windows[k], looks[k][0], win, WINDOW_RANGE, false, looks[k][2])
+	var shops := [["ShopGlass", Color(1.0, 0.82, 0.58), SHOP_LIT], ["ShopGlassDim", Color(1.0, 0.74, 0.48), SHOP_DIM]]
+	for k in 2:
+		var shop := _glow_mat(str(shops[k][0]).to_snake_case(), Color(0.2, 0.24, 0.27), shops[k][1], shops[k][2])
+		shop.metallic = 0.35
+		shop.roughness = 0.08
+		_mesh(glass[k], shops[k][0], shop, WINDOW_RANGE, false, shops[k][2])
+
+
+## Which of `count` meshes a window at `at` goes in, the same every time: 0 with share `a`, 1
+## with share `b`, otherwise the last.
+static func _light_of(at: Vector3, a: float, b := 1.0) -> int:
+	var r := float(hash(Vector3i((at * 10.0).round())) % 1000) / 1000.0
+	return 0 if r < a else (1 if r < a + b else 2)
 
 
 ## One building of the plan into the merged meshes, with its collision and its sign.
-func _add_building(p: Dictionary, walls: SurfaceTool, roofs: SurfaceTool, windows: SurfaceTool, glass: SurfaceTool) -> void:
+func _add_building(p: Dictionary, walls: SurfaceTool, roofs: SurfaceTool, windows: Array[SurfaceTool], glass: Array[SurfaceTool]) -> void:
 	var side := int(p["side"])
 	var w := float(p["x1"]) - float(p["x0"])
 	var d := float(p["depth"])
@@ -380,27 +406,32 @@ func _add_building(p: Dictionary, walls: SurfaceTool, roofs: SurfaceTool, window
 		var y := 1.55 + f * 2.9
 		for k in n:
 			var x := -w * 0.5 + w * (k + 0.5) / n
-			WorldBuildings.box(windows, xf, Vector3(x, y, fz + 0.03), Vector3(1.0, 1.3, 0.06), Color.WHITE)
+			var front := xf * Vector3(x, y, fz)
+			WorldBuildings.box(windows[_light_of(front, WINDOW_SHARES.x, WINDOW_SHARES.y)], xf, Vector3(x, y, fz + 0.03),
+				Vector3(1.0, 1.3, 0.06), Color.WHITE)
 			WorldBuildings.box(walls, xf, Vector3(x, y - 0.72, fz + 0.06), Vector3(1.2, 0.1, 0.14), STONE)
 			if k % 2 == 0:
-				WorldBuildings.box(windows, xf, Vector3(x, y, -fz - 0.03), Vector3(0.9, 1.2, 0.06), Color.WHITE)
+				var back := xf * Vector3(x, y, -fz)
+				WorldBuildings.box(windows[_light_of(back, WINDOW_SHARES.x, WINDOW_SHARES.y)], xf, Vector3(x, y, -fz - 0.03),
+					Vector3(0.9, 1.2, 0.06), Color.WHITE)
 	var dx := _door_x(p) - mid.x
 	# Seen from the street the door is at local x = dx with the front's own x axis.
 	var lx := dx * (-1.0 if side == 1 else 1.0)
 	match kind:
 		"shop", "pub":
-			_shop_front(p, xf, w, fz, lx, walls, windows, glass)
+			_shop_front(p, xf, w, fz, lx, walls, glass[mini(_light_of(mid, SHOP_OPEN_SHARE), 1)])
 		_:
 			WorldBuildings.box(walls, xf, Vector3(lx, 1.1, fz + 0.04), Vector3(0.95, 2.2, 0.08), p["door"])
 			WorldBuildings.box(walls, xf, Vector3(lx, 2.3, fz + 0.06), Vector3(1.2, 0.12, 0.16), STONE)
 			WorldBuildings.box(walls, xf, Vector3(lx, 0.05, fz + 0.3), Vector3(1.2, 0.1, 0.5), STONE)
 			var wx := lx + (1.8 if lx < 0.0 else -1.8)
-			WorldBuildings.box(windows, xf, Vector3(wx, 1.5, fz + 0.03), Vector3(1.5, 1.3, 0.06), Color.WHITE)
+			var down := xf * Vector3(wx, 1.5, fz)
+			WorldBuildings.box(windows[_light_of(down, WINDOW_SHARES.x, WINDOW_SHARES.y)], xf, Vector3(wx, 1.5, fz + 0.03),
+				Vector3(1.5, 1.3, 0.06), Color.WHITE)
 			WorldBuildings.box(walls, xf, Vector3(wx, 0.78, fz + 0.06), Vector3(1.7, 0.1, 0.14), STONE)
 
 
-func _shop_front(p: Dictionary, xf: Transform3D, w: float, fz: float, lx: float, walls: SurfaceTool, windows: SurfaceTool,
-		glass: SurfaceTool) -> void:
+func _shop_front(p: Dictionary, xf: Transform3D, w: float, fz: float, lx: float, walls: SurfaceTool, glass: SurfaceTool) -> void:
 	var trim: Color = p["trim"]
 	var pub := str(p["kind"]) == "pub"
 	# The door, then the shop window across the rest of the front on a low riser.
