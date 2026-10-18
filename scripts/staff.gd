@@ -1349,15 +1349,76 @@ static func _maybe_tea() -> void:
 
 # ---------------------------------------------------------------------------- the TV
 
+## Log lines a worker's spotlight on the Staff channel shows.
+const TV_LOG := 9
+## Seconds each worker has the Staff channel's spotlight before it moves on to the next.
+const TV_SPOT_SECS := 8.0
+
+
+## What worker `w` is up to, at length, for the Staff channel's spotlight: the job, the step
+## they're on, where the bike is, how far down a project's list they are, what they're carrying
+## and when they started.
+static func activity(w: Dictionary) -> String:
+	if w.get("sick", false):
+		return "Off sick today. They'll be back in tomorrow."
+	var out := []
+	var job: Dictionary = w.get("job", {})
+	if not job.is_empty():
+		out.append(str(job.get("label", "Working")) + ".")
+		var doing := str(job.get("doing", ""))
+		if doing != "":
+			out.append(doing.left(1).to_upper() + doing.substr(1) + ".")
+		var tasks: Array = job.get("tasks", [])
+		var ti := int(job.get("ti", 0))
+		if str(job.get("kind", "")) == "project" and ti < tasks.size():
+			out.append("On %d of %d: %s." % [ti + 1, tasks.size(), str(tasks[ti].get("text", ""))])
+		var b := int(job.get("bike", 0))
+		if Shed.bikes.has(b):
+			var bay := int(Shed.bikes[b].get("bay", -1))
+			out.append("The %s is %s." % [str(Shed.bikes[b]["name"]), "in bay %d" % (bay + 1) if bay >= 0 and Shed.bike_in_bay(bay) == b else "out of the bays"])
+		for e in range((w.get("log", []) as Array).size() - 1, -1, -1):
+			var line: Dictionary = w["log"][e]
+			if str(line.get("text", "")).begins_with("New job"):
+				out.append("Started at %s." % str(line.get("at", "")))
+				break
+	else:
+		match str(w["role"]):
+			"reception":
+				out.append("On reception, ready for the next customer through the door.")
+			"sales":
+				var o: Dictionary = Sales.offers().get(int(w.get("deal", 0)), {})
+				if not o.is_empty() and Shed.bikes.has(int(o.get("bike", 0))):
+					out.append("Talking a buyer round on the %s: they've offered %s." % [str(Shed.bikes[int(o["bike"])]["name"]), money(int(o["amount"]))])
+				else:
+					out.append("On the showroom floor, waiting for the next offer.")
+			_:
+				out.append("Waiting for a job: give them one on the Staff tab ({menu}) or from a bike's Workflow card.")
+	var held := Shed.held_by(peer_of(int(w["id"])))
+	if held != 0 and Shed.items.has(held):
+		out.append("Carrying %s." % Shed.item_title(held))
+	return " ".join(out)
+
+
 ## The Staff channel: everyone on the payroll, what they're doing and how far through, their
-## skill, mood and wage, and the latest news.
+## skill, mood and wage, and the latest news; and one of them in the spotlight (each in turn,
+## TV_SPOT_SECS apiece): what they're up to at length, a project's list as it stands, and their
+## log of what they've done today, newest first, with the times.
 static func tv_data() -> Dictionary:
 	var rows := []
 	var ids: Array = workers().keys()
 	ids.sort()
 	for id in ids:
 		var w: Dictionary = workers()[id]
+		var log := []
+		var lines: Array = w.get("log", [])
+		for i in range(lines.size() - 1, maxi(-1, lines.size() - 1 - TV_LOG), -1):
+			var l: Dictionary = lines[i]
+			log.append({"at": str(l.get("at", "")), "text": str(l.get("text", "")) + (" (x%d)" % int(l["n"]) if int(l.get("n", 1)) > 1 else "")})
+		var job: Dictionary = w["job"]
 		rows.append({"name": str(w["name"]), "role": role_name(str(w["role"])), "doing": status_text(w), "progress": progress(w),
-			"busy": not (w["job"] as Dictionary).is_empty(), "level": level(w), "level_frac": level_frac(w), "mood": float(w["mood"]),
-			"mood_word": mood_word(w), "sick": bool(w["sick"]), "wage": int(w["wage"]), "top": w["look"].get("top", Color.GRAY)})
-	return {"rows": rows, "wages": wage_bill(), "news": (_st()["news"] as Array).duplicate(), "max": MAX_STAFF}
+			"busy": not job.is_empty(), "level": level(w), "level_frac": level_frac(w), "mood": float(w["mood"]),
+			"mood_word": mood_word(w), "sick": bool(w["sick"]), "wage": int(w["wage"]), "top": w["look"].get("top", Color.GRAY),
+			"activity": activity(w), "log": log, "list": StaffJobs.project_rows(job) if str(job.get("kind", "")) == "project" else [],
+			"ti": int(job.get("ti", 0))})
+	var spot := int(Time.get_ticks_msec() / (TV_SPOT_SECS * 1000.0)) % maxi(1, rows.size())
+	return {"rows": rows, "wages": wage_bill(), "news": (_st()["news"] as Array).duplicate(), "max": MAX_STAFF, "spot": spot}

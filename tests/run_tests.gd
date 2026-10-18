@@ -19691,6 +19691,14 @@ func _test_staff_tv() -> void:
 	check(str(m["doing"]).begins_with("Servicing the Rusty Ranger") and m["busy"] and float(m["progress"]) > 0.0 and float(m["progress"]) < 1.0
 		and int(m["level"]) >= 1 and int(m["wage"]) > 0 and str(m["mood_word"]) != "", "the mechanic's job with its progress, level, mood and wage (%s)" % str(m["doing"]))
 	check(s["sick"] and str(s["doing"]) == "Off sick today", "the salesman off sick")
+	# The spotlight: at length what they're doing, and their day's log newest first with times.
+	var act := str(m["activity"])
+	var log: Array = m["log"]
+	check(act.begins_with("Servicing the Rusty Ranger.") and act.contains("Started at") and act.length() > str(m["doing"]).length(),
+		"the mechanic's spotlight says at length what they're up to (%s)" % act)
+	check(not log.is_empty() and str(log[-1]["text"]).begins_with("New job") and str(log[0]["at"]).contains(":")
+		and log.size() <= Staff.TV_LOG, "and their log, newest first with the times (%s)" % str(log.map(func(l): return l["text"])))
+	check(int(data["spot"]) >= 0 and int(data["spot"]) < rows.size() and str(s["activity"]).begins_with("Off sick"), "one in the spotlight at a time")
 	var dash := Dashboard.new("crew", 2.0)
 	add_child(dash)
 	var drawn := [0]
@@ -19699,6 +19707,18 @@ func _test_staff_tv() -> void:
 	dash.show_page(TvChannels.page_kind("staff"), data)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	# Every worker's spotlight draws (a project's list among them).
+	var exp := _staff_role("expert")
+	Shed.request({"a": "staff_assign", "worker": exp, "job": {"kind": "project", "bike": _bike_named("Old Faithful"),
+		"tasks": [{"t": "task", "task": "oil"}, {"t": "other", "why": "Not for staff"}, {"t": "bolt"}]}})
+	_staff_run(20)
+	for i in rows.size():
+		var d2 := TvChannels.page_data("staff")
+		d2["spot"] = i
+		dash.show_page(TvChannels.page_kind("staff"), d2)
+		await get_tree().process_frame
+	var e: Dictionary = TvChannels.page_data("staff")["rows"].filter(func(r): return r["role"] == "Expert Mechanic")[0]
+	check((e["list"] as Array).size() == 3, "a project's list goes on the spotlight")
 	check(drawn[0] > 0, "the page draws")
 	dash.queue_free()
 	Shed.stop()
