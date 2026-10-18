@@ -909,3 +909,39 @@ func test_horn() -> void:
 	main.queue_free()
 	await t.get_tree().process_frame
 	Shed.stop()
+
+
+## Simon's 18 October (16:08) round: a ratchet sound stayed in space like the horns did. The
+## winch and strap ratchets fired the work loop (whose take loops) as a one-off where you pressed
+## it, so it never finished; the cab door played the shed's roller door loop. One-shots now never
+## loop, ride on what made them, and go once played (or after a few seconds whatever happens).
+func test_oneshot_sounds() -> void:
+	var main := await _main_with_rig()
+	var rv: RecoveryView = main.recovery
+	var takes := Sfx.sounds("ratchet")
+	var loops := func(s) -> bool:
+		return (s is AudioStreamOggVorbis and s.loop) or (s is AudioStreamWAV and s.loop_mode != AudioStreamWAV.LOOP_DISABLED)
+	check(takes.any(loops), "the ratchet work loop's takes loop (as the spanner's sound needs)")
+	var before := Sfx.oneshots_alive()
+	var p := Sfx.play_on("ratchet", rv.trailer, Trailer.WINCH, -6.0, RecoveryView.RATCHET_SECONDS)
+	check(p != null and p.get_parent() == rv.trailer and not loops.call(p.stream)
+		and p.global_position.distance_to(rv.trailer.global_transform * Trailer.WINCH) < 0.01,
+		"a turn of the winch's ratchet plays once, from the winch on the trailer")
+	check(takes.any(loops), "and the spanner's own loop still loops")
+	Shed.request({"a": "recovery_enter"})
+	await _ticks(10)
+	var door := rv.car.get_children().filter(func(c): return c is AudioStreamPlayer3D and c.is_in_group(Sfx.ONESHOT_GROUP))
+	check(door.size() >= 1, "getting in, the door shuts on the truck itself (%d)" % door.size())
+	Sfx.play_at("ratchet", Vector3(4.0, 1.0, 4.0), -6.0)
+	Sfx.play_ui("wash_ding", -5.0)
+	check(Sfx.oneshots_alive() >= before + 3, "the one-shots are sounding (%d)" % Sfx.oneshots_alive())
+	await _ticks(Engine.physics_ticks_per_second * 3)
+	var stuck := t.get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(
+		func(q): return q.playing and takes.has(q.stream))
+	check(stuck.is_empty(), "nothing's left ratcheting where it was pressed (%d)" % stuck.size())
+	await _ticks(Engine.physics_ticks_per_second * 7)
+	check(Sfx.oneshots_alive() <= before, "and every one-shot's gone by itself (%d left)" % Sfx.oneshots_alive())
+	rv.stop_driving()
+	main.queue_free()
+	await t.get_tree().process_frame
+	Shed.stop()

@@ -352,6 +352,8 @@ func _run_all() -> void:
 	_test_recovery_model()
 	await _test_recovery_controls()
 	await _test_recovery_horn()
+	print("Simon's 18 October (16:08) round: one-shots that go, the truck's handbrake, passenger seat and radar, off the bike in place, a foot down")
+	await _test_oneshot_sounds()
 	print("Simon's 16 October round: dirt where it really goes, and pressure washing it off")
 	_test_dirt_accrual()
 	_test_wash_rules()
@@ -16649,6 +16651,10 @@ func _test_recovery_horn() -> void:
 	await _recovery().test_horn()
 
 
+func _test_oneshot_sounds() -> void:
+	await _recovery().test_oneshot_sounds()
+
+
 ## Simon's 16 October round: road dirt builds up where it really goes as a bike's ridden (more
 ## with distance, heaviest behind the front wheel and under the mudguards, flies on the front at
 ## speed), old saves and delivered bikes get a sensible pattern, and it all survives a save.
@@ -16973,6 +16979,16 @@ func _test_wash_session() -> void:
 		await get_tree().physics_frame
 	Input.action_release("act")
 	check(not w.wash_mode.is_empty(), "the trigger on a bike brings the wash controls up too")
+	# The job started again part way through (a redrawn bike): a part that's dinged doesn't again.
+	var rings := Sfx.oneshots_alive()
+	if w.wash != null:
+		w.wash.cues.append({"kind": "part", "name": "Tank", "slot": "zz_test"})
+	await get_tree().physics_frame
+	var first := Sfx.oneshots_alive() - rings
+	if w.wash != null:
+		w.wash.cues.append({"kind": "part", "name": "Tank", "slot": "zz_test"})
+	await get_tree().physics_frame
+	check(first == 1 and Sfx.oneshots_alive() - rings == 1, "a part dings once a go, even if the job starts again (%d, then %d)" % [first, Sfx.oneshots_alive() - rings])
 	w.set_tool("hands")
 	await get_tree().physics_frame
 	check(w.wash_mode.is_empty(), "putting the washer away steps back")

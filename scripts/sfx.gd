@@ -94,6 +94,10 @@ const PHONE_GAP := 2.2
 ## Bump to throw away the sound cache (the synthesis source's hash is checked too).
 const CACHE_VERSION := "shed-sound-1"
 const CACHE_PATH := "user://sfx_cache.bin"
+## One-shots (play_at, play_on, play_ui, the bells) are in this group while they sound, and go
+## after this many seconds at the most whatever they're playing.
+const ONESHOT_GROUP := "sfx_oneshot"
+const ONESHOT_MAX := 8.0
 
 var muffled := false
 ## Times the sales office phone has rung (tests).
@@ -117,6 +121,7 @@ var _abort := false
 var _rng := RandomNumberGenerator.new()
 var _last_pick := {}    # sound -> the variant played last
 var _loops: Array = []  # loop players made here, to keep routed as the listener moves
+var _once_of := {}      # a looping stream's instance id -> its play-once copy (once)
 var _route_timer := 0.0
 var _preset := {}       # the reverb settings shown now, easing toward the room's
 var _ambience: Node
@@ -248,7 +253,8 @@ func is_muffled() -> bool:
 
 ## Plays a one-shot at a point in the world: a different variant each time (never the same
 ## twice running) with a touch of pitch and level, through the acoustics of where it is.
-func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null) -> AudioStreamPlayer3D:
+## Never loops (see once) and always goes (see _free_when_done); `seconds` cuts a long take short.
+func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null, seconds := 0.0) -> AudioStreamPlayer3D:
 	var host: Node = parent if parent else get_tree().current_scene
 	if host == null:
 		return null
@@ -256,7 +262,7 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null)
 	if s == null:
 		return null
 	var p := AudioStreamPlayer3D.new()
-	p.stream = s
+	p.stream = once(s)
 	p.volume_db = volume_db + _rng.randf_range(-1.2, 1.2) + occlusion_db(pos)
 	p.pitch_scale = _rng.randf_range(0.95, 1.05)
 	p.unit_size = 4.0
@@ -264,9 +270,73 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null)
 	p.bus = bus_for(pos)
 	host.add_child(p)
 	p.global_position = pos
-	p.finished.connect(p.queue_free)
+	_free_when_done(p, seconds)
 	p.play()
 	return p
+
+
+## A one-shot riding along on `source` (a truck, a trailer, someone's hand): it plays from
+## `offset` in the source's own space, moves with it, goes when the source does, and never
+## loops. `seconds` cuts a long take short (0: the whole of it).
+func play_on(sound: String, source: Node3D, offset := Vector3.ZERO, volume_db := 0.0, seconds := 0.0) -> AudioStreamPlayer3D:
+	if source == null or not source.is_inside_tree():
+		return null
+	var p := play_at(sound, source.global_transform * offset, volume_db, source, seconds)
+	if p:
+		p.position = offset
+	return p
+
+
+## `s` to play once: a looping take (the work loops' recordings and synthesised loops are set
+## to loop) comes back as a copy that plays through once and finishes, so a one-shot made from
+## it can't ring on for ever where it was played. Made once per stream.
+func once(s: AudioStream) -> AudioStream:
+	if s == null:
+		return null
+	var looped := (s is AudioStreamWAV and (s as AudioStreamWAV).loop_mode != AudioStreamWAV.LOOP_DISABLED) \
+		or (s is AudioStreamOggVorbis and (s as AudioStreamOggVorbis).loop) \
+		or (s is AudioStreamMP3 and (s as AudioStreamMP3).loop)
+	if not looped:
+		return s
+	var key := s.get_instance_id()
+	if _once_of.has(key):
+		return _once_of[key]
+	var c: AudioStream = s.duplicate()
+	if c is AudioStreamWAV:
+		(c as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_DISABLED
+	elif c is AudioStreamOggVorbis:
+		(c as AudioStreamOggVorbis).loop = false
+	elif c is AudioStreamMP3:
+		(c as AudioStreamMP3).loop = false
+	_once_of[key] = c
+	return c
+
+
+## A one-shot player goes when it's finished, and in any case once its stream's had time to
+## play through (ONESHOT_MAX at most, or `seconds`), so nothing's left sounding in the world.
+func _free_when_done(p: Node, seconds := 0.0) -> void:
+	p.add_to_group(ONESHOT_GROUP)
+	p.finished.connect(p.queue_free)
+	var st: AudioStream = p.get("stream")
+	var life := ONESHOT_MAX
+	if st and st.get_length() > 0.0:
+		life = minf(st.get_length() / maxf(float(p.get("pitch_scale")), 0.1) + 0.25, ONESHOT_MAX)
+	if seconds > 0.0:
+		life = minf(life, seconds)
+	var ref: WeakRef = weakref(p)
+	get_tree().create_timer(life, false).timeout.connect(func():
+		var n := ref.get_ref() as Node
+		if n:
+			n.queue_free())
+
+
+## How many one-shots are sounding (or waiting to go) right now (tests).
+func oneshots_alive() -> int:
+	var n := 0
+	for p in get_tree().get_nodes_in_group(ONESHOT_GROUP):
+		if not p.is_queued_for_deletion():
+			n += 1
+	return n
 
 
 ## A part or kit landing: `material` is what it's made of (a PartsDB material, or "metal",
@@ -399,7 +469,7 @@ func bell(at: Vector3) -> void:
 		pairs = [["bell_chime", at, 0.0, 9.0, 140.0], ["bell", at, -8.0, 6.0, 60.0], ["bell_chime", SalesOffice.SHED_CHIME_POS, -2.0, 5.0, 60.0]]
 	for p in pairs:
 		var player := AudioStreamPlayer3D.new()
-		player.stream = pick(str(p[0]))
+		player.stream = once(pick(str(p[0])))
 		player.bus = bus_for(p[1])
 		player.volume_db = float(p[2]) + occlusion_db(p[1]) * 0.5
 		player.unit_size = float(p[3])
@@ -407,7 +477,7 @@ func bell(at: Vector3) -> void:
 		player.attenuation_filter_cutoff_hz = 12000.0
 		host.add_child(player)
 		player.global_position = p[1]
-		player.finished.connect(player.queue_free)
+		_free_when_done(player)
 		player.play()
 	# The shop bell over the doors and the chime's striker swing.
 	var office := get_tree().get_first_node_in_group("sales_office")
@@ -439,11 +509,11 @@ func play_ui(sound: String, volume_db := 0.0) -> void:
 	if st == null:
 		return
 	var p := AudioStreamPlayer.new()
-	p.stream = st
+	p.stream = once(st)
 	p.bus = "SFX"
 	p.volume_db = volume_db
 	host.add_child(p)
-	p.finished.connect(p.queue_free)
+	_free_when_done(p)
 	p.play()
 
 

@@ -22,6 +22,7 @@ var _wet := 0.0               # how big the wet patch is, 0..1
 var _flow := 0.0              # how much water's running to the drain, 0..1
 var _drain := Wash.BAY_DRAIN
 var firing := false
+var _idle := 0.0              # seconds since whoever owns it last updated it
 
 
 func _ready() -> void:
@@ -134,6 +135,7 @@ static func _fade(from: Color) -> Gradient:
 ## One frame: the jet from `from` landing at `at` on a surface facing `normal` (world), `firing`
 ## or not. `dirt` (0..1) is how dirty what it's washing is, for the colour of the run-off.
 func update(delta: float, from: Vector3, at: Vector3, normal: Vector3, fire: bool, dirt := 0.3) -> void:
+	_idle = 0.0
 	firing = fire
 	if fire:
 		var d := (at - from).normalized()
@@ -173,6 +175,15 @@ func update(delta: float, from: Vector3, at: Vector3, normal: Vector3, fire: boo
 		_puddle_mat.albedo_color.a = 0.55 * minf(1.0, _wet * 3.0)
 	_gurgle.global_position = _drain
 	Sfx.set_loop(_gurgle, "pour" if _flow > 0.15 else "")
+
+
+## Left without updates (its washer off riding, say): the water runs away and the drain's
+## gurgle stops by itself rather than going on where it was.
+func _process(delta: float) -> void:
+	_idle += delta
+	if _idle > 0.5:
+		update(delta, Vector3.ZERO, Vector3.ZERO, Vector3.UP, false)
+		_idle = 0.6
 
 
 ## Stops the jet's splash at once (the water already on the floor runs off and dries as usual).

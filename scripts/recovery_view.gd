@@ -11,6 +11,8 @@ extends Node3D
 const EXIT_SPEED := 1.5
 const MOVE_EVERY := 1.5        # seconds between telling the host where the truck has got to
 const REMOTE_DELAY := 0.12
+## How long a turn of a strap's or the winch's ratchet sounds (s).
+const RATCHET_SECONDS := 1.1
 ## Where the horn sits in a snapshot from net_state().
 const NET_HORN := 1 + Car.NET_SIZE + Trailer.NET_SIZE
 const STRAP_ANCHORS := [Vector3(-0.42, 0.03, -0.95), Vector3(0.42, 0.03, -0.95), Vector3(-0.42, 0.03, 0.85),
@@ -487,7 +489,9 @@ func use(t: Dictionary) -> void:
 			var a: Dictionary = _winch_prompt()[1]
 			if not a.is_empty():
 				Shed.request(a)
-				Sfx.play_at("ratchet", trailer.global_transform * Trailer.WINCH, -6.0)
+				# A turn of the ratchet from the winch itself: a one-shot on the trailer, cut short,
+				# never the work loop left running where it was pressed.
+				Sfx.play_on("ratchet", trailer, Trailer.WINCH, -6.0, RATCHET_SECONDS)
 		"dolly":
 			var a2: Dictionary = _dolly_prompt()[1]
 			if not a2.is_empty():
@@ -497,7 +501,8 @@ func use(t: Dictionary) -> void:
 			if id != 0:
 				var on: bool = (Recovery.loads()[id]["straps"] as Array)[int(u["point"])]
 				Shed.request({"a": "recovery_strap", "bike": id, "point": int(u["point"]), "on": not on})
-				Sfx.play_at("ratchet", t.get("at", trailer.global_position), -3.0)
+				var at: Vector3 = t.get("at", trailer.global_position)
+				Sfx.play_on("ratchet", trailer, trailer.global_transform.affine_inverse() * at, -3.0, RATCHET_SECONDS)
 		"tarp":
 			Shed.request({"a": "recovery_tarp", "bike": int(u["bike"])})
 
@@ -628,7 +633,8 @@ func start_driving() -> void:
 	if not car.engine_changed.is_connected(_on_engine_changed):
 		car.engine_changed.connect(_on_engine_changed)
 		car.gear_changed.connect(_on_gear_changed)
-	Sfx.play_at("door", car.global_position, -12.0)
+	# The cab door shutting behind you (a clunk from the truck, not the shed's roller door loop).
+	Sfx.play_on("clunk", car, Vector3(-0.9, 1.0, -0.6), -8.0)
 
 
 func _on_engine_changed(running: bool) -> void:
