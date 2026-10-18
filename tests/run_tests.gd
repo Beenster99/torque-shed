@@ -100,6 +100,8 @@ func _run_all() -> void:
 	await _test_bike_baking()
 	_test_state_diff()
 	await _test_ai_riders_light()
+	print("Traffic vehicles: cars, vans, lorries and coaches on the roads")
+	await _test_vehicles_build()
 	print("XP, levels, tool upgrades and skills")
 	_test_progress()
 	print("Bike lights, tyres and the tyre changer")
@@ -3448,6 +3450,51 @@ func _test_ai_riders_light() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().process_frame
+
+
+## Point 13 of the adventure round: the traffic's cars, vans, lorries and coaches. Each kind
+## builds in each trim from shared meshes with few surfaces, a far mesh much lighter than the
+## near one, and a box to hit as long and wide as it looks.
+func _test_vehicles_build() -> void:
+	var holder := Node3D.new()
+	add_child(holder)
+	var t0 := Time.get_ticks_msec()
+	for kind in VehicleModel.KINDS:
+		var worst_near := 0
+		var worst_far := 0
+		var ratio := 0.0
+		for trim in int(VehicleModel.SPECS[kind]["trims"]):
+			var p := VehicleModel.parts(kind, trim)
+			var near: ArrayMesh = p["near"]
+			var far: ArrayMesh = p["far"]
+			worst_near = maxi(worst_near, near.get_surface_count())
+			worst_far = maxi(worst_far, far.get_surface_count())
+			# The near model is drawn with its wheels: two front ones and the back axle's.
+			var nv := _mesh_verts(near) + _mesh_verts(p["wheel"]) * 2 + _mesh_verts(p["axle"])
+			var fv := _mesh_verts(far)
+			ratio = maxf(ratio, float(fv) / float(maxi(nv, 1)))
+			if trim == 0:
+				print("    %s: %d vertices near, %d far" % [kind, nv, fv])
+		var v := TrafficVehicle.new()
+		holder.add_child(v)
+		v.setup(kind, 4242)
+		var aabb: AABB = (VehicleModel.parts(kind, int(v.look["trim"]))["near"] as ArrayMesh).get_aabb()
+		var spec: Dictionary = VehicleModel.SPECS[kind]
+		var shape: BoxShape3D = (v.get_child(0) as CollisionShape3D).shape
+		check(worst_near <= 7 and worst_far <= 6 and ratio < 0.7,
+			"a %s builds: %d surfaces near, %d far, the far mesh %.0f%% of the near one's vertices" % [kind, worst_near, worst_far, ratio * 100.0])
+		check(absf(aabb.size.z - float(spec["len"])) < 0.8 and absf(aabb.end.y - float(spec["h"])) < 0.3 and absf(shape.size.z - aabb.size.z) < 0.8,
+			"  and is the size it says (%.2f x %.2f x %.2f m)" % [aabb.size.x, aabb.size.y, aabb.size.z])
+	print("    (built every kind and trim in %d ms)" % (Time.get_ticks_msec() - t0))
+	holder.queue_free()
+	await get_tree().process_frame
+
+
+static func _mesh_verts(mesh: Mesh) -> int:
+	var n := 0
+	for si in mesh.get_surface_count():
+		n += (mesh as ArrayMesh).surface_get_array_len(si)
+	return n
 
 
 ## Simon's 17 October round: bikes riding off from the cafe showed as big white glow balls
