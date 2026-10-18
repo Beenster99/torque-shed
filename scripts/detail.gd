@@ -477,10 +477,12 @@ static func work_step(bike_id: int, step: String, amount: float, skill := 0.5) -
 				var c: PackedByteArray = d["c"]
 				var r: PackedByteArray = d["r"]
 				var sm: PackedByteArray = d["s"]
+				var buff := 1.0 - minf(1.0, rate * 3.0)   # working back over a high spot while it's fresh
 				for i in Dirt.CELLS:
 					var cv := c[i] / 255.0
 					c[i] = clampi(roundi((cv + (1.0 - cv) * rate * 1.5) * 255.0), 0, 255)
 					r[i] = 0
+					sm[i] = roundi(sm[i] * buff)
 				if rng.randf() < RISK * (1.0 - skill) * amount:
 					sm[rng.randi() % Dirt.CELLS] = 200
 				it["shine"] = {"g": d["g"], "b": d["b"], "c": c, "r": r, "s": sm, "u": d["u"]}

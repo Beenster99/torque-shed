@@ -14,7 +14,7 @@ extends RefCounted
 ##   {do: "wait", secs, anim}, {do: "flag", k, v}, {do: "say", text}, {do: "plan"}
 ## A step's "what" is what they're doing, for the TV and the look panel.
 ##
-## Detailing jobs are a list of steps (DETAIL_STEPS: "wash" now; polishing and ceramic coating
+## Detailing jobs are a list of steps (DETAIL_STEPS: wash, polish and ceramic coat via Detail.work_step;
 ## plug in as more entries, each a function name here that returns its next steps or [] when
 ## it's done).
 
@@ -25,7 +25,9 @@ const SERVICE_PARTS: Array[String] = ["front_pads", "rear_pads", "spark_plugs", 
 const WORN := 0.2
 ## What a detailing job can do, in order, each with the planner that does it ("" for a step the
 ## detailer has no kit for yet: skipped with a word).
-const DETAIL_STEPS := {"wash": "_detail_wash", "polish": "", "ceramic": ""}
+const DETAIL_STEPS := {"wash": "_detail_wash", "polish": "_detail_polish", "ceramic": "_detail_ceramic"}
+const SHINE_PASSES := 4   # polisher passes between looks at how it's coming on
+const SHINE_ROUNDS := 8   # looks before they give up on a step that won't come right
 const DETAIL_NAMES := {"wash": "pressure wash", "polish": "polish", "ceramic": "ceramic coat"}
 const WASH_PASSES := 4
 ## The usual stock they order when there's none in the shed.
@@ -91,8 +93,9 @@ static func new_job(w: Dictionary, j: Dictionary) -> Dictionary:
 		"detail":
 			var todo: Array = []
 			for s in j.get("steps", ["wash"]):
-				if DETAIL_STEPS.has(str(s)):
-					todo.append(str(s))
+				var st := "ceramic" if str(s) == "coat" else str(s)   # a Detailing job's list says "coat"
+				if DETAIL_STEPS.has(st):
+					todo.append(st)
 			if todo.is_empty():
 				todo = ["wash"]
 			job["todo"] = todo
@@ -683,7 +686,7 @@ static func _detail(w: Dictionary, job: Dictionary) -> Array:
 		if bay >= 0:
 			return _wheel(b, StaffNav.bay_in(bay), Workshop.bay_transform(bay), "its bay") + [plan_step()]
 		return _wheel(b, StaffNav.place(StaffNav.nearest_node(home.origin), [home.origin]), home, "where it was") + [plan_step()]
-	job["report"] = "The %s's clean as a whistle%s." % [_bike_name(b), "" if job["todo"] == ["wash"] else ", all done"]
+	job["report"] = "The %s's clean as a whistle%s.%s" % [_bike_name(b), "" if job["todo"] == ["wash"] else ", all done", str(job.get("note", ""))]
 	return []
 
 
@@ -692,7 +695,36 @@ static func _detail_step(fn: String, w: Dictionary, job: Dictionary) -> Array:
 	match fn:
 		"_detail_wash":
 			return _detail_wash(w, job)
+		"_detail_polish":
+			return _detail_shine(w, job, "polish", "polishing")
+		"_detail_ceramic":
+			return _detail_shine(w, job, "coat", "ceramic coating")
 	return []
+
+
+## Polishing or ceramic coating (Detail step `step`) with the polisher, a few passes at a time,
+## as well as their level lets them (a beginner sometimes burns through or leaves a smear).
+static func _detail_shine(w: Dictionary, job: Dictionary, step: String, doing: String) -> Array:
+	var b := int(job["bike"])
+	if Detail.step_done(b, step):
+		return []
+	if step == "polish" and int(Detail.bike_stats(b)["burns"]) > 0:
+		job["note"] = " I burnt through the lacquer in a spot, though. That wants a respray."
+		return []
+	var rounds := "%s_rounds" % step
+	job[rounds] = int(job.get(rounds, 0)) + 1
+	if int(job[rounds]) > SHINE_ROUNDS:
+		# A burn-through only a respray fixes, or a coat that won't come right: leave it there.
+		job["note"] = " I couldn't get the %s right, though. It wants looking at." % str(DETAIL_NAMES.get("ceramic" if step == "coat" else step, step))
+		return []
+	# A detailer by trade starts part way up the scale; levels take them the rest of the way.
+	var skill := lerpf(0.4, 1.0, clampf(float(Staff.level(w) - 1) / float(Staff.MAX_LEVEL - 1), 0.0, 1.0))
+	var out := [go(StaffNav.wash(), "getting the polisher")]
+	for i in SHINE_PASSES:
+		out.append(work({"a": "shine_step", "bike": b, "step": step, "amount": 0.3, "skill": skill}, 2.5, "detail",
+			"%s the %s" % [doing, _bike_name(b)]))
+	out.append(plan_step())
+	return out
 
 
 ## A wash with the pressure washer: a few passes over the whole bike at a time.

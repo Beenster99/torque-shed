@@ -386,6 +386,7 @@ func _run_all() -> void:
 	await _test_staff_skills()
 	await _test_staff_sickies()
 	await _test_staff_service_job()
+	await _test_staff_full_detail()
 	await _test_staff_tea_run()
 	await _test_staff_tv()
 	await _test_staff_save()
@@ -19388,6 +19389,25 @@ func _test_staff_service_job() -> void:
 	# Something they can't get done, they say why.
 	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "fit", "bike": ranger, "slot": "front_tyre", "part": "knobbly_mx_90"}})
 	check((Staff.worker(id)["job"] as Dictionary).is_empty(), "a tyre isn't a job for a plain mechanic")
+	Shed.stop()
+
+
+## A detailer given a full detail washes, polishes and ceramic coats the bike through the shed
+## (Detail.work_step via "shine_step"), then wheels it back and reports.
+func _test_staff_full_detail() -> void:
+	Shed.start_new("T", 5)
+	Staff.hire_one_of_each()
+	var id := _staff_role("detailer")
+	var ranger := _bike_named("Rusty Ranger")
+	var gloss0 := float(Detail.bike_stats(ranger)["gloss"])
+	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "detail", "bike": ranger, "steps": ["wash", "polish", "coat"]}})
+	var w := Staff.worker(id)
+	check(w["job"].get("todo", []) == ["wash", "polish", "ceramic"], "a detailing list's coat is their ceramic step (%s)" % str(w["job"].get("todo", [])))
+	_staff_run(12000, id, true)
+	var st := Detail.bike_stats(ranger)
+	check((w["job"] as Dictionary).is_empty() and Staff.saying(w).contains("all done"), "the full detail gets done and they say so (%s)" % Staff.saying(w))
+	check(float(st["gloss"]) > gloss0 + 0.1 and float(st["coat"]) > 0.2,
+		"polished up (gloss %.2f from %.2f, worst %.2f, burns %d) and coated (%.2f)" % [float(st["gloss"]), gloss0, float(st["worst"]), int(st["burns"]), float(st["coat"])])
 	Shed.stop()
 
 
