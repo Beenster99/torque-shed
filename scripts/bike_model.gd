@@ -78,6 +78,10 @@ var _block_w := 0.3
 var _bore_r := 0.048             # cylinder barrel radius
 var _tank_a := Vector3.ZERO      # the tank's underside line, nose to tail (see _draw_tank)
 var _tank_b := Vector3.ZERO
+var _tank_secs: Array = []       # the tank's sections as drawn, for what sits on top of it (see tank_top_at)
+var _satnav_screen: MeshInstance3D   # the sat nav's screen, lit with the live map (see set_satnav_texture)
+var _screen_lift: Node3D         # an adjustable screen hangs from this, moved up its rails (see set_screen_raise)
+var _screen_dir := Vector3.UP
 var _covered: Array[AABB] = []   # what a full fairing hides, side on (see _hide_covered)
 var _eng_s := 1.0                # engine size relative to a 700 cc
 var _cyls := []                  # {base, up} per cylinder barrel
@@ -143,6 +147,9 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_plates.clear()
 	_flat_tyres.clear()
 	_dash_face = PackedVector3Array()
+	_tank_secs = []
+	_satnav_screen = null
+	_screen_lift = null
 
 	var zr := _lay_out(build)
 	_layout_cylinders(build)
@@ -204,6 +211,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_guards()
 	_draw_number_boards()
 	_draw_steering_damper()
+	KitModel.draw(self, build, zr)
 
 	# A full fairing carries its own lamps: the plain headlight is tucked away inside it.
 	if _full_fairing_fitted():
@@ -855,6 +863,7 @@ func _draw_tank() -> void:
 			"n": shape["n"], "bw": shape["bw"]})
 	var body := _shell(secs, mat)
 	body.name = "TankBody"
+	_tank_secs = secs
 	if look.get("shrouds", false):
 		# Radiator shrouds: angular plastic wings either side of the tank, from the head stock
 		# back to the seat and down over the radiator and the top of the engine, the way a
@@ -3832,12 +3841,64 @@ func _adventure_fairing(mat: Material, glass: Material, dark: Material, screen: 
 		vent.rotation.y = 0.12 * side
 		vent.name = "FairingVent"
 	var crown: Dictionary = secs[3]
-	_screen(crown["c"] + Vector3(0.0, float(crown["up"]) - 0.015, -0.03), float(crown["w"]) * 0.7, maxf(screen, 0.28), 0.42, glass)
+	# An adjustable screen hangs from its own node, moved up its rails as the rider sets it.
+	var base: Vector3 = crown["c"] + Vector3(0.0, float(crown["up"]) - 0.015, -0.03)
+	var adjust := float(_part().get("screen_adjust", 0.0))
+	var host: Node3D = self
+	if adjust > 0.0:
+		_screen_lift = Node3D.new()
+		_screen_lift.name = "ScreenLift"
+		add_child(_screen_lift)
+		_screen_dir = Vector3(0.0, cos(0.42), sin(0.42))
+		_screen_lift.position = _screen_dir * (_build.screen_raise if _build else 0.0)
+		host = _screen_lift
+		# The rails it slides up, either side behind the screen.
+		for side in [-1.0, 1.0]:
+			_tube(base + Vector3(float(crown["w"]) * 0.45 * side, -0.02, 0.02), base + Vector3(float(crown["w"]) * 0.45 * side, 0.0, 0.02) + _screen_dir * (adjust + 0.06),
+				0.006, dark)
+	_screen(base, float(crown["w"]) * 0.7, maxf(screen, 0.28), 0.42, glass, host)
 	if lk.has("accent"):
 		var stripe := []
 		for sec in secs:
 			stripe.append(_on_loft(sec, -0.3, 1.004))
 		_bend(stripe, 0.01, _mat(_accent(), 0.1, 0.35, 0.6))
+
+
+## The top of the tank at `z` (along the bike): [height of its top, its half width there]. A
+## tank bag sits on it.
+func tank_top_at(z: float) -> Vector2:
+	if _tank_secs.is_empty():
+		return Vector2(_seat_y + 0.1, 0.12)
+	var best: Dictionary = _tank_secs[0]
+	for sec: Dictionary in _tank_secs:
+		if absf(float((sec["c"] as Vector3).z) - z) < absf(float((best["c"] as Vector3).z) - z):
+			best = sec
+	return Vector2(float((best["c"] as Vector3).y) + float(best["up"]), float(best["w"]))
+
+
+## Where the tank starts at the front (its nose's z).
+func _tank_front() -> float:
+	return float((_tank_secs[0]["c"] as Vector3).z) if not _tank_secs.is_empty() else _head.z + 0.1
+
+
+## Lights the sat nav's screen with `tex` (the live map, see SatnavScreen), or blanks it with null.
+func set_satnav_texture(tex: Texture2D) -> void:
+	if _satnav_screen == null or not is_instance_valid(_satnav_screen):
+		return
+	var mat := _satnav_screen.material_override as StandardMaterial3D
+	mat.albedo_texture = tex
+	mat.albedo_color = Color.WHITE if tex != null else Color(0.02, 0.03, 0.04)
+
+
+## The sat nav's screen as drawn, or null with none fitted.
+func satnav_screen() -> MeshInstance3D:
+	return _satnav_screen if _satnav_screen != null and is_instance_valid(_satnav_screen) else null
+
+
+## Moves an adjustable screen `raise` metres up its rails (0 right down), as the rider sets it.
+func set_screen_raise(raise: float) -> void:
+	if _screen_lift != null and is_instance_valid(_screen_lift):
+		_screen_lift.position = _screen_dir * raise
 
 
 ## Under a full fairing the engine's covers, the airbox, the coil and the electrics are out of
@@ -4454,28 +4515,67 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 			band.scale = Vector3(1.0, 0.12, 1.0)
 			band.name = "WallBand"
 	_tyre_lettering(tyre_mi, rim_r, radius, width)
-	if style != "offroad":
+	# The tread: knobs on an off-road tyre (bigger, flatter blocks on a 50/50 adventure one, studs
+	# in them on a studded one), fine sipes cut across a winter tyre; a road tyre is smooth.
+	var tread := str(_part().get("tread", "knobs" if style == "offroad" else ""))
+	if tread == "":
 		return
+	if tread == "sipes":
+		_tread_ring(wheel, radius, Vector3(width * 0.72, 0.003, 0.004), 72, 0.0015, 0.0, _mat(Color(0.015, 0.015, 0.015), 0.0, 0.95))
+		return
+	var blocks := tread == "blocks"
+	var size := Vector3(width * 0.42, 0.012, 0.045) if blocks else Vector3(width * 0.36, 0.022, 0.03)
+	var placed := _tread_ring(wheel, radius, size, 56 if blocks else 80, 0.008 if not blocks else 0.004, width * (0.2 if blocks else 0.19), rubber)
+	if tread == "studs":
+		# A tungsten stud in the top of every knob.
+		var stud := CylinderMesh.new()
+		stud.top_radius = 0.0035
+		stud.bottom_radius = 0.0035
+		stud.height = 0.006
+		stud.radial_segments = 6
+		var studs := MultiMesh.new()
+		studs.transform_format = MultiMesh.TRANSFORM_3D
+		studs.mesh = stud
+		studs.instance_count = placed.size()
+		var stud_at: Array[Transform3D] = []
+		for i in placed.size():
+			var t := placed[i].translated_local(Vector3(0.0, size.y * 0.5 + 0.002, 0.0))
+			studs.set_instance_transform(i, t)
+			stud_at.append(t)
+		var smi := MultiMeshInstance3D.new()
+		smi.set_meta("instances", stud_at)
+		smi.multimesh = studs
+		smi.material_override = _mat(Color(0.7, 0.72, 0.75), 1.0, 0.25)
+		wheel.add_child(smi)
+		_slot_meshes[_current_slot].append(smi)
+
+
+## A ring of tread pieces (`size` each, `count` of them, staggered `stagger` either side of the
+## middle and sunk `sink` into the rubber) round a tyre of `radius`, as one multimesh. Returns
+## where each piece went.
+func _tread_ring(wheel: Node3D, radius: float, size: Vector3, count: int, sink: float, stagger: float, mat: Material) -> Array[Transform3D]:
 	var knobs := MultiMesh.new()
 	knobs.transform_format = MultiMesh.TRANSFORM_3D
 	var knob := BoxMesh.new()
-	knob.size = Vector3(width * 0.36, 0.022, 0.03)
+	knob.size = size
 	knobs.mesh = knob
-	knobs.instance_count = 80
+	knobs.instance_count = count
 	var placed: Array[Transform3D] = []
-	for i in 80:
-		var a := TAU * (i / 2) / 40.0 + (PI / 40.0 if i % 2 else 0.0)
-		var t := Transform3D(Basis(Vector3.RIGHT, a), Vector3(0.0, cos(a), sin(a)) * (radius - 0.008))
-		t = t.translated_local(Vector3((width * 0.19 if i % 2 == 0 else -width * 0.19), 0.0, 0.0))
+	var rows := count / 2
+	for i in count:
+		var a := TAU * (i / 2) / rows + (PI / rows if i % 2 else 0.0)
+		var t := Transform3D(Basis(Vector3.RIGHT, a), Vector3(0.0, cos(a), sin(a)) * (radius - sink))
+		t = t.translated_local(Vector3((stagger if i % 2 == 0 else -stagger), 0.0, 0.0))
 		knobs.set_instance_transform(i, t)
 		placed.append(t)
 	var mmi := MultiMeshInstance3D.new()
 	# Kept on the node too: a headless run (the .glb exporter, GlbExport) can't read them back.
 	mmi.set_meta("instances", placed)
 	mmi.multimesh = knobs
-	mmi.material_override = rubber
+	mmi.material_override = mat
 	wheel.add_child(mmi)
 	_slot_meshes[_current_slot].append(mmi)
+	return placed
 
 
 ## A flat tyre squashed down under its rim, 0 (holding its shape) .. 1 (no air in it, see

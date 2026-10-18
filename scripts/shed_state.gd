@@ -61,7 +61,8 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
 	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6,
 	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2, "front_mudguard": 1.0, "indicators": 0.4, "side_panels": 0.4,
-	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8, "steering_damper": 0.2}
+	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8, "steering_damper": 0.2,
+	"tank_bag": 0.3, "aux_tank": 0.6, "toolbox": 0.7, "satnav": 0.15}
 ## Parts in the front wheel's spray. With no front mudguard they get this much more road dirt;
 ## a guard takes it back down by how much spray it stops (its "cover").
 const FRONT_SPRAY: Array[String] = ["fork", "engine", "cooling", "exhaust", "headlight", "horn", "fog_lights",
@@ -81,7 +82,7 @@ const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "l
 	"r_preload": ["shock", "preload"], "r_bump": ["shock", "bump"], "r_rebound": ["shock", "rebound"],
 	"psi_f": ["front_tyre", "pressure"], "psi_r": ["rear_tyre", "pressure"],
 	"sprocket_f": ["final_drive", "front"], "sprocket_r": ["final_drive", "rear"], "spread": ["gearbox", "spread"],
-	"chain": ["chain", "slack"], "damper": ["steering_damper", "clicks"]}
+	"chain": ["chain", "slack"], "damper": ["steering_damper", "clicks"], "screen": ["fairing", "screen"]}
 const LIGHTEN_WEAR := 0.08     # condition a part gives up to being drilled and trimmed
 const TYRE_WEAR := 0.0002      # tyre wear per km at the right pressure
 const BURNOUT_WEAR := 0.004    # back tyre wear per second of full burnout
@@ -391,7 +392,7 @@ func _add_new_slots() -> void:
 		var original: Dictionary = bike.get("original", {})
 		if not original.has("tail"):
 			original["tail"] = PartsDB.fitting_tail(PartsDB.sanitize_build(original.duplicate()))
-		for slot in ["fairing", "mirrors"] + Array(PartsDB.FILLER_SLOTS):
+		for slot in ["fairing", "mirrors"] + Array(PartsDB.FILLER_SLOTS) + Array(PartsDB.KIT_SLOTS):
 			if not original.has(slot):
 				original[slot] = "none"
 			if not bike["slots"].has(slot):
@@ -672,6 +673,9 @@ func condition_of(item: Dictionary) -> Dictionary:
 		cond["flat"] = float(item["flat"])
 	if item.get("mix") is Dictionary:
 		cond["paint_q"] = float(item.get("paint_quality", 1.0))
+	# What's packed in a toolbox (see PartsDB.TOOLBOX_CONTENTS).
+	if item.get("contents") is Array:
+		cond["contents"] = item["contents"]
 	return cond
 
 
@@ -4016,10 +4020,15 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 	var rear_tyre := item_on(bike_id, "rear_tyre")
 	if rear_tyre != 0 and spin > 0.0:
 		items[rear_tyre]["wear"] = minf(1.0, float(items[rear_tyre]["wear"]) + spin * BURNOUT_WEAR)
-	var tank := item_on(bike_id, "tank")
-	if tank != 0 and items[tank].has("fluid"):
-		var f: Dictionary = items[tank]["fluid"]
-		f["litres"] = maxf(0.0, float(f["litres"]) - clampf(float(action.get("fuel", 0.0)), 0.0, 2.0))
+	# Petrol burnt: an auxiliary tank feeds the main one, so it empties first.
+	var burnt := clampf(float(action.get("fuel", 0.0)), 0.0, 2.0)
+	for slot in ["aux_tank", "tank"]:
+		var tank := item_on(bike_id, slot)
+		if tank != 0 and items[tank].has("fluid") and burnt > 0.0:
+			var f: Dictionary = items[tank]["fluid"]
+			var take := minf(burnt, float(f["litres"]))
+			f["litres"] = float(f["litres"]) - take
+			burnt -= take
 	var block := item_on(bike_id, "engine")
 	if block != 0 and items[block].has("fluid"):
 		var oil: Dictionary = items[block]["fluid"]

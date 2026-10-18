@@ -47,7 +47,7 @@ const GROUPS := [
 	["Wheels and brakes", ["wheel", "tyre", "disc", "caliper", "pads", "master"]],
 	["Body and lights", ["tank", "saddle", "front_mudguard", "tail", "fairing", "mirrors", "dashboard", "headlight",
 		"fog_lights", "horn", "indicators", "side_panels", "number_boards"]],
-	["Luggage", ["panniers", "top_box"]],
+	["Luggage and adventure kit", ["panniers", "top_box", "tank_bag", "aux_tank", "toolbox", "satnav"]],
 	["Fluids", ["petrol", "oil", "brake_fluid", "chain_lube", "puncture_kit"]],
 	["Tools and machines", ["eq:stand", "eq:washer", "eq:repair", "eq:blaster", "eq:booth", "eq:changer"]],
 	["Storage and benches", ["eq:shelf", "eq:bench", "eq:trolley"]],

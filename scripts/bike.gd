@@ -562,7 +562,8 @@ func lean_for_input(x: float) -> float:
 ## clearance allows.
 func _grip_lean() -> float:
 	var surf := str(wheels[1]["surface"]) if not wheels.is_empty() else "tarmac"
-	var mu := minf(float(build.grip_front.get(surf, 0.7)), float(build.grip_rear.get(surf, 0.7))) * Weather.grip_mult(surf)
+	var wet := Weather.wetness()
+	var mu := minf(build.tyre_grip(true, surf, wet), build.tyre_grip(false, surf, wet)) * Weather.grip_mult(surf)
 	# With Riding realism up, the rider knows cold (or overcooked) tyres hold less and leans less on
 	# them; at 0 they lean as far as warm tyres would hold, and find out.
 	if heat:
@@ -1048,7 +1049,7 @@ func _apply_donut(delta: float) -> void:
 	var wb := build.wheelbase
 	var i_front := inertia.y + mass * wb * wb * 0.25
 	var push := (want - yaw_rate) * i_front * 8.0 / wb
-	var grip: float = float(build.grip_rear.get(str(wheels[1]["surface"]), 0.7)) * float(wheels[1]["load"])
+	var grip: float = build.tyre_grip(false, str(wheels[1]["surface"]), Weather.wetness()) * float(wheels[1]["load"])
 	push = clampf(push, -grip, grip)
 	var at: Vector3 = wheels[1].get("contact_pos", global_transform * Vector3(0.0, -build.rear_radius, wb * 0.5))
 	apply_force(b.x * push, at - global_position)
@@ -1122,6 +1123,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		n = hit["normal"]
 		if hit["collider"] and (hit["collider"] as Object).has_meta("surface"):
 			hit_surf = str((hit["collider"] as Object).get_meta("surface"))
+		# The world's say on what's really there: the adventure roads' gravel, sand and snow.
+		hit_surf = TyreGrip.surface_at(hit_surf, hit["position"])
 		# The contact patch rolls round the tyre's crown as it leans: the wheel centre sits
 		# (radius - crown) * cos(camber) + crown above the ground.
 		var sin_cam := clampf(axle.dot(n), -0.95, 0.95)
@@ -1261,8 +1264,10 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var v_long := v_contact.dot(long_dir)
 	var v_lat := v_contact.dot(lat_dir)
 	var v_abs := absf(v_long)
-	var mu_surf: float = float((build.grip_front if is_front else build.grip_rear).get(hit_surf, 0.7))
-	mu_surf *= Weather.grip_mult(hit_surf)   # wet roads after rain grip a little less
+	# The tyre's grip on what's under it, for its kind of tread (see TyreGrip), and wet roads after
+	# rain grip a little less.
+	var mu_surf := build.tyre_grip(is_front, hit_surf, Weather.wetness())
+	mu_surf *= Weather.grip_mult(hit_surf)
 	if heat:
 		mu_surf *= heat.tyre_grip(0 if is_front else 1, hit_surf)   # a cold tyre (or a cooked one) grips less
 	if flat_now > 0.0:

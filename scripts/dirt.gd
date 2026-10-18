@@ -38,7 +38,7 @@ const SPAN := {
 	"saddle": [0.35, 0.12], "handlebars": [0.12, 0.12], "engine": [0.35, 0.4], "head": [0.2, 0.15], "cooling": [0.08, 0.35],
 	"gearbox": [0.2, 0.2], "exhaust": [0.8, 0.35], "final_drive": [0.4, 0.15], "chain": [0.45, 0.15], "tail": [0.35, 0.3],
 	"fairing": [0.35, 0.5], "front_mudguard": [0.3, 0.12], "side_panels": [0.2, 0.2], "swingarm": [0.45, 0.12],
-	"panniers": [0.35, 0.35], "top_box": [0.25, 0.25], "guards": [0.3, 0.2], "number_boards": [0.3, 0.25],
+	"panniers": [0.35, 0.35], "top_box": [0.25, 0.25], "tank_bag": [0.2, 0.15], "aux_tank": [0.2, 0.2], "toolbox": [0.2, 0.15], "guards": [0.3, 0.2], "number_boards": [0.3, 0.25],
 }
 const SMALL := [0.15, 0.15]
 ## Parts that spin (or run round): the muck goes on all over them, not on one side.
