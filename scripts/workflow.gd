@@ -14,6 +14,7 @@ extends RefCounted
 ##   card_tick {bike, task, on}   tick a task off by hand (or untick it)
 ##   card_order {bike}            order every part the tasks still need and the shed hasn't got
 ##   card_assign {bike, task}     give a task to whichever of the staff can do it
+##   card_project {bike}          give the whole list still to do to a mechanic, as a project
 ##   card_pick {screen, step}     a screen's Workflow channel moves on to the next bike (or back)
 
 ## A part counts as put right at this health or better (where the assessment stops asking for
@@ -217,6 +218,42 @@ static func staff_job(bike_id: int, task: Dictionary) -> Dictionary:
 	return {}
 
 
+## The staff "project" job for the card: every task still to do, in the card's order, as the
+## project's list (see StaffJobs.project_tasks). Replacing or restoring a part is renewing it
+## until it comes up to GOOD_HEALTH, old fluids are an oil change and the last task's bolting it
+## all up; pumping up tyres stays on the list for the crew (the mechanic says so and goes on).
+## {} when there's nothing left to do.
+static func project_job(bike_id: int) -> Dictionary:
+	var tasks := []
+	# A customer's own list comes first (as the card shows it).
+	if not Contracts.job_for_bike(bike_id).is_empty():
+		for t in StaffJobs.project_tasks(bike_id):
+			if not StaffJobs.task_done(bike_id, t):
+				tasks.append(t)
+	for t in card(bike_id).get("tasks", []):
+		if is_done(bike_id, t):
+			continue
+		var text := str(t["text"])
+		match str(t.get("fix", "")):
+			"replace", "restore":
+				tasks.append({"t": "renew", "slot": str(t["slot"]), "part": str(t.get("part", "")), "health": GOOD_HEALTH, "text": text})
+			"fluids":
+				tasks.append({"t": "task", "task": "oil", "text": text})
+			"bolted":
+				tasks.append({"t": "bolt", "text": text})
+			_:
+				tasks.append({"t": "other", "text": text, "why": "That's one for the crew."})
+	if tasks.is_empty():
+		return {}
+	return {"kind": "project", "bike": bike_id, "tasks": tasks}
+
+
+## Whether a task on the card can go to one of the staff now (someone can do it).
+static func can_assign(bike_id: int, task: Dictionary) -> bool:
+	var job := staff_job(bike_id, task)
+	return not job.is_empty() and not pick_worker(job).is_empty()
+
+
 ## The worker who'd take a task on: an idle one who can do it first, else anyone who can. {} for none.
 static func pick_worker(job: Dictionary) -> Dictionary:
 	var best := {}
@@ -358,6 +395,18 @@ static func check(peer: int, action: Dictionary) -> String:
 					if why != "":
 						return why
 				return "Nobody free who can do it."
+		"card_project":
+			var pj := project_job(bike_id)
+			if pj.is_empty():
+				return "Nothing left on the card to do."
+			if Staff.workers().is_empty():
+				return "No staff yet: hire them on the Staff tab ({menu})."
+			if pick_worker(pj).is_empty():
+				for id in Staff.workers():
+					var why2 := Staff.job_check(Staff.workers()[id], pj)
+					if why2 != "":
+						return why2
+				return "Nobody free who can do it."
 		_:
 			return "There's nothing like that to do."
 	return ""
@@ -413,6 +462,13 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var w := pick_worker(job)
 			_card_of(bike_id)["assign"][str(t["id"])] = int(w["id"])
 			return Staff.assign(w, job)
+		"card_project":
+			var pj := project_job(bike_id)
+			var pw := pick_worker(pj)
+			for ct in card(bike_id).get("tasks", []):
+				if not is_done(bike_id, ct):
+					_card_of(bike_id)["assign"][str(ct["id"])] = int(pw["id"])
+			return Staff.assign(pw, pj)
 	return ""
 
 

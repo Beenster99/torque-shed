@@ -322,7 +322,7 @@ static func kit_list(w: Dictionary, job: Dictionary, b: int) -> Array:
 						if on == 0:
 							parts.append(part_for(b, str(slot)))
 					_:
-						if on == 0 or float(Shed.items[on]["wear"]) > 0.2 or float(Shed.items[on]["rust"]) > 0.2:
+						if not _renewed(b, str(slot), float(t.get("health", 0.0))):
 							parts.append(part_for(b, str(slot), str(t.get("part", ""))))
 	var scope := func(k: String) -> bool: return all or keys.has(k)
 	for slot in SERVICE_PARTS:
@@ -860,7 +860,8 @@ static func _service_need(w: Dictionary, job: Dictionary, b: int, only: Array = 
 ##   {t: "task", task}          a Contracts.TASKS job (oil, chain, pads, a new tyre...)
 ##   {t: "part", slot, part}    that part fitted in that slot
 ##   {t: "fit", slot}           something fitted in an empty slot (the bike's own part)
-##   {t: "renew", slot, part}   the part in that slot renewed like for like (or fitted if gone)
+##   {t: "renew", slot, part}   the part in that slot renewed like for like (or fitted if gone);
+##                              with "health", the part on has to be at least that good too
 ##   {t: "bolt"}                everything on it bolted up
 ##   {t: "other", why}          on the list, but not a mechanic's work (skipped, with why)
 ## Each has "text", what the list says.
@@ -1068,7 +1069,7 @@ static func task_done(bike_id: int, t: Dictionary) -> bool:
 		"fit":
 			return on != 0 and Shed.is_bolted(bike_id, slot)
 		"renew":
-			return on != 0 and float(Shed.items[on]["wear"]) <= 0.2 and float(Shed.items[on]["rust"]) <= 0.2 and Shed.is_bolted(bike_id, slot)
+			return _renewed(bike_id, slot, float(t.get("health", 0.0))) and Shed.is_bolted(bike_id, slot)
 		"bolt":
 			return Shed.loose_slots(bike_id).is_empty()
 	return false
@@ -1192,7 +1193,7 @@ static func _task_steps(w: Dictionary, job: Dictionary, b: int, t: Dictionary) -
 					return out
 			return []
 		"renew":
-			return _renew(w, job, b, str(t["slot"]), str(t.get("part", "")))
+			return _renew(w, job, b, str(t["slot"]), str(t.get("part", "")), float(t.get("health", 0.0)))
 		"part", "fit":
 			var slot := str(t["slot"])
 			if task_done(b, t):
@@ -1212,9 +1213,9 @@ static func _task_steps(w: Dictionary, job: Dictionary, b: int, t: Dictionary) -
 
 ## Renewing the part in `slot` like for like (fitting one if it's gone), unless it's as good as
 ## new already. The old one goes in the bin.
-static func _renew(w: Dictionary, job: Dictionary, b: int, slot: String, want: String) -> Array:
+static func _renew(w: Dictionary, job: Dictionary, b: int, slot: String, want: String, health := 0.0) -> Array:
 	var on := Shed.item_on(b, slot)
-	if on != 0 and float(Shed.items[on]["wear"]) <= 0.2 and float(Shed.items[on]["rust"]) <= 0.2:
+	if _renewed(b, slot, health):
 		if not Shed.is_bolted(b, slot):
 			return [go(StaffNav.bike(b), "going over to the %s" % _bike_name(b)),
 				work({"a": "bolt", "bike": b, "slot": slot, "crouched": true}, 4.0, "wrench", "bolting up the %s" % _slot(slot)), plan_step()]
@@ -1225,6 +1226,17 @@ static func _renew(w: Dictionary, job: Dictionary, b: int, slot: String, want: S
 		return []
 	job["sub"] = {"slot": slot, "part": part, "old": on, "bin": true}
 	return _fit(w, job, b, slot, part, true, on)
+
+
+## Whether the part in `slot` is fresh: hardly worn or rusty, and at least `health` good.
+static func _renewed(b: int, slot: String, health := 0.0) -> bool:
+	var on := Shed.item_on(b, slot)
+	if on == 0:
+		return false
+	var it: Dictionary = Shed.items[on]
+	if float(it["wear"]) > 0.2 or float(it["rust"]) > 0.2:
+		return false
+	return health <= 0.0 or BikeBuild.part_health(Shed.condition_of(it)) >= health
 
 
 ## A project's list with how each task stands, for the TV, the panel and the bay's workflow

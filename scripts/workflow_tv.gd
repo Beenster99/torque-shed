@@ -92,7 +92,9 @@ static func data(key: String) -> Dictionary:
 			if not r["done"] and not r.has("who"):
 				var act := {"a": "card_assign", "bike": bike_id, "task": r["id"]}
 				var b := _button("Assign", Rect2(520, y - 25, 96, 32), act, "small")
-				if not Staff.workers().is_empty():
+				# Only where one of the staff can take that task on by itself (a part for an
+				# expert to fit, a service); the whole list goes as a project (below).
+				if Workflow.can_assign(bike_id, Workflow.task_of(bike_id, str(r["id"]))):
 					out["buttons"].append(b)
 		shown.append(r)
 	out["rows"] = shown
@@ -129,6 +131,10 @@ static func data(key: String) -> Dictionary:
 			for part in need:
 				cost += Money.buy_price(str(part), Shed.me())
 			acts.append(["Order %d missing: %s" % [need.size(), TvChannels.money_text(cost)], {"a": "card_order", "bike": bike_id}, "warn"])
+		# The whole list to a mechanic, unless one's on it already.
+		var pj := Workflow.project_job(bike_id)
+		if not pj.is_empty() and not _on_project(bike_id) and not Workflow.pick_worker(pj).is_empty():
+			acts.append(["Assign the project", {"a": "card_project", "bike": bike_id}, "go"])
 		if state == "insurer":
 			acts.append(["Insurer collects", {"a": "recovery_collect", "job": int(job["id"])}, "go"])
 		elif not contract.is_empty():
@@ -137,9 +143,21 @@ static func data(key: String) -> Dictionary:
 			acts.append(["Hand it back", {"a": "contract_hand_in", "job": int(contract["id"])}, "go"])
 		if Workflow.assessed(bike_id) and acts.size() < 3:
 			acts.append(["Assess again", {"a": "card_assess", "bike": bike_id}, ""])
-	for i in mini(acts.size(), 3):
-		out["buttons"].append(_button(str(acts[i][0]), Rect2(bx, by + i * 46.0, 364, 40), acts[i][1], str(acts[i][2])))
+	# Four squeeze in a little closer (an MOT job with parts to order and the project to give).
+	var n := mini(acts.size(), 4)
+	var gap := 46.0 if n <= 3 else 38.0
+	for i in n:
+		out["buttons"].append(_button(str(acts[i][0]), Rect2(bx, by + i * gap, 364, gap - 6.0), acts[i][1], str(acts[i][2])))
 	return out
+
+
+## Whether one of the staff is on a project on the bike now.
+static func _on_project(bike_id: int) -> bool:
+	for id in Staff.workers():
+		var j: Dictionary = Staff.workers()[id]["job"]
+		if str(j.get("kind", "")) == "project" and int(j.get("bike", 0)) == bike_id:
+			return true
+	return false
 
 
 # ---------------------------------------------------------------------------- drawing
