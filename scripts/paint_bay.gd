@@ -979,6 +979,12 @@ static func spray_from_cup(peer: int, it: Dictionary, waste: float, fade := "") 
 	var c := cup_of(peer)
 	var s: Dictionary = (c["mix"] as Dictionary).duplicate(true)
 	c["litres"] = maxf(0.0, float(c["litres"]) - cup_use(peer, it, waste))
+	return spray_spec(it, s, fade)
+
+
+## Host: a coat of paint `s` (a PaintMix spec) goes on `it`: from a player's cup, or a paint
+## expert's own mix (see StaffJobs._paint). Returns the quality factor for the coats so far.
+static func spray_spec(it: Dictionary, s: Dictionary, fade := "") -> float:
 	if str(s.get("effect", "")) == "lacquer":
 		# Lacquer from the cup is a clear top coat: the colour stays, the sheen changes.
 		it["flat"] = float(s.get("flat", 0.0))

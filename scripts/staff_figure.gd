@@ -251,6 +251,23 @@ func animate(delta: float, walking: bool, pushing: bool, carrying: bool, anim: S
 				nod = -0.15
 			"tray", "carry":
 				arm = Vector2(1.2, 1.2)
+			"look":
+				# Hands behind their back, looking the bike over.
+				arm = Vector2(-0.35, -0.35)
+				nod = 0.3 + sin(_t * 0.7) * 0.08
+				twist = sin(_t * 0.5) * 0.25
+			"card":
+				# Bent to the price card, a hand at the chin.
+				arm = Vector2(0.1, 2.0)
+				lean = -0.22
+				nod = 0.35
+			"sit":
+				# Astride a bike: legs out each side and down, hands forward on the bars.
+				drop = 0.08
+				leg = Vector2(0.7, 0.7)
+				arm = Vector2(1.25, 1.25)
+				lean = -0.3
+				twist = sin(_t * 0.6) * 0.1
 			"":
 				arm = Vector2(0.04, 0.04) * sin(_t * 1.3)
 			_:

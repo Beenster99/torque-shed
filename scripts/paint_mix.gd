@@ -31,8 +31,10 @@ const BASES := {
 	"S": {"name": "Metallic silver base", "color": Color(0.72, 0.73, 0.75), "opaque": true, "metal": 0.8, "price": 28, "level": 1},
 	"C": {"name": "Clear base (candy)", "color": Color(0.9, 0.9, 0.9), "opaque": false, "metal": 0.0, "price": 24, "level": 8},
 	"L": {"name": "Clear lacquer", "color": Color(0.9, 0.9, 0.9), "opaque": false, "metal": 0.0, "price": 22, "level": 1},
+	# A mirror-silver base: sprayed (three coats) it looks like chrome plate; a tint smokes or colours it.
+	"H": {"name": "Chrome-effect base", "color": Color(0.88, 0.89, 0.9), "opaque": true, "metal": 1.0, "price": 48, "level": 12},
 }
-const BASE_ORDER: Array[String] = ["W", "B", "S", "C", "L"]
+const BASE_ORDER: Array[String] = ["W", "B", "S", "C", "L", "H"]
 
 ## The tints: code -> {name, color (sRGB), k (tinting strength), kind, rack ("base": the stock
 ## rack, "plus": the effects rack upgrade), level, price (a BOTTLE_G bottle)}. Kinds: "tint"
@@ -88,10 +90,11 @@ const EFFECTS := {
 	"pearl": {"name": "Pearl", "level": 5, "need": 3, "value": 0.04, "letter": "P"},
 	"candy": {"name": "Candy", "level": 8, "need": 3, "value": 0.06, "letter": "C"},
 	"flake": {"name": "Flake", "level": 10, "need": 3, "value": 0.07, "letter": "F"},
+	"chrome": {"name": "Chrome effect", "level": 12, "need": 3, "value": 0.09, "letter": "H"},
 	"chameleon": {"name": "Chameleon", "level": 15, "need": 3, "value": 0.1, "letter": "X"},
 	"lacquer": {"name": "Lacquer", "level": 1, "need": 1, "value": 0.0, "letter": "L"},
 }
-const EFFECT_ORDER: Array[String] = ["solid", "metallic", "pearl", "candy", "flake", "chameleon"]
+const EFFECT_ORDER: Array[String] = ["solid", "metallic", "pearl", "candy", "flake", "chrome", "chameleon"]
 ## Candy coats: the ideal is 3 or 4; it darkens with each one.
 const CANDY_BEST := Vector2i(3, 4)
 ## Flattener in the lacquer: gloss, satin and matt (share of the lacquer's weight).
@@ -331,10 +334,13 @@ static func spec(tin: Dictionary, tin_name := "") -> Dictionary:
 		effect = "candy"
 	if flake >= 0.25:
 		effect = "flake"
+	if base == "H" and flake < 0.25:
+		# The mirror base: chrome, whatever tints (a smoke, a colour) are in it.
+		effect = "chrome"
 	if flip >= 0.3:
 		effect = "chameleon"
 	out["effect"] = effect
-	out["rough"] = 0.3 if effect == "metallic" else (0.18 if effect in ["flake", "pearl"] else 0.1)
+	out["rough"] = 0.3 if effect == "metallic" else (0.18 if effect in ["flake", "pearl"] else (0.03 if effect == "chrome" else 0.1))
 	out["need"] = int(EFFECTS[effect]["need"])
 	return out
 
@@ -609,6 +615,8 @@ static func solve(target: Color, effect := "solid", allowed: Array = []) -> Dict
 		"chameleon":
 			bases = ["B"]
 			extra = {"XP": 60.0}
+		"chrome":
+			bases = ["H"]
 	var best := {}
 	var best_d := INF
 	for base in bases:
@@ -853,6 +861,12 @@ static func apply(m: StandardMaterial3D, cond: Dictionary) -> void:
 			"chameleon":
 				m.metallic = 0.5
 				m.roughness = 0.2
+			"chrome":
+				# Mirror-bright: all metal, hardly any roughness, a glassy clear over it.
+				m.metallic = 1.0
+				m.roughness = 0.035
+				m.clearcoat = 1.0
+				m.clearcoat_roughness = 0.01
 	var flat := float(cond.get("flat", 0.0))
 	if flat > 0.0:
 		# Flattener in the lacquer: satin, or matt that soaks up the light.

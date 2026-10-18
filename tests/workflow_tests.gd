@@ -165,6 +165,20 @@ func test_channel() -> void:
 	d = WorkflowTv.data("crew")
 	check(on and str(_row(d, str(free["text"])).get("who", "")) != "" and not (d["on"] as Array).is_empty(),
 		"one of the staff takes it on, and the card says who (%s)" % str(d["on"]))
+	# The whole list as a project, to a mechanic: the card's tasks still to do, in order.
+	var first_left: Dictionary = (Workflow.card(bike)["tasks"] as Array).filter(func(x): return not Workflow.is_done(bike, x))[0]
+	var left := (Workflow.card(bike)["tasks"] as Array).filter(func(x): return not Workflow.is_done(bike, x)).size()
+	var pb := _button(d, "card_project")
+	check(not pb.is_empty() and str(pb["off"]) == "", "the card offers to assign the whole project")
+	Shed.request(pb["act"])
+	var proj := {}
+	for wid in Staff.workers():
+		var j: Dictionary = Staff.workers()[wid]["job"]
+		if str(j.get("kind", "")) == "project" and int(j.get("bike", 0)) == bike:
+			proj = Staff.workers()[wid]
+	check(not proj.is_empty() and str(proj["role"]) in ["mechanic", "expert"] and (proj["job"]["tasks"] as Array).size() == left
+		and str(proj["job"]["tasks"][0]["text"]) == str(first_left["text"]), "one who can takes the card's list on as a project, in order (%d tasks)" % left)
+	check(_button(WorkflowTv.data("crew"), "card_project").is_empty(), "and the card doesn't offer it again while they're on it")
 	# Who's been at it.
 	var act := {"a": "unbolt", "bike": bike, "slot": "tank"}
 	var why2 := Shed.check(me, act)

@@ -4,11 +4,13 @@ extends RefCounted
 ## while you do something else. Six roles, each unlocked at a character level (UNLOCK):
 ##   detailer   washes bikes in the wash bay (a list of steps per detailing job, see StaffJobs)
 ##   reception  minds the reception desk: greets customers and keeps them waiting happily
-##   mechanic   services bikes and fits parts (simple ones: nothing else has to come off first)
+##   mechanic   services bikes and works through a bike's listed jobs (a project), the simple
+##              ones: nothing else has to come off first
 ##   sales      puts bikes on the showroom plinths, prices them and haggles with buyers
 ##   paint      paint expert: takes a part off, mixes at the bench, sprays it in the booth
 ##   expert     expert mechanic: any part (stripping what's in the way and refitting it), tyres
-##              on the tyre changer, brake fluid as well as oil in a service
+##              on the tyre changer, brake fluid as well as oil in a service; more organised:
+##              orders a whole job's parts in one go and fetches them on a parts trolley
 ## Candidates turn up on the hiring board (the Esc menu's Staff tab), a few new ones a day, each
 ## with a name, a look, a short back story, a starting skill and a daily wage. Hire one (up to
 ## MAX_STAFF), give them a job (look at them and press F, or from the Staff tab) and leave them to
@@ -37,13 +39,20 @@ const MAX_STAFF := 6
 const MAX_LEVEL := 10
 ## The host works the staff out this often (seconds), not every frame.
 const TICK := 0.25
+## Requests too small to go in a worker's log (picking things up and putting them down).
+const QUIET_ACTS: Array[String] = ["take", "place", "drop", "set_down", "grab", "grab_bike", "move_bike", "move_furniture",
+	"release", "unpack", "coffee_tray_down"]
 ## Pseudo player ids: worker `id` acts as peer -(PEER_BASE + id), clear of real peers (> 0),
 ## nobody (0) and the -1s some code uses for "none".
 const PEER_BASE := 100
 ## Jobs, and the roles that do them.
-const JOBS := {"service": ["mechanic", "expert"], "fit": ["mechanic", "expert"], "paint": ["paint"],
+## "project" works through the bike's listed jobs (its job card, MOT fails or assessment, see
+## StaffJobs.project_tasks) and nothing more; fitting a part on request is the expert's.
+const JOBS := {"service": ["mechanic", "expert"], "project": ["mechanic", "expert"], "fit": ["expert"], "paint": ["paint"],
 	"detail": ["detailer"], "sell": ["sales"], "reception": ["reception"], "tea": []}
-const JOB_NAMES := {"service": "Service a bike", "fit": "Fit a part", "paint": "Paint a part", "detail": "Wash and detail a bike",
+## The jobs done on a bike (one worker on each bike at a time).
+const BIKE_JOBS: Array[String] = ["service", "project", "fit", "paint", "detail", "sell"]
+const JOB_NAMES := {"service": "Service a bike", "project": "Complete a project (the listed work)", "fit": "Fit a part", "paint": "Paint a part", "detail": "Wash and detail a bike",
 	"sell": "Sell a bike", "reception": "Run reception", "tea": "Fetch teas from the cafe"}
 ## A day's chance someone phones in sick (more when they're fed up), and the fewest days between.
 const SICK_CHANCE := 0.05
@@ -52,9 +61,14 @@ const SICK_GAP := 3
 ## How often (real seconds) someone idle fetches a round of teas while the cafe's open.
 const TEA_EVERY := 540.0
 const TEA_FIRST := 240.0
+## The boards of the staff parts rack (Shed.STAFF_RACK), bottom up, and whose each is.
+const RACK_BINS: Array[String] = ["MECHANICS", "EXPERT MECHANIC", "PAINT", "DETAILING"]
+const RACK_LEVEL := {"mechanic": 0, "expert": 1, "paint": 2, "detailer": 3}
 ## How long a line said stays over their head, and the news kept for the TV.
 const SAY_SECS := 7.0
 const MAX_NEWS := 8
+## How many lines of their own log each worker keeps.
+const MAX_LOG := 14
 ## How long the salesman thinks over an offer, and how many jobs in a row can fail before
 ## they give it up.
 const CONSIDER_SECS := 9.0
@@ -146,7 +160,8 @@ static var _heard := {}        # worker id -> the last thing the shed told them 
 
 ## A new shed: nobody on the payroll, the board drawn on the first day.
 static func empty() -> Dictionary:
-	return {"next": 1, "workers": {}, "board": {}, "board_day": -1, "clock": 0.0, "news": [], "tea_at": TEA_FIRST, "hired": 0}
+	return {"next": 1, "workers": {}, "board": {}, "board_day": -1, "clock": 0.0, "news": [], "tea_at": TEA_FIRST, "hired": 0,
+		"margin": Sales.DEFAULT_MARGIN}
 
 
 ## Saved or synced staff made safe to use: sheds from before staff have none.
@@ -157,7 +172,7 @@ static func sanitize(s) -> Dictionary:
 	for key in out:
 		if s.has(key) and typeof(s[key]) == typeof(out[key]):
 			out[key] = s[key]
-		elif s.has(key) and key in ["clock", "tea_at"] and (s[key] is int or s[key] is float):
+		elif s.has(key) and key in ["clock", "tea_at", "margin"] and (s[key] is int or s[key] is float):
 			out[key] = float(s[key])
 	for id in out["workers"].keys():
 		if not (out["workers"][id] is Dictionary) or not ROLES.has(str(out["workers"][id].get("role", ""))):
@@ -175,7 +190,7 @@ static func _fill_worker(w: Dictionary, id: int) -> void:
 	var defaults := {"id": id, "name": "Worker", "look": {}, "story": [], "wage": 60, "xp": 0, "mood": 0.75, "hired_day": 0,
 		"sick": false, "sick_last": -99, "jobs": 0, "job": {}, "at": StaffNav.idle(str(w.get("role", "mechanic"))),
 		"pos": Vector3.ZERO, "yaw": 0.0, "leg": {}, "anim": "", "say": "", "say_at": -100.0, "deal": 0, "deal_at": 0.0,
-		"greeted": [], "earned": 0}
+		"greeted": [], "earned": 0, "log": []}
 	for k in defaults:
 		if not w.has(k) or typeof(w[k]) != typeof(defaults[k]):
 			if k == "pos" and w.get("pos") is Vector3:
@@ -436,6 +451,10 @@ static func check(peer: int, action: Dictionary) -> String:
 				return job_check(w, action.get("job", {}))
 			if a == "staff_cancel" and (w["job"] as Dictionary).is_empty():
 				return "%s isn't doing anything." % first_name(w)
+		"staff_margin":
+			var m = action.get("margin", null)
+			if not (m is float or m is int) or float(m) < 0.0 or float(m) > 0.6:
+				return "Pick a margin between 0 and 60%."
 		"staff_debug_hire_all", "staff_debug_sick":
 			if Net.is_online() and peer != 1:
 				return "Only the host can do that."
@@ -454,7 +473,7 @@ static func job_check(w: Dictionary, job) -> String:
 	var roles: Array = JOBS[kind]
 	if not roles.is_empty() and not roles.has(str(w["role"])):
 		return "That's not %s's job: a %s does it." % [first_name(w), " or ".join(roles.map(func(r): return role_name(r).to_lower()))]
-	if kind in ["service", "fit", "paint", "detail", "sell"]:
+	if kind in BIKE_JOBS:
 		var b := int(job.get("bike", 0))
 		if not Shed.bikes.has(b):
 			return "Which bike?"
@@ -465,6 +484,9 @@ static func job_check(w: Dictionary, job) -> String:
 			if int(id) != int(w["id"]) and int(other["job"].get("bike", 0)) == b:
 				return "%s is already working on it." % first_name(other)
 	match kind:
+		"project":
+			if StaffJobs.project_tasks(int(job["bike"]), job.get("tasks", [])).is_empty():
+				return "There's nothing listed to do on the %s." % str(Shed.bikes[int(job["bike"])].get("name", "bike"))
 		"fit":
 			var slot := str(job.get("slot", ""))
 			var part := str(job.get("part", ""))
@@ -488,6 +510,14 @@ static func job_check(w: Dictionary, job) -> String:
 				return "Pick a part to paint."
 			if Shed.item_on(int(job["bike"]), slot) == 0:
 				return "There's no %s on it." % PartsDB.slot_name(slot).to_lower()
+			if str(job.get("lib", "")) != "" or str(job.get("code", "")) != "":
+				# A mixed paint: one the paint expert's up to.
+				var mix := StaffJobs.paint_spec(job)
+				if mix.is_empty():
+					return "That colour's not one anyone can mix."
+				if job.has("sheen") and not PaintMix.SHEENS.has(str(job["sheen"])):
+					return "Gloss, satin or matt?"
+				return StaffJobs.paint_why(w, mix)
 			var idx := int(job.get("color", -1))
 			if idx < 0 or idx >= Shed.PAINTS.size():
 				return "Pick a colour."
@@ -516,6 +546,12 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var w := worker(int(action["worker"]))
 			_drop_job(w, "Right you are. Leaving that.")
 			return "%s stopped." % first_name(w)
+		"staff_margin":
+			_st()["margin"] = float(action["margin"])
+			var line := "%s set the salesman's target margin to %d%%." % [str(Shed.crew.get(peer, {}).get("name", "Someone")),
+				roundi(margin() * 100.0)]
+			_news(line)
+			return line
 		"staff_debug_hire_all":
 			return hire_one_of_each()
 		"staff_debug_sick":
@@ -573,11 +609,14 @@ static func _let_go(w: Dictionary) -> void:
 	var peer := peer_of(int(w["id"]))
 	var held := Shed.held_by(peer)
 	if held != 0:
-		Shed._put_on_bench(held)
+		StaffJobs.put_on_rack(w, held)
 	var pushing := Shed.pushing_bike(peer)
 	if pushing != 0:
 		Shed.bikes[pushing]["pusher"] = 0
 		Shed._park(pushing)
+	var cart := Shed.moving(peer)
+	if cart != 0:
+		Shed.furniture[cart]["mover"] = 0
 	CoffeeShop.put_back(peer)
 	w["leg"] = {}
 	w["pos"] = _pos_now(w)
@@ -595,6 +634,8 @@ static func assign(w: Dictionary, job_in: Dictionary) -> String:
 	if str(job["kind"]) == "reception":
 		w["job"] = {}
 		line = "I'll be on the desk."
+	else:
+		log_line(w, "New job: %s" % label)
 	say(w, line)
 	Shed._mark_dirty()
 	return "%s: \"%s\"" % [first_name(w), line]
@@ -623,6 +664,25 @@ static func say(w: Dictionary, text: String, tell := false, ok := true) -> void:
 		for p in Shed.crew:
 			Shed._tell(int(p), line, ok)
 		_news("%s: %s" % [first_name(w), text])
+
+
+## Adds a line to their own log of what they've done (the Staff TV shows it), with the time of
+## day; the same thing again in a row counts up instead ("... (x3)").
+static func log_line(w: Dictionary, text: String) -> void:
+	if w.is_empty() or text == "":
+		return
+	if not (w.get("log") is Array):
+		w["log"] = []
+	var log: Array = w["log"]
+	text = text.left(1).to_upper() + text.substr(1, 159)
+	if not log.is_empty() and str(log[-1].get("text", "")) == text:
+		log[-1]["n"] = int(log[-1].get("n", 1)) + 1
+		log[-1]["at"] = Daylight.clock_text(Daylight.time_of_day())
+	else:
+		log.append({"at": Daylight.clock_text(Daylight.time_of_day()), "text": text, "n": 1})
+	while log.size() > MAX_LOG:
+		log.pop_front()
+	Shed._mark_dirty()
 
 
 static func _news(text: String) -> void:
@@ -816,8 +876,8 @@ static func pos_at(w: Dictionary, t: float) -> Vector3:
 		return w.get("pos", Vector3.ZERO)
 	var pts: PackedVector3Array = leg["pts"]
 	var s := minf((t - float(leg["t0"])) * float(leg["v"]), float(leg["len"]))
-	if int(leg.get("push", 0)) != 0:
-		s -= StaffNav.BIKE_AHEAD
+	if int(leg.get("push", 0)) != 0 or int(leg.get("cart", 0)) != 0:
+		s -= StaffNav.BIKE_AHEAD if int(leg.get("push", 0)) != 0 else StaffNav.CART_AHEAD
 		if s < 0.0:
 			var d := StaffNav.heading(pts, 0.0)
 			return pts[0] + Vector3(sin(d), 0.0, cos(d)) * -s
@@ -832,14 +892,22 @@ static func _walked(w: Dictionary) -> bool:
 	return (clock() - float(leg["t0"])) * float(leg["v"]) >= float(leg["len"])
 
 
-## Starts them walking to place `to` (straight away there when it's no distance).
-static func _go_to(w: Dictionary, to: Dictionary, push := 0, push_from := {}) -> void:
-	var from: Dictionary = push_from if push != 0 else w.get("at", {})
-	var start: Vector3 = _pos_now(w) if push == 0 else (Shed.bikes[push]["xf"] as Transform3D).origin
-	var pts := StaffNav.route(from, to, start)
+## Starts them walking to place `to` (straight away there when it's no distance), wheeling bike
+## `push` (from place `push_from`) or trolley `cart` (equipment id) when they're given.
+static func _go_to(w: Dictionary, to: Dictionary, push := 0, push_from := {}, cart := 0) -> void:
+	var from: Dictionary = push_from if push != 0 or cart != 0 else w.get("at", {})
+	var start: Vector3 = _pos_now(w)
+	var ignore := {}
+	if push != 0:
+		start = (Shed.bikes[push]["xf"] as Transform3D).origin
+		ignore = {"bike": push}
+	elif cart != 0:
+		start = (Shed.furniture[cart]["xf"] as Transform3D).origin
+		ignore = {"furniture": cart}
+	var pts := StaffNav.route(from, to, start, ignore)
 	var length := StaffNav.length(pts)
-	w["leg"] = {"pts": pts, "t0": clock(), "v": StaffNav.PUSH_SPEED if push != 0 else StaffNav.WALK_SPEED, "len": length,
-		"push": push, "n": int(w.get("legs", 0)) + 1}
+	w["leg"] = {"pts": pts, "t0": clock(), "v": StaffNav.PUSH_SPEED if push != 0 or cart != 0 else StaffNav.WALK_SPEED, "len": length,
+		"push": push, "cart": cart, "n": int(w.get("legs", 0)) + 1}
 	w["legs"] = int(w.get("legs", 0)) + 1
 	w["to"] = to
 	w["anim"] = ""
@@ -853,11 +921,12 @@ static func _arrive(w: Dictionary) -> void:
 	if not leg.is_empty():
 		var pts: PackedVector3Array = leg["pts"]
 		var end := float(leg["len"])
-		if int(leg.get("push", 0)) != 0:
-			end -= StaffNav.BIKE_AHEAD
-		w["pos"] = StaffNav.along(pts, end)
-		w["yaw"] = StaffNav.heading(pts, end, float(w.get("yaw", 0.0)))
-		if int(leg.get("push", 0)) != 0:
+		var wheeled := int(leg.get("push", 0)) != 0 or int(leg.get("cart", 0)) != 0
+		if wheeled:
+			end -= StaffNav.BIKE_AHEAD if int(leg.get("push", 0)) != 0 else StaffNav.CART_AHEAD
+		w["pos"] = StaffNav.along(pts, end) if end >= 0.0 else pts[0] - Vector3(sin(StaffNav.heading(pts, 0.0)), 0.0, cos(StaffNav.heading(pts, 0.0))) * end
+		w["yaw"] = StaffNav.heading(pts, maxf(end, 0.0), float(w.get("yaw", 0.0)))
+		if wheeled:
 			# Stood behind the bike they've wheeled in: that's where they're at now.
 			var p: Array = (to.get("p", []) as Array).duplicate()
 			if not p.is_empty():
@@ -866,7 +935,7 @@ static func _arrive(w: Dictionary) -> void:
 			to = {"n": to.get("n", "shed"), "p": p}
 	else:
 		w["pos"] = StaffNav.spot(to)
-	if to.has("yaw") and int(leg.get("push", 0)) == 0:
+	if to.has("yaw") and int(leg.get("push", 0)) == 0 and int(leg.get("cart", 0)) == 0:
 		w["yaw"] = float(to["yaw"])
 	w["at"] = to
 	w["leg"] = {}
@@ -934,14 +1003,23 @@ static func _run_job(w: Dictionary, job: Dictionary, dt: float) -> void:
 			return   # entering did it all (a plan, a flag)
 	job["t"] = float(job["t"]) + dt
 	match kind:
-		"go", "push":
+		"go", "push", "cart":
 			if int((w["leg"] as Dictionary).get("push", 0)) != 0:
 				_push_bike(w)
+			if int((w["leg"] as Dictionary).get("cart", 0)) != 0:
+				_push_cart(w)
 			if _walked(w):
 				var pushed := int((w["leg"] as Dictionary).get("push", 0))
+				var carted := int((w["leg"] as Dictionary).get("cart", 0))
+				var end_xf := _cart_xf(w["leg"], INF) if carted != 0 else Transform3D()
 				_arrive(w)
 				if pushed != 0:
 					var why := act(w, {"a": "release_bike", "bike": pushed, "xf": st["xf"]})
+					if why != "":
+						_failed(w, job, why)
+						return
+				if carted != 0:
+					var why := act(w, {"a": "release", "furniture": carted, "xf": end_xf})
 					if why != "":
 						_failed(w, job, why)
 						return
@@ -954,6 +1032,10 @@ static func _run_job(w: Dictionary, job: Dictionary, dt: float) -> void:
 					if why != "":
 						_failed(w, job, why)
 						return
+					if not QUIET_ACTS.has(str(a.get("a", ""))):
+						log_line(w, str(st.get("what", "")))
+				elif str(st.get("what", "")) != "":
+					log_line(w, str(st["what"]))
 				w["anim"] = ""
 				if str(st.get("after", "")) != "":
 					StaffJobs.after(w, job, str(st["after"]))
@@ -1001,6 +1083,13 @@ static func _enter(w: Dictionary, job: Dictionary, st: Dictionary) -> bool:
 				_failed(w, job, "I've lost hold of the bike.")
 				return false
 			_go_to(w, st["to"], b, st.get("from", StaffNav.bike_out(b)))
+		"cart":
+			var f := int(st["furniture"])
+			if not Shed.furniture.has(f) or int(Shed.furniture[f].get("mover", 0)) != peer_of(int(w["id"])):
+				_failed(w, job, "I've lost hold of the trolley.")
+				return false
+			var at: Vector3 = (Shed.furniture[f]["xf"] as Transform3D).origin
+			_go_to(w, st["to"], 0, StaffNav.place(StaffNav.nearest_node(at), [at]), f)
 		"work":
 			var secs := float(st.get("secs", 2.0)) / speed(w)
 			if Shed._rng.randf() < slip_chance(w) and st.get("slips", true):
@@ -1041,6 +1130,10 @@ static func _act_step(w: Dictionary, job: Dictionary, a: Dictionary) -> String:
 			return StaffJobs.buy_round(w, job)
 		"staff_sell_list":
 			return StaffJobs.list_bike(w, job)
+		"staff_rack_down":
+			return StaffJobs.rack_down(w)
+		"staff_cart_load":
+			return StaffJobs.cart_load(w)
 		"move_bike":
 			pass
 	return act(w, action)
@@ -1058,6 +1151,23 @@ static func _push_bike(w: Dictionary) -> void:
 	var at := StaffNav.along(pts, s)
 	var yaw := StaffNav.heading(pts, s)
 	act(w, {"a": "move_bike", "bike": b, "xf": Transform3D(Basis(Vector3.UP, yaw), at)})
+
+
+## Keeps the trolley they're pushing just ahead of them (like a bike, see _push_bike).
+static func _push_cart(w: Dictionary) -> void:
+	var leg: Dictionary = w["leg"]
+	var f := int(leg.get("cart", 0))
+	if not Shed.furniture.has(f):
+		return
+	act(w, {"a": "move_furniture", "furniture": f, "xf": _cart_xf(leg, clock())})
+
+
+## Where a trolley being pushed along walk `leg` is at staff time `t` (INF: at the end): its
+## middle on the way, the handle (+Z) back towards whoever's pushing.
+static func _cart_xf(leg: Dictionary, t: float) -> Transform3D:
+	var pts: PackedVector3Array = leg["pts"]
+	var s := float(leg["len"]) if is_inf(t) else minf((t - float(leg["t0"])) * float(leg["v"]), float(leg["len"]))
+	return Transform3D(Basis(Vector3.UP, StaffNav.heading(pts, s)), StaffNav.along(pts, s))
 
 
 static func _next(job: Dictionary) -> void:
@@ -1084,6 +1194,7 @@ static func _failed(w: Dictionary, job: Dictionary, why: String) -> void:
 
 static func _give_up(w: Dictionary, job: Dictionary, why: String) -> void:
 	say(w, why, true, false)
+	log_line(w, "Gave up: %s" % why)
 	_let_go(w)
 	w["job"] = {}
 	w["anim"] = ""
@@ -1098,6 +1209,7 @@ static func _finish(w: Dictionary, job: Dictionary) -> void:
 		line = "%s %s." % [DONE_LINES[Shed._rng.randi() % DONE_LINES.size()], str(job.get("label", "")).trim_suffix(".")]
 	gain(w, 12 + 3 * int(job.get("done", 0)) / 2)
 	say(w, line, true)
+	log_line(w, line)
 	w["jobs"] = int(w["jobs"]) + 1
 	w["mood"] = minf(1.0, float(w["mood"]) + 0.04)
 	w["job"] = {}
@@ -1196,37 +1308,79 @@ static func _sales_duty(w: Dictionary, _dt: float) -> bool:
 	return false
 
 
-## The salesman's answer to an offer: near enough the asking price (or a buyer's last word
-## that's fair) he takes; otherwise he counters, pitching nearer what the buyer will really pay
-## the better he is at it.
+## The margin a salesman will settle for under the target: a new one gives away up to
+## MARGIN_SLACK of it to get a sale, the best hardly any.
+const MARGIN_SLACK := 0.1
+
+
+## The business's target margin for the salesman (profit as a share of the price; see
+## Sales.MARGINS), set on his page of the Staff tab.
+static func margin() -> float:
+	return clampf(float(_st().get("margin", Sales.DEFAULT_MARGIN)), 0.0, 0.8)
+
+
+## The least margin worker `w` takes: the target less what a salesman of their level gives away.
+static func floor_margin(w: Dictionary) -> float:
+	return maxf(0.0, margin() - MARGIN_SLACK * clampf(1.0 - (level(w) - 1) / 9.0, 0.0, 1.0))
+
+
+## The salesman's answer to an offer, against what the bike's cost the business (bought, parts
+## and labour: Sales.appraise's sunk) and the target margin. An offer near the asking price, or
+## one that makes his margin (a little under it for a new one), he takes. A buyer's last word
+## that's at least a profit he takes; under cost he turns it down. Otherwise he counters: never
+## under the price that makes his margin, pitched nearer what the buyer will really pay the
+## better he is at it. What margin each sale made goes in his log (and on the Staff channel).
 static func _decide(w: Dictionary, o: Dictionary) -> void:
 	var amt := int(o["amount"])
 	var ask := int(o.get("ask", amt))
 	var top := int(o.get("max", amt))
 	var lv := level(w)
-	if amt >= roundi(ask * 0.97) or bool(o.get("final", false)):
-		if amt >= roundi(ask * 0.7):
-			var why := act(w, {"a": "sale_accept", "offer": int(o["id"])})
-			if why == "":
-				say(w, "Sold! %s for %s." % [str(o.get("bike_name", "It")), money(amt)], true)
-				gain(w, 20)
+	var b := int(o.get("bike", 0))
+	var sunk := int(Sales.appraise(b).get("sunk", 0)) if Shed.bikes.has(b) else 0
+	var least := floor_margin(w)
+	var made := Sales.margin_of(amt, sunk)
+	var buyer := first_name({"name": str(o.get("buyer", ""))})
+	if amt >= roundi(ask * 0.97) or (sunk > 0 and made >= least):
+		_sold(w, o, amt, sunk)
+		return
+	if bool(o.get("final", false)):
+		if amt >= sunk and amt >= roundi(ask * 0.7):
+			_sold(w, o, amt, sunk)
 			return
 		act(w, {"a": "sale_reject", "offer": int(o["id"])})
-		say(w, "Turned %s down. Not at %s." % [first_name({"name": str(o.get("buyer", ""))}), money(amt)], true, false)
+		say(w, "Turned %s down. Not at %s: %s." % [buyer, money(amt), Sales.margin_text(amt, sunk)], true, false)
+		log_line(w, "Turned down %s for the %s: %s" % [money(amt), str(o.get("bike_name", "bike")), Sales.margin_text(amt, sunk)])
 		return
 	var aim := lerpf(float(amt), float(maxi(top, amt)), clampf(0.45 + 0.055 * lv, 0.0, 0.98))
 	aim = maxf(aim, amt + maxf(10.0, ask * 0.02))
+	# Never under the price that makes the least margin he'll take.
+	if sunk > 0:
+		aim = maxf(aim, sunk / maxf(0.05, 1.0 - least))
 	var counter := mini(roundi(aim / 10.0) * 10, ask)
 	if counter <= amt:
-		act(w, {"a": "sale_accept", "offer": int(o["id"])})
-		say(w, "Sold! %s for %s." % [str(o.get("bike_name", "It")), money(amt)], true)
-		gain(w, 20)
+		_sold(w, o, amt, sunk)
 		return
 	var why := act(w, {"a": "sale_counter", "offer": int(o["id"]), "amount": counter})
 	if why == "":
 		say(w, "I've come back at %s with %s for %s." % [str(o.get("buyer", "the buyer")).get_slice(" ", 0), money(counter),
 			str(o.get("bike_name", "it"))], true)
+		log_line(w, "%s offered %s for the %s; came back at %s (%d%% margin)" % [buyer, money(amt), str(o.get("bike_name", "bike")),
+			money(counter), roundi(100.0 * Sales.margin_of(counter, sunk))])
 		gain(w, 4)
+
+
+## Takes an offer: sold, and what margin it made against the target, said and logged.
+static func _sold(w: Dictionary, o: Dictionary, amt: int, sunk: int) -> void:
+	var why := act(w, {"a": "sale_accept", "offer": int(o["id"])})
+	if why != "":
+		return
+	var made := Sales.margin_of(amt, sunk)
+	var line := "Sold the %s for %s: %s, target %d%%" % [str(o.get("bike_name", "bike")), money(amt), Sales.margin_text(amt, sunk),
+		roundi(margin() * 100.0)]
+	say(w, "Sold! %s for %s, a %d%% margin." % [str(o.get("bike_name", "It")), money(amt), roundi(made * 100.0)], true)
+	log_line(w, line)
+	w["sold"] = {"bike": str(o.get("bike_name", "")), "amount": amt, "margin": made, "target": margin()}
+	gain(w, 20 + (10 if made >= margin() else 0))
 
 
 ## Every so often, while the cafe's open, someone with nothing on fetches a round of teas.
@@ -1256,15 +1410,82 @@ static func _maybe_tea() -> void:
 
 # ---------------------------------------------------------------------------- the TV
 
+## Log lines a worker's spotlight on the Staff channel shows.
+const TV_LOG := 9
+## Seconds each worker has the Staff channel's spotlight before it moves on to the next.
+const TV_SPOT_SECS := 8.0
+
+
+## What worker `w` is up to, at length, for the Staff channel's spotlight: the job, the step
+## they're on, where the bike is, how far down a project's list they are, what they're carrying
+## and when they started.
+static func activity(w: Dictionary) -> String:
+	if w.get("sick", false):
+		return "Off sick today. They'll be back in tomorrow."
+	var out := []
+	var job: Dictionary = w.get("job", {})
+	if not job.is_empty():
+		out.append(str(job.get("label", "Working")) + ".")
+		var doing := str(job.get("doing", ""))
+		if doing != "":
+			out.append(doing.left(1).to_upper() + doing.substr(1) + ".")
+		var tasks: Array = job.get("tasks", [])
+		var ti := int(job.get("ti", 0))
+		if str(job.get("kind", "")) == "project" and ti < tasks.size():
+			out.append("On %d of %d: %s." % [ti + 1, tasks.size(), str(tasks[ti].get("text", ""))])
+		var b := int(job.get("bike", 0))
+		if Shed.bikes.has(b):
+			var bay := int(Shed.bikes[b].get("bay", -1))
+			out.append("The %s is %s." % [str(Shed.bikes[b]["name"]), "in bay %d" % (bay + 1) if bay >= 0 and Shed.bike_in_bay(bay) == b else "out of the bays"])
+		for e in range((w.get("log", []) as Array).size() - 1, -1, -1):
+			var line: Dictionary = w["log"][e]
+			if str(line.get("text", "")).begins_with("New job"):
+				out.append("Started at %s." % str(line.get("at", "")))
+				break
+	else:
+		match str(w["role"]):
+			"reception":
+				out.append("On reception, ready for the next customer through the door.")
+			"sales":
+				var o: Dictionary = Sales.offers().get(int(w.get("deal", 0)), {})
+				if not o.is_empty() and Shed.bikes.has(int(o.get("bike", 0))):
+					out.append("Talking a buyer round on the %s: they've offered %s." % [str(Shed.bikes[int(o["bike"])]["name"]), money(int(o["amount"]))])
+				else:
+					out.append("On the showroom floor, waiting for the next offer.")
+			_:
+				out.append("Waiting for a job: give them one on the Staff tab ({menu}) or from a bike's Workflow card.")
+	if str(w["role"]) == "sales":
+		var sold: Dictionary = w.get("sold", {})
+		out.append("Target margin %d%%." % roundi(margin() * 100.0))
+		if not sold.is_empty():
+			out.append("Last sale the %s at %s, a %d%% margin." % [str(sold.get("bike", "")), money(int(sold.get("amount", 0))),
+				roundi(float(sold.get("margin", 0.0)) * 100.0)])
+	var held := Shed.held_by(peer_of(int(w["id"])))
+	if held != 0 and Shed.items.has(held):
+		out.append("Carrying %s." % Shed.item_title(held))
+	return " ".join(out)
+
+
 ## The Staff channel: everyone on the payroll, what they're doing and how far through, their
-## skill, mood and wage, and the latest news.
+## skill, mood and wage, and the latest news; and one of them in the spotlight (each in turn,
+## TV_SPOT_SECS apiece): what they're up to at length, a project's list as it stands, and their
+## log of what they've done today, newest first, with the times.
 static func tv_data() -> Dictionary:
 	var rows := []
 	var ids: Array = workers().keys()
 	ids.sort()
 	for id in ids:
 		var w: Dictionary = workers()[id]
+		var log := []
+		var lines: Array = w.get("log", [])
+		for i in range(lines.size() - 1, maxi(-1, lines.size() - 1 - TV_LOG), -1):
+			var l: Dictionary = lines[i]
+			log.append({"at": str(l.get("at", "")), "text": str(l.get("text", "")) + (" (x%d)" % int(l["n"]) if int(l.get("n", 1)) > 1 else "")})
+		var job: Dictionary = w["job"]
 		rows.append({"name": str(w["name"]), "role": role_name(str(w["role"])), "doing": status_text(w), "progress": progress(w),
-			"busy": not (w["job"] as Dictionary).is_empty(), "level": level(w), "level_frac": level_frac(w), "mood": float(w["mood"]),
-			"mood_word": mood_word(w), "sick": bool(w["sick"]), "wage": int(w["wage"]), "top": w["look"].get("top", Color.GRAY)})
-	return {"rows": rows, "wages": wage_bill(), "news": (_st()["news"] as Array).duplicate(), "max": MAX_STAFF}
+			"busy": not job.is_empty(), "level": level(w), "level_frac": level_frac(w), "mood": float(w["mood"]),
+			"mood_word": mood_word(w), "sick": bool(w["sick"]), "wage": int(w["wage"]), "top": w["look"].get("top", Color.GRAY),
+			"activity": activity(w), "log": log, "list": StaffJobs.project_rows(job) if str(job.get("kind", "")) == "project" else [],
+			"ti": int(job.get("ti", 0))})
+	var spot := int(Time.get_ticks_msec() / (TV_SPOT_SECS * 1000.0)) % maxi(1, rows.size())
+	return {"rows": rows, "wages": wage_bill(), "news": (_st()["news"] as Array).duplicate(), "max": MAX_STAFF, "spot": spot}

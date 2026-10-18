@@ -59,7 +59,7 @@ func open_worker(id: int) -> void:
 
 ## A job to start from for `w`: their role's first job on the first bike that fits it.
 static func default_choice(w: Dictionary) -> Dictionary:
-	var c := {"kind": "", "bike": 0, "slot": "front_pads", "part": "", "color": 1, "finish": "gloss", "steps": ["wash"], "ask": 0}
+	var c := {"kind": "", "bike": 0, "slot": "front_pads", "part": "", "color": 1, "finish": "gloss", "steps": ["wash"], "ask": 0, "his": true, "lib": "", "sheen": "gloss"}
 	var kinds := kinds_for(w)
 	c["kind"] = kinds[0] if not kinds.is_empty() else "tea"
 	var bikes := bikes_for(str(c["kind"]))
@@ -81,7 +81,7 @@ static func kinds_for(w: Dictionary) -> Array:
 
 ## The bikes a job of `kind` could be on (the shed's own only, for a sale), by id.
 static func bikes_for(kind: String) -> Array:
-	if not (kind in ["service", "fit", "paint", "detail", "sell"]):
+	if not Staff.BIKE_JOBS.has(kind):
 		return []
 	var ids := []
 	for id in Shed.bikes:
@@ -102,6 +102,11 @@ static func fit_slots() -> Array:
 	return out
 
 
+## The colour book's paints worker `w` can mix and spray at their level.
+static func mixable(w: Dictionary) -> Array:
+	return PaintMix.library().filter(func(e): return StaffJobs.paint_why(w, StaffJobs.paint_spec({"lib": str(e["id"])})) == "")
+
+
 ## Fills in the choices that depend on the bike: the part on it now for a fitting, its recommended
 ## price for a sale.
 static func _fill_defaults(c: Dictionary) -> void:
@@ -115,7 +120,7 @@ static func _fill_defaults(c: Dictionary) -> void:
 		elif not opts.has(str(c.get("part", ""))):
 			c["part"] = str(opts[0]) if not opts.is_empty() else ""
 	if str(c["kind"]) == "sell" and Shed.bikes.has(b):
-		c["ask"] = int(Sales.appraise(b).get("recommended", 0))
+		c["ask"] = int(Sales.appraise(b, Staff.margin()).get("recommended", 0))
 
 
 ## The job request for the choices made now.
@@ -123,17 +128,20 @@ func job() -> Dictionary:
 	var kind := str(choice.get("kind", ""))
 	var j := {"kind": kind}
 	match kind:
-		"service":
+		"service", "project":
 			j["bike"] = int(choice["bike"])
 		"fit":
 			j.merge({"bike": int(choice["bike"]), "slot": str(choice["slot"]), "part": str(choice["part"])})
 		"paint":
 			j.merge({"bike": int(choice["bike"]), "slot": str(choice["slot"]) if StaffJobs.PAINT_SLOTS.has(str(choice["slot"])) else "tank",
 				"color": int(choice["color"]), "finish": str(choice["finish"])})
+			if str(choice.get("lib", "")) != "":
+				j.merge({"lib": str(choice["lib"]), "sheen": str(choice.get("sheen", "gloss"))})
 		"detail":
 			j.merge({"bike": int(choice["bike"]), "steps": (choice["steps"] as Array).duplicate()})
 		"sell":
-			j.merge({"bike": int(choice["bike"]), "ask": int(choice["ask"])})
+			# 0: he prices it himself, from what it cost and what it's worth at the target margin.
+			j.merge({"bike": int(choice["bike"]), "ask": 0 if choice.get("his", true) else int(choice["ask"])})
 	return j
 
 
@@ -196,8 +204,8 @@ func _refresh() -> void:
 	if w.is_empty():
 		close_dialog()   # let go (or the shed was reset)
 		return
-	var sig := "%d|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d" % [worker_id, str(choice), _line, Staff.level(w), int(w["wage"]), str(w["sick"]),
-		str((w["job"] as Dictionary).is_empty()), str(_firing), Shed.bikes.size(), Staff.mood_word(w), Shed.garage_money / 100]
+	var sig := "%d|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d|%.2f" % [worker_id, str(choice), _line, Staff.level(w), int(w["wage"]), str(w["sick"]),
+		str((w["job"] as Dictionary).is_empty()), str(_firing), Shed.bikes.size(), Staff.mood_word(w), Shed.garage_money / 100, Staff.margin()]
 	if sig != _sig:
 		_sig = sig
 		for c in _box.get_children():
@@ -241,6 +249,8 @@ func _fill(w: Dictionary) -> void:
 			Shed.request({"a": "staff_cancel", "worker": worker_id})
 			_sig = ""))
 	_box.add_child(top)
+	if str(w["role"]) == "sales":
+		_fill_margin(w)
 	if w["sick"]:
 		_box.add_child(UITheme.label("%s's off sick today. Back tomorrow, hopefully." % first, 16, Color(1, 0.55, 0.45)))
 	else:
@@ -287,12 +297,27 @@ func _fill_job(w: Dictionary) -> void:
 		names.append(str(Staff.JOB_NAMES.get(k, k)))
 	_option(grid, "Job", names, kinds.find(kind), func(i): set_choice("kind", kinds[i]))
 	var bikes := bikes_for(kind)
-	if kind in ["service", "fit", "paint", "detail", "sell"]:
+	if Staff.BIKE_JOBS.has(kind):
 		var bike_names := []
 		for b in bikes:
 			bike_names.append("%s%s" % [str(Shed.bikes[b]["name"]), " (customer's)" if Sales.is_customer_bike(int(b)) else ""])
 		_option(grid, "Bike", bike_names, bikes.find(int(choice.get("bike", 0))), func(i): set_choice("bike", int(bikes[i])))
 	match kind:
+		"project":
+			# The list they'll work through, as it stands, with what they'd have to leave.
+			var tasks := StaffJobs.project_tasks(int(choice.get("bike", 0)))
+			var lines := []
+			for t in tasks.slice(0, 10):
+				var why := StaffJobs.task_why(w, int(choice.get("bike", 0)), t)
+				var done := StaffJobs.task_done(int(choice.get("bike", 0)), t)
+				lines.append("%s %s%s" % ["✓" if done else ("–" if why != "" else "•"), str(t["text"]), "  (%s)" % why if why != "" and not done else ""])
+			if tasks.size() > 10:
+				lines.append("... and %d more" % (tasks.size() - 10))
+			grid.add_child(_grid_label("List"))
+			var l := UITheme.label("\n".join(lines) if not lines.is_empty() else "Nothing listed.", 14, Color(1, 1, 1, 0.8))
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			grid.add_child(l)
 		"fit":
 			var slots := fit_slots()
 			_option(grid, "Slot", slots.map(func(s): return PartsDB.slot_name(s)), slots.find(str(choice["slot"])),
@@ -304,11 +329,31 @@ func _fill_job(w: Dictionary) -> void:
 			var slots: Array = StaffJobs.PAINT_SLOTS
 			_option(grid, "Part", slots.map(func(s): return PartsDB.slot_name(s)), slots.find(str(choice["slot"])),
 				func(i): set_choice("slot", slots[i]))
-			_option(grid, "Colour", Shed.PAINT_NAMES.map(func(n): return str(n).capitalize()), int(choice["color"]),
-				func(i): set_choice("color", i))
-			var fins: Array = Array(Shed.FINISHES)
-			_option(grid, "Finish", fins.map(func(f): return str(f).capitalize()), fins.find(str(choice["finish"])),
-				func(i): set_choice("finish", fins[i]))
+			# Plain spray-can colours, or a mixed paint from the colour book that they're up to.
+			var libs := mixable(w)
+			var paints := ["Spray can (plain colours)"]
+			for e in libs:
+				paints.append("%s  ·  %s" % [PaintMix.library_name(e), PaintMix.effect_name(str(e["effect"])).to_lower()])
+			var at := 0
+			for i in libs.size():
+				if str(libs[i]["id"]) == str(choice.get("lib", "")):
+					at = i + 1
+			_option(grid, "Paint", paints, at, func(i): set_choice("lib", "" if i == 0 else str(libs[i - 1]["id"])))
+			if str(choice.get("lib", "")) == "":
+				_option(grid, "Colour", Shed.PAINT_NAMES.map(func(n): return str(n).capitalize()), int(choice["color"]),
+					func(i): set_choice("color", i))
+				var fins: Array = Array(Shed.FINISHES)
+				_option(grid, "Finish", fins.map(func(f): return str(f).capitalize()), fins.find(str(choice["finish"])),
+					func(i): set_choice("finish", fins[i]))
+			else:
+				var sheens: Array = PaintMix.SHEENS.keys()
+				_option(grid, "Sheen", sheens.map(func(s): return str(s).capitalize()), sheens.find(str(choice.get("sheen", "gloss"))),
+					func(i): set_choice("sheen", sheens[i]))
+			var locked := PaintMix.library().size() - libs.size()
+			if locked > 0:
+				grid.add_child(_grid_label(""))
+				grid.add_child(UITheme.label("%d more in the book as %s gets better (pearl at level 3, candy 5, flake 6, chrome 8, chameleon 9)."
+					% [locked, Staff.first_name(w)], 13, Color(1, 1, 1, 0.55)))
 		"detail":
 			grid.add_child(_grid_label("Steps"))
 			var row := HBoxContainer.new()
@@ -328,6 +373,12 @@ func _fill_job(w: Dictionary) -> void:
 				row.add_child(cb)
 			grid.add_child(row)
 		"sell":
+			grid.add_child(_grid_label("Price"))
+			var his := CheckBox.new()
+			his.text = "His price: cost and value at the %d%% target margin" % roundi(Staff.margin() * 100.0)
+			his.button_pressed = bool(choice.get("his", true))
+			his.toggled.connect(func(on: bool): set_choice("his", on))
+			grid.add_child(his)
 			grid.add_child(_grid_label("Asking"))
 			var ask := SpinBox.new()
 			ask.min_value = 0
@@ -335,6 +386,7 @@ func _fill_job(w: Dictionary) -> void:
 			ask.step = 50
 			ask.prefix = TvChannels.CURRENCY
 			ask.value = int(choice.get("ask", 0))
+			ask.editable = not bool(choice.get("his", true))
 			ask.custom_minimum_size = Vector2(170, 0)
 			ask.value_changed.connect(func(v): choice["ask"] = int(v))
 			grid.add_child(ask)
@@ -346,6 +398,29 @@ func _fill_job(w: Dictionary) -> void:
 	_box.add_child(go)
 	if why != "":
 		_box.add_child(UITheme.label(why, 15, Color(1, 0.5, 0.4)))
+
+
+## The salesman's target margin: what he prices bikes to make and haggles for (he gives a little
+## of it away to get a sale, less the better he is), and what his last sale made.
+func _fill_margin(w: Dictionary) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 12)
+	var names := []
+	var at := 0
+	for i in Sales.MARGINS.size():
+		names.append("%d%% of the price" % roundi(Sales.MARGINS[i] * 100.0))
+		if absf(Sales.MARGINS[i] - Staff.margin()) < 0.001:
+			at = i
+	var ob := _option(grid, "Target margin", names, at, func(i: int):
+		Shed.request({"a": "staff_margin", "margin": Sales.MARGINS[i]})
+		_sig = "")
+	ob.tooltip_text = "He prices bikes from what they've cost and what they're worth to make this, and won't sell under %d%%." % roundi(Staff.floor_margin(w) * 100.0)
+	_box.add_child(grid)
+	var sold: Dictionary = w.get("sold", {})
+	if not sold.is_empty():
+		_box.add_child(UITheme.label("Last sale: the %s for %s, a %d%% margin (target %d%%)." % [str(sold["bike"]), Staff.money(int(sold["amount"])),
+			roundi(float(sold["margin"]) * 100.0), roundi(float(sold["target"]) * 100.0)], 14, UITheme.ACCENT))
 
 
 func _option(grid: GridContainer, label: String, items: Array, selected: int, on_pick: Callable) -> OptionButton:

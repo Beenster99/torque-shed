@@ -130,10 +130,17 @@ func _draw_worker(f: StaffFigure, w: Dictionary, pose: Array, delta: float) -> v
 		walking = s < float(leg["len"])
 		at = Staff.pos_at(w, _clock)
 		pushing = int(leg.get("push", 0))
+		var cart := int(leg.get("cart", 0))
 		if walking:
-			yaw = StaffNav.heading(pts, maxf(0.0, s - (StaffNav.BIKE_AHEAD if pushing != 0 else 0.0)), yaw)
+			var ahead := StaffNav.BIKE_AHEAD if pushing != 0 else (StaffNav.CART_AHEAD if cart != 0 else 0.0)
+			yaw = StaffNav.heading(pts, maxf(0.0, s - ahead), yaw)
 		if pushing != 0:
 			_draw_pushed(pushing, pts, minf(s, float(leg["len"])), float(leg["len"]))
+		elif cart != 0:
+			# The trolley they're pushing, drawn just ahead of them between syncs.
+			if main and main.workshop and Shed.furniture.has(cart):
+				main.workshop.preview_furniture(cart, Staff._cart_xf(leg, _clock))
+			pushing = cart
 	if f.position.distance_to(at) > SNAP:
 		f.rotation.y = yaw
 	else:

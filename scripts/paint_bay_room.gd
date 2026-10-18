@@ -630,7 +630,7 @@ func _draw_bench_top() -> void:
 			var n := mini(int(floor(PaintBay.stock_of(base))), 4)
 			for k in n:
 				var tin := tin_model({"base": base, "base_g": 1000.0, "tints": {}, "stir": 1.0, "mix": {"color": PaintMix.BASES[base]["color"]}})
-				tin.position = Vector3(b.position.x - 0.03, 0.12, b.position.y + 0.25 + i * 0.75 + k * 0.13)
+				tin.position = Vector3(b.position.x - 0.03, 0.12, b.position.y + 0.25 + i * minf(0.75, (b.size.y - 0.55) / PaintMix.BASE_ORDER.size()) + k * 0.13)
 				_dyn.add_child(tin)
 			i += 1
 		_box(_dyn, Vector3(b.position.x - 0.02, 0.1, cz), Vector3(0.18, 0.02, b.size.y - 0.1), _mats["steel"])

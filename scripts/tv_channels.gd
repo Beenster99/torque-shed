@@ -609,9 +609,11 @@ static func _draw_contracts(c: Control, font: Font, data: Dictionary) -> void:
 		_later(c, font, "Customers bring jobs to the shed in a later update.")
 
 
-## The staff board: each worker's name and role, what they're doing (with how far through),
-## their skill level, how they are (or that they're off sick) and their day's wage; the latest
-## of what they've said under it.
+## The staff board. Down the left, everyone on the payroll: name, role and level, a line on
+## what they're doing and how far through. On the right, one of them in the spotlight (each in
+## turn, see Staff.tv_data): what they're up to at length, how they are, a project's list with
+## how each task stands, and their log of the day, newest first with the times. The news goes
+## under the list.
 static func _draw_staff(c: Control, font: Font, data: Dictionary) -> void:
 	var rows: Array = data.get("rows", [])
 	_title(c, font, "STAFF", "%d of %d  ·  wages %s a day" % [rows.size(), int(data.get("max", 6)), money_text(int(data.get("wages", 0)))])
@@ -619,27 +621,94 @@ static func _draw_staff(c: Control, font: Font, data: Dictionary) -> void:
 		_text(c, font, Vector2(24, 150), "Nobody on the payroll yet.", 30, Dashboard.DIM)
 		_text(c, font, Vector2(24, 196), "Hire staff on the Staff tab of the menu ({menu}).", 22, Dashboard.DIM)
 		return
-	var y := 84.0
-	for r in rows:
+	var spot := clampi(int(data.get("spot", 0)), 0, rows.size() - 1)
+	var lw := 400.0
+	var y := 82.0
+	for i in rows.size():
+		var r: Dictionary = rows[i]
 		var sick := bool(r.get("sick", false))
-		c.draw_rect(Rect2(24, y, Dashboard.PX.x - 48, 60), PANEL)
-		c.draw_rect(Rect2(24, y, 6, 60), r.get("top", Color.GRAY) if r.get("top") is Color else Color.GRAY)
-		_text(c, font, Vector2(42, y + 26), str(r.get("name", "")).left(18), 22, Dashboard.DIM if sick else Color.WHITE)
-		_text(c, font, Vector2(42, y + 50), str(r.get("role", "")), 16, ORANGE)
-		_text(c, font, Vector2(270, y + 26), str(r.get("doing", "")).left(48), 18, Dashboard.BAD if sick else Color.WHITE)
+		var rect := Rect2(16, y, lw, 62)
+		c.draw_rect(rect, PANEL)
+		c.draw_rect(Rect2(16, y, 6, 62), r.get("top", Color.GRAY) if r.get("top") is Color else Color.GRAY)
+		if i == spot:
+			c.draw_rect(rect, ORANGE, false, 2.0)
+		_text(c, font, Vector2(32, y + 22), str(r.get("name", "")).left(18), 19, Dashboard.DIM if sick else Color.WHITE)
+		_text(c, font, Vector2(32, y + 22), "%s  Lv %d" % [str(r.get("role", "")), int(r.get("level", 1))], 13, ORANGE, lw - 24, HORIZONTAL_ALIGNMENT_RIGHT)
+		_text(c, font, Vector2(32, y + 42), str(r.get("doing", "")).left(46), 14, Dashboard.BAD if sick else Color(0.85, 0.9, 0.95), lw - 24)
 		if r.get("busy", false):
-			_bar(c, Rect2(270, y + 38, 400, 10), float(r.get("progress", 0.0)), Dashboard.GOOD)
-		_text(c, font, Vector2(700, y + 26), "Lv %d" % int(r.get("level", 1)), 20, AMBER)
-		_bar(c, Rect2(700, y + 38, 90, 8), float(r.get("level_frac", 0.0)), AMBER)
-		var mood := "OFF SICK" if sick else str(r.get("mood_word", ""))
-		var mc := Dashboard.BAD if sick or float(r.get("mood", 0.7)) < 0.4 else (Dashboard.GOOD if float(r.get("mood", 0.7)) >= 0.8 else Dashboard.DIM)
-		_text(c, font, Vector2(806, y + 26), mood, 16, mc)
-		_text(c, font, Vector2(806, y + 50), "%s/day" % money_text(int(r.get("wage", 0))), 16, Dashboard.DIM)
+			_bar(c, Rect2(32, y + 50, lw - 32, 6), float(r.get("progress", 0.0)), Dashboard.GOOD)
 		y += 66.0
 	var news: Array = data.get("news", [])
-	var ny := y + 24.0
+	var ny := y + 18.0
 	for i in range(news.size() - 1, -1, -1):
 		if ny > Dashboard.PX.y - 10:
 			break
-		_text(c, font, Vector2(24, ny), str(news[i]).left(90), 16, Dashboard.DIM)
-		ny += 22.0
+		c.draw_multiline_string(font, Vector2(16, ny), str(news[i]), HORIZONTAL_ALIGNMENT_LEFT, lw, 13, 2, Dashboard.DIM)
+		ny += 18.0 * mini(2, ceili(font.get_string_size(str(news[i]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x / lw)) + 4.0
+	_draw_staff_spot(c, font, rows[spot], spot, rows.size())
+
+
+## The Staff channel's spotlight on one worker (see _draw_staff).
+static func _draw_staff_spot(c: Control, font: Font, r: Dictionary, at: int, of: int) -> void:
+	var x := 432.0
+	var w := Dashboard.PX.x - x - 16.0
+	var sick := bool(r.get("sick", false))
+	c.draw_rect(Rect2(x, 82, w, Dashboard.PX.y - 98), PANEL)
+	c.draw_rect(Rect2(x, 82, w, 6), r.get("top", Color.GRAY) if r.get("top") is Color else Color.GRAY)
+	_text(c, font, Vector2(x + 16, 120), str(r.get("name", "")), 28, Color.WHITE, w - 120)
+	_text(c, font, Vector2(x + 16, 120), "%d / %d" % [at + 1, of], 16, Dashboard.DIM, w - 32, HORIZONTAL_ALIGNMENT_RIGHT)
+	var mood := "off sick" if sick else str(r.get("mood_word", ""))
+	_text(c, font, Vector2(x + 16, 146), "%s, level %d  ·  %s  ·  %s a day" % [str(r.get("role", "")), int(r.get("level", 1)), mood,
+		money_text(int(r.get("wage", 0)))], 16, ORANGE, w - 32)
+	_bar(c, Rect2(x + 16, 156, 160, 6), float(r.get("level_frac", 0.0)), AMBER)
+	var mc := Dashboard.BAD if sick or float(r.get("mood", 0.7)) < 0.4 else (Dashboard.GOOD if float(r.get("mood", 0.7)) >= 0.8 else Dashboard.DIM)
+	_bar(c, Rect2(x + 192, 156, 160, 6), float(r.get("mood", 0.7)), mc)
+	_text(c, font, Vector2(x + 16, 190), "NOW", 14, ORANGE)
+	var act := Controls.hint(str(r.get("activity", "")))
+	c.draw_multiline_string(font, Vector2(x + 16, 212), act, HORIZONTAL_ALIGNMENT_LEFT, w - 32, 17, 4, Dashboard.BAD if sick else Color.WHITE)
+	var y := 212.0 + 20.0 * mini(4, ceili(font.get_string_size(act, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x / (w - 32)))
+	if r.get("busy", false):
+		_bar(c, Rect2(x + 16, y - 6, w - 32, 6), float(r.get("progress", 0.0)), Dashboard.GOOD)
+		y += 14.0
+	# A project's list: the one they're on and a few either side.
+	var list: Array = r.get("list", [])
+	if not list.is_empty():
+		_text(c, font, Vector2(x + 16, y + 10), "THE LIST", 14, ORANGE)
+		y += 30.0
+		var ti := int(r.get("ti", 0))
+		var first := clampi(ti - 1, 0, maxi(0, list.size() - 4))
+		for i in range(first, mini(list.size(), first + 4)):
+			var t: Dictionary = list[i]
+			var st := str(t.get("state", "todo"))
+			var mark := "•"
+			match st:
+				"done":
+					mark = "✓"
+				"skipped":
+					mark = "–"
+			if i == ti and st in ["todo", "doing"]:
+				mark = "▶"
+			var col := Dashboard.GOOD if st == "done" else (Dashboard.DIM if st == "skipped" else Color.WHITE)
+			var line := str(t.get("text", ""))
+			if st == "skipped" and str(t.get("note", "")) != "":
+				line += ": " + str(t["note"])
+			_text(c, font, Vector2(x + 16, y), mark, 15, col)
+			_text(c, font, Vector2(x + 36, y), line, 15, col, w - 52)
+			y += 20.0
+		if list.size() > first + 4:
+			_text(c, font, Vector2(x + 36, y), "and %d more" % (list.size() - first - 4), 13, Dashboard.DIM)
+			y += 18.0
+	# The log, newest first, as far as there's room.
+	_text(c, font, Vector2(x + 16, y + 12), "TODAY", 14, ORANGE)
+	y += 34.0
+	var log: Array = r.get("log", [])
+	if log.is_empty():
+		_text(c, font, Vector2(x + 16, y), "Nothing yet.", 15, Dashboard.DIM)
+	for i in log.size():
+		if y > Dashboard.PX.y - 24:
+			break
+		var l: Dictionary = log[i]
+		var fade := 1.0 - 0.07 * i
+		_text(c, font, Vector2(x + 16, y), str(l.get("at", "")), 14, Color(Dashboard.DIM, Dashboard.DIM.a * fade))
+		_text(c, font, Vector2(x + 76, y), str(l.get("text", "")), 15, Color(0.9, 0.95, 1.0, fade), w - 92)
+		y += 20.0

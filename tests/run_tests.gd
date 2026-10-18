@@ -263,6 +263,7 @@ func _run_all() -> void:
 	_test_sales_offers()
 	_test_sales_part_exchange()
 	_test_sales_save()
+	_test_sales_browse()
 	await _test_sales_session()
 	print("Playtest fixes: a blasted engine is new, grit stays in the cabinet, an empty new shed, varied contracts")
 	_test_blast_engine_like_new()
@@ -402,9 +403,14 @@ func _run_all() -> void:
 	await _test_staff_skills()
 	await _test_staff_sickies()
 	await _test_staff_service_job()
+	_test_staff_project()
+	_test_staff_paths()
+	_test_staff_rack_and_trolley()
 	await _test_staff_full_detail()
 	await _test_staff_tea_run()
 	await _test_staff_tv()
+	_test_staff_sales_margin()
+	_test_staff_exotic_paint()
 	await _test_staff_save()
 	await _test_staff_session()
 	print("Simon's 18 October round (v0.10.0): polishing and ceramic coating in the wash bay, and detailing jobs")
@@ -13304,6 +13310,80 @@ func _test_sales_save() -> void:
 	Shed.stop()
 
 
+## Buyers look round the showroom before offering: between the bikes on show, looking one over,
+## down at an engine, sat on one, a word with the salesman, the price card on theirs; the offer
+## when they go. Worked out the same everywhere from the plan, saved with the sales, and drawn.
+func _test_sales_browse() -> void:
+	Shed.start_new("Tester", 67)
+	Staff.hire_one_of_each()
+	var faithful := _bike_named("Old Faithful")
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.bikes[faithful]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.bikes[ranger]["xf"] = Workshop.SHOWROOM_SPOTS[3]
+	Shed.request({"a": "sale_list", "bike": faithful, "ask": 6000})
+	Shed.request({"a": "sale_list", "bike": ranger, "ask": 6000})
+	Sales._st()["next_px_at"] = 1.0e9
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var acts := {}
+	for i in 30:
+		for s in SalesBrowse.plan(faithful, rng):
+			acts[str(s["act"])] = int(acts.get(str(s["act"]), 0)) + 1
+	check(acts.has("look") and acts.has("crouch") and acts.has("sit") and acts.has("card") and acts.has("talk"),
+		"they look bikes over, crouch at the engine, sit on one, read the price card and talk to the salesman (%s)" % str(acts))
+	var id := SalesBrowse.spawn(faithful, {"name": "Pat Browser", "look": {}}, rng)
+	var b: Dictionary = SalesBrowse.browsers()[id]
+	var stops: Array = b["stops"]
+	var card := SalesBrowse.card_spot(0)
+	check(stops[0]["p"].distance_to(SalesView.door_in()) < 0.01 and stops[-3]["p"].distance_to(card.origin) < 0.01 and str(stops[-3]["act"]) == "card"
+		and stops.slice(1, -3).any(func(s): return str(s["act"]) == "look" and s["p"].distance_to(SalesView.viewing_xf(3).origin) < 0.01),
+		"in at the doors, round the other bike first, the price card on theirs last, and out")
+	# Where they are along it, the same on every game.
+	var t := 0.0
+	var seen := {}
+	var clear := true
+	var secs := SalesBrowse.duration(stops)
+	while t < secs:
+		var p := SalesBrowse.pose(b, t)
+		seen[str(p["act"])] = true
+		if p["walking"]:
+			for i in SalesOffice.SHOWROOM_SPOTS.size():
+				var c: Vector3 = SalesOffice.SHOWROOM_SPOTS[i].origin
+				var flat := Vector2(p["pos"].x - c.x, p["pos"].z - c.z).length()
+				var stepping := stops.any(func(s): return Vector2(s["p"].x - c.x, s["p"].z - c.z).length() < SalesOffice.PLINTH_RADIUS + SalesBrowse.PLINTH_CLEAR)
+				if flat < SalesOffice.PLINTH_RADIUS and not stepping:
+					clear = false
+		t += 0.25
+	check(seen.has("look") and seen.has("card") and seen.has("talk") and clear and SalesBrowse.pose(b, secs + 1.0)["gone"],
+		"walked through, they stop at each and keep off the plinths on the way (%s)" % str(seen.keys()))
+	check(absf(float(b["end"]) - float(b["at"]) - secs * Contracts.hours_rate()) < 0.0001 and SalesBrowse.doing(b, 0.0) != "", "and leave when they're done")
+	# The offer comes as they go.
+	var offers := Sales.offers().size()
+	Sales._st()["clock"] = float(b["end"]) + 0.001
+	Sales.advance(0.0)
+	check(not SalesBrowse.browsers().has(id) and Sales.offers().size() == offers + 1
+		and Sales.offers().values().any(func(o): return str(o["buyer"]) == "Pat Browser" and int(o["bike"]) == faithful), "their offer comes in as they leave")
+	# Over a long jump of the clock, buyers offer straight away.
+	SalesBrowse.browsers().clear()
+	for i in 6:
+		Sales.advance(2.0)
+	check(SalesBrowse.browsers().is_empty(), "a long jump of the clock sends nobody in to look round")
+	# Saved, and an old save gets none.
+	var id2 := SalesBrowse.spawn(ranger, {"name": "Sam", "look": {}}, rng)
+	var back := Sales.sanitize(str_to_var(var_to_str(Shed.sales)))
+	check((back["browse"] as Dictionary).has(id2) and (Sales.sanitize({"listings": {}})["browse"] as Dictionary).is_empty(), "browsers are saved; an old save has none")
+	# Drawn: a figure for each, gone when they go.
+	var view := SalesView.new()
+	add_child(view)
+	view.sync_state()
+	check(view.browsing.has(id2) and (view.browsing[id2] as StaffFigure).is_in_group(SalesOffice.VISITOR_GROUP), "each one's drawn (and opens the doors)")
+	SalesBrowse.browsers().erase(id2)
+	view.sync_state()
+	check(view.browsing.is_empty(), "and goes when they go")
+	view.queue_free()
+	Shed.stop()
+
+
 ## In the game: the stands' cards and the office screen, the PC, the till, accepting on the
 ## page, a part-exchange buyer riding in, the TV channel.
 func _test_sales_session() -> void:
@@ -15676,7 +15756,7 @@ func _test_paint_codes() -> void:
 ## The manufacturer colours: 30 to 40 recipe cards, each with a code that mixes it closely.
 func _test_paint_library() -> void:
 	var lib := PaintMix.library()
-	check(lib.size() >= 30 and lib.size() <= 40, "%d manufacturer colours" % lib.size())
+	check(lib.size() >= 30 and lib.size() <= 60, "%d manufacturer and custom colours" % lib.size())
 	var brands := {}
 	var effects := {}
 	var bad := []
@@ -15693,7 +15773,7 @@ func _test_paint_library() -> void:
 	check(bad.is_empty(), "each one's recipe reads and makes its effect %s" % str(bad))
 	check(weak.is_empty(), "and mixes within 85%% of the real colour %s" % str(weak))
 	check(brands.size() >= 12 and effects.has("solid") and effects.has("metallic") and effects.has("pearl") and effects.has("candy")
-		and effects.has("flake") and effects.has("chameleon"), "from %d makers, with every effect" % brands.size())
+		and effects.has("flake") and effects.has("chameleon") and effects.has("chrome"), "from %d makers, with every effect" % brands.size())
 	var brg := PaintMix.library_entry("british_racing_green")
 	check(not brg.is_empty() and PaintMix.library_name(brg).contains("British Racing Green"), "British racing green is there")
 	check(str(PaintMix.nearest_library(Color(0.8, 0.07, 0.06), "solid")["entry"].get("brand", "")) in ["Ducati", "BMW", "Honda", "MV Agusta"],
@@ -19715,6 +19795,194 @@ func _test_staff_service_job() -> void:
 	Shed.stop()
 
 
+## "Complete a project": a mechanic works through the bike's listed work, exactly that (no full
+## service), skipping what's beyond them and saying so; from a customer's job card the list is
+## the card's tasks; MOT fails become tasks; plain mechanics aren't offered "fit a part".
+func _test_staff_project() -> void:
+	Shed.start_new("T", 5)
+	Staff.hire_one_of_each()
+	var id := _staff_role("mechanic")
+	var mech := Staff.worker(id)
+	check(StaffPanel.kinds_for(mech).has("project") and not StaffPanel.kinds_for(mech).has("fit")
+		and StaffPanel.kinds_for(Staff.worker(_staff_role("expert"))).has("fit"),
+		"mechanics get \"complete a project\" and no \"fit a part\"; experts keep it (%s)" % str(StaffPanel.kinds_for(mech)))
+	var ranger := _bike_named("Rusty Ranger")
+	var chain_before := Contracts._eval_task(ranger, "chain")
+	var list := [{"t": "task", "task": "oil"}, {"t": "task", "task": "pads"}, {"t": "task", "task": "front_tyre"}, {"t": "task", "task": "wash"}]
+	check(Shed.check(Shed.me(), {"a": "staff_assign", "worker": id, "job": {"kind": "project", "bike": ranger, "tasks": list}}) == "",
+		"a project with a list can be given")
+	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "project", "bike": ranger, "tasks": list}})
+	var job: Dictionary = mech["job"]
+	check((job.get("tasks", []) as Array).size() == 4 and str(job["tasks"][0]["text"]).begins_with("Oil change"), "they take on the list as given")
+	_staff_run(9000, id, true)
+	var said := Staff.saying(mech)
+	print("    " + said)
+	check((mech["job"] as Dictionary).is_empty() and said.contains("2 of 4"), "it's done: two of the four ticked off (%s)" % said)
+	check(Contracts._eval_task(ranger, "oil")["done"] and Contracts._eval_task(ranger, "pads")["done"], "fresh oil and new pads, as listed")
+	check(Contracts._eval_task(ranger, "chain")["done"] == chain_before["done"] and not Contracts._eval_task(ranger, "front_tyre")["done"],
+		"and nothing else: the chain wasn't on the list, the tyre's an expert's job")
+	var log: Array = mech.get("log", [])
+	check(log.any(func(l): return str(l["text"]).begins_with("Skipped: New front tyre")) and log.any(func(l): return str(l["text"]).begins_with("Done: New brake pads")),
+		"their log says what they did and what they skipped (%s)" % str(log.map(func(l): return l["text"])).left(300))
+	# From a customer's job card.
+	Contracts.spawn("maint", 1)
+	var cid: int = Contracts.customers().keys()[-1]
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var cj: Dictionary = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == "maint")[0]
+	var cb := int(cj["bike"])
+	var tasks := StaffJobs.project_tasks(cb)
+	var goals: Array = cj["goals"].filter(func(g): return str(g.get("t", "")) == "task")
+	check(tasks.size() == goals.size() and tasks.all(func(t): return str(t["t"]) == "task"),
+		"a customer's bike: the list is its job card's tasks (%s)" % str(tasks.map(func(t): return t["text"])))
+	var ex := _staff_role("expert")
+	Shed.request({"a": "staff_assign", "worker": ex, "job": {"kind": "project", "bike": cb}})
+	_staff_run(16000, ex, true)
+	var rows := Contracts.evaluate(cj)
+	check(rows.filter(func(r): return not r["done"]).size() <= rows.filter(func(r): return str(r["text"]) == Contracts.TASKS["wash"]).size(),
+		"the expert gets the card's work done (but a wash) (%s)" % str(rows.map(func(r): return "%s %s" % [r["text"], r["done"]])))
+	# MOT fails as tasks.
+	var mt := StaffJobs.mot_tasks(_bike_named("Barn Find"))
+	check(not mt.is_empty() and mt.all(func(t): return str(t["text"]).begins_with("MOT:")), "an MOT's fails become a list (%d tasks)" % mt.size())
+	Shed.stop()
+
+
+## The staff's storage: their own labelled parts rack in the storage room (fixed, saved, and
+## added to older sheds) where what they bought and what's left over goes instead of the
+## workbench; and the expert mechanic, more organised, orders the whole job's parts in one go and
+## fetches them on the staff parts trolley, wheeling it back after.
+func _test_staff_rack_and_trolley() -> void:
+	Shed.start_new("T", 5)
+	var rack := Shed.staff_rack()
+	var cart := Shed.staff_trolley()
+	check(rack != 0 and str(Shed.furniture[rack]["label"]) == "STAFF PARTS" and cart != 0 and str(Shed.furniture[cart]["model"]) == "trolley_parts",
+		"the shed has a staff parts rack and a staff trolley")
+	check(Workshop.room_at(Shed.STAFF_RACK_XF.origin) == "storage" and Workshop.room_at(Shed.STAFF_TROLLEY_XF.origin) == "storage",
+		"both in the storage room")
+	check(Shed.check(Shed.me(), {"a": "grab", "furniture": rack}) != "" and not Shed.scrappable(Shed.furniture[rack]) and not Shed.scrappable(Shed.furniture[cart]),
+		"the rack's fixed down, and neither can be scrapped")
+	Staff.hire_one_of_each()
+	var ranger := _bike_named("Rusty Ranger")
+	var ex := _staff_role("expert")
+	var w := Staff.worker(ex)
+	Shed.request({"a": "staff_assign", "worker": ex, "job": {"kind": "service", "bike": ranger}})
+	var orders_first_trip := 0
+	var max_kit := 0
+	var cart_at_deliveries := false
+	var cart_at_bike := false
+	var on_deck := 0
+	var visits := 0
+	var was_at_pc := false
+	for i in 16000:
+		Staff.process(Staff.TICK)
+		var job: Dictionary = w["job"]
+		if job.is_empty() and i > 4:
+			break
+		max_kit = maxi(max_kit, (job.get("kit", []) as Array).size())
+		var c: Vector3 = (Shed.furniture[cart]["xf"] as Transform3D).origin
+		cart_at_deliveries = cart_at_deliveries or c.distance_to(StaffNav.spot(StaffNav.cart_delivery())) < 1.0
+		cart_at_bike = cart_at_bike or c.distance_to(StaffNav.spot(StaffNav.cart_by_bike(ranger))) < 1.0
+		on_deck = maxi(on_deck, Shed.surface_items("f%d" % cart).size())
+		var at_pc := Staff.pos_at(w, Staff.clock()).distance_to(StaffNav.spot(StaffNav.computer())) < 0.3
+		if at_pc and not was_at_pc:
+			visits += 1
+		was_at_pc = at_pc
+	print("    kit %d parts, %d on the trolley at once, %d trips to the parts computer: %s" % [max_kit, on_deck, visits, Staff.saying(w)])
+	check((w["job"] as Dictionary).is_empty() and Staff.saying(w).contains("serviced"), "the expert gets the service done (%s)" % Staff.saying(w))
+	check(max_kit >= 3 and visits == 1, "they ordered the lot in one trip to the parts computer (%d parts)" % max_kit)
+	check(cart_at_deliveries and cart_at_bike and on_deck >= 2, "and fetched them on the trolley: out to the deliveries, loaded, over to the bike")
+	check((Shed.furniture[cart]["xf"] as Transform3D).origin.distance_to(StaffNav.spot(StaffNav.cart_park())) < 0.7
+		and int(Shed.furniture[cart]["mover"]) == 0, "then wheeled it back to its place")
+	var on_rack := 0
+	for key in ["f%ds0" % rack, "f%ds1" % rack, "f%ds2" % rack, "f%ds3" % rack]:
+		on_rack += Shed.surface_items(key).size()
+	var on_bench := Shed.surface_items("bench").size()
+	print("    on the staff rack %d, on the bench %d" % [on_rack, on_bench])
+	check(on_rack >= 1, "what's left over (oil, lube) is on the staff rack (%d)" % on_rack)
+	check(Contracts._eval_task(ranger, "oil")["done"] and Contracts._eval_task(ranger, "pads")["done"] and Contracts._eval_task(ranger, "brake_fluid")["done"],
+		"oil, pads and brake fluid done (%s)" % str(Contracts._eval_task(ranger, "brake_fluid")))
+	# Older sheds get them; a save keeps them.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	for id in copy["furniture"].keys():
+		if str(copy["furniture"][id]["model"]) == Shed.STAFF_RACK or copy["furniture"][id].get("staff", false):
+			copy["furniture"].erase(id)
+	Shed.load_state(copy, "T")
+	check(Shed.staff_rack() != 0 and Shed.staff_trolley() != 0, "a shed saved before them gets the rack and the trolley")
+	Shed.stop()
+
+
+## Staff walks: straight across the shed where nothing's in the way (not out to the middle of it
+## and back), never through a bike, the workbench or a wall (in and out of rooms by the doors),
+## and clear of the delivery area's boxes.
+func _test_staff_paths() -> void:
+	Shed.start_new("T", 5)
+	var raw_len := func(from: Dictionary, to: Dictionary, pos: Vector3) -> float:
+		var pts := PackedVector3Array([pos])
+		for n in StaffNav.node_path(str(from["n"]), str(to["n"])):
+			pts.append(Vector3(StaffNav.NODES[n].x, 0.0, StaffNav.NODES[n].y))
+		pts.append(StaffNav.spot(to))
+		return StaffNav.length(pts)
+	var home := StaffNav.idle("mechanic")
+	var pc := StaffNav.computer()
+	var r := StaffNav.route(home, pc, StaffNav.spot(home))
+	var mid := Vector3(StaffNav.NODES["shed"].x, 0.0, StaffNav.NODES["shed"].y)
+	check(not Array(r).any(func(p): return p.distance_to(mid) < 0.05) and r.size() <= 3 and StaffNav.length(r) < float(raw_len.call(home, pc, StaffNav.spot(home))) - 0.2,
+		"from the bench to the parts computer: straight across, not via the middle of the shed (%d points, %.1f m)" % [r.size(), StaffNav.length(r)])
+	# A box near the front of the delivery area, and one at the back.
+	var front_box := 0
+	var back_box := 0
+	for part in ["spark_plugs", "air_filter", "oil_filter", "sintered", "organic", "knobbly_mx_90"]:
+		if PartsDB.get_part(part).is_empty():
+			continue
+		Shed.request({"a": "order_part", "part": part})
+	for id in Shed.items:
+		if Shed.items[id]["at"] == "floor" and Shed.DELIVERY_FLOOR.has_point(Vector2(StaffJobs.item_at(id).x, StaffJobs.item_at(id).z)):
+			var z := StaffJobs.item_at(id).z
+			if front_box == 0 or z < StaffJobs.item_at(front_box).z:
+				front_box = int(id)
+			if back_box == 0 or z > StaffJobs.item_at(back_box).z:
+				back_box = int(id)
+	var places := [pc, StaffNav.bench(2), StaffNav.at_item(front_box), StaffNav.at_item(back_box), StaffNav.wash(), StaffNav.mix_bench(),
+		StaffNav.cafe_counter(), StaffNav.show_side(1)]
+	for b in Shed.bikes:
+		places.append(StaffNav.bike(int(b)))
+	var obs := StaffNav.obstacles()
+	var bad := []
+	for a in places:
+		for b in places:
+			if a == b:
+				continue
+			var pts := StaffNav.route(a, b, StaffNav.spot(a))
+			var len := StaffNav.length(pts)
+			var s := 0.0
+			var prev := StaffNav.along(pts, 0.0)
+			while s <= len:
+				var p := StaffNav.along(pts, s)
+				var q := Vector2(p.x, p.z)
+				var near_end := p.distance_to(pts[0]) < 0.8 or p.distance_to(pts[pts.size() - 1]) < 0.8
+				if Shed.DELIVERY_FLOOR.has_point(q):
+					bad.append("in the delivery boxes at %s" % str(q))
+				for o in obs:
+					var c: Vector2 = o[0]
+					var h: Vector2 = o[1]
+					var l := Vector2((q - c).dot(o[2]), (q - c).dot(o[3]))
+					if not near_end and absf(l.x) < h.x - 0.02 and absf(l.y) < h.y - 0.02:
+						bad.append("through something at %s" % str(q))
+				var was_in := Workshop.room_at(prev) == "shed"
+				if was_in != (Workshop.room_at(p) == "shed"):
+					var by_door := false
+					for n in StaffNav.NODES:
+						by_door = by_door or Vector2(StaffNav.NODES[n]).distance_to(q) < 1.6
+					if not by_door:
+						bad.append("through the shed wall at %s" % str(q))
+				prev = p
+				s += 0.1
+	check(bad.is_empty(), "every walk between %d places keeps out of bikes, benches, walls and the delivery boxes (%d bad: %s)" % [places.size(),
+		bad.size(), str(bad.slice(0, 4))])
+	var at_front := StaffNav.spot(StaffNav.at_item(front_box))
+	check(at_front.z < Shed.DELIVERY_AREA.position.y - 0.3, "a box at the front of the delivery area is fetched from in front of it (%s)" % str(at_front))
+	Shed.stop()
+
+
 ## A detailer given a full detail washes, polishes and ceramic coats the bike through the shed
 ## (Detail.work_step via "shine_step"), then wheels it back and reports.
 func _test_staff_full_detail() -> void:
@@ -19795,6 +20063,14 @@ func _test_staff_tv() -> void:
 	check(str(m["doing"]).begins_with("Servicing the Rusty Ranger") and m["busy"] and float(m["progress"]) > 0.0 and float(m["progress"]) < 1.0
 		and int(m["level"]) >= 1 and int(m["wage"]) > 0 and str(m["mood_word"]) != "", "the mechanic's job with its progress, level, mood and wage (%s)" % str(m["doing"]))
 	check(s["sick"] and str(s["doing"]) == "Off sick today", "the salesman off sick")
+	# The spotlight: at length what they're doing, and their day's log newest first with times.
+	var act := str(m["activity"])
+	var log: Array = m["log"]
+	check(act.begins_with("Servicing the Rusty Ranger.") and act.contains("Started at") and act.length() > str(m["doing"]).length(),
+		"the mechanic's spotlight says at length what they're up to (%s)" % act)
+	check(not log.is_empty() and str(log[-1]["text"]).begins_with("New job") and str(log[0]["at"]).contains(":")
+		and log.size() <= Staff.TV_LOG, "and their log, newest first with the times (%s)" % str(log.map(func(l): return l["text"])))
+	check(int(data["spot"]) >= 0 and int(data["spot"]) < rows.size() and str(s["activity"]).begins_with("Off sick"), "one in the spotlight at a time")
 	var dash := Dashboard.new("crew", 2.0)
 	add_child(dash)
 	var drawn := [0]
@@ -19803,8 +20079,127 @@ func _test_staff_tv() -> void:
 	dash.show_page(TvChannels.page_kind("staff"), data)
 	await get_tree().process_frame
 	await get_tree().process_frame
+	# Every worker's spotlight draws (a project's list among them).
+	var exp := _staff_role("expert")
+	Shed.request({"a": "staff_assign", "worker": exp, "job": {"kind": "project", "bike": _bike_named("Old Faithful"),
+		"tasks": [{"t": "task", "task": "oil"}, {"t": "other", "why": "Not for staff"}, {"t": "bolt"}]}})
+	_staff_run(20)
+	for i in rows.size():
+		var d2 := TvChannels.page_data("staff")
+		d2["spot"] = i
+		dash.show_page(TvChannels.page_kind("staff"), d2)
+		await get_tree().process_frame
+	var e: Dictionary = TvChannels.page_data("staff")["rows"].filter(func(r): return r["role"] == "Expert Mechanic")[0]
+	check((e["list"] as Array).size() == 3, "a project's list goes on the spotlight")
 	check(drawn[0] > 0, "the page draws")
 	dash.queue_free()
+	Shed.stop()
+
+
+## Exotic paint: a chrome-effect base for the mixing bay and the colour book's custom paints
+## (candy, flake, pearl, chameleon, chrome, satin and matt); the paint expert mixes and sprays
+## them coat by coat once good enough (chameleon at level 9), with a satin or matt lacquer over.
+func _test_staff_exotic_paint() -> void:
+	Shed.start_new("Tester", 308)
+	var chrome := PaintMix.spec(PaintMix.parse_code("H"))
+	var m := PaintMix.material(chrome)
+	check(str(chrome["effect"]) == "chrome" and m.metallic >= 0.99 and m.roughness < 0.05 and PaintMix.level_needed(PaintMix.parse_code("H")) == 12
+		and PaintMix.BASE_ORDER.has("H"), "a chrome-effect base sprays mirror-bright (level 12 in the bay)")
+	check(str(PaintMix.spec(PaintMix.parse_code("H-BK24"))["effect"]) == "chrome", "and a tint smokes it: black chrome")
+	var effects := {}
+	for e in PaintMix.library():
+		if str(e["brand"]) == "Custom paint":
+			effects[str(e["effect"]) + ("/" + str(e["finish"]) if str(e["finish"]) != "gloss" else "")] = true
+	check(effects.has("chameleon") and effects.has("candy") and effects.has("flake") and effects.has("pearl") and effects.has("chrome")
+		and effects.has("solid/satin") and effects.has("solid/matt"), "the colour book has custom candy, flake, pearl, chameleon, chrome, satin and matt (%s)" % str(effects.keys()))
+	Staff.hire_one_of_each()
+	var w := Staff.worker(_staff_role("paint"))
+	w["xp"] = Staff.xp_for(4)
+	var ranger := _bike_named("Rusty Ranger")
+	var tank := Shed.item_on(ranger, "tank")
+	Shed.items[tank]["rust"] = 0.0
+	var job := {"kind": "paint", "bike": ranger, "slot": "tank", "color": 1, "finish": "gloss", "lib": "custom_blue_gold", "sheen": "satin"}
+	var why := Shed.check(Shed.me(), {"a": "staff_assign", "worker": int(w["id"]), "job": job})
+	check(why.contains("level 9"), "a chameleon is beyond a level 4 paint expert (%s)" % why)
+	var easy := StaffPanel.mixable(w)
+	check(easy.any(func(e): return str(e["effect"]) == "pearl") and not easy.any(func(e): return str(e["effect"]) in ["chameleon", "chrome"]),
+		"the panel offers what they can mix at their level")
+	check(Shed.check(Shed.me(), {"a": "paint", "item": tank, "mix": chrome}) != "", "a player can't spray straight from a recipe")
+	w["xp"] = Staff.xp_for(9)
+	Shed.request({"a": "staff_assign", "worker": int(w["id"]), "job": job})
+	check(str(w["job"].get("label", "")).contains("Chameleon Blue-Gold") and int(w["job"].get("coats", 0)) == 3, "at level 9 they take it on: three coats")
+	_staff_run(20000, int(w["id"]), true)
+	var it: Dictionary = Shed.items[tank]
+	check((w["job"] as Dictionary).is_empty() and it.get("mix") is Dictionary and str(it["mix"]["effect"]) == "chameleon" and int(it.get("mix_coats", 0)) == 3
+		and float(it.get("flat", 0.0)) > 0.1 and Shed.item_on(ranger, "tank") == tank, "the tank's back on, chameleon in three coats under a satin lacquer (%s)" % Staff.saying(w))
+	# Chrome on the front mudguard.
+	var guard := Shed.item_on(ranger, "front_mudguard")
+	if guard != 0:
+		Shed.items[guard]["rust"] = 0.0
+		Shed.request({"a": "staff_assign", "worker": int(w["id"]), "job": {"kind": "paint", "bike": ranger, "slot": "front_mudguard", "color": 1, "finish": "gloss", "lib": "custom_chrome"}})
+		_staff_run(20000, int(w["id"]), true)
+		check(str(Shed.items[guard].get("mix", {}).get("effect", "")) == "chrome", "and a chrome-effect mudguard")
+	Shed.stop()
+
+
+## The salesman prices from what a bike's cost and what it's worth at the target margin (set on
+## his page of the Staff tab), or at a player's own price; haggles against that margin (giving a
+## little away the newer he is) and logs the margin each sale made.
+func _test_staff_sales_margin() -> void:
+	Shed.start_new("Tester", 307)
+	var me := Shed.me()
+	Staff.hire_one_of_each()
+	var s := Staff.worker(_staff_role("sales"))
+	check(is_equal_approx(Staff.margin(), Sales.DEFAULT_MARGIN) and is_equal_approx(float(Staff.sanitize({})["margin"]), Sales.DEFAULT_MARGIN),
+		"the target margin starts at the default (and an old save gets it)")
+	check(Shed.check(me, {"a": "staff_margin", "margin": 2.0}) != "", "a silly margin is refused")
+	Shed.request({"a": "staff_margin", "margin": 0.3})
+	check(is_equal_approx(Staff.margin(), 0.3) and is_equal_approx(float(Staff.sanitize(JSON.parse_string(JSON.stringify(Staff._st())))["margin"]), 0.3),
+		"set to 30%, and it's saved")
+	# His own price, from the cost and value at the margin.
+	var faithful := _bike_named("Old Faithful")
+	Shed.bikes[faithful]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.request({"a": "staff_assign", "worker": int(s["id"]), "job": {"kind": "sell", "bike": faithful, "ask": 0}})
+	_staff_run(400, int(s["id"]), true)
+	var p := Sales.appraise(faithful, 0.3)
+	check(Sales.listings().has(faithful) and int(Sales.listings()[faithful]["ask"]) == int(p["recommended"]),
+		"he prices it at the PC's recommended price for a 30%% margin (%s)" % Sales.money(int(Sales.listings().get(faithful, {}).get("ask", 0))))
+	check((s["log"] as Array).any(func(l): return str(l["text"]).begins_with("Priced the Old Faithful")), "and notes how he priced it")
+	# A player's own price stands.
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.bikes[ranger]["xf"] = Workshop.SHOWROOM_SPOTS[1]
+	Shed.request({"a": "staff_assign", "worker": int(s["id"]), "job": {"kind": "sell", "bike": ranger, "ask": 7770}})
+	_staff_run(400, int(s["id"]), true)
+	check(int(Sales.listings().get(ranger, {}).get("ask", 0)) == 7770, "a price the player gives him is the price")
+	# Haggling against the margin: an offer under it gets a counter no lower than his least margin.
+	var sunk := int(Sales.appraise(ranger)["sunk"])
+	var least := Staff.floor_margin(s)
+	check(least <= 0.3 and least >= 0.2, "his least margin is a little under the target (%.2f)" % least)
+	var oid := Sales.make_offer(ranger)
+	var o: Dictionary = Sales.offers()[oid]
+	o["amount"] = roundi(sunk / 0.95)
+	o["max"] = 7770
+	Staff._decide(s, o)
+	check(str(o["state"]) == "waiting" and Sales.margin_of(int(o["counter"]), sunk) >= least - 0.01,
+		"an offer at a 5%% margin gets a counter that makes his (%s)" % Sales.money(int(o.get("counter", 0))))
+	# A last word under cost he turns down.
+	var oid2 := Sales.make_offer(faithful)
+	var o2: Dictionary = Sales.offers()[oid2]
+	var sunk2 := int(Sales.appraise(faithful)["sunk"])
+	o2["amount"] = maxi(10, sunk2 - 200)
+	o2["final"] = true
+	Staff._decide(s, o2)
+	check(not Sales.offers().has(oid2) and Shed.bikes.has(faithful), "a final offer under cost he turns down")
+	# One that makes the margin he takes, and logs what it made.
+	var oid3 := Sales.make_offer(faithful)
+	var o3: Dictionary = Sales.offers()[oid3]
+	o3["amount"] = roundi(sunk2 / 0.65)
+	o3["ask"] = roundi(sunk2 / 0.5)
+	Staff._decide(s, o3)
+	var sold: Dictionary = s.get("sold", {})
+	check(not Shed.bikes.has(faithful) and not sold.is_empty() and float(sold["margin"]) >= 0.3 and is_equal_approx(float(sold["target"]), 0.3),
+		"an offer that makes 35%% he takes (%s)" % str(sold))
+	check(str(s["log"][-1]["text"]).contains("target 30%") and Staff.activity(s).contains("margin"), "the margin it made goes in his log and on the Staff channel")
 	Shed.stop()
 
 

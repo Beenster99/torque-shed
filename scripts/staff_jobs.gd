@@ -76,6 +76,16 @@ static func new_job(w: Dictionary, j: Dictionary) -> Dictionary:
 		"service":
 			job["label"] = "Servicing the %s" % _bike_name(b)
 			job["did"] = []
+		"project":
+			# The list as it stands now, worked through in order (see _project).
+			var tasks := project_tasks(b, j.get("tasks", []))
+			job["tasks"] = tasks
+			job["state"] = tasks.map(func(_t): return "todo")
+			job["notes"] = tasks.map(func(_t): return "")
+			job["looks"] = tasks.map(func(_t): return 0)
+			job["ti"] = 0
+			job["did"] = []
+			job["label"] = "Working through the %s's job list" % _bike_name(b)
 		"fit":
 			job["slot"] = str(j["slot"])
 			job["part"] = str(j["part"])
@@ -90,6 +100,13 @@ static func new_job(w: Dictionary, j: Dictionary) -> Dictionary:
 			job["finish"] = str(j.get("finish", "gloss")) if Shed.FINISHES.has(str(j.get("finish", "gloss"))) else "gloss"
 			job["item"] = Shed.item_on(b, job["slot"])
 			job["label"] = "Painting the %s's %s %s" % [_bike_name(b), _slot(job["slot"]), str(Shed.PAINT_NAMES[job["color"]])]
+			# A mixed paint (a colour from the library, or a recipe): candy, flake, pearl, chameleon, chrome...
+			var mix := paint_spec(j)
+			if not mix.is_empty():
+				job["mix"] = mix
+				job["coats"] = CANDY_COATS if str(mix["effect"]) == "candy" else int(mix.get("need", 2))
+				job["sheen"] = str(j.get("sheen", "gloss")) if PaintMix.SHEENS.has(str(j.get("sheen", "gloss"))) else "gloss"
+				job["label"] = "Painting the %s's %s %s" % [_bike_name(b), _slot(job["slot"]), str(mix["name"])]
 		"detail":
 			var todo: Array = []
 			for s in j.get("steps", ["wash"]):
@@ -118,7 +135,7 @@ static func new_job(w: Dictionary, j: Dictionary) -> Dictionary:
 ## when it can't be done at all.
 static func plan(w: Dictionary, job: Dictionary) -> Array:
 	var b := int(job.get("bike", 0))
-	if str(job["kind"]) in ["service", "fit", "paint", "detail", "sell"]:
+	if Staff.BIKE_JOBS.has(str(job["kind"])):
 		if not Shed.bikes.has(b):
 			job["fail"] = "The bike's gone, so that's that."
 			return []
@@ -127,6 +144,8 @@ static func plan(w: Dictionary, job: Dictionary) -> Array:
 	match str(job["kind"]):
 		"service":
 			return _service(w, job)
+		"project":
+			return _project(w, job)
 		"fit":
 			var out := _fit(w, job, b, str(job["slot"]), str(job["part"]), false, int(job.get("old", 0)))
 			if out.is_empty() and not job.has("fail"):
@@ -146,6 +165,17 @@ static func plan(w: Dictionary, job: Dictionary) -> Array:
 
 ## A work step's follow-up, by name.
 static func after(_w: Dictionary, job: Dictionary, key: String) -> void:
+	if key.begins_with("kit:"):
+		# The part just ordered (the newest of it in the shed) is this job's.
+		var part := key.substr(4)
+		var newest := 0
+		for id in Shed.items:
+			if str(Shed.items[id]["part"]) == part and int(id) > newest and not (job.get("kit", []) as Array).has(int(id)):
+				newest = int(id)
+		if newest != 0:
+			if not (job.get("kit") is Array):
+				job["kit"] = []
+			(job["kit"] as Array).append(newest)
 	if key.begins_with("ordered:"):
 		var part := key.substr(8)
 		if not (job.get("orders") is Dictionary):
@@ -206,6 +236,8 @@ static func find_stock(part: String, job: Dictionary, fluid := 0.0, kind := "") 
 		var other: Dictionary = Staff.workers()[id]["job"]
 		if other != job and other.has("claim"):
 			taken.append(int(other["claim"]))
+		if other != job:
+			taken.append_array(other.get("kit", []))
 	for id in Shed.items:
 		var it: Dictionary = Shed.items[id]
 		if kind != "":
@@ -225,6 +257,11 @@ static func find_stock(part: String, job: Dictionary, fluid := 0.0, kind := "") 
 		if fluid <= 0.0 and (float(it["wear"]) > 0.2 or float(it["rust"]) > 0.2):
 			continue
 		var score := (0.0 if not it.get("boxed", false) else 5.0) + item_at(int(id)).distance_to(Workshop.CENTER) * 0.05
+		# What they bought for this job first (on the trolley by now), then what's on the staff rack.
+		if (job.get("kit", []) as Array).has(int(id)):
+			score -= 20.0
+		elif it["at"] == "spot" and Shed.furniture_of_spot(str(it["ref"])).get("model", "") == Shed.STAFF_RACK:
+			score -= 2.0
 		if score < best_score:
 			best_score = score
 			best = int(id)
@@ -241,6 +278,183 @@ static func _fetch(job: Dictionary, id: int) -> Array:
 	out.append(work({"a": "take", "item": id} if it["at"] == "floor" else {"a": "take", "spot": str(it["ref"])}, 1.0, "hands",
 		"picking up the %s" % _part(id)))
 	return out
+
+
+# ---------------------------------------------------------------------------- the expert's kit
+
+## How many spares of `part` there are in the shed for this job (as find_stock would take them).
+static func _stock_count(part: String, job: Dictionary) -> int:
+	var taken := []
+	for id in Staff.workers():
+		var other: Dictionary = Staff.workers()[id]["job"]
+		if other != job:
+			taken.append(int(other.get("claim", 0)))
+			taken.append_array(other.get("kit", []))
+	var n := 0
+	for id in Shed.items:
+		var it: Dictionary = Shed.items[id]
+		if str(it["part"]) != part or not it["at"] in ["floor", "spot"] or taken.has(int(id)) or (job["dropped"] as Array).has(int(id)):
+			continue
+		if it["at"] == "spot" and Shed.spot_role(str(it["ref"])) in ["booth", "blaster", "stand", "changer", "repair"]:
+			continue
+		if float(it["wear"]) > 0.2 or float(it["rust"]) > 0.2:
+			continue
+		n += 1
+	return n
+
+
+## Everything a service or a project still needs buying, worked out all at once (an expert
+## mechanic orders the lot in one go): new parts for whatever's to be renewed or fitted, and the
+## oil, lube, brake fluid and drain pans it wants when there's none in the shed.
+static func kit_list(w: Dictionary, job: Dictionary, b: int) -> Array:
+	var parts := []
+	var keys := []   # the service tasks, [] with "all" for a whole service
+	var all := str(job["kind"]) == "service"
+	if str(job["kind"]) == "project":
+		var tasks: Array = job["tasks"]
+		for i in range(int(job.get("ti", 0)), tasks.size()):
+			var t: Dictionary = tasks[i]
+			if str(job["state"][i]) in ["done", "skipped"] or task_why(w, b, t) != "" or task_done(b, t):
+				continue
+			if str(t["t"]) == "task" and SERVICE_TASKS.has(str(t["task"])):
+				keys.append(str(t["task"]))
+				continue
+			for slot in task_slots(t):
+				var on := Shed.item_on(b, str(slot))
+				match str(t["t"]):
+					"part":
+						if on == 0 or str(Shed.items[on]["part"]) != str(t["part"]):
+							parts.append(str(t["part"]))
+					"fit":
+						if on == 0:
+							parts.append(part_for(b, str(slot)))
+					_:
+						if not _renewed(b, str(slot), float(t.get("health", 0.0))):
+							parts.append(part_for(b, str(slot), str(t.get("part", ""))))
+	var scope := func(k: String) -> bool: return all or keys.has(k)
+	for slot in SERVICE_PARTS:
+		var id := Shed.item_on(b, slot)
+		if id == 0 or not (all or keys.any(func(k): return Contracts.TASK_PARTS.get(str(k), []).has(slot))):
+			continue
+		var it: Dictionary = Shed.items[id]
+		if float(it["wear"]) > WORN or (slot.ends_with("filter") and float(it["dirt"]) > (0.6 if all else 0.2)):
+			parts.append(str(it["part"]))
+	var chain := Shed.item_on(b, "chain")
+	if scope.call("chain") and chain != 0 and float(Shed.items[chain].get("lube", 0.0)) < 0.6 \
+			and find_stock("", job, Shed.LUBE_USE, "chain_lube") == 0:
+		parts.append(DEFAULT_LUBE)
+	var fluids := []
+	if scope.call("oil"):
+		fluids.append(["engine", "oil", "drain_pan", DEFAULT_OIL])
+	if scope.call("brake_fluid") and str(w["role"]) == "expert":
+		fluids.append(["front_master", "brake_fluid", "bleed_bottle", DEFAULT_BRAKE])
+	var drained := {}
+	for f in fluids:
+		var id := Shed.item_on(b, str(f[0]))
+		if id == 0 or not Shed.items[id].has("fluid"):
+			continue
+		var fl: Dictionary = Shed.items[id]["fluid"]
+		if float(fl.get("age", 0.0)) > 0.15 and not drained.has(f[2]) and find_stock(str(f[2]), job, 0.0) == 0:
+			drained[f[2]] = true
+			parts.append(str(f[2]))
+		if (float(fl.get("age", 0.0)) > 0.15 or float(fl["litres"]) < PartsDB.fluid_capacity(str(Shed.items[id]["part"])) * 0.97) \
+				and find_stock("", job, 0.05, str(f[1])) == 0:
+			parts.append(str(f[3]))
+	# What's in the shed already comes off the list.
+	var out := []
+	var counted := {}
+	for p in parts:
+		counted[p] = int(counted.get(p, 0)) + 1
+	for p in counted:
+		for k in maxi(0, int(counted[p]) - _stock_count(str(p), job)):
+			out.append(str(p))
+	return out
+
+
+## An expert's first look at a service or project: everything it needs ordered at once, the
+## staff trolley wheeled out to the deliveries, loaded and wheeled to the bike. [] once that's
+## done (or there was nothing to buy, or the trolley's in use), for the job to carry on as usual.
+static func _kit(w: Dictionary, job: Dictionary, b: int) -> Array:
+	if str(w["role"]) != "expert" or str(job.get("kit_stage", "")) == "done":
+		return []
+	if str(job.get("kit_stage", "")) == "":
+		if not (job.get("kit") is Array):
+			job["kit"] = []
+		var want := kit_list(w, job, b)
+		if want.is_empty():
+			job["kit_stage"] = "done" if (job["kit"] as Array).is_empty() else "load"
+			return _kit(w, job, b)
+		var out := [go(StaffNav.computer(), "going to order everything the job needs")]
+		for p in want:
+			var s := work({"a": "order_part", "part": p}, 2.0, "type", "ordering a %s" % PartsDB.part_name(str(p)))
+			s["after"] = "kit:" + str(p)
+			out.append(s)
+		out.append({"do": "say", "text": "That's the lot ordered: %d part%s. I'll fetch them on the trolley." % [want.size(), "" if want.size() == 1 else "s"]})
+		out.append(flag("kit_stage", "load"))
+		out.append(plan_step())
+		return out
+	var cart := Shed.staff_trolley()
+	var peer := Staff.peer_of(int(w["id"]))
+	var kit: Array = (job["kit"] as Array).filter(func(id): return Shed.items.has(int(id)) and Shed.items[int(id)]["at"] in ["floor", "spot", "held"])
+	job["kit"] = kit
+	var held := _held(w)
+	if cart == 0 or not int(Shed.furniture[cart].get("mover", 0)) in [0, peer] or kit.is_empty():
+		job["kit_stage"] = "done"
+		return []
+	var deck := "f%d" % cart
+	var cart_at: Vector3 = (Shed.furniture[cart]["xf"] as Transform3D).origin
+	var at_deliveries := cart_at.distance_to(StaffNav.spot(StaffNav.cart_delivery())) < 1.0
+	if held != 0:
+		if kit.has(held) and at_deliveries:
+			return [go(StaffNav.cart_handle(cart), "taking the %s to the trolley" % _part(held)),
+				work({"a": "staff_cart_load"}, 1.0, "hands", "loading the %s onto the trolley" % _part(held)), plan_step()]
+		return _stow(job, held, b, false)
+	# What's still to load and fits on the deck (the rest is fetched by hand later).
+	var to_load := kit.filter(func(id): return not _on_deck(int(id), deck) and Shed.find_room(deck, int(id), Vector2.ZERO) is Transform3D)
+	if not to_load.is_empty():
+		if not at_deliveries:
+			return _cart_to(cart, StaffNav.cart_delivery(), "wheeling the trolley out to the deliveries") + [plan_step()]
+		return _fetch(job, int(to_load[0])) + [plan_step()]
+	if cart_at.distance_to(StaffNav.spot(StaffNav.cart_by_bike(b))) > 1.0:
+		return _cart_to(cart, StaffNav.cart_by_bike(b), "wheeling the parts over to the %s" % _bike_name(b)) + [flag("kit_stage", "done"), plan_step()]
+	job["kit_stage"] = "done"
+	return []
+
+
+## After an expert's job: what's left of the parts they bought off the trolley and onto their
+## board of the rack, and the trolley wheeled back to its place. [] when it's all put away.
+static func _kit_tidy(w: Dictionary, job: Dictionary, b: int) -> Array:
+	if str(w["role"]) != "expert" or not job.has("kit_stage"):
+		return []
+	var cart := Shed.staff_trolley()
+	var held := _held(w)
+	if held != 0:
+		if PartsDB.is_fluid(str(Shed.items[held]["part"])):
+			return _stow(job, held, b, false)
+		return _to_rack(w, held) + [plan_step()]
+	if cart == 0:
+		return []
+	var deck := "f%d" % cart
+	for id in job.get("kit", []):
+		if Shed.items.has(int(id)) and _on_deck(int(id), deck):
+			return _fetch(job, int(id)) + [plan_step()]
+	var peer := Staff.peer_of(int(w["id"]))
+	var home := StaffNav.spot(StaffNav.cart_park())
+	if (Shed.furniture[cart]["xf"] as Transform3D).origin.distance_to(home) > 0.6 and int(Shed.furniture[cart].get("mover", 0)) in [0, peer]:
+		return _cart_to(cart, StaffNav.cart_park(), "wheeling the trolley back") + [plan_step()]
+	return []
+
+
+static func _on_deck(id: int, deck: String) -> bool:
+	var it: Dictionary = Shed.items.get(id, {})
+	return it.get("at", "") == "spot" and Shed.surface_of_spot(str(it["ref"])) == deck
+
+
+## Over to a trolley's handle, hold of it, and wheel it to place `to`.
+static func _cart_to(cart: int, to: Dictionary, what: String) -> Array:
+	return [go(StaffNav.cart_handle(cart), "going over to the trolley"),
+		work({"a": "grab", "furniture": cart}, 1.0, "hands", "taking hold of the trolley"),
+		{"do": "cart", "furniture": cart, "to": to, "what": what}]
 
 
 ## Ordering a new `part` on the parts computer (it comes boxed, to the delivery area).
@@ -285,7 +499,7 @@ static func _stow(job: Dictionary, held: int, bike: int, bin_it: bool) -> Array:
 		if not empty_kind and fluid_left <= 0.001:
 			var which := PartsDB.bin_for(part)
 			return [go(_bin_place(which), "taking the empty to the bin"), work({"a": "bin", "bin": which}, 1.0, "hands", "recycling the empty"), plan_step()]
-		return _to_bench(held) + [plan_step()]
+		return _to_rack(Staff.worker(int(job.get("wid", 0))), held) + [plan_step()]
 	if bin_it and not _refitting(job, held):
 		var which := PartsDB.bin_for(part)
 		if Shed.bin_check(held, which) != "":
@@ -303,6 +517,75 @@ static func _refitting(job: Dictionary, item: int) -> bool:
 		if int(r["item"]) == item:
 			return true
 	return false
+
+
+## Onto their own board of the staff parts rack (see rack_down), or the workbench if there's no
+## rack.
+static func _to_rack(w: Dictionary, held: int) -> Array:
+	if Shed.staff_rack() == 0:
+		return _to_bench(held)
+	return [go(StaffNav.rack(), "taking the %s to the parts rack" % _part(held)),
+		work({"a": "staff_rack_down"}, 1.2, "hands", "putting the %s on the %s board" % [_part(held), _bin_name(w)])]
+
+
+static func _bin_name(w: Dictionary) -> String:
+	return str(Staff.RACK_BINS[int(Staff.RACK_LEVEL.get(str(w.get("role", "")), 0))]).to_lower()
+
+
+## The board of the staff rack worker `w` keeps parts on, and a place on it for `item` (in the
+## board's frame, along from where theirs go), or [] when it's full: [surface key, place].
+static func _rack_place(w: Dictionary, item: int) -> Array:
+	var rack := Shed.staff_rack()
+	if rack == 0:
+		return []
+	var mine := int(Staff.RACK_LEVEL.get(str(w.get("role", "")), 0))
+	var levels := int(Equipment.get_model(Shed.STAFF_RACK).get("levels", 4))
+	for k in levels:
+		var key := "f%ds%d" % [rack, (mine + k) % levels]
+		var rect: Rect2 = Shed.surface(key)["rect"]
+		var place = Shed.find_room(key, item, Vector2(rect.position.x + 0.15, 0.0))
+		if place is Transform3D:
+			return [key, place]
+	return []
+
+
+## Puts what they're holding down on their board of the staff rack. "" or why not.
+static func rack_down(w: Dictionary) -> String:
+	var held := _held(w)
+	if held == 0:
+		return "I've nothing to put away."
+	var at := _rack_place(w, held)
+	if at.is_empty():
+		return "The parts rack's full."
+	return Staff.act(w, {"a": "set_down", "top": at[0], "xf": at[1]})
+
+
+## Host: a part a worker had hold of goes back on their board of the rack (letting go of it, when
+## they're let go, go off sick or a save's opened), else on the workbench.
+static func put_on_rack(w: Dictionary, item: int) -> void:
+	var at := _rack_place(w, item)
+	if at.is_empty():
+		Shed._put_on_bench(item)
+		return
+	Shed._move(item, "spot", Shed._free_surface_spot(at[0]))
+	Shed.items[item]["place"] = at[1]
+
+
+## Puts what they're holding on the trolley's deck. "" or why not.
+static func cart_load(w: Dictionary) -> String:
+	var held := _held(w)
+	var cart := Shed.staff_trolley()
+	if held == 0 or cart == 0:
+		return "Nothing to load."
+	var key := "f%d" % cart
+	var place = Shed.find_room(key, held, Vector2.ZERO)
+	if not (place is Transform3D):
+		# No room after all: it goes down beside the trolley, to be fetched by hand.
+		var xf: Transform3D = Shed.furniture[cart]["xf"]
+		var at := xf.origin + xf.basis.x.normalized() * 0.7
+		at.y = 0.0
+		return Staff.act(w, {"a": "drop", "xf": Transform3D(Basis(), at)})
+	return Staff.act(w, {"a": "set_down", "top": key, "xf": place})
 
 
 ## On the workbench: the first free place on it, or the floor in front of it.
@@ -459,20 +742,38 @@ static func _fit_tyre(w: Dictionary, job: Dictionary, bike: int, slot: String, p
 ## fresh in (and brake fluid, for an expert), one thing at a time.
 static func _service(w: Dictionary, job: Dictionary) -> Array:
 	var b := int(job["bike"])
+	var kit := _kit(w, job, b)
+	if not kit.is_empty():
+		return kit
+	var out := _service_core(w, job, b, [])
+	if not out.is_empty() or job.has("fail"):
+		return out
+	var tidy := _kit_tidy(w, job, b)
+	if not tidy.is_empty():
+		return tidy
+	var held := _held(w)
+	if held != 0:
+		return _stow(job, held, b, false)
+	var did: Array = job["did"]
+	job["report"] = "The %s's serviced: %s." % [_bike_name(b), ", ".join(did) if not did.is_empty() else "it didn't need anything"]
+	return []
+
+
+## The next steps of a service, or of just the service tasks in `only` (Contracts.TASKS keys:
+## oil, chain, pads, filters, plugs, brake_fluid; [] for the lot). [] when there's nothing more
+## to do for them (what's in their hands is left to the caller).
+static func _service_core(w: Dictionary, job: Dictionary, b: int, only: Array) -> Array:
 	var did: Array = job["did"]
 	var sub = job.get("sub")
 	if sub is Dictionary:
-		var out := _fit(w, job, b, str(sub["slot"]), str(sub["part"]), true, int(sub.get("old", 0)))
+		var out := _fit(w, job, b, str(sub["slot"]), str(sub["part"]), bool(sub.get("bin", true)), int(sub.get("old", 0)))
 		if not out.is_empty() or job.has("fail"):
 			return out
 		job.erase("sub")
 		did.append(_slot(str(sub["slot"])))
 	var held := _held(w)
-	var need := _service_need(w, job, b)
+	var need := _service_need(w, job, b, only)
 	if need.is_empty():
-		if held != 0:
-			return _stow(job, held, b, false)
-		job["report"] = "The %s's serviced: %s." % [_bike_name(b), ", ".join(did) if not did.is_empty() else "it didn't need anything"]
 		return []
 	var tool_kind := str(need.get("tool", ""))
 	if held != 0 and (tool_kind == "" or not _is_tool(held, need)):
@@ -520,9 +821,10 @@ static func _is_tool(held: int, need: Dictionary) -> bool:
 
 ## The next thing a service needs doing ({} when it's all done): {task, tool (a kind of can or
 ## container to have in hand), order (what to buy if there's none), ...}.
-static func _service_need(w: Dictionary, job: Dictionary, b: int) -> Dictionary:
+static func _service_need(w: Dictionary, job: Dictionary, b: int, only: Array = []) -> Dictionary:
 	var chain := Shed.item_on(b, "chain")
-	if chain != 0 and not job.get("chain_done", false):
+	var all := only.is_empty()
+	if chain != 0 and not job.get("chain_done", false) and (all or only.has("chain")):
 		var slack := float(Shed.items[chain].get("slack", Shed.CHAIN_SLACK_SET))
 		if (slack < Shed.CHAIN_SLACK_GOOD.x or slack > Shed.CHAIN_SLACK_GOOD.y) and absf(slack - Shed.CHAIN_SLACK_SET) >= 3.0:
 			return {"task": "chain"}
@@ -532,11 +834,16 @@ static func _service_need(w: Dictionary, job: Dictionary, b: int) -> Dictionary:
 		var id := Shed.item_on(b, slot)
 		if id == 0 or (job["did"] as Array).has(_slot(slot)):
 			continue
+		if not all and not only.any(func(k): return Contracts.TASK_PARTS.get(str(k), []).has(slot)):
+			continue
 		var it: Dictionary = Shed.items[id]
-		if float(it["wear"]) > WORN or (slot.ends_with("filter") and float(it["dirt"]) > 0.6):
+		# Asked for by name (a job card's "air and oil filters renewed"), a dirty filter's renewed too.
+		if float(it["wear"]) > WORN or (slot.ends_with("filter") and float(it["dirt"]) > (0.6 if all else 0.2)):
 			return {"task": "part", "slot": slot, "part": str(it["part"]), "old": id}
-	var fluids := [["engine", "oil", "drain_pan", "oil", DEFAULT_OIL, "oil changed"]]
-	if str(w["role"]) == "expert":
+	var fluids := []
+	if all or only.has("oil"):
+		fluids.append(["engine", "oil", "drain_pan", "oil", DEFAULT_OIL, "oil changed"])
+	if str(w["role"]) == "expert" and (all or only.has("brake_fluid")):
 		fluids.append(["front_master", "brake_fluid", "bleed_bottle", "brake fluid", DEFAULT_BRAKE, "brake fluid renewed"])
 		fluids.append(["rear_master", "brake_fluid", "bleed_bottle", "brake fluid", DEFAULT_BRAKE, "brake fluid renewed"])
 	for f in fluids:
@@ -552,6 +859,403 @@ static func _service_need(w: Dictionary, job: Dictionary, b: int) -> Dictionary:
 			return {"task": "fill", "slot": key, "item": id, "tool": str(f[1]), "min": 0.05, "order": str(f[4]), "what": str(f[3]),
 				"done": str(f[5])}
 	return {}
+
+
+# ---------------------------------------------------------------------------- projects
+
+## The kinds of task on a project's list (plain data, like a job card's goals):
+##   {t: "task", task}          a Contracts.TASKS job (oil, chain, pads, a new tyre...)
+##   {t: "part", slot, part}    that part fitted in that slot
+##   {t: "fit", slot}           something fitted in an empty slot (the bike's own part)
+##   {t: "renew", slot, part}   the part in that slot renewed like for like (or fitted if gone);
+##                              with "health", the part on has to be at least that good too
+##   {t: "bolt"}                everything on it bolted up
+##   {t: "other", why}          on the list, but not a mechanic's work (skipped, with why)
+## Each has "text", what the list says.
+const TASK_TYPES: Array[String] = ["task", "part", "fit", "renew", "bolt", "other"]
+## Service tasks done the way a service does them, the rest by renewing the parts they cover.
+const SERVICE_TASKS: Array[String] = ["oil", "chain", "pads", "filters", "plugs", "brake_fluid"]
+## Looks at one task before they give it up as not coming right.
+const MAX_TASK_LOOKS := 60
+
+
+## The work listed for bike `bike_id`, in order: `given` (a list handed over with the job, such
+## as the bay's workflow screen's), else its customer's job card (MOT fails worked out from a
+## fresh inspection), an insurer's repair list, or for the shed's own bikes the assessment's
+## parts to replace and anything missing. [] when nothing's listed.
+static func project_tasks(bike_id: int, given = []) -> Array:
+	if not Shed.bikes.has(bike_id):
+		return []
+	var out := []
+	if given is Array and not (given as Array).is_empty():
+		for t in given:
+			if t is Dictionary and TASK_TYPES.has(str(t.get("t", ""))):
+				_add_task(out, (t as Dictionary).duplicate(true))
+		return out
+	var cj := Contracts.job_for_bike(bike_id)
+	if not cj.is_empty() and str(cj.get("kind", "")) != "batch":
+		for g in cj.get("goals", []):
+			match str(g.get("t", "")):
+				"task":
+					_add_task(out, {"t": "task", "task": str(g["task"])})
+				"part":
+					_add_task(out, {"t": "part", "slot": str(g["slot"]), "part": str(g["part"])})
+				"fit":
+					_add_task(out, {"t": "fit", "slot": str(g["slot"])})
+				"pipes":
+					var from := str(g.get("from", ""))
+					_add_task(out, {"t": "part", "slot": "exhaust", "part": "full_system" if from != "full_system" else "titanium_race",
+						"text": Contracts.goal_text(g)})
+				"mot":
+					for t in mot_tasks(bike_id):
+						_add_task(out, t)
+				_:
+					_add_task(out, {"t": "other", "text": Contracts.goal_text(g), "why": "That one's not spanner work: it's for the crew."})
+		return out
+	var rj := Recovery.job_of(bike_id)
+	if not rj.is_empty() and rj.get("spec") is Array and not (rj["spec"] as Array).is_empty():
+		for slot in rj["spec"]:
+			_add_task(out, {"t": "renew", "slot": str(slot)})
+		return out
+	for r in Recovery.assess(bike_id)["rows"]:
+		if str(r["fix"]) == "replace":
+			_add_task(out, {"t": "renew", "slot": str(r["slot"]), "part": str(r["part"])})
+	for slot in Shed.missing_slots(bike_id):
+		_add_task(out, {"t": "fit", "slot": str(slot)})
+	return out
+
+
+## Adds a task to a list once (with its text).
+static func _add_task(out: Array, t: Dictionary) -> void:
+	if not t.has("text"):
+		t["text"] = task_text(t)
+	var key := _task_key(t)
+	for o in out:
+		if _task_key(o) == key:
+			return
+	out.append(t)
+
+
+static func _task_key(t: Dictionary) -> String:
+	return "%s|%s|%s|%s" % [str(t.get("t", "")), str(t.get("task", "")), str(t.get("slot", "")), str(t["text"]) if str(t.get("t", "")) == "other" else ""]
+
+
+## What a task says on the list.
+static func task_text(t: Dictionary) -> String:
+	var slot := str(t.get("slot", ""))
+	match str(t.get("t", "")):
+		"task":
+			return str(Contracts.TASKS.get(str(t.get("task", "")), str(t.get("task", ""))))
+		"part":
+			return "%s: %s" % [PartsDB.slot_name(slot), PartsDB.part_name(str(t.get("part", "")))]
+		"fit":
+			return "%s fitted" % PartsDB.slot_name(slot)
+		"renew":
+			return "New %s" % PartsDB.slot_name(slot).to_lower()
+		"bolt":
+			return "Everything bolted up"
+	return str(t.get("why", "Something else"))
+
+
+## An MOT's failures as tasks, from a fresh inspection of the bike.
+static func mot_tasks(bike_id: int) -> Array:
+	var out := []
+	for r in MotTest.fails(MotTest.inspect(bike_id)):
+		var n := str(r["name"]).to_lower()
+		var side := "front" if n.begins_with("front") else "rear"
+		var t := {}
+		if n.contains("tyre bead"):
+			t = {"t": "other", "why": "Re-seating a tyre's bead is one for the crew."}
+		elif n.contains("tyre"):
+			t = {"t": "task", "task": side + "_tyre"}
+		elif n.contains("wheel and rim"):
+			t = {"t": "renew", "slot": side + "_wheel"}
+		elif n.contains("disc thickness"):
+			t = {"t": "renew", "slot": side + "_disc"}
+		elif n.contains("brake fluid"):
+			t = {"t": "task", "task": "brake_fluid"}
+		elif n.contains("pads"):
+			t = {"t": "renew", "slot": side + "_pads"}
+		elif n.contains("caliper"):
+			t = {"t": "renew", "slot": side + "_caliper"}
+		elif n.contains("master cylinder"):
+			t = {"t": "renew", "slot": side + "_master"}
+		elif n.contains("front fork"):
+			t = {"t": "renew", "slot": "fork"}
+		elif n.contains("rear suspension"):
+			t = {"t": "renew", "slot": "shock"}
+		elif n.contains("handlebars"):
+			t = {"t": "renew", "slot": "handlebars"}
+		elif n.contains("sprocket"):
+			t = {"t": "task", "task": "chain_kit"}
+		elif n.contains("chain tension"):
+			t = {"t": "task", "task": "chain"}
+		elif n.contains("headlight"):
+			t = {"t": "renew", "slot": "headlight"}
+		elif n.contains("rear light") or n.contains("number plate"):
+			t = {"t": "renew", "slot": "tail"}
+		elif n.contains("horn"):
+			t = {"t": "renew", "slot": "horn"}
+		elif n.contains("speedometer"):
+			t = {"t": "renew", "slot": "dashboard"}
+		elif n.contains("mirrors"):
+			t = {"t": "fit", "slot": "mirrors"}
+		elif n.contains("exhaust noise"):
+			t = {"t": "part", "slot": "exhaust", "part": _road_exhaust(bike_id)}
+		elif n.contains("exhaust"):
+			t = {"t": "renew", "slot": "exhaust"}
+		elif n.contains("fuel tank"):
+			t = {"t": "renew", "slot": "tank"}
+		elif n.contains("seat"):
+			t = {"t": "fit", "slot": "saddle"}
+		elif n.contains("engine oil"):
+			t = {"t": "task", "task": "oil"}
+		elif n.contains("bolted up"):
+			t = {"t": "bolt"}
+		else:
+			t = {"t": "other", "why": "%s: one for the crew." % str(r["name"])}
+		t["text"] = "MOT: %s" % str(r["fix"]) if str(r.get("fix", "")) != "" else "MOT: %s" % str(r["name"])
+		out.append(t)
+	return out
+
+
+## A road-legal exhaust for the bike: the one it came with, or the plainest there is.
+static func _road_exhaust(bike_id: int) -> String:
+	var orig := str(Shed.bikes.get(bike_id, {}).get("original", {}).get("exhaust", ""))
+	if orig != "" and orig != "straight_pipe" and not PartsDB.get_part(orig).is_empty():
+		return orig
+	for p in PartsDB.by_kind.get("exhaust", []):
+		if str(p) != "straight_pipe":
+			return str(p)
+	return "full_system"
+
+
+## The part a slot gets when the list just says "fitted" or "new": what's on it now, else the
+## part the bike came with, else the cheapest that goes there.
+static func part_for(bike_id: int, slot: String, want := "") -> String:
+	var kind := str(PartsDB.SLOT_KIND.get(slot, ""))
+	if want != "" and PartsDB.kind_of(want) == kind:
+		return want
+	var on := Shed.item_on(bike_id, slot)
+	if on != 0:
+		return str(Shed.items[on]["part"])
+	var orig := str(Shed.bikes.get(bike_id, {}).get("original", {}).get(slot, ""))
+	if orig != "" and orig != "none" and PartsDB.kind_of(orig) == kind:
+		return orig
+	var best := ""
+	var price := INF
+	for p in PartsDB.by_kind.get(kind, []):
+		var c := float(PartsDB.get_part(str(p)).get("price", 0))
+		if c < price:
+			price = c
+			best = str(p)
+	return best
+
+
+## The slots a task works on.
+static func task_slots(t: Dictionary) -> Array:
+	match str(t.get("t", "")):
+		"task":
+			return Contracts.TASK_PARTS.get(str(t.get("task", "")), [])
+		"part", "fit", "renew":
+			return [str(t.get("slot", ""))]
+	return []
+
+
+## Whether a task's done on the bike now.
+static func task_done(bike_id: int, t: Dictionary) -> bool:
+	if not Shed.bikes.has(bike_id):
+		return false
+	var slot := str(t.get("slot", ""))
+	var on := Shed.item_on(bike_id, slot) if slot != "" else 0
+	match str(t.get("t", "")):
+		"task":
+			return bool(Contracts._eval_task(bike_id, str(t.get("task", "")))["done"])
+		"part":
+			return on != 0 and str(Shed.items[on]["part"]) == str(t.get("part", "")) and Shed.is_bolted(bike_id, slot)
+		"fit":
+			return on != 0 and Shed.is_bolted(bike_id, slot)
+		"renew":
+			return _renewed(bike_id, slot, float(t.get("health", 0.0))) and Shed.is_bolted(bike_id, slot)
+		"bolt":
+			return Shed.loose_slots(bike_id).is_empty()
+	return false
+
+
+## Why worker `w` can't do task `t` on the bike ("" if they can): it isn't spanner work, or it
+## needs an expert (tyres, brake fluid, anything with other parts in the way).
+static func task_why(w: Dictionary, bike_id: int, t: Dictionary) -> String:
+	var expert := str(w.get("role", "")) == "expert"
+	match str(t.get("t", "")):
+		"other":
+			return str(t.get("why", "That's not one for a mechanic."))
+		"task":
+			match str(t.get("task", "")):
+				"wash":
+					return "Washing's the detailer's job."
+				"brake_fluid":
+					if not expert:
+						return "Bleeding the brakes is one for an expert mechanic."
+	for slot in task_slots(t):
+		if slot in ["frame", "engine"] or (PartsDB.is_engine_slot(slot) and not PartsDB.SERVICE_SLOTS.has(slot)):
+			return "The %s is a job for the crew." % _slot(slot)
+		if expert:
+			continue
+		if PartsDB.SLOT_KIND.get(slot, "") == "tyre":
+			return "Tyres need the tyre changer: one for an expert mechanic."
+		if Shed.item_on(bike_id, slot) != 0:
+			var dep := _first_off(bike_id, slot)
+			if dep != "":
+				return "The %s has to come off first: one for an expert mechanic." % _slot(dep)
+	return ""
+
+
+## A project: the bike's listed work done in order, exactly that and nothing more. Each task's
+## looked at in turn: done already, it's ticked; one they can't do (not spanner work, or for an
+## expert) they say so and skip; otherwise they work at it until it's done.
+static func _project(w: Dictionary, job: Dictionary) -> Array:
+	var b := int(job["bike"])
+	var tasks: Array = job["tasks"]
+	var state: Array = job["state"]
+	var kit := _kit(w, job, b)
+	if not kit.is_empty():
+		return kit
+	while int(job["ti"]) < tasks.size():
+		var i := int(job["ti"])
+		var t: Dictionary = tasks[i]
+		if str(state[i]) == "todo":
+			var why := task_why(w, b, t)
+			if why != "":
+				return _skip_task(w, job, i, why)
+			if task_done(b, t):
+				_tick_task(w, job, i, "done", "")
+				continue
+			state[i] = "doing"
+			Staff.log_line(w, "Started: %s" % str(t["text"]))
+		job["looks"][i] = int(job["looks"][i]) + 1
+		if int(job["looks"][i]) > MAX_TASK_LOOKS:
+			job.erase("sub")
+			return _skip_task(w, job, i, "I can't get \"%s\" right. I'll leave it for the crew." % str(t["text"]))
+		var out := _task_steps(w, job, b, t)
+		if job.has("fail"):
+			# Something in the way of this one: say so and get on with the rest.
+			var why := str(job["fail"])
+			job.erase("fail")
+			job.erase("sub")
+			return _skip_task(w, job, i, why)
+		if not out.is_empty():
+			job["doing_task"] = i
+			return out
+		_tick_task(w, job, i, "done" if task_done(b, t) else "skipped", "" if task_done(b, t) else "Did what I could.")
+	var tidy := _kit_tidy(w, job, b)
+	if not tidy.is_empty():
+		return tidy
+	var held := _held(w)
+	if held != 0:
+		return _stow(job, held, b, false)
+	var done := 0
+	var skipped := []
+	for i in tasks.size():
+		if str(state[i]) == "done":
+			done += 1
+		elif str(state[i]) == "skipped":
+			skipped.append(str(tasks[i]["text"]).to_lower())
+	job["report"] = "The %s's list is done: %d of %d ticked off.%s" % [_bike_name(b), done, tasks.size(),
+		" I left %s." % ", ".join(skipped) if not skipped.is_empty() else ""]
+	return []
+
+
+## Marks task `i` done or skipped and moves on to the next.
+static func _tick_task(w: Dictionary, job: Dictionary, i: int, how: String, note: String) -> void:
+	job["state"][i] = how
+	job["notes"][i] = note
+	job["ti"] = i + 1
+	job.erase("doing_task")
+	Staff.log_line(w, "%s: %s%s" % ["Done" if how == "done" else "Skipped", str(job["tasks"][i]["text"]), " (%s)" % note if note != "" else ""])
+
+
+## Skipping task `i`, saying why.
+static func _skip_task(w: Dictionary, job: Dictionary, i: int, why: String) -> Array:
+	_tick_task(w, job, i, "skipped", why)
+	return [{"do": "say", "text": "Skipping \"%s\": %s" % [str(job["tasks"][i]["text"]), why]}, plan_step()]
+
+
+## The next steps of one task ([] when there's nothing more to do on it).
+static func _task_steps(w: Dictionary, job: Dictionary, b: int, t: Dictionary) -> Array:
+	var sub = job.get("sub")
+	if sub is Dictionary:
+		var out := _fit(w, job, b, str(sub["slot"]), str(sub["part"]), bool(sub.get("bin", true)), int(sub.get("old", 0)))
+		if not out.is_empty() or job.has("fail"):
+			return out
+		job.erase("sub")
+		(job["did"] as Array).append(_slot(str(sub["slot"])))
+	match str(t.get("t", "")):
+		"task":
+			var k := str(t.get("task", ""))
+			if SERVICE_TASKS.has(k):
+				return _service_core(w, job, b, [k])
+			for slot in Contracts.TASK_PARTS.get(k, []):
+				var out := _renew(w, job, b, str(slot), "")
+				if not out.is_empty() or job.has("fail"):
+					return out
+			return []
+		"renew":
+			return _renew(w, job, b, str(t["slot"]), str(t.get("part", "")), float(t.get("health", 0.0)))
+		"part", "fit":
+			var slot := str(t["slot"])
+			if task_done(b, t):
+				return []
+			var part := str(t["part"]) if str(t["t"]) == "part" else part_for(b, slot)
+			if part == "":
+				job["fail"] = "There's no part that goes on the %s." % _slot(slot)
+				return []
+			job["sub"] = {"slot": slot, "part": part, "old": 0, "bin": false}
+			return _fit(w, job, b, slot, part, false, 0)
+		"bolt":
+			for slot in Shed.loose_slots(b):
+				return [go(StaffNav.bike(b), "going over to the %s" % _bike_name(b)),
+					work({"a": "bolt", "bike": b, "slot": str(slot), "crouched": true}, 4.0, "wrench", "bolting up the %s" % _slot(str(slot))), plan_step()]
+	return []
+
+
+## Renewing the part in `slot` like for like (fitting one if it's gone), unless it's as good as
+## new already. The old one goes in the bin.
+static func _renew(w: Dictionary, job: Dictionary, b: int, slot: String, want: String, health := 0.0) -> Array:
+	var on := Shed.item_on(b, slot)
+	if _renewed(b, slot, health):
+		if not Shed.is_bolted(b, slot):
+			return [go(StaffNav.bike(b), "going over to the %s" % _bike_name(b)),
+				work({"a": "bolt", "bike": b, "slot": slot, "crouched": true}, 4.0, "wrench", "bolting up the %s" % _slot(slot)), plan_step()]
+		return []
+	var part := part_for(b, slot, want)
+	if part == "":
+		job["fail"] = "There's no part that goes on the %s." % _slot(slot)
+		return []
+	job["sub"] = {"slot": slot, "part": part, "old": on, "bin": true}
+	return _fit(w, job, b, slot, part, true, on)
+
+
+## Whether the part in `slot` is fresh: hardly worn or rusty, and at least `health` good.
+static func _renewed(b: int, slot: String, health := 0.0) -> bool:
+	var on := Shed.item_on(b, slot)
+	if on == 0:
+		return false
+	var it: Dictionary = Shed.items[on]
+	if float(it["wear"]) > 0.2 or float(it["rust"]) > 0.2:
+		return false
+	return health <= 0.0 or BikeBuild.part_health(Shed.condition_of(it)) >= health
+
+
+## A project's list with how each task stands, for the TV, the panel and the bay's workflow
+## screen: [{text, state ("todo", "doing", "done", "skipped"), note}].
+static func project_rows(job: Dictionary) -> Array:
+	var out := []
+	var tasks: Array = job.get("tasks", [])
+	for i in tasks.size():
+		var st := str((job.get("state", []) as Array)[i]) if i < (job.get("state", []) as Array).size() else "todo"
+		var note := str((job.get("notes", []) as Array)[i]) if i < (job.get("notes", []) as Array).size() else ""
+		out.append({"text": str(tasks[i].get("text", "")), "state": st, "note": note})
+	return out
 
 
 # ---------------------------------------------------------------------------- paint
@@ -612,22 +1316,74 @@ static func _paint(w: Dictionary, job: Dictionary) -> Array:
 		return [go(StaffNav.at_spot(str(it["ref"])), "at the repair machine"),
 			work({"a": "take", "spot": str(it["ref"])}, 1.0, "hands", "picking up the %s" % _slot(slot)), plan_step()]
 	if it["at"] == "spot" and Shed.spot_role(str(it["ref"])) == "booth":
+		var mix: Dictionary = job.get("mix", {})
+		var paint_name := str(mix["name"]) if not mix.is_empty() else str(Shed.PAINT_NAMES[int(job["color"])])
 		if not job.get("mixed", false):
+			# A mixed paint takes longer at the bench: weighed out tint by tint, then stirred.
+			var mix_secs := 10.0 + 3.0 * float((PaintMix.parse_code(str(mix.get("code", ""))).get("tints", {}) as Dictionary).size()) if not mix.is_empty() else 10.0
 			return [go(StaffNav.mix_bench(), "going to the mixing bench"),
-				{"do": "work", "act": {}, "secs": 10.0, "anim": "mix", "what": "mixing up the %s" % str(Shed.PAINT_NAMES[int(job["color"])])},
+				{"do": "work", "act": {}, "secs": mix_secs, "anim": "mix", "what": "mixing up the %s" % paint_name},
 				flag("mixed"), plan_step()]
 		var spot := str(it["ref"])
 		var out := [go(StaffNav.at_spot(spot), "taking the paint to the booth")]
 		if job.get("repaired", false) and not job.get("primed", false):
 			out.append(work({"a": "prime", "item": id, "gun": true, "quality": "q", "waste": "w"}, 8.0, "spray", "spraying primer on the %s" % _slot(slot)))
 			out.append(flag("primed"))
-		out.append(work({"a": "paint", "item": id, "gun": true, "color": int(job["color"]), "finish": str(job["finish"]), "quality": "q",
-			"waste": "w"}, 12.0, "spray", "spraying the %s %s" % [_slot(slot), str(Shed.PAINT_NAMES[int(job["color"])])]))
+		if mix.is_empty():
+			out.append(work({"a": "paint", "item": id, "gun": true, "color": int(job["color"]), "finish": str(job["finish"]), "quality": "q",
+				"waste": "w"}, 12.0, "spray", "spraying the %s %s" % [_slot(slot), paint_name]))
+		else:
+			# Coat by coat (a candy deepens with each), then a satin or matt lacquer over it if asked.
+			var coats := maxi(1, int(job.get("coats", 2)))
+			for c in coats:
+				out.append(work({"a": "paint", "item": id, "gun": true, "mix": mix, "quality": "q", "waste": "w"}, 8.0, "spray",
+					"spraying the %s %s, coat %d of %d" % [_slot(slot), paint_name, c + 1, coats]))
+				if c < coats - 1:
+					out.append({"do": "wait", "secs": 3.0, "anim": "think", "what": "letting the coat flash off"})
+			var sheen := str(job.get("sheen", "gloss"))
+			if sheen != "gloss":
+				out.append(work({"a": "paint", "item": id, "gun": true, "mix": {"effect": "lacquer", "flat": float(PaintMix.SHEENS[sheen]), "name": "%s lacquer" % sheen},
+					"quality": "q", "waste": "w"}, 6.0, "spray", "a %s lacquer over the %s" % [sheen, _slot(slot)]))
 		out.append({"do": "wait", "secs": 6.0, "anim": "think", "what": "letting it flash off"})
 		out.append(flag("painted"))
 		out.append(plan_step())
 		return out
 	return _fetch(job, id) + [plan_step()]
+
+
+## Coats of candy a paint expert puts on (the best for depth: PaintMix.CANDY_BEST).
+const CANDY_COATS := 3
+## The paint expert's level each effect needs (players unlock them by their own level instead,
+## PaintMix.EFFECTS).
+const STAFF_EFFECT_LEVEL := {"solid": 1, "metallic": 1, "lacquer": 1, "pearl": 3, "candy": 5, "flake": 6, "chrome": 8, "chameleon": 9}
+
+
+## The mixed paint a paint job asks for, as a PaintMix spec (well stirred, named): from a
+## library colour ("lib", an id in data/paint_colours.json) or a recipe code ("code"). {} for a
+## plain spray-can colour (the job's "color" and "finish").
+static func paint_spec(j: Dictionary) -> Dictionary:
+	var code := str(j.get("code", ""))
+	var name := "custom mix"
+	var lib := PaintMix.library_entry(str(j.get("lib", ""))) if str(j.get("lib", "")) != "" else {}
+	if not lib.is_empty():
+		code = str(lib["code"])
+		name = str(lib["name"])
+	if code == "":
+		return {}
+	var tin := PaintMix.parse_code(code)
+	if tin.is_empty():
+		return {}
+	tin["stir"] = 1.0
+	return PaintMix.spec(tin, name)
+
+
+## Why paint expert `w` can't spray `spec` ("" if they can): it's beyond them yet.
+static func paint_why(w: Dictionary, spec: Dictionary) -> String:
+	var e := str(spec.get("effect", "solid"))
+	var need := int(STAFF_EFFECT_LEVEL.get(e, 99))
+	if Staff.level(w) < need:
+		return "%s paint is beyond %s yet: it needs a level %d paint expert." % [PaintMix.effect_name(e), Staff.first_name(w), need]
+	return ""
 
 
 static func _free_spot_of(role: String) -> String:
@@ -780,13 +1536,22 @@ static func _sell(w: Dictionary, job: Dictionary) -> Array:
 	return _wheel(b, StaffNav.show_in(free), SalesOffice.SHOWROOM_SPOTS[free], "the showroom") + [plan_step()]
 
 
-## Puts the bike up for sale at the asking price.
+## Puts the bike up for sale: at the asking price given with the job (a player's own price),
+## else his own from what it's cost and what it's worth at the business's target margin (the
+## PC's recommended price at that margin: Sales.appraise), noted in his log.
 static func list_bike(w: Dictionary, job: Dictionary) -> String:
 	var b := int(job["bike"])
 	var ask := int(job.get("ask", 0))
-	if ask <= 0:
-		ask = int(Sales.appraise(b).get("recommended", 0))
-	return Staff.act(w, {"a": "sale_list", "bike": b, "ask": maxi(ask, 10)})
+	var p := Sales.appraise(b, Staff.margin())
+	var own := ask <= 0
+	if own:
+		ask = int(p.get("recommended", 0))
+	ask = maxi(ask, 10)
+	var why := Staff.act(w, {"a": "sale_list", "bike": b, "ask": ask, "margin": Staff.margin()})
+	if why == "":
+		Staff.log_line(w, "Priced the %s at %s%s: cost %s, worth %s, %s" % [_bike_name(b), Staff.money(ask), "" if own else " (as asked)",
+			Staff.money(int(p.get("sunk", 0))), Staff.money(int(p.get("fair", 0))), Sales.margin_text(ask, int(p.get("sunk", 0)))])
+	return why
 
 
 # ---------------------------------------------------------------------------- teas
