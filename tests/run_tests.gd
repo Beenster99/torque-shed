@@ -299,6 +299,7 @@ func _run_all() -> void:
 	await _test_heat_brakes_ride()
 	await _test_heat_engine_ride()
 	_test_heat_carry_over()
+	_test_brake_details()
 	print("The riding map: roads, grades, no jumps, land under the roads, spawns, surfaces, counts")
 	await _test_world_map()
 	print("Shop and crew: part previews, trolleys, box notes, the geometry parts list, styled project bikes, emotes")
@@ -19083,3 +19084,65 @@ func _test_puncture_shed() -> void:
 		Shed.remove_bike(id)
 	check(arrived > 0 and arrived < 20, "some barn finds come in on a punctured tyre (%d of 20)" % arrived)
 	Shed.stop()
+
+
+## The look-at panel on a bike's brake parts: the disc's type, size, cooling and thickness, the
+## pads fitted and when they fade, the caliper and the brake's torque, and the disc's heat now.
+func _test_brake_details() -> void:
+	Shed.start_new("Tester", 64)
+	var bike_id := 0
+	for id in Shed.bikes:
+		if Shed.item_on(id, "front_disc") != 0 and Shed.item_on(id, "front_pads") != 0 and Shed.item_on(id, "front_caliper") != 0:
+			bike_id = id
+			break
+	check(bike_id != 0, "a starting bike has a front disc, pads and caliper")
+	if bike_id == 0:
+		return
+	var disc_item: Dictionary = Shed.items[Shed.item_on(bike_id, "front_disc")]
+	var disc_part := str(disc_item["part"])
+	var spec := PartsDB.spec_line(disc_part)
+	print("    %s: %s" % [disc_part, spec])
+	check(spec.contains(str(PartsDB.get_part(disc_part)["type"])) and spec.contains("mm") and spec.contains("cooling")
+		and spec.contains("kg"), "a disc's spec says its type, size, cooling and mass")
+	check(PartsDB.spec_line("drum_tls_200").contains("cooling poor") and PartsDB.spec_line("drum_tls_200").contains("two leading shoes")
+		and PartsDB.spec_line("solid_240").contains("cooling standard") and PartsDB.spec_line("drilled_280").contains("cooling good"),
+		"drums cool worst, solid discs as standard, drilled ones best (%s)" % PartsDB.spec_line("drum_tls_200"))
+	check(PartsDB.spec_line("sintered").contains("fade from 450") and PartsDB.spec_line("organic").contains("fade from 250"),
+		"pads say when they fade (%s)" % PartsDB.spec_line("sintered"))
+	check(PartsDB.spec_line("six_piston_race").contains("6 pistons"), "a caliper's spec says its pistons")
+	# The heat model reads the same numbers.
+	check(is_equal_approx(BikeHeat.disc_cooling(PartsDB.get_part("drum_sls_180")), 0.5)
+		and float(BikeHeat.pad_temps(PartsDB.get_part("ceramic"), PartsDB.get_part("drum_sls_180"))[2]) == BikeHeat.DRUM_FADE,
+		"shoes in a drum fade early whatever they're made of")
+	disc_item["wear"] = 0.5
+	check(Shed.condition_text(disc_item).contains("4.2 mm thick"), "a half-worn disc's condition says 4.2 mm thick (%s)" % Shed.condition_text(disc_item))
+	BikeHeat.fixed_air = 10.0
+	BikeHeat.parked.erase(bike_id)
+	var cold := BikeHeat.brake_lines(bike_id, "front", "disc")
+	print("    " + "\n    ".join(cold))
+	var pad_type := str(PartsDB.get_part(str(Shed.items[Shed.item_on(bike_id, "front_pads")]["part"]))["type"])
+	check(cold.size() == 3 and str(cold[0]).contains("13 °C") and str(cold[0]).contains("cold") and str(cold[1]).contains(pad_type)
+		and str(cold[1]).contains("fade from") and str(cold[2]).contains("N·m"),
+		"looking at a disc: its heat (shed temperature unridden), the pads fitted and when they fade, the caliper and the brake's torque")
+	# Just ridden hard: the disc is hot, and cools while it stands.
+	var heat := BikeHeat.new()
+	heat.setup(Shed.build_of(bike_id))
+	heat.discs[0] = 400.0
+	BikeHeat.park(bike_id, heat)
+	var hot := BikeHeat.disc_now(bike_id, 0)
+	BikeHeat.parked[bike_id]["at"] = Time.get_ticks_msec() - 600000
+	var later := BikeHeat.disc_now(bike_id, 0)
+	BikeHeat.parked[bike_id]["at"] = Time.get_ticks_msec() - 4 * 3600 * 1000
+	var hours := BikeHeat.disc_now(bike_id, 0)
+	var stood := BikeHeat.new()
+	stood.setup(Shed.build_of(bike_id))
+	stood.copy_from(heat)
+	stood.rest(600.0, BikeHeat.shed_c())
+	print("    disc just parked %d °C, 10 min later %d °C (the full model says %d °C), 4 hours later %d °C" % [roundi(hot), roundi(later),
+		roundi(stood.discs[0]), roundi(hours)])
+	check(hot > 390.0 and later < hot - 100.0 and absf(later - stood.discs[0]) < 5.0 and absf(hours - 13.0) < 1.0,
+		"a disc just ridden hard is hot and cools standing, as the heat model has it, back to shed temperature in hours")
+	BikeHeat.parked[bike_id]["at"] = Time.get_ticks_msec()
+	check(str(BikeHeat.brake_lines(bike_id, "front", "pads")[0]).contains("hot"), "looking at the pads after a hard ride says the disc is hot")
+	BikeHeat.parked.erase(bike_id)
+	BikeHeat.fixed_air = NAN

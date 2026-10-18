@@ -103,6 +103,8 @@ var _air_timer := 0.0
 static var parked := {}
 ## Pins the air (and road) temperature, °C, for tests; NAN follows the time of day and weather.
 static var fixed_air := NAN
+## disc_now's last answers: "bike:side" -> {at, parked, air, t}.
+static var _disc_seen := {}
 
 
 func setup(build: BikeBuild) -> void:
@@ -124,16 +126,10 @@ func setup(build: BikeBuild) -> void:
 		_flat_build[i] = float(build.flat[sides[i]])
 		leak[i] = float(build.condition.get(sides[i] + "_tyre", {}).get("puncture", 0.0))
 		var disc := build.part(sides[i] + "_disc")
-		var drum := str(disc.get("style", "")) == "drum"
-		var d := float(disc.get("diameter", 280.0)) / 1000.0
-		_disc_c[i] = (float(disc.get("mass", 1.0)) + 0.5) * 480.0
-		_disc_area[i] = PI * d * 0.06 if drum else TAU * maxf(pow(d * 0.5, 2.0) - pow(d * 0.5 - 0.04, 2.0), 0.01)
-		_disc_cool[i] = 0.5 if drum else (1.25 if str(disc.get("style", "")) in ["drilled", "wave", "floating"] else 1.0)
-		var pad := build.part(sides[i] + "_pads")
-		var p: Array = (PADS.get(str(pad.get("type", "")).to_lower(), PADS["semi-metallic"]) as Array).duplicate()
-		if drum:
-			p[2] = minf(float(p[2]), DRUM_FADE)
-		_pad[i] = p
+		_disc_c[i] = disc_capacity(disc)
+		_disc_area[i] = disc_area(disc)
+		_disc_cool[i] = disc_cooling(disc)
+		_pad[i] = pad_temps(build.part(sides[i] + "_pads"), disc)
 	var cooling: Dictionary = build.part("cooling") if build.has_part("cooling") else {}
 	var kind := str(cooling.get("type", "Air")).to_lower()
 	liquid = kind.contains("liquid")
@@ -152,6 +148,120 @@ func setup(build: BikeBuild) -> void:
 	air = ambient_c()
 	road = road_c()
 	warm_through()
+
+
+## A brake disc's (or drum's) heat capacity, J/K: the disc and the hub and carrier it soaks into.
+static func disc_capacity(disc: Dictionary) -> float:
+	return (float(disc.get("mass", 1.0)) + 0.5) * 480.0
+
+
+## The area a disc sheds its heat from, m²: both faces of its braking ring, or a drum's outside.
+static func disc_area(disc: Dictionary) -> float:
+	var d := float(disc.get("diameter", 280.0)) / 1000.0
+	if str(disc.get("style", "")) == "drum":
+		return PI * d * 0.06
+	return TAU * maxf(pow(d * 0.5, 2.0) - pow(d * 0.5 - 0.04, 2.0), 0.01)
+
+
+## How well a disc cools against a plain solid one: drilled, wave and floating discs shed heat a
+## quarter faster, a drum (its shoes cooking inside it) half as fast.
+static func disc_cooling(disc: Dictionary) -> float:
+	var style := str(disc.get("style", ""))
+	if style == "drum":
+		return 0.5
+	return 1.25 if style in ["drilled", "wave", "floating"] else 1.0
+
+
+## A disc's cooling in words, for its spec line: "cooling good (vented faces, x1.25)".
+static func cooling_text(disc: Dictionary) -> String:
+	var c := disc_cooling(disc)
+	if c < 0.9:
+		return "cooling poor (enclosed drum, x%.2f)" % c
+	if c > 1.1:
+		return "cooling good (%s, x%.2f)" % ["floating rotor" if str(disc.get("style", "")) == "floating" else "vented faces", c]
+	return "cooling standard (solid, x%.2f)" % c
+
+
+## Pads' working temperatures, [bite fully from °C, bite share cold, fade from °C], by their type;
+## inside a drum (`disc`) the shoes fade early whatever they're made of.
+static func pad_temps(pad: Dictionary, disc := {}) -> Array:
+	var p: Array = (PADS.get(str(pad.get("type", "")).to_lower(), PADS["semi-metallic"]) as Array).duplicate()
+	if str(disc.get("style", "")) == "drum":
+		p[2] = minf(float(p[2]), DRUM_FADE)
+	return p
+
+
+## The temperature of a shed bike's disc now, °C (`i` 0 front, 1 rear): what's left of its last
+## ride, cooled (as _brake_step has it, standing still) for as long as it has stood, or the shed's
+## temperature if nobody has ridden it this session. Worked out at most twice a second per bike.
+static func disc_now(bike_id: int, i: int) -> float:
+	var t := shed_c()
+	var p: Dictionary = parked.get(bike_id, {})
+	if p.is_empty() or not is_instance_valid(p["heat"]):
+		return t
+	var now := Time.get_ticks_msec()
+	var key := "%d:%d" % [bike_id, i]
+	var c: Dictionary = _disc_seen.get(key, {})
+	if not c.is_empty() and now - int(c["at"]) < 500 and int(c["parked"]) == int(p["at"]) and is_equal_approx(float(c["air"]), t):
+		return float(c["t"])
+	var h: BikeHeat = p["heat"]
+	var td := h.discs[i]
+	var tp := h.pads[i]
+	var stood := (now - int(p["at"])) / 1000.0
+	var left := minf(stood, 3.0 * 3600.0)
+	while left > 0.0 and maxf(td, tp) > t + 0.5:
+		var dt := minf(left, 4.0)
+		var tk := td + KELVIN
+		var ta := t + KELVIN
+		var cool := 10.0 * h._disc_area[i] * h._disc_cool[i] * (td - t) + 0.5 * 5.67e-8 * h._disc_area[i] * (tk * tk * tk * tk - ta * ta * ta * ta)
+		var link := 8.0 * (td - tp)
+		td += (-cool - link) * dt / h._disc_c[i]
+		tp += (link - (tp - t)) * dt / 270.0
+		left -= dt
+	td = t if stood > 3.0 * 3600.0 else maxf(td, t)
+	_disc_seen[key] = {"at": now, "parked": int(p["at"]), "air": t, "t": td}
+	return td
+
+
+## Lines for the look-at panel on a bike's disc, pads or caliper (`looked` is which): the disc's
+## temperature now, and the rest of that brake: the disc, the pads it runs and when they fade, the
+## caliper and the stopping torque the whole brake makes. What the part's own condition line
+## already says (its thickness) isn't repeated.
+static func brake_lines(bike_id: int, side: String, looked: String) -> Array:
+	var out := []
+	var i := 0 if side == "front" else 1
+	var disc_id := Shed.item_on(bike_id, side + "_disc")
+	var pad_id := Shed.item_on(bike_id, side + "_pads")
+	var cal_id := Shed.item_on(bike_id, side + "_caliper")
+	var disc: Dictionary = PartsDB.get_part(str(Shed.items[disc_id]["part"])) if Shed.items.has(disc_id) else {}
+	var drum := str(disc.get("style", "")) == "drum"
+	if not disc.is_empty():
+		var now := disc_now(bike_id, i)
+		var word := "cold" if now < 40.0 else ("warm" if now < 150.0 else "hot")
+		var head := "%s %s: about %d °C now (%s)" % [side.capitalize(), "drum" if drum else "disc", roundi(now), word]
+		if looked != "disc":
+			head = "%s %s  ·  %.1f mm thick  ·  about %d °C now (%s)" % [side.capitalize(), PartsDB.part_name(str(Shed.items[disc_id]["part"])),
+				MotTest.disc_mm(Shed.items[disc_id]), roundi(now), word]
+		out.append(head)
+	else:
+		out.append("%s disc: none fitted" % side.capitalize())
+	if Shed.items.has(pad_id):
+		var pad := PartsDB.get_part(str(Shed.items[pad_id]["part"]))
+		var temps := pad_temps(pad, disc)
+		var fade := "bite fully from %d °C, fade from %d °C%s" % [roundi(float(temps[0])), roundi(float(temps[2])), " (inside the drum)" if drum else ""]
+		if looked == "pads":
+			out.append("On %s: %s" % ["this drum" if drum else "this disc", fade])
+		else:
+			out.append("Pads fitted: %s, %.1f mm left  ·  %s" % [str(pad.get("type", "?")), MotTest.pad_mm(Shed.items[pad_id]), fade])
+	else:
+		out.append("Pads: none fitted")
+	var build: BikeBuild = Shed.build_of(bike_id)
+	var torque := build.front_brake_torque if side == "front" else build.rear_brake_torque
+	if looked == "caliper" or not Shed.items.has(cal_id):
+		out.append("Brake: %d N·m stopping torque%s" % [roundi(torque), "" if Shed.items.has(cal_id) else ", no caliper fitted"])
+	else:
+		out.append("Caliper: %s  ·  brake makes %d N·m" % [PartsDB.part_name(str(Shed.items[cal_id]["part"])), roundi(torque)])
+	return out
 
 
 ## A tyre's working window, [full grip from °C, greasy above °C, grip share stone cold], from its
