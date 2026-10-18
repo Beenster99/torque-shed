@@ -59,6 +59,7 @@ var count := PackedFloat32Array()
 var wsum := PackedFloat32Array()
 var sent := PackedFloat32Array()
 var part_n := PackedInt32Array()   # entries on each part
+var slick := PackedFloat32Array()  # how much quicker each part washes off (its ceramic coat, see Detail)
 var done := {}               # slot index -> true once it's clean
 var dinged := {}             # slot index -> true once its ding has gone off (once a part)
 var bike_done := false
@@ -126,6 +127,7 @@ func setup(bike_id: int, bike_model: BikeModel) -> bool:
 		slots.append(str(slot))
 		items.append(id)
 		boxes.append(box)
+		slick.append(Detail.wash_mult(Shed.items[id]))
 		_raw_p.append_array(surf[0])
 		_raw_n.append_array(surf[1])
 		for k in (surf[0] as PackedVector3Array).size():
@@ -426,7 +428,7 @@ func step(delta: float, eye: Vector3, dir: Vector3, firing: bool, hit := false, 
 		var lvl := start[k]
 		if e_slot[i] == hs:
 			hit_level = lvl
-		var add := minf(1.0 - e_w[i], delta * RATE * power * tk * (1.0 - FALLOFF * sqrt(l2) / r) / grip(lvl))
+		var add := minf(1.0 - e_w[i], delta * RATE * power * tk * (1.0 - FALLOFF * sqrt(l2) / r) / grip(lvl) * slick[e_slot[i]])
 		e_w[i] += add
 		wsum[k] += add
 		touched[e_slot[i]] = true

@@ -70,6 +70,9 @@ const XP := {
 	"wash_part": {"xp": 1, "label": "Pressure washing"},
 	"pressure_wash": {"xp": 8, "label": "Bike washed"},
 	"muddy_wash": {"xp": 12, "label": "Mud monster washed", "once": "bike"},
+	# Detailing in the wash bay (see Detail): a panel polished to a deep gloss, one ceramic coated.
+	"polish_panel": {"xp": 8, "label": "Panel polished", "once": "item"},
+	"ceramic_panel": {"xp": 10, "label": "Panel ceramic coated", "once": "item"},
 	"chain_lube": {"xp": 6, "label": "Chain lube"},
 	# Repairing and spraying: higher again.
 	"repair": {"xp": 10, "label": "Restoring"},
@@ -105,6 +108,7 @@ const XP := {
 	"contract_maint": {"xp": 40, "label": "Service job done"},
 	"contract_mot": {"xp": 60, "label": "MOT job done"},
 	"contract_respray": {"xp": 80, "label": "Colour match job done"},
+	"contract_detail": {"xp": 50, "label": "Detailing job done"},
 	"contract_mod": {"xp": 100, "label": "Modification job done"},
 	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
 	"contract_batch": {"xp": 150, "label": "Batch order delivered"},
@@ -143,7 +147,7 @@ const PAY := {
 	"carry": 0, "unbox": 1, "unbolt": 1, "bolt": 1, "remove": 1, "fit": 2, "chain_tension": 3, "tune": 1, "dyno_run": 5,
 	"dyno_strap": 0, "dyno_hose": 1, "fluids": 3, "start_build": 10,
 	"bin": 0, "tip": 1, "recycle_plastic": 1, "recycle_metal": 2,
-	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "chain_lube": 3,
+	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "polish_panel": 4, "ceramic_panel": 5, "chain_lube": 3,
 	"repair": 6, "sandblast": 6, "paint": 8, "prime": 4, "protect_coat": 8, "lighten": 5, "paint_mix": 5, "test_panel": 1, "paint_stir": 1, "colour_match": 8,
 	"masking": 3, "tyre_remove": 2, "tyre_fit": 6, "tyre_plug": 4, "restore_part": 4,
 	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
@@ -165,6 +169,7 @@ const TOOL_INFO := {
 	"lance": {"name": "Pressure washer", "speed": "blasts off %d%% more muck a pass", "rate": true, "spread": 0.15,
 		"spread_what": "%d%% wider jet"},
 	"gun": {"name": "Spray gun", "speed": "coats %d%% faster", "rate": true, "spread": 0.08, "spread_what": "%d%% wider fan"},
+	"polisher": {"name": "Polisher", "speed": "polishes %d%% quicker", "rate": true, "spread": 0.06, "spread_what": "%d%% bigger pad"},
 	"watch": {"name": "Stopwatch", "speed": "keeps %d laps", "laps": true, "spread": 0.0},
 	"tyre": {"name": "Tyre changer", "speed": "%d%% quicker tyre changes", "spread": 0.0},
 }

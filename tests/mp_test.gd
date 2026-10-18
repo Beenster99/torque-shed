@@ -111,6 +111,8 @@ func _ready() -> void:
 	var REC_PARK := Recovery.PARK.translated(Vector3(-6.0, 0.0, 2.0))
 	var wash_step := 0
 	var wash_ok := false
+	var shine_step := 0
+	var shine_ok := false
 	var pool_t := 0             # when this side last tried to shoot, msec
 	var pool_own := false        # a shot this side took came back from the host
 	var pool_other := false      # and one the other side took arrived here
@@ -541,6 +543,25 @@ func _ready() -> void:
 			var seen_water: bool = role == "client" or (main.remotes.size() == 1 and ws != null and ws._wash_fx.has(int(main.remotes.keys()[0])))
 			wash_ok = wash_ok or (w_tyre != 0 and absf(float(Shed.items[w_tyre]["dirt"]) - 0.4) < 0.01 and absf(float(Shed.items[w_fork]["dirt"]) - 0.4) < 0.01
 				and float(Shed.items[w_engine]["dirt"]) == 0.0 and Dirt.side(Dirt.cells(Shed.items[w_fork], "fork"), 0) < 0.41 and seen_water)
+		# Detailing together, once it's washed: the client polishes the Ranger's tank to a deep gloss
+		# (as its mini game sends it), the host's AI-style step lays a ceramic coat on; both see
+		# both, and the host's Ranger is drawn with its finish.
+		if ranger != 0 and wash_ok and Shed.crew.size() == 2 and Shed.item_on(ranger, "tank") != 0:
+			var s_tank := Shed.item_on(ranger, "tank")
+			if role == "client" and shine_step == 0:
+				var fin := Detail.data(Shed.items[s_tank])
+				var shiny := PackedByteArray()
+				shiny.resize(Dirt.CELLS)
+				shiny.fill(240)
+				fin["g"] = shiny
+				Shed.request({"a": "shine_cells", "bike": ranger, "parts": {s_tank: fin}})
+				shine_step = 1
+			var s_st := Detail.part_stats(Shed.items[s_tank])
+			if role == "host" and shine_step == 0 and float(s_st["gloss"]) > 0.9:
+				Shed.request({"a": "shine_step", "bike": ranger, "step": "coat", "amount": 5.0, "skill": 1.0})
+				shine_step = 1
+			var drawn: bool = role == "client" or (ws != null and ws.bike_model(ranger) != null and ws.bike_model(ranger).finish_layer != null)
+			shine_ok = shine_ok or (float(s_st["gloss"]) > 0.9 and float(s_st["coat"]) > 0.5 and drawn)
 		# Pool in the crew lounge: the host gives the garage the lounge and racks up, the client
 		# joins, and they take turns at the table until each has seen a shot the other took
 		# played out on its own table.
@@ -577,7 +598,7 @@ func _ready() -> void:
 			elif pool_by != 0 and played_out:
 				pool_other = true
 			pool_ok = pool_own and pool_other
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and wash_ok and pool_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and wash_ok and shine_ok and pool_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -593,8 +614,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, washing %s, pool shots each way %s/%s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, wash_ok, pool_own, pool_other])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, washing %s, detailing %s, pool shots each way %s/%s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, wash_ok, shine_ok, pool_own, pool_other])
 	get_tree().quit(0 if ok else 1)
 
 

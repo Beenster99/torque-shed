@@ -21,6 +21,7 @@ var popups: Array = []
 var blast_hud: BlastHud     # the sandblaster's readout, while your hands are in the gloves
 var spray_hud: SprayHud     # the spray readout, while you lay a coat on
 var wash_hud: WashHud       # the pressure washing readout, while the wash controls are up
+var detail_hud: DetailHud   # the polishing and coating readout, while the detailing controls are up
 var _banner_level := 0
 var _banner_time := 0.0
 const POPUP_LIFE := 3.0
@@ -73,6 +74,8 @@ func _ready() -> void:
 	add_child(spray_hud)
 	wash_hud = WashHud.new()
 	add_child(wash_hud)
+	detail_hud = DetailHud.new()
+	add_child(detail_hud)
 	Progress.xp_gained.connect(add_popup)
 	Progress.cash_changed.connect(add_popup.bind(true))
 	Progress.leveled_up.connect(func(level: int):
@@ -120,7 +123,8 @@ func _process(delta: float) -> void:
 	blast_hud.walker = walker if on_foot else null
 	spray_hud.walker = walker if on_foot else null
 	wash_hud.walker = walker if on_foot else null
-	_panel.visible = on_foot and walker.blast == null and not spray_hud.showing() and not wash_hud.showing() \
+	detail_hud.walker = walker if on_foot else null
+	_panel.visible = on_foot and walker.blast == null and not spray_hud.showing() and not wash_hud.showing() and not detail_hud.showing() \
 		and (walker.info != "" or walker.look_info != "" or not walker.plan.is_empty() or walker.crouched)
 	if on_foot:
 		# What the cafe's bikers and the like say (Walker.look_info) comes first, over what the
@@ -368,7 +372,7 @@ func _draw_toolbar() -> void:
 			draw_rect(r, UITheme.ACCENT, false, 2.0)
 		draw_string(font, r.position + Vector2(8, 18), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.5))
 		var label: String = {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder", "spray": "Spray can",
-			"lance": "Pressure wash", "gun": "Spray gun", "watch": "Stopwatch"}.get(t, t)
+			"lance": "Pressure wash", "gun": "Spray gun", "watch": "Stopwatch", "polisher": "Polisher"}.get(t, t)
 		draw_string(font, r.position + Vector2(0, 34), label, HORIZONTAL_ALIGNMENT_CENTER, w, 16, Color.WHITE if active else Color(1, 1, 1, 0.65))
 		var stage := Progress.tool_stage(Shed.me(), t)
 		if stage > 0:
