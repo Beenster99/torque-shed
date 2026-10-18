@@ -218,9 +218,10 @@ static func money_data(peer: int) -> Dictionary:
 static func garage_data() -> Dictionary:
 	var worth := Money.shed_worth()
 	var flow := Money.flow(Shed.bank, 7)
-	return {"cash": Shed.garage_money, "bike_value": int(worth["bikes"]), "stock_value": int(worth["stock"]),
+	return {"cash": Money.balance(), "bike_value": int(worth["bikes"]), "stock_value": int(worth["stock"]),
 		"income_week": int(flow["in"]), "outgoings_week": int(flow["out"]), "bikes": Shed.bikes.size(),
-		"history": Money.graph(Settings.money_graph_range), "range": Settings.money_graph_range, "debt": Money.debt(Shed.bank)}
+		"history": Money.graph(Settings.money_graph_range), "range": Settings.money_graph_range, "debt": Money.debt(Shed.bank),
+		"bills_day": Money.bill_total(Money.bill_lines(Shed.bank)), "overdraft": int(Shed.bank.get("overdraft", 0))}
 
 
 ## Things worth saving up for, what they cost the business, and whether this player's cash covers them.
@@ -529,13 +530,16 @@ static func _draw_money_me(c: Control, font: Font, data: Dictionary) -> void:
 static func _draw_garage(c: Control, font: Font, data: Dictionary) -> void:
 	_title(c, font, "GARAGE MONEY", "The shed's own account")
 	_text(c, font, Vector2(24, 110), "SHED ACCOUNT", 20, Dashboard.DIM)
-	_text(c, font, Vector2(24, 180), money_text(int(data.get("cash", 0))), 72, Dashboard.GOOD)
+	var cash := int(data.get("cash", 0))
+	_text(c, font, Vector2(24, 180), money_text(cash), 72, Dashboard.GOOD if cash >= 0 else Dashboard.BAD)
+	if int(data.get("overdraft", 0)) > 0:
+		_text(c, font, Vector2(260, 110), "OVERDRAWN", 20, Dashboard.BAD)
 	_tile(c, font, Rect2(24, 210, 230, 96), "Bikes worth", money_text(int(data.get("bike_value", 0))))
 	_tile(c, font, Rect2(266, 210, 230, 96), "Parts stock", money_text(int(data.get("stock_value", 0))))
 	_tile(c, font, Rect2(24, 318, 230, 96), "In this week", money_text(int(data.get("income_week", 0))))
 	_tile(c, font, Rect2(266, 318, 230, 96), "Out this week", money_text(int(data.get("outgoings_week", 0))))
-	_tile(c, font, Rect2(24, 426, 230, 82), "Bikes in the shed", str(int(data.get("bikes", 0))))
-	_tile(c, font, Rect2(266, 426, 230, 82), "Owed to the bank", money_text(int(data.get("debt", 0))))
+	_tile(c, font, Rect2(24, 426, 230, 82), "Bills a night", money_text(int(data.get("bills_day", 0))))
+	_tile(c, font, Rect2(266, 426, 230, 82), "Owed to the bank", money_text(int(data.get("debt", 0)) + int(data.get("overdraft", 0))))
 	var key := str(data.get("range", MoneyGraph.DEFAULT_RANGE))
 	chart(c, font, Rect2(516, 90, 484, 418), data.get("history", []), "Shed account, %s" % MoneyGraph.span_text(key), key)
 	if data.get("placeholder", false):

@@ -81,6 +81,13 @@ const PADDLE_HOLD := 0.45         # hold the front brake this long at a standsti
 const BURNOUT_SPEED := 2.5        # below this, front brake plus throttle lights up the back tyre
 const BEAM_FOG := 3               # the headlight switch's last stop on a bike with fog lights
 const DONUT_RATE := 2.2           # rad/s: how fast a full-lock burnout swings the back round the front wheel
+## Gear 0 is neutral. It sits between first and second, as on a real bike: at a walking pace or
+## slower one click finds it (up from first, down from second); riding, a full click goes
+## straight between first and second.
+const NEUTRAL := 0
+const NEUTRAL_FIND_SPEED := 2.0
+## In neutral the engine spins only itself: it makes this share of its torque to do it (fuel, heat).
+const FREE_REV_LOAD := 0.12
 
 var build: BikeBuild
 
@@ -111,7 +118,7 @@ var fuel_used := 0.0       # litres burnt since the last time someone read and c
 var effects: BikeEffects
 
 # Simulation state, read by the HUD, camera, audio and network.
-var gear := 1
+var gear := 1               # 0 is neutral (NEUTRAL), then 1 .. build.gear_count()
 var rpm := 1000.0
 var steer := 0.0            # radians, + bars turned right
 var steer_vel := 0.0        # how fast the bars are turning, rad/s
@@ -462,6 +469,10 @@ func _physics_process(delta: float) -> void:
 
 	if model:
 		model.update_pose(self)
+		if heat:
+			# A tyre going flat squashes out under the rim as it loses its air (see Puncture).
+			model.set_flat("front", heat.flat(0))
+			model.set_flat("rear", heat.flat(1))
 	if effects:
 		effects.update(delta, speed, throttle, engine_on, build.overall_health(), surface,
 			wheels[1]["contact"], wheels[1]["slip"])
@@ -796,15 +807,24 @@ func kick_bars(impulse: float) -> void:
 
 func _update_engine(delta: float) -> void:
 	var rear: Dictionary = wheels[1]
-	var ratio := build.overall_ratio(gear)
+	var neutral := gear == NEUTRAL
+	var ratio := build.overall_ratio(maxi(gear, 1))
 	var wheel_rpm: float = rear["omega"] * ratio * 60.0 / TAU
 	var idle_rpm := idle_now()
 	var clutch_rpm := idle_rpm + 900.0
-	var engaged := wheel_rpm >= clutch_rpm
+	var engaged := wheel_rpm >= clutch_rpm and not neutral
 	var shifting := _shift_timer > 0.0
 	_shift_timer -= delta
 
-	if shifting and engine_on:
+	if neutral:
+		if engine_on:
+			# Nothing but the engine's own flywheel to spin: it revs freely, quick to rise on the
+			# throttle and slower to fall back to idle, and bounces off the limiter.
+			var free := lerpf(idle_rpm, build.redline * 1.01, pow(_throttle_eff, 0.8))
+			rpm = lerpf(rpm, free, 1.0 - exp(-(6.0 if free > rpm else 2.5) * delta))
+			if rpm >= build.redline:
+				rpm -= build.redline * 0.04
+	elif shifting and engine_on:
 		# The clutch is in: the revs fall (or blip up) to the new gear's speed instead of jumping.
 		var f := clampf(1.0 - _shift_timer / maxf(build.shift_time, 0.01), 0.0, 1.0)
 		rpm = lerpf(_shift_from_rpm, maxf(wheel_rpm, idle_rpm), f * f)
@@ -855,6 +875,10 @@ func _update_engine(delta: float) -> void:
 	if shifting:
 		torque = 0.0
 		made = 0.0
+	if neutral:
+		# Nothing to drive: the back wheel just rolls.
+		made *= FREE_REV_LOAD
+		torque = 0.0
 	if not engine_on:
 		# Engine off: the bike just rolls. The revs fall away to nothing.
 		torque = 0.0
@@ -874,15 +898,20 @@ func _update_engine(delta: float) -> void:
 	rpm = clampf(rpm, idle_rpm * 0.9 if engine_on else 0.0, build.redline * 1.02)
 
 	_since_shift += delta
-	if auto_shift and not shifting and _since_shift > 0.6:
+	if auto_shift and neutral:
+		# The automatic box drops into a gear that suits the road speed as soon as the rider opens
+		# the throttle (first from a standstill); it never picks neutral by itself.
+		if engine_on and throttle > 0.05:
+			_select(gear_for_speed())
+	elif auto_shift and not shifting and _since_shift > 0.6:
 		# Shift on road speed, not engine revs, so wheelspin doesn't confuse the gearbox.
 		var road_rpm := absf(speed) / build.rear_radius * ratio * 60.0 / TAU
 		if road_rpm > build.redline * 0.9 and gear < build.gear_count():
-			shift_up()
+			_select(gear + 1)
 		elif gear > 1:
 			var lower_rpm := road_rpm * build.overall_ratio(gear - 1) / ratio
 			if road_rpm < build.peak_torque_rpm * 0.5 and lower_rpm < build.redline * 0.8:
-				shift_down()
+				_select(gear - 1)
 
 
 ## The revs the engine idles at now: higher on the choke while it's cold.
@@ -895,22 +924,51 @@ func _bite(i: int) -> float:
 	return heat.bite[i] if heat else 1.0
 
 
+## One click up: first to neutral at a walking pace or slower (a half click), otherwise first to
+## second, neutral to second, and on up the box.
 func shift_up() -> void:
-	if gear < build.gear_count():
-		_shift_from_rpm = rpm
-		gear += 1
-		_shift_timer = build.shift_time
-		_since_shift = 0.0
-		gear_changed.emit(gear)
+	if gear == 1 and absf(speed) < NEUTRAL_FIND_SPEED:
+		_select(NEUTRAL)
+	elif gear == NEUTRAL:
+		_select(mini(2, build.gear_count()))
+	elif gear < build.gear_count():
+		_select(gear + 1)
 
 
+## One click down: second to neutral at a walking pace or slower (a half click), otherwise down
+## the box to first, and neutral to first.
 func shift_down() -> void:
-	if gear > 1:
-		_shift_from_rpm = rpm
-		gear -= 1
-		_shift_timer = build.shift_time
-		_since_shift = 0.0
-		gear_changed.emit(gear)
+	if gear == 2 and absf(speed) < NEUTRAL_FIND_SPEED:
+		_select(NEUTRAL)
+	elif gear == NEUTRAL:
+		_select(1)
+	elif gear > 1:
+		_select(gear - 1)
+
+
+## Puts the box in gear `g` (0 neutral). Into a gear the clutch is in for a moment while the revs
+## meet the new gear; into neutral the drive simply lets go.
+func _select(g: int) -> void:
+	if g == gear:
+		return
+	_shift_from_rpm = rpm
+	gear = g
+	_shift_timer = build.shift_time if g != NEUTRAL else 0.0
+	_since_shift = 0.0
+	gear_changed.emit(gear)
+
+
+## The lowest gear that doesn't over-rev the engine at the road speed now (first when stopped).
+func gear_for_speed() -> int:
+	for g in range(1, build.gear_count() + 1):
+		if absf(speed) / build.rear_radius * build.overall_ratio(g) * 60.0 / TAU < build.redline * 0.8:
+			return g
+	return build.gear_count()
+
+
+## How the dash and HUD show gear `g`: "N" for neutral, else its number.
+static func gear_name(g: int) -> String:
+	return "N" if g == NEUTRAL else str(g)
 
 
 ## The wheelie angle the rider aims for: with their weight back, the balance angle (higher the
@@ -941,7 +999,7 @@ func _update_feet(delta: float) -> void:
 		_stopped_brake = 0.0
 	if paddling:
 		_stopped_brake = 0.0
-	var lit := engine_on and on_ground and front_brake > 0.5 and throttle > 0.35 and absf(speed) < BURNOUT_SPEED \
+	var lit := engine_on and gear != NEUTRAL and on_ground and front_brake > 0.5 and throttle > 0.35 and absf(speed) < BURNOUT_SPEED \
 		and pitch_angle < deg_to_rad(8.0)
 	var spin_v: float = wheels[1]["omega"] * build.rear_radius - speed
 	var target := clampf(spin_v / 12.0, 0.0, 1.0) * throttle if lit else 0.0
@@ -1008,6 +1066,11 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var is_front: bool = w["is_front"]
 	var tp: Dictionary = build.tyre_front if is_front else build.tyre_rear
 	var radius: float = w["radius"]
+	# A flat tyre folds under the rim: the wheel rides lower, drags and wallows (see Puncture).
+	var flat_now := heat.flat(0 if is_front else 1) if heat else 0.0
+	if flat_now > 0.0:
+		radius -= heat.squash(0 if is_front else 1, radius - (build.front_rim_radius if is_front else build.rear_rim_radius))
+	var roll_k := build.rolling * (1.0 + Puncture.FLAT_DRAG * maxf(flat_now - float(build.flat["front" if is_front else "rear"]), 0.0))
 	var crown := minf(float(tp.get("crown", 0.0)), radius * 0.6)
 	var travel: float = w["travel"]
 	var q_was: float = w["compression"]
@@ -1193,6 +1256,9 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	mu_surf *= Weather.grip_mult(hit_surf)   # wet roads after rain grip a little less
 	if heat:
 		mu_surf *= heat.tyre_grip(0 if is_front else 1, hit_surf)   # a cold tyre (or a cooked one) grips less
+	if flat_now > 0.0:
+		# The folded carcass bunches up and lets go once a turn of the wheel: it wallows.
+		mu_surf *= 1.0 - 0.18 * flat_now * (0.5 + 0.5 * sin(float(w["spin"]) * 2.0))
 	var mu := TyreModel.mu_at(mu_surf, fz, build.total_mass * G * 0.5, tp)
 	var f_peak := mu * fz
 	var bc := TyreModel.stiffness_at_zero(tp)
@@ -1254,8 +1320,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	fy = clampf(fy, -fy_cap, fy_cap)
 	# The work of the tyre sliding over the road and flexing as it rolls heats it (see BikeHeat).
 	w["p_slip"] = absf(fx * (omega_new * r_eff - v_long)) + absf(fy * v_lat)
-	w["p_roll"] = build.rolling * fz * v_abs
-	fx -= signf(v_long) * build.rolling * fz
+	w["p_roll"] = roll_k * fz * v_abs
+	fx -= signf(v_long) * roll_k * fz
 	if burnout > 0.0 and not is_front:
 		# Lit up: the tyre spins free against the road, smoking, while the feet hold the bike.
 		fx *= 1.0 - 0.85 * burnout

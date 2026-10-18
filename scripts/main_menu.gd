@@ -7,6 +7,8 @@ signal ride_solo
 signal host_game
 signal join_game(ip: String)
 signal resume
+## "Back to the garage": out in the world, home with the bike you're on (see Main.go_home).
+signal go_home
 signal leave_session
 signal order_bike
 signal geometry_mode
@@ -35,11 +37,15 @@ RIDING
 I / D-pad up: start or stop the engine      W / RT: throttle      S / LT: front brake
 Space / B: rear brake      A D / left stick: lean      Shift / LB: weight back      Ctrl / RB: forward
 E Q / A X: gear up / down      T: auto-shift      C / R3: chase or first-person camera
+Neutral (N) sits between 1st and 2nd: at a standstill E from 1st or Q from 2nd finds it; Q from N is 1st
 Mouse / right stick: swing the camera round      V: ride-by camera (watch yourself go past)
 L / L3: headlight (off, low, high, high with fog lights)      S + W / LT + RT: burnout (lean to spin round)
 R / View: reset after a crash      F / Y: get off (when stopped)      F3: telemetry overlay"""
 
 var _name: LineEdit
+var _home: Button
+## Says whether "Back to the garage" can be used now ("" yes, "home" already there, else why not); set by Main.
+var home_check := Callable()
 var _ip: LineEdit
 var _status: Label
 var _start_box: VBoxContainer
@@ -144,6 +150,8 @@ func _ready() -> void:
 	col.add_child(_pause_box)
 	_resume = _button("Back to the shed", func(): _save(); resume.emit())
 	_pause_box.add_child(_resume)
+	_home = _button("Respawn at the garage (stranded? you and the bike you're on go home)", func(): go_home.emit())
+	_pause_box.add_child(_home)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
 	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
@@ -359,8 +367,18 @@ func show_pause() -> void:
 	_third_person.button_pressed = Settings.walk_third_person
 	_refresh_time_settings(true)
 	refresh_retrieve()
+	_refresh_home()
 	show()
 	_resume.grab_focus()
+
+
+## Shows "Back to the garage" while you're out in the world, greyed out (and saying why) when
+## it can't be used just now.
+func _refresh_home() -> void:
+	var why: String = home_check.call() if home_check.is_valid() else "home"
+	_home.visible = why != "home"
+	_home.disabled = why != ""
+	_home.tooltip_text = Controls.hint(why) if why != "home" else ""
 
 
 ## Lists bikes left out on the road (nobody riding them, away from the shed) with a button each

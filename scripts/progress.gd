@@ -88,6 +88,7 @@ const XP := {
 	"masking": {"xp": 6, "label": "Masking"},
 	"tyre_remove": {"xp": 4, "label": "Tyre off"},
 	"tyre_fit": {"xp": 10, "label": "Tyre fitting"},
+	"tyre_plug": {"xp": 8, "label": "Puncture plugged"},
 	"restore_part": {"xp": 4, "label": "Part like new", "once": "item"},
 	# Milestones: high.
 	"engine_build": {"xp": 40, "label": "Engine rebuilt", "once": "item", "tag": "builder"},
@@ -144,7 +145,7 @@ const PAY := {
 	"bin": 0, "tip": 1, "recycle_plastic": 1, "recycle_metal": 2,
 	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "chain_lube": 3,
 	"repair": 6, "sandblast": 6, "paint": 8, "prime": 4, "protect_coat": 8, "lighten": 5, "paint_mix": 5, "test_panel": 1, "paint_stir": 1, "colour_match": 8,
-	"masking": 3, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
+	"masking": 3, "tyre_remove": 2, "tyre_fit": 6, "tyre_plug": 4, "restore_part": 4,
 	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
 	"sell_bike": 50, "sell_part": 2, "px_deal": 20,
 }

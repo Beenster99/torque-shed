@@ -221,6 +221,10 @@ var flat_dip := 0.0            # a manufacturer prototype's flat spot: torque lo
 var engine_stress := 1.0       # how hard the tune works the engine: multiplies its wear
 var rolling := ROLLING         # rolling resistance; soft tyres drag
 var tyre_wear := {"front": 1.0, "rear": 1.0}   # how fast each tyre wears at its pressure
+## Air each tyre has lost from its set pressure (a puncture, see Puncture), bar, and how flat
+## that leaves it: 0 holding its shape .. 1 rolling on the rim.
+var deflate := {"front": 0.0, "rear": 0.0}
+var flat := {"front": 0.0, "rear": 0.0}
 
 # Drivetrain
 var primary := 2.9
@@ -616,15 +620,26 @@ func _compute_wheels() -> void:
 		grip[surf] = (grip_front[surf] + grip_rear[surf]) * 0.5
 	# Tyre pressures: off the tyre's best, it grips less on tarmac. A little soft finds more
 	# grip in the dirt, but squirms, drags and wears.
+	# A punctured tyre has lost air from that: nearly flat, it folds and rolls on the rim.
+	for side in ["front", "rear"]:
+		deflate[side] = maxf(float(condition.get(side + "_tyre", {}).get("deflate", 0.0)), 0.0)
 	var dev_f := pressure_offset("front")
 	var dev_r := pressure_offset("rear")
+	flat["front"] = Puncture.flat_of(pressure_now("front"), tune_default("psi_f"))
+	flat["rear"] = Puncture.flat_of(pressure_now("rear"), tune_default("psi_r"))
 	for surf in grip_rear:
-		grip_front[surf] *= _pressure_grip(dev_f, surf)
-		grip_rear[surf] *= _pressure_grip(dev_r, surf)
+		grip_front[surf] *= _pressure_grip(dev_f, surf) * Puncture.flat_grip(flat["front"])
+		grip_rear[surf] *= _pressure_grip(dev_r, surf) * Puncture.flat_grip(flat["rear"])
 		grip[surf] = (grip_front[surf] + grip_rear[surf]) * 0.5
-	rolling = ROLLING * (clampf(1.0 - 0.9 * dev_f, 0.6, 2.5) + clampf(1.0 - 0.9 * dev_r, 0.6, 2.5)) * 0.5
+	rolling = ROLLING * (clampf(1.0 - 0.9 * dev_f, 0.6, 2.5) * (1.0 + Puncture.FLAT_DRAG * flat["front"])
+		+ clampf(1.0 - 0.9 * dev_r, 0.6, 2.5) * (1.0 + Puncture.FLAT_DRAG * flat["rear"])) * 0.5
+	for side in ["front", "rear"]:
+		if flat[side] > 0.0:
+			notes.append("The %s tyre is flat: it wallows and grips badly, and riding on it ruins the tyre and rim. Plug it, or change it, and pump it up." % side)
+		elif float(condition.get(side + "_tyre", {}).get("puncture", 0.0)) > 0.0:
+			notes.append("The %s tyre has a puncture: it's losing air. Plug it, or change it on the tyre changer." % side)
 	tyre_wear = {"front": 1.0 + 2.5 * absf(dev_f), "rear": 1.0 + 2.5 * absf(dev_r)}
-	if minf(dev_f, dev_r) < -0.3:
+	if minf(dev_f, dev_r) < -0.3 and maxf(flat["front"], flat["rear"]) == 0.0:   # a flat one says so itself
 		notes.append("The tyres are soft: they'll squirm, drag and wear out fast.")
 	elif maxf(dev_f, dev_r) > 0.3:
 		notes.append("The tyres are rock hard: less grip, and they skip over bumps.")
@@ -1028,11 +1043,16 @@ func tune_value(key: String) -> float:
 	return clampf(float(tune[key]), r.x, r.y)
 
 
-## How far a tyre is off its best pressure, as a fraction: -0.2 is 20% soft.
+## How far a tyre is off its best pressure, as a fraction: -0.2 is 20% soft (-1 with no air in it).
 func pressure_offset(side: String) -> float:
 	var key := "psi_f" if side == "front" else "psi_r"
 	var best := tune_default(key)
-	return (tune_value(key) - best) / best
+	return (pressure_now(side) - best) / best
+
+
+## A tyre's cold pressure as it is, bar: what it's set to, less any air a puncture has let out.
+func pressure_now(side: String) -> float:
+	return maxf(tune_value("psi_f" if side == "front" else "psi_r") - float(deflate.get(side, 0.0)), 0.0)
 
 
 func _pressure_grip(dev: float, surf: String) -> float:

@@ -101,6 +101,9 @@ func _run_all() -> void:
 	await _test_bike_lights()
 	await _test_tyre_changer()
 	await _test_changer_save_load()
+	_test_puncture_build()
+	await _test_puncture_ride()
+	_test_puncture_shed()
 	print("Shop: recycling and TV channels")
 	_test_recycling()
 	await _test_tv_channels()
@@ -159,6 +162,8 @@ func _run_all() -> void:
 	_test_money_pay_and_transfers()
 	_test_money_loans()
 	_test_money_parts_and_selling()
+	_test_money_running_costs()
+	_test_debug_contracts()
 	print("Contracts: customers, offers, MOT, goals, payouts and saving")
 	_test_contract_customers()
 	_test_contract_mot()
@@ -367,6 +372,10 @@ func _run_all() -> void:
 	_test_tail_and_dash_fit()
 	print("Simon's 17 October round (v0.8.0): third person on foot")
 	await _test_walk_third_person()
+	print("Simon's 18 October round (v0.9.0): neutral, rubber on the road, back to the garage")
+	await _test_neutral_gear()
+	await _test_burnout_marks()
+	await _test_go_home()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -7149,6 +7158,8 @@ func _test_money_pay_and_transfers() -> void:
 ## debt limit, and the bank saved with the shed (old saves get the defaults).
 func _test_money_loans() -> void:
 	Shed.start_new("Boss", 8)
+	# Just the loans here: the nightly running costs are tested in _test_money_running_costs.
+	Shed.request({"a": "money_settings", "costs": "off"})
 	var me := Shed.me()
 	var start := Shed.garage_money
 	Shed.request({"a": "money_loan", "offer": 0})
@@ -7304,6 +7315,166 @@ func _test_money_parts_and_selling() -> void:
 	Progress.select(Settings.player_name)
 
 
+## Running costs: the nightly bill (rent and rates by the premises, insurance, power and water by
+## the lights and machines used, consumables by the work done), the off / normal / hard setting,
+## the overdraft when the account can't cover it, the Money tab and the TV page, and saving.
+func _test_money_running_costs() -> void:
+	Shed.start_new("Boss", 8)
+	var me := Shed.me()
+	var bank: Dictionary = Shed.bank
+	check(str(bank["costs"]) == "normal" and int(bank["overdraft"]) == 0, "a new shed's running costs are normal, with no overdraft")
+	var lines := Money.bill_lines(bank)
+	var keys := lines.map(func(l): return str(l["key"]))
+	var idle := Money.bill_total(lines)
+	check(keys.has("rent") and keys.has("rates") and keys.has("insurance") and keys.has("power") and not keys.has("consumables"),
+		"tonight's bill: rent, rates, insurance and power (no consumables before any work) %s" % str(keys))
+	check(idle >= 140 and idle <= 220, "an idle shed's bill before the lights count: %s" % TvChannels.money_text(idle))
+	var power := func() -> int:
+		for l in Money.bill_lines(Shed.bank):
+			if str(l["key"]) == "power":
+				return int(l["amt"])
+		return 0
+	var p0: int = power.call()
+	for i in 4:
+		Money.note_use({"a": "dyno_run"})
+	Money.note_use({"a": "ride"})
+	Money.note_use({"a": "contract_accept"})
+	check(power.call() == p0 + 8 and int(bank["use"]["work"]) == 4, "machines add to power and water (a dyno run 8 units), riding and paperwork don't")
+	for i in 40:
+		Money.note_use({"a": "install", "bike": 1})
+	check(Money.bill_lines(bank).any(func(l): return str(l["key"]) == "consumables"), "work on the kit uses consumables")
+	var p1: int = power.call()
+	Shed.lights_on = true
+	Money.note_lights(5.0)
+	Money.note_lights(5.0)
+	var lit: int = power.call()
+	check(lit > p1 + 7, "ten hours of lights on: more power (%s to %s)" % [TvChannels.money_text(p1), TvChannels.money_text(lit)])
+	Shed.upgrades["led"] = true
+	check(power.call() < lit, "LED lighting uses less")
+	var rent := func() -> int:
+		return int(Money.bill_lines(Shed.bank).filter(func(l): return str(l["key"]) == "rent")[0]["amt"])
+	var r0: int = rent.call()
+	Shed.upgrades["wing"] = true
+	check(rent.call() == r0 + 45, "an extension puts the rent up")
+	# The bill comes out at midnight.
+	var total := Money.bill_total(Money.bill_lines(bank))
+	var bal := Shed.garage_money
+	var heard := Shed.bills_heard
+	Shed.money_new_day()
+	check(Shed.garage_money == bal - total, "midnight: the bill comes out of the business (%s)" % TvChannels.money_text(total))
+	check(bank["ledger"].any(func(e): return str(e["why"]) == "Rent" and int(e["amt"]) < 0 and int(e["day"]) == 1)
+		and bank["ledger"].any(func(e): return str(e["why"]) == "Insurance"), "each bill is a line in the ledger")
+	check(Money.bill_total(bank["last_bill"]) == total and int(bank["last_bill_day"]) == 1, "the last bill is kept for the Money tab")
+	check(int(bank["use"]["work"]) == 0 and float(bank["use"]["light_h"]) == 0.0, "and what was used starts again")
+	check(Shed.bills_heard == heard + 1, "everyone hears the bill come out")
+	check(int(Money.flow(bank, 7)["out"]) >= total and int(TvChannels.garage_data()["outgoings_week"]) >= total,
+		"the bills count as outgoings on the Garage money page")
+	check(int(TvChannels.garage_data()["bills_day"]) == Money.bill_total(Money.bill_lines(bank)), "and the page shows a night's bills")
+	# Off and hard.
+	var normal := Money.bill_total(Money.bill_lines(bank))
+	Shed.request({"a": "money_settings", "costs": "hard"})
+	var hard := Money.bill_total(Money.bill_lines(bank))
+	check(str(bank["costs"]) == "hard" and hard > normal * 1.6 and hard < normal * 1.9, "hard: bills 1.75 times as big (%d vs %d)" % [hard, normal])
+	check(Money.check(2, {"a": "money_settings", "costs": "off"}) != "", "only the host sets the running costs")
+	check(Money.check(me, {"a": "money_settings", "costs": "silly"}) != "", "off, normal or hard only")
+	Shed.request({"a": "money_settings", "costs": "off"})
+	bal = Shed.garage_money
+	Shed.money_new_day()
+	check(Money.bill_lines(bank).is_empty() and Shed.garage_money == bal, "off: no bills at all")
+	# The overdraft.
+	Shed.request({"a": "money_settings", "costs": "normal"})
+	Shed.garage_money = 50
+	total = Money.bill_total(Money.bill_lines(bank))
+	Shed.money_new_day()
+	var od := int(bank["overdraft"])
+	check(Shed.garage_money == 0 and od == total - 50 and Money.balance() == 50 - total, "a bill it can't cover: overdrawn by %s" % TvChannels.money_text(od))
+	check(int(TvChannels.garage_data()["cash"]) < 0, "the Garage money page shows the account below nothing")
+	Money.record_graph()
+	check(int(Money.graph("day")[-1]) == Money.balance(), "and so does the graph")
+	total = Money.bill_total(Money.bill_lines(bank))
+	Shed.money_new_day()
+	var fee := maxi(Money.OVERDRAFT_MIN_FEE, roundi(od * Money.OVERDRAFT_RATE))
+	check(int(bank["overdraft"]) == od + fee + total, "interest on the overdraft, and the next bill on top")
+	check(Money.check(me, {"a": "money_loan", "offer": 0}) == "", "overdrawn isn't game over: the bank still lends")
+	od = int(bank["overdraft"])
+	Shed.credit_garage(5000, "Test sale")
+	check(int(bank["overdraft"]) == 0 and Shed.garage_money == 5000 - od, "income pays the overdraft back first")
+	# Saving.
+	Shed.request({"a": "money_settings", "costs": "hard"})
+	bank["overdraft"] = 123
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Boss")
+	check(str(Shed.bank["costs"]) == "hard" and int(Shed.bank["overdraft"]) == 123 and not Shed.bank["last_bill"].is_empty(),
+		"the setting, the overdraft and the last bill are saved with the shed")
+	for k in ["costs", "overdraft", "use", "last_bill", "last_bill_day"]:
+		copy["bank"].erase(k)
+	Shed.load_state(copy, "Boss")
+	check(str(Shed.bank["costs"]) == "normal" and int(Shed.bank["overdraft"]) == 0 and Shed.bank["last_bill"].is_empty(),
+		"a shed saved before running costs pays them at normal from now on")
+	# The Money tab.
+	var tab := MoneyTab.new()
+	add_child(tab)
+	tab.refresh()
+	var texts := tab.find_children("*", "Label", true, false).map(func(l): return (l as Label).text)
+	check(texts.any(func(t): return str(t).begins_with("Tonight's bill so far")) and texts.any(func(t): return str(t).contains("Business rates")),
+		"the Money tab shows tonight's bill line by line")
+	tab.set_costs("off")
+	check(str(Shed.bank["costs"]) == "off", "and the host sets the running costs there")
+	tab.free()
+
+
+## The Debug tab's contract buttons: every kind of job and both recovery jobs start there and
+## then (whatever the reputation, level or truck), or the customer arrives, at a chosen size.
+func _test_debug_contracts() -> void:
+	for kind in Contracts.KINDS:
+		Shed.start_new("Tester", 5)
+		var tab := DebugTab.new()
+		add_child(tab)
+		check(Contracts.reputation() < int(Contracts.UNLOCK[kind]) or kind == "maint", "%s: reputation too low for it as usual" % kind)
+		tab.press_named("start_" + kind)
+		var jobs: Array = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == kind)
+		check(jobs.size() == 1 and str(jobs[0]["state"]) == "active" and Contracts.customers().is_empty(),
+			"Debug: start a %s job now" % Contracts.KIND_NAMES[kind])
+		if kind != "batch":
+			check(not jobs.is_empty() and Shed.bikes.has(int(jobs[0].get("bike", 0))), "%s: its bike is in the shed" % kind)
+		tab.press_named("send_" + kind)
+		check(Contracts.customers().values().any(func(c): return str(c["offer"]["kind"]) == kind), "Debug: a %s customer arrives" % kind)
+		tab.free()
+	Shed.start_new("Tester", 5)
+	var tab := DebugTab.new()
+	add_child(tab)
+	tab.set_tier(0)
+	tab.press_named("send_mot")
+	tab.set_tier(2)
+	tab.press_named("send_mot")
+	var faults: Array = Contracts.customers().values().map(func(c): return int(c["offer"].get("faults", 0)))
+	check(faults.size() == 2 and faults.min() <= 3 and faults.max() >= 6, "the difficulty: an easy MOT and a hard one %s" % str(faults))
+	tab.set_tier(2)
+	tab.press_named("start_maint")
+	var maint: Array = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == "maint")
+	check(maint.size() == 1 and maint[0]["goals"].size() >= 4, "a hard service: a long list (%d tasks)" % (maint[0]["goals"].size() if maint.size() == 1 else 0))
+	check(Contracts.check(2, {"a": "contract_start", "kind": "mot"}) != "", "only the host starts contracts")
+	# Recovery jobs, the truck granted.
+	check(not Recovery.owned(), "no recovery truck yet")
+	tab.press_named("start_barn")
+	check(Recovery.owned() and Recovery.jobs().values().any(func(j): return str(j["kind"]) == "barn" and str(j["state"]) == "collect"),
+		"Debug: a barn find taken on now, with the truck")
+	tab.press_named("start_crash")
+	check(Recovery.jobs().values().any(func(j): return str(j["kind"]) == "crash"), "Debug: a crash rescue taken on now")
+	var n := Recovery.jobs().size()
+	tab.press_named("start_barn")
+	check(Recovery.jobs().size() == n, "no more than %d out to collect at once" % Recovery.MAX_JOBS)
+	tab.press_named("send_crash")
+	check(Recovery.offers().values().any(func(o): return str(o["kind"]) == "crash"), "Debug: a crash rescue offer rings in")
+	var focusable := tab.find_children("start_*", "Button", true, false).filter(func(b): return (b as Button).focus_mode == Control.FOCUS_ALL)
+	check(focusable.size() == Contracts.KINDS.size() + Recovery.KIND_NAMES.size(), "every start button takes the controller's focus")
+	var day := int(Shed.bank["day"])
+	var bal := Shed.garage_money
+	tab.press("Pay tonight's bills now")
+	check(int(Shed.bank["day"]) == day + 1 and Shed.garage_money < bal, "Debug: pay tonight's bills now")
+	tab.free()
+
+
 # ---------------------------------------------------------------------------- contracts
 
 ## A bike in a known, roadworthy state: new parts, mirrors, fluids full, chain set right.
@@ -7329,6 +7500,8 @@ func _make_roadworthy(bike_id: int) -> void:
 		if id == 0:
 			continue
 		var item: Dictionary = Shed.items[id]
+		item.erase("puncture")   # plugged and pumped up (see Puncture)
+		item.erase("deflate")
 		item["rust"] = 0.0
 		item["dirt"] = 0.0
 		item["wear"] = 0.0
@@ -18391,3 +18564,325 @@ func _test_heat_carry_over() -> void:
 		"the HUD says cold tyres and engine on a cold bike, warm on a ridden one")
 	var save := BikeBuild.new({}).to_dict()
 	check(not str(save).contains("heat") and not str(save).contains("carcass"), "heat isn't part of a saved bike")
+
+
+## Neutral sits between first and second: a half click at a standstill finds it, a full click on
+## the move skips it. In neutral the engine revs freely, nothing drives the back wheel and the bike
+## coasts; the automatic box drops into a gear when the throttle opens.
+func _test_neutral_gear() -> void:
+	check(Bike.gear_name(0) == "N" and Bike.gear_name(3) == "3", "the gear readout shows N for neutral")
+	var r := await ride({}, 0.5, func(_b, _t): pass)
+	var bike: Bike = r["bike"]
+	bike.auto_shift = false
+	var seen := []
+	for step in ["up", "up", "down", "down", "down"]:
+		if step == "up":
+			bike.shift_up()
+		else:
+			bike.shift_down()
+		seen.append(Bike.gear_name(bike.gear))
+	check(seen == ["N", "2", "N", "1", "1"], "standing still: 1 up to N, up to 2, down to N, down to 1, and 1 is the bottom %s" % str(seen))
+	await _done(r)
+	# Revving in neutral: the revs climb with nothing driven, and fall back to idle off the throttle.
+	var top := [0.0, 0.0, 0.0]
+	r = await ride({}, 4.0, func(b, t):
+		if t == 0.0:
+			b.auto_shift = false
+			b.gear = Bike.NEUTRAL
+		b.throttle = 1.0 if t < 2.0 else 0.0
+		b.front_brake = 1.0 if t > 1.2 and t < 2.0 else 0.0
+		if t < 2.0:
+			top[0] = maxf(top[0], b.rpm)
+			top[1] = maxf(top[1], absf(float(b.wheels[1]["drive_torque"])))
+			top[2] = maxf(top[2], b.burnout))
+	bike = r["bike"]
+	check(top[0] > bike.build.redline * 0.85, "in neutral the throttle revs the engine freely (%.0f of %.0f rpm)" % [top[0], bike.build.redline])
+	check(top[1] == 0.0 and absf(bike.speed) < 0.3, "and nothing drives the back wheel: the bike stays put (%.2f m/s)" % bike.speed)
+	check(bike.rpm < bike.idle_now() * 1.3, "off the throttle the revs fall back to idle (%.0f rpm)" % bike.rpm)
+	check(top[2] == 0.0, "front brake and throttle in neutral don't light up a burnout")
+	await _done(r)
+	# The automatic box picks first as soon as the throttle opens in neutral.
+	r = await ride({}, 3.0, func(b, t):
+		if t == 0.0:
+			b.gear = Bike.NEUTRAL
+		b.throttle = 0.6 if t > 0.5 else 0.0)
+	bike = r["bike"]
+	check(bike.gear >= 1 and bike.speed > 4.0, "auto-shift drops out of neutral into gear and rides off (gear %d, %.1f m/s)" % [bike.gear, bike.speed])
+	await _done(r)
+	# On the move a full click goes straight from first to second and back, and neutral coasts.
+	var clicks := []
+	var coast := {}
+	r = await ride({}, 10.0, func(b, t):
+		b.auto_shift = false
+		b.throttle = 1.0 if t < 1.5 else 0.0
+		if absf(t - 1.5) < 0.001:
+			b.shift_up()
+			clicks.append(b.gear)
+		if absf(t - 2.0) < 0.001:
+			b.shift_down()
+			clicks.append(b.gear)
+			b.gear = Bike.NEUTRAL
+			coast["from"] = b.speed
+		if absf(t - 6.0) < 0.001:
+			coast["neutral"] = coast["from"] - b.speed
+			b.gear = 1
+			coast["from"] = b.speed
+		if absf(t - 9.9) < 0.001:
+			coast["gear"] = (coast["from"] - b.speed) / 3.9 * 4.0)
+	check(clicks == [2, 1], "riding, a click up from first is second and down from second is first %s" % str(clicks))
+	check(coast.get("neutral", 99.0) < coast.get("gear", 0.0), "in neutral it coasts on further than with the engine braking in gear (%.1f vs %.1f m/s lost)" % [
+		coast.get("neutral", 99.0), coast.get("gear", 0.0)])
+	await _done(r)
+
+
+## A burnout smears a dark patch of rubber into the tarmac (none on grass); the marks are one
+## capped ring of strips, recycled oldest first, and each fades away a few minutes after it went down.
+func _test_burnout_marks() -> void:
+	var marks := SkidMarks.shared(get_tree())
+	var before := marks.laid()
+	var r := await ride({"engine": "twin_700"}, 3.5, func(b, t):
+		b.front_brake = 1.0
+		b.throttle = 1.0 if t > 0.5 else 0.0)
+	var bike: Bike = r["bike"]
+	var laid := marks.laid() - before
+	var at: Vector3 = bike.wheels[1]["contact_pos"]
+	var col := marks.last_color
+	check(bike.burnout > 0.5 and laid >= 6, "a burnout on tarmac lays rubber (%d strips)" % laid)
+	check(marks.last_centre.distance_to(at) < 0.15 and col.r < 0.1 and col.a > 0.2,
+		"a dark patch right under the spinning back tyre (%.2f m away, rgb %.2f alpha %.2f)" % [marks.last_centre.distance_to(at), col.r, col.a])
+	check(marks.life_of(marks.newest()) == 1.0, "fresh rubber shows at full strength")
+	await _done(r)
+	before = marks.laid()
+	r = await ride({"engine": "twin_700"}, 2.5, func(b, t):
+		b.front_brake = 1.0
+		b.throttle = 1.0 if t > 0.5 else 0.0, "grass")
+	check(r["bike"].burnout > 0.3 and marks.laid() == before, "on grass the burnout leaves no rubber (%d strips)" % (marks.laid() - before))
+	await _done(r)
+	# The ring is capped: laying more than it holds recycles the oldest, and the count stops growing.
+	before = marks.laid()
+	for i in SkidMarks.MAX_MARKS + 40:
+		marks.mark("zz_test", Vector3(float(i) * 0.15, 0.0, 300.0), Vector3.UP, 0.15, 1.0, "tarmac")
+	check(marks.count() == SkidMarks.MAX_MARKS and marks.laid() - before >= SkidMarks.MAX_MARKS,
+		"the marks are capped at %d strips, the oldest reused (%d drawn, %d laid)" % [SkidMarks.MAX_MARKS, marks.count(), marks.laid() - before])
+	marks.mark("zz_test", Vector3.ZERO, Vector3.UP, 0.0, 0.0, "")
+	var newest_i := marks.newest()
+	marks._clock += SkidMarks.HOLD + SkidMarks.FADE * 0.5
+	var half := marks.life_of(newest_i)
+	marks._clock += SkidMarks.FADE
+	check(half > 0.3 and half < 0.7 and marks.life_of(newest_i) == 0.0, "old rubber fades away (%.2f half way, then gone)" % half)
+
+
+## Stranded out in the world, the Esc menu's "Back to the garage" fades out and puts you at the
+## shed door on foot, with the bike you were riding parked in a bay rather than left on the road.
+func _test_go_home() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.start_new("Tester", 7)
+	await get_tree().physics_frame
+	main.menu.show_pause()
+	check(main.home_reason() == "home" and not main.menu._home.visible, "in the shed the menu doesn't offer to go back to the garage")
+	main.menu.hide()
+	var faithful := _bike_named("Old Faithful")
+	Shed.request({"a": "mount", "bike": faithful})
+	await get_tree().physics_frame
+	var road: Transform3D = main.world.road_transform(0.3)
+	main.bike.place(road.origin, road.basis.get_euler().y)
+	for i in 30:
+		await get_tree().physics_frame
+	var far: float = Vector2(road.origin.x - Workshop.CENTER.x, road.origin.z - Workshop.CENTER.z).length()
+	main.menu.show_pause()
+	check(main.home_reason() == "" and main.menu._home.visible and not main.menu._home.disabled,
+		"out on the road (%.0f m away) the menu offers Back to the garage" % far)
+	main.menu.hide()
+	main.go_home(true)
+	await get_tree().physics_frame
+	var parked: Transform3D = Shed.bikes[faithful]["xf"]
+	var in_bay := Shed.bay_at(parked.origin) >= 0
+	var spawn: Vector3 = Workshop.walker_spawn(Net.local_slot()).origin
+	check(main.bike == null and Shed.riding(Shed.me()) == 0 and Shed.bikes[faithful]["rider"] == 0,
+		"going home gets you off the bike")
+	check(in_bay and Vector2(parked.origin.x - Workshop.CENTER.x, parked.origin.z - Workshop.CENTER.z).length() < 12.0,
+		"and the bike comes back with you, parked in a bay (bay %d)" % Shed.bay_at(parked.origin))
+	check(main.walker.visible and main.walker.global_position.distance_to(spawn) < 1.0,
+		"you're on foot at the shed door (%.1f m from it)" % main.walker.global_position.distance_to(spawn))
+	# On foot out in the world: a short fade to black and back, and you're home.
+	main.walker.place(road)
+	await get_tree().physics_frame
+	main.go_home()
+	var darkest := 0.0
+	for i in 120:
+		await get_tree().process_frame
+		if main._fade:
+			darkest = maxf(darkest, main._fade.color.a)
+	check(main.walker.global_position.distance_to(spawn) < 1.0 and darkest > 0.95 and main._fade.color.a < 0.05,
+		"on foot it works too, with a fade to black and back (darkest %.2f)" % darkest)
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## Punctures (see Puncture): a punctured tyre loses air, grips less and goes flat; the plug kit
+## and a new tyre fix it, the air line pumps it back up; it's saved, synced and old saves have none.
+func _test_puncture_build() -> void:
+	var good := BikeBuild.new({})
+	var psi := good.tune_value("psi_f")
+	var soft := BikeBuild.new({}, {"front_tyre": {"rust": 0.0, "dirt": 0.0, "wear": 0.0, "color": Color.BLACK, "deflate": psi * 0.3}})
+	var flat := BikeBuild.new({}, {"front_tyre": {"rust": 0.0, "dirt": 0.0, "wear": 0.0, "color": Color.BLACK, "deflate": psi, "puncture": Puncture.FAST}})
+	check(is_equal_approx(good.pressure_now("front"), psi) and absf(soft.pressure_now("front") - psi * 0.7) < 0.01 and flat.pressure_now("front") == 0.0,
+		"a tyre's pressure is its setting less the air it's lost (%.2f, %.2f, %.2f bar)" % [good.pressure_now("front"), soft.pressure_now("front"), flat.pressure_now("front")])
+	check(soft.grip_front["tarmac"] < good.grip_front["tarmac"] and flat.grip_front["tarmac"] < good.grip_front["tarmac"] * 0.35
+		and is_equal_approx(flat.grip_rear["tarmac"], good.grip_rear["tarmac"]),
+		"soft it grips less, flat it hardly grips (%.2f / %.2f / %.2f), and only that tyre" % [good.grip_front["tarmac"], soft.grip_front["tarmac"], flat.grip_front["tarmac"]])
+	check(good.flat["front"] == 0.0 and soft.flat["front"] == 0.0 and flat.flat["front"] > 0.99 and flat.rolling > good.rolling * 1.5,
+		"flat, it rolls on the rim and drags (%.3f against %.3f)" % [flat.rolling, good.rolling])
+	check(flat.notes.any(func(n): return n.contains("front tyre is flat")), "the bay screen says the tyre is flat")
+	# The plug game: finding the hole and keeping on it plugs it well; never finding it, not at all.
+	var g := PlugGame.new(1234)
+	var steps := 0
+	while not g.done() and steps < 5000:
+		g.cursor.x = move_toward(g.cursor.x, g.hole_now(), 0.03)
+		g.step(1.0 / 60.0)
+		steps += 1
+	var lazy := PlugGame.new(1234)
+	while not lazy.done():
+		lazy.step(1.0 / 60.0)
+	check(g.found and g.quality() > 0.85 and not lazy.found and lazy.quality() == 0.0,
+		"sweeping onto the hiss and keeping the reamer on it plugs it (%.2f); not finding it does nothing" % g.quality())
+	check(PlugGame.new(77).hole == PlugGame.new(77).hole and PlugGame.new(77).foam() < 0.5, "the hole's in the same place each go, and the nozzle starts away from it")
+
+
+func _test_puncture_ride() -> void:
+	# Riding on a fast puncture: the pressure falls, the tyre grips less, then folds onto the rim
+	# and the bike sits lower on it. A steady straight line stays up.
+	var st := {"psi0": 0.0, "grip0": 0.0, "h0": 0.0, "done": false}
+	var r := await ride({}, 14.0, func(b, t):
+		b.assist = 0.5
+		_hold_speed(b, 14.0)
+		b.lean_input = 0.0
+		if t > 3.0 and st["psi0"] == 0.0:
+			st["psi0"] = b.heat.pressure(0)
+			st["grip0"] = b.heat.tyre_grip(0, "tarmac")
+			st["h0"] = b.global_position.y
+			b.heat.leak[0] = Puncture.FAST * 30.0)
+	var b: Bike = r["bike"]
+	print("    front tyre %.2f -> %.2f bar, grip %.2f -> %.2f, flat %.2f, body %.3f m lower" % [st["psi0"], b.heat.pressure(0), st["grip0"],
+		b.heat.tyre_grip(0, "tarmac"), b.heat.flat(0), st["h0"] - b.global_position.y])
+	check(b.heat.pressure(0) < st["psi0"] * 0.2 and b.heat.flat(0) > 0.6, "a punctured tyre lets its air out as it's ridden")
+	check(b.heat.tyre_grip(0, "tarmac") < st["grip0"] * 0.7, "the flat tyre grips far less")
+	check(st["h0"] - b.global_position.y > 0.015, "the bike sinks onto the flat tyre")
+	var squashed: bool = b.model._flat_tyres.has("front") and not b.model._flat_tyres.has("rear")
+	check(squashed and (b.model._flat_tyres["front"] as MeshInstance3D).get_aabb().size.y < 2.0 * b.build.front_radius - 0.03,
+		"the flat tyre is drawn squashed down under the rim")
+	check(not r["crashed"], "a straight line on a flat stays up")
+	await _done(r)
+
+
+func _test_puncture_shed() -> void:
+	Shed.start_new("Tester", 5)
+	var me := Shed.me()
+	var bike := _bike_named("Old Faithful")
+	var front := Shed.item_on(bike, "front_tyre")
+	var grip0: float = Shed.build_of(bike).grip_front["tarmac"]
+	check(not Shed.condition_text(Shed.items[front]).contains("Puncture") and MotTest.fails(MotTest.inspect(bike)).all(func(row): return not str(row["name"]).contains("air")),
+		"a tyre holds its air to begin with, and the MOT passes it")
+	Shed.puncture_tyre(bike, "front", "slow")
+	Shed.crew[me]["riding"] = bike
+	Shed.request({"a": "ride", "km": 5.0})
+	Shed.crew[me]["riding"] = 0
+	var lost := Puncture.lost(Shed.items[front])
+	check(absf(lost - 5.0 * Puncture.SLOW) < 0.01, "a slow puncture lets %.2f bar out over 5 km" % lost)
+	check(Shed.build_of(bike).grip_front["tarmac"] < grip0 and Shed.build_of(bike).pressure_now("front") < Shed.build_of(bike).tune_value("psi_f") - 0.5,
+		"the soft tyre grips less")
+	var info := Shed.condition_text(Shed.items[front])
+	check(info.contains("Puncture: a slow leak") and info.contains("Pressure low"), "the part info shows the puncture and the low pressure (%s)" % info.replace("\n", " / "))
+	check(MotTest.fails(MotTest.inspect(bike)).any(func(row): return str(row["name"]) == "Front tyre holds its air"), "the MOT fails the punctured tyre")
+	# The air line pumps it up, but it'll go down again.
+	check(Shed.check(me, {"a": "plug_tyre", "item": front}).contains("puncture repair kit"), "plugging it needs a puncture repair kit")
+	Shed.request({"a": "inflate", "item": front})
+	check(Puncture.lost(Shed.items[front]) == 0.0 and Puncture.punctured(Shed.items[front]), "the air line pumps it back up, but it's still punctured")
+	check(Shed.check(me, {"a": "inflate", "item": front}).contains("set pressure"), "a tyre at its pressure needs no air")
+	# Order a plug kit and plug it.
+	Shed.request({"a": "order_part", "part": "plug_kit"})
+	var kit := 0
+	for id in Shed.items:
+		if Shed.items[id]["part"] == "plug_kit":
+			kit = maxi(kit, id)
+	check(kit != 0 and Money.part_price("plug_kit") <= 15 and Shed.fluid_text(Shed.items[kit]) == "Puncture repair kit: 5 plugs left",
+		"a puncture repair kit is cheap to order and has 5 plugs (%s)" % Shed.fluid_text(Shed.items.get(kit, {})))
+	Shed.request({"a": "take", "item": kit})
+	Shed.request({"a": "plug_tyre", "item": front, "quality": 0.0})
+	check(Puncture.punctured(Shed.items[front]) and roundi(float(Shed.items[kit]["fluid"]["litres"])) == 5, "not finding the leak uses no plug")
+	Shed.request({"a": "plug_tyre", "item": front, "quality": 0.3})
+	check(Puncture.rate(Shed.items[front]) < Puncture.SLOW and Puncture.punctured(Shed.items[front]), "a crooked plug still weeps air")
+	Shed.request({"a": "plug_tyre", "item": front, "quality": 0.9})
+	check(not Puncture.punctured(Shed.items[front]) and roundi(float(Shed.items[kit]["fluid"]["litres"])) == 3
+		and Shed.condition_text(Shed.items[front]).contains("Puncture plugged (90%)"), "a good plug seals it, a plug from the kit each go")
+	check(Shed.check(me, {"a": "plug_tyre", "item": front}).contains("no hiss"), "a tyre with no puncture has nothing to plug")
+	Shed.crew[me]["riding"] = bike
+	Shed.request({"a": "ride", "km": 5.0})
+	Shed.crew[me]["riding"] = 0
+	check(Puncture.lost(Shed.items[front]) == 0.0 and absf(Shed.build_of(bike).grip_front["tarmac"] - grip0) < 0.001,
+		"plugged, it holds its air and grips as it did")
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(0.5, 0.0, 2.0))})
+	# Riding a flat chews up the tyre and the rim.
+	var rear := Shed.item_on(bike, "rear_tyre")
+	var rim := Shed.item_on(bike, "rear_wheel")
+	Shed.puncture_tyre(bike, "rear", "fast", 9.0)
+	var wear_t := float(Shed.items[rear]["wear"])
+	var wear_w := float(Shed.items[rim]["wear"])
+	Shed.crew[me]["riding"] = bike
+	Shed.request({"a": "ride", "km": 2.0})
+	Shed.crew[me]["riding"] = 0
+	check(float(Shed.items[rear]["wear"]) > wear_t + 0.05 and float(Shed.items[rim]["wear"]) > wear_w + 0.02,
+		"riding on a flat wears the tyre and the rim (%.2f -> %.2f, %.2f -> %.2f)" % [wear_t, float(Shed.items[rear]["wear"]), wear_w, float(Shed.items[rim]["wear"])])
+	# Saved and loaded; synced to the crew; an old save has no punctures.
+	var saved: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	var snap: Dictionary = bytes_to_var(var_to_bytes(Shed._snapshot(false)))
+	Shed.items[rear].erase("puncture")
+	Shed.items[rear].erase("deflate")
+	Shed._sync(snap)
+	check(Puncture.punctured(Shed.items[rear]) and Puncture.lost(Shed.items[rear]) > 2.0, "the crew get the puncture with the shed")
+	Shed.load_state(saved, "Tester")
+	check(Puncture.punctured(Shed.items[rear]) and Puncture.lost(Shed.items[rear]) > 2.0 and Shed.items[front].has("plug"),
+		"a puncture and a plug come back from the save")
+	var old: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	for id in old["items"]:
+		for key in ["puncture", "deflate", "plug"]:
+			old["items"][id].erase(key)
+	Shed.load_state(old, "Tester")
+	check(not Puncture.punctured(Shed.items[rear]) and Shed.build_of(bike).flat["rear"] == 0.0, "a shed saved before punctures has none")
+	# Changing the tyre gets rid of the puncture: the new one's sound, the old one keeps its hole.
+	Shed.puncture_tyre(bike, "front", "slow", 1.0)
+	var brake := _wheel_to_changer(bike, "front")
+	var spot := Shed.changer_spot()
+	Shed.request({"a": "tyre_remove", "spot": spot})
+	check(Shed.held_by(me) == front and Puncture.punctured(Shed.items[front]) and Puncture.lost(Shed.items[front]) == 0.0,
+		"the punctured tyre comes off with its hole in it")
+	Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(1.0, 0.0, 2.0))})
+	var fresh := _order(str(Shed.items[front]["part"]))
+	Shed.request({"a": "unpack", "item": fresh})
+	Shed.request({"a": "take", "item": fresh})
+	Shed.request({"a": "tyre_fit", "spot": spot, "quality": 1.0})
+	_wheel_from_changer(bike, "front", brake)
+	check(Shed.item_on(bike, "front_tyre") == fresh and not Puncture.punctured(Shed.items[fresh]) and Shed.build_of(bike).pressure_now("front") > 1.5,
+		"a new tyre fitted on the changer holds its air")
+	# The debug tab punctures the bike you're riding; a barn find may arrive on one.
+	var tab := DebugTab.new()
+	add_child(tab)
+	Shed.bikes[bike]["rider"] = me
+	tab.press("Fast puncture, rear")
+	Shed.bikes[bike]["rider"] = 0
+	check(Puncture.rate(Shed.items[rear]) == Puncture.FAST, "the Debug tab can give the bike you're riding a fast puncture")
+	tab.queue_free()
+	var arrived := 0
+	for i in 20:
+		var id := Shed._random_bike(3)
+		if Shed.arrival_puncture(id, "barn"):
+			arrived += 1
+			var holed := Shed.item_on(id, "front_tyre") if Puncture.punctured(Shed.items[Shed.item_on(id, "front_tyre")]) else Shed.item_on(id, "rear_tyre")
+			check(Puncture.punctured(Shed.items[holed]) and Puncture.lost(Shed.items[holed]) > 0.3, "a bike that arrives punctured has gone soft standing")
+		Shed.remove_bike(id)
+	check(arrived > 0 and arrived < 20, "some barn finds come in on a punctured tyre (%d of 20)" % arrived)
+	Shed.stop()
