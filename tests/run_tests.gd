@@ -8287,12 +8287,12 @@ func _test_sales_office_session() -> void:
 		return space.intersect_ray(q)
 	var at := func(lx: float, lz: float) -> Vector2:
 		return Vector2(SalesOffice.CENTER.x + lx, SalesOffice.CENTER.z + lz)
-	# Off the road loop.
+	# Street side now: off the carriageway, with the pavement between.
 	var road_gap := 999.0
 	for p in [Vector2(SalesOffice.FORECOURT.position.x, SalesOffice.FORECOURT.end.y), SalesOffice.FORECOURT.end, SalesOffice.footprint().position,
 			Vector2(SalesOffice.footprint().end.x, SalesOffice.footprint().position.y)]:
 		road_gap = minf(road_gap, (main.world._road_info(p.x, p.y) as Vector2).x)
-	check(road_gap > World.ROAD_HALF_WIDTH + 10.0, "the sales office and car park are well off the road (%.0f m)" % road_gap)
+	check(road_gap > World.ROAD_HALF_WIDTH + 2.0, "the sales office and car park sit back from the street behind the pavement (%.0f m)" % road_gap)
 	# Floors: the ground floor everywhere (yard level), the mezzanine at its height.
 	var level := true
 	for p in [Vector2(0.0, 4.0), Vector2(3.9, 1.4), Vector2(-3.5, 0.5), Vector2(-4.0, -4.6), Vector2(-5.0, 1.2), Vector2(6.5, -5.4)]:
