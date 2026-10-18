@@ -262,6 +262,7 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	model.own_rider = true   # your own: the first-person eye leaves your helmet and torso out
 	model.rider_color = rider_color
 	model.rider_gear = rider_gear
+	model.baked = true   # ridden, not worked on: far fewer draw calls (see BikeModel._bake_static)
 	add_child(model)
 	model.build_from(build, paint)
 	for l in _fog:

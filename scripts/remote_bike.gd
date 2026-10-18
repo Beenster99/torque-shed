@@ -33,6 +33,7 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 	model = BikeModel.new()
 	model.rider_color = rider_color
 	model.rider_gear = rider_gear
+	model.baked = true   # ridden past, not worked on: far fewer draw calls (see BikeModel._bake_static)
 	add_child(model)
 	model.build_from(_build, paint)
 	_fog = Bike.make_fog_lights(self, model, _build)

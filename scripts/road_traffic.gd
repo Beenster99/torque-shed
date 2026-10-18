@@ -574,6 +574,7 @@ func _make_view(slot: int, d: Dictionary) -> Dictionary:
 	body.add_child(lean)
 	var model := BikeModel.new()
 	model.rider_color = look["jacket"]
+	model.baked = true   # far fewer draw calls (see BikeModel._bake_static)
 	model.position.y = build.rear_radius
 	lean.add_child(model)
 	model.build_from(build, look["paint"])
