@@ -33,7 +33,7 @@ const STEP_SURFACES: Array[String] = ["concrete", "epoxy", "wood", "metal", "gra
 ## Loudness each sound is brought to: ["rms", x] for steady loops, ["peak", x] for one-shots.
 const LEVELS := {
 	"ratchet": ["peak", 0.85], "scrub": ["rms", 0.12], "grinder": ["rms", 0.17], "spray": ["rms", 0.13], "spray_gun": ["rms", 0.12],
-	"washer": ["rms", 0.13], "static": ["rms", 0.1], "jet": ["rms", 0.2], "pour": ["rms", 0.12], "door": ["rms", 0.15],
+	"washer": ["rms", 0.13], "polisher": ["rms", 0.15], "static": ["rms", 0.1], "jet": ["rms", 0.2], "pour": ["rms", 0.12], "door": ["rms", 0.15],
 	"fan": ["rms", 0.15], "blast": ["rms", 0.22], "rain": ["rms", 0.12], "rain_roof": ["rms", 0.14], "changer": ["rms", 0.12],
 	"dyno_roller": ["rms", 0.14], "compressor": ["rms", 0.16], "shaker": ["rms", 0.13], "hum_fluoro": ["rms", 0.05], "hum_led": ["rms", 0.035],
 	"tone_shed": ["rms", 0.04], "tone_sales": ["rms", 0.04], "amb_out": ["rms", 0.07], "amb_town": ["rms", 0.05], "birds": ["peak", 0.35],
@@ -73,7 +73,7 @@ static func variant_count(sound: String) -> int:
 ## the order a new shed needs them (the worker makes them in this order).
 static func all_sounds() -> Array[String]:
 	var out: Array[String] = ["step_concrete", "step_epoxy", "step", "switch", "pickup", "clink", "clunk", "ratchet", "scrub",
-		"impact_metal_concrete", "impact_metal_wood", "impact_metal_steel", "grinder", "spray", "spray_gun", "washer", "jet",
+		"impact_metal_concrete", "impact_metal_wood", "impact_metal_steel", "grinder", "spray", "spray_gun", "washer", "jet", "polisher",
 		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "shaker", "scrap", "screech", "chirp", "starter",
 		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "desk_bell", "sale_offer", "wash_ding", "wash_clean", "rain", "rain_roof",
 		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets", "amb_town"]
@@ -109,6 +109,7 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"ratchet": return _ratchet()
 		"scrub": return _scrub()
 		"grinder": return _grinder()
+		"polisher": return _polisher()
 		"spray": return _spray(false)
 		"spray_gun": return _spray(true)
 		"static": return _static()
@@ -375,7 +376,7 @@ static func is_loop(sound: String) -> bool:
 	return LOOP_SOUNDS.has(sound)
 
 
-const LOOP_SOUNDS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "spray_gun", "washer", "static", "jet", "pour",
+const LOOP_SOUNDS: Array[String] = ["ratchet", "scrub", "grinder", "polisher", "spray", "spray_gun", "washer", "static", "jet", "pour",
 	"screech", "door", "fan", "blast", "rain", "rain_roof", "changer", "dyno_roller", "compressor", "shaker", "hum_fluoro", "hum_led",
 	"tone_shed", "tone_sales", "amb_out", "birds", "crickets", "amb_town"]
 
@@ -513,6 +514,34 @@ func _grinder() -> PackedFloat32Array:
 			spark = rf(0.4, 1.0)
 		spark *= 0.82
 		d[i] = (motor + gear) * (1.3 + 0.3 * s) + hum + scream + air + rasp * 0.8 + nz() * spark * 0.5
+	return loopify(d, 0.1)
+
+
+## A dual-action polisher: a smooth motor whine (a little lower and softer than a grinder),
+## the wobble of the pad's orbit through it, and the swish of foam on paint. Its pitch is the
+## free-running speed: the player's pressure on the pad pulls it down (see DetailMode).
+func _polisher() -> PackedFloat32Array:
+	var secs := 4.0
+	var d := buf(secs + 0.1)
+	var n := d.size()
+	var motor_f := fit(150.0, float(n) / R)
+	var orbit_f := fit(9.0, float(n) / R)
+	var ph := 0.0
+	var orb := 0.0
+	var sw_a := 0.0
+	var sw_b := 0.0
+	var air := 0.0
+	for i in n:
+		ph += motor_f / R
+		orb += orbit_f / R
+		var p := TAU * ph
+		var wob := 1.0 + 0.18 * sin(TAU * orb)
+		var whine := sin(4.0 * p) * 0.3 + sin(8.0 * p) * 0.1 + sin(12.0 * p) * 0.05 + sin(p) * 0.12 + sin(2.0 * p) * 0.08
+		sw_a += (nz() - sw_a) * 0.12
+		sw_b += (sw_a - sw_b) * 0.02
+		var swish := (sw_a - sw_b) * (0.5 + 0.5 * sin(TAU * orb * 2.0))
+		air += (nz() - air) * 0.5
+		d[i] = whine * wob + swish * 0.7 + air * 0.05
 	return loopify(d, 0.1)
 
 

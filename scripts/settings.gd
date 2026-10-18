@@ -81,7 +81,7 @@ const ACTIONS := [
 	["tool_1", "Hands", ["foot", "board"]], ["tool_2", "Wrench", ["foot", "board"]], ["tool_3", "Brush", ["foot", "board"]],
 	["tool_4", "Grinder", ["foot", "board"]], ["tool_5", "Spray can", ["foot", "board"]],
 	["tool_6", "Pressure washer", ["foot", "board"]], ["tool_7", "Spray gun", ["foot", "board"]],
-	["tool_8", "Stopwatch", ["foot", "board"]],
+	["tool_8", "Stopwatch", ["foot", "board"]], ["tool_9", "Polisher", ["foot"]],
 	["spray_colour", "Spray colour", ["spray"]], ["spray_finish", "Spray finish", ["spray"]],
 	["rename", "Name a bike", ["foot"]], ["blast_scan", "Sandblaster: scan the engine", ["foot"]],
 	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
@@ -309,7 +309,7 @@ func _setup_inputs() -> void:
 	_bind("act", [], [JOY_BUTTON_A], [MOUSE_BUTTON_LEFT])
 	_bind("tool_next", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [MOUSE_BUTTON_WHEEL_DOWN])
 	_bind("tool_prev", [KEY_Q], [JOY_BUTTON_LEFT_SHOULDER], [MOUSE_BUTTON_WHEEL_UP])
-	for i in 8:
+	for i in 9:
 		_bind("tool_%d" % (i + 1), [KEY_1 + i], [])
 	_bind("spray_colour", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	# The finish is T or the mouse's back side button: the middle button is ping's.

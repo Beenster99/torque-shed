@@ -85,6 +85,7 @@ var furniture_nodes := {} # furniture id -> EquipmentView
 var _furniture_sigs := {}
 var _floor_nodes := {}     # item id -> Node3D for parts put down anywhere
 var _dirt_sigs := {}       # bike id -> its dirt as last drawn (Dirt.sig_of_bike)
+var _shine_sigs := {}      # bike id -> its detailed paintwork as last drawn (Detail.sig_of_bike)
 var _wash_fx := {}         # peer -> WashFx where someone else's pressure washer jet is landing
 var wash_mist: WashMist    # the haze that fills the wash bay while anyone's washing
 var _floor_sigs := {}
@@ -288,7 +289,9 @@ func sync_state() -> void:
 				bike_views[id].free()
 			bike_views[id] = _make_bike_view(id)
 			_dirt_sigs[id] = Dirt.sig_of_bike(id)
+			_shine_sigs[id] = ""
 		_sync_dirt(id)
+		_sync_shine(id)
 		# Moving a bike only moves its view; the one you're wheeling follows you directly.
 		if bike.get("pusher", 0) != Shed.me() or bike.get("pusher", 0) == 0:
 			bike_views[id].transform = bike["xf"]
@@ -915,7 +918,8 @@ func _bike_signature(id: int) -> String:
 			var it: Dictionary = Shed.items[item_id]
 			# Its dirt isn't in it: that's drawn over the bike as it changes (see _sync_dirt).
 			parts.append("%s:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", ""),
-				bool(host.get("bolted", {}).get(slot, false)), Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it)])
+				bool(host.get("bolted", {}).get(slot, false)), Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it)
+				+ ("|sh" if it.get("shine") is Dictionary else "")])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
@@ -931,6 +935,19 @@ func _sync_dirt(id: int) -> void:
 	var model := bike_model(id)
 	if model:
 		model.show_dirt(Dirt.of_bike(id))
+
+
+## A parked bike's detailed paintwork (see Detail), redrawn over it as it changes (polishing,
+## coating, the miles wearing it) without rebuilding it. The pass itself goes on with the
+## drawing, when a panel first has a finish of its own (that's in its signature).
+func _sync_shine(id: int) -> void:
+	var sig := Detail.sig_of_bike(id)
+	if _shine_sigs.get(id, "") == sig:
+		return
+	_shine_sigs[id] = sig
+	var model := bike_model(id)
+	if model:
+		model.show_shine(Detail.of_bike(id))
 
 
 ## Everyone else's pressure washer: the splash and run-off where their jet is landing. And the

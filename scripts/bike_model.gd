@@ -73,6 +73,7 @@ var _exhaust_tip := Vector3.ZERO
 var _eye := Vector3.ZERO
 var _grime: StandardMaterial3D
 var dirt_layer: DirtLayer        # the road dirt drawn over the parts (see show_dirt)
+var finish_layer: FinishLayer    # detailed panels' gloss, burns and ceramic coat (see show_shine)
 var _dash_label: Label3D
 var _needles := []               # {node, what: "speed" or "rpm"} on dial clocks
 var _leds := []                  # shift lights: {mat, color}
@@ -117,6 +118,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 		child.free()
 	_rider = null
 	dirt_layer = null
+	finish_layer = null
 	_geo_nodes.clear()
 	_geo_pivots.clear()
 	_geo_anchors.clear()
@@ -203,6 +205,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	# Before the bike's own fit moves anything: the mask is laid out where the parts were drawn.
 	_show_blasted()
 	_show_paint_fx()
+	# Ahead of the dirt, which copies the paint's passes into its own.
+	_show_shine()
 	_show_dirt()
 	if not geometry.is_empty():
 		apply_geometry(geometry)
@@ -273,6 +277,28 @@ func _show_dirt() -> void:
 		levels[slot] = Dirt.cells(cond, str(slot))
 	if not levels.is_empty():
 		ensure_dirt_layer().set_levels(levels)
+
+
+## Detailed panels' finish (see Detail and FinishLayer), from each part's condition ("shine").
+func _show_shine() -> void:
+	var finishes := {}
+	for slot in Detail.PANELS:
+		var cond = condition.get(slot)
+		if cond is Dictionary and (cond as Dictionary).get("shine") is Dictionary and not (_slot_meshes.get(slot, []) as Array).is_empty():
+			finishes[slot] = Detail.data(cond)
+	if finishes.is_empty():
+		return
+	finish_layer = FinishLayer.new()
+	finish_layer.name = "FinishLayer"
+	add_child(finish_layer)
+	finish_layer.setup(self, finishes)
+
+
+## Shows each detailed panel's finish as it is now (slot -> finish, see Detail.of_bike), without
+## redrawing the bike. A panel that wasn't detailed when it was drawn waits for the redraw.
+func show_shine(finishes: Dictionary) -> void:
+	if finish_layer != null and is_instance_valid(finish_layer):
+		finish_layer.show(finishes)
 
 
 ## The layer the dirt's drawn in (made if it hasn't been yet).

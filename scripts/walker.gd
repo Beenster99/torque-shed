@@ -13,9 +13,9 @@ signal label_requested(furniture_id: int)
 signal rename_requested(bike_id: int)
 signal paint_bench_requested
 
-const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair", "spray", "lance", "gun", "watch"]
+const TOOLS: Array[String] = ["hands", "wrench", "brush", "repair", "spray", "lance", "gun", "watch", "polisher"]
 const TOOL_NAMES := {"hands": "Hands", "wrench": "Wrench", "brush": "Brush", "repair": "Grinder and welder",
-	"spray": "Spray can", "lance": "Pressure washer", "gun": "Spray gun", "watch": "Stopwatch"}
+	"spray": "Spray can", "lance": "Pressure washer", "gun": "Spray gun", "watch": "Stopwatch", "polisher": "Polisher"}
 const EYE := 1.62
 const CROUCH_EYE := 0.95
 const WALK := 3.2
@@ -150,6 +150,9 @@ var _wash_send := 0.0
 var _wash_aim_send := 0.0
 var _wash_aim_sig := ""
 var _wash_resync := 0.0
+## Polishing and ceramic coating a bike with the detailing controls up (F with the polisher on a
+## washed bike in the wash bay; see DetailMode and DetailJob).
+var detail := DetailMode.new(self)
 var _blast_send := 0.0
 var _blast_tick := 0.0
 var _blast_done_for := 0.0
@@ -340,6 +343,24 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("interact") and not wash_mode.is_empty():
 		get_viewport().set_input_as_handled()
 		leave_wash_mode()
+	elif event.is_action_pressed("interact") and detail.active():
+		get_viewport().set_input_as_handled()
+		detail.leave()
+		_need_release = _main_button()
+	elif event.is_action_pressed("interact") and tool == "polisher" and wash_target() != 0 and Shed.held_by(Shed.me()) == 0:
+		# The polisher on a bike: F brings up the detailing controls (polish, or T for the coat).
+		get_viewport().set_input_as_handled()
+		detail.enter(wash_target())
+	elif tool == "polisher" and event.is_action_pressed("spray_finish"):
+		get_viewport().set_input_as_handled()
+		if detail.active():
+			detail.switch_mode()
+		else:
+			detail.mode = "coat" if detail.mode == "polish" else "polish"
+			Shed.feedback.emit("Polisher and compound ready" if detail.mode == "polish" else "Ceramic coat, applicator and microfibre ready", true)
+	elif tool == "polisher" and detail.active() and event.is_action_pressed("blast_scan"):
+		get_viewport().set_input_as_handled()
+		detail.set_scan(not detail.scan)
 	elif event.is_action_pressed("interact") and tool == "lance" and wash_target() != 0 and Shed.held_by(Shed.me()) == 0:
 		# The pressure washer on a bike: F brings up the wash controls.
 		get_viewport().set_input_as_handled()
@@ -443,7 +464,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## of anything you're wheeling, carrying or sat on, and not at a job that has you planted.
 func can_jump() -> bool:
 	return controls_enabled and is_on_floor() and _grounded >= JUMP_REST and not crouched and seat == 0 \
-		and not blast and Shed.blasting(Shed.me()) == 0 and spray_mode.is_empty() and wash_mode.is_empty() \
+		and not blast and Shed.blasting(Shed.me()) == 0 and spray_mode.is_empty() and wash_mode.is_empty() and not detail.active() \
 		and tyre_game == null and Shed.pushing_bike(Shed.me()) == 0 and Shed.moving(Shed.me()) == 0
 
 
@@ -614,6 +635,8 @@ func set_tool(new_tool: String) -> void:
 		leave_spray_mode()
 	if not wash_mode.is_empty():
 		leave_wash_mode()
+	if detail.active():
+		detail.leave()
 	tool = new_tool
 	progress = 0.0
 	_hold = 0.0
@@ -1413,6 +1436,11 @@ func _make_plan() -> Dictionary:
 		if not sp.is_empty():
 			sp["blocked"] = Shed.check(me, sp["action"])
 		return sp
+	if detail.active():
+		# The detailing controls are up: the pad's on that bike, wherever you aim.
+		var dp := {"action": {"a": "shine_cells", "bike": detail.bike, "parts": {}}, "time": 0.0, "verb": "polish it"}
+		dp["blocked"] = Shed.check(me, dp["action"])
+		return dp
 	if not wash_mode.is_empty():
 		# The wash controls are up: the jet's on that bike, wherever you aim.
 		var wp := {"action": {"a": "wash_cells", "bike": int(wash_mode["bike"]), "parts": {}, "clean": []}, "time": 0.0,
@@ -1984,6 +2012,9 @@ func _describe() -> String:
 				lines.append("%s on %s  ·  %s" % [PartsDB.slot_name(slot), owner, "bolted" if Shed.bolted_at_target(target) else "LOOSE"])
 				lines.append(PartsDB.spec_line(it["part"]))
 				lines.append(Shed.condition_text(it))
+				var shine := Detail.part_line(it, slot)
+				if shine != "":
+					lines.append(shine)
 				lines.append(PartsDB.bin_text(str(it["part"])))
 				if it.has("fluid"):
 					lines.append(Shed.fluid_text(it))
@@ -2000,6 +2031,12 @@ func _describe() -> String:
 				var bike_id := int(target["bike"])
 				for note in Shed.build_of(bike_id).notes:
 					lines.append("! " + note)
+				var paintwork := Detail.bike_line(bike_id)
+				if paintwork != "":
+					lines.append(paintwork)
+				if tool == "polisher":
+					lines.append("{interact}: detailing controls (%s; {spray_finish} for the %s)" % [
+						"polish the paint" if detail.mode == "polish" else "ceramic coat it", "coat" if detail.mode == "polish" else "polisher"])
 				lines.append("{rename}: give it a name")
 				var ride := Shed.check(Shed.me(), {"a": "mount", "bike": bike_id})
 				lines.append("{interact}: ride %s" % Shed.bikes[bike_id]["name"] if ride == "" else "Can't ride yet. " + ride)
@@ -2317,7 +2354,7 @@ func _preview(item_id: int, at := {}) -> String:
 func _highlight() -> void:
 	var model: BikeModel = null
 	var slot := ""
-	if target.get("kind", "") == "part" and tool != "lance" and wash_mode.is_empty():
+	if target.get("kind", "") == "part" and tool != "lance" and tool != "polisher" and wash_mode.is_empty():
 		var view: Node = get_tree().get_first_node_in_group("workshop")
 		if view:
 			model = view.model_for(target)
@@ -2354,6 +2391,13 @@ func _update_work(delta: float) -> void:
 		return
 	if not wash_mode.is_empty():
 		_wash_mode_step(delta)
+		return
+	if detail.active():
+		detail.step(delta)
+		return
+	if not use_alt and _acting() and not _need_release and tool == "polisher" and wash_target() != 0 and Shed.held_by(Shed.me()) == 0:
+		Shed.feedback.emit("Press {interact} to bring up the detailing controls and get set at the bike.", false)
+		_need_release = true
 		return
 	if not use_alt and _acting() and not _need_release and tool == "lance" and wash_target() != 0 and Shed.held_by(Shed.me()) == 0:
 		# The trigger on a bike brings the wash controls straight up, and the jet with them.

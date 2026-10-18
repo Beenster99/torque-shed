@@ -61,7 +61,7 @@ func _ready() -> void:
 	_tier.add_item("As usual")
 	for t in Contracts.TIERS:
 		_tier.add_item(t)
-	_tier.tooltip_text = "How big a job: the number of service tasks, MOT faults, batch size or test ride length."
+	_tier.tooltip_text = "How big a job: the number of service tasks, MOT faults, batch size or test ride length; detailing: a wash, a wash and polish, or the full detail."
 	var top := _row([_button("Send a customer", func(): Shed.request({"a": "contract_spawn"})),
 		_button("Reputation +5", func(): Shed.request({"a": "contract_rep", "value": Contracts.reputation() + 5}))])
 	var tier_label := UITheme.label("Difficulty", 15)

@@ -16,6 +16,10 @@ extends RefCounted
 ##            power, tanks and panels in a library colour): see ContractBatch
 ##   test_ride  a manufacturer's prototype to ride through a set test and report on: see
 ##            ContractTestRide
+##   detail   a dirty bike brought in for a detailing package: a wash, a wash and polish, or the
+##            full detail (wash, polish, ceramic coat); the job keeps the package as a list of
+##            steps ("steps", see Detail) and the handover checks how clean and glossy it is,
+##            the coat, and that the polisher hasn't burnt through anywhere
 ## A new kind is a name in the tables below, a branch in make_offer (and, for one that isn't
 ## about a customer's bike, in _accept, evaluate and payout), as the batch and test ride kinds do.
 ## Each job's pay, parts budget and deadline are worked out from what it asks for.
@@ -31,18 +35,18 @@ extends RefCounted
 ## ask for changes with Shed.request({"a": "contract_..."}), which Shed hands to check()/apply().
 ## Everything here is static, working on the Shed autoload.
 
-const KINDS: Array[String] = ["maint", "mot", "respray", "mod", "bespoke", "batch", "test_ride"]
+const KINDS: Array[String] = ["maint", "mot", "respray", "mod", "bespoke", "batch", "test_ride", "detail"]
 const KIND_NAMES := {"maint": "Maintenance", "mot": "MOT", "respray": "Colour match", "mod": "Modifications", "bespoke": "Bespoke build",
-	"batch": "Batch order", "test_ride": "Test ride"}
+	"batch": "Batch order", "test_ride": "Test ride", "detail": "Detailing"}
 ## Reputation the garage needs before customers bring each kind of job.
-const UNLOCK := {"maint": 0, "mot": 2, "respray": 3, "mod": 5, "bespoke": 10, "batch": 4, "test_ride": 6}
+const UNLOCK := {"maint": 0, "mot": 2, "respray": 3, "mod": 5, "bespoke": 10, "batch": 4, "test_ride": 6, "detail": 1}
 ## How the kind's job counts in the player's XP (see Progress.XP).
 const XP_KEYS := {"maint": "contract_maint", "mot": "contract_mot", "respray": "contract_respray", "mod": "contract_mod",
-	"bespoke": "contract_bespoke", "batch": "contract_batch", "test_ride": "contract_test"}
+	"bespoke": "contract_bespoke", "batch": "contract_batch", "test_ride": "contract_test", "detail": "contract_detail"}
 ## Reputation earned by a job done to the letter.
-const REP_GAIN := {"maint": 1, "mot": 2, "respray": 2, "mod": 3, "bespoke": 5, "batch": 3, "test_ride": 3}
+const REP_GAIN := {"maint": 1, "mot": 2, "respray": 2, "mod": 3, "bespoke": 5, "batch": 3, "test_ride": 3, "detail": 1}
 ## How often each kind turns up, against the others the reputation allows.
-const WEIGHTS := {"maint": 4.0, "mot": 3.0, "respray": 2.0, "mod": 2.0, "bespoke": 1.0, "batch": 2.0, "test_ride": 1.5}
+const WEIGHTS := {"maint": 4.0, "mot": 3.0, "respray": 2.0, "mod": 2.0, "bespoke": 1.0, "batch": 2.0, "test_ride": 1.5, "detail": 2.5}
 ## Kinds whose customer comes on foot, with no bike of their own to leave.
 const ON_FOOT: Array[String] = ["bespoke", "batch"]
 const FIRST_CUSTOMER := 0.4          # game hours into a new shed before the first customer
@@ -663,6 +667,29 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 			offer["pay"] = int(snappedi(1500 + offer["goals"].size() * rng.randi_range(400, 650), 100))
 			offer["days"] = 8 + offer["goals"].size() + rng.randi_range(0, 2)
 			offer["blurb"] = "Something nobody else has. Start from a bare frame and build me exactly this."
+		"detail":
+			# A package (the Debug tab's tiers: Easy a wash, Medium a wash and polish, Hard the lot),
+			# its steps the job's list (see Detail).
+			var parts := random_parts(rng, true)
+			var pk: Dictionary = Detail.PACKAGES[_tier if _tier >= 0 else rng.randi() % Detail.PACKAGES.size()]
+			var steps: Array = (pk["steps"] as Array).duplicate()
+			offer["parts"] = parts
+			offer["steps"] = steps
+			offer["package"] = str(pk["name"])
+			for st in steps:
+				offer["goals"].append({"t": "detail", "step": str(st)})
+			if steps.has("polish"):
+				offer["goals"].append({"t": "detail", "step": "no_burn"})
+			var range_p: Vector2i = pk["pay"]
+			offer["pay"] = int(snappedi(rng.randi_range(range_p.x, range_p.y), 5))
+			offer["days"] = int(pk["days"]) + rng.randi_range(0, 1)
+			offer["blurb"] = {
+				"wash": ["It's filthy after the weekend. Just a good wash, please.", "Can you get the muck off it? A proper wash."],
+				"wash and polish": ["Wash it and bring the shine back: the paint's gone dull and swirly.",
+					"It's looking tired. A wash and a machine polish, and don't burn the paint."],
+				"full detail": ["The full works: wash, polish, and a ceramic coat so it stays clean.",
+					"I want it showroom fresh: washed, polished and ceramic coated. No smears, mind."],
+			}[str(pk["name"]).to_lower()][rng.randi() % 2]
 		"batch":
 			offer = ContractBatch.make_offer(rng, _tier_level())
 		"test_ride":
@@ -1105,6 +1132,8 @@ static func goal_text(g: Dictionary) -> String:
 			return "On the tank, %s (masked first, then the main colour over it)" % what
 		"health":
 			return "Condition at least %d%%" % roundi(float(g["min"]) * 100.0)
+		"detail":
+			return Detail.step_text(str(g.get("step", "")))
 	return str(g)
 
 
@@ -1194,6 +1223,9 @@ static func eval_goal(job: Dictionary, g: Dictionary) -> Dictionary:
 		"part":
 			var p := str(parts.get(str(g["slot"]), "none"))
 			return {"done": p == str(g["part"]), "have": PartsDB.part_name(p) if p != "none" else "none"}
+		"detail":
+			var row := Detail.eval_step(bike_id, str(g.get("step", "")))
+			return {"done": bool(row["done"]), "have": str(row["have"])}
 	return {"done": false, "have": ""}
 
 
@@ -1339,6 +1371,10 @@ static func payout(job: Dictionary, spend_override := -1) -> Dictionary:
 	if sat >= 1.0 and late == 0:
 		var shine := bike_health(int(job.get("bike", 0)))
 		tip = roundi(fee * (0.05 + 0.2 * clampf((shine - 0.6) / 0.4, 0.0, 1.0)))
+		if str(job.get("kind", "")) == "detail" and job.get("steps", []).has("polish"):
+			# A detailing customer tips on the shine: more the deeper the gloss past what they asked.
+			var gloss := float(Detail.bike_stats(int(job.get("bike", 0)))["gloss"])
+			tip = roundi(fee * (0.05 + 0.25 * clampf((gloss - Detail.GLOSS_GOOD) / (1.0 - Detail.GLOSS_GOOD), 0.0, 1.0)))
 	var rep := int(REP_GAIN.get(str(job.get("kind", "")), 1)) if sat >= 1.0 else (0 if sat >= 0.5 else -1)
 	if late > 0:
 		rep -= 1
@@ -1559,7 +1595,7 @@ static func _accept(_peer: int, cid: int) -> String:
 		var frame := Shed._new_item(str(offer["parts"].get("frame", "steel_cradle")), 0.0, 0.0, 0.0)
 		bike_id = Shed._empty_bike(frame, bay)
 	else:
-		var age: float = {"maint": 0.15, "mot": 0.28, "mod": 0.12, "test_ride": 0.0}.get(kind, 0.2)
+		var age: float = {"maint": 0.15, "mot": 0.28, "mod": 0.12, "test_ride": 0.0, "detail": 0.12}.get(kind, 0.2)
 		var paint = Shed.PAINTS[int(offer["paint"]) % Shed.PAINTS.size()] if offer.has("paint") else null
 		if offer.has("paint_rgb"):
 			paint = Color.html(str(offer["paint_rgb"]))
@@ -1585,6 +1621,10 @@ static func _accept(_peer: int, cid: int) -> String:
 		"workers": {}, "state": "active"}
 	if kind == "mot":
 		job["mot"] = {"tested": false, "stale": false, "fails": 0, "sheet": [], "tests": 0}
+	if offer.get("steps") is Array:
+		# A detailing package: its steps, in order, for anyone (or any AI detailer) working through it.
+		job["steps"] = (offer["steps"] as Array).duplicate()
+		job["package"] = str(offer.get("package", ""))
 	if kind == "test_ride":
 		ContractTestRide.start(job, offer, bike_id)
 	jobs()[jid] = job
@@ -1736,6 +1776,20 @@ static func prepare_bike(bike_id: int, kind: String, goals: Array, rng: RandomNu
 			"fork":
 				set_part.call("fork", "wear", 0.7)
 	match kind:
+		"detail":
+			# Filthy, and its paint dull and swirled (in patches), ready for the package.
+			for slot in PartsDB.SLOTS:
+				var id := Shed.item_on(bike_id, slot)
+				if id != 0:
+					Shed.items[id]["dirt"] = clampf(float(Shed.items[id]["dirt"]) + rng.randf_range(0.45, 0.6), 0.0, 1.0)
+			for id in Detail.panels_of(bike_id):
+				var d := Detail.data(Shed.items[id])
+				var g: PackedByteArray = d["g"]
+				var dull := rng.randf_range(0.18, 0.32)
+				for i in Dirt.CELLS:
+					g[i] = clampi(roundi((dull + rng.randf_range(-0.06, 0.06)) * 255.0), 0, 255)
+				d["g"] = g
+				Detail.store(Shed.items[id], d)
 		"mot":
 			# A few faults for the test to find.
 			var fault_list := ["front_tyre", "rear_tyre", "pads", "disc", "mirrors", "horn", "headlight", "chain", "fork", "frame",

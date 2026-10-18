@@ -24,7 +24,8 @@ const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "
 	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray",
 	"tyre_fit": "changer", "tyre_remove": "changer", "inflate": "compressor"}
 ## Which loop a tool makes in someone else's hands while they work.
-const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet", "gun": "spray_gun"}
+const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet", "gun": "spray_gun",
+	"polisher": "polisher"}
 ## The one-shot when a job is done (putting a part down plays an impact instead, see job_done).
 const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "install": "clunk", "take": "pickup",
 	"place": "clunk", "drop": "clunk", "set_down": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink",
@@ -36,7 +37,7 @@ const LOOP_TAILS := {"grinder": ["grinder_up", "grinder_down"], "jet": ["jet_on"
 ## How long a loop takes to fade in, for machines that spin up (their start sound covers it).
 const LOOP_FADE_IN := {"shaker": 0.5, "grinder": 0.45, "jet": 0.15, "spray_gun": 0.12, "compressor": 0.6, "blast": 0.1, "fan": 1.4}
 ## Loops that get a small random pitch each time they start (the same tool never quite the same).
-const LOOP_DETUNE := ["ratchet", "scrub", "grinder", "spray", "spray_gun", "jet", "washer", "blast", "changer", "pour"]
+const LOOP_DETUNE := ["ratchet", "scrub", "grinder", "polisher", "spray", "spray_gun", "jet", "washer", "blast", "changer", "pour"]
 ## The acoustics of each kind of room: AudioEffectReverb settings (room size, damping, wet,
 ## pre-delay in ms, high-pass) and how loud the outdoor ambience comes through.
 const ROOM_PRESETS := {

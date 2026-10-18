@@ -292,11 +292,12 @@ static func bike_sale(bike_id: int, peer := 0) -> int:
 	return roundi(total * SELL_RATE * bonus * (1.0 + HAGGLE_SELL * _haggle(peer)))
 
 
-## BONUS_CLEAN for a bike with every part washed clean, else nothing.
+## BONUS_CLEAN for a bike with every part washed clean, else nothing; and what its paintwork
+## adds or takes off (a deep gloss and a ceramic coat, a burn-through: see Detail.shine_bonus).
 static func clean_bonus(bike_id: int) -> float:
 	if not Shed.bikes.has(bike_id) or Shed.item_on(bike_id, "frame") == 0:
 		return 0.0
-	return BONUS_CLEAN if Shed._bike_dirt(bike_id, true) <= Dirt.CLEAN else 0.0
+	return (BONUS_CLEAN if Shed._bike_dirt(bike_id, true) <= Dirt.CLEAN else 0.0) + Detail.shine_bonus(bike_id)
 
 
 ## What a project bike costs to buy as it comes (see PROJECT_MARKUP).

@@ -645,6 +645,9 @@ func condition_of(item: Dictionary) -> Dictionary:
 		cond["blast_full"] = blast_full(item)
 	if item.has("coat"):
 		cond["coat"] = str(item["coat"])
+	# A detailed panel's gloss, burns and ceramic coat, region by region (see Detail).
+	if item.get("shine") is Dictionary:
+		cond["shine"] = item["shine"]
 	if item.get("primer_top", false):
 		cond["primer"] = true
 	# Paint mixed in the mixing bay: its effect, a masked stripe or fade, tape still on, the
@@ -2397,6 +2400,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return _blast_check(peer, action)
 	if a.begins_with("wash_"):
 		return Wash.check(peer, action)
+	if a.begins_with("shine_"):
+		return Detail.check(peer, action)
 	if a == "coat":
 		return _coat_check(peer, action)
 	if a.begins_with("money_"):
@@ -3186,6 +3191,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		# SYNC_INTERVAL), not gone over again for each of these, many times a second.
 		_mark_dirty()
 		return
+	if a.begins_with("shine_"):
+		# Polishing and coating (see Detail): like the wash, the next sync carries it.
+		var shone := Detail.apply(peer, action)
+		if shone != "":
+			_tell(peer, shone, false)
+		_mark_dirty()
+		return
 	if a == "coat":
 		_tell(peer, _coat_apply(peer, action), true)
 		_mark_dirty()
@@ -3567,10 +3579,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 				it.erase("flat")
 				it["color"] = PAINTS[idx]
 				it["finish"] = finish
-			# Fresh paint covers bare metal and any coat that was on it.
+			# Fresh paint covers bare metal and any coat that was on it, and its old polish.
 			_paint_over(it)
 			it.erase("coat")
 			it.erase("coat_q")
+			Detail.repainted(it)
 			# Showroom Shine (a skill) gives a better finish.
 			var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
 			var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
@@ -3602,6 +3615,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_paint_over(it)
 			it.erase("coat")
 			it.erase("coat_q")
+			Detail.repainted(it)
 			it.erase("mix")
 			it.erase("mix_coats")
 			it.erase("mask")
@@ -3887,7 +3901,10 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 		var protect := coat_protect(items[id]) if id != 0 else 0.0
 		if id != 0 and (dirty > 0.0 or flies > 0.0):
 			var exposure := float(DIRT_EXPOSURE.get(slot, 0.4)) * (spray if FRONT_SPRAY.has(slot) else 1.0)
-			Dirt.accrue(items[id], slot, dirty, flies, exposure, spray, protect)
+			# A ceramic coat on the paint sheds it too (see Detail).
+			Dirt.accrue(items[id], slot, dirty, flies, exposure, spray, maxf(protect, Detail.dirt_protect(items[id])))
+		if id != 0 and km + dirty > 0.0 and Detail.has(items[id]):
+			Detail.ride_wear(items[id], km + dirty)
 		if id != 0 and blast_cover(items[id]) > 0.0 and km + dirty > 0.0:
 			var bare := blast_cover(items[id]) * (1.0 - protect)
 			items[id]["rust"] = minf(1.0, float(items[id]["rust"]) + (km + dirty * 2.0) * BARE_RUST * bare)
