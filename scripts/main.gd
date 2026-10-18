@@ -419,6 +419,8 @@ func home_reason() -> String:
 		return "home"
 	if recovery.driving:
 		return "You're in the truck: drive it back, or get out ({interact}) first."
+	if recovery.riding_along:
+		return "You're in the truck's passenger seat: get out ({interact}) first."
 	var at: Vector3 = bike.global_position if bike else walker.global_position
 	if Workshop.room_at(at) != "" or Vector2(at.x - Workshop.CENTER.x, at.z - Workshop.CENTER.z).length() < HOME_RANGE:
 		return "home"
@@ -747,7 +749,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or coffee_panel.visible or staff_panel.visible \
-			or paint_bench.visible or recovery_panel.visible or (bike == null and not recovery.driving):
+			or paint_bench.visible or recovery_panel.visible or (bike == null and not recovery.driving and not recovery.riding_along):
+		return
+	if recovery.riding_along:
+		if recovery.passenger_input(event):
+			get_viewport().set_input_as_handled()
 		return
 	if recovery.driving:
 		if recovery.drive_input(event):
@@ -1049,10 +1055,13 @@ func _update_dash() -> void:
 	_dash.modulate = Color(1.0, 0.45, 0.3) if fuel < 0.15 else Color(0.75, 1.0, 0.85)
 
 
-## [0, x, y, z, yaw, pitch, crouched] on foot, or [1, bike id, bike state...] riding.
+## [0, x, y, z, yaw, pitch, crouched] on foot, [1, bike id, bike state...] riding, the truck's
+## snapshot driving it (RecoveryView.net_state), or [3] in its passenger seat.
 func _net_state() -> PackedFloat32Array:
 	if recovery and recovery.driving:
 		return recovery.net_state()
+	if recovery and recovery.riding_along:
+		return PackedFloat32Array([3.0])   # in the truck's passenger seat (drawn sat there: RecoveryView)
 	if bike:
 		var s := PackedFloat32Array([1.0, float(riding_id)])
 		s.append_array(bike.get_net_state())

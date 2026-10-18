@@ -4771,6 +4771,7 @@ func _on_player_left(id: int) -> void:
 		_move(held, "spot", _free_spot())
 	CoffeeShop.put_back(id)
 	PaintBay.put_back(id)
+	Recovery.put_back(id)
 	var bike_id := riding(id)
 	if bike_id != 0:
 		bikes[bike_id]["rider"] = 0

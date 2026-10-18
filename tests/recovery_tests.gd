@@ -681,7 +681,8 @@ func test_jump() -> void:
 ## steering wheel turning with the front wheels. The trailer's fixed parts are merged too.
 func test_model() -> void:
 	var car := Car.new()
-	var meshes := car.model.find_children("*", "MeshInstance3D", true, false)
+	# The front doors and the openings they leave only draw while one stands open (hidden, shut).
+	var meshes := car.model.find_children("*", "MeshInstance3D", true, false).filter(func(mi): return not str(mi.get_parent().name).begins_with("Door"))
 	var body: MeshInstance3D = car.model.get_node("Body")
 	var mats := []
 	for s in body.mesh.get_surface_count():
@@ -942,6 +943,177 @@ func test_oneshot_sounds() -> void:
 	await _ticks(Engine.physics_ticks_per_second * 7)
 	check(Sfx.oneshots_alive() <= before, "and every one-shot's gone by itself (%d left)" % Sfx.oneshots_alive())
 	rv.stop_driving()
+	main.queue_free()
+	await t.get_tree().process_frame
+	Shed.stop()
+
+
+## A slope of `deg` degrees running down towards +z, with the truck on it facing uphill (-z) and
+## its trailer hitched on behind when `trailer`, stopped.
+func _slope_rig(deg: float, trailer := false) -> Dictionary:
+	var root := Node3D.new()
+	t.add_child(root)
+	var ground := TestGround.new(4000.0, "tarmac")
+	ground.rotation.x = deg_to_rad(deg)   # +z end lower: facing -z is uphill
+	root.add_child(ground)
+	var car := Car.new()
+	root.add_child(car)
+	var up := Basis(Vector3.RIGHT, deg_to_rad(deg))
+	car.place(Transform3D(up, Vector3.ZERO))
+	var out := {"root": root, "car": car}
+	if trailer:
+		var tr := Trailer.new()
+		root.add_child(tr)
+		tr.hitch_to(car)
+		out["trailer"] = tr
+	return out
+
+
+## Simon's 18 October (16:08) round: a handbrake for the truck. Pulled up (J, or the pad's D-pad
+## left) it stays on, holding the back wheels, on a slope too and with the trailer behind; let off
+## (or never put on) a stopped truck rolls back down the hill. It's on the dash, and it's left as
+## it was for whoever gets in next.
+func test_handbrake() -> void:
+	for with_trailer in [false, true]:
+		var r := _slope_rig(7.0, with_trailer)
+		var car: Car = r["car"]
+		car.engine_on = false
+		car.parking_brake = true
+		await _ticks(Engine.physics_ticks_per_second * 1)
+		var held_at := car.global_position
+		await _ticks(Engine.physics_ticks_per_second * 4)
+		var crept := car.global_position.distance_to(held_at)
+		check(crept < 0.05, "%s on a 7 degree hill the handbrake holds it (%.2f m in 4 s)" % ["With the trailer," if with_trailer else "Parked", crept])
+		car.parking_brake = false
+		await _ticks(Engine.physics_ticks_per_second * 4)
+		var rolled := car.global_position.distance_to(held_at)
+		check(rolled > 1.5 and car.speed < -0.3, "let off, it rolls back down (%.1f m, %.1f m/s)" % [rolled, car.speed])
+		(r["root"] as Node).queue_free()
+		await _ticks(2)
+	# At the wheel.
+	var main := await _main_with_rig()
+	var rv: RecoveryView = main.recovery
+	Shed.request({"a": "recovery_enter"})
+	await _ticks(10)
+	check(rv.driving and not rv.car.parking_brake, "getting in a truck that was left without it, the handbrake's off")
+	var ev := InputEventAction.new()
+	ev.action = "handbrake"
+	ev.pressed = true
+	check(rv.drive_input(ev) and rv.car.parking_brake, "the handbrake key pulls it up")
+	check(InputMap.action_get_events("handbrake").any(func(e): return e is InputEventJoypadButton), "and there's a pad button for it")
+	rv.car.start_engine()
+	await _ticks(Engine.physics_ticks_per_second * 1)
+	main.hud.queue_redraw()
+	rv.car._update_model(0.0)
+	check(rv.car._park_lamp_mat.emission_energy_multiplier > 1.0, "its red lamp's lit on the dash")
+	Input.action_press("throttle")
+	await _ticks(Engine.physics_ticks_per_second * 2)
+	Input.action_release("throttle")
+	check(absf(rv.car.speed) < 1.0 and absf(float(rv.car.wheels[2]["omega"])) < 1.0, "with it on, the back wheels stay put on the throttle (%.1f m/s)" % rv.car.speed)
+	await _ticks(Engine.physics_ticks_per_second * 1)
+	rv.stop_driving()
+	await _ticks(5)
+	check(bool(Recovery.car()["handbrake"]), "got out, the truck's left with its handbrake on")
+	Shed.request({"a": "recovery_enter"})
+	await _ticks(10)
+	check(rv.car.parking_brake, "and it's still on for whoever gets in next")
+	check(rv.drive_input(ev) and not rv.car.parking_brake, "pressed again it's let off")
+	rv.car.start_engine()
+	await _ticks(Engine.physics_ticks_per_second * 1)
+	Input.action_press("throttle")
+	await _ticks(Engine.physics_ticks_per_second * 2)
+	Input.action_release("throttle")
+	check(rv.car.speed > 1.0, "and it pulls away (%.1f m/s)" % rv.car.speed)
+	rv.stop_driving()
+	main.queue_free()
+	await t.get_tree().process_frame
+	Shed.stop()
+
+
+## Simon's 18 October (16:08) round: passenger doors. A second player can get in the passenger
+## seat by its own door (on the left: it's right-hand drive), sits there looking out, and gets out
+## the same side. The doors swing open and shut as anyone gets in or out, on everyone's screen
+## (it's the shed's seats changing), and the crew are drawn sat in the cab.
+func test_passenger() -> void:
+	var main := await _main_with_rig()
+	var rv: RecoveryView = main.recovery
+	var w: Walker = main.walker
+	var car := rv.car
+	check(car._doors.size() == 2 and not (car._doors[0] as Node3D).visible, "the truck has two front doors, shut")
+	check(rv.use_text({"use": {"what": "ride"}}).contains("passenger seat"), "the passenger door says you can get in there")
+	rv.use({"use": {"what": "ride"}})
+	await _ticks(3)
+	check(Recovery.passenger() == Shed.me() and rv.riding_along, "F at the passenger door: you're in the passenger seat")
+	var cam: Camera3D = rv._pass_cam
+	check(cam != null and cam.current and cam.get_parent() == car and cam.position.distance_to(Car.PASSENGER_EYE) < 0.01,
+		"looking out from the passenger's seat, on the left")
+	check(w.process_mode == Node.PROCESS_MODE_DISABLED and not w.visible, "the walker's put away meanwhile")
+	await _ticks(20)
+	check(float(car.door_open[0]) > 0.5 and (car._doors[0] as Node3D).visible and float(car.door_open[1]) == 0.0,
+		"the passenger door swings open as you get in (%.2f), the driver's stays shut" % float(car.door_open[0]))
+	await _ticks(Engine.physics_ticks_per_second * 3)
+	check(float(car.door_open[0]) == 0.0 and not (car._doors[0] as Node3D).visible, "and shuts behind you")
+	check(main._net_state() == PackedFloat32Array([3.0]), "the crew are told you're sat in the truck")
+	var ev := InputEventMouseMotion.new()
+	ev.relative = Vector2(-200.0, 0.0)
+	rv.passenger_input(ev)
+	check(cam.rotation.y > 0.3, "the mouse turns your head to look about (%.2f)" % cam.rotation.y)
+	check(Shed.check(Shed.me(), {"a": "recovery_enter"}) != "", "you can't drive from the passenger seat")
+	var press := InputEventAction.new()
+	press.action = "interact"
+	press.pressed = true
+	rv.passenger_input(press)
+	await _ticks(3)
+	var local := car.global_transform.affine_inverse() * w.global_position
+	check(Recovery.passenger() == 0 and not rv.riding_along and w.visible and w.camera.current and local.x < -1.0,
+		"F gets you out, stood by the passenger door (%.1f m to the left)" % -local.x)
+	await _ticks(10)
+	check(float(car.door_open[0]) > 0.3, "the door swings open as you get out too")
+	# The crew's view: a player getting in the passenger seat, and one at the wheel.
+	var peer := 99
+	Recovery.car()["passenger"] = peer
+	await _ticks(3)
+	var sat: Array = car.get_children().filter(func(c): return c.has_meta("peer") and int(c.get_meta("peer")) == peer)
+	check(sat.size() == 1 and (sat[0] as Node3D).position.x < 0.0, "the crew see them sat in the passenger seat")
+	check(float(car.door_open[0]) > 0.0, "and the door swing as they get in")
+	var parked := car.global_position
+	Recovery.car()["passenger"] = 0
+	await _ticks(3)
+	sat = car.get_children().filter(func(c): return c.has_meta("peer") and int(c.get_meta("peer")) == peer and not c.is_queued_for_deletion())
+	check(sat.is_empty() and car.global_position.distance_to(parked) < 0.01, "and gone again once they're out")
+	main.queue_free()
+	await t.get_tree().process_frame
+	Shed.stop()
+
+
+## Simon's 18 October (16:08) round: a sort of radar in the truck for the jobs. In the cab a round
+## radar shows the truck in the middle facing up, a blip for each bike still to collect and one
+## for the garage (out of range, on the rim), and under it the next place to go, how far, and an
+## arrow pointing at it.
+func test_radar() -> void:
+	var main := await _main_with_rig()
+	var rv: RecoveryView = main.recovery
+	Shed.request({"a": "recovery_start", "kind": "barn"})
+	await _ticks(3)
+	var list := TruckRadar.targets()
+	var jobs := list.filter(func(x): return str(x["kind"]) == "job")
+	var home := list.filter(func(x): return str(x["kind"]) == "home")
+	check(jobs.size() >= 1 and home.size() == 1, "the radar has the job to collect and the garage on it (%d jobs)" % jobs.size())
+	var ahead := TruckRadar.blip(Vector3.ZERO, Vector3.FORWARD, Vector3(0.0, 0.0, -450.0))
+	var right := TruckRadar.blip(Vector3.ZERO, Vector3.FORWARD, Vector3(300.0, 0.0, 0.0))
+	var far := TruckRadar.blip(Vector3.ZERO, Vector3.RIGHT, Vector3(0.0, 0.0, -5000.0))
+	check(absf(ahead.x) < 0.01 and absf(ahead.y + TruckRadar.RADIUS * 0.5) < 0.1 and right.x > 10.0 and absf(right.y) < 0.01,
+		"something ahead shows straight up the screen, something to the right to the right (%s, %s)" % [ahead, right])
+	check(absf(far.length() - TruckRadar.RADIUS) < 0.01 and far.x < -10.0, "and a long way off it sits on the rim, turned with the truck (%s)" % far)
+	check(not rv.radar.visible, "on foot there's no radar")
+	Shed.request({"a": "recovery_enter"})
+	await _ticks(5)
+	check(rv.radar.visible, "in the cab it's up")
+	rv.radar.queue_redraw()
+	await t.get_tree().process_frame
+	rv.stop_driving()
+	await _ticks(3)
+	check(not rv.radar.visible, "and out of the truck it's gone")
 	main.queue_free()
 	await t.get_tree().process_frame
 	Shed.stop()

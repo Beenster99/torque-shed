@@ -516,6 +516,14 @@ func _draw_truck_dash() -> void:
 		var main_beam := car.beam >= 2
 		draw_string(font, r.position + Vector2(176, 34), "MAIN" if main_beam else "DIP", HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
 			Color(0.35, 0.6, 1.0) if main_beam else Color(0.35, 0.9, 0.45))
+	# The handbrake telltale: a red (P) in a ring while it's pulled up and left on.
+	if car.parking_brake or car.handbrake > 0.3:
+		var c := r.position + Vector2(158, 28)
+		var red := Color(1.0, 0.22, 0.15)
+		draw_arc(c, 11.0, 0.0, TAU, 24, red, 2.0)
+		draw_arc(c, 15.0, deg_to_rad(-50.0), deg_to_rad(50.0), 8, red, 1.5)
+		draw_arc(c, 15.0, deg_to_rad(130.0), deg_to_rad(230.0), 8, red, 1.5)
+		draw_string(font, c + Vector2(-5, 5), "P", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, red)
 	var stops: Array = ["R", "N", "D"] if car.auto_shift else ["R", "N", "1", "2", "3", "4", "5", "6"]
 	var lit := "R" if car.gear < 0 else ("N" if car.gear == 0 else ("D" if car.auto_shift else str(car.gear)))
 	var x := 12.0
@@ -545,6 +553,7 @@ func _draw_truck_dash() -> void:
 			rev = "{shift_down}: reverse   ·   {shift_up}: first"
 		else:
 			rev = "{shift_down}: down to neutral, then reverse"
-		hint = Controls.hint("{interact}: get out   ·   %s   ·   {headlight}: headlamps   ·   {ignition}: engine off" % rev)
+		var hb := "{handbrake}: handbrake off" if car.parking_brake else "{handbrake}: handbrake on"
+		hint = Controls.hint("{interact}: get out   ·   %s   ·   %s   ·   {headlight}: headlamps   ·   {ignition}: engine off" % [rev, hb])
 	if hint != "":
 		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))

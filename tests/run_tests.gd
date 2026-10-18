@@ -355,6 +355,10 @@ func _run_all() -> void:
 	print("Simon's 18 October (16:08) round: one-shots that go, the truck's handbrake, passenger seat and radar, off the bike in place, a foot down")
 	await _test_oneshot_sounds()
 	await _test_dismount_in_place()
+	await _test_truck_handbrake()
+	await _test_truck_passenger()
+	await _test_truck_radar()
+	await _test_foot_down()
 	print("Simon's 16 October round: dirt where it really goes, and pressure washing it off")
 	_test_dirt_accrual()
 	_test_wash_rules()
@@ -16656,6 +16660,18 @@ func _test_oneshot_sounds() -> void:
 	await _recovery().test_oneshot_sounds()
 
 
+func _test_truck_handbrake() -> void:
+	await _recovery().test_handbrake()
+
+
+func _test_truck_passenger() -> void:
+	await _recovery().test_passenger()
+
+
+func _test_truck_radar() -> void:
+	await _recovery().test_radar()
+
+
 ## Simon's 16 October round: road dirt builds up where it really goes as a bike's ridden (more
 ## with distance, heaviest behind the front wheel and under the mudguards, flies on the front at
 ## speed), old saves and delivered bikes get a sensible pattern, and it all survives a save.
@@ -20078,4 +20094,66 @@ func _test_dismount_in_place() -> void:
 	rp.queue_free()
 	main._leave()
 	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The lowest point (world y) of everything drawn under `n`.
+func _lowest(n: Node3D) -> float:
+	var low := INF
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var box: AABB = (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
+		low = minf(low, box.position.y)
+	return low
+
+
+## Simon's 18 October (16:08) round: the rider puts their left foot on the ground to hold the bike
+## up as it comes to rest, the bike leaning a touch onto it, and lifts it as they ride off; the
+## crew's riders do it too, from the speed in their snapshots.
+func _test_foot_down() -> void:
+	var r := await ride({}, 2.0, func(_b, _t): pass)
+	var bike: Bike = r["bike"]
+	var model := bike.model
+	var down := model._rider.get_node_or_null("LegLDown") as Node3D
+	var peg := model._rider.get_node_or_null("LegLPeg") as Node3D
+	check(down != null and peg != null, "the rider's left leg can go on the peg or down on the ground")
+	if down == null:
+		await _done(r)
+		return
+	var lean := -model.transform.basis.y.x
+	check(model.foot_down > 0.99 and down.visible and not peg.visible and lean > 0.04,
+		"stopped, the left foot's down and the bike leans onto it (%.1f degrees)" % rad_to_deg(asin(clampf(lean, -1.0, 1.0))))
+	var sole := _lowest(down)
+	check(absf(sole) < 0.06, "the boot's on the ground (its sole %.3f m off it)" % sole)
+	var side: float = (bike.global_transform.affine_inverse() * down.find_children("*", "MeshInstance3D", true, false)[-1].global_position).x
+	check(side < -0.2, "out to the left of the bike (%.2f m)" % side)
+	await _done(r)
+	# Riding off, then pulling up again.
+	var lifted := {"min": 1.0}
+	var r2 := await ride({}, 9.0, func(b, t):
+		b.throttle = 0.5 if t > 1.5 and t < 4.0 else 0.0
+		b.front_brake = 0.6 if t > 5.0 and t < 6.8 else 0.0   # (held on at a stop it walks the bike back)
+		if t > 3.0 and t < 4.0:
+			lifted["min"] = minf(lifted["min"], b.model.foot_down))
+	var b2: Bike = r2["bike"]
+	check(lifted["min"] < 0.01 and r2["max_speed"] > 4.0, "riding off, the foot's lifted back onto the peg (%.2f)" % lifted["min"])
+	check(b2.model.foot_down > 0.99 and absf(b2.speed) < BikeModel.FOOT_DOWN_SPEED, "and pulling up it goes down again (%.2f down, %.1f m/s)" % [b2.model.foot_down, b2.speed])
+	await _done(r2)
+	# The crew's riders: by their bike's speed.
+	var rb := RemoteBike.new()
+	add_child(rb)
+	rb.setup("Crew", BikeBuild.new({}), Color.RED)
+	var bs := PackedFloat32Array()
+	bs.resize(25)
+	bs[6] = 1.0
+	bs[9] = -8.0   # going along at 8 m/s
+	for i in 30:
+		rb.push_state(bs)
+		await get_tree().physics_frame
+	var moving := rb.model.foot_down
+	bs[9] = 0.0
+	for i in 60:
+		rb.push_state(bs)
+		await get_tree().physics_frame
+	check(moving < 0.01 and rb.model.foot_down > 0.99, "a crew member's rider puts a foot down too as their bike stops (%.2f, then %.2f)" % [moving, rb.model.foot_down])
+	rb.queue_free()
 	await get_tree().physics_frame
