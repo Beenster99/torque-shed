@@ -114,6 +114,17 @@ func _ready() -> void:
 	_tyre_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
 	box.add_child(_tyre_note)
 
+	# Staff (see Staff): a full payroll at once, whatever the level, and everyone off sick or back.
+	box.add_child(UITheme.label("Staff (host)", 15, UITheme.ACCENT))
+	var staff_row := _row([
+		_button("Hire one of each", func(): Shed.request({"a": "staff_debug_hire_all"})),
+		_button("Make everyone sick", func(): Shed.request({"a": "staff_debug_sick", "sick": true})),
+		_button("Make everyone well", func(): Shed.request({"a": "staff_debug_sick", "sick": false})),
+	])
+	box.add_child(staff_row)
+	for b in staff_row.get_children():
+		_host_only.append(b)
+
 	_confirm = ConfirmationDialog.new()
 	_confirm.confirmed.connect(func():
 		if _pending.is_valid():

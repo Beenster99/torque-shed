@@ -692,6 +692,7 @@ static func costs_mult(bank: Dictionary) -> float:
 ## off): rent and rates for the premises (Shed.upgrades), insurance on the premises, the
 ## recovery rig and what's in the shed, power and water for the lights and machines used since
 ## the last bill, and consumables for the work done.
+## The staff's wages (see Staff) go on it too.
 static func bill_lines(bank: Dictionary) -> Array:
 	var mult := costs_mult(bank)
 	if mult <= 0.0:
@@ -711,8 +712,10 @@ static func bill_lines(bank: Dictionary) -> Array:
 		+ float(use.get("machine", 0.0)) * POWER_UNIT, POWER_USE_MAX)
 	var kit := minf(int(use.get("work", 0)) * CONSUMABLE_EACH, CONSUMABLES_MAX)
 	var out := []
+	var staff := Staff.workers().size()
 	for l in [["rent", "Rent", rent], ["rates", "Business rates", rent * RATES_SHARE], ["insurance", "Insurance", insure],
-			["power", "Power and water", power], ["consumables", "Workshop consumables", kit]]:
+			["power", "Power and water", power], ["consumables", "Workshop consumables", kit],
+			["wages", "Staff wages (%d on the payroll)" % staff, float(Staff.wage_bill())]]:
 		var amt := roundi(float(l[2]) * mult)
 		if amt > 0:
 			out.append({"key": l[0], "why": l[1], "amt": amt})
