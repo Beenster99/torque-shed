@@ -295,7 +295,7 @@ func _draw_tyre_game(game: TyreGame) -> void:
 ## it, bubbles foaming thicker the nearer it is to the hole, and the plug going in.
 func _draw_plug_game(game: PlugGame) -> void:
 	var font := get_theme_default_font()
-	var w := minf(size.x * 0.6, 760.0)
+	var w := minf(size.x * 0.4, 560.0)   # clear of the part info down the right
 	var strip := Rect2(size.x * 0.5 - w * 0.5, size.y * 0.5 + 60.0, w, 46.0)
 	draw_rect(strip.grow(28.0), Color(0.03, 0.03, 0.04, 0.6))
 	draw_rect(strip, Color(0.07, 0.07, 0.08))
