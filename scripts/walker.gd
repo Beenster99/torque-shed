@@ -1987,6 +1987,9 @@ func _describe() -> String:
 				lines.append(PartsDB.bin_text(str(it["part"])))
 				if it.has("fluid"):
 					lines.append(Shed.fluid_text(it))
+				var brake_kind := PartsDB.kind_of(str(it["part"]))
+				if engine_id == 0 and brake_kind in ["disc", "pads", "caliper"]:
+					lines.append_array(BikeHeat.brake_lines(int(target["bike"]), slot.get_slice("_", 0), brake_kind))
 				var whisper := _whisper(slot, engine_id)
 				if whisper != "":
 					lines.append(whisper)

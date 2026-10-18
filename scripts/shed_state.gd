@@ -1357,6 +1357,11 @@ func condition_text(item: Dictionary) -> String:
 		roundi(item["dirt"] * 100.0), roundi(item["wear"] * 100.0), paint_text(item)]
 	if item.has("slack"):
 		text += "\n" + chain_text(item)
+	match str(item.get("kind", "")):
+		"disc":
+			text += "\n%.1f mm thick (MOT min %.1f mm)" % [MotTest.disc_mm(item), MotTest.DISC_MIN]
+		"pads":
+			text += "\n%.1f mm of pad left (MOT min %.1f mm)" % [MotTest.pad_mm(item), MotTest.PAD_MIN]
 	if item.has("paint_quality"):
 		text += "\n" + finish_text(item)
 	elif item.get("primer_top", false):
