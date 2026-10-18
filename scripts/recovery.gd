@@ -512,7 +512,7 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "Bring it back to the yard first."
 			if not Shed.bikes.has(int(job["bike"])) or loads().has(int(job["bike"])):
 				return "Get it off the trailer first."
-			var price := int(assess(int(job["bike"]), job)[{"recovery_buy": "buy", "recovery_salvage": "salvage"}.get(a, "buy")]) \
+			var price := int(quote(job)[{"recovery_buy": "buy", "recovery_salvage": "salvage"}.get(a, "buy")]) \
 				if a != "recovery_insurer" else 0
 			if price > Shed.garage_money:
 				return "The garage can't afford %s." % money(price)
@@ -699,8 +699,10 @@ static func apply(peer: int, action: Dictionary) -> String:
 		"recovery_insurer":
 			var job: Dictionary = jobs()[int(action["job"])]
 			job["state"] = "insurer"
+			if not Workflow.assessed(int(job["bike"])):
+				Workflow.assess_bike(int(job["bike"]), peer)
 			job["spec"] = _insurer_spec(int(job["bike"]))
-			job["pay"] = int(assess(int(job["bike"]), job)["insurer"])
+			job["pay"] = int(quote(job)["insurer"])
 			text = "%s will pay %s to put it right: %s. Every part on and bolted up, then they'll collect it from the yard." % [
 				job["insurer"], money(int(job["pay"])), ", ".join(job["spec"].map(func(sl): return PartsDB.slot_name(str(sl)).to_lower())) if not job["spec"].is_empty() else "a once-over"]
 		"recovery_collect":
@@ -795,7 +797,7 @@ static func _delivered(job: Dictionary) -> void:
 	var crew: Array = Shed.crew.keys()
 	for p in crew:
 		Shed._xp(int(p), "recovery_delivered", 1.0, "recovery:%d" % int(job["id"]))
-	_tell_all("%s delivered to the yard: %s call-out paid. Assess it from the Recovery list ({menu}, Recovery)." % [
+	_tell_all("%s delivered to the yard: %s call-out paid. Assess it on the Workflow channel of a bay screen (or {menu}, Recovery)." % [
 		str(job["name"]).capitalize(), money(fee)], true)
 
 
@@ -870,10 +872,20 @@ static func assess(bike_id: int, job := {}) -> Dictionary:
 		"strip": roundi(worth_now)}
 
 
+## The three prices for a delivered job: as its assessment (on the bike's job card, the same
+## for the whole crew) put them, or worked out now when it hasn't been assessed.
+static func quote(job: Dictionary) -> Dictionary:
+	var c := Workflow.card(int(job.get("bike", 0)))
+	if c.get("prices") is Dictionary:
+		return c["prices"]
+	return assess(int(job.get("bike", 0)), job)
+
+
 ## The parts the insurer wants put right: anything the assessment says to restore or replace.
 static func _insurer_spec(bike_id: int) -> Array:
 	var out := []
-	for r in assess(bike_id)["rows"]:
+	var c := Workflow.card(bike_id)
+	for r in (c["rows"] if c.get("rows") is Array else assess(bike_id)["rows"]):
 		if str(r["fix"]) != "ok":
 			out.append(str(r["slot"]))
 	return out
@@ -903,7 +915,7 @@ static func _pay_garage(amount: int, reason: String) -> bool:
 ## Buy it: the owner is paid and it's the garage's own project bike.
 static func _buy(peer: int, job: Dictionary) -> String:
 	var bike_id := int(job["bike"])
-	var price := int(assess(bike_id, job)["buy"])
+	var price := int(quote(job)["buy"])
 	if not _pay_garage(price, "Bought: %s" % job["name"]):
 		return "The garage can't afford it."
 	Shed.bikes[bike_id]["bought"] = price
@@ -916,7 +928,7 @@ static func _buy(peer: int, job: Dictionary) -> String:
 ## ground beside it when that's full) and the frame goes for scrap.
 static func _salvage(peer: int, job: Dictionary) -> String:
 	var bike_id := int(job["bike"])
-	var price := int(assess(bike_id, job)["salvage"])
+	var price := int(quote(job)["salvage"])
 	if not _pay_garage(price, "Salvage: %s" % job["name"]):
 		return "The garage can't afford it."
 	var b: Dictionary = Shed.bikes[bike_id]
@@ -988,7 +1000,7 @@ static func block(_peer: int, action: Dictionary) -> String:
 		return ""
 	if a == "mount" and str(job["state"]) in ["collect", "delivered"]:
 		return "It's not roadworthy. Winch it onto the trailer and take it back to the yard." if str(job["state"]) == "collect" \
-			else "Assess it first ({menu}, Recovery): buy it, break it or fix it for the insurer."
+			else "Assess it first (the Workflow channel of a bay screen, or {menu}, Recovery): buy it, break it or fix it for the insurer."
 	if a == "grab_bike" and seized(bike_id):
 		return "It won't roll: the %s. Get it on the dolly tray (it hangs on the trailer's side rail)." % (
 			"brakes are seized solid" if str(job["kind"]) == "barn" else "front wheel's buckled")

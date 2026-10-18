@@ -91,6 +91,9 @@ func _ready() -> void:
 	var staff_hired := false
 	var staff_asked := false
 	var staff_ok := false
+	var card_asked := false
+	var card_ticked := false
+	var card_ok := false
 	var spray_made := false
 	var spray_step := 0
 	var spray_ok := false
@@ -388,6 +391,17 @@ func _ready() -> void:
 		var tea_done := (Shed.staff.get("news", []) as Array).any(func(n): return str(n).contains("Tea's up"))
 		staff_ok = staff_ok or (Staff.workers().size() == Staff.MAX_STAFF and main.staff_view.figures.size() == Staff.MAX_STAFF
 			and (on_tea or tea_done))
+		# Job cards: the client assesses the Rusty Ranger and the host ticks its first task off by
+		# hand; both see the card with the tick (see Workflow).
+		if role == "client" and ranger != 0 and Shed.crew.size() == 2 and not card_asked:
+			Shed.request({"a": "card_assess", "bike": ranger})
+			card_asked = true
+		var card := Workflow.card(ranger)
+		if role == "host" and card.get("tasks") is Array and not card_ticked:
+			Shed.request({"a": "card_tick", "bike": ranger, "task": card["tasks"][0]["id"], "on": true})
+			card_ticked = true
+		card_ok = card_ok or (Workflow.assessed(ranger) and str(card.get("by", "")) == "Test client"
+			and Workflow.is_done(ranger, card["tasks"][0]))
 		# Emotes: the client waves and the host sees its figure wave; the host pings and the
 		# client sees the host's figure point at it.
 		if Shed.crew.size() == 2 and main.remotes.size() == 1 and not emote_sent:
@@ -598,7 +612,7 @@ func _ready() -> void:
 			elif pool_by != 0 and played_out:
 				pool_other = true
 			pool_ok = pool_own and pool_other
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and wash_ok and shine_ok and pool_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and wash_ok and shine_ok and pool_ok and card_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -614,8 +628,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, washing %s, detailing %s, pool shots each way %s/%s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, wash_ok, shine_ok, pool_own, pool_other])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok])
 	get_tree().quit(0 if ok else 1)
 
 

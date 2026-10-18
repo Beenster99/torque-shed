@@ -13,10 +13,10 @@ extends RefCounted
 ## wiring it up later only touches that function.
 
 ## The channels every screen has, in order. A screen's own home channel goes first.
-const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts", "staff"]
+const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts", "staff", "workflow"]
 const NAMES := {"bay": "Bay", "live": "Live riding", "crew": "Crew board", "xp": "XP goals", "howto": "How to play",
 	"money_me": "My money", "money_garage": "Garage money", "afford": "What you can afford", "contracts": "Contracts",
-	"sales": "Sales", "staff": "Staff"}
+	"sales": "Sales", "staff": "Staff", "workflow": "Workflow"}
 const BUILT_IN: Array[String] = ["crew", "bay0", "bay1", "bay2", "bay3"]
 ## The how-to-play pages turn over on their own, this many seconds each.
 const HOWTO_PAGE_TIME := 9.0
@@ -94,6 +94,8 @@ static func home(key: String) -> String:
 ## Every channel a screen has, its home channel first.
 static func channels_for(key: String) -> Array:
 	var out := [home(key)]
+	if key.begins_with("bay"):
+		out.append("workflow")   # a bay screen's next channel is its bike's job card (see WorkflowTv)
 	for ch in CHANNELS:
 		if not out.has(ch):
 			out.append(ch)
@@ -420,6 +422,8 @@ static func draw_page(c: Control, font: Font, kind: String, data: Dictionary) ->
 			Sales.draw_tv(c, font, data)
 		"staff":
 			_draw_staff(c, font, data)
+		"workflow":
+			WorkflowTv.draw(c, font, data)
 		_:
 			_title(c, font, "NO SIGNAL")
 

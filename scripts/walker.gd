@@ -61,6 +61,8 @@ const CARRY_MAX := 3.0       # and further out
 var camera: Camera3D
 ## The third-person view on foot and your own figure in it (see WalkerView).
 var view: WalkerView
+## The shed's screens as touch screens: the cursor on the one you look at (see ScreenTouch).
+var touch: ScreenTouch
 var tool := "hands"
 var controls_enabled := true
 var target := {}            # what the crosshair is on: {kind, bike, engine, slot, spot}
@@ -212,6 +214,8 @@ func _ready() -> void:
 	_set_tool_view()
 	view = WalkerView.new(self)
 	add_child(view)
+	touch = ScreenTouch.new(self)
+	add_child(touch)
 	stopwatch.max_laps = Progress.stopwatch_laps(Shed.me())
 	# A tool upgrade bought in the Character tab shows in your hand straight away.
 	Progress.changed.connect(func():
@@ -2321,7 +2325,10 @@ func _channel_lines(key: String) -> Array:
 		return []
 	var state := Shed.screen_channel(key)
 	var label := TvChannels.osd_label(key, state, Shed.riders())
-	return ["Showing " + label, "{alt_act}: next channel   {spray_finish}: previous"]
+	var lines := ["Showing " + label, "{alt_act}: next channel   {spray_finish}: previous"]
+	if touch and touch.screen_under().size() > 0:
+		lines.append("{act}: touch the screen" + ("   {interact}: hold the cursor on it" if str(target.get("kind", "")) == "screen" else ""))
+	return lines
 
 
 ## Changes the channel on the screen you're looking at, through the host.

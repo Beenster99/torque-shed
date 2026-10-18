@@ -4,6 +4,11 @@ extends Node3D
 ## glowing panel. "crew" pages list every player; "bike" pages show one bike's numbers now
 ## against how it was delivered; the rest are TV channels drawn by TvChannels. It can also show
 ## a live picture over the page (the riding feed), and flashes the channel name when it changes.
+##
+## It's a touch screen (see ScreenTouch): a page's data can carry "buttons" ({r: Rect2 on the
+## page, t, act: a Shed request, off: why it can't be pressed}), and while a player's cursor is
+## on the screen it shows with the button under it lit and the channel buttons in the corner. A
+## touch goes into the page's SubViewport as a mouse click on the page, which finds the button.
 
 const PX := Vector2i(1024, 576)
 const BG := Color(0.03, 0.05, 0.07)
@@ -23,6 +28,11 @@ var _caption: Label3D
 var _osd: Label3D
 var _osd_left := 0.0
 var _osd_bg: MeshInstance3D
+var key := ""                 # the screen's key (see TvChannels), for its channel buttons
+var _cursor: MeshInstance3D
+var _cursor_on := false
+var _hover := -1
+var _tapped := {}
 
 
 func _init(page_kind := "bike", screen_width := 2.0) -> void:
@@ -38,6 +48,7 @@ func _init(page_kind := "bike", screen_width := 2.0) -> void:
 	_page = Control.new()
 	_page.size = Vector2(PX)
 	_page.draw.connect(_draw_page)
+	_page.gui_input.connect(_on_page_input)
 	_viewport.add_child(_page)
 	var height := width * PX.y / PX.x
 	var quad := QuadMesh.new()
@@ -123,6 +134,23 @@ func _init(page_kind := "bike", screen_width := 2.0) -> void:
 	_osd_bg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_osd_bg.visible = false
 	add_child(_osd_bg)
+	# The touch cursor: a ring floating just off the glass, so moving it needs no redraw.
+	_cursor = MeshInstance3D.new()
+	var ring := TorusMesh.new()
+	ring.inner_radius = width * 0.009
+	ring.outer_radius = width * 0.014
+	ring.rings = 12
+	ring.ring_segments = 6
+	_cursor.mesh = ring
+	_cursor.rotation.x = PI * 0.5
+	var cur_mat := StandardMaterial3D.new()
+	cur_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cur_mat.albedo_color = Color(1.0, 0.85, 0.3)
+	cur_mat.no_depth_test = true
+	_cursor.material_override = cur_mat
+	_cursor.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_cursor.visible = false
+	add_child(_cursor)
 
 
 func _ready() -> void:
@@ -136,8 +164,106 @@ func _on_device_changed(_pad: bool) -> void:
 
 func show_data(new_data: Dictionary) -> void:
 	data = new_data
+	_hover = _button_at(_cursor_px()) if _cursor_on else -1
+	_redraw()
+
+
+func _redraw() -> void:
 	_page.queue_redraw()
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+
+# ---------------------------------------------------------------------------- touch
+
+## The screen's height in metres.
+func height() -> float:
+	return width * PX.y / PX.x
+
+
+## Where a ray from `from` along `dir` (global) meets the glass, as a point on the page in
+## pixels; null when it misses the screen or points away from it.
+func page_point(from: Vector3, dir: Vector3):
+	var inv := global_transform.affine_inverse()
+	var o := inv * from
+	var d := inv.basis * dir
+	if o.z <= 0.03 or absf(d.z) < 0.0001:   # from behind it (through the wall) it isn't touched
+		return null
+	var t := (0.03 - o.z) / d.z
+	if t <= 0.0:
+		return null
+	var p := o + d * t
+	var px := Vector2((p.x / width + 0.5) * PX.x, (0.5 - p.y / height()) * PX.y)
+	if px.x < 0.0 or px.y < 0.0 or px.x > PX.x or px.y > PX.y:
+		return null
+	return px
+
+
+## The buttons on the screen now: the page's own, and with the cursor on it the channel ones.
+func buttons() -> Array:
+	var out: Array = data["buttons"].duplicate() if data.get("buttons") is Array else []
+	if _cursor_on and key != "":
+		out.append({"r": Rect2(PX.x - 140, 12, 60, 46), "t": "<", "act": {"a": "tv_channel", "screen": key, "step": -1}, "off": "", "tone": "ch"})
+		out.append({"r": Rect2(PX.x - 72, 12, 60, 46), "t": ">", "act": {"a": "tv_channel", "screen": key, "step": 1}, "off": "", "tone": "ch"})
+	return out
+
+
+func _button_at(px: Vector2) -> int:
+	var list := buttons()
+	for i in range(list.size() - 1, -1, -1):
+		if (list[i]["r"] as Rect2).grow(4.0).has_point(px):
+			return i
+	return -1
+
+
+func _cursor_px() -> Vector2:
+	var p := _cursor.position
+	return Vector2((p.x / width + 0.5) * PX.x, (0.5 - p.y / height()) * PX.y)
+
+
+## Puts the touch cursor at `px` on the page (null takes it away). Only the button it's over
+## changing redraws the page.
+func set_cursor(px) -> void:
+	var on: bool = px is Vector2
+	if on:
+		_cursor.position = Vector3((px.x / PX.x - 0.5) * width, (0.5 - px.y / PX.y) * height(), 0.036)
+	var was_on := _cursor_on
+	_cursor_on = on
+	_cursor.visible = on
+	var hover := _button_at(px) if on else -1
+	if hover != _hover or was_on != on:
+		_hover = hover
+		_redraw()
+
+
+func cursor_on() -> bool:
+	return _cursor_on
+
+
+## The button the cursor is over ({} for none).
+func hovered() -> Dictionary:
+	var list := buttons()
+	return list[_hover] if _hover >= 0 and _hover < list.size() else {}
+
+
+## Touches the screen at `px`: a click goes into the page's viewport, and the button there is
+## returned ({} for none). The caller sends its request.
+func tap(px: Vector2) -> Dictionary:
+	_tapped = {}
+	for pressed in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = pressed
+		ev.position = px
+		ev.global_position = px
+		_viewport.push_input(ev, true)
+	return _tapped
+
+
+func _on_page_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var i := _button_at(event.position)
+		_tapped = buttons()[i] if i >= 0 else {}
+		_page.accept_event()
 
 
 ## Switches to another page (see TvChannels.PAGES) with its data.
@@ -195,6 +321,24 @@ func _draw_page() -> void:
 		_draw_bike(font)
 	else:
 		TvChannels.draw_page(_page, font, kind, data)
+	if _cursor_on:
+		_draw_touch(font)
+
+
+## The channel buttons and the lit button under the cursor, over the page.
+func _draw_touch(font: Font) -> void:
+	var list := buttons()
+	for b in list:
+		if str(b.get("tone", "")) == "ch":
+			var r0: Rect2 = b["r"]
+			_page.draw_rect(r0, Color(0, 0, 0, 0.75))
+			_page.draw_rect(r0, Color(1, 1, 1, 0.7), false, 2.0)
+			_text(font, r0.position + Vector2(0, 33), str(b["t"]), 30, Color.WHITE, r0.size.x, HORIZONTAL_ALIGNMENT_CENTER)
+	if _hover >= 0 and _hover < list.size():
+		var r: Rect2 = (list[_hover]["r"] as Rect2).grow(3.0)
+		var off := str(list[_hover].get("off", "")) != ""
+		_page.draw_rect(r, Color(1, 1, 1, 0.12))
+		_page.draw_rect(r, Color(1.0, 0.85, 0.3) if not off else Color(1, 0.45, 0.35), false, 3.0)
 
 
 func _text(font: Font, pos: Vector2, text: String, size: int, color := Color.WHITE, width := -1.0, align := HORIZONTAL_ALIGNMENT_LEFT) -> void:
