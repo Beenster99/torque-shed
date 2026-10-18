@@ -63,7 +63,7 @@ const CRASH_LINES := ["Our customer came off on the bend and the bike's still in
 # ---------------------------------------------------------------------------- state
 
 static func empty() -> Dictionary:
-	return {"car": {"xf": PARK, "trailer_xf": trailer_park(PARK), "driver": 0, "ramp": false,
+	return {"car": {"xf": PARK, "trailer_xf": trailer_park(PARK), "driver": 0, "passenger": 0, "handbrake": false, "ramp": false,
 		"dolly": {"at": "trailer", "xf": Transform3D(), "bike": 0}, "winch": 0, "winch_dir": 1},
 		"loads": {}, "offers": {}, "jobs": {}, "done": [], "next": 1, "next_at": -1.0, "earned": 0}
 
@@ -88,6 +88,7 @@ static func sanitize(s) -> Dictionary:
 static func after_load() -> void:
 	var c := car()
 	c["driver"] = 0
+	c["passenger"] = 0
 	var w := int(c["winch"])
 	if w != 0 and loads().has(w):
 		if int(c["winch_dir"]) > 0:
@@ -134,6 +135,22 @@ static func owned() -> bool:
 
 static func driver() -> int:
 	return int(car()["driver"]) if owned() else 0
+
+
+## Who's riding along in the passenger seat, or 0.
+static func passenger() -> int:
+	return int(car().get("passenger", 0)) if owned() else 0
+
+
+## Someone's gone (left the game): out of the truck's seats, the truck parked where it was.
+static func put_back(peer: int) -> void:
+	if not (Shed.recovery is Dictionary) or not Shed.recovery.has("car"):
+		return
+	var c := car()
+	if int(c["driver"]) == peer:
+		c["driver"] = 0
+	if int(c.get("passenger", 0)) == peer:
+		c["passenger"] = 0
 
 
 static func dolly() -> Dictionary:
@@ -420,19 +437,28 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "That job's gone to someone else."
 			if a == "recovery_accept" and jobs().values().filter(func(j): return str(j["state"]) == "collect").size() >= MAX_JOBS:
 				return "You've already got %d recoveries to fetch. Bring one in first." % MAX_JOBS
-		"recovery_enter":
-			if not parked:
+		"recovery_enter", "recovery_board":
+			if a == "recovery_enter" and not parked:
 				return "Someone's driving it."
+			if a == "recovery_enter" and passenger() == peer:
+				return "You're in the passenger seat: get out and round to the driver's door."
+			if a == "recovery_board" and passenger() != 0:
+				return "There's already someone in the passenger seat."
+			if a == "recovery_board" and int(c["driver"]) == peer:
+				return "You're driving it."
 			if Shed.riding(peer) != 0:
 				return "Get off the bike first."
 			if Shed.held_by(peer) != 0:
 				return "Put the part down first."
 			if Shed.pushing_bike(peer) != 0 or Shed.moving(peer) != 0:
 				return "Let go of what you're pushing first."
-			if int(c["winch"]) != 0:
+			if a == "recovery_enter" and int(c["winch"]) != 0:
 				return "Wait for the winch to finish."
-			if bool(c["ramp"]):
+			if a == "recovery_enter" and bool(c["ramp"]):
 				return "Raise the ramp first (F at the back of the trailer)."
+		"recovery_alight":
+			if passenger() != peer:
+				return "You're not in the passenger seat."
 		"recovery_exit", "recovery_move", "recovery_slide", "recovery_fall":
 			if int(c["driver"]) != peer:
 				return "You're not driving it."
@@ -601,7 +627,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			text = "Turned it down."
 		"recovery_enter":
 			c["driver"] = peer
-			text = "In the truck. {ignition} starts it, {throttle} and {front_brake} to drive,\n{shift_down} when stopped for reverse (or hold {front_brake}), {headlight} the headlamps, {rear_brake} the handbrake, {interact} to get out."
+			text = "In the truck. {ignition} starts it, {throttle} and {front_brake} to drive,\n{shift_down} when stopped for reverse (or hold {front_brake}), {headlight} the headlamps, {handbrake} the handbrake on or off ({rear_brake} while held), {interact} to get out."
 		"recovery_exit", "recovery_move":
 			if action.get("xf") is Transform3D:
 				c["xf"] = action["xf"]
@@ -612,6 +638,13 @@ static func apply(peer: int, action: Dictionary) -> String:
 					Shed.bikes[int(id)]["xf"] = load_world(int(id))
 			if a == "recovery_exit":
 				c["driver"] = 0
+				# Left with the handbrake on or off, for whoever gets in next.
+				c["handbrake"] = bool(action.get("handbrake", false))
+		"recovery_board":
+			c["passenger"] = peer
+			text = "In the passenger seat. Look about with the mouse; {interact} to get out."
+		"recovery_alight":
+			c["passenger"] = 0
 		"recovery_ramp":
 			c["ramp"] = bool(action.get("down", not bool(c["ramp"])))
 			text = "Ramp %s" % ("down" if c["ramp"] else "up")

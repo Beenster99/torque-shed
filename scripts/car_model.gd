@@ -47,10 +47,12 @@ func build() -> void:
 	_bed()
 	_details()
 	_interior()
+	_park_lamp()
 	var body := MeshInstance3D.new()
 	body.name = "Body"
 	body.mesh = merged(items)
 	car.model.add_child(body)
+	_doors()
 	_wheels()
 	_steering_wheel()
 	_lights()
@@ -684,6 +686,73 @@ func _interior() -> void:
 
 
 # ---------------------------------------------------------------------------- moving parts
+
+## The front doors, swinging open on their front hinges as someone gets in or out (Car.swing_door):
+## each a door skin with its handle, window frame and glass, and the door card inside, merged into
+## one mesh on a node at its hinge (hidden, so drawing nothing, while it's shut). The body has the doors shut in it, so while one's open the opening it leaves is
+## drawn over the body (the dark of the cab inside) and the door shows swung out.
+func _doors() -> void:
+	var z0 := Car.DOOR_HINGE_Z
+	var z1 := Car.DOOR_BACK_Z
+	var long := z1 - z0
+	var low := 0.555
+	var tall := BELT - low
+	for s in [-1.0, 1.0]:
+		var hinge := Node3D.new()
+		hinge.name = "DoorL" if s < 0.0 else "DoorR"
+		hinge.position = Vector3(s * W, 0.0, z0)
+		hinge.visible = false
+		car.model.add_child(hinge)
+		var parts := []
+		_piece(parts, Vector3(SKIN, tall, long), Vector3(-s * SKIN * 0.5, low + tall * 0.5, long * 0.5), "paint")
+		_piece(parts, Vector3(0.012, tall - 0.08, long - 0.08), Vector3(-s * (SKIN + 0.006), low + tall * 0.5, long * 0.5), "trim_in")
+		_piece(parts, Vector3(0.025, 0.035, 0.17), Vector3(s * 0.008, 1.09, -0.36 - z0), "gloss")
+		# The window frame above the belt and the glass in it.
+		_piece(parts, Vector3(0.03, 0.5, 0.025), Vector3(-s * 0.03, BELT + 0.25, long - 0.02), "gloss")
+		_piece(parts, Vector3(0.03, 0.025, long * 0.8), Vector3(-s * 0.04, BELT + 0.5, long * 0.55), "gloss")
+		_piece(parts, Vector3(0.008, 0.48, long * 0.92), Vector3(-s * 0.035, BELT + 0.25, long * 0.5), "glass")
+		var door := MeshInstance3D.new()
+		door.name = "Door"
+		door.mesh = merged(parts)   # one mesh a door, a surface per material
+		hinge.add_child(door)
+		car._doors.append(hinge)
+		# The opening the door leaves, over the body's shut door.
+		var hole := Node3D.new()
+		hole.name = "DoorwayL" if s < 0.0 else "DoorwayR"
+		hole.visible = false
+		car.model.add_child(hole)
+		_part(hole, Vector3(0.004, tall, long), Vector3(s * (W + 0.026), low + tall * 0.5, (z0 + z1) * 0.5), "trim_in")
+		car._doorways.append(hole)
+
+
+## The handbrake's red warning lamp on the dash in front of the driver: lit while it's on.
+func _park_lamp() -> void:
+	var lamp := mat(Color(0.3, 0.02, 0.02), 0.0, 0.3)
+	lamp.emission_enabled = true
+	lamp.emission = Color(1.0, 0.08, 0.04)
+	lamp.emission_energy_multiplier = 0.0
+	m["park_lamp"] = lamp
+	car._park_lamp_mat = lamp
+	_box(Vector3(0.022, 0.016, 0.006), Vector3(Car.EYE.x, 1.2, -0.835), "park_lamp", Vector3(deg_to_rad(-20.0), 0.0, 0.0))
+
+
+## A box of its own (not merged into the body) under `parent`.
+func _part(parent: Node3D, size: Vector3, at: Vector3, name: String, rot := Vector3.ZERO) -> MeshInstance3D:
+	var b := BoxMesh.new()
+	b.size = size
+	var mi := MeshInstance3D.new()
+	mi.mesh = b
+	mi.material_override = m[name]
+	mi.transform = Transform3D(Basis.from_euler(rot), at)
+	parent.add_child(mi)
+	return mi
+
+
+## A box for `list` (to merge into a mesh of its own, as the body's items are).
+func _piece(list: Array, size: Vector3, at: Vector3, name: String) -> void:
+	var b := BoxMesh.new()
+	b.size = size
+	list.append([b, Transform3D(Basis(), at), m[name]])
 
 ## A wheel: an all-terrain tyre with a chunky tread, a six-spoke alloy with its centre cap and
 ## wheel nuts, and the brake disc behind (outer face +x).

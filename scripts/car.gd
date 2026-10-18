@@ -50,6 +50,13 @@ const MAX_STEER := deg_to_rad(34.0)
 const STEER_RATE := 1.4         # rad/s at the road wheels
 const CDA := 1.4                # drag area, m^2: a pickup is a brick
 const EYE := Vector3(0.4, 1.58, -0.2)   # the driver's eyes (right-hand drive)
+const PASSENGER_EYE := Vector3(-0.4, 1.58, -0.2)   # the passenger's, on the left
+## The front doors: their hinges at the front, the back edge, how far they swing open (rad) and
+## how long one stands open as someone gets in or out (s).
+const DOOR_HINGE_Z := -1.1
+const DOOR_BACK_Z := -0.06
+const DOOR_SWING := deg_to_rad(62.0)
+const DOOR_HOLD := 1.1
 const STEER_RATIO := 16.0       # steering wheel turns to road wheel angle
 const START_TIME := 0.9         # seconds on the starter before the diesel catches
 ## The headlamp switch's stops, as on the bikes (but no fog stop: the fog lamps ride with dipped).
@@ -57,7 +64,10 @@ const BEAM_NAMES := ["off", "dipped beam", "main beam"]
 
 var throttle := 0.0
 var brake := 0.0
-var handbrake := 0.0
+var handbrake := 0.0             # the handbrake held on (Space), 0..1
+## The handbrake pulled up and left on (J, or the pad's D-pad left, in the truck): it holds the
+## back wheels until it's let off, on a slope too; without it a stopped truck rolls downhill.
+var parking_brake := false
 var steer_input := 0.0          # -1 left .. 1 right
 var auto_shift := true
 var controls_enabled := true
@@ -89,6 +99,14 @@ var _brake_mat: StandardMaterial3D
 var _lamp_mat: StandardMaterial3D      # headlamps and fog lamps, lit with the engine
 var _reverse_mat: StandardMaterial3D   # the reversing lamps
 var _dash_mat: StandardMaterial3D      # the instruments and screen
+var _park_lamp_mat: StandardMaterial3D # the handbrake's warning lamp on the dash
+## The front doors (left, the passenger's; right, the driver's): how far open each is (0..1), and
+## how long more it stands open. The door nodes and the openings they leave (CarModel._doors).
+var door_open := [0.0, 0.0]
+var _door_hold := [0.0, 0.0]
+var _doors: Array = []
+var _doorways: Array = []
+var _hold_at := Vector3.INF      # where it stopped on the handbrake, to stay put there
 var _paint := Color(0.12, 0.27, 0.2)
 
 
@@ -141,6 +159,7 @@ func place(xf: Transform3D) -> void:
 	steer = 0.0
 	gear = 1
 	reverse_selected = false
+	_hold_at = Vector3.INF
 	for w in wheels:
 		w["omega"] = 0.0
 		w["sy"] = 0.0
@@ -268,14 +287,15 @@ func _physics_process(delta: float) -> void:
 	# automatic's own reverse they swap round, so S backs you up and W stops you.
 	var pedal_brake := throttle if pedals_swapped() else brake
 	braking = pedal_brake > 0.1
+	var hb := maxf(handbrake, 1.0 if parking_brake else 0.0)
 	for w in wheels:
 		var front: bool = w["front"]
 		w["brake_torque"] = pedal_brake * (BRAKE_FRONT if front else BRAKE_REAR)
 		if not front:
-			w["brake_torque"] = maxf(float(w["brake_torque"]), handbrake * HANDBRAKE)
+			w["brake_torque"] = maxf(float(w["brake_torque"]), hb * HANDBRAKE)
 			# An open differential: the same torque to each back wheel.
 			w["drive_torque"] = drive * 0.5
-			w["abs"] = handbrake < 0.1
+			w["abs"] = hb < 0.1
 		else:
 			w["drive_torque"] = 0.0
 	var space := get_world_3d().direct_space_state
@@ -285,9 +305,21 @@ func _physics_process(delta: float) -> void:
 	var v := linear_velocity
 	apply_central_force(-0.5 * 1.225 * CDA * v.length() * v)
 	# Stood still on the brakes: hold it (a tyre at rest has its own static grip).
-	if absf(speed) < 0.3 and (pedal_brake > 0.3 or handbrake > 0.3) and wheels.any(func(w): return w["contact"]):
+	if absf(speed) < 0.3 and (pedal_brake > 0.3 or hb > 0.3) and wheels.any(func(w): return w["contact"]):
 		var flat := linear_velocity - b.y * linear_velocity.dot(b.y)
 		apply_central_force(-flat * mass * 8.0)
+		# On the handbrake it stays where it stopped, not creeping down a hill (or dragged by the
+		# trailer) a little at a time.
+		if hb > 0.3:
+			if _hold_at == Vector3.INF:
+				_hold_at = global_position
+			var off := _hold_at - global_position
+			off -= b.y * off.dot(b.y)
+			apply_central_force((off * 60.0).limit_length(6.0) * mass)
+		else:
+			_hold_at = Vector3.INF
+	else:
+		_hold_at = Vector3.INF
 	_update_model(delta)
 
 
@@ -404,9 +436,42 @@ func _make_horn() -> void:
 	add_child(horn_audio)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if horn_audio:
 		horn_audio.pressed = horn
+	_swing_doors(delta)
+
+
+## Someone getting in or out on `side` (0 the passenger's door on the left, 1 the driver's on the
+## right): the door swings open, stands a moment, and shuts with a clunk.
+func swing_door(side: int) -> void:
+	side = clampi(side, 0, 1)
+	_door_hold[side] = DOOR_HOLD
+	Sfx.play_on("pickup", self, door_point(side), -12.0)
+
+
+## Where the middle of a front door is (local), on `side` as for swing_door.
+static func door_point(side: int) -> Vector3:
+	return Vector3((1.0 if side == 1 else -1.0) * 0.95, 1.0, (DOOR_HINGE_Z + DOOR_BACK_Z) * 0.5)
+
+
+func _swing_doors(delta: float) -> void:
+	for side in 2:
+		var hold: float = _door_hold[side]
+		var was: float = door_open[side]
+		if hold > 0.0:
+			_door_hold[side] = hold - delta
+		var want := 1.0 if hold > 0.0 else 0.0
+		var now := move_toward(was, want, delta * 3.2)
+		door_open[side] = now
+		if was > 0.0 and now <= 0.0:
+			Sfx.play_on("clunk", self, door_point(side), -8.0)
+		if side < _doors.size():
+			var door: Node3D = _doors[side]
+			var eased := 1.0 - pow(1.0 - now, 2.0)
+			door.visible = now > 0.0
+			door.rotation.y = (1.0 if side == 1 else -1.0) * DOOR_SWING * eased
+			(_doorways[side] as Node3D).visible = now > 0.0
 
 
 # ---------------------------------------------------------------------------- network
@@ -482,6 +547,8 @@ func _update_model(_delta: float) -> void:
 		_reverse_mat.emission_energy_multiplier = 2.0 if engine_on and gear < 0 else 0.0
 	if _dash_mat:
 		_dash_mat.emission_energy_multiplier = 0.8 if engine_on else 0.0
+	if _park_lamp_mat:
+		_park_lamp_mat.emission_energy_multiplier = 3.0 if engine_on and parking_brake else 0.0
 	_update_beams(lamps)
 
 

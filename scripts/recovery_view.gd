@@ -5,12 +5,17 @@ extends Node3D
 ## state). It puts the bikes on the trailer where they ride on it, draws the winch cable, the
 ## ratchet straps and the dolly tray, the tarp over a barn find and a beacon over each site, the
 ## HUD's distance to the next site and the driving read-out, and gives the walker the things to
-## press F on (see use_text and use): the driver's door, the jobs clipboard, the ramp, the winch,
-## the dolly tray, the strap anchors and the tarp.
+## press F on (see use_text and use): the driver's door, the passenger door, the jobs clipboard,
+## the ramp, the winch, the dolly tray, the strap anchors and the tarp. A second player can ride
+## along in the passenger seat (looking out from it; the crew see them sat there), the doors
+## swing open and shut as anyone gets in or out, and in the cab a radar (TruckRadar) shows the
+## way to the recovery jobs and back to the garage.
 
 const EXIT_SPEED := 1.5
 const MOVE_EVERY := 1.5        # seconds between telling the host where the truck has got to
 const REMOTE_DELAY := 0.12
+## How long a turn of a strap's or the winch's ratchet sounds (s).
+const RATCHET_SECONDS := 1.1
 ## Where the horn sits in a snapshot from net_state().
 const NET_HORN := 1 + Car.NET_SIZE + Trailer.NET_SIZE
 const STRAP_ANCHORS := [Vector3(-0.42, 0.03, -0.95), Vector3(0.42, 0.03, -0.95), Vector3(-0.42, 0.03, 0.85),
@@ -43,6 +48,23 @@ var _offers_seen := -1
 var _lifted := 0               # the bike raised up on the dolly on the ground
 var _strap_mat: StandardMaterial3D
 var _cable_mat: StandardMaterial3D
+## This player is riding along in the passenger seat, looking out through _pass_cam (turned with
+## the mouse or the right stick: _pass_look is its yaw and pitch).
+var riding_along := false
+var _pass_cam: Camera3D
+var _pass_look := Vector2.ZERO
+## Who was in each seat when last looked (to swing the door as that changes), and the figures
+## sat in the cab for the crew: peer -> Node3D.
+var _seen_seats := [0, 0]
+var _seat_figs := {}
+## When you last left the driver's seat [0] and the passenger seat [1] (ms). Online the shed
+## still has you in the seat until the host hears, so you're not put straight back in.
+var _left_seat := [-100000, -100000]
+## How fast the truck's going as seen here (m/s), whoever's driving it: from how far it moved.
+var cab_speed := 0.0
+var _cab_from := Vector3.INF
+var radar: TruckRadar
+var _hb_told := false
 
 
 func _ready() -> void:
@@ -60,6 +82,9 @@ func _ready() -> void:
 	hud_label.add_theme_constant_override("outline_size", 5)
 	hud_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	layer.add_child(hud_label)
+	radar = TruckRadar.new()
+	radar.view = self
+	layer.add_child(radar)
 	_strap_mat = Trailer._mat(Color(0.95, 0.55, 0.05), 0.0, 0.7)
 	_cable_mat = Trailer._mat(Color(0.2, 0.2, 0.22), 0.8, 0.3)
 	Shed.changed.connect(_on_shed_loads)
@@ -74,6 +99,7 @@ func _process(delta: float) -> void:
 	if not Shed.active or not Recovery.owned() or main == null or not main.in_session:
 		_free_rig()
 		hud_label.text = ""
+		radar.visible = false
 		_sync_markers()
 		return
 	_ensure_rig()
@@ -94,6 +120,10 @@ func _process(delta: float) -> void:
 		if is_instance_valid(_remote_audio):
 			_remote_audio.running = false
 	trailer.ramp_down = bool(Recovery.car()["ramp"])
+	var cp := car.global_position
+	cab_speed = 0.0 if _cab_from == Vector3.INF or delta <= 0.0 else lerpf(cab_speed, cp.distance_to(_cab_from) / delta, 0.3)
+	_cab_from = cp
+	_sync_seats()
 	if drv != 0:
 		_keep_off_trailer()
 	_place_loads()
@@ -145,7 +175,8 @@ func _ensure_rig() -> void:
 	_parked_sig = ""
 	# The things to press F on.
 	_use_box(car, Vector3(0.16, 1.0, 1.0), Vector3(0.98, 1.2, -0.55), {"what": "drive"})
-	_use_box(car, Vector3(0.16, 1.0, 1.0), Vector3(-0.98, 1.2, -0.55), {"what": "jobs"})
+	_use_box(car, Vector3(0.16, 1.0, 1.0), Vector3(-0.98, 1.2, -0.55), {"what": "ride"})
+	_use_box(car, Vector3(0.16, 1.0, 0.7), Vector3(-0.98, 1.2, 0.33), {"what": "jobs"})
 	_use_box(trailer, Vector3(0.35, 0.6, 0.3), Trailer.WINCH + Vector3(0.0, -0.15, 0.0), {"what": "winch"})
 	_use_box(trailer, Vector3(1.5, 0.5, 0.35), Vector3(0.0, Trailer.BED_Y + 0.15, Trailer.BED_REAR + 0.15), {"what": "ramp"})
 	_use_box(trailer, Vector3(0.2, 0.4, 2.0), Vector3(-Trailer.BED_HALF_W - 0.12, Trailer.BED_Y - 0.1, -0.1), {"what": "dolly"})
@@ -186,6 +217,10 @@ func _use_box(parent: Node3D, size: Vector3, at: Vector3, use: Dictionary) -> St
 func _free_rig() -> void:
 	if driving:
 		stop_driving(false)
+	if riding_along:
+		stop_riding_along(false)
+	_seat_figs.clear()
+	_seen_seats = [0, 0]
 	for n in [car, trailer, _dolly, _cable]:
 		if is_instance_valid(n):
 			n.queue_free()
@@ -419,10 +454,15 @@ func _ring_for_offers() -> void:
 
 func _update_hud() -> void:
 	var lines := []
-	var from: Vector3 = car.global_position if driving else (main.walker.global_position if main.walker else car.global_position)
+	var in_cab := driving or riding_along
+	var from: Vector3 = car.global_position if in_cab else (main.walker.global_position if main.walker else car.global_position)
 	var site := Recovery.next_site(from)
-	if not site.is_empty():
+	if not site.is_empty() and not in_cab:
 		lines.append("RECOVERY  %s  ·  %s" % [site["name"], Recovery.distance_text(from, site["at"])])
+	# In the cab the radar shows the way (and says how far).
+	radar.visible = in_cab
+	if riding_along:
+		lines.append(Controls.hint("In the passenger seat  ·  {interact}: get out"))
 	if driving:
 		# The speed, gears and lamps are on the truck's dash in the corner (Hud._draw_truck_dash).
 		var loose := 0
@@ -444,8 +484,11 @@ func use_text(t: Dictionary) -> String:
 		"drive":
 			var why := Shed.check(me, {"a": "recovery_enter"})
 			return "Recovery truck\n" + ("{interact}: get in and drive" if why == "" else why)
+		"ride":
+			var why_r := Shed.check(me, {"a": "recovery_board"})
+			return "Recovery truck, passenger door\n" + ("{interact}: get in the passenger seat" if why_r == "" else why_r)
 		"jobs":
-			return "Recovery jobs clipboard\n{interact}: see the jobs on offer and the ones under way"
+			return "Recovery jobs clipboard (on the back seat)\n{interact}: see the jobs on offer and the ones under way"
 		"ramp":
 			var down := bool(Recovery.car()["ramp"])
 			var why := Shed.check(me, {"a": "recovery_ramp", "down": not down})
@@ -476,7 +519,15 @@ func use(t: Dictionary) -> void:
 			if why != "":
 				Shed.feedback.emit(why, false)
 				return
+			_left_seat = [-100000, _left_seat[1]]
 			Shed.request({"a": "recovery_enter"})
+		"ride":
+			var why_r := Shed.check(Shed.me(), {"a": "recovery_board"})
+			if why_r != "":
+				Shed.feedback.emit(why_r, false)
+				return
+			_left_seat = [_left_seat[0], -100000]
+			Shed.request({"a": "recovery_board"})
 		"jobs":
 			if main.has_method("open_recovery"):
 				main.open_recovery()
@@ -487,7 +538,9 @@ func use(t: Dictionary) -> void:
 			var a: Dictionary = _winch_prompt()[1]
 			if not a.is_empty():
 				Shed.request(a)
-				Sfx.play_at("ratchet", trailer.global_transform * Trailer.WINCH, -6.0)
+				# A turn of the ratchet from the winch itself: a one-shot on the trailer, cut short,
+				# never the work loop left running where it was pressed.
+				Sfx.play_on("ratchet", trailer, Trailer.WINCH, -6.0, RATCHET_SECONDS)
 		"dolly":
 			var a2: Dictionary = _dolly_prompt()[1]
 			if not a2.is_empty():
@@ -497,7 +550,8 @@ func use(t: Dictionary) -> void:
 			if id != 0:
 				var on: bool = (Recovery.loads()[id]["straps"] as Array)[int(u["point"])]
 				Shed.request({"a": "recovery_strap", "bike": id, "point": int(u["point"]), "on": not on})
-				Sfx.play_at("ratchet", t.get("at", trailer.global_position), -3.0)
+				var at: Vector3 = t.get("at", trailer.global_position)
+				Sfx.play_on("ratchet", trailer, trailer.global_transform.affine_inverse() * at, -3.0, RATCHET_SECONDS)
 		"tarp":
 			Shed.request({"a": "recovery_tarp", "bike": int(u["bike"])})
 
@@ -609,6 +663,8 @@ func start_driving() -> void:
 	car.engine_on = false
 	car.rpm = 0.0
 	car.controls_enabled = true
+	car.parking_brake = bool(c.get("handbrake", false))   # as it was left
+	_hb_told = false
 	trailer.load_sim.clear()
 	for id in Recovery.loads():
 		var l: Dictionary = Recovery.loads()[id]
@@ -628,7 +684,6 @@ func start_driving() -> void:
 	if not car.engine_changed.is_connected(_on_engine_changed):
 		car.engine_changed.connect(_on_engine_changed)
 		car.gear_changed.connect(_on_gear_changed)
-	Sfx.play_at("door", car.global_position, -12.0)
 
 
 func _on_engine_changed(running: bool) -> void:
@@ -652,10 +707,12 @@ func stop_driving(tell := true) -> void:
 	if not driving:
 		return
 	driving = false
+	_left_seat = [Time.get_ticks_msec(), _left_seat[1]]
 	car.horn = false
 	main.hud.car = null
 	if tell:
-		Shed.request({"a": "recovery_exit", "xf": _settled(car.global_transform), "trailer_xf": _settled(trailer.global_transform)})
+		Shed.request({"a": "recovery_exit", "xf": _settled(car.global_transform), "trailer_xf": _settled(trailer.global_transform),
+			"handbrake": car.parking_brake})
 	trailer.unhitch()
 	car.freeze = true
 	trailer.freeze = true
@@ -672,6 +729,131 @@ func stop_driving(tell := true) -> void:
 		main.walker.place(Transform3D(Basis(Vector3.UP, atan2(-fwd.x, -fwd.z) + PI * 0.5), door))
 		main._set_walker_active(true)
 		main.walker.camera.current = true
+
+
+# ---------------------------------------------------------------------------- the passenger seat
+
+## Who's in the seats now, as the shed has it: a door swings open and shut for each change (on
+## everyone's screen), you're put in or out of the passenger seat, and the crew in the cab are
+## drawn sat there.
+func _sync_seats() -> void:
+	var seats := [Recovery.passenger(), Recovery.driver()]
+	for side in 2:
+		if int(seats[side]) != int(_seen_seats[side]):
+			car.swing_door(side)
+	_seen_seats = seats
+	var me := Shed.me()
+	if int(seats[0]) == me and not riding_along and not driving and not just_left(false):
+		start_riding_along()
+	elif riding_along and int(seats[0]) != me:
+		stop_riding_along(false)
+	# The crew sat in the cab (not you: you're looking out of your own eyes, or driving).
+	var want := {}
+	for side in 2:
+		var peer := int(seats[side])
+		if peer != 0 and peer != me:
+			want[peer] = side
+	for peer in _seat_figs.keys():
+		if not want.has(peer) or int((_seat_figs[peer] as Node3D).get_meta("side", -1)) != int(want[peer]):
+			if is_instance_valid(_seat_figs[peer]):
+				(_seat_figs[peer] as Node3D).queue_free()
+			_seat_figs.erase(peer)
+	for peer in want:
+		if not _seat_figs.has(peer):
+			_seat_figs[peer] = _seat_figure(int(peer), int(want[peer]))
+
+
+## Someone sat in the cab on `side` (0 the passenger seat, 1 the driver's), in their own gear.
+func _seat_figure(peer: int, side: int) -> Node3D:
+	var tint := Color(0.8, 0.1, 0.1)
+	if main and main.remotes.has(peer) and is_instance_valid(main.remotes[peer]):
+		tint = main.remotes[peer].color
+	var fig := RiderFigure.make(RiderGear.worn_of(peer), tint)
+	fig.name = "Seated%d" % peer
+	fig.set_meta("side", side)
+	fig.set_meta("peer", peer)
+	# Sat down: legs out in front into the footwell, a touch smaller so the lid clears the roof.
+	for leg in ["LegL", "LegR"]:
+		var l := fig.get_node_or_null(leg) as Node3D
+		if l:
+			l.rotation.x = PI * 0.5
+	fig.scale = Vector3.ONE * 0.9
+	var eye: Vector3 = Car.EYE if side == 1 else Car.PASSENGER_EYE
+	fig.position = Vector3(eye.x, 0.9 - 0.86 * 0.9, -0.05)
+	car.add_child(fig)
+	return fig
+
+
+## True for a few seconds after you got out of the driver's seat (`driver`) or the passenger
+## seat, while the host may not have heard yet (only a joining player waits on the host).
+func just_left(driver: bool) -> bool:
+	if not (Net.is_online() and not Net.is_host()):
+		return false
+	return Time.get_ticks_msec() - int(_left_seat[0 if driver else 1]) < 3000
+
+
+## The shed has you in the passenger seat: you're in the cab, looking out from it.
+func start_riding_along() -> void:
+	if riding_along or car == null:
+		return
+	riding_along = true
+	if _pass_cam == null or not is_instance_valid(_pass_cam):
+		_pass_cam = Camera3D.new()
+		_pass_cam.name = "PassengerEye"
+		_pass_cam.fov = main.camera.fov if main and main.camera else 75.0
+		_pass_cam.near = 0.05
+		car.add_child(_pass_cam)
+	_pass_look = Vector2.ZERO
+	_pass_cam.position = Car.PASSENGER_EYE
+	_pass_cam.rotation = Vector3.ZERO
+	_pass_cam.current = true
+	if main and main.walker:
+		main._set_walker_active(false)
+
+
+## Out of the passenger seat: stood by the passenger door (the host is told, unless `tell` is off).
+func stop_riding_along(tell := true) -> void:
+	if not riding_along:
+		return
+	riding_along = false
+	_left_seat = [_left_seat[0], Time.get_ticks_msec()]
+	if tell:
+		Shed.request({"a": "recovery_alight"})
+	if main == null or main.walker == null:
+		return
+	if car != null and is_instance_valid(car):
+		var door := car.global_transform * Vector3(-1.7, 0.0, -0.6)
+		var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(door + Vector3.UP * 2.0, door + Vector3.DOWN * 3.0, 1))
+		if hit:
+			door = hit["position"]
+		var fwd := -car.global_basis.z
+		main.walker.place(Transform3D(Basis(Vector3.UP, atan2(-fwd.x, -fwd.z) - PI * 0.5), door))
+	main._set_walker_active(true)
+	main.walker.camera.current = true
+
+
+## The passenger's keys: F gets out (once it's stopped), the mouse looks about the cab. True when
+## the event was the passenger seat's.
+func passenger_input(event: InputEvent) -> bool:
+	if event.is_action_pressed("interact"):
+		if cab_speed > EXIT_SPEED:
+			main.hud.flash("Wait for it to stop, then get out.", 1.5, true)
+		else:
+			stop_riding_along()
+		return true
+	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"):
+		var rel: Vector2 = event.relative
+		look_about(-rel.x * Walker.MOUSE_SENS, -rel.y * Walker.MOUSE_SENS)
+		return true
+	return false
+
+
+## Turns the passenger's head by `yaw` and `pitch` (rad), as far as a head turns.
+func look_about(yaw: float, pitch: float) -> void:
+	_pass_look.x = clampf(_pass_look.x + yaw, -deg_to_rad(150.0), deg_to_rad(150.0))
+	_pass_look.y = clampf(_pass_look.y + pitch, -deg_to_rad(60.0), deg_to_rad(50.0))
+	if _pass_cam and is_instance_valid(_pass_cam):
+		_pass_cam.rotation = Vector3(_pass_look.y, _pass_look.x, 0.0)
 
 
 ## Stood level on its wheels as it is, for parking: no roll or pitch left in it.
@@ -701,6 +883,9 @@ func drive_input(event: InputEvent) -> bool:
 	if event.is_action_pressed("headlight"):
 		main.hud.flash("Headlamps: %s" % car.cycle_beam(), 1.2)
 		return true
+	if event.is_action_pressed("handbrake"):
+		set_handbrake(not car.parking_brake)
+		return true
 	if event.is_action_pressed("shift_up"):
 		car.shift_up()
 		return true
@@ -719,6 +904,14 @@ func drive_input(event: InputEvent) -> bool:
 		main.camera.add_orbit(-rel.x * ChaseCamera.MOUSE_ORBIT, rel.y * ChaseCamera.MOUSE_ORBIT)
 		return true
 	return false
+
+
+## Pulls the handbrake up (it holds the back wheels until it's let off, on a slope too) or lets
+## it off, with its ratchet.
+func set_handbrake(on: bool) -> void:
+	car.parking_brake = on
+	main.hud.flash("Handbrake on" if on else "Handbrake off", 1.2)
+	Sfx.play_on("ratchet", car, Vector3(0.06, 0.95, -0.1), -14.0, 0.35 if on else 0.15)
 
 
 ## Starts or stops the engine on the key, as on the bikes.
@@ -744,6 +937,11 @@ func _right_the_truck() -> void:
 
 ## Each physics tick at the wheel: the controls (when `active`), the sound, and the map's edge.
 func drive_physics(_delta: float, active: bool) -> void:
+	if riding_along and active:
+		# The passenger looks about with the right stick.
+		var look_pad := Controls.stick(true)
+		if look_pad != Vector2.ZERO:
+			look_about(-look_pad.x * Walker.PAD_LOOK * _delta, -look_pad.y * Walker.PAD_LOOK * 0.7 * _delta)
 	if not driving:
 		return
 	if active:
@@ -751,6 +949,13 @@ func drive_physics(_delta: float, active: bool) -> void:
 		car.throttle = maxf(Input.get_action_strength("throttle"), Controls.trigger(true))
 		car.brake = maxf(Input.get_action_strength("front_brake"), Controls.trigger(false))
 		car.handbrake = Input.get_action_strength("rear_brake")
+		# Pulling away against the handbrake: say how to let it off (once a go at the throttle).
+		if car.parking_brake and car.engine_on and car.throttle > 0.4:
+			if not _hb_told:
+				_hb_told = true
+				main.hud.flash("The handbrake's on: {handbrake} to let it off.", 2.0, true)
+		elif car.throttle < 0.1:
+			_hb_told = false
 		car.steer_input = clampf(Input.get_axis("lean_left", "lean_right") + stick.x, -1.0, 1.0)
 		var look := Controls.stick(true)
 		if look != Vector2.ZERO:
@@ -829,6 +1034,8 @@ func _on_shed_loads() -> void:
 
 ## Another player's network state while they drive: [2, truck..., trailer...].
 func remote_state(peer: int, s: PackedFloat32Array) -> void:
+	if s.size() < 1 + Car.NET_SIZE:
+		return   # riding along in the passenger seat ([3]): nothing to drive the truck with
 	if not _remote.has(peer):
 		_remote[peer] = []
 	var list: Array = _remote[peer]

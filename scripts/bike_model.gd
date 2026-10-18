@@ -35,6 +35,19 @@ const HELMET_LAYER := 2
 ## Whether this is your own ride: only then do the rider's helmet, torso and upper arms go on
 ## HELMET_LAYER, out of your first-person eye. Everyone else's riders stay whole in it.
 var own_rider := false
+## The rider's left foot put down on the ground as the ridden bike comes to rest (update_foot):
+## below FOOT_DOWN_SPEED (m/s) it goes down, above FOOT_UP_SPEED it's lifted back onto the peg,
+## each over FOOT_TIME seconds; the foot lands FOOT_OUT to the left of the bike, which leans
+## FOOT_LEAN onto it. FOOT_SAG is how far the bike sits down on its springs, for the ground.
+const FOOT_DOWN_SPEED := 1.1
+const FOOT_UP_SPEED := 1.8
+const FOOT_TIME := 0.3
+const FOOT_OUT := 0.42
+const FOOT_LEAN := 0.08
+const FOOT_SAG := 0.035
+## How far the foot's down now, 0 (on the peg) .. 1 (on the ground), and where it's going.
+var foot_down := 0.0
+var _foot_want := 0.0
 
 var _build: BikeBuild
 var _slot_meshes := {}           # slot -> Array of GeometryInstance3D
@@ -4833,12 +4846,20 @@ func eye_layers() -> int:
 	return 1 << (HELMET_LAYER - 1) if own_rider else 1
 
 
+## Sits the rider on the bike, in their gear or plain colours, the left foot ready to go down.
 func _build_rider() -> void:
 	_rider = Node3D.new()
 	add_child(_rider)
 	if rider_color.a > 0.0 or not rider_gear.is_empty():
 		_build_dressed_rider()
-		return
+	else:
+		_build_plain_rider()
+	if foot_down > 0.0:
+		_pose_foot()   # built again with the foot down (redressed at a standstill)
+
+
+## The rider in plain colours (no gear chosen): overalls, lid and boots.
+func _build_plain_rider() -> void:
 	var seat_y := _seat_y
 	# The rider wears their own colours, the same as on foot: overalls in a darker shade, lid in the colour.
 	var mine := rider_color.a > 0.0
@@ -4872,9 +4893,12 @@ func _build_rider() -> void:
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
 		var knee := Vector3(0.19 * side, seat_y - 0.02, minf(hips.z - 0.36, lerpf(hips.z, _peg.z, 0.55)))
 		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
-		_tube(hip, knee, 0.075, pants, Vector3.ONE, _rider)
-		_tube(knee, peg, 0.06, pants, Vector3.ONE, _rider)
-		_box(peg + Vector3(0.0, -0.02, -0.06), Vector3(0.09, 0.08, 0.22), gloves, _rider)
+		var legs := _rider_legs(side, hip, knee, peg)
+		for k in legs.size():
+			var leg: Array = legs[k]
+			_tube(hip, leg[1], 0.075, pants, Vector3.ONE, leg[0])
+			_tube(leg[1], leg[2], 0.06, pants, Vector3.ONE, leg[0])
+			_box(leg[2] + (Vector3(0.0, -0.02, -0.06) if k == 0 else Vector3(0.0, -0.03, -0.07)), Vector3(0.09, 0.08, 0.22), gloves, leg[0])
 
 
 ## The rider in their own gear (see RiderGear and RiderFigure), sat the same way as the plain
@@ -4916,11 +4940,83 @@ func _build_dressed_rider() -> void:
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
 		var knee := Vector3(0.19 * side, seat_y - 0.02, minf(hips.z - 0.36, lerpf(hips.z, _peg.z, 0.55)))
 		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
-		RiderFigure.limb(_rider, hip, knee, 0.075, tm)
-		RiderFigure.limb(_rider, knee, peg, 0.06, tm)
-		if tx.has("knees"):
-			RiderFigure.knee_guard(_rider, knee, hip, peg, 0.065, trousers, tint)
-		RiderFigure.boot(_rider, peg + Vector3(0.0, -0.06, 0.0), knee, Vector3.FORWARD, str(worn["boots"]), tint)
+		for leg: Array in _rider_legs(side, hip, knee, peg):
+			var at: Node3D = leg[0]
+			RiderFigure.limb(at, hip, leg[1], 0.075, tm)
+			RiderFigure.limb(at, leg[1], leg[2], 0.06, tm)
+			if tx.has("knees"):
+				RiderFigure.knee_guard(at, leg[1], hip, leg[2], 0.065, trousers, tint)
+			RiderFigure.boot(at, leg[2] + Vector3(0.0, -0.06, 0.0), leg[1], Vector3.FORWARD, str(worn["boots"]), tint)
+
+
+## Where the rider's leg on `side` goes, from `hip` through `knee` to the ankle at `peg`, as
+## [[node to build it under, knee, ankle], ...]: the right leg once, on its peg; the left twice,
+## on its peg ("LegLPeg") and put down on the ground beside the bike ("LegLDown", hidden till the
+## bike comes to rest: see update_foot), the knee bent forward and out to reach it.
+func _rider_legs(side: float, hip: Vector3, knee: Vector3, peg: Vector3) -> Array:
+	if side > 0.0:
+		return [[_rider, knee, peg]]
+	var on_peg := Node3D.new()
+	on_peg.name = "LegLPeg"
+	_rider.add_child(on_peg)
+	var down := Node3D.new()
+	down.name = "LegLDown"
+	down.visible = false
+	_rider.add_child(down)
+	var thigh := hip.distance_to(knee)
+	var shin := knee.distance_to(peg)
+	# The ground, with the bike leaned over onto the foot (about the tyres' contact line).
+	var ground := foot_ground_y()
+	var foot_x := -FOOT_OUT
+	var ankle := Vector3(foot_x, ground + FOOT_OUT * tan(FOOT_LEAN) + 0.065, hip.z - 0.08)
+	var to := ankle - hip
+	var reach := thigh + shin - 0.005
+	if to.length() > reach:
+		ankle = hip + to.normalized() * reach   # a short leg on a tall bike: on tiptoe
+		to = ankle - hip
+	var d := to.length()
+	var along := (thigh * thigh - shin * shin + d * d) / (2.0 * d)
+	var lift := sqrt(maxf(thigh * thigh - along * along, 0.0))
+	var axis := to / d
+	var pole := Vector3(-0.35, 0.0, -1.0).normalized()
+	pole = (pole - axis * pole.dot(axis)).normalized()
+	var knee_down := hip + axis * along + pole * lift
+	return [[on_peg, knee, peg], [down, knee_down, ankle]]
+
+
+## The ground under the bike in the model's own space (its origin's at the axles, roughly).
+func foot_ground_y() -> float:
+	return -(_build.rear_radius if _build else 0.3) + FOOT_SAG
+
+
+## The ridden bike coming to rest (`speed` m/s; `can` is false crashed, in the air or in a
+## burnout): below walking pace the rider puts their left foot down and the bike leans a little
+## onto it, and as it pulls away they lift it back onto the peg. Eases in and out over `delta`.
+## Returns how far down the foot is, 0..1.
+func update_foot(speed: float, delta: float, can := true) -> float:
+	if not can or absf(speed) > FOOT_UP_SPEED:
+		_foot_want = 0.0
+	elif absf(speed) < FOOT_DOWN_SPEED:
+		_foot_want = 1.0
+	var was := foot_down
+	foot_down = move_toward(foot_down, _foot_want, delta / FOOT_TIME)
+	if foot_down != was:
+		_pose_foot()
+	return foot_down
+
+
+func _pose_foot() -> void:
+	if _rider == null:
+		return
+	var on_peg := _rider.get_node_or_null("LegLPeg") as Node3D
+	var down := _rider.get_node_or_null("LegLDown") as Node3D
+	if on_peg and down:
+		down.visible = foot_down > 0.5
+		on_peg.visible = not down.visible
+	# Leaned over onto the foot about where the tyres meet the road.
+	var c := Vector3(0.0, foot_ground_y(), 0.0)
+	var lean := Basis(Vector3.BACK, FOOT_LEAN * smoothstep(0.0, 1.0, foot_down))   # top over to the left
+	transform = Transform3D(lean, c - lean * c) if foot_down > 0.0 else Transform3D()
 
 
 ## Dresses the rider again in `gear` (when its rider changes their gear mid-ride).

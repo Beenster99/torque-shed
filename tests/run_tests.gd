@@ -356,6 +356,13 @@ func _run_all() -> void:
 	_test_recovery_model()
 	await _test_recovery_controls()
 	await _test_recovery_horn()
+	print("Simon's 18 October (16:08) round: one-shots that go, the truck's handbrake, passenger seat and radar, off the bike in place, a foot down")
+	await _test_oneshot_sounds()
+	await _test_dismount_in_place()
+	await _test_truck_handbrake()
+	await _test_truck_passenger()
+	await _test_truck_radar()
+	await _test_foot_down()
 	print("Simon's 16 October round: dirt where it really goes, and pressure washing it off")
 	_test_dirt_accrual()
 	_test_wash_rules()
@@ -16677,6 +16684,22 @@ func _test_recovery_horn() -> void:
 	await _recovery().test_horn()
 
 
+func _test_oneshot_sounds() -> void:
+	await _recovery().test_oneshot_sounds()
+
+
+func _test_truck_handbrake() -> void:
+	await _recovery().test_handbrake()
+
+
+func _test_truck_passenger() -> void:
+	await _recovery().test_passenger()
+
+
+func _test_truck_radar() -> void:
+	await _recovery().test_radar()
+
+
 ## Simon's 16 October round: road dirt builds up where it really goes as a bike's ridden (more
 ## with distance, heaviest behind the front wheel and under the mudguards, flies on the front at
 ## speed), old saves and delivered bikes get a sensible pattern, and it all survives a save.
@@ -17001,6 +17024,16 @@ func _test_wash_session() -> void:
 		await get_tree().physics_frame
 	Input.action_release("act")
 	check(not w.wash_mode.is_empty(), "the trigger on a bike brings the wash controls up too")
+	# The job started again part way through (a redrawn bike): a part that's dinged doesn't again.
+	var rings := Sfx.oneshots_alive()
+	if w.wash != null:
+		w.wash.cues.append({"kind": "part", "name": "Tank", "slot": "zz_test"})
+	await get_tree().physics_frame
+	var first := Sfx.oneshots_alive() - rings
+	if w.wash != null:
+		w.wash.cues.append({"kind": "part", "name": "Tank", "slot": "zz_test"})
+	await get_tree().physics_frame
+	check(first == 1 and Sfx.oneshots_alive() - rings == 1, "a part dings once a go, even if the job starts again (%d, then %d)" % [first, Sfx.oneshots_alive() - rings])
 	w.set_tool("hands")
 	await get_tree().physics_frame
 	check(w.wash_mode.is_empty(), "putting the washer away steps back")
@@ -20017,4 +20050,138 @@ func _test_detail_session() -> void:
 	wj.finish()
 	main._leave()
 	main.queue_free()
+	await get_tree().physics_frame
+
+
+## Simon's 18 October (16:08) round: getting off the bike out in the country flashed you back to
+## the garage and back. Online the shed still had you on the bike until the host heard, so the
+## next change got you back on it where it was got on (the garage); and the crew saw your figure
+## for a moment back where you were last on foot. Now you stand beside the bike, and stay there.
+func _test_dismount_in_place() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.start_new("Tester", 7)
+	await get_tree().physics_frame
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	main._try_mount(faithful)
+	await get_tree().physics_frame
+	var road: Transform3D = main.world.road_transform(0.3)
+	main.bike.place(road.origin, road.basis.get_euler().y)
+	for i in 30:
+		await get_tree().physics_frame
+	var at: Vector3 = main.bike.global_position
+	main._get_off()
+	await get_tree().physics_frame
+	var garage: Vector3 = Workshop.walker_spawn(Net.local_slot()).origin
+	check(main.bike == null and main.walker.visible and main.walker.global_position.distance_to(at) < 2.0,
+		"off the bike out on the road you're stood beside it (%.1f m; the garage is %.0f m off)" % [main.walker.global_position.distance_to(at), at.distance_to(garage)])
+	# As a co-op client: getting off goes to the host, and the shed has you on the bike a moment
+	# longer (where it was got on); the shed changing meanwhile mustn't put you back on it there.
+	main._try_mount(faithful)
+	await get_tree().physics_frame
+	main.bike.place(at, road.basis.get_euler().y)
+	for i in 10:
+		await get_tree().physics_frame
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), garage)
+	main.walker.place(Transform3D(Basis(), at + Vector3.RIGHT * 0.9))
+	main._stop_riding()   # the client's own half of getting off
+	var worst := 0.0
+	for i in 5:
+		Shed.changed.emit()
+		await get_tree().process_frame
+		worst = maxf(worst, main.walker.global_position.distance_to(at))
+		if main.bike != null or not main.walker.camera.current:
+			worst = 9999.0
+	check(main.bike == null and worst < 2.0, "and online, before the host's heard, you're not put back on it at the garage (%.1f m)" % worst)
+	Shed.request({"a": "dismount", "bike": faithful, "xf": Transform3D(Basis(), at)})
+	await get_tree().physics_frame
+	check(main.bike == null and main.walker.global_position.distance_to(at) < 2.0, "nor once it has")
+	main._try_mount(faithful)
+	await get_tree().physics_frame
+	check(main.bike != null, "and you can get straight back on")
+	main._get_off()
+	await get_tree().physics_frame
+	# The crew's view of you: a figure stood where you got off from the first snapshot on foot.
+	var rp := RemotePlayer.new()
+	add_child(rp)
+	rp.setup(77, "Crew", Color.RED)
+	rp.push_state(PackedFloat32Array([0.0, garage.x, garage.y, garage.z, 0.0, 0.0]))
+	for i in 3:
+		await get_tree().physics_frame
+	var riding := PackedFloat32Array([1.0, float(faithful)])
+	riding.resize(30)
+	riding[8] = 1.0   # the bike stood upright (its rotation, w)
+	rp.push_state(riding)
+	await get_tree().physics_frame
+	rp.push_state(PackedFloat32Array([0.0, at.x, at.y, at.z, 0.0, 0.0]))
+	check(rp.bike == null and rp._figure.visible and rp._figure.global_position.distance_to(at) < 0.1,
+		"the crew see you stood where you got off straight away, not back at the garage (%.1f m)" % rp._figure.global_position.distance_to(at))
+	rp.queue_free()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## The lowest point (world y) of everything drawn under `n`.
+func _lowest(n: Node3D) -> float:
+	var low := INF
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var box: AABB = (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
+		low = minf(low, box.position.y)
+	return low
+
+
+## Simon's 18 October (16:08) round: the rider puts their left foot on the ground to hold the bike
+## up as it comes to rest, the bike leaning a touch onto it, and lifts it as they ride off; the
+## crew's riders do it too, from the speed in their snapshots.
+func _test_foot_down() -> void:
+	var r := await ride({}, 2.0, func(_b, _t): pass)
+	var bike: Bike = r["bike"]
+	var model := bike.model
+	var down := model._rider.get_node_or_null("LegLDown") as Node3D
+	var peg := model._rider.get_node_or_null("LegLPeg") as Node3D
+	check(down != null and peg != null, "the rider's left leg can go on the peg or down on the ground")
+	if down == null:
+		await _done(r)
+		return
+	var lean := -model.transform.basis.y.x
+	check(model.foot_down > 0.99 and down.visible and not peg.visible and lean > 0.04,
+		"stopped, the left foot's down and the bike leans onto it (%.1f degrees)" % rad_to_deg(asin(clampf(lean, -1.0, 1.0))))
+	var sole := _lowest(down)
+	check(absf(sole) < 0.06, "the boot's on the ground (its sole %.3f m off it)" % sole)
+	var side: float = (bike.global_transform.affine_inverse() * down.find_children("*", "MeshInstance3D", true, false)[-1].global_position).x
+	check(side < -0.2, "out to the left of the bike (%.2f m)" % side)
+	await _done(r)
+	# Riding off, then pulling up again.
+	var lifted := {"min": 1.0}
+	var r2 := await ride({}, 9.0, func(b, t):
+		b.throttle = 0.5 if t > 1.5 and t < 4.0 else 0.0
+		b.front_brake = 0.6 if t > 5.0 and t < 6.8 else 0.0   # (held on at a stop it walks the bike back)
+		if t > 3.0 and t < 4.0:
+			lifted["min"] = minf(lifted["min"], b.model.foot_down))
+	var b2: Bike = r2["bike"]
+	check(lifted["min"] < 0.01 and r2["max_speed"] > 4.0, "riding off, the foot's lifted back onto the peg (%.2f)" % lifted["min"])
+	check(b2.model.foot_down > 0.99 and absf(b2.speed) < BikeModel.FOOT_DOWN_SPEED, "and pulling up it goes down again (%.2f down, %.1f m/s)" % [b2.model.foot_down, b2.speed])
+	await _done(r2)
+	# The crew's riders: by their bike's speed.
+	var rb := RemoteBike.new()
+	add_child(rb)
+	rb.setup("Crew", BikeBuild.new({}), Color.RED)
+	var bs := PackedFloat32Array()
+	bs.resize(25)
+	bs[6] = 1.0
+	bs[9] = -8.0   # going along at 8 m/s
+	for i in 30:
+		rb.push_state(bs)
+		await get_tree().physics_frame
+	var moving := rb.model.foot_down
+	bs[9] = 0.0
+	for i in 60:
+		rb.push_state(bs)
+		await get_tree().physics_frame
+	check(moving < 0.01 and rb.model.foot_down > 0.99, "a crew member's rider puts a foot down too as their bike stops (%.2f, then %.2f)" % [moving, rb.model.foot_down])
+	rb.queue_free()
 	await get_tree().physics_frame

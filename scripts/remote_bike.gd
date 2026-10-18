@@ -97,6 +97,8 @@ func _physics_process(delta: float) -> void:
 	model.update_pose_from(lerpf(sa[10], sb[10], f), sb[11], sb[12], lerpf(sa[13], sb[13], f),
 		lerpf(sa[14], sb[14], f), sb[18], 0.0)
 	model.set_rider_visible(sb[17] < 0.5)
+	# Their left foot down as their bike comes to rest, by its speed as their snapshots have it.
+	model.update_foot(Vector3(sb[7], sb[8], sb[9]).length(), delta, sb[17] < 0.5)
 	audio.rpm = sb[15]
 	audio.throttle = sb[16]
 	var running := sb.size() < 20 or sb[19] > 0.5

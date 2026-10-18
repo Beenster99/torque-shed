@@ -148,6 +148,7 @@ var wash_cues: Array = []
 var wash_scan := false
 var wash_firing := false
 var _wash_fx: WashFx
+var _wash_dinged := {}     # slot (or "bike") -> true once it's dinged this go at the bike
 var _wash_send := 0.0
 var _wash_aim_send := 0.0
 var _wash_aim_sig := ""
@@ -3076,6 +3077,7 @@ func enter_wash_mode(bike: int, wait_release := true) -> void:
 	wash = job
 	wash_mode = {"bike": bike}
 	wash_cues.clear()
+	_wash_dinged.clear()
 	_need_release = wait_release and _main_button()
 	_plan_key = ""
 	_wash_send = 0.0
@@ -3162,6 +3164,12 @@ func _wash_mode_step(delta: float) -> void:
 		_send_status("Pressure washing" if firing else "")
 	progress = float(wash.stats()["clean"]) if wash.ready else 0.0
 	for c in wash.cues:
+		# Each part (and the whole bike) dings once a go at it, even when the job's started again
+		# on a redrawn bike part way through.
+		var key := "bike" if str(c["kind"]) == "bike" else str(c.get("slot", c["name"]))
+		if _wash_dinged.has(key):
+			continue
+		_wash_dinged[key] = true
 		wash_cues.append(c)
 		Sfx.play_ui("wash_clean" if str(c["kind"]) == "bike" else "wash_ding", -3.0 if str(c["kind"]) == "bike" else -5.0)
 	wash.cues.clear()

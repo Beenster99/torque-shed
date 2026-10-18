@@ -97,13 +97,14 @@ const ACTIONS := [
 	["board_image", "Whiteboard: add a picture", ["board"]], ["board_move", "Whiteboard: move a picture", ["board"]],
 	["board_bigger", "Whiteboard: picture bigger", ["board"]], ["board_smaller", "Whiteboard: picture smaller", ["board"]],
 	["board_poster", "Whiteboard: make a poster", ["board"]],
-	["throttle", "Throttle", ["ride"]], ["front_brake", "Front brake (truck: brake, hold when stopped to reverse)", ["ride"]], ["rear_brake", "Rear brake (truck: handbrake)", ["ride"]],
+	["throttle", "Throttle", ["ride"]], ["front_brake", "Front brake (truck: brake, hold when stopped to reverse)", ["ride"]], ["rear_brake", "Rear brake (truck: handbrake while held)", ["ride"]],
 	["lean_left", "Lean left", ["ride"]], ["lean_right", "Lean right", ["ride"]],
 	["body_back", "Weight back", ["ride"]], ["body_forward", "Weight forward", ["ride"]],
 	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down (truck: into reverse when stopped)", ["ride"]],
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
 	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera: third person, first person, fly-by", ["ride"]],
 	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
+	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["geo_move", "Geometry: move", ["geo"]], ["geo_rotate", "Geometry: rotate", ["geo"]],
@@ -115,7 +116,8 @@ const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding or driving", "spray":
 ## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
 ## B on a pad jumps on foot, but with a spray can or gun out it's the finish (the spray comes first).
 ## View on a pad turns what you hold or carry; with nothing in hand it switches the camera.
-const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rotate_right", "walk_camera"]]
+## D-pad left is the stopwatch, but at the wheel of the truck it's the handbrake.
+const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rotate_right", "walk_camera"], ["stopwatch", "handbrake"]]
 ## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
 const CONTEXT_ALSO := {"spray": ["foot"]}
 
@@ -293,6 +295,8 @@ func _setup_inputs() -> void:
 	_bind("toggle_auto_shift", [KEY_T], [])
 	_bind("ignition", [KEY_I], [JOY_BUTTON_DPAD_UP])
 	_bind("horn", [KEY_H], [JOY_BUTTON_DPAD_DOWN])
+	# The truck's handbrake, pulled up and left on: the stopwatch's D-pad left at the wheel.
+	_bind("handbrake", [KEY_J], [JOY_BUTTON_DPAD_LEFT])
 	_bind("headlight", [KEY_L], [JOY_BUTTON_LEFT_STICK])
 	# Drop a camera at the roadside ahead and watch yourself ride past (no pad button spare).
 	_bind("ride_by", [KEY_V], [])

@@ -469,6 +469,8 @@ func _physics_process(delta: float) -> void:
 
 	if model:
 		model.update_pose(self)
+		# Coming to rest the rider puts their left foot down (not crashed, airborne or in a burnout).
+		model.update_foot(speed, delta, not is_crashed and burnout <= 0.0 and (wheels[0]["contact"] or wheels[1]["contact"]))
 		if heat:
 			# A tyre going flat squashes out under the rim as it loses its air (see Puncture).
 			model.set_flat("front", heat.flat(0))

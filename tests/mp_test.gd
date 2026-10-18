@@ -18,6 +18,8 @@ extends Node
 ## Recovery: the host gives the garage the recovery rig and puts a crash rescue on the phone; the
 ## client takes the job on, gets in the truck (the host must see it driving) and parks it
 ## somewhere new: both must see the job's bike out at its site and the truck where it was left.
+## Then the host gets in its passenger seat by the passenger door: the client must see the door
+## swing open and the host sat in the cab (their figure gone from outside), and both see them out.
 ## Pool: the host racks up in the crew lounge and the client joins; each must see a shot the
 ## other took played out on its own table, and its own come back from the host.
 
@@ -111,6 +113,10 @@ func _ready() -> void:
 	var rec_t := 0
 	var rec_drove := false      # the host saw the client at the wheel; the client was driving
 	var rec_ok := false
+	var pass_step := 0
+	var pass_t := 0
+	var pass_seen := false     # the client saw the host sat in the passenger seat, its door open
+	var pass_ok := false
 	var REC_PARK := Recovery.PARK.translated(Vector3(-6.0, 0.0, 2.0))
 	var wash_step := 0
 	var wash_ok := false
@@ -526,6 +532,29 @@ func _ready() -> void:
 		rec_ok = rec_ok or (rec_drove and rec_job_ok and Recovery.driver() == 0 and rv.car != null
 			and (Recovery.car()["xf"] as Transform3D).origin.distance_to(REC_PARK.origin) < 0.3
 			and rv.car.global_position.distance_to(REC_PARK.origin) < 0.3)
+		# The passenger seat (see the top): the host gets in once the truck's parked, sits a
+		# couple of seconds and gets out; the client sees the door swing and them sat in the cab.
+		if rec_ok and rv.car != null and main.remotes.size() == 1:
+			var other: RemotePlayer = main.remotes.values()[0]
+			if role == "host":
+				match pass_step:
+					0:
+						if Recovery.driver() == 0 and Engine.get_process_frames() % 30 == 0:
+							Shed.request({"a": "recovery_board"})
+						if rv.riding_along:
+							pass_step = 1
+					1:
+						pass_t += 1
+						if pass_t > 150:
+							rv.stop_riding_along()
+							pass_step = 2
+					2:
+						pass_ok = Recovery.passenger() == 0 and not rv.riding_along and main.walker.visible
+			else:
+				if Recovery.passenger() == other.peer and rv._seat_figs.has(other.peer) and float(rv.car.door_open[0]) > 0.0 \
+						and not other._figure.visible:
+					pass_seen = true
+				pass_ok = pass_seen and Recovery.passenger() == 0 and rv._seat_figs.is_empty() and other._figure.visible
 		# Pressure washing together: the host mucks up the Ranger's front tyre, fork and engine and
 		# washes half the dirt off the tyre; the client washes half off the fork and calls the
 		# engine clean, with its jet firing; both see all three, and the host sees the client's water.
@@ -612,7 +641,7 @@ func _ready() -> void:
 			elif pool_by != 0 and played_out:
 				pool_other = true
 			pool_ok = pool_own and pool_other
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and wash_ok and shine_ok and pool_ok and card_ok:
+		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -628,8 +657,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, passenger %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, pass_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok])
 	get_tree().quit(0 if ok else 1)
 
 
