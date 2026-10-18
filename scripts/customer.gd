@@ -391,6 +391,12 @@ func _leg_done(then: String) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("customers", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _cur.is_empty():
 		if _queue.is_empty():
 			return

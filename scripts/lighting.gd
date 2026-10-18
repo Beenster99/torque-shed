@@ -418,6 +418,12 @@ static func gi_mode_for(g: GeometryInstance3D) -> int:
 # ---------------------------------------------------------------------------- every frame
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("sky_weather", pt)
+
+
+func _process_body(delta: float) -> void:
 	if not _pending.is_empty():
 		_drain_pending()
 	_poll -= delta

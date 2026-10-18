@@ -4,7 +4,8 @@ extends ScrollContainer
 ## everyone's XP (the host tells every player's game), empty the garage's account or give it
 ## a million pounds or pay tonight's bills now (host), and start any kind of contract there and then for testing (host):
 ## a customer arriving at reception, or the job taken on at once, at a chosen difficulty, and
-## the recovery jobs with the truck granted if the garage hasn't got it. Puncture a tyre. Every reset asks first.
+## the recovery jobs with the truck granted if the garage hasn't got it. Puncture a tyre. The
+## performance profiler and its recording (see PerfOverlay). Every reset asks first.
 
 var _info: Label
 var _all_xp: Button
@@ -16,6 +17,8 @@ var _host_only: Array[Control] = []    # the contract buttons, for the host only
 var _confirm: ConfirmationDialog
 var _pending := Callable()
 var _tyre_note: Label
+var _perf_toggle: CheckButton
+var _perf_note: Label
 
 
 func _ready() -> void:
@@ -125,6 +128,21 @@ func _ready() -> void:
 	for b in staff_row.get_children():
 		_host_only.append(b)
 
+	# The performance profiler (see PerfOverlay): the panel, and a recording to send in.
+	box.add_child(UITheme.label("Performance", 15, UITheme.ACCENT))
+	var perf_note := UITheme.label("", 14, Color(1, 1, 1, 0.6))
+	Controls.bind_text(perf_note, "The profiler panel shows the frame rate and where each frame's time goes ({perf_overlay}). " +
+		"Record writes 60 seconds of it to a file to send in ({perf_record}).")
+	perf_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(perf_note)
+	_perf_toggle = CheckButton.new()
+	_perf_toggle.text = "Show the performance profiler"
+	_perf_toggle.toggled.connect(func(on): if Settings.perf: Settings.perf.toggle(on))
+	_perf_note = UITheme.label("", 14, UITheme.ACCENT)
+	_perf_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_row([_perf_toggle, _button("Record 60 s", func(): if Settings.perf: Settings.perf.record())]))
+	box.add_child(_perf_note)
+
 	_confirm = ConfirmationDialog.new()
 	_confirm.confirmed.connect(func():
 		if _pending.is_valid():
@@ -147,6 +165,10 @@ func _process(_delta: float) -> void:
 		(c as BaseButton).disabled = not host
 		c.tooltip_text = "" if host else "Only the host can start contracts."
 	_tier.disabled = not host
+	if Settings.perf:
+		_perf_toggle.set_pressed_no_signal(Settings.perf.shown)
+		_perf_note.text = ("Recording... %d s left" % ceili(Settings.perf.record_left)) if Settings.perf.recording() \
+			else ("Last recording: %s" % Settings.perf.last_file if Settings.perf.last_file != "" else "")
 	_info.text = "You: level %d, %d XP, %s     Garage: %s" % [Progress.level(), int(Progress.profile.get("xp", 0)),
 		TvChannels.money_text(Progress.money()), TvChannels.money_text(Shed.garage_money)]
 

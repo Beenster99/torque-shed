@@ -130,6 +130,12 @@ func _refresh_display() -> void:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("radio", pt)
+
+
+func _process_body(_delta: float) -> void:
 	if is_on() and _hiss.playing == _stream.is_live():
 		_refresh_display()
 

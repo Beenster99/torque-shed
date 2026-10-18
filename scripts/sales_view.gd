@@ -288,6 +288,12 @@ func looked_at() -> int:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("sales_visitors", pt)
+
+
+func _process_body(delta: float) -> void:
 	var id := looked_at() if main and main.walker and main.walker.controls_enabled else 0
 	if id != _looked:
 		if views.has(_looked) and is_instance_valid(views[_looked]):

@@ -649,6 +649,12 @@ func set_tool(new_tool: String) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("walker", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	var input := Vector2.ZERO
 	var running := false
 	if controls_enabled:

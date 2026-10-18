@@ -195,6 +195,12 @@ func apply_window(w: Window) -> void:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("graphics", pt)
+
+
+func _process_body(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam:
 		# Draw distance: the camera's own far plane times the slider.

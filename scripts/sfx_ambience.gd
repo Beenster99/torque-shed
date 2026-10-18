@@ -90,6 +90,12 @@ func _player(sound: String, bus: String) -> AudioStreamPlayer:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("audio", pt)
+
+
+func _process_body(delta: float) -> void:
 	var room := Sfx.listener_room
 	var indoors := room != ""
 	var kind: String = Sfx.ROOM_KIND.get(room, "outside")

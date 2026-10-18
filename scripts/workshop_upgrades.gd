@@ -118,6 +118,12 @@ func built() -> String:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("upgrades", pt)
+
+
+func _process_body(_delta: float) -> void:
 	for p in _probes:
 		var probe: ReflectionProbe = p[0]
 		var on := Shed.room_lit(str(p[1]))
@@ -493,6 +499,12 @@ func lift_height_at(at: Vector3) -> float:
 ## The lifts run here on every player's machine from Shed.lifts (which bays are up), so they
 ## go up and down smoothly for everyone.
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("upgrades", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	for bay in _lifts:
 		var want := float(_lifts[bay]["top"]) if Shed.lifts.has(bay) else 0.0
 		var was := float(_lift_h.get(bay, 0.0))

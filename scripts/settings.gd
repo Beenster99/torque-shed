@@ -106,6 +106,8 @@ const ACTIONS := [
 	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
+	["perf_overlay", "Performance profiler on / off", ["foot", "ride"]],
+	["perf_record", "Performance profiler: record 60 s to a file", ["foot", "ride"]],
 	["geo_move", "Geometry: move", ["geo"]], ["geo_rotate", "Geometry: rotate", ["geo"]],
 	["geo_scale", "Geometry: scale / stretch", ["geo"]], ["geo_snap", "Geometry: snap (hold)", ["geo"]],
 	["geo_undo", "Geometry: undo", ["geo"]], ["geo_reset", "Geometry: reset the part", ["geo"]],
@@ -119,6 +121,9 @@ const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rot
 ## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
 const CONTEXT_ALSO := {"spray": ["foot"]}
 
+## The performance profiler's panel (F4; see PerfOverlay).
+var perf: PerfOverlay
+
 ## action -> the events it had before any rebinding, for Reset to defaults.
 var _defaults := {}
 
@@ -130,6 +135,8 @@ func _ready() -> void:
 		_defaults[a[0]] = InputMap.action_get_events(a[0]).duplicate()
 	load_settings()
 	add_child(Graphics.new())
+	perf = PerfOverlay.new()
+	add_child(perf)
 
 
 func load_settings() -> void:
@@ -355,6 +362,9 @@ func _setup_inputs() -> void:
 	_bind("board_poster", [KEY_K], [JOY_BUTTON_DPAD_DOWN])
 	# Geometry mode: fit a bike's parts with move, rotate and scale handles, Blender style.
 	_bind("geometry_mode", [KEY_F2], [])
+	# The performance profiler (see PerfOverlay), and a recording of it to send in.
+	_bind("perf_overlay", [KEY_F4], [])
+	_bind("perf_record", [KEY_F11], [])
 	_bind("geo_move", [KEY_W], [])
 	_bind("geo_rotate", [KEY_E], [])
 	_bind("geo_scale", [KEY_R], [])

@@ -76,6 +76,12 @@ func push_state(state: PackedFloat32Array) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("remote_bikes", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	if _snapshots.is_empty():
 		return
 	var render_t := Time.get_ticks_msec() / 1000.0 - DELAY

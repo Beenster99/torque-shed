@@ -523,6 +523,12 @@ func _ridden_node(peer: int) -> Node3D:
 ## Points a chase camera at each rider a screen is tuned to, and puts the live picture on
 ## those screens. Screens on other channels, or live with nobody out, show their page.
 func _update_tv_feed(delta: float) -> void:
+	var pt := Perf.t0()
+	_update_tv_feed_body(delta)
+	Perf.add("tvs", pt)
+
+
+func _update_tv_feed_body(delta: float) -> void:
 	var riders := Shed.riders()
 	var want := {}     # bike node instance id -> {node, screens: [[dashboard, caption]]}
 	var all := screens()
@@ -953,6 +959,12 @@ func _sync_shine(id: int) -> void:
 ## Everyone else's pressure washer: the splash and run-off where their jet is landing. And the
 ## haze in the wash bay, building up while anyone (you too) is washing.
 func _update_wash_fx(delta: float) -> void:
+	var pt := Perf.t0()
+	_update_wash_fx_body(delta)
+	Perf.add("wash_fx", pt)
+
+
+func _update_wash_fx_body(delta: float) -> void:
 	if wash_mist:
 		wash_mist.update(delta, WashMist.anyone_washing())
 	var live := {}
@@ -1101,6 +1113,12 @@ func _paddock_stand(parent: Node3D, build: BikeBuild) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("workshop", pt)
+
+
+func _process_body(delta: float) -> void:
 	_flicker_holograms()
 	_update_wash_fx(delta)
 	_update_tv_feed(delta)

@@ -81,6 +81,12 @@ func sync_state() -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("staff", pt)
+
+
+func _process_body(delta: float) -> void:
 	if figures.is_empty():
 		if _tip[0] != "":
 			_set_tip(0)

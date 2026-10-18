@@ -96,6 +96,12 @@ func sounding() -> bool:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("audio", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _recorded:
 		_play_recorded(delta)
 		return

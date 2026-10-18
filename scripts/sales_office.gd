@@ -131,6 +131,12 @@ func build() -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("rooms", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _lights_shown != Shed.room_lit("sales"):
 		set_lights(Shed.room_lit("sales"))
 	_update_doors(delta)

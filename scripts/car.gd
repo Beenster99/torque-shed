@@ -245,6 +245,12 @@ func _shifted() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("truck", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	var b := global_basis
 	speed = linear_velocity.dot(-b.z)
 	if freeze:
@@ -405,6 +411,12 @@ func _make_horn() -> void:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("truck", pt)
+
+
+func _process_body(_delta: float) -> void:
 	if horn_audio:
 		horn_audio.pressed = horn
 

@@ -229,6 +229,12 @@ static func _surface_at(z: float) -> float:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("truck", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	_ramp_angle = move_toward(_ramp_angle, RAMP_ANGLE if ramp_down else -PI * 0.5, delta * 2.5)
 	var walkable := ramp_down and absf(_ramp_angle - RAMP_ANGLE) < 0.02
 	if _ramp_shape.disabled == walkable:

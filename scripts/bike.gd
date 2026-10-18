@@ -384,6 +384,12 @@ func respawn() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("bike_physics", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	if build == null:
 		return
 	var space := get_world_3d().direct_space_state

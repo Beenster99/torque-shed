@@ -5210,6 +5210,12 @@ func _sync(state: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("shed", pt)
+
+
+func _process_body(delta: float) -> void:
 	if not active or not is_authority():
 		return
 	_cool_dyno(delta)

@@ -200,6 +200,12 @@ func _heads_into_yard(ri: int, s: float, dir: int, reach := 600.0) -> bool:
 # ---------------------------------------------------------------------------- host
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("traffic", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	if main == null or not main.get("in_session") or world == null:
 		if active_count() > 0:
 			clear()

@@ -143,6 +143,12 @@ func finish_job(delay := 0.4) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("spray_fx", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _fading < 0.0:
 		return
 	_fading -= delta

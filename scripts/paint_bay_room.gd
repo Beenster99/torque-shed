@@ -726,6 +726,12 @@ func _draw_shaker_body() -> void:
 # ---------------------------------------------------------------------------- every frame
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("rooms", pt)
+
+
+func _process_body(delta: float) -> void:
 	_t += delta
 	if Shed.room_lit("paint") != _lit_shown:
 		_set_lit(Shed.room_lit("paint"))

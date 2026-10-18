@@ -221,6 +221,12 @@ func _rest_cue() -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("rooms", pt)
+
+
+func _process_body(delta: float) -> void:
 	var st: Dictionary = Shed.pool
 	var last: Dictionary = st.get("last", {})
 	var n := int(last.get("n", -1))

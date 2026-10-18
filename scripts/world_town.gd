@@ -274,6 +274,12 @@ func build(world: World) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("town", pt)
+
+
+func _process_body(delta: float) -> void:
 	# The crossings' beacons blink, a little under once a second.
 	_beacon_t += delta
 	if _beacon_mat and _beacon_t >= 0.55:
