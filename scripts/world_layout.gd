@@ -4,8 +4,9 @@ extends RefCounted
 ## props: where the villages and farms are, and the line of every road and track. Roads are
 ## drawn as smooth curves through these points; their heights follow the land (see WorldRoads).
 ##
-## Map axes: +x is east, -z is north. The shed's yard is at (0, 100), the mountains are along
-## the north edge, and the map is MAP_HALF either way from the middle.
+## Map axes: +x is east, -z is north. The shed fronts the High Street at z 93 with its yard
+## behind it round (0, -10), the mountains are along the north edge, and the map is MAP_HALF
+## either way from the middle.
 
 ## Villages and farmyards: centre, radius of the flat ground they stand on, kind and name.
 const SITES := [
@@ -70,6 +71,13 @@ const ROADS := [
 		Vector2(930.0, -990.0), Vector2(970.0, -978.0), Vector2(972.0, -950.0), Vector2(935.0, -938.0),
 		Vector2(650.0, -905.0), Vector2(612.0, -895.0), Vector2(610.0, -867.0), Vector2(648.0, -855.0),
 		Vector2(1000.0, -800.0), Vector2(1180.0, -720.0), Vector2(1290.0, -688.0)]},
+	# The town round the shed: the High Street past its front (straight through the town, see
+	# WorldTown), and Station Road from it down to the loop behind the far side of the street.
+	{"name": "high", "label": "High Street", "kind": "tarmac", "hw": 4.5, "grade": 0.09, "start": "loop", "end": "loop", "pts": [
+		Vector2(-160.0, 93.0), Vector2(-140.0, 93.0), Vector2(-112.0, 93.0), Vector2(-60.0, 93.0), Vector2(0.0, 93.0),
+		Vector2(60.0, 93.0), Vector2(108.0, 93.0), Vector2(126.0, 93.0), Vector2(140.0, 93.0)]},
+	{"name": "station", "label": "Station Road", "kind": "tarmac", "hw": 3.5, "grade": 0.09, "start": "high", "end": "loop", "pts": [
+		Vector2(60.0, 93.0), Vector2(60.0, 105.0), Vector2(60.0, 118.0), Vector2(60.0, 131.0)]},
 	# Dirt tracks.
 	{"name": "woods", "label": "Woods trail", "kind": "dirt", "hw": 2.2, "grade": 0.2, "start": "west", "end": "south", "pts": [
 		Vector2(-380.0, 62.0), Vector2(-392.0, 120.0), Vector2(-400.0, 180.0), Vector2(-330.0, 300.0), Vector2(-180.0, 380.0),

@@ -23,6 +23,9 @@ signal saved(ok: bool)
 
 ## 2: the save's name, play time and the host's character were added (1 still loads).
 const VERSION := 2
+## The layout of the world round the shed the save was made in: 0 (none saved) the old yard in
+## front of the shed, 1 the shed on the town's High Street with the yard behind (see WorldTown).
+const TOWN_LAYOUT := 1
 const DIR := "user://saves/"
 ## The single save from before there were save games; migrate() gives it a name and a character.
 const SLOT := "shed"
@@ -543,7 +546,7 @@ func capture() -> Dictionary:
 		if rider != 0 and live != null:
 			bikes[id]["xf"] = live
 	var now := int(Time.get_unix_time_from_system())
-	return {"version": VERSION, "game": "Torque Shed", "saved_at": now,
+	return {"version": VERSION, "game": "Torque Shed", "saved_at": now, "town": TOWN_LAYOUT,
 		"name": save_name if save_name != "" else "%s's shed" % _local_name(),
 		"created_at": created_at if created_at > 0 else now, "play_time": play_time,
 		"host": _local_name(), "shed": shed, "profile": Progress.save_copy(),
@@ -680,6 +683,12 @@ func restore(data: Dictionary) -> bool:
 		_placed.clear()
 		last_saved = 0
 		return true
+	var players = data.get("players", {})
+	if int(data.get("town", 0)) < TOWN_LAYOUT:
+		# Saved before the shed stood in the town with its yard behind it: what was out in the old
+		# yard in front goes to the same place in the yard behind, nothing is left in a building.
+		WorldTown.migrate(shed)
+		WorldTown.migrate(players)
 	Shed.load_state(shed, Settings.player_name)
 	Settings.day_night_cycle = bool(data.get("day_night_cycle", Settings.day_night_cycle))
 	Settings.day_length = int(data.get("day_length", Settings.day_length))
@@ -695,7 +704,6 @@ func restore(data: Dictionary) -> bool:
 		Settings.weather_now = str(weather.get("state", Settings.weather_now))
 		if Weather.current:
 			Weather.current.restore(weather)
-	var players = data.get("players", {})
 	_players = players.duplicate(true) if players is Dictionary else {}
 	# Renamed since the last save: you're still the host who saved it.
 	var host := str(data.get("host", ""))

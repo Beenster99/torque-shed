@@ -36,7 +36,7 @@ const LEVELS := {
 	"washer": ["rms", 0.13], "static": ["rms", 0.1], "jet": ["rms", 0.2], "pour": ["rms", 0.12], "door": ["rms", 0.15],
 	"fan": ["rms", 0.15], "blast": ["rms", 0.22], "rain": ["rms", 0.12], "rain_roof": ["rms", 0.14], "changer": ["rms", 0.12],
 	"dyno_roller": ["rms", 0.14], "compressor": ["rms", 0.16], "shaker": ["rms", 0.13], "hum_fluoro": ["rms", 0.05], "hum_led": ["rms", 0.035],
-	"tone_shed": ["rms", 0.04], "tone_sales": ["rms", 0.04], "amb_out": ["rms", 0.07], "birds": ["peak", 0.35],
+	"tone_shed": ["rms", 0.04], "tone_sales": ["rms", 0.04], "amb_out": ["rms", 0.07], "amb_town": ["rms", 0.05], "birds": ["peak", 0.35],
 	"crickets": ["peak", 0.25],
 	"screech": ["peak", 0.36], "starter": ["peak", 0.61], "chirp": ["peak", 1.0], "gear": ["peak", 0.64], "ping": ["peak", 0.44],
 	"beep": ["peak", 0.18], "levelup": ["peak", 0.37], "bell": ["peak", 0.37], "bell_chime": ["peak", 0.36],
@@ -76,7 +76,7 @@ static func all_sounds() -> Array[String]:
 		"impact_metal_concrete", "impact_metal_wood", "impact_metal_steel", "grinder", "spray", "spray_gun", "washer", "jet",
 		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "shaker", "scrap", "screech", "chirp", "starter",
 		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "desk_bell", "sale_offer", "wash_ding", "wash_clean", "rain", "rain_roof",
-		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets"]
+		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets", "amb_town"]
 	for s in VARIANTS:
 		if not out.has(s):
 			out.append(s)
@@ -129,6 +129,7 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"tone_shed": return _room_tone(false)
 		"tone_sales": return _room_tone(true)
 		"amb_out": return _outdoors()
+		"amb_town": return _town()
 		"birds": return _birds()
 		"crickets": return _crickets()
 		"clink": return _clink()
@@ -376,7 +377,7 @@ static func is_loop(sound: String) -> bool:
 
 const LOOP_SOUNDS: Array[String] = ["ratchet", "scrub", "grinder", "spray", "spray_gun", "washer", "static", "jet", "pour",
 	"screech", "door", "fan", "blast", "rain", "rain_roof", "changer", "dyno_roller", "compressor", "shaker", "hum_fluoro", "hum_led",
-	"tone_shed", "tone_sales", "amb_out", "birds", "crickets"]
+	"tone_shed", "tone_sales", "amb_out", "birds", "crickets", "amb_town"]
 
 
 # ---------------------------------------------------------------------------- hand tools
@@ -933,6 +934,54 @@ func _outdoors() -> PackedFloat32Array:
 			var hi := nz() - lo - 0.8 * bp
 			bp += f * hi
 			d[posmod(mid + i, n)] += (bp * 0.6 + sin(TAU * ph) * 0.3 + sin(TAU * 2.0 * ph) * 0.1) * env * amp
+	return loopify(d, 0.3)
+
+
+## The town's bustle out on the High Street: people talking as they pass (bursts of voice-like
+## formants in syllables and phrases, near and far), footsteps going by, a shop door's bell now
+## and then and the pigeons cooing.
+func _town() -> PackedFloat32Array:
+	var secs := 12.0
+	var d := buf(secs + 0.3)
+	var n := d.size()
+	for voice in 5:
+		var near := rf(0.35, 1.0)
+		var f1 := rf(330.0, 520.0) if voice % 2 == 0 else rf(480.0, 720.0)
+		var t := rf(0.0, 2.0)
+		while t < secs:
+			var syllables := rng.randi_range(3, 9)
+			for k2 in syllables:
+				var ln := rf(0.07, 0.19)
+				var at := int(t * R)
+				var f := f1 * rf(0.85, 1.25)
+				band(d, at, ln, f, 0.35, 0.06 * near, 9.0, 0.025, true)
+				band(d, at, ln * 0.8, f * rf(2.2, 2.8), 0.4, 0.025 * near, 12.0, 0.02, true)
+				t += ln + rf(0.03, 0.12)
+			t += rf(0.6, 2.5)
+	# Footsteps of people walking past.
+	for walker in 3:
+		var t2 := rf(0.0, secs)
+		var pace := rf(0.48, 0.6)
+		for step in rng.randi_range(6, 12):
+			var loud := sin(PI * float(step) / 12.0) * 0.05
+			burst(d, int((t2 + step * pace) * R), 0.035, loud, 140.0, 900.0, 5000.0, true)
+	# A shop door's bell.
+	for b in 2:
+		var at2 := rng.randi_range(0, n - 1)
+		ring(d, at2, 2650.0, 0.02, 5.0, true)
+		ring(d, at2 + int(0.18 * R), 3120.0, 0.014, 6.0, true)
+	# Pigeons: roo-COO-coo, low and soft.
+	for c in 3:
+		var start := rng.randi_range(0, n - 1)
+		var f0 := rf(250.0, 320.0)
+		var ph := 0.0
+		for note: Array in [[0.0, 0.22, 0.6], [0.3, 0.42, 1.0], [0.8, 0.3, 0.7]]:
+			var o := int(float(note[0]) * R)
+			var ln2 := int(float(note[1]) * R)
+			for i in ln2:
+				var x := float(i) / ln2
+				ph += f0 * (1.0 + 0.04 * sin(TAU * 7.0 * x)) * (1.0 - 0.1 * x) / R
+				d[(start + o + i) % n] += sin(TAU * ph) * sin(PI * x) * 0.03 * float(note[2])
 	return loopify(d, 0.3)
 
 

@@ -6,8 +6,9 @@ extends Node
 ## switched on, the air compressor in the back corner cycling on and off (sooner while the
 ## spray gun or the sandblaster is drawing air), the roof creaking now and then, the sales
 ## office's sliding doors and its phone ringing as a customer calls ahead, and outside the
-## wind, distant traffic, birds by day (now and then, in short bursts, quietest at midday) and
-## crickets at night, heard muffled from indoors.
+## wind, distant traffic, birds by day (now and then, in short bursts, quietest at midday),
+## crickets at night and, near the High Street, the town's bustle (people talking and walking
+## by, a shop bell, pigeons; quieter at night), all heard muffled from indoors.
 
 ## The compressor's spot: the shed's back left corner, low down.
 const COMPRESSOR_POS := Workshop.CENTER + Vector3(-Workshop.HALF.x + 0.6, 0.5, -Workshop.HALF.y + 0.6)
@@ -21,6 +22,10 @@ const AIR_DRAIN := 8.0
 const BIRD_BURST := Vector2(4.0, 10.0)
 const BIRD_GAP := Vector2(25.0, 70.0)
 const BIRD_DB := -16.0
+## The town's bustle: full within the first distance (m) of the High Street, gone past the second.
+const TOWN_NEAR := 25.0
+const TOWN_FAR := 150.0
+const TOWN_DB := -10.0
 
 ## The shed this ambience belongs to.
 var workshop: Node3D
@@ -29,6 +34,7 @@ var _hum: AudioStreamPlayer
 var _wind: AudioStreamPlayer
 var _birds: AudioStreamPlayer
 var _crickets: AudioStreamPlayer
+var _town: AudioStreamPlayer
 var _comp: AudioStreamPlayer3D
 var _rng := RandomNumberGenerator.new()
 ## The compressor: running or resting, and how long until it changes.
@@ -56,6 +62,7 @@ func setup(shed: Node3D) -> void:
 	_wind = _player("amb_out", "AmbOut")
 	_birds = _player("birds", "AmbOut")
 	_crickets = _player("crickets", "AmbOut")
+	_town = _player("amb_town", "AmbOut")
 	_comp = Sfx.make_loop_player(shed)
 	_comp.position = COMPRESSOR_POS
 	_comp.volume_db = -9.0
@@ -67,7 +74,7 @@ func setup(shed: Node3D) -> void:
 func _exit_tree() -> void:
 	if is_instance_valid(_comp) and _comp.playing:
 		_comp.stop()
-	for p in [_tone, _hum, _wind, _birds, _crickets]:
+	for p in [_tone, _hum, _wind, _birds, _crickets, _town]:
 		if is_instance_valid(p):
 			p.stop()
 
@@ -101,11 +108,19 @@ func _process(delta: float) -> void:
 	_fade(_wind, 1.0, delta, -8.0)
 	_fade(_birds, (1.0 - dark) * (1.0 - rain * 0.85) * _bird_burst(delta), delta, BIRD_DB)
 	_fade(_crickets, dark * (1.0 - rain * 0.7), delta, -14.0)
+	_fade(_town, town_level(Sfx.listener_pos, dark, rain), delta, TOWN_DB)
 	_muffle_outdoors(indoors, room, delta)
 	_compressor(delta)
 	_creaks(delta, room, kind)
 	_sliding_doors()
 	_watch_customers(delta)
+
+
+## How loud the town's bustle is at `at` (0..1): by how near the High Street it is, quieter at
+## night and in the rain.
+static func town_level(at: Vector3, dark: float, rain: float) -> float:
+	var near := 1.0 - smoothstep(TOWN_NEAR, TOWN_FAR, TownPeople._street_distance(at))
+	return near * lerpf(1.0, 0.3, dark) * (1.0 - rain * 0.5)
 
 
 ## How much the birds are singing now (0..1): an occasional burst, then a long quiet gap that

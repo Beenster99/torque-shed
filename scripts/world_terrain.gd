@@ -12,9 +12,9 @@ const SIZE := 1025                   # samples along each side
 const CHUNK := 64                    # cells along each side of a mesh chunk
 const COARSE := 4                    # the far mesh keeps every 4th sample
 const SKIRT := 6.0                   # chunk edges hang down this far to hide seams
-## The flat ground round the shed and the yard, and the height of the grass on it (just under
-## the yard's surface, so the slab's edge is no kerb).
-const HOME := Rect2(-75.0, 25.0, 150.0, 125.0)
+## The flat ground round the shed, its yard and the town it stands in, and the height of the
+## grass on it (just under the yard's surface, so the slab's edge is no kerb).
+const HOME := Rect2(-115.0, -62.0, 225.0, 212.0)
 const HOME_LEVEL := -0.03
 ## How far under a road's surface the ground beneath it sits.
 const ROAD_DROP := {"tarmac": 0.16, "dirt": 0.13}
@@ -309,7 +309,7 @@ func _build_colors() -> void:
 			elif k == 2:
 				c = c.lerp(earth, (1.0 - smoothstep(2.5, 6.5, road_d[i])) * 0.85)
 			colors[i] = c
-	# Fields round the farms, and worn gravel round the yard's edge fading into the grass.
+	# Fields round the farms, and worn gravel round the yard's edges fading into the grass.
 	for at: Vector2 in farms:
 		var box := _grid_box(Rect2(at - Vector2(330.0, 330.0), Vector2(660.0, 660.0)))
 		for gz in range(box.position.y, box.end.y):
@@ -327,13 +327,16 @@ func _build_colors() -> void:
 				if d < 40.0:
 					var i := gz * SIZE + gx
 					colors[i] = colors[i].lerp(earth.lerp(gravel, 0.5), (1.0 - smoothstep(22.0, 40.0, d)) * 0.85)
-	var home := _grid_box(HOME.grow(14.0))
-	for gz in range(home.position.y, home.end.y):
-		for gx in range(home.position.x, home.end.x):
-			var i := gz * SIZE + gx
-			var hd := _home_dist(gx * SPACING - HALF, gz * SPACING - HALF)
-			if hd < 14.0:
-				colors[i] = colors[i].lerp(gravel, (1.0 - smoothstep(0.0, 14.0, hd)) * 0.7)
+	for rect: Rect2 in WorldYard.GROUND:
+		var box := _grid_box(rect.grow(14.0))
+		for gz in range(box.position.y, box.end.y):
+			for gx in range(box.position.x, box.end.x):
+				var p := Vector2(gx * SPACING - HALF, gz * SPACING - HALF)
+				var hd := Vector2(maxf(maxf(rect.position.x - p.x, p.x - rect.end.x), 0.0),
+					maxf(maxf(rect.position.y - p.y, p.y - rect.end.y), 0.0)).length()
+				if hd < 14.0:
+					var i := gz * SIZE + gx
+					colors[i] = colors[i].lerp(gravel, (1.0 - smoothstep(0.0, 14.0, hd)) * 0.7)
 
 
 ## Which crop (0..3) the field at (x, z) round the farm at `farm` grows, or -1 for none:

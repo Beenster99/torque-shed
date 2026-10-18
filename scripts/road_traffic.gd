@@ -7,9 +7,9 @@ extends Node3D
 ## anyone stopped or slower in the lane ahead. They're solid: ride into one and you crash, as
 ## you would into anything else.
 ##
-## They keep off the Build Yard (the test area, with the shed, the sales office and the cafe
-## and its car park) and the stretch of the loop that runs across it: roads near the yard are
-## marked out of bounds, and a rider heading that way turns off at the junction before it.
+## They ride through the town on the High Street past the shed's forecourt, but keep off the
+## Build Yard behind it (the test area): roads near the yard are marked out of bounds, and a
+## rider heading that way turns off at the junction before it.
 ## They appear out of everyone's sight (SPAWN_NEAR from every player) but near enough to
 ## someone to be met (SPAWN_FAR), and go when they're far from everyone (DESPAWN).
 ##
@@ -26,7 +26,7 @@ const SPAWN_NEAR := 220.0
 const SPAWN_FAR := 520.0
 const DESPAWN := 700.0
 ## The Build Yard, and how far round it the roads are out of bounds.
-const KEEP_OUT := Rect2(-65.0, 55.0, 130.0, 90.0)
+const KEEP_OUT := Rect2(WorldYard.CENTER - WorldYard.HALF, WorldYard.HALF * 2.0)
 const KEEP_OUT_MARGIN := 25.0
 ## How hard they corner (sideways m/s^2), brake and pull away (m/s^2), and the pace they take
 ## a junction they turn off at, or a dead end they turn round in (m/s).

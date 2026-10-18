@@ -132,6 +132,7 @@ func _ensure_rig() -> void:
 	car.name = "RecoveryTruck"
 	car.freeze = true
 	car.set_meta("chase_scale", 2.0)
+	car.add_to_group("town_movers")   # the townsfolk get out of its way (TownPeople)
 	add_child(car)
 	trailer = Trailer.new()
 	trailer.name = "RecoveryTrailer"

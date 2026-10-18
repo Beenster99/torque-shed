@@ -2001,12 +2001,20 @@ func _test_world() -> void:
 	var bike := Bike.new()
 	bike.setup(BikeBuild.new())
 	world.add_child(bike)
+	# From a spawn point out over the pavement into the street, and along the yard's drag strip.
 	var spawn: Transform3D = world.spawn_point(0)
 	bike.place(spawn.origin, spawn.basis.get_euler().y)
+	for i in 200:
+		bike.throttle = 0.5
+		await get_tree().physics_frame
+	check(not bike.is_crashed and bike.speed > 4.0 and bike.global_position.z > WorldTown.NORTH_FRONT,
+		"bike rides off the forecourt into the High Street (%.1f m/s)" % bike.speed)
+	bike.place(Vector3(WorldYard.START_X + 2.0, 0.05, (WorldYard.LANE_Z.x + WorldYard.LANE_Z.y) * 0.5), -PI * 0.5)
 	for i in 360:
 		bike.throttle = 0.5
 		await get_tree().physics_frame
-	check(not bike.is_crashed and bike.speed > 5.0, "bike rides in the Build Yard (%.1f m/s)" % bike.speed)
+	check(not bike.is_crashed and bike.speed > 5.0 and bike.global_position.x > WorldYard.START_X + 10.0,
+		"bike rides in the Build Yard behind the shed (%.1f m/s)" % bike.speed)
 	# Drop a bike onto the road loop and check it lands on the road surface.
 	var road_t: Transform3D = world.road_transform(0.3)
 	bike.place(road_t.origin, road_t.basis.get_euler().y)
@@ -10680,8 +10688,8 @@ func _test_customer_routes() -> void:
 		"the same rider takes the same way every time (it's worked out from their id)")
 	var loop := PackedVector2Array()
 	for r: Dictionary in WorldLayout.ROADS:
-		if r["name"] == "loop":
-			loop = WorldRoads._spline(PackedVector2Array(r["pts"]), true)
+		if r["name"] == "high":
+			loop = WorldRoads._spline(PackedVector2Array(r["pts"]), false)
 	var off_road := func(p: Vector3) -> float:
 		var best := INF
 		for q in loop:
@@ -13920,15 +13928,15 @@ func _test_world_map() -> void:
 	for h in (r.roads[int(r.by_name["pass"])]["h"] as PackedFloat32Array):
 		pass_top = maxf(pass_top, h)
 	check(pass_top > 120.0, "the mountain pass climbs %.0f m" % pass_top)
-	# Spawn points stand on the yard's slab.
+	# Spawn points stand on the forecourt's slab in front of the shed, short of the pavement.
 	var spawns_ok := true
 	for i in 14:
 		var sp := world.spawn_point(i)
 		var o := sp.origin
-		var on := Rect2(World.YARD_CENTER - World.YARD_HALF, World.YARD_HALF * 2.0).has_point(Vector2(o.x, o.z))
+		var on := WorldYard.GROUND[1].has_point(Vector2(o.x, o.z)) and o.z < WorldTown.NORTH_FRONT - 1.0
 		if not on or absf(world.surface_height(o.x, o.z)) > 0.05:
 			spawns_ok = false
-	check(spawns_ok, "the spawn points are on the yard's slab")
+	check(spawns_ok, "the spawn points are on the forecourt in front of the shed")
 	# The yard blends into the land: no kerb round its edge.
 	var kerb := 0.0
 	var rect := Rect2(World.YARD_CENTER - World.YARD_HALF, World.YARD_HALF * 2.0).grow(1.5)
@@ -13952,15 +13960,15 @@ func _test_world_map() -> void:
 	check(not tags.values().has(false), "roads are tarmac, tracks dirt and fields grass %s" % str(tags))
 	var barriers := world.find_child("Barriers", true, false)
 	check(barriers != null and str(barriers.get_meta("surface", "")) == "metal", "the armco is tagged metal")
-	# The customers' ride in and out runs on the loop where it crosses the yard, flat with the
-	# slab, and nothing from the yard's test kit stands in the way.
+	# The customers' ride in and out runs along the High Street past the shed, flat with the
+	# forecourt, and nothing from the yard's test kit stands in the way.
 	var route_ok := true
-	for x: float in [24.0, 40.0, 56.0, 72.0]:
+	for x: float in [-72.0, -40.0, 0.0, 24.0, 40.0, 56.0, 72.0]:
 		var p := Contracts.road_at(x)
 		var near := r.nearest(p.x, p.z, 5.0, "tarmac")
-		if near.is_empty() or int(near["road"]) != int(r.by_name["loop"]) or float(near["d"]) > 1.5 or absf(float(near["h"])) > 0.15:
+		if near.is_empty() or int(near["road"]) != int(r.by_name["high"]) or float(near["d"]) > 1.5 or absf(float(near["h"])) > 0.15:
 			route_ok = false
-	check(route_ok, "the customers' road past the yard is the loop, level with the yard")
+	check(route_ok, "the customers' road past the shed is the High Street, level with the forecourt")
 	var in_way := []
 	for k in Contracts.PARK_SLOTS:
 		for path: PackedVector3Array in [Contracts.ride_in_path(k), Contracts.ride_out_path(Contracts.park_xf(k))]:
@@ -13978,15 +13986,15 @@ func _test_world_map() -> void:
 		if not near.is_empty():
 			on_loop.append(item[2])
 	check(on_loop.is_empty(), "and off the loop %s" % str(on_loop))
-	# The bikers coming to the coffee shop ride in from the west along the same loop.
+	# The bikers coming to the coffee shop ride in from the west along the same street.
 	var cafe_ok := true
 	for i in 3:
 		var p: Vector3 = CoffeeShop.ROAD_IN[i]
 		var near := r.nearest(p.x, p.z, 5.0, "tarmac")
-		if near.is_empty() or int(near["road"]) != int(r.by_name["loop"]) or float(near["d"]) > 1.5 or absf(float(near["h"])) > 0.15:
+		if near.is_empty() or int(near["road"]) != int(r.by_name["high"]) or float(near["d"]) > 1.5 or absf(float(near["h"])) > 0.15:
 			cafe_ok = false
 			print("    cafe road point %s: %s" % [str(p), str(near)])
-	check(cafe_ok, "the cafe's bikers ride in along the loop past the yard, level with it")
+	check(cafe_ok, "the cafe's bikers ride in along the High Street past the shed, level with it")
 	# Things to see: trees, rocks, villages and farms, barriers and signs.
 	var plan: Dictionary = World._cache[1234]["props"]
 	print("    %d trees, %d rocks, %d track rocks, %d buildings, %d fence runs, %d armco, %d signs" % [plan["trees"].size(),

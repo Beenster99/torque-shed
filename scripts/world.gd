@@ -1,7 +1,8 @@
 class_name World
 extends Node3D
-## The riding map, about four kilometres across: the shed and its yard (laid out as a bike test
-## area, see WorldYard), the 1 km tarmac loop round them, a network of tarmac roads out to the
+## The riding map, about four kilometres across: the shed on the High Street of a little town
+## (WorldTown, with the people walking its pavements), its yard behind it (laid out as a bike
+## test area, see WorldYard), the 1 km tarmac loop round them, a network of tarmac roads out to the
 ## villages and farms and over a mountain pass with hairpins, and dirt tracks off them, the
 ## hardest up in the mountains. Woods, rocks, fences, barriers, signs, houses and farmyards
 ## (WorldProps) fill it in. Generated from a seed so every player in a session gets the same
@@ -24,6 +25,7 @@ var terrain: WorldTerrain
 var roads: WorldRoads
 var yard: WorldYard
 var props: WorldProps
+var town: WorldTown
 var _sun: DirectionalLight3D
 var _env: WorldEnvironment
 var workshop: Workshop
@@ -48,6 +50,10 @@ func generate(seed_value := 1) -> void:
 	yard.build(self)
 	_build_garage()
 	_build_yard_lights()
+	town = WorldTown.new()
+	town.name = "Town"
+	add_child(town)
+	town.build(self)
 	props = WorldProps.new()
 	props.name = "Props"
 	add_child(props)
@@ -112,10 +118,11 @@ func road_transform_on(road_name: String, metres: float) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, atan2(-dir.x, -dir.y)), roads.point(ri, i) + Vector3.UP * 0.1)
 
 
-## Where player number `index` starts: lined up in front of the garage, facing the yard.
+## Where player number `index` starts: lined up on the forecourt in front of the garage,
+## facing the street.
 func spawn_point(index: int) -> Transform3D:
 	var x := -9.0 + (index % 7) * 3.0
-	var z := 84.0 + (index / 7) * 4.0
+	var z := 80.0 + (index / 7) * 3.5
 	return Transform3D(Basis(Vector3.UP, PI), Vector3(x, 0.05, z))
 
 
@@ -368,9 +375,9 @@ func _build_yard_lights() -> void:
 	pole_mat.albedo_color = Color(0.32, 0.33, 0.34)
 	pole_mat.metallic = 0.6
 	pole_mat.roughness = 0.45
-	# Round the edge of the test area, clear of the lanes, and across the loop road from it.
-	var spots: Array[Vector3] = [Vector3(-20.0, 0.0, 93.5), Vector3(36.0, 0.0, 90.0), Vector3(-66.0, 0.0, 100.0),
-		Vector3(0.0, 0.0, 146.5), Vector3(66.0, 0.0, 100.0), Vector3(-40.0, 0.0, 146.5), Vector3(40.0, 0.0, 145.5)]
+	# Round the edge of the test area, clear of the lanes, and along its side nearest the shed.
+	var spots: Array[Vector3] = [Vector3(-20.0, 0.0, -16.5), Vector3(36.0, 0.0, -20.0), Vector3(-66.0, 0.0, -10.0),
+		Vector3(0.0, 0.0, 36.5), Vector3(66.0, 0.0, -10.0), Vector3(-52.0, 0.0, 36.5), Vector3(52.0, 0.0, 36.5)]
 	var aim := Vector3(YARD_CENTER.x, 0.0, YARD_CENTER.y + 8.0)
 	for p in spots:
 		var pole := MeshInstance3D.new()

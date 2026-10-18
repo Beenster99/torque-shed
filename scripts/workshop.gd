@@ -1,6 +1,6 @@
 class_name Workshop
 extends Node3D
-## The shed: a snug workshop with a roller door onto the Build Yard. Inside are four bike bays
+## The shed: a snug workshop with a roller door onto its forecourt on the High Street. Inside are four bike bays
 ## with paddock stands and a screen above each, a workbench, an engine stand, a parts computer
 ## with delivery pallets, a parts washer, a repair bench, a bin and the crew board, and through
 ## the back wall the dyno room (DynoRoom). It also draws every parked bike and every loose
