@@ -12,7 +12,7 @@ const NAMES := {"tarmac": "Tarmac", "gravel": "Gravel", "sand": "Sand", "snow": 
 const LAND := {"tarmac": "grass", "gravel": "grass", "sand": "sand", "snow": "snow"}
 ## The road's own colour, and the land's base colour beside it.
 const ROAD_COLOR := {"tarmac": Color(0.17, 0.17, 0.18), "gravel": Color(0.5, 0.45, 0.38),
-	"sand": Color(0.78, 0.67, 0.47), "snow": Color(0.86, 0.88, 0.92)}
+	"sand": Color(0.7, 0.58, 0.4), "snow": Color(0.76, 0.78, 0.83)}
 const LAND_COLOR := {"tarmac": Color(0.3, 0.42, 0.18), "gravel": Color(0.36, 0.4, 0.22),
 	"sand": Color(0.82, 0.7, 0.48), "snow": Color(0.9, 0.92, 0.96)}
 ## Second land colour, mixed in by noise for patches (heather, dune shadow, bare rock in snow).

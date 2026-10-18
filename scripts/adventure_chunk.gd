@@ -72,19 +72,28 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 			var rx := cos(h)
 			var rz := sin(h)
 			var e := route.width[i] * 0.5
-			var kk := route.smooth_curv(i, 6)
-			var inside := absf(kk) > 1e-4 and signf(kk) == float(side)
-			var max_in := 0.85 / absf(kk) if inside else INF
+			var max_in := route.inside_reach(i, side)
 			var row_v := []
 			var row_c := []
 			var prev := e
+			var stopped := false   # past another stretch of the road: the rest of the row stays put
 			for k in cols:
 				var out_k: float = LAND_OUT[k]
 				var lat := (e + out_k) if k < 6 else maxf(out_k, e + out_k * 0.5)
 				if k > 0:
 					lat = maxf(lat, prev + 0.3)
-				if inside and k > 2:
+				if k > 2:
 					lat = minf(lat, maxf(max_in, prev + 0.05))
+				if k >= 7 and not stopped:
+					# Would the land out to here reach over a bend that doubles back? Look along the way.
+					var steps := maxi(1, int((lat - prev) / 40.0))
+					for q in range(1, steps + 1):
+						var at := lerpf(prev, lat, float(q) / steps)
+						if route.other_road_near(i, route.px[i] + rx * at * side, route.pz[i] + rz * at * side, 30.0):
+							stopped = true
+							break
+				if stopped:
+					lat = prev + 0.05 * k
 				prev = lat
 				var wx := route.px[i] + rx * lat * side
 				var wz := route.pz[i] + rz * lat * side
@@ -311,8 +320,7 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 static func _on_land(route: AdventureRoute, i: int, lat: float, ax: float, az: float, angle: float, scale: float,
 		close := false, keep_clear := 2.0) -> Transform3D:
 	var h := route.hd[i]
-	var kk := route.smooth_curv(i, 6)
-	if absf(kk) > 1e-4 and signf(kk) == signf(lat) and absf(lat) > 0.8 / absf(kk):
+	if absf(lat) > route.inside_reach(i, int(signf(lat))) * 0.95:
 		return Transform3D()
 	var wx := route.px[i] + cos(h) * lat
 	var wz := route.pz[i] + sin(h) * lat

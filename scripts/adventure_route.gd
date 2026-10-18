@@ -303,6 +303,31 @@ func clearance(x: float, z: float) -> float:
 	return best
 
 
+## How far the land may reach on the inside of a bend at knot `i` on `side` (1 right, -1 left)
+## before its cross-sections would fold over each other: a little short of the tightest radius
+## near it, growing again with distance from that bend. INF where there's no bend that way.
+func inside_reach(i: int, side: int) -> float:
+	var out := INF
+	for j in range(maxi(0, i - 50), mini(curv.size(), i + 51)):
+		var k := curv[j]
+		if absf(k) > 1e-5 and signi(int(signf(k))) == side:
+			out = minf(out, 0.85 / absf(k) + absi(i - j) * STEP * 0.6)
+	return out
+
+
+## Whether another stretch of the road (a bend doubling back, not the road beside knot `i`) runs
+## within `r` metres of route-frame (x, z).
+func other_road_near(i: int, x: float, z: float, r: float) -> bool:
+	var cx := int(floor(x / GRID))
+	var cz := int(floor(z / GRID))
+	for gz in range(cz - 1, cz + 2):
+		for gx in range(cx - 1, cx + 2):
+			for j in _grid.get(Vector2i(gx, gz), PackedInt32Array()):
+				if absi(j - i) >= 40 and (px[j] - x) * (px[j] - x) + (pz[j] - z) * (pz[j] - z) < r * r:
+					return true
+	return false
+
+
 ## The curvature at knot `i` smoothed over `span` knots either side.
 func smooth_curv(i: int, span := 8) -> float:
 	var sum := 0.0
