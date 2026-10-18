@@ -341,13 +341,13 @@ func _build_buildings() -> void:
 		_add_building(p, walls, roofs, windows, glass)
 	_mesh(walls, "Walls", _mat("walls", Color.WHITE, 0.9), BUILDING_RANGE)
 	_mesh(roofs, "Roofs", _mat("roofs", Color.WHITE, 0.8), BUILDING_RANGE)
-	var win := _glow_mat("windows", Color(0.16, 0.19, 0.23), Color(1.0, 0.78, 0.48), 1.6)
+	var win := _glow_mat("windows", Color(0.16, 0.19, 0.23), Color(1.0, 0.78, 0.48), 0.9)
 	win.metallic = 0.3
-	_mesh(windows, "Windows", win, WINDOW_RANGE, false, 1.6)
-	var shop := _glow_mat("shop_glass", Color(0.2, 0.24, 0.27), Color(1.0, 0.86, 0.62), 2.6)
+	_mesh(windows, "Windows", win, WINDOW_RANGE, false, 0.9)
+	var shop := _glow_mat("shop_glass", Color(0.2, 0.24, 0.27), Color(1.0, 0.82, 0.56), 1.1)
 	shop.metallic = 0.35
 	shop.roughness = 0.08
-	_mesh(glass, "ShopGlass", shop, WINDOW_RANGE, false, 2.6)
+	_mesh(glass, "ShopGlass", shop, WINDOW_RANGE, false, 1.1)
 
 
 ## One building of the plan into the merged meshes, with its collision and its sign.
