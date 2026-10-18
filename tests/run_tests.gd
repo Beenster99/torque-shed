@@ -370,6 +370,7 @@ func _run_all() -> void:
 	print("Simon's 18 October round (v0.9.0): neutral, rubber on the road, back to the garage")
 	await _test_neutral_gear()
 	await _test_burnout_marks()
+	await _test_go_home()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -18492,3 +18493,54 @@ func _test_burnout_marks() -> void:
 	var half := marks.life_of(newest_i)
 	marks._clock += SkidMarks.FADE
 	check(half > 0.3 and half < 0.7 and marks.life_of(newest_i) == 0.0, "old rubber fades away (%.2f half way, then gone)" % half)
+
+
+## Stranded out in the world, the Esc menu's "Back to the garage" fades out and puts you at the
+## shed door on foot, with the bike you were riding parked in a bay rather than left on the road.
+func _test_go_home() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.start_new("Tester", 7)
+	await get_tree().physics_frame
+	main.menu.show_pause()
+	check(main.home_reason() == "home" and not main.menu._home.visible, "in the shed the menu doesn't offer to go back to the garage")
+	main.menu.hide()
+	var faithful := _bike_named("Old Faithful")
+	Shed.request({"a": "mount", "bike": faithful})
+	await get_tree().physics_frame
+	var road: Transform3D = main.world.road_transform(0.3)
+	main.bike.place(road.origin, road.basis.get_euler().y)
+	for i in 30:
+		await get_tree().physics_frame
+	var far: float = Vector2(road.origin.x - Workshop.CENTER.x, road.origin.z - Workshop.CENTER.z).length()
+	main.menu.show_pause()
+	check(main.home_reason() == "" and main.menu._home.visible and not main.menu._home.disabled,
+		"out on the road (%.0f m away) the menu offers Back to the garage" % far)
+	main.menu.hide()
+	main.go_home(true)
+	await get_tree().physics_frame
+	var parked: Transform3D = Shed.bikes[faithful]["xf"]
+	var in_bay := Shed.bay_at(parked.origin) >= 0
+	var spawn: Vector3 = Workshop.walker_spawn(Net.local_slot()).origin
+	check(main.bike == null and Shed.riding(Shed.me()) == 0 and Shed.bikes[faithful]["rider"] == 0,
+		"going home gets you off the bike")
+	check(in_bay and Vector2(parked.origin.x - Workshop.CENTER.x, parked.origin.z - Workshop.CENTER.z).length() < 12.0,
+		"and the bike comes back with you, parked in a bay (bay %d)" % Shed.bay_at(parked.origin))
+	check(main.walker.visible and main.walker.global_position.distance_to(spawn) < 1.0,
+		"you're on foot at the shed door (%.1f m from it)" % main.walker.global_position.distance_to(spawn))
+	# On foot out in the world: a short fade to black and back, and you're home.
+	main.walker.place(road)
+	await get_tree().physics_frame
+	main.go_home()
+	var darkest := 0.0
+	for i in 120:
+		await get_tree().process_frame
+		if main._fade:
+			darkest = maxf(darkest, main._fade.color.a)
+	check(main.walker.global_position.distance_to(spawn) < 1.0 and darkest > 0.95 and main._fade.color.a < 0.05,
+		"on foot it works too, with a fade to black and back (darkest %.2f)" % darkest)
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame

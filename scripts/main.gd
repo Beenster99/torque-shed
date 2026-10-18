@@ -53,6 +53,11 @@ const KEY_LEAN_ON := 1.25
 ## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
 var _safe_xf := Transform3D()
 var _neutral_hint_at := 0   # ticks: when the "in neutral" hint may show again
+var _fade: ColorRect        # the black that fades in and out going back to the garage
+var _going_home := false
+## Further than this (m, from the shed's middle) and outside every room, you're out in the world
+## and the Esc menu offers to take you back to the garage.
+const HOME_RANGE := 30.0
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
 const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7}
 
@@ -153,6 +158,10 @@ func _ready() -> void:
 	menu.host_game.connect(_host)
 	menu.join_game.connect(_join)
 	menu.resume.connect(_close_menu)
+	menu.home_check = home_reason
+	menu.go_home.connect(func():
+		_close_menu()
+		go_home())
 	menu.leave_session.connect(_leave)
 	menu.load_game.connect(load_game)
 	menu.save_as.connect(func(called): saver.save_as(called))
@@ -370,6 +379,89 @@ func open_recovery() -> void:
 func _close_menu() -> void:
 	menu.hide()
 	_capture_mouse(true)
+
+
+# ---------------------------------------------------------------------------- back to the garage
+
+## Whether "Back to the garage" can be used now: "" when it can, "home" when you're already at
+## the garage (the menu hides it), otherwise why not.
+func home_reason() -> String:
+	if not in_session or walker == null:
+		return "home"
+	if recovery.driving:
+		return "You're in the truck: drive it back, or get out ({interact}) first."
+	var at: Vector3 = bike.global_position if bike else walker.global_position
+	if Workshop.room_at(at) != "" or Vector2(at.x - Workshop.CENTER.x, at.z - Workshop.CENTER.z).length() < HOME_RANGE:
+		return "home"
+	if bike == null and (Shed.pushing_bike(Shed.me()) != 0 or Shed.moving(Shed.me()) != 0):
+		return "Let go of what you're pushing first."
+	return ""
+
+
+## Stranded out in the world: a short fade to black, then you're back at the shed door on foot,
+## and the bike you were riding is parked in its bay (another free one, or the yard by the roller
+## door when they're all full), so it isn't left out on the road. `instant` skips the fade (tests).
+func go_home(instant := false) -> void:
+	if _going_home or home_reason() != "":
+		return
+	_going_home = true
+	if not instant:
+		await _fade_to(1.0)
+	if bike != null:
+		if bike.is_crashed:
+			bike.respawn()   # picks the rider up off the road first
+		_send_ride_stats()
+		# Through the shed's state like getting off, so a co-op client's bike is parked for everyone.
+		Shed.request({"a": "dismount", "bike": riding_id, "xf": garage_spot(riding_id)})
+		_stop_riding()
+	walker.place(Workshop.walker_spawn(Net.local_slot()))
+	camera.snap()
+	hud.flash("Back at the garage.", 2.0)
+	_going_home = false
+	if not instant:
+		await _fade_to(0.0)
+
+
+func _fade_to(alpha: float) -> void:
+	if _fade == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 90
+		add_child(layer)
+		_fade = ColorRect.new()
+		_fade.color = Color(0, 0, 0, 0)
+		_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+		layer.add_child(_fade)
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", alpha, 0.35)
+	await tw.finished
+
+
+## Where a bike brought back to the garage is parked: its own bay if it's free, else another free
+## bay, else a free spot in a row in the yard outside the roller door.
+static func garage_spot(bike_id: int) -> Transform3D:
+	var own := int(Shed.bikes[bike_id].get("bay", -1)) if Shed.bikes.has(bike_id) else -1
+	var order := [own] if own >= 0 and own < Workshop.bay_count() else []
+	for bay in Workshop.bay_count():
+		if bay != own:
+			order.append(bay)
+	for bay in order:
+		var o := Workshop.bay_transform(bay).origin
+		if not Shed.holograms.has(bay) and not _bike_near(o, 2.5, bike_id):
+			return Workshop.bay_transform(bay)
+	for i in 24:
+		var at := Workshop.CENTER + Vector3(-5.0 + float(i % 6) * 2.0, 0.0, Workshop.HALF.y + 5.0 + float(i / 6) * 3.0)
+		if not _bike_near(at, 1.4, bike_id):
+			return Transform3D(Basis(Vector3.UP, PI), at)
+	return Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(0.0, 0.0, Workshop.HALF.y + 5.0))
+
+
+## Whether any bike but `except` stands within `r` metres of `at`.
+static func _bike_near(at: Vector3, r: float, except: int) -> bool:
+	for id in Shed.bikes:
+		if int(id) != except and (Shed.bikes[id]["xf"] as Transform3D).origin.distance_to(at) < r:
+			return true
+	return false
 
 
 # ---------------------------------------------------------------------------- geometry mode
