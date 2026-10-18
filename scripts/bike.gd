@@ -464,8 +464,8 @@ func _physics_process(delta: float) -> void:
 		model.update_pose(self)
 		if heat:
 			# A tyre going flat squashes out under the rim as it loses its air (see Puncture).
-			model.set_flat("front", heat.flat(0), true)
-			model.set_flat("rear", heat.flat(1), true)
+			model.set_flat("front", heat.flat(0))
+			model.set_flat("rear", heat.flat(1))
 	if effects:
 		effects.update(delta, speed, throttle, engine_on, build.overall_health(), surface,
 			wheels[1]["contact"], wheels[1]["slip"])

@@ -983,6 +983,12 @@ func _make_bike_view(id: int) -> Node3D:
 		lean.basis = Basis(Vector3.BACK, deg_to_rad(74.0))
 		lift = 0.12
 	model.position.y = build.rear_radius + lift
+	if lift == 0.0 and stand != "down":
+		# Standing on a flat tyre, the bike has sunk onto that rim (see BikeModel.set_flat).
+		var drop_f := BikeModel.flat_drop(build, "front")
+		var drop_r := BikeModel.flat_drop(build, "rear")
+		model.position.y -= (drop_f + drop_r) * 0.5
+		model.rotation.x = -(drop_f - drop_r) / maxf(build.wheelbase, 0.5)
 	model.stand_pose = stand
 	model.geometry = Shed.geometry_of(id)
 	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)

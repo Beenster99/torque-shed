@@ -639,7 +639,7 @@ func _compute_wheels() -> void:
 		elif float(condition.get(side + "_tyre", {}).get("puncture", 0.0)) > 0.0:
 			notes.append("The %s tyre has a puncture: it's losing air. Plug it, or change it on the tyre changer." % side)
 	tyre_wear = {"front": 1.0 + 2.5 * absf(dev_f), "rear": 1.0 + 2.5 * absf(dev_r)}
-	if minf(dev_f, dev_r) < -0.3:
+	if minf(dev_f, dev_r) < -0.3 and maxf(flat["front"], flat["rear"]) == 0.0:   # a flat one says so itself
 		notes.append("The tyres are soft: they'll squirm, drag and wear out fast.")
 	elif maxf(dev_f, dev_r) > 0.3:
 		notes.append("The tyres are rock hard: less grip, and they skip over bumps.")

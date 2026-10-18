@@ -44,6 +44,7 @@ var _front_hub: Node3D
 var _front_wheel: Node3D
 var _rear_hub: Node3D
 var _rear_wheel: Node3D
+var _flat_tyres := {}   # side -> the squashed tyre's mesh, held still as the wheel turns (see set_flat)
 var _swingarm: Node3D
 var _rider: Node3D
 var _steer_axis := Vector3.UP
@@ -121,6 +122,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_geo_anchors.clear()
 	_rear_guard.clear()
 	_plates.clear()
+	_flat_tyres.clear()
 	_dash_face = PackedVector3Array()
 
 	var zr := _lay_out(build)
@@ -4432,49 +4434,69 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	_slot_meshes[_current_slot].append(mmi)
 
 
-## A flat tyre squashed out under its rim: the sidewalls bulge where it sits on the ground, 0
-## (holding its shape) .. 1 (no air in it, see Puncture). Hung on the hub, not the wheel, so it
-## stays at the bottom as the wheel turns. `sunk`: the wheel rides lower on it (being ridden, see
-## Bike), so the bulge sits that much higher up the tyre, where the road is.
-func set_flat(side: String, amount: float, sunk := false) -> void:
-	var hub := _front_hub if side == "front" else _rear_hub
-	if hub == null or _build == null:
+## A flat tyre squashed down under its rim, 0 (holding its shape) .. 1 (no air in it, see
+## Puncture): the bottom of the tyre flattened onto the ground the rim has sunk towards, and the
+## sidewalls bulging out round it. The squashed tyre is held still while the rim turns inside it
+## (see update_pose_from), so the flat stays at the bottom.
+func set_flat(side: String, amount: float) -> void:
+	var wheel := _front_wheel if side == "front" else _rear_wheel
+	if wheel == null or _build == null:
 		return
-	var node := hub.get_node_or_null("FlatBulge") as MeshInstance3D
+	var tyre_mi: MeshInstance3D = null
+	for c in wheel.get_children():
+		if c is MeshInstance3D and c.has_meta("hoop"):
+			tyre_mi = c
+			break
+	if tyre_mi == null:
+		return
+	if absf(float(tyre_mi.get_meta("flat", 0.0)) - amount) < 0.02 and (amount > 0.02) == _flat_tyres.has(side):
+		return
+	if not tyre_mi.has_meta("round"):
+		tyre_mi.set_meta("round", tyre_mi.mesh)
+	var round_mesh: Mesh = tyre_mi.get_meta("round")
+	tyre_mi.set_meta("flat", amount)
 	if amount <= 0.02:
-		if node:
-			node.visible = false
-			node.set_meta("flat", 0.0)
+		tyre_mi.mesh = round_mesh
+		tyre_mi.rotation.x = 0.0
+		_flat_tyres.erase(side)
 		return
-	if node and absf(float(node.get_meta("flat", 0.0)) - amount) < 0.02 and bool(node.get_meta("sunk", false)) == sunk:
-		return
+	var hoop: Vector3 = tyre_mi.get_meta("hoop")
+	# Squashed as it sits with the wheel still (it's held that way, see update_pose_from).
+	var still := Transform3D(Basis.from_euler(Vector3(0.0, 0.0, tyre_mi.rotation.z)), tyre_mi.position)
+	tyre_mi.mesh = _squashed_tyre(round_mesh, still, hoop.x, hoop.y, amount)
+	_flat_tyres[side] = tyre_mi
+
+
+## How far a flat tyre lets its rim down towards the ground, metres (see Puncture).
+static func flat_drop(build: BikeBuild, side: String) -> float:
 	var front := side == "front"
-	var rim_r := _build.front_rim_radius if front else _build.rear_rim_radius
-	var radius := _build.front_radius if front else _build.rear_radius
-	var width := _build.front_tyre_width if front else _build.rear_tyre_width
-	if node == null:
-		var was := _current_slot
-		_current_slot = side + "_tyre"
-		var rubber := _mat(_col(), 0.0, 0.9)
-		rubber.albedo_color = _col()
-		rubber.metallic = 0.0
-		rubber.metallic_specular = 0.3
-		var blob := SphereMesh.new()
-		blob.radius = 0.5
-		blob.height = 1.0
-		blob.radial_segments = 20
-		blob.rings = 10
-		node = _mesh_instance(blob, rubber, Vector3.ZERO, hub)
-		node.name = "FlatBulge"
-		_current_slot = was
+	var h := (build.front_radius - build.front_rim_radius) if front else (build.rear_radius - build.rear_rim_radius)
+	return float(build.flat.get(side, 0.0)) * Puncture.SQUASH * h
+
+
+## A copy of a tyre's mesh squashed flat by `amount` (0..1), from where it sits on the wheel (`xf`).
+static func _squashed_tyre(round_mesh: Mesh, xf: Transform3D, rim_r: float, radius: float, amount: float) -> ArrayMesh:
 	var h := radius - rim_r
-	var squash := amount * Puncture.SQUASH * h
-	node.scale = Vector3(width * (1.12 + 0.3 * amount), h * (0.45 + 0.25 * amount), radius * (0.45 + 0.45 * amount))
-	var ground := -radius + (squash if sunk else 0.0)
-	node.position = Vector3(0.0, ground + node.scale.y * 0.5, 0.0)
-	node.visible = is_fitted(side + "_tyre")
-	node.set_meta("flat", amount)
-	node.set_meta("sunk", sunk)
+	var ground := -(radius - amount * Puncture.SQUASH * h)
+	var inv := xf.affine_inverse()
+	var out := ArrayMesh.new()
+	for si in round_mesh.get_surface_count():
+		var arrays := round_mesh.surface_get_arrays(si)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for i in verts.size():
+			var p := xf * verts[i]
+			var dist := Vector2(p.y, p.z).length()
+			# Below the axle the sidewalls bulge out, most at mid-height, more the nearer the ground.
+			if p.y < 0.0 and dist > rim_r:
+				var low := clampf(-p.y / maxf(radius, 0.01), 0.0, 1.0)
+				var wall := sin(PI * clampf((dist - rim_r) / maxf(h, 0.005), 0.0, 1.0))
+				p.x *= 1.0 + 0.45 * amount * low * low * wall
+			if p.y < ground:
+				p.y = ground
+			verts[i] = inv * p
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return out
 
 
 ## The maker's name and the size moulded into both sidewalls, in raised rubber a shade lighter
@@ -4913,6 +4935,11 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 	var front_axle := Vector3(0.0, 0.0, -wb * 0.5) + _build.fork_path * comp_f
 	_front_hub.position = _steer_node.transform.affine_inverse() * front_axle
 	_front_wheel.rotation.x = -spin_f
+	# A flat tyre stays squashed at the bottom while the rim turns inside it (see set_flat).
+	if _flat_tyres.has("front"):
+		(_flat_tyres["front"] as Node3D).rotation.x = spin_f
+	if _flat_tyres.has("rear"):
+		(_flat_tyres["rear"] as Node3D).rotation.x = spin_r
 	var rear_axle := _build.rear_axle_at(comp_r)
 	_rear_hub.position = rear_axle
 	_rear_wheel.rotation.x = -spin_r
@@ -5648,6 +5675,7 @@ func build_fit_parts(build: BikeBuild, tail: bool) -> void:
 		_slot_meshes[slot] = []
 	_rear_guard.clear()
 	_plates.clear()
+	_flat_tyres.clear()
 	_dash_face = PackedVector3Array()
 	_lay_out(build)
 	_layout_cylinders(build)

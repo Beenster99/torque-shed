@@ -18439,8 +18439,9 @@ func _test_puncture_ride() -> void:
 	check(b.heat.pressure(0) < st["psi0"] * 0.2 and b.heat.flat(0) > 0.6, "a punctured tyre lets its air out as it's ridden")
 	check(b.heat.tyre_grip(0, "tarmac") < st["grip0"] * 0.7, "the flat tyre grips far less")
 	check(st["h0"] - b.global_position.y > 0.015, "the bike sinks onto the flat tyre")
-	var bulge := b.model.find_child("FlatBulge", true, false) as Node3D
-	check(bulge != null and bulge.visible, "the flat tyre is drawn squashed out under the rim")
+	var squashed: bool = b.model._flat_tyres.has("front") and not b.model._flat_tyres.has("rear")
+	check(squashed and (b.model._flat_tyres["front"] as MeshInstance3D).get_aabb().size.y < 2.0 * b.build.front_radius - 0.03,
+		"the flat tyre is drawn squashed down under the rim")
 	check(not r["crashed"], "a straight line on a flat stays up")
 	await _done(r)
 
