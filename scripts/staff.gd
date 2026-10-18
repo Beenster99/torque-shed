@@ -160,7 +160,8 @@ static var _heard := {}        # worker id -> the last thing the shed told them 
 
 ## A new shed: nobody on the payroll, the board drawn on the first day.
 static func empty() -> Dictionary:
-	return {"next": 1, "workers": {}, "board": {}, "board_day": -1, "clock": 0.0, "news": [], "tea_at": TEA_FIRST, "hired": 0}
+	return {"next": 1, "workers": {}, "board": {}, "board_day": -1, "clock": 0.0, "news": [], "tea_at": TEA_FIRST, "hired": 0,
+		"margin": Sales.DEFAULT_MARGIN}
 
 
 ## Saved or synced staff made safe to use: sheds from before staff have none.
@@ -171,7 +172,7 @@ static func sanitize(s) -> Dictionary:
 	for key in out:
 		if s.has(key) and typeof(s[key]) == typeof(out[key]):
 			out[key] = s[key]
-		elif s.has(key) and key in ["clock", "tea_at"] and (s[key] is int or s[key] is float):
+		elif s.has(key) and key in ["clock", "tea_at", "margin"] and (s[key] is int or s[key] is float):
 			out[key] = float(s[key])
 	for id in out["workers"].keys():
 		if not (out["workers"][id] is Dictionary) or not ROLES.has(str(out["workers"][id].get("role", ""))):
@@ -450,6 +451,10 @@ static func check(peer: int, action: Dictionary) -> String:
 				return job_check(w, action.get("job", {}))
 			if a == "staff_cancel" and (w["job"] as Dictionary).is_empty():
 				return "%s isn't doing anything." % first_name(w)
+		"staff_margin":
+			var m = action.get("margin", null)
+			if not (m is float or m is int) or float(m) < 0.0 or float(m) > 0.6:
+				return "Pick a margin between 0 and 60%."
 		"staff_debug_hire_all", "staff_debug_sick":
 			if Net.is_online() and peer != 1:
 				return "Only the host can do that."
@@ -533,6 +538,12 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var w := worker(int(action["worker"]))
 			_drop_job(w, "Right you are. Leaving that.")
 			return "%s stopped." % first_name(w)
+		"staff_margin":
+			_st()["margin"] = float(action["margin"])
+			var line := "%s set the salesman's target margin to %d%%." % [str(Shed.crew.get(peer, {}).get("name", "Someone")),
+				roundi(margin() * 100.0)]
+			_news(line)
+			return line
 		"staff_debug_hire_all":
 			return hire_one_of_each()
 		"staff_debug_sick":
@@ -1289,37 +1300,79 @@ static func _sales_duty(w: Dictionary, _dt: float) -> bool:
 	return false
 
 
-## The salesman's answer to an offer: near enough the asking price (or a buyer's last word
-## that's fair) he takes; otherwise he counters, pitching nearer what the buyer will really pay
-## the better he is at it.
+## The margin a salesman will settle for under the target: a new one gives away up to
+## MARGIN_SLACK of it to get a sale, the best hardly any.
+const MARGIN_SLACK := 0.1
+
+
+## The business's target margin for the salesman (profit as a share of the price; see
+## Sales.MARGINS), set on his page of the Staff tab.
+static func margin() -> float:
+	return clampf(float(_st().get("margin", Sales.DEFAULT_MARGIN)), 0.0, 0.8)
+
+
+## The least margin worker `w` takes: the target less what a salesman of their level gives away.
+static func floor_margin(w: Dictionary) -> float:
+	return maxf(0.0, margin() - MARGIN_SLACK * clampf(1.0 - (level(w) - 1) / 9.0, 0.0, 1.0))
+
+
+## The salesman's answer to an offer, against what the bike's cost the business (bought, parts
+## and labour: Sales.appraise's sunk) and the target margin. An offer near the asking price, or
+## one that makes his margin (a little under it for a new one), he takes. A buyer's last word
+## that's at least a profit he takes; under cost he turns it down. Otherwise he counters: never
+## under the price that makes his margin, pitched nearer what the buyer will really pay the
+## better he is at it. What margin each sale made goes in his log (and on the Staff channel).
 static func _decide(w: Dictionary, o: Dictionary) -> void:
 	var amt := int(o["amount"])
 	var ask := int(o.get("ask", amt))
 	var top := int(o.get("max", amt))
 	var lv := level(w)
-	if amt >= roundi(ask * 0.97) or bool(o.get("final", false)):
-		if amt >= roundi(ask * 0.7):
-			var why := act(w, {"a": "sale_accept", "offer": int(o["id"])})
-			if why == "":
-				say(w, "Sold! %s for %s." % [str(o.get("bike_name", "It")), money(amt)], true)
-				gain(w, 20)
+	var b := int(o.get("bike", 0))
+	var sunk := int(Sales.appraise(b).get("sunk", 0)) if Shed.bikes.has(b) else 0
+	var least := floor_margin(w)
+	var made := Sales.margin_of(amt, sunk)
+	var buyer := first_name({"name": str(o.get("buyer", ""))})
+	if amt >= roundi(ask * 0.97) or (sunk > 0 and made >= least):
+		_sold(w, o, amt, sunk)
+		return
+	if bool(o.get("final", false)):
+		if amt >= sunk and amt >= roundi(ask * 0.7):
+			_sold(w, o, amt, sunk)
 			return
 		act(w, {"a": "sale_reject", "offer": int(o["id"])})
-		say(w, "Turned %s down. Not at %s." % [first_name({"name": str(o.get("buyer", ""))}), money(amt)], true, false)
+		say(w, "Turned %s down. Not at %s: %s." % [buyer, money(amt), Sales.margin_text(amt, sunk)], true, false)
+		log_line(w, "Turned down %s for the %s: %s" % [money(amt), str(o.get("bike_name", "bike")), Sales.margin_text(amt, sunk)])
 		return
 	var aim := lerpf(float(amt), float(maxi(top, amt)), clampf(0.45 + 0.055 * lv, 0.0, 0.98))
 	aim = maxf(aim, amt + maxf(10.0, ask * 0.02))
+	# Never under the price that makes the least margin he'll take.
+	if sunk > 0:
+		aim = maxf(aim, sunk / maxf(0.05, 1.0 - least))
 	var counter := mini(roundi(aim / 10.0) * 10, ask)
 	if counter <= amt:
-		act(w, {"a": "sale_accept", "offer": int(o["id"])})
-		say(w, "Sold! %s for %s." % [str(o.get("bike_name", "It")), money(amt)], true)
-		gain(w, 20)
+		_sold(w, o, amt, sunk)
 		return
 	var why := act(w, {"a": "sale_counter", "offer": int(o["id"]), "amount": counter})
 	if why == "":
 		say(w, "I've come back at %s with %s for %s." % [str(o.get("buyer", "the buyer")).get_slice(" ", 0), money(counter),
 			str(o.get("bike_name", "it"))], true)
+		log_line(w, "%s offered %s for the %s; came back at %s (%d%% margin)" % [buyer, money(amt), str(o.get("bike_name", "bike")),
+			money(counter), roundi(100.0 * Sales.margin_of(counter, sunk))])
 		gain(w, 4)
+
+
+## Takes an offer: sold, and what margin it made against the target, said and logged.
+static func _sold(w: Dictionary, o: Dictionary, amt: int, sunk: int) -> void:
+	var why := act(w, {"a": "sale_accept", "offer": int(o["id"])})
+	if why != "":
+		return
+	var made := Sales.margin_of(amt, sunk)
+	var line := "Sold the %s for %s: %s, target %d%%" % [str(o.get("bike_name", "bike")), money(amt), Sales.margin_text(amt, sunk),
+		roundi(margin() * 100.0)]
+	say(w, "Sold! %s for %s, a %d%% margin." % [str(o.get("bike_name", "It")), money(amt), roundi(made * 100.0)], true)
+	log_line(w, line)
+	w["sold"] = {"bike": str(o.get("bike_name", "")), "amount": amt, "margin": made, "target": margin()}
+	gain(w, 20 + (10 if made >= margin() else 0))
 
 
 ## Every so often, while the cafe's open, someone with nothing on fetches a round of teas.
@@ -1393,6 +1446,12 @@ static func activity(w: Dictionary) -> String:
 					out.append("On the showroom floor, waiting for the next offer.")
 			_:
 				out.append("Waiting for a job: give them one on the Staff tab ({menu}) or from a bike's Workflow card.")
+	if str(w["role"]) == "sales":
+		var sold: Dictionary = w.get("sold", {})
+		out.append("Target margin %d%%." % roundi(margin() * 100.0))
+		if not sold.is_empty():
+			out.append("Last sale the %s at %s, a %d%% margin." % [str(sold.get("bike", "")), money(int(sold.get("amount", 0))),
+				roundi(float(sold.get("margin", 0.0)) * 100.0)])
 	var held := Shed.held_by(peer_of(int(w["id"])))
 	if held != 0 and Shed.items.has(held):
 		out.append("Carrying %s." % Shed.item_title(held))

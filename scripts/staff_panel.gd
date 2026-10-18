@@ -59,7 +59,7 @@ func open_worker(id: int) -> void:
 
 ## A job to start from for `w`: their role's first job on the first bike that fits it.
 static func default_choice(w: Dictionary) -> Dictionary:
-	var c := {"kind": "", "bike": 0, "slot": "front_pads", "part": "", "color": 1, "finish": "gloss", "steps": ["wash"], "ask": 0}
+	var c := {"kind": "", "bike": 0, "slot": "front_pads", "part": "", "color": 1, "finish": "gloss", "steps": ["wash"], "ask": 0, "his": true}
 	var kinds := kinds_for(w)
 	c["kind"] = kinds[0] if not kinds.is_empty() else "tea"
 	var bikes := bikes_for(str(c["kind"]))
@@ -115,7 +115,7 @@ static func _fill_defaults(c: Dictionary) -> void:
 		elif not opts.has(str(c.get("part", ""))):
 			c["part"] = str(opts[0]) if not opts.is_empty() else ""
 	if str(c["kind"]) == "sell" and Shed.bikes.has(b):
-		c["ask"] = int(Sales.appraise(b).get("recommended", 0))
+		c["ask"] = int(Sales.appraise(b, Staff.margin()).get("recommended", 0))
 
 
 ## The job request for the choices made now.
@@ -133,7 +133,8 @@ func job() -> Dictionary:
 		"detail":
 			j.merge({"bike": int(choice["bike"]), "steps": (choice["steps"] as Array).duplicate()})
 		"sell":
-			j.merge({"bike": int(choice["bike"]), "ask": int(choice["ask"])})
+			# 0: he prices it himself, from what it cost and what it's worth at the target margin.
+			j.merge({"bike": int(choice["bike"]), "ask": 0 if choice.get("his", true) else int(choice["ask"])})
 	return j
 
 
@@ -196,8 +197,8 @@ func _refresh() -> void:
 	if w.is_empty():
 		close_dialog()   # let go (or the shed was reset)
 		return
-	var sig := "%d|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d" % [worker_id, str(choice), _line, Staff.level(w), int(w["wage"]), str(w["sick"]),
-		str((w["job"] as Dictionary).is_empty()), str(_firing), Shed.bikes.size(), Staff.mood_word(w), Shed.garage_money / 100]
+	var sig := "%d|%s|%s|%d|%d|%s|%s|%s|%d|%s|%d|%.2f" % [worker_id, str(choice), _line, Staff.level(w), int(w["wage"]), str(w["sick"]),
+		str((w["job"] as Dictionary).is_empty()), str(_firing), Shed.bikes.size(), Staff.mood_word(w), Shed.garage_money / 100, Staff.margin()]
 	if sig != _sig:
 		_sig = sig
 		for c in _box.get_children():
@@ -241,6 +242,8 @@ func _fill(w: Dictionary) -> void:
 			Shed.request({"a": "staff_cancel", "worker": worker_id})
 			_sig = ""))
 	_box.add_child(top)
+	if str(w["role"]) == "sales":
+		_fill_margin(w)
 	if w["sick"]:
 		_box.add_child(UITheme.label("%s's off sick today. Back tomorrow, hopefully." % first, 16, Color(1, 0.55, 0.45)))
 	else:
@@ -343,6 +346,12 @@ func _fill_job(w: Dictionary) -> void:
 				row.add_child(cb)
 			grid.add_child(row)
 		"sell":
+			grid.add_child(_grid_label("Price"))
+			var his := CheckBox.new()
+			his.text = "His price: cost and value at the %d%% target margin" % roundi(Staff.margin() * 100.0)
+			his.button_pressed = bool(choice.get("his", true))
+			his.toggled.connect(func(on: bool): set_choice("his", on))
+			grid.add_child(his)
 			grid.add_child(_grid_label("Asking"))
 			var ask := SpinBox.new()
 			ask.min_value = 0
@@ -350,6 +359,7 @@ func _fill_job(w: Dictionary) -> void:
 			ask.step = 50
 			ask.prefix = TvChannels.CURRENCY
 			ask.value = int(choice.get("ask", 0))
+			ask.editable = not bool(choice.get("his", true))
 			ask.custom_minimum_size = Vector2(170, 0)
 			ask.value_changed.connect(func(v): choice["ask"] = int(v))
 			grid.add_child(ask)
@@ -361,6 +371,29 @@ func _fill_job(w: Dictionary) -> void:
 	_box.add_child(go)
 	if why != "":
 		_box.add_child(UITheme.label(why, 15, Color(1, 0.5, 0.4)))
+
+
+## The salesman's target margin: what he prices bikes to make and haggles for (he gives a little
+## of it away to get a sale, less the better he is), and what his last sale made.
+func _fill_margin(w: Dictionary) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 12)
+	var names := []
+	var at := 0
+	for i in Sales.MARGINS.size():
+		names.append("%d%% of the price" % roundi(Sales.MARGINS[i] * 100.0))
+		if absf(Sales.MARGINS[i] - Staff.margin()) < 0.001:
+			at = i
+	var ob := _option(grid, "Target margin", names, at, func(i: int):
+		Shed.request({"a": "staff_margin", "margin": Sales.MARGINS[i]})
+		_sig = "")
+	ob.tooltip_text = "He prices bikes from what they've cost and what they're worth to make this, and won't sell under %d%%." % roundi(Staff.floor_margin(w) * 100.0)
+	_box.add_child(grid)
+	var sold: Dictionary = w.get("sold", {})
+	if not sold.is_empty():
+		_box.add_child(UITheme.label("Last sale: the %s for %s, a %d%% margin (target %d%%)." % [str(sold["bike"]), Staff.money(int(sold["amount"])),
+			roundi(float(sold["margin"]) * 100.0), roundi(float(sold["target"]) * 100.0)], 14, UITheme.ACCENT))
 
 
 func _option(grid: GridContainer, label: String, items: Array, selected: int, on_pick: Callable) -> OptionButton:

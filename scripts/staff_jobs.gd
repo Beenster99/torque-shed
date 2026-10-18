@@ -1477,13 +1477,22 @@ static func _sell(w: Dictionary, job: Dictionary) -> Array:
 	return _wheel(b, StaffNav.show_in(free), SalesOffice.SHOWROOM_SPOTS[free], "the showroom") + [plan_step()]
 
 
-## Puts the bike up for sale at the asking price.
+## Puts the bike up for sale: at the asking price given with the job (a player's own price),
+## else his own from what it's cost and what it's worth at the business's target margin (the
+## PC's recommended price at that margin: Sales.appraise), noted in his log.
 static func list_bike(w: Dictionary, job: Dictionary) -> String:
 	var b := int(job["bike"])
 	var ask := int(job.get("ask", 0))
-	if ask <= 0:
-		ask = int(Sales.appraise(b).get("recommended", 0))
-	return Staff.act(w, {"a": "sale_list", "bike": b, "ask": maxi(ask, 10)})
+	var p := Sales.appraise(b, Staff.margin())
+	var own := ask <= 0
+	if own:
+		ask = int(p.get("recommended", 0))
+	ask = maxi(ask, 10)
+	var why := Staff.act(w, {"a": "sale_list", "bike": b, "ask": ask, "margin": Staff.margin()})
+	if why == "":
+		Staff.log_line(w, "Priced the %s at %s%s: cost %s, worth %s, %s" % [_bike_name(b), Staff.money(ask), "" if own else " (as asked)",
+			Staff.money(int(p.get("sunk", 0))), Staff.money(int(p.get("fair", 0))), Sales.margin_text(ask, int(p.get("sunk", 0)))])
+	return why
 
 
 # ---------------------------------------------------------------------------- teas

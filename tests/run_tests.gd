@@ -396,6 +396,7 @@ func _run_all() -> void:
 	await _test_staff_full_detail()
 	await _test_staff_tea_run()
 	await _test_staff_tv()
+	_test_staff_sales_margin()
 	await _test_staff_save()
 	await _test_staff_session()
 	print("Simon's 18 October round (v0.10.0): polishing and ceramic coating in the wash bay, and detailing jobs")
@@ -19721,6 +19722,67 @@ func _test_staff_tv() -> void:
 	check((e["list"] as Array).size() == 3, "a project's list goes on the spotlight")
 	check(drawn[0] > 0, "the page draws")
 	dash.queue_free()
+	Shed.stop()
+
+
+## The salesman prices from what a bike's cost and what it's worth at the target margin (set on
+## his page of the Staff tab), or at a player's own price; haggles against that margin (giving a
+## little away the newer he is) and logs the margin each sale made.
+func _test_staff_sales_margin() -> void:
+	Shed.start_new("Tester", 307)
+	var me := Shed.me()
+	Staff.hire_one_of_each()
+	var s := Staff.worker(_staff_role("sales"))
+	check(is_equal_approx(Staff.margin(), Sales.DEFAULT_MARGIN) and is_equal_approx(float(Staff.sanitize({})["margin"]), Sales.DEFAULT_MARGIN),
+		"the target margin starts at the default (and an old save gets it)")
+	check(Shed.check(me, {"a": "staff_margin", "margin": 2.0}) != "", "a silly margin is refused")
+	Shed.request({"a": "staff_margin", "margin": 0.3})
+	check(is_equal_approx(Staff.margin(), 0.3) and is_equal_approx(float(Staff.sanitize(JSON.parse_string(JSON.stringify(Staff._st())))["margin"]), 0.3),
+		"set to 30%, and it's saved")
+	# His own price, from the cost and value at the margin.
+	var faithful := _bike_named("Old Faithful")
+	Shed.bikes[faithful]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.request({"a": "staff_assign", "worker": int(s["id"]), "job": {"kind": "sell", "bike": faithful, "ask": 0}})
+	_staff_run(400, int(s["id"]), true)
+	var p := Sales.appraise(faithful, 0.3)
+	check(Sales.listings().has(faithful) and int(Sales.listings()[faithful]["ask"]) == int(p["recommended"]),
+		"he prices it at the PC's recommended price for a 30%% margin (%s)" % Sales.money(int(Sales.listings().get(faithful, {}).get("ask", 0))))
+	check((s["log"] as Array).any(func(l): return str(l["text"]).begins_with("Priced the Old Faithful")), "and notes how he priced it")
+	# A player's own price stands.
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.bikes[ranger]["xf"] = Workshop.SHOWROOM_SPOTS[1]
+	Shed.request({"a": "staff_assign", "worker": int(s["id"]), "job": {"kind": "sell", "bike": ranger, "ask": 7770}})
+	_staff_run(400, int(s["id"]), true)
+	check(int(Sales.listings().get(ranger, {}).get("ask", 0)) == 7770, "a price the player gives him is the price")
+	# Haggling against the margin: an offer under it gets a counter no lower than his least margin.
+	var sunk := int(Sales.appraise(ranger)["sunk"])
+	var least := Staff.floor_margin(s)
+	check(least <= 0.3 and least >= 0.2, "his least margin is a little under the target (%.2f)" % least)
+	var oid := Sales.make_offer(ranger)
+	var o: Dictionary = Sales.offers()[oid]
+	o["amount"] = roundi(sunk / 0.95)
+	o["max"] = 7770
+	Staff._decide(s, o)
+	check(str(o["state"]) == "waiting" and Sales.margin_of(int(o["counter"]), sunk) >= least - 0.01,
+		"an offer at a 5%% margin gets a counter that makes his (%s)" % Sales.money(int(o.get("counter", 0))))
+	# A last word under cost he turns down.
+	var oid2 := Sales.make_offer(faithful)
+	var o2: Dictionary = Sales.offers()[oid2]
+	var sunk2 := int(Sales.appraise(faithful)["sunk"])
+	o2["amount"] = maxi(10, sunk2 - 200)
+	o2["final"] = true
+	Staff._decide(s, o2)
+	check(not Sales.offers().has(oid2) and Shed.bikes.has(faithful), "a final offer under cost he turns down")
+	# One that makes the margin he takes, and logs what it made.
+	var oid3 := Sales.make_offer(faithful)
+	var o3: Dictionary = Sales.offers()[oid3]
+	o3["amount"] = roundi(sunk2 / 0.65)
+	o3["ask"] = roundi(sunk2 / 0.5)
+	Staff._decide(s, o3)
+	var sold: Dictionary = s.get("sold", {})
+	check(not Shed.bikes.has(faithful) and not sold.is_empty() and float(sold["margin"]) >= 0.3 and is_equal_approx(float(sold["target"]), 0.3),
+		"an offer that makes 35%% he takes (%s)" % str(sold))
+	check(str(s["log"][-1]["text"]).contains("target 30%") and Staff.activity(s).contains("margin"), "the margin it made goes in his log and on the Staff channel")
 	Shed.stop()
 
 
