@@ -137,6 +137,8 @@ const HELLOS := ["Morning! Glad to be here.", "Right then, where do you want me?
 const DONE_LINES := ["Done!", "All finished.", "That's that sorted.", "Job's a good 'un."]
 
 ## Lines worth repeating when they're asked to do what they're already doing.
+## Tests: the day's sick roll (0..1) instead of a random one, when 0 or more.
+static var test_roll := -1.0
 static var _heard := {}        # worker id -> the last thing the shed told them (host only)
 
 
@@ -422,7 +424,7 @@ static func check(peer: int, action: Dictionary) -> String:
 			if workers().size() >= MAX_STAFF:
 				return "The garage can't take on more than %d staff." % MAX_STAFF
 			var need := int(UNLOCK.get(str(c["role"]), 1))
-			if not action.get("debug", false) and level_of_peer(peer) < need:
+			if level_of_peer(peer) < need:
 				return "Hiring a %s needs character level %d." % [role_name(str(c["role"])).to_lower(), need]
 		"staff_fire", "staff_cancel", "staff_assign":
 			var w := worker(int(action.get("worker", 0)))
@@ -694,7 +696,8 @@ static func new_day() -> void:
 		var w: Dictionary = workers()[id]
 		if day - int(w["sick_last"]) < SICK_GAP or day <= int(w["hired_day"]):
 			continue
-		if rng.randf() < SICK_CHANCE + SICK_LOW_MOOD * (1.0 - float(w["mood"])):
+		var roll := test_roll if test_roll >= 0.0 else rng.randf()
+		if roll < SICK_CHANCE + SICK_LOW_MOOD * (1.0 - float(w["mood"])):
 			go_sick(w, day)
 	refresh_board(day)
 	Shed._mark_dirty()
@@ -743,6 +746,8 @@ static func gain(w: Dictionary, xp: int) -> void:
 	var before := level(w)
 	w["xp"] = int(w["xp"]) + xp
 	if level(w) > before:
+		# Better at it, paid more (see wage_for).
+		w["wage"] = maxi(int(w["wage"]), wage_for(str(w["role"]), level(w)))
 		say(w, "Getting the hang of this. That's level %d!" % level(w), true)
 	Shed._mark_dirty()
 
@@ -786,15 +791,13 @@ static func set_all_sick(on: bool) -> String:
 ## Host: moves the staff on `delta` seconds: their clock, and every TICK each one's job or duty.
 static func process(delta: float) -> void:
 	var s := _st()
-	if workers().is_empty():
-		s["clock"] = float(s["clock"]) + delta
-		return
 	var before := float(s["clock"])
 	s["clock"] = before + delta
-	if floor(before / TICK) == floor(float(s["clock"]) / TICK):
-		return
 	if int(s["board_day"]) < 0:
 		refresh_board(int(Shed.bank.get("day", 0)))
+		Shed._mark_dirty()
+	if workers().is_empty() or floor(before / TICK) == floor(float(s["clock"]) / TICK):
+		return
 	for id in workers().keys():
 		if workers().has(id):
 			_tick(workers()[id], TICK)
@@ -803,11 +806,16 @@ static func process(delta: float) -> void:
 
 ## Where they are now: along the walk they're on, or where they stopped.
 static func _pos_now(w: Dictionary) -> Vector3:
+	return pos_at(w, clock())
+
+
+## Where they are at staff clock time `t` (views draw them between syncs with this).
+static func pos_at(w: Dictionary, t: float) -> Vector3:
 	var leg: Dictionary = w.get("leg", {})
 	if leg.is_empty():
 		return w.get("pos", Vector3.ZERO)
 	var pts: PackedVector3Array = leg["pts"]
-	var s := (clock() - float(leg["t0"])) * float(leg["v"])
+	var s := minf((t - float(leg["t0"])) * float(leg["v"]), float(leg["len"]))
 	if int(leg.get("push", 0)) != 0:
 		s -= StaffNav.BIKE_AHEAD
 		if s < 0.0:

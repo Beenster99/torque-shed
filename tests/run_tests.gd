@@ -379,6 +379,16 @@ func _run_all() -> void:
 	print("Simon's 18 October round (v0.9.0): the shed on a town High Street, its yard behind")
 	_test_town_plan()
 	await _test_town_session()
+	print("Staff: hiring, wages, skills, sickies, jobs they go and do, teas, the TV channel")
+	await _test_staff_hiring()
+	await _test_staff_wages()
+	await _test_staff_skills()
+	await _test_staff_sickies()
+	await _test_staff_service_job()
+	await _test_staff_tea_run()
+	await _test_staff_tv()
+	await _test_staff_save()
+	await _test_staff_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -3999,7 +4009,7 @@ func _test_tv_channels() -> void:
 	Shed.request({"a": "tv_channel", "screen": key, "step": -1})
 	Shed.request({"a": "tv_channel", "screen": key, "step": -1})
 	Shed.request({"a": "tv_channel", "screen": key, "step": -1})
-	check(Shed.screen_channel(key)["ch"] == "contracts", "back past the first channel wraps round to the last")
+	check(Shed.screen_channel(key)["ch"] == TvChannels.CHANNELS[-1], "back past the first channel wraps round to the last")
 	check(Shed.check(me, {"a": "tv_channel", "screen": "f99999", "step": 1}) != "" and Shed.check(me, {"a": "tv_channel", "screen": key, "step": 3}) != "",
 		"the host refuses a screen that isn't there or a jump of several channels")
 	Shed.request({"a": "tv_channel", "screen": "bay2", "step": 1})
@@ -19082,4 +19092,376 @@ func _test_puncture_shed() -> void:
 			check(Puncture.punctured(Shed.items[holed]) and Puncture.lost(Shed.items[holed]) > 0.3, "a bike that arrives punctured has gone soft standing")
 		Shed.remove_bike(id)
 	check(arrived > 0 and arrived < 20, "some barn finds come in on a punctured tyre (%d of 20)" % arrived)
+	Shed.stop()
+
+
+# ---------------------------------------------------------------------------- staff
+
+## Runs the staff on `ticks` ticks (or until worker `id` has no job, with `until_done`).
+func _staff_run(ticks: int, id := 0, until_done := false) -> void:
+	for i in ticks:
+		Staff.process(Staff.TICK)
+		if until_done and i > 4 and (Staff.worker(id).get("job", {}) as Dictionary).is_empty():
+			return
+
+
+func _staff_role(role: String) -> int:
+	for id in Staff.workers():
+		if str(Staff.workers()[id]["role"]) == role:
+			return int(id)
+	return 0
+
+
+## The hiring board: someone for every role each day, each with a name, a look, a back story, a
+## wage and a skill; roles unlocking with level (the Expert Mechanic last); hiring and letting
+## go, with a goodbye; never more than six.
+func _test_staff_hiring() -> void:
+	var was_xp := int(Progress.profile.get("xp", 0))
+	Progress.profile["xp"] = 0
+	Shed.start_new("Tester", 301)
+	var me := Shed.me()
+	check(Staff.workers().is_empty() and Shed.staff == Staff.empty(), "a new shed has nobody on the payroll")
+	Staff.process(Staff.TICK)
+	var board := Staff.board()
+	var roles := board.values().map(func(c): return str(c["role"]))
+	check(Staff.ROLES.all(func(r): return roles.has(r)) and Staff.ROLES.size() == 6,
+		"the hiring board has a candidate for each of the six roles (%s)" % str(roles))
+	var all_ok := true
+	for c in board.values():
+		all_ok = all_ok and str(c["name"]).contains(" ") and c["look"].has("top") and c["look"].has("skin") and c["look"].has("hair") \
+			and (c["story"] as Array).size() == 3 and int(c["wage"]) > 0 and int(c["level"]) >= 1
+	check(all_ok, "each has a name, a look, a three-part back story, a wage and a skill level")
+	var top_unlock := 0
+	for r in Staff.UNLOCK:
+		top_unlock = maxi(top_unlock, int(Staff.UNLOCK[r]))
+	check(int(Staff.UNLOCK["expert"]) == top_unlock and int(Staff.UNLOCK["detailer"]) < int(Staff.UNLOCK["expert"]),
+		"roles unlock by level, the Expert Mechanic last")
+	var cand := {}
+	for id in board:
+		cand[str(board[id]["role"])] = int(id)
+	var why := Shed.check(me, {"a": "staff_hire", "cand": cand["detailer"]})
+	check(why.contains("level %d" % int(Staff.UNLOCK["detailer"])), "at level 1 nobody can be hired yet (%s)" % why)
+	Progress.profile["xp"] = Progress.xp_for_level(int(Staff.UNLOCK["expert"]) - 1)
+	check(Shed.check(me, {"a": "staff_hire", "cand": cand["detailer"]}) == "" and Shed.check(me, {"a": "staff_hire", "cand": cand["expert"]}) != "",
+		"a level up the detailer can be, the expert mechanic not yet")
+	var named := str(board[cand["detailer"]]["name"])
+	var told := []
+	var hear := func(text: String, _ok: bool): told.append(text)
+	Shed.feedback.connect(hear)
+	Shed.request({"a": "staff_hire", "cand": cand["detailer"]})
+	var wid := _staff_role("detailer")
+	var w := Staff.worker(wid)
+	check(wid != 0 and str(w["name"]) == named and not Staff.board().has(cand["detailer"]) and told.any(func(t): return str(t).contains("on the payroll")),
+		"hired: on the payroll and off the board (%s)" % str(told))
+	check(Staff.is_staff_peer(Staff.peer_of(wid)) and Staff.id_of_peer(Staff.peer_of(wid)) == wid and not Shed.crew.has(Staff.peer_of(wid)),
+		"they act as a peer of their own, not one of the crew")
+	check(Shed.check(Staff.peer_of(wid), {"a": "staff_hire", "cand": cand["reception"]}) != "", "staff can't hire staff")
+	told.clear()
+	Shed.request({"a": "staff_fire", "worker": wid})
+	check(Staff.workers().is_empty() and told.size() == 1 and Staff.BYES.any(func(b): return str(told[0]).contains(b)),
+		"let go: gone, with a goodbye (%s)" % str(told))
+	Staff.hire_one_of_each()
+	check(Staff.workers().size() == Staff.MAX_STAFF, "one of each fills the payroll")
+	Staff.refresh_board(99)
+	var extra := int(Staff.board().keys()[0])
+	check(Shed.check(me, {"a": "staff_hire", "cand": extra}).contains("more than %d" % Staff.MAX_STAFF), "and no more than six")
+	Shed.feedback.disconnect(hear)
+	Progress.profile["xp"] = was_xp
+	Shed.stop()
+
+
+## Wages go on the nightly running costs bill, scaled like the rest by Off / Normal / Hard, and
+## show in the bill's breakdown; they come out with the bill.
+func _test_staff_wages() -> void:
+	Shed.start_new("Tester", 302)
+	var lines := func(): return Money.bill_lines(Shed.bank).filter(func(l): return l["key"] == "wages")
+	check((lines.call() as Array).is_empty(), "no staff, no wages line")
+	Staff.hire_one_of_each()
+	var bill := Staff.wage_bill()
+	check(bill == Staff.workers().values().reduce(func(a, w): return a + int(w["wage"]), 0) and bill > 300, "the day's wages add up (%d)" % bill)
+	var normal: Array = lines.call()
+	check(normal.size() == 1 and int(normal[0]["amt"]) == bill and str(normal[0]["why"]).contains("6 on the payroll"),
+		"on Normal the wages are a line on tonight's bill (%s)" % str(normal))
+	Shed.bank["costs"] = "hard"
+	var hard: Array = lines.call()
+	check(hard.size() == 1 and int(hard[0]["amt"]) == roundi(bill * float(Money.COSTS_MULT["hard"])), "on Hard they bite harder (%s)" % str(hard))
+	Shed.bank["costs"] = "off"
+	check(Money.bill_lines(Shed.bank).is_empty(), "with running costs off there's no bill at all")
+	Shed.bank["costs"] = "normal"
+	Shed.garage_money = 100000
+	var total := 0
+	for l in Money.bill_lines(Shed.bank):
+		total += int(l["amt"])
+	var before := Shed.garage_money
+	Shed.money_new_day()
+	check(before - Shed.garage_money == total and (Shed.bank.get("last_bill", []) as Array).any(func(l): return str(l["why"]).begins_with("Staff wages")),
+		"they're paid with the bill at midnight (%d of %d)" % [before - Shed.garage_money, total])
+	var w := Staff.worker(_staff_role("mechanic"))
+	check(Staff.wage_for("mechanic", 5) > Staff.wage_for("mechanic", 1), "a better hand costs more")
+	Staff.gain(w, Staff.xp_for(Staff.level(w) + 1))
+	Staff.process(Staff.TICK)
+	check(int(w["wage"]) == Staff.wage_for("mechanic", Staff.level(w)), "and a wage goes up with skill (%d at level %d)" % [int(w["wage"]), Staff.level(w)])
+	Shed.stop()
+
+
+## Skill: XP from work done raises a worker's level (said out loud); each level makes them
+## quicker, slip up less, paint better and sell better.
+func _test_staff_skills() -> void:
+	Shed.start_new("Tester", 303)
+	Staff.hire_one_of_each()
+	check(Staff.level_of(0) == 1 and Staff.level_of(Staff.xp_for(4)) == 4 and Staff.level_of(Staff.xp_for(4) - 1) == 3
+		and Staff.level_of(999999) == Staff.MAX_LEVEL, "levels go by XP, up to %d" % Staff.MAX_LEVEL)
+	var w := Staff.worker(_staff_role("paint"))
+	w["xp"] = 0
+	var slow := Staff.speed(w)
+	var slips := Staff.slip_chance(w)
+	var finish := Staff.finish(w)
+	Staff.gain(w, Staff.xp_for(2))
+	check(Staff.level(w) == 2 and Staff.saying(w).contains("level 2"), "going up a level they say so (%s)" % Staff.saying(w))
+	w["xp"] = Staff.xp_for(Staff.MAX_LEVEL)
+	check(Staff.speed(w) > slow * 1.5 and Staff.slip_chance(w) < slips * 0.3 and Staff.finish(w) > finish,
+		"a top hand works quicker (%.2f vs %.2f), slips less (%.2f vs %.2f) and finishes better (%.2f vs %.2f)" % [Staff.speed(w), slow,
+			Staff.slip_chance(w), slips, Staff.finish(w), finish])
+	check(Staff.level_frac(w) >= 0.0 and Staff.level_frac(w) <= 1.0, "progress to the next level reads 0..1")
+	# Work done through the shed earns them XP, not the crew.
+	var mech := Staff.worker(_staff_role("mechanic"))
+	var xp := int(mech["xp"])
+	var crew_xp := int(Progress.profile.get("xp", 0))
+	Shed._xp(Staff.peer_of(int(mech["id"])), "fit")
+	check(int(mech["xp"]) > xp and int(Progress.profile.get("xp", 0)) == crew_xp, "the shed's XP for their work goes to their own skill")
+	Shed.stop()
+
+
+## Sickies: now and then someone phones in sick (the crew is told); they're not in that day and
+## their job waits; the next day they're back and carry on.
+func _test_staff_sickies() -> void:
+	Shed.start_new("Tester", 5)
+	Staff.hire_one_of_each()
+	var id := _staff_role("mechanic")
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "service", "bike": ranger}})
+	_staff_run(60)
+	var w := Staff.worker(id)
+	var done := int(w["job"]["done"])
+	var told := []
+	var hear := func(text: String, _ok: bool): told.append(text)
+	Shed.feedback.connect(hear)
+	Staff.test_roll = 0.0
+	Shed.bank["day"] = 10
+	Shed.money_new_day()
+	check(Staff.workers().values().all(func(x): return x["sick"]) and told.any(func(t): return str(t).contains("phoned in sick")),
+		"a sick day: they phone in, and the crew hears (%s)" % str(told).left(160))
+	check(Staff.status_text(w) == "Off sick today" and Shed.check(Shed.me(), {"a": "staff_assign", "worker": id, "job": {"kind": "tea"}}).contains("off sick"),
+		"they're off today and can't be given a job")
+	_staff_run(200)
+	check(int(w["job"]["done"]) == done and not (w["job"] as Dictionary).is_empty(), "the job waits for them")
+	Staff.test_roll = 0.0
+	Shed.money_new_day()
+	check(Staff.workers().values().all(func(x): return not x["sick"]), "the next day they're back, and nobody's sick two days running")
+	_staff_run(200)
+	check(int(w["job"].get("done", 99)) > done or (w["job"] as Dictionary).is_empty(), "and get on with the job")
+	Staff.test_roll = 0.99
+	Shed.request({"a": "staff_debug_sick", "sick": true})
+	check(Staff.workers().values().all(func(x): return x["sick"]), "the Debug tab can make everyone sick")
+	Shed.request({"a": "staff_debug_sick", "sick": false})
+	check(Staff.workers().values().all(func(x): return not x["sick"]), "and well again")
+	Staff.test_roll = -1.0
+	Shed.feedback.disconnect(hear)
+	Shed.stop()
+
+
+## Assign and leave: a mechanic given a service does it for real through the shed: the chain
+## set and lubed, worn pads, plugs and filters renewed (ordered from the parts computer, old
+## ones binned), the oil drained and filled; then reports back and goes idle.
+func _test_staff_service_job() -> void:
+	Shed.start_new("T", 5)
+	Staff.hire_one_of_each()
+	var id := _staff_role("mechanic")
+	var ranger := _bike_named("Rusty Ranger")
+	check(Contracts._eval_task(ranger, "oil")["done"] == false and Contracts._eval_task(ranger, "chain")["done"] == false,
+		"the Rusty Ranger needs a service")
+	check(Shed.check(Shed.me(), {"a": "staff_assign", "worker": _staff_role("sales"), "job": {"kind": "service", "bike": ranger}}).contains("mechanic"),
+		"a salesman won't service bikes")
+	var money := Shed.garage_money
+	var xp := int(Staff.worker(id)["xp"])
+	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "service", "bike": ranger}})
+	var w := Staff.worker(id)
+	check(str(w["job"].get("kind", "")) == "service" and Staff.saying(w).contains("servicing the Rusty Ranger"), "they take it on (%s)" % Staff.saying(w))
+	var other := Shed.check(Shed.me(), {"a": "staff_assign", "worker": _staff_role("expert"), "job": {"kind": "service", "bike": ranger}})
+	check(other.contains("already working on it"), "nobody else can be put on the same bike (%s)" % other)
+	_staff_run(9000, id, true)
+	var said := Staff.saying(w)
+	check((w["job"] as Dictionary).is_empty() and said.contains("serviced"), "it gets done and they say so (%s)" % said)
+	check(Contracts._eval_task(ranger, "oil")["done"] and Contracts._eval_task(ranger, "pads")["done"] and Contracts._eval_task(ranger, "chain")["done"],
+		"fresh oil, good pads and the chain set (%s %s %s)" % [Contracts._eval_task(ranger, "oil"), Contracts._eval_task(ranger, "pads"), Contracts._eval_task(ranger, "chain")])
+	for slot in ["air_filter", "oil_filter", "spark_plugs"]:
+		var on := Shed.item_on(ranger, slot)
+		check(on != 0 and float(Shed.items[on]["wear"]) < 0.05 and Shed.is_bolted(ranger, slot), "a new %s on it, bolted up" % slot)
+	check(Shed.garage_money < money and int(w["xp"]) > xp and int(w["jobs"]) == 1, "the parts came out of the business, and they learnt something")
+	check(Shed.held_by(Staff.peer_of(id)) == 0 and Staff.status_text(w) == "Waiting for a job", "nothing left in their hands, waiting for the next job")
+	# Something they can't get done, they say why.
+	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "fit", "bike": ranger, "slot": "front_tyre", "part": "knobbly_mx_90"}})
+	check((Staff.worker(id)["job"] as Dictionary).is_empty(), "a tyre isn't a job for a plain mechanic")
+	Shed.stop()
+
+
+## A tea run: over to the cafe, a round on a tray (paid for by the business), back to the shed and
+## down on the workbench; everyone cheers up. With the cafe shut, they say so.
+func _test_staff_tea_run() -> void:
+	Shed.start_new("Tester", 304)
+	Staff.hire_one_of_each()
+	var id := _staff_role("reception")
+	CoffeeShop.advance(0.0, 11.0)
+	var moods := Staff.workers().values().map(func(x): return float(x["mood"]))
+	var money := Shed.garage_money
+	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "tea"}})
+	var w := Staff.worker(id)
+	var at_cafe := false
+	var carried := false
+	for i in 2000:
+		Staff.process(Staff.TICK)
+		var p := Staff.pos_at(w, Staff.clock())
+		at_cafe = at_cafe or p.distance_to(Vector3(CoffeeShop.ORDER_SPOT.x, 0.0, CoffeeShop.ORDER_SPOT.z)) < 2.5
+		carried = carried or not CoffeeShop.tray_of(Staff.peer_of(id)).is_empty()
+		if (w["job"] as Dictionary).is_empty() and i > 4:
+			break
+	check(at_cafe and carried, "they walk to the cafe counter and carry a tray back")
+	var tray := {}
+	for t in CoffeeShop.trays().values():
+		if int(t["holder"]) == 0 and (t["xf"] as Transform3D).origin.distance_to(StaffNav.tea_xf().origin) < 0.3:
+			tray = t
+	check(not tray.is_empty() and (tray["items"] as Array).size() >= 2 and Staff.saying(w).contains("Tea's up"),
+		"a round of teas down on the workbench (%s)" % str(tray.get("items", [])))
+	check(Shed.garage_money < money, "paid for by the business (%d)" % (money - Shed.garage_money))
+	var now := Staff.workers().values().map(func(x): return float(x["mood"]))
+	var happier := true
+	for i in now.size():
+		happier = happier and (float(now[i]) >= float(moods[i]) or float(now[i]) >= 0.99)
+	check(happier, "everyone cheers up")
+	CoffeeShop.advance(0.0, 19.0)
+	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "tea"}})
+	_staff_run(1500, id, true)
+	check(Staff.saying(w).contains("shut"), "with the cafe shut they say so (%s)" % Staff.saying(w))
+	Shed.stop()
+
+
+## The Staff TV channel: each worker's name, role, job with how far through, skill level, mood or
+## sick, and wage; it draws.
+func _test_staff_tv() -> void:
+	Shed.start_new("Tester", 305)
+	check(TvChannels.CHANNELS.has("staff") and TvChannels.channel_name("f1", "staff") == "Staff", "the TVs have a Staff channel")
+	var empty := TvChannels.page_data("staff")
+	check((empty["rows"] as Array).is_empty(), "nobody on it to start with")
+	Staff.hire_one_of_each()
+	var ranger := _bike_named("Rusty Ranger")
+	var mech := _staff_role("mechanic")
+	Shed.request({"a": "staff_assign", "worker": mech, "job": {"kind": "service", "bike": ranger}})
+	_staff_run(120)
+	Staff.go_sick(Staff.worker(_staff_role("sales")), 1)
+	var data := TvChannels.page_data("staff")
+	var rows: Array = data["rows"]
+	var m: Dictionary = rows.filter(func(r): return r["role"] == "Mechanic")[0]
+	var s: Dictionary = rows.filter(func(r): return r["role"] == "Salesman")[0]
+	check(rows.size() == 6 and int(data["wages"]) == Staff.wage_bill(), "a row for each worker, and the wage bill")
+	check(str(m["doing"]).begins_with("Servicing the Rusty Ranger") and m["busy"] and float(m["progress"]) > 0.0 and float(m["progress"]) < 1.0
+		and int(m["level"]) >= 1 and int(m["wage"]) > 0 and str(m["mood_word"]) != "", "the mechanic's job with its progress, level, mood and wage (%s)" % str(m["doing"]))
+	check(s["sick"] and str(s["doing"]) == "Off sick today", "the salesman off sick")
+	var dash := Dashboard.new("crew", 2.0)
+	add_child(dash)
+	var drawn := [0]
+	dash._page.draw.connect(func(): drawn[0] += 1)
+	dash._viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	dash.show_page(TvChannels.page_kind("staff"), data)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check(drawn[0] > 0, "the page draws")
+	dash.queue_free()
+	Shed.stop()
+
+
+## Saved and loaded: the staff, their skill and a job part done (picked up again); a shed saved
+## before staff loads with nobody; odd values put right.
+func _test_staff_save() -> void:
+	Shed.start_new("T", 5)
+	Staff.hire_one_of_each()
+	var ranger := _bike_named("Rusty Ranger")
+	var mech := _staff_role("mechanic")
+	Shed.request({"a": "staff_assign", "worker": mech, "job": {"kind": "service", "bike": ranger}})
+	_staff_run(150)
+	var w := Staff.worker(mech)
+	w["xp"] = 77
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.start_new("Someone", 9)
+	Shed.load_state(copy, "Tester")
+	var back := Staff.worker(mech)
+	check(Staff.workers().size() == 6 and str(back["name"]) == str(w["name"]) and int(back["xp"]) == 77 and back["look"]["top"] == w["look"]["top"],
+		"the staff come back from the save, skill and all (%d, %s, %d, %s)" % [Staff.workers().size(), str(back.get("name")), int(back.get("xp", 0)), str(back.get("look", {})) + " vs " + str(w["look"])])
+	check(str(back["job"].get("kind", "")) == "service", "their job comes back with them")
+	_staff_run(9000, mech, true)
+	check((back["job"] as Dictionary).is_empty() and Contracts._eval_task(ranger, "oil")["done"], "and they finish it after loading (%s)" % Staff.saying(back))
+	var old: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	old.erase("staff")
+	Shed.load_state(old, "Tester")
+	check(Staff.workers().is_empty() and Staff.wage_bill() == 0, "a shed saved before staff loads with nobody on the payroll")
+	check(Staff.sanitize("junk") == Staff.empty() and Staff.sanitize({"workers": "x"})["workers"] == {}
+		and Staff.sanitize({"workers": {3: {"role": "nope"}}})["workers"].is_empty(), "odd values are put right")
+	Shed.stop()
+
+
+## In the world: the staff drawn walking about, the look panel saying who they are, F to talk
+## and give them a job (it goes off to the host and they do it), the Staff tab with the board,
+## the Debug tab's buttons; off sick, they're not there.
+func _test_staff_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main.menu.new_shed = true
+	main._start_session()
+	await get_tree().physics_frame
+	main.menu.debug.press("Hire one of each")
+	await get_tree().process_frame
+	var view: StaffView = main.staff_view
+	check(Staff.workers().size() == 6 and view.figures.size() == 6, "the Debug tab hires one of each, and they're drawn (%d)" % view.figures.size())
+	var tab: StaffTab = main.menu.staff
+	tab.refresh()
+	check(tab.text().contains("6 of 6") and tab.text().contains("Hiring board"), "the Staff tab lists them and the board")
+	# Stand in front of the detailer once they're at their spot.
+	var id := _staff_role("detailer")
+	_staff_run(200)
+	await get_tree().process_frame
+	var f: StaffFigure = view.figures[id]
+	var at: Vector3 = f.global_position
+	var w: Walker = main.walker
+	w.set_tool("hands")
+	w.place(Transform3D(Basis(), at + Vector3(0.0, 0.0, 1.6)))
+	w.rotation.y = 0.0
+	w._look(0.0, -0.15)
+	for i in 6:
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	check(view.looked() == id and w.look_info.contains(str(Staff.worker(id)["name"])) and w.look_prompt.contains("talk to"),
+		"looking at one: who they are in the look panel (%s / %s)" % [w.look_info.replace("\n", " / "), w.look_prompt])
+	_press("interact")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var panel: StaffPanel = main.staff_panel
+	check(panel.visible and panel.worker_id == id and not w.controls_enabled and panel.buttons().has("Chat"), "F: talking to them")
+	var first := panel.text()
+	panel.press("Chat")
+	check(panel.text() != first, "chatting gets another line")
+	var barn := _bike_named("Barn Find")
+	panel.set_choice("kind", "detail")
+	panel.set_choice("bike", barn)
+	panel.press("Get on with it")
+	await get_tree().process_frame
+	check(str(Staff.worker(id)["job"].get("kind", "")) == "detail" and int(Staff.worker(id)["job"]["bike"]) == barn, "and give them a job")
+	panel.close_dialog()
+	Shed.request({"a": "staff_debug_sick", "sick": true})
+	await get_tree().process_frame
+	check(not f.visible and f.body.collision_layer == 0, "off sick, they're not here")
+	Shed.request({"a": "staff_debug_sick", "sick": false})
+	await get_tree().process_frame
+	check(f.visible, "and back when they're well")
+	main.queue_free()
+	await get_tree().process_frame
 	Shed.stop()

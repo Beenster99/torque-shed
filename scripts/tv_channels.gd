@@ -13,10 +13,10 @@ extends RefCounted
 ## wiring it up later only touches that function.
 
 ## The channels every screen has, in order. A screen's own home channel goes first.
-const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts"]
+const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts", "staff"]
 const NAMES := {"bay": "Bay", "live": "Live riding", "crew": "Crew board", "xp": "XP goals", "howto": "How to play",
 	"money_me": "My money", "money_garage": "Garage money", "afford": "What you can afford", "contracts": "Contracts",
-	"sales": "Sales"}
+	"sales": "Sales", "staff": "Staff"}
 const BUILT_IN: Array[String] = ["crew", "bay0", "bay1", "bay2", "bay3"]
 ## The how-to-play pages turn over on their own, this many seconds each.
 const HOWTO_PAGE_TIME := 9.0
@@ -259,6 +259,8 @@ static func page_data(ch: String) -> Dictionary:
 			return contracts_data()
 		"sales":
 			return Sales.tv_data()
+		"staff":
+			return Staff.tv_data()
 		"live":
 			return nobody_data()
 	return {}
@@ -416,6 +418,8 @@ static func draw_page(c: Control, font: Font, kind: String, data: Dictionary) ->
 			_draw_contracts(c, font, data)
 		"sales":
 			Sales.draw_tv(c, font, data)
+		"staff":
+			_draw_staff(c, font, data)
 		_:
 			_title(c, font, "NO SIGNAL")
 
@@ -599,3 +603,39 @@ static func _draw_contracts(c: Control, font: Font, data: Dictionary) -> void:
 				break
 	if data.get("placeholder", false):
 		_later(c, font, "Customers bring jobs to the shed in a later update.")
+
+
+## The staff board: each worker's name and role, what they're doing (with how far through),
+## their skill level, how they are (or that they're off sick) and their day's wage; the latest
+## of what they've said under it.
+static func _draw_staff(c: Control, font: Font, data: Dictionary) -> void:
+	var rows: Array = data.get("rows", [])
+	_title(c, font, "STAFF", "%d of %d  ·  wages %s a day" % [rows.size(), int(data.get("max", 6)), money_text(int(data.get("wages", 0)))])
+	if rows.is_empty():
+		_text(c, font, Vector2(24, 150), "Nobody on the payroll yet.", 30, Dashboard.DIM)
+		_text(c, font, Vector2(24, 196), "Hire staff on the Staff tab of the menu ({menu}).", 22, Dashboard.DIM)
+		return
+	var y := 84.0
+	for r in rows:
+		var sick := bool(r.get("sick", false))
+		c.draw_rect(Rect2(24, y, Dashboard.PX.x - 48, 60), PANEL)
+		c.draw_rect(Rect2(24, y, 6, 60), r.get("top", Color.GRAY) if r.get("top") is Color else Color.GRAY)
+		_text(c, font, Vector2(42, y + 26), str(r.get("name", "")).left(18), 22, Dashboard.DIM if sick else Color.WHITE)
+		_text(c, font, Vector2(42, y + 50), str(r.get("role", "")), 16, ORANGE)
+		_text(c, font, Vector2(270, y + 26), str(r.get("doing", "")).left(48), 18, Dashboard.BAD if sick else Color.WHITE)
+		if r.get("busy", false):
+			_bar(c, Rect2(270, y + 38, 400, 10), float(r.get("progress", 0.0)), Dashboard.GOOD)
+		_text(c, font, Vector2(700, y + 26), "Lv %d" % int(r.get("level", 1)), 20, AMBER)
+		_bar(c, Rect2(700, y + 38, 90, 8), float(r.get("level_frac", 0.0)), AMBER)
+		var mood := "OFF SICK" if sick else str(r.get("mood_word", ""))
+		var mc := Dashboard.BAD if sick or float(r.get("mood", 0.7)) < 0.4 else (Dashboard.GOOD if float(r.get("mood", 0.7)) >= 0.8 else Dashboard.DIM)
+		_text(c, font, Vector2(806, y + 26), mood, 16, mc)
+		_text(c, font, Vector2(806, y + 50), "%s/day" % money_text(int(r.get("wage", 0))), 16, Dashboard.DIM)
+		y += 66.0
+	var news: Array = data.get("news", [])
+	var ny := y + 24.0
+	for i in range(news.size() - 1, -1, -1):
+		if ny > Dashboard.PX.y - 10:
+			break
+		_text(c, font, Vector2(24, ny), str(news[i]).left(90), 16, Dashboard.DIM)
+		ny += 22.0

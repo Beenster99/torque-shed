@@ -68,6 +68,7 @@ var _weather: OptionButton
 var _weather_now: Label
 var debug: DebugTab
 var money: MoneyTab
+var staff: StaffTab
 var shop: ShopTab
 ## Set when the player chose New game: the next solo or hosted start begins a fresh shed (and
 ## character), saved as `new_name`.
@@ -257,6 +258,9 @@ func _ready() -> void:
 	# Your cash, the business's account, sending money, loans and the ledger (see Money).
 	money = MoneyTab.new()
 	_tabs.add_child(money)
+	# The garage's staff and the hiring board (see Staff).
+	staff = StaffTab.new()
+	_tabs.add_child(staff)
 	# Rider gear and shed trinkets bought with your own money (see ShopTab).
 	shop = ShopTab.new()
 	_tabs.add_child(shop)

@@ -24,6 +24,8 @@ var sales_pc: SalesComputer     # the Sales page on the sales office's PC
 var sales_view: SalesView       # part-exchange buyers, buyers collecting, the till, the stands' prices
 var coffee_panel: CoffeePanel   # the cafe counter's menu, and talking to a biker about their bike
 var coffee_view: CoffeeView     # the bikers at the cafe, its barista and the trays put down
+var staff_panel: StaffPanel     # talking to one of the staff and giving them a job
+var staff_view: StaffView       # the garage's staff at work
 var paint_bench: PaintBench     # the paint mixing bay's bench, stepped up to (see PaintBay)
 var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
 var emote_bar: EmoteBar         # the emotes and their keys, while the bar is open (B)
@@ -147,6 +149,17 @@ func _ready() -> void:
 	coffee_view.order_requested.connect(func():
 		coffee_panel.open_menu()
 		_capture_mouse(false))
+	staff_panel = StaffPanel.new()
+	staff_panel.visible = false
+	ui.add_child(staff_panel)
+	staff_panel.closed.connect(func(): _capture_mouse(true))
+	staff_view = StaffView.new()
+	staff_view.name = "Staff"
+	staff_view.main = self
+	world.add_child(staff_view)
+	staff_view.talk_requested.connect(func(id):
+		staff_panel.open_worker(id)
+		_capture_mouse(false))
 	recovery = RecoveryView.new()
 	recovery.main = self
 	world.add_child(recovery)
@@ -163,6 +176,10 @@ func _ready() -> void:
 	menu.host_game.connect(_host)
 	menu.join_game.connect(_join)
 	menu.resume.connect(_close_menu)
+	menu.staff.talk_requested.connect(func(id):
+		menu.hide()
+		staff_panel.open_worker(id)
+		_capture_mouse(false))
 	menu.home_check = home_reason
 	menu.go_home.connect(func():
 		_close_menu()
@@ -332,6 +349,7 @@ func _end_session() -> void:
 	contract_panel.visible = false
 	recovery_panel.visible = false
 	coffee_panel.visible = false
+	staff_panel.visible = false
 	paint_bench.visible = false
 	PaintBayRoom.live = {}
 	recovery.stop_driving(false)
@@ -684,7 +702,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not in_session or geometry.active:
 		return   # geometry mode takes its own keys, Esc and F2 included
 	if event.is_action_pressed("geometry_mode") and bike == null and walker and not menu.visible and not computer.visible \
-			and not tuning.visible and not sales_pc.visible and not label_dialog.visible and not contract_panel.visible and not coffee_panel.visible \
+			and not tuning.visible and not sales_pc.visible and not label_dialog.visible and not contract_panel.visible and not coffee_panel.visible and not staff_panel.visible \
 			and not paint_bench.visible:
 		get_viewport().set_input_as_handled()
 		open_geometry()
@@ -698,6 +716,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			recovery_panel.close_dialog()
 		elif coffee_panel.visible:
 			coffee_panel.close_dialog()
+		elif staff_panel.visible:
+			staff_panel.close_dialog()
 		elif paint_bench.visible:
 			paint_bench.close_dialog()
 		elif computer.visible:
@@ -714,7 +734,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_capture_mouse(false)
 		get_viewport().set_input_as_handled()
 		return
-	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or coffee_panel.visible \
+	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or coffee_panel.visible or staff_panel.visible \
 			or paint_bench.visible or recovery_panel.visible or (bike == null and not recovery.driving):
 		return
 	if recovery.driving:
@@ -764,7 +784,7 @@ func _physics_process(delta: float) -> void:
 	if not in_session:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
-		and not contract_panel.visible and not coffee_panel.visible and not paint_bench.visible and not geometry.active \
+		and not contract_panel.visible and not coffee_panel.visible and not staff_panel.visible and not paint_bench.visible and not geometry.active \
 		and not recovery_panel.visible
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
