@@ -46,6 +46,7 @@ var _screech: AudioStreamPlayer3D
 var _probe_timer := 0.0
 var _wind_time := randf() * 100.0
 var _tyre_level := 0.0
+var _mark_keys: Array = []    # the skid marks' names for this bike's two tyres (made once)
 
 
 ## `exhaust` is the tailpipe tip and `rear_contact` where the back tyre meets the ground, both
@@ -561,18 +562,26 @@ func _probe_surface() -> String:
 	return "grass" if hit else "tarmac"
 
 
-## Tyre screech and rubber on the road while the ridden bike's tyres skid.
+## Tyre screech and rubber on the road while the ridden bike's tyres skid, and a dark patch
+## smeared where the back tyre spins on the spot in a burnout.
 func update_skids(bike: Bike) -> void:
 	var marks := SkidMarks.shared(get_tree())
 	var loudest := 0.0
+	if _mark_keys.is_empty():
+		_mark_keys = ["%d_0" % bike.get_instance_id(), "%d_1" % bike.get_instance_id()]
 	for i in bike.wheels.size():
 		var w: Dictionary = bike.wheels[i]
 		var hard := 0.0
-		if w["contact"] and absf(bike.speed) > 2.0 and w["surface"] in ["tarmac", "dirt"]:
+		if w["contact"] and absf(bike.speed) > 2.0 and SkidMarks.RUBBER.has(w["surface"]):
 			hard = clampf((float(w["slip"]) - Bike.SKID_SLIP) / 0.5, 0.0, 1.0)
 		var width: float = bike.build.front_tyre_width if w["is_front"] else bike.build.rear_tyre_width
-		marks.mark("%d_%d" % [bike.get_instance_id(), i], w.get("contact_pos", Vector3.ZERO), w.get("normal", Vector3.UP),
-			width, hard, str(w["surface"]))
+		var key: String = _mark_keys[mini(i, 1)]
+		if not w["is_front"] and bike.burnout > 0.05 and w["contact"]:
+			# Lit up: the spinning tyre smears rubber where it sits.
+			marks.scrub(key, w.get("contact_pos", Vector3.ZERO), w.get("normal", Vector3.UP), -bike.global_basis.z,
+				width, maxf(bike.burnout, hard), str(w["surface"]), bike.get_physics_process_delta_time())
+		else:
+			marks.mark(key, w.get("contact_pos", Vector3.ZERO), w.get("normal", Vector3.UP), width, hard, str(w["surface"]))
 		if w["surface"] == "tarmac":
 			loudest = maxf(loudest, hard)
 			# Lighting the back tyre up on the spot squeals too.

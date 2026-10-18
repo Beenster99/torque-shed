@@ -15,6 +15,8 @@ var _last := PackedFloat32Array()
 var _effects: BikeEffects
 var _horn: HornAudio
 var _fog: Array = []
+var _mark_key := ""         # its tyre's name in the shared skid marks
+var _marking := false        # its back tyre was laying rubber last frame
 ## The rider's gear (slot -> RiderGear item id); set before setup. Empty dresses them as before.
 var rider_gear := {}
 
@@ -111,10 +113,37 @@ func _physics_process(delta: float) -> void:
 		audio.gear = int(sb[22])
 	if sb.size() > 23 and _effects.has_method("set_tyre_smoke"):
 		_effects.call("set_tyre_smoke", sb[23], Vector3(0.0, -_build.rear_radius, _build.wheelbase * 0.5))
+	_rubber(sb[23] if sb.size() > 23 else 0.0, sb[20] if sb.size() > 20 else 0.0, delta)
 	var fog := running and _effects.beam_mode >= Bike.BEAM_FOG
 	for l in _fog:
 		l.visible = fog
 	model.set_lights(running, _effects.beam_mode > 0, fog)
+
+
+## Their back tyre's rubber on the road: a burnout's patch or a skid's line, laid from the
+## snapshots (the ground under it is only looked up while it's marking).
+func _rubber(burnout: float, skid: float, delta: float) -> void:
+	if _mark_key == "":
+		_mark_key = "remote_%d" % get_instance_id()
+	var marks := SkidMarks.shared(get_tree())
+	if burnout <= 0.05 and skid <= 0.05:
+		if _marking:
+			marks.mark(_mark_key, Vector3.ZERO, Vector3.UP, 0.0, 0.0, "")
+			_marking = false
+		return
+	var at := global_transform * Vector3(0.0, 0.0, _build.wheelbase * 0.5)
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.2, at + Vector3.DOWN * (_build.rear_radius + 0.6), 1)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return
+	var surf := "tarmac"
+	if hit["collider"] and (hit["collider"] as Object).has_meta("surface"):
+		surf = str((hit["collider"] as Object).get_meta("surface"))
+	_marking = true
+	if burnout > 0.05:
+		marks.scrub(_mark_key, hit["position"], hit["normal"], -global_basis.z, _build.rear_tyre_width, burnout, surf, delta)
+	else:
+		marks.mark(_mark_key, hit["position"], hit["normal"], _build.rear_tyre_width, skid, surf)
 
 
 func current_speed() -> float:

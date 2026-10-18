@@ -393,7 +393,7 @@ func _draw_speedo() -> void:
 	draw_string(font, r.position + Vector2(12, 58), "%d" % Units.speed_value(bike.speed), HORIZONTAL_ALIGNMENT_LEFT, -1, 50, Color.WHITE)
 	draw_string(font, r.position + Vector2(120, 34), Units.speed_unit(), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.6))
 	if features.has("gear"):
-		draw_string(font, r.position + Vector2(120, 60), "GEAR %d" % bike.gear, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UITheme.ACCENT)
+		draw_string(font, r.position + Vector2(120, 60), "GEAR %s" % Bike.gear_name(bike.gear), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UITheme.ACCENT)
 	if features.has("top_speed"):
 		draw_string(font, r.position + Vector2(170, 34), "TOP %d" % Units.speed_value(_top_kmh / 3.6), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
 	var frac := clampf(bike.rpm / bike.build.redline, 0.0, 1.0)

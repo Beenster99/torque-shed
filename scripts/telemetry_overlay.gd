@@ -44,7 +44,7 @@ func _draw() -> void:
 	var dim := TelemetryGraph.INK_DIM
 	var y := 22.0
 	draw_string(font, Vector2(10, y), "TELEMETRY", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UITheme.ACCENT)
-	draw_string(font, Vector2(110, y), "%s  ·  gear %d  ·  %d rpm" % ["%d %s" % [Units.speed_value(absf(bike.speed)), Units.speed_unit()], bike.gear,
+	draw_string(font, Vector2(110, y), "%s  ·  gear %s  ·  %d rpm" % ["%d %s" % [Units.speed_value(absf(bike.speed)), Units.speed_unit()], Bike.gear_name(bike.gear),
 		roundi(bike.rpm / 50.0) * 50], HORIZONTAL_ALIGNMENT_LEFT, size.x - 120.0, 14, ink)
 	y += 10.0
 	# The two friction circles, front and rear.
