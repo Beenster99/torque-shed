@@ -2393,6 +2393,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return contract_why
 	if a.begins_with("recovery_"):
 		return Recovery.check(peer, action)
+	if a.begins_with("card_"):
+		return Workflow.check(peer, action)
 	if a.begins_with("staff_"):
 		return Staff.check(peer, action)
 	var recovering := Recovery.block(peer, action)
@@ -3172,6 +3174,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	var a := str(action["a"])
 	Contracts.note_action(peer, action)
+	Workflow.note_action(peer, action)
 	Sales.note_action(action)
 	Money.note_use(action)
 	if a.begins_with("sale_"):
@@ -3185,6 +3188,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		var said_c := Contracts.apply(peer, action)
 		if said_c != "":
 			_tell(peer, said_c, true)
+		_mark_dirty()
+		changed.emit()
+		return
+	if a.begins_with("card_"):
+		var said_w := Workflow.apply(peer, action)
+		if said_w != "":
+			_tell(peer, said_w, true)
 		_mark_dirty()
 		changed.emit()
 		return

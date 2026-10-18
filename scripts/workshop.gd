@@ -501,6 +501,8 @@ func screens() -> Dictionary:
 	for id in furniture_nodes:
 		if furniture_nodes[id].tv:
 			out["f%d" % id] = furniture_nodes[id].tv.board
+	for key in out:
+		(out[key] as Dashboard).key = key   # for its touch channel buttons (see ScreenTouch)
 	return out
 
 
@@ -1168,6 +1170,11 @@ func _refresh_dashboards() -> void:
 					dash.show_page("bike", _bay_data(int(key.trim_prefix("bay"))))
 			"crew":
 				dash.show_page("crew", {"players": _crew_rows()})
+			"workflow":
+				# A bike's job card (see WorkflowTv): redrawn only when something on it changes.
+				var card := WorkflowTv.data(key)
+				if changed or dash.kind != "workflow" or card != dash.data:
+					dash.show_page("workflow", card)
 			_:
 				if ch == "live" and dash.is_live():
 					continue

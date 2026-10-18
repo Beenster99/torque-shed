@@ -346,6 +346,10 @@ func _run_all() -> void:
 	await _test_recovery_dolly()
 	await _test_recovery_straps()
 	await _test_recovery_assess()
+	await _test_workflow_assess()
+	await _test_workflow_channel()
+	await _test_workflow_touch()
+	await _test_workflow_session()
 	await _test_recovery_save()
 	await _test_recovery_walk_on()
 	await _test_walker_jump()
@@ -4024,7 +4028,9 @@ func _test_tv_channels() -> void:
 	check(Shed.check(me, {"a": "tv_channel", "screen": "f99999", "step": 1}) != "" and Shed.check(me, {"a": "tv_channel", "screen": key, "step": 3}) != "",
 		"the host refuses a screen that isn't there or a jump of several channels")
 	Shed.request({"a": "tv_channel", "screen": "bay2", "step": 1})
-	check(Shed.screen_channel("bay2")["ch"] == "live", "the bay screens change channel too")
+	check(Shed.screen_channel("bay2")["ch"] == "workflow", "the bay screens change channel too, to the bike's job card first")
+	Shed.request({"a": "tv_channel", "screen": "bay2", "step": 1})
+	check(Shed.screen_channel("bay2")["ch"] == "live", "then live riding")
 	# Two riders out: the live channel has a stop for each.
 	var a := _bike_named("Old Faithful")
 	var b := _bike_named("Rusty Ranger")
@@ -4111,9 +4117,9 @@ func _test_tv_and_bins_session() -> void:
 	check(w.info.contains("CH 1  BAY 1") and w.info.contains("next channel"), "the panel says what's on and how to change it")
 	_press("alt_act")
 	await get_tree().process_frame
-	check(Shed.screen_channel("bay0")["ch"] == "live", "R changes the bay screen's channel")
+	check(Shed.screen_channel("bay0")["ch"] == "workflow", "R changes the bay screen's channel (to its bike's job card)")
 	main.workshop._refresh_dashboards()
-	check(screen.osd_text() == "CH 2  LIVE: NOBODY RIDING", "the new channel's name shows on the screen (%s)" % screen.osd_text())
+	check(screen.osd_text() == "CH 2  WORKFLOW", "the new channel's name shows on the screen (%s)" % screen.osd_text())
 	_press("spray_finish")
 	await get_tree().process_frame
 	check(Shed.screen_channel("bay0")["ch"] == "bay", "T goes back a channel")
@@ -16623,6 +16629,28 @@ func _test_recovery_straps() -> void:
 
 func _test_recovery_assess() -> void:
 	await _recovery().test_assess()
+
+
+# ---------------------------------------------------------------------------- job cards and touch screens (tests/workflow_tests.gd)
+
+func _workflow() -> RefCounted:
+	return load("res://tests/workflow_tests.gd").new(self)
+
+
+func _test_workflow_assess() -> void:
+	await _workflow().test_assess()
+
+
+func _test_workflow_channel() -> void:
+	await _workflow().test_channel()
+
+
+func _test_workflow_touch() -> void:
+	await _workflow().test_touch()
+
+
+func _test_workflow_session() -> void:
+	await _workflow().test_session()
 
 
 func _test_recovery_save() -> void:

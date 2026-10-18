@@ -789,7 +789,8 @@ func _physics_process(delta: float) -> void:
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:
-		walker.controls_enabled = active
+		# Holding the cursor on a touch screen (see ScreenTouch) you stand still.
+		walker.controls_enabled = active and (walker.touch == null or walker.touch.focused == "")
 	if bike:
 		var stick := Controls.stick()
 		if active:
