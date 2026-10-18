@@ -125,6 +125,8 @@ var contracts := {}
 var sales := {}
 ## The coffee shop next door: its bikers and the trays out (see CoffeeShop).
 var coffee := {}
+## The garage's own staff, their jobs and the hiring board (see Staff).
+var staff := Staff.empty()
 ## The paint mixing bay off the paint shop: its stock, tins, recipes and bench (see PaintBay).
 var paint_bay := {}
 ## The recovery truck and trailer, what's on it, and the barn find and crash rescue jobs (see Recovery).
@@ -220,6 +222,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	paint_bay = PaintBay.empty()
 	recovery = Recovery.empty()
 	pool = PoolGame.empty()
+	staff = Staff.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -341,6 +344,8 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	PaintBay.after_load()
 	# Nor driving the recovery truck, or halfway up its ramp.
 	Recovery.after_load()
+	# The staff start the day at their own spots, any job in hand picked up again from there.
+	Staff.after_load()
 	# Nobody is holding the hose or wearing the ear defenders in a new session.
 	if dyno["hose"] == "held":
 		dyno["hose"] = "hook"
@@ -451,6 +456,7 @@ func join_remote() -> void:
 	paint_bay = PaintBay.empty()
 	recovery = Recovery.empty()
 	pool = PoolGame.empty()
+	staff = Staff.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -480,6 +486,7 @@ func stop() -> void:
 	paint_bay = PaintBay.empty()
 	recovery = Recovery.empty()
 	pool = PoolGame.empty()
+	staff = Staff.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -2378,6 +2385,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return contract_why
 	if a.begins_with("recovery_"):
 		return Recovery.check(peer, action)
+	if a.begins_with("staff_"):
+		return Staff.check(peer, action)
 	var recovering := Recovery.block(peer, action)
 	if recovering != "":
 		return recovering
@@ -3074,6 +3083,9 @@ func screen_channel(key: String) -> Dictionary:
 
 ## Gives `peer` XP for `key` through the Progress autoload, when it's there (host only).
 func _award(peer: int, key: String, mult := 1.0) -> void:
+	if Staff.is_staff_peer(peer):
+		Staff.add_xp(peer, key, mult)
+		return
 	var prog := get_node_or_null("/root/Progress")
 	if prog and prog.has_method("award"):
 		prog.award(peer, key, mult)
@@ -3140,6 +3152,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	if str(action.get("a", "")).begins_with("pool_"):
 		_pool_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("staff_"):
+		_staff_apply(peer, action)
 		return
 	var why := check(peer, action)
 	if why != "":
@@ -4285,6 +4300,9 @@ func poster_marks(design: int) -> Array:
 
 
 func _tell(peer: int, text: String, ok: bool) -> void:
+	if Staff.is_staff_peer(peer):
+		Staff.heard(peer, text, ok)   # one of the staff: they take note, nobody's told
+		return
 	if peer == me():
 		feedback.emit(text, ok)
 	elif Net.is_online():
@@ -4318,6 +4336,9 @@ func _prog() -> Node:
 
 ## Gives `peer` XP for a job. Guarded so the shed works without Progress.
 func _xp(peer: int, action: String, mult := 1.0, detail := "") -> void:
+	if Staff.is_staff_peer(peer):
+		Staff.add_xp(peer, action, mult)   # the staff's work goes to their own skill (and earns nobody a wage)
+		return
 	var prog := _prog()
 	if prog:
 		prog.award(peer, action, mult, detail)
@@ -5081,7 +5102,7 @@ func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
 		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
-		"lifts": lifts, "looks": looks, "pool": pool}
+		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff}
 	if with_board:
 		state["board"] = board
 	return state
@@ -5126,6 +5147,8 @@ func _sync(state: Dictionary) -> void:
 	recovery = Recovery.sanitize(state.get("recovery"))
 	# Sheds saved before the pool table was playable have no game on.
 	pool = PoolGame.sanitize(state.get("pool"))
+	# Sheds saved before the garage took on staff have nobody on the payroll.
+	staff = Staff.sanitize(state.get("staff"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.
@@ -5176,6 +5199,7 @@ func _process(delta: float) -> void:
 	PaintBay.process(delta)
 	Recovery.process(delta)
 	PoolGame.process(delta)
+	Staff.process(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":
@@ -5326,6 +5350,20 @@ func _paint_bay_apply(peer: int, action: Dictionary) -> void:
 	changed.emit()
 
 
+## A "staff_*" request: hiring, firing and giving the garage's staff jobs (see Staff.check and
+## Staff.apply).
+func _staff_apply(peer: int, action: Dictionary) -> void:
+	var why := Staff.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var text := Staff.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_mark_dirty()
+	changed.emit()
+
+
 ## A "pool_*" request for the lounge's pool table (see PoolGame.check and PoolGame.apply).
 func _pool_apply(peer: int, action: Dictionary) -> void:
 	var why := PoolGame.check(peer, action)
@@ -5359,6 +5397,8 @@ func money_new_day() -> void:
 	if not is_authority():
 		return
 	var said := Money.new_day()
+	# The staff's new day: who's in, who's phoned in sick, who's on the hiring board.
+	Staff.new_day()
 	if said != "":
 		var ok := not said.contains("MISSED") and not said.contains("OVERDRAWN")
 		for p in crew:
