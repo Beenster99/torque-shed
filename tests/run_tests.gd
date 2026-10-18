@@ -2907,7 +2907,12 @@ func _test_road_traffic() -> void:
 	tr._spawn_timer = 1000.0   # only the riders this test puts out
 	var near := []
 	for i in RoadTraffic.MAX_RIDERS:
-		near.append(tr.spawn_one())
+		var slot := -1
+		for tries in 20:   # each call tries a few random spots; the game just tries again later
+			slot = tr.spawn_one()
+			if slot >= 0:
+				break
+		near.append(slot)
 	var walker_at: Vector3 = main.walker.global_position
 	var first: Dictionary = tr.riders[0]
 	check(not near.has(-1) and tr.active_count() == RoadTraffic.MAX_RIDERS and tr.spawn_one() == -1,

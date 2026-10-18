@@ -576,8 +576,10 @@ func _check_far(delta: float) -> void:
 		return
 	_far = far
 	for r in _restore:
+		if not is_instance_valid(r[0]):   # a part model freed under us: check before the cast
+			continue
 		var g := r[0] as GeometryInstance3D
-		if is_instance_valid(g):
+		if g:
 			g.material_override = r[1] if _far else r[2]
 
 

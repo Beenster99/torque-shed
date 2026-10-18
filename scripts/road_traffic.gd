@@ -397,6 +397,11 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	# A kink it couldn't see coming (just round a junction onto a new road): scrub off what it
 	# must so it never corners harder than a rider would.
 	var k_now := absf(kk[i0])
+	var i1 := i0 + dir   # and the next sample, which this step may ride onto
+	if r["closed"]:
+		i1 = posmod(i1, n)
+	if i1 >= 0 and i1 < n:
+		k_now = maxf(k_now, absf(kk[i1]))
 	if v * v * k_now > GRIP * 1.5:
 		v = sqrt(GRIP * 1.5 / k_now)
 	d["v"] = v
