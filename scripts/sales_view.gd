@@ -24,6 +24,8 @@ const PC_POS := SalesOffice.CENTER + Vector3(-2.66, SalesOffice.MEZZ_Y + 1.2, 1.
 var main: Node                 # for the walker and whether a menu is open
 var views := {}                # part-exchange id -> CustomerView
 var collecting := {}           # collect entry id -> CustomerView (null once seen or skipped)
+var browsing := {}             # browser id -> StaffFigure, having a look round (SalesBrowse)
+var _clock := 0.0              # the sales clock the browsers are drawn by (see _browse_clock)
 ## Times the till has rung here (tests).
 var tills := 0
 var _alerts_seen := -1
@@ -44,11 +46,16 @@ func sync_state() -> void:
 				views[id].queue_free()
 		views.clear()
 		collecting.clear()
+		for id in browsing.keys():
+			if is_instance_valid(browsing[id]):
+				browsing[id].queue_free()
+		browsing.clear()
 		_alerts_seen = -1
 		return
 	_ring_till()
 	_sync_px()
 	_sync_collect()
+	_sync_browse()
 	update_signs()
 
 
@@ -218,6 +225,54 @@ func _start_collect(d: Dictionary, from := Vector3.INF) -> void:
 	collecting[id] = v
 
 
+## Buyers looking round the showroom (SalesBrowse): a figure for each, gone when they've gone.
+func _sync_browse() -> void:
+	var list := SalesBrowse.browsers()
+	for id in browsing.keys():
+		if not list.has(id):
+			if is_instance_valid(browsing[id]):
+				browsing[id].queue_free()
+			browsing.erase(id)
+	for id in list:
+		if browsing.has(id):
+			continue
+		var b: Dictionary = list[id]
+		var f := StaffFigure.new()
+		add_child(f)
+		f.build({"id": Sales.BUYER_ID_BASE + int(id), "name": b.get("name", "Buyer"), "role": "browser", "look": b.get("look", {})})
+		f.body.collision_layer = 0
+		f.add_to_group(SalesOffice.VISITOR_GROUP)
+		browsing[id] = f
+		_browse_clock(0.0)
+		_pose_browser(f, b, 0.0)
+
+
+## The sales clock as the browsers are drawn by: the host's own, a joiner's run on between
+## syncs (the clock only comes over now and then) and never put back.
+func _browse_clock(delta: float) -> float:
+	if Shed.is_authority() or _clock < Sales.clock():
+		_clock = Sales.clock()
+	else:
+		_clock += delta * Contracts.hours_rate()
+	return _clock
+
+
+## Puts browser `b`'s figure where they are now, doing what they're doing.
+func _pose_browser(f: StaffFigure, b: Dictionary, delta: float) -> void:
+	var p := SalesBrowse.pose(b, (_clock - float(b.get("at", 0.0))) / maxf(Contracts.hours_rate(), 0.000001))
+	f.visible = not p["gone"]
+	if p["gone"]:
+		return
+	var yaw := float(p["yaw"])
+	if f.position.distance_to(p["pos"]) > 1.5 or delta <= 0.0:
+		f.rotation.y = yaw
+	else:
+		f.rotation.y = lerp_angle(f.rotation.y, yaw, minf(1.0, delta * 8.0))
+	f.position = p["pos"]
+	var act := str(p["act"])
+	f.animate(maxf(delta, 0.0), bool(p["walking"]), false, false, act, act == "crouch")
+
+
 # ---------------------------------------------------------------------------- signs
 
 ## The stands' price cards and the office PC's screen.
@@ -295,6 +350,12 @@ func _process(delta: float) -> void:
 		if views.has(id):
 			(views[id] as CustomerView).set_hint(true)
 		_looked = id
+	if not browsing.is_empty():
+		_browse_clock(delta)
+		var list := SalesBrowse.browsers()
+		for bid in browsing:
+			if list.has(bid) and is_instance_valid(browsing[bid]):
+				_pose_browser(browsing[bid], list[bid], delta)
 	_screen_timer -= delta
 	if _screen_timer <= 0.0 and Shed.active:
 		_screen_timer = 1.0

@@ -258,6 +258,7 @@ func _run_all() -> void:
 	_test_sales_offers()
 	_test_sales_part_exchange()
 	_test_sales_save()
+	_test_sales_browse()
 	await _test_sales_session()
 	print("Playtest fixes: a blasted engine is new, grit stays in the cabinet, an empty new shed, varied contracts")
 	_test_blast_engine_like_new()
@@ -13036,6 +13037,80 @@ func _test_sales_save() -> void:
 	Shed.load_state(old, "Tester")
 	check(Sales.listings().is_empty() and Sales.offers().is_empty() and Sales.px().is_empty() and Sales.clock() == 0.0 and Shed.bikes.has(bike),
 		"a save from before selling from the showroom opens with nothing for sale")
+	Shed.stop()
+
+
+## Buyers look round the showroom before offering: between the bikes on show, looking one over,
+## down at an engine, sat on one, a word with the salesman, the price card on theirs; the offer
+## when they go. Worked out the same everywhere from the plan, saved with the sales, and drawn.
+func _test_sales_browse() -> void:
+	Shed.start_new("Tester", 67)
+	Staff.hire_one_of_each()
+	var faithful := _bike_named("Old Faithful")
+	var ranger := _bike_named("Rusty Ranger")
+	Shed.bikes[faithful]["xf"] = Workshop.SHOWROOM_SPOTS[0]
+	Shed.bikes[ranger]["xf"] = Workshop.SHOWROOM_SPOTS[3]
+	Shed.request({"a": "sale_list", "bike": faithful, "ask": 6000})
+	Shed.request({"a": "sale_list", "bike": ranger, "ask": 6000})
+	Sales._st()["next_px_at"] = 1.0e9
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var acts := {}
+	for i in 30:
+		for s in SalesBrowse.plan(faithful, rng):
+			acts[str(s["act"])] = int(acts.get(str(s["act"]), 0)) + 1
+	check(acts.has("look") and acts.has("crouch") and acts.has("sit") and acts.has("card") and acts.has("talk"),
+		"they look bikes over, crouch at the engine, sit on one, read the price card and talk to the salesman (%s)" % str(acts))
+	var id := SalesBrowse.spawn(faithful, {"name": "Pat Browser", "look": {}}, rng)
+	var b: Dictionary = SalesBrowse.browsers()[id]
+	var stops: Array = b["stops"]
+	var card := SalesBrowse.card_spot(0)
+	check(stops[0]["p"].distance_to(SalesView.door_in()) < 0.01 and stops[-3]["p"].distance_to(card.origin) < 0.01 and str(stops[-3]["act"]) == "card"
+		and stops.slice(1, -3).any(func(s): return str(s["act"]) == "look" and s["p"].distance_to(SalesView.viewing_xf(3).origin) < 0.01),
+		"in at the doors, round the other bike first, the price card on theirs last, and out")
+	# Where they are along it, the same on every game.
+	var t := 0.0
+	var seen := {}
+	var clear := true
+	var secs := SalesBrowse.duration(stops)
+	while t < secs:
+		var p := SalesBrowse.pose(b, t)
+		seen[str(p["act"])] = true
+		if p["walking"]:
+			for i in SalesOffice.SHOWROOM_SPOTS.size():
+				var c: Vector3 = SalesOffice.SHOWROOM_SPOTS[i].origin
+				var flat := Vector2(p["pos"].x - c.x, p["pos"].z - c.z).length()
+				var stepping := stops.any(func(s): return Vector2(s["p"].x - c.x, s["p"].z - c.z).length() < SalesOffice.PLINTH_RADIUS + SalesBrowse.PLINTH_CLEAR)
+				if flat < SalesOffice.PLINTH_RADIUS and not stepping:
+					clear = false
+		t += 0.25
+	check(seen.has("look") and seen.has("card") and seen.has("talk") and clear and SalesBrowse.pose(b, secs + 1.0)["gone"],
+		"walked through, they stop at each and keep off the plinths on the way (%s)" % str(seen.keys()))
+	check(absf(float(b["end"]) - float(b["at"]) - secs * Contracts.hours_rate()) < 0.0001 and SalesBrowse.doing(b, 0.0) != "", "and leave when they're done")
+	# The offer comes as they go.
+	var offers := Sales.offers().size()
+	Sales._st()["clock"] = float(b["end"]) + 0.001
+	Sales.advance(0.0)
+	check(not SalesBrowse.browsers().has(id) and Sales.offers().size() == offers + 1
+		and Sales.offers().values().any(func(o): return str(o["buyer"]) == "Pat Browser" and int(o["bike"]) == faithful), "their offer comes in as they leave")
+	# Over a long jump of the clock, buyers offer straight away.
+	SalesBrowse.browsers().clear()
+	for i in 6:
+		Sales.advance(2.0)
+	check(SalesBrowse.browsers().is_empty(), "a long jump of the clock sends nobody in to look round")
+	# Saved, and an old save gets none.
+	var id2 := SalesBrowse.spawn(ranger, {"name": "Sam", "look": {}}, rng)
+	var back := Sales.sanitize(str_to_var(var_to_str(Shed.sales)))
+	check((back["browse"] as Dictionary).has(id2) and (Sales.sanitize({"listings": {}})["browse"] as Dictionary).is_empty(), "browsers are saved; an old save has none")
+	# Drawn: a figure for each, gone when they go.
+	var view := SalesView.new()
+	add_child(view)
+	view.sync_state()
+	check(view.browsing.has(id2) and (view.browsing[id2] as StaffFigure).is_in_group(SalesOffice.VISITOR_GROUP), "each one's drawn (and opens the doors)")
+	SalesBrowse.browsers().erase(id2)
+	view.sync_state()
+	check(view.browsing.is_empty(), "and goes when they go")
+	view.queue_free()
 	Shed.stop()
 
 
