@@ -118,6 +118,7 @@ const MAX_GARAGE_MONEY := 100000000
 ## Everything else about the business's money: wage cut, owner, ledger, loans (see Money.defaults).
 var bank := Money.defaults()
 var _clock_hours := -1.0       # host: the clock last frame, to see midnight pass
+var bills_heard := 0           # how many nightly bills this machine has heard come out (for tests)
 ## Customers at reception and the jobs taken on for them (see Contracts).
 var contracts := {}
 ## Bikes for sale on the showroom stands, buyers' offers and part-exchanges (see Sales).
@@ -3063,6 +3064,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 		_coffee_apply(peer, action)
 		return
 	if str(action.get("a", "")).begins_with("paint_"):
+		Money.note_use(action)
 		_paint_bay_apply(peer, action)
 		return
 	if str(action.get("a", "")).begins_with("pool_"):
@@ -3075,6 +3077,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 	var a := str(action["a"])
 	Contracts.note_action(peer, action)
 	Sales.note_action(action)
+	Money.note_use(action)
 	if a.begins_with("sale_"):
 		var said_s := Sales.apply(peer, action)
 		if said_s != "":
@@ -5111,6 +5114,8 @@ func credit_garage(amount: int, reason: String) -> void:
 		return
 	garage_money = mini(garage_money + amount, MAX_GARAGE_MONEY)
 	Money.log_entry(bank, amount, reason, garage_money)
+	# An overdraft (see Money.pay_bills) is paid back first.
+	Money.settle_overdraft(bank)
 	for m in Money._mark_milestones(bank, garage_money):
 		for p in crew:
 			_xp(int(p), "money_milestone", 1.0, "bank:%d" % int(m))
@@ -5220,21 +5225,38 @@ func _money_clock() -> void:
 		_clock_hours = -1.0
 		return
 	var h := Daylight.time_of_day()
+	if _clock_hours >= 0.0:
+		# The lights on since last frame count towards tonight's power bill.
+		Money.note_lights(h - _clock_hours if h >= _clock_hours else h + 24.0 - _clock_hours)
 	if _clock_hours >= 0.0 and h < _clock_hours - 12.0:
 		money_new_day()
 	_clock_hours = h
 
 
-## Host: moves the business on a day (the clock does this at midnight; tests call it).
+## Host: moves the business on a day (the clock does this at midnight; tests call it). When the
+## night's bills come out everyone hears the till (see _bill_sound).
 func money_new_day() -> void:
 	if not is_authority():
 		return
 	var said := Money.new_day()
 	if said != "":
+		var ok := not said.contains("MISSED") and not said.contains("OVERDRAWN")
 		for p in crew:
-			_tell(int(p), said, not said.contains("MISSED"))
+			_tell(int(p), said, ok)
+		if int(bank.get("last_bill_day", -1)) == int(bank["day"]):
+			_bill_sound(ok)
+			if Net.is_online():
+				_bill_sound.rpc(ok)
 	_mark_dirty()
 	changed.emit()
+
+
+## The night's bills have come out of the business's account: a ting, or a warning beep when
+## it's gone overdrawn.
+@rpc("authority", "call_remote", "reliable")
+func _bill_sound(ok: bool) -> void:
+	bills_heard += 1
+	Sfx.play_ui("ting" if ok else "beep", -6.0)
 
 
 # ---------------------------------------------------------------------------- sales office

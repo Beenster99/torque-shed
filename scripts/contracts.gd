@@ -551,9 +551,19 @@ static func advance(hours: float) -> void:
 		Shed.changed.emit()
 
 
+## The Debug tab's difficulty for the next offer: -1 as usual, 0 easy, 1 medium, 2 hard (see
+## tier_pick). Set only while spawn makes one.
+static var _tier := -1
+## The Debug tab's difficulties, in order.
+const TIERS: Array[String] = ["Easy", "Medium", "Hard"]
+## The workshop level a batch order or test ride is made for at each difficulty.
+const TIER_LEVELS := [1, 8, 16]
+
+
 ## A new customer comes in with an offer (host only). `kind` forces the job; "" picks one the
-## reputation allows. Returns the customer's id.
-static func spawn(kind := "") -> int:
+## reputation allows. `tier` (the Debug tab) forces how big a job it is, where the kind has
+## sizes (TIERS); -1 is as usual. Returns the customer's id.
+static func spawn(kind := "", tier := -1) -> int:
 	var s := _st()
 	var rng: RandomNumberGenerator = Shed._rng
 	if kind == "" or not KINDS.has(kind):
@@ -578,7 +588,9 @@ static func spawn(kind := "") -> int:
 		"skin": SKINS[rng.randi() % SKINS.size()], "hair": HAIR[rng.randi() % HAIR.size()], "hat": rng.randf() < 0.3,
 		"tall": rng.randf_range(0.92, 1.06), "vip": vip}
 	var now := clock()
+	_tier = clampi(tier, -1, TIERS.size() - 1)
 	var offer := make_offer(kind, person_name)
+	_tier = -1
 	if kind == "test_ride":
 		# The manufacturer's rep, in the brand's colours.
 		look["top"] = ContractTestRide.BRANDS.get(str(offer.get("brand", "")), {}).get("jacket", look["top"])
@@ -609,7 +621,7 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 	match kind:
 		"maint":
 			var parts := random_parts(rng)
-			var size: Dictionary = SERVICES[rng.randi() % SERVICES.size()]
+			var size: Dictionary = SERVICES[_tier if _tier >= 0 else rng.randi() % SERVICES.size()]
 			var keys: Array = TASKS.keys().filter(func(k): return task_fits(str(k), parts))
 			_shuffle(keys, rng)
 			var range_n: Vector2i = size["n"]
@@ -628,7 +640,7 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 			offer["parts"] = parts
 			offer["goals"] = [{"t": "mot"}]
 			# How far gone it is: a couple of faults to a bike that's been off the road for years.
-			var faults := rng.randi_range(2, 7)
+			var faults := rng.randi_range(2, 7) if _tier < 0 else rng.randi_range(2 + _tier * 2, 3 + _tier * 2)
 			offer["faults"] = faults
 			var extras: Array = MOT_EXTRAS.filter(func(k): return task_fits(str(k), parts))
 			_shuffle(extras, rng)
@@ -689,9 +701,9 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 			offer["days"] = 8 + offer["goals"].size() + rng.randi_range(0, 2)
 			offer["blurb"] = "Something nobody else has. Start from a bare frame and build me exactly this."
 		"batch":
-			offer = ContractBatch.make_offer(rng, PaintBay.level_of(Shed.me()))
+			offer = ContractBatch.make_offer(rng, _tier_level())
 		"test_ride":
-			offer = ContractTestRide.make_offer(rng, PaintBay.level_of(Shed.me()))
+			offer = ContractTestRide.make_offer(rng, _tier_level())
 	var bike_name: String = "%s's %s" % [first, Shed.BIKE_NAMES[rng.randi() % Shed.BIKE_NAMES.size()]]
 	if kind == "bespoke":
 		bike_name = "%s's %s special" % [first, str(STYLES[offer["goals"][0]["style"]]).to_lower()]
@@ -699,6 +711,11 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 	bike_name = offer["bike_name"]
 	offer["title"] = "%s: %s" % [KIND_NAMES[kind], bike_name]
 	return offer
+
+
+## The workshop level a batch order or test ride is made for: the host's, or the Debug tab's tier.
+static func _tier_level() -> int:
+	return int(TIER_LEVELS[_tier]) if _tier >= 0 else PaintBay.level_of(Shed.me())
 
 
 ## Whether a bike with `parts` can have a maintenance task done: it has the parts it renews.
@@ -1391,7 +1408,8 @@ static func _best_match(rows: Array) -> float:
 
 ## Why `peer` can't do a contract action, or "". Actions: contract_accept {customer},
 ## contract_decline {customer}, contract_mot_test {job}, contract_hand_in {job},
-## contract_spawn {kind} (the Debug tab), contract_rep {value} (the Debug tab).
+## contract_spawn {kind, tier} (the Debug tab: a customer arrives at reception), contract_start
+## {kind, tier} (the Debug tab: the job is taken on there and then), contract_rep {value} (the Debug tab).
 static func check(peer: int, action: Dictionary) -> String:
 	var a := str(action.get("a", ""))
 	match a:
@@ -1443,12 +1461,20 @@ static func check(peer: int, action: Dictionary) -> String:
 					return "It isn't finished: every part has to be on and bolted up."
 				if not near_handback(bike_id):
 					return "Leave it in the car park outside the sales office to hand it back."
-		"contract_spawn", "contract_rep":
+		"contract_spawn", "contract_rep", "contract_start":
 			# Debug tab helpers, for the host.
 			if peer != Shed.me():
 				return "Only the host can do that."
 			if a == "contract_spawn" and customers().size() >= MAX_WAITING + 2:
 				return "There's a queue already."
+			if a == "contract_start":
+				var kind := str(action.get("kind", ""))
+				if not KINDS.has(kind):
+					return "There's no job like that."
+				if active_count() >= MAX_ACTIVE:
+					return "The shed has as many jobs as it can take. Finish one first."
+				if kind == "bespoke" and Shed.free_bay(Workshop.bay_count()) < 0:
+					return "Every bay is full. Clear one for the bare frame first."
 
 		_:
 			return "There's nothing like that to do."
@@ -1515,8 +1541,17 @@ static func apply(peer: int, action: Dictionary) -> String:
 		"contract_report":
 			text = _report(peer, jobs()[int(action["job"])], action)
 		"contract_spawn":
-			var cid := spawn(str(action.get("kind", "")))
+			var cid := spawn(str(action.get("kind", "")), int(action.get("tier", -1)))
 			text = "%s is on the way to reception." % customers()[cid]["name"]
+		"contract_start":
+			# The customer comes and the job is taken on at once; one who'd need a bay when none is
+			# free waits at reception instead.
+			var cid := spawn(str(action["kind"]), int(action.get("tier", -1)))
+			var why := check(peer, {"a": "contract_accept", "customer": cid})
+			if why != "":
+				text = "%s is waiting at reception: %s" % [customers()[cid]["name"], why]
+			else:
+				text = _accept(peer, cid)
 		"contract_rep":
 			_st()["reputation"] = clampi(int(action.get("value", 0)), 0, 999)
 			text = "Reputation set to %d" % reputation()

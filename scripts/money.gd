@@ -13,11 +13,21 @@ extends RefCounted
 ##   blocked: a missed repayment stops new loans until that loan is paid off,
 ##   day: in-game days since the shed opened (the clock passing midnight), history: the
 ##   account at the end of each day, milestones: account sizes already celebrated, series: the
-##   account over in-game time for the graphs (see MoneyGraph).
+##   account over in-game time for the graphs (see MoneyGraph),
+##   costs: how hard the running costs bite ("off", "normal" or "hard", host setting),
+##   overdraft: what the business owes after a bill it couldn't cover (income pays it back first),
+##   use: what the crew has used since the last bill (machine units, work done, light hours),
+##   last_bill: the lines of the last nightly bill [{why, amt}] and last_bill_day: its day.
 ##
 ## Jobs pay wages (Progress.PAY) through Shed.pay_worker: the worker gets the rest after the
 ## business's cut. The business earns from selling parts and bikes (and other helpers' sales and
 ## contracts through Shed.credit_garage), and pays for parts, project bikes and loans.
+##
+## Running costs: every in-game midnight (with the loan repayments) the business pays its bills:
+## rent and business rates (more for every extension), insurance (more for more stock and bikes),
+## power and water (standing charge, lights on and machines used) and workshop consumables (per
+## bit of work done). A bill it can't cover takes what's there and the rest goes on an overdraft,
+## which costs OVERDRAFT_RATE a day until income pays it off. Never game over.
 
 const START_FUNDS := 10000
 const DEFAULT_CUT := 20
@@ -59,10 +69,54 @@ const KIND_PRICE := {"frame": 900, "fork": 450, "shock": 350, "wheel": 250, "tyr
 const FLUID_LITRE := {"petrol": 1.6, "oil": 6.0, "brake_fluid": 12.0, "chain_lube": 25.0}
 const EMPTY_CONTAINER := 8
 
+## Running costs, a day, in pounds at "normal" (see bill_lines). An idle shed with the lights on
+## pays about 200 a day; a solo player doing contracts clears 400 to 1,000 a day for the business.
+const COSTS_MODES: Array[String] = ["off", "normal", "hard"]
+const COSTS_NAMES := {"off": "Off", "normal": "Normal", "hard": "Hard"}
+const COSTS_MULT := {"off": 0.0, "normal": 1.0, "hard": 1.75}
+const RENT_BASE := 85
+## Each building upgrade adds to the rent (bigger premises).
+const RENT_EXTRA := {"wing": 45, "bays_56": 20, "bay_7": 10, "annex": 30, "mezzanine": 15, "lounge": 20, "showroom": 60}
+## Business rates: this share of the rent.
+const RATES_SHARE := 0.3
+const INSURANCE_BASE := 25
+## Insurance also covers what's in the shed: this share a day of what its bikes and stock would fetch.
+const INSURANCE_WORTH := 0.001
+const INSURANCE_RIG := 15
+const INSURANCE_MAX := 250
+## Power and water: a standing charge, the shed's strip lights (LED lighting uses less) and the
+## side rooms' lights by the game hour, and the machines by the unit (MACHINE_UNITS).
+const POWER_STANDING := 12
+const POWER_LIGHT_HOUR := 0.8
+const POWER_LED := 0.6
+const POWER_ROOM_HOUR := 0.3
+const POWER_UNIT := 0.25
+const POWER_USE_MAX := 200
+## What one use of each machine adds to the power and water bill (anything else counts as nothing).
+const MACHINE_UNITS := {"dyno_run": 8.0, "dyno_fan": 1.0, "blast_use": 4.0, "blast": 2.0, "wash": 3.0, "wash_cells": 0.3,
+	"repair": 2.0, "repair_many": 4.0, "clean_many": 2.0, "paint": 1.5, "coat": 2.0, "prime": 2.0, "paint_shake": 1.0,
+	"paint_stir": 0.5, "lift": 0.5, "door": 0.5, "tyre_fit": 1.0, "tyre_remove": 1.0}
+## Rags, gloves, cleaner and the rest: a little for every bit of work, up to a cap a day.
+const CONSUMABLE_EACH := 0.15
+const CONSUMABLES_MAX := 60
+## Actions that aren't work on the shed's kit (they use no consumables).
+const NOT_USE_PREFIXES: Array[String] = ["contract_", "sale_", "recovery_", "coffee_", "pool_", "board_", "money_", "bp_",
+	"geo_", "dyno_headphones", "lights", "tv_", "radio", "computer", "sales_pc", "rename", "label", "write_label", "turn_poster",
+	"blast_aim", "blast_tick", "wash_aim", "paint_bench_ui"]
+## An overdraft costs this share of it a day (at least OVERDRAFT_MIN_FEE).
+const OVERDRAFT_RATE := 0.015
+const OVERDRAFT_MIN_FEE := 5
+
 
 static func defaults() -> Dictionary:
 	return {"cut": DEFAULT_CUT, "owner": "", "ledger": [], "loans": [], "next_loan": 1, "blocked": false, "day": 0,
-		"history": [], "milestones": [], "series": {}}
+		"history": [], "milestones": [], "series": {}, "costs": "normal", "overdraft": 0, "use": empty_use(), "last_bill": [],
+		"last_bill_day": -1}
+
+
+## Nothing used yet since the last bill.
+static func empty_use() -> Dictionary:
+	return {"machine": 0.0, "work": 0, "light_h": 0.0, "room_h": 0.0}
 
 
 ## A saved or synced bank with every field present and sane (older saves have none).
@@ -93,6 +147,20 @@ static func sanitize(b) -> Dictionary:
 		for v in hist.slice(-HISTORY_DAYS):
 			out["history"].append(int(v))
 	out["series"] = MoneyGraph.sanitize(b.get("series", {}))
+	# Sheds saved before running costs pay them from now on, at normal.
+	var mode := str(b.get("costs", "normal"))
+	out["costs"] = mode if COSTS_MODES.has(mode) else "normal"
+	out["overdraft"] = clampi(int(b.get("overdraft", 0)), 0, 100000000)
+	var use = b.get("use", {})
+	if use is Dictionary:
+		out["use"] = {"machine": maxf(0.0, float(use.get("machine", 0.0))), "work": maxi(0, int(use.get("work", 0))),
+			"light_h": maxf(0.0, float(use.get("light_h", 0.0))), "room_h": maxf(0.0, float(use.get("room_h", 0.0)))}
+	var bill = b.get("last_bill", [])
+	if bill is Array:
+		for e in bill.slice(0, 10):
+			if e is Dictionary:
+				out["last_bill"].append({"why": str(e.get("why", "")).left(60), "amt": maxi(0, int(e.get("amt", 0)))})
+	out["last_bill_day"] = int(b.get("last_bill_day", -1))
 	var ms = b.get("milestones", [])
 	if ms is Array:
 		for v in ms:
@@ -368,14 +436,19 @@ static func flow(bank: Dictionary, days := 7) -> Dictionary:
 ## The business's account over the range's buckets ("minute" .. "year"), oldest first and now
 ## last, for the graphs.
 static func graph(range_key: String) -> Array:
-	return MoneyGraph.points(Shed.bank.get("series", {}), range_key, MoneyGraph.now_hours(), Shed.garage_money)
+	return MoneyGraph.points(Shed.bank.get("series", {}), range_key, MoneyGraph.now_hours(), balance())
 
 
 ## Host: notes the account in the graphs' series when it has moved. True when it had.
 static func record_graph() -> bool:
 	if not (Shed.bank.get("series") is Dictionary):
 		Shed.bank["series"] = {}
-	return MoneyGraph.record(Shed.bank["series"], MoneyGraph.now_hours(), Shed.garage_money)
+	return MoneyGraph.record(Shed.bank["series"], MoneyGraph.now_hours(), balance())
+
+
+## The business's account less any overdraft: below nothing when it's overdrawn.
+static func balance() -> int:
+	return Shed.garage_money - int(Shed.bank.get("overdraft", 0))
 
 
 ## The account at the end of each of the last six days and now, for the TV charts.
@@ -432,6 +505,8 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "Only the host can change the garage's settings."
 			if action.has("cut") and not (action["cut"] is int or action["cut"] is float):
 				return "Pick a percentage."
+			if action.has("costs") and not COSTS_MODES.has(str(action["costs"])):
+				return "Pick off, normal or hard."
 		"money_loan":
 			if not is_owner(peer):
 				return "Only the garage owner (%s) can take out a loan." % owner_name()
@@ -511,6 +586,10 @@ static func apply(peer: int, action: Dictionary) -> String:
 			if action.has("owner"):
 				var o := str(action["owner"]).strip_edges().left(24)
 				bank["owner"] = "" if o == str(Shed.crew.get(1, {}).get("name", "")) else o
+			if action.has("costs"):
+				bank["costs"] = str(action["costs"])
+				return "Running costs: %s (about %s a day now)." % [str(COSTS_NAMES[bank["costs"]]).to_lower(),
+					TvChannels.money_text(bill_total(bill_lines(bank)))]
 			return "The business takes %d%% of wages; %s runs it." % [int(bank["cut"]), owner_name()]
 		"money_loan":
 			var loan := new_loan(int(action["offer"]), int(bank["next_loan"]), int(bank["day"]))
@@ -548,6 +627,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 		"money_debug_grant":
 			Shed.garage_money = mini(Shed.garage_money + DEBUG_GRANT, Shed.MAX_GARAGE_MONEY)
 			log_entry(bank, DEBUG_GRANT, "Debug: a gift", Shed.garage_money)
+			settle_overdraft(bank)
 			_mark_milestones(bank, Shed.garage_money)
 			return "The garage got %s." % TvChannels.money_text(DEBUG_GRANT)
 	return ""
@@ -593,9 +673,138 @@ static func new_day() -> String:
 			said.append("MISSED a loan repayment of %s (fee %s, no new loans until it's paid off)" % [
 				TvChannels.money_text(pay), TvChannels.money_text(fee)])
 	_tidy_loans(bank)
+	var bills := pay_bills(bank)
+	if bills != "":
+		said.append(bills)
 	if said.is_empty():
 		return ""
 	return "Day %d: the business %s." % [int(bank["day"]), ", ".join(said)]
+
+
+# ---------------------------------------------------------------------------- running costs
+
+## The running costs' multiplier for the bank's setting (0 when they're off).
+static func costs_mult(bank: Dictionary) -> float:
+	return float(COSTS_MULT.get(str(bank.get("costs", "normal")), 1.0))
+
+
+## Tonight's bill as it stands, one line each [{key, why, amt}] (nothing when running costs are
+## off): rent and rates for the premises (Shed.upgrades), insurance on the premises, the
+## recovery rig and what's in the shed, power and water for the lights and machines used since
+## the last bill, and consumables for the work done.
+static func bill_lines(bank: Dictionary) -> Array:
+	var mult := costs_mult(bank)
+	if mult <= 0.0:
+		return []
+	var rent := float(RENT_BASE)
+	for id in RENT_EXTRA:
+		if Shed.upgrades.get(id, false):
+			rent += float(RENT_EXTRA[id])
+	var worth := shed_worth()
+	var insure := float(INSURANCE_BASE) + (float(worth["bikes"]) + float(worth["stock"])) * INSURANCE_WORTH
+	if Shed.upgrades.get(Recovery.UPGRADE, false):
+		insure += INSURANCE_RIG
+	insure = minf(insure, INSURANCE_MAX)
+	var use: Dictionary = bank.get("use", empty_use())
+	var light := POWER_LIGHT_HOUR * (POWER_LED if Shed.upgrades.get("led", false) else 1.0)
+	var power := float(POWER_STANDING) + minf(float(use.get("light_h", 0.0)) * light + float(use.get("room_h", 0.0)) * POWER_ROOM_HOUR
+		+ float(use.get("machine", 0.0)) * POWER_UNIT, POWER_USE_MAX)
+	var kit := minf(int(use.get("work", 0)) * CONSUMABLE_EACH, CONSUMABLES_MAX)
+	var out := []
+	for l in [["rent", "Rent", rent], ["rates", "Business rates", rent * RATES_SHARE], ["insurance", "Insurance", insure],
+			["power", "Power and water", power], ["consumables", "Workshop consumables", kit]]:
+		var amt := roundi(float(l[2]) * mult)
+		if amt > 0:
+			out.append({"key": l[0], "why": l[1], "amt": amt})
+	return out
+
+
+static func bill_total(lines: Array) -> int:
+	var total := 0
+	for l in lines:
+		total += int(l["amt"])
+	return total
+
+
+## Host: something a player did in the shed (a checked request) counts towards tonight's power
+## and water (MACHINE_UNITS) and consumables (any work on the kit).
+static func note_use(action: Dictionary) -> void:
+	var a := str(action.get("a", ""))
+	if a == "" or Contracts.NOT_WORK.has(a):
+		return
+	for p in NOT_USE_PREFIXES:
+		if a.begins_with(p):
+			return
+	var use: Dictionary = Shed.bank.get("use", {})
+	if use.is_empty():
+		use = empty_use()
+		Shed.bank["use"] = use
+	use["machine"] = float(use.get("machine", 0.0)) + float(MACHINE_UNITS.get(a, 0.0))
+	use["work"] = int(use.get("work", 0)) + 1
+
+
+## Host: `hours` of game time have passed with the shed's lights as they are now.
+static func note_lights(hours: float) -> void:
+	if hours <= 0.0 or hours > 6.0:
+		return
+	var use: Dictionary = Shed.bank.get("use", {})
+	if use.is_empty():
+		use = empty_use()
+		Shed.bank["use"] = use
+	if Shed.lights_on:
+		use["light_h"] = float(use.get("light_h", 0.0)) + hours
+	var rooms := 0
+	for room in Shed.room_lights:
+		if bool(Shed.room_lights[room]):
+			rooms += 1
+	use["room_h"] = float(use.get("room_h", 0.0)) + hours * rooms
+
+
+## Host: takes `amount` for `why` from the business; what it can't cover goes on the overdraft.
+## Returns how much went on the overdraft.
+static func charge_or_overdraw(bank: Dictionary, amount: int, why: String) -> int:
+	var paid := mini(amount, maxi(Shed.garage_money, 0))
+	var short := amount - paid
+	Shed.garage_money -= paid
+	bank["overdraft"] = int(bank.get("overdraft", 0)) + short
+	log_entry(bank, -amount, why + (" (overdrawn)" if short > 0 else ""), Shed.garage_money)
+	return short
+
+
+## Host: pays back as much of the overdraft as the account holds (income does this first).
+static func settle_overdraft(bank: Dictionary) -> void:
+	var od := int(bank.get("overdraft", 0))
+	if od <= 0 or Shed.garage_money <= 0:
+		return
+	var pay := mini(od, Shed.garage_money)
+	Shed.garage_money -= pay
+	bank["overdraft"] = od - pay
+	log_entry(bank, -pay, "Overdraft paid back", Shed.garage_money)
+
+
+## Host, at midnight: interest on any overdraft, then tonight's bill (bill_lines), and what was
+## used goes back to nothing. Returns what to tell the crew ("" when there was nothing to pay).
+static func pay_bills(bank: Dictionary) -> String:
+	var said := []
+	var od := int(bank.get("overdraft", 0))
+	if od > 0:
+		var fee := maxi(OVERDRAFT_MIN_FEE, roundi(od * OVERDRAFT_RATE))
+		bank["overdraft"] = od + fee
+		log_entry(bank, 0, "Overdraft interest: %s" % TvChannels.money_text(fee), Shed.garage_money)
+	var lines := bill_lines(bank)
+	bank["use"] = empty_use()
+	if lines.is_empty():
+		return ""
+	var short := 0
+	for l in lines:
+		short += charge_or_overdraw(bank, int(l["amt"]), str(l["why"]))
+	bank["last_bill"] = lines.map(func(l): return {"why": str(l["why"]), "amt": int(l["amt"])})
+	bank["last_bill_day"] = int(bank.get("day", 0))
+	said.append("paid %s in running costs" % TvChannels.money_text(bill_total(lines)))
+	if int(bank["overdraft"]) > 0:
+		said.append("is OVERDRAWN by %s%s (%.1f%% a day until income pays it back)" % [
+			TvChannels.money_text(int(bank["overdraft"])), "" if short > 0 else " still", OVERDRAFT_RATE * 100.0])
+	return ", ".join(said)
 
 
 # ---------------------------------------------------------------------------- from this machine

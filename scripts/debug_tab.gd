@@ -2,12 +2,16 @@ class_name DebugTab
 extends ScrollContainer
 ## The Esc menu's Debug tab, for trying things out: reset or max out your XP and money, reset
 ## everyone's XP (the host tells every player's game), empty the garage's account or give it
-## a million pounds (host). Every reset asks first.
+## a million pounds (host), and start any kind of contract there and then for testing (host):
+## a customer arriving at reception, or the job taken on at once, at a chosen difficulty, and
+## the recovery jobs with the truck granted if the garage hasn't got it. Every reset asks first.
 
 var _info: Label
 var _all_xp: Button
 var _garage: Button
 var _grant: Button
+var _tier: OptionButton
+var _host_only: Array[Control] = []    # the contract buttons, for the host only
 var _confirm: ConfirmationDialog
 var _pending := Callable()
 
@@ -47,13 +51,53 @@ func _ready() -> void:
 	box.add_child(_row([_garage, _grant]))
 
 	box.add_child(UITheme.label("Contracts (host)", 15, UITheme.ACCENT))
-	box.add_child(_row([
-		_button("Send a customer", func(): Shed.request({"a": "contract_spawn"})),
-		_button("Send a bespoke customer", func(): Shed.request({"a": "contract_spawn", "kind": "bespoke"})),
-		_button("Send a batch order", func(): Shed.request({"a": "contract_spawn", "kind": "batch"})),
-		_button("Send a test ride", func(): Shed.request({"a": "contract_spawn", "kind": "test_ride"})),
-		_button("Reputation +5", func(): Shed.request({"a": "contract_rep", "value": Contracts.reputation() + 5})),
-	]))
+	box.add_child(UITheme.label("Any kind of job, whatever the reputation or level: a customer arriving at reception, or the job taken on there and then.",
+		14, Color(1, 1, 1, 0.6)))
+	_tier = OptionButton.new()
+	_tier.add_item("As usual")
+	for t in Contracts.TIERS:
+		_tier.add_item(t)
+	_tier.tooltip_text = "How big a job: the number of service tasks, MOT faults, batch size or test ride length."
+	var top := _row([_button("Send a customer", func(): Shed.request({"a": "contract_spawn"})),
+		_button("Reputation +5", func(): Shed.request({"a": "contract_rep", "value": Contracts.reputation() + 5}))])
+	var tier_label := UITheme.label("Difficulty", 15)
+	tier_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	top.add_child(tier_label)
+	top.add_child(_tier)
+	box.add_child(top)
+	for c in top.get_children():
+		if c is Button and c != _tier:
+			_host_only.append(c)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 6)
+	box.add_child(grid)
+	for kind in Contracts.KINDS:
+		var k: String = kind
+		var name_label := UITheme.label("%s  (rep %d)" % [Contracts.KIND_NAMES[k], int(Contracts.UNLOCK.get(k, 0))], 15)
+		name_label.custom_minimum_size.x = 260.0
+		grid.add_child(name_label)
+		var send := _button("Customer arrives", func(): send_contract(k))
+		send.name = "send_" + k
+		var start := _button("Start the job now", func(): start_contract(k))
+		start.name = "start_" + k
+		for b in [send, start]:
+			grid.add_child(b)
+			_host_only.append(b)
+	for kind in Recovery.KIND_NAMES:
+		var k: String = kind
+		grid.add_child(UITheme.label("%s  (recovery truck)" % Recovery.KIND_NAMES[k], 15))
+		var offer := _button("Phone offer", func(): send_recovery(k))
+		offer.name = "send_" + k
+		var start := _button("Start the job now", func(): start_recovery(k))
+		start.name = "start_" + k
+		for b in [offer, start]:
+			grid.add_child(b)
+			_host_only.append(b)
+	var truck := _button("Grant the recovery truck", func(): Shed.request({"a": "recovery_grant"}))
+	box.add_child(_row([truck]))
+	_host_only.append(truck)
 
 	_confirm = ConfirmationDialog.new()
 	_confirm.confirmed.connect(func():
@@ -73,6 +117,10 @@ func _process(_delta: float) -> void:
 	for b in [_garage, _grant]:
 		b.disabled = not host
 		b.tooltip_text = "" if host else "Only the host can change the garage's money."
+	for c in _host_only:
+		(c as BaseButton).disabled = not host
+		c.tooltip_text = "" if host else "Only the host can start contracts."
+	_tier.disabled = not host
 	_info.text = "You: level %d, %d XP, %s     Garage: %s" % [Progress.level(), int(Progress.profile.get("xp", 0)),
 		TvChannels.money_text(Progress.money()), TvChannels.money_text(Shed.garage_money)]
 
@@ -127,6 +175,45 @@ func reset_garage_money() -> void:
 ## Host: a million pounds into the business's account (see Money.DEBUG_GRANT).
 func give_garage_million() -> void:
 	Shed.request({"a": "money_debug_grant"})
+
+
+## The difficulty chosen for the contract buttons: -1 as usual, else an index into Contracts.TIERS.
+func tier() -> int:
+	return _tier.selected - 1 if _tier.selected > 0 else -1
+
+
+## Picks the difficulty (-1 as usual, else an index into Contracts.TIERS).
+func set_tier(t: int) -> void:
+	_tier.select(clampi(t + 1, 0, _tier.item_count - 1))
+
+
+## Host: a customer for `kind` (see Contracts.KINDS) arrives at reception.
+func send_contract(kind: String) -> void:
+	Shed.request({"a": "contract_spawn", "kind": kind, "tier": tier()})
+
+
+## Host: a `kind` job is taken on there and then, the bike in the car park or on a bay.
+func start_contract(kind: String) -> void:
+	Shed.request({"a": "contract_start", "kind": kind, "tier": tier()})
+
+
+## Host: a barn find or crash rescue offer rings in (the truck too if the garage hasn't got one).
+func send_recovery(kind: String) -> void:
+	if not Recovery.owned():
+		Shed.request({"a": "recovery_grant"})
+	Shed.request({"a": "recovery_spawn", "kind": kind})
+
+
+## Host: a barn find or crash rescue taken on there and then, the truck granted if need be.
+func start_recovery(kind: String) -> void:
+	Shed.request({"a": "recovery_start", "kind": kind})
+
+
+## Presses the button named `node_name` (the contract buttons: "start_mot", "send_barn"...; for tests).
+func press_named(node_name: String) -> void:
+	var b := find_child(node_name, true, false) as Button
+	if b and not b.disabled:
+		b.pressed.emit()
 
 
 ## Presses the button labelled `text` (for tests).

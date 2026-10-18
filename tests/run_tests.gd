@@ -159,6 +159,8 @@ func _run_all() -> void:
 	_test_money_pay_and_transfers()
 	_test_money_loans()
 	_test_money_parts_and_selling()
+	_test_money_running_costs()
+	_test_debug_contracts()
 	print("Contracts: customers, offers, MOT, goals, payouts and saving")
 	_test_contract_customers()
 	_test_contract_mot()
@@ -7141,6 +7143,8 @@ func _test_money_pay_and_transfers() -> void:
 ## debt limit, and the bank saved with the shed (old saves get the defaults).
 func _test_money_loans() -> void:
 	Shed.start_new("Boss", 8)
+	# Just the loans here: the nightly running costs are tested in _test_money_running_costs.
+	Shed.request({"a": "money_settings", "costs": "off"})
 	var me := Shed.me()
 	var start := Shed.garage_money
 	Shed.request({"a": "money_loan", "offer": 0})
@@ -7294,6 +7298,162 @@ func _test_money_parts_and_selling() -> void:
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
+
+
+## Running costs: the nightly bill (rent and rates by the premises, insurance, power and water by
+## the lights and machines used, consumables by the work done), the off / normal / hard setting,
+## the overdraft when the account can't cover it, the Money tab and the TV page, and saving.
+func _test_money_running_costs() -> void:
+	Shed.start_new("Boss", 8)
+	var me := Shed.me()
+	var bank: Dictionary = Shed.bank
+	check(str(bank["costs"]) == "normal" and int(bank["overdraft"]) == 0, "a new shed's running costs are normal, with no overdraft")
+	var lines := Money.bill_lines(bank)
+	var keys := lines.map(func(l): return str(l["key"]))
+	var idle := Money.bill_total(lines)
+	check(keys.has("rent") and keys.has("rates") and keys.has("insurance") and keys.has("power") and not keys.has("consumables"),
+		"tonight's bill: rent, rates, insurance and power (no consumables before any work) %s" % str(keys))
+	check(idle >= 140 and idle <= 220, "an idle shed's bill before the lights count: %s" % TvChannels.money_text(idle))
+	var power := func() -> int:
+		for l in Money.bill_lines(Shed.bank):
+			if str(l["key"]) == "power":
+				return int(l["amt"])
+		return 0
+	var p0: int = power.call()
+	for i in 4:
+		Money.note_use({"a": "dyno_run"})
+	Money.note_use({"a": "ride"})
+	Money.note_use({"a": "contract_accept"})
+	check(power.call() == p0 + 8 and int(bank["use"]["work"]) == 4, "machines add to power and water (a dyno run 8 units), riding and paperwork don't")
+	for i in 40:
+		Money.note_use({"a": "install", "bike": 1})
+	check(Money.bill_lines(bank).any(func(l): return str(l["key"]) == "consumables"), "work on the kit uses consumables")
+	var p1: int = power.call()
+	Shed.lights_on = true
+	Money.note_lights(5.0)
+	Money.note_lights(5.0)
+	var lit: int = power.call()
+	check(lit > p1 + 7, "ten hours of lights on: more power (%s to %s)" % [TvChannels.money_text(p1), TvChannels.money_text(lit)])
+	Shed.upgrades["led"] = true
+	check(power.call() < lit, "LED lighting uses less")
+	var rent := func() -> int:
+		return int(Money.bill_lines(Shed.bank).filter(func(l): return str(l["key"]) == "rent")[0]["amt"])
+	var r0: int = rent.call()
+	Shed.upgrades["wing"] = true
+	check(rent.call() == r0 + 45, "an extension puts the rent up")
+	# The bill comes out at midnight.
+	var total := Money.bill_total(Money.bill_lines(bank))
+	var bal := Shed.garage_money
+	var heard := Shed.bills_heard
+	Shed.money_new_day()
+	check(Shed.garage_money == bal - total, "midnight: the bill comes out of the business (%s)" % TvChannels.money_text(total))
+	check(bank["ledger"].any(func(e): return str(e["why"]) == "Rent" and int(e["amt"]) < 0 and int(e["day"]) == 1)
+		and bank["ledger"].any(func(e): return str(e["why"]) == "Insurance"), "each bill is a line in the ledger")
+	check(Money.bill_total(bank["last_bill"]) == total and int(bank["last_bill_day"]) == 1, "the last bill is kept for the Money tab")
+	check(int(bank["use"]["work"]) == 0 and float(bank["use"]["light_h"]) == 0.0, "and what was used starts again")
+	check(Shed.bills_heard == heard + 1, "everyone hears the bill come out")
+	check(int(Money.flow(bank, 7)["out"]) >= total and int(TvChannels.garage_data()["outgoings_week"]) >= total,
+		"the bills count as outgoings on the Garage money page")
+	check(int(TvChannels.garage_data()["bills_day"]) == Money.bill_total(Money.bill_lines(bank)), "and the page shows a night's bills")
+	# Off and hard.
+	var normal := Money.bill_total(Money.bill_lines(bank))
+	Shed.request({"a": "money_settings", "costs": "hard"})
+	var hard := Money.bill_total(Money.bill_lines(bank))
+	check(str(bank["costs"]) == "hard" and hard > normal * 1.6 and hard < normal * 1.9, "hard: bills 1.75 times as big (%d vs %d)" % [hard, normal])
+	check(Money.check(2, {"a": "money_settings", "costs": "off"}) != "", "only the host sets the running costs")
+	check(Money.check(me, {"a": "money_settings", "costs": "silly"}) != "", "off, normal or hard only")
+	Shed.request({"a": "money_settings", "costs": "off"})
+	bal = Shed.garage_money
+	Shed.money_new_day()
+	check(Money.bill_lines(bank).is_empty() and Shed.garage_money == bal, "off: no bills at all")
+	# The overdraft.
+	Shed.request({"a": "money_settings", "costs": "normal"})
+	Shed.garage_money = 50
+	total = Money.bill_total(Money.bill_lines(bank))
+	Shed.money_new_day()
+	var od := int(bank["overdraft"])
+	check(Shed.garage_money == 0 and od == total - 50 and Money.balance() == 50 - total, "a bill it can't cover: overdrawn by %s" % TvChannels.money_text(od))
+	check(int(TvChannels.garage_data()["cash"]) < 0, "the Garage money page shows the account below nothing")
+	Money.record_graph()
+	check(int(Money.graph("day")[-1]) == Money.balance(), "and so does the graph")
+	total = Money.bill_total(Money.bill_lines(bank))
+	Shed.money_new_day()
+	var fee := maxi(Money.OVERDRAFT_MIN_FEE, roundi(od * Money.OVERDRAFT_RATE))
+	check(int(bank["overdraft"]) == od + fee + total, "interest on the overdraft, and the next bill on top")
+	check(Money.check(me, {"a": "money_loan", "offer": 0}) == "", "overdrawn isn't game over: the bank still lends")
+	od = int(bank["overdraft"])
+	Shed.credit_garage(5000, "Test sale")
+	check(int(bank["overdraft"]) == 0 and Shed.garage_money == 5000 - od, "income pays the overdraft back first")
+	# Saving.
+	Shed.request({"a": "money_settings", "costs": "hard"})
+	bank["overdraft"] = 123
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	Shed.load_state(copy, "Boss")
+	check(str(Shed.bank["costs"]) == "hard" and int(Shed.bank["overdraft"]) == 123 and not Shed.bank["last_bill"].is_empty(),
+		"the setting, the overdraft and the last bill are saved with the shed")
+	for k in ["costs", "overdraft", "use", "last_bill", "last_bill_day"]:
+		copy["bank"].erase(k)
+	Shed.load_state(copy, "Boss")
+	check(str(Shed.bank["costs"]) == "normal" and int(Shed.bank["overdraft"]) == 0 and Shed.bank["last_bill"].is_empty(),
+		"a shed saved before running costs pays them at normal from now on")
+	# The Money tab.
+	var tab := MoneyTab.new()
+	add_child(tab)
+	tab.refresh()
+	var texts := tab.find_children("*", "Label", true, false).map(func(l): return (l as Label).text)
+	check(texts.any(func(t): return str(t).begins_with("Tonight's bill so far")) and texts.any(func(t): return str(t).contains("Business rates")),
+		"the Money tab shows tonight's bill line by line")
+	tab.set_costs("off")
+	check(str(Shed.bank["costs"]) == "off", "and the host sets the running costs there")
+	tab.free()
+
+
+## The Debug tab's contract buttons: every kind of job and both recovery jobs start there and
+## then (whatever the reputation, level or truck), or the customer arrives, at a chosen size.
+func _test_debug_contracts() -> void:
+	for kind in Contracts.KINDS:
+		Shed.start_new("Tester", 5)
+		var tab := DebugTab.new()
+		add_child(tab)
+		check(Contracts.reputation() < int(Contracts.UNLOCK[kind]) or kind == "maint", "%s: reputation too low for it as usual" % kind)
+		tab.press_named("start_" + kind)
+		var jobs: Array = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == kind)
+		check(jobs.size() == 1 and str(jobs[0]["state"]) == "active" and Contracts.customers().is_empty(),
+			"Debug: start a %s job now" % Contracts.KIND_NAMES[kind])
+		if kind != "batch":
+			check(not jobs.is_empty() and Shed.bikes.has(int(jobs[0].get("bike", 0))), "%s: its bike is in the shed" % kind)
+		tab.press_named("send_" + kind)
+		check(Contracts.customers().values().any(func(c): return str(c["offer"]["kind"]) == kind), "Debug: a %s customer arrives" % kind)
+		tab.free()
+	Shed.start_new("Tester", 5)
+	var tab := DebugTab.new()
+	add_child(tab)
+	tab.set_tier(0)
+	tab.press_named("send_mot")
+	tab.set_tier(2)
+	tab.press_named("send_mot")
+	var faults: Array = Contracts.customers().values().map(func(c): return int(c["offer"].get("faults", 0)))
+	check(faults.size() == 2 and faults.min() <= 3 and faults.max() >= 6, "the difficulty: an easy MOT and a hard one %s" % str(faults))
+	tab.set_tier(2)
+	tab.press_named("start_maint")
+	var maint: Array = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == "maint")
+	check(maint.size() == 1 and maint[0]["goals"].size() >= 4, "a hard service: a long list (%d tasks)" % (maint[0]["goals"].size() if maint.size() == 1 else 0))
+	check(Contracts.check(2, {"a": "contract_start", "kind": "mot"}) != "", "only the host starts contracts")
+	# Recovery jobs, the truck granted.
+	check(not Recovery.owned(), "no recovery truck yet")
+	tab.press_named("start_barn")
+	check(Recovery.owned() and Recovery.jobs().values().any(func(j): return str(j["kind"]) == "barn" and str(j["state"]) == "collect"),
+		"Debug: a barn find taken on now, with the truck")
+	tab.press_named("start_crash")
+	check(Recovery.jobs().values().any(func(j): return str(j["kind"]) == "crash"), "Debug: a crash rescue taken on now")
+	var n := Recovery.jobs().size()
+	tab.press_named("start_barn")
+	check(Recovery.jobs().size() == n, "no more than %d out to collect at once" % Recovery.MAX_JOBS)
+	tab.press_named("send_crash")
+	check(Recovery.offers().values().any(func(o): return str(o["kind"]) == "crash"), "Debug: a crash rescue offer rings in")
+	var focusable := tab.find_children("start_*", "Button", true, false).filter(func(b): return (b as Button).focus_mode == Control.FOCUS_ALL)
+	check(focusable.size() == Contracts.KINDS.size() + Recovery.KIND_NAMES.size(), "every start button takes the controller's focus")
+	tab.free()
 
 
 # ---------------------------------------------------------------------------- contracts

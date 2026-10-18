@@ -404,8 +404,12 @@ static func crash_spot(rng: RandomNumberGenerator) -> Dictionary:
 static func check(peer: int, action: Dictionary) -> String:
 	var a := str(action.get("a", ""))
 	var c := car()
-	if a in ["recovery_spawn", "recovery_grant"]:
-		return "" if peer == Shed.me() else "Only the host can do that."
+	if a in ["recovery_spawn", "recovery_grant", "recovery_start"]:
+		if peer != Shed.me():
+			return "Only the host can do that."
+		if a == "recovery_start" and jobs().values().filter(func(j): return str(j["state"]) == "collect").size() >= MAX_JOBS:
+			return "You've already got %d jobs out to collect." % MAX_JOBS
+		return ""
 	if not owned():
 		return "The garage hasn't got a recovery truck yet."
 	var bike_id := int(action.get("bike", 0))
@@ -585,6 +589,11 @@ static func apply(peer: int, action: Dictionary) -> String:
 		"recovery_spawn":
 			var id := spawn(str(action.get("kind", "")))
 			text = "Recovery job: %s" % offers()[id]["name"]
+		"recovery_start":
+			# The Debug tab: the truck if the garage hasn't got one, and a job taken on at once.
+			var granted := not owned()
+			Shed.upgrades[UPGRADE] = true
+			text = ("The recovery truck and trailer are parked in the yard. " if granted else "") + _accept(spawn(str(action.get("kind", ""))))
 		"recovery_accept":
 			text = _accept(int(action["offer"]))
 		"recovery_decline":
