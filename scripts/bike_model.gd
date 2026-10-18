@@ -42,8 +42,8 @@ var own_rider := false
 const FOOT_DOWN_SPEED := 1.1
 const FOOT_UP_SPEED := 1.8
 const FOOT_TIME := 0.3
-const FOOT_OUT := 0.36
-const FOOT_LEAN := 0.07
+const FOOT_OUT := 0.42
+const FOOT_LEAN := 0.08
 const FOOT_SAG := 0.035
 ## How far the foot's down now, 0 (on the peg) .. 1 (on the ground), and where it's going.
 var foot_down := 0.0

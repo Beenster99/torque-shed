@@ -562,7 +562,7 @@ func _on_shed_changed() -> void:
 		return
 	workshop.sync_state()
 	_refit_ridden_bikes()
-	if Recovery.driver() == Shed.me() and not recovery.driving and bike == null:
+	if Recovery.driver() == Shed.me() and not recovery.driving and bike == null and not recovery.just_left(true):
 		recovery.start_driving()
 	elif recovery.driving and Recovery.driver() != Shed.me():
 		recovery.stop_driving(false)

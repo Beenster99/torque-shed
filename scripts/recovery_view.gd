@@ -57,6 +57,9 @@ var _pass_look := Vector2.ZERO
 ## sat in the cab for the crew: peer -> Node3D.
 var _seen_seats := [0, 0]
 var _seat_figs := {}
+## When you last left the driver's seat [0] and the passenger seat [1] (ms). Online the shed
+## still has you in the seat until the host hears, so you're not put straight back in.
+var _left_seat := [-100000, -100000]
 ## How fast the truck's going as seen here (m/s), whoever's driving it: from how far it moved.
 var cab_speed := 0.0
 var _cab_from := Vector3.INF
@@ -516,12 +519,14 @@ func use(t: Dictionary) -> void:
 			if why != "":
 				Shed.feedback.emit(why, false)
 				return
+			_left_seat = [-100000, _left_seat[1]]
 			Shed.request({"a": "recovery_enter"})
 		"ride":
 			var why_r := Shed.check(Shed.me(), {"a": "recovery_board"})
 			if why_r != "":
 				Shed.feedback.emit(why_r, false)
 				return
+			_left_seat = [_left_seat[0], -100000]
 			Shed.request({"a": "recovery_board"})
 		"jobs":
 			if main.has_method("open_recovery"):
@@ -702,6 +707,7 @@ func stop_driving(tell := true) -> void:
 	if not driving:
 		return
 	driving = false
+	_left_seat = [Time.get_ticks_msec(), _left_seat[1]]
 	car.horn = false
 	main.hud.car = null
 	if tell:
@@ -737,7 +743,7 @@ func _sync_seats() -> void:
 			car.swing_door(side)
 	_seen_seats = seats
 	var me := Shed.me()
-	if int(seats[0]) == me and not riding_along and not driving:
+	if int(seats[0]) == me and not riding_along and not driving and not just_left(false):
 		start_riding_along()
 	elif riding_along and int(seats[0]) != me:
 		stop_riding_along(false)
@@ -778,6 +784,14 @@ func _seat_figure(peer: int, side: int) -> Node3D:
 	return fig
 
 
+## True for a few seconds after you got out of the driver's seat (`driver`) or the passenger
+## seat, while the host may not have heard yet (only a joining player waits on the host).
+func just_left(driver: bool) -> bool:
+	if not (Net.is_online() and not Net.is_host()):
+		return false
+	return Time.get_ticks_msec() - int(_left_seat[0 if driver else 1]) < 3000
+
+
 ## The shed has you in the passenger seat: you're in the cab, looking out from it.
 func start_riding_along() -> void:
 	if riding_along or car == null:
@@ -802,6 +816,7 @@ func stop_riding_along(tell := true) -> void:
 	if not riding_along:
 		return
 	riding_along = false
+	_left_seat = [_left_seat[0], Time.get_ticks_msec()]
 	if tell:
 		Shed.request({"a": "recovery_alight"})
 	if main == null or main.walker == null:

@@ -518,7 +518,7 @@ func _draw_truck_dash() -> void:
 			Color(0.35, 0.6, 1.0) if main_beam else Color(0.35, 0.9, 0.45))
 	# The handbrake telltale: a red (P) in a ring while it's pulled up and left on.
 	if car.parking_brake or car.handbrake > 0.3:
-		var c := r.position + Vector2(158, 28)
+		var c := r.position + Vector2(196, 58)
 		var red := Color(1.0, 0.22, 0.15)
 		draw_arc(c, 11.0, 0.0, TAU, 24, red, 2.0)
 		draw_arc(c, 15.0, deg_to_rad(-50.0), deg_to_rad(50.0), 8, red, 1.5)
