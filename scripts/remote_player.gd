@@ -149,6 +149,7 @@ func push_state(state: PackedFloat32Array) -> void:
 		if RecoveryView.current:
 			RecoveryView.current.remote_state(peer, state)
 		return
+	var driving_left := driving
 	if driving:
 		driving = false
 		_figure.visible = true
@@ -159,10 +160,18 @@ func push_state(state: PackedFloat32Array) -> void:
 		if bike:
 			bike.push_state(state.slice(2))
 		return
-	if riding_bike != 0:
+	var was_riding := riding_bike != 0
+	if was_riding:
 		_stop_riding()
 	if state.size() < 6:
 		return
+	if was_riding or driving_left:
+		# Off the bike (or out of the truck): stood where they got off at once, not shown for a
+		# frame back where they were last on foot (the garage, often) before walking there.
+		_snapshots.clear()
+		_figure.global_transform = Transform3D(Basis(Vector3.UP, state[4]), Vector3(state[1], state[2], state[3]))
+		_walk_from = Vector3.INF
+		_step_from = Vector3.INF
 	_snapshots.append({"t": Time.get_ticks_msec() / 1000.0, "s": state})
 	while _snapshots.size() > 20:
 		_snapshots.pop_front()

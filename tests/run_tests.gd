@@ -354,6 +354,7 @@ func _run_all() -> void:
 	await _test_recovery_horn()
 	print("Simon's 18 October (16:08) round: one-shots that go, the truck's handbrake, passenger seat and radar, off the bike in place, a foot down")
 	await _test_oneshot_sounds()
+	await _test_dismount_in_place()
 	print("Simon's 16 October round: dirt where it really goes, and pressure washing it off")
 	_test_dirt_accrual()
 	_test_wash_rules()
@@ -20003,6 +20004,78 @@ func _test_detail_session() -> void:
 	var wt := wj.slots.find("tank")
 	check(made and wt >= 0 and wj.slick[wt] > 1.8 and wj.slick[wj.slots.find("frame")] == 1.0, "and the pressure washer gets a coated panel clean twice as quick")
 	wj.finish()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame
+
+
+## Simon's 18 October (16:08) round: getting off the bike out in the country flashed you back to
+## the garage and back. Online the shed still had you on the bike until the host heard, so the
+## next change got you back on it where it was got on (the garage); and the crew saw your figure
+## for a moment back where you were last on foot. Now you stand beside the bike, and stay there.
+func _test_dismount_in_place() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	Shed.start_new("Tester", 7)
+	await get_tree().physics_frame
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	main._try_mount(faithful)
+	await get_tree().physics_frame
+	var road: Transform3D = main.world.road_transform(0.3)
+	main.bike.place(road.origin, road.basis.get_euler().y)
+	for i in 30:
+		await get_tree().physics_frame
+	var at: Vector3 = main.bike.global_position
+	main._get_off()
+	await get_tree().physics_frame
+	var garage: Vector3 = Workshop.walker_spawn(Net.local_slot()).origin
+	check(main.bike == null and main.walker.visible and main.walker.global_position.distance_to(at) < 2.0,
+		"off the bike out on the road you're stood beside it (%.1f m; the garage is %.0f m off)" % [main.walker.global_position.distance_to(at), at.distance_to(garage)])
+	# As a co-op client: getting off goes to the host, and the shed has you on the bike a moment
+	# longer (where it was got on); the shed changing meanwhile mustn't put you back on it there.
+	main._try_mount(faithful)
+	await get_tree().physics_frame
+	main.bike.place(at, road.basis.get_euler().y)
+	for i in 10:
+		await get_tree().physics_frame
+	Shed.bikes[faithful]["xf"] = Transform3D(Basis(), garage)
+	main.walker.place(Transform3D(Basis(), at + Vector3.RIGHT * 0.9))
+	main._stop_riding()   # the client's own half of getting off
+	var worst := 0.0
+	for i in 5:
+		Shed.changed.emit()
+		await get_tree().process_frame
+		worst = maxf(worst, main.walker.global_position.distance_to(at))
+		if main.bike != null or not main.walker.camera.current:
+			worst = 9999.0
+	check(main.bike == null and worst < 2.0, "and online, before the host's heard, you're not put back on it at the garage (%.1f m)" % worst)
+	Shed.request({"a": "dismount", "bike": faithful, "xf": Transform3D(Basis(), at)})
+	await get_tree().physics_frame
+	check(main.bike == null and main.walker.global_position.distance_to(at) < 2.0, "nor once it has")
+	main._try_mount(faithful)
+	await get_tree().physics_frame
+	check(main.bike != null, "and you can get straight back on")
+	main._get_off()
+	await get_tree().physics_frame
+	# The crew's view of you: a figure stood where you got off from the first snapshot on foot.
+	var rp := RemotePlayer.new()
+	add_child(rp)
+	rp.setup(77, "Crew", Color.RED)
+	rp.push_state(PackedFloat32Array([0.0, garage.x, garage.y, garage.z, 0.0, 0.0]))
+	for i in 3:
+		await get_tree().physics_frame
+	var riding := PackedFloat32Array([1.0, float(faithful)])
+	riding.resize(30)
+	riding[8] = 1.0   # the bike stood upright (its rotation, w)
+	rp.push_state(riding)
+	await get_tree().physics_frame
+	rp.push_state(PackedFloat32Array([0.0, at.x, at.y, at.z, 0.0, 0.0]))
+	check(rp.bike == null and rp._figure.visible and rp._figure.global_position.distance_to(at) < 0.1,
+		"the crew see you stood where you got off straight away, not back at the garage (%.1f m)" % rp._figure.global_position.distance_to(at))
+	rp.queue_free()
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

@@ -59,6 +59,12 @@ var _safe_xf := Transform3D()
 var _neutral_hint_at := 0   # ticks: when the "in neutral" hint may show again
 var _fade: ColorRect        # the black that fades in and out going back to the garage
 var _going_home := false
+## The bike you've just got off, and when (ticks, ms): online the shed still has you on it
+## until the host hears, and getting back on it meanwhile (back where it was got on, often the
+## garage) flashed you there and back. A refused dismount gives it back after LEFT_WAIT_MS.
+var _left_bike := 0
+var _left_at := 0
+const LEFT_WAIT_MS := 3000
 ## Further than this (m, from the shed's middle) and outside every room, you're out in the world
 ## and the Esc menu offers to take you back to the garage.
 const HOME_RANGE := 30.0
@@ -545,6 +551,7 @@ func _try_mount(bike_id: int) -> void:
 	if why != "":
 		hud.flash(why, 2.5, true)
 		return
+	_left_bike = 0
 	Shed.request({"a": "mount", "bike": bike_id})
 
 
@@ -558,7 +565,9 @@ func _on_shed_changed() -> void:
 	elif recovery.driving and Recovery.driver() != Shed.me():
 		recovery.stop_driving(false)
 	var mine := Shed.riding(Shed.me())
-	if mine != 0 and bike == null:
+	if mine == 0 or mine != _left_bike or Time.get_ticks_msec() - _left_at > LEFT_WAIT_MS:
+		_left_bike = 0
+	if mine != 0 and bike == null and mine != _left_bike:
 		_start_riding(mine)
 	elif mine == 0 and bike != null and riding_id != 0:
 		_stop_riding()
@@ -679,6 +688,9 @@ func _ignition() -> void:
 func _stop_riding() -> void:
 	if bike:
 		BikeHeat.park(riding_id, bike.heat)
+	if riding_id != 0:
+		_left_bike = riding_id
+		_left_at = Time.get_ticks_msec()
 	riding_id = 0
 	if bike:
 		bike.queue_free()
