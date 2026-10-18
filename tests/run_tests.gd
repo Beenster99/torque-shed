@@ -386,6 +386,7 @@ func _run_all() -> void:
 	await _test_staff_skills()
 	await _test_staff_sickies()
 	await _test_staff_service_job()
+	_test_staff_project()
 	await _test_staff_full_detail()
 	await _test_staff_tea_run()
 	await _test_staff_tv()
@@ -19389,6 +19390,57 @@ func _test_staff_service_job() -> void:
 	# Something they can't get done, they say why.
 	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "fit", "bike": ranger, "slot": "front_tyre", "part": "knobbly_mx_90"}})
 	check((Staff.worker(id)["job"] as Dictionary).is_empty(), "a tyre isn't a job for a plain mechanic")
+	Shed.stop()
+
+
+## "Complete a project": a mechanic works through the bike's listed work, exactly that (no full
+## service), skipping what's beyond them and saying so; from a customer's job card the list is
+## the card's tasks; MOT fails become tasks; plain mechanics aren't offered "fit a part".
+func _test_staff_project() -> void:
+	Shed.start_new("T", 5)
+	Staff.hire_one_of_each()
+	var id := _staff_role("mechanic")
+	var mech := Staff.worker(id)
+	check(StaffPanel.kinds_for(mech).has("project") and not StaffPanel.kinds_for(mech).has("fit")
+		and StaffPanel.kinds_for(Staff.worker(_staff_role("expert"))).has("fit"),
+		"mechanics get \"complete a project\" and no \"fit a part\"; experts keep it (%s)" % str(StaffPanel.kinds_for(mech)))
+	var ranger := _bike_named("Rusty Ranger")
+	var chain_before := Contracts._eval_task(ranger, "chain")
+	var list := [{"t": "task", "task": "oil"}, {"t": "task", "task": "pads"}, {"t": "task", "task": "front_tyre"}, {"t": "task", "task": "wash"}]
+	check(Shed.check(Shed.me(), {"a": "staff_assign", "worker": id, "job": {"kind": "project", "bike": ranger, "tasks": list}}) == "",
+		"a project with a list can be given")
+	Shed.request({"a": "staff_assign", "worker": id, "job": {"kind": "project", "bike": ranger, "tasks": list}})
+	var job: Dictionary = mech["job"]
+	check((job.get("tasks", []) as Array).size() == 4 and str(job["tasks"][0]["text"]).begins_with("Oil change"), "they take on the list as given")
+	_staff_run(9000, id, true)
+	var said := Staff.saying(mech)
+	print("    " + said)
+	check((mech["job"] as Dictionary).is_empty() and said.contains("2 of 4"), "it's done: two of the four ticked off (%s)" % said)
+	check(Contracts._eval_task(ranger, "oil")["done"] and Contracts._eval_task(ranger, "pads")["done"], "fresh oil and new pads, as listed")
+	check(Contracts._eval_task(ranger, "chain")["done"] == chain_before["done"] and not Contracts._eval_task(ranger, "front_tyre")["done"],
+		"and nothing else: the chain wasn't on the list, the tyre's an expert's job")
+	var log: Array = mech.get("log", [])
+	check(log.any(func(l): return str(l["text"]).begins_with("Skipped: New front tyre")) and log.any(func(l): return str(l["text"]).begins_with("Done: New brake pads")),
+		"their log says what they did and what they skipped (%s)" % str(log.map(func(l): return l["text"])).left(300))
+	# From a customer's job card.
+	Contracts.spawn("maint", 1)
+	var cid: int = Contracts.customers().keys()[-1]
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var cj: Dictionary = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == "maint")[0]
+	var cb := int(cj["bike"])
+	var tasks := StaffJobs.project_tasks(cb)
+	var goals: Array = cj["goals"].filter(func(g): return str(g.get("t", "")) == "task")
+	check(tasks.size() == goals.size() and tasks.all(func(t): return str(t["t"]) == "task"),
+		"a customer's bike: the list is its job card's tasks (%s)" % str(tasks.map(func(t): return t["text"])))
+	var ex := _staff_role("expert")
+	Shed.request({"a": "staff_assign", "worker": ex, "job": {"kind": "project", "bike": cb}})
+	_staff_run(16000, ex, true)
+	var rows := Contracts.evaluate(cj)
+	check(rows.filter(func(r): return not r["done"]).size() <= rows.filter(func(r): return str(r["text"]) == Contracts.TASKS["wash"]).size(),
+		"the expert gets the card's work done (but a wash) (%s)" % str(rows.map(func(r): return "%s %s" % [r["text"], r["done"]])))
+	# MOT fails as tasks.
+	var mt := StaffJobs.mot_tasks(_bike_named("Barn Find"))
+	check(not mt.is_empty() and mt.all(func(t): return str(t["text"]).begins_with("MOT:")), "an MOT's fails become a list (%d tasks)" % mt.size())
 	Shed.stop()
 
 

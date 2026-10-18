@@ -81,7 +81,7 @@ static func kinds_for(w: Dictionary) -> Array:
 
 ## The bikes a job of `kind` could be on (the shed's own only, for a sale), by id.
 static func bikes_for(kind: String) -> Array:
-	if not (kind in ["service", "fit", "paint", "detail", "sell"]):
+	if not Staff.BIKE_JOBS.has(kind):
 		return []
 	var ids := []
 	for id in Shed.bikes:
@@ -123,7 +123,7 @@ func job() -> Dictionary:
 	var kind := str(choice.get("kind", ""))
 	var j := {"kind": kind}
 	match kind:
-		"service":
+		"service", "project":
 			j["bike"] = int(choice["bike"])
 		"fit":
 			j.merge({"bike": int(choice["bike"]), "slot": str(choice["slot"]), "part": str(choice["part"])})
@@ -287,12 +287,27 @@ func _fill_job(w: Dictionary) -> void:
 		names.append(str(Staff.JOB_NAMES.get(k, k)))
 	_option(grid, "Job", names, kinds.find(kind), func(i): set_choice("kind", kinds[i]))
 	var bikes := bikes_for(kind)
-	if kind in ["service", "fit", "paint", "detail", "sell"]:
+	if Staff.BIKE_JOBS.has(kind):
 		var bike_names := []
 		for b in bikes:
 			bike_names.append("%s%s" % [str(Shed.bikes[b]["name"]), " (customer's)" if Sales.is_customer_bike(int(b)) else ""])
 		_option(grid, "Bike", bike_names, bikes.find(int(choice.get("bike", 0))), func(i): set_choice("bike", int(bikes[i])))
 	match kind:
+		"project":
+			# The list they'll work through, as it stands, with what they'd have to leave.
+			var tasks := StaffJobs.project_tasks(int(choice.get("bike", 0)))
+			var lines := []
+			for t in tasks.slice(0, 10):
+				var why := StaffJobs.task_why(w, int(choice.get("bike", 0)), t)
+				var done := StaffJobs.task_done(int(choice.get("bike", 0)), t)
+				lines.append("%s %s%s" % ["✓" if done else ("–" if why != "" else "•"), str(t["text"]), "  (%s)" % why if why != "" and not done else ""])
+			if tasks.size() > 10:
+				lines.append("... and %d more" % (tasks.size() - 10))
+			grid.add_child(_grid_label("List"))
+			var l := UITheme.label("\n".join(lines) if not lines.is_empty() else "Nothing listed.", 14, Color(1, 1, 1, 0.8))
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			grid.add_child(l)
 		"fit":
 			var slots := fit_slots()
 			_option(grid, "Slot", slots.map(func(s): return PartsDB.slot_name(s)), slots.find(str(choice["slot"])),

@@ -4,11 +4,13 @@ extends RefCounted
 ## while you do something else. Six roles, each unlocked at a character level (UNLOCK):
 ##   detailer   washes bikes in the wash bay (a list of steps per detailing job, see StaffJobs)
 ##   reception  minds the reception desk: greets customers and keeps them waiting happily
-##   mechanic   services bikes and fits parts (simple ones: nothing else has to come off first)
+##   mechanic   services bikes and works through a bike's listed jobs (a project), the simple
+##              ones: nothing else has to come off first
 ##   sales      puts bikes on the showroom plinths, prices them and haggles with buyers
 ##   paint      paint expert: takes a part off, mixes at the bench, sprays it in the booth
 ##   expert     expert mechanic: any part (stripping what's in the way and refitting it), tyres
-##              on the tyre changer, brake fluid as well as oil in a service
+##              on the tyre changer, brake fluid as well as oil in a service; more organised:
+##              orders a whole job's parts in one go and fetches them on a parts trolley
 ## Candidates turn up on the hiring board (the Esc menu's Staff tab), a few new ones a day, each
 ## with a name, a look, a short back story, a starting skill and a daily wage. Hire one (up to
 ## MAX_STAFF), give them a job (look at them and press F, or from the Staff tab) and leave them to
@@ -37,13 +39,20 @@ const MAX_STAFF := 6
 const MAX_LEVEL := 10
 ## The host works the staff out this often (seconds), not every frame.
 const TICK := 0.25
+## Requests too small to go in a worker's log (picking things up and putting them down).
+const QUIET_ACTS: Array[String] = ["take", "place", "drop", "set_down", "grab", "grab_bike", "move_bike", "move_furniture",
+	"release", "unpack", "coffee_tray_down"]
 ## Pseudo player ids: worker `id` acts as peer -(PEER_BASE + id), clear of real peers (> 0),
 ## nobody (0) and the -1s some code uses for "none".
 const PEER_BASE := 100
 ## Jobs, and the roles that do them.
-const JOBS := {"service": ["mechanic", "expert"], "fit": ["mechanic", "expert"], "paint": ["paint"],
+## "project" works through the bike's listed jobs (its job card, MOT fails or assessment, see
+## StaffJobs.project_tasks) and nothing more; fitting a part on request is the expert's.
+const JOBS := {"service": ["mechanic", "expert"], "project": ["mechanic", "expert"], "fit": ["expert"], "paint": ["paint"],
 	"detail": ["detailer"], "sell": ["sales"], "reception": ["reception"], "tea": []}
-const JOB_NAMES := {"service": "Service a bike", "fit": "Fit a part", "paint": "Paint a part", "detail": "Wash and detail a bike",
+## The jobs done on a bike (one worker on each bike at a time).
+const BIKE_JOBS: Array[String] = ["service", "project", "fit", "paint", "detail", "sell"]
+const JOB_NAMES := {"service": "Service a bike", "project": "Complete a project (the listed work)", "fit": "Fit a part", "paint": "Paint a part", "detail": "Wash and detail a bike",
 	"sell": "Sell a bike", "reception": "Run reception", "tea": "Fetch teas from the cafe"}
 ## A day's chance someone phones in sick (more when they're fed up), and the fewest days between.
 const SICK_CHANCE := 0.05
@@ -55,6 +64,8 @@ const TEA_FIRST := 240.0
 ## How long a line said stays over their head, and the news kept for the TV.
 const SAY_SECS := 7.0
 const MAX_NEWS := 8
+## How many lines of their own log each worker keeps.
+const MAX_LOG := 14
 ## How long the salesman thinks over an offer, and how many jobs in a row can fail before
 ## they give it up.
 const CONSIDER_SECS := 9.0
@@ -175,7 +186,7 @@ static func _fill_worker(w: Dictionary, id: int) -> void:
 	var defaults := {"id": id, "name": "Worker", "look": {}, "story": [], "wage": 60, "xp": 0, "mood": 0.75, "hired_day": 0,
 		"sick": false, "sick_last": -99, "jobs": 0, "job": {}, "at": StaffNav.idle(str(w.get("role", "mechanic"))),
 		"pos": Vector3.ZERO, "yaw": 0.0, "leg": {}, "anim": "", "say": "", "say_at": -100.0, "deal": 0, "deal_at": 0.0,
-		"greeted": [], "earned": 0}
+		"greeted": [], "earned": 0, "log": []}
 	for k in defaults:
 		if not w.has(k) or typeof(w[k]) != typeof(defaults[k]):
 			if k == "pos" and w.get("pos") is Vector3:
@@ -454,7 +465,7 @@ static func job_check(w: Dictionary, job) -> String:
 	var roles: Array = JOBS[kind]
 	if not roles.is_empty() and not roles.has(str(w["role"])):
 		return "That's not %s's job: a %s does it." % [first_name(w), " or ".join(roles.map(func(r): return role_name(r).to_lower()))]
-	if kind in ["service", "fit", "paint", "detail", "sell"]:
+	if kind in BIKE_JOBS:
 		var b := int(job.get("bike", 0))
 		if not Shed.bikes.has(b):
 			return "Which bike?"
@@ -465,6 +476,9 @@ static func job_check(w: Dictionary, job) -> String:
 			if int(id) != int(w["id"]) and int(other["job"].get("bike", 0)) == b:
 				return "%s is already working on it." % first_name(other)
 	match kind:
+		"project":
+			if StaffJobs.project_tasks(int(job["bike"]), job.get("tasks", [])).is_empty():
+				return "There's nothing listed to do on the %s." % str(Shed.bikes[int(job["bike"])].get("name", "bike"))
 		"fit":
 			var slot := str(job.get("slot", ""))
 			var part := str(job.get("part", ""))
@@ -595,6 +609,8 @@ static func assign(w: Dictionary, job_in: Dictionary) -> String:
 	if str(job["kind"]) == "reception":
 		w["job"] = {}
 		line = "I'll be on the desk."
+	else:
+		log_line(w, "New job: %s" % label)
 	say(w, line)
 	Shed._mark_dirty()
 	return "%s: \"%s\"" % [first_name(w), line]
@@ -623,6 +639,25 @@ static func say(w: Dictionary, text: String, tell := false, ok := true) -> void:
 		for p in Shed.crew:
 			Shed._tell(int(p), line, ok)
 		_news("%s: %s" % [first_name(w), text])
+
+
+## Adds a line to their own log of what they've done (the Staff TV shows it), with the time of
+## day; the same thing again in a row counts up instead ("... (x3)").
+static func log_line(w: Dictionary, text: String) -> void:
+	if w.is_empty() or text == "":
+		return
+	if not (w.get("log") is Array):
+		w["log"] = []
+	var log: Array = w["log"]
+	text = text.left(1).to_upper() + text.substr(1, 159)
+	if not log.is_empty() and str(log[-1].get("text", "")) == text:
+		log[-1]["n"] = int(log[-1].get("n", 1)) + 1
+		log[-1]["at"] = Daylight.clock_text(Daylight.time_of_day())
+	else:
+		log.append({"at": Daylight.clock_text(Daylight.time_of_day()), "text": text, "n": 1})
+	while log.size() > MAX_LOG:
+		log.pop_front()
+	Shed._mark_dirty()
 
 
 static func _news(text: String) -> void:
@@ -954,6 +989,10 @@ static func _run_job(w: Dictionary, job: Dictionary, dt: float) -> void:
 					if why != "":
 						_failed(w, job, why)
 						return
+					if not QUIET_ACTS.has(str(a.get("a", ""))):
+						log_line(w, str(st.get("what", "")))
+				elif str(st.get("what", "")) != "":
+					log_line(w, str(st["what"]))
 				w["anim"] = ""
 				if str(st.get("after", "")) != "":
 					StaffJobs.after(w, job, str(st["after"]))
@@ -1084,6 +1123,7 @@ static func _failed(w: Dictionary, job: Dictionary, why: String) -> void:
 
 static func _give_up(w: Dictionary, job: Dictionary, why: String) -> void:
 	say(w, why, true, false)
+	log_line(w, "Gave up: %s" % why)
 	_let_go(w)
 	w["job"] = {}
 	w["anim"] = ""
@@ -1098,6 +1138,7 @@ static func _finish(w: Dictionary, job: Dictionary) -> void:
 		line = "%s %s." % [DONE_LINES[Shed._rng.randi() % DONE_LINES.size()], str(job.get("label", "")).trim_suffix(".")]
 	gain(w, 12 + 3 * int(job.get("done", 0)) / 2)
 	say(w, line, true)
+	log_line(w, line)
 	w["jobs"] = int(w["jobs"]) + 1
 	w["mood"] = minf(1.0, float(w["mood"]) + 0.04)
 	w["job"] = {}
