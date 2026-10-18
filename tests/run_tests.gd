@@ -1680,7 +1680,7 @@ func _test_round5_shed() -> void:
 	Shed.request({"a": "order_furniture", "model": "ramp_large"})
 	var ordered: Dictionary = Shed.furniture[Shed.furniture.keys().max()]
 	var at: Vector3 = ordered["xf"].origin
-	check(Shed.furniture.size() == n + 1 and ordered["model"] == "ramp_large" and at.z > 104.0 and absf(at.x) < 65.0,
+	check(Shed.furniture.size() == n + 1 and ordered["model"] == "ramp_large" and WorldYard.DROP_OFF.grow(1.0).has_point(Vector2(at.x, at.z)),
 		"an ordered ramp is left in the yard past the drag strip (%s)" % str(at))
 	check(Shed.check(me, {"a": "grab", "furniture": ordered["id"]}) == "", "you can take hold of it to move it")
 
@@ -2890,11 +2890,17 @@ func _test_road_traffic() -> void:
 	main._start_session()
 	var tr: RoadTraffic = main.traffic
 	tr.setup_roads()
-	var loop_blocked := 0
-	for b in (tr._blocked[0] as PackedByteArray):
-		loop_blocked += b
-	check(tr._ready_roads and tr._tarmac.size() >= 5 and loop_blocked > 20,
-		"the tarmac roads are mapped, with the loop's stretch across the yard out of bounds (%d samples)" % loop_blocked)
+	# No road runs through the yard behind the shed; the High Street past its front is open.
+	var high_blocked := 0
+	for b in (tr._blocked[int(main.world.roads.by_name["high"])] as PackedByteArray):
+		high_blocked += b
+	var through_yard := 0
+	for r: Dictionary in main.world.roads.roads:
+		for p: Vector2 in (r["xz"] as PackedVector2Array):
+			if RoadTraffic.KEEP_OUT.has_point(p):
+				through_yard += 1
+	check(tr._ready_roads and tr._tarmac.size() >= 5 and high_blocked == 0 and through_yard == 0,
+		"the tarmac roads are mapped, the High Street open to them and none through the yard (%d, %d samples)" % [high_blocked, through_yard])
 	tr._spawn_timer = 1000.0   # only the riders this test puts out
 	var near := []
 	for i in RoadTraffic.MAX_RIDERS:
@@ -8183,8 +8189,10 @@ func _test_sales_office_layout() -> void:
 		var r: Rect2 = rooms[room]
 		clear = clear and not sales.grow(SalesOffice.WALL + 1.0).intersects(r) and not SalesOffice.FORECOURT.intersects(r.grow(0.3))
 	check(clear, "the building and its forecourt keep clear of the shed, its side rooms and the wash bay")
-	var yard := Rect2(World.YARD_CENTER - World.YARD_HALF, World.YARD_HALF * 2.0)
-	check(yard.encloses(sales.grow(SalesOffice.WALL)) and yard.encloses(SalesOffice.FORECOURT), "it all stands on the flat yard slab")
+	# Out front on the shed's forecourt slab, short of the High Street's pavement.
+	var yard: Rect2 = WorldYard.GROUND[1]
+	check(yard.encloses(sales.grow(SalesOffice.WALL)) and yard.encloses(SalesOffice.FORECOURT) and SalesOffice.FORECOURT.end.y <= WorldTown.NORTH_FRONT,
+		"it all stands on the flat forecourt slab, short of the pavement")
 	check(SalesOffice.FORECOURT.end.y < 95.0, "the car park stops short of the drag strip")
 	check(Workshop.room_at(Workshop.RECEPTION.origin) == "sales" and Workshop.room_at(Workshop.RECEPTION_DESK.origin) == "sales",
 		"reception is inside")
@@ -10489,17 +10497,19 @@ func _test_customer_rides_in() -> void:
 			slots_ok = slots_ok and o.distance_to(Contracts.park_xf(i - 1).origin) >= 2.0
 	check(slots_ok, "the car park bays are on the forecourt, outside, with room between them")
 	var ride := Contracts.ride_in_path(park)
-	var yard := Rect2(World.YARD_CENTER - World.YARD_HALF, World.YARD_HALF * 2.0).grow(8.0)
+	var flat_ground := WorldTerrain.HOME.grow(-5.0)
 	var flat := true
 	var inside := ""
 	for i in range(1, ride.size()):
 		for k in 10:
 			var p := ride[i - 1].lerp(ride[i], k / 10.0)
-			flat = flat and yard.has_point(Vector2(p.x, p.z))
+			flat = flat and flat_ground.has_point(Vector2(p.x, p.z))
 			if Workshop.room_at(p) != "":
 				inside = Workshop.room_at(p)
-	check(absf(ride[0].x - Contracts.ROAD_FAR_X) < 0.5 and ride[0].z > 120.0 and ride[0].z < 145.0 and flat and inside == "",
-		"they ride in along the road past the yard (from %s) and across the flat yard, through no buildings (%s)" % [ride[0], inside])
+			if not WorldTown.building_at(p).is_empty():
+				inside = "town"
+	check(absf(ride[0].x - Contracts.ROAD_FAR_X) < 0.5 and absf(ride[0].z - WorldTown.STREET_Z) < 3.0 and flat and inside == "",
+		"they ride in along the High Street (from %s) and across the flat forecourt, through no buildings (%s)" % [ride[0], inside])
 	var last := ride[ride.size() - 1] - ride[ride.size() - 2]
 	check(ride[ride.size() - 1].distance_to(Contracts.park_xf(park).origin) < 0.01 and last.normalized().dot(Vector3.FORWARD) > 0.99,
 		"and park nose-in to the office in their bay")
@@ -10673,7 +10683,7 @@ func _test_customer_ride_session() -> void:
 	await get_tree().process_frame
 	var cid := _newest_customer()
 	var cv: CustomerView = view.views.get(cid)
-	check(cv != null and cv.has_bike() and cv.bike_position().z > 120.0, "a customer comes riding in along the road")
+	check(cv != null and cv.has_bike() and absf(cv.bike_position().z - WorldTown.STREET_Z) < 3.0, "a customer comes riding in along the High Street")
 	var park := int(Contracts.customers()[cid]["park"])
 	var arrived := [false]
 	cv.arrived.connect(func(_v): arrived[0] = true)
@@ -18718,6 +18728,18 @@ func _test_go_home() -> void:
 			darkest = maxf(darkest, main._fade.color.a)
 	check(main.walker.global_position.distance_to(spawn) < 1.0 and darkest > 0.95 and main._fade.color.a < 0.05,
 		"on foot it works too, with a fade to black and back (darkest %.2f)" % darkest)
+	# With every bay taken the row they're parked in is out in the Build Yard behind the shed, clear
+	# of its kit and of every building.
+	var row_ok := true
+	for i in 24:
+		var at: Vector3 = main.YARD_ROW + Vector3(float(i % 6) * 2.0, 0.0, -float(i / 6) * 3.0)
+		var yard: Rect2 = WorldYard.GROUND[0]
+		if not yard.grow(-1.0).has_point(Vector2(at.x, at.z)) or Workshop.room_at(at) != "" or not WorldTown.building_at(at, 1.0).is_empty():
+			row_ok = false
+		for k in WorldYard.starting_kit():
+			if (k[1] as Transform3D).origin.distance_to(at) < 6.0:
+				row_ok = false
+	check(row_ok, "with the bays full, bikes brought home go in a row in the yard behind, clear of its kit")
 	main._leave()
 	main.queue_free()
 	await get_tree().physics_frame

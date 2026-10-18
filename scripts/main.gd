@@ -60,6 +60,9 @@ var _going_home := false
 ## Further than this (m, from the shed's middle) and outside every room, you're out in the world
 ## and the Esc menu offers to take you back to the garage.
 const HOME_RANGE := 30.0
+## The first spot of the row in the Build Yard where bikes brought home are parked when every bay
+## is taken (see garage_spot): clear of the jumps, facing up the yard. The row runs east and back.
+const YARD_ROW := Vector3(14.0, 0.0, 32.0)
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
 const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7}
 
@@ -440,7 +443,8 @@ func _fade_to(alpha: float) -> void:
 
 
 ## Where a bike brought back to the garage is parked: its own bay if it's free, else another free
-## bay, else a free spot in a row in the yard outside the roller door.
+## bay, else a free spot in a row at the front of the Build Yard behind the shed (YARD_ROW; the
+## forecourt out front is the car park and the street).
 static func garage_spot(bike_id: int) -> Transform3D:
 	var own := int(Shed.bikes[bike_id].get("bay", -1)) if Shed.bikes.has(bike_id) else -1
 	var order := [own] if own >= 0 and own < Workshop.bay_count() else []
@@ -452,10 +456,10 @@ static func garage_spot(bike_id: int) -> Transform3D:
 		if not Shed.holograms.has(bay) and not _bike_near(o, 2.5, bike_id):
 			return Workshop.bay_transform(bay)
 	for i in 24:
-		var at := Workshop.CENTER + Vector3(-5.0 + float(i % 6) * 2.0, 0.0, Workshop.HALF.y + 5.0 + float(i / 6) * 3.0)
+		var at := YARD_ROW + Vector3(float(i % 6) * 2.0, 0.0, -float(i / 6) * 3.0)
 		if not _bike_near(at, 1.4, bike_id):
-			return Transform3D(Basis(Vector3.UP, PI), at)
-	return Transform3D(Basis(Vector3.UP, PI), Workshop.CENTER + Vector3(0.0, 0.0, Workshop.HALF.y + 5.0))
+			return Transform3D(Basis(), at)
+	return Transform3D(Basis(), YARD_ROW)
 
 
 ## Whether any bike but `except` stands within `r` metres of `at`.

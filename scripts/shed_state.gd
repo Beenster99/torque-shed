@@ -1692,7 +1692,7 @@ func free_yard_xf(model: String):
 	var r := maxf(size.x, size.z) * 0.5 + 0.5
 	for row in 3:
 		for col in 8:
-			var at := Vector3(-60.0 + col * 4.0, 0.0, 107.0 + row * 3.0 + size.z * 0.5)
+			var at := Vector3(WorldYard.DROP_OFF.position.x + 2.0 + col * 4.0, 0.0, WorldYard.DROP_OFF.position.y + 2.0 + row * 3.0 + size.z * 0.5)
 			if _clear_at(at, r):
 				return Transform3D(Basis(), at)
 	return null
