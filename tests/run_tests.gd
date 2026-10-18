@@ -9088,7 +9088,7 @@ func _test_gear_seen_by_others() -> void:
 		"a rider in race gear on a bike is drawn with it (%d meshes, plain %d)" % [dressed._rider.get_child_count(), plain._rider.get_child_count()])
 	var helmeted := 0
 	for c in dressed._rider.get_children():
-		if (c as VisualInstance3D).layers == 1 << (BikeModel.HELMET_LAYER - 1):
+		if c is VisualInstance3D and (c as VisualInstance3D).layers == 1 << (BikeModel.HELMET_LAYER - 1):   # the foot-down markers are bare Node3Ds
 			helmeted += 1
 	check(helmeted >= 4, "your own helmet, torso and upper arms stay out of the first-person view (%d)" % helmeted)
 	# Someone else's rider: all of them in your first-person view, plain or in gear.
