@@ -51,15 +51,15 @@ const COAT_LIFE_KM := 4000.0
 const GLOSS_LIFE_KM := 6000.0
 ## What a deep gloss and a full coat add to a bike's price (on top of being clean, see
 ## Money.clean_bonus), and what each burnt panel takes off.
-const BONUS_GLOSS := 0.04
-const BONUS_COAT := 0.04
+const BONUS_GLOSS := 0.03
+const BONUS_COAT := 0.03
 const BURN_COST := 0.03
 ## The steps of a detailing job, in order, and what they're called.
 const STEPS: Array[String] = ["wash", "polish", "coat"]
 const STEP_NAMES := {"wash": "Wash", "polish": "Polish", "coat": "Ceramic coat"}
 ## A customer's detailing packages (Contracts' "detail" kind), smallest first.
 const PACKAGES := [
-	{"name": "Wash", "steps": ["wash"], "pay": Vector2i(45, 70), "days": 1},
+	{"name": "Wash", "steps": ["wash"], "pay": Vector2i(45, 70), "days": 2},
 	{"name": "Wash and polish", "steps": ["wash", "polish"], "pay": Vector2i(150, 220), "days": 2},
 	{"name": "Full detail", "steps": ["wash", "polish", "coat"], "pay": Vector2i(320, 440), "days": 3},
 ]

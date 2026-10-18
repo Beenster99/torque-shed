@@ -379,6 +379,10 @@ func _run_all() -> void:
 	print("Simon's 18 October round (v0.9.0): the shed on a town High Street, its yard behind")
 	_test_town_plan()
 	await _test_town_session()
+	print("Simon's 18 October round (v0.10.0): polishing and ceramic coating in the wash bay, and detailing jobs")
+	_test_detail_rules()
+	_test_detail_contract()
+	await _test_detail_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -7539,7 +7543,7 @@ func _test_contract_customers() -> void:
 	check(Contracts.customers().is_empty() and Contracts.jobs().is_empty() and Contracts.reputation() == 0,
 		"a new shed has no customers, no jobs and no reputation")
 	check(Contracts.unlocked(0) == ["maint"] and Contracts.unlocked(int(Contracts.UNLOCK["mot"])).has("mot")
-		and Contracts.unlocked(10).size() == 7, "reputation unlocks harder jobs: service first, then MOT, colour matches, batch orders, mods, test rides and bespoke builds")
+		and Contracts.unlocked(10).size() == 8, "reputation unlocks harder jobs: service first, then detailing, MOT, colour matches, batch orders, mods, test rides and bespoke builds")
 	Contracts.advance(Contracts.FIRST_CUSTOMER + 0.05)
 	check(Contracts.customers().size() == 1, "the first customer turns up soon after the shed opens")
 	var c: Dictionary = Contracts.customers().values()[0]
@@ -19083,3 +19087,422 @@ func _test_puncture_shed() -> void:
 		Shed.remove_bike(id)
 	check(arrived > 0 and arrived < 20, "some barn finds come in on a punctured tyre (%d of 20)" % arrived)
 	Shed.stop()
+
+
+# ---------------------------------------------------------------------------- detailing
+
+## A finish with every region of a channel at one level (bytes), the rest as `fin` has them.
+func _fin_with(fin: Dictionary, ch: String, level: float) -> Dictionary:
+	var out := fin.duplicate()
+	var v := PackedByteArray()
+	v.resize(Dirt.CELLS)
+	v.fill(clampi(roundi(level * 255.0), 0, 255))
+	out[ch] = v
+	return out
+
+
+## The rules of detailing (Detail): a panel nobody's detailed is a bit swirled with no coat; it's
+## done in the wash bay; what the mini game sends is kept on the panel, worth its XP once; a burn
+## shows and spoils the job; a coat keeps the road dirt off and wears off slowly with the miles;
+## a deep gloss and a coat sell a bike for more (a burn for less); fresh paint takes it all off;
+## the steps' API (what an AI detailer calls); and it's saved, with old saves loading with none.
+func _test_detail_rules() -> void:
+	Shed.start_new("Tester", 11)
+	var me := Shed.me()
+	var bike := _bike_named("Old Faithful")
+	var tank := Shed.item_on(bike, "tank")
+	var st0 := Detail.part_stats(Shed.items[tank]) if tank != 0 else {}
+	check(tank != 0 and not Detail.has(Shed.items[tank]) and absf(float(st0.get("gloss", 0.0)) - Detail.BASE_GLOSS) < 0.01
+		and Detail.coat_of(Shed.items[tank]) == 0.0 and Detail.panels_of(bike).size() >= 2,
+		"a panel nobody's detailed: a bit swirled, no coat (%d panels on the bike)" % Detail.panels_of(bike).size())
+	check(Detail.bike_line(bike) == "" and Detail.shine_bonus(bike) == 0.0, "an undetailed bike says nothing about it, and its price is as it was")
+	check(Shed.check(me, {"a": "shine_cells", "bike": bike, "parts": {}}) == Detail.NO_REACH, "polishing's done in the wash bay, not in the shed")
+	Shed.bikes[bike]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(bike, slot)
+		if id != 0:
+			Dirt.clear(Shed.items[id])
+	var price0 := Money.bike_sale(bike)
+	Shed.request({"a": "shine_start", "bike": bike})
+	check(Detail.panels_of(bike).all(func(id): return Detail.has(Shed.items[id])) and Shed.condition_of(Shed.items[tank]).get("shine") is Dictionary,
+		"getting set at it: every panel gets a finish of its own, and it's in the panel's condition for drawing")
+	var fin := Detail.data(Shed.items[tank])
+	var xp0 := int(Progress.profile["xp"])
+	Shed.request({"a": "shine_cells", "bike": bike, "parts": {tank: _fin_with(fin, "g", 0.92)}})
+	var xp1 := int(Progress.profile["xp"])
+	Shed.request({"a": "shine_cells", "bike": bike, "parts": {tank: _fin_with(fin, "g", 0.93)}})
+	check(float(Detail.part_stats(Shed.items[tank])["gloss"]) > 0.9 and xp1 > xp0 and int(Progress.profile["xp"]) == xp1,
+		"the tank polished to a deep gloss is kept, and it's worth its XP once (%d, %d)" % [xp1 - xp0, int(Progress.profile["xp"]) - xp1])
+	check(Detail.part_line(Shed.items[tank], "tank").begins_with("Gloss 9") and Detail.bike_line(bike).begins_with("Paintwork: gloss"),
+		"the tank's info and the bike's show its gloss: %s / %s" % [Detail.part_line(Shed.items[tank], "tank"), Detail.bike_line(bike)])
+	check(Shed.check(me, {"a": "shine_step", "bike": bike, "step": "wax"}) != "", "there's no step but wash, polish and coat")
+	# Every panel glossy and coated: it sells for more.
+	for id in Detail.panels_of(bike):
+		var f := _fin_with(_fin_with(Detail.data(Shed.items[id]), "g", 0.95), "c", 1.0)
+		Shed.request({"a": "shine_cells", "bike": bike, "parts": {id: f}})
+	var st := Detail.bike_stats(bike)
+	var price1 := Money.bike_sale(bike)
+	check(float(st["gloss"]) > 0.9 and float(st["coat"]) > 0.95 and Detail.shine_bonus(bike) > Detail.BONUS_GLOSS
+		and price1 > price0 and Sales.appraise(bike)["fair"] > 0,
+		"glossy and coated, it sells for a bit more (%d to %d, +%.1f%%)" % [price0, price1, Detail.shine_bonus(bike) * 100.0])
+	check(Detail.eval_step(bike, "polish")["done"] and Detail.eval_step(bike, "coat")["done"] and Detail.eval_step(bike, "no_burn")["done"],
+		"polished, coated and not burnt: those steps are done")
+	# A burn-through.
+	var burnt := Detail.data(Shed.items[tank])
+	var b: PackedByteArray = burnt["b"]
+	b[Dirt.index(0, 2, 2)] = 255
+	burnt["b"] = b
+	Shed.request({"a": "shine_cells", "bike": bike, "parts": {tank: burnt}})
+	check(int(Detail.part_stats(Shed.items[tank])["burns"]) == 1 and not Detail.eval_step(bike, "no_burn")["done"]
+		and Money.bike_sale(bike) < price1 and Detail.part_line(Shed.items[tank], "tank").contains("BURNT"),
+		"burnt through the clear coat: it shows, spoils the no-burn check and takes some off the price (%d)" % Money.bike_sale(bike))
+	# The coat keeps road dirt off, and washes off quicker.
+	var coated := Detail.coat_of(Shed.items[tank])
+	check(Detail.wash_mult(Shed.items[tank]) > 1.8 and Detail.dirt_protect(Shed.items[tank]) > 0.9, "a full coat: twice as quick to wash, and it sheds the muck")
+	Shed.bikes[bike]["rider"] = me
+	Shed._wear_from_ride(bike, {"km": 0.0, "dirt_km": 3.0, "fly_km": 0.0})
+	var dirt_coated := float(Shed.items[tank]["dirt"])
+	Dirt.clear(Shed.items[tank])
+	var bare = Shed.items[tank].get("shine")
+	Shed.items[tank].erase("shine")
+	Shed._wear_from_ride(bike, {"km": 0.0, "dirt_km": 3.0, "fly_km": 0.0})
+	var dirt_bare := float(Shed.items[tank]["dirt"])
+	Shed.items[tank]["shine"] = bare
+	check(dirt_bare > 0.0 and dirt_coated < dirt_bare * 0.6, "a coated tank picks up less road dirt than a bare one (%.4f vs %.4f)" % [dirt_coated, dirt_bare])
+	# It wears off slowly with the miles.
+	for i in 80:
+		Shed._wear_from_ride(bike, {"km": 5.0, "dirt_km": 0.0, "fly_km": 0.0})
+	Shed.bikes[bike]["rider"] = 0
+	var worn := Detail.coat_of(Shed.items[tank])
+	check(worn < coated - 0.05 and worn > coated - 0.2, "400 km on, the coat's worn a little thinner (%.2f to %.2f)" % [coated, worn])
+	# Fresh paint takes the old finish off with it.
+	var spare := {"shine": Shed.items[tank]["shine"].duplicate(true), "shine_km": 3.0}
+	Detail.repainted(spare)
+	check(not Detail.has(spare) and not spare.has("shine_km"), "fresh paint over a panel takes its old polish and coat off")
+	# The steps an AI detailer works through: a dirty, dull bike, step by step.
+	var job_bike := Shed._new_bike(PartsDB.DEFAULT_BUILD, 1, "Detail test", 0.2)
+	Shed.bikes[job_bike]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER + Vector3(1.0, 0.0, 0.0))
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(job_bike, slot)
+		if id != 0:
+			Shed.items[id]["dirt"] = 0.6
+	for id in Detail.panels_of(job_bike):
+		Detail.store(Shed.items[id], _fin_with(Detail.data(Shed.items[id]), "g", 0.25))
+	var steps := ["wash", "polish", "coat"]
+	check(Detail.next_step(job_bike, steps) == "wash" and Detail.step_progress(job_bike, "polish") < 0.1, "a dirty dull bike: the wash comes first")
+	var p_wash := []
+	for i in 30:
+		p_wash.append(Detail.work_step(job_bike, "wash", 1.0, 0.5))
+		if Detail.step_done(job_bike, "wash"):
+			break
+	check(Detail.step_done(job_bike, "wash") and p_wash.size() > 2 and p_wash[0] < p_wash[-1] and Detail.next_step(job_bike, steps) == "polish",
+		"work_step washes it a bit at a time till it's clean (%d goes), then it's the polish" % p_wash.size())
+	var expert := 0
+	while not Detail.step_done(job_bike, "polish") and expert < 40:
+		Detail.work_step(job_bike, "polish", 1.0, 1.0)
+		expert += 1
+	check(Detail.step_done(job_bike, "polish") and Detail.bike_stats(job_bike)["burns"] == 0, "an expert polishes it up without a burn (%d goes)" % expert)
+	var goes := 0
+	while not Detail.step_done(job_bike, "coat") and goes < 40:
+		Shed.request({"a": "shine_step", "bike": job_bike, "step": "coat", "amount": 1.0, "skill": 1.0})
+		goes += 1
+	check(Detail.step_done(job_bike, "coat") and Detail.next_step(job_bike, steps) == "" and Detail.check_steps(job_bike, steps).size() == 4
+		and Detail.check_steps(job_bike, steps).all(func(r): return r["done"]),
+		"and coats it through the shine_step request: every step done, no burn (%d goes)" % goes)
+	var quick := Detail.work_step(job_bike, "polish", 1.0, 1.0)
+	check(quick >= 0.999, "polishing it again keeps the gloss")
+	check(Detail.step_progress(job_bike, "coat") < 1.0, "so it needs coating again after (%.2f)" % Detail.step_progress(job_bike, "coat"))
+	# Saved, and an old save with no detailing loads with none.
+	SaveGame.slot_override = "test_detail"
+	var slot_name := SaveGame.active_slot()
+	var gloss_before := float(Detail.part_stats(Shed.items[tank])["gloss"])
+	check(SaveGame.write(slot_name, {"version": SaveGame.VERSION, "shed": Shed._snapshot().duplicate(true)}) == OK, "the shed is saved")
+	Shed.start_new("Tester", 12)
+	Shed.load_state(SaveGame.read(slot_name)["shed"], "Tester")
+	check(Shed.items.has(tank) and Detail.has(Shed.items[tank]) and absf(float(Detail.part_stats(Shed.items[tank])["gloss"]) - gloss_before) < 0.005
+		and int(Detail.part_stats(Shed.items[tank])["burns"]) == 1, "the tank's gloss, coat and burn come back from the save")
+	var old: Dictionary = Shed._snapshot().duplicate(true)
+	for id in old["items"]:
+		(old["items"][id] as Dictionary).erase("shine")
+		(old["items"][id] as Dictionary).erase("shine_km")
+	Shed.load_state(old, "Tester")
+	check(not Detail.has(Shed.items[tank]) and absf(float(Detail.bike_stats(bike)["gloss"]) - Detail.BASE_GLOSS) < 0.01 and Detail.shine_bonus(bike) == 0.0,
+		"a shed saved before detailing loads with none: every panel as it was")
+	SaveGame.delete_slot(slot_name)
+	SaveGame.slot_override = ""
+	Shed.stop()
+
+
+## Customers' detailing jobs: a "Detailing" contract for a package (a wash, a wash and polish, the
+## full detail) whose steps are a list on the job; the bike comes in dirty and dull; the handover
+## checks how clean and glossy it is, its coat and that it isn't burnt; the crew and the garage
+## are paid; and a burnt job doesn't pay in full.
+func _test_detail_contract() -> void:
+	Shed.start_new("Tester", 5)
+	var me := Shed.me()
+	check(Contracts.KINDS.has("detail") and Contracts.KIND_NAMES["detail"] == "Detailing" and Contracts.unlocked(1).has("detail"),
+		"Detailing is a kind of contract, offered once the garage has a little reputation")
+	var tab := DebugTab.new()
+	add_child(tab)
+	var packages := []
+	for tier in 3:
+		tab.set_tier(tier)
+		tab.press_named("send_detail")
+	for c in Contracts.customers().values():
+		packages.append(c["offer"].get("steps", []))
+	check(packages.size() == 3 and packages.has(["wash"]) and packages.has(["wash", "polish"]) and packages.has(["wash", "polish", "coat"]),
+		"the Debug tab's difficulty picks the package: a wash, a wash and polish, the full detail %s" % str(packages))
+	var fees := Contracts.customers().values().map(func(c): return int(c["offer"]["pay"]))
+	fees.sort()
+	check(fees.size() == 3 and fees[0] < fees[1] and fees[1] < fees[2], "and the bigger the package, the more it pays %s" % str(fees))
+	for id in Contracts.customers().keys():
+		Contracts.customers().erase(id)
+	tab.set_tier(2)
+	tab.press_named("start_detail")
+	tab.free()
+	var jobs: Array = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == "detail")
+	check(jobs.size() == 1, "Debug: a full detail taken on now")
+	if jobs.size() != 1:
+		Shed.stop()
+		return
+	var job: Dictionary = jobs[0]
+	var bike := int(job["bike"])
+	check(job.get("steps", []) == ["wash", "polish", "coat"] and job["goals"].size() == 4 and job["goals"][3]["step"] == "no_burn",
+		"its steps are a list on the job, and the handover checks no burn-through too: %s" % str(job.get("steps")))
+	var rows := Contracts.evaluate(job)
+	check(Shed._bike_dirt(bike) > 0.3 and float(Detail.bike_stats(bike)["gloss"]) < 0.4 and not rows[0]["done"] and not rows[1]["done"]
+		and not rows[2]["done"] and rows[3]["done"],
+		"the customer's bike came in filthy and dull: %s" % str(rows.map(func(r): return "%s: %s" % [r["text"], r["have"]])))
+	var screen := Contracts.screen_data(job)
+	check(str(screen["kind"]) == "Detailing" and (screen["rows"] as Array).size() == 4 and str(rows[1]["text"]).contains("gloss"),
+		"the job card lists the package's checks")
+	# Worked through on the wash bay lift, the steps in order (as an AI detailer would).
+	Shed.bikes[bike]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+	var goes := 0
+	while Detail.next_step(bike, job["steps"]) != "" and goes < 120:
+		Shed.request({"a": "shine_step", "bike": bike, "step": Detail.next_step(bike, job["steps"]), "amount": 1.0, "skill": 1.0})
+		goes += 1
+	rows = Contracts.evaluate(job)
+	check(rows.all(func(r): return r["done"]) and Contracts.progress(job) == 1.0 and job.get("workers", {}).has(me),
+		"washed, polished and coated: every check's ticked, and you worked on it (%d goes)" % goes)
+	var pay := Contracts.payout(job)
+	check(int(pay["labour"]) == int(job["pay"]) and float(pay["sat"]) == 1.0 and int(pay["tip"]) > 0,
+		"it pays the full fee and a tip for the shine (%d + %d)" % [int(pay["labour"]), int(pay["tip"])])
+	check(Shed.check(me, {"a": "contract_hand_in", "job": job["id"]}).contains("car park"), "it's handed back from the car park")
+	Shed.bikes[bike]["xf"] = Contracts.park_xf(0)
+	var bank0 := Shed.garage_money
+	var cash0 := Progress.money()
+	var rep0 := Contracts.reputation()
+	Shed.request({"a": "contract_hand_in", "job": job["id"]})
+	check(not Contracts.jobs().has(int(job["id"])) and not Shed.bikes.has(bike) and Shed.garage_money > bank0 and Progress.money() > cash0
+		and Contracts.reputation() > rep0 and str(Contracts._st()["done"][0]["kind"]) == "detail",
+		"handed back: the garage and the worker are paid (%d, %d) and the reputation's up" % [Shed.garage_money - bank0, Progress.money() - cash0])
+	# A wash and polish with a burn-through doesn't pay in full.
+	Contracts.spawn("detail", 1)
+	var cid: int = Contracts.customers().keys()[-1]
+	Shed.request({"a": "contract_accept", "customer": cid})
+	var j2: Dictionary = Contracts.jobs().values().filter(func(j): return str(j["kind"]) == "detail")[0]
+	var b2 := int(j2["bike"])
+	Shed.bikes[b2]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+	for g2 in 120:
+		if Detail.next_step(b2, j2["steps"]) == "":
+			break
+		Detail.work_step(b2, Detail.next_step(b2, j2["steps"]), 1.0, 1.0)
+	var t2 := Shed.item_on(b2, "tank")
+	var d2 := Detail.data(Shed.items[t2])
+	var bb: PackedByteArray = d2["b"]
+	bb[0] = 255
+	d2["b"] = bb
+	Shed.request({"a": "shine_cells", "bike": b2, "parts": {t2: d2}})
+	var p2 := Contracts.payout(j2)
+	check(j2["steps"] == ["wash", "polish"] and float(p2["sat"]) < 1.0 and int(p2["labour"]) < int(j2["pay"]) and int(p2["tip"]) == 0,
+		"a burn-through on a polish job: the no-burn check fails and it doesn't pay in full (%d of %d)" % [int(p2["labour"]), int(j2["pay"])])
+	Shed.stop()
+
+
+## Polishing and ceramic coating by hand (DetailMode, DetailJob): the polisher on a washed bike
+## in the wash bay, F brings up the detailing controls; the paint's drawn dull and swirled; the
+## pad brings the gloss up where it goes; held still it burns through; the coat wiped on one way
+## is thin, cross-hatched it's full; residue left too long flashes into a smear, buffed in time it
+## doesn't; the shed hears; and a coated panel washes off quicker.
+func _test_detail_session() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var w: Walker = main.walker
+	var ws: Workshop = main.workshop
+	var bike := _bike_named("Old Faithful")
+	var me := Shed.me()
+	Shed.bikes[bike]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(bike, slot)
+		if id != 0:
+			Shed.items[id]["dirt"] = 0.5
+	Shed.changed.emit()
+	for i in 5:
+		await get_tree().process_frame
+	w.set_tool("polisher")
+	await _aim_at(main, bike, "tank")
+	check(w.tool == "polisher" and Walker.TOOLS.has("polisher") and InputMap.has_action("tool_9"), "the polisher is a tool (key 9)")
+	_press("interact")
+	await get_tree().physics_frame
+	check(not w.detail.active(), "a dirty bike: wash it first")
+	for slot in PartsDB.SLOTS:
+		var id := Shed.item_on(bike, slot)
+		if id != 0:
+			Dirt.clear(Shed.items[id])
+	Shed.changed.emit()
+	await get_tree().process_frame
+	await _aim_at(main, bike, "tank")
+	_press("interact")
+	await get_tree().physics_frame
+	check(w.detail.active() and w.detail.mode == "polish", "washed, F brings up the detailing controls")
+	for i in 30:
+		await get_tree().physics_frame
+		if w.detail.job != null:
+			break
+	var model := ws.bike_model(bike)
+	var job: DetailJob = w.detail.job
+	check(model != null and model.finish_layer != null and model.finish_layer.mesh_count() > 0 and job != null,
+		"the bike's redrawn with its panels' finish on (%d meshes)" % (model.finish_layer.mesh_count() if model and model.finish_layer else 0))
+	if job == null:
+		main._leave()
+		main.queue_free()
+		await get_tree().physics_frame
+		return
+	job.prepare_all()
+	await get_tree().process_frame
+	var hud: DetailHud = main.hud.detail_hud
+	check(hud.showing() and not main.hud._panel.visible, "the detailing readout comes up in place of the side panel")
+	var ti := job.slots.find("tank")
+	check(ti >= 0 and job.part_n[ti] > 50, "the tank's paint is covered in points the pad can get to (%d)" % (job.part_n[ti] if ti >= 0 else 0))
+	var xf := model.global_transform
+	# Sweeping the pad over one half of the tank, the side facing you.
+	var g0 := float(job.panel(ti)["gloss"])
+	var side := []
+	for i in job.e_pos.size():
+		if job.e_slot[i] == ti and job.e_n[i].x > 0.7:
+			side.append(i)
+	side.sort_custom(func(a, b): return job.e_pos[a].z < job.e_pos[b].z)
+	var front: Array = side.slice(0, side.size() / 2)
+	for rep in 4:
+		for k in range(0, front.size(), 3):
+			var i: int = front[k]
+			var n: Vector3 = (xf.basis * job.e_n[i]).normalized()
+			var p: Vector3 = xf * job.e_pos[i]
+			job.step(0.15, p + n * 0.6, -n, true, false)
+	var gf := 0.0
+	var gb := 0.0
+	for i in front:
+		gf += job.e_g[i]
+	for i in side.slice(side.size() / 2):
+		gb += job.e_g[i]
+	gf /= maxf(front.size(), 1)
+	gb /= maxf(side.size() - front.size(), 1)
+	check(gf > 0.85 and gb < g0 + 0.05 and float(job.panel(ti)["gloss"]) > g0 and job.e_b.count(1) == 0,
+		"polished half of the tank comes up to a deep gloss and the other half's as it was (%.2f / %.2f, from %.2f), no burn" % [gf, gb, g0])
+	check(job.cues.any(func(c): return str(c["kind"]) == "gloss") or float(job.panel(ti)["gloss"]) < Detail.GLOSS_GOOD, "a panel brought up to a gloss dings")
+	job.cues.clear()
+	w.detail._send_updates()
+	await get_tree().physics_frame
+	var shed_g := Detail.data(Shed.items[Shed.item_on(bike, "tank")])
+	var cell_f := job.e_cell[front[0]]
+	check(shed_g["g"][cell_f] > 200 and shed_g["u"][cell_f] == 1, "and the shed hears: the polished regions are glossy there (%d)" % shed_g["g"][cell_f])
+	# Held still in one place, pressing hard: it burns through.
+	var hold: int = side[side.size() - 1]
+	var hn: Vector3 = (xf.basis * job.e_n[hold]).normalized()
+	var hp: Vector3 = xf * job.e_pos[hold]
+	var heat_seen := 0.0
+	var t_burn := 0.0
+	for i in 200:
+		job.step(0.02, hp + hn * 0.6, -hn, true, true)
+		heat_seen = maxf(heat_seen, float(job.pad.get("heat", 0.0)))
+		t_burn += 0.02
+		if job.e_b[hold] == 1:
+			break
+	check(job.e_b[hold] == 1 and t_burn > 0.5 and t_burn < 3.0 and job.cues.any(func(c): return str(c["kind"]) == "burn")
+		and int(job.panel(ti)["burns"]) >= 1, "held still and leant on, the pad burns through the clear coat (%.1f s)" % t_burn)
+	check(job.e_g[hold] == 0.0, "and that bit's dull for good")
+	job.cues.clear()
+	# A pass moving along doesn't build the heat that far.
+	var cool := job._heat_near(job.e_pos[front[0]], DetailJob.PAD)
+	check(cool < 0.5, "swept steadily, the paint stays cool between passes (%.2f)" % cool)
+	# Coating: T for the coat; one way only is thin, across as well is full.
+	_press("spray_finish")
+	await get_tree().physics_frame
+	check(w.detail.mode == "coat" and job.mode == "coat", "T switches to the ceramic coat")
+	w.detail.settle = 0.0
+	var top := []
+	for i in job.e_pos.size():
+		if job.e_slot[i] == ti and job.e_n[i].y > 0.8:
+			top.append(i)
+	check(top.size() > 20, "the top of the tank's there to coat (%d points)" % top.size())
+	var c0 := job.e_pos[top[0]]
+	var lay := func(from: Vector3, to: Vector3) -> void:
+		for s in 25:
+			var q: Vector3 = from.lerp(to, s / 24.0)
+			job.step(0.03, xf * (q + Vector3.UP * 0.5), xf.basis * Vector3.DOWN, true, false)
+	var zs: Array = top.map(func(i): return job.e_pos[i].z)
+	var xs: Array = top.map(func(i): return job.e_pos[i].x)
+	var mid := Vector3((xs.min() + xs.max()) * 0.5, c0.y, (zs.min() + zs.max()) * 0.5)
+	# Along the bike, back and forth, over the middle of the top.
+	for r in 2:
+		lay.call(Vector3(mid.x, mid.y, zs.min()), Vector3(mid.x, mid.y, zs.max()))
+		lay.call(Vector3(mid.x, mid.y, zs.max()), Vector3(mid.x, mid.y, zs.min()))
+	var centre := -1
+	var best := INF
+	for i in top:
+		var dd: float = Vector2(job.e_pos[i].x - mid.x, job.e_pos[i].z - mid.z).length()
+		if dd < best:
+			best = dd
+			centre = i
+	var one_way := job.e_c[centre]
+	for r in 2:
+		lay.call(Vector3(xs.min(), mid.y, mid.z), Vector3(xs.max(), mid.y, mid.z))
+		lay.call(Vector3(xs.max(), mid.y, mid.z), Vector3(xs.min(), mid.y, mid.z))
+	var crossed := job.e_c[centre]
+	check(one_way > 0.1 and one_way <= DetailJob.ONE_WAY + 0.01 and crossed > 0.9,
+		"wiped on one way only the coat's thin; cross-hatched it's full (%.2f, then %.2f)" % [one_way, crossed])
+	check(job.e_r[centre] > 0.5 and job.flash_left()["left"] < DetailJob.FLASH, "fresh coat is residue till it's buffed off, its flash clock running")
+	# Buffed off in time at the centre: no smear. The rest left to flash: smears.
+	for i in 40:
+		job.step(0.05, xf * (job.e_pos[centre] + Vector3.UP * 0.5), xf.basis * Vector3.DOWN, false, true)
+	check(job.e_r[centre] == 0.0 and job.e_c[centre] > 0.9, "buffed off with the microfibre: the residue's gone and the coat stays (%.2f)" % job.e_c[centre])
+	var left_on := -1
+	for i in top:
+		if job.e_r[i] > 0.3:
+			left_on = i
+			break
+	for i in 30:
+		job.step(1.0, xf * (c0 + Vector3.UP * 2.5), xf.basis * Vector3.DOWN, false, false)
+	check(left_on >= 0 and job.e_s[left_on] > 0.3 and job.e_r[left_on] == 0.0 and job.e_s[centre] == 0.0
+		and job.cues.any(func(c): return str(c["kind"]) == "smear") and int(job.panel(ti)["smears"]) > 0,
+		"left on past %d s the residue flashes into a smear; the bit buffed in time didn't" % roundi(DetailJob.FLASH))
+	job.cues.clear()
+	w.detail._send_updates()
+	await get_tree().physics_frame
+	var shed_t := Detail.part_stats(Shed.items[Shed.item_on(bike, "tank")])
+	check(int(shed_t["smears"]) > 0 and float(shed_t["coat"]) > 0.0, "the shed has the coat and its smear (%.2f coat, %d smears)" % [float(shed_t["coat"]), int(shed_t["smears"])])
+	# Polishing the smear off takes the coat with it.
+	_press("spray_finish")
+	await get_tree().physics_frame
+	for i in 30:
+		job.step(0.05, xf * (job.e_pos[left_on] + Vector3.UP * 0.5), xf.basis * Vector3.DOWN, true, false)
+	check(job.e_s[left_on] < 0.05 and job.e_c[left_on] < 0.05, "polished off, the smear goes, and the coat there with it")
+	# The polisher's sound.
+	check(Sfx.stream("polisher") != null and Sfx.TOOL_LOOPS.get("polisher", "") == "polisher", "the polisher has its whine (and the crew hear it)")
+	_press("interact")
+	await get_tree().physics_frame
+	check(not w.detail.active() and not model.finish_layer.held_by_job, "F steps back, and the bike's drawn from the shed's finish again")
+	# A coated panel washes off quicker.
+	var tank := Shed.item_on(bike, "tank")
+	Shed.request({"a": "shine_cells", "bike": bike, "parts": {tank: _fin_with(Detail.data(Shed.items[tank]), "c", 1.0)}})
+	var wj := WashJob.new()
+	var made := wj.setup(bike, ws.bike_model(bike))
+	var wt := wj.slots.find("tank")
+	check(made and wt >= 0 and wj.slick[wt] > 1.8 and wj.slick[wj.slots.find("frame")] == 1.0, "and the pressure washer gets a coated panel clean twice as quick")
+	wj.finish()
+	main._leave()
+	main.queue_free()
+	await get_tree().physics_frame

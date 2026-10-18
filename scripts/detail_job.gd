@@ -148,9 +148,20 @@ func setup(bike_id: int, bike_model: BikeModel, start_mode := "polish") -> bool:
 	_build_occupancy(bounds)
 	layer.held_by_job = true
 	var n := slots.size() * Dirt.CELLS
-	for a in [count, sum_g, sum_b, sum_c, sum_r, sum_s]:
-		(a as PackedFloat32Array).resize(n)
-		(a as PackedFloat32Array).fill(0.0)
+	# (Packed arrays are copied into an Array, so each is sized on its own.)
+	count.resize(n)
+	sum_g.resize(n)
+	sum_b.resize(n)
+	sum_c.resize(n)
+	sum_r.resize(n)
+	sum_s.resize(n)
+	for k in n:
+		count[k] = 0.0
+		sum_g[k] = 0.0
+		sum_b[k] = 0.0
+		sum_c[k] = 0.0
+		sum_r[k] = 0.0
+		sum_s[k] = 0.0
 	part_n.resize(slots.size())
 	part_n.fill(0)
 	return true
