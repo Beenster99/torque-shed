@@ -52,6 +52,7 @@ var _kb_lean := 0.0        # the keyboard's lean asked for, ramped (see ramp_lea
 const KEY_LEAN_ON := 1.25
 ## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
 var _safe_xf := Transform3D()
+var _neutral_hint_at := 0   # ticks: when the "in neutral" hint may show again
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
 const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7}
 
@@ -482,9 +483,10 @@ func _start_riding(bike_id: int) -> void:
 	bike.place(xf.origin, xf.basis.get_euler().y)
 	_safe_xf = Transform3D()
 	bike.crashed.connect(func(): hud.flash("Crashed!", 1.5, true))
-	# You get on with the engine off and start it yourself.
+	# You get on with the engine off and the box in neutral, as a parked bike is, and start it yourself.
 	bike.engine_on = false
 	bike.rpm = 0.0
+	bike.gear = Bike.NEUTRAL
 	bike.engine_changed.connect(func(running, reason):
 		if running:
 			hud.flash("Engine running", 1.2)
@@ -716,6 +718,11 @@ func _physics_process(delta: float) -> void:
 		# Dead flies on the front at speed (fewer in the rain).
 		_fly_km += km * clampf((absf(bike.speed) * 3.6 - 30.0) / 70.0, 0.0, 1.5) * (1.0 - 0.6 * Weather.rain_level())
 		_update_dash()
+		if bike.gear == Bike.NEUTRAL and not bike.auto_shift and bike.engine_on and bike.throttle > 0.3 \
+				and Time.get_ticks_msec() > _neutral_hint_at:
+			# Revving away in neutral with a manual box: say how to find first.
+			_neutral_hint_at = Time.get_ticks_msec() + 5000
+			hud.flash("In neutral. {shift_down} for first gear.", 2.0)
 		_keep_on_map()
 		_stats_timer += delta
 		if _stats_timer >= 1.0:
@@ -857,7 +864,7 @@ func _update_dash() -> void:
 	bike.model.set_gauges(Units.speed_value(bike.speed) / full_scale, bike.rpm / maxf(b.redline * 1.1, 1000.0))
 	var bars := roundi(fuel * 8.0)
 	var gauge := "F " + "|".repeat(bars) + ".".repeat(8 - bars) + " E"
-	var gear := "G%d" % bike.gear if b.dash_features.has("gear") else ""
+	var gear := ("N" if bike.gear == Bike.NEUTRAL else "G%d" % bike.gear) if b.dash_features.has("gear") else ""
 	if bike.model.has_dials():
 		_dash.text = ("OFF" if not bike.engine_on else gear) + "\n" + "|".repeat(bars) + ".".repeat(8 - bars)
 		_dash.modulate = Color(0.8, 0.1, 0.05) if fuel < 0.15 else Color(0.1, 0.1, 0.1)

@@ -35,6 +35,7 @@ RIDING
 I / D-pad up: start or stop the engine      W / RT: throttle      S / LT: front brake
 Space / B: rear brake      A D / left stick: lean      Shift / LB: weight back      Ctrl / RB: forward
 E Q / A X: gear up / down      T: auto-shift      C / R3: chase or first-person camera
+Neutral (N) sits between 1st and 2nd: at a standstill E from 1st or Q from 2nd finds it; Q from N is 1st
 Mouse / right stick: swing the camera round      V: ride-by camera (watch yourself go past)
 L / L3: headlight (off, low, high, high with fog lights)      S + W / LT + RT: burnout (lean to spin round)
 R / View: reset after a crash      F / Y: get off (when stopped)      F3: telemetry overlay"""

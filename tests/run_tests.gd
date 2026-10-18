@@ -367,6 +367,9 @@ func _run_all() -> void:
 	_test_tail_and_dash_fit()
 	print("Simon's 17 October round (v0.8.0): third person on foot")
 	await _test_walk_third_person()
+	print("Simon's 18 October round (v0.9.0): neutral, rubber on the road, back to the garage")
+	await _test_neutral_gear()
+	await _test_burnout_marks()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -18383,3 +18386,109 @@ func _test_heat_carry_over() -> void:
 		"the HUD says cold tyres and engine on a cold bike, warm on a ridden one")
 	var save := BikeBuild.new({}).to_dict()
 	check(not str(save).contains("heat") and not str(save).contains("carcass"), "heat isn't part of a saved bike")
+
+
+## Neutral sits between first and second: a half click at a standstill finds it, a full click on
+## the move skips it. In neutral the engine revs freely, nothing drives the back wheel and the bike
+## coasts; the automatic box drops into a gear when the throttle opens.
+func _test_neutral_gear() -> void:
+	check(Bike.gear_name(0) == "N" and Bike.gear_name(3) == "3", "the gear readout shows N for neutral")
+	var r := await ride({}, 0.5, func(_b, _t): pass)
+	var bike: Bike = r["bike"]
+	bike.auto_shift = false
+	var seen := []
+	for step in ["up", "up", "down", "down", "down"]:
+		if step == "up":
+			bike.shift_up()
+		else:
+			bike.shift_down()
+		seen.append(Bike.gear_name(bike.gear))
+	check(seen == ["N", "2", "N", "1", "1"], "standing still: 1 up to N, up to 2, down to N, down to 1, and 1 is the bottom %s" % str(seen))
+	await _done(r)
+	# Revving in neutral: the revs climb with nothing driven, and fall back to idle off the throttle.
+	var top := [0.0, 0.0, 0.0]
+	r = await ride({}, 4.0, func(b, t):
+		if t == 0.0:
+			b.auto_shift = false
+			b.gear = Bike.NEUTRAL
+		b.throttle = 1.0 if t < 2.0 else 0.0
+		b.front_brake = 1.0 if t > 1.2 and t < 2.0 else 0.0
+		if t < 2.0:
+			top[0] = maxf(top[0], b.rpm)
+			top[1] = maxf(top[1], absf(float(b.wheels[1]["drive_torque"])))
+			top[2] = maxf(top[2], b.burnout))
+	bike = r["bike"]
+	check(top[0] > bike.build.redline * 0.85, "in neutral the throttle revs the engine freely (%.0f of %.0f rpm)" % [top[0], bike.build.redline])
+	check(top[1] == 0.0 and absf(bike.speed) < 0.3, "and nothing drives the back wheel: the bike stays put (%.2f m/s)" % bike.speed)
+	check(bike.rpm < bike.idle_now() * 1.3, "off the throttle the revs fall back to idle (%.0f rpm)" % bike.rpm)
+	check(top[2] == 0.0, "front brake and throttle in neutral don't light up a burnout")
+	await _done(r)
+	# The automatic box picks first as soon as the throttle opens in neutral.
+	r = await ride({}, 3.0, func(b, t):
+		if t == 0.0:
+			b.gear = Bike.NEUTRAL
+		b.throttle = 0.6 if t > 0.5 else 0.0)
+	bike = r["bike"]
+	check(bike.gear >= 1 and bike.speed > 4.0, "auto-shift drops out of neutral into gear and rides off (gear %d, %.1f m/s)" % [bike.gear, bike.speed])
+	await _done(r)
+	# On the move a full click goes straight from first to second and back, and neutral coasts.
+	var clicks := []
+	var coast := {}
+	r = await ride({}, 10.0, func(b, t):
+		b.auto_shift = false
+		b.throttle = 1.0 if t < 1.5 else 0.0
+		if absf(t - 1.5) < 0.001:
+			b.shift_up()
+			clicks.append(b.gear)
+		if absf(t - 2.0) < 0.001:
+			b.shift_down()
+			clicks.append(b.gear)
+			b.gear = Bike.NEUTRAL
+			coast["from"] = b.speed
+		if absf(t - 6.0) < 0.001:
+			coast["neutral"] = coast["from"] - b.speed
+			b.gear = 1
+			coast["from"] = b.speed
+		if absf(t - 9.9) < 0.001:
+			coast["gear"] = (coast["from"] - b.speed) / 3.9 * 4.0)
+	check(clicks == [2, 1], "riding, a click up from first is second and down from second is first %s" % str(clicks))
+	check(coast.get("neutral", 99.0) < coast.get("gear", 0.0), "in neutral it coasts on further than with the engine braking in gear (%.1f vs %.1f m/s lost)" % [
+		coast.get("neutral", 99.0), coast.get("gear", 0.0)])
+	await _done(r)
+
+
+## A burnout smears a dark patch of rubber into the tarmac (none on grass); the marks are one
+## capped ring of strips, recycled oldest first, and each fades away a few minutes after it went down.
+func _test_burnout_marks() -> void:
+	var marks := SkidMarks.shared(get_tree())
+	var before := marks.laid()
+	var r := await ride({"engine": "twin_700"}, 3.5, func(b, t):
+		b.front_brake = 1.0
+		b.throttle = 1.0 if t > 0.5 else 0.0)
+	var bike: Bike = r["bike"]
+	var laid := marks.laid() - before
+	var at: Vector3 = bike.wheels[1]["contact_pos"]
+	var col := marks.last_color
+	check(bike.burnout > 0.5 and laid >= 6, "a burnout on tarmac lays rubber (%d strips)" % laid)
+	check(marks.last_centre.distance_to(at) < 0.15 and col.r < 0.1 and col.a > 0.2,
+		"a dark patch right under the spinning back tyre (%.2f m away, rgb %.2f alpha %.2f)" % [marks.last_centre.distance_to(at), col.r, col.a])
+	check(marks.life_of(marks.newest()) == 1.0, "fresh rubber shows at full strength")
+	await _done(r)
+	before = marks.laid()
+	r = await ride({"engine": "twin_700"}, 2.5, func(b, t):
+		b.front_brake = 1.0
+		b.throttle = 1.0 if t > 0.5 else 0.0, "grass")
+	check(r["bike"].burnout > 0.3 and marks.laid() == before, "on grass the burnout leaves no rubber (%d strips)" % (marks.laid() - before))
+	await _done(r)
+	# The ring is capped: laying more than it holds recycles the oldest, and the count stops growing.
+	before = marks.laid()
+	for i in SkidMarks.MAX_MARKS + 40:
+		marks.mark("zz_test", Vector3(float(i) * 0.15, 0.0, 300.0), Vector3.UP, 0.15, 1.0, "tarmac")
+	check(marks.count() == SkidMarks.MAX_MARKS and marks.laid() - before >= SkidMarks.MAX_MARKS,
+		"the marks are capped at %d strips, the oldest reused (%d drawn, %d laid)" % [SkidMarks.MAX_MARKS, marks.count(), marks.laid() - before])
+	marks.mark("zz_test", Vector3.ZERO, Vector3.UP, 0.0, 0.0, "")
+	var newest_i := marks.newest()
+	marks._clock += SkidMarks.HOLD + SkidMarks.FADE * 0.5
+	var half := marks.life_of(newest_i)
+	marks._clock += SkidMarks.FADE
+	check(half > 0.3 and half < 0.7 and marks.life_of(newest_i) == 0.0, "old rubber fades away (%.2f half way, then gone)" % half)
