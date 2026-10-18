@@ -14,6 +14,22 @@ extends RefCounted
 const WALK_SPEED := 1.35        # m/s on foot
 const PUSH_SPEED := 0.95        # wheeling a bike
 const BIKE_AHEAD := 1.05        # how far ahead of them a bike they're wheeling stands
+const CART_AHEAD := 0.85        # and a trolley's middle, pushed by its handle
+## Room kept between a walk cut straight (see pull) and anything in the way: on foot, and
+## wheeling a bike or a trolley.
+const CLEAR := 0.35
+const PUSH_CLEAR := 0.55
+## Rooms a walk can cut straight across between two points in the same one ("" is outside).
+const OPEN_ROOMS: Array[String] = ["shed", "paint", "storage", "mixing", "wash", ""]
+## How far off the delivery area's lines a walk cut straight keeps (boxes stand right up to them).
+const DELIVERY_CLEAR := 0.45
+## The middle of the aisle between the delivery floor and its racking.
+const AISLE_Z := 76.15
+## A parked bike's half size (across, along) for keeping clear of it.
+const BIKE_HALF := Vector2(0.32, 1.05)
+## Fixed things on the floor that aren't equipment: the workbench, the parts computer's desk and
+## the bins by the roller door (x/z rectangles).
+const FIXED_BOXES: Array[Rect2] = [Rect2(-6.5, 63.2, 0.95, 4.85), Rect2(5.65, 66.25, 0.8, 1.35), Rect2(-4.2, 69.85, 1.75, 0.65)]
 
 ## The walkways' corners (x, z on the floor).
 const NODES := {
@@ -128,9 +144,11 @@ static func node_path(a: String, b: String) -> Array:
 
 
 ## The walk from `from` (the place they're at, standing at `pos`) to the place `to`: back out of
-## the one, along the graph and in to the other. Corners closer together than a few centimetres
-## are merged.
-static func route(from: Dictionary, to: Dictionary, pos: Vector3) -> PackedVector3Array:
+## the one, along the graph and in to the other, then pulled straight (see pull): any corner
+## they can see past is cut, so they don't wander out to the middle of the shed to cross it.
+## Corners closer together than a few centimetres are merged. `ignore`: {bike, furniture} they're
+## wheeling, which isn't in their way.
+static func route(from: Dictionary, to: Dictionary, pos: Vector3, ignore := {}) -> PackedVector3Array:
 	var pts := PackedVector3Array([Vector3(pos.x, 0.0, pos.z)])
 	var back: Array = from.get("p", [])
 	for i in range(back.size() - 2, -1, -1):
@@ -141,7 +159,135 @@ static func route(from: Dictionary, to: Dictionary, pos: Vector3) -> PackedVecto
 		_add(pts, p)
 	if pts.size() == 1:
 		pts.append(pts[0])
-	return pts
+		return pts
+	return pull(pts, PUSH_CLEAR if not ignore.is_empty() else CLEAR, ignore)
+
+
+# ---------------------------------------------------------------------------- straight lines
+
+## A walk with every corner they can see past cut out: from each point, straight on to the
+## furthest one further along that's in plain sight (the same room, or both out in the open, and
+## nothing in the way with `clear` metres to spare). The start and end stay where they are.
+static func pull(pts: PackedVector3Array, clear := CLEAR, ignore := {}) -> PackedVector3Array:
+	if pts.size() <= 2:
+		return pts
+	var obs := obstacles(ignore)
+	var rooms := _walls()
+	var out := PackedVector3Array([pts[0]])
+	var i := 0
+	while i < pts.size() - 1:
+		var next := i + 1
+		for j in range(pts.size() - 1, i + 1, -1):
+			if sees(pts[i], pts[j], obs, rooms, clear):
+				next = j
+				break
+		out.append(pts[next])
+		i = next
+	return out
+
+
+## Whether the straight line from `a` to `b` is a clear walk: both ends in the same open room
+## (or both outside, crossing no building), and nothing in `obs` within `clear` of it.
+static func sees(a: Vector3, b: Vector3, obs: Array, rooms: Dictionary, clear := CLEAR) -> bool:
+	var ra := _room(a, rooms)
+	if ra != _room(b, rooms) or not OPEN_ROOMS.has(ra):
+		return false
+	var a2 := Vector2(a.x, a.z)
+	var b2 := Vector2(b.x, b.z)
+	if ra == "":
+		for r in rooms.values():
+			if _hits_box(a2, b2, (r as Rect2).get_center(), (r as Rect2).size * 0.5 + Vector2(0.25, 0.25), Vector2.RIGHT, Vector2.DOWN, false):
+				return false
+	for o in obs:
+		if _hits_box(a2, b2, o[0], o[1] + Vector2(clear, clear), o[2], o[3], true):
+			return false
+	return true
+
+
+## Which room a point's in for walking straight across ("wash" for the wash bay lean-to, which
+## has walls but no room of its own; "" outside).
+static func _room(p: Vector3, rooms: Dictionary) -> String:
+	var q := Vector2(p.x, p.z)
+	for r in rooms:
+		if (rooms[r] as Rect2).has_point(q):
+			return str(r)
+	return ""
+
+
+## The rooms' floors, and the wash bay's, as x/z rectangles (the shed's upstairs rooms left out).
+static func _walls() -> Dictionary:
+	var out := Workshop.rooms()
+	out.erase("sales_office")
+	out.erase("lounge")
+	out["wash"] = Rect2(Workshop.WASH_CENTER.x - Workshop.WASH_HALF.x, Workshop.WASH_CENTER.z - Workshop.WASH_HALF.y,
+		Workshop.WASH_HALF.x * 2.0, Workshop.WASH_HALF.y * 2.0)
+	return out
+
+
+## What's in the way on the floor: [centre, half size, x axis, z axis] boxes for the bikes, the
+## equipment standing about, the fixed workbench, parts computer and bins, and the delivery
+## area's boxes (kept well clear of, with DELIVERY_CLEAR round its lines). `ignore` leaves out
+## what they're wheeling.
+static func obstacles(ignore := {}) -> Array:
+	var out := []
+	for id in Shed.bikes:
+		var b: Dictionary = Shed.bikes[id]
+		if int(id) == int(ignore.get("bike", 0)) or int(b.get("rider", 0)) != 0 or not (b.get("xf") is Transform3D):
+			continue
+		out.append(_box(b["xf"], BIKE_HALF))
+	for id in Shed.furniture:
+		var f: Dictionary = Shed.furniture[id]
+		if int(id) == int(ignore.get("furniture", 0)) or int(f.get("mover", 0)) != 0 or not (f.get("xf") is Transform3D):
+			continue
+		if Equipment.WALL_KINDS.has(str(f.get("kind", ""))) or Equipment.is_wall(str(f.get("model", ""))):
+			continue
+		var size := Shed.furniture_size(f)
+		out.append(_box(f["xf"], Vector2(size.x, size.z) * 0.5))
+	for r in FIXED_BOXES:
+		out.append([Vector2(r.get_center().x, r.get_center().y), r.size * 0.5, Vector2.RIGHT, Vector2.DOWN])
+	var d: Rect2 = Shed.DELIVERY_FLOOR.grow(DELIVERY_CLEAR)
+	out.append([d.get_center(), d.size * 0.5, Vector2.RIGHT, Vector2.DOWN])
+	return out
+
+
+static func _box(xf: Transform3D, half: Vector2) -> Array:
+	var ax := Vector2(xf.basis.x.x, xf.basis.x.z)
+	var az := Vector2(xf.basis.z.x, xf.basis.z.z)
+	return [Vector2(xf.origin.x, xf.origin.z), half, ax.normalized() if ax.length() > 0.001 else Vector2.RIGHT,
+		az.normalized() if az.length() > 0.001 else Vector2.DOWN]
+
+
+## Whether segment a..b passes through a box (centre `c`, half size `h` along axes `ax`, `az`).
+## With `skip_inside`, a box either end's already in doesn't count (they're stood at it).
+static func _hits_box(a: Vector2, b: Vector2, c: Vector2, h: Vector2, ax: Vector2, az: Vector2, skip_inside: bool) -> bool:
+	var la := Vector2((a - c).dot(ax), (a - c).dot(az))
+	var lb := Vector2((b - c).dot(ax), (b - c).dot(az))
+	var inside := func(p: Vector2) -> bool: return absf(p.x) <= h.x and absf(p.y) <= h.y
+	if skip_inside and (inside.call(la) or inside.call(lb)):
+		return false
+	# Slabs: the part of the segment inside each pair of sides.
+	var t0 := 0.0
+	var t1 := 1.0
+	var d := lb - la
+	for k in 2:
+		var p := la.x if k == 0 else la.y
+		var dv := d.x if k == 0 else d.y
+		var e := h.x if k == 0 else h.y
+		if absf(dv) < 0.000001:
+			if absf(p) > e:
+				return false
+			continue
+		var ta := (-e - p) / dv
+		var tb := (e - p) / dv
+		if ta > tb:
+			var s := ta
+			ta = tb
+			tb = s
+		t0 = maxf(t0, ta)
+		t1 = minf(t1, tb)
+		if t0 > t1:
+			return false
+	return true
 
 
 static func _add(pts: PackedVector3Array, p: Vector3) -> void:
@@ -283,7 +429,12 @@ static func at_item(item_id: int) -> Dictionary:
 			return at_spot(spot)
 	var at := StaffJobs.item_at(item_id)
 	if Shed.DELIVERY_AREA.grow(0.6).has_point(Vector2(at.x, at.z)):
-		return place("yard_aisle", [Vector3(at.x, 0.0, 76.1), Vector3(at.x, 0.0, minf(at.z + 0.7, 76.1))], 0.0)
+		# A box on the delivery floor: reached from whichever side's nearer, the front line or the
+		# aisle behind, never stood in among the boxes.
+		var front := Shed.DELIVERY_AREA.position.y - DELIVERY_CLEAR
+		if at.z - front < AISLE_Z - at.z:
+			return place("yard", [Vector3(at.x, 0.0, front)], PI)
+		return place("yard_aisle", [Vector3(at.x, 0.0, AISLE_Z)], 0.0)
 	if Shed.in_work_area(at) and Workshop.room_at(at) == "shed":
 		var p := Vector3(clampf(at.x, -5.2, 5.0), 0.0, clampf(at.z + 0.6, 63.4, 68.8))
 		var node := "shed_w" if p.x < -2.0 else ("shed_e" if p.x > 2.0 else "shed")

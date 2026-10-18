@@ -387,6 +387,7 @@ func _run_all() -> void:
 	await _test_staff_sickies()
 	await _test_staff_service_job()
 	_test_staff_project()
+	_test_staff_paths()
 	await _test_staff_full_detail()
 	await _test_staff_tea_run()
 	await _test_staff_tv()
@@ -19441,6 +19442,79 @@ func _test_staff_project() -> void:
 	# MOT fails as tasks.
 	var mt := StaffJobs.mot_tasks(_bike_named("Barn Find"))
 	check(not mt.is_empty() and mt.all(func(t): return str(t["text"]).begins_with("MOT:")), "an MOT's fails become a list (%d tasks)" % mt.size())
+	Shed.stop()
+
+
+## Staff walks: straight across the shed where nothing's in the way (not out to the middle of it
+## and back), never through a bike, the workbench or a wall (in and out of rooms by the doors),
+## and clear of the delivery area's boxes.
+func _test_staff_paths() -> void:
+	Shed.start_new("T", 5)
+	var raw_len := func(from: Dictionary, to: Dictionary, pos: Vector3) -> float:
+		var pts := PackedVector3Array([pos])
+		for n in StaffNav.node_path(str(from["n"]), str(to["n"])):
+			pts.append(Vector3(StaffNav.NODES[n].x, 0.0, StaffNav.NODES[n].y))
+		pts.append(StaffNav.spot(to))
+		return StaffNav.length(pts)
+	var home := StaffNav.idle("mechanic")
+	var pc := StaffNav.computer()
+	var r := StaffNav.route(home, pc, StaffNav.spot(home))
+	var mid := Vector3(StaffNav.NODES["shed"].x, 0.0, StaffNav.NODES["shed"].y)
+	check(not Array(r).any(func(p): return p.distance_to(mid) < 0.05) and r.size() <= 3 and StaffNav.length(r) < float(raw_len.call(home, pc, StaffNav.spot(home))) - 0.2,
+		"from the bench to the parts computer: straight across, not via the middle of the shed (%d points, %.1f m)" % [r.size(), StaffNav.length(r)])
+	# A box near the front of the delivery area, and one at the back.
+	var front_box := 0
+	var back_box := 0
+	for part in ["spark_plugs", "air_filter", "oil_filter", "sintered", "organic", "knobbly_mx_90"]:
+		if PartsDB.get_part(part).is_empty():
+			continue
+		Shed.request({"a": "order_part", "part": part})
+	for id in Shed.items:
+		if Shed.items[id]["at"] == "floor" and Shed.DELIVERY_FLOOR.has_point(Vector2(StaffJobs.item_at(id).x, StaffJobs.item_at(id).z)):
+			var z := StaffJobs.item_at(id).z
+			if front_box == 0 or z < StaffJobs.item_at(front_box).z:
+				front_box = int(id)
+			if back_box == 0 or z > StaffJobs.item_at(back_box).z:
+				back_box = int(id)
+	var places := [pc, StaffNav.bench(2), StaffNav.at_item(front_box), StaffNav.at_item(back_box), StaffNav.wash(), StaffNav.mix_bench(),
+		StaffNav.cafe_counter(), StaffNav.show_side(1)]
+	for b in Shed.bikes:
+		places.append(StaffNav.bike(int(b)))
+	var obs := StaffNav.obstacles()
+	var bad := []
+	for a in places:
+		for b in places:
+			if a == b:
+				continue
+			var pts := StaffNav.route(a, b, StaffNav.spot(a))
+			var len := StaffNav.length(pts)
+			var s := 0.0
+			var prev := StaffNav.along(pts, 0.0)
+			while s <= len:
+				var p := StaffNav.along(pts, s)
+				var q := Vector2(p.x, p.z)
+				var near_end := p.distance_to(pts[0]) < 0.8 or p.distance_to(pts[pts.size() - 1]) < 0.8
+				if Shed.DELIVERY_FLOOR.has_point(q):
+					bad.append("in the delivery boxes at %s" % str(q))
+				for o in obs:
+					var c: Vector2 = o[0]
+					var h: Vector2 = o[1]
+					var l := Vector2((q - c).dot(o[2]), (q - c).dot(o[3]))
+					if not near_end and absf(l.x) < h.x - 0.02 and absf(l.y) < h.y - 0.02:
+						bad.append("through something at %s" % str(q))
+				var was_in := Workshop.room_at(prev) == "shed"
+				if was_in != (Workshop.room_at(p) == "shed"):
+					var by_door := false
+					for n in StaffNav.NODES:
+						by_door = by_door or Vector2(StaffNav.NODES[n]).distance_to(q) < 1.6
+					if not by_door:
+						bad.append("through the shed wall at %s" % str(q))
+				prev = p
+				s += 0.1
+	check(bad.is_empty(), "every walk between %d places keeps out of bikes, benches, walls and the delivery boxes (%d bad: %s)" % [places.size(),
+		bad.size(), str(bad.slice(0, 4))])
+	var at_front := StaffNav.spot(StaffNav.at_item(front_box))
+	check(at_front.z < Shed.DELIVERY_AREA.position.y - 0.3, "a box at the front of the delivery area is fetched from in front of it (%s)" % str(at_front))
 	Shed.stop()
 
 

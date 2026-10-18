@@ -871,7 +871,7 @@ static func _walked(w: Dictionary) -> bool:
 static func _go_to(w: Dictionary, to: Dictionary, push := 0, push_from := {}) -> void:
 	var from: Dictionary = push_from if push != 0 else w.get("at", {})
 	var start: Vector3 = _pos_now(w) if push == 0 else (Shed.bikes[push]["xf"] as Transform3D).origin
-	var pts := StaffNav.route(from, to, start)
+	var pts := StaffNav.route(from, to, start, {"bike": push} if push != 0 else {})
 	var length := StaffNav.length(pts)
 	w["leg"] = {"pts": pts, "t0": clock(), "v": StaffNav.PUSH_SPEED if push != 0 else StaffNav.WALK_SPEED, "len": length,
 		"push": push, "n": int(w.get("legs", 0)) + 1}
