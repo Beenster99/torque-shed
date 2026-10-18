@@ -86,7 +86,7 @@ static func signature() -> String:
 	var bits := [Recovery.owned(), Recovery.offers().keys(), Shed.garage_money, Recovery._st()["done"].size()]
 	for id in Recovery.jobs():
 		var j: Dictionary = Recovery.jobs()[id]
-		bits.append([id, j["state"], Recovery.is_loaded(int(j["bike"])), Recovery.insurer_left(j) if str(j["state"]) == "insurer" else []])
+		bits.append([id, j["state"], Recovery.is_loaded(int(j["bike"])), Workflow.assessed(int(j["bike"])), Recovery.insurer_left(j) if str(j["state"]) == "insurer" else []])
 	return str(bits)
 
 
@@ -134,8 +134,13 @@ static func fill(box: VBoxContainer, assess: Callable) -> void:
 				box.add_child(UITheme.label("To fetch: %s. %s" % [where, "It won't roll: take the dolly tray." if not bool(j["rolls"])
 					else "It rolls: winch it up the ramp."], 15))
 			"delivered":
-				box.add_child(UITheme.label("In the yard. Assess it and decide what to do with it.", 15))
-				box.add_child(ContractPanel.button("Assess it", func(): assess.call(int(id))))
+				var done := Workflow.assessed(bike_id)
+				box.add_child(UITheme.label("In the yard. %s Its job card is on the Workflow channel of the bay screens: touch them to run it." % (
+					"Assessed: decide what to do with it." if done else "Assess it and decide what to do with it."), 15))
+				box.add_child(ContractPanel.button("See the assessment" if done else "Assess vehicle", func():
+					if not Workflow.assessed(bike_id):
+						Shed.request({"a": "card_assess", "bike": bike_id})
+					assess.call(int(id))))
 			"insurer":
 				var left := Recovery.insurer_left(j)
 				box.add_child(UITheme.label("Repair for %s, paying %s. %s" % [j["insurer"], Recovery.money(int(j.get("pay", 0))),
@@ -157,8 +162,16 @@ static func fill(box: VBoxContainer, assess: Callable) -> void:
 ## The assessment of a delivered bike: its parts, the repair estimate and the three choices.
 static func fill_assessment(box: VBoxContainer, job: Dictionary, after: Callable) -> void:
 	var bike_id := int(job["bike"])
+	# The assessment on the bike's job card (the same for the whole crew), or worked out here
+	# while the host's answer is on its way.
 	var a := Recovery.assess(bike_id, job)
+	var card := Workflow.card(bike_id)
+	if card.get("prices") is Dictionary:
+		a = {"rows": card["rows"], "repair": card["repair"], "fixed": card["fixed"], "now": card["now"]}
+		a.merge(card["prices"])
 	box.add_child(UITheme.title("ASSESSMENT: %s" % str(job["name"]).to_upper(), 22))
+	box.add_child(UITheme.label(("Assessed by %s. " % card["by"] if card.has("by") else "") +
+		"The job card, with its task list, is on the Workflow channel of the bay screens.", 13, Color(1, 1, 1, 0.6)))
 	box.add_child(UITheme.label("%s  ·  %s  ·  %s" % [Recovery.KIND_NAMES[str(job["kind"])], Shed.bikes[bike_id]["name"],
 		"owner %s" % job["contact"] if str(job["kind"]) == "barn" else "%s's customer, %s" % [job["insurer"], job["contact"]]], 15, UITheme.ACCENT))
 	var grid := GridContainer.new()
@@ -182,7 +195,7 @@ static func fill_assessment(box: VBoxContainer, job: Dictionary, after: Callable
 		bar.value = hp * 100.0
 		bar.show_percentage = false
 		bar.modulate = col
-		bar.tooltip_text = str(r["text"])
+		bar.tooltip_text = str(r.get("text", ""))
 		grid.add_child(bar)
 		grid.add_child(cell.call({"ok": "fine", "restore": "restore", "replace": "REPLACE"}[str(r["fix"])], col))
 		grid.add_child(cell.call(Recovery.money(int(r["cost"])) if int(r["cost"]) > 0 else "-"))

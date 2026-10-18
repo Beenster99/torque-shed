@@ -60,6 +60,13 @@ func test_assess() -> void:
 	var fixes: Array = live["rows"].filter(func(r): return str(r["fix"]) != "ok")
 	check((c["tasks"] as Array).size() >= fixes.size() + 1 and str(c["tasks"][-1]["fix"]) == "bolted",
 		"each repair is a task on the card, ending with every part on and bolted (%d tasks)" % (c["tasks"] as Array).size())
+	# The old menu (Esc, Recovery) shows the same assessment, and points to the screens.
+	var box := VBoxContainer.new()
+	RecoveryPanel.fill_assessment(box, job, func(): pass)
+	var said := box.find_children("*", "Label", true, false).map(func(l): return (l as Label).text)
+	check(said.any(func(s): return str(s).contains("Assessed by Recovery tester") and str(s).contains("Workflow channel")),
+		"the Recovery menu shows the card's assessment and points to the Workflow channel")
+	box.free()
 	# A client gets the card with the next sync of the shed.
 	var synced: Dictionary = Shed._snapshot().duplicate(true)
 	check(synced["bikes"][bike].get("card") is Dictionary and synced["bikes"][bike]["card"]["rows"].size() == c["rows"].size(),
