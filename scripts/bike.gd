@@ -71,7 +71,7 @@ const WHEELIE_PITCH := deg_to_rad(28.0)   # where the rider tries to hold a whee
 const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down
 const AIR_REV_PITCH := 7.0        # pitch acceleration (rad/s^2) from blipping the rear wheel in the air
 const SKID_SLIP := 0.2            # tyre slip above which it screeches and marks the road
-const BUMP_HEIGHT := {"tarmac": 0.006, "concrete": 0.004, "dirt": 0.035, "grass": 0.025, "gravel": 0.03}
+const BUMP_HEIGHT := {"tarmac": 0.006, "concrete": 0.004, "dirt": 0.035, "grass": 0.025, "gravel": 0.03, "sand": 0.02, "snow": 0.012}
 static var _bumps: FastNoiseLite
 ## How much past the grip that's left for braking (normalised slip) a rider with no help lets the
 ## front go before they'd ease off: with full care (Riding realism 0.5 and up) none at all.
@@ -378,6 +378,20 @@ func is_starting() -> bool:
 	return _starting > 0.0
 
 
+## The world's origin moved by `d` (see AdventureWorld): the bike jumps by -d with its speed,
+## lean and spin exactly as they were, and so does its rider if they're off it.
+func shift_origin(d: Vector3) -> void:
+	var t := global_transform
+	t.origin -= d
+	global_transform = t
+	PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+	for w in wheels:
+		if w.has("contact_pos"):
+			w["contact_pos"] = (w["contact_pos"] as Vector3) - d
+	if is_instance_valid(_ragdoll):
+		_ragdoll.global_position -= d
+
+
 func respawn() -> void:
 	var fwd := -global_transform.basis.z
 	var heading := atan2(-fwd.x, -fwd.z)
@@ -562,7 +576,7 @@ func lean_for_input(x: float) -> float:
 ## clearance allows.
 func _grip_lean() -> float:
 	var surf := str(wheels[1]["surface"]) if not wheels.is_empty() else "tarmac"
-	var mu := minf(float(build.grip_front.get(surf, 0.7)), float(build.grip_rear.get(surf, 0.7))) * Weather.grip_mult(surf)
+	var mu := minf(surface_grip(build.grip_front, surf), surface_grip(build.grip_rear, surf)) * Weather.grip_mult(surf)
 	# With Riding realism up, the rider knows cold (or overcooked) tyres hold less and leans less on
 	# them; at 0 they lean as far as warm tyres would hold, and find out.
 	if heat:
@@ -1048,7 +1062,7 @@ func _apply_donut(delta: float) -> void:
 	var wb := build.wheelbase
 	var i_front := inertia.y + mass * wb * wb * 0.25
 	var push := (want - yaw_rate) * i_front * 8.0 / wb
-	var grip: float = float(build.grip_rear.get(str(wheels[1]["surface"]), 0.7)) * float(wheels[1]["load"])
+	var grip: float = surface_grip(build.grip_rear, str(wheels[1]["surface"])) * float(wheels[1]["load"])
 	push = clampf(push, -grip, grip)
 	var at: Vector3 = wheels[1].get("contact_pos", global_transform * Vector3(0.0, -build.rear_radius, wb * 0.5))
 	apply_force(b.x * push, at - global_position)
@@ -1261,7 +1275,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var v_long := v_contact.dot(long_dir)
 	var v_lat := v_contact.dot(lat_dir)
 	var v_abs := absf(v_long)
-	var mu_surf: float = float((build.grip_front if is_front else build.grip_rear).get(hit_surf, 0.7))
+	var mu_surf: float = surface_grip(build.grip_front if is_front else build.grip_rear, hit_surf)
 	mu_surf *= Weather.grip_mult(hit_surf)   # wet roads after rain grip a little less
 	if heat:
 		mu_surf *= heat.tyre_grip(0 if is_front else 1, hit_surf)   # a cold tyre (or a cooked one) grips less
@@ -1400,6 +1414,13 @@ func _brake_care(is_front: bool) -> float:
 	if is_front:
 		return clampf(assist * 2.0, 0.0, 1.0)
 	return 0.0
+
+
+## The tyre's grip (mu) on surface `surf` from its grip table `grips` (BikeBuild's grip_front or
+## grip_rear). The adventure surfaces (gravel, sand, snow) that the tables don't list yet are
+## worked out from the nearest one they do (see AdventureSurface.grip_from_table).
+static func surface_grip(grips: Dictionary, surf: String) -> float:
+	return AdventureSurface.grip_from_table(grips, surf)
 
 
 ## How far the surface under a tyre rises above its smooth shape at `at`, in metres: a few

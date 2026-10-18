@@ -571,6 +571,12 @@ func _local_name() -> String:
 func _note_players() -> void:
 	if main == null or not Shed.active:
 		return
+	if AdventureTrip.current and AdventureTrip.current.on_trip():
+		# Out on an adventure: a save keeps everyone back at the shed, off their bikes.
+		_note(Shed.me(), _local_name(), Workshop.walker_spawn(Net.local_slot()), 0)
+		for peer in main.remotes:
+			_note(peer, main.remotes[peer].player_name, Workshop.walker_spawn(0), 0)
+		return
 	if main.walker:
 		var xf: Transform3D = Transform3D(Basis(Vector3.UP, main.walker.yaw()), main.walker.global_position)
 		if main.bike:

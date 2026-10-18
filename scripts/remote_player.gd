@@ -371,6 +371,24 @@ static func fill_hand(hand: Node3D, peer: int, tool: String, keep: Node = null) 
 			hand.add_child(can_mist)
 
 
+## The world's origin moved by `d` (see AdventureWorld): their figure, bike and the snapshots
+## still to be played move with it.
+func shift_origin(d: Vector3) -> void:
+	for snap in _snapshots:
+		var st: PackedFloat32Array = snap["s"]
+		if st.size() >= 4:
+			st[1] -= d.x
+			st[2] -= d.y
+			st[3] -= d.z
+			snap["s"] = st
+	if _figure:
+		_figure.global_position -= d
+	_walk_from = Vector3.INF
+	_step_from = Vector3.INF
+	if bike:
+		bike.shift_origin(d)
+
+
 func world_position() -> Vector3:
 	if driving and RecoveryView.current and RecoveryView.current.remote_transform(peer) != null:
 		return (RecoveryView.current.remote_transform(peer) as Transform3D).origin

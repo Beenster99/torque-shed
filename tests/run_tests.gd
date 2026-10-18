@@ -417,6 +417,14 @@ func _run_all() -> void:
 	_test_detail_rules()
 	_test_detail_contract()
 	await _test_detail_session()
+	print("Adventure rides (v0.12.0): the streaming road, floating origin, surfaces, fuel stations, there and back")
+	_test_adventure_route()
+	await _test_adventure_stream()
+	await _test_adventure_frames()
+	await _test_adventure_origin()
+	await _test_adventure_surfaces()
+	await _test_adventure_pumps()
+	await _test_adventure_trip()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -20842,3 +20850,37 @@ func _test_foot_down() -> void:
 	check(moving < 0.01 and rb.model.foot_down > 0.99, "a crew member's rider puts a foot down too as their bike stops (%.2f, then %.2f)" % [moving, rb.model.foot_down])
 	rb.queue_free()
 	await get_tree().physics_frame
+
+
+# ---------------------------------------------------------------------------- adventure rides (tests/adventure_tests.gd)
+
+func _adventure() -> RefCounted:
+	return load("res://tests/adventure_tests.gd").new(self)
+
+
+func _test_adventure_route() -> void:
+	_adventure().test_route()
+
+
+func _test_adventure_stream() -> void:
+	await _adventure().test_stream()
+
+
+func _test_adventure_frames() -> void:
+	await _adventure().test_frames()
+
+
+func _test_adventure_origin() -> void:
+	await _adventure().test_origin()
+
+
+func _test_adventure_surfaces() -> void:
+	await _adventure().test_surfaces()
+
+
+func _test_adventure_pumps() -> void:
+	await _adventure().test_pumps()
+
+
+func _test_adventure_trip() -> void:
+	await _adventure().test_trip()

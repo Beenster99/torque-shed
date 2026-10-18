@@ -31,6 +31,7 @@ var geometry: GeometryMode      # fitting a bike's parts by hand (F2)
 var emote_bar: EmoteBar         # the emotes and their keys, while the bar is open (B)
 var recovery: RecoveryView      # the recovery truck and trailer, and driving it (see Recovery)
 var recovery_panel: RecoveryPanel   # the recovery jobs clipboard and a recovered bike's assessment
+var trip: AdventureTrip         # out on an adventure ride: its road, and getting there and back
 var audio: EngineSound
 var saver: SaveGame
 var remotes := {}     # peer id -> RemotePlayer
@@ -72,7 +73,7 @@ const HOME_RANGE := 30.0
 ## is taken (see garage_spot): clear of the jumps, facing up the yard. The row runs east and back.
 const YARD_ROW := Vector3(14.0, 0.0, 32.0)
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
-const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7}
+const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7, "gravel": 0.6, "sand": 0.45, "snow": 0.3}
 
 
 func _ready() -> void:
@@ -206,6 +207,9 @@ func _ready() -> void:
 	saver.name = "SaveGame"
 	saver.main = self
 	add_child(saver)
+	trip = AdventureTrip.new()
+	trip.main = self
+	add_child(trip)
 
 	Net.player_joined.connect(_on_player_joined)
 	Net.player_updated.connect(_on_player_updated)
@@ -362,6 +366,7 @@ func _end_session() -> void:
 	if geometry.active:
 		geometry.close()
 	_stop_riding()
+	trip.reset()
 	for id in remotes.keys():
 		remotes[id].queue_free()
 	remotes.clear()
@@ -417,6 +422,8 @@ func _close_menu() -> void:
 func home_reason() -> String:
 	if not in_session or walker == null:
 		return "home"
+	if trip.on_trip():
+		return trip.home_reason()
 	if recovery.driving:
 		return "You're in the truck: drive it back, or get out ({interact}) first."
 	if recovery.riding_along:
@@ -560,6 +567,7 @@ func _try_mount(bike_id: int) -> void:
 func _on_shed_changed() -> void:
 	if not in_session:
 		return
+	trip.sync()
 	workshop.sync_state()
 	_refit_ridden_bikes()
 	if Recovery.driver() == Shed.me() and not recovery.driving and bike == null and not recovery.just_left(true):
@@ -607,6 +615,8 @@ func _start_riding(bike_id: int) -> void:
 	bike.set_meta("shed_bike", bike_id)   # so the shed TVs know whose ride this is
 	world.add_child(bike)
 	var xf: Transform3D = data["xf"]
+	if trip.on_trip():
+		xf = trip.start_xf()   # out on an adventure: on the grid at its start
 	bike.place(xf.origin, xf.basis.get_euler().y)
 	_safe_xf = Transform3D()
 	bike.crashed.connect(func(): hud.flash("Crashed!", 1.5, true))
@@ -880,7 +890,7 @@ func _physics_process_body(delta: float) -> void:
 	_send_timer += delta
 	if _send_timer >= 1.0 / 30.0:
 		_send_timer = 0.0
-		Net.send_state(_net_state())
+		Net.send_state(trip.tag_state(_net_state()))
 
 
 ## The steer input: a lean to aim for, or with Direct bars the push on the bars. Keys are all or
@@ -924,6 +934,8 @@ static func ramp_bars(held: float, keys: float, delta: float) -> float:
 ## Off the edge of the map (or through it): the bike goes back to the last place it had its
 ## wheels on the ground, rather than falling forever.
 func _keep_on_map() -> void:
+	if trip.on_trip():
+		return   # the adventure keeps you on its own road (AdventureTrip._keep_on_road)
 	var p := bike.global_position
 	var lost := p.y < world.terrain_height(p.x, p.z) - 15.0 or absf(p.x) > World.MAP_HALF - 1.0 or absf(p.z) > World.MAP_HALF - 1.0
 	if lost and _safe_xf != Transform3D():
@@ -997,7 +1009,7 @@ func _sync_tyre_air() -> void:
 ## The ride logger's lap counter: which stretch of the test route (The Loop) the bike is on, if
 ## it's on it, and a lap counted when it's been along all of them.
 func _track_lap() -> void:
-	if world == null or world.roads == null:
+	if world == null or world.roads == null or trip.on_trip():
 		return
 	var p := bike.global_position
 	var hit := world.roads.nearest(p.x, p.z, 9.0)
@@ -1137,4 +1149,4 @@ func _on_emote(peer: int, d: Dictionary) -> void:
 
 func _on_state(id: int, state: PackedFloat32Array) -> void:
 	if remotes.has(id):
-		remotes[id].push_state(state)
+		remotes[id].push_state(trip.untag_state(state))

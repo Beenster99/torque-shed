@@ -139,6 +139,8 @@ var paint_bay := {}
 var recovery := {}
 ## The pool table in the crew lounge: the balls, who's playing and whose shot (see PoolGame).
 var pool := PoolGame.empty()
+## The adventure ride the crew is out on, or {} (see Adventure).
+var adventure := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -229,6 +231,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	recovery = Recovery.empty()
 	pool = PoolGame.empty()
 	staff = Staff.empty()
+	adventure = {}
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -330,6 +333,7 @@ func load_state(state: Dictionary, player_name: String) -> void:
 			saved_bikes[id]["pusher"] = 0
 			was_moving.append(id)
 	_sync(state)
+	adventure = {}   # nobody is out on an adventure in a save just opened
 	for id in was_moving:
 		_park(id)
 	for id in items:
@@ -454,6 +458,7 @@ static func _guard_color(part: String, paint):
 
 
 func join_remote() -> void:
+	adventure = {}
 	garage_money = 0
 	bank = Money.defaults()
 	contracts = Contracts.empty()
@@ -483,6 +488,7 @@ func join_remote() -> void:
 
 
 func stop() -> void:
+	adventure = {}
 	garage_money = 0
 	bank = Money.defaults()
 	_clock_hours = -1.0
@@ -3212,6 +3218,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("staff_"):
 		_staff_apply(peer, action)
 		return
+	if str(action.get("a", "")).begins_with("adventure_"):
+		_adventure_apply(peer, action)
+		return
 	var why := check(peer, action)
 	if why != "":
 		_tell(peer, why, false)
@@ -4377,6 +4386,23 @@ func poster_marks(design: int) -> Array:
 	return out
 
 
+## An adventure ride's actions (see Adventure): what's said goes to the player, or to the whole
+## crew when it starts with "*".
+func _adventure_apply(peer: int, action: Dictionary) -> void:
+	var why := Adventure.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var said := Adventure.apply(peer, action)
+	if said.begins_with("*"):
+		for p in crew:
+			_tell(int(p), said.substr(1), true)
+	elif said != "":
+		_tell(peer, said, true)
+	_mark_dirty()
+	changed.emit()
+
+
 func _tell(peer: int, text: String, ok: bool) -> void:
 	if Staff.is_staff_peer(peer):
 		Staff.heard(peer, text, ok)   # one of the staff: they take note, nobody's told
@@ -5206,7 +5232,7 @@ func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
 		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
-		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff}
+		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure}
 	if with_board:
 		state["board"] = board
 	return state
@@ -5253,6 +5279,8 @@ func _sync(state: Dictionary) -> void:
 	pool = PoolGame.sanitize(state.get("pool"))
 	# Sheds saved before the garage took on staff have nobody on the payroll.
 	staff = Staff.sanitize(state.get("staff"))
+	# Sheds saved before adventure rides have none on.
+	adventure = Adventure.sanitize(state.get("adventure"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.

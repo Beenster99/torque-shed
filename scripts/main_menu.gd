@@ -44,6 +44,8 @@ R / View: reset after a crash      F / Y: get off (when stopped)      F3: teleme
 
 var _name: LineEdit
 var _home: Button
+## Starts an adventure ride for the crew, or ends the one on (the host; see Adventure.menu_action).
+var _adventure: Button
 ## Says whether "Back to the garage" can be used now ("" yes, "home" already there, else why not); set by Main.
 var home_check := Callable()
 var _ip: LineEdit
@@ -153,6 +155,10 @@ func _ready() -> void:
 	_pause_box.add_child(_resume)
 	_home = _button("Respawn at the garage (stranded? you and the bike you're on go home)", func(): go_home.emit())
 	_pause_box.add_child(_home)
+	_adventure = _button("Adventure ride", func():
+		Adventure.menu_action()
+		resume.emit())
+	_pause_box.add_child(_adventure)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
 	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
@@ -378,6 +384,7 @@ func show_pause() -> void:
 	_refresh_time_settings(true)
 	refresh_retrieve()
 	_refresh_home()
+	_refresh_adventure()
 	show()
 	_resume.grab_focus()
 
@@ -389,6 +396,14 @@ func _refresh_home() -> void:
 	_home.visible = why != "home"
 	_home.disabled = why != ""
 	_home.tooltip_text = Controls.hint(why) if why != "home" else ""
+
+
+## The adventure button: start one or end it, greyed out (saying why) for anyone but the host.
+func _refresh_adventure() -> void:
+	var t := Adventure.menu_text()
+	_adventure.text = str(t[0])
+	_adventure.disabled = str(t[1]) != ""
+	_adventure.tooltip_text = str(t[1])
 
 
 ## Lists bikes left out on the road (nobody riding them, away from the shed) with a button each
