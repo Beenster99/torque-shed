@@ -304,6 +304,12 @@ func osd_text() -> String:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("hud", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _osd_left > 0.0:
 		_osd_left -= delta
 		if _osd_left <= 0.0:

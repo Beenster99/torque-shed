@@ -167,6 +167,12 @@ func ride_by_spot() -> Vector3:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("camera", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	_idle += delta
 	match mode:
 		Mode.ORBIT:

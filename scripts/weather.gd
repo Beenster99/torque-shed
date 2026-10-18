@@ -156,6 +156,12 @@ func restore(data: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("sky_weather", pt)
+
+
+func _process_body(delta: float) -> void:
 	var client := set_by_host()
 	if client:
 		if _synced:

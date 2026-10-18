@@ -81,6 +81,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("skid_marks", pt)
+
+
+func _process_body(delta: float) -> void:
 	_clock += delta
 	if _laid > 0:
 		_mat.set_shader_parameter("now", _clock)

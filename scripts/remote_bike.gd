@@ -33,6 +33,7 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 	model = BikeModel.new()
 	model.rider_color = rider_color
 	model.rider_gear = rider_gear
+	model.baked = true   # ridden past, not worked on: far fewer draw calls (see BikeModel._bake_static)
 	add_child(model)
 	model.build_from(_build, paint)
 	_fog = Bike.make_fog_lights(self, model, _build)
@@ -76,6 +77,12 @@ func push_state(state: PackedFloat32Array) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("remote_bikes", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	if _snapshots.is_empty():
 		return
 	var render_t := Time.get_ticks_msec() / 1000.0 - DELAY

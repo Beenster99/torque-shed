@@ -224,6 +224,7 @@ func _set_parked(on_stand: bool) -> void:
 	if _model:
 		_model.free()
 	_model = BikeModel.new()
+	_model.baked = true   # ridden in and out, not worked on: far fewer draw calls (see BikeModel._bake_static)
 	_model.rider_color = _look.get("top", Color(0, 0, 0, 0)) if _look.get("top") is Color else Color(0, 0, 0, 0)
 	_lean.basis = Basis()
 	var lift := 0.0
@@ -391,6 +392,12 @@ func _leg_done(then: String) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("customers", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _cur.is_empty():
 		if _queue.is_empty():
 			return

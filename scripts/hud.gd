@@ -107,6 +107,12 @@ func flash(text: String, seconds := 2.5, bad := false) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("hud", pt)
+
+
+func _process_body(delta: float) -> void:
 	_message_timer -= delta
 	for p in popups:
 		p["age"] = float(p["age"]) + delta

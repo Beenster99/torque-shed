@@ -161,6 +161,12 @@ func _now() -> float:
 # ---------------------------------------------------------------------------- running
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("rooms", pt)
+
+
+func _process_body(delta: float) -> void:
 	if not Shed.active:
 		return
 	var bike := Shed.dyno_bike()

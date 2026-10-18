@@ -128,6 +128,12 @@ static func _make_core() -> MeshInstance3D:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("wash_fx", pt)
+
+
+func _process_body(_delta: float) -> void:
 	if _mist and _mist.emitting != emitting:
 		_mist.emitting = emitting
 	if _core:

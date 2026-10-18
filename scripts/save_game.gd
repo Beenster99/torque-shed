@@ -90,6 +90,12 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("save_game", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _task >= 0 and WorkerThreadPool.is_task_completed(_task):
 		_finish_background()
 	if not can_save():

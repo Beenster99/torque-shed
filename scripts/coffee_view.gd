@@ -306,6 +306,12 @@ func _talkable(id: int) -> bool:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("cafe", pt)
+
+
+func _process_body(_delta: float) -> void:
 	var now := looked_at() if main and main.walker and main.walker.controls_enabled else {}
 	if now != _looked:
 		_show_hint(_looked, false)

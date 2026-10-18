@@ -141,6 +141,12 @@ static func pop_rate(engine_spec: Dictionary, at_rpm: float, overrun_s: float) -
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("engine_audio", pt)
+
+
+func _process_body(delta: float) -> void:
 	if bank == null:
 		return
 	bank.poll()

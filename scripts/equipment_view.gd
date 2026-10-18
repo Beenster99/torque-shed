@@ -1209,6 +1209,12 @@ func blast_firing() -> bool:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("equipment", pt)
+
+
+func _process_body(delta: float) -> void:
 	if kind != "blaster" or Time.get_ticks_msec() < _blast_local_until:
 		return
 	# Someone else at the gloves: show what they're doing from the shed state.

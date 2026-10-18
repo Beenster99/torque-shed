@@ -584,6 +584,12 @@ func _check_far(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("dirt_layers", pt)
+
+
+func _process_body(delta: float) -> void:
 	_check_far(delta)
 	_update_transform()
 	var want := 1.0 if _scan_on else 0.0

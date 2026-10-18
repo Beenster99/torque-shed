@@ -96,6 +96,12 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("recovery", pt)
+
+
+func _process_body(delta: float) -> void:
 	if not Shed.active or not Recovery.owned() or main == null or not main.in_session:
 		_free_rig()
 		hud_label.text = ""

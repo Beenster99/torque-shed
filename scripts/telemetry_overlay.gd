@@ -31,6 +31,12 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("hud", pt)
+
+
+func _process_body(_delta: float) -> void:
 	if visible:
 		queue_redraw()
 

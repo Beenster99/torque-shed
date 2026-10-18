@@ -588,6 +588,12 @@ func _route(p: AudioStreamPlayer3D) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("audio", pt)
+
+
+func _process_body(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d() if get_viewport() else null
 	if cam:
 		listener_pos = cam.global_position

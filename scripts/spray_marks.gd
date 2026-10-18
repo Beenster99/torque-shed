@@ -434,6 +434,12 @@ func _update_transform() -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("spray_fx", pt)
+
+
+func _process_body(delta: float) -> void:
 	_update_transform()
 	var want := 1.0 if _scan_on else 0.0
 	if _scan != want or _scan_on:

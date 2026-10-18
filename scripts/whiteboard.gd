@@ -316,6 +316,12 @@ func _local(p: Vector2) -> Vector3:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("whiteboard", pt)
+
+
+func _process_body(delta: float) -> void:
 	var w := _local_walker()
 	var p := aim(w) if _here() else Vector2(-1, -1)
 	var on := p.x >= 0.0

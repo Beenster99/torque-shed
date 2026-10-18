@@ -203,6 +203,12 @@ func _stop_riding() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("remote_players", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	if riding_bike != 0 or _snapshots.is_empty():
 		return
 	var render_t := Time.get_ticks_msec() / 1000.0 - DELAY
@@ -282,6 +288,12 @@ func _dress() -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("remote_players", pt)
+
+
+func _process_body(delta: float) -> void:
 	_animate_emote(delta)
 	_phones.visible = Shed.wearing_headphones(peer)
 	if RiderGear.sig(RiderGear.worn_of(peer)) != _gear_sig:

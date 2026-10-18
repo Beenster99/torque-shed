@@ -63,6 +63,11 @@ func local_slot() -> int:
 	return 1 + local_id() % (MAX_PLAYERS - 1)
 
 
+## Every packet is squashed (the shed's state is mostly the same few words over and over);
+## host and crew must match.
+const COMPRESSION := ENetConnection.COMPRESS_ZSTD
+
+
 func host(info: Dictionary, port := PORT) -> Error:
 	leave()
 	local_info = info
@@ -70,6 +75,7 @@ func host(info: Dictionary, port := PORT) -> Error:
 	var err := peer.create_server(port, MAX_PLAYERS)
 	if err != OK:
 		return err
+	peer.host.compress(COMPRESSION)
 	multiplayer.multiplayer_peer = peer
 	_open_router_port(port)
 	return OK
@@ -109,6 +115,7 @@ func join(address: String, info: Dictionary, port := 0) -> Error:
 	var err := peer.create_client(where["host"], port if port > 0 else int(where["port"]))
 	if err != OK:
 		return err
+	peer.host.compress(COMPRESSION)
 	multiplayer.multiplayer_peer = peer
 	return OK
 
@@ -250,7 +257,9 @@ func update_local_info(info: Dictionary) -> void:
 
 func send_state(state: PackedFloat32Array) -> void:
 	if is_online() and not players.is_empty():
+		var pt := Perf.t0()
 		_state.rpc(state)
+		Perf.add("net_send", pt)
 
 
 ## Host only: tell everyone the time of day.
@@ -295,7 +304,9 @@ func _register(info: Dictionary) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _state(state: PackedFloat32Array) -> void:
+	var pt := Perf.t0()
 	state_received.emit(multiplayer.get_remote_sender_id(), state)
+	Perf.add("net_receive", pt)
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")

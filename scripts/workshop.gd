@@ -525,6 +525,12 @@ func _ridden_node(peer: int) -> Node3D:
 ## Points a chase camera at each rider a screen is tuned to, and puts the live picture on
 ## those screens. Screens on other channels, or live with nobody out, show their page.
 func _update_tv_feed(delta: float) -> void:
+	var pt := Perf.t0()
+	_update_tv_feed_body(delta)
+	Perf.add("tvs", pt)
+
+
+func _update_tv_feed_body(delta: float) -> void:
 	var riders := Shed.riders()
 	var want := {}     # bike node instance id -> {node, screens: [[dashboard, caption]]}
 	var all := screens()
@@ -917,15 +923,32 @@ func _bike_signature(id: int) -> String:
 		if item_id == 0:
 			parts.append("-")
 		else:
-			var it: Dictionary = Shed.items[item_id]
-			# Its dirt isn't in it: that's drawn over the bike as it changes (see _sync_dirt).
-			parts.append("%s:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", ""),
-				bool(host.get("bolted", {}).get(slot, false)), Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it)
-				+ ("|sh" if it.get("shine") is Dictionary else "")])
+			var sig := _item_look_sig(item_id)
+			parts.append("%s%s%s" % [sig[0], bool(host.get("bolted", {}).get(slot, false)), sig[1]])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
 		str(bike.get("blueprint", {}).get("parts", "")) if bike.get("blueprint") is Dictionary else ""]
+
+
+## Each fitted item's part of _bike_signature, kept until the item itself changes: building
+## them all was the dearest part of every shed sync a player gets. item id -> [hash, before, after].
+var _look_sigs := {}
+
+
+func _item_look_sig(item_id: int) -> Array:
+	var it: Dictionary = Shed.items[item_id]
+	var h := hash(it)
+	var c: Array = _look_sigs.get(item_id, [])
+	if not c.is_empty() and c[0] == h:
+		return [c[1], c[2]]
+	if _look_sigs.size() > 2 * Shed.items.size() + 64:
+		_look_sigs.clear()
+	# Its dirt isn't in it: that's drawn over the bike as it changes (see _sync_dirt).
+	var before := "%s:%.1f:%.1f:%s:%s:" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", "")]
+	var after := Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it) + ("|sh" if it.get("shine") is Dictionary else "")
+	_look_sigs[item_id] = [h, before, after]
+	return [before, after]
 
 
 ## A parked bike's road dirt, redrawn over it as it changes (riding, washing) without rebuilding it.
@@ -955,6 +978,12 @@ func _sync_shine(id: int) -> void:
 ## Everyone else's pressure washer: the splash and run-off where their jet is landing. And the
 ## haze in the wash bay, building up while anyone (you too) is washing.
 func _update_wash_fx(delta: float) -> void:
+	var pt := Perf.t0()
+	_update_wash_fx_body(delta)
+	Perf.add("wash_fx", pt)
+
+
+func _update_wash_fx_body(delta: float) -> void:
 	if wash_mist:
 		wash_mist.update(delta, WashMist.anyone_washing())
 	var live := {}
@@ -1103,6 +1132,12 @@ func _paddock_stand(parent: Node3D, build: BikeBuild) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("workshop", pt)
+
+
+func _process_body(delta: float) -> void:
 	_flicker_holograms()
 	_update_wash_fx(delta)
 	_update_tv_feed(delta)

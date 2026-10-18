@@ -132,6 +132,12 @@ func set_time(h: float) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("sky_weather", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _env == null:
 		return
 	var client := set_by_host()

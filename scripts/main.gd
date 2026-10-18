@@ -799,6 +799,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("main_ride", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	if not in_session:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \

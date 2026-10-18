@@ -41,6 +41,8 @@ const LANE := 0.45
 const TURN_CHANCE := 0.4
 ## Drawn only within this of the camera.
 const DRAW_RANGE := 450.0
+## Further than this (m) a rider's engine isn't heard: its sound players stop.
+const SOUND_RANGE := 260.0
 ## Hitting one faster than this (m/s) throws you off.
 const CRASH_SPEED := 4.0
 
@@ -200,6 +202,12 @@ func _heads_into_yard(ri: int, s: float, dir: int, reach := 600.0) -> bool:
 # ---------------------------------------------------------------------------- host
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("traffic", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	if main == null or not main.get("in_session") or world == null:
 		if active_count() > 0:
 			clear()
@@ -566,23 +574,33 @@ func _make_view(slot: int, d: Dictionary) -> Dictionary:
 	body.add_child(cs)
 	var lean := Node3D.new()
 	body.add_child(lean)
+	var p := _rider_point(d)
+	# The bike and its sound come when it's near enough to see (see _dress_view): most start
+	# out of sight, and building one is the heavy part.
+	return {"body": body, "lean": lean, "model": null, "sound": null, "seed": int(d["seed"]), "build": build, "look": look,
+		"pos": p, "yaw": _yaw(d), "off": Vector3.ZERO, "roll": 0.0, "spin": 0.0, "road": int(d["road"]), "dir": int(d["dir"])}
+
+
+## Draws a rider's bike and starts its engine sound, the first time it comes in sight.
+func _dress_view(view: Dictionary) -> void:
+	var look: Dictionary = view["look"]
+	var build: BikeBuild = view["build"]
 	var model := BikeModel.new()
 	model.rider_color = look["jacket"]
+	model.baked = true   # far fewer draw calls (see BikeModel._bake_static)
 	model.position.y = build.rear_radius
-	lean.add_child(model)
+	(view["lean"] as Node3D).add_child(model)
 	model.build_from(build, look["paint"])
 	model.set_lights(true, true)
-	var sound: EngineSound = null
+	view["model"] = model
 	if DisplayServer.get_name() != "headless":
-		sound = EngineSound.new()
+		var sound := EngineSound.new()
 		sound.volume_db = -6.0
-		body.add_child(sound)
+		(view["body"] as Node3D).add_child(sound)
 		sound.setup(build, model)
 		sound.set_distant_filter(true)
 		sound.running = true
-	var p := _rider_point(d)
-	return {"body": body, "lean": lean, "model": model, "sound": sound, "seed": int(d["seed"]), "build": build,
-		"pos": p, "yaw": _yaw(d), "off": Vector3.ZERO, "roll": 0.0, "spin": 0.0, "road": int(d["road"]), "dir": int(d["dir"])}
+		view["sound"] = sound
 
 
 func _yaw(d: Dictionary) -> float:
@@ -631,14 +649,20 @@ func _update_views(delta: float) -> void:
 		(view["lean"] as Node3D).basis = Basis(Vector3.FORWARD, roll)   # + leans right
 		var build: BikeBuild = view["build"]
 		view["spin"] = float(view["spin"]) + v * delta / maxf(build.rear_radius, 0.2)
+		var dist := 0.0 if cam == null else cam.global_position.distance_to(pos)
+		var near := dist < DRAW_RANGE
+		if near and view["model"] == null:
+			_dress_view(view)
 		var model: BikeModel = view["model"]
-		var near := cam == null or cam.global_position.distance_to(pos) < DRAW_RANGE
-		model.visible = near
+		if model:
+			model.visible = near
 		if near:
 			var steer := clampf(-atan(build.wheelbase * k) * 0.8, -0.5, 0.5)
 			model.update_pose_from(steer, float(view["spin"]), float(view["spin"]), 0.0, 0.0, 0.0, clampf(roll / 0.6, -1.0, 1.0) * 0.6)
 		var sound: EngineSound = view["sound"]
 		if sound:
+			# Too far off to hear: its players stop (they come back as it nears).
+			sound.running = dist < SOUND_RANGE
 			sound.speed = v
 			sound.gear = clampi(1 + int(v / 4.5), 1, 5)
 			sound.throttle = 0.35

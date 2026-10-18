@@ -48,6 +48,10 @@ const FOOT_SAG := 0.035
 ## How far the foot's down now, 0 (on the peg) .. 1 (on the ground), and where it's going.
 var foot_down := 0.0
 var _foot_want := 0.0
+## Set before build_from: the parts are merged into fewer meshes as they're drawn (see
+## _bake_static), for a bike that's ridden past rather than worked on. How many went, after.
+var baked := false
+var baked_away := 0
 
 var _build: BikeBuild
 var _slot_meshes := {}           # slot -> Array of GeometryInstance3D
@@ -214,6 +218,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	set_gauges(0.0, 0.0)
 	# Parked, every lamp and the clocks are dark until the engine runs (see set_lights).
 	set_lights(false, false)
+	baked_away = _bake_static() if baked else 0
 	_floor_shine()
 	# Before the bike's own fit moves anything: the mask is laid out where the parts were drawn.
 	_show_blasted()
@@ -5177,6 +5182,90 @@ func _apply_visibility() -> void:
 	for slot in _slot_meshes:
 		for mi in _slot_meshes[slot]:
 			mi.visible = is_fitted(slot) and not ((mi as Node).has_meta("under_fairing") and is_fitted("fairing"))
+
+
+## A merged piece smaller than this (m) casts no shadow (see _bake_static).
+const SHADOW_MIN := 0.08
+
+
+## Draws the parts with fewer, bigger meshes. A bike is drawn from about 300 small meshes, each
+## a draw call in every pass (the shadows' too), which is what cost the frame rate riding beside
+## someone else. Each part's pieces that hang from the same node and share a material become
+## one mesh, so the part still shows, hides, moves in geometry mode, gets dirty and polished as
+## before. Left as they are: anything that moves or changes by itself (the shock springs, the
+## needles, the tyres, which go flat), anything hidden, anything carrying its own data (metas,
+## per-mesh shader values, overlays) and the rider. Called from build_from when `baked` is set,
+## ahead of the dirt and the paint's effects. Returns how many meshes were merged away.
+func _bake_static() -> int:
+	var moving := {}
+	for s in _struts:
+		moving[s["mi"]] = true
+	for n in _needles:
+		moving[n["node"]] = true
+	for side in _flat_tyres:
+		moving[_flat_tyres[side]] = true
+	var gone := 0
+	for slot in _slot_meshes:
+		var groups := {}    # [parent, material, shadows, layers] -> [[mesh, surface, transform], ...]
+		var keep := []
+		for mi in _slot_meshes[slot]:
+			if not _can_bake(mi, moving):
+				keep.append(mi)
+				continue
+			var m := mi as MeshInstance3D
+			for s in m.mesh.get_surface_count():
+				var key := [m.get_parent(), m.get_active_material(s), m.cast_shadow, m.layers]
+				if not groups.has(key):
+					groups[key] = []
+				groups[key].append([m.mesh, s, m.transform])
+			m.get_parent().remove_child(m)
+			m.queue_free()
+			gone += 1
+		for key in groups:
+			var st := SurfaceTool.new()
+			for piece in groups[key]:
+				st.append_from(piece[0], piece[1], piece[2])
+			var merged := MeshInstance3D.new()
+			merged.name = "Baked_" + str(slot)
+			merged.mesh = st.commit()
+			merged.material_override = key[1]
+			merged.cast_shadow = key[2]
+			# A shadow too small to see isn't drawn into the shadow maps.
+			if merged.mesh.get_aabb().get_longest_axis_size() < SHADOW_MIN:
+				merged.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			merged.layers = key[3]
+			(key[0] as Node).add_child(merged)
+			keep.append(merged)
+			gone -= 1
+		_slot_meshes[slot] = keep
+	return gone
+
+
+## Whether a part's mesh can be merged into others (see _bake_static).
+func _can_bake(mi, moving: Dictionary) -> bool:
+	if not is_instance_valid(mi) or (mi as Object).get_class() != "MeshInstance3D" or moving.has(mi):
+		return false
+	var m := mi as MeshInstance3D
+	if m.mesh == null or m.get_child_count() > 0 or not m.visible or m.material_overlay != null or m.get_parent() == null:
+		return false
+	if not m.get_meta_list().is_empty() or (m.get_script() != null) or (_rider != null and _rider.is_ancestor_of(m)):
+		return false
+	for s in m.mesh.get_surface_count():
+		if m.mesh is ArrayMesh and (m.mesh as ArrayMesh).surface_get_primitive_type(s) != Mesh.PRIMITIVE_TRIANGLES:
+			return false
+		var mat := m.get_active_material(s)
+		while mat != null:
+			if mat is ShaderMaterial and (mat as ShaderMaterial).shader != null \
+					and (mat as ShaderMaterial).shader.code.contains("instance uniform"):
+				return false
+			mat = mat.next_pass
+	# Hidden by something it hangs from: left alone (it doesn't draw).
+	var n := m.get_parent()
+	while n != null and n != self:
+		if n is Node3D and not (n as Node3D).visible:
+			return false
+		n = n.get_parent()
+	return true
 
 
 ## Draws a glow over one part (or none with "").

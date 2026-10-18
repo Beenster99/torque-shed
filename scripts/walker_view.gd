@@ -151,6 +151,12 @@ func _switch(on: bool) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("walker", pt)
+
+
+func _process_body(delta: float) -> void:
 	if walker == null or not walker.is_inside_tree():
 		return
 	update(delta)

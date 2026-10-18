@@ -20,6 +20,14 @@ extends CanvasLayer
 const OVERRIDE_PATH := "user://graphics_override.cfg"
 const DRIVER_KEY := "rendering_device/driver.windows"
 
+## Room lamps (the shed's, the side rooms', the cafe's: lights reaching no further than
+## ROOM_LIGHT_RANGE) fade out past LIGHT_FADE metres from the camera, and their shadows past
+## SHADOW_FADE: from across the yard or the road you don't see a lamp's light inside, but each
+## one in view still drew its shadow map whenever anything under it moved.
+const ROOM_LIGHT_RANGE := 20.0
+const LIGHT_FADE := 70.0
+const SHADOW_FADE := 30.0
+
 ## Common 16:9, 16:10 and 21:9 sizes, up to 4K.
 const RESOLUTIONS := [Vector2i(1280, 720), Vector2i(1280, 800), Vector2i(1366, 768), Vector2i(1440, 900),
 	Vector2i(1600, 900), Vector2i(1680, 1050), Vector2i(1920, 1080), Vector2i(1920, 1200), Vector2i(2560, 1080),
@@ -86,6 +94,9 @@ var _window_key := ""   # the display settings last put on the window, so other 
 func _ready() -> void:
 	layer = 120
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().node_added.connect(func(n: Node):
+		if n is OmniLight3D or n is SpotLight3D:
+			fade_room_light.call_deferred(n))
 	driver_at_start = Settings.gfx_driver
 	_fps = Label.new()
 	_fps.add_theme_font_size_override("font_size", 15)
@@ -195,6 +206,12 @@ func apply_window(w: Window) -> void:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("graphics", pt)
+
+
+func _process_body(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam:
 		# Draw distance: the camera's own far plane times the slider.
@@ -206,6 +223,20 @@ func _process(_delta: float) -> void:
 			cam.fov = Settings.gfx_fov
 	if _fps.visible:
 		_fps.text = "%d FPS  %.1f ms" % [Engine.get_frames_per_second(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0]
+
+
+## Makes a room lamp fade out at a distance (see LIGHT_FADE); other lights are left alone.
+static func fade_room_light(node) -> void:
+	if not is_instance_valid(node) or not (node is Light3D) or (node as Light3D).distance_fade_enabled:
+		return
+	var light := node as Light3D
+	var reach := (light as OmniLight3D).omni_range if light is OmniLight3D else (light as SpotLight3D).spot_range
+	if reach > ROOM_LIGHT_RANGE:
+		return
+	light.distance_fade_enabled = true
+	light.distance_fade_begin = LIGHT_FADE
+	light.distance_fade_length = 20.0
+	light.distance_fade_shadow = SHADOW_FADE
 
 
 ## How much the field-of-view slider moves the cameras off what they were tuned for.

@@ -176,6 +176,12 @@ func _hide_all() -> void:
 # ---------------------------------------------------------------------------- each frame
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("town_people", pt)
+
+
+func _process_body(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
 	_clock += delta
 	var cam := get_viewport().get_camera_3d()

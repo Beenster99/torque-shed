@@ -441,6 +441,12 @@ func _variety(lo: float, hi: float) -> Gradient:
 
 ## A gentle breeze that wanders, so smoke and dust drift instead of rising in a straight column.
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("bike_fx", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _smoke == null and _tyre == null:
 		return
 	_wind_time += delta

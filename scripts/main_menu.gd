@@ -325,6 +325,12 @@ static func realism_text(v: float) -> String:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("menus", pt)
+
+
+func _process_body(_delta: float) -> void:
 	if visible and _tabs.get_current_tab_control() == _pad.get_parent():
 		_pad.text = Controls.diagnostics()
 	if visible and _tabs.current_tab == 0:

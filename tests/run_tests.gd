@@ -95,6 +95,11 @@ func _run_all() -> void:
 	print("Simon's 17 October round: the game had got slow")
 	await _test_perf_steady()
 	await _test_no_glare()
+	print("Simon's 18 October round: performance")
+	await _test_profiler()
+	await _test_bike_baking()
+	_test_state_diff()
+	await _test_ai_riders_light()
 	print("XP, levels, tool upgrades and skills")
 	_test_progress()
 	print("Bike lights, tyres and the tyre changer")
@@ -3177,6 +3182,263 @@ func _test_perf_steady() -> void:
 		and not SaveGame.read(SaveGame.active_slot()).is_empty(), "the autosave is written in the background (%d frames)" % waited)
 	_clear_save_dir(SaveGame.dir)
 	SaveGame.dir = kept_dir
+	main._leave()
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Simon's 18 October round, performance: F4 shows where each frame's time goes, and a
+## recording of it lands in a file to send in. Switched off, the systems' timers do nothing.
+func _test_profiler() -> void:
+	check(Perf.t0() == 0 and not Perf.on, "switched off, the profiler's timers hand back nothing")
+	Perf.add("nothing", 0)
+	Perf.end_frame()
+	check(not Perf.shown.has("nothing"), "and count nothing")
+	var keys := Controls.key("perf_overlay", false) + " " + Controls.key("perf_record", false)
+	check(keys == "F4 F11", "F4 shows the profiler, F11 records it (%s)" % keys)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var perf: PerfOverlay = Settings.perf
+	check(perf != null and not perf.is_processing() and not perf.shown, "the profiler is there, off and idle")
+	await get_tree().process_frame
+	# Room lamps fade out with distance (their shadows sooner); headlights and street lamps don't change.
+	var lamps := 0
+	var faded := 0
+	for l in main.workshop.find_children("*", "Light3D", true, false):
+		if (l is OmniLight3D and (l as OmniLight3D).omni_range <= Graphics.ROOM_LIGHT_RANGE) \
+				or (l is SpotLight3D and (l as SpotLight3D).spot_range <= Graphics.ROOM_LIGHT_RANGE):
+			lamps += 1
+			if (l as Light3D).distance_fade_enabled and (l as Light3D).distance_fade_shadow <= Graphics.SHADOW_FADE:
+				faded += 1
+	check(lamps > 10 and faded == lamps, "the shed's lamps fade out from far off (%d of %d)" % [faded, lamps])
+	perf.toggle(true)
+	for i in 90:
+		await get_tree().process_frame
+	var names := {}
+	for r in Perf.ranked():
+		names[r[0]] = r
+	check(Perf.on and names.has("workshop") and names.has("walker") and names.has("shed") and names.has("hud"),
+		"on, it times the shed's systems (%s)" % ", ".join(names.keys()))
+	var text := perf.panel_text()
+	check(text.contains("fps") and text.contains("draw calls") and text.contains("orphans") and text.contains("Sounds")
+		and text.contains("workshop"), "the panel shows the frame rate, what's drawn, the counts and the systems")
+	# A short recording, written as CSV and JSON.
+	DirAccess.make_dir_recursive_absolute(PerfOverlay.DIR)
+	for f in DirAccess.get_files_at(PerfOverlay.DIR):
+		DirAccess.remove_absolute(PerfOverlay.DIR + f)
+	perf.record(1.5)
+	var waited := 0
+	while perf.recording() and waited < 600:
+		await get_tree().process_frame
+		waited += 1
+	var files := DirAccess.get_files_at(PerfOverlay.DIR)
+	var json_name := ""
+	for f in files:
+		if f.ends_with(".json"):
+			json_name = f
+	var data = JSON.parse_string(FileAccess.get_file_as_string(PerfOverlay.DIR + json_name)) if json_name != "" else null
+	var systems := []
+	if data is Dictionary:
+		for s in data.get("systems", []):
+			systems.append(str(s["system"]))
+	check(files.size() == 2 and data is Dictionary and systems.has("workshop") and (data["monitors"] as Dictionary).has("nodes")
+		and float(data["fps_avg"]) > 0.0 and perf.last_file.ends_with(".csv") and FileAccess.file_exists(perf.last_file),
+		"recording writes the systems and the engine's counts to %s and a .json (%s)" % [perf.last_file, ", ".join(systems.slice(0, 5))])
+	var csv := FileAccess.get_file_as_string(perf.last_file)
+	check(csv.contains("system,avg_ms,peak_ms,calls_per_frame") and csv.contains("monitor,avg,peak,min"), "the CSV has a table of each")
+	perf.toggle(false)
+	await get_tree().process_frame
+	check(not Perf.on and not perf.is_processing() and Perf.t0() == 0, "off again, it stops timing")
+	for f in DirAccess.get_files_at(PerfOverlay.DIR):
+		DirAccess.remove_absolute(PerfOverlay.DIR + f)
+	main._leave()
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Riding beside another player cost a lot of frame rate: each bike was drawn from about 300
+## small meshes, each a draw call in every pass. Bikes out riding (yours, the crew's, the bikers
+## on the roads and customers riding in) merge each part's pieces by material and drop the
+## shadows too small to see; the part still shows, moves with its fit, goes flat and gets dirty.
+func _test_bike_baking() -> void:
+	Shed.start_new("Baker")
+	var id := _bike_named("Old Faithful")
+	var holder := Node3D.new()
+	add_child(holder)
+	var plain := BikeModel.new()
+	holder.add_child(plain)
+	plain.build_from(Shed.build_of(id), Shed.bikes[id]["paint"])
+	var baked := BikeModel.new()
+	baked.baked = true
+	holder.add_child(baked)
+	baked.build_from(Shed.build_of(id), Shed.bikes[id]["paint"])
+	var count := func(m: BikeModel) -> Array:
+		var n := 0
+		var shadows := 0
+		for mi in m.find_children("*", "MeshInstance3D", true, false):
+			if (mi as MeshInstance3D).is_visible_in_tree():
+				n += 1
+				if (mi as MeshInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+					shadows += 1
+		return [n, shadows]
+	var a: Array = count.call(plain)
+	var b: Array = count.call(baked)
+	check(b[0] * 2 < a[0] and b[1] * 2 < a[1], "a riding bike is drawn with far fewer meshes (%d, not %d) and shadow casters (%d, not %d)" % [b[0], a[0], b[1], a[1]])
+	var off := []
+	for slot in plain._slot_meshes:
+		if (plain._slot_meshes[slot] as Array).is_empty() != (baked._slot_meshes[slot] as Array).is_empty():
+			off.append(slot)
+		elif not (plain._slot_meshes[slot] as Array).is_empty():
+			# Measured round the part's own corners: a box turned through the model's nodes is
+			# looser round one merged mesh than round its pieces.
+			var pa := _faces_box(plain, slot)
+			var pb := _faces_box(baked, slot)
+			if pa.position.distance_to(pb.position) > 0.002 or pa.end.distance_to(pb.end) > 0.002:
+				off.append("%s %s / %s" % [slot, pa, pb])
+	check(off.is_empty(), "every part is there, just where it was %s" % [off])
+	# The wheels still turn and a tyre can still go flat.
+	baked.update_pose_from(0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+	baked.set_flat("rear", 1.0)
+	check(baked._flat_tyres.has("rear"), "a tyre still goes flat")
+	# Its fit (geometry mode) still moves the part.
+	var before := baked.slot_bounds("tank").get_center()
+	baked.apply_geometry({"tank": {"p": Vector3(0.0, 0.1, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}})
+	var moved := _local_box(baked, "tank").get_center() - before
+	check(absf(moved.y - 0.1) < 0.01, "a part's fit still moves it (%.3f m)" % moved.y)
+	# Dirt picked up on the ride still shows.
+	var dirt := {}
+	for slot in ["engine", "frame", "tank"]:
+		dirt[slot] = Dirt.cells({"dirt": 0.8, "grime": 0.4}, slot)
+	baked.show_dirt(dirt)
+	check(baked.dirt_layer != null and baked.dirt_layer.mesh_count() > 0, "and the muck it picks up shows (%d meshes)" % (baked.dirt_layer.mesh_count() if baked.dirt_layer else 0))
+	holder.queue_free()
+	# The ridden bike and the crew's are drawn so.
+	var bike := Bike.new()
+	bike.setup(Shed.build_of(id))
+	var rb := RemoteBike.new()
+	add_child(rb)
+	rb.setup("Ghost", Shed.build_of(id), Color.RED)
+	check(bike.model.baked and bike.model.baked_away > 50 and rb.model.baked and rb.model.baked_away > 50,
+		"your bike and the crew's are drawn so (%d and %d meshes fewer)" % [bike.model.baked_away, rb.model.baked_away])
+	bike.free()
+	rb.queue_free()
+	await get_tree().process_frame
+
+
+## The box round a part's corners in the model, as it sits now.
+func _faces_box(m: BikeModel, slot: String) -> AABB:
+	var lo := Vector3.INF
+	var hi := -Vector3.INF
+	for mi in m._slot_meshes.get(slot, []):
+		if mi is MeshInstance3D and (mi as MeshInstance3D).mesh != null:
+			var xf := m._local_xform(mi)
+			for v in (mi as MeshInstance3D).mesh.get_faces():
+				lo = lo.min(xf * v)
+				hi = hi.max(xf * v)
+	return AABB(lo, hi - lo)
+
+
+## A part's box in the model, as it sits now (through its fit's nodes).
+func _local_box(m: BikeModel, slot: String) -> AABB:
+	var box := AABB()
+	var first := true
+	for mi in m._slot_meshes[slot]:
+		var xf := m.global_transform.affine_inverse() * (mi as Node3D).global_transform
+		var bb: AABB = xf * (mi as VisualInstance3D).get_aabb()
+		box = bb if first else box.merge(bb)
+		first = false
+	return box
+
+
+## With three playing for an hour the game crashed to the desktop: the whole shed went to every
+## player up to ten times a second whenever anything changed (over a megabyte a second with two
+## riding). Now only what changed goes, and it's put onto each player's copy of the shed exactly.
+func _test_state_diff() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 18
+	var state := {"bikes": {}, "items": {}, "crew": {1: {"tool": "wrench", "activity": ""}}, "radio": {"on": true, "station": 2},
+		"coffee": {"clock": 0.0, "visitors": {}}, "next": 10, "door": true}
+	for i in 30:
+		state["bikes"][i] = {"name": "Bike %d" % i, "xf": Transform3D(Basis(), Vector3(i, 0, 0)), "parts": {"engine": "twin_500", "tank": "steel"},
+			"wear": {"engine": rng.randf()}, "paint": Color(rng.randf(), 0.2, 0.3)}
+	for i in 200:
+		state["items"][100 + i] = {"part": "bolt_%d" % (i % 7), "rust": rng.randf(), "dirt": 0.5, "ref": Transform3D(Basis(), Vector3(0, i * 0.01, 0))}
+	for i in 12:
+		state["coffee"]["visitors"][i] = {"name": "Visitor %d" % i, "bike": {"parts": {"engine": "single_250"}}, "mood": 0.5}
+	var sent = StateDiff.tree(state)
+	var copy: Dictionary = bytes_to_var(var_to_bytes(state))   # a player's copy of it
+	var r := StateDiff.diff(sent, StateDiff.tree(state), state)
+	check(not r[0], "nothing changed, nothing goes")
+	# One bike moves, an item rusts, one goes, a visitor sits down, the cafe clock ticks.
+	state["bikes"][3]["xf"] = Transform3D(Basis(), Vector3(9, 9, 9))
+	state["items"][150]["rust"] = 0.99
+	state["items"].erase(160)
+	state["coffee"]["visitors"][5]["mood"] = 0.9
+	state["coffee"]["clock"] = 12.5
+	state["crew"][2] = {"tool": "hands", "activity": "Walking"}
+	state["next"] = 11
+	var now = StateDiff.tree(state)
+	r = StateDiff.diff(sent, now, state)
+	var full := var_to_bytes(state).size()
+	var patch := var_to_bytes(r[1]).size()
+	check(r[0] and patch * 10 < full, "what changed is a small part of the whole (%d bytes, not %d)" % [patch, full])
+	copy = StateDiff.apply(copy, r[1])
+	check(var_to_bytes(copy) == var_to_bytes(state), "and put onto the player's copy it matches the host's exactly")
+	# A player who joined in between (with the whole shed as it was then) ends up the same too.
+	var joined: Dictionary = bytes_to_var(var_to_bytes(state))
+	state["bikes"][4]["name"] = "Renamed"
+	state["bikes"].erase(7)
+	var r2 := StateDiff.diff(now, StateDiff.tree(state), state)
+	joined = StateDiff.apply(joined, r2[1])
+	copy = StateDiff.apply(copy, r2[1])
+	check(var_to_bytes(joined) == var_to_bytes(state) and var_to_bytes(copy) == var_to_bytes(state),
+		"the next change reaches someone who has just joined as well as everyone else")
+	# A section that changes shape (a value turned into a Dictionary and back) goes whole.
+	var t1 = StateDiff.tree(state)
+	state["radio"] = 5
+	var r3 := StateDiff.diff(t1, StateDiff.tree(state), state)
+	copy = StateDiff.apply(copy, r3[1])
+	check(int(copy["radio"]) == 5, "a value that changes kind goes whole")
+	check(Net.COMPRESSION == ENetConnection.COMPRESS_ZSTD, "and every packet is compressed")
+
+
+## Make sure AI riders don't use physics: the bikers on the roads are moved along their road, not
+## simulated, solid for your bike to hit; their bikes are only built once they come within sight,
+## and their engines go quiet when they're too far off to hear.
+func _test_ai_riders_light() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var tr: RoadTraffic = main.traffic
+	await get_tree().physics_frame
+	tr.setup_roads()
+	for slot in RoadTraffic.MAX_RIDERS:
+		tr.riders[slot] = {}
+	var east := int(main.world.roads.by_name["east"])
+	tr.riders[0] = {"road": east, "s": 100.0, "dir": 1, "v": 8.0, "seed": 31, "cruise": 8.0, "turn": {}, "round": -1.0}
+	var cam := get_viewport().get_camera_3d()
+	var spot := tr._rider_point(tr.riders[0])
+	var keep := cam.global_position
+	# Far off: no bike drawn yet.
+	cam.global_position = spot + Vector3(0.0, 0.0, RoadTraffic.DRAW_RANGE + 200.0)
+	tr._update_views(0.016)
+	var view: Dictionary = tr._views[0]
+	check(not view.is_empty() and view["model"] == null, "a biker out of sight has no bike built yet")
+	cam.global_position = spot + Vector3(0.0, 2.0, 20.0)
+	tr._update_views(0.016)
+	check(view["model"] != null and (view["model"] as BikeModel).baked, "in sight, theirs is drawn (merged, see BikeModel._bake_static)")
+	var bodies := []
+	var rigid := 0
+	for group_owner in [tr, main.contracts_view, main.coffee_view, main.staff_view, main.sales_view]:
+		for n in (group_owner as Node).find_children("*", "PhysicsBody3D", true, false):
+			bodies.append(n)
+			if n is RigidBody3D or n is CharacterBody3D or n is VehicleBody3D:
+				rigid += 1
+	check(rigid == 0 and (view["body"] as Node) is AnimatableBody3D, "no AI rider or walker is a physics body (%d bodies, all kinematic or static)" % bodies.size())
+	cam.global_position = keep
 	main._leave()
 	main.queue_free()
 	await get_tree().process_frame

@@ -332,6 +332,12 @@ func scanning() -> bool:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("finish_layers", pt)
+
+
+func _process_body(delta: float) -> void:
 	var want := 1.0 if _scan_on else 0.0
 	if _scan != want or _scan_on:
 		_scan = move_toward(_scan, want, delta * 3.0)

@@ -453,6 +453,12 @@ func _notification(what: int) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("progress", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _dirty_save:
 		_save_timer -= delta
 		if _save_timer <= 0.0:
