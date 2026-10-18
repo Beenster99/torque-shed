@@ -11,7 +11,8 @@ const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc",
 	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels",
 	"rearsets", "guards", "number_boards", "swingarm", "steering_damper"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
-const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube"]
+## A puncture repair kit is carried the same way: its "litres" are the plugs left in it.
+const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube", "puncture_kit"]
 const KIND_NAMES := {
 	"frame": "Frame", "fork": "Front fork", "shock": "Rear suspension", "wheel": "Wheel", "tyre": "Tyre",
 	"disc": "Brake disc", "caliper": "Brake caliper", "pads": "Brake pads", "master": "Master cylinder",
@@ -23,6 +24,7 @@ const KIND_NAMES := {
 	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "front_mudguard": "Front mudguard", "indicators": "Indicators",
 	"side_panels": "Side panels", "rearsets": "Footpegs and rearsets", "guards": "Engine guards", "number_boards": "Number boards",
 	"swingarm": "Swingarm", "steering_damper": "Steering damper", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
+	"puncture_kit": "Puncture repair kit",
 }
 ## Slots on the bike itself.
 const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
@@ -124,6 +126,7 @@ const KIND_MATERIAL := {
 	"tail": "plastic", "fairing": "plastic", "mirrors": "mixed", "front_mudguard": "plastic",
 	"indicators": "electronics", "side_panels": "plastic", "rearsets": "metal", "guards": "metal", "number_boards": "plastic",
 	"swingarm": "metal", "steering_damper": "metal", "petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
+	"puncture_kit": "mixed",
 }
 const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
 	"mixed": "Mixed materials", "electronics": "Electronics", "fabric": "Fabric", "leather": "Leather", "wood": "Wood"}
@@ -347,6 +350,8 @@ func spec_line(id: String) -> String:
 		"chain":
 			bits = [p["type"], "power loss %.1f%%" % (float(p["friction"]) * 100.0), "stretches %s" % ("slowly" if p["stretch"] < 6.0 else "fast" if p["stretch"] > 10.0 else "normally"),
 				"lube lasts %s" % Units.distance(float(p["lube_life"]), 0)]
+		"puncture_kit":
+			bits = ["%d plugs" % int(p["litres"]), "find the hiss, push a plug in"]
 		"chain_lube":
 			bits = [p["container"], "%.1f L (about %d coats)" % [p["litres"], roundi(float(p["litres"]) / 0.03)], "lasts x%.1f" % float(p["lasts"])]
 		"side_stand":

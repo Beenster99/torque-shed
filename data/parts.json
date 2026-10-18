@@ -19266,5 +19266,41 @@
 			],
 			"price": 320
 		}
+	},
+	"puncture_kit": {
+		"plug_kit": {
+			"name": "Tubeless puncture repair kit",
+			"description": "Soapy spray to find the hiss, a reamer and sticky rubber plugs to push into the hole. Fixes a nail or a thorn in a tubeless tyre in a couple of minutes.",
+			"container": "Repair kit",
+			"litres": 5,
+			"color": [
+				0.85,
+				0.12,
+				0.08
+			],
+			"liquid": [
+				0.35,
+				0.22,
+				0.12
+			],
+			"price": 12
+		},
+		"plug_kit_pro": {
+			"name": "Workshop plug kit",
+			"description": "A workshop box of plugs with a T-handle insertion tool. Plenty of plugs for a busy shed.",
+			"container": "Repair kit",
+			"litres": 15,
+			"color": [
+				0.1,
+				0.25,
+				0.7
+			],
+			"liquid": [
+				0.35,
+				0.22,
+				0.12
+			],
+			"price": 28
+		}
 	}
 }

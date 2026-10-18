@@ -22,7 +22,7 @@ const MUFFLE_DB := -12.0
 ## Which loop each kind of work makes while you hold the button.
 const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray",
 	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray",
-	"tyre_fit": "changer", "tyre_remove": "changer"}
+	"tyre_fit": "changer", "tyre_remove": "changer", "inflate": "compressor"}
 ## Which loop a tool makes in someone else's hands while they work.
 const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet", "gun": "spray_gun"}
 ## The one-shot when a job is done (putting a part down plays an impact instead, see job_done).

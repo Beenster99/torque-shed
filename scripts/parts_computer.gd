@@ -48,7 +48,7 @@ const GROUPS := [
 	["Body and lights", ["tank", "saddle", "front_mudguard", "tail", "fairing", "mirrors", "dashboard", "headlight",
 		"fog_lights", "horn", "indicators", "side_panels", "number_boards"]],
 	["Luggage", ["panniers", "top_box"]],
-	["Fluids", ["petrol", "oil", "brake_fluid", "chain_lube"]],
+	["Fluids", ["petrol", "oil", "brake_fluid", "chain_lube", "puncture_kit"]],
 	["Tools and machines", ["eq:stand", "eq:washer", "eq:repair", "eq:blaster", "eq:booth", "eq:changer"]],
 	["Storage and benches", ["eq:shelf", "eq:bench", "eq:trolley"]],
 	["Comfort and decor", ["eq:seat", "eq:tv", "eq:poster"]],
@@ -877,6 +877,11 @@ func _fill_part(id: String) -> void:
 	if _kind == "chain_lube":
 		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it, crouch by a bike's chain and hold {work} to lube it." \
 			+ " A dry chain wastes power and wears out.\nDelivered outside, no box to unpack."
+		return
+	if _kind == "puncture_kit":
+		_spec.text = PartsDB.spec_line(id).replace("  ·  ", "\n") + "\n\nHold it and aim at a punctured tyre (on the bike or a wheel), then hold {work}:" \
+			+ " sweep the soapy spray round the tread to find the hiss, then keep the reamer on the hole while the plug goes in." \
+			+ "\nPump it back up afterwards: {work2} on the tyre, empty-handed.\nDelivered outside, no box to unpack."
 		return
 	if PartsDB.FLUID_KINDS.has(_kind):
 		var into: String = {"petrol": "the fuel tank", "oil": "the engine", "brake_fluid": "the front and rear brake master cylinders"}[_kind]

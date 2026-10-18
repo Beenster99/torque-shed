@@ -1610,6 +1610,7 @@ static func _accept(_peer: int, cid: int) -> String:
 			ContractTestRide.prepare_bike(bike_id, offer.get("quirks", []))
 		else:
 			prepare_bike(bike_id, kind, offer.get("goals", []), Shed._rng, int(offer.get("faults", -1)))
+			Shed.arrival_puncture(bike_id, kind)   # an MOT or service may have a puncture to find
 	Shed.bikes[bike_id]["name"] = str(offer["bike_name"])
 	Shed.bikes[bike_id]["contract"] = true
 	var s := _st()
