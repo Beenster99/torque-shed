@@ -5116,6 +5116,31 @@ func _mark_dirty() -> void:
 	_dirty = true
 
 
+## The hashes of the shed as it last went to the crew (see _send_changes).
+var _sent_tree = null
+
+
+## Host: sends the crew what changed in the shed since it last went (see StateDiff), rather
+## than all of it. Players joining get it whole (see _sync), then these.
+func _send_changes() -> void:
+	var pt := Perf.t0()
+	var snap := _snapshot(false)
+	var now = StateDiff.tree(snap)
+	var r := StateDiff.diff(_sent_tree, now, snap)
+	_sent_tree = now
+	if r[0]:
+		_sync_patch.rpc(r[1])
+	Perf.add("net_shed_send", pt)
+
+
+## What changed in the shed (see _send_changes), put onto this player's copy of it.
+@rpc("authority", "call_remote", "reliable")
+func _sync_patch(patch) -> void:
+	var pt := Perf.t0()
+	_sync(StateDiff.apply(_snapshot(false), patch))
+	Perf.add("net_shed_receive", pt)
+
+
 ## The whole shed. The regular syncs leave the whiteboard out: its marks go out one by one
 ## as they're drawn (_board_op), and whole only to players joining.
 func _snapshot(with_board := true) -> Dictionary:
@@ -5257,7 +5282,7 @@ func _process_body(delta: float) -> void:
 		_sync_timer = SYNC_INTERVAL
 		_dirty = false
 		if Net.is_online():
-			_sync.rpc(_snapshot(false))
+			_send_changes()
 		changed.emit()
 
 
