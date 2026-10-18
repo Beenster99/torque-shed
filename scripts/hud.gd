@@ -172,7 +172,9 @@ func _draw() -> void:
 	elif walker:
 		_draw_crosshair()
 		_draw_toolbar()
-		if walker.tyre_game:
+		if walker.tyre_game is PlugGame:
+			_draw_plug_game(walker.tyre_game)
+		elif walker.tyre_game:
 			_draw_tyre_game(walker.tyre_game)
 	if walker and (walker.stopwatch.showing() or (bike == null and walker.tool == "watch")):
 		_draw_stopwatch()
@@ -287,6 +289,58 @@ func _draw_tyre_game(game: TyreGame) -> void:
 	draw_string(font, Vector2(0, c.y - r - 48), "WORK THE TYRE ON", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
 	draw_string(font, Vector2(0, c.y + r + 52), "%s  ·  bead %d%%" % [hint, roundi(game.quality() * 100.0)],
 		HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
+
+
+## The puncture plug game: the tread laid out as a strip, the soapy nozzle (then the reamer) on
+## it, bubbles foaming thicker the nearer it is to the hole, and the plug going in.
+func _draw_plug_game(game: PlugGame) -> void:
+	var font := get_theme_default_font()
+	var w := minf(size.x * 0.6, 760.0)
+	var strip := Rect2(size.x * 0.5 - w * 0.5, size.y * 0.5 + 60.0, w, 46.0)
+	draw_rect(strip.grow(28.0), Color(0.03, 0.03, 0.04, 0.6))
+	draw_rect(strip, Color(0.07, 0.07, 0.08))
+	# The tread blocks.
+	var blocks := 26
+	for i in blocks:
+		var x := strip.position.x + (i + 0.5) * strip.size.x / blocks
+		draw_line(Vector2(x - 6.0, strip.position.y + 4.0), Vector2(x + 6.0, strip.end.y - 4.0), Color(0.16, 0.16, 0.17), 5.0)
+	var at := func(u: float) -> float: return strip.position.x + (u * 0.5 + 0.5) * strip.size.x
+	var nozzle_x: float = at.call(game.cursor.x)
+	var t := float(Time.get_ticks_msec()) / 1000.0
+	if not game.found:
+		# Soap where the nozzle is: a few bubbles anywhere, a froth growing right over the hole.
+		var foam := game.foam()
+		var n := 3 + roundi(foam * 14.0)
+		for i in n:
+			var k := float(i) / maxf(float(n), 1.0)
+			var jx := sin(t * 3.1 + i * 2.39) * (10.0 + 6.0 * foam)
+			var jy := cos(t * 2.3 + i * 1.71) * 14.0
+			var r := 2.5 + (5.0 + 3.0 * sin(t * 6.0 + i)) * foam * (0.5 + k)
+			draw_arc(Vector2(nozzle_x + jx, strip.get_center().y + jy), r, 0.0, TAU, 12, Color(0.9, 0.95, 1.0, 0.45 + 0.4 * foam), 1.5, true)
+		draw_line(Vector2(nozzle_x, strip.position.y - 26.0), Vector2(nozzle_x, strip.position.y - 4.0), Color(0.5, 0.8, 1.0), 4.0)
+		draw_circle(Vector2(nozzle_x, strip.position.y - 30.0), 7.0, Color(0.5, 0.8, 1.0))
+		var lock := game.lock_progress()
+		if lock > 0.0:
+			draw_arc(Vector2(nozzle_x, strip.position.y - 30.0), 13.0, -PI * 0.5, -PI * 0.5 + TAU * lock, 24, UITheme.ACCENT, 3.0, true)
+		draw_string(font, Vector2(0, strip.position.y - 56.0), "FIND THE HISS", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
+		draw_string(font, Vector2(0, strip.end.y + 44.0), Controls.hint("Sweep the soapy spray along the tread with the {aim}: hold it where it froths up"),
+			HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
+		var left := maxf(0.0, PlugGame.FIND_TIME - game.t)
+		draw_string(font, Vector2(0, strip.end.y + 66.0), "soap left %.0f s" % left, HORIZONTAL_ALIGNMENT_CENTER, size.x, 13, Color(1, 1, 1, 0.55))
+		return
+	# Found: the hole, drifting as the tyre creeps, and the reamer to keep on it.
+	var hole_x: float = at.call(game.hole_now())
+	draw_circle(Vector2(hole_x, strip.get_center().y), 6.0, Color(0.95, 0.85, 0.3))
+	var on := game.on_target()
+	draw_line(Vector2(nozzle_x, strip.position.y - 34.0), Vector2(nozzle_x, strip.get_center().y), Color(0.75, 0.75, 0.78), 4.0)
+	draw_line(Vector2(nozzle_x - 16.0, strip.position.y - 34.0), Vector2(nozzle_x + 16.0, strip.position.y - 34.0), Color(0.75, 0.75, 0.78), 6.0)
+	draw_circle(Vector2(nozzle_x, strip.get_center().y), 4.0, Color(1, 1, 1).lerp(Color(0.3, 1.0, 0.4), on))
+	var bar := Rect2(strip.position.x, strip.end.y + 14.0, strip.size.x, 6.0)
+	draw_rect(bar, Color(1, 1, 1, 0.15))
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * game.plug_progress(), bar.size.y)), UITheme.ACCENT)
+	draw_string(font, Vector2(0, strip.position.y - 56.0), "PUSH THE PLUG IN", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
+	draw_string(font, Vector2(0, strip.end.y + 44.0), "%s  ·  plug %d%%" % [Controls.hint("Keep the reamer on the hole with the {aim}"),
+		roundi(game.quality() * 100.0)], HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
 
 
 func _draw_crosshair() -> void:

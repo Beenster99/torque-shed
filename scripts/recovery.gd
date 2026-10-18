@@ -711,6 +711,7 @@ static func _accept(offer_id: int) -> String:
 	bike["xf"] = o["xf"]
 	bike["wb"] = Shed.build_of(bike_id).wheelbase
 	_wreck(bike_id, kind, bool(o["rolls"]), rng)
+	Shed.arrival_puncture(bike_id, kind)
 	bike["stand"] = "down" if kind == "crash" else ("side" if Shed.item_on(bike_id, "side_stand") != 0 else Shed._rest_stand(bike_id))
 	var s := _st()
 	var jid := int(s["next"])

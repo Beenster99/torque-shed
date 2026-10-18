@@ -2,7 +2,7 @@ class_name DebugTab
 extends ScrollContainer
 ## The Esc menu's Debug tab, for trying things out: reset or max out your XP and money, reset
 ## everyone's XP (the host tells every player's game), empty the garage's account or give it
-## a million pounds (host). Every reset asks first.
+## a million pounds (host), puncture a tyre. Every reset asks first.
 
 var _info: Label
 var _all_xp: Button
@@ -10,6 +10,7 @@ var _garage: Button
 var _grant: Button
 var _confirm: ConfirmationDialog
 var _pending := Callable()
+var _tyre_note: Label
 
 
 func _ready() -> void:
@@ -54,6 +55,16 @@ func _ready() -> void:
 		_button("Send a test ride", func(): Shed.request({"a": "contract_spawn", "kind": "test_ride"})),
 		_button("Reputation +5", func(): Shed.request({"a": "contract_rep", "value": Contracts.reputation() + 5})),
 	]))
+
+	box.add_child(UITheme.label("Tyres: the bike you're riding, or the one nearest you", 15, UITheme.ACCENT))
+	box.add_child(_row([
+		_button("Slow puncture, front", func(): puncture("front", "slow")),
+		_button("Slow puncture, rear", func(): puncture("rear", "slow")),
+		_button("Fast puncture, front", func(): puncture("front", "fast")),
+		_button("Fast puncture, rear", func(): puncture("rear", "fast")),
+	]))
+	_tyre_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
+	box.add_child(_tyre_note)
 
 	_confirm = ConfirmationDialog.new()
 	_confirm.confirmed.connect(func():
@@ -127,6 +138,34 @@ func reset_garage_money() -> void:
 ## Host: a million pounds into the business's account (see Money.DEBUG_GRANT).
 func give_garage_million() -> void:
 	Shed.request({"a": "money_debug_grant"})
+
+
+## Punctures a tyre for testing (see Puncture): on the bike you're riding, else the bike nearest you.
+func puncture(side: String, kind: String) -> void:
+	var bike := puncture_target()
+	if bike == 0:
+		_tyre_note.text = "No bike near you to puncture."
+		return
+	Shed.request({"a": "puncture", "bike": bike, "side": side, "kind": kind, "debug": true})
+	_tyre_note.text = "Punctured the %s tyre on %s (%s)." % [side, str(Shed.bikes[bike]["name"]), kind]
+
+
+## The bike a debug puncture goes in: the one you're riding, or the nearest within 10 m of you.
+func puncture_target() -> int:
+	var riding := Shed.riding(Shed.me())
+	if riding != 0:
+		return riding
+	var walker := get_tree().get_first_node_in_group("local_walker") as Node3D
+	if walker == null:
+		return 0
+	var best := 0
+	var best_d := 10.0
+	for id in Shed.bikes:
+		var d := (Shed.bikes[id]["xf"] as Transform3D).origin.distance_to(walker.global_position)
+		if d < best_d:
+			best_d = d
+			best = int(id)
+	return best
 
 
 ## Presses the button labelled `text` (for tests).

@@ -462,6 +462,10 @@ func _physics_process(delta: float) -> void:
 
 	if model:
 		model.update_pose(self)
+		if heat:
+			# A tyre going flat squashes out under the rim as it loses its air (see Puncture).
+			model.set_flat("front", heat.flat(0), true)
+			model.set_flat("rear", heat.flat(1), true)
 	if effects:
 		effects.update(delta, speed, throttle, engine_on, build.overall_health(), surface,
 			wheels[1]["contact"], wheels[1]["slip"])
@@ -1008,6 +1012,11 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var is_front: bool = w["is_front"]
 	var tp: Dictionary = build.tyre_front if is_front else build.tyre_rear
 	var radius: float = w["radius"]
+	# A flat tyre folds under the rim: the wheel rides lower, drags and wallows (see Puncture).
+	var flat_now := heat.flat(0 if is_front else 1) if heat else 0.0
+	if flat_now > 0.0:
+		radius -= heat.squash(0 if is_front else 1, radius - (build.front_rim_radius if is_front else build.rear_rim_radius))
+	var roll_k := build.rolling * (1.0 + Puncture.FLAT_DRAG * maxf(flat_now - float(build.flat["front" if is_front else "rear"]), 0.0))
 	var crown := minf(float(tp.get("crown", 0.0)), radius * 0.6)
 	var travel: float = w["travel"]
 	var q_was: float = w["compression"]
@@ -1193,6 +1202,9 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	mu_surf *= Weather.grip_mult(hit_surf)   # wet roads after rain grip a little less
 	if heat:
 		mu_surf *= heat.tyre_grip(0 if is_front else 1, hit_surf)   # a cold tyre (or a cooked one) grips less
+	if flat_now > 0.0:
+		# The folded carcass bunches up and lets go once a turn of the wheel: it wallows.
+		mu_surf *= 1.0 - 0.18 * flat_now * (0.5 + 0.5 * sin(float(w["spin"]) * 2.0))
 	var mu := TyreModel.mu_at(mu_surf, fz, build.total_mass * G * 0.5, tp)
 	var f_peak := mu * fz
 	var bc := TyreModel.stiffness_at_zero(tp)
@@ -1254,8 +1266,8 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	fy = clampf(fy, -fy_cap, fy_cap)
 	# The work of the tyre sliding over the road and flexing as it rolls heats it (see BikeHeat).
 	w["p_slip"] = absf(fx * (omega_new * r_eff - v_long)) + absf(fy * v_lat)
-	w["p_roll"] = build.rolling * fz * v_abs
-	fx -= signf(v_long) * build.rolling * fz
+	w["p_roll"] = roll_k * fz * v_abs
+	fx -= signf(v_long) * roll_k * fz
 	if burnout > 0.0 and not is_front:
 		# Lit up: the tyre spins free against the road, smoking, while the feet hold the bike.
 		fx *= 1.0 - 0.85 * burnout

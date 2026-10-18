@@ -43,6 +43,8 @@ var _lap_seen := []           # the ride logger's lap counter: stretches of the 
 var _laps := 0               # laps of it since the last ride stats went
 var _fly_km := 0.0         # distance at speed since the last stats, for dead flies on the front
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
+var _was_bottomed := [false, false]   # each wheel's suspension bottomed last frame (a kerb or pothole hit)
+var _flat_told := [false, false]      # told the rider this tyre has gone flat, this ride
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
 var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at the side while riding (F3)
@@ -505,6 +507,8 @@ func _start_riding(bike_id: int) -> void:
 	_ride_top = 0.0
 	_dirt_km = 0.0
 	_ride_dirt = 0.0
+	_was_bottomed = [false, false]
+	_flat_told = [false, false]
 	_lap_seen = []
 	_laps = 0
 	hud.trip_km = 0.0
@@ -713,6 +717,7 @@ func _physics_process(delta: float) -> void:
 				* (1.0 + wet * (3.0 if paved else 1.0)) * pace
 			_dirt_km += muck
 			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
+		_puncture_rolls(km)
 		# Dead flies on the front at speed (fewer in the rain).
 		_fly_km += km * clampf((absf(bike.speed) * 3.6 - 30.0) / 70.0, 0.0, 1.5) * (1.0 - 0.6 * Weather.rain_level())
 		_update_dash()
@@ -795,6 +800,7 @@ func _send_ride_stats() -> void:
 		ride["laps"] = _laps
 		_laps = 0
 	Shed.request(ride)
+	_sync_tyre_air()
 	bike.fuel_used = 0.0
 	_ride_km = 0.0
 	_dirt_km = 0.0
@@ -803,6 +809,41 @@ func _send_ride_stats() -> void:
 	var riding := Shed.riding(Shed.me())
 	if riding != 0 and Shed.bikes.has(riding) and bike.model:
 		bike.model.show_dirt(Dirt.of_bike(riding))
+
+
+## Now and then a tyre picks up a puncture: a nail or a thorn as the km go by (more off the road),
+## or a pinch from a hard hit on a kerb or a pothole (see Puncture). The bike starts letting its
+## air out straight away; the shed is told, so the crew see it and it's saved.
+func _puncture_rolls(km: float) -> void:
+	if bike.heat == null or bike.is_crashed:
+		return
+	for i in 2:
+		var w: Dictionary = bike.wheels[i]
+		var hit: bool = bool(w.get("bottomed", false)) and not _was_bottomed[i]
+		_was_bottomed[i] = bool(w.get("bottomed", false))
+		if not w["contact"] or bike.heat.leak[i] > 0.0:
+			continue
+		if Puncture.ride_punctures(str(w.get("surface", bike.surface)), km, randf()) \
+				or (hit and Puncture.hit_punctures(bike.speed, randf())):
+			var kind := Puncture.kind_of_roll(randf())
+			bike.heat.leak[i] = Puncture.rate_of_kind(kind)
+			Shed.request({"a": "puncture", "side": "front" if i == 0 else "rear", "kind": kind})
+
+
+## Keeps the ridden bike's punctures in step with the shed's (one given from the Debug tab, say),
+## and tells the rider once when a tyre has gone flat.
+func _sync_tyre_air() -> void:
+	var riding := Shed.riding(Shed.me())
+	if bike.heat == null or not Shed.bikes.has(riding):
+		return
+	for i in 2:
+		var side := "front" if i == 0 else "rear"
+		var tyre := Shed.item_on(riding, side + "_tyre")
+		if tyre != 0 and Puncture.punctured(Shed.items[tyre]):
+			bike.heat.leak[i] = Puncture.rate(Shed.items[tyre])
+		if bike.heat.flat(i) > 0.3 and not _flat_told[i]:
+			_flat_told[i] = true
+			hud.flash("The %s tyre's gone flat: it'll wallow and slide. Get it back to the shed to plug it, and go easy." % side, 5.0, true)
 
 
 ## The ride logger's lap counter: which stretch of the test route (The Loop) the bike is on, if

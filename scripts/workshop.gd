@@ -868,7 +868,7 @@ func _engine_sling(swing: Node3D, display: Node3D, depth: float) -> void:
 func _item_signature(item_id: int) -> String:
 	var it: Dictionary = Shed.items[item_id]
 	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
-		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)]
+		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it)]
 	if Shed.is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
@@ -886,6 +886,11 @@ static func _coat_sig(it: Dictionary) -> String:
 		return ""
 	return "|q%.3f:%.3f:%.3f:%.3f" % [float(it.get("paint_quality", 0.0)), float(it.get("paint_runs", 0.0)), float(it.get("primer", 0.0)),
 		float(it.get("coat_q", 0.0))]
+
+
+## A tyre gone soft or flat is drawn squashed out (see BikeModel.set_flat): redrawn as it changes.
+static func _air_sig(it: Dictionary) -> String:
+	return "|air%.1f" % Puncture.lost(it) if Puncture.lost(it) > 0.0 else ""
 
 
 ## The engine's own slots, to look up quickly.
@@ -910,7 +915,7 @@ func _bike_signature(id: int) -> String:
 			var it: Dictionary = Shed.items[item_id]
 			# Its dirt isn't in it: that's drawn over the bike as it changes (see _sync_dirt).
 			parts.append("%s:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", ""),
-				bool(host.get("bolted", {}).get(slot, false)), Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)])
+				bool(host.get("bolted", {}).get(slot, false)), Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it)])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),

@@ -161,6 +161,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 		_draw_rim(wheel, rim_r, rim_w)
 		_current_slot = side + "_tyre"
 		_draw_tyre(wheel, rim_r, build.front_radius if front else build.rear_radius, width, rim_w)
+		set_flat(side, float(build.flat.get(side, 0.0)))
 		_draw_brake(side, wheel, hub, rim_r, rim_w)
 	_draw_rear_master()
 	_draw_final_drive(zr)
@@ -4431,6 +4432,51 @@ func _draw_tyre(wheel: Node3D, rim_r: float, radius: float, width: float, rim_w:
 	_slot_meshes[_current_slot].append(mmi)
 
 
+## A flat tyre squashed out under its rim: the sidewalls bulge where it sits on the ground, 0
+## (holding its shape) .. 1 (no air in it, see Puncture). Hung on the hub, not the wheel, so it
+## stays at the bottom as the wheel turns. `sunk`: the wheel rides lower on it (being ridden, see
+## Bike), so the bulge sits that much higher up the tyre, where the road is.
+func set_flat(side: String, amount: float, sunk := false) -> void:
+	var hub := _front_hub if side == "front" else _rear_hub
+	if hub == null or _build == null:
+		return
+	var node := hub.get_node_or_null("FlatBulge") as MeshInstance3D
+	if amount <= 0.02:
+		if node:
+			node.visible = false
+			node.set_meta("flat", 0.0)
+		return
+	if node and absf(float(node.get_meta("flat", 0.0)) - amount) < 0.02 and bool(node.get_meta("sunk", false)) == sunk:
+		return
+	var front := side == "front"
+	var rim_r := _build.front_rim_radius if front else _build.rear_rim_radius
+	var radius := _build.front_radius if front else _build.rear_radius
+	var width := _build.front_tyre_width if front else _build.rear_tyre_width
+	if node == null:
+		var was := _current_slot
+		_current_slot = side + "_tyre"
+		var rubber := _mat(_col(), 0.0, 0.9)
+		rubber.albedo_color = _col()
+		rubber.metallic = 0.0
+		rubber.metallic_specular = 0.3
+		var blob := SphereMesh.new()
+		blob.radius = 0.5
+		blob.height = 1.0
+		blob.radial_segments = 20
+		blob.rings = 10
+		node = _mesh_instance(blob, rubber, Vector3.ZERO, hub)
+		node.name = "FlatBulge"
+		_current_slot = was
+	var h := radius - rim_r
+	var squash := amount * Puncture.SQUASH * h
+	node.scale = Vector3(width * (1.12 + 0.3 * amount), h * (0.45 + 0.25 * amount), radius * (0.45 + 0.45 * amount))
+	var ground := -radius + (squash if sunk else 0.0)
+	node.position = Vector3(0.0, ground + node.scale.y * 0.5, 0.0)
+	node.visible = is_fitted(side + "_tyre")
+	node.set_meta("flat", amount)
+	node.set_meta("sunk", sunk)
+
+
 ## The maker's name and the size moulded into both sidewalls, in raised rubber a shade lighter
 ## than the tyre: "TORQUE RADIAL" over the top, "120/70 ZR17" under it.
 func _tyre_lettering(tyre_mi: MeshInstance3D, rim_r: float, radius: float, width: float) -> void:
@@ -5338,6 +5384,22 @@ static func fluid_display(part_id: String, full: float) -> Node3D:
 				[_box_mesh(Vector3(0.014, 0.16, 0.004)), strip, Vector3(0.0, 0.095, 0.0335)]]
 			if level > 0.01:
 				pieces.append([_box_mesh(Vector3(0.01, 0.155 * level, 0.004)), liquid, Vector3(0.0, 0.018 + 0.0775 * level, 0.034)])
+		"Repair kit":
+			# A puncture repair kit: a little tin box with the soapy spray bottle and the T-handle reamer.
+			size = Vector3(0.16, 0.06, 0.1)
+			var steel := StandardMaterial3D.new()
+			steel.albedo_color = Color(0.7, 0.72, 0.75)
+			steel.metallic = 0.8
+			steel.roughness = 0.35
+			pieces = [[_box_mesh(Vector3(0.16, 0.05, 0.1)), body, Vector3(0.0, 0.025, 0.0)],
+				[_box_mesh(Vector3(0.162, 0.012, 0.102)), dark, Vector3(0.0, 0.05, 0.0)],
+				[_cyl_mesh(0.004, 0.09), steel, Vector3(0.03, 0.06, 0.0)],
+				[_box_mesh(Vector3(0.05, 0.012, 0.012)), dark, Vector3(0.03, 0.105, 0.0)]]
+			if level > 0.01:
+				# The plugs left, brown sticky strips in a row on the lid.
+				var n := clampi(ceili(level * 5.0), 1, 5)
+				for i in n:
+					pieces.append([_box_mesh(Vector3(0.006, 0.004, 0.05)), liquid, Vector3(-0.07 + i * 0.012, 0.058, 0.0)])
 		"Race fuel drum":
 			size = Vector3(0.2, 0.3, 0.2)
 			pieces = [[_cyl_mesh(0.1, 0.3), see, Vector3(0.0, 0.15, 0.0)], [_cyl_mesh(0.02, 0.03), dark, Vector3(0.05, 0.315, 0.0)]]

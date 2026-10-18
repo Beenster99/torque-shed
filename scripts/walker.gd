@@ -1582,11 +1582,37 @@ func _make_plan() -> Dictionary:
 				if not near.is_empty() or item_id != 0:
 					p = {"action": {"a": "wash", "items": near, "at": target["at"]}, "time": 0.2, "verb": "blast the muck off"}
 	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0:
+		# A tyre that's lost air: the air line pumps it back up to its set pressure.
+		var soft := air_tyre(item_id)
+		if soft != 0 and Puncture.lost(Shed.items[soft]) >= 0.05:
+			alt_plan = {"action": {"a": "inflate", "item": soft}, "time": 1.0 + 0.8 * Puncture.lost(Shed.items[soft]),
+				"verb": "pump it up from the air line"}
+			alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
+	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0:
 		_bay_alt(item_id)
 	if p.is_empty():
 		return {}
 	p["blocked"] = "" if p["action"]["a"] in ["computer", "tuning", "sales_pc", "write_label"] else Shed.check(me, p["action"])
 	return p
+
+
+## The tyre that holds air for `item_id`: the tyre itself, or the one on a wheel (fitted to a
+## bike or loose), or 0.
+func air_tyre(item_id: int) -> int:
+	if not Shed.items.has(item_id):
+		return 0
+	var it: Dictionary = Shed.items[item_id]
+	if it["kind"] == "tyre":
+		return item_id if it["at"] in ["bike", "wheel"] else 0
+	if it["kind"] != "wheel":
+		return 0
+	if it["at"] == "bike":
+		var bike := int(it["ref"])
+		for side in ["front", "rear"]:
+			if Shed.item_on(bike, side + "_wheel") == item_id:
+				return Shed.item_on(bike, side + "_tyre")
+		return 0
+	return Shed.tyre_on_wheel(item_id)
 
 
 ## Empty hands on a part: right mouse peels masking tape off it, or (with the colour meter)
@@ -1834,6 +1860,15 @@ func _fluid_plan(held: int, kind: String) -> Dictionary:
 	var me := Shed.me()
 	var can: Dictionary = Shed.items[held]
 	var fluid := PartsDB.kind_of(can["part"])
+	if fluid == "puncture_kit":
+		# The plug kit on a tyre: find the hiss and push a plug in, a skill game (PlugGame).
+		var holed := air_tyre(target_item()) if kind in ["part", "spot", "item"] else 0
+		if holed != 0:
+			var plug := {"action": {"a": "plug_tyre", "item": holed}, "time": PlugGame.duration(), "game": "plug",
+				"verb": "find the hiss with the soapy spray and plug it"}
+			plug["blocked"] = Shed.check(me, plug["action"])
+			return plug
+		return {}
 	if fluid == "chain_lube":
 		var chain := target_item() if kind in ["part", "spot", "item"] else 0
 		if chain != 0 and Shed.items[chain]["kind"] == "chain":
@@ -2412,25 +2447,29 @@ func _changer_of(p: Dictionary) -> int:
 ## Letting go, or looking away, before the marker has gone round lets the bead slip back off.
 ## Returns true while the game has the work button.
 func _tyre_game_step(delta: float, plan_now: Dictionary, use_alt: bool) -> bool:
-	var playing: bool = not use_alt and plan_now.get("game", "") == "tyre" and plan_now["blocked"] == "" and _acting() \
+	var game := str(plan_now.get("game", ""))
+	var playing: bool = not use_alt and game in ["tyre", "plug"] and plan_now["blocked"] == "" and _acting() \
 		and not _need_release
 	var key := str(plan_now.get("action", {}))
 	if tyre_game and (not playing or key != _game_key):
+		var plugging := tyre_game is PlugGame
 		tyre_game = null
 		progress = 0.0
 		_send_status("")
 		Sfx.set_loop(_work_sound, "")
-		Shed.feedback.emit("The bead slipped back off the rim. Hold on all the way round.", false)
+		Shed.feedback.emit("You let go before the plug was in. Hold on until it's done." if plugging
+			else "The bead slipped back off the rim. Hold on all the way round.", false)
 		_need_release = _acting()
 		return true
 	if not playing:
 		return false
 	if tyre_game == null:
-		tyre_game = TyreGame.new()
+		# The plug game is seeded by the tyre, so the hole is in the same place each go at it.
+		tyre_game = PlugGame.new(int(plan_now["action"].get("item", 0)) * 7919 + 1) if game == "plug" else TyreGame.new()
 		_game_key = key
 		_active_plan = plan_now
-		_send_status("Fitting a tyre on the tyre changer", _changer_of(plan_now))
-		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get("tyre_fit", ""))
+		_send_status("Plugging a puncture" if game == "plug" else "Fitting a tyre on the tyre changer", _changer_of(plan_now))
+		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get("lube" if game == "plug" else "tyre_fit", ""))
 	tyre_game.step(delta)
 	progress = tyre_game.progress()
 	if tyre_game.done():
@@ -2443,7 +2482,8 @@ func _tyre_game_step(delta: float, plan_now: Dictionary, use_alt: bool) -> bool:
 		_hold = 0.0
 		_send_status("")
 		Sfx.set_loop(_work_sound, "")
-		Sfx.play_at("bead_pop", camera.global_position - camera.global_transform.basis.z * 1.2, -4.0)
+		if game == "tyre":
+			Sfx.play_at("bead_pop", camera.global_position - camera.global_transform.basis.z * 1.2, -4.0)
 	return true
 
 
@@ -3290,7 +3330,8 @@ func _activity_text() -> String:
 		"place": "Putting down a part", "set_down": "Putting down a part", "start_build": "Starting a bike from scratch", "drop": "Putting down a part", "radio": "Fiddling with the radio", "bin": "Scrapping a part", "computer": "Browsing the parts computer", "tuning": "Tuning at the dyno desk", "sales_pc": "At the sales PC",
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
-		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer"}
+		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer",
+		"inflate": "Pumping up a tyre", "plug_tyre": "Plugging a puncture"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()
