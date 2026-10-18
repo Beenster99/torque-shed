@@ -2093,7 +2093,7 @@ func _describe() -> String:
 							lines.append("Store parts and boxed stock here.")
 				if not f.is_empty():
 					lines.append(Equipment.spec_line(str(f["model"])))
-					if not Equipment.FIXED_KINDS.has(str(f["kind"])) and str(f["model"]) != Shed.DELIVERY_RACK:
+					if not Equipment.FIXED_KINDS.has(str(f["kind"])) and not Shed.fixed_rack(str(f["model"])):
 						lines.append("{interact}: move it somewhere else")
 		"item":
 			var it: Dictionary = Shed.items[int(target["item"])]
@@ -2125,8 +2125,8 @@ func _describe() -> String:
 				"booth", "changer":
 					lines.append("Built into the shed")
 				_:
-					if str(f["model"]) == Shed.DELIVERY_RACK:
-						lines.append("Fixed down in the delivery area")
+					if Shed.fixed_rack(str(f["model"])):
+						lines.append("Fixed down in the delivery area" if str(f["model"]) == Shed.DELIVERY_RACK else "Fixed down: the staff keep their parts here")
 					else:
 						lines.append("{interact}: move it somewhere else")
 			if kind == "label":
@@ -2177,7 +2177,7 @@ func _describe() -> String:
 			var fid := int(target.get("furniture", 0))
 			if fid != 0 and Shed.furniture.has(fid):
 				lines.append(Equipment.spec_line(str(Shed.furniture[fid]["model"])))
-				if str(Shed.furniture[fid]["model"]) != Shed.DELIVERY_RACK:
+				if not Shed.fixed_rack(str(Shed.furniture[fid]["model"])):
 					lines.append("{interact}: move it somewhere else")
 		"pc":
 			lines.append("Parts computer")

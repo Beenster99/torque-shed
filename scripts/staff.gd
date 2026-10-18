@@ -61,6 +61,9 @@ const SICK_GAP := 3
 ## How often (real seconds) someone idle fetches a round of teas while the cafe's open.
 const TEA_EVERY := 540.0
 const TEA_FIRST := 240.0
+## The boards of the staff parts rack (Shed.STAFF_RACK), bottom up, and whose each is.
+const RACK_BINS: Array[String] = ["MECHANICS", "EXPERT MECHANIC", "PAINT", "DETAILING"]
+const RACK_LEVEL := {"mechanic": 0, "expert": 1, "paint": 2, "detailer": 3}
 ## How long a line said stays over their head, and the news kept for the TV.
 const SAY_SECS := 7.0
 const MAX_NEWS := 8
@@ -587,11 +590,14 @@ static func _let_go(w: Dictionary) -> void:
 	var peer := peer_of(int(w["id"]))
 	var held := Shed.held_by(peer)
 	if held != 0:
-		Shed._put_on_bench(held)
+		StaffJobs.put_on_rack(w, held)
 	var pushing := Shed.pushing_bike(peer)
 	if pushing != 0:
 		Shed.bikes[pushing]["pusher"] = 0
 		Shed._park(pushing)
+	var cart := Shed.moving(peer)
+	if cart != 0:
+		Shed.furniture[cart]["mover"] = 0
 	CoffeeShop.put_back(peer)
 	w["leg"] = {}
 	w["pos"] = _pos_now(w)
@@ -851,8 +857,8 @@ static func pos_at(w: Dictionary, t: float) -> Vector3:
 		return w.get("pos", Vector3.ZERO)
 	var pts: PackedVector3Array = leg["pts"]
 	var s := minf((t - float(leg["t0"])) * float(leg["v"]), float(leg["len"]))
-	if int(leg.get("push", 0)) != 0:
-		s -= StaffNav.BIKE_AHEAD
+	if int(leg.get("push", 0)) != 0 or int(leg.get("cart", 0)) != 0:
+		s -= StaffNav.BIKE_AHEAD if int(leg.get("push", 0)) != 0 else StaffNav.CART_AHEAD
 		if s < 0.0:
 			var d := StaffNav.heading(pts, 0.0)
 			return pts[0] + Vector3(sin(d), 0.0, cos(d)) * -s
@@ -867,14 +873,22 @@ static func _walked(w: Dictionary) -> bool:
 	return (clock() - float(leg["t0"])) * float(leg["v"]) >= float(leg["len"])
 
 
-## Starts them walking to place `to` (straight away there when it's no distance).
-static func _go_to(w: Dictionary, to: Dictionary, push := 0, push_from := {}) -> void:
-	var from: Dictionary = push_from if push != 0 else w.get("at", {})
-	var start: Vector3 = _pos_now(w) if push == 0 else (Shed.bikes[push]["xf"] as Transform3D).origin
-	var pts := StaffNav.route(from, to, start, {"bike": push} if push != 0 else {})
+## Starts them walking to place `to` (straight away there when it's no distance), wheeling bike
+## `push` (from place `push_from`) or trolley `cart` (equipment id) when they're given.
+static func _go_to(w: Dictionary, to: Dictionary, push := 0, push_from := {}, cart := 0) -> void:
+	var from: Dictionary = push_from if push != 0 or cart != 0 else w.get("at", {})
+	var start: Vector3 = _pos_now(w)
+	var ignore := {}
+	if push != 0:
+		start = (Shed.bikes[push]["xf"] as Transform3D).origin
+		ignore = {"bike": push}
+	elif cart != 0:
+		start = (Shed.furniture[cart]["xf"] as Transform3D).origin
+		ignore = {"furniture": cart}
+	var pts := StaffNav.route(from, to, start, ignore)
 	var length := StaffNav.length(pts)
-	w["leg"] = {"pts": pts, "t0": clock(), "v": StaffNav.PUSH_SPEED if push != 0 else StaffNav.WALK_SPEED, "len": length,
-		"push": push, "n": int(w.get("legs", 0)) + 1}
+	w["leg"] = {"pts": pts, "t0": clock(), "v": StaffNav.PUSH_SPEED if push != 0 or cart != 0 else StaffNav.WALK_SPEED, "len": length,
+		"push": push, "cart": cart, "n": int(w.get("legs", 0)) + 1}
 	w["legs"] = int(w.get("legs", 0)) + 1
 	w["to"] = to
 	w["anim"] = ""
@@ -888,11 +902,12 @@ static func _arrive(w: Dictionary) -> void:
 	if not leg.is_empty():
 		var pts: PackedVector3Array = leg["pts"]
 		var end := float(leg["len"])
-		if int(leg.get("push", 0)) != 0:
-			end -= StaffNav.BIKE_AHEAD
-		w["pos"] = StaffNav.along(pts, end)
-		w["yaw"] = StaffNav.heading(pts, end, float(w.get("yaw", 0.0)))
-		if int(leg.get("push", 0)) != 0:
+		var wheeled := int(leg.get("push", 0)) != 0 or int(leg.get("cart", 0)) != 0
+		if wheeled:
+			end -= StaffNav.BIKE_AHEAD if int(leg.get("push", 0)) != 0 else StaffNav.CART_AHEAD
+		w["pos"] = StaffNav.along(pts, end) if end >= 0.0 else pts[0] - Vector3(sin(StaffNav.heading(pts, 0.0)), 0.0, cos(StaffNav.heading(pts, 0.0))) * end
+		w["yaw"] = StaffNav.heading(pts, maxf(end, 0.0), float(w.get("yaw", 0.0)))
+		if wheeled:
 			# Stood behind the bike they've wheeled in: that's where they're at now.
 			var p: Array = (to.get("p", []) as Array).duplicate()
 			if not p.is_empty():
@@ -901,7 +916,7 @@ static func _arrive(w: Dictionary) -> void:
 			to = {"n": to.get("n", "shed"), "p": p}
 	else:
 		w["pos"] = StaffNav.spot(to)
-	if to.has("yaw") and int(leg.get("push", 0)) == 0:
+	if to.has("yaw") and int(leg.get("push", 0)) == 0 and int(leg.get("cart", 0)) == 0:
 		w["yaw"] = float(to["yaw"])
 	w["at"] = to
 	w["leg"] = {}
@@ -969,14 +984,23 @@ static func _run_job(w: Dictionary, job: Dictionary, dt: float) -> void:
 			return   # entering did it all (a plan, a flag)
 	job["t"] = float(job["t"]) + dt
 	match kind:
-		"go", "push":
+		"go", "push", "cart":
 			if int((w["leg"] as Dictionary).get("push", 0)) != 0:
 				_push_bike(w)
+			if int((w["leg"] as Dictionary).get("cart", 0)) != 0:
+				_push_cart(w)
 			if _walked(w):
 				var pushed := int((w["leg"] as Dictionary).get("push", 0))
+				var carted := int((w["leg"] as Dictionary).get("cart", 0))
+				var end_xf := _cart_xf(w["leg"], INF) if carted != 0 else Transform3D()
 				_arrive(w)
 				if pushed != 0:
 					var why := act(w, {"a": "release_bike", "bike": pushed, "xf": st["xf"]})
+					if why != "":
+						_failed(w, job, why)
+						return
+				if carted != 0:
+					var why := act(w, {"a": "release", "furniture": carted, "xf": end_xf})
 					if why != "":
 						_failed(w, job, why)
 						return
@@ -1040,6 +1064,13 @@ static func _enter(w: Dictionary, job: Dictionary, st: Dictionary) -> bool:
 				_failed(w, job, "I've lost hold of the bike.")
 				return false
 			_go_to(w, st["to"], b, st.get("from", StaffNav.bike_out(b)))
+		"cart":
+			var f := int(st["furniture"])
+			if not Shed.furniture.has(f) or int(Shed.furniture[f].get("mover", 0)) != peer_of(int(w["id"])):
+				_failed(w, job, "I've lost hold of the trolley.")
+				return false
+			var at: Vector3 = (Shed.furniture[f]["xf"] as Transform3D).origin
+			_go_to(w, st["to"], 0, StaffNav.place(StaffNav.nearest_node(at), [at]), f)
 		"work":
 			var secs := float(st.get("secs", 2.0)) / speed(w)
 			if Shed._rng.randf() < slip_chance(w) and st.get("slips", true):
@@ -1080,6 +1111,10 @@ static func _act_step(w: Dictionary, job: Dictionary, a: Dictionary) -> String:
 			return StaffJobs.buy_round(w, job)
 		"staff_sell_list":
 			return StaffJobs.list_bike(w, job)
+		"staff_rack_down":
+			return StaffJobs.rack_down(w)
+		"staff_cart_load":
+			return StaffJobs.cart_load(w)
 		"move_bike":
 			pass
 	return act(w, action)
@@ -1097,6 +1132,23 @@ static func _push_bike(w: Dictionary) -> void:
 	var at := StaffNav.along(pts, s)
 	var yaw := StaffNav.heading(pts, s)
 	act(w, {"a": "move_bike", "bike": b, "xf": Transform3D(Basis(Vector3.UP, yaw), at)})
+
+
+## Keeps the trolley they're pushing just ahead of them (like a bike, see _push_bike).
+static func _push_cart(w: Dictionary) -> void:
+	var leg: Dictionary = w["leg"]
+	var f := int(leg.get("cart", 0))
+	if not Shed.furniture.has(f):
+		return
+	act(w, {"a": "move_furniture", "furniture": f, "xf": _cart_xf(leg, clock())})
+
+
+## Where a trolley being pushed along walk `leg` is at staff time `t` (INF: at the end): its
+## middle on the way, the handle (+Z) back towards whoever's pushing.
+static func _cart_xf(leg: Dictionary, t: float) -> Transform3D:
+	var pts: PackedVector3Array = leg["pts"]
+	var s := float(leg["len"]) if is_inf(t) else minf((t - float(leg["t0"])) * float(leg["v"]), float(leg["len"]))
+	return Transform3D(Basis(Vector3.UP, StaffNav.heading(pts, s)), StaffNav.along(pts, s))
 
 
 static func _next(job: Dictionary) -> void:

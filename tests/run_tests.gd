@@ -388,6 +388,7 @@ func _run_all() -> void:
 	await _test_staff_service_job()
 	_test_staff_project()
 	_test_staff_paths()
+	_test_staff_rack_and_trolley()
 	await _test_staff_full_detail()
 	await _test_staff_tea_run()
 	await _test_staff_tv()
@@ -19442,6 +19443,70 @@ func _test_staff_project() -> void:
 	# MOT fails as tasks.
 	var mt := StaffJobs.mot_tasks(_bike_named("Barn Find"))
 	check(not mt.is_empty() and mt.all(func(t): return str(t["text"]).begins_with("MOT:")), "an MOT's fails become a list (%d tasks)" % mt.size())
+	Shed.stop()
+
+
+## The staff's storage: their own labelled parts rack in the storage room (fixed, saved, and
+## added to older sheds) where what they bought and what's left over goes instead of the
+## workbench; and the expert mechanic, more organised, orders the whole job's parts in one go and
+## fetches them on the staff parts trolley, wheeling it back after.
+func _test_staff_rack_and_trolley() -> void:
+	Shed.start_new("T", 5)
+	var rack := Shed.staff_rack()
+	var cart := Shed.staff_trolley()
+	check(rack != 0 and str(Shed.furniture[rack]["label"]) == "STAFF PARTS" and cart != 0 and str(Shed.furniture[cart]["model"]) == "trolley_parts",
+		"the shed has a staff parts rack and a staff trolley")
+	check(Workshop.room_at(Shed.STAFF_RACK_XF.origin) == "storage" and Workshop.room_at(Shed.STAFF_TROLLEY_XF.origin) == "storage",
+		"both in the storage room")
+	check(Shed.check(Shed.me(), {"a": "grab", "furniture": rack}) != "" and not Shed.scrappable(Shed.furniture[rack]) and not Shed.scrappable(Shed.furniture[cart]),
+		"the rack's fixed down, and neither can be scrapped")
+	Staff.hire_one_of_each()
+	var ranger := _bike_named("Rusty Ranger")
+	var ex := _staff_role("expert")
+	var w := Staff.worker(ex)
+	Shed.request({"a": "staff_assign", "worker": ex, "job": {"kind": "service", "bike": ranger}})
+	var orders_first_trip := 0
+	var max_kit := 0
+	var cart_at_deliveries := false
+	var cart_at_bike := false
+	var on_deck := 0
+	var visits := 0
+	var was_at_pc := false
+	for i in 16000:
+		Staff.process(Staff.TICK)
+		var job: Dictionary = w["job"]
+		if job.is_empty() and i > 4:
+			break
+		max_kit = maxi(max_kit, (job.get("kit", []) as Array).size())
+		var c: Vector3 = (Shed.furniture[cart]["xf"] as Transform3D).origin
+		cart_at_deliveries = cart_at_deliveries or c.distance_to(StaffNav.spot(StaffNav.cart_delivery())) < 1.0
+		cart_at_bike = cart_at_bike or c.distance_to(StaffNav.spot(StaffNav.cart_by_bike(ranger))) < 1.0
+		on_deck = maxi(on_deck, Shed.surface_items("f%d" % cart).size())
+		var at_pc := Staff.pos_at(w, Staff.clock()).distance_to(StaffNav.spot(StaffNav.computer())) < 0.3
+		if at_pc and not was_at_pc:
+			visits += 1
+		was_at_pc = at_pc
+	print("    kit %d parts, %d on the trolley at once, %d trips to the parts computer: %s" % [max_kit, on_deck, visits, Staff.saying(w)])
+	check((w["job"] as Dictionary).is_empty() and Staff.saying(w).contains("serviced"), "the expert gets the service done (%s)" % Staff.saying(w))
+	check(max_kit >= 3 and visits == 1, "they ordered the lot in one trip to the parts computer (%d parts)" % max_kit)
+	check(cart_at_deliveries and cart_at_bike and on_deck >= 2, "and fetched them on the trolley: out to the deliveries, loaded, over to the bike")
+	check((Shed.furniture[cart]["xf"] as Transform3D).origin.distance_to(StaffNav.spot(StaffNav.cart_park())) < 0.7
+		and int(Shed.furniture[cart]["mover"]) == 0, "then wheeled it back to its place")
+	var on_rack := 0
+	for key in ["f%ds0" % rack, "f%ds1" % rack, "f%ds2" % rack, "f%ds3" % rack]:
+		on_rack += Shed.surface_items(key).size()
+	var on_bench := Shed.surface_items("bench").size()
+	print("    on the staff rack %d, on the bench %d" % [on_rack, on_bench])
+	check(on_rack >= 1, "what's left over (oil, lube) is on the staff rack (%d)" % on_rack)
+	check(Contracts._eval_task(ranger, "oil")["done"] and Contracts._eval_task(ranger, "pads")["done"] and Contracts._eval_task(ranger, "brake_fluid")["done"],
+		"oil, pads and brake fluid done (%s)" % str(Contracts._eval_task(ranger, "brake_fluid")))
+	# Older sheds get them; a save keeps them.
+	var copy: Dictionary = str_to_var(var_to_str(Shed.save_snapshot()))
+	for id in copy["furniture"].keys():
+		if str(copy["furniture"][id]["model"]) == Shed.STAFF_RACK or copy["furniture"][id].get("staff", false):
+			copy["furniture"].erase(id)
+	Shed.load_state(copy, "T")
+	check(Shed.staff_rack() != 0 and Shed.staff_trolley() != 0, "a shed saved before them gets the rack and the trolley")
 	Shed.stop()
 
 

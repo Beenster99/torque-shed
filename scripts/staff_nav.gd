@@ -44,6 +44,7 @@ const NODES := {
 	"yard_sw": Vector2(-6.5, 72.3), "wash_front": Vector2(-9.3, 70.6), "yard_w": Vector2(-16.5, 74.7),
 	"cafe_aisle": Vector2(-25.25, 74.7), "cafe_walk": Vector2(-25.25, 70.5), "cafe_door": Vector2(-25.25, 63.6),
 	"cafe": Vector2(-24.7, 62.2),
+	"shed_nw": Vector2(-5.85, 62.95), "store_door": Vector2(-5.95, 60.5), "store": Vector2(-7.7, 60.5),
 }
 const EDGES := [["shed", "shed_w"], ["shed", "shed_e"], ["shed", "shed_door"], ["shed_w", "shed_door"],
 	["shed_e", "shed_door"], ["shed_e", "paint_gap"], ["shed_door", "paint_gap"], ["shed_e", "shed_ne"],
@@ -52,7 +53,8 @@ const EDGES := [["shed", "shed_w"], ["shed", "shed_e"], ["shed", "shed_door"], [
 	["shed_door", "yard"], ["yard", "yard_aisle"], ["yard_aisle", "yard_s"], ["yard", "yard_s"], ["yard_s", "yard_se"],
 	["yard_se", "sales_front"], ["sales_front", "sales_door"], ["sales_door", "sales"], ["sales", "sales_desk"],
 	["yard", "yard_sw"], ["yard_sw", "wash_front"], ["yard_sw", "yard_w"], ["yard_w", "cafe_aisle"],
-	["cafe_aisle", "cafe_walk"], ["cafe_walk", "cafe_door"], ["cafe_door", "cafe"]]
+	["cafe_aisle", "cafe_walk"], ["cafe_walk", "cafe_door"], ["cafe_door", "cafe"],
+	["shed_w", "shed_nw"], ["shed_nw", "store_door"], ["store_door", "store"]]
 
 ## Where the staff wait about between jobs, by role (a spot each, a little apart).
 const IDLE := {"mechanic": Vector2(-4.6, 64.6), "expert": Vector2(-4.6, 66.3), "paint": Vector2(7.6, 66.8),
@@ -501,6 +503,51 @@ static func tea_spot() -> Dictionary:
 ## The point on the workbench a tray goes down at.
 static func tea_xf() -> Transform3D:
 	return Transform3D(Basis(), Vector3(-6.0, 0.96, 68.0))
+
+
+## In front of the staff parts rack in the storage room, facing it.
+static func rack() -> Dictionary:
+	var at := Shed.STAFF_RACK_XF.origin
+	return place("store", [Vector3(at.x - 0.65, 0.0, at.z)], -PI * 0.5)
+
+
+## At a trolley's handle (its +Z end), to take hold of it.
+static func cart_handle(furniture_id: int) -> Dictionary:
+	var f: Dictionary = Shed.furniture.get(furniture_id, {})
+	if f.is_empty():
+		return idle("expert")
+	var xf: Transform3D = f["xf"]
+	var at := xf.origin + xf.basis.z.normalized() * CART_AHEAD
+	return place(nearest_node(at), [at], atan2(xf.basis.z.x, xf.basis.z.z))
+
+
+## Where a trolley's left to load the deliveries onto: just off the delivery area's corner by the
+## roller door, clear of the boxes.
+static func cart_delivery() -> Dictionary:
+	return place("yard", [Vector3(1.9, 0.0, 73.0), Vector3(1.9, 0.0, 73.7)])
+
+
+## Where a trolley's left by a bike to work from: at the mouth of its bay, out of the way of
+## their own way in down its right-hand side, or beside it anywhere else.
+static func cart_by_bike(bike_id: int) -> Dictionary:
+	var b: Dictionary = Shed.bikes.get(bike_id, {})
+	if b.is_empty():
+		return cart_park()
+	var xf: Transform3D = b["xf"]
+	var at := xf.origin
+	var bay := bay_of(at)
+	if bay >= 0 and bay < Workshop.BAY_COUNT:
+		return place("shed", [Vector3(at.x - 0.25, 0.0, 64.6), Vector3(at.x - 0.25, 0.0, 63.75)])
+	if bay >= Workshop.BAY_COUNT:
+		return place("wing_mid", [Vector3(at.x - 0.25, 0.0, 55.4), Vector3(at.x - 0.25, 0.0, 56.0)])
+	var side := at - xf.basis.x.normalized() * 1.2
+	return place(nearest_node(side), [side])
+
+
+## The staff trolley's own place, beside the parts rack.
+static func cart_park() -> Dictionary:
+	var at := Shed.STAFF_TROLLEY_XF.origin
+	return place("store", [Vector3(at.x + 1.0, 0.0, at.z), at])
 
 
 ## Their own spot to wait at between jobs (`k` spreads two of the same role apart).

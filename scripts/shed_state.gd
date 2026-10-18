@@ -26,6 +26,12 @@ const DELIVERY_FLOOR := Rect2(3.0, 72.6, 7.6, 3.0)
 const DELIVERY_RACK := "shelf_delivery"
 const DELIVERY_RACK_XFS: Array[Transform3D] = [Transform3D(Basis(Vector3.UP, PI), Vector3(4.9, 0.0, 77.05)),
 	Transform3D(Basis(Vector3.UP, PI), Vector3(8.7, 0.0, 77.05))]
+## The staff's own parts rack, fixed against the storage room's east wall just inside its door
+## (a board each for the mechanics, the expert, the paint expert and the detailer), and the
+## parts trolley the expert mechanics fetch with, parked in front of it.
+const STAFF_RACK := "shelf_staff"
+const STAFF_RACK_XF := Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-7.11, 0.0, 58.3))
+const STAFF_TROLLEY_XF := Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-9.0, 0.0, 59.3))
 const DELIVERY_GAP := 0.04      # left between boxes
 const DELIVERY_STACK := 1.3     # how high boxes are stacked on the floor, at most
 const PACK_CELL := 0.05         # the grid boxes are packed on
@@ -1586,6 +1592,27 @@ func _delivery_racks() -> Array:
 	return out
 
 
+## Racking that comes with the shed and stays put: the delivery racking and the staff's rack.
+static func fixed_rack(model: String) -> bool:
+	return model == DELIVERY_RACK or model == STAFF_RACK
+
+
+## The staff's parts rack (see ensure_fixtures), or 0.
+func staff_rack() -> int:
+	for id in furniture:
+		if str(furniture[id]["model"]) == STAFF_RACK:
+			return int(id)
+	return 0
+
+
+## The staff's parts trolley, or 0.
+func staff_trolley() -> int:
+	for id in furniture:
+		if furniture[id].get("staff", false) and str(furniture[id]["kind"]) == "trolley":
+			return int(id)
+	return 0
+
+
 ## Parts lying on the ground in the delivery area (and stacked there).
 func _delivery_floor_items() -> Array:
 	var out := []
@@ -2100,6 +2127,17 @@ func ensure_fixtures() -> void:
 		else:
 			var rack := _new_furniture("shelf", DELIVERY_RACK_XFS[i], DELIVERY_RACK)
 			furniture[rack]["label"] = "DELIVERIES"
+	# The staff's parts rack and trolley (sheds from before them get them too).
+	if staff_rack() == 0:
+		var rack := _new_furniture("shelf", STAFF_RACK_XF, STAFF_RACK)
+		furniture[rack]["label"] = "STAFF PARTS"
+	else:
+		furniture[staff_rack()]["xf"] = STAFF_RACK_XF
+		furniture[staff_rack()]["mover"] = 0
+	if staff_trolley() == 0:
+		var cart := _new_furniture("trolley", STAFF_TROLLEY_XF, "trolley_parts")
+		furniture[cart]["label"] = "STAFF"
+		furniture[cart]["staff"] = true
 	# The crew whiteboard can be hung on any wall; a save from before that keeps it where it was.
 	if whiteboard_id() == 0:
 		_new_furniture("whiteboard", Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT), "whiteboard")
@@ -2557,8 +2595,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unknown equipment."
 			if Equipment.FIXED_KINDS.has(Equipment.kind_of(model)):
 				return "The paint booth is built into the shed: it's in the paint shop on the east side."
-			if model == DELIVERY_RACK:
-				return "The delivery racking comes with the shed: it's in the delivery area outside."
+			if model == DELIVERY_RACK or model == STAFF_RACK:
+				return "The %s comes with the shed." % str(Equipment.get_model(model).get("name", "racking")).to_lower()
 			if model == Equipment.BOARD_POSTER and not posters.has(int(action.get("design", 0))):
 				return "That whiteboard poster isn't in the shop any more."
 			if str(action.get("psize", "")) != "" and (Equipment.kind_of(model) != "poster" or not Equipment.POSTER_SIZES.has(str(action["psize"]))):
@@ -2582,8 +2620,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "That has gone."
 			if Equipment.FIXED_KINDS.has(str(f["kind"])):
 				return "The %s is built in." % furniture_name(f).to_lower()
-			if str(f["model"]) == DELIVERY_RACK:
-				return "The delivery racking is fixed down in the delivery area."
+			if fixed_rack(str(f["model"])):
+				return "The %s is fixed down where it is." % furniture_name(f).to_lower()
 			if f["mover"] != 0 and f["mover"] != peer:
 				return "Someone else is moving that."
 			if blaster_user(int(f["id"])) != 0:
@@ -3016,7 +3054,7 @@ func _drop_trinkets_off(id: int) -> int:
 ## changer and the crew whiteboard.
 static func scrappable(f: Dictionary) -> bool:
 	var kind := str(f.get("kind", ""))
-	return kind != "" and not Equipment.FIXED_KINDS.has(kind) and kind != "whiteboard" and str(f.get("model", "")) != DELIVERY_RACK
+	return kind != "" and not Equipment.FIXED_KINDS.has(kind) and kind != "whiteboard" and not fixed_rack(str(f.get("model", ""))) and not f.get("staff", false)
 
 
 ## Scraps equipment or a part for good (see scrap_check). Whatever was on or in it goes on the
