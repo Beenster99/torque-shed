@@ -96,19 +96,24 @@ void fragment() {
 	float gloss = s.r;
 	float coat = s.b;
 	float burn = s.g;
-	// Dull and swirled: a pale haze, and fine scratches going round in arcs.
+	vec3 v = normalize(VIEW);
+	float facing = clamp(dot(NORMAL, v), 0.0, 1.0);
+	// Dull and swirled: a milky haze that flattens the colour, and fine swirl marks (little
+	// arcs going round, from years of washing with a dirty sponge) that catch the light most at a
+	// glancing angle.
 	float haze = 1.0 - smoothstep(0.3, 0.85, gloss);
-	vec3 q = mpos * 7.0;
+	vec3 q = mpos * 24.0;
 	vec3 cellp = floor(q);
 	vec3 off = vec3(hash3(cellp), hash3(cellp + 3.1), hash3(cellp + 7.7));
-	float ring = length((fract(q) - off) * vec3(1.0, 1.0, 1.0));
-	float arcs = smoothstep(0.82, 0.98, abs(sin(ring * 90.0 + hash3(cellp + 1.3) * 6.0))) * step(0.3, vnoise(mpos * 60.0));
-	float scratch = smoothstep(0.75, 0.95, vnoise(vec3(mpos.x * 30.0, mpos.y * 260.0, mpos.z * 30.0 + mpos.y * 90.0)));
-	float swirl = max(arcs * 0.8, scratch * 0.6);
-	float dull_a = haze * (0.2 + 0.32 * swirl);
+	float ring = length(fract(q) - off);
+	float arcs = smoothstep(0.9, 1.0, abs(sin(ring * 26.0 + hash3(cellp + 1.3) * 6.0))) * step(0.6, vnoise(mpos * 90.0 + 2.0));
+	float scratch = smoothstep(0.86, 0.97, vnoise(vec3(mpos.x * 40.0 + mpos.y * 120.0, mpos.y * 420.0, mpos.z * 40.0 - mpos.x * 160.0)));
+	float glance = 0.35 + 0.65 * pow(1.0 - facing, 2.0);
+	float swirl = max(arcs * 0.7, scratch * 0.5) * glance;
+	float dull_a = haze * (0.3 + 0.3 * swirl);
 	// Polished: a deep, wet clear layer, sharper under a coat.
-	float deep = smoothstep(0.55, 1.0, gloss);
-	float clear_a = deep * 0.2 + coat * 0.1;
+	float deep = smoothstep(0.5, 0.95, gloss);
+	float clear_a = deep * (0.22 + 0.25 * pow(1.0 - facing, 3.0)) + coat * 0.12;
 	vec3 col = vec3(0.0);
 	float alpha = 0.0;
 	float rough = 0.5;
@@ -116,9 +121,9 @@ void fragment() {
 	float tot = dull_a + clear_a;
 	if (tot > 0.0) {
 		float t = dull_a / tot;
-		col = mix(vec3(0.005, 0.006, 0.008), vec3(0.78, 0.78, 0.76), t);
-		rough = mix(mix(0.035, 0.02, coat), 0.62, t);
-		spec = mix(1.0, 0.35, t);
+		col = mix(vec3(0.004, 0.005, 0.007), mix(vec3(0.66, 0.66, 0.64), vec3(0.85, 0.85, 0.83), swirl), t);
+		rough = mix(mix(0.03, 0.015, coat), 0.78, t);
+		spec = mix(1.0, 0.2, t);
 		alpha = max(dull_a, clear_a);
 	}
 	// Burnt through: the clear coat gone, a chalky dull patch with a ragged edge.
@@ -130,21 +135,21 @@ void fragment() {
 	// Coat residue still to buff off: an oily rainbow shimmer.
 	float res = mk.r;
 	if (res > 0.01) {
-		vec3 v = normalize(VIEW);
-		float ang = dot(NORMAL, v) * 2.5 + vnoise(mpos * 25.0) * 1.5;
+		float ang = facing * 2.5 + vnoise(mpos * 25.0) * 1.5;
 		vec3 rainbow = 0.5 + 0.5 * cos(6.2832 * (vec3(0.0, 0.33, 0.67) + ang));
-		float ra = res * (0.25 + 0.2 * vnoise(mpos * 50.0));
-		col = mix(col, rainbow * 0.6, ra / max(alpha + ra, 0.001));
-		rough = mix(rough, 0.15, ra);
+		float ra = res * (0.3 + 0.25 * vnoise(mpos * 50.0));
+		col = mix(col, rainbow * 0.7, ra / max(alpha + ra, 0.001));
+		rough = mix(rough, 0.12, ra);
 		alpha = max(alpha, ra);
 	}
-	// A smear: residue that flashed, streaky and grey.
+	// A smear: residue that flashed, hard grey-white streaks the way it was wiped.
 	float sm = mk.g;
 	if (sm > 0.01) {
-		float streak = vnoise(vec3(mpos.x * 22.0 + mpos.y * 40.0, mpos.y * 8.0, mpos.z * 22.0 - mpos.y * 40.0));
-		float sa = sm * (0.3 + 0.45 * smoothstep(0.3, 0.8, streak));
-		col = mix(col, vec3(0.42, 0.42, 0.45), sa / max(alpha + sa, 0.001));
-		rough = mix(rough, 0.7, sa);
+		float streak = vnoise(vec3(mpos.x * 14.0 + mpos.y * 30.0, mpos.y * 6.0, mpos.z * 70.0));
+		float blotch = vnoise(mpos * 18.0 + 5.0);
+		float sa = sm * (0.55 + 0.4 * smoothstep(0.35, 0.75, streak) * (0.5 + 0.5 * blotch));
+		col = mix(col, vec3(0.78, 0.78, 0.8), sa / max(alpha + sa, 0.001));
+		rough = mix(rough, 0.65, sa);
 		spec = mix(spec, 0.3, sa);
 		alpha = max(alpha, sa);
 	}
