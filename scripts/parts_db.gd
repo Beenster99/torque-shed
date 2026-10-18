@@ -331,7 +331,7 @@ func spec_line(id: String) -> String:
 			if p.has("spokes"):
 				bits.append("%d spokes" % int(p["spokes"]))
 		"tyre":
-			bits = [p["type"], TyreGrip.kind_name(TyreGrip.kind_of(p)), p["compound"] + " compound", "%d mm wide, %d%% profile" % [int(p["width"]), roundi(float(p["aspect"]) * 100.0)],
+			bits = [p["type"], p["compound"] + " compound", TyreGrip.kind_name(TyreGrip.kind_of(p)), "%d mm wide, %d%% profile" % [int(p["width"]), roundi(float(p["aspect"]) * 100.0)],
 				"fits " + tyre_rims_text(id), "grip %.2f tarmac / %.2f dirt" % [p["grip"]["tarmac"], p["grip"]["dirt"]]]
 			bits.append(tyre_handling_text(p))
 		"disc":

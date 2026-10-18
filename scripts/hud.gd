@@ -16,6 +16,7 @@ var _prompt: Label
 var _top_kmh := 0.0
 var trip_km := 0.0         # this ride, for the economy readout
 var trip_fuel := 0.0       # litres burnt this ride
+var fuel_stop: FuelStop     # filling up at a pump and the low fuel light, while riding (main sets it)
 ## "+6 XP Cleaning" popups under the level bar: [{amount, label, age}], newest first.
 var popups: Array = []
 var blast_hud: BlastHud     # the sandblaster's readout, while your hands are in the gloves
@@ -475,9 +476,18 @@ func _draw_speedo() -> void:
 	var used := trip_fuel + bike.fuel_used
 	var economy := Units.economy(trip_km / used) if used > 0.01 and trip_km > 0.05 else "-- " + Units.economy_unit()
 	draw_string(font, r.position + Vector2(12, 130), "%.1f L  ·  %s" % [bike.fuel_litres, economy], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.8))
+	if fuel_stop and fuel_stop.low() and int(Time.get_ticks_msec() / 500) % 2 == 0:
+		# The low fuel light, blinking.
+		draw_string(font, r.position + Vector2(140, 106), "LOW FUEL", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.65, 0.1))
 	_draw_heat_hints(r)
 	var hint := ""
-	if not bike.engine_on and not bike.is_crashed:
+	if fuel_stop and fuel_stop.filling:
+		hint = "Filling up: %.1f L  ·  %s" % [fuel_stop.litres, TvChannels.money_text(ceili(fuel_stop.litres * FuelStop.price_of(fuel_stop.pump)))]
+	elif fuel_stop and fuel_stop.pump_here() != null and not bike.is_crashed:
+		hint = Controls.hint("Hold {interact}: fill up (%dp a litre, your money)   ·   %.1f of %.0f L in the tank" % [
+			roundi(FuelStop.price_of(fuel_stop.pump_here()) * 100.0), bike.fuel_litres, bike.build.fuel_capacity]) \
+			if fuel_stop.space() >= 0.05 else Controls.hint("The tank's full   ·   {interact}: get off")
+	elif not bike.engine_on and not bike.is_crashed:
 		hint = "Starting..." if bike.is_starting() else Controls.hint("Engine off: press {ignition} to start it")
 	elif absf(bike.speed) < 2.0 and not bike.is_crashed:
 		hint = Controls.hint("{interact}: get off   ·   {ignition}: engine off   ·   hold {front_brake}: paddle back   ·   {front_brake} + {throttle}: burnout")

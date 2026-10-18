@@ -49,6 +49,7 @@ var _was_bottomed := [false, false]   # each wheel's suspension bottomed last fr
 var _flat_told := [false, false]      # told the rider this tyre has gone flat, this ride
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
+var fuel_stop: FuelStop    # filling up at a pump, and the low fuel warning, while riding
 var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at the side while riding (F3)
 var _kb_bars := 0.0        # the keyboard's steer in Direct bars mode, ramped like a hand pushing harder
 var _kb_lean := 0.0        # the keyboard's lean asked for, ramped (see ramp_lean)
@@ -641,6 +642,8 @@ func _start_riding(bike_id: int) -> void:
 	hud.trip_km = 0.0
 	hud.trip_fuel = 0.0
 	_dash = bike.model.dash_readout()
+	fuel_stop = FuelStop.new(bike)
+	hud.fuel_stop = fuel_stop
 	_mounted_at = Time.get_ticks_msec()
 	var build := bike.build
 	if build.fuel_litres <= 0.0:
@@ -688,6 +691,12 @@ func _ignition() -> void:
 
 
 func _stop_riding() -> void:
+	if fuel_stop:
+		var paid := fuel_stop.finish()
+		if paid != "":
+			hud.flash(paid, 2.5)
+	fuel_stop = null
+	hud.fuel_stop = null
 	if bike:
 		BikeHeat.park(riding_id, bike.heat)
 	if riding_id != 0:
@@ -767,7 +776,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		camera.add_orbit(-rel.x * ChaseCamera.MOUSE_ORBIT, rel.y * ChaseCamera.MOUSE_ORBIT)
 		return
 	if event.is_action_pressed("interact"):
-		if Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
+		# Stopped at a pump with room in the tank, holding it fills up (see FuelStop); else off you get.
+		var fuelled := false
+		if fuel_stop and fuel_stop.pump_here() != null and fuel_stop.space() >= 0.05:
+			var why := fuel_stop.start()
+			fuelled = why == ""
+			if not fuelled:
+				hud.flash(why, 2.0, true)
+		if not fuelled and Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
 			_get_off()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("respawn"):
@@ -861,6 +877,13 @@ func _physics_process_body(delta: float) -> void:
 			_dirt_km += muck
 			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
 		_puncture_rolls(km)
+		if fuel_stop:
+			var filled := fuel_stop.update(delta, active and Input.is_action_pressed("interact"))
+			if filled != "":
+				hud.flash(filled, 3.0)
+			var low := fuel_stop.warning()
+			if low != "":
+				hud.flash(low, 4.0, true)
 		# Dead flies on the front at speed (fewer in the rain).
 		_fly_km += km * clampf((absf(bike.speed) * 3.6 - 30.0) / 70.0, 0.0, 1.5) * (1.0 - 0.6 * Weather.rain_level())
 		_update_dash()
