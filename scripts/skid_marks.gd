@@ -117,7 +117,9 @@ func scrub(key: String, at: Vector3, normal: Vector3, heading: Vector3, width: f
 		_scrub.erase(key)
 		return
 	if _last.has(key) and (_last[key] as Vector3).distance_to(at) >= STEP:
+		# Moving: a line, and no smear across it until the tyre has sat in one place a moment.
 		mark(key, at, normal, width, strength, surface)
+		_scrub[key] = 0.0
 		return
 	if not _last.has(key):
 		_last[key] = at
