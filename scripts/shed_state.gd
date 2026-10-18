@@ -2787,6 +2787,12 @@ func check(peer: int, action: Dictionary) -> String:
 						return "Fades need level %d." % int(PaintMix.PATTERNS[fade]["level"])
 					if it.get("primer_top", false) or not it.has("paint_quality"):
 						return "Paint its first colour on before fading a second one in."
+			elif a == "paint" and action.get("mix") is Dictionary:
+				# A paint expert's own mix (see StaffJobs._paint): only staff spray straight from a spec.
+				if not Staff.is_staff_peer(peer):
+					return "Mix it at the bench and fill the gun's cup from the tin."
+				if not PaintMix.EFFECTS.has(str(action["mix"].get("effect", ""))):
+					return "That's no paint."
 			elif a == "paint" and not it.get("primer_top", false) and it.get("finish", "") == str(action.get("finish", "gloss")) \
 					and paint_index(it["color"]) == int(action.get("color", 0)) and it["color"] == PAINTS[paint_index(it["color"])] \
 					and not (it.get("mix") is Dictionary) and not (it.get("tape") is Dictionary):
@@ -3631,6 +3637,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 				# Mixed paint from the gun's cup: its colour and effect, coats building up, a
 				# mask where tape was or a fade over the colour under it (see PaintBay).
 				coats_q = PaintBay.spray_from_cup(peer, it, float(action.get("waste", 0.0)), str(action.get("fade", "")))
+			elif action.get("mix") is Dictionary:
+				coats_q = PaintBay.spray_spec(it, (action["mix"] as Dictionary).duplicate(true))
 			else:
 				var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
 				var finish := str(action.get("finish", "gloss"))

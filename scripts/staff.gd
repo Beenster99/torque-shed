@@ -510,6 +510,14 @@ static func job_check(w: Dictionary, job) -> String:
 				return "Pick a part to paint."
 			if Shed.item_on(int(job["bike"]), slot) == 0:
 				return "There's no %s on it." % PartsDB.slot_name(slot).to_lower()
+			if str(job.get("lib", "")) != "" or str(job.get("code", "")) != "":
+				# A mixed paint: one the paint expert's up to.
+				var mix := StaffJobs.paint_spec(job)
+				if mix.is_empty():
+					return "That colour's not one anyone can mix."
+				if job.has("sheen") and not PaintMix.SHEENS.has(str(job["sheen"])):
+					return "Gloss, satin or matt?"
+				return StaffJobs.paint_why(w, mix)
 			var idx := int(job.get("color", -1))
 			if idx < 0 or idx >= Shed.PAINTS.size():
 				return "Pick a colour."

@@ -398,6 +398,7 @@ func _run_all() -> void:
 	await _test_staff_tea_run()
 	await _test_staff_tv()
 	_test_staff_sales_margin()
+	_test_staff_exotic_paint()
 	await _test_staff_save()
 	await _test_staff_session()
 	print("Simon's 18 October round (v0.10.0): polishing and ceramic coating in the wash bay, and detailing jobs")
@@ -15486,7 +15487,7 @@ func _test_paint_codes() -> void:
 ## The manufacturer colours: 30 to 40 recipe cards, each with a code that mixes it closely.
 func _test_paint_library() -> void:
 	var lib := PaintMix.library()
-	check(lib.size() >= 30 and lib.size() <= 40, "%d manufacturer colours" % lib.size())
+	check(lib.size() >= 30 and lib.size() <= 60, "%d manufacturer and custom colours" % lib.size())
 	var brands := {}
 	var effects := {}
 	var bad := []
@@ -15503,7 +15504,7 @@ func _test_paint_library() -> void:
 	check(bad.is_empty(), "each one's recipe reads and makes its effect %s" % str(bad))
 	check(weak.is_empty(), "and mixes within 85%% of the real colour %s" % str(weak))
 	check(brands.size() >= 12 and effects.has("solid") and effects.has("metallic") and effects.has("pearl") and effects.has("candy")
-		and effects.has("flake") and effects.has("chameleon"), "from %d makers, with every effect" % brands.size())
+		and effects.has("flake") and effects.has("chameleon") and effects.has("chrome"), "from %d makers, with every effect" % brands.size())
 	var brg := PaintMix.library_entry("british_racing_green")
 	check(not brg.is_empty() and PaintMix.library_name(brg).contains("British Racing Green"), "British racing green is there")
 	check(str(PaintMix.nearest_library(Color(0.8, 0.07, 0.06), "solid")["entry"].get("brand", "")) in ["Ducati", "BMW", "Honda", "MV Agusta"],
@@ -19797,6 +19798,52 @@ func _test_staff_tv() -> void:
 	check((e["list"] as Array).size() == 3, "a project's list goes on the spotlight")
 	check(drawn[0] > 0, "the page draws")
 	dash.queue_free()
+	Shed.stop()
+
+
+## Exotic paint: a chrome-effect base for the mixing bay and the colour book's custom paints
+## (candy, flake, pearl, chameleon, chrome, satin and matt); the paint expert mixes and sprays
+## them coat by coat once good enough (chameleon at level 9), with a satin or matt lacquer over.
+func _test_staff_exotic_paint() -> void:
+	Shed.start_new("Tester", 308)
+	var chrome := PaintMix.spec(PaintMix.parse_code("H"))
+	var m := PaintMix.material(chrome)
+	check(str(chrome["effect"]) == "chrome" and m.metallic >= 0.99 and m.roughness < 0.05 and PaintMix.level_needed(PaintMix.parse_code("H")) == 12
+		and PaintMix.BASE_ORDER.has("H"), "a chrome-effect base sprays mirror-bright (level 12 in the bay)")
+	check(str(PaintMix.spec(PaintMix.parse_code("H-BK24"))["effect"]) == "chrome", "and a tint smokes it: black chrome")
+	var effects := {}
+	for e in PaintMix.library():
+		if str(e["brand"]) == "Custom paint":
+			effects[str(e["effect"]) + ("/" + str(e["finish"]) if str(e["finish"]) != "gloss" else "")] = true
+	check(effects.has("chameleon") and effects.has("candy") and effects.has("flake") and effects.has("pearl") and effects.has("chrome")
+		and effects.has("solid/satin") and effects.has("solid/matt"), "the colour book has custom candy, flake, pearl, chameleon, chrome, satin and matt (%s)" % str(effects.keys()))
+	Staff.hire_one_of_each()
+	var w := Staff.worker(_staff_role("paint"))
+	w["xp"] = Staff.xp_for(4)
+	var ranger := _bike_named("Rusty Ranger")
+	var tank := Shed.item_on(ranger, "tank")
+	Shed.items[tank]["rust"] = 0.0
+	var job := {"kind": "paint", "bike": ranger, "slot": "tank", "color": 1, "finish": "gloss", "lib": "custom_blue_gold", "sheen": "satin"}
+	var why := Shed.check(Shed.me(), {"a": "staff_assign", "worker": int(w["id"]), "job": job})
+	check(why.contains("level 9"), "a chameleon is beyond a level 4 paint expert (%s)" % why)
+	var easy := StaffPanel.mixable(w)
+	check(easy.any(func(e): return str(e["effect"]) == "pearl") and not easy.any(func(e): return str(e["effect"]) in ["chameleon", "chrome"]),
+		"the panel offers what they can mix at their level")
+	check(Shed.check(Shed.me(), {"a": "paint", "item": tank, "mix": chrome}) != "", "a player can't spray straight from a recipe")
+	w["xp"] = Staff.xp_for(9)
+	Shed.request({"a": "staff_assign", "worker": int(w["id"]), "job": job})
+	check(str(w["job"].get("label", "")).contains("Chameleon Blue-Gold") and int(w["job"].get("coats", 0)) == 3, "at level 9 they take it on: three coats")
+	_staff_run(20000, int(w["id"]), true)
+	var it: Dictionary = Shed.items[tank]
+	check((w["job"] as Dictionary).is_empty() and it.get("mix") is Dictionary and str(it["mix"]["effect"]) == "chameleon" and int(it.get("mix_coats", 0)) == 3
+		and float(it.get("flat", 0.0)) > 0.1 and Shed.item_on(ranger, "tank") == tank, "the tank's back on, chameleon in three coats under a satin lacquer (%s)" % Staff.saying(w))
+	# Chrome on the front mudguard.
+	var guard := Shed.item_on(ranger, "front_mudguard")
+	if guard != 0:
+		Shed.items[guard]["rust"] = 0.0
+		Shed.request({"a": "staff_assign", "worker": int(w["id"]), "job": {"kind": "paint", "bike": ranger, "slot": "front_mudguard", "color": 1, "finish": "gloss", "lib": "custom_chrome"}})
+		_staff_run(20000, int(w["id"]), true)
+		check(str(Shed.items[guard].get("mix", {}).get("effect", "")) == "chrome", "and a chrome-effect mudguard")
 	Shed.stop()
 
 

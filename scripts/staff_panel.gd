@@ -59,7 +59,7 @@ func open_worker(id: int) -> void:
 
 ## A job to start from for `w`: their role's first job on the first bike that fits it.
 static func default_choice(w: Dictionary) -> Dictionary:
-	var c := {"kind": "", "bike": 0, "slot": "front_pads", "part": "", "color": 1, "finish": "gloss", "steps": ["wash"], "ask": 0, "his": true}
+	var c := {"kind": "", "bike": 0, "slot": "front_pads", "part": "", "color": 1, "finish": "gloss", "steps": ["wash"], "ask": 0, "his": true, "lib": "", "sheen": "gloss"}
 	var kinds := kinds_for(w)
 	c["kind"] = kinds[0] if not kinds.is_empty() else "tea"
 	var bikes := bikes_for(str(c["kind"]))
@@ -102,6 +102,11 @@ static func fit_slots() -> Array:
 	return out
 
 
+## The colour book's paints worker `w` can mix and spray at their level.
+static func mixable(w: Dictionary) -> Array:
+	return PaintMix.library().filter(func(e): return StaffJobs.paint_why(w, StaffJobs.paint_spec({"lib": str(e["id"])})) == "")
+
+
 ## Fills in the choices that depend on the bike: the part on it now for a fitting, its recommended
 ## price for a sale.
 static func _fill_defaults(c: Dictionary) -> void:
@@ -130,6 +135,8 @@ func job() -> Dictionary:
 		"paint":
 			j.merge({"bike": int(choice["bike"]), "slot": str(choice["slot"]) if StaffJobs.PAINT_SLOTS.has(str(choice["slot"])) else "tank",
 				"color": int(choice["color"]), "finish": str(choice["finish"])})
+			if str(choice.get("lib", "")) != "":
+				j.merge({"lib": str(choice["lib"]), "sheen": str(choice.get("sheen", "gloss"))})
 		"detail":
 			j.merge({"bike": int(choice["bike"]), "steps": (choice["steps"] as Array).duplicate()})
 		"sell":
@@ -322,11 +329,31 @@ func _fill_job(w: Dictionary) -> void:
 			var slots: Array = StaffJobs.PAINT_SLOTS
 			_option(grid, "Part", slots.map(func(s): return PartsDB.slot_name(s)), slots.find(str(choice["slot"])),
 				func(i): set_choice("slot", slots[i]))
-			_option(grid, "Colour", Shed.PAINT_NAMES.map(func(n): return str(n).capitalize()), int(choice["color"]),
-				func(i): set_choice("color", i))
-			var fins: Array = Array(Shed.FINISHES)
-			_option(grid, "Finish", fins.map(func(f): return str(f).capitalize()), fins.find(str(choice["finish"])),
-				func(i): set_choice("finish", fins[i]))
+			# Plain spray-can colours, or a mixed paint from the colour book that they're up to.
+			var libs := mixable(w)
+			var paints := ["Spray can (plain colours)"]
+			for e in libs:
+				paints.append("%s  ·  %s" % [PaintMix.library_name(e), PaintMix.effect_name(str(e["effect"])).to_lower()])
+			var at := 0
+			for i in libs.size():
+				if str(libs[i]["id"]) == str(choice.get("lib", "")):
+					at = i + 1
+			_option(grid, "Paint", paints, at, func(i): set_choice("lib", "" if i == 0 else str(libs[i - 1]["id"])))
+			if str(choice.get("lib", "")) == "":
+				_option(grid, "Colour", Shed.PAINT_NAMES.map(func(n): return str(n).capitalize()), int(choice["color"]),
+					func(i): set_choice("color", i))
+				var fins: Array = Array(Shed.FINISHES)
+				_option(grid, "Finish", fins.map(func(f): return str(f).capitalize()), fins.find(str(choice["finish"])),
+					func(i): set_choice("finish", fins[i]))
+			else:
+				var sheens: Array = PaintMix.SHEENS.keys()
+				_option(grid, "Sheen", sheens.map(func(s): return str(s).capitalize()), sheens.find(str(choice.get("sheen", "gloss"))),
+					func(i): set_choice("sheen", sheens[i]))
+			var locked := PaintMix.library().size() - libs.size()
+			if locked > 0:
+				grid.add_child(_grid_label(""))
+				grid.add_child(UITheme.label("%d more in the book as %s gets better (pearl at level 3, candy 5, flake 6, chrome 8, chameleon 9)."
+					% [locked, Staff.first_name(w)], 13, Color(1, 1, 1, 0.55)))
 		"detail":
 			grid.add_child(_grid_label("Steps"))
 			var row := HBoxContainer.new()

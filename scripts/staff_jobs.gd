@@ -100,6 +100,13 @@ static func new_job(w: Dictionary, j: Dictionary) -> Dictionary:
 			job["finish"] = str(j.get("finish", "gloss")) if Shed.FINISHES.has(str(j.get("finish", "gloss"))) else "gloss"
 			job["item"] = Shed.item_on(b, job["slot"])
 			job["label"] = "Painting the %s's %s %s" % [_bike_name(b), _slot(job["slot"]), str(Shed.PAINT_NAMES[job["color"]])]
+			# A mixed paint (a colour from the library, or a recipe): candy, flake, pearl, chameleon, chrome...
+			var mix := paint_spec(j)
+			if not mix.is_empty():
+				job["mix"] = mix
+				job["coats"] = CANDY_COATS if str(mix["effect"]) == "candy" else int(mix.get("need", 2))
+				job["sheen"] = str(j.get("sheen", "gloss")) if PaintMix.SHEENS.has(str(j.get("sheen", "gloss"))) else "gloss"
+				job["label"] = "Painting the %s's %s %s" % [_bike_name(b), _slot(job["slot"]), str(mix["name"])]
 		"detail":
 			var todo: Array = []
 			for s in j.get("steps", ["wash"]):
@@ -1309,22 +1316,74 @@ static func _paint(w: Dictionary, job: Dictionary) -> Array:
 		return [go(StaffNav.at_spot(str(it["ref"])), "at the repair machine"),
 			work({"a": "take", "spot": str(it["ref"])}, 1.0, "hands", "picking up the %s" % _slot(slot)), plan_step()]
 	if it["at"] == "spot" and Shed.spot_role(str(it["ref"])) == "booth":
+		var mix: Dictionary = job.get("mix", {})
+		var paint_name := str(mix["name"]) if not mix.is_empty() else str(Shed.PAINT_NAMES[int(job["color"])])
 		if not job.get("mixed", false):
+			# A mixed paint takes longer at the bench: weighed out tint by tint, then stirred.
+			var mix_secs := 10.0 + 3.0 * float((PaintMix.parse_code(str(mix.get("code", ""))).get("tints", {}) as Dictionary).size()) if not mix.is_empty() else 10.0
 			return [go(StaffNav.mix_bench(), "going to the mixing bench"),
-				{"do": "work", "act": {}, "secs": 10.0, "anim": "mix", "what": "mixing up the %s" % str(Shed.PAINT_NAMES[int(job["color"])])},
+				{"do": "work", "act": {}, "secs": mix_secs, "anim": "mix", "what": "mixing up the %s" % paint_name},
 				flag("mixed"), plan_step()]
 		var spot := str(it["ref"])
 		var out := [go(StaffNav.at_spot(spot), "taking the paint to the booth")]
 		if job.get("repaired", false) and not job.get("primed", false):
 			out.append(work({"a": "prime", "item": id, "gun": true, "quality": "q", "waste": "w"}, 8.0, "spray", "spraying primer on the %s" % _slot(slot)))
 			out.append(flag("primed"))
-		out.append(work({"a": "paint", "item": id, "gun": true, "color": int(job["color"]), "finish": str(job["finish"]), "quality": "q",
-			"waste": "w"}, 12.0, "spray", "spraying the %s %s" % [_slot(slot), str(Shed.PAINT_NAMES[int(job["color"])])]))
+		if mix.is_empty():
+			out.append(work({"a": "paint", "item": id, "gun": true, "color": int(job["color"]), "finish": str(job["finish"]), "quality": "q",
+				"waste": "w"}, 12.0, "spray", "spraying the %s %s" % [_slot(slot), paint_name]))
+		else:
+			# Coat by coat (a candy deepens with each), then a satin or matt lacquer over it if asked.
+			var coats := maxi(1, int(job.get("coats", 2)))
+			for c in coats:
+				out.append(work({"a": "paint", "item": id, "gun": true, "mix": mix, "quality": "q", "waste": "w"}, 8.0, "spray",
+					"spraying the %s %s, coat %d of %d" % [_slot(slot), paint_name, c + 1, coats]))
+				if c < coats - 1:
+					out.append({"do": "wait", "secs": 3.0, "anim": "think", "what": "letting the coat flash off"})
+			var sheen := str(job.get("sheen", "gloss"))
+			if sheen != "gloss":
+				out.append(work({"a": "paint", "item": id, "gun": true, "mix": {"effect": "lacquer", "flat": float(PaintMix.SHEENS[sheen]), "name": "%s lacquer" % sheen},
+					"quality": "q", "waste": "w"}, 6.0, "spray", "a %s lacquer over the %s" % [sheen, _slot(slot)]))
 		out.append({"do": "wait", "secs": 6.0, "anim": "think", "what": "letting it flash off"})
 		out.append(flag("painted"))
 		out.append(plan_step())
 		return out
 	return _fetch(job, id) + [plan_step()]
+
+
+## Coats of candy a paint expert puts on (the best for depth: PaintMix.CANDY_BEST).
+const CANDY_COATS := 3
+## The paint expert's level each effect needs (players unlock them by their own level instead,
+## PaintMix.EFFECTS).
+const STAFF_EFFECT_LEVEL := {"solid": 1, "metallic": 1, "lacquer": 1, "pearl": 3, "candy": 5, "flake": 6, "chrome": 8, "chameleon": 9}
+
+
+## The mixed paint a paint job asks for, as a PaintMix spec (well stirred, named): from a
+## library colour ("lib", an id in data/paint_colours.json) or a recipe code ("code"). {} for a
+## plain spray-can colour (the job's "color" and "finish").
+static func paint_spec(j: Dictionary) -> Dictionary:
+	var code := str(j.get("code", ""))
+	var name := "custom mix"
+	var lib := PaintMix.library_entry(str(j.get("lib", ""))) if str(j.get("lib", "")) != "" else {}
+	if not lib.is_empty():
+		code = str(lib["code"])
+		name = str(lib["name"])
+	if code == "":
+		return {}
+	var tin := PaintMix.parse_code(code)
+	if tin.is_empty():
+		return {}
+	tin["stir"] = 1.0
+	return PaintMix.spec(tin, name)
+
+
+## Why paint expert `w` can't spray `spec` ("" if they can): it's beyond them yet.
+static func paint_why(w: Dictionary, spec: Dictionary) -> String:
+	var e := str(spec.get("effect", "solid"))
+	var need := int(STAFF_EFFECT_LEVEL.get(e, 99))
+	if Staff.level(w) < need:
+		return "%s paint is beyond %s yet: it needs a level %d paint expert." % [PaintMix.effect_name(e), Staff.first_name(w), need]
+	return ""
 
 
 static func _free_spot_of(role: String) -> String:
