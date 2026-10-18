@@ -3,9 +3,10 @@ extends Node
 ## The shed's screens as touch screens (the bay screens, the crew board and the wall TVs). Look
 ## at one up close and a cursor ring shows where you're pointing, with the button under it lit
 ## (see Dashboard): click ({act}, or RT on a pad) and that's touched. Press {interact} at a
-## built-in screen (or {act} where there's no button, on a pad) and the cursor is yours to move
-## about on it, with the mouse or either stick, while you stand still: {act} or A touches, {back}
-## leaves. What a button does is a Shed request, so it's done for the whole crew.
+## built-in screen, or one out of the hands' reach, (or {act} off the buttons, on a pad) and
+## the cursor is yours to move about on it, with the mouse, the keys or either stick, while you
+## stand still: {act} or A touches, {back} leaves. What a button does is a Shed request, so it's
+## done for the whole crew.
 
 const REACH := 4.5             # m from the screen's middle (plus half its width)
 const PAD_SPEED := 620.0       # page pixels a second, stick full over
@@ -28,21 +29,32 @@ func _workshop() -> Node:
 
 
 ## The screen the crosshair is on, near enough to touch, and where on its page: [key, dash, px] or [].
+## That's the screen you're looking at, or with nothing nearer under the crosshair (a screen high
+## on the wall behind a bike is out of the hands' reach) the nearest one the crosshair is on.
 func screen_under() -> Array:
-	var key := walker._screen_key()
 	var ws := _workshop()
-	if key == "" or ws == null or walker.camera == null:
+	if ws == null or walker.camera == null:
 		return []
-	var dash: Dashboard = ws.screens().get(key)
-	if dash == null or not dash.is_inside_tree():
+	var key := walker._screen_key()
+	if key == "" and not walker.target.is_empty():
 		return []
 	var from := walker.camera.global_position
-	if dash.global_position.distance_to(from) > REACH + dash.width * 0.5:
-		return []
-	var px = dash.page_point(from, -walker.camera.global_transform.basis.z)
-	if px == null:
-		return []
-	return [key, dash, px]
+	var dir := -walker.camera.global_transform.basis.z
+	var all: Dictionary = ws.screens()
+	var best := []
+	var best_d := INF
+	for k in ([key] if key != "" else all.keys()):
+		var dash: Dashboard = all.get(k)
+		if dash == null or not dash.is_inside_tree() or not dash.is_visible_in_tree():
+			continue
+		var d := dash.global_position.distance_to(from)
+		if d > REACH + dash.width * 0.5 or d >= best_d:
+			continue
+		var px = dash.page_point(from, dir)
+		if px != null:
+			best = [k, dash, px]
+			best_d = d
+	return best
 
 
 func _set_dash(dash: Dashboard) -> void:
@@ -58,7 +70,8 @@ func _process(delta: float) -> void:
 		if not is_instance_valid(_dash) or not _dash.is_inside_tree() or not TvChannels.screen_exists(focused):
 			leave()
 			return
-		var move := Controls.stick() + Controls.stick(true)
+		var move := Controls.stick() + Controls.stick(true) + Vector2(Input.get_axis("move_left", "move_right"),
+			Input.get_axis("move_forward", "move_back"))
 		if move != Vector2.ZERO:
 			move_cursor(move.limit_length(1.0) * PAD_SPEED * delta)
 		return
@@ -142,6 +155,6 @@ func _input(event: InputEvent) -> void:
 			focus()
 		else:
 			touch()
-	elif event.is_action_pressed("interact") and str(walker.target.get("kind", "")) == "screen":
+	elif event.is_action_pressed("interact") and (walker.target.is_empty() or str(walker.target.get("kind", "")) == "screen"):
 		get_viewport().set_input_as_handled()
 		focus()

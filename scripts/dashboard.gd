@@ -186,7 +186,7 @@ func page_point(from: Vector3, dir: Vector3):
 	var inv := global_transform.affine_inverse()
 	var o := inv * from
 	var d := inv.basis * dir
-	if absf(d.z) < 0.0001:
+	if o.z <= 0.03 or absf(d.z) < 0.0001:   # from behind it (through the wall) it isn't touched
 		return null
 	var t := (0.03 - o.z) / d.z
 	if t <= 0.0:

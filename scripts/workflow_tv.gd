@@ -160,7 +160,8 @@ static func draw(c: Control, font: Font, d: Dictionary) -> void:
 		draw_buttons(c, font, d.get("buttons", []))
 		return
 	_text(c, font, Vector2(24, 50), ("WORKFLOW: " + str(d["name"])).to_upper().left(30), 36, INK)
-	_text(c, font, Vector2(600, 48), str(d.get("where", "")), 22, INK, 400, HORIZONTAL_ALIGNMENT_RIGHT)
+	# Clear of the channel buttons that show in the corner while someone's touching the screen.
+	_text(c, font, Vector2(600, 48), str(d.get("where", "")), 22, INK, 260, HORIZONTAL_ALIGNMENT_RIGHT)
 	_text(c, font, Vector2(24, 100), str(d.get("kind", "")), 20, Color(0.6, 0.9, 1.0), 600)
 	var total := int(d.get("total", 0))
 	var met := int(d.get("met", 0))
@@ -199,8 +200,12 @@ static func draw(c: Control, font: Font, d: Dictionary) -> void:
 	var on: Array = d.get("on", [])
 	if on.is_empty():
 		_text(c, font, Vector2(RIGHT + 14, 234), "Nobody right now", 16, Dashboard.DIM)
-	for i in on.size():
-		_text(c, font, Vector2(RIGHT + 14, 234 + i * 22), str(on[i]).left(40), 16, Color.WHITE, px.x - RIGHT - 40)
+	var oy := 230.0
+	for line in on:
+		if oy > 290.0:
+			break
+		c.draw_multiline_string(font, Vector2(RIGHT + 14, oy), str(line), HORIZONTAL_ALIGNMENT_LEFT, px.x - RIGHT - 40, 15, 2, Color.WHITE)
+		oy += 18.0 * mini(2, ceili(font.get_string_size(str(line), HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x / (px.x - RIGHT - 40))) + 4.0
 	var hours := float(d.get("hours", -1.0))
 	var money_y := 318.0
 	_text(c, font, Vector2(RIGHT + 14, money_y), "TIME", 13, Dashboard.DIM)

@@ -285,6 +285,14 @@ func test_session() -> void:
 	t._press("menu")
 	await t.get_tree().process_frame
 	check(w.touch.focused == "" and w.controls_enabled and not main.menu.visible, "Esc lets go of it (and doesn't open the menu)")
+	# Further back, out of the hands' reach, the screen high on the wall can still be touched.
+	w.place(Transform3D(Basis(), Vector3(aim.x + 0.5, 0.0, screen.global_position.z + 3.6)))
+	await t._aim_point(w, aim)
+	await t.get_tree().process_frame
+	check(w._screen_key() == "" and screen.cursor_on(), "from further back the cursor still finds the screen (%s)" % str(w.target.get("kind", "")))
+	# Not from behind it, through the wall.
+	var behind := screen.global_transform * Vector3(0.0, -1.0, -2.0)
+	check(screen.page_point(behind, (screen.global_position - behind).normalized()) == null, "a screen can't be touched from behind")
 	main._leave()
 	main.queue_free()
 	await t.get_tree().physics_frame
