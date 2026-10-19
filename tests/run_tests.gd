@@ -479,6 +479,13 @@ func _run_all() -> void:
 	_test_adv_themes_scenery()
 	await _test_adv_themes_stream()
 	await _test_adv_themes_sky()
+	_test_adv_dest_data()
+	await _test_adv_dest_build()
+	_test_adv_dest_arrive()
+	_test_adv_dest_photo()
+	_test_adv_magazine_issues()
+	await _test_adv_magazine_facts()
+	await _test_adv_magazine_ui()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21731,3 +21738,37 @@ func _test_adv_themes_stream() -> void:
 
 func _test_adv_themes_sky() -> void:
 	await _adv_themes().test_sky()
+
+
+# ---------------------------------------------------------------------------- destinations and the magazine (tests/adventure_dest_tests.gd)
+
+func _adv_dest() -> RefCounted:
+	return load("res://tests/adventure_dest_tests.gd").new(self)
+
+
+func _test_adv_dest_data() -> void:
+	_adv_dest().test_data()
+
+
+func _test_adv_dest_build() -> void:
+	await _adv_dest().test_build()
+
+
+func _test_adv_dest_arrive() -> void:
+	_adv_dest().test_arrive()
+
+
+func _test_adv_dest_photo() -> void:
+	_adv_dest().test_photo()
+
+
+func _test_adv_magazine_issues() -> void:
+	_adv_dest().test_magazine_issues()
+
+
+func _test_adv_magazine_facts() -> void:
+	await _adv_dest().test_magazine_facts()
+
+
+func _test_adv_magazine_ui() -> void:
+	await _adv_dest().test_magazine_ui()

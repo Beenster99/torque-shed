@@ -9,10 +9,20 @@ extends Node
 ## Out there it keeps your bike, the camera, your walker and the other players in step with the
 ## world's floating origin, puts a bike that's left the road back on it, tells the host when you
 ## reach the destination, runs the day faster (Adventure.day_rate) and shows how far you've come.
+##
+## Once anyone reaches the destination, everyone's brought to it (parked by the set piece, see
+## AdventureDest) for the arrival moment: the camera pulls back from the crew to take in what
+## they came for, a title card, and the group photo (a flash, then the photo; it's kept in this
+## machine's album and hangs on the shed wall). Then it's theirs to look round until the host
+## picks Ride home. It also holds the magazine (AdventureMag), read in the shed.
 
 static var current: AdventureTrip
 ## Skips the fades (the tests).
 static var instant := false
+## How long the arrival moment runs (s), the camera's pull-back, and when the photo's taken.
+const MOMENT := 10.0
+const PULL_BACK := 7.0
+const PHOTO_AT := 4.5
 
 var main: Node
 ## The adventure's world while you're on one, else null.
@@ -20,7 +30,20 @@ var world: AdventureWorld
 var trip_id := 0
 var _busy := false
 var _arrive_sent := false
-var _arrive_timer := 0.0
+## The arrival moment: seconds into it, or -1 while it isn't playing; done once it's begun.
+var moment_t := -1.0
+var moment_done := false
+var _moment_cam: Camera3D
+var _card: Control           # the title card and the photo
+var _card_title: Label
+var _card_sub: Label
+var _card_flash: ColorRect
+var _polaroid: PanelContainer
+var _polaroid_pic: TextureRect
+var _polaroid_caption: Label
+var _started_at := 0         # ticks when this player set off, for the title card's time
+## The magazine on the workbench, made the first time it's read.
+var magazine: AdventureMag
 var _hidden: Array = []      # [node, was visible, process mode] of the town put to sleep
 var _hud: Label
 var _hud_timer := 0.0
@@ -71,11 +94,13 @@ func _ready() -> void:
 	needs = AdventureNeedsView.new()
 	needs.trip = self
 	add_child(needs)
+	_make_card(layer)
 
 
 func _exit_tree() -> void:
 	if current == self:
 		current = null
+	AdventureMag.wait_all()   # the magazine's route facts still being worked out
 
 
 ## Whether you're out on an adventure now (its world loaded).
@@ -104,6 +129,8 @@ func sync() -> void:
 		_fork_timer = 0.0   # the way's decided: say so straight away
 		if _map and _map.visible:
 			_map.refresh()
+	if world != null and trip_id == id and int(Shed.adventure.get("arrived", 0)) != 0 and not moment_done:
+		arrive_moment()
 
 
 ## Into the adventure in Shed.adventure.
@@ -112,7 +139,9 @@ func enter() -> void:
 	trip_id = int(info["id"])
 	_busy = true
 	_arrive_sent = false
-	_arrive_timer = 0.0
+	moment_done = false
+	_started_at = Time.get_ticks_msec()
+	close_magazine()
 	# The bike you're on, or the one you're standing by in the shed: the one you'd like to take.
 	var preferred: int = main.riding_id if main.bike else _nearest_bike()
 	if not instant:
@@ -122,7 +151,7 @@ func enter() -> void:
 	if main.geometry.active:
 		main.geometry.close()
 	world = AdventureWorld.new()
-	world.setup(int(info["seed"]), float(info["km"]), str(info.get("theme", "varied")))
+	world.setup(int(info["seed"]), float(info["km"]), str(info.get("theme", "varied")), str(info.get("dest", "")))
 	world.apply_picks(AdventureForks.picks())   # a ride picked up again: the ways already taken
 	_fork_due = {}
 	world.focus = focus_points
@@ -151,7 +180,8 @@ func enter() -> void:
 	if start_s() > 0.0:
 		main.hud.flash("Carrying on the adventure: %.1f of %d km done. Morning, and back on the road." % [start_s() / 1000.0, roundi(float(info["km"]))], 5.0)
 	else:
-		main.hud.flash("Adventure ride: %d km of %s. Fuel stations are signed along the way; at a fork the crew votes for the way. {paper_map} for the map when stopped." % [roundi(float(info["km"])), AdventureTheme.roads_of(world.route.theme)], 5.0)
+		main.hud.flash("%s: %d km of %s to %s. Fuel stations are signed along the way; at a fork the crew votes for the way. {paper_map} for the map when stopped." % [
+			str(info.get("title", "Adventure ride")), roundi(float(info["km"])), AdventureTheme.roads_of(world.route.theme), AdventureDest.name_of(str(info.get("dest", ""))).trim_prefix("the ")], 5.0)
 	_busy = false
 	if not instant:
 		await main._fade_to(0.0)
@@ -208,7 +238,13 @@ func _unload() -> void:
 	if needs:
 		needs.reset()
 	close_map()
+	_end_moment()
+	moment_done = false
 	if world:
+		# Gone at the end of the frame: until then it mustn't follow you home and shift the
+		# origin (which would move you, at the shed, by the shift).
+		world.focus = Callable()
+		world.origin_shifted.disconnect(_on_shift)
 		world.queue_free()
 		world = null
 	police = null
@@ -303,6 +339,8 @@ func _on_shift(d: Vector3) -> void:
 	main.camera.shift_origin(d)
 	if main.walker:
 		main.walker.global_position -= d
+	if _moment_cam:
+		_moment_cam.global_position -= d
 	for peer in main.remotes:
 		var rp = main.remotes[peer]
 		if is_instance_valid(rp):
@@ -345,15 +383,9 @@ func _physics_process(delta: float) -> void:
 	if not _arrive_sent and not hit.is_empty() and s >= world.route.length - 12.0 and absf(float(hit["lat"])) < 30.0:
 		_arrive_sent = true
 		Shed.request({"a": "adventure_arrive"})
-	# The host takes everyone home a few seconds after someone gets there.
-	if Shed.is_authority() and int(Shed.adventure.get("arrived", 0)) != 0:
-		_arrive_timer += delta
-		if _arrive_timer >= Adventure.ARRIVE_WAIT:
-			_arrive_timer = -1000.0
-			Shed.request({"a": "adventure_end"})
 	if world == null:
 		Perf.add("adventure_trip", pt)
-		return   # the ride just ended (reaching the destination brings everyone home)
+		return   # the ride just ended
 	_hud_timer -= delta
 	if _hud_timer <= 0.0 and not hit.is_empty():
 		_hud_timer = 0.25
@@ -373,6 +405,9 @@ func _physics_process(delta: float) -> void:
 ## fork, and the next fuel.
 func hud_text(s: float) -> String:
 	var r := world.route
+	if int(Shed.adventure.get("arrived", 0)) != 0:
+		return "At %s, %d km from the start.   %s" % [AdventureDest.name_of(str(Shed.adventure.get("dest", ""))), roundi(r.length / 1000.0),
+			"Ride home from the Esc menu when everyone's ready." if Shed.is_authority() else "The host rides everyone home when you're ready."]
 	var text := "Adventure  %.1f / %.0f km   %s, %s" % [s / 1000.0, r.length / 1000.0,
 		AdventureSurface.NAMES.get(r.surface_at_s(s), "Road"), str(AdventureRoute.KIND_NAMES.get(r.kind_at_s(s), "")).to_lower()]
 	var f := r.fork_at(s)
@@ -514,3 +549,220 @@ func jump(metres: float) -> void:
 ## Why "Back to the garage" can't be used out here ("" if it can).
 func home_reason() -> String:
 	return "You're out on an adventure: %s." % ("end it from this menu to bring everyone home" if Shed.is_authority() else "the host ends it")
+
+
+# ---------------------------------------------------------------------------- arriving
+
+## Everyone's at the destination (someone got there first): you're brought to it too, parked by
+## the set piece with the rest of the crew, and the moment plays. The photo goes in your album.
+func arrive_moment() -> void:
+	moment_done = true
+	var photo = Shed.adventure.get("photo", {})
+	if photo is Dictionary and not photo.is_empty():
+		AdventureDest.album_add(_my_name(), photo)
+	var id := trip_id
+	if not instant:
+		_busy = true
+		await main._fade_to(1.0)
+		_busy = false
+	if world == null or trip_id != id:
+		return
+	park_at_dest()
+	_start_moment()
+	if not instant:
+		await main._fade_to(0.0)
+	sync()   # anything that came in while the screen was dark
+
+
+func _my_name() -> String:
+	return str(Shed.crew.get(Shed.me(), {}).get("name", Settings.player_name))
+
+
+## Puts you at your place by the set piece: on your bike, stopped, or on foot beside the road.
+func park_at_dest() -> void:
+	var ids := Shed.crew.keys()
+	ids.sort()
+	var slot := maxi(0, ids.find(Shed.me()))
+	var ds := AdventureDest.dest_s(world)
+	world.preload_range(ds - 160.0, ds + 160.0)
+	var xf := AdventureDest.park_xf(world, slot)
+	if main.bike:
+		main.bike.place(xf.origin, xf.basis.get_euler().y)
+		main.bike.linear_velocity = Vector3.ZERO
+		main.bike.angular_velocity = Vector3.ZERO
+		main.camera.snap()
+	elif main.walker:
+		main.walker.place(xf)
+
+
+## Where the crew stands for the photo (local): the middle of the parked bikes, at head height.
+func _group_point() -> Vector3:
+	var a := AdventureDest.park_xf(world, 0).origin
+	var b := AdventureDest.park_xf(world, 3).origin
+	return (a + b) * 0.5 + Vector3.UP * 1.3
+
+
+func _start_moment() -> void:
+	moment_t = 0.0
+	if _moment_cam == null:
+		_moment_cam = Camera3D.new()
+		_moment_cam.name = "ArrivalCamera"
+		_moment_cam.fov = 62.0
+		_moment_cam.far = 6000.0
+		main.world.add_child(_moment_cam)
+	_moment_cam.current = true
+	var dest := AdventureDest.of(str(Shed.adventure.get("dest", "")))
+	var mins := maxi(1, (Time.get_ticks_msec() - _started_at) / 60000)
+	_card_title.text = AdventureDest.name_of(str(Shed.adventure.get("dest", "")))
+	_card_sub.text = "%s  ·  %d km  ·  %s\n%s" % [str(Shed.adventure.get("title", "")), roundi(float(Shed.adventure.get("km", 0.0))),
+		"%d h %02d min in the saddle" % [mins / 60, mins % 60] if mins >= 60 else "%d min in the saddle" % mins, str(dest.get("line", ""))]
+	var photo: Dictionary = Shed.adventure.get("photo", {})
+	_polaroid_pic.texture = AdventureDest.picture(str(Shed.adventure.get("dest", "")), maxi(1, (photo.get("names", []) as Array).size()))
+	_polaroid_caption.text = AdventureDest.caption(photo) if not photo.is_empty() else ""
+	_card.visible = true
+	_card.modulate.a = 0.0
+	_polaroid.visible = false
+	_tick_moment(0.0)
+	Sfx.play_ui("levelup", -4.0)
+
+
+## Runs the moment on: the camera pulling back from the crew to take in the set piece, the
+## title card fading in and out, and the flash and the photo.
+func _tick_moment(delta: float) -> void:
+	moment_t += delta
+	var t := moment_t
+	if world and _moment_cam:
+		var group := _group_point()
+		var piece := AdventureDest.piece_point(world)
+		var right := Vector3(piece.x - group.x, 0.0, piece.z - group.z).normalized()
+		var fwd := right.cross(Vector3.UP)
+		var k := smoothstep(0.0, PULL_BACK, t)
+		var from := group - right * 7.0 + fwd * 1.5 + Vector3.UP * 0.8
+		var to := group - right * 26.0 - fwd * 14.0 + Vector3.UP * 13.0
+		var look := group.lerp((group + piece) * 0.5, k)
+		_moment_cam.global_position = from.lerp(to, k)
+		if _moment_cam.global_position.distance_to(look) > 0.1:
+			_moment_cam.look_at(look, Vector3.UP)
+	_card.modulate.a = clampf(minf((t - 0.4) / 1.0, (MOMENT - 0.3 - t) / 1.0), 0.0, 1.0)
+	var since := t - PHOTO_AT
+	_card_flash.color.a = clampf(1.0 - since / 0.45, 0.0, 1.0) if since >= 0.0 else 0.0
+	if since >= 0.0 and since - delta < 0.0:
+		Sfx.play_ui("clink", -2.0)
+	_polaroid.visible = since >= 0.0
+	_polaroid.rotation = deg_to_rad(-4.0) * clampf(since, 0.0, 1.0)
+	if t >= MOMENT:
+		_end_moment()
+
+
+## The moment's over (or the ride is): back to your own camera.
+func _end_moment() -> void:
+	moment_t = -1.0
+	if _card:
+		_card.visible = false
+	if _moment_cam:
+		_moment_cam.queue_free()
+		_moment_cam = null
+		if main and main.bike:
+			main.camera.current = true
+		elif main and main.walker:
+			main.walker.camera.current = true
+
+
+func _process(delta: float) -> void:
+	if moment_t >= 0.0:
+		_tick_moment(delta)
+
+
+## The title card (the destination's name, the ride, how long it took) and the photo.
+func _make_card(layer: CanvasLayer) -> void:
+	_card = Control.new()
+	_card.name = "ArrivalCard"
+	_card.visible = false
+	_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(_card)
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	box.position.y = 90.0
+	box.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_card.add_child(box)
+	var kicker := _card_label("YOU MADE IT", 22, UITheme.ACCENT)
+	box.add_child(kicker)
+	_card_title = _card_label("", 64, Color(1, 1, 1))
+	box.add_child(_card_title)
+	_card_sub = _card_label("", 22, Color(0.95, 0.92, 0.85))
+	box.add_child(_card_sub)
+	_polaroid = PanelContainer.new()
+	var ps := StyleBoxFlat.new()
+	ps.bg_color = Color(0.97, 0.96, 0.93)
+	ps.set_content_margin_all(12)
+	ps.content_margin_bottom = 8
+	ps.shadow_color = Color(0, 0, 0, 0.45)
+	ps.shadow_size = 10
+	_polaroid.add_theme_stylebox_override("panel", ps)
+	_polaroid.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	_polaroid.position = Vector2(-470, -400)
+	_polaroid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_card.add_child(_polaroid)
+	var pv := VBoxContainer.new()
+	_polaroid.add_child(pv)
+	_polaroid_pic = TextureRect.new()
+	_polaroid_pic.custom_minimum_size = Vector2(384, 256)
+	_polaroid_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_polaroid_pic.stretch_mode = TextureRect.STRETCH_SCALE
+	pv.add_child(_polaroid_pic)
+	_polaroid_caption = Label.new()
+	_polaroid_caption.add_theme_font_size_override("font_size", 15)
+	_polaroid_caption.add_theme_color_override("font_color", Color(0.15, 0.13, 0.12))
+	_polaroid_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_polaroid_caption.custom_minimum_size = Vector2(384, 0)
+	_polaroid_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	pv.add_child(_polaroid_caption)
+	_card_flash = ColorRect.new()
+	_card_flash.color = Color(1, 1, 1, 0)
+	_card_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_card_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_card.add_child(_card_flash)
+
+
+func _card_label(text: String, size: int, col: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	l.add_theme_constant_override("outline_size", 10)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+
+# ---------------------------------------------------------------------------- the magazine
+
+## Picks up the magazine on the workbench (open at article `at`, or where it was left).
+func open_magazine(at := "") -> void:
+	if main == null or not main.in_session:
+		return
+	if magazine == null:
+		magazine = AdventureMag.new()
+		magazine.visible = false
+		_hud.get_parent().add_child(magazine)
+		magazine.closed.connect(close_magazine)
+	if main.menu.visible:
+		main.menu.hide()
+	magazine.open(at)
+	main._capture_mouse(false)
+
+
+func close_magazine() -> void:
+	if magazine == null or not magazine.visible:
+		return
+	magazine.visible = false
+	if main and main.in_session and not main.menu.visible:
+		main._capture_mouse(true)
+
+
+func magazine_open() -> bool:
+	return magazine != null and magazine.visible

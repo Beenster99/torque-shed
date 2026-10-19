@@ -81,12 +81,13 @@ func _exit_tree() -> void:
 		current = null
 
 
-## Plans the route for `seed` and `km` and puts its start at ANCHOR.
-func setup(seed: int, km: float, theme := "varied") -> void:
+## Plans the route for `seed` and `km` and puts its start at ANCHOR. `dest` (see AdventureDest) is
+## the set piece past the finish, planned with the road ("" for none).
+func setup(seed: int, km: float, theme := "varied", dest := "") -> void:
 	name = "Adventure"
 	var t0 := Time.get_ticks_usec()
 	route = AdventureRoute.new()
-	route.plan(seed, km, theme)
+	route.plan(seed, km, theme, [AdventureDest.site(dest, km)] if dest != "" else [])
 	stats["plan_ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	origin = -ANCHOR
 	site_builders = {
@@ -96,6 +97,8 @@ func setup(seed: int, km: float, theme := "varied") -> void:
 		"fork": func(site, xf, _info): return AdventureForks.signpost(site, xf, route),
 	}
 	AdventureStops.register(self)
+	if dest != "":
+		AdventureDest.register(self, dest)
 	_make_horizon()
 
 

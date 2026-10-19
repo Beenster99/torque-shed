@@ -36,12 +36,15 @@ const MODELS := {
 		"desc": "A die-cast model of a café racer on a little display stand."},
 	"trinket_neon": {"kind": "trinket", "name": "Neon shed sign", "price": 180, "size": Vector3(0.9, 0.36, 0.06), "wall": true,
 		"desc": "A pink neon sign that says TORQUE SHED. Glows in the dark. Hangs on a wall."},
+	# Never in the Shop: the crew's photo at an adventure's destination (see AdventureDest).
+	"trinket_adventure_photo": {"kind": "trinket", "name": "Adventure photo", "price": 30, "size": Vector3(0.62, 0.5, 0.04), "wall": true,
+		"shop": false, "desc": "The crew at the end of an adventure ride, framed. Hangs on a wall."},
 }
 
 
-## Every trinket, cheapest first.
+## Every trinket in the Shop, cheapest first.
 static func all() -> Array:
-	var out := MODELS.keys()
+	var out := MODELS.keys().filter(func(id): return MODELS[id].get("shop", true))
 	out.sort_custom(func(a, b): return int(MODELS[a]["price"]) < int(MODELS[b]["price"]))
 	return out
 
@@ -105,6 +108,9 @@ static func build(parent: Node3D, id: String) -> void:
 	var m: Dictionary = MODELS.get(id, {})
 	var size: Vector3 = m.get("size", Vector3.ONE * 0.2)
 	match id:
+		"trinket_adventure_photo":   # AdventureDest.PHOTO_MODEL
+			var fid = parent.get("id")
+			AdventureDest.build_photo(parent, Shed.furniture.get(int(fid), {}).get("photo", {}) if fid != null else {})
 		"trinket_bobblehead":
 			_cyl(parent, Vector3(0.0, 0.01, 0.0), 0.05, 0.055, 0.02, _mat(Color(0.1, 0.1, 0.12)))
 			var body := Node3D.new()

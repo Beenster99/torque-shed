@@ -2113,6 +2113,8 @@ func furniture_name(f: Dictionary) -> String:
 	var n := str(Equipment.get_model(str(f.get("model", ""))).get("name", "Equipment"))
 	if f["kind"] == "shelf" and str(f.get("label", "")) != "":
 		return "%s: %s" % [n, f["label"]]
+	if f.get("photo") is Dictionary:
+		return "%s: %s" % [n, AdventureDest.caption(f["photo"]).replace("\n", ", ")]
 	return n
 
 

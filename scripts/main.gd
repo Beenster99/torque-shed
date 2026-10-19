@@ -315,6 +315,8 @@ func _start_session() -> void:
 			saver.begin_new()
 	menu.new_shed = false
 	menu.new_name = ""
+	if Shed.is_authority() and not Progress._in_tests():
+		AdventureDest.hang_album(Settings.player_name)   # your adventure photos go up in your own shed too
 	walker = Walker.new()
 	world.add_child(walker)
 	walker.place(Workshop.walker_spawn(Net.local_slot()))
@@ -900,7 +902,7 @@ func _physics_process_body(delta: float) -> void:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
 		and not contract_panel.visible and not coffee_panel.visible and not staff_panel.visible and not paint_bench.visible and not geometry.active \
-		and not recovery_panel.visible and not trip.map_open()
+		and not recovery_panel.visible and not trip.map_open() and not trip.magazine_open()
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:
