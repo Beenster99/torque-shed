@@ -1,0 +1,141 @@
+extends Node
+## Two-process co-op check of an adventure ride, run by tests/mp_test.sh after the shed's own: a
+## host and a client start the real game, the host starts an adventure, and both must load it
+## and be on a bike at the start, seeing each other there. Then each skips 30 km and more down
+## the road (the host to 30 km, the client 700 m further on), which moves both worlds' floating
+## origins, to different places: each must still see the other at the right spot on the road,
+## to within a few centimetres, and again after the client rides its origin on once more.
+## Finally the host ends the adventure and both must be back at the shed, off their bikes.
+
+const SEED := 321
+const KM := 50.0
+const HOST_S := 30000.0
+const CLIENT_S := 30700.0
+const CLIENT_ON := 900.0
+
+var role := "host"
+var main: Node
+
+
+func _ready() -> void:
+	Shed.demo_bikes = true
+	AdventureTrip.instant = true
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--role="):
+			role = a.trim_prefix("--role=")
+	Settings.player_name = "Adv %s" % role
+	main = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	if role == "host":
+		main._host()
+	else:
+		main._join("127.0.0.1")
+	var trip: AdventureTrip = main.trip
+	var ok_start := await _until(func():
+		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
+			Adventure.start(SEED, KM)
+		return trip.on_trip() and main.bike != null and _remote_bike() != null, 40.0)
+	var start_seen := false
+	if ok_start:
+		start_seen = await _until(func():
+			var s := trip.world.distance_of(_remote_bike().global_position, "check")
+			return s >= 0.0 and s < 60.0, 10.0)
+		if not start_seen:
+			print("MP adv note %s: the other's bike is at %s, %.1f m along; mine at %s" % [role, _remote_bike().global_position,
+				trip.world.distance_of(_remote_bike().global_position, "check"), main.bike.global_position])
+	print("MP adv note %s: on the adventure %s, the other's bike seen at the start %s" % [role, ok_start, start_seen])
+	# Out past 30 km: both origins move, each to its own place.
+	var mine := HOST_S if role == "host" else CLIENT_S
+	var theirs := CLIENT_S if role == "host" else HOST_S
+	var my_lat := -1.5 if role == "host" else 1.0
+	var their_lat := 1.0 if role == "host" else -1.5
+	var far_ok := false
+	var again_ok := false
+	var err := [Vector2(INF, INF)]
+	if start_seen:
+		# Give the other side time to see us at the start too before setting off.
+		var wait_until := Time.get_ticks_msec() + 4000
+		await _until(func(): return Time.get_ticks_msec() > wait_until, 5.0)
+	if start_seen and trip.on_trip():
+		_jump_to(trip, mine, my_lat)
+		far_ok = await _until(func():
+			_hold(trip, mine, my_lat)
+			err[0] = _seen_error(trip, theirs, their_lat)
+			return err[0].x < 0.1 and err[0].y < 0.1, 20.0)
+		print("MP adv note %s: at %.0f m, origin %s; the other seen off by %.3f m along, %.3f m across" % [role, mine, trip.world.origin if trip.world else Vector3.ZERO, err[0].x, err[0].y])
+		if role == "client":
+			# On again past another shift: the host, standing still, must stay put on the road.
+			var before: Vector3 = trip.world.origin if trip.world else Vector3.ZERO
+			mine += CLIENT_ON
+			_jump_to(trip, mine, my_lat)
+			await _until(func(): return trip.world != null and trip.world.origin != before, 5.0)
+		var expect := (CLIENT_S + CLIENT_ON) if role == "host" else HOST_S
+		again_ok = await _until(func():
+			_hold(trip, mine, my_lat)
+			err[0] = _seen_error(trip, expect, their_lat)
+			return err[0].x < 0.1 and err[0].y < 0.1, 20.0)
+		print("MP adv note %s: after the client rode on, origin %s; the other seen off by %.3f m along, %.3f m across" % [role, trip.world.origin if trip.world else Vector3.ZERO, err[0].x, err[0].y])
+	# Home: the host ends it (once the client has had time to check, too).
+	var asked := [false]
+	var end_at := Time.get_ticks_msec() + 3000
+	var home_ok := await _until(func():
+		if role == "host" and Adventure.active() and not asked[0] and Time.get_ticks_msec() > end_at:
+			asked[0] = true
+			Shed.request({"a": "adventure_end"})
+		return not trip.on_trip() and main.bike == null and Shed.riding(Shed.me()) == 0 and not Adventure.active(), 25.0)
+	var ok := ok_start and start_seen and far_ok and again_ok and home_ok
+	# The client stays until the host has gone, so the host's checks finish first.
+	var linger := Time.get_ticks_msec() + (15000 if role == "client" else 3000)
+	while Time.get_ticks_msec() < linger:
+		await get_tree().physics_frame
+		if role == "client" and not main.in_session:
+			break
+	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, seen 30 km out after the origins moved=%s, and after another shift=%s, back at the shed=%s" % [
+		"PASS" if ok else "FAIL", role, ok_start, start_seen, far_ok, again_ok, home_ok])
+	get_tree().quit(0 if ok else 1)
+
+
+func _until(cond: Callable, seconds: float) -> bool:
+	var end := Time.get_ticks_msec() + int(seconds * 1000.0)
+	while Time.get_ticks_msec() < end:
+		if cond.call():
+			return true
+		await get_tree().physics_frame
+	return cond.call()
+
+
+func _remote_bike() -> Node3D:
+	for peer in main.remotes:
+		var rp = main.remotes[peer]
+		if is_instance_valid(rp) and rp.bike != null:
+			return rp.bike
+	return null
+
+
+func _jump_to(trip: AdventureTrip, s: float, lat: float) -> void:
+	if not trip.on_trip() or main.bike == null:
+		return
+	trip.jump(s - trip.world.distance_of(main.bike.global_position, "own"))
+	var xf := trip.world.transform_at(s, lat)
+	main.bike.place(xf.origin, trip.world.heading_at(s))
+
+
+## Keeps our bike stood at `s`, `lat`: put back if it rolls or falls over, left to itself.
+func _hold(trip: AdventureTrip, s: float, lat: float) -> void:
+	if not trip.on_trip() or main.bike == null:
+		return
+	var xf := trip.world.transform_at(s, lat)
+	if main.bike.global_position.distance_to(xf.origin) > 0.8 or main.bike.is_crashed:
+		main.bike.place(xf.origin, trip.world.heading_at(s))
+
+
+## How far off (along, across) the other player's bike is from where they stand.
+func _seen_error(trip: AdventureTrip, s: float, lat: float) -> Vector2:
+	var rb := _remote_bike()
+	if rb == null or not trip.on_trip():
+		return Vector2(INF, INF)
+	var hit := trip.world.locate_local(rb.global_position, "check")
+	if hit.is_empty():
+		return Vector2(INF, INF)
+	return Vector2(absf(float(hit["s"]) - s), absf(float(hit["lat"]) - lat))

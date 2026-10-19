@@ -6,23 +6,14 @@ extends RefCounted
 ## grass; this scales it for the adventure surfaces and for what its tread makes of them. 1.0 is
 ## a tyre on dry tarmac, so every tyre the town always had grips there just as it did.
 ##
-## The surface under a wheel comes from the world: the collider's own "surface" meta (the town's
-## tarmac, dirt tracks and grass), or for tarmac whatever `surface_provider` says is really there
-## (the adventure world's gravel, sand and snow). See surface_at.
+## The surface under a wheel is its collider's "surface" meta: the town's tarmac, dirt tracks and
+## grass, and the adventure road's gravel, sand and snow (AdventureSurface).
 
 const PATH := "res://data/tyre_grip.json"
 ## The surfaces the table knows, in the order the spec lines list them.
 const SURFACES: Array[String] = ["tarmac", "gravel", "sand", "snow"]
 
-## The world's say on what's under a wheel: a Callable(at: Vector3) -> String ("tarmac",
-## "gravel", "sand", "snow", or "" when it doesn't know). The adventure world sets it while one
-## is running; with none set, an AdventureWorld class with a static surface_at(at) is asked if
-## the game has one, and otherwise the ground is what its collider says.
-static var surface_provider := Callable()
-
 static var _kinds := {}
-static var _adventure: Script = null
-static var _adventure_checked := false
 
 
 ## The table, loaded once.
@@ -80,35 +71,6 @@ static func base_grip(grip: Dictionary, surface: String) -> float:
 ## The tyre's grip (catalogue "grip" table and kind) on `surface`, `wet` 0..1.
 static func grip_on(grip: Dictionary, tyre_kind: String, surface: String, wet: float) -> float:
 	return base_grip(grip, surface) * factor(tyre_kind, surface, wet)
-
-
-## What's under a wheel at `at`: the collider's own `collider_surf` where it says it's loose
-## ground (the town's dirt tracks and grass), else what the world says is there (the adventure
-## world's gravel, sand and snow), else tarmac.
-static func surface_at(collider_surf: String, at: Vector3) -> String:
-	if collider_surf != "" and collider_surf != "tarmac":
-		return collider_surf
-	var s := ""
-	if surface_provider.is_valid():
-		s = str(surface_provider.call(at))
-	else:
-		var adv := _adventure_world()
-		if adv != null:
-			s = str(adv.call("surface_at", at))
-	return s if s in SURFACES else "tarmac"
-
-
-## The adventure world's script, if the game has one with a static surface_at (looked up once).
-static func _adventure_world() -> Script:
-	if _adventure_checked:
-		return _adventure
-	_adventure_checked = true
-	for c in ProjectSettings.get_global_class_list():
-		if str(c.get("class", "")) == "AdventureWorld":
-			var script := load(str(c["path"])) as Script
-			if script != null and script.get_script_method_list().any(func(m): return str(m.get("name", "")) == "surface_at"):
-				_adventure = script
-	return _adventure
 
 
 ## Each table surface and how the tyre kind grips there dry and wet, for the parts computer:

@@ -4,7 +4,7 @@ extends Node3D
 ## headlight beam, for a ridden bike and for other players' bikes. Lives on the bike body; feed
 ## it with update() every frame (and set_tyre_smoke() while the back tyre is spinning or locked).
 
-const DUSTY := {"dirt": 1.0, "grass": 0.45}
+const DUSTY := {"dirt": 1.0, "grass": 0.45, "gravel": 0.8, "sand": 1.15, "snow": 0.7}
 ## Alpha over a puff's life, as [offset, alpha] pairs: fade in fast, linger, thin out.
 const SMOKE_PROFILE := [[0.0, 0.0], [0.07, 1.0], [0.45, 0.55], [1.0, 0.0]]
 const DUST_PROFILE := [[0.0, 0.0], [0.06, 1.0], [0.3, 0.75], [0.7, 0.3], [1.0, 0.0]]
@@ -482,7 +482,8 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 	var kick := clampf((absf(speed) - 2.0) / 12.0, 0.0, 1.0) + slip
 	_dust.emitting = rear_contact and dusty > 0.0 and kick > 0.05
 	if _dust.emitting:
-		_tint(_dust.color_ramp, DUST_PROFILE, Color(0.62, 0.5, 0.36) if surface == "dirt" else Color(0.55, 0.5, 0.38),
+		var dust_col: Color = AdventureSurface.DUST_COLOR.get(surface, Color(0.62, 0.5, 0.36) if surface == "dirt" else Color(0.55, 0.5, 0.38))
+		_tint(_dust.color_ramp, DUST_PROFILE, dust_col,
 			clampf(0.25 + 0.5 * kick, 0.0, 0.8) * dusty)
 		_dust.initial_velocity_max = 1.5 + 3.0 * kick
 	_grit.emitting = _dust.emitting and kick * dusty > 0.35

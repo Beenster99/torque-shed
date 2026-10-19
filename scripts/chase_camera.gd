@@ -93,6 +93,16 @@ func snap() -> void:
 	_initialized = false
 
 
+## The world's origin moved by `d` (see AdventureWorld): everything the camera remembers moves
+## with it, so the view doesn't jump.
+func shift_origin(d: Vector3) -> void:
+	global_position -= d
+	_smoothed_pos -= d
+	_look -= d
+	_pivot -= d
+	_by_pos -= d
+
+
 ## Swings the chase view round the bike (or turns your head in first person) by `yaw` and
 ## `pitch` radians. Mouse: pass the motion times MOUSE_ORBIT; stick: STICK_ORBIT times delta.
 func add_orbit(yaw: float, pitch: float) -> void:

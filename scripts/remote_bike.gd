@@ -155,6 +155,17 @@ func _rubber(burnout: float, skid: float, delta: float) -> void:
 		marks.mark(_mark_key, hit["position"], hit["normal"], _build.rear_tyre_width, skid, surf)
 
 
+## The world's origin moved by `d` (see AdventureWorld): the bike and its snapshots move with it.
+func shift_origin(d: Vector3) -> void:
+	for snap in _snapshots:
+		var st: PackedFloat32Array = snap["s"]
+		st[0] -= d.x
+		st[1] -= d.y
+		st[2] -= d.z
+		snap["s"] = st
+	global_position -= d
+
+
 func current_speed() -> float:
 	if _last.size() < 10:
 		return 0.0

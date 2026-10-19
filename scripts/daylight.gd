@@ -27,6 +27,9 @@ const RAIN_HAZE := 0.004
 const NIGHT_LIGHTS := "night_lights"
 
 static var current: Daylight
+## Hours a real second while out on an adventure ride (see Adventure.day_rate), whatever the
+## Settings say; 0 back at the shed.
+static var adventure_rate := 0.0
 
 var hours := 9.0
 ## 0 in full daylight .. 1 at night.
@@ -111,6 +114,8 @@ func _exit_tree() -> void:
 
 ## Hours of game time that pass per real second (0 with the cycle switched off).
 static func local_rate() -> float:
+	if adventure_rate > 0.0:
+		return adventure_rate
 	if not Settings.day_night_cycle:
 		return 0.0
 	return 24.0 / (maxf(float(Settings.day_length), 1.0) * 60.0)

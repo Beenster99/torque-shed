@@ -8,7 +8,8 @@ extends Node
 ## satnav_hud, {satnav_hud} toggles it).
 ##
 ## Where the roads come from is a route provider. In town it's TownRoute, over the riding map's
-## WorldRoads. Anything else (the adventure world) sets `Satnav.route_provider` to an object with
+## WorldRoads; on an adventure (AdventureWorld.current) it's AdventureNav, over its road. Anything
+## else sets `Satnav.route_provider` to an object with
 ## any of these methods (all positions are world x z as Vector2, distances in metres):
 ##   satnav_roads(pos: Vector2, radius: float) -> Array of {pts: PackedVector2Array, kind, hw}
 ##       the roads near `pos` to draw
@@ -34,6 +35,7 @@ var viewport: SubViewport
 var screen: SatnavScreen         # in the viewport, for the unit on the bars
 var hud_screen: SatnavScreen     # the HUD overlay (made by HUD, or null)
 var town: TownRoute
+var adventure: AdventureNav      # the adventure road's provider, made when one is on
 var _timer := 0.0
 var _model: BikeModel            # the model the texture went on
 
@@ -68,10 +70,15 @@ func fitted() -> bool:
 	return bike != null and is_instance_valid(bike) and bike.build != null and bike.build.has_part("satnav")
 
 
-## The provider in use: the one set, else the town's.
+## The provider in use: the one set, else the adventure road's while one is on, else the town's.
 func provider() -> Object:
 	if route_provider != null and is_instance_valid(route_provider):
 		return route_provider
+	var adv := AdventureWorld.current
+	if adv != null and adv.route != null:
+		if adventure == null or adventure.world != adv:
+			adventure = AdventureNav.new(adv)
+		return adventure
 	return town
 
 
@@ -218,4 +225,91 @@ class TownRoute:
 				continue
 			var at := Vector2(p.global_position.x, p.global_position.z)
 			out.append({"kind": "fuel", "name": "Fuel", "distance": pos.distance_to(at), "at": at})
+		return out
+
+
+## The adventure road's route provider: the road round you from AdventureRoute (in the world's
+## floating frame), the road ahead the way you're facing, its fuel stations and the destination.
+class AdventureNav:
+	extends RefCounted
+	## Metres between the points the map draws the road through.
+	const STEP := 8.0
+	var world: AdventureWorld
+
+	func _init(w: AdventureWorld) -> void:
+		world = w
+
+	func _at(s: float) -> Vector2:
+		var xz := world.route.xz_at(s)
+		var p := world.to_local_pos(xz[0], 0.0, xz[1])
+		return Vector2(p.x, p.z)
+
+	func _where(pos: Vector2) -> Dictionary:
+		return world.locate_local(Vector3(pos.x, 0.0, pos.y), "satnav")
+
+	## Which way along the road `fwd` is: 1 on towards the destination, -1 back.
+	func _way(s: float, fwd: Vector2) -> int:
+		return 1 if (_at(s + STEP) - _at(s)).dot(fwd) >= 0.0 else -1
+
+	func satnav_roads(pos: Vector2, radius: float) -> Array:
+		var hit := _where(pos)
+		if hit.is_empty():
+			return []
+		var r := world.route
+		var s0 := maxf(float(hit["s"]) - radius * 1.5, 0.0)
+		var s1 := minf(float(hit["s"]) + radius * 1.5, r.total)
+		var out := []
+		var run := PackedVector2Array()
+		var surf := r.surface_at_s(s0)
+		var s := s0
+		while s <= s1:
+			var here := r.surface_at_s(s)
+			if here != surf and run.size() > 1:
+				run.append(_at(s))
+				out.append({"pts": run, "kind": "road" if surf == "tarmac" else "dirt", "hw": r.width_at_s(s) * 0.5})
+				run = PackedVector2Array()
+				surf = here
+			run.append(_at(s))
+			s += STEP
+		if run.size() > 1:
+			out.append({"pts": run, "kind": "road" if surf == "tarmac" else "dirt", "hw": r.width_at_s(s1) * 0.5})
+		return out
+
+	func satnav_route(pos: Vector2, fwd: Vector2, metres: float) -> PackedVector2Array:
+		var out := PackedVector2Array()
+		var hit := _where(pos)
+		if hit.is_empty():
+			return out
+		var s := float(hit["s"])
+		var way := _way(s, fwd)
+		var end := clampf(s + metres * way, 0.0, world.route.total)
+		out.append(pos)
+		var at := s
+		while (at - end) * way < 0.0:
+			at = clampf(at + STEP * way, minf(s, end), maxf(s, end))
+			out.append(_at(at))
+		return out
+
+	func satnav_road_name(pos: Vector2) -> String:
+		var hit := _where(pos)
+		if hit.is_empty() or absf(float(hit["lat"])) > world.route.width_at_s(float(hit["s"])) * 0.5 + 12.0:
+			return ""
+		var s := float(hit["s"])
+		var surf := world.route.surface_at_s(s)
+		return "%s road, %s" % [str(AdventureSurface.NAMES.get(surf, surf)), str(AdventureRoute.KIND_NAMES.get(world.route.kind_at_s(s), "")).to_lower()]
+
+	func satnav_points(pos: Vector2, fwd: Vector2) -> Array:
+		var hit := _where(pos)
+		if hit.is_empty():
+			return []
+		var s := float(hit["s"])
+		var way := _way(s, fwd)
+		var out := []
+		for st in world.route.sites_of("fuel"):
+			var d := (float(st["s"]) - s) * way
+			if d > -10.0:
+				out.append({"kind": "fuel", "name": "Fuel", "distance": maxf(d, 0.0), "at": _at(float(st["s"]))})
+		var left := world.route.length - s
+		if left > 0.0:
+			out.append({"kind": "destination", "name": "Destination", "distance": left, "at": _at(world.route.length)})
 		return out

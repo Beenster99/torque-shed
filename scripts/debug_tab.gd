@@ -19,6 +19,9 @@ var _pending := Callable()
 var _tyre_note: Label
 var _perf_toggle: CheckButton
 var _perf_note: Label
+var _adv_seed: SpinBox
+var _adv_km: SpinBox
+var _adv_note: Label
 
 
 func _ready() -> void:
@@ -128,6 +131,31 @@ func _ready() -> void:
 	for b in staff_row.get_children():
 		_host_only.append(b)
 
+	# Adventure rides (see Adventure): start one on a chosen seed and length, end it, or skip along.
+	box.add_child(UITheme.label("Adventure (host)", 15, UITheme.ACCENT))
+	_adv_seed = SpinBox.new()
+	_adv_seed.min_value = 1
+	_adv_seed.max_value = 999999
+	_adv_seed.value = 1
+	_adv_seed.prefix = "Seed"
+	_adv_km = SpinBox.new()
+	_adv_km.min_value = Adventure.MIN_KM
+	_adv_km.max_value = Adventure.MAX_KM
+	_adv_km.value = Adventure.DEFAULT_KM
+	_adv_km.suffix = "km"
+	var adv_start := _button("Start adventure", func(): Adventure.start(int(_adv_seed.value), _adv_km.value))
+	var adv_end := _button("End adventure", func(): Shed.request({"a": "adventure_end"}))
+	box.add_child(_row([_adv_seed, _adv_km, adv_start, adv_end]))
+	_host_only.append(adv_start)
+	_host_only.append(adv_end)
+	box.add_child(_row([
+		_button("Skip 1 km ahead", func(): if AdventureTrip.current: AdventureTrip.current.jump(1000.0)),
+		_button("Skip 10 km ahead", func(): if AdventureTrip.current: AdventureTrip.current.jump(10000.0)),
+	]))
+	_adv_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
+	_adv_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(_adv_note)
+
 	# The performance profiler (see PerfOverlay): the panel, and a recording to send in.
 	box.add_child(UITheme.label("Performance", 15, UITheme.ACCENT))
 	var perf_note := UITheme.label("", 14, Color(1, 1, 1, 0.6))
@@ -156,6 +184,9 @@ func _process(_delta: float) -> void:
 	if not is_visible_in_tree():
 		return
 	var host := Shed.is_authority()
+	var trip := AdventureTrip.current
+	_adv_note.text = "Out on an adventure. Road streaming: %s" % trip.world.timing_text() if trip and trip.on_trip() \
+		else "Not on an adventure."
 	_all_xp.disabled = not host
 	_all_xp.tooltip_text = "" if host else "Only the host can reset everyone's XP."
 	for b in [_garage, _grant, _night]:

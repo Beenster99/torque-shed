@@ -18,7 +18,7 @@ const SLOW := 0.12
 const FAST := 1.4
 ## Chance of a puncture per km ridden on each surface (per tyre). The road is mostly clean;
 ## tracks and fields have thorns, flints and old fence wire.
-const PER_KM := {"tarmac": 0.0015, "concrete": 0.0015, "dirt": 0.008, "gravel": 0.01, "grass": 0.005}
+const PER_KM := {"tarmac": 0.0015, "concrete": 0.0015, "dirt": 0.008, "gravel": 0.01, "grass": 0.005, "sand": 0.004, "snow": 0.002}
 ## Chance a hard hit (the suspension bottoming at speed: a kerb, a pothole) pinches a tyre.
 const PER_HIT := 0.04
 const HIT_SPEED := 9.0          # m/s: slower knocks don't pinch

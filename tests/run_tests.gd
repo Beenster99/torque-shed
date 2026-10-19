@@ -423,6 +423,14 @@ func _run_all() -> void:
 	_test_kit_toolbox()
 	await _test_kit_satnav()
 	await _test_kit_fuel()
+	print("Adventure rides (v0.12.0): the streaming road, floating origin, surfaces, fuel stations, there and back")
+	_test_adventure_route()
+	await _test_adventure_stream()
+	await _test_adventure_frames()
+	await _test_adventure_origin()
+	await _test_adventure_surfaces()
+	await _test_adventure_pumps()
+	await _test_adventure_trip()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -20968,17 +20976,14 @@ func _test_kit_grip() -> void:
 		mu[t] = float(r["bike"].wheels[1]["mu"])
 		await _done(r)
 	check(mu["adv_knobbly_150"] > mu["trail_road_150"] * 1.15, "on gravel the knobbly grips more than the road tyre under the bike (mu %.2f vs %.2f)" % [mu["adv_knobbly_150"], mu["trail_road_150"]])
-	# A surface from the world (the adventure road's snow) on ground that doesn't say.
+	# The adventure road's snow (its collider says so, as the road's chunks do).
 	var dry := await ride({}, 1.0, func(_b, _t): pass)
 	var mu_tarmac := float(dry["bike"].wheels[1]["mu"])
 	await _done(dry)
-	TyreGrip.surface_provider = func(_at: Vector3) -> String: return "snow"
-	var snowy := await ride({}, 1.0, func(_b, _t): pass)
+	var snowy := await ride({}, 1.0, func(_b, _t): pass, "snow")
 	var mu_snow := float(snowy["bike"].wheels[1]["mu"])
 	await _done(snowy)
-	TyreGrip.surface_provider = Callable()
-	check(TyreGrip.surface_at("", Vector3.ZERO) == "tarmac" and TyreGrip.surface_at("dirt", Vector3.ZERO) == "dirt", "with nothing saying, it's tarmac (and the town's dirt is still dirt)")
-	check(mu_snow < mu_tarmac * 0.4, "the world saying snow drops a road tyre's grip (mu %.2f to %.2f)" % [mu_tarmac, mu_snow])
+	check(mu_snow < mu_tarmac * 0.4, "snow drops a road tyre's grip (mu %.2f to %.2f)" % [mu_tarmac, mu_snow])
 
 
 ## A toolbox carries what's packed in it: packed at the bike (paid by the business), counted in
@@ -21071,6 +21076,25 @@ func _test_kit_satnav() -> void:
 	var pts: Array = pv["points"]
 	check(pts.size() == 2 and float(pts[0]["distance"]) == 900.0 and pts[1]["kind"] == "destination", "and the next fuel (the nearest) and the destination")
 	check(nav.provider() == nav.town, "cleared, it's the town's again")
+	# On an adventure: its road, the fuel ahead along it and the destination.
+	var adv := AdventureWorld.new()
+	adv.setup(42, 60.0)
+	adv.focus = func(): return [adv.transform_at(20.0).origin]
+	add_child(adv)
+	var start := adv.transform_at(200.0)
+	var av := Satnav.view_for(nav.provider(), start.origin, -start.basis.z, 20.0)
+	var fuel_s := float(adv.route.sites_of("fuel")[0]["s"])
+	var ap: Array = av["points"]
+	check(nav.provider() is Satnav.AdventureNav and (av["roads"] as Array).size() > 0 and (av["route"] as PackedVector2Array).size() > 50,
+		"on an adventure the sat nav draws its road and the way ahead (%d points)" % (av["route"] as PackedVector2Array).size())
+	check(ap.size() == 2 and ap[0]["kind"] == "fuel" and absf(float(ap[0]["distance"]) - (fuel_s - 200.0)) < 2.0
+		and ap[1]["kind"] == "destination" and absf(float(ap[1]["distance"]) - (adv.route.length - 200.0)) < 2.0,
+		"with the next fuel (%.1f km) and the destination along the road %s" % [(fuel_s - 200.0) / 1000.0, str(ap.map(func(q): return "%s %.0f" % [q["kind"], q["distance"]]))])
+	check(str(av["road"]).contains("road"), "and the road it's on (%s)" % str(av["road"]))
+	var back := Satnav.view_for(nav.provider(), start.origin, start.basis.z, 20.0)
+	check((back["points"] as Array).filter(func(q): return q["kind"] == "fuel").is_empty(), "turned round, no fuel behind the start")
+	adv.queue_free()
+	await get_tree().process_frame
 	# The HUD overlay draws the same view.
 	var hud_nav := SatnavScreen.new()
 	hud_nav.framed = true
@@ -21169,3 +21193,37 @@ func _test_kit_fuel() -> void:
 	DirAccess.remove_absolute(Progress.path)
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
+
+
+# ---------------------------------------------------------------------------- adventure rides (tests/adventure_tests.gd)
+
+func _adventure() -> RefCounted:
+	return load("res://tests/adventure_tests.gd").new(self)
+
+
+func _test_adventure_route() -> void:
+	_adventure().test_route()
+
+
+func _test_adventure_stream() -> void:
+	await _adventure().test_stream()
+
+
+func _test_adventure_frames() -> void:
+	await _adventure().test_frames()
+
+
+func _test_adventure_origin() -> void:
+	await _adventure().test_origin()
+
+
+func _test_adventure_surfaces() -> void:
+	await _adventure().test_surfaces()
+
+
+func _test_adventure_pumps() -> void:
+	await _adventure().test_pumps()
+
+
+func _test_adventure_trip() -> void:
+	await _adventure().test_trip()
