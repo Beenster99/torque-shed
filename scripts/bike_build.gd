@@ -442,9 +442,21 @@ func _compute_kit() -> void:
 	satnav_features = part("satnav").get("features", ["map"]) if has_part("satnav") else []
 	var fairing := part("fairing")
 	screen_adjust = float(fairing.get("screen_adjust", 0.0)) if has_part("fairing") else 0.0
-	screen_raise = tune_value("screen") * screen_adjust
-	if screen_raise > 0.0:
-		cda += screen_raise * 0.12
+	screen_raise = 0.0
+	_set_screen_raise(tune_value("screen") * screen_adjust)
+
+
+## Puts an adjustable screen `v` (0 right down .. 1 right up) of the way up its rails, as the
+## rider does on the move: the drag and the wind on the helmet follow.
+func set_screen(v: float) -> void:
+	tune["screen"] = clampf(v, 0.0, 1.0)
+	_set_screen_raise(tune_value("screen") * screen_adjust)
+
+
+func _set_screen_raise(raise: float) -> void:
+	cda += (raise - screen_raise) * 0.12
+	screen_raise = raise
+	var fairing := part("fairing")
 	var screen := (float(fairing.get("screen", 0.0)) + screen_raise) if has_part("fairing") else 0.0
 	wind_buffet = clampf(1.0 - (screen - 0.08) / 0.42, 0.0, 1.0)
 

@@ -417,6 +417,12 @@ func _run_all() -> void:
 	_test_detail_rules()
 	_test_detail_contract()
 	await _test_detail_session()
+	print("The adventure kit: tank bags, auxiliary tanks, toolboxes, sat navs, tyres for every surface, fuel")
+	await _test_kit_parts()
+	await _test_kit_grip()
+	_test_kit_toolbox()
+	await _test_kit_satnav()
+	await _test_kit_fuel()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -20842,3 +20848,324 @@ func _test_foot_down() -> void:
 	check(moving < 0.01 and rb.model.foot_down > 0.99, "a crew member's rider puts a foot down too as their bike stops (%.2f, then %.2f)" % [moving, rb.model.foot_down])
 	rb.queue_free()
 	await get_tree().physics_frame
+
+
+# ---------------------------------------------------------------------------- the adventure kit
+
+## A part `part` fitted straight onto `bike` in slot `slot`, bolted up. Returns the item.
+func _kit_fit(bike: int, slot: String, part: String) -> int:
+	var old := Shed.item_on(bike, slot)
+	if old != 0:
+		Shed.items.erase(old)
+	var id := Shed._new_item(part, 0.0, 0.0, 0.0)
+	Shed._move(id, "bike", bike)
+	Shed.bikes[bike]["slots"][slot] = id
+	Shed.bikes[bike]["bolted"][slot] = true
+	return id
+
+
+## A whole adventure bike's parts: the adventure style with every bit of kit on.
+func _kit_build() -> Dictionary:
+	var parts: Dictionary = Shed.style_parts("adventure") if PartsDB.STYLES.has("adventure") else {}
+	parts.merge({"tank_bag": "mag_tank_bag_15", "aux_tank": "rear_rally_tank_10", "toolbox": "alloy_toolbox",
+		"satnav": "adventure_gps", "fairing": "adv_tall_screen_adj", "panniers": "adv_alloy_trunks_silver",
+		"top_box": "adv_alloy_top_55"}, true)
+	return parts
+
+
+## The kit parts are in the catalogue with their variants, every one has a model, and they go on
+## a bike the usual way (held, installed, bolted) and change the bike: litres, mass, drag.
+func _test_kit_parts() -> void:
+	for k in PartsDB.KIT_SLOTS:
+		check(PartsDB.by_kind[k].size() >= 5, "%s: %d variants" % [str(PartsDB.KIND_NAMES.get(k, k)), PartsDB.by_kind[k].size()])
+	var kinds := {}
+	for id in PartsDB.by_kind["tyre"]:
+		var gk := str(PartsDB.get_part(id).get("grip_kind", ""))
+		kinds[gk] = int(kinds.get(gk, 0)) + 1
+	check(["road", "adventure", "knobbly", "winter", "studded"].all(func(k): return int(kinds.get(k, 0)) >= 3),
+		"road, 50/50, knobbly, winter and studded adventure tyres in three sizes each %s" % str(kinds))
+	var adjustable: Array = PartsDB.by_kind["fairing"].filter(func(id): return float(PartsDB.get_part(id).get("screen_adjust", 0.0)) > 0.0)
+	check(adjustable.size() >= 3, "%d tall adventure screens that raise and lower" % adjustable.size())
+	var boxes: int = PartsDB.by_kind.get("top_box", []).size() + PartsDB.by_kind.get("panniers", []).size()
+	check(boxes >= 10, "more side and top boxes (%d)" % boxes)
+	var bad := []
+	for k in PartsDB.KIT_SLOTS:
+		for id in PartsDB.by_kind[k]:
+			if not PartsDB.get_part(id).has("price") or PartsDB.spec_line(id) == "":
+				bad.append(id)
+	check(bad.is_empty(), "every kit part has a price and a spec line %s" % str(bad))
+	# The kit changes the bike.
+	var bare := BikeBuild.new({})
+	var kit := BikeBuild.new({"tank_bag": "mag_tank_bag_15", "aux_tank": "rear_rally_tank_10", "toolbox": "alloy_toolbox", "satnav": "road_gps"})
+	check(is_equal_approx(kit.fuel_capacity, bare.fuel_capacity + 10.0) and kit.aux_capacity > 9.9,
+		"an auxiliary tank adds its litres (%.1f L to %.1f L)" % [bare.fuel_capacity, kit.fuel_capacity])
+	check(kit.total_mass > bare.total_mass + 5.0, "the kit adds weight (%.1f kg)" % (kit.total_mass - bare.total_mass))
+	check(kit.cda > bare.cda and kit.luggage_litres >= bare.luggage_litres + 15.0, "a tank bag carries 15 L and pushes a little air")
+	check(kit.has_part("satnav") and kit.satnav_features.has("map") and kit.toolbox_slots == 6, "the build knows its sat nav and toolbox")
+	# Fitted in the shed like any other part.
+	Shed.start_new("Tester", 61)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	var fitted := []
+	for k in PartsDB.KIT_SLOTS:
+		var id := Shed._new_item(PartsDB.by_kind[k][0], 0.0, 0.0, 0.0)
+		Shed._move(id, "held", me)
+		var why := Shed.check(me, {"a": "install", "bike": faithful, "slot": k, "crouched": true})
+		Shed.request({"a": "install", "bike": faithful, "slot": k, "crouched": true})
+		Shed.request({"a": "bolt", "bike": faithful, "slot": k, "crouched": true})
+		if Shed.item_on(faithful, k) == id and Shed.is_bolted(faithful, k):
+			fitted.append(k)
+		elif why != "":
+			fitted.append("%s refused: %s" % [k, why])
+		if Shed.held_by(me) != 0:
+			Shed.request({"a": "bin"})
+	check(fitted == Array(PartsDB.KIT_SLOTS), "a tank bag, auxiliary tank, toolbox and sat nav install and bolt on %s" % str(fitted))
+	var b := Shed.build_of(faithful)
+	check(b.has_part("tank_bag") and b.has_part("aux_tank") and b.has_part("toolbox") and b.has_part("satnav"), "and the bike's build has them")
+	# Every kit part, and the whole kitted bike, draws.
+	var m := BikeModel.new()
+	add_child(m)
+	m.build_from(BikeBuild.new(_kit_build()))
+	check(m.satnav_screen() != null, "a kitted adventure bike draws, its sat nav with a screen")
+	var raised := BikeBuild.new(_kit_build())
+	raised.set_screen(1.0)
+	check(raised.screen_raise > 0.1 and raised.wind_buffet < BikeBuild.new(_kit_build()).wind_buffet,
+		"raising the adjustable screen cuts the wind on the helmet (%.2f to %.2f)" % [BikeBuild.new(_kit_build()).wind_buffet, raised.wind_buffet])
+	m.set_screen_raise(raised.screen_raise)
+	m.free()
+
+
+## The grip table: every kind of tyre on every surface and wet, the town unchanged for the tyres
+## it always had, and bike.gd reading it through the surface under each wheel.
+func _test_kit_grip() -> void:
+	check(TyreGrip.kinds().size() >= 7, "the grip table has %d kinds of tyre" % TyreGrip.kinds().size())
+	var off := []
+	for id in PartsDB.by_kind["tyre"]:
+		var p := PartsDB.get_part(id)
+		if p.has("grip_kind"):
+			continue
+		var k := TyreGrip.kind_of(p)
+		if not is_equal_approx(TyreGrip.factor(k, "tarmac", 0.0), 1.0) or not is_equal_approx(TyreGrip.factor(k, "tarmac", 1.0), 1.0) \
+				or not is_equal_approx(TyreGrip.grip_on(p["grip"], k, "tarmac", 0.0), float(p["grip"]["tarmac"])) \
+				or not is_equal_approx(TyreGrip.grip_on(p["grip"], k, "dirt", 0.0), float(p["grip"]["dirt"])):
+			off.append(id)
+	check(off.is_empty(), "every tyre the town always had grips exactly as before on tarmac (dry and wet) and dirt %s" % str(off))
+	check(is_equal_approx(TyreGrip.factor("road", "tarmac", 0.0), 1.0), "1.0 is a road tyre on dry tarmac")
+	check(TyreGrip.factor("knobbly", "gravel", 0.0) > TyreGrip.factor("adventure", "gravel", 0.0) and TyreGrip.factor("adventure", "gravel", 0.0) > TyreGrip.factor("road", "gravel", 0.0),
+		"on gravel: knobbly beats 50/50 beats road (%.2f, %.2f, %.2f)" % [TyreGrip.factor("knobbly", "gravel", 0.0), TyreGrip.factor("adventure", "gravel", 0.0), TyreGrip.factor("road", "gravel", 0.0)])
+	check(TyreGrip.factor("studded", "snow", 0.0) > 3.0 * TyreGrip.factor("road", "snow", 0.0) and TyreGrip.factor("studded", "tarmac", 0.0) < 0.9,
+		"studs grip on snow and skate on tarmac")
+	check(TyreGrip.factor("winter", "snow", 0.0) > TyreGrip.factor("knobbly", "snow", 0.0) and TyreGrip.factor("winter", "tarmac", 1.0) > TyreGrip.factor("winter", "tarmac", 0.0),
+		"winter tyres: good in snow, better in the wet than the dry")
+	check(TyreGrip.factor("road", "sand", 0.0) < TyreGrip.factor("road", "gravel", 0.0) and is_equal_approx(TyreGrip.factor("nonsense", "moon", 0.5), 1.0),
+		"sand is worse than gravel, and anything unknown is 1.0")
+	var road := BikeBuild.new({})
+	check(is_equal_approx(road.tyre_grip(true, "tarmac", 0.0), float(road.grip_front["tarmac"])), "a stock bike's tyres on tarmac grip as they always did")
+	# In the physics: the rear tyre's friction on gravel, a road tyre against a knobbly.
+	var mu := {}
+	for t in ["trail_road_150", "adv_knobbly_150"]:
+		var r := await ride({"rear_tyre": t, "front_tyre": t.replace("150", "110")}, 1.5, func(_b, _t): pass, "gravel")
+		mu[t] = float(r["bike"].wheels[1]["mu"])
+		await _done(r)
+	check(mu["adv_knobbly_150"] > mu["trail_road_150"] * 1.15, "on gravel the knobbly grips more than the road tyre under the bike (mu %.2f vs %.2f)" % [mu["adv_knobbly_150"], mu["trail_road_150"]])
+	# A surface from the world (the adventure road's snow) on ground that doesn't say.
+	var dry := await ride({}, 1.0, func(_b, _t): pass)
+	var mu_tarmac := float(dry["bike"].wheels[1]["mu"])
+	await _done(dry)
+	TyreGrip.surface_provider = func(_at: Vector3) -> String: return "snow"
+	var snowy := await ride({}, 1.0, func(_b, _t): pass)
+	var mu_snow := float(snowy["bike"].wheels[1]["mu"])
+	await _done(snowy)
+	TyreGrip.surface_provider = Callable()
+	check(TyreGrip.surface_at("", Vector3.ZERO) == "tarmac" and TyreGrip.surface_at("dirt", Vector3.ZERO) == "dirt", "with nothing saying, it's tarmac (and the town's dirt is still dirt)")
+	check(mu_snow < mu_tarmac * 0.4, "the world saying snow drops a road tyre's grip (mu %.2f to %.2f)" % [mu_tarmac, mu_snow])
+
+
+## A toolbox carries what's packed in it: packed at the bike (paid by the business), counted in
+## its weight, shown in its info, synced, saved and loaded.
+func _test_kit_toolbox() -> void:
+	Shed.start_new("Tester", 62)
+	var me := Shed.me()
+	var bike := _bike_named("Old Faithful")
+	var box := _kit_fit(bike, "toolbox", "tool_tube")
+	check(Shed.toolbox_slots(box) == 4 and Shed.toolbox_contents(box).is_empty(), "a new toolbox is empty, with room for 4")
+	var money := Shed.garage_money
+	var mass := Shed.build_of(bike).total_mass
+	for i in 4:
+		Shed.request({"a": "toolbox_pack", "item": box})
+	var packed := Shed.toolbox_contents(box)
+	check(packed == ["tools", "plug_kit", "pump", "spare_chain"], "packing fills it in order: tools, plug kit, pump, spare chain %s" % str(packed))
+	var cost := 0
+	for c in packed:
+		cost += int(PartsDB.TOOLBOX_CONTENTS[c]["price"])
+	check(Shed.garage_money == money - cost, "the business pays for what's packed (%s)" % TvChannels.money_text(cost))
+	check(Shed.check(me, {"a": "toolbox_pack", "item": box}).contains("full"), "a full toolbox takes no more")
+	var b := Shed.build_of(bike)
+	check(b.toolbox_contents == packed and b.has_kit("spare_chain") and b.total_mass > mass + 2.0, "the bike knows what it carries, and it weighs (+%.1f kg)" % (b.total_mass - mass))
+	check(Shed.condition_text(Shed.items[box]).contains("plug kit"), "the toolbox's info lists what's in it")
+	check(Shed.condition_of(Shed.items[box]).get("contents", []) == packed, "the contents go out with its condition (synced)")
+	var saved: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	Shed.start_new("Tester", 63)
+	Shed.load_state(saved, "Tester")
+	check(Shed.toolbox_contents(box) == packed, "and come back from a save")
+	Shed.request({"a": "toolbox_pack", "item": box, "empty": true})
+	check(Shed.toolbox_contents(box).is_empty(), "emptying it out")
+	Shed.bikes[bike]["rider"] = me
+	check(Shed.check(me, {"a": "toolbox_pack", "item": box}) != "", "not while someone's riding the bike")
+	Shed.bikes[bike]["rider"] = 0
+
+
+## A provider the adventure world might be: a straight road north and a fuel stop on it.
+class _KitRoute:
+	extends RefCounted
+	func satnav_route(pos: Vector2, _fwd: Vector2, metres: float) -> PackedVector2Array:
+		return PackedVector2Array([pos, pos + Vector2(0, -metres)])
+	func satnav_road_name(_pos: Vector2) -> String:
+		return "The Pass Road"
+	func satnav_points(pos: Vector2, _fwd: Vector2) -> Array:
+		return [{"kind": "fuel", "name": "Fuel", "distance": 4200.0, "at": null},
+			{"kind": "fuel", "name": "Fuel", "distance": 900.0, "at": pos + Vector2(0, -900)},
+			{"kind": "destination", "name": "Camp", "distance": 12000.0, "at": null}]
+
+
+## The sat nav: the town's roads round the bike from WorldRoads, the way ahead, the town's fuel,
+## lit on the unit's screen; and a route provider (the adventure world) takes over.
+func _test_kit_satnav() -> void:
+	var world := World.new()
+	add_child(world)
+	world.generate(1234)
+	var bike := Bike.new()
+	bike.setup(BikeBuild.new(_kit_build()))
+	world.add_child(bike)
+	var spawn: Transform3D = world.spawn_point(0)
+	bike.place(spawn.origin, spawn.basis.get_euler().y)
+	bike.engine_on = true
+	var nav := Satnav.new(bike, world)
+	add_child(nav)
+	await get_tree().process_frame
+	nav.refresh()
+	var v := nav.screen.view
+	check(not (v["roads"] as Array).is_empty(), "the sat nav shows the town's roads round the bike (%d runs)" % (v["roads"] as Array).size())
+	check(str(v["road"]) != "" and (v["route"] as PackedVector2Array).size() > 10, "the road it's on (%s) and the way ahead along it" % str(v["road"]))
+	var fuel: Array = (v["points"] as Array).filter(func(p): return p["kind"] == "fuel")
+	var pump: Node3D = get_tree().get_nodes_in_group(FuelPump.GROUP)[0]
+	check(fuel.size() == 1 and absf(float(fuel[0]["distance"]) - Vector2(pump.global_position.x - bike.global_position.x, pump.global_position.z - bike.global_position.z).length()) < 1.0,
+		"and how far to the town's fuel (%.0f m)" % (float(fuel[0]["distance"]) if not fuel.is_empty() else -1.0))
+	for i in 3:
+		await get_tree().process_frame
+	var mat := bike.model.satnav_screen().material_override as StandardMaterial3D
+	check(mat.albedo_texture == nav.viewport.get_texture(), "the live map is lit on the unit's screen")
+	# Heading up: the road ahead goes up the screen.
+	var ahead: Vector2 = (v["route"] as PackedVector2Array)[(v["route"] as PackedVector2Array).size() - 1]
+	check(nav.screen.to_screen(ahead).y < nav.screen.to_screen(v["pos"]).y, "heading up: the way ahead is up the screen")
+	# The engine off, the screen goes dark.
+	bike.engine_on = false
+	nav._timer = 0.0
+	nav._tick(0.01)
+	check(mat.albedo_texture == null, "with the engine off the screen is dark")
+	# A route provider takes over.
+	Satnav.route_provider = _KitRoute.new()
+	var pv := Satnav.view_for(nav.provider(), Vector3(10, 0, 20), Vector3(0, 0, -1), 20.0)
+	Satnav.route_provider = null
+	check((pv["route"] as PackedVector2Array).size() == 2 and str(pv["road"]) == "The Pass Road", "a route provider gives the road ahead")
+	var pts: Array = pv["points"]
+	check(pts.size() == 2 and float(pts[0]["distance"]) == 900.0 and pts[1]["kind"] == "destination", "and the next fuel (the nearest) and the destination")
+	check(nav.provider() == nav.town, "cleared, it's the town's again")
+	# The HUD overlay draws the same view.
+	var hud_nav := SatnavScreen.new()
+	hud_nav.framed = true
+	hud_nav.size = Vector2(300, 200)
+	add_child(hud_nav)
+	hud_nav.show_view(pv)
+	await get_tree().process_frame
+	check(hud_nav.view == pv, "the HUD's sat nav shows the same")
+	hud_nav.queue_free()
+	nav.queue_free()
+	world.queue_free()
+	await get_tree().process_frame
+
+
+## Fuel: the engine burns it by throttle and size, an empty tank stops it, and at a pump you fill
+## up, paid out of your own money, the shed's tank filled to match.
+func _test_kit_fuel() -> void:
+	var small := BikeBuild.new({})
+	check(small.fuel_rate(20.0, 6000.0) > small.fuel_rate(5.0, 6000.0) and small.fuel_rate(5.0, 9000.0) > small.fuel_rate(5.0, 3000.0) * 0.99,
+		"more power burns more petrol, as do revs")
+	var used := {}
+	for th in [0.3, 1.0]:
+		var r := await ride({}, 5.0, func(b, _t): b.throttle = th)
+		used[th] = float(r["bike"].build.fuel_litres) - float(r["bike"].fuel_litres)
+		await _done(r)
+	check(used[1.0] > used[0.3] and used[0.3] > 0.0, "riding burns fuel, harder throttle more (%.3f L vs %.3f L)" % [used[1.0], used[0.3]])
+	var dry := await ride({}, 0.5, func(b, _t): b.throttle = 1.0)
+	var bike: Bike = dry["bike"]
+	bike.fuel_litres = 0.003
+	for i in 240:
+		await get_tree().physics_frame
+	check(not bike.engine_on and bike.fuel_litres == 0.0, "an empty tank stops the engine")
+	await _done(dry)
+	# Filling up at the town's pump.
+	var real_path := Progress.path
+	Progress.path = "user://profile_kit_test.json"
+	DirAccess.remove_absolute(Progress.path)
+	Shed.start_new("Tester", 64)
+	Progress.select("Tester")
+	Progress.set_money(100)
+	var me := Shed.me()
+	var ridden := _bike_named("Old Faithful")
+	var aux := _kit_fit(ridden, "aux_tank", "rack_can_5")
+	var tank := Shed.item_on(ridden, "tank")
+	Shed.items[tank]["fluid"] = {"type": "unleaded_95", "litres": 2.0, "age": 0.0}
+	Shed.items[aux]["fluid"] = {"type": "", "litres": 0.0, "age": 0.0}
+	Shed.bikes[ridden]["rider"] = me
+	Shed.crew[me]["riding"] = ridden
+	var world := World.new()
+	add_child(world)
+	world.generate(1234)
+	var pump: Node3D = get_tree().get_nodes_in_group(FuelPump.GROUP)[0]
+	var rider := Bike.new()
+	rider.setup(Shed.build_of(ridden))
+	world.add_child(rider)
+	rider.place(pump.global_position + Vector3(0, 0.3, 1.8), 0.0)
+	for i in 60:
+		await get_tree().physics_frame
+	var stop := FuelStop.new(rider)
+	var cap := rider.build.fuel_capacity
+	check(stop.pump_here() == pump and absf(stop.space() - (cap - rider.fuel_litres)) < 0.01, "stopped beside the town's pump, with %.1f L of room" % stop.space())
+	check(stop.low() and stop.warning().contains("Low fuel") and stop.warning() == "", "the low fuel warning comes on once")
+	check(stop.start() == "", "holding interact starts filling")
+	var before := rider.fuel_litres
+	for i in 120:
+		stop.update(1.0 / 60.0, true)
+	var put := stop.litres
+	check(absf(put - FuelStop.FILL_RATE * 2.0) < 0.1 and absf(rider.fuel_litres - before - put) < 0.01, "the petrol goes in at %.1f L a second" % FuelStop.FILL_RATE)
+	var said := stop.update(0.1, false)
+	var cost := ceili(put * Shed.PUMP_PRICE)
+	check(said.contains("Filled up") and Progress.money() == 100 - cost, "letting go pays for it from your own money (%s for %.1f L)" % [TvChannels.money_text(cost), put])
+	var in_shed := float(Shed.items[tank]["fluid"]["litres"]) + float(Shed.items[aux]["fluid"]["litres"])
+	check(absf(in_shed - (2.0 + put)) < 0.05, "the shed's tank is filled to match (%.1f L)" % in_shed)
+	# Brim it: the main tank first, then the auxiliary.
+	Progress.set_money(500)
+	stop.start()
+	for i in 1200:
+		if stop.update(1.0 / 60.0, true) != "":
+			break
+	check(not stop.filling and absf(rider.fuel_litres - cap) < 0.05, "it stops when the tanks are full")
+	check(absf(float(Shed.items[aux]["fluid"]["litres"]) - 5.0) < 0.05 and str(Shed.items[aux]["fluid"]["type"]) == "unleaded_95", "the auxiliary tank fills too")
+	check(Shed.check(me, {"a": "refuel", "litres": 1.0, "paid": 2}).contains("full"), "a full tank takes no more")
+	Progress.set_money(0)
+	Shed.items[tank]["fluid"]["litres"] = 1.0
+	rider.fuel_litres = 1.0
+	check(stop.start().contains("money"), "no money, no petrol")
+	# Old saves come back brimmed.
+	var old: Dictionary = str_to_var(var_to_str(Shed._snapshot()))
+	old.erase("kit_v")
+	Shed.bikes[ridden]["rider"] = 0
+	Shed.crew[me]["riding"] = 0
+	Shed.load_state(old, "Tester")
+	check(absf(float(Shed.items[tank]["fluid"]["litres"]) - PartsDB.fluid_capacity(str(Shed.items[tank]["part"]))) < 0.01, "an old save loads with a full tank")
+	world.queue_free()
+	await get_tree().process_frame
+	DirAccess.remove_absolute(Progress.path)
+	Progress.path = real_path
+	Progress.select(Settings.player_name)

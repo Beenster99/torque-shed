@@ -311,6 +311,11 @@ func _build_riding_settings(settings: VBoxContainer) -> void:
 	tele.button_pressed = Settings.telemetry_overlay
 	tele.toggled.connect(func(v): Settings.telemetry_overlay = v)
 	settings.add_child(tele)
+	var nav := CheckBox.new()
+	Controls.bind_text(nav, "Sat nav map on the HUD, on a bike with one fitted ({satnav_hud})")
+	nav.button_pressed = Settings.satnav_hud
+	nav.toggled.connect(func(v): Settings.satnav_hud = v)
+	settings.add_child(nav)
 
 
 ## What a Riding realism setting does, in a few words.

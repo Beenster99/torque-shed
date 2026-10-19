@@ -13,6 +13,8 @@ var assist := 0.5
 var direct_bars := false
 ## The telemetry overlay at the side of the screen while riding (F3 toggles it).
 var telemetry_overlay := false
+## The sat nav's map on the HUD too, while riding a bike with one fitted ({satnav_hud}).
+var satnav_hud := true
 var auto_shift := true
 ## The chase camera eases back behind the bike after a moment of not swinging it round.
 var camera_recentre := true
@@ -106,6 +108,8 @@ const ACTIONS := [
 	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
 	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
+	["satnav_hud", "Sat nav on the HUD on / off", ["ride"]],
+	["screen_up", "Adjustable screen up", ["ride"]], ["screen_down", "Adjustable screen down", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["perf_overlay", "Performance profiler on / off", ["foot", "ride"]],
 	["perf_record", "Performance profiler: record 60 s to a file", ["foot", "ride"]],
@@ -151,6 +155,7 @@ func load_settings() -> void:
 		auto_shift = cfg.get_value("riding", "auto_shift", auto_shift)
 		direct_bars = bool(cfg.get_value("riding", "direct_bars", direct_bars))
 		telemetry_overlay = bool(cfg.get_value("riding", "telemetry", telemetry_overlay))
+		satnav_hud = bool(cfg.get_value("riding", "satnav_hud", satnav_hud))
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
 		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
@@ -184,6 +189,7 @@ func save_settings() -> void:
 	cfg.set_value("riding", "auto_shift", auto_shift)
 	cfg.set_value("riding", "direct_bars", direct_bars)
 	cfg.set_value("riding", "telemetry", telemetry_overlay)
+	cfg.set_value("riding", "satnav_hud", satnav_hud)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
 	cfg.set_value("walking", "third_person", walk_third_person)
 	cfg.set_value("video", "high_quality", high_quality)
@@ -308,6 +314,10 @@ func _setup_inputs() -> void:
 	# Drop a camera at the roadside ahead and watch yourself ride past (no pad button spare).
 	_bind("ride_by", [KEY_V], [])
 	_bind("telemetry", [KEY_F3], [])
+	# The sat nav's map on the HUD, and an adjustable screen up and down on the move.
+	_bind("satnav_hud", [KEY_M], [])
+	_bind("screen_up", [KEY_PAGEUP], [])
+	_bind("screen_down", [KEY_PAGEDOWN], [])
 	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])
 	# On foot in the shed
 	_bind("move_forward", [KEY_W, KEY_UP], [])
