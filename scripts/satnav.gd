@@ -30,8 +30,6 @@ extends Node
 ##   satnav_junction(pos: Vector2, fwd: Vector2) -> the next junction on the way where there's
 ##       something to say, within JUNCTION_AHEAD: {text ("At the roundabout, take the 2nd exit"),
 ##       type (AdventureJunctions.TYPES), exit (a roundabout's, else 0), distance}, {} for none
-
-
 ##   satnav_next(pos: Vector2, fwd: Vector2) -> {fuel, food, sleep}: how far along the way to the
 ##       next of each (m), -1 when there's none (the trip computer's page)
 ## and clears it (null) when it's done.

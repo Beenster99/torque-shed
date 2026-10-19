@@ -329,7 +329,7 @@ func _setup_inputs() -> void:
 	_bind("paper_map", [KEY_TAB], [])
 	# The camera for the Adventure Diary: a photo (held, a clip), and on foot holding it up to your eye.
 	_bind("photo", [KEY_K], [])
-	_bind("photo_camera", [KEY_O], [])
+	_bind("photo_camera", [KEY_L], [])
 	_bind("screen_up", [KEY_PAGEUP], [])
 	_bind("screen_down", [KEY_PAGEDOWN], [])
 	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])
