@@ -395,16 +395,19 @@ func chunk_mesh(cx: int, cz: int, step: int) -> ArrayMesh:
 		for k in per - 1:
 			var a := j * per + k
 			idx.append_array([a, a + 1, a + per + 1, a, a + per + 1, a + per])
-	# Skirts: each edge copied SKIRT lower and stitched on, so a near chunk next to a far one
-	# shows no gap where their edges differ.
+	# Skirts: each edge copied lower and stitched on, so a near chunk next to a far one shows no
+	# gap where their edges differ. In the mountains the far mesh's edge can sit well above the
+	# near one's between its samples, more than SKIRT, which let the sky show through slits in
+	# the distant hills: each edge hangs down as far as the two ever part along it, and more.
 	var edges := [[0, 1, 0], [per - 1, 1, 0], [0, 0, 1], [per - 1, 0, 1]]
 	for e in edges:
 		var base := verts.size()
+		var drop := SKIRT + _edge_gap(cx, cz, e)
 		for t in per:
 			var j: int = e[0] if e[2] == 0 else t
 			var k: int = t if e[2] == 0 else e[0]
 			var src := j * per + k
-			verts.append(verts[src] + Vector3.DOWN * SKIRT)
+			verts.append(verts[src] + Vector3.DOWN * drop)
 			norms.append(norms[src])
 			cols.append(cols[src])
 			uvs.append(uvs[src])
@@ -427,6 +430,25 @@ func chunk_mesh(cx: int, cz: int, step: int) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+
+## How far apart (m) the near and far meshes' edges ever get along one edge of chunk (cx, cz):
+## the full-detail heights against the far mesh's straight lines between every COARSE-th sample.
+## `e` is the edge as chunk_mesh lists them ([index along, 1 for a row / 0 for a column, ...]).
+func _edge_gap(cx: int, cz: int, e: Array) -> float:
+	var gap := 0.0
+	var x0 := cx * CHUNK
+	var z0 := cz * CHUNK
+	var fixed: int = (CHUNK if int(e[0]) > 0 else 0)
+	for c in range(0, CHUNK, COARSE):
+		var h := PackedFloat32Array()
+		for q in COARSE + 1:
+			var gx: int = x0 + (c + q if int(e[2]) == 0 else fixed)
+			var gz: int = z0 + (fixed if int(e[2]) == 0 else c + q)
+			h.append(heights[mini(gz, SIZE - 1) * SIZE + mini(gx, SIZE - 1)])
+		for q in range(1, COARSE):
+			gap = maxf(gap, absf(h[q] - lerpf(h[0], h[COARSE], float(q) / COARSE)))
+	return gap
 
 
 ## The middle of chunk (cx, cz) on the ground plane.
