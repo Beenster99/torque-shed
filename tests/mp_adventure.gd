@@ -85,6 +85,12 @@ func _ready() -> void:
 		print("MP adv note %s: at %.0f m, origin %s; the other seen off by %.3f m along, %.3f m across" % [role, mine, trip.world.origin if trip.world else Vector3.ZERO, err[0].x, err[0].y])
 		if role == "client":
 			# On again past another shift: the host, standing still, must stay put on the road.
+			# Stay put a while first, so the host has seen us here too (the fork ends at
+			# different moments on each side).
+			var stay_until := Time.get_ticks_msec() + 6000
+			await _until(func():
+				_hold(trip, mine, my_lat)
+				return Time.get_ticks_msec() > stay_until, 7.0)
 			var before: Vector3 = trip.world.origin if trip.world else Vector3.ZERO
 			mine += CLIENT_ON
 			_jump_to(trip, mine, my_lat)
