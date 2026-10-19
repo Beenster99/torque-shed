@@ -559,8 +559,8 @@ static func route_facts(seed: int, km: float, theme: String, dest: String) -> Di
 class Prop extends Node3D:
 	func _ready() -> void:
 		name = "AdventureMagazine"
-		var x := Workshop.CENTER.x - Workshop.HALF.x + 0.62
-		var z := Workshop.spot_transform("bench_0").origin.z - 0.38
+		var x := Workshop.CENTER.x - Workshop.HALF.x + 0.76
+		var z := Workshop.spot_transform("bench_0").origin.z - 0.47
 		position = Vector3(x, 0.952, z)
 		rotation.y = PI * 0.5 + 0.12
 		var cover := MeshInstance3D.new()

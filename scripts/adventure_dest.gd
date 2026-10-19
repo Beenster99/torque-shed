@@ -38,7 +38,7 @@ const ALBUM_SIZE := 60
 const DESTS := {
 	"canyon": {"name": "Red Rock Canyon", "kind": "canyon", "theme": "desert",
 		"what": "the canyon viewpoint at sunset: towers of red rock glowing as the sun goes down",
-		"line": "The canyon at sunset. Worth every grain of sand.", "hours": 19.4},
+		"line": "The canyon at sunset. Worth every grain of sand.", "hours": 17.4},
 	"dune_track": {"name": "Dune Dirt Track", "kind": "dirt_track", "theme": "desert",
 		"what": "a sandy dirt track in the dunes, with a jump: ride as many laps as you like",
 		"line": "A dirt track in the dunes, all yours. Get some laps in.", "hours": -1.0},
@@ -50,7 +50,7 @@ const DESTS := {
 		"line": "Race day at the top of the pass. Grab a seat.", "hours": -1.0},
 	"lighthouse": {"name": "Gull Point Lighthouse", "kind": "lighthouse", "theme": "coastal",
 		"what": "the lighthouse on the cliffs, its beam sweeping out over the sea at dusk",
-		"line": "The lighthouse at the end of the land.", "hours": 20.5},
+		"line": "The lighthouse at the end of the land.", "hours": 18.6},
 	"sea_meet": {"name": "Seafront Bike Meet", "kind": "rally", "theme": "coastal",
 		"what": "the big seafront bike meet: stalls, a stage and rows of bikes by the sea",
 		"line": "Bikes as far as the eye can see, and chips.", "hours": -1.0},
@@ -213,17 +213,17 @@ static func build(dest: String, theme: String, st: Dictionary, xf: Transform3D) 
 static func _board(k: AdventureStops.Kit, at: Transform3D, text: String) -> void:
 	for sx: float in [-1.6, 1.6]:
 		AdventureProps.box(k.far, at * Transform3D(Basis(), Vector3(0, -0.12, sx)), Vector3(0.12, 3.0, 0.12), Color(0.35, 0.25, 0.16))
-	AdventureProps.box(k.far, at * Transform3D(Basis(), Vector3(0, 1.7, 0)), Vector3(0.1, 1.2, 4.0), Color(0.42, 0.23, 0.12))
+	AdventureProps.box(k.far, at * Transform3D(Basis(), Vector3(0, 1.4, 0)), Vector3(0.1, 1.6, 4.0), Color(0.42, 0.23, 0.12))
 	for face: float in [1.0, -1.0]:
 		var l := Label3D.new()
 		l.text = text
-		l.font_size = 64
+		l.font_size = 44
 		l.pixel_size = 0.0085
 		l.outline_size = 0
 		l.modulate = Color(0.98, 0.92, 0.75)
-		l.width = 420.0
+		l.width = 430.0
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		l.transform = at * Transform3D(Basis(Vector3.UP, PI * 0.5 * face), Vector3(0.07 * face, 2.3, 0))
+		l.transform = at * Transform3D(Basis(Vector3.UP, PI * 0.5 * face), Vector3(0.07 * face, 2.2, 0))
 		k.root.add_child(l)
 
 
@@ -481,7 +481,7 @@ static func _track(k: AdventureStops.Kit, theme: String, race: bool) -> void:
 		var o0 := Vector3(cos(a0) / rx, 0, sin(a0) / rz).normalized() * w * 0.5
 		var o1 := Vector3(cos(a1) / rx, 0, sin(a1) / rz).normalized() * w * 0.5
 		var y := -0.07
-		AdventureProps._quad(k.far, p0 - o0 + Vector3(0, y, 0), p0 + o0 + Vector3(0, y, 0), p1 + o1 + Vector3(0, y, 0), p1 - o1 + Vector3(0, y, 0), col)
+		AdventureProps._quad(k.far, p0 - o0 + Vector3(0, y, 0), p1 - o1 + Vector3(0, y, 0), p1 + o1 + Vector3(0, y, 0), p0 + o0 + Vector3(0, y, 0), col)
 		# The collision: a thin slab along each piece, its top level with the track.
 		var mid := (p0 + p1) * 0.5
 		var along := p1 - p0
@@ -498,8 +498,11 @@ static func _track(k: AdventureStops.Kit, theme: String, race: bool) -> void:
 				var e0 := p0 + o0 * side * 1.0
 				var e1 := p1 + o1 * side * 1.0
 				var kc := Color(0.85, 0.1, 0.1) if i % 2 == 0 else Color(0.95, 0.95, 0.95)
-				AdventureProps._quad(k.near, e0 + Vector3(0, -0.05, 0), e0 + o0.normalized() * 0.8 * side + Vector3(0, -0.05, 0),
-					e1 + o1.normalized() * 0.8 * side + Vector3(0, -0.05, 0), e1 + Vector3(0, -0.05, 0), kc)
+				var q := [e0 + Vector3(0, -0.05, 0), e1 + Vector3(0, -0.05, 0), e1 + o1.normalized() * 0.8 * side + Vector3(0, -0.05, 0),
+					e0 + o0.normalized() * 0.8 * side + Vector3(0, -0.05, 0)]
+				if side < 0.0:
+					q.reverse()
+				AdventureProps._quad(k.near, q[0], q[1], q[2], q[3], kc)
 		elif i % 2 == 0:
 			for side: float in [-1.0, 1.0]:
 				var bp := p0 + o0 * side * 1.25

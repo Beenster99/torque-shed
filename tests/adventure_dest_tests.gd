@@ -75,7 +75,7 @@ func test_data() -> void:
 			"%s has a theme, a name and its lines" % id)
 	for k in ["canyon", "glacier", "lighthouse", "rally", "dirt_track", "race"]:
 		check(kinds.has(k), "there's a %s to ride to" % k)
-	check(float(AdventureDest.of("canyon")["hours"]) > 18.5 and float(AdventureDest.of("lighthouse")["hours"]) > 19.5,
+	check(float(AdventureDest.of("canyon")["hours"]) > 16.5 and float(AdventureDest.of("lighthouse")["hours"]) > 18.0,
 		"the canyon's seen at sunset, the lighthouse at dusk")
 	var site := AdventureDest.site("canyon", 100.0)
 	check(str(site["kind"]) == "dest" and float(site["s"]) > 100000.0 and float(site["s"]) < 100000.0 + AdventureRoute.RUN_OUT - 150.0,
@@ -161,7 +161,7 @@ func test_arrive() -> void:
 	check(not hung.is_empty() and absf((hung["xf"] as Transform3D).origin.z - wall_z) < 0.1, "on the shed's front wall")
 	check(Shed.furniture_name(hung).contains("Red Rock Canyon"), "it says where (%s)" % Shed.furniture_name(hung))
 	if Daylight.current:
-		check(absf(Daylight.time_of_day() - 19.4) < 0.2, "the clock goes to sunset for the canyon (%.2f)" % Daylight.time_of_day())
+		check(absf(Daylight.time_of_day() - 17.4) < 0.2, "the clock goes to sunset for the canyon (%.2f)" % Daylight.time_of_day())
 	check(Adventure.active() and Adventure.menu_text()[0].begins_with("Ride home"), "the adventure stays on till the host rides everyone home")
 	# A second arrival can't double anything.
 	Shed.request({"a": "adventure_arrive"})
