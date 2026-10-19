@@ -19,14 +19,15 @@ extends Node
 
 ## The render layer the live glass is moved to, for the mirror cameras to leave out.
 const GLASS_LAYER := 11
-## Each detail level: the picture's height in pixels at most, drawn every how many frames, how
-## far it sees (metres), the mesh LOD threshold (higher is coarser), MSAA, the lamps' shadow
+## Each detail level: the picture's height in pixels at most, and how many of its pixels go to
+## each of the glass's on the screen (over 1 is supersampled: smoother), drawn every how many
+## frames, how far it sees (metres), the mesh LOD threshold (higher is coarser), MSAA, the lamps' shadow
 ## atlas (0: the lamps cast no shadows in it) and ambient occlusion.
 const LEVELS := {
-	"low": {"px": 128, "every": 3, "far": 150.0, "lod": 4.0, "msaa": Viewport.MSAA_DISABLED, "shadows": 0, "ssao": false},
-	"medium": {"px": 192, "every": 2, "far": 300.0, "lod": 2.0, "msaa": Viewport.MSAA_DISABLED, "shadows": 0, "ssao": false},
-	"high": {"px": 256, "every": 1, "far": 500.0, "lod": 1.5, "msaa": Viewport.MSAA_2X, "shadows": 1024, "ssao": false},
-	"ultra": {"px": 384, "every": 1, "far": 900.0, "lod": 1.0, "msaa": Viewport.MSAA_4X, "shadows": 2048, "ssao": true},
+	"low": {"px": 128, "sample": 0.8, "every": 3, "far": 150.0, "lod": 4.0, "msaa": Viewport.MSAA_DISABLED, "shadows": 0, "ssao": false},
+	"medium": {"px": 192, "sample": 1.25, "every": 2, "far": 300.0, "lod": 2.0, "msaa": Viewport.MSAA_DISABLED, "shadows": 0, "ssao": false},
+	"high": {"px": 256, "sample": 1.75, "every": 1, "far": 500.0, "lod": 1.5, "msaa": Viewport.MSAA_2X, "shadows": 1024, "ssao": false},
+	"ultra": {"px": 384, "sample": 2.5, "every": 1, "far": 900.0, "lod": 1.0, "msaa": Viewport.MSAA_4X, "shadows": 2048, "ssao": true},
 }
 ## The heights the picture steps between: smaller while the glass is small on the screen (in the
 ## chase view it's a few dozen pixels across).
@@ -230,7 +231,7 @@ func update(eye_cam: Camera3D) -> void:
 		in_sight += 1
 		if (_frame + i * maxi(1, every / 2)) % every != 0:
 			continue
-		var px := _pixels_for(eye_cam, eye.distance_to(frame.origin), size.y, int(cfg["px"]), int(v["px"]))
+		var px := _pixels_for(eye_cam, eye.distance_to(frame.origin), size.y, float(cfg["sample"]), int(cfg["px"]), int(v["px"]))
 		if px != int(v["px"]):
 			v["px"] = px
 			vp.size = _view_size(size, px)
@@ -296,14 +297,14 @@ static func _on_screen(cam: Camera3D, frame: Transform3D, size: Vector2) -> bool
 	return false
 
 
-## The picture height for glass `h` high, `dist` from `cam`: about as many pixels as it covers on
-## the screen, at most `top`. `now` is the height it has, kept unless it's well off.
-static func _pixels_for(cam: Camera3D, dist: float, h: float, top: int, now: int) -> int:
+## The picture height for glass `h` high, `dist` from `cam`: `sample` times the pixels it covers
+## on the screen, at most `top`. `now` is the height it has, kept unless it's well off.
+static func _pixels_for(cam: Camera3D, dist: float, h: float, sample: float, top: int, now: int) -> int:
 	var screen_h := float(cam.get_viewport().get_visible_rect().size.y) if cam.get_viewport() else 720.0
 	var on_screen := h / maxf(dist, 0.05) * screen_h / (2.0 * tan(deg_to_rad(cam.fov) * 0.5))
 	var want: int = SIZES[SIZES.size() - 1]
 	for s in SIZES:
-		if s >= on_screen * 1.2:
+		if s >= on_screen * sample:
 			want = s
 			break
 	want = mini(want, top)
