@@ -206,6 +206,9 @@ var _mats := {}               # slot -> ShaderMaterial
 var _boxes := {}              # slot -> its bounds in the model, as the regions are laid over it
 var _restore := []            # [mesh, its own material]
 var _covered := {}            # instance id -> true for each mesh carrying the pass
+## On a baked model (one being ridden), the pass drawn over the merged pieces hanging from the
+## same node as one mesh: [mesh, how many pieces it covers].
+var _overlays := []
 ## Each part's regions as last set (slot -> Dirt levels), and how much of each region the wash
 ## mask has washed (slot -> share per cell, from WashJob), which the drawn level is evened out by.
 var levels := {}
@@ -333,6 +336,7 @@ func _add_slot(slot: String) -> void:
 	# Meshes of the part that share a material share its copy too (one material each, not one
 	# per mesh, so the renderer has far fewer to switch between).
 	var copies := {}
+	var merged := {}   # node -> a baked model's merged pieces hanging from it
 	for mi in model._slot_meshes.get(slot, []):
 		var g := mi as GeometryInstance3D
 		if g == null or not is_instance_valid(g) or g.material_override == null:
@@ -341,6 +345,11 @@ func _add_slot(slot: String) -> void:
 		if _covered.has(g.get_instance_id()):
 			continue   # a mesh listed under two parts carries the first one's pass only
 		_covered[g.get_instance_id()] = true
+		if model.baked_piece(g) and g.get_parent() != null:
+			if not merged.has(g.get_parent()):
+				merged[g.get_parent()] = []
+			merged[g.get_parent()].append(g)
+			continue
 		var mine: Material = copies.get(own)
 		if mine == null:
 			mine = own.duplicate() as Material
@@ -354,6 +363,19 @@ func _add_slot(slot: String) -> void:
 			copies[own] = mine
 		_restore.append([g, own, mine])
 		g.material_override = own if _far else mine
+	# A baked model's pieces on the same node, whatever they're painted: the pass over all of
+	# them is one more draw, not one each. Up close (the crew's bike riding beside you, or your
+	# own) that was a draw for nearly every piece of the bike.
+	for parent in merged:
+		var over := MeshInstance3D.new()
+		over.name = "Dirt_" + slot
+		over.mesh = BikeModel.shape_mesh(merged[parent])
+		over.material_override = m
+		over.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		over.visible = not _far
+		(parent as Node).add_child(over)
+		model.add_slot_extra(slot, over)
+		_overlays.append([over, (merged[parent] as Array).size()])
 	_xf_stale = true
 	_update_transform()
 
@@ -374,7 +396,10 @@ func material_for(slot: String) -> ShaderMaterial:
 
 ## How many meshes carry the pass (for tests).
 func mesh_count() -> int:
-	return _restore.size()
+	var n := _restore.size()
+	for o in _overlays:
+		n += int(o[1])
+	return n
 
 
 ## The part's bounds the regions are laid over (model space).
@@ -581,6 +606,9 @@ func _check_far(delta: float) -> void:
 		var g := r[0] as GeometryInstance3D
 		if g:
 			g.material_override = r[1] if _far else r[2]
+	for o in _overlays:
+		if is_instance_valid(o[0]):
+			(o[0] as Node3D).visible = not _far
 
 
 func _process(delta: float) -> void:
@@ -612,5 +640,9 @@ func restore() -> void:
 		if is_instance_valid(r[0]) and (r[0] as GeometryInstance3D).material_override != r[1]:
 			(r[0] as GeometryInstance3D).material_override = r[1]
 	_restore.clear()
+	for o in _overlays:
+		if is_instance_valid(o[0]):
+			(o[0] as Node).queue_free()
+	_overlays.clear()
 	_covered.clear()
 	_mats.clear()
