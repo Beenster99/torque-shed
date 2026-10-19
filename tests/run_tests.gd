@@ -21367,7 +21367,7 @@ func _test_kit_satnav() -> void:
 	var start := adv.transform_at(200.0)
 	var av := Satnav.view_for(nav.provider(), start.origin, -start.basis.z, 20.0)
 	var fuel_s := float(adv.route.sites_of("fuel")[0]["s"])
-	var ap: Array = av["points"]
+	var ap: Array = (av["points"] as Array).filter(func(q): return q["kind"] != "fork")   # forks: see _test_adv_routes_*
 	check(nav.provider() is Satnav.AdventureNav and (av["roads"] as Array).size() > 0 and (av["route"] as PackedVector2Array).size() > 50,
 		"on an adventure the sat nav draws its road and the way ahead (%d points)" % (av["route"] as PackedVector2Array).size())
 	check(ap.size() == 2 and ap[0]["kind"] == "fuel" and absf(float(ap[0]["distance"]) - (fuel_s - 200.0)) < 2.0

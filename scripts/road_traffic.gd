@@ -546,6 +546,11 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 		var pd := 1 if _rng.randf() < 0.5 else -1
 		if _heads_into_yard(pr, ps, pd):
 			pd = -pd
+		# Someone just there on it: wait at the end of this road till they've pulled away.
+		if _taken(pr, ps, pd, slot) == 1:
+			d["s"] = clampf(s, 0.0, length)
+			d["v"] = 0.0
+			return
 		d["road"] = pr
 		d["s"] = ps
 		d["dir"] = pd
