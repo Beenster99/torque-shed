@@ -80,12 +80,14 @@ static func apply(peer: int, action: Dictionary, who: String) -> String:
 			all[f][peer] = w
 			if Adventure._is_host(peer):
 				p[f] = w
+				AdventureDiary.forked(f, w)
 				return "*%s picks %s: everyone that way at the fork." % [who, way_name(f, w)]
 			return "*%s votes for %s." % [who, way_name(f, w)]
 		"adventure_fork_due":
 			if p.has(f):
 				return ""
 			p[f] = 0
+			AdventureDiary.forked(f, 0)
 			return "*No pick at the fork, so it's %s." % way_name(f, 0)
 	return ""
 

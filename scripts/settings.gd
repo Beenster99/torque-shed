@@ -111,8 +111,10 @@ const ACTIONS := [
 	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
 	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
-	["satnav_hud", "Sat nav on the HUD on / off", ["ride"]],
+	["satnav_hud", "Sat nav: map, trip computer, then off the HUD", ["ride"]],
 	["paper_map", "Adventure: the paper map of the route (when stopped)", ["foot", "ride"]],
+	["photo", "Adventure: take a photo (hold to film a clip)", ["foot", "ride"]],
+	["photo_camera", "Adventure: hold the camera up on foot (zoom, friends in shot)", ["foot"]],
 	["screen_up", "Adjustable screen up", ["ride"]], ["screen_down", "Adjustable screen down", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["perf_overlay", "Performance profiler on / off", ["foot", "ride"]],
@@ -324,6 +326,9 @@ func _setup_inputs() -> void:
 	_bind("satnav_hud", [KEY_M], [])
 	# Out on an adventure: the paper map of the whole route, once you have stopped.
 	_bind("paper_map", [KEY_TAB], [])
+	# The camera for the Adventure Diary: a photo (held, a clip), and on foot holding it up to your eye.
+	_bind("photo", [KEY_K], [])
+	_bind("photo_camera", [KEY_O], [])
 	_bind("screen_up", [KEY_PAGEUP], [])
 	_bind("screen_down", [KEY_PAGEDOWN], [])
 	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])

@@ -231,6 +231,13 @@ func _ready() -> void:
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nav.add_child(gap)
+	# Tucked in the back: the Adventure Diaries of the rides this machine has been on (DiaryBook).
+	var diaries := Button.new()
+	diaries.text = "Adventure diaries"
+	diaries.pressed.connect(func():
+		if AdventureTrip.current:
+			AdventureTrip.current.open_diary())
+	nav.add_child(diaries)
 	var close := Button.new()
 	Controls.bind_text(close, "Put it down ({menu})")
 	close.pressed.connect(func(): closed.emit())
@@ -531,7 +538,12 @@ static func poll() -> void:
 static func wait_all() -> void:
 	for key in _tasks.keys():
 		WorkerThreadPool.wait_for_task_completion(_tasks[key])
-	poll()
+	_tasks.clear()   # (a task waited for is gone: asking after it again is an error)
+	_results.mutex.lock()
+	for key in _results.done:
+		_facts_cache[key] = _results.done[key]
+	_results.done.clear()
+	_results.mutex.unlock()
 
 
 ## Plans the route and counts what's on it (any thread).

@@ -15,6 +15,11 @@ extends Node
 ## they came for, a title card, and the group photo (a flash, then the photo; it's kept in this
 ## machine's album and hangs on the shed wall). Then it's theirs to look round until the host
 ## picks Ride home. It also holds the magazine (AdventureMag), read in the shed.
+##
+## It keeps the trip computer for the whole ride (TripComputer, on the sat nav's trip page and in
+## the diary's stats) and this player's camera (AdventurePhotos); at the destination, and again at
+## Ride home, the Adventure Diary is put together (AdventureDiary) and, back in the shed, opened
+## in its book (DiaryBook), as it can be again from the magazine or the photo on the shed wall.
 
 static var current: AdventureTrip
 ## Skips the fades (the tests).
@@ -65,6 +70,11 @@ var _map: AdventureMap       # the paper map, made the first time it's opened
 ## The police on the road (see AdventurePolice), while you're out here.
 var police: AdventurePolice
 var _nav_cache: Satnav.AdventureNav   # for the wrong-way warning on the HUD (see wrong_way)
+## The trip computer for the whole ride, from setting off (see Satnav.computer).
+var computer := TripComputer.new()
+## This player's camera and their side of the Adventure Diary, and the book it's read in.
+var photos: AdventurePhotos
+var diary: DiaryBook
 
 
 func _ready() -> void:
@@ -130,6 +140,9 @@ func _ready() -> void:
 	needs.trip = self
 	add_child(needs)
 	_make_card(layer)
+	photos = AdventurePhotos.new()
+	photos.trip = self
+	add_child(photos)
 
 
 func _exit_tree() -> void:
@@ -212,6 +225,8 @@ func enter() -> void:
 	Daylight.adventure_rate = Adventure.day_rate()
 	apply_theme(world.route.theme, int(info["seed"]), start_s() <= 0.0)
 	Shed.request({"a": "adventure_join", "bike": preferred})
+	computer.reset()
+	photos.begin()   # (a ride carried on picks its diary and trip computer up again)
 	if start_s() > 0.0:
 		main.hud.flash("Carrying on the adventure: %.1f of %d km done. Morning, and back on the road." % [start_s() / 1000.0, roundi(float(info["km"]))], 5.0)
 	else:
@@ -244,6 +259,8 @@ func apply_theme(theme: String, seed: int, fresh: bool) -> void:
 ## muck as the road left them), you on foot at the shed door.
 func leave() -> void:
 	_busy = true
+	# The diary put together while the road's still here, to open back at the shed.
+	var kept := photos.diary_id if photos.finish() else ""
 	if not instant:
 		await main._fade_to(1.0)
 	if main.bike != null:
@@ -261,6 +278,8 @@ func leave() -> void:
 	_busy = false
 	if not instant:
 		await main._fade_to(0.0)
+	if kept != "" and main.in_session:
+		open_diary(kept)
 
 
 ## Drops the adventure at once, as the session ends (nothing is asked of the shed).
@@ -272,6 +291,8 @@ func reset() -> void:
 func _unload() -> void:
 	if needs:
 		needs.reset()
+	if photos:
+		photos.end()
 	close_map()
 	_end_moment()
 	moment_done = false
@@ -425,6 +446,8 @@ func _physics_process(delta: float) -> void:
 	if world == null:
 		Perf.add("adventure_trip", pt)
 		return   # the ride just ended
+	if main.bike:
+		computer.step(delta, main.bike.speed, main.bike.global_position.y, main.bike.fuel_litres, main.bike.surface)
 	_hud_timer -= delta
 	if _hud_timer <= 0.0 and not hit.is_empty():
 		_hud_timer = 0.25
@@ -798,6 +821,9 @@ func _tick_moment(delta: float) -> void:
 			_moment_cam.look_at(look, Vector3.UP)
 	_card.modulate.a = clampf(minf((t - 0.4) / 1.0, (MOMENT - 0.3 - t) / 1.0), 0.0, 1.0)
 	var since := t - PHOTO_AT
+	if t >= PHOTO_AT - 0.2 and t - delta < PHOTO_AT - 0.2:
+		# The crew at the destination, for the diary: the frame just before the flash.
+		photos.snap("arrive", "We made it: %s" % AdventureDest.name_of(str(Shed.adventure.get("dest", ""))), "arrive")
 	_card_flash.color.a = clampf(1.0 - since / 0.45, 0.0, 1.0) if since >= 0.0 else 0.0
 	if since >= 0.0 and since - delta < 0.0:
 		Sfx.play_ui("clink", -2.0)
@@ -805,6 +831,8 @@ func _tick_moment(delta: float) -> void:
 	_polaroid.rotation = deg_to_rad(-4.0) * clampf(since, 0.0, 1.0)
 	if t >= MOMENT:
 		_end_moment()
+		if photos.finish():
+			main.hud.flash("The Adventure Diary's put together: read it after Ride home, or any time from the magazine on the workbench or the photo on the shed wall.", 6.0)
 
 
 ## The moment's over (or the ride is): back to your own camera.
@@ -919,3 +947,34 @@ func close_magazine() -> void:
 
 func magazine_open() -> bool:
 	return magazine != null and magazine.visible
+
+
+# ---------------------------------------------------------------------------- the diary
+
+## Opens the Adventure Diary book: at diary `id`, or on the shelf of every diary on this machine.
+func open_diary(id := "") -> void:
+	if main == null or not main.in_session:
+		return
+	if diary == null:
+		diary = DiaryBook.new()
+		diary.visible = false
+		_hud.get_parent().add_child(diary)
+		diary.closed.connect(close_diary)
+	if main.menu.visible:
+		main.menu.hide()
+	close_magazine()
+	if id == "" or not diary.open_diary(id):
+		diary.open_shelf()
+	main._capture_mouse(false)
+
+
+func close_diary() -> void:
+	if diary == null or not diary.visible:
+		return
+	diary.visible = false
+	if main and main.in_session and not main.menu.visible and not magazine_open():
+		main._capture_mouse(true)
+
+
+func diary_open() -> bool:
+	return diary != null and diary.visible

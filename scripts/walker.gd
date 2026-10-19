@@ -336,7 +336,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		var chair := _f_seat
 		_f_seat = 0
-		if _f_time < HOLD_TO_PUSH:
+		if _f_time < HOLD_TO_PUSH and Shed.furniture.has(chair) and Shed.furniture[chair].get("model", "") == AdventureDest.PHOTO_MODEL:
+			_read_diary(chair)
+		elif _f_time < HOLD_TO_PUSH:
 			sit(chair)
 	elif seat != 0 and (event.is_action_pressed("interact") or event.is_action_pressed("crouch")):
 		get_viewport().set_input_as_handled()
@@ -414,7 +416,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			Shed.request({"a": "unpack", "item": box})
 			Sfx.play_at("pickup", camera.global_position - camera.global_transform.basis.z, -4.0)
-		elif furniture != 0 and Shed.furniture[furniture]["kind"] == "seat":
+		elif furniture != 0 and (Shed.furniture[furniture]["kind"] == "seat" or Shed.furniture[furniture].get("model", "") == AdventureDest.PHOTO_MODEL):
+			# A seat: a tap sits you down. An adventure's photo: a tap reads its diary. Held, either moves.
 			get_viewport().set_input_as_handled()
 			_f_seat = furniture
 			_f_time = 0.0
@@ -498,6 +501,17 @@ func set_crouched(on: bool) -> void:
 	crouched = on
 	_shape.height = 1.1 if crouched else 1.75
 	_shape_node.position.y = _shape.height * 0.5
+
+
+## The adventure's photo on the wall `fid`: its Adventure Diary, if this machine was on that ride
+## (else the shelf of the diaries it has).
+func _read_diary(fid: int) -> void:
+	var key := str((Shed.furniture[fid].get("photo", {}) as Dictionary).get("key", ""))
+	var id := AdventureDiary.find_by_photo(key)
+	if id == "":
+		Shed.feedback.emit("No diary of that ride on this machine: here are the ones there are.", false)
+	if AdventureTrip.current:
+		AdventureTrip.current.open_diary(id)
 
 
 ## Sits down on a seat, on the free place nearest you. Walking off (or F) stands you up.
@@ -2283,7 +2297,10 @@ func _describe() -> String:
 			var f: Dictionary = Shed.furniture[int(target["furniture"])]
 			lines.append(Shed.furniture_name(f))
 			lines.append(Equipment.spec_line(str(f["model"])))
-			match str(f["kind"]):
+			match str(f["kind"]) if str(f.get("model", "")) != AdventureDest.PHOTO_MODEL else "photo":
+				"photo":
+					lines.append(AdventureDest.caption(f.get("photo", {})).replace("\n", "  ·  "))
+					lines.append("{interact}: read its Adventure Diary   Hold {interact}: move it")
 				"seat":
 					lines.append("{interact}: sit down   Hold {interact}: move it")
 				"tv":

@@ -91,6 +91,8 @@ func forced_reason() -> String:
 	var w := walker
 	if w.seat != 0:
 		return "sitting down"
+	if AdventureTrip.current and AdventureTrip.current.photos and AdventureTrip.current.photos.camera_up:
+		return "taking photos"
 	if w.blast or Shed.blasting(Shed.me()) != 0:
 		return "the sandblaster"
 	if w.tyre_game:

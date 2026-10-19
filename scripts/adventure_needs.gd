@@ -498,6 +498,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			if together.size() >= 2 and Time.get_ticks_msec() - _picnic_at > 60000:
 				_picnic_at = Time.get_ticks_msec()
 				var names := together.map(func(p): return str(Shed.crew.get(p, {}).get("name", "Someone")))
+				AdventureDiary.picnic(together)
 				return "*Picnic: %s sat down together. Food goes further shared." % _and_list(names)
 			return ""
 		"needs_bed":

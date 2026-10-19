@@ -3,7 +3,8 @@
 # Then a second pair rides an adventure together (tests/mp_adventure.gd), a third breaks down
 # on one and fixes it at the roadside, then tows (tests/mp_wrench.gd), a fourth eats, sits
 # and sleeps on one (tests/mp_needs.gd), a fifth meets the police on one (tests/mp_police.gd),
-# and a sixth starts one from the magazine and arrives at its destination together (tests/mp_dest.gd).
+# a sixth starts one from the magazine and arrives at its destination together (tests/mp_dest.gd),
+# and a seventh keeps the Adventure Diary: the host's shared highlights, each machine's own photos (tests/mp_diary.gd).
 set -u
 cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
@@ -60,7 +61,16 @@ DCLIENT=$?
 wait $DHOST
 DHOSTRC=$?
 grep -h "MP dest" /tmp/torque_mp_dest_host.log /tmp/torque_mp_dest_client.log
-if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ] || [ $DHOSTRC -ne 0 ] || [ $DCLIENT -ne 0 ] || [ $PHOSTRC -ne 0 ] || [ $PCLIENT -ne 0 ]; then
+# The Adventure Diary: the same highlights on both from the host, each diary with only its own photos.
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_diary.tscn -- --role=host > /tmp/torque_mp_diary_host.log 2>&1 &
+YHOST=$!
+sleep 4
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_diary.tscn -- --role=client > /tmp/torque_mp_diary_client.log 2>&1
+YCLIENT=$?
+wait $YHOST
+YHOSTRC=$?
+grep -h "MP diary" /tmp/torque_mp_diary_host.log /tmp/torque_mp_diary_client.log
+if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ] || [ $DHOSTRC -ne 0 ] || [ $DCLIENT -ne 0 ] || [ $PHOSTRC -ne 0 ] || [ $PCLIENT -ne 0 ] || [ $YHOSTRC -ne 0 ] || [ $YCLIENT -ne 0 ]; then
 	echo "Multiplayer test failed"
 	exit 1
 fi
