@@ -25,6 +25,10 @@ const SEAT_HEIGHT := 0.45
 const MAX_LAG := 0.28
 ## Slower than this (m/s) on a bike you're stopped, for eating.
 const STOPPED := 1.0
+## A bed's node is at its door (an inn room's, a tent's), facing in: you lie this far in.
+const BED_IN := 1.4
+## How far your eyes close lying in bed (the world dims to a slit while you wait for the night).
+const BED_LIDS := 0.8
 ## Seconds the host's word on a sit or a bed has to arrive before you're stood back up.
 const ANSWER_WAIT := 2.0
 
@@ -69,6 +73,7 @@ var _eat_seen := -1            # your mouthfuls as last seen, for the food in yo
 var _food: Node3D              # what you're eating, in front of your eyes
 var _food_t := 0.0
 var _nights_seen := -1
+var _paid_for := ""            # the bed you've paid for tonight (going back to it is free)
 var _near_timer := 0.0
 var _meter_timer := 0.0
 
@@ -138,6 +143,7 @@ func reset() -> void:
 	_bands.clear()
 	_eat_seen = -1
 	_nights_seen = -1
+	_paid_for = ""
 	if is_instance_valid(_food):
 		_food.queue_free()
 	_food = null
@@ -208,7 +214,7 @@ func _process(delta: float) -> void:
 	var t := tiredness(n)
 	vignette = move_toward(vignette, vignette_of(n), delta * 0.3)
 	if abed():
-		blink = 0.0
+		blink = move_toward(blink, BED_LIDS, delta * 0.8)   # eyes closing, waiting for the night
 		_blink_t = -1.0
 	elif _blink_t >= 0.0:
 		# A slow blink: 0.5 s closing, held a moment (longer the more tired), 0.5 s opening.
@@ -258,6 +264,7 @@ func _physics_process(delta: float) -> void:
 	_update_confirm()
 	var nights := int(Shed.adventure.get("nights", 0))
 	if _nights_seen >= 0 and nights > _nights_seen:
+		_paid_for = ""   # a new day: tonight's bed is paid for afresh
 		_blink_t = -1.0
 		_next_blink = 30.0
 		if Shed.is_authority() and main.get("saver") != null and main.saver.has_method("save_soon"):
@@ -323,7 +330,12 @@ func prompt_text() -> String:
 		"seat":
 			return "{interact}: sit down" + ("   ·   someone's sat there" if str(near.get("key", "")) == "" else "")
 		"bed":
-			return "{interact}: go to bed" if str(near.get("key", "")) != "" else "That bed's taken"
+			if str(near.get("key", "")) == "":
+				return "That bed's taken"
+			var bed: Node = near["node"]
+			var price := ceili(float(bed.get_meta("price", 0.0)))
+			return "{interact}: %s%s" % ["go to bed" if not bed.has_meta("name") else "take " + str(bed.get_meta("name")).to_lower(),
+				"" if price <= 0 or _paid_for == str(near["key"]) else " (%s)" % TvChannels.money_text(price)]
 		"counter":
 			var menu := AdventureNeeds.menu_of(near["node"])
 			if menu.is_empty():
@@ -354,13 +366,15 @@ func abed() -> bool:
 	return str(perch.get("kind", "")) == "bed"
 
 
-## The places on a seat or bed node: their transforms (your feet's, sat or lying there).
+## The places on a seat or bed node: their transforms (your feet's, sat on a seat; lying in a
+## bed, BED_IN through its door). A node's "places" meta has more than one side by side.
 static func places_of(node: Node3D) -> Array:
 	var n := maxi(1, int(node.get_meta("places", 1)))
-	var gap := float(node.get_meta("spacing", 0.6 if node.is_in_group(AdventureNeeds.SEAT_GROUP) else 0.9))
+	var bed := node.is_in_group(AdventureNeeds.BED_GROUP)
+	var gap := float(node.get_meta("spacing", 0.9 if bed else 0.6))
 	var out := []
 	for i in n:
-		out.append(node.global_transform * Transform3D(Basis(), Vector3((i - (n - 1) * 0.5) * gap, 0.0, 0.0)))
+		out.append(node.global_transform * Transform3D(Basis(), Vector3((i - (n - 1) * 0.5) * gap, 0.0, -BED_IN if bed else 0.0)))
 	return out
 
 
@@ -404,7 +418,8 @@ func find_near() -> Dictionary:
 			var free_d := INF
 			var any_d := INF
 			for i in places.size():
-				var p: Vector3 = (places[i] as Transform3D).origin
+				# A bed's used from its door; a seat from beside it.
+				var p: Vector3 = n3.global_position if pair[0] == "bed" else (places[i] as Transform3D).origin
 				var d := Vector2(p.x - at.x, p.z - at.z).length()
 				any_d = minf(any_d, d)
 				if not AdventureNeeds.taken("%s#%d" % [base, i], field, Shed.me()) and d < free_d:
@@ -419,19 +434,28 @@ func find_near() -> Dictionary:
 	return best
 
 
-## Sits you down (or lies you down) on `spot` (as find_near gives it), asking the host.
-func take(spot: Dictionary) -> void:
+## Sits you down (or lies you down) on `spot` (as find_near gives it), asking the host. A bed
+## (its node's "price" meta) is paid for out of your own money, once a night. "" when it's done,
+## else why not.
+func take(spot: Dictionary) -> String:
 	if spot.is_empty() or str(spot.get("key", "")) == "" or spot["kind"] == "counter":
-		return
+		return "There's nowhere free there."
 	var main: Node = trip.main
 	if main.bike != null:
-		return
+		return "Get off the bike first."
 	var kind := str(spot["kind"])
+	if kind == "bed" and _paid_for != str(spot["key"]):
+		var price := ceili(float((spot["node"] as Node).get_meta("price", 0.0)))
+		var what := str((spot["node"] as Node).get_meta("name", "the bed"))
+		if not Progress.spend(price, "Bed: %s" % what.left(30)):
+			return "You haven't got %s for %s." % [TvChannels.money_text(price), what.to_lower()]
+		_paid_for = str(spot["key"])
 	perch = {"kind": kind, "node": spot["node"], "place": int(spot["place"]), "key": str(spot["key"]), "s": float(spot.get("s", 0.0))}
 	_perch_since = Time.get_ticks_msec()
 	Shed.request({"a": "needs_sit" if kind == "seat" else "needs_bed", "key": perch["key"], "s": perch["s"], "on": true})
 	_keep_perch()
 	Sfx.play_at("pickup", main.walker.global_position, -14.0)
+	return ""
 
 
 ## Up off the seat or out of bed.
@@ -456,6 +480,8 @@ func _leave_perch(place_walker: bool) -> void:
 	if place_walker and xf != null:
 		var at: Transform3D = xf
 		var out := at.origin - at.basis.z * 0.7 - Vector3.UP * h
+		if is_instance_valid(node) and (node as Node).is_in_group(AdventureNeeds.BED_GROUP):
+			out = (node as Node3D).global_position   # back out of the door
 		walker.unperch(Transform3D(at.basis, out))
 	else:
 		walker.perch = null
@@ -565,7 +591,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			if why != "":
 				main.hud.flash(why, 2.5, true)
 		elif str(near.get("key", "")) != "":
-			take(near)
+			var why := take(near)
+			if why != "":
+				main.hud.flash(why, 2.5, true)
 		else:
 			main.hud.flash("Every place there is taken.", 2.0, true)
 	elif event.is_action_pressed("alt_act") and near["kind"] == "counter":

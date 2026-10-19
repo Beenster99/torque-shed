@@ -16,10 +16,14 @@ const TRACK := Color(0.55, 0.45, 0.32)
 const ROUTE := Color(0.25, 0.75, 1.0)
 const FUEL := Color(0.25, 0.9, 0.4)
 const DEST := Color(1.0, 0.45, 0.35)
+## The stops ahead (see Satnav.satnav_stops): each kind's colour and the letter on its marker.
+const STOP_COLORS := {"food": Color(1.0, 0.7, 0.2), "rest": Color(0.4, 0.65, 1.0), "sleep": Color(0.8, 0.5, 1.0), "fuel": FUEL}
+const STOP_MARKS := {"food": "E", "rest": "P", "sleep": "Z", "fuel": "F"}
 
 ## {pos: Vector2 (x, z), fwd: Vector2 (unit heading, x z), speed (m/s), roads: Array of
 ## {pts: PackedVector2Array, kind, hw}, route: PackedVector2Array, road: name of the road it's
-## on, points: Array of {kind, name, distance (m), at: Vector2 or null}} or {} for no fix yet.
+## on, points: Array of {kind, name, distance (m), at: Vector2 or null}, stops: the next places
+## to stop, Array of {kind, name, label, distance, at}} or {} for no fix yet.
 var view := {}
 ## What the unit can show (BikeBuild.satnav_features): "map", "route", "fuel".
 var features: Array = ["map", "route", "fuel"]
@@ -96,6 +100,15 @@ func _draw() -> void:
 			var c := FUEL if str(p["kind"]) == "fuel" else DEST
 			draw_circle(at, maxf(size.x / 40.0, 4.0), c)
 			draw_string(font, at + Vector2(-20, -8), "F" if str(p["kind"]) == "fuel" else "X", HORIZONTAL_ALIGNMENT_CENTER, 40, fs, Color.WHITE)
+	# The stops ahead: their markers on the map and a list of the next few (a unit that knows the route).
+	var stops: Array = view.get("stops", []) if features.has("route") else []
+	for p in stops:
+		if str(p.get("kind", "")) == "fuel" or not (p.get("at") is Vector2):
+			continue
+		var at := to_screen(p["at"])
+		if r.grow(-4.0).has_point(at):
+			draw_circle(at, maxf(size.x / 46.0, 3.5), STOP_COLORS.get(str(p["kind"]), Color.WHITE))
+			draw_string(font, at + Vector2(-20, -7), str(STOP_MARKS.get(str(p["kind"]), "?")), HORIZONTAL_ALIGNMENT_CENTER, 40, fs - 2, Color.WHITE)
 	# The bike's arrow.
 	var b := _bike_at()
 	var a := maxf(size.x / 28.0, 6.0)
@@ -114,6 +127,17 @@ func _draw() -> void:
 		for i in mini(top.size(), 2):
 			draw_string(font, Vector2(x, fs + 2.0), top[i], HORIZONTAL_ALIGNMENT_LEFT, size.x * 0.5 - 8.0, fs, cols[i])
 			x += size.x * 0.5
+	if not stops.is_empty():
+		var lfs := maxi(8, fs - 2)
+		var line_h := lfs + 4.0
+		var box := Rect2(4.0, bar_h + 4.0, size.x * 0.62, line_h * stops.size() + 4.0)
+		draw_rect(box, Color(0, 0, 0, 0.55))
+		for i in stops.size():
+			var p: Dictionary = stops[i]
+			var txt := "%s %s  %.1f %s" % [str(STOP_MARKS.get(str(p["kind"]), "?")), str(p.get("label", p.get("name", ""))),
+				Units.distance_value(float(p["distance"]) / 1000.0), Units.distance_unit()]
+			draw_string(font, Vector2(box.position.x + 4.0, box.position.y + line_h * (i + 1) - 2.0), txt, HORIZONTAL_ALIGNMENT_LEFT,
+				box.size.x - 8.0, lfs, STOP_COLORS.get(str(p["kind"]), Color.WHITE))
 	# Along the bottom: the road it's on, and north.
 	draw_rect(Rect2(0, size.y - bar_h, size.x, bar_h), Color(0, 0, 0, 0.6))
 	var road_name := str(view.get("road", ""))

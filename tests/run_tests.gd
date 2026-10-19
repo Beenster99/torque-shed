@@ -443,6 +443,12 @@ func _run_all() -> void:
 	await _test_adv_needs_sit()
 	await _test_adv_needs_sleep()
 	await _test_adv_needs_resume()
+	await _test_adv_needs_real_stop()
+	_test_adv_stops_spacing()
+	await _test_adv_stops_groups()
+	await _test_adv_stops_satnav()
+	await _test_adv_stops_freed()
+	await _test_adv_stops_frame_cost()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21530,3 +21536,32 @@ func _test_adv_needs_sleep() -> void:
 
 func _test_adv_needs_resume() -> void:
 	await _needs().test_resume()
+
+
+func _test_adv_needs_real_stop() -> void:
+	await _needs().test_real_stop()
+
+# ---------------------------------------------------------------------------- adventure stops (tests/adventure_stops_tests.gd)
+
+func _adv_stops() -> RefCounted:
+	return load("res://tests/adventure_stops_tests.gd").new(self)
+
+
+func _test_adv_stops_spacing() -> void:
+	_adv_stops().test_spacing()
+
+
+func _test_adv_stops_groups() -> void:
+	await _adv_stops().test_groups()
+
+
+func _test_adv_stops_satnav() -> void:
+	await _adv_stops().test_satnav()
+
+
+func _test_adv_stops_freed() -> void:
+	await _adv_stops().test_freed()
+
+
+func _test_adv_stops_frame_cost() -> void:
+	await _adv_stops().test_frame_cost()

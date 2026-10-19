@@ -128,7 +128,7 @@ func _stubs(w: AdventureWorld) -> Dictionary:
 	return {
 		"bench": stub.stub(w, AdventureNeeds.SEAT_GROUP, w.transform_at(SITE_S, lat).translated_local(Vector3(0.0, 0.45, 0.0)), 2, {"key": "bench"}),
 		"counter": stub.stub(w, AdventureNeeds.COUNTER_GROUP, w.transform_at(SITE_S + 6.0, lat), 1, {"key": "counter"}),
-		"bed": stub.stub(w, AdventureNeeds.BED_GROUP, w.transform_at(SITE_S + 12.0, lat).translated_local(Vector3(0.0, 0.5, 0.0)), 2, {"key": "inn"}),
+		"bed": stub.stub(w, AdventureNeeds.BED_GROUP, w.transform_at(SITE_S + 12.0, lat), 2, {"key": "inn"}),
 	}
 
 

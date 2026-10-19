@@ -92,6 +92,7 @@ func setup(seed: int, km: float, theme := "varied") -> void:
 		"start": func(_site, xf, info): return AdventureProps.banner("START", xf, float(info["width"]), Color(0.1, 0.35, 0.7)),
 		"finish": func(_site, xf, info): return AdventureProps.banner("DESTINATION", xf, float(info["width"]), Color(0.75, 0.2, 0.1)),
 	}
+	AdventureStops.register(self)
 	_make_horizon()
 
 
@@ -159,6 +160,9 @@ func surface_local(p: Vector3) -> String:
 	for st in route.sites_of("fuel"):
 		if absf(float(st["s"]) - s) < 22.0 and signf(float(hit["lat"])) == float(st["side"]) and absf(float(hit["lat"])) < route.width_at_s(s) * 0.5 + 24.0:
 			return "tarmac"
+	var pad := AdventureStops.pad_surface(route, s, float(hit["lat"]))
+	if pad != "":
+		return pad
 	return str(AdventureSurface.LAND.get(surf, "grass"))
 
 

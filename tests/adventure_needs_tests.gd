@@ -64,8 +64,9 @@ static func stub(world: Node3D, group: String, xf: Transform3D, places := 1, met
 			back.position = Vector3(0.0, 0.25, 0.27)
 			n.add_child(back)
 		AdventureNeeds.BED_GROUP:
-			box.size = Vector3(w, 0.4, 2.0)
-			mesh.position = Vector3(0.0, -0.2, 0.0)
+			# A sleeping mat in through the door (the node), as in a tent.
+			box.size = Vector3(w, 0.1, 2.0)
+			mesh.position = Vector3(0.0, 0.05, -AdventureNeedsView.BED_IN)
 			mat.albedo_color = Color(0.85, 0.85, 0.9)
 		_:
 			box.size = Vector3(w, 1.0, 0.6)
@@ -399,7 +400,7 @@ func test_sleep() -> void:
 	var w: AdventureWorld = main.trip.world
 	var s := 90.0
 	var lat := -w.route.width_at_s(s) * 0.5 + 1.0
-	stub(w, AdventureNeeds.BED_GROUP, w.transform_at(s, lat).translated_local(Vector3(0.0, 0.5, 0.0)), 2)
+	stub(w, AdventureNeeds.BED_GROUP, w.transform_at(s, lat), 2)
 	await _walk_to(main, w.transform_at(s - 1.4, lat))
 	Shed.request({"a": "needs_debug", "food": 0.6, "drink": 0.6, "rest": 0.1})
 	view.near = view.find_near()
@@ -440,7 +441,7 @@ func test_resume() -> void:
 	await _ticks(10)
 	var s := w.distance_of(main.bike.global_position, "own")
 	var lat := -w.route.width_at_s(s) * 0.5 + 1.0
-	stub(w, AdventureNeeds.BED_GROUP, w.transform_at(s, lat).translated_local(Vector3(0.0, 0.5, 0.0)), 1, {"key": "inn"})
+	stub(w, AdventureNeeds.BED_GROUP, w.transform_at(s, lat), 1, {"key": "inn"})
 	await _walk_to(main, w.transform_at(s - 1.4, lat))
 	view.take(view.find_near())
 	Shed._apply(MATE, {"a": "needs_bed", "key": "bed:tent#0", "s": s + 30.0, "on": true})
@@ -476,4 +477,67 @@ func test_resume() -> void:
 	check(absf(AdventureNeeds.resume_s("Mate") - (s + 30.0)) < 0.5 and absf(Daylight.time_of_day() - AdventureNeeds.MORNING) < 0.1,
 		"your mate carries on from their tent, in the morning")
 	Shed.crew.erase(MATE)
+	await _end(main)
+
+
+## On a real stop (an inn, as AdventureStops builds it): sit on one of its seats, buy from its
+## counter's menu, and take one of its rooms, paying for the night out of your own pocket.
+func test_real_stop() -> void:
+	var found: Array = load("res://tests/adventure_stops_tests.gd")._find("inn")
+	check(not found.is_empty(), "an inn turns up on some seed")
+	if found.is_empty():
+		return
+	var main := await _start(int(found[0]), 150.0, false)
+	await _go(main, int(found[0]), 150.0)
+	var view: AdventureNeedsView = main.trip.needs
+	var w: AdventureWorld = main.trip.world
+	var s := float(found[1]["s"])
+	main.trip.jump(s - 40.0 - w.distance_of(main.bike.global_position, "own"))
+	w.preload_range(s - 200.0, s + 200.0)
+	await _ticks(4)
+	var near_s := func(group: String) -> Array:
+		return t.get_tree().get_nodes_in_group(group).filter(func(n): return absf(float(n.get_meta("s", -1.0)) - s) < 1.0)
+	var seats: Array = near_s.call(AdventureNeeds.SEAT_GROUP)
+	var counters: Array = near_s.call(AdventureNeeds.COUNTER_GROUP)
+	var beds: Array = near_s.call(AdventureNeeds.BED_GROUP)
+	check(not seats.is_empty() and not counters.is_empty() and not beds.is_empty(), "the inn %.1f km along has %d seats, %d counters, %d beds" % [s / 1000.0, seats.size(), counters.size(), beds.size()])
+	if seats.is_empty() or counters.is_empty() or beds.is_empty():
+		await _end(main)
+		return
+	var me := Shed.me()
+	var seat: Node3D = seats[0]
+	var h := float(seat.get_meta("height", 0.45))
+	await _walk_to(main, Transform3D(seat.global_basis, seat.global_position - seat.global_basis.z * 0.6 - Vector3.UP * h))
+	view.near = view.find_near()
+	check(str(view.near.get("kind", "")) == "seat" and view.take(view.near) == "", "you sit on its %s" % str(seat.get_meta("seat", "seat")))
+	await _ticks(3)
+	check(AdventureNeeds.sat(me) and main.walker.global_position.distance_to(seat.global_position) < 0.7, "held on the seat, facing out")
+	view.stand_up()
+	await _ticks(3)
+	var counter: Node3D = counters[0]
+	main.walker.place(counter.global_transform)
+	await _ticks(2)
+	view.near = view.find_near()
+	var menu := AdventureNeeds.menu_of(counter)
+	Progress.set_money(200)
+	Shed.request({"a": "needs_debug", "food": 0.1, "drink": 0.1})
+	var price := int(menu[0]["price"])
+	check(str(view.near.get("kind", "")) == "counter" and view.buy(counter, 0) == "" and Progress.money() == 200 - price
+		and AdventureNeeds.level(me, "food") + AdventureNeeds.level(me, "drink") > 0.2 + 0.01,
+		"%s at %s: %s for %s" % [str(menu[0]["name"]), str(counter.get_meta("shop", "")), Controls.hint(view.prompt_text()), TvChannels.money_text(price)])
+	var bed: Node3D = beds[0]
+	main.walker.place(bed.global_transform)
+	await _ticks(2)
+	view.near = view.find_near()
+	var night := ceili(float(bed.get_meta("price", 0.0)))
+	var before := Progress.money()
+	check(str(view.near.get("kind", "")) == "bed" and view.take(view.near) == "" and Progress.money() == before - night,
+		"%s: paid %s for the night" % [str(bed.get_meta("name", "")), TvChannels.money_text(night)])
+	await _ticks(3)
+	check(AdventureNeeds.abed(me) and Shed.check(me, {"a": "needs_sleep"}) == "", "in bed, alone on the ride: the night can pass")
+	view.stand_up()
+	await _ticks(3)
+	Progress.set_money(0)
+	view.near = view.find_near()
+	check(view.take(view.near) == "", "going back to the same bed the same night costs nothing more")
 	await _end(main)
