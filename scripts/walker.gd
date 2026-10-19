@@ -884,7 +884,7 @@ func _update_target() -> void:
 		info += "\nHold %s: scrap the %s for good" % [_keys("scrap"), Shed.item_title(held_now).to_lower()]
 	var geo_key := Settings.binding_text("geometry_mode", false)
 	if str(target.get("kind", "")) == "part" and int(target.get("bike", 0)) != 0 and geo_key != "" \
-			and not target.get("road", false):
+			and not target.get("road", false) and not target.get("roadside", false):
 		info += "\n%s: geometry mode (move, turn and size this bike's parts)" % _keys("geometry_mode")
 	if str(target.get("kind", "")) == "spot" and Shed.spot_role(str(target["spot"])) == "blaster" \
 			and Shed.item_at_spot(str(target["spot"])) != 0 and Shed.held_by(Shed.me()) == 0:
