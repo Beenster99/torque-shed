@@ -99,6 +99,9 @@ func _ready() -> void:
 		riders.append({})
 		_views.append({})
 	Net.traffic_received.connect(unpack)
+	var sounds := TrafficSounds.new()   # the cars', vans', lorries' and coaches' engines (the bikers have their own)
+	sounds.name = "VehicleSounds"
+	add_child(sounds)
 
 
 ## Works out the bends, the out-of-bounds stretches and the junctions of every tarmac road.
