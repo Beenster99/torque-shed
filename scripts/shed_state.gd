@@ -61,7 +61,8 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
 	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6,
 	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2, "front_mudguard": 1.0, "indicators": 0.4, "side_panels": 0.4,
-	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8, "steering_damper": 0.2}
+	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8, "steering_damper": 0.2,
+	"tank_bag": 0.3, "aux_tank": 0.6, "toolbox": 0.7, "satnav": 0.15}
 ## Parts in the front wheel's spray. With no front mudguard they get this much more road dirt;
 ## a guard takes it back down by how much spray it stops (its "cover").
 const FRONT_SPRAY: Array[String] = ["fork", "engine", "cooling", "exhaust", "headlight", "horn", "fog_lights",
@@ -81,7 +82,7 @@ const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "l
 	"r_preload": ["shock", "preload"], "r_bump": ["shock", "bump"], "r_rebound": ["shock", "rebound"],
 	"psi_f": ["front_tyre", "pressure"], "psi_r": ["rear_tyre", "pressure"],
 	"sprocket_f": ["final_drive", "front"], "sprocket_r": ["final_drive", "rear"], "spread": ["gearbox", "spread"],
-	"chain": ["chain", "slack"], "damper": ["steering_damper", "clicks"]}
+	"chain": ["chain", "slack"], "damper": ["steering_damper", "clicks"], "screen": ["fairing", "screen"]}
 const LIGHTEN_WEAR := 0.08     # condition a part gives up to being drilled and trimmed
 const TYRE_WEAR := 0.0002      # tyre wear per km at the right pressure
 const BURNOUT_WEAR := 0.004    # back tyre wear per second of full burnout
@@ -381,9 +382,26 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	_next_id = maxi(_next_id, top + 1)
 	_rng.seed = int(Time.get_unix_time_from_system())
 	_add_new_slots()
+	if int(state.get("kit_v", 0)) < KIT_SAVE:
+		_brim_old_tanks()
 	ensure_fixtures()
 	_mark_dirty()
 	changed.emit()
+
+
+## Saves from before the pumps (and the adventure kit) come back with every bike's tanks full,
+## so nobody loads in stranded: what was in there stays (and as old as it was), topped up.
+func _brim_old_tanks() -> void:
+	for id in bikes:
+		for slot in ["tank", "aux_tank"]:
+			var tank := item_on(id, slot)
+			if tank == 0:
+				continue
+			var f: Dictionary = items[tank].get("fluid", {"type": "", "litres": 0.0, "age": 0.0})
+			if str(f.get("type", "")) == "":
+				f["type"] = "unleaded_95"
+			f["litres"] = PartsDB.fluid_capacity(str(items[tank]["part"]))
+			items[tank]["fluid"] = f
 
 
 ## Sheds saved before tail units, fairings and mirrors: every bike gets the tail unit that suits
@@ -395,7 +413,7 @@ func _add_new_slots() -> void:
 		var original: Dictionary = bike.get("original", {})
 		if not original.has("tail"):
 			original["tail"] = PartsDB.fitting_tail(PartsDB.sanitize_build(original.duplicate()))
-		for slot in ["fairing", "mirrors"] + Array(PartsDB.FILLER_SLOTS):
+		for slot in ["fairing", "mirrors"] + Array(PartsDB.FILLER_SLOTS) + Array(PartsDB.KIT_SLOTS):
 			if not original.has(slot):
 				original[slot] = "none"
 			if not bike["slots"].has(slot):
@@ -678,6 +696,9 @@ func condition_of(item: Dictionary) -> Dictionary:
 		cond["flat"] = float(item["flat"])
 	if item.get("mix") is Dictionary:
 		cond["paint_q"] = float(item.get("paint_quality", 1.0))
+	# What's packed in a toolbox (see PartsDB.TOOLBOX_CONTENTS).
+	if item.get("contents") is Array:
+		cond["contents"] = item["contents"]
 	return cond
 
 
@@ -1395,6 +1416,8 @@ func condition_text(item: Dictionary) -> String:
 		text += "\n" + coat_text(item)
 	if item.has("bead"):
 		text += "\n" + bead_text(item)
+	if str(item.get("kind", "")) == "toolbox":
+		text += "\n" + toolbox_text(item)
 	var holed := Puncture.text(item)
 	if holed != "":
 		text += "\n" + holed
@@ -2724,6 +2747,47 @@ func check(peer: int, action: Dictionary) -> String:
 			var holed := int(action.get("bike", 0)) if action.get("debug", false) else riding(peer)
 			if not bikes.has(holed) or item_on(holed, str(action["side"]) + "_tyre") == 0:
 				return "There's no tyre there to puncture."
+		"toolbox_pack":
+			var box := int(action.get("item", 0))
+			if not items.has(box) or items[box]["kind"] != "toolbox":
+				return "Aim at a toolbox."
+			if items[box].get("boxed", false):
+				return "Unpack it first."
+			if _bike_of(box) != 0 and int(bikes[_bike_of(box)].get("rider", 0)) != 0:
+				return "Someone is riding that bike."
+			if action.get("empty", false):
+				if toolbox_contents(box).is_empty():
+					return "There's nothing in it."
+			else:
+				var what := str(action.get("what", next_kit(box)))
+				if not PartsDB.TOOLBOX_CONTENTS.has(what):
+					return "It's packed full." if next_kit(box) == "" else "There's nothing like that to pack."
+				if toolbox_contents(box).has(what):
+					return "That's packed already."
+				if toolbox_contents(box).size() >= toolbox_slots(box):
+					return "It's packed full."
+				var cost := int(PartsDB.TOOLBOX_CONTENTS[what]["price"])
+				if cost > garage_money:
+					return "The business can't afford it: %s, and it has %s." % [TvChannels.money_text(cost), TvChannels.money_text(garage_money)]
+		"refuel":
+			# Filling up at a pump while riding: the rider paid for it out of their own money.
+			var ridden := riding(peer)
+			if not bikes.has(ridden):
+				return "Ride up to the pump to fill up."
+			if not (action.get("litres") is float or action.get("litres") is int) or float(action["litres"]) <= 0.0:
+				return "How much?"
+			if fuel_space(ridden) < 0.05:
+				return "The tank's full."
+		"screen":
+			var ridden := riding(peer) if bike_id == 0 else bike_id
+			if not bikes.has(ridden):
+				return "That bike has gone."
+			if item_on(ridden, "fairing") == 0:
+				return "There's no fairing fitted."
+			if float(PartsDB.get_part(str(items[item_on(ridden, "fairing")]["part"])).get("screen_adjust", 0.0)) <= 0.0:
+				return "This screen doesn't adjust."
+			if not (action.get("value") is float or action.get("value") is int):
+				return "How high?"
 		"plug_tyre", "inflate":
 			var tyre := int(action.get("item", 0))
 			if not items.has(tyre) or items[tyre]["kind"] != "tyre":
@@ -3619,6 +3683,33 @@ func _apply(peer: int, action: Dictionary) -> void:
 					items[tyre]["puncture"] = Puncture.SLOW * Puncture.PLUG_WEEP
 					text = "The plug's in crooked (%d%%): it still weeps air. Try another, or change the tyre." % roundi(q * 100.0)
 				_xp(peer, "tyre_plug", q, "item:%d" % tyre)
+		"toolbox_pack":
+			var box := int(action["item"])
+			var packed: Array = toolbox_contents(box).duplicate()
+			if action.get("empty", false):
+				items[box]["contents"] = []
+				text = "Emptied the %s: %s back on the shelf" % [item_title(box), kit_list(packed)]
+			else:
+				var what := str(action.get("what", next_kit(box)))
+				var info: Dictionary = PartsDB.TOOLBOX_CONTENTS[what]
+				charge_garage(int(info["price"]), "Toolbox kit: %s" % str(info["short"]))
+				packed.append(what)
+				items[box]["contents"] = packed
+				text = "Packed the %s in the %s (%d of %d)" % [str(info["name"]).to_lower(), item_title(box), packed.size(), toolbox_slots(box)]
+		"refuel":
+			var ridden := riding(peer)
+			var put := _fill_tanks(ridden, float(action["litres"]))
+			var paid := maxi(0, int(action.get("paid", 0)))
+			if put < float(action["litres"]) - 0.05 and paid > 0:
+				# What didn't fit goes back in the rider's pocket.
+				give_cash(peer, mini(paid, ceili((float(action["litres"]) - put) * PUMP_PRICE)), "Fuel refund")
+			text = "Filled up with %.1f L of unleaded" % put
+		"screen":
+			var ridden := riding(peer) if bike_id == 0 else bike_id
+			var fairing := item_on(ridden, "fairing")
+			if not items[fairing].has("tune"):
+				items[fairing]["tune"] = {}
+			items[fairing]["tune"]["screen"] = clampf(float(action["value"]), 0.0, 1.0)
 		"inflate":
 			var tyre := int(action["item"])
 			items[tyre].erase("deflate")
@@ -4025,10 +4116,15 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 	var rear_tyre := item_on(bike_id, "rear_tyre")
 	if rear_tyre != 0 and spin > 0.0:
 		items[rear_tyre]["wear"] = minf(1.0, float(items[rear_tyre]["wear"]) + spin * BURNOUT_WEAR)
-	var tank := item_on(bike_id, "tank")
-	if tank != 0 and items[tank].has("fluid"):
-		var f: Dictionary = items[tank]["fluid"]
-		f["litres"] = maxf(0.0, float(f["litres"]) - clampf(float(action.get("fuel", 0.0)), 0.0, 2.0))
+	# Petrol burnt: an auxiliary tank feeds the main one, so it empties first.
+	var burnt := clampf(float(action.get("fuel", 0.0)), 0.0, 2.0)
+	for slot in ["aux_tank", "tank"]:
+		var tank := item_on(bike_id, slot)
+		if tank != 0 and items[tank].has("fluid") and burnt > 0.0:
+			var f: Dictionary = items[tank]["fluid"]
+			var take := minf(burnt, float(f["litres"]))
+			f["litres"] = float(f["litres"]) - take
+			burnt -= take
 	var block := item_on(bike_id, "engine")
 	if block != 0 and items[block].has("fluid"):
 		var oil: Dictionary = items[block]["fluid"]
@@ -5232,7 +5328,7 @@ func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
 		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
-		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure}
+		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "kit_v": KIT_SAVE}
 	if with_board:
 		state["board"] = board
 	return state
@@ -5650,7 +5746,7 @@ const WORK_AREA := Rect2(-22.0, 42.0, 60.0, 44.0)
 ## Work that needs the bike at the shed: tools, fitting and taking off parts, fluids (apart from
 ## a can of petrol in the tank), chain lube and adjusting, tuning and geometry mode.
 const WORKSHOP_ONLY := ["unbolt", "bolt", "remove", "install", "adjust_chain", "tune", "geo_save", "geo_blueprint",
-	"clean", "clean_many", "repair", "repair_many", "paint", "prime", "coat", "lube", "drain", "wash"]
+	"clean", "clean_many", "repair", "repair_many", "paint", "prime", "coat", "lube", "drain", "wash", "toolbox_pack"]
 ## What the garage pays to have a bike left out on the road brought back to the yard.
 const RETRIEVE_FEE := 40
 ## Where retrieved bikes are dropped off: a row in the yard to the west of the roller door.
@@ -5670,6 +5766,88 @@ func bike_at_work(bike_id: int) -> bool:
 		return true
 	var xf = bikes[bike_id].get("xf", null)
 	return not (xf is Transform3D) or in_work_area((xf as Transform3D).origin)
+
+
+## What's packed in a toolbox item (PartsDB.TOOLBOX_CONTENTS ids, in the order they went in).
+func toolbox_contents(item_id: int) -> Array:
+	var c = items.get(item_id, {}).get("contents", [])
+	return c if c is Array else []
+
+
+## How many things a toolbox item has room for.
+func toolbox_slots(item_id: int) -> int:
+	return int(PartsDB.get_part(str(items.get(item_id, {}).get("part", ""))).get("slots", 0))
+
+
+## The next thing that would go in a toolbox (in PartsDB.TOOLBOX_CONTENTS order), or "" when it's
+## full or has the lot.
+func next_kit(item_id: int) -> String:
+	var packed := toolbox_contents(item_id)
+	if packed.size() >= toolbox_slots(item_id):
+		return ""
+	for what in PartsDB.TOOLBOX_CONTENTS:
+		if not packed.has(what):
+			return str(what)
+	return ""
+
+
+## "tools, plug kit and pump" for what's packed.
+static func kit_list(packed: Array) -> String:
+	var names := packed.map(func(w): return str(PartsDB.TOOLBOX_CONTENTS.get(str(w), {}).get("short", w)))
+	if names.is_empty():
+		return "nothing"
+	if names.size() == 1:
+		return str(names[0])
+	return ", ".join(names.slice(0, names.size() - 1)) + " and " + str(names[-1])
+
+
+## A toolbox's contents for the info panel: "Packed (3 of 6): tools, plug kit and pump".
+func toolbox_text(item: Dictionary) -> String:
+	var packed: Array = item.get("contents", []) if item.get("contents") is Array else []
+	var slots := int(PartsDB.get_part(str(item["part"])).get("slots", 0))
+	if packed.is_empty():
+		return "Empty: room for %d things" % slots
+	return "Packed (%d of %d): %s" % [packed.size(), slots, kit_list(packed)]
+
+
+## The pump's price for a litre of unleaded, in pounds (the rider pays out of their own money).
+const PUMP_PRICE := 1.6
+## The save's kit version: saves without it are from before the pumps (see _brim_old_tanks).
+const KIT_SAVE := 1
+
+
+## Litres of petrol a bike's tanks have room for (the main tank and any auxiliary one).
+func fuel_space(bike_id: int) -> float:
+	var space := 0.0
+	for slot in ["tank", "aux_tank"]:
+		var id := item_on(bike_id, slot)
+		if id != 0:
+			space += PartsDB.fluid_capacity(str(items[id]["part"])) - float(items[id].get("fluid", {}).get("litres", 0.0))
+	return maxf(space, 0.0)
+
+
+## Puts `litres` of fresh unleaded in a bike's tanks, the main one first, then any auxiliary
+## one. Returns how much went in.
+func _fill_tanks(bike_id: int, litres: float) -> float:
+	var put := 0.0
+	for slot in ["tank", "aux_tank"]:
+		var id := item_on(bike_id, slot)
+		if id == 0 or litres - put <= 0.0:
+			continue
+		var cap := PartsDB.fluid_capacity(str(items[id]["part"]))
+		var f: Dictionary = items[id].get("fluid", {"type": "", "litres": 0.0, "age": 0.0})
+		var have := float(f.get("litres", 0.0))
+		var add := clampf(litres - put, 0.0, maxf(cap - have, 0.0))
+		if add <= 0.0:
+			continue
+		# Fresh pump fuel freshens what was there; mostly pump fuel, it's pump fuel.
+		f["age"] = float(f.get("age", 0.0)) * have / (have + add)
+		if str(f.get("type", "")) == "" or add > have:
+			f["type"] = "unleaded_95"
+		f["litres"] = have + add
+		items[id]["fluid"] = f
+		put += add
+	return put
 
 
 ## Why `action` can't be done because the bike it's on is out on the road, or "".

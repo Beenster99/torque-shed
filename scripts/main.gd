@@ -50,6 +50,9 @@ var _was_bottomed := [false, false]   # each wheel's suspension bottomed last fr
 var _flat_told := [false, false]      # told the rider this tyre has gone flat, this ride
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
+var fuel_stop: FuelStop    # filling up at a pump, and the low fuel warning, while riding
+var satnav: Satnav         # the sat nav's live map while riding a bike with one
+var hud_satnav: SatnavScreen   # the sat nav's map on the HUD (Settings.satnav_hud)
 var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at the side while riding (F3)
 var _kb_bars := 0.0        # the keyboard's steer in Direct bars mode, ramped like a hand pushing harder
 var _kb_lean := 0.0        # the keyboard's lean asked for, ramped (see ramp_lean)
@@ -94,6 +97,16 @@ func _ready() -> void:
 	telemetry_overlay = TelemetryOverlay.new()
 	telemetry_overlay.visible = false
 	ui.add_child(telemetry_overlay)
+	hud_satnav = SatnavScreen.new()
+	hud_satnav.framed = true
+	hud_satnav.visible = false
+	hud_satnav.anchor_top = 1.0
+	hud_satnav.anchor_bottom = 1.0
+	hud_satnav.offset_left = 24.0
+	hud_satnav.offset_right = 24.0 + 300.0
+	hud_satnav.offset_top = -24.0 - 200.0
+	hud_satnav.offset_bottom = -24.0
+	ui.add_child(hud_satnav)
 	emote_bar = EmoteBar.new()
 	ui.add_child(emote_bar)
 	computer = PartsComputer.new()
@@ -651,6 +664,11 @@ func _start_riding(bike_id: int) -> void:
 	hud.trip_km = 0.0
 	hud.trip_fuel = 0.0
 	_dash = bike.model.dash_readout()
+	fuel_stop = FuelStop.new(bike)
+	hud.fuel_stop = fuel_stop
+	satnav = Satnav.new(bike, world)
+	satnav.hud_screen = hud_satnav
+	add_child(satnav)
 	_mounted_at = Time.get_ticks_msec()
 	var build := bike.build
 	if build.fuel_litres <= 0.0:
@@ -697,7 +715,30 @@ func _ignition() -> void:
 	Sfx.play_at("switch", bike.global_position, -10.0)   # the starter itself is the engine sound's
 
 
+## Moves an adjustable screen `by` (a share of its travel) up or down its rails while riding:
+## at once on this bike, and the shed is told so it stays where it's set (Shed "screen").
+func _move_screen(by: float) -> void:
+	var build := bike.build
+	if build.screen_adjust <= 0.0:
+		hud.flash("This screen doesn't adjust" if build.has_part("fairing") else "No screen to adjust", 1.5)
+		return
+	var v := clampf(build.tune_value("screen") + by, 0.0, 1.0)
+	build.set_screen(v)
+	bike.model.set_screen_raise(build.screen_raise)
+	Shed.request({"a": "screen", "value": v, "bike": riding_id})
+	hud.flash("Screen %s" % ("right up" if v >= 0.99 else "right down" if v <= 0.01 else "%d%% up" % roundi(v * 100.0)), 1.0)
+
+
 func _stop_riding() -> void:
+	if fuel_stop:
+		var paid := fuel_stop.finish()
+		if paid != "":
+			hud.flash(paid, 2.5)
+	fuel_stop = null
+	hud.fuel_stop = null
+	if satnav:
+		satnav.queue_free()
+		satnav = null
 	if bike:
 		BikeHeat.park(riding_id, bike.heat)
 	if riding_id != 0:
@@ -777,7 +818,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		camera.add_orbit(-rel.x * ChaseCamera.MOUSE_ORBIT, rel.y * ChaseCamera.MOUSE_ORBIT)
 		return
 	if event.is_action_pressed("interact"):
-		if Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
+		# Stopped at a pump with room in the tank, holding it fills up (see FuelStop); else off you get.
+		var fuelled := false
+		if fuel_stop and fuel_stop.pump_here() != null and fuel_stop.space() >= 0.05:
+			var why := fuel_stop.start()
+			fuelled = why == ""
+			if not fuelled:
+				hud.flash(why, 2.0, true)
+		if not fuelled and Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
 			_get_off()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("respawn"):
@@ -800,6 +848,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("stopwatch") and walker:
 		walker.stopwatch.start_stop()
 		Sfx.play_at("beep", camera.global_position, -6.0)
+	elif event.is_action_pressed("satnav_hud"):
+		Settings.satnav_hud = not Settings.satnav_hud
+		if bike.build.has_part("satnav"):
+			hud.flash("Sat nav on the HUD %s" % ("on" if Settings.satnav_hud else "off"), 1.2)
+		else:
+			hud.flash("No sat nav on this bike", 1.5)
+	elif event.is_action_pressed("screen_up") or event.is_action_pressed("screen_down"):
+		_move_screen(0.2 if event.is_action_pressed("screen_up") else -0.2)
 	elif event.is_action_pressed("telemetry"):
 		Settings.telemetry_overlay = not Settings.telemetry_overlay
 		hud.flash("Telemetry %s" % ("on" if Settings.telemetry_overlay else "off"), 1.2)
@@ -871,6 +927,13 @@ func _physics_process_body(delta: float) -> void:
 			_dirt_km += muck
 			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
 		_puncture_rolls(km)
+		if fuel_stop:
+			var filled := fuel_stop.update(delta, active and Input.is_action_pressed("interact"))
+			if filled != "":
+				hud.flash(filled, 3.0)
+			var low := fuel_stop.warning()
+			if low != "":
+				hud.flash(low, 4.0, true)
 		# Dead flies on the front at speed (fewer in the rain).
 		_fly_km += km * clampf((absf(bike.speed) * 3.6 - 30.0) / 70.0, 0.0, 1.5) * (1.0 - 0.6 * Weather.rain_level())
 		_update_dash()
@@ -887,6 +950,7 @@ func _physics_process_body(delta: float) -> void:
 	recovery.drive_physics(delta, active)
 	telemetry_overlay.bike = bike
 	telemetry_overlay.visible = bike != null and Settings.telemetry_overlay and not menu.visible
+	hud_satnav.visible = bike != null and satnav != null and satnav.fitted() and bike.engine_on and Settings.satnav_hud and not menu.visible
 	_send_timer += delta
 	if _send_timer >= 1.0 / 30.0:
 		_send_timer = 0.0

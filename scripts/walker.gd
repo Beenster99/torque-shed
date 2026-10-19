@@ -1627,6 +1627,17 @@ func _make_plan() -> Dictionary:
 			alt_plan = {"action": {"a": "inflate", "item": soft}, "time": 1.0 + 0.8 * Puncture.lost(Shed.items[soft]),
 				"verb": "pump it up from the air line"}
 			alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
+	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0 and Shed.items[item_id]["kind"] == "toolbox":
+		# A toolbox: the second button packs the next thing in it (bought from the business's
+		# account), or once it's full, empties it out.
+		var next := Shed.next_kit(item_id)
+		if next != "":
+			var info: Dictionary = PartsDB.TOOLBOX_CONTENTS[next]
+			alt_plan = {"action": {"a": "toolbox_pack", "item": item_id, "what": next}, "time": 0.8,
+				"verb": "pack the %s (%s)" % [str(info["short"]), TvChannels.money_text(int(info["price"]))]}
+		else:
+			alt_plan = {"action": {"a": "toolbox_pack", "item": item_id, "empty": true}, "time": 1.0, "verb": "empty it out"}
+		alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
 	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0:
 		_bay_alt(item_id)
 	if p.is_empty():
@@ -3399,7 +3410,7 @@ func _activity_text() -> String:
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
 		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer",
-		"inflate": "Pumping up a tyre", "plug_tyre": "Plugging a puncture"}
+		"inflate": "Pumping up a tyre", "plug_tyre": "Plugging a puncture", "toolbox_pack": "Packing a toolbox"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()

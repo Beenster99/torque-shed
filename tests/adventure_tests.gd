@@ -313,10 +313,10 @@ func test_surfaces() -> void:
 	for m in looks.values():
 		mats[m] = true
 	check(mats.size() == 4, "each surface has its own look")
-	var tyre := BikeBuild.new({}).grip_rear
-	var knobbly := BikeBuild.new({"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"}).grip_rear
-	var g := func(grips, s): return Bike.surface_grip(grips, s)
-	check(g.call(tyre, "tarmac") == float(tyre["tarmac"]) and g.call(tyre, "tarmac") > g.call(tyre, "gravel")
+	var tyre := BikeBuild.new({})
+	var knobbly := BikeBuild.new({"front_tyre": "knobbly_mx", "rear_tyre": "knobbly_mx"})
+	var g := func(b, s): return Bike.surface_grip(b, false, s)
+	check(g.call(tyre, "tarmac") == float(tyre.grip_rear["tarmac"]) and g.call(tyre, "tarmac") > g.call(tyre, "gravel")
 		and g.call(tyre, "gravel") > g.call(tyre, "sand") and g.call(tyre, "sand") > g.call(tyre, "snow"),
 		"grip falls from tarmac to gravel, sand and snow (%.2f, %.2f, %.2f, %.2f)" % [g.call(tyre, "tarmac"), g.call(tyre, "gravel"), g.call(tyre, "sand"), g.call(tyre, "snow")])
 	check(g.call(knobbly, "gravel") > g.call(tyre, "gravel") and g.call(knobbly, "sand") > g.call(tyre, "sand"),

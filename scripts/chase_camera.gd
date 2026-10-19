@@ -269,6 +269,13 @@ func _helmet(delta := 0.0) -> void:
 	if orbiting():
 		# Turning your head inside the helmet.
 		global_basis = global_basis * Basis(Vector3.UP, orbit_yaw) * Basis(Vector3.RIGHT, -orbit_pitch)
+	if target is Bike and target.build != null:
+		# Wind buffeting the helmet at speed: less behind a taller screen (BikeBuild.wind_buffet).
+		var gust := float(target.build.wind_buffet) * clampf((absf(target.speed) - 18.0) / 30.0, 0.0, 1.0)
+		if gust > 0.0:
+			var t := Time.get_ticks_msec() * 0.001
+			var shake := Vector2(sin(t * 23.0) * sin(t * 5.3), sin(t * 19.0 + 1.3) * sin(t * 6.1)) * 0.0035 * gust
+			global_basis = global_basis * Basis(Vector3.RIGHT, shake.x) * Basis(Vector3.FORWARD, shake.y)
 	fov = 80.0 + Graphics.fov_offset()
 
 

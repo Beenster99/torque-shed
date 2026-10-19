@@ -4,7 +4,7 @@ extends RefCounted
 ## chunk's collision body carries its surface as meta "surface" (as the town's roads do), so a
 ## tyre's ray finds it; AdventureWorld.surface_at(pos) answers the same for anything else.
 ## Also here: how each looks (the road's material and the land beside it), the dust or spray a
-## tyre throws up on it, and a stand-in for its grip until the tyre tables know these surfaces.
+## tyre throws up on it. How each tyre grips on them is TyreGrip's (data/tyre_grip.json).
 
 const IDS: Array[String] = ["tarmac", "gravel", "sand", "snow"]
 const NAMES := {"tarmac": "Tarmac", "gravel": "Gravel", "sand": "Sand", "snow": "Snow"}
@@ -23,11 +23,6 @@ const VERGE_COLOR := {"tarmac": Color(0.34, 0.38, 0.2), "gravel": Color(0.46, 0.
 ## How much dust (or snow spray) a tyre kicks up, relative to a dirt track, and its colour.
 const DUST := {"gravel": 0.8, "sand": 1.15, "snow": 0.7}
 const DUST_COLOR := {"gravel": Color(0.6, 0.55, 0.47), "sand": Color(0.8, 0.7, 0.5), "snow": Color(0.95, 0.96, 1.0)}
-## Until the tyres carry a grip figure for these, the grip on them is taken from the tyre's grip
-## table: [the table's surface to start from, times this]. A knobbly tyre's good dirt grip
-## carries over to gravel and sand; snow is poor for everything. (The kit helper's TyreGrip
-## replaces this with real per-tyre numbers.)
-const GRIP_FROM := {"gravel": ["dirt", 0.9], "sand": ["dirt", 0.66], "snow": ["dirt", 0.48]}
 ## Muck a kilometre of each throws up onto the bike (see Main.SURFACE_DIRT), and bumpiness (m).
 const MUCK := {"gravel": 0.6, "sand": 0.45, "snow": 0.3}
 const BUMP := {"gravel": 0.03, "sand": 0.02, "snow": 0.012}
@@ -39,17 +34,6 @@ static var _line_mat: StandardMaterial3D
 
 static func is_surface(id: String) -> bool:
 	return IDS.has(id)
-
-
-## The tyre's grip on `surf` from its grip table `grips` (surface -> mu, as BikeBuild keeps
-## them), with the adventure surfaces worked out from the nearest one it has.
-static func grip_from_table(grips: Dictionary, surf: String) -> float:
-	if grips.has(surf):
-		return float(grips[surf])
-	if GRIP_FROM.has(surf):
-		var from: Array = GRIP_FROM[surf]
-		return float(grips.get(str(from[0]), 0.7)) * float(from[1])
-	return 0.7
 
 
 ## The road's material for a surface: a noise-grained albedo in its colour, rougher off the tarmac.

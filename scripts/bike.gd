@@ -576,7 +576,8 @@ func lean_for_input(x: float) -> float:
 ## clearance allows.
 func _grip_lean() -> float:
 	var surf := str(wheels[1]["surface"]) if not wheels.is_empty() else "tarmac"
-	var mu := minf(surface_grip(build.grip_front, surf), surface_grip(build.grip_rear, surf)) * Weather.grip_mult(surf)
+	var wet := Weather.wetness()
+	var mu := minf(surface_grip(build, true, surf, wet), surface_grip(build, false, surf, wet)) * Weather.grip_mult(surf)
 	# With Riding realism up, the rider knows cold (or overcooked) tyres hold less and leans less on
 	# them; at 0 they lean as far as warm tyres would hold, and find out.
 	if heat:
@@ -1062,7 +1063,7 @@ func _apply_donut(delta: float) -> void:
 	var wb := build.wheelbase
 	var i_front := inertia.y + mass * wb * wb * 0.25
 	var push := (want - yaw_rate) * i_front * 8.0 / wb
-	var grip: float = surface_grip(build.grip_rear, str(wheels[1]["surface"])) * float(wheels[1]["load"])
+	var grip: float = surface_grip(build, false, str(wheels[1]["surface"]), Weather.wetness()) * float(wheels[1]["load"])
 	push = clampf(push, -grip, grip)
 	var at: Vector3 = wheels[1].get("contact_pos", global_transform * Vector3(0.0, -build.rear_radius, wb * 0.5))
 	apply_force(b.x * push, at - global_position)
@@ -1275,8 +1276,10 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var v_long := v_contact.dot(long_dir)
 	var v_lat := v_contact.dot(lat_dir)
 	var v_abs := absf(v_long)
-	var mu_surf: float = surface_grip(build.grip_front if is_front else build.grip_rear, hit_surf)
-	mu_surf *= Weather.grip_mult(hit_surf)   # wet roads after rain grip a little less
+	# The tyre's grip on what's under it, for its kind of tread (see TyreGrip), and wet roads after
+	# rain grip a little less.
+	var mu_surf := surface_grip(build, is_front, hit_surf, Weather.wetness())
+	mu_surf *= Weather.grip_mult(hit_surf)
 	if heat:
 		mu_surf *= heat.tyre_grip(0 if is_front else 1, hit_surf)   # a cold tyre (or a cooked one) grips less
 	if flat_now > 0.0:
@@ -1416,11 +1419,11 @@ func _brake_care(is_front: bool) -> float:
 	return 0.0
 
 
-## The tyre's grip (mu) on surface `surf` from its grip table `grips` (BikeBuild's grip_front or
-## grip_rear). The adventure surfaces (gravel, sand, snow) that the tables don't list yet are
-## worked out from the nearest one they do (see AdventureSurface.grip_from_table).
-static func surface_grip(grips: Dictionary, surf: String) -> float:
-	return AdventureSurface.grip_from_table(grips, surf)
+## The grip (mu) of build `b`'s front or back tyre on surface `surf` (the town's tarmac, dirt
+## and grass, the adventure roads' gravel, sand and snow) with the ground `wet` 0..1: the one
+## place the grip numbers come from (TyreGrip, data/tyre_grip.json).
+static func surface_grip(b: BikeBuild, front: bool, surf: String, wet := 0.0) -> float:
+	return b.tyre_grip(front, surf, wet)
 
 
 ## How far the surface under a tyre rises above its smooth shape at `at`, in metres: a few

@@ -73,6 +73,7 @@ const TUNE_LIMITS := {
 	# The ECU's rider aids, where it has them: 0 off, then level 1 (gentle) .. AID_LEVELS (firm).
 	"aid_traction": [0.0, 5.0], "aid_stability": [0.0, 5.0], "aid_anti_wheelie": [0.0, 5.0],
 	"damper": [-1.0, 1.0],         # steering damper clicker: softer .. firmer
+	"screen": [0.0, 1.0],          # an adjustable screen: right down .. right up (the rider sets it riding)
 }
 ## The rider aids the dyno desk sets, aid -> its tune key (see TUNE_LIMITS). Level AID_STOCK is
 ## how the ECU comes from the factory; AID_SCALE is how firmly each level steps in next to that.
@@ -102,7 +103,9 @@ var rake_deg := 25.0
 var seat_height := 0.85
 var cda := 0.55                # drag area, m^2
 var steer_rate := 4.0          # how quickly the bars turn, rad/s; wider bars give more leverage
-var fuel_capacity := 15.0
+var fuel_capacity := 15.0      # the tank and any auxiliary tank together, litres
+var main_capacity := 15.0      # the tank on its own
+var aux_capacity := 0.0        # an auxiliary tank's, 0 with none fitted
 var dash_features: Array = ["speed"]
 var headlight_lumens := 0.0    # 0 with no headlight fitted
 var fog_lumens := 0.0          # 0 with no fog lights
@@ -114,12 +117,25 @@ var horn_sound := ""           # the horn's recordings (an Sfx sound), "" for a 
 var ecu_features: Array = []   # rider aids the ECU gives: traction, abs, anti_wheelie, stability
 var ecu_aid := 0.0             # how firmly those aids step in, 0..1
 var luggage_litres := 0.0
+## The adventure kit: the tyres' kinds (see TyreGrip), what's packed in the toolbox (PartsDB
+## TOOLBOX_CONTENTS ids), what the sat nav shows (empty with none), and an adjustable screen: how
+## far it can rise (m), how far it's up now (m), and how much wind gets past it to the rider's
+## helmet, 0 (calm air) .. 1 (none of it stopped).
+var tyre_kind_front := "road"
+var tyre_kind_rear := "road"
+var toolbox_contents: Array = []
+var toolbox_slots := 0
+var satnav_features: Array = []
+var screen_adjust := 0.0
+var screen_raise := 0.0
+var wind_buffet := 1.0
 var has_side_stand := false
 var has_centre_stand := false
 var centre_lift := 0.04
 
 # Fluids
-var fuel_litres := 0.0
+var fuel_litres := 0.0         # in the tank and any auxiliary tank together
+var aux_litres := 0.0          # in the auxiliary tank
 var fuel_type := "unleaded_95"
 var fuel_age := 0.0            # 0 fresh .. 1 stale, gummed-up petrol
 var oil_capacity := 2.5
@@ -307,11 +323,16 @@ func _compute() -> void:
 	var bars := part("handlebars")
 
 	cylinders = int(block["cylinders"])
-	fuel_capacity = tank["capacity"]
-	var fuel := _fluid("tank", "unleaded_95", fuel_capacity)
+	main_capacity = tank["capacity"]
+	var fuel := _fluid("tank", "unleaded_95", main_capacity)
 	fuel_litres = fuel["litres"]
 	fuel_type = fuel["type"]
 	fuel_age = fuel["age"]
+	# An auxiliary tank carries more petrol, fed into the main one as it goes down.
+	aux_capacity = PartsDB.fluid_capacity(parts["aux_tank"]) if has_part("aux_tank") else 0.0
+	aux_litres = float(_fluid("aux_tank", "unleaded_95", aux_capacity)["litres"]) if aux_capacity > 0.0 else 0.0
+	fuel_capacity = main_capacity + aux_capacity
+	fuel_litres += aux_litres
 	oil_capacity = PartsDB.fluid_capacity(parts["engine"])
 	var oil := _fluid("engine", "semi_10w40", oil_capacity)
 	oil_litres = oil["litres"]
@@ -328,11 +349,14 @@ func _compute() -> void:
 	com_height = frame["com_height"]
 	rake_deg = frame["rake_deg"]
 	seat_height = float(frame["seat_height"]) + float(saddle["height"])
-	cda = float(frame["cda"]) + float(bars["cda"]) + float(part("panniers").get("cda", 0.0)) + float(part("top_box").get("cda", 0.0))
+	cda = float(frame["cda"]) + float(bars["cda"]) + float(part("panniers").get("cda", 0.0)) + float(part("top_box").get("cda", 0.0)) \
+		+ float(part("tank_bag").get("cda", 0.0))
 	# A fairing parts the air round the rider (a cracked, grimy one less well); mirrors stick out into it.
 	cda += float(part("fairing").get("cda", 0.0)) * lerpf(0.7, 1.0, health.get("fairing", 1.0))
 	cda += float(part("mirrors").get("cda", 0.0))
-	luggage_litres = float(part("panniers").get("litres", 0.0)) + float(part("top_box").get("litres", 0.0))
+	luggage_litres = float(part("panniers").get("litres", 0.0)) + float(part("top_box").get("litres", 0.0)) \
+		+ float(part("tank_bag").get("litres", 0.0))
+	_compute_kit()
 	steer_rate = 4.0 * float(bars["width"]) / 720.0
 	# A fat front tyre is slower to turn in.
 	steer_rate *= clampf(1.0 - 0.3 * (float(part("front_tyre")["width"]) - 160.0) / 160.0, 0.85, 1.12)
@@ -403,6 +427,52 @@ func _compute() -> void:
 	_compute_squat()
 
 
+## The adventure kit: the toolbox and what's in it, the sat nav, the tyres' kinds, and an
+## adjustable screen. A screen raised pushes a little more air (and the taller the screen
+## stands, the less wind reaches the rider's helmet: see wind_buffet).
+func _compute_kit() -> void:
+	tyre_kind_front = TyreGrip.kind_of(part("front_tyre"))
+	tyre_kind_rear = TyreGrip.kind_of(part("rear_tyre"))
+	toolbox_slots = int(part("toolbox").get("slots", 0)) if has_part("toolbox") else 0
+	toolbox_contents = []
+	if has_part("toolbox"):
+		for c in condition.get("toolbox", {}).get("contents", []):
+			if PartsDB.TOOLBOX_CONTENTS.has(str(c)) and toolbox_contents.size() < toolbox_slots:
+				toolbox_contents.append(str(c))
+	satnav_features = part("satnav").get("features", ["map"]) if has_part("satnav") else []
+	var fairing := part("fairing")
+	screen_adjust = float(fairing.get("screen_adjust", 0.0)) if has_part("fairing") else 0.0
+	screen_raise = 0.0
+	_set_screen_raise(tune_value("screen") * screen_adjust)
+
+
+## Puts an adjustable screen `v` (0 right down .. 1 right up) of the way up its rails, as the
+## rider does on the move: the drag and the wind on the helmet follow.
+func set_screen(v: float) -> void:
+	tune["screen"] = clampf(v, 0.0, 1.0)
+	_set_screen_raise(tune_value("screen") * screen_adjust)
+
+
+func _set_screen_raise(raise: float) -> void:
+	cda += (raise - screen_raise) * 0.12
+	screen_raise = raise
+	var fairing := part("fairing")
+	var screen := (float(fairing.get("screen", 0.0)) + screen_raise) if has_part("fairing") else 0.0
+	wind_buffet = clampf(1.0 - (screen - 0.08) / 0.42, 0.0, 1.0)
+
+
+## Whether the toolbox has `what` packed in it (a PartsDB.TOOLBOX_CONTENTS id).
+func has_kit(what: String) -> bool:
+	return toolbox_contents.has(what)
+
+
+## The grip of a tyre (the front's or the back's) on `surf` with the ground `wet` 0..1: its own
+## figure for the town's ground, or its tarmac one for the adventure surfaces, times what its
+## kind of tread makes of that surface (see TyreGrip).
+func tyre_grip(front: bool, surf: String, wet: float) -> float:
+	return TyreGrip.grip_on(grip_front if front else grip_rear, tyre_kind_front if front else tyre_kind_rear, surf, wet)
+
+
 ## Where each slot's part sits on a bike: [share of the wheelbase back from the front axle,
 ## height above the ground in m]. Slots not listed sit in the middle of the bike.
 const PART_SPOT := {
@@ -417,7 +487,22 @@ const PART_SPOT := {
 	"fog_lights": [-0.02, 0.6], "tail": [0.9, 0.8], "fairing": [0.06, 0.98], "mirrors": [0.14, 1.12],
 	"front_mudguard": [0.0, 0.62], "indicators": [0.5, 0.85], "side_panels": [0.6, 0.65], "rearsets": [0.68, 0.38],
 	"guards": [0.38, 0.4], "number_boards": [0.75, 0.75], "swingarm": [0.82, 0.35], "steering_damper": [0.16, 0.92],
+	"tank_bag": [0.3, 1.0], "satnav": [0.12, 1.12], "aux_tank": [0.9, 0.65], "toolbox": [0.9, 0.5],
 }
+## Where the auxiliary tank and the toolbox sit depends on their style: low by the engine, on
+## the rails, under the rack or up on top of it.
+const STYLE_SPOT := {
+	"aux_tank": {"twin": [0.3, 0.42], "rear": [0.95, 0.78], "cell": [0.88, 0.58], "can": [0.92, 0.6], "bladder": [1.02, 0.98]},
+	"toolbox": {"bash": [0.42, 0.14], "roll": [0.03, 0.62], "tube": [0.86, 0.48], "box": [0.92, 0.5], "case": [1.05, 0.95]},
+}
+
+
+## Where a slot's part sits (see PART_SPOT and STYLE_SPOT).
+func part_spot(slot: String) -> Array:
+	var by_style: Dictionary = STYLE_SPOT.get(slot, {})
+	if not by_style.is_empty() and has_part(slot):
+		return by_style.get(str(part(slot).get("style", "")), PART_SPOT.get(slot, [0.5, 0.5]))
+	return PART_SPOT.get(slot, [0.5, 0.5])
 
 
 ## The parts' own spread: each slot's part weighs more or less than the stock part there
@@ -436,10 +521,13 @@ func _compute_mass_spread() -> void:
 		var dm := (_part_mass(slot) if has_part(slot) else 0.0) - m0
 		if absf(dm) < 0.01:
 			continue
-		var spot: Array = PART_SPOT.get(slot, [0.5, 0.5])
+		var spot: Array = part_spot(slot)
 		extra.append([dm, Vector3(0.0, float(spot[1]), (float(spot[0]) - 0.5) * wheelbase)])
 	var spot_tank: Array = PART_SPOT["tank"]
-	extra.append([(fuel_litres - 15.0) * FUEL_DENSITY, Vector3(0.0, float(spot_tank[1]), (float(spot_tank[0]) - 0.5) * wheelbase)])
+	extra.append([(fuel_litres - aux_litres - 15.0) * FUEL_DENSITY, Vector3(0.0, float(spot_tank[1]), (float(spot_tank[0]) - 0.5) * wheelbase)])
+	if aux_litres > 0.0:
+		var spot_aux := part_spot("aux_tank")
+		extra.append([aux_litres * FUEL_DENSITY, Vector3(0.0, float(spot_aux[1]), (float(spot_aux[0]) - 0.5) * wheelbase)])
 	for e in extra:
 		com_offset += float(e[0]) * ((e[1] as Vector3) - base) / maxf(total_mass, 1.0)
 	com_offset = com_offset.clamp(Vector3(0.0, -0.1, -0.12), Vector3(0.0, 0.1, 0.12))
@@ -964,6 +1052,10 @@ func _part_mass(slot: String) -> float:
 	var m := float(p.get("mass", float(p.get("mass_per_cyl", 0.0)) * cylinders))
 	if condition.get(slot, {}).get("lightened", false):
 		m *= 1.0 - lighten_cut(str(parts[slot]), float(condition[slot].get("lighten_extra", 0.0)))
+	if slot == "toolbox":
+		# What's packed in it weighs too.
+		for c in condition.get(slot, {}).get("contents", []):
+			m += float(PartsDB.TOOLBOX_CONTENTS.get(str(c), {}).get("mass", 0.0))
 	return m
 
 
@@ -989,6 +1081,11 @@ func tune_block(key: String) -> String:
 		return "Only a cassette gearbox lets you respace the ratios."
 	elif key.begins_with("aid_") and not has_aid(key.trim_prefix("aid_")):
 		return "This ECU has no %s." % str(PartsDB.ECU_AID_NAMES.get(key.trim_prefix("aid_"), "rider aid"))
+	elif key == "screen":
+		if not has_part("fairing"):
+			return "There's no fairing fitted."
+		if float(part("fairing").get("screen_adjust", 0.0)) <= 0.0:
+			return "This screen doesn't adjust."
 	elif key == "damper":
 		if not has_part("steering_damper"):
 			return "There's no steering damper fitted."

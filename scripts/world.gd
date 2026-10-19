@@ -54,6 +54,8 @@ func generate(seed_value := 1) -> void:
 	town.name = "Town"
 	add_child(town)
 	town.build(self)
+	# The town's filling station on the High Street, east of the shed (see FuelPump).
+	FuelPump.build_forecourt(self)
 	props = WorldProps.new()
 	props.name = "Props"
 	add_child(props)

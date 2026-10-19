@@ -5383,6 +5383,533 @@
 			],
 			"pack": "cruiser",
 			"price": 110
+		},
+		"trail_road_90": {
+			"name": "Trail road tyre 90/90",
+			"description": "A road-biased adventure tyre: grippy and long-lasting on tarmac, so-so off it. A front 90/90-21.",
+			"mass": 3.6,
+			"type": "Road, radial",
+			"compound": "Dual",
+			"width": 90,
+			"aspect": 0.9,
+			"style": "road",
+			"construction": "radial",
+			"profile": 1.0,
+			"stiffness": 1.0,
+			"slide": 0.82,
+			"grip": {
+				"tarmac": 1.08,
+				"dirt": 0.78,
+				"grass": 0.66
+			},
+			"grip_kind": "road",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				21
+			],
+			"styles": [
+				"adventure",
+				"tourer",
+				"roader"
+			],
+			"price": 110
+		},
+		"trail_road_110": {
+			"name": "Trail road tyre 110/80",
+			"description": "A road-biased adventure tyre: grippy and long-lasting on tarmac, so-so off it. A front 110/80-19.",
+			"mass": 4.2,
+			"type": "Road, radial",
+			"compound": "Dual",
+			"width": 110,
+			"aspect": 0.8,
+			"style": "road",
+			"construction": "radial",
+			"profile": 1.0,
+			"stiffness": 1.0,
+			"slide": 0.82,
+			"grip": {
+				"tarmac": 1.08,
+				"dirt": 0.78,
+				"grass": 0.66
+			},
+			"grip_kind": "road",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				19
+			],
+			"styles": [
+				"adventure",
+				"tourer",
+				"roader"
+			],
+			"price": 120
+		},
+		"trail_road_150": {
+			"name": "Trail road tyre 150/70",
+			"description": "A road-biased adventure tyre: grippy and long-lasting on tarmac, so-so off it. A rear 150/70.",
+			"mass": 6.0,
+			"type": "Road, radial",
+			"compound": "Dual",
+			"width": 150,
+			"aspect": 0.7,
+			"style": "road",
+			"construction": "radial",
+			"profile": 1.0,
+			"stiffness": 1.0,
+			"slide": 0.82,
+			"grip": {
+				"tarmac": 1.08,
+				"dirt": 0.78,
+				"grass": 0.66
+			},
+			"grip_kind": "road",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				17,
+				18
+			],
+			"styles": [
+				"adventure",
+				"tourer",
+				"roader"
+			],
+			"price": 140
+		},
+		"adv_5050_90": {
+			"name": "50/50 adventure tyre 90/90",
+			"description": "Big blocks with wide gaps: half road, half trail. The do-it-all tyre for a long ride on mixed roads. A front 90/90-21.",
+			"mass": 3.6,
+			"type": "Dual purpose, radial",
+			"compound": "Medium",
+			"width": 90,
+			"aspect": 0.9,
+			"style": "offroad",
+			"construction": "radial",
+			"profile": 1.02,
+			"stiffness": 0.95,
+			"slide": 0.83,
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.95,
+				"grass": 0.85
+			},
+			"grip_kind": "adventure",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				21
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 125,
+			"tread": "blocks"
+		},
+		"adv_5050_110": {
+			"name": "50/50 adventure tyre 110/80",
+			"description": "Big blocks with wide gaps: half road, half trail. The do-it-all tyre for a long ride on mixed roads. A front 110/80-19.",
+			"mass": 4.2,
+			"type": "Dual purpose, radial",
+			"compound": "Medium",
+			"width": 110,
+			"aspect": 0.8,
+			"style": "offroad",
+			"construction": "radial",
+			"profile": 1.02,
+			"stiffness": 0.95,
+			"slide": 0.83,
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.95,
+				"grass": 0.85
+			},
+			"grip_kind": "adventure",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				19
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 135,
+			"tread": "blocks"
+		},
+		"adv_5050_150": {
+			"name": "50/50 adventure tyre 150/70",
+			"description": "Big blocks with wide gaps: half road, half trail. The do-it-all tyre for a long ride on mixed roads. A rear 150/70.",
+			"mass": 6.0,
+			"type": "Dual purpose, radial",
+			"compound": "Medium",
+			"width": 150,
+			"aspect": 0.7,
+			"style": "offroad",
+			"construction": "radial",
+			"profile": 1.02,
+			"stiffness": 0.95,
+			"slide": 0.83,
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.95,
+				"grass": 0.85
+			},
+			"grip_kind": "adventure",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				17,
+				18
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 155,
+			"tread": "blocks"
+		},
+		"adv_knobbly_90": {
+			"name": "Adventure knobbly 90/90",
+			"description": "Tall, tough knobs for a heavy adventure bike: digs into gravel and sand, wanders a bit on tarmac. A front 90/90-21.",
+			"mass": 3.6,
+			"type": "Dual purpose, bias ply",
+			"compound": "Medium",
+			"width": 90,
+			"aspect": 0.9,
+			"style": "offroad",
+			"construction": "bias",
+			"profile": 1.05,
+			"stiffness": 0.9,
+			"slide": 0.84,
+			"grip": {
+				"tarmac": 0.9,
+				"dirt": 1.02,
+				"grass": 0.92
+			},
+			"grip_kind": "knobbly",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				21
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 120,
+			"tread": "knobs"
+		},
+		"adv_knobbly_110": {
+			"name": "Adventure knobbly 110/80",
+			"description": "Tall, tough knobs for a heavy adventure bike: digs into gravel and sand, wanders a bit on tarmac. A front 110/80-19.",
+			"mass": 4.2,
+			"type": "Dual purpose, bias ply",
+			"compound": "Medium",
+			"width": 110,
+			"aspect": 0.8,
+			"style": "offroad",
+			"construction": "bias",
+			"profile": 1.05,
+			"stiffness": 0.9,
+			"slide": 0.84,
+			"grip": {
+				"tarmac": 0.9,
+				"dirt": 1.02,
+				"grass": 0.92
+			},
+			"grip_kind": "knobbly",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				19
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 130,
+			"tread": "knobs"
+		},
+		"adv_knobbly_150": {
+			"name": "Adventure knobbly 150/70",
+			"description": "Tall, tough knobs for a heavy adventure bike: digs into gravel and sand, wanders a bit on tarmac. A rear 150/70.",
+			"mass": 6.0,
+			"type": "Dual purpose, bias ply",
+			"compound": "Medium",
+			"width": 150,
+			"aspect": 0.7,
+			"style": "offroad",
+			"construction": "bias",
+			"profile": 1.05,
+			"stiffness": 0.9,
+			"slide": 0.84,
+			"grip": {
+				"tarmac": 0.9,
+				"dirt": 1.02,
+				"grass": 0.92
+			},
+			"grip_kind": "knobbly",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				17,
+				18
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 150,
+			"tread": "knobs"
+		},
+		"winter_tyre_90": {
+			"name": "Winter tyre 90/90",
+			"description": "A soft cold-weather compound cut with sipes: grips in the wet, the cold and on snow, wears fast in the summer. A front 90/90-21.",
+			"mass": 3.6,
+			"type": "Road, radial",
+			"compound": "Soft",
+			"width": 90,
+			"aspect": 0.9,
+			"style": "road",
+			"construction": "radial",
+			"profile": 1.0,
+			"stiffness": 0.95,
+			"slide": 0.8,
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.8,
+				"grass": 0.72
+			},
+			"grip_kind": "winter",
+			"color": [
+				0.05,
+				0.05,
+				0.055
+			],
+			"rims": [
+				21
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 130,
+			"tread": "sipes"
+		},
+		"winter_tyre_110": {
+			"name": "Winter tyre 110/80",
+			"description": "A soft cold-weather compound cut with sipes: grips in the wet, the cold and on snow, wears fast in the summer. A front 110/80-19.",
+			"mass": 4.2,
+			"type": "Road, radial",
+			"compound": "Soft",
+			"width": 110,
+			"aspect": 0.8,
+			"style": "road",
+			"construction": "radial",
+			"profile": 1.0,
+			"stiffness": 0.95,
+			"slide": 0.8,
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.8,
+				"grass": 0.72
+			},
+			"grip_kind": "winter",
+			"color": [
+				0.05,
+				0.05,
+				0.055
+			],
+			"rims": [
+				19
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 140,
+			"tread": "sipes"
+		},
+		"winter_tyre_150": {
+			"name": "Winter tyre 150/70",
+			"description": "A soft cold-weather compound cut with sipes: grips in the wet, the cold and on snow, wears fast in the summer. A rear 150/70.",
+			"mass": 6.0,
+			"type": "Road, radial",
+			"compound": "Soft",
+			"width": 150,
+			"aspect": 0.7,
+			"style": "road",
+			"construction": "radial",
+			"profile": 1.0,
+			"stiffness": 0.95,
+			"slide": 0.8,
+			"grip": {
+				"tarmac": 1.0,
+				"dirt": 0.8,
+				"grass": 0.72
+			},
+			"grip_kind": "winter",
+			"color": [
+				0.05,
+				0.05,
+				0.055
+			],
+			"rims": [
+				17,
+				18
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 160,
+			"tread": "sipes"
+		},
+		"studded_tyre_90": {
+			"name": "Studded tyre 90/90",
+			"description": "Knobs with tungsten studs in them for snow and ice. Noisy and skittish on dry tarmac. A front 90/90-21.",
+			"mass": 3.6,
+			"type": "Dual purpose, bias ply",
+			"compound": "Soft",
+			"width": 90,
+			"aspect": 0.9,
+			"style": "offroad",
+			"construction": "bias",
+			"profile": 1.05,
+			"stiffness": 0.9,
+			"slide": 0.8,
+			"grip": {
+				"tarmac": 0.92,
+				"dirt": 0.95,
+				"grass": 0.85
+			},
+			"grip_kind": "studded",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				21
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 160,
+			"tread": "studs"
+		},
+		"studded_tyre_110": {
+			"name": "Studded tyre 110/80",
+			"description": "Knobs with tungsten studs in them for snow and ice. Noisy and skittish on dry tarmac. A front 110/80-19.",
+			"mass": 4.2,
+			"type": "Dual purpose, bias ply",
+			"compound": "Soft",
+			"width": 110,
+			"aspect": 0.8,
+			"style": "offroad",
+			"construction": "bias",
+			"profile": 1.05,
+			"stiffness": 0.9,
+			"slide": 0.8,
+			"grip": {
+				"tarmac": 0.92,
+				"dirt": 0.95,
+				"grass": 0.85
+			},
+			"grip_kind": "studded",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				19
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 170,
+			"tread": "studs"
+		},
+		"studded_tyre_150": {
+			"name": "Studded tyre 150/70",
+			"description": "Knobs with tungsten studs in them for snow and ice. Noisy and skittish on dry tarmac. A rear 150/70.",
+			"mass": 6.0,
+			"type": "Dual purpose, bias ply",
+			"compound": "Soft",
+			"width": 150,
+			"aspect": 0.7,
+			"style": "offroad",
+			"construction": "bias",
+			"profile": 1.05,
+			"stiffness": 0.9,
+			"slide": 0.8,
+			"grip": {
+				"tarmac": 0.92,
+				"dirt": 0.95,
+				"grass": 0.85
+			},
+			"grip_kind": "studded",
+			"color": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"rims": [
+				17,
+				18
+			],
+			"styles": [
+				"adventure",
+				"scrambler",
+				"tourer"
+			],
+			"price": 190,
+			"tread": "studs"
 		}
 	},
 	"disc": {
@@ -14751,6 +15278,77 @@
 			],
 			"pack": "tourer",
 			"price": 300
+		},
+		"adv_alloy_trunks_silver": {
+			"mass": 9.5,
+			"type": "Hard, aluminium",
+			"style": "alloy",
+			"litres": 90,
+			"cda": 0.055,
+			"material": "metal",
+			"name": "Expedition alloy side boxes, 90 L",
+			"description": "Big square alloy boxes on a steel rack. Pack for a month.",
+			"color": [
+				0.74,
+				0.75,
+				0.77
+			],
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"pack": "adventure",
+			"price": 420
+		},
+		"adv_hard_side_cases": {
+			"mass": 7.0,
+			"type": "Hard, plastic",
+			"style": "hard",
+			"litres": 72,
+			"cda": 0.045,
+			"material": "plastic",
+			"name": "Adventure hard side cases, grey",
+			"description": "Tough plastic side cases with alloy lids on a quick-release rack.",
+			"color": [
+				0.3,
+				0.31,
+				0.32
+			],
+			"look": {
+				"shape": "hard",
+				"accent": [
+					0.74,
+					0.75,
+					0.77
+				]
+			},
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"pack": "adventure",
+			"price": 340
+		},
+		"adv_slim_soft_cases": {
+			"mass": 2.8,
+			"type": "Soft, roll-top",
+			"style": "roll",
+			"litres": 40,
+			"cda": 0.025,
+			"material": "fabric",
+			"name": "Slim soft side bags, olive",
+			"description": "Slim roll-top bags on a light rack. Narrow enough for the trail.",
+			"color": [
+				0.3,
+				0.33,
+				0.2
+			],
+			"styles": [
+				"adventure",
+				"scrambler"
+			],
+			"pack": "adventure",
+			"price": 220
 		}
 	},
 	"top_box": {
@@ -14865,6 +15463,68 @@
 				"scrambler",
 				"roader"
 			]
+		},
+		"adv_alloy_top_55": {
+			"name": "Expedition alloy top box, 55 L",
+			"description": "A big riveted alloy top box on the rack. Two helmets and the stove.",
+			"mass": 6.0,
+			"type": "Hard, aluminium",
+			"style": "alloy",
+			"litres": 55,
+			"cda": 0.03,
+			"color": [
+				0.74,
+				0.75,
+				0.77
+			],
+			"material": "metal",
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"pack": "adventure",
+			"price": 280
+		},
+		"adv_black_top_42": {
+			"name": "Black alloy top box, 42 L",
+			"description": "A black anodised alloy top case to match the black side boxes.",
+			"mass": 5.2,
+			"type": "Hard, aluminium",
+			"style": "alloy",
+			"litres": 42,
+			"cda": 0.026,
+			"color": [
+				0.05,
+				0.05,
+				0.055
+			],
+			"material": "metal",
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"pack": "adventure",
+			"price": 240
+		},
+		"adv_plastic_top_50": {
+			"name": "Adventure top case, 50 L",
+			"description": "A big plastic top case with a pillion backrest. Light and lockable.",
+			"mass": 4.8,
+			"type": "Hard, plastic",
+			"style": "large",
+			"litres": 50,
+			"cda": 0.028,
+			"color": [
+				0.3,
+				0.31,
+				0.32
+			],
+			"material": "plastic",
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"price": 190
 		}
 	},
 	"fog_lights": {
@@ -16716,6 +17376,132 @@
 			],
 			"pack": "tourer",
 			"price": 360
+		},
+		"adv_tall_screen_adj": {
+			"mass": 5.0,
+			"type": "Frame-mounted, tall adjustable screen",
+			"style": "half",
+			"cda": -0.055,
+			"screen": 0.38,
+			"screen_adjust": 0.12,
+			"frame_mount": true,
+			"name": "Adventure fairing, tall adjustable screen",
+			"description": "A creased adventure fairing with a tall screen on rails: raise it on the motorway, drop it on the trail (Page Up / Page Down as you ride).",
+			"color": [
+				0.85,
+				0.85,
+				0.83
+			],
+			"look": {
+				"shape": "adventure",
+				"wide": 1.05,
+				"tall": 1.05,
+				"accent": [
+					0.75,
+					0.08,
+					0.06
+				]
+			},
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"pack": "adventure",
+			"price": 420
+		},
+		"adv_touring_screen_adj": {
+			"mass": 6.5,
+			"type": "Frame-mounted, touring adjustable screen",
+			"style": "half",
+			"cda": -0.06,
+			"screen": 0.44,
+			"screen_adjust": 0.15,
+			"frame_mount": true,
+			"name": "Touring adventure fairing, adjustable",
+			"description": "A wide fairing with a big screen you raise or lower on the move. Calm air all day on a long ride.",
+			"color": [
+				0.2,
+				0.21,
+				0.23
+			],
+			"look": {
+				"shape": "adventure",
+				"wide": 1.18,
+				"tall": 1.1,
+				"accent": [
+					0.74,
+					0.75,
+					0.77
+				]
+			},
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"pack": "adventure",
+			"price": 480
+		},
+		"adv_rally_screen_tall": {
+			"mass": 4.0,
+			"type": "Frame-mounted, tall rally screen",
+			"style": "half",
+			"cda": -0.05,
+			"screen": 0.46,
+			"frame_mount": true,
+			"name": "Rally fairing, extra tall screen",
+			"description": "A narrow rally nose with a tall fixed screen. Stand up on the pegs and it still keeps the wind off.",
+			"color": [
+				0.93,
+				0.93,
+				0.92
+			],
+			"look": {
+				"shape": "adventure",
+				"wide": 0.9,
+				"tall": 1.15,
+				"accent": [
+					0.92,
+					0.42,
+					0.06
+				]
+			},
+			"styles": [
+				"adventure"
+			],
+			"pack": "adventure",
+			"price": 340
+		},
+		"adv_spoiler_screen_adj": {
+			"mass": 4.8,
+			"type": "Frame-mounted, adjustable screen",
+			"style": "half",
+			"cda": -0.052,
+			"screen": 0.34,
+			"screen_adjust": 0.09,
+			"frame_mount": true,
+			"name": "Adventure fairing, quick-adjust screen",
+			"description": "A mid-height screen on a one-hand adjuster. Not the tallest, but it moves.",
+			"color": [
+				0.04,
+				0.04,
+				0.045
+			],
+			"look": {
+				"shape": "adventure",
+				"wide": 1.0,
+				"tall": 1.0,
+				"accent": [
+					0.95,
+					0.75,
+					0.1
+				]
+			},
+			"styles": [
+				"adventure",
+				"roader"
+			],
+			"pack": "adventure",
+			"price": 380
 		}
 	},
 	"mirrors": {
@@ -19301,6 +20087,458 @@
 				0.12
 			],
 			"price": 28
+		}
+	},
+	"tank_bag": {
+		"mag_tank_bag_8": {
+			"name": "Magnetic tank bag, 8 L",
+			"description": "A low soft bag that sticks to a steel tank with magnets in its base. Wallet, phone and a sandwich.",
+			"mass": 0.9,
+			"type": "Soft, magnetic",
+			"style": "low",
+			"mount": "magnetic",
+			"litres": 8,
+			"cda": 0.004,
+			"color": [
+				0.07,
+				0.07,
+				0.075
+			],
+			"material": "fabric",
+			"styles": [
+				"adventure",
+				"tourer",
+				"roader",
+				"naked"
+			],
+			"price": 55
+		},
+		"mag_tank_bag_15": {
+			"name": "Expanding magnetic tank bag, 15 L",
+			"description": "Zips out from 11 to 15 litres, with a clear map pocket on top. Sticks to a steel tank.",
+			"mass": 1.3,
+			"type": "Soft, magnetic, map pocket",
+			"style": "tall",
+			"mount": "magnetic",
+			"map": true,
+			"litres": 15,
+			"cda": 0.008,
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"material": "fabric",
+			"styles": [
+				"adventure",
+				"tourer",
+				"roader"
+			],
+			"price": 85
+		},
+		"strap_tank_bag_10": {
+			"name": "Strap-on tank bag, 10 L",
+			"description": "Buckles round the steering head and under the seat, so it sits on any tank, plastic ones too.",
+			"mass": 1.1,
+			"type": "Soft, strap-on",
+			"style": "low",
+			"mount": "strap",
+			"litres": 10,
+			"cda": 0.006,
+			"color": [
+				0.32,
+				0.33,
+				0.3
+			],
+			"material": "fabric",
+			"styles": [
+				"adventure",
+				"tourer",
+				"scrambler"
+			],
+			"price": 70
+		},
+		"rally_tank_bag": {
+			"name": "Rally tank bag with map window",
+			"description": "A tough strap-on bag with a big clear window on top for a paper map, and side pockets for the jerky.",
+			"mass": 1.5,
+			"type": "Soft, strap-on, map window",
+			"style": "tall",
+			"mount": "strap",
+			"map": true,
+			"litres": 12,
+			"cda": 0.008,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"accent": [
+				0.92,
+				0.42,
+				0.06
+			],
+			"material": "fabric",
+			"styles": [
+				"adventure",
+				"scrambler"
+			],
+			"price": 110
+		},
+		"ring_tank_bag_6": {
+			"name": "Quick-lock tank bag, 6 L",
+			"description": "Clicks onto a ring under the filler cap and off again in a second to fill up. Small and neat.",
+			"mass": 0.8,
+			"type": "Hard-shell, tank ring",
+			"style": "ring",
+			"mount": "ring",
+			"litres": 6,
+			"cda": 0.003,
+			"color": [
+				0.05,
+				0.05,
+				0.055
+			],
+			"material": "plastic",
+			"styles": [
+				"adventure",
+				"tourer",
+				"sport",
+				"roader",
+				"naked"
+			],
+			"price": 95
+		}
+	},
+	"aux_tank": {
+		"bladder_tank_6": {
+			"name": "Fuel bladder, 6 L",
+			"description": "A tough rubberised bag strapped across the back, with a hose and tap to top up the main tank.",
+			"mass": 0.6,
+			"type": "Soft bladder",
+			"style": "bladder",
+			"capacity": 6,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"material": "rubber",
+			"styles": [
+				"adventure"
+			],
+			"price": 60
+		},
+		"rack_can_5": {
+			"name": "Rack-mounted fuel can, 5 L",
+			"description": "A flat red steel can on a bracket off the pannier rail. Five litres to get you to the next town.",
+			"mass": 1.4,
+			"type": "Steel can",
+			"style": "can",
+			"capacity": 5,
+			"color": [
+				0.72,
+				0.08,
+				0.05
+			],
+			"material": "metal",
+			"styles": [
+				"adventure",
+				"scrambler"
+			],
+			"price": 45
+		},
+		"rail_cell_8": {
+			"name": "Pannier-rail fuel cell, 8 L",
+			"description": "A slim alloy tank along the pannier rail, plumbed into the main tank with a pump.",
+			"mass": 2.2,
+			"type": "Alloy cell",
+			"style": "cell",
+			"capacity": 8,
+			"color": [
+				0.7,
+				0.71,
+				0.73
+			],
+			"material": "metal",
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"price": 140
+		},
+		"rear_rally_tank_10": {
+			"name": "Rear rally tank, 10 L",
+			"description": "A moulded plastic tank behind the seat under the rack, rally style. Keeps the weight low and central-ish.",
+			"mass": 2.6,
+			"type": "Rear tank",
+			"style": "rear",
+			"capacity": 10,
+			"color": [
+				0.9,
+				0.9,
+				0.88
+			],
+			"material": "plastic",
+			"styles": [
+				"adventure"
+			],
+			"price": 220
+		},
+		"twin_side_tanks_14": {
+			"name": "Twin rally side tanks, 14 L",
+			"description": "A pair of tanks low either side of the engine, ahead of your shins, Dakar style. Fourteen litres more, carried low.",
+			"mass": 3.4,
+			"type": "Twin side tanks",
+			"style": "twin",
+			"capacity": 14,
+			"color": [
+				0.9,
+				0.9,
+				0.88
+			],
+			"material": "plastic",
+			"styles": [
+				"adventure"
+			],
+			"price": 320
+		}
+	},
+	"toolbox": {
+		"tool_roll_pouch": {
+			"name": "Leather tool roll",
+			"description": "A rolled leather pouch strapped to the fork. Room for a few things.",
+			"mass": 0.4,
+			"type": "Tool roll",
+			"style": "roll",
+			"slots": 3,
+			"color": [
+				0.3,
+				0.17,
+				0.08
+			],
+			"material": "leather",
+			"styles": [
+				"classic",
+				"scrambler",
+				"adventure",
+				"cafe"
+			],
+			"price": 30
+		},
+		"tool_tube": {
+			"name": "Tool tube",
+			"description": "A screw-capped plastic tube on the pannier rail. Keeps the tools dry.",
+			"mass": 0.8,
+			"type": "Tool tube",
+			"style": "tube",
+			"slots": 4,
+			"color": [
+				0.06,
+				0.06,
+				0.065
+			],
+			"material": "plastic",
+			"styles": [
+				"adventure",
+				"scrambler"
+			],
+			"price": 35
+		},
+		"bash_toolbox": {
+			"name": "Bash plate toolbox",
+			"description": "A sealed alloy box built into the bash plate, low down where the weight doesn't matter.",
+			"mass": 1.4,
+			"type": "Under-engine box",
+			"style": "bash",
+			"slots": 5,
+			"color": [
+				0.7,
+				0.71,
+				0.73
+			],
+			"material": "metal",
+			"styles": [
+				"adventure"
+			],
+			"price": 120
+		},
+		"alloy_toolbox": {
+			"name": "Aluminium toolbox",
+			"description": "A lockable alloy box bolted to the rack beside the rear wheel.",
+			"mass": 1.6,
+			"type": "Rack box",
+			"style": "box",
+			"slots": 6,
+			"color": [
+				0.72,
+				0.73,
+				0.75
+			],
+			"material": "metal",
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"price": 75
+		},
+		"expedition_tool_case": {
+			"name": "Expedition tool case",
+			"description": "A big black case on the rack with room for the lot: tools, spares, fluids and a pump.",
+			"mass": 2.4,
+			"type": "Rack case",
+			"style": "case",
+			"slots": 9,
+			"color": [
+				0.05,
+				0.05,
+				0.055
+			],
+			"material": "metal",
+			"styles": [
+				"adventure"
+			],
+			"price": 160
+		}
+	},
+	"satnav": {
+		"phone_nav_mount": {
+			"name": "Phone mount and nav app",
+			"description": "Your phone in a clamp on the bars, running a free map app. Small screen, and it hates the rain.",
+			"mass": 0.3,
+			"type": "Phone, 4\"",
+			"style": "phone",
+			"screen": [
+				0.07,
+				0.13
+			],
+			"features": [
+				"map"
+			],
+			"color": [
+				0.06,
+				0.06,
+				0.065
+			],
+			"styles": [
+				"naked",
+				"roader",
+				"classic",
+				"scrambler",
+				"adventure",
+				"tourer"
+			],
+			"price": 30
+		},
+		"compact_gps": {
+			"name": "Compact moto sat nav, 3.5\"",
+			"description": "A small rugged sat nav on a ball mount. Shows the road ahead and how far to go.",
+			"mass": 0.25,
+			"type": "Sat nav, 3.5\"",
+			"style": "compact",
+			"screen": [
+				0.08,
+				0.06
+			],
+			"features": [
+				"map",
+				"route"
+			],
+			"color": [
+				0.08,
+				0.08,
+				0.09
+			],
+			"styles": [
+				"naked",
+				"roader",
+				"adventure",
+				"tourer"
+			],
+			"price": 180
+		},
+		"road_gps": {
+			"name": "Road sat nav, 4.3\"",
+			"description": "A motorcycle sat nav on a RAM arm: glove-friendly buttons, the road ahead and the next fuel.",
+			"mass": 0.3,
+			"type": "Sat nav, 4.3\"",
+			"style": "road",
+			"screen": [
+				0.1,
+				0.065
+			],
+			"features": [
+				"map",
+				"route",
+				"fuel"
+			],
+			"color": [
+				0.06,
+				0.06,
+				0.065
+			],
+			"styles": [
+				"roader",
+				"adventure",
+				"tourer"
+			],
+			"price": 240
+		},
+		"adventure_gps": {
+			"name": "Adventure sat nav, 5\"",
+			"description": "A big rugged unit in an armoured cradle on a crossbar above the clocks: map, fuel stops and where you're headed.",
+			"mass": 0.45,
+			"type": "Sat nav, 5\"",
+			"style": "adventure",
+			"screen": [
+				0.115,
+				0.07
+			],
+			"features": [
+				"map",
+				"route",
+				"fuel"
+			],
+			"color": [
+				0.1,
+				0.1,
+				0.11
+			],
+			"accent": [
+				0.92,
+				0.42,
+				0.06
+			],
+			"styles": [
+				"adventure",
+				"tourer"
+			],
+			"price": 320
+		},
+		"rally_tablet": {
+			"name": "Rally tablet, 8\"",
+			"description": "A rally tower's big tablet on a navigation bar: the whole route in front of you, with fuel and stops.",
+			"mass": 0.7,
+			"type": "Tablet, 8\"",
+			"style": "tablet",
+			"screen": [
+				0.18,
+				0.11
+			],
+			"features": [
+				"map",
+				"route",
+				"fuel"
+			],
+			"color": [
+				0.04,
+				0.04,
+				0.045
+			],
+			"styles": [
+				"adventure"
+			],
+			"price": 450
 		}
 	}
 }
