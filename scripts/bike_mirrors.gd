@@ -219,6 +219,9 @@ func update(eye_cam: Camera3D) -> void:
 		var v: Dictionary = views[i]
 		var glass: MeshInstance3D = v["glass"]
 		var vp: SubViewport = v["vp"]
+		if measure != bool(v.get("measured", false)):
+			v["measured"] = measure
+			RenderingServer.viewport_set_measure_render_time(vp.get_viewport_rid(), measure)
 		if glass.material_override != v["mat"]:
 			# Something gave the glass a new look (a respray): keep that one for when it's off.
 			v["plain"] = glass.material_override
@@ -241,7 +244,7 @@ func update(eye_cam: Camera3D) -> void:
 		if cam.environment != _env:
 			cam.environment = _env
 		if measure:
-			RenderingServer.viewport_set_measure_render_time(vp.get_viewport_rid(), true)
+			# Its last drawing's time, counted for each time it's drawn.
 			Perf.add_us("mirrors_gpu", roundi(1000.0 * (RenderingServer.viewport_get_measured_render_time_gpu(vp.get_viewport_rid())
 				+ RenderingServer.viewport_get_measured_render_time_cpu(vp.get_viewport_rid()))))
 		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
