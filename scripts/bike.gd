@@ -67,6 +67,7 @@ const CRASH_LEAN := deg_to_rad(78.0)
 const CRASH_PITCH := deg_to_rad(72.0)
 const AUTO_RESPAWN_TIME := 3.5
 const HOLD_SPEED := 1.0           # m/s: slower than this, a bike with its controls off is held still (see _hold_still)
+var _held := false   # frozen by _hold_still (not by anyone else)
 const START_TIME := 0.7           # seconds on the starter motor before it fires
 const WHEELIE_PITCH := deg_to_rad(28.0)   # where the rider tries to hold a wheelie (weight back: higher)
 const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down
@@ -418,12 +419,16 @@ func shift_origin(d: Vector3) -> void:
 ## come back.
 func _hold_still() -> void:
 	var hold := not controls_enabled and absf(speed) < HOLD_SPEED and bool(wheels[0]["contact"]) and bool(wheels[1]["contact"])
-	if hold == freeze:
+	if hold == _held:
 		return
+	# Only ever undoes its own freeze: a bike frozen for anything else stays frozen.
 	if hold:
+		if freeze:
+			return
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
 		paddling = false
+	_held = hold
 	freeze = hold
 
 
