@@ -3,7 +3,18 @@ extends RefCounted
 ## The road of an adventure ride, planned whole from its seed and length before anyone sets
 ## off, so every player's game has the very same road: its centre line (a knot every STEP
 ## metres, in doubles: the route runs for a hundred kilometres and more), its height, width and
-## bends, its surfaces, and the sites along it (fuel stations now; towns, stops and forks later).
+## bends, its surfaces, and the sites along it (fuel stations, stops, and the forks).
+##
+## Forks: every 20 to 30 km the road splits into two or three ways (the main road, a scenic pass,
+## a gravel track: each its own length, surfaces and bends) that meet again a few km on. The
+## route is planned along the main road at every fork (the default path, the old single road),
+## then each other way is planned from the fork to the rejoin, steered there on its own seed.
+## The arrays below (px, pz, ...) are always the path as chosen so far (`choices`, the main road
+## where nothing is chosen yet): choose() rebuilds them from that fork on. Nothing past a fork
+## that isn't decided is ever built (see stream_end), and nothing built before one reads the road
+## past it, so the road up to a fork is the same whichever way is taken. Distances (s) are along
+## the path; sites are filed by where they are on the graph and get their s on the path afresh
+## whenever it changes.
 ##
 ## The road is made of sections, each straight, sweeping, curvy or very curvy, a run of bends
 ## of that kind (clothoid in and out); the heading never strays past MAX_HEADING from the way
@@ -46,6 +57,32 @@ const FUEL_EVERY := [22000.0, 32000.0]
 const SITE_KNOTS := 28
 ## The grid knots are filed in, to find the road near a point (m).
 const GRID := 64.0
+## Forks: the first this far in (m), then one every so often along the main road; the main road
+## through one runs this long before the ways meet again, at least FORK_END_GAP before the end.
+const FORK_FIRST := [14000.0, 22000.0]
+const FORK_EVERY := [20000.0, 30000.0]
+const FORK_MAIN := [5000.0, 9000.0]
+const FORK_END_GAP := 3000.0
+## Knots kept straight and level either side of a fork and a rejoin: far enough that nothing
+## built before the fork reads the road past it.
+const JUNCTION_KNOTS := 56
+## Where the signpost stands, before the fork (m).
+const SIGN_BEFORE := 60.0
+const WAY_LETTERS: Array[String] = ["A", "B", "C"]
+## How each other kind of way is planned: its bends, how far off the line from fork to rejoin it
+## swings (of that distance, to one side), how far its heading may stray from the way to where
+## it's making for (radians), and its widths.
+const WAY_PLANS := {
+	"scenic": {"kinds": {"sweeping": 0.15, "curvy": 0.45, "very_curvy": 0.4}, "off": 0.3, "stray": 1.15,
+		"widths": {"road": 0.15, "narrow": 0.55, "single": 0.3}},
+	"gravel": {"kinds": {"straight": 0.35, "sweeping": 0.4, "curvy": 0.25}, "off": 0.04, "stray": 0.55,
+		"widths": {"road": 0.15, "narrow": 0.5, "single": 0.35}},
+}
+const PASS_NAMES: Array[String] = ["Hollow", "Raven", "Kestrel", "Windy Gap", "Black Crag", "Eagle", "High Moor", "Stag", "Falcon", "Cloud"]
+const TRACK_NAMES: Array[String] = ["Quarry", "Forest", "Drovers'", "Old Mine", "Shepherds'", "Ridge", "Peat", "Miners'", "Fell", "Long Lane"]
+## Rough average speeds for how long each way takes (km/h): by its bends, times a surface factor.
+const PACE := {"straight": 90.0, "sweeping": 78.0, "curvy": 58.0, "very_curvy": 40.0}
+const PACE_SURF := {"tarmac": 1.0, "gravel": 0.68, "sand": 0.5, "snow": 0.5}
 
 var seed_value := 0
 var theme := "varied"
@@ -70,6 +107,31 @@ var chunk_surface: Array[String] = []
 ## [{kind, s, i, side, flat, name}] sorted by s: see add_site.
 var sites: Array = []
 var _grid := {}
+## [{s, rejoin (on the default path, m), i0, i1 (their knots there), ways: [way]}]: way 0 is the
+## main road (the default path's own knots), the others {kind, name, letter, n, len, px, pz, ph,
+## hd, curv, width, base, sections, chunk_surface, sites (each with ls, its s along the way)};
+## every way has its summary too (see _summarise).
+var forks: Array = []
+## fork -> the way taken there (0, the main road, wherever nothing's chosen yet), and fork -> true
+## once that's decided for good.
+var choices := {}
+var decided := {}
+## Each knot of the path's index on the default path (or the knot level with it, on another
+## way), to tell another stretch of road from this one (see _other_road_limit).
+var eq := PackedInt32Array()
+## The default path's arrays, and its sites (each with ds, its s on that path).
+var _def := {}
+var _def_sites: Array = []
+## The path in pieces: [{fork (-1 between forks), way, d0, d1 (default path s), p0, p1 (path s), k0 (first knot)}].
+var _layout: Array = []
+var _planned := false
+## Every knot of every way, filed in a grid like _grid: x, z, height, half width and eq in flat arrays.
+var _sgrid := {}
+var _sx := PackedFloat64Array()
+var _sz := PackedFloat64Array()
+var _sh := PackedFloat32Array()
+var _sw := PackedFloat32Array()
+var _seq := PackedInt32Array()
 var _noise: FastNoiseLite
 var _noise_fine: FastNoiseLite
 var _noise_far: FastNoiseLite
@@ -86,28 +148,51 @@ func plan(seed: int, km: float, theme_name := "varied", extra_sites: Array = [])
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed, "adventure_road", theme])
 	_make_noise(seed)
+	_planned = false
 	sites.clear()
+	forks.clear()
+	choices.clear()
+	decided.clear()
 	_plan_fuel(rng)
 	add_site("start", 48.0, 1, 0.0, "Start")
 	add_site("finish", length, 1, 0.0, "Destination")
 	for e in extra_sites:
 		add_site(str(e.get("kind", "site")), float(e.get("s", 0.0)), int(e.get("side", 1)), float(e.get("flat", 20.0)),
 			str(e.get("name", "")))
+	_plan_forks()
 	_plan_surfaces(rng, n)
 	_plan_bends(rng, n)
 	_plan_heights(rng, n)
 	_integrate(n)
-	_build_grid()
+	_stash_default()
+	for f in forks.size():
+		_plan_ways(f)
+	_build_static_grid()
+	_planned = true
+	_assemble()
 
 
-## Marks a site (a fuel station, later a town, a stop or a fork) at `s` metres on `side` (1 the
-## right, -1 the left): the land there is kept flat at the road's height `flat` metres out past
-## the verge. Sites added before plan() also get a straight, level stretch of road.
-func add_site(kind: String, s: float, side := 1, flat := 30.0, site_name := "") -> Dictionary:
+## Marks a site (a fuel station, a town, a stop, a fork) at `s` metres on `side` (1 the right,
+## -1 the left): the land there is kept flat at the road's height `flat` metres out past the
+## verge. Sites planned with the road (plan's extra_sites) also get a straight, level stretch,
+## `keep` knots either side. On a planned route `s` is along the path as chosen so far, and the
+## site stays on that stretch of road (on a way that isn't taken it's off the path: not in sites).
+func add_site(kind: String, s: float, side := 1, flat := 30.0, site_name := "", keep := SITE_KNOTS) -> Dictionary:
 	var site := {"kind": kind, "s": s, "i": clampi(int(round(s / STEP)), 0, maxi(0, px.size() - 1)), "side": signi(side) if side != 0 else 1,
-		"flat": flat, "name": site_name}
-	sites.append(site)
-	sites.sort_custom(func(a, b): return float(a["s"]) < float(b["s"]))
+		"flat": flat, "name": site_name, "keep": keep}
+	if not _planned:
+		site["ds"] = s
+		sites.append(site)
+		sites.sort_custom(func(a, b): return float(a["s"]) < float(b["s"]))
+		return site
+	var piece := _piece_at(s)
+	if int(piece["fork"]) >= 0 and int(piece["way"]) > 0:
+		site["ls"] = s - float(piece["p0"])
+		forks[int(piece["fork"])]["ways"][int(piece["way"])]["sites"].append(site)
+	else:
+		site["ds"] = float(piece["d0"]) + s - float(piece["p0"])
+		_def_sites.append(site)
+	_assemble_sites()
 	return site
 
 
@@ -262,20 +347,22 @@ func natural_height(i: int, x: float, z: float, a: float) -> float:
 
 ## Keeps the land under the road where another stretch of it (a bend that doubles back, more
 ## than SITE_KNOTS... 160 m along) passes close by: at most that road's height just under its
-## verge, rising gently away from it.
+## verge, rising gently away from it. Every way at every fork counts, taken or not, so the land
+## comes out the same whichever is chosen (see eq).
 func _other_road_limit(i: int, x: float, z: float) -> float:
 	var limit := INF
 	var cx := int(floor(x / GRID))
 	var cz := int(floor(z / GRID))
+	var e := eq[i] if i < eq.size() else i
 	for gz in range(cz - 1, cz + 2):
 		for gx in range(cx - 1, cx + 2):
-			for j in _grid.get(Vector2i(gx, gz), PackedInt32Array()):
-				if absi(j - i) < 40:
+			for j in _sgrid.get(Vector2i(gx, gz), PackedInt32Array()):
+				if absi(_seq[j] - e) < 40:
 					continue
-				var d := sqrt((px[j] - x) * (px[j] - x) + (pz[j] - z) * (pz[j] - z))
-				var reach := width[j] * 0.5 + 2.0
+				var d := sqrt((_sx[j] - x) * (_sx[j] - x) + (_sz[j] - z) * (_sz[j] - z))
+				var reach := _sw[j] + 2.0
 				if d < reach + 40.0:
-					limit = minf(limit, ph[j] - 0.35 + maxf(0.0, d - reach) * 0.7)
+					limit = minf(limit, _sh[j] - 0.35 + maxf(0.0, d - reach) * 0.7)
 	return limit
 
 
@@ -289,16 +376,16 @@ func _site_flat(i: int, side: float) -> float:
 	return out
 
 
-## The distance from route-frame (x, z) to the road's nearest centre line, less its half width
-## (negative on the road), looking only at knots filed near it.
+## The distance from route-frame (x, z) to the nearest centre line of any way, less its half
+## width (negative on the road), looking only at knots filed near it.
 func clearance(x: float, z: float) -> float:
 	var best := INF
 	var cx := int(floor(x / GRID))
 	var cz := int(floor(z / GRID))
 	for gz in range(cz - 1, cz + 2):
 		for gx in range(cx - 1, cx + 2):
-			for j in _grid.get(Vector2i(gx, gz), PackedInt32Array()):
-				var d := sqrt((px[j] - x) * (px[j] - x) + (pz[j] - z) * (pz[j] - z)) - width[j] * 0.5
+			for j in _sgrid.get(Vector2i(gx, gz), PackedInt32Array()):
+				var d := sqrt((_sx[j] - x) * (_sx[j] - x) + (_sz[j] - z) * (_sz[j] - z)) - _sw[j]
 				best = minf(best, d)
 	return best
 
@@ -320,10 +407,11 @@ func inside_reach(i: int, side: int) -> float:
 func other_road_near(i: int, x: float, z: float, r: float) -> bool:
 	var cx := int(floor(x / GRID))
 	var cz := int(floor(z / GRID))
+	var e := eq[i] if i < eq.size() else i
 	for gz in range(cz - 1, cz + 2):
 		for gx in range(cx - 1, cx + 2):
-			for j in _grid.get(Vector2i(gx, gz), PackedInt32Array()):
-				if absi(j - i) >= 40 and (px[j] - x) * (px[j] - x) + (pz[j] - z) * (pz[j] - z) < r * r:
+			for j in _sgrid.get(Vector2i(gx, gz), PackedInt32Array()):
+				if absi(_seq[j] - e) >= 40 and (_sx[j] - x) * (_sx[j] - x) + (_sz[j] - z) * (_sz[j] - z) < r * r:
 					return true
 	return false
 
@@ -487,20 +575,24 @@ func _put(st: Dictionary, k: float) -> void:
 		hd[i + 1] = st["h"]
 
 
-func _site_near(i: int, knots: int) -> bool:
-	for st in sites:
+## Whether a site of `among` (each kept straight `keep` knots either side) is within the
+## `knots` from knot `i`.
+func _site_near(i: int, knots: int, among: Array = sites) -> bool:
+	for st in among:
 		var si: int = int(round(float(st["s"]) / STEP))
-		if si + SITE_KNOTS >= i and si - SITE_KNOTS <= i + knots:
+		var keep := int(st.get("keep", SITE_KNOTS))
+		if si + keep >= i and si - keep <= i + knots:
 			return true
 	return false
 
 
-func _site_end(i: int, knots: int) -> int:
+func _site_end(i: int, knots: int, among: Array = sites) -> int:
 	var out := i + 1
-	for st in sites:
+	for st in among:
 		var si: int = int(round(float(st["s"]) / STEP))
-		if si + SITE_KNOTS >= i and si - SITE_KNOTS <= i + knots:
-			out = maxi(out, si + SITE_KNOTS + 1)
+		var keep := int(st.get("keep", SITE_KNOTS))
+		if si + keep >= i and si - keep <= i + knots:
+			out = maxi(out, si + keep + 1)
 	return out
 
 
@@ -597,3 +689,738 @@ func _build_grid() -> void:
 		arr.append(i)
 		cells[key] = arr
 	_grid = cells
+
+
+# ---------------------------------------------------------------------------- forks
+
+## Where the forks go, along the main road: clear of the sites already planned, each with the
+## signpost before it and the junctions kept straight at the fork and where the ways meet again.
+func _plan_forks() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed_value, "forks", theme])
+	var s := snappedf(rng.randf_range(FORK_FIRST[0], FORK_FIRST[1]), CHUNK_LEN)
+	while true:
+		var main_len := snappedf(rng.randf_range(FORK_MAIN[0], FORK_MAIN[1]), CHUNK_LEN)
+		var tries := 0
+		while _junction_clash(s, s + main_len) and tries < 30:
+			s += CHUNK_LEN * 2.0
+			tries += 1
+		if s + main_len > length - FORK_END_GAP:
+			break
+		var f := forks.size()
+		var kinds: Array[String] = ["main", "scenic", "gravel"]
+		if rng.randf() < 0.45:
+			kinds.remove_at(1 if rng.randf() < 0.5 else 2)
+		var names := {"main": "Main road", "scenic": PASS_NAMES[rng.randi() % PASS_NAMES.size()] + " Pass",
+			"gravel": TRACK_NAMES[rng.randi() % TRACK_NAMES.size()] + " Track"}
+		forks.append({"s": s, "rejoin": s + main_len, "i0": int(round(s / STEP)), "i1": int(round((s + main_len) / STEP)),
+			"kinds": kinds, "names": names, "ways": []})
+		var sign := add_site("fork", s - SIGN_BEFORE, 1, 16.0, "Fork", 40)
+		sign["fork"] = f
+		var part := add_site("junction", s, 1, 0.0, "Fork", JUNCTION_KNOTS)
+		part["fork"] = f
+		var meet := add_site("junction", s + main_len, 1, 0.0, "Ways meet", JUNCTION_KNOTS)
+		meet["rejoin"] = f
+		s += snappedf(rng.randf_range(FORK_EVERY[0], FORK_EVERY[1]), CHUNK_LEN)
+
+
+func _junction_clash(a: float, b: float) -> bool:
+	for st in sites:
+		if st["kind"] != "start" and (absf(float(st["s"]) - a) < 600.0 or absf(float(st["s"]) - b) < 600.0):
+			return true
+	return false
+
+
+## Keeps the default path (the main road at every fork) to build any path from, with its lie of
+## the land worked out a stretch between junctions at a time, so the land up to a fork never
+## depends on the road past it.
+func _stash_default() -> void:
+	var cuts := [0]
+	for fk in forks:
+		cuts.append_array([int(fk["i0"]), int(fk["i1"])])
+	cuts.append(px.size() - 1)
+	base = _leg_base(ph, cuts)
+	_def = {"px": px.duplicate(), "pz": pz.duplicate(), "ph": ph.duplicate(), "hd": hd.duplicate(), "curv": curv.duplicate(),
+		"width": width.duplicate(), "base": base.duplicate(), "sections": sections.duplicate(true),
+		"chunk_surface": chunk_surface.duplicate(), "total": total, "n": px.size()}
+	_def_sites = sites.duplicate()
+
+
+## The lie of the land along heights `h`: averaged over 200 m either way, but never across a cut
+## (each stretch between cuts on its own; a cut knot goes with the stretch before it).
+static func _leg_base(h: PackedFloat64Array, cuts: Array) -> PackedFloat32Array:
+	var n := h.size()
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var sums := PackedFloat64Array()
+	sums.resize(n + 1)
+	for i in n:
+		sums[i + 1] = sums[i] + h[i]
+	for k in range(cuts.size() - 1):
+		var a: int = cuts[k]
+		var b: int = cuts[k + 1]
+		for i in range(a if k == 0 else a + 1, b + 1):
+			var lo := maxi(a, i - 50)
+			var hi := mini(b, i + 50) + 1
+			out[i] = (sums[hi] - sums[lo]) / float(hi - lo)
+	return out
+
+
+## Plans the ways at fork `f`: the main road (the default path's own), and the others steered off
+## to the other side of it and back to the rejoin.
+func _plan_ways(f: int) -> void:
+	var fk: Dictionary = forks[f]
+	var i0: int = fk["i0"]
+	var i1: int = fk["i1"]
+	var mid := (i0 + i1) / 2
+	var cx := (px[i0] + px[i1]) * 0.5
+	var cz := (pz[i0] + pz[i1]) * 0.5
+	# Which side of the line from fork to rejoin the main road bows out to.
+	var rx := -(pz[i1] - pz[i0])
+	var rz := px[i1] - px[i0]
+	var main_side := 1.0 if (px[mid] - cx) * rx + (pz[mid] - cz) * rz >= 0.0 else -1.0
+	var ways := [{"kind": "main", "name": fk["names"]["main"], "n": i1 - i0 + 1, "sites": []}]
+	_summarise(ways[0], _def, i0, i1)
+	for kind in fk["kinds"]:
+		if kind == "main":
+			continue
+		var way := _plan_way(f, kind, -main_side if kind == "scenic" else main_side)
+		way["name"] = fk["names"][kind]
+		_summarise(way, way, 0, int(way["n"]) - 1)
+		ways.append(way)
+	# The letters, and which way each points off at the fork (by how it bears 700 m on).
+	var order := range(ways.size())
+	order.sort_custom(func(p, q): return float(ways[p]["bear"]) < float(ways[q]["bear"]))
+	var arrows := ["<", ">"] if ways.size() == 2 else ["<", "^", ">"]
+	for k in order.size():
+		ways[order[k]]["arrow"] = arrows[k]
+	for w in ways.size():
+		ways[w]["letter"] = WAY_LETTERS[w]
+	fk["ways"] = ways
+
+
+## Plans one other way at fork `f` (WAY_PLANS[kind]): from the fork, straight for the junction,
+## then sections of bends steered towards a point off to `side` of the line to the rejoin, then
+## to a point in line behind the rejoin, then followed in onto the rejoin. What's left over
+## (tens of metres, and a few degrees of heading) is spread along the way, so it meets the road
+## on from there exactly. A whole number of chunks long.
+func _plan_way(f: int, kind: String, side: float) -> Dictionary:
+	var fk: Dictionary = forks[f]
+	var spec: Dictionary = WAY_PLANS[kind]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed_value, "way", theme, f, kind])
+	var i0: int = fk["i0"]
+	var i1: int = fk["i1"]
+	var a := Vector2(px[i0], pz[i0])
+	var b := Vector2(px[i1], pz[i1])
+	var hb := hd[i1]
+	var chord := b - a
+	var dist := chord.length()
+	var right := Vector2(-chord.y, chord.x) / dist
+	var aim := a + chord * 0.5 + right * side * dist * float(spec["off"]) * rng.randf_range(0.8, 1.2)
+	var approach := b - Vector2(sin(hb), -cos(hb)) * 420.0
+	# Fuel on the main road through the fork is matched on every other way, about as far along,
+	# so whichever's taken nobody's left dry.
+	var wsites := []
+	for st in sites:
+		if st["kind"] == "fuel" and float(st["s"]) > float(fk["s"]) and float(st["s"]) < float(fk["rejoin"]):
+			var frac := (float(st["s"]) - float(fk["s"])) / (float(fk["rejoin"]) - float(fk["s"]))
+			var ls := snappedf(clampf(frac * dist, JUNCTION_KNOTS * STEP + 250.0, dist * 0.7), STEP)
+			wsites.append({"kind": "fuel", "s": ls, "ls": ls, "i": 0, "side": st["side"], "flat": st["flat"], "name": st["name"], "keep": SITE_KNOTS})
+	var g := {"x": float(px[i0]), "z": float(pz[i0]), "h": float(hd[i0]), "cv": PackedFloat64Array(), "hs": PackedFloat64Array(),
+		"xs": PackedFloat64Array(), "zs": PackedFloat64Array()}
+	var secs := []
+	for k in JUNCTION_KNOTS:
+		_wput(g, 0.0)
+	var stage := 0
+	var limit := int(dist * 3.0 / STEP) + 400
+	var sec_end := 0
+	var bends: Dictionary = BENDS["sweeping"]
+	var last_sign := side
+	var stray: float = spec["stray"]
+	while _wn(g) < limit:
+		var p := Vector2(g["x"], g["z"])
+		if stage == 0 and (p.distance_to(aim) < dist * 0.2 or (p - a).dot(chord) > (aim - a).dot(chord)):
+			stage = 1
+		if stage == 1 and (p.distance_to(approach) < 260.0 or (p - a).dot(chord) > (approach - a).dot(chord)):
+			break
+		if _wn(g) >= sec_end:
+			var sk := _weighted(rng, spec["kinds"])
+			bends = BENDS[sk]
+			sec_end = _wn(g) + int(rng.randf_range(bends["len"][0], bends["len"][1]) / STEP)
+			secs.append({"s0": _wn(g) * STEP, "s1": sec_end * STEP, "kind": sk, "width": _weighted(rng, spec["widths"])})
+		var target := aim if stage == 0 else approach
+		for k in int(rng.randf_range(bends["gap"][0], bends["gap"][1]) / STEP):
+			_wput(g, 0.0)
+		var r: float = rng.randf_range(bends["r"][0], bends["r"][1])
+		var arc := deg_to_rad(rng.randf_range(bends["arc"][0], bends["arc"][1]))
+		var t: float = rng.randf_range(bends["t"][0], bends["t"][1])
+		# Bend towards where it's making for when it's well off it, otherwise mostly swap sides;
+		# never so far that the heading strays more than `stray` from it.
+		var to := target - Vector2(g["x"], g["z"])
+		var err := wrapf(atan2(to.x, -to.y) - float(g["h"]), -PI, PI)
+		var sign := 1.0 if err > 0.0 else -1.0
+		if absf(err) < stray * 0.5:
+			sign = -last_sign if rng.randf() < 0.72 else last_sign
+		var room := stray + sign * err
+		if room < deg_to_rad(10.0):
+			sign = -sign
+			room = stray + sign * err
+		arc = minf(arc, maxf(room, deg_to_rad(5.0)))
+		last_sign = sign
+		var tk := maxi(1, int(minf(t, arc * r * 0.5) / STEP))
+		var ck := maxi(0, int((arc * r - tk * STEP) / STEP))
+		var knots := tk * 2 + ck
+		if _site_near(_wn(g), knots, wsites):
+			var end := _site_end(_wn(g), knots, wsites)
+			while _wn(g) < end:
+				_wput(g, 0.0)
+			continue
+		for k in tk:
+			_wput(g, sign / r * (k + 0.5) / tk)
+		for k in ck:
+			_wput(g, sign / r)
+		for k in tk:
+			_wput(g, sign / r * (tk - k - 0.5) / tk)
+	# In onto the line behind the rejoin and along it, following a point a little ahead.
+	var ab := b - approach
+	var lab := ab.length()
+	var u := ab / lab
+	var final_at := _wn(g)
+	while _wn(g) < limit + 600:
+		var p := Vector2(g["x"], g["z"])
+		var along := (p - approach).dot(u)
+		if along >= lab - STEP * 0.5:
+			break
+		var carrot := approach + u * minf(maxf(along, 0.0) + 120.0, lab + 60.0)
+		var to := carrot - p
+		var err := wrapf(atan2(to.x, -to.y) - float(g["h"]), -PI, PI)
+		_wput(g, clampf(2.0 * sin(err) / maxf(to.length(), 30.0), -1.0 / 70.0, 1.0 / 70.0))
+	secs.append({"s0": final_at * STEP, "s1": INF, "kind": "sweeping", "width": _weighted(rng, spec["widths"])})
+	# A whole number of chunks: straight on a little further, or cut back.
+	var cnt := _wn(g) + 1
+	var n := maxi(CHUNK_KNOTS * 4 + 1, int(round(float(cnt - 1) / CHUNK_KNOTS)) * CHUNK_KNOTS + 1)
+	while _wn(g) < n - 1:
+		_wput(g, 0.0)
+	var xs: PackedFloat64Array = g["xs"]
+	var zs: PackedFloat64Array = g["zs"]
+	var hs: PackedFloat64Array = g["hs"]
+	var cv: PackedFloat64Array = g["cv"]
+	xs.append(g["x"])
+	zs.append(g["z"])
+	hs.append(g["h"])
+	cv.append(0.0)
+	xs.resize(n)
+	zs.resize(n)
+	hs.resize(n)
+	cv.resize(n)
+	# Turn the last stretch round onto the rejoin's heading...
+	var dh := wrapf(hb - hs[n - 1], -PI, PI)
+	var m := mini(120, (n - 1) / 3)
+	var k0 := n - 1 - m
+	for k in range(k0, n - 1):
+		var sh := hs[k] + cv[k] * STEP * 0.5 + dh * smoothstep(float(k0), float(n - 1), k + 0.5)
+		xs[k + 1] = xs[k] + sin(sh) * STEP
+		zs[k + 1] = zs[k] - cos(sh) * STEP
+	# ...and ease the whole way across onto it.
+	var ex := px[i1] - xs[n - 1]
+	var ez := pz[i1] - zs[n - 1]
+	for k in n:
+		var tt := float(k) / float(n - 1)
+		var w := tt * tt * tt * (tt * (tt * 6.0 - 15.0) + 10.0)
+		xs[k] += ex * w
+		zs[k] += ez * w
+	xs[0] = px[i0]
+	zs[0] = pz[i0]
+	xs[n - 1] = px[i1]
+	zs[n - 1] = pz[i1]
+	# Headings and curvature from where the knots ended up.
+	var whd := PackedFloat64Array()
+	whd.resize(n)
+	var wcv := PackedFloat32Array()
+	wcv.resize(n)
+	var prev := hd[i0]
+	var segs := PackedFloat64Array()
+	segs.resize(n - 1)
+	for k in n - 1:
+		var sg := atan2(xs[k + 1] - xs[k], -(zs[k + 1] - zs[k]))
+		prev = prev + wrapf(sg - prev, -PI, PI)
+		segs[k] = prev
+	whd[0] = hd[i0]
+	for k in range(1, n - 1):
+		whd[k] = (segs[k - 1] + segs[k]) * 0.5
+	whd[n - 1] = hb
+	for k in n - 1:
+		wcv[k] = (whd[k + 1] - whd[k]) / STEP
+	var way := {"kind": kind, "n": n, "px": xs, "pz": zs, "hd": whd, "curv": wcv, "sites": wsites, "miss": Vector2(ex, ez).length()}
+	for sec in secs:
+		sec["s1"] = minf(float(sec["s1"]), (n - 1) * STEP)
+	way["sections"] = secs.filter(func(sec): return float(sec["s1"]) > float(sec["s0"]))
+	_way_heights(way, rng, ph[i0], ph[i1])
+	_way_widths(way, width[i0], width[i1])
+	# Its surfaces, a chunk at a time: a gravel track (sand in the middle of some), a scenic pass
+	# on tarmac, snowy over the top of a high one.
+	var cs: Array[String] = []
+	var chunks := (n - 1) / CHUNK_KNOTS
+	var sandy := rng.randf() < 0.4
+	for c in chunks:
+		var ct := (c + 0.5) / chunks
+		var surf := "tarmac"
+		if kind == "gravel":
+			surf = "sand" if sandy and ct > 0.4 and ct < 0.62 else "gravel"
+		elif float(way["rise"]) > 120.0 and ct > 0.38 and ct < 0.62:
+			surf = "snow"
+		cs.append(surf)
+	way["chunk_surface"] = cs
+	way["base"] = _leg_base(way["ph"], [0, n - 1])
+	return way
+
+
+## How many knots a way being planned has so far.
+static func _wn(g: Dictionary) -> int:
+	return (g["xs"] as PackedFloat64Array).size()
+
+
+## Writes the next knot of a way being planned (curvature `k` after it) and moves on.
+static func _wput(g: Dictionary, k: float) -> void:
+	var h: float = g["h"]
+	(g["cv"] as PackedFloat64Array).append(k)
+	(g["hs"] as PackedFloat64Array).append(h)
+	(g["xs"] as PackedFloat64Array).append(g["x"])
+	(g["zs"] as PackedFloat64Array).append(g["z"])
+	var hm := h + k * STEP * 0.5
+	g["x"] = float(g["x"]) + sin(hm) * STEP
+	g["z"] = float(g["z"]) - cos(hm) * STEP
+	g["h"] = h + k * STEP
+
+
+## A way's heights: climbs and descents like the main road's, level by the junctions and its
+## sites, eased to meet the rejoin's height; a scenic pass rises over a top on the way.
+func _way_heights(way: Dictionary, rng: RandomNumberGenerator, h0: float, h1: float) -> void:
+	var n: int = way["n"]
+	var zh := PackedFloat64Array()
+	zh.resize(n)
+	var h := h0
+	var gr := 0.0
+	var target := 0.0
+	var seg_end := 0
+	for k in n:
+		if k >= seg_end:
+			var kind := _kind_in(way["sections"], k * STEP)
+			var steep := {"straight": 3.0, "sweeping": 6.0, "curvy": 8.0, "very_curvy": 10.0}.get(kind, 5.0) as float
+			target = rng.randf_range(0.25, 1.0) * steep / 100.0 * (1.0 if rng.randf() < 0.5 else -1.0)
+			if rng.randf() < 0.22:
+				target = 0.0
+			seg_end = k + int(rng.randf_range(300.0, 1400.0) / STEP)
+		var aim := target
+		if k < JUNCTION_KNOTS + 10 or k > n - JUNCTION_KNOTS - 40 or _site_near(k - 30, 150, way["sites"]):
+			aim = 0.0
+		gr = move_toward(gr, aim, 0.0012)
+		zh[k] = h
+		h += gr * STEP
+	var len_m := (n - 1) * STEP
+	var rise := 0.0
+	if way["kind"] == "scenic":
+		rise = minf(rng.randf_range(150.0, 320.0), 0.05 * len_m / PI)
+	var dz := h1 - zh[n - 1]
+	for k in n:
+		var t := float(k) / float(n - 1)
+		zh[k] += dz * t * t * t * (t * (t * 6.0 - 15.0) + 10.0) + rise * pow(sin(PI * t), 2.0)
+	zh[0] = h0
+	zh[n - 1] = h1
+	way["ph"] = zh
+	way["rise"] = rise
+
+
+## A way's widths by its sections, eased from the road's at the fork and onto it at the rejoin.
+func _way_widths(way: Dictionary, w0: float, w1: float) -> void:
+	var n: int = way["n"]
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var w := w0
+	for k in n:
+		var aim := w0
+		for sec in way["sections"]:
+			if k * STEP >= float(sec["s0"]) and k * STEP < float(sec["s1"]):
+				aim = WIDTHS[str(sec["width"])]
+		w = move_toward(w, aim, 0.05)
+		out[k] = lerpf(w, w1, smoothstep(float(n - 81), float(n - 1), float(k)))
+	out[n - 1] = w1
+	way["width"] = out
+
+
+static func _kind_in(secs: Array, s: float) -> String:
+	for sec in secs:
+		if s < float(sec["s1"]):
+			return str(sec["kind"])
+	return "straight" if secs.is_empty() else str(secs[-1]["kind"])
+
+
+## What the satnav, signpost and map say about a way: its length (len), how long it takes about
+## (time, s), metres of each surface (surfaces) and kind of bends (kinds), the climbing (climb, m),
+## its high point over the fork (top, m), how twisty it is (twist, degrees of turning a km), how
+## it bears off at the fork (bear, radians) and the box round it. From arrays `a` (a way's own,
+## or _def), knots k0..k1.
+func _summarise(way: Dictionary, a: Dictionary, k0: int, k1: int) -> void:
+	var surfs := {}
+	var kinds := {}
+	var secs := 0.0
+	var climb := 0.0
+	var turn := 0.0
+	var top := 0.0
+	var aph: PackedFloat64Array = a["ph"]
+	var acv: PackedFloat32Array = a["curv"]
+	var apx: PackedFloat64Array = a["px"]
+	var apz: PackedFloat64Array = a["pz"]
+	var cs: Array = a["chunk_surface"]
+	var box := Rect2(apx[k0], apz[k0], 0.0, 0.0)
+	for k in range(k0, k1):
+		var sf := str(cs[clampi(k / CHUNK_KNOTS, 0, cs.size() - 1)])
+		var kd := _kind_in(a["sections"], k * STEP)
+		surfs[sf] = float(surfs.get(sf, 0.0)) + STEP
+		kinds[kd] = float(kinds.get(kd, 0.0)) + STEP
+		secs += STEP / (float(PACE.get(kd, 70.0)) * float(PACE_SURF.get(sf, 0.7)) / 3.6)
+		climb += maxf(0.0, aph[k + 1] - aph[k])
+		turn += absf(acv[k]) * STEP
+		top = maxf(top, aph[k] - aph[k0])
+		box = box.expand(Vector2(apx[k], apz[k]))
+	var len_m := (k1 - k0) * STEP
+	var kb := mini(k0 + 175, k1)
+	var bear := atan2(apx[kb] - apx[k0], -(apz[kb] - apz[k0])) - float(a["hd"][k0])
+	way["len"] = len_m
+	way["time"] = secs
+	way["surfaces"] = surfs
+	way["kinds"] = kinds
+	way["climb"] = climb
+	way["top"] = top
+	way["twist"] = rad_to_deg(turn) / maxf(len_m / 1000.0, 0.1)
+	way["bear"] = wrapf(bear, -PI, PI)
+	way["box"] = box.grow(60.0)
+
+
+## Files every knot of every way (taken or not) in the static grid: the land and scenery keep
+## clear of all of them, the same whichever way the crew goes.
+func _build_static_grid() -> void:
+	_sgrid = {}
+	_sx = PackedFloat64Array()
+	_sz = PackedFloat64Array()
+	_sh = PackedFloat32Array()
+	_sw = PackedFloat32Array()
+	_seq = PackedInt32Array()
+	var d: Dictionary = _def
+	var dpx: PackedFloat64Array = d["px"]
+	var dpz: PackedFloat64Array = d["pz"]
+	var dph: PackedFloat64Array = d["ph"]
+	var dw: PackedFloat32Array = d["width"]
+	for j in int(d["n"]):
+		_file_knot(dpx[j], dpz[j], dph[j], dw[j] * 0.5, j)
+	for fk in forks:
+		for w in range(1, fk["ways"].size()):
+			var way: Dictionary = fk["ways"][w]
+			var wpx: PackedFloat64Array = way["px"]
+			var wpz: PackedFloat64Array = way["pz"]
+			var wph: PackedFloat64Array = way["ph"]
+			var ww: PackedFloat32Array = way["width"]
+			for k in range(1, int(way["n"]) - 1):
+				_file_knot(wpx[k], wpz[k], wph[k], ww[k] * 0.5, _way_eq(fk, way, k))
+	for key in _sgrid:
+		_sgrid[key] = PackedInt32Array(_sgrid[key])
+
+
+func _file_knot(x: float, z: float, h: float, hw: float, e: int) -> void:
+	var key := Vector2i(int(floor(x / GRID)), int(floor(z / GRID)))
+	if not _sgrid.has(key):
+		_sgrid[key] = []
+	(_sgrid[key] as Array).append(_sx.size())
+	_sx.append(x)
+	_sz.append(z)
+	_sh.append(h)
+	_sw.append(hw)
+	_seq.append(e)
+
+
+## The default path's knot level with knot `k` of another way: counted on from the fork for its
+## first half, back from the rejoin for the rest.
+static func _way_eq(fk: Dictionary, way: Dictionary, k: int) -> int:
+	var n: int = way["n"]
+	return int(fk["i0"]) + k if k < (n - 1) / 2 else int(fk["i1"]) - (n - 1 - k)
+
+
+# ---------------------------------------------------------------------------- the path as chosen
+
+## Builds the path's arrays from the default path and the ways chosen (choices): the road between
+## forks as planned, and at each fork the way taken. Its sites get their places along it.
+func _assemble() -> void:
+	var d: Dictionary = _def
+	px = PackedFloat64Array()
+	pz = PackedFloat64Array()
+	ph = PackedFloat64Array()
+	hd = PackedFloat64Array()
+	curv = PackedFloat32Array()
+	width = PackedFloat32Array()
+	base = PackedFloat32Array()
+	eq = PackedInt32Array()
+	sections = []
+	chunk_surface = []
+	_layout = []
+	_take_def(0, 0)
+	var at := 0
+	for f in forks.size():
+		var fk: Dictionary = forks[f]
+		var i0: int = fk["i0"]
+		var i1: int = fk["i1"]
+		var t0 := (px.size() - 1) * STEP
+		_take_def(at + 1, i0)
+		_layout.append({"fork": -1, "way": 0, "d0": at * STEP, "d1": i0 * STEP, "p0": t0, "p1": (px.size() - 1) * STEP})
+		var w := clampi(int(choices.get(f, 0)), 0, fk["ways"].size() - 1)
+		var p0 := (px.size() - 1) * STEP
+		if w == 0:
+			_take_def(i0 + 1, i1)
+		else:
+			var way: Dictionary = fk["ways"][w]
+			var n: int = way["n"]
+			px.append_array((way["px"] as PackedFloat64Array).slice(1, n))
+			pz.append_array((way["pz"] as PackedFloat64Array).slice(1, n))
+			ph.append_array((way["ph"] as PackedFloat64Array).slice(1, n))
+			hd.append_array((way["hd"] as PackedFloat64Array).slice(1, n))
+			curv.append_array((way["curv"] as PackedFloat32Array).slice(1, n))
+			width.append_array((way["width"] as PackedFloat32Array).slice(1, n))
+			base.append_array((way["base"] as PackedFloat32Array).slice(1, n))
+			for k in range(1, n):
+				eq.append(_way_eq(fk, way, k))
+			for sec in way["sections"]:
+				sections.append({"s0": p0 + float(sec["s0"]), "s1": p0 + float(sec["s1"]), "kind": sec["kind"], "width": sec["width"]})
+			chunk_surface.append_array(way["chunk_surface"])
+		_layout.append({"fork": f, "way": w, "d0": i0 * STEP, "d1": i1 * STEP, "p0": p0, "p1": (px.size() - 1) * STEP})
+		at = i1
+	var last := int(d["n"]) - 1
+	var t1 := (px.size() - 1) * STEP
+	_take_def(at + 1, last)
+	_layout.append({"fork": -1, "way": 0, "d0": at * STEP, "d1": last * STEP, "p0": t1, "p1": (px.size() - 1) * STEP})
+	total = float(d["total"]) + (px.size() - int(d["n"])) * STEP
+	surfaces = []
+	var c := 0
+	while c < chunk_surface.size():
+		var e := c
+		while e < chunk_surface.size() and chunk_surface[e] == chunk_surface[c]:
+			e += 1
+		surfaces.append({"s0": c * CHUNK_LEN, "s1": e * CHUNK_LEN, "surface": chunk_surface[c]})
+		c = e
+	_build_grid()
+	_assemble_sites()
+
+
+## Appends the default path's knots a..b (inclusive), with their sections and the surfaces of
+## the chunks they finish.
+func _take_def(a: int, b: int) -> void:
+	if b < a:
+		return
+	var d: Dictionary = _def
+	var shift := (px.size() - a) * STEP   # path s less default s from here on
+	px.append_array((d["px"] as PackedFloat64Array).slice(a, b + 1))
+	pz.append_array((d["pz"] as PackedFloat64Array).slice(a, b + 1))
+	ph.append_array((d["ph"] as PackedFloat64Array).slice(a, b + 1))
+	hd.append_array((d["hd"] as PackedFloat64Array).slice(a, b + 1))
+	curv.append_array((d["curv"] as PackedFloat32Array).slice(a, b + 1))
+	width.append_array((d["width"] as PackedFloat32Array).slice(a, b + 1))
+	base.append_array((d["base"] as PackedFloat32Array).slice(a, b + 1))
+	for j in range(a, b + 1):
+		eq.append(j)
+	var s0 := maxi(a - 1, 0) * STEP
+	var s1 := b * STEP
+	for sec in d["sections"]:
+		if float(sec["s1"]) > s0 and float(sec["s0"]) < s1:
+			sections.append({"s0": maxf(float(sec["s0"]), s0) + shift, "s1": minf(float(sec["s1"]), s1) + shift, "kind": sec["kind"], "width": sec["width"]})
+	var cs: Array = d["chunk_surface"]
+	for ci in range(maxi(a - 1, 0) / CHUNK_KNOTS, mini(int(ceil(float(b) / CHUNK_KNOTS)), cs.size())):
+		chunk_surface.append(cs[ci])
+
+
+## Puts every site on the path at its place along it (sites), and the destination's distance (length).
+func _assemble_sites() -> void:
+	sites = []
+	for piece in _layout:
+		var f: int = piece["fork"]
+		var d0: float = piece["d0"]
+		var d1: float = piece["d1"]
+		var p0: float = piece["p0"]
+		if f >= 0 and int(piece["way"]) > 0:
+			for st in forks[f]["ways"][int(piece["way"])]["sites"]:
+				st["s"] = p0 + float(st["ls"])
+				sites.append(st)
+			continue
+		for st in _def_sites:
+			var ds := float(st["ds"])
+			if (ds >= d0 and ds <= d1) if f < 0 else (ds > d0 and ds < d1):
+				st["s"] = p0 + ds - d0
+				sites.append(st)
+	for st in sites:
+		st["i"] = clampi(int(round(float(st["s"]) / STEP)), 0, px.size() - 1)
+	sites.sort_custom(func(a, b): return float(a["s"]) < float(b["s"]))
+	for st in sites:
+		if st["kind"] == "finish":
+			length = float(st["s"])
+
+
+func _piece_at(s: float) -> Dictionary:
+	for piece in _layout:
+		if s <= float(piece["p1"]):
+			return piece
+	return _layout[-1]
+
+
+## Takes way `way` at fork `f`, for good: the path is rebuilt along it from there on (true when
+## that changed it). Whoever holds chunks past the fork drops them (see AdventureWorld.apply_picks).
+func choose(f: int, way: int) -> bool:
+	if f < 0 or f >= forks.size():
+		return false
+	way = clampi(way, 0, forks[f]["ways"].size() - 1)
+	var changed := int(choices.get(f, 0)) != way
+	choices[f] = way
+	decided[f] = true
+	if changed:
+		_assemble()
+	return changed
+
+
+## How far along the path fork `f` is (the junction where its ways part), and where they meet again.
+func fork_s(f: int) -> float:
+	for piece in _layout:
+		if int(piece["fork"]) == f:
+			return float(piece["p0"])
+	return INF
+
+
+func rejoin_s(f: int) -> float:
+	for piece in _layout:
+		if int(piece["fork"]) == f:
+			return float(piece["p1"])
+	return INF
+
+
+## The first fork at or ahead of `s` (its junction no more than a few metres behind), or -1.
+func next_fork(s: float) -> int:
+	for f in forks.size():
+		if fork_s(f) > s - 5.0:
+			return f
+	return -1
+
+
+## The fork whose ways `s` is on (between the junction and the rejoin), or -1.
+func fork_at(s: float) -> int:
+	for f in forks.size():
+		if s > fork_s(f) and s < rejoin_s(f):
+			return f
+	return -1
+
+
+## How far the road can be built: up to the first fork that isn't decided (INF once all are).
+func stream_end() -> float:
+	for f in forks.size():
+		if not decided.has(f):
+			return fork_s(f)
+	return INF
+
+
+func way_of(f: int, w: int) -> Dictionary:
+	if f < 0 or f >= forks.size() or w < 0 or w >= forks[f]["ways"].size():
+		return {}
+	return forks[f]["ways"][w]
+
+
+## Whether way `w` at fork `f` is the one on the path now.
+func on_path(f: int, w: int) -> bool:
+	return int(choices.get(f, 0)) == w
+
+
+# ---------------------------------------------------------------------------- the whole graph
+
+## Way `w` at fork `f`: [x, z, first knot, last knot, chunk surfaces] (way 0 out of the default path).
+func _way_xz(f: int, w: int) -> Array:
+	if w == 0:
+		return [_def["px"], _def["pz"], int(forks[f]["i0"]), int(forks[f]["i1"]), _def["chunk_surface"]]
+	var way: Dictionary = forks[f]["ways"][w]
+	return [way["px"], way["pz"], 0, int(way["n"]) - 1, way["chunk_surface"]]
+
+
+## The whole route graph for a map, a chunk at a time: [{pts (route frame x z, every `every`
+## knots), surface, fork (-1 between forks), way, on (on the path as chosen)}].
+func map_lines(every := 8) -> Array:
+	var out := []
+	var d: Dictionary = _def
+	var bounds := [0]
+	for fk in forks:
+		bounds.append_array([int(fk["i0"]), int(fk["i1"])])
+	bounds.append(int(d["n"]) - 1)
+	for k in range(bounds.size() - 1):
+		var f := -1 if k % 2 == 0 else k / 2
+		_lines_of(out, d["px"], d["pz"], d["chunk_surface"], bounds[k], bounds[k + 1], every, f, 0, f < 0 or on_path(f, 0))
+	for f in forks.size():
+		for w in range(1, forks[f]["ways"].size()):
+			var way: Dictionary = forks[f]["ways"][w]
+			_lines_of(out, way["px"], way["pz"], way["chunk_surface"], 0, int(way["n"]) - 1, every, f, w, on_path(f, w))
+	return out
+
+
+static func _lines_of(out: Array, xs: PackedFloat64Array, zs: PackedFloat64Array, cs: Array, a: int, b: int, every: int,
+		f: int, w: int, on: bool) -> void:
+	var k := a
+	while k < b:
+		var e := mini(b, (k / CHUNK_KNOTS + 1) * CHUNK_KNOTS)
+		var pts := PackedVector2Array()
+		var j := k
+		while j < e:
+			pts.append(Vector2(xs[j], zs[j]))
+			j += every
+		pts.append(Vector2(xs[e], zs[e]))
+		var ci := clampi((k - a) / CHUNK_KNOTS if w > 0 else k / CHUNK_KNOTS, 0, cs.size() - 1)
+		out.append({"pts": pts, "surface": cs[ci], "fork": f, "way": w, "on": on})
+		k = e
+
+
+## Every site on the graph, taken or not: [{site, x, z (route frame), on (on the path), fork, way}].
+func map_sites() -> Array:
+	var out := []
+	var d: Dictionary = _def
+	for st in _def_sites:
+		var j := clampi(int(round(float(st["ds"]) / STEP)), 0, int(d["n"]) - 1)
+		var f := -1
+		for k in forks.size():
+			if j > int(forks[k]["i0"]) and j < int(forks[k]["i1"]):
+				f = k
+		out.append({"site": st, "x": d["px"][j], "z": d["pz"][j], "on": f < 0 or on_path(f, 0), "fork": f, "way": 0})
+	for f in forks.size():
+		for w in range(1, forks[f]["ways"].size()):
+			var way: Dictionary = forks[f]["ways"][w]
+			for st in way["sites"]:
+				var k := clampi(int(round(float(st["ls"]) / STEP)), 0, int(way["n"]) - 1)
+				out.append({"site": st, "x": way["px"][k], "z": way["pz"][k], "on": on_path(f, w), "fork": f, "way": w})
+	return out
+
+
+## The ways off the path within `r` of route-frame (x, z), for the satnav to show the roads off
+## at a fork: [{xs, zs (route frame), surface}], every `every` knots.
+func ways_near(x: float, z: float, r: float, every := 2) -> Array:
+	var out := []
+	var view := Rect2(x - r, z - r, r * 2.0, r * 2.0)
+	for f in forks.size():
+		for w in forks[f]["ways"].size():
+			if on_path(f, w) or not (forks[f]["ways"][w]["box"] as Rect2).intersects(view):
+				continue
+			var src := _way_xz(f, w)
+			var xs: PackedFloat64Array = src[0]
+			var zs: PackedFloat64Array = src[1]
+			var rx := PackedFloat64Array()
+			var rz := PackedFloat64Array()
+			for k in range(int(src[2]), int(src[3]) + 1, every):
+				if absf(xs[k] - x) < r and absf(zs[k] - z) < r:
+					rx.append(xs[k])
+					rz.append(zs[k])
+				else:
+					if rx.size() > 1:
+						out.append({"xs": rx, "zs": rz, "surface": src[4][0]})
+					rx = PackedFloat64Array()
+					rz = PackedFloat64Array()
+			if rx.size() > 1:
+				out.append({"xs": rx, "zs": rz, "surface": src[4][0]})
+	return out

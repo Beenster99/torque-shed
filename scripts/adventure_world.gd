@@ -91,8 +91,54 @@ func setup(seed: int, km: float, theme := "varied") -> void:
 		"fuel": func(site, xf, _info): return AdventureProps.fuel_station(site, xf, route.surface_at_s(float(site["s"]))),
 		"start": func(_site, xf, info): return AdventureProps.banner("START", xf, float(info["width"]), Color(0.1, 0.35, 0.7)),
 		"finish": func(_site, xf, info): return AdventureProps.banner("DESTINATION", xf, float(info["width"]), Color(0.75, 0.2, 0.1)),
+		"fork": func(site, xf, _info): return AdventureForks.signpost(site, xf, route),
 	}
 	_make_horizon()
+
+
+## Takes the ways picked at the forks ({fork: way}, see AdventureForks): the road from each newly
+## decided fork on is rebuilt along its way, and anything already built or building past it is
+## dropped (normally nothing: the road isn't built past a fork until it's decided). True when
+## anything changed.
+func apply_picks(picks: Dictionary) -> bool:
+	var keys := picks.keys()
+	keys.sort()
+	var changed := false
+	for f in keys:
+		var fi := int(f)
+		var w := int(picks[f])
+		if fi < 0 or fi >= route.forks.size() or (route.decided.has(fi) and int(route.choices.get(fi, 0)) == w):
+			continue
+		_drop_from(route.fork_s(fi))
+		route.choose(fi, w)
+		changed = true
+	return changed
+
+
+## Lets the worker threads finish (they read the route, which is about to change) and drops every
+## chunk from `s` on, built, waiting or building.
+func _drop_from(s: float) -> void:
+	for c in _tasks:
+		WorkerThreadPool.wait_for_task_completion(_tasks[c])
+	_tasks.clear()
+	_box.mutex.lock()
+	_box.done.clear()
+	_box.mutex.unlock()
+	var c0 := AdventureRoute.chunk_of(s)
+	for c in _ready_data.keys():
+		if c >= c0:
+			_ready_data.erase(c)
+	for c in chunks.keys():
+		if c >= c0:
+			chunks[c].queue_free()
+			chunks.erase(c)
+
+
+## The last chunk that may be built: the one ending at the first undecided fork (or the road's end).
+func last_buildable_chunk() -> int:
+	var end := route.stream_end()
+	var last := route.chunk_count() - 1
+	return last if end == INF else mini(last, AdventureRoute.chunk_of(end) - 1)
 
 
 # ---------------------------------------------------------------------------- frames
@@ -270,7 +316,7 @@ func wanted_chunks() -> Array:
 		if s >= 0.0 and s < own and s > own - REMOTE_BEHIND:
 			lo = minf(lo, s - BEHIND * 0.5)
 	var c_lo := maxi(0, AdventureRoute.chunk_of(lo))
-	var c_hi := mini(route.chunk_count() - 1, AdventureRoute.chunk_of(own + AHEAD))
+	var c_hi := mini(last_buildable_chunk(), AdventureRoute.chunk_of(own + AHEAD))
 	var c_own := AdventureRoute.chunk_of(own)
 	var out := []
 	for c in range(c_lo, c_hi + 1):
@@ -358,7 +404,7 @@ func _commit(data: Dictionary) -> void:
 
 ## Builds and commits every chunk from `s0` to `s1` metres at once (the start, behind a fade).
 func preload_range(s0: float, s1: float) -> void:
-	for c in range(maxi(0, AdventureRoute.chunk_of(s0)), mini(route.chunk_count() - 1, AdventureRoute.chunk_of(s1)) + 1):
+	for c in range(maxi(0, AdventureRoute.chunk_of(s0)), mini(last_buildable_chunk(), AdventureRoute.chunk_of(s1)) + 1):
 		if not chunks.has(c):
 			var data := AdventureChunk.build(route, c)
 			_note_build(data)
