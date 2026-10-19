@@ -154,6 +154,7 @@ func plan(seed: int, km: float, theme_name := "varied", extra_sites: Array = [])
 	choices.clear()
 	decided.clear()
 	_plan_fuel(rng)
+	AdventureStops.plan(self)
 	add_site("start", 48.0, 1, 0.0, "Start")
 	add_site("finish", length, 1, 0.0, "Destination")
 	for e in extra_sites:
@@ -744,6 +745,9 @@ func _stash_default() -> void:
 		"width": width.duplicate(), "base": base.duplicate(), "sections": sections.duplicate(true),
 		"chunk_surface": chunk_surface.duplicate(), "total": total, "n": px.size()}
 	_def_sites = sites.duplicate()
+	for st in _def_sites:
+		if st.has("main_s"):
+			st["main_off"] = float(st["main_s"]) - float(st["s"])   # a village row's middle, kept with it
 
 
 ## The lie of the land along heights `h`: averaged over 200 m either way, but never across a cut
@@ -799,16 +803,29 @@ func _plan_ways(f: int) -> void:
 	fk["ways"] = ways
 
 
+## Plans way `kind` at fork `f` (see _try_way): if one comes in far off the rejoin (so easing it
+## across would stretch it out of shape), it's planned again on the next seed, keeping the best.
+func _plan_way(f: int, kind: String, side: float) -> Dictionary:
+	var best := {}
+	for attempt in 5:
+		var way := _try_way(f, kind, side, attempt)
+		if best.is_empty() or float(way["miss"]) < float(best["miss"]):
+			best = way
+		if float(best["miss"]) < 90.0:
+			break
+	return best
+
+
 ## Plans one other way at fork `f` (WAY_PLANS[kind]): from the fork, straight for the junction,
 ## then sections of bends steered towards a point off to `side` of the line to the rejoin, then
 ## to a point in line behind the rejoin, then followed in onto the rejoin. What's left over
 ## (tens of metres, and a few degrees of heading) is spread along the way, so it meets the road
 ## on from there exactly. A whole number of chunks long.
-func _plan_way(f: int, kind: String, side: float) -> Dictionary:
+func _try_way(f: int, kind: String, side: float, attempt: int) -> Dictionary:
 	var fk: Dictionary = forks[f]
 	var spec: Dictionary = WAY_PLANS[kind]
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([seed_value, "way", theme, f, kind])
+	rng.seed = hash([seed_value, "way", theme, f, kind, attempt])
 	var i0: int = fk["i0"]
 	var i1: int = fk["i1"]
 	var a := Vector2(px[i0], pz[i0])
@@ -818,17 +835,32 @@ func _plan_way(f: int, kind: String, side: float) -> Dictionary:
 	var dist := chord.length()
 	var right := Vector2(-chord.y, chord.x) / dist
 	var aim := a + chord * 0.5 + right * side * dist * float(spec["off"]) * rng.randf_range(0.8, 1.2)
-	var approach := b - Vector2(sin(hb), -cos(hb)) * 420.0
-	# Fuel on the main road through the fork is matched on every other way, about as far along,
-	# so whichever's taken nobody's left dry.
+	var approach := b - Vector2(sin(hb), -cos(hb)) * 700.0
+	# The fuel and the stops (AdventureStops) on the main road through the fork are matched on
+	# every other way, as far along it in proportion and in the same order, so whichever's taken
+	# nobody's left dry or hungry and the stops keep their spacing. A village's other rows of
+	# shops keep their distance from its middle.
 	var wsites := []
+	var lo := JUNCTION_KNOTS * STEP + 250.0
+	var hi := maxf(lo + 200.0, dist * 0.8 - 300.0)
 	for st in sites:
-		if st["kind"] == "fuel" and float(st["s"]) > float(fk["s"]) and float(st["s"]) < float(fk["rejoin"]):
-			var frac := (float(st["s"]) - float(fk["s"])) / (float(fk["rejoin"]) - float(fk["s"]))
-			var ls := snappedf(clampf(frac * dist, JUNCTION_KNOTS * STEP + 250.0, dist * 0.7), STEP)
-			wsites.append({"kind": "fuel", "s": ls, "ls": ls, "i": 0, "side": st["side"], "flat": st["flat"], "name": st["name"], "keep": SITE_KNOTS})
-	var g := {"x": float(px[i0]), "z": float(pz[i0]), "h": float(hd[i0]), "cv": PackedFloat64Array(), "hs": PackedFloat64Array(),
-		"xs": PackedFloat64Array(), "zs": PackedFloat64Array()}
+		var ds := float(st["s"])
+		if ds <= float(fk["s"]) or ds >= float(fk["rejoin"]):
+			continue
+		if not (st["kind"] == "fuel" or bool(st.get("stop", false)) or st.has("main_s")):
+			continue
+		var centre := float(st.get("main_s", ds))
+		var frac := clampf((centre - float(fk["s"])) / (float(fk["rejoin"]) - float(fk["s"])), 0.0, 1.0)
+		var lc := snappedf(lerpf(lo, hi, frac), STEP)
+		var copy: Dictionary = st.duplicate()
+		copy.erase("ds")
+		copy["ls"] = lc + ds - centre
+		copy["s"] = copy["ls"]
+		if st.has("main_s"):
+			copy["main_off"] = centre - ds
+		wsites.append(copy)
+	var g := {"x": float(px[i0]), "z": float(pz[i0]), "h": float(hd[i0]), "cv": [], "hs": [],
+		"xs": [], "zs": []}
 	var secs := []
 	for k in JUNCTION_KNOTS:
 		_wput(g, 0.0)
@@ -842,7 +874,7 @@ func _plan_way(f: int, kind: String, side: float) -> Dictionary:
 		var p := Vector2(g["x"], g["z"])
 		if stage == 0 and (p.distance_to(aim) < dist * 0.2 or (p - a).dot(chord) > (aim - a).dot(chord)):
 			stage = 1
-		if stage == 1 and (p.distance_to(approach) < 260.0 or (p - a).dot(chord) > (approach - a).dot(chord)):
+		if stage == 1 and (p.distance_to(approach) < 500.0 or (p - a).dot(chord) > (approach - a).dot(chord) - 100.0 * dist):
 			break
 		if _wn(g) >= sec_end:
 			var sk := _weighted(rng, spec["kinds"])
@@ -902,10 +934,10 @@ func _plan_way(f: int, kind: String, side: float) -> Dictionary:
 	var n := maxi(CHUNK_KNOTS * 4 + 1, int(round(float(cnt - 1) / CHUNK_KNOTS)) * CHUNK_KNOTS + 1)
 	while _wn(g) < n - 1:
 		_wput(g, 0.0)
-	var xs: PackedFloat64Array = g["xs"]
-	var zs: PackedFloat64Array = g["zs"]
-	var hs: PackedFloat64Array = g["hs"]
-	var cv: PackedFloat64Array = g["cv"]
+	var xs := PackedFloat64Array(g["xs"])
+	var zs := PackedFloat64Array(g["zs"])
+	var hs := PackedFloat64Array(g["hs"])
+	var cv := PackedFloat64Array(g["cv"])
 	xs.append(g["x"])
 	zs.append(g["z"])
 	hs.append(g["h"])
@@ -978,16 +1010,16 @@ func _plan_way(f: int, kind: String, side: float) -> Dictionary:
 
 ## How many knots a way being planned has so far.
 static func _wn(g: Dictionary) -> int:
-	return (g["xs"] as PackedFloat64Array).size()
+	return (g["xs"] as Array).size()
 
 
 ## Writes the next knot of a way being planned (curvature `k` after it) and moves on.
 static func _wput(g: Dictionary, k: float) -> void:
 	var h: float = g["h"]
-	(g["cv"] as PackedFloat64Array).append(k)
-	(g["hs"] as PackedFloat64Array).append(h)
-	(g["xs"] as PackedFloat64Array).append(g["x"])
-	(g["zs"] as PackedFloat64Array).append(g["z"])
+	(g["cv"] as Array).append(k)
+	(g["hs"] as Array).append(h)
+	(g["xs"] as Array).append(g["x"])
+	(g["zs"] as Array).append(g["z"])
 	var hm := h + k * STEP * 0.5
 	g["x"] = float(g["x"]) + sin(hm) * STEP
 	g["z"] = float(g["z"]) - cos(hm) * STEP
@@ -1256,6 +1288,8 @@ func _assemble_sites() -> void:
 				sites.append(st)
 	for st in sites:
 		st["i"] = clampi(int(round(float(st["s"]) / STEP)), 0, px.size() - 1)
+		if st.has("main_off"):
+			st["main_s"] = float(st["s"]) + float(st["main_off"])
 	sites.sort_custom(func(a, b): return float(a["s"]) < float(b["s"]))
 	for st in sites:
 		if st["kind"] == "finish":

@@ -20,6 +20,9 @@ extends Node
 ##       "fork"), name, distance (m, along the route), at (Vector2, or null when it's off the map)}
 ##   satnav_choice(pos: Vector2, fwd: Vector2) -> Dictionary    the ways at a fork coming up
 ##       (AdventureForks.choice), {} when there's none
+##   satnav_stops(pos: Vector2, fwd: Vector2, count: int) -> Array of the next `count` places to
+##       stop ahead, nearest first: {kind (AdventureStops.NAV: "food", "rest", "sleep", "fuel"),
+##       site (the site's kind), name, label (for the list: "Lay-by", or a cafe's name), distance, at}
 ## and clears it (null) when it's done.
 
 ## Times a second the screen is redrawn.
@@ -27,6 +30,8 @@ const RATE := 10.0
 ## Metres round the bike the map covers, and of the road ahead picked out.
 const RADIUS := 320.0
 const AHEAD := 600.0
+## How many of the stops ahead the list shows.
+const STOPS := 3
 
 ## The route provider (see the top): null for the town's own.
 static var route_provider: Object = null
@@ -126,7 +131,7 @@ static func view_for(source: Object, pos: Vector3, fwd3: Vector3, speed := 0.0) 
 	var p := Vector2(pos.x, pos.z)
 	var fwd := Vector2(fwd3.x, fwd3.z)
 	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector2(0, -1)
-	var v := {"pos": p, "fwd": fwd, "speed": speed, "roads": [], "route": PackedVector2Array(), "road": "", "points": []}
+	var v := {"pos": p, "fwd": fwd, "speed": speed, "roads": [], "route": PackedVector2Array(), "road": "", "points": [], "stops": []}
 	if source == null:
 		return v
 	if source.has_method("satnav_roads"):
@@ -146,6 +151,8 @@ static func view_for(source: Object, pos: Vector3, fwd3: Vector3, speed := 0.0) 
 			if not seen.has(str(q["kind"])):
 				seen[str(q["kind"])] = true
 				v["points"].append(q)
+	if source.has_method("satnav_stops"):
+		v["stops"] = source.satnav_stops(p, fwd, STOPS)
 	return v
 
 
@@ -338,3 +345,29 @@ class AdventureNav:
 		if hit.is_empty() or _way(float(hit["s"]), fwd) < 0:
 			return {}
 		return AdventureForks.choice(world.route, float(hit["s"]))
+
+	## The next `count` stops ahead (AdventureStops' places and the fuel stations), nearest first.
+	func satnav_stops(pos: Vector2, fwd: Vector2, count: int) -> Array:
+		var hit := _where(pos)
+		if hit.is_empty():
+			return []
+		var s := float(hit["s"])
+		var way := _way(s, fwd)
+		var out := []
+		var sites: Array = world.route.sites
+		var k0 := 0 if way > 0 else sites.size() - 1
+		var k := k0
+		while k >= 0 and k < sites.size() and out.size() < count:
+			var st: Dictionary = sites[k]
+			k += way
+			var kind := str(st["kind"])
+			if not AdventureStops.NAV.has(kind):
+				continue
+			var d := (float(st["s"]) - s) * way
+			if d < -15.0:
+				continue
+			# The list says what it is, or a village's, cafe's or inn's own name.
+			var label := str(st["name"]) if kind in ["village", "cafe", "inn"] else str(AdventureStops.LABELS.get(kind, kind))
+			out.append({"kind": AdventureStops.NAV[kind], "site": kind, "name": str(st["name"]), "label": label,
+				"distance": maxf(d, 0.0), "at": _at(float(st["s"]))})
+		return out

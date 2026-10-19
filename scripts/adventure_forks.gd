@@ -117,11 +117,11 @@ static func surfaces_text(way: Dictionary) -> String:
 ## How twisty `way` is, in a word or two.
 static func twist_text(way: Dictionary) -> String:
 	var t := float(way.get("twist", 0.0))
-	if t < 40.0:
+	if t < 80.0:
 		return "fairly straight"
-	if t < 90.0:
+	if t < 160.0:
 		return "sweeping"
-	if t < 170.0:
+	if t < 300.0:
 		return "twisty"
 	return "very twisty"
 
