@@ -134,6 +134,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	present = fitted
 	condition = build.condition if part_condition == null else part_condition
 	_slot_meshes.clear()
+	mirrors.clear()
 	_slot_extras.clear()
 	_baked_pieces.clear()
 	_covered.clear()
@@ -4025,21 +4026,55 @@ func _draw_mirrors() -> void:
 
 
 var _mirror_k := 1.0   # the mirrors' look "size", while they're drawn
+## Each mirror's glass, for live reflections (see BikeMirrors): {"glass": the glass mesh,
+## "frame": a node on the glass's face (+Z out towards the rider, X to their right), "size": its
+## width and height}.
+var mirrors: Array = []
+## Where a rider sets their mirrors to look: back past their shoulder, a little out and level.
+const MIRROR_AIM := Vector3(0.16, 0.0, 1.0)
 
 
 ## One mirror facing the rider: round (`size.x` its radius, `size.y` 0) or a rectangle `size`.
+## The head swivels on its stalk to look back past the rider's shoulder from their eyes, as a
+## rider sets them.
 func _mirror_head(at: Vector3, size: Vector2, mat: Material, glass: Material, parent: Node3D) -> void:
 	size *= _mirror_k
+	var head := Node3D.new()
+	head.name = "MirrorHead"
+	head.position = at
+	parent.add_child(head)
+	head.basis = _mirror_aim(at, parent)
+	var face: MeshInstance3D
+	var dims: Vector2
 	if size.y <= 0.0:
-		var shell := _mesh_instance(_cylinder(size.x, 0.02), mat, at, parent)
+		var shell := _mesh_instance(_cylinder(size.x, 0.02), mat, Vector3.ZERO, head)
 		shell.rotation.x = PI * 0.5
-		var face := _mesh_instance(_cylinder(size.x * 0.88, 0.002), glass, at + Vector3(0.0, 0.0, 0.011), parent)
+		face = _mesh_instance(_cylinder(size.x * 0.88, 0.002), glass, Vector3(0.0, 0.0, 0.011), head)
 		face.rotation.x = PI * 0.5
-		face.name = "MirrorGlass"
-		return
-	_box(at, Vector3(size.x, size.y, 0.02), mat, parent)
-	var pane := _box(at + Vector3(0.0, 0.0, 0.011), Vector3(size.x - 0.01, size.y - 0.01, 0.002), glass, parent)
-	pane.name = "MirrorGlass"
+		dims = Vector2.ONE * size.x * 1.76
+	else:
+		_box(Vector3.ZERO, Vector3(size.x, size.y, 0.02), mat, head)
+		dims = Vector2(size.x - 0.01, size.y - 0.01)
+		face = _box(Vector3(0.0, 0.0, 0.011), Vector3(dims.x, dims.y, 0.002), glass, head)
+	face.name = "MirrorGlass"
+	face.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	face.set_meta("mirror_glass", true)   # kept out of the baked meshes, so BikeMirrors can swap its look
+	var frame := Node3D.new()
+	frame.name = "MirrorFrame"
+	frame.position = Vector3(0.0, 0.0, 0.012)
+	head.add_child(frame)
+	mirrors.append({"glass": face, "frame": frame, "size": dims})
+
+
+## The way a mirror head at `at` (in `parent`'s space) faces: half way between back at the
+## rider's eyes and MIRROR_AIM, so from the saddle it shows the road behind.
+func _mirror_aim(at: Vector3, parent: Node3D) -> Basis:
+	var to_model := Transform3D(Basis(), _head) if parent == _steer_node else Transform3D()
+	var p := to_model * at
+	var eye := _eye if _eye != Vector3.ZERO else _eye_point()
+	var aim := Vector3(MIRROR_AIM.x * signf(p.x), MIRROR_AIM.y, MIRROR_AIM.z).normalized()
+	var n := to_model.basis.inverse() * ((eye - p).normalized() + aim).normalized()
+	return Basis.looking_at(-n, Vector3.UP)
 
 
 ## The indicators: a pair either side of the headlight (turning with the bars) and a pair

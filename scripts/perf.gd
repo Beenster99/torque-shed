@@ -39,7 +39,13 @@ static func t0() -> int:
 static func add(key: String, since: int) -> void:
 	if since == 0:
 		return
-	var us := Time.get_ticks_usec() - since
+	add_us(key, Time.get_ticks_usec() - since)
+
+
+## Counts `us` microseconds measured some other way (a viewport's render time) against `key`.
+static func add_us(key: String, us: int) -> void:
+	if not on:
+		return
 	_frame[key] = int(_frame.get(key, 0)) + us
 	_frame_calls[key] = int(_frame_calls.get(key, 0)) + 1
 

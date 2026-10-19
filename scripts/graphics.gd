@@ -7,7 +7,8 @@ extends CanvasLayer
 ## shadows. Also draws the FPS counter. Settings adds one of these as its child at start-up and
 ## it re-applies whenever Settings.graphics_changed fires.
 ## The lighting (GI, volumetric fog, clouds, SSR, SSAO, glow, shadows, brightness) is applied
-## to the environment by the lighting code, from the same settings.
+## to the environment by the lighting code, from the same settings, and the ridden bike's live
+## mirrors (Mirror detail) by BikeMirrors.
 ##
 ## The rendering driver (Vulkan or DirectX 12) can only be picked before the renderer starts,
 ## so it's written to OVERRIDE_PATH, which project.godot names as its settings override
@@ -35,6 +36,8 @@ const RESOLUTIONS := [Vector2i(1280, 720), Vector2i(1280, 800), Vector2i(1366, 7
 	Vector2i(2560, 1440), Vector2i(2560, 1600), Vector2i(3440, 1440), Vector2i(3840, 1600), Vector2i(3840, 2160)]
 const FPS_CAPS := [30, 60, 120, 144, 165, 240, 0]   # 0 = unlimited
 const QUALITY := ["low", "medium", "high", "ultra"]
+## The mirror detail slider's steps, left to right (see BikeMirrors.LEVELS).
+const MIRROR_LEVELS := ["off", "low", "medium", "high", "ultra"]
 
 ## The allowed values of every option setting (anything else in a settings file is ignored).
 const CHOICES := {
@@ -50,6 +53,7 @@ const CHOICES := {
 	"gfx_volumetrics": ["off", "low", "high"],
 	"gfx_clouds": ["off", "low", "high"],
 	"gfx_driver": ["vulkan", "d3d12"],
+	"gfx_mirrors": MIRROR_LEVELS,
 }
 ## [min, max] of the number settings.
 const RANGES := {
@@ -61,16 +65,20 @@ const RANGES := {
 const PRESETS := {
 	"low": {"gfx_shadows": "low", "gfx_detail": "low", "gfx_draw_distance": 0.6, "gfx_gi": "off",
 		"gfx_volumetrics": "off", "gfx_clouds": "low", "gfx_ssr": false, "gfx_ssao": false, "gfx_glow": true,
-		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 0.75, "gfx_upscaler": "fsr1"},
+		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 0.75, "gfx_upscaler": "fsr1",
+		"gfx_mirrors": "off"},
 	"medium": {"gfx_shadows": "medium", "gfx_detail": "medium", "gfx_draw_distance": 0.8, "gfx_gi": "ssil",
 		"gfx_volumetrics": "low", "gfx_clouds": "low", "gfx_ssr": false, "gfx_ssao": true, "gfx_glow": true,
-		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2"},
+		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2",
+		"gfx_mirrors": "low"},
 	"high": {"gfx_shadows": "high", "gfx_detail": "high", "gfx_draw_distance": 1.0, "gfx_gi": "sdfgi",
 		"gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_ssr": true, "gfx_ssao": true, "gfx_glow": true,
-		"gfx_msaa": "2x", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2"},
+		"gfx_msaa": "2x", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2",
+		"gfx_mirrors": "medium"},
 	"ultra": {"gfx_shadows": "ultra", "gfx_detail": "ultra", "gfx_draw_distance": 1.5, "gfx_gi": "sdfgi",
 		"gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_ssr": true, "gfx_ssao": true, "gfx_glow": true,
-		"gfx_msaa": "4x", "gfx_taa": true, "gfx_screen_aa": "smaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2"},
+		"gfx_msaa": "4x", "gfx_taa": true, "gfx_screen_aa": "smaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2",
+		"gfx_mirrors": "ultra"},
 }
 
 ## Mesh LOD threshold in pixels (lower keeps the detailed meshes further away) and texture

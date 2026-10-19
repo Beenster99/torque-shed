@@ -507,6 +507,10 @@ func _run_all() -> void:
 	await _test_lights_far_terrain()
 	await _test_lights_kit_bike_materials()
 	await _test_lights_adventure_land_edge()
+	print("Live mirrors (v0.16.0): the Mirror detail setting, the reflection following the glass, Off costing nothing")
+	await _test_mirrors_setting()
+	await _test_mirrors_follow_glass()
+	await _test_mirrors_off()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21876,3 +21880,21 @@ func _test_lights_kit_bike_materials() -> void:
 
 func _test_lights_adventure_land_edge() -> void:
 	await _lights().test_adventure_land_edge()
+
+
+# ---------------------------------------------------------------------------- live mirrors (tests/mirror_tests.gd)
+
+func _mirror_t() -> RefCounted:
+	return load("res://tests/mirror_tests.gd").new(self)
+
+
+func _test_mirrors_setting() -> void:
+	await _mirror_t().test_setting()
+
+
+func _test_mirrors_follow_glass() -> void:
+	await _mirror_t().test_follows_glass()
+
+
+func _test_mirrors_off() -> void:
+	await _mirror_t().test_off()

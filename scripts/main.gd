@@ -663,6 +663,7 @@ func _start_riding(bike_id: int) -> void:
 	audio = EngineSound.new()   # engine, exhaust, pops, gear shifts and the starter
 	bike.add_child(audio)
 	audio.setup(bike.build, bike.model)
+	bike.add_child(BikeMirrors.new())   # live mirrors, at the Mirror detail setting
 	camera.target = bike
 	camera.set_mode(_ride_view)
 	camera.snap()
