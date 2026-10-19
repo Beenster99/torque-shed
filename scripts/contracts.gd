@@ -866,8 +866,7 @@ static func style_build(style: String) -> Dictionary:
 		"cruiser":
 			b.merge({"frame": "cruiser_cradle", "tank": "cruiser_fatbob_console", "saddle": "touring_comfort", "handlebars": "drag_bar",
 				"tail": "classic_mudguard", "engine": "vtwin_1100", "exhaust": "shotgun_duals", "front_wheel": "cast_19_six",
-				"rear_wheel": "wire_16_bobber", "panniers": "leather_saddlebags", "mirrors": "round_mirrors", "front_mudguard": "chrome_classic",
-				"front_tyre": "touring_road_130", "rear_tyre": "touring_road_150"}, true)
+				"rear_wheel": "wire_16_bobber", "panniers": "leather_saddlebags", "mirrors": "round_mirrors", "front_mudguard": "chrome_classic"}, true)
 		"adventure":
 			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "adv_big_tank", "saddle": "adv_comfort_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "boxer_1100", "exhaust": "mx_upswept", "front_wheel": "spoked_19_adventure",
