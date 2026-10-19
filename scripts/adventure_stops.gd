@@ -342,6 +342,7 @@ static func _solid(k: Kit, xf: Transform3D, size: Vector3, col: Color, near := f
 ## Hard ground from x0 to x1 out from the road and z0 to z1 along it, level with the road, with
 ## its own collision carrying `surface`.
 static func _pad(k: Kit, x0: float, x1: float, z0: float, z1: float, col: Color, surface: String) -> void:
+	col = Color(col.r * 0.55, col.g * 0.55, col.b * 0.55)   # flat to the sky it reads much lighter than the walls
 	AdventureProps._quad(k.far, Vector3(x0, 0.03, z1), Vector3(x1, 0.03, z1), Vector3(x1, 0.03, z0), Vector3(x0, 0.03, z0), col)
 	AdventureProps.box(k.far, Transform3D(Basis(), Vector3((x0 + x1) * 0.5, -0.6, (z0 + z1) * 0.5)),
 		Vector3(x1 - x0, 0.62, z1 - z0), col.darkened(0.25), false)
@@ -527,7 +528,10 @@ static func _bike(k: Kit, xf: Transform3D, col: Color) -> void:
 	var lean := xf * Transform3D(Basis(Vector3.BACK, 0.12), Vector3.ZERO)
 	var tyre := Color(0.05, 0.05, 0.05)
 	for wz: float in [-0.72, 0.72]:
-		AdventureProps.cone(k.near, lean * Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(-0.07, 0.33, wz)), 0.33, 0.0, 0.14, tyre, 10, 0.33)
+		# A wheel: two square slabs turned 45 degrees to each other, an octagon from the side.
+		for turn: float in [0.0, PI * 0.25]:
+			AdventureProps.box(k.near, lean * Transform3D(Basis(Vector3.RIGHT, turn), Vector3(0, 0.33, wz)) * Transform3D(Basis(), Vector3(0, -0.29, 0)),
+				Vector3(0.12, 0.58, 0.58), tyre)
 	AdventureProps.box(k.near, lean * Transform3D(Basis(), Vector3(0, 0.38, 0)), Vector3(0.28, 0.32, 0.9), Color(0.2, 0.2, 0.21))   # engine
 	AdventureProps.box(k.near, lean * Transform3D(Basis(Vector3.RIGHT, -0.12), Vector3(0, 0.72, -0.12)), Vector3(0.34, 0.26, 0.6), col)   # tank
 	AdventureProps.box(k.near, lean * Transform3D(Basis(), Vector3(0, 0.76, 0.45)), Vector3(0.28, 0.1, 0.6), Color(0.08, 0.08, 0.08))   # seat
@@ -566,7 +570,7 @@ static func _sign(route: AdventureRoute, k: Kit, xf: Transform3D) -> void:
 		text = "P  Lay-by\n%d m" % int(SIGN_BEFORE)
 	elif kind == "rest_area":
 		text = "P  Rest area\nWC  picnic  %d m" % int(SIGN_BEFORE)
-	var board_w := 2.6
+	var board_w := 3.4
 	for sx: float in [-board_w * 0.42, board_w * 0.42]:
 		AdventureProps.box(k.far, local * Transform3D(Basis(), Vector3(sx, 0, 0)), Vector3(0.09, 2.2, 0.09), Color(0.55, 0.56, 0.58))
 	AdventureProps.box(k.far, local * Transform3D(Basis(), Vector3(0, 1.3, 0)), Vector3(board_w, 1.25, 0.06), col)
@@ -575,10 +579,12 @@ static func _sign(route: AdventureRoute, k: Kit, xf: Transform3D) -> void:
 	label.name = "Sign"
 	label.text = text
 	label.font_size = 56
-	label.pixel_size = 0.0085
+	label.pixel_size = 0.0062
 	label.outline_size = 0
 	label.modulate = Color(1, 1, 1)
-	label.transform = local * Transform3D(Basis(), Vector3(0, 1.92 - 0.6, 0.04))
+	label.width = (board_w - 0.2) / 0.0062
+	label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	label.transform = local * Transform3D(Basis(), Vector3(0, 1.3 + 0.625, 0.04))
 	label.visibility_range_end = 220.0
 	label.set_meta("for_s", s)
 	k.root.add_child(label)
