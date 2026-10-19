@@ -267,6 +267,9 @@ class Kit:
 	var site: Dictionary
 	var rng := RandomNumberGenerator.new()
 	var surf := "tarmac"
+	## The theme's building style (AdventureTheme.STYLES) and its name.
+	var style: Dictionary = AdventureTheme.STYLES["mixed"]
+	var style_name := "mixed"
 
 
 ## A stop's node at `xf` (the site's frame on the road's edge: local +x away from the road).
@@ -275,10 +278,13 @@ static func build(route: AdventureRoute, site: Dictionary, xf: Transform3D) -> N
 	k.site = site
 	k.rng.seed = int(site.get("seed", hash([route.seed_value, site["s"]])))
 	k.surf = route.surface_at_s(float(site["s"]))
+	k.style_name = str(AdventureTheme.get_value(route.theme, "style", "mixed"))
+	k.style = AdventureTheme.style(route.theme)
 	k.root = Node3D.new()
 	k.root.name = "Stop_%s_%d" % [str(site["kind"]), int(site["s"])]
 	k.root.transform = xf
 	k.root.set_meta("site", site)
+	k.root.set_meta("style", k.style_name)
 	match str(site["kind"]):
 		"village":
 			_village(k)
@@ -467,6 +473,7 @@ static func _lamp(k: Kit, at: Vector3, light := true) -> void:
 ## Returns the transform of its door, on the ground in front of it (local +z out of the door).
 static func _house(k: Kit, x: float, z: float, w: float, d: float, h: float, wall: Color, roof: Color, title := "",
 		awning := Color(0, 0, 0, 0), flat_roof := false) -> Transform3D:
+	flat_roof = flat_roof or bool(k.style["flat"])   # adobe
 	var xf := _front(x + d * 0.5, z)
 	AdventureProps.box(k.far, xf, Vector3(w, h, d), wall, flat_roof)
 	k.boxes.append([xf * Transform3D(Basis(), Vector3(0, h * 0.5, 0)), Vector3(w, h, d)])
@@ -629,7 +636,11 @@ static func _sign_line(kind: String) -> String:
 
 # ---------------------------------------------------------------------------- the places
 
+## The walls a stop's buildings may have: the theme's style (whitewash, adobe, chalet, stone), or
+## the varied mix (sandy colours out on the sand).
 static func _walls(k: Kit) -> Array:
+	if k.style_name != "mixed":
+		return k.style["walls"]
 	if k.surf == "sand":
 		return [Color(0.86, 0.74, 0.55), Color(0.92, 0.85, 0.7), Color(0.8, 0.66, 0.5)]
 	return [Color(0.86, 0.82, 0.72), Color(0.72, 0.62, 0.5), Color(0.6, 0.32, 0.24), Color(0.9, 0.9, 0.88), Color(0.68, 0.7, 0.66)]
@@ -638,6 +649,8 @@ static func _walls(k: Kit) -> Array:
 static func _roof(k: Kit) -> Color:
 	if k.surf == "snow":
 		return Color(0.92, 0.93, 0.96)
+	if k.style_name != "mixed":
+		return _pick(k, k.style["roofs"])
 	return [Color(0.25, 0.22, 0.22), Color(0.45, 0.2, 0.15), Color(0.32, 0.34, 0.36)][k.rng.randi() % 3]
 
 
@@ -731,7 +744,7 @@ static func _row(k: Kit) -> void:
 static func _cafe(k: Kit) -> void:
 	var name := str(k.site.get("name", "Cafe"))
 	_pad(k, 0.6, 30.0, -22.0, 22.0, Color(0.33, 0.33, 0.34) if k.surf != "sand" else Color(0.6, 0.55, 0.45), "tarmac")
-	var wall: Color = _pick(k, [Color(0.15, 0.15, 0.17), Color(0.85, 0.82, 0.74), Color(0.55, 0.15, 0.12)])
+	var wall: Color = _pick(k, [Color(0.15, 0.15, 0.17), Color(0.85, 0.82, 0.74), Color(0.55, 0.15, 0.12)] if k.style_name == "mixed" else _walls(k))
 	var door := _house(k, 21.0, 5.0, 17.0, 8.5, 4.0, wall, Color(0.2, 0.2, 0.22), name.to_upper(), Color(0.85, 0.5, 0.08), true)
 	_counter(k, door.origin, -door.basis.z, name, "cafe")
 	# A serving hatch at the side for the queue out the door.
@@ -830,7 +843,7 @@ static func _viewpoint(k: Kit) -> void:
 static func _inn(k: Kit) -> void:
 	var name := str(k.site.get("name", "Inn"))
 	_pad(k, 0.6, 14.0, -23.0, 23.0, Color(0.33, 0.33, 0.34), "tarmac")
-	var wall: Color = _pick(k, [Color(0.92, 0.9, 0.84), Color(0.62, 0.55, 0.45), Color(0.82, 0.78, 0.68)])
+	var wall: Color = _pick(k, [Color(0.92, 0.9, 0.84), Color(0.62, 0.55, 0.45), Color(0.82, 0.78, 0.68)] if k.style_name == "mixed" else _walls(k))
 	var door := _house(k, 15.0, 0.0, 22.0, 11.0, 6.6, wall, _roof(k), name.to_upper())
 	_counter(k, door.origin, -door.basis.z, name, "inn")
 	# The rooms upstairs: you book one at the door.

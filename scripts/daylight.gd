@@ -30,6 +30,16 @@ static var current: Daylight
 ## Hours a real second while out on an adventure ride (see Adventure.day_rate), whatever the
 ## Settings say; 0 back at the shed.
 static var adventure_rate := 0.0
+## An adventure theme's tint on the day sky and the haze ({top, horizon, fog, amount, haze}: see
+## AdventureTheme "sky"); empty back at the shed. Set it with set_tint.
+static var tint := {}
+
+
+## Tints the sky and haze for an adventure's theme ({} for none), at once.
+static func set_tint(t: Dictionary) -> void:
+	tint = t.duplicate()
+	if current and current._env:
+		current._apply(true)
 
 var hours := 9.0
 ## 0 in full daylight .. 1 at night.
@@ -230,9 +240,11 @@ func _apply(force: bool) -> void:
 	_env.ambient_light_energy *= 1.0 - 0.18 * overcast
 	var fog := Color(0.7, 0.77, 0.86).lerp(Color(0.85, 0.58, 0.44), twilight * 0.6).lerp(Color(0.62, 0.65, 0.68), maxf(overcast * 0.6, mist)) \
 		.lerp(Color(0.03, 0.04, 0.07), dark)
+	if not tint.is_empty():
+		fog = fog.lerp(tint["fog"], float(tint["amount"]) * (1.0 - dark) * (1.0 - maxf(overcast * 0.6, mist)))
 	_env.fog_light_color = fog
 	# Depth fog works on every renderer: a light haze by default, thick in fog, misty in rain.
-	_env.fog_density = WORLD_FOG + mist * FOG_WEATHER + rain * RAIN_HAZE
+	_env.fog_density = WORLD_FOG + mist * FOG_WEATHER + rain * RAIN_HAZE + float(tint.get("haze", 0.0))
 	_env.fog_sky_affect = lerpf(0.25, 0.95, maxf(mist, rain * 0.5))
 	_env.fog_aerial_perspective = lerpf(0.3, 0.0, maxf(mist, rain * 0.6))
 	_env.fog_light_energy = 1.0
@@ -265,6 +277,9 @@ func _update_sky(s: float, moon_dir: Vector3, warm: float, twilight: float, over
 	var day_horizon := Color(0.68, 0.76, 0.86)
 	var night_top := Color(0.01, 0.014, 0.035)
 	var night_horizon := Color(0.035, 0.045, 0.085)
+	if not tint.is_empty():
+		day_top = day_top.lerp(tint["top"], float(tint["amount"]))
+		day_horizon = day_horizon.lerp(tint["horizon"], float(tint["amount"]))
 	# Overcast: a flat grey sky, darker in rain; fog washes it out to the fog's own grey.
 	var grey := Color(0.55, 0.58, 0.62).lerp(Color(0.38, 0.4, 0.44), rain)
 	day_top = day_top.lerp(grey, overcast * 0.85).lerp(Color(0.66, 0.68, 0.7), mist * 0.8)

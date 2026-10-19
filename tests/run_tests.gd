@@ -475,6 +475,10 @@ func _run_all() -> void:
 	await _test_adv_police_trap()
 	await _test_adv_police_coop()
 	await _test_adv_police_stream()
+	_test_adv_themes_plan()
+	_test_adv_themes_scenery()
+	await _test_adv_themes_stream()
+	await _test_adv_themes_sky()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21705,3 +21709,25 @@ func _test_adv_police_coop() -> void:
 
 func _test_adv_police_stream() -> void:
 	await _adv_police().test_stream()
+
+
+# ---------------------------------------------------------------------------- adventure themes (tests/adventure_themes_tests.gd)
+
+func _adv_themes() -> RefCounted:
+	return load("res://tests/adventure_themes_tests.gd").new(self)
+
+
+func _test_adv_themes_plan() -> void:
+	_adv_themes().test_plan()
+
+
+func _test_adv_themes_scenery() -> void:
+	_adv_themes().test_scenery()
+
+
+func _test_adv_themes_stream() -> void:
+	await _adv_themes().test_stream()
+
+
+func _test_adv_themes_sky() -> void:
+	await _adv_themes().test_sky()

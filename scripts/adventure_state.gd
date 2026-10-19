@@ -22,7 +22,8 @@ extends RefCounted
 const DEFAULT_KM := 60.0
 const MIN_KM := 5.0
 const MAX_KM := 400.0
-const THEMES: Array[String] = ["varied"]
+## The kinds of ride (see AdventureTheme: each its roads, scenery, buildings, sky and weather).
+const THEMES: Array[String] = ["varied", "desert", "alpine", "coastal", "hills"]
 ## Real minutes for a whole day and night out on an adventure (the shed's own day is the
 ## Settings' length): fast enough to ride through a night in a session.
 const DAY_MINUTES := 75.0
