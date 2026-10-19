@@ -530,22 +530,11 @@ static func _car(k: Kit, xf: Transform3D) -> void:
 	k.boxes.append([xf * Transform3D(Basis(), Vector3(0, float(spec["h"]) * 0.5, 0)), Vector3(float(spec["w"]) * 2.0, float(spec["h"]), float(spec["len"]))])
 
 
-## A motorbike parked on its side stand at `xf` (facing local -z), in `col`.
+## A motorbike parked on its side stand at `xf` (facing local -z), in `col`: a ParkedBike, with
+## a real build of its own from the stop's seed and where it stands.
 static func _bike(k: Kit, xf: Transform3D, col: Color) -> void:
-	var lean := xf * Transform3D(Basis(Vector3.BACK, 0.12), Vector3.ZERO)
-	var tyre := Color(0.05, 0.05, 0.05)
-	for wz: float in [-0.72, 0.72]:
-		# A wheel: two square slabs turned 45 degrees to each other, an octagon from the side.
-		for turn: float in [0.0, PI * 0.25]:
-			AdventureProps.box(k.near, lean * Transform3D(Basis(Vector3.RIGHT, turn), Vector3(0, 0.33, wz)) * Transform3D(Basis(), Vector3(0, -0.29, 0)),
-				Vector3(0.12, 0.58, 0.58), tyre)
-	AdventureProps.box(k.near, lean * Transform3D(Basis(), Vector3(0, 0.38, 0)), Vector3(0.28, 0.32, 0.9), Color(0.2, 0.2, 0.21))   # engine
-	AdventureProps.box(k.near, lean * Transform3D(Basis(Vector3.RIGHT, -0.12), Vector3(0, 0.72, -0.12)), Vector3(0.34, 0.26, 0.6), col)   # tank
-	AdventureProps.box(k.near, lean * Transform3D(Basis(), Vector3(0, 0.76, 0.45)), Vector3(0.28, 0.1, 0.6), Color(0.08, 0.08, 0.08))   # seat
-	AdventureProps.box(k.near, lean * Transform3D(Basis(Vector3.RIGHT, 0.45), Vector3(0, 0.62, -0.65)), Vector3(0.06, 0.55, 0.06), Color(0.6, 0.6, 0.62))   # forks
-	AdventureProps.box(k.near, lean * Transform3D(Basis(), Vector3(0, 0.95, -0.55)), Vector3(0.7, 0.04, 0.04), Color(0.1, 0.1, 0.1))   # bars
-	if k.rng.randf() < 0.5:
-		AdventureProps.box(k.near, lean * Transform3D(Basis(), Vector3(0, 0.84, 0.82)), Vector3(0.42, 0.32, 0.36), Color(0.1, 0.1, 0.11))   # top box
+	var look_seed := hash([int(k.site.get("seed", 0)), float(k.site.get("s", 0.0)), xf.origin])
+	k.root.add_child(ParkedBike.make(xf, look_seed, col, k.rng.randf() < 0.5, NEAR * clampf(Settings.gfx_draw_distance, 0.5, 2.0)))
 
 
 ## The roadside sign SIGN_BEFORE metres ahead of the stop, on the left verge facing the way you

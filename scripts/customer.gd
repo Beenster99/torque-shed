@@ -216,6 +216,32 @@ func _make_bike(bike: Dictionary, xf: Transform3D, on_stand: bool) -> void:
 	_bike.add_child(_lean)
 	_yaw = xf.basis.get_euler().y
 	_set_parked(on_stand)
+	if not (self is CoffeeVisitor):
+		# Something to look at, for ordering one like it or copying its blueprint (BikeCopyView);
+		# a cafe biker's parked bike has its own (CoffeeVisitor._add_bike_body). Not solid.
+		var body := StaticBody3D.new()
+		body.name = "LookBody"
+		body.collision_layer = Workshop.INTERACT_LAYER
+		body.collision_mask = 0
+		body.set_meta("bike_view", self)
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(0.75, 1.1, 2.0)
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		cs.position.y = 0.55
+		body.add_child(cs)
+		_bike.add_child(body)
+
+
+## Their bike as a request for ordering one or copying its blueprint carries it (see BikeCopy),
+## or {} with no bike here.
+func bike_src() -> Dictionary:
+	if not has_bike() or _build == null:
+		return {}
+	var style := str(PartsDB.detect_style(_build.parts).get("style", ""))
+	var who := customer_name.get_slice(" ", 0) if customer_name != "" else "A customer"
+	return BikeCopy.build_src("%s's %s" % [who, PartsDB.style_name(style) if style != "" else "bike"], _build.parts, _bike_paint,
+		_build.condition, false)
 
 
 ## Rebuilds the bike parked on its stand (leaning on the side stand, nobody on it) or ridden.

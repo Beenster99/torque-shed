@@ -87,7 +87,7 @@ const ACTIONS := [
 	["tool_6", "Pressure washer", ["foot", "board"]], ["tool_7", "Spray gun", ["foot", "board"]],
 	["tool_8", "Stopwatch", ["foot", "board"]], ["tool_9", "Polisher", ["foot"]],
 	["spray_colour", "Spray colour", ["spray"]], ["spray_finish", "Spray finish", ["spray"]],
-	["rename", "Name a bike", ["foot"]], ["blast_scan", "Sandblaster: scan the engine", ["foot"]],
+	["rename", "Name a bike", ["foot"]], ["order_bike", "Looking at a bike: order one of these or copy its blueprint", ["foot"]], ["blast_scan", "Sandblaster: scan the engine", ["foot"]],
 	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
 	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
 	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
@@ -354,6 +354,8 @@ func _setup_inputs() -> void:
 	_bind("emote_cheer", [KEY_F9], [])
 	_bind("emote_dance", [KEY_F10], [])
 	_bind("rename", [KEY_N], [])
+	# Looking at any bike: order one of these, or copy its blueprint (see BikeCopy). No pad button spare.
+	_bind("order_bike", [KEY_O], [])
 	# At the sandblaster's gloves: scan the engine for what's still to blast.
 	_bind("blast_scan", [KEY_X], [JOY_BUTTON_DPAD_UP])
 	# Turn a part in your hands, equipment you're carrying, a poster before you hang it or a

@@ -176,6 +176,11 @@ var blueprints := {}
 ## moves onto that bike as its "blueprint", and goes when the bike is built.
 var holograms := {}
 const MAX_BLUEPRINTS := 40
+## Parts bought with "Order one of these" (see BikeCopy) that didn't fit in the delivery area
+## yet, oldest first: [{part, color, finish, paid, by}]. Already paid for; each is boxed up
+## outside the roller door as soon as there's room for it.
+var on_order := []
+var _on_order_timer := 0.0
 
 ## Whether a new shed opens with the old demo bikes (for the tests and screenshot tools; a
 ## player's new shed starts empty).
@@ -246,6 +251,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	screens = {}
 	blueprints = {}
 	holograms = {}
+	on_order = []
 	dyno = dyno_defaults()
 	_dyno_busy_until = 0
 	items.clear()
@@ -503,6 +509,7 @@ func join_remote() -> void:
 	screens = {}
 	blueprints = {}
 	holograms = {}
+	on_order = []
 	dyno = dyno_defaults()
 	_dyno_busy_until = 0
 	items.clear()
@@ -535,6 +542,7 @@ func stop() -> void:
 	screens = {}
 	blueprints = {}
 	holograms = {}
+	on_order = []
 	dyno = dyno_defaults()
 	_dyno_busy_until = 0
 	active = false
@@ -2503,6 +2511,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return _coat_check(peer, action)
 	if a.begins_with("money_"):
 		return Money.check(peer, action)
+	if a.begins_with("copy_"):
+		return BikeCopy.check(peer, action)
 	if a == "retrieve_bike":
 		return retrieve_check(action)
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
@@ -3285,6 +3295,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	if str(action.get("a", "")).begins_with("coffee_"):
 		_coffee_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("copy_"):
+		_copy_apply(peer, action)
 		return
 	if str(action.get("a", "")).begins_with("paint_"):
 		Money.note_use(action)
@@ -5230,6 +5243,11 @@ func _blueprint_apply(action: Dictionary, peer := 1) -> String:
 ## is empty), each part's colour and finish, its paint and its parts' fit. One with the same
 ## name is replaced.
 func _save_blueprint(bike_id: int, bp_name: String) -> int:
+	return store_blueprint(bp_name, blueprint_of(bike_id))
+
+
+## What a bike is now, as a blueprint holds it: {parts, colors, paint, geo, from} (see blueprints).
+func blueprint_of(bike_id: int) -> Dictionary:
 	var bike: Dictionary = bikes[bike_id]
 	var parts := {}
 	var colors := {}
@@ -5242,12 +5260,18 @@ func _save_blueprint(bike_id: int, bp_name: String) -> int:
 			parts[slot] = "none"
 		else:
 			parts[slot] = str(bike.get("original", {}).get(slot, PartsDB.DEFAULT_BUILD.get(slot, "none")))
+	return {"parts": parts, "colors": colors, "paint": bike["paint"], "geo": geometry_of(bike_id).duplicate(true), "from": str(bike["name"])}
+
+
+## Keeps `plan` (as blueprint_of gives it) as the blueprint `bp_name`; one with the same name is
+## replaced. Returns its id.
+func store_blueprint(bp_name: String, plan: Dictionary) -> int:
 	var id := blueprint_named(bp_name)
 	if id == 0:
 		id = _next_id
 		_next_id += 1
-	blueprints[id] = {"id": id, "name": bp_name, "parts": parts, "colors": colors, "paint": bike["paint"],
-		"geo": geometry_of(bike_id).duplicate(true), "from": str(bike["name"])}
+	blueprints[id] = {"id": id, "name": bp_name, "parts": plan["parts"], "colors": plan.get("colors", {}), "paint": plan["paint"],
+		"geo": plan.get("geo", {}), "from": str(plan.get("from", ""))}
 	return id
 
 
@@ -5400,7 +5424,7 @@ func _snapshot(with_board := true) -> Dictionary:
 		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
+		"blueprints": blueprints, "holograms": holograms, "on_order": on_order, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
 		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "adventure_save": adventure_save, "kit_v": KIT_SAVE}
 	if with_board:
 		state["board"] = board
@@ -5475,6 +5499,7 @@ func _sync(state: Dictionary) -> void:
 	# Sheds saved before blueprints have none.
 	blueprints = state["blueprints"] if state.get("blueprints") is Dictionary else {}
 	holograms = state["holograms"] if state.get("holograms") is Dictionary else {}
+	on_order = state["on_order"] if state.get("on_order") is Array else []
 	if state.get("blobs") is Dictionary:
 		# A save being opened: its pictures and poster prints.
 		for id in state["blobs"]:
@@ -5511,6 +5536,7 @@ func _process_body(delta: float) -> void:
 	Staff.process(delta)
 	if Adventure.active():
 		AdventureNeeds.tick(delta)
+	_deliver_on_order(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":
@@ -5630,6 +5656,63 @@ func _money_apply(peer: int, action: Dictionary) -> void:
 	_tidy_dyno()
 	_mark_dirty()
 	changed.emit()
+
+
+## A "copy_*" request (see BikeCopy): ordering one of a bike, or copying its blueprint. Money
+## a player paid for an order the host turns down goes back to them.
+func _copy_apply(peer: int, action: Dictionary) -> void:
+	var why := check(peer, action)
+	if why != "":
+		if int(action.get("paid", 0)) > 0:
+			give_cash(peer, mini(int(action["paid"]), Progress.MAX_MONEY), "Order refund")
+		_tell(peer, why, false)
+		return
+	var text := BikeCopy.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## Host: boxes up whatever's on order (see on_order) that the delivery area has room for now,
+## a few at a time, checked every second or so.
+func _deliver_on_order(delta: float) -> void:
+	_on_order_timer -= delta
+	if on_order.is_empty() or _on_order_timer > 0.0:
+		return
+	_on_order_timer = 1.0
+	var sent := 0
+	var i := 0
+	while i < on_order.size() and sent < 4:
+		var o: Dictionary = on_order[i]
+		if PartsDB.get_part(str(o.get("part", ""))).is_empty():
+			on_order.remove_at(i)
+			continue
+		if not delivery_room(str(o["part"])):
+			i += 1
+			continue
+		on_order.remove_at(i)
+		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")))
+		sent += 1
+	if sent > 0:
+		_mark_dirty()
+		changed.emit()
+
+
+## Host: a new part, boxed (fluids as they are) and put in the delivery area, with what was paid
+## for it and who ordered it on the note. Returns its id, or 0 when there's no room for it.
+func deliver_new(part: String, color = null, finish := "", paid := 0, by := "") -> int:
+	if not delivery_room(part):
+		return 0
+	var item_id := _new_item(part, 0.0, 0.0, 0.0, color if color is Color else null)
+	items[item_id]["paid"] = paid
+	items[item_id]["finish"] = finish
+	items[item_id]["boxed"] = not PartsDB.is_fluid(part)
+	items[item_id]["by"] = by if by != "" else "the crew"
+	if not _deliver(item_id):
+		items.erase(item_id)
+		return 0
+	return item_id
 
 
 ## A "coffee_*" request (see CoffeeShop.check and CoffeeShop.apply). Money a player paid at the

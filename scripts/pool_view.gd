@@ -379,7 +379,7 @@ func _take_aim() -> void:
 		var local := global_transform.basis.inverse() * fwd
 		aim = atan2(local.x, -local.z)
 		_walker.process_mode = Node.PROCESS_MODE_DISABLED
-		for key in ["info", "look_info", "look_prompt", "tap_prompt"]:
+		for key in ["info", "look_info", "look_prompt", "tap_prompt", "bike_info", "bike_prompt"]:
 			_walker.set(key, "")
 		_walker.plan = {}
 		_walker.alt_plan = {}
