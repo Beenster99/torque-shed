@@ -115,6 +115,10 @@ func _build_quality(body: VBoxContainer) -> void:
 	_check(body, "gfx_ssao", "Ambient occlusion (SSAO)")
 	_check(body, "gfx_glow", "Glow and bloom")
 	_check(body, "gfx_avatar_shadows", "Avatar shadow (players, staff and townsfolk cast shadows)")
+	_steps(body, "gfx_mirrors", "Mirror detail", [["off", "Off"], ["low", "Low"], ["medium", "Medium"],
+		["high", "High"], ["ultra", "Ultra"]])
+	_note(body, "Your bike's mirrors show the road behind you, live. Higher detail draws them sharper, more often "
+		+ "and further back; Off leaves plain shiny glass and costs nothing. Other riders' mirrors stay plain glass.")
 	var blur := CheckBox.new()
 	blur.text = "Motion blur (the game has none, so it's always off)"
 	blur.disabled = true
@@ -152,6 +156,11 @@ func refresh() -> void:
 				s.set_value_no_signal(float(v))
 				var fmt: Callable = c["fmt"]
 				(c["text"] as Label).text = fmt.call(float(v))
+			"steps":
+				var values: Array = c["values"]
+				var i := maxi(values.find(v), 0)
+				(c["control"] as HSlider).set_value_no_signal(i)
+				(c["text"] as Label).text = str(c["names"][i])
 			"check":
 				(c["control"] as CheckBox).set_pressed_no_signal(bool(v))
 	_rt.set_pressed_no_signal(Settings.gfx_gi == "sdfgi")
@@ -236,6 +245,31 @@ func _slider(body: VBoxContainer, key: String, text: String, lo: float, hi: floa
 	value.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(value)
 	_controls[key] = {"kind": "slider", "control": s, "text": value, "fmt": fmt}
+
+
+## A slider for `key` that steps through [value, text] pairs, low to high.
+func _steps(body: VBoxContainer, key: String, text: String, items: Array) -> void:
+	var row := _row(body, text)
+	var values := []
+	var names := []
+	for it in items:
+		values.append(it[0])
+		names.append(it[1])
+	var s := HSlider.new()
+	s.min_value = 0
+	s.max_value = items.size() - 1
+	s.step = 1
+	s.tick_count = items.size()
+	s.ticks_on_borders = true
+	s.custom_minimum_size.x = 280.0
+	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	s.value_changed.connect(func(v): Settings.set_graphics(key, values[clampi(roundi(v), 0, values.size() - 1)]))
+	row.add_child(s)
+	var value := UITheme.label("", 15, NOTE_COLOR)
+	value.autowrap_mode = TextServer.AUTOWRAP_OFF
+	value.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(value)
+	_controls[key] = {"kind": "steps", "control": s, "text": value, "values": values, "names": names}
 
 
 func _check(body: VBoxContainer, key: String, text: String) -> void:

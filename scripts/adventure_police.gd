@@ -131,6 +131,7 @@ var _red := {}                  # peer -> {t, s}: the last red light they went t
 var _mirror_view: SubViewport   # the mirror, while you're being chased (see _mirror)
 var _mirror_cam: Camera3D
 var _mirror_box: Control
+var _mirror_env_in := 0.0
 
 
 func _ready() -> void:
@@ -326,7 +327,7 @@ func tick(delta: float) -> void:
 				Net.send_police(pack())
 	driver.step(delta)
 	_show(delta)
-	_mirror()
+	_mirror(delta)
 	_fine_t -= delta
 	if _fine_t <= 0.0:
 		_fine_t = 0.25
@@ -829,11 +830,13 @@ func _show(delta: float) -> void:
 
 ## While the police are after you (or stopping you), a rear-view mirror at the top of the
 ## screen: a small second view back down the road from your bike, flipped as a mirror is, so
-## you can see the blue lights coming. Drawn only then (a second camera costs a frame's time).
-func _mirror() -> void:
+## you can see the blue lights coming. Drawn only then (a second camera costs a frame's time),
+## and not in first person while the bike's own mirrors are live (BikeMirrors): you see them
+## coming in those. It's drawn with the same cheap copy of the world's look as those are.
+func _mirror(delta: float) -> void:
 	var main = trip.main if trip and trip.get("main") else null
 	var bike: Node3D = main.bike if main else null
-	var want := bike != null and (chasing() or holding())
+	var want := bike != null and (chasing() or holding()) and not own_mirrors_shown(main)
 	if not want:
 		if _mirror_box and _mirror_box.visible:
 			_mirror_box.visible = false
@@ -870,6 +873,11 @@ func _mirror() -> void:
 		holder.pivot_offset = Vector2(210.0, 60.0)
 	_mirror_box.visible = true
 	_mirror_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_mirror_env_in -= delta
+	if _mirror_env_in <= 0.0:
+		_mirror_env_in = BikeMirrors.ENV_EVERY
+		var w := get_viewport().find_world_3d()
+		_mirror_cam.environment = BikeMirrors.cheap_environment(w.environment if w else null, false)
 	var b := bike.global_transform.basis
 	var fwd := -b.z
 	fwd.y = 0.0
@@ -879,6 +887,14 @@ func _mirror() -> void:
 	var eye := bike.global_position + Vector3.UP * 1.15 + fwd * 0.55 + right * 0.68
 	_mirror_cam.global_transform = Transform3D(Basis.looking_at(-fwd + right * 0.06 + Vector3.DOWN * 0.03, Vector3.UP), eye)
 	_mirror_cam.make_current()
+
+
+## Whether you're looking out of your helmet with the bike's own mirrors live.
+static func own_mirrors_shown(main) -> bool:
+	if main == null or main.bike == null or main.camera == null:
+		return false
+	var own := BikeMirrors.of(main.bike)
+	return own != null and own.live() and main.camera.mode == ChaseCamera.Mode.HELMET
 
 
 ## The blue lamps at time `t`: the left and right banks flashing in turn, each a double flash.
