@@ -110,9 +110,9 @@ func finish() -> String:
 	var cost := maxi(1, ceili(litres * price))
 	var paid := cost if Progress.spend(cost, "Petrol") else 0
 	Shed.request({"a": "refuel", "litres": litres, "paid": paid})
-	var text := "Filled up: %.1f L for %s." % [litres, TvChannels.money_text(cost)]
+	var text := "Filled up with %.1f litres for %s." % [litres, TvChannels.money_text(cost)]
 	if bike.fuel_litres >= bike.build.fuel_capacity - 0.05:
-		text = "Brimmed: %.1f L for %s." % [litres, TvChannels.money_text(cost)]
+		text = "Brimmed with %.1f litres for %s." % [litres, TvChannels.money_text(cost)]
 	litres = 0.0
 	if bike.fuel_litres / maxf(bike.build.fuel_capacity, 0.1) > LOW_CLEAR:
 		warned = false
