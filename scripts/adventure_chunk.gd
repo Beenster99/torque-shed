@@ -248,7 +248,8 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 			var prev := Vector3.INF
 			for i in range(i0, i1 + 1):
 				var lat := (route.width[i] * 0.5 + 4.0) * side
-				var xf := _on_land(route, i, lat, ax, az, route.hd[i], 1.0, true)
+				# No fence across a site's forecourt or lay-by: it's left open to ride in.
+				var xf := Transform3D() if route._site_flat(i, side) > 0.5 else _on_land(route, i, lat, ax, az, route.hd[i], 1.0, true)
 				if xf == Transform3D():
 					prev = Vector3.INF
 					continue
