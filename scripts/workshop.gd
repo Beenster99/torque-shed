@@ -229,6 +229,7 @@ func build() -> void:
 	_build_delivery_area()
 	_build_bin()
 	_build_radio()
+	add_child(AdventureMag.Prop.new())   # the adventure magazine, on the back end of the workbench
 	_build_wash_bay()
 	_build_drain()
 	_build_booth_room()

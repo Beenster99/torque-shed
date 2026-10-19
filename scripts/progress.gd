@@ -118,6 +118,8 @@ const XP := {
 	# Recovery jobs (see Recovery): a bike brought in on the trailer, and an insurer's repair collected.
 	"recovery_delivered": {"xp": 60, "label": "Bike recovered"},
 	"recovery_insurer": {"xp": 120, "label": "Insurer repair done"},
+	# Adventure rides (see Adventure): everyone there when the crew reaches the destination, per 100 km.
+	"adventure_done": {"xp": 300, "label": "Adventure ride complete"},
 	"garage_upgrade": {"xp": 40, "label": "Garage upgrade"},
 	# The coffee shop next door (see CoffeeShop): a break, and a biker's bike bought off them.
 	"coffee_break": {"xp": 3, "label": "Coffee break"},

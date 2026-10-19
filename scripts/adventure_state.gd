@@ -6,13 +6,18 @@ extends RefCounted
 ## ending it, brings everyone back to the shed with their bikes as they were (the fuel burnt,
 ## the wear and the muck all kept, as after any ride).
 ##
-## Shed.adventure: {} when there's none, else {id, seed, km, theme, by (the host's name),
+## Shed.adventure: {} when there's none, else {id, seed, km, theme, dest (where it ends up, see
+## AdventureDest), title, mag (the magazine article it's from, "" for none), by (the host's name),
 ## riders {peer: bike id, 0 when there was none for them}, arrived (the first peer to reach the
-## destination, 0 till then), arrived_name}. Never carried over in a save: loading one finds
-## everybody back at the shed.
+## destination, 0 till then), arrived_name, photo (the crew's photo there, once arrived)}. Never
+## carried over in a save: loading one finds everybody back at the shed.
 ##
-## Actions (Shed.request): adventure_start {seed, km, theme} and adventure_end (the host),
-## adventure_join {bike: the one you'd like} (each player, on loading it) and adventure_arrive;
+## Actions (Shed.request): adventure_start {seed, km, theme, dest, title, mag} (the host, usually
+## from the magazine on the workbench, see AdventureMag) and adventure_end (the host: "Ride home"
+## once everyone's at the destination), adventure_join {bike: the one you'd like} (each player, on
+## loading it) and adventure_arrive (the first there: everyone's brought to the destination, gets
+## XP, and the photo goes up on the shed wall); adventure_photo {photo} (the host: a photo from
+## their own album hung in this shed, see AdventureDest.hang_album);
 ## adventure_resume (the host) carries on the one a night's sleep put away (Shed.adventure_save,
 ## see AdventureNeeds), everyone back where they slept.
 ## the forks' adventure_vote and adventure_fork_due (see AdventureForks, which keeps votes and
@@ -25,8 +30,6 @@ const THEMES: Array[String] = ["varied"]
 ## Real minutes for a whole day and night out on an adventure (the shed's own day is the
 ## Settings' length): fast enough to ride through a night in a session.
 const DAY_MINUTES := 75.0
-## Seconds between someone reaching the destination and everyone going home.
-const ARRIVE_WAIT := 8.0
 
 
 static func active() -> bool:
@@ -44,6 +47,10 @@ static func sanitize(v) -> Dictionary:
 	if not (out.get("riders") is Dictionary):
 		out["riders"] = {}
 	out["arrived"] = int(out.get("arrived", 0))
+	out["dest"] = str(out.get("dest", "")) if AdventureDest.exists(str(out.get("dest", ""))) \
+		else AdventureDest.default_for(str(out["theme"]), int(out["seed"]))
+	out["title"] = str(out.get("title", ""))
+	out["mag"] = str(out.get("mag", ""))
 	return out
 
 
@@ -68,6 +75,16 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "Pick between %d and %d km." % [int(MIN_KM), int(MAX_KM)]
 			if not THEMES.has(str(action.get("theme", "varied"))):
 				return "There's no adventure like that."
+			if str(action.get("dest", "")) != "" and not AdventureDest.exists(str(action["dest"])):
+				return "There's no destination like that."
+			var art := AdventureMag.find(str(action.get("mag", "")))
+			if str(action.get("mag", "")) != "" and (art.is_empty() or not AdventureMag.unlocked(art, AdventureMag.level_now())):
+				return "That issue of the magazine isn't out yet."
+		"adventure_photo":
+			if not _is_host(peer):
+				return "Only the host hangs photos."
+			if AdventureDest.sanitize_photo(action.get("photo")).is_empty():
+				return "That photo's no good."
 		"adventure_resume":
 			if not _is_host(peer):
 				return "Only the host can carry on an adventure."
@@ -96,10 +113,18 @@ static func apply(peer: int, action: Dictionary) -> String:
 	match str(action.get("a", "")):
 		"adventure_start":
 			var km := float(action.get("km", DEFAULT_KM))
-			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": int(action.get("seed", randi())), "km": km,
-				"theme": str(action.get("theme", "varied")), "by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
+			var seed := int(action.get("seed", randi()))
+			var theme := str(action.get("theme", "varied"))
+			var dest := str(action.get("dest", ""))
+			if dest == "":
+				dest = AdventureDest.default_for(theme, seed)
+			var title := str(action.get("title", "")).left(48)
+			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": seed, "km": km, "theme": theme, "dest": dest,
+				"title": title if title != "" else "Ride to %s" % AdventureDest.name_of(dest), "mag": str(action.get("mag", "")),
+				"by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
 			Shed.adventure_save = {}   # a new adventure: any put away overnight is forgotten
-			return "*%s is off on an adventure ride: %d km, %s. Everyone to the start!" % [who, roundi(km), str(Shed.adventure["theme"])]
+			return "*%s is off on an adventure ride: %s, %d km to %s. Everyone to the start!" % [who, str(Shed.adventure["title"]),
+				roundi(km), AdventureDest.name_of(dest)]
 		"adventure_resume":
 			var save := Shed.adventure_save
 			Shed.adventure = (save["adventure"] as Dictionary).duplicate(true)
@@ -140,10 +165,32 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure["arrived"] = peer
 			Shed.adventure["arrived_name"] = who
 			Shed.adventure_save = {}   # there: nothing left to carry on
-			return "*%s has reached the destination! Back to the shed in a few seconds." % who
+			return "*" + _arrive(who)
+		"adventure_photo":
+			AdventureDest.hang(action["photo"])
+			return ""
 		"adventure_vote", "adventure_fork_due":
 			return AdventureForks.apply(peer, action, who)
 	return ""
+
+
+## Everyone's at the destination: the crew's photo (hung on the shed wall), XP for each of them
+## (more for a longer ride), and the clock to the time of day it's best seen at. What to tell them.
+static func _arrive(who: String) -> String:
+	var ids := Shed.crew.keys()
+	ids.sort()
+	var names := ids.map(func(p): return str(Shed.crew[p].get("name", "Rider")))
+	var photo := AdventureDest.make_photo(Shed.adventure, names)
+	Shed.adventure["photo"] = photo
+	AdventureDest.hang(photo)
+	var km := float(Shed.adventure.get("km", DEFAULT_KM))
+	for p in ids:
+		Progress.award(int(p), "adventure_done", km / 100.0, "adventure:%d" % int(Shed.adventure["id"]))
+	var dest := AdventureDest.of(str(Shed.adventure.get("dest", "")))
+	if float(dest.get("hours", -1.0)) >= 0.0 and Daylight.current:
+		Daylight.current.set_time(float(dest["hours"]))
+	return "%s has reached %s! Everyone's there for the photo; it'll hang on the shed wall. The host rides everyone home from the Esc menu." % [
+		who, AdventureDest.name_of(str(Shed.adventure.get("dest", "")))]
 
 
 ## The bike `peer` takes: `preferred` (the one they were by) if it's free to ride, else the
@@ -162,17 +209,19 @@ static func _bike_for(peer: int, preferred: int, riders: Dictionary) -> int:
 	return 0
 
 
-## The Esc menu's adventure button: the host starts a varied ride of DEFAULT_KM on a fresh seed,
-## or ends the one on. (The workbench magazine replaces this later.)
+## The Esc menu's adventure button: opens the magazine (AdventureMag) to pick one, or the host
+## ends the one on ("Ride home" once everyone's at the destination).
 static func menu_action() -> void:
 	if active():
 		Shed.request({"a": "adventure_end"})
-	else:
-		start(randi() % 1000000, DEFAULT_KM)
+	elif AdventureTrip.current:
+		AdventureTrip.current.open_magazine.call_deferred()
 
 
-static func start(seed: int, km: float, theme := "varied") -> void:
-	Shed.request({"a": "adventure_start", "seed": seed, "km": km, "theme": theme})
+## Starts a ride on `seed` of `km` to the theme's destination for it (the Debug tab and tests;
+## the magazine starts its own, AdventureMag.start_article).
+static func start(seed: int, km: float, theme := "varied", dest := "") -> void:
+	Shed.request({"a": "adventure_start", "seed": seed, "km": km, "theme": theme, "dest": dest})
 
 
 ## What the Esc menu's button says, and why it can't be pressed ("" when it can).
@@ -190,7 +239,8 @@ static func continue_text() -> Array:
 
 static func menu_text() -> Array:
 	var host := Shed.is_authority()
+	if active() and int(Shed.adventure.get("arrived", 0)) != 0:
+		return ["Ride home (everyone back to the shed)", "" if host else "The host rides everyone home."]
 	if active():
 		return ["End the adventure (everyone back to the shed)", "" if host else "The host ends the adventure."]
-	return ["Adventure ride: %d km, varied roads (host starts it for everyone)" % int(DEFAULT_KM),
-		"" if host else "The host starts adventures."]
+	return ["Adventure ride: read the magazine to pick one (the host starts it for everyone)", ""]

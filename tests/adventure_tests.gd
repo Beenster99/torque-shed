@@ -362,6 +362,7 @@ func test_pumps() -> void:
 ## with the fuel it burnt and the muck it picked up kept. A save made out there keeps you at home.
 func test_trip() -> void:
 	AdventureTrip.instant = true
+	AdventureDest.album_path = ""
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	t.add_child(main)
 	await t.get_tree().process_frame
@@ -414,14 +415,27 @@ func test_trip() -> void:
 		main.bike.throttle = 0.3
 		await t.get_tree().physics_frame
 	check(int(Shed.adventure.get("arrived", 0)) == Shed.me(), "reaching the destination tells the host")
-	trip._arrive_timer = Adventure.ARRIVE_WAIT
+	# There: parked by the set piece for the moment, the photo up on the shed wall, and it's the
+	# host who rides everyone home (nothing ends by itself).
+	var at_dest: float = trip.world.distance_of(main.bike.global_position, "own")
+	check(trip.moment_done and absf(at_dest - AdventureDest.dest_s(trip.world)) < 20.0,
+		"everyone's brought to the destination's set piece (%.0f m along, it's at %.0f)" % [at_dest, AdventureDest.dest_s(trip.world)])
+	var photo: Dictionary = Shed.adventure.get("photo", {})
+	check(not photo.is_empty() and not AdventureDest.photo_on_wall(str(photo.get("key", ""))).is_empty(), "and the crew's photo hangs in the shed")
+	for i in 30:
+		await t.get_tree().physics_frame
+	check(Adventure.active() and trip.on_trip(), "the adventure stays on at the destination")
+	main.menu.show_pause()
+	check(main.menu._adventure.text.begins_with("Ride home") and not main.menu._adventure.disabled, "the Esc menu offers the host Ride home")
+	main.menu.hide()
+	Adventure.menu_action()
 	for i in 10:
 		await t.get_tree().physics_frame
 	check(not Adventure.active() and not trip.on_trip() and main.bike == null and Shed.riding(Shed.me()) == 0,
-		"a few seconds later everyone's brought home")
+		"Ride home brings everyone home")
 	var parked: Transform3D = Shed.bikes[faithful]["xf"]
 	check(Shed.bay_at(parked.origin) >= 0 and main.walker.global_position.distance_to(Workshop.walker_spawn(Net.local_slot()).origin) < 1.0,
-		"the bike's parked in a bay and you're at the shed door")
+		"the bike's parked in a bay and you're at the shed door (%s, %s)" % [parked.origin, main.walker.global_position])
 	check(main.workshop.visible and main.workshop.process_mode != Node.PROCESS_MODE_DISABLED and Daylight.adventure_rate == 0.0,
 		"the town wakes up and the day runs as before")
 	var fuel_after := Shed.build_of(faithful).fuel_litres
