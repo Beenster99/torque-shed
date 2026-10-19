@@ -790,7 +790,7 @@ func _mirror() -> void:
 	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
 	# The right-hand mirror, out on its stalk ahead of the rider: their shoulder at its inner edge.
 	var right := fwd.cross(Vector3.UP)
-	var eye := bike.global_position + Vector3.UP * 1.15 + fwd * 0.55 + right * 0.5
+	var eye := bike.global_position + Vector3.UP * 1.15 + fwd * 0.55 + right * 0.68
 	_mirror_cam.global_transform = Transform3D(Basis.looking_at(-fwd + right * 0.06 + Vector3.DOWN * 0.03, Vector3.UP), eye)
 	_mirror_cam.make_current()
 
