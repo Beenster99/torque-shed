@@ -194,18 +194,18 @@ static func signpost(site: Dictionary, xf: Transform3D, route: AdventureRoute) -
 	root.transform = xf
 	var a := AdventureProps.new_arrays()
 	var x0 := 0.5
-	var bw := 4.2
-	var top := 1.6 + ways.size() * 0.62
+	var bw := 6.0
+	var top := 1.8 + ways.size() * 0.86
 	for sx: float in [x0 + 0.25, x0 + bw - 0.25]:
-		AdventureProps.box(a, Transform3D(Basis(), Vector3(sx, 0.0, 0.0)), Vector3(0.12, top + 0.2, 0.12), Color(0.3, 0.3, 0.32))
+		AdventureProps.box(a, Transform3D(Basis(), Vector3(sx, 0.0, 0.0)), Vector3(0.16, top + 0.3, 0.16), Color(0.3, 0.3, 0.32))
 	for k in ways.size():
 		var way: Dictionary = ways[k]
 		var cols: Array = SIGN_COLOURS.get(str(way["kind"]), SIGN_COLOURS["main"])
-		var y := top - 0.35 - k * 0.62
-		AdventureProps.box(a, Transform3D(Basis(), Vector3(x0 + bw * 0.5, y - 0.26, 0.09)), Vector3(bw, 0.52, 0.05), cols[0])
+		var y := top - 0.5 - k * 0.86
+		AdventureProps.box(a, Transform3D(Basis(), Vector3(x0 + bw * 0.5, y - 0.37, 0.09)), Vector3(bw, 0.74, 0.05), cols[0])
 		var label := Label3D.new()
 		label.text = "%s  %s  %s   %.1f km" % [str(way["arrow"]), str(way["letter"]), str(way["name"]), float(way["len"]) / 1000.0]
-		label.font_size = 52
+		label.font_size = 76
 		label.pixel_size = 0.0058
 		label.modulate = cols[1]
 		label.outline_size = 0
@@ -214,7 +214,7 @@ static func signpost(site: Dictionary, xf: Transform3D, route: AdventureRoute) -
 		root.add_child(label)
 	var head := Label3D.new()
 	head.text = "FORK AHEAD"
-	head.font_size = 44
+	head.font_size = 64
 	head.pixel_size = 0.0058
 	head.outline_size = 6
 	head.position = Vector3(x0 + bw * 0.5, top + 0.25, 0.09)

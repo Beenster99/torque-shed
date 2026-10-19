@@ -343,7 +343,7 @@ func _forks(s: float, delta: float) -> void:
 		return
 	_fork_timer = 0.25
 	_fork_choice = AdventureForks.choice(r, s)
-	_fork_panel.visible = not _fork_choice.is_empty() and not (main.menu.visible if main and main.menu else false)
+	_fork_panel.visible = not _fork_choice.is_empty() and not map_open() and not (main.menu.visible if main and main.menu else false)
 	if _fork_panel.visible:
 		_fork_label.text = "\n".join(AdventureForks.choice_lines(_fork_choice, main.bike != null))
 		_fork_panel.reset_size()
@@ -408,6 +408,7 @@ func open_map() -> void:
 		_hud.get_parent().add_child(_map)
 		_map.closed.connect(close_map)
 	_map.open()
+	_fork_panel.visible = false
 	main._capture_mouse(false)
 
 
