@@ -119,7 +119,10 @@ var geometry := {}
 var _geo_nodes := {}             # slot -> [{node, parent, anchor}]: a node per slot per parent its meshes hang from
 var _geo_pivots := {}            # slot -> the part's middle at rest, in model space
 var _geo_anchors := {}           # node -> its rest transform in model space, for the nodes offsets ride on
-var _shadow_casters := {}        # slot -> its baked shadow-only meshes (see _bake_static)
+## slot -> meshes drawn for the part besides its own: a baked model's shadow-only casters (see
+## _bake_static) and the dirt drawn over its merged pieces (see DirtLayer). They move with it.
+var _slot_extras := {}
+var _baked_pieces := {}          # instance id -> true for each mesh _bake_static merged
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -131,7 +134,8 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	present = fitted
 	condition = build.condition if part_condition == null else part_condition
 	_slot_meshes.clear()
-	_shadow_casters.clear()
+	_slot_extras.clear()
+	_baked_pieces.clear()
 	_covered.clear()
 	_lamps.clear()
 	_lit = [true, true, true]
@@ -5337,7 +5341,6 @@ func _bake_static() -> int:
 	for side in _flat_tyres:
 		moving[_flat_tyres[side]] = true
 	var gone := 0
-	_shadow_casters.clear()
 	for slot in _slot_meshes:
 		var groups := {}    # [parent, material, shadows, layers] -> [[mesh, surface, transform], ...]
 		var shadow_groups := {}   # [parent, layers] -> the merged meshes whose shadows go together
@@ -5370,6 +5373,7 @@ func _bake_static() -> int:
 			merged.layers = key[3]
 			(key[0] as Node).add_child(merged)
 			keep.append(merged)
+			_baked_pieces[merged.get_instance_id()] = true
 			gone -= 1
 			if merged.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON and _plain_caster(key[1]):
 				var sk := [key[0], key[3]]
@@ -5386,16 +5390,27 @@ func _bake_static() -> int:
 				continue
 			var sh := MeshInstance3D.new()
 			sh.name = "BakedShadow_" + str(slot)
-			sh.mesh = _shadow_mesh(pieces)
+			sh.mesh = shape_mesh(pieces)
 			sh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 			sh.layers = sk[1]
 			(sk[0] as Node).add_child(sh)
 			for mi in pieces:
 				(mi as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			if not _shadow_casters.has(slot):
-				_shadow_casters[slot] = []
-			_shadow_casters[slot].append(sh)
+			add_slot_extra(slot, sh)
 	return gone
+
+
+## Keeps `mi`, a mesh drawn for `slot`'s part besides its own (see _slot_extras), with the part.
+func add_slot_extra(slot: String, mi: GeometryInstance3D) -> void:
+	if not _slot_extras.has(slot):
+		_slot_extras[slot] = []
+	_slot_extras[slot].append(mi)
+
+
+## Whether `g` is one of the meshes a baked model's pieces were merged into (see _bake_static):
+## it stays as it is, and others drawn over it can go into one mesh with its neighbours'.
+func baked_piece(g: Node) -> bool:
+	return g != null and _baked_pieces.has(g.get_instance_id())
 
 
 ## Whether a material's shadow is the plain one (opaque, front faces only), as a shadow-only
@@ -5410,9 +5425,10 @@ static func _plain_caster(mat: Material) -> bool:
 		and not b.grow and not b.use_point_size and b.billboard_mode == BaseMaterial3D.BILLBOARD_DISABLED
 
 
-## One mesh of the shapes of `pieces` (MeshInstance3Ds hanging from the same node), as they sit:
-## just where its corners are, and which way they face for the shadows' normal bias.
-static func _shadow_mesh(pieces: Array) -> ArrayMesh:
+## One mesh of the shapes of `pieces` (MeshInstance3Ds hanging from the same node), as they sit
+## there: just where the corners are and which way they face (for a shadow's normal bias, or a
+## pass drawn over them).
+static func shape_mesh(pieces: Array) -> ArrayMesh:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var index := PackedInt32Array()
@@ -5527,7 +5543,7 @@ func _wrap_slots() -> void:
 	for a in anchors:
 		_geo_anchors[a] = Transform3D.IDENTITY if a == self else _local_xform(a)
 	for slot in _slot_meshes:
-		var meshes: Array = (_slot_meshes[slot] + _shadow_casters.get(slot, [])).filter(func(m): return is_instance_valid(m))
+		var meshes: Array = (_slot_meshes[slot] + _slot_extras.get(slot, [])).filter(func(m): return is_instance_valid(m))
 		if meshes.is_empty():
 			continue
 		_geo_pivots[slot] = slot_bounds(slot).get_center()
@@ -5578,8 +5594,8 @@ func make_ghost(mat: Material) -> void:
 				(mi as GeometryInstance3D).material_override = mat
 				(mi as GeometryInstance3D).material_overlay = null
 				(mi as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	for slot in _shadow_casters:
-		for sh in _shadow_casters[slot]:
+	for slot in _slot_extras:
+		for sh in _slot_extras[slot]:
 			if is_instance_valid(sh):
 				(sh as Node3D).visible = false
 	if _dash_label:
@@ -5700,11 +5716,11 @@ func strip_to(keep: Array) -> void:
 	for s in _slot_meshes:
 		if keep.has(s):
 			continue
-		for mi in _slot_meshes[s] + _shadow_casters.get(s, []):
+		for mi in _slot_meshes[s] + _slot_extras.get(s, []):
 			if is_instance_valid(mi):
 				mi.free()
 		_slot_meshes[s] = []
-		_shadow_casters.erase(s)
+		_slot_extras.erase(s)
 
 
 ## Loose parts on their own, sitting with their base on the origin. `parts` maps slot ->

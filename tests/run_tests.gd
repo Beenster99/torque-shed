@@ -3357,18 +3357,11 @@ func _test_bike_baking() -> void:
 	holder.add_child(baked)
 	baked.build_from(Shed.build_of(id), Shed.bikes[id]["paint"])
 	var count := func(m: BikeModel) -> Array:
-		var n := 0
-		var shadows := 0
-		for mi in m.find_children("*", "MeshInstance3D", true, false):
-			if (mi as MeshInstance3D).is_visible_in_tree():
-				if (mi as MeshInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
-					n += 1
-				if (mi as MeshInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
-					shadows += 1
-		return [n, shadows]
+		var d: Dictionary = load("res://tests/coop_perf_tests.gd").draws(m)
+		return [d["all"], d["casters"]]
 	var a: Array = count.call(plain)
 	var b: Array = count.call(baked)
-	check(b[0] * 2 < a[0] and b[1] * 2 < a[1], "a riding bike is drawn with far fewer meshes (%d, not %d) and shadow casters (%d, not %d)" % [b[0], a[0], b[1], a[1]])
+	check(b[0] * 2 < a[0] and b[1] * 2 < a[1], "a riding bike is drawn with far fewer draws (%d, not %d) and shadow casters (%d, not %d)" % [b[0], a[0], b[1], a[1]])
 	var off := []
 	for slot in plain._slot_meshes:
 		if (plain._slot_meshes[slot] as Array).is_empty() != (baked._slot_meshes[slot] as Array).is_empty():

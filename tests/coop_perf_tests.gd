@@ -17,9 +17,10 @@ func check(cond: bool, what: String) -> void:
 	t.check(cond, what)
 
 
-## What's drawn under `n`: "all", the GeometryInstance3Ds seen (each a draw call of its own);
-## "close", those of them only drawn up close (a visibility range ending within 30 m); and
-## "casters", those drawn into the shadow maps (a draw in each split they're in).
+## What's drawn under `n`: "all", the draw calls for what's seen (one for each GeometryInstance3D,
+## and one more for each pass drawn over it: the dirt, paint effects, an overlay); "close", the
+## instances only drawn up close (a visibility range ending within 30 m); and "casters", the
+## instances drawn into the shadow maps (a draw in each split they're in).
 static func draws(n: Node) -> Dictionary:
 	var all := 0
 	var casters := 0
@@ -34,18 +35,23 @@ static func draws(n: Node) -> Dictionary:
 			casters += 1
 		if gi.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
 			continue
-		all += 1
+		all += 1 + (1 if gi.material_overlay != null else 0)
+		var mat := gi.material_override
+		while mat != null and mat.next_pass != null:
+			all += 1
+			mat = mat.next_pass
 		if gi.visibility_range_end > 0.0 and gi.visibility_range_end < 30.0:
 			close.append(gi)
 	return {"all": all, "close": close, "casters": casters}
 
 
 ## Simon's 19 October round: "Performance has improved except for when we are a couple of
-## metres from each other." A crew member's bike drew 88 more things once it came within 9 m,
-## the tyre walls' letters, each a Label3D of its own, and close to the camera it's in all four
-## of the sun's shadow splits, each a draw for every piece. Now each tyre's lettering is one
-## mesh and the pieces on a node cast one shadow, and a crew member's bike or figure 2 m away
-## costs the frame about what it does 30 m away.
+## metres from each other." Within 30 m a crew member's muddy bike drew its dirt over nearly
+## every piece, a draw each; within 9 m the tyre walls' 88 letters came in, each a Label3D of its
+## own; and close to the camera it's in all four of the sun's shadow splits, a draw there for
+## every piece. Now each tyre's lettering is one mesh, and the pieces on a node take one draw
+## for their dirt and one for their shadow, so a crew member's bike or figure 2 m away costs
+## the frame about what it does 30 m away.
 func test_close() -> void:
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	t.add_child(main)
@@ -71,8 +77,12 @@ func test_close() -> void:
 		"each tyre's lettering is one mesh, letters and all (%s triangles)" % str(faces))
 	check((d["close"] as Array).size() <= 2 and labels <= 2,
 		"only %d things on the crew's bike are drawn just up close (not the 88 letters there were), and %d labels (their name)" % [(d["close"] as Array).size(), labels])
-	check(int(d["all"]) <= 150 and int(d["casters"]) <= 75,
-		"the crew's bike is %d draws close or far, and %d in each shadow split it's in" % [int(d["all"]), int(d["casters"])])
+	var dirt: DirtLayer = rb.model.dirt_layer
+	var dirt_draws: int = (dirt._overlays.size() + dirt._restore.size()) if dirt else 0
+	check(dirt != null and dirt.mesh_count() > 40 and dirt_draws * 2 < dirt.mesh_count(),
+		"its dirt is drawn over %d pieces in %d draws" % [dirt.mesh_count() if dirt else 0, dirt_draws])
+	check(int(d["all"]) <= 215 and int(d["casters"]) <= 75,
+		"the crew's muddy bike is %d draws up close, its dirt and all, and %d in each shadow split it's in" % [int(d["all"]), int(d["casters"])])
 	rb.queue_free()
 	# Riding beside them and stood beside them, timed: 2 m against 30 m, turn about.
 	var at := Vector3(14.0, 0.0, 30.0)
