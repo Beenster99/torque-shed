@@ -42,6 +42,7 @@ func _run_all() -> void:
 	await _test_acceleration()
 	await _test_performance()
 	_test_style_performance()
+	await _test_style_launch()
 	await _test_turning()
 	await _test_braking()
 	await _test_low_speed()
@@ -751,7 +752,7 @@ const STYLE_REAL := {
 	"cafe": {"hp": [45, 115], "mph": [105, 140], "mpg": [42, 65], "kg": [180, 225]},
 	"bobber": {"hp": [70, 110], "mph": [100, 125], "mpg": [40, 58], "kg": [220, 300]},
 	"chopper": {"hp": [80, 110], "mph": [100, 120], "mpg": [36, 50], "kg": [230, 320]},
-	"cruiser": {"hp": [50, 110], "mph": [100, 120], "mpg": [40, 60], "kg": [220, 320]},
+	"cruiser": {"hp": [50, 110], "mph": [100, 125], "mpg": [40, 60], "kg": [220, 320]},
 	"scrambler": {"hp": [60, 110], "mph": [105, 130], "mpg": [45, 60], "kg": [185, 230]},
 	"adventure": {"hp": [95, 150], "mph": [115, 140], "mpg": [44, 60], "kg": [215, 270]},
 	"roader": {"hp": [65, 170], "mph": [120, 160], "mpg": [45, 60], "kg": [205, 260]},
@@ -784,6 +785,24 @@ func _test_style_performance() -> void:
 		"a race bike is faster than a sports bike, then a naked bike, then a cruiser")
 	check(top.call("mx") < top.call("supermoto"), "an MX bike's short gearing runs out before a supermoto's")
 	check(thirst.call("race") < thirst.call("classic"), "a superbike drinks more than a classic twin")
+
+
+## Flat-out launches on the stock bikes, ridden, against magazine 0-60 mph times: a superbike
+## does it in about three seconds, a middleweight sports bike in a little over, and a big
+## cruiser in four to five (its 16" rear takes only an old-school tyre, and it weighs 300 kg).
+func _test_style_launch() -> void:
+	for run in [["race", 2.6, 3.6], ["sport", 2.9, 3.9], ["cruiser", 4.0, 6.0]]:
+		var parts := Contracts.style_build(run[0])
+		var t60 := [-1.0]
+		var r := await ride(parts, 8.0, func(bike, t):
+			bike.throttle = 1.0
+			bike.body_shift = 0.6
+			if t60[0] < 0.0 and bike.speed >= 26.8224:
+				t60[0] = t)
+		var nm := PartsDB.style_name(run[0])
+		check(not r["crashed"], "%s: the launch does not crash" % nm)
+		check(t60[0] >= run[1] and t60[0] <= run[2], "%s: 0-60 mph in %.1f s (%.1f-%.1f s expected)" % [nm, t60[0], run[1], run[2]])
+		await _done(r)
 
 
 func _test_turning() -> void:

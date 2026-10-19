@@ -58,31 +58,50 @@ mpg is UK (imperial), and UK mpg ÷ 1.201 = US mpg.
 
 ## The game's stock bikes against the real figures
 
-These are the stock bikes from `Contracts.style_build`, as tuned in October 2026.
+These are the stock bikes from `Contracts.style_build`, as tuned in October 2026, after raising tyre grip and
+adding the 1500 and 1800 cc V-twins.
 - **Ride 0-60:** a real full-throttle run on flat tarmac, with auto-shift and rider assist at 0.5.
 - **Top mph:** the build's estimate.
 - **mpg:** a steady 90 km/h in top gear, in UK gallons. The real figures are real-world averages.
 
-`_test_style_performance` in `tests/run_tests.gd` keeps every style inside the real-world range.
+`_test_style_performance` and `_test_style_launch` in `tests/run_tests.gd` keep them there.
 
 | Style | hp (real) | Top mph (real) | Ride 0-60 s (real) | UK mpg (real) | Wet kg (real) |
 |---|---|---|---|---|---|
-| Classic | 54 (47) | 102 (110) | 5.3 (5.5) | 60 (60) | 211 (224) |
-| Cafe racer | 98 (105) | 128 (130) | 5.3 (3.7) | 53 (50) | 195 (214) |
-| Bobber | 85 (94) | 110 (115) | 5.8 (4.0) | 50 (48) | 231 (255) |
-| Chopper | 91 (100) | 107 (115) | 5.9 (4.0) | 44 (43) | 240 (308) |
-| Cruiser | 91 (87) | 109 (112) | 5.7 (4.2) | 46 (48) | 268 (290) |
-| Scrambler | 77 (80) | 111 (118) | 5.1 (3.9) | 52 (52) | 208 (222) |
-| Adventure | 101 (106) | 119 (130) | 5.3 (3.4) | 46 (51) | 252 (226; GS Adventure 269) |
-| Tall roader | 114 (117) | 137 (140) | 3.8 (3.3) | 52 (52) | 213 (219) |
-| Tourer | 153 (136) | 147 (135) | 4.3 (3.4) | 41 (47) | 277 (343) |
-| Sports bike | 119 (95) | 156 (145) | 3.6 (3.3) | 62 (50) | 197 (200) |
-| Race bike | 222 (206) | 186 (186) | 3.5 (2.9) | 43 (40) | 206 (199) |
-| Naked | 124 (117) | 137 (145) | 3.9 (3.1) | 47 (52) | 201 (190) |
-| Supermoto | 71 (74) | 109 (110) | 4.2 (3.5) | 54 (58) | 149 (158) |
-| MX bike | 71 (63 crank) | 85 (85) | 5.8 on tarmac | 44 | 130 (109) |
+| Classic | 54 (47) | 102 (110) | 5.1 (5.5) | 60 (60) | 211 (224) |
+| Cafe racer | 98 (105) | 128 (130) | 4.5 (3.7) | 53 (50) | 195 (214) |
+| Bobber | 98 (94) | 115 (115) | 5.2 (4.0) | 49 (48) | 263 (255) |
+| Chopper | 101 (100) | 117 (115) | 5.3 (4.0) | 47 (43) | 281 (308) |
+| Cruiser | 101 (87) | 120 (112) | 5.1 (4.2) | 48 (48) | 308 (290) |
+| Scrambler | 77 (80) | 111 (118) | 4.6 (3.9) | 52 (52) | 208 (222) |
+| Adventure | 101 (106) | 119 (130) | 4.7 (3.4) | 46 (51) | 252 (226; GS Adventure 269) |
+| Tall roader | 114 (117) | 137 (140) | 3.3 (3.3) | 52 (52) | 213 (219) |
+| Tourer | 153 (136) | 147 (135) | 3.8 (3.4) | 41 (47) | 277 (343) |
+| Sports bike | 119 (95) | 156 (145) | 3.3 (3.3) | 62 (50) | 197 (200) |
+| Race bike | 222 (206) | 186 (186) | 3.0 (2.9) | 43 (40) | 206 (199) |
+| Naked | 124 (117) | 137 (145) | 3.4 (3.1) | 47 (52) | 201 (190) |
+| Supermoto | 71 (74) | 109 (110) | 3.8 (3.5) | 54 (58) | 149 (158) |
+| MX bike | 71 (63 crank) | 85 (85) | 5.5 on tarmac | 44 | 130 (109) |
 
-**Known gap.** Launches are held back by tyre grip. The game's tyres give 0.9-1.2 on tarmac, a little below real
-road tyres, and the ridden 0-60 times come out 0.3-2 s slower than magazine tests. The gap is widest for bikes on
-vintage or dual-sport tyres. Closing it means retuning tyre grip, which would also change cornering and braking
-everywhere.
+**Tyre grip on dry tarmac:**
+
+| Tyre family | Grip |
+|---|---|
+| Vintage and whitewall | 1.05 |
+| Touring road | 1.20 |
+| Sport road | 1.32 |
+| Race slick | 1.45 |
+| Dual-sport | 1.08 |
+| MX knobbly | 0.92 |
+
+**Big twins.** The 1500 and 1800 cc V-twins carry a `breathing` figure below 1. Turning only 5,500-6,500 rpm, they
+need less fuel flow and shed less heat than their size suggests. They pair with the 6-speed cruiser overdrive
+gearbox (a tall primary drive and an overdrive sixth), as real big twins do.
+
+**Known gaps.**
+- **Cruiser-style launches.** The bobber, chopper and cruiser are still about 1 s slower to 60 than magazine
+  tests.
+  - Their 16" rear rims only take old-school tyres.
+  - Under hard acceleration the rear tyre's load bounces about (wheel hop), so it spins past peak grip in first
+    gear.
+- **Adventure and scrambler launches.** These run on dual-sport tyres.

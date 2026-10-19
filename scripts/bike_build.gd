@@ -861,8 +861,10 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	friction_mult = float(head.get("thirst", 1.0))
 
 	torque_mult = float(head["torque_mult"]) * lerpf(0.75, 1.0, health["head"]) * float(ecu.get("power", 1.0))
-	# The fuel system has to keep up with the engine, or it runs lean and gutless.
-	var demand := displacement * float(head["peak_shift"])
+	# The fuel system has to keep up with the engine, or it runs lean and gutless. A big, slow-revving
+	# engine breathes less air (and makes less heat) than its size alone says.
+	var breathing := float(block.get("breathing", 1.0))
+	var demand := displacement * float(head["peak_shift"]) * breathing
 	var flow := float(fuel["flow"]) * lerpf(0.8, 1.0, health["fuel"])
 	torque_mult *= float(fuel["torque_mult"])
 	if flow < demand:
@@ -884,7 +886,7 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	torque_mult *= lerpf(0.55, 1.0, clampf(block_health, 0.0, 1.0))
 	# Hot heads need cooling to match.
 	var lean := maxf(-tune_value("map"), 0.0)
-	engine_heat = displacement / 1000.0 * float(head["heat"]) * (1.0 + 0.15 * lean + 0.06 * maxf(tune_value("ignition"), 0.0))
+	engine_heat = displacement / 1000.0 * float(head["heat"]) * breathing * (1.0 + 0.15 * lean + 0.06 * maxf(tune_value("ignition"), 0.0))
 	cooling_capacity = float(cooling["capacity"]) * lerpf(0.6, 1.0, health["cooling"])
 	if engine_heat > cooling_capacity:
 		torque_mult *= maxf(0.8, 1.0 - (engine_heat - cooling_capacity) * 0.4)
