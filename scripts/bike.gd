@@ -43,6 +43,8 @@ const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down
 const AIR_REV_PITCH := 7.0        # pitch acceleration (rad/s^2) from blipping the rear wheel in the air
 const SKID_SLIP := 0.2            # tyre slip above which it screeches and marks the road
 const BUMP_HEIGHT := {"tarmac": 0.006, "concrete": 0.004, "dirt": 0.035, "grass": 0.025, "gravel": 0.03}
+const CONTACT_LENGTH := 0.1       # m: the stretch of road a tyre's contact patch rides over
+const WHEEL_HOP := 14.0           # Hz: how quickly a wheel on its tyre follows the road's ripples
 static var _bumps: FastNoiseLite
 ## How much past the grip that's left for braking (normalised slip) a rider with no help lets the
 ## front go before they'd ease off: with full care (Riding realism 0.5 and up) none at all.
@@ -233,7 +235,7 @@ func _make_wheel(is_front: bool, mount: Vector3, radius: float, travel: float, s
 	return {
 		"is_front": is_front, "mount": mount, "radius": radius, "travel": travel,
 		"spring": spring, "bump": bump, "rebound": rebound, "inertia": wheel_inertia,
-		"omega": 0.0, "spin": 0.0, "compression": 0.0, "contact": false, "load": 0.0,
+		"omega": 0.0, "spin": 0.0, "compression": 0.0, "contact": false, "load": 0.0, "ripple": 0.0, "hop": 0.0,
 		"drive_torque": 0.0, "brake_torque": 0.0, "slip": 0.0, "surface": "tarmac",
 		# Tyre state for the telemetry and the steering: slip ratio, slip angle (rad), lateral
 		# normalised slip after relaxation, camber (+ leaning right), grip used (0..1+), friction,
@@ -856,7 +858,27 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		var h_mount: float = (mount - hit["position"]).dot(n)
 		var hang := (h_mount - crown - (radius - crown) * cos_cam) / maxf(up.dot(n), 0.2)
 		# The ground isn't a billiard table: ripples, ruts and stones under the tyre work the suspension.
-		raw_comp = travel - hang + road_bump(hit["position"], hit_surf)
+		# They reach it through the tyre, though. The contact patch rides over a stretch of road, not
+		# a point, so ripples shorter than it are smoothed out, and so are any shorter than the road
+		# that passes under it in a step, which the step would otherwise sample too coarsely and
+		# alias into slow false bumps. And the carcass is a stiff spring under the wheel's own mass,
+		# so the wheel follows the road only up to its hop frequency and the tyre swallows anything
+		# quicker. Taken a point at a time straight into the damper, a few millimetres of tarmac
+		# ripple came through at speed as the back tyre's load swinging by kilonewtons from one step
+		# to the next and the front's dropping to nothing.
+		var span := heading * maxf(CONTACT_LENGTH, absf(speed) * delta)
+		var ripple := 0.0
+		for k in 4:
+			ripple += road_bump(hit["position"] + span * ((float(k) + 0.5) / 4.0 - 0.5), hit_surf) * 0.25
+		if w["contact"]:
+			# The wheel on its tyre, critically damped about the hop frequency.
+			var follow := 1.0 - exp(-delta * TAU * WHEEL_HOP)
+			w["hop"] = lerpf(float(w["hop"]), ripple, follow)
+			ripple = lerpf(float(w["ripple"]), float(w["hop"]), follow)
+		else:
+			w["hop"] = ripple
+		w["ripple"] = ripple
+		raw_comp = travel - hang + ripple
 
 	if raw_comp < 0.0:
 		w["contact"] = false

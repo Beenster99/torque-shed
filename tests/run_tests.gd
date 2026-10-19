@@ -40,6 +40,7 @@ func _run_all() -> void:
 	await _test_settle()
 	await _test_acceleration()
 	await _test_performance()
+	await _test_style_launch()
 	await _test_turning()
 	await _test_braking()
 	await _test_low_speed()
@@ -497,6 +498,33 @@ func _test_performance() -> void:
 		check(t100[0] >= run[2] and t100[0] <= run[3], "%s: 0-100 km/h in %.1f s (%.1f-%.1f s expected)" % [what, t100[0], run[2], run[3]])
 		check(top >= run[4] and top <= run[5], "%s: reaches %.0f km/h (%.0f-%.0f expected)" % [what, top, run[4], run[5]])
 		check(bike.gear == b.gear_count(), "%s: pulls through every gear into top (gear %d of %d)" % [what, bike.gear, b.gear_count()])
+		await _done(r)
+
+
+## Flat out from a standstill on tarmac, a heavy cruiser and a tourer, looked at every physics
+## step. The road's few millimetres of ripple used to reach the suspension a point at a time,
+## straight into the dampers: at speed the back tyre's load swung by over 300 N a step on
+## average (700 N at 60 mph) and the front kept unloading to nothing.
+func _test_style_launch() -> void:
+	for st in ["cruiser", "tourer"]:
+		var m := {"t60": -1.0, "step": 0.0, "n": 0, "last": -1.0, "front_min": INF}
+		var r := await ride(Contracts.style_build(st), 9.0, func(bike, t):
+			bike.throttle = 1.0
+			bike.body_shift = 0.6
+			if m["t60"] < 0.0 and bike.speed >= 26.82:
+				m["t60"] = t
+			if t < 0.5 or m["t60"] >= 0.0:
+				return
+			var load: float = bike.wheels[1]["load"]
+			if m["last"] >= 0.0:
+				m["step"] += absf(load - m["last"])
+				m["n"] += 1
+			m["last"] = load
+			m["front_min"] = minf(m["front_min"], float(bike.wheels[0]["load"])))
+		var step: float = m["step"] / maxf(1.0, float(m["n"]))
+		check(not r["crashed"] and m["t60"] > 3.5 and m["t60"] < 6.5, "the %s launches flat out to 60 mph (%.2f s)" % [st, m["t60"]])
+		check(step < 150.0, "and the back tyre's load is steady from one step to the next (%.0f N a step)" % step)
+		check(m["front_min"] > 50.0, "and the front stays loaded over the ripples (%.0f N at the least)" % m["front_min"])
 		await _done(r)
 
 
