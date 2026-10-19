@@ -524,7 +524,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			if Daylight.current:
 				Daylight.current.set_time(MORNING)
 			Shed.adventure_save = make_save()
-			return "*Everyone sleeps till morning. The adventure's saved: carry on now, or another day from the shed (the host's Esc menu)."
+			return "*Everyone sleeps till morning. The adventure's saved: carry on now, or another day from the shed (the host's menu, {menu})."
 		"needs_debug":
 			for key in ["food", "drink", "rest"]:
 				if action.get(key) is float or action.get(key) is int:
