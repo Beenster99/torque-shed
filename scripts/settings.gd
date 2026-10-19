@@ -110,6 +110,7 @@ const ACTIONS := [
 	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
 	["satnav_hud", "Sat nav on the HUD on / off", ["ride"]],
+	["paper_map", "Adventure: the paper map of the route (when stopped)", ["foot", "ride"]],
 	["screen_up", "Adjustable screen up", ["ride"]], ["screen_down", "Adjustable screen down", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["perf_overlay", "Performance profiler on / off", ["foot", "ride"]],
@@ -317,6 +318,8 @@ func _setup_inputs() -> void:
 	_bind("telemetry", [KEY_F3], [])
 	# The sat nav's map on the HUD, and an adjustable screen up and down on the move.
 	_bind("satnav_hud", [KEY_M], [])
+	# Out on an adventure: the paper map of the whole route, once you have stopped.
+	_bind("paper_map", [KEY_TAB], [])
 	_bind("screen_up", [KEY_PAGEUP], [])
 	_bind("screen_down", [KEY_PAGEDOWN], [])
 	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])

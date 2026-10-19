@@ -331,7 +331,7 @@ static func menu_of(node: Node) -> Array:
 static func make_save() -> Dictionary:
 	var adv := {}
 	for k in Shed.adventure:
-		if not str(k) in ["id", "riders", "arrived", "arrived_name", "needs", "resume", "needs_saved"]:
+		if not str(k) in ["id", "riders", "arrived", "arrived_name", "needs", "resume", "needs_saved", "votes"]:
 			adv[k] = Shed.adventure[k]
 	var at := {}
 	var meters := {}

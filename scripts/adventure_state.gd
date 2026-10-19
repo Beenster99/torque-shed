@@ -15,6 +15,8 @@ extends RefCounted
 ## adventure_join {bike: the one you'd like} (each player, on loading it) and adventure_arrive;
 ## adventure_resume (the host) carries on the one a night's sleep put away (Shed.adventure_save,
 ## see AdventureNeeds), everyone back where they slept.
+## the forks' adventure_vote and adventure_fork_due (see AdventureForks, which keeps votes and
+## picks here too).
 
 const DEFAULT_KM := 60.0
 const MIN_KM := 5.0
@@ -81,6 +83,8 @@ static func check(peer: int, action: Dictionary) -> String:
 		"adventure_join", "adventure_arrive":
 			if not active():
 				return "There's no adventure on."
+		"adventure_vote", "adventure_fork_due":
+			return AdventureForks.check(peer, action)
 		_:
 			return "Unknown adventure action."
 	return ""
@@ -112,7 +116,6 @@ static func apply(peer: int, action: Dictionary) -> String:
 				AdventureNeeds.save_s(save) / 1000.0, roundi(float(Shed.adventure.get("km", DEFAULT_KM)))]
 		"adventure_end":
 			Shed.adventure = {}
-			bring_bikes_home()
 			return "*The adventure's over: back to the shed."
 		"adventure_join":
 			var riders: Dictionary = Shed.adventure["riders"]
@@ -138,18 +141,9 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure["arrived_name"] = who
 			Shed.adventure_save = {}   # there: nothing left to carry on
 			return "*%s has reached the destination! Back to the shed in a few seconds." % who
+		"adventure_vote", "adventure_fork_due":
+			return AdventureForks.apply(peer, action, who)
 	return ""
-
-
-## Bikes left at the side of an adventure's road (see AdventureTrip.to_shared) go back to the
-## shed, each to its bay or a free spot in the yard, as the adventure ends (or a save is opened).
-static func bring_bikes_home() -> void:
-	for id in Shed.bikes:
-		var b: Dictionary = Shed.bikes[id]
-		if int(b.get("rider", 0)) == 0 and AdventureTrip.is_out(b.get("xf")):
-			b["pusher"] = 0
-			b["xf"] = load("res://scripts/main.gd").garage_spot(int(id))
-			b["stand"] = ""
 
 
 ## The bike `peer` takes: `preferred` (the one they were by) if it's free to ride, else the

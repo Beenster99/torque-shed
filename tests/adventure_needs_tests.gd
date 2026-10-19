@@ -283,8 +283,8 @@ func test_eat() -> void:
 	var at: Vector3 = main.bike.global_position
 	main._get_off()
 	await _ticks(3)
-	check(main.bike == null and AdventureTrip.is_out(Shed.bikes[faithful]["xf"]) and main.trip._parked.has(faithful)
-		and (main.trip._parked[faithful][0] as Node3D).global_position.distance_to(at) < 1.0,
+	check(main.bike == null and Roadside.parked(faithful)
+		and Roadside.xf_in(main.trip.world, Roadside.spot_of(faithful)).origin.distance_to(at) < 1.0,
 		"got off at the side of the road, the bike stays parked where you left it")
 	view._eat_ready = 0
 	Shed.request({"a": "needs_debug", "food": 0.3})
@@ -304,7 +304,7 @@ func test_eat() -> void:
 	await _ticks(3)
 	Shed.request({"a": "adventure_end"})
 	await _ticks(10)
-	check(Shed.bikes[faithful]["rider"] == 0 and not AdventureTrip.is_out(Shed.bikes[faithful]["xf"]) and Shed.bay_at((Shed.bikes[faithful]["xf"] as Transform3D).origin) >= 0,
+	check(Shed.bikes[faithful]["rider"] == 0 and not Shed.bikes[faithful].has("roadside") and Shed.bay_at((Shed.bikes[faithful]["xf"] as Transform3D).origin) >= 0,
 		"left by the road as the adventure ends, the bike's brought back to its bay")
 	await _end(main)
 
@@ -430,14 +430,21 @@ func test_sleep() -> void:
 ## is opened again (nobody's out on an adventure), the host's Esc menu offers to continue it, and
 ## it loads with you on your bike back at the distance you slept, the meters as they were.
 func test_resume() -> void:
-	var main := await _start(97, 20.0, false)
-	await _go(main, 97)
+	var main := await _start(97, 60.0, false)
+	await _go(main, 97, 60.0)
 	_add_mate("Mate")
 	var me := Shed.me()
 	var faithful: int = t._bike_named("Old Faithful")
 	var view: AdventureNeedsView = main.trip.needs
 	var w: AdventureWorld = main.trip.world
-	main.trip.jump(6000.0)
+	# Past the first fork, the host's way taken: the night's stop is along that way.
+	var forked := not w.route.forks.is_empty() and (w.route.forks[0]["ways"] as Array).size() > 1
+	var go := 6000.0
+	if forked:
+		Shed.request({"a": "adventure_vote", "fork": 0, "way": 1})
+		await _ticks(3)
+		go = float(w.route.forks[0]["s"]) + 1500.0
+	main.trip.jump(go)
 	await _ticks(10)
 	var s := w.distance_of(main.bike.global_position, "own")
 	var lat := -w.route.width_at_s(s) * 0.5 + 1.0
@@ -455,7 +462,7 @@ func test_resume() -> void:
 	var text := var_to_str(Shed.save_snapshot())
 	Shed.request({"a": "adventure_end"})
 	await _ticks(10)
-	check(not Adventure.active() and not Shed.adventure_save.is_empty() and Shed.bikes[faithful]["rider"] == 0 and not AdventureTrip.is_out(Shed.bikes[faithful]["xf"]),
+	check(not Adventure.active() and not Shed.adventure_save.is_empty() and Shed.bikes[faithful]["rider"] == 0 and not Shed.bikes[faithful].has("roadside"),
 		"ending it there keeps the save, and the bikes come home")
 	Shed.adventure_save = {}
 	Shed.load_state(str_to_var(text), "Tester")
@@ -476,6 +483,8 @@ func test_resume() -> void:
 		"rested, and as hungry as you went to bed")
 	check(absf(AdventureNeeds.resume_s("Mate") - (s + 30.0)) < 0.5 and absf(Daylight.time_of_day() - AdventureNeeds.MORNING) < 0.1,
 		"your mate carries on from their tent, in the morning")
+	check(forked and AdventureForks.pick_of(0) == 1 and main.trip.world != null and int(main.trip.world.route.choices.get(0, -1)) == 1,
+		"and the road's the same: the way picked at the first fork is still the way (%s)" % str(AdventureForks.picks()))
 	Shed.crew.erase(MATE)
 	await _end(main)
 
@@ -492,6 +501,9 @@ func test_real_stop() -> void:
 	var view: AdventureNeedsView = main.trip.needs
 	var w: AdventureWorld = main.trip.world
 	var s := float(found[1]["s"])
+	for f in w.route.forks.size():
+		Shed.request({"a": "adventure_vote", "fork": f, "way": 0})   # the main road, where the inn was found
+	await _ticks(2)
 	main.trip.jump(s - 40.0 - w.distance_of(main.bike.global_position, "own"))
 	w.preload_range(s - 200.0, s + 200.0)
 	await _ticks(4)

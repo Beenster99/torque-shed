@@ -94,7 +94,7 @@ func forced_reason() -> String:
 	if w.blast or Shed.blasting(Shed.me()) != 0:
 		return "the sandblaster"
 	if w.tyre_game:
-		return "plugging a puncture" if w.tyre_game is PlugGame else "the tyre changer"
+		return "fixing it at the roadside" if w.tyre_game is RoadsideGame else "plugging a puncture" if w.tyre_game is PlugGame else "the tyre changer"
 	if not w.wash_mode.is_empty():
 		return "washing"
 	if not w.spray_mode.is_empty() or (w.spray != null and w.spray.live) \

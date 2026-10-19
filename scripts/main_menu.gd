@@ -48,6 +48,8 @@ var _home: Button
 var _adventure: Button
 ## Carries on the adventure a night's sleep put away (the host; see Adventure.continue_text).
 var _continue_adventure: Button
+## Out on an adventure: the paper map of the route (once you've stopped; see AdventureMap).
+var _paper_map: Button
 ## Says whether "Back to the garage" can be used now ("" yes, "home" already there, else why not); set by Main.
 var home_check := Callable()
 var _ip: LineEdit
@@ -165,6 +167,11 @@ func _ready() -> void:
 		Shed.request({"a": "adventure_resume"})
 		resume.emit())
 	_pause_box.add_child(_continue_adventure)
+	_paper_map = _button("Paper map of the route", func():
+		resume.emit()
+		if AdventureTrip.current:
+			AdventureTrip.current.open_map())
+	_pause_box.add_child(_paper_map)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
 	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
@@ -421,6 +428,11 @@ func _refresh_adventure() -> void:
 		_continue_adventure.text = str(c[0])
 		_continue_adventure.disabled = str(c[1]) != ""
 		_continue_adventure.tooltip_text = str(c[1])
+	var trip := AdventureTrip.current
+	_paper_map.visible = trip != null and trip.on_trip()
+	var why := trip.map_reason() if _paper_map.visible else ""
+	_paper_map.disabled = why != ""
+	_paper_map.tooltip_text = why
 
 
 ## Lists bikes left out on the road (nobody riding them, away from the shed) with a button each

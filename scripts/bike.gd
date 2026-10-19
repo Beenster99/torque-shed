@@ -163,6 +163,15 @@ var burnout_time := 0.0
 ## How far a burnout has spun the bike round, radians (+ to the left), since it lit up.
 var donut_turn := 0.0
 var paddling := false      # walking the bike backwards with the rider's feet
+## What's gone wrong with it out on an adventure (Shed's bikes[id]["faults"], see Roadside):
+## a snapped chain drives nothing, a blown fuse kills the lights or the ignition, a snapped
+## lever leaves a feeble front brake or slow, crunching shifts.
+var faults := {}
+## Wheeled along on foot (Roadside): no engine, the throttle walks it at up to Roadside.PUSH_SPEED.
+var pushing := false
+## On a tow strap: the point on the towing bike the strap's tied to (local), else INF.
+var tow_anchor := Vector3.INF
+var tow_speed := 0.0       # how fast the towing bike's going (m/s): the strap damps against it
 var horn_audio: HornAudio
 var _stopped_brake := 0.0  # how long the front brake has been held at a standstill
 var _throttle_eff := 0.0   # the throttle as the rider's wrist actually turns it (smoothed with realism up)
@@ -362,6 +371,10 @@ func start_engine() -> String:
 		return "Pick the bike up first."
 	if fuel_litres <= 0.0:
 		return "Out of petrol."
+	if pushing:
+		return "You're pushing it: get on it first ({interact} to stop)."
+	if str(faults.get("fuse", "")) == "ignition":
+		return "Not even a click, and the dash is dark: a blown fuse. Get off and swap it (under the seat)."
 	_starting = START_TIME
 	return ""
 
@@ -424,6 +437,10 @@ func _physics_process_body(delta: float) -> void:
 
 	if horn_audio:
 		horn_audio.pressed = horn and controls_enabled and not is_crashed
+	if engine_on and str(faults.get("fuse", "")) == "ignition":
+		stop_engine("The engine cut out and the dash went dark: a blown fuse.")
+	if str(faults.get("fuse", "")) == "lights":
+		beam = 0   # the lights' fuse has gone: the switch does nothing
 	# Every lamp, lens and the clocks run off the ignition: a bike that isn't running is dark.
 	var fog_on := engine_on and beam >= BEAM_FOG
 	for l in _fog:
@@ -474,6 +491,8 @@ func _physics_process_body(delta: float) -> void:
 		front_grip *= clampf(1.0 - (over * 5.0 + falling * 0.8) * _steadiness(), 0.0, 1.0)
 	if paddling:
 		front_grip = 0.0
+	if str(faults.get("lever", "")) == "brake":
+		front_grip *= 0.15   # a stub of a lever: barely any front brake
 	# Cold pads bite a little less, overcooked ones fade (see BikeHeat).
 	wheels[0]["brake_torque"] = front_grip * build.front_brake_torque * _bite(0)
 	wheels[1]["brake_torque"] = 0.0 if burnout > 0.0 else rear_grip * build.rear_brake_torque * _bite(1)
@@ -831,7 +850,8 @@ func kick_bars(impulse: float) -> void:
 
 func _update_engine(delta: float) -> void:
 	var rear: Dictionary = wheels[1]
-	var neutral := gear == NEUTRAL
+	# A snapped chain: the engine spins free with nothing to drive, as in neutral.
+	var neutral: bool = gear == NEUTRAL or bool(faults.get("chain_snap", false))
 	var ratio := build.overall_ratio(maxi(gear, 1))
 	var wheel_rpm: float = rear["omega"] * ratio * 60.0 / TAU
 	var idle_rpm := idle_now()
@@ -978,6 +998,8 @@ func _select(g: int) -> void:
 	_shift_from_rpm = rpm
 	gear = g
 	_shift_timer = build.shift_time if g != NEUTRAL else 0.0
+	if str(faults.get("lever", "")) == "clutch" and g != NEUTRAL:
+		_shift_timer *= 3.5   # no clutch lever: every shift crunches in slowly
 	_since_shift = 0.0
 	gear_changed.emit(gear)
 
@@ -1043,6 +1065,28 @@ func _apply_feet() -> void:
 	elif paddling:
 		var v := linear_velocity.dot(flat)
 		apply_central_force(flat * (-PADDLE_SPEED - v) * mass * 2.5)
+	elif pushing:
+		# Wheeling it along on foot: walking pace on the throttle, the brakes to stop.
+		var v := linear_velocity.dot(flat)
+		var want := Roadside.PUSH_SPEED * clampf(throttle, 0.0, 1.0)
+		if throttle > 0.05 or v > want:
+			apply_central_force(flat * clampf(want - v, -1.5, 1.5) * mass * 2.0)
+	if tow_anchor != Vector3.INF:
+		_apply_tow()
+
+
+## On the tow strap: once it's taut it pulls the bike after the towing one, springy and damped.
+func _apply_tow() -> void:
+	var d := tow_anchor - global_position
+	d.y = 0.0
+	var dist := d.length()
+	if dist <= Roadside.STRAP or dist > 40.0:
+		return
+	var dir := d / dist
+	# Damped against the towing bike's own speed, so the towed one settles in behind, not past it.
+	var closing := linear_velocity.dot(dir) - tow_speed
+	var pull := clampf((dist - Roadside.STRAP) * 1800.0 - closing * 900.0, 0.0, mass * 4.0)
+	apply_central_force(dir * pull)
 
 
 ## Circle burnouts: lit up with the bars turned, the rider pivots the bike round the braked

@@ -11,10 +11,6 @@ extends Node
 ## reach the destination, runs the day faster (Adventure.day_rate) and shows how far you've come.
 
 static var current: AdventureTrip
-## A bike got off and left at the side of the adventure's road keeps its place in Shed.bikes in
-## the road's own frame (the same for everyone, wherever their origin is), lifted this far up
-## so nothing in the town mistakes it for a spot there (see to_shared).
-const PARK_Y := 10000.0
 ## Skips the fades (the tests).
 static var instant := false
 
@@ -31,7 +27,12 @@ var _hud_timer := 0.0
 var _put_back_at := 0        # ticks: when the last "back on the road" happened
 ## Hunger, thirst and tiredness: the meters, their effects, and sitting, eating and sleeping.
 var needs: AdventureNeedsView
-var _parked := {}            # bike id -> [view, signature]: bikes left at the side of the road
+var _fork_panel: PanelContainer   # the choice coming up at a fork (see AdventureForks)
+var _fork_label: Label
+var _fork_timer := 0.0
+var _fork_due := {}          # forks we've told the host we're nearly at
+var _fork_choice := {}       # what the panel shows now (AdventureForks.choice)
+var _map: AdventureMap       # the paper map, made the first time it's opened
 
 
 func _ready() -> void:
@@ -40,6 +41,21 @@ func _ready() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 5
 	add_child(layer)
+	_fork_panel = PanelContainer.new()
+	_fork_panel.visible = false
+	_fork_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.06, 0.08, 0.78)
+	style.set_corner_radius_all(6)
+	style.set_content_margin_all(10)
+	_fork_panel.add_theme_stylebox_override("panel", style)
+	_fork_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_fork_panel.position = Vector2(16, 44)
+	_fork_label = Label.new()
+	_fork_label.add_theme_font_size_override("font_size", 16)
+	_fork_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fork_panel.add_child(_fork_label)
+	layer.add_child(_fork_panel)
 	_hud = Label.new()
 	_hud.visible = false
 	_hud.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -77,8 +93,10 @@ func sync() -> void:
 		enter()
 	elif trip_id != 0 and id != trip_id:
 		leave()
-	if world != null:
-		_sync_parked()
+	elif world != null and world.apply_picks(AdventureForks.picks()):
+		_fork_timer = 0.0   # the way's decided: say so straight away
+		if _map and _map.visible:
+			_map.refresh()
 
 
 ## Into the adventure in Shed.adventure.
@@ -98,9 +116,12 @@ func enter() -> void:
 		main.geometry.close()
 	world = AdventureWorld.new()
 	world.setup(int(info["seed"]), float(info["km"]), str(info.get("theme", "varied")))
+	world.apply_picks(AdventureForks.picks())   # a ride picked up again: the ways already taken
+	_fork_due = {}
 	world.focus = focus_points
 	main.world.add_child(world)
 	world.origin_shifted.connect(_on_shift)
+	world.add_child(RoadsideView.new())   # bikes stood at the roadside, and tow straps (see Roadside)
 	_sleep_town(true)
 	var from := maxf(0.0, start_s() - 120.0)
 	world.preload_range(from, from + 420.0)
@@ -117,7 +138,7 @@ func enter() -> void:
 	if start_s() > 0.0:
 		main.hud.flash("Carrying on the adventure: %.1f of %d km done. Morning, and back on the road." % [start_s() / 1000.0, roundi(float(info["km"]))], 5.0)
 	else:
-		main.hud.flash("Adventure ride: %d km of varied roads. Fuel stations are signed along the way." % roundi(float(info["km"])), 5.0)
+		main.hud.flash("Adventure ride: %d km of varied roads. Fuel stations are signed along the way; at a fork the crew votes for the way. {paper_map} for the map when stopped." % roundi(float(info["km"])), 5.0)
 	_busy = false
 	if not instant:
 		await main._fade_to(0.0)
@@ -153,12 +174,9 @@ func reset() -> void:
 
 
 func _unload() -> void:
-	for id in _parked:
-		if is_instance_valid(_parked[id][0]):
-			_parked[id][0].queue_free()
-	_parked.clear()
 	if needs:
 		needs.reset()
+	close_map()
 	if world:
 		world.queue_free()
 		world = null
@@ -166,6 +184,7 @@ func _unload() -> void:
 	_sleep_town(false)
 	Daylight.adventure_rate = 0.0
 	_hud.visible = false
+	_fork_panel.visible = false
 
 
 ## Hides the town and stops it (processing and collision) while you're away on the adventure,
@@ -254,9 +273,6 @@ func _on_shift(d: Vector3) -> void:
 		var rp = main.remotes[peer]
 		if is_instance_valid(rp):
 			rp.shift_origin(d)
-	for id in _parked:
-		if is_instance_valid(_parked[id][0]) and Shed.bikes.has(id):
-			_parked[id][0].transform = to_local_xf(Shed.bikes[id]["xf"])
 	var marks := SkidMarks.shared(get_tree())
 	if marks and marks.multimesh:
 		var mm := marks.multimesh
@@ -264,70 +280,6 @@ func _on_shift(d: Vector3) -> void:
 			var t := mm.get_instance_transform(k)
 			t.origin -= d
 			mm.set_instance_transform(k, t)
-
-
-# ---------------------------------------------------------------------------- bikes left by the road
-
-## `xf` (local, here) in the road's own frame, as Shed.bikes keeps a bike got off out here.
-func to_shared(xf: Transform3D) -> Transform3D:
-	return Transform3D(xf.basis, xf.origin + world.origin + Vector3(0.0, PARK_Y, 0.0))
-
-
-## A bike's shared transform out here (see to_shared) in this player's local frame.
-func to_local_xf(xf: Transform3D) -> Transform3D:
-	return Transform3D(xf.basis, xf.origin - world.origin - Vector3(0.0, PARK_Y, 0.0))
-
-
-## Whether a bike's transform is out on an adventure's road (see to_shared).
-static func is_out(xf) -> bool:
-	return xf is Transform3D and (xf as Transform3D).origin.y > PARK_Y * 0.5
-
-
-## Draws the bikes left at the side of the road where they were got off (so they can be got
-## back on), and takes away the ones ridden off again.
-func _sync_parked() -> void:
-	var want := {}
-	for id in Shed.bikes:
-		var b: Dictionary = Shed.bikes[id]
-		if int(b.get("rider", 0)) == 0 and int(b.get("pusher", 0)) == 0 and is_out(b.get("xf")):
-			want[id] = "%s|%s|%s" % [str(b["xf"]), str(b.get("stand", "")), str(Shed.fitted_map(id))]
-	for id in _parked.keys():
-		if not want.has(id) or str(_parked[id][1]) != str(want[id]):
-			if is_instance_valid(_parked[id][0]):
-				_parked[id][0].queue_free()
-			_parked.erase(id)
-	for id in want:
-		if not _parked.has(id):
-			_parked[id] = [_parked_view(id), want[id]]
-
-
-## A parked bike out here, leaning on its stand, that the walker can look at and get on.
-func _parked_view(id: int) -> Node3D:
-	var bike: Dictionary = Shed.bikes[id]
-	var view := Node3D.new()
-	view.name = "ParkedBike%d" % id
-	world.add_child(view)
-	view.transform = to_local_xf(bike["xf"])
-	var build := Shed.build_of(id)
-	var model := BikeModel.new()
-	var lean := Node3D.new()
-	view.add_child(lean)
-	lean.add_child(model)
-	var stand := str(bike.get("stand", ""))
-	var lift := 0.0
-	if stand == "centre":
-		lift = build.centre_lift
-	elif stand == "side":
-		lean.basis = Basis(Vector3.BACK, deg_to_rad(float(PartsDB.get_part(build.parts["side_stand"]).get("lean", 12.0))))
-	elif stand == "down":
-		lean.basis = Basis(Vector3.BACK, deg_to_rad(74.0))
-		lift = 0.12
-	model.position.y = build.rear_radius + lift
-	model.stand_pose = stand
-	model.geometry = Shed.geometry_of(id)
-	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)
-	model.build_pickers({"bike": id})
-	return view
 
 
 # ---------------------------------------------------------------------------- network
@@ -365,24 +317,131 @@ func _physics_process(delta: float) -> void:
 		if _arrive_timer >= Adventure.ARRIVE_WAIT:
 			_arrive_timer = -1000.0
 			Shed.request({"a": "adventure_end"})
+	if world == null:
+		Perf.add("adventure_trip", pt)
+		return   # the ride just ended (reaching the destination brings everyone home)
 	_hud_timer -= delta
 	if _hud_timer <= 0.0 and not hit.is_empty():
 		_hud_timer = 0.25
 		_hud.text = hud_text(s)
 		_hud.visible = true
+	if not hit.is_empty():
+		_forks(s, delta)
+	if _map and _map.visible:
+		if main.bike and absf(main.bike.speed) > 2.0:
+			close_map()
+		else:
+			_map.tick(delta)
 	Perf.add("adventure_trip", pt)
 
 
-## The line at the top of the screen: how far you've come, the road, and the next fuel.
+## The line at the top of the screen: how far you've come, the road, the way you're on through a
+## fork, and the next fuel.
 func hud_text(s: float) -> String:
 	var r := world.route
 	var text := "Adventure  %.1f / %.0f km   %s, %s" % [s / 1000.0, r.length / 1000.0,
 		AdventureSurface.NAMES.get(r.surface_at_s(s), "Road"), str(AdventureRoute.KIND_NAMES.get(r.kind_at_s(s), "")).to_lower()]
+	var f := r.fork_at(s)
+	if f >= 0:
+		var way := r.way_of(f, int(r.choices.get(f, 0)))
+		text += "   On %s %s, %.1f km to go on it" % [str(way["letter"]), str(way["name"]), (r.rejoin_s(f) - s) / 1000.0]
 	for st in r.sites_of("fuel"):
 		if float(st["s"]) > s - 30.0:
 			text += "   Fuel in %.1f km" % maxf(0.0, (float(st["s"]) - s) / 1000.0)
 			break
 	return text
+
+
+# ---------------------------------------------------------------------------- forks and the map
+
+## Coming up to a fork at `s`: the choice on the HUD (with everyone's votes), and once anyone is
+## LOCK_DIST from a fork still open, the host is told so the main road's taken by default.
+func _forks(s: float, delta: float) -> void:
+	var r := world.route
+	var f := r.next_fork(s)
+	if f >= 0 and not r.decided.has(f) and r.fork_s(f) - s < AdventureForks.LOCK_DIST and not _fork_due.has(f):
+		_fork_due[f] = true
+		Shed.request({"a": "adventure_fork_due", "fork": f})
+	_fork_timer -= delta
+	if _fork_timer > 0.0:
+		return
+	_fork_timer = 0.25
+	_fork_choice = AdventureForks.choice(r, s)
+	_fork_panel.visible = not _fork_choice.is_empty() and not map_open() and not (main.menu.visible if main and main.menu else false)
+	if _fork_panel.visible:
+		_fork_label.text = "\n".join(AdventureForks.choice_lines(_fork_choice, main.bike != null))
+		_fork_panel.reset_size()
+
+
+## Your vote for way `w` at the fork coming up (the host's is the pick).
+func vote(w: int) -> void:
+	if _fork_choice.is_empty() or int(_fork_choice["picked"]) >= 0 or w >= (_fork_choice["ways"] as Array).size():
+		return
+	Shed.request({"a": "adventure_vote", "fork": int(_fork_choice["fork"]), "way": w})
+	_fork_timer = 0.0
+
+
+## What the fork panel shows now ({} when there's no fork coming up).
+func fork_choice() -> Dictionary:
+	return _fork_choice
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if world == null or _busy or main == null or main.menu.visible:
+		return
+	if event.is_action_pressed("paper_map"):
+		if map_open():
+			close_map()
+		else:
+			var why := map_reason()
+			if why == "":
+				open_map()
+			else:
+				main.hud.flash(why, 1.5, true)
+		get_viewport().set_input_as_handled()
+		return
+	# On the bike, 1 2 3 vote at a fork (on foot they're the tools: vote on the map there).
+	if main.bike != null and not _fork_choice.is_empty():
+		for k in 3:
+			if event.is_action_pressed("tool_%d" % (k + 1)):
+				vote(k)
+				get_viewport().set_input_as_handled()
+				return
+
+
+## Why the paper map can't come out now ("" if it can): you have to stop first.
+func map_reason() -> String:
+	if world == null:
+		return "The map's for adventure rides."
+	if main.bike != null and absf(main.bike.speed) > 1.5:
+		return "Stop first to get the map out."
+	return ""
+
+
+func map_open() -> bool:
+	return _map != null and _map.visible
+
+
+## Gets the paper map out: the whole route, where everyone is, the ways chosen, fuel and stops.
+func open_map() -> void:
+	if world == null:
+		return
+	if _map == null:
+		_map = AdventureMap.new()
+		_map.trip = self
+		_hud.get_parent().add_child(_map)
+		_map.closed.connect(close_map)
+	_map.open()
+	_fork_panel.visible = false
+	main._capture_mouse(false)
+
+
+func close_map() -> void:
+	if _map == null or not _map.visible:
+		return
+	_map.visible = false
+	if main and main.in_session and not main.menu.visible:
+		main._capture_mouse(true)
 
 
 ## A bike that's gone well off the road (or fallen through the land) is put back on it, facing
@@ -405,7 +464,8 @@ func jump(metres: float) -> void:
 	if world == null:
 		return
 	var p: Vector3 = focus_points()[0]
-	var s := clampf(world.distance_of(p, "own") + metres, 0.0, world.route.total - 20.0)
+	# Never past a fork that isn't decided: there's no road there yet.
+	var s := clampf(world.distance_of(p, "own") + metres, 0.0, minf(world.route.total, world.route.stream_end()) - 20.0)
 	world.preload_range(s - 100.0, s + 300.0)
 	var xf := world.transform_at(s, -world.route.width_at_s(s) * 0.25)
 	if main.bike:

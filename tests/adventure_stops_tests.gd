@@ -33,6 +33,8 @@ func _until(cond: Callable, seconds := 20.0) -> bool:
 func _world(seed: int, km: float, spot: Dictionary) -> AdventureWorld:
 	var w := AdventureWorld.new()
 	w.setup(seed, km)
+	for f in w.route.forks.size():
+		w.route.choose(f, 0)   # the main road at every fork, so it all streams
 	spot["p"] = w.transform_at(20.0).origin
 	w.focus = func(): return [spot["p"]]
 	w.origin_shifted.connect(func(d): spot["p"] -= d)

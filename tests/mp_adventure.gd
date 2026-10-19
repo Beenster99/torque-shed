@@ -57,6 +57,25 @@ func _ready() -> void:
 		# Give the other side time to see us at the start too before setting off.
 		var wait_until := Time.get_ticks_msec() + 4000
 		await _until(func(): return Time.get_ticks_msec() > wait_until, 5.0)
+	# The first fork (22 km in): the client votes B, everyone sees it, the host picks C, and both
+	# roads are built along C (the 30 km spots below are on C and just past it).
+	var fork_ok := false
+	if start_seen and trip.on_trip():
+		var other := 0
+		for peer in Shed.crew:
+			if int(peer) != Shed.me():
+				other = int(peer)
+		if role == "client":
+			Shed.request({"a": "adventure_vote", "fork": 0, "way": 1})
+		var seen_vote := await _until(func():
+			if role == "host" and int(AdventureForks.votes_of(0).get(other, -1)) == 1 and AdventureForks.pick_of(0) < 0:
+				Shed.request({"a": "adventure_vote", "fork": 0, "way": 2})
+			return int(AdventureForks.votes_of(0).get(1 if role == "client" else other, -1)) >= 1, 15.0)
+		var built := await _until(func(): return trip.world != null and trip.world.route.decided.has(0) and int(trip.world.route.choices[0]) == 2, 15.0)
+		var votes := AdventureForks.votes_of(0)
+		fork_ok = seen_vote and built and int(votes.get(other if role == "host" else Shed.me(), -1)) == 1 and int(votes.get(1, -1)) == 2
+		print("MP adv note %s: votes at the fork %s, pick %d, my road along way %d" % [role, str(votes), AdventureForks.pick_of(0),
+			int(trip.world.route.choices.get(0, -1)) if trip.world else -1])
 	if start_seen and trip.on_trip():
 		_jump_to(trip, mine, my_lat)
 		far_ok = await _until(func():
@@ -66,6 +85,12 @@ func _ready() -> void:
 		print("MP adv note %s: at %.0f m, origin %s; the other seen off by %.3f m along, %.3f m across" % [role, mine, trip.world.origin if trip.world else Vector3.ZERO, err[0].x, err[0].y])
 		if role == "client":
 			# On again past another shift: the host, standing still, must stay put on the road.
+			# Stay put a while first, so the host has seen us here too (the fork ends at
+			# different moments on each side).
+			var stay_until := Time.get_ticks_msec() + 6000
+			await _until(func():
+				_hold(trip, mine, my_lat)
+				return Time.get_ticks_msec() > stay_until, 7.0)
 			var before: Vector3 = trip.world.origin if trip.world else Vector3.ZERO
 			mine += CLIENT_ON
 			_jump_to(trip, mine, my_lat)
@@ -84,15 +109,15 @@ func _ready() -> void:
 			asked[0] = true
 			Shed.request({"a": "adventure_end"})
 		return not trip.on_trip() and main.bike == null and Shed.riding(Shed.me()) == 0 and not Adventure.active(), 25.0)
-	var ok := ok_start and start_seen and far_ok and again_ok and home_ok
+	var ok := ok_start and start_seen and fork_ok and far_ok and again_ok and home_ok
 	# The client stays until the host has gone, so the host's checks finish first.
 	var linger := Time.get_ticks_msec() + (15000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
-	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, seen 30 km out after the origins moved=%s, and after another shift=%s, back at the shed=%s" % [
-		"PASS" if ok else "FAIL", role, ok_start, start_seen, far_ok, again_ok, home_ok])
+	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, voted at the fork and both took the host's pick=%s, seen 30 km out after the origins moved=%s, and after another shift=%s, back at the shed=%s" % [
+		"PASS" if ok else "FAIL", role, ok_start, start_seen, fork_ok, far_ok, again_ok, home_ok])
 	get_tree().quit(0 if ok else 1)
 
 
