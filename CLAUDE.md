@@ -12,7 +12,11 @@ A Godot 4.6 (GDScript) co-op motorbike restoration game. See README.md for the g
 - One piece of work per branch: start a new branch from the latest `main` for each new task rather than
   stacking unrelated work on an old branch. If the branch's pull request has already been merged, start
   a fresh branch from the latest `main` for the follow-up.
-- Changes reach `main` only through a pull request, and only when the user asks for one.
+- When a piece of work is finished and its tests pass, push the branch and open a pull request into
+  `main` without waiting to be asked.
+- Never merge a pull request yourself. The user merges, or asks for a merge, when they are ready.
+- If new work depends on a branch whose pull request isn't merged yet, branch from that branch and say
+  so in the new pull request.
 - Never force-push to `main`, and never rewrite history on a branch someone else is working on.
 
 ## Project layout
