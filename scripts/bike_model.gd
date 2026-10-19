@@ -20,6 +20,7 @@ static var _patina_albedo: NoiseTexture2D
 static var _part_sizes := {}      # part id -> bounding size, for sizing delivery boxes
 static var _cardboard: StandardMaterial3D
 static var _highlight_mat: StandardMaterial3D
+static var _letters := {}         # "letter|height" -> its mesh, for the tyre walls (see _tyre_lettering)
 
 var paint := Color(0.78, 0.09, 0.08)
 var jacket := Color(0.1, 0.12, 0.16)
@@ -118,6 +119,7 @@ var geometry := {}
 var _geo_nodes := {}             # slot -> [{node, parent, anchor}]: a node per slot per parent its meshes hang from
 var _geo_pivots := {}            # slot -> the part's middle at rest, in model space
 var _geo_anchors := {}           # node -> its rest transform in model space, for the nodes offsets ride on
+var _shadow_casters := {}        # slot -> its baked shadow-only meshes (see _bake_static)
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -129,6 +131,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	present = fitted
 	condition = build.condition if part_condition == null else part_condition
 	_slot_meshes.clear()
+	_shadow_casters.clear()
 	_covered.clear()
 	_lamps.clear()
 	_lit = [true, true, true]
@@ -4644,7 +4647,10 @@ static func _squashed_tyre(round_mesh: Mesh, xf: Transform3D, rim_r: float, radi
 
 
 ## The maker's name and the size moulded into both sidewalls, in raised rubber a shade lighter
-## than the tyre: "TORQUE RADIAL" over the top, "120/70 ZR17" under it.
+## than the tyre: "TORQUE RADIAL" over the top, "120/70 ZR17" under it. Every letter on a tyre
+## goes into one mesh (its text kept in the "text" meta): drawn one by one, a bike's 88 letters
+## were 88 more draw calls whenever it came within 9 m, which is why being a couple of metres
+## from someone else's bike cost so much more than seeing it from further off.
 func _tyre_lettering(tyre_mi: MeshInstance3D, rim_r: float, radius: float, width: float) -> void:
 	var p := _part()
 	var brand := str((p.get("look", {}) as Dictionary).get("brand", "TORQUE " + {"offroad": "TRAX", "slick": "RACE"}.get(str(p.get("style", "road")), "RADIAL")))
@@ -4652,12 +4658,8 @@ func _tyre_lettering(tyre_mi: MeshInstance3D, rim_r: float, radius: float, width
 		"Z" if str(p.get("style", "road")) != "offroad" else "", roundi(rim_r / 0.0127)]
 	var ink := _col().lightened(0.28)
 	var at_r := lerpf(rim_r, radius, 0.5)
-	var holder := Node3D.new()
-	holder.name = "TyreLettering"
-	# Hung off the tyre itself, so the lettering shows, hides and moves with it, but laid out
-	# in the wheel's own space.
-	tyre_mi.add_child(holder)
-	holder.transform = tyre_mi.transform.affine_inverse()
+	var st := SurfaceTool.new()
+	var letters := 0
 	for side in [-1.0, 1.0]:
 		for line in [[brand, 0.0, 0.026], [size, PI, 0.018]]:
 			var text: String = line[0]
@@ -4673,20 +4675,49 @@ func _tyre_lettering(tyre_mi: MeshInstance3D, rim_r: float, radius: float, width
 				var off := (i - (text.length() - 1) * 0.5) * step
 				var top_line: bool = centre == 0.0
 				var a: float = centre + off * (-side if top_line else side)
-				var l := Label3D.new()
-				l.text = ch
-				l.pixel_size = px / 64.0
-				l.font_size = 64
-				l.outline_size = 0
-				l.modulate = ink
-				l.double_sided = false
-				l.shaded = true
-				l.visibility_range_end = 9.0
-				l.position = Vector3(side * (width * 0.5 + 0.0015), cos(a) * at_r, sin(a) * at_r)
+				var glyph := _letter_mesh(ch, px)
+				if glyph.get_surface_count() == 0:
+					continue
 				var up := Vector3(0.0, cos(a), sin(a)) * (1.0 if top_line else -1.0)
 				var out := Vector3(side, 0.0, 0.0)
-				l.basis = Basis(up.cross(out), up, out)
-				holder.add_child(l)
+				st.append_from(glyph, 0, Transform3D(Basis(up.cross(out), up, out),
+					Vector3(side * (width * 0.5 + 0.0015), cos(a) * at_r, sin(a) * at_r)))
+				letters += 1
+	# Hung off the tyre itself, so the lettering shows, hides and moves with it, but laid out
+	# in the wheel's own space.
+	var holder := MeshInstance3D.new()
+	holder.name = "TyreLettering"
+	holder.set_meta("text", brand + " " + size)
+	if letters > 0:
+		holder.mesh = st.commit()
+	var m := StandardMaterial3D.new()
+	m.albedo_color = ink
+	m.roughness = 0.85
+	holder.material_override = m
+	holder.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.visibility_range_end = 9.0
+	tyre_mi.add_child(holder)
+	holder.transform = tyre_mi.transform.affine_inverse()
+
+
+## One letter `ch`, `px` metres tall, facing +Z as a Label3D would (made once, then shared).
+static func _letter_mesh(ch: String, px: float) -> Mesh:
+	var key := "%s|%.4f" % [ch, px]
+	if not _letters.has(key):
+		var tm := TextMesh.new()
+		tm.text = ch
+		tm.font_size = 64
+		tm.pixel_size = px / 64.0
+		# Flat, as the labels were, and with coarse curves: a few dozen triangles a letter, not
+		# a few hundred, for something 2 cm tall.
+		tm.depth = 0.0
+		tm.curve_step = 4.0
+		var mesh := ArrayMesh.new()
+		var arrays := tm.get_mesh_arrays()
+		if not arrays.is_empty() and not (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).is_empty():
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		_letters[key] = mesh
+	return _letters[key]
 
 
 ## A tyre as a solid of revolution round local Y, like a TorusMesh: its cross-section rises
@@ -5294,7 +5325,8 @@ const SHADOW_MIN := 0.08
 ## one mesh, so the part still shows, hides, moves in geometry mode, gets dirty and polished as
 ## before. Left as they are: anything that moves or changes by itself (the shock springs, the
 ## needles, the tyres, which go flat), anything hidden, anything carrying its own data (metas,
-## per-mesh shader values, overlays) and the rider. Called from build_from when `baked` is set,
+## per-mesh shader values, overlays) and the rider. Their shadows go further: a node's merged
+## pieces cast theirs as one shadow-only mesh. Called from build_from when `baked` is set,
 ## ahead of the dirt and the paint's effects. Returns how many meshes were merged away.
 func _bake_static() -> int:
 	var moving := {}
@@ -5305,8 +5337,10 @@ func _bake_static() -> int:
 	for side in _flat_tyres:
 		moving[_flat_tyres[side]] = true
 	var gone := 0
+	_shadow_casters.clear()
 	for slot in _slot_meshes:
 		var groups := {}    # [parent, material, shadows, layers] -> [[mesh, surface, transform], ...]
+		var shadow_groups := {}   # [parent, layers] -> the merged meshes whose shadows go together
 		var keep := []
 		for mi in _slot_meshes[slot]:
 			if not _can_bake(mi, moving):
@@ -5337,8 +5371,78 @@ func _bake_static() -> int:
 			(key[0] as Node).add_child(merged)
 			keep.append(merged)
 			gone -= 1
+			if merged.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON and _plain_caster(key[1]):
+				var sk := [key[0], key[3]]
+				if not shadow_groups.has(sk):
+					shadow_groups[sk] = []
+				shadow_groups[sk].append(merged)
 		_slot_meshes[slot] = keep
+		# One shadow for each node's merged pieces, whatever they're painted: a bike near the
+		# camera (yours, or the one beside you) is drawn into all four of the sun's shadow
+		# splits, and each material's piece was a draw in every one.
+		for sk in shadow_groups:
+			var pieces: Array = shadow_groups[sk]
+			if pieces.size() < 2:
+				continue
+			var sh := MeshInstance3D.new()
+			sh.name = "BakedShadow_" + str(slot)
+			sh.mesh = _shadow_mesh(pieces)
+			sh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+			sh.layers = sk[1]
+			(sk[0] as Node).add_child(sh)
+			for mi in pieces:
+				(mi as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			if not _shadow_casters.has(slot):
+				_shadow_casters[slot] = []
+			_shadow_casters[slot].append(sh)
 	return gone
+
+
+## Whether a material's shadow is the plain one (opaque, front faces only), as a shadow-only
+## mesh with no material of its own casts it.
+static func _plain_caster(mat: Material) -> bool:
+	if mat == null:
+		return true
+	if not (mat is BaseMaterial3D) or mat.next_pass != null:
+		return false
+	var b := mat as BaseMaterial3D
+	return b.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED and b.cull_mode == BaseMaterial3D.CULL_BACK \
+		and not b.grow and not b.use_point_size and b.billboard_mode == BaseMaterial3D.BILLBOARD_DISABLED
+
+
+## One mesh of the shapes of `pieces` (MeshInstance3Ds hanging from the same node), as they sit:
+## just where its corners are, and which way they face for the shadows' normal bias.
+static func _shadow_mesh(pieces: Array) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var index := PackedInt32Array()
+	for mi in pieces:
+		var m := mi as MeshInstance3D
+		var xf := m.transform
+		var nb := xf.basis.inverse().transposed()
+		for s in m.mesh.get_surface_count():
+			var arrays := m.mesh.surface_get_arrays(s)
+			var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var n = arrays[Mesh.ARRAY_NORMAL]
+			var base := verts.size()
+			for i in v.size():
+				verts.append(xf * v[i])
+				normals.append((nb * (n[i] as Vector3)).normalized() if n is PackedVector3Array and i < (n as PackedVector3Array).size() else Vector3.UP)
+			var idx = arrays[Mesh.ARRAY_INDEX]
+			if idx is PackedInt32Array and not (idx as PackedInt32Array).is_empty():
+				for i in idx:
+					index.append(base + i)
+			else:
+				for i in v.size():
+					index.append(base + i)
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = normals
+	arr[Mesh.ARRAY_INDEX] = index
+	var out := ArrayMesh.new()
+	out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return out
 
 
 ## Whether a part's mesh can be merged into others (see _bake_static).
@@ -5423,7 +5527,7 @@ func _wrap_slots() -> void:
 	for a in anchors:
 		_geo_anchors[a] = Transform3D.IDENTITY if a == self else _local_xform(a)
 	for slot in _slot_meshes:
-		var meshes: Array = _slot_meshes[slot].filter(func(m): return is_instance_valid(m))
+		var meshes: Array = (_slot_meshes[slot] + _shadow_casters.get(slot, [])).filter(func(m): return is_instance_valid(m))
 		if meshes.is_empty():
 			continue
 		_geo_pivots[slot] = slot_bounds(slot).get_center()
@@ -5474,6 +5578,10 @@ func make_ghost(mat: Material) -> void:
 				(mi as GeometryInstance3D).material_override = mat
 				(mi as GeometryInstance3D).material_overlay = null
 				(mi as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for slot in _shadow_casters:
+		for sh in _shadow_casters[slot]:
+			if is_instance_valid(sh):
+				(sh as Node3D).visible = false
 	if _dash_label:
 		_dash_label.visible = false
 
@@ -5592,9 +5700,11 @@ func strip_to(keep: Array) -> void:
 	for s in _slot_meshes:
 		if keep.has(s):
 			continue
-		for mi in _slot_meshes[s]:
-			mi.free()
+		for mi in _slot_meshes[s] + _shadow_casters.get(s, []):
+			if is_instance_valid(mi):
+				mi.free()
 		_slot_meshes[s] = []
+		_shadow_casters.erase(s)
 
 
 ## Loose parts on their own, sitting with their base on the origin. `parts` maps slot ->

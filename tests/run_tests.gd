@@ -100,6 +100,7 @@ func _run_all() -> void:
 	await _test_bike_baking()
 	_test_state_diff()
 	await _test_ai_riders_light()
+	await _test_coop_perf_close()
 	print("Traffic vehicles: cars, vans, lorries and coaches on the roads")
 	await _test_vehicles_build()
 	await _test_vehicles_lamps()
@@ -3360,7 +3361,8 @@ func _test_bike_baking() -> void:
 		var shadows := 0
 		for mi in m.find_children("*", "MeshInstance3D", true, false):
 			if (mi as MeshInstance3D).is_visible_in_tree():
-				n += 1
+				if (mi as MeshInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
+					n += 1
 				if (mi as MeshInstance3D).cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
 					shadows += 1
 		return [n, shadows]
@@ -12863,7 +12865,7 @@ func _test_filler_parts() -> void:
 	var mx := BikeModel.new()
 	add_child(mx)
 	mx.build_from(BikeBuild.new({"number_boards": "mx_side_boards"}))
-	var labels: Array = mx.find_children("*", "Label3D", true, false).filter(func(l): return l.get_parent().name != "TyreLettering")
+	var labels: Array = mx.find_children("*", "Label3D", true, false)
 	check(labels.size() >= 3 and labels.all(func(l): return str(l.text) == str(labels[0].text) and int(str(l.text)) > 0),
 		"MX number boards carry the same race number front and sides (%s)" % str(labels.map(func(l): return l.text)))
 	mx.free()
@@ -12926,10 +12928,8 @@ func _test_detail_pass() -> void:
 	# Wheels: lettered tyres, shaped cast spokes, a cush drive and a valve.
 	var letters: Array = std.find_children("TyreLettering", "", true, false)
 	check(letters.size() == 2, "both tyres have lettering on their walls")
-	var text := ""
-	for l in letters[0].get_children():
-		text += (l as Label3D).text
-	check(text.begins_with("TORQUE"), "the tyre wall reads the maker's name (%s)" % text.left(20))
+	var text := str(letters[0].get_meta("text", ""))
+	check(text.begins_with("TORQUE") and (letters[0] as MeshInstance3D).mesh != null, "the tyre wall reads the maker's name (%s)" % text.left(20))
 	var cast: BikeModel = bike.call({"front_wheel": "cast_17_front", "rear_wheel": "cast_17"})
 	check(count.call(cast, "CastSpoke") >= 5 and count.call(cast, "CushDrive") == 1 and count.call(cast, "Valve") == 2, "cast wheels have shaped spokes, the rear a cush drive, both a valve")
 	# Radiators: a textured core behind a grille, shrouds and hoses.
@@ -21772,3 +21772,13 @@ func _test_adv_magazine_facts() -> void:
 
 func _test_adv_magazine_ui() -> void:
 	await _adv_dest().test_magazine_ui()
+
+
+# ---------------------------------------------------------------------------- co-op performance (tests/coop_perf_tests.gd)
+
+func _coop_perf() -> RefCounted:
+	return load("res://tests/coop_perf_tests.gd").new(self)
+
+
+func _test_coop_perf_close() -> void:
+	await _coop_perf().test_close()
