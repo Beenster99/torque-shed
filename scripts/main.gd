@@ -1224,7 +1224,8 @@ func _sync_tyre_air() -> void:
 			bike.heat.leak[i] = Puncture.rate(Shed.items[tyre])
 		if bike.heat.flat(i) > 0.3 and not _flat_told[i]:
 			_flat_told[i] = true
-			hud.flash("The %s tyre's gone flat: it'll wallow and slide. Get it back to the shed to plug it, and go easy." % side, 5.0, true)
+			hud.flash("The %s tyre's gone flat: it'll wallow and slide. %s" % [side, "Stop and plug it at the roadside from the toolbox, and pump it up."
+				if trip.on_trip() else "Get it back to the shed to plug it, and go easy."], 5.0, true)
 
 
 ## The ride logger's lap counter: which stretch of the test route (The Loop) the bike is on, if

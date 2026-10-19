@@ -185,6 +185,8 @@ func _draw() -> void:
 	elif walker:
 		_draw_crosshair()
 		_draw_toolbar()
+		if walker.target.get("roadside", false) and walker.tyre_game == null:
+			_draw_toolbox(int(walker.target.get("bike", 0)), str(walker.target.get("slot", "")))
 		if walker.tyre_game is PlugGame:
 			_draw_plug_game(walker.tyre_game)
 		elif walker.tyre_game:
@@ -302,6 +304,35 @@ func _draw_tyre_game(game: TyreGame) -> void:
 	draw_string(font, Vector2(0, c.y - r - 48), "WORK THE TYRE ON", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
 	draw_string(font, Vector2(0, c.y + r + 52), "%s  ·  bead %d%%" % [hint, roundi(game.quality() * 100.0)],
 		HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
+
+
+## At the roadside (see Roadside), looking at the toolbox or with it open: what's in it, and
+## what's been used up (struck through, gone), down the left.
+func _draw_toolbox(bike_id: int, slot: String) -> void:
+	var box := Roadside.toolbox_of(bike_id)
+	if box == 0 or not (slot == "toolbox" or bool(Roadside.spot_of(bike_id).get("open", false))):
+		return
+	var font := get_theme_default_font()
+	var lines := Roadside.kit_lines(box)
+	var panel := Rect2(24.0, size.y * 0.5 - 40.0 - 13.0 * lines.size(), 330.0, 58.0 + 26.0 * lines.size())
+	draw_rect(panel, Color(0.03, 0.03, 0.04, 0.72))
+	draw_string(font, panel.position + Vector2(14, 26), "TOOLBOX  ·  %s" % Shed.item_title(box).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 24.0, 15, UITheme.ACCENT)
+	var y := panel.position.y + 52.0
+	if lines.is_empty():
+		draw_string(font, Vector2(panel.position.x + 14, y), "Empty: nothing to fix it with", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 0.5, 0.4))
+	for k in lines:
+		var gone: bool = k["gone"]
+		var col := Color(1, 1, 1, 0.35) if gone else Color(1, 1, 1, 0.9)
+		var text := str(PartsDB.TOOLBOX_CONTENTS[k["what"]]["short"]).capitalize()
+		draw_circle(Vector2(panel.position.x + 20, y - 5), 4.0, Color(0.5, 0.5, 0.5, 0.5) if gone else Color(0.45, 0.85, 0.45))
+		draw_string(font, Vector2(panel.position.x + 34, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, col)
+		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+		if gone:
+			draw_line(Vector2(panel.position.x + 32, y - 5), Vector2(panel.position.x + 36 + w, y - 5), Color(1, 0.45, 0.35, 0.8), 2.0)
+			draw_string(font, Vector2(panel.position.x + 44 + w, y), "used up", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.45, 0.35, 0.8))
+		elif int(k["left"]) > 0:
+			draw_string(font, Vector2(panel.position.x + 44 + w, y), "%d left" % int(k["left"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.55))
+		y += 26.0
 
 
 ## The puncture plug game: the tread laid out as a strip, the soapy nozzle (then the reamer) on
