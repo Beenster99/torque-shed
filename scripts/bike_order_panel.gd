@@ -129,7 +129,7 @@ func _refresh() -> void:
 	if sig == _sig:
 		return
 	_sig = sig
-	_sub.text = "%s  ·  %s  ·  %d hp" % [str(plan["name"]), PartsDB.style_text(plan["parts"]),
+	_sub.text = "%s  ·  %s  ·  %d hp built new" % [str(plan["name"]), PartsDB.style_text(plan["parts"]),
 		roundi(BikeBuild.new(plan["parts"], {}).hp())]
 	for c in _list.get_children():
 		c.queue_free()
