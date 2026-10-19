@@ -12,7 +12,8 @@ var _sig := ""
 func _ready() -> void:
 	name = "Blueprints"
 	add_theme_constant_override("separation", 10)
-	add_child(UITheme.label("Save a bike as a blueprint in geometry mode ({geometry_mode} at a bike, then Save + blueprint). Build one here: "
+	add_child(UITheme.label("Save a bike as a blueprint in geometry mode ({geometry_mode} at a bike, then Save + blueprint), or copy any bike you "
+		+ "look at, the cafe's included ({order_bike}, Copy its blueprint). Build one here: "
 		+ "pick an empty bay and a hologram of the finished bike appears in it. Order the missing parts, put a frame on "
 		+ "the bay's stand and fit the parts the hologram shows. The new bike gets the blueprint's fit.", 15, Color(1, 1, 1, 0.7)))
 	add_child(UITheme.title("Blueprints", 22))

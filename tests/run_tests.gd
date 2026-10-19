@@ -518,6 +518,11 @@ func _run_all() -> void:
 	await _test_adv_roads_traffic_turns()
 	await _test_adv_roads_police_red()
 	await _test_adv_roads_chunk_cost()
+	print("Order one of these, and copy its blueprint (v0.16.0): any bike looked at, the cafes' bikes, parked bikes with real builds")
+	_test_bike_copy_order()
+	_test_bike_copy_blueprint()
+	_test_bike_copy_sources()
+	await _test_bike_copy_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21944,3 +21949,26 @@ func _test_adv_roads_police_red() -> void:
 
 func _test_adv_roads_chunk_cost() -> void:
 	await _adv_roads().test_chunk_cost()
+
+
+
+# ---------------------------------------------------------------------------- order one of these, copy its blueprint (tests/bike_copy_tests.gd)
+
+func _bike_copy() -> RefCounted:
+	return load("res://tests/bike_copy_tests.gd").new(self)
+
+
+func _test_bike_copy_order() -> void:
+	_bike_copy().test_order()
+
+
+func _test_bike_copy_blueprint() -> void:
+	_bike_copy().test_copy()
+
+
+func _test_bike_copy_sources() -> void:
+	_bike_copy().test_sources()
+
+
+func _test_bike_copy_session() -> void:
+	await _bike_copy().test_session()

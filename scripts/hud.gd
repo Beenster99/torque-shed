@@ -134,13 +134,16 @@ func _process_body(delta: float) -> void:
 	wash_hud.walker = walker if on_foot else null
 	detail_hud.walker = walker if on_foot else null
 	_panel.visible = on_foot and walker.blast == null and not spray_hud.showing() and not wash_hud.showing() and not detail_hud.showing() \
-		and (walker.info != "" or walker.look_info != "" or not walker.plan.is_empty() or walker.crouched)
+		and (walker.info != "" or walker.look_info != "" or walker.bike_prompt != "" or not walker.plan.is_empty() or walker.crouched) \
+		and not get_tree().get_nodes_in_group("bike_order_panel").any(func(p): return p.visible)   # a bike's card is wide: it covers the panel
 	if on_foot:
 		# What the cafe's bikers and the like say (Walker.look_info) comes first, over what the
 		# walker's own targeting has to say.
 		var text := walker.info
 		if walker.look_info != "":
 			text = walker.look_info + ("\n" + walker.info if walker.info != "" else "")
+		if text == "":
+			text = walker.bike_info
 		var lines := Controls.hint(text).split("\n")
 		_title.text = lines[0]
 		_info.text = "\n".join(lines.slice(1))
@@ -158,6 +161,8 @@ func _process_body(delta: float) -> void:
 			prompts.append("Hold %s to %s" % [_alt_key(), alt["verb"]])
 		if walker.tap_prompt != "":
 			prompts.append(Controls.hint(walker.tap_prompt))
+		if walker.bike_prompt != "":
+			prompts.append(Controls.hint(walker.bike_prompt))
 		if walker.crouched:
 			prompts.append(Controls.hint("Crouching ({crouch} to stand up)"))
 		_prompt.add_theme_color_override("font_color", Color(1, 0.5, 0.4) if blocked and prompts.size() == 1 else UITheme.ACCENT)

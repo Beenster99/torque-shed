@@ -24,6 +24,8 @@ var sales_pc: SalesComputer     # the Sales page on the sales office's PC
 var sales_view: SalesView       # part-exchange buyers, buyers collecting, the till, the stands' prices
 var coffee_panel: CoffeePanel   # the cafe counter's menu, and talking to a biker about their bike
 var coffee_view: CoffeeView     # the bikers at the cafe, its barista and the trays put down
+var bike_order_panel: BikeOrderPanel   # a bike's card: order one of these, or copy its blueprint
+var bike_copy: BikeCopyView     # which bike you're looking at, for that card ({order_bike})
 var staff_panel: StaffPanel     # talking to one of the staff and giving them a job
 var staff_view: StaffView       # the garage's staff at work
 var paint_bench: PaintBench     # the paint mixing bay's bench, stepped up to (see PaintBay)
@@ -176,6 +178,18 @@ func _ready() -> void:
 	coffee_view.order_requested.connect(func():
 		coffee_panel.open_menu()
 		_capture_mouse(false))
+	bike_order_panel = BikeOrderPanel.new()
+	bike_order_panel.visible = false
+	ui.add_child(bike_order_panel)
+	bike_order_panel.closed.connect(func(): _capture_mouse(true))
+	bike_copy = BikeCopyView.new()
+	bike_copy.name = "BikeCopy"
+	bike_copy.main = self
+	add_child(bike_copy)
+	bike_copy.order_requested.connect(func(src, title):
+		bike_order_panel.open_bike(src, title)
+		if bike_order_panel.visible:
+			_capture_mouse(false))
 	staff_panel = StaffPanel.new()
 	staff_panel.visible = false
 	ui.add_child(staff_panel)
@@ -381,6 +395,7 @@ func _end_session() -> void:
 	contract_panel.visible = false
 	recovery_panel.visible = false
 	coffee_panel.visible = false
+	bike_order_panel.visible = false
 	staff_panel.visible = false
 	paint_bench.visible = false
 	PaintBayRoom.live = {}
@@ -797,7 +812,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return   # geometry mode takes its own keys, Esc and F2 included
 	if event.is_action_pressed("geometry_mode") and bike == null and walker and not menu.visible and not computer.visible \
 			and not tuning.visible and not sales_pc.visible and not label_dialog.visible and not contract_panel.visible and not coffee_panel.visible and not staff_panel.visible \
-			and not paint_bench.visible:
+			and not paint_bench.visible and not bike_order_panel.visible:
 		get_viewport().set_input_as_handled()
 		open_geometry()
 		return
@@ -810,6 +825,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			recovery_panel.close_dialog()
 		elif coffee_panel.visible:
 			coffee_panel.close_dialog()
+		elif bike_order_panel.visible:
+			bike_order_panel.close_dialog()
 		elif staff_panel.visible:
 			staff_panel.close_dialog()
 		elif paint_bench.visible:
@@ -829,7 +846,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or coffee_panel.visible or staff_panel.visible \
-			or paint_bench.visible or recovery_panel.visible or (bike == null and not recovery.driving and not recovery.riding_along):
+			or paint_bench.visible or bike_order_panel.visible or recovery_panel.visible or (bike == null and not recovery.driving and not recovery.riding_along):
 		return
 	if recovery.riding_along:
 		if recovery.passenger_input(event):
@@ -907,6 +924,7 @@ func _physics_process_body(delta: float) -> void:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
 		and not contract_panel.visible and not coffee_panel.visible and not staff_panel.visible and not paint_bench.visible and not geometry.active \
+		and not bike_order_panel.visible \
 		and not recovery_panel.visible and not trip.map_open() and not trip.magazine_open()
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)

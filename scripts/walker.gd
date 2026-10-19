@@ -78,6 +78,10 @@ var _described_frame := -1
 ## more lines, like `info`, and its key prompt ("F: talk..."). Shown in the same HUD panel.
 var look_info := ""
 var look_prompt := ""
+## A bike under the crosshair (BikeCopyView): what it is, when nothing else says, and its key
+## for ordering one or copying its blueprint.
+var bike_info := ""
+var bike_prompt := ""
 var progress := 0.0         # 0..1 of the current hold-to-work action
 var spray_color := 0        # index into Shed.PAINTS loaded in the spray can
 var spray_finish := 0       # index into spray_loads(): the paint finishes, then primer, lacquer and the gun's coats

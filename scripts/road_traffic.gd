@@ -777,6 +777,7 @@ func _make_view(slot: int, d: Dictionary) -> Dictionary:
 	body.collision_layer = 2       # with the bikes, so yours runs into it
 	body.collision_mask = 0
 	body.add_to_group("road_traffic")
+	body.set_meta("traffic_seed", int(d["seed"]))   # its bike can be ordered or copied (see BikeCopyView)
 	add_child(body)
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(0.7, 1.55, build.wheelbase + 0.45)
