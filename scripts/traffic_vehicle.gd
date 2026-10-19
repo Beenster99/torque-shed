@@ -11,15 +11,16 @@ extends AnimatableBody3D
 ## merged mesh with the wheels baked in; past DRAW_RANGE nothing is drawn (it's still solid).
 
 ## Each kind's driving: its pace (a share of the road's speed), how hard it corners (sideways
-## m/s^2), brakes and pulls away (m/s^2), and how often it turns up in town and out of it.
+## m/s^2), brakes and pulls away (m/s^2), its power for hills (W/kg: how fast it can climb, see
+## TrafficStream.CLIMB_DRAG), and how often it turns up in town and out of it.
 const TRAITS := {
-	"hatchback": {"pace": 1.0, "grip": 3.2, "brake": 3.2, "accel": 2.2, "town": 26, "open": 18},
-	"saloon": {"pace": 1.03, "grip": 3.2, "brake": 3.2, "accel": 2.2, "town": 18, "open": 20},
-	"estate": {"pace": 1.0, "grip": 3.1, "brake": 3.1, "accel": 2.0, "town": 13, "open": 15},
-	"suv": {"pace": 1.0, "grip": 2.9, "brake": 3.1, "accel": 2.0, "town": 15, "open": 15},
-	"van": {"pace": 0.95, "grip": 2.7, "brake": 2.8, "accel": 1.7, "town": 12, "open": 14},
-	"lorry": {"pace": 0.78, "grip": 2.0, "brake": 2.2, "accel": 0.9, "town": 5, "open": 11},
-	"coach": {"pace": 0.8, "grip": 2.0, "brake": 2.2, "accel": 1.0, "town": 11, "open": 7},
+	"hatchback": {"pace": 1.0, "grip": 3.2, "brake": 3.2, "accel": 2.2, "power": 55.0, "town": 26, "open": 18},
+	"saloon": {"pace": 1.03, "grip": 3.2, "brake": 3.2, "accel": 2.2, "power": 70.0, "town": 18, "open": 20},
+	"estate": {"pace": 1.0, "grip": 3.1, "brake": 3.1, "accel": 2.0, "power": 60.0, "town": 13, "open": 15},
+	"suv": {"pace": 1.0, "grip": 2.9, "brake": 3.1, "accel": 2.0, "power": 60.0, "town": 15, "open": 15},
+	"van": {"pace": 0.95, "grip": 2.7, "brake": 2.8, "accel": 1.7, "power": 30.0, "town": 12, "open": 14},
+	"lorry": {"pace": 0.78, "grip": 2.0, "brake": 2.2, "accel": 0.9, "power": 8.0, "town": 5, "open": 11},
+	"coach": {"pace": 0.8, "grip": 2.0, "brake": 2.2, "accel": 1.0, "power": 11.0, "town": 11, "open": 7},
 }
 ## Near model within this (m, times the draw distance setting); far mesh out to DRAW_RANGE.
 const LOD_NEAR := 45.0
@@ -36,6 +37,12 @@ const INDICATOR_ON := 5.0
 const BLINK := 0.7              # seconds an indicator's flash cycle takes
 
 var kind := ""
+## How fast it's going (m/s) and how hard it's pulling (0..1), as drive() last had it (its sound
+## follows them: see TrafficSounds).
+var speed := 0.0
+var pull := 0.0
+## A scripted driver's extra state, as TrafficStream carries it (police lights and siren...).
+var aux := 0
 var look := {}
 var length := 4.0
 var half_width := 0.9
@@ -74,6 +81,20 @@ static func pick_kind(rng: RandomNumberGenerator, town: bool) -> String:
 static func pick_pace(rng: RandomNumberGenerator, kind_name: String) -> float:
 	var driver := clampf(1.0 + rng.randfn(0.0, 0.11), 0.72, 1.18)
 	return driver * float(TRAITS[kind_name]["pace"])
+
+
+## Its kind's driving (TRAITS), or a saloon's for a kind that's not in the list.
+static func traits_of(kind_name: String) -> Dictionary:
+	return TRAITS.get(kind_name, TRAITS["saloon"])
+
+
+## Its kind's size (VehicleModel.SPECS), or a saloon's.
+static func spec_of(kind_name: String) -> Dictionary:
+	return VehicleModel.SPECS.get(kind_name, VehicleModel.SPECS["saloon"])
+
+
+static func half_length_of(kind_name: String) -> float:
+	return float(spec_of(kind_name)["len"]) * 0.5
 
 
 ## Builds it as `kind_name` in the look its seed gives (the same on every machine).
@@ -168,6 +189,9 @@ func _paint_over(mi: MeshInstance3D, keys: Array, paint: Material, paint2: Mater
 ## 0 none), seen from `cam` (for which model to draw, and whether its beams light the road).
 func drive(xf: Transform3D, v: float, steer: float, braking: bool, indicator: int, delta: float, cam: Vector3) -> void:
 	global_transform = xf
+	var pulling := clampf(0.25 + (v - speed) / maxf(delta, 0.001) * 0.6, 0.0, 1.0)
+	pull = lerpf(pull, pulling, minf(delta * 4.0, 1.0))
+	speed = v
 	var scale := clampf(Settings.gfx_draw_distance, 0.5, 2.0)
 	var dist := cam.distance_to(xf.origin)
 	var near := LOD_NEAR * scale + (3.0 if lod == 0 else 0.0)

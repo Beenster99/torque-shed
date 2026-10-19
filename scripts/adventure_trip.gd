@@ -122,6 +122,7 @@ func enter() -> void:
 	main.world.add_child(world)
 	world.origin_shifted.connect(_on_shift)
 	world.add_child(RoadsideView.new())   # bikes stood at the roadside, and tow straps (see Roadside)
+	world.add_child(AdventureTraffic.new())   # cars, vans, lorries and buses both ways
 	_sleep_town(true)
 	var from := maxf(0.0, start_s() - 120.0)
 	world.preload_range(from, from + 420.0)
