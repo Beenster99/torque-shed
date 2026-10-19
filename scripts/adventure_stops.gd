@@ -744,7 +744,7 @@ static func _row(k: Kit) -> void:
 static func _cafe(k: Kit) -> void:
 	var name := str(k.site.get("name", "Cafe"))
 	_pad(k, 0.6, 30.0, -22.0, 22.0, Color(0.33, 0.33, 0.34) if k.surf != "sand" else Color(0.6, 0.55, 0.45), "tarmac")
-	var wall: Color = _pick(k, [Color(0.15, 0.15, 0.17), Color(0.85, 0.82, 0.74), Color(0.55, 0.15, 0.12)])
+	var wall: Color = _pick(k, [Color(0.15, 0.15, 0.17), Color(0.85, 0.82, 0.74), Color(0.55, 0.15, 0.12)] if k.style_name == "mixed" else _walls(k))
 	var door := _house(k, 21.0, 5.0, 17.0, 8.5, 4.0, wall, Color(0.2, 0.2, 0.22), name.to_upper(), Color(0.85, 0.5, 0.08), true)
 	_counter(k, door.origin, -door.basis.z, name, "cafe")
 	# A serving hatch at the side for the queue out the door.

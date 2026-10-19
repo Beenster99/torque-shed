@@ -286,8 +286,8 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 							for y: float in [0.55, 0.95]:
 								_rail(buildings, prev + Vector3.UP * y, xf.origin + Vector3.UP * y, rail)
 						"wall":
-							var shade := 0.9 + 0.2 * float(absi(hash([i, side])) % 100) / 100.0
-							_wall(walls, prev, xf.origin, 0.95, 0.55, Color(0.56, 0.54, 0.5) * shade)
+							var shade := 0.8 + 0.35 * float(absi(hash([i, side])) % 100) / 100.0
+							_wall(walls, prev, xf.origin, 0.95, 0.55, Color(0.42, 0.4, 0.35) * shade)
 						"hedge":
 							var shade := 0.88 + 0.2 * float(absi(hash([i, side])) % 100) / 100.0
 							_wall(walls, prev, xf.origin, 1.55, 1.1, Color(0.17, 0.3, 0.11) * shade)
