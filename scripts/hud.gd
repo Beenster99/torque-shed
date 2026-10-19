@@ -17,6 +17,8 @@ var _top_kmh := 0.0
 var trip_km := 0.0         # this ride, for the economy readout
 var trip_fuel := 0.0       # litres burnt this ride
 var fuel_stop: FuelStop     # filling up at a pump and the low fuel light, while riding (main sets it)
+var warn_lights: Array = []  # the dash's warning lights on now (the oil light...), while riding on an adventure (see Roadside)
+var ride_hint := ""          # what to press for a breakdown out on an adventure (main sets it)
 ## "+6 XP Cleaning" popups under the level bar: [{amount, label, age}], newest first.
 var popups: Array = []
 var blast_hud: BlastHud     # the sandblaster's readout, while your hands are in the gloves
@@ -183,6 +185,8 @@ func _draw() -> void:
 	elif walker:
 		_draw_crosshair()
 		_draw_toolbar()
+		if walker.target.get("roadside", false) and walker.tyre_game == null:
+			_draw_toolbox(int(walker.target.get("bike", 0)), str(walker.target.get("slot", "")))
 		if walker.tyre_game is PlugGame:
 			_draw_plug_game(walker.tyre_game)
 		elif walker.tyre_game:
@@ -302,6 +306,35 @@ func _draw_tyre_game(game: TyreGame) -> void:
 		HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
 
 
+## At the roadside (see Roadside), looking at the toolbox or with it open: what's in it, and
+## what's been used up (struck through, gone), down the left.
+func _draw_toolbox(bike_id: int, slot: String) -> void:
+	var box := Roadside.toolbox_of(bike_id)
+	if box == 0 or not (slot == "toolbox" or bool(Roadside.spot_of(bike_id).get("open", false))):
+		return
+	var font := get_theme_default_font()
+	var lines := Roadside.kit_lines(box)
+	var panel := Rect2(24.0, size.y * 0.5 - 40.0 - 13.0 * lines.size(), 330.0, 58.0 + 26.0 * lines.size())
+	draw_rect(panel, Color(0.03, 0.03, 0.04, 0.72))
+	draw_string(font, panel.position + Vector2(14, 26), "TOOLBOX  ·  %s" % Shed.item_title(box).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 24.0, 15, UITheme.ACCENT)
+	var y := panel.position.y + 52.0
+	if lines.is_empty():
+		draw_string(font, Vector2(panel.position.x + 14, y), "Empty: nothing to fix it with", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 0.5, 0.4))
+	for k in lines:
+		var gone: bool = k["gone"]
+		var col := Color(1, 1, 1, 0.35) if gone else Color(1, 1, 1, 0.9)
+		var text := str(PartsDB.TOOLBOX_CONTENTS[k["what"]]["short"]).capitalize()
+		draw_circle(Vector2(panel.position.x + 20, y - 5), 4.0, Color(0.5, 0.5, 0.5, 0.5) if gone else Color(0.45, 0.85, 0.45))
+		draw_string(font, Vector2(panel.position.x + 34, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, col)
+		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+		if gone:
+			draw_line(Vector2(panel.position.x + 32, y - 5), Vector2(panel.position.x + 36 + w, y - 5), Color(1, 0.45, 0.35, 0.8), 2.0)
+			draw_string(font, Vector2(panel.position.x + 44 + w, y), "used up", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.45, 0.35, 0.8))
+		elif int(k["left"]) > 0:
+			draw_string(font, Vector2(panel.position.x + 44 + w, y), "%d left" % int(k["left"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.55))
+		y += 26.0
+
+
 ## The puncture plug game: the tread laid out as a strip, the soapy nozzle (then the reamer) on
 ## it, bubbles foaming thicker the nearer it is to the hole, and the plug going in.
 func _draw_plug_game(game: PlugGame) -> void:
@@ -310,14 +343,31 @@ func _draw_plug_game(game: PlugGame) -> void:
 	var strip := Rect2(size.x * 0.5 - w * 0.5, size.y * 0.5 + 60.0, w, 46.0)
 	draw_rect(strip.grow(28.0), Color(0.03, 0.03, 0.04, 0.6))
 	draw_rect(strip, Color(0.07, 0.07, 0.08))
-	# The tread blocks.
-	var blocks := 26
-	for i in blocks:
-		var x := strip.position.x + (i + 0.5) * strip.size.x / blocks
-		draw_line(Vector2(x - 6.0, strip.position.y + 4.0), Vector2(x + 6.0, strip.end.y - 4.0), Color(0.16, 0.16, 0.17), 5.0)
+	var rg := game as RoadsideGame   # a roadside fix run the same way (see RoadsideGame)
+	if rg != null:
+		_draw_roadside_strip(rg, strip)
+	else:
+		# The tread blocks.
+		var blocks := 26
+		for i in blocks:
+			var x := strip.position.x + (i + 0.5) * strip.size.x / blocks
+			draw_line(Vector2(x - 6.0, strip.position.y + 4.0), Vector2(x + 6.0, strip.end.y - 4.0), Color(0.16, 0.16, 0.17), 5.0)
 	var at := func(u: float) -> float: return strip.position.x + (u * 0.5 + 0.5) * strip.size.x
 	var nozzle_x: float = at.call(game.cursor.x)
 	var t := float(Time.get_ticks_msec()) / 1000.0
+	if not game.found and rg != null:
+		# The test lamp (or the pliers, or the lever) glowing brighter the nearer it is.
+		var glow := game.foam()
+		draw_circle(Vector2(nozzle_x, strip.get_center().y), 6.0 + 14.0 * glow, Color(1.0, 0.85, 0.3, 0.15 + 0.55 * glow))
+		draw_line(Vector2(nozzle_x, strip.position.y - 26.0), Vector2(nozzle_x, strip.get_center().y), Color(0.85, 0.85, 0.9), 4.0)
+		draw_circle(Vector2(nozzle_x, strip.position.y - 30.0), 7.0, Color(1.0, 0.85, 0.3).lerp(Color(0.6, 0.6, 0.6), 1.0 - glow))
+		var lock_r := game.lock_progress()
+		if lock_r > 0.0:
+			draw_arc(Vector2(nozzle_x, strip.position.y - 30.0), 13.0, -PI * 0.5, -PI * 0.5 + TAU * lock_r, 24, UITheme.ACCENT, 3.0, true)
+		draw_string(font, Vector2(0, strip.position.y - 56.0), rg.label("find"), HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
+		draw_string(font, Vector2(0, strip.end.y + 44.0), Controls.hint(rg.label("find_hint")), HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
+		draw_string(font, Vector2(0, strip.end.y + 66.0), "%.0f s left" % maxf(0.0, PlugGame.FIND_TIME - game.t), HORIZONTAL_ALIGNMENT_CENTER, size.x, 13, Color(1, 1, 1, 0.55))
+		return
 	if not game.found:
 		# Soap where the nozzle is: a few bubbles anywhere, a froth growing right over the hole.
 		var foam := game.foam()
@@ -349,9 +399,29 @@ func _draw_plug_game(game: PlugGame) -> void:
 	var bar := Rect2(strip.position.x, strip.end.y + 14.0, strip.size.x, 6.0)
 	draw_rect(bar, Color(1, 1, 1, 0.15))
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * game.plug_progress(), bar.size.y)), UITheme.ACCENT)
-	draw_string(font, Vector2(0, strip.position.y - 56.0), "PUSH THE PLUG IN", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
-	draw_string(font, Vector2(0, strip.end.y + 44.0), "%s  ·  plug %d%%" % [Controls.hint("Keep the reamer on the hole with the {aim}"),
-		roundi(game.quality() * 100.0)], HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
+	draw_string(font, Vector2(0, strip.position.y - 56.0), rg.label("fix") if rg else "PUSH THE PLUG IN", HORIZONTAL_ALIGNMENT_CENTER, size.x, 18, UITheme.ACCENT)
+	draw_string(font, Vector2(0, strip.end.y + 44.0), "%s  ·  %s %d%%" % [Controls.hint(rg.label("fix_hint") if rg else "Keep the reamer on the hole with the {aim}"),
+		rg.label("score") if rg else "plug", roundi(game.quality() * 100.0)], HORIZONTAL_ALIGNMENT_CENTER, size.x, 15, Color(1, 1, 1, 0.8))
+
+
+## What a roadside game's strip shows: a row of fuses, the run of the spare chain, or the bar
+## end with the lever's pivot.
+func _draw_roadside_strip(game: RoadsideGame, strip: Rect2) -> void:
+	match game.kind:
+		"fuse":
+			var n := 12
+			for i in n:
+				var x := strip.position.x + (i + 0.5) * strip.size.x / n
+				var col: Color = [Color(0.85, 0.2, 0.15), Color(0.2, 0.45, 0.9), Color(0.95, 0.8, 0.2), Color(0.3, 0.75, 0.35)][i % 4]
+				draw_rect(Rect2(x - 9.0, strip.position.y + 8.0, 18.0, strip.size.y - 16.0), col.darkened(0.25))
+				draw_rect(Rect2(x - 3.0, strip.position.y + 4.0, 6.0, 6.0), Color(0.8, 0.8, 0.82))
+		"chain":
+			var links := 30
+			for i in links:
+				var x := strip.position.x + (i + 0.5) * strip.size.x / links
+				draw_arc(Vector2(x, strip.get_center().y), 7.0, 0.0, TAU, 12, Color(0.55, 0.55, 0.58), 3.0, true)
+		_:
+			draw_rect(Rect2(strip.position.x, strip.get_center().y - 5.0, strip.size.x, 10.0), Color(0.5, 0.5, 0.52))
 
 
 func _draw_crosshair() -> void:
@@ -480,6 +550,13 @@ func _draw_speedo() -> void:
 		# The low fuel light, blinking.
 		draw_string(font, r.position + Vector2(140, 106), "LOW FUEL", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.65, 0.1))
 	_draw_heat_hints(r)
+	# The warning lights (see Roadside): the oil light, red and steady.
+	var lx := r.position.x + 12.0
+	for l in warn_lights:
+		var lw := 14.0 + 8.0 * str(l).length()
+		draw_rect(Rect2(Vector2(lx, r.position.y - 30.0), Vector2(lw, 22.0)), Color(0.75, 0.08, 0.05, 0.9))
+		draw_string(font, Vector2(lx + 7.0, r.position.y - 14.0), str(l), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.9, 0.85))
+		lx += lw + 6.0
 	var hint := ""
 	if fuel_stop and fuel_stop.filling:
 		hint = "Filling up: %.1f L  ·  %s" % [fuel_stop.litres, TvChannels.money_text(ceili(fuel_stop.litres * FuelStop.price_of(fuel_stop.pump)))]
@@ -487,6 +564,8 @@ func _draw_speedo() -> void:
 		hint = Controls.hint("Hold {interact}: fill up (%dp a litre, your money)   ·   %.1f of %.0f L in the tank" % [
 			roundi(FuelStop.price_of(fuel_stop.pump_here()) * 100.0), bike.fuel_litres, bike.build.fuel_capacity]) \
 			if fuel_stop.space() >= 0.05 else Controls.hint("The tank's full   ·   {interact}: get off")
+	elif ride_hint != "":
+		hint = Controls.hint(ride_hint)
 	elif not bike.engine_on and not bike.is_crashed:
 		hint = "Starting..." if bike.is_starting() else Controls.hint("Engine off: press {ignition} to start it")
 	elif absf(bike.speed) < 2.0 and not bike.is_crashed:

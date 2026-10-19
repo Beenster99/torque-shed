@@ -89,6 +89,7 @@ func enter() -> void:
 	world.focus = focus_points
 	main.world.add_child(world)
 	world.origin_shifted.connect(_on_shift)
+	world.add_child(RoadsideView.new())   # bikes stood at the roadside, and tow straps (see Roadside)
 	_sleep_town(true)
 	world.preload_range(0.0, 420.0)
 	var xf := start_xf()

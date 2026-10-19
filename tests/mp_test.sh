@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Starts a host and a client on this machine and checks each sees the other's bike move.
-# Then a second pair rides an adventure together (tests/mp_adventure.gd).
+# Then a second pair rides an adventure together (tests/mp_adventure.gd), and a third breaks down
+# on one and fixes it at the roadside, then tows (tests/mp_wrench.gd).
 set -u
 cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
@@ -21,7 +22,16 @@ ACLIENT=$?
 wait $AHOST
 AHOSTRC=$?
 grep -h "MP adv" /tmp/torque_mp_adv_host.log /tmp/torque_mp_adv_client.log
-if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ]; then
+# Roadside wrenching: the client breaks down, the host sees the bike at the roadside fixed, then tows it.
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_wrench.tscn -- --role=host > /tmp/torque_mp_wrench_host.log 2>&1 &
+WHOST=$!
+sleep 4
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_wrench.tscn -- --role=client > /tmp/torque_mp_wrench_client.log 2>&1
+WCLIENT=$?
+wait $WHOST
+WHOSTRC=$?
+grep -h "MP wrench" /tmp/torque_mp_wrench_host.log /tmp/torque_mp_wrench_client.log
+if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ]; then
 	echo "Multiplayer test failed"
 	exit 1
 fi
