@@ -40,6 +40,7 @@ func _run_all() -> void:
 	await _test_settle()
 	await _test_acceleration()
 	await _test_performance()
+	_test_style_performance()
 	await _test_turning()
 	await _test_braking()
 	await _test_low_speed()
@@ -498,6 +499,49 @@ func _test_performance() -> void:
 		check(top >= run[4] and top <= run[5], "%s: reaches %.0f km/h (%.0f-%.0f expected)" % [what, top, run[4], run[5]])
 		check(bike.gear == b.gear_count(), "%s: pulls through every gear into top (gear %d of %d)" % [what, bike.gear, b.gear_count()])
 		await _done(r)
+
+
+## Each style's stock bike (the one Contracts.style_build makes, which project bikes and contracts
+## start from) against the spread of real bikes of that style: power, top speed, UK mpg at a steady
+## 90 km/h and wet weight. See docs/bike_style_performance.md for where the figures come from.
+const STYLE_REAL := {
+	"classic": {"hp": [20, 80], "mph": [75, 120], "mpg": [50, 95], "kg": [180, 240]},
+	"cafe": {"hp": [45, 115], "mph": [105, 140], "mpg": [42, 65], "kg": [180, 225]},
+	"bobber": {"hp": [70, 110], "mph": [100, 125], "mpg": [40, 58], "kg": [220, 300]},
+	"chopper": {"hp": [80, 110], "mph": [100, 120], "mpg": [36, 50], "kg": [230, 320]},
+	"cruiser": {"hp": [50, 110], "mph": [100, 120], "mpg": [40, 60], "kg": [220, 320]},
+	"scrambler": {"hp": [60, 110], "mph": [105, 130], "mpg": [45, 60], "kg": [185, 230]},
+	"adventure": {"hp": [95, 150], "mph": [115, 140], "mpg": [44, 60], "kg": [215, 270]},
+	"roader": {"hp": [65, 170], "mph": [120, 160], "mpg": [45, 60], "kg": [205, 260]},
+	"tourer": {"hp": [120, 165], "mph": [120, 155], "mpg": [40, 55], "kg": [270, 390]},
+	"sport": {"hp": [75, 130], "mph": [135, 160], "mpg": [45, 65], "kg": [185, 210]},
+	"race": {"hp": [195, 230], "mph": [175, 200], "mpg": [35, 45], "kg": [190, 215]},
+	"naked": {"hp": [75, 130], "mph": [130, 150], "mpg": [45, 65], "kg": [180, 215]},
+	"supermoto": {"hp": [40, 80], "mph": [90, 115], "mpg": [50, 70], "kg": [140, 165]},
+	"mx": {"hp": [45, 75], "mph": [75, 95], "mpg": [0, 999], "kg": [100, 135]},
+}
+
+
+func _test_style_performance() -> void:
+	for style in STYLE_REAL:
+		var real: Dictionary = STYLE_REAL[style]
+		var b := BikeBuild.new(Contracts.style_build(style))
+		var hp := b.hp()
+		var mph := b.top_speed_estimate() * 2.23694
+		var mpg := b.cruise_economy() / Units.KM_PER_MILE * Units.LITRES_PER_GALLON
+		var nm := PartsDB.style_name(style)
+		check(b.notes.is_empty(), "%s: the stock bike's parts suit each other %s" % [nm, str(b.notes)])
+		check(hp >= real["hp"][0] and hp <= real["hp"][1], "%s: %.0f hp (real ones %d-%d)" % [nm, hp, real["hp"][0], real["hp"][1]])
+		check(mph >= real["mph"][0] and mph <= real["mph"][1], "%s: tops out at %.0f mph (real ones %d-%d)" % [nm, mph, real["mph"][0], real["mph"][1]])
+		check(mpg >= real["mpg"][0] and mpg <= real["mpg"][1], "%s: %.0f mpg (real ones %d-%d)" % [nm, mpg, real["mpg"][0], real["mpg"][1]])
+		check(b.bike_mass >= real["kg"][0] and b.bike_mass <= real["kg"][1], "%s: %.0f kg wet (real ones %d-%d)" % [nm, b.bike_mass, real["kg"][0], real["kg"][1]])
+	# The order real bikes come in.
+	var top := func(s): return BikeBuild.new(Contracts.style_build(s)).top_speed_estimate()
+	var thirst := func(s): return BikeBuild.new(Contracts.style_build(s)).cruise_economy()
+	check(top.call("race") > top.call("sport") and top.call("sport") > top.call("naked") and top.call("naked") > top.call("cruiser"),
+		"a race bike is faster than a sports bike, then a naked bike, then a cruiser")
+	check(top.call("mx") < top.call("supermoto"), "an MX bike's short gearing runs out before a supermoto's")
+	check(thirst.call("race") < thirst.call("classic"), "a superbike drinks more than a classic twin")
 
 
 func _test_turning() -> void:

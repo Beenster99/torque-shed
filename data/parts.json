@@ -121,6 +121,7 @@
 			"name": "Hardtail-look softail frame",
 			"description": "Looks rigid, rides soft: the shocks hide under the gearbox. Long and low for bobbers.",
 			"mass": 19.0,
+			"fixed_mass": 48.0,
 			"wheelbase": 1.6,
 			"com_height": 0.58,
 			"rake_deg": 30.0,
@@ -159,6 +160,7 @@
 			"name": "Long-low cruiser frame",
 			"description": "Stretched double cradle with a raked neck. Lazy, stable steering and a low seat.",
 			"mass": 18.0,
+			"fixed_mass": 52.0,
 			"wheelbase": 1.66,
 			"com_height": 0.6,
 			"rake_deg": 32.0,
@@ -197,6 +199,7 @@
 			"name": "Raked chopper frame",
 			"description": "38 degrees of rake and a long stretched backbone. Built for straight lines and attention.",
 			"mass": 17.0,
+			"fixed_mass": 50.0,
 			"wheelbase": 1.82,
 			"com_height": 0.6,
 			"rake_deg": 38.0,
@@ -308,6 +311,7 @@
 			"name": "MX twin-loop frame",
 			"description": "Chromoly single downtube splitting into twin loops under the engine. Light and stiff for the dirt.",
 			"mass": 9.0,
+			"fixed_mass": 6.0,
 			"wheelbase": 1.48,
 			"com_height": 0.7,
 			"rake_deg": 27.0,
@@ -444,6 +448,7 @@
 		},
 		"bobber_rigid": {
 			"mass": 17.0,
+			"fixed_mass": 44.0,
 			"wheelbase": 1.56,
 			"com_height": 0.58,
 			"rake_deg": 31.0,
@@ -482,6 +487,7 @@
 		},
 		"bobber_springer_frame": {
 			"mass": 19.0,
+			"fixed_mass": 48.0,
 			"wheelbase": 1.62,
 			"com_height": 0.58,
 			"rake_deg": 30.5,
@@ -523,6 +529,7 @@
 		},
 		"chopper_long_rake": {
 			"mass": 16.5,
+			"fixed_mass": 50.0,
 			"wheelbase": 1.92,
 			"com_height": 0.6,
 			"rake_deg": 42.0,
@@ -559,6 +566,7 @@
 		},
 		"chopper_chrome_frame": {
 			"mass": 17.0,
+			"fixed_mass": 50.0,
 			"wheelbase": 1.84,
 			"com_height": 0.6,
 			"rake_deg": 38.5,
@@ -599,6 +607,7 @@
 		},
 		"cruiser_low_glide": {
 			"mass": 19.0,
+			"fixed_mass": 52.0,
 			"wheelbase": 1.7,
 			"com_height": 0.6,
 			"rake_deg": 33.0,
@@ -637,6 +646,7 @@
 		},
 		"cruiser_bagger_frame": {
 			"mass": 20.0,
+			"fixed_mass": 60.0,
 			"wheelbase": 1.64,
 			"com_height": 0.6,
 			"rake_deg": 29.5,
@@ -722,6 +732,7 @@
 		},
 		"mx_alu_perimeter": {
 			"mass": 8.0,
+			"fixed_mass": 6.0,
 			"wheelbase": 1.48,
 			"com_height": 0.7,
 			"rake_deg": 27.0,
@@ -763,6 +774,7 @@
 		},
 		"mx_red_loop": {
 			"mass": 9.0,
+			"fixed_mass": 6.0,
 			"wheelbase": 1.47,
 			"com_height": 0.7,
 			"rake_deg": 26.5,
@@ -824,6 +836,7 @@
 		},
 		"sm_white_loop": {
 			"mass": 9.0,
+			"fixed_mass": 24.0,
 			"wheelbase": 1.46,
 			"com_height": 0.7,
 			"rake_deg": 25.5,
@@ -1186,6 +1199,7 @@
 		},
 		"tourer_heavy_spar": {
 			"mass": 12.0,
+			"fixed_mass": 56.0,
 			"wheelbase": 1.52,
 			"com_height": 0.66,
 			"rake_deg": 26.0,
@@ -1208,6 +1222,7 @@
 		},
 		"tourer_cradle": {
 			"mass": 18.0,
+			"fixed_mass": 60.0,
 			"wheelbase": 1.58,
 			"com_height": 0.6,
 			"rake_deg": 28.0,
@@ -11308,6 +11323,7 @@
 			"peak_shift": 0.95,
 			"redline_add": -500.0,
 			"heat": 0.85,
+			"thirst": 0.9,
 			"color": [
 				0.7,
 				0.71,
@@ -11325,6 +11341,7 @@
 			"peak_shift": 1.0,
 			"redline_add": 0.0,
 			"heat": 1.0,
+			"thirst": 1.0,
 			"color": [
 				0.25,
 				0.26,
@@ -11342,6 +11359,7 @@
 			"peak_shift": 1.04,
 			"redline_add": 300.0,
 			"heat": 1.1,
+			"thirst": 1.1,
 			"color": [
 				0.7,
 				0.71,
@@ -11359,6 +11377,7 @@
 			"peak_shift": 1.12,
 			"redline_add": 800.0,
 			"heat": 1.2,
+			"thirst": 1.3,
 			"color": [
 				0.75,
 				0.1,
@@ -11376,6 +11395,7 @@
 			"peak_shift": 1.1,
 			"redline_add": 1000.0,
 			"heat": 1.45,
+			"thirst": 1.4,
 			"color": [
 				0.1,
 				0.1,
@@ -11779,6 +11799,28 @@
 				0.33
 			],
 			"whine": 0.3,
+			"shift_feel": "click"
+		},
+		"five_close_mx": {
+			"name": "5-speed MX close-ratio",
+			"description": "Short, tightly stacked gears for the track: all drive, no top end.",
+			"mass": 6.0,
+			"primary": 2.45,
+			"ratios": [
+				2.0,
+				1.65,
+				1.37,
+				1.19,
+				1.045
+			],
+			"shift_time": 0.1,
+			"type": "Five-speed MX close ratio",
+			"color": [
+				0.3,
+				0.31,
+				0.33
+			],
+			"whine": 0.4,
 			"shift_feel": "click"
 		},
 		"six_close": {
