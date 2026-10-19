@@ -297,7 +297,7 @@ func _draw_meters() -> void:
 		return
 	var font := _meters.get_theme_default_font()
 	var sz := _meters.size
-	var r := Rect2(24.0, sz.y - 24.0 - 200.0 - 14.0 - 86.0, 230.0, 86.0)
+	var r := Rect2(24.0, sz.y - 24.0 - 200.0 - 14.0 - 96.0, 230.0, 96.0)
 	_meters.draw_rect(r, Color(0.03, 0.04, 0.06, 0.62))
 	_meters.draw_rect(Rect2(r.position, Vector2(3.0, r.size.y)), UITheme.ACCENT)
 	var rows := [["FOOD", "food"], ["DRINK", "drink"], ["REST", "rest"]]
