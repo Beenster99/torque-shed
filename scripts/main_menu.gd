@@ -210,10 +210,18 @@ func _ready() -> void:
 	_tabs.custom_minimum_size = Vector2(760, 600)
 	_tabs.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.add_child(_tabs)
+	# The Settings tab scrolls: it's taller than the screen, and the volume sliders used to sit
+	# off the bottom of it.
+	var settings_scroll := ScrollContainer.new()
+	settings_scroll.name = "Settings"
+	settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	settings_scroll.follow_focus = true
+	_tabs.add_child(settings_scroll)
 	var settings := VBoxContainer.new()
-	settings.name = "Settings"
+	settings.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings.add_theme_constant_override("separation", 10)
-	_tabs.add_child(settings)
+	settings_scroll.add_child(settings)
+	_build_sound_settings(settings)
 	_build_riding_settings(settings)
 	_auto = CheckBox.new()
 	_auto.text = "Automatic gearbox"
@@ -248,10 +256,6 @@ func _ready() -> void:
 	_free_rotate.toggled.connect(func(v): Settings.free_rotate = v)
 	settings.add_child(_free_rotate)
 	_build_time_settings(settings)
-	settings.add_child(UITheme.label("Sound effects volume", 15))
-	settings.add_child(_volume_slider(Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
-	settings.add_child(UITheme.label("Radio volume", 15))
-	settings.add_child(_volume_slider(Settings.radio_volume, func(v): Settings.radio_volume = v; Sfx.apply_volumes()))
 	# Graphics: presets, display, upscaling, anti-aliasing, quality and the driver (see GraphicsTab).
 	graphics = GraphicsTab.new()
 	_tabs.add_child(graphics)
@@ -300,6 +304,17 @@ func _ready() -> void:
 	saves.save_renamed.connect(func(id, called): save_renamed.emit(id, called))
 	saves.changed.connect(_refresh_save_choice)
 	saves.closed.connect(func(): _tabs.visible = true)
+
+
+## The sound rows at the top of the Settings tab: the effects (tools, the washer, knocks,
+## dings, horns), the engines and the radio each have their own bus and slider (see Sfx).
+func _build_sound_settings(settings: VBoxContainer) -> void:
+	settings.add_child(UITheme.label("Sound effects volume", 15))
+	settings.add_child(_volume_slider("SfxVolume", Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
+	settings.add_child(UITheme.label("Engines volume", 15))
+	settings.add_child(_volume_slider("EngineVolume", Settings.engine_volume, func(v): Settings.engine_volume = v; Sfx.apply_volumes()))
+	settings.add_child(UITheme.label("Radio volume", 15))
+	settings.add_child(_volume_slider("RadioVolume", Settings.radio_volume, func(v): Settings.radio_volume = v; Sfx.apply_volumes()))
 
 
 ## The riding rows of the Settings tab: the Riding realism slider (what each end means shows
@@ -631,8 +646,9 @@ func _save() -> void:
 	Settings.save_settings()
 
 
-func _volume_slider(value: float, cb: Callable) -> HSlider:
+func _volume_slider(slider_name: String, value: float, cb: Callable) -> HSlider:
 	var slider := HSlider.new()
+	slider.name = slider_name
 	slider.min_value = 0.0
 	slider.max_value = 1.0
 	slider.step = 0.05

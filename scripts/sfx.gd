@@ -3,8 +3,13 @@ extends Node
 ## footsteps by floor, parts landing by material, the building's ambience. A few are recordings
 ## (RECORDED: the ratchet, sandblaster, dyno fan, roller door, door chime, phone, light switches,
 ## gear levers and horns), which play in place of the made ones when their files are there.
-## Sets up the SFX and Radio buses that the Esc menu volume sliders control, and the
-## buses under SFX that give each room its acoustics:
+## Sets up the buses the Esc menu's volume sliders control, each straight into Master:
+##   SFX:     every sound effect: tools, the washer, impacts, footsteps, machines, UI dings,
+##            horns, tyres, the weather and the ambience.
+##   Engines: every engine (your bike, other riders', the traffic, the truck, the dyno).
+##   Radio:   the shed radio.
+## and the buses under SFX that give each room its acoustics (Engines has its own pair,
+## EngineRoom and EngineFar, that follow the same room):
 ##   Room: sounds in the room you're in, through that room's reverb (the shed's hard concrete,
 ##         the small tiled paint booth, the cluttered store, the showroom's glass, outside's
 ##         open air with a slap back off the shed wall).
@@ -131,7 +136,7 @@ var _amb_timer := 0.0
 func _ready() -> void:
 	var t0 := Time.get_ticks_usec()
 	_rng.randomize()
-	for bus in ["SFX", "Radio"]:
+	for bus in ["SFX", "Engines", "Radio"]:
 		if AudioServer.get_bus_index(bus) == -1:
 			AudioServer.add_bus()
 			var i := AudioServer.bus_count - 1
@@ -152,8 +157,11 @@ func _exit_tree() -> void:
 		_thread.wait_to_finish()
 
 
+## The volume sliders (and the ear defenders) onto the buses.
 func apply_volumes() -> void:
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), linear_to_db(maxf(Settings.sfx_volume, 0.0001))
+		+ (MUFFLE_DB if muffled else 0.0))
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Engines"), linear_to_db(maxf(Settings.engine_volume, 0.0001))
 		+ (MUFFLE_DB if muffled else 0.0))
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Radio"), linear_to_db(maxf(Settings.radio_volume, 0.0001)))
 
@@ -224,21 +232,22 @@ func set_muffled(on: bool) -> void:
 	if on == muffled:
 		return
 	muffled = on
-	var bus := AudioServer.get_bus_index("SFX")
-	if bus < 0:
-		return
-	var at := -1
-	for i in AudioServer.get_bus_effect_count(bus):
-		if AudioServer.get_bus_effect(bus, i) is AudioEffectLowPassFilter:
-			at = i
-	if at < 0 and on:
-		var lp := AudioEffectLowPassFilter.new()
-		lp.cutoff_hz = MUFFLE_CUTOFF
-		lp.resonance = 0.4
-		AudioServer.add_bus_effect(bus, lp)
-		at = AudioServer.get_bus_effect_count(bus) - 1
-	if at >= 0:
-		AudioServer.set_bus_effect_enabled(bus, at, on)
+	for name in ["SFX", "Engines"]:
+		var bus := AudioServer.get_bus_index(name)
+		if bus < 0:
+			continue
+		var at := -1
+		for i in AudioServer.get_bus_effect_count(bus):
+			if AudioServer.get_bus_effect(bus, i) is AudioEffectLowPassFilter:
+				at = i
+		if at < 0 and on:
+			var lp := AudioEffectLowPassFilter.new()
+			lp.cutoff_hz = MUFFLE_CUTOFF
+			lp.resonance = 0.4
+			AudioServer.add_bus_effect(bus, lp)
+			at = AudioServer.get_bus_effect_count(bus) - 1
+		if at >= 0:
+			AudioServer.set_bus_effect_enabled(bus, at, on)
 	apply_volumes()
 
 
@@ -554,9 +563,11 @@ func _tail(p: AudioStreamPlayer3D, sound: String, which: int) -> void:
 
 
 ## Which bus a sound at `pos` goes through: "Room" if it's in the listener's room (or both
-## are outside), "Far" through a wall.
-func bus_for(pos: Vector3) -> String:
-	return "Room" if Workshop.room_at(pos) == listener_room else "Far"
+## are outside), "Far" through a wall. An `engine`'s are the Engines bus's pair (EngineRoom,
+## EngineFar), so the engines slider has them.
+func bus_for(pos: Vector3, engine := false) -> String:
+	var bus := "Room" if Workshop.room_at(pos) == listener_room else "Far"
+	return "Engine" + bus if engine else bus
 
 
 ## How much quieter a sound at `pos` is for the listener (dB): nothing in the same room, a
@@ -637,14 +648,18 @@ func _process_body(delta: float) -> void:
 		_keep_ambience()
 
 
-## Shows the reverb settings in `pr` on the Room bus.
+## Shows the reverb settings in `pr` on the Room bus (and the engines' EngineRoom).
 func _apply_preset(pr: Dictionary) -> void:
-	var bus := AudioServer.get_bus_index("Room")
-	if bus < 0:
-		return
-	var rv := AudioServer.get_bus_effect(bus, 0) as AudioEffectReverb
-	if rv == null:
-		return
+	for name in ["Room", "EngineRoom"]:
+		var bus := AudioServer.get_bus_index(name)
+		if bus < 0:
+			continue
+		var rv := AudioServer.get_bus_effect(bus, 0) as AudioEffectReverb
+		if rv != null:
+			_set_reverb(rv, pr)
+
+
+func _set_reverb(rv: AudioEffectReverb, pr: Dictionary) -> void:
 	rv.room_size = float(pr["size"])
 	rv.damping = float(pr["damp"])
 	rv.wet = float(pr["wet"])
@@ -657,9 +672,6 @@ func _apply_preset(pr: Dictionary) -> void:
 ## Outside, a sound comes back off the shed's wall a moment later: a single quiet echo, its
 ## delay the walk there and back at the speed of sound.
 func _slapback() -> void:
-	var bus := AudioServer.get_bus_index("Room")
-	if bus < 0 or AudioServer.get_bus_effect_count(bus) < 2:
-		return
 	var on := listener_room == "" and Shed.active
 	var dist := 0.0
 	if on:
@@ -669,12 +681,16 @@ func _slapback() -> void:
 		var dz := maxf(maxf(shed.position.y - p.y, p.y - shed.end.y), 0.0)
 		dist = Vector2(dx, dz).length()
 		on = dist > 2.0 and dist < 45.0
-	if on:
-		var dl := AudioServer.get_bus_effect(bus, 1) as AudioEffectDelay
-		dl.tap1_delay_ms = clampf(dist * 2.0 / 343.0 * 1000.0, 15.0, 260.0)
-		dl.tap1_level_db = -13.0 - dist * 0.3
-	if AudioServer.is_bus_effect_enabled(bus, 1) != on:
-		AudioServer.set_bus_effect_enabled(bus, 1, on)
+	for name in ["Room", "EngineRoom"]:
+		var bus := AudioServer.get_bus_index(name)
+		if bus < 0 or AudioServer.get_bus_effect_count(bus) < 2:
+			continue
+		if on:
+			var dl := AudioServer.get_bus_effect(bus, 1) as AudioEffectDelay
+			dl.tap1_delay_ms = clampf(dist * 2.0 / 343.0 * 1000.0, 15.0, 260.0)
+			dl.tap1_level_db = -13.0 - dist * 0.3
+		if AudioServer.is_bus_effect_enabled(bus, 1) != on:
+			AudioServer.set_bus_effect_enabled(bus, 1, on)
 
 
 ## The reverb settings showing on the Room bus now.
@@ -690,7 +706,7 @@ func set_listener_room(room: String) -> void:
 
 
 func _make_room_buses() -> void:
-	var specs := [["Room", "SFX"], ["Far", "SFX"], ["AmbOut", "SFX"]]
+	var specs := [["Room", "SFX"], ["Far", "SFX"], ["AmbOut", "SFX"], ["EngineRoom", "Engines"], ["EngineFar", "Engines"]]
 	for sp in specs:
 		if AudioServer.get_bus_index(str(sp[0])) != -1:
 			continue
@@ -699,7 +715,7 @@ func _make_room_buses() -> void:
 		AudioServer.set_bus_name(i, str(sp[0]))
 		AudioServer.set_bus_send(i, str(sp[1]))
 		match str(sp[0]):
-			"Room":
+			"Room", "EngineRoom":
 				AudioServer.add_bus_effect(i, AudioEffectReverb.new())
 				var dl := AudioEffectDelay.new()
 				dl.dry = 1.0
@@ -710,7 +726,7 @@ func _make_room_buses() -> void:
 				dl.feedback_active = false
 				AudioServer.add_bus_effect(i, dl)
 				AudioServer.set_bus_effect_enabled(i, 1, false)
-			"Far":
+			"Far", "EngineFar":
 				var lp := AudioEffectLowPassFilter.new()
 				lp.cutoff_hz = FAR_CUTOFF
 				AudioServer.add_bus_effect(i, lp)

@@ -8,7 +8,7 @@ extends Node
 ## office's sliding doors and its phone ringing as a customer calls ahead, and outside the
 ## wind, distant traffic, birds by day (now and then, in short bursts, quietest at midday),
 ## crickets at night and, near the High Street, the town's bustle (people talking and walking
-## by, a shop bell, pigeons; quieter at night), all heard muffled from indoors.
+## by, pigeons; quieter at night), all heard muffled from indoors.
 
 ## The compressor's spot: the shed's back left corner, low down.
 const COMPRESSOR_POS := Workshop.CENTER + Vector3(-Workshop.HALF.x + 0.6, 0.5, -Workshop.HALF.y + 0.6)

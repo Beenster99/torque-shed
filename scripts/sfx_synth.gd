@@ -33,16 +33,16 @@ const STEP_SURFACES: Array[String] = ["concrete", "epoxy", "wood", "metal", "gra
 ## Loudness each sound is brought to: ["rms", x] for steady loops, ["peak", x] for one-shots.
 const LEVELS := {
 	"ratchet": ["peak", 0.85], "scrub": ["rms", 0.12], "grinder": ["rms", 0.17], "spray": ["rms", 0.13], "spray_gun": ["rms", 0.12],
-	"washer": ["rms", 0.13], "polisher": ["rms", 0.15], "static": ["rms", 0.1], "jet": ["rms", 0.2], "pour": ["rms", 0.12], "door": ["rms", 0.15],
+	"washer": ["rms", 0.13], "polisher": ["rms", 0.15], "static": ["rms", 0.1], "jet": ["rms", 0.11], "pour": ["rms", 0.12], "door": ["rms", 0.15],
 	"fan": ["rms", 0.15], "blast": ["rms", 0.22], "rain": ["rms", 0.12], "rain_roof": ["rms", 0.14], "changer": ["rms", 0.12],
 	"dyno_roller": ["rms", 0.14], "compressor": ["rms", 0.16], "shaker": ["rms", 0.13], "hum_fluoro": ["rms", 0.05], "hum_led": ["rms", 0.035],
 	"tone_shed": ["rms", 0.04], "tone_sales": ["rms", 0.04], "amb_out": ["rms", 0.07], "amb_town": ["rms", 0.05], "birds": ["peak", 0.35],
-	"crickets": ["peak", 0.25],
+	"crickets": ["peak", 0.25], "rattle": ["rms", 0.12],
 	"screech": ["peak", 0.36], "starter": ["peak", 0.61], "chirp": ["peak", 1.0], "gear": ["peak", 0.64], "ping": ["peak", 0.44],
 	"beep": ["peak", 0.18], "levelup": ["peak", 0.37], "bell": ["peak", 0.37], "bell_chime": ["peak", 0.36],
 	"clink": ["peak", 0.6], "clunk": ["peak", 0.75], "pickup": ["peak", 0.45], "scrap": ["peak", 0.6], "switch": ["peak", 0.5],
 	"ting": ["peak", 0.45], "blast_scan": ["peak", 0.4], "step": ["peak", 0.6], "door_start": ["peak", 0.6], "door_stop": ["peak", 0.6],
-	"grinder_up": ["peak", 0.6], "grinder_down": ["peak", 0.55], "jet_on": ["peak", 0.6], "jet_off": ["peak", 0.55],
+	"grinder_up": ["peak", 0.6], "grinder_down": ["peak", 0.55], "jet_on": ["peak", 0.4], "jet_off": ["peak", 0.36],
 	"gun_on": ["peak", 0.4], "gun_off": ["peak", 0.4], "pump_on": ["peak", 0.5], "pump_off": ["peak", 0.45],
 	"blast_on": ["peak", 0.6], "blast_off": ["peak", 0.6], "comp_on": ["peak", 0.65], "comp_off": ["peak", 0.65],
 	"bead_pop": ["peak", 0.8], "slide_open": ["peak", 0.45], "slide_close": ["peak", 0.45], "slide_shut": ["peak", 0.5],
@@ -76,7 +76,7 @@ static func all_sounds() -> Array[String]:
 		"impact_metal_concrete", "impact_metal_wood", "impact_metal_steel", "grinder", "spray", "spray_gun", "washer", "jet", "polisher",
 		"pour", "changer", "door", "static", "fan", "blast", "dyno_roller", "compressor", "shaker", "scrap", "screech", "chirp", "starter",
 		"gear", "ping", "beep", "levelup", "ting", "bell", "bell_chime", "desk_bell", "sale_offer", "wash_ding", "wash_clean", "rain", "rain_roof",
-		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets", "amb_town"]
+		"tone_shed", "tone_sales", "hum_fluoro", "hum_led", "amb_out", "birds", "crickets", "amb_town", "rattle"]
 	for s in VARIANTS:
 		if not out.has(s):
 			out.append(s)
@@ -125,6 +125,7 @@ func _make(sound: String, v: int) -> PackedFloat32Array:
 		"dyno_roller": return _dyno_roller()
 		"compressor": return _compressor()
 		"shaker": return _shaker()
+		"rattle": return _rattle()
 		"hum_fluoro": return _hum(false)
 		"hum_led": return _hum(true)
 		"tone_shed": return _room_tone(false)
@@ -378,7 +379,7 @@ static func is_loop(sound: String) -> bool:
 
 const LOOP_SOUNDS: Array[String] = ["ratchet", "scrub", "grinder", "polisher", "spray", "spray_gun", "washer", "static", "jet", "pour",
 	"screech", "door", "fan", "blast", "rain", "rain_roof", "changer", "dyno_roller", "compressor", "shaker", "hum_fluoro", "hum_led",
-	"tone_shed", "tone_sales", "amb_out", "birds", "crickets", "amb_town"]
+	"tone_shed", "tone_sales", "amb_out", "birds", "crickets", "amb_town", "rattle"]
 
 
 # ---------------------------------------------------------------------------- hand tools
@@ -876,6 +877,53 @@ func _shaker() -> PackedFloat32Array:
 	return loopify(d, 0.1)
 
 
+## A part on the bike that's worked loose (a panel, a guard, the exhaust on its hanger)
+## rattling on the move: it lifts off its bracket and slaps back in irregular fits, each fit a
+## quick buzz of contacts a few milliseconds apart (thin pressed steel and its bolt chattering
+## in a slotted hole), with nothing ringing on for long. Two loose bits that don't keep time
+## with each other, so it never settles into a beat. Played louder and quicker with the revs
+## and the road (see Main._roadside_sounds).
+func _rattle() -> PackedFloat32Array:
+	var secs := 3.0
+	var d := buf(secs + 0.1)
+	var n := d.size()
+	# The panel: a thin plate's crowded, quickly damped modes; the bolt: a small bar's brighter ones.
+	var plate := []
+	var f0 := rf(520.0, 640.0)
+	for r in [1.0, 1.59, 2.14, 2.91, 3.6, 4.65, 5.9]:
+		plate.append([f0 * float(r) * rf(0.97, 1.03), rf(0.4, 1.0) / sqrt(float(r)), rf(110.0, 170.0) * pow(float(r), 0.5)])
+	var bolt := []
+	var f1 := rf(2300.0, 2900.0)
+	for r in [1.0, 2.756, 5.404]:
+		bolt.append([f1 * float(r) * rf(0.98, 1.02), rf(0.5, 1.0) / float(r), rf(160.0, 260.0) * float(r)])
+	for part in 2:
+		var modes: Array = plate if part == 0 else bolt
+		var t := rf(0.0, 0.05)
+		while t < secs:
+			# One fit: the part lifts and chatters down onto its bracket, a burst of contacts
+			# a few ms apart (the buzz), each a little different, dying away.
+			var contacts := rng.randi_range(3, 11) if part == 0 else rng.randi_range(2, 6)
+			var gap := rf(0.004, 0.009) if part == 0 else rf(0.007, 0.016)
+			var loud := rf(0.45, 1.0) * (1.0 if part == 0 else 0.55)
+			var tc := t
+			for c in contacts:
+				var at := int(tc * R)
+				var a := loud * rf(0.6, 1.0) * pow(0.82, c)
+				var m2 := []
+				for m in modes:
+					m2.append([float(m[0]) * rf(0.985, 1.015), float(m[1]) * rf(0.5, 1.0), float(m[2])])
+				hit(d, at, m2, rf(0.00006, 0.00018), a * 0.35, true)
+				# The scuff of metal on metal at each contact.
+				burst(d, at, 0.003, a * 0.35, 1400.0, 900.0, 9000.0, true)
+				tc += gap * rf(0.7, 1.35)
+			# Bumps don't come evenly: mostly quick fits, now and then a longer lull.
+			t = tc + (rf(0.012, 0.06) if rng.randf() < 0.78 else rf(0.08, 0.22))
+	# A dull thud through the frame under it all, at the bigger slaps.
+	for k2 in int(secs * 6.0):
+		hit(d, rng.randi_range(0, n - 1), [[rf(140.0, 190.0), 0.6, 40.0], [rf(310.0, 380.0), 0.3, 70.0]], 0.001, rf(0.05, 0.14), true)
+	return loopify(d, 0.1)
+
+
 ## The ceiling lights: a fluorescent's magnetic ballast humming at twice the mains frequency
 ## with a buzzy edge, or an LED driver's faint high whine.
 func _hum(led: bool) -> PackedFloat32Array:
@@ -967,8 +1015,9 @@ func _outdoors() -> PackedFloat32Array:
 
 
 ## The town's bustle out on the High Street: people talking as they pass (bursts of voice-like
-## formants in syllables and phrases, near and far), footsteps going by, a shop door's bell now
-## and then and the pigeons cooing.
+## formants in syllables and phrases, near and far), footsteps going by and the pigeons cooing.
+## Nothing that rings: a bell in a 12 s loop came round as the same ding-ding every 12 s for as
+## long as you stood out front.
 func _town() -> PackedFloat32Array:
 	var secs := 12.0
 	var d := buf(secs + 0.3)
@@ -994,11 +1043,6 @@ func _town() -> PackedFloat32Array:
 		for step in rng.randi_range(6, 12):
 			var loud := sin(PI * float(step) / 12.0) * 0.05
 			burst(d, int((t2 + step * pace) * R), 0.035, loud, 140.0, 900.0, 5000.0, true)
-	# A shop door's bell.
-	for b in 2:
-		var at2 := rng.randi_range(0, n - 1)
-		ring(d, at2, 2650.0, 0.02, 5.0, true)
-		ring(d, at2 + int(0.18 * R), 3120.0, 0.014, 6.0, true)
 	# Pigeons: roo-COO-coo, low and soft.
 	for c in 3:
 		var start := rng.randi_range(0, n - 1)

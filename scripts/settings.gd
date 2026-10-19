@@ -23,6 +23,7 @@ var camera_recentre := true
 var walk_third_person := false
 var high_quality := true
 var sfx_volume := 0.8
+var engine_volume := 0.8
 var radio_volume := 0.6
 var units := "metric"     # or "imperial"
 var day_night_cycle := true
@@ -162,6 +163,7 @@ func load_settings() -> void:
 		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
+		engine_volume = float(cfg.get_value("audio", "engines", engine_volume))
 		radio_volume = cfg.get_value("audio", "radio", radio_volume)
 		units = cfg.get_value("display", "units", units)
 		day_night_cycle = cfg.get_value("world", "day_night_cycle", day_night_cycle)
@@ -196,6 +198,7 @@ func save_settings() -> void:
 	cfg.set_value("walking", "third_person", walk_third_person)
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)
+	cfg.set_value("audio", "engines", engine_volume)
 	cfg.set_value("audio", "radio", radio_volume)
 	cfg.set_value("display", "units", units)
 	cfg.set_value("world", "day_night_cycle", day_night_cycle)

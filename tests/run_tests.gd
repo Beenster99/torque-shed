@@ -486,6 +486,13 @@ func _run_all() -> void:
 	_test_adv_magazine_issues()
 	await _test_adv_magazine_facts()
 	await _test_adv_magazine_ui()
+	print("Simon's v0.15.0 round: the sound effects slider, nothing dinging by the door, a loose part's rattle")
+	_test_audio_buses()
+	await _test_audio_sliders()
+	await _test_audio_routing()
+	_test_audio_washer_level()
+	await _test_audio_idle_quiet()
+	await _test_audio_rattle()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21772,3 +21779,33 @@ func _test_adv_magazine_facts() -> void:
 
 func _test_adv_magazine_ui() -> void:
 	await _adv_dest().test_magazine_ui()
+
+
+# ---------------------------------------------------------------------------- the mix (tests/audio_tests.gd)
+
+func _audio() -> RefCounted:
+	return load("res://tests/audio_tests.gd").new(self)
+
+
+func _test_audio_buses() -> void:
+	_audio().test_buses()
+
+
+func _test_audio_sliders() -> void:
+	await _audio().test_sliders()
+
+
+func _test_audio_routing() -> void:
+	await _audio().test_routing()
+
+
+func _test_audio_washer_level() -> void:
+	_audio().test_washer_level()
+
+
+func _test_audio_idle_quiet() -> void:
+	await _audio().test_idle_quiet()
+
+
+func _test_audio_rattle() -> void:
+	await _audio().test_rattle()

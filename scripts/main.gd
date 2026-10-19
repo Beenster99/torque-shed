@@ -52,7 +52,8 @@ var _fault_seen := {}      # the ridden bike's faults as last told to the rider 
 var _fault_wait := 0.0     # seconds before the next breakdown roll (one asked for is on its way)
 var _fault_rates := {}     # the ridden bike's chance of each breakdown a km, worked out now and then
 var _rates_timer := 0.0
-var _rattle_timer := 0.0   # the next rattle or chain slap, seconds
+var _rattle_timer := 0.0   # the next slap of a slack chain, seconds
+var _rattle: AudioStreamPlayer3D   # a loose part rattling, on the ridden bike (see _rattle_sound)
 var _tow_check := 0.0
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
@@ -962,6 +963,7 @@ func _physics_process_body(delta: float) -> void:
 		_puncture_rolls(km)
 		if trip.on_trip():
 			_roadside_step(km, delta)
+		_rattle_sound()
 		if fuel_stop:
 			var filled := fuel_stop.update(delta, active and Input.is_action_pressed("interact"))
 			if filled != "":
@@ -1157,20 +1159,41 @@ func _sync_faults() -> void:
 	hud.warn_lights = lights
 
 
-## What the faults sound like on the move: a loose part rattling, a slack chain slapping.
+## What a slack chain sounds like on the move: slapping now and then (a loose part's rattle
+## is _rattle_sound).
 func _roadside_sounds(delta: float) -> void:
 	_rattle_timer -= delta
-	if _rattle_timer > 0.0 or absf(bike.speed) < 3.0:
+	if _rattle_timer > 0.0 or absf(bike.speed) < 3.0 or not _fault_seen.has("chain_slack"):
 		return
-	var f := bike.faults
-	var slack := _fault_seen.has("chain_slack")
-	if str(f.get("rattle", "")) != "" or slack:
-		var v := clampf(absf(bike.speed) / 25.0, 0.0, 1.0)
-		if slack and (randf() < 0.5 or str(f.get("rattle", "")) == ""):
-			Sfx.play_at("clunk", bike.global_transform * Vector3(0.0, 0.3, 0.5), lerpf(-14.0, -4.0, v))
-		else:
-			Sfx.play_at("clink", bike.global_transform * Vector3(0.0, 0.6, 0.0), lerpf(-16.0, -6.0, v))
-		_rattle_timer = randf_range(0.12, 0.45) / maxf(v, 0.3)
+	var v := clampf(absf(bike.speed) / 25.0, 0.0, 1.0)
+	Sfx.play_at("clunk", bike.global_transform * Vector3(0.0, 0.3, 0.5), lerpf(-14.0, -4.0, v))
+	_rattle_timer = randf_range(0.24, 0.9) / maxf(v, 0.3)
+
+
+## A part that's worked loose (the rattle fault, see Roadside) rattling as you ride: a mechanical
+## buzz from where it sits on the bike, harder and quicker with the revs (the engine shaking it)
+## and the road (rough ground bouncing it), quiet ticking over at a standstill.
+func _rattle_sound() -> void:
+	var slot := str(bike.faults.get("rattle", "")) if bike else ""
+	if slot == "" or (not bike.engine_on and absf(bike.speed) < 1.0):
+		if _rattle and is_instance_valid(_rattle):
+			Sfx.set_loop(_rattle, "")
+		return
+	if _rattle == null or not is_instance_valid(_rattle) or _rattle.get_parent() != bike:
+		_rattle = Sfx.make_loop_player(bike)
+		_rattle.name = "Rattle"
+	if str(_rattle.get_meta("slot", "")) != slot:
+		# From the loose part itself.
+		_rattle.set_meta("slot", slot)
+		var box := bike.model.slot_bounds(slot) if bike.model else AABB()
+		_rattle.position = bike.to_local(bike.model.to_global(box.get_center())) if box.size != Vector3.ZERO else Vector3(0.0, 0.6, 0.0)
+	var revs := clampf(inverse_lerp(bike.build.idle_rpm, bike.build.redline, bike.rpm), 0.0, 1.0) if bike.engine_on else 0.0
+	var rough := clampf((float(Roadside.SURFACE.get(bike.surface, 1.5)) - 1.0) / 1.6, 0.0, 1.0) * clampf(absf(bike.speed) / 12.0, 0.0, 1.0)
+	var shake := clampf(0.25 + 0.5 * revs + 0.5 * rough + 0.15 * clampf(absf(bike.speed) / 30.0, 0.0, 1.0), 0.0, 1.0)
+	Sfx.set_loop(_rattle, "rattle")
+	_rattle.set_meta("base_db", lerpf(-20.0, -3.0, shake))
+	_rattle.volume_db = float(_rattle.get_meta("base_db")) + Sfx.occlusion_db(_rattle.global_position)
+	_rattle.pitch_scale = lerpf(0.8, 1.25, 0.6 * revs + 0.4 * rough)
 
 
 ## On the tow strap: the towing bike's back is where the strap pulls to, and the bars follow it

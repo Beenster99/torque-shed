@@ -45,7 +45,7 @@ func _ready() -> void:
 	for k in POOL:
 		var p := AudioStreamPlayer3D.new()
 		p.name = "Engine%d" % k
-		p.bus = "SFX"
+		p.bus = "Engines"
 		p.unit_size = 7.0
 		p.max_distance = RANGE
 		p.attenuation_filter_cutoff_hz = 4500.0

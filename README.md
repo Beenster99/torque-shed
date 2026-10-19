@@ -279,7 +279,7 @@ The **whiteboard** on the front wall, left of the roller door, is for the crew's
 
 **Using a controller in menus**: the parts computer, the dyno desk and the Esc menu work with a pad. The d-pad or left stick moves between buttons, A presses (on the parts computer: A picks a kind, A picks a part, A again orders it), B goes back a step and then closes, and LB / RB go to the next aisle or tab.
 
-The **radio** on the shelf above the workbench streams internet radio stations (SomaFM and Radio Paradise). Everyone in the shed hears the same station; each player's PC streams it, so it needs an internet connection. The Esc menu has volume sliders for sound effects and the radio. Stations live in `data/radio.json`.
+The **radio** on the shelf above the workbench streams internet radio stations (SomaFM and Radio Paradise). Everyone in the shed hears the same station; each player's PC streams it, so it needs an internet connection. The Esc menu's Settings tab has volume sliders for sound effects (tools, the pressure washer, knocks, dings, horns, footsteps and the ambience), engines (yours, other riders', the traffic and the truck) and the radio, saved with your settings. Stations live in `data/radio.json`.
 
 ### The paint mixing bay
 
