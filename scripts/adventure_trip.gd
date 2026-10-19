@@ -98,6 +98,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if current == self:
 		current = null
+	AdventureMag.wait_all()   # the magazine's route facts still being worked out
 
 
 ## Whether you're out on an adventure now (its world loaded).

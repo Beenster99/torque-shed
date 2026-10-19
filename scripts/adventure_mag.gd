@@ -527,6 +527,13 @@ static func poll() -> void:
 			_results.mutex.unlock()
 
 
+## Waits for every route still being worked out (before the game closes).
+static func wait_all() -> void:
+	for key in _tasks.keys():
+		WorkerThreadPool.wait_for_task_completion(_tasks[key])
+	poll()
+
+
 ## Plans the route and counts what's on it (any thread).
 static func route_facts(seed: int, km: float, theme: String, dest: String) -> Dictionary:
 	var r := AdventureRoute.new()

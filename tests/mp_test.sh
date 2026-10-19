@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Starts a host and a client on this machine and checks each sees the other's bike move.
 # Then a second pair rides an adventure together (tests/mp_adventure.gd), a third breaks down
-# on one and fixes it at the roadside, then tows (tests/mp_wrench.gd), and a fourth eats, sits
-# and sleeps on one (tests/mp_needs.gd).
+# on one and fixes it at the roadside, then tows (tests/mp_wrench.gd), a fourth eats, sits
+# and sleeps on one (tests/mp_needs.gd), and a fifth starts one from the magazine and arrives at
+# its destination together (tests/mp_dest.gd).
 set -u
 cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
@@ -41,7 +42,16 @@ NCLIENT=$?
 wait $NHOST
 NHOSTRC=$?
 grep -h "MP needs" /tmp/torque_mp_needs_host.log /tmp/torque_mp_needs_client.log
-if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ]; then
+# The destination: the host starts one from the magazine, both arrive together, both get the photo.
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_dest.tscn -- --role=host > /tmp/torque_mp_dest_host.log 2>&1 &
+DHOST=$!
+sleep 4
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_dest.tscn -- --role=client > /tmp/torque_mp_dest_client.log 2>&1
+DCLIENT=$?
+wait $DHOST
+DHOSTRC=$?
+grep -h "MP dest" /tmp/torque_mp_dest_host.log /tmp/torque_mp_dest_client.log
+if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ] || [ $DHOSTRC -ne 0 ] || [ $DCLIENT -ne 0 ]; then
 	echo "Multiplayer test failed"
 	exit 1
 fi
