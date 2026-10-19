@@ -88,6 +88,7 @@ func plan(seed: int, km: float, theme_name := "varied", extra_sites: Array = [])
 	_make_noise(seed)
 	sites.clear()
 	_plan_fuel(rng)
+	AdventureStops.plan(self)
 	add_site("start", 48.0, 1, 0.0, "Start")
 	add_site("finish", length, 1, 0.0, "Destination")
 	for e in extra_sites:
