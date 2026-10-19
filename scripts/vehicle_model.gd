@@ -17,7 +17,7 @@ extends RefCounted
 ##
 ## Vehicle axes: forward -Z, up +Y, right +X, origin on the ground under the middle (as Car).
 
-const KINDS: Array[String] = ["hatchback", "saloon", "estate", "suv", "van", "lorry", "coach"]
+const KINDS: Array[String] = ["hatchback", "saloon", "estate", "suv", "van", "lorry", "coach", "police"]
 ## What each is, for the traffic: length, half width, height, wheel radius, the axles (z, the
 ## first steers), whether the back axle has twin tyres, and how many trims it comes in.
 const SPECS := {
@@ -28,6 +28,8 @@ const SPECS := {
 	"van": {"len": 5.34, "w": 1.0, "h": 2.3, "r": 0.34, "tw": 0.215, "axles": [-1.78, 1.62], "dual": false, "trims": 3},
 	"lorry": {"len": 8.6, "w": 1.25, "h": 3.8, "r": 0.5, "tw": 0.28, "axles": [-3.3, 2.2], "dual": true, "trims": 3},
 	"coach": {"len": 12.1, "w": 1.27, "h": 3.45, "r": 0.5, "tw": 0.3, "axles": [-3.45, 3.0], "dual": false, "trims": 3},
+	# The police's estate car (see _police): never in the ordinary traffic's mix.
+	"police": {"len": 4.74, "w": 0.9, "h": 1.62, "r": 0.32, "tw": 0.215, "axles": [-1.42, 1.4], "dual": false, "trims": 1},
 }
 ## Paint colours each kind comes in (main, and a second colour for liveries and two-tone).
 const CAR_PAINTS: Array[Color] = [Color(0.78, 0.79, 0.8), Color(0.08, 0.08, 0.09), Color(0.55, 0.05, 0.06),
@@ -46,6 +48,8 @@ const CH_LEFT := 3.0
 const CH_RIGHT := 4.0
 const CH_MARKER := 5.0      # side and roof markers, the bus's destination board, the dials
 const CH_OFF := 6.0         # reversing lamps and reflectors: never lit here
+const CH_BLUE_L := 7.0      # a police car's blue lights, the left-hand and right-hand banks
+const CH_BLUE_R := 8.0
 
 const LAMP_SHADER := """
 shader_type spatial;
@@ -53,6 +57,7 @@ shader_type spatial;
 // are lit through these, and each lens says which lamp it is in UV.x (VehicleModel.CH_*).
 instance uniform vec4 lamp_a = vec4(0.0);   // head, tail, brake, marker
 instance uniform vec2 lamp_ind = vec2(0.0); // left and right indicators
+instance uniform vec2 lamp_blue = vec2(0.0); // a police car's blue lights, left and right banks
 varying flat float ch;
 
 void vertex() {
@@ -68,6 +73,9 @@ void fragment() {
 	else if (ch < 3.5) { e = lamp_ind.x; }
 	else if (ch < 4.5) { e = lamp_ind.y; }
 	else if (ch < 5.5) { e = lamp_a.w; }
+	else if (ch < 6.5) { e = 0.0; }
+	else if (ch < 7.5) { e = lamp_blue.x; }
+	else if (ch < 8.5) { e = lamp_blue.y; }
 	ALBEDO = c * 0.5;
 	ROUGHNESS = 0.12;
 	METALLIC = 0.2;
@@ -94,6 +102,10 @@ const GREY := Color(0.42, 0.43, 0.45)
 const LENS_WHITE := Color(0.95, 0.95, 0.92)
 const LENS_RED := Color(0.85, 0.04, 0.03)
 const LENS_AMBER := Color(1.0, 0.55, 0.08)
+const LENS_BLUE := Color(0.12, 0.3, 1.0)
+## A police car's battenberg checks: high-visibility yellow and blue.
+const HIVIS := Color(0.86, 0.9, 0.06)
+const POLICE_BLUE := Color(0.04, 0.13, 0.55)
 
 ## The shared materials, the paint materials by colour, and the built meshes by "kind:trim".
 static var _mats := {}
@@ -205,6 +217,8 @@ static func material(key: String) -> Material:
 static func look_of(kind_name: String, seed_value: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value * 104729 + 7
+	if kind_name == "police":
+		return {"paint": Color(0.94, 0.94, 0.92), "paint2": POLICE_BLUE, "trim": 0}
 	var paints := CAR_PAINTS if kind_name in ["hatchback", "saloon", "estate", "suv"] else VAN_PAINTS
 	var paint: Color = paints[rng.randi() % paints.size()]
 	var second: Color = LIVERIES[rng.randi() % LIVERIES.size()]
@@ -612,6 +626,13 @@ func _build() -> void:
 			_lorry()
 		"coach":
 			_coach()
+		"police":
+			# An estate car underneath (plain trim, no roof rails), in its livery and kit.
+			kind = "estate"
+			trim = 1
+			_car()
+			kind = "police"
+			_police()
 	_shape_body()
 	if lo:
 		items.append_array(_wheels_baked())
@@ -622,7 +643,7 @@ func _build() -> void:
 const SHAPING := {
 	"hatchback": [0.13, 0.6, 0.09, 0.45, 0.045], "saloon": [0.13, 0.7, 0.08, 0.5, 0.045], "estate": [0.13, 0.7, 0.06, 0.45, 0.045],
 	"suv": [0.1, 0.6, 0.06, 0.45, 0.04], "van": [0.1, 0.6, 0.025, 0.3, 0.02], "lorry": [0.035, 0.4, 0.0, 0.3, 0.0],
-	"coach": [0.05, 0.6, 0.02, 0.4, 0.0],
+	"coach": [0.05, 0.6, 0.02, 0.4, 0.0], "police": [0.13, 0.7, 0.06, 0.45, 0.045],
 }
 
 
@@ -868,6 +889,55 @@ func _car() -> void:
 		var fin := _pts([[roof_to - 0.25, 0.0], [roof_to - 0.08, 0.06], [roof_to - 0.02, 0.06], [roof_to, 0.0]])
 		var ry := _gp(roof_to - 0.1, PI * 0.5, 0.006).y
 		_add(CarModel.prism(fin, -0.025, 0.025, 0.01), "paint", Color.WHITE, Transform3D(Basis(), Vector3(0.0, ry - 0.005, 0.0)))
+
+
+## A police estate's livery and kit over the estate car: battenberg checks of hi-vis yellow and
+## blue down both sides (two rows between the wheel arches, one fore and aft of them), a band of
+## them across the tailgate, the light bar on the roof (blue lamps either end, the left and right
+## banks flashing in turn, see TrafficVehicle.set_blues) and blue lamps in the grille and tailgate.
+func _police() -> void:
+	var w := float(s["w"])
+	var axles: Array = s["axles"]
+	var ar := float(s["r"]) + 0.06
+	var cell := 0.42
+	var low := Vector2(0.44, 0.68)
+	var high := Vector2(0.69, belt - 0.05)
+	var n := 0
+	var z := -2.02
+	while z + cell <= 2.14:
+		var zc := z + cell * 0.5
+		var between := zc - cell * 0.5 > float(axles[0]) + ar and zc + cell * 0.5 < float(axles[1]) - ar
+		for row in [high, low]:
+			if row == low and not between:
+				continue
+			var yellow := (n + (1 if row == low else 0)) % 2 == 0
+			_boxes(Vector3(0.006, row.y - row.x, cell), Vector3(w + 0.004, (row.x + row.y) * 0.5, zc), "trim", HIVIS if yellow else POLICE_BLUE)
+		n += 1
+		z += cell
+	# Across the tailgate under the rear window, between the tail lamps.
+	var tw := w - 0.32
+	var cols := 6
+	for k in cols:
+		var x0 := -tw + 2.0 * tw * k / cols
+		var x1 := x0 + 2.0 * tw / cols
+		var y := 0.62
+		_box(Vector3(x1 - x0, 0.12, 0.006), Vector3((x0 + x1) * 0.5, y, _face_z(y) + 0.008), "trim", HIVIS if k % 2 == 0 else POLICE_BLUE)
+	# The light bar, over the front seats, on two feet.
+	var bz := roof_from + 0.55
+	var top := _gp(bz, PI * 0.5).y
+	_box(Vector3(1.24, 0.05, 0.3), Vector3(0.0, top + 0.045, bz), "trim", BLACK)
+	_boxes(Vector3(0.05, 0.04, 0.2), Vector3(0.5, top + 0.01, bz), "trim", BLACK)
+	_box(Vector3(0.5, 0.08, 0.27), Vector3(0.36, top + 0.11, bz), "lamps", LENS_BLUE, Vector3.ZERO, CH_BLUE_R)
+	_box(Vector3(0.5, 0.08, 0.27), Vector3(-0.36, top + 0.11, bz), "lamps", LENS_BLUE, Vector3.ZERO, CH_BLUE_L)
+	_box(Vector3(0.2, 0.065, 0.25), Vector3(0.0, top + 0.1, bz), "lamps", LENS_WHITE, Vector3.ZERO, CH_OFF)
+	# Blue lamps in the grille and at the top of the tailgate.
+	_boxes(Vector3(0.13, 0.035, 0.02), Vector3(0.18, 0.69, -2.378), "lamps", LENS_BLUE, Vector3.ZERO, CH_BLUE_R, CH_BLUE_L)
+	_boxes(Vector3(0.12, 0.03, 0.02), Vector3(0.42, belt - 0.03, _face_z(belt - 0.03) + 0.012), "lamps", LENS_BLUE, Vector3.ZERO, CH_BLUE_R, CH_BLUE_L)
+
+
+## The estate's tailgate face at height `y` (its own outline, as _car draws it).
+func _face_z(y: float) -> float:
+	return _face([[-2.33, 0.3], [2.22, belt], [2.33, 0.96], [2.365, 0.8], [2.375, 0.6], [2.33, 0.3]], y, false)
 
 
 ## The panel van: a car-like nose and cab glass, then the tall load box, sliding side door, twin

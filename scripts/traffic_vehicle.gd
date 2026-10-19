@@ -20,6 +20,8 @@ const TRAITS := {
 	"van": {"pace": 0.95, "grip": 2.7, "brake": 2.8, "accel": 1.7, "town": 12, "open": 14},
 	"lorry": {"pace": 0.78, "grip": 2.0, "brake": 2.2, "accel": 0.9, "town": 5, "open": 11},
 	"coach": {"pace": 0.8, "grip": 2.0, "brake": 2.2, "accel": 1.0, "town": 11, "open": 7},
+	# Only ever put on the road on purpose (see AdventurePolice), never in the mix.
+	"police": {"pace": 1.0, "grip": 4.5, "brake": 6.0, "accel": 4.5, "town": 0, "open": 0},
 }
 ## Near model within this (m, times the draw distance setting); far mesh out to DRAW_RANGE.
 const LOD_NEAR := 45.0
@@ -34,6 +36,11 @@ const TAIL_NIGHT := 2.5
 const BRAKE_ON := 6.0
 const INDICATOR_ON := 5.0
 const BLINK := 0.7              # seconds an indicator's flash cycle takes
+## A police car's blue lamps at full flash (bright enough to see by day), and its beacon light's
+## reach and strength at night (a real light, so the road and hedges flash blue round it).
+const BLUE_ON := 16.0
+const BEACON_RANGE := 120.0
+const BEACON_ENERGY := 3.0
 
 var kind := ""
 var look := {}
@@ -45,6 +52,8 @@ var lod := -1
 ## What the lamps were last set to: (head, tail, brake, marker) and (left, right).
 var lamps := Vector4.ZERO
 var indicators := Vector2.ZERO
+## A police car's blue lamps: how bright the left and right banks are now (0 off).
+var blues := Vector2.ZERO
 var _model: Node3D
 var _near: Node3D
 var _body: MeshInstance3D
@@ -52,6 +61,7 @@ var _far: MeshInstance3D
 var _steered: Array[Node3D] = []    # the front wheels' holders, turned to steer
 var _spinning: Array[Node3D] = []   # every wheel node that turns as it rolls
 var _beam: SpotLight3D
+var _beacon: OmniLight3D           # a police car's blue light thrown round it at night
 var _roll := 0.0
 var _blink := 0.0
 
@@ -152,6 +162,17 @@ func setup(kind_name: String, seed_value: int) -> void:
 	_beam.set_meta("lighting_skip", true)
 	_beam.visible = false
 	_model.add_child(_beam)
+	if kind == "police":
+		_beacon = OmniLight3D.new()
+		_beacon.name = "Beacon"
+		_beacon.position = Vector3(0.0, height + 0.3, -0.6)
+		_beacon.omni_range = 16.0
+		_beacon.light_color = Color(0.2, 0.35, 1.0)
+		_beacon.shadow_enabled = false
+		_beacon.light_specular = 0.2
+		_beacon.set_meta("lighting_skip", true)
+		_beacon.visible = false
+		_model.add_child(_beacon)
 	_set_lod(1)
 
 
@@ -186,6 +207,21 @@ func drive(xf: Transform3D, v: float, steer: float, braking: bool, indicator: in
 	_beam.visible = night > 0.3 and lod == 0 and dist < BEAM_RANGE
 	if _beam.visible:
 		_beam.light_energy = 1.6 * night
+	if _beacon:
+		var flash_now := maxf(blues.x, blues.y) / BLUE_ON
+		_beacon.visible = night > 0.15 and flash_now > 0.05 and dist < BEACON_RANGE * scale
+		if _beacon.visible:
+			_beacon.light_energy = BEACON_ENERGY * night * flash_now
+			_beacon.position.x = 0.5 if blues.y > blues.x else -0.5
+
+
+## A police car's blue lamps: the left and right banks' glow (0 off, BLUE_ON flashing full).
+func set_blues(b: Vector2) -> void:
+	if b == blues:
+		return
+	blues = b
+	for mi in [_body, _far]:
+		(mi as MeshInstance3D).set_instance_shader_parameter("lamp_blue", b)
 
 
 ## Lights its lenses: (head, tail, brake, marker) and the (left, right) indicators' glow.
