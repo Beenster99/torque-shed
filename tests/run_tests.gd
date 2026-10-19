@@ -5088,6 +5088,7 @@ func _test_hints_name_no_keys() -> void:
 		"(?i)\\b(left|right|middle) mouse|mouse wheel|\\bscroll\\b|\\b(left|right) click\\b",
 		"\\b(Esc|Space|Shift|Ctrl|Backspace|D-pad|RT|LT|LB|RB|F[1-9]|F1[0-2]|WASD|W A S D)\\b"]:
 		bad.append(RegEx.create_from_string(p))
+	var tokens := RegEx.create_from_string("\\{\\w+\\}")
 	var found := []
 	var dir := DirAccess.open("res://scripts")
 	for file in dir.get_files():
@@ -5099,7 +5100,8 @@ func _test_hints_name_no_keys() -> void:
 			if line.strip_edges().begins_with("#") or line.contains("hint-ok"):
 				continue
 			for m in strings.search_all(line):
-				var s := m.get_string(1)
+				# A {token} is filled in from the bindings, so it's not a key named outright.
+				var s := tokens.sub(m.get_string(1), "", true)
 				if bad.any(func(r: RegEx): return r.search(s) != null):
 					found.append("%s:%d %s" % [file, n, s.left(60)])
 	check(found.is_empty(), "no hint names a key outright (%d found) %s" % [found.size(), str(found.slice(0, 6))])

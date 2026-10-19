@@ -415,13 +415,17 @@ func test_lights_cycle() -> void:
 	await _frames(2)
 	check(sig != null and (sig.heads as Array).size() >= 2 + (js["arms"] as Array).size(), "the lights stand at the junction: %d heads" % (sig.heads.size() if sig else 0))
 	if sig:
+		# Red and amber together is two lamps on a head; every other state is one.
 		var lit := 0
+		var want := 0
 		for h in sig.heads:
+			var state: int = sig.shown().x if h["role"] == "main" else sig.shown().y
+			want += 2 if state == AdventureJunctions.RED_AMBER_ON else 1
 			for k in 3:
 				var m: StandardMaterial3D = h["lamps"][k].material_override
 				if m.emission_enabled and m.emission_energy_multiplier > 0.5:
 					lit += 1
-		check(lit == sig.heads.size(), "one lamp lit on each head (%d of %d)" % [lit, sig.heads.size()])
+		check(lit == want, "the lamps lit for each head's state (%d of %d)" % [lit, want])
 	node.queue_free()
 	# The host's clock rides on the end of the traffic it sends; the crew's lights follow it.
 	AdventureJunctions.clock = 10.0
