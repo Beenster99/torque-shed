@@ -59,6 +59,7 @@ const LEVER_SLOTS: Array[String] = ["handlebars", "front_master"]
 const PUSH_SPEED := 1.6
 const STRAP := 4.0
 const TOW_REACH := 15.0
+const TOW_STOPPED := 2.0   # m/s: slower than this counts as stopped when asking for a tow
 const STOP_REACH := 30.0
 
 ## What each fault is called, how it shows itself, a hint, what it takes to fix (toolbox kit)
@@ -284,6 +285,12 @@ static func uses(kind: String) -> Array:
 
 
 ## Whether a fault stops the bike: it won't go under its own power.
+## Whether the bike's in a state to want a tow: dead, out of fuel (`dry`, the rider's own tank
+## reading) or carrying a roadside fault.
+static func needs_tow(bike_id: int, dry := false) -> bool:
+	return dry or dead(bike_id) or not active(bike_id).is_empty()
+
+
 static func dead(bike_id: int) -> bool:
 	var f := faults_of(bike_id)
 	return f.get("chain_snap", false) or str(f.get("fuse", "")) == "ignition"
@@ -511,6 +518,8 @@ static func check(peer: int, action: Dictionary) -> String:
 			var towed := Shed.riding(peer)
 			if not Adventure.active() or towed == 0:
 				return "Get on your bike first, then a mate can tow you."
+			if not needs_tow(towed, bool(action.get("dry", false))):
+				return "Your bike runs fine: no tow needed."
 			var by := int(action.get("by", 0))
 			var theirs := Shed.riding(by)
 			if by == peer or theirs == 0:

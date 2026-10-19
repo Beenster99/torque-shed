@@ -157,7 +157,8 @@ func _client_tow(trip: AdventureTrip) -> bool:
 	var host_peer := 1
 	var near := await _until(func():
 		var rb := _remote_bike()
-		return rb != null and main.bike != null and rb.global_position.distance_to(main.bike.global_position) < Roadside.TOW_REACH, 30.0)
+		return rb != null and main.bike != null and rb.global_position.distance_to(main.bike.global_position) < Roadside.TOW_REACH \
+			and absf(main.bike.speed) < Roadside.TOW_STOPPED, 30.0)
 	main._tow_button()
 	var tied := await _until(func(): return int(Shed.bikes[bike].get("tow", 0)) == host_peer, 10.0)
 	var from := trip.world.distance_of(main.bike.global_position, "own")
