@@ -43,7 +43,39 @@ const MAX_HEADING := deg_to_rad(80.0)
 ## Road beyond the destination, so the finish isn't the edge of the world.
 const RUN_OUT := 480.0
 const KINDS: Array[String] = ["straight", "sweeping", "curvy", "very_curvy"]
-const KIND_NAMES := {"straight": "Straight", "sweeping": "Sweeping bends", "curvy": "Curvy", "very_curvy": "Very curvy"}
+const KIND_NAMES := {"straight": "Straight", "sweeping": "Sweeping bends", "curvy": "Curvy", "very_curvy": "Very curvy",
+	"switchback": "Switchback hairpins"}
+## The grade (rise per metre) is steered towards what the stretch wants by at most this much a
+## knot on a long climb, and PITCH_RATE on a short steep pitch, a crest or a dip (a vertical
+## curve of 1.6 km: light over the top at speed, never airborne); and never past MAX_GRADE.
+const GRADE_RATE := 0.0012
+const PITCH_RATE := 0.0025
+const MAX_GRADE := 0.155
+## How long a short steep pitch lasts (m, at its steepest), and the rollers' waves: their length
+## (m) and the steepest each may be (no tighter than a 1.2 km curve over the crest).
+const PITCH_LEN := [70.0, 300.0]
+const ROLL_WAVE := [260.0, 560.0]
+const ROLL_R := 1200.0
+## A stack of switchback hairpins (a theme's "switchbacks"): legs this long (m) across the
+## mountainside at this heading off the way on (degrees either side), hairpins of this radius
+## (m), climbing (or dropping) at this grade; the turns onto the first leg and off the last.
+const SB_LEG := [90.0, 190.0]
+const SB_HEADING := [70.0, 77.0]
+const SB_RADIUS := [12.0, 17.0]
+const SB_GRADE := [0.075, 0.1]
+const SB_TURN_R := 70.0
+## Tunnels (a theme's "tunnels"): kept this gentle (1/m of bend at most) and level-ish (grade),
+## clear of any other stretch of road by this far (m), with this much rock over the roof at the
+## portals (m above the road), the hill over it rising this much a metre in from them.
+const TUNNEL_BEND := 1.0 / 240.0
+const TUNNEL_GRADE := 0.04
+const TUNNEL_CLEAR := 110.0
+const TUNNEL_COVER := 9.0
+const TUNNEL_RISE := 0.5
+## Knots either side of a tunnel whose land climbs to its portals (the cutting), and either side
+## of a switchback stack whose land eases onto its mountainside.
+const TUNNEL_APPROACH := 25
+const SLOPE_MARGIN := 50
 ## Road widths (kerb to kerb, metres): a wide two-lane road down to a single track.
 const WIDTHS := {"two_lane": 7.4, "road": 6.0, "narrow": 4.6, "single": 3.3}
 ## The bends of each kind of section: radius (m), arc (degrees), clothoid length in and out (m),
@@ -91,7 +123,7 @@ const WAY_PLANS := {
 const PASS_NAMES: Array[String] = ["Hollow", "Raven", "Kestrel", "Windy Gap", "Black Crag", "Eagle", "High Moor", "Stag", "Falcon", "Cloud"]
 const TRACK_NAMES: Array[String] = ["Quarry", "Forest", "Drovers'", "Old Mine", "Shepherds'", "Ridge", "Peat", "Miners'", "Fell", "Long Lane"]
 ## Rough average speeds for how long each way takes (km/h): by its bends, times a surface factor.
-const PACE := {"straight": 90.0, "sweeping": 78.0, "curvy": 58.0, "very_curvy": 40.0}
+const PACE := {"straight": 90.0, "sweeping": 78.0, "curvy": 58.0, "very_curvy": 40.0, "switchback": 30.0}
 const PACE_SURF := {"tarmac": 1.0, "gravel": 0.68, "sand": 0.5, "snow": 0.5}
 ## Where the land under a coastal sea levels out (m; the sea itself is AdventureTheme.SEA_Y).
 const SEA_BED := AdventureTheme.SEA_Y - 7.0
@@ -161,6 +193,20 @@ var sea := false
 var snow_line := INF
 ## The theme's colours: {"land", "patch", "verge", "road"} -> {surface: Color} (see AdventureSurface).
 var look := {}
+## Tunnels, on the default path: [{k0, k1 (its first and last knots), id}] in order; and those on
+## the path as chosen now, [{s0, s1, id}] (see _assemble).
+var tunnels: Array = []
+var tunnels_on: Array = []
+## The mountainsides the switchback stacks climb: [{k0, k1 (default path knots), cx, cz, a, b, c}],
+## each a plane through the hairpins (height a + b (x - cx) + c (z - cz)) the land lies along.
+var slopes: Array = []
+## Each knot of the path's tunnel (an index into tunnels) and mountainside (into slopes, for knots
+## on or near a stack), or -1.
+var tun_k := PackedInt32Array()
+var slope_k := PackedInt32Array()
+## The theme's relief: {pitch: [odds, steepest from, to (%)], rollers: [odds, grade from, to (%)],
+## switchbacks: [odds, legs from, to], tunnels: [first (m), every from, to (m), long from, to (m)]}.
+var _relief := {}
 
 
 ## Plans the whole road for `seed` and `km`. `extra_sites` ([{kind, s, side, flat}]) are kept
@@ -188,10 +234,15 @@ func plan(seed: int, km: float, theme_name := "varied", extra_sites: Array = [])
 		add_site(str(e.get("kind", "site")), float(e.get("s", 0.0)), int(e.get("side", 1)), float(e.get("flat", 20.0)),
 			str(e.get("name", "")))
 	_plan_forks()
+	AdventureJunctions.plan(self)
 	_plan_surfaces(rng, n)
 	_plan_bends(rng, n)
+	AdventureJunctions.widen(self)
+	_integrate(n)
+	_plan_tunnels(n)
 	_plan_heights(rng, n)
 	_integrate(n)
+	_plan_slopes(n)
 	_snow_over_tops()
 	_stash_default()
 	for f in forks.size():
@@ -199,6 +250,7 @@ func plan(seed: int, km: float, theme_name := "varied", extra_sites: Array = [])
 	_build_static_grid()
 	_planned = true
 	_assemble()
+	AdventureJunctions.lay_out(self)
 
 
 ## Marks a site (a fuel station, a town, a stop, a fork) at `s` metres on `side` (1 the right,
@@ -352,11 +404,24 @@ func land_height(i: int, lat: float, x: float, z: float) -> float:
 	var e := width[i] * 0.5
 	var a := absf(lat)
 	var road_h := ph[i]
+	var tn := tun_k[i] if i < tun_k.size() else -1
+	if tn >= 0 and a >= e - 0.01 and in_tunnel(i):
+		# The hill over the tunnel, right from the road's edge (the tube's under it).
+		return maxf(natural_height(i, x, z, a), road_h + TUNNEL_COVER)
 	if a <= e + 0.9:
 		return road_h - (0.05 if a > e else 0.0)
+	var nat := natural_height(i, x, z, a)
 	var flat := _site_flat(i, signf(lat))
-	var t := smoothstep(e + 1.5 + flat, e + 14.0 + flat * 1.4, a)
-	var h := lerpf(road_h - 0.12, natural_height(i, x, z, a), t)
+	# Cut into the hill or built up over the dip: the steeper the difference, the further out the
+	# bank runs (no sheer walls), but steep rock right up to a tunnel's portals.
+	var widen := clampf(absf(nat - road_h) * 0.9, 0.0, 60.0)
+	var t := smoothstep(e + 1.5 + flat, e + 14.0 + flat * 1.4 + widen, a)
+	if tn >= 0:
+		var t1 := tunnels[tn] as Dictionary
+		var e_i := eq[i] if i < eq.size() else i
+		var d_out := float(maxi(int(t1["k0"]) - e_i, e_i - int(t1["k1"]))) * STEP
+		t = lerpf(smoothstep(e + 1.2, e + 5.0, a), t, smoothstep(10.0, float(TUNNEL_APPROACH) * STEP, d_out))
+	var h := lerpf(road_h - 0.12, nat, t)
 	if sea and lat < 0.0:
 		h = _coast(h, a, e + flat, x, z)
 	return minf(h, _other_road_limit(i, x, z))
@@ -383,7 +448,31 @@ func natural_height(i: int, x: float, z: float, a: float) -> float:
 	# Higher ground rising away from the road for the skyline, mountains in the snow.
 	var far := smoothstep(70.0, 420.0, a)
 	var lift := ({"snow": 160.0, "gravel": 90.0}.get(surf, 55.0) as float) * _lift
-	h += far * lift * (0.45 + 0.55 * (_noise_far.get_noise_2d(x, z) * 0.5 + 0.5))
+	var rise := far * lift * (0.45 + 0.55 * (_noise_far.get_noise_2d(x, z) * 0.5 + 0.5))
+	h += rise
+	var e := eq[i] if i < eq.size() else i
+	var sk := slope_k[i] if i < slope_k.size() else -1
+	if sk >= 0:
+		# By a switchback stack: the mountainside its hairpins climb, the high ground over it.
+		var sl: Dictionary = slopes[sk]
+		var d := float(maxi(maxi(int(sl["k0"]) - e, e - int(sl["k1"])), 0))
+		var plane := float(sl["a"]) + float(sl["b"]) * (x - float(sl["cx"])) + float(sl["c"]) * (z - float(sl["cz"])) \
+			+ _noise.get_noise_2d(x, z) * hills * 0.15 + _noise_fine.get_noise_2d(x, z) * 2.0 + rise * 0.5
+		h = lerpf(h, plane, 1.0 - smoothstep(0.0, float(SLOPE_MARGIN), d))
+	var tn := tun_k[i] if i < tun_k.size() else -1
+	if tn >= 0:
+		# Over a tunnel: the ridge it goes through, from the cutting up to its portals and on up
+		# over the roof, rising away to either side.
+		var t: Dictionary = tunnels[tn]
+		var k0 := int(t["k0"])
+		var k1 := int(t["k1"])
+		var top := 0.0
+		if e >= k0 and e <= k1:
+			top = minf(TUNNEL_COVER + mini(e - k0, k1 - e) * STEP * TUNNEL_RISE, 150.0)
+		else:
+			top = TUNNEL_COVER * (1.0 - smoothstep(0.0, float(TUNNEL_APPROACH) * STEP, float(maxi(k0 - e, e - k1)) * STEP))
+		var want := ph[i] + top + maxf(0.0, a - 8.0) * 0.25
+		h = lerpf(h, maxf(h, want), 1.0 - smoothstep(220.0, 600.0, a))
 	return h
 
 
@@ -408,12 +497,19 @@ func _other_road_limit(i: int, x: float, z: float) -> float:
 	return limit
 
 
-## How much further than usual the land stays flat beside knot `i` on `side`, for a site there.
-func _site_flat(i: int, side: float) -> float:
+## How much further than usual the land stays flat beside knot `i` on `side`, for a site there
+## (`junctions` false: leaving out the junctions, whose flat ground is the scenery's to stand on).
+func _site_flat(i: int, side: float, junctions := true) -> float:
 	var out := 0.0
-	for st in sites:
+	# The sites are in order along the road: from the first that could be near, found by halves.
+	var j := sites.bsearch_custom(i - SITE_KNOTS, func(st, v): return int(st["i"]) < int(v))
+	while j < sites.size() and int(sites[j]["i"]) < i + SITE_KNOTS:
+		var st: Dictionary = sites[j]
+		j += 1
 		var k := absi(int(st["i"]) - i)
-		if k < SITE_KNOTS and float(st["side"]) == side:
+		if not junctions and st["kind"] == AdventureJunctions.KIND:
+			continue
+		if k < SITE_KNOTS and (float(st["side"]) == side or st.get("both", false)):
 			out = maxf(out, float(st["flat"]) * (1.0 - smoothstep(SITE_KNOTS * 0.5, SITE_KNOTS, k)))
 	return out
 
@@ -535,6 +631,8 @@ func _theme_numbers() -> void:
 	_bends = AdventureTheme.get_value(theme, "bends", {})
 	_heights = {"h0": 140.0, "lo": 50.0, "hi": 950.0, "steep": 1.0, "up": 0.5}
 	_heights.merge(AdventureTheme.get_value(theme, "heights", {}), true)
+	_relief = {"pitch": [0.0, 0.0, 0.0], "rollers": [0.0, 0.0, 0.0], "switchbacks": [], "tunnels": []}
+	_relief.merge(AdventureTheme.get_value(theme, "relief", {}), true)
 	_hills = float(AdventureTheme.get_value(theme, "hills", 1.0))
 	_lift = float(AdventureTheme.get_value(theme, "lift", 1.0))
 	sea = bool(AdventureTheme.get_value(theme, "sea", false))
@@ -641,11 +739,31 @@ func _plan_bends(rng: RandomNumberGenerator, n: int) -> void:
 	targets.resize(n)
 	var st := {"i": 0, "h": 0.0}
 	var filled := 0   # knots up to here have their width target (a bend can run past its section's end)
+	var sb: Array = _relief["switchbacks"]
 	while st["i"] < n - 1:
 		var i0: int = st["i"]
 		var kind := "straight"
 		if i0 > 0:
 			kind = _weighted(rng, _kinds)
+		if i0 > 0 and sb.size() == 3 and rng.randf() < float(sb[0]):
+			# A stack of hairpins up (or down) a mountainside, where it fits clear of the sites.
+			var ops := _switchback_ops(rng, float(st["h"]), rng.randi_range(int(sb[1]), int(sb[2])))
+			var knots := _ops_knots(ops, float(st["h"]))
+			if i0 + knots < n - 200 and not _site_near(i0, knots + 30):
+				var swc := _width_for(rng, "very_curvy", surface_at_s(i0 * STEP))
+				sections.append({"s0": i0 * STEP, "s1": (i0 + knots) * STEP, "kind": "switchback", "width": swc})
+				for k in range(filled, mini(i0 + knots + 1, n)):
+					targets[k] = WIDTHS[swc]
+				filled = maxi(filled, mini(i0 + knots + 1, n))
+				for op in ops:
+					if op[0] == "straight":
+						for k in int(op[1]):
+							_put(st, 0.0)
+					else:
+						# Turning to a heading (not by an angle), so the legs stay true however the knots round.
+						var arc := absf(float(op[1]) - float(st["h"]))
+						_arc(st, signf(float(op[1]) - float(st["h"])), float(op[2]), arc, float(op[3]))
+				continue
 		var spec: Dictionary = _bend(kind)
 		var sec_len := rng.randf_range(spec["len"][0], spec["len"][1]) if i0 > 0 else 260.0
 		var end := mini(n - 1, i0 + int(sec_len / STEP))
@@ -690,12 +808,7 @@ func _plan_bends(rng: RandomNumberGenerator, n: int) -> void:
 				while st["i"] < mini(site_end, n - 1):
 					_put(st, 0.0)
 				continue
-			for k in tk:
-				_put(st, sign / r * (k + 0.5) / tk)
-			for k in ck:
-				_put(st, sign / r)
-			for k in tk:
-				_put(st, sign / r * (tk - k - 0.5) / tk)
+			_arc(st, sign, r, arc, t)
 	for k in range(filled, n):
 		targets[k] = targets[filled - 1] if filled > 0 else WIDTHS["road"]
 	# The width eases from one section's to the next.
@@ -721,6 +834,56 @@ func _put(st: Dictionary, k: float) -> void:
 	st["i"] = i + 1
 	if i + 1 < hd.size():
 		hd[i + 1] = st["h"]
+
+
+## A bend `sign` (+1 right) of radius `r` through `arc` radians, eased in and out over `t` metres
+## of clothoid.
+func _arc(st: Dictionary, sign: float, r: float, arc: float, t: float) -> void:
+	var tk := maxi(1, int(minf(t, arc * r * 0.5) / STEP))
+	var ck := maxi(0, int((arc * r - tk * STEP) / STEP))
+	for k in tk:
+		_put(st, sign / r * (k + 0.5) / tk)
+	for k in ck:
+		_put(st, sign / r)
+	for k in tk:
+		_put(st, sign / r * (tk - k - 0.5) / tk)
+
+
+static func _arc_knots(r: float, arc: float, t: float) -> int:
+	var tk := maxi(1, int(minf(t, arc * r * 0.5) / STEP))
+	return tk * 2 + maxi(0, int((arc * r - tk * STEP) / STEP))
+
+
+## A stack of `legs` switchback hairpins from heading `h0`: [["turn", heading, radius, clothoid],
+## ["straight", knots]...]: round onto the first leg across the slope (to the side it's already
+## heading), then each leg and a hairpin onto the next, the other way across, and off the last
+## leg back towards the way on. The legs never point further round than SB_HEADING, so the road
+## still makes way north and never crosses itself; each pair of legs is a hairpin's width and
+## more apart.
+func _switchback_ops(rng: RandomNumberGenerator, h0: float, legs: int) -> Array:
+	var head := deg_to_rad(rng.randf_range(SB_HEADING[0], SB_HEADING[1]))
+	var side := 1.0 if h0 >= 0.0 else -1.0
+	var ops := [["turn", side * head, SB_TURN_R, 24.0]]
+	for k in legs:
+		ops.append(["straight", int(rng.randf_range(SB_LEG[0], SB_LEG[1]) / STEP)])
+		if k < legs - 1:
+			side = -side
+			ops.append(["turn", side * head, rng.randf_range(SB_RADIUS[0], SB_RADIUS[1]), rng.randf_range(8.0, 12.0)])
+	ops.append(["turn", -side * deg_to_rad(rng.randf_range(0.0, 20.0)), SB_TURN_R * 1.3, 30.0])
+	return ops
+
+
+## How many knots a list of switchback ops (see _switchback_ops) runs, from heading `h0`.
+static func _ops_knots(ops: Array, h0 := 0.0) -> int:
+	var out := 0
+	var h := h0
+	for op in ops:
+		if op[0] == "straight":
+			out += int(op[1])
+		else:
+			out += _arc_knots(float(op[2]), absf(float(op[1]) - h), float(op[3]))
+			h = float(op[1])
+	return out
 
 
 ## Whether a site of `among` (each kept straight `keep` knots either side) is within the
@@ -779,6 +942,12 @@ static func _weighted(rng: RandomNumberGenerator, weights: Dictionary) -> String
 	return str(weights.keys()[-1])
 
 
+## The road's heights, a stretch at a time: long steady climbs and descents (steeper on the
+## twistier roads, and over the passes on a theme with a "wave"), short steep pitches (12-15% on
+## the hills and in the mountains) over crests and down into dips, rollers (a run of dips and
+## rises, the desert's way), switchback stacks climbing (or dropping) steadily all the way, level
+## through the sites and near level through tunnels; the grade eased from one to the next (see
+## GRADE_RATE, PITCH_RATE) and never past MAX_GRADE.
 func _plan_heights(rng: RandomNumberGenerator, n: int) -> void:
 	ph.resize(n)
 	var h := float(_heights["h0"])
@@ -787,33 +956,235 @@ func _plan_heights(rng: RandomNumberGenerator, n: int) -> void:
 	var top := float(_heights["hi"])
 	var bottom := float(_heights["lo"])
 	var wave: Array = _heights.get("wave", [])   # [m from top to top, valley, top]
+	var pitch: Array = _relief["pitch"]
+	var roll: Array = _relief["rollers"]
+	var level := _level_mask(n)
+	var gentle := _tunnel_mask(n)
 	var g := 0.0
 	var target := 0.0
+	var rate := GRADE_RATE
 	var seg_end := 0
+	var roll_i0 := -1   # rollers: where the waves start, how long each is (m) and their steepest
+	var roll_len := 1.0
+	var roll_g := 0.0
 	for i in n:
 		if i >= seg_end:
 			var kind := kind_at_s(i * STEP)
 			var steep := ({"straight": 3.0, "sweeping": 6.0, "curvy": 8.0, "very_curvy": 10.0}.get(kind, 5.0) as float) * steep_mult
+			# Which way it wants to go: towards the next top (or down into the valley) over passes.
+			var up_odds := up
 			if wave.size() == 3:
-				# Over the passes: climbing hard towards the next top, then down into the valley.
 				var want := lerpf(float(wave[1]), float(wave[2]), pow(sin(PI * i * STEP / float(wave[0])), 2.0))
-				var up_odds := 0.5 if absf(want - h) < 60.0 else (0.92 if want > h else 0.08)
-				target = rng.randf_range(0.55, 1.0) * steep / 100.0 * (1.0 if rng.randf() < up_odds else -1.0)
+				up_odds = 0.5 if absf(want - h) < 60.0 else (0.92 if want > h else 0.08)
+			rate = GRADE_RATE
+			roll_i0 = -1
+			var r := rng.randf()
+			if kind == "switchback":
+				# Up (or down) the mountainside, the same grade all the way to the top of the stack.
+				var climbs := rng.randf() < up_odds if wave.size() == 3 else h < (top + bottom) * 0.5
+				target = (1.0 if climbs else -1.0) * rng.randf_range(SB_GRADE[0], SB_GRADE[1])
+				rate = PITCH_RATE
+				seg_end = i + 1
+				for sec in sections:
+					if i * STEP >= float(sec["s0"]) and i * STEP < float(sec["s1"]):
+						seg_end = int(float(sec["s1"]) / STEP) + 1
+			elif r < float(pitch[0]):
+				# A short steep pitch: up and over a crest, or down into a dip.
+				target = rng.randf_range(float(pitch[1]), float(pitch[2])) / 100.0 * (1.0 if rng.randf() < up_odds else -1.0)
+				rate = PITCH_RATE
+				seg_end = i + int(absf(target - g) / PITCH_RATE) + int(rng.randf_range(PITCH_LEN[0], PITCH_LEN[1]) / STEP)
+			elif r < float(pitch[0]) + float(roll[0]):
+				# Rollers: a few dips and rises one after another.
+				roll_len = rng.randf_range(ROLL_WAVE[0], ROLL_WAVE[1])
+				roll_g = minf(rng.randf_range(float(roll[1]), float(roll[2])) / 100.0, roll_len / (TAU * ROLL_R))
+				roll_i0 = i
+				target = 0.0
+				rate = maxf(GRADE_RATE, roll_g * TAU / roll_len * STEP * 1.15)
+				seg_end = i + int(roll_len * rng.randi_range(2, 4) / STEP)
 			else:
-				target = rng.randf_range(0.25, 1.0) * steep / 100.0 * (1.0 if rng.randf() < up else -1.0)
-				if rng.randf() < 0.22:
-					target = 0.0
-			seg_end = i + int(rng.randf_range(300.0, 1400.0) / STEP)
+				if wave.size() == 3:
+					# Over the passes: climbing hard towards the next top, then down into the valley.
+					target = rng.randf_range(0.55, 1.0) * steep / 100.0 * (1.0 if rng.randf() < up_odds else -1.0)
+				else:
+					target = rng.randf_range(0.25, 1.0) * steep / 100.0 * (1.0 if rng.randf() < up else -1.0)
+					if rng.randf() < 0.22:
+						target = 0.0
+				seg_end = i + int(rng.randf_range(300.0, 1400.0) / STEP)
 		var aim := target
-		if h > top:
-			aim = -absf(target) - 0.02
-		elif h < bottom:
-			aim = absf(target) + 0.02
-		if _site_near(i - 30, 150):
+		var step_rate := rate
+		if roll_i0 >= 0:
+			aim = roll_g * sin(TAU * (i - roll_i0) * STEP / roll_len)
+		# Turning back in time at the top and bottom: where it would level off from here at this rate.
+		var ease_h := g * absf(g) / (2.0 * step_rate) * STEP
+		if h + maxf(ease_h, 0.0) > top:
+			aim = -absf(aim) - 0.02
+		elif h + minf(ease_h, 0.0) < bottom:
+			aim = absf(aim) + 0.02
+		if gentle[i] != 0 and absf(aim) > TUNNEL_GRADE:
+			aim = clampf(aim, -TUNNEL_GRADE, TUNNEL_GRADE)   # near level through a tunnel
+			step_rate = PITCH_RATE
+		if level[i] != 0:
 			aim = 0.0   # level for a site, from well before it
-		g = move_toward(g, aim, 0.0012)
+			step_rate = maxf(rate, GRADE_RATE * 1.5)
+		g = clampf(move_toward(g, aim, step_rate), -MAX_GRADE, MAX_GRADE)
 		ph[i] = h
 		h += g * STEP
+
+
+## Knots to keep level for the sites: from well before each (where the grade eases off) to a little
+## after; a crossing (AdventureJunctions) only needs a short level stretch either side.
+func _level_mask(n: int) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize(n)
+	for st in sites:
+		var si := int(round(float(st["s"]) / STEP))
+		var keep := int(st.get("keep", SITE_KNOTS))
+		var short: bool = st["kind"] == AdventureJunctions.KIND
+		for k in range(maxi(0, si - keep - (90 if short else 120)), mini(n, si + keep + (20 if short else 30) + 1)):
+			out[k] = 1
+	return out
+
+
+## Knots kept near level for a tunnel: through it, and a run-up to it so the grade is eased off
+## by the portal.
+func _tunnel_mask(n: int) -> PackedByteArray:
+	var out := PackedByteArray()
+	out.resize(n)
+	for t in tunnels:
+		for k in range(maxi(0, int(t["k0"]) - 70), mini(n, int(t["k1"]) + 12)):
+			out[k] = 1
+	return out
+
+
+## Where the tunnels go (a theme's relief "tunnels"): every so often, a stretch of the road gentle
+## enough to bore through (bends no tighter than TUNNEL_BEND), clear of the sites, the forks, the
+## switchback stacks and every other stretch of road (TUNNEL_CLEAR), so the hill over it is whole.
+## Its own rng: the rest of the road is planned the same with or without them.
+func _plan_tunnels(n: int) -> void:
+	tunnels = []
+	var spec: Array = _relief["tunnels"]
+	if spec.size() != 5:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed_value, "tunnels", theme])
+	var cells := {}
+	for i in range(0, n, 4):
+		var key := Vector2i(int(floor(px[i] / 128.0)), int(floor(pz[i] / 128.0)))
+		if not cells.has(key):
+			cells[key] = []
+		(cells[key] as Array).append(i)
+	var busy := PackedByteArray()   # the switchback stacks and the forks' ways
+	busy.resize(n)
+	for sec in sections:
+		if sec["kind"] == "switchback":
+			for k in range(maxi(0, int(float(sec["s0"]) / STEP) - 40), mini(n, int(float(sec["s1"]) / STEP) + 40)):
+				busy[k] = 1
+	for fk in forks:
+		for k in range(maxi(0, int(fk["i0"]) - 80), mini(n, int(fk["i1"]) + 80)):
+			busy[k] = 1
+	var s := float(spec[0])
+	while s < length - 2000.0:
+		var k := int(rng.randf_range(float(spec[3]), float(spec[4])) / STEP)
+		var i := int(s / STEP)
+		var stop := mini(n - k - 120, i + int(4000.0 / STEP))
+		var found := -1
+		while i < stop:
+			var skip := _tunnel_clash(i, k, cells, busy)
+			if skip < 0:
+				found = i
+				break
+			i = skip
+		if found >= 0:
+			tunnels.append({"k0": found, "k1": found + k, "id": tunnels.size()})
+			s = (found + k) * STEP + rng.randf_range(float(spec[1]), float(spec[2]))
+		else:
+			s += 4000.0
+
+
+## Whether a tunnel from knot `i`, `k` knots long, won't do there: the knot to try from next
+## (past what's in the way), or -1 when it's fine.
+func _tunnel_clash(i: int, k: int, cells: Dictionary, busy: PackedByteArray) -> int:
+	for j in range(i - 15, i + k + 16):
+		if busy[j] != 0 or absf(curv[j]) > TUNNEL_BEND:
+			return maxi(j + 16, i + 1)   # (its run-in clear of it)
+	if _site_near(i - 60, k + 120):
+		return maxi(_site_end(i - 60, k + 120) + 60, i + 1)
+	for j in range(i, i + k + 1, 4):
+		var cx := int(floor(px[j] / 128.0))
+		var cz := int(floor(pz[j] / 128.0))
+		for gz in range(cz - 1, cz + 2):
+			for gx in range(cx - 1, cx + 2):
+				for m in cells.get(Vector2i(gx, gz), []):
+					if absi(m - j) > 90 and Vector2(px[m] - px[j], pz[m] - pz[j]).length() < TUNNEL_CLEAR:
+						return j + 1
+	return -1
+
+
+## The mountainside under each switchback stack: the plane fitted (least squares) through its
+## knots, which the land between the hairpins lies along (see natural_height). And each knot's
+## tunnel and mountainside (tun_k, slope_k) on the default path.
+func _plan_slopes(n: int) -> void:
+	slopes = []
+	for sec in sections:
+		if sec["kind"] != "switchback":
+			continue
+		var k0 := int(float(sec["s0"]) / STEP)
+		var k1 := mini(n - 1, int(float(sec["s1"]) / STEP))
+		var cnt := float(k1 - k0 + 1)
+		var cx := 0.0
+		var cz := 0.0
+		var ch := 0.0
+		for k in range(k0, k1 + 1):
+			cx += px[k] / cnt
+			cz += pz[k] / cnt
+			ch += ph[k] / cnt
+		var sxx := 0.0
+		var sxz := 0.0
+		var szz := 0.0
+		var sxh := 0.0
+		var szh := 0.0
+		for k in range(k0, k1 + 1):
+			var dx := px[k] - cx
+			var dz := pz[k] - cz
+			var dh := ph[k] - ch
+			sxx += dx * dx
+			sxz += dx * dz
+			szz += dz * dz
+			sxh += dx * dh
+			szh += dz * dh
+		var det := sxx * szz - sxz * sxz
+		var b := (sxh * szz - szh * sxz) / det if absf(det) > 1e-6 else 0.0
+		var c := (szh * sxx - sxh * sxz) / det if absf(det) > 1e-6 else 0.0
+		slopes.append({"k0": k0, "k1": k1, "cx": cx, "cz": cz, "a": ch, "b": b, "c": c})
+	tun_k = PackedInt32Array()
+	tun_k.resize(n)
+	tun_k.fill(-1)
+	slope_k = PackedInt32Array()
+	slope_k.resize(n)
+	slope_k.fill(-1)
+	for t in tunnels:
+		for k in range(maxi(0, int(t["k0"]) - TUNNEL_APPROACH), mini(n, int(t["k1"]) + TUNNEL_APPROACH + 1)):
+			tun_k[k] = int(t["id"])
+	for q in slopes.size():
+		for k in range(maxi(0, int(slopes[q]["k0"]) - SLOPE_MARGIN), mini(n, int(slopes[q]["k1"]) + SLOPE_MARGIN + 1)):
+			slope_k[k] = q
+
+
+## Whether knot `i` of the path is inside a tunnel (between its portals).
+func in_tunnel(i: int) -> bool:
+	var tn := tun_k[i] if i >= 0 and i < tun_k.size() else -1
+	if tn < 0:
+		return false
+	var e := eq[i] if i < eq.size() else i
+	return e >= int(tunnels[tn]["k0"]) and e <= int(tunnels[tn]["k1"])
+
+
+## The tunnel at `s` along the path ({s0, s1, id}), or {} out in the open.
+func tunnel_at_s(s: float) -> Dictionary:
+	for t in tunnels_on:
+		if s >= float(t["s0"]) and s <= float(t["s1"]):
+			return t
+	return {}
 
 
 func _integrate(n: int) -> void:
@@ -828,7 +1199,12 @@ func _integrate(n: int) -> void:
 			var h := hd[i] + curv[i] * STEP * 0.5
 			x += sin(h) * STEP
 			z -= cos(h) * STEP
-	# The lie of the land: the road's height averaged over 200 m either way.
+	for st in sites:
+		st["i"] = clampi(int(round(float(st["s"]) / STEP)), 0, n - 1)
+	# The lie of the land: the road's height averaged over 200 m either way (once there are
+	# heights: the first pass, for the tunnels' places, is before them).
+	if ph.size() < n:
+		return
 	base.resize(n)
 	var sums := PackedFloat64Array()
 	sums.resize(n + 1)
@@ -838,8 +1214,6 @@ func _integrate(n: int) -> void:
 		var a := maxi(0, i - 50)
 		var b := mini(n, i + 51)
 		base[i] = (sums[b] - sums[a]) / float(b - a)
-	for st in sites:
-		st["i"] = clampi(int(round(float(st["s"]) / STEP)), 0, n - 1)
 
 
 func _build_grid() -> void:
@@ -918,6 +1292,7 @@ func _stash_default() -> void:
 	base = _leg_base(ph, cuts)
 	_def = {"px": px.duplicate(), "pz": pz.duplicate(), "ph": ph.duplicate(), "hd": hd.duplicate(), "curv": curv.duplicate(),
 		"width": width.duplicate(), "base": base.duplicate(), "sections": sections.duplicate(true),
+		"tun_k": tun_k.duplicate(), "slope_k": slope_k.duplicate(),
 		"chunk_surface": chunk_surface.duplicate(), "total": total, "n": px.size()}
 	_def_sites = sites.duplicate()
 	for st in _def_sites:
@@ -1215,18 +1590,27 @@ func _way_heights(way: Dictionary, rng: RandomNumberGenerator, h0: float, h1: fl
 	var gr := 0.0
 	var target := 0.0
 	var seg_end := 0
+	var rate := GRADE_RATE
+	var pitch: Array = _relief["pitch"]
 	for k in n:
 		if k >= seg_end:
 			var kind := _kind_in(way["sections"], k * STEP)
 			var steep := ({"straight": 3.0, "sweeping": 6.0, "curvy": 8.0, "very_curvy": 10.0}.get(kind, 5.0) as float) * float(_heights["steep"])
-			target = rng.randf_range(0.25, 1.0) * steep / 100.0 * (1.0 if rng.randf() < 0.5 else -1.0)
-			if rng.randf() < 0.22:
-				target = 0.0
-			seg_end = k + int(rng.randf_range(300.0, 1400.0) / STEP)
+			rate = GRADE_RATE
+			if rng.randf() < float(pitch[0]):
+				# A short steep pitch, as on the main road.
+				target = rng.randf_range(float(pitch[1]), float(pitch[2])) / 100.0 * (1.0 if rng.randf() < 0.5 else -1.0)
+				rate = PITCH_RATE
+				seg_end = k + int(absf(target - gr) / PITCH_RATE) + int(rng.randf_range(PITCH_LEN[0], PITCH_LEN[1]) / STEP)
+			else:
+				target = rng.randf_range(0.25, 1.0) * steep / 100.0 * (1.0 if rng.randf() < 0.5 else -1.0)
+				if rng.randf() < 0.22:
+					target = 0.0
+				seg_end = k + int(rng.randf_range(300.0, 1400.0) / STEP)
 		var aim := target
 		if k < JUNCTION_KNOTS + 10 or k > n - JUNCTION_KNOTS - 40 or _site_near(k - 30, 150, way["sites"]):
 			aim = 0.0
-		gr = move_toward(gr, aim, 0.0012)
+		gr = clampf(move_toward(gr, aim, rate), -MAX_GRADE, MAX_GRADE)
 		zh[k] = h
 		h += gr * STEP
 	var len_m := (n - 1) * STEP
@@ -1372,6 +1756,8 @@ func _assemble() -> void:
 	width = PackedFloat32Array()
 	base = PackedFloat32Array()
 	eq = PackedInt32Array()
+	tun_k = PackedInt32Array()
+	slope_k = PackedInt32Array()
 	sections = []
 	chunk_surface = []
 	_layout = []
@@ -1400,6 +1786,8 @@ func _assemble() -> void:
 			base.append_array((way["base"] as PackedFloat32Array).slice(1, n))
 			for k in range(1, n):
 				eq.append(_way_eq(fk, way, k))
+				tun_k.append(-1)
+				slope_k.append(-1)
 			for sec in way["sections"]:
 				sections.append({"s0": p0 + float(sec["s0"]), "s1": p0 + float(sec["s1"]), "kind": sec["kind"], "width": sec["width"]})
 			chunk_surface.append_array(way["chunk_surface"])
@@ -1418,6 +1806,16 @@ func _assemble() -> void:
 			e += 1
 		surfaces.append({"s0": c * CHUNK_LEN, "s1": e * CHUNK_LEN, "surface": chunk_surface[c]})
 		c = e
+	# The tunnels on the path as it runs now.
+	tunnels_on = []
+	var k := 0
+	while k < tun_k.size():
+		if in_tunnel(k):
+			var k0 := k
+			while k + 1 < tun_k.size() and in_tunnel(k + 1):
+				k += 1
+			tunnels_on.append({"s0": k0 * STEP, "s1": k * STEP, "id": tun_k[k0]})
+		k += 1
 	_build_grid()
 	_assemble_sites()
 
@@ -1438,6 +1836,8 @@ func _take_def(a: int, b: int) -> void:
 	base.append_array((d["base"] as PackedFloat32Array).slice(a, b + 1))
 	for j in range(a, b + 1):
 		eq.append(j)
+	tun_k.append_array((d["tun_k"] as PackedInt32Array).slice(a, b + 1))
+	slope_k.append_array((d["slope_k"] as PackedInt32Array).slice(a, b + 1))
 	var s0 := maxi(a - 1, 0) * STEP
 	var s1 := b * STEP
 	for sec in d["sections"]:

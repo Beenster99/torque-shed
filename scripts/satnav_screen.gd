@@ -30,7 +30,8 @@ const STOP_MARKS := {"food": "E", "rest": "P", "sleep": "Z", "fuel": "F"}
 ## {pts: PackedVector2Array, kind, hw}, route: PackedVector2Array, road: name of the road it's
 ## on, points: Array of {kind, name, distance (m), at: Vector2 or null}, stops: the next places
 ## to stop, Array of {kind, name, label, distance, at}, guide: {wrong_way, turn} (the way to go,
-## relative to the heading), friends: Array of {name, ahead (m), at}} or {} for no fix yet.
+## relative to the heading), friends: Array of {name, ahead (m), at}, junction: what to do at the
+## next one, {text, type, exit, distance}} or {} for no fix yet.
 var view := {}
 ## What the unit can show (BikeBuild.satnav_features): "map", "route", "fuel".
 var features: Array = ["map", "route", "fuel"]
@@ -148,6 +149,8 @@ func _draw() -> void:
 	var choice: Dictionary = view.get("choice", {})
 	if features.has("route") and not choice.is_empty():
 		_draw_choice(choice, bar_h + 4.0, fs, font)
+	elif features.has("route") and not (view.get("junction", {}) as Dictionary).is_empty():
+		_draw_junction(view["junction"], bar_h + 4.0, fs, font)
 	elif not stops.is_empty():
 			var lfs := maxi(8, fs - 2)
 			var line_h := lfs + 4.0
@@ -221,6 +224,42 @@ func _draw_guide(c: Vector2, rad: float, turn: float, col: Color) -> void:
 	var tip := c + d * rad * 0.75
 	draw_line(c - d * rad * 0.6, c + d * rad * 0.2, col, 3.0, true)
 	draw_colored_polygon(PackedVector2Array([tip, c + d * rad * 0.1 + side * rad * 0.42, c + d * rad * 0.1 - side * rad * 0.42]), col)
+
+
+## What to do at the junction coming up: a little sign (a roundabout with its exit marked, or
+## lights) and the words, with how far it is.
+func _draw_junction(j: Dictionary, y: float, fs: int, font: Font) -> void:
+	var lh := fs + 3.0
+	var box := Rect2(4.0, y, size.x - 8.0, lh * 2.0 + 8.0)
+	draw_rect(box, Color(0, 0, 0, 0.72))
+	var icon := Vector2(box.position.x + lh, box.position.y + box.size.y * 0.5)
+	var rad := lh * 0.62
+	match str(j.get("type", "")):
+		"roundabout", "mini":
+			draw_arc(icon, rad * 0.6, 0.0, TAU, 18, Color.WHITE, 2.0, true)
+			draw_line(icon + Vector2(0, rad * 0.6), icon + Vector2(0, rad * 1.3), Color.WHITE, 2.0, true)
+			# The way out: straight on over the top (the main road goes on).
+			draw_line(icon - Vector2(0, rad * 0.6), icon - Vector2(0, rad * 1.3), ROUTE, 3.0, true)
+		"lights":
+			for k in 3:
+				draw_circle(icon + Vector2(0, (k - 1) * rad * 0.62), rad * 0.26, [Color(0.95, 0.2, 0.15), Color(1.0, 0.7, 0.1), Color(0.2, 0.9, 0.35)][k])
+		_:
+			draw_line(icon + Vector2(0, rad * 1.2), icon - Vector2(0, rad * 1.2), Color.WHITE, 3.0, true)
+			draw_line(icon + Vector2(-rad, 0), icon + Vector2(rad, 0), Color.WHITE, 2.0, true)
+	var x := box.position.x + lh * 2.0
+	draw_string(font, Vector2(x, box.position.y + fs + 2.0), near_distance(float(j.get("distance", 0.0))), HORIZONTAL_ALIGNMENT_LEFT,
+		box.size.x - x, fs, ROUTE)
+	draw_string(font, Vector2(x, box.position.y + lh + fs + 3.0), str(j.get("text", "")), HORIZONTAL_ALIGNMENT_LEFT,
+		box.end.x - x - 4.0, maxi(8, fs - 1), Color.WHITE)
+
+
+## A short way off, as the sat nav says it: "250 m", "270 yd", "Now".
+static func near_distance(m: float) -> String:
+	if m < 15.0:
+		return "Now"
+	if Units.imperial():
+		return "%d yd" % (roundi(m * 1.0936 / 10.0) * 10)
+	return "%d m" % (roundi(m / 10.0) * 10)
 
 
 func _colour(p: Dictionary) -> Color:

@@ -27,6 +27,9 @@ extends Node
 ##       turn: where the way on is, relative to your heading (radians, + to the right)}, {} off it
 ##   satnav_friends(pos: Vector2) -> Array of the other riders: {name, ahead (m along the road,
 ##       negative behind), at (Vector2)}
+##   satnav_junction(pos: Vector2, fwd: Vector2) -> the next junction on the way where there's
+##       something to say, within JUNCTION_AHEAD: {text ("At the roundabout, take the 2nd exit"),
+##       type (AdventureJunctions.TYPES), exit (a roundabout's, else 0), distance}, {} for none
 ## and clears it (null) when it's done.
 
 ## Times a second the screen is redrawn.
@@ -36,6 +39,8 @@ const RADIUS := 320.0
 const AHEAD := 600.0
 ## How many of the stops ahead the list shows.
 const STOPS := 3
+## How far ahead (m) a junction's instruction comes up.
+const JUNCTION_AHEAD := 400.0
 
 ## The route provider (see the top): null for the town's own.
 static var route_provider: Object = null
@@ -161,6 +166,8 @@ static func view_for(source: Object, pos: Vector3, fwd3: Vector3, speed := 0.0) 
 		v["guide"] = source.satnav_guide(p, fwd)
 	if source.has_method("satnav_friends"):
 		v["friends"] = source.satnav_friends(p)
+	if source.has_method("satnav_junction"):
+		v["junction"] = source.satnav_junction(p, fwd)
 	return v
 
 
@@ -248,8 +255,9 @@ class TownRoute:
 
 
 ## The adventure road's route provider: the road round you from AdventureRoute (in the world's
-## floating frame), the way on to the destination whichever way you're facing (with a warning
-## when that's behind you), its fuel stations, the destination and the rest of the crew.
+## floating frame) with its side roads and roundabouts, the way on to the destination whichever
+## way you're facing (with a warning when that's behind you; round each roundabout's island, and
+## what to do at it coming up), its fuel stations, the destination and the rest of the crew.
 class AdventureNav:
 	extends RefCounted
 	## Metres between the points the map draws the road through.
@@ -331,6 +339,26 @@ class AdventureNav:
 				var q := world.to_local_pos(xs[k], 0.0, zs[k])
 				pts.append(Vector2(q.x, q.z))
 			out.append({"pts": pts, "kind": "other", "hw": 2.0})
+		# The junctions' side roads, and round each roundabout's island its ring.
+		var i0 := int(s0 / AdventureRoute.STEP)
+		for st in AdventureJunctions.near(r, i0, int(s1 / AdventureRoute.STEP)):
+			if not st.has("arm_geo"):
+				continue
+			var si: int = st["i"]
+			for k in (st["arms"] as Array).size():
+				var arm: Dictionary = st["arms"][k]
+				var pts := PackedVector2Array()
+				for q in st["arm_geo"][k]:
+					var lp := world.to_local_pos(r.px[si] + q.x, 0.0, r.pz[si] + q.z)
+					pts.append(Vector2(lp.x, lp.z))
+				out.append({"pts": pts, "kind": "road" if arm["surf"] == "tarmac" else "dirt", "hw": float(arm["w"]) * 0.5})
+			if st.has("rc"):
+				var c := world.to_local_pos(r.px[si], 0.0, r.pz[si])
+				var ring := PackedVector2Array()
+				var rr := float(st["rc"])
+				for k in 25:
+					ring.append(Vector2(c.x, c.z) + Vector2(cos(TAU * k / 24.0), sin(TAU * k / 24.0)) * rr)
+				out.append({"pts": ring, "kind": "road", "hw": float(st["ro"]) - rr})
 		return out
 
 	func satnav_route(pos: Vector2, fwd: Vector2, metres: float) -> PackedVector2Array:
@@ -343,11 +371,47 @@ class AdventureNav:
 		var s := float(hit["s"])
 		var end := clampf(s + metres, 0.0, minf(world.route.total, world.route.stream_end()))
 		out.append(pos)
+		var rounds := AdventureJunctions.near(world.route, int(s / AdventureRoute.STEP), int(end / AdventureRoute.STEP) + 8, 8) \
+			.filter(func(st): return st.has("rc"))
 		var at := s
 		while at < end:
-			at = minf(at + STEP, end)
-			out.append(_at(at))
+			at = minf(at + STEP * (0.25 if _round_near(rounds, at) else 1.0), end)
+			out.append(_on_way(at, rounds))
 		return out
+
+	func _round_near(rounds: Array, at: float) -> bool:
+		for st in rounds:
+			if absf(at - float(st["s"])) < float(st["rc"]) + 10.0:
+				return true
+		return false
+
+	## The way on at `s`: on the road's centre line, but round the left of a roundabout's island.
+	func _on_way(s: float, rounds: Array) -> Vector2:
+		var lat := 0.0
+		for st in rounds:
+			lat = minf(lat, -AdventureJunctions.swing(st, s - float(st["s"]), 0.0))
+		if lat == 0.0:
+			return _at(s)
+		var xz := world.route.xz_at(s, lat)
+		var p := world.to_local_pos(xz[0], 0.0, xz[1])
+		return Vector2(p.x, p.z)
+
+	## The next junction on the way with something to say (see AdventureJunctions.instruction),
+	## within JUNCTION_AHEAD, heading on; {} for none.
+	func satnav_junction(pos: Vector2, fwd: Vector2) -> Dictionary:
+		var hit := _where(pos)
+		if hit.is_empty() or _way(float(hit["s"]), fwd) < 0:
+			return {}
+		var s := float(hit["s"])
+		var i := int(s / AdventureRoute.STEP)
+		for st in AdventureJunctions.near(world.route, i, i + int(JUNCTION_AHEAD / AdventureRoute.STEP)):
+			var d := float(st["s"]) - s
+			var text := AdventureJunctions.instruction(st, 1)
+			if d < -2.0 or d > JUNCTION_AHEAD or text == "":
+				continue
+			return {"text": text, "type": str(st["type"]), "distance": maxf(d, 0.0),
+				"exit": AdventureJunctions.exit_number(st, 1) if str(st["type"]) == "roundabout" else 0}
+		return {}
 
 	func satnav_road_name(pos: Vector2) -> String:
 		var hit := _where(pos)

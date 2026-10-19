@@ -15,8 +15,13 @@ extends Node3D
 ## where the road isn't built (TrafficStream.s_max). With riders far apart, each group has
 ## traffic of its own (TrafficStream.foci).
 ##
+## At the junctions (AdventureJunctions) it stops for the lights and gives way at roundabouts,
+## and turns off down the side roads and comes out of them (see TrafficStream.junctions). The
+## lights all run off one clock (AdventureJunctions.clock), the host's.
+##
 ## Co-op: the host drives it and sends it to the crew a few times a second (Net.send_adv_traffic,
-## TrafficStream.pack: distances along the road, so each machine puts it in its own frame).
+## TrafficStream.pack: distances along the road, so each machine puts it in its own frame), with
+## the lights' clock on the end ([..., clock, CLOCK_TAG]).
 ##
 ## For the police (and anything else that drives in the traffic): AdventureTraffic.current.stream
 ## is the TrafficStream; see its spawn_at / slot / take / release / remove_id.
@@ -55,6 +60,8 @@ const PULL_OUT_WAIT := [1.5, 4.5]
 const SEND_EVERY := 0.2
 ## A bike hitting a vehicle faster than this comes off.
 const CRASH_SPEED := 4.0
+## Marks the lights' clock on the end of a traffic snapshot.
+const CLOCK_TAG := -55555.0
 
 var world: AdventureWorld
 var stream: TrafficStream
@@ -90,6 +97,8 @@ func _ready() -> void:
 	stream.host = host
 	stream.sample = sample
 	stream.curve = curve
+	stream.signal_state = func(jn: Dictionary) -> Vector2i: return AdventureJunctions.light_state(jn["site"], AdventureJunctions.clock)
+	stream.arm_at = arm_at
 	stream.spawn_near = SPAWN_NEAR
 	stream.spawn_far = SPAWN_FAR
 	stream.despawn = DESPAWN
@@ -130,6 +139,21 @@ func sample(s: float) -> Dictionary:
 func curve(s: float) -> float:
 	var c := world.route.curv
 	return c[clampi(int(round(s / AdventureRoute.STEP)), 0, c.size() - 1)]
+
+
+## Where junction `jn`'s side road `k` is `t` m out from its mouth (for the stream): {pos (local,
+## on its surface), fwd (unit, out along it)}.
+func arm_at(jn: Dictionary, k: int, t: float) -> Dictionary:
+	var r := world.route
+	var st: Dictionary = jn["site"]
+	var pts: PackedVector3Array = st["arm_geo"][k]
+	var si: int = st["i"]
+	var f := clampf(t / AdventureJunctions.ARM_STEP, 0.0, float(pts.size() - 1))
+	var i := mini(int(f), pts.size() - 2)
+	var p := pts[i].lerp(pts[i + 1], f - i)
+	var fwd := pts[i + 1] - pts[i]
+	fwd.y = 0.0
+	return {"pos": world.to_local_pos(r.px[si] + p.x, r.ph[si] + p.y + 0.06, r.pz[si] + p.z), "fwd": fwd.normalized()}
 
 
 ## How busy the road is at `s` (0 open road .. 1 a village) and its limit there (m/s).
@@ -179,6 +203,23 @@ func _tables() -> void:
 		open *= float(AdventureRoute.PACE_SURF.get(r.surface_at_s(s), 1.0))
 		_limit[b] = lerpf(open, minf(open, TOWN_LIMIT), clampf(_busy[b] * 1.6, 0.0, 1.0))
 	stream.bus_stops = _villages.map(func(v): return {"s": v[1], "dir": v[2]})
+	# The junctions, for stopping, giving way and turning (anything down a side road of the old
+	# list goes: its place in it is gone).
+	var js := []
+	for st in r.sites_of(AdventureJunctions.KIND):
+		if not st.has("arm_geo"):
+			continue
+		var jn := {"s": float(st["s"]), "stop": AdventureJunctions.stop_line(st), "lights": bool(st["lights"]),
+			"village": float(st.get("village", -1.0)) >= 0.0, "site": st,
+			"arms": (st["arms"] as Array).map(func(a): return {"side": int(a["side"]), "len": float(a["len"]), "w": float(a["w"])})}
+		if st.has("ro"):
+			jn["ro"] = float(st["ro"])
+			jn["rc"] = float(st["rc"])
+		js.append(jn)
+	for i in range(stream.vehicles.size() - 1, -1, -1):
+		if stream.vehicles[i].has("arm"):
+			stream._remove(i)
+	stream.junctions = js
 
 
 # ---------------------------------------------------------------------------- each tick
@@ -199,6 +240,7 @@ func _physics_process(delta: float) -> void:
 		if _town_timer <= 0.0:
 			_town_timer = 1.3
 			_pull_out()
+	AdventureJunctions.clock += delta
 	var st := Perf.t0()
 	stream.step(delta)
 	Perf.add("traffic", st)   # the driving and drawing, inside adv_traffic
@@ -206,7 +248,9 @@ func _physics_process(delta: float) -> void:
 		_send_timer -= delta
 		if _send_timer <= 0.0:
 			_send_timer = SEND_EVERY
-			Net.send_adv_traffic(stream.pack())
+			var pack := stream.pack()
+			pack.append_array([AdventureJunctions.clock, CLOCK_TAG])
+			Net.send_adv_traffic(pack)
 	Perf.add("adv_traffic", pt)
 
 
@@ -292,5 +336,12 @@ func _on_bike_hit(body: Node, b: Bike) -> void:
 
 
 func _on_net(state: PackedFloat32Array) -> void:
-	if not host:
-		stream.unpack(state)
+	if host:
+		return
+	if state.size() >= 2 and state[state.size() - 1] == CLOCK_TAG:
+		# The host's lights clock: taken as it is when it's well out, else eased onto.
+		var theirs := state[state.size() - 2]
+		var off := theirs - AdventureJunctions.clock
+		AdventureJunctions.clock += off if absf(off) > 1.0 else off * 0.3
+		state = state.slice(0, state.size() - 2)
+	stream.unpack(state)

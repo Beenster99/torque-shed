@@ -190,15 +190,15 @@ func test_friends() -> void:
 	check(trip.friends().is_empty() and trip.crew_text() == "", "riding alone, nobody to say")
 	# A mate along the road (a stand-in for the RemotePlayer: where they are and their name).
 	var mate := _Mate.new()
-	mate.at = w.transform_at(3250.0, 1.5).origin
+	mate.at = w.transform_at(3300.0, 1.5).origin
 	mate.player_name = "Dave"
 	main.remotes[77] = mate
 	Shed.crew[77] = {"name": "Dave"}
 	var f := trip.friends()
-	check(f.size() == 1 and absf(float(f[0]["ahead"]) - 1250.0) < 3.0, "Dave's 1250 m on along the road (%.0f)" % (float(f[0]["ahead"]) if f.size() else -1.0))
+	check(f.size() == 1 and absf(float(f[0]["ahead"]) - 1300.0) < 3.0, "Dave's 1300 m on along the road (%.0f)" % (float(f[0]["ahead"]) if f.size() else -1.0))
 	check(trip.crew_text() == "Dave 1.3 km ahead", "the HUD: %s" % trip.crew_text())
 	var v := Satnav.view_for(Satnav.AdventureNav.new(w), main.bike.global_position, -main.bike.global_transform.basis.z)
-	check((v["friends"] as Array).size() == 1 and str(v["friends"][0]["name"]) == "Dave" and absf(float(v["friends"][0]["ahead"]) - 1250.0) < 3.0,
+	check((v["friends"] as Array).size() == 1 and str(v["friends"][0]["name"]) == "Dave" and absf(float(v["friends"][0]["ahead"]) - 1300.0) < 3.0,
 		"and the sat nav has him")
 	await _ticks(40)
 	check(trip._crew.visible and trip._crew.text.begins_with("Dave 1.") and trip._crew.text.ends_with("km ahead") and not trip._wrong.visible, "on the HUD, top right, and no wrong-way warning (%s, %s, %s)" % [trip._crew.visible, trip._crew.text, trip._wrong.visible])

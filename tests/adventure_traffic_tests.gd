@@ -96,7 +96,8 @@ func test_density() -> void:
 		if d > best:
 			best = d
 			open_s = s
-	check(tr.busy_at(vs) > 0.99 and tr.busy_at(open_s) < 0.01 and absf(tr.limit_at(vs) - AdventureTraffic.TOWN_LIMIT) < 0.01 and tr.limit_at(open_s) > 15.0,
+	check(tr.busy_at(vs) > 0.99 and tr.busy_at(open_s) < 0.01 and tr.limit_at(vs) < AdventureTraffic.TOWN_LIMIT + 0.01 \
+			and tr.limit_at(vs) > AdventureTraffic.TOWN_LIMIT * 0.75 and tr.limit_at(open_s) > 15.0,
 		"the road knows a village from the open road (busy %.2f, %.0f mph through %s; %.2f, %.0f mph at %.1f km)" % [tr.busy_at(vs),
 		tr.limit_at(vs) * 2.237, str(found[1]["name"]), tr.busy_at(open_s), tr.limit_at(open_s) * 2.237, open_s / 1000.0])
 	var counts := {}
@@ -163,8 +164,9 @@ func test_climb() -> void:
 		stream.step(0.05)
 	var lv := float(lorry["v"])
 	var cv := float(car["v"])
-	check(lv < 9.5 and lv > 4.0 and cv > 20.0 and float(down["v"]) > 18.0,
-		"up a 9%% hill a lorry crawls at %.0f mph while a car keeps to %.0f (and one coming down %.0f)" % [lv * 2.237, cv * 2.237, float(down["v"]) * 2.237])
+	# Coming down it a lorry holds back in a low gear, but keeps going.
+	check(lv < 9.5 and lv > 4.0 and cv > 20.0 and float(down["v"]) > 7.0 and float(down["v"]) < 15.5,
+		"up a 9%% hill a lorry crawls at %.0f mph while a car keeps to %.0f (and one coming down holds back to %.0f)" % [lv * 2.237, cv * 2.237, float(down["v"]) * 2.237])
 	stream.queue_free()
 	# On a real road: the stretch it climbs most steeply.
 	var spot := {}

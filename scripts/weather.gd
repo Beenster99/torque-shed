@@ -233,13 +233,15 @@ func _mix() -> void:
 func _apply_effects(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() and get_viewport() else null
 	indoors = cam != null and Workshop.room_at(cam.global_position) != ""
+	# In an adventure's tunnel no rain falls round you and the outside's rain is heard faintly.
+	var sheltered := Daylight.shelter
 	if _rain_mat:
-		_rain_mesh.visible = rain > 0.01
+		_rain_mesh.visible = rain > 0.01 and sheltered < 0.6
 		_rain_mat.set_shader_parameter("amount", rain)
 		var night := Daylight.darkness()
 		_rain_mat.set_shader_parameter("tint", Color(0.75, 0.8, 0.88).lerp(Color(0.22, 0.25, 0.32), night))
 	# Rain heard outside, or drumming on the roof from indoors; it eases across at the door.
-	var out_target := rain * (0.0 if indoors else 1.0)
+	var out_target := rain * (0.0 if indoors else 1.0 - 0.85 * sheltered)
 	var roof_target := rain * (1.0 if indoors else 0.0)
 	_fade(_outside, out_target, delta, 0.0)
 	_fade(_roof, roof_target, delta, 3.0)
@@ -285,9 +287,9 @@ func _soak() -> void:
 		mat.roughness = lerpf(rough, lerpf(rough, 0.18, shine), wet)
 
 
-## Whether rain is falling where `at` is (outside, under the open sky).
+## Whether rain is falling where `at` is (outside, under the open sky: not in a tunnel).
 static func raining_at(at: Vector3) -> bool:
-	return rain_level() > 0.05 and Workshop.room_at(at) == ""
+	return rain_level() > 0.05 and Workshop.room_at(at) == "" and AdventureWorld.shelter_at(at) < 0.5
 
 
 ## The rain: thin streaks drawn from one MultiMesh, falling in a block that stays round the

@@ -104,7 +104,8 @@ func test_spacing() -> void:
 					bad.append("%s mix %s" % [tag, str(mix.keys())])
 			for st in all:
 				for other in r.sites:
-					if other != st and str(other["kind"]) != AdventureStops.ROW and absf(float(other["s"]) - float(st["s"])) < AdventureStops.CLEAR - 1.0:
+					# (The junctions keep their own, shorter, distance: tests/adventure_roads_tests.gd.)
+					if other != st and not str(other["kind"]) in [AdventureStops.ROW, AdventureJunctions.KIND] and absf(float(other["s"]) - float(st["s"])) < AdventureStops.CLEAR - 1.0:
 						bad.append("%s %s at %.0f is on top of %s" % [tag, st["kind"], float(st["s"]), other["kind"]])
 	check(bad.is_empty(), "stops are spaced right on every seed: food 15-25 km, pull-ins 5-10 km, beds 40-60 km %s" % str(bad))
 	check(kinds.size() == AdventureStops.KINDS.size(), "every kind of stop turns up somewhere %s" % str(kinds.keys()))

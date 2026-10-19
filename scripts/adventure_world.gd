@@ -35,6 +35,8 @@ const COMMITS_PER_FRAME := 1
 const NET_TAG := -77777.0
 ## The sea's colour on a coastal ride (the far ground there: see _follow_horizon).
 const SEA_COLOR := Color(0.09, 0.27, 0.36)
+## Inside a tunnel the sky is shut out this far from a portal (m), easing in from the mouth.
+const SHELTER_IN := 30.0
 
 ## Emitted after the origin moves: everything placed in the local frame moves by -delta.
 signal origin_shifted(delta: Vector3)
@@ -76,6 +78,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	Daylight.shelter = 0.0
 	for c in _tasks:
 		WorkerThreadPool.wait_for_task_completion(_tasks[c])
 	_tasks.clear()
@@ -97,6 +100,7 @@ func setup(seed: int, km: float, theme := "varied", dest := "") -> void:
 		"start": func(_site, xf, info): return AdventureProps.banner("START", xf, float(info["width"]), Color(0.1, 0.35, 0.7)),
 		"finish": func(_site, xf, info): return AdventureProps.banner("DESTINATION", xf, float(info["width"]), Color(0.75, 0.2, 0.1)),
 		"fork": func(site, xf, _info): return AdventureForks.signpost(site, xf, route),
+		AdventureJunctions.KIND: func(site, xf, _info): return AdventureJunctions.build(route, site, xf),
 	}
 	AdventureStops.register(self)
 	if dest != "":
@@ -230,7 +234,34 @@ func surface_local(p: Vector3) -> String:
 	var pad := AdventureStops.pad_surface(route, s, float(hit["lat"]))
 	if pad != "":
 		return pad
+	var xz := route_xz(p)
+	var arm := AdventureJunctions.arm_surface(route, int(hit["i"]), xz[0], xz[1])
+	if arm != "":
+		return arm
 	return str(AdventureSurface.LAND.get(surf, "grass"))
+
+
+## How far local `p` is under a tunnel's roof: 0 out under the sky, 1 well inside (easing in over
+## SHELTER_IN from each portal), for the daylight, the rain and your eyes.
+func shelter_local(p: Vector3) -> float:
+	if route == null or route.tunnels_on.is_empty():
+		return 0.0
+	var hit := locate_local(p, "shelter")
+	if hit.is_empty():
+		return 0.0
+	var s := float(hit["s"])
+	var t := route.tunnel_at_s(s)
+	if t.is_empty() or absf(float(hit["lat"])) > route.width_at_s(s) * 0.5 + AdventureTunnels.SIDE + 1.0 \
+			or p.y > route.height_at_s(s) + AdventureTunnels.WALL + AdventureTunnels.ARCH + 1.0:
+		return 0.0
+	return smoothstep(0.0, SHELTER_IN, minf(s - float(t["s0"]), float(t["s1"]) - s))
+
+
+## shelter_local in the current adventure (0 when there's none).
+static func shelter_at(pos: Vector3) -> float:
+	if current == null or current.route == null:
+		return 0.0
+	return current.shelter_local(pos)
 
 
 ## The surface under `pos` in the current adventure, or "tarmac" when there's none (the town's
@@ -316,9 +347,13 @@ static func untag(state: PackedFloat32Array, mine: Vector3) -> PackedFloat32Arra
 
 # ---------------------------------------------------------------------------- streaming
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if route == null:
 		return
+	# The tunnel roof over the camera, eased so the light doesn't snap at a portal.
+	var cam := get_viewport().get_camera_3d() if get_viewport() else null
+	var cover := shelter_local(cam.global_position) if cam else 0.0
+	Daylight.shelter = move_toward(Daylight.shelter, cover, delta * 2.5)
 	var pt := Perf.t0()
 	var t0 := Time.get_ticks_usec()
 	stream()

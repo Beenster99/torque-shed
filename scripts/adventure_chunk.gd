@@ -138,6 +138,9 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 		# Solid out to COLLIDE_COLS: the inner columns (the right's first, the left's last).
 		out["land_faces_%d" % side] = _faces(v, rows, cols, COLLIDE_COLS + 1, side < 0)
 	out["lines"] = _lines(route, i0, i1, ax, az, surf)
+	# The side roads and the paint at the junctions, and any tunnel through here.
+	AdventureJunctions.chunk_parts(route, i0, i1, ax, az, land, out)
+	AdventureTunnels.build(route, i0, i1, ax, az, land, out)
 	_scenery(route, c, i0, i1, ax, az, surf, out)
 	out["ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	return out
@@ -228,14 +231,24 @@ static func _lines(route: AdventureRoute, i0: int, i1: int, ax: float, az: float
 	if surf != "tarmac":
 		return a
 	var col := Color(0.88, 0.88, 0.84)
+	var junctions := AdventureJunctions.near(route, i0, i1, 12)
 	for i in range(i0, i1):
 		var e0 := route.width[i] * 0.5
 		var e1 := route.width[i + 1] * 0.5
 		if e0 < 2.0:
 			continue
-		var offs := [[-e0 + 0.3, -e1 + 0.3, 0.12], [e0 - 0.3, e1 - 0.3, 0.12]]
+		# No centre line through a junction (nor round a roundabout's island), and none along the
+		# edge across a side road's mouth.
+		var centre := e0 >= 2.7 and i % 3 == 0
+		var offs := []
+		for side: float in [-1.0, 1.0]:
+			if not AdventureJunctions.mouth(route, i, side) and not AdventureJunctions.mouth(route, i + 1, side):
+				offs.append([side * (e0 - 0.3), side * (e1 - 0.3), 0.12])
+		for st in junctions:
+			if absf(float(i - int(st["i"]))) * AdventureRoute.STEP < AdventureJunctions.zone(st):
+				centre = false
 		# Dashes: 3 m of line, 6 m gap (a knot is 4 m: every third knot's stretch, most of it).
-		if e0 >= 2.7 and i % 3 == 0:
+		if centre:
 			offs.append([0.0, 0.0, 0.1])
 		for o in offs:
 			var w: float = o[2] * 0.5
@@ -290,8 +303,10 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 			var prev := Vector3.INF
 			for i in range(i0, i1 + 1):
 				var lat := (route.width[i] * 0.5 + (4.0 if bound_kind == "fence" else 2.6)) * side
-				# No fence across a site's forecourt or lay-by: it's left open to ride in.
-				var xf := Transform3D() if route._site_flat(i, side) > 0.5 else _on_land(route, i, lat, ax, az, route.hd[i], 1.0, true)
+				# No fence across a site's forecourt or lay-by, nor a side road's mouth: they're
+				# left open to ride in.
+				var shut := route._site_flat(i, side, false) > 0.5 or AdventureJunctions.mouth(route, i, side, 4.0)
+				var xf := Transform3D() if shut else _on_land(route, i, lat, ax, az, route.hd[i], 1.0, true)
 				if xf == Transform3D():
 					prev = Vector3.INF
 					continue
@@ -359,7 +374,7 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 			var e := route.width[si] * 0.5
 			var r := Vector3(cos(h), 0.0, sin(h))
 			var fwd := Vector3(sin(h), 0.0, -cos(h))
-			var across: bool = st["kind"] in ["start", "finish"]   # a banner over the road
+			var across: bool = st["kind"] in ["start", "finish", AdventureJunctions.KIND]   # a banner over the road, a junction's middle
 			var lat := 0.0 if across else (e + 0.9) * side
 			var origin := Vector3(route.px[si] - ax + r.x * lat, route.ph[si], route.pz[si] - az + r.z * lat)
 			var basis := Basis(r, Vector3.UP, -fwd) if across else Basis(r * side, Vector3.UP, -fwd * side)
@@ -451,12 +466,16 @@ static func _on_land(route: AdventureRoute, i: int, lat: float, ax: float, az: f
 	var h := route.hd[i]
 	if absf(lat) > route.land_reach(i, int(signf(lat))) * 0.95:
 		return Transform3D()
+	if absf(lat) < route.width[i] * 0.5 + 14.0 and route.in_tunnel(i):
+		return Transform3D()   # nothing by the road in a tunnel, nor on the rock just over it
 	var wx := route.px[i] + cos(h) * lat
 	var wz := route.pz[i] + sin(h) * lat
 	if not close and route.clearance(wx, wz) < keep_clear:
 		return Transform3D()
-	if route._site_flat(i, signf(lat)) > 0.0 and not close:
+	if route._site_flat(i, signf(lat), false) > 0.0 and not close:
 		return Transform3D()
+	if not close and AdventureJunctions.in_the_way(route, i, lat, wx, wz, keep_clear):
+		return Transform3D()   # on a side road, or the corners of a junction
 	var y := route.land_height(i, lat, wx, wz)
 	if route.sea and y < AdventureTheme.SEA_Y + 0.8 and not close:
 		return Transform3D()   # in the sea, or on the wet sand
@@ -533,6 +552,8 @@ static func commit(data: Dictionary, world: AdventureWorld) -> Node3D:
 		lcs.shape = lshape
 		lb.add_child(lcs)
 	node.add_child(lb)
+	_commit_junctions(data, node, scale)
+	AdventureTunnels.commit(data, node)
 	# Scenery
 	var mm: Dictionary = data["mm"]
 	for kind in mm:
@@ -587,6 +608,40 @@ static func commit(data: Dictionary, world: AdventureWorld) -> Node3D:
 				node.add_child(made)
 	world.place_chunk(node)
 	return node
+
+
+## The side roads (each surface its own mesh and collision, for the tyres) and the junctions' paint.
+static func _commit_junctions(data: Dictionary, node: Node3D, scale: float) -> void:
+	var arms: Dictionary = data.get("arms", {})
+	for surf in arms:
+		var a: Dictionary = arms[surf]
+		if (a["v"] as PackedVector3Array).is_empty():
+			continue
+		var mi := MeshInstance3D.new()
+		mi.name = "SideRoads_" + str(surf)
+		mi.mesh = AdventureJunctions.stub_mesh(a)
+		mi.material_override = AdventureSurface.road_material(str(surf))
+		node.add_child(mi)
+		var body := StaticBody3D.new()
+		body.name = "SideRoadBody_" + str(surf)
+		body.collision_layer = 1
+		body.set_meta("surface", surf)
+		var shape := ConcavePolygonShape3D.new()
+		shape.backface_collision = true
+		shape.set_faces(data["arm_faces"][surf])
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		body.add_child(cs)
+		node.add_child(body)
+	var paint: Dictionary = data.get("paint", {})
+	if not paint.is_empty() and not (paint["v"] as PackedVector3Array).is_empty():
+		var pm := MeshInstance3D.new()
+		pm.name = "JunctionPaint"
+		pm.mesh = AdventureProps.to_mesh(paint)
+		pm.material_override = AdventureSurface.line_material()
+		pm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_range(pm, RANGES["lines"] * scale)
+		node.add_child(pm)
 
 
 static func _range(gi: GeometryInstance3D, end: float) -> void:

@@ -17,6 +17,10 @@ extends RefCounted
 ##   heights: {h0 start height, lo, hi (the road turns back down past it), steep (times the grades),
 ##       up (the odds a climb rather than a descent), wave ([metres from top to top, the valleys'
 ##       height, the tops']: mountain passes, climbing to each top and down the other side)}.
+##   relief: {pitch: [odds a stretch is a short steep pitch, its steepest from, to (%)], rollers: [odds
+##       of a run of dips and rises, their steepest from, to (%)], switchbacks: [odds a section is a
+##       stack of hairpins up a mountainside, legs from, to], tunnels: [the first (m in), then every
+##       from, to (m), each from, to (m) long]} (see AdventureRoute._plan_heights, _plan_tunnels).
 ##   hills, lift: times the land's own rise and fall, and the high ground off towards the skyline.
 ##   snow: snow on the road over the tops (the highest fifth of the road, and never below this).
 ##   track_sand, pass_rise, pass_snow: a fork's gravel track has sand in it at these odds, a scenic
@@ -37,7 +41,8 @@ const IDS: Array[String] = ["varied", "desert", "alpine", "coastal", "hills"]
 const SEA_Y := 0.0
 
 const DATA := {
-	"varied": {"name": "Varied", "roads": "varied roads", "style": "mixed", "start_hour": -1.0},
+	"varied": {"name": "Varied", "roads": "varied roads", "style": "mixed", "start_hour": -1.0,
+		"relief": {"pitch": [0.16, 8.0, 13.0], "rollers": [0.12, 3.0, 6.0]}},
 	"desert": {
 		"name": "Desert", "roads": "desert roads: sand, long straights and mesas",
 		"kinds": {"straight": 0.52, "sweeping": 0.33, "curvy": 0.12, "very_curvy": 0.03},
@@ -46,6 +51,7 @@ const DATA := {
 		"surf_len": [2000.0, 5200.0],
 		"widths": {"two_lane": 1.6, "single": 0.4},
 		"heights": {"h0": 320.0, "lo": 180.0, "hi": 760.0, "steep": 0.5, "up": 0.5},
+		"relief": {"pitch": [0.08, 6.0, 10.0], "rollers": [0.4, 3.0, 7.0]},
 		"hills": 0.45, "lift": 0.5, "track_sand": 0.95, "pass_rise": [90.0, 200.0], "pass_snow": false,
 		"land": {"tarmac": Color(0.72, 0.55, 0.38), "gravel": Color(0.66, 0.48, 0.34), "sand": Color(0.84, 0.62, 0.42)},
 		"patch": {"tarmac": Color(0.6, 0.5, 0.32), "gravel": Color(0.58, 0.38, 0.28), "sand": Color(0.76, 0.52, 0.36)},
@@ -68,6 +74,8 @@ const DATA := {
 		"surf_len": [1500.0, 4000.0],
 		"widths": {"two_lane": 0.5, "single": 0.6},
 		"heights": {"h0": 820.0, "lo": 450.0, "hi": 2500.0, "steep": 1.3, "up": 0.6, "wave": [32000.0, 750.0, 2400.0]},
+		"relief": {"pitch": [0.2, 10.0, 15.0], "rollers": [0.05, 3.0, 5.0], "switchbacks": [0.2, 4, 8],
+			"tunnels": [2500.0, 5000.0, 11000.0, 160.0, 650.0]},
 		"hills": 1.7, "lift": 2.6, "snow": 1500.0, "track_sand": 0.0, "pass_rise": [260.0, 520.0], "pass_snow": true,
 		"land": {"tarmac": Color(0.27, 0.44, 0.19), "gravel": Color(0.33, 0.4, 0.24)},
 		"patch": {"tarmac": Color(0.38, 0.5, 0.22), "gravel": Color(0.46, 0.44, 0.4)},
@@ -87,6 +95,7 @@ const DATA := {
 		"bag": ["tarmac", "tarmac", "tarmac", "tarmac", "gravel", "sand"],
 		"surf_len": [1800.0, 4600.0],
 		"heights": {"h0": 70.0, "lo": 28.0, "hi": 170.0, "steep": 0.9, "up": 0.5},
+		"relief": {"pitch": [0.32, 9.0, 14.0], "rollers": [0.12, 3.0, 6.0], "tunnels": [7000.0, 16000.0, 30000.0, 110.0, 260.0]},
 		"hills": 0.7, "lift": 0.7, "track_sand": 0.7, "pass_rise": [60.0, 120.0], "pass_snow": false,
 		"sea": true,
 		"land": {"tarmac": Color(0.36, 0.48, 0.22), "gravel": Color(0.4, 0.46, 0.26), "sand": Color(0.86, 0.8, 0.62)},
@@ -107,8 +116,9 @@ const DATA := {
 		"kinds": {"straight": 0.08, "sweeping": 0.24, "curvy": 0.46, "very_curvy": 0.22},
 		"bag": ["tarmac", "tarmac", "tarmac", "tarmac", "gravel"],
 		"surf_len": [1500.0, 4200.0],
-		"widths": {"two_lane": 0.15, "road": 0.6, "narrow": 1.5, "single": 2.2},
+		"widths": {"two_lane": 0.15, "road": 0.3, "narrow": 1.6, "single": 2.6},
 		"heights": {"h0": 180.0, "lo": 60.0, "hi": 560.0, "steep": 1.2, "up": 0.5},
+		"relief": {"pitch": [0.36, 10.0, 15.0], "rollers": [0.2, 4.0, 7.0]},
 		"hills": 1.1, "lift": 0.85, "track_sand": 0.0, "pass_rise": [70.0, 150.0], "pass_snow": false,
 		"land": {"tarmac": Color(0.25, 0.46, 0.17), "gravel": Color(0.3, 0.42, 0.19)},
 		"patch": {"tarmac": Color(0.34, 0.52, 0.2), "gravel": Color(0.4, 0.32, 0.33)},

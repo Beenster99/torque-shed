@@ -30,6 +30,13 @@ extends Node3D
 ## sent to the crew as it is, e.g. lights and siren) each tick; release(id) gives it back to the
 ## stream to drive on from there; remove_id(id) takes it off the road.
 ##
+## Junctions (`junctions`, see there): traffic stops at the lights while they're against it (a red,
+## or an amber it can stop for: `signal_state`), slows round a roundabout's island and gives way
+## at its line to anything already going round, and now and then turns off down a side road
+## (indicating, a right turn waiting for what's coming) and drives off along it out of sight; and
+## others come out of the side roads (`arm_at` says where they run), waiting at the mouth for the
+## side road's green, a clear circle or a gap in the lanes they cross.
+##
 ## Host-driven in co-op like RoadTraffic: the host runs it, and pack() / unpack() carry it to
 ## the crew (a few numbers per vehicle; the looks come from seeds).
 
@@ -63,6 +70,21 @@ const BUS_DWELL := [10.0, 18.0]
 const BUS_PULL_IN := 70.0
 ## Numbers sent for each vehicle (see pack).
 const PACKED := 7
+## Junctions: the share of drivers that turn off at one with a side road they can take (more in
+## a village), the speed they take the turn at and the bend's length off the lane onto the side
+## road (m), how fast they go along it, round a roundabout, and how often one comes out of a side
+## road (s) when there's room for it. An out-of-sight side road's end is this far from the
+## camera, or behind it.
+const TURN_ODDS := 0.14
+const TURN_ODDS_VILLAGE := 0.3
+const TURN_SPEED := 4.5
+const TURN_LEN := 10.0
+const ARM_LIMIT := 9.0
+const ROUND_SPEED := 7.5
+const SIDE_EVERY := 3.0
+const UNSEEN := 140.0
+## A vehicle on a side road is sent with its lat past this (see pack).
+const ARM_CODE := 10000.0
 
 ## s -> {pos, fwd, hw, busy?, limit?, grade?} (see above).
 var sample: Callable
@@ -88,16 +110,34 @@ var blockers: Array = []
 var bus_stops: Array = []
 ## Whether this machine runs it (the host, or a solo game); a client only moves them on between unpacks.
 var host := true
+## The junctions along it, in order of s: [{s (the middle), stop (m before the middle where traffic
+## stops or gives way), lights (bool), village (bool: in or by one), ro and rc (a roundabout's
+## outer and going-round radii; absent for none), arms: [{side (+1 right of the way s grows), len,
+## w}]}, ...]; the same list on every machine (a vehicle on a side road is sent by its place in
+## it). `signal_state(junction)` gives its lights, Vector2i(main road, side road) as
+## AdventureJunctions.RED / RED_AMBER_ON / GREEN / AMBER_ON; `arm_at(junction, arm, t)` where a
+## side road is `t` m out from its mouth, {pos (global, on its surface), fwd (unit, out along it)}.
+var junctions: Array = []
+var signal_state: Callable
+var arm_at: Callable
 ## Each: {s, dir, v, pace, kind, seed (also its id), ind, aux, lat (NAN in its lane), bus,
 ## kerb (pulled in to the kerb), body (TrafficVehicle), bend (allowed speed for the bends ahead),
 ## bend_t (when to look again), climb (allowed speed up the hill), slowing, last_v, scripted,
-## dwell (seconds left at a bus stop), served (the stop it last stood at)}.
+## dwell (seconds left at a bus stop), served (the stop it last stood at); and at the junctions
+## turn ([junction, arm, right] it's turning off at), seen (the last junction it decided at),
+## and on a side road arm (its junction's index), k (which arm), t (m out along it: negative on
+## the bend off the main road), out (going away from the main road), go (pulling out), parked
+## (stood at the side road's end, gone once no one sees)}. On a side road `dir` is the way it
+## goes on the main road, its s is worked from t (see _arm_s).
 var vehicles: Array = []
 var rng := RandomNumberGenerator.new()
 ## The engine sounds of the nearest few.
 var sounds: TrafficSounds
 var _spawn_timer := 0.0
 var _seq := 0
+var _side_timer := 0.0
+var _near_j: Array = []   # the junctions within reach of the riders (indices into junctions)
+var _near_t := 0.0
 
 
 func _ready() -> void:
@@ -131,23 +171,42 @@ func from_focus(s: float) -> float:
 
 ## Moves everything on `delta` seconds (and, on the host, brings new ones and lets far ones go).
 func step(delta: float) -> void:
+	_near_t -= delta
+	if _near_t <= 0.0:
+		_near_t = 0.5
+		_find_junctions()
 	if host:
 		for i in range(vehicles.size() - 1, -1, -1):
 			var d: Dictionary = vehicles[i]
 			if d.get("scripted", false):
 				continue
 			var s := float(d["s"])
-			if from_focus(s) > despawn or s < s_min or s > s_max:
+			if from_focus(s) > despawn or s < s_min or s > s_max or (d.get("parked", false) and unseen(_place_arm(d)[0])):
 				_remove(i)
 		_spawn_timer -= delta
 		if _spawn_timer <= 0.0:
 			_spawn_timer = SPAWN_EVERY
 			if vehicles.size() < wanted():
 				spawn_one()
+		_side_timer -= delta
+		if _side_timer <= 0.0:
+			_side_timer = SIDE_EVERY
+			if vehicles.size() < wanted():
+				spawn_side()
 	for d in vehicles:
 		if host:
 			if not d.get("scripted", false):
-				_drive(d, delta)
+				if d.has("arm"):
+					_drive_arm(d, delta)
+				else:
+					_drive(d, delta)
+		elif d.has("arm"):
+			var way := 1.0 if d["out"] else -1.0
+			d["t"] = float(d["t"]) + way * float(d["v"]) * delta
+			if d.has("target"):
+				d["t"] = float(d["t"]) + (float(d["target"]) - float(d["t"])) * (1.0 - exp(-4.0 * delta))
+				d["target"] = float(d["target"]) + way * float(d["v"]) * delta
+			d["s"] = _arm_s(d)
 		else:
 			d["s"] = float(d["s"]) + int(d["dir"]) * float(d["v"]) * delta
 			if d.has("target"):
@@ -207,7 +266,7 @@ func spawn_one(near := spawn_near, far := spawn_far) -> Dictionary:
 ## Whether nothing in lane `dir` is within `gap` (plus their lengths) of `s`.
 func clear_at(s: float, dir: int, gap: float) -> bool:
 	for o in vehicles:
-		if int(o["dir"]) == dir and absf(float(o["s"]) - s) < gap + TrafficVehicle.spec_of(str(o["kind"]))["len"]:
+		if int(o["dir"]) == dir and not o.has("arm") and absf(float(o["s"]) - s) < gap + TrafficVehicle.spec_of(str(o["kind"]))["len"]:
 			return false
 	return true
 
@@ -282,7 +341,7 @@ func slot(id: int) -> Dictionary:
 	var d := find(id)
 	if d.is_empty():
 		return {}
-	var where := _place(d)
+	var where := _place_arm(d) if d.has("arm") else _place(d)
 	return {"id": id, "kind": d["kind"], "s": float(d["s"]), "v": float(d["v"]), "dir": int(d["dir"]), "lat": float(where[2]),
 		"pos": where[0], "fwd": where[1], "scripted": bool(d.get("scripted", false))}
 
@@ -296,6 +355,8 @@ func ids() -> Array:
 ## by writing the returned entry's s, v, dir, lat, ind and aux. {} if it's gone.
 func take(id: int) -> Dictionary:
 	var d := find(id)
+	if d.has("arm"):
+		return {}   # off down a side road: not one to take over
 	if not d.is_empty():
 		d["scripted"] = true
 		d.erase("dwell")
@@ -356,8 +417,12 @@ func _drive(d: Dictionary, delta: float) -> void:
 			((sample.call(s + 4.0)["pos"] as Vector3).y - (at["pos"] as Vector3).y) / 4.0
 		grade *= dir
 		d["climb"] = float(tr.get("power", 60.0)) / (9.81 * maxf(grade, 0.0) + CLIMB_DRAG)
+		if grade < -0.05 and float(tr.get("power", 60.0)) < 20.0:
+			# Down a steep hill a lorry or coach holds back in a low gear.
+			d["climb"] = minf(float(d["climb"]), lerpf(16.0, 8.0, clampf((-grade - 0.05) / 0.07, 0.0, 1.0)))
 	var allow := minf(minf(float(d["bend"]), float(d["climb"])), float(d["pace"]) * _limit(at))
 	var half := TrafficVehicle.half_length_of(str(d["kind"]))
+	allow = minf(allow, _junction_ahead(d, half, brake))
 	for o in vehicles:
 		if o != d and int(o["dir"]) == dir and _in_lane(o, float(at["hw"])):
 			_follow(d, float(o["s"]), TrafficVehicle.half_length_of(str(o["kind"])), half)
@@ -369,13 +434,22 @@ func _drive(d: Dictionary, delta: float) -> void:
 	if d.has("dwell"):
 		allow = minf(allow, _stand(d, delta))
 	else:
-		if int(d["ind"]) > 0 and v > 6.0:
+		if int(d["ind"]) > 0 and v > 6.0 and not d.has("turn"):
 			d["ind"] = 0   # pulled out and away
 		if d.get("bus", false):
 			allow = minf(allow, _bus(d, half, brake))
 	v = move_toward(v, allow, (brake * 1.6 if allow < v else float(tr["accel"])) * delta)
 	d["v"] = v
 	d["s"] = s + dir * v * delta
+	if d.has("turn") and (float(d["s"]) - _turn_from(d)) * dir >= 0.0:
+		# Onto the bend off the lane, down the side road.
+		var turn: Array = d["turn"]
+		d.erase("turn")
+		d["arm"] = int(turn[0])
+		d["k"] = int(turn[1])
+		d["t"] = -TURN_LEN
+		d["out"] = true
+		d["s"] = _arm_s(d)
 
 
 ## Stood at the kerb (a bus at its stop, a parked car about to pull out) for its `dwell`
@@ -421,6 +495,9 @@ func _bus(d: Dictionary, half: float, brake: float) -> float:
 ## Whether vehicle `o` is in its own lane: a scripted one put over on the other side (overtaking)
 ## or off the road (a police car in a lay-by) isn't in anyone's way there.
 static func _in_lane(o: Dictionary, hw: float) -> bool:
+	if o.has("arm"):
+		# Off the main road, but for the first half of the bend off it or the last onto it.
+		return float(o["t"]) < -TURN_LEN * 0.5
 	var lat := float(o.get("lat", NAN))
 	return is_nan(lat) or (lat * int(o["dir"]) < 0.0 and absf(lat) < hw + 0.5)
 
@@ -430,6 +507,280 @@ func _follow(d: Dictionary, other_s: float, other_half: float, half: float) -> v
 	var clear := along - half - other_half
 	if along > 0.0 and clear < 50.0:
 		d["hold"] = minf(float(d.get("hold", INF)), maxf(0.0, (clear - GAP) / HEADWAY))
+
+
+# ---------------------------------------------------------------------------- junctions
+
+## The junctions within reach of the riders now (rechecked twice a second).
+func _find_junctions() -> void:
+	_near_j = []
+	for j in junctions.size():
+		if from_focus(float(junctions[j]["s"])) < reach + 100.0:
+			_near_j.append(j)
+
+
+## The speed vehicle `d` (on the main road) is allowed for the junctions ahead: held at a red (or
+## an amber it can stop for), slowed round a roundabout and waiting at its line while something's
+## going round, and slowing for the turn when it's turning off (deciding whether it will as it
+## comes up to each one).
+func _junction_ahead(d: Dictionary, half: float, brake: float) -> float:
+	var allow := INF
+	var s := float(d["s"])
+	var dir := int(d["dir"])
+	var v := float(d["v"])
+	for j in _near_j:
+		var jn: Dictionary = junctions[j]
+		var along := (float(jn["s"]) - s) * dir
+		if along < -2.0 or along > 160.0:
+			continue
+		if along > 2.0 and along < 120.0 and int(d.get("seen", -1)) != j:
+			d["seen"] = j
+			_decide_turn(d, j)
+		var to_line := along - float(jn["stop"]) - half   # its front to the stop line
+		if jn.get("lights", false) and to_line > -0.5 and signal_state.is_valid():
+			var light := int(signal_state.call(jn).x)
+			# Amber: stop if it comfortably can, else go on through.
+			if light == AdventureJunctions.RED or light == AdventureJunctions.RED_AMBER_ON \
+					or (light == AdventureJunctions.AMBER_ON and to_line > v * v / (2.0 * brake * 0.7)):
+				allow = minf(allow, _stop_for(to_line, brake))
+		if jn.has("ro"):
+			allow = minf(allow, sqrt(ROUND_SPEED * ROUND_SPEED + 2.0 * brake * 0.5 * maxf(along - float(jn["ro"]), 0.0)))
+			if to_line > -0.5 and to_line < 30.0 and not _circle_clear(jn, d):
+				allow = minf(allow, _stop_for(to_line, brake))
+		if d.has("turn") and int(d["turn"][0]) == j:
+			var to_turn := (_turn_from(d) - s) * dir
+			allow = minf(allow, sqrt(TURN_SPEED * TURN_SPEED + 2.0 * brake * 0.5 * maxf(to_turn, 0.0)))
+			if to_turn < 70.0:
+				d["ind"] = 1 if d["turn"][2] else -1
+			# Turning right: across the other lane, so it waits for a gap in what's coming.
+			if d["turn"][2] and not _lanes_clear(jn, [-dir], d):
+				allow = minf(allow, _stop_for(to_turn, brake))
+	return allow
+
+
+## The speed from which it stops in `dist` m (gently).
+static func _stop_for(dist: float, brake: float) -> float:
+	return sqrt(2.0 * brake * 0.6 * maxf(dist - 0.5, 0.0))
+
+
+## Whether vehicle `d` turns off at junction `j`, and down which side road: on its left whichever
+## it is, on its right across the other lane (not at a roundabout: round the island it only takes
+## the first exit). Nothing big, and no bus, goes down a side road.
+func _decide_turn(d: Dictionary, j: int) -> void:
+	var jn: Dictionary = junctions[j]
+	if d.get("bus", false) or str(d["kind"]) in ["lorry", "coach", "police"] or d.has("dwell"):
+		return
+	if rng.randf() > (TURN_ODDS_VILLAGE if jn.get("village", false) else TURN_ODDS):
+		return
+	var dir := int(d["dir"])
+	var can := []
+	for k in (jn["arms"] as Array).size():
+		var side := int(jn["arms"][k]["side"])
+		if side == -dir or (side == dir and not jn.has("ro")):
+			can.append([j, k, side == dir])
+	if not can.is_empty():
+		d["turn"] = can[rng.randi() % can.size()]
+
+
+## How far from junction `jn`'s middle along the main road the bend off it (before the middle)
+## or onto it (past it) starts.
+static func _bend_reach(jn: Dictionary) -> float:
+	return float(jn["stop"]) + 1.5
+
+
+func _turn_from(d: Dictionary) -> float:
+	var jn: Dictionary = junctions[int(d["turn"][0])]
+	return float(jn["s"]) - int(d["dir"]) * _bend_reach(jn)
+
+
+## Whether nothing's going round roundabout `jn` but `d` itself: no vehicle past its own line and
+## not yet out (nor on the bend off it or onto it), nor a rider in it.
+func _circle_clear(jn: Dictionary, d: Dictionary) -> bool:
+	var js := float(jn["s"])
+	var ro := float(jn["ro"])
+	var line := float(jn["stop"])
+	for o in vehicles:
+		if o == d:
+			continue
+		var ds := float(o["s"]) - js
+		if o.has("arm"):
+			if float(o["t"]) < 0.0 and absf(ds) < ro:
+				return false
+			continue
+		var before := -ds * int(o["dir"])   # how far short of the middle it is
+		if before < line - 0.3 and before > -ro:
+			return false
+	for b in blockers:
+		if absf(float(b[0]) - js) < ro:
+			return false
+	return true
+
+
+## Whether the main road's lanes `dirs` are clear enough to cross or pull into at junction `jn`:
+## nothing in them coming up to it within a few seconds (nor just past, still across the mouth),
+## nor a rider near it.
+func _lanes_clear(jn: Dictionary, dirs: Array, d: Dictionary) -> bool:
+	var js := float(jn["s"])
+	for o in vehicles:
+		if o == d or o.has("arm") or not int(o["dir"]) in dirs or not _in_lane(o, 3.0):
+			continue
+		var coming := (js - float(o["s"])) * int(o["dir"])
+		if coming > -TrafficVehicle.half_length_of(str(o["kind"])) - 4.0 and coming < maxf(35.0, float(o["v"]) * 5.0):
+			return false
+	for b in blockers:
+		if absf(float(b[0]) - js) < 45.0:
+			return false
+	return true
+
+
+## Whether vehicle `d`, waiting at its side road's mouth, may pull out: at the lights on the side
+## road's green, at a roundabout into a clear circle, else into a gap in the lanes it crosses.
+func _may_join(d: Dictionary) -> bool:
+	var jn: Dictionary = junctions[int(d["arm"])]
+	if jn.get("lights", false) and signal_state.is_valid():
+		return int(signal_state.call(jn).y) == AdventureJunctions.GREEN
+	if jn.has("ro"):
+		return _circle_clear(jn, d)
+	var dir := int(d["dir"])
+	var side := int(jn["arms"][int(d["k"])]["side"])
+	return _lanes_clear(jn, [dir] if side == -dir else [dir, -dir], d)
+
+
+## A vehicle on a side road: off along it and out of sight (stopping at its end, parked there
+## till no one sees), or coming in to the mouth, waiting there, then the bend onto the main
+## road, where it drives on as any other.
+func _drive_arm(d: Dictionary, delta: float) -> void:
+	var tr := TrafficVehicle.traits_of(str(d["kind"]))
+	var brake := float(tr["brake"])
+	var j := int(d["arm"])
+	var jn: Dictionary = junctions[j]
+	var arm: Dictionary = jn["arms"][int(d["k"])]
+	var t := float(d["t"])
+	var v := float(d["v"])
+	var out: bool = d["out"]
+	var allow := ARM_LIMIT if t >= 0.0 else TURN_SPEED + 1.5
+	var half := TrafficVehicle.half_length_of(str(d["kind"]))
+	if out:
+		var end := float(arm["len"]) - 4.0
+		allow = minf(allow, _stop_for(end - t + 0.5, brake))
+		if t > 4.0:
+			d["ind"] = 0
+		if end - t < 1.0 and v < 0.3:
+			d["parked"] = true
+	elif not d.get("go", false):
+		allow = minf(allow, _stop_for(t + 0.1, brake))
+		d["ind"] = -1 if int(arm["side"]) == -int(d["dir"]) else 1
+		if t < 1.5 and v < 1.0 and _may_join(d):
+			d["go"] = true
+	# Behind whatever's ahead of it along the same side road, going the same way.
+	for o in vehicles:
+		if o == d or not o.has("arm") or int(o["arm"]) != int(d["arm"]) or int(o["k"]) != int(d["k"]) or o["out"] != out:
+			continue
+		var ahead := (float(o["t"]) - t) * (1.0 if out else -1.0)
+		var clear := ahead - half - TrafficVehicle.half_length_of(str(o["kind"]))
+		if ahead > 0.0 and clear < 40.0:
+			allow = minf(allow, maxf(0.0, (clear - GAP) / HEADWAY))
+	v = move_toward(v, allow, (brake * 1.6 if allow < v else float(tr["accel"])) * delta)
+	d["v"] = v
+	t += (1.0 if out else -1.0) * v * delta
+	d["t"] = t
+	d["s"] = _arm_s(d)
+	if not out and t <= -TURN_LEN:
+		# Onto the main road: on in its lane from here.
+		for key in ["arm", "k", "t", "out", "go"]:
+			d.erase(key)
+		d["s"] = float(jn["s"]) + int(d["dir"]) * _bend_reach(jn)
+		d["ind"] = 0
+		d["seen"] = j
+		d["bend_t"] = 0.0
+
+
+## Where along the main road a vehicle on a side road counts as being: the junction's middle, or
+## along the bend between it and the lane.
+func _arm_s(d: Dictionary) -> float:
+	var jn: Dictionary = junctions[int(d["arm"])]
+	var js := float(jn["s"])
+	var t := float(d["t"])
+	if t >= 0.0:
+		return js
+	var lane_s := js + (-1.0 if d["out"] else 1.0) * int(d["dir"]) * _bend_reach(jn)
+	return lerpf(js, lane_s, clampf(-t / TURN_LEN, 0.0, 1.0))
+
+
+## Where a vehicle on a side road is: [pos, fwd, lat] as _place (lat NAN). Along the side road on
+## its left, or on the bend, a curve from its lane on the main road to the mouth.
+func _place_arm(d: Dictionary) -> Array:
+	var jn: Dictionary = junctions[int(d["arm"])]
+	var k := int(d["k"])
+	var arm: Dictionary = jn["arms"][k]
+	var out: bool = d["out"]
+	var t := float(d["t"])
+	var off := clampf(float(arm["w"]) * 0.25, 0.9, 1.4)
+	var a: Dictionary = arm_at.call(jn, k, maxf(t, 0.0))
+	var fwd: Vector3 = a["fwd"]
+	var travel := fwd if out else -fwd
+	var mouth: Vector3 = (a["pos"] as Vector3) - Vector3(-travel.z, 0.0, travel.x).normalized() * off
+	if t >= 0.0:
+		return [mouth, travel, NAN]
+	var js := float(jn["s"])
+	var dir := int(d["dir"])
+	var lane_s := js + (-1.0 if out else 1.0) * dir * _bend_reach(jn)
+	var p0: Vector3 = _place({"s": lane_s, "dir": dir, "kind": d["kind"]})[0]
+	var p1: Vector3 = _place({"s": js, "dir": dir, "kind": d["kind"]})[0]
+	var u := clampf(1.0 + t / TURN_LEN, 0.0, 1.0)   # 0 in the lane, 1 at the mouth
+	var pos := p0 * (1.0 - u) * (1.0 - u) + p1 * 2.0 * (1.0 - u) * u + mouth * u * u
+	var tangent := (p1 - p0) * 2.0 * (1.0 - u) + (mouth - p1) * 2.0 * u
+	tangent.y = 0.0
+	if tangent.length() < 0.01:
+		tangent = travel
+	tangent = tangent.normalized()
+	return [pos, tangent if out else -tangent, NAN]
+
+
+## Whether `pos` is out of everyone's sight: well away from the camera, or behind it (always, with
+## no camera).
+func unseen(pos: Vector3) -> bool:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() and get_viewport() else null
+	if cam == null:
+		return true
+	var to := pos - cam.global_position
+	return to.length() > UNSEEN or to.normalized().dot(-cam.global_basis.z) < 0.1
+
+
+## A vehicle coming out of a side road near the riders: turning up at the far end of one whose
+## end no one can see, heading in to the main road to turn left (off a roundabout's, round it),
+## or now and then right, across. Returns it, or {}.
+func spawn_side() -> Dictionary:
+	if vehicles.size() >= MAX_VEHICLES or not arm_at.is_valid():
+		return {}
+	var can := []
+	for j in _near_j:
+		var jn: Dictionary = junctions[j]
+		if from_focus(float(jn["s"])) > spawn_far:
+			continue
+		for k in (jn["arms"] as Array).size():
+			var end := float(jn["arms"][k]["len"]) - 4.0
+			var busy := false
+			for o in vehicles:
+				if o.has("arm") and int(o["arm"]) == j and int(o["k"]) == k and float(o["t"]) > end - 25.0:
+					busy = true
+			if not busy and unseen((arm_at.call(jn, k, end) as Dictionary)["pos"]):
+				can.append([j, k, end])
+	if can.is_empty():
+		return {}
+	var pick: Array = can[rng.randi() % can.size()]
+	var jn: Dictionary = junctions[int(pick[0])]
+	var arm: Dictionary = jn["arms"][int(pick[1])]
+	var side := int(arm["side"])
+	var dir := -side if jn.has("ro") or rng.randf() < 0.6 else side
+	var kind := TrafficVehicle.pick_kind(rng, jn.get("village", false))
+	if kind in ["lorry", "coach"] or (float(arm["w"]) < 4.0 and kind == "van"):
+		kind = "hatchback"
+	var pace := TrafficVehicle.pick_pace(rng, kind)
+	var d := {"s": float(jn["s"]), "dir": dir, "v": ARM_LIMIT * 0.8, "pace": pace, "kind": kind, "seed": _new_seed(), "ind": 0,
+		"bus": false, "arm": int(pick[0]), "k": int(pick[1]), "t": float(pick[2]), "out": false}
+	_add(d)
+	return d
 
 
 # ---------------------------------------------------------------------------- drawing
@@ -448,11 +799,21 @@ func _place(d: Dictionary, at := {}) -> Array:
 	var spec := TrafficVehicle.spec_of(str(d["kind"]))
 	var half_w := float(spec["w"])
 	var lat := float(d.get("lat", NAN))
+	var lane := minf(maxf(hw * LANE, half_w + 0.2), maxf(hw - half_w - 0.1, half_w + 0.1))
 	if is_nan(lat):
-		var lane := minf(maxf(hw * LANE, half_w + 0.2), maxf(hw - half_w - 0.1, half_w + 0.1))
 		var kerb := maxf(hw - half_w - 0.1, lane)
 		lat = -dir * lerpf(lane, kerb, float(d.get("kerb_f", 0.0)))
-	return [(at["pos"] as Vector3) + right * lat, fwd * dir, lat]
+	var heading := fwd * dir
+	for j in _near_j:
+		var jn: Dictionary = junctions[j]
+		if jn.has("rc") and absf(s - float(jn["s"])) < float(jn["rc"]) + 9.0:
+			# Round the island on its left, then back into the lane.
+			var ds := s - float(jn["s"])
+			var side := signf(lat) if absf(lat) > 0.3 else float(-dir)
+			lat += side * (AdventureJunctions.swing(jn, ds, lane) - lane)
+			var slope := AdventureJunctions.swing(jn, ds + 0.5, lane) - AdventureJunctions.swing(jn, ds - 0.5, lane)
+			heading = (fwd * dir + right * side * slope * dir).normalized()
+	return [(at["pos"] as Vector3) + right * lat, heading, lat]
 
 
 func _draw(delta: float) -> void:
@@ -463,11 +824,17 @@ func _draw(delta: float) -> void:
 		var dir := int(d["dir"])
 		d["kerb_f"] = move_toward(float(d.get("kerb_f", 0.0)), 1.0 if d.get("kerb", false) else 0.0, delta * 0.6)
 		var at: Dictionary = sample.call(s)
-		var where := _place(d, at)
+		var on_arm: bool = d.has("arm")
+		var where := _place_arm(d) if on_arm else _place(d, at)
 		var pos: Vector3 = where[0]
 		var f: Vector3 = where[1]
 		var pitch := 0.0
-		if at.has("grade"):
+		if on_arm:
+			var probe: Dictionary = d.duplicate()
+			probe["t"] = float(d["t"]) + (1.0 if d["out"] else -1.0) * 1.5
+			var ahead_at: Vector3 = _place_arm(probe)[0]
+			pitch = atan2(ahead_at.y - pos.y, 1.5)
+		elif at.has("grade"):
 			pitch = atan(float(at["grade"]) * dir)
 		else:
 			var ahead: Vector3 = sample.call(s + dir * car.length * 0.5)["pos"]
@@ -479,7 +846,7 @@ func _draw(delta: float) -> void:
 		d["last_v"] = v
 		d["slowing"] = 0.4 if dv > 0.8 or v < 0.3 else maxf(float(d["slowing"]) - delta, 0.0)
 		var axles: Array = TrafficVehicle.spec_of(str(d["kind"]))["axles"]
-		var steer := clampf(atan((float(axles[1]) - float(axles[0])) * curvature(s) * dir), -0.6, 0.6)
+		var steer := 0.0 if on_arm else clampf(atan((float(axles[1]) - float(axles[0])) * curvature(s) * dir), -0.6, 0.6)
 		var cam_at := cam.global_position if cam else pos + Vector3(0.0, 0.0, 1.0e5)
 		car.drive(Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch), pos), v, steer,
 			float(d["slowing"]) > 0.0, int(d["ind"]), delta, cam_at)
@@ -489,13 +856,18 @@ func _draw(delta: float) -> void:
 # ---------------------------------------------------------------------------- the crew
 
 ## For the network: [s, dir, v, seed, kind (its place in VehicleModel.KINDS), flags (indicator + 1,
-## + 4 at the kerb, + 8 x aux), lat (-999 in its lane)] for each vehicle.
+## + 4 at the kerb, + 8 x aux), lat (-999 in its lane)] for each vehicle; on a side road, its t
+## for s and for lat ARM_CODE + (junction x 8 + arm) x 2 + (1 going out).
 func pack() -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	for d in vehicles:
 		var flags := int(d.get("ind", 0)) + 1 + (4 if d.get("kerb", false) else 0) + 8 * int(d.get("aux", 0))
 		var lat := float(d.get("lat", NAN))
-		out.append_array([float(d["s"]), float(d["dir"]), float(d["v"]), float(d["seed"]), float(VehicleModel.KINDS.find(d["kind"])),
+		var s := float(d["s"])
+		if d.has("arm"):
+			s = float(d["t"])
+			lat = ARM_CODE + (int(d["arm"]) * 8 + int(d["k"])) * 2 + (1 if d["out"] else 0)
+		out.append_array([s, float(d["dir"]), float(d["v"]), float(d["seed"]), float(VehicleModel.KINDS.find(d["kind"])),
 			float(flags), -999.0 if is_nan(lat) else lat])
 	return out
 
@@ -511,14 +883,37 @@ func unpack(state: PackedFloat32Array) -> void:
 		seen[seed_value] = true
 		var flags := int(state[b + 5])
 		var lat := NAN if state[b + 6] < -998.0 else state[b + 6]
+		var arm := {}
+		if lat > ARM_CODE - 0.5:
+			var code := int(round(lat - ARM_CODE))
+			if code >> 4 >= junctions.size() or (code >> 1) & 7 >= (junctions[code >> 4]["arms"] as Array).size():
+				continue   # (a junction we don't have: the road changed under it)
+			arm = {"arm": code >> 4, "k": (code >> 1) & 7, "out": code & 1 == 1, "t": state[b]}
+			lat = NAN
 		var found := find(seed_value)
 		if found.is_empty() or str(found["kind"]) != VehicleModel.KINDS[ki]:
 			if not found.is_empty():
 				remove_id(seed_value)
 			found = {"s": state[b], "dir": int(state[b + 1]), "v": state[b + 2], "pace": 1.0, "kind": VehicleModel.KINDS[ki],
 				"seed": seed_value, "ind": 0, "target": state[b], "kerb": flags & 4 != 0}
+			found.merge(arm, true)
 			_add(found)
+		elif not arm.is_empty():
+			# On a side road: its t is what moves (s follows from it).
+			var was_on := found.has("arm") and int(found["arm"]) == int(arm["arm"]) and int(found["k"]) == int(arm["k"])
+			found["dir"] = int(state[b + 1])
+			found["v"] = state[b + 2]
+			found["arm"] = arm["arm"]
+			found["k"] = arm["k"]
+			found["out"] = arm["out"]
+			found["target"] = state[b]
+			if not was_on or absf(float(found["t"]) - state[b]) > 25.0:
+				found["t"] = state[b]
 		else:
+			if found.has("arm"):
+				for key in ["arm", "k", "t", "out"]:
+					found.erase(key)
+				found["s"] = state[b]
 			found["dir"] = int(state[b + 1])
 			found["v"] = state[b + 2]
 			found["target"] = state[b]
@@ -528,6 +923,8 @@ func unpack(state: PackedFloat32Array) -> void:
 		found["kerb"] = flags & 4 != 0
 		found["aux"] = flags >> 3
 		found["lat"] = lat
+		if found.has("arm"):
+			found["s"] = _arm_s(found)
 	for i in range(vehicles.size() - 1, -1, -1):
 		if not seen.has(int(vehicles[i]["seed"])):
 			_remove(i)
