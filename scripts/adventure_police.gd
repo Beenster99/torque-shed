@@ -111,6 +111,9 @@ var _sirens := {}               # car id -> PoliceSiren
 var _officers := {}             # car id -> StaffFigure
 var _clock := 0.0
 var _limits := {}               # int(s / 25) -> the limit there
+var _mirror_view: SubViewport   # the mirror, while you're being chased (see _mirror)
+var _mirror_cam: Camera3D
+var _mirror_box: Control
 
 
 func _ready() -> void:
@@ -289,6 +292,7 @@ func tick(delta: float) -> void:
 				Net.send_police(pack())
 	driver.step(delta)
 	_show(delta)
+	_mirror()
 	_fine_t -= delta
 	if _fine_t <= 0.0:
 		_fine_t = 0.25
@@ -735,6 +739,60 @@ func _show(delta: float) -> void:
 			siren.yelp = gap < 70.0
 			siren.velocity = -body.global_transform.basis.z * float(st["v"])
 		_officer(b, st, delta)
+
+
+## While the police are after you (or stopping you), a rear-view mirror at the top of the
+## screen: a small second view back down the road from your bike, flipped as a mirror is, so
+## you can see the blue lights coming. Drawn only then (a second camera costs a frame's time).
+func _mirror() -> void:
+	var main = trip.main if trip and trip.get("main") else null
+	var bike: Node3D = main.bike if main else null
+	var want := bike != null and (chasing() or holding())
+	if not want:
+		if _mirror_box and _mirror_box.visible:
+			_mirror_box.visible = false
+			_mirror_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		return
+	if _mirror_view == null:
+		var layer := CanvasLayer.new()
+		layer.layer = 4
+		add_child(layer)
+		_mirror_box = PanelContainer.new()
+		var frame := StyleBoxFlat.new()
+		frame.bg_color = Color(0.02, 0.02, 0.02)
+		frame.set_corner_radius_all(14)
+		frame.set_content_margin_all(5)
+		_mirror_box.add_theme_stylebox_override("panel", frame)
+		_mirror_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_mirror_box.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+		_mirror_box.position = Vector2(-215.0, 40.0)
+		layer.add_child(_mirror_box)
+		var holder := SubViewportContainer.new()
+		holder.stretch = true
+		holder.custom_minimum_size = Vector2(420.0, 120.0)
+		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_mirror_box.add_child(holder)
+		_mirror_view = SubViewport.new()
+		_mirror_view.size = Vector2i(420, 120)
+		holder.add_child(_mirror_view)
+		_mirror_cam = Camera3D.new()
+		_mirror_cam.fov = 38.0
+		_mirror_cam.far = 900.0
+		_mirror_view.add_child(_mirror_cam)
+		# Flipped left to right, as a mirror shows it.
+		holder.scale = Vector2(-1.0, 1.0)
+		holder.pivot_offset = Vector2(210.0, 60.0)
+	_mirror_box.visible = true
+	_mirror_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	var b := bike.global_transform.basis
+	var fwd := -b.z
+	fwd.y = 0.0
+	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
+	# The right-hand mirror, out on its stalk ahead of the rider: their shoulder at its inner edge.
+	var right := fwd.cross(Vector3.UP)
+	var eye := bike.global_position + Vector3.UP * 1.15 + fwd * 0.55 + right * 0.5
+	_mirror_cam.global_transform = Transform3D(Basis.looking_at(-fwd + right * 0.06 + Vector3.DOWN * 0.03, Vector3.UP), eye)
+	_mirror_cam.make_current()
 
 
 ## The blue lamps at time `t`: the left and right banks flashing in turn, each a double flash.
