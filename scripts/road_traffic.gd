@@ -43,6 +43,8 @@ const SPAWN_GAP := 60.0
 ## (s) kept at speed.
 const GAP := 3.0
 const HEADWAY := 1.2
+## How often (s) each looks over the road ahead for bends and junctions.
+const SCAN_EVERY := 0.2
 const SPAWN_NEAR := 220.0
 const SPAWN_FAR := 520.0
 const DESPAWN := 700.0
@@ -428,7 +430,6 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	var r := _road(ri)
 	var dir := int(d["dir"])
 	var v := float(d["v"])
-	var step := _step(ri)
 	var n := (r["xz"] as PackedVector2Array).size()
 	var length := float(r["length"])
 	var people := _people()
@@ -444,35 +445,17 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	# The pace it can take now: its own cruise, the bends ahead, the junction it's turning
 	# off at, a dead end or the edge of the yard it turns round before.
 	var allow := float(d["cruise"]) if bike else float(d.get("pace", 1.0)) * limit_at(here)
-	var reach := maxf(40.0, v * v / (2.0 * brake) + 15.0)
 	var i0 := _i(ri, float(d["s"]))
-	var blocked: PackedByteArray = _blocked[ri]
-	var at: Dictionary = _junctions[ri]
 	var kk: PackedFloat32Array = _k[ri]
-	var steps := int(reach / step) + 1
-	for k in range(0, steps):
-		var j := i0 + k * dir
-		var dist := k * step
-		if r["closed"]:
-			j = posmod(j, n)
-		elif j < 0 or j >= n:
-			if _end_join(ri, dir).is_empty():
-				if float(d["round"]) < 0.0:
-					d["round"] = 0.0 if dir < 0 else length
-			else:
-				# The end of the road, where it joins another: slow to turn onto it.
-				allow = minf(allow, sqrt(TURN_SPEED * TURN_SPEED + 2.0 * brake * maxf(dist - step, 0.0)))
-			break
-		var bend := sqrt(grip / maxf(absf(kk[j]), 0.0005))
-		allow = minf(allow, sqrt(bend * bend + 2.0 * brake * dist))
-		if blocked[j]:
-			if float(d["round"]) < 0.0 and (d["turn"] as Dictionary).is_empty():
-				d["round"] = _wrap_s(ri, float(d["s"]) + dir * maxf(dist - 6.0, 0.0))
-			break
-		if k > 0 and at.has(j) and (d["turn"] as Dictionary).is_empty() and float(d["round"]) < 0.0 \
-				and d.get("decided", Vector2i(-1, -1)) != Vector2i(ri, j):
-			d["decided"] = Vector2i(ri, j)   # made up its mind about this one: don't ask again
-			_choose_turn(d, ri, j, dir)
+	# The road ahead is looked over every SCAN_EVERY seconds (and straight away on a new road),
+	# allowing for how far it goes before the next look.
+	var scan_key := ri * 2 + (1 if dir > 0 else 0)
+	d["scan_t"] = float(d.get("scan_t", 0.0)) - delta
+	if float(d["scan_t"]) <= 0.0 or int(d.get("scan_key", -1)) != scan_key:
+		d["scan_t"] = SCAN_EVERY
+		d["scan_key"] = scan_key
+		d["scan_allow"] = _scan(d, ri, i0, dir, v, grip, brake)
+	allow = minf(allow, float(d["scan_allow"]))
 	if not (d["turn"] as Dictionary).is_empty():
 		var gap := absf(_ahead(ri, float(d["s"]), float(d["turn"]["at"]), dir))
 		allow = minf(allow, sqrt(TURN_SPEED * TURN_SPEED + 2.0 * brake * gap))
@@ -502,9 +485,16 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	for o in _users(slot):
 		var off: Vector3 = o[0] - here
 		var along := off.dot(fwd)
+		var other: Dictionary = riders[int(o[2])] if int(o[2]) >= 0 else {}
+		if not other.is_empty() and int(other["road"]) == ri:
+			# On the same road: by how far along it they are (round the bends too), in this lane only.
+			if int(other["dir"]) != dir:
+				continue
+			along = _ahead(ri, float(d["s"]), float(other["s"]), dir)
+			off = fwd * along
 		var clear := along - mine - float(o[1])
 		if along > 0.0 and clear < look and (off - fwd * along).length() < 2.4 and absf(off.y) < 3.0:
-			var vo := maxf((o[3] as Vector3).dot(fwd), 0.0)
+			var vo := maxf((o[3] as Vector3).dot(fwd), 0.0) if other.is_empty() or int(other["road"]) != ri else float(other["v"])
 			var want := GAP + HEADWAY * vo
 			if clear > want:
 				allow = minf(allow, sqrt(vo * vo + 2.0 * brake * (clear - want)))
@@ -514,8 +504,10 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	var turning: Dictionary = d["turn"]
 	if not turning.is_empty():
 		var gap := absf(_ahead(ri, float(d["s"]), float(turning["at"]), dir))
-		# (Not for ever: two waiting on each other go after a few seconds.)
-		if gap < 30.0 and float(d.get("waited", 0.0)) < 4.0 and _taken(int(turning["road"]), float(turning["s"]), slot):
+		# (Someone just pulled away along it is always waited for; anyone else not for ever, as
+		# two waiting on each other go after a few seconds.)
+		var taken := _taken(int(turning["road"]), float(turning["s"]), int(turning["dir"]), slot, gap)
+		if gap < 30.0 and (taken == 1 or (taken == 2 and float(d.get("waited", 0.0)) < 4.0)):
 			allow = minf(allow, sqrt(2.0 * brake * maxf(gap - 4.0, 0.0)))
 			if v < 0.5:
 				d["waited"] = float(d.get("waited", 0.0)) + delta
@@ -561,14 +553,71 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	d["s"] = _wrap_s(ri, s)
 
 
-## Whether anyone else is on road `ri` within a vehicle's length or two of `s`.
-func _taken(ri: int, s: float, skip_slot: int) -> bool:
+## Looks along road `ri` ahead from sample `i0`: the bends, the end of the road, a dead end or
+## the edge of the yard to turn round before, and the junctions to make its mind up about.
+## Returns the pace that lets it take them all, allowing for SCAN_EVERY seconds more road.
+func _scan(d: Dictionary, ri: int, i0: int, dir: int, v: float, grip: float, brake: float) -> float:
+	var r := _road(ri)
+	var n := (r["xz"] as PackedVector2Array).size()
+	var step := _step(ri)
+	var length := float(r["length"])
+	var blocked: PackedByteArray = _blocked[ri]
+	var at: Dictionary = _junctions[ri]
+	var kk: PackedFloat32Array = _k[ri]
+	var allow := INF
+	var early := v * SCAN_EVERY
+	var reach := maxf(40.0, v * v / (2.0 * brake) + 15.0) + early
+	var steps := int(reach / step) + 1
+	for k in range(0, steps):
+		var j := i0 + k * dir
+		var dist := k * step
+		var room := maxf(dist - early, 0.0)
+		if r["closed"]:
+			j = posmod(j, n)
+		elif j < 0 or j >= n:
+			if _end_join(ri, dir).is_empty():
+				if float(d["round"]) < 0.0:
+					d["round"] = 0.0 if dir < 0 else length
+			else:
+				# The end of the road, where it joins another: slow to turn onto it.
+				allow = minf(allow, sqrt(TURN_SPEED * TURN_SPEED + 2.0 * brake * maxf(room - step, 0.0)))
+			break
+		var bend := sqrt(grip / maxf(absf(kk[j]), 0.0005))
+		allow = minf(allow, sqrt(bend * bend + 2.0 * brake * room))
+		if blocked[j]:
+			if float(d["round"]) < 0.0 and (d["turn"] as Dictionary).is_empty():
+				d["round"] = _wrap_s(ri, float(d["s"]) + dir * maxf(dist - 6.0, 0.0))
+			break
+		if k > 0 and at.has(j) and (d["turn"] as Dictionary).is_empty() and float(d["round"]) < 0.0 \
+				and d.get("decided", Vector2i(-1, -1)) != Vector2i(ri, j):
+			d["decided"] = Vector2i(ri, j)   # made up its mind about this one: don't ask again
+			_choose_turn(d, ri, j, dir)
+	return allow
+
+
+## Whether anyone else is on road `ri` near `s`, for someone `gap` short of turning onto it
+## there going `dir`: 1 for one just ahead going the same way (or close behind, coming on), or
+## turning onto it there too and nearer its junction (it goes first), 2 for anyone else near,
+## 0 when it's clear.
+func _taken(ri: int, s: float, dir: int, skip_slot: int, gap := INF) -> int:
+	var out := 0
 	for slot in MAX_RIDERS:
 		var o: Dictionary = riders[slot]
-		if slot != skip_slot and not o.is_empty() and int(o["road"]) == ri \
-				and absf(_ahead(ri, s, float(o["s"]), 1)) < 14.0 + half_length(o):
-			return true
-	return false
+		if slot == skip_slot or o.is_empty():
+			continue
+		var t: Dictionary = o["turn"]
+		if not t.is_empty() and int(t["road"]) == ri and absf(float(t["s"]) - s) < 10.0:
+			var theirs := absf(_ahead(int(o["road"]), float(o["s"]), float(t["at"]), int(o["dir"])))
+			if theirs < gap or (theirs == gap and slot < skip_slot):
+				return 1
+		if int(o["road"]) != ri:
+			continue
+		var along := _ahead(ri, s, float(o["s"]), dir)
+		if int(o["dir"]) == dir and along > -8.0 - half_length(o) and along < 12.0 + 2.0 * half_length(o):
+			return 1
+		if absf(along) < 14.0 + half_length(o):
+			out = 2
+	return out
 
 
 ## The join at the end of road `ri` it's riding towards ({road, i}), or {} for a dead end.

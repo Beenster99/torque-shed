@@ -3588,7 +3588,10 @@ func _test_vehicles_traffic() -> void:
 					continue
 				var along := tr._ahead(int(d["road"]), float(d["s"]), float(o["s"]), int(d["dir"]))
 				if along > 0.0 and along < 60.0 and (d["turn"] as Dictionary).is_empty() and float(d["v"]) > 3.0:
-					min_gap = minf(min_gap, along - RoadTraffic.half_length(d) - RoadTraffic.half_length(o))
+					var g := along - RoadTraffic.half_length(d) - RoadTraffic.half_length(o)
+					if g < min_gap and g < 1.0:
+						print("    (close: %s behind %s on road %d at %.0f, %.1f m/s to %.1f m/s, step %d)" % [RoadTraffic.kind_of(d), RoadTraffic.kind_of(o), int(d["road"]), float(d["s"]), float(d["v"]), float(o["v"]), step])
+					min_gap = minf(min_gap, g)
 	var vehicles := 0
 	for k in kinds:
 		if k != "bike":
