@@ -678,12 +678,16 @@ static func _fit_tyre(w: Dictionary, job: Dictionary, bike: int, slot: String, p
 			return _stow(job, held, bike, false)
 		return _refit_next(w, job, bike, held)
 	var wheel := int(job.get("wheel", 0))
+	# A project can do both tyres: the wheel noted for the other one isn't this one.
+	if str(job.get("wheel_slot", wheel_slot)) != wheel_slot:
+		wheel = 0
 	if wheel == 0 or not Shed.items.has(wheel):
 		wheel = Shed.item_on(bike, wheel_slot)
 		if wheel == 0:
 			job["fail"] = "There's no wheel on it for a tyre."
 			return []
 		job["wheel"] = wheel
+		job["wheel_slot"] = wheel_slot
 	var wit: Dictionary = Shed.items[wheel]
 	if wit["at"] == "bike":
 		if held != 0:
