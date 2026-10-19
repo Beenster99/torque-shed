@@ -100,6 +100,11 @@ func _run_all() -> void:
 	await _test_bike_baking()
 	_test_state_diff()
 	await _test_ai_riders_light()
+	print("Traffic vehicles: cars, vans, lorries and coaches on the roads")
+	await _test_vehicles_build()
+	await _test_vehicles_lamps()
+	await _test_vehicles_traffic()
+	await _test_vehicles_stream()
 	print("XP, levels, tool upgrades and skills")
 	_test_progress()
 	print("Bike lights, tyres and the tyre changer")
@@ -2972,6 +2977,7 @@ func _test_road_traffic() -> void:
 	var switched := false
 	var roads_before := tr.riders.map(func(d): return int(d["road"]))
 	var lean := 0.0
+	var car_top := 0.0
 	for step in 3000:
 		for slot in RoadTraffic.MAX_RIDERS:
 			var d: Dictionary = tr.riders[slot]
@@ -2982,7 +2988,10 @@ func _test_road_traffic() -> void:
 			d = tr.riders[slot]
 			if d.is_empty():
 				continue
-			top = maxf(top, float(d["v"]))
+			if RoadTraffic.kind_of(d) == "bike":
+				top = maxf(top, float(d["v"]))
+			else:
+				car_top = maxf(car_top, float(d["v"]))
 			var p := tr._rider_point(d)
 			if RoadTraffic.KEEP_OUT.has_point(Vector2(p.x, p.z)):
 				into_yard = true
@@ -2991,8 +3000,10 @@ func _test_road_traffic() -> void:
 			if int(d["road"]) != int(roads_before[slot]):
 				switched = true
 			var k := float((tr._k[int(d["road"])] as PackedFloat32Array)[tr._i(int(d["road"]), float(d["s"]))])
-			lean = maxf(lean, absf(atan(float(d["v"]) * float(d["v"]) * k / Bike.G)))
-	check(top > 10.0 and top <= 20.5, "they ride at a sensible pace (top %.0f km/h)" % (top * 3.6))
+			if RoadTraffic.kind_of(d) == "bike":
+				lean = maxf(lean, absf(atan(float(d["v"]) * float(d["v"]) * k / Bike.G)))
+	check(top > 10.0 and top <= 20.5 and car_top > 10.0 and car_top <= RoadTraffic.OPEN_LIMIT * 1.25,
+		"they ride at a sensible pace (bikers' top %.0f km/h, drivers' %.0f km/h)" % [top * 3.6, car_top * 3.6])
 	check(off_road < 3.0, "in their lane, on the road (at most %.1f m off its middle)" % off_road)
 	check(not into_yard, "and never into the yard, the test area or the cafe car park")
 	check(switched, "they turn off at junctions onto other roads")
@@ -3006,7 +3017,7 @@ func _test_road_traffic() -> void:
 		main.walker.global_position = walker_at
 	# The crew get them as a few numbers each, and ride them the same.
 	var packed := tr.pack()
-	check(packed.size() == 1 + RoadTraffic.MAX_RIDERS * 5, "the crew get %d numbers for the lot" % packed.size())
+	check(packed.size() == 1 + RoadTraffic.MAX_RIDERS * RoadTraffic.PACKED, "the crew get %d numbers for the lot" % packed.size())
 	var other := RoadTraffic.new()
 	other.world = main.world
 	add_child(other)
@@ -3456,6 +3467,257 @@ func _test_ai_riders_light() -> void:
 	main._leave()
 	main.queue_free()
 	await get_tree().process_frame
+
+
+## Point 13 of the adventure round: the traffic's cars, vans, lorries and coaches. Each kind
+## builds in each trim from shared meshes with few surfaces, a far mesh much lighter than the
+## near one, and a box to hit as long and wide as it looks.
+func _test_vehicles_build() -> void:
+	var holder := Node3D.new()
+	add_child(holder)
+	var t0 := Time.get_ticks_msec()
+	for kind in VehicleModel.KINDS:
+		var worst_near := 0
+		var worst_far := 0
+		var ratio := 0.0
+		for trim in int(VehicleModel.SPECS[kind]["trims"]):
+			var p := VehicleModel.parts(kind, trim)
+			var near: ArrayMesh = p["near"]
+			var far: ArrayMesh = p["far"]
+			worst_near = maxi(worst_near, near.get_surface_count())
+			worst_far = maxi(worst_far, far.get_surface_count())
+			# The near model is drawn with its wheels: two front ones and the back axle's.
+			var nv := _mesh_verts(near) + _mesh_verts(p["wheel"]) * 2 + _mesh_verts(p["axle"])
+			var fv := _mesh_verts(far)
+			ratio = maxf(ratio, float(fv) / float(maxi(nv, 1)))
+			if trim == 0:
+				print("    %s: %d vertices near, %d far" % [kind, nv, fv])
+		var v := TrafficVehicle.new()
+		holder.add_child(v)
+		v.setup(kind, 4242)
+		var aabb: AABB = (VehicleModel.parts(kind, int(v.look["trim"]))["near"] as ArrayMesh).get_aabb()
+		var spec: Dictionary = VehicleModel.SPECS[kind]
+		var shape: BoxShape3D = (v.get_child(0) as CollisionShape3D).shape
+		check(worst_near <= 7 and worst_far <= 6 and ratio < 0.7,
+			"a %s builds: %d surfaces near, %d far, the far mesh %.0f%% of the near one's vertices" % [kind, worst_near, worst_far, ratio * 100.0])
+		check(absf(aabb.size.z - float(spec["len"])) < 0.8 and absf(aabb.end.y - float(spec["h"])) < 0.3 and absf(shape.size.z - aabb.size.z) < 0.8,
+			"  and is the size it says (%.2f x %.2f x %.2f m)" % [aabb.size.x, aabb.size.y, aabb.size.z])
+	print("    (built every kind and trim in %d ms)" % (Time.get_ticks_msec() - t0))
+	holder.queue_free()
+	await get_tree().process_frame
+
+
+## A traffic vehicle's lamps and wheels: dipped beams, tail lamps and markers lit after dusk
+## (only running lamps by day), brake lamps as it slows, an indicator blinking; its wheels turn
+## and steer close up, one merged mesh further off, nothing drawn past its range.
+func _test_vehicles_lamps() -> void:
+	var holder := Node3D.new()
+	add_child(holder)
+	var v := TrafficVehicle.new()
+	holder.add_child(v)
+	v.setup("saloon", 7)
+	var day := Daylight.current
+	Daylight.current = null
+	var xf := Transform3D(Basis(), Vector3(0.0, 0.0, 0.0))
+	v.drive(xf, 10.0, 0.0, false, 0, 0.05, Vector3(0.0, 2.0, 12.0))
+	var by_day := v.lamps
+	var fake := Daylight.new()
+	fake.lamps = 1.0
+	Daylight.current = fake
+	v.drive(xf, 10.0, 0.2, true, 1, 0.05, Vector3(0.0, 2.0, 12.0))
+	var at_night := v.lamps
+	var blink_on := v.indicators.y
+	var wheel_turn: float = v._spinning[0].rotation.x
+	var steer: float = v._steered[0].rotation.y
+	v.drive(xf, 10.0, 0.0, false, 1, TrafficVehicle.BLINK * 0.5, Vector3(0.0, 2.0, 12.0))
+	var blink_off := v.indicators.y
+	check(by_day.x > 0.5 and by_day.x < at_night.x and by_day.y == 0.0 and at_night.y > 1.0 and by_day.z == 0.0 and at_night.z > 2.0,
+		"its head and tail lamps light up after dark, brake lamps as it slows (%s by day, %s at night)" % [by_day, at_night])
+	check(blink_on > 1.0 and blink_off == 0.0 and v.indicators.x == 0.0, "its indicator blinks on the side it's turning")
+	check(absf(wheel_turn) > 0.1 and steer < -0.1 and v.lod == 0, "close up its wheels roll and the front ones steer")
+	v.drive(xf, 10.0, 0.0, false, 0, 0.05, Vector3(0.0, 2.0, 200.0))
+	var mid := v.lod
+	v.drive(xf, 10.0, 0.0, false, 0, 0.05, Vector3(0.0, 2.0, 2000.0))
+	check(mid == 1 and v.lod == 2 and not v._near.visible and not v._far.visible, "further off one merged mesh, far off nothing drawn")
+	Daylight.current = day
+	fake.free()
+	holder.queue_free()
+	await get_tree().process_frame
+
+
+## Point 12 of the adventure round, on the town's roads: the bikers are joined by cars, vans,
+## lorries and coaches, going both ways at a pace of their own (lorries and coaches slower),
+## hanging back a gap behind whoever's ahead, more of them round the town than on the open
+## road, sent to the crew with their kinds, and solid to ride into.
+func _test_vehicles_traffic() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var tr: RoadTraffic = main.traffic
+	tr.setup_roads()
+	tr._spawn_timer = 1000.0
+	var walker_at: Vector3 = main.walker.global_position
+	var in_town := tr.wanted()
+	main.walker.global_position = Vector3(-700.0, 0.0, -1300.0)
+	var out_there := tr.wanted()
+	main.walker.global_position = walker_at
+	check(RoadTraffic.busy(walker_at) > 0.9 and in_town > out_there + 4,
+		"there's more traffic round you in town than out on the open road (%d to %d)" % [in_town, out_there])
+	var kinds := {}
+	var dirs := {}
+	var paces := {}
+	var min_gap := INF
+	for step in 2400:
+		for slot in RoadTraffic.MAX_RIDERS:
+			var d: Dictionary = tr.riders[slot]
+			if d.is_empty():
+				tr.spawn_one(0.0, 600.0)
+				continue
+			tr._drive(slot, d, 0.05)
+		if step % 10 != 0:
+			continue
+		for slot in RoadTraffic.MAX_RIDERS:
+			var d: Dictionary = tr.riders[slot]
+			if d.is_empty():
+				continue
+			var k := RoadTraffic.kind_of(d)
+			kinds[k] = int(kinds.get(k, 0)) + 1
+			dirs[int(d["dir"])] = true
+			if step > 400:
+				var group := "heavy" if k in ["lorry", "coach"] else ("bike" if k == "bike" else "car")
+				if not paces.has(group):
+					paces[group] = []
+				(paces[group] as Array).append(float(d["v"]) / RoadTraffic.limit_at(tr._rider_point(d)))
+			# The gap to anyone ahead in the same lane of the same road (not mid-turn).
+			for other in RoadTraffic.MAX_RIDERS:
+				var o: Dictionary = tr.riders[other]
+				if other == slot or o.is_empty() or int(o["road"]) != int(d["road"]) or int(o["dir"]) != int(d["dir"]):
+					continue
+				var along := tr._ahead(int(d["road"]), float(d["s"]), float(o["s"]), int(d["dir"]))
+				if along > 0.0 and along < 60.0 and (d["turn"] as Dictionary).is_empty() and float(d["v"]) > 3.0:
+					var g := along - RoadTraffic.half_length(d) - RoadTraffic.half_length(o)
+					if g < min_gap and g < 1.0:
+						print("    (close: %s behind %s on road %d at %.0f, %.1f m/s to %.1f m/s, step %d)" % [RoadTraffic.kind_of(d), RoadTraffic.kind_of(o), int(d["road"]), float(d["s"]), float(d["v"]), float(o["v"]), step])
+					min_gap = minf(min_gap, g)
+	var vehicles := 0
+	for k in kinds:
+		if k != "bike":
+			vehicles += 1
+	var avg := func(a: Array) -> float: return a.reduce(func(x, y): return x + y, 0.0) / maxf(a.size(), 1.0)
+	check(kinds.has("bike") and vehicles >= 5, "bikers and drivers share the roads (%s)" % str(kinds))
+	check(dirs.has(1) and dirs.has(-1), "going both ways")
+	check(paces.has("heavy") and paces.has("car") and avg.call(paces["heavy"]) < avg.call(paces["car"]) - 0.05,
+		"lorries and coaches take it slower than cars (%.2f of the limit to %.2f)" % [avg.call(paces.get("heavy", [])), avg.call(paces.get("car", []))])
+	check(min_gap > 1.0, "everyone keeps a gap behind whoever's ahead (at least %.1f m bumper to bumper)" % min_gap)
+	var packed := tr.pack()
+	var other := RoadTraffic.new()
+	other.world = main.world
+	add_child(other)
+	other.setup_roads()
+	other.unpack(packed)
+	var same := packed.size() == 1 + RoadTraffic.MAX_RIDERS * RoadTraffic.PACKED
+	for slot in RoadTraffic.MAX_RIDERS:
+		var a: Dictionary = tr.riders[slot]
+		var b: Dictionary = other.riders[slot]
+		if a.is_empty() != b.is_empty() or (not a.is_empty() and (RoadTraffic.kind_of(a) != RoadTraffic.kind_of(b) or int(a.get("ind", 0)) != int(b["ind"]))):
+			same = false
+	check(same, "the crew get the same vehicles, with their indicators (%d numbers)" % packed.size())
+	other.free()
+	# One of the vehicles in view: solid, with the bikes, and drawn.
+	for slot in RoadTraffic.MAX_RIDERS:
+		tr.riders[slot] = {}
+	await get_tree().physics_frame
+	var east := int(main.world.roads.by_name["east"])
+	tr.riders[0] = {"road": east, "s": 200.0, "dir": 1, "v": 0.0, "seed": 5, "cruise": 0.0, "pace": 1.0, "kind": "lorry", "turn": {}, "round": -1.0}
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var body: Node = tr._views[0]["body"]
+	check(body is TrafficVehicle and (body as TrafficVehicle).kind == "lorry" and body.is_in_group("road_traffic") and (body as CollisionObject3D).collision_layer & 2 != 0,
+		"a lorry on the road is solid, with the bikes")
+	main._leave()
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## The traffic as a module for any road (the adventure's): along a made-up winding road it puts
+## vehicles both ways round the riders, keeps them in their lanes and apart, slows them for the
+## bends, lets them go once far behind, and reaches the crew.
+func _test_vehicles_stream() -> void:
+	var stream := TrafficStream.new()
+	stream.rng.seed = 99
+	# A road heading north that winds gently.
+	stream.sample = func(s: float) -> Dictionary:
+		var x := 20.0 * sin(s / 90.0)
+		var heading := 20.0 / 90.0 * cos(s / 90.0)
+		var fwd := Vector3(heading, 0.0, -1.0).normalized()
+		return {"pos": Vector3(x, 0.0, -s), "fwd": fwd, "hw": 3.5, "busy": 0.0}
+	add_child(stream)
+	stream.set_physics_process(false)
+	for i in 40:
+		stream.spawn_one(0.0, 500.0)
+	var both := {}
+	var min_gap := INF
+	var top := 0.0
+	for step in 600:
+		stream.step(0.05)
+		for d in stream.vehicles:
+			both[int(d["dir"])] = true
+			top = maxf(top, float(d["v"]))
+			for o in stream.vehicles:
+				if o != d and int(o["dir"]) == int(d["dir"]):
+					var along := (float(o["s"]) - float(d["s"])) * int(d["dir"])
+					if along > 0.0:
+						min_gap = minf(min_gap, along - (float(VehicleModel.SPECS[d["kind"]]["len"]) + float(VehicleModel.SPECS[o["kind"]]["len"])) * 0.5)
+	check(stream.vehicles.size() >= 4 and stream.vehicles.size() <= TrafficStream.MAX_VEHICLES and both.has(1) and both.has(-1),
+		"vehicles go both ways along any road it's given (%d out)" % stream.vehicles.size())
+	check(min_gap > 1.0 and top <= TrafficStream.OPEN_LIMIT * 1.2, "apart, at a sensible pace (gap %.1f m, top %.0f km/h)" % [min_gap, top * 3.6])
+	var d0: Dictionary = stream.vehicles[0]
+	var car: TrafficVehicle = d0["body"]
+	var road_x := 20.0 * sin(float(d0["s"]) / 90.0)
+	var off := absf(car.global_position.x - road_x)
+	check(off > 1.0 and off < 3.0, "in its lane (%.1f m off the middle)" % off)
+	var packed := stream.pack()
+	var other := TrafficStream.new()
+	other.sample = stream.sample
+	other.host = false
+	add_child(other)
+	other.set_physics_process(false)
+	other.unpack(packed)
+	check(other.vehicles.size() == stream.vehicles.size(), "and the crew get the same vehicles")
+	# Round a tight bend (40 m across) they slow to what they can corner at.
+	var ring := TrafficStream.new()
+	ring.rng.seed = 5
+	ring.sample = func(s: float) -> Dictionary:
+		var a := s / 40.0
+		return {"pos": Vector3(40.0 * cos(a), 0.0, 40.0 * sin(a)), "fwd": Vector3(-sin(a), 0.0, cos(a)), "hw": 3.5}
+	add_child(ring)
+	ring.set_physics_process(false)
+	while ring.vehicles.is_empty():
+		ring.spawn_one(0.0, 100.0)
+	var ring_top := 0.0
+	for step in 400:
+		ring.step(0.05)
+		if step > 200:
+			ring_top = maxf(ring_top, float(ring.vehicles[0]["v"]))
+	var can := sqrt(float(TrafficVehicle.TRAITS[ring.vehicles[0]["kind"]]["grip"]) * 40.0)
+	check(ring_top > can * 0.5 and ring_top < can * 1.1, "they slow for the bends (%.0f km/h round a 40 m one)" % (ring_top * 3.6))
+	ring.queue_free()
+	stream.focus_s = 5000.0
+	stream.step(0.05)
+	var gone := stream.vehicles.size()
+	await get_tree().process_frame
+	check(gone == 0 or stream.vehicles.all(func(d): return absf(float(d["s"]) - 5000.0) < TrafficStream.DESPAWN), "the ones far behind go")
+	stream.queue_free()
+	other.queue_free()
+	await get_tree().process_frame
+
+
+static func _mesh_verts(mesh: Mesh) -> int:
+	var n := 0
+	for si in mesh.get_surface_count():
+		n += (mesh as ArrayMesh).surface_get_array_len(si)
+	return n
 
 
 ## Simon's 17 October round: bikes riding off from the cafe showed as big white glow balls
