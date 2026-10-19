@@ -33,6 +33,8 @@ var _fork_timer := 0.0
 var _fork_due := {}          # forks we've told the host we're nearly at
 var _fork_choice := {}       # what the panel shows now (AdventureForks.choice)
 var _map: AdventureMap       # the paper map, made the first time it's opened
+## The police on the road (see AdventurePolice), while you're out here.
+var police: AdventurePolice
 
 
 func _ready() -> void:
@@ -81,6 +83,11 @@ func on_trip() -> bool:
 	return world != null
 
 
+## Whether the police are pulling you over (your throttle's cut and you brake, see Main).
+func police_hold() -> bool:
+	return police != null and is_instance_valid(police) and police.holding()
+
+
 ## Called whenever the shed changes: loads the adventure the host started, or brings you home
 ## from one that's over.
 func sync() -> void:
@@ -122,6 +129,10 @@ func enter() -> void:
 	main.world.add_child(world)
 	world.origin_shifted.connect(_on_shift)
 	world.add_child(RoadsideView.new())   # bikes stood at the roadside, and tow straps (see Roadside)
+	police = AdventurePolice.new()
+	police.trip = self
+	police.world = world
+	world.add_child(police)
 	_sleep_town(true)
 	var from := maxf(0.0, start_s() - 120.0)
 	world.preload_range(from, from + 420.0)
@@ -180,6 +191,7 @@ func _unload() -> void:
 	if world:
 		world.queue_free()
 		world = null
+	police = null
 	trip_id = 0
 	_sleep_town(false)
 	Daylight.adventure_rate = 0.0

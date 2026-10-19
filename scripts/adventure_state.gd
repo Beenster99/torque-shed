@@ -16,7 +16,8 @@ extends RefCounted
 ## adventure_resume (the host) carries on the one a night's sleep put away (Shed.adventure_save,
 ## see AdventureNeeds), everyone back where they slept.
 ## the forks' adventure_vote and adventure_fork_due (see AdventureForks, which keeps votes and
-## picks here too).
+## picks here too); the police's adventure_police_fine and adventure_police_paid (see
+## AdventurePolice, which keeps its fines here as "police").
 
 const DEFAULT_KM := 60.0
 const MIN_KM := 5.0
@@ -85,6 +86,8 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "There's no adventure on."
 		"adventure_vote", "adventure_fork_due":
 			return AdventureForks.check(peer, action)
+		"adventure_police_fine", "adventure_police_paid":
+			return AdventurePolice.check(peer, action)
 		_:
 			return "Unknown adventure action."
 	return ""
@@ -143,6 +146,8 @@ static func apply(peer: int, action: Dictionary) -> String:
 			return "*%s has reached the destination! Back to the shed in a few seconds." % who
 		"adventure_vote", "adventure_fork_due":
 			return AdventureForks.apply(peer, action, who)
+		"adventure_police_fine", "adventure_police_paid":
+			return AdventurePolice.apply(peer, action)
 	return ""
 
 

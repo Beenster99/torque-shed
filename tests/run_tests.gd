@@ -457,6 +457,14 @@ func _run_all() -> void:
 	await _test_adv_routes_vote()
 	await _test_adv_routes_stream()
 	await _test_adv_routes_map()
+	print("The police on adventures (v0.14.0): patrols and speed traps, the 30 mph rule, chases, stops and fines")
+	await _test_adv_police_spawn_rate()
+	await _test_adv_police_rule()
+	await _test_adv_police_chase()
+	await _test_adv_police_caught()
+	await _test_adv_police_outrun()
+	await _test_adv_police_trap()
+	await _test_adv_police_coop()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21613,3 +21621,37 @@ func _test_adv_routes_stream() -> void:
 
 func _test_adv_routes_map() -> void:
 	await _adv_routes().test_map()
+
+
+# ---------------------------------------------------------------------------- the police on adventures (tests/adventure_police_tests.gd)
+
+func _adv_police() -> RefCounted:
+	return load("res://tests/adventure_police_tests.gd").new(self)
+
+
+func _test_adv_police_spawn_rate() -> void:
+	await _adv_police().test_spawn_rate()
+
+
+func _test_adv_police_rule() -> void:
+	await _adv_police().test_rule()
+
+
+func _test_adv_police_chase() -> void:
+	await _adv_police().test_chase()
+
+
+func _test_adv_police_caught() -> void:
+	await _adv_police().test_caught()
+
+
+func _test_adv_police_outrun() -> void:
+	await _adv_police().test_outrun()
+
+
+func _test_adv_police_trap() -> void:
+	await _adv_police().test_trap()
+
+
+func _test_adv_police_coop() -> void:
+	await _adv_police().test_coop()

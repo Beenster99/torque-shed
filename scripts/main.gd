@@ -912,6 +912,11 @@ func _physics_process_body(delta: float) -> void:
 			bike.throttle = maxf(Input.get_action_strength("throttle"), Controls.trigger(true))
 			bike.front_brake = maxf(Input.get_action_strength("front_brake"), Controls.trigger(false))
 			bike.rear_brake = Input.get_action_strength("rear_brake")
+			if trip.police_hold():
+				# Pulled over by the police: off the throttle and braking to a stop, still steering.
+				bike.throttle = 0.0
+				bike.front_brake = maxf(bike.front_brake, 0.35)
+				bike.rear_brake = maxf(bike.rear_brake, 0.5)
 			# Tired out on an adventure the bars answer slower (see AdventureNeedsView.steer).
 			bike.lean_input = trip.needs.steer(_steer_input(stick.x, delta), delta)
 			bike.body_shift = clampf(Input.get_axis("body_back", "body_forward") - stick.y, -1.0, 1.0)
