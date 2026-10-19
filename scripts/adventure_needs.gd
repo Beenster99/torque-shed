@@ -131,7 +131,8 @@ static func _set_level(peer: int, key: String, v: float) -> void:
 	if n.is_empty():
 		return
 	n[key] = clampf(v, 0.0, 1.0)
-	_live.erase(peer)
+	if _live.has(peer):
+		_live[peer][["food", "drink", "rest"].find(key)] = n[key]
 
 
 # ---------------------------------------------------------------------------- the host's clock
@@ -308,7 +309,7 @@ static func taken(key: String, field: String, peer: int) -> bool:
 ## price, food, drink, rest}. An entry may give "kind" ("food", "drink" or "both") instead of
 ## its amounts.
 static func menu_of(node: Node) -> Array:
-	var raw = node.get_meta("menu", null) if node != null else null
+	var raw = node.get_meta("menu") if node != null and node.has_meta("menu") else null
 	if not (raw is Array) or (raw as Array).is_empty():
 		raw = DEFAULT_MENU
 	var out := []

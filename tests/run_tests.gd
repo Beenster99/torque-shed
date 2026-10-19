@@ -436,6 +436,13 @@ func _run_all() -> void:
 	await _test_adventure_surfaces()
 	await _test_adventure_pumps()
 	await _test_adventure_trip()
+	_test_adv_needs_rates()
+	await _test_adv_needs_effects()
+	await _test_adv_needs_eat()
+	await _test_adv_needs_buy()
+	await _test_adv_needs_sit()
+	await _test_adv_needs_sleep()
+	await _test_adv_needs_resume()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21489,3 +21496,37 @@ func _test_adventure_pumps() -> void:
 
 func _test_adventure_trip() -> void:
 	await _adventure().test_trip()
+
+
+# ---------------------------------------------------------------------------- adventure needs (tests/adventure_needs_tests.gd)
+
+func _needs() -> RefCounted:
+	return load("res://tests/adventure_needs_tests.gd").new(self)
+
+
+func _test_adv_needs_rates() -> void:
+	_needs().test_rates()
+
+
+func _test_adv_needs_effects() -> void:
+	await _needs().test_effects()
+
+
+func _test_adv_needs_eat() -> void:
+	await _needs().test_eat()
+
+
+func _test_adv_needs_buy() -> void:
+	await _needs().test_buy()
+
+
+func _test_adv_needs_sit() -> void:
+	await _needs().test_sit()
+
+
+func _test_adv_needs_sleep() -> void:
+	await _needs().test_sleep()
+
+
+func _test_adv_needs_resume() -> void:
+	await _needs().test_resume()
