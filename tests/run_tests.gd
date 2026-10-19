@@ -617,7 +617,12 @@ func ride(build: Dictionary, seconds: float, drive: Callable, surf := "tarmac") 
 	bike.auto_shift = true
 	bike.assist = 0.5
 	var result := {"root": root, "bike": bike, "max_speed": 0.0, "max_lean": 0.0, "crashed": false,
-		"start_yaw": 0.0, "front_lifted": false}
+		"start_yaw": 0.0, "front_lifted": false, "weather": Weather.current, "air": BikeHeat.fixed_air}
+	# The same dry, mild day for every ride, whatever weather and time of day an earlier test
+	# left behind (those come from a clock-seeded world, so they change from run to run).
+	Weather.current = null
+	if is_nan(BikeHeat.fixed_air):
+		BikeHeat.fixed_air = 15.0
 	var steps := int(seconds * Engine.physics_ticks_per_second)
 	var dt := 1.0 / Engine.physics_ticks_per_second
 	for i in steps:
@@ -649,6 +654,9 @@ func _heading(bike: Bike) -> float:
 
 func _done(r: Dictionary) -> void:
 	r["root"].queue_free()
+	if r.has("weather"):
+		Weather.current = r["weather"] if is_instance_valid(r["weather"]) else null
+		BikeHeat.fixed_air = r["air"]
 	await get_tree().physics_frame
 
 

@@ -166,6 +166,17 @@ func _menu_check(trip: AdventureTrip) -> bool:
 	main.menu.show()
 	await _until(func(): return main.bike != null and main.bike.freeze, 3.0)
 	var mine: Vector3 = main.bike.global_position
+	# The other opens theirs when they get here: wait till their bike's stopped settling too.
+	var last := [Vector3.INF]
+	var calm_since := [Time.get_ticks_msec()]
+	await _until(func():
+		var b := _remote_bike()
+		if b == null:
+			return false
+		if b.global_position.distance_to(last[0]) > 0.005:
+			calm_since[0] = Time.get_ticks_msec()
+		last[0] = b.global_position
+		return Time.get_ticks_msec() - calm_since[0] > 1000, 10.0)
 	var rb := _remote_bike()
 	var theirs: Vector3 = rb.global_position if rb else Vector3.INF
 	var until := Time.get_ticks_msec() + 4000
@@ -175,8 +186,7 @@ func _menu_check(trip: AdventureTrip) -> bool:
 	var seen: float = rb.global_position.distance_to(theirs) if rb and theirs != Vector3.INF else INF
 	main.menu.hide()
 	print("MP adv note %s: 4 s with the menu up, my bike moved %.3f m, the other's %.3f m" % [role, moved, seen])
-	# (The other may open theirs a moment after: up to 10 cm of their last settling is allowed.)
-	return moved < 0.02 and seen < 0.1
+	return moved < 0.02 and seen < 0.05
 
 
 # ---------------------------------------------------------------------------- the traffic
