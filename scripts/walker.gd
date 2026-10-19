@@ -727,7 +727,8 @@ func _physics_process_body(delta: float) -> void:
 	if _f_bike != 0:
 		_f_time += delta
 		if _f_time >= HOLD_TO_PUSH:
-			Shed.request({"a": "grab_bike", "bike": _f_bike})
+			# At an adventure's roadside, holding F wheels it along the road on foot (see Roadside).
+			Shed.request({"a": "roadside_push" if Roadside.parked(_f_bike) else "grab_bike", "bike": _f_bike})
 			_f_bike = 0
 	if _f_seat != 0:
 		_f_time += delta
@@ -798,7 +799,9 @@ func _update_target() -> void:
 		var c: Object = hit["collider"]
 		if c.has_meta("bike") and Shed.bikes.has(int(c.get_meta("bike"))):
 			t = {"kind": "part", "bike": int(c.get_meta("bike")), "slot": str(c.get_meta("slot"))}
-			if not Shed.bike_at_work(int(t["bike"])):
+			if Roadside.parked(int(t["bike"])):
+				t["roadside"] = true   # stood at the roadside on an adventure: what its toolbox can fix (see Roadside)
+			elif not Shed.bike_at_work(int(t["bike"])):
 				t["road"] = true   # out on the road: ride it or wheel it, no spanners
 		elif c.has_meta("engine") and Shed.is_engine(int(c.get_meta("engine"))):
 			t = {"kind": "part", "engine": int(c.get_meta("engine")), "slot": str(c.get_meta("slot"))}
@@ -1474,6 +1477,8 @@ func _make_plan() -> Dictionary:
 		return dp
 	if target.get("road", false):
 		return _road_plan(held)
+	if target.get("roadside", false):
+		return _roadside_plan(held)
 	if held != 0 and tool == "hands" and PartsDB.is_fluid(Shed.items[held]["part"]):
 		var fp := _fluid_plan(held, kind)
 		if not fp.is_empty() or kind == "part":
@@ -1638,6 +1643,15 @@ func _make_plan() -> Dictionary:
 		else:
 			alt_plan = {"action": {"a": "toolbox_pack", "item": item_id, "empty": true}, "time": 1.0, "verb": "empty it out"}
 		alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
+	if tool == "hands" and held == 0 and alt_plan.is_empty() and kind == "part" and int(target.get("bike", 0)) != 0:
+		# Back at the shed with a lever snapped or a fuse blown out on an adventure: fit one from
+		# the shed's spares (see Roadside).
+		for f in Roadside.at_slot(int(target["bike"]), str(target.get("slot", ""))):
+			if str(f["kind"]) in ["lever", "fuse"]:
+				alt_plan = {"action": {"a": "roadside_fix", "bike": int(target["bike"]), "fault": str(f["kind"])}, "time": 3.0,
+					"verb": "fit a new %s lever" % str(f.get("detail", "")) if str(f["kind"]) == "lever" else "swap the blown fuse"}
+				alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
+				break
 	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0:
 		_bay_alt(item_id)
 	if p.is_empty():
@@ -1894,6 +1908,96 @@ func _set_down_plan(key: String) -> Dictionary:
 	return {"action": {"a": "set_down", "top": key, "xf": place}, "time": 0.25, "verb": verb}
 
 
+## At the roadside on an adventure (see Roadside): the fix for what's wrong where the crosshair
+## is, with what the bike's toolbox holds: the wrench tightens a slack chain or a rattling part,
+## hands top up the oil, plug a tyre (the plug kit's game), swap a fuse, a lever or a snapped
+## chain (RoadsideGame), pump a tyre up (second button), or open and shut the toolbox.
+func _roadside_plan(held: int) -> Dictionary:
+	if held != 0:
+		return _road_plan(held)
+	var me := Shed.me()
+	var bike := int(target["bike"])
+	var slot := str(target.get("slot", ""))
+	var p := {}
+	for f in Roadside.at_slot(bike, slot):
+		var kind := str(f["kind"])
+		var a := {"a": "roadside_fix", "bike": bike, "fault": kind}
+		match kind:
+			"chain_slack":
+				if tool == "wrench":
+					a["crouched"] = crouched
+					p = {"action": a, "time": 3.0, "verb": "tighten the chain back up"}
+			"rattle":
+				if tool == "wrench":
+					p = {"action": a, "time": 1.6, "verb": "bolt the %s up tight" % PartsDB.slot_name(slot).to_lower()}
+			"oil":
+				if tool == "hands":
+					p = {"action": a, "time": 3.0, "verb": "top the oil up from the toolbox's bottle"}
+			"chain_snap", "lever", "fuse":
+				if tool == "hands":
+					if kind == "chain_snap":
+						a["crouched"] = crouched
+					var verbs := {"chain_snap": "fit the spare chain and clip its split link on",
+						"lever": "fit a spare %s lever" % str(f.get("detail", "")), "fuse": "find the blown fuse under the seat and swap it"}
+					p = {"action": a, "time": PlugGame.duration(), "game": "roadside", "kind": RoadsideGame.for_fault(kind),
+						"verb": verbs[kind]}
+			"puncture":
+				if tool == "hands":
+					a["side"] = str(f["detail"])
+					a["item"] = Shed.item_on(bike, slot)
+					p = {"action": a, "time": PlugGame.duration(), "game": "plug", "verb": "find the hiss with the soapy spray and plug it"}
+			"pressure":
+				if tool == "hands":
+					alt_plan = {"action": {"a": "roadside_pump", "bike": bike, "side": str(f["detail"])},
+						"time": 1.5 + 2.0 * Puncture.lost(Shed.items[Shed.item_on(bike, slot)]), "verb": "pump it up with the mini pump"}
+					alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
+		if not p.is_empty():
+			break
+	if p.is_empty() and tool == "hands" and slot == "toolbox":
+		var open := bool(Roadside.spot_of(bike).get("open", false))
+		p = {"action": {"a": "roadside_open", "bike": bike, "open": not open}, "time": 0.5,
+			"verb": "shut the toolbox" if open else "open the toolbox and lay the kit out"}
+	if p.is_empty():
+		return {}
+	p["blocked"] = Shed.check(me, p["action"])
+	return p
+
+
+## What the part info says about a bike stood at the roadside: what's wrong with it and how to
+## fix it, what's in the toolbox (and what's used up), and how to ride, push or get it towed.
+func roadside_lines(bike: int, slot: String) -> Array:
+	var lines := ["%s  ·  at the roadside" % str(Shed.bikes[bike]["name"])]
+	if slot != "":
+		lines.append(PartsDB.slot_name(slot))
+	var wrong := Roadside.active(bike)
+	if wrong.is_empty():
+		lines.append("Nothing wrong with it that you can see.")
+	for f in wrong:
+		var here := Roadside.at_slot(bike, slot).has(f)
+		lines.append("%s%s: %s" % ["> " if here else "", Roadside.name_of(f), Roadside.hint(f)])
+		if here:
+			var missing := Roadside.kit_missing(bike, str(f["kind"]))
+			if missing != "":
+				lines.append(missing)
+	var box := Roadside.toolbox_of(bike)
+	if box == 0:
+		lines.append("No toolbox: nothing to fix it with out here.")
+	else:
+		var have := []
+		var gone := []
+		for k in Roadside.kit_lines(box):
+			if k["gone"]:
+				gone.append(str(PartsDB.TOOLBOX_CONTENTS[k["what"]]["short"]))
+			else:
+				have.append(str(PartsDB.TOOLBOX_CONTENTS[k["what"]]["short"]) + (" (%d left)" % int(k["left"]) if int(k["left"]) > 0 else ""))
+		lines.append("Toolbox: %s%s" % [", ".join(have) if not have.is_empty() else "empty",
+			"  ·  used up: " + ", ".join(gone) if not gone.is_empty() else ""])
+	var ride_on := Shed.check(Shed.me(), {"a": "mount", "bike": bike})
+	lines.append("{interact}: ride it" if ride_on == "" else ride_on)
+	lines.append("Hold {interact}: wheel it along on foot")
+	return lines
+
+
 ## With a can or bottle in hand: pour it into the tank, engine or brakes (first button), drain
 ## them into it (second button), or tip what's in it away in the scrap bin.
 ## A bike out on the road is only for riding: the one job you can do there is pour a can of
@@ -2008,6 +2112,8 @@ func _describe() -> String:
 			var t: Dictionary = CoffeeShop.trays()[int(target["tray"])]
 			lines.append("Tray from the cafe")
 			lines.append("On it: %s" % CoffeeShop.items_text(t["items"]))
+		"part" when target.get("roadside", false):
+			lines.append_array(roadside_lines(int(target["bike"]), str(target.get("slot", ""))))
 		"part" when target.get("road", false):
 			# Out on the road: no inspecting its parts, it's just a bike to ride.
 			var road_id := int(target["bike"])
@@ -2520,16 +2626,18 @@ func _changer_of(p: Dictionary) -> int:
 ## Returns true while the game has the work button.
 func _tyre_game_step(delta: float, plan_now: Dictionary, use_alt: bool) -> bool:
 	var game := str(plan_now.get("game", ""))
-	var playing: bool = not use_alt and game in ["tyre", "plug"] and plan_now["blocked"] == "" and _acting() \
+	var playing: bool = not use_alt and game in ["tyre", "plug", "roadside"] and plan_now["blocked"] == "" and _acting() \
 		and not _need_release
 	var key := str(plan_now.get("action", {}))
 	if tyre_game and (not playing or key != _game_key):
-		var plugging := tyre_game is PlugGame
+		var plugging := tyre_game is PlugGame and not tyre_game is RoadsideGame
+		var fixing := tyre_game is RoadsideGame
 		tyre_game = null
 		progress = 0.0
 		_send_status("")
 		Sfx.set_loop(_work_sound, "")
 		Shed.feedback.emit("You let go before the plug was in. Hold on until it's done." if plugging
+			else "You let go before it was done. Hold on until it's in." if fixing
 			else "The bead slipped back off the rim. Hold on all the way round.", false)
 		_need_release = _acting()
 		return true
@@ -2537,10 +2645,16 @@ func _tyre_game_step(delta: float, plan_now: Dictionary, use_alt: bool) -> bool:
 		return false
 	if tyre_game == null:
 		# The plug game is seeded by the tyre, so the hole is in the same place each go at it.
-		tyre_game = PlugGame.new(int(plan_now["action"].get("item", 0)) * 7919 + 1) if game == "plug" else TyreGame.new()
+		if game == "roadside":
+			# A roadside fix (RoadsideGame), seeded by the bike so the spot's the same each go.
+			tyre_game = RoadsideGame.new(int(plan_now["action"].get("bike", 0)) * 6151 + str(plan_now.get("kind", "")).length(),
+				str(plan_now.get("kind", "fuse")))
+		else:
+			tyre_game = PlugGame.new(int(plan_now["action"].get("item", 0)) * 7919 + 1) if game == "plug" else TyreGame.new()
 		_game_key = key
 		_active_plan = plan_now
-		_send_status("Plugging a puncture" if game == "plug" else "Fitting a tyre on the tyre changer", _changer_of(plan_now))
+		_send_status("Fixing it at the roadside" if game == "roadside" else "Plugging a puncture" if game == "plug"
+			else "Fitting a tyre on the tyre changer", _changer_of(plan_now))
 		Sfx.set_loop(_work_sound, Sfx.WORK_LOOPS.get("lube" if game == "plug" else "tyre_fit", ""))
 	tyre_game.step(delta)
 	progress = tyre_game.progress()

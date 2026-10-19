@@ -335,6 +335,7 @@ func load_state(state: Dictionary, player_name: String) -> void:
 			was_moving.append(id)
 	_sync(state)
 	adventure = {}   # nobody is out on an adventure in a save just opened
+	Roadside.bring_home()   # and nobody's bike is left at an adventure's roadside (see Roadside)
 	for id in was_moving:
 		_park(id)
 	for id in items:
@@ -2436,6 +2437,8 @@ func check(peer: int, action: Dictionary) -> String:
 	if road != "":
 		return road
 	var a := str(action.get("a", ""))
+	if a.begins_with("roadside_"):
+		return Roadside.check(peer, action)
 	var held := held_by(peer)
 	var bike_id := int(action.get("bike", 0))
 	var engine_id := int(action.get("engine", 0))
@@ -3285,6 +3288,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("adventure_"):
 		_adventure_apply(peer, action)
 		return
+	if str(action.get("a", "")).begins_with("roadside_"):
+		_roadside_apply(peer, action)
+		return
 	var why := check(peer, action)
 	if why != "":
 		_tell(peer, why, false)
@@ -3381,6 +3387,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"bolt":
 			host_of(bike_id, slot, engine_id)["bolted"][slot] = true
 			text = "%s bolted up" % PartsDB.slot_name(slot)
+			if engine_id == 0 and str(Roadside.faults_of(bike_id).get("rattle", "")) == slot:
+				bikes[bike_id]["faults"].erase("rattle")   # bolted up tight: no more rattle (see Roadside)
 			if engine_id == 0 and is_complete(bike_id):
 				text += ". The bike is ready to ride!"
 			elif engine_id != 0 and engine_missing(engine_id).is_empty():
@@ -3426,6 +3434,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			host["slots"][s] = item_id
 			host["bolted"][s] = false
 			_move(item_id, "engine" if PartsDB.is_engine_slot(s) else "bike", int(host["id"]))
+			if engine_id == 0 and s == "chain" and Roadside.faults_of(bike_id).has("chain_snap"):
+				bikes[bike_id]["faults"].erase("chain_snap")   # a new chain on in place of the snapped one
 			var tyre := tyre_on_wheel(item_id)
 			if tyre != 0 and WHEEL_TYRE.has(s) and int(host["slots"].get(WHEEL_TYRE[s], 0)) == 0:
 				# A wheel goes back on with its tyre seated on it.
@@ -3688,6 +3698,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var packed: Array = toolbox_contents(box).duplicate()
 			if action.get("empty", false):
 				items[box]["contents"] = []
+				Roadside.repacked(box)
 				text = "Emptied the %s: %s back on the shelf" % [item_title(box), kit_list(packed)]
 			else:
 				var what := str(action.get("what", next_kit(box)))
@@ -3695,6 +3706,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				charge_garage(int(info["price"]), "Toolbox kit: %s" % str(info["short"]))
 				packed.append(what)
 				items[box]["contents"] = packed
+				Roadside.repacked(box, what)
 				text = "Packed the %s in the %s (%d of %d)" % [str(info["name"]).to_lower(), item_title(box), packed.size(), toolbox_slots(box)]
 		"refuel":
 			var ridden := riding(peer)
@@ -3805,11 +3817,22 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "You heave %s back upright" % bikes[bike_id]["name"]
 			bikes[bike_id]["rider"] = peer
 			bikes[bike_id]["stand"] = ""
+			bikes[bike_id].erase("push")
 			c["riding"] = bike_id
 		"dismount":
 			bikes[bike_id]["rider"] = 0
 			bikes[bike_id]["xf"] = action.get("xf", bikes[bike_id]["xf"])
+			bikes[bike_id].erase("push")
+			bikes[bike_id].erase("tow")
+			for other in bikes:
+				if int(bikes[other].get("tow", 0)) == peer:
+					bikes[other].erase("tow")   # the strap comes off the bike that was towing
 			c["riding"] = 0
+			if Adventure.active() and action.get("roadside") is Dictionary:
+				# Left at the side of the road on an adventure: where, in the route's frame (see Roadside).
+				var r: Dictionary = action["roadside"]
+				bikes[bike_id]["roadside"] = {"trip": int(adventure["id"]), "x": float(r.get("x", 0.0)), "y": float(r.get("y", 0.0)),
+					"z": float(r.get("z", 0.0)), "yaw": float(r.get("yaw", 0.0)), "s": float(r.get("s", 0.0)), "open": false, "out": []}
 			_park(bike_id)
 			if bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over. Fit a side stand."
@@ -4482,6 +4505,23 @@ func poster_marks(design: int) -> Array:
 	return out
 
 
+## Breakdowns and fixing them at the roadside on an adventure (see Roadside): what's said goes
+## to the player, or to the whole crew when it starts with "*".
+func _roadside_apply(peer: int, action: Dictionary) -> void:
+	var why := Roadside.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var said := Roadside.apply(peer, action)
+	if said.begins_with("*"):
+		for p in crew:
+			_tell(int(p), said.substr(1), true)
+	elif said != "":
+		_tell(peer, said, true)
+	_mark_dirty()
+	changed.emit()
+
+
 ## An adventure ride's actions (see Adventure): what's said goes to the player, or to the whole
 ## crew when it starts with "*".
 func _adventure_apply(peer: int, action: Dictionary) -> void:
@@ -4490,6 +4530,8 @@ func _adventure_apply(peer: int, action: Dictionary) -> void:
 		_tell(peer, why, false)
 		return
 	var said := Adventure.apply(peer, action)
+	if str(action.get("a", "")) == "adventure_end":
+		Roadside.bring_home()   # bikes left at the roadside come home to the shed
 	if said.begins_with("*"):
 		for p in crew:
 			_tell(int(p), said.substr(1), true)
@@ -5874,7 +5916,7 @@ func abandoned_bikes() -> Array:
 	var out := []
 	for id in bikes:
 		var b: Dictionary = bikes[id]
-		if int(b.get("rider", 0)) == 0 and int(b.get("pusher", 0)) == 0 and not bike_at_work(int(id)):
+		if int(b.get("rider", 0)) == 0 and int(b.get("pusher", 0)) == 0 and not bike_at_work(int(id)) and not Roadside.parked(int(id)):
 			out.append(int(id))
 	out.sort()
 	return out

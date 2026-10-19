@@ -19,6 +19,8 @@ var _mark_key := ""         # its tyre's name in the shared skid marks
 var _marking := false        # its back tyre was laying rubber last frame
 ## The rider's gear (slot -> RiderGear item id); set before setup. Empty dresses them as before.
 var rider_gear := {}
+## Wheeled along on foot (see Roadside): nobody's sat on it.
+var pushed := false
 
 
 func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Color(0, 0, 0, 0)) -> void:
@@ -103,7 +105,7 @@ func _physics_process_body(delta: float) -> void:
 	_last = sb
 	model.update_pose_from(lerpf(sa[10], sb[10], f), sb[11], sb[12], lerpf(sa[13], sb[13], f),
 		lerpf(sa[14], sb[14], f), sb[18], 0.0)
-	model.set_rider_visible(sb[17] < 0.5)
+	model.set_rider_visible(sb[17] < 0.5 and not pushed)
 	# Their left foot down as their bike comes to rest, by its speed as their snapshots have it.
 	model.update_foot(Vector3(sb[7], sb[8], sb[9]).length(), delta, sb[17] < 0.5)
 	audio.rpm = sb[15]
