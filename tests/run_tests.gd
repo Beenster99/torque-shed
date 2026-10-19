@@ -457,6 +457,10 @@ func _run_all() -> void:
 	await _test_adv_routes_vote()
 	await _test_adv_routes_stream()
 	await _test_adv_routes_map()
+	_test_adv_themes_plan()
+	_test_adv_themes_scenery()
+	await _test_adv_themes_stream()
+	await _test_adv_themes_sky()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21613,3 +21617,25 @@ func _test_adv_routes_stream() -> void:
 
 func _test_adv_routes_map() -> void:
 	await _adv_routes().test_map()
+
+
+# ---------------------------------------------------------------------------- adventure themes (tests/adventure_themes_tests.gd)
+
+func _adv_themes() -> RefCounted:
+	return load("res://tests/adventure_themes_tests.gd").new(self)
+
+
+func _test_adv_themes_plan() -> void:
+	_adv_themes().test_plan()
+
+
+func _test_adv_themes_scenery() -> void:
+	_adv_themes().test_scenery()
+
+
+func _test_adv_themes_stream() -> void:
+	await _adv_themes().test_stream()
+
+
+func _test_adv_themes_sky() -> void:
+	await _adv_themes().test_sky()

@@ -83,6 +83,8 @@ const TRACK_NAMES: Array[String] = ["Quarry", "Forest", "Drovers'", "Old Mine", 
 ## Rough average speeds for how long each way takes (km/h): by its bends, times a surface factor.
 const PACE := {"straight": 90.0, "sweeping": 78.0, "curvy": 58.0, "very_curvy": 40.0}
 const PACE_SURF := {"tarmac": 1.0, "gravel": 0.68, "sand": 0.5, "snow": 0.5}
+## Where the land under a coastal sea levels out (m; the sea itself is AdventureTheme.SEA_Y).
+const SEA_BED := AdventureTheme.SEA_Y - 7.0
 
 var seed_value := 0
 var theme := "varied"
@@ -135,13 +137,25 @@ var _seq := PackedInt32Array()
 var _noise: FastNoiseLite
 var _noise_fine: FastNoiseLite
 var _noise_far: FastNoiseLite
+## The theme's planning numbers (see AdventureTheme), read once in plan().
+var _kinds: Dictionary = KIND_WEIGHTS
+var _bends := {}
+var _heights := {"h0": 140.0, "lo": 50.0, "hi": 950.0, "steep": 1.0, "up": 0.5}
+var _hills := 1.0
+var _lift := 1.0
+## The sea off to the left (coastal), and the snow line over the tops (alpine; INF without).
+var sea := false
+var snow_line := INF
+## The theme's colours: {"land", "patch", "verge", "road"} -> {surface: Color} (see AdventureSurface).
+var look := {}
 
 
 ## Plans the whole road for `seed` and `km`. `extra_sites` ([{kind, s, side, flat}]) are kept
 ## straight and level like the fuel stations, for whatever is to be built there.
 func plan(seed: int, km: float, theme_name := "varied", extra_sites: Array = []) -> void:
 	seed_value = seed
-	theme = theme_name
+	theme = theme_name if AdventureTheme.has(theme_name) else "varied"
+	_theme_numbers()
 	length = clampf(km, 1.0, 1000.0) * 1000.0
 	total = length + RUN_OUT
 	var n := int(ceil(total / STEP)) + 1
@@ -165,6 +179,7 @@ func plan(seed: int, km: float, theme_name := "varied", extra_sites: Array = [])
 	_plan_bends(rng, n)
 	_plan_heights(rng, n)
 	_integrate(n)
+	_snow_over_tops()
 	_stash_default()
 	for f in forks.size():
 		_plan_ways(f)
@@ -329,19 +344,32 @@ func land_height(i: int, lat: float, x: float, z: float) -> float:
 	var flat := _site_flat(i, signf(lat))
 	var t := smoothstep(e + 1.5 + flat, e + 14.0 + flat * 1.4, a)
 	var h := lerpf(road_h - 0.12, natural_height(i, x, z, a), t)
+	if sea and lat < 0.0:
+		h = _coast(h, a, e + flat, x, z)
 	return minf(h, _other_road_limit(i, x, z))
+
+
+## The land on the sea side of a coastal road, `a` metres out (the verge and any site's flat
+## ground ending at `inner`): it runs on a way, then drops to the sea, steeply off a cliff or
+## gently down a beach (noise picks which, and where), and on under the water.
+func _coast(h: float, a: float, inner: float, x: float, z: float) -> float:
+	var n1 := _noise_far.get_noise_2d(x * 2.3, z * 2.3) * 0.5 + 0.5
+	var n2 := _noise.get_noise_2d(x * 1.7 + 900.0, z * 1.7) * 0.5 + 0.5
+	var a0 := inner + 26.0 + n1 * 70.0
+	var w := lerpf(14.0, 150.0, smoothstep(0.35, 0.7, n2))   # a cliff, or a long beach
+	return lerpf(h, SEA_BED, smoothstep(a0, a0 + w, a))
 
 
 ## The lie of the land at (x, z), `a` metres from the road beside knot `i`.
 func natural_height(i: int, x: float, z: float, a: float) -> float:
 	var surf := surface_at_s(i * STEP)
-	var hills := {"tarmac": 22.0, "gravel": 34.0, "sand": 18.0, "snow": 55.0}.get(surf, 25.0) as float
+	var hills := ({"tarmac": 22.0, "gravel": 34.0, "sand": 18.0, "snow": 55.0}.get(surf, 25.0) as float) * _hills
 	var h := base[i] + _noise.get_noise_2d(x, z) * hills + _noise_fine.get_noise_2d(x, z) * 2.5
 	if surf == "sand":
 		h += absf(_noise_fine.get_noise_2d(x * 0.35, z * 0.9)) * 6.0   # dunes
 	# Higher ground rising away from the road for the skyline, mountains in the snow.
 	var far := smoothstep(70.0, 420.0, a)
-	var lift := {"snow": 160.0, "gravel": 90.0}.get(surf, 55.0) as float
+	var lift := ({"snow": 160.0, "gravel": 90.0}.get(surf, 55.0) as float) * _lift
 	h += far * lift * (0.45 + 0.55 * (_noise_far.get_noise_2d(x, z) * 0.5 + 0.5))
 	return h
 
@@ -429,6 +457,52 @@ func smooth_curv(i: int, span := 8) -> float:
 
 # ---------------------------------------------------------------------------- planning
 
+## Reads the theme's planning numbers (AdventureTheme.DATA), varied's where it has none.
+func _theme_numbers() -> void:
+	_kinds = AdventureTheme.get_value(theme, "kinds", KIND_WEIGHTS)
+	_bends = AdventureTheme.get_value(theme, "bends", {})
+	_heights = {"h0": 140.0, "lo": 50.0, "hi": 950.0, "steep": 1.0, "up": 0.5}
+	_heights.merge(AdventureTheme.get_value(theme, "heights", {}), true)
+	_hills = float(AdventureTheme.get_value(theme, "hills", 1.0))
+	_lift = float(AdventureTheme.get_value(theme, "lift", 1.0))
+	sea = bool(AdventureTheme.get_value(theme, "sea", false))
+	snow_line = INF
+	look = {}
+	for table in [["land", AdventureSurface.LAND_COLOR], ["patch", AdventureSurface.LAND_PATCH],
+			["verge", AdventureSurface.VERGE_COLOR], ["road", AdventureSurface.ROAD_COLOR]]:
+		var d := {}
+		for surf in AdventureSurface.IDS:
+			d[surf] = AdventureTheme.color(theme, table[0], surf, table[1][surf])
+		look[table[0]] = d
+
+
+## The bends of a section of `kind`: BENDS's, with the theme's own over them (alpine hairpins).
+func _bend(kind: String) -> Dictionary:
+	if not _bends.has(kind):
+		return BENDS[kind]
+	var spec: Dictionary = (BENDS[kind] as Dictionary).duplicate()
+	spec.merge(_bends[kind], true)
+	return spec
+
+
+## Snow on the road over the tops (a theme with "snow"): every chunk of the main road higher than
+## the highest fifth of it (and never below the theme's own line) is snow, past the start's
+## tarmac. The ways at the forks take the same line (see _try_way).
+func _snow_over_tops() -> void:
+	var floor_h = AdventureTheme.get_value(theme, "snow", null)
+	if floor_h == null or chunk_surface.is_empty():
+		return
+	var tops := PackedFloat64Array()
+	for c in chunk_surface.size():
+		tops.append(ph[mini(c * CHUNK_KNOTS + CHUNK_KNOTS / 2, ph.size() - 1)])
+	var sorted := tops.duplicate()
+	sorted.sort()
+	snow_line = maxf(float(floor_h), sorted[int(sorted.size() * 0.8)])
+	for c in range(12, chunk_surface.size()):
+		if tops[c] > snow_line:
+			chunk_surface[c] = "snow"
+
+
 func _make_noise(seed: int) -> void:
 	_noise = FastNoiseLite.new()
 	_noise.seed = seed
@@ -464,7 +538,7 @@ func _plan_surfaces(rng: RandomNumberGenerator, n: int) -> void:
 		var surf := "tarmac"
 		if c > 0:
 			if bag.is_empty():
-				bag = SURFACE_BAG.duplicate()
+				bag.assign(AdventureTheme.get_value(theme, "bag", SURFACE_BAG))
 				for k in range(bag.size() - 1, 0, -1):   # shuffled with our own rng, the same everywhere
 					var j := rng.randi_range(0, k)
 					var tmp := bag[k]
@@ -474,7 +548,8 @@ func _plan_surfaces(rng: RandomNumberGenerator, n: int) -> void:
 			if surf == last and not bag.is_empty():
 				bag.push_front(surf)
 				surf = bag.pop_back()
-		var span := maxi(4, int(rng.randf_range(SURFACE_LEN[0], SURFACE_LEN[1]) / CHUNK_LEN))
+		var surf_len: Array = AdventureTheme.get_value(theme, "surf_len", SURFACE_LEN)
+		var span := maxi(4, int(rng.randf_range(surf_len[0], surf_len[1]) / CHUNK_LEN))
 		if c == 0:
 			span = maxi(span, 12)   # the start is always on tarmac for a while
 		var end := mini(chunks, c + span)
@@ -498,8 +573,8 @@ func _plan_bends(rng: RandomNumberGenerator, n: int) -> void:
 		var i0: int = st["i"]
 		var kind := "straight"
 		if i0 > 0:
-			kind = _weighted(rng, KIND_WEIGHTS)
-		var spec: Dictionary = BENDS[kind]
+			kind = _weighted(rng, _kinds)
+		var spec: Dictionary = _bend(kind)
 		var sec_len := rng.randf_range(spec["len"][0], spec["len"][1]) if i0 > 0 else 260.0
 		var end := mini(n - 1, i0 + int(sec_len / STEP))
 		var wclass := _width_for(rng, kind, surface_at_s(i0 * STEP))
@@ -613,6 +688,10 @@ func _width_for(rng: RandomNumberGenerator, kind: String, surf: String) -> Strin
 		w = {"road": 0.3, "narrow": 0.5, "single": 0.2}
 	else:
 		w = {"road": 0.4, "narrow": 0.5, "single": 0.1}
+	var mult: Dictionary = AdventureTheme.get_value(theme, "widths", {})
+	for k in mult:
+		if w.has(k):
+			w[k] = float(w[k]) * float(mult[k])
 	return _weighted(rng, w)
 
 
@@ -630,22 +709,33 @@ static func _weighted(rng: RandomNumberGenerator, weights: Dictionary) -> String
 
 func _plan_heights(rng: RandomNumberGenerator, n: int) -> void:
 	ph.resize(n)
-	var h := 140.0
+	var h := float(_heights["h0"])
+	var steep_mult := float(_heights["steep"])
+	var up := float(_heights["up"])
+	var top := float(_heights["hi"])
+	var bottom := float(_heights["lo"])
+	var wave: Array = _heights.get("wave", [])   # [m from top to top, valley, top]
 	var g := 0.0
 	var target := 0.0
 	var seg_end := 0
 	for i in n:
 		if i >= seg_end:
 			var kind := kind_at_s(i * STEP)
-			var steep := {"straight": 3.0, "sweeping": 6.0, "curvy": 8.0, "very_curvy": 10.0}.get(kind, 5.0) as float
-			target = rng.randf_range(0.25, 1.0) * steep / 100.0 * (1.0 if rng.randf() < 0.5 else -1.0)
-			if rng.randf() < 0.22:
-				target = 0.0
+			var steep := ({"straight": 3.0, "sweeping": 6.0, "curvy": 8.0, "very_curvy": 10.0}.get(kind, 5.0) as float) * steep_mult
+			if wave.size() == 3:
+				# Over the passes: climbing hard towards the next top, then down into the valley.
+				var want := lerpf(float(wave[1]), float(wave[2]), pow(sin(PI * i * STEP / float(wave[0])), 2.0))
+				var up_odds := 0.5 if absf(want - h) < 60.0 else (0.92 if want > h else 0.08)
+				target = rng.randf_range(0.55, 1.0) * steep / 100.0 * (1.0 if rng.randf() < up_odds else -1.0)
+			else:
+				target = rng.randf_range(0.25, 1.0) * steep / 100.0 * (1.0 if rng.randf() < up else -1.0)
+				if rng.randf() < 0.22:
+					target = 0.0
 			seg_end = i + int(rng.randf_range(300.0, 1400.0) / STEP)
 		var aim := target
-		if h > 950.0:
+		if h > top:
 			aim = -absf(target) - 0.02
-		elif h < 50.0:
+		elif h < bottom:
 			aim = absf(target) + 0.02
 		if _site_near(i - 30, 150):
 			aim = 0.0   # level for a site, from well before it
@@ -867,7 +957,7 @@ func _try_way(f: int, kind: String, side: float, attempt: int) -> Dictionary:
 	var stage := 0
 	var limit := int(dist * 3.0 / STEP) + 400
 	var sec_end := 0
-	var bends: Dictionary = BENDS["sweeping"]
+	var bends: Dictionary = _bend("sweeping")
 	var last_sign := side
 	var stray: float = spec["stray"]
 	while _wn(g) < limit:
@@ -878,7 +968,7 @@ func _try_way(f: int, kind: String, side: float, attempt: int) -> Dictionary:
 			break
 		if _wn(g) >= sec_end:
 			var sk := _weighted(rng, spec["kinds"])
-			bends = BENDS[sk]
+			bends = _bend(sk)
 			sec_end = _wn(g) + int(rng.randf_range(bends["len"][0], bends["len"][1]) / STEP)
 			secs.append({"s0": _wn(g) * STEP, "s1": sec_end * STEP, "kind": sk, "width": _weighted(rng, spec["widths"])})
 		var target := aim if stage == 0 else approach
@@ -994,14 +1084,18 @@ func _try_way(f: int, kind: String, side: float, attempt: int) -> Dictionary:
 	# on tarmac, snowy over the top of a high one.
 	var cs: Array[String] = []
 	var chunks := (n - 1) / CHUNK_KNOTS
-	var sandy := rng.randf() < 0.4
+	var sandy := rng.randf() < float(AdventureTheme.get_value(theme, "track_sand", 0.4))
+	var pass_snow := bool(AdventureTheme.get_value(theme, "pass_snow", true))
+	var wph: PackedFloat64Array = way["ph"]
 	for c in chunks:
 		var ct := (c + 0.5) / chunks
 		var surf := "tarmac"
 		if kind == "gravel":
 			surf = "sand" if sandy and ct > 0.4 and ct < 0.62 else "gravel"
-		elif float(way["rise"]) > 120.0 and ct > 0.38 and ct < 0.62:
+		elif pass_snow and float(way["rise"]) > 120.0 and ct > 0.38 and ct < 0.62:
 			surf = "snow"
+		if wph[mini(c * CHUNK_KNOTS + CHUNK_KNOTS / 2, n - 1)] > snow_line:
+			surf = "snow"   # over the snow line (alpine)
 		cs.append(surf)
 	way["chunk_surface"] = cs
 	way["base"] = _leg_base(way["ph"], [0, n - 1])
@@ -1039,7 +1133,7 @@ func _way_heights(way: Dictionary, rng: RandomNumberGenerator, h0: float, h1: fl
 	for k in n:
 		if k >= seg_end:
 			var kind := _kind_in(way["sections"], k * STEP)
-			var steep := {"straight": 3.0, "sweeping": 6.0, "curvy": 8.0, "very_curvy": 10.0}.get(kind, 5.0) as float
+			var steep := ({"straight": 3.0, "sweeping": 6.0, "curvy": 8.0, "very_curvy": 10.0}.get(kind, 5.0) as float) * float(_heights["steep"])
 			target = rng.randf_range(0.25, 1.0) * steep / 100.0 * (1.0 if rng.randf() < 0.5 else -1.0)
 			if rng.randf() < 0.22:
 				target = 0.0
@@ -1053,7 +1147,8 @@ func _way_heights(way: Dictionary, rng: RandomNumberGenerator, h0: float, h1: fl
 	var len_m := (n - 1) * STEP
 	var rise := 0.0
 	if way["kind"] == "scenic":
-		rise = minf(rng.randf_range(150.0, 320.0), 0.05 * len_m / PI)
+		var pr: Array = AdventureTheme.get_value(theme, "pass_rise", [150.0, 320.0])
+		rise = minf(rng.randf_range(pr[0], pr[1]), 0.05 * len_m / PI)
 	var dz := h1 - zh[n - 1]
 	for k in n:
 		var t := float(k) / float(n - 1)

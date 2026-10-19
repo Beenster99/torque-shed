@@ -134,7 +134,8 @@ static func vc_material() -> StandardMaterial3D:
 # ---------------------------------------------------------------------------- scenery meshes
 
 ## One shared mesh per kind: "pine", "snow_pine", "tree", "bush", "dry_bush", "rock", "post",
-## "snow_pole", "km_post".
+## "snow_pole", "km_post", and the themes' (AdventureTheme): "cactus", "red_rock", "mesa" (desert),
+## "crag" (alpine), "gorse", "dune_grass", "lighthouse" (coastal), "oak", "sheep" (hills).
 static func mesh(kind: String) -> ArrayMesh:
 	if _meshes.has(kind):
 		return _meshes[kind]
@@ -168,18 +169,76 @@ static func mesh(kind: String) -> ArrayMesh:
 		"km_post":
 			box(a, Transform3D(), Vector3(0.18, 1.0, 0.1), Color(0.94, 0.94, 0.92))
 			box(a, Transform3D(Basis(), Vector3(0, 0.82, 0)), Vector3(0.19, 0.12, 0.11), Color(0.85, 0.15, 0.1))
+		"cactus":
+			var green := Color(0.25, 0.42, 0.2)
+			cone(a, Transform3D(), 0.3, 0.0, 4.0, green, 6, 0.26)
+			cone(a, Transform3D(), 0.26, 4.0, 4.35, green, 6)
+			for arm: Array in [[-1.0, 1.6, 1.1], [1.0, 2.2, 0.9]]:
+				var sx: float = arm[0]
+				box(a, Transform3D(Basis(), Vector3(sx * 0.55, arm[1], 0)), Vector3(0.75, 0.36, 0.36), green)
+				cone(a, Transform3D(Basis(), Vector3(sx * 0.85, 0, 0)), 0.2, arm[1], arm[1] + arm[2] + 0.6, green, 5, 0.17)
+		"red_rock":
+			blob(a, Vector3(0, 0.3, 0), Vector3(1.3, 0.9, 1.0), Color(0.62, 0.37, 0.25), 13)
+		"mesa":
+			# A butte: layered red rock with a flat top, bands of a paler stone.
+			cone(a, Transform3D(), 40.0, -6.0, 6.0, Color(0.6, 0.36, 0.24), 9, 34.0)
+			cone(a, Transform3D(), 34.0, 6.0, 26.0, Color(0.68, 0.4, 0.26), 9, 31.0)
+			cone(a, Transform3D(), 31.0, 26.0, 30.0, Color(0.78, 0.56, 0.4), 9, 30.0)
+			cone(a, Transform3D(), 30.0, 30.0, 44.0, Color(0.64, 0.36, 0.23), 9, 28.0)
+			cone(a, Transform3D(), 28.0, 44.0, 44.05, Color(0.7, 0.5, 0.34), 9)
+		"crag":
+			var stone := Color(0.5, 0.49, 0.47)
+			blob(a, Vector3(0, 6.0, 0), Vector3(16.0, 13.0, 11.0), stone, 17)
+			blob(a, Vector3(5.0, 15.0, 2.0), Vector3(8.0, 11.0, 7.0), stone.darkened(0.08), 19)
+			blob(a, Vector3(5.5, 24.0, 2.0), Vector3(4.2, 2.6, 3.8), Color(0.9, 0.92, 0.95), 23)
+		"gorse":
+			blob(a, Vector3(0, 0.55, 0), Vector3(1.1, 0.75, 1.0), Color(0.2, 0.31, 0.12), 29)
+			blob(a, Vector3(0.25, 1.05, 0.15), Vector3(0.6, 0.28, 0.55), Color(0.92, 0.78, 0.14), 31)
+		"dune_grass":
+			for t: Vector3 in [Vector3(0, 0, 0), Vector3(0.5, 0, 0.3), Vector3(-0.35, 0, 0.45)]:
+				cone(a, Transform3D(Basis(), t), 0.32, 0.0, 0.95, Color(0.6, 0.6, 0.36), 5)
+		"oak":
+			cone(a, Transform3D(), 0.5, 0.0, 3.0, trunk, 6, 0.32)
+			blob(a, Vector3(0, 5.2, 0), Vector3(3.8, 2.7, 3.8), Color(0.2, 0.33, 0.12), 37)
+			blob(a, Vector3(1.6, 6.4, 0.8), Vector3(2.2, 1.7, 2.2), Color(0.24, 0.38, 0.14), 41)
+			blob(a, Vector3(-1.5, 6.0, -1.0), Vector3(2.0, 1.6, 2.0), Color(0.22, 0.35, 0.13), 43)
+		"sheep":
+			var dark := Color(0.12, 0.11, 0.1)
+			for leg: Vector3 in [Vector3(-0.2, 0, -0.35), Vector3(0.2, 0, -0.35), Vector3(-0.2, 0, 0.35), Vector3(0.2, 0, 0.35)]:
+				box(a, Transform3D(Basis(), leg), Vector3(0.08, 0.5, 0.08), dark, false)
+			blob(a, Vector3(0, 0.78, 0), Vector3(0.42, 0.36, 0.62), Color(0.9, 0.89, 0.84), 47)
+			blob(a, Vector3(0, 0.9, -0.72), Vector3(0.15, 0.18, 0.22), dark, 53)
+		"lighthouse":
+			# White with red bands, the gallery and lantern on top, the keeper's cottage beside it.
+			for k in 4:
+				var y0 := k * 4.5
+				cone(a, Transform3D(), 2.6 - k * 0.25, y0, y0 + 4.5, Color(0.95, 0.95, 0.93) if k % 2 == 0 else Color(0.78, 0.12, 0.1), 10, 2.35 - k * 0.25)
+			cone(a, Transform3D(), 2.2, 18.0, 18.3, Color(0.15, 0.15, 0.16), 10, 2.2)
+			cone(a, Transform3D(), 2.2, 18.3, 18.31, Color(0.15, 0.15, 0.16), 10)
+			cone(a, Transform3D(), 1.1, 18.3, 20.3, Color(0.98, 0.92, 0.6), 8, 1.1)
+			cone(a, Transform3D(), 1.4, 20.3, 21.6, Color(0.7, 0.12, 0.1), 8)
+			var cottage := Transform3D(Basis(), Vector3(0, 0, 6.5))
+			box(a, cottage, Vector3(7.0, 3.0, 4.5), Color(0.95, 0.95, 0.93), false)
+			gable(a, cottage * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3.ZERO), 4.5, 7.0, 3.0, 1.8, Color(0.28, 0.3, 0.35), Color(0.95, 0.95, 0.93))
 	var m := to_mesh(a)
 	_meshes[kind] = m
 	return m
 
 
-## The odd house, cottage or barn by the road, into `a` at `xf` (its front facing local +z).
-static func building(a: Dictionary, xf: Transform3D, rng: RandomNumberGenerator, surf: String) -> void:
+## The odd house, cottage or barn by the road, into `a` at `xf` (its front facing local +z), in
+## the theme's building style (`style_name`, see AdventureTheme.STYLES: adobe ones are flat-roofed).
+static func building(a: Dictionary, xf: Transform3D, rng: RandomNumberGenerator, surf: String, style_name := "mixed") -> void:
 	var kind := rng.randi_range(0, 2)
 	var walls := [Color(0.86, 0.82, 0.72), Color(0.72, 0.62, 0.5), Color(0.6, 0.3, 0.22), Color(0.9, 0.9, 0.88)]
 	var roofs := [Color(0.25, 0.22, 0.22), Color(0.45, 0.2, 0.15), Color(0.32, 0.34, 0.36)]
 	if surf == "sand":
 		walls = [Color(0.86, 0.74, 0.55), Color(0.92, 0.85, 0.7)]
+	if style_name != "mixed" and AdventureTheme.STYLES.has(style_name):
+		var st: Dictionary = AdventureTheme.STYLES[style_name]
+		walls = st["walls"]
+		roofs = st["roofs"]
+		if bool(st["flat"]):
+			kind = 2
 	var wall: Color = walls[rng.randi_range(0, walls.size() - 1)]
 	var roof: Color = roofs[rng.randi_range(0, roofs.size() - 1)]
 	if surf == "snow":

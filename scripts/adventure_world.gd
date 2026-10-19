@@ -31,6 +31,8 @@ const MAX_TASKS := 2
 const COMMITS_PER_FRAME := 1
 ## Marks a network snapshot carrying its sender's origin (see tag_state).
 const NET_TAG := -77777.0
+## The sea's colour on a coastal ride (the far ground there: see _follow_horizon).
+const SEA_COLOR := Color(0.09, 0.27, 0.36)
 
 ## Emitted after the origin moves: everything placed in the local frame moves by -delta.
 signal origin_shifted(delta: Vector3)
@@ -454,14 +456,21 @@ func _follow_horizon(p: Vector3) -> void:
 		return
 	var s := maxf(_own_s, 0.0)
 	var i := clampi(int(s / AdventureRoute.STEP), 0, route.base.size() - 1)
-	horizon.position = Vector3(p.x, route.base[i] - 70.0, p.z)
-	var surf := route.surface_at_s(s)
-	var col: Color = AdventureSurface.LAND_COLOR[surf]
 	var m := horizon.material_override as StandardMaterial3D
 	if m == null:
 		m = StandardMaterial3D.new()
 		m.roughness = 1.0
 		horizon.material_override = m
+	if route.sea:
+		# By the sea the far ground is the sea itself, at its own level: the land runs down into it.
+		horizon.position = Vector3(p.x, AdventureTheme.SEA_Y, p.z)
+		m.albedo_color = SEA_COLOR
+		m.roughness = 0.12
+		m.metallic_specular = 0.8
+		return
+	horizon.position = Vector3(p.x, route.base[i] - 70.0, p.z)
+	var surf := route.surface_at_s(s)
+	var col: Color = route.look["land"][surf]
 	m.albedo_color = col.darkened(0.2)
 
 

@@ -134,14 +134,33 @@ func enter() -> void:
 		var side := world.transform_at(s0, -world.route.width_at_s(s0) * 0.5 - 1.5)
 		main.walker.place(side)
 	Daylight.adventure_rate = Adventure.day_rate()
+	apply_theme(world.route.theme, int(info["seed"]), start_s() <= 0.0)
 	Shed.request({"a": "adventure_join", "bike": preferred})
 	if start_s() > 0.0:
 		main.hud.flash("Carrying on the adventure: %.1f of %d km done. Morning, and back on the road." % [start_s() / 1000.0, roundi(float(info["km"]))], 5.0)
 	else:
-		main.hud.flash("Adventure ride: %d km of varied roads. Fuel stations are signed along the way; at a fork the crew votes for the way. {paper_map} for the map when stopped." % roundi(float(info["km"])), 5.0)
+		main.hud.flash("Adventure ride: %d km of %s. Fuel stations are signed along the way; at a fork the crew votes for the way. {paper_map} for the map when stopped." % [roundi(float(info["km"])), AdventureTheme.roads_of(world.route.theme)], 5.0)
 	_busy = false
 	if not instant:
 		await main._fade_to(0.0)
+
+
+## The theme's sky and weather (AdventureTheme): the sky and haze tinted, the weather changing
+## by the theme's odds, and on a fresh start (`fresh`; not carrying on after a night) the time of
+## day it sets off at and its first weather, from the seed. The host's clock and weather are
+## everyone's (Daylight, Weather), so on a client only the tint and odds are its own.
+func apply_theme(theme: String, seed: int, fresh: bool) -> void:
+	Daylight.set_tint(AdventureTheme.get_value(theme, "sky", {}))
+	Weather.odds = (AdventureTheme.get_value(theme, "weather", {}) as Dictionary).duplicate()
+	if not fresh:
+		return
+	var hour := float(AdventureTheme.get_value(theme, "start_hour", -1.0))
+	if hour >= 0.0 and Daylight.current and not Daylight.set_by_host():
+		Daylight.current.set_time(hour)
+	if Weather.current and not Weather.set_by_host() and not Weather.STATES.has(Settings.weather):
+		var pick := AdventureTheme.weather_pick(theme, float(absi(hash([seed, "weather"])) % 1000) / 1000.0)
+		if pick != "":
+			Weather.current.change_to(pick, true)
 
 
 ## Back to the shed from the adventure: the bike you're on parked in its bay (fuel, wear and
@@ -183,6 +202,8 @@ func _unload() -> void:
 	trip_id = 0
 	_sleep_town(false)
 	Daylight.adventure_rate = 0.0
+	Daylight.set_tint({})
+	Weather.odds = {}
 	_hud.visible = false
 	_fork_panel.visible = false
 

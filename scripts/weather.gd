@@ -32,6 +32,10 @@ const DROPS := 2400
 const RAIN_BOX := Vector3(28.0, 16.0, 28.0)   # the block of falling rain kept round the camera
 
 static var current: Weather
+## Out on an adventure, the theme's odds of each kind of weather ({state: weight}, see
+## AdventureTheme "weather"): when it changes by itself it's drawn from these instead of NEXT.
+## Empty back at the shed (and on a varied ride).
+static var odds := {}
 
 var state := "clear"       # the weather it is (or is turning into)
 var from := "clear"        # the weather it's turning from
@@ -178,7 +182,10 @@ func _process_body(delta: float) -> void:
 			_spell -= delta
 			if _spell <= 0.0:
 				var options: Array = NEXT[state]
-				change_to(str(options[_rng.randi() % options.size()]))
+				var next := str(options[_rng.randi() % options.size()])
+				if not odds.is_empty():
+					next = AdventureTheme.weather_pick_from(odds, _rng.randf())
+				change_to(next)
 		blend = minf(blend + delta / BLEND_TIME, 1.0)
 		# Rain soaks the ground; once it stops it dries out slowly.
 		_mix()

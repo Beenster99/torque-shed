@@ -14,8 +14,15 @@ const COLLIDE_COLS := 7
 const CROWN := 0.04
 ## How far each kind of thing is drawn (m, times the draw distance setting).
 const RANGES := {"pine": 650.0, "snow_pine": 650.0, "tree": 650.0, "bush": 260.0, "dry_bush": 260.0, "rock": 320.0,
-	"post": 220.0, "snow_pole": 260.0, "km_post": 200.0, "buildings": 1100.0, "lines": 380.0}
-## Scenery per chunk on each surface's land: kind -> how many.
+	"post": 220.0, "snow_pole": 260.0, "km_post": 200.0, "buildings": 1100.0, "lines": 380.0,
+	"cactus": 420.0, "red_rock": 320.0, "gorse": 260.0, "dune_grass": 200.0, "oak": 650.0, "sheep": 220.0,
+	"mesa": 3400.0, "crag": 2400.0, "lighthouse": 2600.0, "walls": 420.0}
+## Small things that may stand close to the road's edge (the rest keep 6 m off it).
+const NEAR_KINDS := ["rock", "bush", "dry_bush", "red_rock", "gorse", "dune_grass", "sheep"]
+## The far scenery (AdventureTheme "far"): how far out from the road it stands (m), and how
+## clear of any road its middle must be.
+const FAR_PLACE := {"mesa": [170.0, 380.0, 80.0], "crag": [70.0, 260.0, 40.0]}
+## Scenery per chunk on each surface's land: kind -> how many (a theme may have its own: AdventureTheme "scenery").
 const SCENERY := {
 	"tarmac": {"tree": 16, "bush": 10, "pine": 3, "rock": 2},
 	"gravel": {"pine": 28, "tree": 4, "bush": 5, "rock": 10},
@@ -24,6 +31,8 @@ const SCENERY := {
 }
 const BUILDING_ODDS := {"tarmac": 0.2, "gravel": 0.07, "sand": 0.06, "snow": 0.05}
 const FENCE_ODDS := {"tarmac": 0.55, "gravel": 0.3, "sand": 0.0, "snow": 0.0}
+## A beach's sand, along a coastal sea.
+const BEACH := Color(0.86, 0.8, 0.62)
 
 
 ## Lays out chunk `c` of `route`. Safe to run on a worker thread: it only reads the route.
@@ -42,7 +51,7 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 	var road_v := PackedVector3Array()
 	var road_uv := PackedVector2Array()
 	var road_c := PackedColorArray()
-	var rc: Color = AdventureSurface.ROAD_COLOR[surf]
+	var rc: Color = route.look["road"][surf]
 	for i in range(i0, i1 + 1):
 		var h := route.hd[i]
 		var rx := cos(h)
@@ -122,23 +131,30 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: float, z: float, y: float) -> Color:
 	var s := i * AdventureRoute.STEP
 	var here := route.surface_at_s(s)
-	var col: Color = AdventureSurface.LAND_COLOR[here]
-	var patch: Color = AdventureSurface.LAND_PATCH[here]
+	var lands: Dictionary = route.look["land"]
+	var patches: Dictionary = route.look["patch"]
+	var col: Color = lands[here]
+	var patch: Color = patches[here]
 	for d: float in [-64.0, 64.0]:
 		var other := route.surface_at_s(s + d)
 		if other != here:
-			col = col.lerp(AdventureSurface.LAND_COLOR[other], 0.35)
-			patch = patch.lerp(AdventureSurface.LAND_PATCH[other], 0.35)
+			col = col.lerp(lands[other], 0.35)
+			patch = patch.lerp(patches[other], 0.35)
 	var n := route._noise_fine.get_noise_2d(x * 1.7, z * 1.7) * 0.5 + 0.5
 	col = col.lerp(patch, smoothstep(0.35, 0.75, n))
 	if k <= 1:
-		col = AdventureSurface.VERGE_COLOR[here]
+		col = route.look["verge"][here]
 	elif k == 2:
-		col = col.lerp(AdventureSurface.VERGE_COLOR[here], 0.5)
+		col = col.lerp(route.look["verge"][here], 0.5)
 	# Steep ground away from the road shows rock (snow lies on the gentler slopes).
 	var rise := absf(y - route.ph[i]) / maxf(lat, 1.0)
 	if k > 3:
 		col = col.lerp(Color(0.45, 0.43, 0.4), smoothstep(0.45, 0.9, rise) * 0.7)
+		# By the sea: a beach along the water's edge, wet sand under it.
+		if route.sea and y < AdventureTheme.SEA_Y + 5.0:
+			col = col.lerp(BEACH, 1.0 - smoothstep(AdventureTheme.SEA_Y + 2.0, AdventureTheme.SEA_Y + 5.0, y))
+			if y < AdventureTheme.SEA_Y - 0.2:
+				col = BEACH.darkened(0.3)
 	return col
 
 
@@ -226,39 +242,59 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([route.seed_value, "chunk", c])
 	var mm := {}
-	var counts: Dictionary = SCENERY.get(surf, {})
+	var theme := route.theme
+	var counts: Dictionary = (AdventureTheme.get_value(theme, "scenery", {}) as Dictionary).get(surf, SCENERY.get(surf, {}))
 	for kind in counts:
 		var list := []
 		for k in int(counts[kind]):
 			var i := rng.randi_range(i0, i1)
 			var side := -1.0 if rng.randf() < 0.5 else 1.0
-			var near := 2.5 if kind in ["rock", "bush", "dry_bush"] else 6.0
+			var near := 2.5 if kind in NEAR_KINDS else 6.0
 			var lat := route.width[i] * 0.5 + near + pow(rng.randf(), 1.5) * 120.0
 			var xf := _on_land(route, i, lat * side, ax, az, rng.randf() * TAU, rng.randf_range(0.7, 1.35))
 			if xf != Transform3D():
 				list.append(xf)
 		mm[kind] = list
-	# Fences along farmland, a post every 3 m or so, with two rails between.
+	# Fences along farmland, a post every 3 m or so, with two rails between; or in the hills and
+	# by the sea dry-stone walls and hedges (a theme's "bounds").
 	var buildings := AdventureProps.new_arrays()
-	var fence_roll := float(absi(hash([route.seed_value, "fence", int(i0 * AdventureRoute.STEP / 600.0)])) % 1000) / 1000.0
-	if fence_roll < float(FENCE_ODDS.get(surf, 0.0)):
+	var walls := AdventureProps.new_arrays()
+	var bounds: Array = AdventureTheme.get_value(theme, "bounds", [])
+	var bound_kind := "fence" if bounds.is_empty() else str(bounds[0])
+	var bound_odds: Dictionary = FENCE_ODDS if bounds.is_empty() else bounds[1]
+	var stretch := int(i0 * AdventureRoute.STEP / 600.0)
+	var fence_roll := float(absi(hash([route.seed_value, "fence", stretch])) % 1000) / 1000.0
+	if bound_kind == "wall_hedge":
+		bound_kind = "wall" if absi(hash([route.seed_value, "hedge", stretch])) % 2 == 0 else "hedge"
+	if fence_roll < float(bound_odds.get(surf, 0.0)):
 		var posts := []
 		var rail := Color(0.45, 0.35, 0.24)
 		for side: float in [-1.0, 1.0]:
 			var prev := Vector3.INF
 			for i in range(i0, i1 + 1):
-				var lat := (route.width[i] * 0.5 + 4.0) * side
+				var lat := (route.width[i] * 0.5 + (4.0 if bound_kind == "fence" else 2.6)) * side
 				# No fence across a site's forecourt or lay-by: it's left open to ride in.
 				var xf := Transform3D() if route._site_flat(i, side) > 0.5 else _on_land(route, i, lat, ax, az, route.hd[i], 1.0, true)
 				if xf == Transform3D():
 					prev = Vector3.INF
 					continue
-				posts.append(xf)
+				if bound_kind == "fence":
+					posts.append(xf)
 				if prev != Vector3.INF:
-					for y: float in [0.55, 0.95]:
-						_rail(buildings, prev + Vector3.UP * y, xf.origin + Vector3.UP * y, rail)
+					match bound_kind:
+						"fence":
+							for y: float in [0.55, 0.95]:
+								_rail(buildings, prev + Vector3.UP * y, xf.origin + Vector3.UP * y, rail)
+						"wall":
+							var shade := 0.9 + 0.2 * float(absi(hash([i, side])) % 100) / 100.0
+							_wall(walls, prev, xf.origin, 0.95, 0.55, Color(0.56, 0.54, 0.5) * shade)
+						"hedge":
+							var shade := 0.88 + 0.2 * float(absi(hash([i, side])) % 100) / 100.0
+							_wall(walls, prev, xf.origin, 1.55, 1.1, Color(0.17, 0.3, 0.11) * shade)
 				prev = xf.origin
-		mm["post"] = posts
+		if not posts.is_empty():
+			mm["post"] = posts
+	out["walls"] = walls
 	# Marker poles along a snowy road, every 32 m or so either side.
 	if surf == "snow":
 		var poles := []
@@ -269,7 +305,7 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 					poles.append(xf)
 		mm["snow_pole"] = poles
 	# The odd building.
-	if rng.randf() < float(BUILDING_ODDS.get(surf, 0.0)):
+	if rng.randf() < float(BUILDING_ODDS.get(surf, 0.0)) * float(AdventureTheme.get_value(theme, "buildings", 1.0)):
 		var i := rng.randi_range(i0, i1)
 		var side := -1.0 if rng.randf() < 0.5 else 1.0
 		var lat := route.width[i] * 0.5 + rng.randf_range(18.0, 50.0)
@@ -278,8 +314,9 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 		var xf := _on_land(route, i, lat * side, ax, az, face, 1.0, false, 9.0)
 		if xf != Transform3D():
 			xf.origin.y -= 0.4   # sunk in a little on a slope
-			AdventureProps.building(buildings, xf, rng, surf)
+			AdventureProps.building(buildings, xf, rng, surf, str(AdventureTheme.get_value(theme, "style", "mixed")))
 	out["buildings"] = buildings
+	_far(route, c, i0, i1, ax, az, mm)
 	# Kilometre posts on the left verge, every kilometre.
 	var kms := []
 	var s0 := i0 * AdventureRoute.STEP
@@ -313,6 +350,80 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 	out["sites"] = here
 
 
+## The theme's far scenery in chunk `c` (AdventureTheme "far"): the odd mesa off in the desert,
+## a crag of bare rock in the mountains, a lighthouse on a cliff top by the sea. On its own rng,
+## so the rest of the chunk is laid out the same with or without it.
+static func _far(route: AdventureRoute, c: int, i0: int, i1: int, ax: float, az: float, mm: Dictionary) -> void:
+	var far: Array = AdventureTheme.get_value(route.theme, "far", [])
+	if far.is_empty():
+		return
+	var kind := str(far[0])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([route.seed_value, "far", c])
+	var list := []
+	for k in int(far[2]):
+		if rng.randf() >= float(far[1]):
+			continue
+		var i := rng.randi_range(i0, i1)
+		if kind == "lighthouse":
+			# On the first cliff top along the chunk from there (none where it's all beach).
+			for j in range(0, i1 - i0, 4):
+				var xf := _cliff_top(route, i0 + (i - i0 + j) % (i1 - i0), ax, az)
+				if xf != Transform3D():
+					list.append(xf)
+					break
+			continue
+		var place: Array = FAR_PLACE[kind]
+		var side := -1.0 if rng.randf() < 0.5 else 1.0
+		if route.sea:
+			side = 1.0
+		var lat := rng.randf_range(place[0], place[1]) * side
+		var xf := _on_land(route, i, lat, ax, az, rng.randf() * TAU, rng.randf_range(0.7, 1.5), false, place[2])
+		if xf != Transform3D():
+			xf.origin.y -= 2.0   # bedded in on a slope
+			list.append(xf)
+	if not list.is_empty():
+		mm[kind] = list
+
+
+## Where a lighthouse stands beside knot `i`: the last high ground before the land drops to the
+## sea (on the left of a coastal road), or an empty Transform3D where it's a beach, not a cliff.
+static func _cliff_top(route: AdventureRoute, i: int, ax: float, az: float) -> Transform3D:
+	var h := route.hd[i]
+	var e := route.width[i] * 0.5
+	var prev := Vector3.INF
+	var a := e + 30.0
+	while a < e + 260.0:
+		if a > route.inside_reach(i, -1) * 0.95:
+			return Transform3D()
+		var wx := route.px[i] - cos(h) * a
+		var wz := route.pz[i] - sin(h) * a
+		var y := route.land_height(i, -a, wx, wz)
+		if prev != Vector3.INF and prev.y > AdventureTheme.SEA_Y + 14.0 and y < AdventureTheme.SEA_Y + 2.0:
+			if route.clearance(prev.x, prev.z) < 30.0:
+				return Transform3D()
+			return Transform3D(Basis(), Vector3(prev.x - ax, prev.y - 0.3, prev.z - az))
+		prev = Vector3(wx, y, wz)
+		a += 12.0
+	return Transform3D()
+
+
+## A dry-stone wall or a hedge from `a` to `b` (on the ground), `h` high and `t` thick: its
+## two sides and its top.
+static func _wall(arr: Dictionary, a: Vector3, b: Vector3, h: float, t: float, col: Color) -> void:
+	var along := b - a
+	along.y = 0.0
+	if along.length() < 0.01:
+		return
+	var across := Vector3(-along.z, 0.0, along.x).normalized() * t * 0.5
+	var up := Vector3.UP * h
+	var top := 0.82   # a little narrower over the top
+	var dn := Vector3.DOWN * 0.25   # down into the ground on a slope
+	AdventureProps._quad(arr, a + across + dn, b + across + dn, b + across * top + up, a + across * top + up, col)
+	AdventureProps._quad(arr, b - across + dn, a - across + dn, a - across * top + up, b - across * top + up, col.darkened(0.08))
+	AdventureProps._quad(arr, a + across * top + up, b + across * top + up, b - across * top + up, a - across * top + up, col.lightened(0.06))
+
+
 ## A transform standing on the land `lat` metres off the road at knot `i` (relative to the
 ## anchor), turned `angle` about the vertical (local +z then points along (sin, cos)) and
 ## scaled `scale`; an empty Transform3D where it would be on a road,
@@ -330,6 +441,8 @@ static func _on_land(route: AdventureRoute, i: int, lat: float, ax: float, az: f
 	if route._site_flat(i, signf(lat)) > 0.0 and not close:
 		return Transform3D()
 	var y := route.land_height(i, lat, wx, wz)
+	if route.sea and y < AdventureTheme.SEA_Y + 0.8 and not close:
+		return Transform3D()   # in the sea, or on the wet sand
 	return Transform3D(Basis(Vector3.UP, angle).scaled(Vector3.ONE * scale), Vector3(wx - ax, y - 0.05, wz - az))
 
 
@@ -418,10 +531,18 @@ static func commit(data: Dictionary, world: AdventureWorld) -> Node3D:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "MM_" + kind
 		mmi.multimesh = multi
-		if kind in ["post", "snow_pole", "km_post", "bush", "dry_bush"]:
+		if kind in ["post", "snow_pole", "km_post", "bush", "dry_bush", "gorse", "dune_grass", "sheep", "red_rock"]:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_range(mmi, float(RANGES.get(kind, 400.0)) * scale)
 		node.add_child(mmi)
+	var walls: Dictionary = data.get("walls", {})
+	if not walls.is_empty() and not (walls["v"] as PackedVector3Array).is_empty():
+		var wmi := MeshInstance3D.new()
+		wmi.name = "Walls"
+		wmi.mesh = AdventureProps.to_mesh(walls)
+		wmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_range(wmi, RANGES["walls"] * scale)
+		node.add_child(wmi)
 	var bld: Dictionary = data["buildings"]
 	if not (bld["v"] as PackedVector3Array).is_empty():
 		var bmi := MeshInstance3D.new()
