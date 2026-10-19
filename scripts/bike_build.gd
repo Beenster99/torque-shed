@@ -11,12 +11,22 @@ extends RefCounted
 ## carry "lightened" in their condition.
 
 const RIDER_MASS := 75.0
-const FIXED_MASS := 36.0      # battery, wiring, side panels (the tail unit weighs its own)
+## Battery, wiring, side panels and brackets (the tail unit weighs its own). A frame can carry its own
+## figure as "fixed_mass": an MX bike has next to none of it, a big steel cruiser or tourer a lot.
+const FIXED_MASS := 36.0
 const FUEL_DENSITY := 0.74    # kg per litre
 const OIL_DENSITY := 0.87
-## Litres of petrol per kWh at the crank, and the engine's own thirst ticking over per litre of capacity.
-const FUEL_PER_KWH := 0.5
-const IDLE_FUEL_PER_LITRE := 0.9   # litres an hour
+## Litres of petrol per kWh the cylinders make. Some of that goes in the engine's own friction and
+## pumping, a mean pressure in bar that climbs with revs (and with a head's "thirst": big valves and
+## long cam overlap waste fuel at part throttle), so a revvy, hot-cammed engine cruising high up the
+## rev range drinks more than a lazy one doing the same work.
+const FUEL_PER_KWH := 0.32
+const FRICTION_BAR := 1.7
+const FRICTION_BAR_PER_KRPM := 0.3
+## A two-stroke loses some of its fresh charge out of the exhaust.
+const TWO_STROKE_THIRST := 1.35
+## How fast torque falls away past its peak: power then peaks about a quarter above peak torque.
+const TORQUE_FADE := 1.5
 const AIR_DENSITY := 1.2
 const DRIVETRAIN_EFFICIENCY := 0.92
 const ROLLING := 0.015
@@ -101,6 +111,7 @@ var oil_type := "semi_10w40"
 var oil_protection := 0.88     # how well the oil looks after the engine, 0..1
 var brake_fluid := {"front": 1.0, "rear": 1.0}   # how full each side's master cylinder is, 0..1
 var economy_mult := 1.0        # how far each litre goes: fuel grade, tune and condition
+var friction_mult := 1.0       # the head's thirst at part throttle (see friction_kw)
 
 # Suspension
 var front_travel := 0.13
@@ -252,7 +263,7 @@ func _compute() -> void:
 	oil_type = oil["type"]
 	var oil_part := PartsDB.get_part(oil["type"])
 	oil_protection = float(oil_part.get("protection", 0.8)) * lerpf(1.0, 0.55, oil_age)
-	bike_mass = FIXED_MASS + fuel_litres * FUEL_DENSITY + oil_litres * OIL_DENSITY
+	bike_mass = float(frame.get("fixed_mass", FIXED_MASS)) + fuel_litres * FUEL_DENSITY + oil_litres * OIL_DENSITY
 	for slot in parts:
 		bike_mass += _part_mass(slot)
 	total_mass = bike_mass + RIDER_MASS
@@ -579,6 +590,7 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	stock_redline = float(block["redline"]) + float(head["redline_add"]) + float(ecu.get("rev_add", 0.0))
 	redline = stock_redline + tune_value("limiter")
 	idle_rpm = block["idle_rpm"]
+	friction_mult = float(head.get("thirst", 1.0))
 
 	torque_mult = float(head["torque_mult"]) * lerpf(0.75, 1.0, health["head"]) * float(ecu.get("power", 1.0))
 	# The fuel system has to keep up with the engine, or it runs lean and gutless.
@@ -681,7 +693,8 @@ func engine_torque(rpm: float) -> float:
 	if rpm > redline * 1.02:
 		return 0.0
 	var x := (rpm - peak_torque_rpm) / peak_torque_rpm
-	var shape := 1.0 - 0.7 * x * x
+	# Past its peak the torque fades faster than it builds, so power peaks a little short of the limiter.
+	var shape := 1.0 - (0.7 if x < 0.0 else TORQUE_FADE) * x * x
 	var t := peak_torque * clampf(shape, 0.3, 1.0)
 	if x < 0.0:
 		t *= 1.0 + tune_low * minf(-x * 2.0, 1.0)
@@ -732,8 +745,16 @@ func top_speed_estimate() -> float:
 
 ## Litres an hour the engine burns making `kw` at the crank while turning `rpm`.
 func fuel_rate(kw: float, rpm: float) -> float:
-	var idle := IDLE_FUEL_PER_LITRE * displacement / 1000.0 * clampf(rpm / maxf(idle_rpm * 3.0, 1.0), 0.33, 2.5)
-	return (maxf(kw, 0.0) * FUEL_PER_KWH + idle) / maxf(economy_mult, 0.3)
+	var litres := (maxf(kw, 0.0) + friction_kw(rpm)) * FUEL_PER_KWH * (TWO_STROKE_THIRST if layout == "2stroke" else 1.0)
+	return litres / maxf(economy_mult, 0.3)
+
+
+## kW the engine spends turning itself over at `rpm`: friction and pumping, a mean pressure on the
+## pistons over one power stroke every two turns.
+func friction_kw(rpm: float) -> float:
+	var rpm_on := maxf(rpm, idle_rpm)
+	var bar := (FRICTION_BAR + FRICTION_BAR_PER_KRPM * rpm_on / 1000.0) * friction_mult
+	return bar * 100000.0 * displacement / 1000000.0 * rpm_on / 120.0 / 1000.0
 
 
 ## Kilometres per litre at a steady 90 km/h, for comparing bikes.
