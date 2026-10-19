@@ -74,7 +74,7 @@ const MPH := 2.23694
 ## How often the host sends the cars to the crew (s).
 const SEND_EVERY := 0.1
 const MODES: Array[String] = ["patrol", "parked", "chase", "stop"]
-const PACKED := 15              # numbers per car in pack()
+const PACKED := 16              # numbers per car in pack()
 const STAGES: Array[String] = ["", "pull", "walk", "talk", "back"]
 ## What the officer says, by how fast you were going.
 const LINES: Array[String] = [
@@ -120,12 +120,20 @@ func _ready() -> void:
 	name = "Police"
 	host = Shed.is_authority()
 	if driver == null:
-		driver = PoliceDriver.new()
+		# In the adventure's traffic when it has some (the stream draws the cars and the crew get
+		# them with it), else on their own.
+		var traffic := AdventureTraffic.current
+		if world and traffic and is_instance_valid(traffic) and traffic.world == world and traffic.stream:
+			var sd := PoliceStreamDriver.new()
+			sd.stream = traffic.stream
+			driver = sd
+		else:
+			driver = PoliceDriver.new()
 		driver.name = "PoliceDriver"
 		add_child(driver)
 	driver.host = host
 	if world and not driver.sample.is_valid():
-		driver.sample = road_sample
+		driver.sample = driver.stream.sample if driver is PoliceStreamDriver else road_sample
 	if world and plan.is_empty():
 		plan = plan_for(world.route)
 	if not Net.police_received.is_connected(unpack):
@@ -161,8 +169,11 @@ static func plan_for(route: AdventureRoute) -> Array:
 	return out
 
 
-## The speed limit at `s` (m/s), remembered by the 25 m.
+## The speed limit at `s` (m/s): the traffic's when there is some (it knows the narrow roads
+## and the gravel), else limit_at's; remembered by the 25 m.
 func limit_here(s: float) -> float:
+	if driver is PoliceStreamDriver and AdventureTraffic.current:
+		return AdventureTraffic.current.limit_at(s)
 	var k := int(s / 25.0)
 	if not _limits.has(k):
 		if _limits.size() > 400:
@@ -402,6 +413,8 @@ func spawn(s: float, dir: int, parked := false, pace := 0.9, side := -1) -> int:
 		lane = world.route.width_at_s(s) * 0.5 + PARKED_OUT
 		v = 0.0
 	driver.add(id, s, dir, v, lane)
+	if not driver.has(id):
+		return -1   # no room on the road just now
 	cars[id] = {"id": id, "mode": "parked" if parked else "patrol", "target": 0, "excess": 0.0, "near_t": 0.0, "lost_t": 0.0,
 		"stage": "", "stage_t": 0.0, "stop_s": 0.0, "let_off": {}, "pace": pace, "trap": parked, "speed": 0.0}
 	events.append(["spawn", id, "parked" if parked else "patrol"])
@@ -724,6 +737,7 @@ func _show(delta: float) -> void:
 		var lit := mode == "chase" or (mode == "stop" and str(b["stage"]) != "back")
 		body.set_blues(blues_at(_clock + id * 0.37) if lit else Vector2.ZERO)
 		var wail := mode == "chase" or (mode == "stop" and str(b["stage"]) == "pull")
+		driver.set_aux(id, (PoliceStreamDriver.AUX_LIGHTS if lit else 0) | (PoliceStreamDriver.AUX_SIREN if wail else 0))
 		if wail and not _sirens.has(id):
 			var siren := PoliceSiren.new()
 			siren.name = "Siren"
@@ -868,8 +882,8 @@ func _officer(b: Dictionary, st: Dictionary, delta: float) -> void:
 # ---------------------------------------------------------------------------- the crew
 
 ## For the network: per car [id, s, dir, v, lane, lane_want, mode, target (its high 16 bits),
-## stage, stage_t, stop_s, excess, speed, trap, target (its low 16 bits)]: a peer id is too big to
-## go whole in a float.
+## stage, stage_t, stop_s, excess, speed, trap, target (its low 16 bits), the stream vehicle it
+## is (-1 driven on its own)]: a peer id is too big to go whole in a float.
 func pack() -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	for id in cars:
@@ -879,7 +893,8 @@ func pack() -> PackedFloat32Array:
 			continue
 		out.append_array([float(id), float(c["s"]), float(c["dir"]), float(c["v"]), float(c["lane"]), float(c["lane_want"]),
 			float(MODES.find(b["mode"])), float(int(b["target"]) >> 16), float(STAGES.find(b["stage"])), float(b["stage_t"]),
-			float(b["stop_s"]), float(b["excess"]), float(b["speed"]), 1.0 if b["trap"] else 0.0, float(int(b["target"]) & 0xFFFF)])
+			float(b["stop_s"]), float(b["excess"]), float(b["speed"]), 1.0 if b["trap"] else 0.0, float(int(b["target"]) & 0xFFFF),
+			float(driver.stream_id(id))])
 	return out
 
 
@@ -897,7 +912,10 @@ func unpack(state_in: PackedFloat32Array) -> void:
 			continue
 		seen[id] = true
 		if not driver.has(id):
-			driver.add(id, state_in[k + 1], int(state_in[k + 2]), state_in[k + 3], state_in[k + 4])
+			if driver is PoliceStreamDriver:
+				(driver as PoliceStreamDriver).attach(id, int(state_in[k + 15]))
+			else:
+				driver.add(id, state_in[k + 1], int(state_in[k + 2]), state_in[k + 3], state_in[k + 4])
 			cars[id] = {"id": id, "mode": MODES[mi], "target": 0, "excess": 0.0, "near_t": 0.0, "lost_t": 0.0, "stage": "",
 				"stage_t": 0.0, "stop_s": 0.0, "let_off": {}, "pace": 1.0, "trap": MODES[mi] == "parked", "speed": 0.0}
 		var c: Dictionary = driver.cars[id]

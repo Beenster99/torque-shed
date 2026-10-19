@@ -457,6 +457,15 @@ func _run_all() -> void:
 	await _test_adv_routes_vote()
 	await _test_adv_routes_stream()
 	await _test_adv_routes_map()
+	print("Adventure traffic (v0.14.0): both ways, busier through villages, buses at the stops, hills, riders in the lanes, engines")
+	await _test_adv_traffic_density()
+	await _test_adv_traffic_climb()
+	await _test_adv_traffic_bus()
+	await _test_adv_traffic_blockers()
+	await _test_adv_traffic_forks_origin()
+	await _test_adv_traffic_takeover()
+	await _test_adv_traffic_sounds()
+	await _test_adv_traffic_perf()
 	print("The police on adventures (v0.14.0): patrols and speed traps, the 30 mph rule, chases, stops and fines")
 	await _test_adv_police_spawn_rate()
 	await _test_adv_police_rule()
@@ -465,6 +474,7 @@ func _run_all() -> void:
 	await _test_adv_police_outrun()
 	await _test_adv_police_trap()
 	await _test_adv_police_coop()
+	await _test_adv_police_stream()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21623,6 +21633,42 @@ func _test_adv_routes_map() -> void:
 	await _adv_routes().test_map()
 
 
+# ---------------------------------------------------------------------------- adventure traffic (tests/adventure_traffic_tests.gd)
+
+func _adv_traffic() -> RefCounted:
+	return load("res://tests/adventure_traffic_tests.gd").new(self)
+
+
+func _test_adv_traffic_density() -> void:
+	await _adv_traffic().test_density()
+
+
+func _test_adv_traffic_climb() -> void:
+	await _adv_traffic().test_climb()
+
+
+func _test_adv_traffic_bus() -> void:
+	await _adv_traffic().test_bus()
+
+
+func _test_adv_traffic_blockers() -> void:
+	await _adv_traffic().test_blockers()
+
+
+func _test_adv_traffic_forks_origin() -> void:
+	await _adv_traffic().test_forks_origin()
+
+
+func _test_adv_traffic_takeover() -> void:
+	await _adv_traffic().test_takeover()
+
+
+func _test_adv_traffic_sounds() -> void:
+	await _adv_traffic().test_sounds()
+
+
+func _test_adv_traffic_perf() -> void:
+	await _adv_traffic().test_perf()
 # ---------------------------------------------------------------------------- the police on adventures (tests/adventure_police_tests.gd)
 
 func _adv_police() -> RefCounted:
@@ -21655,3 +21701,7 @@ func _test_adv_police_trap() -> void:
 
 func _test_adv_police_coop() -> void:
 	await _adv_police().test_coop()
+
+
+func _test_adv_police_stream() -> void:
+	await _adv_police().test_stream()

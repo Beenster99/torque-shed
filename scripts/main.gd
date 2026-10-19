@@ -1203,6 +1203,14 @@ func _tow_button() -> void:
 	if Shed.check(Shed.me(), {"a": "roadside_untow"}) == "":
 		Shed.request({"a": "roadside_untow"})
 		return
+	# Only a broken-down (or dry) bike that's stopped asks for a tow, so a stray press while riding
+	# along doesn't strap you to whoever's nearby.
+	var riding := Shed.riding(Shed.me())
+	if not Roadside.needs_tow(riding, bike.fuel_litres <= 0.0):
+		return
+	if absf(bike.speed) > Roadside.TOW_STOPPED:
+		hud.flash("Stop first, then ask a mate for a tow.", 2.0, true)
+		return
 	var best := 0
 	var best_d := Roadside.TOW_REACH
 	for peer in remotes:
@@ -1215,7 +1223,7 @@ func _tow_button() -> void:
 	if best == 0:
 		hud.flash("Nobody on a bike close enough to tow you (within %d m)." % int(Roadside.TOW_REACH), 2.5, true)
 		return
-	Shed.request({"a": "roadside_tow", "by": best})
+	Shed.request({"a": "roadside_tow", "by": best, "dry": bike.fuel_litres <= 0.0})
 
 
 ## Keeps the ridden bike's punctures in step with the shed's (one given from the Debug tab, say),

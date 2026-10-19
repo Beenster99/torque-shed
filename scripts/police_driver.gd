@@ -4,10 +4,10 @@ extends Node3D
 ## interface so the police themselves never care: the police say what each car should do this
 ## tick (a speed to make, how hard it may speed up and brake, and which part of the road to be on)
 ## and the driver moves it there and draws it. This one drives them itself, a kinematic follower
-## along the road the way TrafficStream drives its own vehicles. Once the traffic has a stream on
-## the adventure's road, a driver that spawns a "police" slot in that stream and takes the slot
-## over (scripted control) and hands it back can stand in for this one by overriding the same
-## handful of functions (add, remove, has, state, steer, body, traffic, step).
+## along the road the way TrafficStream drives its own vehicles (used where there's no traffic).
+## Out in the adventure's traffic PoliceStreamDriver stands in for it, overriding the same handful
+## of functions (add, remove, has, state, steer, body, traffic, step): it spawns a "police"
+## vehicle into the stream and takes it over, driving it the same way.
 ##
 ## Positions are distance along the road (s) and a lane: metres to the left of the centre line
 ## as the car faces (it's a left-hand road: about LANE x half the width is its own lane, minus
@@ -98,6 +98,17 @@ func steer(id: int, want: float, accel: float, brake: float, lane: float, dir :=
 ## The car's model, for its lamps and siren.
 func body(id: int) -> TrafficVehicle:
 	return cars[id]["body"] if cars.has(id) else null
+
+
+## The stream vehicle car `id` is, or -1 (driven here, on its own).
+func stream_id(_id: int) -> int:
+	return -1
+
+
+## What the car's lights and siren are doing (see PoliceStreamDriver.AUX_*), for whoever draws it.
+func set_aux(id: int, aux: int) -> void:
+	if cars.has(id):
+		cars[id]["aux"] = aux
 
 
 ## The other vehicles on the road, for overtaking: [{s, dir, v, half}] (none without a stream).

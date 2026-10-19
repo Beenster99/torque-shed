@@ -396,3 +396,87 @@ func test_coop() -> void:
 	client.queue_free()
 	Progress.set_money(keep)
 	await _free(p)
+
+
+## Out in the adventure's traffic the police car is one of the stream's vehicles, taken over:
+## a "police" vehicle the stream draws (and sends the crew), driven by the police, the rest of the
+## traffic for it to get round, its lights and siren in its aux; gone, it's off the road.
+func test_stream() -> void:
+	var sim := {1: {"s": 0.0, "v": 0.0}}
+	var w := AdventureWorld.new()
+	w.setup(7, 60.0)
+	for f in w.route.forks.size():
+		w.route.choose(f, 0)
+	w.focus = func(): return [w.transform_at(float(sim[1]["s"]), -1.5).origin]
+	w.process_mode = Node.PROCESS_MODE_DISABLED
+	t.add_child(w)
+	var tr := AdventureTraffic.new()
+	w.add_child(tr)
+	tr.set_physics_process(false)
+	var p := AdventurePolice.new()
+	p.world = w
+	p.rider_source = func() -> Array:
+		return [{"peer": 1, "s": sim[1]["s"], "v": sim[1]["v"]}]
+	w.add_child(p)
+	p.set_physics_process(false)
+	p.plan = []
+	check(p.driver is PoliceStreamDriver, "with the adventure's traffic about, the police drive in it")
+	var s0 := _straight(w.route, 3000.0, 1500.0)
+	sim[1]["s"] = s0 - 200.0
+	tr._physics_process(DT)
+	var id := p.spawn(s0, 1, false, 0.85)
+	var k := p.driver.stream_id(id)
+	var sl := tr.stream.slot(k)
+	check(id >= 0 and k >= 0 and str(sl.get("kind", "")) == "police" and bool(sl.get("scripted", false)) and p.driver.body(id) != null,
+		"a police car goes into the stream as one of its vehicles, taken over (%s)" % str(sl.get("kind", "?")))
+	var ours := false
+	for o in p.driver.traffic():
+		ours = ours or absf(float(o["s"]) - float(sl.get("s", -1.0))) < 0.01
+	check(not ours, "the traffic it sees to get round is everyone else's")
+	var patrol_v := float(p.driver.state(id)["v"])
+	sim[1]["s"] = s0 - 60.0
+	sim[1]["v"] = patrol_v + 20.0
+	var seen := {"aux": 0}
+	_run(p, sim, 14.0, func(): return p.chasing(1) and int(seen["aux"]) == 3, func():
+		tr._physics_process(DT)
+		seen["aux"] = int(seen["aux"]) | int(tr.stream.find(k).get("aux", 0)))
+	var moved := tr.stream.slot(k)
+	check(p.chasing(1) and int(seen["aux"]) == 3 and absf(float(moved.get("s", -1.0)) - float(p.driver.state(id)["s"])) < 0.01,
+		"chasing, the stream's car is where the police put it, its lights and siren in its aux (%d)" % int(seen["aux"]))
+	# The crew: their stream brings the car, the police say which one it is.
+	var cs := TrafficStream.new()
+	cs.sample = tr.stream.sample
+	cs.host = false
+	t.add_child(cs)
+	cs.set_physics_process(false)
+	cs.unpack(tr.stream.pack())
+	var client := AdventurePolice.new()
+	var cd := PoliceStreamDriver.new()
+	cd.stream = cs
+	cd.name = "PoliceDriver"
+	client.driver = cd
+	client.world = w
+	client.rider_source = p.rider_source
+	client.plan = []
+	t.add_child(client)
+	client.set_physics_process(false)
+	client.host = false
+	cd.host = false
+	client.unpack(p.pack())
+	var cst := cd.state(id)
+	check(cd.stream_id(id) == k and not cst.is_empty() and absf(float(cst["s"]) - float(p.driver.state(id)["s"])) < 0.5 and cd.body(id) != null,
+		"the crew's police find the same car in their own stream")
+	client.queue_free()
+	cs.queue_free()
+	# A car parked in a lay-by isn't in anyone's lane.
+	var hw := float(tr.stream.sample.call(s0)["hw"])
+	check(not TrafficStream._in_lane({"dir": 1, "lat": hw + 2.5}, hw) and TrafficStream._in_lane({"dir": 1, "lat": -hw * 0.45}, hw)
+		and TrafficStream._in_lane({"dir": 1, "lat": NAN}, hw),
+		"the traffic queues behind a car in its lane, not one in a lay-by")
+	p.remove(id)
+	check(tr.stream.find(k).is_empty() and not p.driver.has(id), "gone off the police, it's off the road")
+	p.queue_free()
+	w.queue_free()
+	Shed.adventure = {}
+	await t.get_tree().process_frame
+	await t.get_tree().process_frame

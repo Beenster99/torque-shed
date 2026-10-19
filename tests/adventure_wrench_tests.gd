@@ -107,9 +107,12 @@ func test_rules() -> void:
 	Shed.request({"a": "adventure_start", "seed": 5, "km": 20.0})
 	check(Adventure.active(), "an adventure on")
 	check(Shed.check(me, {"a": "roadside_fault", "kind": "warp_drive"}) != "", "only real faults")
+	check(Shed.check(me, {"a": "roadside_tow", "by": 99}).contains("no tow needed"), "a bike that runs fine can't be put on a tow strap")
+	check(not Shed.check(me, {"a": "roadside_tow", "by": 99, "dry": true}).contains("no tow needed"), "out of fuel it can")
 	Shed.request({"a": "roadside_fault", "kind": "chain_snap"})
 	check(Roadside.faults_of(bike).get("chain_snap", false) and Roadside.dead(bike), "out on the adventure the chain snaps: the bike's dead")
 	check(Shed.check(me, {"a": "roadside_fault", "kind": "chain_snap"}) != "", "it can't snap twice")
+	check(not Shed.check(me, {"a": "roadside_tow", "by": 99}).contains("no tow needed") and Roadside.needs_tow(bike), "broken down, it can")
 	check(Shed.check(me, {"a": "roadside_fix", "bike": bike, "fault": "chain_snap", "crouched": true}).contains("roadside"),
 		"no fixing it while riding: stop and get off first")
 	# Off at the roadside.

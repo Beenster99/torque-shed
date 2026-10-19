@@ -129,6 +129,7 @@ func enter() -> void:
 	main.world.add_child(world)
 	world.origin_shifted.connect(_on_shift)
 	world.add_child(RoadsideView.new())   # bikes stood at the roadside, and tow straps (see Roadside)
+	world.add_child(AdventureTraffic.new())   # cars, vans, lorries and buses both ways
 	police = AdventurePolice.new()
 	police.trip = self
 	police.world = world
