@@ -266,6 +266,9 @@ func _apply_environment(p: Dictionary) -> void:
 	env.glow_enabled = p["glow"]
 	env.glow_hdr_threshold = 1.0
 	env.glow_hdr_scale = 2.0
+	# A pixel gone wildly over-bright (a bad sample in the GI or the fog) blooms into a white blot;
+	# capped, it stays a speck.
+	env.glow_hdr_luminance_cap = 6.0
 	env.set_glow_level(1, 0.8)
 	env.set_glow_level(2, 0.6)
 	env.set_glow_level(3, 0.35)
