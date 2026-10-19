@@ -436,6 +436,10 @@ func _run_all() -> void:
 	await _test_adventure_surfaces()
 	await _test_adventure_pumps()
 	await _test_adventure_trip()
+	print("Roadside wrenching on adventures (v0.13.0): breakdowns, the toolbox, pushing and towing; none on normal rides")
+	_test_adv_wrench_odds()
+	_test_adv_wrench_rules()
+	await _test_adv_wrench_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21489,3 +21493,21 @@ func _test_adventure_pumps() -> void:
 
 func _test_adventure_trip() -> void:
 	await _adventure().test_trip()
+
+
+# ---------------------------------------------------------------------------- roadside wrenching (tests/adventure_wrench_tests.gd)
+
+func _adv_wrench() -> RefCounted:
+	return load("res://tests/adventure_wrench_tests.gd").new(self)
+
+
+func _test_adv_wrench_odds() -> void:
+	_adv_wrench().test_odds()
+
+
+func _test_adv_wrench_rules() -> void:
+	_adv_wrench().test_rules()
+
+
+func _test_adv_wrench_session() -> void:
+	await _adv_wrench().test_session()

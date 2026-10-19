@@ -595,7 +595,8 @@ func _on_shed_changed() -> void:
 	elif recovery.driving and Recovery.driver() != Shed.me():
 		recovery.stop_driving(false)
 	var mine := Shed.riding(Shed.me())
-	if mine == 0 or mine != _left_bike or Time.get_ticks_msec() - _left_at > LEFT_WAIT_MS:
+	if mine == 0 or mine != _left_bike or Time.get_ticks_msec() - _left_at > LEFT_WAIT_MS \
+			or bool(Shed.bikes[mine].get("push", false)):   # taken hold of to push it at the roadside (see Roadside)
 		_left_bike = 0
 	if mine != 0 and bike == null and mine != _left_bike:
 		_start_riding(mine)
