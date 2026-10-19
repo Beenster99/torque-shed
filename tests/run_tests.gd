@@ -445,6 +445,10 @@ func _run_all() -> void:
 	_test_adv_wrench_odds()
 	_test_adv_wrench_rules()
 	await _test_adv_wrench_session()
+	_test_adv_routes_graph()
+	await _test_adv_routes_vote()
+	await _test_adv_routes_stream()
+	await _test_adv_routes_map()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21542,3 +21546,25 @@ func _test_adv_wrench_rules() -> void:
 
 func _test_adv_wrench_session() -> void:
 	await _adv_wrench().test_session()
+
+
+# ---------------------------------------------------------------------------- adventure forks (tests/adventure_routes_tests.gd)
+
+func _adv_routes() -> RefCounted:
+	return load("res://tests/adventure_routes_tests.gd").new(self)
+
+
+func _test_adv_routes_graph() -> void:
+	_adv_routes().test_graph()
+
+
+func _test_adv_routes_vote() -> void:
+	await _adv_routes().test_vote()
+
+
+func _test_adv_routes_stream() -> void:
+	await _adv_routes().test_stream()
+
+
+func _test_adv_routes_map() -> void:
+	await _adv_routes().test_map()

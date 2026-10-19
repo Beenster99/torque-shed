@@ -36,10 +36,13 @@ func _until(cond: Callable, seconds := 20.0) -> bool:
 
 
 ## A world for `seed` and `km` whose road follows `spot` ({p: local position}), kept in step
-## with the origin.
-func _world(seed: int, km: float, spot: Dictionary) -> AdventureWorld:
+## with the origin. The main road is taken at every fork (unless `forks_open`), so it's all there to stream.
+func _world(seed: int, km: float, spot: Dictionary, forks_open := false) -> AdventureWorld:
 	var w := AdventureWorld.new()
 	w.setup(seed, km)
+	if not forks_open:
+		for f in w.route.forks.size():
+			w.route.choose(f, 0)
 	spot["p"] = w.transform_at(20.0).origin
 	w.focus = func(): return [spot["p"]]
 	w.origin_shifted.connect(func(d): spot["p"] -= d)

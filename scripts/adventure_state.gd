@@ -12,7 +12,9 @@ extends RefCounted
 ## everybody back at the shed.
 ##
 ## Actions (Shed.request): adventure_start {seed, km, theme} and adventure_end (the host),
-## adventure_join {bike: the one you'd like} (each player, on loading it) and adventure_arrive.
+## adventure_join {bike: the one you'd like} (each player, on loading it) and adventure_arrive;
+## the forks' adventure_vote and adventure_fork_due (see AdventureForks, which keeps votes and
+## picks here too).
 
 const DEFAULT_KM := 60.0
 const MIN_KM := 5.0
@@ -72,6 +74,8 @@ static func check(peer: int, action: Dictionary) -> String:
 		"adventure_join", "adventure_arrive":
 			if not active():
 				return "There's no adventure on."
+		"adventure_vote", "adventure_fork_due":
+			return AdventureForks.check(peer, action)
 		_:
 			return "Unknown adventure action."
 	return ""
@@ -110,6 +114,8 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure["arrived"] = peer
 			Shed.adventure["arrived_name"] = who
 			return "*%s has reached the destination! Back to the shed in a few seconds." % who
+		"adventure_vote", "adventure_fork_due":
+			return AdventureForks.apply(peer, action, who)
 	return ""
 
 
