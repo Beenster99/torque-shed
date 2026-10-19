@@ -23,6 +23,10 @@ static var instant := false
 const MOMENT := 10.0
 const PULL_BACK := 7.0
 const PHOTO_AT := 4.5
+## Ground steeper than this (its normal's height) is too steep to stand on (the walker's floor angle).
+const STAND_SLOPE := 0.72
+## Falling faster than this on foot (m/s, about 30 m of drop) is through the land, not down a bank.
+const FALL_SPEED := 24.0
 
 var main: Node
 ## The adventure's world while you're on one, else null.
@@ -46,6 +50,8 @@ var _started_at := 0         # ticks when this player set off, for the title car
 var magazine: AdventureMag
 var _hidden: Array = []      # [node, was visible, process mode] of the town put to sleep
 var _hud: Label
+var _crew: Label             # how far ahead or behind the rest of the crew are (see friends)
+var _wrong: Label            # facing back the way you came (see wrong_way)
 var _hud_timer := 0.0
 var _put_back_at := 0        # ticks: when the last "back on the road" happened
 ## Hunger, thirst and tiredness: the meters, their effects, and sitting, eating and sleeping.
@@ -58,6 +64,7 @@ var _fork_choice := {}       # what the panel shows now (AdventureForks.choice)
 var _map: AdventureMap       # the paper map, made the first time it's opened
 ## The police on the road (see AdventurePolice), while you're out here.
 var police: AdventurePolice
+var _nav_cache: Satnav.AdventureNav   # for the wrong-way warning on the HUD (see wrong_way)
 
 
 func _ready() -> void:
@@ -91,6 +98,34 @@ func _ready() -> void:
 	_hud.add_theme_constant_override("outline_size", 6)
 	_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_hud)
+	# The rest of the crew, under the money and XP in the top right (clear of the messages in the
+	# middle), and the wrong-way warning under the messages.
+	_crew = Label.new()
+	_crew.visible = false
+	_crew.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_crew.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_crew.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_crew.offset_right = -20.0
+	_crew.offset_top = 58.0
+	_crew.add_theme_font_size_override("font_size", 17)
+	_crew.add_theme_color_override("font_color", SatnavScreen.FRIEND)
+	_crew.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_crew.add_theme_constant_override("outline_size", 6)
+	_crew.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_crew)
+	_wrong = Label.new()
+	_wrong.visible = false
+	_wrong.text = "WRONG WAY: TURN AROUND"
+	_wrong.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_wrong.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_wrong.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_wrong.offset_top = 84.0
+	_wrong.add_theme_font_size_override("font_size", 28)
+	_wrong.add_theme_color_override("font_color", Color(1.0, 0.3, 0.25))
+	_wrong.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_wrong.add_theme_constant_override("outline_size", 8)
+	_wrong.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_wrong)
 	needs = AdventureNeedsView.new()
 	needs.trip = self
 	add_child(needs)
@@ -254,6 +289,8 @@ func _unload() -> void:
 	Daylight.set_tint({})
 	Weather.odds = {}
 	_hud.visible = false
+	_crew.visible = false
+	_wrong.visible = false
 	_fork_panel.visible = false
 
 
@@ -379,6 +416,8 @@ func _physics_process(delta: float) -> void:
 	var hit := world.locate_local(p, "own")
 	if main.bike and not hit.is_empty():
 		_keep_on_road(hit)
+	elif main.walker and not hit.is_empty():
+		_keep_walker(hit)
 	var s := float(hit.get("s", 0.0))
 	if not _arrive_sent and not hit.is_empty() and s >= world.route.length - 12.0 and absf(float(hit["lat"])) < 30.0:
 		_arrive_sent = true
@@ -391,6 +430,10 @@ func _physics_process(delta: float) -> void:
 		_hud_timer = 0.25
 		_hud.text = hud_text(s)
 		_hud.visible = true
+		_crew.text = crew_text()
+		_crew.visible = _crew.text != ""
+		# On the bike, sat nav or not (one fitted says so on its screen too).
+		_wrong.visible = main.bike != null and int(Shed.adventure.get("arrived", 0)) == 0 and not map_open() and not main.menu.visible and wrong_way()
 	if not hit.is_empty():
 		_forks(s, delta)
 	if _map and _map.visible:
@@ -526,6 +569,116 @@ func _keep_on_road(hit: Dictionary) -> void:
 		bike.place(xf.origin, world.heading_at(s))
 		main.camera.snap()
 		main.hud.flash("Back on the road.", 2.0, true)
+
+
+## On foot, fallen through the land (or off the edge of it): falling as fast as only a long drop
+## makes you, you're stood back at the roadside.
+func _keep_walker(hit: Dictionary) -> void:
+	var s: float = hit["s"]
+	var w: Walker = main.walker
+	if not w.is_on_floor() and w.velocity.y < -FALL_SPEED and Time.get_ticks_msec() - _put_back_at > 1500:
+		_put_back_at = Time.get_ticks_msec()
+		main.walker.place(world.transform_at(s, -world.route.width_at_s(s) * 0.5 + 0.5))   # on the road, at its edge
+		main.hud.flash("Back by the road.", 2.0, true)
+
+
+## Where you're stood getting off a bike stopped at local `ground` facing `heading`: on the ground
+## beside it, found for itself. Across a mountainside that's well above (or below) the ground under
+## the bike, and placed at the bike's height you'd be inside the hill and drop straight through
+## it. Too steep to stand there (a cutting's bank), the nearest spot round it that isn't; none,
+## the edge of the road beside it.
+func step_off_spot(ground: Vector3, heading: float) -> Vector3:
+	var right := Basis(Vector3.UP, heading) * Vector3.RIGHT
+	var space := world.get_world_3d().direct_space_state
+	for reach in [0.9, 1.6, 2.6]:
+		# The left first (the side you get off), then on round.
+		for k in 8:
+			var at: Vector3 = ground - right.rotated(Vector3.UP, -TAU * k / 8.0) * reach
+			var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 3.0, at + Vector3.DOWN * 3.0, 1)
+			var foot := space.intersect_ray(q)
+			if foot and (foot["normal"] as Vector3).y > STAND_SLOPE:
+				return foot["position"]
+	var hit := world.locate_local(ground)
+	if hit.is_empty():
+		return ground - right * 0.9
+	var s := float(hit["s"])
+	var edge := world.route.width_at_s(s) * 0.5 - 0.4
+	return world.transform_at(s, clampf(float(hit["lat"]), -edge, edge)).origin
+
+
+## Where a crash picks you up (Bike.respawn_at): off the road, back on it at the nearest point
+## along it, on your side and facing on towards the destination (AdventureWorld.back_on_road);
+## on the road, or not out on an adventure, null: where you lie, as in town.
+func respawn_spot(p: Vector3):
+	if world == null:
+		return null
+	var xf = world.back_on_road(p)
+	if xf is Transform3D:
+		main.hud.flash("Back on the road.", 2.0, true)
+		main.camera.snap.call_deferred()   # once the bike's there
+	return xf
+
+
+## Whether you're facing back the way you came (the sat nav's warning, see Satnav.AdventureNav).
+func wrong_way() -> bool:
+	var me: Node3D = main.bike if main.bike else main.walker
+	if world == null or me == null:
+		return false
+	var fwd := -me.global_transform.basis.z
+	var g := _nav().satnav_guide(Vector2(me.global_position.x, me.global_position.z), Vector2(fwd.x, fwd.z).normalized())
+	return bool(g.get("wrong_way", false))
+
+
+func _nav() -> Satnav.AdventureNav:
+	if _nav_cache == null or _nav_cache.world != world:
+		_nav_cache = Satnav.AdventureNav.new(world)
+	return _nav_cache
+
+
+## The rest of the crew along the road: [{peer, name, ahead (m along the road from you, negative
+## behind), at (local)}], nearest first. Along the road, not as the crow flies: a mate on the
+## hairpin just above you is as far ahead as the road there says.
+func friends() -> Array:
+	var out := []
+	if world == null or main == null:
+		return out
+	var mine := world.distance_of(focus_points()[0], "own")
+	if mine < 0.0:
+		return out
+	for peer in main.remotes:
+		var rp = main.remotes[peer]
+		if not is_instance_valid(rp):
+			continue
+		var at: Vector3 = rp.world_position()
+		var s := world.distance_of(at, "friend_%d" % int(peer))
+		if s < 0.0:
+			continue
+		out.append({"peer": int(peer), "name": str(Shed.crew.get(peer, {}).get("name", rp.player_name)), "ahead": s - mine, "at": at})
+	out.sort_custom(func(a, b): return absf(float(a["ahead"])) < absf(float(b["ahead"])))
+	return out
+
+
+## The crew on the HUD, a line each, nearest first: "Dave 1.2 km ahead", "Sam 300 m behind"
+## ("" riding alone).
+func crew_text() -> String:
+	var bits := PackedStringArray()
+	for f in friends():
+		bits.append(friend_text(str(f["name"]), float(f["ahead"])))
+	return "\n".join(bits)
+
+
+## "Dave 1.2 km ahead", "Sam 300 m behind", "Jo with you": a mate `ahead` metres on along the road.
+static func friend_text(who: String, ahead: float) -> String:
+	var d := absf(ahead)
+	if d < 30.0:
+		return "%s with you" % who
+	var how := "ahead" if ahead > 0.0 else "behind"
+	if Units.imperial():
+		var mi := Units.distance_value(d / 1000.0)
+		return "%s %.1f mi %s" % [who, mi, how] if mi >= 0.1 else "%s %d yd %s" % [who, roundi(d * 1.0936 / 10.0) * 10, how]
+	if d < 1000.0:
+		return "%s %d m %s" % [who, roundi(d / 10.0) * 10, how]
+	return "%s %.1f km %s" % [who, d / 1000.0, how]
 
 
 ## Moves your bike `metres` along the road (the Debug tab, for trying things out).

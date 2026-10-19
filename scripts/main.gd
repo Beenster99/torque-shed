@@ -644,6 +644,7 @@ func _start_riding(bike_id: int) -> void:
 		var spot := Roadside.spot_of(bike_id)
 		xf = Roadside.xf_in(trip.world, spot) if not spot.is_empty() else trip.start_xf()
 	bike.place(xf.origin, xf.basis.get_euler().y)
+	bike.respawn_at = trip.respawn_spot   # a crash off an adventure's road: back on it
 	_safe_xf = Transform3D()
 	bike.crashed.connect(func():
 		hud.flash("Crashed!", 1.5, true)
@@ -713,7 +714,10 @@ func _get_off() -> void:
 	if hit:
 		ground = hit["position"]
 	var right := Basis(Vector3.UP, heading) * Vector3.RIGHT
-	walker.place(Transform3D(Basis(Vector3.UP, heading), ground - right * 0.9))
+	var step := ground - right * 0.9
+	if trip.on_trip():
+		step = trip.step_off_spot(ground, heading)   # onto ground you can stand on, across a mountainside
+	walker.place(Transform3D(Basis(Vector3.UP, heading), step))
 	_send_ride_stats()
 	var off := {"a": "dismount", "bike": riding_id, "xf": Transform3D(Basis(Vector3.UP, heading), ground)}
 	if trip.on_trip():
@@ -911,6 +915,7 @@ func _physics_process_body(delta: float) -> void:
 		walker.controls_enabled = active and (walker.touch == null or walker.touch.focused == "")
 	if bike:
 		var stick := Controls.stick()
+		bike.controls_enabled = active   # a menu up: brakes on, and held still once stopped
 		if active:
 			bike.throttle = maxf(Input.get_action_strength("throttle"), Controls.trigger(true))
 			bike.front_brake = maxf(Input.get_action_strength("front_brake"), Controls.trigger(false))

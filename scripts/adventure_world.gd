@@ -27,6 +27,8 @@ const SHIFT_SNAP := 256.0
 const AHEAD := 3200.0
 const BEHIND := 600.0
 const REMOTE_BEHIND := 1500.0
+## A crash this far past the road's edge (m) is off it: you're picked up back on the road.
+const OFF_ROAD := 1.0
 const MAX_TASKS := 2
 const COMMITS_PER_FRAME := 1
 ## Marks a network snapshot carrying its sender's origin (see tag_state).
@@ -189,6 +191,20 @@ func transform_at(s: float, lat := 0.0) -> Transform3D:
 ## The heading Bike.place wants for facing along the road at `s`.
 func heading_at(s: float) -> float:
 	return -route.heading_at_s(s)
+
+
+## Where a bike that came to rest at local `p` off the road is put back on it: the nearest point
+## along it, on the left half and facing on towards the destination. null when `p` is on the
+## road (or nowhere near it), so it's picked up where it lies.
+func back_on_road(p: Vector3):
+	var hit := locate_local(p, "respawn")
+	if hit.is_empty():
+		return null
+	var s := float(hit["s"])
+	if absf(float(hit["lat"])) <= route.width_at_s(s) * 0.5 + OFF_ROAD and p.y > route.height_at_s(s) - 5.0:
+		return null
+	s = clampf(s, 2.0, minf(route.total, route.stream_end()) - 20.0)
+	return transform_at(s, -route.width_at_s(s) * 0.25)
 
 
 ## Where player `slot` starts: two by two on the left half of the road behind the start banner.

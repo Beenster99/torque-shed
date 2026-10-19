@@ -23,6 +23,10 @@ extends Node
 ##   satnav_stops(pos: Vector2, fwd: Vector2, count: int) -> Array of the next `count` places to
 ##       stop ahead, nearest first: {kind (AdventureStops.NAV: "food", "rest", "sleep", "fuel"),
 ##       site (the site's kind), name, label (for the list: "Lay-by", or a cafe's name), distance, at}
+##   satnav_guide(pos: Vector2, fwd: Vector2) -> {wrong_way: bool (facing back the way you came),
+##       turn: where the way on is, relative to your heading (radians, + to the right)}, {} off it
+##   satnav_friends(pos: Vector2) -> Array of the other riders: {name, ahead (m along the road,
+##       negative behind), at (Vector2)}
 ## and clears it (null) when it's done.
 
 ## Times a second the screen is redrawn.
@@ -153,6 +157,10 @@ static func view_for(source: Object, pos: Vector3, fwd3: Vector3, speed := 0.0) 
 				v["points"].append(q)
 	if source.has_method("satnav_stops"):
 		v["stops"] = source.satnav_stops(p, fwd, STOPS)
+	if source.has_method("satnav_guide"):
+		v["guide"] = source.satnav_guide(p, fwd)
+	if source.has_method("satnav_friends"):
+		v["friends"] = source.satnav_friends(p)
 	return v
 
 
@@ -240,11 +248,16 @@ class TownRoute:
 
 
 ## The adventure road's route provider: the road round you from AdventureRoute (in the world's
-## floating frame), the road ahead the way you're facing, its fuel stations and the destination.
+## floating frame), the way on to the destination whichever way you're facing (with a warning
+## when that's behind you), its fuel stations, the destination and the rest of the crew.
 class AdventureNav:
 	extends RefCounted
 	## Metres between the points the map draws the road through.
 	const STEP := 8.0
+	## Facing further round than this from the way on (radians) is the wrong way.
+	const WRONG_WAY := deg_to_rad(110.0)
+	## How far along the way on the guide arrow points (m).
+	const GUIDE_AHEAD := 60.0
 	var world: AdventureWorld
 
 	func _init(w: AdventureWorld) -> void:
@@ -258,9 +271,33 @@ class AdventureNav:
 	func _where(pos: Vector2) -> Dictionary:
 		return world.locate_local(Vector3(pos.x, 0.0, pos.y), "satnav")
 
-	## Which way along the road `fwd` is: 1 on towards the destination, -1 back.
+	## Which way along the road `fwd` is: 1 on towards the destination, -1 back (the wrong way).
 	func _way(s: float, fwd: Vector2) -> int:
-		return 1 if (_at(s + STEP) - _at(s)).dot(fwd) >= 0.0 else -1
+		return -1 if absf((_at(s + STEP) - _at(s)).angle_to(fwd)) > WRONG_WAY else 1
+
+	## The way to go from `pos` facing `fwd`: whether you're facing the wrong way, and where the
+	## road on towards the destination is relative to your heading (behind you, a turn right round).
+	func satnav_guide(pos: Vector2, fwd: Vector2) -> Dictionary:
+		var hit := _where(pos)
+		if hit.is_empty():
+			return {}
+		var s := float(hit["s"])
+		var end := minf(world.route.length, world.route.stream_end())
+		var to := _at(minf(s + GUIDE_AHEAD, end)) - pos
+		if to.length() < 2.0:
+			to = _at(minf(s + STEP, end)) - _at(maxf(s - STEP, 0.0))
+		return {"wrong_way": _way(s, fwd) < 0, "turn": fwd.angle_to(to)}
+
+	## The rest of the crew along the road (see AdventureTrip.friends).
+	func satnav_friends(_pos: Vector2) -> Array:
+		var trip := AdventureTrip.current
+		if trip == null or trip.world != world:
+			return []
+		var out := []
+		for f in trip.friends():
+			var at: Vector3 = f["at"]
+			out.append({"name": f["name"], "ahead": f["ahead"], "at": Vector2(at.x, at.z)})
+		return out
 
 	func satnav_roads(pos: Vector2, radius: float) -> Array:
 		var hit := _where(pos)
@@ -301,14 +338,14 @@ class AdventureNav:
 		var hit := _where(pos)
 		if hit.is_empty():
 			return out
+		# Always on towards the destination, whichever way you're facing: turned round, it runs
+		# back behind you. Not past a fork till the way's decided: which way to go isn't known yet.
 		var s := float(hit["s"])
-		var way := _way(s, fwd)
-		# Not past a fork till the way's decided: which way to go isn't known yet.
-		var end := clampf(s + metres * way, 0.0, minf(world.route.total, world.route.stream_end()))
+		var end := clampf(s + metres, 0.0, minf(world.route.total, world.route.stream_end()))
 		out.append(pos)
 		var at := s
-		while (at - end) * way < 0.0:
-			at = clampf(at + STEP * way, minf(s, end), maxf(s, end))
+		while at < end:
+			at = minf(at + STEP, end)
 			out.append(_at(at))
 		return out
 
@@ -320,22 +357,22 @@ class AdventureNav:
 		var surf := world.route.surface_at_s(s)
 		return "%s road, %s" % [str(AdventureSurface.NAMES.get(surf, surf)), str(AdventureRoute.KIND_NAMES.get(world.route.kind_at_s(s), "")).to_lower()]
 
-	func satnav_points(pos: Vector2, fwd: Vector2) -> Array:
+	## What's on along the way to the destination, whichever way you're facing.
+	func satnav_points(pos: Vector2, _fwd: Vector2) -> Array:
 		var hit := _where(pos)
 		if hit.is_empty():
 			return []
 		var s := float(hit["s"])
-		var way := _way(s, fwd)
 		var out := []
 		for st in world.route.sites_of("fuel"):
-			var d := (float(st["s"]) - s) * way
+			var d := float(st["s"]) - s
 			if d > -10.0:
 				out.append({"kind": "fuel", "name": "Fuel", "distance": maxf(d, 0.0), "at": _at(float(st["s"]))})
 		var left := world.route.length - s
 		if left > 0.0:
 			out.append({"kind": "destination", "name": "Destination", "distance": left, "at": _at(world.route.length)})
 		var f := world.route.next_fork(s)
-		if f >= 0 and way > 0:
+		if f >= 0:
 			out.append({"kind": "fork", "name": "Fork", "distance": maxf(world.route.fork_s(f) - s, 0.0), "at": _at(world.route.fork_s(f))})
 		return out
 
@@ -346,24 +383,23 @@ class AdventureNav:
 			return {}
 		return AdventureForks.choice(world.route, float(hit["s"]))
 
-	## The next `count` stops ahead (AdventureStops' places and the fuel stations), nearest first.
-	func satnav_stops(pos: Vector2, fwd: Vector2, count: int) -> Array:
+	## The next `count` stops on the way (AdventureStops' places and the fuel stations), nearest
+	## first, whichever way you're facing.
+	func satnav_stops(pos: Vector2, _fwd: Vector2, count: int) -> Array:
 		var hit := _where(pos)
 		if hit.is_empty():
 			return []
 		var s := float(hit["s"])
-		var way := _way(s, fwd)
 		var out := []
 		var sites: Array = world.route.sites
-		var k0 := 0 if way > 0 else sites.size() - 1
-		var k := k0
-		while k >= 0 and k < sites.size() and out.size() < count:
+		var k := 0
+		while k < sites.size() and out.size() < count:
 			var st: Dictionary = sites[k]
-			k += way
+			k += 1
 			var kind := str(st["kind"])
 			if not AdventureStops.NAV.has(kind):
 				continue
-			var d := (float(st["s"]) - s) * way
+			var d := float(st["s"]) - s
 			if d < -15.0:
 				continue
 			# The list says what it is, or a village's, cafe's or inn's own name.
