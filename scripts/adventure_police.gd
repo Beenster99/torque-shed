@@ -18,6 +18,10 @@ extends Node3D
 ## profile's stats, "licence_points"): no debts. Outrun it (more than LOSE_DIST ahead for
 ## LOSE_TIME) and it gives up.
 ##
+## Go through a red light (over a junction's stop line while the lights are against you: see
+## AdventureJunctions) with a police car within RED_SEE of it and it comes after you just the
+## same: that's a £100 fine (more for each time that day, as for speeding).
+##
 ## Each rider is judged on their own: a car chases one rider, the one who broke the rule, and
 ## only that rider is pulled over and fined. The host runs the police (where every rider is along
 ## the road, how fast they go, the cars' driving and decisions) and sends the cars a few times a
@@ -66,6 +70,10 @@ const PARKED_OUT := 3.2
 const WALK_SPEED := 1.4
 const TALK_TIME := 7.0
 const LET_OFF := 40.0
+## A red light run with a police car this near (m along the road) is seen, and how long after it
+## a car can still act on it (s).
+const RED_SEE := 150.0
+const RED_MEMORY := 2.0
 ## The fines (£), and the points on your licence for what you couldn't pay.
 const FINE_MIN := 100
 const FINE_MAX := 600
@@ -83,6 +91,12 @@ const LINES: Array[String] = [
 	"I clocked you at %d mph. Not the place for it. You'll be paying for that.",
 	"%d mph on this road? We had to work to catch you. Fine's coming your way.",
 ]
+## And for a red light.
+const RED_LINES: Array[String] = [
+	"That light was red. You went straight through it, right in front of us. That's a fine.",
+	"Red means stop, even out here. Licence, please.",
+	"Through a red light at %d mph? Not clever. You'll be paying for that.",
+]
 
 var trip: Node                 # the AdventureTrip (its main, for the HUD and your bike)
 var world: AdventureWorld
@@ -92,7 +106,8 @@ var host := true
 ## Where the police turn up along the route: [{s, dir, trap, pace, used, site_s?, side?}].
 var plan: Array = []
 ## id -> {id, mode, target, excess (mph over the rule's reference), near_t, lost_t, stage,
-## stage_t, stop_s, let_off {peer: seconds left}, pace, trap}.
+## stage_t, stop_s, let_off {peer: seconds left}, pace, trap, why ("red" for a red light, else
+## speeding)}.
 var cars := {}
 ## Instead of finding the riders (tests): () -> [{peer, s, v}], v along the road (+ the way s grows).
 var rider_source := Callable()
@@ -111,6 +126,8 @@ var _sirens := {}               # car id -> PoliceSiren
 var _officers := {}             # car id -> StaffFigure
 var _clock := 0.0
 var _limits := {}               # int(s / 25) -> the limit there
+var _last_s := {}               # peer -> where they were last tick (for the stop lines)
+var _red := {}                  # peer -> {t, s}: the last red light they went through
 var _mirror_view: SubViewport   # the mirror, while you're being chased (see _mirror)
 var _mirror_cam: Camera3D
 var _mirror_box: Control
@@ -230,8 +247,8 @@ static func _day() -> int:
 	return int(bank.get("day", 0)) if bank is Dictionary else 0
 
 
-## Shed actions: adventure_police_fine {peer, mph, car} (the host, once its officer has had his
-## say) and adventure_police_paid {id, paid, points} (the fined player, once it's paid).
+## Shed actions: adventure_police_fine {peer, mph, car, why ("red" for a red light)} (the host,
+## once its officer has had his say) and adventure_police_paid {id, paid, points} (the fined player, once it's paid).
 static func check(peer: int, action: Dictionary) -> String:
 	if not Adventure.active():
 		return "There's no adventure on."
@@ -259,10 +276,12 @@ static func apply(_peer: int, action: Dictionary) -> String:
 			var n := (int(c[1]) if c is Array and c.size() == 2 and int(c[0]) == day else 0) + 1
 			p["count"][who] = [day, n]
 			var mph := float(action.get("mph", 30.0))
+			var why := "red" if str(action.get("why", "")) == "red" else ""
 			var id := int(p["next"])
 			p["next"] = id + 1
-			(p["fines"] as Array).append({"id": id, "peer": who, "amount": fine_amount(mph, n), "mph": roundi(mph),
-				"day": day, "n": n, "paid": -1, "points": 0})
+			# A red light is the least a fine comes to (more for each time that day).
+			(p["fines"] as Array).append({"id": id, "peer": who, "amount": fine_amount(30.0 if why == "red" else mph, n), "mph": roundi(mph),
+				"day": day, "n": n, "paid": -1, "points": 0, "why": why})
 			while (p["fines"] as Array).size() > 24:
 				(p["fines"] as Array).pop_front()
 		"adventure_police_paid":
@@ -290,6 +309,7 @@ func tick(delta: float) -> void:
 	_clock += delta
 	_track_riders(delta)
 	if host:
+		_watch_lights()
 		_spawn_t -= delta
 		if _spawn_t <= 0.0:
 			_spawn_t = 0.5
@@ -349,6 +369,29 @@ func _track_riders(delta: float) -> void:
 			v = 0.0
 		_track[peer] = {"s": s, "v": v}
 		riders[peer] = {"s": s, "v": v}
+
+
+## Host: who's just gone through a red light: over a stop line, going its way, while the main
+## road's lights there are red (or red and amber). Remembered for the police (see _think).
+func _watch_lights() -> void:
+	for p in riders:
+		var s := float(riders[p]["s"])
+		var v := float(riders[p]["v"])
+		var was := float(_last_s.get(p, s))
+		_last_s[p] = s
+		if absf(v) < 2.0 or absf(s - was) > 30.0:
+			continue
+		var dir := 1 if v > 0.0 else -1
+		var i := int(minf(was, s) / AdventureRoute.STEP)
+		for st in AdventureJunctions.near(world.route, i, i + int(absf(s - was) / AdventureRoute.STEP) + 1, 4):
+			if not st["lights"]:
+				continue
+			var line := float(st["s"]) - dir * AdventureJunctions.stop_line(st)
+			if (was - line) * dir < 0.0 and (s - line) * dir >= 0.0:
+				var light := AdventureJunctions.light_state(st, AdventureJunctions.clock).x
+				if light == AdventureJunctions.RED or light == AdventureJunctions.RED_AMBER_ON:
+					_red[p] = {"t": _clock, "s": line, "mph": absf(v) * MPH}
+					events.append(["red", int(p), roundi(line)])
 
 
 ## Host: brings in the police planned near the riders and lets go of those left far behind.
@@ -461,6 +504,16 @@ func _think(b: Dictionary, delta: float) -> void:
 				if over > 0.0:
 					_start_chase(b, int(p), (over + THRESHOLD) * MPH, absf(float(r["v"])) * MPH)
 					break
+			# Through a red light in front of them.
+			if b["mode"] != "chase":
+				for p in keys:
+					var red: Dictionary = _red.get(p, {})
+					if red.is_empty() or b["let_off"].has(p) or _clock - float(red["t"]) > RED_MEMORY or absf(float(red["s"]) - s) > RED_SEE:
+						continue
+					_red.erase(p)
+					b["why"] = "red"
+					_start_chase(b, int(p), float(red["mph"]), float(red["mph"]))
+					break
 		"chase":
 			if not riders.has(int(b["target"])):
 				_give_up(b)
@@ -547,6 +600,7 @@ func _caught(b: Dictionary) -> void:
 
 func _give_up(b: Dictionary) -> void:
 	var was := int(b["target"])
+	b["why"] = ""
 	b["mode"] = "patrol"
 	b["target"] = 0
 	b["let_off"][was] = LET_OFF
@@ -557,6 +611,7 @@ func _give_up(b: Dictionary) -> void:
 ## Lets the rider go after a stop: back on patrol, leaving them be a while.
 func _release(b: Dictionary) -> void:
 	var was := int(b["target"])
+	b["why"] = ""
 	b["mode"] = "patrol"
 	b["stage"] = ""
 	b["target"] = 0
@@ -600,7 +655,8 @@ func _stop(b: Dictionary, st: Dictionary, r: Dictionary, delta: float) -> void:
 			if float(b["stage_t"]) >= walk_time(b, s):
 				b["stage"] = "talk"
 				b["stage_t"] = 0.0
-				Shed.request({"a": "adventure_police_fine", "peer": int(b["target"]), "mph": float(b["excess"]), "car": id})
+				Shed.request({"a": "adventure_police_fine", "peer": int(b["target"]), "mph": float(b["excess"]), "car": id,
+					"why": str(b.get("why", ""))})
 				events.append(["fined", id, int(b["target"])])
 		"talk":
 			driver.steer(id, 0.0, 1.0, CHASE_BRAKE, float(st["lane"]))
@@ -648,9 +704,12 @@ func _announce(b: Dictionary, old_mode: String, old_target: int) -> void:
 	var target := int(b["target"])
 	if mode == "chase" and old_mode != "chase":
 		if target == me:
-			var why := "%d mph over the limit past their speed trap" % roundi(float(b["excess"])) if b["trap"] \
-				else "%d mph faster than them" % roundi(float(b["excess"]))
-			_say("POLICE! Blue lights behind you: you went by %s (30's the most). Stop, or try to lose them." % why, true)
+			if b.get("why", "") == "red":
+				_say("POLICE! Blue lights behind you: you went through a red light right in front of them. Stop, or try to lose them.", true)
+			else:
+				var why := "%d mph over the limit past their speed trap" % roundi(float(b["excess"])) if b["trap"] \
+					else "%d mph faster than them" % roundi(float(b["excess"]))
+				_say("POLICE! Blue lights behind you: you went by %s (30's the most). Stop, or try to lose them." % why, true)
 		else:
 			_say("The police are after %s!" % _name(target), false)
 	elif mode == "stop" and old_mode == "chase":
@@ -676,6 +735,9 @@ static func _name(peer: int) -> String:
 
 ## The officer's words, from car `id`, to the rider it caught (b["speed"]: how fast they went, mph).
 static func line_for(id: int, b: Dictionary) -> String:
+	if b.get("why", "") == "red":
+		var line := RED_LINES[id % RED_LINES.size()]
+		return line % roundi(float(b.get("speed", 0.0))) if "%d" in line else line
 	return LINES[id % LINES.size()] % roundi(float(b.get("speed", 0.0)))
 
 
@@ -692,8 +754,11 @@ func pay_fines() -> void:
 		var paid := mini(amount, have)
 		var points := 0
 		if paid > 0:
-			Progress.spend(paid, "Police fine (%d mph)" % int(f["mph"]))
-		var what := "Fined £%d for speeding, %d mph too fast%s" % [amount, int(f["mph"]), "" if int(f["n"]) <= 1 else " (the %s today)" % _nth(int(f["n"]))]
+			Progress.spend(paid, "Police fine (red light)" if str(f.get("why", "")) == "red" else "Police fine (%d mph)" % int(f["mph"]))
+		var again := "" if int(f["n"]) <= 1 else " (the %s today)" % _nth(int(f["n"]))
+		var what := "Fined £%d for speeding, %d mph too fast%s" % [amount, int(f["mph"]), again]
+		if str(f.get("why", "")) == "red":
+			what = "Fined £%d for running a red light%s" % [amount, again]
 		var text := "%s: paid from your own money." % what
 		if paid < amount:
 			points = POINTS * (2 if amount - paid > 300 else 1)
@@ -882,8 +947,8 @@ func _officer(b: Dictionary, st: Dictionary, delta: float) -> void:
 # ---------------------------------------------------------------------------- the crew
 
 ## For the network: per car [id, s, dir, v, lane, lane_want, mode, target (its high 16 bits),
-## stage, stage_t, stop_s, excess, speed, trap, target (its low 16 bits), the stream vehicle it
-## is (-1 driven on its own)]: a peer id is too big to go whole in a float.
+## stage, stage_t, stop_s, excess, speed, trap (+ 2 for a red light), target (its low 16 bits),
+## the stream vehicle it is (-1 driven on its own)]: a peer id is too big to go whole in a float.
 func pack() -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	for id in cars:
@@ -893,7 +958,8 @@ func pack() -> PackedFloat32Array:
 			continue
 		out.append_array([float(id), float(c["s"]), float(c["dir"]), float(c["v"]), float(c["lane"]), float(c["lane_want"]),
 			float(MODES.find(b["mode"])), float(int(b["target"]) >> 16), float(STAGES.find(b["stage"])), float(b["stage_t"]),
-			float(b["stop_s"]), float(b["excess"]), float(b["speed"]), 1.0 if b["trap"] else 0.0, float(int(b["target"]) & 0xFFFF),
+			float(b["stop_s"]), float(b["excess"]), float(b["speed"]), (1.0 if b["trap"] else 0.0) + (2.0 if b.get("why", "") == "red" else 0.0),
+			float(int(b["target"]) & 0xFFFF),
 			float(driver.stream_id(id))])
 	return out
 
@@ -934,7 +1000,8 @@ func unpack(state_in: PackedFloat32Array) -> void:
 		b["stop_s"] = state_in[k + 10]
 		b["excess"] = state_in[k + 11]
 		b["speed"] = state_in[k + 12]
-		b["trap"] = state_in[k + 13] > 0.5
+		b["trap"] = int(state_in[k + 13]) & 1 != 0
+		b["why"] = "red" if int(state_in[k + 13]) & 2 != 0 else ""
 		if old_mode != b["mode"] or old_target != int(b["target"]):
 			_announce(b, old_mode, old_target)
 	for id in cars.keys():

@@ -123,7 +123,8 @@ func test_plan() -> void:
 	check(sh.call(de, "surf", "sand") > 0.25 and sh.call(de, "surf", "snow") == 0.0 and sh.call(de, "kinds", "straight") > 0.4
 		and sh.call(de, "kinds", "straight") > 2.0 * sh.call(v, "kinds", "straight"),
 		"desert: sand and long straights, no snow (%s; %s)" % [_fmt(de["surf"]), _fmt(de["kinds"])])
-	check(sh.call(al, "surf", "snow") > 0.08 and sh.call(al, "surf", "sand") == 0.0 and sh.call(al, "kinds", "very_curvy") > 0.35
+	check(sh.call(al, "surf", "snow") > 0.08 and sh.call(al, "surf", "sand") == 0.0
+		and sh.call(al, "kinds", "very_curvy") + sh.call(al, "kinds", "switchback") > 0.35
 		and float(al["radius"]) < 22.0 and float(al["hi"]) > 1500.0,
 		"alpine: hairpins (%.0f m), climbs to %.0f m and snow over the tops (%s)" % [al["radius"], al["hi"], _fmt(al["surf"])])
 	check(sh.call(co, "surf", "snow") == 0.0 and float(co["hi"]) < 260.0 and float(co["lo"]) > AdventureTheme.SEA_Y + 15.0,
@@ -277,12 +278,12 @@ func test_stream() -> void:
 				if mi is MeshInstance3D and (mi as MeshInstance3D).mesh:
 					var m := (mi as MeshInstance3D).mesh
 					for s in m.get_surface_count():
-						tris += m.surface_get_array_len(s) / 3
+						tris += _verts(m, s) / 3
 				elif mi is MultiMeshInstance3D:
 					var mm := (mi as MultiMeshInstance3D).multimesh
 					var per := 0
 					for s in mm.mesh.get_surface_count():
-						per += mm.mesh.surface_get_array_len(s) / 3
+						per += _verts(mm.mesh, s) / 3
 					tris += per * mm.instance_count
 		var per_chunk := tris / maxi(1, w.chunks.size())
 		check(ready and float(w.stats["commit_ms_max"]) < 25.0 and float(w.stats["stream_ms_max"]) < 30.0 and float(w.stats["plan_ms"]) < 2000.0,
@@ -353,3 +354,10 @@ func test_sky() -> void:
 	AdventureTrip.instant = false
 	Shed.stop()
 	await _frames(3)
+
+
+## The vertices in surface `s` of `m`, an ArrayMesh or a primitive one (the lights' heads and poles).
+static func _verts(m: Mesh, s: int) -> int:
+	if m is ArrayMesh:
+		return (m as ArrayMesh).surface_get_array_len(s)
+	return (m.surface_get_arrays(s)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()

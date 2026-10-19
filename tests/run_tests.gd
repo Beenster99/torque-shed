@@ -507,6 +507,17 @@ func _run_all() -> void:
 	await _test_lights_far_terrain()
 	await _test_lights_kit_bike_materials()
 	await _test_lights_adventure_land_edge()
+	await _test_adv_roads_relief()
+	await _test_adv_roads_switchbacks()
+	await _test_adv_roads_tunnels()
+	await _test_adv_roads_shelter()
+	await _test_adv_roads_junction_plan()
+	await _test_adv_roads_instructions()
+	await _test_adv_roads_lights_cycle()
+	await _test_adv_roads_traffic_stops()
+	await _test_adv_roads_traffic_turns()
+	await _test_adv_roads_police_red()
+	await _test_adv_roads_chunk_cost()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21884,3 +21895,52 @@ func _test_lights_kit_bike_materials() -> void:
 
 func _test_lights_adventure_land_edge() -> void:
 	await _lights().test_adventure_land_edge()
+
+# ---------------------------------------------------------------------------- adventure roads: junctions, climbs and tunnels (tests/adventure_roads_tests.gd)
+
+func _adv_roads() -> RefCounted:
+	return load("res://tests/adventure_roads_tests.gd").new(self)
+
+
+func _test_adv_roads_relief() -> void:
+	await _adv_roads().test_relief()
+
+
+func _test_adv_roads_switchbacks() -> void:
+	await _adv_roads().test_switchbacks()
+
+
+func _test_adv_roads_tunnels() -> void:
+	await _adv_roads().test_tunnels()
+
+
+func _test_adv_roads_shelter() -> void:
+	await _adv_roads().test_shelter()
+
+
+func _test_adv_roads_junction_plan() -> void:
+	await _adv_roads().test_junction_plan()
+
+
+func _test_adv_roads_instructions() -> void:
+	await _adv_roads().test_instructions()
+
+
+func _test_adv_roads_lights_cycle() -> void:
+	await _adv_roads().test_lights_cycle()
+
+
+func _test_adv_roads_traffic_stops() -> void:
+	await _adv_roads().test_traffic_stops()
+
+
+func _test_adv_roads_traffic_turns() -> void:
+	await _adv_roads().test_traffic_turns()
+
+
+func _test_adv_roads_police_red() -> void:
+	await _adv_roads().test_police_red()
+
+
+func _test_adv_roads_chunk_cost() -> void:
+	await _adv_roads().test_chunk_cost()
