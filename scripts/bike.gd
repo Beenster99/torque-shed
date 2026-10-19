@@ -1669,6 +1669,10 @@ func cycle_beam() -> String:
 	return BikeEffects.BEAM_NAMES[beam]
 
 
+## How far the fog lamps reach (m): a base plus so much per lumen (900 lm: about 45 m).
+const FOG_REACH := [22.0, 1.0 / 40.0]
+
+
 ## Fog lamp beams for a bike's fog lights, children of `parent`, off until the engine runs.
 static func make_fog_lights(parent: Node3D, bike_model: BikeModel, b: BikeBuild) -> Array:
 	var out := []
@@ -1676,14 +1680,21 @@ static func make_fog_lights(parent: Node3D, bike_model: BikeModel, b: BikeBuild)
 		return out
 	var spots := bike_model.fog_positions()
 	for at in spots:
+		# Fog lamps: low, very wide and flat, lighting the road's edges and the verges well ahead
+		# (they used to give out after 15 m or so), fading from the middle with no edge.
 		var l := SpotLight3D.new()
 		l.position = at
-		l.rotation.x = deg_to_rad(-7.0)
-		l.spot_range = 12.0 + b.fog_lumens / 160.0
-		l.spot_angle = 38.0 if spots.size() > 1 else 30.0
-		l.light_energy = b.fog_lumens / 600.0 / spots.size()
+		l.rotation.x = deg_to_rad(-3.5)
+		l.spot_range = FOG_REACH[0] + b.fog_lumens * FOG_REACH[1]
+		l.spot_angle = 55.0 if spots.size() > 1 else 48.0
+		l.spot_angle_attenuation = 0.5
+		l.spot_attenuation = 0.8
+		l.light_energy = b.fog_lumens / 400.0 / spots.size()
 		l.light_color = b.fog_color
 		l.shadow_enabled = false
+		# Kept out of the volumetric fog, like the headlight's core: a lamp on the bike lighting
+		# the air right at its own lens showed as a blinding white glow round the bike.
+		l.light_volumetric_fog_energy = 0.0
 		l.visible = false
 		parent.add_child(l)
 		out.append(l)

@@ -135,6 +135,7 @@ static func mesh(parent: Node3D, m: Mesh, mat: Material, pos: Vector3, layers :=
 	mi.material_override = mat
 	mi.position = pos
 	mi.layers = layers
+	Graphics.avatar_mesh(mi)
 	parent.add_child(mi)
 	return mi
 

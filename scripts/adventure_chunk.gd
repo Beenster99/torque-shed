@@ -8,9 +8,18 @@ extends RefCounted
 ## stay small however far along the route it is.
 
 ## The land either side, metres out past the road's edge (the first few follow the road's half
-## width; the rest are from the centre line). Out to column COLLIDE_COLS it's solid.
-const LAND_OUT := [0.0, 0.9, 2.5, 6.0, 12.0, 20.0, 30.0, 46.0, 70.0, 110.0, 170.0, 260.0, 400.0]
+## width; the rest are from the centre line). Out to column COLLIDE_COLS it's solid. Past the
+## skyline ridge (400 m) it runs on and down over the far side, under the far ground, so the
+## land has no edge to see past (it used to stop at 400 m, often up on a ridge 100 m or more
+## above the far ground, and you could see through under it).
+const LAND_OUT := [0.0, 0.9, 2.5, 6.0, 12.0, 20.0, 30.0, 46.0, 70.0, 110.0, 170.0, 260.0, 400.0, 640.0, 1000.0]
+## Where the land's far side ends up: this far under the road's base height, below the far
+## ground (AdventureWorld's FarGround, 70 m under it), or under the sea on a coastal ride.
+const FAR_SIDE_DROP := 160.0
 const COLLIDE_COLS := 7
+## From this column out (past the skyline ridge) the land needn't look for other stretches of
+## the road along the way: route.land_reach keeps it well short of them.
+const SHARED_COL := 13
 const CROWN := 0.04
 ## How far each kind of thing is drawn (m, times the draw distance setting).
 const RANGES := {"pine": 650.0, "snow_pine": 650.0, "tree": 650.0, "bush": 260.0, "dry_bush": 260.0, "rock": 320.0,
@@ -81,7 +90,7 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 			var rx := cos(h)
 			var rz := sin(h)
 			var e := route.width[i] * 0.5
-			var max_in := route.inside_reach(i, side)
+			var max_in := route.land_reach(i, side)
 			var row_v := []
 			var row_c := []
 			var prev := e
@@ -93,8 +102,9 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 					lat = maxf(lat, prev + 0.3)
 				if k > 2:
 					lat = minf(lat, maxf(max_in, prev + 0.05))
-				if k >= 7 and not stopped:
+				if k >= 7 and k < SHARED_COL and not stopped:
 					# Would the land out to here reach over a bend that doubles back? Look along the way.
+					# (Further out, land_reach has already stopped it short of any other stretch.)
 					var steps := maxi(1, int((lat - prev) / 40.0))
 					for q in range(1, steps + 1):
 						var at := lerpf(prev, lat, float(q) / steps)
@@ -103,10 +113,17 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 							break
 				if stopped:
 					lat = prev + 0.05 * k
+				var inner := prev   # the column before's reach
 				prev = lat
 				var wx := route.px[i] + rx * lat * side
 				var wz := route.pz[i] + rz * lat * side
 				var y := route.land_height(i, lat * side, wx, wz)
+				if k == cols - 1:
+					# Down the far side, by as much as this last step got out past the one before
+					# (none where the row was cut short and they're together: no wall straight down).
+					var floor_y := AdventureTheme.SEA_Y - 10.0 if route.sea else route.base[i] - FAR_SIDE_DROP
+					var run := out_k - float(LAND_OUT[cols - 2])
+					y = lerpf(y, minf(y, floor_y), clampf((lat - inner) / (run * 0.75), 0.0, 1.0))
 				row_v.append(Vector3(wx - ax, y, wz - az))
 				row_c.append(_land_color(route, i, k, lat, wx, wz, y))
 			if side < 0:
@@ -394,7 +411,7 @@ static func _cliff_top(route: AdventureRoute, i: int, ax: float, az: float) -> T
 	var prev := Vector3.INF
 	var a := e + 30.0
 	while a < e + 260.0:
-		if a > route.inside_reach(i, -1) * 0.95:
+		if a > route.land_reach(i, -1) * 0.95:
 			return Transform3D()
 		var wx := route.px[i] - cos(h) * a
 		var wz := route.pz[i] - sin(h) * a
@@ -432,7 +449,7 @@ static func _wall(arr: Dictionary, a: Vector3, b: Vector3, h: float, t: float, c
 static func _on_land(route: AdventureRoute, i: int, lat: float, ax: float, az: float, angle: float, scale: float,
 		close := false, keep_clear := 2.0) -> Transform3D:
 	var h := route.hd[i]
-	if absf(lat) > route.inside_reach(i, int(signf(lat))) * 0.95:
+	if absf(lat) > route.land_reach(i, int(signf(lat))) * 0.95:
 		return Transform3D()
 	var wx := route.px[i] + cos(h) * lat
 	var wz := route.pz[i] + sin(h) * lat

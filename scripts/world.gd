@@ -262,9 +262,16 @@ func _build_terrain(data: Dictionary) -> void:
 	for cz in count:
 		for cx in count:
 			var c := WorldTerrain.chunk_center(cx, cz)
+			# Both levels of detail measured from the same box: the switch from one to the other
+			# goes by the distance to the middle of each one's box, and with boxes of their own
+			# (the far mesh's a little lower or higher) there was a band where neither showed.
+			var near_mesh: Mesh = data["near"][cz * count + cx]
+			var far_mesh: Mesh = data["far"][cz * count + cx]
+			var box := near_mesh.get_aabb().merge(far_mesh.get_aabb())
 			for lod in 2:
 				var mi := MeshInstance3D.new()
-				mi.mesh = (data["near"] if lod == 0 else data["far"])[cz * count + cx]
+				mi.mesh = near_mesh if lod == 0 else far_mesh
+				mi.custom_aabb = box
 				mi.material_override = mat
 				mi.position = Vector3(c.x, 0.0, c.y)
 				if lod == 0:

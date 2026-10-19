@@ -195,6 +195,7 @@ func _part(parent: Node3D, mesh: PrimitiveMesh, pos: Vector3, size: Vector3, mat
 	mi.material_override = mat
 	mi.position = pos
 	mi.scale = size
+	Graphics.avatar_mesh(mi)
 	parent.add_child(mi)
 
 

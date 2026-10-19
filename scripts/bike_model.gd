@@ -229,6 +229,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_current_slot = ""
 	if with_rider:
 		_build_rider()
+		Graphics.avatar_meshes(_rider)
 	update_pose_from(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 	set_gauges(0.0, 0.0)
 	# Parked, every lamp and the clocks are dark until the engine runs (see set_lights).

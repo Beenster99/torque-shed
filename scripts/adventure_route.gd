@@ -28,6 +28,16 @@ extends RefCounted
 
 const STEP := 4.0
 const CHUNK_KNOTS := 32
+## How many knots either way a cross-section of the land is kept from crossing (see inside_reach).
+const REACH_KNOTS := 4
+## The land beside a knot runs out until it's nearer another stretch of the road than its own
+## (see land_reach), then on this far (m) under or over that stretch's land, so there's no slit
+## between them; never stopping that way short of this far out (the solid ground by the road
+## keeps to inside_reach and other_road_near).
+const LAND_OVERLAP := 30.0
+const LAND_SHARE_FROM := 70.0
+## The cell size (m) of the grid of every fourth knot that land_reach looks through.
+const REACH_GRID := 256.0
 const CHUNK_LEN := STEP * CHUNK_KNOTS
 const MAX_HEADING := deg_to_rad(80.0)
 ## Road beyond the destination, so the finish isn't the edge of the world.
@@ -109,6 +119,9 @@ var chunk_surface: Array[String] = []
 ## [{kind, s, i, side, flat, name}] sorted by s: see add_site.
 var sites: Array = []
 var _grid := {}
+var _reach_grid := {}
+var _reach_known := {}   # knot * 2 + (side + 1) / 2 -> land_reach
+var _reach_lock := Mutex.new()
 ## [{s, rejoin (on the default path, m), i0, i1 (their knots there), ways: [way]}]: way 0 is the
 ## main road (the default path's own knots), the others {kind, name, letter, n, len, px, pz, ph,
 ## hd, curv, width, base, sections, chunk_surface, sites (each with ls, its s along the way)};
@@ -419,15 +432,74 @@ func clearance(x: float, z: float) -> float:
 	return best
 
 
-## How far the land may reach on the inside of a bend at knot `i` on `side` (1 right, -1 left)
-## before its cross-sections would fold over each other: a little short of the tightest radius
-## near it, growing again with distance from that bend. INF where there's no bend that way.
+## How far the land may reach out on `side` (1 right, -1 left) of knot `i` before its cross-
+## section would run into one of the next few knots' (REACH_KNOTS either way: on the inside of a
+## bend they close in on its middle, and land past that folds over itself): a little short of
+## where it would first cross one. INF where none does. (It used to stop short of the tightest
+## bend within 200 m, so beside a winding road whole stretches of the countryside were missing
+## and you could see through them to the far ground.)
 func inside_reach(i: int, side: int) -> float:
 	var out := INF
-	for j in range(maxi(0, i - 50), mini(curv.size(), i + 51)):
-		var k := curv[j]
-		if absf(k) > 1e-5 and signi(int(signf(k))) == side:
-			out = minf(out, 0.85 / absf(k) + absi(i - j) * STEP * 0.6)
+	var dix := cos(hd[i]) * side
+	var diz := sin(hd[i]) * side
+	for j in range(maxi(0, i - REACH_KNOTS), mini(hd.size(), i + REACH_KNOTS + 1)):
+		if j == i:
+			continue
+		var djx := cos(hd[j]) * side
+		var djz := sin(hd[j]) * side
+		var cross := dix * djz - diz * djx
+		if absf(cross) < 1e-6:
+			continue
+		var wx := px[j] - px[i]
+		var wz := pz[j] - pz[i]
+		var t := (wx * djz - wz * djx) / cross   # out along this knot's cross-section
+		var u := (wx * diz - wz * dix) / cross   # and along the other's
+		if t > 0.0 and u > 0.0:
+			out = minf(out, t * 0.85)
+	return out
+
+
+## How far the land runs out on `side` of knot `i`: as far as inside_reach lets it, and only
+## to about where it's nearer another stretch of the road than this one (each stretch has the
+## land on its own side of the line halfway between them, overlapping a little), so the land
+## of two stretches never lies in two sheets at different heights, one floating over the other.
+## Stretches past the first undecided fork don't count (they may never be built).
+## Worked out once a knot (chunks are built on worker threads, so the cache is locked).
+func land_reach(i: int, side: int) -> float:
+	var key := i * 2 + (side + 1) / 2
+	_reach_lock.lock()
+	var known = _reach_known.get(key)
+	_reach_lock.unlock()
+	if known != null:
+		return known
+	var out := inside_reach(i, side)
+	var dx := cos(hd[i]) * side
+	var dz := sin(hd[i]) * side
+	var end := stream_end()
+	var cx := int(floor(px[i] / REACH_GRID))
+	var cz := int(floor(pz[i] / REACH_GRID))
+	var rings := int(ceil(2.0 * float(AdventureChunk.LAND_OUT[-1]) / REACH_GRID))
+	for ring in rings + 1:
+		# Ring by ring outwards: a knot further off than twice the reach so far can't be nearer.
+		if (ring - 1) * REACH_GRID > 2.0 * out:
+			break
+		for gz in range(cz - ring, cz + ring + 1):
+			var edge := gz == cz - ring or gz == cz + ring
+			for gx in (range(cx - ring, cx + ring + 1) if edge else [cx - ring, cx + ring]):
+				for j in _reach_grid.get(Vector2i(gx, gz), PackedInt32Array()):
+					if absi(j - i) <= 40 or j * STEP >= end:
+						continue
+					var wx := px[j] - px[i]
+					var wz := pz[j] - pz[i]
+					var ahead := wx * dx + wz * dz
+					if ahead <= 0.0:
+						continue
+					# Out along the cross-section, where it's as near knot j as its own road.
+					var t := (wx * wx + wz * wz) / (2.0 * ahead)
+					out = minf(out, maxf(t + LAND_OVERLAP, LAND_SHARE_FROM))
+	_reach_lock.lock()
+	_reach_known[key] = out
+	_reach_lock.unlock()
 	return out
 
 
@@ -780,6 +852,19 @@ func _build_grid() -> void:
 		arr.append(i)
 		cells[key] = arr
 	_grid = cells
+	# Every fourth knot again in big cells, for how far out the land reaches (see land_reach).
+	var coarse := {}
+	for i in range(0, px.size(), 4):
+		var key := Vector2i(int(floor(px[i] / REACH_GRID)), int(floor(pz[i] / REACH_GRID)))
+		if not coarse.has(key):
+			coarse[key] = PackedInt32Array()
+		var arr: PackedInt32Array = coarse[key]
+		arr.append(i)
+		coarse[key] = arr
+	_reach_grid = coarse
+	_reach_lock.lock()
+	_reach_known = {}
+	_reach_lock.unlock()
 
 
 # ---------------------------------------------------------------------------- forks
@@ -1407,6 +1492,9 @@ func choose(f: int, way: int) -> bool:
 	var changed := int(choices.get(f, 0)) != way
 	choices[f] = way
 	decided[f] = true
+	_reach_lock.lock()
+	_reach_known = {}   # the road past the fork counts now (see land_reach)
+	_reach_lock.unlock()
 	if changed:
 		_assemble()
 	return changed
