@@ -31,6 +31,7 @@ var framed := false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	clip_contents = true   # the roads run off the edge of the screen, not over the HUD
 
 
 ## Takes a new `v` (see view) and redraws.
