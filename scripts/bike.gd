@@ -171,6 +171,7 @@ var faults := {}
 var pushing := false
 ## On a tow strap: the point on the towing bike the strap's tied to (local), else INF.
 var tow_anchor := Vector3.INF
+var tow_speed := 0.0       # how fast the towing bike's going (m/s): the strap damps against it
 var horn_audio: HornAudio
 var _stopped_brake := 0.0  # how long the front brake has been held at a standstill
 var _throttle_eff := 0.0   # the throttle as the rider's wrist actually turns it (smoothed with realism up)
@@ -1082,8 +1083,9 @@ func _apply_tow() -> void:
 	if dist <= Roadside.STRAP or dist > 40.0:
 		return
 	var dir := d / dist
-	var closing := linear_velocity.dot(dir)
-	var pull := clampf((dist - Roadside.STRAP) * 1800.0 - closing * 600.0, 0.0, mass * 6.0)
+	# Damped against the towing bike's own speed, so the towed one settles in behind, not past it.
+	var closing := linear_velocity.dot(dir) - tow_speed
+	var pull := clampf((dist - Roadside.STRAP) * 1800.0 - closing * 900.0, 0.0, mass * 4.0)
 	apply_central_force(dir * pull)
 
 

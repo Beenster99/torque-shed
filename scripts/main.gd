@@ -1177,6 +1177,7 @@ func _tow_step(delta: float) -> void:
 		bike.tow_anchor = Vector3.INF
 		return
 	bike.tow_anchor = tower.global_transform * Vector3(0.0, 0.0, 1.0)
+	bike.tow_speed = float(tower.call("current_speed")) if tower.has_method("current_speed") else 0.0
 	if absf(Input.get_axis("lean_left", "lean_right")) < 0.1 and absf(Controls.stick().x) < 0.1:
 		var to: Vector3 = bike.global_transform.affine_inverse() * bike.tow_anchor
 		bike.lean_input = clampf(atan2(to.x, -to.z) * 1.5, -0.6, 0.6)
