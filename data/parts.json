@@ -4108,7 +4108,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -4144,7 +4144,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -4180,7 +4180,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -4216,7 +4216,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -4252,7 +4252,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -4288,7 +4288,7 @@
 			"stiffness": 0.95,
 			"slide": 0.82,
 			"grip": {
-				"tarmac": 1.1,
+				"tarmac": 1.2,
 				"dirt": 0.74,
 				"grass": 0.62
 			},
@@ -4324,7 +4324,7 @@
 			"stiffness": 0.95,
 			"slide": 0.82,
 			"grip": {
-				"tarmac": 1.1,
+				"tarmac": 1.2,
 				"dirt": 0.74,
 				"grass": 0.62
 			},
@@ -4360,7 +4360,7 @@
 			"stiffness": 0.95,
 			"slide": 0.82,
 			"grip": {
-				"tarmac": 1.1,
+				"tarmac": 1.2,
 				"dirt": 0.74,
 				"grass": 0.62
 			},
@@ -4396,7 +4396,7 @@
 			"stiffness": 0.95,
 			"slide": 0.82,
 			"grip": {
-				"tarmac": 1.1,
+				"tarmac": 1.2,
 				"dirt": 0.74,
 				"grass": 0.62
 			},
@@ -4432,7 +4432,7 @@
 			"stiffness": 0.95,
 			"slide": 0.82,
 			"grip": {
-				"tarmac": 1.1,
+				"tarmac": 1.2,
 				"dirt": 0.74,
 				"grass": 0.62
 			},
@@ -4468,7 +4468,7 @@
 			"stiffness": 0.95,
 			"slide": 0.82,
 			"grip": {
-				"tarmac": 1.1,
+				"tarmac": 1.2,
 				"dirt": 0.74,
 				"grass": 0.62
 			},
@@ -4504,7 +4504,7 @@
 			"stiffness": 1.05,
 			"slide": 0.78,
 			"grip": {
-				"tarmac": 1.2,
+				"tarmac": 1.32,
 				"dirt": 0.72,
 				"grass": 0.6
 			},
@@ -4537,7 +4537,7 @@
 			"stiffness": 1.05,
 			"slide": 0.78,
 			"grip": {
-				"tarmac": 1.2,
+				"tarmac": 1.32,
 				"dirt": 0.72,
 				"grass": 0.6
 			},
@@ -4570,7 +4570,7 @@
 			"stiffness": 1.05,
 			"slide": 0.78,
 			"grip": {
-				"tarmac": 1.2,
+				"tarmac": 1.32,
 				"dirt": 0.72,
 				"grass": 0.6
 			},
@@ -4603,7 +4603,7 @@
 			"stiffness": 1.05,
 			"slide": 0.78,
 			"grip": {
-				"tarmac": 1.2,
+				"tarmac": 1.32,
 				"dirt": 0.72,
 				"grass": 0.6
 			},
@@ -4636,7 +4636,7 @@
 			"stiffness": 1.05,
 			"slide": 0.78,
 			"grip": {
-				"tarmac": 1.2,
+				"tarmac": 1.32,
 				"dirt": 0.72,
 				"grass": 0.6
 			},
@@ -4669,7 +4669,7 @@
 			"stiffness": 0.85,
 			"slide": 0.85,
 			"grip": {
-				"tarmac": 1.0,
+				"tarmac": 1.08,
 				"dirt": 0.92,
 				"grass": 0.82
 			},
@@ -4703,7 +4703,7 @@
 			"stiffness": 0.85,
 			"slide": 0.85,
 			"grip": {
-				"tarmac": 1.0,
+				"tarmac": 1.08,
 				"dirt": 0.92,
 				"grass": 0.82
 			},
@@ -4737,7 +4737,7 @@
 			"stiffness": 0.85,
 			"slide": 0.85,
 			"grip": {
-				"tarmac": 1.0,
+				"tarmac": 1.08,
 				"dirt": 0.92,
 				"grass": 0.82
 			},
@@ -4771,7 +4771,7 @@
 			"stiffness": 0.85,
 			"slide": 0.85,
 			"grip": {
-				"tarmac": 1.0,
+				"tarmac": 1.08,
 				"dirt": 0.92,
 				"grass": 0.82
 			},
@@ -4805,7 +4805,7 @@
 			"stiffness": 0.85,
 			"slide": 0.85,
 			"grip": {
-				"tarmac": 1.0,
+				"tarmac": 1.08,
 				"dirt": 0.92,
 				"grass": 0.82
 			},
@@ -4839,7 +4839,7 @@
 			"stiffness": 0.7,
 			"slide": 0.88,
 			"grip": {
-				"tarmac": 0.88,
+				"tarmac": 0.92,
 				"dirt": 1.0,
 				"grass": 0.9
 			},
@@ -4872,7 +4872,7 @@
 			"stiffness": 0.7,
 			"slide": 0.88,
 			"grip": {
-				"tarmac": 0.88,
+				"tarmac": 0.92,
 				"dirt": 1.0,
 				"grass": 0.9
 			},
@@ -4905,7 +4905,7 @@
 			"stiffness": 0.7,
 			"slide": 0.88,
 			"grip": {
-				"tarmac": 0.88,
+				"tarmac": 0.92,
 				"dirt": 1.0,
 				"grass": 0.9
 			},
@@ -4938,7 +4938,7 @@
 			"stiffness": 0.7,
 			"slide": 0.88,
 			"grip": {
-				"tarmac": 0.88,
+				"tarmac": 0.92,
 				"dirt": 1.0,
 				"grass": 0.9
 			},
@@ -4971,7 +4971,7 @@
 			"stiffness": 0.7,
 			"slide": 0.88,
 			"grip": {
-				"tarmac": 0.88,
+				"tarmac": 0.92,
 				"dirt": 1.0,
 				"grass": 0.9
 			},
@@ -5004,7 +5004,7 @@
 			"stiffness": 0.7,
 			"slide": 0.88,
 			"grip": {
-				"tarmac": 0.88,
+				"tarmac": 0.92,
 				"dirt": 1.0,
 				"grass": 0.9
 			},
@@ -5037,7 +5037,7 @@
 			"stiffness": 1.15,
 			"slide": 0.72,
 			"grip": {
-				"tarmac": 1.32,
+				"tarmac": 1.45,
 				"dirt": 0.56,
 				"grass": 0.46
 			},
@@ -5069,7 +5069,7 @@
 			"stiffness": 1.15,
 			"slide": 0.72,
 			"grip": {
-				"tarmac": 1.32,
+				"tarmac": 1.45,
 				"dirt": 0.56,
 				"grass": 0.46
 			},
@@ -5101,7 +5101,7 @@
 			"stiffness": 1.15,
 			"slide": 0.72,
 			"grip": {
-				"tarmac": 1.32,
+				"tarmac": 1.45,
 				"dirt": 0.56,
 				"grass": 0.46
 			},
@@ -5133,7 +5133,7 @@
 			"stiffness": 1.15,
 			"slide": 0.72,
 			"grip": {
-				"tarmac": 1.32,
+				"tarmac": 1.45,
 				"dirt": 0.56,
 				"grass": 0.46
 			},
@@ -5165,7 +5165,7 @@
 			"stiffness": 1.15,
 			"slide": 0.72,
 			"grip": {
-				"tarmac": 1.32,
+				"tarmac": 1.45,
 				"dirt": 0.56,
 				"grass": 0.46
 			},
@@ -5195,7 +5195,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -5238,7 +5238,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -5281,7 +5281,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -5325,7 +5325,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -5367,7 +5367,7 @@
 			"stiffness": 0.8,
 			"slide": 0.84,
 			"grip": {
-				"tarmac": 0.95,
+				"tarmac": 1.05,
 				"dirt": 0.74,
 				"grass": 0.64
 			},
@@ -10910,6 +10910,48 @@
 			],
 			"type": "V-twin"
 		},
+		"vtwin_1500": {
+			"name": "1500 cc V-twin",
+			"description": "Two big cylinders in a V. Lazy, thumping torque from tickover.",
+			"mass": 88.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1500.0,
+			"bore": 95.3,
+			"stroke": 104.8,
+			"torque_per_cc": 0.092,
+			"peak_torque_rpm": 4400.0,
+			"redline": 6600.0,
+			"idle_rpm": 900.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin",
+			"breathing": 0.75
+		},
+		"vtwin_1800": {
+			"name": "1800 cc V-twin",
+			"description": "A huge long-stroke V-twin. Shakes at idle, pulls like a train.",
+			"mass": 102.0,
+			"layout": "vtwin",
+			"cylinders": 2,
+			"displacement": 1800.0,
+			"bore": 101.6,
+			"stroke": 111.1,
+			"torque_per_cc": 0.088,
+			"peak_torque_rpm": 4000.0,
+			"redline": 5800.0,
+			"idle_rpm": 850.0,
+			"color": [
+				0.12,
+				0.12,
+				0.13
+			],
+			"type": "V-twin",
+			"breathing": 0.65
+		},
 		"2stroke_50": {
 			"name": "50 cc two-stroke",
 			"description": "Fires every turn of the crank. Light, peaky and smoky; nothing until the power band, then everything. Learner-sized.",
@@ -11846,6 +11888,29 @@
 			"whine": 0.35,
 			"cassette": true,
 			"shift_feel": "click"
+		},
+		"six_cruiser_od": {
+			"name": "6-speed cruiser overdrive",
+			"description": "Tall gearing for a big twin: lugs off idle, and sixth is a lazy overdrive for the motorway.",
+			"mass": 9.5,
+			"primary": 1.5,
+			"ratios": [
+				2.9,
+				1.98,
+				1.45,
+				1.15,
+				0.98,
+				0.85
+			],
+			"shift_time": 0.14,
+			"type": "Six-speed overdrive",
+			"color": [
+				0.3,
+				0.31,
+				0.33
+			],
+			"whine": 0.2,
+			"shift_feel": "clunk"
 		},
 		"six_race_quickshift": {
 			"name": "6-speed race with quickshifter",

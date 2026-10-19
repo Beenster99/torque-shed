@@ -17,7 +17,7 @@ Current milestone, **The Shed**: a snug first-person workshop with four bike bay
 | Luggage | Panniers and top boxes; they add drag |
 | Stands | Side stand (length, lean), centre stand (lift). Without either, a bike left anywhere but a paddock stand falls over |
 | Fluids | Petrol in the tank, oil in the engine, brake fluid in each master cylinder. Each has 3 grades and ages with use |
-| Engine, built on the stand | Block (single, twin, parallel twin, V-twin, boxer, two-stroke or inline four; 50 to 1200 cc), cylinder head, fuel system, air filter, oil filter, spark plugs, cooling, gearbox |
+| Engine, built on the stand | Block (single, twin, parallel twin, V-twin, boxer, two-stroke or inline four; 50 to 1800 cc), cylinder head, fuel system, air filter, oil filter, spark plugs, cooling, gearbox |
 | Drivetrain | Exhaust, sprockets, chain (slack and lube matter) |
 
 Engine parts have to suit each other: one carb can't feed a big four, a race head needs a radiator, worn plugs misfire and a poor oil filter lets a tired engine wear faster. The bay screens list anything that doesn't suit.
