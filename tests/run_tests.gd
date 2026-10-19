@@ -492,6 +492,7 @@ func _run_all() -> void:
 	await _test_lights_avatar_shadows()
 	await _test_lights_far_terrain()
 	await _test_lights_kit_bike_materials()
+	await _test_lights_adventure_land_edge()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21797,3 +21798,7 @@ func _test_lights_far_terrain() -> void:
 
 func _test_lights_kit_bike_materials() -> void:
 	await _lights().test_kit_bike_materials()
+
+
+func _test_lights_adventure_land_edge() -> void:
+	await _lights().test_adventure_land_edge()
