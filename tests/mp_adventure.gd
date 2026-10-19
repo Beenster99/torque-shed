@@ -240,12 +240,13 @@ func _jump_to(trip: AdventureTrip, s: float, lat: float) -> void:
 	main.bike.place(xf.origin, trip.world.heading_at(s))
 
 
-## Keeps our bike stood at `s`, `lat`: put back if it rolls or falls over, left to itself.
+## Keeps our bike stood at `s`, `lat`: put back if it creeps (a few mm a second on a slope adds up
+## past the 10 cm checks) or falls over.
 func _hold(trip: AdventureTrip, s: float, lat: float) -> void:
 	if not trip.on_trip() or main.bike == null:
 		return
 	var xf := trip.world.transform_at(s, lat)
-	if main.bike.global_position.distance_to(xf.origin) > 0.8 or main.bike.is_crashed:
+	if main.bike.global_position.distance_to(xf.origin) > 0.05 or main.bike.is_crashed:
 		main.bike.place(xf.origin, trip.world.heading_at(s))
 
 

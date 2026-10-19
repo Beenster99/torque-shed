@@ -407,7 +407,7 @@ func hud_text(s: float) -> String:
 	var r := world.route
 	if int(Shed.adventure.get("arrived", 0)) != 0:
 		return "At %s, %d km from the start.   %s" % [AdventureDest.name_of(str(Shed.adventure.get("dest", ""))), roundi(r.length / 1000.0),
-			"Ride home from the Esc menu when everyone's ready." if Shed.is_authority() else "The host rides everyone home when you're ready."]
+			Controls.hint("Ride home from the {menu} menu when everyone's ready.") if Shed.is_authority() else "The host rides everyone home when you're ready."]
 	var text := "Adventure  %.1f / %.0f km   %s, %s" % [s / 1000.0, r.length / 1000.0,
 		AdventureSurface.NAMES.get(r.surface_at_s(s), "Road"), str(AdventureRoute.KIND_NAMES.get(r.kind_at_s(s), "")).to_lower()]
 	var f := r.fork_at(s)
