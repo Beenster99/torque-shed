@@ -164,6 +164,11 @@ func _traffic_check(trip: AdventureTrip, s: float, lat: float) -> bool:
 				_verdict_from.rpc(1, _traffic_note)
 		await get_tree().physics_frame
 	print("MP adv note %s: traffic %s (%s)" % [role, "matches" if _verdict == 1 else "doesn't match", _traffic_note])
+	# Stood afresh where we were (a bike left standing creeps a few centimetres in that time,
+	# and the checks after this one look to within 10 cm).
+	if trip.on_trip() and main.bike != null:
+		var xf := trip.world.transform_at(s, lat)
+		main.bike.place(xf.origin, trip.world.heading_at(s))
 	return _verdict == 1
 
 
