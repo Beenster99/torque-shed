@@ -79,7 +79,8 @@ func _build_upscaling(body: VBoxContainer) -> void:
 	body.add_child(UITheme.title("Upscaling", 20))
 	_slider(body, "gfx_render_scale", "Render scale", 0.5, 2.0, 0.05, func(v): return "%d%%" % roundi(v * 100.0))
 	_option(body, "gfx_upscaler", "Upscaler", [["fsr2", "AMD FSR 2.2 (temporal, best looking)"],
-		["fsr1", "AMD FSR 1.0 (spatial, fastest)"], ["bilinear", "Bilinear (plain stretch)"]])
+		["fsr1", "AMD FSR 1.0 (spatial, fastest)"], ["bilinear", "Bilinear (plain stretch)"],
+		["off", "Off (native resolution, no scaling)"]])
 	_slider(body, "gfx_sharpness", "Sharpness", 0.0, 1.0, 0.05, func(v): return "%d%%" % roundi(v * 100.0))
 	_scale_note = _note(body, "")
 	_note(body, "DLSS and XeSS: not available. The Godot engine this game is built on (4.6) doesn't include "
@@ -113,6 +114,7 @@ func _build_quality(body: VBoxContainer) -> void:
 	_check(body, "gfx_ssr", "Screen-space reflections")
 	_check(body, "gfx_ssao", "Ambient occlusion (SSAO)")
 	_check(body, "gfx_glow", "Glow and bloom")
+	_check(body, "gfx_avatar_shadows", "Avatar shadow (players, staff and townsfolk cast shadows)")
 	var blur := CheckBox.new()
 	blur.text = "Motion blur (the game has none, so it's always off)"
 	blur.disabled = true
@@ -154,7 +156,11 @@ func refresh() -> void:
 				(c["control"] as CheckBox).set_pressed_no_signal(bool(v))
 	_rt.set_pressed_no_signal(Settings.gfx_gi == "sdfgi")
 	var scale := Settings.gfx_render_scale
-	_scale_note.text = "At 100% the 3D view renders at full resolution and no upscaler runs." if absf(scale - 1.0) < 0.005 \
+	var off := Settings.gfx_upscaler == "off"
+	for k in ["gfx_render_scale", "gfx_sharpness"]:
+		(_controls[k]["control"] as HSlider).editable = not off
+	_scale_note.text = "Upscaler off: the 3D view always renders at your screen's own resolution, with no scaling." if off \
+		else "At 100% the 3D view renders at full resolution and no upscaler runs." if absf(scale - 1.0) < 0.005 \
 		else ("Above 100% the game renders bigger and shrinks it down (supersampling, very sharp but slow; bilinear only)."
 			if scale > 1.0 else "Below 100% the 3D view renders smaller and the upscaler brings it back up (faster).")
 	_window_note.text = "Windowed: the window's size (no bigger than your screen)." if Settings.gfx_window_mode == "windowed" \

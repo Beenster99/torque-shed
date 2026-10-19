@@ -155,6 +155,8 @@ func _multimesh(mesh: Mesh, count: int, mat: Material, node_name: String) -> Mul
 	mmi.material_override = mat
 	if node_name == "Pigeons":
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	elif node_name == "Pedestrians":
+		Graphics.avatar_mesh(mmi)
 	add_child(mmi)
 	_world.ranged(mmi, 60.0 if node_name == "Pigeons" else DRAW_RANGE)
 	_holders.append(mmi)
