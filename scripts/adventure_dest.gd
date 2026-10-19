@@ -748,6 +748,12 @@ static func paint(dest: String, riders := 0) -> Image:
 				for i in 6:
 					_disc(img, i / 5.0, 0.56, 0.12, Color(0.22, 0.38, 0.16))
 			_rect(img, 0.0, 0.55, 1.0, 1.0, ground)
+			if theme == "hills":
+				# Stone walls up the fellside behind, and sheep.
+				for i in 3:
+					_rect(img, 0.0, 0.565 + 0.03 * i, 1.0, 0.572 + 0.03 * i, Color(0.55, 0.53, 0.48))
+				for i in 7:
+					_disc(img, rng.randf(), rng.randf_range(0.57, 0.64), 0.012, Color(0.95, 0.95, 0.92))
 			if kind == "rally":
 				for i in 6:
 					var x := 0.08 + 0.15 * i
