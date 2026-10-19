@@ -60,6 +60,8 @@ var world: AdventureWorld
 var stream: TrafficStream
 ## Whether this machine drives the traffic (the host, or a solo game).
 var host := true
+## The share of villages with a bus waiting as you come in (BUS_CHANCE; the tests set it).
+var bus_chance := BUS_CHANCE
 var _busy := PackedFloat32Array()
 var _limit := PackedFloat32Array()
 var _villages: Array = []     # [s of the middle, s of its bus stop, the way its buses go]
@@ -76,6 +78,11 @@ func _ready() -> void:
 	if world == null:
 		world = get_parent() as AdventureWorld
 	host = not Net.is_online() or Net.is_host()
+	# Every vehicle's meshes made now, behind the fade into the adventure, not as each first
+	# turns up (a few tens of ms each: a hitch on the road).
+	for kind in VehicleModel.KINDS:
+		for trim in int(VehicleModel.SPECS[kind]["trims"]):
+			VehicleModel.parts(kind, trim)
 	_rng.seed = hash([world.route.seed_value, "adventure_traffic", Time.get_ticks_usec()])
 	stream = TrafficStream.new()
 	stream.name = "Stream"
@@ -88,8 +95,8 @@ func _ready() -> void:
 	stream.despawn = DESPAWN
 	stream.reach = SPAWN_FAR + 50.0
 	stream.weigh_busy = true
-	stream.set_physics_process(false)   # stepped from here, after the riders are found
 	add_child(stream)
+	stream.set_physics_process(false)   # stepped from here, after the riders are found
 	_tables()
 	Net.adv_traffic_received.connect(_on_net)
 
@@ -105,12 +112,18 @@ func _exit_tree() -> void:
 
 ## The road at `s` for the stream: {pos (local), fwd, hw, busy, limit, grade}.
 func sample(s: float) -> Dictionary:
+	# As AdventureRoute's xz_at, heading_at_s, height_at_s and grade_at_s, in one go (it's asked
+	# a few times a frame for every vehicle).
 	var r := world.route
-	var xz := r.xz_at(s)
-	var h := r.heading_at_s(s)
+	var f := clampf(s / AdventureRoute.STEP, 0.0, float(r.px.size() - 1))
+	var i := mini(int(f), r.px.size() - 2)
+	var u := f - i
+	var h := lerpf(r.hd[i], r.hd[i + 1], u)
 	var b := clampi(int(s / BIN), 0, _busy.size() - 1)
-	return {"pos": world.to_local_pos(xz[0], r.height_at_s(s) + AdventureChunk.CROWN * 0.75, xz[1]), "fwd": Vector3(sin(h), 0.0, -cos(h)),
-		"hw": r.width_at_s(s) * 0.5, "busy": _busy[b], "limit": _limit[b], "grade": r.grade_at_s(s)}
+	return {"pos": world.to_local_pos(lerpf(r.px[i], r.px[i + 1], u), lerpf(r.ph[i], r.ph[i + 1], u) + AdventureChunk.CROWN * 0.75,
+			lerpf(r.pz[i], r.pz[i + 1], u)),
+		"fwd": Vector3(sin(h), 0.0, -cos(h)), "hw": r.width[clampi(int(round(f)), 0, r.width.size() - 1)] * 0.5,
+		"busy": _busy[b], "limit": _limit[b], "grade": (r.ph[i + 1] - r.ph[i]) / AdventureRoute.STEP}
 
 
 ## The road's bend at `s` (1/m, + to the right).
@@ -186,7 +199,9 @@ func _physics_process(delta: float) -> void:
 		if _town_timer <= 0.0:
 			_town_timer = 1.3
 			_pull_out()
+	var st := Perf.t0()
 	stream.step(delta)
+	Perf.add("traffic", st)   # the driving and drawing, inside adv_traffic
 	if host:
 		_send_timer -= delta
 		if _send_timer <= 0.0:
@@ -231,7 +246,7 @@ func _waiting_buses() -> void:
 			if ahead < BUS_AHEAD[0] or ahead > BUS_AHEAD[1]:
 				continue
 			_buses_done[stop_s] = true
-			if _rng.randf() < BUS_CHANCE:
+			if _rng.randf() < bus_chance:
 				var dir := int(v[2])
 				var centre := stop_s + dir * (2.5 - TrafficVehicle.half_length_of("coach"))
 				# Long enough for riders to arrive while it's there, and a little more.

@@ -455,12 +455,17 @@ func _draw(delta: float) -> void:
 		var s := float(d["s"])
 		var dir := int(d["dir"])
 		d["kerb_f"] = move_toward(float(d.get("kerb_f", 0.0)), 1.0 if d.get("kerb", false) else 0.0, delta * 0.6)
-		var where := _place(d)
+		var at: Dictionary = sample.call(s)
+		var where := _place(d, at)
 		var pos: Vector3 = where[0]
 		var f: Vector3 = where[1]
-		var ahead: Vector3 = sample.call(s + dir * car.length * 0.5)["pos"]
-		var behind: Vector3 = sample.call(s - dir * car.length * 0.5)["pos"]
-		var pitch := atan2(ahead.y - behind.y, maxf(car.length, 1.0))
+		var pitch := 0.0
+		if at.has("grade"):
+			pitch = atan(float(at["grade"]) * dir)
+		else:
+			var ahead: Vector3 = sample.call(s + dir * car.length * 0.5)["pos"]
+			var behind: Vector3 = sample.call(s - dir * car.length * 0.5)["pos"]
+			pitch = atan2(ahead.y - behind.y, maxf(car.length, 1.0))
 		var yaw := atan2(-f.x, -f.z)
 		var v := float(d["v"])
 		var dv := (float(d["last_v"]) - v) / maxf(delta, 0.001)
