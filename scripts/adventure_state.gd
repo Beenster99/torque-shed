@@ -189,7 +189,7 @@ static func _arrive(who: String) -> String:
 	var dest := AdventureDest.of(str(Shed.adventure.get("dest", "")))
 	if float(dest.get("hours", -1.0)) >= 0.0 and Daylight.current:
 		Daylight.current.set_time(float(dest["hours"]))
-	return "%s has reached %s! Everyone's there for the photo; it'll hang on the shed wall. The host rides everyone home from the Esc menu." % [
+	return "%s has reached %s! Photo time!" % [
 		who, AdventureDest.name_of(str(Shed.adventure.get("dest", "")))]
 
 
