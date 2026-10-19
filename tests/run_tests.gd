@@ -486,6 +486,12 @@ func _run_all() -> void:
 	_test_adv_magazine_issues()
 	await _test_adv_magazine_facts()
 	await _test_adv_magazine_ui()
+	print("Lights and graphics (v0.15.1): headlight and fog lamp reach, upscaler off, avatar shadows")
+	await _test_lights_beams()
+	await _test_lights_upscaler_off()
+	await _test_lights_avatar_shadows()
+	await _test_lights_far_terrain()
+	await _test_lights_kit_bike_materials()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -7167,8 +7173,8 @@ func _test_tail_old_save() -> void:
 
 
 ## The headlight is a soft core that lights the road and a wide, dim flood round it that is the
-## only light in the fog: both fade from the middle, with a blurred round projector, so neither
-## the pool on the road nor the haze in the air has an edge.
+## only light in the fog: both fade from the middle outwards, so neither the pool on the road nor
+## the haze in the air has an edge.
 func _test_soft_beam() -> void:
 	var env := Environment.new()
 	var sun := DirectionalLight3D.new()
@@ -7191,15 +7197,8 @@ func _test_soft_beam() -> void:
 		"the flood is much wider (%.0f vs %.0f degrees) and dimmer" % [flood.spot_angle, core.spot_angle])
 	check(core.spot_angle_attenuation < 1.0 and flood.spot_angle_attenuation < 0.5,
 		"both fade from the middle outwards (falloff %.2f / %.2f), nothing left at the edge" % [core.spot_angle_attenuation, flood.spot_angle_attenuation])
-	check(core.light_projector is GradientTexture2D and flood.light_projector == core.light_projector,
-		"a blurred round projector softens the pool of light on the road")
-	var tex := BikeEffects.soft_spot_texture()
-	var mid := tex.gradient.sample(0.0).r
-	var rim := tex.gradient.sample(1.0).r
-	var half := tex.gradient.sample(0.5).r
-	check(tex.fill == GradientTexture2D.FILL_RADIAL and is_equal_approx(tex.fill_to.x - tex.fill_from.x, 0.5),
-		"a round spot that reaches black at the cone's edge")
-	check(mid > 0.9 and rim < 0.05 and half > rim and half < mid, "the projector fades smoothly from white to black (%.2f, %.2f, %.2f)" % [mid, half, rim])
+	check(core.light_projector == null and flood.light_projector == null,
+		"no projector narrowing the pool: the cones' own falloff softens its edge")
 	check(core.light_volumetric_fog_energy == 0.0 and flood.light_volumetric_fog_energy > 0.0,
 		"only the soft flood lights the night air, never the bright core")
 	check(fx.beam_fog() > 0.5 and fx.beam_fog() <= BikeEffects.BEAM_FOG_LOW + 0.01, "the haze is faint (%.2f)" % fx.beam_fog())
@@ -21772,3 +21771,29 @@ func _test_adv_magazine_facts() -> void:
 
 func _test_adv_magazine_ui() -> void:
 	await _adv_dest().test_magazine_ui()
+
+
+# ---------------------------------------------------------------------------- lights and graphics (tests/lights_tests.gd)
+
+func _lights() -> RefCounted:
+	return load("res://tests/lights_tests.gd").new(self)
+
+
+func _test_lights_beams() -> void:
+	await _lights().test_beams()
+
+
+func _test_lights_upscaler_off() -> void:
+	await _lights().test_upscaler_off()
+
+
+func _test_lights_avatar_shadows() -> void:
+	await _lights().test_avatar_shadows()
+
+
+func _test_lights_far_terrain() -> void:
+	await _lights().test_far_terrain()
+
+
+func _test_lights_kit_bike_materials() -> void:
+	await _lights().test_kit_bike_materials()
