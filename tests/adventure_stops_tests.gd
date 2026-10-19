@@ -168,7 +168,7 @@ func test_groups() -> void:
 			var hit := w.locate_local(n.global_position)
 			seat_ok = seat_ok and absf(f.length() - 1.0) < 0.01 and absf(f.y) < 0.01 and h > 0.2 and h < 0.8 and not ground.is_empty() \
 				and str(n.get_meta("seat", "")) != "" and str(n.get_meta("site", "")) != "" and not hit.is_empty() \
-				and absf(float(hit["s"]) - s) < 80.0 and signf(float(hit["lat"])) == side
+				and absf(float(hit["s"]) - s) < 80.0 and (signf(float(hit["lat"])) == side or kind == "village")   # a high street's both sides
 		var menu_ok := not counters.is_empty()
 		for n: Node3D in counters:
 			var menu: Array = n.get_meta("menu", [])
@@ -274,7 +274,8 @@ func test_frame_cost() -> void:
 		r.plan(int(found[0]), 150.0)
 		var site: Dictionary = found[1]
 		var xf := Transform3D(Basis(), Vector3(0, 100, 0))
-		AdventureStops.build(r, site, xf).free()   # the parked cars' meshes are made once, first
+		for car in AdventureStops.PARKED:
+			VehicleModel.parts(car, 0)   # as the adventure's start does
 		var t0 := Time.get_ticks_usec()
 		var node := AdventureStops.build(r, site, xf)
 		worst[kind] = (Time.get_ticks_usec() - t0) / 1000.0

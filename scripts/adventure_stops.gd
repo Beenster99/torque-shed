@@ -60,6 +60,9 @@ const PADS := {"village": [3.6, 24.0], "village_row": [3.6, 24.0], "cafe": [30.0
 ## and the small things (benches, bins, bikes, cars).
 const FAR := 900.0
 const NEAR := 220.0
+## The traffic's models that are parked up at the stops (their first trim), made when the
+## adventure starts (each takes a few tens of ms the first time) so a stop never hitches.
+const PARKED: Array[String] = ["hatchback", "saloon", "estate", "van"]
 
 ## The menus: id -> [name, price, food, drink].
 const FOODS := {
@@ -238,8 +241,11 @@ static func pad_surface(route: AdventureRoute, s: float, lat: float) -> String:
 
 # ---------------------------------------------------------------------------- building
 
-## Puts the stops' builders (and the fuel stations' shops) into `world`'s site builders.
+## Puts the stops' builders (and the fuel stations' shops) into `world`'s site builders, and
+## makes the parked cars' meshes ready.
 static func register(world: AdventureWorld) -> void:
+	for kind in PARKED:
+		VehicleModel.parts(kind, 0)
 	for kind in KINDS + [ROW]:
 		world.site_builders[kind] = func(site, xf, _info): return build(world.route, site, xf)
 	var fuel: Callable = world.site_builders.get("fuel", Callable())
@@ -497,10 +503,9 @@ static func _house(k: Kit, x: float, z: float, w: float, d: float, h: float, wal
 
 ## A parked car (one of the traffic's own models, its far mesh) at `xf` (facing local -z).
 static func _car(k: Kit, xf: Transform3D) -> void:
-	var kinds: Array[String] = ["hatchback", "saloon", "estate", "suv", "van"]
-	var kind := kinds[k.rng.randi() % kinds.size()]
+	var kind := PARKED[k.rng.randi() % PARKED.size()]
 	var look := VehicleModel.look_of(kind, k.rng.randi() % 100000)
-	var parts := VehicleModel.parts(kind, int(look["trim"]))
+	var parts := VehicleModel.parts(kind, 0)
 	var mi := MeshInstance3D.new()
 	mi.name = "Car"
 	mi.mesh = parts["far"]
