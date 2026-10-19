@@ -168,6 +168,13 @@ func shift_origin(d: Vector3) -> void:
 	global_position -= d
 
 
+## Their bike's velocity as their last snapshot has it (m/s).
+func current_velocity() -> Vector3:
+	if _last.size() < 10:
+		return Vector3.ZERO
+	return Vector3(_last[7], _last[8], _last[9])
+
+
 func current_speed() -> float:
 	if _last.size() < 10:
 		return 0.0

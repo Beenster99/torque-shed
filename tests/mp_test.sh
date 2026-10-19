@@ -2,7 +2,7 @@
 # Starts a host and a client on this machine and checks each sees the other's bike move.
 # Then a second pair rides an adventure together (tests/mp_adventure.gd), a third breaks down
 # on one and fixes it at the roadside, then tows (tests/mp_wrench.gd), and a fourth eats, sits
-# and sleeps on one (tests/mp_needs.gd).
+# and sleeps on one (tests/mp_needs.gd), and a fifth meets the police on one (tests/mp_police.gd).
 set -u
 cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
@@ -41,7 +41,16 @@ NCLIENT=$?
 wait $NHOST
 NHOSTRC=$?
 grep -h "MP needs" /tmp/torque_mp_needs_host.log /tmp/torque_mp_needs_client.log
-if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ]; then
+# The police: the client speeds past a patrol, is chased, pulled over and fined from its own money; the host isn't.
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_police.tscn -- --role=host > /tmp/torque_mp_police_host.log 2>&1 &
+PHOST=$!
+sleep 4
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_police.tscn -- --role=client > /tmp/torque_mp_police_client.log 2>&1
+PCLIENT=$?
+wait $PHOST
+PHOSTRC=$?
+grep -h "MP police" /tmp/torque_mp_police_host.log /tmp/torque_mp_police_client.log
+if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ] || [ $PHOSTRC -ne 0 ] || [ $PCLIENT -ne 0 ]; then
 	echo "Multiplayer test failed"
 	exit 1
 fi

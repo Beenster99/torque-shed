@@ -74,7 +74,7 @@ const MPH := 2.23694
 ## How often the host sends the cars to the crew (s).
 const SEND_EVERY := 0.1
 const MODES: Array[String] = ["patrol", "parked", "chase", "stop"]
-const PACKED := 14              # numbers per car in pack()
+const PACKED := 15              # numbers per car in pack()
 const STAGES: Array[String] = ["", "pull", "walk", "talk", "back"]
 ## What the officer says, by how fast you were going.
 const LINES: Array[String] = [
@@ -296,37 +296,39 @@ func tick(delta: float) -> void:
 
 
 ## Every rider's distance along the road and speed along it (+ the way s grows): yours and the
-## crew's from where they are, their speed from how that moves (smoothed, and a jump down the
-## road isn't speed).
+## crew's from where they are, their speed their bike's own (as it reports it: network jitter
+## isn't speed), or on foot from how they move (smoothed, and a jump down the road isn't speed).
 func _track_riders(delta: float) -> void:
 	if rider_source.is_valid():
 		riders.clear()
 		for r in rider_source.call():
 			riders[int(r["peer"])] = {"s": float(r["s"]), "v": float(r["v"])}
 		return
-	var spots := {}
+	var spots := {}     # peer -> [where, velocity or null]
 	if trip and trip.get("main"):
 		var main = trip.main
 		if main.bike:
-			spots[Shed.me()] = main.bike.global_position
+			spots[Shed.me()] = [main.bike.global_position, main.bike.linear_velocity]
 		elif main.walker:
-			spots[Shed.me()] = main.walker.global_position
+			spots[Shed.me()] = [main.walker.global_position, null]
 		for peer in main.remotes:
 			var rp = main.remotes[peer]
 			if is_instance_valid(rp):
-				spots[int(peer)] = rp.world_position()
+				spots[int(peer)] = [rp.world_position(), rp.bike.current_velocity() if rp.bike else null]
 	for peer in riders.keys():
 		if not spots.has(peer):
 			riders.erase(peer)
 			_track.erase(peer)
 	for peer in spots:
-		var s := world.distance_of(spots[peer], "police_%d" % peer)
+		var s := world.distance_of(spots[peer][0], "police_%d" % peer)
 		if s < 0.0:
 			continue
 		var tr: Dictionary = _track.get(peer, {"s": s, "v": 0.0})
 		var ds := s - float(tr["s"])
 		var v := float(tr["v"])
-		if absf(ds) < 90.0 and delta > 0.0:
+		if spots[peer][1] is Vector3:
+			v = (spots[peer][1] as Vector3).dot(-world.transform_at(s).basis.z)
+		elif absf(ds) < 90.0 and delta > 0.0:
 			v = lerpf(v, ds / delta, 1.0 - exp(-delta / 0.35))
 		else:
 			v = 0.0
@@ -807,8 +809,9 @@ func _officer(b: Dictionary, st: Dictionary, delta: float) -> void:
 
 # ---------------------------------------------------------------------------- the crew
 
-## For the network: per car [id, s, dir, v, lane, lane_want, mode, target, stage, stage_t, stop_s,
-## excess, speed, trap].
+## For the network: per car [id, s, dir, v, lane, lane_want, mode, target (its high 16 bits),
+## stage, stage_t, stop_s, excess, speed, trap, target (its low 16 bits)]: a peer id is too big to
+## go whole in a float.
 func pack() -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	for id in cars:
@@ -817,8 +820,8 @@ func pack() -> PackedFloat32Array:
 		if c.is_empty():
 			continue
 		out.append_array([float(id), float(c["s"]), float(c["dir"]), float(c["v"]), float(c["lane"]), float(c["lane_want"]),
-			float(MODES.find(b["mode"])), float(b["target"]), float(STAGES.find(b["stage"])), float(b["stage_t"]),
-			float(b["stop_s"]), float(b["excess"]), float(b["speed"]), 1.0 if b["trap"] else 0.0])
+			float(MODES.find(b["mode"])), float(int(b["target"]) >> 16), float(STAGES.find(b["stage"])), float(b["stage_t"]),
+			float(b["stop_s"]), float(b["excess"]), float(b["speed"]), 1.0 if b["trap"] else 0.0, float(int(b["target"]) & 0xFFFF)])
 	return out
 
 
@@ -849,7 +852,7 @@ func unpack(state_in: PackedFloat32Array) -> void:
 		var old_mode := str(b["mode"])
 		var old_target := int(b["target"])
 		b["mode"] = MODES[mi]
-		b["target"] = int(state_in[k + 7])
+		b["target"] = (int(state_in[k + 7]) << 16) | int(state_in[k + 14])
 		b["stage"] = STAGES[si]
 		b["stage_t"] = state_in[k + 9]
 		b["stop_s"] = state_in[k + 10]
