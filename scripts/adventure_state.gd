@@ -22,7 +22,8 @@ extends RefCounted
 ## see AdventureNeeds), everyone back where they slept.
 ## the forks' adventure_vote and adventure_fork_due (see AdventureForks, which keeps votes and
 ## picks here too); the police's adventure_police_fine and adventure_police_paid (see
-## AdventurePolice, which keeps its fines here as "police").
+## AdventurePolice, which keeps its fines here as "police"); adventure_highlight (see
+## AdventureDiary, which keeps the crew's highlights here as "log").
 
 const DEFAULT_KM := 60.0
 const MIN_KM := 5.0
@@ -106,6 +107,8 @@ static func check(peer: int, action: Dictionary) -> String:
 			return AdventureForks.check(peer, action)
 		"adventure_police_fine", "adventure_police_paid":
 			return AdventurePolice.check(peer, action)
+		"adventure_highlight":
+			return AdventureDiary.check(peer, action)
 		_:
 			return "Unknown adventure action."
 	return ""
@@ -127,6 +130,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 				"title": title if title != "" else "Ride to %s" % AdventureDest.name_of(dest), "mag": str(action.get("mag", "")),
 				"by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
 			Shed.adventure_save = {}   # a new adventure: any put away overnight is forgotten
+			AdventureDiary.started(true)
 			return "*%s is off on an adventure ride: %s, %d km to %s. Everyone to the start!" % [who, str(Shed.adventure["title"]),
 				roundi(km), AdventureDest.name_of(dest)]
 		"adventure_resume":
@@ -141,6 +145,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure["needs_saved"] = (save["needs"] as Dictionary).duplicate(true)
 			if Daylight.current:
 				Daylight.current.set_time(float(save.get("hours", AdventureNeeds.MORNING)))
+			AdventureDiary.started(false)
 			return "*%s carries on the adventure: %.1f of %d km done. Everyone back on the road!" % [who,
 				AdventureNeeds.save_s(save) / 1000.0, roundi(float(Shed.adventure.get("km", DEFAULT_KM)))]
 		"adventure_end":
@@ -169,6 +174,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure["arrived"] = peer
 			Shed.adventure["arrived_name"] = who
 			Shed.adventure_save = {}   # there: nothing left to carry on
+			AdventureDiary.arrived(peer)
 			return "*" + _arrive(who)
 		"adventure_photo":
 			AdventureDest.hang(action["photo"])
@@ -177,6 +183,8 @@ static func apply(peer: int, action: Dictionary) -> String:
 			return AdventureForks.apply(peer, action, who)
 		"adventure_police_fine", "adventure_police_paid":
 			return AdventurePolice.apply(peer, action)
+		"adventure_highlight":
+			return AdventureDiary.apply(peer, action)
 	return ""
 
 

@@ -30,7 +30,15 @@ extends Node
 ##   satnav_junction(pos: Vector2, fwd: Vector2) -> the next junction on the way where there's
 ##       something to say, within JUNCTION_AHEAD: {text ("At the roundabout, take the 2nd exit"),
 ##       type (AdventureJunctions.TYPES), exit (a roundabout's, else 0), distance}, {} for none
+
+
+##   satnav_next(pos: Vector2, fwd: Vector2) -> {fuel, food, sleep}: how far along the way to the
+##       next of each (m), -1 when there's none (the trip computer's page)
 ## and clears it (null) when it's done.
+##
+## It has two pages, the map and the trip computer (TripComputer: how far, how long, the speeds,
+## the petrol, the climbing, the stops coming up), and {satnav_hud} goes round them: the map, the
+## trip page, then the HUD's copy off (Satnav.page; the unit on the bars shows the same page).
 
 ## Times a second the screen is redrawn.
 const RATE := 10.0
@@ -44,6 +52,9 @@ const JUNCTION_AHEAD := 400.0
 
 ## The route provider (see the top): null for the town's own.
 static var route_provider: Object = null
+## The page showing: "map" or "trip" (the trip computer), on the unit and the HUD alike.
+const PAGES: Array[String] = ["map", "trip"]
+static var page := "map"
 
 var bike: Bike
 var world: World
@@ -52,6 +63,8 @@ var screen: SatnavScreen         # in the viewport, for the unit on the bars
 var hud_screen: SatnavScreen     # the HUD overlay (made by HUD, or null)
 var town: TownRoute
 var adventure: AdventureNav      # the adventure road's provider, made when one is on
+## The trip meter for this ride, from getting on (an adventure keeps its own, see computer()).
+var trip := TripComputer.new()
 var _timer := 0.0
 var _model: BikeModel            # the model the texture went on
 
@@ -98,8 +111,19 @@ func provider() -> Object:
 	return town
 
 
+## The trip computer in use: the adventure's (the whole ride, see AdventureTrip.computer) while
+## you're out on one, else this ride's own trip meter.
+func computer() -> TripComputer:
+	var at := AdventureTrip.current
+	if at != null and at.on_trip() and at.computer != null:
+		return at.computer
+	return trip
+
+
 func _process(delta: float) -> void:
 	var pt := Perf.t0()
+	if bike != null and is_instance_valid(bike) and computer() == trip:
+		trip.step(delta, bike.speed, bike.global_position.y, bike.fuel_litres, bike.surface)
 	_tick(delta)
 	Perf.add("satnav", pt)
 
@@ -127,6 +151,9 @@ func _tick(delta: float) -> void:
 func refresh() -> void:
 	var fwd3 := -bike.global_transform.basis.z
 	var v := view_for(provider(), bike.global_position, fwd3, absf(bike.speed))
+	v["page"] = page
+	if page == "trip":
+		v["trip"] = trip_view(computer(), provider(), bike.global_position, fwd3, bike.fuel_litres, bike.build.cruise_economy())
 	screen.features = bike.build.satnav_features
 	screen.show_view(v)
 	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -169,6 +196,47 @@ static func view_for(source: Object, pos: Vector3, fwd3: Vector3, speed := 0.0) 
 	if source.has_method("satnav_junction"):
 		v["junction"] = source.satnav_junction(p, fwd)
 	return v
+
+
+## The trip computer's page from `tc`, riding at `pos` along `fwd3` with `fuel_left` litres in the
+## tank (`book`: the bike's own km a litre, for the range before there's an average): {ridden,
+## to_go (m to the destination, -1 for none), time (s on the move), eta (clock hours, -1 unknown),
+## eta_s, average, top (m/s), fuel (litres burnt), economy (km/l), range (km, -1 unknown), next
+## {fuel, food, sleep} (m, -1 for none), elevation, climb, descent (m), surface (its name)}.
+static func trip_view(tc: TripComputer, source: Object, pos: Vector3, fwd3: Vector3, fuel_left: float, book := 0.0) -> Dictionary:
+	var p := Vector2(pos.x, pos.z)
+	var fwd := Vector2(fwd3.x, fwd3.z)
+	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector2(0, -1)
+	var to_go := -1.0
+	if source != null and source.has_method("satnav_points"):
+		for q in source.satnav_points(p, fwd):
+			if str(q["kind"]) == "destination":
+				to_go = float(q["distance"])
+	var next := {"fuel": -1.0, "food": -1.0, "sleep": -1.0}
+	if source != null and source.has_method("satnav_next"):
+		next.merge(source.satnav_next(p, fwd), true)
+	var eta_s := tc.eta_seconds(to_go) if to_go >= 0.0 else -1.0
+	return {"ridden": tc.distance, "to_go": to_go, "time": tc.moving_time, "eta_s": eta_s,
+		"eta": tc.eta_clock(to_go, Daylight.time_of_day(), Daylight.local_rate()) if eta_s >= 0.0 else -1.0,
+		"average": tc.average(), "top": tc.top, "fuel": tc.fuel_used, "economy": tc.economy(), "range": tc.range_km(fuel_left, book),
+		"next": next, "elevation": tc.elevation, "climb": tc.climb, "descent": tc.descent,
+		"surface": str(AdventureSurface.NAMES.get(tc.surface, tc.surface.capitalize())) if tc.surface != "" else "--"}
+
+
+## {satnav_hud}: on to the next page, and after the last the HUD's copy goes off (and the next
+## press brings it back on the map). What to say about it.
+static func next_page() -> String:
+	if not Settings.satnav_hud:
+		Settings.satnav_hud = true
+		page = "map"
+		return "Sat nav on the HUD: map"
+	var i := PAGES.find(page) + 1
+	if i >= PAGES.size():
+		Settings.satnav_hud = false
+		page = "map"
+		return "Sat nav on the HUD off"
+	page = PAGES[i]
+	return "Sat nav: trip computer" if page == "trip" else "Sat nav: map"
 
 
 ## The town's route provider: the riding map's roads (WorldRoads), the road ahead along the one
@@ -252,6 +320,14 @@ class TownRoute:
 			var at := Vector2(p.global_position.x, p.global_position.z)
 			out.append({"kind": "fuel", "name": "Fuel", "distance": pos.distance_to(at), "at": at})
 		return out
+
+	## In town there's only fuel to stop for: the nearest pump, as the crow flies.
+	func satnav_next(pos: Vector2, fwd: Vector2) -> Dictionary:
+		var best := -1.0
+		for q in satnav_points(pos, fwd):
+			if best < 0.0 or float(q["distance"]) < best:
+				best = float(q["distance"])
+		return {"fuel": best}
 
 
 ## The adventure road's route provider: the road round you from AdventureRoute (in the world's
@@ -438,6 +514,25 @@ class AdventureNav:
 		var f := world.route.next_fork(s)
 		if f >= 0:
 			out.append({"kind": "fork", "name": "Fork", "distance": maxf(world.route.fork_s(f) - s, 0.0), "at": _at(world.route.fork_s(f))})
+		return out
+
+	## How far along the way to the next fuel, food and bed (m; -1 when there's none ahead).
+	func satnav_next(pos: Vector2, _fwd: Vector2) -> Dictionary:
+		var out := {"fuel": -1.0, "food": -1.0, "sleep": -1.0}
+		var hit := _where(pos)
+		if hit.is_empty():
+			return out
+		var s := float(hit["s"])
+		var left := 3
+		for st in world.route.sites:
+			var kind := str(AdventureStops.NAV.get(str(st["kind"]), ""))
+			var d := float(st["s"]) - s
+			if not out.has(kind) or float(out[kind]) >= 0.0 or d < -15.0 or float(st["s"]) > world.route.length:
+				continue
+			out[kind] = maxf(d, 0.0)
+			left -= 1
+			if left == 0:
+				break
 		return out
 
 	## The choice coming up at a fork, heading on (see AdventureForks.choice), or {}.

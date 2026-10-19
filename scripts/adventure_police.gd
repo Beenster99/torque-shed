@@ -282,6 +282,9 @@ static func apply(_peer: int, action: Dictionary) -> String:
 			# A red light is the least a fine comes to (more for each time that day).
 			(p["fines"] as Array).append({"id": id, "peer": who, "amount": fine_amount(30.0 if why == "red" else mph, n), "mph": roundi(mph),
 				"day": day, "n": n, "paid": -1, "points": 0, "why": why})
+			(p["fines"] as Array).append({"id": id, "peer": who, "amount": fine_amount(mph, n), "mph": roundi(mph),
+				"day": day, "n": n, "paid": -1, "points": 0})
+			AdventureDiary.fined(who, fine_amount(mph, n), roundi(mph))
 			while (p["fines"] as Array).size() > 24:
 				(p["fines"] as Array).pop_front()
 		"adventure_police_paid":
@@ -535,6 +538,10 @@ func _start_chase(b: Dictionary, peer: int, over_mph: float, mph: float) -> void
 	b["lost_t"] = 0.0
 	events.append(["chase", int(b["id"]), peer, roundi(over_mph)])
 	_announce(b, "patrol", 0)
+	if Adventure.active() and Shed.is_authority():
+		# One for the Adventure Diary (see AdventureDiary).
+		Shed.request({"a": "adventure_highlight", "kind": "chase", "peer": peer, "mph": roundi(over_mph),
+			"s": float(riders.get(peer, {}).get("s", 0.0))})
 
 
 ## Chasing rider `r`: turned to face them, flat out till close, then sat FOLLOW behind; round

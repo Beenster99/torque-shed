@@ -547,6 +547,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 	match a:
 		"roadside_fault":
 			_break(Shed.riding(peer), str(action["kind"]), action)
+			AdventureDiary.broke(peer, str(INFO.get(str(action["kind"]), {}).get("name", "a fault")))
 			return ""   # the rider's own game tells them, as their bike changes (Main._sync_faults)
 		"roadside_open":
 			var r: Dictionary = Shed.bikes[bike_id]["roadside"]
@@ -568,6 +569,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 				for what in uses(kind):
 					use_kit(box, str(what))
 				_lay_out(bike_id, "tools")
+				AdventureDiary.fixed(peer, str(INFO.get(kind, {}).get("name", kind)))
 			return text
 		"roadside_push":
 			var bike: Dictionary = Shed.bikes[bike_id]
@@ -583,6 +585,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.bikes[towed]["tow"] = int(action["by"])
 			Shed.bikes[towed].erase("push")
 			var by_name := str(Shed.crew.get(int(action["by"]), {}).get("name", "A mate"))
+			AdventureDiary.towed(peer, int(action["by"]))
 			return "*%s ties a tow strap from %s's bike to %s's: on to the next stop." % [who, by_name, who]
 		"roadside_untow":
 			var ridden := Shed.riding(peer)

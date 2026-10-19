@@ -523,6 +523,15 @@ func _run_all() -> void:
 	_test_bike_copy_blueprint()
 	_test_bike_copy_sources()
 	await _test_bike_copy_session()
+	print("Trip computer and the Adventure Diary (v0.16.0): the sat nav's trip page, the crew's highlights, photos without a stutter, the diary book")
+	_test_adv_diary_trip_maths()
+	await _test_adv_diary_trip_page()
+	_test_adv_diary_log()
+	await _test_adv_diary_highlights_ride()
+	await _test_adv_diary_capture_cost()
+	await _test_adv_diary_capture_ride()
+	await _test_adv_diary_files()
+	await _test_adv_diary_ride()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21972,3 +21981,42 @@ func _test_bike_copy_sources() -> void:
 
 func _test_bike_copy_session() -> void:
 	await _bike_copy().test_session()
+
+
+
+# ---------------------------------------------------------------------------- trip computer and the Adventure Diary (tests/adventure_diary_tests.gd)
+
+func _adv_diary() -> RefCounted:
+	return load("res://tests/adventure_diary_tests.gd").new(self)
+
+
+func _test_adv_diary_trip_maths() -> void:
+	_adv_diary().test_trip_maths()
+
+
+func _test_adv_diary_trip_page() -> void:
+	await _adv_diary().test_trip_page()
+
+
+func _test_adv_diary_log() -> void:
+	_adv_diary().test_highlight_log()
+
+
+func _test_adv_diary_highlights_ride() -> void:
+	await _adv_diary().test_highlights_ride()
+
+
+func _test_adv_diary_capture_cost() -> void:
+	await _adv_diary().test_capture_cost()
+
+
+func _test_adv_diary_capture_ride() -> void:
+	await _adv_diary().test_capture_ride()
+
+
+func _test_adv_diary_files() -> void:
+	await _adv_diary().test_diary_files()
+
+
+func _test_adv_diary_ride() -> void:
+	await _adv_diary().test_diary_ride()

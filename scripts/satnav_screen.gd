@@ -5,6 +5,10 @@ extends Control
 ## bottom, and along the top how far to the next fuel and the destination, when the route
 ## knows them. It draws the `view` Satnav makes (see Satnav.view_for), whether that's on the
 ## unit's own screen on the bars (in a SubViewport, see Satnav) or as the HUD overlay.
+##
+## On its trip computer page (view "page" "trip", see Satnav.trip_view) it's the journey in
+## numbers instead: how far and how long, the arrival, the speeds, the petrol and the range, the
+## stops coming up, the height and the climbing, and the ground under the wheels.
 
 ## How many metres the map spans across, at a standstill and at speed (it zooms out as you go).
 const SPAN_SLOW := 220.0
@@ -77,6 +81,9 @@ func _draw() -> void:
 	var fs := maxi(9, int(size.y / 14.0))
 	if view.is_empty():
 		draw_string(font, Vector2(0, size.y * 0.5), "Finding satellites...", HORIZONTAL_ALIGNMENT_CENTER, size.x, fs, Color(1, 1, 1, 0.6))
+		return
+	if str(view.get("page", "map")) == "trip" and view.get("trip") is Dictionary:
+		_draw_trip(view["trip"], fs, font)
 		return
 	var k := size.x / span
 	var show_map := features.has("map")
@@ -198,6 +205,69 @@ func _draw() -> void:
 	draw_line(nc - north * 7.0, nc + north * 7.0, Color(1, 1, 1, 0.5), 2.0)
 	draw_circle(nc + north * 7.0, 2.5, Color(1, 0.35, 0.3))
 	draw_string(font, Vector2(size.x - 34.0, size.y - bar_h - 4.0), "N", HORIZONTAL_ALIGNMENT_CENTER, 36, fs - 2, Color(1, 1, 1, 0.6))
+
+
+## The trip computer's page: a heading with the clock, the journey in two columns of readings
+## (each a small grey label over its value), the stops coming up in their colours, and along the
+## bottom the ground you're on and the key for the map.
+func _draw_trip(t: Dictionary, fs: int, font: Font) -> void:
+	var bar_h := fs + 8.0
+	draw_rect(Rect2(0, 0, size.x, bar_h), Color(0, 0, 0, 0.6))
+	draw_string(font, Vector2(6, fs + 2.0), "TRIP COMPUTER", HORIZONTAL_ALIGNMENT_LEFT, size.x * 0.6, fs, ROUTE)
+	draw_string(font, Vector2(size.x * 0.5, fs + 2.0), Daylight.clock_text(Daylight.time_of_day()), HORIZONTAL_ALIGNMENT_RIGHT, size.x * 0.5 - 6.0, fs, Color(1, 1, 1, 0.8))
+	var to_go := float(t.get("to_go", -1.0))
+	var eta := float(t.get("eta", -1.0))
+	var avg := float(t.get("average", 0.0))
+	var econ := float(t.get("economy", 0.0))
+	var rng := float(t.get("range", -1.0))
+	var cells := [
+		["RIDDEN", TripComputer.distance_text(float(t.get("ridden", 0.0))), Color.WHITE],
+		["TO GO", TripComputer.distance_text(to_go) if to_go >= 0.0 else "--", DEST],
+		["RIDING TIME", TripComputer.duration_text(float(t.get("time", 0.0))), Color.WHITE],
+		["ARRIVE", "%s  (%s)" % [Daylight.clock_text(eta), TripComputer.duration_text(float(t.get("eta_s", 0.0)))] if eta >= 0.0 else "--", DEST],
+		["AVERAGE", "%d %s" % [Units.speed_value(avg), Units.speed_unit()] if avg > 0.0 else "--", Color.WHITE],
+		["MAX", "%d %s" % [Units.speed_value(float(t.get("top", 0.0))), Units.speed_unit()], Color.WHITE],
+		["FUEL USED", "%.1f L" % float(t.get("fuel", 0.0)), FUEL],
+		["AVERAGING", Units.economy(econ) if econ > 0.0 else "--", FUEL],
+		["RANGE", TripComputer.distance_text(rng * 1000.0) if rng >= 0.0 else "--", FUEL if rng < 0.0 or rng > 30.0 else WRONG.lightened(0.3)],
+		["ELEVATION", TripComputer.height_text(float(t.get("elevation", 0.0))), Color.WHITE],
+		["CLIMB / DESCENT", "+%s  -%s" % [TripComputer.height_text(float(t.get("climb", 0.0))), TripComputer.height_text(float(t.get("descent", 0.0)))], Color.WHITE],
+	]
+	# The stops coming up: fuel, food and a bed, each in its colour (only what the unit knows).
+	var next: Dictionary = t.get("next", {})
+	var bits := []
+	for kind in ["fuel", "food", "sleep"]:
+		if (kind == "fuel" and not features.has("fuel")) or (kind != "fuel" and not features.has("route")):
+			continue
+		var d := float(next.get(kind, -1.0))
+		if d >= 0.0:
+			bits.append([kind, "%s %s" % [STOP_MARKS[kind], TripComputer.distance_text(d)]])
+	# The rows fitted between the bars, with the stops' row (if any) along the bottom.
+	var lfs := maxi(7, fs - 6)
+	var vfs := maxi(9, fs - 2)
+	var y := bar_h + 2.0
+	var bottom := size.y - bar_h - 2.0
+	var stops_h := (vfs + 6.0) if not bits.is_empty() else 0.0
+	var rows := ceilf(cells.size() / 2.0)
+	var row_h := minf(lfs + vfs + 3.0, (bottom - y - stops_h - 2.0) / rows)
+	vfs = maxi(7, mini(vfs, int(row_h) - lfs - 1))
+	var col_w := size.x * 0.5
+	for i in cells.size():
+		var c: Array = cells[i]
+		var x := 6.0 + col_w * float(i % 2)
+		var cy := y + row_h * float(i / 2)
+		draw_string(font, Vector2(x, cy + lfs), str(c[0]), HORIZONTAL_ALIGNMENT_LEFT, col_w - 8.0, lfs, Color(1, 1, 1, 0.45))
+		draw_string(font, Vector2(x, cy + lfs + vfs + 1.0), str(c[1]), HORIZONTAL_ALIGNMENT_LEFT, col_w - 8.0, vfs, c[2])
+	if not bits.is_empty():
+		var sy := bottom - stops_h
+		var w := (size.x - 12.0) / float(bits.size())
+		for i in bits.size():
+			var x := 6.0 + w * i
+			draw_rect(Rect2(x, sy, w - 4.0, stops_h), Color(STOP_COLORS[bits[i][0]], 0.18))
+			draw_string(font, Vector2(x + 4.0, sy + vfs + 1.0), str(bits[i][1]), HORIZONTAL_ALIGNMENT_LEFT, w - 10.0, vfs, STOP_COLORS[bits[i][0]])
+	draw_rect(Rect2(0, size.y - bar_h, size.x, bar_h), Color(0, 0, 0, 0.6))
+	draw_string(font, Vector2(6, size.y - 5.0), "On %s" % str(t.get("surface", "--")).to_lower(), HORIZONTAL_ALIGNMENT_LEFT, size.x * 0.5, fs, Color(1, 1, 1, 0.85))
+	draw_string(font, Vector2(size.x * 0.4, size.y - 5.0), Controls.hint("{satnav_hud}: next page"), HORIZONTAL_ALIGNMENT_RIGHT, size.x * 0.6 - 6.0, lfs + 1, Color(1, 1, 1, 0.5))
 
 
 ## The guide arrow in a disc at `c` (radius `rad`), pointing `turn` radians round from straight up

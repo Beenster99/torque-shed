@@ -898,9 +898,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		walker.stopwatch.start_stop()
 		Sfx.play_at("beep", camera.global_position, -6.0)
 	elif event.is_action_pressed("satnav_hud"):
-		Settings.satnav_hud = not Settings.satnav_hud
+		# Round the sat nav's pages (the map, the trip computer), then the HUD's copy off.
+		var said := Satnav.next_page()
 		if bike.build.has_part("satnav"):
-			hud.flash("Sat nav on the HUD %s" % ("on" if Settings.satnav_hud else "off"), 1.2)
+			hud.flash(said, 1.2)
+			if satnav:
+				satnav._timer = 0.0   # the new page straight away
 		else:
 			hud.flash("No sat nav on this bike", 1.5)
 	elif event.is_action_pressed("screen_up") or event.is_action_pressed("screen_down"):
@@ -926,6 +929,7 @@ func _physics_process_body(delta: float) -> void:
 		and not contract_panel.visible and not coffee_panel.visible and not staff_panel.visible and not paint_bench.visible and not geometry.active \
 		and not bike_order_panel.visible \
 		and not recovery_panel.visible and not trip.map_open() and not trip.magazine_open()
+		and not recovery_panel.visible and not trip.map_open() and not trip.magazine_open() and not trip.diary_open()
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	if walker:
@@ -1112,6 +1116,8 @@ func _puncture_rolls(km: float) -> void:
 			var kind := Puncture.kind_of_roll(randf())
 			bike.heat.leak[i] = Puncture.rate_of_kind(kind)
 			Shed.request({"a": "puncture", "side": "front" if i == 0 else "rear", "kind": kind})
+			if trip.on_trip():
+				trip.photos.report("breakdown", "", {"what": "Puncture (%s tyre)" % ("front" if i == 0 else "rear")})
 
 
 ## Out on an adventure, now and then something goes wrong with the bike as the km go by (see
