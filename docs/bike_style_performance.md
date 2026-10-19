@@ -55,3 +55,34 @@ mpg is UK (imperial), and UK mpg ÷ 1.201 = US mpg.
 - [Cycle World 1982 aerodynamics roundup](https://issues.cycleworld.com/article/1982/10/1/roundup)
 - [Energy Reports 2021: motorcycle tyre rolling resistance](https://doaj.org/article/1b10d8e62ed148258b4f1a3aa2948c83)
 - [Wikipedia: Yamaha YZF-R1](https://en.wikipedia.org/wiki/Yamaha_YZF-R1), [Kawasaki Z900](https://en.wikipedia.org/wiki/Kawasaki_Z900)
+
+## The game's stock bikes against the real figures
+
+These are the stock bikes from `Contracts.style_build`, as tuned in October 2026.
+- **Ride 0-60:** a real full-throttle run on flat tarmac, with auto-shift and rider assist at 0.5.
+- **Top mph:** the build's estimate.
+- **mpg:** a steady 90 km/h in top gear, in UK gallons. The real figures are real-world averages.
+
+`_test_style_performance` in `tests/run_tests.gd` keeps every style inside the real-world range.
+
+| Style | hp (real) | Top mph (real) | Ride 0-60 s (real) | UK mpg (real) | Wet kg (real) |
+|---|---|---|---|---|---|
+| Classic | 54 (47) | 102 (110) | 5.3 (5.5) | 60 (60) | 211 (224) |
+| Cafe racer | 98 (105) | 128 (130) | 5.3 (3.7) | 53 (50) | 195 (214) |
+| Bobber | 85 (94) | 110 (115) | 5.8 (4.0) | 50 (48) | 231 (255) |
+| Chopper | 91 (100) | 107 (115) | 5.9 (4.0) | 44 (43) | 240 (308) |
+| Cruiser | 91 (87) | 109 (112) | 5.7 (4.2) | 46 (48) | 268 (290) |
+| Scrambler | 77 (80) | 111 (118) | 5.1 (3.9) | 52 (52) | 208 (222) |
+| Adventure | 101 (106) | 119 (130) | 5.3 (3.4) | 46 (51) | 252 (226; GS Adventure 269) |
+| Tall roader | 114 (117) | 137 (140) | 3.8 (3.3) | 52 (52) | 213 (219) |
+| Tourer | 153 (136) | 147 (135) | 4.3 (3.4) | 41 (47) | 277 (343) |
+| Sports bike | 119 (95) | 156 (145) | 3.6 (3.3) | 62 (50) | 197 (200) |
+| Race bike | 222 (206) | 186 (186) | 3.5 (2.9) | 43 (40) | 206 (199) |
+| Naked | 124 (117) | 137 (145) | 3.9 (3.1) | 47 (52) | 201 (190) |
+| Supermoto | 71 (74) | 109 (110) | 4.2 (3.5) | 54 (58) | 149 (158) |
+| MX bike | 71 (63 crank) | 85 (85) | 5.8 on tarmac | 44 | 130 (109) |
+
+**Known gap.** Launches are held back by tyre grip. The game's tyres give 0.9-1.2 on tarmac, a little below real
+road tyres, and the ridden 0-60 times come out 0.3-2 s slower than magazine tests. The gap is widest for bikes on
+vintage or dual-sport tyres. Closing it means retuning tyre grip, which would also change cornering and braking
+everywhere.
