@@ -70,7 +70,9 @@ const HOLD_SPEED := 1.0           # m/s: slower than this, a bike with its contr
 var _held := false   # frozen by _hold_still (not by anyone else)
 const START_TIME := 0.7           # seconds on the starter motor before it fires
 const WHEELIE_PITCH := deg_to_rad(28.0)   # where the rider tries to hold a wheelie (weight back: higher)
-const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down
+const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down (weight forward for one)
+const STOPPIE_SKIM := deg_to_rad(4.0)     # braking hard otherwise, how far they let the back come up
+const RIDER_SPIN_FEEL := 1.5      # how hard the rider rolls off per tyre's-peak of extra wheelspin, at full assist
 const AIR_REV_PITCH := 7.0        # pitch acceleration (rad/s^2) from blipping the rear wheel in the air
 const SKID_SLIP := 0.2            # tyre slip above which it screeches and marks the road
 const BUMP_HEIGHT := {"tarmac": 0.006, "concrete": 0.004, "dirt": 0.035, "grass": 0.025, "gravel": 0.03, "sand": 0.02, "snow": 0.012}
@@ -78,6 +80,10 @@ static var _bumps: FastNoiseLite
 ## How much past the grip that's left for braking (normalised slip) a rider with no help lets the
 ## front go before they'd ease off: with full care (Riding realism 0.5 and up) none at all.
 const CARELESS_SLIP := 0.9
+## How close to the tyre's peak (normalised slip) a careful rider, or ABS, holds a hard stop: they
+## work round the peak rather than sitting on it, which on average gets about nine tenths of the
+## grip (an emergency stop from 60 mph takes 35-40 m, not the 31 m perfect grip would).
+const BRAKE_KEEP := 0.55
 const PADDLE_SPEED := 1.1         # walking pace when the rider paddles backwards with their feet
 const PADDLE_HOLD := 0.45         # hold the front brake this long at a standstill to start paddling back
 const BURNOUT_SPEED := 2.5        # below this, front brake plus throttle lights up the back tyre
@@ -518,7 +524,8 @@ func _physics_process_body(delta: float) -> void:
 	var front_grip := front_brake
 	if not wheels[1]["contact"] and wheels[0]["contact"] and pitch_angle < -deg_to_rad(3.0):
 		# Holding a stoppie: ease the front brake as the back climbs past the balance angle.
-		var over := -pitch_angle - STOPPIE_PITCH
+		# Not leaning forward for one, a rider stopping hard keeps the back tyre skimming the road.
+		var over := -pitch_angle - (STOPPIE_PITCH if body_shift >= 0.25 else STOPPIE_SKIM)
 		var falling := -angular_velocity.dot(global_transform.basis.x)
 		front_grip *= clampf(1.0 - (over * 5.0 + falling * 0.8) * _steadiness(), 0.0, 1.0)
 	if paddling:
@@ -924,8 +931,16 @@ func _update_engine(delta: float) -> void:
 	# The ECU's traction control, at the level set on the dyno desk (off: the rider alone).
 	var tc := maxf(minf(1.0, assist + 0.15 * float(skills.get("throttle_control", 0))), build.aid_strength("traction"))
 	var tc_from := lerpf(0.1, 0.06, clampf(build.aid_strength("traction"), 0.0, 1.0)) if build.aid_on("traction") else 0.12
+	var tc_gain := 4.0
+	if not build.aid_on("traction"):
+		# The rider alone feels for where this tyre grips best (a knobbly or an old bias-ply one
+		# slips further before it lets go) and rolls off by how far past that it spins, the way a
+		# launch is ridden, rather than letting it spin up to two or three times that.
+		var kp_rear := float(build.tyre_rear.get("kappa_peak", 0.11))
+		tc_from = kp_rear
+		tc_gain = RIDER_SPIN_FEEL / kp_rear
 	if tc > 0.05 and spin_ratio > tc_from and rear["contact"] and burnout <= 0.0:
-		tc_target = clampf(1.0 - (spin_ratio - tc_from) * 4.0 * tc, 0.15, 1.0)
+		tc_target = clampf(1.0 - (spin_ratio - tc_from) * tc_gain * tc, 0.15, 1.0)
 	# In a wheelie the rider feathers the throttle to hold the front up at the balance angle
 	# rather than looping it; more assist, steadier hands.
 	if not wheels[0]["contact"] and rear["contact"] and pitch_angle > deg_to_rad(4.0):
@@ -1404,7 +1419,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		# with the cornering it's doing (ABS does the same for its wheels): with less care, a
 		# little later. With none at all a grabbed front brake locks the wheel and tucks the front.
 		var left := maxf(sqrt(maxf(1.0 - sy * sy, 0.0)), 0.25)
-		var allowed := left + CARELESS_SLIP * (1.0 - care) / care
+		var allowed := left * BRAKE_KEEP + CARELESS_SLIP * (1.0 - care) / care
 		if (omega_new * r_eff - v_long) / vden / kp < -allowed:
 			omega_new = maxf((v_long - allowed * kp * vden) / r_eff, 0.0)
 			eased = true

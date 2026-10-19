@@ -538,6 +538,10 @@ func _run_all() -> void:
 	await _test_mirrors_setting()
 	await _test_mirrors_follow_glass()
 	await _test_mirrors_off()
+	print("Ridden like the real thing: each style's stock bike's 0-60, stop from 60 mph and full-lean turn against road tests")
+	await _test_realism_launches()
+	await _test_realism_stops()
+	await _test_realism_corners()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -789,7 +793,7 @@ func _test_style_performance() -> void:
 
 ## Flat-out launches on the stock bikes, ridden, against magazine 0-60 mph times: a superbike
 ## does it in about three seconds, a middleweight sports bike in a little over, and a big
-## cruiser in four to five (its 16" rear takes only an old-school tyre, and it weighs 300 kg).
+## cruiser in four to five (it weighs 300 kg).
 func _test_style_launch() -> void:
 	for run in [["race", 2.6, 3.6], ["sport", 2.9, 3.9], ["cruiser", 4.0, 6.0]]:
 		var parts := Contracts.style_build(run[0])
@@ -22108,3 +22112,21 @@ func _test_mirrors_follow_glass() -> void:
 
 func _test_mirrors_off() -> void:
 	await _mirror_t().test_off()
+
+
+# ---------------------------------------------------------------------------- real-world performance (tests/bike_realism_tests.gd)
+
+func _realism() -> RefCounted:
+	return load("res://tests/bike_realism_tests.gd").new(self)
+
+
+func _test_realism_launches() -> void:
+	await _realism().test_launches()
+
+
+func _test_realism_stops() -> void:
+	await _realism().test_stops()
+
+
+func _test_realism_corners() -> void:
+	await _realism().test_corners()
