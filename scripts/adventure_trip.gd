@@ -293,6 +293,9 @@ func _physics_process(delta: float) -> void:
 		if _arrive_timer >= Adventure.ARRIVE_WAIT:
 			_arrive_timer = -1000.0
 			Shed.request({"a": "adventure_end"})
+	if world == null:
+		Perf.add("adventure_trip", pt)
+		return   # the ride just ended (reaching the destination brings everyone home)
 	_hud_timer -= delta
 	if _hud_timer <= 0.0 and not hit.is_empty():
 		_hud_timer = 0.25

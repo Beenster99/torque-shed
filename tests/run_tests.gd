@@ -441,6 +441,10 @@ func _run_all() -> void:
 	await _test_adv_stops_satnav()
 	await _test_adv_stops_freed()
 	await _test_adv_stops_frame_cost()
+	_test_adv_routes_graph()
+	await _test_adv_routes_vote()
+	await _test_adv_routes_stream()
+	await _test_adv_routes_map()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21520,3 +21524,25 @@ func _test_adv_stops_freed() -> void:
 
 func _test_adv_stops_frame_cost() -> void:
 	await _adv_stops().test_frame_cost()
+
+
+# ---------------------------------------------------------------------------- adventure forks (tests/adventure_routes_tests.gd)
+
+func _adv_routes() -> RefCounted:
+	return load("res://tests/adventure_routes_tests.gd").new(self)
+
+
+func _test_adv_routes_graph() -> void:
+	_adv_routes().test_graph()
+
+
+func _test_adv_routes_vote() -> void:
+	await _adv_routes().test_vote()
+
+
+func _test_adv_routes_stream() -> void:
+	await _adv_routes().test_stream()
+
+
+func _test_adv_routes_map() -> void:
+	await _adv_routes().test_map()
