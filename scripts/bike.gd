@@ -66,6 +66,7 @@ const HANG_OFF := 0.12           # m: how far the rider moves their body to the 
 const CRASH_LEAN := deg_to_rad(78.0)
 const CRASH_PITCH := deg_to_rad(72.0)
 const AUTO_RESPAWN_TIME := 3.5
+const HOLD_SPEED := 1.0           # m/s: slower than this, a bike with its controls off is held still (see _hold_still)
 const START_TIME := 0.7           # seconds on the starter motor before it fires
 const WHEELIE_PITCH := deg_to_rad(28.0)   # where the rider tries to hold a wheelie (weight back: higher)
 const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down
@@ -111,7 +112,13 @@ var telemetry: RideTelemetry
 var heat: BikeHeat
 ## The power the engine is making right now, kW (it heats the engine).
 var engine_kw := 0.0
+## Off while a menu's up (see Main): no throttle, the brakes on, and once it's stopped with both
+## wheels down it's held right where it is (frozen: see _hold_still), however steep the road.
 var controls_enabled := true
+## Where a respawn picks it up: Callable(position) -> a Transform3D to put it at (its basis gives
+## the heading), or null for where it lies. Out on an adventure a crash off the road is put back
+## on it (see AdventureTrip.respawn_spot).
+var respawn_at := Callable()
 var engine_on := true      # a parked bike you get on starts with it off; tests ride with it running
 var fuel_litres := 15.0    # petrol left in the tank
 var fuel_used := 0.0       # litres burnt since the last time someone read and cleared it
@@ -405,7 +412,26 @@ func shift_origin(d: Vector3) -> void:
 		_ragdoll.global_position -= d
 
 
+## With the controls off (a menu up: the game never pauses, alone or in co-op) and the bike
+## stopped on both wheels, it's frozen where it stands, so it can't creep down a hill or walk
+## itself backwards on the held front brake (see _update_feet). It lets go as the controls
+## come back.
+func _hold_still() -> void:
+	var hold := not controls_enabled and absf(speed) < HOLD_SPEED and bool(wheels[0]["contact"]) and bool(wheels[1]["contact"])
+	if hold == freeze:
+		return
+	if hold:
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		paddling = false
+	freeze = hold
+
+
 func respawn() -> void:
+	var spot = respawn_at.call(global_position) if respawn_at.is_valid() else null
+	if spot is Transform3D:
+		place((spot as Transform3D).origin, (spot as Transform3D).basis.get_euler().y)
+		return
 	var fwd := -global_transform.basis.z
 	var heading := atan2(-fwd.x, -fwd.z)
 	place(global_position + Vector3.UP * 0.3, heading)
@@ -465,6 +491,7 @@ func _physics_process_body(delta: float) -> void:
 		throttle = 0.0
 		front_brake = 1.0
 		rear_brake = 1.0
+	_hold_still()
 
 	var shift := body_shift * 0.13
 	# Hanging off: riding, the rider moves their body to the inside of the turn they're asking
@@ -1037,7 +1064,7 @@ func _update_feet(delta: float) -> void:
 	if paddling:
 		if front_brake < 0.3 or throttle > 0.1 or not on_ground:
 			paddling = false
-	elif still and on_ground and front_brake > 0.5 and throttle < 0.05:
+	elif still and on_ground and front_brake > 0.5 and throttle < 0.05 and controls_enabled:   # not a menu's held brake
 		_stopped_brake += delta
 		if _stopped_brake >= PADDLE_HOLD:
 			paddling = true
@@ -1066,11 +1093,13 @@ func _apply_feet() -> void:
 		var v := linear_velocity.dot(flat)
 		apply_central_force(flat * (-PADDLE_SPEED - v) * mass * 2.5)
 	elif pushing:
-		# Wheeling it along on foot: walking pace on the throttle, the brakes to stop.
+		# Wheeling it along on foot: walking pace on the throttle, held still off it. Whoever's
+		# pushing takes its weight on a slope too, so it doesn't run away down a snowy pass, or
+		# stall going up one, however little the tyres grip.
 		var v := linear_velocity.dot(flat)
 		var want := Roadside.PUSH_SPEED * clampf(throttle, 0.0, 1.0)
-		if throttle > 0.05 or v > want:
-			apply_central_force(flat * clampf(want - v, -1.5, 1.5) * mass * 2.0)
+		apply_central_force(-fwd * fwd.dot(get_gravity()) * mass)
+		apply_central_force(flat * clampf(want - v, -1.5, 1.5) * mass * 2.0)
 	if tow_anchor != Vector3.INF:
 		_apply_tow()
 

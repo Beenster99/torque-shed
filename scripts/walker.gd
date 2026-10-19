@@ -746,7 +746,7 @@ func _physics_process_body(delta: float) -> void:
 		if _stride > (0.85 if running else 0.7):
 			_stride = 0.0
 			Sfx.footstep(global_position, running)
-	if global_position.y < -20.0:
+	if global_position.y < -20.0 and AdventureWorld.current == null:   # (out on an adventure, see AdventureTrip._keep_walker)
 		place(Workshop.walker_spawn(0))
 	_eye = move_toward(_eye, CROUCH_EYE if crouched else EYE, delta * 4.0)
 	if seat != 0:

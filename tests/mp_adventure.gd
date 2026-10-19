@@ -6,7 +6,9 @@ extends Node
 ## origins, to different places: each must still see the other at the right spot on the road,
 ## to within a few centimetres, and again after the client rides its origin on once more. Out
 ## there both must see the same traffic (AdventureTraffic: the same vehicles at the same places
-## along the road, each drawn where it should be in its own frame).
+## along the road, each drawn where it should be in its own frame). Each must say how far along
+## the road the other is (the host "1.6 km ahead", the client "1.6 km behind"), and with both
+## menus up (the game doesn't pause in co-op) neither bike may move, on either screen.
 ## Finally the host ends the adventure and both must be back at the shed, off their bikes.
 
 const SEED := 321
@@ -55,6 +57,8 @@ func _ready() -> void:
 	var far_ok := false
 	var traffic_ok := false
 	var again_ok := false
+	var friends_ok := false
+	var menu_ok := false
 	var err := [Vector2(INF, INF)]
 	if start_seen:
 		# Give the other side time to see us at the start too before setting off.
@@ -105,6 +109,9 @@ func _ready() -> void:
 			err[0] = _seen_error(trip, expect, their_lat)
 			return err[0].x < 0.1 and err[0].y < 0.1, 20.0)
 		print("MP adv note %s: after the client rode on, origin %s; the other seen off by %.3f m along, %.3f m across" % [role, trip.world.origin if trip.world else Vector3.ZERO, err[0].x, err[0].y])
+		if again_ok:
+			friends_ok = await _friends_check(trip, mine, expect, my_lat)
+			menu_ok = await _menu_check(trip)
 	# Home: the host ends it (once the client has had time to check, too).
 	var asked := [false]
 	var end_at := Time.get_ticks_msec() + 3000
@@ -113,16 +120,63 @@ func _ready() -> void:
 			asked[0] = true
 			Shed.request({"a": "adventure_end"})
 		return not trip.on_trip() and main.bike == null and Shed.riding(Shed.me()) == 0 and not Adventure.active(), 25.0)
-	var ok := ok_start and start_seen and fork_ok and far_ok and traffic_ok and again_ok and home_ok
+	var ok := ok_start and start_seen and fork_ok and far_ok and traffic_ok and again_ok and friends_ok and menu_ok and home_ok
 	# The client stays until the host has gone, so the host's checks finish first.
 	var linger := Time.get_ticks_msec() + (15000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
-	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, voted at the fork and both took the host's pick=%s, seen 30 km out after the origins moved=%s, both see the same traffic there=%s, and after another shift=%s, back at the shed=%s" % [
-		"PASS" if ok else "FAIL", role, ok_start, start_seen, fork_ok, far_ok, traffic_ok, again_ok, home_ok])
+	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, voted at the fork and both took the host's pick=%s, seen 30 km out after the origins moved=%s, both see the same traffic there=%s, and after another shift=%s, how far ahead or behind the other is along the road=%s, held still with the menu up=%s, back at the shed=%s" % [
+		"PASS" if ok else "FAIL", role, ok_start, start_seen, fork_ok, far_ok, traffic_ok, again_ok, friends_ok, menu_ok, home_ok])
 	get_tree().quit(0 if ok else 1)
+
+
+# ---------------------------------------------------------------------------- the crew, the menu
+
+## How far the other is along the road (AdventureTrip.friends): the client 1.6 km on from the
+## host, so the host's HUD, sat nav and paper map say "Adv client 1.6 km ahead", the client's
+## "Adv host 1.6 km behind".
+func _friends_check(trip: AdventureTrip, mine: float, theirs: float, lat: float) -> bool:
+	var want := "%s %.1f km %s" % ["Adv client" if role == "host" else "Adv host", absf(theirs - mine) / 1000.0, "ahead" if theirs > mine else "behind"]
+	var note := [""]
+	var ok := await _until(func():
+		_hold(trip, mine, lat)
+		var f := trip.friends()
+		if f.size() != 1:
+			note[0] = "%d friends" % f.size()
+			return false
+		var view := Satnav.view_for(Satnav.AdventureNav.new(trip.world), main.bike.global_position, -main.bike.global_transform.basis.z)
+		var on_nav: Array = view.get("friends", [])
+		note[0] = "%.1f m along (want %.1f); HUD '%s'" % [float(f[0]["ahead"]), theirs - mine, trip.crew_text()]
+		return absf(float(f[0]["ahead"]) - (theirs - mine)) < 3.0 and trip.crew_text() == want and on_nav.size() == 1 \
+			and AdventureTrip.friend_text(str(on_nav[0]["name"]), float(on_nav[0]["ahead"])) == want, 10.0)
+	print("MP adv note %s: the other along the road: %s (%s)" % [role, note[0], "ok" if ok else "want '%s'" % want])
+	return ok
+
+
+## The menu up, out on the road: the game doesn't pause in co-op, and the bike mustn't roll. Both
+## open it at once and stand there with it up: neither bike moves, on either screen.
+func _menu_check(trip: AdventureTrip) -> bool:
+	if not trip.on_trip() or main.bike == null:
+		return false
+	# Let the bikes settle first, and both get here (the client's on later from its own checks).
+	var settle := Time.get_ticks_msec() + 3000
+	await _until(func(): return Time.get_ticks_msec() > settle, 4.0)
+	main.menu.show()
+	await _until(func(): return main.bike != null and main.bike.freeze, 3.0)
+	var mine: Vector3 = main.bike.global_position
+	var rb := _remote_bike()
+	var theirs: Vector3 = rb.global_position if rb else Vector3.INF
+	var until := Time.get_ticks_msec() + 4000
+	await _until(func(): return Time.get_ticks_msec() > until, 5.0)
+	var moved: float = main.bike.global_position.distance_to(mine) if main.bike else INF
+	rb = _remote_bike()
+	var seen: float = rb.global_position.distance_to(theirs) if rb and theirs != Vector3.INF else INF
+	main.menu.hide()
+	print("MP adv note %s: 4 s with the menu up, my bike moved %.3f m, the other's %.3f m" % [role, moved, seen])
+	# (The other may open theirs a moment after: up to 10 cm of their last settling is allowed.)
+	return moved < 0.02 and seen < 0.1
 
 
 # ---------------------------------------------------------------------------- the traffic

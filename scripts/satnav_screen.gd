@@ -19,6 +19,9 @@ const DEST := Color(1.0, 0.45, 0.35)
 const FORK := Color(1.0, 0.8, 0.25)
 ## Another way off at a fork, not the one being taken.
 const OTHER := Color(0.5, 0.52, 0.55, 0.5)
+## The rest of the crew on the map and in their list, and the wrong-way warning.
+const FRIEND := Color(0.45, 0.85, 1.0)
+const WRONG := Color(0.85, 0.12, 0.1)
 ## The stops ahead (see Satnav.satnav_stops): each kind's colour and the letter on its marker.
 const STOP_COLORS := {"food": Color(1.0, 0.7, 0.2), "rest": Color(0.4, 0.65, 1.0), "sleep": Color(0.8, 0.5, 1.0), "fuel": FUEL}
 const STOP_MARKS := {"food": "E", "rest": "P", "sleep": "Z", "fuel": "F"}
@@ -26,7 +29,8 @@ const STOP_MARKS := {"food": "E", "rest": "P", "sleep": "Z", "fuel": "F"}
 ## {pos: Vector2 (x, z), fwd: Vector2 (unit heading, x z), speed (m/s), roads: Array of
 ## {pts: PackedVector2Array, kind, hw}, route: PackedVector2Array, road: name of the road it's
 ## on, points: Array of {kind, name, distance (m), at: Vector2 or null}, stops: the next places
-## to stop, Array of {kind, name, label, distance, at}} or {} for no fix yet.
+## to stop, Array of {kind, name, label, distance, at}, guide: {wrong_way, turn} (the way to go,
+## relative to the heading), friends: Array of {name, ahead (m), at}} or {} for no fix yet.
 var view := {}
 ## What the unit can show (BikeBuild.satnav_features): "map", "route", "fuel".
 var features: Array = ["map", "route", "fuel"]
@@ -113,6 +117,15 @@ func _draw() -> void:
 		if r.grow(-4.0).has_point(at):
 			draw_circle(at, maxf(size.x / 46.0, 3.5), STOP_COLORS.get(str(p["kind"]), Color.WHITE))
 			draw_string(font, at + Vector2(-20, -7), str(STOP_MARKS.get(str(p["kind"]), "?")), HORIZONTAL_ALIGNMENT_CENTER, 40, fs - 2, Color.WHITE)
+	# The rest of the crew, where they're in view: a dot and their initial.
+	var friends: Array = view.get("friends", [])
+	for f in friends:
+		if not (f.get("at") is Vector2):
+			continue
+		var at := to_screen(f["at"])
+		if r.grow(-4.0).has_point(at):
+			draw_circle(at, maxf(size.x / 46.0, 3.5), FRIEND)
+			draw_string(font, at + Vector2(-20, -7), str(f.get("name", "?")).left(1).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 40, fs - 2, BACK)
 	# The bike's arrow.
 	var b := _bike_at()
 	var a := maxf(size.x / 28.0, 6.0)
@@ -146,6 +159,31 @@ func _draw() -> void:
 					Units.distance_value(float(p["distance"]) / 1000.0), Units.distance_unit()]
 				draw_string(font, Vector2(box.position.x + 4.0, box.position.y + line_h * (i + 1) - 2.0), txt, HORIZONTAL_ALIGNMENT_LEFT,
 					box.size.x - 8.0, lfs, STOP_COLORS.get(str(p["kind"]), Color.WHITE))
+	# Which way to go: an arrow (relative to the heading) to the road on towards the destination,
+	# and facing back the way you came, a warning to turn round.
+	var guide: Dictionary = view.get("guide", {})
+	if features.has("route") and not guide.is_empty():
+		var wrong := bool(guide.get("wrong_way", false))
+		var gc := Vector2(fs * 1.4 + 2.0, size.y - bar_h - fs * 1.4 - 2.0)
+		_draw_guide(gc, fs * 1.1, float(guide.get("turn", 0.0)), WRONG if wrong else ROUTE)
+		if wrong:
+			var band := Rect2(size.x * 0.08, size.y * 0.4, size.x * 0.84, fs * 2.2)
+			draw_rect(band, Color(WRONG, 0.9))
+			draw_rect(band, Color.WHITE, false, 2.0)
+			draw_string(font, Vector2(band.position.x, band.position.y + fs * 1.55), "WRONG WAY: TURN AROUND", HORIZONTAL_ALIGNMENT_CENTER,
+				band.size.x, fs + 1, Color.WHITE)
+	# The rest of the crew along the road: how far ahead or behind, nearest first.
+	if not friends.is_empty():
+		var lfs := maxi(8, fs - 2)
+		var shown := friends.duplicate()
+		shown.sort_custom(func(a, c): return absf(float(a["ahead"])) < absf(float(c["ahead"])))
+		shown = shown.slice(0, 3)
+		var lh := lfs + 4.0
+		var box := Rect2(size.x * 0.56, size.y - bar_h - lh * shown.size() - 6.0, size.x * 0.44 - 2.0, lh * shown.size() + 4.0)
+		draw_rect(box, Color(0, 0, 0, 0.55))
+		for i in shown.size():
+			draw_string(font, Vector2(box.position.x + 4.0, box.position.y + lh * (i + 1) - 2.0), AdventureTrip.friend_text(str(shown[i]["name"]),
+				float(shown[i]["ahead"])), HORIZONTAL_ALIGNMENT_RIGHT, box.size.x - 8.0, lfs, FRIEND)
 	# Along the bottom: the road it's on, and north.
 	draw_rect(Rect2(0, size.y - bar_h, size.x, bar_h), Color(0, 0, 0, 0.6))
 	var road_name := str(view.get("road", ""))
@@ -157,6 +195,32 @@ func _draw() -> void:
 	draw_line(nc - north * 7.0, nc + north * 7.0, Color(1, 1, 1, 0.5), 2.0)
 	draw_circle(nc + north * 7.0, 2.5, Color(1, 0.35, 0.3))
 	draw_string(font, Vector2(size.x - 34.0, size.y - bar_h - 4.0), "N", HORIZONTAL_ALIGNMENT_CENTER, 36, fs - 2, Color(1, 1, 1, 0.6))
+
+
+## The guide arrow in a disc at `c` (radius `rad`), pointing `turn` radians round from straight up
+## (the heading); right round behind you it's a U-turn.
+func _draw_guide(c: Vector2, rad: float, turn: float, col: Color) -> void:
+	draw_circle(c, rad, Color(0, 0, 0, 0.6))
+	draw_arc(c, rad, 0.0, TAU, 24, col, 2.0, true)
+	if absf(turn) > deg_to_rad(150.0):
+		# A U-turn: up, over and back down on the side the road on lies.
+		var sx := 1.0 if turn > 0.0 else -1.0
+		var w := rad * 0.32
+		var top := c.y - rad * 0.15
+		draw_line(Vector2(c.x - sx * w, c.y + rad * 0.55), Vector2(c.x - sx * w, top), col, 3.0, true)
+		var pts := PackedVector2Array()
+		for k in 9:
+			var a := PI * k / 8.0
+			pts.append(Vector2(c.x - sx * w * cos(a), top - w * sin(a)))
+		draw_polyline(pts, col, 3.0, true)
+		var e := Vector2(c.x + sx * w, top)
+		draw_colored_polygon(PackedVector2Array([e + Vector2(0, rad * 0.6), e + Vector2(-rad * 0.28, rad * 0.1), e + Vector2(rad * 0.28, rad * 0.1)]), col)
+		return
+	var d := Vector2(sin(turn), -cos(turn))
+	var side := Vector2(-d.y, d.x)
+	var tip := c + d * rad * 0.75
+	draw_line(c - d * rad * 0.6, c + d * rad * 0.2, col, 3.0, true)
+	draw_colored_polygon(PackedVector2Array([tip, c + d * rad * 0.1 + side * rad * 0.42, c + d * rad * 0.1 - side * rad * 0.42]), col)
 
 
 func _colour(p: Dictionary) -> Color:

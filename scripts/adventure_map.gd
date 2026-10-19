@@ -146,12 +146,10 @@ func _rider_spots() -> Array:
 		fwd = -trip.main.bike.global_transform.basis.z
 	var xz := w.route_xz(mine)
 	out.append({"x": xz[0], "z": xz[1], "name": "You", "me": true, "heading": atan2(fwd.x, -fwd.z)})
-	if trip.main:
-		for peer in trip.main.remotes:
-			var rp = trip.main.remotes[peer]
-			if is_instance_valid(rp):
-				var q := w.route_xz(rp.world_position())
-				out.append({"x": q[0], "z": q[1], "name": str(Shed.crew.get(peer, {}).get("name", "Rider")), "me": false, "heading": 0.0})
+	# The others with how far ahead or behind along the road they are ("Dave 1.2 km ahead").
+	for f in trip.friends():
+		var q := w.route_xz(f["at"])
+		out.append({"x": q[0], "z": q[1], "name": AdventureTrip.friend_text(str(f["name"]), float(f["ahead"])), "me": false, "heading": 0.0})
 	return out
 
 

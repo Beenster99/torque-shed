@@ -227,8 +227,8 @@ func test_satnav() -> void:
 			and str(list[k]["kind"]) == AdventureStops.NAV[str(ahead[k]["kind"])]
 	check(ok, "the satnav lists the next three stops ahead: %s" % str(list.map(func(q): return "%s %.1f km" % [q["label"], float(q["distance"]) / 1000.0])))
 	var back: Array = nav.satnav_stops(p, -fwd, 3)
-	check(back.all(func(q): return float(q["distance"]) <= 1000.0),
-		"turned round it lists what's back the way (%d)" % back.size())
+	check(back.size() == list.size() and range(back.size()).all(func(i): return str(back[i]["name"]) == str(list[i]["name"])),
+		"turned round it still lists the stops on the way (the sat nav says turn around: see Satnav.AdventureNav)")
 	var fuel_s := float(w.route.sites_of("fuel")[0]["s"])
 	var near := w.transform_at(fuel_s - 200.0)
 	var l2: Array = nav.satnav_stops(Vector2(near.origin.x, near.origin.z), Vector2(-near.basis.z.x, -near.basis.z.z), 3)

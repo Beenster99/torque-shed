@@ -486,6 +486,12 @@ func _run_all() -> void:
 	_test_adv_magazine_issues()
 	await _test_adv_magazine_facts()
 	await _test_adv_magazine_ui()
+	print("Adventure fixes (v0.15.1): back on the road after a crash, which way on the sat nav, the crew's distances, getting off on snow, held with a menu up")
+	await _test_adv_fix_crash()
+	await _test_adv_fix_satnav()
+	await _test_adv_fix_friends()
+	await _test_adv_fix_get_off()
+	await _test_adv_fix_menu_hold()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -21404,7 +21410,9 @@ func _test_kit_satnav() -> void:
 		"with the next fuel (%.1f km) and the destination along the road %s" % [(fuel_s - 200.0) / 1000.0, str(ap.map(func(q): return "%s %.0f" % [q["kind"], q["distance"]]))])
 	check(str(av["road"]).contains("road"), "and the road it's on (%s)" % str(av["road"]))
 	var back := Satnav.view_for(nav.provider(), start.origin, start.basis.z, 20.0)
-	check((back["points"] as Array).filter(func(q): return q["kind"] == "fuel").is_empty(), "turned round, no fuel behind the start")
+	var bp: Array = (back["points"] as Array).filter(func(q): return q["kind"] == "fuel")
+	check(bool(back["guide"]["wrong_way"]) and bp.size() == 1 and absf(float(bp[0]["distance"]) - (fuel_s - 200.0)) < 2.0,
+		"turned round: the wrong way, and still the fuel on the way to the destination")
 	adv.queue_free()
 	await get_tree().process_frame
 	# The HUD overlay draws the same view.
@@ -21772,3 +21780,29 @@ func _test_adv_magazine_facts() -> void:
 
 func _test_adv_magazine_ui() -> void:
 	await _adv_dest().test_magazine_ui()
+
+
+# ---------------------------------------------------------------------------- adventure fixes, v0.15.1 (tests/adventure_fix_tests.gd)
+
+func _adv_fix() -> RefCounted:
+	return load("res://tests/adventure_fix_tests.gd").new(self)
+
+
+func _test_adv_fix_crash() -> void:
+	await _adv_fix().test_crash()
+
+
+func _test_adv_fix_satnav() -> void:
+	await _adv_fix().test_satnav()
+
+
+func _test_adv_fix_friends() -> void:
+	await _adv_fix().test_friends()
+
+
+func _test_adv_fix_get_off() -> void:
+	await _adv_fix().test_get_off()
+
+
+func _test_adv_fix_menu_hold() -> void:
+	await _adv_fix().test_menu_hold()
