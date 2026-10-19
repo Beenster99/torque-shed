@@ -12,7 +12,9 @@ extends RefCounted
 ## everybody back at the shed.
 ##
 ## Actions (Shed.request): adventure_start {seed, km, theme} and adventure_end (the host),
-## adventure_join {bike: the one you'd like} (each player, on loading it) and adventure_arrive.
+## adventure_join {bike: the one you'd like} (each player, on loading it) and adventure_arrive;
+## adventure_resume (the host) carries on the one a night's sleep put away (Shed.adventure_save,
+## see AdventureNeeds), everyone back where they slept.
 
 const DEFAULT_KM := 60.0
 const MIN_KM := 5.0
@@ -64,6 +66,13 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "Pick between %d and %d km." % [int(MIN_KM), int(MAX_KM)]
 			if not THEMES.has(str(action.get("theme", "varied"))):
 				return "There's no adventure like that."
+		"adventure_resume":
+			if not _is_host(peer):
+				return "Only the host can carry on an adventure."
+			if active():
+				return "There's an adventure on already."
+			if Shed.adventure_save.is_empty():
+				return "There's no adventure put away to carry on."
 		"adventure_end":
 			if not _is_host(peer):
 				return "Only the host can end the adventure."
@@ -85,9 +94,25 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var km := float(action.get("km", DEFAULT_KM))
 			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": int(action.get("seed", randi())), "km": km,
 				"theme": str(action.get("theme", "varied")), "by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
+			Shed.adventure_save = {}   # a new adventure: any put away overnight is forgotten
 			return "*%s is off on an adventure ride: %d km, %s. Everyone to the start!" % [who, roundi(km), str(Shed.adventure["theme"])]
+		"adventure_resume":
+			var save := Shed.adventure_save
+			Shed.adventure = (save["adventure"] as Dictionary).duplicate(true)
+			Shed.adventure["id"] = 1 + randi() % 1000000000
+			Shed.adventure["riders"] = {}
+			Shed.adventure["arrived"] = 0
+			Shed.adventure["arrived_name"] = ""
+			Shed.adventure["by"] = who
+			Shed.adventure["resume"] = (save["at"] as Dictionary).duplicate()
+			Shed.adventure["needs_saved"] = (save["needs"] as Dictionary).duplicate(true)
+			if Daylight.current:
+				Daylight.current.set_time(float(save.get("hours", AdventureNeeds.MORNING)))
+			return "*%s carries on the adventure: %.1f of %d km done. Everyone back on the road!" % [who,
+				AdventureNeeds.save_s(save) / 1000.0, roundi(float(Shed.adventure.get("km", DEFAULT_KM)))]
 		"adventure_end":
 			Shed.adventure = {}
+			bring_bikes_home()
 			return "*The adventure's over: back to the shed."
 		"adventure_join":
 			var riders: Dictionary = Shed.adventure["riders"]
@@ -101,6 +126,8 @@ static func apply(peer: int, action: Dictionary) -> String:
 					if Shed.crew.has(peer):
 						Shed.crew[peer]["riding"] = bike
 			riders[peer] = bike
+			if AdventureNeeds.of(peer).is_empty():
+				AdventureNeeds.joined(peer)
 			if bike == 0:
 				return "There's no bike ready to ride for you, so you've come along on foot."
 			return ""
@@ -109,8 +136,20 @@ static func apply(peer: int, action: Dictionary) -> String:
 				return ""
 			Shed.adventure["arrived"] = peer
 			Shed.adventure["arrived_name"] = who
+			Shed.adventure_save = {}   # there: nothing left to carry on
 			return "*%s has reached the destination! Back to the shed in a few seconds." % who
 	return ""
+
+
+## Bikes left at the side of an adventure's road (see AdventureTrip.to_shared) go back to the
+## shed, each to its bay or a free spot in the yard, as the adventure ends (or a save is opened).
+static func bring_bikes_home() -> void:
+	for id in Shed.bikes:
+		var b: Dictionary = Shed.bikes[id]
+		if int(b.get("rider", 0)) == 0 and AdventureTrip.is_out(b.get("xf")):
+			b["pusher"] = 0
+			b["xf"] = load("res://scripts/main.gd").garage_spot(int(id))
+			b["stand"] = ""
 
 
 ## The bike `peer` takes: `preferred` (the one they were by) if it's free to ride, else the
@@ -143,6 +182,18 @@ static func start(seed: int, km: float, theme := "varied") -> void:
 
 
 ## What the Esc menu's button says, and why it can't be pressed ("" when it can).
+## The Esc menu's "Continue adventure" button: [text, why it can't be pressed], or [] when
+## there's none put away (or one's on).
+static func continue_text() -> Array:
+	var save := Shed.adventure_save
+	if active() or save.is_empty():
+		return []
+	var km := float((save["adventure"] as Dictionary).get("km", DEFAULT_KM))
+	return ["Continue adventure: %.1f of %d km done, %d %s in (host carries it on for everyone)" % [AdventureNeeds.save_s(save) / 1000.0,
+		roundi(km), maxi(1, int(save.get("nights", 1))), "night" if int(save.get("nights", 1)) <= 1 else "nights"],
+		"" if Shed.is_authority() else "The host carries the adventure on."]
+
+
 static func menu_text() -> Array:
 	var host := Shed.is_authority()
 	if active():

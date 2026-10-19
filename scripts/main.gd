@@ -629,7 +629,8 @@ func _start_riding(bike_id: int) -> void:
 	world.add_child(bike)
 	var xf: Transform3D = data["xf"]
 	if trip.on_trip():
-		xf = trip.start_xf()   # out on an adventure: on the grid at its start
+		# Out on an adventure: where you left it at the side of the road, else on the grid at the start.
+		xf = trip.to_local_xf(xf) if AdventureTrip.is_out(xf) else trip.start_xf()
 	bike.place(xf.origin, xf.basis.get_euler().y)
 	_safe_xf = Transform3D()
 	bike.crashed.connect(func(): hud.flash("Crashed!", 1.5, true))
@@ -696,7 +697,10 @@ func _get_off() -> void:
 	var right := Basis(Vector3.UP, heading) * Vector3.RIGHT
 	walker.place(Transform3D(Basis(Vector3.UP, heading), ground - right * 0.9))
 	_send_ride_stats()
-	Shed.request({"a": "dismount", "bike": riding_id, "xf": Transform3D(Basis(Vector3.UP, heading), ground)})
+	var left := Transform3D(Basis(Vector3.UP, heading), ground)
+	if trip.on_trip():
+		left = trip.to_shared(left)   # kept in the adventure road's own frame, the same for everyone
+	Shed.request({"a": "dismount", "bike": riding_id, "xf": left})
 	_stop_riding()
 
 
@@ -887,7 +891,8 @@ func _physics_process_body(delta: float) -> void:
 			bike.throttle = maxf(Input.get_action_strength("throttle"), Controls.trigger(true))
 			bike.front_brake = maxf(Input.get_action_strength("front_brake"), Controls.trigger(false))
 			bike.rear_brake = Input.get_action_strength("rear_brake")
-			bike.lean_input = _steer_input(stick.x, delta)
+			# Tired out on an adventure the bars answer slower (see AdventureNeedsView.steer).
+			bike.lean_input = trip.needs.steer(_steer_input(stick.x, delta), delta)
 			bike.body_shift = clampf(Input.get_axis("body_back", "body_forward") - stick.y, -1.0, 1.0)
 			# The right stick swings the camera round, as the mouse does.
 			var look := Controls.stick(true)

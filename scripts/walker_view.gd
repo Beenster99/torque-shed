@@ -259,6 +259,7 @@ func _animate(delta: float) -> void:
 	_hand.rotation.x = _head.rotation.x
 	var low := walker.crouched
 	body.scale.y = move_toward(body.scale.y, 0.62 if low else 1.0, delta * 9.6)
+	AdventureNeedsView.pose_figure(_look, _head, _head_look, _hand, self, Shed.me(), delta)
 
 
 func _dress() -> void:

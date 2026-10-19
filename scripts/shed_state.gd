@@ -142,6 +142,9 @@ var recovery := {}
 var pool := PoolGame.empty()
 ## The adventure ride the crew is out on, or {} (see Adventure).
 var adventure := {}
+## An adventure put away by a night's sleep, to be carried on another day, or {} (see
+## AdventureNeeds.make_save). Kept in the save, unlike the adventure itself.
+var adventure_save := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -233,6 +236,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	pool = PoolGame.empty()
 	staff = Staff.empty()
 	adventure = {}
+	adventure_save = {}
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -335,6 +339,7 @@ func load_state(state: Dictionary, player_name: String) -> void:
 			was_moving.append(id)
 	_sync(state)
 	adventure = {}   # nobody is out on an adventure in a save just opened
+	Adventure.bring_bikes_home()   # and bikes left by its road are back at the shed
 	for id in was_moving:
 		_park(id)
 	for id in items:
@@ -507,6 +512,7 @@ func join_remote() -> void:
 
 func stop() -> void:
 	adventure = {}
+	adventure_save = {}
 	garage_money = 0
 	bank = Money.defaults()
 	_clock_hours = -1.0
@@ -1418,6 +1424,8 @@ func condition_text(item: Dictionary) -> String:
 		text += "\n" + bead_text(item)
 	if str(item.get("kind", "")) == "toolbox":
 		text += "\n" + toolbox_text(item)
+	if item.get("food") is Dictionary and AdventureNeeds.packed_text(int(item.get("id", 0))) != "":
+		text += "\n" + AdventureNeeds.packed_text(int(item["id"]))
 	var holed := Puncture.text(item)
 	if holed != "":
 		text += "\n" + holed
@@ -2432,6 +2440,8 @@ func _engine_access(action: Dictionary, slot: String) -> String:
 
 ## Why `peer` can't do `action` right now, or "" when they can.
 func check(peer: int, action: Dictionary) -> String:
+	if str(action.get("a", "")).begins_with("needs_"):
+		return AdventureNeeds.check(peer, action)
 	var road := road_bike_block(action)
 	if road != "":
 		return road
@@ -3284,6 +3294,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	if str(action.get("a", "")).begins_with("adventure_"):
 		_adventure_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("needs_"):
+		_needs_apply(peer, action)
 		return
 	var why := check(peer, action)
 	if why != "":
@@ -4499,6 +4512,23 @@ func _adventure_apply(peer: int, action: Dictionary) -> void:
 	changed.emit()
 
 
+## Hunger, thirst and tiredness out on an adventure, and the lunch packed for it (see
+## AdventureNeeds): told the same way as the adventure's own actions.
+func _needs_apply(peer: int, action: Dictionary) -> void:
+	var why := AdventureNeeds.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var said := AdventureNeeds.apply(peer, action)
+	if said.begins_with("*"):
+		for p in crew:
+			_tell(int(p), said.substr(1), true)
+	elif said != "":
+		_tell(peer, said, true)
+	_mark_dirty()
+	changed.emit()
+
+
 func _tell(peer: int, text: String, ok: bool) -> void:
 	if Staff.is_staff_peer(peer):
 		Staff.heard(peer, text, ok)   # one of the staff: they take note, nobody's told
@@ -5328,7 +5358,7 @@ func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
 		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
-		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "kit_v": KIT_SAVE}
+		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "adventure_save": adventure_save, "kit_v": KIT_SAVE}
 	if with_board:
 		state["board"] = board
 	return state
@@ -5377,6 +5407,8 @@ func _sync(state: Dictionary) -> void:
 	staff = Staff.sanitize(state.get("staff"))
 	# Sheds saved before adventure rides have none on.
 	adventure = Adventure.sanitize(state.get("adventure"))
+	# Nor one put away overnight to carry on.
+	adventure_save = AdventureNeeds.sanitize_save(state.get("adventure_save"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.
@@ -5434,6 +5466,8 @@ func _process_body(delta: float) -> void:
 	Recovery.process(delta)
 	PoolGame.process(delta)
 	Staff.process(delta)
+	if Adventure.active():
+		AdventureNeeds.tick(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":

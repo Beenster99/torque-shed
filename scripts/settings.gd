@@ -90,6 +90,7 @@ const ACTIONS := [
 	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
 	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot", "ride"]],
+	["eat", "Adventure: eat or drink from your packed lunch", ["foot", "ride"]],
 	["emote_menu", "Emotes: open the bar (then 1 to 6)", ["foot"]], ["emote_wave", "Emote: wave", ["foot"]],
 	["emote_thumbs", "Emote: thumbs up", ["foot"]], ["emote_point", "Emote: point", ["foot"]],
 	["emote_shrug", "Emote: shrug", ["foot"]], ["emote_cheer", "Emote: cheer", ["foot"]], ["emote_dance", "Emote: dance", ["foot"]],
@@ -387,6 +388,7 @@ func _setup_inputs() -> void:
 	_bind("geo_reset", [KEY_BACKSPACE], [])
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
+	_bind("eat", [KEY_Y], [JOY_BUTTON_MISC1])
 	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])
 
 

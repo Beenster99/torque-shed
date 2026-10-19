@@ -295,6 +295,8 @@ func _process(delta: float) -> void:
 
 func _process_body(delta: float) -> void:
 	_animate_emote(delta)
+	# Sat on a bench or lying in a bed out on an adventure (see AdventureNeedsView).
+	AdventureNeedsView.pose_figure(_body_look, _head, _head_look, _hand, self, peer, delta)
 	_phones.visible = Shed.wearing_headphones(peer)
 	if RiderGear.sig(RiderGear.worn_of(peer)) != _gear_sig:
 		_dress()

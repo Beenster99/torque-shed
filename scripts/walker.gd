@@ -111,6 +111,12 @@ var _f_seat := 0            # seat F went down on: a tap sits you down, a hold p
 var _f_time := 0.0
 var seat := 0               # the seat you're sitting on, or 0
 var _seat_spot := Vector3.ZERO
+## Sat on a bench or lying in a bed out on an adventure (see AdventureNeedsView): where you're
+## held (a Transform3D, your feet's place), and your eye's height above it. null when you're not.
+var perch = null
+var perch_eye := SEATED_EYE
+## Walking pace is scaled by this (an adventure's hunger slows you down).
+var pace_scale := 1.0
 var _active_plan := {}
 var spray_skill := 1.0       # widens the spray: the tool's upgrade stage and Steady Hand (see Progress)
 var coverage := 0.0          # how much of the part being sprayed is covered, 0..1
@@ -468,7 +474,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Whether Space would jump now: on your feet (and have been a moment), standing up, hands free
 ## of anything you're wheeling, carrying or sat on, and not at a job that has you planted.
 func can_jump() -> bool:
-	return controls_enabled and is_on_floor() and _grounded >= JUMP_REST and not crouched and seat == 0 \
+	return controls_enabled and is_on_floor() and _grounded >= JUMP_REST and not crouched and seat == 0 and perch == null \
 		and not blast and Shed.blasting(Shed.me()) == 0 and spray_mode.is_empty() and wash_mode.is_empty() and not detail.active() \
 		and tyre_game == null and Shed.pushing_bike(Shed.me()) == 0 and Shed.moving(Shed.me()) == 0
 
@@ -517,6 +523,27 @@ func sit(id: int) -> void:
 	rotation.y = (f["xf"] as Transform3D).basis.get_euler().y
 	_shape_node.disabled = true
 	Shed.feedback.emit("Sitting down. Move or press {interact} to get up.", true)
+
+
+## Holds you at `xf` (sat down or lying down out on an adventure), your eye `eye` above it.
+func perch_at(xf: Transform3D, eye: float) -> void:
+	if perch == null:
+		set_crouched(false)
+		rotation.y = xf.basis.get_euler().y
+		_pitch = 0.0
+	perch = xf
+	perch_eye = eye
+	_shape_node.disabled = true
+
+
+## Lets you go from perch_at, standing at `xf`.
+func unperch(xf: Transform3D) -> void:
+	if perch == null:
+		return
+	perch = null
+	_shape_node.disabled = false
+	global_position = xf.origin + Vector3.UP * 0.05
+	velocity = Vector3.ZERO
 
 
 func stand_up() -> void:
@@ -684,7 +711,11 @@ func _physics_process_body(delta: float) -> void:
 			input = Vector2.ZERO
 			global_position = Shed.furniture[seat]["xf"] * _seat_spot - Vector3.UP * SEATED_EYE
 			velocity = Vector3.ZERO
-	var pace := CROUCH_WALK if crouched else (RUN if running else WALK)
+	if perch is Transform3D:
+		input = Vector2.ZERO
+		global_position = (perch as Transform3D).origin
+		velocity = Vector3.ZERO
+	var pace := (CROUCH_WALK if crouched else (RUN if running else WALK)) * pace_scale
 	if not spray_mode.is_empty():
 		pace = SPRAY_WALK
 	if Shed.pushing_bike(Shed.me()) != 0:
@@ -720,6 +751,8 @@ func _physics_process_body(delta: float) -> void:
 	_eye = move_toward(_eye, CROUCH_EYE if crouched else EYE, delta * 4.0)
 	if seat != 0:
 		_eye = SEATED_EYE
+	elif perch is Transform3D:
+		_eye = perch_eye
 	camera.position.y = _eye
 	_update_sway(delta)
 	# In third person the eye turns to what the crosshair is over, before anything aims with it.
@@ -1637,6 +1670,14 @@ func _make_plan() -> Dictionary:
 				"verb": "pack the %s (%s)" % [str(info["short"]), TvChannels.money_text(int(info["price"]))]}
 		else:
 			alt_plan = {"action": {"a": "toolbox_pack", "item": item_id, "empty": true}, "time": 1.0, "verb": "empty it out"}
+		alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
+	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0 and AdventureNeeds.LUGGAGE.has(str(Shed.items[item_id]["kind"])) \
+			and AdventureNeeds.next_pack(item_id) != "":
+		# A tank bag, top box or panniers: the second button packs a lunch, then a flask of tea,
+		# for an adventure (bought from the business's account; see AdventureNeeds).
+		var what := AdventureNeeds.next_pack(item_id)
+		alt_plan = {"action": {"a": "needs_pack", "item": item_id, "what": what}, "time": 1.0,
+			"verb": "pack a %s for the road (%s)" % [AdventureNeeds.PACK_NAMES[what], TvChannels.money_text(int(AdventureNeeds.PACK_PRICE[what]))]}
 		alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
 	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0:
 		_bay_alt(item_id)
@@ -3410,7 +3451,7 @@ func _activity_text() -> String:
 		"pour": "Topping up", "drain": "Draining", "tip": "Tipping away old fluid", "wash": "Pressure washing", "set_stand": "Putting a bike on its stand",
 		"repair_many": "Restoring parts on", "adjust_chain": "Adjusting the chain on", "lube": "Lubing the chain on",
 		"tyre_fit": "Fitting a tyre on the tyre changer", "tyre_remove": "Levering a tyre off on the tyre changer",
-		"inflate": "Pumping up a tyre", "plug_tyre": "Plugging a puncture", "toolbox_pack": "Packing a toolbox"}
+		"inflate": "Pumping up a tyre", "plug_tyre": "Plugging a puncture", "toolbox_pack": "Packing a toolbox", "needs_pack": "Packing a lunch for the road"}
 	var verb: String = verbs.get(a["a"], "Working on")
 	if a["a"] == "clean_many" and what == "":
 		what = "%d parts" % a["items"].size()

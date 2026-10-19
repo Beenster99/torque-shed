@@ -11,6 +11,10 @@ extends Node
 ## reach the destination, runs the day faster (Adventure.day_rate) and shows how far you've come.
 
 static var current: AdventureTrip
+## A bike got off and left at the side of the adventure's road keeps its place in Shed.bikes in
+## the road's own frame (the same for everyone, wherever their origin is), lifted this far up
+## so nothing in the town mistakes it for a spot there (see to_shared).
+const PARK_Y := 10000.0
 ## Skips the fades (the tests).
 static var instant := false
 
@@ -25,6 +29,9 @@ var _hidden: Array = []      # [node, was visible, process mode] of the town put
 var _hud: Label
 var _hud_timer := 0.0
 var _put_back_at := 0        # ticks: when the last "back on the road" happened
+## Hunger, thirst and tiredness: the meters, their effects, and sitting, eating and sleeping.
+var needs: AdventureNeedsView
+var _parked := {}            # bike id -> [view, signature]: bikes left at the side of the road
 
 
 func _ready() -> void:
@@ -43,6 +50,9 @@ func _ready() -> void:
 	_hud.add_theme_constant_override("outline_size", 6)
 	_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_hud)
+	needs = AdventureNeedsView.new()
+	needs.trip = self
+	add_child(needs)
 
 
 func _exit_tree() -> void:
@@ -67,6 +77,8 @@ func sync() -> void:
 		enter()
 	elif trip_id != 0 and id != trip_id:
 		leave()
+	if world != null:
+		_sync_parked()
 
 
 ## Into the adventure in Shed.adventure.
@@ -90,17 +102,22 @@ func enter() -> void:
 	main.world.add_child(world)
 	world.origin_shifted.connect(_on_shift)
 	_sleep_town(true)
-	world.preload_range(0.0, 420.0)
+	var from := maxf(0.0, start_s() - 120.0)
+	world.preload_range(from, from + 420.0)
 	var xf := start_xf()
 	if main.bike:
 		main.bike.place(xf.origin, xf.basis.get_euler().y)
 		main.camera.snap()
 	elif main.walker:
-		var side := world.transform_at(30.0, -world.route.width_at_s(30.0) * 0.5 - 1.5)
+		var s0 := maxf(30.0, start_s())
+		var side := world.transform_at(s0, -world.route.width_at_s(s0) * 0.5 - 1.5)
 		main.walker.place(side)
 	Daylight.adventure_rate = Adventure.day_rate()
 	Shed.request({"a": "adventure_join", "bike": preferred})
-	main.hud.flash("Adventure ride: %d km of varied roads. Fuel stations are signed along the way." % roundi(float(info["km"])), 5.0)
+	if start_s() > 0.0:
+		main.hud.flash("Carrying on the adventure: %.1f of %d km done. Morning, and back on the road." % [start_s() / 1000.0, roundi(float(info["km"]))], 5.0)
+	else:
+		main.hud.flash("Adventure ride: %d km of varied roads. Fuel stations are signed along the way." % roundi(float(info["km"])), 5.0)
 	_busy = false
 	if not instant:
 		await main._fade_to(0.0)
@@ -136,6 +153,12 @@ func reset() -> void:
 
 
 func _unload() -> void:
+	for id in _parked:
+		if is_instance_valid(_parked[id][0]):
+			_parked[id][0].queue_free()
+	_parked.clear()
+	if needs:
+		needs.reset()
 	if world:
 		world.queue_free()
 		world = null
@@ -169,11 +192,22 @@ func _sleep_town(on: bool) -> void:
 			(child as Node3D).visible = false
 
 
-## Where you start: your place on the grid, by your place in the crew.
+## Where you start: your place on the grid, by your place in the crew; carrying on an adventure
+## put away overnight, at the side of the road where you slept (staggered a bike length apart).
 func start_xf() -> Transform3D:
 	var ids := Shed.crew.keys()
 	ids.sort()
-	return world.start_xf(maxi(0, ids.find(Shed.me())))
+	var slot := maxi(0, ids.find(Shed.me()))
+	var s := start_s()
+	if s > 0.0:
+		var at := clampf(s - 4.0 * float(slot), 20.0, world.route.length - 40.0)
+		return world.transform_at(at, -world.route.width_at_s(at) * 0.25)
+	return world.start_xf(slot)
+
+
+## How far along the road you start (m): 0 from the start, else where you slept.
+func start_s() -> float:
+	return maxf(0.0, AdventureNeeds.resume_s(str(Shed.crew.get(Shed.me(), {}).get("name", ""))))
 
 
 ## The nearest bike to you in the shed with nobody on it (within a few metres), or 0.
@@ -220,6 +254,9 @@ func _on_shift(d: Vector3) -> void:
 		var rp = main.remotes[peer]
 		if is_instance_valid(rp):
 			rp.shift_origin(d)
+	for id in _parked:
+		if is_instance_valid(_parked[id][0]) and Shed.bikes.has(id):
+			_parked[id][0].transform = to_local_xf(Shed.bikes[id]["xf"])
 	var marks := SkidMarks.shared(get_tree())
 	if marks and marks.multimesh:
 		var mm := marks.multimesh
@@ -227,6 +264,70 @@ func _on_shift(d: Vector3) -> void:
 			var t := mm.get_instance_transform(k)
 			t.origin -= d
 			mm.set_instance_transform(k, t)
+
+
+# ---------------------------------------------------------------------------- bikes left by the road
+
+## `xf` (local, here) in the road's own frame, as Shed.bikes keeps a bike got off out here.
+func to_shared(xf: Transform3D) -> Transform3D:
+	return Transform3D(xf.basis, xf.origin + world.origin + Vector3(0.0, PARK_Y, 0.0))
+
+
+## A bike's shared transform out here (see to_shared) in this player's local frame.
+func to_local_xf(xf: Transform3D) -> Transform3D:
+	return Transform3D(xf.basis, xf.origin - world.origin - Vector3(0.0, PARK_Y, 0.0))
+
+
+## Whether a bike's transform is out on an adventure's road (see to_shared).
+static func is_out(xf) -> bool:
+	return xf is Transform3D and (xf as Transform3D).origin.y > PARK_Y * 0.5
+
+
+## Draws the bikes left at the side of the road where they were got off (so they can be got
+## back on), and takes away the ones ridden off again.
+func _sync_parked() -> void:
+	var want := {}
+	for id in Shed.bikes:
+		var b: Dictionary = Shed.bikes[id]
+		if int(b.get("rider", 0)) == 0 and int(b.get("pusher", 0)) == 0 and is_out(b.get("xf")):
+			want[id] = "%s|%s|%s" % [str(b["xf"]), str(b.get("stand", "")), str(Shed.fitted_map(id))]
+	for id in _parked.keys():
+		if not want.has(id) or str(_parked[id][1]) != str(want[id]):
+			if is_instance_valid(_parked[id][0]):
+				_parked[id][0].queue_free()
+			_parked.erase(id)
+	for id in want:
+		if not _parked.has(id):
+			_parked[id] = [_parked_view(id), want[id]]
+
+
+## A parked bike out here, leaning on its stand, that the walker can look at and get on.
+func _parked_view(id: int) -> Node3D:
+	var bike: Dictionary = Shed.bikes[id]
+	var view := Node3D.new()
+	view.name = "ParkedBike%d" % id
+	world.add_child(view)
+	view.transform = to_local_xf(bike["xf"])
+	var build := Shed.build_of(id)
+	var model := BikeModel.new()
+	var lean := Node3D.new()
+	view.add_child(lean)
+	lean.add_child(model)
+	var stand := str(bike.get("stand", ""))
+	var lift := 0.0
+	if stand == "centre":
+		lift = build.centre_lift
+	elif stand == "side":
+		lean.basis = Basis(Vector3.BACK, deg_to_rad(float(PartsDB.get_part(build.parts["side_stand"]).get("lean", 12.0))))
+	elif stand == "down":
+		lean.basis = Basis(Vector3.BACK, deg_to_rad(74.0))
+		lift = 0.12
+	model.position.y = build.rear_radius + lift
+	model.stand_pose = stand
+	model.geometry = Shed.geometry_of(id)
+	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)
+	model.build_pickers({"bike": id})
+	return view
 
 
 # ---------------------------------------------------------------------------- network

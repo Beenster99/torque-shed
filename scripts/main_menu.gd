@@ -46,6 +46,8 @@ var _name: LineEdit
 var _home: Button
 ## Starts an adventure ride for the crew, or ends the one on (the host; see Adventure.menu_action).
 var _adventure: Button
+## Carries on the adventure a night's sleep put away (the host; see Adventure.continue_text).
+var _continue_adventure: Button
 ## Says whether "Back to the garage" can be used now ("" yes, "home" already there, else why not); set by Main.
 var home_check := Callable()
 var _ip: LineEdit
@@ -159,6 +161,10 @@ func _ready() -> void:
 		Adventure.menu_action()
 		resume.emit())
 	_pause_box.add_child(_adventure)
+	_continue_adventure = _button("Continue adventure", func():
+		Shed.request({"a": "adventure_resume"})
+		resume.emit())
+	_pause_box.add_child(_continue_adventure)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
 	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
@@ -409,6 +415,12 @@ func _refresh_adventure() -> void:
 	_adventure.text = str(t[0])
 	_adventure.disabled = str(t[1]) != ""
 	_adventure.tooltip_text = str(t[1])
+	var c := Adventure.continue_text()
+	_continue_adventure.visible = not c.is_empty()
+	if not c.is_empty():
+		_continue_adventure.text = str(c[0])
+		_continue_adventure.disabled = str(c[1]) != ""
+		_continue_adventure.tooltip_text = str(c[1])
 
 
 ## Lists bikes left out on the road (nobody riding them, away from the shed) with a button each

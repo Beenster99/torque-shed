@@ -152,6 +152,12 @@ func _ready() -> void:
 		_button("Skip 1 km ahead", func(): if AdventureTrip.current: AdventureTrip.current.jump(1000.0)),
 		_button("Skip 10 km ahead", func(): if AdventureTrip.current: AdventureTrip.current.jump(10000.0)),
 	]))
+	# Hunger, thirst and tiredness (see AdventureNeeds): straight to the low end to try the
+	# effects, or topped up.
+	box.add_child(_row([
+		_button("Needs: tired and hungry", func(): Shed.request({"a": "needs_debug", "food": 0.15, "drink": 0.2, "rest": 0.05})),
+		_button("Needs: topped up", func(): Shed.request({"a": "needs_debug", "food": 1.0, "drink": 1.0, "rest": 1.0})),
+	]))
 	_adv_note = UITheme.label("", 14, Color(1, 1, 1, 0.6))
 	_adv_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_adv_note)
