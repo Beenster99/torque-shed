@@ -1,6 +1,6 @@
 extends RefCounted
 ## Riding on adventures (Simon: "brakes seem to fade on adventures", later "remove brake fade",
-## "too many rattles", "a sharper handlebar turn at >10mph"): the brakes after a long ride, how
+## "too many rattles", "a sharper handlebar turn at <10mph"): the brakes after a long ride, how
 ## often something goes wrong over a whole ride, and how tight a turn the bars make slow. Run from
 ## tests/run_tests.gd: its _test_adv_ride_* functions hand over to these.
 
@@ -292,25 +292,38 @@ func _full_turn(build: Dictionary, mph: float) -> Array:
 	return out
 
 
-## Slow, the input held full turns the bike as sharply as the bars let it: a tight U-turn or a
-## junction at 10-15 mph, not the wide sweep it was above walking pace. The faster it goes the
-## less lock it takes and the wider the turn, as on a real bike.
+## The widest a full-input turn at 5 and 8 mph may be (m), by style (before, with the bars short
+## of full lock below 10 mph: 2.7 and 3.3 m on both).
+const WIDEST_5 := {"classic": 2.35, "cruiser": 2.6}
+const WIDEST_8 := {"classic": 2.9, "cruiser": 3.1}
+
+
+## Slow, the input held full turns the bike as sharply as the bars let it (Simon: "a sharper
+## handlebar turn at <10mph"): full lock at walking pace, a tight U-turn at 5-8 mph, still a sharp
+## junction at 10-15 mph. The faster it goes the less lock it takes and the wider the turn, as on
+## a real bike.
 func test_tight_turns() -> void:
 	# A cruiser grounds its footboards about 30 degrees over, which sets its turn at 15 mph.
+	var lock := rad_to_deg(Bike.STEER_LOCK)
 	for style in ["classic", "cruiser"]:
 		var nm := PartsDB.style_name(style)
 		var line := []
 		var radii := []
 		var bars := []
 		var crashed := false
-		for mph in [5.0, 10.0, 15.0, 25.0]:
+		for mph in [2.0, 5.0, 8.0, 10.0, 15.0, 25.0]:
 			var got: Array = await _full_turn(Contracts.style_build(style), mph)
 			line.append("%d mph %.1f m (lean %d°, bars %d°)" % [roundi(mph), got[0], roundi(got[1]), roundi(got[2])])
 			radii.append(got[0])
 			bars.append(got[2])
 			crashed = crashed or got[3]
 		print("    %s, input held full: %s" % [nm, ", ".join(line)])
-		check(not crashed, "%s: full-input turns from 5 to 25 mph all hold" % nm)
-		check(radii[1] < 4.5 and radii[2] < float(WIDEST_15[style]), "%s: a sharp turn at 10 mph (%.1f m) and 15 mph (%.1f m)" % [nm, radii[1], radii[2]])
-		check(radii[0] < radii[1] and radii[1] < radii[2] and radii[2] < radii[3] and bars[0] > bars[1] and bars[1] > bars[2] and bars[2] > bars[3],
-			"%s: less lock and a wider turn the faster it goes" % nm)
+		check(not crashed, "%s: full-input turns from 2 to 25 mph all hold" % nm)
+		check(bars[0] > lock * 0.97, "%s: at walking pace the bars go to full lock (%.1f° of %.0f°)" % [nm, bars[0], lock])
+		check(radii[1] < float(WIDEST_5[style]) and radii[2] < float(WIDEST_8[style]) and bars[1] > lock * 0.85,
+			"%s: a much sharper turn below 10 mph: %.1f m at 5 mph (bars %.1f°), %.1f m at 8 mph" % [nm, radii[1], bars[1], radii[2]])
+		check(radii[3] < 4.5 and radii[4] < float(WIDEST_15[style]), "%s: a sharp turn at 10 mph (%.1f m) and 15 mph (%.1f m)" % [nm, radii[3], radii[4]])
+		var opening := true
+		for i in range(1, radii.size()):
+			opening = opening and radii[i] > radii[i - 1] and bars[i] < bars[i - 1]
+		check(opening, "%s: less lock and a wider turn the faster it goes" % nm)
