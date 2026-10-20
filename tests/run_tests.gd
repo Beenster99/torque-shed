@@ -528,6 +528,8 @@ func _run_all() -> void:
 	_test_bike_copy_blueprint()
 	_test_bike_copy_sources()
 	await _test_bike_copy_session()
+	_test_bike_copy_quality()
+	await _test_bike_copy_quality_card()
 	print("Trip computer and the Adventure Diary (v0.16.0): the sat nav's trip page, the crew's highlights, photos without a stutter, the diary book")
 	_test_adv_diary_trip_maths()
 	await _test_adv_diary_trip_page()
@@ -22057,6 +22059,14 @@ func _test_bike_copy_sources() -> void:
 
 func _test_bike_copy_session() -> void:
 	await _bike_copy().test_session()
+
+
+func _test_bike_copy_quality() -> void:
+	_bike_copy().test_quality()
+
+
+func _test_bike_copy_quality_card() -> void:
+	await _bike_copy().test_quality_card()
 
 
 

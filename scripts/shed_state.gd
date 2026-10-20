@@ -5692,7 +5692,7 @@ func _deliver_on_order(delta: float) -> void:
 			i += 1
 			continue
 		on_order.remove_at(i)
-		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")))
+		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")), o.get("used", {}))
 		sent += 1
 	if sent > 0:
 		_mark_dirty()
@@ -5700,19 +5700,35 @@ func _deliver_on_order(delta: float) -> void:
 
 
 ## Host: a new part, boxed (fluids as they are) and put in the delivery area, with what was paid
-## for it and who ordered it on the note. Returns its id, or 0 when there's no room for it.
-func deliver_new(part: String, color = null, finish := "", paid := 0, by := "") -> int:
+## for it and who ordered it on the note; with `used` ({rust, dirt, wear}, see used_cond) a used
+## one in that state, unboxed. Returns its id, or 0 when there's no room for it.
+func deliver_new(part: String, color = null, finish := "", paid := 0, by := "", used = {}) -> int:
 	if not delivery_room(part):
 		return 0
-	var item_id := _new_item(part, 0.0, 0.0, 0.0, color if color is Color else null)
+	var cond := used_cond(used)
+	var item_id := _new_item(part, float(cond.get("rust", 0.0)), float(cond.get("dirt", 0.0)), float(cond.get("wear", 0.0)),
+		color if color is Color else null)
 	items[item_id]["paid"] = paid
 	items[item_id]["finish"] = finish
-	items[item_id]["boxed"] = not PartsDB.is_fluid(part)
+	# Used parts come as they are, not boxed.
+	items[item_id]["boxed"] = not PartsDB.is_fluid(part) and cond.is_empty()
 	items[item_id]["by"] = by if by != "" else "the crew"
 	if not _deliver(item_id):
 		items.erase(item_id)
 		return 0
 	return item_id
+
+
+## A used part's {rust, dirt, wear} from what an order says (as BikeCopy.used_cond gives it), each
+## kept to 0..1: {} for new.
+static func used_cond(used) -> Dictionary:
+	var out := {}
+	if used is Dictionary:
+		for k in ["rust", "dirt", "wear"]:
+			var v = used.get(k, 0.0)
+			if (v is float or v is int) and float(v) > 0.0:
+				out[k] = clampf(float(v), 0.0, 1.0)
+	return out
 
 
 ## A "coffee_*" request (see CoffeeShop.check and CoffeeShop.apply). Money a player paid at the
