@@ -679,12 +679,22 @@ func _ready() -> void:
 				Shed._mark_dirty()
 				pump_step = 1
 			var p_litres := float(Shed.items[p_tank].get("fluid", {}).get("litres", 0.0))
-			if role == "client" and pump_step == 0 and p_litres < 1.5 and ShedPump.reaches(faithful) and ShedPump.holder() == 0:
+			# Once the steps that walk the client about the shed (the trolley, the cafe, the order
+			# card) are through, so they don't pull it off the hose's reach.
+			if role == "client" and pump_step == 0 and trolley_ok and cafe_ok and copy_ok and p_litres < 1.5 \
+					and ShedPump.reaches(faithful) and ShedPump.holder() == 0:
 				# Stood by the pump, walking up and down along the wall within the hose's reach.
 				main.walker.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), ShedPump.HOSE_ROOT * Vector3(1, 0, 1) + Vector3(0.0, 0.0, 0.9)))
-				Shed.request({"a": "pump_nozzle", "to": "held"})
-				Shed.request({"a": "pump_pour", "on": true, "bike": faithful})
 				pump_step = 1
+			# Kept by the pump (too far off the hose pulls the nozzle back), lifting the nozzle and then
+			# pouring, asking again until the host has it.
+			if role == "client" and pump_step == 1 and main.walker.global_position.distance_to(ShedPump.HOSE_ROOT) > 2.0:
+				main.walker.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), ShedPump.HOSE_ROOT * Vector3(1, 0, 1) + Vector3(0.0, 0.0, 0.9)))
+			if role == "client" and pump_step == 1 and Engine.get_physics_frames() % 30 == 0:
+				if ShedPump.holder() == 0:
+					Shed.request({"a": "pump_nozzle", "to": "held"})
+				elif ShedPump.holder() == Shed.me() and ShedPump.pouring() == 0 and float(Shed.pump["litres"]) < 1.0:
+					Shed.request({"a": "pump_pour", "on": true, "bike": faithful})
 			if role == "client" and pump_step == 1 and float(Shed.pump["litres"]) > 1.0:
 				Shed.request({"a": "pump_pour", "on": false})
 				Shed.request({"a": "pump_nozzle", "to": "pump"})
