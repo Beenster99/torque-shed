@@ -439,6 +439,9 @@ func _run_all() -> void:
 	print("Adventure rides (v0.12.0): the streaming road, floating origin, surfaces, fuel stations, there and back")
 	_test_adventure_route()
 	_test_real_pack()
+	_test_real_land()
+	_test_real_building_shapes()
+	_test_real_budget()
 	_test_real_plan()
 	await _test_real_ride()
 	_test_real_magazine()
@@ -21896,6 +21899,18 @@ func _real() -> RefCounted:
 
 func _test_real_pack() -> void:
 	_real().test_pack()
+
+
+func _test_real_land() -> void:
+	_real().test_land()
+
+
+func _test_real_building_shapes() -> void:
+	_real().test_building_shapes()
+
+
+func _test_real_budget() -> void:
+	_real().test_budget()
 
 
 func _test_real_plan() -> void:

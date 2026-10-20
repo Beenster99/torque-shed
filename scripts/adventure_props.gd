@@ -14,6 +14,10 @@ static var _meshes := {}
 static var _vc_mat: StandardMaterial3D
 
 
+## How far a real building's walls go down under the ground (m).
+const SKIRT := 1.5
+
+
 # ---------------------------------------------------------------------------- array kit
 
 static func new_arrays() -> Dictionary:
@@ -265,6 +269,79 @@ static func building(a: Dictionary, xf: Transform3D, rng: RandomNumberGenerator,
 			box(a, xf, Vector3(w3, 2.8, d3), wall)
 			box(a, xf * Transform3D(Basis(), Vector3(0, 2.8, 0)), Vector3(w3 + 0.3, 0.18, d3 + 0.3), roof)
 			box(a, xf * Transform3D(Basis(), Vector3(-w3 * 0.25, 0, d3 * 0.5)), Vector3(0.9, 2.0, 0.08), Color(0.3, 0.2, 0.12))
+
+
+## A real building (see RealPack: a footprint's box, its kind and height) into `a`: its middle on the ground at
+## `pos`, turned `yaw` about up, `w` along local x and `d` along local z, `h` tall, in the theme's building
+## style. Walls go on 1.5 m under the ground so a slope never leaves a gap.
+static func real_building(a: Dictionary, pos: Vector3, w: float, d: float, yaw: float, h: float, kind: String,
+		style_name := "mixed") -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([roundi(pos.x * 10.0), roundi(pos.z * 10.0)])
+	var walls := [Color(0.86, 0.82, 0.72), Color(0.72, 0.62, 0.5), Color(0.6, 0.32, 0.24), Color(0.9, 0.9, 0.88), Color(0.68, 0.7, 0.66)]
+	var roofs := [Color(0.25, 0.22, 0.22), Color(0.45, 0.2, 0.15), Color(0.32, 0.34, 0.36)]
+	var flat_style := false
+	if style_name != "mixed" and AdventureTheme.STYLES.has(style_name):
+		var st: Dictionary = AdventureTheme.STYLES[style_name]
+		walls = st["walls"]
+		roofs = st["roofs"]
+		flat_style = bool(st["flat"])
+	var wall: Color = walls[rng.randi_range(0, walls.size() - 1)]
+	var roof: Color = roofs[rng.randi_range(0, roofs.size() - 1)]
+	var xf := Transform3D(Basis(Vector3.UP, yaw), pos + Vector3(0.0, -SKIRT, 0.0))
+	var door := Color(0.25, 0.14, 0.08)
+	var glass := Color(0.15, 0.2, 0.28)
+	match kind:
+		"shed":
+			box(a, xf, Vector3(w, h + SKIRT, d), wall.darkened(0.12), false)
+			box(a, xf * Transform3D(Basis(), Vector3(0, h + SKIRT, 0)), Vector3(w + 0.3, 0.16, d + 0.3), roof)
+		"barn":
+			var c := wall.darkened(0.25)
+			box(a, xf, Vector3(w, h * 0.62 + SKIRT, d), c, false)
+			_roof(a, xf, w, d, h * 0.62 + SKIRT, h * 0.38, roof, c)
+			box(a, xf * Transform3D(Basis(), Vector3(0, SKIRT, d * 0.5)), Vector3(minf(3.2, w * 0.5), minf(3.2, h * 0.5), 0.08), c.darkened(0.35))
+		"block", "shop", "civic":
+			box(a, xf, Vector3(w, h + SKIRT, d), wall, false)
+			box(a, xf * Transform3D(Basis(), Vector3(0, h + SKIRT, 0)), Vector3(w + 0.4, 0.22, d + 0.4), roof.lightened(0.1))
+			var floors := maxi(1, int(h / 3.2))
+			var bays := clampi(int(w / 3.0), 1, 8)
+			for f in floors:
+				for b in bays:
+					var wx := (float(b) + 0.5) / bays * w - w * 0.5
+					if kind == "shop" and f == 0:
+						continue
+					box(a, xf * Transform3D(Basis(), Vector3(wx, SKIRT + 1.0 + f * 3.0, d * 0.5)), Vector3(minf(1.3, w / bays * 0.6), 1.2, 0.06), glass)
+			if kind == "shop":
+				box(a, xf * Transform3D(Basis(), Vector3(0, SKIRT + 0.3, d * 0.5)), Vector3(w * 0.8, 2.0, 0.07), glass.lightened(0.15))
+		"industrial":
+			var c := Color(0.62, 0.64, 0.62).lerp(wall, 0.25)
+			box(a, xf, Vector3(w, h + SKIRT, d), c, false)
+			_roof(a, xf, w, d, h + SKIRT, minf(2.0, h * 0.3), Color(0.5, 0.52, 0.54), c)
+			box(a, xf * Transform3D(Basis(), Vector3(0, SKIRT, d * 0.5)), Vector3(minf(4.0, w * 0.5), minf(3.6, h * 0.8), 0.08), c.darkened(0.3))
+		"worship":
+			var c := Color(0.8, 0.74, 0.62)
+			box(a, xf, Vector3(w, h * 0.55 + SKIRT, d), c, false)
+			_roof(a, xf, w, d, h * 0.55 + SKIRT, h * 0.45, Color(0.22, 0.24, 0.27), c)
+			box(a, xf * Transform3D(Basis(), Vector3(0, SKIRT, d * 0.5)), Vector3(1.6, 2.4, 0.08), Color(0.45, 0.14, 0.1))
+		_:   # a house
+			box(a, xf, Vector3(w, minf(h, 3.2 * maxf(1.0, floorf(h / 3.2))) + SKIRT, d), wall, false)
+			var eaves := minf(h, 3.2 * maxf(1.0, floorf(h / 3.2))) + SKIRT
+			if flat_style:
+				box(a, xf * Transform3D(Basis(), Vector3(0, eaves, 0)), Vector3(w + 0.3, 0.18, d + 0.3), roof)
+			else:
+				_roof(a, xf, w, d, eaves, clampf(minf(w, d) * 0.3, 1.2, 3.0), roof, wall)
+			box(a, xf * Transform3D(Basis(), Vector3(-w * 0.25, SKIRT, d * 0.5)), Vector3(0.9, 2.0, 0.08), door)
+			for sx: float in [-1.0, 1.0]:
+				if w > 5.0:
+					box(a, xf * Transform3D(Basis(), Vector3(sx * w * 0.3 + w * 0.1, SKIRT + 1.1, d * 0.5)), Vector3(1.0, 0.9, 0.06), glass)
+
+
+## A gable roof over a `w` x `d` box, the ridge along its long side.
+static func _roof(a: Dictionary, xf: Transform3D, w: float, d: float, eaves: float, rise: float, col: Color, gable_col: Color) -> void:
+	if w > d:
+		gable(a, xf * Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3.ZERO), d, w, eaves, rise, col, gable_col)
+	else:
+		gable(a, xf, w, d, eaves, rise, col, gable_col)
 
 
 # ---------------------------------------------------------------------------- sites

@@ -12,6 +12,8 @@ folder the game loads (scripts/real_pack.gd):
     route.json       the road as knots every 4 m (x, z, height), per 128 m chunk its class, surface, width and name,
                      and the turn-by-turn instructions
     tiles/TX_TZ.u16  the land's heights in 512 m tiles down the corridor either side of the road
+    tiles/TX_TZ.cov  the same tiles' land cover (land_bake.COVER), one byte a height sample
+    buildings.json   the buildings beside the road, boxes of a kind; landmarks.json named peaks, lighthouses and the like
 
 Everything is in the adventure mode's route frame: metres from the start, +x east, -z north, heights in metres above
 sea level (the sea is at 0). Heights come from Mapterhorn (AWS Terrain Tiles as a fallback), roads from Overture Maps.
@@ -30,6 +32,9 @@ import sys
 import urllib.request
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import land_bake  # noqa: E402
 
 STEP = 4.0                    # metres between knots: AdventureRoute.STEP
 CHUNK = 128.0                 # metres per chunk: AdventureRoute.CHUNK_LEN
@@ -68,7 +73,7 @@ SEA_SHORE_M = 160.0    # over about this far the floor slopes down from the shor
 CREDITS = [
     "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and "
     "licences are listed at https://download.mapterhorn.com/attribution.json.",
-    "Roads: (c) OpenStreetMap contributors, Overture Maps Foundation (ODbL).",
+    "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL).",
 ]
 
 
@@ -672,10 +677,12 @@ def bake(args, log=print):
     tiles = corridor_tiles(knots)
     log("land: %d tiles" % len(tiles))
     os.makedirs(os.path.join(args.out, "tiles"), exist_ok=True)
+    land = land_bake.bake_land(OVERTURE_BUCKET, release, frame, knots, tiles, args.out, log)
     has_sea = False
     for i, (tx, tz) in enumerate(tiles):
         h, sea = tile_heights(dem, frame, tx, tz)
         has_sea = has_sea or sea
+        h = land_bake.level_ground(h, tx, tz, land["buildings"])
         quantise(h).tofile(os.path.join(args.out, "tiles", "%d_%d.u16" % (tx, tz)))
         if (i + 1) % 25 == 0:
             log("  %d / %d" % (i + 1, len(tiles)))
@@ -689,12 +696,13 @@ def bake(args, log=print):
     end_geo = frame.to_geo(knots[-1][0], knots[-1][1])
     start_geo = frame.to_geo(0.0, 0.0)
     meta = {
-        "format": 3, "name": args.name, "title": args.title or args.name,
+        "format": 4, "name": args.name, "title": args.title or args.name,
         "start": {"lat": round(float(start_geo[0]), 6), "lon": round(float(start_geo[1]), 6)},
         "end": {"lat": round(float(end_geo[0]), 6), "lon": round(float(end_geo[1]), 6)},
         "length_m": round((len(knots) - 1) * STEP, 1), "run_out_m": RUN_OUT,
         "tile": {"size_m": TILE_M, "n": TILE_N, "spacing": STEP}, "height": {"min": HEIGHT_MIN, "scale": HEIGHT_SCALE},
-        "tile_count": len(tiles), "sea": has_sea, "theme": "coastal" if has_sea else "hills", "warning": warn,
+        "tile_count": len(tiles), "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
+        "building_count": len(land["buildings"]), "landmark_count": len(land["landmarks"]), "sea": has_sea, "theme": "coastal" if has_sea else "hills", "warning": warn,
         "sources": {"overture_release": release, "elevation": "Mapterhorn, AWS Terrain Tiles fallback"},
         "credits": CREDITS,
     }

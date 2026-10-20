@@ -6,7 +6,11 @@ extends RefCounted
 ## route.json and tiles/. Everything is in the adventure's route frame: metres from the start, +x east, -z north.
 ## Packs are read-only once loaded, so one can be shared by every thread.
 
-const FORMAT := 3
+const FORMAT := 4
+## What covers the land (RealTerrain.cover), by id: the baker's list (tools/land_bake.py COVER).
+const COVER: Array[String] = ["grass", "forest", "crop", "shrub", "barren", "urban", "sand", "wetland", "water", "rock"]
+## The kinds of building (tools/land_bake.py BUILDING_KINDS), by id.
+const BUILDING_KINDS: Array[String] = ["house", "shed", "barn", "shop", "block", "industrial", "worship", "civic"]
 const DIR := "res://data/routes"
 
 static var _cache := {}
@@ -34,6 +38,11 @@ var names: Array = []
 ## [{d, x, z, turn, onto, branches}] and a last {"turn": "arrive"}.
 var turns: Array = []
 var terrain: RealTerrain
+## The buildings beside the road, by the 128 m chunk of the nearest road knot: chunk -> [[x, z, w, d, yaw, h, kind, knot]].
+var buildings := {}
+var building_count := 0
+## Named peaks, lighthouses and the like: [{kind, name, x, z}].
+var landmarks: Array = []
 
 
 ## The ids of the packs the game has.
@@ -102,6 +111,18 @@ static func _load(pack_id: String) -> RealPack:
 	p.chunks = route["chunks"]
 	p.names = route["names"]
 	p.turns = route.get("turns", [])
+	var knots_per_chunk := int(128.0 / p.step)
+	var rows = _json(dir.path_join("buildings.json"))
+	if rows is Array:
+		for b: Array in rows:
+			var c := int(b[7]) / knots_per_chunk
+			if not p.buildings.has(c):
+				p.buildings[c] = []
+			(p.buildings[c] as Array).append(b)
+		p.building_count = (rows as Array).size()
+	var marks = _json(dir.path_join("landmarks.json"))
+	if marks is Array:
+		p.landmarks = marks
 	p.terrain = RealTerrain.new(dir.path_join("tiles"), meta)
 	return p
 
@@ -110,6 +131,16 @@ static func _json(path: String) -> Variant:
 	if not FileAccess.file_exists(path):
 		return null
 	return JSON.parse_string(FileAccess.get_file_as_string(path))
+
+
+## The buildings whose nearest road knot is in chunk `c` ([[x, z, w, d, yaw, h, kind, knot]], route frame), or [].
+func buildings_in(c: int) -> Array:
+	return buildings.get(c, [])
+
+
+## The landmarks of `kind` ("" for all) within `reach` metres of route-frame (x, z).
+func landmarks_near(x: float, z: float, reach: float, kind := "") -> Array:
+	return landmarks.filter(func(m): return (kind == "" or m["kind"] == kind) and Vector2(float(m["x"]) - x, float(m["z"]) - z).length() <= reach)
 
 
 ## The longest ride (km) this pack offers: what is baked less the run-out.
