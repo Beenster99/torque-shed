@@ -25,6 +25,10 @@ extends Node3D
 ##
 ## For the police (and anything else that drives in the traffic): AdventureTraffic.current.stream
 ## is the TrafficStream; see its spawn_at / slot / take / release / remove_id.
+##
+## Other bikers ride the road too, and with the crew if you keep their pace (AdventureBikers, its
+## `bikers`): they're sent on the end of the same snapshot ([..., bikers..., n, AdventureBikers.TAG,
+## clock, CLOCK_TAG]).
 
 static var current: AdventureTraffic
 
@@ -65,6 +69,11 @@ const CLOCK_TAG := -55555.0
 
 var world: AdventureWorld
 var stream: TrafficStream
+## The other bikers on the road (see AdventureBikers).
+var bikers: AdventureBikers
+## Where each rider is along the road this tick, for the bikers: [s, lat] for each of the world's
+## focus spots (yours first), [] for one off the road.
+var rider_spots: Array = []
 ## Whether this machine drives the traffic (the host, or a solo game).
 var host := true
 ## The share of villages with a bus waiting as you come in (BUS_CHANCE; the tests set it).
@@ -107,6 +116,9 @@ func _ready() -> void:
 	add_child(stream)
 	stream.set_physics_process(false)   # stepped from here, after the riders are found
 	_tables()
+	bikers = AdventureBikers.new()
+	bikers.traffic = self
+	add_child(bikers)
 	Net.adv_traffic_received.connect(_on_net)
 
 
@@ -219,6 +231,8 @@ func _tables() -> void:
 	for i in range(stream.vehicles.size() - 1, -1, -1):
 		if stream.vehicles[i].has("arm"):
 			stream._remove(i)
+	if bikers:
+		bikers.drop_arms()
 	stream.junctions = js
 
 
@@ -241,6 +255,9 @@ func _physics_process(delta: float) -> void:
 			_town_timer = 1.3
 			_pull_out()
 	AdventureJunctions.clock += delta
+	var bt := Perf.t0()
+	bikers.step(delta)
+	Perf.add("adv_bikers", bt)
 	var st := Perf.t0()
 	stream.step(delta)
 	Perf.add("traffic", st)   # the driving and drawing, inside adv_traffic
@@ -249,6 +266,7 @@ func _physics_process(delta: float) -> void:
 		if _send_timer <= 0.0:
 			_send_timer = SEND_EVERY
 			var pack := stream.pack()
+			pack.append_array(bikers.pack())
 			pack.append_array([AdventureJunctions.clock, CLOCK_TAG])
 			Net.send_adv_traffic(pack)
 	Perf.add("adv_traffic", pt)
@@ -260,12 +278,15 @@ func _find_riders() -> void:
 	var spots: Array = world.focus.call()
 	var foci := []
 	var blockers := []
+	rider_spots = []
 	for k in spots.size():
 		var hit := world.locate_local(spots[k], "traffic%d" % k)
 		if hit.is_empty() or absf(float(hit["lat"])) > 60.0:
+			rider_spots.append([])
 			continue
 		var s := float(hit["s"])
 		var lat := float(hit["lat"])
+		rider_spots.append([s, lat])
 		if foci.all(func(f): return absf(float(f) - s) > GROUP):
 			foci.append(s)
 		var hw := world.route.width_at_s(s) * 0.5
@@ -330,7 +351,7 @@ func _watch_bikes() -> void:
 
 
 func _on_bike_hit(body: Node, b: Bike) -> void:
-	if is_instance_valid(b) and is_inside_tree() and body.is_in_group("road_traffic") and body.get_parent() == stream \
+	if is_instance_valid(b) and is_inside_tree() and body.is_in_group("road_traffic") and (body.get_parent() == stream or body.get_parent() == bikers) \
 			and float(b.get_meta("traffic_speed", 0.0)) > CRASH_SPEED and not b.is_crashed:
 		b.crash()
 
@@ -344,4 +365,4 @@ func _on_net(state: PackedFloat32Array) -> void:
 		var off := theirs - AdventureJunctions.clock
 		AdventureJunctions.clock += off if absf(off) > 1.0 else off * 0.3
 		state = state.slice(0, state.size() - 2)
-	stream.unpack(state)
+	stream.unpack(bikers.unpack_tail(state))

@@ -5,22 +5,36 @@ extends RefCounted
 ## the crew (Shed.emoted) and the other players see your figure do it (RemotePlayer). A ping
 ## makes your figure point at what you pinged, too.
 ##
+## On a bike there are two more (RIDING): a nod to a biker you pass, and a wave with the left
+## hand off the bar (hold the nod button). They go round the crew the same way, and the rider on
+## your bike does them on everyone's screen (BikeModel.gesture).
+##
 ## A pose is where each arm points, from its shoulder, in the figure's own space (it faces -Z,
 ## +X is its right): see pose().
 
 const LIST: Array[String] = ["wave", "thumbs", "point", "shrug", "cheer", "dance"]
-const NAMES := {"wave": "Wave", "thumbs": "Thumbs up", "point": "Point", "shrug": "Shrug", "cheer": "Cheer", "dance": "Dance"}
+## The ones a rider does on the bike.
+const RIDING: Array[String] = ["nod", "ride_wave"]
+const NAMES := {"wave": "Wave", "thumbs": "Thumbs up", "point": "Point", "shrug": "Shrug", "cheer": "Cheer", "dance": "Dance",
+	"nod": "Nod", "ride_wave": "Wave"}
 ## How it reads in the HUD: "Simon waves", "You wave".
-const VERBS := {"wave": "waves", "thumbs": "gives a thumbs up", "point": "points", "shrug": "shrugs", "cheer": "cheers", "dance": "dances"}
-const YOU := {"wave": "You wave", "thumbs": "Thumbs up", "point": "You point", "shrug": "You shrug", "cheer": "You cheer", "dance": "You dance"}
+const VERBS := {"wave": "waves", "thumbs": "gives a thumbs up", "point": "points", "shrug": "shrugs", "cheer": "cheers", "dance": "dances",
+	"nod": "nods", "ride_wave": "waves"}
+const YOU := {"wave": "You wave", "thumbs": "Thumbs up", "point": "You point", "shrug": "You shrug", "cheer": "You cheer", "dance": "You dance",
+	"nod": "You nod", "ride_wave": "You wave"}
 ## How long each one plays, in seconds.
-const LENGTH := {"wave": 2.4, "thumbs": 2.0, "point": 2.6, "shrug": 1.8, "cheer": 2.4, "dance": 4.0}
+const LENGTH := {"wave": 2.4, "thumbs": 2.0, "point": 2.6, "shrug": 1.8, "cheer": 2.4, "dance": 4.0, "nod": 0.7, "ride_wave": 2.0}
 ## The time it takes to swing into a pose and back out of it.
 const BLEND := 0.25
 
 
 static func is_emote(e: String) -> bool:
-	return LIST.has(e)
+	return LIST.has(e) or RIDING.has(e)
+
+
+## Whether it's one a rider does on the bike (see RIDING).
+static func is_riding(e: String) -> bool:
+	return RIDING.has(e)
 
 
 ## The input action that does an emote straight away ("emote_wave").
@@ -98,3 +112,19 @@ static func arm_turn(right: bool, dir: Vector3) -> Quaternion:
 	if from.dot(to) < -0.999:
 		return Quaternion(Vector3.RIGHT, PI)
 	return Quaternion(from, to)
+
+
+## A rider's gesture on the bike `t` seconds in (see RIDING): {nod: the head's dip forward (rad),
+## arm: where the left arm points from its shoulder in the bike's space (Vector3.ZERO to keep
+## the hand on the bar), w: how far into it, 0..1}.
+static func riding_pose(e: String, t: float) -> Dictionary:
+	var p := {"nod": 0.0, "arm": Vector3.ZERO, "w": weight(e, t)}
+	match e:
+		"nod":
+			# One dip of the head and back up.
+			p["nod"] = 0.32 * sin(clampf(t / float(LENGTH["nod"]), 0.0, 1.0) * PI)
+		"ride_wave":
+			# The left hand up off the bar and out to the side, the palm swinging a little.
+			p["arm"] = Vector3(-0.75, 0.5 + 0.12 * sin(t * 8.0), -0.4).normalized()
+			p["nod"] = 0.08 * float(p["w"])
+	return p

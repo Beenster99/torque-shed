@@ -5,6 +5,7 @@ extends Node
 const MAP_SEED := 1234
 const GET_OFF_SPEED := 2.0
 const GET_OFF_DELAY := 0.6  # seconds after getting on before the same button gets you off
+const DIRT_SHOW_EVERY := 5  # ride stats (a second apart) between redraws of the muck on your bike
 
 var world: World
 var workshop: Workshop
@@ -47,6 +48,7 @@ var _dirt_km := 0.0
 var _lap_seen := []           # the ride logger's lap counter: stretches of the test route passed (see ContractTestRide.lap_step)
 var _laps := 0               # laps of it since the last ride stats went
 var _fly_km := 0.0         # distance at speed since the last stats, for dead flies on the front
+var _dirt_shown := 0       # ride stats sent since the muck on your bike was last redrawn
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
 var _was_bottomed := [false, false]   # each wheel's suspension bottomed last frame (a kerb or pothole hit)
 var _flat_told := [false, false]      # told the rider this tyre has gone flat, this ride
@@ -70,6 +72,11 @@ const KEY_LEAN_ON := 1.25
 ## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
 var _safe_xf := Transform3D()
 var _neutral_hint_at := 0   # ticks: when the "in neutral" hint may show again
+## The nod button held on the bike (s), and whether this hold has become a wave yet.
+var _nod_held := 0.0
+var _waved := false
+## Held this long (s), the nod button raises the left hand in a wave instead.
+const WAVE_HOLD := 0.35
 var _fade: ColorRect        # the black that fades in and out going back to the garage
 var _going_home := false
 ## The bike you've just got off, and when (ticks, ms): online the shed still has you on it
@@ -605,7 +612,9 @@ func _on_shed_changed() -> void:
 	if not in_session:
 		return
 	trip.sync()
-	workshop.sync_state()
+	if not trip.on_trip():
+		# (Out on an adventure the shed's hidden and still: it's put right on the way home.)
+		workshop.sync_state()
 	_refit_ridden_bikes()
 	_sync_faults()
 	if Recovery.driver() == Shed.me() and not recovery.driving and bike == null and not recovery.just_left(true):
@@ -790,6 +799,8 @@ func _stop_riding() -> void:
 		_left_bike = riding_id
 		_left_at = Time.get_ticks_msec()
 	riding_id = 0
+	camera.look_back = false
+	_nod_held = 0.0
 	if bike:
 		bike.queue_free()
 		bike = null
@@ -856,7 +867,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if recovery.driving:
 		if recovery.drive_input(event):
 			get_viewport().set_input_as_handled()
-		elif event.is_action_pressed("ping"):
+		elif event.is_action_pressed("ride_ping"):
 			PingMarker.ping_from(camera, [recovery.car.get_rid()])
 		return
 	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"):
@@ -875,7 +886,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not fuelled and Time.get_ticks_msec() - _mounted_at >= GET_OFF_DELAY * 1000.0:
 			_get_off()
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("alt_act") and trip.on_trip():
+	elif event.is_action_pressed("tow") and trip.on_trip():
 		_tow_button()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("respawn"):
@@ -893,9 +904,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		bike.shift_down()
 	elif event.is_action_pressed("headlight"):
 		hud.flash("Headlight: %s" % bike.cycle_beam(), 1.2)
-	elif event.is_action_pressed("ping"):
+	elif event.is_action_pressed("ride_ping"):
 		PingMarker.ping_from(camera, [bike.get_rid()])
-	elif event.is_action_pressed("stopwatch") and walker:
+	elif event.is_action_pressed("stopwatch") and walker and not event is InputEventJoypadButton:
+		# On a pad the stopwatch's D-pad left is the horn on the bike: P (or its key) here.
 		walker.stopwatch.start_stop()
 		Sfx.play_at("beep", camera.global_position, -6.0)
 	elif event.is_action_pressed("satnav_hud"):
@@ -950,6 +962,10 @@ func _physics_process_body(delta: float) -> void:
 			# Tired out on an adventure the bars answer slower (see AdventureNeedsView.steer).
 			bike.lean_input = trip.needs.steer(_steer_input(stick.x, delta), delta)
 			bike.body_shift = clampf(Input.get_axis("body_back", "body_forward") - stick.y, -1.0, 1.0)
+			bike.clutch_in = Input.is_action_pressed("clutch")
+			# LB and RB together start the engine (Controls.PAD_CHORDS): no look back meanwhile.
+			camera.look_back = Input.is_action_pressed("look_back") and not Controls.chord_held()
+			_nod_step(delta)
 			# The right stick swings the camera round, as the mouse does.
 			var look := Controls.stick(true)
 			if look != Vector2.ZERO:
@@ -960,11 +976,16 @@ func _physics_process_body(delta: float) -> void:
 			bike.body_shift = 0.0
 			bike.front_brake = 1.0
 			bike.rear_brake = 1.0
+			bike.clutch_in = false
+			camera.look_back = false
+			_nod_held = 0.0
 		bike.auto_shift = Settings.auto_shift
 		camera.recentre = Settings.camera_recentre
 		bike.assist = Settings.assist
 		bike.direct_bars = Settings.direct_bars
 		bike.horn = active and Input.is_action_pressed("horn")
+		if bike.model:
+			bike.model.look_back = 1.0 if camera.look_back else 0.0
 		audio.rpm = bike.rpm
 		audio.gear = bike.gear
 		audio.throttle = bike.sound_load()
@@ -1093,9 +1114,12 @@ func _send_ride_stats() -> void:
 	_ride_km = 0.0
 	_dirt_km = 0.0
 	_fly_km = 0.0
-	# The muck builds up on the bike as you ride (as the shed has it: a moment behind online).
+	# The muck builds up on the bike as you ride (as the shed has it: a moment behind online),
+	# redrawn every few seconds: it builds up slowly, and redrawing it is a few ms.
 	var riding := Shed.riding(Shed.me())
-	if riding != 0 and Shed.bikes.has(riding) and bike.model:
+	_dirt_shown += 1
+	if riding != 0 and Shed.bikes.has(riding) and bike.model and _dirt_shown >= DIRT_SHOW_EVERY:
+		_dirt_shown = 0
 		bike.model.show_dirt(Dirt.of_bike(riding))
 
 
@@ -1112,7 +1136,7 @@ func _puncture_rolls(km: float) -> void:
 		if not w["contact"] or bike.heat.leak[i] > 0.0:
 			continue
 		if Puncture.ride_punctures(str(w.get("surface", bike.surface)), km, randf()) \
-				or (hit and Puncture.hit_punctures(bike.speed, randf())):
+				or (hit and Puncture.hit_punctures(bike.speed, randf(), float(w.get("bottom_hit", 0.0)))):
 			var kind := Puncture.kind_of_roll(randf())
 			bike.heat.leak[i] = Puncture.rate_of_kind(kind)
 			Shed.request({"a": "puncture", "side": "front" if i == 0 else "rear", "kind": kind})
@@ -1141,11 +1165,11 @@ func _roadside_step(km: float, delta: float) -> void:
 		bike.model.set_rider_visible(false)   # walking beside it
 	var hint := ""
 	if int(Shed.bikes[riding_id].get("tow", 0)) != 0:
-		hint = "On the tow strap to the next stop   ·   {work2}: let it go"
+		hint = "On the tow strap to the next stop   ·   {tow}: let it go"
 	elif bike.pushing:
 		hint = "Pushing it: {throttle} to walk it along   ·   {interact}: stop and stand it up"
 	elif absf(bike.speed) < 2.0 and not bike.is_crashed and (Roadside.dead(riding_id) or not Roadside.active(riding_id).is_empty()):
-		hint = "{interact}: get off and fix it at the roadside   ·   {work2}: ask a mate for a tow"
+		hint = "{interact}: get off and fix it at the roadside   ·   {tow}: ask a mate for a tow"
 	hud.ride_hint = hint
 	Perf.add("roadside", pt)
 
@@ -1251,8 +1275,37 @@ func _tow_step(delta: float) -> void:
 			hud.flash("At the stop: the tow strap's off.", 3.0)
 
 
-## The second work button while riding on an adventure: ask the nearest mate on a bike for a
-## tow (or let the strap go).
+## The nod button on the bike: a tap nods to a biker you're passing, held it's a wave with the
+## left hand off the bar (as soon as it's held long enough, WAVE_HOLD).
+func _nod_step(delta: float) -> void:
+	if Input.is_action_pressed("nod"):
+		_nod_held += delta
+		if _nod_held >= WAVE_HOLD and not _waved:
+			_waved = true
+			rider_gesture("ride_wave")
+	elif _nod_held > 0.0:
+		if not _waved:
+			rider_gesture("nod")
+		_nod_held = 0.0
+		_waved = false
+
+
+## Your rider nods or waves (see Emotes.RIDING): on your own bike now, and for the crew to see on
+## theirs. A biker in the traffic near you might nod back.
+func rider_gesture(e: String) -> void:
+	if bike == null or bike.is_crashed:
+		return
+	if bike.model:
+		bike.model.gesture(e)
+	Shed.request({"a": "emote", "e": e})
+	if traffic:
+		traffic.nod_back(bike.global_position)
+	# And on an adventure, the bikers on the road near you.
+	AdventureBikers.nod_back(bike.global_position, e == "ride_wave")
+
+
+## The tow button while riding on an adventure: ask the nearest mate on a bike for a tow (or let
+## the strap go).
 func _tow_button() -> void:
 	if Shed.check(Shed.me(), {"a": "roadside_untow"}) == "":
 		Shed.request({"a": "roadside_untow"})
@@ -1431,7 +1484,8 @@ func _on_emote(peer: int, d: Dictionary) -> void:
 	if not Emotes.is_emote(e):
 		return
 	if peer == Shed.me():
-		hud.flash(str(Emotes.YOU[e]), 1.2)
+		if not Emotes.is_riding(e):   # your own rider nodding or waving says it already
+			hud.flash(str(Emotes.YOU[e]), 1.2)
 		return
 	if remotes.has(peer):
 		remotes[peer].play_emote(e, d.get("at"))

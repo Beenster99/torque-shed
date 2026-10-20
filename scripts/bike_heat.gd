@@ -48,7 +48,8 @@ const PADS := {
 }
 const FADE_SPAN := 180.0        # °C past the fade point to the worst of the fade
 const FADE_LOSS := 0.45         # ... losing this much bite
-const DRUM_FADE := 240.0        # a drum's shoes fade early, cooking inside the drum
+const DRUM_FADE := 270.0        # a drum's shoes fade early, cooking inside the drum
+const DISC_AIRFLOW := 10.0      # W/m²K per (m/s)^0.8: how the air riding past cools a disc (see _brake_step)
 ## How much of the effects Riding realism 1 takes away (0 keeps them whole, realism 0 always does).
 const SOFTEN := 0.75
 ## The engine: liquid-cooled by coolant temperature, air-cooled by head temperature, °C.
@@ -155,11 +156,13 @@ static func disc_capacity(disc: Dictionary) -> float:
 	return (float(disc.get("mass", 1.0)) + 0.5) * 480.0
 
 
-## The area a disc sheds its heat from, m²: both faces of its braking ring, or a drum's outside.
+## The area a disc sheds its heat from, m²: both faces of its braking ring, or a drum's outside:
+## the drum itself and the hub's two faces either side of it (half of them out in the air, the
+## brake plate covering the rest), the casting a drum's heat soaks into.
 static func disc_area(disc: Dictionary) -> float:
 	var d := float(disc.get("diameter", 280.0)) / 1000.0
 	if str(disc.get("style", "")) == "drum":
-		return PI * d * 0.06
+		return PI * d * 0.06 + PI * pow(d * 0.5, 2.0)
 	return TAU * maxf(pow(d * 0.5, 2.0) - pow(d * 0.5 - 0.04, 2.0), 0.01)
 
 
@@ -357,9 +360,11 @@ func step(bike: Bike, delta: float) -> void:
 		var on: bool = w["contact"] and not bike.is_crashed
 		_tyre_step(i, delta, v, float(w.get("p_slip", 0.0)) if on else 0.0, float(w.get("p_roll", 0.0)) if on else 0.0,
 			on, Weather.wetness())
-		# The brake's work: its torque against the wheel's spin (a locked wheel heats the tyre instead).
+		# The brake's work: the torque it really put through the wheel against the wheel's spin (a
+		# locked wheel heats the tyre instead). Not the lever's full squeeze: a rider (or ABS)
+		# holding a hard stop at the tyre's limit only uses what the tyre grips.
 		var omega := absf(float(w["omega"]))
-		var p := float(w["brake_torque"]) * omega if omega > 0.5 else 0.0
+		var p := float(w.get("brake_used", w["brake_torque"])) * omega if omega > 0.5 else 0.0
 		_brake_step(i, delta, v, p)
 	_engine_step(delta, v, bike.rpm, bike.engine_kw, bike.engine_on)
 	_update_effects(bike.assist, delta)
@@ -412,12 +417,15 @@ func _tyre_step(i: int, dt: float, v: float, p_slip: float, p_roll: float, touch
 
 
 ## A brake: the disc (or drum) takes the braking work and sheds it to the air; the pads follow it.
+## Riding, the disc spins in the airstream and pumps air across its faces: at 60 mph it sheds
+## about 150 W per m² per degree, so ordinary riding (slowing for bends and junctions) keeps it
+## well short of fading, and a hot disc is back down within a minute or two of riding on.
 func _brake_step(i: int, dt: float, v: float, p: float) -> void:
 	var td := discs[i]
 	var tp := pads[i]
 	var tk := td + KELVIN
 	var ta := air + KELVIN
-	var cool := (10.0 + 6.0 * pow(v, 0.8)) * _disc_area[i] * _disc_cool[i] * (td - air) \
+	var cool := (10.0 + DISC_AIRFLOW * pow(v, 0.8)) * _disc_area[i] * _disc_cool[i] * (td - air) \
 		+ 0.5 * 5.67e-8 * _disc_area[i] * (tk * tk * tk * tk - ta * ta * ta * ta)
 	var link := 8.0 * (td - tp)
 	discs[i] = td + (0.92 * p - cool - link) * dt / _disc_c[i]

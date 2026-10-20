@@ -421,6 +421,9 @@ func _run_all() -> void:
 	_test_staff_exotic_paint()
 	await _test_staff_save()
 	await _test_staff_session()
+	_test_staff_trips_walls()
+	_test_staff_trips_nearest()
+	_test_staff_trips_flatbed()
 	print("Simon's 18 October round (v0.10.0): polishing and ceramic coating in the wash bay, and detailing jobs")
 	_test_detail_rules()
 	_test_detail_contract()
@@ -518,6 +521,13 @@ func _run_all() -> void:
 	await _test_adv_roads_lights_cycle()
 	await _test_adv_roads_traffic_stops()
 	await _test_adv_roads_traffic_turns()
+	print("Other bikers on adventures (v0.18.0): solo and in groups both ways, riding with the crew, peeling off, nods and waves")
+	await _test_adv_bikers_spawn()
+	await _test_adv_bikers_join()
+	await _test_adv_bikers_peel()
+	await _test_adv_bikers_nods()
+	await _test_adv_bikers_sync()
+	await _test_adv_bikers_cost()
 	await _test_adv_roads_police_red()
 	await _test_adv_roads_chunk_cost()
 	print("Order one of these, and copy its blueprint (v0.16.0): any bike looked at, the cafes' bikes, parked bikes with real builds")
@@ -525,6 +535,8 @@ func _run_all() -> void:
 	_test_bike_copy_blueprint()
 	_test_bike_copy_sources()
 	await _test_bike_copy_session()
+	_test_bike_copy_quality()
+	await _test_bike_copy_quality_card()
 	print("Trip computer and the Adventure Diary (v0.16.0): the sat nav's trip page, the crew's highlights, photos without a stutter, the diary book")
 	_test_adv_diary_trip_maths()
 	await _test_adv_diary_trip_page()
@@ -542,6 +554,20 @@ func _run_all() -> void:
 	await _test_realism_launches()
 	await _test_realism_stops()
 	await _test_realism_corners()
+	print("Riding controls (v0.18.0): the new pad layout, the tow on T, the clutch, nod and wave, look back, LB + RB to start")
+	await _test_controls_layout()
+	await _test_controls_clutch()
+	await _test_controls_nod_wave()
+	await _test_controls_look_back()
+	print("Riding on adventures (v0.18.0): brakes after a long ride, how often things go wrong, sharp turns slow")
+	await _test_adv_ride_brakes()
+	_test_adv_ride_descent_fade()
+	_test_adv_ride_breakdown_odds()
+	await _test_adv_ride_tight_turns()
+	print("Simon's v0.17.0 round: adventures without stutters or long triangles")
+	await _test_adv_perf_triangles()
+	await _test_adv_perf_ride()
+	await _test_adv_perf_ride_stats()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -4933,8 +4959,8 @@ func _test_key_bindings() -> void:
 	check(tab.warning().contains("Right mouse") and tab.warning().contains("Ping") and tab.warning().contains("on foot"),
 		"the Key bindings tab warns about it (%s)" % tab.warning())
 	Settings.rebind("ping", _key(KEY_G))
-	Settings.rebind("horn", _key(KEY_N))
-	check(Settings.clashes().is_empty(), "a key that names a bike on foot can sound the horn when riding: no clash")
+	Settings.rebind("horn", _key(KEY_O))
+	check(Settings.clashes().is_empty(), "a key that orders a bike on foot can sound the horn when riding: no clash")
 	Settings.rebind("spray_finish", _key(KEY_G))
 	check(Settings.clashes().any(func(c): return [c["a"], c["b"]].has("spray_finish") and [c["a"], c["b"]].has("ping")),
 		"a spray key clashes with an on-foot one")
@@ -5090,14 +5116,14 @@ func _test_hints_follow_device() -> void:
 	check(Controls.using_pad, "a pad button means the pad")
 	var on_pad: Array = samples.call()
 	check(on_pad[0] == "Press Y to get up." and on_pad[1] == "Close (B)" and str(on_pad[2]).contains("Hold RT")
-		and str(on_pad[3]).contains("Y: step back") and str(on_pad[4]).contains("Left stick") and on_pad[5] == "D-pad up" and on_pad[6] == "Left stick",
+		and str(on_pad[3]).contains("Y: step back") and str(on_pad[4]).contains("Left stick") and on_pad[5] == "LB + RB" and on_pad[6] == "Left stick",
 		"pad hints, the flash and the label already up changed too: %s" % " | ".join(on_pad))
 	var changed := 0
 	for i in on_keys.size():
 		if on_keys[i] != on_pad[i]:
 			changed += 1
 	check(changed == on_keys.size(), "every sampled hint changed (%d of %d)" % [changed, on_keys.size()])
-	check(Controls.key("throttle") == "RT" and Controls.key("front_brake") == "LT" and Controls.key("ignition") == "D-pad up"
+	check(Controls.key("throttle") == "RT" and Controls.key("front_brake") == "LT" and Controls.key("ignition") == "LB + RB"
 		and Controls.key("rename") == "N", "riding keys on the pad, and a key with no pad button still shows its key (%s)" % Controls.key("rename"))
 	# A small nudge of the mouse doesn't switch back; moving it does, and so does a stick past its deadzone.
 	var nudge := InputEventMouseMotion.new()
@@ -9528,8 +9554,9 @@ func _test_gear_seen_by_others() -> void:
 	check(dressed._rider != null and dressed._rider.get_child_count() > plain._rider.get_child_count(),
 		"a rider in race gear on a bike is drawn with it (%d meshes, plain %d)" % [dressed._rider.get_child_count(), plain._rider.get_child_count()])
 	var helmeted := 0
-	for c in dressed._rider.get_children():
-		if c is VisualInstance3D and (c as VisualInstance3D).layers == 1 << (BikeModel.HELMET_LAYER - 1):   # the foot-down markers are bare Node3Ds
+	# The helmet and the left arm sit on pivots of their own (to nod and wave), so look all the way down.
+	for c in dressed._rider.find_children("*", "VisualInstance3D", true, false):
+		if (c as VisualInstance3D).layers == 1 << (BikeModel.HELMET_LAYER - 1):
 			helmeted += 1
 	check(helmeted >= 4, "your own helmet, torso and upper arms stay out of the first-person view (%d)" % helmeted)
 	# Someone else's rider: all of them in your first-person view, plain or in gear.
@@ -22057,6 +22084,14 @@ func _test_bike_copy_session() -> void:
 	await _bike_copy().test_session()
 
 
+func _test_bike_copy_quality() -> void:
+	_bike_copy().test_quality()
+
+
+func _test_bike_copy_quality_card() -> void:
+	await _bike_copy().test_quality_card()
+
+
 
 # ---------------------------------------------------------------------------- trip computer and the Adventure Diary (tests/adventure_diary_tests.gd)
 
@@ -22131,3 +22166,113 @@ func _test_realism_stops() -> void:
 
 func _test_realism_corners() -> void:
 	await _realism().test_corners()
+
+
+# ---------------------------------------------------------------------------- riding controls (tests/controls_tests.gd)
+
+func _controls_t() -> RefCounted:
+	return load("res://tests/controls_tests.gd").new(self)
+
+
+func _test_controls_layout() -> void:
+	await _controls_t().test_layout()
+
+
+func _test_controls_clutch() -> void:
+	await _controls_t().test_clutch()
+
+
+func _test_controls_nod_wave() -> void:
+	await _controls_t().test_nod_wave()
+
+
+func _test_controls_look_back() -> void:
+	await _controls_t().test_look_back_and_chord()
+
+
+# ---------------------------------------------------------------------------- riding on adventures (tests/adventure_ride_tests.gd)
+
+func _adv_ride() -> RefCounted:
+	return load("res://tests/adventure_ride_tests.gd").new(self)
+
+
+func _test_adv_ride_brakes() -> void:
+	await _adv_ride().test_brakes()
+
+
+func _test_adv_ride_descent_fade() -> void:
+	_adv_ride().test_descent_fade()
+
+
+func _test_adv_ride_breakdown_odds() -> void:
+	_adv_ride().test_breakdown_odds()
+
+
+func _test_adv_ride_tight_turns() -> void:
+	await _adv_ride().test_tight_turns()
+
+
+# ---------------------------------------------------------------------------- staff trips for parts (tests/staff_trips_tests.gd)
+
+func _staff_trips() -> RefCounted:
+	return load("res://tests/staff_trips_tests.gd").new(self)
+
+
+func _test_staff_trips_walls() -> void:
+	_staff_trips().test_walls()
+
+
+func _test_staff_trips_nearest() -> void:
+	_staff_trips().test_nearest_stock()
+
+
+func _test_staff_trips_flatbed() -> void:
+	_staff_trips().test_flatbed_kit()
+
+
+# ---------------------------------------------------------------------------- other bikers on adventures (tests/adventure_bikers_tests.gd)
+
+func _adv_bikers() -> RefCounted:
+	return load("res://tests/adventure_bikers_tests.gd").new(self)
+
+
+func _test_adv_bikers_spawn() -> void:
+	await _adv_bikers().test_spawn()
+
+
+func _test_adv_bikers_join() -> void:
+	await _adv_bikers().test_join()
+
+
+func _test_adv_bikers_peel() -> void:
+	await _adv_bikers().test_peel()
+
+
+func _test_adv_bikers_nods() -> void:
+	await _adv_bikers().test_nods()
+
+
+func _test_adv_bikers_sync() -> void:
+	await _adv_bikers().test_sync()
+
+
+func _test_adv_bikers_cost() -> void:
+	await _adv_bikers().test_cost()
+
+
+# ---------------------------------------------------------------------------- adventure stutters and long triangles (tests/adventure_perf_tests.gd)
+
+func _adv_perf() -> RefCounted:
+	return load("res://tests/adventure_perf_tests.gd").new(self)
+
+
+func _test_adv_perf_triangles() -> void:
+	await _adv_perf().test_triangles()
+
+
+func _test_adv_perf_ride() -> void:
+	await _adv_perf().test_ride()
+
+
+func _test_adv_perf_ride_stats() -> void:
+	await _adv_perf().test_ride_stats()

@@ -23,10 +23,13 @@ var active_device := -1
 var using_pad := false
 var _rest := {}          # device -> {axis: resting value}
 var _bound := []         # [weakref to a node, property] whose text follows the device (see bind_text)
+var _pad_down := {}      # pad buttons held now, for the chords (see PAD_CHORDS)
+var _chord := ""         # the chord held now (its action), "" when none
 
 
 func _ready() -> void:
 	Input.joy_connection_changed.connect(func(device: int, connected: bool):
+		_pad_down.clear()
 		if connected:
 			_rest.erase(device)
 		elif device == active_device:
@@ -35,10 +38,12 @@ func _ready() -> void:
 				set_using_pad(false))
 	# Every event passes the window before any node sees it, so a handled key still counts.
 	get_tree().root.window_input.connect(_note_device)
+	get_tree().root.window_input.connect(_note_chord)
 	device_changed.connect(_rebind_texts)
 
 
 func _input(event: InputEvent) -> void:
+	_note_chord(event)
 	if event is InputEventJoypadButton and event.pressed:
 		active_device = event.device
 	elif event is InputEventJoypadMotion:
@@ -86,7 +91,11 @@ func set_using_pad(pad: bool) -> void:
 ## and front brake; the left stick walks and leans.
 const PAD_FIXED := {"throttle": "RT", "front_brake": "LT"}
 const PAD_STICKS := {"move_forward": "Left stick", "move_back": "Left stick", "move_left": "Left stick",
-	"move_right": "Left stick", "lean_left": "Left stick", "lean_right": "Left stick"}
+	"move_right": "Left stick", "lean_left": "Left stick", "lean_right": "Left stick",
+	"body_back": "Left stick", "body_forward": "Left stick"}
+## Pad buttons pressed together for an action of their own: LB and RB start the engine (each on
+## its own is the clutch and the look over your shoulder). Fixed, as the sticks are.
+const PAD_CHORDS := {"ignition": [JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER]}
 ## Hint names that aren't one rebindable action: [keyboard and mouse, controller].
 const VIRTUAL := {"look": ["Mouse", "Right stick"], "aim": ["Mouse", "Right stick"],
 	"scroll": ["Mouse wheel", "LB / RB"]}
@@ -118,11 +127,57 @@ func key(action: String, pad := using_pad) -> String:
 		return PAD_FIXED[action]
 	var label := _first_label(action, pad)
 	if label == "" and pad:
-		label = str(PAD_STICKS.get(action, ""))
+		label = fixed_pad(action)
 	if label == "":
 		# Nothing on this device: the other device's binding is still the way to do it.
 		label = _first_label(action, not pad)
 	return label if label != "" else "-"
+
+
+## What the pad does an action with that isn't a button of its own: a chord ("LB + RB"), a
+## trigger ("RT") or a stick ("Left stick"); "" when it has none.
+func fixed_pad(action: String) -> String:
+	if PAD_CHORDS.has(action):
+		return " + ".join(PAD_CHORDS[action].map(func(b): return str(Settings.PAD_NAMES.get(b, b))))
+	return str(PAD_FIXED.get(action, PAD_STICKS.get(action, "")))
+
+
+## Whether a chord's buttons are held (see PAD_CHORDS): from the press that made it till all of
+## them are let go, so the buttons' own actions (the look back) can stand aside meanwhile.
+func chord_held() -> bool:
+	return _chord != ""
+
+
+## Watches the pad buttons for a chord: the last of its buttons going down does its action, as if
+## its own button had been pressed. Called from both the window and _input (the same press only
+## counts once), so a press a node has handled still counts.
+func _note_chord(event: InputEvent) -> void:
+	if not event is InputEventJoypadButton:
+		return
+	var b: int = (event as InputEventJoypadButton).button_index
+	if not event.pressed:
+		_pad_down.erase(b)
+		if _chord != "" and not PAD_CHORDS[_chord].any(func(c): return _pad_down.has(c)):
+			_chord = ""
+		return
+	if _pad_down.has(b):
+		return
+	_pad_down[b] = true
+	for action in PAD_CHORDS:
+		var chord: Array = PAD_CHORDS[action]
+		if chord.has(b) and chord.all(func(c): return _pad_down.has(c)):
+			_chord = action
+			_press_action.call_deferred(action)
+
+
+## The action pressed and let go again, through the input like a real button.
+func _press_action(action: String) -> void:
+	for down in [true, false]:
+		var ev := InputEventAction.new()
+		ev.action = action
+		ev.pressed = down
+		ev.strength = 1.0 if down else 0.0
+		Input.parse_input_event(ev)
 
 
 ## Two actions' labels for a pair of hints: "Q / E", "LB / RB".

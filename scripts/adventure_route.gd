@@ -1747,6 +1747,60 @@ static func _way_eq(fk: Dictionary, way: Dictionary, k: int) -> int:
 ## Builds the path's arrays from the default path and the ways chosen (choices): the road between
 ## forks as planned, and at each fork the way taken. Its sites get their places along it.
 func _assemble() -> void:
+	_assemble_path()
+	_assemble_sites()
+
+
+## A copy of this route holding only what putting its path together reads (the default path,
+## the forks' ways, the tunnels), with the ways picked at forks `picks` ({fork: way}): its
+## _assemble_path can run on a worker thread while this route is still ridden and built on (it
+## takes a tenth of a second and more on a long road: on the main thread that was a hitch for
+## everyone at once, as the crew's pick reached them all together). Then hand it to take_path.
+func path_copy(picks: Dictionary) -> AdventureRoute:
+	var r := AdventureRoute.new()
+	r._def = _def
+	r.forks = forks
+	r.tunnels = tunnels
+	r.choices = choices.duplicate()
+	for f in picks:
+		if int(f) >= 0 and int(f) < forks.size():
+			r.choices[int(f)] = clampi(int(picks[f]), 0, forks[int(f)]["ways"].size() - 1)
+	return r
+
+
+## Takes the path a path_copy put together (on the main thread, with nothing building on the route
+## meanwhile): its ways are decided for good, and the sites go to their places along it.
+func take_path(r: AdventureRoute, picks: Dictionary) -> void:
+	for f in picks:
+		if int(f) >= 0 and int(f) < forks.size():
+			choices[int(f)] = int(r.choices[int(f)])
+			decided[int(f)] = true
+	px = r.px
+	pz = r.pz
+	ph = r.ph
+	hd = r.hd
+	curv = r.curv
+	width = r.width
+	base = r.base
+	eq = r.eq
+	tun_k = r.tun_k
+	slope_k = r.slope_k
+	sections = r.sections
+	chunk_surface = r.chunk_surface
+	_layout = r._layout
+	total = r.total
+	surfaces = r.surfaces
+	tunnels_on = r.tunnels_on
+	_grid = r._grid
+	_reach_grid = r._reach_grid
+	_reach_lock.lock()
+	_reach_known = {}   # the road past the fork counts now (see land_reach)
+	_reach_lock.unlock()
+	_assemble_sites()
+
+
+## The path's arrays, its pieces, surfaces and tunnels, and its grids (see _assemble).
+func _assemble_path() -> void:
 	var d: Dictionary = _def
 	px = PackedFloat64Array()
 	pz = PackedFloat64Array()
@@ -1817,7 +1871,6 @@ func _assemble() -> void:
 			tunnels_on.append({"s0": k0 * STEP, "s1": k * STEP, "id": tun_k[k0]})
 		k += 1
 	_build_grid()
-	_assemble_sites()
 
 
 ## Appends the default path's knots a..b (inclusive), with their sections and the surfaces of

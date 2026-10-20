@@ -39,6 +39,7 @@ func _world(seed: int, km: float, spot: Dictionary, forks_open := false) -> Adve
 	var tr := AdventureTraffic.new()
 	w.add_child(tr)
 	tr.stream.rng.seed = seed * 31 + 7
+	tr.bikers._spawn_timer = INF   # just the traffic (the other bikers have tests of their own)
 	return tr
 
 

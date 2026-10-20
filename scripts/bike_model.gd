@@ -65,6 +65,23 @@ var _rear_wheel: Node3D
 var _flat_tyres := {}   # side -> the squashed tyre's mesh, held still as the wheel turns (see set_flat)
 var _swingarm: Node3D
 var _rider: Node3D
+## The rider's head (helmet) and left arm, each on a pivot of its own (at the neck and the left
+## shoulder) so the rider can nod, wave and look round (see gesture and look_back).
+var _rider_head: Node3D
+var _arm_left: Node3D
+var _arm_rest := Vector3.ZERO     # the left arm's line at rest, shoulder to grip, in the rider's space
+## The gesture under way on the bike (see Emotes.RIDING) and how far into it, in seconds.
+var _gesture := ""
+var _gesture_t := 0.0
+var _nod := 0.0                    # the head's dip forward now (rad)
+## How far the rider looks back over their left shoulder, 0 (ahead) .. 1 (right round).
+var look_back := 0.0:
+	set(v):
+		look_back = v
+		if v != 0.0:
+			set_process(true)
+const LOOK_BACK_YAW := 2.0
+var _look_shown := 0.0
 var _steer_axis := Vector3.UP
 var _head := Vector3.ZERO
 var _head_bottom := Vector3.ZERO
@@ -5050,6 +5067,7 @@ func _build_plain_rider() -> void:
 	var lid := _mesh_instance(_sphere(0.15), helmet, shoulders + Vector3(0.0, 0.2, -0.08), _rider)
 	var v := _mesh_instance(_sphere(0.1), visor, shoulders + Vector3(0.0, 0.2, -0.17), _rider)
 	v.scale = Vector3(1.1, 0.6, 0.5)
+	_rider_head = _make_pivot(shoulders + NECK, [lid, v], "Head")
 	var grip_l := _head + _grip_l
 	var grip_r := _head + _grip_r
 	# The first-person eye is the rider's own, inside the helmet, looking down the road over the
@@ -5062,10 +5080,14 @@ func _build_plain_rider() -> void:
 		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
 		var grip := grip_r if side > 0 else grip_l
 		var elbow := sh.lerp(grip, 0.5) + Vector3(0.08 * side, -0.06, 0.04)
+		var arm_from := _rider.get_child_count()
 		var upper := _tube(sh, elbow, 0.05, suit, Vector3.ONE, _rider)
 		upper.layers = hidden
 		_tube(elbow, grip, 0.045, suit, Vector3.ONE, _rider)
 		_mesh_instance(_sphere(0.045), gloves, grip, _rider)
+		if side < 0.0:
+			_arm_left = _make_pivot(sh, _rider.get_children().slice(arm_from), "ArmL")
+			_arm_rest = (grip - sh).normalized()
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
 		var knee := Vector3(0.19 * side, seat_y - 0.02, minf(hips.z - 0.36, lerpf(hips.z, _peg.z, 0.55)))
 		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
@@ -5095,7 +5117,9 @@ func _build_dressed_rider() -> void:
 	var shoulders := hips + Vector3(0.0, 0.5, -0.3)
 	var torso := RiderFigure.limb(_rider, hips, shoulders, 0.15, jm, hidden)
 	torso.basis = torso.basis * Basis.from_scale(Vector3(1.25, 1.0, 0.8))
+	var head_from := _rider.get_child_count()
 	RiderFigure.helmet(_rider, shoulders + Vector3(0.0, 0.2, -0.08), 0.15, str(worn["helmet"]), tint, hidden, true)
+	_rider_head = _make_pivot(shoulders + NECK, _rider.get_children().slice(head_from), "Head")
 	var back := (shoulders - hips).normalized().cross(Vector3.RIGHT)
 	if jx.has("hump"):
 		var hump := RiderFigure.mesh(_rider, RiderFigure.sphere(0.5), jm, shoulders.lerp(hips, 0.15) - back * 0.13, hidden)
@@ -5110,9 +5134,13 @@ func _build_dressed_rider() -> void:
 		var sh := shoulders + Vector3(0.19 * side, -0.04, 0.0)
 		var grip := grip_r if side > 0 else grip_l
 		var elbow := sh.lerp(grip, 0.5) + Vector3(0.08 * side, -0.06, 0.04)
+		var arm_from := _rider.get_child_count()
 		RiderFigure.limb(_rider, sh, elbow, 0.05, jm, hidden)
 		RiderFigure.limb(_rider, elbow, grip, 0.045, jm)
 		RiderFigure.glove(_rider, grip, elbow, 0.045, str(worn["gloves"]), tint)
+		if side < 0.0:
+			_arm_left = _make_pivot(sh, _rider.get_children().slice(arm_from), "ArmL")
+			_arm_rest = (grip - sh).normalized()
 		var hip := hips + Vector3(0.12 * side, -0.02, 0.0)
 		var knee := Vector3(0.19 * side, seat_y - 0.02, minf(hips.z - 0.36, lerpf(hips.z, _peg.z, 0.55)))
 		var peg := Vector3(_peg.x * side, _peg.y, _peg.z)
@@ -5195,6 +5223,77 @@ func _pose_foot() -> void:
 	transform = Transform3D(lean, c - lean * c) if foot_down > 0.0 else Transform3D()
 
 
+## Where the head turns from: the neck, from the rider's shoulders.
+const NECK := Vector3(0.0, 0.08, -0.04)
+
+
+## A pivot at `at` in the rider's space with `nodes` (the rider's own children) moved onto it
+## where they were, so turning the pivot turns them about that point.
+func _make_pivot(at: Vector3, nodes: Array, pivot_name: String) -> Node3D:
+	var pivot := Node3D.new()
+	pivot.name = pivot_name
+	pivot.position = at
+	_rider.add_child(pivot)
+	for n in nodes:
+		var n3 := n as Node3D
+		if n3 == null or n3 == pivot:
+			continue
+		var xf := n3.transform
+		_rider.remove_child(n3)
+		pivot.add_child(n3)
+		n3.transform = Transform3D(Basis(), -at) * xf
+	return pivot
+
+
+## The rider does a gesture on the bike: "nod" or "ride_wave" (see Emotes.RIDING). A new one
+## takes over from one under way.
+func gesture(e: String) -> void:
+	if not Emotes.is_riding(e):
+		return
+	_gesture = e
+	_gesture_t = 0.0
+	set_process(true)
+
+
+## The gesture under way, "" when there's none.
+func gesture_now() -> String:
+	return _gesture
+
+
+## How far the left hand is up off the bar now, 0..1 (for the tests).
+func wave_amount() -> float:
+	if _arm_left == null or _arm_rest == Vector3.ZERO:
+		return 0.0
+	var now := _arm_left.basis * _arm_rest
+	return clampf(_arm_rest.angle_to(now) / 1.2, 0.0, 1.0)
+
+
+func _ready() -> void:
+	set_process(_gesture != "" or look_back != 0.0)
+
+
+func _process(delta: float) -> void:
+	var p := {"nod": 0.0, "arm": Vector3.ZERO, "w": 0.0}
+	if _gesture != "":
+		_gesture_t += delta
+		p = Emotes.riding_pose(_gesture, _gesture_t)
+		if _gesture_t >= float(Emotes.LENGTH.get(_gesture, 1.0)):
+			_gesture = ""
+	_nod = float(p["nod"])
+	_look_shown = move_toward(_look_shown, look_back, delta * 5.0)
+	if _rider_head:
+		var yaw := LOOK_BACK_YAW * smoothstep(0.0, 1.0, _look_shown)
+		_rider_head.basis = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -_nod)
+	if _arm_left:
+		var arm: Vector3 = p["arm"]
+		var turn := Quaternion.IDENTITY
+		if arm != Vector3.ZERO and _arm_rest.dot(arm.normalized()) > -0.999:
+			turn = Quaternion(_arm_rest, arm.normalized())
+		_arm_left.basis = Basis(Quaternion.IDENTITY.slerp(turn, float(p["w"])))
+	if _gesture == "" and look_back == 0.0 and _look_shown == 0.0:
+		set_process(false)
+
+
 ## Dresses the rider again in `gear` (when its rider changes their gear mid-ride).
 func redress(gear: Dictionary) -> void:
 	rider_gear = gear
@@ -5254,6 +5353,10 @@ func update_pose_from(steer: float, spin_f: float, spin_r: float, comp_f: float,
 ## Where the rider's eyes are, looking down over the bars at the clocks, in the model's space.
 func eye_transform() -> Transform3D:
 	var at := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-21.0)), _eye)
+	if _rider_head and _nod != 0.0:
+		# Nodding, the eye dips with the head (looking back is the camera's own turn).
+		var neck := _rider_head.position
+		at = Transform3D(Basis(Vector3.RIGHT, -_nod), neck) * Transform3D(Basis(), -neck) * at
 	return (_rider.transform * at) if _rider else at
 
 

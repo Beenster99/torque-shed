@@ -22,6 +22,10 @@ const LONG_SLIP_SPEED := 3.0      # m/s: slip ratios are taken against at least 
 const LAT_SLIP_SPEED := 2.5       # and slip angles against at least this one
 const RELAX_SPEED := 4.0          # grip builds over the relaxation length, timed at no less than this speed
 const STEER_LOCK := deg_to_rad(38.0)
+## The tightest turn the input asks for (see tight_turn): this radius (m) at a crawl, opening out
+## by this much per (m/s)² of speed: under 4 m at 10 mph, about 5 m at 15 mph.
+const TIGHT_TURN := 2.4
+const TIGHT_TURN_OPEN := 0.065
 const HEAD_DAMPING := 1.2         # Nm per rad/s: the head bearings and the fork seals
 const ARM_DAMPING := 2.5          # Nm per rad/s: the rider's hands on the bars soak up a shake, at speed
 const ARM_DAMPING_SLOW := 12.0    # and at town speeds, working the bars firmly
@@ -93,6 +97,11 @@ const DONUT_RATE := 2.2           # rad/s: how fast a full-lock burnout swings t
 ## slower one click finds it (up from first, down from second); riding, a full click goes
 ## straight between first and second.
 const NEUTRAL := 0
+## The clutch lever: seconds to pull it in and to let it out, and how hard the drive pulls the
+## free revs round to the back wheel's as it bites (1/s, times how far it's out).
+const CLUTCH_PULL := 0.08
+const CLUTCH_LET_OUT := 0.35
+const CLUTCH_BITE := 25.0
 const NEUTRAL_FIND_SPEED := 2.0
 ## In neutral the engine spins only itself: it makes this share of its torque to do it (fuel, heat).
 const FREE_REV_LOAD := 0.12
@@ -133,6 +142,12 @@ var effects: BikeEffects
 
 # Simulation state, read by the HUD, camera, audio and network.
 var gear := 1               # 0 is neutral (NEUTRAL), then 1 .. build.gear_count()
+## The rider holding the clutch lever in (the clutch button): the engine spins free of the box,
+## in any gear at any speed, so the throttle blips the revs without driving the back wheel.
+var clutch_in := false
+## How far the lever is in now, 0 (out, the drive engaged) .. 1 (in, nothing driven): it's pulled
+## in over CLUTCH_PULL seconds and let out over CLUTCH_LET_OUT, biting as it comes out.
+var clutch := 0.0
 var rpm := 1000.0
 var steer := 0.0            # radians, + bars turned right
 var steer_vel := 0.0        # how fast the bars are turning, rad/s
@@ -316,6 +331,9 @@ func _make_wheel(is_front: bool, mount: Vector3, radius: float, travel: float, s
 		"spring": spring, "bump": bump, "rebound": rebound, "inertia": wheel_inertia,
 		"omega": 0.0, "spin": 0.0, "compression": 0.0, "contact": false, "load": 0.0,
 		"drive_torque": 0.0, "brake_torque": 0.0, "slip": 0.0, "surface": "tarmac",
+		# The torque the brake really put through the wheel last step (N·m): the lever asks for
+		# brake_torque, but a rider (or ABS) easing off at the tyre's limit uses only what it grips.
+		"brake_used": 0.0,
 		# Tyre state for the telemetry and the steering: slip ratio, slip angle (rad), lateral
 		# normalised slip after relaxation, camber (+ leaning right), grip used (0..1+), friction,
 		# side force along the bike's right (N), rolling radius, and whether the rider eased the brake.
@@ -327,7 +345,7 @@ func _make_wheel(is_front: bool, mount: Vector3, radius: float, travel: float, s
 		# The suspension: the axle fully extended (bike space), the tyre's grip forces as shares of
 		# its load last step (they push the wheel up or down its travel too), the spring and
 		# damper's push along the travel (N), and whether it's on the bump stop.
-		"axle": Vector3(0.0, mount.y - travel, mount.z), "rx": 0.0, "ry": 0.0, "f_susp": 0.0, "bottomed": false,
+		"axle": Vector3(0.0, mount.y - travel, mount.z), "rx": 0.0, "ry": 0.0, "f_susp": 0.0, "bottomed": false, "bottom_hit": 0.0,
 		"prog": 0.0, "preload": 0.0, "knee": 1.0,
 	}
 
@@ -604,13 +622,29 @@ func travel_used(i: int) -> float:
 
 
 func _target_lean() -> float:
-	var speed_factor := clampf((absf(speed) - 1.0) / 8.0, 0.15, 1.0)
+	# Slow, a full turn of the input is as tight a turn as the bars will make (see tight_turn):
+	# that takes less lean than the tyres would hold, so the whole input asks for a share of it.
+	var v := absf(speed)
+	var top := lean_for_input(1.0)
+	var tight := atan(v * v / (G * tight_turn(v)))
+	# Near the tyres' limit the bike swings past the lean it's asked for, and at town speeds that
+	# runs it out of grip: there, a full input keeps a little back, reaching all of it by 45 km/h.
+	# (A bike that grounds out first, short of the tyres' limit, doesn't need to.)
+	var hold_back := lerpf(0.85, 1.0, clampf((v - 4.0) / 8.5, 0.0, 1.0)) * _tyre_lean()
+	var speed_factor := clampf(minf(tight, hold_back) / maxf(top, 0.01), 0.15, 1.0)
 	var want := signf(lean_input) * lean_for_input(absf(lean_input)) * speed_factor
 	# That's the lean of the line from the tyres to the centre of mass, which sets the turn; the
 	# bike itself leans a little further, as the contact patch rolls in round the tyre's crown.
 	var rc := _crown()
 	var arm := maxf(build.com_height - rc, 0.2)
 	return want + asin(clampf(rc * sin(want) / arm, -1.0, 1.0))
+
+
+## The tightest turn (its radius, m) a rider makes at `v` m/s with the input held full: near full
+## lock at walking pace, opening out as the speed rises (a U-turn or a junction at 10-15 mph is
+## still a sharp one), until the lean the tyres hold sets the limit instead.
+func tight_turn(v: float) -> float:
+	return TIGHT_TURN + TIGHT_TURN_OPEN * v * v
 
 
 ## The lean asked for (of the line from the tyres to the centre of mass, rad) by `x` (0..1) of
@@ -633,6 +667,12 @@ func lean_for_input(x: float) -> float:
 ## under them holds in a steady turn, less a margin a rider keeps in hand, or the bike's ground
 ## clearance allows.
 func _grip_lean() -> float:
+	# No further than the bike leans before it grounds out.
+	return minf(_tyre_lean(), _balance_lean(build.lean_clearance))
+
+
+## The most lean the tyres' grip holds in a steady turn, less the rider's margin (see _grip_lean).
+func _tyre_lean() -> float:
 	var surf := str(wheels[1]["surface"]) if not wheels.is_empty() else "tarmac"
 	var wet := Weather.wetness()
 	var mu := minf(surface_grip(build, true, surf, wet), surface_grip(build, false, surf, wet)) * Weather.grip_mult(surf)
@@ -640,8 +680,7 @@ func _grip_lean() -> float:
 	# them; at 0 they lean as far as warm tyres would hold, and find out.
 	if heat:
 		mu *= lerpf(1.0, minf(heat.tyre_grip(0, surf), heat.tyre_grip(1, surf)), clampf(assist * 2.0, 0.0, 1.0))
-	# And no further than the bike leans before it grounds out.
-	return minf(minf(atan(mu * GRIP_IN_HAND), MAX_LEAN), _balance_lean(build.lean_clearance))
+	return minf(atan(mu * GRIP_IN_HAND), MAX_LEAN)
 
 
 ## The tyres' average crown radius (see TyreModel), m.
@@ -895,11 +934,13 @@ func _update_engine(delta: float) -> void:
 	var wheel_rpm: float = rear["omega"] * ratio * 60.0 / TAU
 	var idle_rpm := idle_now()
 	var clutch_rpm := idle_rpm + 900.0
-	var engaged := wheel_rpm >= clutch_rpm and not neutral
+	clutch = move_toward(clutch, 1.0 if clutch_in else 0.0, delta / (CLUTCH_PULL if clutch_in else CLUTCH_LET_OUT))
+	var drive := 1.0 - clutch   # the share of the engine's pull that reaches the box
+	var engaged := wheel_rpm >= clutch_rpm and not neutral and clutch <= 0.0
 	var shifting := _shift_timer > 0.0
 	_shift_timer -= delta
 
-	if neutral:
+	if neutral or clutch > 0.0:
 		if engine_on:
 			# Nothing but the engine's own flywheel to spin: it revs freely, quick to rise on the
 			# throttle and slower to fall back to idle, and bounces off the limiter.
@@ -907,6 +948,12 @@ func _update_engine(delta: float) -> void:
 			rpm = lerpf(rpm, free, 1.0 - exp(-(6.0 if free > rpm else 2.5) * delta))
 			if rpm >= build.redline:
 				rpm -= build.redline * 0.04
+			if not neutral and drive > 0.0:
+				# Letting the lever out: as it bites the revs are pulled round to the back wheel's
+				# (or launch revs, pulling away), so they meet it by the time it's all the way out.
+				var launch := lerpf(idle_rpm, build.peak_torque_rpm * 0.75, _throttle_eff)
+				var meet := wheel_rpm if wheel_rpm >= clutch_rpm else maxf(launch, wheel_rpm)
+				rpm = lerpf(rpm, maxf(meet, idle_rpm), 1.0 - exp(-CLUTCH_BITE * drive * delta))
 	elif shifting and engine_on:
 		# The clutch is in: the revs fall (or blip up) to the new gear's speed instead of jumping.
 		var f := clampf(1.0 - _shift_timer / maxf(build.shift_time, 0.01), 0.0, 1.0)
@@ -970,6 +1017,10 @@ func _update_engine(delta: float) -> void:
 		# Nothing to drive: the back wheel just rolls.
 		made *= FREE_REV_LOAD
 		torque = 0.0
+	elif clutch > 0.0:
+		# The clutch in, or biting as it comes out: only its share of the pull gets through.
+		made *= lerpf(FREE_REV_LOAD, 1.0, drive)
+		torque *= drive
 	if not engine_on:
 		# Engine off: the bike just rolls. The revs fall away to nothing.
 		torque = 0.0
@@ -1092,7 +1143,7 @@ func _update_feet(delta: float) -> void:
 		_stopped_brake = 0.0
 	if paddling:
 		_stopped_brake = 0.0
-	var lit := engine_on and gear != NEUTRAL and on_ground and front_brake > 0.5 and throttle > 0.35 and absf(speed) < BURNOUT_SPEED \
+	var lit := engine_on and gear != NEUTRAL and clutch < 0.5 and on_ground and front_brake > 0.5 and throttle > 0.35 and absf(speed) < BURNOUT_SPEED \
 		and pitch_angle < deg_to_rad(8.0)
 	var spin_v: float = wheels[1]["omega"] * build.rear_radius - speed
 	var target := clampf(spin_v / 12.0, 0.0, 1.0) * throttle if lit else 0.0
@@ -1170,9 +1221,10 @@ func take_burnout_time() -> float:
 	return t
 
 
-## How much revs the engine note should carry: the throttle, except while the clutch is in for a shift.
+## How much revs the engine note should carry: the throttle, except while the clutch is in for a
+## shift (held in by the rider, the throttle blips it as loud as it likes).
 func sound_load() -> float:
-	return throttle * 0.15 if _shift_timer > 0.0 else throttle
+	return throttle * 0.15 if _shift_timer > 0.0 and clutch <= 0.0 else throttle
 
 
 ## One wheel's suspension and tyre: finds the ground under the round tyre, works the spring and
@@ -1253,7 +1305,9 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		w["load"] = 0.0
 		w["compression"] = move_toward(w["compression"], 0.0, delta * 2.0)
 		var omega_air: float = w["omega"] + w["drive_torque"] * delta / inertia_w
+		var spun := omega_air
 		omega_air = move_toward(omega_air, 0.0, w["brake_torque"] * delta / inertia_w)
+		w["brake_used"] = absf(spun - omega_air) * inertia_w / delta
 		w["omega"] = omega_air * 0.999
 		w["spin"] = fmod(w["spin"] + w["omega"] * delta, TAU)
 		w["slip"] = 0.0
@@ -1271,6 +1325,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 		w["f_lat"] = Vector3.ZERO
 		w["f_susp"] = 0.0
 		w["bottomed"] = false
+		w["bottom_hit"] = 0.0
 		return
 
 	# The spring is preloaded: until the road pushes harder than that, the suspension stays
@@ -1302,6 +1357,9 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	else:
 		f_susp = BikeBuild.spring_force(rate, comp, travel, float(w["prog"]), float(w["preload"])) + damp_force
 	w["bottomed"] = raw_comp - pre_gap > travel
+	# How fast the wheel was knocked up its travel as it bottomed (m/s): a kerb or a pothole hits
+	# it hard, the fork diving under the brakes only sinks on to the stop.
+	w["bottom_hit"] = maxf(raw_vel, 0.0) if w["bottomed"] else 0.0
 	if w["bottomed"]:
 		# Bottomed out: a firm, heavily damped rubber stop that eats the energy it takes, both
 		# squashing and coming back off it, so it never kicks the bike back up.
@@ -1410,6 +1468,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	# stiff tyre on a light wheel stays stable at the physics rate and a locked wheel stays locked.
 	var vden := maxf(v_abs, LONG_SLIP_SPEED)
 	var omega: float = w["omega"] + w["drive_torque"] * delta / inertia_w
+	var omega_driven := omega
 	omega = move_toward(omega, 0.0, w["brake_torque"] * delta / inertia_w)
 	var react := (1.0 - 0.4 * burnout) if burnout > 0.0 and not is_front else 1.0
 	var omega_new := _solve_spin(omega, v_long, vden, r_eff, kp, sy, f_peak * react, inertia_w / delta, tp)
@@ -1429,6 +1488,11 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	var g := TyreModel.combined(sx, sy, tp)
 	var fx := f_peak * g.x
 	var fy := f_peak * g.y
+	# What the brake really did (it heats the disc, see BikeHeat): the wheel's change of spin and
+	# the road's pull on it, as the spin was solved. Eased off at the limit, that's the grip the
+	# tyre has, not the full squeeze on the lever.
+	w["brake_used"] = clampf(signf(omega_driven) * (inertia_w / delta * (omega_driven - omega_new) - r_eff * fx * react),
+		0.0, float(w["brake_torque"])) if float(w["brake_torque"]) > 0.0 else 0.0
 	w["kappa"] = sx * kp
 	w["gx"] = g.x
 	w["gy"] = g.y

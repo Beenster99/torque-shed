@@ -34,6 +34,10 @@ const WASH_PASSES := 4
 const DEFAULT_OIL := "semi_10w40"
 const DEFAULT_LUBE := "road_lube"
 const DEFAULT_BRAKE := "dot4"
+## Choosing a spare to use (see find_stock): the extra walk a box is worth for the unpacking, and
+## the walk saved by one already on the staff rack (where it's theirs to use).
+const UNPACK_METRES := 4.0
+const RACK_METRES := 3.0
 
 
 # ---------------------------------------------------------------------------- steps
@@ -185,13 +189,15 @@ static func after(_w: Dictionary, job: Dictionary, key: String) -> void:
 
 # ---------------------------------------------------------------------------- parts
 
-## Where a loose part is: on the floor where it was put down, or in its place on a bench or shelf.
+## Where a loose part is in the shed: on the floor where it was put down, or in its place on a
+## bench, shelf or trolley (spot_transform carries a place on a surface out into the world, where
+## item_place is only where it sits on the surface).
 static func item_at(id: int) -> Vector3:
 	var it: Dictionary = Shed.items.get(id, {})
 	if it.get("at", "") == "floor" and it.get("ref") is Transform3D:
 		return (it["ref"] as Transform3D).origin
 	if it.get("at", "") == "spot":
-		return Shed.item_place(id).origin if it.get("place") is Transform3D else Shed.spot_transform(str(it["ref"])).origin
+		return Shed.spot_transform(str(it["ref"])).origin
 	return Workshop.CENTER
 
 
@@ -226,11 +232,15 @@ static func _first_off(bike: int, slot: String) -> String:
 
 
 ## A spare of `part` in the shed to use: loose (not on a bike, nobody holding it), as good as
-## new, not one this job put down, nor one another worker's after. Unpacked ones first. With
+## new, not one this job put down, nor one another worker's after, and somewhere they can walk
+## to. The nearest by the walk there (a box counts a little further, for the unpacking). With
 ## `fluid` above 0 it has to hold at least that much.
 static func find_stock(part: String, job: Dictionary, fluid := 0.0, kind := "") -> int:
 	var best := 0
 	var best_score := INF
+	var w := Staff.worker(int(job.get("wid", 0)))
+	var from: Dictionary = w.get("at", StaffNav.idle("mechanic"))
+	var pos: Vector3 = w.get("pos", StaffNav.spot(from))
 	var taken := []
 	for id in Staff.workers():
 		var other: Dictionary = Staff.workers()[id]["job"]
@@ -256,12 +266,15 @@ static func find_stock(part: String, job: Dictionary, fluid := 0.0, kind := "") 
 			continue   # a drain pan or bleed bottle with old fluid still in it
 		if fluid <= 0.0 and (float(it["wear"]) > 0.2 or float(it["rust"]) > 0.2):
 			continue
-		var score := (0.0 if not it.get("boxed", false) else 5.0) + item_at(int(id)).distance_to(Workshop.CENTER) * 0.05
+		if not StaffNav.reachable(item_at(int(id))):
+			continue
+		# How far they'd walk for it, in metres (a box is unpacked first: a few metres' worth).
+		var score := StaffNav.length(StaffNav.route(from, StaffNav.at_item(int(id)), pos)) + (UNPACK_METRES if it.get("boxed", false) else 0.0)
 		# What they bought for this job first (on the trolley by now), then what's on the staff rack.
 		if (job.get("kit", []) as Array).has(int(id)):
-			score -= 20.0
+			score -= 1000.0
 		elif it["at"] == "spot" and Shed.furniture_of_spot(str(it["ref"])).get("model", "") == Shed.STAFF_RACK:
-			score -= 2.0
+			score -= RACK_METRES
 		if score < best_score:
 			best_score = score
 			best = int(id)
@@ -281,6 +294,39 @@ static func _fetch(job: Dictionary, id: int) -> Array:
 
 
 # ---------------------------------------------------------------------------- the expert's kit
+
+## The trolley an expert fetches a job's parts on: the one they've got for it, else the biggest
+## free one in the garage (a flatbed takes a whole delivery where the staff's parts trolley
+## takes a few boxes), empty or carrying only this job's parts, and somewhere they can get to.
+## 0 for none.
+static func kit_cart(w: Dictionary, job: Dictionary) -> int:
+	var peer := Staff.peer_of(int(w["id"]))
+	var kit: Array = job.get("kit", [])
+	var usable := func(id: int) -> bool:
+		var f: Dictionary = Shed.furniture.get(id, {})
+		if f.is_empty() or str(f.get("kind", "")) != "trolley" or not int(f.get("mover", 0)) in [0, peer] or not (f.get("xf") is Transform3D):
+			return false
+		if int(f.get("mover", 0)) == 0 and not StaffNav.reachable((f["xf"] as Transform3D).origin):
+			return false
+		return Shed.surface_items("f%d" % id).all(func(it): return kit.has(int(it)))
+	if int(job.get("cart", 0)) != 0 and usable.call(int(job["cart"])):
+		return int(job["cart"])
+	var best := 0
+	var best_area := 0.0
+	for id in Shed.furniture:
+		if not usable.call(int(id)):
+			continue
+		var size := Shed.furniture_size(Shed.furniture[id])
+		var area := size.x * size.z + (0.001 if Shed.furniture[id].get("staff", false) else 0.0)
+		if area > best_area:
+			best_area = area
+			best = int(id)
+	if best != 0:
+		job["cart"] = best
+		if not Shed.furniture[best].get("staff", false):
+			job["cart_home"] = Shed.furniture[best]["xf"]
+	return best
+
 
 ## How many spares of `part` there are in the shed for this job (as find_stock would take them).
 static func _stock_count(part: String, job: Dictionary) -> int:
@@ -393,12 +439,11 @@ static func _kit(w: Dictionary, job: Dictionary, b: int) -> Array:
 		out.append(flag("kit_stage", "load"))
 		out.append(plan_step())
 		return out
-	var cart := Shed.staff_trolley()
-	var peer := Staff.peer_of(int(w["id"]))
 	var kit: Array = (job["kit"] as Array).filter(func(id): return Shed.items.has(int(id)) and Shed.items[int(id)]["at"] in ["floor", "spot", "held"])
 	job["kit"] = kit
+	var cart := kit_cart(w, job)
 	var held := _held(w)
-	if cart == 0 or not int(Shed.furniture[cart].get("mover", 0)) in [0, peer] or kit.is_empty():
+	if cart == 0 or kit.is_empty():
 		job["kit_stage"] = "done"
 		return []
 	var deck := "f%d" % cart
@@ -410,7 +455,7 @@ static func _kit(w: Dictionary, job: Dictionary, b: int) -> Array:
 				work({"a": "staff_cart_load"}, 1.0, "hands", "loading the %s onto the trolley" % _part(held)), plan_step()]
 		return _stow(job, held, b, false)
 	# What's still to load and fits on the deck (the rest is fetched by hand later).
-	var to_load := kit.filter(func(id): return not _on_deck(int(id), deck) and Shed.find_room(deck, int(id), Vector2.ZERO) is Transform3D)
+	var to_load := kit.filter(func(id): return not _on_deck(int(id), deck) and deck_room(deck, int(id)) is Transform3D)
 	if not to_load.is_empty():
 		if not at_deliveries:
 			return _cart_to(cart, StaffNav.cart_delivery(), "wheeling the trolley out to the deliveries") + [plan_step()]
@@ -426,23 +471,33 @@ static func _kit(w: Dictionary, job: Dictionary, b: int) -> Array:
 static func _kit_tidy(w: Dictionary, job: Dictionary, b: int) -> Array:
 	if str(w["role"]) != "expert" or not job.has("kit_stage"):
 		return []
-	var cart := Shed.staff_trolley()
+	var cart := int(job.get("cart", Shed.staff_trolley()))   # a job saved before it had one: the staff's
 	var held := _held(w)
 	if held != 0:
 		if PartsDB.is_fluid(str(Shed.items[held]["part"])):
 			return _stow(job, held, b, false)
 		return _to_rack(w, held) + [plan_step()]
-	if cart == 0:
+	if not Shed.furniture.has(cart):
 		return []
 	var deck := "f%d" % cart
 	for id in job.get("kit", []):
 		if Shed.items.has(int(id)) and _on_deck(int(id), deck):
 			return _fetch(job, int(id)) + [plan_step()]
 	var peer := Staff.peer_of(int(w["id"]))
-	var home := StaffNav.spot(StaffNav.cart_park())
-	if (Shed.furniture[cart]["xf"] as Transform3D).origin.distance_to(home) > 0.6 and int(Shed.furniture[cart].get("mover", 0)) in [0, peer]:
-		return _cart_to(cart, StaffNav.cart_park(), "wheeling the trolley back") + [plan_step()]
+	var park := cart_home(job)
+	if (Shed.furniture[cart]["xf"] as Transform3D).origin.distance_to(StaffNav.spot(park)) > 0.6 and int(Shed.furniture[cart].get("mover", 0)) in [0, peer]:
+		return _cart_to(cart, park, "wheeling the trolley back") + [plan_step()]
 	return []
+
+
+## Where the trolley a job's parts came on goes back to after: the staff trolley to its place by
+## the rack, one of the garage's own to where it was.
+static func cart_home(job: Dictionary) -> Dictionary:
+	if job.get("cart_home") is Transform3D:
+		var at := (job["cart_home"] as Transform3D).origin
+		at.y = 0.0
+		return StaffNav.place(StaffNav.nearest_node(at), [at])
+	return StaffNav.cart_park()
 
 
 static func _on_deck(id: int, deck: String) -> bool:
@@ -574,11 +629,11 @@ static func put_on_rack(w: Dictionary, item: int) -> void:
 ## Puts what they're holding on the trolley's deck. "" or why not.
 static func cart_load(w: Dictionary) -> String:
 	var held := _held(w)
-	var cart := Shed.staff_trolley()
-	if held == 0 or cart == 0:
+	var cart := int((w.get("job", {}) as Dictionary).get("cart", 0))
+	if held == 0 or not Shed.furniture.has(cart):
 		return "Nothing to load."
 	var key := "f%d" % cart
-	var place = Shed.find_room(key, held, Vector2.ZERO)
+	var place = deck_room(key, held)
 	if not (place is Transform3D):
 		# No room after all: it goes down beside the trolley, to be fetched by hand.
 		var xf: Transform3D = Shed.furniture[cart]["xf"]
@@ -586,6 +641,30 @@ static func cart_load(w: Dictionary) -> String:
 		at.y = 0.0
 		return Staff.act(w, {"a": "drop", "xf": Transform3D(Basis(), at)})
 	return Staff.act(w, {"a": "set_down", "top": key, "xf": place})
+
+
+## Where `item` goes on trolley deck `key` packed in with what's on it already: the first place
+## it fits working along the deck from one corner, either way round (a Transform3D in the deck's
+## frame), or null when it's full. Packed tight like this a deck takes a job's whole order.
+static func deck_room(key: String, item: int):
+	var s := Shed.surface(key)
+	if s.is_empty() or not Shed.items.has(item):
+		return null
+	var rect: Rect2 = s["rect"]
+	var foot := Shed.item_footprint(item)
+	var others := Shed._surface_rects(key, item)
+	var z := rect.position.y
+	while z <= rect.end.y:
+		var x := rect.position.x
+		while x <= rect.end.x:
+			for turn in [0.0, PI * 0.5]:
+				var size := foot if turn == 0.0 else Vector2(foot.y, foot.x)
+				var place := Transform3D(Basis(Vector3.UP, turn), Vector3(x + size.x * 0.5, float(s["top"]), z + size.y * 0.5))
+				if Shed._fits(s, item, Shed.foot_rect(place, foot), others) == "":
+					return place
+			x += Shed.PACK_CELL
+		z += Shed.PACK_CELL
+	return null
 
 
 ## On the workbench: the first free place on it, or the floor in front of it.
