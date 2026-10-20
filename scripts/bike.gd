@@ -93,6 +93,11 @@ const DONUT_RATE := 2.2           # rad/s: how fast a full-lock burnout swings t
 ## slower one click finds it (up from first, down from second); riding, a full click goes
 ## straight between first and second.
 const NEUTRAL := 0
+## The clutch lever: seconds to pull it in and to let it out, and how hard the drive pulls the
+## free revs round to the back wheel's as it bites (1/s, times how far it's out).
+const CLUTCH_PULL := 0.08
+const CLUTCH_LET_OUT := 0.35
+const CLUTCH_BITE := 25.0
 const NEUTRAL_FIND_SPEED := 2.0
 ## In neutral the engine spins only itself: it makes this share of its torque to do it (fuel, heat).
 const FREE_REV_LOAD := 0.12
@@ -133,6 +138,12 @@ var effects: BikeEffects
 
 # Simulation state, read by the HUD, camera, audio and network.
 var gear := 1               # 0 is neutral (NEUTRAL), then 1 .. build.gear_count()
+## The rider holding the clutch lever in (the clutch button): the engine spins free of the box,
+## in any gear at any speed, so the throttle blips the revs without driving the back wheel.
+var clutch_in := false
+## How far the lever is in now, 0 (out, the drive engaged) .. 1 (in, nothing driven): it's pulled
+## in over CLUTCH_PULL seconds and let out over CLUTCH_LET_OUT, biting as it comes out.
+var clutch := 0.0
 var rpm := 1000.0
 var steer := 0.0            # radians, + bars turned right
 var steer_vel := 0.0        # how fast the bars are turning, rad/s
@@ -895,11 +906,13 @@ func _update_engine(delta: float) -> void:
 	var wheel_rpm: float = rear["omega"] * ratio * 60.0 / TAU
 	var idle_rpm := idle_now()
 	var clutch_rpm := idle_rpm + 900.0
-	var engaged := wheel_rpm >= clutch_rpm and not neutral
+	clutch = move_toward(clutch, 1.0 if clutch_in else 0.0, delta / (CLUTCH_PULL if clutch_in else CLUTCH_LET_OUT))
+	var drive := 1.0 - clutch   # the share of the engine's pull that reaches the box
+	var engaged := wheel_rpm >= clutch_rpm and not neutral and clutch <= 0.0
 	var shifting := _shift_timer > 0.0
 	_shift_timer -= delta
 
-	if neutral:
+	if neutral or clutch > 0.0:
 		if engine_on:
 			# Nothing but the engine's own flywheel to spin: it revs freely, quick to rise on the
 			# throttle and slower to fall back to idle, and bounces off the limiter.
@@ -907,6 +920,12 @@ func _update_engine(delta: float) -> void:
 			rpm = lerpf(rpm, free, 1.0 - exp(-(6.0 if free > rpm else 2.5) * delta))
 			if rpm >= build.redline:
 				rpm -= build.redline * 0.04
+			if not neutral and drive > 0.0:
+				# Letting the lever out: as it bites the revs are pulled round to the back wheel's
+				# (or launch revs, pulling away), so they meet it by the time it's all the way out.
+				var launch := lerpf(idle_rpm, build.peak_torque_rpm * 0.75, _throttle_eff)
+				var meet := wheel_rpm if wheel_rpm >= clutch_rpm else maxf(launch, wheel_rpm)
+				rpm = lerpf(rpm, maxf(meet, idle_rpm), 1.0 - exp(-CLUTCH_BITE * drive * delta))
 	elif shifting and engine_on:
 		# The clutch is in: the revs fall (or blip up) to the new gear's speed instead of jumping.
 		var f := clampf(1.0 - _shift_timer / maxf(build.shift_time, 0.01), 0.0, 1.0)
@@ -970,6 +989,10 @@ func _update_engine(delta: float) -> void:
 		# Nothing to drive: the back wheel just rolls.
 		made *= FREE_REV_LOAD
 		torque = 0.0
+	elif clutch > 0.0:
+		# The clutch in, or biting as it comes out: only its share of the pull gets through.
+		made *= lerpf(FREE_REV_LOAD, 1.0, drive)
+		torque *= drive
 	if not engine_on:
 		# Engine off: the bike just rolls. The revs fall away to nothing.
 		torque = 0.0
@@ -1092,7 +1115,7 @@ func _update_feet(delta: float) -> void:
 		_stopped_brake = 0.0
 	if paddling:
 		_stopped_brake = 0.0
-	var lit := engine_on and gear != NEUTRAL and on_ground and front_brake > 0.5 and throttle > 0.35 and absf(speed) < BURNOUT_SPEED \
+	var lit := engine_on and gear != NEUTRAL and clutch < 0.5 and on_ground and front_brake > 0.5 and throttle > 0.35 and absf(speed) < BURNOUT_SPEED \
 		and pitch_angle < deg_to_rad(8.0)
 	var spin_v: float = wheels[1]["omega"] * build.rear_radius - speed
 	var target := clampf(spin_v / 12.0, 0.0, 1.0) * throttle if lit else 0.0
@@ -1170,9 +1193,10 @@ func take_burnout_time() -> float:
 	return t
 
 
-## How much revs the engine note should carry: the throttle, except while the clutch is in for a shift.
+## How much revs the engine note should carry: the throttle, except while the clutch is in for a
+## shift (held in by the rider, the throttle blips it as loud as it likes).
 func sound_load() -> float:
-	return throttle * 0.15 if _shift_timer > 0.0 else throttle
+	return throttle * 0.15 if _shift_timer > 0.0 and clutch <= 0.0 else throttle
 
 
 ## One wheel's suspension and tyre: finds the ground under the round tyre, works the spring and

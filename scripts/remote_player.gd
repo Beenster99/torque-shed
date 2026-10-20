@@ -93,7 +93,15 @@ func setup(peer_id: int, rider_name: String, paint: Color) -> void:
 
 
 ## Plays an emote (see Emotes) on their figure. `at` is a world point for a point, or null.
+## A nod or wave on the bike (Emotes.RIDING) is their rider's, on the bike they're riding.
 func play_emote(e: String, at = null) -> void:
+	if Emotes.is_riding(e):
+		if riding_bike != 0 and bike and bike.model:
+			bike.model.gesture(e)
+			emotes_seen.append(e)
+			if emotes_seen.size() > 20:
+				emotes_seen.pop_front()
+		return
 	if not Emotes.is_emote(e) or riding_bike != 0:
 		return
 	emote = e

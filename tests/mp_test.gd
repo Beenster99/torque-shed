@@ -86,6 +86,11 @@ func _ready() -> void:
 	var trolley_ok := false
 	var emote_sent := false
 	var emote_ok := false
+	# The riding nod: heard from the other side ({"heard": true}), and played on a crew mate's rider.
+	var nods := {}
+	Shed.emoted.connect(func(peer: int, d: Dictionary):
+		if peer != Shed.me() and str(d.get("e", "")) == "nod":
+			nods["heard"] = true)
 	var cafe_spawned := false
 	var cafe_bought := false
 	var cafe_down := false
@@ -251,6 +256,9 @@ func _ready() -> void:
 				var on_foot: int = eye_hidden.call(them._figure)
 				them._start_riding(ranger)
 				avatar_ok = on_foot == 0 and them.bike != null and not them.bike.model.own_rider and eye_hidden.call(them.bike) == 0
+				# A nod from them while they ride: their rider nods on their bike here.
+				main._on_emote(them.peer, {"e": "nod", "name": them.player_name})
+				nods["rider"] = them.bike != null and them.bike.model.gesture_now() == "nod"
 				them._stop_riding()
 		# The money graphs: the business's series goes out with the shed, so both sides draw it.
 		var rows: Array = Shed.bank.get("series", {}).get("minute", [])
@@ -417,12 +425,13 @@ func _ready() -> void:
 		if Shed.crew.size() == 2 and main.remotes.size() == 1 and not emote_sent:
 			if role == "client":
 				Shed.request({"a": "emote", "e": "wave"})
+				Shed.request({"a": "emote", "e": "nod"})
 			else:
 				Shed.request({"a": "ping", "at": Workshop.CENTER + Vector3(2.0, 1.0, 0.0), "what": "Over here"})
 			emote_sent = true
 		if main.remotes.size() == 1:
 			var seen: Array = main.remotes.values()[0].emotes_seen
-			emote_ok = seen.has("point") if role == "client" else seen.has("wave")
+			emote_ok = (seen.has("point") if role == "client" else seen.has("wave") and nods.has("heard")) and bool(nods.get("rider", false))
 		if role == "host" and emote_sent and not emote_ok and main.remotes.size() == 1 and Engine.get_process_frames() % 240 == 0:
 			# The client may not have been listening yet: ask again now and then.
 			emote_sent = false

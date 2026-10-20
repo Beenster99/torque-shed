@@ -92,7 +92,7 @@ const ACTIONS := [
 	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
 	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
 	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
-	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot", "ride"]],
+	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot"]],
 	["eat", "Adventure: eat or drink from your packed lunch", ["foot", "ride"]],
 	["emote_menu", "Emotes: open the bar (then 1 to 6)", ["foot"]], ["emote_wave", "Emote: wave", ["foot"]],
 	["emote_thumbs", "Emote: thumbs up", ["foot"]], ["emote_point", "Emote: point", ["foot"]],
@@ -107,10 +107,14 @@ const ACTIONS := [
 	["lean_left", "Lean left", ["ride"]], ["lean_right", "Lean right", ["ride"]],
 	["body_back", "Weight back", ["ride"]], ["body_forward", "Weight forward", ["ride"]],
 	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down (truck: into reverse when stopped)", ["ride"]],
+	["clutch", "Clutch in (hold): rev it in any gear", ["ride"]],
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
 	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera: third person, first person, fly-by", ["ride"]],
 	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
 	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
+	["look_back", "Look over your shoulder (hold)", ["ride"]],
+	["nod", "Nod to a biker (hold: wave)", ["ride"]], ["ride_ping", "Ping (riding or driving)", ["ride"]],
+	["tow", "Adventure: ask a mate for a tow, or let the strap go", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
 	["satnav_hud", "Sat nav: map, trip computer, then off the HUD", ["ride"]],
 	["paper_map", "Adventure: the paper map of the route (when stopped)", ["foot", "ride"]],
@@ -129,8 +133,8 @@ const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding or driving", "spray":
 ## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
 ## B on a pad jumps on foot, but with a spray can or gun out it's the finish (the spray comes first).
 ## View on a pad turns what you hold or carry; with nothing in hand it switches the camera.
-## D-pad left is the stopwatch, but at the wheel of the truck it's the handbrake.
-const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rotate_right", "walk_camera"], ["stopwatch", "handbrake"]]
+## D-pad left is the stopwatch, but riding or driving it's the horn (the stopwatch is P there).
+const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rotate_right", "walk_camera"], ["stopwatch", "horn"]]
 ## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
 const CONTEXT_ALSO := {"spray": ["foot"]}
 
@@ -308,18 +312,29 @@ func _setup_inputs() -> void:
 	_bind("rear_brake", [KEY_SPACE], [JOY_BUTTON_B])
 	_bind("lean_left", [KEY_A, KEY_LEFT], [])
 	_bind("lean_right", [KEY_D, KEY_RIGHT], [])
-	_bind("body_back", [KEY_SHIFT], [JOY_BUTTON_LEFT_SHOULDER])
-	_bind("body_forward", [KEY_CTRL], [JOY_BUTTON_RIGHT_SHOULDER])
+	# On a pad the weight goes back and forward on the left stick (see PAD_STICKS in Controls).
+	_bind("body_back", [KEY_SHIFT], [])
+	_bind("body_forward", [KEY_CTRL], [])
 	_bind("shift_up", [KEY_E], [JOY_BUTTON_A])
 	_bind("shift_down", [KEY_Q], [JOY_BUTTON_X])
+	# Held: the clutch in (rev it in any gear), and a look back over your shoulder.
+	_bind("clutch", [KEY_Z], [JOY_BUTTON_LEFT_SHOULDER])
+	_bind("look_back", [KEY_X], [JOY_BUTTON_RIGHT_SHOULDER])
+	# A nod to another biker (held, a wave with the left hand).
+	_bind("nod", [KEY_N], [JOY_BUTTON_RIGHT_STICK])
 	_bind("respawn", [KEY_R], [JOY_BUTTON_BACK])
-	_bind("camera", [KEY_C], [JOY_BUTTON_RIGHT_STICK])
-	_bind("toggle_auto_shift", [KEY_T], [])
-	_bind("ignition", [KEY_I], [JOY_BUTTON_DPAD_UP])
-	_bind("horn", [KEY_H], [JOY_BUTTON_DPAD_DOWN])
-	# The truck's handbrake, pulled up and left on: the stopwatch's D-pad left at the wheel.
-	_bind("handbrake", [KEY_J], [JOY_BUTTON_DPAD_LEFT])
-	_bind("headlight", [KEY_L], [JOY_BUTTON_LEFT_STICK])
+	_bind("camera", [KEY_C], [JOY_BUTTON_DPAD_DOWN])
+	_bind("toggle_auto_shift", [KEY_U], [])
+	# Out on an adventure: ask a mate for a tow, or let the strap go. No pad button.
+	_bind("tow", [KEY_T], [])
+	# On a pad the engine is LB and RB together (see PAD_CHORDS in Controls).
+	_bind("ignition", [KEY_I], [])
+	_bind("horn", [KEY_H], [JOY_BUTTON_DPAD_LEFT])
+	# The truck's handbrake, pulled up and left on.
+	_bind("handbrake", [KEY_J], [JOY_BUTTON_DPAD_RIGHT])
+	_bind("headlight", [KEY_L], [JOY_BUTTON_DPAD_UP])
+	# Ping while riding or driving: L3 on a pad (on foot that's run, so on foot ping is D-pad right).
+	_bind("ride_ping", [KEY_G], [JOY_BUTTON_LEFT_STICK], [MOUSE_BUTTON_MIDDLE])
 	# Drop a camera at the roadside ahead and watch yourself ride past (no pad button spare).
 	_bind("ride_by", [KEY_V], [])
 	_bind("telemetry", [KEY_F3], [])
