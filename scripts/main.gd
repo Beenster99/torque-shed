@@ -67,7 +67,7 @@ var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at th
 ## which of its 4 km legs the map is now. The next leg is made in the background shortly before you reach it.
 var journey: RouteJourney
 var guide: RouteGuide
-var satnav: SatnavPanel
+var route_panel: SatnavPanel
 var _leg := 0
 var _leg_thread: Thread
 var _leg_loading := -1       # the leg being made in the background, or -1
@@ -142,10 +142,10 @@ func _ready() -> void:
 	ui.add_child(telemetry_overlay)
 	if journey:
 		guide = RouteGuide.new(journey)
-		satnav = SatnavPanel.new()
-		satnav.guide = guide
-		satnav.visible = false
-		ui.add_child(satnav)
+		route_panel = SatnavPanel.new()
+		route_panel.guide = guide
+		route_panel.visible = false
+		ui.add_child(route_panel)
 		_fade_rect = ColorRect.new()
 		_fade_rect.color = Color.BLACK
 		_fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -858,16 +858,16 @@ func _set_walker_active(on: bool) -> void:
 ## The satnav and the leg changes: every frame, work out where the bike is on the route, and when it
 ## nears the end of this leg start making the next, and when it reaches the hand-over swap to it.
 func _process(_delta: float) -> void:
-	if journey == null or satnav == null:
+	if journey == null or route_panel == null:
 		return
-	satnav.visible = bike != null and in_session and not menu.visible
+	route_panel.visible = bike != null and in_session and not menu.visible
 	if bike == null or _swapping:
 		return
 	var here := Vector2(bike.global_position.x, bike.global_position.z) + journey.origin_of(_leg)
 	guide.update(here)
-	satnav.leg = _leg
+	route_panel.leg = _leg
 	var fwd := -bike.global_basis.z
-	satnav.bike_heading = rad_to_deg(atan2(fwd.x, -fwd.z))
+	route_panel.bike_heading = rad_to_deg(atan2(fwd.x, -fwd.z))
 	if guide.off > 200.0:
 		return   # well away from the route: its progress means nothing
 	var want := journey.leg_for_distance(guide.d)
@@ -918,7 +918,7 @@ func _swap_leg(target: int, pack: RoutePack) -> void:
 	var shift3 := Vector3(shift.x, 0.0, shift.y)
 	var bp := bike.global_position
 	var old_near := world.roads.nearest(bp.x, bp.z, 30.0)
-	await _fade_to(1.0, 0.25)
+	await _route_fade(1.0, 0.25)
 	var t0 := Time.get_ticks_msec()
 	world.rebuild_land(pack)
 	var built_ms := Time.get_ticks_msec() - t0
@@ -947,7 +947,7 @@ func _swap_leg(target: int, pack: RoutePack) -> void:
 				_safe_xf = Transform3D()
 				break
 	print("Route: now on leg %d of %d (the map took %d ms to put up)" % [_leg + 1, journey.leg_count(), built_ms])
-	await _fade_to(0.0, 0.4)
+	await _route_fade(0.0, 0.4)
 	_swapping = false
 
 
@@ -961,7 +961,7 @@ func _on_host_leg(index: int) -> void:
 	_swap_leg(index, pack)
 
 
-func _fade_to(alpha: float, seconds: float) -> void:
+func _route_fade(alpha: float, seconds: float) -> void:
 	var tween := create_tween()
 	tween.tween_property(_fade_rect, "modulate:a", alpha, seconds)
 	await tween.finished

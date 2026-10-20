@@ -2491,7 +2491,7 @@ func _test_route_swap() -> void:
 	add_child(main)
 	await get_tree().process_frame
 	main._start_session()
-	check(main.world.has_node("Terrain") and main.satnav != null and main.world.workshop != null, "a route session starts in the shed with a satnav")
+	check(main.world.has_node("Terrain") and main.route_panel != null and main.world.workshop != null, "a route session starts in the shed with a satnav")
 	# Ride a shed bike out onto the route's road: first 1500 m before the first hand-over, facing along it.
 	main._try_mount(_bike_named("Old Faithful"))
 	await get_tree().physics_frame
