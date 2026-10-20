@@ -17,11 +17,13 @@ extends RefCounted
 const SLOW := 0.12
 const FAST := 1.4
 ## Chance of a puncture per km ridden on each surface (per tyre). The road is mostly clean;
-## tracks and fields have thorns, flints and old fence wire.
-const PER_KM := {"tarmac": 0.0015, "concrete": 0.0015, "dirt": 0.008, "gravel": 0.01, "grass": 0.005, "sand": 0.004, "snow": 0.002}
+## tracks and fields have thorns, flints and old fence wire. Together with the breakdowns (see
+## Roadside.PER_KM), a two-hour adventure sees about one thing go wrong, not several.
+const PER_KM := {"tarmac": 0.0003, "concrete": 0.0003, "dirt": 0.0012, "gravel": 0.0014, "grass": 0.0008, "sand": 0.0006, "snow": 0.0004}
 ## Chance a hard hit (the suspension bottoming at speed: a kerb, a pothole) pinches a tyre.
 const PER_HIT := 0.04
 const HIT_SPEED := 9.0          # m/s: slower knocks don't pinch
+const HIT_CLOSING := 1.5        # m/s: nor does the wheel coming up on to its stop any slower than this
 ## Below this share of its best pressure the tyre starts to fold and roll on the rim.
 const FOLD_AT := 0.55
 ## How much of the tyre's height a fully flat tyre squashes down by.
@@ -66,9 +68,11 @@ static func flat_grip(flat: float) -> float:
 	return lerpf(1.0, FLAT_GRIP, clampf(flat, 0.0, 1.0))
 
 
-## Whether a hard hit at `speed` m/s pinches the tyre, given a roll 0..1.
-static func hit_punctures(speed: float, roll: float) -> bool:
-	return absf(speed) >= HIT_SPEED and roll < PER_HIT
+## Whether a hard hit at `speed` m/s pinches the tyre, given a roll 0..1: `closing` is how fast
+## the wheel was knocked up into the bump stop (m/s). A fork sinking on to its stop under the
+## brakes is no hit at all.
+static func hit_punctures(speed: float, roll: float, closing := INF) -> bool:
+	return absf(speed) >= HIT_SPEED and closing >= HIT_CLOSING and roll < PER_HIT
 
 
 ## Whether `km` ridden on `surface` picks up a puncture, given a roll 0..1.

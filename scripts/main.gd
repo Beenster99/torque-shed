@@ -1112,7 +1112,7 @@ func _puncture_rolls(km: float) -> void:
 		if not w["contact"] or bike.heat.leak[i] > 0.0:
 			continue
 		if Puncture.ride_punctures(str(w.get("surface", bike.surface)), km, randf()) \
-				or (hit and Puncture.hit_punctures(bike.speed, randf())):
+				or (hit and Puncture.hit_punctures(bike.speed, randf(), float(w.get("bottom_hit", 0.0)))):
 			var kind := Puncture.kind_of_roll(randf())
 			bike.heat.leak[i] = Puncture.rate_of_kind(kind)
 			Shed.request({"a": "puncture", "side": "front" if i == 0 else "rear", "kind": kind})

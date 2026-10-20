@@ -52,12 +52,13 @@ static func _expected(rates: Dictionary, km: float, surface := "tarmac") -> floa
 	return n + 2.0 * float(Puncture.PER_KM.get(surface, 0.003)) * km
 
 
-## The odds: a couple of hours on a well kept bike might see one small thing; neglect, gravel and
-## sand bring a lot more; a drop can snap a lever or knock something loose.
+## The odds: a couple of hours of tarmac on a well kept bike most likely sees nothing at all;
+## neglect, gravel and sand bring a lot more; a drop can snap a lever or knock something loose.
+## (A whole adventure's odds, gravel and all: test_breakdown_odds in tests/adventure_ride_tests.gd.)
 func test_odds() -> void:
 	var kept := Roadside.rates(KEPT, "tarmac")
 	var two_hours := _expected(kept, 140.0)
-	check(two_hours > 0.3 and two_hours < 1.3, "two hours (140 km) on a well kept bike on tarmac: about %.2f small things expected" % two_hours)
+	check(two_hours > 0.1 and two_hours < 0.6, "two hours (140 km) on a well kept bike on tarmac: about %.2f small things expected" % two_hours)
 	var gravel := _expected(Roadside.rates(KEPT, "gravel"), 140.0, "gravel")
 	var sand := _expected(Roadside.rates(KEPT, "sand"), 140.0, "sand")
 	check(gravel > two_hours * 1.8 and sand > two_hours * 1.5, "gravel and sand shake more loose (%.2f, %.2f)" % [gravel, sand])
@@ -90,7 +91,7 @@ func test_odds() -> void:
 				n += 1
 		total += n
 		none += 1 if n == 0 else 0
-	check(float(total) / 200.0 > 0.15 and float(total) / 200.0 < 0.9 and none > 80,
+	check(float(total) / 200.0 > 0.05 and float(total) / 200.0 < 0.5 and none > 120,
 		"over 200 two-hour rides: %.2f breakdowns a ride, %d rides with none at all" % [float(total) / 200.0, none])
 
 
