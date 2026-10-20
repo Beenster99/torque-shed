@@ -74,6 +74,8 @@ func _run_all() -> void:
 	_test_addresses()
 	print("World")
 	await _test_world()
+	print("Route packs: the map made from real heights and roads")
+	await _test_route_pack()
 	print("Day and night, tyre smoke")
 	await _test_daylight()
 	await _test_tyre_smoke()
@@ -2016,6 +2018,77 @@ func _test_world() -> void:
 		await get_tree().physics_frame
 	check(bike.surface == "dirt", "the woods track is dirt (on %s)" % bike.surface)
 	world.queue_free()
+	await get_tree().physics_frame
+
+
+## A route pack (tools/route_bake.py) makes the map from real heights and roads: the shed's own
+## loop stays, the land is the pack's, the villages and farms are gone, and it all still rides.
+func _test_route_pack() -> void:
+	check(RoutePack.load_pack("res://tests/fixtures/no_such_route") == null, "a missing route pack is refused rather than crashed on")
+	check(WorldLayout.pack == null and WorldLayout.roads().size() == WorldLayout.ROADS.size() and WorldLayout.sites().size() == WorldLayout.SITES.size(),
+		"with no pack the hand-laid map is untouched")
+	# A made-up pack: level, then rising 2% east of x = 300, with one road out from the loop.
+	var n := WorldTerrain.SIZE
+	var made := RoutePack.new()
+	made.name = "made_up"
+	made.id = "made_up_1"
+	made.heights.resize(n * n)
+	for gz in n:
+		for gx in n:
+			made.heights[gz * n + gx] = maxf(gx * WorldTerrain.SPACING - WorldTerrain.HALF - 300.0, 0.0) * 0.02
+	made.roads = [{"name": "out", "label": "Out", "kind": "tarmac", "hw": 3.5, "grade": 0.12, "start": "loop",
+		"pts": PackedVector2Array([Vector2(200.0, -62.0), Vector2(500.0, -60.0), Vector2(900.0, -60.0)])}]
+	check(absf(made.height_at(1000.0, 400.0) - 14.0) < 0.01 and absf(made.height_at(-500.0, 0.0)) < 0.01,
+		"the pack's heights are read at metres from the shed (%.2f m at x = 1000)" % made.height_at(1000.0, 400.0))
+	check(absf(made.height_at(1000.0 + 2.0, 400.0) - 14.04) < 0.01, "and blended between the samples")
+	WorldLayout.pack = made
+	check(WorldLayout.sites().is_empty() and WorldLayout.roads().size() == 2 and WorldLayout.roads()[0]["name"] == "loop",
+		"a route has no made-up villages and keeps the shed's loop first")
+	var terrain := WorldTerrain.new(1)
+	var roads := WorldRoads.new()
+	roads.build(terrain)
+	terrain.build(roads)
+	check(roads.roads.size() == 2 and roads.by_name.has("out"), "the pack's road is laid after the loop")
+	check(absf(terrain.height_at(1200.0, 700.0) - 18.0) < 0.6, "the land is the pack's (%.1f m at x = 1200, expected 18)" % terrain.height_at(1200.0, 700.0))
+	check(absf(terrain.height_at(0.0, 100.0)) < 0.1, "and level at the shed")
+	WorldLayout.pack = null
+	check(WorldLayout.roads().size() == WorldLayout.ROADS.size(), "clearing the pack gives the hand-laid map back")
+	# A real baked pack, if the repository has one: generate the whole map and ride it.
+	var dir := "res://data/routes/shodoshima"
+	if not FileAccess.file_exists(dir.path_join("pack.json")):
+		return
+	var pack := RoutePack.load_pack(dir)
+	check(pack != null and pack.heights.size() == n * n and pack.roads.size() > 20 and not pack.credits.is_empty(),
+		"the baked route loads (%d roads)" % (pack.roads.size() if pack else 0))
+	if pack == null:
+		return
+	var link: Dictionary = pack.roads[pack.roads.size() - 1]
+	check(link["name"] == "link" and link["start"] == "loop" and pack.roads.any(func(d): return d["name"] == link["end"]),
+		"its link road runs from the shed's loop to a real road")
+	WorldLayout.pack = pack
+	var t0 := Time.get_ticks_msec()
+	var world := World.new()
+	add_child(world)
+	world.generate(1234)
+	check(Time.get_ticks_msec() - t0 < 30000, "the route map generates in reasonable time (%d ms)" % (Time.get_ticks_msec() - t0))
+	check(world.roads.by_name.has("link") and world.road_length() > 800.0 and world.road_length() < 1400.0,
+		"the loop and the link are both there (loop %.0f m)" % world.road_length())
+	check(absf(world.terrain_height(0.0, 100.0)) < 0.1 and WorldLayout.sites().is_empty() and World.place_near(0.0, 0.0) == "",
+		"the yard is level and nothing is named after a made-up village")
+	var bike := Bike.new()
+	bike.setup(BikeBuild.new())
+	world.add_child(bike)
+	for road_name in ["link", pack.roads[0]["name"]]:
+		var at: Transform3D = world.road_transform_on(road_name, 150.0)
+		bike.place(at.origin, at.basis.get_euler().y)
+		var start := bike.global_position
+		for i in 600:
+			bike.throttle = 0.4
+			await get_tree().physics_frame
+		check(not bike.is_crashed and bike.surface == "tarmac" and bike.global_position.distance_to(start) > 20.0,
+			"a bike rides the real %s road (%.0f m, on %s)" % [road_name, bike.global_position.distance_to(start), bike.surface])
+	world.queue_free()
+	WorldLayout.pack = null
 	await get_tree().physics_frame
 
 
@@ -15288,3 +15361,4 @@ func _test_money_graph_moves() -> void:
 	Progress.path = real_path
 	Progress.select(Settings.player_name)
 	await get_tree().process_frame
+

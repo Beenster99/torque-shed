@@ -94,8 +94,8 @@ static func _building(p: Dictionary, kind: String, site: int, c: Vector2, base: 
 ## Villages: houses either side of the roads through them, set back a little and facing the
 ## road, with a church and a pub; farms: a farmhouse, a barn, silos, a shed and bales.
 static func _plan_sites(p: Dictionary, t: WorldTerrain, r: WorldRoads, rng: RandomNumberGenerator, taken: Dictionary) -> void:
-	for si in WorldLayout.SITES.size():
-		var site: Dictionary = WorldLayout.SITES[si]
+	for si in WorldLayout.sites().size():
+		var site: Dictionary = WorldLayout.sites()[si]
 		var at: Vector2 = site["at"]
 		var radius: float = site["r"]
 		if site["kind"] == "village":
@@ -201,7 +201,7 @@ static func _plan_farm(p: Dictionary, t: WorldTerrain, r: WorldRoads, rng: Rando
 ## Fences round the farms' fields (WorldTerrain.field_at), with gaps wherever a road or track
 ## passes, and bales left in some fields.
 static func _plan_fields(p: Dictionary, t: WorldTerrain, r: WorldRoads, taken: Dictionary) -> void:
-	for site in WorldLayout.SITES:
+	for site in WorldLayout.sites():
 		if site["kind"] != "farm":
 			continue
 		var at: Vector2 = site["at"]
@@ -393,7 +393,7 @@ static func _plan_signs(p: Dictionary, t: WorldTerrain, r: WorldRoads) -> void:
 			what = "%s (track)%s" % [road["label"], "  - rough" if road["hard"] else ""]
 		p["signs"].append({"xf": Transform3D(Basis(Vector3.UP, atan2(face.x, face.y)), Vector3(c.x, t.height_at(c.x, c.y), c.y)),
 			"lines": [what], "style": "finger"})
-	for site in WorldLayout.SITES:
+	for site in WorldLayout.sites():
 		var at: Vector2 = site["at"]
 		var radius: float = site["r"]
 		for road in r.roads:
@@ -470,7 +470,7 @@ static func _plan_rocks(p: Dictionary, t: WorldTerrain, r: WorldRoads, rng: Rand
 static func _plan_trees(p: Dictionary, t: WorldTerrain, r: WorldRoads, rng: RandomNumberGenerator, taken: Dictionary) -> void:
 	var cells := int(WorldTerrain.HALF * 2.0 / TREE_GRID)
 	var farms := []
-	for site in WorldLayout.SITES:
+	for site in WorldLayout.sites():
 		if site["kind"] == "farm":
 			farms.append(site["at"])
 	for gz in cells:
@@ -664,7 +664,7 @@ func _build_buildings(list: Array) -> void:
 		var windows := SurfaceTool.new()
 		for st in [walls, roofs, windows]:
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var site: Dictionary = WorldLayout.SITES[si]
+		var site: Dictionary = WorldLayout.sites()[si]
 		var center := Vector3((site["at"] as Vector2).x, 0.0, (site["at"] as Vector2).y)
 		for b in by_site[si]:
 			var xf: Transform3D = b["xf"]

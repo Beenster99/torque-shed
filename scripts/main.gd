@@ -47,7 +47,32 @@ var _safe_xf := Transform3D()
 const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7}
 
 
+## Rides a baked real-world route (tools/route_bake.py, see RoutePack) instead of the hand-laid map when
+## the game is started with `-- --route=<folder>`, e.g. `godot --path . -- --route=res://data/routes/shodoshima`.
+func _route_from_args() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if not arg.begins_with("--route="):
+			continue
+		var pack := RoutePack.load_pack(arg.substr(8))
+		if pack == null:
+			return
+		WorldLayout.pack = pack
+		print("Route: %s (%s), %.1f km of road" % [pack.title, pack.id, _route_km(pack)])
+		for line in pack.credits:
+			print("  " + str(line))
+
+
+func _route_km(pack: RoutePack) -> float:
+	var m := 0.0
+	for d: Dictionary in pack.roads:
+		var pts: PackedVector2Array = d["pts"]
+		for i in pts.size() - 1:
+			m += pts[i].distance_to(pts[i + 1])
+	return m / 1000.0
+
+
 func _ready() -> void:
+	_route_from_args()
 	world = World.new()
 	add_child(world)
 	world.generate(MAP_SEED)

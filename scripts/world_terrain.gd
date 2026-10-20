@@ -38,6 +38,8 @@ var _detail := FastNoiseLite.new()
 var _ridge := FastNoiseLite.new()
 var _patch := FastNoiseLite.new()
 var _sites := []   # [{at, r, h}] ground levelled for villages and farms
+## The route whose heights are the land (see RoutePack), or null for the made-up land.
+var _pack: RoutePack = WorldLayout.pack
 
 ## Lone hills on the low ground: centre, height and spread, in metres.
 const HILLS := [[Vector2(10.0, -215.0), 35.0, 100.0], [Vector2(200.0, -90.0), -10.0, 80.0], [Vector2(-185.0, 60.0), 14.0, 70.0],
@@ -53,9 +55,9 @@ func _init(seed_value := 1) -> void:
 		n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 		n.frequency = pair[1]
 		n.fractal_octaves = pair[2]
-	for s in WorldLayout.SITES:
+	for s in WorldLayout.sites():
 		var at: Vector2 = s["at"]
-		_sites.append({"at": at, "r": float(s["r"]), "h": _raw(at.x, at.y) + _hills_at(at.x, at.y)})
+		_sites.append({"at": at, "r": float(s["r"]), "h": _land(at.x, at.y)})
 
 
 # ---------------------------------------------------------------------------- the land
@@ -63,7 +65,7 @@ func _init(seed_value := 1) -> void:
 ## The shape of the land before roads: hills, mountains, the rim, levelled at the yard and
 ## under the villages and farms.
 func natural(x: float, z: float) -> float:
-	var h := _raw(x, z) + _hills_at(x, z)
+	var h := _land(x, z)
 	for s in _sites:
 		var d := (s["at"] as Vector2).distance_to(Vector2(x, z))
 		var r: float = s["r"]
@@ -77,6 +79,13 @@ static func home_mask(x: float, z: float) -> float:
 	var dx := maxf(maxf(HOME.position.x - x, x - HOME.end.x), 0.0)
 	var dz := maxf(maxf(HOME.position.y - z, z - HOME.end.y), 0.0)
 	return smoothstep(10.0, 95.0, Vector2(dx, dz).length())
+
+
+## The land before sites and the yard: a route's own heights, or noise and hills.
+func _land(x: float, z: float) -> float:
+	if _pack != null:
+		return _pack.height_at(x, z)
+	return _raw(x, z) + _hills_at(x, z)
 
 
 func _raw(x: float, z: float) -> float:
@@ -153,12 +162,16 @@ func build(roads: WorldRoads) -> void:
 	road_k.fill(0)
 	# The same land as natural(), a box at a time: the raw shape everywhere, then the sites
 	# and the yard levelled within reach of them.
-	for gz in SIZE:
-		var z := gz * SPACING - HALF
-		var row := gz * SIZE
-		for gx in SIZE:
-			heights[row + gx] = _raw(gx * SPACING - HALF, z)
-	for hill in HILLS:
+	if _pack != null:
+		heights = _pack.heights.duplicate()
+	else:
+		for gz in SIZE:
+			var z := gz * SPACING - HALF
+			var row := gz * SIZE
+			for gx in SIZE:
+				heights[row + gx] = _raw(gx * SPACING - HALF, z)
+	var hills: Array = HILLS if _pack == null else []
+	for hill in hills:
 		var c: Vector2 = hill[0]
 		var r: float = hill[2]
 		var box := _grid_box(Rect2(c - Vector2(r, r) * 3.0, Vector2(r, r) * 6.0))
@@ -285,7 +298,7 @@ func _build_colors() -> void:
 	var gravel := Color(0.42, 0.4, 0.36)
 	var crops := [Color(0.62, 0.55, 0.24), Color(0.33, 0.47, 0.16), Color(0.38, 0.29, 0.19), Color(0.5, 0.52, 0.22)]
 	var farms := []
-	for site in WorldLayout.SITES:
+	for site in WorldLayout.sites():
 		if site["kind"] == "farm":
 			farms.append(site["at"])
 	for gz in SIZE:

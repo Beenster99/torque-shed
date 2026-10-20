@@ -63,8 +63,9 @@ func generate(seed_value := 1) -> void:
 
 ## The land, the roads and the meshes for `seed_value`, made once per run.
 static func _data_for(seed_value: int) -> Dictionary:
-	if _cache.has(seed_value):
-		return _cache[seed_value]
+	var key = seed_value if WorldLayout.pack == null else "route:" + WorldLayout.pack.id
+	if _cache.has(key):
+		return _cache[key]
 	var t := WorldTerrain.new(seed_value)
 	var r := WorldRoads.new()
 	r.build(t)
@@ -84,7 +85,7 @@ static func _data_for(seed_value: int) -> Dictionary:
 	data["road_chunks"] = _road_chunks(r)
 	data["props"] = WorldProps.plan(t, r, seed_value)
 	_cache.clear()   # only the latest map is kept
-	_cache[seed_value] = data
+	_cache[key] = data
 	return data
 
 
@@ -144,7 +145,7 @@ func _road_info(x: float, z: float) -> Vector2:
 static func place_near(x: float, z: float, reach := 400.0) -> String:
 	var best := ""
 	var best_d := reach
-	for s in WorldLayout.SITES:
+	for s in WorldLayout.sites():
 		var d := (s["at"] as Vector2).distance_to(Vector2(x, z))
 		if d < best_d:
 			best_d = d

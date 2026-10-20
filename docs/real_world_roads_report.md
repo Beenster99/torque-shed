@@ -114,6 +114,36 @@ towards BeamNG.Earth's buildings, signals and traffic.
 4. **Polish for real roads** (ongoing). Hairpins, junctions, bridges, tunnels, curation checklist per issue.
 5. **Live source, optional** (4 to 6 weeks).
 
+## Proof of concept status (phase 1)
+
+Built on branch `claude/laughing-brahmagupta-l269oq`, off by default and not merged to `main`. See `tools/README.md`.
+
+- `tools/route_bake.py` bakes a 4 km square of a real place into a route pack in about 25 seconds: heights from
+  Mapterhorn, roads from Overture Maps, no keys. `tools/pack_preview.py` draws the result for a quick look.
+- `data/routes/shodoshima` is a pack baked at Kankakei on Shodoshima, Japan: 112 roads, 46 km, from Mapterhorn
+  heights and Overture roads.
+- The game reads a pack through `scripts/route_pack.gd`. `WorldTerrain` takes its heights from it, `WorldRoads`
+  lays its roads after the shed's own loop, and a link road joins the two. Grading, meshes, collision, surfaces,
+  guard rails, trees and traffic are the existing code, untouched. The hand-laid map is the default and its tests
+  are unchanged.
+- Run it with `godot --path . -- --route=res://data/routes/shodoshima`.
+- The generated map takes about 7 seconds to build and a bike rides the link and the real road in the tests.
+
+![The link road meeting a real Shodoshima road](images/route_poc_junction.jpg)
+
+![A real road, in our own style](images/route_poc_road.jpg)
+
+![The shed and its loop on the island](images/route_poc_valley.jpg)
+
+![The baked heights and roads, shed in blue, start in red](images/route_poc_bake_preview.jpg)
+
+What the proof showed: the data is good enough and the seam is as narrow as expected. Roads, junctions and
+heights from the real world drop into the existing grader and ride without changes to the bike code.
+
+What it did not settle, in order of risk: how hairpins and steep mountain roads ride at speed (the grader limits
+the climb and crest rate, so some real bends may come out flatter than the real road), how much of a real route needs hand curation, the 30 m surface-model
+heights away from lidar, and everything in phases 2 and 3 (streaming, rebasing, a co-op handshake).
+
 ## Sources
 
 - [BeamNG.Earth](https://github.com/TecnaGamer/BeamNG.Earth) and its [releases](https://github.com/TecnaGamer/BeamNG.Earth/releases)

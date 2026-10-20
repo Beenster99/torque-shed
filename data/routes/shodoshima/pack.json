@@ -1,0 +1,37 @@
+{
+ "format": 1,
+ "name": "shodoshima",
+ "title": "Shodoshima",
+ "anchor": {
+  "lat": 34.5184,
+  "lon": 134.2693
+ },
+ "start_world": [
+  800.0,
+  -60.0
+ ],
+ "start_road_point": [
+  815.43,
+  -89.14
+ ],
+ "end_world": null,
+ "grid": {
+  "size": 1025,
+  "spacing": 4.0
+ },
+ "height": {
+  "min": -616.1332792435124,
+  "scale": 0.011831540505547746
+ },
+ "road_count": 112,
+ "road_length_m": 46277.3,
+ "sources": {
+  "overture_release": "2026-09-23.1",
+  "elevation": "Mapterhorn, AWS Terrain Tiles fallback"
+ },
+ "credits": [
+  "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
+  "Roads: (c) OpenStreetMap contributors, Overture Maps Foundation (ODbL)."
+ ],
+ "hash": "389e88b44effe44c"
+}

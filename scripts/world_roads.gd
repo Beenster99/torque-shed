@@ -29,7 +29,7 @@ var _grid := {}   # Vector2i cell -> Array of road * 65536 + sample
 func build(terrain: WorldTerrain) -> void:
 	roads.clear()
 	by_name.clear()
-	for def in WorldLayout.ROADS:
+	for def in WorldLayout.roads():
 		var r := {"name": str(def["name"]), "label": str(def.get("label", def["name"])), "kind": str(def["kind"]),
 			"hw": float(def["hw"]), "grade": float(def["grade"]), "hard": bool(def.get("hard", false)),
 			"closed": bool(def.get("closed", false)), "joins": [], "start_join": {}, "end_join": {}}
