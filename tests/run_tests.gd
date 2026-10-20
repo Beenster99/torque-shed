@@ -421,6 +421,9 @@ func _run_all() -> void:
 	_test_staff_exotic_paint()
 	await _test_staff_save()
 	await _test_staff_session()
+	_test_staff_trips_walls()
+	_test_staff_trips_nearest()
+	_test_staff_trips_flatbed()
 	print("Simon's 18 October round (v0.10.0): polishing and ceramic coating in the wash bay, and detailing jobs")
 	_test_detail_rules()
 	_test_detail_contract()
@@ -22130,3 +22133,21 @@ func _test_realism_stops() -> void:
 
 func _test_realism_corners() -> void:
 	await _realism().test_corners()
+
+
+# ---------------------------------------------------------------------------- staff trips for parts (tests/staff_trips_tests.gd)
+
+func _staff_trips() -> RefCounted:
+	return load("res://tests/staff_trips_tests.gd").new(self)
+
+
+func _test_staff_trips_walls() -> void:
+	_staff_trips().test_walls()
+
+
+func _test_staff_trips_nearest() -> void:
+	_staff_trips().test_nearest_stock()
+
+
+func _test_staff_trips_flatbed() -> void:
+	_staff_trips().test_flatbed_kit()
