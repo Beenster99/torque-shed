@@ -227,6 +227,9 @@ func _build_pool() -> void:
 ## nod and wave: the pieces BikeModel sat on the bike, moved under them as they are.
 static func _rig(model: BikeModel) -> Array:
 	var rider: Node3D = model._rider
+	# The model has its own head and left-arm pivots now (for your gestures): turn those.
+	if model._rider_head and model._arm_left:
+		return [model._rider_head, model._arm_left]
 	var head := Node3D.new()
 	head.name = "Head"
 	var arm := Node3D.new()
