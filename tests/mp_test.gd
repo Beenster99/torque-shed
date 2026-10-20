@@ -46,7 +46,7 @@ func _ready() -> void:
 		main._host()
 	else:
 		main._join(" 127.0.0.1:24680 ")
-	var deadline := Time.get_ticks_msec() + 40000
+	var deadline := Time.get_ticks_msec() + 90000   # a ceiling: the pair stops as soon as every step is seen
 	var moved := false
 	var shed_ok := false
 	var start := Vector3.ZERO
@@ -616,7 +616,19 @@ func _ready() -> void:
 			if role == "host" and not GarageUpgrades.owned("lounge"):
 				Shed.request({"a": "garage_money", "value": Shed.garage_money + GarageUpgrades.price("lounge")})
 				Shed.request({"a": "buy_upgrade", "id": "lounge"})
-			if role == "host" and GarageUpgrades.owned("lounge") and not PoolGame.playing() and Time.get_ticks_msec() > pool_t + 1000:
+			var pool_view: PoolView = ws.get_node_or_null("Upgrades/Built/PoolTable") if ws else null
+			# The last shot is judged before anything re-racks: a rack wipes the game's last shot,
+			# and the host racks again as soon as a game ends, maybe before its own table played it.
+			var pool_by := int(Shed.pool["last"].get("by", 0))
+			var played_out: bool = pool_view != null and pool_view._shown == int(Shed.pool["last"].get("n", -2)) \
+				and pool_view._sim.is_empty()
+			if pool_by == Shed.me() and played_out:
+				pool_own = true
+			elif pool_by != 0 and played_out:
+				pool_other = true
+			pool_ok = pool_own and pool_other
+			if role == "host" and GarageUpgrades.owned("lounge") and not PoolGame.playing() and Time.get_ticks_msec() > pool_t + 1000 \
+					and (pool_view == null or (pool_view._sim.is_empty() and (played_out or not Shed.pool["last"].has("n")))):
 				pool_t = Time.get_ticks_msec()
 				Shed.request({"a": "pool_rack"})
 			var pool_players: Array = Shed.pool["players"]
@@ -624,7 +636,6 @@ func _ready() -> void:
 					and Time.get_ticks_msec() > pool_t + 1000:
 				pool_t = Time.get_ticks_msec()
 				Shed.request({"a": "pool_join"})
-			var pool_view: PoolView = ws.get_node_or_null("Upgrades/Built/PoolTable") if ws else null
 			if PoolGame.shooter() == Shed.me() and pool_players.size() == 2 and Time.get_ticks_msec() > pool_t + 1500 \
 					and pool_view != null and pool_view._sim.is_empty():
 				# At whichever ball's still on the table, or a full-power break.
@@ -637,14 +648,6 @@ func _ready() -> void:
 							angle = atan2(float(pb[bi][0]) - float(pb[0][0]), -(float(pb[bi][1]) - float(pb[0][1])))
 							break
 				Shed.request({"a": "pool_shot", "angle": angle, "power": 1.0 if int(Shed.pool["shots"]) == 0 else 0.6})
-			var pool_by := int(Shed.pool["last"].get("by", 0))
-			var played_out: bool = pool_view != null and pool_view._shown == int(Shed.pool["last"].get("n", -2)) \
-				and pool_view._sim.is_empty()
-			if pool_by == Shed.me() and played_out:
-				pool_own = true
-			elif pool_by != 0 and played_out:
-				pool_other = true
-			pool_ok = pool_own and pool_other
 		var rest_ok := ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok
 		# Order one of these and copy its blueprint (BikeCopy), once the trolley and the poster are
 		# in (it fills the delivery area): the client orders one of the ranger from its own money
