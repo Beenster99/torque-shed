@@ -583,3 +583,239 @@ func test_diary_ride() -> void:
 	check(trip.diary_open() and trip.diary._shelf.visible and not trip.magazine_open(), "the magazine's Adventure diaries: the shelf")
 	trip.close_diary()
 	await _done(main)
+
+
+# ---------------------------------------------------------------------------- films and sharing (v0.19.0)
+
+const CLIPS := "user://zz_test_clips"
+
+
+## The film's file (Simon: "can you make movie clip for 10 seconds"): an AVI of JPEG frames that
+## reads back with the header's size, rate and frame count, every frame in the "movi" list and the
+## index pointing at each, and the frames the same pictures; an odd-length frame padded.
+func test_movie_avi() -> void:
+	var cols := [Color(0.9, 0.2, 0.1), Color(0.1, 0.8, 0.2), Color(0.1, 0.2, 0.9), Color(0.9, 0.9, 0.1), Color(0.6, 0.1, 0.7)]
+	var frames := []
+	for c in cols:
+		var img := Image.create(64, 36, false, Image.FORMAT_RGB8)
+		img.fill(c)
+		frames.append(img.save_jpg_to_buffer(0.9))
+	if (frames[2] as PackedByteArray).size() % 2 == 0:
+		var odd: PackedByteArray = frames[2]
+		odd.append(0)   # (bytes after a JPEG's end are let be)
+		frames[2] = odd
+	var avi := MjpegAvi.build(frames, 64, 36, 24)
+	check(avi.slice(0, 4).get_string_from_ascii() == "RIFF" and avi.slice(8, 12).get_string_from_ascii() == "AVI "
+		and int(avi.decode_u32(4)) + 8 == avi.size(), "a RIFF AVI, its length right (%d bytes)" % avi.size())
+	var back := MjpegAvi.parse(avi)
+	check(bool(back["ok"]) and int(back["w"]) == 64 and int(back["h"]) == 36 and int(back["fps"]) == 24 and str(back["handler"]) == "MJPG",
+		"its header: %dx%d at %d fps, %s" % [int(back["w"]), int(back["h"]), int(back["fps"]), str(back["handler"])])
+	check(int(back["frames"]) == 5 and (back["jpegs"] as Array).size() == 5 and int(back["index"]) == 5 and bool(back["index_ok"]),
+		"5 frames in the header, the movi list and the index (%d, %d, %d), the index pointing at each" % [int(back["frames"]), (back["jpegs"] as Array).size(), int(back["index"])])
+	var same := true
+	for i in 5:
+		var img := Image.new()
+		if (back["jpegs"][i] as PackedByteArray) != (frames[i] as PackedByteArray) or img.load_jpg_from_buffer(back["jpegs"][i]) != OK:
+			same = false
+			continue
+		var c := img.get_pixel(32, 18)
+		same = same and absf(c.r - cols[i].r) < 0.08 and absf(c.g - cols[i].g) < 0.08 and absf(c.b - cols[i].b) < 0.08
+	check(same, "each frame's bytes as they went in, and the picture they were")
+	check(not bool(MjpegAvi.parse(PackedByteArray([1, 2, 3, 4]))["ok"]) and not bool(MjpegAvi.parse(avi.slice(0, 200))["ok"]), "rubbish (or a cut-off file) isn't read as one")
+
+
+## The film's countdown and filming: {movie} counts 3, 2, 1, films LENGTH seconds at FPS with REC
+## and the seconds left, the REC layer kept out of the frames, and saves an AVI that reads back
+## with every frame, its poster frame in the diary's folder; called off in the countdown nothing's
+## saved; stopped early, it's as long as it went on. Asking for frames costs the frame nothing.
+func test_movie_states() -> void:
+	_wipe(CLIPS)
+	MovieClip.root = CLIPS
+	var frame := _frame_image()
+	MovieClip.fake_source = func(): return frame
+	var clip := MovieClip.new()
+	t.add_child(clip)
+	clip.set_process(false)   # (moved on by hand, a frame at a time)
+	await _frames(1)
+	var got := []
+	clip.saved.connect(func(info): got.append(info))
+	var vp := t.get_viewport()
+	var step := 1.0 / MovieClip.FPS
+	# Called off.
+	check(clip.start({}) == "" and clip.state == MovieClip.State.COUNTDOWN and clip.count() == 3 and clip._overlay.visible, "{movie}: the countdown starts at 3")
+	check(clip.start({}) != "", "only one at a time")
+	clip.tick(1.2)
+	check(clip.count() == 2, "then 2")
+	clip.press()
+	check(clip.state == MovieClip.State.IDLE and not clip._overlay.visible and not DirAccess.dir_exists_absolute(CLIPS), "again in the countdown calls it off: nothing filmed")
+	# The whole film.
+	var poster := ROOT.path_join("film/m001.jpg")
+	clip.start({"poster_path": poster, "caption": "On film"})
+	var counts := []
+	while clip.state == MovieClip.State.COUNTDOWN:
+		if not counts.has(clip.count()):
+			counts.append(clip.count())
+		clip.tick(0.25)
+	check(counts == [3, 2, 1] and clip.state == MovieClip.State.FILMING, "3, 2, 1, then it films (%s)" % str(counts))
+	check(absf(clip.seconds_left() - MovieClip.LENGTH) < 0.3, "%.1f seconds left as it starts" % clip.seconds_left())
+	var hidden := 0
+	var asked := 0
+	var running := 0
+	var last_arm := -1
+	var left_mid := -1.0
+	var ticks := []
+	var grabs := []
+	var began := Time.get_ticks_msec()
+	while clip.state == MovieClip.State.FILMING:
+		# (On the clock, as the game would be: the workers keep up.)
+		while Time.get_ticks_msec() - began < clip.asked * 1000.0 / MovieClip.FPS:
+			await _frames(1)
+		var t0 := Time.get_ticks_usec()
+		clip.tick(step)
+		ticks.append((Time.get_ticks_usec() - t0) / 1000.0)
+		if clip._armed:
+			asked += 1
+			if vp.canvas_cull_mask & MovieClip.LAYER == 0:
+				hidden += 1
+			if last_arm >= 0 and clip._armed_at != last_arm and clip._armed_at - last_arm < 2:
+				running += 1
+			last_arm = clip._armed_at
+		if clip.asked == MovieClip.FPS * 5:
+			left_mid = clip.seconds_left()
+		await _frames(1)
+		grabs.append(clip.last_grab_ms)
+	await _until(func():
+		clip.tick(0.0)
+		return not clip._armed, 2.0)
+	check(asked > 200 and hidden == asked and vp.canvas_cull_mask & MovieClip.LAYER != 0, "REC's kept out of each frame filmed (%d of %d), and back on the screen after" % [hidden, asked])
+	check(running == 0, "never two frames running filmed: REC stays on the screen in between")
+	check(absf(left_mid - 5.0) < 0.2, "half way: %.1f seconds left" % left_mid)
+	check(clip.asked == roundi(MovieClip.LENGTH * MovieClip.FPS) and clip.state == MovieClip.State.SAVING, "%d frames asked for (%d s at %d fps), then saving" % [clip.asked, roundi(MovieClip.LENGTH), MovieClip.FPS])
+	# (Middling times: the busy workers can hold the main thread up now and then on a loaded machine.)
+	ticks.sort()
+	grabs.sort()
+	var tick_mid: float = ticks[ticks.size() / 2]
+	var grab_mid: float = grabs[grabs.size() / 2]
+	check(tick_mid < 0.5 and grab_mid < 0.5, "on the main thread each frame's upkeep %.2f ms and asking for its picture %.2f ms (middling; the worst %.1f ms)" % [tick_mid, grab_mid, ticks.back()])
+	var saved := await _until(func():
+		clip.tick(step)
+		return not got.is_empty(), 60.0)
+	var info: Dictionary = got[0] if saved else {}
+	var file := FileAccess.get_file_as_bytes(str(info.get("path", "")))
+	var avi := MjpegAvi.parse(file)
+	var size := MovieClip.size_for(Vector2i(vp.get_visible_rect().size))
+	check(saved and str(info.get("path", "")).begins_with(CLIPS) and str(info["path"]).ends_with(".avi") and str(info.get("file", "")) == ProjectSettings.globalize_path(str(info["path"])),
+		"saved in the clips folder: %s" % str(info.get("file", "")))
+	check(bool(avi["ok"]) and int(avi["frames"]) == 240 and (avi["jpegs"] as Array).size() == 240 and bool(avi["index_ok"]) and int(avi["fps"]) == MovieClip.FPS
+		and int(avi["w"]) == size.x and int(avi["h"]) == size.y and size.x <= MovieClip.MAX_W and size.y <= MovieClip.MAX_H,
+		"it reads back: %d frames at %d fps, %dx%d, %.1f MB" % [int(avi["frames"]), int(avi["fps"]), int(avi["w"]), int(avi["h"]), file.size() / 1048576.0])
+	var f0 := Image.new()
+	check(not (avi["jpegs"] as Array).is_empty() and f0.load_jpg_from_buffer(avi["jpegs"][120]) == OK and f0.get_width() == size.x and int(info.get("got", 0)) > 200,
+		"its frames are pictures of the game (%d of them filmed, none waited for)" % int(info.get("got", 0)))
+	var pic := Image.load_from_file(poster) if FileAccess.file_exists(poster) else null
+	check(pic != null and pic.get_width() == PhotoCapture.PHOTO_W and info.get("poster") is Image and str((info["job"] as Dictionary).get("caption", "")) == "On film",
+		"its poster frame's in the diary's folder, and the job kept with it")
+	check(MovieClip.size_for(Vector2i(1920, 1080)) == Vector2i(1280, 720) and MovieClip.size_for(Vector2i(2560, 1080)) == Vector2i(1280, 540)
+		and MovieClip.size_for(Vector2i(1024, 768)) == Vector2i(960, 720), "the film's size: the window's shape, at most 1280x720")
+	# Stopped early.
+	got.clear()
+	clip.start({})
+	clip.tick(MovieClip.COUNTDOWN + 0.01)
+	for i in 30:
+		clip.tick(step)
+		await _frames(1)
+	clip.press()
+	var early := await _until(func():
+		clip.tick(step)
+		return not got.is_empty(), 30.0)
+	var short := MjpegAvi.parse(FileAccess.get_file_as_bytes(str(got[0].get("path", "")))) if early else {}
+	check(early and int(short.get("frames", 0)) == clip.total and clip.total >= 30 and clip.total < 40, "stopped early: a %d-frame film" % int(short.get("frames", 0)))
+	clip.queue_free()
+	await _frames(1)
+	MovieClip.fake_source = Callable()
+	MovieClip.root = "user://clips"
+	_wipe(CLIPS)
+	_wipe(ROOT)
+
+
+## A film on an adventure: {movie} counts down and films; it's in the diary, its poster on the
+## page with a Play button; and the photo sharing's own pieces: a photo's smaller copy for the
+## crew, a crew mate's photo kept in this diary in its place by time (once), and one for a diary
+## this machine hasn't begun kept for when it does.
+func test_movie_ride() -> void:
+	_wipe(CLIPS)
+	MovieClip.root = CLIPS
+	var frame := _frame_image()
+	MovieClip.fake_source = func(): return frame
+	var main: Node = await _ride_out(8.0, 4103, "hills")
+	var trip: AdventureTrip = main.trip
+	await _ticks(30)
+	var ev := InputEventAction.new()
+	ev.action = "movie"
+	ev.pressed = true
+	main.movie._unhandled_input(ev)
+	check(main.movie.state == MovieClip.State.COUNTDOWN and str(main.movie.job.get("diary", "")) == trip.photos.diary_id, "{movie} on an adventure: counting down, for its diary")
+	main.movie.t = MovieClip.COUNTDOWN - 0.01
+	await _until(func(): return main.movie.state == MovieClip.State.FILMING, 3.0)
+	await _until(func(): return main.movie.asked >= 20, 10.0)
+	main.movie.stop()
+	var done := await _until(func(): return main.movie.state == MovieClip.State.IDLE, 30.0)
+	var films := trip.photos.photos.filter(func(p): return bool(p.get("movie", false)))
+	check(done and films.size() == 1 and FileAccess.file_exists(str(films[0].get("video", ""))) and str(films[0]["video"]).begins_with(CLIPS)
+		and FileAccess.file_exists(AdventureDiary.folder(trip.photos.diary_id).path_join(str(films[0]["file"]))), "in the diary: its poster beside it, the film in the clips folder")
+	check(main.hud._flash_raw.contains(ProjectSettings.globalize_path(CLIPS)), "and where it's saved said on the screen: %s" % main.hud._flash_raw)
+	trip.photos.save_draft()
+	var book := DiaryBook.new()
+	t.add_child(book)
+	await _frames(1)
+	book.open_diary(trip.photos.diary_id)
+	var at := -1
+	for i in book.pages.size():
+		if str(book.pages[i]["kind"]) == "photos" and (book.pages[i]["photos"] as Array).any(func(p): return bool(p.get("movie", false))):
+			at = i
+	book.spread = maxi(0, at) / 2
+	book._show()
+	await _frames(1)
+	var pg: Control = book._left if at % 2 == 0 else book._right
+	var buttons := pg.get_children().filter(func(c): return c is Button and not c.disabled)
+	check(at >= 0 and buttons.size() == 1 and str(buttons[0].text) == "Play the film", "in the book: the film with a Play button")
+	book.queue_free()
+	# A photo's smaller copy for the crew.
+	var shared := []
+	trip.photos.capture.saved.connect(func(j): shared.append(j))
+	trip.photos.capture.snap({"path": AdventureDiary.folder(trip.photos.diary_id).path_join("zz.jpg"), "share": true})
+	await _until(func(): return not shared.is_empty(), 5.0)
+	var sb: PackedByteArray = shared[0].get("share_bytes", PackedByteArray()) if not shared.is_empty() else PackedByteArray()
+	var small := Image.new()
+	check(not sb.is_empty() and small.load_jpg_from_buffer(sb) == OK and small.get_width() == DiaryShare.SHARE_W and sb.size() < DiaryShare.MAX_PHOTO,
+		"a photo's copy for the crew: %dx%d, %d KB" % [small.get_width(), small.get_height(), sb.size() / 1024])
+	# A crew mate's photo, kept here once, in its place.
+	var ds: DiaryShare = Shed.diary_share
+	var first_at := int(trip.photos.photos[0].get("at", 0))
+	var rec := DiaryShare.clean({"kind": "photo", "caption": "Dave's", "uid": "../evil/1a2b", "at": first_at - 5, "who": [], "file": "/etc/passwd", "by": "Dave"})
+	check(str(rec["uid"]) == "evil1a2b" and not rec.has("file") and not rec.has("by"), "a record from the crew: only its fields, its id a safe name")
+	rec["by"] = "Dave"
+	var n0 := trip.photos.photos.size()
+	check(ds.keep(trip.photos.diary_id, rec, sb) and not ds.keep(trip.photos.diary_id, rec, sb), "a crew mate's photo kept, and only once")
+	check(trip.photos.photos.size() == n0 + 1 and str(trip.photos.photos[0].get("uid", "")) == "evil1a2b" and bool(trip.photos.photos[0]["shared"])
+		and FileAccess.file_exists(AdventureDiary.folder(trip.photos.diary_id).path_join("x_evil1a2b.jpg")), "in this diary, first by when it was taken, its file beside it")
+	var saved_d := AdventureDiary.load_diary(trip.photos.diary_id)
+	check((saved_d["photos"] as Array).any(func(p): return str(p.get("by", "")) == "Dave"), "and in the diary saved, credited to Dave")
+	# One for a diary not begun here yet.
+	var later := rec.duplicate()
+	later["uid"] = "later1"
+	check(ds.keep("1700000099_5", later, sb) and DiaryShare.has_photo("1700000099_5", "later1") and DiaryShare.take_pending("1700000099_5").size() == 1
+		and DiaryShare.pending.is_empty(), "one for a diary not begun here: kept for when it is")
+	# A rider joining part-way (as the host sees it): sent every photo so far, the films left out.
+	ds._on_joined(77, {})
+	var queued := ds._out.filter(func(o): return int(o["to"]) == 77).size()
+	var want := trip.photos.photos.filter(func(p): return str(p.get("uid", "")) != "" and not bool(p.get("movie", false))).size()
+	check(queued > 0 and queued == want, "a rider joining part-way is sent the %d photos so far (%d queued), not the film" % [want, queued])
+	ds._on_joined(77, {})
+	check(ds._out.filter(func(o): return int(o["to"]) == 77).size() == queued, "and only once")
+	ds._on_left(77)
+	check(ds._out.is_empty(), "gone again: nothing more sent them")
+	await _done(main)
+	MovieClip.fake_source = Callable()
+	MovieClip.root = "user://clips"
+	_wipe(CLIPS)

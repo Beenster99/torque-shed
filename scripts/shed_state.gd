@@ -167,6 +167,9 @@ var screens := {}
 ## defenders (0: on their hook), how hot the engine on the rig is (0..1) and how much exhaust
 ## haze hangs in the room (0..1).
 var dyno := dyno_defaults()
+## The shed's petrol pump on the front wall: who has the nozzle, the bike it's pouring into and
+## this sale (see ShedPump).
+var pump := ShedPump.defaults()
 ## Bikes saved as blueprints in geometry mode, to build again: blueprint id -> {id, name, parts
 ## {slot: part id or "none"}, colors {slot: {color, finish}}, paint, geo (its parts' fit, see
 ## GeoGizmo), from (the bike it was taken from)}.
@@ -208,6 +211,14 @@ func _ready() -> void:
 	Net.player_joined.connect(_on_player_joined)
 	Net.player_updated.connect(func(id, info): _on_player_joined(id, info))
 	Net.player_left.connect(_on_player_left)
+	# (After the shed's own joining, so a player joining gets the shed before the diary's photos.)
+	diary_share = DiaryShare.new()
+	diary_share.name = "DiaryShare"
+	add_child(diary_share)
+
+
+## The crew's Adventure Diary photos, shared (see DiaryShare).
+var diary_share: DiaryShare
 
 
 func is_authority() -> bool:
@@ -253,6 +264,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	holograms = {}
 	on_order = []
 	dyno = dyno_defaults()
+	pump = ShedPump.defaults()
 	_dyno_busy_until = 0
 	items.clear()
 	crew.clear()
@@ -373,6 +385,8 @@ func load_state(state: Dictionary, player_name: String) -> void:
 		dyno["hose"] = "hook"
 	dyno["hose_by"] = 0
 	dyno["headphones"] = 0
+	# Nor holding the petrol pump's nozzle.
+	ShedPump.after_load()
 	# Peer ids don't carry over between sessions, so live channels follow whoever rides first.
 	for key in screens.keys():
 		if not (screens[key] is Dictionary) or not TvChannels.screen_exists(str(key)):
@@ -511,6 +525,7 @@ func join_remote() -> void:
 	holograms = {}
 	on_order = []
 	dyno = dyno_defaults()
+	pump = ShedPump.defaults()
 	_dyno_busy_until = 0
 	items.clear()
 	crew.clear()
@@ -544,6 +559,7 @@ func stop() -> void:
 	holograms = {}
 	on_order = []
 	dyno = dyno_defaults()
+	pump = ShedPump.defaults()
 	_dyno_busy_until = 0
 	active = false
 	bikes.clear()
@@ -829,6 +845,8 @@ func _dyno_check(peer: int, action: Dictionary) -> String:
 						return "Put the part down first."
 					if pushing_bike(peer) != 0 or moving(peer) != 0:
 						return "Let go of what you're moving first."
+					if ShedPump.holder() == peer:
+						return "You've got the petrol nozzle in your hand. Hang it back on the pump first."
 				"bike":
 					if hose_holder() != peer:
 						return "Take the exhaust hose off its hook first."
@@ -899,6 +917,7 @@ func _tidy_dyno() -> void:
 		dyno["hose_by"] = 0
 	if int(dyno.get("headphones", 0)) != 0 and not crew.has(int(dyno["headphones"])):
 		dyno["headphones"] = 0
+	ShedPump.tidy()
 
 
 const DYNO_HEAT_FAN := 0.08      # how much hotter the engine gets in one run with the fan on
@@ -2511,12 +2530,16 @@ func check(peer: int, action: Dictionary) -> String:
 		return _coat_check(peer, action)
 	if a.begins_with("money_"):
 		return Money.check(peer, action)
+	if a.begins_with("pump_"):
+		return ShedPump.check(peer, action)
 	if a.begins_with("copy_"):
 		return BikeCopy.check(peer, action)
 	if a == "retrieve_bike":
 		return retrieve_check(action)
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
 		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
+	if ShedPump.holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack", "dyno_hose"]:
+		return "You've got the petrol nozzle in your hand. Hang it back on the pump first."
 	match a:
 		"unbolt", "bolt", "remove":
 			var host := host_of(bike_id, slot, engine_id)
@@ -3000,6 +3023,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var style := str(action.get("style", ""))
 			if style != "" and not PartsDB.STYLES.has(style):
 				return "Nobody deals in that style of bike."
+			if action.has("quality") and BikeCopy.quality_of(action["quality"]) < 0.0:
+				return "Nobody sells a bike in that condition."
 		"tune":
 			if not bikes.has(bike_id):
 				return "That bike has gone."
@@ -3292,6 +3317,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	if str(action.get("a", "")).begins_with("money_"):
 		_money_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("pump_"):
+		_pump_apply(peer, action)
 		return
 	if str(action.get("a", "")).begins_with("coffee_"):
 		_coffee_apply(peer, action)
@@ -4008,9 +4036,25 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
 			text = _blueprint_apply(action, peer)
 		"order":
-			# Any old project bike, or one found to order in a style ("make me a cruiser").
+			# Any old project bike, or one found to order in a style ("make me a cruiser"), as worn
+			# as it comes or in the condition the parts computer's slider asked for ("quality", 0
+			# worn .. 1 new: see Money.project_age). A new one comes ready to ride.
 			var style := str(action.get("style", ""))
-			var id := _random_bike(free_bay(Workshop.bay_count())) if style == "" else _style_bike(free_bay(Workshop.bay_count()), style)
+			var age := -1.0
+			var quality := -1.0
+			if action.has("quality"):
+				quality = BikeCopy.quality_of(action["quality"])
+				age = Money.project_age(quality)
+				if age > 0.0:
+					age = clampf(age + _rng.randf_range(-0.05, 0.05), 0.02, 1.0)
+			var bay := free_bay(Workshop.bay_count())
+			var id := _random_bike(bay, age) if style == "" else _style_bike(bay, style, age)
+			# At least half a tank in it; a new one with every fluid in, ready to ride.
+			if age == 0.0:
+				_ready_to_ride(id)
+			else:
+				top_up_fuel(id)
+			Contracts.refresh_delivered(id)
 			# A project bike costs a little more than it would fetch as it comes (see Money), and
 			# one found in a style a little more again.
 			var cost := Money.project_price(id) if style == "" else Money.style_project_price(id)
@@ -4024,8 +4068,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 				bikes[id]["style_order"] = style
 				bikes[id]["ordered_by"] = str(c.get("name", ""))
 			bikes[id]["bought"] = cost   # what it cost, for pricing it when it's sold (see Sales)
-			arrival_puncture(id, "project")
-			text = "%s has been delivered to bay %d, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1, TvChannels.money_text(cost)]
+			if age != 0.0:
+				arrival_puncture(id, "project")
+			text = "%s has been delivered to bay %d%s, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1,
+				", ready to ride" if age == 0.0 else "" if quality < 0.0 else " (%s)" % BikeCopy.quality_name(quality).to_lower(), TvChannels.money_text(cost)]
 		"radio":
 			radio = {"on": bool(action.get("on", radio["on"])), "station": int(action.get("station", radio["station"]))}
 			text = "Radio: %s" % station_name() if radio["on"] else "Radio off"
@@ -4916,7 +4962,90 @@ func _fill_fluids(bike_id: int, age: float) -> void:
 			"age": clampf(age * _rng.randf_range(0.9, 1.3), 0.0, 1.0)}
 
 
-func _random_bike(bay: int) -> int:
+## How much of a tank of petrol every bike bought or ordered in comes with, at least (Simon:
+## "ordered bikes should have at least half a tank of fuel").
+const ORDER_FUEL := 0.5
+
+
+## Tops a bike's tank (and any auxiliary tank) up to at least `share` of what it holds, with fresh
+## petrol; a tank with more in it already is left as it is.
+func top_up_fuel(bike_id: int, share := ORDER_FUEL) -> void:
+	for slot in ["tank", "aux_tank"]:
+		var id := item_on(bike_id, slot)
+		if id == 0 or not (items[id].get("fluid") is Dictionary):
+			continue
+		var f: Dictionary = items[id]["fluid"]
+		var want := ceilf(PartsDB.fluid_capacity(str(items[id]["part"])) * share * 100.0) / 100.0
+		var had := float(f.get("litres", 0.0))
+		if had >= want:
+			continue
+		if str(f.get("type", "")) == "":
+			f["type"] = "unleaded_95"
+		# What's put in is fresh: the old petrol left in it is that much less of the tank.
+		f["age"] = float(f.get("age", 0.0)) * had / maxf(want, 0.01)
+		f["litres"] = want
+
+
+## A bike made ready to ride as it leaves the dealer: the oil and brake fluid filled to the mark
+## and fresh, the chain set and lubed, and at least ORDER_FUEL of a tank.
+func _ready_to_ride(bike_id: int) -> void:
+	for slot in ["engine", "front_master", "rear_master"]:
+		var id := item_on(bike_id, slot)
+		if id == 0 or not (items[id].get("fluid") is Dictionary):
+			continue
+		var f: Dictionary = items[id]["fluid"]
+		if str(f.get("type", "")) == "":
+			f["type"] = "semi_10w40" if slot == "engine" else "dot4"
+		f["litres"] = PartsDB.fluid_capacity(str(items[id]["part"]))
+		f["age"] = 0.0
+	var chain := item_on(bike_id, "chain")
+	if chain != 0:
+		items[chain]["slack"] = CHAIN_SLACK_SET
+		items[chain]["lube"] = 1.0
+	top_up_fuel(bike_id)
+
+
+## Where a bike ordered built (see BikeCopy) is left: {bay, xf}, in the yard by the roller door
+## (the row retrieved bikes are left in) or, with that full, in a free bay; null when there's
+## room in neither.
+func ready_bike_place():
+	var xf = free_retrieve_xf()
+	if xf is Transform3D:
+		return {"bay": -1, "xf": xf}
+	var bay := free_bay(Workshop.bay_count())
+	if bay >= 0:
+		return {"bay": bay, "xf": Workshop.bay_transform(bay)}
+	return null
+
+
+## Host: a new bike built to `plan` (as BikeCopy.plan_of gives it: its parts in their colours, its
+## paint and fit), ready to ride (_ready_to_ride), left at `place` (ready_bike_place) on its
+## stand, with what was paid for it (for Sales) and who ordered it. Returns its id.
+func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: String) -> int:
+	var bay := int(place.get("bay", -1))
+	var paint = plan.get("paint") if plan.get("paint") is Color else null
+	var id := _new_bike(plan.get("parts", {}), maxi(bay, 0), str(plan.get("name", "Bike")), 0.0, paint)
+	var bike: Dictionary = bikes[id]
+	var colors: Dictionary = plan.get("colors", {}) if plan.get("colors") is Dictionary else {}
+	for slot in colors:
+		var it := item_on(id, str(slot))
+		if it != 0 and colors[slot] is Dictionary and colors[slot].get("color") is Color:
+			items[it]["color"] = colors[slot]["color"]
+			items[it]["finish"] = str(colors[slot].get("finish", ""))
+	bike["geo"] = GeoGizmo.sanitize(plan.get("geo", {}))
+	bike["bay"] = bay
+	bike["xf"] = place["xf"]
+	bike["stand"] = "" if bay >= 0 else _rest_stand(id)
+	bike["bought"] = paid
+	bike["ordered_by"] = by
+	_ready_to_ride(id)
+	Contracts.refresh_delivered(id)
+	return id
+
+
+## A project bike of any old build in `bay`, as worn as `age` (0..1; random, as project bikes
+## come, when it's below 0).
+func _random_bike(bay: int, age := -1.0) -> int:
 	var parts := {}
 	var pick := {}
 	for slot in PartsDB.SLOTS:
@@ -4952,7 +5081,7 @@ func _random_bike(bay: int) -> int:
 		parts["mirrors"] = "round_mirrors"
 	parts = PartsDB.dress_fillers(parts, bay)
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
-	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9))
+	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9) if age < 0.0 else age)
 
 
 ## How many goes _style_parts has at a build, keeping the one most true to the style.
@@ -4960,15 +5089,16 @@ const STYLE_TRIES := 6
 
 
 ## A project bike of one style (see PartsDB.STYLES), found to order: as worn as any project
-## bike, but every part on it made for that style. Named after it ("Cruiser project 2").
-func _style_bike(bay: int, style: String) -> int:
+## bike (or as `age` says, when it's 0 or more), but every part on it made for that style. Named
+## after it ("Cruiser project 2"; a new one "New cruiser").
+func _style_bike(bay: int, style: String, age := -1.0) -> int:
 	var parts := style_parts(style)
-	var base := "%s project" % PartsDB.style_name(style)
+	var base := "%s project" % PartsDB.style_name(style) if age != 0.0 else "New %s" % PartsDB.style_noun(style)
 	var n := 1
 	for b in bikes.values():
 		if str(b["name"]).begins_with(base):
 			n += 1
-	return _new_bike(parts, bay, base if n == 1 else "%s %d" % [base, n], _rng.randf_range(0.35, 0.9))
+	return _new_bike(parts, bay, base if n == 1 else "%s %d" % [base, n], _rng.randf_range(0.35, 0.9) if age < 0.0 else age)
 
 
 ## The parts for a bike of `style`: its reference build (Contracts.style_build), with every
@@ -5435,7 +5565,7 @@ func _snapshot(with_board := true) -> Dictionary:
 	if is_authority():
 		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
-		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
+		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno, "pump": pump,
 		"blueprints": blueprints, "holograms": holograms, "on_order": on_order, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
 		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "adventure_save": adventure_save, "kit_v": KIT_SAVE}
 	if with_board:
@@ -5506,6 +5636,8 @@ func _sync(state: Dictionary) -> void:
 	_dyno_busy_until = 0
 	if state.get("dyno") is Dictionary:
 		dyno.merge(state["dyno"], true)
+	# Sheds saved before the pump on the front wall have its nozzle hung up.
+	pump = ShedPump.sanitize(state.get("pump"))
 	_next_id = int(state.get("next", 1))
 	posters = state["posters"] if state.get("posters") is Dictionary else {}
 	# Sheds saved before blueprints have none.
@@ -5537,6 +5669,7 @@ func _process_body(delta: float) -> void:
 	if not active or not is_authority():
 		return
 	_cool_dyno(delta)
+	ShedPump.process(delta)
 	_money_clock()
 	Money.record_graph()
 	Contracts.process(delta)
@@ -5651,6 +5784,20 @@ func remove_bike(bike_id: int) -> void:
 			crew[p]["riding"] = 0
 	bikes.erase(bike_id)
 	_mark_dirty()
+
+
+## A "pump_*" request at the shed's petrol pump (see ShedPump.check and ShedPump.apply).
+func _pump_apply(peer: int, action: Dictionary) -> void:
+	var why := ShedPump.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var text := ShedPump.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_tidy_dyno()
+	_mark_dirty()
+	changed.emit()
 
 
 ## A "money_*" request (see Money.check and Money.apply). Money a player sent that can't be
@@ -5850,7 +5997,7 @@ var bells_heard := 0
 
 
 ## Host-side: rings the sales office's door bell for every player, the shop bell over its doors
-## and the chime in the shed (Sfx.bell). Customers coming in ring it.
+## and the chime in the shed (Sfx.bell). Nothing rings it by itself: customers come in quietly.
 func ring_bell() -> void:
 	if not is_authority():
 		return

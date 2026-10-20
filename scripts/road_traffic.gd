@@ -907,7 +907,8 @@ func _update_views(delta: float) -> void:
 			# Too far off to hear: its players stop (they come back as it nears).
 			sound.running = dist < SOUND_RANGE
 			sound.speed = v
-			sound.gear = clampi(1 + int(v / 4.5), 1, 5)
+			if sound.running:
+				sound.gear = EngineSound.gear_for_speed(sound.gear, v, 4.5, 5)
 			sound.throttle = 0.35
 			sound.rpm = lerpf(build.idle_rpm, build.redline * 0.55, clampf(fmod(v, 4.5) / 4.5 * 0.7 + 0.2, 0.0, 1.0)) \
 				if v > 0.5 else build.idle_rpm

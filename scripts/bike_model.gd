@@ -97,6 +97,9 @@ var _bore_r := 0.048             # cylinder barrel radius
 var _tank_a := Vector3.ZERO      # the tank's underside line, nose to tail (see _draw_tank)
 var _tank_b := Vector3.ZERO
 var _tank_secs: Array = []       # the tank's sections as drawn, for what sits on top of it (see tank_top_at)
+## The middle of the tank's filler cap, on top of it (model space; zero with no tank), where the
+## shed pump's nozzle goes in (see ShedPump).
+var filler := Vector3.ZERO
 var _satnav_screen: MeshInstance3D   # the sat nav's screen, lit with the live map (see set_satnav_texture)
 var _screen_lift: Node3D         # an adjustable screen hangs from this, moved up its rails (see set_screen_raise)
 var _screen_dir := Vector3.UP
@@ -173,6 +176,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_flat_tyres.clear()
 	_dash_face = PackedVector3Array()
 	_tank_secs = []
+	filler = Vector3.ZERO
 	_satnav_screen = null
 	_screen_lift = null
 
@@ -943,6 +947,7 @@ func _draw_tank() -> void:
 	# aircraft cap, or two of them on a cruiser's split tank.
 	var cap_s: Dictionary = secs[roundi(steps * 0.3)]
 	var cap_at: Vector3 = cap_s["c"] + Vector3(0.0, float(cap_s["up"]) - 0.004, 0.0)
+	filler = cap_at
 	match str(look.get("cap", "stock")):
 		"monza":
 			_mesh_instance(_cylinder(0.045, 0.03, 0.04), chrome, cap_at + Vector3(0.0, 0.01, 0.0), self)

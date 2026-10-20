@@ -120,6 +120,7 @@ const ACTIONS := [
 	["paper_map", "Adventure: the paper map of the route (when stopped)", ["foot", "ride"]],
 	["photo", "Adventure: take a photo (hold to film a clip)", ["foot", "ride"]],
 	["photo_camera", "Adventure: hold the camera up on foot (zoom, friends in shot)", ["foot"]],
+	["movie", "Film a 10-second movie (a countdown first; again to stop)", ["foot", "ride"]],
 	["screen_up", "Adjustable screen up", ["ride"]], ["screen_down", "Adjustable screen down", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
 	["perf_overlay", "Performance profiler on / off", ["foot", "ride"]],
@@ -345,6 +346,8 @@ func _setup_inputs() -> void:
 	# The camera for the Adventure Diary: a photo (held, a clip), and on foot holding it up to your eye.
 	_bind("photo", [KEY_K], [])
 	_bind("photo_camera", [KEY_L], [])
+	# A ten-second film, saved as a video (see MovieClip): the key beside L. Every pad button's taken.
+	_bind("movie", [KEY_SEMICOLON], [])
 	_bind("screen_up", [KEY_PAGEUP], [])
 	_bind("screen_down", [KEY_PAGEDOWN], [])
 	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])

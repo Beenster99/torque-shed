@@ -17,7 +17,8 @@ extends RefCounted
 ##   grip    each tyre compound works in a window: race slicks need real heat, a touring or
 ##           dual-sport tyre works almost cold, and any tyre goes greasy overcooked. The air in
 ##           the tyre warms with the carcass, so the pressure rises from the cold setting.
-##   brakes  pads bite a little less cold (race carbon a lot less) and fade when overcooked.
+##   brakes  pads bite a little less cold (race carbon a lot less). However hot they get they
+##           never fade: a brake keeps its full stopping power.
 ##   engine  a cold engine idles fast (on the choke) and makes a little less power until the
 ##           oil is warm; overheating, it loses power.
 ## Kept on the rider's own bike only: nothing here is saved or sent over the network.
@@ -38,17 +39,14 @@ const OFFROAD_SOFT := [15.0, 85.0, 0.9]
 const OVERHEAT_SPAN := 45.0     # °C past the window over which an overcooked tyre goes greasy
 const OVERHEAT_LOSS := 0.25     # ... losing this much grip
 const OFF_ROAD_SHARE := 0.4     # on dirt and grass the compound's temperature matters this much
-## Pads by type: [bite fully from °C, bite share cold, fade from °C].
+## Pads by type: [bite fully from °C, bite share cold].
 const PADS := {
-	"organic": [40.0, 1.0, 250.0],
-	"semi-metallic": [80.0, 0.95, 350.0],
-	"sintered": [80.0, 0.94, 450.0],
-	"ceramic": [120.0, 0.9, 520.0],
-	"carbon-ceramic": [250.0, 0.65, 650.0],
+	"organic": [40.0, 1.0],
+	"semi-metallic": [80.0, 0.95],
+	"sintered": [80.0, 0.94],
+	"ceramic": [120.0, 0.9],
+	"carbon-ceramic": [250.0, 0.65],
 }
-const FADE_SPAN := 180.0        # °C past the fade point to the worst of the fade
-const FADE_LOSS := 0.45         # ... losing this much bite
-const DRUM_FADE := 270.0        # a drum's shoes fade early, cooking inside the drum
 const DISC_AIRFLOW := 10.0      # W/m²K per (m/s)^0.8: how the air riding past cools a disc (see _brake_step)
 ## How much of the effects Riding realism 1 takes away (0 keeps them whole, realism 0 always does).
 const SOFTEN := 0.75
@@ -130,7 +128,7 @@ func setup(build: BikeBuild) -> void:
 		_disc_c[i] = disc_capacity(disc)
 		_disc_area[i] = disc_area(disc)
 		_disc_cool[i] = disc_cooling(disc)
-		_pad[i] = pad_temps(build.part(sides[i] + "_pads"), disc)
+		_pad[i] = pad_temps(build.part(sides[i] + "_pads"))
 	var cooling: Dictionary = build.part("cooling") if build.has_part("cooling") else {}
 	var kind := str(cooling.get("type", "Air")).to_lower()
 	liquid = kind.contains("liquid")
@@ -185,13 +183,9 @@ static func cooling_text(disc: Dictionary) -> String:
 	return "cooling standard (solid, x%.2f)" % c
 
 
-## Pads' working temperatures, [bite fully from °C, bite share cold, fade from °C], by their type;
-## inside a drum (`disc`) the shoes fade early whatever they're made of.
-static func pad_temps(pad: Dictionary, disc := {}) -> Array:
-	var p: Array = (PADS.get(str(pad.get("type", "")).to_lower(), PADS["semi-metallic"]) as Array).duplicate()
-	if str(disc.get("style", "")) == "drum":
-		p[2] = minf(float(p[2]), DRUM_FADE)
-	return p
+## Pads' working temperatures, [bite fully from °C, bite share cold], by their type.
+static func pad_temps(pad: Dictionary) -> Array:
+	return (PADS.get(str(pad.get("type", "")).to_lower(), PADS["semi-metallic"]) as Array).duplicate()
 
 
 ## The temperature of a shed bike's disc now, °C (`i` 0 front, 1 rear): what's left of its last
@@ -227,7 +221,7 @@ static func disc_now(bike_id: int, i: int) -> float:
 
 
 ## Lines for the look-at panel on a bike's disc, pads or caliper (`looked` is which): the disc's
-## temperature now, and the rest of that brake: the disc, the pads it runs and when they fade, the
+## temperature now, and the rest of that brake: the disc, the pads it runs and when they bite, the
 ## caliper and the stopping torque the whole brake makes. What the part's own condition line
 ## already says (its thickness) isn't repeated.
 static func brake_lines(bike_id: int, side: String, looked: String) -> Array:
@@ -250,12 +244,12 @@ static func brake_lines(bike_id: int, side: String, looked: String) -> Array:
 		out.append("%s disc: none fitted" % side.capitalize())
 	if Shed.items.has(pad_id):
 		var pad := PartsDB.get_part(str(Shed.items[pad_id]["part"]))
-		var temps := pad_temps(pad, disc)
-		var fade := "bite fully from %d °C, fade from %d °C%s" % [roundi(float(temps[0])), roundi(float(temps[2])), " (inside the drum)" if drum else ""]
+		var temps := pad_temps(pad)
+		var bite_at := "bite fully from %d °C" % roundi(float(temps[0]))
 		if looked == "pads":
-			out.append("On %s: %s" % ["this drum" if drum else "this disc", fade])
+			out.append("On %s: %s" % ["this drum" if drum else "this disc", bite_at])
 		else:
-			out.append("Pads fitted: %s, %.1f mm left  ·  %s" % [str(pad.get("type", "?")), MotTest.pad_mm(Shed.items[pad_id]), fade])
+			out.append("Pads fitted: %s, %.1f mm left  ·  %s" % [str(pad.get("type", "?")), MotTest.pad_mm(Shed.items[pad_id]), bite_at])
 	else:
 		out.append("Pads: none fitted")
 	var build: BikeBuild = Shed.build_of(bike_id)
@@ -295,7 +289,7 @@ func warm_through() -> void:
 		var t := working(i)
 		tyres[i] = {"surface": t, "carcass": t, "pressure": 0.0, "grip": 1.0}
 		var p: Array = _pad[i]
-		var b := minf(maxf(float(p[0]) + 60.0, 70.0), float(p[2]) - 60.0)
+		var b := maxf(float(p[0]) + 60.0, 70.0)
 		discs[i] = b
 		pads[i] = b
 	engine = LIQUID["running"] if liquid else AIR["running"]
@@ -418,8 +412,7 @@ func _tyre_step(i: int, dt: float, v: float, p_slip: float, p_roll: float, touch
 
 ## A brake: the disc (or drum) takes the braking work and sheds it to the air; the pads follow it.
 ## Riding, the disc spins in the airstream and pumps air across its faces: at 60 mph it sheds
-## about 150 W per m² per degree, so ordinary riding (slowing for bends and junctions) keeps it
-## well short of fading, and a hot disc is back down within a minute or two of riding on.
+## about 150 W per m² per degree, and a hot disc is back down within a minute or two of riding on.
 func _brake_step(i: int, dt: float, v: float, p: float) -> void:
 	var td := discs[i]
 	var tp := pads[i]
@@ -505,13 +498,12 @@ func tyre_grip(i: int, surf: String) -> float:
 	return lerpf(g, 1.0, soften) if g < 1.0 else g
 
 
-## The brake's bite from its heat (1 = full): a little less cold, much less overcooked.
+## The brake's bite from its heat (1 = full): a little less cold, full once warm, and never any
+## less however hot it gets (brakes don't fade).
 func brake_temp_mult(i: int) -> float:
 	var p: Array = _pad[i]
 	var t := 0.7 * discs[i] + 0.3 * pads[i]
-	var cold := lerpf(float(p[1]), 1.0, clampf((t - 10.0) / maxf(float(p[0]) - 10.0, 1.0), 0.0, 1.0))
-	var fade := 1.0 - FADE_LOSS * clampf((t - float(p[2])) / FADE_SPAN, 0.0, 1.0)
-	return cold * fade
+	return lerpf(float(p[1]), 1.0, clampf((t - 10.0) / maxf(float(p[0]) - 10.0, 1.0), 0.0, 1.0))
 
 
 func _update_effects(assist: float, _delta: float) -> void:
@@ -550,15 +542,6 @@ func engine_state() -> String:
 	if engine < float(e["warm"]):
 		return "cold"
 	return "warm"
-
-
-## True while either brake has lost a noticeable share of its bite to heat.
-func brakes_fading() -> bool:
-	for i in 2:
-		var p: Array = _pad[i]
-		if 0.7 * discs[i] + 0.3 * pads[i] > float(p[2]) + 20.0:
-			return true
-	return false
 
 
 ## The engine's temperature's name: coolant or cylinder head.

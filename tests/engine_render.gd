@@ -1,8 +1,8 @@
 extends Node
 ## Renders engine sounds to .wav files for listening outside the game:
 ##   godot --headless --path . res://tests/engine_render.tscn -- --out=DIR [--only=triple]
-## For each engine: a rev sweep (idle, a pull to the redline, roll off with pops, a blip and a
-## downshift bang), plus the gear-shift sounds and the starters. Mixed the way the chase camera
+## For each engine: a rev sweep (idle, a pull to the redline, roll off with pops, a blip), its
+## gear changes (--only=shift) and its start-ups (--only=start). Mixed the way the chase camera
 ## hears it: mostly exhaust, some engine.
 
 const CASES := [
@@ -74,18 +74,54 @@ func _ready() -> void:
 		EngineSynth.save_wav(drive, out_dir.path_join("%s_sweep.wav" % c[0]))
 		print("%s: baked %d loops in %d ms, %.1f s rendered" % [c[0], bank.loop_count(), baked, drive.size() / float(EngineSynth.RATE)])
 	if only == "" or only == "shift":
-		var all := PackedFloat32Array()
-		for kind in ["slick", "click", "clunk", "neutral"]:
-			for i in 3:
-				all.append_array(EngineSynth.render_shift(kind, i))
-			all.append_array(_silence(0.3))
-		EngineSynth.save_wav(all, out_dir.path_join("gear_shifts_slick_click_clunk_neutral.wav"))
-		var spec := EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0})
-		var st := EngineSynth.render_starter(spec, false)
-		st.append_array(_silence(0.3))
-		st.append_array(EngineSynth.render_starter(EngineSynth.make_spec("2stroke", 1, 125.0, {"idle": 1450.0}), true, 0.8))
-		EngineSynth.save_wav(st, out_dir.path_join("starter_and_kick.wav"))
+		# Each engine's gear changes: into first, up the low and tall gears, down, and neutral.
+		for c in CASES:
+			var sp := EngineSynth.make_spec(c[1], c[2], c[3], c[4])
+			var all := PackedFloat32Array()
+			for step in EngineSynth.GEAR_STEPS:
+				for i in 2:
+					all.append_array(EngineSynth.render_gear(sp, step, i + 1))
+					all.append_array(_silence(0.25))
+				all.append_array(_silence(0.3))
+			EngineSynth.save_wav(all, out_dir.path_join("gears_%s.wav" % c[0]))
+	if only == "" or only == "start":
+		# Each engine starting: two takes of the starter (or the kick), cut where the engine fires,
+		# and the catch, then a moment of idle.
+		for c in CASES:
+			var sp := EngineSynth.make_spec(c[1], c[2], c[3], c[4])
+			var bank := EngineBank.new(sp)
+			bank.bake_now()
+			var all := PackedFloat32Array()
+			for take in 2:
+				all.append_array(render_start(bank, take + 1))
+				all.append_array(_silence(0.6))
+			EngineSynth.save_wav(all, out_dir.path_join("start_%s%s.wav" % [c[0], "_kick" if sp["kick"] else ""]))
 	get_tree().quit()
+
+
+## A start as the bike plays it: the starter for 0.7 s (faded as it fires), the catch, and the
+## idle loop coming in under it.
+func render_start(bank: EngineBank, take: int) -> PackedFloat32Array:
+	var spec := bank.spec
+	var crank := int(EngineSynth.RATE * 0.7)
+	var fade := int(EngineSynth.RATE * EngineSound.STARTER_FADE)
+	var st := EngineSynth.render_starter(spec, bool(spec["kick"]), 1.0, take)
+	var c := EngineSynth.render_catch(spec, bool(spec["kick"]), take)
+	var idle: PackedFloat32Array = bank.loops["ex_off"][bank.bake_order()[0]]
+	var engine: PackedFloat32Array = bank.loops["in_off"][bank.bake_order()[0]]
+	var n := crank + int(EngineSynth.RATE * 1.6)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i in mini(st.size(), crank + fade):
+		out[i] += st[i] * (1.0 if i < crank else 1.0 - float(i - crank) / fade)
+	for i in c.size():
+		out[crank + i] += c[i]
+	for i in range(crank, n):
+		var u := float(i - crank) / EngineSynth.RATE
+		var level := 1.0 - exp(-u * 5.0) if u < 0.3 else 1.0
+		var k := (i - crank) % idle.size()
+		out[i] += (idle[k] + 0.5 * engine[(i - crank) % engine.size()]) * 0.7 * level
+	return out
 
 
 func _silence(s: float) -> PackedFloat32Array:

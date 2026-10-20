@@ -76,9 +76,8 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, dim)
 	var h_ := bike.heat
 	if h_:
-		var fading := h_.brakes_fading()
 		draw_string(font, Vector2(bx, by + 44.0), "Discs %d / %d°C" % [roundi(h_.discs[0]), roundi(h_.discs[1])],
-			HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, TelemetryGraph.OVER if fading else dim)
+			HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12, dim)
 		var eng := h_.engine_state()
 		draw_string(font, Vector2(bx, by + 60.0), "%s %d°C" % [h_.engine_label().capitalize(), roundi(h_.engine)],
 			HORIZONTAL_ALIGNMENT_LEFT, size.x - bx - 6.0, 12,

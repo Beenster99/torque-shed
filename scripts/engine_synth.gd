@@ -14,8 +14,9 @@ extends RefCounted
 ## and off it, a short loop is rendered for the exhaust side and one for the engine/intake side.
 ## Each loop is a whole number of engine cycles so it repeats seamlessly. EngineSound then plays
 ## the loops on 3D players, crossfading and pitch-shifting between the two nearest buckets, the
-## way racing games play their recorded engine loops. One-shots (overrun pops, downshift bangs,
-## gear shifts, the starter and the kick) are rendered through the same exhaust.
+## way racing games play their recorded engine loops. One-shots (overrun pops and bangs, the
+## starter or the kick and the engine catching) are rendered through the same exhaust; gear
+## changes are the box's own clicks and clunks.
 
 const RATE := 32000
 const LOOP_SECONDS := 0.4     # each loop is at least this long, a whole number of engine cycles
@@ -77,8 +78,11 @@ static func spec_from_build(build: BikeBuild) -> Dictionary:
 		"dry_clutch": bool(box.get("dry_clutch", false)),
 		"rust": clampf(float(build.condition.get("exhaust", {}).get("rust", 0.0)), 0.0, 1.0),
 		"misfire": clampf((0.6 - plugs) * 0.6, 0.0, 0.3),
+		# Kick-started: a two-stroke single, a single with the vintage box, or any little single,
+		# twin or two-stroke of 125 cc or less.
 		"kick": str(block.get("layout", "")) == "2stroke" and int(block.get("cylinders", 1)) == 1
-			or str(block.get("layout", "")) == "single" and str(build.parts.get("gearbox", "")) == "four_vintage",
+			or str(block.get("layout", "")) == "single" and str(build.parts.get("gearbox", "")) == "four_vintage"
+			or str(block.get("layout", "")) in ["single", "twin", "2stroke"] and build.displacement <= 125.0,
 	}
 	return make_spec(build.layout, build.cylinders, build.displacement, opts)
 
@@ -125,11 +129,12 @@ static func shift_feel(box: Dictionary) -> String:
 	return "slick" if t <= 0.05 else ("click" if t <= 0.1 else "clunk")
 
 
-## Everything that changes the baked sound, as a key for sharing banks between bikes.
+## Everything that changes the baked sound (the gearbox's feel too, for its gear changes), as a
+## key for sharing banks between bikes.
 static func signature(spec: Dictionary) -> String:
-	return "%s|%d|%d|%s|%d|%d|%d|%s|%s|%s|%d|%d|%s" % [spec["layout"], spec["cylinders"], roundi(spec["cc"] / 25.0), spec["crank"],
+	return "%s|%d|%d|%s|%d|%d|%d|%s|%s|%s|%d|%d|%s|%s|%s" % [spec["layout"], spec["cylinders"], roundi(spec["cc"] / 25.0), spec["crank"],
 		roundi(spec["idle"] / 50.0), roundi(spec["redline"] / 100.0), roundi(spec["peak"] / 100.0), spec["exhaust"], spec["intake"],
-		spec["dry_clutch"], roundi(spec["rust"] * 4.0), roundi(spec["misfire"] * 10.0), spec["kick"]]
+		spec["dry_clutch"], roundi(spec["rust"] * 4.0), roundi(spec["misfire"] * 10.0), spec["kick"], spec["shift"], spec["quickshifter"]]
 
 
 static func is_two_stroke(spec: Dictionary) -> bool:
@@ -641,96 +646,302 @@ static func render_pop(spec: Dictionary, strength: float, seed := 1) -> PackedFl
 	return out
 
 
-## The gearbox's sound for one shift: "slick" (a race quickshifter: a crisp double tick),
-## "click" (a positive sports box: a clean detent click with a little body) or "clunk" (a
-## basic or old box: a heavy dog engagement with a rattle). "neutral" is the solid clunk of
-## dropping into first from neutral.
+## The gear changes a bank bakes, each a click or a clunk of the box: into first (the heaviest
+## clunk), a change in the low gears, one up into the tall gears (lighter), a downshift (the
+## dogs meet with more speed between them) and finding neutral (a soft click).
+const GEAR_STEPS := ["first", "low", "high", "down", "neutral"]
+## How much heavier (or lighter) each step sounds than the box's own weight.
+const STEP_HEFT := {"first": 0.25, "low": 0.0, "high": -0.15, "down": 0.08, "neutral": 0.0}
+
+
+## How heavy this engine's gear changes sound, 0 (a little 125's tick) to 1 (a big twin's
+## clunk): by the engine's size, the gearbox's feel and the layout.
+static func gear_heft(spec: Dictionary) -> float:
+	var size := clampf((float(spec["cc"]) - 50.0) / 1300.0, 0.0, 1.0)
+	var h := 0.12 + 0.6 * size + float({"clunk": 0.15, "click": 0.0, "slick": -0.12}.get(str(spec["shift"]), 0.0))
+	if bool(spec["quickshifter"]):
+		h -= 0.05
+	h += float({"vtwin": 0.08, "boxer": 0.08, "2stroke": -0.05}.get(str(spec["layout"]), 0.0))
+	return clampf(h, 0.0, 1.0)
+
+
+## Which step a change from gear `from` to gear `to` is (gear 0 is neutral).
+static func gear_step(from: int, to: int) -> String:
+	if to == 0:
+		return "neutral"
+	if to == 1:
+		return "first"
+	if to < from:
+		return "down"
+	return "high" if to >= 4 else "low"
+
+
+## One gear change of this engine's box, `step` one of GEAR_STEPS.
+static func render_gear(spec: Dictionary, step: String, seed := 1) -> PackedFloat32Array:
+	return render_gear_heft(gear_heft(spec) + float(STEP_HEFT.get(step, 0.0)), step == "neutral", seed)
+
+
+## A gearbox's shift by its feel alone: "slick" (a race box with a quickshifter: a light, crisp
+## click), "click" (a positive sports box) or "clunk" (a basic or old box: a heavy knock).
+## "neutral" is the soft click of finding neutral.
 static func render_shift(kind: String, seed := 1) -> PackedFloat32Array:
+	var h: float = {"slick": 0.1, "click": 0.4, "clunk": 0.8}.get(kind, 0.4)
+	return render_gear_heft(h, kind == "neutral", seed)
+
+
+## A gear change as the box makes it, all metal: the lever's pawl ticking the selector drum
+## round, the drum's detent roller clicking into its notch, then the dogs knocking into
+## engagement (a thud down the shafts and the cases ringing briefly). `heft` 0 is a light click
+## (a small bike, a race box, up the tall gears) and 1 a heavy clunk (a big bike, an old box,
+## into first), whose dogs settle with a second, softer knock. `neutral` is only the pawl and
+## the detent: a soft click.
+static func render_gear_heft(heft: float, neutral := false, seed := 1) -> PackedFloat32Array:
+	var h := clampf(heft, 0.0, 1.0)
 	var rng := RandomNumberGenerator.new()
-	rng.seed = seed * 977 + hash(kind)
+	rng.seed = seed * 977 + roundi(h * 100.0) * 13 + (7 if neutral else 0)
 	var n := int(RATE * 0.25)
 	var out := PackedFloat32Array()
 	out.resize(n)
-	match kind:
-		"slick":
-			_ping(out, 0, 5200.0, 0.006, 0.45, rng)
-			_ping(out, int(RATE * 0.009), 7800.0, 0.004, 0.25, rng)
-			_thump(out, 0, 320.0, 0.012, 0.12)
-		"click":
-			_ping(out, 0, 3400.0, 0.012, 0.55, rng)
-			_thump(out, int(RATE * 0.004), 210.0, 0.025, 0.4)
-			_ping(out, int(RATE * 0.018), 2600.0, 0.008, 0.18, rng)
-		"neutral":
-			_thump(out, 0, 85.0, 0.09, 0.95)
-			_ping(out, int(RATE * 0.003), 560.0, 0.1, 0.35, rng)
-			_ping(out, int(RATE * 0.004), 1240.0, 0.06, 0.25, rng)
-			_noise_burst(out, 0, 0.05, 1700.0, 0.3, rng)
-		_:
-			_thump(out, 0, 110.0, 0.07, 0.8)
-			_ping(out, int(RATE * 0.002), 650.0, 0.09, 0.3, rng)
-			_ping(out, int(RATE * 0.003), 1310.0, 0.05, 0.2, rng)
-			_noise_burst(out, 0, 0.04, 1800.0, 0.25, rng)
-			_thump(out, int(RATE * 0.032), 95.0, 0.05, 0.35)
+	if neutral:
+		_ping(out, 0, rng.randf_range(3000.0, 3600.0), 0.003, 0.2, rng)
+		_noise_burst(out, int(RATE * 0.003), 0.004, 2600.0, 0.07, rng)
+		var notch := int(RATE * rng.randf_range(0.006, 0.009))
+		_ping(out, notch, rng.randf_range(1300.0, 1600.0), 0.01, 0.12, rng)
+		_thump(out, notch, 240.0, 0.01, 0.1)
+		_limit(out)
+		return out
+	# The pawl picking up the drum.
+	_ping(out, 0, lerpf(4200.0, 2400.0, h) * rng.randf_range(0.94, 1.06), lerpf(0.003, 0.006, h), 0.22, rng)
+	# The detent roller dropping into the drum's next notch.
+	var detent := int(RATE * lerpf(0.004, 0.007, h) * rng.randf_range(0.9, 1.1))
+	_noise_burst(out, detent, lerpf(0.004, 0.01, h), lerpf(3000.0, 1800.0, h), 0.12, rng)
+	# The dogs knocking home: a thud down the shafts and the cases ringing.
+	var dog := int(RATE * lerpf(0.01, 0.022, h) * rng.randf_range(0.9, 1.15))
+	var thud := lerpf(190.0, 75.0, h) * rng.randf_range(0.93, 1.07)
+	_thump(out, dog, thud, lerpf(0.015, 0.07, h), lerpf(0.3, 1.0, h))
+	var case_hz := lerpf(1150.0, 480.0, h) * rng.randf_range(0.94, 1.06)
+	for m: Array in [[1.0, 0.35, 1.0], [2.32, 0.22, 0.7], [3.87, 0.14, 0.5], [5.6, 0.08, 0.35]]:
+		_ping(out, dog, case_hz * float(m[0]), lerpf(0.02, 0.08, h) * float(m[2]), float(m[1]) * lerpf(0.55, 1.0, h), rng)
+	_noise_burst(out, dog, lerpf(0.006, 0.03, h), lerpf(2400.0, 1500.0, h), lerpf(0.1, 0.3, h), rng)
+	if h > 0.55:
+		# A heavy box: the dogs bounce and settle with a second knock.
+		var again := dog + int(RATE * lerpf(0.018, 0.03, h) * rng.randf_range(0.85, 1.15))
+		var k := (h - 0.4) / 0.6
+		_thump(out, again, thud * 0.9, 0.04, 0.35 * k)
+		_ping(out, again, case_hz * 1.07, 0.03, 0.12 * k, rng)
 	_limit(out)
 	return out
 
 
-## The starter motor: the solenoid clicks, the motor whirrs and labours at each compression,
-## the engine chuffing over through its pipe. Or, for a kick-start bike, the lever clacks down,
-## the engine turns over a few times and the lever springs back.
-static func render_starter(spec: Dictionary, kick := false, seconds := 0.75) -> PackedFloat32Array:
+## How this engine turns over: on an electric starter, how fast the motor spins the crank (a
+## small single zips over, a big V-twin grinds slowly), how hard each compression drags it down
+## (a single or a V-twin lurches, a four whirrs evenly), the motor's whine (higher on a small
+## engine) and whether an old Bendix drive clanks in; or whether it's kick-started. Picked by
+## layout and size, so a single, a twin, a V-twin, a triple and a four each turn over in their
+## own way.
+static func starter_style(spec: Dictionary) -> Dictionary:
+	var cc: float = spec["cc"]
+	var size := clampf((cc - 50.0) / 1300.0, 0.0, 1.0)
+	var layout := str(spec["layout"])
+	var crank: float = {"single": 430.0, "twin": 340.0, "parallel": 350.0, "vtwin": 300.0, "boxer": 320.0,
+		"triple": 380.0, "inline": 400.0, "2stroke": 460.0}.get(layout, 360.0)
+	var drag: float = {"single": 0.55, "twin": 0.35, "parallel": 0.35, "vtwin": 0.5, "boxer": 0.4,
+		"triple": 0.25, "inline": 0.14, "2stroke": 0.3}.get(layout, 0.3)
+	return {
+		"kick": bool(spec["kick"]),
+		"crank_rpm": crank * lerpf(1.1, 0.75, size),
+		"drag": clampf(drag * clampf(0.6 + cc / float(spec["cylinders"]) / 600.0, 0.6, 1.4), 0.05, 0.8),
+		"motor_hz": lerpf(520.0, 230.0, size),
+		"whine": 0.05 if layout in ["inline", "triple"] else 0.03,
+		"bendix": str(spec["shift"]) == "clunk" or (layout == "vtwin" and cc >= 1000.0),
+	}
+
+
+## Turning the engine over before it catches, `seconds` long (it's faded out as soon as the
+## engine fires). On the button: the solenoid clacks, the starter motor whines up (an old
+## Bendix drive clanking into the ring gear first) and labours at each compression, the crank
+## lurching over them (a single's slow chug, a V-twin's uneven pair, a four's even whirr), the
+## engine chuffing through its own pipe. Or kicked: the lever's ratchet bites, the kick spins it
+## fast through a few compressions and it slows, and the lever springs back up. Each `seed` is a
+## slightly different take (the battery's charge, where the crank stopped, the rider's kick).
+static func render_starter(spec: Dictionary, kick := false, seconds := 1.0, seed := 1) -> PackedFloat32Array:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(signature(spec)) + (5 if kick else 3)
+	rng.seed = hash(signature(spec)) + seed * 7717 + (5 if kick else 3)
 	var n := int(RATE * seconds)
 	var out := PackedFloat32Array()
 	out.resize(n)
-	var comp_events := []
-	var fires := firing_events(spec)
+	var style := starter_style(spec)
+	var chuffs := []
 	if kick:
-		_ping(out, 0, 1250.0, 0.03, 0.5, rng)
-		_ping(out, 0, 3100.0, 0.015, 0.3, rng)
-		_noise_burst(out, int(RATE * 0.01), 0.12, 900.0, 0.12, rng)
-		# The kick spins it over quickly, then slower.
-		var t := 0.05
-		var gap := 0.06
-		for i in 4:
-			comp_events.append([t * RATE, 0.55 - i * 0.08, 0, 0])
-			t += gap
-			gap *= 1.35
-		_ping(out, int(RATE * minf(seconds - 0.12, 0.5)), 1400.0, 0.025, 0.35, rng)   # the lever springs back up
+		_kick_over(out, spec, rng, chuffs)
 	else:
-		_ping(out, 0, 2500.0, 0.01, 0.4, rng)   # the solenoid
-		var crank_rpm := 280.0
-		var phase := 0.0
-		var hz := 150.0
-		var comp_gap := 60.0 / crank_rpm * cycle_degrees(spec) / 360.0 / fires.size()
-		var next_comp := 0.06
-		var labour := 0.0
-		for i in n:
-			var t := float(i) / RATE
-			if t >= 0.03:
-				if t >= next_comp:
-					comp_events.append([float(i), 0.35, 0, 0])
-					next_comp += comp_gap
-					labour = 1.0
-				labour *= 0.9993
-				var target := lerpf(170.0, 300.0, clampf((t - 0.03) / 0.2, 0.0, 1.0)) * (1.0 - 0.22 * labour)
-				hz += (target - hz) * 0.002
-				phase = fmod(phase + hz / RATE, 1.0)
-				# A whirring motor: a buzzy fundamental and its harmonics, and brush noise.
-				var s := 0.0
-				for k in range(1, 6):
-					s += sin(TAU * phase * k * 3.0) / k
-				var fade_in := clampf((t - 0.03) / 0.04, 0.0, 1.0)
-				out[i] += (s * 0.09 + rng.randf_range(-1.0, 1.0) * 0.025) * fade_in
+		_crank_over(out, spec, style, rng, chuffs)
 	# The engine turning over: soft compression chuffs through its own exhaust.
-	if not comp_events.is_empty():
-		var chuffs := _exhaust(spec, 900.0, 0.0, comp_events, n, 0, rng)
+	if not chuffs.is_empty():
+		var puffs := _exhaust(spec, 900.0, 0.0, chuffs, n, 0, rng)
 		for i in n:
-			out[i] += chuffs[i] * 1.6
+			out[i] += puffs[i] * 1.6
 	var fade := int(RATE * 0.03)
 	for i in fade:
 		out[n - 1 - i] *= float(i) / fade
+	_limit(out)
+	return out
+
+
+## How far past its compression top dead centre each cylinder is draws on the crank: rising
+## towards it the crank is dragged back (1 at the top), just over it the gas springs it on.
+static func _compression_load(fires: Array, angle: float, cyc: float) -> float:
+	var load := 0.0
+	for f in fires:
+		var d := fposmod(angle - float(f[0]), cyc)
+		if d > cyc - 90.0:
+			var x := (d - (cyc - 90.0)) / 90.0
+			load += x * x
+		elif d < 45.0:
+			load -= 0.4 * (1.0 - d / 45.0)
+	return clampf(load, -0.5, 1.0)
+
+
+## Adds a chuff for each cylinder whose exhaust valve opened between crank angles `prev` and
+## `angle` (a little after each one's top dead centre).
+static func _chuffs_between(fires: Array, prev: float, angle: float, cyc: float, at: int, amp: float, out: Array) -> void:
+	for c in fires.size():
+		var mark := fposmod(float(fires[c][0]) + 140.0, cyc)
+		if fposmod(prev - mark, cyc) > fposmod(angle - mark, cyc):
+			out.append([float(at), amp, int(fires[c][1]), c])
+
+
+static func _crank_over(out: PackedFloat32Array, spec: Dictionary, style: Dictionary, rng: RandomNumberGenerator, chuffs: Array) -> void:
+	var n := out.size()
+	var fires := firing_events(spec)
+	var cyc := cycle_degrees(spec)
+	var battery := rng.randf_range(0.9, 1.08)
+	var crank_rpm: float = float(style["crank_rpm"]) * battery
+	var drag: float = float(style["drag"]) * rng.randf_range(0.9, 1.1)
+	var motor_hz: float = float(style["motor_hz"]) * rng.randf_range(0.96, 1.04) * sqrt(battery)
+	var whine: float = style["whine"]
+	# The solenoid clacking in.
+	_ping(out, 0, rng.randf_range(2300.0, 2800.0), 0.008, 0.35, rng)
+	_thump(out, 0, 180.0, 0.012, 0.25)
+	var start := int(RATE * rng.randf_range(0.02, 0.04))
+	if style["bendix"]:
+		# The Bendix pinion thrown along into the ring gear: a clank.
+		_ping(out, start, rng.randf_range(1600.0, 1800.0), 0.02, 0.3, rng)
+		_ping(out, start, rng.randf_range(780.0, 860.0), 0.04, 0.25, rng)
+		_noise_burst(out, start, 0.02, 2000.0, 0.15, rng)
+	# The motor's buzzy waveform (a fundamental and four harmonics), looked up rather than summed.
+	var table := PackedFloat32Array()
+	table.resize(512)
+	for j in 512:
+		for k in range(1, 6):
+			table[j] += sin(TAU * j / 512.0 * k) / k
+	var angle := rng.randf() * cyc
+	var speed := 0.0
+	var phase := 0.0
+	var gear_ph := 0.0
+	var hiss := 0.0
+	var block := 8   # the crank's mechanics move on every few samples; the sound on every one
+	var i := start
+	while i < n:
+		var t := float(i - start) / RATE
+		var load := _compression_load(fires, angle, cyc)
+		var target := crank_rpm * clampf(t / 0.12, 0.0, 1.0) * (1.0 - drag * load)
+		speed += (target - speed) * (1.0 - pow(0.996, block))
+		var prev := angle
+		angle = fmod(angle + speed / 60.0 * 360.0 * block / RATE, cyc)
+		_chuffs_between(fires, prev, angle, cyc, i, 0.35 * clampf(speed / crank_rpm, 0.2, 1.2), chuffs)
+		# The motor, geared to the crank: a buzzy whine, the reduction gears' higher whine and
+		# brush noise, all rougher as it draws more current on a compression.
+		var hz := motor_hz * maxf(speed / crank_rpm, 0.05)
+		var strain := 0.85 + 0.35 * maxf(load, 0.0)
+		var fade_in := clampf(t / 0.04, 0.0, 1.0)
+		for j in mini(block, n - i):
+			phase = fmod(phase + hz / RATE, 1.0)
+			gear_ph = fmod(gear_ph + hz * 4.3 / RATE, 1.0)
+			hiss += (rng.randf_range(-1.0, 1.0) - hiss) * 0.35
+			out[i + j] += (table[int(phase * 512.0) & 511] * 0.08 * strain + sin(TAU * gear_ph) * whine + hiss * 0.03 * strain) * fade_in
+		i += block
+
+
+static func _kick_over(out: PackedFloat32Array, spec: Dictionary, rng: RandomNumberGenerator, chuffs: Array) -> void:
+	var n := out.size()
+	var fires := firing_events(spec)
+	var cyc := cycle_degrees(spec)
+	var size := clampf((float(spec["cc"]) - 50.0) / 1300.0, 0.0, 1.0)
+	# The ratchet biting as the foot goes down.
+	_ping(out, 0, rng.randf_range(1150.0, 1350.0), 0.03, 0.4, rng)
+	_ping(out, 0, rng.randf_range(2900.0, 3300.0), 0.015, 0.25, rng)
+	_noise_burst(out, int(RATE * 0.01), 0.1, 900.0, 0.1, rng)
+	var push := rng.randf_range(0.24, 0.32)
+	var peak := rng.randf_range(850.0, 1200.0) * lerpf(1.1, 0.8, size)
+	var angle := rng.randf() * cyc
+	var speed := 0.0
+	var spin := mini(n, int(RATE * (push + 0.3)))
+	for i in spin:
+		var t := float(i) / RATE
+		var load := _compression_load(fires, angle, cyc)
+		if t < push:
+			speed += (peak * (1.0 - 0.5 * load) - speed) * 0.0015
+		else:
+			speed = maxf(speed - (40.0 + 260.0 * maxf(load, 0.0)) * 60.0 / RATE, 0.0)
+		var prev := angle
+		angle = fmod(angle + speed / 60.0 * 360.0 / RATE, cyc)
+		_chuffs_between(fires, prev, angle, cyc, i, 0.55 * clampf(speed / peak, 0.0, 1.0), chuffs)
+	# The lever springing back up on its ratchet, ticking, to clack against its stop.
+	var back := int(RATE * (push + rng.randf_range(0.06, 0.1)))
+	for k in 5:
+		_ping(out, back + int(RATE * 0.012 * k), rng.randf_range(2400.0, 2800.0), 0.004, 0.16 * (1.0 - k * 0.12), rng)
+	var top := back + int(RATE * 0.075)
+	_ping(out, top, rng.randf_range(1300.0, 1500.0), 0.025, 0.35, rng)
+	_thump(out, top, 300.0, 0.015, 0.2)
+
+
+## The engine catching off the starter or the kick: the first few firings, ragged (a cylinder
+## or two missing), the revs flaring up over idle (a single or a V-twin harder than a four)
+## and coming down, fading as the running engine's own sound takes over; on the button, the
+## starter motor freewheeling to a stop as its clutch lets go.
+static func render_catch(spec: Dictionary, kick := false, seed := 1) -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(signature(spec)) + seed * 3331 + (9 if kick else 1)
+	var n := int(RATE * 0.5)
+	var style := starter_style(spec)
+	var fires := firing_events(spec)
+	var cyc := cycle_degrees(spec)
+	var idle: float = spec["idle"]
+	var lumpy := str(spec["layout"]) in ["single", "vtwin", "boxer", "twin", "2stroke"]
+	var flare := idle * (rng.randf_range(1.7, 2.3) if lumpy else rng.randf_range(1.4, 1.8))
+	var rise := rng.randf_range(0.1, 0.16)
+	var from: float = float(style["crank_rpm"]) * 1.2
+	var events := []
+	var angle := 0.0
+	var rpm := from
+	for i in n:
+		var t := float(i) / RATE
+		if t < rise:
+			rpm = lerpf(from, flare, smoothstep(0.0, rise, t))
+		else:
+			rpm = lerpf(flare, idle * 1.15, 1.0 - exp(-(t - rise) / 0.12))
+		var prev := angle
+		angle = fmod(angle + rpm / 60.0 * 360.0 / RATE, cyc)
+		for c in fires.size():
+			var at := float(fires[c][0])
+			if fposmod(prev - at, cyc) > fposmod(angle - at, cyc):
+				var miss := (0.35 if lumpy else 0.2) * clampf(1.0 - t / 0.2, 0.0, 1.0)
+				if rng.randf() >= miss:
+					events.append([float(i), rng.randf_range(0.7, 1.2), int(fires[c][1]), c])
+	var out := _exhaust(spec, flare, 1.0, events, n, 0, rng)
+	for i in n:
+		var t := float(i) / RATE
+		out[i] *= 0.8 * (1.0 if t < 0.15 else cos(clampf((t - 0.15) / 0.35, 0.0, 1.0) * PI * 0.5))
+	if not kick:
+		# The starter motor spinning down free once its clutch lets go.
+		_ping(out, 0, 2200.0, 0.006, 0.15, rng)
+		var phase := 0.0
+		var hz: float = float(style["motor_hz"]) * 1.3
+		for i in int(RATE * 0.18):
+			var x := float(i) / (RATE * 0.18)
+			phase = fmod(phase + hz * (1.0 - x) / RATE, 1.0)
+			out[i] += (sin(TAU * phase) + 0.4 * sin(TAU * phase * 2.0)) * 0.05 * (1.0 - x) * (1.0 - x)
 	_limit(out)
 	return out
 

@@ -22,10 +22,15 @@ const LONG_SLIP_SPEED := 3.0      # m/s: slip ratios are taken against at least 
 const LAT_SLIP_SPEED := 2.5       # and slip angles against at least this one
 const RELAX_SPEED := 4.0          # grip builds over the relaxation length, timed at no less than this speed
 const STEER_LOCK := deg_to_rad(38.0)
-## The tightest turn the input asks for (see tight_turn): this radius (m) at a crawl, opening out
-## by this much per (m/s)² of speed: under 4 m at 10 mph, about 5 m at 15 mph.
+## The tightest turn the input asks for (see tight_turn) from 10 mph up: this radius (m), opening
+## out by this much per (m/s)² of speed: under 4 m at 10 mph, about 5 m at 15 mph.
 const TIGHT_TURN := 2.4
 const TIGHT_TURN_OPEN := 0.065
+## Below this speed (10 mph, m/s) a full input works the bars on round towards full lock, for a
+## U-turn or a tight junction (Simon: "a sharper handlebar turn at <10mph").
+const TIGHT_SPEED := 4.4704
+## The share of full lock the tightest turn takes, slow: the rest is left for catching a fall.
+const LOCK_SHARE := 0.97
 const HEAD_DAMPING := 1.2         # Nm per rad/s: the head bearings and the fork seals
 const ARM_DAMPING := 2.5          # Nm per rad/s: the rider's hands on the bars soak up a shake, at speed
 const ARM_DAMPING_SLOW := 12.0    # and at town speeds, working the bars firmly
@@ -550,7 +555,7 @@ func _physics_process_body(delta: float) -> void:
 		front_grip = 0.0
 	if str(faults.get("lever", "")) == "brake":
 		front_grip *= 0.15   # a stub of a lever: barely any front brake
-	# Cold pads bite a little less, overcooked ones fade (see BikeHeat).
+	# Cold pads bite a little less (see BikeHeat); hot ones never fade.
 	wheels[0]["brake_torque"] = front_grip * build.front_brake_torque * _bite(0)
 	wheels[1]["brake_torque"] = 0.0 if burnout > 0.0 else rear_grip * build.rear_brake_torque * _bite(1)
 	for w in wheels:
@@ -627,12 +632,13 @@ func _target_lean() -> float:
 	var v := absf(speed)
 	var top := lean_for_input(1.0)
 	var tight := atan(v * v / (G * tight_turn(v)))
-	# Near the tyres' limit the bike swings past the lean it's asked for, and at town speeds that
-	# runs it out of grip: there, a full input keeps a little back, reaching all of it by 45 km/h.
-	# (A bike that grounds out first, short of the tyres' limit, doesn't need to.)
-	var hold_back := lerpf(0.85, 1.0, clampf((v - 4.0) / 8.5, 0.0, 1.0)) * _tyre_lean()
-	var speed_factor := clampf(minf(tight, hold_back) / maxf(top, 0.01), 0.15, 1.0)
-	var want := signf(lean_input) * lean_for_input(absf(lean_input)) * speed_factor
+	# Near the tyres' limit the bike swings past the lean it's asked for, and at town and B-road
+	# speeds that runs it out of grip: there, a full input keeps a little back, reaching all of it
+	# by 90 km/h. (A bike that grounds out first, short of the tyres' limit, doesn't need to.) It
+	# trims only the top of the input: less of it asks for the same lean as ever.
+	var hold_back := lerpf(0.85, 1.0, clampf((v - 4.0) / 21.0, 0.0, 1.0)) * _tyre_lean()
+	var speed_factor := clampf(tight / maxf(top, 0.01), 0.15, 1.0)
+	var want := signf(lean_input) * minf(lean_for_input(absf(lean_input)) * speed_factor, hold_back)
 	# That's the lean of the line from the tyres to the centre of mass, which sets the turn; the
 	# bike itself leans a little further, as the contact patch rolls in round the tyre's crown.
 	var rc := _crown()
@@ -640,11 +646,28 @@ func _target_lean() -> float:
 	return want + asin(clampf(rc * sin(want) / arm, -1.0, 1.0))
 
 
-## The tightest turn (its radius, m) a rider makes at `v` m/s with the input held full: near full
-## lock at walking pace, opening out as the speed rises (a U-turn or a junction at 10-15 mph is
-## still a sharp one), until the lean the tyres hold sets the limit instead.
+## The tightest turn (its radius, m) a rider makes at `v` m/s with the input held full: the bars
+## near full lock at walking pace (see lock_turn), opening out quickly towards 10 mph and then
+## more gently (a junction at 10-15 mph is still a sharp one), until the lean the tyres hold sets
+## the limit instead.
 func tight_turn(v: float) -> float:
-	return TIGHT_TURN + TIGHT_TURN_OPEN * v * v
+	var open := TIGHT_TURN + TIGHT_TURN_OPEN * v * v
+	if v >= TIGHT_SPEED:
+		return open
+	var at_ten := TIGHT_TURN + TIGHT_TURN_OPEN * TIGHT_SPEED * TIGHT_SPEED
+	var x := v / TIGHT_SPEED
+	return lerpf(lock_turn(v), at_ten, x * x * x * x)
+
+
+## The radius (m, at the back wheel) of the turn the bars make at LOCK_SHARE of full lock at `v`
+## m/s: about 2.1 m on a stock road bike, more on a long, raked-out cruiser. Leaned into it, the
+## bars turn the bike a little more sharply than upright.
+func lock_turn(v: float) -> float:
+	var upright := build.wheelbase / (tan(STEER_LOCK * LOCK_SHARE) * cos(deg_to_rad(build.rake_deg)))
+	var r := upright
+	for _i in 3:
+		r = upright * cos(atan(v * v / (G * r)))
+	return r
 
 
 ## The lean asked for (of the line from the tyres to the centre of mass, rad) by `x` (0..1) of
@@ -696,8 +719,12 @@ func _balance_lean(lean: float) -> float:
 	return atan2(arm * sin(lean), rc + arm * cos(lean))
 
 
+## The most the rider turns the bars at this speed: full lock at walking pace, easing back by
+## 10 mph to about 32° and on down to a few degrees at speed.
 func _max_steer() -> float:
-	return lerpf(deg_to_rad(35.0), deg_to_rad(3.5), clampf(absf(speed) / 45.0, 0.0, 1.0))
+	var v := absf(speed)
+	var fast := lerpf(deg_to_rad(35.0), deg_to_rad(3.5), clampf(v / 45.0, 0.0, 1.0))
+	return lerpf(STEER_LOCK, fast, smoothstep(2.5, TIGHT_SPEED, v))
 
 
 ## The front end turns about its raked steering axis, a real part of the bike with its own

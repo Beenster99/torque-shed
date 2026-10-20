@@ -3,7 +3,7 @@ extends Node3D
 ## What selling looks and sounds like in the world, drawn from Shed.sales (see Sales) on every
 ## player's game; nothing here is shared state.
 ##   - Part-exchange buyers ride their own bike in, park it on the forecourt, walk in to the bike
-##     they're after and stand by it (the shop bell rings as they reach it). Look at one and
+##     they're after and stand by it (quietly: no shop bell rings as they come in). Look at one and
 ##     press F to open the Sales page on them. Sent away, they ride off on their own bike; with
 ##     a deal done they get on yours and ride it away, and theirs stays.
 ##   - A buyer whose offer was taken walks in from the car park, gets on the bike and rides it out
@@ -186,7 +186,6 @@ func _sync_px() -> void:
 		v.setup({"id": Sales.PX_ID_BASE + int(id), "name": p.get("name", "Buyer"), "look": p.get("look", {})}, walk,
 			viewing_xf(maxi(stand, 0)).basis, _since(float(p.get("arrived", 0.0))) > secs, ride,
 			_bike_look(p.get("parts", {}), paint, p.get("cond", {})))
-		v.arrived.connect(func(cv): ContractsView.ring_bell(cv.global_position))
 		views[id] = v
 
 

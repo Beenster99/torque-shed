@@ -1,6 +1,6 @@
 extends RefCounted
-## Riding on adventures (Simon: "brakes seem to fade on adventures", "too many rattles", "a
-## sharper handlebar turn at >10mph"): the brakes after a long ride of ordinary braking, how
+## Riding on adventures (Simon: "brakes seem to fade on adventures", later "remove brake fade",
+## "too many rattles", "a sharper handlebar turn at <10mph"): the brakes after a long ride, how
 ## often something goes wrong over a whole ride, and how tight a turn the bars make slow. Run from
 ## tests/run_tests.gd: its _test_adv_ride_* functions hand over to these.
 
@@ -156,11 +156,11 @@ func _stop60(build: Dictionary, heat: BikeHeat) -> float:
 	return out
 
 
-## What does fade them: a long steep descent (4 km at 12%, 60 km/h) held on the brakes alone,
-## three quarters of it on the front. Organic pads fade on it, sintered ones much less, an old
-## bike's drums worst of all, and they all come back after a few minutes' riding on with the
-## brakes off.
-func test_descent_fade() -> void:
+## Nothing fades them now (Simon: "remove brake fade"), not even a long steep descent (4 km at
+## 12%, 60 km/h) held on the brakes alone, three quarters of it on the front: the discs and drums
+## come down it hot, but organic pads, sintered ones and an old bike's drums all keep their full
+## bite, and a 60-0 stop at the foot of it is as short as on fresh brakes.
+func test_descent_brakes() -> void:
 	var out := {}
 	var builds := {"organic": _with_pads(Contracts.style_build("classic"), "organic"),
 		"sintered": _with_pads(Contracts.style_build("classic"), "sintered"),
@@ -177,12 +177,25 @@ func test_descent_fade() -> void:
 		var disc := h.discs[0]
 		t._heat_run(h, b, 180.0, 25.0, 400.0, 5000.0, 7.0)
 		out[pad] = [hot, h.brake_temp_mult(0), disc]
-		print("    %s: front brake %d °C at the foot of the descent, bite x%.2f; x%.2f after 3 min riding on" % [pad, roundi(disc), hot, h.brake_temp_mult(0)])
-	check(out["organic"][0] < 0.85, "organic pads fade on a long steep descent held on the brakes (x%.2f)" % out["organic"][0])
-	check(out["sintered"][0] > out["organic"][0] + 0.1, "sintered pads fade far less (x%.2f)" % out["sintered"][0])
-	check(out["drum"][0] < out["organic"][0], "drums fade worst (x%.2f)" % out["drum"][0])
-	check(out["organic"][1] > 0.98 and out["sintered"][1] > 0.98 and out["drum"][1] > 0.98,
-		"and they all come back once they've cooled (x%.2f, x%.2f, x%.2f)" % [out["organic"][1], out["sintered"][1], out["drum"][1]])
+		print("    %s: front brake %d °C at the foot of the descent, bite x%.3f; x%.3f after 3 min riding on" % [pad, roundi(disc), hot, h.brake_temp_mult(0)])
+	check(out["organic"][2] > 300.0 and out["drum"][2] > 300.0,
+		"a long steep descent on the brakes cooks them (front disc %d °C, drum %d °C)" % [roundi(out["organic"][2]), roundi(out["drum"][2])])
+	check(out["organic"][0] > 0.999 and out["sintered"][0] > 0.999 and out["drum"][0] > 0.999,
+		"but none of them fade: full bite at the foot of it (organic x%.3f, sintered x%.3f, drums x%.3f)" % [out["organic"][0], out["sintered"][0], out["drum"][0]])
+	# A hard 60-0 stop on the brakes as they come off the descent.
+	BikeHeat.fixed_air = 15.0
+	for pad in ["organic", "drum"]:
+		var hb: Array = t._heat_of(builds[pad], 15.0)
+		var h: BikeHeat = hb[0]
+		var b: BikeBuild = hb[1]
+		h.warm_through()
+		var v := 16.7
+		t._heat_run(h, b, 4000.0 / v, v, 300.0, 3000.0, 0.0, b.total_mass * Bike.G * 0.12 * v * 0.75)
+		var fresh := await _stop60(builds[pad], null)
+		var after := await _stop60(builds[pad], h)
+		check(fresh > 0.0 and after > 0.0 and after < fresh * 1.02,
+			"%s: a 60-0 stop at the foot of the descent (%d °C) takes %.1f m, on fresh brakes %.1f m" % [pad, roundi(h.discs[0]), after, fresh])
+	BikeHeat.fixed_air = NAN
 
 
 static func _with_pads(build: Dictionary, pad: String) -> Dictionary:
@@ -260,11 +273,13 @@ func test_breakdown_odds() -> void:
 const WIDEST_15 := {"classic": 6.5, "cruiser": 9.0}
 
 
-## How tight a turn the input held full makes at `mph`: [radius m, lean deg, bars deg, crashed].
-func _full_turn(build: Dictionary, mph: float) -> Array:
+## How tight a turn the input held full makes at `mph` (at Riding realism `assist`): [radius m,
+## lean deg, bars deg, crashed].
+func _full_turn(build: Dictionary, mph: float, assist := 0.5) -> Array:
 	var v := mph * 0.44704
 	var acc := {"r": 0.0, "lean": 0.0, "steer": 0.0, "n": 0}
 	var r: Dictionary = await t.ride(build, 14.0, func(bike, at):
+		bike.assist = assist
 		bike.throttle = clampf(0.12 + (v - bike.speed) * 0.5, 0.0, 1.0)
 		bike.front_brake = clampf((bike.speed - v) * 0.3, 0.0, 0.3)
 		bike.lean_input = 0.0 if at < 6.0 else 1.0
@@ -279,25 +294,47 @@ func _full_turn(build: Dictionary, mph: float) -> Array:
 	return out
 
 
-## Slow, the input held full turns the bike as sharply as the bars let it: a tight U-turn or a
-## junction at 10-15 mph, not the wide sweep it was above walking pace. The faster it goes the
-## less lock it takes and the wider the turn, as on a real bike.
+## The widest a full-input turn at 5 and 8 mph may be (m), by style (before, with the bars short
+## of full lock below 10 mph: 2.7 and 3.3 m on both).
+const WIDEST_5 := {"classic": 2.35, "cruiser": 2.6}
+const WIDEST_8 := {"classic": 2.9, "cruiser": 3.1}
+
+
+## Slow, the input held full turns the bike as sharply as the bars let it (Simon: "a sharper
+## handlebar turn at <10mph"): full lock at walking pace, a tight U-turn at 5-8 mph, still a sharp
+## junction at 10-15 mph. The faster it goes the less lock it takes and the wider the turn, as on
+## a real bike.
 func test_tight_turns() -> void:
 	# A cruiser grounds its footboards about 30 degrees over, which sets its turn at 15 mph.
+	var lock := rad_to_deg(Bike.STEER_LOCK)
 	for style in ["classic", "cruiser"]:
 		var nm := PartsDB.style_name(style)
 		var line := []
 		var radii := []
 		var bars := []
 		var crashed := false
-		for mph in [5.0, 10.0, 15.0, 25.0]:
+		for mph in [2.0, 5.0, 8.0, 10.0, 15.0, 25.0]:
 			var got: Array = await _full_turn(Contracts.style_build(style), mph)
 			line.append("%d mph %.1f m (lean %d°, bars %d°)" % [roundi(mph), got[0], roundi(got[1]), roundi(got[2])])
 			radii.append(got[0])
 			bars.append(got[2])
 			crashed = crashed or got[3]
 		print("    %s, input held full: %s" % [nm, ", ".join(line)])
-		check(not crashed, "%s: full-input turns from 5 to 25 mph all hold" % nm)
-		check(radii[1] < 4.5 and radii[2] < float(WIDEST_15[style]), "%s: a sharp turn at 10 mph (%.1f m) and 15 mph (%.1f m)" % [nm, radii[1], radii[2]])
-		check(radii[0] < radii[1] and radii[1] < radii[2] and radii[2] < radii[3] and bars[0] > bars[1] and bars[1] > bars[2] and bars[2] > bars[3],
-			"%s: less lock and a wider turn the faster it goes" % nm)
+		check(not crashed, "%s: full-input turns from 2 to 25 mph all hold" % nm)
+		check(bars[0] > lock * 0.97, "%s: at walking pace the bars go to full lock (%.1f° of %.0f°)" % [nm, bars[0], lock])
+		check(radii[1] < float(WIDEST_5[style]) and radii[2] < float(WIDEST_8[style]) and bars[1] > lock * 0.85,
+			"%s: a much sharper turn below 10 mph: %.1f m at 5 mph (bars %.1f°), %.1f m at 8 mph" % [nm, radii[1], bars[1], radii[2]])
+		check(radii[3] < 4.5 and radii[4] < float(WIDEST_15[style]), "%s: a sharp turn at 10 mph (%.1f m) and 15 mph (%.1f m)" % [nm, radii[3], radii[4]])
+		var opening := true
+		for i in range(1, radii.size()):
+			opening = opening and radii[i] > radii[i - 1] and bars[i] < bars[i - 1]
+		check(opening, "%s: less lock and a wider turn the faster it goes" % nm)
+
+
+## A full input held round at B-road speeds, at Riding realism 0 where nothing helps: the bike
+## holds the lean it's asked for rather than swinging past it and sliding off (a race bike and an
+## MX bike did from 40-45 km/h, where a full input stopped keeping a little lean in hand).
+func test_full_turns_hold() -> void:
+	for c in [["race", 45.0], ["mx", 50.0], ["supermoto", 80.0]]:
+		var got: Array = await _full_turn(Contracts.style_build(c[0]), float(c[1]) / 1.609344, 0.0)
+		check(not got[3], "%s, realism 0: a full-input turn at %d km/h holds (%.1f m, lean %d°)" % [PartsDB.style_name(c[0]), roundi(c[1]), got[0], roundi(got[1])])

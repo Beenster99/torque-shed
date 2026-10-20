@@ -849,6 +849,7 @@ static func _buy_bike(peer: int, v: Dictionary, amount: int) -> String:
 	bike["stand"] = Shed._rest_stand(id)
 	bike["bought"] = amount
 	bike["km"] = int(b.get("km", 0))
+	Shed.top_up_fuel(id)   # they rode it here
 	Contracts.refresh_delivered(id)
 	v["bike_id"] = id
 	v["said"] = "Go on then. Look after her."
