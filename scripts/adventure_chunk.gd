@@ -46,6 +46,28 @@ const BUILDING_ODDS := {"tarmac": 0.2, "gravel": 0.07, "sand": 0.06, "snow": 0.0
 const FENCE_ODDS := {"tarmac": 0.55, "gravel": 0.3, "sand": 0.0, "snow": 0.0}
 ## A beach's sand, along a coastal sea.
 const BEACH := Color(0.86, 0.8, 0.62)
+## On a real road the land is tinted by what covers it (RealPack.COVER): colour and how far it takes over the theme's.
+const COVER_TINT := {
+	"forest": [Color(0.09, 0.22, 0.1), 0.85], "crop": [Color(0.62, 0.66, 0.3), 0.7], "shrub": [Color(0.34, 0.4, 0.2), 0.55],
+	"urban": [Color(0.52, 0.5, 0.46), 0.65], "sand": [BEACH, 0.8], "barren": [Color(0.5, 0.45, 0.38), 0.6],
+	"rock": [Color(0.45, 0.43, 0.4), 0.8], "water": [Color(0.18, 0.34, 0.5), 0.85], "wetland": [Color(0.3, 0.4, 0.28), 0.6],
+}
+## How much of each thing's scenery a real road's cover takes (0 to 1), by what covers the ground: trees, bushes,
+## rocks, and anything else (sheep and the like). A cover left out takes OTHER_ODDS of it.
+const TREES := ["tree", "pine", "oak", "snow_pine"]
+const BUSHES := ["bush", "dry_bush", "gorse"]
+const ODDS := {
+	"trees": {"forest": 1.0, "shrub": 0.35, "wetland": 0.3, "grass": 0.12, "urban": 0.15, "crop": 0.03, "barren": 0.05, "sand": 0.03, "rock": 0.0, "water": 0.0},
+	"bushes": {"forest": 0.6, "shrub": 1.0, "wetland": 0.5, "grass": 0.5, "urban": 0.1, "crop": 0.1, "barren": 0.3, "sand": 0.3, "rock": 0.1, "water": 0.0},
+	"rocks": {"rock": 1.0, "barren": 1.0, "shrub": 0.4, "sand": 0.3, "grass": 0.3, "forest": 0.2, "crop": 0.02, "urban": 0.0, "water": 0.0},
+	"other": {"grass": 1.0, "crop": 0.6, "shrub": 0.4, "forest": 0.15, "urban": 0.05, "barren": 0.1, "water": 0.0},
+}
+const OTHER_ODDS := 0.3
+## What a real road tries to scatter per chunk, then thinned to the cover (the theme's own counts are for made-up
+## country): enough that forest is dense, and open country keeps only a few.
+const REAL_TRIES := {"tree": 240, "pine": 70, "bush": 70, "rock": 24}
+## How far out from a real road scenery is scattered (m): woods run well up the hillsides.
+const REAL_REACH := 260.0
 
 
 ## Lays out chunk `c` of `route`. Safe to run on a worker thread: it only reads the route.
@@ -183,6 +205,10 @@ static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: fl
 		col = route.look["verge"][here]
 	elif k == 2:
 		col = col.lerp(route.look["verge"][here], 0.5)
+	if k > 1 and route.real != null:
+		var tint: Array = COVER_TINT.get(route.cover_at(x, z), [])
+		if not tint.is_empty():
+			col = col.lerp(tint[0] as Color, float(tint[1]) * (0.5 if k == 2 else 1.0))
 	# Steep ground away from the road shows rock (snow lies on the gentler slopes).
 	var rise := absf(y - route.ph[i]) / maxf(lat, 1.0)
 	if k > 3:
@@ -291,15 +317,22 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 	var mm := {}
 	var theme := route.theme
 	var counts: Dictionary = (AdventureTheme.get_value(theme, "scenery", {}) as Dictionary).get(surf, SCENERY.get(surf, {}))
+	var real := route.real != null
+	if real:
+		counts = counts.duplicate()
+		for kind in REAL_TRIES:
+			counts[kind] = REAL_TRIES[kind]
 	for kind in counts:
 		var list := []
-		for k in int(counts[kind]):
+		var tries := int(REAL_TRIES.get(kind, counts[kind])) if real else int(counts[kind])
+		for k in tries:
 			var i := rng.randi_range(i0, i1)
 			var side := -1.0 if rng.randf() < 0.5 else 1.0
 			var near := 2.5 if kind in NEAR_KINDS else 6.0
-			var lat := route.width[i] * 0.5 + near + pow(rng.randf(), 1.5) * 120.0
+			var lat := route.width[i] * 0.5 + near + pow(rng.randf(), 1.5) * (REAL_REACH if real else 120.0)
 			var xf := _on_land(route, i, lat * side, ax, az, rng.randf() * TAU, rng.randf_range(0.7, 1.35))
-			if xf != Transform3D():
+			var roll := rng.randf()
+			if xf != Transform3D() and (not real or roll < _cover_odds(route, kind, ax + xf.origin.x, az + xf.origin.z)):
 				list.append(xf)
 		mm[kind] = list
 	# Fences along farmland, a post every 3 m or so, with two rails between; or in the hills and
@@ -313,6 +346,9 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 	var fence_roll := float(absi(hash([route.seed_value, "fence", stretch])) % 1000) / 1000.0
 	if bound_kind == "wall_hedge":
 		bound_kind = "wall" if absi(hash([route.seed_value, "hedge", stretch])) % 2 == 0 else "hedge"
+	if real:
+		# Fences and walls only where the land is farmed.
+		fence_roll = 0.0 if _farmed(route, i0, i1) else 1.0
 	if fence_roll < float(bound_odds.get(surf, 0.0)):
 		var posts := []
 		var rail := Color(0.45, 0.35, 0.24)
@@ -353,8 +389,10 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 				if xf != Transform3D():
 					poles.append(xf)
 		mm["snow_pole"] = poles
-	# The odd building.
-	if rng.randf() < float(BUILDING_ODDS.get(surf, 0.0)) * float(AdventureTheme.get_value(theme, "buildings", 1.0)):
+	# The buildings: the real ones beside a real road, else the odd one.
+	if real:
+		_real_buildings(route, c, i0, ax, az, buildings)
+	elif rng.randf() < float(BUILDING_ODDS.get(surf, 0.0)) * float(AdventureTheme.get_value(theme, "buildings", 1.0)):
 		var i := rng.randi_range(i0, i1)
 		var side := -1.0 if rng.randf() < 0.5 else 1.0
 		var lat := route.width[i] * 0.5 + rng.randf_range(18.0, 50.0)
@@ -400,10 +438,75 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 	out["sites"] = here
 
 
+## How much of `kind`'s scenery the cover at world (x, z) takes on a real road (see ODDS), 0 to 1.
+static func _cover_odds(route: AdventureRoute, kind: String, x: float, z: float) -> float:
+	var cover := route.cover_at(x, z)
+	var table: Dictionary = ODDS["trees"] if kind in TREES else (ODDS["bushes"] if kind in BUSHES else (ODDS["rocks"] if kind == "rock" else ODDS["other"]))
+	return float(table.get(cover, OTHER_ODDS)) if cover != "" else OTHER_ODDS
+
+
+## Whether a good part of the land either side of knots i0..i1 of a real road is cropland.
+static func _farmed(route: AdventureRoute, i0: int, i1: int) -> bool:
+	var crop := 0
+	var total := 0
+	for i in range(i0, i1 + 1, 8):
+		for side: float in [-1.0, 1.0]:
+			var e := route.width[i] * 0.5 + 12.0
+			var c := route.cover_at(route.px[i] + cos(route.hd[i]) * e * side, route.pz[i] + sin(route.hd[i]) * e * side)
+			total += 1
+			if c == "crop":
+				crop += 1
+	return total > 0 and float(crop) / total > 0.25
+
+
+## The real buildings whose nearest road knot is in chunk `c` of a real road, into `buildings`: each on the
+## ground the land's mesh has there, none by a site (a fuel station, a stop) or over the road's verge.
+static func _real_buildings(route: AdventureRoute, c: int, i0: int, ax: float, az: float, buildings: Dictionary) -> void:
+	var style := str(AdventureTheme.get_value(route.theme, "style", "mixed"))
+	for b: Array in route.real.buildings_in(c):
+		var bx := float(b[0])
+		var bz := float(b[1])
+		var k := clampi(int(b[7]), 0, route.knot_count() - 1)
+		var lat := (bx - route.px[k]) * cos(route.hd[k]) + (bz - route.pz[k]) * sin(route.hd[k])
+		if route._site_flat(k, signf(lat), false) > 0.5 or absf(lat) < route.width[k] * 0.5 + 3.0:
+			continue
+		var w := float(b[2])
+		var d := float(b[3])
+		var yaw := float(b[4])
+		# On the lowest ground under its middle and corners: the land's mesh is coarser than the baked heights.
+		var y := route.land_height(k, lat, bx, bz)
+		for cx: float in [-0.5, 0.5]:
+			for cz: float in [-0.5, 0.5]:
+				var px := bx + (cx * w) * cos(yaw) + (cz * d) * sin(yaw)
+				var pz := bz - (cx * w) * sin(yaw) + (cz * d) * cos(yaw)
+				y = minf(y, route.land_height(k, (px - route.px[k]) * cos(route.hd[k]) + (pz - route.pz[k]) * sin(route.hd[k]), px, pz))
+		AdventureProps.real_building(buildings, Vector3(bx - ax, y, bz - az), w, d, yaw, float(b[5]), RealPack.BUILDING_KINDS[clampi(int(b[6]), 0, RealPack.BUILDING_KINDS.size() - 1)], style)
+
+
+## The real lighthouses of a real road that stand by knots i0..i1, into `mm`.
+static func _real_landmarks(route: AdventureRoute, i0: int, i1: int, ax: float, az: float, mm: Dictionary) -> void:
+	var list := []
+	for m: Dictionary in route.real.landmarks:
+		if str(m["kind"]) != "lighthouse":
+			continue
+		var hit := route.locate(float(m["x"]), float(m["z"]))
+		if hit.is_empty() or int(hit["i"]) < i0 or int(hit["i"]) >= i1:
+			continue
+		var y := route.real.terrain.height(float(m["x"]), float(m["z"]))
+		if is_nan(y):
+			continue
+		list.append(Transform3D(Basis(Vector3.UP, hash([m["x"], m["z"]]) % 628 / 100.0), Vector3(float(m["x"]) - ax, y, float(m["z"]) - az)))
+	if not list.is_empty():
+		mm["lighthouse"] = list
+
+
 ## The theme's far scenery in chunk `c` (AdventureTheme "far"): the odd mesa off in the desert,
 ## a crag of bare rock in the mountains, a lighthouse on a cliff top by the sea. On its own rng,
 ## so the rest of the chunk is laid out the same with or without it.
 static func _far(route: AdventureRoute, c: int, i0: int, i1: int, ax: float, az: float, mm: Dictionary) -> void:
+	if route.real != null:
+		_real_landmarks(route, i0, i1, ax, az, mm)
+		return
 	var far: Array = AdventureTheme.get_value(route.theme, "far", [])
 	if far.is_empty():
 		return

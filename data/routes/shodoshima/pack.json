@@ -1,5 +1,5 @@
 {
- "format": 3,
+ "format": 4,
  "name": "shodoshima",
  "title": "Shodoshima",
  "start": {
@@ -22,6 +22,30 @@
   "scale": 0.0625
  },
  "tile_count": 220,
+ "cover": [
+  "grass",
+  "forest",
+  "crop",
+  "shrub",
+  "barren",
+  "urban",
+  "sand",
+  "wetland",
+  "water",
+  "rock"
+ ],
+ "building_kinds": [
+  "house",
+  "shed",
+  "barn",
+  "shop",
+  "block",
+  "industrial",
+  "worship",
+  "civic"
+ ],
+ "building_count": 627,
+ "landmark_count": 13,
  "sea": true,
  "theme": "coastal",
  "warning": null,
@@ -31,7 +55,7 @@
  },
  "credits": [
   "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
-  "Roads: (c) OpenStreetMap contributors, Overture Maps Foundation (ODbL)."
+  "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."
  ],
- "hash": "e98ec5de34b29392"
+ "hash": "ef009a086bea90bd"
 }

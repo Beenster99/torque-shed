@@ -127,6 +127,19 @@ route and a Japanese coast route both bake with no hand edits.
 
 **Size.** About 3 weeks.
 
+**Status.** Part one is built (`claude/real-roads-2`): the baker fetches Overture land cover, land, land use, water,
+buildings and places (`tools/land_bake.py`) and writes per-tile cover rasters, building boxes with a kind and a
+height, and named landmarks into the pack (format 4); the game tints the land and thins or thickens woods, bushes and
+rocks by cover, fences only farmland, builds the real buildings in the game's style on levelled ground, places real
+lighthouses, and the sat nav shows the real road's name. Every chunk of the Shodoshima road is checked against a
+vertex and instance budget (`test_budget`). Still to do in this stage: the staged cached pipeline with its report
+and `sources.yaml`, real water meshes for lakes and rivers, bridges and tunnels from the road flags, peaks and passes
+named on the sat nav, the hand-edit overlay, the standalone viewer, and the UK dales route that bakes with no
+hand edits.
+
+![Forest by the road](images/real_forest.jpg)
+![A village on the shore](images/real_village.jpg)
+
 ### Stage 3: the whole adventure loop on real places
 
 **Playable loop.** A 100 km epic across a real region: fuel at real filling stations, lunch at a real cafe, the night's

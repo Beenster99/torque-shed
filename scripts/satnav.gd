@@ -492,6 +492,8 @@ class AdventureNav:
 		if hit.is_empty() or absf(float(hit["lat"])) > world.route.width_at_s(float(hit["s"])) * 0.5 + 12.0:
 			return ""
 		var s := float(hit["s"])
+		if world.route.real != null and world.route.real.name_at(s) != "":
+			return world.route.real.name_at(s)   # the real road's own name
 		var surf := world.route.surface_at_s(s)
 		return "%s road, %s" % [str(AdventureSurface.NAMES.get(surf, surf)), str(AdventureRoute.KIND_NAMES.get(world.route.kind_at_s(s), "")).to_lower()]
 

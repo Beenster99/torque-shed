@@ -14,7 +14,8 @@ var cells := 128
 var spacing := 4.0
 var h_min := -256.0
 var h_scale := 0.0625
-var _tiles := {}          # Vector2i -> PackedFloat32Array, or null when there is no such tile
+var _tiles := {}          # Vector2i -> PackedFloat32Array (empty when there is no such tile)
+var _covers := {}         # Vector2i -> PackedByteArray (empty when there is no such tile)
 var _lock := Mutex.new()
 
 
@@ -50,6 +51,35 @@ func height(x: float, z: float) -> float:
 			sum += v
 		return sum / known.size()
 	return lerpf(lerpf(a, b, tx), lerpf(c, d, tx), tz)
+
+
+## What covers the ground at route-frame (x, z): an id into the pack's "cover" list (RealPack.COVER), or -1 with
+## no tile there. The sample nearest to (x, z).
+func cover(x: float, z: float) -> int:
+	var ix := roundi(x / spacing)
+	var iz := roundi(z / spacing)
+	var key := Vector2i(floori(float(ix) / cells), floori(float(iz) / cells))
+	var t: PackedByteArray = _cover_tile(key)
+	if t.is_empty():
+		return -1
+	return t[posmod(iz, cells) * cells + posmod(ix, cells)]
+
+
+func _cover_tile(key: Vector2i) -> PackedByteArray:
+	_lock.lock()
+	if _covers.has(key):
+		var got: PackedByteArray = _covers[key]
+		_lock.unlock()
+		return got
+	var path := dir.path_join("%d_%d.cov" % [key.x, key.y])
+	var out := PackedByteArray()
+	if FileAccess.file_exists(path):
+		var raw := FileAccess.get_file_as_bytes(path)
+		if raw.size() == cells * cells:
+			out = raw
+	_covers[key] = out
+	_lock.unlock()
+	return out
 
 
 ## Whether the tile under route-frame (x, z) exists.

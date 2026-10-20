@@ -615,6 +615,15 @@ func _coast(h: float, a: float, inner: float, x: float, z: float) -> float:
 	return lerpf(h, SEA_BED, smoothstep(a0, a0 + w, a))
 
 
+## What covers the ground at route-frame (x, z) on a real road ("forest", "crop", "urban", ... see
+## RealPack.COVER), or "" on a made-up one or beyond the baked land.
+func cover_at(x: float, z: float) -> String:
+	if real == null:
+		return ""
+	var id := real.terrain.cover(x, z)
+	return RealPack.COVER[id] if id >= 0 and id < RealPack.COVER.size() else ""
+
+
 ## The lie of the land at (x, z), `a` metres from the road beside knot `i`.
 func natural_height(i: int, x: float, z: float, a: float) -> float:
 	if real != null:

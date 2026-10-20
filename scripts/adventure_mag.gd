@@ -27,7 +27,7 @@ const ISSUES := [
 			"blurb": "Cliff roads along the sea, beaches and fishing villages, to the lighthouse at the very end of the land. Time it to arrive at dusk."},
 		{"id": "shodoshima", "title": "Shodoshima: Island in the Inland Sea", "theme": "coastal", "len": "short", "seed": 4104, "dest": "lighthouse",
 			"real": "shodoshima", "blurb": "A real road: right round a Japanese island in the Seto Inland Sea, over the real hills, down to the real shore. "
-			+ "Every bend is where the island put it."},
+			+ "Every bend, wood and village is where the island put it."},
 	]},
 	{"n": 2, "name": "Summer issue", "level": 3, "articles": [
 		{"id": "glacier_express", "title": "Glacier Express", "theme": "alpine", "len": "ride", "seed": 4201, "dest": "glacier",

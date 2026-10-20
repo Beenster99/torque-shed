@@ -3,6 +3,9 @@ extends RefCounted
 ## and built into chunks), run from tests/run_tests.gd: its _test_real_* functions hand over to these.
 
 const PACK := "shodoshima"
+## What a chunk may hold (see test_budget): the buildings' vertices, and trees, bushes, rocks and the like.
+const BUDGET_BUILDING_VERTS := 20000
+const BUDGET_INSTANCES := 800
 
 var t: Node   # the test runner: check()
 
@@ -44,6 +47,76 @@ func test_pack() -> void:
 	check(off < 12.0, "the road sits on the land it was baked from (most %.1f m off)" % off)
 
 
+func test_land() -> void:
+	var p := RealPack.get_pack(PACK)
+	check(p.building_count > 200 and not p.buildings_in(136).is_empty(), "the pack has its buildings (%d), filed by the chunk beside them" % p.building_count)
+	var bad := 0
+	var kinds := {}
+	for c in p.buildings:
+		for b: Array in p.buildings[c]:
+			kinds[int(b[6])] = true
+			var k := int(b[7])
+			if int(c) != k / 32 or int(b[6]) >= RealPack.BUILDING_KINDS.size() or float(b[2]) < 2.0 or float(b[5]) < 2.0:
+				bad += 1
+	check(bad == 0 and kinds.size() >= 2, "each in its own chunk, a kind we draw, a real size (%d kinds)" % kinds.size())
+	var seen := {}
+	for k in range(0, p.x.size(), 20):
+		for off: float in [-30.0, 30.0]:
+			seen[p.terrain.cover(p.x[k] + off, p.z[k])] = true
+	check(seen.has(RealPack.COVER.find("forest")) and not seen.has(-1), "cover under the road's sides (%d kinds, forest among them)" % seen.size())
+	check(p.terrain.cover(1.0e7, 0.0) == -1, "and unknown beyond the tiles")
+	var named := 0
+	for c in p.chunks.size():
+		named += int(p.name_at(c * 128.0 + 1.0) != "")
+	check(named > 5, "roads have their own names (%d chunks named)" % named)
+
+
+func test_building_shapes() -> void:
+	var meshes := {}
+	for kind in RealPack.BUILDING_KINDS:
+		var a := AdventureProps.new_arrays()
+		AdventureProps.real_building(a, Vector3(10.0, 5.0, -20.0), 12.0, 8.0, 0.7, 6.0, kind)
+		var lo := Vector3(INF, INF, INF)
+		var hi := -lo
+		for v: Vector3 in a["v"]:
+			lo = lo.min(v)
+			hi = hi.max(v)
+		meshes[kind] = a["v"].size()
+		# Inside the footprint's circle, from the walls' skirt to roof height, and drawn.
+		var ok: bool = a["v"].size() > 20 and lo.y >= 5.0 - AdventureProps.SKIRT - 0.01 and hi.y <= 5.0 + 6.0 + 4.0 \
+			and Vector2(lo.x - 10.0, lo.z + 20.0).length() < 12.0 and Vector2(hi.x - 10.0, hi.z + 20.0).length() < 12.0
+		check(ok, "a %s is a building on its footprint (%d vertices, up to %.1f m)" % [kind, a["v"].size(), hi.y - 5.0])
+	var b := AdventureProps.new_arrays()
+	AdventureProps.real_building(b, Vector3(10.0, 5.0, -20.0), 12.0, 8.0, 0.7, 6.0, "house")
+	var c := AdventureProps.new_arrays()
+	AdventureProps.real_building(c, Vector3(10.0, 5.0, -20.0), 12.0, 8.0, 0.7, 6.0, "house")
+	check(b["v"] == c["v"] and b["c"] == c["c"], "and the same one every time")
+
+
+## Every chunk of the whole island road is within its budget: buildings' vertices and scattered things.
+func test_budget() -> void:
+	var r := AdventureRoute.new()
+	r.plan_real(RealPack.get_pack(PACK), 7, 1000.0)
+	var worst_v := 0
+	var worst_i := 0
+	var worst_ms := 0.0
+	var where := 0
+	for c in r.chunk_count():
+		var d := AdventureChunk.build(r, c)
+		var verts: int = d["buildings"]["v"].size()
+		var inst := 0
+		for kind in d["mm"]:
+			inst += (d["mm"][kind] as Array).size()
+		if verts > worst_v:
+			worst_v = verts
+			where = c
+		worst_i = maxi(worst_i, inst)
+		worst_ms = maxf(worst_ms, float(d["ms"]))
+	check(worst_v <= BUDGET_BUILDING_VERTS and worst_i <= BUDGET_INSTANCES,
+		"all %d chunks within budget: buildings %d vertices at most (chunk %d, of %d), %d scattered things (of %d); slowest to lay out %.0f ms"
+		% [r.chunk_count(), worst_v, where, BUDGET_BUILDING_VERTS, worst_i, BUDGET_INSTANCES, worst_ms])
+
+
 func test_plan() -> void:
 	var p := RealPack.get_pack(PACK)
 	var a := AdventureRoute.new()
@@ -79,6 +152,29 @@ func test_plan() -> void:
 	var d := AdventureChunk.build(b, 20)
 	check(c["road"][Mesh.ARRAY_VERTEX] == d["road"][Mesh.ARRAY_VERTEX] and c["land_1"][Mesh.ARRAY_VERTEX] == d["land_1"][Mesh.ARRAY_VERTEX],
 		"and builds the same chunk twice, land and all (%.1f ms)" % float(c["ms"]))
+	# Woods where the cover says forest, few where it doesn't.
+	var woods := {}
+	for ch in range(5, big.chunk_count() - 5):
+		var forest := 0
+		var open := 0
+		for i in range(ch * AdventureRoute.CHUNK_KNOTS, (ch + 1) * AdventureRoute.CHUNK_KNOTS, 4):
+			for side: float in [-1.0, 1.0]:
+				var cov := big.cover_at(big.px[i] + cos(big.hd[i]) * 40.0 * side, big.pz[i] + sin(big.hd[i]) * 40.0 * side)
+				forest += int(cov == "forest")
+				open += int(cov == "crop" or cov == "urban" or cov == "grass")
+		if forest == 16 and not woods.has("forest"):
+			woods["forest"] = ch
+		if forest <= 4 and open >= 8 and not woods.has("open"):
+			woods["open"] = ch
+	if woods.has("forest") and woods.has("open"):
+		var fc := AdventureChunk.build(big, int(woods["forest"]))
+		var oc := AdventureChunk.build(big, int(woods["open"]))
+		var ft := (fc["mm"].get("tree", []) as Array).size() + (fc["mm"].get("pine", []) as Array).size()
+		var ot := (oc["mm"].get("tree", []) as Array).size() + (oc["mm"].get("pine", []) as Array).size()
+		print("    woods: ", ft, " trees in forest chunk ", woods["forest"], ", ", ot, " in open chunk ", woods["open"])
+		check(ft > 150 and ft > ot * 3, "a chunk of forest has woods (%d trees), open country few (%d)" % [ft, ot])
+	var town := AdventureChunk.build(big, 136)
+	check((town["buildings"]["v"] as PackedVector3Array).size() > 1500, "a chunk by a village has its buildings (%d vertices)" % town["buildings"]["v"].size())
 	var last := AdventureChunk.build(a, a.chunk_count() - 1)
 	check(not last["road"].is_empty(), "the last chunk builds too")
 
