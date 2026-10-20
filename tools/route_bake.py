@@ -35,15 +35,20 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import land_bake  # noqa: E402
+import levels  # noqa: E402
 
 STEP = 4.0                    # metres between knots: AdventureRoute.STEP
 CHUNK = 128.0                 # metres per chunk: AdventureRoute.CHUNK_LEN
 RUN_OUT = 600.0               # baked past the requested length, for the adventure's run-out beyond the finish
-TILE_M = 512.0                # a height tile's side
-TILE_N = 128                  # its samples along a side (4 m apart)
-CORRIDOR_M = 1300.0           # heights are baked this far either side of the road
-HEIGHT_MIN = -256.0           # tiles store uint16 heights: min + q * scale
-HEIGHT_SCALE = 0.0625
+TILE_M = levels.FINE.size_m   # the fine level's tile side (see levels.py for the others)
+TILE_N = levels.FINE.n
+HEIGHT_MIN = levels.MIN
+HEIGHT_SCALE = levels.FINE.scale
+FEATHER = {"fine": 16, "coarse": 8}   # samples over which a level's edge blends into the next coarser one
+RIDGE_LOWER_M = 90.0          # the ridge level is pushed down this far near the road, hidden under the land mesh
+RIDGE_NEAR_M = 700.0          # ...out to here, easing back up to the real height by RIDGE_FAR_M: about where the land
+RIDGE_FAR_M = 1000.0          # mesh's own real heights end (AdventureChunk.LAND_OUT), so the two meet and never gap
+RIDGE_SEA_M = -3.0            # and where it is sea, just under the water
 SNAP_START_M = 500.0          # the start point must be this close to a road
 MIN_RADIUS = 10.0             # the road's tightest bend after smoothing, metres (the adventure's own hairpins are 12 to 17)
 MAX_GRADE = 0.15              # the steepest the road may climb: a little under AdventureRoute.MAX_GRADE
@@ -168,9 +173,9 @@ def bilinear(a, fx, fy):
 class Dem:
     """Ground heights anywhere, from terrain tiles fetched on demand and kept decoded (Mapterhorn, else AWS)."""
 
-    def __init__(self, cache_dir, lat, log=print):
+    def __init__(self, cache_dir, lat, log=print, spacing=STEP):
         self.cache_dir = cache_dir
-        self.zoom = tile_zoom(lat)
+        self.zoom = tile_zoom(lat, spacing)
         self.tiles = {}
         self.log = log
 
@@ -237,9 +242,9 @@ def shape_sea(ground, spacing=STEP):
     return np.where(sea, -depth, ground), True
 
 
-def quantise(heights):
-    """heights as uint16 steps of HEIGHT_SCALE over HEIGHT_MIN."""
-    return np.clip(np.round((heights - HEIGHT_MIN) / HEIGHT_SCALE), 0, 65535).astype("<u2")
+def quantise(heights, level=levels.FINE):
+    """heights as uint16 steps of the level's scale over levels.MIN."""
+    return level.quantise(heights)
 
 
 # ---------------------------------------------------------------------------- Overture data
@@ -568,8 +573,8 @@ def chunk_attributes(knots_len, edge_of_s, graph):
     return chunks
 
 
-def corridor_tiles(knots, reach=CORRIDOR_M, tile=TILE_M):
-    """The (tx, tz) of every height tile within `reach` metres of the road (tile (tx, tz) covers tx*512..)."""
+def corridor_tiles(knots, reach=levels.FINE.reach, tile=TILE_M):
+    """The (tx, tz) of every tile of side `tile` within `reach` metres of the road (tile (tx, tz) covers tx * tile..)."""
     tiles = set()
     n = int(math.ceil(reach / tile))
     for x, z in knots[::4]:
@@ -585,16 +590,134 @@ def corridor_tiles(knots, reach=CORRIDOR_M, tile=TILE_M):
     return sorted(tiles)
 
 
-def tile_heights(dem, frame, tx, tz, pad=24):
-    """One tile's heights (TILE_N x TILE_N, the sea given a floor) from the DEM; and whether it has sea."""
-    n = TILE_N + 2 * pad
-    ax = tx * TILE_M + (np.arange(n) - pad) * STEP
-    az = tz * TILE_M + (np.arange(n) - pad) * STEP
+def level_heights(dem, frame, level, tx, tz, pad=24):
+    """One tile's heights (n x n, the sea given a floor) at `level` from the DEM; and whether it has sea."""
+    n = level.n + 2 * pad
+    ax = tx * level.size_m + (np.arange(n) - pad) * level.spacing
+    az = tz * level.size_m + (np.arange(n) - pad) * level.spacing
     gx, gz = np.meshgrid(ax, az)
     lat, lon = frame.to_geo(gx, gz)
     ground = dem.heights(lat, lon)
-    shaped, sea = shape_sea(ground)
-    return shaped[pad:pad + TILE_N, pad:pad + TILE_N], sea
+    shaped, sea = shape_sea(ground, level.spacing)
+    return shaped[pad:pad + level.n, pad:pad + level.n], sea
+
+
+def tile_heights(dem, frame, tx, tz, pad=24):
+    """One fine tile's heights (the sea given a floor) from the DEM; and whether it has sea."""
+    return level_heights(dem, frame, levels.FINE, tx, tz, pad)
+
+
+class LevelField:
+    """A level's baked heights as the game reads them: bilinear over the quantised tiles, NaN where a sample is missing."""
+
+    def __init__(self, level, tiles):
+        self.level = level
+        self.tiles = tiles   # (tx, tz) -> float array as dequantised
+
+    def heights(self, x, z):
+        lv = self.level
+        fx = np.asarray(x, dtype=np.float64) / lv.spacing
+        fz = np.asarray(z, dtype=np.float64) / lv.spacing
+        ix = np.floor(fx).astype(int)
+        iz = np.floor(fz).astype(int)
+        tx, tz = fx - ix, fz - iz
+
+        def cell(cx, cz):
+            out = np.full(np.shape(cx), np.nan)
+            key_x, key_z = np.floor_divide(cx, lv.n), np.floor_divide(cz, lv.n)
+            for key in {(int(a), int(b)) for a, b in zip(np.ravel(key_x), np.ravel(key_z))}:
+                t = self.tiles.get(key)
+                if t is None:
+                    continue
+                m = (key_x == key[0]) & (key_z == key[1])
+                out[m] = t[np.mod(cz, lv.n)[m], np.mod(cx, lv.n)[m]]
+            return out
+        a, b, c, d = cell(ix, iz), cell(ix + 1, iz), cell(ix, iz + 1), cell(ix + 1, iz + 1)
+        return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz
+
+
+def blend_edges(h, level, tx, tz, present, coarser, feather):
+    """The tile's heights eased into `coarser`'s over `feather` samples at each side that has no neighbour tile in
+    `present`: where a level ends it meets the next one's own heights, so there is no step to see or ride over."""
+    n = level.n
+    idx = np.arange(n, dtype=np.float64)
+    weight = np.zeros((n, n))
+    for dx, dz, edge in ((-1, 0, "w"), (1, 0, "e"), (0, -1, "n"), (0, 1, "s")):
+        if (tx + dx, tz + dz) in present:
+            continue
+        dist = {"w": idx[None, :], "e": (n - 1 - idx)[None, :], "n": idx[:, None], "s": (n - 1 - idx)[:, None]}[edge]
+        wgt = 1.0 - smoothstep(0.0, float(feather), dist)
+        weight = np.maximum(weight, np.broadcast_to(wgt, (n, n)))
+    # A corner whose diagonal neighbour is missing is a free edge too: the game's bilinear needs that tile's sample.
+    for dx, dz in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+        if (tx + dx, tz + dz) in present:
+            continue
+        cx = idx[None, :] if dx < 0 else (n - 1 - idx)[None, :]
+        cz = idx[:, None] if dz < 0 else (n - 1 - idx)[:, None]
+        weight = np.maximum(weight, 1.0 - smoothstep(0.0, float(feather), np.maximum(cx, cz)))
+    if not weight.any():
+        return h
+    gx, gz = np.meshgrid(tx * level.size_m + idx * level.spacing, tz * level.size_m + idx * level.spacing)
+    other = coarser.heights(gx, gz)
+    ok = ~np.isnan(other)
+    return np.where(ok, h * (1.0 - weight) + other * weight, h)
+
+
+def road_distance(points, knots, block=256):
+    """The distance from each of `points` (n, 2) to the nearest of `knots` (m, 2)."""
+    out = np.empty(len(points))
+    for i in range(0, len(points), block):
+        d = points[i:i + block, None, :] - knots[None, :, :]
+        out[i:i + block] = np.sqrt((d ** 2).sum(axis=2)).min(axis=1)
+    return out
+
+
+def ridge_tile(h, tx, tz, knots):
+    """The ridge level's heights for a tile: pushed down near the road (it is drawn as a mesh of its own, and the
+    land mesh must hide it there), and just under the water where it is sea."""
+    lv = levels.RIDGE
+    idx = np.arange(lv.n)
+    gx, gz = np.meshgrid(tx * lv.size_m + idx * lv.spacing, tz * lv.size_m + idx * lv.spacing)
+    pts = np.column_stack([gx.ravel(), gz.ravel()])
+    near = road_distance(pts, knots[::16]).reshape(lv.n, lv.n)
+    lowered = h - RIDGE_LOWER_M * (1.0 - smoothstep(RIDGE_NEAR_M, RIDGE_FAR_M, near))
+    return np.where(h <= 0.0, np.minimum(lowered, RIDGE_SEA_M), lowered)
+
+
+def bake_terrain(out, frame, knots, dems, land_fn, log=print):
+    """Bakes every level's height tiles under `out` (see levels.py), coarsest first so each finer level can blend its
+    edges into the one above; `dems` is {level name: Dem}; `land_fn({level name: tiles})` bakes the cover and returns
+    the land (with its buildings, to level the fine ground under). Returns ({level name: [(tx, tz)]}, whether there is
+    sea, the land)."""
+    tiles = {lv.name: corridor_tiles(knots, lv.reach, lv.size_m) for lv in levels.LEVELS}
+    for name, t in tiles.items():
+        log("land: %d %s tiles" % (len(t), name))
+    land = land_fn({lv.name: tiles[lv.name] for lv in levels.COVER_LEVELS})
+    has_sea = False
+    fields = {}
+    for k in range(len(levels.LEVELS) - 1, -1, -1):
+        lv = levels.LEVELS[k]
+        os.makedirs(os.path.join(out, lv.folder), exist_ok=True)
+        present = set(tiles[lv.name])
+        coarser = fields[levels.LEVELS[k + 1].name] if k + 1 < len(levels.LEVELS) else None
+        quantised = {}
+        for i, (tx, tz) in enumerate(tiles[lv.name]):
+            h, sea = level_heights(dems[lv.name], frame, lv, tx, tz)
+            has_sea = has_sea or (sea and lv is not levels.RIDGE)
+            if lv is levels.FINE:
+                h = land_bake.level_ground(h, tx, tz, land["buildings"])
+            if lv is levels.RIDGE:
+                h = ridge_tile(h, tx, tz, knots)
+            if coarser is not None:
+                h = blend_edges(h, lv, tx, tz, present, coarser, FEATHER[lv.name])
+            q = lv.quantise(h)
+            with open(os.path.join(out, lv.folder, "%d_%d.u16z" % (tx, tz)), "wb") as f:
+                f.write(levels.encode_heights(q.reshape(lv.n, lv.n)))
+            quantised[(tx, tz)] = lv.dequantise(q).reshape(lv.n, lv.n)
+            if (i + 1) % 50 == 0:
+                log("  %s %d / %d" % (lv.name, i + 1, len(tiles[lv.name])))
+        fields[lv.name] = LevelField(lv, quantised)
+    return tiles, has_sea, land
 
 
 # ---------------------------------------------------------------------------- the pack
@@ -673,19 +796,12 @@ def bake(args, log=print):
     names = sorted({c["name"] for c in chunks})
     chunk_rows = [[c["surface"], c["width"], c["cls"], names.index(c["name"])] for c in chunks]
 
-    # The land: height tiles down the corridor.
-    tiles = corridor_tiles(knots)
-    log("land: %d tiles" % len(tiles))
-    os.makedirs(os.path.join(args.out, "tiles"), exist_ok=True)
-    land = land_bake.bake_land(OVERTURE_BUCKET, release, frame, knots, tiles, args.out, log)
-    has_sea = False
-    for i, (tx, tz) in enumerate(tiles):
-        h, sea = tile_heights(dem, frame, tx, tz)
-        has_sea = has_sea or sea
-        h = land_bake.level_ground(h, tx, tz, land["buildings"])
-        quantise(h).tofile(os.path.join(args.out, "tiles", "%d_%d.u16" % (tx, tz)))
-        if (i + 1) % 25 == 0:
-            log("  %d / %d" % (i + 1, len(tiles)))
+    # The land: height tiles at each level down the corridor.
+    os.makedirs(args.out, exist_ok=True)
+    dems = {lv.name: (dem if lv is levels.FINE else Dem(args.cache, args.lat, log, lv.spacing)) for lv in levels.LEVELS}
+    tiles, has_sea, land = bake_terrain(
+        args.out, frame, knots, dems,
+        lambda cover_tiles: land_bake.bake_land(OVERTURE_BUCKET, release, frame, knots, cover_tiles, args.out, log), log)
 
     turns.append({"d": round((len(knots) - 1) * STEP, 1), "x": round(float(knots[-1][0]), 1), "z": round(float(knots[-1][1]), 1),
                   "turn": "arrive", "onto": "", "branches": 0})
@@ -696,12 +812,12 @@ def bake(args, log=print):
     end_geo = frame.to_geo(knots[-1][0], knots[-1][1])
     start_geo = frame.to_geo(0.0, 0.0)
     meta = {
-        "format": 4, "name": args.name, "title": args.title or args.name,
+        "format": 5, "name": args.name, "title": args.title or args.name,
         "start": {"lat": round(float(start_geo[0]), 6), "lon": round(float(start_geo[1]), 6)},
         "end": {"lat": round(float(end_geo[0]), 6), "lon": round(float(end_geo[1]), 6)},
         "length_m": round((len(knots) - 1) * STEP, 1), "run_out_m": RUN_OUT,
-        "tile": {"size_m": TILE_M, "n": TILE_N, "spacing": STEP}, "height": {"min": HEIGHT_MIN, "scale": HEIGHT_SCALE},
-        "tile_count": len(tiles), "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
+        "levels": [lv.meta() for lv in levels.LEVELS], "tile_counts": {k: len(v) for k, v in tiles.items()},
+        "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
         "building_count": len(land["buildings"]), "landmark_count": len(land["landmarks"]), "sea": has_sea, "theme": "coastal" if has_sea else "hills", "warning": warn,
         "sources": {"overture_release": release, "elevation": "Mapterhorn, AWS Terrain Tiles fallback"},
         "credits": CREDITS,
@@ -744,7 +860,7 @@ def main(argv=None):
         args.length_km = 25.0
     args.out = args.out or os.path.join("data", "routes", args.name)
     meta = bake(args)
-    print("wrote %s: route %.1f km, %d tiles, hash %s" % (args.out, meta["length_m"] / 1000.0, meta["tile_count"], meta["hash"]))
+    print("wrote %s: route %.1f km, tiles %s, hash %s" % (args.out, meta["length_m"] / 1000.0, meta["tile_counts"], meta["hash"]))
 
 
 if __name__ == "__main__":

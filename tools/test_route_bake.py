@@ -9,6 +9,7 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
+import levels  # noqa: E402
 import route_bake as rb  # noqa: E402
 
 
@@ -77,7 +78,7 @@ class HeightTests(unittest.TestCase):
         h = np.linspace(-200.0, 3700.0, 1000)
         q = rb.quantise(h)
         self.assertEqual(q.dtype, np.dtype("<u2"))
-        back = rb.HEIGHT_MIN + q.astype(float) * rb.HEIGHT_SCALE
+        back = levels.MIN + q.astype(float) * rb.HEIGHT_SCALE
         self.assertLessEqual(float(np.abs(back - h).max()), rb.HEIGHT_SCALE)
 
     def test_sea_gets_a_floor_and_land_is_left_alone(self):
@@ -264,6 +265,103 @@ class RoadKnotTests(unittest.TestCase):
             with open(os.path.join(d, "route.json"), "w") as f:
                 f.write("b")
             self.assertNotEqual(first, rb.pack_hash(d))
+
+
+class Levels(unittest.TestCase):
+    def field(self, level, value):
+        return rb.LevelField(level, {(0, 0): np.full((level.n, level.n), float(value))})
+
+    def test_tile_codec_round_trips_exactly_and_is_smaller(self):
+        rng = np.random.default_rng(3)
+        z, x = np.mgrid[0:128, 0:128]
+        q = (np.sin(x / 9.0) * 900 + z * 7 + rng.integers(0, 3, (128, 128)) + 4000).astype("<u2")
+        data = levels.encode_heights(q)
+        self.assertTrue(np.array_equal(levels.decode_heights(data, 128), q))
+        self.assertLess(len(data), q.nbytes * 0.6)
+        wrap = np.array([[0, 65535, 3], [65535, 0, 7], [1, 2, 65530]], dtype="<u2")   # a step across the uint16 range
+        self.assertTrue(np.array_equal(levels.decode_heights(levels.encode_heights(wrap), 3), wrap))
+
+    def test_levels_get_coarser_and_reach_further(self):
+        f, c, r = levels.LEVELS
+        self.assertLess(f.spacing, c.spacing)
+        self.assertLess(c.spacing, r.spacing)
+        self.assertLess(f.reach, c.reach)
+        self.assertLess(c.reach, r.reach)
+        self.assertGreater(r.reach, 10000.0)
+        self.assertGreaterEqual(c.reach, 1500.0)   # the land mesh runs 1 km out and a bit past it
+
+    def test_quantise_per_level_round_trips_within_its_step(self):
+        h = np.array([-12.3, 0.0, 41.7, 640.2, 2100.9])
+        for lv in levels.LEVELS:
+            back = lv.dequantise(lv.quantise(h))
+            self.assertLessEqual(float(np.abs(back - h).max()), lv.scale)
+
+    def test_field_is_bilinear_and_nan_beyond_its_tiles(self):
+        lv = levels.COARSE
+        t = np.zeros((lv.n, lv.n))
+        t[:, :] = np.arange(lv.n)[None, :] * 10.0   # 10 m a sample eastwards
+        f = rb.LevelField(lv, {(0, 0): t})
+        got = f.heights(np.array([16.0, 48.0]), np.array([100.0, 100.0]))
+        self.assertAlmostEqual(float(got[0]), 5.0, places=6)
+        self.assertAlmostEqual(float(got[1]), 15.0, places=6)
+        self.assertTrue(np.isnan(f.heights(np.array([-50.0]), np.array([10.0]))[0]))
+
+    def test_field_reads_across_tile_seams(self):
+        lv = levels.COARSE
+        f = rb.LevelField(lv, {(0, 0): np.full((lv.n, lv.n), 4.0), (1, 0): np.full((lv.n, lv.n), 8.0)})
+        edge = lv.size_m
+        self.assertAlmostEqual(float(f.heights(np.array([edge - lv.spacing / 2]), np.array([10.0]))[0]), 6.0, places=6)
+
+    def test_blend_eases_a_free_edge_into_the_coarser_level(self):
+        lv = levels.FINE
+        coarse = self.field(levels.COARSE, 50.0)
+        h = np.zeros((lv.n, lv.n))
+        out = rb.blend_edges(h, lv, 0, 0, {(0, 0)}, coarse, 16)
+        self.assertAlmostEqual(float(out[64, 0]), 50.0, delta=0.01)   # the free west edge is the coarse height
+        self.assertAlmostEqual(float(out[64, 64]), 0.0, places=6)     # the middle is untouched
+        self.assertTrue(np.all(np.diff(out[64, :17]) <= 1e-9))         # easing back, never past it
+        # Only the diagonal tile missing: that corner is free, and eased.
+        corner = rb.blend_edges(h, lv, 0, 0, {(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1)}, coarse, 16)
+        self.assertAlmostEqual(float(corner[lv.n - 1, lv.n - 1]), 50.0, delta=0.01)
+        self.assertAlmostEqual(float(corner[64, 64]), 0.0, places=6)
+        joined = rb.blend_edges(h, lv, 0, 0, {(a, b) for a in (-1, 0, 1) for b in (-1, 0, 1)}, coarse, 16)
+        self.assertEqual(float(joined.max()), 0.0)                      # with every neighbour present, nothing changes
+
+    def test_ridge_is_pushed_down_near_the_road_and_real_far_off(self):
+        lv = levels.RIDGE
+        h = np.full((lv.n, lv.n), 300.0)
+        knots = np.array([[x, 0.0] for x in np.arange(0.0, 8000.0, 4.0)])
+        out = rb.ridge_tile(h, 0, 0, knots)
+        near = out[1, 20]    # z = 128 m, x = 2560 m: by the road
+        far = out[200, 20]   # z = 25 km: well away
+        self.assertAlmostEqual(float(near), 300.0 - rb.RIDGE_LOWER_M, delta=0.5)
+        self.assertAlmostEqual(float(far), 300.0, delta=0.5)
+
+    def test_ridge_sea_is_just_under_the_water(self):
+        lv = levels.RIDGE
+        h = np.full((lv.n, lv.n), -20.0)
+        out = rb.ridge_tile(h, 0, 0, np.array([[0.0, 0.0], [8.0, 0.0]]))
+        self.assertTrue(np.all(out <= rb.RIDGE_SEA_M + 1e-9))
+        self.assertTrue(np.all(out <= -20.0))
+
+    def test_bake_terrain_writes_every_level(self):
+        class Slope:
+            def heights(self, lat, lon):
+                return 400.0 + (np.asarray(lon) - 134.3) * 1000.0
+        frame = rb.Frame(34.5, 134.3)
+        knots = np.array([[float(x), 0.0] for x in range(0, 1200, 4)])
+        with tempfile.TemporaryDirectory() as d:
+            tiles, sea, land = rb.bake_terrain(d, frame, knots, {lv.name: Slope() for lv in levels.LEVELS},
+                                               lambda t: {"buildings": [], "tiles": t}, log=lambda *_: None)
+            self.assertFalse(sea)
+            self.assertEqual(set(tiles), {"fine", "coarse", "ridge"})
+            for lv in levels.LEVELS:
+                for tx, tz in tiles[lv.name]:
+                    with open(os.path.join(d, lv.folder, "%d_%d.u16z" % (tx, tz)), "rb") as f:
+                        q = levels.decode_heights(f.read(), lv.n)
+                    self.assertEqual(q.shape, (lv.n, lv.n))
+            self.assertEqual(set(land["tiles"]), {"fine", "coarse"})
+            self.assertLess(len(tiles["coarse"]), len(tiles["fine"]) * 10)
 
 
 if __name__ == "__main__":

@@ -44,7 +44,104 @@ func test_pack() -> void:
 		var h := p.terrain.height(p.x[k], p.z[k])
 		if not is_nan(h):
 			off = maxf(off, absf(h - p.e[k]))
-	check(off < 12.0, "the road sits on the land it was baked from (most %.1f m off)" % off)
+	check(off < 2.5, "the road sits on the land it was baked from (most %.1f m off)" % off)
+
+
+## The land's three levels: the fine one by the road, the coarse one out over the hillsides, the ridge level to the
+## skyline; joined without steps, and the whole pack small.
+func test_levels() -> void:
+	var p := RealPack.get_pack(PACK)
+	var t := p.terrain
+	check(t.levels.size() == 3 and t.levels[0].spacing < t.levels[1].spacing and t.levels[1].spacing < t.levels[2].spacing,
+		"three levels of land, each coarser than the last")
+	var k := 2000
+	var hd := atan2(p.x[k + 1] - p.x[k], -(p.z[k + 1] - p.z[k]))
+	var rx := cos(hd)
+	var rz := sin(hd)
+	var reach := {}
+	for side: float in [-1.0, 1.0]:
+		for off in [100.0, 600.0, 1200.0, 3000.0, 9000.0]:
+			var h := t.height(p.x[k] + rx * off * side, p.z[k] + rz * off * side)
+			if not is_nan(h):
+				reach[int(off)] = true
+	check(reach.has(100) and reach.has(600) and reach.has(1200) and reach.has(3000) and reach.has(9000),
+		"land to 9 km out (%s m out have heights)" % str(reach.keys()))
+	check(is_nan(t.height(p.x[k] + 80000.0, p.z[k])), "and none past the ridge level's reach")
+	check(is_nan(t.height_at_level(0, p.x[k] + rx * 1200.0, p.z[k] + rz * 1200.0)) and not is_nan(t.height_at_level(1, p.x[k] + rx * 1200.0, p.z[k] + rz * 1200.0)),
+		"1.2 km out it is the coarse level's (the fine ends near 300 m)")
+	# Walk out from the road: no step where one level hands over to the next (the fine tiles' last metres are eased
+	# into the coarse level).
+	var worst := 0.0
+	var handovers := 0
+	for side: float in [-1.0, 1.0]:
+		for kk in range(400, 5800, 200):
+			var hh := atan2(p.x[kk + 1] - p.x[kk], -(p.z[kk + 1] - p.z[kk]))
+			var was_fine := true
+			var prev := NAN
+			var prev2 := NAN
+			for step in range(0, 2400, 4):
+				var x: float = p.x[kk] + cos(hh) * step * side
+				var z: float = p.z[kk] + sin(hh) * step * side
+				var fine_h := t.height_at_level(0, x, z)
+				var h := t.height(x, z)
+				if was_fine and is_nan(fine_h) and not is_nan(prev) and not is_nan(prev2) and not is_nan(h):
+					handovers += 1
+					worst = maxf(worst, absf(h - (2.0 * prev - prev2)))   # off the line the slope was already on
+				if not is_nan(fine_h):
+					was_fine = true
+				else:
+					was_fine = false
+				prev2 = prev
+				prev = h
+	check(handovers > 5 and worst < 3.0, "no step where the fine level hands over to the coarse (%d handovers, worst %.2f m off the slope)" % [handovers, worst])
+	# The tile codec against a tile worked out by hand: [[10, 12], [14, 20]].
+	var raw := PackedByteArray()
+	raw.resize(8)
+	for i in 4:
+		raw.encode_u16(i * 2, [10, 2, 4, 4][i])   # differences along x then z: a, b-a; c-a, (d-c)-(b-a)
+	var packed := raw.compress(FileAccess.COMPRESSION_DEFLATE)
+	var got := RealTerrain.decode_heights(packed, 2, 0.0, 1.0)
+	check(got.size() == 4 and got[0] == 10.0 and got[1] == 12.0 and got[2] == 14.0 and got[3] == 20.0, "a tile's bytes decode to its heights (%s)" % str(got))
+	check(RealTerrain.decode_heights(PackedByteArray([1, 2, 3]), 2, 0.0, 1.0).is_empty(), "and bad bytes to nothing")
+	var total := 0
+	var dir := DirAccess.open(RealPack.DIR.path_join(PACK))
+	for sub in ["tiles", "coarse", "ridge"]:
+		var d := DirAccess.open(RealPack.DIR.path_join(PACK).path_join(sub))
+		for f in d.get_files():
+			total += FileAccess.get_file_as_bytes(RealPack.DIR.path_join(PACK).path_join(sub).path_join(f)).size()
+	check(dir != null and total < 3000000, "the land is %.1f MB for %.0f km of road" % [total / 1.0e6, p.max_km()])
+
+
+func test_ridges() -> void:
+	var w := AdventureWorld.new()
+	w.setup(11, 23.0, "coastal", "lighthouse", PACK)
+	var p: RealPack = w.route.real
+	check(w.ridges != null and w.ridges.block_count() > 4, "the world draws the real skyline (%d blocks of hills)" % w.ridges.block_count())
+	# Pushed down by the road so the land hides it, the real height from a kilometre out.
+	var k := 2400
+	var fine := p.terrain.height(p.x[k], p.z[k])
+	var ridge := _ridge_at(p.terrain, p.x[k], p.z[k])
+	check(ridge < fine - 30.0, "under the road the ridge level lies %.0f m below the land (%.0f vs %.0f)" % [fine - ridge, ridge, fine])
+	var hd := atan2(p.x[k + 1] - p.x[k], -(p.z[k + 1] - p.z[k]))
+	var far_c := p.terrain.height_at_level(1, p.x[k] + cos(hd) * 1500.0, p.z[k] + sin(hd) * 1500.0)
+	var far_r := p.terrain.height_at_level(2, p.x[k] + cos(hd) * 1500.0, p.z[k] + sin(hd) * 1500.0)
+	check(absf(far_c - far_r) < 40.0, "and 1.5 km out it is the real ground's, as the coarse level has it (%.0f vs %.0f)" % [far_r, far_c])
+	# Moves with the origin.
+	var block: MeshInstance3D = w.ridges.get_children()[0]
+	var before := block.position
+	w.origin += Vector3(1024.0, 0.0, 0.0)
+	w.ridges.place()
+	check(absf((block.position - before).x + 1024.0) < 0.01, "and moves with the world's origin")
+	w.free()
+
+
+func _ridge_at(t: RealTerrain, x: float, z: float) -> float:
+	var sp := t.ridge_spacing()
+	var n := t.ridge_cells()
+	var ix := int(floor(x / sp))
+	var iz := int(floor(z / sp))
+	var tile := t.ridge_tile(Vector2i(floori(float(ix) / n), floori(float(iz) / n)))
+	return NAN if tile.is_empty() else tile[posmod(iz, n) * n + posmod(ix, n)]
 
 
 func test_land() -> void:

@@ -1,5 +1,5 @@
 {
- "format": 4,
+ "format": 5,
  "name": "shodoshima",
  "title": "Shodoshima",
  "start": {
@@ -12,16 +12,43 @@
  },
  "length_m": 24108.0,
  "run_out_m": 600.0,
- "tile": {
-  "size_m": 512.0,
-  "n": 128,
-  "spacing": 4.0
+ "levels": [
+  {
+   "name": "fine",
+   "dir": "tiles",
+   "spacing": 4.0,
+   "n": 128,
+   "size_m": 512.0,
+   "min": -256.0,
+   "scale": 0.0625,
+   "cover": true
+  },
+  {
+   "name": "coarse",
+   "dir": "coarse",
+   "spacing": 32.0,
+   "n": 128,
+   "size_m": 4096.0,
+   "min": -256.0,
+   "scale": 0.125,
+   "cover": true
+  },
+  {
+   "name": "ridge",
+   "dir": "ridge",
+   "spacing": 128.0,
+   "n": 256,
+   "size_m": 32768.0,
+   "min": -256.0,
+   "scale": 0.25,
+   "cover": false
+  }
+ ],
+ "tile_counts": {
+  "fine": 92,
+  "coarse": 9,
+  "ridge": 4
  },
- "height": {
-  "min": -256.0,
-  "scale": 0.0625
- },
- "tile_count": 220,
  "cover": [
   "grass",
   "forest",
@@ -57,5 +84,5 @@
   "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
   "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."
  ],
- "hash": "ef009a086bea90bd"
+ "hash": "c94b9951fc9eaffb"
 }
