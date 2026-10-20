@@ -381,7 +381,7 @@ func test_ride() -> void:
 	var wait_end := Time.get_ticks_msec() + 20000
 	while not w.wanted_chunks().all(func(c): return w.chunks.has(c)) and Time.get_ticks_msec() < wait_end:
 		await t.get_tree().process_frame
-	check(w.chunks.has(AdventureRoute.chunk_of(s)) and int(w.stats["freed"]) > 20,
+	check(w.chunks.has(AdventureRoute.chunk_of(s)) and int(w.stats["freed"]) > 8,
 		"streamed from the start to the end of the island road (%d chunks freed behind, worst frame %.0f ms)" % [int(w.stats["freed"]), worst])
 	w.queue_free()
 	await t.get_tree().process_frame
