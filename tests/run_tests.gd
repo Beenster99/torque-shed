@@ -308,7 +308,7 @@ func _run_all() -> void:
 	print("Handling phase 4: heat (tyre, brake and engine temperatures)")
 	_test_heat_grip_window()
 	_test_heat_warmup()
-	_test_heat_brake_fade()
+	_test_heat_brakes_hold()
 	await _test_heat_cold_tyres()
 	await _test_heat_brakes_ride()
 	await _test_heat_engine_ride()
@@ -561,7 +561,7 @@ func _run_all() -> void:
 	await _test_controls_look_back()
 	print("Riding on adventures (v0.18.0): brakes after a long ride, how often things go wrong, sharp turns slow")
 	await _test_adv_ride_brakes()
-	_test_adv_ride_descent_fade()
+	await _test_adv_ride_descent_brakes()
 	_test_adv_ride_breakdown_odds()
 	await _test_adv_ride_tight_turns()
 	print("Simon's v0.17.0 round: adventures without stutters or long triangles")
@@ -19308,9 +19308,11 @@ func _test_heat_warmup() -> void:
 	check(p0 < 0.85 and hh.power > p0, "an overheating engine loses power (x%.2f, x%.2f at realism 1)" % [p0, hh.power])
 
 
-func _test_heat_brake_fade() -> void:
-	# Brake fade: repeated hard stops from 30 m/s with 20 s of riding between, organic pads (which
-	# fade soonest) against sintered; then what cold does to race carbon pads.
+func _test_heat_brakes_hold() -> void:
+	# No brake fade (Simon: "remove brake fade"): ten hard stops from 30 m/s with 20 s of riding
+	# between cook the discs, but organic pads and sintered alike keep their full bite. Cold still
+	# matters: race carbon pads barely bite cold.
+	var hottest := {}
 	for pad in ["organic", "sintered"]:
 		var hb := _heat_of({"front_pads": pad}, 15.0)
 		var h: BikeHeat = hb[0]
@@ -19319,7 +19321,7 @@ func _test_heat_brake_fade() -> void:
 		var line := []
 		var worst := 1.0
 		for stop in 10:
-			# One stop at about 1 g (less as it fades), the front brake doing 85% of it.
+			# One stop at about 1 g, the front brake doing 85% of it.
 			var v := 30.0
 			while v > 0.0:
 				var dt := 0.05
@@ -19328,15 +19330,17 @@ func _test_heat_brake_fade() -> void:
 				v -= decel * dt
 			line.append("%d°C x%.2f" % [roundi(h.discs[0]), h.brake_temp_mult(0)])
 			worst = minf(worst, h.brake_temp_mult(0))
+			hottest[pad] = maxf(float(hottest.get(pad, 0.0)), h.discs[0])
 			_heat_run(h, b, 20.0, 25.0, 400.0, 5000.0, 7.0)
 		print("    %s pads, front disc after each stop: %s" % [pad, ", ".join(line)])
 		table_heat[pad] = worst
 		_heat_run(h, b, 300.0, 25.0, 400.0, 5000.0, 7.0)
 		table_heat[pad + "_cooled"] = h.brake_temp_mult(0)
 		print("    ... and after 5 min riding gently: %d°C x%.2f" % [roundi(h.discs[0]), h.brake_temp_mult(0)])
-	check(table_heat["organic"] < 0.8, "organic pads fade after repeated hard stops (bite x%.2f)" % table_heat["organic"])
-	check(table_heat["sintered"] > table_heat["organic"] + 0.1, "sintered pads hold on far longer (x%.2f)" % table_heat["sintered"])
-	check(table_heat["organic_cooled"] > 0.98, "the brakes come back once they cool (x%.2f)" % table_heat["organic_cooled"])
+	check(float(hottest["organic"]) > 300.0, "ten hard stops cook the discs (organic pads' disc %d °C at the hottest)" % roundi(float(hottest["organic"])))
+	check(table_heat["organic"] > 0.999 and table_heat["sintered"] > 0.999,
+		"however hot, the brakes keep their full bite: no fade (organic x%.3f, sintered x%.3f)" % [table_heat["organic"], table_heat["sintered"]])
+	check(table_heat["organic_cooled"] > 0.999, "and still full once they've cooled (x%.3f)" % table_heat["organic_cooled"])
 	var hb := _heat_of({"front_pads": "carbon_race"}, 10.0)
 	var h: BikeHeat = hb[0]
 	var cold := h.brake_temp_mult(0)
@@ -19397,19 +19401,22 @@ func _test_heat_cold_tyres() -> void:
 
 
 func _test_heat_brakes_ride() -> void:
-	# Overcooked brakes fade: the same squeeze on discs at 650 °C stops far longer at realism 0.
+	# No brake fade: the same squeeze on discs at 650 °C stops as short as on warm ones, at realism 0
+	# as at realism 1.
 	var lever := 0.45
 	var normal := await _heat_stop({"front_pads": "organic"}, 0.0, func(_h): pass, lever)
-	var faded := await _heat_stop({"front_pads": "organic"}, 0.0, func(h):
+	var cooked := await _heat_stop({"front_pads": "organic"}, 0.0, func(h):
 		h.discs[0] = 650.0
 		h.pads[0] = 600.0, lever, 22.0)
 	var normal_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(_h): pass, lever)
-	var faded_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(h):
+	var cooked_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(h):
 		h.discs[0] = 650.0
 		h.pads[0] = 600.0, lever, 22.0)
-	print("    organic pads, the same squeeze from 25 m/s: %.1f m normal, %.1f m faded (realism 0); %.1f vs %.1f m at realism 1" % [normal[0], faded[0], normal_easy[0], faded_easy[0]])
-	check(normal[0] > 0.0 and faded[0] > normal[0] * 1.3, "faded brakes stop far longer (%.1f m against %.1f m)" % [faded[0], normal[0]])
-	check(normal_easy[0] > 0.0 and faded_easy[0] / normal_easy[0] < faded[0] / normal[0], "Riding realism 1 softens the fade")
+	print("    organic pads, the same squeeze from 25 m/s: %.1f m normal, %.1f m on 650 °C discs (realism 0); %.1f vs %.1f m at realism 1" % [normal[0], cooked[0], normal_easy[0], cooked_easy[0]])
+	check(normal[0] > 0.0 and cooked[0] > 0.0 and cooked[0] < normal[0] * 1.02,
+		"650 °C brakes stop as short as warm ones: no fade (%.1f m against %.1f m)" % [cooked[0], normal[0]])
+	check(normal_easy[0] > 0.0 and cooked_easy[0] > 0.0 and cooked_easy[0] < normal_easy[0] * 1.02,
+		"and the same at Riding realism 1 (%.1f m against %.1f m)" % [cooked_easy[0], normal_easy[0]])
 
 
 func _test_heat_engine_ride() -> void:
@@ -20010,13 +20017,13 @@ func _test_brake_details() -> void:
 	check(PartsDB.spec_line("drum_tls_200").contains("cooling poor") and PartsDB.spec_line("drum_tls_200").contains("two leading shoes")
 		and PartsDB.spec_line("solid_240").contains("cooling standard") and PartsDB.spec_line("drilled_280").contains("cooling good"),
 		"drums cool worst, solid discs as standard, drilled ones best (%s)" % PartsDB.spec_line("drum_tls_200"))
-	check(PartsDB.spec_line("sintered").contains("fade from 450") and PartsDB.spec_line("organic").contains("fade from 250"),
-		"pads say when they fade (%s)" % PartsDB.spec_line("sintered"))
+	check(PartsDB.spec_line("sintered").contains("bite fully from 80") and not PartsDB.spec_line("organic").contains("fade")
+		and not PartsDB.spec_line("drum_tls_200").contains("fade"),
+		"pads say when they bite, and nothing says it fades (%s)" % PartsDB.spec_line("sintered"))
 	check(PartsDB.spec_line("six_piston_race").contains("6 pistons"), "a caliper's spec says its pistons")
 	# The heat model reads the same numbers.
-	check(is_equal_approx(BikeHeat.disc_cooling(PartsDB.get_part("drum_sls_180")), 0.5)
-		and float(BikeHeat.pad_temps(PartsDB.get_part("ceramic"), PartsDB.get_part("drum_sls_180"))[2]) == BikeHeat.DRUM_FADE,
-		"shoes in a drum fade early whatever they're made of")
+	check(is_equal_approx(BikeHeat.disc_cooling(PartsDB.get_part("drum_sls_180")), 0.5),
+		"a drum cools at half a solid disc's rate")
 	disc_item["wear"] = 0.5
 	check(Shed.condition_text(disc_item).contains("4.2 mm thick"), "a half-worn disc's condition says 4.2 mm thick (%s)" % Shed.condition_text(disc_item))
 	BikeHeat.fixed_air = 10.0
@@ -20025,8 +20032,8 @@ func _test_brake_details() -> void:
 	print("    " + "\n    ".join(cold))
 	var pad_type := str(PartsDB.get_part(str(Shed.items[Shed.item_on(bike_id, "front_pads")]["part"]))["type"])
 	check(cold.size() == 3 and str(cold[0]).contains("13 °C") and str(cold[0]).contains("cold") and str(cold[1]).contains(pad_type)
-		and str(cold[1]).contains("fade from") and str(cold[2]).contains("N·m"),
-		"looking at a disc: its heat (shed temperature unridden), the pads fitted and when they fade, the caliper and the brake's torque")
+		and str(cold[1]).contains("bite fully from") and not str(cold[1]).contains("fade") and str(cold[2]).contains("N·m"),
+		"looking at a disc: its heat (shed temperature unridden), the pads fitted and when they bite (no fade), the caliper and the brake's torque")
 	# Just ridden hard: the disc is hot, and cools while it stands.
 	var heat := BikeHeat.new()
 	heat.setup(Shed.build_of(bike_id))
@@ -22200,8 +22207,8 @@ func _test_adv_ride_brakes() -> void:
 	await _adv_ride().test_brakes()
 
 
-func _test_adv_ride_descent_fade() -> void:
-	_adv_ride().test_descent_fade()
+func _test_adv_ride_descent_brakes() -> void:
+	await _adv_ride().test_descent_brakes()
 
 
 func _test_adv_ride_breakdown_odds() -> void:

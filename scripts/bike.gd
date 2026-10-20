@@ -550,7 +550,7 @@ func _physics_process_body(delta: float) -> void:
 		front_grip = 0.0
 	if str(faults.get("lever", "")) == "brake":
 		front_grip *= 0.15   # a stub of a lever: barely any front brake
-	# Cold pads bite a little less, overcooked ones fade (see BikeHeat).
+	# Cold pads bite a little less (see BikeHeat); hot ones never fade.
 	wheels[0]["brake_torque"] = front_grip * build.front_brake_torque * _bite(0)
 	wheels[1]["brake_torque"] = 0.0 if burnout > 0.0 else rear_grip * build.rear_brake_torque * _bite(1)
 	for w in wheels:
