@@ -569,6 +569,8 @@ func _draw_speedo() -> void:
 		hint = Controls.hint("Hold {interact}: fill up (%dp a litre, your money)   ·   %.1f of %.0f L in the tank" % [
 			roundi(FuelStop.price_of(fuel_stop.pump_here()) * 100.0), bike.fuel_litres, bike.build.fuel_capacity]) \
 			if fuel_stop.space() >= 0.05 else Controls.hint("The tank's full   ·   {interact}: get off")
+	elif absf(bike.speed) < 2.0 and not bike.is_crashed and not Adventure.active() and ShedPump.near(bike.global_position):
+		hint = Controls.hint("The shed's pump: {interact} to get off, then lift the nozzle and fill up (%dp a litre, on the business)" % roundi(ShedPump.price() * 100.0))
 	elif ride_hint != "":
 		hint = Controls.hint(ride_hint)
 	elif not bike.engine_on and not bike.is_crashed:

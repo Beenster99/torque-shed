@@ -342,8 +342,8 @@ func _process_body(delta: float) -> void:
 static func hand_sig(peer: int, tool: String) -> String:
 	var tray := CoffeeShop.tray_of(peer)
 	var bay := PaintBay.held(peer)
-	return "%d|%s|%d|%s|%s" % [Shed.held_by(peer), tool, Progress.tool_stage(peer, tool), str(tray.get("items", "-")),
-		str(bay) + str(PaintBay.held_tin(peer).get("code", ""))]
+	return "%d|%s|%d|%s|%s|%s" % [Shed.held_by(peer), tool, Progress.tool_stage(peer, tool), str(tray.get("items", "-")),
+		str(bay) + str(PaintBay.held_tin(peer).get("code", "")), str(ShedPump.holder() == peer)]
 
 
 ## Draws what's in a player's hand on a figure's `hand` node: a part they carry, a tray from
@@ -374,6 +374,8 @@ static func fill_hand(hand: Node3D, peer: int, tool: String, keep: Node = null) 
 		b.name = "PaintBay"
 		b.position = Vector3(-0.2, -0.05, -0.1)
 		hand.add_child(b)
+	elif ShedPump.holder() == peer:
+		pass   # the shed pump's nozzle, which the pump draws in their hand (see ShedPumpView)
 	else:
 		hand.add_child(Walker.make_tool_mesh(tool, Color(0.9, 0.75, 0.1), stage))
 		if tool == "lance":
@@ -414,5 +416,10 @@ func world_position() -> Vector3:
 
 
 ## Where they are and which way they face: their bike's, while they ride.
+## Where their hand is: what they carry is drawn on it (the shed pump's nozzle follows it).
+func hand_transform() -> Transform3D:
+	return _hand.global_transform
+
+
 func world_transform() -> Transform3D:
 	return bike.global_transform if bike else _figure.global_transform

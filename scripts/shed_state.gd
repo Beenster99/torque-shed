@@ -167,6 +167,9 @@ var screens := {}
 ## defenders (0: on their hook), how hot the engine on the rig is (0..1) and how much exhaust
 ## haze hangs in the room (0..1).
 var dyno := dyno_defaults()
+## The shed's petrol pump on the front wall: who has the nozzle, the bike it's pouring into and
+## this sale (see ShedPump).
+var pump := ShedPump.defaults()
 ## Bikes saved as blueprints in geometry mode, to build again: blueprint id -> {id, name, parts
 ## {slot: part id or "none"}, colors {slot: {color, finish}}, paint, geo (its parts' fit, see
 ## GeoGizmo), from (the bike it was taken from)}.
@@ -253,6 +256,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	holograms = {}
 	on_order = []
 	dyno = dyno_defaults()
+	pump = ShedPump.defaults()
 	_dyno_busy_until = 0
 	items.clear()
 	crew.clear()
@@ -373,6 +377,8 @@ func load_state(state: Dictionary, player_name: String) -> void:
 		dyno["hose"] = "hook"
 	dyno["hose_by"] = 0
 	dyno["headphones"] = 0
+	# Nor holding the petrol pump's nozzle.
+	ShedPump.after_load()
 	# Peer ids don't carry over between sessions, so live channels follow whoever rides first.
 	for key in screens.keys():
 		if not (screens[key] is Dictionary) or not TvChannels.screen_exists(str(key)):
@@ -511,6 +517,7 @@ func join_remote() -> void:
 	holograms = {}
 	on_order = []
 	dyno = dyno_defaults()
+	pump = ShedPump.defaults()
 	_dyno_busy_until = 0
 	items.clear()
 	crew.clear()
@@ -544,6 +551,7 @@ func stop() -> void:
 	holograms = {}
 	on_order = []
 	dyno = dyno_defaults()
+	pump = ShedPump.defaults()
 	_dyno_busy_until = 0
 	active = false
 	bikes.clear()
@@ -829,6 +837,8 @@ func _dyno_check(peer: int, action: Dictionary) -> String:
 						return "Put the part down first."
 					if pushing_bike(peer) != 0 or moving(peer) != 0:
 						return "Let go of what you're moving first."
+					if ShedPump.holder() == peer:
+						return "You've got the petrol nozzle in your hand. Hang it back on the pump first."
 				"bike":
 					if hose_holder() != peer:
 						return "Take the exhaust hose off its hook first."
@@ -899,6 +909,7 @@ func _tidy_dyno() -> void:
 		dyno["hose_by"] = 0
 	if int(dyno.get("headphones", 0)) != 0 and not crew.has(int(dyno["headphones"])):
 		dyno["headphones"] = 0
+	ShedPump.tidy()
 
 
 const DYNO_HEAT_FAN := 0.08      # how much hotter the engine gets in one run with the fan on
@@ -2511,12 +2522,16 @@ func check(peer: int, action: Dictionary) -> String:
 		return _coat_check(peer, action)
 	if a.begins_with("money_"):
 		return Money.check(peer, action)
+	if a.begins_with("pump_"):
+		return ShedPump.check(peer, action)
 	if a.begins_with("copy_"):
 		return BikeCopy.check(peer, action)
 	if a == "retrieve_bike":
 		return retrieve_check(action)
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
 		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
+	if ShedPump.holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack", "dyno_hose"]:
+		return "You've got the petrol nozzle in your hand. Hang it back on the pump first."
 	match a:
 		"unbolt", "bolt", "remove":
 			var host := host_of(bike_id, slot, engine_id)
@@ -3294,6 +3309,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	if str(action.get("a", "")).begins_with("money_"):
 		_money_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("pump_"):
+		_pump_apply(peer, action)
 		return
 	if str(action.get("a", "")).begins_with("coffee_"):
 		_coffee_apply(peer, action)
@@ -5539,7 +5557,7 @@ func _snapshot(with_board := true) -> Dictionary:
 	if is_authority():
 		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
-		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
+		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno, "pump": pump,
 		"blueprints": blueprints, "holograms": holograms, "on_order": on_order, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
 		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "adventure_save": adventure_save, "kit_v": KIT_SAVE}
 	if with_board:
@@ -5610,6 +5628,8 @@ func _sync(state: Dictionary) -> void:
 	_dyno_busy_until = 0
 	if state.get("dyno") is Dictionary:
 		dyno.merge(state["dyno"], true)
+	# Sheds saved before the pump on the front wall have its nozzle hung up.
+	pump = ShedPump.sanitize(state.get("pump"))
 	_next_id = int(state.get("next", 1))
 	posters = state["posters"] if state.get("posters") is Dictionary else {}
 	# Sheds saved before blueprints have none.
@@ -5641,6 +5661,7 @@ func _process_body(delta: float) -> void:
 	if not active or not is_authority():
 		return
 	_cool_dyno(delta)
+	ShedPump.process(delta)
 	_money_clock()
 	Money.record_graph()
 	Contracts.process(delta)
@@ -5755,6 +5776,20 @@ func remove_bike(bike_id: int) -> void:
 			crew[p]["riding"] = 0
 	bikes.erase(bike_id)
 	_mark_dirty()
+
+
+## A "pump_*" request at the shed's petrol pump (see ShedPump.check and ShedPump.apply).
+func _pump_apply(peer: int, action: Dictionary) -> void:
+	var why := ShedPump.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var text := ShedPump.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_tidy_dyno()
+	_mark_dirty()
+	changed.emit()
 
 
 ## A "money_*" request (see Money.check and Money.apply). Money a player sent that can't be
