@@ -68,7 +68,7 @@ const FORM_TIME := 0.75
 ## if they get LOSE m from it. A biker that's parted won't join again for COOLDOWN s.
 const JOIN_BEHIND := 35.0
 const JOIN_BESIDE := 8.0
-const JOIN_MATCH := 2.5
+const JOIN_MATCH := 3.0
 const JOIN_TIME := 3.0
 const JOIN_FOR := [150.0, 360.0]
 const JOIN_MIN := 40.0
@@ -459,7 +459,7 @@ func _find_riders(delta: float) -> void:
 		if is_nan(was) or absf(s - was) > 60.0 or delta <= 0.0:
 			r["v"] = 0.0
 		else:
-			r["v"] = lerpf(float(r["v"]), (s - was) / delta, 1.0 - exp(-6.0 * delta))
+			r["v"] = lerpf(float(r["v"]), (s - was) / delta, 1.0 - exp(-2.5 * delta))
 		_rider_s[k] = s
 		r["s"] = s
 		r["lat"] = float(sp[1])

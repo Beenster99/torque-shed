@@ -72,10 +72,10 @@ wait $YHOST
 YHOSTRC=$?
 grep -h "MP diary" /tmp/torque_mp_diary_host.log /tmp/torque_mp_diary_client.log
 # The other bikers: one the host puts on the road joins the client riding behind it, stops with them, then parts.
-"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_bikers.tscn -- --role=host > /tmp/torque_mp_bikers_host.log 2>&1 &
+"$GODOT" --headless --path . res://tests/mp_bikers.tscn -- --role=host > /tmp/torque_mp_bikers_host.log 2>&1 &
 BHOST=$!
 sleep 4
-"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_bikers.tscn -- --role=client > /tmp/torque_mp_bikers_client.log 2>&1
+"$GODOT" --headless --path . res://tests/mp_bikers.tscn -- --role=client > /tmp/torque_mp_bikers_client.log 2>&1
 BCLIENT=$?
 wait $BHOST
 BHOSTRC=$?

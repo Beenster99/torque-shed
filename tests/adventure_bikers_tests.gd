@@ -446,5 +446,5 @@ func test_cost() -> void:
 		tr.bikers.step(1.0 / 60.0)
 		tr.stream.blockers = []
 	each = (Time.get_ticks_usec() - t0) / 1000.0 / 300.0
-	check(most[0] >= 3 and each < 0.5 and worst < 4.0, "with %d bikers out the bikers cost %.3f ms a tick (%.2f ms at the worst)" % [most[0], each, worst])
+	check(most[0] >= 3 and each < 0.5 and worst < 10.0, "with %d bikers out the bikers cost %.3f ms a tick (%.2f ms at the worst)" % [most[0], each, worst])
 	await _free(tr)

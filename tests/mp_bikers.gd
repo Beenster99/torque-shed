@@ -113,7 +113,11 @@ func _host_side(trip: AdventureTrip, tr: AdventureTraffic, mine: float, lat: flo
 		tr.stream.clear()
 		return int(d["rider"]) == 1, 30.0)
 	note[0] = "host: joined %s (place %d)" % [joined, int(d.get("jslot", 0))]
-	# Riding with them: in front, its place kept.
+	# Riding with them: in front, its place kept (once it's dropped back into it).
+	await _until_for(func():
+		_hold(trip, mine, lat)
+		tr.stream.clear()
+		return true, 6.0)
 	var worst := [0.0]
 	var line := await _until_for(func():
 		_hold(trip, mine, lat)
@@ -121,12 +125,13 @@ func _host_side(trip: AdventureTrip, tr: AdventureTraffic, mine: float, lat: flo
 		var gap := float(d["s"]) - float(client_s.call())
 		worst[0] = maxf(worst[0], absf(gap - maxf(AdventureBikers.FORM_GAP, PACE * AdventureBikers.FORM_TIME)))
 		return int(d["rider"]) == 1, 6.0)
-	line = line and worst[0] < 8.0
+	line = line and worst[0] < 4.0
 	# They stop: it stops.
 	var stopped := await _until(func():
 		_hold(trip, mine, lat)
 		tr.stream.clear()
 		return float(b.riders[1]["v"]) < 0.3 and float(d["v"]) < 0.3 and int(d["rider"]) == 1, 30.0)
+	var at_stop := [float(b.riders[1]["v"]), float(d["v"]), float(d["s"]) - float(client_s.call())]
 	var still_t := Time.get_ticks_msec() + 3000
 	await _until(func():
 		_hold(trip, mine, lat)
@@ -139,7 +144,8 @@ func _host_side(trip: AdventureTrip, tr: AdventureTraffic, mine: float, lat: flo
 		_hold(trip, mine, lat)
 		tr.stream.clear()
 		return Time.get_ticks_msec() > stay, 9.0)
-	note[0] += ", its place kept to %.1f m, stopped %s, parted %s" % [worst[0], stopped, parted]
+	note[0] += ", its place kept to %.1f m, stopped %s (the client at %.1f m/s, the biker %.1f, %.1f m ahead), parted %s" % [worst[0], stopped,
+		at_stop[0], at_stop[1], at_stop[2], parted]
 	return [joined, line, stopped, parted]
 
 
@@ -165,18 +171,22 @@ func _client_side(trip: AdventureTrip, tr: AdventureTraffic, mine: float, lat: f
 	# Keeping its pace 20 m behind it.
 	var joined := await _until(func():
 		var v := float(d["v"])
-		s[0] += v / 60.0
+		s[0] += v * get_physics_process_delta_time()
 		s[0] += (float(d["s"]) - 20.0 - s[0]) * 0.02
 		_ride_at(trip, s[0], lat, v)
 		return bool(d.get("joined", false)), 30.0)
+	await _until_for(func():
+		s[0] += PACE * get_physics_process_delta_time()
+		_ride_at(trip, s[0], lat, PACE)
+		return true, 6.0)
 	var worst := [0.0]
 	var line := await _until_for(func():
-		s[0] += PACE / 60.0
+		s[0] += PACE * get_physics_process_delta_time()
 		_ride_at(trip, s[0], lat, PACE)
 		var gap: float = float(d["s"]) - float(s[0])
 		worst[0] = maxf(worst[0], absf(gap - maxf(AdventureBikers.FORM_GAP, PACE * AdventureBikers.FORM_TIME)))
 		return bool(d.get("joined", false)), 6.0)
-	line = line and worst[0] < 8.0
+	line = line and worst[0] < 4.0
 	var drawn: Vector3 = b.pool[int(d["id"])]["body"].global_position
 	var hit := trip.world.locate_local(drawn)
 	var drawn_off := absf(float(hit.get("s", -1000.0)) - float(d["s"]))
@@ -184,7 +194,7 @@ func _client_side(trip: AdventureTrip, tr: AdventureTraffic, mine: float, lat: f
 	var nods := AdventureBikers.nod_back(main.bike.global_position)
 	var head := [0.0]
 	await _until_for(func():
-		s[0] += PACE / 60.0
+		s[0] += PACE * get_physics_process_delta_time()
 		_ride_at(trip, s[0], lat, PACE)
 		var p: Dictionary = b.pool[int(d["id"])]
 		head[0] = maxf(head[0], maxf(absf((p["head"] as Node3D).rotation.x), absf((p["arm"] as Node3D).rotation.z)))
@@ -192,10 +202,13 @@ func _client_side(trip: AdventureTrip, tr: AdventureTraffic, mine: float, lat: f
 	var nodded: bool = nods == 1 and head[0] > 0.3
 	# Stop: brake to a stand over a few seconds.
 	var v := [PACE]
+	var stop_v := [0.0, 0.0]
 	var stopped := await _until(func():
-		v[0] = maxf(0.0, v[0] - 4.0 / 60.0)
-		s[0] += v[0] / 60.0
+		v[0] = maxf(0.0, v[0] - 4.0 * get_physics_process_delta_time())
+		s[0] += v[0] * get_physics_process_delta_time()
 		_ride_at(trip, s[0], lat, v[0])
+		stop_v[0] = float(d["v"])
+		stop_v[1] = float(d["s"]) - s[0]
 		return v[0] <= 0.0 and float(d["v"]) < 0.3 and bool(d.get("joined", false)) and float(d["s"]) > s[0], 30.0)
 	var waved := [false]
 	var parted := await _until(func():
@@ -203,8 +216,8 @@ func _client_side(trip: AdventureTrip, tr: AdventureTraffic, mine: float, lat: f
 		if int(d.get("gesture", 0)) == AdventureBikers.WAVE:
 			waved[0] = true
 		return not bool(d.get("joined", false)) and waved[0], 30.0)
-	note[0] = "client: joined %s, its place kept to %.1f m (drawn %.2f m from its place), nodded back %s, stopped %s, parted %s" % [
-		joined, worst[0], drawn_off, nodded, stopped, parted]
+	note[0] = "client: joined %s, its place kept to %.1f m (drawn %.2f m from its place), nodded back %s, stopped %s (the biker at %.1f m/s, %.1f m ahead), parted %s" % [
+		joined, worst[0], drawn_off, nodded, stopped, stop_v[0], stop_v[1], parted]
 	return [joined, line, nodded, stopped, parted]
 
 
