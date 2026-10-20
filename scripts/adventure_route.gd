@@ -51,6 +51,8 @@ const KIND_NAMES := {"straight": "Straight", "sweeping": "Sweeping bends", "curv
 const GRADE_RATE := 0.0012
 const PITCH_RATE := 0.0025
 const MAX_GRADE := 0.155
+## How far (m) a fuel station or stop may move along a real road to find a straight, level stretch.
+const FIT_REACH := 2500.0
 ## How long a short steep pitch lasts (m, at its steepest), and the rollers' waves: their length
 ## (m) and the steepest each may be (no tighter than a 1.2 km curve over the crest).
 const PITCH_LEN := [70.0, 300.0]
@@ -207,6 +209,8 @@ var slope_k := PackedInt32Array()
 ## The theme's relief: {pitch: [odds, steepest from, to (%)], rollers: [odds, grade from, to (%)],
 ## switchbacks: [odds, legs from, to], tunnels: [first (m), every from, to (m), long from, to (m)]}.
 var _relief := {}
+## The real road this route follows, or null for a made-up one (see plan_real).
+var real: RealPack = null
 
 
 ## Plans the whole road for `seed` and `km`. `extra_sites` ([{kind, s, side, flat}]) are kept
@@ -252,6 +256,179 @@ func plan(seed: int, km: float, theme_name := "varied", extra_sites: Array = [])
 	_assemble()
 	AdventureJunctions.lay_out(self)
 
+
+## Plans the road along the real road `pack` for `km` (at most the pack's own length): its line,
+## heights, widths and surfaces as baked, and the land beside it from the real terrain. Fuel and
+## the stops are still made up (and kept to the straight, level stretches); there are no forks,
+## junctions, tunnels or switchback slopes on a real road.
+func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) -> void:
+	real = pack
+	seed_value = seed
+	theme = pack.theme if AdventureTheme.has(pack.theme) else "hills"
+	_theme_numbers()
+	sea = pack.sea
+	length = clampf(km, 1.0, maxf(pack.max_km(), 1.0)) * 1000.0
+	total = length + RUN_OUT
+	var n := mini(int(ceil(total / STEP)) + 1, pack.x.size())
+	total = (n - 1) * STEP
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed, "adventure_road", theme, pack.id])
+	_make_noise(seed)
+	_planned = false
+	sites.clear()
+	forks.clear()
+	choices.clear()
+	decided.clear()
+	tunnels = []
+	slopes = []
+	px = pack.x.slice(0, n)
+	pz = pack.z.slice(0, n)
+	ph = PackedFloat64Array()
+	ph.resize(n)
+	for i in n:
+		ph[i] = pack.e[i]
+	hd.resize(n)
+	curv.resize(n)
+	for i in n - 1:
+		var h := atan2(px[i + 1] - px[i], -(pz[i + 1] - pz[i]))
+		if i > 0:
+			h = hd[i - 1] + wrapf(h - hd[i - 1], -PI, PI)   # continuous: no jump at north
+		hd[i] = h
+	hd[n - 1] = hd[maxi(n - 2, 0)]
+	for i in n - 1:
+		curv[i] = (hd[i + 1] - hd[i]) / STEP
+	curv[n - 1] = 0.0
+	# Surfaces and widths from the baked chunks.
+	surfaces.clear()
+	chunk_surface.clear()
+	var chunks := int(ceil(float(n - 1) / CHUNK_KNOTS))
+	var targets := PackedFloat32Array()
+	targets.resize(n)
+	for c in chunks:
+		var row: Array = pack.chunks[mini(c, pack.chunks.size() - 1)]
+		var surf := str(row[0])
+		chunk_surface.append(surf if AdventureSurface.IDS.has(surf) else "tarmac")
+		var best := "road"
+		for k in WIDTHS:
+			if absf(float(WIDTHS[k]) - float(row[1])) < absf(float(WIDTHS[best]) - float(row[1])):
+				best = k
+		for k in range(c * CHUNK_KNOTS, mini(n, (c + 1) * CHUNK_KNOTS + 1)):
+			targets[k] = WIDTHS[best]
+	var w := targets[0]
+	width.resize(n)
+	for i in n:
+		w = move_toward(w, targets[i], 0.05)
+		width[i] = w
+	var c := 0
+	while c < chunks:
+		var e := c
+		while e < chunks and chunk_surface[e] == chunk_surface[c]:
+			e += 1
+		surfaces.append({"s0": c * CHUNK_LEN, "s1": e * CHUNK_LEN, "surface": chunk_surface[c]})
+		c = e
+	# Sections by how tight the bends are in each 256 m.
+	sections.clear()
+	var span := int(256.0 / STEP)
+	for k0 in range(0, n - 1, span):
+		var k1 := mini(n - 1, k0 + span)
+		var tight := 0.0
+		for k in range(k0, k1):
+			tight = maxf(tight, absf(curv[k]))
+		var kind := "straight"
+		if tight > 1.0 / 50.0:
+			kind = "very_curvy"
+		elif tight > 1.0 / 160.0:
+			kind = "curvy"
+		elif tight > 1.0 / 400.0:
+			kind = "sweeping"
+		if not sections.is_empty() and sections[-1]["kind"] == kind and sections[-1]["width"] == "road":
+			sections[-1]["s1"] = k1 * STEP
+		else:
+			sections.append({"s0": k0 * STEP, "s1": k1 * STEP, "kind": kind, "width": "road"})
+	# The lie of the land: the road's height over 200 m either way.
+	base.resize(n)
+	var sums := PackedFloat64Array()
+	sums.resize(n + 1)
+	for i in n:
+		sums[i + 1] = sums[i] + ph[i]
+	for i in n:
+		var a := maxi(0, i - 50)
+		var b := mini(n, i + 51)
+		base[i] = (sums[b] - sums[a]) / float(b - a)
+	tun_k = PackedInt32Array()
+	tun_k.resize(n)
+	tun_k.fill(-1)
+	slope_k = PackedInt32Array()
+	slope_k.resize(n)
+	slope_k.fill(-1)
+	# Fuel and the stops, only where the road is straight and level enough to pull in.
+	_plan_fuel(rng)
+	AdventureStops.plan(self)
+	_fit_stops()
+	add_site("start", 48.0, 1, 0.0, "Start")
+	add_site("finish", length, 1, 0.0, "Destination")
+	for e in extra_sites:
+		add_site(str(e.get("kind", "site")), float(e.get("s", 0.0)), int(e.get("side", 1)), float(e.get("flat", 20.0)),
+			str(e.get("name", "")))
+	_stash_default()
+	_build_static_grid()
+	_planned = true
+	_assemble()
+
+
+## Moves the fuel stations and stops (a village with its rows) to the nearest straight, level stretch of the
+## real road, within FIT_REACH, and drops those with none.
+func _fit_stops() -> void:
+	var moved := {}   # a stop's planned s -> metres it moves
+	var keep := []
+	for st in sites:
+		var kind := str(st["kind"])
+		if kind == AdventureStops.ROW or not (kind == "fuel" or AdventureStops.KINDS.has(kind)):
+			continue
+		var at := _fit_near(float(st["s"]))
+		if at >= 0.0:
+			moved[float(st["s"])] = at - float(st["s"])
+			keep.append(st)
+	var out := []
+	for st in sites:
+		var kind := str(st["kind"])
+		if kind == AdventureStops.ROW:
+			var key := float(st["main_s"])
+			if not moved.has(key):
+				continue
+			st["s"] = float(st["s"]) + float(moved[key])
+		elif kind == "fuel" or AdventureStops.KINDS.has(kind):
+			if not keep.has(st):
+				continue
+			st["s"] = float(st["s"]) + float(moved[float(st["s"])])
+		else:
+			out.append(st)
+			continue
+		st["ds"] = st["s"]
+		if st.has("main_s"):
+			st["main_s"] = float(st["main_s"]) + float(moved[float(st["main_s"])])
+		out.append(st)
+	sites = out
+	sites.sort_custom(func(a, b): return float(a["s"]) < float(b["s"]))
+
+
+## The s nearest `s` (within FIT_REACH) where a stop fits, or -1.
+func _fit_near(s: float) -> float:
+	var k := 0
+	while k * 40.0 <= FIT_REACH:
+		for sign: float in ([1.0] if k == 0 else [1.0, -1.0]):
+			var at := snappedf(s + sign * k * 40.0, STEP)
+			if at > 300.0 and at < length - 300.0 and _fit_for_stop(int(round(at / STEP))):
+				return at
+		k += 1
+	return -1.0
+
+
+## Whether the real road about knot `i` is straight and level enough for a stop to go beside it.
+func _fit_for_stop(i: int) -> bool:
+	var a := clampi(i - 15, 0, px.size() - 1)
+	var b := clampi(i + 15, 0, px.size() - 1)
+	return absf(hd[b] - hd[a]) < deg_to_rad(8.0) and absf(ph[b] - ph[a]) < 0.05 * float(b - a) * STEP
 
 ## Marks a site (a fuel station, a town, a stop, a fork) at `s` metres on `side` (1 the right,
 ## -1 the left): the land there is kept flat at the road's height `flat` metres out past the
@@ -422,7 +599,7 @@ func land_height(i: int, lat: float, x: float, z: float) -> float:
 		var d_out := float(maxi(int(t1["k0"]) - e_i, e_i - int(t1["k1"]))) * STEP
 		t = lerpf(smoothstep(e + 1.2, e + 5.0, a), t, smoothstep(10.0, float(TUNNEL_APPROACH) * STEP, d_out))
 	var h := lerpf(road_h - 0.12, nat, t)
-	if sea and lat < 0.0:
+	if sea and lat < 0.0 and real == null:
 		h = _coast(h, a, e + flat, x, z)
 	return minf(h, _other_road_limit(i, x, z))
 
@@ -440,6 +617,9 @@ func _coast(h: float, a: float, inner: float, x: float, z: float) -> float:
 
 ## The lie of the land at (x, z), `a` metres from the road beside knot `i`.
 func natural_height(i: int, x: float, z: float, a: float) -> float:
+	if real != null:
+		var rh := real.terrain.height(x, z)
+		return base[i] if is_nan(rh) else rh
 	var surf := surface_at_s(i * STEP)
 	var hills := ({"tarmac": 22.0, "gravel": 34.0, "sand": 18.0, "snow": 55.0}.get(surf, 25.0) as float) * _hills
 	var h := base[i] + _noise.get_noise_2d(x, z) * hills + _noise_fine.get_noise_2d(x, z) * 2.5

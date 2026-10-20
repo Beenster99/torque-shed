@@ -16,6 +16,7 @@ signal closed
 
 ## Every issue: its number, name, the host's level it's out at, and its adventures: id, title,
 ## theme, len (a key of AdventureDest.LENGTHS), seed, dest (a key of AdventureDest.DESTS), blurb.
+## An article with a "real" key (a RealPack id) is ridden along that real road, all of it: its length is the road's.
 const ISSUES := [
 	{"n": 1, "name": "Spring issue", "level": 1, "articles": [
 		{"id": "red_rock", "title": "The Red Rock Run", "theme": "desert", "len": "short", "seed": 4101, "dest": "canyon",
@@ -24,6 +25,9 @@ const ISSUES := [
 			"blurb": "Narrow lanes between stone walls, sheep in the road and a pub in every village, all the way to the Dales' own bike rally."},
 		{"id": "lighthouse_loop", "title": "The Lighthouse Loop", "theme": "coastal", "len": "ride", "seed": 4103, "dest": "lighthouse",
 			"blurb": "Cliff roads along the sea, beaches and fishing villages, to the lighthouse at the very end of the land. Time it to arrive at dusk."},
+		{"id": "shodoshima", "title": "Shodoshima: Island in the Inland Sea", "theme": "coastal", "len": "short", "seed": 4104, "dest": "lighthouse",
+			"real": "shodoshima", "blurb": "A real road: right round a Japanese island in the Seto Inland Sea, over the real hills, down to the real shore. "
+			+ "Every bend is where the island put it."},
 	]},
 	{"n": 2, "name": "Summer issue", "level": 3, "articles": [
 		{"id": "glacier_express", "title": "Glacier Express", "theme": "alpine", "len": "ride", "seed": 4201, "dest": "glacier",
@@ -343,10 +347,18 @@ func article() -> Dictionary:
 func km_of(a: Dictionary) -> float:
 	if a.is_empty():
 		return Adventure.DEFAULT_KM
+	var pack := real_pack(a)
+	if pack != null:
+		return maxf(floorf(pack.max_km()), 1.0)
 	var id := str(picks.get(a["id"], a["len"]))
 	if id == "free":
 		return float(free_km.get(a["id"], AdventureDest.LENGTHS[a["len"]]["km"]))
 	return float(AdventureDest.LENGTHS[id]["km"])
+
+
+## The real road article `a` is ridden along, or null for a made-up one (or a pack this game doesn't have).
+static func real_pack(a: Dictionary) -> RealPack:
+	return RealPack.get_pack(str(a["real"])) if str(a.get("real", "")) != "" else null
 
 
 ## The theme the road is built as: the article's, or varied when the game doesn't have it yet.
@@ -417,7 +429,7 @@ func start_reason() -> String:
 ## Starts article `a` at `km` for the crew (the host).
 static func start_article(a: Dictionary, km: float) -> void:
 	Shed.request({"a": "adventure_start", "seed": int(a["seed"]), "km": km, "theme": road_theme(str(a["theme"])),
-		"dest": str(a["dest"]), "title": str(a["title"]), "mag": str(a["id"])})
+		"dest": str(a["dest"]), "title": str(a["title"]), "mag": str(a["id"]), "real": str(a.get("real", ""))})
 
 
 # ---------------------------------------------------------------------------- the page
@@ -456,11 +468,14 @@ func refresh() -> void:
 		_what.text += "\n(For now the road there is a varied one.)"
 	_pic.texture = AdventureDest.picture(dest)
 	_facts.text = facts_text(a, km)
+	var real := real_pack(a)
+	if real != null:
+		_facts.text += "\n\n" + "\n".join(real.credits)
 	var kit: Array = (KIT.get(a["theme"], KIT["varied"]) as Array).duplicate()
 	if AdventureDest.overnight(km):
 		kit.append("Side boxes or a top box for a night away (an inn or a campsite on the way)")
 	_kit.text = "\n".join(kit.map(func(x): return "•  " + str(x)))
-	_len_box.visible = true
+	_len_box.visible = real_pack(a) == null
 	var picked := str(picks.get(a["id"], a["len"]))
 	for id in _len_buttons:
 		(_len_buttons[id] as Button).set_pressed_no_signal(id == picked)
@@ -477,7 +492,7 @@ func refresh() -> void:
 ## The route's lines: distance and time, surfaces and stops (once the plan's been worked out).
 func facts_text(a: Dictionary, km: float) -> String:
 	var lines := ["%d km, %s of riding%s" % [roundi(km), AdventureDest.time_text(km), ", with a night's stop" if AdventureDest.overnight(km) else ""]]
-	var f := facts(int(a["seed"]), km, road_theme(str(a["theme"])), str(a["dest"]))
+	var f := facts(int(a["seed"]), km, road_theme(str(a["theme"])), str(a["dest"]), str(a.get("real", "")))
 	if f.is_empty():
 		lines.append("Working out the surfaces and stops...")
 		return "\n".join(lines)
@@ -499,13 +514,13 @@ func facts_text(a: Dictionary, km: float) -> String:
 static func _facts_key(a: Dictionary, km: float) -> String:
 	if a.is_empty():
 		return ""
-	return "%d|%d|%s|%s" % [int(a["seed"]), roundi(km), road_theme(str(a["theme"])), str(a["dest"])]
+	return "%d|%d|%s|%s|%s" % [int(a["seed"]), roundi(km), road_theme(str(a["theme"])), str(a["dest"]), str(a.get("real", ""))]
 
 
 ## The surfaces (share of the main road each) and stops on a route: {surfaces, fuel, food,
 ## rest, sleep, forks}, or {} while it's being worked out (on a worker thread, started here).
-static func facts(seed: int, km: float, theme: String, dest: String) -> Dictionary:
-	var key := "%d|%d|%s|%s" % [seed, roundi(km), theme, dest]
+static func facts(seed: int, km: float, theme: String, dest: String, real_id := "") -> Dictionary:
+	var key := "%d|%d|%s|%s|%s" % [seed, roundi(km), theme, dest, real_id]
 	if _facts_cache.has(key):
 		return _facts_cache[key]
 	poll()
@@ -514,7 +529,7 @@ static func facts(seed: int, km: float, theme: String, dest: String) -> Dictiona
 	if not _tasks.has(key):
 		var box := _results
 		_tasks[key] = WorkerThreadPool.add_task(func():
-			var out := route_facts(seed, km, theme, dest)
+			var out := route_facts(seed, km, theme, dest, real_id)
 			box.mutex.lock()
 			box.done[key] = out
 			box.mutex.unlock())
@@ -547,9 +562,13 @@ static func wait_all() -> void:
 
 
 ## Plans the route and counts what's on it (any thread).
-static func route_facts(seed: int, km: float, theme: String, dest: String) -> Dictionary:
+static func route_facts(seed: int, km: float, theme: String, dest: String, real_id := "") -> Dictionary:
 	var r := AdventureRoute.new()
-	r.plan(seed, km, theme, [AdventureDest.site(dest, km)])
+	var pack := RealPack.get_pack(real_id) if real_id != "" else null
+	if pack != null:
+		r.plan_real(pack, seed, km, [AdventureDest.site(dest, km)])
+	else:
+		r.plan(seed, km, theme, [AdventureDest.site(dest, km)])
 	var surf := {}
 	var n := 0
 	for c in r.chunk_surface.size():

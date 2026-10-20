@@ -436,6 +436,10 @@ func _run_all() -> void:
 	await _test_kit_fuel()
 	print("Adventure rides (v0.12.0): the streaming road, floating origin, surfaces, fuel stations, there and back")
 	_test_adventure_route()
+	_test_real_pack()
+	_test_real_plan()
+	await _test_real_ride()
+	_test_real_magazine()
 	await _test_adventure_stream()
 	await _test_adventure_frames()
 	await _test_adventure_origin()
@@ -21653,6 +21657,26 @@ func _test_kit_fuel() -> void:
 
 func _adventure() -> RefCounted:
 	return load("res://tests/adventure_tests.gd").new(self)
+
+
+func _real() -> RefCounted:
+	return load("res://tests/real_road_tests.gd").new(self)
+
+
+func _test_real_pack() -> void:
+	_real().test_pack()
+
+
+func _test_real_plan() -> void:
+	_real().test_plan()
+
+
+func _test_real_ride() -> void:
+	await _real().test_ride()
+
+
+func _test_real_magazine() -> void:
+	_real().test_magazine()
 
 
 func _test_adventure_route() -> void:
