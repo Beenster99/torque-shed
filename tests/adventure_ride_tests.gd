@@ -273,11 +273,13 @@ func test_breakdown_odds() -> void:
 const WIDEST_15 := {"classic": 6.5, "cruiser": 9.0}
 
 
-## How tight a turn the input held full makes at `mph`: [radius m, lean deg, bars deg, crashed].
-func _full_turn(build: Dictionary, mph: float) -> Array:
+## How tight a turn the input held full makes at `mph` (at Riding realism `assist`): [radius m,
+## lean deg, bars deg, crashed].
+func _full_turn(build: Dictionary, mph: float, assist := 0.5) -> Array:
 	var v := mph * 0.44704
 	var acc := {"r": 0.0, "lean": 0.0, "steer": 0.0, "n": 0}
 	var r: Dictionary = await t.ride(build, 14.0, func(bike, at):
+		bike.assist = assist
 		bike.throttle = clampf(0.12 + (v - bike.speed) * 0.5, 0.0, 1.0)
 		bike.front_brake = clampf((bike.speed - v) * 0.3, 0.0, 0.3)
 		bike.lean_input = 0.0 if at < 6.0 else 1.0
@@ -327,3 +329,12 @@ func test_tight_turns() -> void:
 		for i in range(1, radii.size()):
 			opening = opening and radii[i] > radii[i - 1] and bars[i] < bars[i - 1]
 		check(opening, "%s: less lock and a wider turn the faster it goes" % nm)
+
+
+## A full input held round at B-road speeds, at Riding realism 0 where nothing helps: the bike
+## holds the lean it's asked for rather than swinging past it and sliding off (a race bike and an
+## MX bike did from 40-45 km/h, where a full input stopped keeping a little lean in hand).
+func test_full_turns_hold() -> void:
+	for c in [["race", 45.0], ["mx", 50.0], ["supermoto", 80.0]]:
+		var got: Array = await _full_turn(Contracts.style_build(c[0]), float(c[1]) / 1.609344, 0.0)
+		check(not got[3], "%s, realism 0: a full-input turn at %d km/h holds (%.1f m, lean %d°)" % [PartsDB.style_name(c[0]), roundi(c[1]), got[0], roundi(got[1])])

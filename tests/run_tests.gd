@@ -564,6 +564,7 @@ func _run_all() -> void:
 	await _test_adv_ride_descent_brakes()
 	_test_adv_ride_breakdown_odds()
 	await _test_adv_ride_tight_turns()
+	await _test_adv_ride_full_turns_hold()
 	print("Simon's v0.17.0 round: adventures without stutters or long triangles")
 	await _test_adv_perf_triangles()
 	await _test_adv_perf_ride()
@@ -22217,6 +22218,10 @@ func _test_adv_ride_breakdown_odds() -> void:
 
 func _test_adv_ride_tight_turns() -> void:
 	await _adv_ride().test_tight_turns()
+
+
+func _test_adv_ride_full_turns_hold() -> void:
+	await _adv_ride().test_full_turns_hold()
 
 
 # ---------------------------------------------------------------------------- staff trips for parts (tests/staff_trips_tests.gd)
