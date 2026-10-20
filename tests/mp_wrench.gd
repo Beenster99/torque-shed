@@ -163,12 +163,12 @@ func _client_tow(trip: AdventureTrip) -> bool:
 			and absf(main.bike.speed) < Roadside.TOW_STOPPED, 30.0)
 	main._tow_button()
 	var tied := await _until(func(): return int(Shed.bikes[bike].get("tow", 0)) == host_peer, 10.0)
-	# Off the brake once the host's bike moves off and takes up the strap.
+	# Off the brake once the host's bike moves off up the road and takes up the strap.
 	var rb0 := _remote_bike()
-	var at0: Vector3 = rb0.global_position if rb0 else Vector3.ZERO
+	var at0: float = trip.world.distance_of(rb0.global_position, "towing") if rb0 else 0.0
 	await _until(func():
 		var rb := _remote_bike()
-		return rb == null or rb.global_position.distance_to(at0) > 2.0, 10.0)
+		return rb == null or trip.world.distance_of(rb.global_position, "towing") > at0 + 2.0, 10.0)
 	Input.action_release("rear_brake")
 	var from := trip.world.distance_of(main.bike.global_position, "own")
 	var went := [0.0]
@@ -191,12 +191,24 @@ func _host_tow(trip: AdventureTrip) -> Array:
 			if int(id) != Shed.riding(Shed.me()) and int(Shed.bikes[id].get("rider", 0)) != 0:
 				their_bike[0] = int(id)
 		return their_bike[0] != 0 and _remote_bike() != null, 30.0)
+	# Once its chain has gone and it's come to rest where the client got on it: the remote bike is
+	# drawn where it was a moment ago, and placed off a stale spot the host ends up behind it.
+	await _until(func(): return Roadside.dead(their_bike[0]), 30.0)
 	var rb := _remote_bike()
 	if rb == null:
 		return [false, false]
+	var still := [rb.global_position, Time.get_ticks_msec()]
+	await _until(func():
+		if rb.global_position.distance_to(still[0]) > 0.2:
+			still[0] = rb.global_position
+			still[1] = Time.get_ticks_msec()
+		return Time.get_ticks_msec() - int(still[1]) > 1000, 15.0)
 	var s := trip.world.distance_of(rb.global_position, "host")
 	var xf := trip.world.transform_at(s + 6.0, -trip.world.route.width_at_s(s) * 0.25)
 	main.bike.place(xf.origin, trip.world.heading_at(s + 6.0))
+	# On the brake while the client ties on: the new roads climb, and a bike left to itself rolls
+	# back down on to the one it's meant to tow.
+	Input.action_press("rear_brake")
 	var tied := await _until(func(): return int(Shed.bikes[their_bike[0]].get("tow", 0)) == Shed.me(), 30.0)
 	var view: RoadsideView = null
 	for c in trip.world.get_children():
@@ -207,6 +219,7 @@ func _host_tow(trip: AdventureTrip) -> Array:
 	main.bike.fuel_litres = main.bike.build.fuel_capacity
 	var strap := [false]
 	Input.action_press("throttle", 0.35)
+	Input.action_release("rear_brake")
 	var done := await _until(func():
 		if view and view._straps.has(their_bike[0]):
 			strap[0] = true
