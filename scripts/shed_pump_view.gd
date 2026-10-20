@@ -60,12 +60,12 @@ func build(shop: Workshop) -> void:
 		add_child(_merged(boxes[mat], mat))
 	display = Label3D.new()
 	display.name = "Display"
-	display.font_size = 40
+	display.font_size = 34
 	display.pixel_size = 0.0016
 	display.modulate = Color(0.55, 1.0, 0.6)
 	display.outline_size = 0
 	display.shaded = false
-	display.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	display.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	display.position = Vector3(x - 0.03, 1.47, z + 0.3)
 	add_child(display)
 	var head := Label3D.new()
