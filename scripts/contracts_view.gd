@@ -1,8 +1,8 @@
 class_name ContractsView
 extends Node3D
-## Draws the customers in Shed.contracts as people walking in to reception (see CustomerView),
-## rings the bell as each one gets to the counter, and opens the offer card when a player on
-## foot looks at one and presses F. Main makes one and puts it in the world.
+## Draws the customers in Shed.contracts as people walking in to reception (see CustomerView)
+## and opens the offer card when a player on foot looks at one and presses F. No bell rings as
+## they reach the counter: a ding every time someone came in was just background noise. Main makes one and puts it in the world.
 
 signal talk_requested(customer_id: int)
 
@@ -94,7 +94,6 @@ func sync_state() -> void:
 		var v := CustomerView.new()
 		add_child(v)
 		v.setup(c, walk, face, _since(float(c.get("arrived", 0.0))) > secs, ride, bike)
-		v.arrived.connect(_on_arrived)
 		views[id] = v
 	_sync_leaving()
 
@@ -132,21 +131,6 @@ static func _length(pts: PackedVector3Array) -> float:
 	for k in range(1, pts.size()):
 		length += pts[k].distance_to(pts[k - 1])
 	return length
-
-
-## The bell at the counter: the sales office's own when it has one.
-func _on_arrived(v: CustomerView) -> void:
-	ring_bell(v.global_position)
-
-
-static func ring_bell(at: Vector3) -> void:
-	if Sfx.has_method("bell"):
-		Sfx.call("bell", at)
-		return
-	Sfx.play_at("ting", at + Vector3.UP, -2.0)
-	var tree := Engine.get_main_loop() as SceneTree
-	if tree:
-		tree.create_timer(0.18).timeout.connect(func(): Sfx.play_at("ting", at + Vector3.UP, -5.0))
 
 
 ## The customer under the crosshair of the player on foot, or 0.

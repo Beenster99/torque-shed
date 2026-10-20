@@ -5954,7 +5954,7 @@ var bells_heard := 0
 
 
 ## Host-side: rings the sales office's door bell for every player, the shop bell over its doors
-## and the chime in the shed (Sfx.bell). Customers coming in ring it.
+## and the chime in the shed (Sfx.bell). Nothing rings it by itself: customers come in quietly.
 func ring_bell() -> void:
 	if not is_authority():
 		return

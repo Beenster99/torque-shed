@@ -216,6 +216,8 @@ func _run_all() -> void:
 	await _test_engine_events()
 	await _test_engine_users()
 	_test_engine_samples()
+	await _test_gear_clunks()
+	await _test_starter_variety()
 	print("Shed sound: variants, impacts by material, footsteps by floor, room acoustics, ambience")
 	await _test_shed_sound_variants()
 	await _test_shed_sound_session()
@@ -8563,7 +8565,11 @@ func _test_contract_session() -> void:
 			break
 	var at := Contracts.reception().origin
 	check(arrived[0] and cv.at_counter and Vector2(cv.global_position.x, cv.global_position.z).distance_to(Vector2(at.x, at.z)) < 0.2
-		and start.distance_to(cv.global_position) > 3.0, "they walk to reception and ring the bell")
+		and start.distance_to(cv.global_position) > 3.0, "they walk to reception")
+	await get_tree().process_frame
+	var bell_s: Array = Sfx.sounds("bell") + Sfx.sounds("bell_chime")
+	var bells := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(p): return bell_s.has(p.stream))
+	check(bells.is_empty(), "and no shop bell or door chime rings as they come in (%d)" % bells.size())
 	check(cv.is_in_group("sales_visitor"), "and open the sales office's doors as they come")
 	# Look at them and press F.
 	main.walker.global_position = at - Contracts.reception().basis.z * 1.6 + Vector3(0, 0.1, 0)
@@ -10395,7 +10401,7 @@ func _test_engine_events() -> void:
 	for i in 240:
 		es._process(1.0 / 60.0)
 	check(es.pops == before, "and it settles at idle")
-	# Shifting: an upshift cuts the sound for a blink; a downshift blips (the bark).
+	# Shifting: an upshift cuts the sound for a blink; a downshift just clunks (no blip or bang).
 	es.rpm = 9000.0
 	es.throttle = 1.0
 	es.gear = 4
@@ -10404,7 +10410,7 @@ func _test_engine_events() -> void:
 	es.gear = 3
 	es.throttle = 0.0
 	es._process(1.0 / 60.0)
-	check(es.shifts == 2 and es._blip > 0.5, "a downshift blips the throttle")
+	check(es.shifts == 2 and es.last_step == "down" and es._blip == 0.0 and es._cut <= 0.12, "a downshift clunks, with no blip or bang")
 	es.queue_free()
 	var qs := EngineSound.new()
 	add_child(qs)
@@ -10479,6 +10485,211 @@ func _test_engine_samples() -> void:
 		DirAccess.remove_absolute(dir.path_join(f))
 	DirAccess.remove_absolute(dir)
 	DirAccess.remove_absolute("user://engine_samples")
+
+
+## How much of a buffer's energy is low down (below about 300 Hz): a clunk's thud, not a click.
+func _low_share(x: PackedFloat32Array) -> float:
+	var lp := 0.0
+	var k := 1.0 - exp(-TAU * 300.0 / EngineSynth.RATE)
+	var low := 0.0
+	var total := 0.0
+	for v in x:
+		lp += (v - lp) * k
+		low += lp * lp
+		total += v * v
+	return low / maxf(total, 1e-12)
+
+
+## The share of a buffer's energy after `secs`.
+func _tail_share(x: PackedFloat32Array, secs: float) -> float:
+	var late := 0.0
+	var total := 0.0
+	for i in x.size():
+		total += x[i] * x[i]
+		if i > EngineSynth.RATE * secs:
+			late += x[i] * x[i]
+	return late / maxf(total, 1e-12)
+
+
+## Every gear change is the box's mechanical click or clunk: up or down, engine running or not,
+## on every engine; heavier into first and on a big bike, lighter up the box and on a small one,
+## a soft click finding neutral, and nothing else with it (no pops, bangs or throttle blips).
+func _test_gear_clunks() -> void:
+	check(EngineSynth.gear_step(1, 0) == "neutral" and EngineSynth.gear_step(0, 1) == "first" and EngineSynth.gear_step(2, 1) == "first"
+		and EngineSynth.gear_step(2, 3) == "low" and EngineSynth.gear_step(4, 5) == "high" and EngineSynth.gear_step(4, 3) == "down"
+		and EngineSynth.gear_step(0, 2) == "low", "gear changes are told apart: neutral, into first, low gears, tall gears, down")
+	# A customer or another rider hovering at a change point doesn't click up and down over and over.
+	var gr := 1
+	var changes := 0
+	for i in 200:
+		var was := gr
+		gr = EngineSound.gear_for_speed(gr, 3.0 + 0.3 * sin(i * 0.7), 3.0, 4)
+		changes += 1 if gr != was else 0
+	check(changes <= 1 and EngineSound.gear_for_speed(1, 4.0, 3.0, 4) == 2 and EngineSound.gear_for_speed(2, 2.0, 3.0, 4) == 1,
+		"riders' bikes change gear past the change point, not back and forth at it (%d changes)" % changes)
+	var small := EngineSynth.make_spec("single", 1, 125.0, {"idle": 1500.0, "redline": 10000.0, "shift": "click"})
+	var big := EngineSynth.make_spec("vtwin", 2, 1800.0, {"idle": 900.0, "redline": 6000.0, "shift": "clunk"})
+	check(EngineSynth.gear_heft(big) > EngineSynth.gear_heft(small) + 0.4,
+		"a big V-twin's box is heavier than a little single's (%.2f, %.2f)" % [EngineSynth.gear_heft(big), EngineSynth.gear_heft(small)])
+	var big_first := EngineSynth.render_gear(big, "first")
+	var small_high := EngineSynth.render_gear(small, "high")
+	check(_low_share(big_first) > _low_share(small_high) * 1.5 and _tail_share(big_first, 0.03) > _tail_share(small_high, 0.03),
+		"a big bike clunks into first, low and long; a small one clicks up the box (%.2f vs %.2f low)" % [_low_share(big_first), _low_share(small_high)])
+	var mid := EngineSynth.make_spec("inline", 4, 600.0, {"idle": 1100.0, "redline": 14000.0, "shift": "click"})
+	check(_low_share(EngineSynth.render_gear(mid, "first")) > _low_share(EngineSynth.render_gear(mid, "high")),
+		"and on the same bike first is heavier than the tall gears")
+	check(_rms(EngineSynth.render_gear(mid, "neutral")) < _rms(EngineSynth.render_gear(mid, "low")) * 0.5, "finding neutral is a soft click")
+	# Every engine's every step: a short metallic knock, done within a fifth of a second.
+	var short := true
+	var heard := true
+	for layout in ["single", "twin", "parallel", "vtwin", "boxer", "triple", "inline", "2stroke"]:
+		var sp := EngineSynth.make_spec(layout, 2 if layout in ["twin", "parallel", "vtwin", "boxer"] else (3 if layout == "triple" else (4 if layout == "inline" else 1)), 650.0)
+		for step in EngineSynth.GEAR_STEPS:
+			var x := EngineSynth.render_gear(sp, step, 2)
+			var top := 0.0
+			for v in x:
+				top = maxf(top, absf(v))
+			heard = heard and top > 0.05
+			short = short and _tail_share(x, 0.2) < 0.01
+	check(heard and short, "every engine's gear changes are heard and over in a moment, a knock and not a ring")
+	# Played: every change up and down, with the engine off too, is a click or a clunk and
+	# nothing else.
+	for sp: Dictionary in [small, big]:
+		var es := EngineSound.new()
+		add_child(es)
+		es.setup_spec(sp)
+		es.bank.bake_now()
+		es.running = false
+		es.gear = 0
+		es._process(1.0 / 60.0)
+		es.gear = 1
+		es._process(1.0 / 60.0)
+		var first_ok: bool = es.gear_sounds == 1 and es.last_step == "first" and es.bank.oneshots["shift_first"].has(es._oneshot_en[0].stream)
+		check(first_ok, "with the engine off, into first still clunks (%s, %d)" % [sp["layout"], es.gear_sounds])
+		es.running = true
+		es.rpm = float(sp["redline"]) * 0.7
+		es.throttle = 1.0
+		var pops := es.pops
+		var steps := []
+		for g in [2, 3, 4, 5, 4, 3, 2, 1, 0]:
+			es.gear = g
+			es._process(1.0 / 60.0)
+			steps.append(es.last_step)
+		for i in 30:
+			es._process(1.0 / 60.0)
+		check(es.gear_sounds == 10 and es.lever_sounds == 10 and es.pops == pops and es._blip == 0.0,
+			"every change up and down the box clicks or clunks, with the lever, and nothing pops or blips (%d sounds, %s)" % [es.gear_sounds, str(steps)])
+		check(steps == ["low", "low", "high", "high", "down", "down", "down", "first", "neutral"], "each change sounds its step %s" % str(steps))
+		es.queue_free()
+	await get_tree().process_frame
+
+
+## The rhythm of a starter's cranking: the time (s) between its loudness peaks as each
+## compression drags the crank down and it springs on, taken from the envelope's first strong
+## self-similarity between 40 and 450 ms.
+func _crank_period(x: PackedFloat32Array) -> float:
+	var hop := int(EngineSynth.RATE * 0.005)
+	var env := PackedFloat32Array()
+	var from := int(EngineSynth.RATE * 0.2)
+	var to := int(EngineSynth.RATE * 0.95)
+	var i := from
+	while i + hop <= to:
+		var e := 0.0
+		for j in hop:
+			e += x[i + j] * x[i + j]
+		env.append(sqrt(e / hop))
+		i += hop
+	var mean := 0.0
+	for v in env:
+		mean += v
+	mean /= env.size()
+	for k in env.size():
+		env[k] -= mean
+	var ac := PackedFloat32Array()
+	var lo := 8
+	var hi := 90
+	for lag in range(lo, hi + 1):
+		var s := 0.0
+		for k in env.size() - lag:
+			s += env[k] * env[k + lag]
+		ac.append(s / (env.size() - lag))
+	var best := 0.0
+	for v in ac:
+		best = maxf(best, v)
+	for k in range(1, ac.size() - 1):
+		if ac[k] >= best * 0.6 and ac[k] >= ac[k - 1] and ac[k] >= ac[k + 1]:
+			return (k + lo) * 0.005
+	return 0.0
+
+
+## Start-ups: each engine turns over in its own way (a single's slow chug, a V-twin's lumpy
+## grind with an old Bendix clank, a four's quick even whirr), small bikes kick-start, every
+## take is a little different, and it catches and settles to idle.
+func _test_starter_variety() -> void:
+	var specs := {
+		"single": EngineSynth.make_spec("single", 1, 450.0, {"idle": 1500.0, "redline": 9000.0}),
+		"twin": EngineSynth.make_spec("parallel", 2, 700.0, {"idle": 1300.0, "redline": 9500.0}),
+		"vtwin": EngineSynth.make_spec("vtwin", 2, 1200.0, {"idle": 900.0, "redline": 6500.0}),
+		"triple": EngineSynth.make_spec("triple", 3, 850.0, {"idle": 1250.0, "redline": 10500.0}),
+		"four": EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0}),
+	}
+	var st := {}
+	for k in specs:
+		st[k] = EngineSynth.starter_style(specs[k])
+	check(st["vtwin"]["crank_rpm"] < st["four"]["crank_rpm"] and st["single"]["drag"] > st["four"]["drag"] * 2.0
+		and st["single"]["motor_hz"] > st["vtwin"]["motor_hz"] and st["vtwin"]["bendix"] and not st["four"]["bendix"],
+		"a big V-twin cranks slowly with a Bendix clank, a single lurches, a four spins evenly, a small motor whines higher")
+	var period := {}
+	for k in specs:
+		period[k] = _crank_period(EngineSynth.render_starter(specs[k], false, 1.0, 1))
+	check(period["single"] > period["four"] * 2.0 and period["single"] > period["triple"] and period["triple"] > period["four"],
+		"you hear the compressions: a single's slow chug, a triple's, a four's quick whirr (%s)" % str(period))
+	# Every engine in the catalogue: several distinct ways of turning over, not one for all.
+	var kinds := {}
+	for id in PartsDB.by_kind["engine"]:
+		var b := BikeBuild.new({"engine": id})
+		var s := EngineSynth.starter_style(EngineSynth.spec_from_build(b))
+		kinds["%s|%d|%d" % [s["kick"], roundi(float(s["crank_rpm"]) / 25.0), roundi(float(s["drag"]) * 10.0)]] = true
+	check(kinds.size() >= 6, "the catalogue's engines start in %d different ways" % kinds.size())
+	# Takes differ a little.
+	var a := EngineSynth.render_starter(specs["twin"], false, 1.0, 1)
+	var b2 := EngineSynth.render_starter(specs["twin"], false, 1.0, 2)
+	var dot := 0.0
+	for i in a.size():
+		dot += a[i] * b2[i]
+	var same := dot / maxf(sqrt(_rms(a) * _rms(a) * _rms(b2) * _rms(b2)) * a.size(), 1e-9)
+	check(same < 0.9, "no two starts sound quite alike (%.2f alike)" % same)
+	# Kick-started bikes: the lever's done in a moment, where the starter motor keeps on.
+	var kick_spec := EngineSynth.spec_from_build(BikeBuild.new({"engine": "2stroke_125"}))
+	check(kick_spec["kick"] and EngineSynth.spec_from_build(BikeBuild.new({"engine": "single_250", "gearbox": "four_vintage"}))["kick"]
+		and not EngineSynth.spec_from_build(BikeBuild.new({"engine": "inline_1000"}))["kick"], "small and old singles kick-start; the big four has a button")
+	var kicked := EngineSynth.render_starter(kick_spec, true, 1.0, 1)
+	var pressed := EngineSynth.render_starter(kick_spec, false, 1.0, 1)
+	check(_tail_share(kicked, 0.65) < _tail_share(pressed, 0.65) * 0.2, "a kick spins it over and is done; a starter keeps cranking")
+	# It catches: the revs flare and the catch fades as the running sound takes over.
+	var c := EngineSynth.render_catch(specs["vtwin"], false, 1)
+	check(_rms(c) > 0.01 and _tail_share(c, 0.35) < 0.15, "it catches with a flare of revs that settles")
+	# Played on a bike: a starter take, faded as it fires, then the catch.
+	var es := EngineSound.new()
+	add_child(es)
+	es.setup_spec(specs["triple"])
+	es.bank.bake_now()
+	check(es.bank.oneshots["starter"].size() == 3 and es.bank.oneshots["catch"].size() == 2, "each engine bakes three starter takes and two catches")
+	es.running = false
+	es.rpm = 0.0
+	es.cranking = true
+	es._process(1.0 / 60.0)
+	check(es.starts == 1 and es.bank.oneshots["starter"].has(es.last_start), "pressing the button plays a starter take")
+	for i in 30:
+		es._process(1.0 / 60.0)
+	es.cranking = false
+	es.running = true
+	es.rpm = 1250.0 * 1.3
+	for i in 12:
+		es._process(1.0 / 60.0)
+	check(es.catches == 1 and es._starter == null, "it fires: the starter fades and the engine catches")
+	es.queue_free()
+	await get_tree().process_frame
 
 
 
