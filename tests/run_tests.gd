@@ -546,6 +546,9 @@ func _run_all() -> void:
 	await _test_adv_diary_capture_ride()
 	await _test_adv_diary_files()
 	await _test_adv_diary_ride()
+	_test_adv_diary_movie_avi()
+	await _test_adv_diary_movie_states()
+	await _test_adv_diary_movie_ride()
 	print("Live mirrors (v0.16.0): the Mirror detail setting, the reflection following the glass, Off costing nothing")
 	await _test_mirrors_setting()
 	await _test_mirrors_follow_glass()
@@ -22129,6 +22132,18 @@ func _test_adv_diary_files() -> void:
 
 func _test_adv_diary_ride() -> void:
 	await _adv_diary().test_diary_ride()
+
+
+func _test_adv_diary_movie_avi() -> void:
+	_adv_diary().test_movie_avi()
+
+
+func _test_adv_diary_movie_states() -> void:
+	await _adv_diary().test_movie_states()
+
+
+func _test_adv_diary_movie_ride() -> void:
+	await _adv_diary().test_movie_ride()
 
 
 

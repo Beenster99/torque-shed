@@ -4,7 +4,7 @@
 # on one and fixes it at the roadside, then tows (tests/mp_wrench.gd), a fourth eats, sits
 # and sleeps on one (tests/mp_needs.gd), a fifth meets the police on one (tests/mp_police.gd),
 # a sixth starts one from the magazine and arrives at its destination together (tests/mp_dest.gd),
-# a seventh keeps the Adventure Diary: the host's shared highlights, each machine's own photos (tests/mp_diary.gd),
+# a seventh keeps the Adventure Diary: the host's shared highlights, both riders' photos in each diary (tests/mp_diary.gd),
 # and an eighth rides with one of the other bikers on an adventure (tests/mp_bikers.gd).
 set -u
 cd "$(dirname "$0")/.."
@@ -62,7 +62,7 @@ DCLIENT=$?
 wait $DHOST
 DHOSTRC=$?
 grep -h "MP dest" /tmp/torque_mp_dest_host.log /tmp/torque_mp_dest_client.log
-# The Adventure Diary: the same highlights on both from the host, each diary with only its own photos.
+# The Adventure Diary: the same highlights on both from the host, each diary with both riders' photos.
 "$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_diary.tscn -- --role=host > /tmp/torque_mp_diary_host.log 2>&1 &
 YHOST=$!
 sleep 4

@@ -208,6 +208,14 @@ func _ready() -> void:
 	Net.player_joined.connect(_on_player_joined)
 	Net.player_updated.connect(func(id, info): _on_player_joined(id, info))
 	Net.player_left.connect(_on_player_left)
+	# (After the shed's own joining, so a player joining gets the shed before the diary's photos.)
+	diary_share = DiaryShare.new()
+	diary_share.name = "DiaryShare"
+	add_child(diary_share)
+
+
+## The crew's Adventure Diary photos, shared (see DiaryShare).
+var diary_share: DiaryShare
 
 
 func is_authority() -> bool:

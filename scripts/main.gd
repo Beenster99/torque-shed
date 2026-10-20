@@ -35,6 +35,7 @@ var emote_bar: EmoteBar         # the emotes and their keys, while the bar is op
 var recovery: RecoveryView      # the recovery truck and trailer, and driving it (see Recovery)
 var recovery_panel: RecoveryPanel   # the recovery jobs clipboard and a recovered bike's assessment
 var trip: AdventureTrip         # out on an adventure ride: its road, and getting there and back
+var movie: MovieClip            # {movie}: a ten-second film of the game, saved as a video
 var audio: EngineSound
 var saver: SaveGame
 var remotes := {}     # peer id -> RemotePlayer
@@ -251,6 +252,12 @@ func _ready() -> void:
 	trip = AdventureTrip.new()
 	trip.main = self
 	add_child(trip)
+	movie = MovieClip.new()
+	movie.can_film = func(): return in_session and not menu.visible and not geometry.active and not trip.diary_open()
+	movie.job_for = func(): return trip.photos.movie_job() if trip.on_trip() and trip.photos else {}
+	movie.saved.connect(_on_movie_saved)
+	movie.failed.connect(func(why): hud.flash(why, 3.0, true))
+	add_child(movie)
 
 	Net.player_joined.connect(_on_player_joined)
 	Net.player_updated.connect(_on_player_updated)
@@ -265,6 +272,17 @@ func _ready() -> void:
 	Shed.pinged.connect(_on_ping)
 	Shed.emoted.connect(_on_emote)
 	menu.show_title()
+
+
+## A film's saved (MovieClip): where it is, the clips folder's path copied to paste into
+## Explorer, and on an adventure into the diary.
+func _on_movie_saved(info: Dictionary) -> void:
+	var folder := ProjectSettings.globalize_path(MovieClip.root)
+	if DisplayServer.get_name() != "headless":
+		DisplayServer.clipboard_set(folder)
+	hud.flash("Film saved (%d s): %s  (the folder's path is copied)" % [roundi(float(info.get("secs", 0.0))), str(info.get("file", ""))], 7.0)
+	if trip.photos:
+		trip.photos.add_movie(info)
 
 
 func _title_camera() -> void:

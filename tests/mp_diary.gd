@@ -4,7 +4,9 @@ extends Node
 ## stop and stands there (its own highlight), the host's game notes a sunset (the host's), and
 ## each takes a photo of their own. Both must see the same highlights from the host, with the
 ## right who; both ride to the destination, and each machine's diary must hold those shared
-## highlights and only its own photos, kept on its own machine.
+## highlights and both riders' photos (Simon: "all of our photos should be captured into the
+## shared diary"): its own, and the other's sent across (DiaryShare), kept in its own folder and
+## credited to who took it.
 
 const KM := 8.0
 
@@ -40,6 +42,7 @@ func _ready() -> void:
 			Adventure.start(4102, KM, "hills")
 		return trip.on_trip() and main.bike != null and _remote_bike() != null, 40.0)
 	var me := str(Shed.crew.get(Shed.me(), {}).get("name", Settings.player_name))
+	var them := "Diary client" if role == "host" else "Diary host"
 	print("MP diary note %s: on the adventure %s, diary %s" % [role, ok_start, str(Shed.adventure.get("diary", ""))])
 	# The client stops at a stop; the host notes a sunset; each takes a photo.
 	var stop_key := ""
@@ -75,7 +78,13 @@ func _ready() -> void:
 			if role == "client" and main.bike and int(Shed.adventure.get("arrived", 0)) == 0:
 				main.bike.throttle = 0.3
 			return int(Shed.adventure.get("arrived", 0)) != 0 and trip.moment_done and trip.moment_t < 0.0, 30.0)
-	# Each machine's diary: the same shared highlights, and only its own photos.
+	# Each machine's diary: the same shared highlights, and both riders' photos (the other's may
+	# still be on its way).
+	if arrived:
+		await _until(func():
+			var dd := AdventureDiary.load_diary(trip.photos.diary_id)
+			return not dd.is_empty() and (dd["photos"] as Array).any(func(p): return str(p.get("by", "")) == them and str(p["kind"]) == "photo") \
+				and not Shed.diary_share.sending(), 20.0)
 	var d := AdventureDiary.load_diary(trip.photos.diary_id)
 	var log_ok := false
 	var photos_ok := false
@@ -83,16 +92,24 @@ func _ready() -> void:
 		var kinds := (d["log"] as Array).map(func(e): return str(e["kind"]))
 		log_ok = kinds.has("start") and kinds.has("stop") and kinds.has("sunset") and kinds.has("arrive") \
 			and (d["log"] as Array).size() == AdventureDiary.log_entries().size()
-		var mine := (d["photos"] as Array).filter(func(p): return str(p.get("by", "")) == me)
-		photos_ok = not (d["photos"] as Array).is_empty() and mine.size() == (d["photos"] as Array).size() \
-			and (d["photos"] as Array).any(func(p): return str(p["kind"]) == "photo") \
-			and (d["photos"] as Array).all(func(p): return FileAccess.file_exists(AdventureDiary.folder(str(d["id"])).path_join(str(p["file"]))))
-		# The colour of this machine's own photos in its files.
-		var first := Image.load_from_file(AdventureDiary.folder(str(d["id"])).path_join(str(d["photos"][0]["file"]))) if photos_ok else null
-		if first:
-			var c := first.get_pixel(first.get_width() / 2, first.get_height() / 2)
-			photos_ok = photos_ok and ((c.r > c.b) if role == "host" else (c.b > c.r))
-		print("MP diary note %s: diary %s, log %s, %d photos all mine %s" % [role, str(d["id"]), str(kinds), (d["photos"] as Array).size(), photos_ok])
+		var all: Array = d["photos"]
+		var mine := all.filter(func(p): return str(p.get("by", "")) == me and not bool(p.get("shared", false)))
+		var theirs := all.filter(func(p): return str(p.get("by", "")) == them and bool(p.get("shared", false)))
+		var uids := {}
+		for p in all:
+			uids[str(p.get("uid", ""))] = true
+		photos_ok = mine.any(func(p): return str(p["kind"]) == "photo") and theirs.any(func(p): return str(p["kind"]) == "photo") \
+			and mine.size() + theirs.size() == all.size() and uids.size() == all.size() \
+			and all.all(func(p): return FileAccess.file_exists(AdventureDiary.folder(str(d["id"])).path_join(str(p["file"]))))
+		# Each one's photos are the colour of the machine that took them (the host's red, the client's blue).
+		var red := func(p) -> bool:
+			var img := Image.load_from_file(AdventureDiary.folder(str(d["id"])).path_join(str(p["file"])))
+			var c := img.get_pixel(img.get_width() / 2, img.get_height() / 2) if img else Color.BLACK
+			return c.r > c.b + 0.3
+		var colours_ok := photos_ok and mine.all(func(p): return red.call(p) == (role == "host")) and theirs.all(func(p): return red.call(p) == (role != "host"))
+		photos_ok = photos_ok and colours_ok
+		print("MP diary note %s: diary %s, log %s, %d photos: %d mine, %d %s's (all different %s), in their colours %s, sent %d, received %d" % [role, str(d["id"]), str(kinds),
+			all.size(), mine.size(), theirs.size(), them, uids.size() == all.size(), colours_ok, Shed.diary_share.sent, Shed.diary_share.received])
 	# Home.
 	var asked := [false]
 	var end_at := Time.get_ticks_msec() + 3000
@@ -112,7 +129,7 @@ func _ready() -> void:
 	DirAccess.remove_absolute(AdventureDest.album_path)
 	_wipe(AdventureDiary.root)
 	PhotoCapture.fake_source = Callable()   # (a lambda of this script's, not left behind it)
-	print("MP diary %s %s: on it=%s, the client's stop and the host's sunset in both logs=%s, arrived=%s, the diary's highlights the shared ones=%s, its photos only this machine's=%s, home with the diary kept and open=%s" % [
+	print("MP diary %s %s: on it=%s, the client's stop and the host's sunset in both logs=%s, arrived=%s, the diary's highlights the shared ones=%s, both riders' photos in it, credited=%s, home with the diary kept and open=%s" % [
 		"PASS" if ok else "FAIL", role, ok_start, stop_ok, arrived, log_ok, photos_ok, home_ok and kept_ok])
 	get_tree().quit(0 if ok else 1)
 
