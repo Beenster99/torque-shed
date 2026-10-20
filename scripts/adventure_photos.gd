@@ -13,7 +13,9 @@ extends Node
 ## {photo} takes a photo whenever you like (held, it films a few seconds as a flipbook clip);
 ## on foot {photo_camera} holds the camera up to your eye: first person, {scroll} zooms, and
 ## anyone of the crew in the frame is picked out and named, and named in the caption. The photos
-## stay on this machine, in the diary's folder.
+## are kept in the diary's folder, and shared with the crew (DiaryShare): theirs come into this
+## machine's diary too, credited to them. {movie} films ten seconds (MovieClip); on an adventure
+## the film's in the diary too, kept on this machine only.
 
 ## How often it looks round for highlights (s), and the least time between automatic photos.
 const LOOK_EVERY := 0.25
@@ -143,6 +145,10 @@ func begin() -> void:
 	if not had.is_empty():
 		photos = had["photos"]
 		_n = photos.size()
+	# The crew's photos that came in before this machine got going (joining part-way).
+	for rec in DiaryShare.take_pending(diary_id):
+		if not photos.any(func(p): return str(p.get("uid", "")) == str(rec.get("uid", ""))):
+			AdventureDiary.insert_photo(photos, rec)
 		if trip and trip.computer and had["stats"] is Dictionary:
 			trip.computer.load_from(had["stats"])
 	# Highlights from before this machine got here (a night's sleep ago) aren't photographed again.
@@ -321,8 +327,8 @@ func _want(key: String, kind: String, caption: String, who: Array, s: float, aft
 		if str(q["key"]) == key:
 			return
 	for p in photos:
-		if str(p.get("key", "")) == key:
-			return
+		if str(p.get("key", "")) == key and not bool(p.get("shared", false)):
+			return   # (a crew mate's photo of it is theirs: this rider's is taken too)
 	_queue.append({"key": key, "kind": kind, "caption": caption, "who": who, "s": s,
 		"at": Time.get_ticks_msec() + int(after * 1000.0), "asked": Time.get_ticks_msec()})
 
@@ -358,6 +364,7 @@ func snap(kind: String, caption: String, key := "", who: Array = []) -> void:
 	var job := _job(kind, caption, key, who, in_shot)
 	job["file"] = "p%03d.jpg" % _n
 	job["path"] = AdventureDiary.folder(diary_id).path_join(job["file"])
+	job["share"] = Net.is_online()
 	capture.snap(job)
 	if kind in ["photo", "arrive"]:
 		Sfx.play_ui("switch", -6.0)
@@ -372,8 +379,51 @@ func film() -> void:
 	var job := _job("clip", "", "", [], in_frame())
 	job["file"] = "c%03d.jpg" % _n
 	job["path"] = AdventureDiary.folder(diary_id).path_join(job["file"])
+	job["share"] = Net.is_online()
 	capture.film(job)
 	Sfx.play_ui("beep", -8.0)
+
+
+## The diary's side of a film (MovieClip) started now on the adventure: its record, with the
+## poster frame's file in the diary's folder ({} off an adventure).
+func movie_job() -> Dictionary:
+	if diary_id == "" or trip == null or not trip.on_trip():
+		return {}
+	_n += 1
+	var job := _job("movie", "", "", [], in_frame())
+	job["file"] = "m%03d.jpg" % _n
+	job["poster_path"] = AdventureDiary.folder(diary_id).path_join(job["file"])
+	job["diary"] = diary_id
+	return job
+
+
+## A film's saved (`info` as MovieClip.saved gives it): into the diary it was started for, on this
+## machine (the film itself stays in the clips folder).
+func add_movie(info: Dictionary) -> void:
+	var job: Dictionary = info.get("job", {})
+	var diary := str(job.get("diary", ""))
+	if diary == "" or not FileAccess.file_exists(str(job.get("poster_path", ""))):
+		return
+	var rec := job.duplicate()
+	rec.erase("poster_path")
+	rec.erase("diary")
+	rec["movie"] = true
+	rec["video"] = str(info.get("path", ""))
+	rec["secs"] = float(info.get("secs", 0.0))
+	rec["w"] = int(info.get("w", 0))
+	rec["h"] = int(info.get("h", 0))
+	if diary == diary_id:
+		photos.append(rec)
+		save_draft()
+		_show_toast(info.get("poster"), "Film: " + str(rec.get("caption", "")))
+	else:
+		AdventureDiary.add_photo(diary, rec)
+
+
+## A crew mate's photo come in (DiaryShare, its file already beside the diary): in its place.
+func add_shared(rec: Dictionary) -> void:
+	AdventureDiary.insert_photo(photos, rec)
+	save_draft()
 
 
 func _job(kind: String, caption: String, key: String, who: Array, in_shot: Array) -> Dictionary:
@@ -384,8 +434,10 @@ func _job(kind: String, caption: String, key: String, who: Array, in_shot: Array
 	for nm in names:
 		if not people.has(nm):
 			people.append(nm)
+	# (Its uid is the same on every machine it's shared to; "at" puts the crew's photos in order.)
 	return {"kind": kind, "caption": caption, "key": key, "who": people, "by": _me(), "s": roundf(maxf(_s, 0.0)),
-		"hours": snappedf(Daylight.time_of_day(), 0.01), "day": int(Shed.adventure.get("nights", 0)), "in_shot": names}
+		"hours": snappedf(Daylight.time_of_day(), 0.01), "day": int(Shed.adventure.get("nights", 0)), "in_shot": names,
+		"uid": "%x%08x" % [int(Time.get_unix_time_from_system()), randi()], "at": int(Time.get_unix_time_from_system())}
 
 
 ## A photo you took's caption: who's in it, and where.
@@ -393,7 +445,7 @@ func _caption(kind: String, names: Array) -> String:
 	var where := _where()
 	if not names.is_empty():
 		return ("%s, %s" % [AdventureNeeds._and_list(names), where]).left(110)
-	return ("On film, %s" % where if kind == "clip" else where.left(1).to_upper() + where.substr(1)).left(110)
+	return ("On film, %s" % where if kind in ["clip", "movie"] else where.left(1).to_upper() + where.substr(1)).left(110)
 
 
 ## Where you are, in words: "at the Lay-by", "in Little Hayton", "on the gravel".
@@ -445,17 +497,25 @@ func _on_saved(job: Dictionary) -> void:
 	rec.erase("image")
 	rec.erase("path")
 	rec.erase("hud")
+	rec.erase("share")
+	rec.erase("share_bytes")
 	rec["clip"] = bool(job.get("clip", false))
 	photos.append(rec)
-	var img = job.get("image")
+	if Net.is_online() and Shed.diary_share and job.get("share_bytes") is PackedByteArray:
+		Shed.diary_share.share(diary_id, rec, job["share_bytes"])
+	_show_toast(job.get("image"), ("Clip: " if rec["clip"] else "") + str(rec.get("caption", "")))
+	save_draft()
+
+
+## The picture just taken on the HUD for a moment, with its caption.
+func _show_toast(img, text: String) -> void:
 	if img is Image and is_inside_tree():
 		_toast_pic.texture = ImageTexture.create_from_image(img)
-		_toast_label.text = ("Clip: " if rec["clip"] else "") + str(rec.get("caption", ""))
+		_toast_label.text = text
 		_toast.visible = true
 		_toast_t = TOAST_TIME
 		_toast.reset_size()
 		_toast.position = Vector2(get_viewport().get_visible_rect().size.x - _toast.size.x - 24.0, get_viewport().get_visible_rect().size.y - _toast.size.y - 250.0)
-	save_draft()
 
 
 # ---------------------------------------------------------------------------- the camera held up

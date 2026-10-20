@@ -8,12 +8,14 @@ extends RefCounted
 ## (Shed.adventure["log"], so every player has the same list): setting off, each stop visited,
 ## the ways taken at forks, onto a new surface, the high points, police chases and fines,
 ## breakdowns and roadside fixes, picnics, sunrise and sunset, and arriving. Each has its time
-## (the clock, and the day), how far along the road (km) and who. The photos are each player's
-## own, taken on their own machine (AdventurePhotos: automatically at the highlights they were
-## part of, and whenever they take one) and kept there; nobody else's photos are sent anywhere.
+## (the clock, and the day), how far along the road (km) and who. The photos are taken on each
+## player's own machine (AdventurePhotos: automatically at the highlights they were part of, and
+## whenever they take one) and shared with the whole crew (DiaryShare: everyone's diary has
+## everyone's photos, each credited to who took it). Films (MovieClip) stay on the machine that
+## took them.
 ##
 ## At the destination, and again at Ride home, each player's game puts its diary together: the
-## shared highlights, its own photos with their captions, the route as a strip with the
+## shared highlights, the crew's photos with their captions, the route as a strip with the
 ## highlights marked, and the trip computer's final stats (TripComputer). It's kept in
 ## user://diaries/<id>/ (diary.json and the JPEGs beside it) and read in a book (DiaryBook),
 ## from the magazine on the workbench or the adventure's photo on the shed wall.
@@ -283,6 +285,27 @@ static func save_diary(d: Dictionary) -> bool:
 	if fresh:
 		_trim()   # a new one on the shelf: the oldest off the end
 	return true
+
+
+## Adds photo `rec` (its file already beside the diary) to the diary `id` saved here, in its
+## place by when it was taken. False when there's no such diary.
+static func add_photo(id: String, rec: Dictionary) -> bool:
+	var d := load_diary(id)
+	if d.is_empty():
+		return false
+	insert_photo(d["photos"], rec)
+	return save_diary(d)
+
+
+## Puts `rec` into `photos` in its place by when it was taken ("at"), the end without one.
+static func insert_photo(photos: Array, rec: Dictionary) -> void:
+	var at := int(rec.get("at", 0))
+	if at > 0:
+		for i in photos.size():
+			if int(photos[i].get("at", 0)) > at:
+				photos.insert(i, rec)
+				return
+	photos.append(rec)
 
 
 ## A diary as read back: every field there and the right type.

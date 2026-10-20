@@ -472,6 +472,8 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 | Nod to a biker you pass; hold it to raise your left hand off the bar in a wave (the crew see both; a biker in the traffic nods back) | N (hold: wave) | Right stick click (hold: wave) |
 | Toggle auto-shift | U | |
 | Adventure: ask a mate for a tow when you've broken down, or let the strap go | T | (none) |
+| Adventure: take a photo for the Adventure Diary (hold it to film a short flipbook clip). Everyone's photos go into the whole crew's diaries, each saying who took it; a rider joining part-way gets the ones taken so far | K | (none) |
+| Film a 10-second movie (riding or on foot, on an adventure or at the shed): a 3, 2, 1 countdown, then REC and the seconds left in the corner (press again to call it off, or to stop early). It's saved as a video (an MJPEG `.avi` that Windows plays) in the `clips` folder of the game's user data (the HUD shows the path and it's copied to paste into Explorer); on an adventure it's in your diary too, with a Play button. Films stay on your own computer | ; (the key beside L) | (none; set one in Key bindings) |
 | Reset after a crash | R | View |
 | Camera (third person, first person, fly-by) | C | D-pad down |
 | Swing the camera round the bike (first person: look round) | Mouse | Right stick |
