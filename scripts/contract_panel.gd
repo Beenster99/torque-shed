@@ -331,8 +331,8 @@ static func fill_jobs(box: VBoxContainer) -> void:
 	if not next_up.is_empty():
 		box.add_child(UITheme.label("Harder jobs unlock with reputation: " + ", ".join(next_up) + ".", 14, Color(1, 1, 1, 0.6)))
 	if Contracts.jobs().is_empty():
-		box.add_child(UITheme.label("No jobs under way. Customers come to the sales office reception: a bell rings when one "
-			+ "arrives. Look at them and press {interact} to hear what they want.", 15, Color(1, 1, 1, 0.7)))
+		box.add_child(UITheme.label("No jobs under way. Customers come to the sales office reception: "
+			+ "look at them and press {interact} to hear what they want.", 15, Color(1, 1, 1, 0.7)))
 	for id in Contracts.jobs():
 		_fill_job(box, Contracts.jobs()[id])
 	var done: Array = Contracts._st()["done"]

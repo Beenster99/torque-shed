@@ -4,7 +4,8 @@ extends Control
 ## the crew and a little map of the road; a page of the trip computer's final stats under the
 ## route strip (the road's height all the way, coloured by its surface, the highlights marked
 ## along it); then the photos, two to a page like a photo journal, taped in at a tilt with their
-## captions (the highlight, when, how far in, and who), clips playing as flipbooks; and the log of
+## captions (the highlight, when, how far in, who, and who took it), clips playing as flipbooks,
+## films (MovieClip) with a button to play them; and the log of
 ## every highlight at the back. Two pages open at a time, turned with the buttons or the arrow
 ## keys. Opened on a shelf of this machine's diaries (the magazine's "Adventure diaries"), or at
 ## one (the end of a ride, the photo on the shed wall).
@@ -252,6 +253,12 @@ func texture_of(file: String) -> Texture2D:
 	return tex
 
 
+## Where the `i`th photo of a page goes (two a page, with their captions clear of each other and
+## of the page number).
+static func photo_box(i: int) -> Rect2:
+	return Rect2(64 + (i % 2) * 16.0, 34 + i * 318.0, 416, 234)
+
+
 ## The highlight photo `p` was taken for ({} for one you just took).
 func entry_of(p: Dictionary) -> Dictionary:
 	var key := str(p.get("key", ""))
@@ -289,7 +296,30 @@ class _Page extends Control:
 	func reset() -> void:
 		_t = 0.0
 		_frame = 0
+		_film_buttons()
 		queue_redraw()
+
+	## A Play button on each film on the page (it opens in the computer's own video player).
+	func _film_buttons() -> void:
+		for c in get_children():
+			c.queue_free()
+		if str(page.get("kind", "")) != "photos":
+			return
+		var list: Array = page.get("photos", [])
+		for i in list.size():
+			var p: Dictionary = list[i]
+			if not bool(p.get("movie", false)):
+				continue
+			var box := DiaryBook.photo_box(i)
+			var video := str(p.get("video", ""))
+			var b := Button.new()
+			var here := video != "" and FileAccess.file_exists(video)
+			b.text = "Play the film" if here else "(the film's not on this computer)"
+			b.disabled = not here
+			b.position = box.position + Vector2(box.size.x - 190.0, box.size.y - 46.0)
+			b.size = Vector2(176, 34)
+			b.pressed.connect(func(): OS.shell_open(ProjectSettings.globalize_path(video)))
+			add_child(b)
 
 	## Clips on the page play on.
 	func tick(delta: float) -> void:
@@ -365,8 +395,9 @@ class _Page extends Control:
 			y += 24.0
 		var photos: Array = d.get("photos", [])
 		var clips := photos.filter(func(p): return bool(p.get("clip", false))).size()
-		draw_string(font, Vector2(36, 520), "%s, %s%s." % [DiaryBook.count((d.get("log", []) as Array).size(), "highlight"), DiaryBook.count(photos.size() - clips, "photo"),
-			(", " + DiaryBook.count(clips, "clip")) if clips > 0 else ""], HORIZONTAL_ALIGNMENT_LEFT, size.x - 72.0, 17, INK)
+		var films := photos.filter(func(p): return bool(p.get("movie", false))).size()
+		draw_string(font, Vector2(36, 520), "%s, %s%s%s." % [DiaryBook.count((d.get("log", []) as Array).size(), "highlight"), DiaryBook.count(photos.size() - clips - films, "photo"),
+			(", " + DiaryBook.count(clips, "clip")) if clips > 0 else "", (", " + DiaryBook.count(films, "film")) if films > 0 else ""], HORIZONTAL_ALIGNMENT_LEFT, size.x - 72.0, 17, INK)
 		# The key to the marks on the strip.
 		var kinds := {}
 		for e in d.get("log", []):
@@ -474,8 +505,7 @@ class _Page extends Control:
 		for i in list.size():
 			var p: Dictionary = list[i]
 			var tilt: float = [-2.5, 2.0, 1.5, -1.8][(int(page.get("first", 0)) + i) % 4]
-			# (Two a page with their captions clear of each other and of the page number.)
-			var box := Rect2(64 + (i % 2) * 16.0, 34 + i * 318.0, 416, 234)
+			var box := DiaryBook.photo_box(i)
 			var tex := book.texture_of(str(p.get("file", "")))
 			var region := Rect2()
 			if bool(p.get("clip", false)) and tex != null:
@@ -488,11 +518,15 @@ class _Page extends Control:
 			var e := book.entry_of(p)
 			var cap := str(e.get("text", p.get("caption", ""))) if not e.is_empty() else str(p.get("caption", ""))
 			var when := AdventureDiary.when_text(p if e.is_empty() else e)
-			_polaroid(box, tex, tilt, cap, font, region, when, bool(p.get("clip", false)))
+			var by := str(p.get("by", ""))
+			if by != "" and by != str(book.diary.get("me", "")):
+				when += "  ·  taken by %s" % by
+			_polaroid(box, tex, tilt, cap, font, region, when, bool(p.get("clip", false)),
+				roundi(float(p.get("secs", 0.0))) if bool(p.get("movie", false)) else -1)
 
 	## A photo taped in at `deg`: the picture (a clip's `region` of it), with its caption written
 	## under it and the when, where and who smaller below.
-	func _polaroid(box: Rect2, tex: Texture2D, deg: float, caption: String, font: Font, region: Rect2, when := "", clip := false) -> void:
+	func _polaroid(box: Rect2, tex: Texture2D, deg: float, caption: String, font: Font, region: Rect2, when := "", clip := false, film := -1) -> void:
 		var c := box.get_center()
 		draw_set_transform(c, deg_to_rad(deg), Vector2.ONE)
 		var r := Rect2(-box.size * 0.5, box.size)
@@ -511,6 +545,10 @@ class _Page extends Control:
 			draw_rect(Rect2(r.position + Vector2(8, 8), Vector2(58, 22)), Color(0, 0, 0, 0.6))
 			draw_colored_polygon(PackedVector2Array([r.position + Vector2(15, 12), r.position + Vector2(15, 26), r.position + Vector2(27, 19)]), Color(1, 0.3, 0.25))
 			draw_string(font, r.position + Vector2(31, 25), "CLIP", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+		if film >= 0:
+			draw_rect(Rect2(r.position + Vector2(8, 8), Vector2(92, 22)), Color(0, 0, 0, 0.6))
+			draw_colored_polygon(PackedVector2Array([r.position + Vector2(15, 12), r.position + Vector2(15, 26), r.position + Vector2(27, 19)]), Color(1, 0.3, 0.25))
+			draw_string(font, r.position + Vector2(31, 25), "FILM %d s" % film, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
 		if caption != "":
 			draw_string(font, Vector2(r.position.x, r.end.y + 26.0), caption, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 19, INK)
 			draw_string(font, Vector2(r.position.x, r.end.y + 48.0), when, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 13, FADED)

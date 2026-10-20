@@ -4,10 +4,10 @@ extends Node3D
 ## block-paved forecourt and car park. Downstairs is a double-height showroom with four lit
 ## display plinths for bikes, the reception desk, a viewing area of sofas looking at the
 ## showroom, and a kitchen. Stairs along the back wall climb to a mezzanine office that looks
-## down over the showroom. The front doors slide open for anyone walking up to them, and a brass
-## shop bell over them rings when someone comes in (Shed.ring_bell), with a chime in the shed so
-## the crew hear it at work. Its lights are on their own switch ("sales"), and the sign, canopy
-## and car park lights come on at dusk.
+## down over the showroom. The front doors slide open for anyone walking up to them. A brass
+## shop bell hangs over them, with a chime box in the shed: customers coming in don't ring it
+## (that ding was background noise), only Shed.ring_bell does. Its lights are on their own
+## switch ("sales"), and the sign, canopy and car park lights come on at dusk.
 ##
 ## Local layout (x from CENTER.x, z from CENTER.z; the glass front faces +z, onto the yard):
 ##   x -7.0..-1.5: under the mezzanine: kitchen at the back, reception desk, viewing sofas at the

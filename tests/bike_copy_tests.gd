@@ -30,7 +30,8 @@ func _ordered() -> Array:
 
 
 ## Ordering one of a shed bike: every part on its build at the parts computer's price, out of the
-## player's own money; boxed in its colours; what doesn't fit waits on order and comes later.
+## player's own money. New, it comes built (see test_built); used, laid out in its colours, and
+## what doesn't fit waits on order and comes later.
 func test_order() -> void:
 	Shed.start_new("Tester", 41)
 	var saved: Dictionary = Progress.profile.duplicate(true)
@@ -48,37 +49,45 @@ func test_order() -> void:
 		and rows.any(func(r): return r["slot"] == "head") and cost == expect and cost > 0,
 		"its list is the whole build, frame and engine and all, at the parts computer's prices (%d parts, %s)" % [rows.size(), TvChannels.money_text(cost)])
 	check(rows.all(func(r): return str(r["part"]) == str(plan["parts"][r["slot"]])), "every row is the part on that bike")
+	var bikes_before := Shed.bikes.size()
 	check(BikeCopy.order(src) == "", "ordering one goes through")
-	var got := _ordered()
 	check(Progress.money() == 500000 - cost and Shed.garage_money == garage, "paid from your own money, not the business's (%s)" % TvChannels.money_text(cost))
-	check(got.size() + Shed.on_order.size() == rows.size(), "every part is boxed or on order (%d boxed, %d on order)" % [got.size(), Shed.on_order.size()])
-	var boxes_ok := true
-	for id in got:
-		var it: Dictionary = Shed.items[id]
-		boxes_ok = boxes_ok and (it["boxed"] or PartsDB.is_fluid(str(it["part"]))) and str(it["by"]) == Shed.orderer_name(Shed.me()) \
-			and int(it["paid"]) == Money.buy_price(str(it["part"]), Shed.me())
-	check(boxes_ok, "boxed in the delivery area with your name on the note and what each cost")
-	var tank := Shed.item_on(a, "tank")
-	var tank_box: Array = got.filter(func(id): return Shed.items[id]["part"] == Shed.items[tank]["part"])
-	check(not tank_box.is_empty() and Shed.items[tank_box[0]]["color"] == Shed.items[tank]["color"], "in that bike's colours")
+	check(Shed.bikes.size() == bikes_before + 1 and _ordered().is_empty() and Shed.on_order.is_empty(),
+		"ordered new, it comes built: one more bike, no boxes of parts")
 	# Short of money: nothing's taken.
 	Progress.set_money(10)
 	check(BikeCopy.order(src).contains("you have"), "can't afford it: says so")
 	check(Progress.money() == 10, "and nothing's taken")
 	# The host works the price out itself: paid short (prices changed), it all goes back.
 	Progress.set_money(1000)
-	var before := _ordered().size() + Shed.on_order.size()
+	var before := Shed.bikes.size()
 	Shed.request({"a": "copy_order", "src": src, "paid": 900})
-	check(Progress.money() == 1900 and _ordered().size() + Shed.on_order.size() == before, "an order the host turns down is refunded in full")
+	check(Progress.money() == 1900 and Shed.bikes.size() == before, "an order the host turns down is refunded in full")
 	Progress.set_money(cost + 500)
 	Shed.request({"a": "copy_order", "src": src, "paid": cost + 500})
-	check(Progress.money() == cost + 500 + 500, "paid over, the change comes back")
-	# Fill the delivery area: what doesn't fit waits on order, already paid for.
+	check(Progress.money() == cost + 500 + 500 and Shed.bikes.size() == before + 1, "paid over, the change comes back")
+	# Ordered used, the parts come laid out in its colours, each with what it cost on the note.
 	Progress.set_money(5000000)
+	var used_rows := BikeCopy.lines(plan, Shed.me(), 0.5)
+	check(BikeCopy.order(src, 0.5) == "", "ordering one used goes through")
+	var got := _ordered()
+	check(got.size() + Shed.on_order.size() == used_rows.size(), "every part is laid out or on order (%d out, %d on order)" % [got.size(), Shed.on_order.size()])
+	var price_of := {}
+	for r in used_rows:
+		price_of[str(r["part"])] = int(r["price"])
+	var notes_ok := true
+	for id in got:
+		var it: Dictionary = Shed.items[id]
+		notes_ok = notes_ok and str(it["by"]) == Shed.orderer_name(Shed.me()) and int(it["paid"]) == int(price_of.get(str(it["part"]), -1))
+	check(notes_ok, "in the delivery area with your name on the note and what each cost")
+	var tank := Shed.item_on(a, "tank")
+	var tank_box: Array = got.filter(func(id): return Shed.items[id]["part"] == Shed.items[tank]["part"])
+	check(not tank_box.is_empty() and Shed.items[tank_box[0]]["color"] == Shed.items[tank]["color"], "in that bike's colours")
+	# Fill the delivery area: what doesn't fit waits on order, already paid for.
 	for i in 6:
 		if not Shed.on_order.is_empty():
 			break
-		BikeCopy.order(src)
+		BikeCopy.order(src, 0.5)
 	check(not Shed.on_order.is_empty() and Shed.on_order.all(func(o): return int(o["paid"]) > 0 and str(o["by"]) != ""),
 		"with the delivery area full, the rest wait on order (%d)" % Shed.on_order.size())
 	# Kept with the shed.
@@ -98,7 +107,81 @@ func test_order() -> void:
 		Shed._erase_item(id)
 	for i in 30:
 		Shed._deliver_on_order(1.5)
-	check(Shed.on_order.size() < waiting and _ordered().size() >= mini(waiting, 4), "with room made, they're boxed up outside (%d left on order, %d boxed)" % [Shed.on_order.size(), _ordered().size()])
+	check(Shed.on_order.size() < waiting and _ordered().size() >= mini(waiting, 4), "with room made, they're laid out outside (%d left on order, %d out)" % [Shed.on_order.size(), _ordered().size()])
+	Progress.profile = saved
+	Shed.stop()
+
+
+## Ordered new, one of these comes built (Simon: "when i order a new bike it should come ready
+## made, not as parts"): the same build in its colours and fit, ready to ride with at least half
+## a tank, in the yard by the roller door (a free bay once that's full), noted as bought for what
+## it cost; with nowhere to leave it the host says so.
+func test_built() -> void:
+	Shed.start_new("Tester", 41)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.set_money(50000000)
+	var a: int = t._bike_named("Rusty Ranger")
+	Shed.request({"a": "geo_save", "bike": a, "geo": {"tank": {"p": Vector3(0.0, 0.05, 0.0), "r": Vector3.ZERO, "s": Vector3.ONE}}})
+	var src := {"bike": a}
+	var plan := BikeCopy.plan_of(src)
+	var cost := BikeCopy.total(BikeCopy.lines(plan, Shed.me()))
+	var before: Array = Shed.bikes.keys()
+	var spot = Shed.free_retrieve_xf()
+	check(BikeCopy.order(src) == "", "ordering one new goes through")
+	var id := 0
+	for b in Shed.bikes:
+		if not before.has(b):
+			id = int(b)
+	check(id != 0, "a new bike is the shed's")
+	if id == 0:
+		Progress.profile = saved
+		Shed.stop()
+		return
+	var bike: Dictionary = Shed.bikes[id]
+	var same := true
+	for slot in plan["parts"]:
+		same = same and Contracts.current_parts(id)[slot] == str(plan["parts"][slot])
+	check(same and str(bike["name"]) == "Rusty Ranger", "the very build it was ordered from, by name")
+	var colours_ok := true
+	var as_new := true
+	for slot in PartsDB.SLOTS:
+		var it := Shed.item_on(id, slot)
+		if it == 0:
+			continue
+		as_new = as_new and float(Shed.items[it]["rust"]) == 0.0 and float(Shed.items[it]["wear"]) == 0.0 and float(Shed.items[it]["dirt"]) == 0.0 \
+			and not Shed.items[it].get("boxed", false) and Shed.is_bolted(id, slot)
+		if plan["colors"].has(slot):
+			colours_ok = colours_ok and Shed.items[it]["color"] == plan["colors"][slot]["color"]
+	check(as_new and colours_ok and bike["paint"] == Shed.bikes[a]["paint"], "every part on it, bolted up and as new, in that bike's colours and paint")
+	check(is_equal_approx((Shed.geometry_of(id)["tank"]["p"] as Vector3).y, 0.05), "and its fit")
+	var build := Shed.build_of(id)
+	var engine: Dictionary = Shed.items[Shed.item_on(id, "engine")]
+	check(Shed.is_complete(id) and Money.rideable(id) and build.fuel_litres >= build.fuel_capacity * 0.5 - 0.01
+		and is_equal_approx(float(engine["fluid"]["litres"]), PartsDB.fluid_capacity(str(engine["part"]))) and float(engine["fluid"]["age"]) == 0.0,
+		"ready to ride: complete, fresh oil to the mark and %.1f of %.1f litres of petrol" % [build.fuel_litres, build.fuel_capacity])
+	check(spot is Transform3D and int(bike["bay"]) == -1 and (bike["xf"] as Transform3D).origin.distance_to((spot as Transform3D).origin) < 0.01
+		and str(bike["stand"]) != "down" and Shed.bike_at_work(id), "left in the yard by the roller door, on its stand (%s)" % str(bike["stand"]))
+	check(int(bike["bought"]) == cost and _ordered().is_empty(), "noted as bought for what it cost, and nothing boxed")
+	# With the yard row full, the next goes in a free bay; with no bay either, the host says so.
+	var guard := 0
+	while Shed.free_retrieve_xf() != null and guard < 20:
+		BikeCopy.order(src)
+		guard += 1
+	var bay := Shed.free_bay(Workshop.bay_count())
+	before = Shed.bikes.keys()
+	check(bay >= 0 and BikeCopy.order(src) == "", "with the yard full, one more goes through")
+	var in_bay := 0
+	for b in Shed.bikes:
+		if not before.has(b):
+			in_bay = int(b)
+	check(in_bay != 0 and int(Shed.bikes[in_bay]["bay"]) == bay and Shed.on_paddock(in_bay), "and is left in bay %d, on its paddock stand" % (bay + 1))
+	while Shed.free_bay(Workshop.bay_count()) >= 0 and guard < 30:
+		BikeCopy.order(src)
+		guard += 1
+	var money := Progress.money()
+	var why := BikeCopy.order(src)
+	check(why.contains("nowhere") and Progress.money() == money, "nowhere left to put one: the host says so and nothing's taken (%s)" % why)
+	check(BikeCopy.order(src, 0.5) == "", "but it can still be ordered used, as parts")
 	Progress.profile = saved
 	Shed.stop()
 
@@ -215,10 +298,11 @@ func test_session() -> void:
 		and panel.text().contains("Delivery: Straight away") and panel._order.text.contains(TvChannels.money_text(cost)) and not panel._order.disabled,
 		"{order_bike}: its card, every part with its price, the total and the delivery (%d parts, %s)" % [rows.size(), TvChannels.money_text(cost)])
 	check(panel._preview.visible and panel._preview.showing.begins_with("bike:") and panel._preview.pivot.get_child_count() == 1, "with the bike on a turntable")
+	var bikes_before := Shed.bikes.size()
 	panel.press("Order one of these")
 	await _frames(2)
-	check(not panel.visible and Progress.money() == 500000 - cost and _ordered().size() + Shed.on_order.size() == rows.size(),
-		"Order one of these: paid from your money, the parts on their way")
+	check(not panel.visible and Progress.money() == 500000 - cost and Shed.bikes.size() == bikes_before + 1 and ws.bike_views.size() == Shed.bikes.size(),
+		"Order one of these: paid from your money, and it's in the yard, built and drawn")
 	t._press("order_bike")
 	await _frames(2)
 	panel.press("Copy its blueprint")
@@ -349,13 +433,14 @@ func test_quality() -> void:
 	var came: Array = _ordered().filter(func(id): return not PartsDB.is_fluid(str(Shed.items[id]["part"])))
 	var as_ordered := func(id): return absf(float(Shed.items[id]["wear"]) - float(BikeCopy.used_cond(0.25)["wear"])) < 0.001 and not Shed.items[id]["boxed"]
 	check(not came.is_empty() and came.all(as_ordered), "and come that way when there's room (%d)" % came.size())
-	# New is as it always was: boxed, full price.
+	# New: built, at the full price (see test_built).
 	for id in _ordered():
 		Shed._erase_item(id)
 	Shed.on_order.clear()
 	Progress.set_money(new_cost)
-	check(BikeCopy.order(src) == "" and Progress.money() == 0 and _ordered().all(func(id): return Shed.items[id]["boxed"] or PartsDB.is_fluid(str(Shed.items[id]["part"])))
-		and _ordered().all(func(id): return float(Shed.items[id]["wear"]) == 0.0), "ordered new: boxed and as new, at the full price")
+	var bikes_before := Shed.bikes.size()
+	check(BikeCopy.order(src) == "" and Progress.money() == 0 and _ordered().is_empty() and Shed.bikes.size() == bikes_before + 1,
+		"ordered new: it comes built, at the full price")
 	Progress.profile = saved
 	Shed.stop()
 
@@ -376,8 +461,8 @@ func test_quality_card() -> void:
 	await _frames(2)
 	var plan := BikeCopy.plan_of({"bike": a})
 	var new_cost := BikeCopy.total(BikeCopy.lines(plan, Shed.me()))
-	check(panel.visible and is_equal_approx(panel.quality(), 1.0) and panel.text().contains("New: boxed") and panel._order.text.contains(TvChannels.money_text(new_cost)),
-		"the card opens at new, at the full price (%s)" % TvChannels.money_text(new_cost))
+	check(panel.visible and is_equal_approx(panel.quality(), 1.0) and panel.text().contains("New: built and ready to ride") and panel.text().contains("at least half a tank")
+		and panel._order.text.contains(TvChannels.money_text(new_cost)), "the card opens at new, built and ready to ride, at the full price (%s)" % TvChannels.money_text(new_cost))
 	panel.set_quality(0.3)
 	await _frames(1)
 	var cost := BikeCopy.total(BikeCopy.lines(plan, Shed.me(), 0.3))
@@ -394,4 +479,90 @@ func test_quality_card() -> void:
 	Progress.profile = saved
 	main.queue_free()
 	await _frames(2)
+	Shed.stop()
+
+
+## The parts computer's project bike order (Simon: "when i order a bike from the shop pc i should
+## be presented with the condition slider"): the order button opens a card with the same quality
+## slider, its price following it; the host builds the bike to that condition (new: ready to
+## ride) and every bike bought comes with at least half a tank of fuel.
+func test_project_card() -> void:
+	Shed.start_new("Tester", 62)
+	var me := Shed.me()
+	Shed.garage_money = 10000000
+	for id in Shed.bikes.keys():
+		Shed.remove_bike(id)
+	var half := func(id: int) -> bool:
+		var b := Shed.build_of(id)
+		return b.fuel_litres >= b.fuel_capacity * Shed.ORDER_FUEL - 0.01
+	var newest := func() -> int:
+		var top := 0
+		for id in Shed.bikes:
+			top = maxi(top, int(id))
+		return top
+	# The price goes with the condition.
+	check(Money.typical_project_price(0.0) < Money.typical_project_price(0.5) and Money.typical_project_price(0.5) < Money.typical_project_price(1.0)
+		and Money.typical_style_price("cruiser", 0.2) < Money.typical_style_price("cruiser", 1.0),
+		"a project bike's price goes with its condition: worn %s, used %s, new %s" % [TvChannels.money_text(Money.typical_project_price(0.0)),
+			TvChannels.money_text(Money.typical_project_price(0.5)), TvChannels.money_text(Money.typical_project_price(1.0))])
+	for q in [1.5, -0.3, NAN, "new"]:
+		check(Shed.check(me, {"a": "order", "quality": q}).contains("condition"), "a condition off the slider (%s) is turned down" % str(q))
+	# As they come (the old way, still): at least half a tank.
+	Shed.request({"a": "order"})
+	check(half.call(newest.call()), "a project bike as it comes has at least half a tank")
+	# Worn and nearly new: as worn as asked, half a tank either way.
+	Shed.request(PartsComputer.bike_order("", 0.0))
+	var worn: int = newest.call()
+	Shed.request(PartsComputer.bike_order("", 0.8))
+	var good: int = newest.call()
+	check(Contracts.bike_health(worn) < Contracts.bike_health(good) - 0.15 and half.call(worn) and half.call(good),
+		"ordered worn it's worn (%d%%), nearly new it's good (%d%%); half a tank in both" % [roundi(Contracts.bike_health(worn) * 100.0), roundi(Contracts.bike_health(good) * 100.0)])
+	# New: built, every part new, ready to ride, paid for by the business.
+	var money := Shed.garage_money
+	Shed.request(PartsComputer.bike_order("", 1.0))
+	var fresh: int = newest.call()
+	var as_new := true
+	for slot in PartsDB.SLOTS:
+		var it := Shed.item_on(fresh, slot)
+		if it != 0:
+			as_new = as_new and float(Shed.items[it]["rust"]) + float(Shed.items[it]["wear"]) + float(Shed.items[it]["dirt"]) == 0.0
+	var engine: Dictionary = Shed.items[Shed.item_on(fresh, "engine")]
+	check(as_new and Shed.is_complete(fresh) and Money.rideable(fresh) and half.call(fresh)
+		and is_equal_approx(float(engine["fluid"]["litres"]), PartsDB.fluid_capacity(str(engine["part"]))) and int(Shed.bikes[fresh]["bought"]) == money - Shed.garage_money,
+		"ordered new: every part new, ready to ride with fresh oil and half a tank, for %s from the business" % TvChannels.money_text(money - Shed.garage_money))
+	for id in Shed.bikes.keys():
+		Shed.remove_bike(id)
+	# The parts computer: the order button opens the card, and the card orders at its slider.
+	var pc := PartsComputer.new()
+	t.add_child(pc)
+	pc.open()
+	pc.set_bike_style("cruiser")
+	pc._bike_btn.pressed.emit()
+	await _frames(1)
+	var card: ProjectOrderCard = pc.bike_card
+	check(card.visible and card.style == "cruiser" and is_equal_approx(card.quality(), ProjectOrderCard.START_QUALITY) and card.text().contains("CONDITION")
+		and card.text().contains("ORDER A CRUISER") and card.text().contains(TvChannels.money_text(Money.typical_style_price("cruiser", card.quality()))) and Shed.bikes.is_empty(),
+		"the order button opens the card with the condition slider and the price at it, and orders nothing yet")
+	card.set_quality(1.0)
+	await _frames(1)
+	var new_price := Money.typical_style_price("cruiser", 1.0)
+	check(card.text().contains("New: built and ready to ride") and card.text().contains("ORDER A NEW CRUISER") and card._go.text.contains(TvChannels.money_text(new_price))
+		and card.text().contains("half a tank"), "slid to new: ready to ride, around %s" % TvChannels.money_text(new_price))
+	card.set_quality(0.2)
+	await _frames(1)
+	check(card.text().contains(ProjectOrderCard.condition_text(0.2)) and card._go.text.contains(TvChannels.money_text(Money.typical_style_price("cruiser", 0.2)))
+		and Money.typical_style_price("cruiser", 0.2) < new_price, "slid down to well used: its condition and a lower price (%s)" % ProjectOrderCard.condition_text(0.2))
+	card.set_quality(1.0)
+	card._go.pressed.emit()
+	await _frames(1)
+	var got: int = newest.call()
+	check(not card.visible and got != 0 and str(Shed.bikes[got]["name"]) == "New cruiser" and str(Shed.bikes[got].get("style_order", "")) == "cruiser"
+		and Money.rideable(got) and half.call(got), "Order it: a new cruiser in a bay, ready to ride (%s)" % (str(Shed.bikes[got]["name"]) if got != 0 else "none"))
+	Shed.garage_money = 5
+	pc.open_bike_order()
+	await _frames(1)
+	check(card._go.disabled and card.text().contains("The business has"), "without the money, the card says so and won't order")
+	card.close()
+	pc.queue_free()
+	await _frames(1)
 	Shed.stop()

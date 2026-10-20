@@ -27,8 +27,9 @@ const JPEG_QUALITY := 0.86
 const THUMB_W := 192
 const THUMB_H := 108
 
-## A photo (or a clip) is saved: `job` as it was asked for, with "file" (its path), "w", "h", and
-## "image" (a thumbnail, THUMB_W wide, for the HUD; a clip's first cell).
+## A photo (or a clip) is saved: `job` as it was asked for, with "file" (its path), "w", "h",
+## "image" (a thumbnail, THUMB_W wide, for the HUD; a clip's first cell) and, when the job asked
+## for it with "share", "share_bytes" (the smaller JPEG for the crew, see DiaryShare).
 signal saved(job: Dictionary)
 
 ## Tests and headless runs: a Callable returning the frame as an Image (null for none).
@@ -218,8 +219,9 @@ static func _work_image(src: Image, jobs: Array, box: _Results) -> void:
 		var ok := _write(img, str(j.get("path", "")))
 		var thumb := img.duplicate() as Image   # for the HUD: small, so it's cheap to show
 		thumb.resize(THUMB_W, THUMB_H, Image.INTERPOLATE_BILINEAR)
+		var share := _share_bytes(img) if bool(j.get("share", false)) and ok else PackedByteArray()
 		box.mutex.lock()
-		box.done.append({"job": j, "image": thumb, "failed": not ok, "w": w, "h": h})
+		box.done.append({"job": j, "image": thumb, "failed": not ok, "w": w, "h": h, "share": share})
 		box.mutex.unlock()
 
 
@@ -238,6 +240,15 @@ static func fit(img: Image, w: int, h: int) -> Image:
 	if img.get_format() != Image.FORMAT_RGB8:
 		img.convert(Image.FORMAT_RGB8)
 	return img
+
+
+## The smaller JPEG of `img` sent to the crew (see DiaryShare): at most DiaryShare.SHARE_W wide.
+static func _share_bytes(img: Image) -> PackedByteArray:
+	var small := img
+	if img.get_width() > DiaryShare.SHARE_W:
+		small = img.duplicate() as Image
+		small.resize(DiaryShare.SHARE_W, roundi(img.get_height() * float(DiaryShare.SHARE_W) / img.get_width()), Image.INTERPOLATE_BILINEAR)
+	return small.save_jpg_to_buffer(DiaryShare.SHARE_QUALITY)
 
 
 static func _write(img: Image, path: String) -> bool:
@@ -267,8 +278,10 @@ static func _work_sheet(cells: Dictionary, job: Dictionary, box: _Results) -> vo
 		sheet.blit_rect(c, Rect2i(0, 0, cw, chh), Vector2i((i % cols) * cw, (i / cols) * chh))
 	var ok := got > 0 and _write(sheet, str(job.get("path", "")))
 	job["got"] = got
+	# (A clip's sheet goes to the crew whole: its cells are what's played.)
+	var share := sheet.save_jpg_to_buffer(DiaryShare.SHARE_QUALITY) if bool(job.get("share", false)) and ok else PackedByteArray()
 	box.mutex.lock()
-	box.done.append({"job": job, "image": first, "failed": not ok, "w": cw * cols, "h": chh * rows})
+	box.done.append({"job": job, "image": first, "failed": not ok, "w": cw * cols, "h": chh * rows, "share": share})
 	box.mutex.unlock()
 
 
@@ -341,6 +354,7 @@ func _tick(delta: float) -> void:
 		job["w"] = int(r.get("w", 0))
 		job["h"] = int(r.get("h", 0))
 		job["image"] = r.get("image")
+		job["share_bytes"] = r.get("share", PackedByteArray())
 		saved.emit(job)
 
 

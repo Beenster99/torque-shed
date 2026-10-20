@@ -1,7 +1,8 @@
 class_name EngineBank
 extends RefCounted
 ## One engine's baked sounds (see EngineSynth): a seamless loop for each rpm bucket, on and off
-## the throttle, exhaust side and engine side, plus its pops, bangs, gear shifts and starter.
+## the throttle, exhaust side and engine side, plus its pops and bangs, its gearbox's clicks and
+## clunks, and its starter (or kick) and the engine catching.
 ## Baking runs on a worker thread, the buckets nearest idle first, so the bike sounds within a
 ## moment of getting on; the rest fill in over a second or so. Bikes with the same engine,
 ## exhaust and gearbox share one bank.
@@ -71,7 +72,8 @@ static func sample_folder(engine_spec: Dictionary) -> String:
 ## Uses recorded sounds from `dir` in place of synthesised ones. Loops are named
 ## <layer>_<rpm>.wav (ex_on_6000.wav: the exhaust on the throttle, held at 6000 rpm; ex_off,
 ## in_on and in_off likewise), each a seamless loop. One-shots are pop*, bang*, crack*,
-## shift*, neutral* and starter*.wav. Anything not supplied is synthesised as usual.
+## shift* (every gear change), neutral*, starter* and catch*.wav (the engine firing up off the
+## starter). Anything not supplied is synthesised as usual.
 func load_samples(dir: String) -> void:
 	var found := {}   # rpm -> {layer: stream}
 	var shots := {}
@@ -94,7 +96,7 @@ func load_samples(dir: String) -> void:
 				layer_hit = true
 		if layer_hit:
 			continue
-		for kind in ["pop", "bang", "crack", "shift", "neutral", "starter"]:
+		for kind in ["pop", "bang", "crack", "shift", "neutral", "starter", "catch"]:
 			if base.begins_with(kind):
 				var wav := _load_wav(path, false)
 				if wav:
@@ -205,16 +207,25 @@ func _bake_all() -> void:
 
 
 func _bake_oneshots() -> void:
+	# The starter first: it's the first thing you hear. A few takes, so it's never quite the same.
+	var kick: bool = spec["kick"]
+	_push(["shot", "starter", 0, [EngineSynth.render_starter(spec, kick, 1.0, 1), EngineSynth.render_starter(spec, kick, 1.0, 2),
+		EngineSynth.render_starter(spec, kick, 1.0, 3)]])
+	_push(["shot", "catch", 0, [EngineSynth.render_catch(spec, kick, 1), EngineSynth.render_catch(spec, kick, 2)]])
 	var pops := []
 	for i in 4:
 		pops.append(EngineSynth.render_pop(spec, 0.7 + 0.25 * i, i + 1))
 	_push(["shot", "pop", 0, pops])
 	_push(["shot", "bang", 0, [EngineSynth.render_pop(spec, 2.5, 11), EngineSynth.render_pop(spec, 2.2, 12)]])
 	_push(["shot", "crack", 0, [EngineSynth.render_pop(spec, 4.0, 21)]])
-	var feel: String = spec["shift"]
-	_push(["shot", "shift", 0, [EngineSynth.render_shift(feel, 1), EngineSynth.render_shift(feel, 2), EngineSynth.render_shift(feel, 3)]])
-	_push(["shot", "neutral", 0, [EngineSynth.render_shift("neutral", 1)]])
-	_push(["shot", "starter", 0, [EngineSynth.render_starter(spec, bool(spec["kick"]))]])
+	# The gearbox's clicks and clunks, three takes of each step ("shift" is the plain change).
+	for step in EngineSynth.GEAR_STEPS:
+		var takes := []
+		for i in (2 if step == "neutral" else 3):
+			takes.append(EngineSynth.render_gear(spec, step, i + 1))
+		_push(["shot", "neutral" if step == "neutral" else "shift_" + step, 0, takes])
+		if step == "low":
+			_push(["shot", "shift", 0, takes.duplicate()])
 
 
 func _push(item: Array) -> void:
@@ -264,8 +275,8 @@ func poll() -> void:
 		_task = -1
 
 
-## A random one-shot of a kind ("pop", "bang", "crack", "shift", "neutral", "starter"), or null
-## if it isn't baked yet.
+## A random one-shot of a kind ("pop", "bang", "crack", "shift", "shift_first", "shift_low",
+## "shift_high", "shift_down", "neutral", "starter", "catch"), or null if it isn't baked yet.
 func oneshot(kind: String, rng: RandomNumberGenerator) -> AudioStreamWAV:
 	var list: Array = oneshots.get(kind, [])
 	if list.is_empty():

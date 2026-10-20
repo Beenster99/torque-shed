@@ -2,8 +2,8 @@ class_name BikeOrderPanel
 extends Control
 ## A bike's card, opened with {order_bike} while looking at it (see BikeCopy): the bike turning on
 ## a turntable, every part on its build with what each costs you at the parts computer, the total
-## and when it'll come, a slider for the quality to order it at (worn used parts up to new, see
-## BikeCopy.quality_text), and two buttons: "Order one of these" (paid from your own money) and
+## and when it'll come, a slider for the quality to order it at (QualitySlider: worn used parts up
+## to new, see BikeCopy.quality_text; new comes built and ready to ride), and two buttons: "Order one of these" (paid from your own money) and
 ## "Copy its blueprint". Both go through the host.
 
 signal closed
@@ -22,8 +22,7 @@ var _sums: Label
 var _status: Label
 var _order: Button
 var _copy: Button
-var _quality: HSlider
-var _quality_text: Label
+var _quality: QualitySlider
 var _sig := ""
 
 
@@ -65,31 +64,9 @@ func _ready() -> void:
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 1)
 	scroll.add_child(_list)
-	var qrow := HBoxContainer.new()
-	qrow.add_theme_constant_override("separation", 10)
-	_box.add_child(qrow)
-	var ends := [UITheme.label("QUALITY", 15, UITheme.ACCENT), UITheme.label("Worn", 14, Color(1, 1, 1, 0.6)), UITheme.label("New", 14, Color(1, 1, 1, 0.6))]
-	for l: Label in ends:
-		l.autowrap_mode = TextServer.AUTOWRAP_OFF
-		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	qrow.add_child(ends[0])
-	qrow.add_child(ends[1])
-	_quality = HSlider.new()
-	_quality.min_value = 0.0
-	_quality.max_value = 1.0
-	_quality.step = BikeCopy.QUALITY_STEP
-	_quality.value = 1.0
-	_quality.custom_minimum_size = Vector2(200, 24)
-	_quality.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_quality.value_changed.connect(func(_v): _refresh())
-	qrow.add_child(_quality)
-	qrow.add_child(ends[2])
-	_quality_text = UITheme.label("", 15)
-	_quality_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_quality_text.custom_minimum_size.x = 200.0
-	_quality_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_quality_text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	qrow.add_child(_quality_text)
+	_quality = QualitySlider.new()
+	_quality.quality_changed.connect(func(_q): _refresh())
+	_box.add_child(_quality)
 	_sums = UITheme.label("", 16)
 	_sums.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_box.add_child(_sums)
@@ -158,7 +135,7 @@ func _refresh() -> void:
 	if sig == _sig:
 		return
 	_sig = sig
-	_quality_text.text = BikeCopy.quality_text(q)
+	_quality.refresh()
 	_sub.text = "%s  ·  %s  ·  %d hp built new" % [str(plan["name"]), PartsDB.style_text(plan["parts"]),
 		roundi(BikeBuild.new(plan["parts"], {}).hp())]
 	for c in _list.get_children():
@@ -183,8 +160,8 @@ func _refresh() -> void:
 	var haggle := int(Progress.skill_rank(Shed.me(), "haggler"))
 	var lines := ["Total: %s for %d parts%s, from your own money (you have %s)." % [TvChannels.money_text(cost), rows.size(),
 		" (Haggler: %d%% off)" % roundi(Money.HAGGLE_BUY * haggle * 100.0) if haggle > 0 else "", TvChannels.money_text(Progress.money())],
-		"Delivery: " + (BikeCopy.DELIVERY if BikeCopy.is_new(q) else BikeCopy.DELIVERY.replace("boxed", "laid out"))]
-	if not Shed.on_order.is_empty():
+		"Delivery: " + BikeCopy.delivery_text(q)]
+	if not Shed.on_order.is_empty() and not BikeCopy.is_new(q):
 		lines.append("%d part%s already waiting on order for room in the delivery area." % [Shed.on_order.size(), "" if Shed.on_order.size() == 1 else "s"])
 	_sums.text = Controls.hint("\n".join(lines))
 	_order.text = "Order one of these for %s" % TvChannels.money_text(cost)
@@ -197,12 +174,12 @@ func _refresh() -> void:
 
 ## The quality the slider's at (0 worn .. 1 new).
 func quality() -> float:
-	return BikeCopy.quality_of(_quality.value)
+	return _quality.quality()
 
 
 ## Moves the quality slider (tests).
 func set_quality(q: float) -> void:
-	_quality.value = q
+	_quality.set_quality(q)
 
 
 func _press_order() -> void:

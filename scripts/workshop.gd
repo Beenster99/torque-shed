@@ -100,6 +100,7 @@ var _dash_dirty := true
 var _mats := {}
 var radio: ShedRadio
 var dyno_room: DynoRoom     # the tuning room through the back wall
+var pump_view: ShedPumpView   # the petrol pump on the front wall, beside the roller door
 var sales_office: SalesOffice   # the showroom and office east of the paint shop
 var coffee_shop: CoffeeShopBuilding   # the cafe next door, west of the storage room
 var paint_bay: PaintBayRoom   # the paint mixing bay off the paint shop
@@ -241,6 +242,9 @@ func build() -> void:
 	dyno_room = DynoRoom.new()
 	add_child(dyno_room)
 	dyno_room.build(self)
+	pump_view = ShedPumpView.new()
+	add_child(pump_view)
+	pump_view.build(self)
 	_build_sales_office()
 	_build_coffee_shop()
 	_crew_screen = Dashboard.new("crew", CREW_SCREEN)

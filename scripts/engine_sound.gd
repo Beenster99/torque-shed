@@ -3,9 +3,12 @@ extends Node3D
 ## A bike's engine as you hear it: the baked loops of its EngineBank played on 3D players, the
 ## exhaust side at the tail pipe and the engine/intake side at the airbox, crossfaded and pitched
 ## to the revs and the throttle. On top: pops and burbles when the throttle snaps shut at high
-## revs (more from loud pipes), a blip-and-bang on downshifts, the quickshifter's crisp cut or a
-## clutch shift, the gearbox's own shift sound with a recorded gear lever on top, the starter or kick start, and the
-## backfire's flame. Used by the ridden bike, other players' bikes and the dyno.
+## revs (more from loud pipes) and the backfire's flame; every gear change, up or down, engine
+## running or not, is the box's own mechanical click or clunk (heavier into first and on a big
+## bike, lighter up the box and on a small one, a soft click finding neutral) with a recorded
+## gear lever on top, and nothing else; and the starter motor cranking it over (or the kick
+## start), the engine catching and settling to idle. Used by the ridden bike, other players'
+## bikes, customers' bikes, the truck and the dyno.
 
 signal backfired(strength: float)
 
@@ -17,12 +20,17 @@ const VIEW_MIX := {"rider": [0.75, 1.3], "chase": [1.0, 0.7], "remote": [1.0, 0.
 ## [dB, lowest pitch, highest pitch]. The quickshifter's slick tick is light and high, a sports
 ## box clicks as recorded, a basic or old box clunks low and heavy.
 const SHIFT_FEEL := {"slick": [-10.0, 1.12, 1.24], "click": [-6.0, 0.95, 1.06], "clunk": [-3.0, 0.76, 0.88]}
+## How loud each step of a gear change is (dB): into first the loudest clunk, finding neutral
+## a soft click.
+const STEP_DB := {"first": 0.0, "low": -3.0, "high": -5.0, "down": -2.0, "neutral": -9.0}
+## Seconds the starter takes to fade once the engine fires (or the button's let go).
+const STARTER_FADE := 0.06
 
 var rpm := 0.0
 var throttle := 0.0
 var running := true
 var gear := 1
-var speed := 0.0              # m/s, so it knows when it's dropping into first at a standstill
+var speed := 0.0              # m/s
 var cranking := false         # the starter is turning it over (set by the owner)
 var infer_cranking := false   # other players' bikes: guess cranking from the revs rising with the engine off
 var view := "remote":
@@ -37,7 +45,12 @@ var flame: ExhaustFlame
 ## Counters, for tests and the HUD.
 var pops := 0
 var shifts := 0
-var last_shift := ""
+var last_shift := ""          # the box's feel on the last change ("slick", "click", "clunk")
+var last_step := ""           # and which step it was (EngineSynth.GEAR_STEPS)
+var gear_sounds := 0          # gear-change clicks and clunks played
+var starts := 0               # starter (or kick) sounds played
+var catches := 0              # the engine catching
+var last_start: AudioStream   # the starter take played last
 ## Recorded gear-lever sounds played (tests).
 var lever_sounds := 0
 
@@ -51,14 +64,17 @@ var _lever: AudioStreamPlayer3D
 var _rng := RandomNumberGenerator.new()
 var _load := 0.0              # smoothed throttle as the sound hears it
 var _level := 0.0             # fades the engine in as it catches and out as it dies
-var _blip := 0.0              # a downshift's throttle blip
+var _blip := 0.0              # the bark as it catches
 var _cut := 0.0               # ignition cut: quickshifter or clutch in
 var _last_gear := -1
 var _overrun := 0.0           # seconds since the throttle shut with the revs up
-var _bang_in := -1.0          # a downshift bang due in this many seconds
+var _since_crank := 9.0       # seconds since the starter last turned it over
 var _was_running := false
 var _was_cranking := false
 var _last_rpm := 0.0
+var _starter: AudioStreamPlayer3D   # playing the starter now
+var _starter_stream: AudioStream
+var _catch_t := 1.0           # seconds since it caught: the running sound comes in a touch slower
 var _crank_guess := 0.0
 var _bus_t := 0.0
 var _bus := "Engines"
@@ -170,7 +186,9 @@ func _process_body(delta: float) -> void:
 	_blip = maxf(_blip - delta * 6.0, 0.0)
 	_cut -= delta
 	var alive := 1.0 if running else 0.0
-	_level += (alive - _level) * (1.0 - exp(-delta * (14.0 if running else 4.0)))
+	_catch_t += delta
+	var rise := 5.0 if _catch_t < 0.3 else 14.0   # just caught: the catch one-shot carries it
+	_level += (alive - _level) * (1.0 - exp(-delta * (rise if running else 4.0)))
 	# Below idle (stalling, switched off) the note dies away with the revs.
 	var idle: float = spec["idle"]
 	var life := _level * clampf((rpm - idle * 0.25) / (idle * 0.5), 0.0, 1.0)
@@ -218,28 +236,38 @@ func _drive_layer(layer: String, want: Dictionary) -> void:
 		p.pitch_scale = clampf(pitch, 0.05, 4.0)
 
 
-## Gear changes, pops, bangs, the starter: the things that happen rather than hum.
+## Gear changes, pops, the starter: the things that happen rather than hum.
 func _events(delta: float) -> void:
-	# Starter and catching.
+	# The starter (or the kick), fading out once it fires or the button's let go.
 	if cranking and not _was_cranking and not running:
-		_play(_oneshot_en, "starter", 0.0, 1.0)
+		_starter = _play(_oneshot_en, "starter", 0.0, _rng.randf_range(0.97, 1.03))
+		_starter_stream = _starter.stream if _starter else null
+		if _starter:
+			starts += 1
+			last_start = _starter_stream
 	_was_cranking = cranking
-	if running and not _was_running:
-		_blip = 0.8   # it catches with a bark
+	_since_crank = 0.0 if cranking else _since_crank + delta
+	if _starter and (not cranking or running):
+		if not _starter.playing or _starter.stream != _starter_stream:
+			_starter = null
+		else:
+			_starter.volume_db -= 60.0 * delta / STARTER_FADE
+			if _starter.volume_db < volume_db - 60.0:
+				_starter.stop()
+				_starter = null
+	# Catching off the starter: the first ragged firings and the revs flaring and settling.
+	if running and not _was_running and _since_crank < 0.5:
+		if _play(_oneshot_ex, "catch", 0.0, _rng.randf_range(0.97, 1.03)):
+			catches += 1
+		_catch_t = 0.0
+		_blip = 0.3
 	_was_running = running
-	# Shifts.
+	# Gear changes: every one a click or a clunk of the box, engine running or not.
 	if _last_gear < 0:
 		_last_gear = gear
-	if gear != _last_gear and gear == 1 and absf(speed) < 1.5:
-		_play(_oneshot_en, "neutral", -2.0, 1.0)   # clunk, into first from a standstill
-		_lever_sound("clunk")
-	elif gear != _last_gear and running:
-		_shift(gear > _last_gear)
+	if gear != _last_gear:
+		_shift(_last_gear, gear)
 	_last_gear = gear
-	if _bang_in >= 0.0:
-		_bang_in -= delta
-		if _bang_in < 0.0:
-			_pop("bang", 1.0)
 	# Overrun: the throttle shut with the revs up.
 	if running and throttle < 0.08 and _cut <= 0.0:
 		_overrun += delta
@@ -254,31 +282,32 @@ func _events(delta: float) -> void:
 		_overrun = 0.0
 
 
-func _shift(up: bool) -> void:
+## A gear change from `from` to `to` (0 is neutral): the box's click or clunk for that step with
+## the recorded lever on top, and nothing else (no pops, bangs or blips). Going up with the
+## engine running, the drive's cut for a blink as the clutch comes in (a quickshifter cuts the
+## spark for less).
+func _shift(from: int, to: int) -> void:
 	shifts += 1
 	var qs: bool = spec["quickshifter"]
-	var style: Dictionary = EngineSynth.EXHAUSTS[spec["exhaust"]]
-	var pops_amt: float = style["pops"]
-	if up:
-		# A quickshifter cuts the spark for a blink, which cracks out of a loud pipe; a clutch
-		# shift lets the revs drop as the lever comes in.
+	var step := EngineSynth.gear_step(from, to)
+	if running and to > from and from > 0:
 		_cut = 0.05 if qs else 0.12
-		if qs and _rng.randf() < 0.25 + 0.25 * pops_amt:
-			_pop("pop", 0.7)
-	else:
-		# Downshift: blip the throttle (the bark), then the overrun bangs.
-		if rpm > float(spec["idle"]) * 1.4:
-			_blip = 1.0
-			if _rng.randf() < 0.2 + 0.25 * pops_amt:
-				_bang_in = 0.12
 	last_shift = "slick" if qs else str(spec["shift"])
-	_play(_oneshot_en, "shift", -3.0, _rng.randf_range(0.95, 1.05))
-	_lever_sound(last_shift)
+	last_step = step
+	var kind := "neutral" if step == "neutral" else "shift_" + step
+	if bank and bank.recorded_shots.has("shift") and step != "neutral":
+		kind = "shift"
+	if _play(_oneshot_en, kind, float(STEP_DB.get(step, -3.0)), _rng.randf_range(0.96, 1.04)):
+		gear_sounds += 1
+	# The lever: a light tick finding neutral, a clunk into first, else the box's own feel.
+	var feel := "slick" if step == "neutral" else ("clunk" if step == "first" else last_shift)
+	_lever_sound(feel, -8.0 if step == "neutral" else 0.0, lerpf(1.05, 0.93, EngineSynth.gear_heft(spec)))
 
 
 ## The recorded gear lever and selector for this feel ("slick", "click", "clunk") on top of the
-## made shift sound: a different take each time (Sfx picks them), pitched to the feel.
-func _lever_sound(feel: String) -> void:
+## made shift sound: a different take each time (Sfx picks them), pitched to the feel and by
+## `pitch` (lower for a heavier box), `db` louder or quieter.
+func _lever_sound(feel: String, db := 0.0, pitch := 1.0) -> void:
 	var sfx := get_node_or_null("/root/Sfx")
 	if _lever == null or sfx == null or not sfx.has_method("pick"):
 		return
@@ -287,13 +316,13 @@ func _lever_sound(feel: String) -> void:
 		return
 	var f: Array = SHIFT_FEEL.get(feel, SHIFT_FEEL["click"])
 	_lever.stream = s
-	_lever.volume_db = float(f[0]) + volume_db
-	_lever.pitch_scale = _rng.randf_range(float(f[1]), float(f[2]))
+	_lever.volume_db = float(f[0]) + db + volume_db
+	_lever.pitch_scale = _rng.randf_range(float(f[1]), float(f[2])) * pitch
 	_lever.play()
 	lever_sounds += 1
 
 
-## An overrun pop, a downshift bang or a backfire crack, with the flame for the loud ones.
+## An overrun pop or a backfire crack (or a bang), with the flame for the loud ones.
 func _pop(kind: String, strength: float) -> void:
 	pops += 1
 	_play(_oneshot_ex, kind, linear_to_db(strength), _rng.randf_range(0.9, 1.1))
@@ -305,12 +334,14 @@ func _pop(kind: String, strength: float) -> void:
 			flame.flash(big * strength)
 
 
-func _play(pool: Array, kind: String, db: float, pitch: float) -> void:
+## Plays a one-shot of `kind` from the bank on the next player in `pool`; the player, or null
+## if it isn't baked yet.
+func _play(pool: Array, kind: String, db: float, pitch: float) -> AudioStreamPlayer3D:
 	if bank == null or pool.is_empty():
-		return
+		return null
 	var s := bank.oneshot(kind, _rng)
 	if s == null:
-		return
+		return null
 	var p: AudioStreamPlayer3D
 	if pool == _oneshot_ex:
 		p = pool[_next_ex % pool.size()]
@@ -322,6 +353,7 @@ func _play(pool: Array, kind: String, db: float, pitch: float) -> void:
 	p.volume_db = db + volume_db + (2.0 * (float(spec["loud"]) - 1.0) if pool == _oneshot_ex else 0.0)
 	p.pitch_scale = pitch
 	p.play()
+	return p
 
 
 ## Keeps the listening camera tracked for doppler, and in the shed or out in the open picks the shed sounds' room and distance buses, when there are any.
@@ -339,6 +371,17 @@ func _update_bus() -> void:
 	_bus = bus
 	for p in find_children("*", "AudioStreamPlayer3D", true, false):
 		p.bus = bus
+
+
+## The gear a bike ridden along by the game (a customer, another rider on the road) is in at
+## `speed` m/s, a gear for every `per` m/s up to `top`, held a little past each change point so
+## hovering at one doesn't click it up and down over and over.
+static func gear_for_speed(current: int, speed: float, per: float, top: int) -> int:
+	var want := clampi(1 + int(maxf(speed, 0.0) / per), 1, top)
+	if current < 1 or want == current:
+		return want
+	var edge := float(maxi(want, current) - 1) * per
+	return current if absf(speed - edge) < per * 0.15 and absi(want - current) == 1 else want
 
 
 ## How many loop players are sounding right now (tests).

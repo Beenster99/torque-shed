@@ -8,12 +8,15 @@ extends RefCounted
 ## card (BikeOrderPanel):
 ##   copy_order      buys every part on its build from the parts computer's catalogue, each at
 ##                   what that player pays for it there (Money.buy_price: Haggler counts), out of
-##                   their own money. They're boxed outside the roller door in its colours straight
-##                   away; whatever the delivery area hasn't room for waits on order (Shed.on_order)
-##                   and comes as soon as there is room. The card's quality slider (Simon: "Add a
-##                   slider for bike quality when ordering one into the shed") orders it anywhere
-##                   from worn-out used parts up to new: the parts come in that condition, unboxed
-##                   when they're used, for less (see used_cond and price_factor). The request
+##                   their own money. The card's quality slider (Simon: "Add a slider for bike
+##                   quality when ordering one into the shed") orders it anywhere from worn-out used
+##                   parts up to new. New, it comes built (Simon: "when i order a new bike it should
+##                   come ready made, not as parts"): put together in its colours, paint and fit,
+##                   fluids in and at least half a tank (Shed.deliver_ready_bike), left in the yard
+##                   by the roller door or, with that full, in a free bay. Used, the parts come in
+##                   that condition, for less (see used_cond and price_factor), laid out outside
+##                   the roller door straight away; whatever the delivery area hasn't room for
+##                   waits on order (Shed.on_order) and comes as soon as there is room. The request
 ##                   carries "quality" (0 worn .. 1 new); the host checks it and prices it itself.
 ##   copy_blueprint  keeps the bike as a blueprint (its parts, their colours, its paint and fit),
 ##                   named after it, to build from or order the usual way ({menu}, Blueprints).
@@ -29,7 +32,8 @@ extends RefCounted
 ## The parts that wear a bike's paint when it isn't the shed's (as SalesView._bike_look draws them).
 const PAINTED: Array[String] = ["tank", "fairing"]
 const NAME_MAX := 28
-const DELIVERY := "Straight away, boxed outside the roller door. Whatever won't fit in the delivery area waits on order and comes as soon as there's room."
+const DELIVERY := "Straight away, laid out outside the roller door. Whatever won't fit in the delivery area waits on order and comes as soon as there's room."
+const DELIVERY_BUILT := "Straight away, built and ready to ride with the oil and brake fluid in and at least half a tank, in the yard by the roller door (or a free bay when that's full)."
 ## The quality slider: from worn (0) to new (1), in steps of this.
 const QUALITY_STEP := 0.05
 ## What the worst used parts cost, as a share of the new price (it rises in step to new).
@@ -146,9 +150,14 @@ static func quality_name(quality: float) -> String:
 ## The slider's line: "Used: about 68% condition, unboxed, 65% of the new price".
 static func quality_text(quality: float) -> String:
 	if is_new(quality):
-		return "New: boxed, at the full price"
+		return "New: built and ready to ride, at the full price"
 	return "%s: about %d%% condition, unboxed, %d%% of the new price" % [quality_name(quality),
 		roundi(BikeBuild.part_health(used_cond(quality)) * 100.0), roundi(price_factor(quality) * 100.0)]
+
+
+## When and how an order at `quality` comes, for the card.
+static func delivery_text(quality: float) -> String:
+	return DELIVERY_BUILT if is_new(quality) else DELIVERY
 
 
 static func total(rows: Array) -> int:
@@ -216,6 +225,8 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "There's nothing on it to order."
 			if paid < cost:
 				return "That's %s now: you paid %s." % [TvChannels.money_text(cost), TvChannels.money_text(paid)]
+			if is_new(quality) and Shed.ready_bike_place() == null:
+				return "There's nowhere to leave it built: the yard by the roller door and every bay are full. Move a bike first, or order it used."
 		"copy_blueprint":
 			if Shed.blueprints.size() >= Shed.MAX_BLUEPRINTS:
 				return "There are %d blueprints already. Delete one first ({menu}, Blueprints)." % Shed.MAX_BLUEPRINTS
@@ -236,6 +247,13 @@ static func apply(peer: int, action: Dictionary) -> String:
 			if paid > cost:
 				Shed.give_cash(peer, paid - cost, "Order change")
 			var by := Shed.orderer_name(peer)
+			if used.is_empty():
+				# New: it comes built, ready to ride.
+				var place: Dictionary = Shed.ready_bike_place()
+				var id := Shed.deliver_ready_bike(plan, place, cost, by)
+				var at := "in the yard by the roller door" if int(place["bay"]) < 0 else "in bay %d" % (int(place["bay"]) + 1)
+				return "Ordered one of %s for %s: it's %s, built and ready to ride with %d%% of a tank." % [str(plan["name"]),
+					TvChannels.money_text(cost), at, roundi(Shed.build_of(id).fuel_litres / maxf(Shed.build_of(id).fuel_capacity, 0.01) * 100.0)]
 			var colors: Dictionary = plan.get("colors", {})
 			var boxed := 0
 			for r in rows:
@@ -248,9 +266,9 @@ static func apply(peer: int, action: Dictionary) -> String:
 					if not cond.is_empty():
 						o["used"] = cond
 					Shed.on_order.append(o)
-			var said := "Ordered one of %s%s: %d parts for %s." % [str(plan["name"]), "" if used.is_empty() else " (%s)" % quality_name(quality).to_lower(),
+			var said := "Ordered one of %s (%s): %d parts for %s." % [str(plan["name"]), quality_name(quality).to_lower(),
 				rows.size(), TvChannels.money_text(cost)]
-			var where := "boxed" if used.is_empty() else "laid out"
+			var where := "laid out"
 			if boxed == rows.size():
 				said += " They're %s outside the roller door." % where
 			else:

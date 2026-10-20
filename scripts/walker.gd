@@ -163,6 +163,8 @@ var _wash_send := 0.0
 var _wash_aim_send := 0.0
 var _wash_aim_sig := ""
 var _wash_resync := 0.0
+var _pump_bike := 0          # the bike you've the shed pump's trigger squeezed on, or 0
+var _pump_sent := 0          # when it was squeezed (msec), to give the host time to start
 ## Polishing and ceramic coating a bike with the detailing controls up (F with the polisher on a
 ## washed bike in the wash bay; see DetailMode and DetailJob).
 var detail := DetailMode.new(self)
@@ -880,6 +882,8 @@ func _update_target() -> void:
 			# The shed's own switch says true; a side room's says which room.
 			var room = c.get_meta("light_switch")
 			t = {"kind": "lights", "room": room if room is String else ""}
+		elif c.has_meta("shed_pump"):
+			t = {"kind": "shed_pump"}   # the petrol pump on the shed's front wall (ShedPump)
 		elif c.has_meta("dyno_kit"):
 			t = {"kind": "dyno_kit", "kit": str(c.get_meta("dyno_kit")), "point": int(c.get_meta("point", 0))}
 		elif c.has_meta("whiteboard"):
@@ -1518,6 +1522,12 @@ func _make_plan() -> Dictionary:
 		return _tray_plan()
 	if PaintBay.carrying(me) or kind == "paint_bay":
 		return _bay_plan()
+	if kind == "shed_pump" or ShedPump.holder() == me:
+		# The shed's petrol pump (with the nozzle in your hand, that's all you can do).
+		var pp := ShedPump.plan_for(target, me)
+		if not pp.is_empty():
+			pp["blocked"] = Shed.check(me, pp["action"])
+		return pp
 	if kind == "":
 		return {}
 	if kind == "dyno_kit" or Shed.hose_holder() == me:
@@ -2405,6 +2415,8 @@ func _describe() -> String:
 					lines.append("Not in here: " + why)
 				elif which == "general" and PartsDB.bin_for(str(Shed.items[held]["part"])) != "general":
 					lines.append("It could be recycled instead, for more XP.")
+	if kind == "shed_pump" or ShedPump.holder() == Shed.me():
+		lines.append_array(ShedPump.describe(target, Shed.me()))
 	var looked := looked_at_furniture() if Shed.held_by(Shed.me()) == 0 and Shed.moving(Shed.me()) == 0 else 0
 	if looked != 0 and Shed.scrappable(Shed.furniture[looked]) and Shed.check(Shed.me(), {"a": "scrap", "furniture": looked}) == "":
 		lines.append("Hold %s: scrap it for good%s" % [_keys("scrap"), ", and drop what's on it" if _has_parts_on(looked) else ""])
@@ -2591,6 +2603,8 @@ func _update_work(delta: float) -> void:
 	if detail.active():
 		detail.step(delta)
 		return
+	if not use_alt and _pump_step(plan_now):
+		return
 	if not use_alt and _acting() and not _need_release and tool == "polisher" and wash_target() != 0 and Shed.held_by(Shed.me()) == 0:
 		Shed.feedback.emit("Press {interact} to bring up the detailing controls and get set at the bike.", false)
 		_need_release = true
@@ -2673,6 +2687,32 @@ func _update_work(delta: float) -> void:
 		progress = 0.0
 		_need_release = true
 		_send_status("")
+
+
+## The shed pump's trigger: squeezed on a bike with the nozzle in your hand, the petrol runs
+## (the host pours it, see ShedPump.process) until you let go, or it cuts off when the tank's
+## full or the business can't pay for more; then let go before squeezing again. True while it
+## has the work button.
+func _pump_step(plan_now: Dictionary) -> bool:
+	var me := Shed.me()
+	if _pump_bike != 0:
+		var squeezed := _acting() and ShedPump.holder() == me
+		var cut_off := ShedPump.pouring() != _pump_bike and Time.get_ticks_msec() - _pump_sent > 600
+		if not squeezed or cut_off:
+			if squeezed:
+				_need_release = true
+			else:
+				Shed.request({"a": "pump_pour", "on": false})
+			_pump_bike = 0
+			_send_status("")
+		return true
+	if not plan_now.get("pour", false) or not _acting() or _need_release or plan_now.get("blocked", "") != "":
+		return false
+	_pump_bike = int(plan_now["action"]["bike"])
+	_pump_sent = Time.get_ticks_msec()
+	Shed.request(plan_now["action"])
+	_send_status("Filling %s with petrol" % str(Shed.bikes.get(_pump_bike, {}).get("name", "a bike")))
+	return true
 
 
 ## The tyre changer piece of work under way, if any: the furniture id of the changer.
@@ -3533,7 +3573,7 @@ func _scale_time(p: Dictionary) -> void:
 	if p.is_empty() or p.get("coverage", false) or not p.has("time"):
 		return
 	var a := str(p["action"].get("a", ""))
-	if a in ["computer", "tuning", "sales_pc", "write_label", "wash", "radio"]:
+	if a in ["computer", "tuning", "sales_pc", "write_label", "wash", "radio", "pump_pour"]:
 		return
 	p["time"] = float(p["time"]) * Progress.time_mult(Shed.me(), tool, p["action"])
 
@@ -3627,6 +3667,8 @@ func _update_held_view() -> void:
 	var bay := PaintBay.held(Shed.me())
 	if not bay.is_empty():
 		sig = "bay:%s:%s" % [str(bay), str(PaintBay.held_tin(Shed.me()).get("code", ""))]
+	if ShedPump.holder() == Shed.me():
+		sig = "nozzle"   # the shed pump's nozzle, drawn in your hand by the pump (ShedPumpView)
 	if is_instance_valid(_held_view) and held != 0:
 		_held_view.rotation.y = 0.5 + hold_turn   # turned in your hands as you turn it
 	if sig == _held_sig:
@@ -3636,7 +3678,7 @@ func _update_held_view() -> void:
 		_held_view.queue_free()
 		_held_view = null
 	if _tool_view:
-		_tool_view.visible = held == 0 and tray.is_empty()
+		_tool_view.visible = held == 0 and tray.is_empty() and sig != "nozzle"
 	if not tray.is_empty():
 		# A tray from the cafe, carried in both hands in front of you.
 		_held_view = CoffeeView.tray_model(tray["items"])
@@ -3685,6 +3727,7 @@ func _set_tool_view() -> void:
 		# Held up to read, face towards you.
 		_tool_view.position = Vector3(0.2, -0.2, -0.42)
 		_tool_view.rotation = Vector3(0.35, -0.25, 0.0)
+	_tool_view.visible = ShedPump.holder() != Shed.me()
 	camera.add_child(_tool_view)
 
 

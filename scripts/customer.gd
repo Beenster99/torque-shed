@@ -526,7 +526,7 @@ func _ride(delta: float, pts: PackedVector3Array) -> void:
 		_model.update_pose_from(steer, _spin, _spin, 0.0, 0.0, 0.0, clampf(_roll / MAX_LEAN, -1.0, 1.0) * 0.6)
 	if _sound:
 		_sound.speed = _speed
-		_sound.gear = clampi(1 + int(_speed / 3.0), 1, 4)
+		_sound.gear = EngineSound.gear_for_speed(_sound.gear, _speed, 3.0, 4)
 		_sound.throttle = 0.15 if backwards else clampf(0.25 + (want - _speed) * 0.2, 0.1, 0.8)
 		_sound.rpm = lerpf(_build.idle_rpm, _build.redline * 0.5, clampf(fmod(_speed, 3.0) / 3.0 * 0.7 + 0.2, 0.0, 1.0)) \
 			if _speed > 0.5 else _build.idle_rpm

@@ -337,8 +337,7 @@ func spec_line(id: String) -> String:
 		"disc":
 			bits = [p["type"], "%d mm" % int(p["diameter"])]
 			if str(p.get("style", "")) == "drum":
-				bits.append({"sls": "one leading shoe", "tls": "two leading shoes", "4ls": "four leading shoes"}.get(str(p.get("shoes", "sls")), "leading shoe")
-					+ ", shoes fade from %d °C" % roundi(BikeHeat.DRUM_FADE))
+				bits.append({"sls": "one leading shoe", "tls": "two leading shoes", "4ls": "four leading shoes"}.get(str(p.get("shoes", "sls")), "leading shoe"))
 			bits.append(BikeHeat.cooling_text(p))
 			bits.append("%.1f mm thick new, MOT min %.1f mm" % [MotTest.DISC_NEW, MotTest.DISC_MIN])
 		"caliper":
@@ -346,7 +345,7 @@ func spec_line(id: String) -> String:
 		"pads":
 			var temps := BikeHeat.pad_temps(p)
 			bits = [p["type"], "friction %.2f" % p["mu"], "bite fully from %d °C (%d%% cold)" % [roundi(float(temps[0])), roundi(float(temps[1]) * 100.0)],
-				"fade from %d °C" % roundi(float(temps[2])), "%.1f mm new, MOT min %.1f mm" % [MotTest.PAD_NEW, MotTest.PAD_MIN]]
+				"%.1f mm new, MOT min %.1f mm" % [MotTest.PAD_NEW, MotTest.PAD_MIN]]
 		"master":
 			bits = [p["type"], "leverage %.2f" % p["ratio"]]
 		"tank":

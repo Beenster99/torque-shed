@@ -384,19 +384,24 @@ static func sound_of(s: AudioStream) -> String:
 	return ""
 
 
-## Out by the roller door and in the wash bay, standing about: the town's bustle (heard full
-## there, by the High Street) has no bell going ding-ding round its loop any more, and nothing in
-## the world is left sounding or ringing on there.
+## Out by the roller door and in the wash bay, standing about: there's no shop bell or door
+## ding anywhere in the background (not in the town's bustle, which is heard full there by the
+## High Street, nor any other ambience loop, nor customers coming in), and nothing in the world
+## is left sounding or ringing on there.
 func test_idle_quiet() -> void:
-	# The detector finds a ding like the town loop's old shop bell, and the loops heard out front
-	# have none.
+	# The detector would catch a shop bell rung into a loop, so finding nothing means there's none.
 	var syn := SfxSynth.new(5)
 	var rung := SfxSynth.make("amb_town", 0)
 	syn.ring(rung, int(SfxSynth.R * 3.0), 2650.0, 0.12, 5.0, true)
-	check(not dings(rung).is_empty(), "a shop bell rung in the town's loop is a ding %s" % str(dings(rung).slice(0, 2)))
-	for sound in ["amb_town", "amb_out", "tone_shed", "hum_fluoro"]:
+	check(not dings(rung).is_empty(), "the ding detector would catch a shop bell in the town's loop %s" % str(dings(rung).slice(0, 2)))
+	for sound in ["amb_town", "amb_out", "tone_shed", "tone_sales", "hum_fluoro", "crickets"]:
 		var found := dings(SfxSynth.make(sound, 0))
-		check(found.is_empty(), "the %s loop has nothing ringing round it %s" % [sound, str(found.slice(0, 3))])
+		check(found.is_empty(), "there's no bell in the %s loop: nothing rings round it %s" % [sound, str(found.slice(0, 3))])
+	# Nobody rings the shop bell or the door chime by themselves: customers come in quietly.
+	for path in ["res://scripts/contracts_view.gd", "res://scripts/sales_view.gd", "res://scripts/customer.gd", "res://scripts/sfx_ambience.gd"]:
+		var src := FileAccess.get_file_as_string(path)
+		check(not src.contains("ring_bell") and not src.contains("Sfx.bell") and not src.contains("\"bell_chime\""),
+			"%s rings no shop bell or door chime" % path.get_file())
 	# In the shed, left alone a while, then stood at each spot.
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	t.add_child(main)

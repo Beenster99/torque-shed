@@ -216,6 +216,8 @@ func _run_all() -> void:
 	await _test_engine_events()
 	await _test_engine_users()
 	_test_engine_samples()
+	await _test_gear_clunks()
+	await _test_starter_variety()
 	print("Shed sound: variants, impacts by material, footsteps by floor, room acoustics, ambience")
 	await _test_shed_sound_variants()
 	await _test_shed_sound_session()
@@ -308,7 +310,7 @@ func _run_all() -> void:
 	print("Handling phase 4: heat (tyre, brake and engine temperatures)")
 	_test_heat_grip_window()
 	_test_heat_warmup()
-	_test_heat_brake_fade()
+	_test_heat_brakes_hold()
 	await _test_heat_cold_tyres()
 	await _test_heat_brakes_ride()
 	await _test_heat_engine_ride()
@@ -541,6 +543,8 @@ func _run_all() -> void:
 	await _test_bike_copy_session()
 	_test_bike_copy_quality()
 	await _test_bike_copy_quality_card()
+	_test_bike_copy_built()
+	await _test_bike_copy_project_card()
 	print("Trip computer and the Adventure Diary (v0.16.0): the sat nav's trip page, the crew's highlights, photos without a stutter, the diary book")
 	_test_adv_diary_trip_maths()
 	await _test_adv_diary_trip_page()
@@ -550,6 +554,9 @@ func _run_all() -> void:
 	await _test_adv_diary_capture_ride()
 	await _test_adv_diary_files()
 	await _test_adv_diary_ride()
+	_test_adv_diary_movie_avi()
+	await _test_adv_diary_movie_states()
+	await _test_adv_diary_movie_ride()
 	print("Live mirrors (v0.16.0): the Mirror detail setting, the reflection following the glass, Off costing nothing")
 	await _test_mirrors_setting()
 	await _test_mirrors_follow_glass()
@@ -565,13 +572,17 @@ func _run_all() -> void:
 	await _test_controls_look_back()
 	print("Riding on adventures (v0.18.0): brakes after a long ride, how often things go wrong, sharp turns slow")
 	await _test_adv_ride_brakes()
-	_test_adv_ride_descent_fade()
+	await _test_adv_ride_descent_brakes()
 	_test_adv_ride_breakdown_odds()
 	await _test_adv_ride_tight_turns()
+	await _test_adv_ride_full_turns_hold()
 	print("Simon's v0.17.0 round: adventures without stutters or long triangles")
 	await _test_adv_perf_triangles()
 	await _test_adv_perf_ride()
 	await _test_adv_perf_ride_stats()
+	print("Simon's v0.19.0 round: a petrol pump on the shed's front wall, on the business")
+	await _test_shed_pump_rules()
+	await _test_shed_pump_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -8564,7 +8575,11 @@ func _test_contract_session() -> void:
 			break
 	var at := Contracts.reception().origin
 	check(arrived[0] and cv.at_counter and Vector2(cv.global_position.x, cv.global_position.z).distance_to(Vector2(at.x, at.z)) < 0.2
-		and start.distance_to(cv.global_position) > 3.0, "they walk to reception and ring the bell")
+		and start.distance_to(cv.global_position) > 3.0, "they walk to reception")
+	await get_tree().process_frame
+	var bell_s: Array = Sfx.sounds("bell") + Sfx.sounds("bell_chime")
+	var bells := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(p): return bell_s.has(p.stream))
+	check(bells.is_empty(), "and no shop bell or door chime rings as they come in (%d)" % bells.size())
 	check(cv.is_in_group("sales_visitor"), "and open the sales office's doors as they come")
 	# Look at them and press F.
 	main.walker.global_position = at - Contracts.reception().basis.z * 1.6 + Vector3(0, 0.1, 0)
@@ -10396,7 +10411,7 @@ func _test_engine_events() -> void:
 	for i in 240:
 		es._process(1.0 / 60.0)
 	check(es.pops == before, "and it settles at idle")
-	# Shifting: an upshift cuts the sound for a blink; a downshift blips (the bark).
+	# Shifting: an upshift cuts the sound for a blink; a downshift just clunks (no blip or bang).
 	es.rpm = 9000.0
 	es.throttle = 1.0
 	es.gear = 4
@@ -10405,7 +10420,7 @@ func _test_engine_events() -> void:
 	es.gear = 3
 	es.throttle = 0.0
 	es._process(1.0 / 60.0)
-	check(es.shifts == 2 and es._blip > 0.5, "a downshift blips the throttle")
+	check(es.shifts == 2 and es.last_step == "down" and es._blip == 0.0 and es._cut <= 0.12, "a downshift clunks, with no blip or bang")
 	es.queue_free()
 	var qs := EngineSound.new()
 	add_child(qs)
@@ -10480,6 +10495,211 @@ func _test_engine_samples() -> void:
 		DirAccess.remove_absolute(dir.path_join(f))
 	DirAccess.remove_absolute(dir)
 	DirAccess.remove_absolute("user://engine_samples")
+
+
+## How much of a buffer's energy is low down (below about 300 Hz): a clunk's thud, not a click.
+func _low_share(x: PackedFloat32Array) -> float:
+	var lp := 0.0
+	var k := 1.0 - exp(-TAU * 300.0 / EngineSynth.RATE)
+	var low := 0.0
+	var total := 0.0
+	for v in x:
+		lp += (v - lp) * k
+		low += lp * lp
+		total += v * v
+	return low / maxf(total, 1e-12)
+
+
+## The share of a buffer's energy after `secs`.
+func _tail_share(x: PackedFloat32Array, secs: float) -> float:
+	var late := 0.0
+	var total := 0.0
+	for i in x.size():
+		total += x[i] * x[i]
+		if i > EngineSynth.RATE * secs:
+			late += x[i] * x[i]
+	return late / maxf(total, 1e-12)
+
+
+## Every gear change is the box's mechanical click or clunk: up or down, engine running or not,
+## on every engine; heavier into first and on a big bike, lighter up the box and on a small one,
+## a soft click finding neutral, and nothing else with it (no pops, bangs or throttle blips).
+func _test_gear_clunks() -> void:
+	check(EngineSynth.gear_step(1, 0) == "neutral" and EngineSynth.gear_step(0, 1) == "first" and EngineSynth.gear_step(2, 1) == "first"
+		and EngineSynth.gear_step(2, 3) == "low" and EngineSynth.gear_step(4, 5) == "high" and EngineSynth.gear_step(4, 3) == "down"
+		and EngineSynth.gear_step(0, 2) == "low", "gear changes are told apart: neutral, into first, low gears, tall gears, down")
+	# A customer or another rider hovering at a change point doesn't click up and down over and over.
+	var gr := 1
+	var changes := 0
+	for i in 200:
+		var was := gr
+		gr = EngineSound.gear_for_speed(gr, 3.0 + 0.3 * sin(i * 0.7), 3.0, 4)
+		changes += 1 if gr != was else 0
+	check(changes <= 1 and EngineSound.gear_for_speed(1, 4.0, 3.0, 4) == 2 and EngineSound.gear_for_speed(2, 2.0, 3.0, 4) == 1,
+		"riders' bikes change gear past the change point, not back and forth at it (%d changes)" % changes)
+	var small := EngineSynth.make_spec("single", 1, 125.0, {"idle": 1500.0, "redline": 10000.0, "shift": "click"})
+	var big := EngineSynth.make_spec("vtwin", 2, 1800.0, {"idle": 900.0, "redline": 6000.0, "shift": "clunk"})
+	check(EngineSynth.gear_heft(big) > EngineSynth.gear_heft(small) + 0.4,
+		"a big V-twin's box is heavier than a little single's (%.2f, %.2f)" % [EngineSynth.gear_heft(big), EngineSynth.gear_heft(small)])
+	var big_first := EngineSynth.render_gear(big, "first")
+	var small_high := EngineSynth.render_gear(small, "high")
+	check(_low_share(big_first) > _low_share(small_high) * 1.5 and _tail_share(big_first, 0.03) > _tail_share(small_high, 0.03),
+		"a big bike clunks into first, low and long; a small one clicks up the box (%.2f vs %.2f low)" % [_low_share(big_first), _low_share(small_high)])
+	var mid := EngineSynth.make_spec("inline", 4, 600.0, {"idle": 1100.0, "redline": 14000.0, "shift": "click"})
+	check(_low_share(EngineSynth.render_gear(mid, "first")) > _low_share(EngineSynth.render_gear(mid, "high")),
+		"and on the same bike first is heavier than the tall gears")
+	check(_rms(EngineSynth.render_gear(mid, "neutral")) < _rms(EngineSynth.render_gear(mid, "low")) * 0.5, "finding neutral is a soft click")
+	# Every engine's every step: a short metallic knock, done within a fifth of a second.
+	var short := true
+	var heard := true
+	for layout in ["single", "twin", "parallel", "vtwin", "boxer", "triple", "inline", "2stroke"]:
+		var sp := EngineSynth.make_spec(layout, 2 if layout in ["twin", "parallel", "vtwin", "boxer"] else (3 if layout == "triple" else (4 if layout == "inline" else 1)), 650.0)
+		for step in EngineSynth.GEAR_STEPS:
+			var x := EngineSynth.render_gear(sp, step, 2)
+			var top := 0.0
+			for v in x:
+				top = maxf(top, absf(v))
+			heard = heard and top > 0.05
+			short = short and _tail_share(x, 0.2) < 0.01
+	check(heard and short, "every engine's gear changes are heard and over in a moment, a knock and not a ring")
+	# Played: every change up and down, with the engine off too, is a click or a clunk and
+	# nothing else.
+	for sp: Dictionary in [small, big]:
+		var es := EngineSound.new()
+		add_child(es)
+		es.setup_spec(sp)
+		es.bank.bake_now()
+		es.running = false
+		es.gear = 0
+		es._process(1.0 / 60.0)
+		es.gear = 1
+		es._process(1.0 / 60.0)
+		var first_ok: bool = es.gear_sounds == 1 and es.last_step == "first" and es.bank.oneshots["shift_first"].has(es._oneshot_en[0].stream)
+		check(first_ok, "with the engine off, into first still clunks (%s, %d)" % [sp["layout"], es.gear_sounds])
+		es.running = true
+		es.rpm = float(sp["redline"]) * 0.7
+		es.throttle = 1.0
+		var pops := es.pops
+		var steps := []
+		for g in [2, 3, 4, 5, 4, 3, 2, 1, 0]:
+			es.gear = g
+			es._process(1.0 / 60.0)
+			steps.append(es.last_step)
+		for i in 30:
+			es._process(1.0 / 60.0)
+		check(es.gear_sounds == 10 and es.lever_sounds == 10 and es.pops == pops and es._blip == 0.0,
+			"every change up and down the box clicks or clunks, with the lever, and nothing pops or blips (%d sounds, %s)" % [es.gear_sounds, str(steps)])
+		check(steps == ["low", "low", "high", "high", "down", "down", "down", "first", "neutral"], "each change sounds its step %s" % str(steps))
+		es.queue_free()
+	await get_tree().process_frame
+
+
+## The rhythm of a starter's cranking: the time (s) between its loudness peaks as each
+## compression drags the crank down and it springs on, taken from the envelope's first strong
+## self-similarity between 40 and 450 ms.
+func _crank_period(x: PackedFloat32Array) -> float:
+	var hop := int(EngineSynth.RATE * 0.005)
+	var env := PackedFloat32Array()
+	var from := int(EngineSynth.RATE * 0.2)
+	var to := int(EngineSynth.RATE * 0.95)
+	var i := from
+	while i + hop <= to:
+		var e := 0.0
+		for j in hop:
+			e += x[i + j] * x[i + j]
+		env.append(sqrt(e / hop))
+		i += hop
+	var mean := 0.0
+	for v in env:
+		mean += v
+	mean /= env.size()
+	for k in env.size():
+		env[k] -= mean
+	var ac := PackedFloat32Array()
+	var lo := 8
+	var hi := 90
+	for lag in range(lo, hi + 1):
+		var s := 0.0
+		for k in env.size() - lag:
+			s += env[k] * env[k + lag]
+		ac.append(s / (env.size() - lag))
+	var best := 0.0
+	for v in ac:
+		best = maxf(best, v)
+	for k in range(1, ac.size() - 1):
+		if ac[k] >= best * 0.6 and ac[k] >= ac[k - 1] and ac[k] >= ac[k + 1]:
+			return (k + lo) * 0.005
+	return 0.0
+
+
+## Start-ups: each engine turns over in its own way (a single's slow chug, a V-twin's lumpy
+## grind with an old Bendix clank, a four's quick even whirr), small bikes kick-start, every
+## take is a little different, and it catches and settles to idle.
+func _test_starter_variety() -> void:
+	var specs := {
+		"single": EngineSynth.make_spec("single", 1, 450.0, {"idle": 1500.0, "redline": 9000.0}),
+		"twin": EngineSynth.make_spec("parallel", 2, 700.0, {"idle": 1300.0, "redline": 9500.0}),
+		"vtwin": EngineSynth.make_spec("vtwin", 2, 1200.0, {"idle": 900.0, "redline": 6500.0}),
+		"triple": EngineSynth.make_spec("triple", 3, 850.0, {"idle": 1250.0, "redline": 10500.0}),
+		"four": EngineSynth.make_spec("inline", 4, 1000.0, {"idle": 1200.0, "redline": 13500.0}),
+	}
+	var st := {}
+	for k in specs:
+		st[k] = EngineSynth.starter_style(specs[k])
+	check(st["vtwin"]["crank_rpm"] < st["four"]["crank_rpm"] and st["single"]["drag"] > st["four"]["drag"] * 2.0
+		and st["single"]["motor_hz"] > st["vtwin"]["motor_hz"] and st["vtwin"]["bendix"] and not st["four"]["bendix"],
+		"a big V-twin cranks slowly with a Bendix clank, a single lurches, a four spins evenly, a small motor whines higher")
+	var period := {}
+	for k in specs:
+		period[k] = _crank_period(EngineSynth.render_starter(specs[k], false, 1.0, 1))
+	check(period["single"] > period["four"] * 2.0 and period["single"] > period["triple"] and period["triple"] > period["four"],
+		"you hear the compressions: a single's slow chug, a triple's, a four's quick whirr (%s)" % str(period))
+	# Every engine in the catalogue: several distinct ways of turning over, not one for all.
+	var kinds := {}
+	for id in PartsDB.by_kind["engine"]:
+		var b := BikeBuild.new({"engine": id})
+		var s := EngineSynth.starter_style(EngineSynth.spec_from_build(b))
+		kinds["%s|%d|%d" % [s["kick"], roundi(float(s["crank_rpm"]) / 25.0), roundi(float(s["drag"]) * 10.0)]] = true
+	check(kinds.size() >= 6, "the catalogue's engines start in %d different ways" % kinds.size())
+	# Takes differ a little.
+	var a := EngineSynth.render_starter(specs["twin"], false, 1.0, 1)
+	var b2 := EngineSynth.render_starter(specs["twin"], false, 1.0, 2)
+	var dot := 0.0
+	for i in a.size():
+		dot += a[i] * b2[i]
+	var same := dot / maxf(sqrt(_rms(a) * _rms(a) * _rms(b2) * _rms(b2)) * a.size(), 1e-9)
+	check(same < 0.9, "no two starts sound quite alike (%.2f alike)" % same)
+	# Kick-started bikes: the lever's done in a moment, where the starter motor keeps on.
+	var kick_spec := EngineSynth.spec_from_build(BikeBuild.new({"engine": "2stroke_125"}))
+	check(kick_spec["kick"] and EngineSynth.spec_from_build(BikeBuild.new({"engine": "single_250", "gearbox": "four_vintage"}))["kick"]
+		and not EngineSynth.spec_from_build(BikeBuild.new({"engine": "inline_1000"}))["kick"], "small and old singles kick-start; the big four has a button")
+	var kicked := EngineSynth.render_starter(kick_spec, true, 1.0, 1)
+	var pressed := EngineSynth.render_starter(kick_spec, false, 1.0, 1)
+	check(_tail_share(kicked, 0.65) < _tail_share(pressed, 0.65) * 0.2, "a kick spins it over and is done; a starter keeps cranking")
+	# It catches: the revs flare and the catch fades as the running sound takes over.
+	var c := EngineSynth.render_catch(specs["vtwin"], false, 1)
+	check(_rms(c) > 0.01 and _tail_share(c, 0.35) < 0.15, "it catches with a flare of revs that settles")
+	# Played on a bike: a starter take, faded as it fires, then the catch.
+	var es := EngineSound.new()
+	add_child(es)
+	es.setup_spec(specs["triple"])
+	es.bank.bake_now()
+	check(es.bank.oneshots["starter"].size() == 3 and es.bank.oneshots["catch"].size() == 2, "each engine bakes three starter takes and two catches")
+	es.running = false
+	es.rpm = 0.0
+	es.cranking = true
+	es._process(1.0 / 60.0)
+	check(es.starts == 1 and es.bank.oneshots["starter"].has(es.last_start), "pressing the button plays a starter take")
+	for i in 30:
+		es._process(1.0 / 60.0)
+	es.cranking = false
+	es.running = true
+	es.rpm = 1250.0 * 1.3
+	for i in 12:
+		es._process(1.0 / 60.0)
+	check(es.catches == 1 and es._starter == null, "it fires: the starter fades and the engine catches")
+	es.queue_free()
+	await get_tree().process_frame
 
 
 
@@ -13729,6 +13949,7 @@ func _test_sales_part_exchange() -> void:
 	var cond: Dictionary = p["cond"]
 	check(is_equal_approx(float(Shed.items[Shed.item_on(theirs, "frame")]["rust"]), float(cond["frame"]["rust"]))
 		and is_equal_approx(float(Shed.items[Shed.item_on(theirs, "engine")]["wear"]), float(cond["engine"]["wear"])), "in just the state the page showed")
+	check(Shed.build_of(theirs).fuel_litres >= Shed.build_of(theirs).fuel_capacity * Shed.ORDER_FUEL - 0.01, "with at least half a tank of fuel in it")
 	var d: Dictionary = Sales._st()["deals"][0]
 	check(str(d["kind"]) == "px" and int(d["allowance"]) == 2500 and int(d["price"]) == ask
 		and (Sales._st()["collect"] as Array).any(func(c): return int(c.get("visitor", -1)) == pid), "noted as a part-exchange, and they ride ours away")
@@ -14254,8 +14475,9 @@ func _test_tyre_highside() -> void:
 		b.auto_shift = t < 4.8
 		if t >= 4.8:
 			b.gear = 2
-		# Leaned a bit past a road rider's lean (about 33°: see Bike.lean_for_input).
-		b.lean_input = 0.0 if t < 2.5 else 0.8
+		# Leaned well past a road rider's lean (about 37°: see Bike.lean_for_input). At 0.8 (33°) it was
+		# on the edge: it high-sided after some earlier tests and not after others.
+		b.lean_input = 0.0 if t < 2.5 else 0.85
 		if t < 5.0:
 			_hold_speed(b, 13.0)
 		elif t < 5.75:
@@ -15808,6 +16030,8 @@ func _test_coffee_offers() -> void:
 			and str(b["name"]).begins_with(CoffeeShop.first_name(v2)) and int(b["bought"]) == amount and Shed.bike_at_work(bid),
 			"parked where it stood in the cafe car park: %s" % str(b["name"]))
 		check(Shed.build_of(bid).parts.get("engine", "") == v2["bike"]["parts"]["engine"], "the very bike they rode in on")
+		check(Shed.build_of(bid).fuel_litres >= Shed.build_of(bid).fuel_capacity * Shed.ORDER_FUEL - 0.01,
+			"with at least half a tank of fuel (%.1f of %.1f litres)" % [Shed.build_of(bid).fuel_litres, Shed.build_of(bid).fuel_capacity])
 	check(xp_got.has(Progress.XP[CoffeeShop.BUY_XP_KEY]["label"]), "and a bit of XP for the deal %s" % str(xp_got))
 	check(not CoffeeShop.free_parks().has(int(v2["park"])), "its bay isn't free while it stands there")
 	check(Shed.check(me, {"a": "coffee_offer", "visitor": ids[1], "amount": amount}).contains("gone"), "sold, there's nothing more to offer for")
@@ -19312,9 +19536,11 @@ func _test_heat_warmup() -> void:
 	check(p0 < 0.85 and hh.power > p0, "an overheating engine loses power (x%.2f, x%.2f at realism 1)" % [p0, hh.power])
 
 
-func _test_heat_brake_fade() -> void:
-	# Brake fade: repeated hard stops from 30 m/s with 20 s of riding between, organic pads (which
-	# fade soonest) against sintered; then what cold does to race carbon pads.
+func _test_heat_brakes_hold() -> void:
+	# No brake fade (Simon: "remove brake fade"): ten hard stops from 30 m/s with 20 s of riding
+	# between cook the discs, but organic pads and sintered alike keep their full bite. Cold still
+	# matters: race carbon pads barely bite cold.
+	var hottest := {}
 	for pad in ["organic", "sintered"]:
 		var hb := _heat_of({"front_pads": pad}, 15.0)
 		var h: BikeHeat = hb[0]
@@ -19323,7 +19549,7 @@ func _test_heat_brake_fade() -> void:
 		var line := []
 		var worst := 1.0
 		for stop in 10:
-			# One stop at about 1 g (less as it fades), the front brake doing 85% of it.
+			# One stop at about 1 g, the front brake doing 85% of it.
 			var v := 30.0
 			while v > 0.0:
 				var dt := 0.05
@@ -19332,15 +19558,17 @@ func _test_heat_brake_fade() -> void:
 				v -= decel * dt
 			line.append("%d°C x%.2f" % [roundi(h.discs[0]), h.brake_temp_mult(0)])
 			worst = minf(worst, h.brake_temp_mult(0))
+			hottest[pad] = maxf(float(hottest.get(pad, 0.0)), h.discs[0])
 			_heat_run(h, b, 20.0, 25.0, 400.0, 5000.0, 7.0)
 		print("    %s pads, front disc after each stop: %s" % [pad, ", ".join(line)])
 		table_heat[pad] = worst
 		_heat_run(h, b, 300.0, 25.0, 400.0, 5000.0, 7.0)
 		table_heat[pad + "_cooled"] = h.brake_temp_mult(0)
 		print("    ... and after 5 min riding gently: %d°C x%.2f" % [roundi(h.discs[0]), h.brake_temp_mult(0)])
-	check(table_heat["organic"] < 0.8, "organic pads fade after repeated hard stops (bite x%.2f)" % table_heat["organic"])
-	check(table_heat["sintered"] > table_heat["organic"] + 0.1, "sintered pads hold on far longer (x%.2f)" % table_heat["sintered"])
-	check(table_heat["organic_cooled"] > 0.98, "the brakes come back once they cool (x%.2f)" % table_heat["organic_cooled"])
+	check(float(hottest["organic"]) > 300.0, "ten hard stops cook the discs (organic pads' disc %d °C at the hottest)" % roundi(float(hottest["organic"])))
+	check(table_heat["organic"] > 0.999 and table_heat["sintered"] > 0.999,
+		"however hot, the brakes keep their full bite: no fade (organic x%.3f, sintered x%.3f)" % [table_heat["organic"], table_heat["sintered"]])
+	check(table_heat["organic_cooled"] > 0.999, "and still full once they've cooled (x%.3f)" % table_heat["organic_cooled"])
 	var hb := _heat_of({"front_pads": "carbon_race"}, 10.0)
 	var h: BikeHeat = hb[0]
 	var cold := h.brake_temp_mult(0)
@@ -19401,19 +19629,22 @@ func _test_heat_cold_tyres() -> void:
 
 
 func _test_heat_brakes_ride() -> void:
-	# Overcooked brakes fade: the same squeeze on discs at 650 °C stops far longer at realism 0.
+	# No brake fade: the same squeeze on discs at 650 °C stops as short as on warm ones, at realism 0
+	# as at realism 1.
 	var lever := 0.45
 	var normal := await _heat_stop({"front_pads": "organic"}, 0.0, func(_h): pass, lever)
-	var faded := await _heat_stop({"front_pads": "organic"}, 0.0, func(h):
+	var cooked := await _heat_stop({"front_pads": "organic"}, 0.0, func(h):
 		h.discs[0] = 650.0
 		h.pads[0] = 600.0, lever, 22.0)
 	var normal_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(_h): pass, lever)
-	var faded_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(h):
+	var cooked_easy := await _heat_stop({"front_pads": "organic"}, 1.0, func(h):
 		h.discs[0] = 650.0
 		h.pads[0] = 600.0, lever, 22.0)
-	print("    organic pads, the same squeeze from 25 m/s: %.1f m normal, %.1f m faded (realism 0); %.1f vs %.1f m at realism 1" % [normal[0], faded[0], normal_easy[0], faded_easy[0]])
-	check(normal[0] > 0.0 and faded[0] > normal[0] * 1.3, "faded brakes stop far longer (%.1f m against %.1f m)" % [faded[0], normal[0]])
-	check(normal_easy[0] > 0.0 and faded_easy[0] / normal_easy[0] < faded[0] / normal[0], "Riding realism 1 softens the fade")
+	print("    organic pads, the same squeeze from 25 m/s: %.1f m normal, %.1f m on 650 °C discs (realism 0); %.1f vs %.1f m at realism 1" % [normal[0], cooked[0], normal_easy[0], cooked_easy[0]])
+	check(normal[0] > 0.0 and cooked[0] > 0.0 and cooked[0] < normal[0] * 1.02,
+		"650 °C brakes stop as short as warm ones: no fade (%.1f m against %.1f m)" % [cooked[0], normal[0]])
+	check(normal_easy[0] > 0.0 and cooked_easy[0] > 0.0 and cooked_easy[0] < normal_easy[0] * 1.02,
+		"and the same at Riding realism 1 (%.1f m against %.1f m)" % [cooked_easy[0], normal_easy[0]])
 
 
 func _test_heat_engine_ride() -> void:
@@ -20014,13 +20245,13 @@ func _test_brake_details() -> void:
 	check(PartsDB.spec_line("drum_tls_200").contains("cooling poor") and PartsDB.spec_line("drum_tls_200").contains("two leading shoes")
 		and PartsDB.spec_line("solid_240").contains("cooling standard") and PartsDB.spec_line("drilled_280").contains("cooling good"),
 		"drums cool worst, solid discs as standard, drilled ones best (%s)" % PartsDB.spec_line("drum_tls_200"))
-	check(PartsDB.spec_line("sintered").contains("fade from 450") and PartsDB.spec_line("organic").contains("fade from 250"),
-		"pads say when they fade (%s)" % PartsDB.spec_line("sintered"))
+	check(PartsDB.spec_line("sintered").contains("bite fully from 80") and not PartsDB.spec_line("organic").contains("fade")
+		and not PartsDB.spec_line("drum_tls_200").contains("fade"),
+		"pads say when they bite, and nothing says it fades (%s)" % PartsDB.spec_line("sintered"))
 	check(PartsDB.spec_line("six_piston_race").contains("6 pistons"), "a caliper's spec says its pistons")
 	# The heat model reads the same numbers.
-	check(is_equal_approx(BikeHeat.disc_cooling(PartsDB.get_part("drum_sls_180")), 0.5)
-		and float(BikeHeat.pad_temps(PartsDB.get_part("ceramic"), PartsDB.get_part("drum_sls_180"))[2]) == BikeHeat.DRUM_FADE,
-		"shoes in a drum fade early whatever they're made of")
+	check(is_equal_approx(BikeHeat.disc_cooling(PartsDB.get_part("drum_sls_180")), 0.5),
+		"a drum cools at half a solid disc's rate")
 	disc_item["wear"] = 0.5
 	check(Shed.condition_text(disc_item).contains("4.2 mm thick"), "a half-worn disc's condition says 4.2 mm thick (%s)" % Shed.condition_text(disc_item))
 	BikeHeat.fixed_air = 10.0
@@ -20029,8 +20260,8 @@ func _test_brake_details() -> void:
 	print("    " + "\n    ".join(cold))
 	var pad_type := str(PartsDB.get_part(str(Shed.items[Shed.item_on(bike_id, "front_pads")]["part"]))["type"])
 	check(cold.size() == 3 and str(cold[0]).contains("13 °C") and str(cold[0]).contains("cold") and str(cold[1]).contains(pad_type)
-		and str(cold[1]).contains("fade from") and str(cold[2]).contains("N·m"),
-		"looking at a disc: its heat (shed temperature unridden), the pads fitted and when they fade, the caliper and the brake's torque")
+		and str(cold[1]).contains("bite fully from") and not str(cold[1]).contains("fade") and str(cold[2]).contains("N·m"),
+		"looking at a disc: its heat (shed temperature unridden), the pads fitted and when they bite (no fade), the caliper and the brake's torque")
 	# Just ridden hard: the disc is hot, and cools while it stands.
 	var heat := BikeHeat.new()
 	heat.setup(Shed.build_of(bike_id))
@@ -22116,6 +22347,14 @@ func _test_bike_copy_quality_card() -> void:
 	await _bike_copy().test_quality_card()
 
 
+func _test_bike_copy_built() -> void:
+	_bike_copy().test_built()
+
+
+func _test_bike_copy_project_card() -> void:
+	await _bike_copy().test_project_card()
+
+
 
 # ---------------------------------------------------------------------------- trip computer and the Adventure Diary (tests/adventure_diary_tests.gd)
 
@@ -22153,6 +22392,18 @@ func _test_adv_diary_files() -> void:
 
 func _test_adv_diary_ride() -> void:
 	await _adv_diary().test_diary_ride()
+
+
+func _test_adv_diary_movie_avi() -> void:
+	_adv_diary().test_movie_avi()
+
+
+func _test_adv_diary_movie_states() -> void:
+	await _adv_diary().test_movie_states()
+
+
+func _test_adv_diary_movie_ride() -> void:
+	await _adv_diary().test_movie_ride()
 
 
 
@@ -22224,8 +22475,8 @@ func _test_adv_ride_brakes() -> void:
 	await _adv_ride().test_brakes()
 
 
-func _test_adv_ride_descent_fade() -> void:
-	_adv_ride().test_descent_fade()
+func _test_adv_ride_descent_brakes() -> void:
+	await _adv_ride().test_descent_brakes()
 
 
 func _test_adv_ride_breakdown_odds() -> void:
@@ -22234,6 +22485,10 @@ func _test_adv_ride_breakdown_odds() -> void:
 
 func _test_adv_ride_tight_turns() -> void:
 	await _adv_ride().test_tight_turns()
+
+
+func _test_adv_ride_full_turns_hold() -> void:
+	await _adv_ride().test_full_turns_hold()
 
 
 # ---------------------------------------------------------------------------- staff trips for parts (tests/staff_trips_tests.gd)
@@ -22300,3 +22555,17 @@ func _test_adv_perf_ride() -> void:
 
 func _test_adv_perf_ride_stats() -> void:
 	await _adv_perf().test_ride_stats()
+
+
+# ---------------------------------------------------------------------------- the shed's petrol pump (tests/shed_pump_tests.gd)
+
+func _shed_pump() -> RefCounted:
+	return load("res://tests/shed_pump_tests.gd").new(self)
+
+
+func _test_shed_pump_rules() -> void:
+	await _shed_pump().test_rules()
+
+
+func _test_shed_pump_session() -> void:
+	await _shed_pump().test_session()
