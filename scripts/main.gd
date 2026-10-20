@@ -5,6 +5,7 @@ extends Node
 const MAP_SEED := 1234
 const GET_OFF_SPEED := 2.0
 const GET_OFF_DELAY := 0.6  # seconds after getting on before the same button gets you off
+const DIRT_SHOW_EVERY := 5  # ride stats (a second apart) between redraws of the muck on your bike
 
 var world: World
 var workshop: Workshop
@@ -47,6 +48,7 @@ var _dirt_km := 0.0
 var _lap_seen := []           # the ride logger's lap counter: stretches of the test route passed (see ContractTestRide.lap_step)
 var _laps := 0               # laps of it since the last ride stats went
 var _fly_km := 0.0         # distance at speed since the last stats, for dead flies on the front
+var _dirt_shown := 0       # ride stats sent since the muck on your bike was last redrawn
 var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing it on the bike
 var _was_bottomed := [false, false]   # each wheel's suspension bottomed last frame (a kerb or pothole hit)
 var _flat_told := [false, false]      # told the rider this tyre has gone flat, this ride
@@ -605,7 +607,9 @@ func _on_shed_changed() -> void:
 	if not in_session:
 		return
 	trip.sync()
-	workshop.sync_state()
+	if not trip.on_trip():
+		# (Out on an adventure the shed's hidden and still: it's put right on the way home.)
+		workshop.sync_state()
 	_refit_ridden_bikes()
 	_sync_faults()
 	if Recovery.driver() == Shed.me() and not recovery.driving and bike == null and not recovery.just_left(true):
@@ -1093,9 +1097,12 @@ func _send_ride_stats() -> void:
 	_ride_km = 0.0
 	_dirt_km = 0.0
 	_fly_km = 0.0
-	# The muck builds up on the bike as you ride (as the shed has it: a moment behind online).
+	# The muck builds up on the bike as you ride (as the shed has it: a moment behind online),
+	# redrawn every few seconds: it builds up slowly, and redrawing it is a few ms.
 	var riding := Shed.riding(Shed.me())
-	if riding != 0 and Shed.bikes.has(riding) and bike.model:
+	_dirt_shown += 1
+	if riding != 0 and Shed.bikes.has(riding) and bike.model and _dirt_shown >= DIRT_SHOW_EVERY:
+		_dirt_shown = 0
 		bike.model.show_dirt(Dirt.of_bike(riding))
 
 

@@ -173,12 +173,17 @@ func sync() -> void:
 		enter()
 	elif trip_id != 0 and id != trip_id:
 		leave()
-	elif world != null and world.apply_picks(AdventureForks.picks()):
-		_fork_timer = 0.0   # the way's decided: say so straight away
-		if _map and _map.visible:
-			_map.refresh()
+	elif world != null:
+		world.apply_picks_soon(AdventureForks.picks())   # (put together off the main thread: _on_picks_taken)
 	if world != null and trip_id == id and int(Shed.adventure.get("arrived", 0)) != 0 and not moment_done:
 		arrive_moment()
+
+
+## A way picked at a fork is in the world now: say so straight away.
+func _on_picks_taken() -> void:
+	_fork_timer = 0.0
+	if _map and _map.visible:
+		_map.refresh()
 
 
 ## Into the adventure in Shed.adventure.
@@ -205,6 +210,7 @@ func enter() -> void:
 	world.focus = focus_points
 	main.world.add_child(world)
 	world.origin_shifted.connect(_on_shift)
+	world.picks_taken.connect(_on_picks_taken)
 	world.add_child(RoadsideView.new())   # bikes stood at the roadside, and tow straps (see Roadside)
 	world.add_child(AdventureTraffic.new())   # cars, vans, lorries and buses both ways
 	police = AdventurePolice.new()
@@ -271,6 +277,9 @@ func leave() -> void:
 		Shed.request({"a": "dismount", "bike": id, "xf": main.garage_spot(id)})
 		main._stop_riding()
 	_unload()
+	main.workshop.sync_state()   # (left as it was while you were away: see Main._on_shed_changed)
+	if main.contracts_view:
+		main.contracts_view.sync_state()   # and the customers who came in meanwhile
 	if main.walker:
 		main.walker.place(Workshop.walker_spawn(Net.local_slot()))
 	main.camera.snap()
