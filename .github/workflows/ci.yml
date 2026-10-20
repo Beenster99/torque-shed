@@ -25,6 +25,12 @@ jobs:
         run: stdbuf -oL -eL godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn
       - name: Multiplayer test
         run: tests/mp_test.sh
+      - name: Route multiplayer test
+        run: tests/mp_route_test.sh
+      - name: Route baker tests
+        run: |
+          pip install numpy pillow
+          python3 -m unittest discover -s tools -p 'test_*.py'
 
   windows-build:
     needs: test

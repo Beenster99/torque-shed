@@ -18,6 +18,8 @@ signal time_received(hours: float, rate: float)
 signal weather_received(state: String, from: String, blend: float, wet: float)
 ## The host's road traffic (see RoadTraffic.pack): the other bikers out on the roads.
 signal traffic_received(state: PackedFloat32Array)
+## The host's route has moved on to leg `index` (see RouteJourney): everyone swaps their map to it together.
+signal leg_received(index: int)
 
 ## Whether friends outside your network can reach your shed: "" (not hosting), "checking",
 ## "open" (the router opened the port for us via UPnP) or "closed" (it has to be forwarded by hand).
@@ -284,7 +286,17 @@ func _register(info: Dictionary) -> void:
 	var clean := {
 		"name": str(info.get("name", "Rider")).left(24),
 		"color": info.get("color", Color(0.8, 0.1, 0.1)),
+		# Which baked route they are riding ("" for the normal map): everyone in a shed rides the same one.
+		"route": str(info.get("route", "")).left(32),
 	}
+	if clean["route"] != str(local_info.get("route", "")):
+		if is_host():
+			kick(id)
+		else:
+			connection_failed.emit("The host is on a different map or route (%s). Start the game the same way they did." % \
+				("the normal map" if clean["route"] == "" else "route " + str(clean["route"])))
+			leave()
+		return
 	var is_new := not players.has(id)
 	players[id] = clean
 	if is_new:
@@ -323,3 +335,20 @@ func send_traffic(state: PackedFloat32Array) -> void:
 @rpc("authority", "call_remote", "unreliable_ordered")
 func _traffic(state: PackedFloat32Array) -> void:
 	traffic_received.emit(state)
+
+
+## Host only: sends a player away (they were on a different route, say).
+func kick(id: int) -> void:
+	if is_host() and multiplayer.multiplayer_peer:
+		multiplayer.multiplayer_peer.disconnect_peer(id)
+
+
+## Host only: the route is now on leg `index`; everyone swaps to it.
+func send_leg(index: int) -> void:
+	if is_host() and not players.is_empty():
+		_leg_msg.rpc(index)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _leg_msg(index: int) -> void:
+	leg_received.emit(index)

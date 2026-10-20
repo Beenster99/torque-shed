@@ -503,6 +503,20 @@ Tarmac grips best, dirt less, and grass least. The bike's dirt and ride stats kn
 
 The **draw distance** graphics setting decides how far away trees, rocks, buildings and the detailed ground are drawn. Turn it down if the frame rate drops out on the map.
 
+### Real-world routes (experimental)
+
+A **route** is a real stretch of road, baked ahead of time by `tools/route_bake.py` from free open data and ridden instead of the made-up map. It is off by default: start the game with `-- --route=res://data/routes/shodoshima` (a baked Shodoshima, Japan, is included).
+
+- **A long road of a length you choose.** The baker is told a start point and either an end point or a length in km (`--length-km 25`, or `length_km` in an issue file) and plans the road between along real roads, steering towards main roads. The map is made in overlapping 4 km **legs**: the next leg is built on a thread as you near the end of this one, and the map swaps to it under a quick fade, with the bike carried across at the same speed on the same road. The shed is only in the first leg; the shed's own loop runs out into the real road by a short link road.
+- **Satnav.** A panel at the top of the screen guides the route: an arrow for the next turn, how far away it is, the road to turn onto ("Bear left onto Route 27"), the distance to go and the leg you're on. Go more than 45 m off the route and it turns orange and points you back.
+- **Real land.** Heights come from national and global terrain models. Where the land is at sea level there's a **sea** with a sand beach; ride into it and you're fished out and put back on the road. Buildings are the real footprints, built in the same style as the villages (houses, sheds, barns) with level ground under them, facing the nearest road.
+- **Signs at junctions.** Where a road joins another there's a fingerpost naming it, a **give way** sign for riders coming out of it, and "Junction ahead" boards on the main road a little before, listing which side each road is on and where it goes (a crossroads is one board). Roads are called by their real names, or "Route 27", or by their kind.
+- **Guard rails** run along drops and the outside of bends as continuous rails.
+- **Co-op.** Everyone in the shed has to start the game the same way: the host's route and the joiner's must match or the joiner is turned away. The host decides when the crew changes leg, and everyone swaps together; the crew can't join once it has ridden out of the first leg.
+- Roads, bikers and cars and lorries on them are the same as on the normal map. Dirt tracks stay bikes-only.
+
+What a route doesn't have yet: real villages, land cover (forests are still placed from noise), bridges and tunnels as such, and a road-name sign in kanji unless your system has a font for it. See `tools/README.md` for how to bake one.
+
 ### Engine sound
 
 Every bike sounds like the parts it's built from. The engine itself isn't a recording: the sound is worked out from how the engine runs. Each cylinder fires on its own crank angle, so a single thumps, a 360 degree twin beats evenly, a 270 degree parallel twin and a 90 degree V-twin lope, a boxer burbles, a triple warbles with its airbox howling and rasping, a flat-plane four screams evenly and the crossplane 1000 cc four growls. Two-strokes ring-ding at tickover, rattle, and come "on the pipe" in their powerband with a swelling, screaming note. Each firing goes down the header pipes and through the silencer: the **exhaust** decides how much gets out (stock can: quiet and boomy; slip-on; full system; titanium race system; straight pipe: loud and raspy). An open **air filter** (cotton cone, pods, velocity stacks) lets you hear the intake roar. A rusty exhaust blows and rasps, and worn plugs misfire.
@@ -697,6 +711,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/garage_upgrades.gd`, `workshop_upgrades.gd`, `upgrades_panel.gd` | Garage upgrades: the catalogue and rules, building them onto the shed (the extension bays and their bike lifts, the annex and its mezzanine, the crew lounge upstairs), and the parts computer's Garage upgrades page |
 | `scripts/upgrade_looks.gd`, `look_preview.gd` | Garage upgrade colours and styles: how each choice looks on the shed, and the preview room on the Garage upgrades page |
 | `scripts/walker.gd` | First-person player, tools, targeting and hold-to-work |
+| `scripts/route_pack.gd`, `route_journey.gd`, `route_guide.gd`, `satnav_panel.gd` | Real-world routes: a leg of baked land, the whole route and its legs and turns, the satnav's guidance and its panel |
 | `scripts/placement.gd` | Snapping equipment square and flush to walls and corners |
 | `scripts/dashboard.gd`, `shed_tv.gd`, `tv_channels.gd` | The shed's screens and wall TVs, and their channels and pages |
 | `scripts/whiteboard.gd`, `board_data.gd`, `board_print.gd` | The shared whiteboard: drawing on it, pictures from players' PCs, and its marks kept in the shed state; whiteboard posters |

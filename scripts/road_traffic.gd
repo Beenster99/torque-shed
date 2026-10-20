@@ -809,6 +809,12 @@ func clear() -> void:
 	_update_views(0.0)
 
 
+## The map's roads have changed (a new leg of a route): everyone off the old ones, and the new roads worked out.
+func reset() -> void:
+	clear()
+	setup_roads()
+
+
 # ---------------------------------------------------------------------------- drawing
 
 ## Where a vehicle is on the road: in its lane, on the surface.

@@ -226,6 +226,8 @@ func _note_players() -> void:
 		var xf: Transform3D = Transform3D(Basis(Vector3.UP, main.walker.yaw()), main.walker.global_position)
 		if main.bike:
 			xf = _beside(_upright(main.bike.global_transform))
+		if _out_on_route():
+			xf = main.world.spawn_point(0)
 		_note(Shed.me(), _local_name(), xf, int(main.riding_id))
 	for peer in main.remotes:
 		var rp: RemotePlayer = main.remotes[peer]
@@ -234,6 +236,8 @@ func _note_players() -> void:
 			xf = _beside(_upright(xf))
 		else:
 			xf = Transform3D(Basis(Vector3.UP, xf.basis.get_euler().y), xf.origin)
+		if _out_on_route():
+			xf = main.world.spawn_point(0)
 		_note(peer, rp.player_name, xf, rp.riding_bike)
 
 
@@ -246,9 +250,16 @@ func _note(peer: int, player_name: String, xf: Transform3D, riding: int) -> void
 	_players[player_name] = {"xf": xf, "riding": riding, "stats": stats}
 
 
+## Whether the crew is out on a real-world route beyond its first leg, where the map is no longer the one the
+## shed stands on: places saved from there would mean nothing when the shed is opened again, so people are put
+## back at the shed and bikes where the shed last had them.
+func _out_on_route() -> bool:
+	return main != null and main.journey != null and main._leg != 0
+
+
 ## Where the bike `rider` is on stands right now, upright on the ground; null if not known.
 func _ridden_transform(rider: int):
-	if rider == 0 or main == null:
+	if rider == 0 or main == null or _out_on_route():
 		return null
 	if rider == Shed.me() and main.bike:
 		return _upright(main.bike.global_transform)

@@ -255,6 +255,15 @@ func _add_shape(shape: Shape3D, pos: Vector3) -> int:
 
 
 ## Places the bike upright on the ground at the given position and heading.
+## Moves the bike by `by` without touching its speed, lean or spin: the map round it has been shifted (a
+## route changing leg), so it stays where it was on the road.
+func shift_world(by: Vector3) -> void:
+	var t := global_transform
+	t.origin += by
+	global_transform = t
+	PhysicsServer3D.body_set_state(get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+
+
 func place(pos: Vector3, heading: float) -> void:
 	_clear_ragdoll()
 	is_crashed = false

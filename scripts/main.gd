@@ -198,6 +198,7 @@ func _ready() -> void:
 	Net.player_updated.connect(_on_player_updated)
 	Net.player_left.connect(_on_player_left)
 	Net.state_received.connect(_on_state)
+	Net.leg_received.connect(_on_host_leg)
 	Net.connected.connect(func(): _start_session())
 	Net.internet_status_changed.connect(_on_internet_status)
 	Net.connection_failed.connect(func(reason): menu.show_title(reason))
@@ -222,7 +223,7 @@ func _paint() -> Color:
 
 
 func _local_info() -> Dictionary:
-	return {"name": Settings.player_name, "color": _paint()}
+	return {"name": Settings.player_name, "color": _paint(), "route": journey.id if journey else ""}
 
 
 func _host() -> void:
@@ -571,12 +572,13 @@ func _process(_delta: float) -> void:
 	if guide.off > 200.0:
 		return   # well away from the route: its progress means nothing
 	var want := journey.leg_for_distance(guide.d)
-	var next := _leg + 1
-	if want == _leg:
+	# In co-op the host decides when the crew changes leg (see _on_host_leg); everyone else only gets ready for it.
+	var follower := Net.is_online() and not Net.is_host()
+	if want == _leg or follower:
 		# Ahead of the hand-over: have the next leg made in time.
 		var hand := journey.hand_over_at(_leg)
-		if hand >= 0.0 and guide.d > hand - PRELOAD_M and _leg_loading < 0 and _leg_pack_index != next:
-			_start_leg_load(next)
+		if hand >= 0.0 and guide.d > hand - PRELOAD_M and _leg_loading < 0 and _leg_pack_index != _leg + 1:
+			_start_leg_load(_leg + 1)
 	elif _leg_pack_index == want:
 		_swap_leg(want, _leg_pack)
 	elif _leg_loading < 0:
@@ -618,23 +620,46 @@ func _swap_leg(target: int, pack: RoutePack) -> void:
 	var bp := bike.global_position
 	var old_near := world.roads.nearest(bp.x, bp.z, 30.0)
 	await _fade_to(1.0, 0.25)
+	var t0 := Time.get_ticks_msec()
 	world.rebuild_land(pack)
+	var built_ms := Time.get_ticks_msec() - t0
 	_leg = target
 	_leg_pack = null
 	_leg_pack_index = -1
-	bike.global_position += shift3
-	_safe_xf.origin += shift3
-	var moved := bike.global_position
+	var moved := bp + shift3
 	var new_near := world.roads.nearest(moved.x, moved.z, 30.0)
 	if not old_near.is_empty() and not new_near.is_empty():
-		bike.global_position.y += float(old_near["h"]) - float(new_near["h"])
+		shift3.y = float(new_near["h"]) - float(old_near["h"])   # the same real height: each leg's heights are over its own base
+	bike.shift_world(shift3)
+	_safe_xf.origin += shift3
 	for id in remotes:
-		(remotes[id] as Node3D).global_position += shift3
+		(remotes[id] as Node3D).global_position += Vector3(shift3.x, 0.0, shift3.z)
 	if traffic and traffic.has_method("reset"):
 		traffic.reset()   # their roads are gone: they ride off and new ones turn up on the new leg's
 	camera.snap()
+	if Net.is_host():
+		Net.send_leg(_leg)
+	# A rider far behind the crew lands off the edge of the new map: put them beside the nearest crewmate.
+	if absf(bike.global_position.x) > World.MAP_HALF - 40.0 or absf(bike.global_position.z) > World.MAP_HALF - 40.0:
+		for id in remotes:
+			var mate := (remotes[id] as Node3D).global_position
+			if absf(mate.x) < World.MAP_HALF - 40.0 and absf(mate.z) < World.MAP_HALF - 40.0:
+				bike.place(mate + Vector3(2.0, 0.0, 0.0), atan2(-(-bike.global_basis.z).x, -(-bike.global_basis.z).z))
+				_safe_xf = Transform3D()
+				break
+	print("Route: now on leg %d of %d (the map took %d ms to put up)" % [_leg + 1, journey.leg_count(), built_ms])
 	await _fade_to(0.0, 0.4)
 	_swapping = false
+
+
+## The host says the route is now on leg `index`: swap to it too (waiting for any leg being made on a thread).
+func _on_host_leg(index: int) -> void:
+	if journey == null or index == _leg or _swapping or bike == null:
+		return
+	while _leg_loading >= 0:
+		await get_tree().process_frame
+	var pack := _leg_pack if _leg_pack_index == index else journey.load_leg(index)
+	_swap_leg(index, pack)
 
 
 func _fade_to(alpha: float, seconds: float) -> void:
@@ -854,6 +879,11 @@ func _net_state() -> PackedFloat32Array:
 
 func _on_player_joined(id: int, info: Dictionary) -> void:
 	if not in_session or remotes.has(id):
+		return
+	if journey != null and _leg != 0 and Net.is_host():
+		# The crew has ridden out of the first leg: a newcomer would start in the wrong place.
+		Net.kick(id)
+		hud.flash("%s tried to join, but the crew is already out on the route" % info.get("name", "Someone"), 3.0, true)
 		return
 	var rp := RemotePlayer.new()
 	world.add_child(rp)

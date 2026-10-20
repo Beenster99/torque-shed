@@ -76,6 +76,7 @@ func _run_all() -> void:
 	await _test_world()
 	print("Route packs: the map made from real heights and roads")
 	await _test_route_pack()
+	await _test_route_swap()
 	print("Day and night, tyre smoke")
 	await _test_daylight()
 	await _test_tyre_smoke()
@@ -2218,6 +2219,95 @@ func _test_route_pack() -> void:
 	await get_tree().physics_frame
 
 
+## Riding a route: the satnav follows the bike, the next leg is made as the hand-over nears, and at it the map
+## swaps with the bike carried across on the same road at the same speed, the shed put away and traffic reset.
+func _test_route_swap() -> void:
+	var dir := "res://data/routes/shodoshima"
+	if not FileAccess.file_exists(dir.path_join("pack.json")):
+		return
+	var j := RouteJourney.load_journey(dir)
+	WorldLayout.journey = j
+	WorldLayout.pack = j.load_leg(0)
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	main.journey = j
+	main.guide = RouteGuide.new(j)
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	check(main.world.has_node("Terrain") and main.satnav != null and main.world.workshop != null, "a route session starts in the shed with a satnav")
+	# Ride a shed bike out onto the route's road: first 1500 m before the first hand-over, facing along it.
+	main._try_mount(_bike_named("Old Faithful"))
+	await get_tree().physics_frame
+	var bike: Bike = main.bike
+	check(bike != null and main.audio != null, "a bike from the shed goes on the road")
+	var hand := j.hand_over_at(0)
+	var ground := _put_on_route(main, j, hand - 1500.0)
+	await get_tree().physics_frame
+	main._process(0.0)
+	check(main.guide.d > hand - 1600.0 and main.guide.d < hand - 1400.0 and not main.guide.off_route and main.guide.remaining > 5000.0,
+		"the satnav puts the bike %.0f m along, %.0f m from the hand-over" % [main.guide.d, hand - main.guide.d])
+	check(main._leg_loading < 0 and main._leg_pack_index < 0, "the next leg is not made while it is far off")
+	ground = _put_on_route(main, j, hand - 800.0)
+	await get_tree().physics_frame
+	main._process(0.0)
+	# 800 m out is within the preload distance (1100 m): it starts making the next leg on a thread.
+	main._process(0.0)
+	check(main._leg_loading == 1 or main._leg_pack_index == 1, "inside the preload distance the next leg starts being made")
+	var waited := 0
+	while main._leg_pack_index != 1 and waited < 3000:
+		await get_tree().physics_frame
+		waited += 1
+	check(main._leg_pack_index == 1 and main._leg_pack != null and WorldLayout.pack.index == 0,
+		"it is made in the background and the current leg stays the map (waited %d frames)" % waited)
+	# Carry the bike to just past the hand-over at speed and let the swap happen.
+	var route_pos := j.points[_route_index(j, hand + 20.0)]
+	_put_on_route(main, j, hand + 20.0)
+	await get_tree().physics_frame
+	var fwd := -bike.global_basis.z
+	bike.linear_velocity = Vector3(fwd.x, 0.0, fwd.z).normalized() * 15.0
+	main._process(0.0)
+	var frames := 0
+	while main._leg != 1 and frames < 600:
+		await get_tree().physics_frame
+		frames += 1
+	check(main._leg == 1 and WorldLayout.pack.index == 1 and not WorldLayout.has_shed(), "at the hand-over the map swaps to leg 1 and the shed is gone")
+	while main._swapping and frames < 900:
+		await get_tree().physics_frame
+		frames += 1
+	var now := Vector2(bike.global_position.x, bike.global_position.z) + j.origin_of(1)
+	check(now.distance_to(route_pos) < 12.0, "the bike is still on the real route, having ridden on through the fade (%.1f m on)" % now.distance_to(route_pos))
+	var after: Dictionary = main.world.roads.nearest(bike.global_position.x, bike.global_position.z, 20.0)
+	check(not after.is_empty() and float(after["d"]) < 6.0 and absf(bike.global_position.y - float(after["h"])) < 1.5,
+		"it is on a road of the new leg at the road's height (%.1f m up)" % (bike.global_position.y - float(after.get("h", 0.0))))
+	check(bike.linear_velocity.length() > 10.0, "and still going at speed (%.1f m/s)" % bike.linear_velocity.length())
+	check(main.world.workshop.visible == false or main.world.workshop.position.y < -1000.0, "the shed is put away")
+	check(main.guide.off < 20.0 and absf(main.guide.d - (hand + 20.0)) < 60.0, "the satnav carries on without a hiccup (%.0f m along)" % main.guide.d)
+	check(main.world.get_children().filter(func(n): return n.name == "Terrain").size() == 1, "the old land is gone, not stacked")
+	main.queue_free()
+	WorldLayout.pack = null
+	WorldLayout.journey = null
+	await get_tree().physics_frame
+
+
+## The index of the route point `d` metres along it.
+func _route_index(j: RouteJourney, d: float) -> int:
+	for i in j.points.size() - 3:
+		if j.dists[i] >= d:
+			return i
+	return 0
+
+
+## Puts the ridden bike on the route's road `d` metres along it, facing along it; returns the road found there.
+func _put_on_route(main: Node, j: RouteJourney, d: float) -> Dictionary:
+	var idx := _route_index(j, d)
+	var here := j.points[idx] - j.origin_of(main._leg)
+	var face := (j.points[idx + 2] - j.points[idx]).normalized()
+	var found: Dictionary = main.world.roads.nearest(here.x, here.y, 20.0)
+	if not found.is_empty():
+		main.bike.place(Vector3(here.x, float(found["h"]), here.y), atan2(-face.x, -face.y))
+	return found
+
+
 ## A tarmac road and a sample on it with a dead straight 90 m ahead and 30 m behind, as [name, road, sample].
 func _straight_tarmac(roads: WorldRoads) -> Array:
 	for ri in roads.roads.size():
@@ -3330,10 +3420,11 @@ func _test_road_traffic_route() -> void:
 	var dir := "res://data/routes/shodoshima"
 	if not FileAccess.file_exists(dir.path_join("pack.json")):
 		return
-	var pack := RoutePack.load_pack(dir)
-	if pack == null:
+	var journey := RouteJourney.load_journey(dir)
+	if journey == null:
 		return
-	WorldLayout.pack = pack
+	WorldLayout.journey = journey
+	WorldLayout.pack = journey.load_leg(0)
 	var world := World.new()
 	add_child(world)
 	world.generate(1234)
@@ -3428,6 +3519,7 @@ func _test_road_traffic_route() -> void:
 	world.queue_free()
 	stub.queue_free()
 	WorldLayout.pack = null
+	WorldLayout.journey = null
 	await get_tree().physics_frame
 
 

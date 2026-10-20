@@ -1,0 +1,7 @@
+{
+  "name": "shodoshima",
+  "title": "Shodoshima: Kankakei to the east coast",
+  "start": {"lat": 34.5184, "lon": 134.2693},
+  "length_km": 25,
+  "seed": 0
+}

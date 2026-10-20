@@ -114,35 +114,40 @@ towards BeamNG.Earth's buildings, signals and traffic.
 4. **Polish for real roads** (ongoing). Hairpins, junctions, bridges, tunnels, curation checklist per issue.
 5. **Live source, optional** (4 to 6 weeks).
 
-## Proof of concept status (phase 1)
+## Proof of concept status
 
-Built on branch `claude/laughing-brahmagupta-l269oq`, off by default and not merged to `main`. See `tools/README.md`.
+Built on branch `claude/laughing-brahmagupta-l269oq`, off by default and not merged to `main`. See `tools/README.md` and the "Real-world routes" section of the main README.
 
-- `tools/route_bake.py` bakes a 4 km square of a real place into a route pack in about 25 seconds: heights from
-  Mapterhorn, roads from Overture Maps, no keys. `tools/pack_preview.py` draws the result for a quick look.
-- `data/routes/shodoshima` is a pack baked at Kankakei on Shodoshima, Japan: 112 roads, 46 km, from Mapterhorn
-  heights and Overture roads.
-- The game reads a pack through `scripts/route_pack.gd`. `WorldTerrain` takes its heights from it, `WorldRoads`
-  lays its roads after the shed's own loop, and a link road joins the two. Grading, meshes, collision, surfaces,
-  guard rails, trees and traffic are the existing code, untouched. The hand-laid map is the default and its tests
-  are unchanged.
-- Run it with `godot --path . -- --route=res://data/routes/shodoshima`.
-- The generated map takes about 7 seconds to build and a bike rides the link and the real road in the tests.
+The first cut (a single static 4 km square) answered the data and seam questions. It has since grown to a route of any
+length, in the order you asked for:
+
+- **A long road of a set length, with the satnav.** `tools/route_bake.py` plans a route of `--length-km` (or to an end
+  point) along real roads and bakes it as overlapping 4 km legs. The game builds the next leg on a thread as you near
+  the end of this one and swaps to it under a quick fade, carrying the bike across at speed. A satnav panel shows the
+  next turn, distances and a way back when off route. An issue file (`--issue issue.json`) is the hook for the magazine.
+  Streaming in smaller tiles instead of 4 km legs is the next step if the swap's fade ever bothers anyone (the data
+  would not change).
+- **Sea.** Real coasts get a sloping sea floor, a sand beach and a rippling water sheet; riding in puts you back on the road.
+- **Buildings.** Real footprints become houses, sheds and barns in the villages' own style, on levelled ground, facing the road.
+- **Junction signs, guard rails.** Give way signs and "junction ahead" boards, and the guard rails fixed (they were being
+  stretched along the map's axes, not their own, which left squashed slabs with gaps).
+- **Cars, lorries and groups of bikers** share the roads (see the main README).
+- **Co-op** checks every player has the same route and changes leg together.
 
 ![The link road meeting a real Shodoshima road](images/route_poc_junction.jpg)
 
 ![A real road, in our own style](images/route_poc_road.jpg)
 
-![The shed and its loop on the island](images/route_poc_valley.jpg)
+![A real town of buildings in our style](images/route_buildings.jpg)
 
-![The baked heights and roads, shed in blue, start in red](images/route_poc_bake_preview.jpg)
+![The coast](images/route_sea.jpg)
 
-What the proof showed: the data is good enough and the seam is as narrow as expected. Roads, junctions and
-heights from the real world drop into the existing grader and ride without changes to the bike code.
+![The satnav](images/route_satnav.png)
 
-What it did not settle, in order of risk: how hairpins and steep mountain roads ride at speed (the grader limits
-the climb and crest rate, so some real bends may come out flatter than the real road), how much of a real route needs hand curation, the 30 m surface-model
-heights away from lidar, and everything in phases 2 and 3 (streaming, rebasing, a co-op handshake).
+![The baked heights and roads of the first leg, shed in blue, start in red](images/route_poc_bake_preview.jpg)
+
+What it has not settled, in order of risk: how hairpins and steep mountain roads ride at speed, how much of a real route
+needs hand curation, the 30 m surface-model heights away from lidar, and playing it for an hour (memory over many legs).
 
 ## Sources
 
