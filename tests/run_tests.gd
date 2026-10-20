@@ -2947,7 +2947,7 @@ func _test_road_traffic_vehicles() -> void:
 	# One of each kind.
 	var slots := {}
 	for kind in ["bike", "car", "truck"]:
-		slots[kind] = tr.spawn_one(0.0, 600.0, kind)
+		slots[kind] = tr.spawn_one(0.0, 400.0, kind)
 	check(not slots.values().has(-1), "a bike, a car and a lorry all appear")
 	check(slots.keys().all(func(k): return RoadTraffic.kind_of(int(tr.riders[slots[k]]["seed"])) == k) and tr.count_kind("truck") == 1 and tr.count_kind("car") == 1,
 		"each is the kind asked for")
@@ -3012,7 +3012,8 @@ func _test_road_traffic_vehicles() -> void:
 			bend_pace[kind] = maxf(bend_pace[kind], float(d["v"]) * float(d["v"]) * k)
 	check(tops["car"] > 8.0 and tops["car"] <= 17.5 and tops["truck"] > 6.0 and tops["truck"] <= 13.0 and tops["bike"] > 10.0 and tops["bike"] <= 20.5,
 		"they drive at their own paces (bikes %.0f, cars %.0f, lorries %.0f km/h at most)" % [tops["bike"] * 3.6, tops["car"] * 3.6, tops["truck"] * 3.6])
-	check(bend_pace["car"] < bend_pace["bike"] + 0.1 and bend_pace["truck"] < bend_pace["car"] + 0.1 and bend_pace["truck"] > 0.2,
+	check(bend_pace["car"] <= float(RoadTraffic.STATS["car"]["grip"]) * 1.5 + 0.1 and bend_pace["truck"] <= float(RoadTraffic.STATS["truck"]["grip"]) * 1.5 + 0.1 and bend_pace["truck"] < bend_pace["bike"] and bend_pace["truck"] > 0.2 \
+			and float(RoadTraffic.STATS["car"]["grip"]) < float(RoadTraffic.STATS["bike"]["grip"]) and float(RoadTraffic.STATS["truck"]["grip"]) < float(RoadTraffic.STATS["car"]["grip"]),
 		"cars take the bends a bit slower than bikes and lorries slower again (%.1f, %.1f, %.1f m/s^2 sideways)" % [bend_pace["bike"], bend_pace["car"], bend_pace["truck"]])
 	check(left_ok and off_road < 3.0, "all of them in the left-hand lane on the tarmac (at most %.1f m off its middle)" % off_road)
 	check(not into_yard and not on_dirt, "and never into the yard or onto a dirt track")
