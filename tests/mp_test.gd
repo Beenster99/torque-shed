@@ -121,6 +121,8 @@ func _ready() -> void:
 	var pass_step := 0
 	var pass_t := 0
 	var pass_seen := false     # the client saw the host sat in the passenger seat, its door open
+	var pass_door := false     # the client saw the passenger door swing
+	var pass_sat := false      # and the host sat in the passenger seat
 	var pass_ok := false
 	var REC_PARK := Recovery.PARK.translated(Vector3(-6.0, 0.0, 2.0))
 	var wash_step := 0
@@ -558,15 +560,19 @@ func _ready() -> void:
 							pass_step = 1
 					1:
 						pass_t += 1
-						if pass_t > 150:
+						if pass_t > 300:
 							rv.stop_riding_along()
 							pass_step = 2
 					2:
 						pass_ok = Recovery.passenger() == 0 and not rv.riding_along and main.walker.visible
 			else:
-				if Recovery.passenger() == other.peer and rv._seat_figs.has(other.peer) and float(rv.car.door_open[0]) > 0.0 \
-						and not other._figure.visible:
-					pass_seen = true
+				# The door's swing and the sit are each caught when they happen: on a slow machine
+				# the door can be shut again before the seat's figure is drawn.
+				if float(rv.car.door_open[0]) > 0.0:
+					pass_door = true
+				if Recovery.passenger() == other.peer and rv._seat_figs.has(other.peer) and not other._figure.visible:
+					pass_sat = true
+				pass_seen = pass_door and pass_sat
 				pass_ok = pass_seen and Recovery.passenger() == 0 and rv._seat_figs.is_empty() and other._figure.visible
 		# Pressure washing together: the host mucks up the Ranger's front tyre, fork and engine and
 		# washes half the dirt off the tyre; the client washes half off the fork and calls the
