@@ -135,7 +135,8 @@ lighthouses, and the sat nav shows the real road's name. Every chunk of the Shod
 vertex and instance budget (`test_budget`). Still to do in this stage: the staged cached pipeline with its report
 and `sources.yaml`, real water meshes for lakes and rivers, bridges and tunnels from the road flags, peaks and passes
 named on the sat nav, the hand-edit overlay, the standalone viewer, and the UK dales route that bakes with no
-hand edits.
+hand edits. Place names without an English form (most of Shodoshima's) are left blank for now, by choice; they can
+be romanised or shown as the data has them later.
 
 ![Forest by the road](images/real_forest.jpg)
 ![A village on the shore](images/real_village.jpg)
