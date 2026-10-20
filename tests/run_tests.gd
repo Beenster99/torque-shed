@@ -94,6 +94,8 @@ func _run_all() -> void:
 	_test_bike_paint_panels()
 	print("Road traffic")
 	await _test_road_traffic()
+	await _test_road_traffic_vehicles()
+	await _test_road_traffic_route()
 	print("XP, levels, tool upgrades and skills")
 	_test_progress()
 	print("Bike lights, tyres and the tyre changer")
@@ -2965,6 +2967,7 @@ func _test_road_traffic() -> void:
 	var switched := false
 	var roads_before := tr.riders.map(func(d): return int(d["road"]))
 	var lean := 0.0
+	var other_top := 0.0
 	for step in 3000:
 		for slot in RoadTraffic.MAX_RIDERS:
 			var d: Dictionary = tr.riders[slot]
@@ -2975,7 +2978,11 @@ func _test_road_traffic() -> void:
 			d = tr.riders[slot]
 			if d.is_empty():
 				continue
-			top = maxf(top, float(d["v"]))
+			var is_bike := RoadTraffic.kind_of(int(d["seed"])) == "bike"
+			if is_bike:
+				top = maxf(top, float(d["v"]))
+			else:
+				other_top = maxf(other_top, float(d["v"]))
 			var p := tr._rider_point(d)
 			if RoadTraffic.KEEP_OUT.has_point(Vector2(p.x, p.z)):
 				into_yard = true
@@ -2984,8 +2991,9 @@ func _test_road_traffic() -> void:
 			if int(d["road"]) != int(roads_before[slot]):
 				switched = true
 			var k := float((tr._k[int(d["road"])] as PackedFloat32Array)[tr._i(int(d["road"]), float(d["s"]))])
-			lean = maxf(lean, absf(atan(float(d["v"]) * float(d["v"]) * k / Bike.G)))
-	check(top > 10.0 and top <= 20.5, "they ride at a sensible pace (top %.0f km/h)" % (top * 3.6))
+			if is_bike:
+				lean = maxf(lean, absf(atan(float(d["v"]) * float(d["v"]) * k / Bike.G)))
+	check(top > 10.0 and top <= 20.5 and other_top <= 17.5, "they ride at a sensible pace (bikes up to %.0f km/h, cars and lorries %.0f)" % [top * 3.6, other_top * 3.6])
 	check(off_road < 3.0, "in their lane, on the road (at most %.1f m off its middle)" % off_road)
 	check(not into_yard, "and never into the yard, the test area or the cafe car park")
 	check(switched, "they turn off at junctions onto other roads")
@@ -3025,7 +3033,7 @@ func _test_road_traffic() -> void:
 		if kk < best and not tr._heads_into_yard(east, float(t), 1):
 			best = kk
 			s = float(t)
-	tr.riders[0] = {"road": east, "s": s, "dir": 1, "v": 0.0, "seed": 77, "cruise": 0.0, "turn": {}, "round": -1.0}
+	tr.riders[0] = {"road": east, "s": s, "dir": 1, "v": 0.0, "seed": 70, "cruise": 0.0, "turn": {}, "round": -1.0}
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	var view_body: Node3D = tr._views[0]["body"]
@@ -3034,7 +3042,7 @@ func _test_road_traffic() -> void:
 	var bike := Bike.new()
 	bike.setup(BikeBuild.new())
 	main.world.add_child(bike)
-	var from := tr._rider_point({"road": east, "s": s - 30.0, "dir": 1})
+	var from := tr._rider_point({"road": east, "s": s - 30.0, "dir": 1, "seed": 70})
 	var fwd := tr.road_dir(east, s - 30.0)
 	bike.place(from + Vector3.UP * 0.3, atan2(-fwd.x, -fwd.y))
 	var crashed := false
@@ -3053,6 +3061,374 @@ func _test_road_traffic() -> void:
 	check(tr.active_count() == 0, "and they're off the roads when the session ends")
 	main.queue_free()
 	await get_tree().process_frame
+
+
+## Cars, lorries and groups of bikers on the roads: each kind appears and is drawn, keeps to the
+## tarmac in the left lane at its own pace, brakes for what's stopped ahead and is solid; a group
+## is two to five bikes together on one road; the lot goes over the network as the same numbers.
+func _test_road_traffic_vehicles() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await get_tree().process_frame
+	main._start_session()
+	var tr: RoadTraffic = main.traffic
+	tr.setup_roads()
+	tr._spawn_timer = 1000.0
+	var roads: WorldRoads = main.world.roads
+	check(not tr._car_roads.is_empty() and tr._car_roads.all(func(ri): return roads.roads[ri]["kind"] == "tarmac" and float(roads.roads[ri]["hw"]) >= RoadTraffic.CAR_MIN_HW),
+		"cars and lorries are given only the tarmac roads wide enough for them (%d of %d)" % [tr._car_roads.size(), tr._tarmac.size()])
+	check(RoadTraffic.kind_of(1230) == "bike" and RoadTraffic.kind_of(1237) == "car" and RoadTraffic.kind_of(1239) == "truck",
+		"what a vehicle is comes from the last digit of its look seed")
+	# The looks: every car and lorry model turns up, in colours from the seed, the same each time.
+	var car_models := {}
+	var truck_models := {}
+	for sd in range(0, 600):
+		var kind := RoadTraffic.kind_of(sd)
+		if kind != "bike":
+			(car_models if kind == "car" else truck_models)[TrafficVehicle.look(kind, sd)["model"]] = true
+	check(car_models.size() == TrafficVehicle.CAR_MODELS.size() and truck_models.size() == TrafficVehicle.TRUCK_MODELS.size(),
+		"there are %d looks of car and %d of lorry" % [car_models.size(), truck_models.size()])
+	check(RoadTraffic.look_of(1237) == RoadTraffic.look_of(1237) and RoadTraffic.look_of(1237)["kind"] == "car" and RoadTraffic.look_of(1230)["kind"] == "bike",
+		"a seed always makes the same look")
+	# One of each kind.
+	var slots := {}
+	for kind in ["bike", "car", "truck"]:
+		slots[kind] = tr.spawn_one(0.0, 400.0, kind)
+	check(not slots.values().has(-1), "a bike, a car and a lorry all appear")
+	check(slots.keys().all(func(k): return RoadTraffic.kind_of(int(tr.riders[slots[k]]["seed"])) == k) and tr.count_kind("truck") == 1 and tr.count_kind("car") == 1,
+		"each is the kind asked for")
+	check(int(tr.riders[slots["car"]]["road"]) in tr._car_roads and int(tr.riders[slots["truck"]]["road"]) in tr._car_roads, "and the car and the lorry are on a road they may use")
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var wheels := {}
+	var solid := true
+	for kind in slots:
+		var view: Dictionary = tr._views[slots[kind]]
+		solid = solid and not view.is_empty() and (view["body"] as CollisionObject3D).collision_layer & 2 != 0 and (view["body"] as Node).is_in_group("road_traffic")
+		wheels[kind] = (view["wheels"] as Array).size()
+	check(solid and wheels["car"] == 4 and wheels["truck"] >= 6 and (tr._views[slots["car"]]["model"] as Node3D).get_child_count() > 8,
+		"they're drawn and solid: a car on four wheels, a lorry on six or more")
+	# Wheels turn as they go, and the lamps follow the time of day.
+	var car_view: Dictionary = tr._views[slots["car"]]
+	var spin0 := float(car_view["spin"])
+	tr.riders[slots["car"]]["v"] = 10.0
+	tr._update_views(0.1)
+	check(float(car_view["spin"]) > spin0 and absf(((car_view["wheels"] as Array)[0] as Node3D).rotation.x) > 0.1, "a car's wheels turn")
+	TrafficVehicle.set_lamps(0.0)
+	var head_off := (TrafficVehicle._lamp("head") as StandardMaterial3D).emission_enabled
+	TrafficVehicle.set_lamps(1.0)
+	var head_on := (TrafficVehicle._lamp("head") as StandardMaterial3D).emission_enabled
+	var tail_on := (TrafficVehicle._lamp("tail") as StandardMaterial3D).emission_energy_multiplier
+	TrafficVehicle.set_lamps(0.0)
+	check(not head_off and head_on and tail_on > 0.5, "headlights and tail lights come on in the dark and not by day")
+	# Ride the three on for a while, and top up with more of the same.
+	var off_road := 0.0
+	var into_yard := false
+	var on_dirt := false
+	var left_ok := true
+	var tops := {"bike": 0.0, "car": 0.0, "truck": 0.0}
+	var bend_pace := {"bike": 0.0, "car": 0.0, "truck": 0.0}
+	for step in 3000:
+		for slot in RoadTraffic.MAX_RIDERS:
+			var d: Dictionary = tr.riders[slot]
+			if d.is_empty():
+				if slot < 6:
+					tr.spawn_one(0.0, 600.0, ["bike", "car", "truck"][slot % 3])
+				continue
+			tr._drive(slot, d, 0.05)
+			d = tr.riders[slot]
+			if d.is_empty():
+				continue
+			var kind := RoadTraffic.kind_of(int(d["seed"]))
+			var ri := int(d["road"])
+			tops[kind] = maxf(tops[kind], float(d["v"]))
+			if kind != "bike" and not (ri in tr._tarmac and float(roads.roads[ri]["hw"]) >= 3.0):
+				on_dirt = true
+			var p := tr._rider_point(d)
+			if RoadTraffic.KEEP_OUT.has_point(Vector2(p.x, p.z)):
+				into_yard = true
+			var near_road: Dictionary = roads.nearest(p.x, p.z, 20.0, "tarmac")
+			off_road = maxf(off_road, float(near_road.get("d", 20.0)))
+			# Left of the middle of the road going its way.
+			var f := tr.road_dir(ri, float(d["s"])) * int(d["dir"])
+			var side := (p - tr.road_point(ri, float(d["s"]))).dot(Vector3(f.y, 0.0, -f.x))
+			if side < float(roads.roads[ri]["hw"]) * 0.2 or side > float(roads.roads[ri]["hw"]) * 0.8:
+				left_ok = false
+			var k := absf(float((tr._k[ri] as PackedFloat32Array)[tr._i(ri, float(d["s"]))]))
+			bend_pace[kind] = maxf(bend_pace[kind], float(d["v"]) * float(d["v"]) * k)
+	check(tops["car"] > 8.0 and tops["car"] <= 17.5 and tops["truck"] > 6.0 and tops["truck"] <= 13.0 and tops["bike"] > 10.0 and tops["bike"] <= 20.5,
+		"they drive at their own paces (bikes %.0f, cars %.0f, lorries %.0f km/h at most)" % [tops["bike"] * 3.6, tops["car"] * 3.6, tops["truck"] * 3.6])
+	check(bend_pace["car"] <= float(RoadTraffic.STATS["car"]["grip"]) * 1.5 + 0.1 and bend_pace["truck"] <= float(RoadTraffic.STATS["truck"]["grip"]) * 1.5 + 0.1 and bend_pace["truck"] < bend_pace["bike"] and bend_pace["truck"] > 0.2 \
+			and float(RoadTraffic.STATS["car"]["grip"]) < float(RoadTraffic.STATS["bike"]["grip"]) and float(RoadTraffic.STATS["truck"]["grip"]) < float(RoadTraffic.STATS["car"]["grip"]),
+		"cars take the bends a bit slower than bikes and lorries slower again (%.1f, %.1f, %.1f m/s^2 sideways)" % [bend_pace["bike"], bend_pace["car"], bend_pace["truck"]])
+	check(left_ok and off_road < 3.0, "all of them in the left-hand lane on the tarmac (at most %.1f m off its middle)" % off_road)
+	check(not into_yard and not on_dirt, "and never into the yard or onto a dirt track")
+	# Cars and lorries brake for something stopped ahead, and stop short.
+	for slot in RoadTraffic.MAX_RIDERS:
+		tr.riders[slot] = {}
+	var east := int(roads.by_name["east"])
+	var s := -1.0
+	for t in range(220, int(float(roads.roads[east]["length"])) - 20, 10):
+		var clear := not tr._heads_into_yard(east, float(t), 1)
+		for q in range(t - 180, t + 20, 2):
+			if q < 0 or (tr._junctions[east] as Dictionary).has(tr._i(east, float(q))) or (tr._blocked[east] as PackedByteArray)[tr._i(east, float(q))]:
+				clear = false
+				break
+		if clear:
+			s = float(t)
+			break
+	check(s > 0.0, "a clear stretch of the east road to try braking on")
+	for kind_seed in [{"seed": 1007, "name": "car"}, {"seed": 1009, "name": "lorry"}]:
+		tr.riders[0] = {"road": east, "s": s, "dir": 1, "v": 0.0, "seed": 1007, "cruise": 0.0, "turn": {}, "round": -1.0, "group": 0}
+		tr.riders[1] = {"road": east, "s": s - 150.0, "dir": 1, "v": 12.0, "seed": kind_seed["seed"], "cruise": 12.0, "turn": {}, "round": -1.0, "group": 0}
+		var closest := INF
+		for step in 1200:
+			tr.riders[0]["v"] = 0.0
+			tr._drive(1, tr.riders[1], 0.05)
+			closest = minf(closest, s - float(tr.riders[1]["s"]))
+		var gap: float = s - float(tr.riders[1]["s"])
+		check(float(tr.riders[1]["v"]) < 0.3 and closest > 3.0 and gap < 25.0 and int(tr.riders[1]["road"]) == east,
+			"a %s brakes for one stopped ahead and waits behind it (%.1f m back, closest %.1f)" % [kind_seed["name"], gap, closest])
+	# Ride into a stopped car: you crash.
+	tr.riders[1] = {}
+	tr.riders[0] = {"road": east, "s": s, "dir": 1, "v": 0.0, "seed": 1007, "cruise": 0.0, "turn": {}, "round": -1.0, "group": 0}
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var view_body: Node3D = tr._views[0]["body"]
+	check(view_body != null and (view_body as CollisionObject3D).collision_layer & 2 != 0, "a stopped car is solid")
+	var bike := Bike.new()
+	bike.setup(BikeBuild.new())
+	main.world.add_child(bike)
+	var from := tr._rider_point({"road": east, "s": s - 30.0, "dir": 1, "seed": 1007})
+	var fwd := tr.road_dir(east, s - 30.0)
+	bike.place(from + Vector3.UP * 0.3, atan2(-fwd.x, -fwd.y))
+	var crashed := false
+	for i in int(6.0 * Engine.physics_ticks_per_second):
+		tr.riders[0]["v"] = 0.0
+		bike.throttle = 1.0
+		await get_tree().physics_frame
+		if bike.is_crashed:
+			crashed = true
+			break
+	check(crashed, "riding into a stopped car at speed crashes you (%.0f km/h)" % (absf(bike.speed) * 3.6))
+	bike.queue_free()
+	# Groups: two to five bikers together on one road, a loose stagger, 8 to 25 m apart.
+	for slot in RoadTraffic.MAX_RIDERS:
+		tr.riders[slot] = {}
+	var sizes := {}
+	var one_road := true
+	var all_bikes := true
+	var gaps_ok := true
+	var stagger_ok := true
+	var looks_ok := true
+	var made := 0
+	for trial in 30:
+		var n := tr.spawn_group(0.0, 600.0)
+		if n == 0:
+			continue
+		sizes[n] = true
+		made += 1
+		var members := tr.riders.filter(func(d): return not d.is_empty())
+		one_road = one_road and members.all(func(d): return int(d["road"]) == int(members[0]["road"]) and int(d["group"]) == int(members[0]["group"]))
+		all_bikes = all_bikes and members.all(func(d): return RoadTraffic.kind_of(int(d["seed"])) == "bike")
+		# In order along the road, from the front.
+		var by_s := members.duplicate()
+		by_s.sort_custom(func(a, b): return float(a["s"]) * int(a["dir"]) > float(b["s"]) * int(b["dir"]))
+		for j in range(1, by_s.size()):
+			var gap := float(by_s[j - 1]["s"]) * int(by_s[j - 1]["dir"]) - float(by_s[j]["s"]) * int(by_s[j]["dir"])
+			gaps_ok = gaps_ok and gap > 7.5 and gap < 25.5
+			stagger_ok = stagger_ok and RoadTraffic.lane_shift(int(by_s[j]["seed"])) != RoadTraffic.lane_shift(int(by_s[j - 1]["seed"]))
+		var seeds := {}
+		for m in members:
+			seeds[int(m["seed"])] = true
+		looks_ok = looks_ok and seeds.size() == members.size()
+		for slot in RoadTraffic.MAX_RIDERS:
+			tr.riders[slot] = {}
+	check(sizes.keys().all(func(n): return n >= 2 and n <= 5) and sizes.has(2) and (sizes.has(4) or sizes.has(5)), "a group is two to five bikers (seen sizes %s)" % str(sizes.keys()))
+	check(made >= 20 and one_road and all_bikes, "all on the same road, all on bikes (%d groups of 30 tries)" % made)
+	check(gaps_ok, "8 to 25 m apart along it")
+	check(stagger_ok and looks_ok, "alternating a little in the lane, each with their own bike look")
+	check(tr.spawn_group(0.0, 600.0, 5) == 5 and tr.count_kind("bike") == 5 and tr.spawn_group(0.0, 600.0, 4) == 2, "a group fits the room there is (bikes are capped at %d)" % RoadTraffic.MAX_BIKES)
+	for slot in RoadTraffic.MAX_RIDERS:
+		tr.riders[slot] = {}
+	# The chance of a group is up to the setting.
+	tr.group_chance = 1.0
+	tr.car_share = 0.0
+	tr.truck_share = 0.0
+	var grouped := 0
+	for t in 5:
+		grouped += 1 if tr.spawn_next() >= 2 else 0
+		for slot in RoadTraffic.MAX_RIDERS:
+			tr.riders[slot] = {}
+	tr.group_chance = 0.0
+	var lone := 0
+	for t in 5:
+		lone += 1 if tr.spawn_next() == 1 and tr.active_count() == 1 else 0
+		for slot in RoadTraffic.MAX_RIDERS:
+			tr.riders[slot] = {}
+	check(grouped >= 4 and lone == 5, "the group chance is a setting (%d of 5 at 1.0, %d of 5 alone at 0.0)" % [grouped, lone])
+	tr.group_chance = RoadTraffic.GROUP_CHANCE
+	tr.car_share = RoadTraffic.CAR_SHARE
+	tr.truck_share = RoadTraffic.TRUCK_SHARE
+	# A group stays together as it rides.
+	var spread := 0.0
+	var together := 0
+	for trial in 4:
+		if tr.spawn_group(0.0, 600.0, 4) < 2:
+			continue
+		for step in 3000:
+			for slot in RoadTraffic.MAX_RIDERS:
+				if not tr.riders[slot].is_empty():
+					tr._drive(slot, tr.riders[slot], 0.05)
+					main.walker.global_position = tr._rider_point(tr.riders[slot])   # someone stays near them
+		var mem := tr.riders.filter(func(d): return not d.is_empty())
+		var worst := 0.0
+		for a in mem:
+			var nearest := INF
+			for b in mem:
+				if a != b:
+					nearest = minf(nearest, tr._rider_point(a).distance_to(tr._rider_point(b)))
+			worst = maxf(worst, nearest if nearest < INF else 0.0)
+		spread = maxf(spread, worst)
+		together += 1 if mem.size() >= 2 and worst < 80.0 else 0
+		for slot in RoadTraffic.MAX_RIDERS:
+			tr.riders[slot] = {}
+	check(together >= 3 and spread < 140.0, "a group stays together on the road (%d of 4 within 80 m of a mate at the end, worst %.0f m)" % [together, spread])
+	# The packed state: the same numbers as ever, and the other machine draws the same lot.
+	tr.spawn_one(0.0, 600.0, "car")
+	tr.spawn_one(0.0, 600.0, "truck")
+	tr.spawn_group(0.0, 600.0, 3)
+	var packed := tr.pack()
+	check(packed.size() == 1 + RoadTraffic.MAX_RIDERS * 5 and packed[0] == float(RoadTraffic.MAX_RIDERS), "the crew still get five numbers for each (%d in all)" % packed.size())
+	var other := RoadTraffic.new()
+	other.world = main.world
+	add_child(other)
+	other.setup_roads()
+	other.unpack(packed)
+	var same := other.active_count() == tr.active_count() and tr.active_count() == 5
+	for slot in RoadTraffic.MAX_RIDERS:
+		var a: Dictionary = tr.riders[slot]
+		var b: Dictionary = other.riders[slot]
+		if a.is_empty() != b.is_empty():
+			same = false
+		elif not a.is_empty():
+			same = same and int(a["road"]) == int(b["road"]) and absf(float(a["s"]) - float(b["s"])) < 0.01 and int(a["dir"]) == int(b["dir"]) \
+				and int(a["seed"]) == int(b["seed"]) and RoadTraffic.kind_of(int(b["seed"])) == RoadTraffic.kind_of(int(a["seed"])) \
+				and tr._rider_point(a).distance_to(other._rider_point(b)) < 0.05
+	check(same, "and everyone sees the same cars, lorries and bikers in the same places")
+	other.free()
+	main._end_session()
+	await get_tree().physics_frame
+	check(tr.active_count() == 0, "they're all off the roads when the session ends")
+	main.queue_free()
+	await get_tree().process_frame
+
+
+## Traffic on the real-world route map, where the roads are many short ones (r000, link ...):
+## cars, lorries, bikes and groups all work there, and cars stay off the dirt tracks.
+func _test_road_traffic_route() -> void:
+	var dir := "res://data/routes/shodoshima"
+	if not FileAccess.file_exists(dir.path_join("pack.json")):
+		return
+	var pack := RoutePack.load_pack(dir)
+	if pack == null:
+		return
+	WorldLayout.pack = pack
+	var world := World.new()
+	add_child(world)
+	world.generate(1234)
+	var src := GDScript.new()
+	src.source_code = "extends Node\nvar in_session := true\nvar bike = null\nvar walker: Node3D\nvar remotes := {}\n"
+	src.reload()
+	var stub: Node = src.new()
+	add_child(stub)
+	stub.walker = Node3D.new()
+	world.add_child(stub.walker)
+	var tr := RoadTraffic.new()
+	tr.main = stub
+	tr.world = world
+	world.add_child(tr)
+	tr.set_physics_process(false)
+	tr.setup_roads()
+	var roads: WorldRoads = world.roads
+	var dirt := 0
+	for r in roads.roads:
+		dirt += 1 if r["kind"] == "dirt" else 0
+	check(tr._ready_roads and tr._tarmac.size() > 30 and tr._car_roads.size() > 10 and dirt > 5 and tr._tarmac.size() + dirt <= roads.roads.size(),
+		"the route's roads are mapped (%d tarmac, %d for cars, %d dirt)" % [tr._tarmac.size(), tr._car_roads.size(), dirt])
+	# Stand the walker on a long road in the middle of the route, and put traffic out round them.
+	var best := tr._car_roads[0]
+	for ri in tr._car_roads:
+		if float(roads.roads[ri]["length"]) > float(roads.roads[best]["length"]):
+			best = ri
+	stub.walker.global_position = tr.road_point(best, float(roads.roads[best]["length"]) * 0.5)
+	tr._spawn_timer = 1e9
+	var bad_road := false
+	var off_road := 0.0
+	var seen := {}
+	var drawn := true
+	var made := 0
+	for round in 4:
+		for kind in ["bike", "car", "truck"]:
+			made += 1 if tr.spawn_one(0.0, 400.0, kind) >= 0 else 0
+		made += tr.spawn_group(0.0, 400.0, 3)
+		tr._update_views(0.05)
+		for slot in RoadTraffic.MAX_RIDERS:
+			if not tr.riders[slot].is_empty():
+				drawn = drawn and not tr._views[slot].is_empty() and (tr._views[slot]["body"] as Node3D).is_inside_tree()
+		for step in 1500:
+			for slot in RoadTraffic.MAX_RIDERS:
+				var d: Dictionary = tr.riders[slot]
+				if d.is_empty():
+					continue
+				tr._drive(slot, d, 0.05)
+				d = tr.riders[slot]
+				if d.is_empty():
+					continue
+				var kind := RoadTraffic.kind_of(int(d["seed"]))
+				seen[kind] = true
+				var ri := int(d["road"])
+				if not ri in tr._tarmac or (kind != "bike" and float(roads.roads[ri]["hw"]) < 3.0):
+					bad_road = true
+				var p := tr._rider_point(d)
+				off_road = maxf(off_road, float(roads.nearest(p.x, p.z, 20.0, "tarmac").get("d", 20.0)))
+				if RoadTraffic.KEEP_OUT.has_point(Vector2(p.x, p.z)):
+					bad_road = true
+			if step % 100 == 0:
+				tr._update_views(0.05)
+		for slot in RoadTraffic.MAX_RIDERS:
+			tr.riders[slot] = {}
+	check(made >= 12 and seen.size() == 3 and drawn, "bikes, cars, lorries and groups all appear and are drawn on the route (%d made)" % made)
+	check(not bad_road and off_road < 3.0, "and they keep to its tarmac roads, cars only the wide ones (at most %.1f m off the middle)" % off_road)
+	# A car at the end of a short real road turns round or goes on, rather than getting stuck.
+	var short := -1
+	for ri in tr._car_roads:
+		if float(roads.roads[ri]["length"]) < 400.0:
+			short = ri
+			break
+	if short >= 0:
+		stub.walker.global_position = tr.road_point(short, 5.0)
+		tr.riders[0] = {"road": short, "s": 5.0, "dir": 1, "v": 8.0, "seed": 1007, "cruise": 10.0, "turn": {}, "round": -1.0, "group": 0}
+		var moved := 0.0
+		for step in 3000:
+			if tr.riders[0].is_empty():
+				break
+			tr._drive(0, tr.riders[0], 0.05)
+			moved += float(tr.riders[0]["v"]) * 0.05 if not tr.riders[0].is_empty() else 0.0
+		check(moved > 200.0, "a car on a short road keeps moving (%.0f m)" % moved)
+	var again := RoadTraffic.new()
+	again.world = world
+	world.add_child(again)
+	again.setup_roads()
+	again.set_physics_process(false)
+	tr.spawn_one(0.0, 400.0, "truck")
+	again.unpack(tr.pack())
+	check(again.active_count() == tr.active_count() and again.active_count() > 0, "the route's traffic goes over the network as it does anywhere")
+	again.free()
+	world.queue_free()
+	stub.queue_free()
+	WorldLayout.pack = null
+	await get_tree().physics_frame
 
 
 ## The bike details pages list the paint panel by panel: each panel's own colour or mix (name

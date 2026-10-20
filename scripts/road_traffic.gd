@@ -1,67 +1,114 @@
 class_name RoadTraffic
 extends Node3D
-## Other bikers out on the riding map's roads, now and then: a few riders (never more than
-## MAX_RIDERS) on bikes of every style, riding the tarmac roads in their own lane (it's a
-## left-hand road) at a sensible pace of their own, slowing for the bends and leaning into
-## them, slowing to turn off at junctions, turning round at a dead end, and braking for
+## Other traffic out on the riding map's roads, now and then: bikers on bikes of every style,
+## cars (hatchbacks, saloons, estates, vans, pickups) and lorries (box lorries, flatbeds,
+## tippers), never more than MAX_RIDERS of them at once. They ride the tarmac roads in their
+## own lane (it's a left-hand road) at a sensible pace of their own (cars a bit slower than the
+## bikers on the bends, lorries slower again), slowing for the bends and junctions (bikes lean
+## into the bends), turning off at junctions, turning round at a dead end, and braking for
 ## anyone stopped or slower in the lane ahead. They're solid: ride into one and you crash, as
 ## you would into anything else.
 ##
+## Now and then a few bikers come together, a group of two to five spread out along the road
+## in a loose stagger (a little to either side of the lane, 8 to 25 m apart) at much the same
+## pace: the one in front eases off if the others fall behind, the one at the back catches up,
+## and they all make the same choice at a junction, so they stay together.
+##
+## Cars and lorries keep to the tarmac roads wide enough for them (half width CAR_MIN_HW);
+## dirt tracks are for bikes only. Nothing here depends on which roads there are, so it works
+## the same on the hand-laid map and on a real-world route (WorldLayout.pack), where the roads
+## are many short ones: it uses only each road's kind, width and joins.
+##
 ## They keep off the Build Yard (the test area, with the shed, the sales office and the cafe
 ## and its car park) and the stretch of the loop that runs across it: roads near the yard are
-## marked out of bounds, and a rider heading that way turns off at the junction before it.
+## marked out of bounds, and anyone heading that way turns off at the junction before it.
 ## They appear out of everyone's sight (SPAWN_NEAR from every player) but near enough to
 ## someone to be met (SPAWN_FAR), and go when they're far from everyone (DESPAWN).
 ##
-## Host-driven: the host (or a solo game) rides them and sends where each is to the crew a few
-## times a second (see pack); everyone else rides them on along their road between updates. A
-## rider is only its road, how far along it, which way, its speed and a look seed, so that's
-## all that's sent; every machine draws the same rider from the seed.
+## Host-driven: the host (or a solo game) drives them and sends where each is to the crew a few
+## times a second (see pack); everyone else drives them on along their road between updates. A
+## vehicle is only its road, how far along it, which way, its speed and a look seed, so that's
+## all that's sent; every machine draws the same one from the seed. What it is (bike, car or
+## lorry), its look and which side of its lane a biker keeps all come from the seed too (the
+## last digit says which kind: see kind_of), so the numbers sent are the same as ever.
 
-const MAX_RIDERS := 4
+const MAX_RIDERS := 12
+## No more than this many of them can be bikes (they're the dear ones to draw).
+const MAX_BIKES := 7
 const SEND_EVERY := 0.2
 const SPAWN_EVERY := 5.0
 const SPAWN_CHANCE := 0.5
+## When a bike is the next to appear, the chance it comes with a group instead of on its own.
+const GROUP_CHANCE := 0.3
+## A group is this many riders, spaced this far apart (m) along the road.
+const GROUP_MIN := 2
+const GROUP_MAX := 5
+const GROUP_GAP_MIN := 8.0
+const GROUP_GAP_MAX := 25.0
+## A group's front rider eases off when the nearest behind is further than this (m), and the
+## one at the back catches up when the nearest ahead is.
+const GROUP_LOOSE := 40.0
+const GROUP_CLOSE := 30.0
+## Cars and lorries use only the tarmac roads at least this wide (half width, m) and this long.
+const CAR_MIN_HW := 3.0
+const CAR_MIN_LENGTH := 100.0
+## The chance the next to appear is a car, or a lorry (otherwise a bike).
+const CAR_SHARE := 0.38
+const TRUCK_SHARE := 0.12
 const SPAWN_NEAR := 220.0
 const SPAWN_FAR := 520.0
 const DESPAWN := 700.0
 ## The Build Yard, and how far round it the roads are out of bounds.
 const KEEP_OUT := Rect2(-65.0, 55.0, 130.0, 90.0)
 const KEEP_OUT_MARGIN := 25.0
-## How hard they corner (sideways m/s^2), brake and pull away (m/s^2), and the pace they take
-## a junction they turn off at, or a dead end they turn round in (m/s).
-const GRIP := 3.0
-const BRAKE := 3.0
-const ACCEL := 2.0
-const TURN_SPEED := 6.0
+## How each kind drives: how hard it corners (sideways m/s^2), brakes and pulls away (m/s^2),
+## its range of cruising pace (m/s), the pace it takes a junction it turns off at (m/s), the
+## pace it takes past any junction (0 for no slowing), the gap it keeps behind what's ahead (m)
+## and how far left of the middle of the road it keeps (as a share of the road's half width).
+const STATS := {
+	"bike": {"grip": 3.0, "brake": 3.0, "accel": 2.0, "lo": 12.5, "hi": 20.0, "turn": 6.0, "pass": 0.0, "gap": 7.0, "lane": 0.45},
+	"car": {"grip": 2.4, "brake": 3.0, "accel": 1.8, "lo": 11.0, "hi": 17.0, "turn": 5.5, "pass": 9.0, "gap": 7.5, "lane": 0.45},
+	"truck": {"grip": 1.8, "brake": 2.2, "accel": 1.0, "lo": 8.0, "hi": 12.5, "turn": 4.5, "pass": 6.5, "gap": 11.0, "lane": 0.52},
+}
+## The pace they take a dead end they turn round in (m/s).
 const ROUND_SPEED := 2.5
-## How far left of the middle of the road they keep, as a share of its half width.
-const LANE := 0.45
-## The chance a rider turns off at a junction they could go on through.
+## How far a biker keeps to one side or other of their lane's middle (m), by their seed.
+const STAGGER := 0.3
+## The chance a vehicle turns off at a junction they could go on through.
 const TURN_CHANCE := 0.4
 ## Drawn only within this of the camera.
 const DRAW_RANGE := 450.0
 ## Hitting one faster than this (m/s) throws you off.
 const CRASH_SPEED := 4.0
+## How far ahead (m) they watch for anything in their lane.
+const LOOK_AHEAD := 80.0
 
 var main: Node
 var world: World
+## The chance a new biker comes with a group (see GROUP_CHANCE), and the share of new vehicles
+## that are cars and lorries: set them to change the mix.
+var group_chance := GROUP_CHANCE
+var car_share := CAR_SHARE
+var truck_share := TRUCK_SHARE
 ## Each slot: {} when free, else {road, s, dir (+1 along the road, -1 against it), v, seed,
 ## cruise, turn ({} or {at, road, s, dir}: the junction it's turning off at), round (s of
 ## the dead end or out-of-bounds stretch it's turning round before, or -1), decided (the
-## junction it last made its mind up about, Vector2i(road, sample))}.
+## junction it last made its mind up about, Vector2i(road, sample)), group (0, or the number of
+## the group of bikers it's riding with, on the host)}.
 var riders: Array = []
-var _views: Array = []       # per slot: {} or {body, lean, model, sound, seed, pos, yaw, off, roll, spin, road}
+var _views: Array = []       # per slot: {} or {body, lean, kind, model, sound, seed, pos, yaw, off, roll, spin, road, ...}
 var _rng := RandomNumberGenerator.new()
 var _spawn_timer := 2.0
 var _send_timer := 0.0
-var _seq := 0                # look seeds handed out
+var _groups := 0             # groups handed out
 ## Per road: the curvature at each sample (1/m, + bending right going along it), which samples
 ## are out of bounds, and the junctions on it (sample -> [[road, s, dir], ...]).
 var _k: Array = []
 var _blocked: Array = []
 var _junctions: Array = []
 var _tarmac: Array[int] = []
+## The tarmac roads cars and lorries may use.
+var _car_roads: Array[int] = []
 var _ready_roads := false
 
 
@@ -83,6 +130,7 @@ func setup_roads() -> void:
 	_blocked.clear()
 	_junctions.clear()
 	_tarmac.clear()
+	_car_roads.clear()
 	var keep := KEEP_OUT.grow(KEEP_OUT_MARGIN)
 	for ri in roads.roads.size():
 		var r: Dictionary = roads.roads[ri]
@@ -106,6 +154,8 @@ func setup_roads() -> void:
 		_junctions.append({})
 		if r["kind"] == "tarmac":
 			_tarmac.append(ri)
+			if float(r["hw"]) >= CAR_MIN_HW and float(r["length"]) >= CAR_MIN_LENGTH:
+				_car_roads.append(ri)
 	for ri in _tarmac:
 		var r: Dictionary = roads.roads[ri]
 		for end in ["start_join", "end_join"]:
@@ -118,6 +168,30 @@ func setup_roads() -> void:
 				at[int(j["i"])] = []
 			(at[int(j["i"])] as Array).append(entry)
 	_ready_roads = true
+
+
+# ---------------------------------------------------------------------------- the kinds
+
+## What a look seed makes: "bike" (0 to 5 as its last digit), "car" (6 to 8) or "truck" (9).
+static func kind_of(seed_value: int) -> String:
+	var m := posmod(seed_value, 10)
+	return "bike" if m < 6 else ("car" if m < 9 else "truck")
+
+
+## Which side of its lane a biker keeps, from its seed (m, + towards the left verge): they
+## alternate a little in a group, which picks its seeds to match. Cars and lorries keep the middle.
+static func lane_shift(seed_value: int) -> float:
+	if kind_of(seed_value) != "bike":
+		return 0.0
+	return STAGGER if (seed_value / 10) % 2 == 0 else -STAGGER
+
+
+## Whether road `ri` is one this kind may drive: any tarmac road for a bike, the wider ones for
+## the rest (never a dirt track).
+func _usable(ri: int, kind: String) -> bool:
+	if not _tarmac.has(ri):
+		return false
+	return kind == "bike" or float(_road(ri)["hw"]) >= CAR_MIN_HW
 
 
 # ---------------------------------------------------------------------------- the roads
@@ -223,7 +297,7 @@ func _physics_process(delta: float) -> void:
 		if _spawn_timer <= 0.0:
 			_spawn_timer = SPAWN_EVERY
 			if _rng.randf() < SPAWN_CHANCE:
-				spawn_one()
+				spawn_next()
 		_send_timer -= delta
 		if _send_timer <= 0.0:
 			_send_timer = SEND_EVERY
@@ -263,18 +337,36 @@ func _people() -> Array[Vector3]:
 	return out
 
 
-## The bikes on the road: yours, the crew's and the other riders'.
-func _bikes(skip_slot: int) -> Array[Vector3]:
-	var out: Array[Vector3] = []
-	if main.get("bike") != null:
-		out.append((main.bike as Node3D).global_position)
+## Everything on the road a vehicle might have to stop for: yours, the crew's and everyone
+## else's bikes, cars and lorries (but not `skip_slot`), each as [position, way it's heading
+## (Vector3.ZERO when that's not known), speed (m/s), road (-1 when not one of ours), how far
+## along it, and which way along it].
+func _obstacles(skip_slot: int) -> Array:
+	var out := []
+	var mine = main.get("bike")
+	if mine != null and is_instance_valid(mine):
+		var f := Vector3.ZERO
+		var v := 0.0
+		if mine is Bike:
+			f = -(mine as Bike).global_transform.basis.z
+			f.y = 0.0
+			f = f.normalized()
+			v = (mine as Bike).linear_velocity.length()
+		out.append([(mine as Node3D).global_position, f, v, -1, 0.0, 0])
 	for rp in (main.get("remotes") as Dictionary).values():
 		if is_instance_valid(rp) and is_instance_valid(rp.get("bike")):
-			out.append((rp.bike as Node3D).global_position)
+			out.append([(rp.bike as Node3D).global_position, Vector3.ZERO, 0.0, -1, 0.0, 0])
 	for slot in MAX_RIDERS:
 		if slot != skip_slot and not riders[slot].is_empty():
-			out.append(_rider_point(riders[slot]))
+			var o: Dictionary = riders[slot]
+			out.append([_rider_point(o), _heading(o), float(o["v"]), int(o["road"]), float(o["s"]), int(o["dir"])])
 	return out
+
+
+## The way a vehicle is heading (unit, flat).
+func _heading(d: Dictionary) -> Vector3:
+	var f := road_dir(int(d["road"]), float(d["s"])) * int(d["dir"])
+	return Vector3(f.x, 0.0, f.y)
 
 
 func _nearest_person(p: Vector3, people: Array[Vector3]) -> float:
@@ -284,28 +376,87 @@ func _nearest_person(p: Vector3, people: Array[Vector3]) -> float:
 	return best
 
 
-## Host: a new rider somewhere out of sight but not too far from someone, riding away from
-## the yard. Returns its slot, or -1 when there's no room or nowhere suits.
-func spawn_one(near := SPAWN_NEAR, far := SPAWN_FAR) -> int:
-	if not _ready_roads:
-		setup_roads()
-	if not _ready_roads or _tarmac.is_empty():
-		return -1
-	var slot := -1
+## Host: the next thing to appear, chosen by the mix: a bike (perhaps with a group), a car or
+## a lorry. Returns how many appeared.
+func spawn_next() -> int:
+	var kind := _pick_kind()
+	if kind == "bike" and _rng.randf() < group_chance:
+		var n := spawn_group()
+		if n > 0:
+			return n
+	return 1 if spawn_one(SPAWN_NEAR, SPAWN_FAR, kind) >= 0 else 0
+
+
+func _pick_kind() -> String:
+	var roll := _rng.randf()
+	var kind := "bike"
+	if roll < truck_share:
+		kind = "truck"
+	elif roll < truck_share + car_share:
+		kind = "car"
+	if (kind != "bike" and _car_roads.is_empty()) or (kind == "bike" and count_kind("bike") >= MAX_BIKES):
+		kind = "car" if not _car_roads.is_empty() else "bike"
+	return kind
+
+
+## How many of the vehicles on the road are `kind` ("bike", "car" or "truck").
+func count_kind(kind: String) -> int:
+	var c := 0
+	for d in riders:
+		if not d.is_empty() and kind_of(int(d["seed"])) == kind:
+			c += 1
+	return c
+
+
+func _free_slots() -> Array[int]:
+	var out: Array[int] = []
 	for i in MAX_RIDERS:
 		if (riders[i] as Dictionary).is_empty():
-			slot = i
-			break
-	if slot < 0:
-		return -1
+			out.append(i)
+	return out
+
+
+## A look seed for a `kind` of vehicle; a bike's says which side of its lane it keeps with
+## `side` 0 or 1 (or at random for -1).
+func _seed_for(kind: String, side := -1) -> int:
+	var base := _rng.randi() % 100000
+	if side >= 0:
+		base = base - base % 2 + side
+	var code := _rng.randi() % 6 if kind == "bike" else (6 + _rng.randi() % 3 if kind == "car" else 9)
+	return base * 10 + code
+
+
+## Host: somewhere out of sight but not too far from someone for a `kind` of vehicle to go,
+## with `behind` metres of road clear behind it, heading away from the yard: {road, s, dir},
+## or {} when nowhere suits.
+func _find_spot(kind: String, near: float, far: float, behind := 0.0) -> Dictionary:
+	if not _ready_roads:
+		setup_roads()
+	var roads := _tarmac if kind == "bike" else _car_roads
+	if not _ready_roads or roads.is_empty():
+		return {}
 	var people := _people()
 	if people.is_empty():
-		return -1
-	for attempt in 40:
-		var ri: int = _tarmac[_rng.randi() % _tarmac.size()]
+		return {}
+	var others := _obstacles(-1)
+	for attempt in 60:
+		var ri: int = roads[_rng.randi() % roads.size()]
 		var r := _road(ri)
 		var n := (r["xz"] as PackedVector2Array).size()
 		var i := _rng.randi() % n
+		if attempt % 2 == 1:
+			# Half the tries look for a road at a random spot the right distance from someone, as on
+			# a map of many roads spread far apart picking one at random rarely lands near anybody.
+			var c := people[_rng.randi() % people.size()]
+			var a := _rng.randf() * TAU
+			var reach := _rng.randf_range(near, far)
+			var hit := world.roads.nearest(c.x + cos(a) * reach, c.z + sin(a) * reach, 60.0, "tarmac")
+			if hit.is_empty() or not roads.has(int(hit["road"])):
+				continue
+			ri = int(hit["road"])
+			r = _road(ri)
+			n = (r["xz"] as PackedVector2Array).size()
+			i = int(hit["i"]) % n
 		if (_blocked[ri] as PackedByteArray)[i]:
 			continue
 		var s := float(i) * _step(ri)
@@ -318,21 +469,135 @@ func spawn_one(near := SPAWN_NEAR, far := SPAWN_FAR) -> int:
 			dir = -dir
 			if _heads_into_yard(ri, s, dir):
 				continue
-		_seq += 1
-		var look := _rng.randi() % 100000
-		var cruise := _rng.randf_range(12.5, 20.0) * (0.85 if float(r["hw"]) < 3.4 else 1.0)
-		riders[slot] = {"road": ri, "s": s, "dir": dir, "v": cruise * 0.8, "seed": look, "cruise": cruise,
-			"turn": {}, "round": -1.0}
-		return slot
-	return -1
+		if behind > 0.0 and not r["closed"]:
+			var back := s - dir * behind
+			if back < 4.0 or back > float(r["length"]) - 4.0:
+				continue
+		var crowded := false
+		for o in others:
+			if (o[0] as Vector3).distance_to(p) < 16.0:
+				crowded = true
+				break
+		if not crowded:
+			return {"road": ri, "s": s, "dir": dir}
+	return {}
 
 
-## Host: rides one rider on along its road for `delta` seconds.
+## Host: a new vehicle somewhere out of sight but not too far from someone, heading away from
+## the yard: a `kind` of "bike", "car" or "truck" (by the mix when left out). Returns its slot,
+## or -1 when there's no room or nowhere suits.
+func spawn_one(near := SPAWN_NEAR, far := SPAWN_FAR, kind := "") -> int:
+	var free := _free_slots()
+	if free.is_empty():
+		return -1
+	if kind == "":
+		kind = _pick_kind()
+	if kind == "bike" and count_kind("bike") >= MAX_BIKES:
+		return -1
+	var spot := _find_spot(kind, near, far)
+	if spot.is_empty():
+		return -1
+	var st: Dictionary = STATS[kind]
+	var hw := float(_road(int(spot["road"]))["hw"])
+	var cruise := _rng.randf_range(float(st["lo"]), float(st["hi"])) * (0.85 if hw < 3.4 else 1.0)
+	_place(free[0], kind, int(spot["road"]), float(spot["s"]), int(spot["dir"]), _seed_for(kind), cruise, 0)
+	return free[0]
+
+
+## Host: a group of bikers (`count` of them, or two to five at random) together on one road in
+## a loose stagger. Returns how many appeared, or 0 when there isn't room or nowhere suits.
+func spawn_group(near := SPAWN_NEAR, far := SPAWN_FAR, count := 0) -> int:
+	var free := _free_slots()
+	var room := mini(free.size(), MAX_BIKES - count_kind("bike"))
+	var n := mini(count if count > 0 else _rng.randi_range(GROUP_MIN, GROUP_MAX), room)
+	if n < GROUP_MIN:
+		return 0
+	var gaps: Array[float] = []
+	var span := 0.0
+	for j in n - 1:
+		gaps.append(_rng.randf_range(GROUP_GAP_MIN, GROUP_GAP_MAX))
+		span += gaps[j]
+	var spot := _find_spot("bike", near, far, span + 6.0)
+	if spot.is_empty():
+		return 0
+	var ri := int(spot["road"])
+	var dir := int(spot["dir"])
+	var r := _road(ri)
+	var st: Dictionary = STATS["bike"]
+	# They all go at much the same pace.
+	var pace := _rng.randf_range(float(st["lo"]), float(st["hi"])) * (0.85 if float(r["hw"]) < 3.4 else 1.0)
+	_groups += 1
+	var placed := 0
+	var cum := 0.0
+	for j in n:
+		if j > 0:
+			cum += gaps[j - 1]
+		var s := float(spot["s"]) - dir * cum
+		if not r["closed"] and (s < 2.0 or s > float(r["length"]) - 2.0):
+			break
+		s = _wrap_s(ri, s)
+		if (_blocked[ri] as PackedByteArray)[_i(ri, s)]:
+			break
+		_place(free[j], "bike", ri, s, dir, _seed_for("bike", j % 2), pace * _rng.randf_range(0.96, 1.04), _groups)
+		placed += 1
+	if placed < GROUP_MIN:
+		for j in placed:
+			riders[free[j]] = {}
+		return 0
+	return placed
+
+
+func _place(slot: int, kind: String, ri: int, s: float, dir: int, look_seed: int, cruise: float, group: int) -> void:
+	riders[slot] = {"road": ri, "s": s, "dir": dir, "v": cruise * 0.8, "seed": look_seed, "cruise": cruise,
+		"turn": {}, "round": -1.0, "group": group}
+
+
+## A random number generator for a choice a whole group makes the same way: the same for
+## every member (and different for each `salt`), so they stay together.
+func _group_rng(d: Dictionary, salt: int) -> RandomNumberGenerator:
+	if int(d.get("group", 0)) == 0:
+		return _rng
+	var g := RandomNumberGenerator.new()
+	g.seed = int(d["group"]) * 100003 + salt
+	return g
+
+
+## How fast a group's rider may go to stay with the others: its own cruise, less when the
+## nearest behind is far back, more when the nearest ahead is far ahead.
+func _group_pace(slot: int, d: Dictionary, here: Vector3, fwd: Vector3) -> float:
+	var cruise := float(d["cruise"])
+	var group := int(d.get("group", 0))
+	if group == 0:
+		return cruise
+	var behind := INF
+	var ahead := INF
+	for o in MAX_RIDERS:
+		var od: Dictionary = riders[o]
+		if o == slot or od.is_empty() or int(od.get("group", 0)) != group:
+			continue
+		var off := _rider_point(od) - here
+		var dist := Vector2(off.x, off.z).length()
+		if off.dot(fwd) < 0.0:
+			behind = minf(behind, dist)
+		else:
+			ahead = minf(ahead, dist)
+	if behind < 150.0 and behind > GROUP_LOOSE:
+		return cruise * maxf(0.5, 1.0 - (behind - GROUP_LOOSE) / 60.0)
+	if ahead < 150.0 and ahead > GROUP_CLOSE:
+		return cruise * 1.1
+	return cruise
+
+
+## Host: drives one vehicle on along its road for `delta` seconds.
 func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	var ri := int(d["road"])
 	var r := _road(ri)
 	var dir := int(d["dir"])
 	var v := float(d["v"])
+	var kind := kind_of(int(d["seed"]))
+	var st: Dictionary = STATS[kind]
+	var grip := float(st["grip"])
+	var brake := float(st["brake"])
 	var step := _step(ri)
 	var n := (r["xz"] as PackedVector2Array).size()
 	var length := float(r["length"])
@@ -341,10 +606,13 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	if _nearest_person(here, people) > DESPAWN:
 		riders[slot] = {}
 		return
-	# The pace it can take now: its own cruise, the bends ahead, the junction it's turning
-	# off at, a dead end or the edge of the yard it turns round before.
-	var allow := float(d["cruise"])
-	var reach := maxf(40.0, v * v / (2.0 * BRAKE) + 15.0)
+	var fwd := _heading(d)
+	# The pace it can take now: its own cruise (kept to the group's), the bends ahead, the
+	# junctions, the one it's turning off at, a dead end or the edge of the yard it turns round before.
+	var allow := _group_pace(slot, d, here, fwd)
+	var pass_speed := float(st["pass"])
+	var turn_speed := float(st["turn"])
+	var reach := maxf(40.0, v * v / (2.0 * brake) + 15.0)
 	var i0 := _i(ri, float(d["s"]))
 	var blocked: PackedByteArray = _blocked[ri]
 	var at: Dictionary = _junctions[ri]
@@ -356,49 +624,68 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 		if r["closed"]:
 			j = posmod(j, n)
 		elif j < 0 or j >= n:
-			if _end_join(ri, dir).is_empty():
+			if _end_join(ri, dir, kind).is_empty():
 				if float(d["round"]) < 0.0:
 					d["round"] = 0.0 if dir < 0 else length
 			else:
 				# The end of the road, where it joins another: slow to turn onto it.
-				allow = minf(allow, sqrt(TURN_SPEED * TURN_SPEED + 2.0 * BRAKE * maxf(dist - step, 0.0)))
+				allow = minf(allow, sqrt(turn_speed * turn_speed + 2.0 * brake * maxf(dist - step, 0.0)))
 			break
-		var bend := sqrt(GRIP / maxf(absf(kk[j]), 0.0005))
-		allow = minf(allow, sqrt(bend * bend + 2.0 * BRAKE * dist))
+		var bend := sqrt(grip / maxf(absf(kk[j]), 0.0005))
+		allow = minf(allow, sqrt(bend * bend + 2.0 * brake * dist))
 		if blocked[j]:
 			if float(d["round"]) < 0.0 and (d["turn"] as Dictionary).is_empty():
 				d["round"] = _wrap_s(ri, float(d["s"]) + dir * maxf(dist - 6.0, 0.0))
 			break
-		if k > 0 and at.has(j) and (d["turn"] as Dictionary).is_empty() and float(d["round"]) < 0.0 \
-				and d.get("decided", Vector2i(-1, -1)) != Vector2i(ri, j):
-			d["decided"] = Vector2i(ri, j)   # made up its mind about this one: don't ask again
-			_choose_turn(d, ri, j, dir)
+		if k > 0 and at.has(j):
+			if pass_speed > 0.0:
+				# Cars and lorries take it steadily: someone may pull out.
+				allow = minf(allow, sqrt(pass_speed * pass_speed + 2.0 * brake * dist))
+			if (d["turn"] as Dictionary).is_empty() and float(d["round"]) < 0.0 \
+					and d.get("decided", Vector2i(-1, -1)) != Vector2i(ri, j):
+				d["decided"] = Vector2i(ri, j)   # made up its mind about this one: don't ask again
+				_choose_turn(d, ri, j, dir, kind)
 	if not (d["turn"] as Dictionary).is_empty():
 		var gap := absf(_ahead(ri, float(d["s"]), float(d["turn"]["at"]), dir))
-		allow = minf(allow, sqrt(TURN_SPEED * TURN_SPEED + 2.0 * BRAKE * gap))
+		allow = minf(allow, sqrt(turn_speed * turn_speed + 2.0 * brake * gap))
 	if float(d["round"]) >= 0.0:
 		var gap := maxf(_ahead(ri, float(d["s"]), float(d["round"]), dir), 0.0)
-		allow = minf(allow, sqrt(ROUND_SPEED * ROUND_SPEED + 2.0 * BRAKE * gap))
+		allow = minf(allow, sqrt(ROUND_SPEED * ROUND_SPEED + 2.0 * brake * gap))
 		if gap < 1.0:
 			# Round in the road and back the way it came.
 			d["dir"] = -dir
 			d["round"] = -1.0
 			d["v"] = minf(v, ROUND_SPEED)
 			return
-	# Something in the lane ahead: hang back behind it.
-	var fwd2 := road_dir(ri, float(d["s"])) * dir
-	var fwd := Vector3(fwd2.x, 0.0, fwd2.y)
-	for o in _bikes(slot):
-		var off := o - here
+	# Something in the lane ahead: hang back behind it, at its pace if it's moving the same way.
+	var keep_gap := float(st["gap"])
+	if int(d.get("group", 0)) != 0:
+		keep_gap = maxf(keep_gap, GROUP_GAP_MIN)   # a group's bikers don't tail-gate each other
+	for o in _obstacles(slot):
+		var off: Vector3 = o[0] - here
 		var along := off.dot(fwd)
-		if along > 0.0 and along < 40.0 and (off - fwd * along).length() < 2.4 and absf(off.y) < 3.0:
-			allow = minf(allow, maxf(0.0, (along - 7.0) * 0.8))
-	v = move_toward(v, allow, (BRAKE * 1.6 if allow < v else ACCEL) * delta)
+		var f: Vector3 = o[1]
+		if int(o[3]) == ri and int(o[5]) == dir:
+			# Another on this road going the same way: it's in the lane, however it bends.
+			along = _ahead(ri, float(d["s"]), float(o[4]), dir)
+		elif int(o[3]) == ri and int(o[5]) != dir and o[3] >= 0:
+			continue   # in the other lane
+		elif along <= 0.0 or (off - fwd * along).length() >= 1.9 or absf(off.y) >= 3.0:
+			continue
+		if along <= 0.0 or along >= LOOK_AHEAD:
+			continue
+		var same_way := f != Vector3.ZERO and f.dot(fwd) > 0.3
+		if not same_way and f != Vector3.ZERO and float(o[2]) > 1.0:
+			continue   # coming the other way in its own lane
+		var lead_v := minf(float(o[2]), float(d["cruise"])) if same_way else 0.0
+		allow = minf(allow, lead_v * clampf((along - keep_gap * 0.5) / (keep_gap * 0.5), 0.0, 1.0)
+			+ sqrt(2.0 * brake * maxf(along - keep_gap, 0.0)))
+	v = move_toward(v, allow, (brake * 1.6 if allow < v else float(st["accel"])) * delta)
 	# A kink it couldn't see coming (just round a junction onto a new road): scrub off what it
 	# must so it never corners harder than a rider would.
 	var k_now := absf(kk[i0])
-	if v * v * k_now > GRIP * 1.5:
-		v = sqrt(GRIP * 1.5 / k_now)
+	if v * v * k_now > grip * 1.5:
+		v = sqrt(grip * 1.5 / k_now)
 	d["v"] = v
 	var s := float(d["s"]) + dir * v * delta
 	# The junction it's turning off at: onto the other road there.
@@ -410,7 +697,7 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 		d["turn"] = {}
 		return
 	if not r["closed"] and (s <= 0.0 or s >= length):
-		var join := _end_join(ri, dir)
+		var join := _end_join(ri, dir, kind)
 		if join.is_empty():
 			d["s"] = clampf(s, 0.0, length)
 			d["dir"] = -dir
@@ -418,7 +705,7 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 		# On to the road this one leaves from or joins, whichever way doesn't head into the yard.
 		var pr := int(join["road"])
 		var ps := float(join["i"]) * _step(pr)
-		var pd := 1 if _rng.randf() < 0.5 else -1
+		var pd := 1 if _group_rng(d, pr).randf() < 0.5 else -1
 		if _heads_into_yard(pr, ps, pd):
 			pd = -pd
 		d["road"] = pr
@@ -428,10 +715,11 @@ func _drive(slot: int, d: Dictionary, delta: float) -> void:
 	d["s"] = _wrap_s(ri, s)
 
 
-## The join at the end of road `ri` it's riding towards ({road, i}), or {} for a dead end.
-func _end_join(ri: int, dir: int) -> Dictionary:
+## The join at the end of road `ri` it's driving towards ({road, i}), or {} for a dead end (or
+## when the road it joins is no use to a `kind` of vehicle).
+func _end_join(ri: int, dir: int, kind := "bike") -> Dictionary:
 	var j: Dictionary = _road(ri)["end_join" if dir > 0 else "start_join"]
-	return j if not j.is_empty() and _tarmac.has(int(j["road"])) else {}
+	return j if not j.is_empty() and _usable(int(j["road"]), kind) else {}
 
 
 ## How far ahead (in the way it's going) `to` is from `from` along road `ri`, in metres.
@@ -443,21 +731,22 @@ func _ahead(ri: int, from: float, to: float, dir: int) -> float:
 
 
 ## At the junction at sample `j` of road `ri`: go on, or turn off onto one of the roads there
-## (always, when going on heads into the yard).
-func _choose_turn(d: Dictionary, ri: int, j: int, dir: int) -> void:
+## (always, when going on heads into the yard). A group's riders choose alike.
+func _choose_turn(d: Dictionary, ri: int, j: int, dir: int, kind := "bike") -> void:
 	var options := []
 	for e in _junctions[ri][j]:
 		var branch := int(e[0])
-		if not _heads_into_yard(branch, float(e[1]), int(e[2])):
+		if _usable(branch, kind) and not _heads_into_yard(branch, float(e[1]), int(e[2])):
 			options.append(e)
 	var on := not _heads_into_yard(ri, float(j) * _step(ri), dir)
-	if options.is_empty() or (on and _rng.randf() > TURN_CHANCE):
+	var rng := _group_rng(d, ri * 7919 + j)
+	if options.is_empty() or (on and rng.randf() > TURN_CHANCE):
 		return
-	var e: Array = options[_rng.randi() % options.size()]
+	var e: Array = options[rng.randi() % options.size()]
 	d["turn"] = {"at": float(j) * _step(ri), "road": int(e[0]), "s": float(e[1]), "dir": int(e[2])}
 
 
-## Client: rides each rider on along its road between the host's updates.
+## Client: drives each vehicle on along its road between the host's updates.
 func _coast(d: Dictionary, delta: float) -> void:
 	var ri := int(d["road"])
 	d["s"] = _wrap_s(ri, float(d["s"]) + int(d["dir"]) * float(d["v"]) * delta)
@@ -470,7 +759,7 @@ func _coast(d: Dictionary, delta: float) -> void:
 
 # ---------------------------------------------------------------------------- the crew
 
-## The riders for the network: [count, then road, s, dir, v, seed for each slot (road -1 when free)].
+## The vehicles for the network: [count, then road, s, dir, v, seed for each slot (road -1 when free)].
 func pack() -> PackedFloat32Array:
 	var out := PackedFloat32Array([float(MAX_RIDERS)])
 	for d in riders:
@@ -481,7 +770,7 @@ func pack() -> PackedFloat32Array:
 	return out
 
 
-## Client: the host's riders.
+## Client: the host's vehicles.
 func unpack(state: PackedFloat32Array) -> void:
 	if Net.is_host() or state.size() < 1 or not _ready_roads:
 		return
@@ -498,7 +787,7 @@ func unpack(state: PackedFloat32Array) -> void:
 		var fresh := d.is_empty() or int(d["seed"]) != int(state[b + 4]) or int(d["road"]) != ri
 		if fresh or absf(_ahead(ri, float(d["s"]), state[b + 1], 1)) > 25.0:
 			riders[slot] = {"road": ri, "s": state[b + 1], "dir": int(state[b + 2]), "v": state[b + 3], "seed": int(state[b + 4]),
-				"cruise": state[b + 3], "turn": {}, "round": -1.0, "target": state[b + 1]}
+				"cruise": state[b + 3], "turn": {}, "round": -1.0, "target": state[b + 1], "group": 0}
 		else:
 			d["dir"] = int(state[b + 2])
 			d["v"] = state[b + 3]
@@ -522,62 +811,81 @@ func clear() -> void:
 
 # ---------------------------------------------------------------------------- drawing
 
-## Where a rider is on the road: in their lane, on the surface.
+## Where a vehicle is on the road: in its lane, on the surface.
 func _rider_point(d: Dictionary) -> Vector3:
 	var ri := int(d["road"])
+	var look_seed := int(d.get("seed", 0))
 	var f := road_dir(ri, float(d["s"])) * int(d["dir"])
 	var left := Vector3(f.y, 0.0, -f.x)
-	return road_point(ri, float(d["s"])) + left * float(_road(ri)["hw"]) * LANE
+	var lane := float((STATS[kind_of(look_seed)] as Dictionary)["lane"])
+	return road_point(ri, float(d["s"])) + left * (float(_road(ri)["hw"]) * lane + lane_shift(look_seed))
 
 
 ## A rider's bike as it looks from its seed: a bike of a style, in a colour, its rider in
-## their own jacket. The same on every machine.
+## their own jacket. The same on every machine. (A car's or lorry's look is TrafficVehicle.look.)
 static func look_of(seed_value: int) -> Dictionary:
+	var kind := kind_of(seed_value)
+	if kind != "bike":
+		return TrafficVehicle.look(kind, seed_value)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value * 7919 + 13
 	var style: String = PartsDB.STYLES[rng.randi() % PartsDB.STYLES.size()]
 	var parts := PartsDB.sanitize_build(Contracts.style_build(style))
 	var jackets := [Color(0.07, 0.07, 0.08), Color(0.35, 0.2, 0.12), Color(0.6, 0.08, 0.06), Color(0.12, 0.2, 0.45),
 		Color(0.85, 0.85, 0.82), Color(0.2, 0.3, 0.15)]
-	return {"style": style, "parts": parts, "paint": Shed.PAINTS[rng.randi() % Shed.PAINTS.size()],
+	return {"kind": "bike", "style": style, "parts": parts, "paint": Shed.PAINTS[rng.randi() % Shed.PAINTS.size()],
 		"jacket": jackets[rng.randi() % jackets.size()]}
 
 
 func _make_view(slot: int, d: Dictionary) -> Dictionary:
 	var look := look_of(int(d["seed"]))
-	var build := BikeBuild.new(look["parts"])
+	var kind := str(look["kind"])
 	var body := AnimatableBody3D.new()
-	body.name = "TrafficRider%d" % slot
+	body.name = "Traffic%d" % slot
 	body.sync_to_physics = false
 	body.collision_layer = 2       # with the bikes, so yours runs into it
 	body.collision_mask = 0
 	body.add_to_group("road_traffic")
 	add_child(body)
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(0.7, 1.55, build.wheelbase + 0.45)
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
-	cs.position = Vector3(0.0, 0.8, 0.0)
 	body.add_child(cs)
 	var lean := Node3D.new()
 	body.add_child(lean)
+	var view := {"body": body, "lean": lean, "kind": kind, "model": null, "sound": null, "seed": int(d["seed"]), "build": null,
+		"wheels": [], "radius": 0.3, "pos": _rider_point(d), "yaw": _yaw(d), "off": Vector3.ZERO, "roll": 0.0, "spin": 0.0,
+		"road": int(d["road"]), "dir": int(d["dir"])}
+	if kind != "bike":
+		var built := TrafficVehicle.build(look)
+		var size: Vector3 = built["size"]
+		shape.size = Vector3(size.x, size.y, size.z + 0.1)
+		cs.position = Vector3(0.0, size.y * 0.5, 0.0)
+		lean.add_child(built["root"])
+		view["model"] = built["root"]
+		view["wheels"] = built["wheels"]
+		view["radius"] = float(built["radius"])
+		return view
+	var build := BikeBuild.new(look["parts"])
+	shape.size = Vector3(0.7, 1.55, build.wheelbase + 0.45)
+	cs.position = Vector3(0.0, 0.8, 0.0)
 	var model := BikeModel.new()
 	model.rider_color = look["jacket"]
 	model.position.y = build.rear_radius
 	lean.add_child(model)
 	model.build_from(build, look["paint"])
 	model.set_lights(true, true)
-	var sound: EngineSound = null
 	if DisplayServer.get_name() != "headless":
-		sound = EngineSound.new()
+		var sound := EngineSound.new()
 		sound.volume_db = -6.0
 		body.add_child(sound)
 		sound.setup(build, model)
 		sound.set_distant_filter(true)
 		sound.running = true
-	var p := _rider_point(d)
-	return {"body": body, "lean": lean, "model": model, "sound": sound, "seed": int(d["seed"]), "build": build,
-		"pos": p, "yaw": _yaw(d), "off": Vector3.ZERO, "roll": 0.0, "spin": 0.0, "road": int(d["road"]), "dir": int(d["dir"])}
+		view["sound"] = sound
+	view["model"] = model
+	view["build"] = build
+	return view
 
 
 func _yaw(d: Dictionary) -> float:
@@ -585,8 +893,19 @@ func _yaw(d: Dictionary) -> float:
 	return atan2(-f.x, -f.y)
 
 
+## How brightly the vehicles' lamps burn: at dusk and in the dark, and a little in heavy rain.
+func _lamp_level() -> float:
+	var level := 0.0
+	if Daylight.current != null:
+		level = Daylight.current.lamps
+	if Weather.current != null:
+		level = maxf(level, clampf((Weather.rain_level() - 0.2) * 1.5, 0.0, 0.8))
+	return level
+
+
 func _update_views(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	TrafficVehicle.set_lamps(_lamp_level())
 	for slot in MAX_RIDERS:
 		var d: Dictionary = riders[slot]
 		var view: Dictionary = _views[slot]
@@ -612,22 +931,29 @@ func _update_views(delta: float) -> void:
 		view["yaw"] = yaw
 		var ri := int(d["road"])
 		var v := float(d["v"])
-		# Leaning into the bend just ahead, atan(v^2 k / g); pitched with the road's slope.
-		var k := float((_k[ri] as PackedFloat32Array)[_i(ri, float(d["s"]) + int(d["dir"]) * maxf(v * 0.3, 1.0))]) * int(d["dir"])
+		var dir := int(d["dir"])
+		var near := cam == null or cam.global_position.distance_to(pos) < DRAW_RANGE
+		(view["model"] as Node3D).visible = near
+		var ahead := road_point(ri, float(d["s"]) + dir * 2.0)
+		var behind := road_point(ri, float(d["s"]) - dir * 2.0)
+		var pitch := atan2(ahead.y - behind.y, 4.0)   # pitched with the road's slope
+		var body: AnimatableBody3D = view["body"]
+		body.global_transform = Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch), pos)
+		if str(view["kind"]) != "bike":
+			view["spin"] = float(view["spin"]) + v * delta / float(view["radius"])
+			if near:
+				for w in view["wheels"]:
+					(w as Node3D).rotation.x = -float(view["spin"])
+			continue
+		# Leaning into the bend just ahead, atan(v^2 k / g).
+		var k := float((_k[ri] as PackedFloat32Array)[_i(ri, float(d["s"]) + dir * maxf(v * 0.3, 1.0))]) * dir
 		var want := clampf(atan(v * v * k / Bike.G), -0.7, 0.7)
 		var roll := lerpf(float(view["roll"]), want, 1.0 - exp(-4.0 * delta))
 		view["roll"] = roll
-		var ahead := road_point(ri, float(d["s"]) + int(d["dir"]) * 2.0)
-		var behind := road_point(ri, float(d["s"]) - int(d["dir"]) * 2.0)
-		var pitch := atan2(ahead.y - behind.y, 4.0)
-		var body: AnimatableBody3D = view["body"]
-		body.global_transform = Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch), pos)
 		(view["lean"] as Node3D).basis = Basis(Vector3.FORWARD, roll)   # + leans right
 		var build: BikeBuild = view["build"]
 		view["spin"] = float(view["spin"]) + v * delta / maxf(build.rear_radius, 0.2)
 		var model: BikeModel = view["model"]
-		var near := cam == null or cam.global_position.distance_to(pos) < DRAW_RANGE
-		model.visible = near
 		if near:
 			var steer := clampf(-atan(build.wheelbase * k) * 0.8, -0.5, 0.5)
 			model.update_pose_from(steer, float(view["spin"]), float(view["spin"]), 0.0, 0.0, 0.0, clampf(roll / 0.6, -1.0, 1.0) * 0.6)
