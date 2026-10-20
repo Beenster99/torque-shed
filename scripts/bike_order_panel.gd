@@ -68,22 +68,27 @@ func _ready() -> void:
 	var qrow := HBoxContainer.new()
 	qrow.add_theme_constant_override("separation", 10)
 	_box.add_child(qrow)
-	qrow.add_child(UITheme.label("QUALITY", 15, UITheme.ACCENT))
-	qrow.add_child(UITheme.label("Worn", 14, Color(1, 1, 1, 0.6)))
+	var ends := [UITheme.label("QUALITY", 15, UITheme.ACCENT), UITheme.label("Worn", 14, Color(1, 1, 1, 0.6)), UITheme.label("New", 14, Color(1, 1, 1, 0.6))]
+	for l: Label in ends:
+		l.autowrap_mode = TextServer.AUTOWRAP_OFF
+		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	qrow.add_child(ends[0])
+	qrow.add_child(ends[1])
 	_quality = HSlider.new()
 	_quality.min_value = 0.0
 	_quality.max_value = 1.0
 	_quality.step = BikeCopy.QUALITY_STEP
 	_quality.value = 1.0
-	_quality.custom_minimum_size = Vector2(260, 24)
+	_quality.custom_minimum_size = Vector2(200, 24)
 	_quality.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_quality.value_changed.connect(func(_v): _refresh())
 	qrow.add_child(_quality)
-	qrow.add_child(UITheme.label("New", 14, Color(1, 1, 1, 0.6)))
+	qrow.add_child(ends[2])
 	_quality_text = UITheme.label("", 15)
 	_quality_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_quality_text.custom_minimum_size.x = 200.0
 	_quality_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_quality_text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	qrow.add_child(_quality_text)
 	_sums = UITheme.label("", 16)
 	_sums.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
