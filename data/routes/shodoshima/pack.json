@@ -1,0 +1,37 @@
+{
+ "format": 3,
+ "name": "shodoshima",
+ "title": "Shodoshima",
+ "start": {
+  "lat": 34.518638,
+  "lon": 134.269646
+ },
+ "end": {
+  "lat": 34.499373,
+  "lon": 134.347915
+ },
+ "length_m": 24108.0,
+ "run_out_m": 600.0,
+ "tile": {
+  "size_m": 512.0,
+  "n": 128,
+  "spacing": 4.0
+ },
+ "height": {
+  "min": -256.0,
+  "scale": 0.0625
+ },
+ "tile_count": 220,
+ "sea": true,
+ "theme": "coastal",
+ "warning": null,
+ "sources": {
+  "overture_release": "2026-09-23.1",
+  "elevation": "Mapterhorn, AWS Terrain Tiles fallback"
+ },
+ "credits": [
+  "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
+  "Roads: (c) OpenStreetMap contributors, Overture Maps Foundation (ODbL)."
+ ],
+ "hash": "e98ec5de34b29392"
+}
