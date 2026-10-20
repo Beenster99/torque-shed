@@ -54,7 +54,15 @@ static func sanitize(v) -> Dictionary:
 		else AdventureDest.default_for(str(out["theme"]), int(out["seed"]))
 	out["title"] = str(out.get("title", ""))
 	out["mag"] = str(out.get("mag", ""))
+	var pack := RealPack.get_pack(str(out.get("real", ""))) if str(out.get("real", "")) != "" else null
+	out["real"] = pack.id if pack != null else ""
+	out["real_hash"] = pack.hash if pack != null else ""
 	return out
+
+
+static func _real_hash(id: String) -> String:
+	var pack := RealPack.get_pack(id) if id != "" else null
+	return pack.hash if pack != null else ""
 
 
 ## Hours of game time a real second, out on an adventure.
@@ -80,6 +88,8 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "There's no adventure like that."
 			if str(action.get("dest", "")) != "" and not AdventureDest.exists(str(action["dest"])):
 				return "There's no destination like that."
+			if str(action.get("real", "")) != "" and RealPack.get_pack(str(action["real"])) == null:
+				return "This game doesn't have that road."
 			var art := AdventureMag.find(str(action.get("mag", "")))
 			if str(action.get("mag", "")) != "" and (art.is_empty() or not AdventureMag.unlocked(art, AdventureMag.level_now())):
 				return "That issue of the magazine isn't out yet."
@@ -128,7 +138,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var title := str(action.get("title", "")).left(48)
 			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": seed, "km": km, "theme": theme, "dest": dest,
 				"title": title if title != "" else "Ride to %s" % AdventureDest.name_of(dest), "mag": str(action.get("mag", "")),
-				"by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
+				"real": str(action.get("real", "")), "real_hash": _real_hash(str(action.get("real", ""))), "by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
 			Shed.adventure_save = {}   # a new adventure: any put away overnight is forgotten
 			AdventureDiary.started(true)
 			return "*%s is off on an adventure ride: %s, %d km to %s. Everyone to the start!" % [who, str(Shed.adventure["title"]),

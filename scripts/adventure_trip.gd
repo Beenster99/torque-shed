@@ -186,10 +186,29 @@ func _on_picks_taken() -> void:
 		_map.refresh()
 
 
+## Why this game can't ride the real road in adventure `info` ("" if it can, or the road is made up): it
+## doesn't have the road, or its copy differs from the host's, and the ride would not be the same road.
+static func real_mismatch(info: Dictionary) -> String:
+	var id := str(info.get("real", ""))
+	if id == "":
+		return ""
+	var pack := RealPack.get_pack(id)
+	if pack == null:
+		return "This ride is along a real road your game doesn't have (%s): update the game to join." % id
+	if str(info.get("real_hash", "")) != pack.hash:
+		return "Your copy of the %s road isn't the host's: update the game to join." % pack.title
+	return ""
+
+
 ## Into the adventure in Shed.adventure.
 func enter() -> void:
 	var info := Shed.adventure.duplicate(true)
 	trip_id = int(info["id"])
+	var why := real_mismatch(info)
+	if why != "":
+		_busy = false
+		Shed.feedback.emit(why, false)   # (trip_id stays, so this isn't tried again every frame)
+		return
 	_busy = true
 	_arrive_sent = false
 	moment_done = false
@@ -204,7 +223,7 @@ func enter() -> void:
 	if main.geometry.active:
 		main.geometry.close()
 	world = AdventureWorld.new()
-	world.setup(int(info["seed"]), float(info["km"]), str(info.get("theme", "varied")), str(info.get("dest", "")))
+	world.setup(int(info["seed"]), float(info["km"]), str(info.get("theme", "varied")), str(info.get("dest", "")), str(info.get("real", "")))
 	world.apply_picks(AdventureForks.picks())   # a ride picked up again: the ways already taken
 	_fork_due = {}
 	world.focus = focus_points

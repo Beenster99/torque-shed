@@ -109,12 +109,18 @@ func _exit_tree() -> void:
 
 
 ## Plans the route for `seed` and `km` and puts its start at ANCHOR. `dest` (see AdventureDest) is
-## the set piece past the finish, planned with the road ("" for none).
-func setup(seed: int, km: float, theme := "varied", dest := "") -> void:
+## the set piece past the finish, planned with the road ("" for none). `real_id` is a baked real road
+## (see RealPack) to ride instead of a made-up one.
+func setup(seed: int, km: float, theme := "varied", dest := "", real_id := "") -> void:
 	name = "Adventure"
 	var t0 := Time.get_ticks_usec()
 	route = AdventureRoute.new()
-	route.plan(seed, km, theme, [AdventureDest.site(dest, km)] if dest != "" else [])
+	var extra: Array = [AdventureDest.site(dest, km)] if dest != "" else []
+	var pack := RealPack.get_pack(real_id) if real_id != "" else null
+	if pack != null:
+		route.plan_real(pack, seed, km, extra)
+	else:
+		route.plan(seed, km, theme, extra)
 	stats["plan_ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	origin = -ANCHOR
 	site_builders = {
