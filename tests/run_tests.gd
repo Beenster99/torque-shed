@@ -521,6 +521,13 @@ func _run_all() -> void:
 	await _test_adv_roads_lights_cycle()
 	await _test_adv_roads_traffic_stops()
 	await _test_adv_roads_traffic_turns()
+	print("Other bikers on adventures (v0.18.0): solo and in groups both ways, riding with the crew, peeling off, nods and waves")
+	await _test_adv_bikers_spawn()
+	await _test_adv_bikers_join()
+	await _test_adv_bikers_peel()
+	await _test_adv_bikers_nods()
+	await _test_adv_bikers_sync()
+	await _test_adv_bikers_cost()
 	await _test_adv_roads_police_red()
 	await _test_adv_roads_chunk_cost()
 	print("Order one of these, and copy its blueprint (v0.16.0): any bike looked at, the cafes' bikes, parked bikes with real builds")
@@ -22217,3 +22224,33 @@ func _test_staff_trips_nearest() -> void:
 
 func _test_staff_trips_flatbed() -> void:
 	_staff_trips().test_flatbed_kit()
+
+
+# ---------------------------------------------------------------------------- other bikers on adventures (tests/adventure_bikers_tests.gd)
+
+func _adv_bikers() -> RefCounted:
+	return load("res://tests/adventure_bikers_tests.gd").new(self)
+
+
+func _test_adv_bikers_spawn() -> void:
+	await _adv_bikers().test_spawn()
+
+
+func _test_adv_bikers_join() -> void:
+	await _adv_bikers().test_join()
+
+
+func _test_adv_bikers_peel() -> void:
+	await _adv_bikers().test_peel()
+
+
+func _test_adv_bikers_nods() -> void:
+	await _adv_bikers().test_nods()
+
+
+func _test_adv_bikers_sync() -> void:
+	await _adv_bikers().test_sync()
+
+
+func _test_adv_bikers_cost() -> void:
+	await _adv_bikers().test_cost()
