@@ -659,23 +659,27 @@ func _ready() -> void:
 				Shed.request({"a": "pool_shot", "angle": angle, "power": 1.0 if int(Shed.pool["shots"]) == 0 else 0.6})
 		var rest_ok := ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok
 		# Order one of these and copy its blueprint (BikeCopy), once the trolley and the poster are
-		# in (it fills the delivery area): the client orders one of the ranger from its own money
-		# and copies a cafe biker's bike; both see the boxes with the client's name on them and
-		# the blueprint, and only the client paid.
+		# in (it fills the delivery area): the client orders one of the ranger, used (the card's
+		# quality slider halfway), from its own money and copies a cafe biker's bike; both see the
+		# parts with the client's name on them, worn as ordered, and the blueprint, and only the
+		# client paid the used price.
 		var paid_log: Array = Progress.profile["cash_log"].filter(func(e): return str(e["why"]).begins_with("Ordered:"))
 		if role == "client" and trolley_ok and scrap_ok and cafe_ok and not copy_asked and not CoffeeShop.visitors().is_empty():
 			var vb: Dictionary = CoffeeShop.visitors().values()[0]["bike"]
 			var vsrc := BikeCopy.build_src("MP cafe copy", vb["parts"], Shed.PAINTS[int(vb["paint"]) % Shed.PAINTS.size()])
-			copy_cost = BikeCopy.total(BikeCopy.lines(BikeCopy.plan_of({"bike": ranger}), Shed.me()))
+			copy_cost = BikeCopy.total(BikeCopy.lines(BikeCopy.plan_of({"bike": ranger}), Shed.me(), 0.5))
 			copy_logged = paid_log.size()
 			Progress.earn(copy_cost, "Test")
-			copy_asked = BikeCopy.order({"bike": ranger}) == "" and BikeCopy.copy_blueprint(vsrc) == ""
+			copy_asked = BikeCopy.order({"bike": ranger}, 0.5) == "" and BikeCopy.copy_blueprint(vsrc) == ""
 		var boxed := Shed.items.values().filter(func(it): return str(it.get("by", "")) == "Test client").size() + \
 			Shed.on_order.filter(func(o): return str(o.get("by", "")) == "Test client").size()
+		var used_wear := float(BikeCopy.used_cond(0.5)["wear"])
+		var worn := Shed.items.values().filter(func(it): return str(it.get("by", "")) == "Test client" and absf(float(it["wear"]) - used_wear) < 0.001).size() + \
+			Shed.on_order.filter(func(o): return str(o.get("by", "")) == "Test client" and o.has("used")).size()
 		paid_log = Progress.profile["cash_log"].filter(func(e): return str(e["why"]).begins_with("Ordered:"))
 		var copy_paid: bool = (role == "client" and copy_asked and paid_log.size() == copy_logged + 1 and int(paid_log[-1]["amt"]) == -copy_cost) \
 			or (role == "host" and paid_log.is_empty())
-		copy_ok = copy_ok or (boxed >= 30 and Shed.blueprint_named("MP cafe copy") != 0 and copy_paid)
+		copy_ok = copy_ok or (boxed >= 30 and worn >= 25 and Shed.blueprint_named("MP cafe copy") != 0 and copy_paid)
 		if rest_ok and copy_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and

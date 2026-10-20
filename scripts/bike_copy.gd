@@ -10,7 +10,11 @@ extends RefCounted
 ##                   what that player pays for it there (Money.buy_price: Haggler counts), out of
 ##                   their own money. They're boxed outside the roller door in its colours straight
 ##                   away; whatever the delivery area hasn't room for waits on order (Shed.on_order)
-##                   and comes as soon as there is room.
+##                   and comes as soon as there is room. The card's quality slider (Simon: "Add a
+##                   slider for bike quality when ordering one into the shed") orders it anywhere
+##                   from worn-out used parts up to new: the parts come in that condition, unboxed
+##                   when they're used, for less (see used_cond and price_factor). The request
+##                   carries "quality" (0 worn .. 1 new); the host checks it and prices it itself.
 ##   copy_blueprint  keeps the bike as a blueprint (its parts, their colours, its paint and fit),
 ##                   named after it, to build from or order the usual way ({menu}, Blueprints).
 ##
@@ -26,6 +30,16 @@ extends RefCounted
 const PAINTED: Array[String] = ["tank", "fairing"]
 const NAME_MAX := 28
 const DELIVERY := "Straight away, boxed outside the roller door. Whatever won't fit in the delivery area waits on order and comes as soon as there's room."
+## The quality slider: from worn (0) to new (1), in steps of this.
+const QUALITY_STEP := 0.05
+## What the worst used parts cost, as a share of the new price (it rises in step to new).
+const USED_PRICE := 0.3
+## How worn, rusty and dirty the worst used parts are (better ones in step to none).
+const USED_WEAR := 0.65
+const USED_RUST := 0.45
+const USED_DIRT := 0.7
+## Names along the slider, from the top: [at least this quality, what it's called].
+const QUALITY_NAMES := [[1.0, "New"], [0.75, "Nearly new"], [0.45, "Used"], [0.2, "Well used"], [0.0, "Worn"]]
 
 
 # ---------------------------------------------------------------------------- what a bike is
@@ -81,12 +95,60 @@ static func clean_name(n: String) -> String:
 
 
 ## Every part on a plan's build, one row each: {slot, part, name, price} with the price `peer`
-## pays for it at the parts computer. The frame first, as the build goes.
-static func lines(plan: Dictionary, peer: int) -> Array:
+## pays for it at the parts computer, at `quality` (see price_factor). The frame first, as the
+## build goes.
+static func lines(plan: Dictionary, peer: int, quality := 1.0) -> Array:
 	var out := []
 	for row in Shed.plan_rows({"parts": plan.get("parts", {})}, 0):
-		out.append({"slot": row["slot"], "part": row["part"], "name": row["name"], "price": Money.buy_price(str(row["part"]), peer)})
+		var price := Money.buy_price(str(row["part"]), peer)
+		if not is_new(quality) and not PartsDB.is_fluid(str(row["part"])):
+			price = maxi(1, roundi(price * price_factor(quality)))
+		out.append({"slot": row["slot"], "part": row["part"], "name": row["name"], "price": price})
 	return out
+
+
+# ---------------------------------------------------------------------------- quality
+
+## A quality as an order can have it: 0 (worn) to 1 (new) in QUALITY_STEPs, or -1 for one that
+## isn't (not a number, or off the slider's ends).
+static func quality_of(q) -> float:
+	if not (q is float or q is int) or is_nan(float(q)) or float(q) < -0.001 or float(q) > 1.001:
+		return -1.0
+	return clampf(snappedf(float(q), QUALITY_STEP), 0.0, 1.0)
+
+
+static func is_new(quality: float) -> bool:
+	return quality >= 1.0 - QUALITY_STEP * 0.5
+
+
+## What parts at `quality` cost, as a share of the new price.
+static func price_factor(quality: float) -> float:
+	return 1.0 if is_new(quality) else lerpf(USED_PRICE, 1.0, clampf(quality, 0.0, 1.0))
+
+
+## The state parts at `quality` come in: {rust, dirt, wear} ({} for new), as Shed.deliver_new
+## takes it.
+static func used_cond(quality: float) -> Dictionary:
+	if is_new(quality):
+		return {}
+	var k := 1.0 - clampf(quality, 0.0, 1.0)
+	return {"wear": USED_WEAR * k, "rust": USED_RUST * k, "dirt": USED_DIRT * k}
+
+
+## What the slider calls `quality` ("Used").
+static func quality_name(quality: float) -> String:
+	for n in QUALITY_NAMES:
+		if quality >= float(n[0]) - QUALITY_STEP * 0.5:
+			return str(n[1])
+	return "Worn"
+
+
+## The slider's line: "Used: about 68% condition, unboxed, 65% of the new price".
+static func quality_text(quality: float) -> String:
+	if is_new(quality):
+		return "New: boxed, at the full price"
+	return "%s: about %d%% condition, unboxed, %d%% of the new price" % [quality_name(quality),
+		roundi(BikeBuild.part_health(used_cond(quality)) * 100.0), roundi(price_factor(quality) * 100.0)]
 
 
 static func total(rows: Array) -> int:
@@ -114,17 +176,18 @@ static func free_name(base: String) -> String:
 
 ## Orders one of the bike at `src` with this player's own money: the cash goes here first, then
 ## the host delivers it (and hands back anything it didn't spend). Returns why not, or "".
-static func order(src: Dictionary) -> String:
+static func order(src: Dictionary, quality := 1.0) -> String:
 	var plan := plan_of(src)
 	if plan.is_empty():
 		return "That bike has gone."
-	var cost := total(lines(plan, Shed.me()))
-	var why := Shed.check(Shed.me(), {"a": "copy_order", "src": src, "paid": cost})
+	var cost := total(lines(plan, Shed.me(), quality))
+	var action := {"a": "copy_order", "src": src, "paid": cost, "quality": quality}
+	var why := Shed.check(Shed.me(), action)
 	if why != "":
 		return why
 	if not Progress.spend(cost, "Ordered: %s" % str(plan["name"]).left(40)):
 		return "That's %s and you have %s." % [TvChannels.money_text(cost), TvChannels.money_text(Progress.money())]
-	Shed.request({"a": "copy_order", "src": src, "paid": cost})
+	Shed.request(action)
 	return ""
 
 
@@ -144,8 +207,11 @@ static func check(peer: int, action: Dictionary) -> String:
 		return "That bike has gone."
 	match str(action.get("a", "")):
 		"copy_order":
+			var quality := quality_of(action.get("quality", 1.0))
+			if quality < 0.0:
+				return "That isn't a quality the parts computer sells."
 			var paid := int(action.get("paid", 0))
-			var cost := total(lines(plan, peer))
+			var cost := total(lines(plan, peer, quality))
 			if cost <= 0:
 				return "There's nothing on it to order."
 			if paid < cost:
@@ -162,7 +228,9 @@ static func apply(peer: int, action: Dictionary) -> String:
 	var plan := plan_of(action["src"])
 	match str(action["a"]):
 		"copy_order":
-			var rows := lines(plan, peer)
+			var quality := quality_of(action.get("quality", 1.0))
+			var used := used_cond(quality)
+			var rows := lines(plan, peer, quality)
 			var cost := total(rows)
 			var paid := int(action.get("paid", 0))
 			if paid > cost:
@@ -172,16 +240,21 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var boxed := 0
 			for r in rows:
 				var look: Dictionary = colors.get(r["slot"], {})
-				if Shed.deliver_new(str(r["part"]), look.get("color"), str(look.get("finish", "")), int(r["price"]), by) != 0:
+				var cond := {} if PartsDB.is_fluid(str(r["part"])) else used
+				if Shed.deliver_new(str(r["part"]), look.get("color"), str(look.get("finish", "")), int(r["price"]), by, cond) != 0:
 					boxed += 1
 				else:
-					Shed.on_order.append({"part": str(r["part"]), "color": look.get("color"), "finish": str(look.get("finish", "")),
-						"paid": int(r["price"]), "by": by})
-			var said := "Ordered one of %s: %d parts for %s." % [str(plan["name"]), rows.size(), TvChannels.money_text(cost)]
+					var o := {"part": str(r["part"]), "color": look.get("color"), "finish": str(look.get("finish", "")), "paid": int(r["price"]), "by": by}
+					if not cond.is_empty():
+						o["used"] = cond
+					Shed.on_order.append(o)
+			var said := "Ordered one of %s%s: %d parts for %s." % [str(plan["name"]), "" if used.is_empty() else " (%s)" % quality_name(quality).to_lower(),
+				rows.size(), TvChannels.money_text(cost)]
+			var where := "boxed" if used.is_empty() else "laid out"
 			if boxed == rows.size():
-				said += " They're boxed outside the roller door."
+				said += " They're %s outside the roller door." % where
 			else:
-				said += " %d are boxed outside the roller door; the other %d come as soon as there's room in the delivery area." % [boxed, rows.size() - boxed]
+				said += " %d are %s outside the roller door; the other %d come as soon as there's room in the delivery area." % [boxed, where, rows.size() - boxed]
 			return said
 		"copy_blueprint":
 			var n := free_name(str(plan["name"]))
