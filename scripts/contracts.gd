@@ -1,7 +1,7 @@
 class_name Contracts
 extends RefCounted
-## Contracts: customers walk up to the sales office reception (a bell rings as they get there)
-## with a job for the garage. Talk to one (F) to see the offer, then take it on or turn it down.
+## Contracts: customers walk up to the sales office reception with a job for the garage. Talk
+## to one (F) to see the offer, then take it on or turn it down.
 ## Four kinds, unlocked by the garage's reputation:
 ##   maint    easy: a quick job, a service or the works (oil, chain, pads, filters, plugs, brake
 ##            fluid, a wash, new tyres, a chain and sprockets, a brake disc, a fork service)
