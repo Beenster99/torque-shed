@@ -6147,7 +6147,7 @@
 	"pads": {
 		"organic": {
 			"name": "Organic pads",
-			"description": "Quiet and kind to discs, fade when hot.",
+			"description": "Quiet and kind to discs.",
 			"mass": 0.15,
 			"mu": 0.35,
 			"type": "Organic",

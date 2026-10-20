@@ -579,18 +579,14 @@ func _draw_speedo() -> void:
 		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))
 
 
-## Beside the speedo, how warm the tyres and the engine are (cold, warm or hot), and a warning
-## while the brakes are fading (see BikeHeat).
+## Beside the speedo, how warm the tyres and the engine are: cold, warm or hot (see BikeHeat).
 func _draw_heat_hints(panel: Rect2) -> void:
 	var h := bike.heat
 	if h == null:
 		return
 	var font := get_theme_default_font()
 	var rows := [["TYRES", h.tyre_state()], ["ENGINE", h.engine_state()]]
-	if h.brakes_fading():
-		rows.append(["BRAKES", "fading"])
-	var colours := {"cold": Color(0.45, 0.72, 1.0), "warm": Color(0.45, 0.85, 0.45), "hot": Color(1.0, 0.35, 0.25),
-		"fading": Color(1.0, 0.35, 0.25)}
+	var colours := {"cold": Color(0.45, 0.72, 1.0), "warm": Color(0.45, 0.85, 0.45), "hot": Color(1.0, 0.35, 0.25)}
 	var y := panel.position.y
 	for row in rows:
 		var box := Rect2(panel.position.x - 138.0, y, 130.0, 28.0)
