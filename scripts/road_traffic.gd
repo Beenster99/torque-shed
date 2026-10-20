@@ -621,7 +621,10 @@ func _taken(ri: int, s: float, dir: int, skip_slot: int, gap := INF) -> int:
 		if int(o["road"]) != ri:
 			continue
 		var along := _ahead(ri, s, float(o["s"]), dir)
-		if int(o["dir"]) == dir and along > -8.0 - half_length(o) and along < 12.0 + 2.0 * half_length(o):
+		# Coming up behind, it's taken for as long as they'd need to stop short of it as well.
+		var ov := float(o["v"])
+		var behind := 8.0 + half_length(o) + ov * ov / (2.0 * float(traits_of(o)["brake"]))
+		if int(o["dir"]) == dir and along > -behind and along < 12.0 + 2.0 * half_length(o):
 			return 1
 		if absf(along) < 14.0 + half_length(o):
 			out = 2

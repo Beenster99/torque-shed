@@ -446,6 +446,7 @@ func test_lights_cycle() -> void:
 ## A straight test road for a stream with junction `jn` at 500 m; arm k runs straight out to its side.
 func _stream_with(jn: Dictionary, light: Array) -> TrafficStream:
 	var stream := TrafficStream.new()
+	stream.rng.seed = 2024   # the same traffic every run
 	stream.sample = func(s: float) -> Dictionary:
 		return {"pos": Vector3(0.0, 0.0, -s), "fwd": Vector3(0, 0, -1), "hw": 3.4, "busy": 0.0, "limit": 15.0, "grade": 0.0}
 	stream.junctions = [jn]

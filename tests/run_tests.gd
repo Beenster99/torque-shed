@@ -3732,6 +3732,7 @@ func _test_vehicles_traffic() -> void:
 	var tr: RoadTraffic = main.traffic
 	tr.setup_roads()
 	tr._spawn_timer = 1000.0
+	tr._rng.seed = 2024   # the same traffic every run, so a pass or a fail means the same thing
 	var walker_at: Vector3 = main.walker.global_position
 	var in_town := tr.wanted()
 	main.walker.global_position = Vector3(-700.0, 0.0, -1300.0)
