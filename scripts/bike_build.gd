@@ -35,8 +35,36 @@ const BEAD_OK := 0.6
 ## The fork's offset ahead of the steering axis (m) for a fork in the catalogue without one, by
 ## its style: with the rake and the front wheel's size it sets the trail.
 const FORK_OFFSET := {"conventional": 0.045, "usd": 0.032, "girder": 0.045, "springer": 0.08, "leading_link": 0.05}
+## How a fork's axle travels as it compresses, by its style (degrees tipped forward from its
+## legs): a telescopic fork slides straight up its raked legs, so braking pushes it down them as
+## well as loading it (it dives); the links of a girder, springer or leading-link fork swing the
+## axle up more nearly straight, which holds the nose up on the brakes (anti-dive).
+const FORK_PATH_TILT := {"conventional": 0.0, "usd": 0.0, "girder": 14.0, "springer": 10.0, "leading_link": 30.0}
+## A leading-link (Earles) fork's swinging arm, m, by style: its brake is mounted on the arm, so
+## braking also pushes the arm down, which holds the fork up (the bike barely dives).
+const FORK_LINK := {"leading_link": 0.3}
+## How far each frame style leans before something hard touches down (footboards, pipes, the
+## frame), degrees: a low cruiser grounds out long before its tyres give up.
+const LEAN_CLEARANCE := {"softail": 31.0, "cruiser": 32.0, "chopper": 30.0}
+## How much stiffer a spring gets towards the end of its travel, for a part in the catalogue
+## without its own "progression": the rate at the bottom is (1 + 3 x this) times the rate at the top.
+## Forks by style, shocks by their type (air springs ramp up hardest, linkages next).
+const FORK_PROGRESSION := {"conventional": 0.2, "usd": 0.25, "girder": 0.05, "springer": 0.05, "leading_link": 0.1}
+const SHOCK_PROGRESSION := {"air": 0.7, "linkage": 0.45, "mono": 0.3, "twin": 0.1}
+## Stock spring preload, at the wheel along its travel (m), and how far a preload clicker moves it
+## either way: preload pre-squashes the spring, so the bike sags less without the spring getting
+## any stiffer.
+const PRELOAD_STOCK := 0.008
+const PRELOAD_CLICK := 0.008
+## Chain pitch (520/525/530 chain, 5/8 in), m: with the teeth it sets each sprocket's size.
+const CHAIN_PITCH := 0.015875
+## Where the gearbox sprocket sits from the swingarm pivot (bike space, m: +y up, +z back).
+const COUNTERSHAFT := Vector3(0.0, 0.03, -0.075)
 ## Trail shorter than this (m) makes for nervous steering: the bike info says so.
 const SHORT_TRAIL := 0.06
+## Where a prototype's flat spot sits (a share of the peak torque revs) and how wide it is.
+const FLAT_SPOT_AT := 0.72
+const FLAT_SPOT_WIDTH := 0.12
 ## The least trail a bike that turns up already built has (see sensible_fork), m.
 const STOCK_TRAIL := 0.075
 ## Every tuning setting and its widest range, [min, max]. A setting missing from a tune is left
@@ -55,6 +83,7 @@ const TUNE_LIMITS := {
 	# The ECU's rider aids, where it has them: 0 off, then level 1 (gentle) .. AID_LEVELS (firm).
 	"aid_traction": [0.0, 5.0], "aid_stability": [0.0, 5.0], "aid_anti_wheelie": [0.0, 5.0],
 	"damper": [-1.0, 1.0],         # steering damper clicker: softer .. firmer
+	"screen": [0.0, 1.0],          # an adjustable screen: right down .. right up (the rider sets it riding)
 }
 ## The rider aids the dyno desk sets, aid -> its tune key (see TUNE_LIMITS). Level AID_STOCK is
 ## how the ECU comes from the factory; AID_SCALE is how firmly each level steps in next to that.
@@ -84,7 +113,9 @@ var rake_deg := 25.0
 var seat_height := 0.85
 var cda := 0.55                # drag area, m^2
 var steer_rate := 4.0          # how quickly the bars turn, rad/s; wider bars give more leverage
-var fuel_capacity := 15.0
+var fuel_capacity := 15.0      # the tank and any auxiliary tank together, litres
+var main_capacity := 15.0      # the tank on its own
+var aux_capacity := 0.0        # an auxiliary tank's, 0 with none fitted
 var dash_features: Array = ["speed"]
 var headlight_lumens := 0.0    # 0 with no headlight fitted
 var fog_lumens := 0.0          # 0 with no fog lights
@@ -96,12 +127,25 @@ var horn_sound := ""           # the horn's recordings (an Sfx sound), "" for a 
 var ecu_features: Array = []   # rider aids the ECU gives: traction, abs, anti_wheelie, stability
 var ecu_aid := 0.0             # how firmly those aids step in, 0..1
 var luggage_litres := 0.0
+## The adventure kit: the tyres' kinds (see TyreGrip), what's packed in the toolbox (PartsDB
+## TOOLBOX_CONTENTS ids), what the sat nav shows (empty with none), and an adjustable screen: how
+## far it can rise (m), how far it's up now (m), and how much wind gets past it to the rider's
+## helmet, 0 (calm air) .. 1 (none of it stopped).
+var tyre_kind_front := "road"
+var tyre_kind_rear := "road"
+var toolbox_contents: Array = []
+var toolbox_slots := 0
+var satnav_features: Array = []
+var screen_adjust := 0.0
+var screen_raise := 0.0
+var wind_buffet := 1.0
 var has_side_stand := false
 var has_centre_stand := false
 var centre_lift := 0.04
 
 # Fluids
-var fuel_litres := 0.0
+var fuel_litres := 0.0         # in the tank and any auxiliary tank together
+var aux_litres := 0.0          # in the auxiliary tank
 var fuel_type := "unleaded_95"
 var fuel_age := 0.0            # 0 fresh .. 1 stale, gummed-up petrol
 var oil_capacity := 2.5
@@ -123,6 +167,34 @@ var rear_travel := 0.11
 var rear_spring := 36000.0
 var rear_bump := 2300.0
 var rear_rebound := 3500.0
+## How much each spring firms up towards the bottom (see FORK_PROGRESSION), its preload (m, see
+## PRELOAD_STOCK), and the wheel speed (m/s) past which the bump damping's valving blows off.
+var front_progression := 0.2
+var rear_progression := 0.2
+var front_preload := PRELOAD_STOCK
+var rear_preload := PRELOAD_STOCK
+var front_knee := 1.0
+var rear_knee := 1.0
+## The way the front axle moves as the fork compresses, bike space (up its legs for a telescopic
+## fork, tipped forward for linked forks: see FORK_PATH_TILT).
+var fork_path := Vector3(0.0, 0.9, 0.42)
+## A leading-link fork's arm (see FORK_LINK), m, 0 for any other fork.
+var fork_link := 0.0
+## How far the bike leans before it grounds out (see LEAN_CLEARANCE), rad.
+var lean_clearance := deg_to_rad(52.0)
+## The swingarm: its pivot (bike space, the back wheel fully extended at (0, 0, wheelbase / 2)),
+## and its length, m. The back axle swings up round it.
+var swing_pivot := Vector3(0.0, 0.16, 0.1)
+var swing_length := 0.6
+## The gearbox and rear sprockets' pitch radii, m.
+var sprocket_r_front := 0.05
+var sprocket_r_rear := 0.11
+## How much of the squat from the weight going back under power the swingarm and chain pull hold
+## off, at the bike's sag (1 holds it level, more lifts the back): see anti_squat_at.
+var anti_squat := 1.0
+## How far each end sags under the bike and rider standing still, m along its travel.
+var front_sag := 0.03
+var rear_sag := 0.03
 
 # Wheels and tyres
 var front_radius := 0.3
@@ -172,9 +244,14 @@ var cooling_capacity := 1.0
 var stock_redline := 9500.0    # where the limiter sits before it's moved
 var tune_low := 0.0            # a rich map fattens the torque below the peak, a lean one thins it
 var tune_high := 0.0           # ignition advance sharpens the top end
+var flat_dip := 0.0            # a manufacturer prototype's flat spot: torque lost in the mid-range (see ContractTestRide)
 var engine_stress := 1.0       # how hard the tune works the engine: multiplies its wear
 var rolling := ROLLING         # rolling resistance; soft tyres drag
 var tyre_wear := {"front": 1.0, "rear": 1.0}   # how fast each tyre wears at its pressure
+## Air each tyre has lost from its set pressure (a puncture, see Puncture), bar, and how flat
+## that leaves it: 0 holding its shape .. 1 rolling on the rim.
+var deflate := {"front": 0.0, "rear": 0.0}
+var flat := {"front": 0.0, "rear": 0.0}
 
 # Drivetrain
 var primary := 2.9
@@ -206,6 +283,12 @@ static func part_health(cond: Dictionary) -> float:
 
 func _cond(slot: String, key: String) -> float:
 	return float(condition.get(slot, {}).get(key, 0.0))
+
+
+## A prototype's quirk kept on one of its parts (see ContractTestRide), 0 when there's none.
+func _proto(slot: String, key: String) -> float:
+	var p = condition.get(slot, {}).get("proto")
+	return float(p.get(key, 0.0)) if p is Dictionary else 0.0
 
 
 func has_part(slot: String) -> bool:
@@ -251,11 +334,16 @@ func _compute() -> void:
 	var bars := part("handlebars")
 
 	cylinders = int(block["cylinders"])
-	fuel_capacity = tank["capacity"]
-	var fuel := _fluid("tank", "unleaded_95", fuel_capacity)
+	main_capacity = tank["capacity"]
+	var fuel := _fluid("tank", "unleaded_95", main_capacity)
 	fuel_litres = fuel["litres"]
 	fuel_type = fuel["type"]
 	fuel_age = fuel["age"]
+	# An auxiliary tank carries more petrol, fed into the main one as it goes down.
+	aux_capacity = PartsDB.fluid_capacity(parts["aux_tank"]) if has_part("aux_tank") else 0.0
+	aux_litres = float(_fluid("aux_tank", "unleaded_95", aux_capacity)["litres"]) if aux_capacity > 0.0 else 0.0
+	fuel_capacity = main_capacity + aux_capacity
+	fuel_litres += aux_litres
 	oil_capacity = PartsDB.fluid_capacity(parts["engine"])
 	var oil := _fluid("engine", "semi_10w40", oil_capacity)
 	oil_litres = oil["litres"]
@@ -272,11 +360,14 @@ func _compute() -> void:
 	com_height = frame["com_height"]
 	rake_deg = frame["rake_deg"]
 	seat_height = float(frame["seat_height"]) + float(saddle["height"])
-	cda = float(frame["cda"]) + float(bars["cda"]) + float(part("panniers").get("cda", 0.0)) + float(part("top_box").get("cda", 0.0))
+	cda = float(frame["cda"]) + float(bars["cda"]) + float(part("panniers").get("cda", 0.0)) + float(part("top_box").get("cda", 0.0)) \
+		+ float(part("tank_bag").get("cda", 0.0))
 	# A fairing parts the air round the rider (a cracked, grimy one less well); mirrors stick out into it.
 	cda += float(part("fairing").get("cda", 0.0)) * lerpf(0.7, 1.0, health.get("fairing", 1.0))
 	cda += float(part("mirrors").get("cda", 0.0))
-	luggage_litres = float(part("panniers").get("litres", 0.0)) + float(part("top_box").get("litres", 0.0))
+	luggage_litres = float(part("panniers").get("litres", 0.0)) + float(part("top_box").get("litres", 0.0)) \
+		+ float(part("tank_bag").get("litres", 0.0))
+	_compute_kit()
 	steer_rate = 4.0 * float(bars["width"]) / 720.0
 	# A fat front tyre is slower to turn in.
 	steer_rate *= clampf(1.0 - 0.3 * (float(part("front_tyre")["width"]) - 160.0) / 160.0, 0.85, 1.12)
@@ -307,13 +398,29 @@ func _compute() -> void:
 	rear_spring = shock["spring"] * lerpf(0.85, 1.0, health["shock"])
 	rear_bump = shock["bump"] * lerpf(0.45, 1.0, health["shock"])
 	rear_rebound = shock["rebound"] * lerpf(0.45, 1.0, health["shock"])
-	# The clickers: preload firms the spring up, bump and rebound the damping.
-	front_spring *= 1.0 + 0.18 * tune_value("f_preload")
+	# The clickers: preload pre-squashes the spring (less sag, the same rate), bump and rebound
+	# the damping.
+	front_preload = maxf(float(fork.get("preload", PRELOAD_STOCK)) + PRELOAD_CLICK * tune_value("f_preload"), 0.0)
 	front_bump *= 1.0 + 0.45 * tune_value("f_bump")
 	front_rebound *= 1.0 + 0.45 * tune_value("f_rebound")
-	rear_spring *= 1.0 + 0.18 * tune_value("r_preload")
+	rear_preload = maxf(float(shock.get("preload", PRELOAD_STOCK)) + PRELOAD_CLICK * tune_value("r_preload"), 0.0)
 	rear_bump *= 1.0 + 0.45 * tune_value("r_bump")
 	rear_rebound *= 1.0 + 0.45 * tune_value("r_rebound")
+	var fork_style := str(fork.get("style", "conventional"))
+	front_progression = float(fork.get("progression", FORK_PROGRESSION.get(fork_style, 0.2)))
+	rear_progression = float(shock.get("progression", _shock_progression(str(shock.get("type", "")))))
+	# Top-spec dampers (the ones with every adjuster) have proper high-speed valving that opens
+	# sooner on a sharp hit.
+	front_knee = float(fork.get("knee", 0.6 if int(fork.get("adjust", 0)) >= 4 else 1.0))
+	rear_knee = float(shock.get("knee", 0.6 if int(shock.get("adjust", 0)) >= 4 else 1.0))
+	var path_rake := deg_to_rad(float(frame["rake_deg"]) - float(FORK_PATH_TILT.get(fork_style, 0.0)))
+	fork_path = Vector3(0.0, cos(path_rake), sin(path_rake))
+	fork_link = float(fork.get("link", FORK_LINK.get(fork_style, 0.0)))
+	lean_clearance = deg_to_rad(float(frame.get("clearance", LEAN_CLEARANCE.get(str(frame.get("style", "")), 52.0))))
+	# The swingarm pivots where the frame says (the same point the bike's drawn with).
+	var geo: Dictionary = frame.get("geo", {})
+	swing_pivot = Vector3(0.0, float(geo.get("pivot_y", 0.16)), float(frame["wheelbase"]) * 0.5 - float(geo.get("arm", 0.6)))
+	swing_length = (Vector3(0.0, 0.0, float(frame["wheelbase"]) * 0.5) - swing_pivot).length()
 
 	_compute_wheels()
 	_compute_engine(block, head)
@@ -328,6 +435,53 @@ func _compute() -> void:
 	drivetrain_efficiency = DRIVETRAIN_EFFICIENCY * lerpf(0.8, 1.0, health["gearbox"]) * lerpf(0.88, 1.0, health["final_drive"])
 	_compute_chain()
 	_compute_mass_spread()
+	_compute_squat()
+
+
+## The adventure kit: the toolbox and what's in it, the sat nav, the tyres' kinds, and an
+## adjustable screen. A screen raised pushes a little more air (and the taller the screen
+## stands, the less wind reaches the rider's helmet: see wind_buffet).
+func _compute_kit() -> void:
+	tyre_kind_front = TyreGrip.kind_of(part("front_tyre"))
+	tyre_kind_rear = TyreGrip.kind_of(part("rear_tyre"))
+	toolbox_slots = int(part("toolbox").get("slots", 0)) if has_part("toolbox") else 0
+	toolbox_contents = []
+	if has_part("toolbox"):
+		for c in condition.get("toolbox", {}).get("contents", []):
+			if PartsDB.TOOLBOX_CONTENTS.has(str(c)) and toolbox_contents.size() < toolbox_slots:
+				toolbox_contents.append(str(c))
+	satnav_features = part("satnav").get("features", ["map"]) if has_part("satnav") else []
+	var fairing := part("fairing")
+	screen_adjust = float(fairing.get("screen_adjust", 0.0)) if has_part("fairing") else 0.0
+	screen_raise = 0.0
+	_set_screen_raise(tune_value("screen") * screen_adjust)
+
+
+## Puts an adjustable screen `v` (0 right down .. 1 right up) of the way up its rails, as the
+## rider does on the move: the drag and the wind on the helmet follow.
+func set_screen(v: float) -> void:
+	tune["screen"] = clampf(v, 0.0, 1.0)
+	_set_screen_raise(tune_value("screen") * screen_adjust)
+
+
+func _set_screen_raise(raise: float) -> void:
+	cda += (raise - screen_raise) * 0.12
+	screen_raise = raise
+	var fairing := part("fairing")
+	var screen := (float(fairing.get("screen", 0.0)) + screen_raise) if has_part("fairing") else 0.0
+	wind_buffet = clampf(1.0 - (screen - 0.08) / 0.42, 0.0, 1.0)
+
+
+## Whether the toolbox has `what` packed in it (a PartsDB.TOOLBOX_CONTENTS id).
+func has_kit(what: String) -> bool:
+	return toolbox_contents.has(what)
+
+
+## The grip of a tyre (the front's or the back's) on `surf` with the ground `wet` 0..1: its own
+## figure for the town's ground, or its tarmac one for the adventure surfaces, times what its
+## kind of tread makes of that surface (see TyreGrip).
+func tyre_grip(front: bool, surf: String, wet: float) -> float:
+	return TyreGrip.grip_on(grip_front if front else grip_rear, tyre_kind_front if front else tyre_kind_rear, surf, wet)
 
 
 ## Where each slot's part sits on a bike: [share of the wheelbase back from the front axle,
@@ -344,7 +498,22 @@ const PART_SPOT := {
 	"fog_lights": [-0.02, 0.6], "tail": [0.9, 0.8], "fairing": [0.06, 0.98], "mirrors": [0.14, 1.12],
 	"front_mudguard": [0.0, 0.62], "indicators": [0.5, 0.85], "side_panels": [0.6, 0.65], "rearsets": [0.68, 0.38],
 	"guards": [0.38, 0.4], "number_boards": [0.75, 0.75], "swingarm": [0.82, 0.35], "steering_damper": [0.16, 0.92],
+	"tank_bag": [0.3, 1.0], "satnav": [0.12, 1.12], "aux_tank": [0.9, 0.65], "toolbox": [0.9, 0.5],
 }
+## Where the auxiliary tank and the toolbox sit depends on their style: low by the engine, on
+## the rails, under the rack or up on top of it.
+const STYLE_SPOT := {
+	"aux_tank": {"twin": [0.3, 0.42], "rear": [0.95, 0.78], "cell": [0.88, 0.58], "can": [0.92, 0.6], "bladder": [1.02, 0.98]},
+	"toolbox": {"bash": [0.42, 0.14], "roll": [0.03, 0.62], "tube": [0.86, 0.48], "box": [0.92, 0.5], "case": [1.05, 0.95]},
+}
+
+
+## Where a slot's part sits (see PART_SPOT and STYLE_SPOT).
+func part_spot(slot: String) -> Array:
+	var by_style: Dictionary = STYLE_SPOT.get(slot, {})
+	if not by_style.is_empty() and has_part(slot):
+		return by_style.get(str(part(slot).get("style", "")), PART_SPOT.get(slot, [0.5, 0.5]))
+	return PART_SPOT.get(slot, [0.5, 0.5])
 
 
 ## The parts' own spread: each slot's part weighs more or less than the stock part there
@@ -363,10 +532,13 @@ func _compute_mass_spread() -> void:
 		var dm := (_part_mass(slot) if has_part(slot) else 0.0) - m0
 		if absf(dm) < 0.01:
 			continue
-		var spot: Array = PART_SPOT.get(slot, [0.5, 0.5])
+		var spot: Array = part_spot(slot)
 		extra.append([dm, Vector3(0.0, float(spot[1]), (float(spot[0]) - 0.5) * wheelbase)])
 	var spot_tank: Array = PART_SPOT["tank"]
-	extra.append([(fuel_litres - 15.0) * FUEL_DENSITY, Vector3(0.0, float(spot_tank[1]), (float(spot_tank[0]) - 0.5) * wheelbase)])
+	extra.append([(fuel_litres - aux_litres - 15.0) * FUEL_DENSITY, Vector3(0.0, float(spot_tank[1]), (float(spot_tank[0]) - 0.5) * wheelbase)])
+	if aux_litres > 0.0:
+		var spot_aux := part_spot("aux_tank")
+		extra.append([aux_litres * FUEL_DENSITY, Vector3(0.0, float(spot_aux[1]), (float(spot_aux[0]) - 0.5) * wheelbase)])
 	for e in extra:
 		com_offset += float(e[0]) * ((e[1] as Vector3) - base) / maxf(total_mass, 1.0)
 	com_offset = com_offset.clamp(Vector3(0.0, -0.1, -0.12), Vector3(0.0, 0.1, 0.12))
@@ -386,7 +558,7 @@ func _compute_chain() -> void:
 	var loss := float(chain.get("friction", 0.025)) * (1.0 + (1.0 - chain_lube) * 2.5)
 	if chain_slack > 40.0:
 		loss += (chain_slack - 40.0) * 0.0012
-		notes.append("The chain is slapping about: tighten it (crouch, wrench, right mouse)." if chain_slack < 65.0
+		notes.append("The chain is slapping about: tighten it (crouch, wrench, {work2})." if chain_slack < 65.0
 			else "The chain is so slack it could jump off! Tighten it.")
 	elif chain_slack < 20.0:
 		loss += (20.0 - chain_slack) * 0.002
@@ -394,6 +566,88 @@ func _compute_chain() -> void:
 	if chain_lube < 0.3:
 		notes.append("The chain is dry and rusty-sounding. Give it some chain lube.")
 	drivetrain_efficiency *= (1.0 - loss) * lerpf(0.9, 1.0, health["chain"])
+
+
+## A shock's progression from its type, for one in the catalogue without its own.
+static func _shock_progression(kind: String) -> float:
+	var t := kind.to_lower()
+	for key in ["air", "linkage", "mono", "twin"]:
+		if t.contains(key):
+			return float(SHOCK_PROGRESSION[key])
+	return 0.2
+
+
+## The spring's push at the wheel (N) squashed `q` m into its `travel`, preloaded `pre` m.
+static func spring_force(rate: float, q: float, travel: float, progression: float, pre: float) -> float:
+	var x := q / maxf(travel, 0.01)
+	return rate * (q + pre + progression * q * x * x)
+
+
+## Where the back axle is (bike space) with the shock squashed `q` m along the wheel's travel:
+## swung up round the swingarm pivot.
+func rear_axle_at(q: float) -> Vector3:
+	var arm := Vector3(0.0, 0.0, wheelbase * 0.5) - swing_pivot
+	return swing_pivot + arm.rotated(Vector3.RIGHT, -q / maxf(swing_length, 0.2))
+
+
+## The way the back axle moves as the shock squashes further from `q` (bike space, unit): square
+## to the swingarm, up and a little back (forward once the arm's swung past level).
+func rear_path_at(q: float) -> Vector3:
+	var arm := rear_axle_at(q) - swing_pivot
+	return Vector3(0.0, arm.z, -arm.y).normalized()
+
+
+## The way the chain pulls the back sprocket (bike space, unit, towards the gearbox sprocket)
+## with the back axle at `axle`: the top run under power, the bottom run on the over-run
+## (engine braking).
+func chain_pull_at(axle: Vector3, top := true) -> Vector3:
+	var front := swing_pivot + COUNTERSHAFT
+	var d := axle - front
+	var dist := maxf(d.length(), 0.1)
+	var dn := d / dist
+	var side := Vector3(0.0, dn.z, -dn.y) * (1.0 if top else -1.0)
+	# The run is the line touching both sprockets on that side.
+	var s := clampf(-(sprocket_r_rear - sprocket_r_front) / dist, -0.9, 0.9)
+	var m := side * sqrt(1.0 - s * s) + dn * s
+	return -((axle + m * sprocket_r_rear) - (front + m * sprocket_r_front)).normalized()
+
+
+## Anti-squat with the back squashed `q` m: how much of the extra load the back tyre takes under
+## power (the weight going back) the swingarm's angle and the chain's pull hold off the shock. 1
+## is 100%: the back neither squats nor rises as it drives.
+func anti_squat_at(q: float) -> float:
+	var t := rear_path_at(q)
+	var axle := rear_axle_at(q)
+	var forward := Vector3(0.0, 0.0, -1.0)
+	# Per newton of drive at the road: the push along the road and the chain's pull (both lift
+	# the back on a sloping arm) against the weight coming onto the back wheel.
+	var hold := -(forward.dot(t) + rear_radius / sprocket_r_rear * chain_pull_at(axle).dot(t))
+	var gain := com_height / wheelbase * t.y
+	return hold / maxf(gain, 1e-3)
+
+
+## The sag at each end, the sprockets' sizes and the anti-squat at sag.
+func _compute_squat() -> void:
+	sprocket_r_front = CHAIN_PITCH / (2.0 * sin(PI / maxf(tune_value("sprocket_f"), 8.0)))
+	sprocket_r_rear = CHAIN_PITCH / (2.0 * sin(PI / maxf(tune_value("sprocket_r"), 8.0)))
+	# The weight on each wheel standing still, from where the centre of mass sits.
+	var behind := clampf(0.5 + (0.06 + com_offset.z) / wheelbase, 0.2, 0.8)
+	front_sag = _sag(total_mass * 9.81 * (1.0 - behind) * fork_path.y, front_spring, front_travel, front_progression, front_preload)
+	rear_sag = _sag(total_mass * 9.81 * behind * rear_path_at(0.0).y, rear_spring, rear_travel, rear_progression, rear_preload)
+	anti_squat = anti_squat_at(rear_sag)
+
+
+## How far a spring squashes (m) under `weight` N along its travel.
+static func _sag(weight: float, rate: float, travel: float, progression: float, pre: float) -> float:
+	var lo := 0.0
+	var hi := travel
+	for i in 30:
+		var mid := (lo + hi) * 0.5
+		if spring_force(rate, mid, travel, progression, pre) > weight:
+			hi = mid
+		else:
+			lo = mid
+	return lo
 
 
 ## Power per kilo with the rider on: the number weight-saving parts improve.
@@ -465,15 +719,26 @@ func _compute_wheels() -> void:
 		grip[surf] = (grip_front[surf] + grip_rear[surf]) * 0.5
 	# Tyre pressures: off the tyre's best, it grips less on tarmac. A little soft finds more
 	# grip in the dirt, but squirms, drags and wears.
+	# A punctured tyre has lost air from that: nearly flat, it folds and rolls on the rim.
+	for side in ["front", "rear"]:
+		deflate[side] = maxf(float(condition.get(side + "_tyre", {}).get("deflate", 0.0)), 0.0)
 	var dev_f := pressure_offset("front")
 	var dev_r := pressure_offset("rear")
+	flat["front"] = Puncture.flat_of(pressure_now("front"), tune_default("psi_f"))
+	flat["rear"] = Puncture.flat_of(pressure_now("rear"), tune_default("psi_r"))
 	for surf in grip_rear:
-		grip_front[surf] *= _pressure_grip(dev_f, surf)
-		grip_rear[surf] *= _pressure_grip(dev_r, surf)
+		grip_front[surf] *= _pressure_grip(dev_f, surf) * Puncture.flat_grip(flat["front"])
+		grip_rear[surf] *= _pressure_grip(dev_r, surf) * Puncture.flat_grip(flat["rear"])
 		grip[surf] = (grip_front[surf] + grip_rear[surf]) * 0.5
-	rolling = ROLLING * (clampf(1.0 - 0.9 * dev_f, 0.6, 2.5) + clampf(1.0 - 0.9 * dev_r, 0.6, 2.5)) * 0.5
+	rolling = ROLLING * (clampf(1.0 - 0.9 * dev_f, 0.6, 2.5) * (1.0 + Puncture.FLAT_DRAG * flat["front"])
+		+ clampf(1.0 - 0.9 * dev_r, 0.6, 2.5) * (1.0 + Puncture.FLAT_DRAG * flat["rear"])) * 0.5
+	for side in ["front", "rear"]:
+		if flat[side] > 0.0:
+			notes.append("The %s tyre is flat: it wallows and grips badly, and riding on it ruins the tyre and rim. Plug it, or change it, and pump it up." % side)
+		elif float(condition.get(side + "_tyre", {}).get("puncture", 0.0)) > 0.0:
+			notes.append("The %s tyre has a puncture: it's losing air. Plug it, or change it on the tyre changer." % side)
 	tyre_wear = {"front": 1.0 + 2.5 * absf(dev_f), "rear": 1.0 + 2.5 * absf(dev_r)}
-	if minf(dev_f, dev_r) < -0.3:
+	if minf(dev_f, dev_r) < -0.3 and maxf(flat["front"], flat["rear"]) == 0.0:   # a flat one says so itself
 		notes.append("The tyres are soft: they'll squirm, drag and wear out fast.")
 	elif maxf(dev_f, dev_r) > 0.3:
 		notes.append("The tyres are rock hard: less grip, and they skip over bumps.")
@@ -485,6 +750,8 @@ func _compute_wheels() -> void:
 	tyre_rear = tyre_params(tr, dev_r)
 	var fork := part("fork")
 	fork_offset = float(fork.get("offset", FORK_OFFSET.get(str(fork.get("style", "")), 0.04)))
+	# A manufacturer's prototype can come with yokes of its own, offset more than the fork's.
+	fork_offset += _proto("fork", "offset")
 	trail = clampf(trail_of(front_radius, rake_deg, fork_offset), -0.05, 0.4)
 	if trail < SHORT_TRAIL:
 		notes.append("The trail is very short (%d mm): the steering will be nervous and may shake its head. Fit a fork with less offset, or a steering damper." % roundi(trail * 1000.0))
@@ -583,6 +850,7 @@ func _compute_engine(block: Dictionary, head: Dictionary) -> void:
 	var cooling := part("cooling")
 	var exhaust := part("exhaust")
 	layout = block["layout"]
+	flat_dip = clampf(_proto("engine", "dip"), 0.0, 0.6)
 	displacement = block["displacement"]
 	peak_torque = displacement * float(block["torque_per_cc"])
 	peak_torque_rpm = float(block["peak_torque_rpm"]) * float(head["peak_shift"]) * float(fuel["peak_shift"])
@@ -702,6 +970,10 @@ func engine_torque(rpm: float) -> float:
 		t *= 1.0 + tune_low * minf(-x * 2.0, 1.0)
 	else:
 		t *= 1.0 + tune_high * minf(x * 2.0, 1.0)
+	if flat_dip > 0.0:
+		# A flat spot: the torque sags through a band of revs below the peak, then comes back.
+		var d := (rpm / peak_torque_rpm - FLAT_SPOT_AT) / FLAT_SPOT_WIDTH
+		t *= 1.0 - flat_dip * exp(-d * d)
 	return t
 
 
@@ -803,6 +1075,10 @@ func _part_mass(slot: String) -> float:
 	var m := float(p.get("mass", float(p.get("mass_per_cyl", 0.0)) * cylinders))
 	if condition.get(slot, {}).get("lightened", false):
 		m *= 1.0 - lighten_cut(str(parts[slot]), float(condition[slot].get("lighten_extra", 0.0)))
+	if slot == "toolbox":
+		# What's packed in it weighs too.
+		for c in condition.get(slot, {}).get("contents", []):
+			m += float(PartsDB.TOOLBOX_CONTENTS.get(str(c), {}).get("mass", 0.0))
 	return m
 
 
@@ -828,6 +1104,11 @@ func tune_block(key: String) -> String:
 		return "Only a cassette gearbox lets you respace the ratios."
 	elif key.begins_with("aid_") and not has_aid(key.trim_prefix("aid_")):
 		return "This ECU has no %s." % str(PartsDB.ECU_AID_NAMES.get(key.trim_prefix("aid_"), "rider aid"))
+	elif key == "screen":
+		if not has_part("fairing"):
+			return "There's no fairing fitted."
+		if float(part("fairing").get("screen_adjust", 0.0)) <= 0.0:
+			return "This screen doesn't adjust."
 	elif key == "damper":
 		if not has_part("steering_damper"):
 			return "There's no steering damper fitted."
@@ -882,11 +1163,16 @@ func tune_value(key: String) -> float:
 	return clampf(float(tune[key]), r.x, r.y)
 
 
-## How far a tyre is off its best pressure, as a fraction: -0.2 is 20% soft.
+## How far a tyre is off its best pressure, as a fraction: -0.2 is 20% soft (-1 with no air in it).
 func pressure_offset(side: String) -> float:
 	var key := "psi_f" if side == "front" else "psi_r"
 	var best := tune_default(key)
-	return (tune_value(key) - best) / best
+	return (pressure_now(side) - best) / best
+
+
+## A tyre's cold pressure as it is, bar: what it's set to, less any air a puncture has let out.
+func pressure_now(side: String) -> float:
+	return maxf(tune_value("psi_f" if side == "front" else "psi_r") - float(deflate.get(side, 0.0)), 0.0)
 
 
 func _pressure_grip(dev: float, surf: String) -> float:

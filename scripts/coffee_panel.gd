@@ -122,7 +122,7 @@ func _fill_menu(tray: Dictionary) -> void:
 				Sfx.play_at("pickup", CoffeeShop.ORDER_SPOT + Vector3.UP, -6.0)
 			_sig = "")
 		b.disabled = why != ""
-		b.tooltip_text = why
+		b.tooltip_text = Controls.hint(why)
 		row.add_child(b)
 		_box.add_child(row)
 	var blocked := Shed.check(Shed.me(), {"a": "coffee_buy", "item": "tea", "paid": CoffeeShop.price("tea")})
@@ -130,11 +130,11 @@ func _fill_menu(tray: Dictionary) -> void:
 		_box.add_child(UITheme.label(blocked, 15, Color(1, 0.5, 0.4)))
 	var items: Array = tray.get("items", [])
 	if tray.is_empty():
-		_box.add_child(UITheme.label("It comes on a tray: carry it back to the shed, put it down on anything flat (left mouse) "
-			+ "and have it with the right mouse button.", 14, Color(1, 1, 1, 0.6)))
+		_box.add_child(UITheme.label("It comes on a tray: carry it back to the shed, put it down on anything flat ({work}) "
+			+ "and have it with {work2}.", 14, Color(1, 1, 1, 0.6)))
 	else:
 		_box.add_child(UITheme.label("On your tray: %s (%d of %d)" % [CoffeeShop.items_text(items), items.size(), CoffeeShop.TRAY_MAX], 16))
-	_box.add_child(ContractPanel.button("Done (Esc)", close_dialog))
+	_box.add_child(ContractPanel.button("Done ({back})", close_dialog))
 
 
 func _fill_visitor(v: Dictionary) -> void:
@@ -148,7 +148,7 @@ func _fill_visitor(v: Dictionary) -> void:
 		Color(1, 1, 1, 0.6)))
 	if str(v.get("state", "")) == "sold":
 		_box.add_child(UITheme.label("It's the shed's now, parked outside the cafe.", 16, Color(0.5, 0.95, 0.55)))
-		_box.add_child(ContractPanel.button("Done (Esc)", close_dialog))
+		_box.add_child(ContractPanel.button("Done ({back})", close_dialog))
 		return
 	_box.add_child(UITheme.label("MAKE AN OFFER", 15, UITheme.ACCENT))
 	_box.add_child(UITheme.label("From the business account (%s). Bikers hardly ever sell: offering over the odds helps a "
@@ -173,7 +173,7 @@ func _fill_visitor(v: Dictionary) -> void:
 		_sig = "")
 	offer.disabled = why != "" or offer_amount <= 0
 	row.add_child(offer)
-	row.add_child(ContractPanel.button("Leave it (Esc)", close_dialog))
+	row.add_child(ContractPanel.button("Leave it ({back})", close_dialog))
 	_box.add_child(row)
 	if why != "":
 		_box.add_child(UITheme.label(why, 15, Color(1, 0.5, 0.4)))

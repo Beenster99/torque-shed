@@ -21,6 +21,11 @@ signal traffic_received(state: PackedFloat32Array)
 ## The host's route has moved on to leg `index` (see RouteJourney): everyone swaps their map to it together.
 signal leg_received(index: int)
 
+## The host's traffic on an adventure's road (see AdventureTraffic and TrafficStream.pack).
+signal adv_traffic_received(state: PackedFloat32Array)
+## The host's police cars out on an adventure (see AdventurePolice.pack).
+signal police_received(state: PackedFloat32Array)
+
 ## Whether friends outside your network can reach your shed: "" (not hosting), "checking",
 ## "open" (the router opened the port for us via UPnP) or "closed" (it has to be forwarded by hand).
 var internet_status := ""
@@ -65,6 +70,11 @@ func local_slot() -> int:
 	return 1 + local_id() % (MAX_PLAYERS - 1)
 
 
+## Every packet is squashed (the shed's state is mostly the same few words over and over);
+## host and crew must match.
+const COMPRESSION := ENetConnection.COMPRESS_ZSTD
+
+
 func host(info: Dictionary, port := PORT) -> Error:
 	leave()
 	local_info = info
@@ -72,6 +82,7 @@ func host(info: Dictionary, port := PORT) -> Error:
 	var err := peer.create_server(port, MAX_PLAYERS)
 	if err != OK:
 		return err
+	peer.host.compress(COMPRESSION)
 	multiplayer.multiplayer_peer = peer
 	_open_router_port(port)
 	return OK
@@ -111,6 +122,7 @@ func join(address: String, info: Dictionary, port := 0) -> Error:
 	var err := peer.create_client(where["host"], port if port > 0 else int(where["port"]))
 	if err != OK:
 		return err
+	peer.host.compress(COMPRESSION)
 	multiplayer.multiplayer_peer = peer
 	return OK
 
@@ -252,7 +264,9 @@ func update_local_info(info: Dictionary) -> void:
 
 func send_state(state: PackedFloat32Array) -> void:
 	if is_online() and not players.is_empty():
+		var pt := Perf.t0()
 		_state.rpc(state)
+		Perf.add("net_send", pt)
 
 
 ## Host only: tell everyone the time of day.
@@ -272,7 +286,7 @@ func _on_peer_disconnected(id: int) -> void:
 
 func _on_connection_failed() -> void:
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
-	connection_failed.emit("Could not reach the host. Check the address, that the host has forwarded UDP port %d on their router (the host's Esc menu says whether it's open), and that Windows Firewall lets Torque Shed through." % PORT)
+	connection_failed.emit("Could not reach the host. Check the address, that the host has forwarded UDP port %d on their router (the host's pause menu says whether it's open), and that Windows Firewall lets Torque Shed through." % PORT)
 
 
 func _on_server_disconnected() -> void:
@@ -307,7 +321,9 @@ func _register(info: Dictionary) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _state(state: PackedFloat32Array) -> void:
+	var pt := Perf.t0()
 	state_received.emit(multiplayer.get_remote_sender_id(), state)
+	Perf.add("net_receive", pt)
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
@@ -352,3 +368,25 @@ func send_leg(index: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _leg_msg(index: int) -> void:
 	leg_received.emit(index)
+
+
+## Host only: the traffic on the adventure's road (see AdventureTraffic), a few times a second.
+func send_adv_traffic(state: PackedFloat32Array) -> void:
+	if is_host() and not players.is_empty():
+		_adv_traffic.rpc(state)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _adv_traffic(state: PackedFloat32Array) -> void:
+	adv_traffic_received.emit(state)
+
+
+## Host only: the police cars on the adventure's road (see AdventurePolice), ten times a second.
+func send_police(state: PackedFloat32Array) -> void:
+	if is_host() and not players.is_empty():
+		_police.rpc(state)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func _police(state: PackedFloat32Array) -> void:
+	police_received.emit(state)

@@ -67,7 +67,7 @@ func _ready() -> void:
 	gap.custom_minimum_size = Vector2(16, 0)
 	head.add_child(gap)
 	var back := Button.new()
-	back.text = "Back to parts (Esc)"
+	Controls.bind_text(back, "Back to parts ({back})")
 	back.pressed.connect(close)
 	head.add_child(back)
 	root.add_child(head)
@@ -146,11 +146,11 @@ func _ready() -> void:
 	_peek_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	bar.add_child(_peek_label)
 	var back_up := Button.new()
-	back_up.text = "Back to the upgrades (Esc)"
+	Controls.bind_text(back_up, "Back to the upgrades ({back})")
 	back_up.pressed.connect(stop_peek)
 	bar.add_child(back_up)
 	_peek_bar.visible = false
-	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
+	Shed.feedback.connect(func(text, _ok): if visible: _status.text = Controls.hint(text))
 	Shed.changed.connect(func(): if visible: refresh())
 	visibility_changed.connect(func():
 		if not is_visible_in_tree():
@@ -209,6 +209,8 @@ static func row_text(id: String) -> String:
 		state = "BUILT"
 	elif not GarageUpgrades.missing_needs(id, Shed.upgrades).is_empty():
 		state = "needs " + ", ".join(GarageUpgrades.missing_needs(id, Shed.upgrades).map(func(n): return GarageUpgrades.title(n)))
+	elif GarageUpgrades.level_needed(id) > Progress.level():
+		state = "level %d" % GarageUpgrades.level_needed(id)
 	elif GarageUpgrades.has_options(id):
 		state = "pick colours"
 	return "%s  ·  %s%s" % [GarageUpgrades.title(id), TvChannels.money_text(GarageUpgrades.price(id)), "  ·  " + state if state != "" else ""]
@@ -225,7 +227,7 @@ func show_upgrade(id: String) -> void:
 		(_rows[key] as Button).button_pressed = key == id
 	var u: Dictionary = GarageUpgrades.CATALOGUE[id]
 	_title.text = str(u["name"])
-	_desc.text = str(u["desc"])
+	_desc.text = Controls.hint(str(u["desc"]))
 	var needs: Array = u["needs"]
 	_spec.text = "Price: %s\nNeeds: %s" % [TvChannels.money_text(int(u["price"])),
 		"nothing" if needs.is_empty() else ", ".join(needs.map(func(n): return GarageUpgrades.title(n) + (" (built)" if GarageUpgrades.owned(n) else "")))]
@@ -366,7 +368,7 @@ func _update_buy() -> void:
 			var why := Shed.check(Shed.me(), {"a": "restyle_upgrade", "id": id, "looks": draft(id)})
 			_buy.text = "Change it for %s" % TvChannels.money_text(GarageUpgrades.restyle_fee(id))
 			_buy.disabled = why != ""
-			_buy.tooltip_text = why
+			_buy.tooltip_text = Controls.hint(why)
 			if why != "":
 				_status.text = why
 		else:
@@ -379,7 +381,7 @@ func _update_buy() -> void:
 	if GarageUpgrades.has_options(id):
 		_buy.text += "  ·  " + GarageUpgrades.looks_text(id, draft(id))
 	_buy.disabled = why != ""
-	_buy.tooltip_text = why
+	_buy.tooltip_text = Controls.hint(why)
 	if why != "":
 		_status.text = why
 

@@ -77,6 +77,24 @@ func show_item(item_id: int) -> void:
 	_put(BikeModel.item_display(item_id), "item:%d" % item_id)
 
 
+## Puts a whole bike on the turntable: `parts` built up in `paint`, `cond` its parts' colours
+## (BikeBuild's condition), nobody on it. `key` says which bike, so it's only rebuilt for another.
+func show_bike(key: String, parts: Dictionary, paint: Color, cond := {}) -> void:
+	if key == showing:
+		return
+	var build := BikeBuild.new(PartsDB.sanitize_build(parts.duplicate()), cond)
+	var holder := Node3D.new()
+	var model := BikeModel.new()
+	model.baked = true
+	model.position.y = build.rear_radius
+	holder.add_child(model)
+	model.build_from(build, paint, {}, null, false)
+	# Its middle over the turntable: the wheels sit either side of the model's origin.
+	holder.set_meta("size", Vector3(0.8, 1.15, build.wheelbase + build.rear_radius * 2.0))
+	_put(holder, "bike:" + key)
+	holder.position = Vector3(0.0, -0.55, 0.0)
+
+
 func clear() -> void:
 	showing = ""
 	for c in pivot.get_children():

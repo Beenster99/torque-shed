@@ -12,6 +12,16 @@ extends RefCounted
 ##            brakes, pipes, paint)
 ##   bespoke  a ground-up build on a bare frame, to an exclusive customer's targets (a style,
 ##            and some of: performance, weight, signature parts, paint, a finish standard)
+##   batch    a trade order for a run of identical prepared parts (engines blasted and built to a
+##            power, tanks and panels in a library colour): see ContractBatch
+##   test_ride  a manufacturer's prototype to ride through a set test and report on: see
+##            ContractTestRide
+##   detail   a dirty bike brought in for a detailing package: a wash, a wash and polish, or the
+##            full detail (wash, polish, ceramic coat); the job keeps the package as a list of
+##            steps ("steps", see Detail) and the handover checks how clean and glossy it is,
+##            the coat, and that the polisher hasn't burnt through anywhere
+## A new kind is a name in the tables below, a branch in make_offer (and, for one that isn't
+## about a customer's bike, in _accept, evaluate and payout), as the batch and test ride kinds do.
 ## Each job's pay, parts budget and deadline are worked out from what it asks for.
 ## Customers ride their own bike in along the road, park it in the sales office car park and
 ## walk in to reception. Taking the job on leaves their bike (and its keys) in the car park for
@@ -25,15 +35,20 @@ extends RefCounted
 ## ask for changes with Shed.request({"a": "contract_..."}), which Shed hands to check()/apply().
 ## Everything here is static, working on the Shed autoload.
 
-const KINDS: Array[String] = ["maint", "mot", "respray", "mod", "bespoke"]
-const KIND_NAMES := {"maint": "Maintenance", "mot": "MOT", "respray": "Colour match", "mod": "Modifications", "bespoke": "Bespoke build"}
+const KINDS: Array[String] = ["maint", "mot", "respray", "mod", "bespoke", "batch", "test_ride", "detail"]
+const KIND_NAMES := {"maint": "Maintenance", "mot": "MOT", "respray": "Colour match", "mod": "Modifications", "bespoke": "Bespoke build",
+	"batch": "Batch order", "test_ride": "Test ride", "detail": "Detailing"}
 ## Reputation the garage needs before customers bring each kind of job.
-const UNLOCK := {"maint": 0, "mot": 2, "respray": 3, "mod": 5, "bespoke": 10}
+const UNLOCK := {"maint": 0, "mot": 2, "respray": 3, "mod": 5, "bespoke": 10, "batch": 4, "test_ride": 6, "detail": 1}
 ## How the kind's job counts in the player's XP (see Progress.XP).
 const XP_KEYS := {"maint": "contract_maint", "mot": "contract_mot", "respray": "contract_respray", "mod": "contract_mod",
-	"bespoke": "contract_bespoke"}
+	"bespoke": "contract_bespoke", "batch": "contract_batch", "test_ride": "contract_test", "detail": "contract_detail"}
 ## Reputation earned by a job done to the letter.
-const REP_GAIN := {"maint": 1, "mot": 2, "respray": 2, "mod": 3, "bespoke": 5}
+const REP_GAIN := {"maint": 1, "mot": 2, "respray": 2, "mod": 3, "bespoke": 5, "batch": 3, "test_ride": 3, "detail": 1}
+## How often each kind turns up, against the others the reputation allows.
+const WEIGHTS := {"maint": 4.0, "mot": 3.0, "respray": 2.0, "mod": 2.0, "bespoke": 1.0, "batch": 2.0, "test_ride": 1.5, "detail": 2.5}
+## Kinds whose customer comes on foot, with no bike of their own to leave.
+const ON_FOOT: Array[String] = ["bespoke", "batch"]
 const FIRST_CUSTOMER := 0.4          # game hours into a new shed before the first customer
 const SPAWN_HOURS := Vector2(2.0, 5.0)
 const MAX_WAITING := 2               # customers at reception at once
@@ -48,11 +63,9 @@ const RIDE_SPEED := 9.0              # m/s, a customer riding in or away along t
 const PARK_SLOTS := 6
 const PARK_STEP := 2.6
 const PARK_FROM := Vector2(3.3, 11.6)
-## Where the road runs past the yard, by x: customers ride along it between these.
+## Where the High Street runs past the shed, by x: customers ride along it between these.
 const ROAD_FAR_X := 72.0
 const ROAD_TURN_X := 24.0
-## The loop's line past the west of the yard (see _west_road), worked out once.
-static var _west := PackedVector2Array()
 ## How long a finished job's ride away is kept (game hours), for players arriving to see it.
 const LEAVING_HOURS := 2.0
 const MAX_LEAVING := 6
@@ -109,7 +122,8 @@ const EST_COST := {"frame": 900, "fork": 450, "shock": 300, "wheel": 280, "tyre"
 	"head": 400, "fuel": 260, "air_filter": 40, "oil_filter": 15, "spark_plugs": 20, "cooling": 180, "gearbox": 500,
 	"exhaust": 380, "final_drive": 90, "chain": 70, "side_stand": 40, "centre_stand": 70, "headlight": 90,
 	"horn": 25, "ecu": 350, "panniers": 220, "top_box": 120, "fog_lights": 110, "tail": 140, "fairing": 420, "mirrors": 45,
-	"front_mudguard": 90, "indicators": 60, "side_panels": 90, "rearsets": 160, "guards": 180, "number_boards": 70, "swingarm": 240, "steering_damper": 220}
+	"front_mudguard": 90, "indicators": 60, "side_panels": 90, "rearsets": 160, "guards": 180, "number_boards": 70, "swingarm": 240, "steering_damper": 220,
+	"tank_bag": 80, "aux_tank": 160, "toolbox": 80, "satnav": 240}
 const FIRST_NAMES := ["Dave", "Sue", "Raj", "Kim", "Gary", "Priya", "Tom", "Jo", "Mick", "Aisha", "Steve", "Lena",
 	"Barry", "Chloe", "Nigel", "Fatima", "Pete", "Grace", "Wayne", "Mei", "Colin", "Zara", "Ian", "Bev"]
 const LAST_NAMES := ["Smith", "Patel", "Jones", "O'Brien", "Taylor", "Khan", "Walsh", "Brown", "Nguyen", "Evans",
@@ -301,46 +315,10 @@ static func free_park() -> int:
 	return -1
 
 
-## The point on the ring road where it passes the yard at `x` (the road is flat there). East of
-## the shed that's the loop's own curve; west of it, the line World lays the loop along.
+## The point on the High Street in front of the shed at `x` (it's straight and flat through the
+## town, see WorldTown).
 static func road_at(x: float) -> Vector3:
-	if x < 0.0:
-		var west := _west_road()
-		for i in range(1, west.size()):
-			if west[i].x >= x or i == west.size() - 1:
-				var f := clampf(inverse_lerp(west[i - 1].x, west[i].x, x), 0.0, 1.0)
-				return Vector3(x, 0.0, lerpf(west[i - 1].y, west[i].y, f))
-	var lo := 0.0
-	var hi := 0.8
-	for i in 32:
-		var mid := (lo + hi) * 0.5
-		if _loop(mid).x < x:
-			lo = mid
-		else:
-			hi = mid
-	var p := _loop((lo + hi) * 0.5)
-	return Vector3(p.x, 0.0, p.z)
-
-
-## The ring road's centre line by angle (the same loop World lays the road along east of the shed).
-static func _loop(theta: float) -> Vector3:
-	var f := 1.0 + 0.1 * sin(3.0 * theta + 0.5) + 0.05 * sin(5.0 * theta + 2.0)
-	return Vector3(185.0 * f * sin(theta), 0.0, 126.0 * f * cos(theta))
-
-
-## The loop's line past the west half of the yard (x -90..0), west to east: its smooth curve
-## through WorldLayout's points, as World lays it.
-static func _west_road() -> PackedVector2Array:
-	if _west.is_empty():
-		var pts := []
-		for r: Dictionary in WorldLayout.ROADS:
-			if r["name"] == "loop":
-				for p in WorldRoads._spline(PackedVector2Array(r["pts"]), true):
-					if p.x > -90.0 and p.x < 1.0 and p.y > 110.0:
-						pts.append(p)
-		pts.sort_custom(func(a, b): return a.x < b.x)
-		_west = PackedVector2Array(pts)
-	return _west
+	return Vector3(x, 0.0, WorldTown.STREET_Z)
 
 
 ## A rider's own dice for their way in or out (`salt` tells the two apart): seeded from
@@ -351,16 +329,16 @@ static func route_rng(rider: int, salt: int) -> RandomNumberGenerator:
 	return rng
 
 
-## Which end of the road past the yard a rider comes from (or goes off to) and how they come off
-## it: {east: that end, turn: the x they come off the road at, lane: how far left of the middle
-## of the road they keep (it's a left-hand road), mid: a nudge to their line across the yard,
-## swing: they sweep in from that side of the car park}. From `rng`, or with none the classic
-## way: from the east along the middle of the road and straight up the yard.
+## Which end of the street past the shed a rider comes from (or goes off to) and how they come
+## off it: {east: that end, turn: the x they come off the road at, lane: how far left of the
+## middle of the road they keep (it's a left-hand road), mid: a nudge to their line across the
+## forecourt, swing: they sweep in from that side of the car park}. From `rng`, or with none the
+## classic way: from the east along the middle of the road and straight in.
 static func _route(rng: RandomNumberGenerator) -> Dictionary:
 	if rng == null:
 		return {"east": true, "turn": ROAD_TURN_X, "lane": 0.0, "mid": Vector2.ZERO, "swing": 0.0}
 	var east := rng.randf() < 0.55
-	# From the west they come off short of the tabletop's corner of the yard.
+	# From the west they come off a little short of the car park.
 	var turn := rng.randf_range(22.0, 32.0) if east else rng.randf_range(12.0, 22.0)
 	var swing := 0.0
 	if rng.randf() < 0.25:
@@ -369,8 +347,8 @@ static func _route(rng: RandomNumberGenerator) -> Dictionary:
 		"mid": Vector2(rng.randf_range(-4.0, 4.0), rng.randf_range(-4.0, 6.0)), "swing": swing}
 
 
-## The road past the yard at each x of `xs` in turn, kept `lane` metres left of its middle going
-## that way.
+## The street past the shed at each x of `xs` in turn, kept `lane` metres left of its middle
+## going that way.
 static func road_line(xs: Array, lane: float) -> PackedVector3Array:
 	var pts := PackedVector3Array()
 	for x in xs:
@@ -397,14 +375,14 @@ static func _road_out(r: Dictionary) -> PackedVector3Array:
 	return road_line([r["turn"], 0.0, -20.0, -45.0, -ROAD_FAR_X], r["lane"])
 
 
-## Where route `r`'s way across the yard meets the road.
+## Where route `r`'s way onto the forecourt leaves the road (on the shed's side of it).
 static func _yard_gate(r: Dictionary) -> Vector3:
-	return Vector3(float(r["turn"]) + (-3.0 if r["east"] else 3.0), 0.0, 116.0)
+	return Vector3(float(r["turn"]) + (-3.0 if r["east"] else 3.0), 0.0, WorldTown.STREET_Z - 2.6)
 
 
-## The ride in: along the road past the yard, up across it and into car park bay `park`. With a
-## `rider` (an id every machine has, >= 0) it's their own way: from either end of the road, off
-## it at their own spot and on their own line across the yard. Without, the classic way.
+## The ride in: along the High Street, across the pavement onto the forecourt and into car park
+## bay `park`. With a `rider` (an id every machine has, >= 0) it's their own way: from either end
+## of the street, off it at their own spot and on their own line in. Without, the classic way.
 static func ride_in_path(park: int, rider := -1) -> PackedVector3Array:
 	return ride_in_to(park_xf(park).origin, rider)
 
@@ -417,19 +395,19 @@ static func ride_in_to(spot: Vector3, rider := -1) -> PackedVector3Array:
 	var mid: Vector2 = r["mid"]
 	var swing := float(r["swing"])
 	if swing != 0.0:
-		# Up the yard off to one side of the bay, then sweeping round into it.
-		pts.append(Vector3(clampf(spot.x + swing + mid.x * 0.3, 14.0, 39.0), 0.0, 96.0 + mid.y))
-		pts.append(Vector3(spot.x + swing * 0.45, 0.0, spot.z + 9.5))
+		# Across off to one side of the bay, then sweeping round into it.
+		pts.append(Vector3(clampf(spot.x + swing + mid.x * 0.3, 14.0, 39.0), 0.0, WorldTown.NORTH_FRONT + 3.6 + mid.y * 0.1))
+		pts.append(Vector3(spot.x + swing * 0.45, 0.0, spot.z + 7.8))
 	else:
-		pts.append(Vector3(clampf(spot.x + mid.x, 14.0, 39.0), 0.0, 94.0 + mid.y))
+		pts.append(Vector3(clampf(spot.x + mid.x * 0.5, 14.0, 39.0), 0.0, WorldTown.NORTH_FRONT + 3.0 + mid.y * 0.1))
 	pts.append(Vector3(spot.x, 0.0, spot.z + 6.0))
 	pts.append(spot)
 	return pts
 
 
 ## The ride away from where a bike stands: out of its bay and the roller door (through the
-## extension's doorway from its bays), across the yard to the road and off along it. With a
-## `rider` (>= 0) they go their own way, off either way along the road (see ride_in_path).
+## extension's doorway from its bays), across the forecourt to the street and off along it. With
+## a `rider` (>= 0) they go their own way, off either way along the street (see ride_in_path).
 static func ride_out_path(from: Transform3D, rider := -1) -> PackedVector3Array:
 	var pts := PackedVector3Array()
 	var at := Vector3(from.origin.x, 0.0, from.origin.z)
@@ -447,10 +425,11 @@ static func ride_out_path(from: Transform3D, rider := -1) -> PackedVector3Array:
 		pts.append(Vector3(clampf(at.x, c.x - 1.2, c.x + 1.2), 0.0, door_z - 1.2))
 	if room in ["wing", "shed"]:
 		pts.append(Vector3(c.x, 0.0, door_z + 2.5))
+		pts.append(Vector3(c.x, 0.0, WorldTown.NORTH_FRONT + 0.8))
 	elif at.z < SalesOffice.FORECOURT.end.y and at.x > SalesOffice.FORECOURT.position.x - 1.0:
 		# From the car park or the forecourt: back out of the bay first.
 		pts.append(Vector3(at.x, 0.0, at.z + 2.0))
-		pts.append(Vector3(at.x, 0.0, SalesOffice.FORECOURT.end.y + 4.0))
+		pts.append(Vector3(at.x, 0.0, SalesOffice.FORECOURT.end.y + 1.2))
 	var r := _route(route_rng(rider, 2) if rider >= 0 else null)
 	pts.append(_yard_gate(r))
 	pts.append_array(_road_out(r))
@@ -511,6 +490,11 @@ static func advance(hours: float) -> void:
 			changed = true
 	for id in jobs():
 		var job: Dictionary = jobs()[id]
+		if str(job.get("kind", "")) == "batch":
+			# Donors that didn't fit come as room is made in the delivery area.
+			if int(job.get("owed", 0)) > 0 and ContractBatch.deliver(job) > 0:
+				changed = true
+			continue
 		if not Shed.bikes.has(int(job.get("bike", 0))) and str(job.get("state", "")) == "active":
 			job["state"] = "lost"
 			changed = true
@@ -535,22 +519,31 @@ static func advance(hours: float) -> void:
 		Shed.changed.emit()
 
 
+## The Debug tab's difficulty for the next offer: -1 as usual, 0 easy, 1 medium, 2 hard (see
+## tier_pick). Set only while spawn makes one.
+static var _tier := -1
+## The Debug tab's difficulties, in order.
+const TIERS: Array[String] = ["Easy", "Medium", "Hard"]
+## The workshop level a batch order or test ride is made for at each difficulty.
+const TIER_LEVELS := [1, 8, 16]
+
+
 ## A new customer comes in with an offer (host only). `kind` forces the job; "" picks one the
-## reputation allows. Returns the customer's id.
-static func spawn(kind := "") -> int:
+## reputation allows. `tier` (the Debug tab) forces how big a job it is, where the kind has
+## sizes (TIERS); -1 is as usual. Returns the customer's id.
+static func spawn(kind := "", tier := -1) -> int:
 	var s := _st()
 	var rng: RandomNumberGenerator = Shed._rng
 	if kind == "" or not KINDS.has(kind):
 		var open := unlocked()
 		# Harder jobs come less often than easy ones.
-		var weights := {"maint": 4.0, "mot": 3.0, "respray": 2.0, "mod": 2.0, "bespoke": 1.0}
 		var total := 0.0
 		for k in open:
-			total += float(weights[k])
+			total += float(WEIGHTS.get(k, 1.0))
 		var pick := rng.randf() * total
 		kind = str(open[0])
 		for k in open:
-			pick -= float(weights[k])
+			pick -= float(WEIGHTS.get(k, 1.0))
 			if pick <= 0.0:
 				kind = str(k)
 				break
@@ -563,14 +556,22 @@ static func spawn(kind := "") -> int:
 		"skin": SKINS[rng.randi() % SKINS.size()], "hair": HAIR[rng.randi() % HAIR.size()], "hat": rng.randf() < 0.3,
 		"tall": rng.randf_range(0.92, 1.06), "vip": vip}
 	var now := clock()
+	_tier = clampi(tier, -1, TIERS.size() - 1)
 	var offer := make_offer(kind, person_name)
-	# Everyone but the exclusive customer rides their own bike in and parks it in the car park.
-	var park := free_park() if kind != "bespoke" else -1
+	_tier = -1
+	if kind == "test_ride":
+		# The manufacturer's rep, in the brand's colours.
+		look["top"] = ContractTestRide.BRANDS.get(str(offer.get("brand", "")), {}).get("jacket", look["top"])
+		look["hat"] = false
+	# Everyone but the exclusive customer and the trade buyer rides a bike in and parks it in the
+	# car park (a manufacturer's rep rides in on the prototype).
+	var park := free_park() if not ON_FOOT.has(kind) else -1
 	if park >= 0:
 		var parts: Dictionary = offer["parts"]
 		if str(parts.get("side_stand", "none")) == "none" and str(parts.get("centre_stand", "none")) == "none":
 			parts["side_stand"] = PartsDB.DEFAULT_BUILD["side_stand"]
-		offer["paint"] = rng.randi() % Shed.PAINTS.size()
+		if not offer.has("paint_rgb"):
+			offer["paint"] = rng.randi() % Shed.PAINTS.size()
 	customers()[id] = {"id": id, "name": person_name, "look": look, "arrived": now, "leave_at": now + PATIENCE_HOURS,
 		"offer": offer, "park": park}
 	Shed._mark_dirty()
@@ -588,7 +589,7 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 	match kind:
 		"maint":
 			var parts := random_parts(rng)
-			var size: Dictionary = SERVICES[rng.randi() % SERVICES.size()]
+			var size: Dictionary = SERVICES[_tier if _tier >= 0 else rng.randi() % SERVICES.size()]
 			var keys: Array = TASKS.keys().filter(func(k): return task_fits(str(k), parts))
 			_shuffle(keys, rng)
 			var range_n: Vector2i = size["n"]
@@ -607,7 +608,7 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 			offer["parts"] = parts
 			offer["goals"] = [{"t": "mot"}]
 			# How far gone it is: a couple of faults to a bike that's been off the road for years.
-			var faults := rng.randi_range(2, 7)
+			var faults := rng.randi_range(2, 7) if _tier < 0 else rng.randi_range(2 + _tier * 2, 3 + _tier * 2)
 			offer["faults"] = faults
 			var extras: Array = MOT_EXTRAS.filter(func(k): return task_fits(str(k), parts))
 			_shuffle(extras, rng)
@@ -667,12 +668,45 @@ static func make_offer(kind: String, person_name: String) -> Dictionary:
 			offer["pay"] = int(snappedi(1500 + offer["goals"].size() * rng.randi_range(400, 650), 100))
 			offer["days"] = 8 + offer["goals"].size() + rng.randi_range(0, 2)
 			offer["blurb"] = "Something nobody else has. Start from a bare frame and build me exactly this."
+		"detail":
+			# A package (the Debug tab's tiers: Easy a wash, Medium a wash and polish, Hard the lot),
+			# its steps the job's list (see Detail).
+			var parts := random_parts(rng, true)
+			var pk: Dictionary = Detail.PACKAGES[_tier if _tier >= 0 else rng.randi() % Detail.PACKAGES.size()]
+			var steps: Array = (pk["steps"] as Array).duplicate()
+			offer["parts"] = parts
+			offer["steps"] = steps
+			offer["package"] = str(pk["name"])
+			for st in steps:
+				offer["goals"].append({"t": "detail", "step": str(st)})
+			if steps.has("polish"):
+				offer["goals"].append({"t": "detail", "step": "no_burn"})
+			var range_p: Vector2i = pk["pay"]
+			offer["pay"] = int(snappedi(rng.randi_range(range_p.x, range_p.y), 5))
+			offer["days"] = int(pk["days"]) + rng.randi_range(0, 1)
+			offer["blurb"] = {
+				"wash": ["It's filthy after the weekend. Just a good wash, please.", "Can you get the muck off it? A proper wash."],
+				"wash and polish": ["Wash it and bring the shine back: the paint's gone dull and swirly.",
+					"It's looking tired. A wash and a machine polish, and don't burn the paint."],
+				"full detail": ["The full works: wash, polish, and a ceramic coat so it stays clean.",
+					"I want it showroom fresh: washed, polished and ceramic coated. No smears, mind."],
+			}[str(pk["name"]).to_lower()][rng.randi() % 2]
+		"batch":
+			offer = ContractBatch.make_offer(rng, _tier_level())
+		"test_ride":
+			offer = ContractTestRide.make_offer(rng, _tier_level())
 	var bike_name: String = "%s's %s" % [first, Shed.BIKE_NAMES[rng.randi() % Shed.BIKE_NAMES.size()]]
 	if kind == "bespoke":
 		bike_name = "%s's %s special" % [first, str(STYLES[offer["goals"][0]["style"]]).to_lower()]
-	offer["bike_name"] = bike_name
+	offer["bike_name"] = str(offer.get("bike_name", bike_name))
+	bike_name = offer["bike_name"]
 	offer["title"] = "%s: %s" % [KIND_NAMES[kind], bike_name]
 	return offer
+
+
+## The workshop level a batch order or test ride is made for: the host's, or the Debug tab's tier.
+static func _tier_level() -> int:
+	return int(TIER_LEVELS[_tier]) if _tier >= 0 else PaintBay.level_of(Shed.me())
 
 
 ## Whether a bike with `parts` can have a maintenance task done: it has the parts it renews.
@@ -796,7 +830,7 @@ const STYLE_ENGINE := {
 	"scrambler": {"engine": "boxer_800", "head": "four_valve", "fuel": "throttle_bodies", "cooling": "air_fins",
 		"gearbox": "six_close", "final_drive": "tall_15_42"},
 	"adventure": {"engine": "boxer_1100", "head": "four_valve", "fuel": "throttle_bodies", "cooling": "single_radiator",
-		"gearbox": "six_wide_enduro", "final_drive": "tall_15_42", "ecu": "abs_ecu"},
+		"gearbox": "six_wide_enduro", "final_drive": "top_speed_16_40", "ecu": "abs_ecu"},
 	"roader": {"engine": "triple_850", "head": "four_valve", "fuel": "throttle_bodies", "cooling": "single_radiator",
 		"gearbox": "six_close", "final_drive": "tall_15_42", "ecu": "abs_ecu"},
 	"tourer": {"engine": "inline_1000", "head": "four_valve", "fuel": "throttle_bodies", "cooling": "single_radiator",
@@ -832,8 +866,8 @@ static func style_build(style: String) -> Dictionary:
 		"cafe":
 			b.merge({"frame": "steel_cradle", "tank": "alloy_cafe_14", "saddle": "cafe_hump", "handlebars": "alloy_clip_ons",
 				"tail": "cafe_tail", "engine": "twin_750", "exhaust": "full_system", "headlight": "bates_cafe",
-				"front_wheel": "wire_19_chrome", "rear_wheel": "spoked_18", "front_tyre": "vintage_ribbed_100",
-				"rear_tyre": "vintage_ribbed", "mirrors": "bar_end_mirrors", "front_mudguard": "alloy_cafe_blade"}, true)
+				"front_wheel": "wire_19_chrome", "rear_wheel": "spoked_18", "front_tyre": "touring_road_110",
+				"rear_tyre": "touring_road_130", "mirrors": "bar_end_mirrors", "front_mudguard": "alloy_cafe_blade"}, true)
 		"scrambler":
 			b.merge({"frame": "steel_backbone", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "mx_tall",
 				"tail": "scrambler_loop", "engine": "twin_500", "exhaust": "scrambler_high_twin", "front_wheel": "spoked_19_adventure",
@@ -852,17 +886,19 @@ static func style_build(style: String) -> Dictionary:
 		"race":
 			b.merge({"frame": "race_alu_perimeter", "tank": "race_white_red", "saddle": "race_foam_seat", "handlebars": "race_black_clips",
 				"tail": "race_hump", "engine": "inline_1000", "exhaust": "race_hex_carbon", "fairing": "race_white_fairing",
-				"fork": "race_works_usd", "shock": "sport_mono", "ecu": "sport_ecu", "mirrors": "none", "front_wheel": "race_mag_gold",
-				"rear_wheel": "race_mag_gold", "headlight": "led_projector", "front_mudguard": "race_white_hugger"}, true)
+				"fork": "race_works_usd", "shock": "sport_mono", "ecu": "sport_ecu", "mirrors": "none", "front_wheel": "cast_17_front",
+				"rear_wheel": "race_mag_gold", "headlight": "led_projector", "front_mudguard": "race_white_hugger",
+				"front_tyre": "sport_road_120", "rear_tyre": "sport_road_190"}, true)
 		"bobber":
 			b.merge({"frame": "softail_hardtail", "tank": "peanut_9", "saddle": "flat_bench", "handlebars": "drag_bar",
 				"tail": "bobber_fender", "engine": "vtwin_1000", "exhaust": "straight_pipe", "front_wheel": "wire_16_bobber",
-				"rear_wheel": "wire_16_bobber", "mirrors": "bar_end_mirrors", "front_mudguard": "bobbed_steel"}, true)
+				"rear_wheel": "wire_16_bobber", "mirrors": "bar_end_mirrors", "front_mudguard": "bobbed_steel",
+				"rear_tyre": "touring_road_150"}, true)
 		"chopper":
 			b.merge({"frame": "chopper_raked", "fork": "springer_long", "tank": "peanut_9", "saddle": "flat_bench",
 				"handlebars": "ape_hangers", "tail": "bobber_fender", "engine": "vtwin_1200", "exhaust": "shotgun_duals",
 				"front_wheel": "wire_19_chrome", "rear_wheel": "wire_16_bobber", "headlight": "bates_cafe", "mirrors": "bar_end_mirrors",
-				"front_mudguard": "none"}, true)
+				"front_mudguard": "none", "rear_tyre": "touring_road_150"}, true)
 		"cruiser":
 			b.merge({"frame": "cruiser_cradle", "tank": "cruiser_fatbob_console", "saddle": "touring_comfort", "handlebars": "drag_bar",
 				"tail": "classic_mudguard", "engine": "vtwin_1100", "exhaust": "shotgun_duals", "front_wheel": "cast_19_six",
@@ -871,7 +907,7 @@ static func style_build(style: String) -> Dictionary:
 		"adventure":
 			b.merge({"frame": "adv_trellis", "fork": "enduro_usd", "shock": "enduro_mono", "tank": "adv_big_tank", "saddle": "adv_comfort_seat",
 				"handlebars": "mx_tall", "tail": "enduro_fender", "engine": "boxer_1100", "exhaust": "mx_upswept", "front_wheel": "spoked_19_adventure",
-				"rear_wheel": "spoked_18", "front_tyre": "dual_sport_90", "rear_tyre": "dual_sport", "panniers": "aluminium_boxes",
+				"rear_wheel": "adv_17_cast", "front_tyre": "trail_road_110", "rear_tyre": "trail_road_150", "panniers": "aluminium_boxes",
 				"fairing": "adv_beak_red", "headlight": "led_projector", "mirrors": "touring_mirrors", "front_mudguard": "enduro_front_fender"}, true)
 		"mx":
 			b.merge({"frame": "mx_twin_loop", "fork": "long_travel_mx", "shock": "mono_shock_mx", "tank": "enduro_12", "saddle": "enduro_seat",
@@ -1112,6 +1148,10 @@ static func goal_text(g: Dictionary) -> String:
 	match str(g.get("t", "")):
 		"task":
 			return str(TASKS.get(str(g["task"]), g["task"]))
+		"batch":
+			return ContractBatch.spec_text(g)
+		"ride_km", "ride_top", "ride_brake", "ride_lean", "ride_lap", "ride_dyno", "report":
+			return ContractTestRide.goal_text(g)
 		"mot":
 			return "Pass the MOT (full inspection: tyres, brakes, suspension, lights, chain, exhaust, frame, mirrors...)"
 		"top_kmh":
@@ -1144,6 +1184,8 @@ static func goal_text(g: Dictionary) -> String:
 			return "On the tank, %s (masked first, then the main colour over it)" % what
 		"health":
 			return "Condition at least %d%%" % roundi(float(g["min"]) * 100.0)
+		"detail":
+			return Detail.step_text(str(g.get("step", "")))
 	return str(g)
 
 
@@ -1172,6 +1214,8 @@ static func eval_goal(job: Dictionary, g: Dictionary) -> Dictionary:
 	match str(g.get("t", "")):
 		"task":
 			return _eval_task(bike_id, str(g["task"]))
+		"ride_km", "ride_top", "ride_brake", "ride_lean", "ride_lap", "ride_dyno", "report":
+			return ContractTestRide.eval_goal(job, g)
 		"mot":
 			var m: Dictionary = job.get("mot", {})
 			if not m.get("tested", false):
@@ -1231,6 +1275,9 @@ static func eval_goal(job: Dictionary, g: Dictionary) -> Dictionary:
 		"part":
 			var p := str(parts.get(str(g["slot"]), "none"))
 			return {"done": p == str(g["part"]), "have": PartsDB.part_name(p) if p != "none" else "none"}
+		"detail":
+			var row := Detail.eval_step(bike_id, str(g.get("step", "")))
+			return {"done": bool(row["done"]), "have": str(row["have"])}
 	return {"done": false, "have": ""}
 
 
@@ -1300,6 +1347,8 @@ static func bike_health(bike_id: int) -> float:
 
 ## Every goal of a job with how it stands: [{text, done, have}].
 static func evaluate(job: Dictionary) -> Array:
+	if str(job.get("kind", "")) == "batch":
+		return ContractBatch.rows(job)
 	var rows := []
 	for g in job.get("goals", []):
 		var e := eval_goal(job, g)
@@ -1345,6 +1394,11 @@ static func _mot_passed(job: Dictionary, rows: Array) -> bool:
 
 ## What handing the job back now would pay: {labour, parts, tip, over, late, sat, total, rep, note}.
 static func payout(job: Dictionary, spend_override := -1) -> Dictionary:
+	match str(job.get("kind", "")):
+		"batch":
+			return ContractBatch.payout(job)
+		"test_ride":
+			return ContractTestRide.payout(job)
 	var rows := evaluate(job)
 	var met := rows.filter(func(r): return r["done"]).size()
 	var sat := float(met) / maxf(1.0, rows.size())
@@ -1369,6 +1423,10 @@ static func payout(job: Dictionary, spend_override := -1) -> Dictionary:
 	if sat >= 1.0 and late == 0:
 		var shine := bike_health(int(job.get("bike", 0)))
 		tip = roundi(fee * (0.05 + 0.2 * clampf((shine - 0.6) / 0.4, 0.0, 1.0)))
+		if str(job.get("kind", "")) == "detail" and job.get("steps", []).has("polish"):
+			# A detailing customer tips on the shine: more the deeper the gloss past what they asked.
+			var gloss := float(Detail.bike_stats(int(job.get("bike", 0)))["gloss"])
+			tip = roundi(fee * (0.05 + 0.25 * clampf((gloss - Detail.GLOSS_GOOD) / (1.0 - Detail.GLOSS_GOOD), 0.0, 1.0)))
 	var rep := int(REP_GAIN.get(str(job.get("kind", "")), 1)) if sat >= 1.0 else (0 if sat >= 0.5 else -1)
 	if late > 0:
 		rep -= 1
@@ -1401,7 +1459,8 @@ static func _best_match(rows: Array) -> float:
 
 ## Why `peer` can't do a contract action, or "". Actions: contract_accept {customer},
 ## contract_decline {customer}, contract_mot_test {job}, contract_hand_in {job},
-## contract_spawn {kind} (the Debug tab), contract_rep {value} (the Debug tab).
+## contract_spawn {kind, tier} (the Debug tab: a customer arrives at reception), contract_start
+## {kind, tier} (the Debug tab: the job is taken on there and then), contract_rep {value} (the Debug tab).
 static func check(peer: int, action: Dictionary) -> String:
 	var a := str(action.get("a", ""))
 	match a:
@@ -1412,12 +1471,34 @@ static func check(peer: int, action: Dictionary) -> String:
 			if a == "contract_accept":
 				if active_count() >= MAX_ACTIVE:
 					return "The shed has as many jobs as it can take. Finish one first."
-				if not rides_in(customers()[cid]) and Shed.free_bay(Workshop.bay_count()) < 0:
+				var batch := str(customers()[cid].get("offer", {}).get("kind", "")) == "batch"
+				if not batch and not rides_in(customers()[cid]) and Shed.free_bay(Workshop.bay_count()) < 0:
 					return "Every bay is full. Clear one for the customer's bike first."
+		"contract_dispatch":
+			var job: Dictionary = jobs().get(int(action.get("job", 0)), {})
+			if str(job.get("kind", "")) != "batch":
+				return "That order's finished."
+			if ContractBatch.pallet_items().is_empty():
+				return "Nothing on the dispatch pallet. Put the finished parts down on it."
+		"contract_report":
+			var job: Dictionary = jobs().get(int(action.get("job", 0)), {})
+			if str(job.get("kind", "")) != "test_ride":
+				return "That test is finished."
+			if job.get("report") is Dictionary:
+				return "The report's already in."
+			var r = action.get("ratings")
+			if not (r is Dictionary) or not ContractTestRide.RATINGS.all(func(k): return int(r.get(k, 0)) >= 1 and int(r.get(k, 0)) <= 5):
+				return "Rate every line of the report, 1 to 5."
+			if not (action.get("issues", []) is Array):
+				return "Tick the issues you noticed (or none)."
 		"contract_mot_test", "contract_hand_in":
 			var job: Dictionary = jobs().get(int(action.get("job", 0)), {})
 			if job.is_empty():
 				return "That job's finished."
+			if str(job.get("kind", "")) == "batch":
+				return "" if a == "contract_hand_in" else "Only an MOT job gets tested."
+			if a == "contract_hand_in" and str(job.get("kind", "")) == "test_ride" and not (job.get("report") is Dictionary):
+				return "Fill in the test report first: the rep collects it when it's in."
 			var bike_id := int(job.get("bike", 0))
 			if not Shed.bikes.has(bike_id):
 				return "The bike has gone."
@@ -1431,12 +1512,20 @@ static func check(peer: int, action: Dictionary) -> String:
 					return "It isn't finished: every part has to be on and bolted up."
 				if not near_handback(bike_id):
 					return "Leave it in the car park outside the sales office to hand it back."
-		"contract_spawn", "contract_rep":
+		"contract_spawn", "contract_rep", "contract_start":
 			# Debug tab helpers, for the host.
 			if peer != Shed.me():
 				return "Only the host can do that."
 			if a == "contract_spawn" and customers().size() >= MAX_WAITING + 2:
 				return "There's a queue already."
+			if a == "contract_start":
+				var kind := str(action.get("kind", ""))
+				if not KINDS.has(kind):
+					return "There's no job like that."
+				if active_count() >= MAX_ACTIVE:
+					return "The shed has as many jobs as it can take. Finish one first."
+				if kind == "bespoke" and Shed.free_bay(Workshop.bay_count()) < 0:
+					return "Every bay is full. Clear one for the bare frame first."
 
 		_:
 			return "There's nothing like that to do."
@@ -1451,11 +1540,13 @@ static func active_count() -> int:
 ## leaves it there rather than delivering it to a bay. Customers from sheds saved before they
 ## rode in, and the exclusive customer, didn't.
 static func rides_in(cust: Dictionary) -> bool:
-	return int(cust.get("park", -1)) >= 0 and str(cust.get("offer", {}).get("kind", "")) != "bespoke"
+	return int(cust.get("park", -1)) >= 0 and not ON_FOOT.has(str(cust.get("offer", {}).get("kind", "")))
 
 
 ## The job a bike is in the shed for, or {}.
 static func job_for_bike(bike_id: int) -> Dictionary:
+	if bike_id == 0:
+		return {}
 	for id in jobs():
 		if int(jobs()[id].get("bike", 0)) == bike_id:
 			return jobs()[id]
@@ -1494,10 +1585,24 @@ static func apply(peer: int, action: Dictionary) -> String:
 		"contract_mot_test":
 			text = _mot_test(peer, jobs()[int(action["job"])])
 		"contract_hand_in":
-			text = _hand_in(jobs()[int(action["job"])])
+			var job: Dictionary = jobs()[int(action["job"])]
+			text = ContractBatch.finish(job) if str(job.get("kind", "")) == "batch" else _hand_in(job)
+		"contract_dispatch":
+			text = ContractBatch.dispatch(peer, jobs()[int(action["job"])])
+		"contract_report":
+			text = _report(peer, jobs()[int(action["job"])], action)
 		"contract_spawn":
-			var cid := spawn(str(action.get("kind", "")))
+			var cid := spawn(str(action.get("kind", "")), int(action.get("tier", -1)))
 			text = "%s is on the way to reception." % customers()[cid]["name"]
+		"contract_start":
+			# The customer comes and the job is taken on at once; one who'd need a bay when none is
+			# free waits at reception instead.
+			var cid := spawn(str(action["kind"]), int(action.get("tier", -1)))
+			var why := check(peer, {"a": "contract_accept", "customer": cid})
+			if why != "":
+				text = "%s is waiting at reception: %s" % [customers()[cid]["name"], why]
+			else:
+				text = _accept(peer, cid)
 		"contract_rep":
 			_st()["reputation"] = clampi(int(action.get("value", 0)), 0, 999)
 			text = "Reputation set to %d" % reputation()
@@ -1536,19 +1641,27 @@ static func _accept(_peer: int, cid: int) -> String:
 	var parked := rides_in(cust)
 	var bay := Shed.free_bay(Workshop.bay_count())
 	var bike_id := 0
+	if kind == "batch":
+		return _accept_batch(cid, cust, offer)
 	if kind == "bespoke":
 		var frame := Shed._new_item(str(offer["parts"].get("frame", "steel_cradle")), 0.0, 0.0, 0.0)
 		bike_id = Shed._empty_bike(frame, bay)
 	else:
-		var age: float = {"maint": 0.15, "mot": 0.28, "mod": 0.12}.get(kind, 0.2)
+		var age: float = {"maint": 0.15, "mot": 0.28, "mod": 0.12, "test_ride": 0.0, "detail": 0.12}.get(kind, 0.2)
 		var paint = Shed.PAINTS[int(offer["paint"]) % Shed.PAINTS.size()] if offer.has("paint") else null
+		if offer.has("paint_rgb"):
+			paint = Color.html(str(offer["paint_rgb"]))
 		bike_id = Shed._new_bike(offer["parts"], maxi(bay, 0), str(offer["bike_name"]), age, paint)
 		if parked:
 			# Left in the car park bay they rode into, on its stand, keys with the crew.
 			Shed.bikes[bike_id]["bay"] = -1
 			Shed.bikes[bike_id]["xf"] = park_xf(int(cust["park"]))
 			Shed.bikes[bike_id]["stand"] = Shed._rest_stand(bike_id)
-		prepare_bike(bike_id, kind, offer.get("goals", []), Shed._rng, int(offer.get("faults", -1)))
+		if kind == "test_ride":
+			ContractTestRide.prepare_bike(bike_id, offer.get("quirks", []))
+		else:
+			prepare_bike(bike_id, kind, offer.get("goals", []), Shed._rng, int(offer.get("faults", -1)))
+			Shed.arrival_puncture(bike_id, kind)   # an MOT or service may have a puncture to find
 	Shed.bikes[bike_id]["name"] = str(offer["bike_name"])
 	Shed.bikes[bike_id]["contract"] = true
 	var s := _st()
@@ -1560,15 +1673,94 @@ static func _accept(_peer: int, cid: int) -> String:
 		"workers": {}, "state": "active"}
 	if kind == "mot":
 		job["mot"] = {"tested": false, "stale": false, "fails": 0, "sheet": [], "tests": 0}
+	if offer.get("steps") is Array:
+		# A detailing package: its steps, in order, for anyone (or any AI detailer) working through it.
+		job["steps"] = (offer["steps"] as Array).duplicate()
+		job["package"] = str(offer.get("package", ""))
+	if kind == "test_ride":
+		ContractTestRide.start(job, offer, bike_id)
 	jobs()[jid] = job
 	customers().erase(cid)
+	if kind == "test_ride":
+		return ("Test ride taken on: the %s, due back in %d days. The rep's left it %s with the keys: ride the test (the logger "
+			+ "checks it), fill in the report from the Contracts card, and leave it in the car park for them to collect.") % [
+			offer["model"], int(offer["days"]), "in the car park" if parked else "on bay %d" % (bay + 1)]
 	if parked:
-		return ("Job taken on: %s, due in %d days. They've left it in the car park with the keys: ride it or wheel it (F) into a bay. "
+		return ("Job taken on: %s, due in %d days. They've left it in the car park with the keys: ride it or wheel it ({interact}) into a bay. "
 			+ "When it's done, leave it back in the car park and hand it back.") % [offer["bike_name"], int(offer["days"])]
 	var where := "a bare %s on bay %d" % [PartsDB.part_name(str(offer["parts"]["frame"])).to_lower(), bay + 1] if kind == "bespoke" \
 		else "bay %d" % (bay + 1)
 	return "Job taken on: %s. It's on %s, due in %d days. When it's done, leave it in the car park outside the sales office and hand it back." % [
 		offer["bike_name"], where, int(offer["days"])]
+
+
+## A trade customer's batch order taken on: no bike, the donors crated up in the delivery area.
+static func _accept_batch(cid: int, cust: Dictionary, offer: Dictionary) -> String:
+	var s := _st()
+	var jid := int(s["next"])
+	s["next"] = jid + 1
+	var job := {"id": jid, "cid": cid, "kind": "batch", "title": str(offer["title"]), "customer": str(cust["name"]), "look": cust["look"],
+		"goals": offer["goals"].duplicate(true), "pay": int(offer["pay"]), "budget": 0, "accepted": clock(),
+		"due": clock() + float(offer["days"]) * DAY, "workers": {}, "state": "active"}
+	jobs()[jid] = job
+	ContractBatch.start(job, offer)
+	customers().erase(cid)
+	var text := "Order taken on: %s, due in %d days. Put each finished part down on the dispatch pallet by the delivery area: it's checked and taken there and then." % [
+		offer["bike_name"], int(offer["days"])]
+	if str(job["supply"]) == "donors":
+		var owed := int(job["owed"])
+		text += " The donors are crated up in the delivery area%s." % ("" if owed == 0 else " (%d more as room is made)" % owed)
+	else:
+		text += " Source the parts yourself: the pay covers them."
+	return text
+
+
+## A test ride's report in from `peer`: scored against the prototype, kept for the rep.
+static func _report(peer: int, job: Dictionary, action: Dictionary) -> String:
+	var ratings := {}
+	for k in ContractTestRide.RATINGS:
+		ratings[k] = clampi(int(action["ratings"].get(k, 3)), 1, 5)
+	var issues: Array = (action.get("issues", []) as Array).map(func(k): return str(k)).filter(
+		func(k): return ContractTestRide.ISSUE_ORDER.has(k))
+	var sc := ContractTestRide.score(job, ratings, issues)
+	job["report"] = {"ratings": ratings, "issues": issues, "by": peer, "at": clock(), "score": float(sc["score"]),
+		"hits": int(sc["hits"]), "wrong": int(sc["wrong"]), "missed": int(sc["missed"])}
+	var w: Dictionary = job.get("workers", {})
+	w[peer] = int(w.get(peer, 0)) + 1
+	job["workers"] = w
+	return "Report sent to %s. Leave the %s in the car park for their rep to collect." % [job.get("brand", "the manufacturer"),
+		job.get("model", "prototype")]
+
+
+## Host: a part put down on the ground by `peer`: on the dispatch pallet, it's offered to each
+## batch order under way. Returns what to tell them ("" if it isn't on the pallet).
+static func on_drop(peer: int, item_id: int) -> String:
+	if not ContractBatch.on_pallet(item_id):
+		return ""
+	var said := ""
+	for id in jobs().keys():
+		var job: Dictionary = jobs().get(id, {})
+		if str(job.get("kind", "")) != "batch" or not Shed.items.has(item_id):
+			continue
+		var r := ContractBatch.check_item(job["goals"][0], item_id)
+		if r["ok"]:
+			return ContractBatch.dispatch(peer, job, item_id)
+		# The first reason, to fit on the screen: the Contracts card lists the lot.
+		var why: Array = r["why"]
+		said = "Not to spec: %s%s." % [str(why[0]) if not why.is_empty() else "", " (and more on the Contracts card)" if why.size() > 1 else ""]
+	return said
+
+
+## Host: ride stats from a rider (see Main._send_ride_stats) on a test ride's prototype.
+static func note_ride(bike_id: int, action: Dictionary) -> void:
+	var job := job_for_bike(bike_id)
+	if str(job.get("kind", "")) == "test_ride":
+		ContractTestRide.note_ride(job, action)
+
+
+## Why an action can't be done because of a contract (a prototype can't be worked on), or "".
+static func guard(action: Dictionary) -> String:
+	return ContractTestRide.guard(action)
 
 
 ## A customer's bike brought in for a job: generally looked after, but with whatever the job
@@ -1636,6 +1828,20 @@ static func prepare_bike(bike_id: int, kind: String, goals: Array, rng: RandomNu
 			"fork":
 				set_part.call("fork", "wear", 0.7)
 	match kind:
+		"detail":
+			# Filthy, and its paint dull and swirled (in patches), ready for the package.
+			for slot in PartsDB.SLOTS:
+				var id := Shed.item_on(bike_id, slot)
+				if id != 0:
+					Shed.items[id]["dirt"] = clampf(float(Shed.items[id]["dirt"]) + rng.randf_range(0.45, 0.6), 0.0, 1.0)
+			for id in Detail.panels_of(bike_id):
+				var d := Detail.data(Shed.items[id])
+				var g: PackedByteArray = d["g"]
+				var dull := rng.randf_range(0.18, 0.32)
+				for i in Dirt.CELLS:
+					g[i] = clampi(roundi((dull + rng.randf_range(-0.06, 0.06)) * 255.0), 0, 255)
+				d["g"] = g
+				Detail.store(Shed.items[id], d)
 		"mot":
 			# A few faults for the test to find.
 			var fault_list := ["front_tyre", "rear_tyre", "pads", "disc", "mirrors", "horn", "headlight", "chain", "fork", "frame",
@@ -1838,7 +2044,7 @@ static func screen_data(job: Dictionary) -> Dictionary:
 	var m: Dictionary = job["mot"] if job.get("mot") is Dictionary else {}
 	if str(job.get("kind", "")) == "mot":
 		if not m.get("tested", false):
-			mot_line = "Not tested yet: run the MOT test from Esc, Contracts."
+			mot_line = "Not tested yet: run the MOT test from {menu}, Contracts."
 		else:
 			var f: Array = MotTest.fails(m.get("sheet", []))
 			mot_line = "MOT test %d: %s%s" % [int(m.get("tests", 1)), "PASS" if f.is_empty() else "FAIL on %d" % f.size(),

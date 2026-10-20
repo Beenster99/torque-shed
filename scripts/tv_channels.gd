@@ -13,10 +13,10 @@ extends RefCounted
 ## wiring it up later only touches that function.
 
 ## The channels every screen has, in order. A screen's own home channel goes first.
-const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts"]
+const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts", "staff", "workflow"]
 const NAMES := {"bay": "Bay", "live": "Live riding", "crew": "Crew board", "xp": "XP goals", "howto": "How to play",
 	"money_me": "My money", "money_garage": "Garage money", "afford": "What you can afford", "contracts": "Contracts",
-	"sales": "Sales"}
+	"sales": "Sales", "staff": "Staff", "workflow": "Workflow"}
 const BUILT_IN: Array[String] = ["crew", "bay0", "bay1", "bay2", "bay3"]
 ## The how-to-play pages turn over on their own, this many seconds each.
 const HOWTO_PAGE_TIME := 9.0
@@ -36,12 +36,12 @@ const HOWTO := [
 		["Co-op", "everyone works on the same bikes, live"],
 	]],
 	["On foot", [
-		["WASD", "walk  ·  mouse: look  ·  Shift: run  ·  C: crouch"],
-		["1-8", "pick a tool (or Q / E, the mouse wheel, LB / RB)"],
-		["L mouse", "hold to work (RT or A on a pad)"],
-		["F", "use, ride, unpack, pick up kit (Y on a pad)"],
-		["G", "ping what you're looking at for the crew"],
-		["R", "next TV channel when you look at a screen (X)"],
+		["{move}", "walk  ·  {look}: look  ·  {sprint}: run  ·  {crouch}: crouch"],
+		["{tool_next}", "next tool  ·  {tool_prev}: the one before (or the number keys)"],
+		["{work}", "hold to work"],
+		["{interact}", "use, ride, unpack, pick up kit"],
+		["{ping}", "ping what you're looking at for the crew"],
+		["{alt_act}", "next TV channel when you look at a screen"],
 	]],
 	["Restoring a bike", [
 		["Wrench", "unbolt the part, then take it off with your hands"],
@@ -51,11 +51,11 @@ const HOWTO := [
 		["Fit", "hold the part, look at the bike, then bolt it up"],
 	]],
 	["Riding", [
-		["I", "engine on or off  ·  W: throttle  ·  S: front brake"],
-		["Space", "rear brake  ·  A / D: lean  ·  E / Q: gears"],
-		["Shift", "weight back for a wheelie  ·  Ctrl: forward"],
-		["R", "reset after a crash  ·  C: camera"],
-		["F", "get off when you've stopped"],
+		["{ignition}", "engine on or off  ·  {throttle}: throttle  ·  {front_brake}: front brake"],
+		["{rear_brake}", "rear brake  ·  {lean}: lean  ·  {shift_up|shift_down}: gears"],
+		["{body_back}", "weight back for a wheelie  ·  {body_forward}: forward"],
+		["{respawn}", "reset after a crash  ·  {camera}: camera"],
+		["{interact}", "get off when you've stopped"],
 	]],
 	["Keep the shed tidy", [
 		["General", "the black bin takes anything, and old fluid"],
@@ -94,6 +94,8 @@ static func home(key: String) -> String:
 ## Every channel a screen has, its home channel first.
 static func channels_for(key: String) -> Array:
 	var out := [home(key)]
+	if key.begins_with("bay"):
+		out.append("workflow")   # a bay screen's next channel is its bike's job card (see WorkflowTv)
 	for ch in CHANNELS:
 		if not out.has(ch):
 			out.append(ch)
@@ -218,9 +220,10 @@ static func money_data(peer: int) -> Dictionary:
 static func garage_data() -> Dictionary:
 	var worth := Money.shed_worth()
 	var flow := Money.flow(Shed.bank, 7)
-	return {"cash": Shed.garage_money, "bike_value": int(worth["bikes"]), "stock_value": int(worth["stock"]),
+	return {"cash": Money.balance(), "bike_value": int(worth["bikes"]), "stock_value": int(worth["stock"]),
 		"income_week": int(flow["in"]), "outgoings_week": int(flow["out"]), "bikes": Shed.bikes.size(),
-		"history": Money.graph(Settings.money_graph_range), "range": Settings.money_graph_range, "debt": Money.debt(Shed.bank)}
+		"history": Money.graph(Settings.money_graph_range), "range": Settings.money_graph_range, "debt": Money.debt(Shed.bank),
+		"bills_day": Money.bill_total(Money.bill_lines(Shed.bank)), "overdraft": int(Shed.bank.get("overdraft", 0))}
 
 
 ## Things worth saving up for, what they cost the business, and whether this player's cash covers them.
@@ -258,6 +261,8 @@ static func page_data(ch: String) -> Dictionary:
 			return contracts_data()
 		"sales":
 			return Sales.tv_data()
+		"staff":
+			return Staff.tv_data()
 		"live":
 			return nobody_data()
 	return {}
@@ -279,9 +284,10 @@ static func money_text(v: int) -> String:
 
 # ---------------------------------------------------------------------------- drawing
 
+## Any {action} in `text` shows that action's key on the device in use (see Controls.hint).
 static func _text(c: Control, font: Font, pos: Vector2, text: String, size: int, color := Color.WHITE, width := -1.0,
 		align := HORIZONTAL_ALIGNMENT_LEFT) -> void:
-	c.draw_string(font, pos, text, align, width, size, color)
+	c.draw_string(font, pos, Controls.hint(text), align, width, size, color)
 
 
 static func _title(c: Control, font: Font, title: String, right := "") -> void:
@@ -414,6 +420,10 @@ static func draw_page(c: Control, font: Font, kind: String, data: Dictionary) ->
 			_draw_contracts(c, font, data)
 		"sales":
 			Sales.draw_tv(c, font, data)
+		"staff":
+			_draw_staff(c, font, data)
+		"workflow":
+			WorkflowTv.draw(c, font, data)
 		_:
 			_title(c, font, "NO SIGNAL")
 
@@ -423,7 +433,7 @@ static func _draw_nobody(c: Control, font: Font, data: Dictionary) -> void:
 	c.draw_circle(Vector2(1000 - 120, 35), 9.0, Color(0.6, 0.05, 0.05))
 	_text(c, font, Vector2(1000 - 100, 44), "OFF AIR", 22, HEADER_INK)
 	_text(c, font, Vector2(24, 150), "Nobody's out riding", 52)
-	_text(c, font, Vector2(24, 200), "Get on a finished bike (F) and you're live on every TV tuned here.", 22, Dashboard.DIM)
+	_text(c, font, Vector2(24, 200), "Get on a finished bike ({interact}) and you're live on every TV tuned here.", 22, Dashboard.DIM)
 	var ready: Array = data.get("ready", [])
 	_text(c, font, Vector2(24, 270), "READY TO RIDE", 22, ORANGE)
 	if ready.is_empty():
@@ -502,7 +512,8 @@ static func _draw_howto(c: Control, font: Font, data: Dictionary) -> void:
 			var chip := Rect2(24, y - 32, 150, 44)
 			c.draw_rect(chip, Color(ORANGE, 0.15))
 			c.draw_rect(chip, ORANGE, false, 2.0)
-			_text(c, font, Vector2(24, y - 1), key, 24, ORANGE, 150, HORIZONTAL_ALIGNMENT_CENTER)
+			var shown := Controls.hint(key)
+			_text(c, font, Vector2(24, y - 1), shown, 24 if shown.length() <= 10 else 18, ORANGE, 150, HORIZONTAL_ALIGNMENT_CENTER)
 			_text(c, font, Vector2(196, y), str(row[1]), 27)
 		y += 64.0
 	# Dots for the pages, filled for this one.
@@ -527,13 +538,16 @@ static func _draw_money_me(c: Control, font: Font, data: Dictionary) -> void:
 static func _draw_garage(c: Control, font: Font, data: Dictionary) -> void:
 	_title(c, font, "GARAGE MONEY", "The shed's own account")
 	_text(c, font, Vector2(24, 110), "SHED ACCOUNT", 20, Dashboard.DIM)
-	_text(c, font, Vector2(24, 180), money_text(int(data.get("cash", 0))), 72, Dashboard.GOOD)
+	var cash := int(data.get("cash", 0))
+	_text(c, font, Vector2(24, 180), money_text(cash), 72, Dashboard.GOOD if cash >= 0 else Dashboard.BAD)
+	if int(data.get("overdraft", 0)) > 0:
+		_text(c, font, Vector2(260, 110), "OVERDRAWN", 20, Dashboard.BAD)
 	_tile(c, font, Rect2(24, 210, 230, 96), "Bikes worth", money_text(int(data.get("bike_value", 0))))
 	_tile(c, font, Rect2(266, 210, 230, 96), "Parts stock", money_text(int(data.get("stock_value", 0))))
 	_tile(c, font, Rect2(24, 318, 230, 96), "In this week", money_text(int(data.get("income_week", 0))))
 	_tile(c, font, Rect2(266, 318, 230, 96), "Out this week", money_text(int(data.get("outgoings_week", 0))))
-	_tile(c, font, Rect2(24, 426, 230, 82), "Bikes in the shed", str(int(data.get("bikes", 0))))
-	_tile(c, font, Rect2(266, 426, 230, 82), "Owed to the bank", money_text(int(data.get("debt", 0))))
+	_tile(c, font, Rect2(24, 426, 230, 82), "Bills a night", money_text(int(data.get("bills_day", 0))))
+	_tile(c, font, Rect2(266, 426, 230, 82), "Owed to the bank", money_text(int(data.get("debt", 0)) + int(data.get("overdraft", 0))))
 	var key := str(data.get("range", MoneyGraph.DEFAULT_RANGE))
 	chart(c, font, Rect2(516, 90, 484, 418), data.get("history", []), "Shed account, %s" % MoneyGraph.span_text(key), key)
 	if data.get("placeholder", false):
@@ -593,3 +607,108 @@ static func _draw_contracts(c: Control, font: Font, data: Dictionary) -> void:
 				break
 	if data.get("placeholder", false):
 		_later(c, font, "Customers bring jobs to the shed in a later update.")
+
+
+## The staff board. Down the left, everyone on the payroll: name, role and level, a line on
+## what they're doing and how far through. On the right, one of them in the spotlight (each in
+## turn, see Staff.tv_data): what they're up to at length, how they are, a project's list with
+## how each task stands, and their log of the day, newest first with the times. The news goes
+## under the list.
+static func _draw_staff(c: Control, font: Font, data: Dictionary) -> void:
+	var rows: Array = data.get("rows", [])
+	_title(c, font, "STAFF", "%d of %d  ·  wages %s a day" % [rows.size(), int(data.get("max", 6)), money_text(int(data.get("wages", 0)))])
+	if rows.is_empty():
+		_text(c, font, Vector2(24, 150), "Nobody on the payroll yet.", 30, Dashboard.DIM)
+		_text(c, font, Vector2(24, 196), "Hire staff on the Staff tab of the menu ({menu}).", 22, Dashboard.DIM)
+		return
+	var spot := clampi(int(data.get("spot", 0)), 0, rows.size() - 1)
+	var lw := 400.0
+	var y := 82.0
+	for i in rows.size():
+		var r: Dictionary = rows[i]
+		var sick := bool(r.get("sick", false))
+		var rect := Rect2(16, y, lw, 62)
+		c.draw_rect(rect, PANEL)
+		c.draw_rect(Rect2(16, y, 6, 62), r.get("top", Color.GRAY) if r.get("top") is Color else Color.GRAY)
+		if i == spot:
+			c.draw_rect(rect, ORANGE, false, 2.0)
+		_text(c, font, Vector2(32, y + 22), str(r.get("name", "")).left(18), 19, Dashboard.DIM if sick else Color.WHITE)
+		_text(c, font, Vector2(32, y + 22), "%s  Lv %d" % [str(r.get("role", "")), int(r.get("level", 1))], 13, ORANGE, lw - 24, HORIZONTAL_ALIGNMENT_RIGHT)
+		_text(c, font, Vector2(32, y + 42), str(r.get("doing", "")).left(46), 14, Dashboard.BAD if sick else Color(0.85, 0.9, 0.95), lw - 24)
+		if r.get("busy", false):
+			_bar(c, Rect2(32, y + 50, lw - 32, 6), float(r.get("progress", 0.0)), Dashboard.GOOD)
+		y += 66.0
+	var news: Array = data.get("news", [])
+	var ny := y + 18.0
+	for i in range(news.size() - 1, -1, -1):
+		if ny > Dashboard.PX.y - 10:
+			break
+		c.draw_multiline_string(font, Vector2(16, ny), str(news[i]), HORIZONTAL_ALIGNMENT_LEFT, lw, 13, 2, Dashboard.DIM)
+		ny += 18.0 * mini(2, ceili(font.get_string_size(str(news[i]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x / lw)) + 4.0
+	_draw_staff_spot(c, font, rows[spot], spot, rows.size())
+
+
+## The Staff channel's spotlight on one worker (see _draw_staff).
+static func _draw_staff_spot(c: Control, font: Font, r: Dictionary, at: int, of: int) -> void:
+	var x := 432.0
+	var w := Dashboard.PX.x - x - 16.0
+	var sick := bool(r.get("sick", false))
+	c.draw_rect(Rect2(x, 82, w, Dashboard.PX.y - 98), PANEL)
+	c.draw_rect(Rect2(x, 82, w, 6), r.get("top", Color.GRAY) if r.get("top") is Color else Color.GRAY)
+	_text(c, font, Vector2(x + 16, 120), str(r.get("name", "")), 28, Color.WHITE, w - 120)
+	_text(c, font, Vector2(x + 16, 120), "%d / %d" % [at + 1, of], 16, Dashboard.DIM, w - 32, HORIZONTAL_ALIGNMENT_RIGHT)
+	var mood := "off sick" if sick else str(r.get("mood_word", ""))
+	_text(c, font, Vector2(x + 16, 146), "%s, level %d  ·  %s  ·  %s a day" % [str(r.get("role", "")), int(r.get("level", 1)), mood,
+		money_text(int(r.get("wage", 0)))], 16, ORANGE, w - 32)
+	_bar(c, Rect2(x + 16, 156, 160, 6), float(r.get("level_frac", 0.0)), AMBER)
+	var mc := Dashboard.BAD if sick or float(r.get("mood", 0.7)) < 0.4 else (Dashboard.GOOD if float(r.get("mood", 0.7)) >= 0.8 else Dashboard.DIM)
+	_bar(c, Rect2(x + 192, 156, 160, 6), float(r.get("mood", 0.7)), mc)
+	_text(c, font, Vector2(x + 16, 190), "NOW", 14, ORANGE)
+	var act := Controls.hint(str(r.get("activity", "")))
+	c.draw_multiline_string(font, Vector2(x + 16, 212), act, HORIZONTAL_ALIGNMENT_LEFT, w - 32, 17, 4, Dashboard.BAD if sick else Color.WHITE)
+	var y := 212.0 + 20.0 * mini(4, ceili(font.get_string_size(act, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x / (w - 32)))
+	if r.get("busy", false):
+		_bar(c, Rect2(x + 16, y - 6, w - 32, 6), float(r.get("progress", 0.0)), Dashboard.GOOD)
+		y += 14.0
+	# A project's list: the one they're on and a few either side.
+	var list: Array = r.get("list", [])
+	if not list.is_empty():
+		_text(c, font, Vector2(x + 16, y + 10), "THE LIST", 14, ORANGE)
+		y += 30.0
+		var ti := int(r.get("ti", 0))
+		var first := clampi(ti - 1, 0, maxi(0, list.size() - 4))
+		for i in range(first, mini(list.size(), first + 4)):
+			var t: Dictionary = list[i]
+			var st := str(t.get("state", "todo"))
+			var mark := "•"
+			match st:
+				"done":
+					mark = "✓"
+				"skipped":
+					mark = "–"
+			if i == ti and st in ["todo", "doing"]:
+				mark = "▶"
+			var col := Dashboard.GOOD if st == "done" else (Dashboard.DIM if st == "skipped" else Color.WHITE)
+			var line := str(t.get("text", ""))
+			if st == "skipped" and str(t.get("note", "")) != "":
+				line += ": " + str(t["note"])
+			_text(c, font, Vector2(x + 16, y), mark, 15, col)
+			_text(c, font, Vector2(x + 36, y), line, 15, col, w - 52)
+			y += 20.0
+		if list.size() > first + 4:
+			_text(c, font, Vector2(x + 36, y), "and %d more" % (list.size() - first - 4), 13, Dashboard.DIM)
+			y += 18.0
+	# The log, newest first, as far as there's room.
+	_text(c, font, Vector2(x + 16, y + 12), "TODAY", 14, ORANGE)
+	y += 34.0
+	var log: Array = r.get("log", [])
+	if log.is_empty():
+		_text(c, font, Vector2(x + 16, y), "Nothing yet.", 15, Dashboard.DIM)
+	for i in log.size():
+		if y > Dashboard.PX.y - 24:
+			break
+		var l: Dictionary = log[i]
+		var fade := 1.0 - 0.07 * i
+		_text(c, font, Vector2(x + 16, y), str(l.get("at", "")), 14, Color(Dashboard.DIM, Dashboard.DIM.a * fade))
+		_text(c, font, Vector2(x + 76, y), str(l.get("text", "")), 15, Color(0.9, 0.95, 1.0, fade), w - 92)
+		y += 20.0

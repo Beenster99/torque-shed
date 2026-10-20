@@ -40,6 +40,12 @@ func build() -> void:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("rooms", pt)
+
+
+func _process_body(_delta: float) -> void:
 	if _lights_shown != CoffeeShop.is_open():
 		_show_open(CoffeeShop.is_open())
 

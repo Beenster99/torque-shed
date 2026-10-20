@@ -7,14 +7,21 @@ signal ride_solo
 signal host_game
 signal join_game(ip: String)
 signal resume
+## "Back to the garage": out in the world, home with the bike you're on (see Main.go_home).
+signal go_home
 signal leave_session
 signal order_bike
 signal geometry_mode
 signal save_requested
+## A save game picked on the Load screen, to play solo or host (see SaveBrowser).
+signal load_game(id: String, as_host: bool)
+signal save_as(called: String)
+signal save_renamed(id: String, called: String)
 signal quitting
 
 const CONTROLS_TEXT := """ON FOOT
 W A S D / left stick: walk      Shift: run      Mouse / right stick: look      C / Ctrl / R3: crouch
+V / View: first or third person (spraying, washing, the sandblaster and the tyre changer are always first person)
 1-6, Q / E, mouse wheel, LB / RB: pick a tool (hands, wrench, brush, grinder, spray can, pressure washer)
 Hold left mouse / RT / A: work on what you're looking at, or put a held part down anywhere
 Holding a can of fluid: left mouse pours it in, right mouse / LT drains into it
@@ -30,11 +37,21 @@ RIDING
 I / D-pad up: start or stop the engine      W / RT: throttle      S / LT: front brake
 Space / B: rear brake      A D / left stick: lean      Shift / LB: weight back      Ctrl / RB: forward
 E Q / A X: gear up / down      T: auto-shift      C / R3: chase or first-person camera
+Neutral (N) sits between 1st and 2nd: at a standstill E from 1st or Q from 2nd finds it; Q from N is 1st
 Mouse / right stick: swing the camera round      V: ride-by camera (watch yourself go past)
 L / L3: headlight (off, low, high, high with fog lights)      S + W / LT + RT: burnout (lean to spin round)
 R / View: reset after a crash      F / Y: get off (when stopped)      F3: telemetry overlay"""
 
 var _name: LineEdit
+var _home: Button
+## Starts an adventure ride for the crew, or ends the one on (the host; see Adventure.menu_action).
+var _adventure: Button
+## Carries on the adventure a night's sleep put away (the host; see Adventure.continue_text).
+var _continue_adventure: Button
+## Out on an adventure: the paper map of the route (once you've stopped; see AdventureMap).
+var _paper_map: Button
+## Says whether "Back to the garage" can be used now ("" yes, "home" already there, else why not); set by Main.
+var home_check := Callable()
 var _ip: LineEdit
 var _status: Label
 var _start_box: VBoxContainer
@@ -43,6 +60,7 @@ var _assist: HSlider
 var _auto: CheckBox
 var _snap: CheckBox
 var _free_rotate: CheckBox
+var _third_person: CheckBox
 var _host_info: Label
 var _crew: Label
 var _pad: Label
@@ -56,16 +74,24 @@ var _weather: OptionButton
 var _weather_now: Label
 var debug: DebugTab
 var money: MoneyTab
+var staff: StaffTab
 var shop: ShopTab
-## Set when the player chose "New shed": the next solo or hosted start begins a fresh shed.
+## Set when the player chose New game: the next solo or hosted start begins a fresh shed (and
+## character), saved as `new_name`.
 var new_shed := false
+var new_name := ""
 var _solo: Button
 var _host: Button
 var _save_line: Label
-var _new_shed: Button
-var _confirm: ConfirmationDialog
+var _new_game: Button
+var _load_button: Button
 var _save_status: Label
 var _save_button: Button
+var _save_as_button: Button
+var _saves_button: Button
+## The Load screen, in place of the tabs while it's open.
+var saves: SaveBrowser
+var _row: HBoxContainer
 var _resume: Button
 var keybinds: KeybindTab
 var graphics: GraphicsTab
@@ -84,6 +110,7 @@ func _ready() -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
 	var row := HBoxContainer.new()
+	_row = row
 	row.position = Vector2(60, 60)
 	row.add_theme_constant_override("separation", 24)
 	add_child(row)
@@ -110,7 +137,11 @@ func _ready() -> void:
 	_start_box.add_child(_solo)
 	_host = _button("Host a co-op shed", func(): _save(); host_game.emit())
 	_start_box.add_child(_host)
-	_start_box.add_child(_new_shed)
+	var game_row := HBoxContainer.new()
+	game_row.add_theme_constant_override("separation", 10)
+	game_row.add_child(_new_game)
+	game_row.add_child(_load_button)
+	_start_box.add_child(game_row)
 	var join_row := HBoxContainer.new()
 	_ip = LineEdit.new()
 	_ip.text = Settings.last_ip
@@ -126,9 +157,24 @@ func _ready() -> void:
 	col.add_child(_pause_box)
 	_resume = _button("Back to the shed", func(): _save(); resume.emit())
 	_pause_box.add_child(_resume)
+	_home = _button("Respawn at the garage (stranded? you and the bike you're on go home)", func(): go_home.emit())
+	_pause_box.add_child(_home)
+	_adventure = _button("Adventure ride", func():
+		Adventure.menu_action()
+		resume.emit())
+	_pause_box.add_child(_adventure)
+	_continue_adventure = _button("Continue adventure", func():
+		Shed.request({"a": "adventure_resume"})
+		resume.emit())
+	_pause_box.add_child(_continue_adventure)
+	_paper_map = _button("Paper map of the route", func():
+		resume.emit()
+		if AdventureTrip.current:
+			AdventureTrip.current.open_map())
+	_pause_box.add_child(_paper_map)
 	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
 	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
-	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at (F2)", func(): geometry_mode.emit()))
+	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
 	_retrieve_box = VBoxContainer.new()
 	_retrieve_box.add_theme_constant_override("separation", 6)
 	_pause_box.add_child(_retrieve_box)
@@ -142,6 +188,12 @@ func _ready() -> void:
 	save_row.add_theme_constant_override("separation", 16)
 	_save_button = _button("Save now", func(): save_requested.emit())
 	save_row.add_child(_save_button)
+	_save_as_button = _button("Save as...", func():
+		saves.ask_name("Save as a new game", "Save", SaveGame.unique_name(saves._current_name() + " copy"), "",
+			func(called, _alt): save_as.emit(called)))
+	save_row.add_child(_save_as_button)
+	_saves_button = _button("Save games...", func(): show_saves(true))
+	save_row.add_child(_saves_button)
 	_save_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
 	_save_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_save_status.custom_minimum_size.x = 260.0
@@ -158,10 +210,18 @@ func _ready() -> void:
 	_tabs.custom_minimum_size = Vector2(760, 600)
 	_tabs.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.add_child(_tabs)
+	# The Settings tab scrolls: it's taller than the screen, and the volume sliders used to sit
+	# off the bottom of it.
+	var settings_scroll := ScrollContainer.new()
+	settings_scroll.name = "Settings"
+	settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	settings_scroll.follow_focus = true
+	_tabs.add_child(settings_scroll)
 	var settings := VBoxContainer.new()
-	settings.name = "Settings"
+	settings.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings.add_theme_constant_override("separation", 10)
-	_tabs.add_child(settings)
+	settings_scroll.add_child(settings)
+	_build_sound_settings(settings)
 	_build_riding_settings(settings)
 	_auto = CheckBox.new()
 	_auto.text = "Automatic gearbox"
@@ -173,6 +233,11 @@ func _ready() -> void:
 	recentre.button_pressed = Settings.camera_recentre
 	recentre.toggled.connect(func(v): Settings.camera_recentre = v)
 	settings.add_child(recentre)
+	_third_person = CheckBox.new()
+	_third_person.text = "Third person on foot: the camera behind your shoulder, your whole figure in view (V / View toggles it)"
+	_third_person.button_pressed = Settings.walk_third_person
+	_third_person.toggled.connect(func(v): Settings.walk_third_person = v)
+	settings.add_child(_third_person)
 	settings.add_child(UITheme.label("Units", 15))
 	var units := OptionButton.new()
 	units.add_item("Metric (km/h, km, kg, L/100 km)")
@@ -186,15 +251,11 @@ func _ready() -> void:
 	_snap.toggled.connect(func(v): Settings.snap_placement = v)
 	settings.add_child(_snap)
 	_free_rotate = CheckBox.new()
-	_free_rotate.text = "Free rotate: the rotate keys turn what you hold to any angle, not a quarter a press (/ toggles it)"
+	Controls.bind_text(_free_rotate, "Free rotate: the rotate keys turn what you hold to any angle, not a quarter a press ({rotate_free} toggles it)")
 	_free_rotate.button_pressed = Settings.free_rotate
 	_free_rotate.toggled.connect(func(v): Settings.free_rotate = v)
 	settings.add_child(_free_rotate)
 	_build_time_settings(settings)
-	settings.add_child(UITheme.label("Sound effects volume", 15))
-	settings.add_child(_volume_slider(Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
-	settings.add_child(UITheme.label("Radio volume", 15))
-	settings.add_child(_volume_slider(Settings.radio_volume, func(v): Settings.radio_volume = v; Sfx.apply_volumes()))
 	# Graphics: presets, display, upscaling, anti-aliasing, quality and the driver (see GraphicsTab).
 	graphics = GraphicsTab.new()
 	_tabs.add_child(graphics)
@@ -220,13 +281,40 @@ func _ready() -> void:
 	# Your cash, the business's account, sending money, loans and the ledger (see Money).
 	money = MoneyTab.new()
 	_tabs.add_child(money)
+	# The garage's staff and the hiring board (see Staff).
+	staff = StaffTab.new()
+	_tabs.add_child(staff)
 	# Rider gear and shed trinkets bought with your own money (see ShopTab).
 	shop = ShopTab.new()
 	_tabs.add_child(shop)
 	# Testing helpers: reset or max out XP and money.
 	_tabs.add_child(ContractsTab.new())
+	_tabs.add_child(RecoveryTab.new())
 	debug = DebugTab.new()
 	_tabs.add_child(debug)
+	# The Load screen: save games to load, save as, rename and delete (see SaveBrowser).
+	saves = SaveBrowser.new()
+	saves.visible = false
+	row.add_child(saves)
+	saves.load_game.connect(func(id, as_host):
+		_save()
+		load_game.emit(id, as_host))
+	saves.save_now.connect(func(): save_requested.emit())
+	saves.save_as.connect(func(called): save_as.emit(called))
+	saves.save_renamed.connect(func(id, called): save_renamed.emit(id, called))
+	saves.changed.connect(_refresh_save_choice)
+	saves.closed.connect(func(): _tabs.visible = true)
+
+
+## The sound rows at the top of the Settings tab: the effects (tools, the washer, knocks,
+## dings, horns), the engines and the radio each have their own bus and slider (see Sfx).
+func _build_sound_settings(settings: VBoxContainer) -> void:
+	settings.add_child(UITheme.label("Sound effects volume", 15))
+	settings.add_child(_volume_slider("SfxVolume", Settings.sfx_volume, func(v): Settings.sfx_volume = v; Sfx.apply_volumes()))
+	settings.add_child(UITheme.label("Engines volume", 15))
+	settings.add_child(_volume_slider("EngineVolume", Settings.engine_volume, func(v): Settings.engine_volume = v; Sfx.apply_volumes()))
+	settings.add_child(UITheme.label("Radio volume", 15))
+	settings.add_child(_volume_slider("RadioVolume", Settings.radio_volume, func(v): Settings.radio_volume = v; Sfx.apply_volumes()))
 
 
 ## The riding rows of the Settings tab: the Riding realism slider (what each end means shows
@@ -247,11 +335,21 @@ func _build_riding_settings(settings: VBoxContainer) -> void:
 	show.call(Settings.assist)
 	settings.add_child(_assist)
 	settings.add_child(value)
+	var bars := CheckBox.new()
+	bars.text = "Direct bars: steering pushes on the handlebars (push right to lean right)"
+	bars.button_pressed = Settings.direct_bars
+	bars.toggled.connect(func(v): Settings.direct_bars = v)
+	settings.add_child(bars)
 	var tele := CheckBox.new()
-	tele.text = "Telemetry overlay while riding (F3)"
+	Controls.bind_text(tele, "Telemetry overlay while riding ({telemetry})")
 	tele.button_pressed = Settings.telemetry_overlay
 	tele.toggled.connect(func(v): Settings.telemetry_overlay = v)
 	settings.add_child(tele)
+	var nav := CheckBox.new()
+	Controls.bind_text(nav, "Sat nav map on the HUD, on a bike with one fitted ({satnav_hud})")
+	nav.button_pressed = Settings.satnav_hud
+	nav.toggled.connect(func(v): Settings.satnav_hud = v)
+	settings.add_child(nav)
 
 
 ## What a Riding realism setting does, in a few words.
@@ -266,6 +364,12 @@ static func realism_text(v: float) -> String:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("menus", pt)
+
+
+func _process_body(_delta: float) -> void:
 	if visible and _tabs.get_current_tab_control() == _pad.get_parent():
 		_pad.text = Controls.diagnostics()
 	if visible and _tabs.current_tab == 0:
@@ -276,7 +380,10 @@ func _process(_delta: float) -> void:
 			names.append(Shed.crew[peer]["name"] + (" (you)" if peer == Shed.me() else ""))
 		_crew.text = "In the shed: " + ", ".join(names)
 		_save_status.text = SaveGame.status_text()
-		_save_button.visible = not (Net.is_online() and not Net.is_host())
+		var client := Net.is_online() and not Net.is_host()
+		_save_button.visible = not client
+		_save_as_button.visible = not client
+		_saves_button.visible = not client
 		if Shed.abandoned_bikes() != _retrieve_shown:
 			refresh_retrieve()
 
@@ -285,15 +392,18 @@ func show_title(status := "") -> void:
 	_start_box.visible = true
 	_pause_box.visible = false
 	_status.text = status
+	SaveGame.migrate(Settings.player_name)
+	_hide_saves()
 	_refresh_save_choice()
 	show()
-	_solo.grab_focus()
+	(_solo if _solo.visible else _new_game).grab_focus()
 
 
 func show_pause() -> void:
 	_start_box.visible = false
 	_pause_box.visible = true
 	_status.text = ""
+	_hide_saves()
 	if Net.is_host():
 		_host_info.text = "Hosting on port %d.\n%s" % [Net.PORT, Net.join_instructions()]
 	elif Net.is_online():
@@ -303,10 +413,41 @@ func show_pause() -> void:
 	_auto.button_pressed = Settings.auto_shift
 	_snap.button_pressed = Settings.snap_placement
 	_free_rotate.button_pressed = Settings.free_rotate
+	_third_person.button_pressed = Settings.walk_third_person
 	_refresh_time_settings(true)
 	refresh_retrieve()
+	_refresh_home()
+	_refresh_adventure()
 	show()
 	_resume.grab_focus()
+
+
+## Shows "Back to the garage" while you're out in the world, greyed out (and saying why) when
+## it can't be used just now.
+func _refresh_home() -> void:
+	var why: String = home_check.call() if home_check.is_valid() else "home"
+	_home.visible = why != "home"
+	_home.disabled = why != ""
+	_home.tooltip_text = Controls.hint(why) if why != "home" else ""
+
+
+## The adventure button: start one or end it, greyed out (saying why) for anyone but the host.
+func _refresh_adventure() -> void:
+	var t := Adventure.menu_text()
+	_adventure.text = str(t[0])
+	_adventure.disabled = str(t[1]) != ""
+	_adventure.tooltip_text = str(t[1])
+	var c := Adventure.continue_text()
+	_continue_adventure.visible = not c.is_empty()
+	if not c.is_empty():
+		_continue_adventure.text = str(c[0])
+		_continue_adventure.disabled = str(c[1]) != ""
+		_continue_adventure.tooltip_text = str(c[1])
+	var trip := AdventureTrip.current
+	_paper_map.visible = trip != null and trip.on_trip()
+	var why := trip.map_reason() if _paper_map.visible else ""
+	_paper_map.disabled = why != ""
+	_paper_map.tooltip_text = why
 
 
 ## Lists bikes left out on the road (nobody riding them, away from the shed) with a button each
@@ -324,7 +465,7 @@ func refresh_retrieve() -> void:
 			TvChannels.money_text(Shed.RETRIEVE_FEE)], func(): Shed.request({"a": "retrieve_bike", "bike": bike_id}))
 		var why := Shed.retrieve_check({"bike": bike_id})
 		b.disabled = why != ""
-		b.tooltip_text = why
+		b.tooltip_text = Controls.hint(why)
 		_retrieve_box.add_child(b)
 
 
@@ -437,40 +578,57 @@ func _refresh_time_settings(move_slider: bool) -> void:
 		_time.set_value_no_signal(h)
 
 
-## "Continue" or "New shed" when there's a saved shed: the start buttons carry on with it unless
-## the player confirms starting again.
+## The game the start buttons carry on with (the one played last), with New game (it asks for
+## the new save's name) and Load game (the Load screen) under them.
 func _build_save_choice() -> void:
 	_save_line = UITheme.label("", 14, Color(1, 1, 1, 0.7))
 	_save_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_save_line.custom_minimum_size.x = 400.0
 	_start_box.add_child(_save_line)
-	_new_shed = _button("New shed", func():
-		if new_shed:
-			new_shed = false
-			_refresh_save_choice()
-		else:
-			_confirm.popup_centered())
-	_confirm = ConfirmationDialog.new()
-	_confirm.title = "Start a new shed?"
-	_confirm.dialog_text = "Your saved shed will be replaced by a new one\nthe next time the game saves."
-	_confirm.ok_button_text = "New shed"
-	_confirm.confirmed.connect(func():
+	_new_game = _button("New game...", func(): ask_new_game())
+	_load_button = _button("Load game...", func(): show_saves(false))
+
+
+## New game: asks for the save's name, then opens a new shed with a new character solo, or hosted.
+func ask_new_game() -> void:
+	saves.ask_name("New game", "Start solo", SaveGame.unique_name("%s's shed" % player_name()), "", func(called, as_host):
 		new_shed = true
-		_refresh_save_choice())
-	add_child(_confirm)
+		new_name = called
+		_save()
+		if as_host:
+			host_game.emit()
+		else:
+			ride_solo.emit(), "Host co-op")
+
+
+## Opens the Load screen in place of the tabs; `in_game` from the Esc menu.
+func show_saves(in_game: bool) -> void:
+	_tabs.visible = false
+	saves.open(in_game)
+
+
+func _hide_saves() -> void:
+	if saves:
+		saves.visible = false
+	_tabs.visible = true
 
 
 func _refresh_save_choice() -> void:
+	var all := SaveGame.list_saves()
+	if not SaveGame.has_save(SaveGame.active_slot()) and not all.is_empty() and SaveGame.characters_in_saves():
+		SaveGame.use_slot(str(all[0]["id"]))
 	var saved := SaveGame.can_continue()
-	var info := SaveGame.describe(SaveGame.read(SaveGame.active_slot())) if saved else ""
-	var going_on := saved and not new_shed
-	_solo.text = "Continue (solo)" if going_on else "Open a new shed (solo)" if saved else "Open the shed (solo)"
-	_host.text = "Continue as a co-op host" if going_on else "Host a new co-op shed"
+	var meta := SaveGame.read_meta(SaveGame.active_slot()) if saved else {}
+	var called := str(meta.get("name", "the saved shed"))
+	_solo.text = "Continue %s (solo)" % called if saved else "Open a new shed (solo)"
+	_host.text = "Host %s as co-op" % called if saved else "Host a new co-op shed"
+	_solo.visible = saved
+	_host.visible = saved
 	_save_line.visible = saved
-	_save_line.text = ("Saved shed: %s" % info if info != "" else "The saved shed can't be read; a new one will be opened.") \
-		if going_on else "Starting a new shed. The saved one is replaced when this one saves."
-	_new_shed.visible = saved
-	_new_shed.text = "Keep the saved shed" if new_shed else "New shed"
+	_save_line.text = "%s: %s" % [called, SaveGame.summary_text(meta)] if not meta.is_empty() \
+		else "The saved shed can't be read; a new one will be opened."
+	_load_button.text = "Load game... (%d)" % all.size() if all.size() > 0 else "Load game..."
+	_load_button.disabled = all.is_empty()
 
 
 func set_status(text: String) -> void:
@@ -488,8 +646,9 @@ func _save() -> void:
 	Settings.save_settings()
 
 
-func _volume_slider(value: float, cb: Callable) -> HSlider:
+func _volume_slider(slider_name: String, value: float, cb: Callable) -> HSlider:
 	var slider := HSlider.new()
+	slider.name = slider_name
 	slider.min_value = 0.0
 	slider.max_value = 1.0
 	slider.step = 0.05
@@ -500,7 +659,7 @@ func _volume_slider(value: float, cb: Callable) -> HSlider:
 
 func _button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
-	b.text = text
+	Controls.bind_text(b, text)
 	b.pressed.connect(cb)
 	return b
 

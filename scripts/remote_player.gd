@@ -10,6 +10,7 @@ var player_name := ""
 var color := Color(0.8, 0.1, 0.1)
 var riding_bike := 0
 var bike: RemoteBike
+var driving := false    # in the recovery truck
 
 var _figure: AnimatableBody3D
 var _head: Node3D
@@ -26,6 +27,8 @@ var gear := {}
 var _gear_sig := ""
 var _stride := 0.0         # how far they've walked since their last footstep
 var _step_from := Vector3.INF
+var _walk_phase := 0.0     # how far through their stride their legs are (see RiderFigure.walk_pose)
+var _walk_from := Vector3.INF
 ## The emote they're doing (see Emotes), how far into it they are, and for a point where at.
 var emote := ""
 var emote_time := 0.0
@@ -137,6 +140,19 @@ func _animate_emote(delta: float) -> void:
 func push_state(state: PackedFloat32Array) -> void:
 	if state.is_empty():
 		return
+	if state[0] > 1.5:
+		# Driving the recovery truck (see RecoveryView): the figure's in the cab.
+		if riding_bike != 0:
+			_stop_riding()
+		driving = true
+		_figure.visible = false
+		if RecoveryView.current:
+			RecoveryView.current.remote_state(peer, state)
+		return
+	var driving_left := driving
+	if driving:
+		driving = false
+		_figure.visible = true
 	if state[0] > 0.5 and state.size() >= 21:
 		var bike_id := int(state[1])
 		if bike_id != riding_bike or bike == null:
@@ -144,10 +160,18 @@ func push_state(state: PackedFloat32Array) -> void:
 		if bike:
 			bike.push_state(state.slice(2))
 		return
-	if riding_bike != 0:
+	var was_riding := riding_bike != 0
+	if was_riding:
 		_stop_riding()
 	if state.size() < 6:
 		return
+	if was_riding or driving_left:
+		# Off the bike (or out of the truck): stood where they got off at once, not shown for a
+		# frame back where they were last on foot (the garage, often) before walking there.
+		_snapshots.clear()
+		_figure.global_transform = Transform3D(Basis(Vector3.UP, state[4]), Vector3(state[1], state[2], state[3]))
+		_walk_from = Vector3.INF
+		_step_from = Vector3.INF
 	_snapshots.append({"t": Time.get_ticks_msec() / 1000.0, "s": state})
 	while _snapshots.size() > 20:
 		_snapshots.pop_front()
@@ -178,7 +202,13 @@ func _stop_riding() -> void:
 	_figure.process_mode = Node.PROCESS_MODE_INHERIT
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("remote_players", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	if riding_bike != 0 or _snapshots.is_empty():
 		return
 	var render_t := Time.get_ticks_msec() / 1000.0 - DELAY
@@ -196,11 +226,35 @@ func _physics_process(_delta: float) -> void:
 	var pos := Vector3(sa[1], sa[2], sa[3]).lerp(Vector3(sb[1], sb[2], sb[3]), f)
 	_figure.global_transform = Transform3D(Basis(Vector3.UP, lerp_angle(sa[4], sb[4], f)), pos)
 	_footsteps(pos)
+	_walk(pos, delta)
 	_head.rotation.x = lerpf(sa[5], sb[5], f) * 0.6
 	_hand.rotation.x = _head.rotation.x
 	# Crouching: squash the figure down to about two thirds of its height.
 	var low := sb.size() > 6 and sb[6] > 0.5
 	_figure.scale.y = move_toward(_figure.scale.y, 0.62 if low else 1.0, 0.08)
+
+
+## Swings their legs as they walk, by how fast they're going.
+func _walk(pos: Vector3, delta: float) -> void:
+	var speed := 0.0
+	if _walk_from != Vector3.INF and delta > 0.0:
+		speed = Vector2(pos.x - _walk_from.x, pos.z - _walk_from.z).length() / delta
+	_walk_from = pos
+	if speed > 12.0:
+		speed = 0.0   # a jump across the shed, not a walk
+	_walk_phase = step_walk(_body_look, _walk_phase, speed, delta, self)
+
+
+## Moves a standing figure's stride on by `delta` at `speed` m/s and poses its legs; returns
+## the new phase. The swing eases in and out with the speed (kept on `holder` as walk_amount).
+static func step_walk(body: Node3D, phase: float, speed: float, delta: float, holder: Object) -> float:
+	var want := clampf(speed / 3.2, 0.0, 1.3)
+	var amount := move_toward(float(holder.get_meta("walk_amount", 0.0)), want, delta * 6.0)
+	holder.set_meta("walk_amount", amount)
+	# About 1.4 m a stride (two steps); stood still the legs settle back together.
+	phase = wrapf(phase + speed / 1.4 * TAU * delta, 0.0, TAU) if amount > 0.01 else 0.0
+	RiderFigure.walk_pose(body, phase, amount)
+	return phase
 
 
 ## Their footsteps, by the floor they walk on (a step every 0.7 m or so).
@@ -234,12 +288,27 @@ func _dress() -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("remote_players", pt)
+
+
+func _process_body(delta: float) -> void:
 	_animate_emote(delta)
+	# Sat on a bench or lying in a bed out on an adventure (see AdventureNeedsView).
+	AdventureNeedsView.pose_figure(_body_look, _head, _head_look, _hand, self, peer, delta)
+	if bike:
+		# Pushing their bike along on foot (see Roadside): they walk beside it, not sat on it.
+		bike.pushed = bool(Shed.bikes.get(riding_bike, {}).get("push", false))
+		_figure.visible = bike.pushed
+		if bike.pushed:
+			var b := bike.global_transform
+			var fwd := -b.basis.z
+			_figure.global_transform = Transform3D(Basis(Vector3.UP, atan2(-fwd.x, -fwd.z)), b * Vector3(-0.75, -bike._build.rear_radius, 0.1))
 	_phones.visible = Shed.wearing_headphones(peer)
 	if RiderGear.sig(RiderGear.worn_of(peer)) != _gear_sig:
 		_dress()
 	# What's in their hand: a part they carry, a tray from the cafe, else their tool.
-	var held := Shed.held_by(peer)
 	var tool := str(Shed.crew.get(peer, {}).get("tool", "hands"))
 	# You hear their tools while they work.
 	var working := riding_bike == 0 and str(Shed.crew.get(peer, {}).get("activity", "")) != ""
@@ -254,49 +323,85 @@ func _process(delta: float) -> void:
 		var on := working and (act.begins_with("Spraying") or act.begins_with("Priming") or act.begins_with("Coating"))
 		mist.emitting = on
 		(mist.get_node("Haze") as CPUParticles3D).emitting = on
-	var stage := Progress.tool_stage(peer, tool)
-	var tray := CoffeeShop.tray_of(peer)
-	var bay := PaintBay.held(peer)
-	var sig := "%d|%s|%d|%s|%s" % [held, tool, stage, str(tray.get("items", "-")), str(bay) + str(PaintBay.held_tin(peer).get("code", ""))]
+	var sig := hand_sig(peer, tool)
 	if sig == _hand_sig:
 		return
 	_hand_sig = sig
-	for c in _hand.get_children():
-		if c != _work_sound:
+	fill_hand(_hand, peer, tool, _work_sound)
+
+
+## What's in a player's hand, as a string that changes whenever it should be drawn again.
+static func hand_sig(peer: int, tool: String) -> String:
+	var tray := CoffeeShop.tray_of(peer)
+	var bay := PaintBay.held(peer)
+	return "%d|%s|%d|%s|%s" % [Shed.held_by(peer), tool, Progress.tool_stage(peer, tool), str(tray.get("items", "-")),
+		str(bay) + str(PaintBay.held_tin(peer).get("code", ""))]
+
+
+## Draws what's in a player's hand on a figure's `hand` node: a part they carry, a tray from
+## the cafe, a tin or the tape from the mixing bay, else their tool (with its jet or mist,
+## named "Jet" and "Mist"). Everything already on it but `keep` goes.
+static func fill_hand(hand: Node3D, peer: int, tool: String, keep: Node = null) -> void:
+	var held := Shed.held_by(peer)
+	var stage := Progress.tool_stage(peer, tool)
+	var tray := CoffeeShop.tray_of(peer)
+	var bay := PaintBay.held(peer)
+	for c in hand.get_children():
+		if c != keep:
 			c.queue_free()
 	if held != 0:
 		var part := BikeModel.item_display(held)
 		var size: Vector3 = part.get_meta("size", Vector3.ONE)
 		part.scale = Vector3.ONE * clampf(0.6 / maxf(size.x, maxf(size.y, size.z)), 0.2, 1.0)
 		part.position = Vector3(-0.28, -0.1, -0.1)
-		_hand.add_child(part)
+		hand.add_child(part)
 	elif not tray.is_empty():
 		var t := CoffeeView.tray_model(tray["items"])
 		t.name = "Tray"
 		t.position = Vector3(-0.28, 0.0, -0.2)
-		_hand.add_child(t)
+		hand.add_child(t)
 	elif not bay.is_empty():
 		# A tin of paint or the masking tape from the mixing bay (see PaintBay).
 		var b := PaintBayRoom.tin_model(PaintBay.held_tin(peer)) if str(bay.get("kind", "")) == "tin" else PaintBayRoom.tape_model()
 		b.name = "PaintBay"
 		b.position = Vector3(-0.2, -0.05, -0.1)
-		_hand.add_child(b)
+		hand.add_child(b)
 	else:
-		_hand.add_child(Walker.make_tool_mesh(tool, Color(0.9, 0.75, 0.1), stage))
+		hand.add_child(Walker.make_tool_mesh(tool, Color(0.9, 0.75, 0.1), stage))
 		if tool == "lance":
 			var spray := Walker.make_jet()
 			spray.name = "Jet"
 			spray.position = Vector3(0.0, 0.0, -0.6)
-			_hand.add_child(spray)
+			hand.add_child(spray)
 		elif tool in ["spray", "gun"]:
 			var can_mist := Walker.make_mist()
 			can_mist.name = "Mist"
 			can_mist.color = Color(0.85, 0.85, 0.85)
 			can_mist.position = Vector3(0.0, 0.1, -0.15)
-			_hand.add_child(can_mist)
+			hand.add_child(can_mist)
+
+
+## The world's origin moved by `d` (see AdventureWorld): their figure, bike and the snapshots
+## still to be played move with it.
+func shift_origin(d: Vector3) -> void:
+	for snap in _snapshots:
+		var st: PackedFloat32Array = snap["s"]
+		if st.size() >= 4:
+			st[1] -= d.x
+			st[2] -= d.y
+			st[3] -= d.z
+			snap["s"] = st
+	if _figure:
+		_figure.global_position -= d
+	_walk_from = Vector3.INF
+	_step_from = Vector3.INF
+	if bike:
+		bike.shift_origin(d)
 
 
 func world_position() -> Vector3:
+	if driving and RecoveryView.current and RecoveryView.current.remote_transform(peer) != null:
+		return (RecoveryView.current.remote_transform(peer) as Transform3D).origin
 	return bike.global_position if bike else _figure.global_position
 
 

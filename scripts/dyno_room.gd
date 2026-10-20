@@ -161,6 +161,12 @@ func _now() -> float:
 # ---------------------------------------------------------------------------- running
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("rooms", pt)
+
+
+func _process_body(delta: float) -> void:
 	if not Shed.active:
 		return
 	var bike := Shed.dyno_bike()
@@ -339,7 +345,7 @@ func _cylinder(parent: Node3D, center: Vector3, radius: float, height: float, ma
 
 func _label(text: String, pos: Vector3, rot_y: float, font_size: int, color: Color, parent: Node3D = self) -> Label3D:
 	var l := Label3D.new()
-	l.text = text
+	Controls.bind_text(l, text)
 	l.position = pos
 	l.rotation.y = rot_y
 	l.font_size = font_size
@@ -550,7 +556,7 @@ func _build_decor() -> void:
 	_poster("STRAP IT DOWN. EARS ON.", c + Vector3(-2.6, 1.6, -hz + 0.025), 0.0, Vector2(1.2, 0.22), 40)
 	_poster("PULL IN, LET GO NEAR THE DRUM", c + Vector3(-HALF.x + 0.025, 1.6, 0.4), PI * 0.5, Vector2(1.4, 0.22), 40)
 	_poster("HOSE ON THE EXHAUST", HOSE_HOOK + Vector3(-0.025, 0.45, 0.0), -PI * 0.5, Vector2(0.8, 0.16), 34)
-	_poster("TUNE AT THE DESK (F)", DESK + Vector3(0.0, 1.75, -0.33), 0.0, Vector2(0.9, 0.2), 40)
+	_poster("TUNE AT THE DESK ({interact})", DESK + Vector3(0.0, 1.75, -0.33), 0.0, Vector2(0.9, 0.2), 40)
 
 
 func _blocker(center: Vector3, size: Vector3) -> void:
@@ -991,19 +997,19 @@ static func describe(target: Dictionary, peer: int) -> Array:
 	var lines := []
 	match str(target.get("kit", "")):
 		"lights":
-			lines = ["Dyno room lights", "F: switch them %s" % ("off" if bool(Shed.dyno.get("lights", true)) else "on")]
+			lines = ["Dyno room lights", "{interact}: switch them %s" % ("off" if bool(Shed.dyno.get("lights", true)) else "on")]
 		"fan":
 			var hot := Shed.dyno_temp(float(Shed.dyno.get("heat", 0.0)))
-			lines = ["Cooling fan", "F: switch it %s" % ("off" if bool(Shed.dyno.get("fan", false)) else "on"),
+			lines = ["Cooling fan", "{interact}: switch it %s" % ("off" if bool(Shed.dyno.get("fan", false)) else "on"),
 				"Blows air over the engine on the rig so it doesn't heat soak and lose power. Engine at %d °C." % roundi(hot)]
 		"phones":
 			var wearer := int(Shed.dyno.get("headphones", 0))
 			if wearer == peer:
-				lines = ["Ear defenders (you're wearing them)", "F: hang them back up"]
+				lines = ["Ear defenders (you're wearing them)", "{interact}: hang them back up"]
 			elif wearer != 0:
 				lines = ["Ear defenders", "%s is wearing them." % str(Shed.crew.get(wearer, {}).get("name", "Someone"))]
 			else:
-				lines = ["Ear defenders", "F: put them on. The dyno's roar (and everything else) is muffled while you wear them."]
+				lines = ["Ear defenders", "{interact}: put them on. The dyno's roar (and everything else) is muffled while you wear them."]
 		"strap":
 			var i := clampi(int(target.get("point", 0)), 0, 3)
 			lines = ["Strap post (%s)" % ["front left", "front right", "rear left", "rear right"][i],

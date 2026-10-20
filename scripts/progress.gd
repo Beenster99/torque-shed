@@ -7,8 +7,10 @@ extends Node
 ## gives one tool point (a stage on a hand tool: faster, wider, better looking) and one skill
 ## point (a rank in the skills tree, see SKILLS).
 ##
-## The character lives on the player's own machine, in user://profile.json keyed by player name,
-## apart from the shed save, so it goes with them between sheds and co-op sessions. Clients
+## Playing solo or hosting, the character belongs to the save game (see SaveGame and
+## use_profile): each save holds its own, written with the shed. Joining someone else's shed,
+## the character comes from user://profile.json on the player's own machine, keyed by player
+## name, so it goes with them between co-op sessions. Clients
 ## report their summary (level, XP, tool stages, skills, goals) to the host, which passes
 ## everyone's on to everyone, so the host can apply skills that work host-side and TVs can show
 ## the crew's levels.
@@ -68,6 +70,9 @@ const XP := {
 	"wash_part": {"xp": 1, "label": "Pressure washing"},
 	"pressure_wash": {"xp": 8, "label": "Bike washed"},
 	"muddy_wash": {"xp": 12, "label": "Mud monster washed", "once": "bike"},
+	# Detailing in the wash bay (see Detail): a panel polished to a deep gloss, one ceramic coated.
+	"polish_panel": {"xp": 8, "label": "Panel polished", "once": "item"},
+	"ceramic_panel": {"xp": 10, "label": "Panel ceramic coated", "once": "item"},
 	"chain_lube": {"xp": 6, "label": "Chain lube"},
 	# Repairing and spraying: higher again.
 	"repair": {"xp": 10, "label": "Restoring"},
@@ -86,6 +91,7 @@ const XP := {
 	"masking": {"xp": 6, "label": "Masking"},
 	"tyre_remove": {"xp": 4, "label": "Tyre off"},
 	"tyre_fit": {"xp": 10, "label": "Tyre fitting"},
+	"tyre_plug": {"xp": 8, "label": "Puncture plugged"},
 	"restore_part": {"xp": 4, "label": "Part like new", "once": "item"},
 	# Milestones: high.
 	"engine_build": {"xp": 40, "label": "Engine rebuilt", "once": "item", "tag": "builder"},
@@ -102,9 +108,18 @@ const XP := {
 	"contract_maint": {"xp": 40, "label": "Service job done"},
 	"contract_mot": {"xp": 60, "label": "MOT job done"},
 	"contract_respray": {"xp": 80, "label": "Colour match job done"},
+	"contract_detail": {"xp": 50, "label": "Detailing job done"},
 	"contract_mod": {"xp": 100, "label": "Modification job done"},
 	"contract_bespoke": {"xp": 250, "label": "Bespoke build delivered"},
+	"contract_batch": {"xp": 150, "label": "Batch order delivered"},
+	"contract_batch_part": {"xp": 6, "label": "Batch part dispatched", "once": "item"},
+	"contract_test": {"xp": 90, "label": "Test ride report in"},
 	"mot_test": {"xp": 6, "label": "MOT test"},
+	# Recovery jobs (see Recovery): a bike brought in on the trailer, and an insurer's repair collected.
+	"recovery_delivered": {"xp": 60, "label": "Bike recovered"},
+	"recovery_insurer": {"xp": 120, "label": "Insurer repair done"},
+	# Adventure rides (see Adventure): everyone there when the crew reaches the destination, per 100 km.
+	"adventure_done": {"xp": 300, "label": "Adventure ride complete"},
 	"garage_upgrade": {"xp": 40, "label": "Garage upgrade"},
 	# The coffee shop next door (see CoffeeShop): a break, and a biker's bike bought off them.
 	"coffee_break": {"xp": 3, "label": "Coffee break"},
@@ -134,9 +149,9 @@ const PAY := {
 	"carry": 0, "unbox": 1, "unbolt": 1, "bolt": 1, "remove": 1, "fit": 2, "chain_tension": 3, "tune": 1, "dyno_run": 5,
 	"dyno_strap": 0, "dyno_hose": 1, "fluids": 3, "start_build": 10,
 	"bin": 0, "tip": 1, "recycle_plastic": 1, "recycle_metal": 2,
-	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "chain_lube": 3,
+	"brush": 3, "washer": 3, "wash_part": 1, "pressure_wash": 4, "muddy_wash": 10, "polish_panel": 4, "ceramic_panel": 5, "chain_lube": 3,
 	"repair": 6, "sandblast": 6, "paint": 8, "prime": 4, "protect_coat": 8, "lighten": 5, "paint_mix": 5, "test_panel": 1, "paint_stir": 1, "colour_match": 8,
-	"masking": 3, "tyre_remove": 2, "tyre_fit": 6, "restore_part": 4,
+	"masking": 3, "tyre_remove": 2, "tyre_fit": 6, "tyre_plug": 4, "restore_part": 4,
 	"engine_build": 40, "first_start": 20, "build_complete": 120, "scratch_build": 80, "max_health": 200,
 	"sell_bike": 50, "sell_part": 2, "px_deal": 20,
 }
@@ -156,6 +171,7 @@ const TOOL_INFO := {
 	"lance": {"name": "Pressure washer", "speed": "blasts off %d%% more muck a pass", "rate": true, "spread": 0.15,
 		"spread_what": "%d%% wider jet"},
 	"gun": {"name": "Spray gun", "speed": "coats %d%% faster", "rate": true, "spread": 0.08, "spread_what": "%d%% wider fan"},
+	"polisher": {"name": "Polisher", "speed": "polishes %d%% quicker", "rate": true, "spread": 0.06, "spread_what": "%d%% bigger pad"},
 	"watch": {"name": "Stopwatch", "speed": "keeps %d laps", "laps": true, "spread": 0.0},
 	"tyre": {"name": "Tyre changer", "speed": "%d%% quicker tyre changes", "spread": 0.0},
 }
@@ -242,6 +258,9 @@ var _save_timer := 0.0
 var _report_due := false
 var _relay_due := false
 var _report_timer := 0.0
+## The character came from a save game (use_profile): SaveGame writes it with the shed, and
+## profile.json is left alone.
+var save_bound := false
 
 
 func _ready() -> void:
@@ -305,10 +324,11 @@ func skill_points() -> int:
 
 # ---------------------------------------------------------------------------- the profile on disk
 
-## Loads the character for `player_name` (a new one if there's none yet).
+## Loads the character for `player_name` (a new one if there's none yet) from profile.json.
 func select(player_name: String) -> void:
 	if _dirty_save:
 		save_profile()
+	save_bound = false
 	if path == PATH or path.begins_with("user://profile_test_"):
 		path = _default_path(player_name)
 	var all := _read_all()
@@ -317,6 +337,39 @@ func select(player_name: String) -> void:
 	_note_cash()   # what it opens with, so the first money in or out shows on the graph as a step
 	_report_due = true
 	changed.emit()
+
+
+## Plays on with the character a save game holds (an empty one for a new game). It's kept in
+## memory and saved with the shed from now on, until release().
+func use_profile(p: Dictionary, player_name: String) -> void:
+	if _dirty_save:
+		save_profile()
+	save_bound = true
+	_dirty_save = false
+	profile = _clean_profile(p, player_name)
+	_note_cash()
+	_report_due = true
+	changed.emit()
+
+
+## The save game is closed: back to the profile.json character for `player_name`.
+func release(player_name: String) -> void:
+	if not save_bound:
+		return
+	save_bound = false
+	_dirty_save = false
+	select(player_name)
+
+
+## A copy of the character for a save game, with the right types.
+func save_copy() -> Dictionary:
+	return _clean_profile(profile, str(profile.get("name", Settings.player_name)))
+
+
+## The character for `player_name` stored in profile.json, or {} when there's none.
+func stored_profile(player_name: String) -> Dictionary:
+	var p = _read_all().get(player_name, {})
+	return p if p is Dictionary else {}
 
 
 func _read_all() -> Dictionary:
@@ -372,6 +425,8 @@ func save_profile() -> bool:
 	_dirty_save = false
 	if profile.is_empty():
 		return false
+	if save_bound:
+		return true   # saved with the shed
 	var all := _read_all()
 	all[str(profile["name"])] = profile
 	var tmp := "%s.%d.tmp" % [path, OS.get_process_id()]
@@ -400,6 +455,12 @@ func _notification(what: int) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("progress", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _dirty_save:
 		_save_timer -= delta
 		if _save_timer <= 0.0:

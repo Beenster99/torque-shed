@@ -492,5 +492,117 @@
 			0.08,
 			0.4
 		]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "S-OR240-SC60:M",
+		"effect": "metallic",
+		"finish": "gloss",
+		"id": "custom_iridium_orange",
+		"name": "Iridium Orange",
+		"rgb": [
+			0.91,
+			0.37,
+			0.1
+		]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "B-UB40-XB60:X",
+		"effect": "chameleon",
+		"finish": "gloss",
+		"id": "custom_blue_gold",
+		"name": "Chameleon Blue-Gold",
+		"rgb": [0.067, 0.106, 0.271]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "B-SC30-XR60:X",
+		"effect": "chameleon",
+		"finish": "gloss",
+		"id": "custom_red_gold",
+		"name": "Chameleon Red-Gold",
+		"rgb": [0.274, 0.048, 0.063]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "B-BK20-FH25:F",
+		"effect": "flake",
+		"finish": "gloss",
+		"id": "custom_holo_flake",
+		"name": "Black Holo Flake",
+		"rgb": [0.024, 0.024, 0.029]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "B-OX30-BR30-FG25:F",
+		"effect": "flake",
+		"finish": "gloss",
+		"id": "custom_root_beer",
+		"name": "Root Beer Gold Flake",
+		"rgb": [0.088, 0.056, 0.048]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "W-LY24-OX8-PO30:P",
+		"effect": "pearl",
+		"finish": "gloss",
+		"id": "custom_pearl_gold",
+		"name": "Pearl Gold",
+		"rgb": [0.931, 0.855, 0.525]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "C-CR22:C",
+		"effect": "candy",
+		"finish": "gloss",
+		"id": "custom_candy_apple",
+		"name": "Candy Apple Red",
+		"rgb": [0.588, 0.066, 0.108]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "H:H",
+		"effect": "chrome",
+		"finish": "gloss",
+		"id": "custom_chrome",
+		"name": "Chrome Effect",
+		"rgb": [0.88, 0.89, 0.9]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "H-BK24:H",
+		"effect": "chrome",
+		"finish": "gloss",
+		"id": "custom_black_chrome",
+		"name": "Black Chrome",
+		"rgb": [0.301, 0.303, 0.318]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "H-OR6-OX6:H",
+		"effect": "chrome",
+		"finish": "gloss",
+		"id": "custom_rose_chrome",
+		"name": "Rose Gold Chrome",
+		"rgb": [0.869, 0.78, 0.674]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "B-BK10:S",
+		"effect": "solid",
+		"finish": "satin",
+		"id": "custom_satin_black",
+		"name": "Satin Black",
+		"rgb": [0.024, 0.024, 0.029]
+	},
+	{
+		"brand": "Custom paint",
+		"code": "W-BK48:S",
+		"effect": "solid",
+		"finish": "matt",
+		"id": "custom_matt_gunmetal",
+		"name": "Matt Gunmetal",
+		"rgb": [0.182, 0.182, 0.193]
 	}
 ]

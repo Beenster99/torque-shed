@@ -1,6 +1,6 @@
 class_name Workshop
 extends Node3D
-## The shed: a snug workshop with a roller door onto the Build Yard. Inside are four bike bays
+## The shed: a snug workshop with a roller door onto its forecourt on the High Street. Inside are four bike bays
 ## with paddock stands and a screen above each, a workbench, an engine stand, a parts computer
 ## with delivery pallets, a parts washer, a repair bench, a bin and the crew board, and through
 ## the back wall the dyno room (DynoRoom). It also draws every parked bike and every loose
@@ -28,6 +28,10 @@ const WASH_REACH := 8.0
 const SIDE_DOOR_HALF := 0.65
 const SIDE_DOOR_HEIGHT := 2.4
 const ROOM_HEIGHT := 3.4
+## A solid this thin one way and at least this big the other two is a wall or a roof, and hides
+## what's behind it from the renderer (see _occluder()).
+const OCCLUDER_THICK := 0.4
+const OCCLUDER_MIN := 1.0
 ## The paint shop: a room off the east wall, entered through a doorway from inside the shed,
 ## with the shed's own open-topped downdraft spray bay (ten hooks on two rails) built into it
 ## and a ceiling of hexagon LED tiles. Interior x 6.8..14.0, z 59.8..70.2.
@@ -80,6 +84,10 @@ var _spot_sigs := {}
 var furniture_nodes := {} # furniture id -> EquipmentView
 var _furniture_sigs := {}
 var _floor_nodes := {}     # item id -> Node3D for parts put down anywhere
+var _dirt_sigs := {}       # bike id -> its dirt as last drawn (Dirt.sig_of_bike)
+var _shine_sigs := {}      # bike id -> its detailed paintwork as last drawn (Detail.sig_of_bike)
+var _wash_fx := {}         # peer -> WashFx where someone else's pressure washer jet is landing
+var wash_mist: WashMist    # the haze that fills the wash bay while anyone's washing
 var _floor_sigs := {}
 var _holo_views := {}      # bay -> Node3D: the hologram of a blueprint build waiting for its frame
 var _holo_sigs := {}
@@ -99,6 +107,10 @@ var paint_bay: PaintBayRoom   # the paint mixing bay off the paint shop
 var tv_feed: SubViewport
 ## Live riding pictures, one per rider being watched: bike node instance id -> {vp, cam, node}.
 var _feeds := {}
+## The live pictures' own lighter copy of the world's look (see _feed_environment()), and how
+## long until it's taken again.
+var _feed_env: Environment
+var _feed_env_in := 0.0
 var _screen_shown := {}    # screen key -> the channel it last drew, to flash the name on a change
 var _screens_sig := ""
 var door_open_amount := 1.0   # the roller door: 0 down, 1 rolled up
@@ -217,7 +229,9 @@ func build() -> void:
 	_build_delivery_area()
 	_build_bin()
 	_build_radio()
+	add_child(AdventureMag.Prop.new())   # the adventure magazine, on the back end of the workbench
 	_build_wash_bay()
+	_build_drain()
 	_build_booth_room()
 	_build_paint_bay()
 	_build_storage_room()
@@ -275,6 +289,10 @@ func sync_state() -> void:
 			if bike_views.has(id):
 				bike_views[id].free()
 			bike_views[id] = _make_bike_view(id)
+			_dirt_sigs[id] = Dirt.sig_of_bike(id)
+			_shine_sigs[id] = ""
+		_sync_dirt(id)
+		_sync_shine(id)
 		# Moving a bike only moves its view; the one you're wheeling follows you directly.
 		if bike.get("pusher", 0) != Shed.me() or bike.get("pusher", 0) == 0:
 			bike_views[id].transform = bike["xf"]
@@ -286,8 +304,14 @@ func sync_state() -> void:
 			_drop_spot_node(_spot_nodes[spot]).queue_free()
 			_spot_nodes.erase(spot)
 			_spot_sigs.erase(spot)
+	# What's in each spot, looked up once (Shed.item_at_spot goes through every item each time).
+	var at_spot := {}
+	for id in Shed.items:
+		var it: Dictionary = Shed.items[id]
+		if it["at"] == "spot" and not at_spot.has(it["ref"]):
+			at_spot[it["ref"]] = id
 	for spot in spots:
-		var item_id := Shed.item_at_spot(spot)
+		var item_id: int = at_spot.get(spot, 0)
 		var sig := "" if item_id == 0 else _item_signature(item_id) + str(Shed.items[item_id].get("place", ""))
 		if _spot_sigs.get(spot, "") == sig:
 			continue
@@ -400,7 +424,7 @@ func sync_state() -> void:
 		if view.washer_sound:
 			var busy := false
 			for spot in Shed.furniture_spots(id):
-				var washing := Shed.item_at_spot(spot)
+				var washing: int = at_spot.get(spot, 0)
 				busy = busy or (washing != 0 and float(Shed.items[washing]["dirt"]) > 0.0)
 			Sfx.set_loop(view.washer_sound, "washer" if busy else "")
 	_dash_dirty = true
@@ -478,6 +502,8 @@ func screens() -> Dictionary:
 	for id in furniture_nodes:
 		if furniture_nodes[id].tv:
 			out["f%d" % id] = furniture_nodes[id].tv.board
+	for key in out:
+		(out[key] as Dashboard).key = key   # for its touch channel buttons (see ScreenTouch)
 	return out
 
 
@@ -500,6 +526,12 @@ func _ridden_node(peer: int) -> Node3D:
 ## Points a chase camera at each rider a screen is tuned to, and puts the live picture on
 ## those screens. Screens on other channels, or live with nobody out, show their page.
 func _update_tv_feed(delta: float) -> void:
+	var pt := Perf.t0()
+	_update_tv_feed_body(delta)
+	Perf.add("tvs", pt)
+
+
+func _update_tv_feed_body(delta: float) -> void:
 	var riders := Shed.riders()
 	var want := {}     # bike node instance id -> {node, screens: [[dashboard, caption]]}
 	var all := screens()
@@ -531,7 +563,9 @@ func _update_tv_feed(delta: float) -> void:
 		if fresh:
 			var vp := SubViewport.new()
 			vp.size = Vector2i(640, 360)
-			vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+			# Drawn only while a screen showing it is in view, without the lamps' shadow maps.
+			vp.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+			vp.positional_shadow_atlas_size = 0
 			add_child(vp)
 			var cam := Camera3D.new()
 			cam.fov = 60.0
@@ -546,11 +580,33 @@ func _update_tv_feed(delta: float) -> void:
 		cam.global_position = at if fresh else cam.global_position.lerp(at, 1.0 - exp(-4.0 * delta))
 		if not cam.global_position.is_equal_approx(bxf.origin + Vector3.UP * 0.8):
 			cam.look_at(bxf.origin + Vector3.UP * 0.8, Vector3.UP)
+		var look := _feed_environment(delta)
+		if cam.environment != look:
+			cam.environment = look
 		var vp: SubViewport = _feeds[nid]["vp"]
 		if tv_feed == null:
 			tv_feed = vp
 		for s in want[nid]["screens"]:
 			(s[0] as Dashboard).show_feed(vp.get_texture(), s[1])
+
+
+## The look the live pictures are drawn with: the world's own (sky, time of day, exposure),
+## copied once a second, less the costly extras a small TV picture doesn't show (global
+## illumination, volumetric fog, reflections, AO): each viewport works those out all over again.
+func _feed_environment(delta: float) -> Environment:
+	_feed_env_in -= delta
+	var world := Lighting.current.env if Lighting.current else null
+	if world == null:
+		return null
+	if _feed_env == null or _feed_env_in <= 0.0:
+		_feed_env_in = 1.0
+		_feed_env = world.duplicate()
+		_feed_env.sdfgi_enabled = false
+		_feed_env.volumetric_fog_enabled = false
+		_feed_env.ssr_enabled = false
+		_feed_env.ssil_enabled = false
+		_feed_env.ssao_enabled = false
+	return _feed_env
 
 
 ## Parts put down anywhere, each with a box around it to aim at and pick it up by.
@@ -824,7 +880,7 @@ func _engine_sling(swing: Node3D, display: Node3D, depth: float) -> void:
 func _item_signature(item_id: int) -> String:
 	var it: Dictionary = Shed.items[item_id]
 	var sig := "%d:%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [item_id, it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""),
-		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)]
+		"%.1f" % float(it["fluid"]["litres"]) if it.has("fluid") and PartsDB.is_fluid(it["part"]) else "", Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it)]
 	if Shed.is_engine(item_id):
 		for slot in PartsDB.ENGINE_SLOTS:
 			var sub := Shed.engine_item(item_id, slot)
@@ -844,21 +900,113 @@ static func _coat_sig(it: Dictionary) -> String:
 		float(it.get("coat_q", 0.0))]
 
 
+## A tyre gone soft or flat is drawn squashed out (see BikeModel.set_flat): redrawn as it changes.
+static func _air_sig(it: Dictionary) -> String:
+	return "|air%.1f" % Puncture.lost(it) if Puncture.lost(it) > 0.0 else ""
+
+
+## The engine's own slots, to look up quickly.
+static var _engine_slot_set := {}
+
+
 func _bike_signature(id: int) -> String:
+	if _engine_slot_set.is_empty():
+		for slot in PartsDB.ENGINE_SLOTS:
+			_engine_slot_set[slot] = true
 	var bike: Dictionary = Shed.bikes[id]
 	var parts := []
+	# What's fitted where, read straight off the bike and its engine (as Shed.item_on and
+	# is_bolted have it): this runs for every bike each time anything in the shed changes.
+	var block: Dictionary = Shed.items.get(int(bike["slots"].get("engine", 0)), {})
 	for slot in PartsDB.SLOTS:
-		var item_id := Shed.item_on(id, slot)
+		var host: Dictionary = block if _engine_slot_set.has(slot) else bike
+		var item_id := int(host.get("slots", {}).get(slot, 0))
 		if item_id == 0:
 			parts.append("-")
 		else:
-			var it: Dictionary = Shed.items[item_id]
-			parts.append("%s:%.1f:%.1f:%.1f:%s:%s:%s%s" % [it["part"], it["rust"], it["dirt"], it["wear"], it["color"], it.get("finish", ""), Shed.is_bolted(id, slot),
-				Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it)])
+			var sig := _item_look_sig(item_id)
+			parts.append("%s%s%s" % [sig[0], bool(host.get("bolted", {}).get(slot, false)), sig[1]])
 	var pose := "paddock" if Shed.on_paddock(id) and bike.get("pusher", 0) == 0 else str(bike.get("stand", ""))
 	# Its own fit (geometry mode) and any blueprint it's being built to redraw it too.
 	return "%s|%s|%s|%s|%s" % [",".join(parts), pose, str(bike["paint"]), str(Shed.geometry_of(id)),
 		str(bike.get("blueprint", {}).get("parts", "")) if bike.get("blueprint") is Dictionary else ""]
+
+
+## Each fitted item's part of _bike_signature, kept until the item itself changes: building
+## them all was the dearest part of every shed sync a player gets. item id -> [hash, before, after].
+var _look_sigs := {}
+
+
+func _item_look_sig(item_id: int) -> Array:
+	var it: Dictionary = Shed.items[item_id]
+	var h := hash(it)
+	var c: Array = _look_sigs.get(item_id, [])
+	if not c.is_empty() and c[0] == h:
+		return [c[1], c[2]]
+	if _look_sigs.size() > 2 * Shed.items.size() + 64:
+		_look_sigs.clear()
+	# Its dirt isn't in it: that's drawn over the bike as it changes (see _sync_dirt).
+	var before := "%s:%.1f:%.1f:%s:%s:" % [it["part"], it["rust"], it["wear"], it["color"], it.get("finish", "")]
+	var after := Shed.blast_sig(it) + PaintBay.paint_sig(it) + _coat_sig(it) + _air_sig(it) + ("|sh" if it.get("shine") is Dictionary else "")
+	_look_sigs[item_id] = [h, before, after]
+	return [before, after]
+
+
+## A parked bike's road dirt, redrawn over it as it changes (riding, washing) without rebuilding it.
+func _sync_dirt(id: int) -> void:
+	var sig := Dirt.sig_of_bike(id)
+	if _dirt_sigs.get(id, "") == sig:
+		return
+	_dirt_sigs[id] = sig
+	var model := bike_model(id)
+	if model:
+		model.show_dirt(Dirt.of_bike(id))
+
+
+## A parked bike's detailed paintwork (see Detail), redrawn over it as it changes (polishing,
+## coating, the miles wearing it) without rebuilding it. The pass itself goes on with the
+## drawing, when a panel first has a finish of its own (that's in its signature).
+func _sync_shine(id: int) -> void:
+	var sig := Detail.sig_of_bike(id)
+	if _shine_sigs.get(id, "") == sig:
+		return
+	_shine_sigs[id] = sig
+	var model := bike_model(id)
+	if model:
+		model.show_shine(Detail.of_bike(id))
+
+
+## Everyone else's pressure washer: the splash and run-off where their jet is landing. And the
+## haze in the wash bay, building up while anyone (you too) is washing.
+func _update_wash_fx(delta: float) -> void:
+	var pt := Perf.t0()
+	_update_wash_fx_body(delta)
+	Perf.add("wash_fx", pt)
+
+
+func _update_wash_fx_body(delta: float) -> void:
+	if wash_mist:
+		wash_mist.update(delta, WashMist.anyone_washing())
+	var live := {}
+	for j in Wash.jets():
+		if int(j["peer"]) != Shed.me():
+			live[int(j["peer"])] = j
+	var peers := live.keys()
+	for peer in _wash_fx:
+		if not peers.has(peer):
+			peers.append(peer)
+	for peer in peers:
+		if not _wash_fx.has(peer):
+			var made := WashFx.new()
+			add_child(made)
+			_wash_fx[peer] = made
+		var fx: WashFx = _wash_fx[peer]
+		var j: Dictionary = live.get(peer, {})
+		var from := (j["at"] as Vector3) + Vector3.UP if not j.is_empty() else Vector3.ZERO
+		for rp in get_tree().get_nodes_in_group("remote_players"):
+			if rp is RemotePlayer and (rp as RemotePlayer).peer == int(peer):
+				from = (rp as RemotePlayer).world_position() + Vector3.UP * 1.3
+		fx.update(delta, from, j.get("at", Vector3.ZERO), j.get("normal", Vector3.UP), not j.is_empty())
 
 
 func _make_bike_view(id: int) -> Node3D:
@@ -884,6 +1032,12 @@ func _make_bike_view(id: int) -> Node3D:
 		lean.basis = Basis(Vector3.BACK, deg_to_rad(74.0))
 		lift = 0.12
 	model.position.y = build.rear_radius + lift
+	if lift == 0.0 and stand != "down":
+		# Standing on a flat tyre, the bike has sunk onto that rim (see BikeModel.set_flat).
+		var drop_f := BikeModel.flat_drop(build, "front")
+		var drop_r := BikeModel.flat_drop(build, "rear")
+		model.position.y -= (drop_f + drop_r) * 0.5
+		model.rotation.x = -(drop_f - drop_r) / maxf(build.wheelbase, 0.5)
 	model.stand_pose = stand
 	model.geometry = Shed.geometry_of(id)
 	model.build_from(build, bike["paint"], Shed.fitted_map(id), build.condition, false)
@@ -979,7 +1133,14 @@ func _paddock_stand(parent: Node3D, build: BikeBuild) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("workshop", pt)
+
+
+func _process_body(delta: float) -> void:
 	_flicker_holograms()
+	_update_wash_fx(delta)
 	_update_tv_feed(delta)
 	_update_door(delta)
 	spin_changers(delta)
@@ -1045,6 +1206,11 @@ func _refresh_dashboards() -> void:
 					dash.show_page("bike", _bay_data(int(key.trim_prefix("bay"))))
 			"crew":
 				dash.show_page("crew", {"players": _crew_rows()})
+			"workflow":
+				# A bike's job card (see WorkflowTv): redrawn only when something on it changes.
+				var card := WorkflowTv.data(key)
+				if changed or dash.kind != "workflow" or card != dash.data:
+					dash.show_page("workflow", card)
 			_:
 				if ch == "live" and dash.is_live():
 					continue
@@ -1223,8 +1389,25 @@ func _solid(center: Vector3, size: Vector3, mat: Material, parent: Node3D = self
 	mi.mesh = bm
 	mi.material_override = mat
 	body.add_child(mi)
+	if not (mat is BaseMaterial3D and (mat as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED):
+		_occluder(body, size)
 	parent.add_child(body)
 	return body
+
+
+## A wall or roof (`size`: thin one way, at least OCCLUDER_MIN the other two) hides what's
+## behind it from the renderer (occlusion culling), so from inside a room the rooms and the yard
+## beyond its walls aren't drawn. It goes with the wall: knock the wall out and it's gone too.
+func _occluder(body: Node3D, size: Vector3) -> void:
+	var dims := [size.x, size.y, size.z]
+	dims.sort()
+	if dims[0] > OCCLUDER_THICK or dims[1] < OCCLUDER_MIN:
+		return
+	var occ := OccluderInstance3D.new()
+	var box := BoxOccluder3D.new()
+	box.size = size
+	occ.occluder = box
+	body.add_child(occ)
 
 
 func _deco(parent: Node3D, center: Vector3, size: Vector3, mat: Material) -> MeshInstance3D:
@@ -1541,7 +1724,6 @@ func _build_wash_bay() -> void:
 	var pad := _material(Color(0.42, 0.44, 0.45), 0.0, 0.25, _noise(0.3, 0.85, 1.05), 4.0)
 	var floor_mi := _deco(self, c + Vector3(0.0, 0.006, 0.0), Vector3(hx * 2.0, 0.012, hz * 2.0), pad)
 	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_deco(self, c + Vector3(0.0, 0.014, 0.6), Vector3(1.6, 0.006, 0.2), _mats["dark"]).name = "Drain"
 	# Back and outer walls (the shed wall is the inner side); open to the yard at the front.
 	_solid(c + Vector3(0.0, h * 0.5, -hz - 0.1), Vector3(hx * 2.0 + 0.2, h, 0.2), _mats["cladding"])
 	_solid(c + Vector3(-hx - 0.1, h * 0.5, 0.0), Vector3(0.2, h, hz * 2.0 + 0.2), _mats["cladding"])
@@ -1579,6 +1761,25 @@ func _build_wash_bay() -> void:
 	light.light_energy = 1.0
 	light.light_color = Color(1.0, 0.95, 0.88)
 	add_child(light)
+	wash_mist = WashMist.new()
+	wash_mist.name = "WashMist"
+	add_child(wash_mist)
+
+
+## The drain in the middle of the wash bay's floor (Wash.BAY_DRAIN) that washing water runs into:
+## a square steel grate in a shallow dished apron of floor.
+func _build_drain() -> void:
+	var at := Wash.BAY_DRAIN + Vector3(0.0, 0.012, 0.0)
+	var apron := _material(Color(0.33, 0.34, 0.35), 0.0, 0.5)
+	var dish := _deco(self, at + Vector3(0.0, 0.003, 0.0), Vector3(1.1, 0.004, 1.1), apron)
+	dish.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var frame := _material(Color(0.25, 0.26, 0.27), 0.8, 0.45)
+	var hole := _material(Color(0.02, 0.02, 0.025), 0.0, 0.9)
+	_deco(self, at + Vector3(0.0, 0.006, 0.0), Vector3(0.42, 0.006, 0.42), frame).name = "WashDrain"
+	_deco(self, at + Vector3(0.0, 0.0065, 0.0), Vector3(0.36, 0.006, 0.36), hole)
+	for i in 7:
+		var bar := _deco(self, at + Vector3(-0.15 + i * 0.05, 0.009, 0.0), Vector3(0.018, 0.006, 0.36), frame)
+		bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Splits a wall running from `from` to `to` round a doorway at `door` (half width `half`):

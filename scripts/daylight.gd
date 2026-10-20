@@ -27,6 +27,22 @@ const RAIN_HAZE := 0.004
 const NIGHT_LIGHTS := "night_lights"
 
 static var current: Daylight
+## Hours a real second while out on an adventure ride (see Adventure.day_rate), whatever the
+## Settings say; 0 back at the shed.
+static var adventure_rate := 0.0
+## An adventure theme's tint on the day sky and the haze ({top, horizon, fog, amount, haze}: see
+## AdventureTheme "sky"); empty back at the shed. Set it with set_tint.
+static var tint := {}
+## 0 under the open sky .. 1 deep in an adventure's tunnel (set each frame by AdventureWorld): the
+## sun and most of the sky's light are shut out, leaving the tunnel's own lamps.
+static var shelter := 0.0
+
+
+## Tints the sky and haze for an adventure's theme ({} for none), at once.
+static func set_tint(t: Dictionary) -> void:
+	tint = t.duplicate()
+	if current and current._env:
+		current._apply(true)
 
 var hours := 9.0
 ## 0 in full daylight .. 1 at night.
@@ -111,6 +127,8 @@ func _exit_tree() -> void:
 
 ## Hours of game time that pass per real second (0 with the cycle switched off).
 static func local_rate() -> float:
+	if adventure_rate > 0.0:
+		return adventure_rate
 	if not Settings.day_night_cycle:
 		return 0.0
 	return 24.0 / (maxf(float(Settings.day_length), 1.0) * 60.0)
@@ -132,6 +150,12 @@ func set_time(h: float) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("sky_weather", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _env == null:
 		return
 	var client := set_by_host()
@@ -202,7 +226,7 @@ func _apply(force: bool) -> void:
 	if _sun.visible:
 		_sun.basis = Basis.looking_at(-sun_dir, Vector3.UP if absf(s) < 0.99 else Vector3.FORWARD)
 		_sun.light_color = Color(1.0, 0.95, 0.86).lerp(Color(1.0, 0.52, 0.26), warm)
-		_sun.light_energy = SUN_ENERGY * pow(light_day, 0.55) * (1.0 - 0.72 * overcast) * (1.0 - 0.35 * mist)
+		_sun.light_energy = SUN_ENERGY * pow(light_day, 0.55) * (1.0 - 0.72 * overcast) * (1.0 - 0.35 * mist) * (1.0 - 0.9 * shelter)
 		# Under cloud the shadows go soft and faint.
 		_sun.shadow_opacity = lerpf(1.0, 0.35, maxf(overcast, mist))
 	# Moon: roughly opposite the sun, cool and dim, only once the sun is down.
@@ -210,18 +234,20 @@ func _apply(force: bool) -> void:
 	_moon.visible = s <= -0.06 and moon_dir.y > -0.02
 	if _moon.visible:
 		_moon.basis = Basis.looking_at(-moon_dir, Vector3.UP if absf(moon_dir.y) < 0.99 else Vector3.FORWARD)
-		_moon.light_energy = MOON_ENERGY * (1.0 - smoothstep(-0.2, -0.06, s)) * smoothstep(-0.02, 0.2, moon_dir.y) * (1.0 - 0.8 * overcast)
+		_moon.light_energy = MOON_ENERGY * (1.0 - smoothstep(-0.2, -0.06, s)) * smoothstep(-0.02, 0.2, moon_dir.y) * (1.0 - 0.8 * overcast) * (1.0 - 0.9 * shelter)
 
 	# Ambient and fog: night is dark blue, not black, so the yard stays readable.
 	_env.ambient_light_sky_contribution = lerpf(1.0, 0.25, dark)
 	_env.ambient_light_color = Color(0.32, 0.4, 0.62).lerp(Color(0.75, 0.55, 0.5), twilight * (1.0 - dark))
 	_env.ambient_light_energy = lerpf(0.9, 0.22, dark) + 0.35 * twilight * (1.0 - dark)
-	_env.ambient_light_energy *= 1.0 - 0.18 * overcast
+	_env.ambient_light_energy *= (1.0 - 0.18 * overcast) * (1.0 - 0.8 * shelter)
 	var fog := Color(0.7, 0.77, 0.86).lerp(Color(0.85, 0.58, 0.44), twilight * 0.6).lerp(Color(0.62, 0.65, 0.68), maxf(overcast * 0.6, mist)) \
 		.lerp(Color(0.03, 0.04, 0.07), dark)
+	if not tint.is_empty():
+		fog = fog.lerp(tint["fog"], float(tint["amount"]) * (1.0 - dark) * (1.0 - maxf(overcast * 0.6, mist)))
 	_env.fog_light_color = fog
 	# Depth fog works on every renderer: a light haze by default, thick in fog, misty in rain.
-	_env.fog_density = WORLD_FOG + mist * FOG_WEATHER + rain * RAIN_HAZE
+	_env.fog_density = WORLD_FOG + mist * FOG_WEATHER + rain * RAIN_HAZE + float(tint.get("haze", 0.0))
 	_env.fog_sky_affect = lerpf(0.25, 0.95, maxf(mist, rain * 0.5))
 	_env.fog_aerial_perspective = lerpf(0.3, 0.0, maxf(mist, rain * 0.6))
 	_env.fog_light_energy = 1.0
@@ -254,6 +280,9 @@ func _update_sky(s: float, moon_dir: Vector3, warm: float, twilight: float, over
 	var day_horizon := Color(0.68, 0.76, 0.86)
 	var night_top := Color(0.01, 0.014, 0.035)
 	var night_horizon := Color(0.035, 0.045, 0.085)
+	if not tint.is_empty():
+		day_top = day_top.lerp(tint["top"], float(tint["amount"]))
+		day_horizon = day_horizon.lerp(tint["horizon"], float(tint["amount"]))
 	# Overcast: a flat grey sky, darker in rain; fog washes it out to the fog's own grey.
 	var grey := Color(0.55, 0.58, 0.62).lerp(Color(0.38, 0.4, 0.44), rain)
 	day_top = day_top.lerp(grey, overcast * 0.85).lerp(Color(0.66, 0.68, 0.7), mist * 0.8)

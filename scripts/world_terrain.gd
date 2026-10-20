@@ -12,9 +12,9 @@ const SIZE := 1025                   # samples along each side
 const CHUNK := 64                    # cells along each side of a mesh chunk
 const COARSE := 4                    # the far mesh keeps every 4th sample
 const SKIRT := 6.0                   # chunk edges hang down this far to hide seams
-## The flat ground round the shed and the yard, and the height of the grass on it (just under
-## the yard's surface, so the slab's edge is no kerb).
-const HOME := Rect2(-75.0, 25.0, 150.0, 125.0)
+## The flat ground round the shed, its yard and the town it stands in, and the height of the
+## grass on it (just under the yard's surface, so the slab's edge is no kerb).
+const HOME := Rect2(-115.0, -62.0, 225.0, 212.0)
 const HOME_LEVEL := -0.03
 ## How far under a road's surface the ground beneath it sits.
 const ROAD_DROP := {"tarmac": 0.16, "dirt": 0.13}
@@ -341,7 +341,7 @@ func _build_colors() -> void:
 			elif k == 2:
 				c = c.lerp(earth, (1.0 - smoothstep(2.5, 6.5, road_d[i])) * 0.85)
 			colors[i] = c
-	# Fields round the farms, and worn gravel round the yard's edge fading into the grass.
+	# Fields round the farms, and worn gravel round the yard's edges fading into the grass.
 	for at: Vector2 in farms:
 		var box := _grid_box(Rect2(at - Vector2(330.0, 330.0), Vector2(660.0, 660.0)))
 		for gz in range(box.position.y, box.end.y):
@@ -359,13 +359,16 @@ func _build_colors() -> void:
 				if d < 40.0:
 					var i := gz * SIZE + gx
 					colors[i] = colors[i].lerp(earth.lerp(gravel, 0.5), (1.0 - smoothstep(22.0, 40.0, d)) * 0.85)
-	var home := _grid_box(HOME.grow(14.0))
-	for gz in range(home.position.y, home.end.y):
-		for gx in range(home.position.x, home.end.x):
-			var i := gz * SIZE + gx
-			var hd := _home_dist(gx * SPACING - HALF, gz * SPACING - HALF)
-			if hd < 14.0:
-				colors[i] = colors[i].lerp(gravel, (1.0 - smoothstep(0.0, 14.0, hd)) * 0.7)
+	for rect: Rect2 in WorldYard.GROUND:
+		var box := _grid_box(rect.grow(14.0))
+		for gz in range(box.position.y, box.end.y):
+			for gx in range(box.position.x, box.end.x):
+				var p := Vector2(gx * SPACING - HALF, gz * SPACING - HALF)
+				var hd := Vector2(maxf(maxf(rect.position.x - p.x, p.x - rect.end.x), 0.0),
+					maxf(maxf(rect.position.y - p.y, p.y - rect.end.y), 0.0)).length()
+				if hd < 14.0:
+					var i := gz * SIZE + gx
+					colors[i] = colors[i].lerp(gravel, (1.0 - smoothstep(0.0, 14.0, hd)) * 0.7)
 
 
 ## Which crop (0..3) the field at (x, z) round the farm at `farm` grows, or -1 for none:
@@ -424,16 +427,19 @@ func chunk_mesh(cx: int, cz: int, step: int) -> ArrayMesh:
 		for k in per - 1:
 			var a := j * per + k
 			idx.append_array([a, a + 1, a + per + 1, a, a + per + 1, a + per])
-	# Skirts: each edge copied SKIRT lower and stitched on, so a near chunk next to a far one
-	# shows no gap where their edges differ.
+	# Skirts: each edge copied lower and stitched on, so a near chunk next to a far one shows no
+	# gap where their edges differ. In the mountains the far mesh's edge can sit well above the
+	# near one's between its samples, more than SKIRT, which let the sky show through slits in
+	# the distant hills: each edge hangs down as far as the two ever part along it, and more.
 	var edges := [[0, 1, 0], [per - 1, 1, 0], [0, 0, 1], [per - 1, 0, 1]]
 	for e in edges:
 		var base := verts.size()
+		var drop := SKIRT + _edge_gap(cx, cz, e)
 		for t in per:
 			var j: int = e[0] if e[2] == 0 else t
 			var k: int = t if e[2] == 0 else e[0]
 			var src := j * per + k
-			verts.append(verts[src] + Vector3.DOWN * SKIRT)
+			verts.append(verts[src] + Vector3.DOWN * drop)
 			norms.append(norms[src])
 			cols.append(cols[src])
 			uvs.append(uvs[src])
@@ -456,6 +462,25 @@ func chunk_mesh(cx: int, cz: int, step: int) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+
+## How far apart (m) the near and far meshes' edges ever get along one edge of chunk (cx, cz):
+## the full-detail heights against the far mesh's straight lines between every COARSE-th sample.
+## `e` is the edge as chunk_mesh lists them ([index along, 1 for a row / 0 for a column, ...]).
+func _edge_gap(cx: int, cz: int, e: Array) -> float:
+	var gap := 0.0
+	var x0 := cx * CHUNK
+	var z0 := cz * CHUNK
+	var fixed: int = (CHUNK if int(e[0]) > 0 else 0)
+	for c in range(0, CHUNK, COARSE):
+		var h := PackedFloat32Array()
+		for q in COARSE + 1:
+			var gx: int = x0 + (c + q if int(e[2]) == 0 else fixed)
+			var gz: int = z0 + (fixed if int(e[2]) == 0 else c + q)
+			h.append(heights[mini(gz, SIZE - 1) * SIZE + mini(gx, SIZE - 1)])
+		for q in range(1, COARSE):
+			gap = maxf(gap, absf(h[q] - lerpf(h[0], h[COARSE], float(q) / COARSE)))
+	return gap
 
 
 ## The middle of chunk (cx, cz) on the ground plane.
