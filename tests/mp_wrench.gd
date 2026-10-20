@@ -155,12 +155,21 @@ func _client_tow(trip: AdventureTrip) -> bool:
 	Shed.request({"a": "roadside_fault", "kind": "chain_snap"})
 	await _until(func(): return Roadside.dead(bike), 10.0)
 	var host_peer := 1
+	# Held on the back brake while it waits, as a rider would on a hill (the new roads climb).
+	Input.action_press("rear_brake")
 	var near := await _until(func():
 		var rb := _remote_bike()
 		return rb != null and main.bike != null and rb.global_position.distance_to(main.bike.global_position) < Roadside.TOW_REACH \
 			and absf(main.bike.speed) < Roadside.TOW_STOPPED, 30.0)
 	main._tow_button()
 	var tied := await _until(func(): return int(Shed.bikes[bike].get("tow", 0)) == host_peer, 10.0)
+	# Off the brake once the host's bike moves off and takes up the strap.
+	var rb0 := _remote_bike()
+	var at0: Vector3 = rb0.global_position if rb0 else Vector3.ZERO
+	await _until(func():
+		var rb := _remote_bike()
+		return rb == null or rb.global_position.distance_to(at0) > 2.0, 10.0)
+	Input.action_release("rear_brake")
 	var from := trip.world.distance_of(main.bike.global_position, "own")
 	var went := [0.0]
 	var pulled := await _until(func():

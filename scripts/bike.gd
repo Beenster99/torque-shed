@@ -1134,7 +1134,8 @@ func _apply_tow() -> void:
 	var dir := d / dist
 	# Damped against the towing bike's own speed, so the towed one settles in behind, not past it.
 	var closing := linear_velocity.dot(dir) - tow_speed
-	var pull := clampf((dist - Roadside.STRAP) * 1800.0 - closing * 900.0, 0.0, mass * 4.0)
+	# At most about 0.6 g: a strap snatching taut from well back yanks a bike over, not along.
+	var pull := clampf((dist - Roadside.STRAP) * 1800.0 - closing * 900.0, 0.0, mass * 6.0)
 	apply_central_force(dir * pull)
 
 
