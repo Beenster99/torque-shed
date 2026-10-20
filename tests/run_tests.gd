@@ -547,6 +547,11 @@ func _run_all() -> void:
 	await _test_controls_clutch()
 	await _test_controls_nod_wave()
 	await _test_controls_look_back()
+	print("Riding on adventures (v0.18.0): brakes after a long ride, how often things go wrong, sharp turns slow")
+	await _test_adv_ride_brakes()
+	_test_adv_ride_descent_fade()
+	_test_adv_ride_breakdown_odds()
+	await _test_adv_ride_tight_turns()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22159,3 +22164,25 @@ func _test_controls_nod_wave() -> void:
 
 func _test_controls_look_back() -> void:
 	await _controls_t().test_look_back_and_chord()
+
+
+# ---------------------------------------------------------------------------- riding on adventures (tests/adventure_ride_tests.gd)
+
+func _adv_ride() -> RefCounted:
+	return load("res://tests/adventure_ride_tests.gd").new(self)
+
+
+func _test_adv_ride_brakes() -> void:
+	await _adv_ride().test_brakes()
+
+
+func _test_adv_ride_descent_fade() -> void:
+	_adv_ride().test_descent_fade()
+
+
+func _test_adv_ride_breakdown_odds() -> void:
+	_adv_ride().test_breakdown_odds()
+
+
+func _test_adv_ride_tight_turns() -> void:
+	await _adv_ride().test_tight_turns()

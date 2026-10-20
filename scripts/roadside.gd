@@ -8,7 +8,8 @@ extends RefCounted
 ## oil runs low (the oil light), a bolt works loose and something rattles, a drop snaps the
 ## clutch or brake lever, a fuse blows (the lights, or the ignition). The chance rises with the
 ## parts' wear, loose ground (gravel and sand most), drops, and maintenance skipped (a dry chain,
-## old oil); tuned so a couple of hours on a well kept bike might see one small thing.
+## old oil); tuned so a two-hour adventure (gravel and all) sees about one thing go wrong, a
+## puncture included, on a fairly kept bike: not several.
 ## Each has a clear symptom (a sound, a dash light, the way it rides) and a hint.
 ##
 ## Stopped on an adventure you get off, and the bike stands at the roadside on its stand (drawn
@@ -33,11 +34,11 @@ extends RefCounted
 
 const KINDS: Array[String] = ["chain_slack", "chain_snap", "oil", "rattle", "lever", "fuse"]
 ## Chance of each going wrong per km on tarmac, on a well kept bike.
-const PER_KM := {"chain_slack": 0.0009, "chain_snap": 0.00008, "oil": 0.0005, "rattle": 0.0011, "fuse": 0.0004, "lever": 0.0}
+const PER_KM := {"chain_slack": 0.00025, "chain_snap": 0.00002, "oil": 0.00014, "rattle": 0.0003, "fuse": 0.00011, "lever": 0.0}
 ## How much more often things shake loose or go wrong on each surface.
 const SURFACE := {"tarmac": 1.0, "concrete": 1.0, "gravel": 2.6, "dirt": 2.2, "sand": 2.2, "snow": 1.4, "grass": 1.8}
 ## Chance a drop (a crash) snaps a lever, or knocks something loose.
-const DROP := {"lever": 0.4, "rattle": 0.25}
+const DROP := {"lever": 0.4, "rattle": 0.15}
 ## A chain this slack (mm) is the slack chain fault (the shed's own reading, see BikeBuild).
 const SLACK_FAULT := 50.0
 const SLACK_GONE := 64.0       # how slack a chain goes when it's let go
