@@ -68,6 +68,9 @@ const DRAW_RANGE := 450.0
 const SOUND_RANGE := 260.0
 ## Hitting one faster than this (m/s) throws you off.
 const CRASH_SPEED := 4.0
+## A biker this close (m) to you when you nod or wave nods back, after NOD_BACK_DELAY seconds.
+const NOD_REACH := 45.0
+const NOD_BACK_DELAY := 0.5
 
 var main: Node
 var world: World
@@ -819,6 +822,27 @@ func _dress_view(view: Dictionary) -> void:
 func _yaw(d: Dictionary) -> float:
 	var f := road_dir(int(d["road"]), float(d["s"])) * int(d["dir"])
 	return atan2(-f.x, -f.y)
+
+
+## You nodded or waved at `at`: the nearest biker within NOD_REACH nods back a moment later
+## (on your own screen: it's your nod they answer). Returns the slot that will, or -1.
+func nod_back(at: Vector3) -> int:
+	var best := -1
+	var best_d := NOD_REACH
+	for slot in MAX_RIDERS:
+		var view: Dictionary = _views[slot]
+		if view.is_empty() or view.has("car") or view.get("model") == null:
+			continue
+		var d := (view["pos"] as Vector3).distance_to(at)
+		if d < best_d:
+			best_d = d
+			best = slot
+	if best >= 0:
+		var model: BikeModel = _views[best]["model"]
+		get_tree().create_timer(NOD_BACK_DELAY).timeout.connect(func():
+			if is_instance_valid(model):
+				model.gesture("nod"))
+	return best
 
 
 func _update_views(delta: float) -> void:

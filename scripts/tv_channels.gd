@@ -54,7 +54,8 @@ const HOWTO := [
 		["{ignition}", "engine on or off  ·  {throttle}: throttle  ·  {front_brake}: front brake"],
 		["{rear_brake}", "rear brake  ·  {lean}: lean  ·  {shift_up|shift_down}: gears"],
 		["{body_back}", "weight back for a wheelie  ·  {body_forward}: forward"],
-		["{respawn}", "reset after a crash  ·  {camera}: camera"],
+		["{clutch}", "hold the clutch in to blip the revs  ·  {look_back}: look behind"],
+		["{nod}", "nod to a biker (hold: wave)  ·  {respawn}: reset  ·  {camera}: view"],
 		["{interact}", "get off when you've stopped"],
 	]],
 	["Keep the shed tidy", [

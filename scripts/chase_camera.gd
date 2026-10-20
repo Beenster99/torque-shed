@@ -3,7 +3,9 @@ extends Camera3D
 ## Follows the bike: a smooth chase view the rider can swing round the bike with the mouse or
 ## right stick, a first-person view from the rider's helmet looking down over the bars and
 ## clocks, a ride-by view from the roadside ahead that watches the bike go past, and a slow
-## orbit for the title screen.
+## orbit for the title screen. Holding the look back button turns it to look behind: over your
+## left shoulder in first person, and round to the front of the bike looking back past you in
+## the chase view.
 
 enum Mode { CHASE, HELMET, ORBIT, RIDE_BY }
 
@@ -20,6 +22,10 @@ const RECENTRE_RATE := 2.5
 ## First person: how far you can turn your head.
 const HEAD_YAW := 1.9
 const HEAD_PITCH := 0.9
+## Looking back: how far the head turns over the left shoulder in first person (rad), and how
+## quickly the view swings round and back (1/s).
+const LOOK_BACK_YAW := 2.6
+const LOOK_BACK_RATE := 9.0
 ## The ride-by camera: the shortest and longest it watches before going back.
 const RIDE_BY_MIN := 3.0
 const RIDE_BY_MAX := 7.0
@@ -36,6 +42,9 @@ var orbit_yaw := 0.0
 var orbit_pitch := 0.0
 ## Ease back behind the bike after a moment without orbit input (Settings: camera recentre).
 var recentre := true
+## The look back button held (set each tick while riding), and how far round the view is now, 0..1.
+var look_back := false
+var _back := 0.0
 var _orbit_angle := 0.0
 var _smoothed_pos := Vector3.ZERO
 var _look := Vector3.ZERO
@@ -118,6 +127,11 @@ func add_orbit(yaw: float, pitch: float) -> void:
 		_idle = 0.0
 
 
+## How far round to look behind the view is, 0 (ahead) .. 1 (looking back).
+func looking_back() -> float:
+	return _back
+
+
 ## Whether the rider has swung the view away from straight behind.
 func orbiting() -> bool:
 	return absf(orbit_yaw) > 0.02 or absf(orbit_pitch) > 0.02
@@ -184,6 +198,10 @@ func _physics_process(delta: float) -> void:
 
 func _physics_process_body(delta: float) -> void:
 	_idle += delta
+	var k_back := 1.0 - exp(-LOOK_BACK_RATE * delta)
+	_back = lerpf(_back, 1.0 if look_back and mode in [Mode.CHASE, Mode.HELMET] else 0.0, k_back)
+	if absf(_back - float(look_back)) < 0.002:
+		_back = float(look_back)
 	match mode:
 		Mode.ORBIT:
 			_orbit(delta)
@@ -223,7 +241,8 @@ func _chase(delta: float) -> void:
 	var dist := (4.6 + speed * 0.04) * scale
 	var height := (1.7 + speed * 0.008) * sqrt(scale)
 	var radius := sqrt(dist * dist + height * height)
-	var want_heading := atan2(-flat.x, -flat.z) + orbit_yaw
+	# Looking back: round in front of the bike, looking back down the road past the rider.
+	var want_heading := atan2(-flat.x, -flat.z) + orbit_yaw + PI * smoothstep(0.0, 1.0, _back)
 	var want_elev := clampf(atan2(height, dist) + orbit_pitch, -0.12, 1.35)
 	if not _initialized:
 		_pivot = t.origin
@@ -240,7 +259,7 @@ func _chase(delta: float) -> void:
 	var desired := _pivot + dir * radius
 	# Looking ahead down the road from behind; at the bike itself once swung round it.
 	var swung := clampf(absf(orbit_yaw) / 0.6, 0.0, 1.0)
-	var look := t.origin + Vector3.UP * 0.9 + flat * 2.0 * (1.0 - swung)
+	var look := t.origin + Vector3.UP * 0.9 + flat * 2.0 * (1.0 - swung) * (1.0 - _back) - flat * 4.0 * _back
 	# Keep the camera out of hills and walls.
 	var from := t.origin + Vector3.UP * 1.2
 	var q := PhysicsRayQueryParameters3D.create(from, desired, 1)
@@ -266,9 +285,10 @@ func _helmet(delta := 0.0) -> void:
 		global_transform = target.global_transform * target.eye_transform()
 	else:
 		global_transform = target.global_transform.translated_local(Vector3(0.0, 1.5, 0.0))
-	if orbiting():
-		# Turning your head inside the helmet.
-		global_basis = global_basis * Basis(Vector3.UP, orbit_yaw) * Basis(Vector3.RIGHT, -orbit_pitch)
+	if orbiting() or _back > 0.0:
+		# Turning your head inside the helmet (over your left shoulder to look back).
+		var yaw := clampf(orbit_yaw + LOOK_BACK_YAW * smoothstep(0.0, 1.0, _back), -LOOK_BACK_YAW, LOOK_BACK_YAW)
+		global_basis = global_basis * Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -orbit_pitch * (1.0 - _back))
 	if target is Bike and target.build != null:
 		# Wind buffeting the helmet at speed: less behind a taller screen (BikeBuild.wind_buffet).
 		var gust := float(target.build.wind_buffet) * clampf((absf(target.speed) - 18.0) / 30.0, 0.0, 1.0)

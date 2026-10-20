@@ -460,25 +460,29 @@ Everything you do earns **XP**, one pool for the lot: work in the shed, riding, 
 
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
-| Engine on / off | I | D-pad up |
+| Engine on / off | I | LB + RB together |
 | Throttle | W / Up | Right trigger |
 | Front brake | S / Down | Left trigger |
 | Rear brake | Space | B |
 | Lean left / right | A / D | Left stick |
-| Weight back (wheelie) / forward | Shift / Ctrl | LB / RB |
+| Weight back (wheelie) / forward | Shift / Ctrl | Left stick back / forward |
 | Shift up / down | E / Q | A / X |
-| Toggle auto-shift | T | |
+| Hold the clutch in: the throttle blips the revs in any gear, at any speed, without driving the back wheel (let go and it takes up smoothly) | Hold Z | Hold LB |
+| Look over your shoulder (while held) | Hold X | Hold RB |
+| Nod to a biker you pass; hold it to raise your left hand off the bar in a wave (the crew see both; a biker in the traffic nods back) | N (hold: wave) | Right stick click (hold: wave) |
+| Toggle auto-shift | U | |
+| Adventure: ask a mate for a tow when you've broken down, or let the strap go | T | (none) |
 | Reset after a crash | R | View |
-| Camera (third person, first person, fly-by) | C | Right stick click |
+| Camera (third person, first person, fly-by) | C | D-pad down |
 | Swing the camera round the bike (first person: look round) | Mouse | Right stick |
 | Ride-by camera: watch yourself ride past (again to end it) | V | (none; set one in Key bindings) |
 | Telemetry overlay on / off | F3 | (none; set one in Key bindings) |
-| Horn (hold it; other players hear it where your bike is) | H | D-pad down |
-| Headlight: off, low beam, high beam (then high beam and fog lights, with fog lights fitted) | L | Left stick click |
+| Horn (hold it; other players hear it where your bike is) | H | D-pad left |
+| Headlight: off, low beam, high beam (then high beam and fog lights, with fog lights fitted) | L | D-pad up |
 | Paddle backwards with your feet (when stopped) | Hold S | Hold left trigger |
 | Burnout | Hold S, then throttle | Left then right trigger |
 | Circle burnout: spin round on the front wheel | Burnout, then A / D | Burnout, then left stick |
-| Ping / stopwatch | G or middle mouse / P | D-pad right / left |
+| Ping / stopwatch | G or middle mouse / P | Left stick click / (none: D-pad left is the horn) |
 | Get off (when stopped) | F | Y |
 
 The suspension now moves visibly over bumps and dirt ruts, the rear shocks stretch and squash with the swingarm, and landings from jumps soak up instead of bouncing. **Tyres come in widths** (for example 120/70, 160/60, 180/55, 190/50): wider tyres grip more on tarmac and less in mud, a wide front tyre steers slower, and each wheel rim takes a range of widths and one rim size (the part info shows it). Tyres and rims are drawn at their real width and profile.
@@ -489,7 +493,7 @@ You get on with the engine off: press I to start it. The speedo shows a fuel gau
 
 **Horns** are recorded from real ones: the stock disc horn, low-tone and high-tone discs, snail horns, the twin trumpet and truck air horns and the freight train horn sound for as long as you hold H and stop when you let go; the courtesy pip horn gives one short pip however long you hold it; the **police yelp horn** keeps whooping and yelping while you hold it, a different yelp each time; and, as a joke, the **ship's foghorn** and the **tugboat horn** blow their whole blast on every press. The twin-tone, klaxon, bulb, scooter beeper, musical and goose horns are still made by the game. Fit one from the parts computer's Horn aisle. Other players hear your horn from where your bike is, quieter and duller further off.
 
-Hold weight back (Shift / LB) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The moment a tyre loses grip it gives a loud, sharp chirp (louder the more suddenly it lets go, from a lock-up, a wheelspin or a burnout), and a skid that goes on settles to a quieter screech. The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
+Hold weight back (Shift, or the left stick back) to lift and hold a wheelie; the bike now eases the throttle and dabs the back brake for you near the balance point, and a stoppie on the front brake is easier to hold. In the air, throttle tips the bike back and closing it (or the back brake) tips the nose down, so you can set up the landing. Skids screech and leave black marks on tarmac (and ruts on dirt). The moment a tyre loses grip it gives a loud, sharp chirp (louder the more suddenly it lets go, from a lock-up, a wheelspin or a burnout), and a skid that goes on settles to a quieter screech. The clocks face the rider and their needles, rev lights and screens show live speed, revs, gear and fuel; first person sits at eye height.
 
 **Cameras**: move the mouse (or the right stick) to swing the chase camera round the bike and look at it from any side, or from above. Let go and after a moment it eases back behind the bike; untick "Chase camera swings back" in the Esc menu's Settings to leave it where you put it. In first person the same moves turn your head. Press **V** for the **ride-by camera**: it drops a camera at the roadside ahead of you, watches you ride past for a few seconds, then goes back to the view you had (V or C ends it early). **C** steps through the views: third person, first person, then **fly-by** (the roadside camera stays on, hopping ahead each time you've gone past).
 
@@ -701,6 +705,8 @@ Next to **Order a project bike** on the parts computer is a style picker: pick o
 ### Emotes
 
 On foot, press **B** for the emote bar, then **1** to **6**: **wave**, **thumbs up**, **point**, **shrug**, **cheer** and **dance** (B again closes it). Or do one straight away with **F5** to **F10**. The rest of the crew sees your figure do it, with what you're doing over your head; a point aims at whatever your crosshair is on. When you **ping** something (G or middle mouse), your figure points at it for the crew as well as it lighting up. Every key can be changed in the Key bindings tab.
+
+On a bike, **N** (the right stick click on a pad) nods to a biker you're passing; hold it and your rider takes their left hand off the bar for a wave. The crew see your rider do both on your bike, and a biker in the traffic nearby nods back.
 
 ### Debug tab
 
