@@ -1300,6 +1300,8 @@ func rider_gesture(e: String) -> void:
 	Shed.request({"a": "emote", "e": e})
 	if traffic:
 		traffic.nod_back(bike.global_position)
+	# And on an adventure, the bikers on the road near you.
+	AdventureBikers.nod_back(bike.global_position, e == "ride_wave")
 
 
 ## The tow button while riding on an adventure: ask the nearest mate on a bike for a tow (or let
