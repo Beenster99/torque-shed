@@ -26,7 +26,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
 	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.5)
+	shade.color = Color(0, 0, 0, 0.8)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(shade)
 	var center := CenterContainer.new()
