@@ -22,6 +22,9 @@ extends Node
 ## swing open and the host sat in the cab (their figure gone from outside), and both see them out.
 ## Pool: the host racks up in the crew lounge and the client joins; each must see a shot the
 ## other took played out on its own table, and its own come back from the host.
+## The shed's petrol pump: the host stands Old Faithful by it with its tank low, the client lifts
+## the nozzle and fills it (the host must see the nozzle in the client's figure's hand), then
+## hangs it back up: both see the litres in the tank and the petrol in the business's books.
 
 var role := "host"
 var main: Node
@@ -133,6 +136,9 @@ func _ready() -> void:
 	var pool_own := false        # a shot this side took came back from the host
 	var pool_other := false      # and one the other side took arrived here
 	var pool_ok := false
+	var pump_step := 0          # the petrol pump: 0 not begun, 1 set up (host) or pouring (client), 2 done
+	var pump_seen := false       # the host saw the nozzle in the client's hand
+	var pump_ok := false
 	var copy_asked := false     # the client ordered one of the ranger and copied a cafe biker's bike
 	var copy_cost := 0
 	var copy_logged := 0        # "Ordered:" lines in the client's cash log before (it carries on between runs)
@@ -663,7 +669,37 @@ func _ready() -> void:
 							angle = atan2(float(pb[bi][0]) - float(pb[0][0]), -(float(pb[bi][1]) - float(pb[0][1])))
 							break
 				Shed.request({"a": "pool_shot", "angle": angle, "power": 1.0 if int(Shed.pool["shots"]) == 0 else 0.6})
-		var rest_ok := ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok
+		# The petrol pump on the front wall, once Old Faithful's back from the road.
+		if retrieve_ok and faithful != 0 and Shed.crew.size() == 2 and Shed.item_on(faithful, "tank") != 0:
+			var p_tank := Shed.item_on(faithful, "tank")
+			var p_spot := Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(ShedPump.X, 0.0, ShedPump.WALL_Z + 1.3))
+			if role == "host" and pump_step == 0:
+				Shed.items[p_tank]["fluid"] = {"type": "unleaded_95", "litres": 1.0, "age": 0.0}
+				Shed.bikes[faithful]["xf"] = p_spot
+				Shed._mark_dirty()
+				pump_step = 1
+			var p_litres := float(Shed.items[p_tank].get("fluid", {}).get("litres", 0.0))
+			if role == "client" and pump_step == 0 and p_litres < 1.5 and ShedPump.reaches(faithful) and ShedPump.holder() == 0:
+				# Stood by the pump, walking up and down along the wall within the hose's reach.
+				main.walker.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), ShedPump.HOSE_ROOT * Vector3(1, 0, 1) + Vector3(0.0, 0.0, 0.9)))
+				Shed.request({"a": "pump_nozzle", "to": "held"})
+				Shed.request({"a": "pump_pour", "on": true, "bike": faithful})
+				pump_step = 1
+			if role == "client" and pump_step == 1 and float(Shed.pump["litres"]) > 1.0:
+				Shed.request({"a": "pump_pour", "on": false})
+				Shed.request({"a": "pump_nozzle", "to": "pump"})
+				pump_step = 2
+			if role == "host" and ws != null and ws.pump_view != null and main.remotes.size() == 1 \
+					and ShedPump.holder() == int(main.remotes.keys()[0]):
+				# In their figure's hand, or in the bike's filler with the petrol running in.
+				var p_hand: Transform3D = (main.remotes.values()[0] as RemotePlayer).hand_transform()
+				var p_at: Vector3 = ws.pump_view.nozzle.global_position
+				pump_seen = pump_seen or (p_at.distance_to(p_hand.origin) < 0.1 if ShedPump.pouring() == 0
+					else p_at.distance_to(ShedPump.filler_point(faithful)) < 0.35 and ws.pump_view.get_node("Petrol").visible)
+			var p_booked: bool = (Shed.bank["ledger"] as Array).any(func(e): return str(e["why"]) == "Petrol for Old Faithful")
+			pump_ok = pump_ok or (ShedPump.holder() == 0 and float(Shed.pump["litres"]) > 1.0 and p_litres > 2.0 and p_booked
+				and (role == "client" or pump_seen))
+		var rest_ok := pump_ok and ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok
 		# Order one of these and copy its blueprint (BikeCopy), once the trolley and the poster are
 		# in (it fills the delivery area): the client orders one of the ranger, used (the card's
 		# quality slider halfway), from its own money and copies a cafe biker's bike; both see the
@@ -702,8 +738,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, passenger %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s, order and copy %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, pass_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok, copy_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, passenger %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s, order and copy %s, petrol pump %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, pass_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok, copy_ok, pump_ok])
 	get_tree().quit(0 if ok else 1)
 
 

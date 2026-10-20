@@ -568,6 +568,9 @@ func _run_all() -> void:
 	await _test_adv_perf_triangles()
 	await _test_adv_perf_ride()
 	await _test_adv_perf_ride_stats()
+	print("Simon's v0.19.0 round: a petrol pump on the shed's front wall, on the business")
+	await _test_shed_pump_rules()
+	await _test_shed_pump_session()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22276,3 +22279,17 @@ func _test_adv_perf_ride() -> void:
 
 func _test_adv_perf_ride_stats() -> void:
 	await _adv_perf().test_ride_stats()
+
+
+# ---------------------------------------------------------------------------- the shed's petrol pump (tests/shed_pump_tests.gd)
+
+func _shed_pump() -> RefCounted:
+	return load("res://tests/shed_pump_tests.gd").new(self)
+
+
+func _test_shed_pump_rules() -> void:
+	await _shed_pump().test_rules()
+
+
+func _test_shed_pump_session() -> void:
+	await _shed_pump().test_session()
