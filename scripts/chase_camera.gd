@@ -93,6 +93,16 @@ func snap() -> void:
 	_initialized = false
 
 
+## The world's origin moved by `d` (see AdventureWorld): everything the camera remembers moves
+## with it, so the view doesn't jump.
+func shift_origin(d: Vector3) -> void:
+	global_position -= d
+	_smoothed_pos -= d
+	_look -= d
+	_pivot -= d
+	_by_pos -= d
+
+
 ## Swings the chase view round the bike (or turns your head in first person) by `yaw` and
 ## `pitch` radians. Mouse: pass the motion times MOUSE_ORBIT; stick: STICK_ORBIT times delta.
 func add_orbit(yaw: float, pitch: float) -> void:
@@ -167,6 +177,12 @@ func ride_by_spot() -> Vector3:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("camera", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	_idle += delta
 	match mode:
 		Mode.ORBIT:
@@ -200,10 +216,12 @@ func _chase(delta: float) -> void:
 	var t := target.global_transform
 	var flat := _flat_forward(t)
 	var speed := 0.0
-	if target is Bike:
+	if target is Bike or target is Car:
 		speed = absf(target.speed)
-	var dist := 4.6 + speed * 0.04
-	var height := 1.7 + speed * 0.008
+	# A bigger thing to follow (the recovery truck and its trailer) is followed from further back.
+	var scale: float = float(target.get_meta("chase_scale", 1.0))
+	var dist := (4.6 + speed * 0.04) * scale
+	var height := (1.7 + speed * 0.008) * sqrt(scale)
 	var radius := sqrt(dist * dist + height * height)
 	var want_heading := atan2(-flat.x, -flat.z) + orbit_yaw
 	var want_elev := clampf(atan2(height, dist) + orbit_pitch, -0.12, 1.35)
@@ -244,11 +262,20 @@ func _helmet(delta := 0.0) -> void:
 	if target is Bike and target.model:
 		var model: BikeModel = target.model
 		global_transform = model.global_transform * model.eye_transform()
+	elif target.has_method("eye_transform"):
+		global_transform = target.global_transform * target.eye_transform()
 	else:
 		global_transform = target.global_transform.translated_local(Vector3(0.0, 1.5, 0.0))
 	if orbiting():
 		# Turning your head inside the helmet.
 		global_basis = global_basis * Basis(Vector3.UP, orbit_yaw) * Basis(Vector3.RIGHT, -orbit_pitch)
+	if target is Bike and target.build != null:
+		# Wind buffeting the helmet at speed: less behind a taller screen (BikeBuild.wind_buffet).
+		var gust := float(target.build.wind_buffet) * clampf((absf(target.speed) - 18.0) / 30.0, 0.0, 1.0)
+		if gust > 0.0:
+			var t := Time.get_ticks_msec() * 0.001
+			var shake := Vector2(sin(t * 23.0) * sin(t * 5.3), sin(t * 19.0 + 1.3) * sin(t * 6.1)) * 0.0035 * gust
+			global_basis = global_basis * Basis(Vector3.RIGHT, shake.x) * Basis(Vector3.FORWARD, shake.y)
 	fov = 80.0 + Graphics.fov_offset()
 
 

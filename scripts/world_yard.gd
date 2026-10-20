@@ -1,6 +1,6 @@
 class_name WorldYard
 extends Node3D
-## The Build Yard in front of the shed, laid out as a test area for the bikes you build:
+## The Build Yard behind the shed, laid out as a test area for the bikes you build:
 ##  - an acceleration lane (two lanes, the "drag strip") from a start line to a chequered
 ##    brake line, then a braking zone marked every 5 m and a run-off,
 ##  - a skid pad circle east of the sales office for steady-state cornering,
@@ -8,28 +8,35 @@ extends Node3D
 ##  - a slow-control area west of the shed: a U-turn box, a figure of eight and a lane of
 ##    speed humps for the suspension,
 ##  - an obstacle corner, and a marked drop-off box where ordered yard kit is left.
+## It's reached from the shed's forecourt on the High Street (see WorldTown) by a lane either
+## side of the buildings (GROUND: the yard, and the forecourt and lanes, all one level slab).
 ## The slab's top is flush with the grass round it (see WorldTerrain.HOME_LEVEL), so there's
-## no kerb at its edge. The loop road runs along its south side past a start gantry.
+## no kerb at its edge. The loop's start gantry stands where the loop passes the town.
 
-const CENTER := Vector2(0.0, 100.0)
+const CENTER := Vector2(0.0, -10.0)
 const HALF := Vector2(65.0, 45.0)
 ## The acceleration lane runs along x from START_X to the brake line at BRAKE_X, then the
 ## braking zone (marked every 5 m) to BRAKE_END, between z LANE_Z.x and LANE_Z.y.
 const START_X := -58.0
 const BRAKE_X := 0.0
 const BRAKE_END := 40.0
-const LANE_Z := Vector2(96.0, 104.0)
-const SKID_PAD := Vector3(50.0, 0.0, 74.0)
+const LANE_Z := Vector2(-14.0, -6.0)
+const SKID_PAD := Vector3(50.0, 0.0, -36.0)
 const SKID_RADIUS := 11.0
-const SLALOM_Z := 112.0
+const SLALOM_Z := 2.0
 const SLALOM_X := [-24.0, -18.0, -12.0, -6.0, 0.0, 6.0]
-const JUMP_Z := 123.0
+const JUMP_Z := 13.0
 const HUMPS_X := [-56.0, -50.0, -44.0, -38.0, -32.0]
-const HUMPS_Z := 91.0
-const UTURN := Rect2(-62.0, 79.0, 38.0, 7.0)
-const FIGURE_EIGHT := [Vector2(-52.0, 66.0), Vector2(-38.0, 66.0)]
+const HUMPS_Z := -19.0
+const UTURN := Rect2(-62.0, -31.0, 38.0, 7.0)
+const FIGURE_EIGHT := [Vector2(-52.0, -44.0), Vector2(-38.0, -44.0)]
 const FIGURE_EIGHT_R := 6.0
-const DROP_OFF := Rect2(-62.0, 105.0, 32.0, 16.0)
+const DROP_OFF := Rect2(-62.0, -5.0, 32.0, 16.0)
+## The level slab, as x/z rectangles: the yard itself, and the forecourt along the front of the
+## buildings out to the High Street's kerb with the lanes either side of them up to the yard.
+const GROUND: Array[Rect2] = [Rect2(-65.0, -55.0, 130.0, 90.0), Rect2(-45.0, 35.0, 90.0, 53.5)]
+## The lanes from the forecourt up to the yard, either side of the buildings (x/z rectangles).
+const LANES: Array[Rect2] = [Rect2(-45.0, 35.0, 12.0, 30.0), Rect2(33.0, 35.0, 12.0, 30.0)]
 
 var _paint := SurfaceTool.new()
 var _labels := []
@@ -47,25 +54,25 @@ static func starting_kit() -> Array:
 	kit.append(["ramp", Transform3D(west, Vector3(-6.0, 0.0, JUMP_Z)), "ramp_landing"])
 	kit.append(["marker", Transform3D(north, Vector3(-1.0, 0.0, JUMP_Z + 2.4)), "flag_chequered"])
 	# Smaller kickers and the tabletop alongside it.
-	kit.append(["ramp", Transform3D(east, Vector3(-22.0, 0.0, 118.5)), "ramp_small"])
-	kit.append(["ramp", Transform3D(east, Vector3(-12.0, 0.0, 118.5)), "ramp_medium"])
-	kit.append(["obstacle", Transform3D(east, Vector3(4.0, 0.0, 118.5)), "tabletop"])
+	kit.append(["ramp", Transform3D(east, Vector3(-22.0, 0.0, 8.5)), "ramp_small"])
+	kit.append(["ramp", Transform3D(east, Vector3(-12.0, 0.0, 8.5)), "ramp_medium"])
+	kit.append(["obstacle", Transform3D(east, Vector3(4.0, 0.0, 8.5)), "tabletop"])
 	# The slalom: flags at the gate, then cones and posts on their painted spots.
 	kit.append(["marker", Transform3D(north, Vector3(-30.0, 0.0, SLALOM_Z - 2.2)), "flag_red"])
 	kit.append(["marker", Transform3D(north, Vector3(-30.0, 0.0, SLALOM_Z + 2.2)), "flag_blue"])
 	for i in SLALOM_X.size():
 		kit.append(["marker", Transform3D(north, Vector3(SLALOM_X[i], 0.0, SLALOM_Z)), "cone" if i % 3 != 2 else "post"])
 	# The obstacle corner: things to ride round and over, and walls and fences.
-	kit.append(["obstacle", Transform3D(north, Vector3(44.0, 0.0, 110.0)), "barrels"])
-	kit.append(["obstacle", Transform3D(north, Vector3(49.0, 0.0, 110.0)), "log"])
-	kit.append(["obstacle", Transform3D(north, Vector3(54.0, 0.0, 110.0)), "hay_bales"])
-	kit.append(["obstacle", Transform3D(north, Vector3(59.0, 0.0, 110.0)), "tyre_stack"])
-	kit.append(["obstacle", Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(58.0, 0.0, 117.0)), "car_wreck"])
-	kit.append(["barrier", Transform3D(north, Vector3(43.0, 0.0, 124.0)), "wall_concrete"])
-	kit.append(["barrier", Transform3D(north, Vector3(45.2, 0.0, 124.0)), "wall_concrete"])
-	kit.append(["barrier", Transform3D(north, Vector3(49.0, 0.0, 124.0)), "wall_brick"])
-	kit.append(["barrier", Transform3D(north, Vector3(53.0, 0.0, 124.0)), "fence_wood"])
-	kit.append(["barrier", Transform3D(north, Vector3(57.5, 0.0, 124.0)), "fence_mesh"])
+	kit.append(["obstacle", Transform3D(north, Vector3(44.0, 0.0, 0.0)), "barrels"])
+	kit.append(["obstacle", Transform3D(north, Vector3(49.0, 0.0, 0.0)), "log"])
+	kit.append(["obstacle", Transform3D(north, Vector3(54.0, 0.0, 0.0)), "hay_bales"])
+	kit.append(["obstacle", Transform3D(north, Vector3(59.0, 0.0, 0.0)), "tyre_stack"])
+	kit.append(["obstacle", Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(58.0, 0.0, 7.0)), "car_wreck"])
+	kit.append(["barrier", Transform3D(north, Vector3(43.0, 0.0, 14.0)), "wall_concrete"])
+	kit.append(["barrier", Transform3D(north, Vector3(45.2, 0.0, 14.0)), "wall_concrete"])
+	kit.append(["barrier", Transform3D(north, Vector3(49.0, 0.0, 14.0)), "wall_brick"])
+	kit.append(["barrier", Transform3D(north, Vector3(53.0, 0.0, 14.0)), "fence_wood"])
+	kit.append(["barrier", Transform3D(north, Vector3(57.5, 0.0, 14.0)), "fence_mesh"])
 	return kit
 
 
@@ -102,22 +109,24 @@ func _build_slab(world: World) -> void:
 	concrete.albedo_texture = world._noise_texture(0.15, Color(0.82, 0.82, 0.82), Color(1.08, 1.08, 1.08))
 	concrete.uv1_scale = Vector3(12.0, 12.0, 12.0)
 	world._wet(concrete, 0.8)
-	var body := StaticBody3D.new()
-	body.name = "Slab"
-	body.set_meta("surface", "tarmac")
-	body.position = Vector3(CENTER.x, -0.25, CENTER.y)
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(HALF.x * 2.0, 0.5, HALF.y * 2.0)
-	var cs := CollisionShape3D.new()
-	cs.shape = shape
-	body.add_child(cs)
-	var mesh := BoxMesh.new()
-	mesh.size = shape.size
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.material_override = concrete
-	body.add_child(mi)
-	add_child(body)
+	for k in GROUND.size():
+		var r: Rect2 = GROUND[k]
+		var body := StaticBody3D.new()
+		body.name = "Slab" if k == 0 else "Forecourt"
+		body.set_meta("surface", "tarmac")
+		body.position = Vector3(r.get_center().x, -0.25, r.get_center().y)
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(r.size.x, 0.5, r.size.y)
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		body.add_child(cs)
+		var mesh := BoxMesh.new()
+		mesh.size = shape.size
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.material_override = concrete
+		body.add_child(mi)
+		add_child(body)
 
 
 # ---------------------------------------------------------------------------- paint
@@ -258,11 +267,11 @@ func _mark_slalom_and_jumps() -> void:
 		_spot(x, SLALOM_Z, 0.35, AMBER)
 	_words("SLALOM", Vector3(-27.0, 0.0, SLALOM_Z + 4.4), 140, WHITE, -PI * 0.5)
 	# The jump area: a box round the jump line, and arrows for the way to ride it.
-	_outline(Rect2(-28.0, 115.5, 42.0, 11.0), 0.2, YELLOW)
-	for z in [JUMP_Z, 118.5]:
+	_outline(Rect2(-28.0, JUMP_Z - 7.5, 42.0, 11.0), 0.2, YELLOW)
+	for z in [JUMP_Z, JUMP_Z - 4.5]:
 		for k in 3:
 			_rect(-34.0 + k * 1.5, z, 1.0, 0.25, WHITE, 0.0)
-	_words("JUMPS", Vector3(-25.5, 0.0, 125.3), 120, YELLOW, -PI * 0.5)
+	_words("JUMPS", Vector3(-25.5, 0.0, JUMP_Z + 2.3), 120, YELLOW, -PI * 0.5)
 
 
 func _mark_slow_area() -> void:
@@ -273,7 +282,7 @@ func _mark_slow_area() -> void:
 	for c in FIGURE_EIGHT:
 		_ring(Vector3(c.x, 0.0, c.y), FIGURE_EIGHT_R, 0.18, BLUE)
 		_spot(c.x, c.y, 0.35, AMBER)
-	_words("FIGURE OF EIGHT", Vector3(-45.0, 0.0, 74.0), 110, WHITE)
+	_words("FIGURE OF EIGHT", Vector3(-45.0, 0.0, FIGURE_EIGHT[0].y + 8.0), 110, WHITE)
 	# The hump lane.
 	_outline(Rect2(HUMPS_X[0] - 6.0, HUMPS_Z - 1.8, HUMPS_X[HUMPS_X.size() - 1] - HUMPS_X[0] + 12.0, 3.6), 0.15, WHITE)
 	_words("SPEED HUMPS", Vector3(HUMPS_X[0] - 2.0, 0.0, HUMPS_Z + 3.0), 110, WHITE)

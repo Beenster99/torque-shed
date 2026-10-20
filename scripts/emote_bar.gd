@@ -25,7 +25,7 @@ func _ready() -> void:
 	for i in Emotes.LIST.size():
 		var e: String = Emotes.LIST[i]
 		_row.add_child(UITheme.label("%d  %s" % [i + 1, Emotes.NAMES[e]], 16, Color.WHITE))
-	_row.add_child(UITheme.label("%s: close" % Walker._keys("emote_menu"), 14, Color(1, 1, 1, 0.55)))
+	_row.add_child(UITheme.label("{emote_menu}: close", 14, Color(1, 1, 1, 0.55)))
 	for c in _row.get_children():
 		(c as Label).autowrap_mode = TextServer.AUTOWRAP_OFF   # one line each, the bar sizes to fit
 	visible = false

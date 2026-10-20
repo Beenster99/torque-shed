@@ -69,7 +69,7 @@ const OPENERS := ["Lovely bike. Would you take %s?", "I've had my eye on this on
 ## A new shed's sales: nothing listed, nobody interested yet.
 static func empty() -> Dictionary:
 	return {"clock": 0.0, "next": 1, "listings": {}, "offers": {}, "px": {}, "next_px_at": PX_FIRST, "deals": [], "news": [],
-		"collect": [], "alerts": 0, "earned": 0}
+		"collect": [], "alerts": 0, "earned": 0, "browse": {}}
 
 
 ## Saved or synced sales made safe to use: anything missing (sheds from before selling from
@@ -192,7 +192,7 @@ static func appraise(bike_id: int, margin := -1.0) -> Dictionary:
 	var sunk := bought + parts_cost + labour
 	var complete := Shed.is_complete(bike_id)
 	var rideable := Money.rideable(bike_id)
-	var bonus := 1.0 + (Money.BONUS_COMPLETE if complete else 0.0) + (Money.BONUS_RIDEABLE if rideable else 0.0)
+	var bonus := 1.0 + (Money.BONUS_COMPLETE if complete else 0.0) + (Money.BONUS_RIDEABLE if rideable else 0.0) + Money.clean_bonus(bike_id)
 	var retail := worth * bonus
 	var uq := uniqueness(bike_id)
 	var premium := float(uq["score"]) * UNIQUE_PREMIUM
@@ -447,13 +447,20 @@ static func advance(hours: float) -> void:
 			_news("%s's offer on %s lapsed." % [o["buyer"], o["bike_name"]])
 			offers().erase(id)
 			changed = true
-	# New buyers for each bike on show at a price.
+	# Buyers done looking round the showroom make their offers.
+	if SalesBrowse.advance(now):
+		changed = true
+	# New buyers for each bike on show at a price: in for a look round first (SalesBrowse), or
+	# over a long jump of the clock, straight to an offer.
 	for b in listings().keys():
-		if not active(int(b)) or offers().size() >= MAX_OFFERS or _offers_on(int(b)) >= MAX_OFFERS_PER_BIKE:
+		if not active(int(b)) or offers().size() + SalesBrowse.browsers().size() >= MAX_OFFERS or _offers_on(int(b)) >= MAX_OFFERS_PER_BIKE:
 			continue
 		var rate := interest(int(b))
 		if rng.randf() < 1.0 - exp(-rate * maxf(hours, 0.0) / DAY):
-			make_offer(int(b))
+			if hours < SalesBrowse.BROWSE_STEP and SalesBrowse.browsers().size() < SalesBrowse.MAX_BROWSE:
+				SalesBrowse.spawn(int(b), _person(rng), rng)
+			else:
+				make_offer(int(b))
 			changed = true
 	# Part-exchange buyers.
 	for id in px().keys():
@@ -478,7 +485,7 @@ static func advance(hours: float) -> void:
 
 
 static func _offers_on(bike_id: int) -> int:
-	return offers().values().filter(func(o): return int(o["bike"]) == bike_id).size()
+	return offers().values().filter(func(o): return int(o["bike"]) == bike_id).size() + SalesBrowse.on(bike_id)
 
 
 static func _active_listings() -> Array:
@@ -500,7 +507,7 @@ static func _person(rng: RandomNumberGenerator) -> Dictionary:
 ## A buyer makes an offer on a listed bike (host only). What they'd pay at most (`max`, hidden)
 ## is round the fair price; their opening offer is under it, and never over the asking price.
 ## Returns the offer's id.
-static func make_offer(bike_id: int) -> int:
+static func make_offer(bike_id: int, person := {}) -> int:
 	var s := _st()
 	var rng: RandomNumberGenerator = Shed._rng
 	var ap := appraise(bike_id)
@@ -515,7 +522,7 @@ static func make_offer(bike_id: int) -> int:
 		top = roundi(value)
 		opening = _nice(value * rng.randf_range(0.82, 0.93))
 	opening = clampi(opening, 1, ask)
-	var who := _person(rng)
+	var who := person if not person.is_empty() else _person(rng)
 	var id := int(s["next"])
 	s["next"] = id + 1
 	var line := str(OPENERS[rng.randi() % OPENERS.size()]) % money(opening)

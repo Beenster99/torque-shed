@@ -93,7 +93,7 @@ func _ready() -> void:
 	stock.pressed.connect(_reset_all)
 	head.add_child(stock)
 	var close := Button.new()
-	close.text = "Close (Esc)"
+	Controls.bind_text(close, "Close ({back})")
 	close.pressed.connect(close_computer)
 	head.add_child(close)
 	root.add_child(head)
@@ -165,7 +165,7 @@ func _ready() -> void:
 	bar.add_child(_status)
 	right.add_child(bar)
 
-	Shed.feedback.connect(func(text, _ok): if visible: _status.text = text)
+	Shed.feedback.connect(func(text, _ok): if visible: _status.text = Controls.hint(text))
 	Shed.changed.connect(func(): if visible: refresh())
 
 
@@ -352,7 +352,7 @@ func _refresh() -> void:
 	_summary.text = "Now: %.1f hp  ·  %.0f Nm  ·  top %s  ·  %s  ·  %s\nEngine wear x%.1f  ·  0-100 %s%s" % [
 		float(s["hp"]), float(s["torque"]), Units.kmh(float(s["top_kmh"])), Units.mass(build.bike_mass),
 		Units.economy(float(s["economy"])), build.engine_stress, "%.2f s" % build.zero_to_100() if build.zero_to_100() > 0.0 else "--",
-		("\n" + "\n".join(build.notes.slice(0, 3))) if not build.notes.is_empty() else ""]
+		Controls.hint("\n" + "\n".join(build.notes.slice(0, 3))) if not build.notes.is_empty() else ""]
 	_summary.text += dyno_reader_text(build, Progress.skill_rank(Shed.me(), "dyno_reader"))
 	_update_graph()
 
@@ -544,7 +544,7 @@ func _update_ride() -> void:
 		+ "bar torque (what the rider pushed through the bars), steering shake, the trail as it changed, each tyre's "
 		+ "slip ratio and slip angle, how much of its grip it used (1 is the limit: above it the tyre slides), "
 		+ "the loads on the tyres, the throttle and brakes, the gear and the revs. Front tyre blue, rear orange. "
-		+ "F3 shows the same live at the side of the screen while you ride.") % [
+		+ Controls.hint("{telemetry} shows the same live at the side of the screen while you ride.")) % [
 		tel.bike_name if tel.bike_name != "" else "Last ride", int(s["duration"]) / 60, int(s["duration"]) % 60,
 		Units.kmh(float(s["top_kmh"])), s["max_lean"], s["max_brake_g"], s["max_lat_g"], s["front_over"], s["rear_over"],
 		s["max_wobble"], " (a tank-slapper: a steering damper calms it)" if float(s["max_wobble"]) > 4.0 else ""]

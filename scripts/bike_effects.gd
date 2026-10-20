@@ -4,7 +4,7 @@ extends Node3D
 ## headlight beam, for a ridden bike and for other players' bikes. Lives on the bike body; feed
 ## it with update() every frame (and set_tyre_smoke() while the back tyre is spinning or locked).
 
-const DUSTY := {"dirt": 1.0, "grass": 0.45}
+const DUSTY := {"dirt": 1.0, "grass": 0.45, "gravel": 0.8, "sand": 1.15, "snow": 0.7}
 ## Alpha over a puff's life, as [offset, alpha] pairs: fade in fast, linger, thin out.
 const SMOKE_PROFILE := [[0.0, 0.0], [0.07, 1.0], [0.45, 0.55], [1.0, 0.0]]
 const DUST_PROFILE := [[0.0, 0.0], [0.06, 1.0], [0.3, 0.75], [0.7, 0.3], [1.0, 0.0]]
@@ -29,10 +29,22 @@ const MOTES := 36
 ## the wide soft flood lights the air, so what shows is a faint haze, not a shaft with edges.
 const BEAM_FOG_LOW := 1.6
 const BEAM_FOG_HIGH := 2.6
-## The flood: how much wider than the core, how bright next to it and how far it reaches.
-const FLOOD_WIDER := 18.0
-const FLOOD_SHARE := 0.3
-const FLOOD_REACH := 0.65
+## The flood: how much wider than the core, how bright next to it, how far it reaches (as a share
+## of the core's reach) and how much lower it's aimed, onto the near road and the verges. It used
+## to stop at two thirds of the core's reach, which drew an arc of darkness across the road about
+## 20 m ahead: now it fades out with distance long before its end, so it has no edge to show.
+const FLOOD_WIDER := 26.0
+const FLOOD_SHARE := 0.35
+const FLOOD_REACH := 0.9
+const FLOOD_DIP := 4.0
+## How the core and the flood fade with distance (SpotLight3D.spot_attenuation): a real lamp's
+## hot spot is aimed far up the road, so a slower fade than a bare bulb's keeps the road lit
+## well ahead without the near road glaring.
+const CORE_DECAY := 0.55
+const FLOOD_DECAY := 1.0
+## The headlight's reach (m) on dipped and main beam: a base plus so much per lumen.
+const LOW_REACH := [70.0, 1.0 / 30.0]
+const HIGH_REACH := [150.0, 1.0 / 15.0]
 ## Cone falloff (SpotLight3D.spot_angle_attenuation): below 1 the light fades from the middle
 ## outwards, so there is next to nothing left at the cone's edge to show as a line.
 const CORE_FALLOFF := 0.7
@@ -46,6 +58,7 @@ var _screech: AudioStreamPlayer3D
 var _probe_timer := 0.0
 var _wind_time := randf() * 100.0
 var _tyre_level := 0.0
+var _mark_keys: Array = []    # the skid marks' names for this bike's two tyres (made once)
 
 
 ## `exhaust` is the tailpipe tip and `rear_contact` where the back tyre meets the ground, both
@@ -104,25 +117,26 @@ func setup(exhaust: Vector3, rear_contact: Vector3, lamp: Vector3, lumens: float
 		_beam = SpotLight3D.new()
 		_beam.position = lamp + Vector3(0.0, 0.0, -0.08)
 		_beam.rotation.x = deg_to_rad(-4.0)
-		_beam.spot_range = 18.0 + lumens / 100.0
-		_beam.spot_angle = 24.0
+		_beam.spot_range = LOW_REACH[0] + lumens * LOW_REACH[1]
+		_beam.spot_angle = 30.0
+		_beam.spot_attenuation = CORE_DECAY
 		_beam.light_energy = lumens / 300.0
 		_beam.set_meta("day_energy", _beam.light_energy)
 		_beam.set_meta("lumens", lumens)
 		_beam.light_color = Color(1.0, 0.92, 0.78) if lumens < 2000.0 else Color(0.92, 0.96, 1.0)
 		_beam.shadow_enabled = false
+		# The cone's own falloff fades the pool on the road to nothing at its edge, so there is no
+		# ring. (No projector: its blurred spot was already under half strength two thirds of the
+		# way out, so the lit pool was much narrower than the cone.)
 		_beam.spot_angle_attenuation = CORE_FALLOFF
-		# A blurred round projector (Forward+): the pool of light on the road fades out smoothly
-		# to nothing before the cone's edge, so there is no ring.
-		_beam.light_projector = soft_spot_texture()
 		add_child(_beam)
 		_flood = SpotLight3D.new()
 		_flood.name = "Flood"
 		_flood.light_color = _beam.light_color
 		_flood.shadow_enabled = false
 		_flood.spot_angle_attenuation = FLOOD_FALLOFF
-		_flood.spot_attenuation = 1.3     # fades with distance faster than the core: no long tube
-		_flood.light_projector = soft_spot_texture()
+		_flood.spot_attenuation = FLOOD_DECAY   # fades with distance faster than the core: no long tube
+		_flood.rotation.x = deg_to_rad(-FLOOD_DIP)
 		_flood.light_specular = 0.2
 		_beam.add_child(_flood)
 		_lamp_glow = OmniLight3D.new()
@@ -130,6 +144,7 @@ func setup(exhaust: Vector3, rear_contact: Vector3, lamp: Vector3, lumens: float
 		_lamp_glow.omni_range = 0.8
 		_lamp_glow.light_energy = 0.4
 		_lamp_glow.light_color = _beam.light_color
+		_lamp_glow.light_volumetric_fog_energy = 0.0   # right at the lens: it would light the air as a white ball
 		add_child(_lamp_glow)
 		# Light in the night air: the beam lights the volumetric fog (Forward+), soft and diffuse
 		# rather than a shape; a faint stand-in glow only where there's no volumetric fog.
@@ -440,6 +455,12 @@ func _variety(lo: float, hi: float) -> Gradient:
 
 ## A gentle breeze that wanders, so smoke and dust drift instead of rising in a straight column.
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("bike_fx", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _smoke == null and _tyre == null:
 		return
 	_wind_time += delta
@@ -475,7 +496,8 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 	var kick := clampf((absf(speed) - 2.0) / 12.0, 0.0, 1.0) + slip
 	_dust.emitting = rear_contact and dusty > 0.0 and kick > 0.05
 	if _dust.emitting:
-		_tint(_dust.color_ramp, DUST_PROFILE, Color(0.62, 0.5, 0.36) if surface == "dirt" else Color(0.55, 0.5, 0.38),
+		var dust_col: Color = AdventureSurface.DUST_COLOR.get(surface, Color(0.62, 0.5, 0.36) if surface == "dirt" else Color(0.55, 0.5, 0.38))
+		_tint(_dust.color_ramp, DUST_PROFILE, dust_col,
 			clampf(0.25 + 0.5 * kick, 0.0, 0.8) * dusty)
 		_dust.initial_velocity_max = 1.5 + 3.0 * kick
 	_grit.emitting = _dust.emitting and kick * dusty > 0.35
@@ -485,10 +507,12 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 		var night := World.darkness()
 		var high := beam_mode >= 2
 		var lumens: float = _beam.get_meta("lumens")
-		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night) * (3.0 if high else 1.2)
-		_beam.spot_angle = 17.0 if high else lerpf(26.0, 32.0, night)
-		_beam.spot_range = (55.0 + lumens / 40.0) if high else (24.0 + lumens / 100.0)
-		_beam.rotation.x = deg_to_rad(-1.2 if high else -5.0)
+		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night) * (3.0 if high else 1.4)
+		_beam.spot_angle = 20.0 if high else lerpf(30.0, 36.0, night)
+		var reach: Array = HIGH_REACH if high else LOW_REACH
+		_beam.spot_range = float(reach[0]) + lumens * float(reach[1])
+		# Dipped, the hot spot lands some 30 m up the road; main beam goes out to the horizon.
+		_beam.rotation.x = deg_to_rad(-0.6 if high else -1.8)
 		_lamp_glow.visible = engine_on and beam_mode > 0
 		_lamp_glow.light_energy = 0.9 if high else 0.5
 		# The core lights only the road; the flood, wide, dim and fading from its middle, fills
@@ -496,8 +520,9 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 		# lamp's power, a little more on high beam, nothing by day.
 		_beam.light_volumetric_fog_energy = 0.0
 		_flood.light_energy = _beam.light_energy * FLOOD_SHARE
-		_flood.spot_angle = minf(_beam.spot_angle + FLOOD_WIDER, 60.0)
-		_flood.spot_range = minf(_beam.spot_range * FLOOD_REACH, 45.0)
+		# Wide enough to light the hedges, walls, trees and signs either side.
+		_flood.spot_angle = minf(_beam.spot_angle + FLOOD_WIDER, 62.0)
+		_flood.spot_range = _beam.spot_range * FLOOD_REACH
 		_flood.light_volumetric_fog_energy = night * (BEAM_FOG_HIGH if high else BEAM_FOG_LOW) / maxf(_flood.light_energy, 1.0)
 		if _cone == null and not volumetric_beams() and night > 0.2:
 			# Volumetric fog switched off while riding: the stand-in glow takes over.
@@ -561,18 +586,26 @@ func _probe_surface() -> String:
 	return "grass" if hit else "tarmac"
 
 
-## Tyre screech and rubber on the road while the ridden bike's tyres skid.
+## Tyre screech and rubber on the road while the ridden bike's tyres skid, and a dark patch
+## smeared where the back tyre spins on the spot in a burnout.
 func update_skids(bike: Bike) -> void:
 	var marks := SkidMarks.shared(get_tree())
 	var loudest := 0.0
+	if _mark_keys.is_empty():
+		_mark_keys = ["%d_0" % bike.get_instance_id(), "%d_1" % bike.get_instance_id()]
 	for i in bike.wheels.size():
 		var w: Dictionary = bike.wheels[i]
 		var hard := 0.0
-		if w["contact"] and absf(bike.speed) > 2.0 and w["surface"] in ["tarmac", "dirt"]:
+		if w["contact"] and absf(bike.speed) > 2.0 and SkidMarks.RUBBER.has(w["surface"]):
 			hard = clampf((float(w["slip"]) - Bike.SKID_SLIP) / 0.5, 0.0, 1.0)
 		var width: float = bike.build.front_tyre_width if w["is_front"] else bike.build.rear_tyre_width
-		marks.mark("%d_%d" % [bike.get_instance_id(), i], w.get("contact_pos", Vector3.ZERO), w.get("normal", Vector3.UP),
-			width, hard, str(w["surface"]))
+		var key: String = _mark_keys[mini(i, 1)]
+		if not w["is_front"] and bike.burnout > 0.05 and w["contact"]:
+			# Lit up: the spinning tyre smears rubber where it sits.
+			marks.scrub(key, w.get("contact_pos", Vector3.ZERO), w.get("normal", Vector3.UP), -bike.global_basis.z,
+				width, maxf(bike.burnout, hard), str(w["surface"]), bike.get_physics_process_delta_time())
+		else:
+			marks.mark(key, w.get("contact_pos", Vector3.ZERO), w.get("normal", Vector3.UP), width, hard, str(w["surface"]))
 		if w["surface"] == "tarmac":
 			loudest = maxf(loudest, hard)
 			# Lighting the back tyre up on the spot squeals too.

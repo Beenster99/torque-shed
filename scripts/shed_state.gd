@@ -26,6 +26,12 @@ const DELIVERY_FLOOR := Rect2(3.0, 72.6, 7.6, 3.0)
 const DELIVERY_RACK := "shelf_delivery"
 const DELIVERY_RACK_XFS: Array[Transform3D] = [Transform3D(Basis(Vector3.UP, PI), Vector3(4.9, 0.0, 77.05)),
 	Transform3D(Basis(Vector3.UP, PI), Vector3(8.7, 0.0, 77.05))]
+## The staff's own parts rack, fixed against the storage room's east wall just inside its door
+## (a board each for the mechanics, the expert, the paint expert and the detailer), and the
+## parts trolley the expert mechanics fetch with, parked in front of it.
+const STAFF_RACK := "shelf_staff"
+const STAFF_RACK_XF := Transform3D(Basis(Vector3.UP, -PI * 0.5), Vector3(-7.11, 0.0, 58.3))
+const STAFF_TROLLEY_XF := Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(-9.0, 0.0, 59.3))
 const DELIVERY_GAP := 0.04      # left between boxes
 const DELIVERY_STACK := 1.3     # how high boxes are stacked on the floor, at most
 const PACK_CELL := 0.05         # the grid boxes are packed on
@@ -55,7 +61,8 @@ const DIRT_EXPOSURE := {"front_tyre": 1.0, "rear_tyre": 1.0, "front_wheel": 0.9,
 	"tank": 0.25, "saddle": 0.25, "headlight": 0.5, "handlebars": 0.15, "dashboard": 0.1, "front_master": 0.15,
 	"horn": 0.6, "ecu": 0.2, "panniers": 0.6, "top_box": 0.3, "fog_lights": 0.6,
 	"tail": 0.9, "fairing": 0.4, "mirrors": 0.2, "front_mudguard": 1.0, "indicators": 0.4, "side_panels": 0.4,
-	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8, "steering_damper": 0.2}
+	"rearsets": 0.7, "guards": 0.9, "number_boards": 0.5, "swingarm": 0.8, "steering_damper": 0.2,
+	"tank_bag": 0.3, "aux_tank": 0.6, "toolbox": 0.7, "satnav": 0.15}
 ## Parts in the front wheel's spray. With no front mudguard they get this much more road dirt;
 ## a guard takes it back down by how much spray it stops (its "cover").
 const FRONT_SPRAY: Array[String] = ["fork", "engine", "cooling", "exhaust", "headlight", "horn", "fog_lights",
@@ -75,7 +82,7 @@ const TUNE_HOME := {"map": ["bike", "map"], "ignition": ["bike", "ignition"], "l
 	"r_preload": ["shock", "preload"], "r_bump": ["shock", "bump"], "r_rebound": ["shock", "rebound"],
 	"psi_f": ["front_tyre", "pressure"], "psi_r": ["rear_tyre", "pressure"],
 	"sprocket_f": ["final_drive", "front"], "sprocket_r": ["final_drive", "rear"], "spread": ["gearbox", "spread"],
-	"chain": ["chain", "slack"], "damper": ["steering_damper", "clicks"]}
+	"chain": ["chain", "slack"], "damper": ["steering_damper", "clicks"], "screen": ["fairing", "screen"]}
 const LIGHTEN_WEAR := 0.08     # condition a part gives up to being drilled and trimmed
 const TYRE_WEAR := 0.0002      # tyre wear per km at the right pressure
 const BURNOUT_WEAR := 0.004    # back tyre wear per second of full burnout
@@ -118,14 +125,26 @@ const MAX_GARAGE_MONEY := 100000000
 ## Everything else about the business's money: wage cut, owner, ledger, loans (see Money.defaults).
 var bank := Money.defaults()
 var _clock_hours := -1.0       # host: the clock last frame, to see midnight pass
+var bills_heard := 0           # how many nightly bills this machine has heard come out (for tests)
 ## Customers at reception and the jobs taken on for them (see Contracts).
 var contracts := {}
 ## Bikes for sale on the showroom stands, buyers' offers and part-exchanges (see Sales).
 var sales := {}
 ## The coffee shop next door: its bikers and the trays out (see CoffeeShop).
 var coffee := {}
+## The garage's own staff, their jobs and the hiring board (see Staff).
+var staff := Staff.empty()
 ## The paint mixing bay off the paint shop: its stock, tins, recipes and bench (see PaintBay).
 var paint_bay := {}
+## The recovery truck and trailer, what's on it, and the barn find and crash rescue jobs (see Recovery).
+var recovery := {}
+## The pool table in the crew lounge: the balls, who's playing and whose shot (see PoolGame).
+var pool := PoolGame.empty()
+## The adventure ride the crew is out on, or {} (see Adventure).
+var adventure := {}
+## An adventure put away by a night's sleep, to be carried on another day, or {} (see
+## AdventureNeeds.make_save). Kept in the save, unlike the adventure itself.
+var adventure_save := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -157,6 +176,11 @@ var blueprints := {}
 ## moves onto that bike as its "blueprint", and goes when the bike is built.
 var holograms := {}
 const MAX_BLUEPRINTS := 40
+## Parts bought with "Order one of these" (see BikeCopy) that didn't fit in the delivery area
+## yet, oldest first: [{part, color, finish, paid, by}]. Already paid for; each is boxed up
+## outside the roller door as soon as there's room for it.
+var on_order := []
+var _on_order_timer := 0.0
 
 ## Whether a new shed opens with the old demo bikes (for the tests and screenshot tools; a
 ## player's new shed starts empty).
@@ -213,6 +237,11 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
 	paint_bay = PaintBay.empty()
+	recovery = Recovery.empty()
+	pool = PoolGame.empty()
+	staff = Staff.empty()
+	adventure = {}
+	adventure_save = {}
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -222,6 +251,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	screens = {}
 	blueprints = {}
 	holograms = {}
+	on_order = []
 	dyno = dyno_defaults()
 	_dyno_busy_until = 0
 	items.clear()
@@ -314,6 +344,8 @@ func load_state(state: Dictionary, player_name: String) -> void:
 			saved_bikes[id]["pusher"] = 0
 			was_moving.append(id)
 	_sync(state)
+	adventure = {}   # nobody is out on an adventure in a save just opened
+	Roadside.bring_home()   # and nobody's bike is left at an adventure's roadside (see Roadside)
 	for id in was_moving:
 		_park(id)
 	for id in items:
@@ -332,6 +364,10 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	CoffeeShop.after_load()
 	# Nor at the mixing bench or holding a tin: tins go back on the shelf.
 	PaintBay.after_load()
+	# Nor driving the recovery truck, or halfway up its ramp.
+	Recovery.after_load()
+	# The staff start the day at their own spots, any job in hand picked up again from there.
+	Staff.after_load()
 	# Nobody is holding the hose or wearing the ear defenders in a new session.
 	if dyno["hose"] == "held":
 		dyno["hose"] = "hook"
@@ -357,9 +393,26 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	_next_id = maxi(_next_id, top + 1)
 	_rng.seed = int(Time.get_unix_time_from_system())
 	_add_new_slots()
+	if int(state.get("kit_v", 0)) < KIT_SAVE:
+		_brim_old_tanks()
 	ensure_fixtures()
 	_mark_dirty()
 	changed.emit()
+
+
+## Saves from before the pumps (and the adventure kit) come back with every bike's tanks full,
+## so nobody loads in stranded: what was in there stays (and as old as it was), topped up.
+func _brim_old_tanks() -> void:
+	for id in bikes:
+		for slot in ["tank", "aux_tank"]:
+			var tank := item_on(id, slot)
+			if tank == 0:
+				continue
+			var f: Dictionary = items[tank].get("fluid", {"type": "", "litres": 0.0, "age": 0.0})
+			if str(f.get("type", "")) == "":
+				f["type"] = "unleaded_95"
+			f["litres"] = PartsDB.fluid_capacity(str(items[tank]["part"]))
+			items[tank]["fluid"] = f
 
 
 ## Sheds saved before tail units, fairings and mirrors: every bike gets the tail unit that suits
@@ -371,7 +424,7 @@ func _add_new_slots() -> void:
 		var original: Dictionary = bike.get("original", {})
 		if not original.has("tail"):
 			original["tail"] = PartsDB.fitting_tail(PartsDB.sanitize_build(original.duplicate()))
-		for slot in ["fairing", "mirrors"] + Array(PartsDB.FILLER_SLOTS):
+		for slot in ["fairing", "mirrors"] + Array(PartsDB.FILLER_SLOTS) + Array(PartsDB.KIT_SLOTS):
 			if not original.has(slot):
 				original[slot] = "none"
 			if not bike["slots"].has(slot):
@@ -434,12 +487,16 @@ static func _guard_color(part: String, paint):
 
 
 func join_remote() -> void:
+	adventure = {}
 	garage_money = 0
 	bank = Money.defaults()
 	contracts = Contracts.empty()
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
 	paint_bay = PaintBay.empty()
+	recovery = Recovery.empty()
+	pool = PoolGame.empty()
+	staff = Staff.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -452,6 +509,7 @@ func join_remote() -> void:
 	screens = {}
 	blueprints = {}
 	holograms = {}
+	on_order = []
 	dyno = dyno_defaults()
 	_dyno_busy_until = 0
 	items.clear()
@@ -460,6 +518,8 @@ func join_remote() -> void:
 
 
 func stop() -> void:
+	adventure = {}
+	adventure_save = {}
 	garage_money = 0
 	bank = Money.defaults()
 	_clock_hours = -1.0
@@ -467,6 +527,9 @@ func stop() -> void:
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
 	paint_bay = PaintBay.empty()
+	recovery = Recovery.empty()
+	pool = PoolGame.empty()
+	staff = Staff.empty()
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -479,6 +542,7 @@ func stop() -> void:
 	screens = {}
 	blueprints = {}
 	holograms = {}
+	on_order = []
 	dyno = dyno_defaults()
 	_dyno_busy_until = 0
 	active = false
@@ -604,6 +668,9 @@ func is_complete(bike_id: int) -> bool:
 func condition_of(item: Dictionary) -> Dictionary:
 	var cond := {"rust": item["rust"], "dirt": item["dirt"], "wear": item["wear"], "color": item["color"],
 		"finish": item.get("finish", "")}
+	# Where the dirt is on it, region by region (see Dirt).
+	if item.get("grime") is PackedByteArray:
+		cond["grime"] = item["grime"]
 	if item.has("fluid"):
 		cond["fluid"] = item["fluid"]
 	if item.has("slack"):
@@ -615,12 +682,23 @@ func condition_of(item: Dictionary) -> Dictionary:
 			cond["lighten_extra"] = float(item["lighten_extra"])
 	if item.has("bead"):
 		cond["bead"] = item["bead"]
+	# A punctured tyre, and the air it has lost (see Puncture).
+	if Puncture.punctured(item):
+		cond["puncture"] = Puncture.rate(item)
+	if Puncture.lost(item) > 0.0:
+		cond["deflate"] = Puncture.lost(item)
+	# A manufacturer prototype's built-in quirk (see ContractTestRide).
+	if item.get("proto") is Dictionary:
+		cond["proto"] = item["proto"]
 	# Sandblasted bare metal (where, and whether all over) and any protective coat, for drawing it.
 	if item.get("blast") is Dictionary:
 		cond["blast"] = item["blast"]
 		cond["blast_full"] = blast_full(item)
 	if item.has("coat"):
 		cond["coat"] = str(item["coat"])
+	# A detailed panel's gloss, burns and ceramic coat, region by region (see Detail).
+	if item.get("shine") is Dictionary:
+		cond["shine"] = item["shine"]
 	if item.get("primer_top", false):
 		cond["primer"] = true
 	# Paint mixed in the mixing bay: its effect, a masked stripe or fade, tape still on, the
@@ -632,6 +710,9 @@ func condition_of(item: Dictionary) -> Dictionary:
 		cond["flat"] = float(item["flat"])
 	if item.get("mix") is Dictionary:
 		cond["paint_q"] = float(item.get("paint_quality", 1.0))
+	# What's packed in a toolbox (see PartsDB.TOOLBOX_CONTENTS).
+	if item.get("contents") is Array:
+		cond["contents"] = item["contents"]
 	return cond
 
 
@@ -963,7 +1044,7 @@ func _blast_apply(peer: int, action: Dictionary) -> String:
 				for id in _blast_parts(engine):
 					base[id] = _blast_base_of(id)
 				c["blast_base"] = base
-				return "Hands in the gloves. Turn the engine with W A S D (or hold right mouse), blast with left mouse, X to scan it. F to step back."
+				return "Hands in the gloves. Turn the engine with {move} (or hold {work2}), blast with {work}, {blast_scan} to scan it. {interact} to step back."
 			c["blaster"] = 0
 			c["blast_fire"] = false
 			c["blast_scan"] = false
@@ -1333,6 +1414,11 @@ func condition_text(item: Dictionary) -> String:
 		roundi(item["dirt"] * 100.0), roundi(item["wear"] * 100.0), paint_text(item)]
 	if item.has("slack"):
 		text += "\n" + chain_text(item)
+	match str(item.get("kind", "")):
+		"disc":
+			text += "\n%.1f mm thick (MOT min %.1f mm)" % [MotTest.disc_mm(item), MotTest.DISC_MIN]
+		"pads":
+			text += "\n%.1f mm of pad left (MOT min %.1f mm)" % [MotTest.pad_mm(item), MotTest.PAD_MIN]
 	if item.has("paint_quality"):
 		text += "\n" + finish_text(item)
 	elif item.get("primer_top", false):
@@ -1344,6 +1430,13 @@ func condition_text(item: Dictionary) -> String:
 		text += "\n" + coat_text(item)
 	if item.has("bead"):
 		text += "\n" + bead_text(item)
+	if str(item.get("kind", "")) == "toolbox":
+		text += "\n" + toolbox_text(item)
+	if item.get("food") is Dictionary and AdventureNeeds.packed_text(int(item.get("id", 0))) != "":
+		text += "\n" + AdventureNeeds.packed_text(int(item["id"]))
+	var holed := Puncture.text(item)
+	if holed != "":
+		text += "\n" + holed
 	return text
 
 
@@ -1393,6 +1486,9 @@ func fluid_text(item: Dictionary) -> String:
 	var f: Dictionary = item["fluid"]
 	var cap := PartsDB.fluid_capacity(item["part"])
 	var k := PartsDB.fluid_kind(item["part"])
+	if k == "puncture_kit":
+		var plugs := roundi(float(f["litres"]))
+		return "Puncture repair kit: %s" % ("no plugs left" if plugs <= 0 else "%d plug%s left" % [plugs, "" if plugs == 1 else "s"])
 	var what: String = {"petrol": "Petrol", "oil": "Oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube"}.get(k, "Fluid")
 	var amount := ("%.2f of %.2f L" if cap < 1.0 else "%.1f of %.0f L") % [float(f["litres"]), cap]
 	if float(f["litres"]) <= 0.001:
@@ -1541,6 +1637,27 @@ func _delivery_racks() -> Array:
 	return out
 
 
+## Racking that comes with the shed and stays put: the delivery racking and the staff's rack.
+static func fixed_rack(model: String) -> bool:
+	return model == DELIVERY_RACK or model == STAFF_RACK
+
+
+## The staff's parts rack (see ensure_fixtures), or 0.
+func staff_rack() -> int:
+	for id in furniture:
+		if str(furniture[id]["model"]) == STAFF_RACK:
+			return int(id)
+	return 0
+
+
+## The staff's parts trolley, or 0.
+func staff_trolley() -> int:
+	for id in furniture:
+		if furniture[id].get("staff", false) and str(furniture[id]["kind"]) == "trolley":
+			return int(id)
+	return 0
+
+
 ## Parts lying on the ground in the delivery area (and stacked there).
 func _delivery_floor_items() -> Array:
 	var out := []
@@ -1662,7 +1779,7 @@ func free_yard_xf(model: String):
 	var r := maxf(size.x, size.z) * 0.5 + 0.5
 	for row in 3:
 		for col in 8:
-			var at := Vector3(-60.0 + col * 4.0, 0.0, 107.0 + row * 3.0 + size.z * 0.5)
+			var at := Vector3(WorldYard.DROP_OFF.position.x + 2.0 + col * 4.0, 0.0, WorldYard.DROP_OFF.position.y + 2.0 + row * 3.0 + size.z * 0.5)
 			if _clear_at(at, r):
 				return Transform3D(Basis(), at)
 	return null
@@ -2004,6 +2121,8 @@ func furniture_name(f: Dictionary) -> String:
 	var n := str(Equipment.get_model(str(f.get("model", ""))).get("name", "Equipment"))
 	if f["kind"] == "shelf" and str(f.get("label", "")) != "":
 		return "%s: %s" % [n, f["label"]]
+	if f.get("photo") is Dictionary:
+		return "%s: %s" % [n, AdventureDest.caption(f["photo"]).replace("\n", ", ")]
 	return n
 
 
@@ -2055,6 +2174,17 @@ func ensure_fixtures() -> void:
 		else:
 			var rack := _new_furniture("shelf", DELIVERY_RACK_XFS[i], DELIVERY_RACK)
 			furniture[rack]["label"] = "DELIVERIES"
+	# The staff's parts rack and trolley (sheds from before them get them too).
+	if staff_rack() == 0:
+		var rack := _new_furniture("shelf", STAFF_RACK_XF, STAFF_RACK)
+		furniture[rack]["label"] = "STAFF PARTS"
+	else:
+		furniture[staff_rack()]["xf"] = STAFF_RACK_XF
+		furniture[staff_rack()]["mover"] = 0
+	if staff_trolley() == 0:
+		var cart := _new_furniture("trolley", STAFF_TROLLEY_XF, "trolley_parts")
+		furniture[cart]["label"] = "STAFF"
+		furniture[cart]["staff"] = true
 	# The crew whiteboard can be hung on any wall; a save from before that keeps it where it was.
 	if whiteboard_id() == 0:
 		_new_furniture("whiteboard", Transform3D(Basis(Vector3.UP, Whiteboard.FACING), Whiteboard.MOUNT), "whiteboard")
@@ -2102,6 +2232,40 @@ func bead_text(item: Dictionary) -> String:
 	if q >= BikeBuild.BEAD_OK:
 		return "Bead seated well (%d%%)" % roundi(q * 100.0)
 	return "Bead badly seated (%d%%): it loses pressure and grips less. Refit it on the tyre changer." % roundi(q * 100.0)
+
+
+## Gives a bike's tyre a puncture (see Puncture): "slow" or "fast", with `lost` bar of air
+## already gone (an arrival that's stood a while). A plug it had no longer counts.
+func puncture_tyre(bike_id: int, side: String, kind := "slow", lost := 0.0) -> void:
+	var tyre := item_on(bike_id, side + "_tyre")
+	if tyre == 0:
+		return
+	items[tyre]["puncture"] = Puncture.rate_of_kind(kind)
+	items[tyre].erase("plug")
+	if lost > 0.0:
+		items[tyre]["deflate"] = maxf(Puncture.lost(items[tyre]), lost)
+
+
+## A bike just arrived from `where` (a key of Puncture.ARRIVE) may be on a punctured tyre, gone
+## soft or flat standing. Rolled on its own dice, so the bike's other rolls are unchanged.
+func arrival_puncture(bike_id: int, where: String) -> bool:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("puncture:%d:%d" % [bike_id, _rng.seed])
+	if not bikes.has(bike_id) or rng.randf() >= float(Puncture.ARRIVE.get(where, 0.0)):
+		return false
+	var side := "front" if rng.randf() < 0.45 else "rear"
+	var kind := Puncture.kind_of_roll(rng.randf())
+	var psi := build_of(bike_id).tune_value("psi_f" if side == "front" else "psi_r")
+	puncture_tyre(bike_id, side, kind, psi * rng.randf_range(0.35, 1.0))
+	return true
+
+
+## "front" or "rear": the wheel a tyre is on (on the bike, or a loose wheel by its kind of slot).
+func _tyre_side(tyre: int) -> String:
+	var bike := _bike_of(tyre)
+	if bike != 0:
+		return "front" if item_on(bike, "front_tyre") == tyre else "rear"
+	return "front"
 
 
 func _new_furniture(kind: String, xf: Transform3D, model := "") -> int:
@@ -2202,7 +2366,8 @@ func _bay_near(xf: Transform3D, bike_id: int) -> int:
 	return -1
 
 
-## The bay of the lift a bike stands on (an extension bay's, see GarageUpgrades), or -1.
+## The bay of the lift a bike stands on (an extension bay's, see GarageUpgrades, or the wash
+## bay's: Wash.LIFT), or -1.
 func lift_of(bike_id: int) -> int:
 	if not bikes.has(bike_id):
 		return -1
@@ -2210,13 +2375,15 @@ func lift_of(bike_id: int) -> int:
 	for bay in GarageUpgrades.lift_bays(upgrades):
 		if at.distance_to(Workshop.bay_transform(bay).origin) < 0.5:
 			return bay
+	if Wash.on_lift(at):
+		return Wash.LIFT
 	return -1
 
 
 ## Whether a bike is up on a raised lift (it can't be wheeled off or ridden till it's down).
 func lift_raised(bike_id: int) -> bool:
 	var bay := lift_of(bike_id)
-	return bay >= 0 and lifts.has(bay)
+	return bay != -1 and lifts.has(bay)
 
 
 ## Where a held part would go on a target, or why it can't: {slot} or {error}.
@@ -2283,17 +2450,21 @@ func _engine_access(action: Dictionary, slot: String) -> String:
 
 ## Why `peer` can't do `action` right now, or "" when they can.
 func check(peer: int, action: Dictionary) -> String:
+	if str(action.get("a", "")).begins_with("needs_"):
+		return AdventureNeeds.check(peer, action)
 	var road := road_bike_block(action)
 	if road != "":
 		return road
 	var a := str(action.get("a", ""))
+	if a.begins_with("roadside_"):
+		return Roadside.check(peer, action)
 	var held := held_by(peer)
 	var bike_id := int(action.get("bike", 0))
 	var engine_id := int(action.get("engine", 0))
 	var slot := str(action.get("slot", ""))
 	if a in ["unbolt", "bolt", "remove"] and engine_id == 0 and PartsDB.LOW_SLOTS.has(slot) \
 			and not action.get("crouched", false):
-		return "Crouch down to reach it (C)."
+		return "Crouch down to reach it ({crouch})."
 	if a in ["unbolt", "bolt", "remove", "install", "mount", "grab_bike", "set_stand", "adjust_chain"]:
 		if engine_id != 0:
 			if not is_engine(engine_id):
@@ -2306,6 +2477,18 @@ func check(peer: int, action: Dictionary) -> String:
 			return "Someone is wheeling that bike about."
 	if a.begins_with("contract_"):
 		return Contracts.check(peer, action)
+	var contract_why := Contracts.guard(action)
+	if contract_why != "":
+		return contract_why
+	if a.begins_with("recovery_"):
+		return Recovery.check(peer, action)
+	if a.begins_with("card_"):
+		return Workflow.check(peer, action)
+	if a.begins_with("staff_"):
+		return Staff.check(peer, action)
+	var recovering := Recovery.block(peer, action)
+	if recovering != "":
+		return recovering
 	if a.begins_with("sale_"):
 		return Sales.check(peer, action)
 	if PaintBay.carrying(peer) and (PaintBay.HANDS_NEEDED.has(a) and not a in ["paint", "coat"] or a in ["coffee_buy", "coffee_tray_take"]):
@@ -2320,10 +2503,16 @@ func check(peer: int, action: Dictionary) -> String:
 		return _dyno_check(peer, action)
 	if a.begins_with("blast"):
 		return _blast_check(peer, action)
+	if a.begins_with("wash_"):
+		return Wash.check(peer, action)
+	if a.begins_with("shine_"):
+		return Detail.check(peer, action)
 	if a == "coat":
 		return _coat_check(peer, action)
 	if a.begins_with("money_"):
 		return Money.check(peer, action)
+	if a.begins_with("copy_"):
+		return BikeCopy.check(peer, action)
 	if a == "retrieve_bike":
 		return retrieve_check(action)
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
@@ -2369,7 +2558,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if where.has("error"):
 				return where["error"]
 			if engine_id == 0 and PartsDB.LOW_SLOTS.has(where["slot"]) and not action.get("crouched", false):
-				return "Crouch down to reach it (C)."
+				return "Crouch down to reach it ({crouch})."
 			var access := _engine_access(action, where["slot"])
 			if access != "":
 				return access
@@ -2461,14 +2650,14 @@ func check(peer: int, action: Dictionary) -> String:
 				return "Unknown equipment."
 			if Equipment.FIXED_KINDS.has(Equipment.kind_of(model)):
 				return "The paint booth is built into the shed: it's in the paint shop on the east side."
-			if model == DELIVERY_RACK:
-				return "The delivery racking comes with the shed: it's in the delivery area outside."
+			if model == DELIVERY_RACK or model == STAFF_RACK:
+				return "The %s comes with the shed." % str(Equipment.get_model(model).get("name", "racking")).to_lower()
 			if model == Equipment.BOARD_POSTER and not posters.has(int(action.get("design", 0))):
 				return "That whiteboard poster isn't in the shop any more."
 			if str(action.get("psize", "")) != "" and (Equipment.kind_of(model) != "poster" or not Equipment.POSTER_SIZES.has(str(action["psize"]))):
 				return "That size isn't sold."
 			if Equipment.kind_of(model) == "whiteboard":
-				return "The shed has its whiteboard already. Press F on it to hang it somewhere else."
+				return "The shed has its whiteboard already. Press {interact} on it to hang it somewhere else."
 			if Equipment.is_yard(model):
 				if free_yard_xf(model) == null:
 					return "The yard kit drop-off is full. Move some of the yard kit first."
@@ -2486,8 +2675,8 @@ func check(peer: int, action: Dictionary) -> String:
 				return "That has gone."
 			if Equipment.FIXED_KINDS.has(str(f["kind"])):
 				return "The %s is built in." % furniture_name(f).to_lower()
-			if str(f["model"]) == DELIVERY_RACK:
-				return "The delivery racking is fixed down in the delivery area."
+			if fixed_rack(str(f["model"])):
+				return "The %s is fixed down where it is." % furniture_name(f).to_lower()
 			if f["mover"] != 0 and f["mover"] != peer:
 				return "Someone else is moving that."
 			if blaster_user(int(f["id"])) != 0:
@@ -2570,12 +2759,79 @@ func check(peer: int, action: Dictionary) -> String:
 			if chain == 0:
 				return "There's no chain on it."
 			if not action.get("crouched", false):
-				return "Crouch down (C) to get at the chain adjusters."
+				return "Crouch down ({crouch}) to get at the chain adjusters."
 			if bikes[bike_id]["rider"] != 0:
 				return "Someone's riding it."
 			var slack := float(items[chain].get("slack", CHAIN_SLACK_SET))
 			if absf(slack - CHAIN_SLACK_SET) < 3.0:
 				return "The chain tension is spot on."
+		"puncture":
+			if not str(action.get("side", "")) in ["front", "rear"]:
+				return "Which tyre?"
+			var holed := int(action.get("bike", 0)) if action.get("debug", false) else riding(peer)
+			if not bikes.has(holed) or item_on(holed, str(action["side"]) + "_tyre") == 0:
+				return "There's no tyre there to puncture."
+		"toolbox_pack":
+			var box := int(action.get("item", 0))
+			if not items.has(box) or items[box]["kind"] != "toolbox":
+				return "Aim at a toolbox."
+			if items[box].get("boxed", false):
+				return "Unpack it first."
+			if _bike_of(box) != 0 and int(bikes[_bike_of(box)].get("rider", 0)) != 0:
+				return "Someone is riding that bike."
+			if action.get("empty", false):
+				if toolbox_contents(box).is_empty():
+					return "There's nothing in it."
+			else:
+				var what := str(action.get("what", next_kit(box)))
+				if not PartsDB.TOOLBOX_CONTENTS.has(what):
+					return "It's packed full." if next_kit(box) == "" else "There's nothing like that to pack."
+				if toolbox_contents(box).has(what):
+					return "That's packed already."
+				if toolbox_contents(box).size() >= toolbox_slots(box):
+					return "It's packed full."
+				var cost := int(PartsDB.TOOLBOX_CONTENTS[what]["price"])
+				if cost > garage_money:
+					return "The business can't afford it: %s, and it has %s." % [TvChannels.money_text(cost), TvChannels.money_text(garage_money)]
+		"refuel":
+			# Filling up at a pump while riding: the rider paid for it out of their own money.
+			var ridden := riding(peer)
+			if not bikes.has(ridden):
+				return "Ride up to the pump to fill up."
+			if not (action.get("litres") is float or action.get("litres") is int) or float(action["litres"]) <= 0.0:
+				return "How much?"
+			if fuel_space(ridden) < 0.05:
+				return "The tank's full."
+		"screen":
+			var ridden := riding(peer) if bike_id == 0 else bike_id
+			if not bikes.has(ridden):
+				return "That bike has gone."
+			if item_on(ridden, "fairing") == 0:
+				return "There's no fairing fitted."
+			if float(PartsDB.get_part(str(items[item_on(ridden, "fairing")]["part"])).get("screen_adjust", 0.0)) <= 0.0:
+				return "This screen doesn't adjust."
+			if not (action.get("value") is float or action.get("value") is int):
+				return "How high?"
+		"plug_tyre", "inflate":
+			var tyre := int(action.get("item", 0))
+			if not items.has(tyre) or items[tyre]["kind"] != "tyre":
+				return "Aim at a tyre."
+			if not items[tyre]["at"] in ["bike", "wheel"]:
+				return "It has to be on a wheel to hold air."
+			if _bike_of(tyre) != 0 and int(bikes[_bike_of(tyre)].get("rider", 0)) != 0:
+				return "Someone is riding that bike."
+			if a == "inflate":
+				if held != 0:
+					return "Put down what you're holding to use the air line."
+				if Puncture.lost(items[tyre]) < 0.05:
+					return "It's up to its set pressure."
+			else:
+				if held == 0 or PartsDB.kind_of(items[held]["part"]) != "puncture_kit":
+					return "You need a puncture repair kit in your hands. Order one on the parts computer."
+				if float(items[held].get("fluid", {}).get("litres", 0.0)) < 0.5:
+					return "The kit's out of plugs."
+				if not Puncture.punctured(items[tyre]):
+					return "There's no hiss anywhere: it holds its air."
 		"lube":
 			if held == 0 or PartsDB.kind_of(items[held]["part"]) != "chain_lube":
 				return "You need a can of chain lube in your hands."
@@ -2585,7 +2841,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if not items.has(chain) or items[chain]["kind"] != "chain":
 				return "Aim at a chain."
 			if items[chain]["at"] == "bike" and not action.get("crouched", false):
-				return "Crouch down (C) to get at the chain."
+				return "Crouch down ({crouch}) to get at the chain."
 			if float(items[chain].get("lube", 0.0)) > 0.95:
 				return "It's freshly lubed."
 		"clean", "repair", "paint", "prime":
@@ -2614,7 +2870,7 @@ func check(peer: int, action: Dictionary) -> String:
 				# Paint mixed in the mixing bay, from the spray gun's cup (see PaintBay).
 				var cup := PaintBay.cup_of(peer)
 				if cup.is_empty():
-					return "The gun's cup is empty. Fill it from a tin of mixed paint (hold the tin, right click)."
+					return "The gun's cup is empty. Fill it from a tin of mixed paint (hold the tin, {alt_act})."
 				if PaintBay.cup_use(peer, it, float(action.get("waste", 0.0))) < 0.0:
 					return "Not enough %s left in the cup for that. Top it up from the tin." % str(cup.get("name", "paint"))
 				var fade := str(action.get("fade", ""))
@@ -2625,6 +2881,12 @@ func check(peer: int, action: Dictionary) -> String:
 						return "Fades need level %d." % int(PaintMix.PATTERNS[fade]["level"])
 					if it.get("primer_top", false) or not it.has("paint_quality"):
 						return "Paint its first colour on before fading a second one in."
+			elif a == "paint" and action.get("mix") is Dictionary:
+				# A paint expert's own mix (see StaffJobs._paint): only staff spray straight from a spec.
+				if not Staff.is_staff_peer(peer):
+					return "Mix it at the bench and fill the gun's cup from the tin."
+				if not PaintMix.EFFECTS.has(str(action["mix"].get("effect", ""))):
+					return "That's no paint."
 			elif a == "paint" and not it.get("primer_top", false) and it.get("finish", "") == str(action.get("finish", "gloss")) \
 					and paint_index(it["color"]) == int(action.get("color", 0)) and it["color"] == PAINTS[paint_index(it["color"])] \
 					and not (it.get("mix") is Dictionary) and not (it.get("tape") is Dictionary):
@@ -2648,15 +2910,15 @@ func check(peer: int, action: Dictionary) -> String:
 					return "It's already full."
 			else:
 				if k == "oil" and items[into]["at"] == "bike" and not action.get("crouched", false):
-					return "Crouch down to get at the drain plug (C)."
+					return "Crouch down to get at the drain plug ({crouch})."
 				if float(items[into]["fluid"]["litres"]) <= 0.001:
 					return "There's nothing to drain."
 				if can_room <= 0.005:
 					return "Your %s is full. Tip it in the scrap bin." % PartsDB.get_part(items[held]["part"])["container"].to_lower()
 		"wash":
 			var at = action.get("at", null)
-			if not (at is Vector3) or (at as Vector3).distance_to(Workshop.WASH_POS) > Workshop.WASH_REACH:
-				return "The hose doesn't reach. Bring the bike to the wash bay beside the shed."
+			if not (at is Vector3) or not Wash.reaches(at):
+				return Wash.NO_REACH
 			var any := false
 			for id in action.get("items", []):
 				if items.has(int(id)) and items[int(id)]["dirt"] >= 0.005 and not items[int(id)].get("boxed", false):
@@ -2668,7 +2930,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if why != "":
 				return why
 			if lift_raised(bike_id):
-				return "It's up on the lift. Lower the lift first (F on the button post)."
+				return "It's up on the lift. Lower the lift first ({interact} on the button post)."
 			if on_dyno(bike_id) and straps_done() > 0:
 				return "Undo the straps first (hold the work button at each one)."
 			if on_dyno(bike_id) and dyno["hose"] == "bike":
@@ -2686,6 +2948,8 @@ func check(peer: int, action: Dictionary) -> String:
 				var bay := _bay_near(action["xf"], bike_id)
 				if bay >= 0 and lifts.has(bay):
 					return "Bay %d's lift is up. Lower it first, then wheel the bike on." % (bay + 1)
+				if lifts.has(Wash.LIFT) and Wash.near_lift((action["xf"] as Transform3D).origin):
+					return "The wash bay lift is up. Lower it first, then wheel the bike on."
 		"set_stand":
 			var which := str(action.get("stand", ""))
 			if not which in ["side", "centre"]:
@@ -2702,7 +2966,7 @@ func check(peer: int, action: Dictionary) -> String:
 			if riding(peer) != 0:
 				return "You're already riding."
 			if lift_raised(bike_id):
-				return "It's up on the lift. Lower the lift first (F on the button post)."
+				return "It's up on the lift. Lower the lift first ({interact} on the button post)."
 			if pushing_bike(peer) != 0:
 				return "Let go of the bike first, then get on it."
 			if held != 0:
@@ -2794,9 +3058,17 @@ func check(peer: int, action: Dictionary) -> String:
 			if not (action.get("value") is int or action.get("value") is float):
 				return "How much?"
 		"buy_upgrade":
+			var need_lv := GarageUpgrades.level_needed(str(action.get("id", "")))
+			if need_lv > int(Progress.summary(peer).get("level", 1)):
+				return "Needs character level %d (you're level %d)." % [need_lv, int(Progress.summary(peer).get("level", 1))]
 			return GarageUpgrades.check(str(action.get("id", "")), upgrades, garage_money)
 		"lift":
 			var bay := int(action.get("bay", -1))
+			if bay == Wash.LIFT:
+				var washing := Wash.bike_on_lift()
+				if washing != 0 and (bikes[washing]["rider"] != 0 or bikes[washing].get("pusher", 0) != 0):
+					return "Someone's moving the bike on the wash bay lift."
+				return ""
 			if not GarageUpgrades.lift_bays(upgrades).has(bay):
 				return "There's no lift there."
 			var on := bike_in_bay(bay)
@@ -2884,7 +3156,7 @@ func _drop_trinkets_off(id: int) -> int:
 ## changer and the crew whiteboard.
 static func scrappable(f: Dictionary) -> bool:
 	var kind := str(f.get("kind", ""))
-	return kind != "" and not Equipment.FIXED_KINDS.has(kind) and kind != "whiteboard" and str(f.get("model", "")) != DELIVERY_RACK
+	return kind != "" and not Equipment.FIXED_KINDS.has(kind) and kind != "whiteboard" and not fixed_rack(str(f.get("model", ""))) and not f.get("staff", false)
 
 
 ## Scraps equipment or a part for good (see scrap_check). Whatever was on or in it goes on the
@@ -2961,6 +3233,9 @@ func screen_channel(key: String) -> Dictionary:
 
 ## Gives `peer` XP for `key` through the Progress autoload, when it's there (host only).
 func _award(peer: int, key: String, mult := 1.0) -> void:
+	if Staff.is_staff_peer(peer):
+		Staff.add_xp(peer, key, mult)
+		return
 	var prog := get_node_or_null("/root/Progress")
 	if prog and prog.has_method("award"):
 		prog.award(peer, key, mult)
@@ -3021,8 +3296,27 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("coffee_"):
 		_coffee_apply(peer, action)
 		return
+	if str(action.get("a", "")).begins_with("copy_"):
+		_copy_apply(peer, action)
+		return
 	if str(action.get("a", "")).begins_with("paint_"):
+		Money.note_use(action)
 		_paint_bay_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("pool_"):
+		_pool_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("staff_"):
+		_staff_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("adventure_"):
+		_adventure_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("needs_"):
+		_needs_apply(peer, action)
+		return
+	if str(action.get("a", "")).begins_with("roadside_"):
+		_roadside_apply(peer, action)
 		return
 	var why := check(peer, action)
 	if why != "":
@@ -3030,7 +3324,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 		return
 	var a := str(action["a"])
 	Contracts.note_action(peer, action)
+	Workflow.note_action(peer, action)
 	Sales.note_action(action)
+	Money.note_use(action)
 	if a.begins_with("sale_"):
 		var said_s := Sales.apply(peer, action)
 		if said_s != "":
@@ -3045,12 +3341,42 @@ func _apply(peer: int, action: Dictionary) -> void:
 		_mark_dirty()
 		changed.emit()
 		return
+	if a.begins_with("card_"):
+		var said_w := Workflow.apply(peer, action)
+		if said_w != "":
+			_tell(peer, said_w, true)
+		_mark_dirty()
+		changed.emit()
+		return
+	if a.begins_with("recovery_"):
+		var said_r := Recovery.apply(peer, action)
+		if said_r != "":
+			_tell(peer, said_r, true)
+		_mark_dirty()
+		changed.emit()
+		return
 	if a.begins_with("blast"):
 		var told := _blast_apply(peer, action)
 		if told != "":
 			_tell(peer, told, true)
 		_mark_dirty()
 		changed.emit()
+		return
+	if a.begins_with("wash_"):
+		var washed := Wash.apply(peer, action)
+		if washed != "":
+			_tell(peer, washed, true)
+		# Where the jet's landing is read every frame (Wash.jets), and the washer's own bike is
+		# drawn by their wash job meanwhile: the shed's told with the next sync (a moment later,
+		# SYNC_INTERVAL), not gone over again for each of these, many times a second.
+		_mark_dirty()
+		return
+	if a.begins_with("shine_"):
+		# Polishing and coating (see Detail): like the wash, the next sync carries it.
+		var shone := Detail.apply(peer, action)
+		if shone != "":
+			_tell(peer, shone, false)
+		_mark_dirty()
 		return
 	if a == "coat":
 		_tell(peer, _coat_apply(peer, action), true)
@@ -3088,6 +3414,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"bolt":
 			host_of(bike_id, slot, engine_id)["bolted"][slot] = true
 			text = "%s bolted up" % PartsDB.slot_name(slot)
+			if engine_id == 0 and str(Roadside.faults_of(bike_id).get("rattle", "")) == slot:
+				bikes[bike_id]["faults"].erase("rattle")   # bolted up tight: no more rattle (see Roadside)
 			if engine_id == 0 and is_complete(bike_id):
 				text += ". The bike is ready to ride!"
 			elif engine_id != 0 and engine_missing(engine_id).is_empty():
@@ -3133,6 +3461,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			host["slots"][s] = item_id
 			host["bolted"][s] = false
 			_move(item_id, "engine" if PartsDB.is_engine_slot(s) else "bike", int(host["id"]))
+			if engine_id == 0 and s == "chain" and Roadside.faults_of(bike_id).has("chain_snap"):
+				bikes[bike_id]["faults"].erase("chain_snap")   # a new chain on in place of the snapped one
 			var tyre := tyre_on_wheel(item_id)
 			if tyre != 0 and WHEEL_TYRE.has(s) and int(host["slots"].get(WHEEL_TYRE[s], 0)) == 0:
 				# A wheel goes back on with its tyre seated on it.
@@ -3156,6 +3486,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var item_id := held_by(peer)
 			_move(item_id, "floor", action["xf"])
 			_xp(peer, "carry", 1.0, "item:%d" % item_id)
+			# Down on the dispatch pallet: a batch order checks it and takes it if it's to spec.
+			text = Contracts.on_drop(peer, item_id)
 		"place":
 			var item_id := held_by(peer)
 			_move(item_id, "spot", str(action["spot"]))
@@ -3186,6 +3518,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			items[wheel]["tyre"] = tyre
 			_move(tyre, "wheel", wheel)
 			items[tyre]["bead"] = q
+			items[tyre].erase("deflate")   # seated with the bead popped on, it's pumped up fresh
 			_bump(c, "fitted")
 			_xp(peer, "tyre_fit", q, "item:%d" % tyre)
 			text = "Fitted the %s to the %s. %s" % [item_title(tyre), item_title(wheel), bead_text(items[tyre])]
@@ -3194,6 +3527,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var tyre := tyre_on_wheel(wheel)
 			items[wheel].erase("tyre")
 			items[tyre].erase("bead")
+			items[tyre].erase("deflate")
 			_move(tyre, "held", peer)
 			_bump(c, "removed")
 			_xp(peer, "tyre_remove", 1.0, "item:%d" % tyre)
@@ -3215,7 +3549,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var kind := Equipment.kind_of(model)
 			if Equipment.is_yard(model):
 				_new_furniture(kind, free_yard_xf(model), model)
-				text = "Ordered the %s. It's in the yard by the drag strip: press F on it to move it where you want it." % \
+				text = "Ordered the %s. It's in the yard by the drag strip: press {interact} on it to move it where you want it." % \
 					Equipment.get_model(model)["name"].to_lower()
 			else:
 				var fid := _new_furniture(kind, free_delivery_xf(Equipment.get_model(model).get("size", Vector3.ONE)), model)
@@ -3230,8 +3564,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 					var design := int(action.get("design", 0))
 					furniture[fid]["design"] = design
 					what = "\"%s\" poster" % str(posters[design]["name"])
-				var how := "press F on it to carry it in and hang it on a wall" if Equipment.is_wall(model) else \
-					("hold F on it to move it" if kind == "seat" else "press F on it to push it in")
+				var how := "press {interact} on it to carry it in and hang it on a wall" if Equipment.is_wall(model) else \
+					("hold {interact} on it to move it" if kind == "seat" else "press {interact} on it to push it in")
 				if kind == "poster":
 					what = "%s %s" % [Equipment.POSTER_SIZES[furniture[fid]["psize"]]["name"], what]
 				text = "Ordered the %s. It's outside by the roller door: %s." % [what, how]
@@ -3283,7 +3617,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				lifts[bay] = true
 			else:
 				lifts.erase(bay)
-			text = "Bay %d's lift going %s" % [bay + 1, "up" if up else "down"]
+			text = "%s going %s" % [Wash.lift_name(bay), "up" if up else "down"]
 		"restyle_upgrade":
 			text = _restyle_upgrade(str(action["id"]), action.get("looks"))
 		"door":
@@ -3360,6 +3694,70 @@ func _apply(peer: int, action: Dictionary) -> void:
 			items[chain]["slack"] = CHAIN_SLACK_SET
 			text = "Chain %s to %d mm of slack" % ["tightened" if was > CHAIN_SLACK_SET else "slackened off", roundi(CHAIN_SLACK_SET)]
 			_xp(peer, "chain_tension", 1.0, "item:%d" % chain)
+		"puncture":
+			var holed := int(action.get("bike", 0)) if action.get("debug", false) else riding(peer)
+			var side := str(action["side"])
+			var kind := "fast" if str(action.get("kind", "")) == "fast" else "slow"
+			if action.get("debug", false) or not Puncture.punctured(items[item_on(holed, side + "_tyre")]):
+				puncture_tyre(holed, side, kind)
+				if kind == "fast" or action.get("debug", false):
+					text = "Puncture! The %s tyre's picked something up: it's going down %s." % [side, "fast" if kind == "fast" else "slowly"]
+		"plug_tyre":
+			# The plug kit: find the hiss with the soapy spray, then push a plug in (see PlugGame).
+			var tyre := int(action["item"])
+			var q := clampf(float(action.get("quality", 1.0)), 0.0, 1.0)
+			if q <= 0.0:
+				text = "Couldn't find the leak. Sweep the soapy spray round the tread and watch for the bubbles."
+			else:
+				var kit: Dictionary = items[held_by(peer)]["fluid"]
+				kit["litres"] = maxf(0.0, float(kit["litres"]) - 1.0)
+				q = clampf(q + _finish_bonus(peer), 0.0, 1.0)
+				items[tyre]["plug"] = q
+				if q >= Puncture.PLUG_SEALS:
+					items[tyre].erase("puncture")
+					text = "Plugged the puncture in the %s (%d%%): it holds its air. Pump it back up at the air line." % [item_title(tyre), roundi(q * 100.0)]
+				else:
+					items[tyre]["puncture"] = Puncture.SLOW * Puncture.PLUG_WEEP
+					text = "The plug's in crooked (%d%%): it still weeps air. Try another, or change the tyre." % roundi(q * 100.0)
+				_xp(peer, "tyre_plug", q, "item:%d" % tyre)
+		"toolbox_pack":
+			var box := int(action["item"])
+			var packed: Array = toolbox_contents(box).duplicate()
+			if action.get("empty", false):
+				items[box]["contents"] = []
+				Roadside.repacked(box)
+				text = "Emptied the %s: %s back on the shelf" % [item_title(box), kit_list(packed)]
+			else:
+				var what := str(action.get("what", next_kit(box)))
+				var info: Dictionary = PartsDB.TOOLBOX_CONTENTS[what]
+				charge_garage(int(info["price"]), "Toolbox kit: %s" % str(info["short"]))
+				packed.append(what)
+				items[box]["contents"] = packed
+				Roadside.repacked(box, what)
+				text = "Packed the %s in the %s (%d of %d)" % [str(info["name"]).to_lower(), item_title(box), packed.size(), toolbox_slots(box)]
+		"refuel":
+			var ridden := riding(peer)
+			var put := _fill_tanks(ridden, float(action["litres"]))
+			var paid := maxi(0, int(action.get("paid", 0)))
+			if put < float(action["litres"]) - 0.05 and paid > 0:
+				# What didn't fit goes back in the rider's pocket.
+				give_cash(peer, mini(paid, ceili((float(action["litres"]) - put) * PUMP_PRICE)), "Fuel refund")
+			text = "Filled up with %.1f L of unleaded" % put
+		"screen":
+			var ridden := riding(peer) if bike_id == 0 else bike_id
+			var fairing := item_on(ridden, "fairing")
+			if not items[fairing].has("tune"):
+				items[fairing]["tune"] = {}
+			items[fairing]["tune"]["screen"] = clampf(float(action["value"]), 0.0, 1.0)
+		"inflate":
+			var tyre := int(action["item"])
+			items[tyre].erase("deflate")
+			text = "Pumped the %s back up" % item_title(tyre)
+			if _bike_of(tyre) != 0:
+				var key := "psi_f" if _tyre_side(tyre) == "front" else "psi_r"
+				text = "Pumped the %s up to %.1f bar" % [item_title(tyre), build_of(_bike_of(tyre)).tune_value(key)]
+			if Puncture.punctured(items[tyre]):
+				text += ", but it's hissing: it'll go down again. Plug it or change it."
 		"lube":
 			# How well it went on: coverage along the chain, less any flung off where it was overdone.
 			var chain := int(action["item"])
@@ -3378,6 +3776,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 				# Mixed paint from the gun's cup: its colour and effect, coats building up, a
 				# mask where tape was or a fade over the colour under it (see PaintBay).
 				coats_q = PaintBay.spray_from_cup(peer, it, float(action.get("waste", 0.0)), str(action.get("fade", "")))
+			elif action.get("mix") is Dictionary:
+				coats_q = PaintBay.spray_spec(it, (action["mix"] as Dictionary).duplicate(true))
 			else:
 				var idx := clampi(int(action.get("color", 0)), 0, PAINTS.size() - 1)
 				var finish := str(action.get("finish", "gloss"))
@@ -3394,10 +3794,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 				it.erase("flat")
 				it["color"] = PAINTS[idx]
 				it["finish"] = finish
-			# Fresh paint covers bare metal and any coat that was on it.
+			# Fresh paint covers bare metal and any coat that was on it, and its old polish.
 			_paint_over(it)
 			it.erase("coat")
 			it.erase("coat_q")
+			Detail.repainted(it)
 			# Showroom Shine (a skill) gives a better finish.
 			var q := clampf(float(action.get("quality", 1.0)) + _finish_bonus(peer), 0.0, 1.0)
 			var runs := clampf(float(action.get("waste", 0.0)), 0.0, 1.0)
@@ -3429,6 +3830,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			_paint_over(it)
 			it.erase("coat")
 			it.erase("coat_q")
+			Detail.repainted(it)
 			it.erase("mix")
 			it.erase("mix_coats")
 			it.erase("mask")
@@ -3442,11 +3844,22 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "You heave %s back upright" % bikes[bike_id]["name"]
 			bikes[bike_id]["rider"] = peer
 			bikes[bike_id]["stand"] = ""
+			bikes[bike_id].erase("push")
 			c["riding"] = bike_id
 		"dismount":
 			bikes[bike_id]["rider"] = 0
 			bikes[bike_id]["xf"] = action.get("xf", bikes[bike_id]["xf"])
+			bikes[bike_id].erase("push")
+			bikes[bike_id].erase("tow")
+			for other in bikes:
+				if int(bikes[other].get("tow", 0)) == peer:
+					bikes[other].erase("tow")   # the strap comes off the bike that was towing
 			c["riding"] = 0
+			if Adventure.active() and action.get("roadside") is Dictionary:
+				# Left at the side of the road on an adventure: where, in the route's frame (see Roadside).
+				var r: Dictionary = action["roadside"]
+				bikes[bike_id]["roadside"] = {"trip": int(adventure["id"]), "x": float(r.get("x", 0.0)), "y": float(r.get("y", 0.0)),
+					"z": float(r.get("z", 0.0)), "yaw": float(r.get("yaw", 0.0)), "s": float(r.get("s", 0.0)), "open": false, "out": []}
 			_park(bike_id)
 			if bikes[bike_id]["stand"] == "down":
 				text = "No stand fitted, so it falls over. Fit a side stand."
@@ -3455,7 +3868,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"grab_bike":
 			bikes[bike_id]["pusher"] = peer
 			bikes[bike_id]["stand"] = ""
-			text = "Got hold of %s. F to let go." % bikes[bike_id]["name"]
+			text = "Got hold of %s. {interact} to let go." % bikes[bike_id]["name"]
 		"move_bike":
 			bikes[bike_id]["xf"] = action["xf"]
 		"release_bike":
@@ -3604,6 +4017,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 				bikes[id]["style_order"] = style
 				bikes[id]["ordered_by"] = str(c.get("name", ""))
 			bikes[id]["bought"] = cost   # what it cost, for pricing it when it's sold (see Sales)
+			arrival_puncture(id, "project")
 			text = "%s has been delivered to bay %d, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1, TvChannels.money_text(cost)]
 		"radio":
 			radio = {"on": bool(action.get("on", radio["on"])), "station": int(action.get("station", radio["station"]))}
@@ -3616,6 +4030,7 @@ func _apply(peer: int, action: Dictionary) -> void:
 			var bike := int(c.get("riding", 0))
 			if bikes.has(bike):
 				_wear_from_ride(bike, action)
+				Contracts.note_ride(bike, action)
 			c["km"] = float(c.get("km", 0.0)) + clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 			c["top_kmh"] = maxf(float(c.get("top_kmh", 0.0)), clampf(float(action.get("top_kmh", 0.0)), 0.0, 400.0))
 			c["kmh"] = clampf(float(action.get("kmh", 0.0)), 0.0, 400.0)
@@ -3668,6 +4083,11 @@ func _park(bike_id: int) -> void:
 		return
 	if _park_on_show(bike_id):
 		return
+	if Wash.near_lift((bike["xf"] as Transform3D).origin) and Wash.bike_on_lift(bike_id) == 0:
+		# Wheeled onto the wash bay's lift: square on it, clamped upright in its wheel chock.
+		bike["xf"] = Wash.lift_xf()
+		bike["stand"] = ""
+		return
 	var bay := _bay_near(bike["xf"], bike_id)
 	if bay >= 0:
 		bike["bay"] = bay
@@ -3691,11 +4111,13 @@ func front_spray(bike_id: int) -> float:
 	return lerpf(NO_GUARD_SPRAY, 1.0, clampf(cover, 0.0, 1.0))
 
 
-## What a ride does to a bike: road dirt on its parts, petrol used, oil and brake fluid aging,
-## and engine wear, which climbs steeply when the oil is low or worn out.
+## What a ride does to a bike: road dirt on its parts (where it really goes, see Dirt.accrue,
+## dead flies on the front at speed), petrol used, oil and brake fluid aging, and engine wear,
+## which climbs steeply when the oil is low or worn out.
 func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 	var km := clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 	var dirty := clampf(float(action.get("dirt_km", 0.0)), 0.0, 5.0)
+	var flies := clampf(float(action.get("fly_km", 0.0)), 0.0, 5.0)
 	var build := build_of(bike_id)
 	var spray := front_spray(bike_id)
 	for slot in PartsDB.SLOTS:
@@ -3703,9 +4125,12 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 		# A protective coat keeps muck from sticking and rust off; bare metal without one
 		# flash-rusts, quicker in the muck. The coat itself wears thinner with the miles.
 		var protect := coat_protect(items[id]) if id != 0 else 0.0
-		if id != 0 and dirty > 0.0:
+		if id != 0 and (dirty > 0.0 or flies > 0.0):
 			var exposure := float(DIRT_EXPOSURE.get(slot, 0.4)) * (spray if FRONT_SPRAY.has(slot) else 1.0)
-			items[id]["dirt"] = minf(1.0, float(items[id]["dirt"]) + dirty * ROAD_DIRT * exposure * (1.0 - 0.6 * protect))
+			# A ceramic coat on the paint sheds it too (see Detail).
+			Dirt.accrue(items[id], slot, dirty, flies, exposure, spray, maxf(protect, Detail.dirt_protect(items[id])))
+		if id != 0 and km + dirty > 0.0 and Detail.has(items[id]):
+			Detail.ride_wear(items[id], km + dirty)
 		if id != 0 and blast_cover(items[id]) > 0.0 and km + dirty > 0.0:
 			var bare := blast_cover(items[id]) * (1.0 - protect)
 			items[id]["rust"] = minf(1.0, float(items[id]["rust"]) + (km + dirty * 2.0) * BARE_RUST * bare)
@@ -3725,15 +4150,31 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 				var psi := float(tune.get("pressure", build.tune_default(key)))
 				tune["pressure"] = maxf(float(BikeBuild.TUNE_LIMITS[key][0]), psi - km * BEAD_LEAK * (1.0 - bead / BikeBuild.BEAD_OK))
 				items[tyre]["tune"] = tune
+			# Ridden on a flat, the tyre is chewed up and the rim takes the knocks; a puncture
+			# keeps letting the air out (see Puncture).
+			var flat: float = build.flat[side]
+			if flat > 0.0 and km > 0.0:
+				items[tyre]["wear"] = minf(1.0, float(items[tyre]["wear"]) + km * Puncture.FLAT_TYRE_WEAR * flat)
+				var rim := item_on(bike_id, side + "_wheel")
+				if rim != 0:
+					items[rim]["wear"] = minf(1.0, float(items[rim]["wear"]) + km * Puncture.FLAT_RIM_WEAR * flat)
+			if Puncture.punctured(items[tyre]) and km > 0.0:
+				items[tyre]["deflate"] = minf(build.tune_value("psi_f" if side == "front" else "psi_r"),
+					Puncture.lost(items[tyre]) + km * Puncture.rate(items[tyre]))
 	# Burnouts scrub the back tyre down fast.
 	var spin := clampf(float(action.get("spin", 0.0)), 0.0, 5.0)
 	var rear_tyre := item_on(bike_id, "rear_tyre")
 	if rear_tyre != 0 and spin > 0.0:
 		items[rear_tyre]["wear"] = minf(1.0, float(items[rear_tyre]["wear"]) + spin * BURNOUT_WEAR)
-	var tank := item_on(bike_id, "tank")
-	if tank != 0 and items[tank].has("fluid"):
-		var f: Dictionary = items[tank]["fluid"]
-		f["litres"] = maxf(0.0, float(f["litres"]) - clampf(float(action.get("fuel", 0.0)), 0.0, 2.0))
+	# Petrol burnt: an auxiliary tank feeds the main one, so it empties first.
+	var burnt := clampf(float(action.get("fuel", 0.0)), 0.0, 2.0)
+	for slot in ["aux_tank", "tank"]:
+		var tank := item_on(bike_id, slot)
+		if tank != 0 and items[tank].has("fluid") and burnt > 0.0:
+			var f: Dictionary = items[tank]["fluid"]
+			var take := minf(burnt, float(f["litres"]))
+			f["litres"] = float(f["litres"]) - take
+			burnt -= take
 	var block := item_on(bike_id, "engine")
 	if block != 0 and items[block].has("fluid"):
 		var oil: Dictionary = items[block]["fluid"]
@@ -4091,7 +4532,63 @@ func poster_marks(design: int) -> Array:
 	return out
 
 
+## Breakdowns and fixing them at the roadside on an adventure (see Roadside): what's said goes
+## to the player, or to the whole crew when it starts with "*".
+func _roadside_apply(peer: int, action: Dictionary) -> void:
+	var why := Roadside.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var said := Roadside.apply(peer, action)
+	if said.begins_with("*"):
+		for p in crew:
+			_tell(int(p), said.substr(1), true)
+	elif said != "":
+		_tell(peer, said, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## An adventure ride's actions (see Adventure): what's said goes to the player, or to the whole
+## crew when it starts with "*".
+func _adventure_apply(peer: int, action: Dictionary) -> void:
+	var why := Adventure.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var said := Adventure.apply(peer, action)
+	if str(action.get("a", "")) == "adventure_end":
+		Roadside.bring_home()   # bikes left at the roadside come home to the shed
+	if said.begins_with("*"):
+		for p in crew:
+			_tell(int(p), said.substr(1), true)
+	elif said != "":
+		_tell(peer, said, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## Hunger, thirst and tiredness out on an adventure, and the lunch packed for it (see
+## AdventureNeeds): told the same way as the adventure's own actions.
+func _needs_apply(peer: int, action: Dictionary) -> void:
+	var why := AdventureNeeds.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var said := AdventureNeeds.apply(peer, action)
+	if said.begins_with("*"):
+		for p in crew:
+			_tell(int(p), said.substr(1), true)
+	elif said != "":
+		_tell(peer, said, true)
+	_mark_dirty()
+	changed.emit()
+
+
 func _tell(peer: int, text: String, ok: bool) -> void:
+	if Staff.is_staff_peer(peer):
+		Staff.heard(peer, text, ok)   # one of the staff: they take note, nobody's told
+		return
 	if peer == me():
 		feedback.emit(text, ok)
 	elif Net.is_online():
@@ -4125,6 +4622,9 @@ func _prog() -> Node:
 
 ## Gives `peer` XP for a job. Guarded so the shed works without Progress.
 func _xp(peer: int, action: String, mult := 1.0, detail := "") -> void:
+	if Staff.is_staff_peer(peer):
+		Staff.add_xp(peer, action, mult)   # the staff's work goes to their own skill (and earns nobody a wage)
+		return
 	var prog := _prog()
 	if prog:
 		prog.award(peer, action, mult, detail)
@@ -4535,6 +5035,7 @@ func _on_player_left(id: int) -> void:
 		_move(held, "spot", _free_spot())
 	CoffeeShop.put_back(id)
 	PaintBay.put_back(id)
+	Recovery.put_back(id)
 	var bike_id := riding(id)
 	if bike_id != 0:
 		bikes[bike_id]["rider"] = 0
@@ -4645,7 +5146,7 @@ func _blueprint_check(action: Dictionary) -> String:
 				if n == "":
 					return "Give the blueprint a name."
 				if blueprints.size() >= MAX_BLUEPRINTS and blueprint_named(n) == 0:
-					return "There are %d blueprints already. Delete one first (Esc, Blueprints)." % MAX_BLUEPRINTS
+					return "There are %d blueprints already. Delete one first ({menu}, Blueprints)." % MAX_BLUEPRINTS
 		"bp_rename", "bp_delete", "bp_build":
 			if not blueprints.has(int(action.get("bp", 0))):
 				return "That blueprint has gone."
@@ -4670,7 +5171,7 @@ func _blueprint_check(action: Dictionary) -> String:
 			if bay >= 0 and plan_at(bay).is_empty():
 				return "There's no blueprint build in that bay."
 			if bay < 0 and plan_bays().is_empty():
-				return "No blueprint builds under way. Start one from the Esc menu: Build from blueprint."
+				return "No blueprint builds under way. Start one from the {menu} menu: Build from blueprint."
 	return ""
 
 
@@ -4685,7 +5186,7 @@ func _blueprint_apply(action: Dictionary, peer := 1) -> String:
 		"geo_blueprint":
 			bikes[bike_id]["geo"] = GeoGizmo.sanitize(action["geo"])
 			var bp := _save_blueprint(bike_id, str(action["name"]).strip_edges().left(28))
-			return "Saved the fit of %s's parts, and the blueprint \"%s\" (Esc, Build from blueprint)." % [
+			return "Saved the fit of %s's parts, and the blueprint \"%s\" ({menu}, Build from blueprint)." % [
 				bikes[bike_id]["name"], blueprints[bp]["name"]]
 		"bp_rename":
 			blueprints[int(action["bp"])]["name"] = str(action["name"]).strip_edges().left(28)
@@ -4742,6 +5243,11 @@ func _blueprint_apply(action: Dictionary, peer := 1) -> String:
 ## is empty), each part's colour and finish, its paint and its parts' fit. One with the same
 ## name is replaced.
 func _save_blueprint(bike_id: int, bp_name: String) -> int:
+	return store_blueprint(bp_name, blueprint_of(bike_id))
+
+
+## What a bike is now, as a blueprint holds it: {parts, colors, paint, geo, from} (see blueprints).
+func blueprint_of(bike_id: int) -> Dictionary:
 	var bike: Dictionary = bikes[bike_id]
 	var parts := {}
 	var colors := {}
@@ -4754,12 +5260,18 @@ func _save_blueprint(bike_id: int, bp_name: String) -> int:
 			parts[slot] = "none"
 		else:
 			parts[slot] = str(bike.get("original", {}).get(slot, PartsDB.DEFAULT_BUILD.get(slot, "none")))
+	return {"parts": parts, "colors": colors, "paint": bike["paint"], "geo": geometry_of(bike_id).duplicate(true), "from": str(bike["name"])}
+
+
+## Keeps `plan` (as blueprint_of gives it) as the blueprint `bp_name`; one with the same name is
+## replaced. Returns its id.
+func store_blueprint(bp_name: String, plan: Dictionary) -> int:
 	var id := blueprint_named(bp_name)
 	if id == 0:
 		id = _next_id
 		_next_id += 1
-	blueprints[id] = {"id": id, "name": bp_name, "parts": parts, "colors": colors, "paint": bike["paint"],
-		"geo": geometry_of(bike_id).duplicate(true), "from": str(bike["name"])}
+	blueprints[id] = {"id": id, "name": bp_name, "parts": plan["parts"], "colors": plan.get("colors", {}), "paint": plan["paint"],
+		"geo": plan.get("geo", {}), "from": str(plan.get("from", ""))}
 	return id
 
 
@@ -4880,6 +5392,31 @@ func _mark_dirty() -> void:
 	_dirty = true
 
 
+## The hashes of the shed as it last went to the crew (see _send_changes).
+var _sent_tree = null
+
+
+## Host: sends the crew what changed in the shed since it last went (see StateDiff), rather
+## than all of it. Players joining get it whole (see _sync), then these.
+func _send_changes() -> void:
+	var pt := Perf.t0()
+	var snap := _snapshot(false)
+	var now = StateDiff.tree(snap)
+	var r := StateDiff.diff(_sent_tree, now, snap)
+	_sent_tree = now
+	if r[0]:
+		_sync_patch.rpc(r[1])
+	Perf.add("net_shed_send", pt)
+
+
+## What changed in the shed (see _send_changes), put onto this player's copy of it.
+@rpc("authority", "call_remote", "reliable")
+func _sync_patch(patch) -> void:
+	var pt := Perf.t0()
+	_sync(StateDiff.apply(_snapshot(false), patch))
+	Perf.add("net_shed_receive", pt)
+
+
 ## The whole shed. The regular syncs leave the whiteboard out: its marks go out one by one
 ## as they're drawn (_board_op), and whole only to players joining.
 func _snapshot(with_board := true) -> Dictionary:
@@ -4887,8 +5424,8 @@ func _snapshot(with_board := true) -> Dictionary:
 		Money.record_graph()   # the graphs go out with the money they show
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno,
-		"blueprints": blueprints, "holograms": holograms, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "upgrades": upgrades,
-		"lifts": lifts, "looks": looks}
+		"blueprints": blueprints, "holograms": holograms, "on_order": on_order, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
+		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "adventure_save": adventure_save, "kit_v": KIT_SAVE}
 	if with_board:
 		state["board"] = board
 	return state
@@ -4929,6 +5466,16 @@ func _sync(state: Dictionary) -> void:
 	coffee = CoffeeShop.sanitize(state.get("coffee"))
 	# Sheds saved before the paint mixing bay get its starter stock.
 	paint_bay = PaintBay.sanitize(state.get("paint_bay"))
+	# Sheds saved before the recovery truck have no jobs out.
+	recovery = Recovery.sanitize(state.get("recovery"))
+	# Sheds saved before the pool table was playable have no game on.
+	pool = PoolGame.sanitize(state.get("pool"))
+	# Sheds saved before the garage took on staff have nobody on the payroll.
+	staff = Staff.sanitize(state.get("staff"))
+	# Sheds saved before adventure rides have none on.
+	adventure = Adventure.sanitize(state.get("adventure"))
+	# Nor one put away overnight to carry on.
+	adventure_save = AdventureNeeds.sanitize_save(state.get("adventure_save"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.
@@ -4952,6 +5499,7 @@ func _sync(state: Dictionary) -> void:
 	# Sheds saved before blueprints have none.
 	blueprints = state["blueprints"] if state.get("blueprints") is Dictionary else {}
 	holograms = state["holograms"] if state.get("holograms") is Dictionary else {}
+	on_order = state["on_order"] if state.get("on_order") is Array else []
 	if state.get("blobs") is Dictionary:
 		# A save being opened: its pictures and poster prints.
 		for id in state["blobs"]:
@@ -4968,6 +5516,12 @@ func _sync(state: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("shed", pt)
+
+
+func _process_body(delta: float) -> void:
 	if not active or not is_authority():
 		return
 	_cool_dyno(delta)
@@ -4977,6 +5531,12 @@ func _process(delta: float) -> void:
 	Sales.process(delta)
 	CoffeeShop.process(delta)
 	PaintBay.process(delta)
+	Recovery.process(delta)
+	PoolGame.process(delta)
+	Staff.process(delta)
+	if Adventure.active():
+		AdventureNeeds.tick(delta)
+	_deliver_on_order(delta)
 	# Parts washers slowly clean whatever is in them.
 	for id in furniture:
 		if furniture[id]["kind"] != "washer":
@@ -5006,7 +5566,7 @@ func _process(delta: float) -> void:
 		_sync_timer = SYNC_INTERVAL
 		_dirty = false
 		if Net.is_online():
-			_sync.rpc(_snapshot(false))
+			_send_changes()
 		changed.emit()
 
 
@@ -5035,6 +5595,8 @@ func credit_garage(amount: int, reason: String) -> void:
 		return
 	garage_money = mini(garage_money + amount, MAX_GARAGE_MONEY)
 	Money.log_entry(bank, amount, reason, garage_money)
+	# An overdraft (see Money.pay_bills) is paid back first.
+	Money.settle_overdraft(bank)
 	for m in Money._mark_milestones(bank, garage_money):
 		for p in crew:
 			_xp(int(p), "money_milestone", 1.0, "bank:%d" % int(m))
@@ -5096,6 +5658,63 @@ func _money_apply(peer: int, action: Dictionary) -> void:
 	changed.emit()
 
 
+## A "copy_*" request (see BikeCopy): ordering one of a bike, or copying its blueprint. Money
+## a player paid for an order the host turns down goes back to them.
+func _copy_apply(peer: int, action: Dictionary) -> void:
+	var why := check(peer, action)
+	if why != "":
+		if int(action.get("paid", 0)) > 0:
+			give_cash(peer, mini(int(action["paid"]), Progress.MAX_MONEY), "Order refund")
+		_tell(peer, why, false)
+		return
+	var text := BikeCopy.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## Host: boxes up whatever's on order (see on_order) that the delivery area has room for now,
+## a few at a time, checked every second or so.
+func _deliver_on_order(delta: float) -> void:
+	_on_order_timer -= delta
+	if on_order.is_empty() or _on_order_timer > 0.0:
+		return
+	_on_order_timer = 1.0
+	var sent := 0
+	var i := 0
+	while i < on_order.size() and sent < 4:
+		var o: Dictionary = on_order[i]
+		if PartsDB.get_part(str(o.get("part", ""))).is_empty():
+			on_order.remove_at(i)
+			continue
+		if not delivery_room(str(o["part"])):
+			i += 1
+			continue
+		on_order.remove_at(i)
+		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")))
+		sent += 1
+	if sent > 0:
+		_mark_dirty()
+		changed.emit()
+
+
+## Host: a new part, boxed (fluids as they are) and put in the delivery area, with what was paid
+## for it and who ordered it on the note. Returns its id, or 0 when there's no room for it.
+func deliver_new(part: String, color = null, finish := "", paid := 0, by := "") -> int:
+	if not delivery_room(part):
+		return 0
+	var item_id := _new_item(part, 0.0, 0.0, 0.0, color if color is Color else null)
+	items[item_id]["paid"] = paid
+	items[item_id]["finish"] = finish
+	items[item_id]["boxed"] = not PartsDB.is_fluid(part)
+	items[item_id]["by"] = by if by != "" else "the crew"
+	if not _deliver(item_id):
+		items.erase(item_id)
+		return 0
+	return item_id
+
+
 ## A "coffee_*" request (see CoffeeShop.check and CoffeeShop.apply). Money a player paid at the
 ## counter for something they can't have goes back to them.
 func _coffee_apply(peer: int, action: Dictionary) -> void:
@@ -5125,27 +5744,73 @@ func _paint_bay_apply(peer: int, action: Dictionary) -> void:
 	changed.emit()
 
 
+## A "staff_*" request: hiring, firing and giving the garage's staff jobs (see Staff.check and
+## Staff.apply).
+func _staff_apply(peer: int, action: Dictionary) -> void:
+	var why := Staff.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var text := Staff.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## A "pool_*" request for the lounge's pool table (see PoolGame.check and PoolGame.apply).
+func _pool_apply(peer: int, action: Dictionary) -> void:
+	var why := PoolGame.check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	var text := PoolGame.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	_mark_dirty()
+	changed.emit()
+
+
 ## Host: a new day starts when the clock passes midnight: loan repayments come out (see Money.new_day).
 func _money_clock() -> void:
 	if Daylight.current == null:
 		_clock_hours = -1.0
 		return
 	var h := Daylight.time_of_day()
+	if _clock_hours >= 0.0:
+		# The lights on since last frame count towards tonight's power bill.
+		Money.note_lights(h - _clock_hours if h >= _clock_hours else h + 24.0 - _clock_hours)
 	if _clock_hours >= 0.0 and h < _clock_hours - 12.0:
 		money_new_day()
 	_clock_hours = h
 
 
-## Host: moves the business on a day (the clock does this at midnight; tests call it).
+## Host: moves the business on a day (the clock does this at midnight; tests call it). When the
+## night's bills come out everyone hears the till (see _bill_sound).
 func money_new_day() -> void:
 	if not is_authority():
 		return
 	var said := Money.new_day()
+	# The staff's new day: who's in, who's phoned in sick, who's on the hiring board.
+	Staff.new_day()
 	if said != "":
+		var ok := not said.contains("MISSED") and not said.contains("OVERDRAWN")
 		for p in crew:
-			_tell(int(p), said, not said.contains("MISSED"))
+			_tell(int(p), said, ok)
+		if int(bank.get("last_bill_day", -1)) == int(bank["day"]):
+			_bill_sound(ok)
+			if Net.is_online():
+				_bill_sound.rpc(ok)
 	_mark_dirty()
 	changed.emit()
+
+
+## The night's bills have come out of the business's account: a ting, or a warning beep when
+## it's gone overdrawn.
+@rpc("authority", "call_remote", "reliable")
+func _bill_sound(ok: bool) -> void:
+	bills_heard += 1
+	Sfx.play_ui("ting" if ok else "beep", -6.0)
 
 
 # ---------------------------------------------------------------------------- sales office
@@ -5241,7 +5906,7 @@ const WORK_AREA := Rect2(-22.0, 42.0, 60.0, 44.0)
 ## Work that needs the bike at the shed: tools, fitting and taking off parts, fluids (apart from
 ## a can of petrol in the tank), chain lube and adjusting, tuning and geometry mode.
 const WORKSHOP_ONLY := ["unbolt", "bolt", "remove", "install", "adjust_chain", "tune", "geo_save", "geo_blueprint",
-	"clean", "clean_many", "repair", "repair_many", "paint", "prime", "coat", "lube", "drain", "wash"]
+	"clean", "clean_many", "repair", "repair_many", "paint", "prime", "coat", "lube", "drain", "wash", "toolbox_pack"]
 ## What the garage pays to have a bike left out on the road brought back to the yard.
 const RETRIEVE_FEE := 40
 ## Where retrieved bikes are dropped off: a row in the yard to the west of the roller door.
@@ -5261,6 +5926,88 @@ func bike_at_work(bike_id: int) -> bool:
 		return true
 	var xf = bikes[bike_id].get("xf", null)
 	return not (xf is Transform3D) or in_work_area((xf as Transform3D).origin)
+
+
+## What's packed in a toolbox item (PartsDB.TOOLBOX_CONTENTS ids, in the order they went in).
+func toolbox_contents(item_id: int) -> Array:
+	var c = items.get(item_id, {}).get("contents", [])
+	return c if c is Array else []
+
+
+## How many things a toolbox item has room for.
+func toolbox_slots(item_id: int) -> int:
+	return int(PartsDB.get_part(str(items.get(item_id, {}).get("part", ""))).get("slots", 0))
+
+
+## The next thing that would go in a toolbox (in PartsDB.TOOLBOX_CONTENTS order), or "" when it's
+## full or has the lot.
+func next_kit(item_id: int) -> String:
+	var packed := toolbox_contents(item_id)
+	if packed.size() >= toolbox_slots(item_id):
+		return ""
+	for what in PartsDB.TOOLBOX_CONTENTS:
+		if not packed.has(what):
+			return str(what)
+	return ""
+
+
+## "tools, plug kit and pump" for what's packed.
+static func kit_list(packed: Array) -> String:
+	var names := packed.map(func(w): return str(PartsDB.TOOLBOX_CONTENTS.get(str(w), {}).get("short", w)))
+	if names.is_empty():
+		return "nothing"
+	if names.size() == 1:
+		return str(names[0])
+	return ", ".join(names.slice(0, names.size() - 1)) + " and " + str(names[-1])
+
+
+## A toolbox's contents for the info panel: "Packed (3 of 6): tools, plug kit and pump".
+func toolbox_text(item: Dictionary) -> String:
+	var packed: Array = item.get("contents", []) if item.get("contents") is Array else []
+	var slots := int(PartsDB.get_part(str(item["part"])).get("slots", 0))
+	if packed.is_empty():
+		return "Empty: room for %d things" % slots
+	return "Packed (%d of %d): %s" % [packed.size(), slots, kit_list(packed)]
+
+
+## The pump's price for a litre of unleaded, in pounds (the rider pays out of their own money).
+const PUMP_PRICE := 1.6
+## The save's kit version: saves without it are from before the pumps (see _brim_old_tanks).
+const KIT_SAVE := 1
+
+
+## Litres of petrol a bike's tanks have room for (the main tank and any auxiliary one).
+func fuel_space(bike_id: int) -> float:
+	var space := 0.0
+	for slot in ["tank", "aux_tank"]:
+		var id := item_on(bike_id, slot)
+		if id != 0:
+			space += PartsDB.fluid_capacity(str(items[id]["part"])) - float(items[id].get("fluid", {}).get("litres", 0.0))
+	return maxf(space, 0.0)
+
+
+## Puts `litres` of fresh unleaded in a bike's tanks, the main one first, then any auxiliary
+## one. Returns how much went in.
+func _fill_tanks(bike_id: int, litres: float) -> float:
+	var put := 0.0
+	for slot in ["tank", "aux_tank"]:
+		var id := item_on(bike_id, slot)
+		if id == 0 or litres - put <= 0.0:
+			continue
+		var cap := PartsDB.fluid_capacity(str(items[id]["part"]))
+		var f: Dictionary = items[id].get("fluid", {"type": "", "litres": 0.0, "age": 0.0})
+		var have := float(f.get("litres", 0.0))
+		var add := clampf(litres - put, 0.0, maxf(cap - have, 0.0))
+		if add <= 0.0:
+			continue
+		# Fresh pump fuel freshens what was there; mostly pump fuel, it's pump fuel.
+		f["age"] = float(f.get("age", 0.0)) * have / (have + add)
+		if str(f.get("type", "")) == "" or add > have:
+			f["type"] = "unleaded_95"
+		f["litres"] = have + add
+		items[id]["fluid"] = f
+		put += add
+	return put
 
 
 ## Why `action` can't be done because the bike it's on is out on the road, or "".
@@ -5287,7 +6034,7 @@ func abandoned_bikes() -> Array:
 	var out := []
 	for id in bikes:
 		var b: Dictionary = bikes[id]
-		if int(b.get("rider", 0)) == 0 and int(b.get("pusher", 0)) == 0 and not bike_at_work(int(id)):
+		if int(b.get("rider", 0)) == 0 and int(b.get("pusher", 0)) == 0 and not bike_at_work(int(id)) and not Roadside.parked(int(id)):
 			out.append(int(id))
 	out.sort()
 	return out

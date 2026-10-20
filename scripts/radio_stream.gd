@@ -131,6 +131,12 @@ func _set_status(text: String) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("radio", pt)
+
+
+func _process_body(delta: float) -> void:
 	if url == "":
 		return
 	if _state == State.IDLE:

@@ -15,8 +15,12 @@ var _last := PackedFloat32Array()
 var _effects: BikeEffects
 var _horn: HornAudio
 var _fog: Array = []
+var _mark_key := ""         # its tyre's name in the shared skid marks
+var _marking := false        # its back tyre was laying rubber last frame
 ## The rider's gear (slot -> RiderGear item id); set before setup. Empty dresses them as before.
 var rider_gear := {}
+## Wheeled along on foot (see Roadside): nobody's sat on it.
+var pushed := false
 
 
 func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Color(0, 0, 0, 0)) -> void:
@@ -31,6 +35,7 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 	model = BikeModel.new()
 	model.rider_color = rider_color
 	model.rider_gear = rider_gear
+	model.baked = true   # ridden past, not worked on: far fewer draw calls (see BikeModel._bake_static)
 	add_child(model)
 	model.build_from(_build, paint)
 	_fog = Bike.make_fog_lights(self, model, _build)
@@ -74,6 +79,12 @@ func push_state(state: PackedFloat32Array) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var pt := Perf.t0()
+	_physics_process_body(delta)
+	Perf.add("remote_bikes", pt)
+
+
+func _physics_process_body(delta: float) -> void:
 	if _snapshots.is_empty():
 		return
 	var render_t := Time.get_ticks_msec() / 1000.0 - DELAY
@@ -94,7 +105,9 @@ func _physics_process(delta: float) -> void:
 	_last = sb
 	model.update_pose_from(lerpf(sa[10], sb[10], f), sb[11], sb[12], lerpf(sa[13], sb[13], f),
 		lerpf(sa[14], sb[14], f), sb[18], 0.0)
-	model.set_rider_visible(sb[17] < 0.5)
+	model.set_rider_visible(sb[17] < 0.5 and not pushed)
+	# Their left foot down as their bike comes to rest, by its speed as their snapshots have it.
+	model.update_foot(Vector3(sb[7], sb[8], sb[9]).length(), delta, sb[17] < 0.5)
 	audio.rpm = sb[15]
 	audio.throttle = sb[16]
 	var running := sb.size() < 20 or sb[19] > 0.5
@@ -103,17 +116,63 @@ func _physics_process(delta: float) -> void:
 	audio.speed = v.length()
 	_effects.update(delta, v.length(), sb[16], running, _build.overall_health(), "", true, 0.0)
 	_effects.set_screech(sb[20] if sb.size() > 20 else 0.0)
-	_horn.pressed = sb.size() > 21 and sb[21] > 0.5
+	# Their horn, while held; it stops if their snapshots stop coming (a dropped connection).
+	_horn.pressed = sb.size() > 21 and sb[21] > 0.5 and render_t + DELAY - float(_snapshots[-1]["t"]) < 0.5
 	if sb.size() > 24:
 		_effects.beam_mode = int(sb[24])
 	if sb.size() > 22:
 		audio.gear = int(sb[22])
 	if sb.size() > 23 and _effects.has_method("set_tyre_smoke"):
 		_effects.call("set_tyre_smoke", sb[23], Vector3(0.0, -_build.rear_radius, _build.wheelbase * 0.5))
+	_rubber(sb[23] if sb.size() > 23 else 0.0, sb[20] if sb.size() > 20 else 0.0, delta)
 	var fog := running and _effects.beam_mode >= Bike.BEAM_FOG
 	for l in _fog:
 		l.visible = fog
 	model.set_lights(running, _effects.beam_mode > 0, fog)
+
+
+## Their back tyre's rubber on the road: a burnout's patch or a skid's line, laid from the
+## snapshots (the ground under it is only looked up while it's marking).
+func _rubber(burnout: float, skid: float, delta: float) -> void:
+	if _mark_key == "":
+		_mark_key = "remote_%d" % get_instance_id()
+	var marks := SkidMarks.shared(get_tree())
+	if burnout <= 0.05 and skid <= 0.05:
+		if _marking:
+			marks.mark(_mark_key, Vector3.ZERO, Vector3.UP, 0.0, 0.0, "")
+			_marking = false
+		return
+	var at := global_transform * Vector3(0.0, 0.0, _build.wheelbase * 0.5)
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.2, at + Vector3.DOWN * (_build.rear_radius + 0.6), 1)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return
+	var surf := "tarmac"
+	if hit["collider"] and (hit["collider"] as Object).has_meta("surface"):
+		surf = str((hit["collider"] as Object).get_meta("surface"))
+	_marking = true
+	if burnout > 0.05:
+		marks.scrub(_mark_key, hit["position"], hit["normal"], -global_basis.z, _build.rear_tyre_width, burnout, surf, delta)
+	else:
+		marks.mark(_mark_key, hit["position"], hit["normal"], _build.rear_tyre_width, skid, surf)
+
+
+## The world's origin moved by `d` (see AdventureWorld): the bike and its snapshots move with it.
+func shift_origin(d: Vector3) -> void:
+	for snap in _snapshots:
+		var st: PackedFloat32Array = snap["s"]
+		st[0] -= d.x
+		st[1] -= d.y
+		st[2] -= d.z
+		snap["s"] = st
+	global_position -= d
+
+
+## Their bike's velocity as their last snapshot has it (m/s).
+func current_velocity() -> Vector3:
+	if _last.size() < 10:
+		return Vector3.ZERO
+	return Vector3(_last[7], _last[8], _last[9])
 
 
 func current_speed() -> float:

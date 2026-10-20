@@ -2,8 +2,9 @@ class_name MoneyTab
 extends ScrollContainer
 ## The Esc menu's Money tab: your own cash and the business's account, sending money to a mate
 ## or to the business, taking money out of the business (the garage owner only), the garage's
-## settings (the host only: the business's cut of wages and who owns it), bank loans and the
-## business's ledger, and graphs of both over in-game time (minutes up to years, see
+## settings (the host only: the business's cut of wages, who owns it and how hard the running
+## costs bite), the running costs (tonight's bill line by line, the last one, any overdraft),
+## bank loans and the business's ledger, and graphs of both over in-game time (minutes up to years, see
 ## MoneyGraph). Everything goes through Money and the host.
 
 var _box: VBoxContainer
@@ -17,6 +18,10 @@ var _take: Button
 var _cut: SpinBox
 var _owner: OptionButton
 var _settings_note: Label
+var _costs: OptionButton
+var _bills: VBoxContainer
+var _bills_shown := ""
+var _bills_timer := 0.0
 var _loans: VBoxContainer
 var _ledger: VBoxContainer
 var _mine: VBoxContainer
@@ -110,6 +115,22 @@ func _ready() -> void:
 		if not _filling:
 			Shed.request({"a": "money_settings", "owner": _owner.get_item_text(i)}))
 	owner_row.add_child(_owner)
+	var costs_row := _row()
+	costs_row.add_child(_row_label("Running costs"))
+	_costs = OptionButton.new()
+	_costs.custom_minimum_size.x = 160.0
+	for mode in Money.COSTS_MODES:
+		_costs.add_item(str(Money.COSTS_NAMES[mode]))
+	_costs.item_selected.connect(func(i):
+		if not _filling:
+			set_costs(Money.COSTS_MODES[i]))
+	costs_row.add_child(_costs)
+
+	_box.add_child(UITheme.title("Running costs", 20))
+	_box.add_child(UITheme.label("Every in-game midnight the business pays its bills: rent and business rates (more for every extension), insurance (more for more bikes and stock), power and water (the lights and machines used that day) and workshop consumables (rags, gloves, cleaner: a little for every job done). A bill it can't cover puts it overdrawn: income pays that back first, and it costs %.1f%% a day until then." % (Money.OVERDRAFT_RATE * 100.0), 14, Color(1, 1, 1, 0.6)))
+	_bills = VBoxContainer.new()
+	_bills.add_theme_constant_override("separation", 4)
+	_box.add_child(_bills)
 
 	_box.add_child(UITheme.title("Bank loans", 20))
 	_box.add_child(UITheme.label("The bank takes a repayment from the business every in-game day (at midnight), with interest on what's owed. Pay more off any time. Miss one and there's a fee, and no new loans until that one is paid off.", 14, Color(1, 1, 1, 0.6)))
@@ -132,13 +153,18 @@ func _process(delta: float) -> void:
 	if _graph_timer <= 0.0:
 		_graph_timer = 0.5
 		refresh_graphs()
+	_bills_timer -= delta
+	if _bills_timer <= 0.0:
+		_bills_timer = 1.0
+		refresh_bills()
 	var crew_names := _crew_signature()
 	if crew_names != _crew_shown:
 		_crew_shown = crew_names
 		_fill_choices()
 	var sig := "%d|%d|%s|%s|%d|%s" % [Progress.money(), Shed.garage_money, var_to_str(Shed.bank.get("loans", [])),
 		str(Shed.bank.get("ledger", []).size()) + str(Shed.bank.get("ledger", []).back() if not Shed.bank.get("ledger", []).is_empty() else ""),
-		int(Shed.bank.get("cut", 0)), str(Shed.bank.get("owner", "")) + str(Progress.profile.get("cash_log", []).size())]
+		int(Shed.bank.get("cut", 0)), str(Shed.bank.get("owner", "")) + str(Progress.profile.get("cash_log", []).size())
+		+ str(Shed.bank.get("costs", "")) + str(Shed.bank.get("overdraft", 0))]
 	if sig != _shown:
 		_shown = sig
 		refresh()
@@ -197,15 +223,22 @@ func refresh() -> void:
 	var owner := Money.owner_name()
 	var is_owner := Money.is_owner(Shed.me())
 	var host := Shed.is_authority() and Shed.me() == 1
-	_summary.text = "You: %s     The business: %s     It takes %d%% of wages; %s owns it.     Day %d" % [
-		TvChannels.money_text(Progress.money()), TvChannels.money_text(Shed.garage_money), int(bank["cut"]), owner, int(bank["day"])]
+	var od := int(bank.get("overdraft", 0))
+	_summary.text = "You: %s     The business: %s%s     It takes %d%% of wages; %s owns it.     Day %d" % [
+		TvChannels.money_text(Progress.money()), TvChannels.money_text(Shed.garage_money),
+		("  (OVERDRAWN by %s)" % TvChannels.money_text(od)) if od > 0 else "", int(bank["cut"]), owner, int(bank["day"])]
 	_take.disabled = not is_owner
 	_take.tooltip_text = "" if is_owner else "Only the garage owner (%s) can take money out." % owner
 	_filling = true
 	_cut.value = int(bank["cut"])
+	_costs.select(maxi(0, Money.COSTS_MODES.find(str(bank.get("costs", "normal")))))
 	_filling = false
 	_cut.editable = host
 	_owner.disabled = not host
+	_costs.disabled = not host
+	_costs.tooltip_text = "" if host else "Only the host can change the running costs."
+	_bills_shown = ""
+	refresh_bills()
 	_settings_note.text = "The host sets these; they're saved with the shed." if host else "Only the host can change these."
 	if not _owner.disabled:
 		_fill_choices()
@@ -237,7 +270,7 @@ func refresh() -> void:
 		var b := _button(Money.offer_text(i), func(): take_loan(offer))
 		var why := Money.check(Shed.me(), {"a": "money_loan", "offer": i})
 		b.disabled = why != ""
-		b.tooltip_text = why
+		b.tooltip_text = Controls.hint(why)
 		_loans.add_child(b)
 	for c in _ledger.get_children():
 		c.queue_free()
@@ -256,6 +289,38 @@ func refresh() -> void:
 		_mine.add_child(UITheme.label("Nothing yet: jobs in the shed pay wages.", 15))
 	for e in mine:
 		_mine.add_child(_line(int(e["day"]), int(e["amt"]), str(e["why"]), ""))
+
+
+## The running costs section: tonight's bill so far line by line, the last bill, and any
+## overdraft. Rebuilt only when something in it changed.
+func refresh_bills() -> void:
+	if _bills == null:
+		return
+	var bank: Dictionary = Shed.bank
+	var lines := Money.bill_lines(bank)
+	var od := int(bank.get("overdraft", 0))
+	var sig := var_to_str([lines, od, bank.get("last_bill", []), bank.get("last_bill_day", -1), bank.get("costs", "")])
+	if sig == _bills_shown:
+		return
+	_bills_shown = sig
+	for c in _bills.get_children():
+		c.queue_free()
+	var mode := str(bank.get("costs", "normal"))
+	if lines.is_empty():
+		_bills.add_child(UITheme.label("Running costs are off: the business pays no bills.", 15))
+	else:
+		_bills.add_child(UITheme.label("Tonight's bill so far (%s): %s" % [str(Money.COSTS_NAMES.get(mode, mode)).to_lower(),
+			TvChannels.money_text(Money.bill_total(lines))], 16, UITheme.ACCENT))
+		for l in lines:
+			_bills.add_child(UITheme.label("      %s    %s" % [str(l["why"]), TvChannels.money_text(int(l["amt"]))], 15,
+				Color(0.85, 0.87, 0.9)))
+	var last: Array = bank.get("last_bill", [])
+	if not last.is_empty():
+		_bills.add_child(UITheme.label("Last bill, day %d: %s" % [int(bank.get("last_bill_day", 0)), TvChannels.money_text(Money.bill_total(last))],
+			14, Color(1, 1, 1, 0.6)))
+	if od > 0:
+		_bills.add_child(UITheme.label("The business is overdrawn by %s. Income pays it back first; until then it costs %.1f%% a day." % [
+			TvChannels.money_text(od), Money.OVERDRAFT_RATE * 100.0], 15, Color(1, 0.55, 0.45)))
 
 
 ## Shows the money graphs by the minute, hour, day, week, month or year (kept in the settings;
@@ -299,6 +364,11 @@ func send_money(to: int, amount: int) -> void:
 ## The owner takes money out of the business into their own cash.
 func withdraw(amount: int) -> void:
 	Shed.request({"a": "money_withdraw", "amount": amount})
+
+
+## Host: how hard the running costs bite ("off", "normal" or "hard").
+func set_costs(mode: String) -> void:
+	Shed.request({"a": "money_settings", "costs": mode})
 
 
 func take_loan(offer: int) -> void:

@@ -17,8 +17,9 @@ const LINE_STEP := 0.5
 const CORNER_REACH := 8.0
 const TIGHT_REACH := 0.8
 const NEAR_ROOM := 3.0
-## The furthest a rider leans over (rad), and how hard they brake for a corner or a bay (m/s^2).
-const MAX_LEAN := 0.6
+## The furthest a rider leans over (rad: a road rider's lean, see Bike.ROAD_LEAN), and how hard
+## they brake for a corner or a bay (m/s^2).
+const MAX_LEAN := Bike.ROAD_LEAN
 const BRAKING := 2.5
 
 var customer_id := 0
@@ -194,6 +195,7 @@ func _part(parent: Node3D, mesh: PrimitiveMesh, pos: Vector3, size: Vector3, mat
 	mi.material_override = mat
 	mi.position = pos
 	mi.scale = size
+	Graphics.avatar_mesh(mi)
 	parent.add_child(mi)
 
 
@@ -214,6 +216,32 @@ func _make_bike(bike: Dictionary, xf: Transform3D, on_stand: bool) -> void:
 	_bike.add_child(_lean)
 	_yaw = xf.basis.get_euler().y
 	_set_parked(on_stand)
+	if not (self is CoffeeVisitor):
+		# Something to look at, for ordering one like it or copying its blueprint (BikeCopyView);
+		# a cafe biker's parked bike has its own (CoffeeVisitor._add_bike_body). Not solid.
+		var body := StaticBody3D.new()
+		body.name = "LookBody"
+		body.collision_layer = Workshop.INTERACT_LAYER
+		body.collision_mask = 0
+		body.set_meta("bike_view", self)
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(0.75, 1.1, 2.0)
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		cs.position.y = 0.55
+		body.add_child(cs)
+		_bike.add_child(body)
+
+
+## Their bike as a request for ordering one or copying its blueprint carries it (see BikeCopy),
+## or {} with no bike here.
+func bike_src() -> Dictionary:
+	if not has_bike() or _build == null:
+		return {}
+	var style := str(PartsDB.detect_style(_build.parts).get("style", ""))
+	var who := customer_name.get_slice(" ", 0) if customer_name != "" else "A customer"
+	return BikeCopy.build_src("%s's %s" % [who, PartsDB.style_name(style) if style != "" else "bike"], _build.parts, _bike_paint,
+		_build.condition, false)
 
 
 ## Rebuilds the bike parked on its stand (leaning on the side stand, nobody on it) or ridden.
@@ -223,6 +251,7 @@ func _set_parked(on_stand: bool) -> void:
 	if _model:
 		_model.free()
 	_model = BikeModel.new()
+	_model.baked = true   # ridden in and out, not worked on: far fewer draw calls (see BikeModel._bake_static)
 	_model.rider_color = _look.get("top", Color(0, 0, 0, 0)) if _look.get("top") is Color else Color(0, 0, 0, 0)
 	_lean.basis = Basis()
 	var lift := 0.0
@@ -289,12 +318,11 @@ static func _look_along(from: Vector3, to: Vector3) -> Transform3D:
 
 # ---------------------------------------------------------------------------- walking about
 
-## Shows "F: talk" under the name while someone looks at them.
+## Shows "F: talk" (or "Y: talk" on a pad) under the name while someone looks at them.
 func set_hint(on: bool) -> void:
 	if _label == null:
 		return
-	var key := Settings.binding_text("interact", false)
-	_label.text = customer_name + ("\n%s: talk" % (key if key != "" else "F") if on and at_counter and not leaving else "")
+	Controls.bind_text(_label, customer_name + ("\n{interact}: talk" if on and at_counter and not leaving else ""))
 
 
 ## Walks to a new place in the queue.
@@ -391,6 +419,12 @@ func _leg_done(then: String) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("customers", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _cur.is_empty():
 		if _queue.is_empty():
 			return

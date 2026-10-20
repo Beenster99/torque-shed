@@ -198,7 +198,7 @@ func _refresh() -> void:
 	if category == "trinket":
 		var t: Dictionary = Trinkets.MODELS[selected]
 		_name.text = str(t["name"])
-		_desc.text = str(t["desc"])
+		_desc.text = Controls.hint(str(t["desc"]))
 		_price.text = "%s  ·  for the shed: arrives outside the roller door" % TvChannels.money_text(int(t["price"]))
 		_buy.text = "Buy (%s)" % TvChannels.money_text(int(t["price"]))
 		_buy.disabled = false
@@ -206,7 +206,7 @@ func _refresh() -> void:
 	else:
 		var item: Dictionary = RiderGear.ITEMS[selected]
 		_name.text = str(item["name"])
-		_desc.text = str(item["desc"])
+		_desc.text = Controls.hint(str(item["desc"]))
 		var owned := RiderGear.owns(selected)
 		_price.text = RiderGear.status_text(selected) if owned else ("Free" if int(item["price"]) == 0 else TvChannels.money_text(int(item["price"])))
 		_buy.text = "Owned" if owned else "Buy and wear (%s)" % TvChannels.money_text(int(item["price"]))
@@ -255,10 +255,10 @@ func buy_selected() -> void:
 		why = RiderGear.wear(selected)
 		_status.text = "Bought the %s and put it on." % RiderGear.ITEMS[selected]["name"] if why == "" else why
 	elif why == "":
-		_status.text = "Bought the %s. It's outside by the roller door: press F on it to bring it in." % \
+		_status.text = Controls.hint("Bought the %s. It's outside by the roller door: press {interact} on it to bring it in.") % \
 			str(Trinkets.MODELS[selected]["name"]).to_lower()
 	else:
-		_status.text = why
+		_status.text = Controls.hint(why)
 	if why == "":
 		Sfx.play_ui("clink", -6.0)
 		_redress_my_bike()

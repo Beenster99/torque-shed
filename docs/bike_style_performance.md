@@ -64,23 +64,25 @@ adding the 1500 and 1800 cc V-twins.
 - **Top mph:** the build's estimate.
 - **mpg:** a steady 90 km/h in top gear, in UK gallons. The real figures are real-world averages.
 
-`_test_style_performance` and `_test_style_launch` in `tests/run_tests.gd` keep them there.
+`_test_style_performance` and `_test_style_launch` in `tests/run_tests.gd` keep them there, and the
+`_test_realism_*` tests (`tests/bike_realism_tests.gd`) keep every style's ridden 0-60, stop and full-lean turn in
+the bands below.
 
 | Style | hp (real) | Top mph (real) | Ride 0-60 s (real) | UK mpg (real) | Wet kg (real) |
 |---|---|---|---|---|---|
 | Classic | 54 (47) | 102 (110) | 5.1 (5.5) | 60 (60) | 211 (224) |
-| Cafe racer | 98 (105) | 128 (130) | 4.5 (3.7) | 53 (50) | 195 (214) |
-| Bobber | 98 (94) | 115 (115) | 5.2 (4.0) | 49 (48) | 263 (255) |
-| Chopper | 101 (100) | 117 (115) | 5.3 (4.0) | 47 (43) | 281 (308) |
-| Cruiser | 101 (87) | 120 (112) | 5.1 (4.2) | 48 (48) | 308 (290) |
+| Cafe racer | 98 (105) | 128 (130) | 3.8 (3.7) | 52 (50) | 197 (214) |
+| Bobber | 98 (94) | 115 (115) | 4.3 (4.0) | 49 (48) | 263 (255) |
+| Chopper | 101 (100) | 118 (115) | 4.4 (4.0) | 47 (43) | 282 (308) |
+| Cruiser | 101 (87) | 120 (112) | 4.4 (4.2) | 48 (48) | 309 (290) |
 | Scrambler | 77 (80) | 111 (118) | 4.6 (3.9) | 52 (52) | 208 (222) |
-| Adventure | 101 (106) | 119 (130) | 4.7 (3.4) | 46 (51) | 252 (226; GS Adventure 269) |
-| Tall roader | 114 (117) | 137 (140) | 3.3 (3.3) | 52 (52) | 213 (219) |
-| Tourer | 153 (136) | 147 (135) | 3.8 (3.4) | 41 (47) | 277 (343) |
+| Adventure | 101 (106) | 121 (130) | 4.2 (3.4) | 48 (51) | 251 (226; GS Adventure 269) |
+| Tall roader | 114 (117) | 137 (140) | 3.2 (3.3) | 52 (52) | 213 (219) |
+| Tourer | 153 (136) | 147 (135) | 3.7 (3.4) | 41 (47) | 277 (343) |
 | Sports bike | 119 (95) | 156 (145) | 3.3 (3.3) | 62 (50) | 197 (200) |
 | Race bike | 222 (206) | 186 (186) | 3.0 (2.9) | 43 (40) | 206 (199) |
-| Naked | 124 (117) | 137 (145) | 3.4 (3.1) | 47 (52) | 201 (190) |
-| Supermoto | 71 (74) | 109 (110) | 3.8 (3.5) | 54 (58) | 149 (158) |
+| Naked | 124 (117) | 137 (145) | 3.2 (3.1) | 47 (52) | 201 (190) |
+| Supermoto | 71 (74) | 109 (110) | 3.7 (3.5) | 54 (58) | 149 (158) |
 | MX bike | 71 (63 crank) | 85 (85) | 5.5 on tarmac | 44 | 130 (109) |
 
 **Tyre grip on dry tarmac:**
@@ -92,16 +94,54 @@ adding the 1500 and 1800 cc V-twins.
 | Sport road | 1.32 |
 | Race slick | 1.45 |
 | Dual-sport | 1.08 |
+| Road-biased trail (adventure) | 1.15 |
 | MX knobbly | 0.92 |
 
 **Big twins.** The 1500 and 1800 cc V-twins carry a `breathing` figure below 1. Turning only 5,500-6,500 rpm, they
 need less fuel flow and shed less heat than their size suggests. They pair with the 6-speed cruiser overdrive
 gearbox (a tall primary drive and an overdrive sixth), as real big twins do.
 
+## Ridden: 0-60, the stop from 60 mph and a full-lean turn
+
+Each style's stock bike ridden on flat dry tarmac with auto-shift and Riding realism at 0.5: flat out from a
+standstill; both brakes on hard from just over 60 mph, no weight forward; and at 20 m/s with the steer input held
+full, the lean it settles at and the sideways g. Real figures are typical magazine road tests of the kind of bike,
+about ±10%: 60-0 stops run 32-38 m for sports bikes on ABS (about 1 g), 38-44 m for heavy cruisers. Cruisers ground
+their pegs and boards at about 30 degrees.
+
+| Style | 0-60 s (real) | 60-0 m (real) | Lean deg (real) | Sideways g (real) |
+|---|---|---|---|---|
+| Classic | 5.0 (5.5) | 35.4 (36-42) | 48 (45) | 0.98 (0.9-1.0) |
+| Cafe racer | 3.8 (3.7) | 35.2 (35-40) | 49 (45-50) | 1.02 (1.0) |
+| Scrambler | 4.6 (3.9) | 37.8 (37-42) | 43 (40-45) | 0.87 (0.85) |
+| Tourer | 3.7 (3.4) | 35.4 (36-40) | 49 (45-48) | 0.99 (1.0) |
+| Tall roader | 3.2 (3.3) | 33.5 (34-38) | 51 (48-50) | 1.09 (1.0-1.1) |
+| Naked | 3.2 (3.1) | 32.8 (34-37) | 51 (48-52) | 1.10 (1.1) |
+| Sports bike | 3.3 (3.3) | 34.2 (34-37) | 51 (50-55) | 1.09 (1.1-1.2) |
+| Race bike | 3.0 (2.9) | 34.2 (33-36) | 53 (55+ on track) | 1.18 (1.2) |
+| Bobber | 4.3 (4.0) | 36.0 (38-42) | 31 (28-31) | 0.54 (0.55) |
+| Chopper | 4.4 (4.0) | 36.0 (40-44) | 31 (28-32) | 0.52 (0.55) |
+| Cruiser | 4.4 (4.2) | 33.9 (38-42) | 33 (29-32) | 0.56 (0.6) |
+| Adventure | 4.2 (3.4) | 36.4 (36-40) | 46 (45) | 0.92 (0.95) |
+| Supermoto | 3.7 (3.5) | 34.4 (35-38) | 50 (50+) | 1.05 (1.1) |
+| MX bike, on tarmac | 5.5 | 42.6 | 37 | 0.75 |
+
+What got them there (on top of the tuning above):
+- **Rider throttle control** (Riding realism, no traction control) rolls off by how far the back tyre spins past
+  its own peak slip. It used to wait for a fixed 12% and then barely trim, so a bias-ply or dual-sport tyre spun at
+  two to three times its peak and the cruisers, cafe racer and adventure bike lost about a second to 60.
+- **Hard stops.** Braking hard without leaning forward for a stoppie, the rider lets the back come up only about 4
+  degrees. Before, a hard stop on the sports bike went up onto a 23 degree stoppie and took 42 m. A careful rider, or
+  ABS, also works round the tyre's peak instead of sitting exactly on it (`BRAKE_KEEP`), which took the road bikes'
+  stops from about 31 m (1.18 g) to 33-36 m.
+- **Tyres.** Touring tyres come in 16" for cruiser rims, and the bobber, chopper and cruiser stock bikes wear one at
+  the back. The cafe racer runs touring tyres like the classic, and the adventure bike runs road-biased trail tyres
+  on a 17" cast rear (grip 1.15, between touring and dual-sport) with taller gearing, which also lifts its top speed.
+- **Race bike.** Its front wheel was the 6" rear rim, which put a 180 mm tyre on the front; it fell over in a full
+  lean turn. It now has a 3.5" front with a 120 sport tyre.
+
 **Known gaps.**
-- **Cruiser-style launches.** The bobber, chopper and cruiser are still about 1 s slower to 60 than magazine
-  tests.
-  - Their 16" rear rims only take old-school tyres.
-  - Under hard acceleration the rear tyre's load bounces about (wheel hop), so it spins past peak grip in first
-    gear.
-- **Adventure and scrambler launches.** These run on dual-sport tyres.
+- **Scrambler and adventure launches** are still 0.7-0.8 s slower to 60 than road tests: dual-sport and trail tyres.
+- **Heavy cruisers stop a little short** (34-36 m against 38-44 m). They wear the default road brakes; real ones have
+  weaker brakes for their weight.
+- **The supermoto's front** runs a 160 mm tyre: its 17" supermoto wheels are all 4.25" rear-width rims.

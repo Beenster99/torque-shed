@@ -9,9 +9,10 @@ const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc",
 	"saddle", "handlebars", "dashboard", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling",
 	"gearbox", "exhaust", "final_drive", "chain", "side_stand", "centre_stand", "headlight", "horn", "ecu",
 	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels",
-	"rearsets", "guards", "number_boards", "swingarm", "steering_damper"]
+	"rearsets", "guards", "number_boards", "swingarm", "steering_damper", "tank_bag", "aux_tank", "toolbox", "satnav"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
-const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube"]
+## A puncture repair kit is carried the same way: its "litres" are the plugs left in it.
+const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube", "puncture_kit"]
 const KIND_NAMES := {
 	"frame": "Frame", "fork": "Front fork", "shock": "Rear suspension", "wheel": "Wheel", "tyre": "Tyre",
 	"disc": "Brake disc", "caliper": "Brake caliper", "pads": "Brake pads", "master": "Master cylinder",
@@ -22,18 +23,25 @@ const KIND_NAMES := {
 	"headlight": "Headlight", "horn": "Horn", "ecu": "ECU", "panniers": "Panniers", "top_box": "Top box",
 	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "front_mudguard": "Front mudguard", "indicators": "Indicators",
 	"side_panels": "Side panels", "rearsets": "Footpegs and rearsets", "guards": "Engine guards", "number_boards": "Number boards",
-	"swingarm": "Swingarm", "steering_damper": "Steering damper", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
+	"swingarm": "Swingarm", "steering_damper": "Steering damper", "tank_bag": "Tank bag", "aux_tank": "Auxiliary fuel tank",
+	"toolbox": "Toolbox", "satnav": "Sat nav", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
+	"puncture_kit": "Puncture repair kit",
 }
 ## Slots on the bike itself.
 const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_wheel", "front_tyre", "rear_tyre",
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors",
-	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper"]
+	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper",
+	"tank_bag", "aux_tank", "toolbox", "satnav"]
 ## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
 const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box",
 	"fog_lights", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards",
-	"swingarm", "steering_damper"]
+	"swingarm", "steering_damper", "tank_bag", "aux_tank", "toolbox", "satnav"]
+## The adventure kit: a tank bag, an extra fuel tank, a toolbox and a sat nav (the luggage and
+## the screens are the panniers, top box and fairing). Bikes saved before they existed get the
+## slots empty.
+const KIT_SLOTS: Array[String] = ["tank_bag", "aux_tank", "toolbox", "satnav"]
 ## The bolt-on bits that finish a bike in its style (indicators, side panels, rearsets, guards,
 ## number boards and a swingarm of its own in place of the frame's). Bikes saved before they
 ## existed get the slots empty.
@@ -48,7 +56,8 @@ const SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_whe
 	"front_disc", "rear_disc", "front_caliper", "rear_caliper", "front_pads", "rear_pads", "front_master",
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox",
-	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper"]
+	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper",
+	"tank_bag", "aux_tank", "toolbox", "satnav"]
 const SLOT_KIND := {
 	"frame": "frame", "fork": "fork", "shock": "shock", "front_wheel": "wheel", "rear_wheel": "wheel",
 	"front_tyre": "tyre", "rear_tyre": "tyre", "front_disc": "disc", "rear_disc": "disc",
@@ -61,7 +70,7 @@ const SLOT_KIND := {
 	"panniers": "panniers", "top_box": "top_box", "fog_lights": "fog_lights", "tail": "tail", "fairing": "fairing",
 	"mirrors": "mirrors", "front_mudguard": "front_mudguard", "indicators": "indicators", "side_panels": "side_panels",
 	"rearsets": "rearsets", "guards": "guards", "number_boards": "number_boards", "swingarm": "swingarm",
-	"steering_damper": "steering_damper",
+	"steering_damper": "steering_damper", "tank_bag": "tank_bag", "aux_tank": "aux_tank", "toolbox": "toolbox", "satnav": "satnav",
 }
 const DEFAULT_BUILD := {
 	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17_front",
@@ -75,7 +84,7 @@ const DEFAULT_BUILD := {
 	"headlight": "round_7", "horn": "disc_horn", "ecu": "none", "panniers": "none", "top_box": "none", "fog_lights": "none",
 	"tail": "classic_mudguard", "fairing": "none", "mirrors": "none", "front_mudguard": "chrome_classic", "indicators": "none",
 	"side_panels": "none", "rearsets": "none", "guards": "none", "number_boards": "none", "swingarm": "none",
-	"steering_damper": "none",
+	"steering_damper": "none", "tank_bag": "none", "aux_tank": "none", "toolbox": "none", "satnav": "none",
 }
 ## What each slot bolts onto. A part can only go on once its mounts are fitted, and has to
 ## come off before any of them can. Engine slots mount on the block ("engine").
@@ -104,10 +113,28 @@ const MOUNTS := {
 	"swingarm": ["frame"],
 	# A steering damper links the frame to the fork's yokes.
 	"steering_damper": ["fork"],
+	# The adventure kit: a tank bag sits on the tank, a sat nav clamps to the bars, and the extra
+	# fuel tank and the toolbox bolt to the frame (its rack and rails).
+	"tank_bag": ["tank"], "satnav": ["handlebars"], "aux_tank": ["frame"], "toolbox": ["frame"],
 }
 ## Which fluid each part holds, and how much (litres; the tank and engine work theirs out).
-const FLUID_HOLDERS := {"tank": "petrol", "engine": "oil", "master": "brake_fluid"}
+const FLUID_HOLDERS := {"tank": "petrol", "aux_tank": "petrol", "engine": "oil", "master": "brake_fluid"}
 const MASTER_FLUID := 0.25
+## What a sat nav's screen can show, for the spec line.
+const SATNAV_FEATURES := {"map": "the map", "route": "the way to go", "fuel": "the next fuel"}
+## What can go in a toolbox: id -> {name, price (pounds, to pack it), mass (kg), fixes (what it
+## lets you sort out at the roadside, for later)}. Packed in this order.
+const TOOLBOX_CONTENTS := {
+	"tools": {"name": "Tool roll (spanners, sockets, screwdrivers)", "short": "tools", "price": 25, "mass": 1.5, "fixes": "bolts"},
+	"plug_kit": {"name": "Tyre plug kit", "short": "plug kit", "price": 12, "mass": 0.3, "fixes": "puncture"},
+	"pump": {"name": "Mini tyre pump", "short": "pump", "price": 35, "mass": 0.8, "fixes": "pressure"},
+	"spare_chain": {"name": "Spare chain and split link", "short": "spare chain", "price": 45, "mass": 1.6, "fixes": "chain"},
+	"oil": {"name": "Litre of engine oil", "short": "oil", "price": 10, "mass": 1.0, "fixes": "oil"},
+	"brake_fluid": {"name": "Bottle of brake fluid", "short": "brake fluid", "price": 8, "mass": 0.3, "fixes": "brakes"},
+	"chain_lube": {"name": "Can of chain lube", "short": "chain lube", "price": 9, "mass": 0.4, "fixes": "lube"},
+	"levers": {"name": "Spare clutch and brake levers", "short": "levers", "price": 20, "mass": 0.3, "fixes": "levers"},
+	"fuses": {"name": "Fuses, cable ties and duct tape", "short": "fuses and tape", "price": 6, "mass": 0.2, "fixes": "electrics"},
+}
 const ECU_AID_NAMES := {"traction": "traction control", "abs": "ABS", "anti_wheelie": "anti-wheelie",
 	"stability": "stability control"}
 
@@ -123,7 +150,9 @@ const KIND_MATERIAL := {
 	"horn": "metal", "ecu": "electronics", "panniers": "fabric", "top_box": "plastic", "fog_lights": "electronics",
 	"tail": "plastic", "fairing": "plastic", "mirrors": "mixed", "front_mudguard": "plastic",
 	"indicators": "electronics", "side_panels": "plastic", "rearsets": "metal", "guards": "metal", "number_boards": "plastic",
-	"swingarm": "metal", "steering_damper": "metal", "petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
+	"swingarm": "metal", "steering_damper": "metal", "tank_bag": "fabric", "aux_tank": "metal", "toolbox": "metal",
+	"satnav": "electronics", "petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
+	"puncture_kit": "mixed",
 }
 const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
 	"mixed": "Mixed materials", "electronics": "Electronics", "fabric": "Fabric", "leather": "Leather", "wood": "Wood"}
@@ -229,7 +258,7 @@ func fluid_kind(id: String) -> String:
 func fluid_capacity(id: String) -> float:
 	var p := get_part(id)
 	match str(p.get("kind", "")):
-		"tank":
+		"tank", "aux_tank":
 			return float(p["capacity"])
 		"engine":
 			return snappedf(1.0 + float(p["displacement"]) / 400.0, 0.1)
@@ -302,15 +331,22 @@ func spec_line(id: String) -> String:
 			if p.has("spokes"):
 				bits.append("%d spokes" % int(p["spokes"]))
 		"tyre":
-			bits = [p["type"], p["compound"] + " compound", "%d mm wide, %d%% profile" % [int(p["width"]), roundi(float(p["aspect"]) * 100.0)],
+			bits = [p["type"], p["compound"] + " compound", TyreGrip.kind_name(TyreGrip.kind_of(p)), "%d mm wide, %d%% profile" % [int(p["width"]), roundi(float(p["aspect"]) * 100.0)],
 				"fits " + tyre_rims_text(id), "grip %.2f tarmac / %.2f dirt" % [p["grip"]["tarmac"], p["grip"]["dirt"]]]
 			bits.append(tyre_handling_text(p))
 		"disc":
 			bits = [p["type"], "%d mm" % int(p["diameter"])]
+			if str(p.get("style", "")) == "drum":
+				bits.append({"sls": "one leading shoe", "tls": "two leading shoes", "4ls": "four leading shoes"}.get(str(p.get("shoes", "sls")), "leading shoe")
+					+ ", shoes fade from %d °C" % roundi(BikeHeat.DRUM_FADE))
+			bits.append(BikeHeat.cooling_text(p))
+			bits.append("%.1f mm thick new, MOT min %.1f mm" % [MotTest.DISC_NEW, MotTest.DISC_MIN])
 		"caliper":
-			bits = [p["type"], "%d piston%s" % [p["pistons"], "" if p["pistons"] == 1 else "s"]]
+			bits = [p["type"], "%d piston%s" % [p["pistons"], "" if p["pistons"] == 1 else "s"], "clamping force x%.2f" % float(p["force"])]
 		"pads":
-			bits = [p["type"], "friction %.2f" % p["mu"]]
+			var temps := BikeHeat.pad_temps(p)
+			bits = [p["type"], "friction %.2f" % p["mu"], "bite fully from %d °C (%d%% cold)" % [roundi(float(temps[0])), roundi(float(temps[1]) * 100.0)],
+				"fade from %d °C" % roundi(float(temps[2])), "%.1f mm new, MOT min %.1f mm" % [MotTest.PAD_NEW, MotTest.PAD_MIN]]
 		"master":
 			bits = [p["type"], "leverage %.2f" % p["ratio"]]
 		"tank":
@@ -347,6 +383,8 @@ func spec_line(id: String) -> String:
 		"chain":
 			bits = [p["type"], "power loss %.1f%%" % (float(p["friction"]) * 100.0), "stretches %s" % ("slowly" if p["stretch"] < 6.0 else "fast" if p["stretch"] > 10.0 else "normally"),
 				"lube lasts %s" % Units.distance(float(p["lube_life"]), 0)]
+		"puncture_kit":
+			bits = ["%d plugs" % int(p["litres"]), "find the hiss, push a plug in"]
 		"chain_lube":
 			bits = [p["container"], "%.1f L (about %d coats)" % [p["litres"], roundi(float(p["litres"]) / 0.03)], "lasts x%.1f" % float(p["lasts"])]
 		"side_stand":
@@ -365,11 +403,22 @@ func spec_line(id: String) -> String:
 			bits.append("map tunable %d%%" % roundi(float(p.get("tune_range", 0.25)) * 100.0))
 		"panniers", "top_box":
 			bits = [p["type"], "%d litres" % int(p["litres"])]
+		"tank_bag":
+			bits = [p["type"], "%d litres" % int(p["litres"]), {"magnetic": "sticks to a steel tank", "strap": "straps onto any tank",
+				"ring": "clicks onto a tank ring"}.get(str(p.get("mount", "")), "sits on the tank")]
+		"aux_tank":
+			bits = [p["type"], "+%d litres of petrol" % int(p["capacity"])]
+		"toolbox":
+			bits = [p["type"], "room for %d things (see what's packed on the part)" % int(p.get("slots", 4))]
+		"satnav":
+			bits = [p["type"], "shows " + ", ".join(p.get("features", ["map"]).map(func(f): return str(SATNAV_FEATURES.get(f, f))))]
 		"tail":
 			bits = [p["type"], str(TAIL_LIGHT_NAMES.get(str(p.get("light", "")), "rear light"))]
 		"fairing":
 			bits = [p["type"], "%d%% less drag" % roundi(-float(p["cda"]) / 0.55 * 100.0),
 				"%d mm screen" % roundi(float(p.get("screen", 0.0)) * 1000.0)]
+			if float(p.get("screen_adjust", 0.0)) > 0.0:
+				bits.append("raises %d mm as you ride" % roundi(float(p["screen_adjust"]) * 1000.0))
 		"front_mudguard":
 			bits = [p["type"], "keeps off %d%% of the spray" % roundi(float(p.get("cover", 0.7)) * 100.0),
 				"mounts high under the yoke" if mudguard_high(id) else "mounts low on the fork legs"]
@@ -599,7 +648,7 @@ const STYLE_WEIGHT := {"frame": 3.0, "tank": 2.0, "saddle": 2.0, "handlebars": 2
 	"fork": 1.5, "exhaust": 1.5, "front_mudguard": 1.5, "number_boards": 1.5, "front_wheel": 1.0, "rear_wheel": 1.0,
 	"headlight": 1.0, "panniers": 1.0, "side_panels": 1.0, "rearsets": 1.0, "guards": 1.0, "shock": 0.5,
 	"front_tyre": 0.5, "rear_tyre": 0.5, "mirrors": 0.5, "top_box": 0.5, "fog_lights": 0.5, "dashboard": 0.5,
-	"indicators": 0.5, "swingarm": 1.0}
+	"indicators": 0.5, "swingarm": 1.0, "tank_bag": 0.5, "aux_tank": 0.5, "toolbox": 0.5}
 ## With nothing fitted there, a slot still says something: no fairing is the naked look.
 const EMPTY_STYLES := {"fairing": ["classic", "cafe", "bobber", "chopper", "cruiser", "scrambler", "naked", "supermoto", "mx"]}
 ## How much of a bike has to agree on a style for it to be a proper one ("a proper bobber").

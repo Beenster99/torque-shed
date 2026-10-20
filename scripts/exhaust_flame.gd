@@ -55,6 +55,12 @@ func is_lit() -> bool:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("bike_fx", pt)
+
+
+func _process_body(delta: float) -> void:
 	if _t <= 0.0:
 		return
 	_t -= delta

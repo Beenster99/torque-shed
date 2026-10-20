@@ -2,11 +2,13 @@ class_name Graphics
 extends CanvasLayer
 ## Applies the graphics settings (Settings.gfx_*) to the game window, the main viewport and
 ## the camera: window mode, resolution, monitor, VSync, frame-rate cap, render scale and
-## upscaler (FSR 2.2, FSR 1 or bilinear), anti-aliasing, mesh detail, texture filtering, draw
-## distance and field of view. Also draws the FPS counter. Settings adds one of these as its
-## child at start-up and it re-applies whenever Settings.graphics_changed fires.
+## upscaler (FSR 2.2, FSR 1, bilinear, or off for the native resolution), anti-aliasing, mesh
+## detail, texture filtering, draw distance, field of view and whether people's figures cast
+## shadows. Also draws the FPS counter. Settings adds one of these as its child at start-up and
+## it re-applies whenever Settings.graphics_changed fires.
 ## The lighting (GI, volumetric fog, clouds, SSR, SSAO, glow, shadows, brightness) is applied
-## to the environment by the lighting code, from the same settings.
+## to the environment by the lighting code, from the same settings, and the ridden bike's live
+## mirrors (Mirror detail) by BikeMirrors.
 ##
 ## The rendering driver (Vulkan or DirectX 12) can only be picked before the renderer starts,
 ## so it's written to OVERRIDE_PATH, which project.godot names as its settings override
@@ -20,19 +22,29 @@ extends CanvasLayer
 const OVERRIDE_PATH := "user://graphics_override.cfg"
 const DRIVER_KEY := "rendering_device/driver.windows"
 
+## Room lamps (the shed's, the side rooms', the cafe's: lights reaching no further than
+## ROOM_LIGHT_RANGE) fade out past LIGHT_FADE metres from the camera, and their shadows past
+## SHADOW_FADE: from across the yard or the road you don't see a lamp's light inside, but each
+## one in view still drew its shadow map whenever anything under it moved.
+const ROOM_LIGHT_RANGE := 20.0
+const LIGHT_FADE := 70.0
+const SHADOW_FADE := 30.0
+
 ## Common 16:9, 16:10 and 21:9 sizes, up to 4K.
 const RESOLUTIONS := [Vector2i(1280, 720), Vector2i(1280, 800), Vector2i(1366, 768), Vector2i(1440, 900),
 	Vector2i(1600, 900), Vector2i(1680, 1050), Vector2i(1920, 1080), Vector2i(1920, 1200), Vector2i(2560, 1080),
 	Vector2i(2560, 1440), Vector2i(2560, 1600), Vector2i(3440, 1440), Vector2i(3840, 1600), Vector2i(3840, 2160)]
 const FPS_CAPS := [30, 60, 120, 144, 165, 240, 0]   # 0 = unlimited
 const QUALITY := ["low", "medium", "high", "ultra"]
+## The mirror detail slider's steps, left to right (see BikeMirrors.LEVELS).
+const MIRROR_LEVELS := ["off", "low", "medium", "high", "ultra"]
 
 ## The allowed values of every option setting (anything else in a settings file is ignored).
 const CHOICES := {
 	"gfx_preset": ["low", "medium", "high", "ultra", "custom"],
 	"gfx_window_mode": ["windowed", "borderless", "fullscreen"],
 	"gfx_vsync": ["off", "on", "adaptive", "mailbox"],
-	"gfx_upscaler": ["fsr2", "fsr1", "bilinear"],
+	"gfx_upscaler": ["fsr2", "fsr1", "bilinear", "off"],
 	"gfx_msaa": ["off", "2x", "4x", "8x"],
 	"gfx_screen_aa": ["off", "fxaa", "smaa"],
 	"gfx_detail": QUALITY,
@@ -41,6 +53,7 @@ const CHOICES := {
 	"gfx_volumetrics": ["off", "low", "high"],
 	"gfx_clouds": ["off", "low", "high"],
 	"gfx_driver": ["vulkan", "d3d12"],
+	"gfx_mirrors": MIRROR_LEVELS,
 }
 ## [min, max] of the number settings.
 const RANGES := {
@@ -52,16 +65,20 @@ const RANGES := {
 const PRESETS := {
 	"low": {"gfx_shadows": "low", "gfx_detail": "low", "gfx_draw_distance": 0.6, "gfx_gi": "off",
 		"gfx_volumetrics": "off", "gfx_clouds": "low", "gfx_ssr": false, "gfx_ssao": false, "gfx_glow": true,
-		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 0.75, "gfx_upscaler": "fsr1"},
+		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 0.75, "gfx_upscaler": "fsr1",
+		"gfx_mirrors": "off"},
 	"medium": {"gfx_shadows": "medium", "gfx_detail": "medium", "gfx_draw_distance": 0.8, "gfx_gi": "ssil",
 		"gfx_volumetrics": "low", "gfx_clouds": "low", "gfx_ssr": false, "gfx_ssao": true, "gfx_glow": true,
-		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2"},
+		"gfx_msaa": "off", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2",
+		"gfx_mirrors": "low"},
 	"high": {"gfx_shadows": "high", "gfx_detail": "high", "gfx_draw_distance": 1.0, "gfx_gi": "sdfgi",
 		"gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_ssr": true, "gfx_ssao": true, "gfx_glow": true,
-		"gfx_msaa": "2x", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2"},
+		"gfx_msaa": "2x", "gfx_taa": false, "gfx_screen_aa": "fxaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2",
+		"gfx_mirrors": "medium"},
 	"ultra": {"gfx_shadows": "ultra", "gfx_detail": "ultra", "gfx_draw_distance": 1.5, "gfx_gi": "sdfgi",
 		"gfx_volumetrics": "high", "gfx_clouds": "high", "gfx_ssr": true, "gfx_ssao": true, "gfx_glow": true,
-		"gfx_msaa": "4x", "gfx_taa": true, "gfx_screen_aa": "smaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2"},
+		"gfx_msaa": "4x", "gfx_taa": true, "gfx_screen_aa": "smaa", "gfx_render_scale": 1.0, "gfx_upscaler": "fsr2",
+		"gfx_mirrors": "ultra"},
 }
 
 ## Mesh LOD threshold in pixels (lower keeps the detailed meshes further away) and texture
@@ -76,6 +93,9 @@ const VSYNC := {"off": DisplayServer.VSYNC_DISABLED, "on": DisplayServer.VSYNC_E
 	"adaptive": DisplayServer.VSYNC_ADAPTIVE, "mailbox": DisplayServer.VSYNC_MAILBOX}
 ## The field of view the cameras were tuned for; the slider shifts them all by the difference.
 const BASE_FOV := 75.0
+## Every mesh of a person's figure (players on foot and riding, staff, customers, townsfolk):
+## the "Avatar shadow" setting turns their shadows off (see avatar_mesh).
+const AVATAR_GROUP := "avatar_mesh"
 
 ## The driver Settings had when the game started: a different one now needs a restart.
 var driver_at_start := ""
@@ -86,6 +106,9 @@ var _window_key := ""   # the display settings last put on the window, so other 
 func _ready() -> void:
 	layer = 120
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().node_added.connect(func(n: Node):
+		if n is OmniLight3D or n is SpotLight3D:
+			fade_room_light.call_deferred(n))
 	driver_at_start = Settings.gfx_driver
 	_fps = Label.new()
 	_fps.add_theme_font_size_override("font_size", 15)
@@ -107,6 +130,7 @@ func _ready() -> void:
 ## Puts every graphics setting into effect (except the driver, which needs a restart).
 func apply() -> void:
 	apply_viewport(get_tree().root)
+	apply_avatar_shadows(get_tree())
 	if not is_headless():
 		DisplayServer.window_set_vsync_mode(VSYNC.get(Settings.gfx_vsync, DisplayServer.VSYNC_ENABLED))
 		Engine.max_fps = Settings.gfx_fps_cap
@@ -125,7 +149,8 @@ func _display_key() -> String:
 static func apply_viewport(vp: Viewport) -> void:
 	vp.msaa_3d = MSAA.get(Settings.gfx_msaa, Viewport.MSAA_2X)
 	vp.screen_space_aa = SCREEN_AA.get(Settings.gfx_screen_aa, Viewport.SCREEN_SPACE_AA_FXAA)
-	var scale := render_scale(vp)
+	# Upscaler off: always the screen's own resolution, nothing scaled.
+	var scale := 1.0 if Settings.gfx_upscaler == "off" else render_scale(vp)
 	var mode := scaling_mode(Settings.gfx_upscaler, scale)
 	vp.scaling_3d_mode = mode
 	vp.scaling_3d_scale = scale
@@ -149,10 +174,11 @@ static func render_scale(vp: Viewport) -> float:
 	return clampf(scale, 0.25, 2.0)
 
 
-## The Viewport scaling mode for an upscaler and scale. At 100% nothing is scaled; above 100%
-## (supersampling) only bilinear works, and the FSR upscalers are for scaling up only.
+## The Viewport scaling mode for an upscaler and scale. At 100% (or with the upscaler off)
+## nothing is scaled; above 100% (supersampling) only bilinear works, and the FSR upscalers are
+## for scaling up only.
 static func scaling_mode(upscaler: String, scale: float) -> int:
-	if scale >= 0.995:
+	if scale >= 0.995 or upscaler == "off":
 		return Viewport.SCALING_3D_MODE_BILINEAR
 	match upscaler:
 		"fsr2":
@@ -195,6 +221,12 @@ func apply_window(w: Window) -> void:
 
 
 func _process(_delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(_delta)
+	Perf.add("graphics", pt)
+
+
+func _process_body(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam:
 		# Draw distance: the camera's own far plane times the slider.
@@ -206,6 +238,51 @@ func _process(_delta: float) -> void:
 			cam.fov = Settings.gfx_fov
 	if _fps.visible:
 		_fps.text = "%d FPS  %.1f ms" % [Engine.get_frames_per_second(), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0]
+
+
+## Makes a room lamp fade out at a distance (see LIGHT_FADE); other lights are left alone.
+static func fade_room_light(node) -> void:
+	if not is_instance_valid(node) or not (node is Light3D) or (node as Light3D).distance_fade_enabled:
+		return
+	var light := node as Light3D
+	var reach := (light as OmniLight3D).omni_range if light is OmniLight3D else (light as SpotLight3D).spot_range
+	if reach > ROOM_LIGHT_RANGE:
+		return
+	light.distance_fade_enabled = true
+	light.distance_fade_begin = LIGHT_FADE
+	light.distance_fade_length = 20.0
+	light.distance_fade_shadow = SHADOW_FADE
+
+
+## Marks `gi` as part of a person's figure, so the Avatar shadow setting decides whether it casts
+## a shadow (its own shadow setting is kept for when it's on). Returns it.
+static func avatar_mesh(gi: GeometryInstance3D) -> GeometryInstance3D:
+	if not gi.has_meta("avatar_cast"):
+		gi.set_meta("avatar_cast", gi.cast_shadow)
+	gi.add_to_group(AVATAR_GROUP)
+	_avatar_cast(gi)
+	return gi
+
+
+## Marks every mesh under `root` (and `root` itself) as part of a person's figure (avatar_mesh).
+static func avatar_meshes(root: Node) -> void:
+	if root is GeometryInstance3D:
+		avatar_mesh(root)
+	for c in root.get_children():
+		avatar_meshes(c)
+
+
+## Puts the Avatar shadow setting on every figure's meshes in `tree`.
+static func apply_avatar_shadows(tree: SceneTree) -> void:
+	for n in tree.get_nodes_in_group(AVATAR_GROUP):
+		_avatar_cast(n as GeometryInstance3D)
+
+
+static func _avatar_cast(gi: GeometryInstance3D) -> void:
+	if gi == null:
+		return
+	gi.cast_shadow = int(gi.get_meta("avatar_cast", GeometryInstance3D.SHADOW_CASTING_SETTING_ON)) if Settings.gfx_avatar_shadows \
+		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## How much the field-of-view slider moves the cameras off what they were tuned for.

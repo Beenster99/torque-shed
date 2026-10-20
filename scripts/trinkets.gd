@@ -36,12 +36,15 @@ const MODELS := {
 		"desc": "A die-cast model of a café racer on a little display stand."},
 	"trinket_neon": {"kind": "trinket", "name": "Neon shed sign", "price": 180, "size": Vector3(0.9, 0.36, 0.06), "wall": true,
 		"desc": "A pink neon sign that says TORQUE SHED. Glows in the dark. Hangs on a wall."},
+	# Never in the Shop: the crew's photo at an adventure's destination (see AdventureDest).
+	"trinket_adventure_photo": {"kind": "trinket", "name": "Adventure photo", "price": 30, "size": Vector3(0.62, 0.5, 0.04), "wall": true,
+		"shop": false, "desc": "The crew at the end of an adventure ride, framed. Hangs on a wall."},
 }
 
 
-## Every trinket, cheapest first.
+## Every trinket in the Shop, cheapest first.
 static func all() -> Array:
-	var out := MODELS.keys()
+	var out := MODELS.keys().filter(func(id): return MODELS[id].get("shop", true))
 	out.sort_custom(func(a, b): return int(MODELS[a]["price"]) < int(MODELS[b]["price"]))
 	return out
 
@@ -105,6 +108,9 @@ static func build(parent: Node3D, id: String) -> void:
 	var m: Dictionary = MODELS.get(id, {})
 	var size: Vector3 = m.get("size", Vector3.ONE * 0.2)
 	match id:
+		"trinket_adventure_photo":   # AdventureDest.PHOTO_MODEL
+			var fid = parent.get("id")
+			AdventureDest.build_photo(parent, Shed.furniture.get(int(fid), {}).get("photo", {}) if fid != null else {})
 		"trinket_bobblehead":
 			_cyl(parent, Vector3(0.0, 0.01, 0.0), 0.05, 0.055, 0.02, _mat(Color(0.1, 0.1, 0.12)))
 			var body := Node3D.new()
@@ -363,6 +369,10 @@ class Clock extends Node3D:
 		_minute = _hand(radius * 0.85, 0.012, black, 0.003)
 		_second = _hand(radius * 0.9, 0.005, red, 0.006)
 		RiderFigure.mesh(self, RiderFigure.sphere(0.012), red, Vector3(0.0, 0.0, 0.007))
+		# The hands move every frame: a shadow from them would have the lamps over the clock
+		# draw their shadow maps again every frame, for a shadow too thin to see.
+		for g in find_children("*", "GeometryInstance3D", true, false):
+			(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_process(0.0)
 
 	func _hand(length: float, width: float, mat: Material, z: float) -> Node3D:
@@ -398,6 +408,9 @@ class DigitalClock extends Node3D:
 		label.outline_size = 0
 		label.shaded = false
 		label.double_sided = false
+		# Glowing digits cast no shadow (and changing every half second, one would have the
+		# lamps nearby draw their shadow maps again each time).
+		label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(label)
 		_process(0.0)
 

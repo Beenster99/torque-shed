@@ -61,7 +61,7 @@ var _was_cranking := false
 var _last_rpm := 0.0
 var _crank_guess := 0.0
 var _bus_t := 0.0
-var _bus := "SFX"
+var _bus := "Engines"
 
 
 ## Sets the sound up for a bike. `model` gives where the pipe and engine are; without one they
@@ -109,7 +109,7 @@ func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
 
 func _make_player(parent: Node3D, unit: float) -> AudioStreamPlayer3D:
 	var p := AudioStreamPlayer3D.new()
-	p.bus = "SFX"
+	p.bus = "Engines"
 	p.unit_size = unit
 	p.max_db = 6.0
 	p.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
@@ -141,6 +141,12 @@ static func pop_rate(engine_spec: Dictionary, at_rpm: float, overrun_s: float) -
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("engine_audio", pt)
+
+
+func _process_body(delta: float) -> void:
 	if bank == null:
 		return
 	bank.poll()
@@ -327,7 +333,7 @@ func _update_bus() -> void:
 	var sfx := get_node_or_null("/root/Sfx")
 	if sfx == null or not sfx.has_method("bus_for") or not is_inside_tree():
 		return
-	var bus := str(sfx.call("bus_for", global_position))
+	var bus := str(sfx.call("bus_for", global_position, true))
 	if bus == _bus or AudioServer.get_bus_index(bus) < 0:
 		return
 	_bus = bus

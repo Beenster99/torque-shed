@@ -67,11 +67,11 @@ const ORDER_SPOT := Vector3(-22.2, 0.0, 59.6)
 const BARISTA := Transform3D(Basis(Vector3.UP, PI), Vector3(-22.6, 0.0, 57.98))
 const KITCHEN_Z := 57.0
 const KITCHEN_X := -24.6
-## The way in from the road: from the west along the loop where it passes the yard, then up
-## the yard's west side (clear of the slalom, the jumps, the drop-off box and the speed humps)
-## to the car park's east end.
-const ROAD_IN := [Vector3(-72.0, 0.0, 134.6), Vector3(-45.0, 0.0, 133.5), Vector3(-27.0, 0.0, 134.1),
-	Vector3(-27.0, 0.0, 95.0), Vector3(-16.5, 0.0, 84.0), Vector3(-16.5, 0.0, AISLE_Z)]
+## The way in from the road: from the west along the High Street past the shed, then across the
+## pavement onto the forecourt and round to the car park's east end.
+const ROAD_IN := [Vector3(-72.0, 0.0, WorldTown.STREET_Z), Vector3(-45.0, 0.0, WorldTown.STREET_Z),
+	Vector3(-27.0, 0.0, WorldTown.STREET_Z), Vector3(-22.0, 0.0, WorldTown.NORTH_FRONT + 2.0), Vector3(-16.5, 0.0, 82.0),
+	Vector3(-16.5, 0.0, AISLE_Z)]
 ## The walk over to the sales office: along the front of the yard past the shed, clear of the
 ## retrieved bikes, the delivery area and the customer car park, to its front doors.
 const TO_SALES := [Vector3(-16.5, 0.0, AISLE_Z), Vector3(-14.0, 0.0, 78.6), Vector3(14.0, 0.0, 78.6), Vector3(24.5, 0.0, 78.2)]
@@ -294,7 +294,7 @@ static func ride_out(park: int, rider := -1) -> PackedVector3Array:
 	return pts
 
 
-## The road past the yard to (or from, not `inbound`) the turn up to the cafe, from the `east`
+## The street past the shed to (or from, not `inbound`) the turn in to the cafe, from the `east`
 ## end or the west, keeping `lane` metres left of its middle.
 static func _road(east: bool, lane: float, inbound: bool) -> PackedVector3Array:
 	var turn: float = ROAD_IN[2].x
@@ -304,10 +304,10 @@ static func _road(east: bool, lane: float, inbound: bool) -> PackedVector3Array:
 	return Contracts.road_line(xs, lane)
 
 
-## A rider's own line up the yard from the road to the end of the aisle: up past the slalom's
-## gate (where there's no room to wander) and across to the car park.
+## A rider's own line from the road to the end of the aisle: over the pavement onto the
+## forecourt and round to the car park.
 static func _yard_way(rng: RandomNumberGenerator) -> PackedVector3Array:
-	return PackedVector3Array([Vector3(ROAD_IN[3].x + rng.randf_range(-0.3, 0.3), 0.0, ROAD_IN[3].z + rng.randf_range(-2.0, 3.0)),
+	return PackedVector3Array([Vector3(ROAD_IN[3].x + rng.randf_range(-0.6, 0.6), 0.0, ROAD_IN[3].z + rng.randf_range(-0.4, 0.6)),
 		Vector3(ROAD_IN[4].x + rng.randf_range(-1.0, 1.0), 0.0, ROAD_IN[4].z + rng.randf_range(-2.0, 2.0)), ROAD_IN[5]])
 
 
@@ -780,8 +780,8 @@ static func apply(peer: int, action: Dictionary) -> String:
 				t = _new_tray(peer)
 			(t["items"] as Array).append(item)
 			_st()["served"] = int(_st()["served"]) + 1
-			return "%s on your tray (%s). Hold %s to %s it." % [item_name(item), money(price(item)),
-				"right mouse", str(MENU[item]["verb"])]
+			return "%s on your tray (%s). Hold {work2} to %s it." % [item_name(item), money(price(item)),
+				str(MENU[item]["verb"])]
 		"coffee_tray_down":
 			var t := tray_of(peer)
 			var xf: Transform3D = action["xf"]

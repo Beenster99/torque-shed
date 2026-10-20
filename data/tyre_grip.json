@@ -1,0 +1,20 @@
+{
+	"_about": "How much each kind of tyre grips on each surface, as a share of its own grip on dry tarmac (its \"grip\" in parts.json). 1.0 is the tyre on dry tarmac, so the town is unchanged for the tyres it always had. \"wet\" multiplies on top when the ground is soaked (the town's own wet-road grip, Weather.grip_mult, still applies to tarmac, dirt and grass). Surfaces a kind doesn't list grip as they always did (1.0).",
+	"surfaces": ["tarmac", "gravel", "sand", "snow"],
+	"kinds": {
+		"road": {"name": "road", "tarmac": 1.0, "gravel": 0.6, "sand": 0.38, "snow": 0.22,
+			"wet": {"tarmac": 1.0, "gravel": 0.92, "sand": 1.05, "snow": 0.85}},
+		"slick": {"name": "slick", "tarmac": 1.0, "gravel": 0.45, "sand": 0.28, "snow": 0.12,
+			"wet": {"tarmac": 1.0, "gravel": 0.85, "sand": 1.0, "snow": 0.8}},
+		"dual": {"name": "dual sport", "tarmac": 1.0, "gravel": 0.8, "sand": 0.58, "snow": 0.36,
+			"wet": {"tarmac": 1.0, "gravel": 0.94, "sand": 1.05, "snow": 0.88}},
+		"adventure": {"name": "50/50 adventure", "tarmac": 1.0, "gravel": 0.88, "sand": 0.66, "snow": 0.42,
+			"wet": {"tarmac": 1.0, "gravel": 0.95, "sand": 1.05, "snow": 0.9}},
+		"knobbly": {"name": "knobbly", "tarmac": 1.0, "gravel": 1.08, "sand": 0.92, "snow": 0.55,
+			"wet": {"tarmac": 1.0, "gravel": 0.97, "sand": 1.05, "snow": 0.9}},
+		"winter": {"name": "winter", "tarmac": 0.95, "gravel": 0.72, "sand": 0.45, "snow": 0.72,
+			"wet": {"tarmac": 1.1, "gravel": 0.97, "sand": 1.05, "snow": 0.95}},
+		"studded": {"name": "studded", "tarmac": 0.8, "gravel": 0.98, "sand": 0.62, "snow": 1.0,
+			"wet": {"tarmac": 0.92, "gravel": 0.97, "sand": 1.05, "snow": 0.98}}
+	}
+}

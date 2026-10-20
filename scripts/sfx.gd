@@ -3,8 +3,13 @@ extends Node
 ## footsteps by floor, parts landing by material, the building's ambience. A few are recordings
 ## (RECORDED: the ratchet, sandblaster, dyno fan, roller door, door chime, phone, light switches,
 ## gear levers and horns), which play in place of the made ones when their files are there.
-## Sets up the SFX and Radio buses that the Esc menu volume sliders control, and the
-## buses under SFX that give each room its acoustics:
+## Sets up the buses the Esc menu's volume sliders control, each straight into Master:
+##   SFX:     every sound effect: tools, the washer, impacts, footsteps, machines, UI dings,
+##            horns, tyres, the weather and the ambience.
+##   Engines: every engine (your bike, other riders', the traffic, the truck, the dyno).
+##   Radio:   the shed radio.
+## and the buses under SFX that give each room its acoustics (Engines has its own pair,
+## EngineRoom and EngineFar, that follow the same room):
 ##   Room: sounds in the room you're in, through that room's reverb (the shed's hard concrete,
 ##         the small tiled paint booth, the cluttered store, the showroom's glass, outside's
 ##         open air with a slap back off the shed wall).
@@ -22,9 +27,10 @@ const MUFFLE_DB := -12.0
 ## Which loop each kind of work makes while you hold the button.
 const WORK_LOOPS := {"unbolt": "ratchet", "bolt": "ratchet", "clean": "scrub", "clean_many": "scrub", "repair": "grinder", "paint": "spray",
 	"pour": "pour", "drain": "pour", "tip": "pour", "wash": "jet", "repair_many": "grinder", "adjust_chain": "ratchet", "lube": "spray",
-	"tyre_fit": "changer", "tyre_remove": "changer"}
+	"tyre_fit": "changer", "tyre_remove": "changer", "inflate": "compressor"}
 ## Which loop a tool makes in someone else's hands while they work.
-const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet", "gun": "spray_gun"}
+const TOOL_LOOPS := {"wrench": "ratchet", "brush": "scrub", "repair": "grinder", "spray": "spray", "lance": "jet", "gun": "spray_gun",
+	"polisher": "polisher"}
 ## The one-shot when a job is done (putting a part down plays an impact instead, see job_done).
 const DONE_SOUNDS := {"unbolt": "clink", "bolt": "clink", "remove": "pickup", "install": "clunk", "take": "pickup",
 	"place": "clunk", "drop": "clunk", "set_down": "clunk", "bin": "scrap", "order_part": "clunk", "set_stand": "clunk", "adjust_chain": "clink",
@@ -36,7 +42,7 @@ const LOOP_TAILS := {"grinder": ["grinder_up", "grinder_down"], "jet": ["jet_on"
 ## How long a loop takes to fade in, for machines that spin up (their start sound covers it).
 const LOOP_FADE_IN := {"shaker": 0.5, "grinder": 0.45, "jet": 0.15, "spray_gun": 0.12, "compressor": 0.6, "blast": 0.1, "fan": 1.4}
 ## Loops that get a small random pitch each time they start (the same tool never quite the same).
-const LOOP_DETUNE := ["ratchet", "scrub", "grinder", "spray", "spray_gun", "jet", "washer", "blast", "changer", "pour"]
+const LOOP_DETUNE := ["ratchet", "scrub", "grinder", "polisher", "spray", "spray_gun", "jet", "washer", "blast", "changer", "pour"]
 ## The acoustics of each kind of room: AudioEffectReverb settings (room size, damping, wet,
 ## pre-delay in ms, high-pass) and how loud the outdoor ambience comes through.
 const ROOM_PRESETS := {
@@ -93,6 +99,10 @@ const PHONE_GAP := 2.2
 ## Bump to throw away the sound cache (the synthesis source's hash is checked too).
 const CACHE_VERSION := "shed-sound-1"
 const CACHE_PATH := "user://sfx_cache.bin"
+## One-shots (play_at, play_on, play_ui, the bells) are in this group while they sound, and go
+## after this many seconds at the most whatever they're playing.
+const ONESHOT_GROUP := "sfx_oneshot"
+const ONESHOT_MAX := 8.0
 
 var muffled := false
 ## Times the sales office phone has rung (tests).
@@ -116,6 +126,7 @@ var _abort := false
 var _rng := RandomNumberGenerator.new()
 var _last_pick := {}    # sound -> the variant played last
 var _loops: Array = []  # loop players made here, to keep routed as the listener moves
+var _once_of := {}      # a looping stream's instance id -> its play-once copy (once)
 var _route_timer := 0.0
 var _preset := {}       # the reverb settings shown now, easing toward the room's
 var _ambience: Node
@@ -125,7 +136,7 @@ var _amb_timer := 0.0
 func _ready() -> void:
 	var t0 := Time.get_ticks_usec()
 	_rng.randomize()
-	for bus in ["SFX", "Radio"]:
+	for bus in ["SFX", "Engines", "Radio"]:
 		if AudioServer.get_bus_index(bus) == -1:
 			AudioServer.add_bus()
 			var i := AudioServer.bus_count - 1
@@ -146,8 +157,11 @@ func _exit_tree() -> void:
 		_thread.wait_to_finish()
 
 
+## The volume sliders (and the ear defenders) onto the buses.
 func apply_volumes() -> void:
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), linear_to_db(maxf(Settings.sfx_volume, 0.0001))
+		+ (MUFFLE_DB if muffled else 0.0))
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Engines"), linear_to_db(maxf(Settings.engine_volume, 0.0001))
 		+ (MUFFLE_DB if muffled else 0.0))
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Radio"), linear_to_db(maxf(Settings.radio_volume, 0.0001)))
 
@@ -218,21 +232,22 @@ func set_muffled(on: bool) -> void:
 	if on == muffled:
 		return
 	muffled = on
-	var bus := AudioServer.get_bus_index("SFX")
-	if bus < 0:
-		return
-	var at := -1
-	for i in AudioServer.get_bus_effect_count(bus):
-		if AudioServer.get_bus_effect(bus, i) is AudioEffectLowPassFilter:
-			at = i
-	if at < 0 and on:
-		var lp := AudioEffectLowPassFilter.new()
-		lp.cutoff_hz = MUFFLE_CUTOFF
-		lp.resonance = 0.4
-		AudioServer.add_bus_effect(bus, lp)
-		at = AudioServer.get_bus_effect_count(bus) - 1
-	if at >= 0:
-		AudioServer.set_bus_effect_enabled(bus, at, on)
+	for name in ["SFX", "Engines"]:
+		var bus := AudioServer.get_bus_index(name)
+		if bus < 0:
+			continue
+		var at := -1
+		for i in AudioServer.get_bus_effect_count(bus):
+			if AudioServer.get_bus_effect(bus, i) is AudioEffectLowPassFilter:
+				at = i
+		if at < 0 and on:
+			var lp := AudioEffectLowPassFilter.new()
+			lp.cutoff_hz = MUFFLE_CUTOFF
+			lp.resonance = 0.4
+			AudioServer.add_bus_effect(bus, lp)
+			at = AudioServer.get_bus_effect_count(bus) - 1
+		if at >= 0:
+			AudioServer.set_bus_effect_enabled(bus, at, on)
 	apply_volumes()
 
 
@@ -247,7 +262,8 @@ func is_muffled() -> bool:
 
 ## Plays a one-shot at a point in the world: a different variant each time (never the same
 ## twice running) with a touch of pitch and level, through the acoustics of where it is.
-func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null) -> AudioStreamPlayer3D:
+## Never loops (see once) and always goes (see _free_when_done); `seconds` cuts a long take short.
+func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null, seconds := 0.0) -> AudioStreamPlayer3D:
 	var host: Node = parent if parent else get_tree().current_scene
 	if host == null:
 		return null
@@ -255,7 +271,7 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null)
 	if s == null:
 		return null
 	var p := AudioStreamPlayer3D.new()
-	p.stream = s
+	p.stream = once(s)
 	p.volume_db = volume_db + _rng.randf_range(-1.2, 1.2) + occlusion_db(pos)
 	p.pitch_scale = _rng.randf_range(0.95, 1.05)
 	p.unit_size = 4.0
@@ -263,9 +279,73 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, parent: Node = null)
 	p.bus = bus_for(pos)
 	host.add_child(p)
 	p.global_position = pos
-	p.finished.connect(p.queue_free)
+	_free_when_done(p, seconds)
 	p.play()
 	return p
+
+
+## A one-shot riding along on `source` (a truck, a trailer, someone's hand): it plays from
+## `offset` in the source's own space, moves with it, goes when the source does, and never
+## loops. `seconds` cuts a long take short (0: the whole of it).
+func play_on(sound: String, source: Node3D, offset := Vector3.ZERO, volume_db := 0.0, seconds := 0.0) -> AudioStreamPlayer3D:
+	if source == null or not source.is_inside_tree():
+		return null
+	var p := play_at(sound, source.global_transform * offset, volume_db, source, seconds)
+	if p:
+		p.position = offset
+	return p
+
+
+## `s` to play once: a looping take (the work loops' recordings and synthesised loops are set
+## to loop) comes back as a copy that plays through once and finishes, so a one-shot made from
+## it can't ring on for ever where it was played. Made once per stream.
+func once(s: AudioStream) -> AudioStream:
+	if s == null:
+		return null
+	var looped := (s is AudioStreamWAV and (s as AudioStreamWAV).loop_mode != AudioStreamWAV.LOOP_DISABLED) \
+		or (s is AudioStreamOggVorbis and (s as AudioStreamOggVorbis).loop) \
+		or (s is AudioStreamMP3 and (s as AudioStreamMP3).loop)
+	if not looped:
+		return s
+	var key := s.get_instance_id()
+	if _once_of.has(key):
+		return _once_of[key]
+	var c: AudioStream = s.duplicate()
+	if c is AudioStreamWAV:
+		(c as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_DISABLED
+	elif c is AudioStreamOggVorbis:
+		(c as AudioStreamOggVorbis).loop = false
+	elif c is AudioStreamMP3:
+		(c as AudioStreamMP3).loop = false
+	_once_of[key] = c
+	return c
+
+
+## A one-shot player goes when it's finished, and in any case once its stream's had time to
+## play through (ONESHOT_MAX at most, or `seconds`), so nothing's left sounding in the world.
+func _free_when_done(p: Node, seconds := 0.0) -> void:
+	p.add_to_group(ONESHOT_GROUP)
+	p.finished.connect(p.queue_free)
+	var st: AudioStream = p.get("stream")
+	var life := ONESHOT_MAX
+	if st and st.get_length() > 0.0:
+		life = minf(st.get_length() / maxf(float(p.get("pitch_scale")), 0.1) + 0.25, ONESHOT_MAX)
+	if seconds > 0.0:
+		life = minf(life, seconds)
+	var ref: WeakRef = weakref(p)
+	get_tree().create_timer(life, false).timeout.connect(func():
+		var n := ref.get_ref() as Node
+		if n:
+			n.queue_free())
+
+
+## How many one-shots are sounding (or waiting to go) right now (tests).
+func oneshots_alive() -> int:
+	var n := 0
+	for p in get_tree().get_nodes_in_group(ONESHOT_GROUP):
+		if not p.is_queued_for_deletion():
+			n += 1
+	return n
 
 
 ## A part or kit landing: `material` is what it's made of (a PartsDB material, or "metal",
@@ -398,7 +478,7 @@ func bell(at: Vector3) -> void:
 		pairs = [["bell_chime", at, 0.0, 9.0, 140.0], ["bell", at, -8.0, 6.0, 60.0], ["bell_chime", SalesOffice.SHED_CHIME_POS, -2.0, 5.0, 60.0]]
 	for p in pairs:
 		var player := AudioStreamPlayer3D.new()
-		player.stream = pick(str(p[0]))
+		player.stream = once(pick(str(p[0])))
 		player.bus = bus_for(p[1])
 		player.volume_db = float(p[2]) + occlusion_db(p[1]) * 0.5
 		player.unit_size = float(p[3])
@@ -406,7 +486,7 @@ func bell(at: Vector3) -> void:
 		player.attenuation_filter_cutoff_hz = 12000.0
 		host.add_child(player)
 		player.global_position = p[1]
-		player.finished.connect(player.queue_free)
+		_free_when_done(player)
 		player.play()
 	# The shop bell over the doors and the chime's striker swing.
 	var office := get_tree().get_first_node_in_group("sales_office")
@@ -438,11 +518,11 @@ func play_ui(sound: String, volume_db := 0.0) -> void:
 	if st == null:
 		return
 	var p := AudioStreamPlayer.new()
-	p.stream = st
+	p.stream = once(st)
 	p.bus = "SFX"
 	p.volume_db = volume_db
 	host.add_child(p)
-	p.finished.connect(p.queue_free)
+	_free_when_done(p)
 	p.play()
 
 
@@ -483,9 +563,11 @@ func _tail(p: AudioStreamPlayer3D, sound: String, which: int) -> void:
 
 
 ## Which bus a sound at `pos` goes through: "Room" if it's in the listener's room (or both
-## are outside), "Far" through a wall.
-func bus_for(pos: Vector3) -> String:
-	return "Room" if Workshop.room_at(pos) == listener_room else "Far"
+## are outside), "Far" through a wall. An `engine`'s are the Engines bus's pair (EngineRoom,
+## EngineFar), so the engines slider has them.
+func bus_for(pos: Vector3, engine := false) -> String:
+	var bus := "Room" if Workshop.room_at(pos) == listener_room else "Far"
+	return "Engine" + bus if engine else bus
 
 
 ## How much quieter a sound at `pos` is for the listener (dB): nothing in the same room, a
@@ -517,6 +599,12 @@ func _route(p: AudioStreamPlayer3D) -> void:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("audio", pt)
+
+
+func _process_body(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d() if get_viewport() else null
 	if cam:
 		listener_pos = cam.global_position
@@ -560,14 +648,18 @@ func _process(delta: float) -> void:
 		_keep_ambience()
 
 
-## Shows the reverb settings in `pr` on the Room bus.
+## Shows the reverb settings in `pr` on the Room bus (and the engines' EngineRoom).
 func _apply_preset(pr: Dictionary) -> void:
-	var bus := AudioServer.get_bus_index("Room")
-	if bus < 0:
-		return
-	var rv := AudioServer.get_bus_effect(bus, 0) as AudioEffectReverb
-	if rv == null:
-		return
+	for name in ["Room", "EngineRoom"]:
+		var bus := AudioServer.get_bus_index(name)
+		if bus < 0:
+			continue
+		var rv := AudioServer.get_bus_effect(bus, 0) as AudioEffectReverb
+		if rv != null:
+			_set_reverb(rv, pr)
+
+
+func _set_reverb(rv: AudioEffectReverb, pr: Dictionary) -> void:
 	rv.room_size = float(pr["size"])
 	rv.damping = float(pr["damp"])
 	rv.wet = float(pr["wet"])
@@ -580,9 +672,6 @@ func _apply_preset(pr: Dictionary) -> void:
 ## Outside, a sound comes back off the shed's wall a moment later: a single quiet echo, its
 ## delay the walk there and back at the speed of sound.
 func _slapback() -> void:
-	var bus := AudioServer.get_bus_index("Room")
-	if bus < 0 or AudioServer.get_bus_effect_count(bus) < 2:
-		return
 	var on := listener_room == "" and Shed.active
 	var dist := 0.0
 	if on:
@@ -592,12 +681,16 @@ func _slapback() -> void:
 		var dz := maxf(maxf(shed.position.y - p.y, p.y - shed.end.y), 0.0)
 		dist = Vector2(dx, dz).length()
 		on = dist > 2.0 and dist < 45.0
-	if on:
-		var dl := AudioServer.get_bus_effect(bus, 1) as AudioEffectDelay
-		dl.tap1_delay_ms = clampf(dist * 2.0 / 343.0 * 1000.0, 15.0, 260.0)
-		dl.tap1_level_db = -13.0 - dist * 0.3
-	if AudioServer.is_bus_effect_enabled(bus, 1) != on:
-		AudioServer.set_bus_effect_enabled(bus, 1, on)
+	for name in ["Room", "EngineRoom"]:
+		var bus := AudioServer.get_bus_index(name)
+		if bus < 0 or AudioServer.get_bus_effect_count(bus) < 2:
+			continue
+		if on:
+			var dl := AudioServer.get_bus_effect(bus, 1) as AudioEffectDelay
+			dl.tap1_delay_ms = clampf(dist * 2.0 / 343.0 * 1000.0, 15.0, 260.0)
+			dl.tap1_level_db = -13.0 - dist * 0.3
+		if AudioServer.is_bus_effect_enabled(bus, 1) != on:
+			AudioServer.set_bus_effect_enabled(bus, 1, on)
 
 
 ## The reverb settings showing on the Room bus now.
@@ -613,7 +706,7 @@ func set_listener_room(room: String) -> void:
 
 
 func _make_room_buses() -> void:
-	var specs := [["Room", "SFX"], ["Far", "SFX"], ["AmbOut", "SFX"]]
+	var specs := [["Room", "SFX"], ["Far", "SFX"], ["AmbOut", "SFX"], ["EngineRoom", "Engines"], ["EngineFar", "Engines"]]
 	for sp in specs:
 		if AudioServer.get_bus_index(str(sp[0])) != -1:
 			continue
@@ -622,7 +715,7 @@ func _make_room_buses() -> void:
 		AudioServer.set_bus_name(i, str(sp[0]))
 		AudioServer.set_bus_send(i, str(sp[1]))
 		match str(sp[0]):
-			"Room":
+			"Room", "EngineRoom":
 				AudioServer.add_bus_effect(i, AudioEffectReverb.new())
 				var dl := AudioEffectDelay.new()
 				dl.dry = 1.0
@@ -633,7 +726,7 @@ func _make_room_buses() -> void:
 				dl.feedback_active = false
 				AudioServer.add_bus_effect(i, dl)
 				AudioServer.set_bus_effect_enabled(i, 1, false)
-			"Far":
+			"Far", "EngineFar":
 				var lp := AudioEffectLowPassFilter.new()
 				lp.cutoff_hz = FAR_CUTOFF
 				AudioServer.add_bus_effect(i, lp)

@@ -2,9 +2,10 @@ class_name PaintBayRoom
 extends Node3D
 ## The paint mixing bay as drawn (see PaintBay for its rules): a narrow white room off the
 ## paint shop's east wall, through a sliding glass door at its front end. Along the east wall
-## the mixing bench with its digital scale, the tint rack over it and the shaker at the end;
-## the tin shelf by the door; the swatch wall down the west wall; the daylight booth across the
-## back with the spray-out panel stand in front of it; the masking tape on its hook by the door.
+## the mixing bench with its digital scale, the tint rack over it and the shaker at the end, a
+## compact second bench beside it towards the back, and the tin shelf by the door; the swatch
+## wall down the west wall; the daylight booth across the back with the spray-out panel stand in
+## front of it; the masking tape on its hook by the door.
 ## It's lit on the paint shop's light switch.
 ##
 ## What changes (tins, swatch cards, the test card, the kit the garage has bought) is redrawn
@@ -26,7 +27,7 @@ static var live := {}
 
 var ws: Node3D
 var bench_camera: Camera3D
-var shop_camera: Camera3D      # over the paint shop's compact bench (PaintBay.SHOP_BENCH)
+var shop_camera: Camera3D      # over the compact bench (PaintBay.SHOP_BENCH)
 var _mats := {}
 var _dyn: Node3D
 var _sig := ""
@@ -79,7 +80,7 @@ func build(workshop: Node3D) -> void:
 	shop_camera.name = "ShopBenchCamera"
 	shop_camera.fov = 52.0
 	add_child(shop_camera)
-	shop_camera.look_at_from_position(PaintBay.SHOP_EYE, PaintBay.SHOP_SCALE_AT + Vector3(0.0, 0.2, -0.16), Vector3.UP)
+	shop_camera.look_at_from_position(PaintBay.SHOP_EYE, PaintBay.SHOP_SCALE_AT + Vector3(0.12, 0.12, 0.0), Vector3.UP)
 	# The shaker's whirr while it runs, from the shaker, for everyone in earshot.
 	_shaker_sound = Sfx.make_loop_player(self)
 	_shaker_sound.position = PaintBay.SHAKER_AT + Vector3(0.0, 0.2, 0.0)
@@ -300,9 +301,10 @@ func _build_bench() -> void:
 	_label(self, "EMPTY TINS", bin_at + Vector3(-0.172, 0.35, 0.0), -PI * 0.5, 0.0009, Color(0.9, 0.9, 0.9))
 
 
-## The paint shop's compact mixing bench against its back wall, beside the spray bay: a worktop on
-## a cupboard, its own scale, and a little rack of every tint on the wall over it. It's the same
-## bench as the bay's (see PaintBay.SHOP_BENCH), so stepping up to it works just the same.
+## The compact mixing bench on the east wall, between the daylight booth and the big bench: a
+## worktop on a cupboard, its own scale, and a little rack of every tint on the wall over it.
+## It's the same bench as the big one (see PaintBay.SHOP_BENCH), so stepping up to it works just
+## the same.
 func _build_shop_bench() -> void:
 	var b := PaintBay.SHOP_BENCH
 	var top := PaintBay.BENCH_TOP
@@ -310,20 +312,21 @@ func _build_shop_bench() -> void:
 	var body := _solid(Vector3(c.x, top * 0.5, c.y), Vector3(b.size.x, top, b.size.y), null)
 	body.name = "ShopMixingBench"
 	_box(self, Vector3(c.x, top - 0.025, c.y), Vector3(b.size.x + 0.04, 0.05, b.size.y + 0.04), _mats["bench"])
-	_box(self, Vector3(c.x, (top - 0.05) * 0.5, c.y - 0.02), Vector3(b.size.x - 0.04, top - 0.05, b.size.y - 0.04), _mats["cabinet"])
+	_box(self, Vector3(c.x + 0.02, (top - 0.05) * 0.5, c.y), Vector3(b.size.x - 0.04, top - 0.05, b.size.y - 0.04), _mats["cabinet"])
 	_target(self, Vector3(c.x, top + 0.08, c.y), Vector3(b.size.x, 0.16, b.size.y), {"paint_bay": "bench"})
-	# The scale, its display on the front edge facing you.
+	# The scale, its display on the front edge facing you (as on the big bench).
 	var s := PaintBay.SHOP_SCALE_AT
-	_box(self, s + Vector3(0.0, 0.02, 0.0), Vector3(0.3, 0.04, 0.28), _mats["dark"])
+	_box(self, s + Vector3(0.0, 0.02, 0.0), Vector3(0.28, 0.04, 0.3), _mats["dark"])
 	_box(self, s + Vector3(0.0, 0.043, 0.0), Vector3(0.22, 0.006, 0.22), _mats["steel"])
-	_box(self, s + Vector3(0.0, 0.03, 0.15), Vector3(0.18, 0.04, 0.03), _mats["lcd"])
-	_shop_scale_label = _label(self, "0 g", s + Vector3(0.0, 0.032, 0.168), 0.0, 0.0009, Color(0.6, 1.0, 0.7))
+	_box(self, s + Vector3(-0.15, 0.03, 0.0), Vector3(0.03, 0.04, 0.18), _mats["lcd"])
+	_shop_scale_label = _label(self, "0 g", s + Vector3(-0.168, 0.032, 0.0), -PI * 0.5, 0.0009, Color(0.6, 1.0, 0.7))
+	_shop_scale_label.rotation = Vector3(0.0, -PI * 0.5, 0.0)
 	_shop_scale_label.rotate_object_local(Vector3.RIGHT, -0.5)
 	# The rack: two shelves on the wall.
 	for y in PaintBay.SHOP_RACK_Y:
-		_box(self, Vector3(c.x, float(y) - 0.01, PaintBay.SHOP_RACK_Z), Vector3(b.size.x, 0.02, 0.11), _mats["wood"])
-	_label(self, "TINTS", Vector3(c.x, float(PaintBay.SHOP_RACK_Y[0]) - 0.05, PaintBay.SHOP_RACK_Z + 0.056), 0.0, 0.0012)
-	_label(self, "MIXING BENCH  ·  the same bench as the mixing bay's", Vector3(c.x, 2.05, b.position.y + 0.012), 0.0, 0.0014)
+		_box(self, Vector3(PaintBay.SHOP_RACK_X, float(y) - 0.01, c.y), Vector3(0.11, 0.02, b.size.y), _mats["wood"])
+	_label(self, "TINTS", Vector3(PaintBay.SHOP_RACK_X - 0.056, float(PaintBay.SHOP_RACK_Y[0]) - 0.05, c.y), -PI * 0.5, 0.0012)
+	_label(self, "MIXING BENCH  ·  the same bench as the big one", Vector3(b.end.x - 0.012, 2.05, c.y), -PI * 0.5, 0.0014)
 
 
 func _blocker(center: Vector3, size: Vector3) -> void:
@@ -627,7 +630,7 @@ func _draw_bench_top() -> void:
 			var n := mini(int(floor(PaintBay.stock_of(base))), 4)
 			for k in n:
 				var tin := tin_model({"base": base, "base_g": 1000.0, "tints": {}, "stir": 1.0, "mix": {"color": PaintMix.BASES[base]["color"]}})
-				tin.position = Vector3(b.position.x - 0.03, 0.12, b.position.y + 0.25 + i * 0.75 + k * 0.13)
+				tin.position = Vector3(b.position.x - 0.03, 0.12, b.position.y + 0.25 + i * minf(0.75, (b.size.y - 0.55) / PaintMix.BASE_ORDER.size()) + k * 0.13)
 				_dyn.add_child(tin)
 			i += 1
 		_box(_dyn, Vector3(b.position.x - 0.02, 0.1, cz), Vector3(0.18, 0.02, b.size.y - 0.1), _mats["steel"])
@@ -641,7 +644,7 @@ func _draw_rack() -> void:
 		bottle.transform = PaintBay.bottle_xf(c)
 		bottle.name = "Bottle_" + c
 		_dyn.add_child(bottle)
-		# And its twin on the paint shop bench's rack.
+		# And its twin on the compact bench's rack.
 		var twin := bottle_model(c)
 		twin.transform = PaintBay.shop_bottle_xf(c)
 		twin.name = "ShopBottle_" + c
@@ -723,6 +726,12 @@ func _draw_shaker_body() -> void:
 # ---------------------------------------------------------------------------- every frame
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("rooms", pt)
+
+
+func _process_body(delta: float) -> void:
 	_t += delta
 	if Shed.room_lit("paint") != _lit_shown:
 		_set_lit(Shed.room_lit("paint"))
@@ -821,12 +830,12 @@ func _update_bench(delta: float) -> void:
 			_stream = _cylinder(0.0025, 1.0, sm, 6)
 			add_child(_stream)
 	if _pour_bottle:
-		# The neck over the tin's rim; tipped towards it (towards the bench's front edge: -x at the
-		# bay's, +z at the paint shop's) as it pours.
+		# The neck over the tin's rim; tipped towards it (towards the bench's front edge, -x) as it
+		# pours.
 		var neck := scale_at + Vector3(0.0, 0.3, 0.0)
 		_pour_bottle.position = neck
 		var tip := lerpf(0.7, 2.8, tilt)
-		_pour_bottle.rotation = Vector3(tip, 0.0, 0.0) if shop else Vector3(0.0, 0.0, tip)
+		_pour_bottle.rotation = Vector3(0.0, 0.0, tip)
 		var flowing := PaintMix.pour_rate(tilt) > 0.0
 		_stream.visible = flowing
 		if flowing:

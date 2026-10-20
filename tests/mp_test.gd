@@ -15,6 +15,13 @@ extends Node
 ## shed: both must see the box, with its "for" note, ride on the trolley. The client waves and
 ## the host must see its figure wave; the host pings and the client must see it point.
 ## The host puts a biker out on the roads, and the client must see them riding along.
+## Recovery: the host gives the garage the recovery rig and puts a crash rescue on the phone; the
+## client takes the job on, gets in the truck (the host must see it driving) and parks it
+## somewhere new: both must see the job's bike out at its site and the truck where it was left.
+## Then the host gets in its passenger seat by the passenger door: the client must see the door
+## swing open and the host sat in the cab (their figure gone from outside), and both see them out.
+## Pool: the host racks up in the crew lounge and the client joins; each must see a shot the
+## other took played out on its own table, and its own come back from the host.
 
 var role := "host"
 var main: Node
@@ -39,7 +46,7 @@ func _ready() -> void:
 		main._host()
 	else:
 		main._join(" 127.0.0.1:24680 ")
-	var deadline := Time.get_ticks_msec() + 40000
+	var deadline := Time.get_ticks_msec() + 90000   # a ceiling: the pair stops as soon as every step is seen
 	var moved := false
 	var shed_ok := false
 	var start := Vector3.ZERO
@@ -83,6 +90,12 @@ func _ready() -> void:
 	var cafe_bought := false
 	var cafe_down := false
 	var cafe_ok := false
+	var staff_hired := false
+	var staff_asked := false
+	var staff_ok := false
+	var card_asked := false
+	var card_ticked := false
+	var card_ok := false
 	var spray_made := false
 	var spray_step := 0
 	var spray_ok := false
@@ -96,6 +109,29 @@ func _ready() -> void:
 	var tare_seen := false      # the scale zeroed, on both sides
 	var avatar_ok := false
 	var graph_ok := false
+	var rec_step := 0
+	var rec_t := 0
+	var rec_drove := false      # the host saw the client at the wheel; the client was driving
+	var rec_ok := false
+	var pass_step := 0
+	var pass_t := 0
+	var pass_seen := false     # the client saw the host sat in the passenger seat, its door open
+	var pass_door := false     # the client saw the passenger door swing
+	var pass_sat := false      # and the host sat in the passenger seat
+	var pass_ok := false
+	var REC_PARK := Recovery.PARK.translated(Vector3(-6.0, 0.0, 2.0))
+	var wash_step := 0
+	var wash_ok := false
+	var shine_step := 0
+	var shine_ok := false
+	var pool_t := 0             # when this side last tried to shoot, msec
+	var pool_own := false        # a shot this side took came back from the host
+	var pool_other := false      # and one the other side took arrived here
+	var pool_ok := false
+	var copy_asked := false     # the client ordered one of the ranger and copied a cafe biker's bike
+	var copy_cost := 0
+	var copy_logged := 0        # "Ordered:" lines in the client's cash log before (it carries on between runs)
+	var copy_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -351,6 +387,33 @@ func _ready() -> void:
 			tray_seen = tray_seen or (int(ct["holder"]) == 0 and ct["items"] == ["coffee"] and (ct["xf"] as Transform3D).origin.distance_to(CAFE_TRAY_XF.origin) < 0.01)
 		var bikers_seen: bool = main.coffee_view.views.values().any(func(v): return is_instance_valid(v) and (v as CoffeeVisitor).has_bike())
 		cafe_ok = cafe_ok or (tray_seen and main.coffee_view.trays.size() >= 1 and bikers_seen)
+		# Staff: the host takes on one of each, the client sends one off for teas (a request the
+		# host checks and does), and both see every worker drawn and the tea run under way.
+		if role == "host" and Shed.crew.size() == 2 and not staff_hired:
+			Shed.request({"a": "staff_debug_hire_all"})
+			staff_hired = true
+		var tea_worker := 0
+		for wid in Staff.workers():
+			if str(Staff.workers()[wid]["role"]) == "reception":
+				tea_worker = int(wid)
+		if role == "client" and tea_worker != 0 and not staff_asked:
+			Shed.request({"a": "staff_assign", "worker": tea_worker, "job": {"kind": "tea"}})
+			staff_asked = true
+		var on_tea := tea_worker != 0 and str(Staff.worker(tea_worker)["job"].get("kind", "")) == "tea"
+		var tea_done := (Shed.staff.get("news", []) as Array).any(func(n): return str(n).contains("Tea's up"))
+		staff_ok = staff_ok or (Staff.workers().size() == Staff.MAX_STAFF and main.staff_view.figures.size() == Staff.MAX_STAFF
+			and (on_tea or tea_done))
+		# Job cards: the client assesses the Rusty Ranger and the host ticks its first task off by
+		# hand; both see the card with the tick (see Workflow).
+		if role == "client" and ranger != 0 and Shed.crew.size() == 2 and not card_asked:
+			Shed.request({"a": "card_assess", "bike": ranger})
+			card_asked = true
+		var card := Workflow.card(ranger)
+		if role == "host" and card.get("tasks") is Array and not card_ticked:
+			Shed.request({"a": "card_tick", "bike": ranger, "task": card["tasks"][0]["id"], "on": true})
+			card_ticked = true
+		card_ok = card_ok or (Workflow.assessed(ranger) and str(card.get("by", "")) == "Test client"
+			and Workflow.is_done(ranger, card["tasks"][0]))
 		# Emotes: the client waves and the host sees its figure wave; the host pings and the
 		# client sees the host's figure point at it.
 		if Shed.crew.size() == 2 and main.remotes.size() == 1 and not emote_sent:
@@ -439,7 +502,178 @@ func _ready() -> void:
 			var shelved := PaintBay.tins().values().filter(func(t): return str(t.get("name", "")) == "MP Blue" and str(t["at"]) == "shelf")
 			paint_ok = cards.size() >= 1 and shelved.size() == 1 and float(PaintBay.stock_of("PB")) > PaintBay.STARTER_TINT - 20.0 \
 				and str(mp_blue[0]["code"]).begins_with("W-PB20") and PaintBay.at_bench() == 0 and tare_seen and (role != "host" or bottle_back)
-		if ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok:
+		# Recovery (see the top): the host grants the rig and a job, the client drives off with it.
+		if Shed.crew.size() == 2 and main.remotes.size() == 1:
+			if role == "host" and rec_step == 0:
+				Shed.request({"a": "recovery_grant"})
+				Shed.request({"a": "recovery_spawn", "kind": "crash"})
+				rec_step = 1
+			if role == "client":
+				match rec_step:
+					0:
+						if Recovery.owned() and not Recovery.offers().is_empty():
+							Shed.request({"a": "recovery_accept", "offer": int(Recovery.offers().keys()[0])})
+							rec_step = 1
+					1:
+						if not Recovery.jobs().is_empty() and Recovery.driver() == 0:
+							Shed.request({"a": "recovery_enter"})
+							rec_step = 2
+					2:
+						# Asked again now and then: the host turns it down while this player's still busy
+						# with an earlier step (just as a player would press F again).
+						if not main.recovery.driving and Recovery.driver() == 0 and Engine.get_process_frames() % 60 == 0:
+							Shed.request({"a": "recovery_enter"})
+						if main.recovery.driving:
+							rec_drove = true
+							rec_t += 1
+							if rec_t > 90:
+								main.recovery.car.place(REC_PARK)
+								main.recovery.trailer.place(Recovery.trailer_park(REC_PARK))
+								main.recovery.stop_driving()
+								rec_step = 3
+			if role == "host" and Recovery.driver() != 0 and (main.remotes.values()[0] as RemotePlayer).driving:
+				rec_drove = true
+		var rv: RecoveryView = main.recovery
+		var rec_job_ok := Recovery.jobs().size() == 1 and Shed.bikes.has(int(Recovery.jobs().values()[0]["bike"]))
+		rec_ok = rec_ok or (rec_drove and rec_job_ok and Recovery.driver() == 0 and rv.car != null
+			and (Recovery.car()["xf"] as Transform3D).origin.distance_to(REC_PARK.origin) < 0.3
+			and rv.car.global_position.distance_to(REC_PARK.origin) < 0.3)
+		# The passenger seat (see the top): the host gets in once the truck's parked, sits a
+		# couple of seconds and gets out; the client sees the door swing and them sat in the cab.
+		if rec_ok and rv.car != null and main.remotes.size() == 1:
+			var other: RemotePlayer = main.remotes.values()[0]
+			if role == "host":
+				match pass_step:
+					0:
+						if Recovery.driver() == 0 and Engine.get_process_frames() % 30 == 0:
+							Shed.request({"a": "recovery_board"})
+						if rv.riding_along:
+							pass_step = 1
+					1:
+						pass_t += 1
+						if pass_t > 300:
+							rv.stop_riding_along()
+							pass_step = 2
+					2:
+						pass_ok = Recovery.passenger() == 0 and not rv.riding_along and main.walker.visible
+			else:
+				# The door's swing and the sit are each caught when they happen: on a slow machine
+				# the door can be shut again before the seat's figure is drawn.
+				if float(rv.car.door_open[0]) > 0.0:
+					pass_door = true
+				if Recovery.passenger() == other.peer and rv._seat_figs.has(other.peer) and not other._figure.visible:
+					pass_sat = true
+				pass_seen = pass_door and pass_sat
+				pass_ok = pass_seen and Recovery.passenger() == 0 and rv._seat_figs.is_empty() and other._figure.visible
+		# Pressure washing together: the host mucks up the Ranger's front tyre, fork and engine and
+		# washes half the dirt off the tyre; the client washes half off the fork and calls the
+		# engine clean, with its jet firing; both see all three, and the host sees the client's water.
+		if ranger != 0 and Shed.crew.size() == 2:
+			var w_tyre := Shed.item_on(ranger, "front_tyre")
+			var w_fork := Shed.item_on(ranger, "fork")
+			var w_engine := Shed.item_on(ranger, "engine")
+			var all_cells := func(f: float) -> Dictionary:
+				var d := {}
+				for k in Dirt.CELLS:
+					d[k] = f
+				return d
+			if role == "host" and wash_step == 0 and w_tyre != 0 and w_fork != 0 and w_engine != 0:
+				var muck := PackedFloat32Array()
+				muck.resize(Dirt.CELLS)
+				muck.fill(0.8)
+				for wid in [w_tyre, w_fork, w_engine]:
+					Dirt.store(Shed.items[wid], muck)
+				# Washing's done in the wash bay, so the Ranger goes in there first.
+				Shed.bikes[ranger]["xf"] = Transform3D(Basis(), Workshop.WASH_CENTER)
+				Shed._mark_dirty()
+				Shed.request({"a": "wash_cells", "bike": ranger, "parts": {w_tyre: all_cells.call(0.5)}, "clean": []})
+				wash_step = 1
+			if role == "client" and wash_step == 0 and w_fork != 0 and absf(float(Shed.items[w_fork]["dirt"]) - 0.8) < 0.01 \
+					and absf(float(Shed.items[w_tyre]["dirt"]) - 0.4) < 0.01:
+				Shed.request({"a": "wash_aim", "fire": true, "bike": ranger, "at": (Shed.bikes[ranger]["xf"] as Transform3D).origin + Vector3.UP * 0.5, "n": Vector3.RIGHT})
+				Shed.request({"a": "wash_cells", "bike": ranger, "parts": {w_fork: all_cells.call(0.5)}, "clean": [w_engine]})
+				wash_step = 1
+			var seen_water: bool = role == "client" or (main.remotes.size() == 1 and ws != null and ws._wash_fx.has(int(main.remotes.keys()[0])))
+			wash_ok = wash_ok or (w_tyre != 0 and absf(float(Shed.items[w_tyre]["dirt"]) - 0.4) < 0.01 and absf(float(Shed.items[w_fork]["dirt"]) - 0.4) < 0.01
+				and float(Shed.items[w_engine]["dirt"]) == 0.0 and Dirt.side(Dirt.cells(Shed.items[w_fork], "fork"), 0) < 0.41 and seen_water)
+		# Detailing together, once it's washed: the client polishes the Ranger's tank to a deep gloss
+		# (as its mini game sends it), the host's AI-style step lays a ceramic coat on; both see
+		# both, and the host's Ranger is drawn with its finish.
+		if ranger != 0 and wash_ok and Shed.crew.size() == 2 and Shed.item_on(ranger, "tank") != 0:
+			var s_tank := Shed.item_on(ranger, "tank")
+			if role == "client" and shine_step == 0:
+				var fin := Detail.data(Shed.items[s_tank])
+				var shiny := PackedByteArray()
+				shiny.resize(Dirt.CELLS)
+				shiny.fill(240)
+				fin["g"] = shiny
+				Shed.request({"a": "shine_cells", "bike": ranger, "parts": {s_tank: fin}})
+				shine_step = 1
+			var s_st := Detail.part_stats(Shed.items[s_tank])
+			if role == "host" and shine_step == 0 and float(s_st["gloss"]) > 0.9:
+				Shed.request({"a": "shine_step", "bike": ranger, "step": "coat", "amount": 5.0, "skill": 1.0})
+				shine_step = 1
+			var drawn: bool = role == "client" or (ws != null and ws.bike_model(ranger) != null and ws.bike_model(ranger).finish_layer != null)
+			shine_ok = shine_ok or (float(s_st["gloss"]) > 0.9 and float(s_st["coat"]) > 0.5 and drawn)
+		# Pool in the crew lounge: the host gives the garage the lounge and racks up, the client
+		# joins, and they take turns at the table until each has seen a shot the other took
+		# played out on its own table.
+		if Shed.crew.size() == 2:
+			if role == "host" and not GarageUpgrades.owned("lounge"):
+				Shed.request({"a": "garage_money", "value": Shed.garage_money + GarageUpgrades.price("lounge")})
+				Shed.request({"a": "buy_upgrade", "id": "lounge"})
+			var pool_view: PoolView = ws.get_node_or_null("Upgrades/Built/PoolTable") if ws else null
+			# The last shot is judged before anything re-racks: a rack wipes the game's last shot,
+			# and the host racks again as soon as a game ends, maybe before its own table played it.
+			var pool_by := int(Shed.pool["last"].get("by", 0))
+			var played_out: bool = pool_view != null and pool_view._shown == int(Shed.pool["last"].get("n", -2)) \
+				and pool_view._sim.is_empty()
+			if pool_by == Shed.me() and played_out:
+				pool_own = true
+			elif pool_by != 0 and played_out:
+				pool_other = true
+			pool_ok = pool_own and pool_other
+			if role == "host" and GarageUpgrades.owned("lounge") and not PoolGame.playing() and Time.get_ticks_msec() > pool_t + 1000 \
+					and (pool_view == null or (pool_view._sim.is_empty() and (played_out or not Shed.pool["last"].has("n")))):
+				pool_t = Time.get_ticks_msec()
+				Shed.request({"a": "pool_rack"})
+			var pool_players: Array = Shed.pool["players"]
+			if role == "client" and PoolGame.playing() and not pool_players.has(Shed.me()) and pool_players.size() < 2 \
+					and Time.get_ticks_msec() > pool_t + 1000:
+				pool_t = Time.get_ticks_msec()
+				Shed.request({"a": "pool_join"})
+			if PoolGame.shooter() == Shed.me() and pool_players.size() == 2 and Time.get_ticks_msec() > pool_t + 1500 \
+					and pool_view != null and pool_view._sim.is_empty():
+				# At whichever ball's still on the table, or a full-power break.
+				pool_t = Time.get_ticks_msec()
+				var pb: Array = Shed.pool["balls"]
+				var angle := 0.003
+				if int(Shed.pool["shots"]) > 0:
+					for bi in range(1, 16):
+						if bool(pb[bi][2]) and bi != 8:
+							angle = atan2(float(pb[bi][0]) - float(pb[0][0]), -(float(pb[bi][1]) - float(pb[0][1])))
+							break
+				Shed.request({"a": "pool_shot", "angle": angle, "power": 1.0 if int(Shed.pool["shots"]) == 0 else 0.6})
+		var rest_ok := ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok
+		# Order one of these and copy its blueprint (BikeCopy), once the trolley and the poster are
+		# in (it fills the delivery area): the client orders one of the ranger from its own money
+		# and copies a cafe biker's bike; both see the boxes with the client's name on them and
+		# the blueprint, and only the client paid.
+		var paid_log: Array = Progress.profile["cash_log"].filter(func(e): return str(e["why"]).begins_with("Ordered:"))
+		if role == "client" and trolley_ok and scrap_ok and cafe_ok and not copy_asked and not CoffeeShop.visitors().is_empty():
+			var vb: Dictionary = CoffeeShop.visitors().values()[0]["bike"]
+			var vsrc := BikeCopy.build_src("MP cafe copy", vb["parts"], Shed.PAINTS[int(vb["paint"]) % Shed.PAINTS.size()])
+			copy_cost = BikeCopy.total(BikeCopy.lines(BikeCopy.plan_of({"bike": ranger}), Shed.me()))
+			copy_logged = paid_log.size()
+			Progress.earn(copy_cost, "Test")
+			copy_asked = BikeCopy.order({"bike": ranger}) == "" and BikeCopy.copy_blueprint(vsrc) == ""
+		var boxed := Shed.items.values().filter(func(it): return str(it.get("by", "")) == "Test client").size() + \
+			Shed.on_order.filter(func(o): return str(o.get("by", "")) == "Test client").size()
+		paid_log = Progress.profile["cash_log"].filter(func(e): return str(e["why"]).begins_with("Ordered:"))
+		var copy_paid: bool = (role == "client" and copy_asked and paid_log.size() == copy_logged + 1 and int(paid_log[-1]["amt"]) == -copy_cost) \
+			or (role == "host" and paid_log.is_empty())
+		copy_ok = copy_ok or (boxed >= 30 and Shed.blueprint_named("MP cafe copy") != 0 and copy_paid)
+		if rest_ok and copy_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -455,8 +689,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, passenger %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s, order and copy %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, pass_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok, copy_ok])
 	get_tree().quit(0 if ok else 1)
 
 

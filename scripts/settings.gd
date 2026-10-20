@@ -5,16 +5,25 @@ const PATH := "user://settings.cfg"
 
 var player_name := "Rider"
 var last_ip := "127.0.0.1"
+var current_save := ""     # the save game played last (an id under user://saves/, see SaveGame)
 ## Riding realism: 0 = full sim (the front can tuck, a slide can high-side), 0.5 = the rider
 ## protects the front and smooths the throttle, 1 = the easiest, with the most help balancing.
 var assist := 0.5
+## Direct bars: the steer input turns into torque on the handlebars instead of a lean to aim for.
+var direct_bars := false
 ## The telemetry overlay at the side of the screen while riding (F3 toggles it).
 var telemetry_overlay := false
+## The sat nav's map on the HUD too, while riding a bike with one fitted ({satnav_hud}).
+var satnav_hud := true
 var auto_shift := true
 ## The chase camera eases back behind the bike after a moment of not swinging it round.
 var camera_recentre := true
+## On foot, the view from behind your shoulder with your whole figure in it, instead of from
+## your eyes (V, or View on a pad, toggles it; see WalkerView).
+var walk_third_person := false
 var high_quality := true
 var sfx_volume := 0.8
+var engine_volume := 0.8
 var radio_volume := 0.6
 var units := "metric"     # or "imperial"
 var day_night_cycle := true
@@ -39,7 +48,7 @@ var gfx_fps_cap := 0              # 0 = unlimited
 var gfx_fov := 75.0
 var gfx_brightness := 1.0
 var gfx_render_scale := 1.0       # 0.5..1.0 upscaled, 1.0..2.0 supersampled
-var gfx_upscaler := "fsr2"        # "fsr2", "fsr1" or "bilinear"
+var gfx_upscaler := "fsr2"        # "fsr2", "fsr1", "bilinear" or "off" (native resolution, no scaling)
 var gfx_sharpness := 0.8          # 0 soft .. 1 sharpest
 var gfx_msaa := "2x"              # "off", "2x", "4x", "8x"
 var gfx_taa := false
@@ -55,10 +64,12 @@ var gfx_ssao := true
 var gfx_glow := true
 var gfx_driver := "vulkan"        # "vulkan" or "d3d12" (Windows; from the next start)
 var gfx_fps_counter := false
+var gfx_avatar_shadows := true    # whether players', staff's and townsfolk's figures cast shadows
+var gfx_mirrors := "medium"       # the ridden bike's live mirrors: "off" (plain glass), "low".."ultra" (see BikeMirrors)
 const GFX_KEYS := ["gfx_preset", "gfx_window_mode", "gfx_resolution", "gfx_monitor", "gfx_vsync", "gfx_fps_cap",
 	"gfx_fov", "gfx_brightness", "gfx_render_scale", "gfx_upscaler", "gfx_sharpness", "gfx_msaa", "gfx_taa",
 	"gfx_screen_aa", "gfx_detail", "gfx_draw_distance", "gfx_shadows", "gfx_gi", "gfx_volumetrics", "gfx_clouds",
-	"gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_driver", "gfx_fps_counter"]
+	"gfx_ssr", "gfx_ssao", "gfx_glow", "gfx_driver", "gfx_fps_counter", "gfx_avatar_shadows", "gfx_mirrors"]
 
 
 ## Every action a player can rebind, in the order the Key bindings tab lists them:
@@ -68,19 +79,21 @@ const GFX_KEYS := ["gfx_preset", "gfx_window_mode", "gfx_resolution", "gfx_monit
 const ACTIONS := [
 	["move_forward", "Walk forward", ["foot"]], ["move_back", "Walk back", ["foot"]],
 	["move_left", "Walk left", ["foot"]], ["move_right", "Walk right", ["foot"]],
-	["sprint", "Run", ["foot"]], ["crouch", "Crouch", ["foot"]],
+	["sprint", "Run", ["foot"]], ["crouch", "Crouch", ["foot"]], ["jump", "Jump", ["foot"]],
+	["walk_camera", "Camera on foot: first or third person", ["foot"]],
 	["act", "Work / use (hold)", ["foot", "board"]], ["alt_act", "Second work button (hold)", ["foot", "board"]],
 	["tool_next", "Next tool", ["foot", "board"]], ["tool_prev", "Previous tool", ["foot", "board"]],
 	["tool_1", "Hands", ["foot", "board"]], ["tool_2", "Wrench", ["foot", "board"]], ["tool_3", "Brush", ["foot", "board"]],
 	["tool_4", "Grinder", ["foot", "board"]], ["tool_5", "Spray can", ["foot", "board"]],
 	["tool_6", "Pressure washer", ["foot", "board"]], ["tool_7", "Spray gun", ["foot", "board"]],
-	["tool_8", "Stopwatch", ["foot", "board"]],
+	["tool_8", "Stopwatch", ["foot", "board"]], ["tool_9", "Polisher", ["foot"]],
 	["spray_colour", "Spray colour", ["spray"]], ["spray_finish", "Spray finish", ["spray"]],
-	["rename", "Name a bike", ["foot"]], ["blast_scan", "Sandblaster: scan the engine", ["foot"]],
+	["rename", "Name a bike", ["foot"]], ["order_bike", "Looking at a bike: order one of these or copy its blueprint", ["foot"]], ["blast_scan", "Sandblaster: scan the engine", ["foot"]],
 	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
 	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
 	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot", "ride"]],
+	["eat", "Adventure: eat or drink from your packed lunch", ["foot", "ride"]],
 	["emote_menu", "Emotes: open the bar (then 1 to 6)", ["foot"]], ["emote_wave", "Emote: wave", ["foot"]],
 	["emote_thumbs", "Emote: thumbs up", ["foot"]], ["emote_point", "Emote: point", ["foot"]],
 	["emote_shrug", "Emote: shrug", ["foot"]], ["emote_cheer", "Emote: cheer", ["foot"]], ["emote_dance", "Emote: dance", ["foot"]],
@@ -90,25 +103,39 @@ const ACTIONS := [
 	["board_image", "Whiteboard: add a picture", ["board"]], ["board_move", "Whiteboard: move a picture", ["board"]],
 	["board_bigger", "Whiteboard: picture bigger", ["board"]], ["board_smaller", "Whiteboard: picture smaller", ["board"]],
 	["board_poster", "Whiteboard: make a poster", ["board"]],
-	["throttle", "Throttle", ["ride"]], ["front_brake", "Front brake", ["ride"]], ["rear_brake", "Rear brake", ["ride"]],
+	["throttle", "Throttle", ["ride"]], ["front_brake", "Front brake (truck: brake, hold when stopped to reverse)", ["ride"]], ["rear_brake", "Rear brake (truck: handbrake while held)", ["ride"]],
 	["lean_left", "Lean left", ["ride"]], ["lean_right", "Lean right", ["ride"]],
 	["body_back", "Weight back", ["ride"]], ["body_forward", "Weight forward", ["ride"]],
-	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down", ["ride"]],
+	["shift_up", "Shift up", ["ride"]], ["shift_down", "Shift down (truck: into reverse when stopped)", ["ride"]],
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
 	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera: third person, first person, fly-by", ["ride"]],
-	["horn", "Horn", ["ride"]], ["headlight", "Headlight", ["ride"]],
+	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
+	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
 	["ride_by", "Ride-by camera", ["ride"]], ["telemetry", "Telemetry overlay on / off", ["ride"]],
+	["satnav_hud", "Sat nav: map, trip computer, then off the HUD", ["ride"]],
+	["paper_map", "Adventure: the paper map of the route (when stopped)", ["foot", "ride"]],
+	["photo", "Adventure: take a photo (hold to film a clip)", ["foot", "ride"]],
+	["photo_camera", "Adventure: hold the camera up on foot (zoom, friends in shot)", ["foot"]],
+	["screen_up", "Adjustable screen up", ["ride"]], ["screen_down", "Adjustable screen down", ["ride"]],
 	["geometry_mode", "Geometry mode on / off", ["foot", "geo"]],
+	["perf_overlay", "Performance profiler on / off", ["foot", "ride"]],
+	["perf_record", "Performance profiler: record 60 s to a file", ["foot", "ride"]],
 	["geo_move", "Geometry: move", ["geo"]], ["geo_rotate", "Geometry: rotate", ["geo"]],
 	["geo_scale", "Geometry: scale / stretch", ["geo"]], ["geo_snap", "Geometry: snap (hold)", ["geo"]],
 	["geo_undo", "Geometry: undo", ["geo"]], ["geo_reset", "Geometry: reset the part", ["geo"]],
 ]
-const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding", "spray": "with a spray can or gun", "board": "at the whiteboard",
+const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding or driving", "spray": "with a spray can or gun", "board": "at the whiteboard",
 	"geo": "in geometry mode"}
 ## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
-const SHARED_OK := [["alt_act", "spray_colour"]]
+## B on a pad jumps on foot, but with a spray can or gun out it's the finish (the spray comes first).
+## View on a pad turns what you hold or carry; with nothing in hand it switches the camera.
+## D-pad left is the stopwatch, but at the wheel of the truck it's the handbrake.
+const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rotate_right", "walk_camera"], ["stopwatch", "handbrake"]]
 ## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
 const CONTEXT_ALSO := {"spray": ["foot"]}
+
+## The performance profiler's panel (F4; see PerfOverlay).
+var perf: PerfOverlay
 
 ## action -> the events it had before any rebinding, for Reset to defaults.
 var _defaults := {}
@@ -121,6 +148,8 @@ func _ready() -> void:
 		_defaults[a[0]] = InputMap.action_get_events(a[0]).duplicate()
 	load_settings()
 	add_child(Graphics.new())
+	perf = PerfOverlay.new()
+	add_child(perf)
 
 
 func load_settings() -> void:
@@ -128,12 +157,17 @@ func load_settings() -> void:
 	if cfg.load(PATH) == OK:
 		player_name = cfg.get_value("player", "name", player_name)
 		last_ip = cfg.get_value("player", "last_ip", last_ip)
+		current_save = str(cfg.get_value("player", "save", current_save))
 		assist = cfg.get_value("riding", "assist", assist)
 		auto_shift = cfg.get_value("riding", "auto_shift", auto_shift)
+		direct_bars = bool(cfg.get_value("riding", "direct_bars", direct_bars))
 		telemetry_overlay = bool(cfg.get_value("riding", "telemetry", telemetry_overlay))
+		satnav_hud = bool(cfg.get_value("riding", "satnav_hud", satnav_hud))
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
+		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
+		engine_volume = float(cfg.get_value("audio", "engines", engine_volume))
 		radio_volume = cfg.get_value("audio", "radio", radio_volume)
 		units = cfg.get_value("display", "units", units)
 		day_night_cycle = cfg.get_value("world", "day_night_cycle", day_night_cycle)
@@ -158,12 +192,17 @@ func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("player", "name", player_name)
 	cfg.set_value("player", "last_ip", last_ip)
+	cfg.set_value("player", "save", current_save)
 	cfg.set_value("riding", "assist", assist)
 	cfg.set_value("riding", "auto_shift", auto_shift)
+	cfg.set_value("riding", "direct_bars", direct_bars)
 	cfg.set_value("riding", "telemetry", telemetry_overlay)
+	cfg.set_value("riding", "satnav_hud", satnav_hud)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
+	cfg.set_value("walking", "third_person", walk_third_person)
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)
+	cfg.set_value("audio", "engines", engine_volume)
 	cfg.set_value("audio", "radio", radio_volume)
 	cfg.set_value("display", "units", units)
 	cfg.set_value("world", "day_night_cycle", day_night_cycle)
@@ -278,10 +317,21 @@ func _setup_inputs() -> void:
 	_bind("toggle_auto_shift", [KEY_T], [])
 	_bind("ignition", [KEY_I], [JOY_BUTTON_DPAD_UP])
 	_bind("horn", [KEY_H], [JOY_BUTTON_DPAD_DOWN])
+	# The truck's handbrake, pulled up and left on: the stopwatch's D-pad left at the wheel.
+	_bind("handbrake", [KEY_J], [JOY_BUTTON_DPAD_LEFT])
 	_bind("headlight", [KEY_L], [JOY_BUTTON_LEFT_STICK])
 	# Drop a camera at the roadside ahead and watch yourself ride past (no pad button spare).
 	_bind("ride_by", [KEY_V], [])
 	_bind("telemetry", [KEY_F3], [])
+	# The sat nav's map on the HUD, and an adjustable screen up and down on the move.
+	_bind("satnav_hud", [KEY_M], [])
+	# Out on an adventure: the paper map of the whole route, once you have stopped.
+	_bind("paper_map", [KEY_TAB], [])
+	# The camera for the Adventure Diary: a photo (held, a clip), and on foot holding it up to your eye.
+	_bind("photo", [KEY_K], [])
+	_bind("photo_camera", [KEY_L], [])
+	_bind("screen_up", [KEY_PAGEUP], [])
+	_bind("screen_down", [KEY_PAGEDOWN], [])
 	_bind("stopwatch", [KEY_P], [JOY_BUTTON_DPAD_LEFT])
 	# On foot in the shed
 	_bind("move_forward", [KEY_W, KEY_UP], [])
@@ -289,10 +339,12 @@ func _setup_inputs() -> void:
 	_bind("move_left", [KEY_A, KEY_LEFT], [])
 	_bind("move_right", [KEY_D, KEY_RIGHT], [])
 	_bind("sprint", [KEY_SHIFT], [JOY_BUTTON_LEFT_STICK])
+	# Space is the handbrake in the truck and the back brake on a bike; on foot it jumps.
+	_bind("jump", [KEY_SPACE], [JOY_BUTTON_B])
 	_bind("act", [], [JOY_BUTTON_A], [MOUSE_BUTTON_LEFT])
 	_bind("tool_next", [KEY_E], [JOY_BUTTON_RIGHT_SHOULDER], [MOUSE_BUTTON_WHEEL_DOWN])
 	_bind("tool_prev", [KEY_Q], [JOY_BUTTON_LEFT_SHOULDER], [MOUSE_BUTTON_WHEEL_UP])
-	for i in 8:
+	for i in 9:
 		_bind("tool_%d" % (i + 1), [KEY_1 + i], [])
 	_bind("spray_colour", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	# The finish is T or the mouse's back side button: the middle button is ping's.
@@ -308,6 +360,8 @@ func _setup_inputs() -> void:
 	_bind("emote_cheer", [KEY_F9], [])
 	_bind("emote_dance", [KEY_F10], [])
 	_bind("rename", [KEY_N], [])
+	# Looking at any bike: order one of these, or copy its blueprint (see BikeCopy). No pad button spare.
+	_bind("order_bike", [KEY_O], [])
 	# At the sandblaster's gloves: scan the engine for what's still to blast.
 	_bind("blast_scan", [KEY_X], [JOY_BUTTON_DPAD_UP])
 	# Turn a part in your hands, equipment you're carrying, a poster before you hang it or a
@@ -321,6 +375,9 @@ func _setup_inputs() -> void:
 	# The second work button: drains fluids into a held container.
 	_bind("alt_act", [KEY_R], [JOY_BUTTON_X], [MOUSE_BUTTON_RIGHT])
 	_bind("crouch", [KEY_C, KEY_CTRL], [JOY_BUTTON_RIGHT_STICK])
+	# First or third person on foot. C (the riding camera key) crouches on foot, so it's the key
+	# beside it; on a pad it's View, which only turns things while you hold or carry them.
+	_bind("walk_camera", [KEY_V], [JOY_BUTTON_BACK])
 	# At the whiteboard: write a line of text, undo your last mark (Z or Ctrl+Z), hold to wipe it.
 	_bind("board_text", [KEY_T], [])
 	_bind("board_undo", [KEY_Z], [JOY_BUTTON_DPAD_LEFT])
@@ -335,6 +392,9 @@ func _setup_inputs() -> void:
 	_bind("board_poster", [KEY_K], [JOY_BUTTON_DPAD_DOWN])
 	# Geometry mode: fit a bike's parts with move, rotate and scale handles, Blender style.
 	_bind("geometry_mode", [KEY_F2], [])
+	# The performance profiler (see PerfOverlay), and a recording of it to send in.
+	_bind("perf_overlay", [KEY_F4], [])
+	_bind("perf_record", [KEY_F11], [])
 	_bind("geo_move", [KEY_W], [])
 	_bind("geo_rotate", [KEY_E], [])
 	_bind("geo_scale", [KEY_R], [])
@@ -343,6 +403,7 @@ func _setup_inputs() -> void:
 	_bind("geo_reset", [KEY_BACKSPACE], [])
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
+	_bind("eat", [KEY_Y], [JOY_BUTTON_MISC1])
 	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])
 
 

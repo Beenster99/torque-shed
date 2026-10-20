@@ -11,7 +11,7 @@ const STEP := 2.0
 const CELL := 32.0
 ## A branch's surface sits this much above the road it leaves, where the two overlap.
 const JOIN_LIFT := 0.015
-## The loop sits this much proud of the yard slab where it crosses it.
+## Roads through the flat ground round the shed (the town's streets) sit this much proud of it.
 const YARD_LIFT := 0.02
 ## The steepest a tarmac road may be across a crest: how fast its grade may change per metre,
 ## so a bike at speed stays on the ground (a crest of radius R keeps v^2 / R under g).
@@ -201,11 +201,11 @@ func _profile(r: Dictionary, terrain: WorldTerrain) -> void:
 	fixed.resize(n)
 	var fix_h := PackedFloat32Array()
 	fix_h.resize(n)
-	if r["name"] == "loop":
-		for i in n:
-			if xz[i].y > 95.0 and xz[i].x > -70.0 and xz[i].x < 92.0:
-				fixed[i] = 1
-				fix_h[i] = YARD_LIFT
+	var town := WorldTerrain.HOME.grow(-4.0)
+	for i in n:
+		if town.has_point(xz[i]):
+			fixed[i] = 1
+			fix_h[i] = YARD_LIFT
 	for end in ["start_join", "end_join"]:
 		var j: Dictionary = r[end]
 		if j.is_empty():

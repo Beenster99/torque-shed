@@ -4,7 +4,9 @@ class_name ToolModels
 ## shadows. Tools: "wrench" (combination spanner), "brush" (wire brush), "repair" (angle
 ## grinder), "spray" (aerosol can, tinted can_color), "lance" (pressure washer gun and lance,
 ## nozzle at (0, 0, -0.6)), "gun" (HVLP paint gun, cup tinted can_color, nozzle near
-## (0, 0.02, -0.12)) and "stopwatch" (turn its hand with set_hand_angle / set_hand_seconds).
+## (0, 0.02, -0.12)), "polisher" (a dual-action polisher, its foam pad facing forward at
+## (0, 0, -0.17)), "applicator" (a ceramic coating applicator block in your fingers) and
+## "stopwatch" (turn its hand with set_hand_angle / set_hand_seconds).
 ## Tools with a nozzle carry it as the "nozzle" meta (a local Vector3).
 ## `stage` (0..5, the tool's upgrade stage, see Progress) dresses it up: bare steel, polished,
 ## chrome, anodised, carbon, then gold trim.
@@ -29,6 +31,10 @@ static func make(which: String, can_color := Color(0.9, 0.75, 0.1), stage := 0) 
 			_lance(root)
 		"gun":
 			_paint_gun(root, can_color)
+		"polisher":
+			_polisher(root)
+		"applicator":
+			_applicator(root)
 		"stopwatch":
 			_stopwatch(root)
 		_:
@@ -378,6 +384,40 @@ static func _grinder(root: Node3D) -> void:
 	for z in [-0.0471, -0.0509]:
 		_add(root, _cyl(0.022, 0.022, 0.0006, 24), _mat("red"), c + Vector3(0, 0, z), Vector3(PI * 0.5, 0, 0))
 	_add(root, _cyl(0.011, 0.011, 0.005, 6), _mat("chrome"), c + Vector3(0, 0, -0.053), Vector3(PI * 0.5, 0, 0))
+
+
+## A dual-action polisher: a grey motor body along the line of the tool with a rubber nose grip,
+## the D handle over it with its trigger, and the backing plate and orange foam pad facing
+## forward (-Z), its middle the "nozzle".
+static func _polisher(root: Node3D) -> void:
+	var body := _tint(Color(0.32, 0.34, 0.37), 0.1, 0.45)
+	var rubber := _mat("rubber")
+	# The motor body, back to front, with a cord out of the tail.
+	_add(root, _cyl(0.032, 0.036, 0.15, 24), body, Vector3(0, 0, 0.02), Vector3(PI * 0.5, 0, 0))
+	_add(root, _sphere(0.032, 0.05, false, 20), body, Vector3(0, 0, 0.095))
+	_add(root, _cyl(0.0375, 0.037, 0.05, 24), rubber, Vector3(0, 0, -0.055), Vector3(PI * 0.5, 0, 0))
+	_add(root, _cyl(0.004, 0.004, 0.05, 8), rubber, Vector3(0, -0.005, 0.135), Vector3(PI * 0.5, 0, 0))
+	for i in 5:
+		_add(root, _box(Vector3(0.022, 0.003, 0.004)), _mat("hole"), Vector3(0, 0.032, 0.045 + i * 0.008))
+	# The D handle on top, its trigger, and the speed wheel.
+	_add(root, _box(Vector3(0.022, 0.05, 0.02)), body, Vector3(0, 0.05, 0.075))
+	_add(root, _box(Vector3(0.022, 0.05, 0.02)), body, Vector3(0, 0.05, -0.015))
+	_add(root, _cyl(0.012, 0.012, 0.11, 14), rubber, Vector3(0, 0.08, 0.03), Vector3(PI * 0.5, 0, 0))
+	_add(root, _box(Vector3(0.01, 0.018, 0.026)), _mat("red"), Vector3(0, 0.062, 0.03))
+	_add(root, _cyl(0.012, 0.012, 0.008, 14), _mat("yellow"), Vector3(0.0, 0.0, 0.105), Vector3(0, 0, PI * 0.5))
+	# The backing plate and the foam pad on the front.
+	_add(root, _cyl(0.03, 0.03, 0.02, 18), _mat("dark_steel"), Vector3(0, 0, -0.09), Vector3(PI * 0.5, 0, 0))
+	_add(root, _cyl(0.066, 0.064, 0.012, 32), _mat("plastic_black"), Vector3(0, 0, -0.106), Vector3(PI * 0.5, 0, 0))
+	_add(root, _cyl(0.075, 0.07, 0.035, 36), _tint(Color(0.95, 0.45, 0.08), 0.0, 0.95), Vector3(0, 0, -0.13), Vector3(PI * 0.5, 0, 0))
+	_add(root, _cyl(0.03, 0.03, 0.002, 18), _tint(Color(0.8, 0.35, 0.06), 0.0, 0.95), Vector3(0, 0, -0.148), Vector3(PI * 0.5, 0, 0))
+	root.set_meta("nozzle", Vector3(0, 0, -0.17))
+
+
+## A ceramic coating applicator: a little blue foam block wrapped in white suede, held face out.
+static func _applicator(root: Node3D) -> void:
+	_add(root, _box(Vector3(0.06, 0.03, 0.09)), _tint(Color(0.15, 0.35, 0.8), 0.0, 0.9), Vector3(0, 0, -0.02))
+	_add(root, _box(Vector3(0.062, 0.006, 0.092)), _tint(Color(0.92, 0.92, 0.9), 0.0, 1.0), Vector3(0, -0.018, -0.02))
+	root.set_meta("nozzle", Vector3(0, -0.02, -0.02))
 
 
 ## An aerosol can: steel body with a coloured label band, rolled rims, domed top, valve cup and

@@ -202,6 +202,21 @@ func _build_shelf() -> void:
 		var y := Equipment.shelf_top(model, level)
 		_ws._target(Vector3(0.0, y + pitch * 0.42, 0.03), Vector3(size.x * 0.96, pitch * 0.82, size.z * 0.95),
 			{"top": "f%ds%d" % [id, level], "furniture": id, "shelf": level}, self)
+	if model == Shed.STAFF_RACK:
+		# A bin label on the front of each board: whose parts go on it.
+		var strip: Material = _ws._material(Color(0.95, 0.8, 0.15), 0.0, 0.7)
+		for level in levels:
+			var y := Equipment.shelf_top(model, level) - 0.045
+			_deco(Vector3(0.0, y, size.z * 0.5 + 0.004), Vector3(0.62, 0.06, 0.008), strip)
+			var bin := Label3D.new()
+			bin.name = "Bin%d" % level
+			bin.text = str(Staff.RACK_BINS[level]) if level < Staff.RACK_BINS.size() else ""
+			bin.font_size = 30
+			bin.pixel_size = 0.002
+			bin.modulate = Color(0.1, 0.08, 0.05)
+			bin.outline_size = 0
+			bin.position = Vector3(0.0, y, size.z * 0.5 + 0.01)
+			add_child(bin)
 	var plate_y := size.y - 0.12
 	_deco(Vector3(0.0, plate_y, size.z * 0.5 + 0.005), Vector3(0.7, 0.14, 0.01), _ws._material(Color(0.88, 0.86, 0.8), 0.0, 0.8)).name = "Plate"
 	_ws._target(Vector3(0.0, plate_y, size.z * 0.5), Vector3(0.74, 0.18, 0.06), {"label": id}, self)
@@ -1209,6 +1224,12 @@ func blast_firing() -> bool:
 
 
 func _process(delta: float) -> void:
+	var pt := Perf.t0()
+	_process_body(delta)
+	Perf.add("equipment", pt)
+
+
+func _process_body(delta: float) -> void:
 	if kind != "blaster" or Time.get_ticks_msec() < _blast_local_until:
 		return
 	# Someone else at the gloves: show what they're doing from the shed state.
