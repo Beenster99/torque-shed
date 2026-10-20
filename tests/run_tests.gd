@@ -14471,8 +14471,9 @@ func _test_tyre_highside() -> void:
 		b.auto_shift = t < 4.8
 		if t >= 4.8:
 			b.gear = 2
-		# Leaned a bit past a road rider's lean (about 33°: see Bike.lean_for_input).
-		b.lean_input = 0.0 if t < 2.5 else 0.8
+		# Leaned well past a road rider's lean (about 37°: see Bike.lean_for_input). At 0.8 (33°) it was
+		# on the edge: it high-sided after some earlier tests and not after others.
+		b.lean_input = 0.0 if t < 2.5 else 0.85
 		if t < 5.0:
 			_hold_speed(b, 13.0)
 		elif t < 5.75:

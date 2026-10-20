@@ -634,10 +634,11 @@ func _target_lean() -> float:
 	var tight := atan(v * v / (G * tight_turn(v)))
 	# Near the tyres' limit the bike swings past the lean it's asked for, and at town and B-road
 	# speeds that runs it out of grip: there, a full input keeps a little back, reaching all of it
-	# by 90 km/h. (A bike that grounds out first, short of the tyres' limit, doesn't need to.)
+	# by 90 km/h. (A bike that grounds out first, short of the tyres' limit, doesn't need to.) It
+	# trims only the top of the input: less of it asks for the same lean as ever.
 	var hold_back := lerpf(0.85, 1.0, clampf((v - 4.0) / 21.0, 0.0, 1.0)) * _tyre_lean()
-	var speed_factor := clampf(minf(tight, hold_back) / maxf(top, 0.01), 0.15, 1.0)
-	var want := signf(lean_input) * lean_for_input(absf(lean_input)) * speed_factor
+	var speed_factor := clampf(tight / maxf(top, 0.01), 0.15, 1.0)
+	var want := signf(lean_input) * minf(lean_for_input(absf(lean_input)) * speed_factor, hold_back)
 	# That's the lean of the line from the tyres to the centre of mass, which sets the turn; the
 	# bike itself leans a little further, as the contact patch rolls in round the tyre's crown.
 	var rc := _crown()
