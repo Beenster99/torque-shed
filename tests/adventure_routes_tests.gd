@@ -301,8 +301,10 @@ func test_map() -> void:
 	check(m._lines.size() > 100 and m._riders.size() == 1 and m._fork == 0 and m._vote_box.get_child_count() == r.forks[0]["ways"].size(),
 		"with the whole route (%d stretches, %d sites), you on it and a button a way at the fork" % [m._lines.size(), m._sites.size()])
 	(m._vote_box.get_child(1) as Button).pressed.emit()
-	for i in 5:
-		await t.get_tree().physics_frame
+	# (The way's put together off the main thread, and taken in a few frames on: see
+	# AdventureWorld.apply_picks_soon.)
+	await _until(func(): return r.decided.has(0), 5.0)
+	await _frames(2)
 	check(AdventureForks.pick_of(0) == 1 and r.decided.has(0) and int(r.choices[0]) == 1 and m._lines.any(func(l): return int(l["fork"]) == 0 and int(l["way"]) == 1 and bool(l["on"])),
 		"voting B on the map (the host) picks it, and the map marks it taken")
 	m._input(_key_event("paper_map"))

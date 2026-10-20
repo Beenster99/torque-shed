@@ -3371,6 +3371,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		# SYNC_INTERVAL), not gone over again for each of these, many times a second.
 		_mark_dirty()
 		return
+	if a == "ride":
+		# Every rider's ride stats, every second (see Main._send_ride_stats): like the wash, the
+		# next sync carries them (and Shed.changed with it). Each going over the whole shed
+		# again was a hitch a second for each rider on the host, on an adventure all the way.
+		_ride_apply(peer, action)
+		_mark_dirty()
+		return
 	if a.begins_with("shine_"):
 		# Polishing and coating (see Detail): like the wash, the next sync carries it.
 		var shone := Detail.apply(peer, action)
@@ -4026,19 +4033,24 @@ func _apply(peer: int, action: Dictionary) -> void:
 			c["tool"] = str(action.get("tool", c.get("tool", "")))
 			c["activity"] = str(action.get("activity", "")).left(60)
 			c["changer"] = int(action.get("changer", 0))   # the tyre changer they're working at, to spin it
-		"ride":
-			var bike := int(c.get("riding", 0))
-			if bikes.has(bike):
-				_wear_from_ride(bike, action)
-				Contracts.note_ride(bike, action)
-			c["km"] = float(c.get("km", 0.0)) + clampf(float(action.get("km", 0.0)), 0.0, 5.0)
-			c["top_kmh"] = maxf(float(c.get("top_kmh", 0.0)), clampf(float(action.get("top_kmh", 0.0)), 0.0, 400.0))
-			c["kmh"] = clampf(float(action.get("kmh", 0.0)), 0.0, 400.0)
 	if text != "":
 		_tell(peer, text, true)
 	_tidy_dyno()
 	_mark_dirty()
 	changed.emit()
+
+
+## A rider's ride stats (see Main._send_ride_stats): the wear and muck on their bike, and their
+## distance and speeds.
+func _ride_apply(peer: int, action: Dictionary) -> void:
+	var c: Dictionary = crew.get(peer, {})
+	var bike := int(c.get("riding", 0))
+	if bikes.has(bike):
+		_wear_from_ride(bike, action)
+		Contracts.note_ride(bike, action)
+	c["km"] = float(c.get("km", 0.0)) + clampf(float(action.get("km", 0.0)), 0.0, 5.0)
+	c["top_kmh"] = maxf(float(c.get("top_kmh", 0.0)), clampf(float(action.get("top_kmh", 0.0)), 0.0, 400.0))
+	c["kmh"] = clampf(float(action.get("kmh", 0.0)), 0.0, 400.0)
 
 
 ## Pours as much as fits from one fluid holder into another and returns the litres moved.
@@ -5692,7 +5704,7 @@ func _deliver_on_order(delta: float) -> void:
 			i += 1
 			continue
 		on_order.remove_at(i)
-		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")))
+		deliver_new(str(o["part"]), o.get("color"), str(o.get("finish", "")), int(o.get("paid", 0)), str(o.get("by", "")), o.get("used", {}))
 		sent += 1
 	if sent > 0:
 		_mark_dirty()
@@ -5700,19 +5712,35 @@ func _deliver_on_order(delta: float) -> void:
 
 
 ## Host: a new part, boxed (fluids as they are) and put in the delivery area, with what was paid
-## for it and who ordered it on the note. Returns its id, or 0 when there's no room for it.
-func deliver_new(part: String, color = null, finish := "", paid := 0, by := "") -> int:
+## for it and who ordered it on the note; with `used` ({rust, dirt, wear}, see used_cond) a used
+## one in that state, unboxed. Returns its id, or 0 when there's no room for it.
+func deliver_new(part: String, color = null, finish := "", paid := 0, by := "", used = {}) -> int:
 	if not delivery_room(part):
 		return 0
-	var item_id := _new_item(part, 0.0, 0.0, 0.0, color if color is Color else null)
+	var cond := used_cond(used)
+	var item_id := _new_item(part, float(cond.get("rust", 0.0)), float(cond.get("dirt", 0.0)), float(cond.get("wear", 0.0)),
+		color if color is Color else null)
 	items[item_id]["paid"] = paid
 	items[item_id]["finish"] = finish
-	items[item_id]["boxed"] = not PartsDB.is_fluid(part)
+	# Used parts come as they are, not boxed.
+	items[item_id]["boxed"] = not PartsDB.is_fluid(part) and cond.is_empty()
 	items[item_id]["by"] = by if by != "" else "the crew"
 	if not _deliver(item_id):
 		items.erase(item_id)
 		return 0
 	return item_id
+
+
+## A used part's {rust, dirt, wear} from what an order says (as BikeCopy.used_cond gives it), each
+## kept to 0..1: {} for new.
+static func used_cond(used) -> Dictionary:
+	var out := {}
+	if used is Dictionary:
+		for k in ["rust", "dirt", "wear"]:
+			var v = used.get(k, 0.0)
+			if (v is float or v is int) and float(v) > 0.0:
+				out[k] = clampf(float(v), 0.0, 1.0)
+	return out
 
 
 ## A "coffee_*" request (see CoffeeShop.check and CoffeeShop.apply). Money a player paid at the

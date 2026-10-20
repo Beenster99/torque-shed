@@ -282,3 +282,116 @@ func test_session() -> void:
 	main.queue_free()
 	await _frames(2)
 	Shed.stop()
+
+
+## The quality to order one at (Simon: "Add a slider for bike quality when ordering one into the
+## shed"): from worn used parts up to new, setting the state the parts come in and the price;
+## the host checks the quality and works the price out itself; what waits on order keeps it.
+func test_quality() -> void:
+	Shed.start_new("Tester", 41)
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	var a: int = t._bike_named("Rusty Ranger")
+	var src := {"bike": a}
+	var plan := BikeCopy.plan_of(src)
+	var new_cost := BikeCopy.total(BikeCopy.lines(plan, Shed.me()))
+	var worn_cost := BikeCopy.total(BikeCopy.lines(plan, Shed.me(), 0.0))
+	var used_cost := BikeCopy.total(BikeCopy.lines(plan, Shed.me(), 0.5))
+	check(BikeCopy.total(BikeCopy.lines(plan, Shed.me(), 1.0)) == new_cost and worn_cost < used_cost and used_cost < new_cost
+		and absf(float(worn_cost) / new_cost - BikeCopy.USED_PRICE) < 0.05,
+		"the price goes with the quality: worn %s, used %s, new %s" % [TvChannels.money_text(worn_cost), TvChannels.money_text(used_cost), TvChannels.money_text(new_cost)])
+	check(BikeCopy.used_cond(1.0).is_empty() and float(BikeCopy.used_cond(0.0)["wear"]) > float(BikeCopy.used_cond(0.5)["wear"])
+		and BikeBuild.part_health(BikeCopy.used_cond(0.0)) < 0.5 and BikeBuild.part_health(BikeCopy.used_cond(0.75)) > 0.75,
+		"and the state the parts come in (worn %d%%, used %d%%, nearly new %d%%)" % [roundi(BikeBuild.part_health(BikeCopy.used_cond(0.0)) * 100.0),
+			roundi(BikeBuild.part_health(BikeCopy.used_cond(0.5)) * 100.0), roundi(BikeBuild.part_health(BikeCopy.used_cond(0.75)) * 100.0)])
+	check(BikeCopy.quality_name(0.0) == "Worn" and BikeCopy.quality_name(0.5) == "Used" and BikeCopy.quality_name(1.0) == "New"
+		and BikeCopy.quality_text(0.5).contains("% condition") and BikeCopy.quality_text(1.0).begins_with("New"),
+		"each step along it is named (%s)" % BikeCopy.quality_text(0.5))
+	# The host checks it.
+	for q in [1.5, -0.2, NAN, "new"]:
+		check(Shed.check(Shed.me(), {"a": "copy_order", "src": src, "paid": new_cost, "quality": q}).contains("quality"),
+			"a quality off the slider (%s) is turned down" % str(q))
+	check(Shed.check(Shed.me(), {"a": "copy_order", "src": src, "paid": used_cost, "quality": 0.5}) == ""
+		and Shed.check(Shed.me(), {"a": "copy_order", "src": src, "paid": worn_cost, "quality": 0.5}).contains("you paid"),
+		"paid for worn but asked for used: the host prices it itself and says no")
+	# Ordered used: worn parts, unboxed, each at its share of the price.
+	Progress.set_money(used_cost + 100)
+	check(BikeCopy.order(src, 0.5) == "", "ordering one used goes through")
+	check(Progress.money() == 100, "paid the used price (%s)" % TvChannels.money_text(used_cost))
+	var got: Array = _ordered()
+	var cond := BikeCopy.used_cond(0.5)
+	var all_used := true
+	for id in got:
+		var it: Dictionary = Shed.items[id]
+		if PartsDB.is_fluid(str(it["part"])):
+			continue
+		all_used = all_used and not it["boxed"] and absf(float(it["wear"]) - float(cond["wear"])) < 0.001 \
+			and absf(float(it["rust"]) - float(cond["rust"])) < 0.001 and int(it["paid"]) == maxi(1, roundi(Money.buy_price(str(it["part"]), Shed.me()) * BikeCopy.price_factor(0.5)))
+	check(not got.is_empty() and all_used, "the parts come used: worn and rusty as the slider said, unboxed, each at 65%% of its price (%d parts)" % got.size())
+	var told := Shed.condition_text(Shed.items[got[0]])
+	check(told.begins_with("Condition"), "and say so when looked at (%s)" % told.split("\n")[0])
+	# Paid over for used: the change comes back.
+	Progress.set_money(used_cost + 300)
+	Shed.request({"a": "copy_order", "src": src, "paid": used_cost + 300, "quality": 0.5})
+	check(Progress.money() == used_cost + 300 + 300, "paid over, the change comes back")
+	# Fill the delivery area: what waits on order keeps its quality, and comes that way.
+	Progress.set_money(5000000)
+	for i in 8:
+		if not Shed.on_order.is_empty():
+			break
+		BikeCopy.order(src, 0.25)
+	var waiting: Array = Shed.on_order.filter(func(o): return o.has("used"))
+	check(not waiting.is_empty() and waiting.all(func(o): return absf(float(o["used"]["wear"]) - float(BikeCopy.used_cond(0.25)["wear"])) < 0.001),
+		"with the delivery area full, the rest wait on order as worn as they were ordered (%d)" % waiting.size())
+	for id in _ordered():
+		Shed._erase_item(id)
+	for i in 30:
+		Shed._deliver_on_order(1.5)
+	var came: Array = _ordered().filter(func(id): return not PartsDB.is_fluid(str(Shed.items[id]["part"])))
+	var as_ordered := func(id): return absf(float(Shed.items[id]["wear"]) - float(BikeCopy.used_cond(0.25)["wear"])) < 0.001 and not Shed.items[id]["boxed"]
+	check(not came.is_empty() and came.all(as_ordered), "and come that way when there's room (%d)" % came.size())
+	# New is as it always was: boxed, full price.
+	for id in _ordered():
+		Shed._erase_item(id)
+	Shed.on_order.clear()
+	Progress.set_money(new_cost)
+	check(BikeCopy.order(src) == "" and Progress.money() == 0 and _ordered().all(func(id): return Shed.items[id]["boxed"] or PartsDB.is_fluid(str(Shed.items[id]["part"])))
+		and _ordered().all(func(id): return float(Shed.items[id]["wear"]) == 0.0), "ordered new: boxed and as new, at the full price")
+	Progress.profile = saved
+	Shed.stop()
+
+
+## The card's quality slider: the prices, the total and the button follow it; ordered from the card
+## the parts come at that quality.
+func test_quality_card() -> void:
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	t.add_child(main)
+	await t.get_tree().process_frame
+	main._start_session()
+	await t.get_tree().physics_frame
+	var saved: Dictionary = Progress.profile.duplicate(true)
+	Progress.set_money(500000)
+	var a: int = t._bike_named("Rusty Ranger")
+	var panel: BikeOrderPanel = main.bike_order_panel
+	panel.open_bike({"bike": a}, "Rusty Ranger")
+	await _frames(2)
+	var plan := BikeCopy.plan_of({"bike": a})
+	var new_cost := BikeCopy.total(BikeCopy.lines(plan, Shed.me()))
+	check(panel.visible and is_equal_approx(panel.quality(), 1.0) and panel.text().contains("New: boxed") and panel._order.text.contains(TvChannels.money_text(new_cost)),
+		"the card opens at new, at the full price (%s)" % TvChannels.money_text(new_cost))
+	panel.set_quality(0.3)
+	await _frames(1)
+	var cost := BikeCopy.total(BikeCopy.lines(plan, Shed.me(), 0.3))
+	check(panel.text().contains(BikeCopy.quality_text(0.3)) and panel.text().contains("Total: %s" % TvChannels.money_text(cost))
+		and panel._order.text.contains(TvChannels.money_text(cost)) and panel.text().contains("laid out"),
+		"slid down to well used: its condition, the lower total and the button's price (%s: %s)" % [BikeCopy.quality_text(0.3), TvChannels.money_text(cost)])
+	panel.press("Order one of these")
+	await _frames(2)
+	var got := _ordered().filter(func(id): return not PartsDB.is_fluid(str(Shed.items[id]["part"])))
+	check(not panel.visible and Progress.money() == 500000 - cost and not got.is_empty()
+		and got.all(func(id): return absf(float(Shed.items[id]["wear"]) - float(BikeCopy.used_cond(0.3)["wear"])) < 0.001),
+		"ordered from the card: paid %s, the parts come well used" % TvChannels.money_text(cost))
+	panel.set_quality(1.0)
+	Progress.profile = saved
+	main.queue_free()
+	await _frames(2)
+	Shed.stop()

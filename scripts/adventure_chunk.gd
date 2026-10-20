@@ -14,8 +14,12 @@ extends RefCounted
 ## above the far ground, and you could see through under it).
 const LAND_OUT := [0.0, 0.9, 2.5, 6.0, 12.0, 20.0, 30.0, 46.0, 70.0, 110.0, 170.0, 260.0, 400.0, 640.0, 1000.0]
 ## Where the land's far side ends up: this far under the road's base height, below the far
-## ground (AdventureWorld's FarGround, 70 m under it), or under the sea on a coastal ride.
+## ground (AdventureWorld's FarGround, 70 m under it), or under the sea on a coastal ride; at
+## least this far out past the column before it (m), and this far for each metre it goes down
+## (as far out as down: steep, but not a wall).
 const FAR_SIDE_DROP := 160.0
+const FAR_SIDE_RUN := 30.0
+const FAR_SIDE_SLOPE := 1.0
 const COLLIDE_COLS := 7
 ## From this column out (past the skyline ridge) the land needn't look for other stretches of
 ## the road along the way: route.land_reach keeps it well short of them.
@@ -94,7 +98,9 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 			var row_v := []
 			var row_c := []
 			var prev := e
+			var prev_y := route.ph[i]
 			var stopped := false   # past another stretch of the road: the rest of the row stays put
+			var floor_y := AdventureTheme.SEA_Y - 10.0 if route.sea else route.base[i] - FAR_SIDE_DROP
 			for k in cols:
 				var out_k: float = LAND_OUT[k]
 				var lat := (e + out_k) if k < 6 else maxf(out_k, e + out_k * 0.5)
@@ -114,16 +120,27 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 				if stopped:
 					lat = prev + 0.05 * k
 				var inner := prev   # the column before's reach
+				var run := maxf(FAR_SIDE_RUN, (prev_y - floor_y) * FAR_SIDE_SLOPE)
+				if k == cols - 1:
+					# Out far enough to go down without a wall, but never on into the middle of a
+					# bend, where the rows close in and would fold over each other.
+					lat = maxf(lat, minf(prev + run, route.inside_reach(i, side) * 0.95))
 				prev = lat
 				var wx := route.px[i] + rx * lat * side
 				var wz := route.pz[i] + rz * lat * side
 				var y := route.land_height(i, lat * side, wx, wz)
 				if k == cols - 1:
-					# Down the far side, by as much as this last step got out past the one before
-					# (none where the row was cut short and they're together: no wall straight down).
-					var floor_y := AdventureTheme.SEA_Y - 10.0 if route.sea else route.base[i] - FAR_SIDE_DROP
-					var run := out_k - float(LAND_OUT[cols - 2])
-					y = lerpf(y, minf(y, floor_y), clampf((lat - inner) / (run * 0.75), 0.0, 1.0))
+					# Down the far side, every row: a row cut short (by a bend doubling back,
+					# another stretch of the road over the way) goes down from where it stops,
+					# under the other stretch's land, rather than ending in the air beside rows
+					# that ran on out and down. Those ragged ends, row by row, were long triangles
+					# reaching up into the sky and down to the far ground ("lots of graphics
+					# glitches on adventure - long triangles"), with the sky showing between.
+					# (Where it closes in on a bend's middle, as far down as it got out; and never up,
+					# where it's gone further out than it would have, onto a mountainside.)
+					y = minf(y, prev_y)
+					y = lerpf(y, minf(y, floor_y), clampf((lat - inner) / run, 0.0, 1.0))
+				prev_y = y
 				row_v.append(Vector3(wx - ax, y, wz - az))
 				row_c.append(_land_color(route, i, k, lat, wx, wz, y))
 			if side < 0:
@@ -364,6 +381,7 @@ static func _scenery(route: AdventureRoute, c: int, i0: int, i1: int, ax: float,
 	out["km"] = kms
 	mm["km_post"] = kms.map(func(k): return k["xf"])
 	out["mm"] = mm
+	out["mm_buf"] = _mm_buffers(mm)
 	# Sites starting in this chunk, and where each stands: on the verge, x away from the road.
 	var here := []
 	for st in route.sites:
@@ -492,16 +510,69 @@ static func _rail(arr: Dictionary, a: Vector3, b: Vector3, col: Color) -> void:
 # ---------------------------------------------------------------------------- nodes
 
 ## Makes chunk `data` (from build) into a node under `world`, placed at its anchor in the
-## world's local frame. Returns it (its meta "c" is the chunk index).
+## world's local frame, all at once. Returns it (its meta "c" is the chunk index).
 static func commit(data: Dictionary, world: AdventureWorld) -> Node3D:
+	var job := begin(data, world)
+	while not step(job):
+		pass
+	return job["node"]
+
+
+## The job of putting chunk `data` into `world` a piece at a time (see step): AdventureWorld does
+## a few milliseconds of it a frame. All at once a chunk could take 10 ms and more on the main
+## thread (its meshes, its collision, its scenery, a fuel station or a cafe on it), a stutter.
+static func begin(data: Dictionary, world: AdventureWorld) -> Dictionary:
 	var node := Node3D.new()
 	var c: int = data["c"]
 	node.name = "Chunk%d" % c
 	node.set_meta("c", c)
 	node.set_meta("ax", data["ax"])
 	node.set_meta("az", data["az"])
-	var surf: String = data["surface"]
+	return {"data": data, "world": world, "node": node, "c": c, "step": 0, "site": 0}
+
+
+## Does the next piece of putting a chunk into the world (`job` from begin): its road and land,
+## their collision, the side roads and any tunnel, the scenery, then each site on it; and last
+## the node goes into the world, whole. True once it has.
+static func step(job: Dictionary) -> bool:
+	var data: Dictionary = job["data"]
+	var node: Node3D = job["node"]
 	var scale := clampf(Settings.gfx_draw_distance, 0.5, 2.0)
+	match int(job["step"]):
+		0:
+			_commit_ground(data, node, scale)
+		1:
+			_commit_bodies(data, node)
+		2:
+			_commit_junctions(data, node, scale)
+			AdventureTunnels.commit(data, node)
+		3:
+			_commit_scenery(data, node, scale)
+		4:
+			var sites: Array = data["sites"]
+			var k: int = job["site"]
+			if k < sites.size():
+				var st: Dictionary = sites[k]
+				var site: Dictionary = st["site"]
+				var world: AdventureWorld = job["world"]
+				var builder: Callable = world.site_builders.get(str(site["kind"]), Callable())
+				if builder.is_valid():
+					var made = builder.call(site, st["xf"], st)
+					if made is Node3D:
+						node.add_child(made)
+				job["site"] = k + 1
+				if k + 1 < sites.size():
+					return false   # the next site next time
+		_:
+			(job["world"] as AdventureWorld).place_chunk(node)
+			return true
+	job["step"] = int(job["step"]) + 1
+	return false
+
+
+## The road (its lines), and the land either side in one mesh.
+static func _commit_ground(data: Dictionary, node: Node3D, scale: float) -> void:
+	var surf: String = data["surface"]
 	# Road
 	var road := ArrayMesh.new()
 	road.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data["road"])
@@ -528,7 +599,11 @@ static func commit(data: Dictionary, world: AdventureWorld) -> Node3D:
 	lmesh.mesh = land
 	lmesh.material_override = AdventureSurface.land_material()
 	node.add_child(lmesh)
-	# Collision: the road (its surface for the tyres) and the land near it.
+
+
+## The collision: the road (its surface for the tyres) and the land near it.
+static func _commit_bodies(data: Dictionary, node: Node3D) -> void:
+	var surf: String = data["surface"]
 	var rb := StaticBody3D.new()
 	rb.name = "RoadBody"
 	rb.collision_layer = 1
@@ -552,10 +627,33 @@ static func commit(data: Dictionary, world: AdventureWorld) -> Node3D:
 		lcs.shape = lshape
 		lb.add_child(lcs)
 	node.add_child(lb)
-	_commit_junctions(data, node, scale)
-	AdventureTunnels.commit(data, node)
-	# Scenery
+
+
+## Each kind's transforms in `mm` as a MultiMesh's buffer (twelve floats each, the basis's rows
+## each with the origin's part on the end), made here on the worker thread so that the commit only
+## hands it over, instead of setting each transform in turn on the main thread.
+static func _mm_buffers(mm: Dictionary) -> Dictionary:
+	var out := {}
+	for kind in mm:
+		var list: Array = mm[kind]
+		var buf := PackedFloat32Array()
+		buf.resize(list.size() * 12)
+		var j := 0
+		for xf: Transform3D in list:
+			var b := xf.basis
+			var o := xf.origin
+			buf[j] = b.x.x; buf[j + 1] = b.y.x; buf[j + 2] = b.z.x; buf[j + 3] = o.x
+			buf[j + 4] = b.x.y; buf[j + 5] = b.y.y; buf[j + 6] = b.z.y; buf[j + 7] = o.y
+			buf[j + 8] = b.x.z; buf[j + 9] = b.y.z; buf[j + 10] = b.z.z; buf[j + 11] = o.z
+			j += 12
+		out[kind] = buf
+	return out
+
+
+## The trees, rocks, posts and the rest, the walls and hedges, the buildings and the km posts.
+static func _commit_scenery(data: Dictionary, node: Node3D, scale: float) -> void:
 	var mm: Dictionary = data["mm"]
+	var bufs: Dictionary = data.get("mm_buf", {})
 	for kind in mm:
 		var list: Array = mm[kind]
 		if list.is_empty():
@@ -564,8 +662,12 @@ static func commit(data: Dictionary, world: AdventureWorld) -> Node3D:
 		multi.transform_format = MultiMesh.TRANSFORM_3D
 		multi.mesh = AdventureProps.mesh(kind)
 		multi.instance_count = list.size()
-		for k in list.size():
-			multi.set_instance_transform(k, list[k])
+		var buf: PackedFloat32Array = bufs.get(kind, PackedFloat32Array())
+		if buf.size() == list.size() * 12:
+			multi.buffer = buf
+		else:
+			for k in list.size():
+				multi.set_instance_transform(k, list[k])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "MM_" + kind
 		mmi.multimesh = multi
@@ -599,15 +701,6 @@ static func commit(data: Dictionary, world: AdventureWorld) -> Node3D:
 		label.transform = Transform3D(xf.basis.orthonormalized(), xf.origin + Vector3.UP * 0.62 + xf.basis.z.normalized() * 0.06)
 		label.visibility_range_end = 120.0
 		node.add_child(label)
-	for st in data["sites"]:
-		var site: Dictionary = st["site"]
-		var builder: Callable = world.site_builders.get(str(site["kind"]), Callable())
-		if builder.is_valid():
-			var made = builder.call(site, st["xf"], st)
-			if made is Node3D:
-				node.add_child(made)
-	world.place_chunk(node)
-	return node
 
 
 ## The side roads (each surface its own mesh and collision, for the tyres) and the junctions' paint.

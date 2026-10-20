@@ -18,7 +18,7 @@ func _ready() -> void:
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 12)
 	var help := UITheme.label("Click a binding, then press the key, mouse button or pad button to use. Esc cancels. "
-		+ "Sticks and triggers can't be changed.", 14, Color(1, 1, 1, 0.65))
+		+ "Sticks, triggers and LB + RB together (the engine) can't be changed.", 14, Color(1, 1, 1, 0.65))
 	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	help.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(help)
@@ -122,6 +122,8 @@ func refresh() -> void:
 			var b: Button = row["pad" if pad else "kbm"]
 			var waiting: bool = listening.get("action", "") == action and listening.get("pad", false) == pad
 			var text := Settings.binding_text(action, pad)
+			if text == "" and pad:
+				text = Controls.fixed_pad(action)   # LB + RB for the engine, the triggers, the sticks
 			b.text = ("Press a pad button..." if pad else "Press a key...") if waiting else (text if text != "" else "-")
 		(row["name"] as Label).add_theme_color_override("font_color", Color(1, 0.5, 0.4) if clashing.has(action) else Color(0.85, 0.87, 0.9))
 		(row["name"] as Label).tooltip_text = Settings.clash_text(action, found) if clashing.has(action) else ""

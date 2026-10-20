@@ -20,7 +20,7 @@ const CART_AHEAD := 0.85        # and a trolley's middle, pushed by its handle
 const CLEAR := 0.35
 const PUSH_CLEAR := 0.55
 ## Rooms a walk can cut straight across between two points in the same one ("" is outside).
-const OPEN_ROOMS: Array[String] = ["shed", "paint", "storage", "mixing", "wash", ""]
+const OPEN_ROOMS: Array[String] = ["shed", "paint", "storage", "mixing", "wash", "annex", ""]
 ## How far off the delivery area's lines a walk cut straight keeps (boxes stand right up to them).
 const DELIVERY_CLEAR := 0.45
 ## The middle of the aisle between the delivery floor and its racking.
@@ -45,6 +45,8 @@ const NODES := {
 	"cafe_aisle": Vector2(-25.25, 74.7), "cafe_walk": Vector2(-25.25, 70.5), "cafe_door": Vector2(-25.25, 63.6),
 	"cafe": Vector2(-24.7, 62.2),
 	"shed_nw": Vector2(-5.85, 62.95), "store_door": Vector2(-5.95, 60.5), "store": Vector2(-7.7, 60.5),
+	"annex_door": Vector2(GarageUpgrades.ANNEX_DOOR_X, 55.0), "annex": Vector2(GarageUpgrades.ANNEX_DOOR_X, 51.0),
+	"dyno_door": Vector2(0.0, 60.4), "dyno": Vector2(0.0, 57.4),
 }
 const EDGES := [["shed", "shed_w"], ["shed", "shed_e"], ["shed", "shed_door"], ["shed_w", "shed_door"],
 	["shed_e", "shed_door"], ["shed_e", "paint_gap"], ["shed_door", "paint_gap"], ["shed_e", "shed_ne"],
@@ -54,7 +56,13 @@ const EDGES := [["shed", "shed_w"], ["shed", "shed_e"], ["shed", "shed_door"], [
 	["yard_se", "sales_front"], ["sales_front", "sales_door"], ["sales_door", "sales"], ["sales", "sales_desk"],
 	["yard", "yard_sw"], ["yard_sw", "wash_front"], ["yard_sw", "yard_w"], ["yard_w", "cafe_aisle"],
 	["cafe_aisle", "cafe_walk"], ["cafe_walk", "cafe_door"], ["cafe_door", "cafe"],
-	["shed_w", "shed_nw"], ["shed_nw", "store_door"], ["store_door", "store"]]
+	["shed_w", "shed_nw"], ["shed_nw", "store_door"], ["store_door", "store"],
+	["store", "annex_door"], ["annex_door", "annex"], ["shed", "dyno_door"], ["dyno_door", "dyno"]]
+## Corners in rooms the garage builds on (GarageUpgrades): only walked once it has them.
+const NODE_NEEDS := {"wing_door": "wing", "wing": "wing", "wing_mid": "wing", "annex_door": "annex", "annex": "annex"}
+## How high off the floor they reach for a part (the tallest racking's top board, not a
+## mezzanine or an upstairs room).
+const REACH_HIGH := 2.6
 
 ## Where the staff wait about between jobs, by role (a spot each, a little apart).
 const IDLE := {"mechanic": Vector2(-4.6, 64.6), "expert": Vector2(-4.6, 66.3), "paint": Vector2(7.6, 66.8),
@@ -97,18 +105,42 @@ static func spot(pl: Dictionary) -> Vector3:
 	return pts[pts.size() - 1]
 
 
-## The node nearest `at` (for a place out in the open, like a bike left in the yard).
+## Whether corner `n` is there to walk through (its room's built).
+static func is_open(n: String) -> bool:
+	return NODES.has(n) and (not NODE_NEEDS.has(n) or Shed.upgrades.has(NODE_NEEDS[n]))
+
+
+## The node nearest `at` that they can walk straight to from it: one in the same room (or, out in
+## the open, one with no building in between), so a walk never cuts through a wall to get there.
+## Only when there's none, the nearest of all.
 static func nearest_node(at: Vector3, only: Array = []) -> String:
-	var best := "shed"
+	var rooms := _walls()
+	var room := _room(at, rooms)
+	var q := Vector2(at.x, at.z)
+	var best := ""
 	var d := INF
+	var any := "shed"
+	var d_any := INF
 	for n in NODES:
-		if not only.is_empty() and not only.has(n):
+		if (not only.is_empty() and not only.has(n)) or not is_open(n):
 			continue
-		var dd := (NODES[n] as Vector2).distance_squared_to(Vector2(at.x, at.z))
-		if dd < d:
+		var p: Vector2 = NODES[n]
+		var dd := p.distance_squared_to(q)
+		if dd < d_any:
+			d_any = dd
+			any = n
+		if dd < d and _room(_v(p), rooms) == room and (room != "" or not _crosses_building(q, p, rooms)):
 			d = dd
 			best = n
-	return best
+	return best if best != "" else any
+
+
+## Whether they can walk to `at` at all: on the floor round the garage (in a room the walkways
+## reach, or outside nearby) and within reach of it, not upstairs or out on the roads.
+static func reachable(at: Vector3) -> bool:
+	if not Shed.in_work_area(at) or at.y > REACH_HIGH:
+		return false
+	return Workshop.room_at(at) in ["", "shed", "paint", "storage", "mixing", "dyno", "sales", "cafe", "wing", "annex"]
 
 
 ## The nodes of the shortest way from node `a` to node `b`, both ends included.
@@ -131,6 +163,8 @@ static func node_path(a: String, b: String) -> Array:
 		if u == b:
 			break
 		for v in g[u]:
+			if not is_open(v) and v != b:
+				continue
 			var nd := float(dist[u]) + (NODES[u] as Vector2).distance_to(NODES[v])
 			if not dist.has(v) or nd < float(dist[v]):
 				dist[v] = nd
@@ -196,14 +230,20 @@ static func sees(a: Vector3, b: Vector3, obs: Array, rooms: Dictionary, clear :=
 		return false
 	var a2 := Vector2(a.x, a.z)
 	var b2 := Vector2(b.x, b.z)
-	if ra == "":
-		for r in rooms.values():
-			if _hits_box(a2, b2, (r as Rect2).get_center(), (r as Rect2).size * 0.5 + Vector2(0.25, 0.25), Vector2.RIGHT, Vector2.DOWN, false):
-				return false
+	if ra == "" and _crosses_building(a2, b2, rooms):
+		return false
 	for o in obs:
 		if _hits_box(a2, b2, o[0], o[1] + Vector2(clear, clear), o[2], o[3], true):
 			return false
 	return true
+
+
+## Whether the straight line from `a` to `b` (x/z) passes through a building.
+static func _crosses_building(a: Vector2, b: Vector2, rooms: Dictionary) -> bool:
+	for r in rooms.values():
+		if _hits_box(a, b, (r as Rect2).get_center(), (r as Rect2).size * 0.5 + Vector2(0.25, 0.25), Vector2.RIGHT, Vector2.DOWN, false):
+			return true
+	return false
 
 
 ## Which room a point's in for walking straight across ("wash" for the wash bay lean-to, which
@@ -426,7 +466,7 @@ static func at_item(item_id: int) -> Dictionary:
 			var s := StaffJobs.item_at(item_id)
 			if Shed.DELIVERY_AREA.grow(0.6).has_point(Vector2(s.x, s.z)):
 				return place("yard_aisle", [Vector3(s.x, 0.0, 76.2)], 0.0 if s.z < 76.2 else PI)
-			return place(nearest_node(s), [s + Vector3(0.0, 0.0, -0.7)], PI)
+			return shelf_front(Shed.furniture_of_spot(spot), s)
 		if Shed.surface_of_spot(spot) == "":
 			return at_spot(spot)
 	var at := StaffJobs.item_at(item_id)
@@ -443,6 +483,21 @@ static func at_item(item_id: int) -> Dictionary:
 		return place(node, [p], atan2(-(at.x - p.x), -(at.z - p.z)) if p.distance_to(Vector3(at.x, 0.0, at.z)) > 0.1 else NAN)
 	var q := Vector3(at.x, 0.0, at.z + 0.6)
 	return place(nearest_node(q), [q], PI)
+
+
+## Stood in front of a shelving unit (its +Z side, the side it's loaded from) level with point
+## `s` on it, facing it.
+static func shelf_front(f: Dictionary, s: Vector3) -> Dictionary:
+	if not (f.get("xf") is Transform3D):
+		var q := Vector3(s.x, 0.0, s.z)
+		return place(nearest_node(q), [q])
+	var xf: Transform3D = f["xf"]
+	var size := Shed.furniture_size(f)
+	var local := xf.affine_inverse() * s
+	var stand := xf * Vector3(clampf(local.x, -size.x * 0.5, size.x * 0.5), 0.0, size.z * 0.5 + 0.45)
+	stand.y = 0.0
+	var fz := xf.basis.z.normalized()
+	return place(nearest_node(stand), [stand], atan2(fz.x, fz.z))
 
 
 ## Somewhere on the floor beside a bike to put a part taken off it down, out of the way.

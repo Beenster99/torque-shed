@@ -59,6 +59,11 @@ static func dispatch_pallet() -> Node3D:
 ## Brings the figures into line with the customers waiting now, and the ones collecting their
 ## bikes.
 func sync_state() -> void:
+	if main != null and main.get("trip") != null and main.trip.on_trip():
+		# Out on an adventure the shed's out of sight: a customer walking in there (their bike's
+		# model made there and then) was a hitch of 100 ms and more, on everyone's machine. They're
+		# there waiting on the way home (see AdventureTrip.leave).
+		return
 	var waiting: Array = Contracts.customers().keys()
 	waiting.sort_custom(func(a, b): return float(Contracts.customers()[a]["arrived"]) < float(Contracts.customers()[b]["arrived"]))
 	for id in views.keys():
