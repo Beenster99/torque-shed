@@ -440,6 +440,9 @@ func _run_all() -> void:
 	_test_adventure_route()
 	_test_real_pack()
 	_test_real_levels()
+	_test_real_stops()
+	_test_real_junctions()
+	_test_real_limits()
 	_test_real_ridges()
 	_test_real_land()
 	_test_real_building_shapes()
@@ -21901,6 +21904,18 @@ func _real() -> RefCounted:
 
 func _test_real_pack() -> void:
 	_real().test_pack()
+
+
+func _test_real_stops() -> void:
+	_real().test_stops()
+
+
+func _test_real_junctions() -> void:
+	_real().test_junctions()
+
+
+func _test_real_limits() -> void:
+	_real().test_limits()
 
 
 func _test_real_levels() -> void:

@@ -1,5 +1,5 @@
 {
- "format": 5,
+ "format": 6,
  "name": "shodoshima",
  "title": "Shodoshima",
  "start": {
@@ -72,6 +72,9 @@
   "civic"
  ],
  "building_count": 627,
+ "region": "jp",
+ "junction_count": 17,
+ "poi_count": 6,
  "landmark_count": 13,
  "sea": true,
  "theme": "coastal",
@@ -84,5 +87,5 @@
   "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
   "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."
  ],
- "hash": "c94b9951fc9eaffb"
+ "hash": "965da3654c9614f0"
 }

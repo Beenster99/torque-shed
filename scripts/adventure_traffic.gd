@@ -214,6 +214,8 @@ func _tables() -> void:
 				break
 		open *= float(AdventureRoute.PACE_SURF.get(r.surface_at_s(s), 1.0))
 		_limit[b] = lerpf(open, minf(open, TOWN_LIMIT), clampf(_busy[b] * 1.6, 0.0, 1.0))
+		if r.real != null and r.real.limit_at(s) > 0.0:
+			_limit[b] = minf(_limit[b], r.real.limit_at(s) / 3.6)   # the real road's own limit
 	stream.bus_stops = _villages.map(func(v): return {"s": v[1], "dir": v[2]})
 	# The junctions, for stopping, giving way and turning (anything down a side road of the old
 	# list goes: its place in it is gone).

@@ -35,6 +35,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import land_bake  # noqa: E402
+import road_facts  # noqa: E402
 import levels  # noqa: E402
 
 STEP = 4.0                    # metres between knots: AdventureRoute.STEP
@@ -267,7 +268,7 @@ def fetch_segments(south, west, north, east, release, log=print):
     f = ((pc.field("bbox", "xmin") < east) & (pc.field("bbox", "xmax") > west)
          & (pc.field("bbox", "ymin") < north) & (pc.field("bbox", "ymax") > south))
     tb = d.to_table(columns=["id", "geometry", "subtype", "class", "connectors", "road_surface", "road_flags",
-                             "names", "routes"], filter=f)
+                             "names", "routes", "speed_limits"], filter=f)
     log("roads: %d segments in the box" % tb.num_rows)
     return tb.to_pylist()
 
@@ -356,7 +357,7 @@ class Graph:
                 self.pos.setdefault(a, pts[0])
                 self.pos.setdefault(b, pts[-1])
                 e = {"a": a, "b": b, "pts": pts, "cls": info[0], "surface": info[1], "label": segment_label(s),
-                     "length": length_of(pts)}
+                     "length": length_of(pts), "limit": road_facts.segment_limit(s.get("speed_limits"))}
                 self.adj.setdefault(a, []).append((b, len(self.edges)))
                 self.adj.setdefault(b, []).append((a, len(self.edges)))
                 self.edges.append(e)
@@ -569,7 +570,7 @@ def chunk_attributes(knots_len, edge_of_s, graph):
         ei = max(votes, key=votes.get)
         e = graph.edges[ei]
         chunks.append({"surface": e["surface"], "width": CLASSES[e["cls"]][0], "cls": e["cls"],
-                       "name": e["label"] or GENERIC_NAMES[e["cls"]]})
+                       "name": e["label"] or GENERIC_NAMES[e["cls"]], "limit": e.get("limit")})
     return chunks
 
 
@@ -794,7 +795,7 @@ def bake(args, log=print):
         return int(owner_arr[min(max(i, 0), len(owner_arr) - 1)])
     chunks = chunk_attributes(len(knots), edge_of_s, graph)
     names = sorted({c["name"] for c in chunks})
-    chunk_rows = [[c["surface"], c["width"], c["cls"], names.index(c["name"])] for c in chunks]
+    # (the chunks' rows are made after the land, which says which are built up: see below)
 
     # The land: height tiles at each level down the corridor.
     os.makedirs(args.out, exist_ok=True)
@@ -803,6 +804,17 @@ def bake(args, log=print):
         args.out, frame, knots, dems,
         lambda cover_tiles: land_bake.bake_land(OVERTURE_BUCKET, release, frame, knots, cover_tiles, args.out, log), log)
 
+    # Speed limits: posted where the data has them, else the country's default for the class, lower where built up.
+    region = road_facts.region_of(args.lat, args.lon)
+    limits = road_facts.chunk_limits(chunks, [c["limit"] for c in chunks],
+                                     road_facts.built_up_chunks(len(chunks), land["buildings"]), region)
+    chunk_rows = [[c["surface"], c["width"], c["cls"], names.index(c["name"]), limits[i]] for i, c in enumerate(chunks)]
+    # Where side roads join: the route's junctions (the graph is in the start-point frame, the knots in the route's).
+    junctions = road_facts.thin_junctions(road_facts.junctions_along(graph, steps, knots + shift))
+    with open(os.path.join(args.out, "junctions.json"), "w") as f:
+        json.dump(junctions, f, separators=(",", ":"))
+    log("junctions: %d (%s)" % (len(junctions), ", ".join("%d %s" % (sum(1 for j in junctions if j["type"] == t), t)
+                                                         for t in ("tee", "cross", "roundabout", "mini"))))
     turns.append({"d": round((len(knots) - 1) * STEP, 1), "x": round(float(knots[-1][0]), 1), "z": round(float(knots[-1][1]), 1),
                   "turn": "arrive", "onto": "", "branches": 0})
     with open(os.path.join(args.out, "route.json"), "w") as f:
@@ -812,13 +824,14 @@ def bake(args, log=print):
     end_geo = frame.to_geo(knots[-1][0], knots[-1][1])
     start_geo = frame.to_geo(0.0, 0.0)
     meta = {
-        "format": 5, "name": args.name, "title": args.title or args.name,
+        "format": 6, "name": args.name, "title": args.title or args.name,
         "start": {"lat": round(float(start_geo[0]), 6), "lon": round(float(start_geo[1]), 6)},
         "end": {"lat": round(float(end_geo[0]), 6), "lon": round(float(end_geo[1]), 6)},
         "length_m": round((len(knots) - 1) * STEP, 1), "run_out_m": RUN_OUT,
         "levels": [lv.meta() for lv in levels.LEVELS], "tile_counts": {k: len(v) for k, v in tiles.items()},
         "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
-        "building_count": len(land["buildings"]), "landmark_count": len(land["landmarks"]), "sea": has_sea, "theme": "coastal" if has_sea else "hills", "warning": warn,
+        "building_count": len(land["buildings"]), "region": region, "junction_count": len(junctions),
+        "poi_count": len(land["pois"]), "landmark_count": len(land["landmarks"]), "sea": has_sea, "theme": "coastal" if has_sea else "hills", "warning": warn,
         "sources": {"overture_release": release, "elevation": "Mapterhorn, AWS Terrain Tiles fallback"},
         "credits": CREDITS,
     }

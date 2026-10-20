@@ -167,6 +167,17 @@ circuit).
 
 **Size.** About 3 weeks.
 
+**Status.** Part one is built (`claude/real-roads-3a`): the baker writes `pois.json` (filling stations, cafes, pubs, inns,
+campsites, lay-bys, viewpoints within reach of the road), `junctions.json` (side roads, found from the road graph, and
+roundabouts found from the road's shape: the data has no roundabout flag) and a speed limit per chunk (posted where
+the data has one, else the country's default for the class, lower where built up). The game's planned stops move to
+the nearest real place of their sort and take its name, side roads join where the real ones do, and the police and
+traffic keep to the real limits. What the data cannot give us: traffic lights (there are none in it, so the game keeps
+making its own in villages) and, on Shodoshima, fuel (the nearest filling station to the coast road is 3.6 km away).
+Still to do in this stage: real forks (a second-best path offered to the crew), the 100 km UK epic with its night stop
+and the co-op test, the destination set at a real place with the magazine blurb written from the data, one-way and
+turn restrictions in the planner, and speed-limit signs by the road.
+
 ### Stage 4: choose your own route from a region
 
 **Playable loop.** An issue is now a *region* (the whole of Shodoshima; a 60 by 60 km square of the Dales). Its article

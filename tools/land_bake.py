@@ -7,6 +7,7 @@ Used by route_bake.py (stage 2 of docs/real_world_plan.md). All from Overture Ma
     buildings.json    [[x, z, w, d, yaw, h, kind, knot], ...] in the route frame, kinds as BUILDING_KINDS says,
                       knot the nearest road knot (by index), in order along the road
     landmarks.json    [{kind, name, x, z}, ...] peaks, lighthouses and the like
+    pois.json         the places to stop beside the road (road_facts.make_pois)
 
 The data decides where things are and what kind they are; the game decides how they look.
 """
@@ -19,6 +20,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 import levels
+import road_facts
+from road_facts import english_name, parse_point  # noqa: F401  (also used by the tests)
 
 STEP = levels.FINE.spacing
 TILE_M = levels.FINE.size_m
@@ -94,28 +97,6 @@ def parse_geometry(wkb):
             return [], off
         raise ValueError("unsupported geometry type %d" % kind)
     return read(bytes(wkb), 0)[0]
-
-
-def parse_point(wkb):
-    """(lon, lat) of a WKB point, or None."""
-    buf = bytes(wkb)
-    order = "<" if buf[0] == 1 else ">"
-    if struct.unpack_from(order + "I", buf, 1)[0] % 1000 != 1:
-        return None
-    return struct.unpack_from(order + "2d", buf, 5)
-
-
-def english_name(names):
-    """A name the game can print: English, else a Latin-script one, else the primary if it is plain ASCII, else ''."""
-    if not names:
-        return ""
-    common = names.get("common") or {}
-    common = dict(common)
-    for key in ("en", "ja-Latn", "ja_latn"):
-        if common.get(key):
-            return str(common[key])
-    primary = str(names.get("primary") or "")
-    return primary if primary.isascii() else ""
 
 
 # ---------------------------------------------------------------------------- fetching
@@ -367,7 +348,7 @@ def make_landmarks(places, peaks, frame, knots):
 # ---------------------------------------------------------------------------- the lot
 
 def bake_land(bucket, release, frame, knots, tiles, out, log=print):
-    """Fetches and writes the cover tiles, buildings and landmarks; returns {buildings, landmarks} for the baker.
+    """Fetches and writes the cover tiles, buildings, landmarks and places to stop; returns {buildings, landmarks, pois}.
 
     `tiles` is {level name: [(tx, tz)]} for the levels that have cover (levels.COVER_LEVELS)."""
     reach = max(BUILDING_REACH, levels.COARSE.reach)
@@ -386,6 +367,10 @@ def bake_land(bucket, release, frame, knots, tiles, out, log=print):
     peaks = fetch(bucket, release, "base", "land", box, ["geometry", "class", "names"])
     landmarks = make_landmarks(places, peaks, frame, knots)
     log("landmarks: %d" % len(landmarks))
+    pois = road_facts.make_pois(places, frame, knots)
+    log("places to stop: %d" % len(pois))
+    with open(os.path.join(out, "pois.json"), "w") as f:
+        json.dump(pois, f, separators=(",", ":"))
     with open(os.path.join(out, "buildings.json"), "w") as f:
         json.dump(buildings, f, separators=(",", ":"))
     with open(os.path.join(out, "landmarks.json"), "w") as f:
@@ -395,4 +380,4 @@ def bake_land(bucket, release, frame, knots, tiles, out, log=print):
         for tx, tz in tiles.get(level.name, []):
             with open(os.path.join(out, level.folder, "%d_%d.covz" % (tx, tz)), "wb") as f:
                 f.write(levels.encode_cover(rasterise_tile(tx, tz, layers, level)))
-    return {"buildings": buildings, "landmarks": landmarks}
+    return {"buildings": buildings, "landmarks": landmarks, "pois": pois}

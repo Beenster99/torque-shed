@@ -140,6 +140,11 @@ static func _try(route: AdventureRoute, rng: RandomNumberGenerator, kind: String
 		arms.append({"side": int(side), "skew": skew, "bend": bend, "len": rng.randf_range(ARM_LEN[0], ARM_LEN[1]),
 			"w": 3.3 if lane else rng.randf_range(ARM_W[0], ARM_W[1]), "surf": "gravel" if lane else "tarmac",
 			"name": _place_name(rng), "km": rng.randi_range(2, 14)})
+	_add_site(route, rng, kind, s, arms, village)
+
+
+## Adds the junction site of `kind` at `s` with its `arms` (see the file's comment for what it carries).
+static func _add_site(route: AdventureRoute, rng: RandomNumberGenerator, kind: String, s: float, arms: Array, village: float) -> void:
 	var round_kind: bool = kind in ["roundabout", "mini"]
 	var site := route.add_site(KIND, s, 1, FLAT, NAMES[kind], KEEP_ROUND if round_kind else KEEP)
 	site["type"] = kind
@@ -160,6 +165,67 @@ static func _try(route: AdventureRoute, rng: RandomNumberGenerator, kind: String
 	# The lights' own timing: how long each road's green lasts, and where in the cycle it starts.
 	site["green"] = [rng.randf_range(MAIN_GREEN[0], MAIN_GREEN[1]), rng.randf_range(SIDE_GREEN[0], SIDE_GREEN[1])]
 	site["phase"] = rng.randf() * 60.0
+
+
+## How far (knots either side) and how much (radians) a real road may bend through a junction we draw on it.
+const REAL_WINDOW := 6
+const REAL_BEND := deg_to_rad(18.0)
+
+
+## Puts the real road's junctions in (AdventureRoute.plan_real; `rows` are RealPack.junctions): a site at each place
+## a side road joins, with the real side roads as its arms (their sides, skews, classes and names). A real road bends
+## through a junction where a made-up one runs straight, so a roundabout (the road must go straight on through it)
+## stays one only where the road is straight there; elsewhere it's a crossroads or a side road, and one at a corner
+## (the road turns more than REAL_BEND through it) is left out. Their own rng, so the rest of the plan is the same with or without them.
+static func plan_real(route: AdventureRoute, rows: Array) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([route.seed_value, "real_junctions", route.theme])
+	for jn: Dictionary in rows:
+		var arms_in: Array = jn["arms"]
+		var kind := str(jn["type"])
+		var si := int(jn["k"])
+		var m := si % AdventureRoute.CHUNK_KNOTS
+		if m < 5:
+			si += 5 - m
+		elif m > 26:
+			si -= m - 26
+		var s := si * AdventureRoute.STEP
+		if s < 450.0 or s > route.length - 450.0:
+			continue
+		var bend := _bend_through(route, si, KEEP_ROUND)
+		if kind in ["roundabout", "mini"] and bend > deg_to_rad(5.0):
+			kind = "cross" if arms_in.size() > 1 else "tee"
+			if arms_in.is_empty():
+				continue
+		if _bend_through(route, si, REAL_WINDOW) > REAL_BEND:
+			continue   # the road turns here (the sat nav says so): no junction drawn over a corner
+		var clear := true
+		for st in route.sites:
+			if absf(float(st["s"]) - s) < float(CLEAR.get(str(st["kind"]), CLEAR_OTHER)):
+				clear = false
+				break
+		if not clear:
+			continue
+		var arms := []
+		for a: Dictionary in arms_in:
+			var lane := str(a["surf"]) != "tarmac"
+			arms.append({"side": int(a["side"]), "skew": float(a["skew"]), "bend": rng.randf_range(-30.0, 30.0),
+				"len": rng.randf_range(ARM_LEN[0], ARM_LEN[1]), "w": float(a["w"]),
+				"surf": "gravel" if lane else "tarmac",
+				"name": str(a["name"]) if str(a["name"]) != "" else _place_name(rng), "km": rng.randi_range(2, 14)})
+		_add_site(route, rng, kind, s, arms, -1.0)
+		if kind == "roundabout" and jn.has("ri"):
+			var st := route.sites_of(KIND)[-1] as Dictionary
+			st["ri"] = float(jn["ri"])
+			st["ro"] = float(jn["ri"]) + RING
+			st["rc"] = float(jn["ri"]) + CIRCLE
+
+
+## How far (radians) the road's heading changes over `knots` knots either side of knot `i`.
+static func _bend_through(route: AdventureRoute, i: int, knots: int) -> float:
+	var a := maxi(i - knots, 0)
+	var b := mini(i + knots, route.hd.size() - 1)
+	return absf(wrapf(route.hd[b] - route.hd[a], -PI, PI))
 
 
 static func _place_name(rng: RandomNumberGenerator) -> String:
