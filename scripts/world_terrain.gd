@@ -76,6 +76,8 @@ func natural(x: float, z: float) -> float:
 
 ## 0 on the flat ground round the shed, rising to 1 well clear of it.
 static func home_mask(x: float, z: float) -> float:
+	if not WorldLayout.has_shed():
+		return 1.0
 	var dx := maxf(maxf(HOME.position.x - x, x - HOME.end.x), 0.0)
 	var dz := maxf(maxf(HOME.position.y - z, z - HOME.end.y), 0.0)
 	return smoothstep(10.0, 95.0, Vector2(dx, dz).length())
@@ -191,11 +193,12 @@ func build(roads: WorldRoads) -> void:
 				if d < r:
 					var i := gz * SIZE + gx
 					heights[i] = lerpf(heights[i], sh, 1.0 - smoothstep(r * 0.55, r, d))
-	var home := _grid_box(HOME.grow(95.0))
-	for gz in range(home.position.y, home.end.y):
-		for gx in range(home.position.x, home.end.x):
-			var i := gz * SIZE + gx
-			heights[i] = lerpf(HOME_LEVEL, heights[i], home_mask(gx * SPACING - HALF, gz * SPACING - HALF))
+	if WorldLayout.has_shed():
+		var home := _grid_box(HOME.grow(95.0))
+		for gz in range(home.position.y, home.end.y):
+			for gx in range(home.position.x, home.end.x):
+				var i := gz * SIZE + gx
+				heights[i] = lerpf(HOME_LEVEL, heights[i], home_mask(gx * SPACING - HALF, gz * SPACING - HALF))
 	var road_h := PackedFloat32Array()
 	road_h.resize(n)
 	for r in roads.roads:
@@ -296,6 +299,7 @@ func _build_colors() -> void:
 	var snow := Color(0.86, 0.88, 0.92)
 	var earth := Color(0.4, 0.3, 0.2)
 	var gravel := Color(0.42, 0.4, 0.36)
+	var sand := Color(0.78, 0.7, 0.5)
 	var crops := [Color(0.62, 0.55, 0.24), Color(0.33, 0.47, 0.16), Color(0.38, 0.29, 0.19), Color(0.5, 0.52, 0.22)]
 	var farms := []
 	for site in WorldLayout.sites():
@@ -311,11 +315,26 @@ func _build_colors() -> void:
 			if f > -0.05:
 				c = c.lerp(woods, smoothstep(-0.05, 0.15, f) * 0.8)
 			var h := heights[i]
-			c = c.lerp(moor, smoothstep(150.0, 240.0, h) * 0.7)
 			var slope := 1.0 - normals[i].y
-			c = c.lerp(rock, smoothstep(0.18, 0.4, slope))
-			if h > 250.0:
-				c = c.lerp(snow, smoothstep(250.0, 320.0, h + _detail.get_noise_2d(x, z) * 30.0) * (1.0 - smoothstep(0.25, 0.45, slope)))
+			if _pack == null:
+				c = c.lerp(moor, smoothstep(150.0, 240.0, h) * 0.7)
+				c = c.lerp(rock, smoothstep(0.18, 0.4, slope))
+				if h > 250.0:
+					c = c.lerp(snow, smoothstep(250.0, 320.0, h + _detail.get_noise_2d(x, z) * 30.0) * (1.0 - smoothstep(0.25, 0.45, slope)))
+			else:
+				# Real land: the height is over the start, so the real height is h + base_elev. Moorland and
+				# bare rock only up high, snow only on real mountains.
+				var e := h + _pack.base_elev
+				c = c.lerp(moor, smoothstep(450.0, 900.0, e) * 0.6)
+				c = c.lerp(rock, smoothstep(0.22, 0.5, slope))
+				if e > 1800.0:
+					c = c.lerp(snow, smoothstep(1800.0, 2300.0, e) * (1.0 - smoothstep(0.25, 0.45, slope)))
+				if not is_nan(_pack.sea_level):
+					# Sand and wet shingle at the water's edge, the sea floor dark under it.
+					var above := h - _pack.sea_level
+					c = c.lerp(sand, 1.0 - smoothstep(1.4, 3.6, above))
+					if above < 0.0:
+						c = sand.darkened(0.25).lerp(Color(0.1, 0.24, 0.3), clampf(-above / 9.0, 0.0, 1.0))
 			var k := road_k[i]
 			if k == 1:
 				c = c.lerp(gravel, (1.0 - smoothstep(4.0, 9.0, road_d[i])) * 0.8)
@@ -507,6 +526,9 @@ func _horizon_height(x: float, z: float) -> float:
 	if edge <= HALF + 1.0:
 		return height_at(clampf(x, -HALF, HALF), clampf(z, -HALF, HALF)) - 0.3
 	var out := smoothstep(HALF, HALF + 1400.0, edge)
+	if _pack != null:
+		# A real place carries on the way its edge does, not into made-up hills.
+		out = 0.0
 	var hills := 90.0 + _hills.get_noise_2d(x * 0.4, z * 0.4) * 160.0 + (220.0 if z < 0.0 else 0.0) * smoothstep(-HALF, -HALF - 2000.0, z)
 	# The map's edge carried outwards, blurred along the edge the further out it goes, so its
 	# ridges soften into the far hills instead of streaking.

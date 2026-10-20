@@ -2021,17 +2021,19 @@ func _test_world() -> void:
 	await get_tree().physics_frame
 
 
-## A route pack (tools/route_bake.py) makes the map from real heights and roads: the shed's own
-## loop stays, the land is the pack's, the villages and farms are gone, and it all still rides.
+## A baked route (tools/route_bake.py) makes the map from real heights, roads and buildings, a leg at a time:
+## the shed's own loop stays in the first leg, the land is the leg's, the villages and farms are gone, there is
+## sea where the coast is, and it all rides.
 func _test_route_pack() -> void:
-	check(RoutePack.load_pack("res://tests/fixtures/no_such_route") == null, "a missing route pack is refused rather than crashed on")
+	check(RouteJourney.load_journey("res://tests/fixtures/no_such_route") == null, "a missing route is refused rather than crashed on")
 	check(WorldLayout.pack == null and WorldLayout.roads().size() == WorldLayout.ROADS.size() and WorldLayout.sites().size() == WorldLayout.SITES.size(),
-		"with no pack the hand-laid map is untouched")
-	# A made-up pack: level, then rising 2% east of x = 300, with one road out from the loop.
+		"with no route the hand-laid map is untouched")
+	# A made-up leg: level, then rising 2% east of x = 300, with one road out from the loop.
 	var n := WorldTerrain.SIZE
 	var made := RoutePack.new()
 	made.name = "made_up"
 	made.id = "made_up_1"
+	made.shed = true
 	made.heights.resize(n * n)
 	for gz in n:
 		for gx in n:
@@ -2039,33 +2041,82 @@ func _test_route_pack() -> void:
 	made.roads = [{"name": "out", "label": "Out", "kind": "tarmac", "hw": 3.5, "grade": 0.12, "start": "loop",
 		"pts": PackedVector2Array([Vector2(200.0, -62.0), Vector2(500.0, -60.0), Vector2(900.0, -60.0)])}]
 	check(absf(made.height_at(1000.0, 400.0) - 14.0) < 0.01 and absf(made.height_at(-500.0, 0.0)) < 0.01,
-		"the pack's heights are read at metres from the shed (%.2f m at x = 1000)" % made.height_at(1000.0, 400.0))
+		"the leg's heights are read at metres from the middle (%.2f m at x = 1000)" % made.height_at(1000.0, 400.0))
 	check(absf(made.height_at(1000.0 + 2.0, 400.0) - 14.04) < 0.01, "and blended between the samples")
 	WorldLayout.pack = made
-	check(WorldLayout.sites().is_empty() and WorldLayout.roads().size() == 2 and WorldLayout.roads()[0]["name"] == "loop",
-		"a route has no made-up villages and keeps the shed's loop first")
+	check(WorldLayout.sites().is_empty() and WorldLayout.roads().size() == 2 and WorldLayout.roads()[0]["name"] == "loop" and WorldLayout.has_shed(),
+		"a route's first leg has no made-up villages and keeps the shed's loop first")
 	var terrain := WorldTerrain.new(1)
 	var roads := WorldRoads.new()
 	roads.build(terrain)
 	terrain.build(roads)
-	check(roads.roads.size() == 2 and roads.by_name.has("out"), "the pack's road is laid after the loop")
-	check(absf(terrain.height_at(1200.0, 700.0) - 18.0) < 0.6, "the land is the pack's (%.1f m at x = 1200, expected 18)" % terrain.height_at(1200.0, 700.0))
+	check(roads.roads.size() == 2 and roads.by_name.has("out"), "the leg's road is laid after the loop")
+	check(absf(terrain.height_at(1200.0, 700.0) - 18.0) < 0.6, "the land is the leg's (%.1f m at x = 1200, expected 18)" % terrain.height_at(1200.0, 700.0))
 	check(absf(terrain.height_at(0.0, 100.0)) < 0.1, "and level at the shed")
+	# A leg with no shed: no loop, and nothing flattened in the middle.
+	made.shed = false
+	check(WorldLayout.roads().size() == 1 and not WorldLayout.has_shed() and WorldTerrain.home_mask(0.0, 100.0) == 1.0,
+		"later legs have no shed, no loop and no flat patch")
+	var open := WorldTerrain.new(1)
+	var open_roads := WorldRoads.new()
+	open_roads.build(open)
+	open.build(open_roads)
+	check(absf(open.height_at(1200.0, 700.0) - 18.0) < 0.6 and absf(open.height_at(0.0, 100.0)) < 0.1, "their land is just the leg's")
 	WorldLayout.pack = null
-	check(WorldLayout.roads().size() == WorldLayout.ROADS.size(), "clearing the pack gives the hand-laid map back")
-	# A real baked pack, if the repository has one: generate the whole map and ride it.
+	check(WorldLayout.roads().size() == WorldLayout.ROADS.size(), "clearing the route gives the hand-laid map back")
+	# The guide: a made-up route east then north, with a left turn at 500 m.
+	var j := RouteJourney.new()
+	j.points = PackedVector2Array([Vector2(0, 0), Vector2(500, 0), Vector2(500, -500)])
+	j.dists = PackedFloat32Array([0.0, 500.0, 1000.0])
+	j.length_m = 1000.0
+	j.turns = [{"d": 300.0, "turn": "straight", "onto": "A1"}, {"d": 500.0, "turn": "left", "onto": "Coast Road", "x": 500, "z": 0},
+		{"d": 1000.0, "turn": "arrive", "onto": ""}]
+	j.legs = [{"hand_over_d": 400.0}, {"hand_over_d": 800.0}, {"hand_over_d": null}]
+	check(j.leg_for_distance(100.0) == 0 and j.leg_for_distance(400.0) == 1 and j.leg_for_distance(799.0) == 1 and j.leg_for_distance(900.0) == 2,
+		"the leg to be on follows the hand-over distances")
+	var guide := RouteGuide.new(j)
+	guide.update(Vector2(100.0, 3.0))
+	check(guide.d == 100.0 and not guide.off_route and absf(guide.remaining - 900.0) < 0.1, "the satnav knows how far along and how much is left")
+	check(guide.next_turn["turn"] == "left" and absf(guide.next_dist - 400.0) < 0.1 and guide.instruction() == "Turn left onto Coast Road",
+		"it skips going straight on and announces the next turn (%s in %.0f m)" % [guide.instruction(), guide.next_dist])
+	check(guide.arrow_degrees() == -90.0 and RouteGuide.distance_text(400.0) == "400 m" and RouteGuide.distance_text(1250.0) == "1.2 km",
+		"with a left arrow and distances said as a rider reads them")
+	guide.update(Vector2(500.0, -250.0))
+	check(guide.next_turn["turn"] == "arrive" and guide.instruction() == "Arrive at your destination", "past the turn it counts down to the end")
+	guide.update(Vector2(900.0, -900.0))
+	check(guide.off_route and guide.instruction().begins_with("Off route") and guide.back_dir.length() > 0.99, "a long way off, it says so and points back")
+	guide.update(Vector2(200.0, 0.0))
+	check(not guide.off_route and guide.next_turn["turn"] == "left", "and it picks up again when you rejoin, even after backing up past a turn")
+	# A real baked route, if the repository has one: look it over, make a leg, and ride it.
 	var dir := "res://data/routes/shodoshima"
 	if not FileAccess.file_exists(dir.path_join("pack.json")):
 		return
-	var pack := RoutePack.load_pack(dir)
-	check(pack != null and pack.heights.size() == n * n and pack.roads.size() > 20 and not pack.credits.is_empty(),
-		"the baked route loads (%d roads)" % (pack.roads.size() if pack else 0))
-	if pack == null:
+	var real := RouteJourney.load_journey(dir)
+	check(real != null and real.leg_count() >= 2 and real.length_m > 5000.0 and real.points.size() > 100 and not real.credits.is_empty(),
+		"the baked route loads (%d legs, %.1f km)" % [real.leg_count() if real else 0, real.length_m / 1000.0 if real else 0.0])
+	if real == null:
 		return
-	var link: Dictionary = pack.roads[pack.roads.size() - 1]
-	check(link["name"] == "link" and link["start"] == "loop" and pack.roads.any(func(d): return d["name"] == link["end"]),
-		"its link road runs from the shed's loop to a real road")
-	WorldLayout.pack = pack
+	check(real.hand_over_at(real.leg_count() - 1) < 0.0 and real.hand_over_at(0) > 0.0 and real.leg_for_distance(0.0) == 0 \
+		and real.leg_for_distance(real.length_m) == real.leg_count() - 1, "its legs hand over in order, and the last one doesn't")
+	var last_turn: Dictionary = real.turns[real.turns.size() - 1]
+	check(last_turn["turn"] == "arrive" and absf(float(last_turn["d"]) - real.length_m) < 1.0, "it ends with arriving")
+	# Each leg's frame is a shift of the last: a point on the route is on both legs' roads near the hand-over.
+	var leg0 := real.load_leg(0)
+	var leg1 := real.load_leg(1)
+	check(leg0 != null and leg1 != null and leg0.shed and not leg1.shed and leg0.heights.size() == n * n, "legs load, and only the first has the shed")
+	var hand := real.hand_over_at(0)
+	var at := Vector2.ZERO
+	for i in real.points.size():
+		if real.dists[i] >= hand:
+			at = real.points[i]
+			break
+	var shifted := at - real.origin_of(0) + real.shift_to_next(0)
+	check(shifted.distance_to(at - real.origin_of(1)) < 0.01, "the shift between legs turns one leg's frame into the next's")
+	var near0 := _nearest_road_distance(leg0, at - real.origin_of(0))
+	var near1 := _nearest_road_distance(leg1, at - real.origin_of(1))
+	check(near0 < 6.0 and near1 < 6.0, "at the hand-over the route is on a road in both legs (%.1f m, %.1f m)" % [near0, near1])
+	WorldLayout.journey = real
+	WorldLayout.pack = leg0
 	var t0 := Time.get_ticks_msec()
 	var world := World.new()
 	add_child(world)
@@ -2078,18 +2129,113 @@ func _test_route_pack() -> void:
 	var bike := Bike.new()
 	bike.setup(BikeBuild.new())
 	world.add_child(bike)
-	for road_name in ["link", pack.roads[0]["name"]]:
-		var at: Transform3D = world.road_transform_on(road_name, 150.0)
-		bike.place(at.origin, at.basis.get_euler().y)
+	# Ride the link, and then a straight stretch of one of the real roads (the bike is not steered).
+	var straight := _straight_tarmac(world.roads)
+	for pick: Array in [["link", world.roads.by_name["link"], 75], straight]:
+		var ri: int = pick[1]
+		var si: int = pick[2]
+		var heading: Vector2 = (world.roads.roads[ri]["dir"] as PackedVector2Array)[si]
+		var spot := world.roads.point(ri, si) + Vector3.UP * 0.1
+		bike.place(spot, atan2(-heading.x, -heading.y))
 		var start := bike.global_position
-		for i in 600:
+		for i in 480:
 			bike.throttle = 0.4
 			await get_tree().physics_frame
 		check(not bike.is_crashed and bike.surface == "tarmac" and bike.global_position.distance_to(start) > 20.0,
-			"a bike rides the real %s road (%.0f m, on %s)" % [road_name, bike.global_position.distance_to(start), bike.surface])
+			"a bike rides the real %s road (%.0f m, on %s)" % [world.roads.roads[ri]["name"], bike.global_position.distance_to(start), bike.surface])
+	# Guardrails: every rail is a clean box stretched along itself (they were once squashed in world axes).
+	var rails: Node = world.props.get_node("ArmcoRails")
+	var rail_count := 0
+	var rail_ok := true
+	var rail_bad := ""
+	for mmi: MultiMeshInstance3D in rails.get_children():
+		for k in mini(mmi.multimesh.instance_count, 40):
+			var bx := mmi.multimesh.get_instance_transform(k).basis
+			rail_count += 1
+			if absf(bx.x.length() - 1.0) > 0.01 or absf(bx.y.length() - 1.0) > 0.01 or bx.z.length() < 0.9 or bx.z.length() > 6.5 \
+					or absf(bx.x.normalized().dot(bx.z.normalized())) > 0.01 or absf(bx.y.normalized().dot(bx.z.normalized())) > 0.01:
+				rail_ok = false
+				rail_bad = "x %.2f y %.2f z %.2f" % [bx.x.length(), bx.y.length(), bx.z.length()]
+	check(rail_count > 20 and rail_ok, "guardrails are straight stretched boxes, not squashed slabs (%d looked at; %s)" % [rail_count, rail_bad])
+	# Junction signs: give way on the minor road, a "junction ahead" board each way on the main one.
+	var plan := WorldProps.plan(world.terrain, world.roads, 1)
+	var styles := {}
+	for sg: Dictionary in plan["signs"]:
+		styles[sg["style"]] = int(styles.get(sg["style"], 0)) + 1
+	check(styles.get("giveway", 0) > 3 and styles.get("ahead", 0) > 3 and styles.get("finger", 0) > 3,
+		"junctions have give way signs, advance boards and fingerposts (%s)" % str(styles))
+	var crossroads_ok := true
+	for sg: Dictionary in plan["signs"]:
+		if sg["style"] == "ahead" and (sg["lines"].size() < 2 or str(sg["lines"][0]) != "Junction ahead" or sg["lines"].size() > 4):
+			crossroads_ok = false
+	check(crossroads_ok, "an advance board says 'Junction ahead' and then which way each road goes")
 	world.queue_free()
 	WorldLayout.pack = null
+	WorldLayout.journey = null
 	await get_tree().physics_frame
+
+	# A later leg: the coast has sea and the towns have buildings in the villages' style; nothing of the shed.
+	var coast := -1
+	for i in real.leg_count():
+		if real.legs[i].get("sea_level") != null:
+			coast = i
+	var town := -1
+	for i in real.leg_count():
+		if int(real.legs[i]["building_count"]) > 100:
+			town = i
+	var pick := coast if coast >= 0 else maxi(town, 1)
+	var leg := real.load_leg(pick)
+	WorldLayout.journey = real
+	WorldLayout.pack = leg
+	var far := World.new()
+	add_child(far)
+	far.generate(1234)
+	check(far.yard == null and far.workshop == null and not far.roads.by_name.has("loop"), "a later leg has no shed, yard or loop")
+	if coast >= 0:
+		check(not is_nan(far.sea_y) and far.get_node_or_null("Sea") != null, "the coast has a sea (surface %.0f m)" % far.sea_y)
+		var wet := Vector2.ZERO
+		var dry := Vector2.ZERO
+		for gz in range(20, n - 20, 10):
+			for gx in range(20, n - 20, 10):
+				var h := leg.heights[gz * n + gx]
+				if h < far.sea_y - 5.0 and wet == Vector2.ZERO:
+					wet = Vector2(gx * WorldTerrain.SPACING - WorldTerrain.HALF, gz * WorldTerrain.SPACING - WorldTerrain.HALF)
+				if h > far.sea_y + 8.0 and dry == Vector2.ZERO:
+					dry = Vector2(gx * WorldTerrain.SPACING - WorldTerrain.HALF, gz * WorldTerrain.SPACING - WorldTerrain.HALF)
+		check(far.in_sea(wet.x, wet.y) and not far.in_sea(dry.x, dry.y), "the sea floor is under the water and the land is not")
+	var buildings := WorldProps.plan(far.terrain, far.roads, 1)["buildings"] as Array
+	var wall_ok := not buildings.is_empty()
+	for b: Dictionary in buildings:
+		var bxf: Transform3D = b["xf"]
+		if str(b["kind"]) not in ["house", "shed", "barn"] or Vector3(b["size"]).y < 2.5 or far.terrain.height_at(bxf.origin.x, bxf.origin.z) < -9999.0:
+			wall_ok = false
+	check(wall_ok and (buildings.size() > 20 or town < 0), "real buildings stand in the villages' style (%d in this leg)" % buildings.size())
+	far.queue_free()
+	WorldLayout.pack = null
+	WorldLayout.journey = null
+	await get_tree().physics_frame
+
+
+## A tarmac road and a sample on it with a dead straight 90 m ahead and 30 m behind, as [name, road, sample].
+func _straight_tarmac(roads: WorldRoads) -> Array:
+	for ri in roads.roads.size():
+		var r: Dictionary = roads.roads[ri]
+		if r["kind"] != "tarmac" or r["closed"] or float(r["length"]) < 200.0:
+			continue
+		var dirs: PackedVector2Array = r["dir"]
+		for i in range(20, dirs.size() - 60, 5):
+			if dirs[i - 15].dot(dirs[i + 45]) > 0.999:
+				return [r["name"], ri, i]
+	return ["", 0, 20]
+
+
+## The distance from `p` (a leg's own coordinates) to the nearest of `leg`'s roads' points.
+func _nearest_road_distance(leg: RoutePack, p: Vector2) -> float:
+	var best := INF
+	for r: Dictionary in leg.roads:
+		for q: Vector2 in r["pts"]:
+			best = minf(best, q.distance_to(p))
+	return best
 
 
 func _test_round6_parts() -> void:

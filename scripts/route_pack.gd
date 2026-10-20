@@ -1,69 +1,72 @@
 class_name RoutePack
 extends RefCounted
-## A real-world route baked by tools/route_bake.py: the land's heights and the roads of a stretch of a
-## real place, in the riding map's own frame (+x east, -z north, the shed at the origin). When
-## WorldLayout.pack is set the map is made from it instead of from noise and the hand-laid layout:
-## WorldTerrain takes its heights from `heights`, and WorldRoads lays `roads` after the shed's own loop.
-## A pack is a folder: pack.json (details), heights.u16 and roads.json.
+## One leg of a baked real-world route (see RouteJourney and tools/route_bake.py): the heights, roads and
+## buildings of a 4 km square of a real place, in the riding map's own frame (+x east, -z north, metres,
+## the middle of the square at the origin). When WorldLayout.pack is set the map is made from it instead of
+## from noise and the hand-laid layout: WorldTerrain takes its heights from `heights`, WorldRoads lays
+## `roads` (after the shed's own loop in the first leg), and WorldProps stands `buildings` on the land.
 
-const FORMAT := 1
+const FORMAT := 2
 
 var name := ""
-var title := ""
-## A short hash of the data, so every player can check they have the same route.
+## A short hash of the whole route's data, so every player can check they have the same route.
 var id := ""
-## Heights in metres over the start point, WorldTerrain.SIZE x WorldTerrain.SIZE, row by row (z then x).
+## This leg's number in the journey.
+var index := 0
+## Heights in metres in the leg's own frame, WorldTerrain.SIZE x WorldTerrain.SIZE, row by row (z then x).
 var heights := PackedFloat32Array()
 ## Road definitions in WorldLayout.ROADS's shape (the loop is not in here; the shed has its own).
 var roads: Array = []
-## Where the route starts and where it ends, in map metres (end is Vector2.INF when it has none).
-var start := Vector2.ZERO
-var end := Vector2.INF
-## Who to thank for the data, one line each.
-var credits: Array = []
+## Footprints: [{x, z, w, d, yaw, h, kind}] with kind "house", "shed" or "barn".
+var buildings: Array = []
+## Where the sea's surface is in the heights' frame, or NAN when this leg has no sea.
+var sea_level := NAN
+## How far above real sea level the heights' zero is, so the ground's real height is `h + base_elev`.
+var base_elev := 0.0
+## The first leg has the shed at its origin; the rest are open country.
+var shed := false
+## Where this leg's origin is in the whole route's frame, in metres.
+var origin := Vector2.ZERO
 
 
-## Reads the pack in folder `dir`, or returns null (and says why in the log) if it can't be used.
-static func load_pack(dir: String) -> RoutePack:
-	var meta = null
-	if FileAccess.file_exists(dir.path_join("pack.json")):
-		meta = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("pack.json")))
-	if not meta is Dictionary:
-		push_error("Route pack: no readable pack.json in %s" % dir)
-		return null
-	if int(meta.get("format", 0)) != FORMAT:
-		push_error("Route pack: %s is format %s, this game reads %d" % [dir, meta.get("format"), FORMAT])
-		return null
-	var grid: Dictionary = meta.get("grid", {})
-	if int(grid.get("size", 0)) != WorldTerrain.SIZE or not is_equal_approx(float(grid.get("spacing", 0.0)), WorldTerrain.SPACING):
-		push_error("Route pack: %s has a %s grid, the map needs %d samples %g m apart" % [dir, grid, WorldTerrain.SIZE, WorldTerrain.SPACING])
-		return null
-	var raw := FileAccess.get_file_as_bytes(dir.path_join("heights.u16"))
+## Reads leg `index` of the route in `dir` (`leg` is its entry in pack.json), or returns null with the
+## reason in the log.
+static func load_leg(dir: String, leg: Dictionary, index: int, route_id: String, route_name: String) -> RoutePack:
+	var d := dir.path_join(str(leg["dir"]))
+	var raw := FileAccess.get_file_as_bytes(d.path_join("heights.u16"))
 	var n := WorldTerrain.SIZE * WorldTerrain.SIZE
 	if raw.size() != n * 2:
-		push_error("Route pack: heights.u16 in %s is %d bytes, expected %d" % [dir, raw.size(), n * 2])
+		push_error("Route pack: %s/heights.u16 is %d bytes, expected %d" % [d, raw.size(), n * 2])
 		return null
-	var defs = JSON.parse_string(FileAccess.get_file_as_string(dir.path_join("roads.json")))
-	if not defs is Array:
-		push_error("Route pack: no readable roads.json in %s" % dir)
+	var defs = _json(d.path_join("roads.json"))
+	var houses = _json(d.path_join("buildings.json"))
+	if not defs is Array or not houses is Array:
+		push_error("Route pack: no readable roads.json or buildings.json in %s" % d)
 		return null
 	var p := RoutePack.new()
-	p.name = str(meta.get("name", ""))
-	p.title = str(meta.get("title", p.name))
-	p.id = str(meta.get("hash", p.name))
-	var lo := float(meta["height"]["min"])
-	var scale := float(meta["height"]["scale"])
+	p.name = route_name
+	p.id = route_id
+	p.index = index
+	var lo := float(leg["height"]["min"])
+	var scale := float(leg["height"]["scale"])
 	p.heights.resize(n)
 	for i in n:
 		p.heights[i] = lo + raw.decode_u16(i * 2) * scale
-	for d in defs:
-		p.roads.append(_road_def(d))
-	var s: Array = meta.get("start_world", [0.0, 0.0])
-	p.start = Vector2(float(s[0]), float(s[1]))
-	if meta.get("end_world") is Array:
-		p.end = Vector2(float(meta["end_world"][0]), float(meta["end_world"][1]))
-	p.credits = meta.get("credits", [])
+	for def in defs:
+		p.roads.append(_road_def(def))
+	p.buildings = houses
+	p.sea_level = float(leg["sea_level"]) if leg.get("sea_level") != null else NAN
+	p.base_elev = float(leg.get("base_elev", 0.0))
+	p.shed = bool(leg.get("shed", false))
+	var o: Array = leg.get("origin", [0.0, 0.0])
+	p.origin = Vector2(float(o[0]), float(o[1]))
 	return p
+
+
+static func _json(path: String) -> Variant:
+	if not FileAccess.file_exists(path):
+		return null
+	return JSON.parse_string(FileAccess.get_file_as_string(path))
 
 
 ## A road definition read from JSON, with its points as a Packed array (what WorldRoads wants).
@@ -76,7 +79,7 @@ static func _road_def(d: Dictionary) -> Dictionary:
 	return out
 
 
-## The land's height at (x, z) in metres over the start point, from the grid (bilinear), clamped to its edge.
+## The land's height at (x, z) in metres, from the grid (bilinear), clamped to its edge.
 func height_at(x: float, z: float) -> float:
 	var size := WorldTerrain.SIZE
 	var fx := clampf((x + WorldTerrain.HALF) / WorldTerrain.SPACING, 0.0, size - 1.001)

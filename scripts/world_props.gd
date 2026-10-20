@@ -38,6 +38,7 @@ static func plan(t: WorldTerrain, r: WorldRoads, seed_value: int) -> Dictionary:
 		"signs": [], "bales": [], "lamps": []}
 	var taken := {}
 	_plan_sites(p, t, r, rng, taken)
+	_plan_route_buildings(p, t, r, rng, taken)
 	_plan_fields(p, t, r, taken)
 	_plan_barriers(p, t, r)
 	_plan_signs(p, t, r)
@@ -196,6 +197,56 @@ static func _plan_farm(p: Dictionary, t: WorldTerrain, r: WorldRoads, rng: Rando
 		var c2 := at + Vector2(off2.x, off2.z)
 		p["bales"].append(Transform3D(Basis(Vector3.UP, yaw + PI * 0.5), Vector3(c2.x, t.height_at(c2.x, c2.y), c2.y)))
 	_take(taken, at + Vector2((b * Vector3(-4.0, 0, -25.0)).x, (b * Vector3(-4.0, 0, -25.0)).z), Vector2(4.0, 3.0), yaw)
+
+
+## The real buildings of a route's leg (RoutePack.buildings), built in the same style as the villages' and
+## standing in groups by 256 m square so each group is three meshes. Each is turned to face the nearest road.
+static func _plan_route_buildings(p: Dictionary, t: WorldTerrain, r: WorldRoads, rng: RandomNumberGenerator, taken: Dictionary) -> void:
+	if WorldLayout.pack == null:
+		return
+	var cells := 16
+	for b: Dictionary in WorldLayout.pack.buildings:
+		var c := Vector2(float(b["x"]), float(b["z"]))
+		var w := float(b["w"])
+		var d := float(b["d"])
+		var yaw := float(b["yaw"])
+		var near := r.nearest(c.x, c.y, 120.0)
+		if not near.is_empty():
+			# Turn it so its front (+Z) looks at the road: the quarter turn that points best that way.
+			var road: Dictionary = r.roads[int(near["road"])]
+			var to := (road["xz"] as PackedVector2Array)[int(near["i"])] - c
+			var best_k := 0
+			var best_dot := -2.0
+			for k in 4:
+				var front := Basis(Vector3.UP, yaw + k * PI * 0.5) * Vector3.BACK
+				var dot := Vector2(front.x, front.z).dot(to.normalized())
+				if dot > best_dot:
+					best_dot = dot
+					best_k = k
+			yaw += best_k * PI * 0.5
+			if best_k % 2 == 1:
+				var swap := w
+				w = d
+				d = swap
+		var half := Vector2(w * 0.5, d * 0.5)
+		if not _clear_of_roads(r, c, half, yaw, 2.0):
+			continue
+		var ground := t.height_at(c.x, c.y)
+		if not is_nan(WorldLayout.pack.sea_level) and ground < WorldLayout.pack.sea_level + 1.5:
+			continue
+		_take(taken, c, half, yaw, 2.0)
+		var kind: String = b["kind"]
+		var wall: Color = WALLS[rng.randi() % WALLS.size()]
+		var roof: Color = ROOFS[rng.randi() % ROOFS.size()]
+		if kind == "barn" or kind == "shed":
+			wall = BARNS[rng.randi() % BARNS.size()]
+			roof = Color(0.32, 0.33, 0.33)
+		var cx := clampi(int((c.x + WorldTerrain.HALF) / 256.0), 0, cells - 1)
+		var cz := clampi(int((c.y + WorldTerrain.HALF) / 256.0), 0, cells - 1)
+		_building(p, kind, 1000 + cz * cells + cx, c, _base(t, c, half, yaw), yaw, Vector3(w, float(b["h"]), d), wall, roof)
+		var last: Dictionary = p["buildings"][p["buildings"].size() - 1]
+		last["center"] = Vector2(-WorldTerrain.HALF + (cx + 0.5) * 256.0, -WorldTerrain.HALF + (cz + 0.5) * 256.0)
+		last["name"] = "Houses_%d_%d" % [cx, cz]
 
 
 ## Fences round the farms' fields (WorldTerrain.field_at), with gaps wherever a road or track
@@ -377,22 +428,14 @@ static func _plan_barriers(p: Dictionary, t: WorldTerrain, r: WorldRoads) -> voi
 ## Fingerposts where each road or track leaves another, naming where it goes, and a name sign
 ## where roads come into each village or farm.
 static func _plan_signs(p: Dictionary, t: WorldTerrain, r: WorldRoads) -> void:
+	p["ahead"] = {}
 	for road in r.roads:
-		var j: Dictionary = road["start_join"]
-		if j.is_empty():
-			continue
-		var xz: PackedVector2Array = road["xz"]
-		var dirs: PackedVector2Array = road["dir"]
-		var parent: Dictionary = r.roads[int(j["road"])]
-		var k := mini(ceili((float(parent["hw"]) + 4.0) / WorldRoads.STEP), xz.size() - 1)
-		var right := Vector2(-dirs[k].y, dirs[k].x)
-		var c := xz[k] + right * (float(road["hw"]) + 2.2)
-		var face := -dirs[k]
-		var what := "%s  %.1f km" % [road["label"], float(road["length"]) / 1000.0]
-		if road["kind"] == "dirt":
-			what = "%s (track)%s" % [road["label"], "  - rough" if road["hard"] else ""]
-		p["signs"].append({"xf": Transform3D(Basis(Vector3.UP, atan2(face.x, face.y)), Vector3(c.x, t.height_at(c.x, c.y), c.y)),
-			"lines": [what], "style": "finger"})
+		for end in ["start", "end"]:
+			var j: Dictionary = road[end + "_join"]
+			if not j.is_empty():
+				_plan_junction_signs(p, t, r, road, end, j)
+	for board in (p["ahead"] as Dictionary).values():
+		p["signs"].append(board)
 	for site in WorldLayout.sites():
 		var at: Vector2 = site["at"]
 		var radius: float = site["r"]
@@ -412,6 +455,64 @@ static func _plan_signs(p: Dictionary, t: WorldTerrain, r: WorldRoads) -> void:
 					var face := -inward
 					p["signs"].append({"xf": Transform3D(Basis(Vector3.UP, atan2(face.x, face.y)), Vector3(c.x, t.height_at(c.x, c.y), c.y)),
 						"lines": [str(site["name"]).to_upper()], "style": "village" if site["kind"] == "village" else "farm"})
+
+
+## The signs at one junction, where `road` meets `parent` at its `end` ("start" or "end"): a fingerpost
+## naming the road, a give way sign for riders coming out of it (it is the minor road), and a
+## "junction ahead" board each way along the parent, a little before the junction, saying which
+## side it is on and where it goes.
+static func _plan_junction_signs(p: Dictionary, t: WorldTerrain, r: WorldRoads, road: Dictionary, end: String, j: Dictionary) -> void:
+	var xz: PackedVector2Array = road["xz"]
+	var dirs: PackedVector2Array = road["dir"]
+	var parent: Dictionary = r.roads[int(j["road"])]
+	var gap := ceili((float(parent["hw"]) + 5.0) / WorldRoads.STEP)
+	var k := mini(gap, xz.size() - 1) if end == "start" else maxi(xz.size() - 1 - gap, 0)
+	# Which way a rider on this road is heading as they come up to the junction, and its left and right.
+	var toward: Vector2 = -dirs[k] if end == "start" else dirs[k]
+	var right := Vector2(-toward.y, toward.x)
+	var hw: float = road["hw"]
+	var name_text := "%s  %.1f km" % [road["label"], float(road["length"]) / 1000.0]
+	if road["kind"] == "dirt":
+		name_text = "%s (track)%s" % [road["label"], "  - rough" if road["hard"] else ""]
+	var c := xz[k] + right * (hw + 2.2)
+	p["signs"].append({"xf": _facing(t, c, -toward), "lines": [name_text], "style": "finger"})
+	if road["kind"] != "tarmac" or parent["kind"] != "tarmac":
+		return
+	# Driving on the left: the give way sign is on the rider's left, facing them.
+	var cg := xz[k] - right * (hw + 1.6)
+	p["signs"].append({"xf": _facing(t, cg, -toward), "lines": [], "style": "giveway"})
+	if float(road["length"]) < 300.0:
+		return
+	# The branch leaves the parent this way, and sits on the right or the left of someone riding along it.
+	var away: Vector2 = dirs[k] if end == "start" else -dirs[k]
+	var pxz: PackedVector2Array = parent["xz"]
+	var pdirs: PackedVector2Array = parent["dir"]
+	var pi: int = int(j["i"])
+	var lead := ceili(70.0 / WorldRoads.STEP)
+	for heading: float in [1.0, -1.0]:
+		var i := pi - int(heading) * lead
+		if i < 2 or i > pxz.size() - 3:
+			continue
+		var travel: Vector2 = pdirs[i] * heading
+		var side := travel.x * away.y - travel.y * away.x
+		if absf(side) < 0.3:
+			continue
+		var pright := Vector2(-travel.y, travel.x)
+		var cp := pxz[i] - pright * (float(parent["hw"]) + 1.8)
+		var arrow := ">" if side > 0.0 else "<"
+		# One board per approach: a crossroads lists both its branches on it.
+		var key := "%d:%d:%d" % [int(j["road"]), pi, int(heading)]
+		var board: Dictionary = p["ahead"].get(key, {})
+		if board.is_empty():
+			board = {"xf": _facing(t, cp, -travel), "lines": ["Junction ahead"], "style": "ahead"}
+			p["ahead"][key] = board
+		if board["lines"].size() < 4:
+			board["lines"].append("%s %s" % [arrow, road["label"]])
+
+
+## A transform standing on the ground at `c` with its front facing `face` (a direction on the map).
+static func _facing(t: WorldTerrain, c: Vector2, face: Vector2) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, atan2(face.x, face.y)), Vector3(c.x, t.height_at(c.x, c.y), c.y))
 
 
 ## Boulders: many on the mountains (more on the steep ground), a few in the lowlands, and rock
@@ -483,9 +584,12 @@ static func _plan_trees(p: Dictionary, t: WorldTerrain, r: WorldRoads, rng: Rand
 			if roll > chance:
 				continue
 			var h := t.height_at(x, z)
-			if h > 285.0 or t.slope_at(x, z) > 0.5:
+			var real := WorldLayout.pack != null
+			if t.slope_at(x, z) > 0.5 or (not real and h > 285.0):
 				continue
-			if h > 200.0 and rng.randf() < smoothstep(200.0, 285.0, h):
+			if real and not is_nan(WorldLayout.pack.sea_level) and h < WorldLayout.pack.sea_level + 2.5:
+				continue
+			if not real and h > 200.0 and rng.randf() < smoothstep(200.0, 285.0, h):
 				continue
 			var i := WorldTerrain.index_of(x, z)
 			var k := t.road_k[i]
@@ -499,7 +603,8 @@ static func _plan_trees(p: Dictionary, t: WorldTerrain, r: WorldRoads, rng: Rand
 					in_field = true
 			if in_field:
 				continue
-			var pine := h > 110.0 or t.forest(x * 0.3 + 77.0, z * 0.3) > 0.1
+			var elev := h + (WorldLayout.pack.base_elev if real else 0.0)
+			var pine := elev > (400.0 if real else 110.0) or t.forest(x * 0.3 + 77.0, z * 0.3) > 0.1
 			var s := rng.randf_range(0.75, 1.35)
 			var tint := Color.from_hsv(rng.randf_range(0.31, 0.38), rng.randf_range(0.45, 0.6), rng.randf_range(0.25, 0.36)) if pine \
 				else Color.from_hsv(rng.randf_range(0.2, 0.29), rng.randf_range(0.5, 0.7), rng.randf_range(0.33, 0.5))
@@ -664,8 +769,16 @@ func _build_buildings(list: Array) -> void:
 		var windows := SurfaceTool.new()
 		for st in [walls, roofs, windows]:
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var site: Dictionary = WorldLayout.sites()[si]
-		var center := Vector3((site["at"] as Vector2).x, 0.0, (site["at"] as Vector2).y)
+		var first: Dictionary = by_site[si][0]
+		var center: Vector3
+		var holder_name: String
+		if first.has("center"):
+			center = Vector3((first["center"] as Vector2).x, 0.0, (first["center"] as Vector2).y)
+			holder_name = str(first["name"])
+		else:
+			var site: Dictionary = WorldLayout.sites()[si]
+			center = Vector3((site["at"] as Vector2).x, 0.0, (site["at"] as Vector2).y)
+			holder_name = str(site["name"]).replace(" ", "")
 		for b in by_site[si]:
 			var xf: Transform3D = b["xf"]
 			var local := Transform3D(xf.basis, xf.origin - center)
@@ -676,7 +789,7 @@ func _build_buildings(list: Array) -> void:
 			box.size = Vector3(size.x, tall + 1.0, size.z)
 			_add_shape(body, box, Transform3D(xf.basis, xf.origin + Vector3.UP * (tall * 0.5 - 0.5)))
 		var holder := Node3D.new()
-		holder.name = str(site["name"]).replace(" ", "")
+		holder.name = holder_name
 		holder.position = center
 		add_child(holder)
 		for pair in [[walls, walls_mat, true], [roofs, roof_mat, true], [windows, glass, false]]:
@@ -739,7 +852,7 @@ func _build_armco(segs: Array) -> void:
 		var yaw := atan2(flat.x, flat.y)
 		var tilt := atan2(b.y - a.y, flat.length())
 		var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -tilt)
-		rails.append(Transform3D(basis.scaled(Vector3(1.0, 1.0, length + 0.35)), (a + b) * 0.5 + Vector3.UP * 0.55))   # overlapping, so a bend has no gaps
+		rails.append(Transform3D(basis * Basis.from_scale(Vector3(1.0, 1.0, length + 0.35)), (a + b) * 0.5 + Vector3.UP * 0.55))   # stretched along the rail, and overlapping, so a bend has no gaps
 		posts.append(Transform3D(Basis(Vector3.UP, yaw), a))
 		var shape := BoxShape3D.new()
 		shape.size = Vector3(0.25, 0.9, length + 0.1)
@@ -784,6 +897,7 @@ func _build_chevrons(xfs: Array) -> void:
 			l.pixel_size = 0.01
 			l.modulate = Color(0.05, 0.05, 0.05)
 			l.outline_size = 0
+			l.double_sided = false
 			l.position = Vector3(0.0, 1.3, 0.03 * face)
 			l.rotation.y = 0.0 if face > 0.0 else PI
 			root.add_child(l)
@@ -798,6 +912,9 @@ func _build_signs(signs: Array) -> void:
 		root.transform = sg["xf"]
 		add_child(root)
 		var style: String = sg["style"]
+		if style == "giveway":
+			_build_giveway(root)
+			continue
 		var text: String = "\n".join(sg["lines"])
 		var board_col := Color(0.95, 0.95, 0.92)
 		var text_col := Color(0.05, 0.05, 0.05)
@@ -811,34 +928,75 @@ func _build_signs(signs: Array) -> void:
 			board_col = Color(0.15, 0.3, 0.18)
 			text_col = Color(0.95, 0.95, 0.9)
 			y = 1.3
-		var post := MeshInstance3D.new()
-		var pm := BoxMesh.new()
-		pm.size = Vector3(0.1, y + 0.3, 0.1)
-		post.mesh = pm
-		post.material_override = _mat("sign_post", Color(0.55, 0.56, 0.58), 0.6)
-		post.position = Vector3(0.0, (y + 0.3) * 0.5, 0.0)
-		root.add_child(post)
+		elif style == "ahead":
+			board_col = Color(0.1, 0.28, 0.5)
+			text_col = Color(0.96, 0.96, 0.96)
+			width = 0.5
+			for line: String in sg["lines"]:
+				width = maxf(width, 0.5 + line.length() * 0.1)
+			y = 1.7
+		# A board that is wide stands on two posts at its ends, so none runs across the writing.
+		var post_xs := [-(width * 0.5 - 0.1), width * 0.5 - 0.1] if style == "ahead" else [0.0]
+		var post: MeshInstance3D
+		for px: float in post_xs:
+			post = MeshInstance3D.new()
+			var pm := BoxMesh.new()
+			pm.size = Vector3(0.1, y + 0.3, 0.1)
+			post.mesh = pm
+			post.material_override = _mat("sign_post", Color(0.55, 0.56, 0.58), 0.6)
+			post.position = Vector3(px, (y + 0.3) * 0.5, -0.05 if style != "ahead" else -0.07)
+			root.add_child(post)
+			post.visibility_range_end = SMALL_RANGE
 		var board := MeshInstance3D.new()
 		var bm := BoxMesh.new()
-		bm.size = Vector3(width, 0.42 if style != "village" else 0.6, 0.04)
+		bm.size = Vector3(width, (0.2 + 0.2 * sg["lines"].size()) if style == "ahead" else (0.6 if style == "village" else 0.42), 0.04)
 		board.mesh = bm
 		board.material_override = _mat("board_" + style, board_col, 0.6)
 		# A fingerpost's arm sticks out the way it points (towards the road it names).
 		board.position = Vector3(width * 0.5 - 0.1 if style == "finger" else 0.0, y, 0.0)
 		root.add_child(board)
 		board.visibility_range_end = SMALL_RANGE
-		post.visibility_range_end = SMALL_RANGE
 		for face: float in [1.0, -1.0]:
 			var l := Label3D.new()
 			l.text = text
-			l.font_size = 48 if style != "village" else 72
+			l.font_size = 72 if style == "village" else (44 if style == "ahead" else 48)
 			l.pixel_size = 0.0055
 			l.modulate = text_col
 			l.outline_size = 0
+			l.double_sided = false
 			l.position = board.position + Vector3(0.0, 0.0, 0.025 * face)
 			l.rotation.y = 0.0 if face > 0.0 else PI
 			l.visibility_range_end = 120.0
 			root.add_child(l)
+
+
+## A give way sign: a red-edged white triangle pointing down on a post, facing the rider.
+func _build_giveway(root: Node3D) -> void:
+	var post := MeshInstance3D.new()
+	var pm := BoxMesh.new()
+	pm.size = Vector3(0.08, 2.2, 0.08)
+	post.mesh = pm
+	post.material_override = _mat("sign_post", Color(0.55, 0.56, 0.58), 0.6)
+	post.position = Vector3(0.0, 1.1, 0.0)
+	root.add_child(post)
+	post.visibility_range_end = SMALL_RANGE
+	for layer in [[0.5, Color(0.8, 0.08, 0.08), 0.0], [0.34, Color(0.97, 0.97, 0.95), 0.012]]:
+		var half: float = layer[0]
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for v in [Vector3(-half, half * 0.866, 0.0), Vector3(0.0, -half * 0.866, 0.0), Vector3(half, half * 0.866, 0.0)]:
+			st.add_vertex(v + Vector3(0.0, 0.0, layer[2]))
+		st.generate_normals()
+		var tri := MeshInstance3D.new()
+		tri.mesh = st.commit()
+		var m := StandardMaterial3D.new()
+		m.albedo_color = layer[1]
+		m.roughness = 0.6
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		tri.material_override = m
+		tri.position = Vector3(0.0, 2.0 if layer[2] == 0.0 else 2.04, 0.03)
+		tri.visibility_range_end = SMALL_RANGE
+		root.add_child(tri)
 
 
 func _build_bales(xfs: Array) -> void:

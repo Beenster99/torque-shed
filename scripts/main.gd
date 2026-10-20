@@ -41,34 +41,43 @@ var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing i
 var _ride_view := ChaseCamera.Mode.CHASE
 var _dash: Label3D
 var telemetry_overlay: TelemetryOverlay   # live tyre and handling numbers at the side while riding (F3)
+## A baked real-world route being ridden (tools/route_bake.py, see RouteJourney), the satnav that guides it, and
+## which of its 4 km legs the map is now. The next leg is made in the background shortly before you reach it.
+var journey: RouteJourney
+var guide: RouteGuide
+var satnav: SatnavPanel
+var _leg := 0
+var _leg_thread: Thread
+var _leg_loading := -1       # the leg being made in the background, or -1
+var _leg_pack: RoutePack     # a leg that is made and waiting, and which one
+var _leg_pack_index := -1
+var _swapping := false
+var _fade_rect: ColorRect
+const PRELOAD_M := 1100.0     # start making the next leg this far before the hand-over
 ## The last place the bike had both wheels on the map, to put it back if it goes off the edge.
 var _safe_xf := Transform3D()
 ## How much road dirt a kilometre of each surface throws up, relative to a dirt track.
 const SURFACE_DIRT := {"tarmac": 0.06, "dirt": 1.0, "grass": 0.7}
 
 
-## Rides a baked real-world route (tools/route_bake.py, see RoutePack) instead of the hand-laid map when
+## Rides a baked real-world route (tools/route_bake.py, see RouteJourney) instead of the hand-laid map when
 ## the game is started with `-- --route=<folder>`, e.g. `godot --path . -- --route=res://data/routes/shodoshima`.
 func _route_from_args() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if not arg.begins_with("--route="):
 			continue
-		var pack := RoutePack.load_pack(arg.substr(8))
-		if pack == null:
+		var j := RouteJourney.load_journey(arg.substr(8))
+		if j == null:
 			return
-		WorldLayout.pack = pack
-		print("Route: %s (%s), %.1f km of road" % [pack.title, pack.id, _route_km(pack)])
-		for line in pack.credits:
+		var first := j.load_leg(0)
+		if first == null:
+			return
+		journey = j
+		WorldLayout.journey = j
+		WorldLayout.pack = first
+		print("Route: %s (%s), %.1f km in %d legs" % [j.title, j.id, j.length_m / 1000.0, j.leg_count()])
+		for line in j.credits:
 			print("  " + str(line))
-
-
-func _route_km(pack: RoutePack) -> float:
-	var m := 0.0
-	for d: Dictionary in pack.roads:
-		var pts: PackedVector2Array = d["pts"]
-		for i in pts.size() - 1:
-			m += pts[i].distance_to(pts[i + 1])
-	return m / 1000.0
 
 
 func _ready() -> void:
@@ -90,6 +99,18 @@ func _ready() -> void:
 	telemetry_overlay = TelemetryOverlay.new()
 	telemetry_overlay.visible = false
 	ui.add_child(telemetry_overlay)
+	if journey:
+		guide = RouteGuide.new(journey)
+		satnav = SatnavPanel.new()
+		satnav.guide = guide
+		satnav.visible = false
+		ui.add_child(satnav)
+		_fade_rect = ColorRect.new()
+		_fade_rect.color = Color.BLACK
+		_fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_fade_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_fade_rect.modulate.a = 0.0
+		ui.add_child(_fade_rect)
 	emote_bar = EmoteBar.new()
 	ui.add_child(emote_bar)
 	computer = PartsComputer.new()
@@ -534,6 +555,94 @@ func _set_walker_active(on: bool) -> void:
 
 # ---------------------------------------------------------------------------- input
 
+## The satnav and the leg changes: every frame, work out where the bike is on the route, and when it
+## nears the end of this leg start making the next, and when it reaches the hand-over swap to it.
+func _process(_delta: float) -> void:
+	if journey == null or satnav == null:
+		return
+	satnav.visible = bike != null and in_session and not menu.visible
+	if bike == null or _swapping:
+		return
+	var here := Vector2(bike.global_position.x, bike.global_position.z) + journey.origin_of(_leg)
+	guide.update(here)
+	satnav.leg = _leg
+	var fwd := -bike.global_basis.z
+	satnav.bike_heading = rad_to_deg(atan2(fwd.x, -fwd.z))
+	if guide.off > 200.0:
+		return   # well away from the route: its progress means nothing
+	var want := journey.leg_for_distance(guide.d)
+	var next := _leg + 1
+	if want == _leg:
+		# Ahead of the hand-over: have the next leg made in time.
+		var hand := journey.hand_over_at(_leg)
+		if hand >= 0.0 and guide.d > hand - PRELOAD_M and _leg_loading < 0 and _leg_pack_index != next:
+			_start_leg_load(next)
+	elif _leg_pack_index == want:
+		_swap_leg(want, _leg_pack)
+	elif _leg_loading < 0:
+		# Needed now and not made (back up the route, or a jump): make it here and now.
+		_swap_leg(want, journey.load_leg(want))
+
+
+## Makes leg `index` on a thread (its files, terrain, roads and prop plan), so swapping to it later is quick.
+func _start_leg_load(index: int) -> void:
+	_leg_loading = index
+	_leg_thread = Thread.new()
+	var keep := WorldLayout.pack
+	_leg_thread.start(func():
+		var pack := journey.load_leg(index)
+		if pack != null:
+			# The map builders read the leg they are making from WorldLayout.pack; put the current one back after.
+			WorldLayout.pack = pack
+			World.prepare()
+			WorldLayout.pack = keep
+		_leg_ready.call_deferred(index, pack))
+
+
+func _leg_ready(index: int, pack: RoutePack) -> void:
+	_leg_thread.wait_to_finish()
+	_leg_thread = null
+	_leg_loading = -1
+	_leg_pack = pack
+	_leg_pack_index = index if pack != null else -1
+
+
+## Swaps the map to leg `target` under a quick fade, moving everything alive by the shift between the two
+## frames and matching the road height so the bike does not jump.
+func _swap_leg(target: int, pack: RoutePack) -> void:
+	if pack == null:
+		return
+	_swapping = true
+	var shift := journey.origin_of(_leg) - journey.origin_of(target)
+	var shift3 := Vector3(shift.x, 0.0, shift.y)
+	var bp := bike.global_position
+	var old_near := world.roads.nearest(bp.x, bp.z, 30.0)
+	await _fade_to(1.0, 0.25)
+	world.rebuild_land(pack)
+	_leg = target
+	_leg_pack = null
+	_leg_pack_index = -1
+	bike.global_position += shift3
+	_safe_xf.origin += shift3
+	var moved := bike.global_position
+	var new_near := world.roads.nearest(moved.x, moved.z, 30.0)
+	if not old_near.is_empty() and not new_near.is_empty():
+		bike.global_position.y += float(old_near["h"]) - float(new_near["h"])
+	for id in remotes:
+		(remotes[id] as Node3D).global_position += shift3
+	if traffic and traffic.has_method("reset"):
+		traffic.reset()   # their roads are gone: they ride off and new ones turn up on the new leg's
+	camera.snap()
+	await _fade_to(0.0, 0.4)
+	_swapping = false
+
+
+func _fade_to(alpha: float, seconds: float) -> void:
+	var tween := create_tween()
+	tween.tween_property(_fade_rect, "modulate:a", alpha, seconds)
+	await tween.finished
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not in_session or geometry.active:
 		return   # geometry mode takes its own keys, Esc and F2 included
@@ -677,13 +786,15 @@ func _steer_input(stick_x: float, _delta: float) -> float:
 ## wheels on the ground, rather than falling forever.
 func _keep_on_map() -> void:
 	var p := bike.global_position
-	var lost := p.y < world.terrain_height(p.x, p.z) - 15.0 or absf(p.x) > World.MAP_HALF - 1.0 or absf(p.z) > World.MAP_HALF - 1.0
-	if lost and _safe_xf != Transform3D():
+	var fell := p.y < world.terrain_height(p.x, p.z) - 15.0 or absf(p.x) > World.MAP_HALF - 1.0 or absf(p.z) > World.MAP_HALF - 1.0
+	var drowned := not fell and world.in_sea(p.x, p.z) and p.y < world.sea_y + 0.6
+	if (fell or drowned) and _safe_xf != Transform3D():
 		var fwd := -_safe_xf.basis.z
 		bike.place(_safe_xf.origin, atan2(-fwd.x, -fwd.z) + PI)
-		hud.flash("That's the edge of the map. Turned round and put back on the ground.", 3.0, true)
+		hud.flash("Into the sea! Fished out and put back on the road." if drowned \
+			else "That's the edge of the map. Turned round and put back on the ground.", 3.0, true)
 		camera.snap()
-	elif not lost and bike.wheels[0]["contact"] and bike.wheels[1]["contact"] and not bike.is_crashed \
+	elif not fell and not drowned and bike.wheels[0]["contact"] and bike.wheels[1]["contact"] and not bike.is_crashed \
 			and absf(p.x) < World.MAP_HALF - 12.0 and absf(p.z) < World.MAP_HALF - 12.0:
 		_safe_xf = Transform3D(bike.global_basis, p - Vector3.UP * bike.build.rear_radius)
 

@@ -1,37 +1,145 @@
 {
- "format": 1,
+ "format": 2,
  "name": "shodoshima",
  "title": "Shodoshima",
  "anchor": {
   "lat": 34.5184,
   "lon": 134.2693
  },
- "start_world": [
-  800.0,
-  -60.0
- ],
- "start_road_point": [
-  815.43,
-  -89.14
- ],
- "end_world": null,
  "grid": {
   "size": 1025,
   "spacing": 4.0
  },
- "height": {
-  "min": -616.1332792435124,
-  "scale": 0.011831540505547746
+ "route": {
+  "length_m": 24992.7,
+  "requested_km": 25.0,
+  "end": {
+   "lat": 34.499365,
+   "lon": 134.347929
+  },
+  "warning": null
  },
- "road_count": 112,
- "road_length_m": 46277.3,
+ "legs": [
+  {
+   "dir": "legs/leg00",
+   "height": {
+    "min": -666.382358311514,
+    "scale": 0.012367602635919173
+   },
+   "sea_level": -631.382358311514,
+   "road_count": 113,
+   "building_count": 107,
+   "origin": [
+    -768.22,
+    33.59
+   ],
+   "shed": true,
+   "base_elev": 631.38,
+   "enter_d": 0.0,
+   "exit_d": 1175.0,
+   "hand_over_d": 1625.0,
+   "to_next": [
+    -3155.42,
+    125.89
+   ]
+  },
+  {
+   "dir": "legs/leg01",
+   "height": {
+    "min": -473.4299848454298,
+    "scale": 0.011329099894706797
+   },
+   "sea_level": null,
+   "road_count": 50,
+   "building_count": 26,
+   "origin": [
+    2387.2,
+    -92.3
+   ],
+   "shed": false,
+   "base_elev": 546.85,
+   "enter_d": 875.0,
+   "exit_d": 6450.0,
+   "hand_over_d": 6900.0,
+   "to_next": [
+    -2436.32,
+    892.79
+   ]
+  },
+  {
+   "dir": "legs/leg02",
+   "height": {
+    "min": -539.1605215718738,
+    "scale": 0.01244761472838961
+   },
+   "sea_level": null,
+   "road_count": 119,
+   "building_count": 274,
+   "origin": [
+    4823.52,
+    -985.09
+   ],
+   "shed": false,
+   "base_elev": 539.33,
+   "enter_d": 6150.0,
+   "exit_d": 14650.0,
+   "hand_over_d": 15087.5,
+   "to_next": [
+    -1915.54,
+    327.44
+   ]
+  },
+  {
+   "dir": "legs/leg03",
+   "height": {
+    "min": -292.13498340745366,
+    "scale": 0.011830522349223516
+   },
+   "sea_level": -257.13498340745366,
+   "road_count": 162,
+   "building_count": 369,
+   "origin": [
+    6739.06,
+    -1312.53
+   ],
+   "shed": false,
+   "base_elev": 257.13,
+   "enter_d": 14325.0,
+   "exit_d": 22400.0,
+   "hand_over_d": 22850.0,
+   "to_next": [
+    -765.64,
+    -2413.19
+   ]
+  },
+  {
+   "dir": "legs/leg04",
+   "height": {
+    "min": -93.09588839393109,
+    "scale": 0.01034320811902705
+   },
+   "sea_level": -58.09588839393109,
+   "road_count": 110,
+   "building_count": 166,
+   "origin": [
+    7504.7,
+    1100.66
+   ],
+   "shed": false,
+   "base_elev": 58.1,
+   "enter_d": 22100.0,
+   "exit_d": 24392.7,
+   "hand_over_d": null,
+   "to_next": null
+  }
+ ],
  "sources": {
   "overture_release": "2026-09-23.1",
   "elevation": "Mapterhorn, AWS Terrain Tiles fallback"
  },
  "credits": [
   "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
-  "Roads: (c) OpenStreetMap contributors, Overture Maps Foundation (ODbL)."
+  "Roads and buildings: (c) OpenStreetMap contributors, Overture Maps Foundation (ODbL)."
  ],
- "hash": "389e88b44effe44c"
+ "hash": "54b0be53124fbeb5"
 }

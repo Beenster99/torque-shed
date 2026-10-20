@@ -7,9 +7,11 @@ extends RefCounted
 ## Map axes: +x is east, -z is north. The shed's yard is at (0, 100), the mountains are along
 ## the north edge, and the map is MAP_HALF either way from the middle.
 
-## The route the map is made from (see RoutePack), or null for this hand-laid map. Set it before
-## the World is generated.
+## The leg of a route the map is made from (see RoutePack), or null for this hand-laid map. Set it before
+## the World is generated; RouteJourney says which legs there are.
 static var pack: RoutePack = null
+## The whole route that `pack` is a leg of, if any.
+static var journey: RouteJourney = null
 
 
 ## The villages and farms: this map's, or none for a route (its places are the real ones).
@@ -17,11 +19,19 @@ static func sites() -> Array:
 	return [] if pack != null else SITES
 
 
-## The roads to lay: this map's, or for a route just the shed's own loop and then the route's.
+## The roads to lay: this map's; for a route's first leg the shed's own loop and then the route's; for
+## the legs after that just the route's.
 static func roads() -> Array:
 	if pack == null:
 		return ROADS
-	return [ROADS[0]] + pack.roads
+	if pack.shed:
+		return [ROADS[0]] + pack.roads
+	return pack.roads
+
+
+## Whether the shed and its yard stand on this map (they are only in the hand-laid map and a route's first leg).
+static func has_shed() -> bool:
+	return pack == null or pack.shed
 
 
 ## Villages and farmyards: centre, radius of the flat ground they stand on, kind and name.

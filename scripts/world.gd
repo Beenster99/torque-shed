@@ -36,6 +36,14 @@ var wet_surfaces := []
 var _ranged := []
 
 
+## Where the sea's surface is, in this map's frame, or NAN when there is no sea (only a route's legs have one).
+var sea_y := NAN
+var _sea: MeshInstance3D
+var _sea_mat: StandardMaterial3D
+## The shed, its yard and their lights: nodes parked out of the way once a route has left them behind.
+var _home_nodes := []
+
+
 func generate(seed_value := 1) -> void:
 	_build_environment()
 	var data := _data_for(seed_value)
@@ -43,15 +51,20 @@ func generate(seed_value := 1) -> void:
 	roads = data["roads"]
 	_build_terrain(data)
 	_build_roads(data)
-	yard = WorldYard.new()
-	add_child(yard)
-	yard.build(self)
-	_build_garage()
-	_build_yard_lights()
+	if WorldLayout.has_shed():
+		var first_home := get_child_count()
+		yard = WorldYard.new()
+		add_child(yard)
+		yard.build(self)
+		_build_garage()
+		_build_yard_lights()
+		for i in range(first_home, get_child_count()):
+			_home_nodes.append(get_child(i))
 	props = WorldProps.new()
 	props.name = "Props"
 	add_child(props)
 	props.build(self, data)
+	_build_sea()
 	weather = Weather.new()
 	weather.name = "Weather"
 	add_child(weather)
@@ -61,9 +74,94 @@ func generate(seed_value := 1) -> void:
 		Settings.graphics_changed.connect(_apply_draw_distance)
 
 
+## Swaps the land for leg `pack` of the route (WorldLayout.pack is set to it): the terrain, roads, buildings,
+## trees, signs and sea are made afresh, and everything else (sky, weather, the bike, the crew) stays.
+## Call it outside the physics step. The caller moves what is alive by the leg's shift.
+func rebuild_land(pack: RoutePack) -> void:
+	WorldLayout.pack = pack
+	for node_name in ["Terrain", "Roads", "Props", "Sea"]:
+		var old := get_node_or_null(node_name)
+		if old:
+			remove_child(old)
+			old.queue_free()
+	_ranged = _ranged.filter(func(e): return is_instance_valid(e[0]))
+	_sea = null
+	var data := _data_for(0)
+	terrain = data["terrain"]
+	roads = data["roads"]
+	_build_terrain(data)
+	_build_roads(data)
+	props = WorldProps.new()
+	props.name = "Props"
+	add_child(props)
+	props.build(self, data)
+	_build_sea()
+	_apply_draw_distance()
+	# The shed is behind us: out of sight and out of the way (its collision goes with it).
+	if not pack.shed:
+		for n in _home_nodes:
+			if is_instance_valid(n) and n is Node3D and (n as Node3D).visible:
+				(n as Node3D).visible = false
+				(n as Node3D).position += Vector3(0.0, -20000.0, 0.0)
+
+
+## The sea of the current leg: a big flat sheet of water at its sea level, with a slow ripple.
+func _build_sea() -> void:
+	sea_y = NAN
+	if WorldLayout.pack == null or is_nan(WorldLayout.pack.sea_level):
+		return
+	sea_y = WorldLayout.pack.sea_level
+	_sea = MeshInstance3D.new()
+	_sea.name = "Sea"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(24000.0, 24000.0)
+	_sea.mesh = plane
+	_sea.position = Vector3(0.0, sea_y, 0.0)
+	_sea.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.1, 0.33, 0.46, 0.82)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.roughness = 0.06
+	m.metallic = 0.15
+	m.metallic_specular = 0.9
+	m.normal_enabled = true
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.012
+	noise.fractal_octaves = 3
+	var tex := NoiseTexture2D.new()
+	tex.noise = noise
+	tex.width = 512
+	tex.height = 512
+	tex.seamless = true
+	tex.as_normal_map = true
+	tex.bump_strength = 3.0
+	m.normal_texture = tex
+	m.normal_scale = 0.5
+	m.uv1_scale = Vector3(60.0, 60.0, 1.0)
+	_sea.material_override = m
+	_sea_mat = m
+	add_child(_sea)
+
+
+func _process(delta: float) -> void:
+	if _sea_mat:
+		_sea_mat.uv1_offset += Vector3(0.0021, 0.0013, 0.0) * delta
+
+
+## Whether (x, z) is under the sea: the ground there is more than a little below the water.
+func in_sea(x: float, z: float) -> bool:
+	return not is_nan(sea_y) and terrain.height_at(x, z) < sea_y - 0.3
+
+
+## Makes (and caches) the land for WorldLayout.pack ahead of time, so rebuild_land is quick. Safe on a thread.
+static func prepare() -> void:
+	_data_for(0)
+
+
 ## The land, the roads and the meshes for `seed_value`, made once per run.
 static func _data_for(seed_value: int) -> Dictionary:
-	var key = seed_value if WorldLayout.pack == null else "route:" + WorldLayout.pack.id
+	var key = seed_value if WorldLayout.pack == null else "route:%s:%d" % [WorldLayout.pack.id, WorldLayout.pack.index]
 	if _cache.has(key):
 		return _cache[key]
 	var t := WorldTerrain.new(seed_value)
