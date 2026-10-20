@@ -564,6 +564,10 @@ func _run_all() -> void:
 	_test_adv_ride_descent_fade()
 	_test_adv_ride_breakdown_odds()
 	await _test_adv_ride_tight_turns()
+	print("Simon's v0.17.0 round: adventures without stutters or long triangles")
+	await _test_adv_perf_triangles()
+	await _test_adv_perf_ride()
+	await _test_adv_perf_ride_stats()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22254,3 +22258,21 @@ func _test_adv_bikers_sync() -> void:
 
 func _test_adv_bikers_cost() -> void:
 	await _adv_bikers().test_cost()
+
+
+# ---------------------------------------------------------------------------- adventure stutters and long triangles (tests/adventure_perf_tests.gd)
+
+func _adv_perf() -> RefCounted:
+	return load("res://tests/adventure_perf_tests.gd").new(self)
+
+
+func _test_adv_perf_triangles() -> void:
+	await _adv_perf().test_triangles()
+
+
+func _test_adv_perf_ride() -> void:
+	await _adv_perf().test_ride()
+
+
+func _test_adv_perf_ride_stats() -> void:
+	await _adv_perf().test_ride_stats()

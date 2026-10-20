@@ -30,7 +30,9 @@ const REMOTE_BEHIND := 1500.0
 ## A crash this far past the road's edge (m) is off it: you're picked up back on the road.
 const OFF_ROAD := 1.0
 const MAX_TASKS := 2
-const COMMITS_PER_FRAME := 1
+## How long a frame spends putting a built chunk into the world (ms): a piece at a time (see
+## AdventureChunk.step), at least one a frame, more while they fit in this.
+const COMMIT_BUDGET_MS := 2.0
 ## Marks a network snapshot carrying its sender's origin (see tag_state).
 const NET_TAG := -77777.0
 ## The sea's colour on a coastal ride (the far ground there: see _follow_horizon).
@@ -40,6 +42,8 @@ const SHELTER_IN := 30.0
 
 ## Emitted after the origin moves: everything placed in the local frame moves by -delta.
 signal origin_shifted(delta: Vector3)
+## Emitted when a way picked at a fork has been taken in (see apply_picks_soon).
+signal picks_taken
 
 static var current: AdventureWorld
 
@@ -62,14 +66,28 @@ var horizon: MeshInstance3D
 var _box := _Results.new()
 var _tasks := {}         # chunk -> WorkerThreadPool task id
 var _ready_data := {}    # chunk -> built data waiting to be committed
+var _committing := {}    # the chunk going into the world a piece at a time (AdventureChunk.begin), or {}
 var _hints := {}         # who -> the knot they were last found near
 var _own_s := 0.0
+var _path_job: _PathJob   # a fork's way being put together on a worker thread (apply_picks_soon)
+var _later_picks := {}    # picks that came in meanwhile
 
 
 ## What the worker threads hand back, guarded by its mutex (not the node, which may go first).
 class _Results extends RefCounted:
 	var mutex := Mutex.new()
 	var done := {}
+
+
+## The path for some picks at the forks, put together on a worker thread: `path` is a copy of
+## the route assembled for `picks` (see AdventureRoute.path_copy).
+class _PathJob extends RefCounted:
+	var picks := {}
+	var path: AdventureRoute
+	var task := -1
+
+	func run() -> void:
+		path._assemble_path()
 
 
 func _ready() -> void:
@@ -82,6 +100,10 @@ func _exit_tree() -> void:
 	for c in _tasks:
 		WorkerThreadPool.wait_for_task_completion(_tasks[c])
 	_tasks.clear()
+	if _path_job != null:
+		WorkerThreadPool.wait_for_task_completion(_path_job.task)
+		_path_job = null
+	_stop_committing()
 	if current == self:
 		current = null
 
@@ -127,6 +149,54 @@ func apply_picks(picks: Dictionary) -> bool:
 	return changed
 
 
+## apply_picks without the hitch, for the crew's picks as they come in on the ride: a way off
+## the main road has its path put together on a worker thread, and taken in (the chunks past
+## its fork dropped) once that's done and no chunk is building, a few frames later; picks_taken
+## says when. True when it's started on a pick it didn't have.
+func apply_picks_soon(picks: Dictionary) -> bool:
+	if _path_job != null:
+		_later_picks = picks   # the one under way first, then these
+		return false
+	var fresh := {}
+	for f in picks:
+		var fi := int(f)
+		if fi < 0 or fi >= route.forks.size() or (route.decided.has(fi) and int(route.choices.get(fi, 0)) == int(picks[f])):
+			continue
+		fresh[fi] = int(picks[f])
+	if fresh.is_empty():
+		return false
+	var same := fresh.keys().all(func(f): return int(route.choices.get(f, 0)) == int(fresh[f]))
+	if same or not threaded:
+		# The way the path already runs (the main road): nothing to put together.
+		if apply_picks(fresh):
+			picks_taken.emit()
+		return true
+	_path_job = _PathJob.new()
+	_path_job.picks = fresh
+	_path_job.path = route.path_copy(fresh)
+	_path_job.task = WorkerThreadPool.add_task(_path_job.run, false, "Adventure fork")
+	return true
+
+
+## Takes in the path a pick's job put together, once it's done and nothing's building on the
+## route: drops what was built past its forks (normally nothing) and swaps the new path in.
+func _take_path() -> void:
+	if not WorkerThreadPool.is_task_completed(_path_job.task) or not _tasks.is_empty():
+		return
+	WorkerThreadPool.wait_for_task_completion(_path_job.task)
+	var job := _path_job
+	_path_job = null
+	var keys := job.picks.keys()
+	keys.sort()
+	_drop_from(route.fork_s(int(keys[0])))
+	route.take_path(job.path, job.picks)
+	picks_taken.emit()
+	var later := _later_picks
+	_later_picks = {}
+	if not later.is_empty():
+		apply_picks_soon(later)
+
+
 ## Lets the worker threads finish (they read the route, which is about to change) and drops every
 ## chunk from `s` on, built, waiting or building.
 func _drop_from(s: float) -> void:
@@ -137,6 +207,8 @@ func _drop_from(s: float) -> void:
 	_box.done.clear()
 	_box.mutex.unlock()
 	var c0 := AdventureRoute.chunk_of(s)
+	if not _committing.is_empty() and int(_committing["c"]) >= c0:
+		_stop_committing()
 	for c in _ready_data.keys():
 		if c >= c0:
 			_ready_data.erase(c)
@@ -417,16 +489,13 @@ func stream() -> void:
 	for c in _ready_data.keys():
 		if not keep.has(c):
 			_ready_data.erase(c)
-	var commits := 0
+	if not _committing.is_empty() and not keep.has(int(_committing["c"])):
+		_stop_committing()
+	if _path_job != null:
+		_take_path()
+	var commits := _commit_some(want)
 	for c in want:
-		if commits >= COMMITS_PER_FRAME:
-			break
-		if _ready_data.has(c) and not chunks.has(c):
-			_commit(_ready_data[c])
-			_ready_data.erase(c)
-			commits += 1
-	for c in want:
-		if chunks.has(c) or _tasks.has(c) or _ready_data.has(c):
+		if chunks.has(c) or _tasks.has(c) or _ready_data.has(c) or int(_committing.get("c", -1)) == c:
 			continue
 		if not threaded:
 			if commits == 0:
@@ -435,8 +504,8 @@ func stream() -> void:
 				_commit(data)
 				commits += 1
 			break
-		if _tasks.size() >= MAX_TASKS:
-			break
+		if _tasks.size() >= MAX_TASKS or _path_job != null:
+			break   # (none started while a fork's new way is being put together: see _take_path)
 		_tasks[c] = WorkerThreadPool.add_task(_work.bind(route, c, _box), false, "Adventure chunk")
 
 
@@ -462,6 +531,47 @@ func _commit(data: Dictionary) -> void:
 	stats["commit_ms_max"] = maxf(float(stats["commit_ms_max"]), ms)
 
 
+## This frame's share of putting built chunks into the world, nearest wanted first: pieces of
+## one (AdventureChunk.step) while they fit in COMMIT_BUDGET_MS, at least one. How many chunks
+## went in whole.
+func _commit_some(want: Array) -> int:
+	var t0 := Time.get_ticks_usec()
+	var done := 0
+	while true:
+		if _committing.is_empty():
+			for c in want:
+				if _ready_data.has(c) and not chunks.has(c):
+					_committing = AdventureChunk.begin(_ready_data[c], self)
+					_committing["us"] = 0
+					_ready_data.erase(c)
+					break
+			if _committing.is_empty():
+				break
+		var s0 := Time.get_ticks_usec()
+		var whole := AdventureChunk.step(_committing)
+		_committing["us"] = int(_committing["us"]) + Time.get_ticks_usec() - s0
+		if whole:
+			stats["commits"] += 1
+			stats["commit_ms_total"] += int(_committing["us"]) / 1000.0
+			_committing = {}
+			done += 1
+		if Time.get_ticks_usec() - t0 >= COMMIT_BUDGET_MS * 1000.0:
+			break
+	if Time.get_ticks_usec() > t0 + 50:
+		stats["commit_ms_max"] = maxf(float(stats["commit_ms_max"]), (Time.get_ticks_usec() - t0) / 1000.0)
+	return done
+
+
+## Gives up on the chunk being put into the world (not wanted any more, or past a fork).
+func _stop_committing() -> void:
+	if _committing.is_empty():
+		return
+	var node: Node3D = _committing["node"]
+	if is_instance_valid(node) and node.get_parent() == null:
+		node.free()
+	_committing = {}
+
+
 ## Builds and commits every chunk from `s0` to `s1` metres at once (the start, behind a fade).
 func preload_range(s0: float, s1: float) -> void:
 	for c in range(maxi(0, AdventureRoute.chunk_of(s0)), mini(last_buildable_chunk(), AdventureRoute.chunk_of(s1)) + 1):
@@ -480,7 +590,7 @@ func has_ground(s: float) -> bool:
 func timing_text() -> String:
 	var built := maxi(1, int(stats["built"]))
 	var commits := maxi(1, int(stats["commits"]))
-	return "plan %.1f ms; chunk build %.1f ms avg, %.1f max (worker thread, %d built); commit %.2f ms avg, %.2f max (main thread); origin shift %.2f ms max (%d); worst frame of streaming %.2f ms" % [
+	return "plan %.1f ms; chunk build %.1f ms avg, %.1f max (worker thread, %d built); commit %.2f ms a chunk avg, %.2f max in a frame (main thread); origin shift %.2f ms max (%d); worst frame of streaming %.2f ms" % [
 		stats["plan_ms"], float(stats["build_ms_total"]) / built, stats["build_ms_max"], stats["built"],
 		float(stats["commit_ms_total"]) / commits, stats["commit_ms_max"], stats["shift_ms_max"], stats["shifts"], stats["stream_ms_max"]]
 

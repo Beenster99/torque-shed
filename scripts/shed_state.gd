@@ -3371,6 +3371,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		# SYNC_INTERVAL), not gone over again for each of these, many times a second.
 		_mark_dirty()
 		return
+	if a == "ride":
+		# Every rider's ride stats, every second (see Main._send_ride_stats): like the wash, the
+		# next sync carries them (and Shed.changed with it). Each going over the whole shed
+		# again was a hitch a second for each rider on the host, on an adventure all the way.
+		_ride_apply(peer, action)
+		_mark_dirty()
+		return
 	if a.begins_with("shine_"):
 		# Polishing and coating (see Detail): like the wash, the next sync carries it.
 		var shone := Detail.apply(peer, action)
@@ -4026,19 +4033,24 @@ func _apply(peer: int, action: Dictionary) -> void:
 			c["tool"] = str(action.get("tool", c.get("tool", "")))
 			c["activity"] = str(action.get("activity", "")).left(60)
 			c["changer"] = int(action.get("changer", 0))   # the tyre changer they're working at, to spin it
-		"ride":
-			var bike := int(c.get("riding", 0))
-			if bikes.has(bike):
-				_wear_from_ride(bike, action)
-				Contracts.note_ride(bike, action)
-			c["km"] = float(c.get("km", 0.0)) + clampf(float(action.get("km", 0.0)), 0.0, 5.0)
-			c["top_kmh"] = maxf(float(c.get("top_kmh", 0.0)), clampf(float(action.get("top_kmh", 0.0)), 0.0, 400.0))
-			c["kmh"] = clampf(float(action.get("kmh", 0.0)), 0.0, 400.0)
 	if text != "":
 		_tell(peer, text, true)
 	_tidy_dyno()
 	_mark_dirty()
 	changed.emit()
+
+
+## A rider's ride stats (see Main._send_ride_stats): the wear and muck on their bike, and their
+## distance and speeds.
+func _ride_apply(peer: int, action: Dictionary) -> void:
+	var c: Dictionary = crew.get(peer, {})
+	var bike := int(c.get("riding", 0))
+	if bikes.has(bike):
+		_wear_from_ride(bike, action)
+		Contracts.note_ride(bike, action)
+	c["km"] = float(c.get("km", 0.0)) + clampf(float(action.get("km", 0.0)), 0.0, 5.0)
+	c["top_kmh"] = maxf(float(c.get("top_kmh", 0.0)), clampf(float(action.get("top_kmh", 0.0)), 0.0, 400.0))
+	c["kmh"] = clampf(float(action.get("kmh", 0.0)), 0.0, 400.0)
 
 
 ## Pours as much as fits from one fluid holder into another and returns the litres moved.
