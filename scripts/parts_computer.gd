@@ -35,6 +35,8 @@ const SELL_KINDS := ["sell:bikes", "sell:parts"]
 const PAINT_KINDS := ["paint:bases", "paint:tints"]
 ## The Garage upgrades page (UpgradesPanel), opened from the button at the top.
 var upgrades_panel: UpgradesPanel
+## The project bike order, with its condition slider (opened by the order button).
+var bike_card: ProjectOrderCard
 
 ## The shop's three aisles, so nobody scrolls through everything.
 const SECTIONS := {"shed": "Shed", "bike": "Bike", "outdoors": "Outdoors", "sell": "Sell"}
@@ -118,7 +120,7 @@ func _ready() -> void:
 	head.add_child(_bike_style_pick)
 	_bike_btn = Button.new()
 	_bike_btn.text = "Order a project bike"
-	_bike_btn.pressed.connect(order_bike)
+	_bike_btn.pressed.connect(open_bike_order)
 	head.add_child(_bike_btn)
 	# Blueprint builds under way (Esc, Blueprints): order whatever their holograms still show.
 	var bp_btn := Button.new()
@@ -282,6 +284,8 @@ func _ready() -> void:
 	_show_section(_section)
 	upgrades_panel = UpgradesPanel.new()
 	add_child(upgrades_panel)
+	bike_card = ProjectOrderCard.new()
+	add_child(bike_card)
 
 
 ## Opens the Garage upgrades page over the shop.
@@ -563,6 +567,8 @@ func open() -> void:
 	_refresh_bank()
 	if upgrades_panel:
 		upgrades_panel.close()
+	if bike_card:
+		bike_card.close()
 	_status.text = "Room in the delivery area: %s" % ("no, bring some boxes in first" if Shed.delivery_place(Vector3(0.25, 0.15, 0.25)).is_empty() else "yes")
 	_fill_bike_pick()
 	if not Shed.bikes.has(fits_bike):
@@ -957,10 +963,10 @@ func _refresh_bank() -> void:
 	_bank.text = "Business: %s  " % TvChannels.money_text(Shed.garage_money)
 	if bike_style == "":
 		_bike_btn.text = "Order a project bike"
-		_bike_btn.tooltip_text = "Around %s, paid by the business" % TvChannels.money_text(Money.typical_project_price())
+		_bike_btn.tooltip_text = "Around %s as they come, paid by the business: pick the condition, worn to new" % TvChannels.money_text(Money.typical_project_price())
 	else:
 		_bike_btn.text = "Order %s" % PartsDB.style_phrase(bike_style)
-		_bike_btn.tooltip_text = "A project bike built as %s, found to order: around %s, paid by the business" % [
+		_bike_btn.tooltip_text = "A project bike built as %s, found to order: around %s as they come, paid by the business: pick the condition, worn to new" % [
 			PartsDB.style_phrase(bike_style), TvChannels.money_text(Money.typical_style_price(bike_style))]
 
 
@@ -974,12 +980,26 @@ func set_bike_style(style: String) -> void:
 	_refresh_bank()
 
 
-## Orders a project bike, in the style picked if there is one. It turns up in a free bay.
-func order_bike() -> void:
-	if bike_style == "":
-		Shed.request({"a": "order"})
-	else:
-		Shed.request({"a": "order", "style": bike_style})
+## Opens the project bike order (ProjectOrderCard) for the style picked: its condition slider and
+## what one goes for.
+func open_bike_order() -> void:
+	bike_card.open(bike_style)
+
+
+## Orders a project bike, in the style picked if there is one, at `quality` (0 worn .. 1 new; as
+## they come when it's below 0). It turns up in a free bay.
+func order_bike(quality := -1.0) -> void:
+	Shed.request(bike_order(bike_style, quality))
+
+
+## The host request for a project bike of `style` ("" for any) at `quality` (below 0: as they come).
+static func bike_order(style: String, quality := -1.0) -> Dictionary:
+	var action := {"a": "order"}
+	if style != "":
+		action["style"] = style
+	if quality >= 0.0:
+		action["quality"] = quality
+	return action
 
 
 ## The mixing bay's supplies of a kind: "paint:bases" or "paint:tints" (PaintBay.supplies).

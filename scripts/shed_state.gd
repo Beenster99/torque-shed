@@ -3000,6 +3000,8 @@ func check(peer: int, action: Dictionary) -> String:
 			var style := str(action.get("style", ""))
 			if style != "" and not PartsDB.STYLES.has(style):
 				return "Nobody deals in that style of bike."
+			if action.has("quality") and BikeCopy.quality_of(action["quality"]) < 0.0:
+				return "Nobody sells a bike in that condition."
 		"tune":
 			if not bikes.has(bike_id):
 				return "That bike has gone."
@@ -4008,9 +4010,25 @@ func _apply(peer: int, action: Dictionary) -> void:
 		"geo_save", "geo_blueprint", "bp_rename", "bp_delete", "bp_build", "bp_cancel", "bp_order":
 			text = _blueprint_apply(action, peer)
 		"order":
-			# Any old project bike, or one found to order in a style ("make me a cruiser").
+			# Any old project bike, or one found to order in a style ("make me a cruiser"), as worn
+			# as it comes or in the condition the parts computer's slider asked for ("quality", 0
+			# worn .. 1 new: see Money.project_age). A new one comes ready to ride.
 			var style := str(action.get("style", ""))
-			var id := _random_bike(free_bay(Workshop.bay_count())) if style == "" else _style_bike(free_bay(Workshop.bay_count()), style)
+			var age := -1.0
+			var quality := -1.0
+			if action.has("quality"):
+				quality = BikeCopy.quality_of(action["quality"])
+				age = Money.project_age(quality)
+				if age > 0.0:
+					age = clampf(age + _rng.randf_range(-0.05, 0.05), 0.02, 1.0)
+			var bay := free_bay(Workshop.bay_count())
+			var id := _random_bike(bay, age) if style == "" else _style_bike(bay, style, age)
+			# At least half a tank in it; a new one with every fluid in, ready to ride.
+			if age == 0.0:
+				_ready_to_ride(id)
+			else:
+				top_up_fuel(id)
+			Contracts.refresh_delivered(id)
 			# A project bike costs a little more than it would fetch as it comes (see Money), and
 			# one found in a style a little more again.
 			var cost := Money.project_price(id) if style == "" else Money.style_project_price(id)
@@ -4024,8 +4042,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 				bikes[id]["style_order"] = style
 				bikes[id]["ordered_by"] = str(c.get("name", ""))
 			bikes[id]["bought"] = cost   # what it cost, for pricing it when it's sold (see Sales)
-			arrival_puncture(id, "project")
-			text = "%s has been delivered to bay %d, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1, TvChannels.money_text(cost)]
+			if age != 0.0:
+				arrival_puncture(id, "project")
+			text = "%s has been delivered to bay %d%s, for %s" % [bikes[id]["name"], bikes[id]["bay"] + 1,
+				", ready to ride" if age == 0.0 else "" if quality < 0.0 else " (%s)" % BikeCopy.quality_name(quality).to_lower(), TvChannels.money_text(cost)]
 		"radio":
 			radio = {"on": bool(action.get("on", radio["on"])), "station": int(action.get("station", radio["station"]))}
 			text = "Radio: %s" % station_name() if radio["on"] else "Radio off"
@@ -4916,7 +4936,90 @@ func _fill_fluids(bike_id: int, age: float) -> void:
 			"age": clampf(age * _rng.randf_range(0.9, 1.3), 0.0, 1.0)}
 
 
-func _random_bike(bay: int) -> int:
+## How much of a tank of petrol every bike bought or ordered in comes with, at least (Simon:
+## "ordered bikes should have at least half a tank of fuel").
+const ORDER_FUEL := 0.5
+
+
+## Tops a bike's tank (and any auxiliary tank) up to at least `share` of what it holds, with fresh
+## petrol; a tank with more in it already is left as it is.
+func top_up_fuel(bike_id: int, share := ORDER_FUEL) -> void:
+	for slot in ["tank", "aux_tank"]:
+		var id := item_on(bike_id, slot)
+		if id == 0 or not (items[id].get("fluid") is Dictionary):
+			continue
+		var f: Dictionary = items[id]["fluid"]
+		var want := ceilf(PartsDB.fluid_capacity(str(items[id]["part"])) * share * 100.0) / 100.0
+		var had := float(f.get("litres", 0.0))
+		if had >= want:
+			continue
+		if str(f.get("type", "")) == "":
+			f["type"] = "unleaded_95"
+		# What's put in is fresh: the old petrol left in it is that much less of the tank.
+		f["age"] = float(f.get("age", 0.0)) * had / maxf(want, 0.01)
+		f["litres"] = want
+
+
+## A bike made ready to ride as it leaves the dealer: the oil and brake fluid filled to the mark
+## and fresh, the chain set and lubed, and at least ORDER_FUEL of a tank.
+func _ready_to_ride(bike_id: int) -> void:
+	for slot in ["engine", "front_master", "rear_master"]:
+		var id := item_on(bike_id, slot)
+		if id == 0 or not (items[id].get("fluid") is Dictionary):
+			continue
+		var f: Dictionary = items[id]["fluid"]
+		if str(f.get("type", "")) == "":
+			f["type"] = "semi_10w40" if slot == "engine" else "dot4"
+		f["litres"] = PartsDB.fluid_capacity(str(items[id]["part"]))
+		f["age"] = 0.0
+	var chain := item_on(bike_id, "chain")
+	if chain != 0:
+		items[chain]["slack"] = CHAIN_SLACK_SET
+		items[chain]["lube"] = 1.0
+	top_up_fuel(bike_id)
+
+
+## Where a bike ordered built (see BikeCopy) is left: {bay, xf}, in the yard by the roller door
+## (the row retrieved bikes are left in) or, with that full, in a free bay; null when there's
+## room in neither.
+func ready_bike_place():
+	var xf = free_retrieve_xf()
+	if xf is Transform3D:
+		return {"bay": -1, "xf": xf}
+	var bay := free_bay(Workshop.bay_count())
+	if bay >= 0:
+		return {"bay": bay, "xf": Workshop.bay_transform(bay)}
+	return null
+
+
+## Host: a new bike built to `plan` (as BikeCopy.plan_of gives it: its parts in their colours, its
+## paint and fit), ready to ride (_ready_to_ride), left at `place` (ready_bike_place) on its
+## stand, with what was paid for it (for Sales) and who ordered it. Returns its id.
+func deliver_ready_bike(plan: Dictionary, place: Dictionary, paid: int, by: String) -> int:
+	var bay := int(place.get("bay", -1))
+	var paint = plan.get("paint") if plan.get("paint") is Color else null
+	var id := _new_bike(plan.get("parts", {}), maxi(bay, 0), str(plan.get("name", "Bike")), 0.0, paint)
+	var bike: Dictionary = bikes[id]
+	var colors: Dictionary = plan.get("colors", {}) if plan.get("colors") is Dictionary else {}
+	for slot in colors:
+		var it := item_on(id, str(slot))
+		if it != 0 and colors[slot] is Dictionary and colors[slot].get("color") is Color:
+			items[it]["color"] = colors[slot]["color"]
+			items[it]["finish"] = str(colors[slot].get("finish", ""))
+	bike["geo"] = GeoGizmo.sanitize(plan.get("geo", {}))
+	bike["bay"] = bay
+	bike["xf"] = place["xf"]
+	bike["stand"] = "" if bay >= 0 else _rest_stand(id)
+	bike["bought"] = paid
+	bike["ordered_by"] = by
+	_ready_to_ride(id)
+	Contracts.refresh_delivered(id)
+	return id
+
+
+## A project bike of any old build in `bay`, as worn as `age` (0..1; random, as project bikes
+## come, when it's below 0).
+func _random_bike(bay: int, age := -1.0) -> int:
 	var parts := {}
 	var pick := {}
 	for slot in PartsDB.SLOTS:
@@ -4952,7 +5055,7 @@ func _random_bike(bay: int) -> int:
 		parts["mirrors"] = "round_mirrors"
 	parts = PartsDB.dress_fillers(parts, bay)
 	var bike_name: String = BIKE_NAMES[_rng.randi() % BIKE_NAMES.size()]
-	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9))
+	return _new_bike(parts, bay, bike_name, _rng.randf_range(0.35, 0.9) if age < 0.0 else age)
 
 
 ## How many goes _style_parts has at a build, keeping the one most true to the style.
@@ -4960,15 +5063,16 @@ const STYLE_TRIES := 6
 
 
 ## A project bike of one style (see PartsDB.STYLES), found to order: as worn as any project
-## bike, but every part on it made for that style. Named after it ("Cruiser project 2").
-func _style_bike(bay: int, style: String) -> int:
+## bike (or as `age` says, when it's 0 or more), but every part on it made for that style. Named
+## after it ("Cruiser project 2"; a new one "New cruiser").
+func _style_bike(bay: int, style: String, age := -1.0) -> int:
 	var parts := style_parts(style)
-	var base := "%s project" % PartsDB.style_name(style)
+	var base := "%s project" % PartsDB.style_name(style) if age != 0.0 else "New %s" % PartsDB.style_noun(style)
 	var n := 1
 	for b in bikes.values():
 		if str(b["name"]).begins_with(base):
 			n += 1
-	return _new_bike(parts, bay, base if n == 1 else "%s %d" % [base, n], _rng.randf_range(0.35, 0.9))
+	return _new_bike(parts, bay, base if n == 1 else "%s %d" % [base, n], _rng.randf_range(0.35, 0.9) if age < 0.0 else age)
 
 
 ## The parts for a bike of `style`: its reference build (Contracts.style_build), with every

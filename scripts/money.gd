@@ -306,14 +306,45 @@ static func project_price(bike_id: int) -> int:
 	return _nice(bike_sale(bike_id) * PROJECT_MARKUP)
 
 
-## The going rate for a project bike, for the TV (an average wreck).
-static func typical_project_price() -> int:
+## The going rate for a project bike, for the TV (an average wreck), or for one ordered at
+## `quality` (0 worn .. 1 new, see project_age).
+static func typical_project_price(quality := -1.0) -> int:
+	return _nice(_typical_bike(PartsDB.DEFAULT_BUILD, quality) * PROJECT_MARKUP)
+
+
+## How worn the worst project bike ordered from the parts computer is (as Shed._new_bike's age
+## takes it, at quality 0); better ones in step to new.
+const PROJECT_WORST_AGE := 0.9
+
+
+## The age (see Shed._new_bike) of a project bike ordered at `quality` (0 worn .. 1 new, as
+## BikeCopy.quality_of has it): 0 at new.
+static func project_age(quality: float) -> float:
+	return 0.0 if BikeCopy.is_new(quality) else PROJECT_WORST_AGE * (1.0 - clampf(quality, 0.0, 1.0))
+
+
+## The {rust, dirt, wear} a part on a bike of `age` has on average (as Shed._aged_item rolls it).
+static func aged_cond(age: float) -> Dictionary:
+	return {"wear": age * 0.6, "rust": age * 0.37, "dirt": minf(1.0, age * 1.1)}
+
+
+## What a bike of `build` would fetch from the trade as an average one at `quality` (an average
+## wreck when it's below 0): its parts' worth at that condition, complete and rideable, and clean
+## when it's new.
+static func _typical_bike(build: Dictionary, quality: float) -> float:
 	var total := 0.0
-	for slot in PartsDB.DEFAULT_BUILD:
-		var part := str(PartsDB.DEFAULT_BUILD[slot])
-		if part != "none":
+	for slot in build:
+		var part := str(build[slot])
+		if part != "none" and part != "":
 			total += part_price(part)
-	return _nice(total * 0.36 * SELL_RATE * (1.0 + BONUS_COMPLETE + BONUS_RIDEABLE) * PROJECT_MARKUP)
+	var worth := 0.36
+	var bonus := 1.0 + BONUS_COMPLETE + BONUS_RIDEABLE
+	if quality >= 0.0:
+		var h := BikeBuild.part_health(aged_cond(project_age(quality)))
+		worth = h * h
+		if BikeCopy.is_new(quality):
+			bonus += BONUS_CLEAN
+	return total * worth * SELL_RATE * bonus
 
 
 ## A project bike found to order in a style costs this much more than one that just turns up.
@@ -326,15 +357,9 @@ static func style_project_price(bike_id: int) -> int:
 
 
 ## The going rate for a project bike in a style, for the order button: an average wreck of
-## that style's reference build (Contracts.style_build).
-static func typical_style_price(style: String) -> int:
-	var build := Contracts.style_build(style)
-	var total := 0.0
-	for slot in build:
-		var part := str(build[slot])
-		if part != "none" and part != "":
-			total += part_price(part)
-	return _nice(total * 0.36 * SELL_RATE * (1.0 + BONUS_COMPLETE + BONUS_RIDEABLE) * PROJECT_MARKUP * STYLE_PREMIUM)
+## that style's reference build (Contracts.style_build), or an average one at `quality`.
+static func typical_style_price(style: String, quality := -1.0) -> int:
+	return _nice(_typical_bike(Contracts.style_build(style), quality) * PROJECT_MARKUP * STYLE_PREMIUM)
 
 
 static var _worth := {}

@@ -721,6 +721,7 @@ static func _px_deal(peer: int, id: int, allowance: int) -> String:
 	bike["stand"] = Shed._rest_stand(theirs)
 	bike["bought"] = allowance
 	bike["km"] = int(p.get("km", 0))
+	Shed.top_up_fuel(theirs)   # they rode it in
 	Contracts.refresh_delivered(theirs)
 	var what := str(Shed.bikes[target]["name"])
 	var who := str(p["name"])

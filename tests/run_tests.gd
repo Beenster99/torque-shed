@@ -537,6 +537,8 @@ func _run_all() -> void:
 	await _test_bike_copy_session()
 	_test_bike_copy_quality()
 	await _test_bike_copy_quality_card()
+	_test_bike_copy_built()
+	await _test_bike_copy_project_card()
 	print("Trip computer and the Adventure Diary (v0.16.0): the sat nav's trip page, the crew's highlights, photos without a stutter, the diary book")
 	_test_adv_diary_trip_maths()
 	await _test_adv_diary_trip_page()
@@ -13725,6 +13727,7 @@ func _test_sales_part_exchange() -> void:
 	var cond: Dictionary = p["cond"]
 	check(is_equal_approx(float(Shed.items[Shed.item_on(theirs, "frame")]["rust"]), float(cond["frame"]["rust"]))
 		and is_equal_approx(float(Shed.items[Shed.item_on(theirs, "engine")]["wear"]), float(cond["engine"]["wear"])), "in just the state the page showed")
+	check(Shed.build_of(theirs).fuel_litres >= Shed.build_of(theirs).fuel_capacity * Shed.ORDER_FUEL - 0.01, "with at least half a tank of fuel in it")
 	var d: Dictionary = Sales._st()["deals"][0]
 	check(str(d["kind"]) == "px" and int(d["allowance"]) == 2500 and int(d["price"]) == ask
 		and (Sales._st()["collect"] as Array).any(func(c): return int(c.get("visitor", -1)) == pid), "noted as a part-exchange, and they ride ours away")
@@ -15804,6 +15807,8 @@ func _test_coffee_offers() -> void:
 			and str(b["name"]).begins_with(CoffeeShop.first_name(v2)) and int(b["bought"]) == amount and Shed.bike_at_work(bid),
 			"parked where it stood in the cafe car park: %s" % str(b["name"]))
 		check(Shed.build_of(bid).parts.get("engine", "") == v2["bike"]["parts"]["engine"], "the very bike they rode in on")
+		check(Shed.build_of(bid).fuel_litres >= Shed.build_of(bid).fuel_capacity * Shed.ORDER_FUEL - 0.01,
+			"with at least half a tank of fuel (%.1f of %.1f litres)" % [Shed.build_of(bid).fuel_litres, Shed.build_of(bid).fuel_capacity])
 	check(xp_got.has(Progress.XP[CoffeeShop.BUY_XP_KEY]["label"]), "and a bit of XP for the deal %s" % str(xp_got))
 	check(not CoffeeShop.free_parks().has(int(v2["park"])), "its bay isn't free while it stands there")
 	check(Shed.check(me, {"a": "coffee_offer", "visitor": ids[1], "amount": amount}).contains("gone"), "sold, there's nothing more to offer for")
@@ -22090,6 +22095,14 @@ func _test_bike_copy_quality() -> void:
 
 func _test_bike_copy_quality_card() -> void:
 	await _bike_copy().test_quality_card()
+
+
+func _test_bike_copy_built() -> void:
+	_bike_copy().test_built()
+
+
+func _test_bike_copy_project_card() -> void:
+	await _bike_copy().test_project_card()
 
 
 
