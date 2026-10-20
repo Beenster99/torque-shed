@@ -627,7 +627,11 @@ func _target_lean() -> float:
 	var v := absf(speed)
 	var top := lean_for_input(1.0)
 	var tight := atan(v * v / (G * tight_turn(v)))
-	var speed_factor := clampf(tight / maxf(top, 0.01), 0.15, 1.0)
+	# Near the tyres' limit the bike swings past the lean it's asked for, and at town speeds that
+	# runs it out of grip: there, a full input keeps a little back, reaching all of it by 45 km/h.
+	# (A bike that grounds out first, short of the tyres' limit, doesn't need to.)
+	var hold_back := lerpf(0.85, 1.0, clampf((v - 4.0) / 8.5, 0.0, 1.0)) * _tyre_lean()
+	var speed_factor := clampf(minf(tight, hold_back) / maxf(top, 0.01), 0.15, 1.0)
 	var want := signf(lean_input) * lean_for_input(absf(lean_input)) * speed_factor
 	# That's the lean of the line from the tyres to the centre of mass, which sets the turn; the
 	# bike itself leans a little further, as the contact patch rolls in round the tyre's crown.
@@ -663,6 +667,12 @@ func lean_for_input(x: float) -> float:
 ## under them holds in a steady turn, less a margin a rider keeps in hand, or the bike's ground
 ## clearance allows.
 func _grip_lean() -> float:
+	# No further than the bike leans before it grounds out.
+	return minf(_tyre_lean(), _balance_lean(build.lean_clearance))
+
+
+## The most lean the tyres' grip holds in a steady turn, less the rider's margin (see _grip_lean).
+func _tyre_lean() -> float:
 	var surf := str(wheels[1]["surface"]) if not wheels.is_empty() else "tarmac"
 	var wet := Weather.wetness()
 	var mu := minf(surface_grip(build, true, surf, wet), surface_grip(build, false, surf, wet)) * Weather.grip_mult(surf)
@@ -670,8 +680,7 @@ func _grip_lean() -> float:
 	# them; at 0 they lean as far as warm tyres would hold, and find out.
 	if heat:
 		mu *= lerpf(1.0, minf(heat.tyre_grip(0, surf), heat.tyre_grip(1, surf)), clampf(assist * 2.0, 0.0, 1.0))
-	# And no further than the bike leans before it grounds out.
-	return minf(minf(atan(mu * GRIP_IN_HAND), MAX_LEAN), _balance_lean(build.lean_clearance))
+	return minf(atan(mu * GRIP_IN_HAND), MAX_LEAN)
 
 
 ## The tyres' average crown radius (see TyreModel), m.
