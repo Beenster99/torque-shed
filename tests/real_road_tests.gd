@@ -214,6 +214,87 @@ func test_budget() -> void:
 		% [r.chunk_count(), worst_v, where, BUDGET_BUILDING_VERTS, worst_i, BUDGET_INSTANCES, worst_ms])
 
 
+## Real places the stops take over, the real road's junctions and its speed limits.
+func test_stops() -> void:
+	var p := RealPack.get_pack(PACK)
+	var a := AdventureRoute.new()
+	a.plan_real(p, 7, 23.0)
+	var fuel := a.sites_of("fuel")
+	check(not fuel.is_empty(), "a ride has fuel (%d stations)" % fuel.size())
+	# A real filling station at the first station's place (the planner's own pick, so it fits): taken over.
+	var at := float(fuel[0]["s"])
+	var saved := p.pois
+	p.pois = [{"kind": "fuel", "name": "Test Garage", "x": 0.0, "z": 0.0, "k": int(round(at / AdventureRoute.STEP)), "lat": -22.0, "conf": 0.9},
+		{"kind": "cafe", "name": "Far Cafe", "x": 0.0, "z": 0.0, "k": 5, "lat": 30.0, "conf": 0.9}]
+	var b := AdventureRoute.new()
+	b.plan_real(p, 7, 23.0)
+	p.pois = saved
+	var taken := b.sites_of("fuel").filter(func(st): return st.has("real"))
+	check(taken.size() == 1 and str(taken[0]["name"]) == "Test Garage" and absf(float(taken[0]["s"]) - at) < 1.0 and int(taken[0]["side"]) == -1,
+		"a real filling station takes over a made-up one, with its name and side (%s)" % str(taken.map(func(st): return [st["name"], st["s"], st["side"]])))
+	check(b.sites_of("cafe").all(func(st): return str(st["name"]) != "Far Cafe"), "a real place too far from any stop is left alone")
+	check(a.sites_of("fuel").size() == b.sites_of("fuel").size(), "and taking over doesn't change how many stops there are")
+	var c := AdventureRoute.new()
+	c.plan_real(p, 7, 23.0)
+	check(c.sites.size() == a.sites.size() and c.px == a.px, "with the real places put back it plans as before")
+
+
+func test_junctions() -> void:
+	var p := RealPack.get_pack(PACK)
+	check(p.junctions.size() >= 5, "the pack has the road's junctions (%d)" % p.junctions.size())
+	var r := AdventureRoute.new()
+	r.plan_real(p, 7, 23.0)
+	var js := r.sites_of(AdventureJunctions.KIND)
+	check(js.size() >= 3, "the ride has them as junction sites (%d of %d in the pack)" % [js.size(), p.junctions.size()])
+	var bad := 0
+	var kinds := {}
+	for st: Dictionary in js:
+		kinds[str(st["type"])] = true
+		var m := int(st["i"]) % AdventureRoute.CHUNK_KNOTS
+		if m < 5 or m > 26 or (st["arms"] as Array).is_empty() or not st.has("arm_geo"):
+			bad += 1
+		for other: Dictionary in r.sites:
+			if other != st and absf(float(other["s"]) - float(st["s"])) < 100.0:
+				bad += 1
+		for arm: Dictionary in st["arms"]:
+			if int(arm["side"]) == 0 or float(arm["w"]) < 3.0 or float(arm["len"]) < 40.0:
+				bad += 1
+	check(bad == 0, "each well inside its chunk, clear of other sites, with its arms laid out (%s)" % str(kinds.keys()))
+	if not js.is_empty():
+		var st: Dictionary = js[0]
+		var d := AdventureChunk.build(r, int(st["i"]) / AdventureRoute.CHUNK_KNOTS)
+		check(not (d["arms"] as Dictionary).is_empty() and (d["paint"]["v"] as PackedVector3Array).size() > 0,
+			"and its side roads and paint are built with the chunk")
+	var same := AdventureRoute.new()
+	same.plan_real(p, 7, 23.0)
+	check(same.sites_of(AdventureJunctions.KIND).map(func(st): return [st["s"], st["type"]]) == js.map(func(st): return [st["s"], st["type"]]),
+		"the same every time")
+	# A real road bends through a roundabout: where it does, it's no roundabout.
+	var rounds := js.filter(func(st): return st["type"] == "roundabout")
+	for st: Dictionary in rounds:
+		var i: int = st["i"]
+		check(absf(wrapf(r.hd[mini(i + 15, r.hd.size() - 1)] - r.hd[maxi(i - 15, 0)], -PI, PI)) <= deg_to_rad(5.0) + 0.001,
+			"a roundabout is only where the road runs straight through it")
+
+
+func test_limits() -> void:
+	var p := RealPack.get_pack(PACK)
+	var r := AdventureRoute.new()
+	r.plan_real(p, 7, 23.0)
+	var seen := {}
+	var ok := true
+	for s in range(0, int(r.length), 128):
+		var kmh := p.limit_at(float(s))
+		seen[int(kmh)] = true
+		ok = ok and kmh >= 20.0 and kmh <= 120.0 and absf(AdventurePolice.limit_at(r, float(s)) * 3.6 - kmh) < 0.01
+	check(ok and seen.size() >= 2, "the police go by the real road's limits (%s km/h along it)" % str(seen.keys()))
+	check(p.region == "jp", "the limits are the country's (%s)" % p.region)
+	var made_up := AdventureRoute.new()
+	made_up.plan(7, 20.0)
+	check(is_equal_approx(AdventurePolice.limit_at(made_up, 1000.0), AdventurePolice.OPEN_LIMIT) or AdventurePolice.limit_at(made_up, 1000.0) == AdventurePolice.VILLAGE_LIMIT,
+		"and a made-up road keeps its 60 and 30 mph")
+
+
 func test_plan() -> void:
 	var p := RealPack.get_pack(PACK)
 	var a := AdventureRoute.new()

@@ -6,7 +6,7 @@ extends RefCounted
 ## route.json and tiles/. Everything is in the adventure's route frame: metres from the start, +x east, -z north.
 ## Packs are read-only once loaded, so one can be shared by every thread.
 
-const FORMAT := 5
+const FORMAT := 6
 ## What covers the land (RealTerrain.cover), by id: the baker's list (tools/land_bake.py COVER).
 const COVER: Array[String] = ["grass", "forest", "crop", "shrub", "barren", "urban", "sand", "wetland", "water", "rock"]
 ## The kinds of building (tools/land_bake.py BUILDING_KINDS), by id.
@@ -32,7 +32,7 @@ var x := PackedFloat64Array()
 var z := PackedFloat64Array()
 ## Height of the road's surface at each knot, metres above sea level (graded, see the baker).
 var e := PackedFloat32Array()
-## Per 128 m chunk: [surface, width, class, name index].
+## Per 128 m chunk: [surface, width, class, name index, speed limit (km/h)].
 var chunks: Array = []
 var names: Array = []
 ## [{d, x, z, turn, onto, branches}] and a last {"turn": "arrive"}.
@@ -43,6 +43,14 @@ var buildings := {}
 var building_count := 0
 ## Named peaks, lighthouses and the like: [{kind, name, x, z}].
 var landmarks: Array = []
+## Where side roads join the road: [{k (the nearest knot), type ("tee", "cross", "roundabout", "mini"), arms: [{side (1
+## the right), skew (degrees off square), cls, name, w, surf}], ri, ro (a roundabout's island and outer radius)}].
+var junctions: Array = []
+## Real places beside the road to stop at: [{kind ("fuel", "cafe", "pub", "inn", "campsite", "layby", "viewpoint"),
+## name ("" when it has none we can print), x, z, k (the nearest knot), lat (m to the right of the road), conf}].
+var pois: Array = []
+## The country's speed-limit rules the baker used ("uk", "jp" or "world").
+var region := "world"
 
 
 ## The ids of the packs the game has.
@@ -123,6 +131,13 @@ static func _load(pack_id: String) -> RealPack:
 	var marks = _json(dir.path_join("landmarks.json"))
 	if marks is Array:
 		p.landmarks = marks
+	var js = _json(dir.path_join("junctions.json"))
+	if js is Array:
+		p.junctions = js
+	var places = _json(dir.path_join("pois.json"))
+	if places is Array:
+		p.pois = places
+	p.region = str(meta.get("region", "world"))
 	p.terrain = RealTerrain.new(dir, meta)
 	return p
 
@@ -131,6 +146,19 @@ static func _json(path: String) -> Variant:
 	if not FileAccess.file_exists(path):
 		return null
 	return JSON.parse_string(FileAccess.get_file_as_string(path))
+
+
+## The speed limit (km/h) at `s` metres along the road.
+func limit_at(s: float) -> float:
+	if chunks.is_empty():
+		return 0.0
+	var row: Array = chunks[clampi(int(s / 128.0), 0, chunks.size() - 1)]
+	return float(row[4]) if row.size() > 4 else 0.0
+
+
+## The places of `kind` beside the road, nearest the road first.
+func pois_of(kind: String) -> Array:
+	return pois.filter(func(q): return q["kind"] == kind)
 
 
 ## The buildings whose nearest road knot is in chunk `c` ([[x, z, w, d, yaw, h, kind, knot]], route frame), or [].

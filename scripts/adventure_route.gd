@@ -53,6 +53,13 @@ const PITCH_RATE := 0.0025
 const MAX_GRADE := 0.155
 ## How far (m) a fuel station or stop may move along a real road to find a straight, level stretch.
 const FIT_REACH := 2500.0
+## How far along a real road a planned stop may move to take over a real place (m), and how far it may then move to find a
+## straight, level stretch (it keeps the place's name, so not far).
+const ADOPT_REACH := 3000.0
+const ADOPT_FIT := 400.0
+## The real places each kind of made-up stop can be (RealPack.pois kinds).
+const ADOPT_ROLES := {"fuel": ["fuel"], "cafe": ["cafe", "pub"], "inn": ["inn"], "campsite": ["campsite"], "layby": ["layby"],
+	"rest_area": ["layby"], "viewpoint": ["viewpoint"]}
 ## How long a short steep pitch lasts (m, at its steepest), and the rollers' waves: their length
 ## (m) and the steepest each may be (no tighter than a 1.2 km curve over the crest).
 const PITCH_LEN := [70.0, 300.0]
@@ -364,16 +371,51 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 	# Fuel and the stops, only where the road is straight and level enough to pull in.
 	_plan_fuel(rng)
 	AdventureStops.plan(self)
+	_adopt_pois()
 	_fit_stops()
 	add_site("start", 48.0, 1, 0.0, "Start")
 	add_site("finish", length, 1, 0.0, "Destination")
 	for e in extra_sites:
 		add_site(str(e.get("kind", "site")), float(e.get("s", 0.0)), int(e.get("side", 1)), float(e.get("flat", 20.0)),
 			str(e.get("name", "")))
+	AdventureJunctions.plan_real(self, pack.junctions)
+	AdventureJunctions.widen(self)
 	_stash_default()
 	_build_static_grid()
 	_planned = true
 	_assemble()
+	AdventureJunctions.lay_out(self)
+
+
+## Real places the planned stops take over: each fuel station, cafe, inn, campsite, lay-by and viewpoint the planner
+## made up moves to the nearest real one of its sort beside the road within ADOPT_REACH (and takes its side and its
+## name when it has one we can print), so the ride stops at real filling stations and cafes where the map has them
+## and at made-up ones where it doesn't. Each real place is taken once.
+func _adopt_pois() -> void:
+	var taken := {}
+	for st in sites:
+		var roles: Array = ADOPT_ROLES.get(str(st["kind"]), [])
+		if roles.is_empty():
+			continue
+		var best: Dictionary = {}
+		var best_d := ADOPT_REACH
+		for poi: Dictionary in real.pois:
+			if not roles.has(str(poi["kind"])) or taken.has(poi):
+				continue
+			var d := absf(float(int(poi["k"]) * STEP) - float(st["s"]))
+			if d < best_d:
+				best = poi
+				best_d = d
+		if best.is_empty():
+			continue
+		taken[best] = true
+		st["planned_s"] = st["s"]
+		st["planned_name"] = st["name"]
+		st["s"] = float(int(best["k"]) * STEP)
+		st["side"] = 1 if float(best["lat"]) >= 0.0 else -1
+		if str(best["name"]) != "":
+			st["name"] = str(best["name"])
+		st["real"] = true
 
 
 ## Moves the fuel stations and stops (a village with its rows) to the nearest straight, level stretch of the
@@ -385,7 +427,13 @@ func _fit_stops() -> void:
 		var kind := str(st["kind"])
 		if kind == AdventureStops.ROW or not (kind == "fuel" or AdventureStops.KINDS.has(kind)):
 			continue
-		var at := _fit_near(float(st["s"]))
+		var at := _fit_near(float(st["s"]), ADOPT_FIT if st.has("real") else FIT_REACH)
+		if at < 0.0 and st.has("real"):
+			# No straight, level stretch by the real place: back to where it was planned, and its made-up name.
+			st["s"] = st["planned_s"]
+			st["name"] = st["planned_name"]
+			st.erase("real")
+			at = _fit_near(float(st["s"]))
 		if at >= 0.0:
 			moved[float(st["s"])] = at - float(st["s"])
 			keep.append(st)
@@ -412,10 +460,10 @@ func _fit_stops() -> void:
 	sites.sort_custom(func(a, b): return float(a["s"]) < float(b["s"]))
 
 
-## The s nearest `s` (within FIT_REACH) where a stop fits, or -1.
-func _fit_near(s: float) -> float:
+## The s nearest `s` (within `reach`) where a stop fits, or -1.
+func _fit_near(s: float, reach := FIT_REACH) -> float:
 	var k := 0
-	while k * 40.0 <= FIT_REACH:
+	while k * 40.0 <= reach:
 		for sign: float in ([1.0] if k == 0 else [1.0, -1.0]):
 			var at := snappedf(s + sign * k * 40.0, STEP)
 			if at > 300.0 and at < length - 300.0 and _fit_for_stop(int(round(at / STEP))):
