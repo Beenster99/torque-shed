@@ -18102,15 +18102,20 @@ func _test_wash_session() -> void:
 	Input.action_release("act")
 	check(not w.wash_mode.is_empty(), "the trigger on a bike brings the wash controls up too")
 	# The job started again part way through (a redrawn bike): a part that's dinged doesn't again.
-	var rings := Sfx.oneshots_alive()
+	# Counted by the sounds that weren't playing before, so an earlier sound ending doesn't skew it.
+	var old_rings := get_tree().get_nodes_in_group(Sfx.ONESHOT_GROUP)
+	var new_rings := func() -> int:
+		return get_tree().get_nodes_in_group(Sfx.ONESHOT_GROUP).filter(
+				func(p): return not p.is_queued_for_deletion() and not old_rings.has(p)).size()
 	if w.wash != null:
 		w.wash.cues.append({"kind": "part", "name": "Tank", "slot": "zz_test"})
 	await get_tree().physics_frame
-	var first := Sfx.oneshots_alive() - rings
+	var first: int = new_rings.call()
 	if w.wash != null:
 		w.wash.cues.append({"kind": "part", "name": "Tank", "slot": "zz_test"})
 	await get_tree().physics_frame
-	check(first == 1 and Sfx.oneshots_alive() - rings == 1, "a part dings once a go, even if the job starts again (%d, then %d)" % [first, Sfx.oneshots_alive() - rings])
+	var second: int = new_rings.call()
+	check(first == 1 and second == 1, "a part dings once a go, even if the job starts again (%d, then %d)" % [first, second])
 	w.set_tool("hands")
 	await get_tree().physics_frame
 	check(w.wash_mode.is_empty(), "putting the washer away steps back")
