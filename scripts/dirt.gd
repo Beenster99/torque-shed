@@ -48,7 +48,7 @@ const GUARD_UNDERSIDE := {"front_mudguard": 3.0, "tail": 2.4, "guards": 1.5, "sw
 ## The parts out in front that collect dead flies at speed, and how many land on each.
 const FLY_SLOTS := {"headlight": 1.0, "fairing": 1.0, "fog_lights": 0.9, "mirrors": 0.6, "front_mudguard": 0.7, "fork": 0.55,
 	"indicators": 0.5, "number_boards": 0.6, "handlebars": 0.35, "dashboard": 0.35, "tank": 0.3, "front_master": 0.3,
-	"horn": 0.5, "cooling": 0.45, "steering_damper": 0.3}
+	"horn": 0.5, "cooling": 0.45, "steering_damper": 0.3, "lever_guards": 0.3}
 
 ## A part laid on with dirt by only an overall figure (see the top) takes this share of it per
 ## unit of its usual exposure (Shed.DIRT_EXPOSURE), at least SETTLE_MIN and at most all of it.

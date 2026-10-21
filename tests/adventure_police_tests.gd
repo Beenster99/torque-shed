@@ -145,7 +145,8 @@ func test_spawn_rate() -> void:
 
 ## The rule at its edge: passing a car 30 mph faster than it's going (or 30 over the limit past a
 ## parked one) is fine, a whisker more and it chases. Both ways: overtaking one going your way and
-## meeting one coming the other way (which turns round to come after you).
+## meeting one coming the other way (which turns round to come after you), but only once you've
+## gone by it: not while it's still in front of you, nor one behind you that you never passed.
 func test_rule() -> void:
 	var th := AdventurePolice.THRESHOLD
 	check(AdventurePolice.over_rule(24.0 + th - 0.1, 24.0, false, 26.8) < 0.0 and AdventurePolice.over_rule(24.0 + th + 0.1, 24.0, false, 26.8) > 0.0,
@@ -171,13 +172,26 @@ func test_rule() -> void:
 	var s1 := _straight(p2.world.route, 3000.0)
 	var id2 := p2.spawn(s1 + 200.0, -1, false, 0.85)
 	sim2[1]["s"] = s1
-	_run(p2, sim2, 15.0, func(): return float(sim2[1]["s"]) > float(p2.driver.state(id2)["s"]) + 100.0 or p2.chasing(1),
-		func(): sim2[1]["v"] = float(p2.driver.state(id2)["v"]) + th + 2.0)
+	var fast := func(): sim2[1]["v"] = float(p2.driver.state(id2)["v"]) + th + 2.0
+	# Bearing down on it too fast, but it's still in front of you: nothing yet.
+	_run(p2, sim2, 15.0, func(): return float(sim2[1]["s"]) > float(p2.driver.state(id2)["s"]) - 5.0 or p2.chasing(1), fast)
+	var early := p2.chasing(1)
+	check(not early, "a police car still in front of you doesn't chase, however fast you're coming at it")
+	_run(p2, sim2, 15.0, func(): return float(sim2[1]["s"]) > float(p2.driver.state(id2)["s"]) + 100.0 or p2.chasing(1), fast)
 	var met := p2.chasing(1)
 	sim2[1]["v"] = 30.0
 	var turned := _run(p2, sim2, 15.0, func(): return int(p2.driver.state(id2)["dir"]) == 1 and float(p2.driver.state(id2)["v"]) > 15.0)
 	check(met and turned, "meeting one coming the other way too fast: it turns round and comes after you (chased %s, turned %s)" % [met, turned])
 	await _free(p2)
+	# One behind you going your way that you never went by: it's not seen you pass, so it leaves you be.
+	var sim3 := {1: {"s": 0.0, "v": 0.0}}
+	var p3 := _police(7, sim3)
+	var s3 := _straight(p3.world.route, 3000.0)
+	var id3 := p3.spawn(s3, 1, false, 0.85)
+	sim3[1]["s"] = s3 + 20.0
+	_run(p3, sim3, 4.0, func(): return p3.chasing(1), func(): sim3[1]["v"] = float(p3.driver.state(id3)["v"]) + th + 4.0)
+	check(not p3.chasing(1), "speeding away from one behind you that you never passed: left alone")
+	await _free(p3)
 
 
 ## The chase: lights and siren on, flat out after the speeder (well past its patrol pace),
@@ -272,8 +286,9 @@ func test_caught() -> void:
 	sim[me]["brake"] = false
 	p.cars[id]["let_off"].clear()
 	sim[me]["s"] = float(p.driver.state(id)["s"]) - 60.0
-	sim[me]["v"] = float(p.driver.state(id)["v"]) + 20.0
-	_run(p, sim, 15.0, func(): return p.chasing(me) and float(sim[me]["s"]) > float(p.driver.state(id)["s"]) + 20.0)
+	# It's only just pulling away again, so keep 20 m/s faster than it as it speeds up, to get by it.
+	_run(p, sim, 15.0, func(): return p.chasing(me) and float(sim[me]["s"]) > float(p.driver.state(id)["s"]) + 20.0,
+		func(): if not p.chasing(me): sim[me]["v"] = float(p.driver.state(id)["v"]) + 20.0)
 	sim[me]["brake"] = true
 	_run(p, sim, 90.0, func(): return AdventurePolice.fines_of(me).size() == 2 and int(AdventurePolice.fines_of(me)[-1]["paid"]) >= 0)
 	fines = AdventurePolice.fines_of(me)

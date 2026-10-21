@@ -9,7 +9,8 @@ const KINDS: Array[String] = ["frame", "fork", "shock", "wheel", "tyre", "disc",
 	"saddle", "handlebars", "dashboard", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling",
 	"gearbox", "exhaust", "final_drive", "chain", "side_stand", "centre_stand", "headlight", "horn", "ecu",
 	"panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels",
-	"rearsets", "guards", "number_boards", "swingarm", "steering_damper", "tank_bag", "aux_tank", "toolbox", "satnav"]
+	"rearsets", "guards", "number_boards", "swingarm", "steering_damper", "tank_bag", "aux_tank", "toolbox", "satnav",
+	"lever_guards"]
 ## Fluids come in containers you carry and pour; they don't bolt on anywhere.
 ## A puncture repair kit is carried the same way: its "litres" are the plugs left in it.
 const FLUID_KINDS: Array[String] = ["petrol", "oil", "brake_fluid", "chain_lube", "puncture_kit"]
@@ -24,7 +25,7 @@ const KIND_NAMES := {
 	"fog_lights": "Fog lights", "tail": "Tail unit", "fairing": "Fairing", "mirrors": "Mirrors", "front_mudguard": "Front mudguard", "indicators": "Indicators",
 	"side_panels": "Side panels", "rearsets": "Footpegs and rearsets", "guards": "Engine guards", "number_boards": "Number boards",
 	"swingarm": "Swingarm", "steering_damper": "Steering damper", "tank_bag": "Tank bag", "aux_tank": "Auxiliary fuel tank",
-	"toolbox": "Toolbox", "satnav": "Sat nav", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
+	"toolbox": "Toolbox", "satnav": "Sat nav", "lever_guards": "Lever guards", "petrol": "Petrol", "oil": "Engine oil", "brake_fluid": "Brake fluid", "chain_lube": "Chain lube",
 	"puncture_kit": "Puncture repair kit",
 }
 ## Slots on the bike itself.
@@ -33,11 +34,11 @@ const BIKE_SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rea
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors",
 	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper",
-	"tank_bag", "aux_tank", "toolbox", "satnav"]
+	"tank_bag", "aux_tank", "toolbox", "satnav", "lever_guards"]
 ## Bike slots a bike can be ridden without. "none" in a build means nothing is fitted there.
 const OPTIONAL_SLOTS: Array[String] = ["side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box",
 	"fog_lights", "fairing", "mirrors", "front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards",
-	"swingarm", "steering_damper", "tank_bag", "aux_tank", "toolbox", "satnav"]
+	"swingarm", "steering_damper", "tank_bag", "aux_tank", "toolbox", "satnav", "lever_guards"]
 ## The adventure kit: a tank bag, an extra fuel tank, a toolbox and a sat nav (the luggage and
 ## the screens are the panniers, top box and fairing). Bikes saved before they existed get the
 ## slots empty.
@@ -57,7 +58,7 @@ const SLOTS: Array[String] = ["frame", "fork", "shock", "front_wheel", "rear_whe
 	"rear_master", "tank", "saddle", "handlebars", "dashboard", "engine", "exhaust", "final_drive", "chain",
 	"side_stand", "centre_stand", "headlight", "horn", "ecu", "panniers", "top_box", "fog_lights", "tail", "fairing", "mirrors", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox",
 	"front_mudguard", "indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm", "steering_damper",
-	"tank_bag", "aux_tank", "toolbox", "satnav"]
+	"tank_bag", "aux_tank", "toolbox", "satnav", "lever_guards"]
 const SLOT_KIND := {
 	"frame": "frame", "fork": "fork", "shock": "shock", "front_wheel": "wheel", "rear_wheel": "wheel",
 	"front_tyre": "tyre", "rear_tyre": "tyre", "front_disc": "disc", "rear_disc": "disc",
@@ -71,6 +72,7 @@ const SLOT_KIND := {
 	"mirrors": "mirrors", "front_mudguard": "front_mudguard", "indicators": "indicators", "side_panels": "side_panels",
 	"rearsets": "rearsets", "guards": "guards", "number_boards": "number_boards", "swingarm": "swingarm",
 	"steering_damper": "steering_damper", "tank_bag": "tank_bag", "aux_tank": "aux_tank", "toolbox": "toolbox", "satnav": "satnav",
+	"lever_guards": "lever_guards",
 }
 const DEFAULT_BUILD := {
 	"frame": "steel_cradle", "fork": "telescopic_road", "shock": "twin_shock", "front_wheel": "cast_17_front",
@@ -85,6 +87,7 @@ const DEFAULT_BUILD := {
 	"tail": "classic_mudguard", "fairing": "none", "mirrors": "none", "front_mudguard": "chrome_classic", "indicators": "none",
 	"side_panels": "none", "rearsets": "none", "guards": "none", "number_boards": "none", "swingarm": "none",
 	"steering_damper": "none", "tank_bag": "none", "aux_tank": "none", "toolbox": "none", "satnav": "none",
+	"lever_guards": "none",
 }
 ## What each slot bolts onto. A part can only go on once its mounts are fitted, and has to
 ## come off before any of them can. Engine slots mount on the block ("engine").
@@ -116,6 +119,8 @@ const MOUNTS := {
 	# The adventure kit: a tank bag sits on the tank, a sat nav clamps to the bars, and the extra
 	# fuel tank and the toolbox bolt to the frame (its rack and rails).
 	"tank_bag": ["tank"], "satnav": ["handlebars"], "aux_tank": ["frame"], "toolbox": ["frame"],
+	# Lever guards bolt into the bar ends.
+	"lever_guards": ["handlebars"],
 }
 ## Which fluid each part holds, and how much (litres; the tank and engine work theirs out).
 const FLUID_HOLDERS := {"tank": "petrol", "aux_tank": "petrol", "engine": "oil", "master": "brake_fluid"}
@@ -151,7 +156,7 @@ const KIND_MATERIAL := {
 	"tail": "plastic", "fairing": "plastic", "mirrors": "mixed", "front_mudguard": "plastic",
 	"indicators": "electronics", "side_panels": "plastic", "rearsets": "metal", "guards": "metal", "number_boards": "plastic",
 	"swingarm": "metal", "steering_damper": "metal", "tank_bag": "fabric", "aux_tank": "metal", "toolbox": "metal",
-	"satnav": "electronics", "petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
+	"satnav": "electronics", "lever_guards": "metal", "petrol": "metal", "oil": "plastic", "brake_fluid": "plastic", "chain_lube": "metal",
 	"puncture_kit": "mixed",
 }
 const MATERIAL_NAMES := {"metal": "Metal", "plastic": "Plastic", "rubber": "Rubber", "carbon": "Carbon fibre",
@@ -429,6 +434,8 @@ func spec_line(id: String) -> String:
 				bits.append("%.1f N·m friction" % float(p["friction"]))
 			if int(p.get("adjust", 0)) > 0:
 				bits.append("adjustable on the dyno desk")
+		"lever_guards":
+			bits = [p["type"], "guards both levers" if str(p.get("style", "brake")) == "pair" else "guards the front brake lever"]
 		"rearsets":
 			bits = [p["type"], peg_text(id)]
 		"mirrors":
@@ -647,7 +654,7 @@ const STYLE_WEIGHT := {"frame": 3.0, "tank": 2.0, "saddle": 2.0, "handlebars": 2
 	"fork": 1.5, "exhaust": 1.5, "front_mudguard": 1.5, "number_boards": 1.5, "front_wheel": 1.0, "rear_wheel": 1.0,
 	"headlight": 1.0, "panniers": 1.0, "side_panels": 1.0, "rearsets": 1.0, "guards": 1.0, "shock": 0.5,
 	"front_tyre": 0.5, "rear_tyre": 0.5, "mirrors": 0.5, "top_box": 0.5, "fog_lights": 0.5, "dashboard": 0.5,
-	"indicators": 0.5, "swingarm": 1.0, "tank_bag": 0.5, "aux_tank": 0.5, "toolbox": 0.5}
+	"indicators": 0.5, "swingarm": 1.0, "tank_bag": 0.5, "aux_tank": 0.5, "toolbox": 0.5, "lever_guards": 0.5}
 ## With nothing fitted there, a slot still says something: no fairing is the naked look.
 const EMPTY_STYLES := {"fairing": ["classic", "cafe", "bobber", "chopper", "cruiser", "scrambler", "naked", "supermoto", "mx"]}
 ## How much of a bike has to agree on a style for it to be a proper one ("a proper bobber").

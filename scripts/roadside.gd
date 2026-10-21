@@ -19,6 +19,8 @@ extends RefCounted
 ## gets used up is gone from the box (shown as gone, until it's packed again in the shed). No
 ## toolbox, or not the right thing in it, and that can't be fixed here: push the bike (wheel it
 ## along on foot), or a mate tows you to the next stop on a strap from their bike.
+## With the toolbox open the crew can also take its spanners to the bike's small parts, and fit
+## the spare parts packed in it: see ToolboxSpares.
 ##
 ## Shared state, all in Shed (so the crew see it and it's saved):
 ##   bikes[id]["faults"]    {chain_snap: true, rattle: slot, lever: "clutch"|"brake",
