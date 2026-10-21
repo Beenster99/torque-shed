@@ -14,12 +14,12 @@ extends Node
 ## AdventureDest) for the arrival moment: the camera pulls back from the crew to take in what
 ## they came for, a title card, and the group photo (a flash, then the photo; it's kept in this
 ## machine's album and hangs on the shed wall). Then it's theirs to look round until the host
-## picks Ride home. It also holds the magazine (AdventureMag), read in the shed.
+## picks Ride home. It also holds the full-screen route planner (JourneyMap), a close-up of the shed's route TV.
 ##
 ## It keeps the trip computer for the whole ride (TripComputer, on the sat nav's trip page and in
 ## the diary's stats) and this player's camera (AdventurePhotos); at the destination, and again at
 ## Ride home, the Adventure Diary is put together (AdventureDiary) and, back in the shed, opened
-## in its book (DiaryBook), as it can be again from the magazine or the photo on the shed wall.
+## in its book (DiaryBook), as it can be again from the route planner's Adventure diaries button or the photo on the shed wall.
 
 static var current: AdventureTrip
 ## Skips the fades (the tests).
@@ -51,8 +51,6 @@ var _polaroid: PanelContainer
 var _polaroid_pic: TextureRect
 var _polaroid_caption: Label
 var _started_at := 0         # ticks when this player set off, for the title card's time
-## The magazine on the workbench, made the first time it's read.
-var magazine: AdventureMag
 ## The map where the crew plans a journey across a real region, made the first time it is opened.
 var journey_map: JourneyMap
 var _hidden: Array = []      # [node, was visible, process mode] of the town put to sleep
@@ -150,7 +148,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if current == self:
 		current = null
-	AdventureMag.wait_all()   # the magazine's route facts still being worked out
+	AdventurePlans.wait_all()   # journeys still being planned
 
 
 ## Whether you're out on an adventure now (its world loaded).
@@ -224,7 +222,7 @@ func enter() -> void:
 	_arrive_sent = false
 	moment_done = false
 	_started_at = Time.get_ticks_msec()
-	close_magazine()
+	close_journey()
 	# The bike you're on, or the one you're standing by in the shed: the one you'd like to take.
 	var preferred: int = main.riding_id if main.bike else _nearest_bike()
 	if not instant:
@@ -871,7 +869,7 @@ func _tick_moment(delta: float) -> void:
 	if t >= MOMENT:
 		_end_moment()
 		if photos.finish():
-			main.hud.flash("The Adventure Diary's put together: read it after Ride home, or any time from the magazine on the workbench or the photo on the shed wall.", 6.0)
+			main.hud.flash("The Adventure Diary's put together: read it after Ride home, or any time from the route planner or the photo on the shed wall.", 6.0)
 
 
 ## The moment's over (or the ride is): back to your own camera.
@@ -959,25 +957,11 @@ func _card_label(text: String, size: int, col: Color) -> Label:
 	return l
 
 
-# ---------------------------------------------------------------------------- the magazine
+# ---------------------------------------------------------------------------- the route planner
 
-## Picks up the magazine on the workbench (open at article `at`, or where it was left).
-func open_magazine(at := "") -> void:
-	if main == null or not main.in_session:
-		return
-	if magazine == null:
-		magazine = AdventureMag.new()
-		magazine.visible = false
-		_hud.get_parent().add_child(magazine)
-		magazine.closed.connect(close_magazine)
-	if main.menu.visible:
-		main.menu.hide()
-	magazine.open(at)
-	main._capture_mouse(false)
-
-
-## Unfolds the shed's map of region `region_id` (from the magazine page `article_id`).
-func open_journey(region_id: String, article_id := "") -> void:
+## Unfolds the full-screen route planner (the same board as the shed's route TV) on region `region_id` ("" for the
+## one the crew's pins are on, else the first the game has).
+func open_journey(region_id := "") -> void:
 	if main == null or not main.in_session:
 		return
 	if journey_map == null:
@@ -985,10 +969,10 @@ func open_journey(region_id: String, article_id := "") -> void:
 		journey_map.visible = false
 		_hud.get_parent().add_child(journey_map)
 		journey_map.closed.connect(close_journey)
-	if magazine != null:
-		magazine.visible = false
-	journey_map.article_id = article_id
-	journey_map.open(region_id)
+	var id := region_id if region_id != "" else str(Shed.journey.get("region", ""))
+	if id == "" or not RealRegion.list().has(id):
+		id = RealRegion.list()[0] if not RealRegion.list().is_empty() else ""
+	journey_map.open(id)
 	main._capture_mouse(false)
 
 
@@ -1004,18 +988,6 @@ func journey_open() -> bool:
 	return journey_map != null and journey_map.visible
 
 
-func close_magazine() -> void:
-	if magazine == null or not magazine.visible:
-		return
-	magazine.visible = false
-	if main and main.in_session and not main.menu.visible:
-		main._capture_mouse(true)
-
-
-func magazine_open() -> bool:
-	return magazine != null and magazine.visible
-
-
 # ---------------------------------------------------------------------------- the diary
 
 ## Opens the Adventure Diary book: at diary `id`, or on the shelf of every diary on this machine.
@@ -1029,7 +1001,6 @@ func open_diary(id := "") -> void:
 		diary.closed.connect(close_diary)
 	if main.menu.visible:
 		main.menu.hide()
-	close_magazine()
 	if id == "" or not diary.open_diary(id):
 		diary.open_shelf()
 	main._capture_mouse(false)
@@ -1039,7 +1010,7 @@ func close_diary() -> void:
 	if diary == null or not diary.visible:
 		return
 	diary.visible = false
-	if main and main.in_session and not main.menu.visible and not magazine_open() and not journey_open():
+	if main and main.in_session and not main.menu.visible and not journey_open():
 		main._capture_mouse(true)
 
 

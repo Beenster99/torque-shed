@@ -7,13 +7,13 @@ extends RefCounted
 ## the wear and the muck all kept, as after any ride).
 ##
 ## Shed.adventure: {} when there's none, else {id, seed, km, theme, dest (where it ends up, see
-## AdventureDest), title, mag (the magazine article it's from, "" for none), by (the host's name),
+## AdventureDest), title, by (the host's name),
 ## riders {peer: bike id, 0 when there was none for them}, arrived (the first peer to reach the
 ## destination, 0 till then), arrived_name, photo (the crew's photo there, once arrived)}. Never
 ## carried over in a save: loading one finds everybody back at the shed.
 ##
-## Actions (Shed.request): adventure_start {seed, km, theme, dest, title, mag} (the host, usually
-## from the magazine on the workbench, see AdventureMag) and adventure_end (the host: "Ride home"
+## Actions (Shed.request): adventure_start {seed, km, theme, dest, title, plan} (the host, from the route planner:
+## the shed's route TV, see RouteTv) and adventure_end (the host: "Ride home"
 ## once everyone's at the destination), adventure_join {bike: the one you'd like} (each player, on
 ## loading it) and adventure_arrive (the first there: everyone's brought to the destination, gets
 ## XP, and the photo goes up on the shed wall); adventure_photo {photo} (the host: a photo from
@@ -53,7 +53,6 @@ static func sanitize(v) -> Dictionary:
 	out["dest"] = str(out.get("dest", "")) if AdventureDest.exists(str(out.get("dest", ""))) \
 		else AdventureDest.default_for(str(out["theme"]), int(out["seed"]))
 	out["title"] = str(out.get("title", ""))
-	out["mag"] = str(out.get("mag", ""))
 	if out.get("plan") is Dictionary:
 		# A journey planned on the map: planned here too (the host's road if all is well; if not, what was said is kept,
 		# for AdventureTrip.real_mismatch to turn down).
@@ -106,9 +105,6 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "There's no destination like that."
 			if str(action.get("real", "")) != "" and RealPack.get_pack(str(action["real"])) == null:
 				return "This game doesn't have that road."
-			var art := AdventureMag.find(str(action.get("mag", "")))
-			if str(action.get("mag", "")) != "" and (art.is_empty() or not AdventureMag.unlocked(art, AdventureMag.level_now())):
-				return "That issue of the magazine isn't out yet."
 		"adventure_photo":
 			if not _is_host(peer):
 				return "Only the host hangs photos."
@@ -159,7 +155,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 				dest = AdventureDest.default_for(theme, seed)
 			var title := str(action.get("title", "")).left(48)
 			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": seed, "km": km, "theme": theme, "dest": dest,
-				"title": title if title != "" else "Ride to %s" % AdventureDest.name_of(dest), "mag": str(action.get("mag", "")),
+				"title": title if title != "" else "Ride to %s" % AdventureDest.name_of(dest),
 				"real": str(action.get("real", "")), "real_hash": _real_hash(str(action.get("real", ""))), "by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
 			if not planned.is_empty():
 				Shed.adventure["plan"] = planned["plan"]
@@ -259,17 +255,16 @@ static func _bike_for(peer: int, preferred: int, riders: Dictionary) -> int:
 	return 0
 
 
-## The Esc menu's adventure button: opens the magazine (AdventureMag) to pick one, or the host
-## ends the one on ("Ride home" once everyone's at the destination).
+## The Esc menu's adventure button: opens the route planner (JourneyMap, the same board as the shed's route TV) to plan
+## one, or the host ends the one on ("Ride home" once everyone's at the destination).
 static func menu_action() -> void:
 	if active():
 		Shed.request({"a": "adventure_end"})
 	elif AdventureTrip.current:
-		AdventureTrip.current.open_magazine.call_deferred()
+		AdventureTrip.current.open_journey.call_deferred()
 
 
-## Starts a ride on `seed` of `km` to the theme's destination for it (the Debug tab and tests;
-## the magazine starts its own, AdventureMag.start_article).
+## Starts a ride on `seed` of `km` to the theme's destination for it (the Debug tab and tests).
 static func start(seed: int, km: float, theme := "varied", dest := "") -> void:
 	Shed.request({"a": "adventure_start", "seed": seed, "km": km, "theme": theme, "dest": dest})
 
@@ -293,4 +288,4 @@ static func menu_text() -> Array:
 		return ["Ride home (everyone back to the shed)", "" if host else "The host rides everyone home."]
 	if active():
 		return ["End the adventure (everyone back to the shed)", "" if host else "The host ends the adventure."]
-	return ["Adventure ride: read the magazine to pick one (the host starts it for everyone)", ""]
+	return ["Adventure ride: plan one on the route TV in the shed, or here (the host starts it for everyone)", ""]

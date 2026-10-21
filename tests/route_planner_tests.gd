@@ -200,147 +200,90 @@ func test_map() -> void:
 	map.open(REGION)
 	await t.get_tree().process_frame
 	await t.get_tree().process_frame
-	check(map.visible and map.region == r and map._scale > 0.0, "the map opens on the region, all of it in view")
+	check(map.visible and map.region == r and map._view._scale > 0.0, "the map opens on the region, all of it in view")
 	var a: Vector2 = pins()[0]
 	var b: Vector2 = pins()[1]
-	map.click(map._to_screen(a))
-	map.click(map._to_screen(b))
+	map._view.click(map._view.to_screen(a))
+	map._view.click(map._view.to_screen(b))
 	check((Shed.journey["pins"] as Array).size() == 2, "a click on the map puts a pin down")
 	map.refresh()
 	await t.get_tree().process_frame
 	check(map._pin_box.get_child_count() == 2, "and the panel lists it")
 	var end := Time.get_ticks_msec() + 20000
-	while map._route_pts.size() < 2 and Time.get_ticks_msec() < end:
+	while map._view.route_pts.size() < 2 and Time.get_ticks_msec() < end:
 		await t.get_tree().process_frame
 		map.refresh()
 		await t.get_tree().create_timer(0.1).timeout
-	check(map._route_pts.size() > 100 and "km" in map._facts.text, "the road is planned and shown (%s)" % map._facts.text.split("\n")[0])
+	check(map._view.route_pts.size() > 100 and "km" in map._facts.text, "the road is planned and shown (%s)" % map._facts.text.split("\n")[0])
 	check(not map._start.disabled, "and the host can start it")
-	map.click(map._to_screen(Vector2(float(Shed.journey["pins"][1]["x"]), float(Shed.journey["pins"][1]["z"]))))
+	map._view.click(map._view.to_screen(Vector2(float(Shed.journey["pins"][1]["x"]), float(Shed.journey["pins"][1]["z"]))))
 	check((Shed.journey["pins"] as Array).size() == 1, "a click on a pin takes it off")
 	map.refresh()
 	check(map._start.disabled and "Pin where you start" in map._facts.text, "with one pin there is nothing to start")
-	var img := JourneyMap.shade_image(r)
+	var img := JourneyView.shade_image(r)
 	check(img.get_width() > 100 and img.get_height() > 50 and img.get_pixel(img.get_width() / 2, img.get_height() / 2).a >= 0.0, "the land is shaded for the map (%d x %d)" % [img.get_width(), img.get_height()])
 	map.queue_free()
 	Shed.journey = {}
 	await t.get_tree().process_frame
-	# The magazine has the page that opens it.
-	var art := AdventureMag.find("shodoshima_plan")
-	check(not art.is_empty() and str(art["region"]) == REGION and AdventureMag.unlocked(art, 1), "the magazine has the Shodoshima page that opens the map")
 
 
-## A pin the road has to go out to and back from (not just a dead-end street) is visited, and the way in is not
-## cut out of the route as a spur.
-func test_via() -> void:
-	var r := RealRegion.get_region(REGION)
-	var mid := r.geo_to_xz(34.53, 134.22)
-	var res := RoutePlanner.plan(r, {"pins": [pins()[0], mid, pins()[1]]})
-	check(bool(res["ok"]), "a journey with a stop in the middle plans")
-	if not bool(res["ok"]):
-		return
-	var p: RealPack = res["pack"]
-	var node := r.nearest_connected(mid.x, mid.y, 800.0)
-	var best := INF
-	for k in range(0, p.x.size()):
-		best = minf(best, Vector2(p.x[k], p.z[k]).distance_to(r.node_pos[node]))
-	var direct := RoutePlanner.plan(r, {"pins": pins()})["pack"] as RealPack
-	check(best < 80.0 and p.max_km() > direct.max_km() + 0.5, "it goes out to the stop and turns round there (%.0f m short at the nearest) and the road is longer for it (%.1f km, %.1f direct)" % [best, p.max_km(), direct.max_km()])
-	# A pin 100 m up a dead-end street is not driven into: the spur is shorter than SPUR_M each way.
-	var steps: Array[Vector3i] = [Vector3i(0, 0, 1), Vector3i(1, 0, 0)]
-	check(RoutePlanner.strip_spurs(r, steps).is_empty() == (r.edge_len[0] <= RoutePlanner.SPUR_M), "an out-and-back of %.0f m is %s" % [r.edge_len[0], "cut out" if r.edge_len[0] <= RoutePlanner.SPUR_M else "kept"])
-
-
-## A small graph of the tests' own: A-B-C along the bottom, B-D up, and A-D across.
-func _square() -> RealRegion:
-	return RealRegion.from_rows({"classes": ["primary", "tertiary"], "surfaces": ["tarmac"], "names": [""],
-		"nodes": [[0, 0], [1000, 0], [2000, 0], [1000, 800]],
-		"edges": [{"a": 0, "b": 1, "c": 0, "s": 0, "l": 0, "n": 0, "o": 1, "p": []},
-			{"a": 1, "b": 2, "c": 0, "s": 0, "l": 0, "n": 0, "o": -1, "p": []},
-			{"a": 1, "b": 3, "c": 1, "s": 0, "l": 0, "n": 0, "o": 0, "p": []},
-			{"a": 0, "b": 3, "c": 1, "s": 0, "l": 0, "n": 0, "o": 0, "p": []}],
-		"bans": [[3, 3, 2]]})
-
-
-## One-way roads are driven their way only, and a prohibited turn is not taken.
-func test_rules() -> void:
-	var r := _square()
-	check(r.passable(0, 0) and not r.passable(0, 1) and r.passable(1, 2) and not r.passable(1, 1) and r.passable(2, 3),
-		"a one-way road is passable from its open end only")
-	check(r.turn_banned(3, 3, 2) and not r.turn_banned(2, 3, 3), "the banned turn is known, its reverse isn't")
-	var costs := PackedFloat64Array([1.0, 1.0])
-	var ab = RoutePlanner._shortest(r, 0, 1, costs)
-	check(ab != null and (ab as Array).size() == 1 and (ab as Array)[0].y == 0, "A to B goes straight along the one-way road")
-	var ba = RoutePlanner._shortest(r, 1, 0, costs)
-	check(ba != null and (ba as Array).size() == 2 and (ba as Array)[0].y == 2 and (ba as Array)[1].y == 3, "B to A can't go back along it: round by D")
-	check(RoutePlanner._shortest(r, 1, 2, costs) == null, "B to C is against the one-way and there is no way round")
-	var cb = RoutePlanner._shortest(r, 2, 1, costs)
-	check(cb != null and (cb as Array).size() == 1, "C to B is with it")
-	var ad = RoutePlanner._shortest(r, 0, 3, costs)
-	check(ad != null and (ad as Array).size() == 1 and (ad as Array)[0].y == 3, "A to D takes the direct road")
-	var ab2 = RoutePlanner._shortest(r, 0, 1, PackedFloat64Array([10.0, 1.0]))
-	check(ab2 != null and (ab2 as Array).size() == 1 and (ab2 as Array)[0].y == 0, "A to B still can't go A-D-B: the turn at D onto D-B is banned, so the dear road it is")
-	var db = RoutePlanner._shortest(r, 3, 1, PackedFloat64Array([10.0, 1.0]))
-	check(db != null and (db as Array)[0].y == 2, "but from D itself the road to B is fine (no turn to ban)")
-
-
-## A planned road has forks where the roads offer another way: the other way is a road of its own that meets the main
-## road at both ends, and the adventure rides it like a baked fork.
-func test_forks() -> void:
-	var r := RealRegion.get_region(REGION)
-	var res := RoutePlanner.plan(r, {"pins": pins(), "mode": "scenic", "seed": 3})
-	var p: RealPack = res["pack"]
-	check(bool(res["ok"]) and p.forks.size() >= 1, "the scenic island road has %d fork(s) (%d ms for them)" % [p.forks.size(), int(res["parts"].get("forks", 0)) - int(res["parts"].get("places", 0))])
-	if p.forks.is_empty():
-		return
-	var ok := true
-	for row: Dictionary in p.forks:
-		var way: Dictionary = row["way"]
-		var n := int(way["n"])
-		var i0 := int(row["i0"])
-		var i1 := int(row["i1"])
-		var wx: PackedFloat64Array = way["x"]
-		var wz: PackedFloat64Array = way["z"]
-		var we: PackedFloat32Array = way["e"]
-		if (n - 1) % 32 != 0 or i0 % 32 != 0 or i1 % 32 != 0 or i1 <= i0 or wx.size() != n or we.size() != n:
-			ok = false
-		if Vector2(wx[0] - p.x[i0], wz[0] - p.z[i0]).length() > 0.01 or Vector2(wx[n - 1] - p.x[i1], wz[n - 1] - p.z[i1]).length() > 0.01:
-			ok = false
-		if absf(we[0] - p.e[i0]) > 0.01 or absf(we[n - 1] - p.e[i1]) > 0.01:
-			ok = false
-		var line := PackedVector2Array()
-		for k in n:
-			line.append(Vector2(wx[k], wz[k]))
-		if (way["chunks"] as Array).size() != (n - 1) / 32 or RoutePlanner.sharpest_turn(line) > RoutePlanner.MAX_TURN:
-			ok = false
-		var kinds: Array = row["kinds"]
-		if kinds[0] != "main" or not ["scenic", "gravel"].has(str(kinds[1])) or str((row["names"] as Dictionary)[kinds[1]]) == "":
-			ok = false
-	check(ok, "each fork's other way runs from the main road's knot i0 to i1 in whole chunks, with their heights and a name")
-	# The adventure rides it.
-	RealPack.register(p)
-	var route := AdventureRoute.new()
-	route.plan_real(p, 3, p.max_km(), [])
-	check(route.forks.size() == p.forks.size(), "the adventure has the planned forks (%d)" % route.forks.size())
-
-
-## Finding places on the map: the region's towns and villages by name, and suggestions with nothing typed.
-func test_places() -> void:
-	var r := RealRegion.get_region(REGION)
-	check(r.places.size() >= 30 and r.places.all(func(p): return str(p["name"]) != "" and ["town", "village"].has(str(p["kind"]))),
-		"the region has %d towns and villages with names we can print" % r.places.size())
-	var hits := JourneyMap.find_places(r, "fuku")
-	check(hits.size() >= 1 and str(hits[0]["name"]).to_lower().contains("fuku"), "typing part of a name finds it (%s)" % str(hits.map(func(h): return h["name"])))
-	check(JourneyMap.find_places(r, "zzzz").is_empty(), "and a name that isn't there finds nothing")
-	var sug := JourneyMap.find_places(r, "")
-	var apart := true
-	for i in sug.size():
-		for j in range(i + 1, sug.size()):
-			if Vector2(float(sug[i]["x"]) - float(sug[j]["x"]), float(sug[i]["z"]) - float(sug[j]["z"])).length() < 3000.0:
-				apart = false
-	check(sug.size() >= 4 and sug.size() <= 8 and apart, "with nothing typed, %d suggested places spread about the island (%s)" % [sug.size(), str(sug.map(func(h): return h["name"]))])
-	var oneway := 0
-	for ei in r.edge_count():
-		if r.edge_oneway[ei] != 0:
-			oneway += 1
-	check(oneway == int(r.counts.get("oneway", -1)) and oneway > 0, "%d one-way roads, as the bake counted" % oneway)
+## The route TV: a Dashboard page of kind "route" holding the planner (RouteTv). Touched like any shed screen (a click into
+## the page), it takes pins from the map and from the places list, shows the road the game plans, and the host starts it.
+func test_tv() -> void:
+	Shed.adventure = {}
+	Shed.journey = {}
+	var dash := Dashboard.new("route", 3.4)
+	t.add_child(dash)
+	dash.show_page("route", {})
+	for i in 6:
+		await t.get_tree().process_frame
+	var board: RouteTv = dash._route
+	check(board != null and board.visible and board.region != null and board.region.id == REGION, "the route TV shows the region's map")
+	check(dash.kind == "route" and TvChannels.screen_exists("route") and TvChannels.home("route") == "route" and TvChannels.channels_for("f1").has("route"),
+		"it is a built-in screen, and a channel every TV has")
+	var r := board.region
+	var a: Vector2 = pins()[0]
+	var b: Vector2 = pins()[1]
+	var origin := board.view.global_position
+	dash.tap(origin + board.view.to_screen(a))
+	await t.get_tree().process_frame
+	check((Shed.journey.get("pins", []) as Array).size() == 1, "a touch on the map pins a place")
+	dash.tap(origin + board.view.to_screen(b))
+	await t.get_tree().process_frame
+	var end := Time.get_ticks_msec() + 30000
+	while board.view.route_pts.size() < 2 and Time.get_ticks_msec() < end:
+		await t.get_tree().create_timer(0.1).timeout
+		board.refresh()
+	check(board.view.route_pts.size() > 100 and "km" in board._facts.text and not board._start.disabled,
+		"the planned road is on the map, its facts on the panel and Start lit (%s)" % board._facts.text.split("\n")[0])
+	check(board._pins.get_child_count() >= 2, "each pin is listed")
+	# Another style of ride, by touch.
+	var scenic: Button = board._mode_buttons["scenic"]
+	dash.tap(scenic.global_position + scenic.size * 0.5)
+	await t.get_tree().process_frame
+	check(str(Shed.journey["mode"]) == "scenic", "a touch on Scenic changes the style for everyone")
+	# Places: the tab, a town, and it is pinned.
+	var tabs: Button = board._tab_buttons["places"]
+	dash.tap(tabs.global_position + tabs.size * 0.5)
+	await t.get_tree().process_frame
+	await t.get_tree().process_frame
+	check(board._tab == "places" and board._place_list.get_child_count() > 3, "the Places tab lists the towns (%d rows)" % board._place_list.get_child_count())
+	var first: Button = board._place_list.get_child(0)
+	var pins_before := (Shed.journey["pins"] as Array).size()
+	dash.tap(first.global_position + first.size * 0.5)
+	await t.get_tree().process_frame
+	check((Shed.journey["pins"] as Array).size() == pins_before + 1 and board._tab == "plan", "a touch on a place pins it and goes back to the ride")
+	# The host starts it.
+	Shed.request({"a": "adventure_unpin", "i": pins_before})
+	end = Time.get_ticks_msec() + 30000
+	while board._start.disabled and Time.get_ticks_msec() < end:
+		await t.get_tree().create_timer(0.1).timeout
+		board.refresh()
+	dash.tap(board._start.global_position + board._start.size * 0.5)
+	await t.get_tree().process_frame
+	check(Adventure.active() and Shed.adventure.get("plan") is Dictionary and str(Shed.adventure["real"]).begins_with("plan_"),
+		"and a touch on Start starts the ride along it")
+	Shed.adventure = {}
+	Shed.journey = {}
+	dash.queue_free()
+	await t.get_tree().process_frame

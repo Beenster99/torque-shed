@@ -538,7 +538,7 @@ func test_diary_files() -> void:
 
 
 ## A whole ride: to the destination, the arrival's photo in the moment, the diary put together
-## there; Ride home puts it together again and opens it at the shed; the magazine and the photo on
+## there; Ride home puts it together again and opens it at the shed; the route planner and the photo on
 ## the wall open it again.
 func test_diary_ride() -> void:
 	var main: Node = await _ride_out(8.0, 4101, "desert")
@@ -577,10 +577,10 @@ func test_diary_ride() -> void:
 		main.walker._read_diary(fid)
 		check(trip.diary_open() and trip.diary.diary.get("id", "") == id, "and reading it opens the diary")
 		trip.close_diary()
-	# From the magazine: the shelf.
-	trip.open_magazine()
+	# From the route planner: the shelf.
+	trip.open_journey()
 	trip.open_diary()
-	check(trip.diary_open() and trip.diary._shelf.visible and not trip.magazine_open(), "the magazine's Adventure diaries: the shelf")
+	check(trip.diary_open() and trip.diary._shelf.visible and not trip.journey_open(), "the route planner's Adventure diaries: the shelf")
 	trip.close_diary()
 	await _done(main)
 

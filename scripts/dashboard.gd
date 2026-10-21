@@ -33,6 +33,8 @@ var _cursor: MeshInstance3D
 var _cursor_on := false
 var _hover := -1
 var _tapped := {}
+## The route planner a "route" page holds (see RouteTv), made the first time one is shown.
+var _route: RouteTv
 
 
 func _init(page_kind := "bike", screen_width := 2.0) -> void:
@@ -164,6 +166,12 @@ func _on_device_changed(_pad: bool) -> void:
 
 func show_data(new_data: Dictionary) -> void:
 	data = new_data
+	if kind == "route" and _route == null:
+		_route = RouteTv.new()
+		_route.changed.connect(_redraw)
+		_viewport.add_child(_route)
+	if _route != null:
+		_route.visible = kind == "route"
 	_hover = _button_at(_cursor_px()) if _cursor_on else -1
 	_redraw()
 
@@ -229,6 +237,13 @@ func set_cursor(px) -> void:
 	var was_on := _cursor_on
 	_cursor_on = on
 	_cursor.visible = on
+	if on and _route != null and _route.visible:
+		# The route planner is a page of real controls: they hover as the cursor moves over them.
+		var ev := InputEventMouseMotion.new()
+		ev.position = px
+		ev.global_position = px
+		_viewport.push_input(ev, true)
+		_redraw()
 	var hover := _button_at(px) if on else -1
 	if hover != _hover or was_on != on:
 		_hover = hover
@@ -256,6 +271,11 @@ func tap(px: Vector2) -> Dictionary:
 		ev.position = px
 		ev.global_position = px
 		_viewport.push_input(ev, true)
+	if _route != null and _route.visible:
+		# What the touch did (a button pressed, a pin put down) shows on the screen now and as it settles.
+		_redraw()
+		get_tree().create_timer(0.15).timeout.connect(_redraw)
+		get_tree().create_timer(0.6).timeout.connect(_redraw)
 	return _tapped
 
 
@@ -321,7 +341,9 @@ func _draw_page() -> void:
 	var font := _page.get_theme_default_font()
 	_page.draw_rect(Rect2(Vector2.ZERO, Vector2(PX)), BG)
 	_page.draw_rect(Rect2(0, 0, PX.x, 70), Color(1.0, 0.55, 0.15, 0.9))
-	if kind == "crew":
+	if kind == "route":
+		_text(font, Vector2(20, 48), "ROUTE PLANNER", 34, TvChannels.HEADER_INK, 600.0)
+	elif kind == "crew":
 		_draw_crew(font)
 	elif kind == "bike":
 		_draw_bike(font)

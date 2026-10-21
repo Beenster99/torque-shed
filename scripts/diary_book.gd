@@ -55,7 +55,7 @@ func _ready() -> void:
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_theme_constant_override("separation", 12)
 	add_child(col)
-	var title := AdventureMag._l("THE ADVENTURE DIARY", 22, Color(1.0, 0.85, 0.55))
+	var title := UITheme.label("THE ADVENTURE DIARY", 22, Color(1.0, 0.85, 0.55))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(title)
 	var center := CenterContainer.new()
@@ -93,7 +93,7 @@ func _ready() -> void:
 	_prev.text = "< Turn back"
 	_prev.pressed.connect(func(): turn(-1))
 	nav.add_child(_prev)
-	_where = AdventureMag._l("", 15, Color(1, 1, 1, 0.7))
+	_where = UITheme.label("", 15, Color(1, 1, 1, 0.7))
 	_where.custom_minimum_size = Vector2(160, 0)
 	_where.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	nav.add_child(_where)
@@ -149,7 +149,7 @@ func open_shelf() -> void:
 	var all := AdventureDiary.list()
 	_where.text = "%d %s on this machine" % [all.size(), "diary" if all.size() == 1 else "diaries"]
 	if all.is_empty():
-		var l := AdventureMag._l("No diaries yet. Every adventure ride makes one: the photos and the highlights, put together at the end.", 18, Color(1, 1, 1, 0.8))
+		var l := UITheme.label("No diaries yet. Every adventure ride makes one: the photos and the highlights, put together at the end.", 18, Color(1, 1, 1, 0.8))
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		l.custom_minimum_size = Vector2(PAGE.x * 1.6, 0)
 		_shelf_grid.add_child(l)

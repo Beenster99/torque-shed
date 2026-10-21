@@ -458,6 +458,7 @@ func _run_all() -> void:
 	_test_planner_forks()
 	_test_planner_board()
 	await _test_planner_map()
+	await _test_planner_tv()
 	_test_real_pack()
 	_test_real_levels()
 	_test_real_forks()
@@ -530,9 +531,6 @@ func _run_all() -> void:
 	await _test_adv_dest_build()
 	_test_adv_dest_arrive()
 	_test_adv_dest_photo()
-	_test_adv_magazine_issues()
-	await _test_adv_magazine_facts()
-	await _test_adv_magazine_ui()
 	print("Simon's v0.15.0 round: the sound effects slider, nothing dinging by the door, a loose part's rattle")
 	_test_audio_buses()
 	await _test_audio_sliders()
@@ -22073,6 +22071,10 @@ func _test_planner_board() -> void:
 	_planner().test_board()
 
 
+func _test_planner_tv() -> void:
+	await _planner().test_tv()
+
+
 func _test_planner_map() -> void:
 	await _planner().test_map()
 
@@ -22406,18 +22408,6 @@ func _test_adv_dest_arrive() -> void:
 
 func _test_adv_dest_photo() -> void:
 	_adv_dest().test_photo()
-
-
-func _test_adv_magazine_issues() -> void:
-	_adv_dest().test_magazine_issues()
-
-
-func _test_adv_magazine_facts() -> void:
-	await _adv_dest().test_magazine_facts()
-
-
-func _test_adv_magazine_ui() -> void:
-	await _adv_dest().test_magazine_ui()
 
 
 # ---------------------------------------------------------------------------- the mix (tests/audio_tests.gd)
