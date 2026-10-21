@@ -1001,6 +1001,8 @@ func open_diary(id := "") -> void:
 		diary.closed.connect(close_diary)
 	if main.menu.visible:
 		main.menu.hide()
+	if journey_map != null:
+		journey_map.visible = false
 	if id == "" or not diary.open_diary(id):
 		diary.open_shelf()
 	main._capture_mouse(false)
