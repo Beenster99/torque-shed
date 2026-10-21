@@ -507,6 +507,10 @@ Hold weight back (Shift, or the left stick back) to lift and hold a wheelie; the
 
 The **yard** has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
 
+### Sat navs, and a phone on the bars
+
+The parts computer's **Luggage and adventure kit** sells sat navs for the bars, from a compact unit up to a rally tablet. The cheapest is a **phone sat nav in a handlebar clip** (£30): your phone in a sprung cradle on a ball joint and a short arm, clamped round the bar itself, for any style of bike. It finds its own spot on whatever bars the bike has (inboard of the lever, clear of the mirrors' stalks and a fairing, without hiding the clocks) and turns to face you. Its screen shows the same live map as the dash units: the roads round you, the way ahead, the next turn and the next fuel, and **M** puts the map on the HUD as with any sat nav. It buzzes a little with the engine, the screen glows after dark, and in co-op everyone else sees it on your bike, lit while the engine runs.
+
 ### The riding map
 
 The **yard** in front of the shed is laid out as a **test area** for checking the bikes you build. The tarmac runs out level into the grass all round, with no kerb to hop.
