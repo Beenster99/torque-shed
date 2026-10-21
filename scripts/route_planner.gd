@@ -18,8 +18,10 @@ const SNAP_M := 800.0
 const MIN_RADIUS := 10.0
 const MAX_GRADE := 0.15
 const MAX_ROUNDS := 20000
+## An out-and-back this long (m each way) or shorter, to a pin on a dead-end street, is left out of the route.
+const SPUR_M := 300.0
 ## The version of the planner, in every plan's hash: a change to how routes are made changes the hash.
-const VERSION := 1
+const VERSION := 2
 
 ## What a metre of each class of road costs, by the style of ride ("main": the quick way, "scenic": quiet back roads,
 ## "tracks": gravel and tracks where there are any).
@@ -146,7 +148,7 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 		if leg == null:
 			return _fail("There is no way by road between those places.")
 		steps.append_array(leg)
-	steps = strip_spurs(steps)
+	steps = strip_spurs(region, steps)
 	if steps.is_empty():
 		return _fail("Those pins are the same place: pin somewhere else to get to.")
 	parts["roads"] = Time.get_ticks_msec() - t0
@@ -292,15 +294,28 @@ static func _shortest(region: RealRegion, start: int, goal: int, costs: PackedFl
 	return out
 
 
-## The path with every out-and-back along the same road taken out (a pin on a dead-end street would make the route
-## drive in and turn round).
-static func strip_spurs(steps: Array[Vector3i]) -> Array[Vector3i]:
+## The path with the short out-and-backs along the same road (SPUR_M or less each way) taken out: a pin on a
+## dead-end street would make the route drive in and turn round. A longer one is a place the crew meant to go to, and
+## stays.
+static func strip_spurs(region: RealRegion, steps: Array[Vector3i]) -> Array[Vector3i]:
 	var out: Array[Vector3i] = []
-	for st in steps:
-		if not out.is_empty() and out[out.size() - 1].y == st.y and out[out.size() - 1].z == st.x and out[out.size() - 1].x == st.z:
-			out.pop_back()
+	var i := 0
+	while i < steps.size():
+		var k := 0
+		var run := 0.0
+		while i + k < steps.size() and out.size() > k:
+			var back := out[out.size() - 1 - k]
+			var st := steps[i + k]
+			if back.y != st.y or back.z != st.x or back.x != st.z:
+				break
+			run += region.edge_len[st.y]
+			k += 1
+		if k > 0 and run <= SPUR_M:
+			out.resize(out.size() - k)
+			i += k
 		else:
-			out.append(st)
+			out.append(steps[i])
+			i += 1
 	return out
 
 

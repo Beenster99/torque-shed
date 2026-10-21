@@ -446,7 +446,9 @@ func _run_all() -> void:
 	_test_planner_errors()
 	_test_planner_speed()
 	await _test_planner_ride()
+	_test_planner_via()
 	_test_planner_board()
+	await _test_planner_map()
 	_test_real_pack()
 	_test_real_levels()
 	_test_real_forks()
@@ -21949,8 +21951,16 @@ func _test_planner_speed() -> void:
 	_planner().test_speed()
 
 
+func _test_planner_via() -> void:
+	_planner().test_via()
+
+
 func _test_planner_board() -> void:
 	_planner().test_board()
+
+
+func _test_planner_map() -> void:
+	await _planner().test_map()
 
 
 func _test_planner_ride() -> void:

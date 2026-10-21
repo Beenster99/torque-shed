@@ -188,3 +188,64 @@ func test_board() -> void:
 	Shed.request({"a": "adventure_clear"})
 	check(Shed.journey.is_empty(), "the board is wiped clean")
 	Shed.adventure = saved_adventure
+
+
+## The map: opens on the region, a click pins a road junction, a click on a pin takes it off, the panel and the plan follow.
+func test_map() -> void:
+	var r := RealRegion.get_region(REGION)
+	Shed.adventure = {}
+	Shed.journey = {}
+	var map := JourneyMap.new()
+	t.add_child(map)
+	map.open(REGION)
+	await t.get_tree().process_frame
+	await t.get_tree().process_frame
+	check(map.visible and map.region == r and map._scale > 0.0, "the map opens on the region, all of it in view")
+	var a: Vector2 = pins()[0]
+	var b: Vector2 = pins()[1]
+	map.click(map._to_screen(a))
+	map.click(map._to_screen(b))
+	check((Shed.journey["pins"] as Array).size() == 2, "a click on the map puts a pin down")
+	map.refresh()
+	await t.get_tree().process_frame
+	check(map._pin_box.get_child_count() == 2, "and the panel lists it")
+	var end := Time.get_ticks_msec() + 20000
+	while map._route_pts.size() < 2 and Time.get_ticks_msec() < end:
+		await t.get_tree().process_frame
+		map.refresh()
+		await t.get_tree().create_timer(0.1).timeout
+	check(map._route_pts.size() > 100 and "km" in map._facts.text, "the road is planned and shown (%s)" % map._facts.text.split("\n")[0])
+	check(not map._start.disabled, "and the host can start it")
+	map.click(map._to_screen(Vector2(float(Shed.journey["pins"][1]["x"]), float(Shed.journey["pins"][1]["z"]))))
+	check((Shed.journey["pins"] as Array).size() == 1, "a click on a pin takes it off")
+	map.refresh()
+	check(map._start.disabled and "Pin where you start" in map._facts.text, "with one pin there is nothing to start")
+	var img := JourneyMap.shade_image(r)
+	check(img.get_width() > 100 and img.get_height() > 50 and img.get_pixel(img.get_width() / 2, img.get_height() / 2).a >= 0.0, "the land is shaded for the map (%d x %d)" % [img.get_width(), img.get_height()])
+	map.queue_free()
+	Shed.journey = {}
+	await t.get_tree().process_frame
+	# The magazine has the page that opens it.
+	var art := AdventureMag.find("shodoshima_plan")
+	check(not art.is_empty() and str(art["region"]) == REGION and AdventureMag.unlocked(art, 1), "the magazine has the Shodoshima page that opens the map")
+
+
+## A pin the road has to go out to and back from (not just a dead-end street) is visited, and the way in is not
+## cut out of the route as a spur.
+func test_via() -> void:
+	var r := RealRegion.get_region(REGION)
+	var mid := r.geo_to_xz(34.53, 134.22)
+	var res := RoutePlanner.plan(r, {"pins": [pins()[0], mid, pins()[1]]})
+	check(bool(res["ok"]), "a journey with a stop in the middle plans")
+	if not bool(res["ok"]):
+		return
+	var p: RealPack = res["pack"]
+	var node := r.nearest_connected(mid.x, mid.y, 800.0)
+	var best := INF
+	for k in range(0, p.x.size()):
+		best = minf(best, Vector2(p.x[k], p.z[k]).distance_to(r.node_pos[node]))
+	var direct := RoutePlanner.plan(r, {"pins": pins()})["pack"] as RealPack
+	check(best < 12.0 and p.max_km() > direct.max_km() + 0.5, "it goes to the stop (%.0f m off at the nearest) and the road is longer for it (%.1f km, %.1f direct)" % [best, p.max_km(), direct.max_km()])
+	# A pin 100 m up a dead-end street is not driven into: the spur is shorter than SPUR_M each way.
+	var steps: Array[Vector3i] = [Vector3i(0, 0, 1), Vector3i(1, 0, 0)]
+	check(RoutePlanner.strip_spurs(r, steps).is_empty() == (r.edge_len[0] <= RoutePlanner.SPUR_M), "an out-and-back of %.0f m is %s" % [r.edge_len[0], "cut out" if r.edge_len[0] <= RoutePlanner.SPUR_M else "kept"])

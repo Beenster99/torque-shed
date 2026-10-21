@@ -28,6 +28,9 @@ const ISSUES := [
 		{"id": "shodoshima", "title": "Shodoshima: Island in the Inland Sea", "theme": "coastal", "len": "short", "seed": 4104, "dest": "lighthouse",
 			"real": "shodoshima", "blurb": "A real road: right round a Japanese island in the Seto Inland Sea, over the real hills, down to the real shore. "
 			+ "Every bend, wood and village is where the island put it."},
+		{"id": "shodoshima_plan", "title": "Shodoshima: Your Own Way", "theme": "coastal", "len": "short", "seed": 4105, "dest": "lighthouse",
+			"region": "shodoshima", "blurb": "The whole island is on the shed's map, every road of it. Pin where you start, any places you fancy on the way, "
+			+ "and where you want to end up, choose quick, scenic or tracks, and the game plans the road and builds it as you ride."},
 	]},
 	{"n": 2, "name": "Summer issue", "level": 3, "articles": [
 		{"id": "dales_epic", "title": "The Dales Epic: Settle to Leyburn", "theme": "hills", "len": "ride", "seed": 4204, "dest": "dales_rally",
@@ -97,6 +100,7 @@ var _len_box: HBoxContainer
 var _len_buttons := {}
 var _km: SpinBox
 var _start: Button
+var _plan_btn: Button
 var _start_note: Label
 var _page_l: Label
 var _prev: Button
@@ -221,6 +225,10 @@ func _ready() -> void:
 	_start.text = "Start this adventure for everyone"
 	_start.pressed.connect(start)
 	right.add_child(_start)
+	_plan_btn = Button.new()
+	_plan_btn.text = "Plan the journey on the map"
+	_plan_btn.pressed.connect(open_map)
+	right.add_child(_plan_btn)
 	_start_note = _l("", 14, INK.lightened(0.3))
 	_start_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	right.add_child(_start_note)
@@ -421,6 +429,22 @@ func start() -> void:
 	closed.emit()
 
 
+## Opens the shed's map (JourneyMap) for the region article open.
+func open_map() -> void:
+	var a := article()
+	if a.is_empty() or str(a.get("region", "")) == "" or AdventureTrip.current == null:
+		return
+	AdventureTrip.current.open_journey(str(a["region"]), str(a["id"]))
+
+
+## The kilometres of road in a region (all its roads, once each).
+static func _road_km(reg: RealRegion) -> float:
+	var m := 0.0
+	for ei in reg.edge_count():
+		m += reg.edge_len[ei]
+	return m / 1000.0
+
+
 ## Why the host can't start the one open ("" if they can).
 func start_reason() -> String:
 	if not Shed.is_authority():
@@ -463,10 +487,25 @@ func refresh() -> void:
 		return
 	var dest := str(a["dest"])
 	var km := km_of(a)
+	_plan_btn.visible = str(a.get("region", "")) != ""
 	_page_l.text = "Issue %d, %s  ·  page %d of %d" % [int(a["issue"]), str(a["issue_name"]).to_lower(), page + 1, list.size()]
 	_kicker.text = "%s ADVENTURE  ·  %s" % [str(THEME_NAMES.get(a["theme"], "Varied")).to_upper(), AdventureDest.name_of(dest).to_upper()]
 	_title.text = str(a["title"])
 	_blurb.text = str(a["blurb"])
+	if str(a.get("region", "")) != "":
+		var reg := RealRegion.get_region(str(a["region"]))
+		_what.text = "At the end: wherever you pin it."
+		_pic.texture = AdventureDest.picture(dest)
+		_facts.text = ("%s: %d km of roads to choose from." % [reg.title, roundi(_road_km(reg))] if reg != null else "This game doesn't have that map.") \
+			+ "\n\nThe crew pins the places together on the shed's map; the host starts the ride for everyone."
+		if reg != null:
+			_facts.text += "\n\n" + "\n".join(reg.credits)
+		_kit.text = "\n".join((KIT.get(a["theme"], KIT["varied"]) as Array).map(func(x): return "•  " + str(x)))
+		_len_box.visible = false
+		_start.visible = false
+		_start_note.text = "Anyone can pin; the host starts the ride." if reg != null else ""
+		_plan_btn.disabled = reg == null
+		return
 	if real_pack(a) != null:
 		_blurb.text += "\n\n" + real_pack(a).summary_text()
 	_what.text = "At the end: %s." % str(AdventureDest.of(dest).get("what", ""))

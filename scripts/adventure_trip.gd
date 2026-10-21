@@ -53,6 +53,8 @@ var _polaroid_caption: Label
 var _started_at := 0         # ticks when this player set off, for the title card's time
 ## The magazine on the workbench, made the first time it's read.
 var magazine: AdventureMag
+## The map where the crew plans a journey across a real region, made the first time it is opened.
+var journey_map: JourneyMap
 var _hidden: Array = []      # [node, was visible, process mode] of the town put to sleep
 var _hud: Label
 var _crew: Label             # how far ahead or behind the rest of the crew are (see friends)
@@ -974,6 +976,34 @@ func open_magazine(at := "") -> void:
 	main._capture_mouse(false)
 
 
+## Unfolds the shed's map of region `region_id` (from the magazine page `article_id`).
+func open_journey(region_id: String, article_id := "") -> void:
+	if main == null or not main.in_session:
+		return
+	if journey_map == null:
+		journey_map = JourneyMap.new()
+		journey_map.visible = false
+		_hud.get_parent().add_child(journey_map)
+		journey_map.closed.connect(close_journey)
+	if magazine != null:
+		magazine.visible = false
+	journey_map.article_id = article_id
+	journey_map.open(region_id)
+	main._capture_mouse(false)
+
+
+func close_journey() -> void:
+	if journey_map == null or not journey_map.visible:
+		return
+	journey_map.visible = false
+	if main and main.in_session and not main.menu.visible:
+		main._capture_mouse(true)
+
+
+func journey_open() -> bool:
+	return journey_map != null and journey_map.visible
+
+
 func close_magazine() -> void:
 	if magazine == null or not magazine.visible:
 		return
@@ -1009,7 +1039,7 @@ func close_diary() -> void:
 	if diary == null or not diary.visible:
 		return
 	diary.visible = false
-	if main and main.in_session and not main.menu.visible and not magazine_open():
+	if main and main.in_session and not main.menu.visible and not magazine_open() and not journey_open():
 		main._capture_mouse(true)
 
 
