@@ -459,14 +459,21 @@ static func _farmed(route: AdventureRoute, i0: int, i1: int) -> bool:
 	return total > 0 and float(crop) / total > 0.25
 
 
-## The real buildings whose nearest road knot is in chunk `c` of a real road, into `buildings`: each on the
-## ground the land's mesh has there, none by a site (a fuel station, a stop) or over the road's verge.
+## The real buildings beside the road in chunk `c` of the path on a real road, into `buildings`: each on the ground the
+## land's mesh has there, none by a site (a fuel station, a stop) or over the road's verge. The pack files them by the
+## main road's chunk, so on the other way of a fork there are none (they aren't baked there), and past one the path's
+## chunk is mapped back to the main road's (`eq`).
 static func _real_buildings(route: AdventureRoute, c: int, i0: int, ax: float, az: float, buildings: Dictionary) -> void:
 	var style := str(AdventureTheme.get_value(route.theme, "style", "mixed"))
-	for b: Array in route.real.buildings_in(c):
+	var piece := route._piece_at(float(i0) * AdventureRoute.STEP)
+	if int(piece["fork"]) >= 0 and int(piece["way"]) > 0:
+		return
+	var dk0 := route.eq[mini(i0, route.eq.size() - 1)] if not route.eq.is_empty() else i0
+	var dc := dk0 / AdventureRoute.CHUNK_KNOTS
+	for b: Array in route.real.buildings_in(dc):
 		var bx := float(b[0])
 		var bz := float(b[1])
-		var k := clampi(int(b[7]), 0, route.knot_count() - 1)
+		var k := clampi(i0 + int(b[7]) - dc * AdventureRoute.CHUNK_KNOTS, 0, route.knot_count() - 1)
 		var lat := (bx - route.px[k]) * cos(route.hd[k]) + (bz - route.pz[k]) * sin(route.hd[k])
 		if route._site_flat(k, signf(lat), false) > 0.5 or absf(lat) < route.width[k] * 0.5 + 3.0:
 			continue

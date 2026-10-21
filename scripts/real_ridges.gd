@@ -7,6 +7,8 @@ extends Node3D
 ## (AdventureWorld.shift_origin_to calls place()).
 
 const BLOCK := 32
+## How many blocks are laid out at once.
+const AT_ONCE := 2
 const RANGE := 14000.0
 const DROP := 17000.0
 ## Past this the ridge's own height (m) is rock and, on a snowy road, the snow line takes over.
@@ -18,7 +20,11 @@ const SNOW := Color(0.92, 0.93, 0.96)
 
 var world: AdventureWorld
 var terrain: RealTerrain
-var _blocks := {}   # Vector2i -> MeshInstance3D
+var _blocks := {}   # Vector2i -> MeshInstance3D (null where the pack has no ridge there: not asked again)
+var _tasks := {}    # Vector2i -> worker task id while its mesh is laid out
+var _queue: Array[Vector2i] = []   # blocks to make, nearest first, a few at a time (they must not crowd out the road's chunks)
+var _done := {}     # Vector2i -> the arrays it made (or null), waiting for the main thread
+var _lock := Mutex.new()
 var _material: StandardMaterial3D
 var _land := Color(0.3, 0.4, 0.22)
 var _snow_line := INF
@@ -37,7 +43,14 @@ func setup(w: AdventureWorld, t: RealTerrain) -> void:
 		_snow_line = w.route.snow_line
 
 
-## Makes the blocks within RANGE of route-frame (x, z) and drops those past DROP.
+func _exit_tree() -> void:
+	for key in _tasks:
+		WorkerThreadPool.wait_for_task_completion(_tasks[key])
+	_tasks.clear()
+
+
+## Starts the blocks within RANGE of route-frame (x, z) (laid out on worker threads, put in by _process) and drops
+## those past DROP.
 func follow(x: float, z: float) -> void:
 	if terrain == null or terrain.levels.is_empty() or Vector2(x, z).distance_to(_at) < 400.0:
 		return
@@ -49,13 +62,13 @@ func follow(x: float, z: float) -> void:
 		for bx in range(b0.x, b1.x + 1):
 			var key := Vector2i(bx, bz)
 			var mid := Vector2((bx + 0.5) * size, (bz + 0.5) * size)
-			if _blocks.has(key) or mid.distance_to(_at) > RANGE + size * 0.7:
+			if _blocks.has(key) or _tasks.has(key) or mid.distance_to(_at) > RANGE + size * 0.7:
 				continue
-			var mi := _make_block(key)
-			_blocks[key] = mi   # (null where the pack has no ridge there: not asked again)
-			if mi != null:
-				add_child(mi)
-				_place(key, mi)
+			if not _queue.has(key):
+				_queue.append(key)
+	_queue = _queue.filter(func(k): return Vector2((k.x + 0.5) * size, (k.y + 0.5) * size).distance_to(_at) <= RANGE + size * 0.7)
+	_queue.sort_custom(func(a, b): return Vector2((a.x + 0.5) * size, (a.y + 0.5) * size).distance_squared_to(_at) \
+		< Vector2((b.x + 0.5) * size, (b.y + 0.5) * size).distance_squared_to(_at))
 	for key: Vector2i in _blocks.keys():
 		var mid := Vector2((key.x + 0.5) * size, (key.y + 0.5) * size)
 		if mid.distance_to(_at) > DROP + size * 0.7:
@@ -63,6 +76,35 @@ func follow(x: float, z: float) -> void:
 			if mi != null:
 				mi.queue_free()
 			_blocks.erase(key)
+
+
+func _process(_delta: float) -> void:
+	while _tasks.size() < AT_ONCE and not _queue.is_empty():
+		var key: Vector2i = _queue.pop_front()
+		_tasks[key] = WorkerThreadPool.add_task(func():
+			var arrays = _block_arrays(key)
+			_lock.lock()
+			_done[key] = arrays
+			_lock.unlock())
+	if _tasks.is_empty():
+		return
+	var put := 0
+	for key: Vector2i in _tasks.keys():
+		if put >= 2 or not WorkerThreadPool.is_task_completed(_tasks[key]):
+			continue
+		WorkerThreadPool.wait_for_task_completion(_tasks[key])
+		_tasks.erase(key)
+		_lock.lock()
+		var arrays = _done.get(key)
+		_done.erase(key)
+		_lock.unlock()
+		var mi: MeshInstance3D = null
+		if arrays != null:
+			mi = _make_mesh(key, arrays)
+			add_child(mi)
+			_place(key, mi)
+			put += 1
+		_blocks[key] = mi
 
 
 ## Puts every block where the world's origin has it (after a shift).
@@ -76,32 +118,37 @@ func block_count() -> int:
 	return _blocks.values().filter(func(b): return b != null).size()
 
 
+## Whether any block is still waiting or being laid out.
+func busy() -> bool:
+	return not _tasks.is_empty() or not _queue.is_empty()
+
+
 func _place(key: Vector2i, mi: MeshInstance3D) -> void:
 	var size := BLOCK * terrain.ridge_spacing()
 	mi.position = Vector3(key.x * size - world.origin.x, 0.0, key.y * size - world.origin.z)
 
 
-## The ridge's height at grid sample (ix, iz) over the whole route frame, or NAN.
-func _sample(ix: int, iz: int) -> float:
-	var per := terrain.ridge_cells()
-	var t := terrain.ridge_tile(Vector2i(floori(float(ix) / per), floori(float(iz) / per)))
-	if t.is_empty():
-		return NAN
-	return t[posmod(iz, per) * per + posmod(ix, per)]
-
-
-## The mesh of block `key` (BLOCK x BLOCK cells), or null where there is no ridge land in it.
-func _make_block(key: Vector2i) -> MeshInstance3D:
+## The mesh arrays of block `key` (BLOCK x BLOCK cells), or null where there is no ridge land in it. Any thread.
+func _block_arrays(key: Vector2i) -> Variant:
 	var sp := terrain.ridge_spacing()
+	var per := terrain.ridge_cells()
 	var n := BLOCK + 1
-	var heights := PackedFloat32Array()
-	heights.resize(n * n)
+	var m := n + 2   # (a sample's border either side, for the normals)
+	var tiles := {}
+	var grid := PackedFloat32Array()
+	grid.resize(m * m)
 	var any := false
-	for j in n:
-		for i in n:
-			var h := _sample(key.x * BLOCK + i, key.y * BLOCK + j)
-			heights[j * n + i] = h
-			any = any or not is_nan(h)
+	for j in m:
+		for i in m:
+			var ix := key.x * BLOCK + i - 1
+			var iz := key.y * BLOCK + j - 1
+			var tk := Vector2i(floori(float(ix) / per), floori(float(iz) / per))
+			if not tiles.has(tk):
+				tiles[tk] = terrain.ridge_tile(tk)
+			var t: PackedFloat32Array = tiles[tk]
+			var h := NAN if t.is_empty() else t[posmod(iz, per) * per + posmod(ix, per)]
+			grid[j * m + i] = h
+			any = any or (not is_nan(h) and i > 0 and j > 0 and i < m - 1 and j < m - 1)
 	if not any:
 		return null
 	var verts := PackedVector3Array()
@@ -112,19 +159,19 @@ func _make_block(key: Vector2i) -> MeshInstance3D:
 	cols.resize(n * n)
 	for j in n:
 		for i in n:
-			var h := heights[j * n + i]
+			var g := (j + 1) * m + (i + 1)
+			var h := grid[g]
 			if is_nan(h):
 				h = -50.0
-				heights[j * n + i] = h
-			verts[j * n + i] = Vector3(i * sp, h, j * sp)
-			var hl := _sample(key.x * BLOCK + i - 1, key.y * BLOCK + j)
-			var hr := _sample(key.x * BLOCK + i + 1, key.y * BLOCK + j)
-			var hu := _sample(key.x * BLOCK + i, key.y * BLOCK + j - 1)
-			var hd := _sample(key.x * BLOCK + i, key.y * BLOCK + j + 1)
+			var hl := grid[g - 1]
+			var hr := grid[g + 1]
+			var hu := grid[g - m]
+			var hd := grid[g + m]
 			hl = h if is_nan(hl) else hl
 			hr = h if is_nan(hr) else hr
 			hu = h if is_nan(hu) else hu
 			hd = h if is_nan(hd) else hd
+			verts[j * n + i] = Vector3(i * sp, h, j * sp)
 			norms[j * n + i] = Vector3(hl - hr, 2.0 * sp, hu - hd).normalized()
 			cols[j * n + i] = _colour(h)
 	var idx := PackedInt32Array()
@@ -138,6 +185,10 @@ func _make_block(key: Vector2i) -> MeshInstance3D:
 	arrays[Mesh.ARRAY_NORMAL] = norms
 	arrays[Mesh.ARRAY_COLOR] = cols
 	arrays[Mesh.ARRAY_INDEX] = idx
+	return arrays
+
+
+func _make_mesh(key: Vector2i, arrays: Array) -> MeshInstance3D:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	var mi := MeshInstance3D.new()

@@ -1,0 +1,12 @@
+{
+  "name": "dales",
+  "title": "The Dales Epic: Settle to Wensleydale",
+  "start": {"lat": 54.0687, "lon": -2.2800},
+  "via": [{"lat": 54.3040, "lon": -2.1960}, {"lat": 54.3830, "lon": -1.9500}],
+  "end": {"lat": 54.3100, "lon": -1.8300},
+  "avoid": ["motorway", "trunk"],
+  "from": "Settle",
+  "to": "Leyburn",
+  "length_km": 95,
+  "seed": 7
+}

@@ -347,13 +347,14 @@ def make_landmarks(places, peaks, frame, knots):
 
 # ---------------------------------------------------------------------------- the lot
 
-def bake_land(bucket, release, frame, knots, tiles, out, log=print):
+def bake_land(bucket, release, frame, knots, tiles, out, log=print, box_knots=None):
     """Fetches and writes the cover tiles, buildings, landmarks and places to stop; returns {buildings, landmarks, pois}.
 
     `tiles` is {level name: [(tx, tz)]} for the levels that have cover (levels.COVER_LEVELS)."""
     reach = max(BUILDING_REACH, levels.COARSE.reach)
-    lo = knots.min(axis=0) - reach - levels.COARSE.size_m
-    hi = knots.max(axis=0) + reach + levels.COARSE.size_m
+    around = knots if box_knots is None else box_knots   # (the box fetched covers the other ways too)
+    lo = around.min(axis=0) - reach - levels.COARSE.size_m
+    hi = around.max(axis=0) + reach + levels.COARSE.size_m
     lat_n, lon_w = frame.to_geo(lo[0], lo[1])
     lat_s, lon_e = frame.to_geo(hi[0], hi[1])
     box = (float(lat_s), float(lon_w), float(lat_n), float(lon_e))

@@ -263,7 +263,7 @@ func test_magazine_issues() -> void:
 		lens[a["len"]] = true
 	check(lens.size() == 3, "short, ride and epic adventures")
 	var out_at := func(level: int) -> int: return all.filter(func(a): return AdventureMag.unlocked(a, level)).size()
-	check(out_at.call(1) == 4 and out_at.call(3) == 7 and out_at.call(6) == 10 and out_at.call(50) == all.size(),
+	check(out_at.call(1) == 4 and out_at.call(3) == 8 and out_at.call(6) == 11 and out_at.call(50) == all.size(),
 		"new issues come out with level (%d, %d, %d of %d)" % [out_at.call(1), out_at.call(3), out_at.call(6), all.size()])
 	check(AdventureMag.next_issue(1)["n"] == 2 and AdventureMag.next_issue(50).is_empty(), "the next issue's known")
 	check(AdventureMag.road_theme("varied") == "varied" and AdventureMag.road_theme("nowhere") == "varied", "a theme the game lacks rides varied")
@@ -330,7 +330,7 @@ func test_magazine_ui() -> void:
 	prop.use({})
 	var mag: AdventureMag = main.trip.magazine
 	check(mag != null and main.trip.magazine_open(), "it opens")
-	check(mag.pages().size() == 11 and str(mag.pages()[10].get("id", "x")) == "", "level 7: three issues out, then the next one's coming (%d pages)" % mag.pages().size())
+	check(mag.pages().size() == 12 and str(mag.pages()[11].get("id", "x")) == "", "level 7: three issues out, then the next one's coming (%d pages)" % mag.pages().size())
 	mag.open("red_rock")
 	check(mag._title.text == "The Red Rock Run" and mag._pic.texture != null and mag._kit.text.contains("tank"), "a page: title, picture, kit")
 	await _until(func():

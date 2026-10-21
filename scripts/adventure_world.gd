@@ -131,6 +131,7 @@ func setup(seed: int, km: float, theme := "varied", dest := "", real_id := "") -
 		"finish": func(_site, xf, info): return AdventureProps.banner("DESTINATION", xf, float(info["width"]), Color(0.75, 0.2, 0.1)),
 		"fork": func(site, xf, _info): return AdventureForks.signpost(site, xf, route),
 		AdventureJunctions.KIND: func(site, xf, _info): return AdventureJunctions.build(route, site, xf),
+		"limit": func(site, xf, _info): return AdventureProps.limit_sign(float(site["kmh"]), route.real != null and route.real.region == "uk", xf),
 	}
 	AdventureStops.register(self)
 	if dest != "":

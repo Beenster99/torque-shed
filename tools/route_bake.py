@@ -34,6 +34,7 @@ import urllib.request
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fork_bake  # noqa: E402
 import land_bake  # noqa: E402
 import road_facts  # noqa: E402
 import levels  # noqa: E402
@@ -332,47 +333,107 @@ def length_of(pts):
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
 
 
+def cut_at_connectors(pts, cons):
+    """A segment's polyline cut at its connectors (Overture `at`: the fraction of its length each is along):
+    [(connector, next connector, points between)] for each consecutive pair."""
+    seg = [math.dist(p, q) for p, q in zip(pts, pts[1:])]
+    total = sum(seg)
+    cum = [0.0]
+    for d in seg:
+        cum.append(cum[-1] + d)
+
+    def at(frac):
+        d = min(max(frac, 0.0), 1.0) * total
+        for i in range(len(seg)):
+            if cum[i + 1] >= d:
+                t = (d - cum[i]) / seg[i] if seg[i] > 0 else 0.0
+                return i, (pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t)
+        return len(seg) - 1, pts[-1]
+    out = []
+    for c0, c1 in zip(cons, cons[1:]):
+        i0, p0 = at(float(c0["at"]))
+        i1, p1 = at(float(c1["at"]))
+        sub = [p0] + [pts[k] for k in range(i0 + 1, i1 + 1)] + [p1]
+        out.append((c0["connector_id"], c1["connector_id"], sub))
+    return out
+
+
 class Graph:
     """The ridden roads as a graph: nodes are Overture connectors, edges are road segments."""
 
-    def __init__(self, segments, frame):
+    def __init__(self, segments, frame, avoid=()):
         self.edges = []     # {a, b, pts [(x, z)] from a to b, cls, surface, label, length}
         self.pos = {}       # connector id -> (x, z)
         self.adj = {}       # connector id -> [(other id, edge index)]
         for s in segments:
             info = segment_kind(s)
             cons = s.get("connectors") or []
-            if info is None or len(cons) < 2:
+            if info is None or len(cons) < 2 or info[0] in avoid:
                 continue
             cons = sorted(cons, key=lambda c: c["at"])
-            for line in parse_wkb(s["geometry"]):
+            lines = parse_wkb(s["geometry"])
+            for line in lines:
                 if len(line) < 2:
                     continue
                 lon, lat = zip(*line)
                 x, z = frame.to_world(np.array(lat), np.array(lon))
                 pts = list(zip(x.tolist(), z.tolist()))
-                a, b = cons[0]["connector_id"], cons[-1]["connector_id"]
-                if a == b:
-                    continue
-                self.pos.setdefault(a, pts[0])
-                self.pos.setdefault(b, pts[-1])
-                e = {"a": a, "b": b, "pts": pts, "cls": info[0], "surface": info[1], "label": segment_label(s),
-                     "length": length_of(pts), "limit": road_facts.segment_limit(s.get("speed_limits"))}
-                self.adj.setdefault(a, []).append((b, len(self.edges)))
-                self.adj.setdefault(b, []).append((a, len(self.edges)))
-                self.edges.append(e)
+                # A segment can be joined to others part-way along (a connector with an `at` between 0 and 1): the
+                # road graph needs an edge between each pair of connectors, so cut it there.
+                parts = [(cons[0]["connector_id"], cons[-1]["connector_id"], pts)]
+                if len(lines) == 1 and len(cons) > 2:
+                    parts = cut_at_connectors(pts, cons)
+                for a, b, sub in parts:
+                    if a == b or len(sub) < 2:
+                        continue
+                    self.pos.setdefault(a, sub[0])
+                    self.pos.setdefault(b, sub[-1])
+                    e = {"a": a, "b": b, "pts": sub, "cls": info[0], "surface": info[1], "label": segment_label(s),
+                         "length": length_of(sub), "limit": road_facts.segment_limit(s.get("speed_limits"))}
+                    self.adj.setdefault(a, []).append((b, len(self.edges)))
+                    self.adj.setdefault(b, []).append((a, len(self.edges)))
+                    self.edges.append(e)
 
     def weight(self, ei):
         e = self.edges[ei]
         return e["length"] * CLASSES[e["cls"]][1]
 
-    def nearest_node(self, p, within):
+    def component_of(self, node):
+        """The nodes reachable from `node` (its connected piece of the road graph): a via or end point snaps to one of
+        these, not to a stray bit of road that leads nowhere."""
+        if not hasattr(self, "_comps"):
+            self._comps = {}
+        if node not in self._comps:
+            comp, stack = {node}, [node]
+            while stack:
+                n = stack.pop()
+                for m, _ in self.adj.get(n, []):
+                    if m not in comp:
+                        comp.add(m)
+                        stack.append(m)
+            for n in comp:
+                self._comps[n] = comp
+        return self._comps[node]
+
+    def nearest_node(self, p, within, component=None):
+        """The node nearest `p` within `within` metres (and in `component`, a set of nodes, when given), or None."""
         best, bd = None, within
         for n, q in self.pos.items():
+            if component is not None and n not in component:
+                continue
             d = math.dist(p, q)
             if d < bd:
                 best, bd = n, d
         return best
+
+    def nearest_connected(self, p, within, min_nodes=200):
+        """The node nearest `p` within `within` metres that is part of a road network of at least `min_nodes` junctions
+        (not a stray bit of road), or None."""
+        near = sorted((math.dist(p, q), n) for n, q in self.pos.items() if math.dist(p, q) <= within)
+        for _, n in near:
+            if len(self.component_of(n)) >= min_nodes:
+                return n
+        return near[0][1] if near else None
 
     def dijkstra(self, start):
         """(weighted cost, real length, previous (node, edge)) of every node reachable from `start`."""
@@ -392,6 +453,31 @@ class Graph:
                     prev[m] = (n, ei)
                     heapq.heappush(heap, (w, m))
         return cost, length, prev
+
+    def shortest(self, start, goal, banned=frozenset(), max_cost=float("inf")):
+        """The cheapest path from `start` to `goal` as [(from, edge, to)] that uses none of the edges in `banned` and
+        costs no more than `max_cost`, or None."""
+        cost, prev = {start: 0.0}, {}
+        heap = [(0.0, start)]
+        done = set()
+        while heap:
+            c, n = heapq.heappop(heap)
+            if n in done:
+                continue
+            if n == goal:
+                return self.path(prev, start, goal) if goal != start else []
+            if c > max_cost:
+                return None
+            done.add(n)
+            for m, ei in self.adj.get(n, []):
+                if ei in banned:
+                    continue
+                w = c + self.weight(ei)
+                if m not in cost or w < cost[m] - 1e-9:
+                    cost[m] = w
+                    prev[m] = (n, ei)
+                    heapq.heappush(heap, (w, m))
+        return None
 
     def path(self, prev, start, end):
         """The edges from `start` to `end`, as [(from node, edge index, to node)]."""
@@ -449,6 +535,33 @@ def classify_turn(angle):
     if a < 135:
         return side
     return "sharp_" + side
+
+
+def road_summary(chunks, names_by_chunk, elev, issue):
+    """What the magazine says about the road from the data: where from and to (the issue's own words), the named roads
+    it follows (longest first), and how much it climbs: {from, to, roads, climb_m, top_m, low_m}."""
+    generic = set(GENERIC_NAMES.values())
+    metres = {}
+    for c in chunks:
+        if c["name"] not in generic:
+            metres[c["name"]] = metres.get(c["name"], 0.0) + CHUNK
+    roads = [n for n, _ in sorted(metres.items(), key=lambda kv: (-kv[1], kv[0]))[:4]]
+    e = np.asarray(elev, dtype=float)
+    climb = float(np.maximum(np.diff(e), 0.0).sum())
+    return {"from": issue.get("from", ""), "to": issue.get("to", ""), "roads": roads, "climb_m": int(round(climb)),
+            "top_m": int(round(float(e.max()))), "low_m": int(round(float(e.min())))}
+
+
+def strip_spurs(steps):
+    """The path with every out-and-back along the same road taken out (a via point on a dead-end street would make the
+    route drive in and turn round): steps are (from, edge, to)."""
+    out = []
+    for st in steps:
+        if out and out[-1][1] == st[1] and out[-1][2] == st[0] and out[-1][0] == st[2]:
+            out.pop()
+        else:
+            out.append(st)
+    return out
 
 
 def route_from_path(graph, steps):
@@ -739,31 +852,45 @@ def bake(args, log=print):
     log("Overture release %s" % release)
     g0 = Frame(args.lat, args.lon)            # provisional: metres from the given point
     length_m = (args.length_km * 1000.0) + RUN_OUT
+    via = [g0.to_world(v[0], v[1]) for v in (getattr(args, "via", None) or [])]
     if args.end:
         ex, ez = g0.to_world(args.end[0], args.end[1])
-        box = (min(0.0, float(ex)) - 4000.0, min(0.0, float(ez)) - 4000.0, max(0.0, float(ex)) + 4000.0,
-               max(0.0, float(ez)) + 4000.0)
+        xs = [0.0, float(ex)] + [float(v[0]) for v in via]
+        zs = [0.0, float(ez)] + [float(v[1]) for v in via]
+        box = (min(xs) - 4000.0, min(zs) - 4000.0, max(xs) + 4000.0, max(zs) + 4000.0)
     else:
         r = min(length_m * 0.8 + 3000.0, 60000.0)
         box = (-r, -r, r, r)
     lat_n, lon_w = g0.to_geo(box[0], box[1])
     lat_s, lon_e = g0.to_geo(box[2], box[3])
     segments = fetch_segments(float(lat_s), float(lon_w), float(lat_n), float(lon_e), release, log)
-    graph = Graph(segments, g0)
-    start = graph.nearest_node((0.0, 0.0), SNAP_START_M)
+    avoid = set(getattr(args, "avoid", None) or [])
+    graph = Graph(segments, g0, avoid)
+    start = graph.nearest_connected((0.0, 0.0), SNAP_START_M)
     if start is None:
         raise SystemExit("no road within %d m of the start point; move it onto a road" % SNAP_START_M)
     warn = None
     if args.end:
-        end = graph.nearest_node((float(ex), float(ez)), SNAP_START_M)
+        end = graph.nearest_node((float(ex), float(ez)), SNAP_START_M, graph.component_of(start))
         if end is None:
             raise SystemExit("no road within %d m of the end point" % SNAP_START_M)
     else:
         end, warn = choose_end(graph, start, length_m, args.seed)
-    _, _, prev = graph.dijkstra(start)
-    if end not in prev and end != start:
-        raise SystemExit("the end cannot be reached by road from the start")
-    steps = graph.path(prev, start, end)
+    # The path: start to each via point in turn, and on to the end.
+    stops = [start]
+    for v in via:
+        node = graph.nearest_node((float(v[0]), float(v[1])), SNAP_START_M, graph.component_of(start))
+        if node is None:
+            raise SystemExit("no road within %d m of a via point" % SNAP_START_M)
+        stops.append(node)
+    stops.append(end)
+    steps = []
+    for a, b in zip(stops, stops[1:]):
+        _, _, prev = graph.dijkstra(a)
+        if b not in prev and b != a:
+            raise SystemExit("the end cannot be reached by road from the start (or a via point)")
+        steps += graph.path(prev, a, b)
+    steps = strip_spurs(steps)
     route_pts, owner, turns = route_from_path(graph, steps)
     if warn:
         log("WARNING: " + warn)
@@ -797,18 +924,32 @@ def bake(args, log=print):
     names = sorted({c["name"] for c in chunks})
     # (the chunks' rows are made after the land, which says which are built up: see below)
 
-    # The land: height tiles at each level down the corridor.
+    # Forks: the second-best way between two junctions of the route, a road of its own.
+    region = road_facts.region_of(args.lat, args.lon)
+    forks = fork_bake.find_forks(sys.modules[__name__], graph, steps, knots, shift, args.seed) if args.forks else []
+    ways = [fork_bake.build_way(sys.modules[__name__], graph, fk, knots, shift, elev, dem, frame, edge_of_s, region)
+            for fk in forks]
+    fork_rows = fork_bake.fork_rows(sys.modules[__name__], forks, ways, chunks)
+    os.makedirs(args.out, exist_ok=True)
+    log("forks: %d (%s)" % (len(forks), ", ".join("%d to %d km, other way %.1f km" % (
+        fk["i0"] * STEP / 1000, fk["i1"] * STEP / 1000, w["length"] / 1000.0) for fk, w in zip(forks, ways))))
+    with open(os.path.join(args.out, "forks.json"), "w") as f:
+        json.dump(fork_rows, f, separators=(",", ":"))
+    all_knots = np.vstack([knots] + [np.column_stack([w["x"], w["z"]]) for w in ways])
+
+    # The land: height tiles at each level down the corridor (the other ways' too).
     os.makedirs(args.out, exist_ok=True)
     dems = {lv.name: (dem if lv is levels.FINE else Dem(args.cache, args.lat, log, lv.spacing)) for lv in levels.LEVELS}
     tiles, has_sea, land = bake_terrain(
-        args.out, frame, knots, dems,
-        lambda cover_tiles: land_bake.bake_land(OVERTURE_BUCKET, release, frame, knots, cover_tiles, args.out, log), log)
+        args.out, frame, all_knots, dems,
+        lambda cover_tiles: land_bake.bake_land(OVERTURE_BUCKET, release, frame, knots, cover_tiles, args.out, log,
+                                                box_knots=all_knots), log)
 
     # Speed limits: posted where the data has them, else the country's default for the class, lower where built up.
-    region = road_facts.region_of(args.lat, args.lon)
     limits = road_facts.chunk_limits(chunks, [c["limit"] for c in chunks],
                                      road_facts.built_up_chunks(len(chunks), land["buildings"]), region)
     chunk_rows = [[c["surface"], c["width"], c["cls"], names.index(c["name"]), limits[i]] for i, c in enumerate(chunks)]
+    summary = road_summary(chunks, names_by_chunk=None, elev=elev, issue=getattr(args, "places", None) or {})
     # Where side roads join: the route's junctions (the graph is in the start-point frame, the knots in the route's).
     junctions = road_facts.thin_junctions(road_facts.junctions_along(graph, steps, knots + shift))
     with open(os.path.join(args.out, "junctions.json"), "w") as f:
@@ -824,13 +965,13 @@ def bake(args, log=print):
     end_geo = frame.to_geo(knots[-1][0], knots[-1][1])
     start_geo = frame.to_geo(0.0, 0.0)
     meta = {
-        "format": 6, "name": args.name, "title": args.title or args.name,
+        "format": 7, "name": args.name, "title": args.title or args.name,
         "start": {"lat": round(float(start_geo[0]), 6), "lon": round(float(start_geo[1]), 6)},
         "end": {"lat": round(float(end_geo[0]), 6), "lon": round(float(end_geo[1]), 6)},
         "length_m": round((len(knots) - 1) * STEP, 1), "run_out_m": RUN_OUT,
         "levels": [lv.meta() for lv in levels.LEVELS], "tile_counts": {k: len(v) for k, v in tiles.items()},
         "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
-        "building_count": len(land["buildings"]), "region": region, "junction_count": len(junctions),
+        "building_count": len(land["buildings"]), "region": region, "junction_count": len(junctions), "fork_count": len(forks), "summary": summary,
         "poi_count": len(land["pois"]), "landmark_count": len(land["landmarks"]), "sea": has_sea, "theme": "coastal" if has_sea else "hills", "warning": warn,
         "sources": {"overture_release": release, "elevation": "Mapterhorn, AWS Terrain Tiles fallback"},
         "credits": CREDITS,
@@ -843,7 +984,7 @@ def bake(args, log=print):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--issue", help="a JSON file with name, title, start {lat, lon}, end {lat, lon} and length_km")
+    ap.add_argument("--issue", help="a JSON file with name, title, start {lat, lon}, end {lat, lon}, length_km, and optionally via [{lat, lon}], avoid [class] and forks (false for none)")
     ap.add_argument("--name", help="short id, used as the folder name")
     ap.add_argument("--title", default="", help="the issue's name for the title screen")
     ap.add_argument("--lat", type=float, help="start point latitude (put it near a road)")
@@ -854,7 +995,12 @@ def main(argv=None):
     ap.add_argument("--out", help="folder to write (default data/routes/NAME)")
     ap.add_argument("--cache", default=os.path.expanduser("~/.cache/torque-shed-bake"), help="download cache")
     ap.add_argument("--release", help="Overture release, default the latest")
+    ap.add_argument("--via", type=float, nargs=2, action="append", metavar=("LAT", "LON"),
+                    help="a point the route passes (repeat for more), between the start and the end")
+    ap.add_argument("--avoid", default="", help="road classes to leave out, comma-separated (e.g. motorway,trunk)")
+    ap.add_argument("--no-forks", dest="forks", action="store_false", help="bake no second ways for the crew to vote on")
     args = ap.parse_args(argv)
+    args.avoid = [c for c in str(args.avoid).split(",") if c]
     if args.issue:
         with open(args.issue) as f:
             issue = json.load(f)
@@ -867,6 +1013,13 @@ def main(argv=None):
         if args.length_km is None:
             args.length_km = issue.get("length_km")
         args.seed = args.seed or int(issue.get("seed", 0))
+        if not args.via and issue.get("via"):
+            args.via = [[v["lat"], v["lon"]] for v in issue["via"]]
+        if not args.avoid and issue.get("avoid"):
+            args.avoid = list(issue["avoid"])
+        if issue.get("forks") is False:
+            args.forks = False
+        args.places = {"from": issue.get("from", ""), "to": issue.get("to", "")}
     if args.lat is None or args.lon is None or not args.name:
         ap.error("give --name, --lat and --lon (or --issue)")
     if args.length_km is None:
