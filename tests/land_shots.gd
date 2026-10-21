@@ -9,6 +9,7 @@ var height := 2.4
 var side := 0.0
 var tag := ""
 var noridge := false
+var plan := false
 var noland := false
 var yaw := 0.0
 var pitch := 0.0
@@ -28,6 +29,8 @@ func _ready() -> void:
 			yaw = float(a.trim_prefix("--yaw="))
 		elif a.begins_with("--pitch="):
 			pitch = float(a.trim_prefix("--pitch="))
+		elif a == "--plan":
+			plan = true
 		elif a == "--noridge":
 			noridge = true
 		elif a == "--noland":
@@ -55,7 +58,16 @@ func _ready() -> void:
 	add_child(cam)
 	cam.make_current()
 	var w := AdventureWorld.new()
-	w.setup(11, 23.0, "coastal", "lighthouse", pack)
+	if plan:
+		# A journey planned over the region, as the shed's map does: Shodoshima's two ends.
+		var r := RealRegion.get_region(pack)
+		var res := RoutePlanner.plan(r, {"pins": [r.geo_to_xz(34.518638, 134.269646), r.geo_to_xz(34.499373, 134.347915)], "mode": "main"})
+		var planned: RealPack = res["pack"]
+		RealPack.register(planned)
+		print("planned ", planned.id, " ", planned.max_km(), " km, theme ", planned.theme, " sea ", planned.sea)
+		w.setup(5, floorf(planned.max_km()), planned.theme, "lighthouse", planned.id)
+	else:
+		w.setup(11, 23.0, "coastal", "lighthouse", pack)
 	w.focus = func(): return [cam.global_position]
 	w.origin_shifted.connect(func(d): cam.global_position -= d)
 	add_child(w)

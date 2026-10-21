@@ -467,6 +467,7 @@ func _run_all() -> void:
 	_test_real_limits()
 	await _test_real_ridges()
 	_test_real_land()
+	_test_export_data()
 	await _test_real_land_blocks()
 	_test_real_building_shapes()
 	_test_real_budget()
@@ -22115,6 +22116,10 @@ func _test_real_ridges() -> void:
 
 func _test_real_land_blocks() -> void:
 	await _real().test_real_land()
+
+
+func _test_export_data() -> void:
+	_real().test_export_includes_data()
 
 
 func _test_real_land() -> void:
