@@ -107,3 +107,4 @@ func _refresh() -> void:
 	var why := Shed.check(Shed.me(), {"a": "home_answer", "offer": offer_id, "yes": true})
 	_yes.disabled = why != ""
 	_yes.tooltip_text = why
+	_status.text = why

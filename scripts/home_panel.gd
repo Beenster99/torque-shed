@@ -165,6 +165,10 @@ func _refresh() -> void:
 	for line in s["lines"]:
 		var k := UITheme.label(str(line[0]), 15, Color(1, 1, 1, 0.55))
 		var v := UITheme.label(str(line[1]), 15)
+		# One line each (a wrapping label in a grid column shrinks to nothing).
+		k.autowrap_mode = TextServer.AUTOWRAP_OFF
+		v.autowrap_mode = TextServer.AUTOWRAP_OFF
+		k.custom_minimum_size.x = 110.0
 		_grid.add_child(k)
 		_grid.add_child(v)
 	_high.text = "\n".join(s["highlights"]) if not (s["highlights"] as Array).is_empty() else "A stock build."
