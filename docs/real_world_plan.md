@@ -187,6 +187,19 @@ ride).
 
 ### Stage 4: choose your own route from a region
 
+**Status.** Built for Shodoshima: `tools/region_bake.py` bakes a region (13 MB for the island: its 4,300 junctions and
+5,300 roads as a graph, and the three-level land, 8,400 buildings, places and landmarks beside any road);
+`RealRegion` loads it; `RoutePlanner` plans a journey over it in GDScript on a worker thread (Dijkstra with a cost per
+class for Quick, Scenic and Tracks, spurs to dead-end pins left out, bends smoothed by revisiting only what moved, the
+real heights graded, junctions and roundabouts, buildings, places and speed limits) and a 24 km route plans in about
+0.7 s. It matches the baker's own road for the same two pins (length within 4 %, heights within 1 m). The shed's map
+(`JourneyMap`, from the magazine) shows the island shaded by height with its roads, pins from anyone in the crew are
+shared (`AdventureJourney`, in the shed's state), and the host's Start makes an adventure carrying the plan; every
+game plans it again (`AdventurePlans`, cached by the plan's key) and the hash says they got the same road
+(`tests/mp_journey.gd` runs two processes through it). Still to do from the list below: place search, suggested
+destinations, forks on a planned road, one-way streets and turn restrictions, and the region download (the region is
+bundled for now).
+
 **Playable loop.** An issue is now a *region* (the whole of Shodoshima; a 60 by 60 km square of the Dales). Its article
 shows the region's map on the shed screen with a few suggested destinations. The host picks a start, a destination and
 waypoints by pointing at the map; the crew sees the pins and votes on waypoints the way they vote at forks; the route

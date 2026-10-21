@@ -438,6 +438,17 @@ func _run_all() -> void:
 	await _test_kit_fuel()
 	print("Adventure rides (v0.12.0): the streaming road, floating origin, surfaces, fuel stations, there and back")
 	_test_adventure_route()
+	_test_region_loads()
+	_test_region_nearest()
+	_test_region_land()
+	_test_planner_plan()
+	_test_planner_deterministic()
+	_test_planner_errors()
+	_test_planner_speed()
+	await _test_planner_ride()
+	_test_planner_via()
+	_test_planner_board()
+	await _test_planner_map()
 	_test_real_pack()
 	_test_real_levels()
 	_test_real_forks()
@@ -21902,6 +21913,58 @@ func _adventure() -> RefCounted:
 
 func _real() -> RefCounted:
 	return load("res://tests/real_road_tests.gd").new(self)
+
+
+func _region() -> RefCounted:
+	return load("res://tests/real_region_tests.gd").new(self)
+
+
+func _test_region_loads() -> void:
+	_region().test_region()
+
+
+func _test_region_nearest() -> void:
+	_region().test_nearest()
+
+
+func _test_region_land() -> void:
+	_region().test_land()
+
+
+func _planner() -> RefCounted:
+	return load("res://tests/route_planner_tests.gd").new(self)
+
+
+func _test_planner_plan() -> void:
+	_planner().test_plan()
+
+
+func _test_planner_deterministic() -> void:
+	_planner().test_deterministic()
+
+
+func _test_planner_errors() -> void:
+	_planner().test_errors()
+
+
+func _test_planner_speed() -> void:
+	_planner().test_speed()
+
+
+func _test_planner_via() -> void:
+	_planner().test_via()
+
+
+func _test_planner_board() -> void:
+	_planner().test_board()
+
+
+func _test_planner_map() -> void:
+	await _planner().test_map()
+
+
+func _test_planner_ride() -> void:
+	await _planner().test_ride()
 
 
 func _test_real_pack() -> void:

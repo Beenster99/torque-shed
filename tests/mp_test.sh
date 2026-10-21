@@ -90,7 +90,16 @@ RCLIENT=$?
 wait $RHOST
 RHOSTRC=$?
 grep -h "MP real" /tmp/torque_mp_real_host.log /tmp/torque_mp_real_client.log
-if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ] || [ $DHOSTRC -ne 0 ] || [ $DCLIENT -ne 0 ] || [ $PHOSTRC -ne 0 ] || [ $PCLIENT -ne 0 ] || [ $YHOSTRC -ne 0 ] || [ $YCLIENT -ne 0 ] || [ $BHOSTRC -ne 0 ] || [ $BCLIENT -ne 0 ] || [ $RHOSTRC -ne 0 ] || [ $RCLIENT -ne 0 ]; then
+# A journey planned together on the shed's map: both put pins on it, each game plans the same road, and both ride it.
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_journey.tscn -- --role=host > /tmp/torque_mp_journey_host.log 2>&1 &
+JHOST=$!
+sleep 4
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_journey.tscn -- --role=client > /tmp/torque_mp_journey_client.log 2>&1
+JCLIENT=$?
+wait $JHOST
+JHOSTRC=$?
+grep -h "MP journey" /tmp/torque_mp_journey_host.log /tmp/torque_mp_journey_client.log
+if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ] || [ $DHOSTRC -ne 0 ] || [ $DCLIENT -ne 0 ] || [ $PHOSTRC -ne 0 ] || [ $PCLIENT -ne 0 ] || [ $YHOSTRC -ne 0 ] || [ $YCLIENT -ne 0 ] || [ $BHOSTRC -ne 0 ] || [ $BCLIENT -ne 0 ] || [ $RHOSTRC -ne 0 ] || [ $RCLIENT -ne 0 ] || [ $JHOSTRC -ne 0 ] || [ $JCLIENT -ne 0 ]; then
 	echo "Multiplayer test failed"
 	exit 1
 fi
