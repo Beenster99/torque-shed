@@ -46,6 +46,14 @@ jobs:
           godot --headless --path . --import || true
           mkdir -p build/windows
           godot --headless --path . --export-release "Windows Desktop" build/windows/TorqueShed.exe
+      - name: Check the build holds the land's tiles
+        run: |
+          # (an export only takes the files its include filters name: a build once shipped without them, and every real road came out flat)
+          for p in data/routes/shodoshima/tiles/ data/regions/shodoshima/tiles/ data/routes/dales/ridge/; do
+            n=$(grep -a -o "$p" build/windows/TorqueShed.exe | wc -l)
+            echo "$p: $n"
+            test "$n" -gt 0
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: TorqueShed-windows

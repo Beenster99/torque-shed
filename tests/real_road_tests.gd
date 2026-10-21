@@ -629,3 +629,35 @@ func test_real_land() -> void:
 	check(land.block_count() == 0 and land._at.x == INF, "a new road (a fork's way) clears them to be laid out again")
 	w.queue_free()
 	await t.get_tree().process_frame
+
+
+## What the game ships: every file of the game's data (the roads' and regions' tiles included) must be in the exported
+## build, which only takes files that are resources or that its include filters name. (A build once went out with the
+## tiles missing: the land came out flat at sea level, and rides across it were a road on a blue plane.)
+func test_export_includes_data() -> void:
+	var cfg := FileAccess.get_file_as_string("res://export_presets.cfg")
+	var filters: Array[String] = []
+	for line in cfg.split("\n"):
+		if line.begins_with("include_filter="):
+			for f in line.trim_prefix("include_filter=").trim_prefix("\"").trim_suffix("\"").split(","):
+				filters.append(f.strip_edges())
+			break
+	check(not filters.is_empty(), "the export presets have include filters (%s)" % ", ".join(filters))
+	var missing := {}
+	var files := 0
+	var stack: Array[String] = ["data"]
+	while not stack.is_empty():
+		var rel: String = stack.pop_back()
+		var d := DirAccess.open("res://" + rel)
+		if d == null:
+			continue
+		for sub in d.get_directories():
+			stack.append(rel + "/" + sub)
+		for fn in d.get_files():
+			if fn.ends_with(".import") or fn.ends_with(".uid"):
+				continue
+			files += 1
+			var path := rel + "/" + fn
+			if not filters.any(func(f): return path.match(f)):
+				missing[fn.get_extension()] = path
+	check(files > 100 and missing.is_empty(), "every one of the %d data files is in the export (not: %s)" % [files, str(missing)])
