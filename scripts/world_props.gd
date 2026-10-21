@@ -37,6 +37,11 @@ static func plan(t: WorldTerrain, r: WorldRoads, seed_value: int) -> Dictionary:
 	var p := {"trees": [], "rocks": [], "track_rocks": [], "buildings": [], "fences": [], "armco": [], "chevrons": [],
 		"signs": [], "bales": [], "lamps": []}
 	var taken := {}
+	# The crew's house plots (HomePlots) are kept clear.
+	for i in HomePlots.PLOTS.size():
+		var plot: Dictionary = HomePlots.PLOTS[i]
+		var o: Vector3 = Basis(Vector3.UP, float(plot["yaw"])) * Vector3(HomePlots.RECT.get_center().x, 0.0, HomePlots.RECT.get_center().y)
+		_take(taken, (plot["at"] as Vector2) + Vector2(o.x, o.z), HomePlots.RECT.size * 0.5, float(plot["yaw"]), 6.0)
 	_plan_sites(p, t, r, rng, taken)
 	_plan_fields(p, t, r, taken)
 	_plan_barriers(p, t, r)

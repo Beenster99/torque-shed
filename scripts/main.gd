@@ -27,6 +27,9 @@ var coffee_panel: CoffeePanel   # the cafe counter's menu, and talking to a bike
 var coffee_view: CoffeeView     # the bikers at the cafe, its barista and the trays put down
 var bike_order_panel: BikeOrderPanel   # a bike's card: order one of these, or copy its blueprint
 var bike_copy: BikeCopyView     # which bike you're looking at, for that card ({order_bike})
+var home_panel: HomePanel       # a collection bike's card, from its information stand at its owner's house
+var home_offer: HomeOfferPanel  # someone's offer for a bike in your collection: accept or decline
+var _offer_check := 0.0
 var staff_panel: StaffPanel     # talking to one of the staff and giving them a job
 var staff_view: StaffView       # the garage's staff at work
 var paint_bench: PaintBench     # the paint mixing bay's bench, stepped up to (see PaintBay)
@@ -198,6 +201,18 @@ func _ready() -> void:
 		bike_order_panel.open_bike(src, title)
 		if bike_order_panel.visible:
 			_capture_mouse(false))
+	home_panel = HomePanel.new()
+	home_panel.visible = false
+	ui.add_child(home_panel)
+	home_panel.closed.connect(func(): _capture_mouse(true))
+	world.homes.stand_used.connect(func(cid):
+		home_panel.open_bike(cid)
+		if home_panel.visible:
+			_capture_mouse(false))
+	home_offer = HomeOfferPanel.new()
+	home_offer.visible = false
+	ui.add_child(home_offer)
+	home_offer.closed.connect(func(): _capture_mouse(true))
 	staff_panel = StaffPanel.new()
 	staff_panel.visible = false
 	ui.add_child(staff_panel)
@@ -421,6 +436,9 @@ func _end_session() -> void:
 	recovery_panel.visible = false
 	coffee_panel.visible = false
 	bike_order_panel.visible = false
+	home_panel.visible = false
+	home_offer.visible = false
+	home_offer.later.clear()
 	staff_panel.visible = false
 	paint_bench.visible = false
 	PaintBayRoom.live = {}
@@ -441,6 +459,26 @@ func _end_session() -> void:
 	hud.visible = false
 	_title_camera()
 	camera.current = true
+	_capture_mouse(false)
+
+
+## A collection bike's card or an offer for one of yours is up.
+func _home_ui_open() -> bool:
+	return home_panel.visible or home_offer.visible
+
+
+## Now and then, on foot with nothing else open: an offer for one of your bikes comes up to answer.
+func _check_offers(delta: float, active: bool) -> void:
+	_offer_check -= delta
+	if _offer_check > 0.0:
+		return
+	_offer_check = 1.0
+	if not active or bike != null or walker == null or recovery.driving or recovery.riding_along:
+		return
+	var o := home_offer.due()
+	if o.is_empty():
+		return
+	home_offer.open_offer(int(o["id"]))
 	_capture_mouse(false)
 
 
@@ -842,7 +880,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return   # geometry mode takes its own keys, Esc and F2 included
 	if event.is_action_pressed("geometry_mode") and bike == null and walker and not menu.visible and not computer.visible \
 			and not tuning.visible and not sales_pc.visible and not label_dialog.visible and not contract_panel.visible and not coffee_panel.visible and not staff_panel.visible \
-			and not paint_bench.visible and not bike_order_panel.visible:
+			and not paint_bench.visible and not bike_order_panel.visible and not _home_ui_open():
 		get_viewport().set_input_as_handled()
 		open_geometry()
 		return
@@ -857,6 +895,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			coffee_panel.close_dialog()
 		elif bike_order_panel.visible:
 			bike_order_panel.close_dialog()
+		elif home_panel.visible:
+			home_panel.close_dialog()
+		elif home_offer.visible:
+			home_offer.close_dialog()
 		elif staff_panel.visible:
 			staff_panel.close_dialog()
 		elif paint_bench.visible:
@@ -876,7 +918,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if menu.visible or computer.visible or tuning.visible or sales_pc.visible or label_dialog.visible or contract_panel.visible or coffee_panel.visible or staff_panel.visible \
-			or paint_bench.visible or bike_order_panel.visible or recovery_panel.visible or (bike == null and not recovery.driving and not recovery.riding_along):
+			or paint_bench.visible or bike_order_panel.visible or _home_ui_open() or recovery_panel.visible or (bike == null and not recovery.driving and not recovery.riding_along):
 		return
 	if recovery.riding_along:
 		if recovery.passenger_input(event):
@@ -958,10 +1000,11 @@ func _physics_process_body(delta: float) -> void:
 		return
 	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
 		and not contract_panel.visible and not coffee_panel.visible and not staff_panel.visible and not paint_bench.visible and not geometry.active \
-		and not bike_order_panel.visible \
+		and not bike_order_panel.visible and not _home_ui_open() \
 		and not recovery_panel.visible and not trip.map_open() and not trip.magazine_open() and not trip.journey_open() and not trip.diary_open()
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
+	_check_offers(delta, active and not emote_bar.visible)
 	if walker:
 		# Holding the cursor on a touch screen (see ScreenTouch) you stand still.
 		walker.controls_enabled = active and (walker.touch == null or walker.touch.focused == "")

@@ -35,6 +35,10 @@ var CAFE_TRAY_XF := Transform3D(Basis(), CoffeeShop.CENTER + Vector3(0.0, 0.0, 3
 var SPRAY_XF := Transform3D(Basis(), Workshop.CENTER + Vector3(-2.5, 0.0, 1.0))   # where the tank to spray is left
 
 
+## What the client offers the host for the bike in its collection (the collection offer step).
+const HOME_OFFER := 1234
+
+
 func _ready() -> void:
 	# The old demo bikes these were written round (a player's new shed starts empty).
 	Shed.demo_bikes = true
@@ -143,6 +147,9 @@ func _ready() -> void:
 	var copy_cost := 0
 	var copy_logged := 0        # "Ordered:" lines in the client's cash log before (it carries on between runs)
 	var copy_ok := false
+	var home_step := 0          # a collection bike: 1 put on show (host) or offered for (client)
+	var home_logged := 0        # this side's cash log lines for it before (it carries on between runs)
+	var home_ok := false
 	while Time.get_ticks_msec() < deadline and not (moved and shed_ok):
 		await get_tree().physics_frame
 		if not main.in_session:
@@ -732,7 +739,33 @@ func _ready() -> void:
 		var copy_paid: bool = (role == "client" and copy_asked and paid_log.size() == copy_logged + 1 and int(paid_log[-1]["amt"]) == -copy_cost) \
 			or (role == "host" and paid_log.is_empty())
 		copy_ok = copy_ok or (boxed >= 30 and worn >= 25 and Shed.blueprint_named("MP cafe copy") != 0 and copy_paid)
-		if rest_ok and copy_ok:
+		# A bike in a crew member's collection (Collection), once everything else is through: the host
+		# puts Old Faithful on show at its house, the client offers for it from its own money, the
+		# host accepts; both see it in the client's collection, the client paid and the host paid.
+		var home_cid := 0
+		for hc in Collection.bikes():
+			if str(Collection.bikes()[hc]["name"]) == "Old Faithful":
+				home_cid = int(hc)
+		var home_why := "Sold Old Faithful to" if role == "host" else "Offer for Old Faithful"
+		var home_log: Array = Progress.profile["cash_log"].filter(func(e): return str(e["why"]).begins_with(home_why))
+		if role == "host" and rest_ok and copy_ok and home_step == 0 and faithful != 0 and int(Shed.bikes[faithful].get("rider", 0)) == 0 \
+				and int(Shed.bikes[faithful].get("pusher", 0)) == 0:
+			home_logged = home_log.size()
+			Collection.ensure_home(Settings.player_name)
+			Collection._take_home(faithful, Settings.player_name)
+			Shed.homes_touched()
+			home_step = 1
+		if role == "client" and home_step == 0 and home_cid != 0 and str(Collection.entry(home_cid)["owner"]) == "Test host":
+			home_logged = home_log.size()
+			Progress.earn(HOME_OFFER, "Test")
+			home_step = 1 if Collection.make_offer(home_cid, HOME_OFFER) == "" else 0
+		if role == "host" and home_step == 1 and Engine.get_physics_frames() % 30 == 0:
+			var waiting := Collection.offers_to(Settings.player_name)
+			if not waiting.is_empty():
+				Shed.request({"a": "home_answer", "offer": int(waiting[0]["id"]), "yes": true})
+		home_ok = home_ok or (home_cid != 0 and str(Collection.entry(home_cid)["owner"]) == "Test client" and Collection.offers().is_empty()
+			and home_log.size() == home_logged + 1 and absi(int(home_log[-1]["amt"])) == HOME_OFFER)
+		if rest_ok and copy_ok and home_ok:
 			shed_ok = true
 	# Keep running for a moment so the other side can finish its own check: the client stays (and
 	# keeps walking) until the host has finished and gone, or 20 s at most.
@@ -748,8 +781,8 @@ func _ready() -> void:
 	var ok := moved and shed_ok
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
-	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, passenger %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s, order and copy %s, petrol pump %s)" % [
-		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, pass_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok, copy_ok, pump_ok])
+	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, passenger %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s, order and copy %s, petrol pump %s, collection offer %s)" % [
+		"PASS" if ok else "FAIL", role, moved, shed_ok, Shed.bikes.size(), Shed.crew.size(), Shed.board["marks"].size(), xp_ok, _picture_ok(), Shed.posters.size(), scrap_ok, money_ok, Contracts.customers().size(), GarageUpgrades.owned("wing"), gear_ok, retrieve_ok, Shed.lifts.has(4), sales_ok, trolley_ok, emote_ok, cafe_ok, staff_ok, spray_ok, paint_ok, traffic_ok, avatar_ok, graph_ok, rec_ok, pass_ok, wash_ok, shine_ok, pool_own, pool_other, card_ok, copy_ok, pump_ok, home_ok])
 	get_tree().quit(0 if ok else 1)
 
 
