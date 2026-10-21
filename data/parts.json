@@ -14698,6 +14698,76 @@
 			],
 			"pack": "tourer",
 			"price": 95
+		},
+		"bugeye_twin": {
+			"name": "Twin bug-eye headlights",
+			"description": "A pair of small oval lamps set close together and angled out like a wasp's eyes, on a short bracket under a little fly-screen. The 90s streetfighter look.",
+			"mass": 1.6,
+			"type": "Halogen, twin",
+			"style": "twin",
+			"size": 0.05,
+			"lumens": 1800,
+			"color": [
+				0.07,
+				0.07,
+				0.075
+			],
+			"look": {
+				"lamp": "bugeye"
+			},
+			"styles": [
+				"naked",
+				"sport"
+			],
+			"price": 145
+		},
+		"square_chrome": {
+			"name": "Square headlight, chrome bezel",
+			"description": "A big rectangular lamp of the 70s and 80s: fluted glass in a chrome bezel, on chrome ears.",
+			"mass": 1.7,
+			"type": "Halogen",
+			"style": "square",
+			"size": 0.08,
+			"lumens": 1100,
+			"color": [
+				0.06,
+				0.06,
+				0.065
+			],
+			"look": {
+				"bezel": "chrome",
+				"brackets": true
+			},
+			"styles": [
+				"classic",
+				"tourer",
+				"cafe"
+			],
+			"price": 110
+		},
+		"square_xl": {
+			"name": "Extra-large square headlight",
+			"description": "A great slab of a rectangular lamp in a black bezel, like an 80s desert racer or a big tourer wore. Fluted glass and plenty of light.",
+			"mass": 2.1,
+			"type": "Halogen",
+			"style": "square",
+			"size": 0.095,
+			"lumens": 1400,
+			"color": [
+				0.05,
+				0.05,
+				0.055
+			],
+			"look": {
+				"bezel": "black"
+			},
+			"styles": [
+				"tourer",
+				"adventure",
+				"scrambler",
+				"classic"
+			],
+			"price": 130
 		}
 	},
 	"horn": {

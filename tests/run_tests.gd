@@ -609,6 +609,10 @@ func _run_all() -> void:
 	_test_phone_mounts()
 	await _test_phone_screen()
 	_test_phone_buy_fit_save()
+	print("Simon's v0.19.0 round: twin bug-eye headlights and big old-school square ones")
+	_test_headlight_catalogue()
+	_test_headlight_builds()
+	await _test_headlight_lit()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22709,3 +22713,21 @@ func _test_phone_screen() -> void:
 
 func _test_phone_buy_fit_save() -> void:
 	_phone_t().test_buy_fit_save()
+
+
+# ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)
+
+func _headlights() -> RefCounted:
+	return load("res://tests/headlight_tests.gd").new(self)
+
+
+func _test_headlight_catalogue() -> void:
+	_headlights().test_catalogue()
+
+
+func _test_headlight_builds() -> void:
+	_headlights().test_builds()
+
+
+func _test_headlight_lit() -> void:
+	await _headlights().test_lit()
