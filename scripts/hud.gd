@@ -29,6 +29,9 @@ var _banner_level := 0
 var _banner_time := 0.0
 const POPUP_LIFE := 3.0
 const BANNER_LIFE := 4.0
+## The house marker shows between these distances (m) from your house.
+const HOME_MARKER_NEAR := 40.0
+const HOME_MARKER_FAR := 3000.0
 
 
 func _ready() -> void:
@@ -201,6 +204,46 @@ func _draw() -> void:
 	if walker:
 		_draw_level()
 		_draw_badges()
+		_draw_home_marker()
+
+
+## Where your house is (see Collection), top middle: how far, and an arrow pointing the way from
+## where you're looking. Hidden once you're nearly there, and off on a long ride well away.
+func _draw_home_marker() -> void:
+	var m := home_marker()
+	if m.is_empty():
+		return
+	var d := float(m["d"])
+	var ang := float(m["angle"])
+	var font := get_theme_default_font()
+	var text := "Your house  %s" % Units.distance(d / 1000.0)
+	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+	var r := Rect2(size.x * 0.5 - (tw + 44.0) * 0.5, 14.0, tw + 44.0, 26.0)
+	draw_rect(r, Color(0.03, 0.03, 0.04, 0.5))
+	var c := r.position + Vector2(16.0, 13.0)
+	var tip := Vector2(0.0, -8.0).rotated(ang)
+	var side := Vector2(5.0, 5.0).rotated(ang)
+	var side2 := Vector2(-5.0, 5.0).rotated(ang)
+	draw_colored_polygon(PackedVector2Array([c + tip, c + side, c + side2]), UITheme.ACCENT)
+	draw_string(font, r.position + Vector2(32.0, 18.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 1, 1, 0.85))
+
+
+## The house marker's numbers: {d (metres to your house), angle (radians right of where you're
+## looking)}, or {} when it's hidden.
+func home_marker() -> Dictionary:
+	var plot := Collection.plot_of(Collection.name_of(Shed.me()))
+	var cam := get_viewport().get_camera_3d() if get_viewport() else null
+	var from: Node3D = bike if bike else (car if car else walker)
+	if plot < 0 or cam == null or from == null:
+		return {}
+	var at := from.global_position
+	var home := HomePlots.to_map(plot, Vector2.ZERO)
+	var to := Vector2(home.x - at.x, home.y - at.z)
+	var d := to.length()
+	if d < HOME_MARKER_NEAR or d > HOME_MARKER_FAR:
+		return {}
+	var look := -cam.global_basis.z
+	return {"d": d, "angle": Vector2(look.x, look.z).angle_to(to)}
 
 
 ## Small reminders down the left: ear defenders on, carrying the dyno's extraction hose.

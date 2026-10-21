@@ -1227,13 +1227,18 @@ func gear_speeds() -> Array:
 ## Seconds from a standstill to 100 km/h flat out with clean shifts, held back by traction,
 ## wheelies, drag and shift time. -1 when the bike can't get there.
 func zero_to_100() -> float:
+	return zero_to(100.0)
+
+
+## Seconds from a standstill to `kmh` (0-60 mph is 96.56 km/h), as zero_to_100; -1 when it never gets there.
+func zero_to(kmh: float) -> float:
 	var v := 0.0
 	var t := 0.0
 	var gear := 1
 	var dt := 0.01
 	var mu := float(grip_rear.get("tarmac", 1.0))
 	var max_a := minf(mu * 9.81 * 0.75, 9.81 * wheelbase * 0.55 / com_height)
-	while v < 100.0 / 3.6:
+	while v < kmh / 3.6:
 		if t > 40.0:
 			return -1.0
 		var ratio := overall_ratio(gear)

@@ -144,8 +144,10 @@ static func bike_on_stand(i: int) -> int:
 
 
 ## A customer's bike in for a job (or one of the shed's being worked on for a contract).
+## One of the crew's own bikes, out of their collection (see Collection), isn't the shed's either.
 static func is_customer_bike(bike_id: int) -> bool:
-	return Shed.bikes.has(bike_id) and (Shed.bikes[bike_id].get("contract", false) or not Contracts.job_for_bike(bike_id).is_empty())
+	return Shed.bikes.has(bike_id) and (Shed.bikes[bike_id].get("contract", false) or not Contracts.job_for_bike(bike_id).is_empty()
+		or str(Shed.bikes[bike_id].get("owner", "")) != "")
 
 
 ## A bike that's listed, priced, and on its stand: buyers can find it.
@@ -613,13 +615,14 @@ static func _sell(bike_id: int, price: int, buyer: String, look, peer: int, kind
 	Shed._mark_dirty()
 
 
-## Host: a bike on a stand is sold to the trade (Money's "money_sell_bike"): into the deals,
-## and off sale with its offers.
-static func note_trade(bike_id: int, price: int) -> void:
+## Host: a bike on a stand is sold to the trade (Money's "money_sell_bike"), or one of the shed's
+## bikes to one of the crew for their own collection (`buyer` their name, `kind` "crew", see
+## Collection): into the deals, and off sale with its offers.
+static func note_trade(bike_id: int, price: int, buyer := "the trade", kind := "trade") -> void:
 	var ap := appraise(bike_id)
 	var deals: Array = _st()["deals"]
-	deals.push_front({"day": Contracts.day_number(), "bike": str(Shed.bikes[bike_id]["name"]), "buyer": "the trade", "price": price,
-		"sunk": int(ap["sunk"]), "fair": int(ap["fair"]), "profit": price - int(ap["sunk"]), "kind": "trade", "allowance": 0})
+	deals.push_front({"day": Contracts.day_number(), "bike": str(Shed.bikes[bike_id]["name"]), "buyer": buyer, "price": price,
+		"sunk": int(ap["sunk"]), "fair": int(ap["fair"]), "profit": price - int(ap["sunk"]), "kind": kind, "allowance": 0})
 	while deals.size() > MAX_DEALS:
 		deals.pop_back()
 	listings().erase(bike_id)
@@ -630,7 +633,7 @@ static func note_trade(bike_id: int, price: int) -> void:
 		if int(px()[id].get("target", 0)) == bike_id:
 			_px_leave(int(id))
 	_st()["earned"] = int(_st()["earned"]) + price
-	_news("Sold %s to the trade for %s." % [Shed.bikes[bike_id]["name"], money(price)])
+	_news("Sold %s to %s for %s." % [Shed.bikes[bike_id]["name"], buyer, money(price)])
 
 
 # ---------------------------------------------------------------------------- part-exchange buyers

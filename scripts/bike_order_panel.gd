@@ -4,7 +4,8 @@ extends Control
 ## a turntable, every part on its build with what each costs you at the parts computer, the total
 ## and when it'll come, a slider for the quality to order it at (QualitySlider: worn used parts up
 ## to new, see BikeCopy.quality_text; new comes built and ready to ride), and two buttons: "Order one of these" (paid from your own money) and
-## "Copy its blueprint". Both go through the host.
+## "Copy its blueprint". One of the shed's own bikes, finished, can also be bought outright for
+## your collection at home (Collection.buy, from your own money). All of it goes through the host.
 
 signal closed
 
@@ -22,6 +23,7 @@ var _sums: Label
 var _status: Label
 var _order: Button
 var _copy: Button
+var _buy: Button
 var _quality: QualitySlider
 var _sig := ""
 
@@ -82,6 +84,9 @@ func _ready() -> void:
 	_copy.pressed.connect(_press_copy)
 	_copy.tooltip_text = COPY_TIP
 	row.add_child(_copy)
+	_buy = Button.new()
+	_buy.pressed.connect(_press_buy)
+	row.add_child(_buy)
 	row.add_child(ContractPanel.button("Close ({back})", close_dialog))
 	_status = UITheme.label("", 15, Color(1, 0.5, 0.4))
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -131,7 +136,13 @@ func _refresh() -> void:
 	if why == "" and Progress.money() < cost:
 		why = "You have %s: %s short." % [TvChannels.money_text(Progress.money()), TvChannels.money_text(cost - Progress.money())]
 	var copy_why := Shed.check(Shed.me(), {"a": "copy_blueprint", "src": src})
-	var sig := "%s|%d|%d|%s|%s|%d|%.2f" % [str(plan["parts"].hash()), cost, Progress.money(), why, copy_why, Shed.on_order.size(), q]
+	var buy_id := int(src.get("bike", 0))
+	var buy_price := Collection.buy_price(buy_id) if Shed.bikes.has(buy_id) else 0
+	var buy_why := Collection.check(Shed.me(), {"a": "home_buy", "bike": buy_id, "paid": buy_price}) if buy_id != 0 else "-"
+	if buy_why == "" and Progress.money() < buy_price:
+		buy_why = "It's %s and you have %s." % [TvChannels.money_text(buy_price), TvChannels.money_text(Progress.money())]
+	var sig := "%s|%d|%d|%s|%s|%d|%.2f|%d|%s|%d" % [str(plan["parts"].hash()), cost, Progress.money(), why, copy_why, Shed.on_order.size(), q,
+		buy_price, buy_why, Collection.count_of(Collection.name_of(Shed.me()))]
 	if sig == _sig:
 		return
 	_sig = sig
@@ -169,6 +180,13 @@ func _refresh() -> void:
 	_order.tooltip_text = Controls.hint(why)
 	_copy.disabled = copy_why != ""
 	_copy.tooltip_text = Controls.hint(copy_why if copy_why != "" else COPY_TIP)
+	# Only the shed's own bikes are for sale; a customer's or someone's own isn't offered at all.
+	_buy.visible = buy_id != 0 and not Sales.is_customer_bike(buy_id)
+	_buy.text = "Buy it for my collection (%s)" % TvChannels.money_text(buy_price)
+	_buy.disabled = buy_why != ""
+	var me := Shed.me()
+	_buy.tooltip_text = Controls.hint(buy_why if buy_why != "" else "From your own money: it goes on show at your house (%d of %d slots used)." % [
+		Collection.count_of(Collection.name_of(me)), Collection.slots_of(me)])
 	_status.text = Controls.hint(why if why != "" else copy_why)
 
 
@@ -190,6 +208,14 @@ func _press_order() -> void:
 	close_dialog()
 
 
+func _press_buy() -> void:
+	var said := Collection.buy(int(src.get("bike", 0)))
+	if said != "":
+		_status.text = Controls.hint(said)
+		return
+	close_dialog()
+
+
 func _press_copy() -> void:
 	var said := BikeCopy.copy_blueprint(src)
 	if said != "":
@@ -200,8 +226,8 @@ func _press_copy() -> void:
 
 ## Presses the button whose text starts with `text` (for tests).
 func press(text: String) -> void:
-	for b in [_order, _copy]:
-		if (b as Button).text.begins_with(text) and not (b as Button).disabled:
+	for b in [_order, _copy, _buy]:
+		if (b as Button).visible and (b as Button).text.begins_with(text) and not (b as Button).disabled:
 			(b as Button).pressed.emit()
 			return
 

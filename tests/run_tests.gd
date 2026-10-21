@@ -555,6 +555,17 @@ func _run_all() -> void:
 	await _test_bike_copy_quality_card()
 	_test_bike_copy_built()
 	await _test_bike_copy_project_card()
+	print("Bike collections: your own bikes on show at your house, bought, ridden out, offered for and sold back")
+	_test_collection_slots()
+	_test_collection_plots()
+	_test_collection_ring()
+	_test_collection_buy()
+	_test_collection_take()
+	_test_collection_offers()
+	_test_collection_sell()
+	_test_collection_stats()
+	_test_collection_save()
+	await _test_collection_session()
 	print("Trip computer and the Adventure Diary (v0.16.0): the sat nav's trip page, the crew's highlights, photos without a stutter, the diary book")
 	_test_adv_diary_trip_maths()
 	await _test_adv_diary_trip_page()
@@ -22619,3 +22630,49 @@ func _test_shed_pump_rules() -> void:
 
 func _test_shed_pump_session() -> void:
 	await _shed_pump().test_session()
+
+
+# ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)
+
+func _collection() -> RefCounted:
+	return load("res://tests/collection_tests.gd").new(self)
+
+
+func _test_collection_slots() -> void:
+	_collection().test_slots()
+
+
+func _test_collection_plots() -> void:
+	_collection().test_plots()
+
+
+func _test_collection_ring() -> void:
+	_collection().test_ring()
+
+
+func _test_collection_buy() -> void:
+	_collection().test_buy()
+
+
+func _test_collection_take() -> void:
+	_collection().test_take()
+
+
+func _test_collection_offers() -> void:
+	_collection().test_offers()
+
+
+func _test_collection_sell() -> void:
+	_collection().test_sell()
+
+
+func _test_collection_stats() -> void:
+	_collection().test_stats()
+
+
+func _test_collection_save() -> void:
+	_collection().test_save()
+
+
+func _test_collection_session() -> void:
+	await _collection().test_session()

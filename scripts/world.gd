@@ -26,6 +26,7 @@ var roads: WorldRoads
 var yard: WorldYard
 var props: WorldProps
 var town: WorldTown
+var homes: HomesView
 var _sun: DirectionalLight3D
 var _env: WorldEnvironment
 var workshop: Workshop
@@ -43,6 +44,7 @@ func generate(seed_value := 1) -> void:
 	var data := _data_for(seed_value)
 	terrain = data["terrain"]
 	roads = data["roads"]
+	HomePlots.levels = terrain.plot_levels
 	_build_terrain(data)
 	_build_roads(data)
 	yard = WorldYard.new()
@@ -56,6 +58,11 @@ func generate(seed_value := 1) -> void:
 	town.build(self)
 	# The town's filling station on the High Street, east of the shed (see FuelPump).
 	FuelPump.build_forecourt(self)
+	# The crew's houses and their bike collections (see Collection).
+	homes = HomesView.new()
+	homes.name = "Homes"
+	add_child(homes)
+	homes.build(self)
 	props = WorldProps.new()
 	props.name = "Props"
 	add_child(props)
