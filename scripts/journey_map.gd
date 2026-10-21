@@ -4,7 +4,7 @@ extends Control
 ## (anyone's pin shows to everyone, see AdventureJourney), pick the style of ride, and see the road the game plans
 ## between the pins (RoutePlanner, on a worker thread as you go). The host starts the ride from here, for everyone.
 ##
-## Scroll to zoom, drag with the right or middle button to move the map, click a pin to take it off.
+## The wheel zooms, dragging with the right or middle button moves the map, a click on a pin takes it off.
 
 signal closed
 
@@ -98,7 +98,7 @@ func _ready() -> void:
 	row.add_child(side)
 	side.add_child(UITheme.title("Plan a journey", 26))
 	var how := UITheme.label("Click the map to pin a start, stops and a finish: everyone in the shed sees the pins. Click a pin to take it off. "
-		+ "Scroll to zoom, drag with the right button to move.", 14, Color(0.85, 0.85, 0.85))
+		+ "The wheel zooms; drag the map to move it.", 14, Color(0.85, 0.85, 0.85))
 	how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side.add_child(how)
 	_pin_box = VBoxContainer.new()
