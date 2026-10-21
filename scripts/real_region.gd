@@ -7,8 +7,10 @@ extends RefCounted
 ##
 ## Regions are read-only once loaded, so one can be shared by every thread (the planner reads it on a worker).
 
-const FORMAT := 1
+const FORMAT := 2
 const DIR := "res://data/regions"
+## Downloaded regions (RegionStore) live here, beside the bundled ones.
+const USER_DIR := "user://regions"
 ## Cells of the grid the nodes are filed in (m), for finding the nearest.
 const CELL := 250.0
 ## The names roads without one are given, by class.
@@ -44,7 +46,13 @@ var edge_surface := PackedInt32Array()
 var edge_limit := PackedInt32Array()
 var edge_name := PackedInt32Array()
 var edge_len := PackedFloat32Array()
+## Which way each edge may be driven: 0 both, 1 only from a to b, -1 only from b to a (a one-way street).
+var edge_oneway := PackedInt32Array()
 var edge_line: Array[PackedVector2Array] = []
+## The turns the road rules prohibit: Vector3i(edge arrived by, node, edge left by) -> true.
+var bans := {}
+## The towns, villages and quarters with names: [{kind ("town" or "village"), name, x, z, pop}].
+var places: Array = []
 ## For each node the edges that meet there.
 var adjacent: Array[PackedInt32Array] = []
 var buildings: Array = []
@@ -57,17 +65,32 @@ var component_size := PackedInt32Array()
 var _grid := {}
 
 
-## The ids of the regions the game has.
+## The ids of the regions the game has (bundled, and downloaded).
 static func list() -> Array[String]:
 	var out: Array[String] = []
-	var d := DirAccess.open(DIR)
-	if d == null:
-		return out
-	for name in d.get_directories():
-		if FileAccess.file_exists(DIR.path_join(name).path_join("region.json")):
-			out.append(name)
+	for root in [DIR, USER_DIR]:
+		var d := DirAccess.open(root)
+		if d == null:
+			continue
+		for name in d.get_directories():
+			if FileAccess.file_exists(root.path_join(name).path_join("region.json")) and not out.has(name):
+				out.append(name)
 	out.sort()
 	return out
+
+
+## The folder of region `region_id`: the bundled one, else the downloaded one (which may not exist).
+static func dir_of(region_id: String) -> String:
+	if FileAccess.file_exists(DIR.path_join(region_id).path_join("region.json")):
+		return DIR.path_join(region_id)
+	return USER_DIR.path_join(region_id)
+
+
+## Drops region `region_id` from the cache (after a download replaces it).
+static func forget(region_id: String) -> void:
+	_cache_lock.lock()
+	_cache.erase(region_id)
+	_cache_lock.unlock()
 
 
 ## The region `region_id` (read once, then shared), or null with the reason in the log.
@@ -92,7 +115,7 @@ static func _json(path: String) -> Variant:
 
 
 static func _load(region_id: String) -> RealRegion:
-	var dir := DIR.path_join(region_id)
+	var dir := dir_of(region_id)
 	var meta = _json(dir.path_join("region.json"))
 	if not meta is Dictionary:
 		if FileAccess.file_exists(dir.path_join("region.json")):
@@ -105,7 +128,7 @@ static func _load(region_id: String) -> RealRegion:
 	if not rows is Dictionary or not rows.get("nodes") is Array or (rows["nodes"] as Array).size() < 2:
 		push_error("Region: no readable roads.json in %s" % dir)
 		return null
-	var r := RealRegion.new()
+	var r := from_rows(rows)
 	r.id = region_id
 	r.title = str(meta.get("title", region_id))
 	r.hash = str(meta.get("hash", ""))
@@ -118,6 +141,26 @@ static func _load(region_id: String) -> RealRegion:
 	var b: Array = meta["bounds"]
 	r.bounds = Rect2(float(b[0]), float(b[1]), float(b[2]) - float(b[0]), float(b[3]) - float(b[1]))
 	r.counts = meta.get("counts", {})
+	var rows_b = _json(dir.path_join("buildings.json"))
+	if rows_b is Array:
+		r.buildings = rows_b
+	var rows_p = _json(dir.path_join("pois.json"))
+	if rows_p is Array:
+		r.pois = rows_p
+	var rows_l = _json(dir.path_join("landmarks.json"))
+	if rows_l is Array:
+		r.landmarks = rows_l
+	var rows_t = _json(dir.path_join("places.json"))
+	if rows_t is Array:
+		r.places = rows_t
+	r.terrain = RealTerrain.new(dir, meta)
+	return r
+
+
+## A region's road graph from the rows of a roads.json ({nodes, edges, bans, classes, surfaces, names}): the loader's
+## own step, and the tests', which make small graphs of their own.
+static func from_rows(rows: Dictionary) -> RealRegion:
+	var r := RealRegion.new()
 	r.classes = rows["classes"]
 	r.surfaces = rows["surfaces"]
 	r.names = rows["names"]
@@ -142,6 +185,7 @@ static func _load(region_id: String) -> RealRegion:
 		r.edge_surface.append(int(e["s"]))
 		r.edge_limit.append(int(e["l"]))
 		r.edge_name.append(int(e["n"]))
+		r.edge_oneway.append(int(e.get("o", 0)))
 		var line := PackedVector2Array()
 		line.append(r.node_pos[a])
 		var p: Array = e["p"]
@@ -159,17 +203,9 @@ static func _load(region_id: String) -> RealRegion:
 		var at_b := r.adjacent[bn]
 		at_b.append(ei)
 		r.adjacent[bn] = at_b
+	for ban in rows.get("bans", []):
+		r.bans[Vector3i(int(ban[0]), int(ban[1]), int(ban[2]))] = true
 	r._find_components()
-	var rows_b = _json(dir.path_join("buildings.json"))
-	if rows_b is Array:
-		r.buildings = rows_b
-	var rows_p = _json(dir.path_join("pois.json"))
-	if rows_p is Array:
-		r.pois = rows_p
-	var rows_l = _json(dir.path_join("landmarks.json"))
-	if rows_l is Array:
-		r.landmarks = rows_l
-	r.terrain = RealTerrain.new(dir, meta)
 	return r
 
 
@@ -208,6 +244,17 @@ func edge_count() -> int:
 ## The other node of edge `ei` from `node`.
 func other_end(ei: int, node: int) -> int:
 	return edge_b[ei] if edge_a[ei] == node else edge_a[ei]
+
+
+## Whether edge `ei` may be driven starting from `node` (a one-way road only from its open end).
+func passable(ei: int, node: int) -> bool:
+	var o := edge_oneway[ei]
+	return o == 0 or (o == 1 and edge_a[ei] == node) or (o == -1 and edge_b[ei] == node)
+
+
+## Whether turning at `node` from edge `came` onto edge `onto` is prohibited.
+func turn_banned(came: int, node: int, onto: int) -> bool:
+	return not bans.is_empty() and bans.has(Vector3i(came, node, onto))
 
 
 ## The line of edge `ei` as it runs from `node` (one of its ends).

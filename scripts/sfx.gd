@@ -497,12 +497,15 @@ func bell(at: Vector3) -> void:
 ## The sales office phone ringing at `at`: a few rings a couple of seconds apart, a different
 ## take each time, with the extension bell on the shed's wall (by the door chime) ringing along
 ## so the crew hear it at work. Only plays here: SfxAmbience rings it on every player's PC
-## when a new customer calls ahead.
+## when a new customer calls ahead. Out on the High Street it isn't heard at all: its bell
+## carrying out of the office was a shop bell going off along the street (see indoors()).
 func ring_phone(at: Vector3, rings := PHONE_RINGS) -> void:
 	var tree := get_tree()
 	if tree == null:
 		return
 	phone_calls += 1
+	if not indoors():
+		return
 	for i in rings:
 		tree.create_timer(i * PHONE_GAP).timeout.connect(func():
 			play_at("phone_ring", at, -3.0)
@@ -857,3 +860,10 @@ func _save_cache(key: String, pcm: Dictionary) -> void:
 	var f := FileAccess.open_compressed(CACHE_PATH, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
 	if f:
 		f.store_var({"key": key, "pcm": pcm})
+
+
+## Whether the listener is inside the shed or the sales office (any of Workshop's rooms), not
+## out on the forecourt or the High Street. The office's bells (the phone, the till) ring
+## only for those inside.
+func indoors() -> bool:
+	return Workshop.room_at(listener_pos) != ""

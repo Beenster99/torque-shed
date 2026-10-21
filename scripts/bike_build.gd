@@ -499,6 +499,7 @@ const PART_SPOT := {
 	"front_mudguard": [0.0, 0.62], "indicators": [0.5, 0.85], "side_panels": [0.6, 0.65], "rearsets": [0.68, 0.38],
 	"guards": [0.38, 0.4], "number_boards": [0.75, 0.75], "swingarm": [0.82, 0.35], "steering_damper": [0.16, 0.92],
 	"tank_bag": [0.3, 1.0], "satnav": [0.12, 1.12], "aux_tank": [0.9, 0.65], "toolbox": [0.9, 0.5],
+	"lever_guards": [0.14, 1.0],
 }
 ## Where the auxiliary tank and the toolbox sit depends on their style: low by the engine, on
 ## the rails, under the rack or up on top of it.
@@ -1079,6 +1080,7 @@ func _part_mass(slot: String) -> float:
 		# What's packed in it weighs too.
 		for c in condition.get(slot, {}).get("contents", []):
 			m += float(PartsDB.TOOLBOX_CONTENTS.get(str(c), {}).get("mass", 0.0))
+		m += float(condition.get(slot, {}).get("spares_kg", 0.0))   # and any spare parts (see ToolboxSpares)
 	return m
 
 

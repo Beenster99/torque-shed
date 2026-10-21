@@ -20733,5 +20733,100 @@
 			],
 			"price": 450
 		}
+	},
+	"lever_guards": {
+		"lever_guard_carbon_race": {
+			"name": "Carbon race lever guard",
+			"description": "The hoop racing rules ask for: a carbon arm off the right bar end that curves round in front of the brake lever, so another bike's bars can't pull it on in a pack.",
+			"mass": 0.12,
+			"type": "Carbon, brake side",
+			"style": "brake",
+			"material": "carbon",
+			"color": [
+				0.05,
+				0.05,
+				0.06
+			],
+			"styles": [
+				"race",
+				"sport"
+			],
+			"price": 95
+		},
+		"lever_guard_billet_black": {
+			"name": "Black billet lever guards",
+			"description": "A pair of black anodised alloy hoops off the bar ends, one in front of the brake lever and one the clutch, to save them in a tip-over.",
+			"mass": 0.24,
+			"type": "Billet alloy, pair",
+			"style": "pair",
+			"material": "metal",
+			"color": [
+				0.07,
+				0.07,
+				0.08
+			],
+			"styles": [
+				"sport",
+				"naked",
+				"race"
+			],
+			"price": 110
+		},
+		"lever_guard_red": {
+			"name": "Red anodised lever guards",
+			"description": "Bright red alloy hoops for both levers, bolted to the bar ends. Loud, and they keep the levers whole when it goes down.",
+			"mass": 0.24,
+			"type": "Anodised alloy, pair",
+			"style": "pair",
+			"material": "metal",
+			"color": [
+				0.72,
+				0.08,
+				0.06
+			],
+			"styles": [
+				"naked",
+				"sport",
+				"supermoto"
+			],
+			"price": 120
+		},
+		"lever_guard_gold": {
+			"name": "Gold anodised lever guard",
+			"description": "A gold alloy brake lever guard with a bar-end weight, the finishing touch on a race replica.",
+			"mass": 0.15,
+			"type": "Anodised alloy, brake side",
+			"style": "brake",
+			"material": "metal",
+			"color": [
+				0.78,
+				0.6,
+				0.18
+			],
+			"styles": [
+				"race",
+				"sport"
+			],
+			"price": 85
+		},
+		"lever_guard_street": {
+			"name": "Short street lever guard",
+			"description": "A short polished alloy hoop off the right bar end, just enough to keep the brake lever off the tarmac if it's dropped.",
+			"mass": 0.11,
+			"type": "Polished alloy, brake side",
+			"style": "brake",
+			"material": "metal",
+			"color": [
+				0.8,
+				0.81,
+				0.83
+			],
+			"styles": [
+				"naked",
+				"roader",
+				"cafe"
+			],
+			"price": 55
+		}
 	}
 }

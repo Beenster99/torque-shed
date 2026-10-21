@@ -68,8 +68,11 @@ func _ring_till() -> void:
 	_alerts_seen = alerts
 
 
+## The till's bell rings only for those indoors, not out along the High Street (see Sfx.indoors).
 func ring_till() -> void:
 	tills += 1
+	if not Sfx.indoors():
+		return
 	Sfx.play_at(TILL, PC_POS, 0.0)
 	Sfx.play_at(TILL, SalesOffice.SHED_CHIME_POS, -8.0)
 

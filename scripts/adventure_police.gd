@@ -7,9 +7,10 @@ extends Node3D
 ##
 ## The rule: you can pass the police, but not much faster than they're going. Pass or meet a
 ## police car more than THRESHOLD (30 mph) faster than it's going, or go by a parked one more
-## than 30 mph over the limit (60 mph on the open road, 30 through a village), and it lights up
-## (blue lamps flashing by day and night, its siren wailing, pitch bent as it closes and falls
-## away) and comes after you: hard on the throttle, following the road, round the traffic when
+## than 30 mph over the limit (60 mph on the open road, 30 through a village), judged as you go
+## by it (one still in front of you does nothing till you're past it), and it lights up (blue
+## lamps flashing by day and night, its siren wailing, pitch bent as it closes and falls away)
+## and comes after you: hard on the throttle, following the road, round the traffic when
 ## the other side's clear. Let it get within CATCH_DIST of you for CATCH_TIME, or stop, and
 ## you're pulled over: your throttle's cut and you brake to a stop, an officer walks up from the
 ## car, says a few words, and you're fined from your OWN money (Progress, not the garage's):
@@ -107,7 +108,8 @@ var host := true
 var plan: Array = []
 ## id -> {id, mode, target, excess (mph over the rule's reference), near_t, lost_t, stage,
 ## stage_t, stop_s, let_off {peer: seconds left}, pace, trap, why ("red" for a red light, else
-## speeding)}.
+## speeding), side {peer: which side of the car (along s, -1 or +1) they were last seen within
+## RADAR, to tell when they go by it}}.
 var cars := {}
 ## Instead of finding the riders (tests): () -> [{peer, s, v}], v along the road (+ the way s grows).
 var rider_source := Callable()
@@ -501,9 +503,21 @@ func _think(b: Dictionary, delta: float) -> void:
 				driver.steer(id, float(b["pace"]) * limit, 2.0, 3.0, lane)
 			var keys := riders.keys()
 			keys.sort()
+			var sides: Dictionary = b.get("side", {})
+			b["side"] = sides
 			for p in keys:
 				var r: Dictionary = riders[p]
-				if b["let_off"].has(p) or absf(float(r["s"]) - s) > RADAR:
+				if absf(float(r["s"]) - s) > RADAR:
+					sides.erase(p)
+					continue
+				var was_side := int(sides.get(p, 0))
+				var now_side := signi(int(signf(float(r["s"]) - s)))
+				if now_side != 0:
+					sides[p] = now_side
+				# Only once they've gone by it: on the far side of the car from where they were, the
+				# car now behind them the way they're going (still in front of them, it waits).
+				var gone_by := was_side != 0 and now_side == -was_side and now_side * signf(float(r["v"])) > 0.0
+				if b["let_off"].has(p) or not gone_by:
 					continue
 				var over := over_rule(float(r["v"]), float(st["v"]), parked, limit)
 				if over > 0.0:

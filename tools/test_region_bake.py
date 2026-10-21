@@ -24,8 +24,10 @@ def wkb_line(points):
     return struct.pack("<BII", 1, 2, len(points)) + b"".join(struct.pack("<dd", *p) for p in points)
 
 
-def seg(a, b, pts_xz, cls="primary", name=None, surface=None, limit=None):
+def seg(a, b, pts_xz, cls="primary", name=None, surface=None, limit=None, oneway=0, bans=None):
+    access = [{"access_type": "denied", "when": {"heading": "backward" if oneway > 0 else "forward"}, "between": None}] if oneway else None
     return {"id": a + b, "subtype": "road", "class": cls, "geometry": wkb_line([ll(*p) for p in pts_xz]),
+            "access_restrictions": access, "prohibited_transitions": bans,
             "connectors": [{"connector_id": a, "at": 0.0}, {"connector_id": b, "at": 1.0}],
             "road_surface": [{"value": surface, "between": None}] if surface else None, "road_flags": None,
             "names": {"primary": name} if name else None, "routes": None,
@@ -87,6 +89,35 @@ class Rows(unittest.TestCase):
         b = json.dumps(rg.graph_rows(self.graph(), min_network=3))
         self.assertEqual(a, b)
 
+    def test_one_way_roads_and_banned_turns_are_in_the_rows(self):
+        segs = [seg("A", "B", [(0, 0), (1000, 0)], oneway=1),
+                seg("B", "C", [(1000, 0), (2000, 0)], oneway=-1),
+                seg("B", "D", [(1000, 0), (1000, 800)], bans=[{"sequence": [{"segment_id": "BC", "connector_id": "B"}], "when": None, "between": None}]),
+                seg("A", "D", [(0, 0), (1000, 800)])]
+        rows = rg.graph_rows(rb.Graph(segs, F), min_network=2)
+        o = {(e["a"], e["b"]): e["o"] for e in rows["edges"]}
+        self.assertEqual(sorted(o.values()), [-1, 0, 0, 1])
+        self.assertEqual(len(rows["bans"]), 1)
+        ef, node, et = rows["bans"][0]
+        self.assertEqual(rows["nodes"][node], [1000.0, 0.0])
+        self.assertEqual((rows["edges"][ef]["o"], rows["edges"][et]["o"]), (0, -1))
+
+    def test_places_come_from_named_divisions_near_a_road(self):
+        def div(subtype, x, z, names, pop=None):
+            lon, lat = ll(x, z)
+            return {"subtype": subtype, "names": names, "population": pop,
+                    "geometry": struct.pack("<BIdd", 1, 1, lon, lat)}
+        pts = np.array([[0.0, 0.0], [1000.0, 0.0], [2000.0, 0.0]])
+        rows = rg.make_places([
+            div("locality", 100, 50, {"primary": "Harbour", "common": {"en": "Harbour Town"}}, 900),
+            div("microhood", 1500, 300, {"primary": "東", "common": {"en": "Higashi"}}),
+            div("neighborhood", 1600, 320, {"primary": "東", "common": {"en": "Higashi"}}),   # the same place twice
+            div("microhood", 1900, 100, {"primary": "西"}),                                   # no name we can print
+            div("locality", 1000, 9000, {"primary": "Far", "common": {"en": "Far"}}),         # far from any road
+            div("country", 500, 0, {"primary": "Japan", "common": {"en": "Japan"}}),
+        ], F, pts, (-100, -100, 3000, 1000))
+        self.assertEqual([(p["name"], p["kind"], p["pop"]) for p in rows], [("Harbour Town", "town", 900), ("Higashi", "village", 0)])
+
     def test_everything_is_kept_with_a_small_enough_limit(self):
         self.assertEqual(len(rg.graph_rows(self.graph(), min_network=2)["nodes"]), 6)
 
@@ -119,3 +150,24 @@ class Hash(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Zip(unittest.TestCase):
+    def test_zip_holds_the_folder_and_the_entry_has_its_hash(self):
+        import zipfile
+        import region_zip
+        with tempfile.TemporaryDirectory() as d:
+            folder = os.path.join(d, "tiny")
+            os.makedirs(os.path.join(folder, "tiles"))
+            with open(os.path.join(folder, "region.json"), "w") as f:
+                json.dump({"format": rg.FORMAT, "title": "Tiny"}, f)
+            with open(os.path.join(folder, "roads.json"), "w") as f:
+                f.write("{}")
+            with open(os.path.join(folder, "tiles", "0_0.u16z"), "wb") as f:
+                f.write(b"abc")
+            out = os.path.join(d, "tiny.zip")
+            entry = region_zip.zip_region(folder, out)
+            self.assertEqual(entry["hash"], rg.region_hash(folder))
+            self.assertEqual(entry["title"], "Tiny")
+            with zipfile.ZipFile(out) as z:
+                self.assertEqual(sorted(z.namelist()), ["region.json", "roads.json", "tiles/0_0.u16z"])

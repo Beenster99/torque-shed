@@ -14,6 +14,11 @@ const DROP := 17000.0
 ## Past this the ridge's own height (m) is rock and, on a snowy road, the snow line takes over.
 const ROCK_FROM := 600.0
 const ROCK_TO := 1400.0
+## Within this of the road (m) the ridge lies LAND_UNDER below the real height, easing back up to it over the next
+## LAND_EASE: RealLand's blocks (the garage map's way of drawing the land) are above it there, and the two never fight.
+const LAND_REACH := 5400.0
+const LAND_EASE := 700.0
+const LAND_UNDER := 30.0
 const WOODS := Color(0.09, 0.22, 0.1)
 const ROCK := Color(0.46, 0.44, 0.4)
 const SNOW := Color(0.92, 0.93, 0.96)
@@ -29,6 +34,8 @@ var _material: StandardMaterial3D
 var _land := Color(0.3, 0.4, 0.22)
 var _snow_line := INF
 var _at := Vector2(INF, INF)
+## The road every 16th knot, for easing the ridge down under the land blocks (RealLand) along it.
+var _road := PackedVector2Array()
 
 
 func setup(w: AdventureWorld, t: RealTerrain) -> void:
@@ -41,6 +48,8 @@ func setup(w: AdventureWorld, t: RealTerrain) -> void:
 	if w.route != null:
 		_land = (w.route.look["land"]["tarmac"] as Color).lerp(WOODS, 0.55)
 		_snow_line = w.route.snow_line
+		for k in range(0, w.route.px.size(), 16):
+			_road.append(Vector2(w.route.px[k], w.route.pz[k]))
 
 
 func _exit_tree() -> void:
@@ -151,6 +160,14 @@ func _block_arrays(key: Vector2i) -> Variant:
 			any = any or (not is_nan(h) and i > 0 and j > 0 and i < m - 1 and j < m - 1)
 	if not any:
 		return null
+	# The stretch of road that could be within reach of this block.
+	var size := BLOCK * sp
+	var near_road := PackedVector2Array()
+	var lo := Vector2(key.x * size - LAND_REACH - LAND_EASE, key.y * size - LAND_REACH - LAND_EASE)
+	var hi := Vector2((key.x + 1) * size + LAND_REACH + LAND_EASE, (key.y + 1) * size + LAND_REACH + LAND_EASE)
+	for p in _road:
+		if p.x >= lo.x and p.x <= hi.x and p.y >= lo.y and p.y <= hi.y:
+			near_road.append(p)
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
 	var cols := PackedColorArray()

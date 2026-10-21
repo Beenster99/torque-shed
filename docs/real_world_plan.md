@@ -196,9 +196,15 @@ real heights graded, junctions and roundabouts, buildings, places and speed limi
 (`JourneyMap`, from the magazine) shows the island shaded by height with its roads, pins from anyone in the crew are
 shared (`AdventureJourney`, in the shed's state), and the host's Start makes an adventure carrying the plan; every
 game plans it again (`AdventurePlans`, cached by the plan's key) and the hash says they got the same road
-(`tests/mp_journey.gd` runs two processes through it). Still to do from the list below: place search, suggested
-destinations, forks on a planned road, one-way streets and turn restrictions, and the region download (the region is
-bundled for now).
+(`tests/mp_journey.gd` runs two processes through it). The gaps are now closed too: the baker keeps one-way roads (five
+on Shodoshima) and prohibited turns (none in this area's data) and the planner drives one-way roads their way only
+and never takes a banned turn (its search is over arrivals, with the straight-line distance as a floor); the map has
+a search box over the region's 47 named towns and villages, named places to stop and landmarks, suggested places
+with nothing typed, and the towns named on the map; a planned road has forks (the second-best way between two of its
+junctions, as the baker finds them) the crew votes on; and regions can be downloaded (`RegionStore`: a zip from the
+index's URL, its hash checked against the index's before it is put under `user://regions`, where `RealRegion` finds it
+beside the bundled ones; `tools/region_zip.py` makes the zip and the index entry). Nothing is hosted yet, so the
+bundled Shodoshima is the only region.
 
 **Playable loop.** An issue is now a *region* (the whole of Shodoshima; a 60 by 60 km square of the Dales). Its article
 shows the region's map on the shed screen with a few suggested destinations. The host picks a start, a destination and
@@ -272,6 +278,24 @@ How each piece grows across the stages, so nothing is built twice:
 | Loader | `AdventureRoute.plan_real` and `RealTerrain` | the same | the same, over a region | the same, over a cache fed by the service | the same |
 | Planning UI | the magazine page | the magazine page | the shed map screen with pins | plus search anywhere and links | shared, with votes and sharing |
 | Co-op | route hash | route hash | region hash plus pins | release pin plus pins | the same |
+
+## How the land is drawn, and streaming it
+
+A real road's land is drawn the way the garage map's is (`scripts/real_land.gd`, after `WorldTerrain`): the road's own
+chunks keep the road, its verge and the collision out to 110 m, and everything beyond is a grid of 512 m blocks over the
+real heights, each at a near (8 m cells), middle (32 m) or far (64 m) level by how far the rider is from it, with
+skirts hiding the cracks between levels. A block beside the road is always at the near level, the road's own blend
+into the land is worked out exactly in the band where the two meet (so they join without a line), and the skyline
+(`RealRidges`) is eased down under the blocks. Valleys open out and hills climb away from the road instead of the road
+running down a corridor of strips (the strips had fifteen columns to a kilometre: a valley 300 m across was two flat
+facets).
+
+The blocks ask the terrain one thing, the height (and the cover) at x, z, so where the heights come from is the terrain's
+business alone. **Heights can stream with no server of ours**: Mapterhorn serves its elevation as ordinary map tiles
+over HTTP, so a `RealTerrain` that fetches the tiles round the rider on demand, keeps them in a disk cache and feeds
+the same three levels would make any road on Earth ridable with real heights. Roads, buildings and places cannot
+stream directly (Overture ships them as large data files, not tiles), which is what Stage 5's route service is for:
+it turns a start and an end into those layers for the stretch asked for, cached by content hash.
 
 ## Pack size and delivery
 

@@ -79,11 +79,13 @@ func test_sliders() -> void:
 	var eng := menu.find_child("EngineVolume", true, false) as HSlider
 	var radio := menu.find_child("RadioVolume", true, false) as HSlider
 	check(sfx != null and eng != null and radio != null and sfx.get_parent() == eng.get_parent() and eng.get_parent() == radio.get_parent(),
-		"the Settings tab has sound effects, engines and radio sliders together")
+		"the Settings panel's Sound tab has sound effects, engines and radio sliders together")
 	if sfx == null or eng == null:
 		menu.queue_free()
 		return
-	var tab := menu._tabs.get_child(0) as Control
+	var tab := menu.find_child("Sound", true, false) as Control
+	menu.open_tab(tab)
+	await t.get_tree().process_frame
 	var shown := tab.get_global_rect().intersection(t.get_viewport().get_visible_rect())
 	check(tab is ScrollContainer and shown.encloses(radio.get_global_rect()),
 		"they're at the top of the Settings tab, on screen (the radio slider's bottom at %.0f of %.0f)" % [radio.get_global_rect().end.y, shown.end.y])

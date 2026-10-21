@@ -255,6 +255,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_draw_guards()
 	_draw_number_boards()
 	_draw_steering_damper()
+	_draw_lever_guards()
 	KitModel.draw(self, build, zr)
 
 	# A full fairing carries its own lamps: the plain headlight is tucked away inside it.
@@ -4570,6 +4571,28 @@ func _draw_steering_damper() -> void:
 		_:
 			_mesh_instance(_cylinder(0.022, 0.018), mat, _head_bottom + Vector3(0.0, -0.05, 0.02))
 			_mesh_instance(_cylinder(0.006, 0.05), rod_mat, _head_bottom + Vector3(0.0, -0.02, 0.02))
+
+
+## Lever guards: a hoop off the bar end that curves round in front of the lever's tip, so a
+## knock (or another bike's bars) can't pull the lever on or snap it. A "brake" one guards only
+## the front brake lever on the right; a "pair" guards the clutch lever too. Each bolts into the
+## bar end with a round boss over the bar-end weight.
+func _draw_lever_guards() -> void:
+	_current_slot = "lever_guards"
+	var p := _part()
+	if p.is_empty():
+		return
+	var carbon := str(p.get("material", "metal")) == "carbon"
+	var mat := _tex(_mat(_col(), 0.2, 0.3), "carbon") if carbon else _tex(_mat(_col(), 0.85, 0.25), "brushed", -1.0, 0.5)
+	var sides := [1.0, -1.0] if str(p.get("style", "brake")) == "pair" else [1.0]
+	for side in sides:
+		var bar_end: Vector3 = (_grip_r if side > 0.0 else _grip_l) + Vector3(0.05 * side, 0.0, 0.0)
+		var boss := _mesh_instance(_cylinder(0.019, 0.016), mat, bar_end + Vector3(0.026 * side, 0.0, 0.0), _steer_node)
+		boss.rotation.z = PI * 0.5
+		# Out from the boss, forward past the lever's tip and back in across the front of it.
+		var hoop := _bend([bar_end + Vector3(0.03 * side, -0.004, -0.012), bar_end + Vector3(0.042 * side, -0.01, -0.05),
+			bar_end + Vector3(0.024 * side, -0.014, -0.082), bar_end + Vector3(-0.045 * side, -0.014, -0.09)], 0.0065, mat, _steer_node, 8)
+		hoop.name = "LeverGuard"
 
 
 ## The side stand on the left, under the footpeg: tucked up along the frame, or down on the

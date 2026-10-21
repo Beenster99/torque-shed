@@ -720,7 +720,8 @@ static func _fit(w: Dictionary, job: Dictionary, bike: int, slot: String, part: 
 
 
 ## The next part that came off to get at the job going back on (last off, first on). [] when
-## they're all back.
+## they're all back. Each one's crossed off once it's back on and bolted up, so a later task
+## that renews that same part (a rear tyre, then a new chain) doesn't go looking for the old one.
 static func _refit_next(_w: Dictionary, job: Dictionary, bike: int, held: int) -> Array:
 	var refit: Array = job["refit"]
 	for i in range(refit.size() - 1, -1, -1):
@@ -734,6 +735,7 @@ static func _refit_next(_w: Dictionary, job: Dictionary, bike: int, held: int) -
 			if not Shed.is_bolted(bike, slot):
 				return [go(StaffNav.bike(bike), "back at the %s" % _bike_name(bike)),
 					work({"a": "bolt", "bike": bike, "slot": slot, "crouched": true}, 4.0, "wrench", "bolting the %s back up" % _slot(slot)), plan_step()]
+			refit.remove_at(i)
 			continue
 		if held == item:
 			return _install(bike, slot, held)

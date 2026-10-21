@@ -53,8 +53,8 @@ func sync() -> void:
 		if not Roadside.parked(int(id)):
 			continue
 		var r := Roadside.spot_of(int(id))
-		var sig := "%s|%s|%s|%s|%s" % [str(Shed.fitted_map(int(id))), str(Shed.bikes[id].get("stand", "")), str(r.get("open", false)),
-			str(r.get("out", [])), str(Shed.bikes[id].get("paint", ""))]
+		var sig := "%s|%s|%s|%s|%s|%d" % [str(Shed.fitted_map(int(id))), str(Shed.bikes[id].get("stand", "")), str(r.get("open", false)),
+			str(r.get("out", [])), str(Shed.bikes[id].get("paint", "")), ToolboxSpares.spares_of(Roadside.toolbox_of(int(id))).size()]
 		if _views.has(id) and _views[id]["sig"] == sig:
 			continue
 		if _views.has(id):
@@ -131,6 +131,11 @@ func _lay_out(view: Node3D, id: int, r: Dictionary) -> void:
 			at += Vector3(0.0, 0.0, 0.22)
 			if at.z > 0.55:
 				at = Vector3(1.15, 0.01, -0.45)
+		# And the spare parts packed in it (see ToolboxSpares), each in its own little bag.
+		for i in ToolboxSpares.spares_of(Roadside.toolbox_of(id)).size():
+			var bag := _box(Vector3(0.12, 0.05, 0.09), _box_mat)
+			bag.position = Vector3(1.2, 0.035, -0.45 + 0.16 * float(i))
+			view.add_child(bag)
 	for what in r.get("out", []):
 		var piece := _out_piece(str(what))
 		if piece == null:
