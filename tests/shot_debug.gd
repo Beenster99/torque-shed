@@ -278,7 +278,7 @@ func _weather_shots() -> void:
 	main.menu.show_pause()
 	await _frames(10)
 	await _shot("w_menu_settings")
-	main.menu._tabs.current_tab = main.menu._tabs.get_tab_idx_from_control(main.menu.debug)
+	main.menu.open_tab(main.menu.debug)
 	await _frames(10)
 	await _shot("w_menu_debug")
 	main._close_menu()
@@ -523,7 +523,7 @@ func _outfit_shots() -> void:
 	Progress.set_money(2500)
 	main.menu.show_pause()
 	var shop: ShopTab = main.menu.shop
-	main.menu._tabs.current_tab = main.menu._tabs.get_tab_idx_from_control(shop)
+	main.menu.open_tab(shop)
 	shop.show_category("jacket")
 	shop.select("jacket_kestrel")
 	await _frames(30)
@@ -592,7 +592,7 @@ func _graphics_shots() -> void:
 	var fps := Settings.gfx_fps_counter
 	Settings.set_graphics("gfx_fps_counter", true)
 	main.menu.show_pause()
-	main.menu._tabs.current_tab = main.menu._tabs.get_tab_idx_from_control(main.menu.graphics)
+	main.menu.open_tab(main.menu.graphics)
 	await _frames(10)
 	await _shot("gfx1_graphics_tab")
 	var scroll: ScrollContainer = main.menu.graphics.get_child(1)

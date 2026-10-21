@@ -1,7 +1,12 @@
 class_name MainMenu
 extends Control
-## Title screen and the Esc menu. The Esc menu holds everything that isn't the shed itself:
-## ordering bikes, who's playing, riding settings, the controls list and a controller check.
+## Title screen and the Esc menu. The Esc menu is short: Continue, Settings, saving, Leave and
+## return to title, and Exit game. Settings opens its own tabs (Graphics, Sound, Gameplay,
+## Controller and Debug). The badge in the top left corner (the garage's name) opens the
+## garage's panel: Money, Staff, Contracts, the Recovery truck, Blueprints and the Workshop
+## (adventure rides, ordering a project bike, geometry mode). The profile picture in the top
+## right opens yours: your profile, your Character (level, tools, skills, goals) and the Shop
+## for rider gear.
 
 signal ride_solo
 signal host_game
@@ -64,7 +69,19 @@ var _third_person: CheckBox
 var _host_info: Label
 var _crew: Label
 var _pad: Label
+## The Settings panel's tabs: Graphics, Sound, Gameplay, Controller and Debug.
 var _tabs: TabContainer
+## The garage's panel (the top left badge) and yours (the profile picture, top right).
+var _garage_tabs: TabContainer
+var _profile_tabs: TabContainer
+var _garage_badge: MenuBadge
+var _profile_badge: MenuBadge
+var _profile_info: Label
+var _profile_pic: MenuBadge
+var _gameplay: Control
+var _controller: TabContainer
+## The garage's name on its badge (the save game's name; on a co-op client, the host's shed).
+var _garage_name := ""
 var _cycle: CheckBox
 var _day_length: OptionButton
 var _time: HSlider
@@ -93,6 +110,8 @@ var _saves_button: Button
 var saves: SaveBrowser
 var _row: HBoxContainer
 var _resume: Button
+var _settings_button: Button
+var _title_settings: Button
 var keybinds: KeybindTab
 var graphics: GraphicsTab
 var blueprints: BlueprintTab
@@ -111,7 +130,7 @@ func _ready() -> void:
 	add_child(shade)
 	var row := HBoxContainer.new()
 	_row = row
-	row.position = Vector2(60, 60)
+	row.position = Vector2(60, 96)
 	row.add_theme_constant_override("separation", 24)
 	add_child(row)
 	var panel := PanelContainer.new()
@@ -151,41 +170,30 @@ func _ready() -> void:
 	join_row.add_child(_button("Join", func(): _save(); join_game.emit(_ip.text.strip_edges())))
 	_start_box.add_child(join_row)
 
+	_title_settings = _button("Settings", func(): toggle_panel(_tabs))
+	_start_box.add_child(_title_settings)
+
 	_pause_box = VBoxContainer.new()
 	_pause_box.add_theme_constant_override("separation", 10)
 	_pause_box.visible = false
 	col.add_child(_pause_box)
-	_resume = _button("Back to the shed", func(): _save(); resume.emit())
+	_resume = _button("Continue", func(): _save(); resume.emit())
 	_pause_box.add_child(_resume)
+	_settings_button = _button("Settings", func(): toggle_panel(_tabs))
+	_pause_box.add_child(_settings_button)
+	# Only out in the world, stranded: you and the bike you're on go home.
 	_home = _button("Respawn at the garage (stranded? you and the bike you're on go home)", func(): go_home.emit())
 	_pause_box.add_child(_home)
-	_adventure = _button("Adventure ride", func():
-		Adventure.menu_action()
-		resume.emit())
-	_pause_box.add_child(_adventure)
-	_continue_adventure = _button("Continue adventure", func():
-		Shed.request({"a": "adventure_resume"})
-		resume.emit())
-	_pause_box.add_child(_continue_adventure)
-	_paper_map = _button("Paper map of the route", func():
-		resume.emit()
-		if AdventureTrip.current:
-			AdventureTrip.current.open_map())
-	_pause_box.add_child(_paper_map)
-	_pause_box.add_child(_button("Order a project bike", func(): order_bike.emit()))
-	_pause_box.add_child(_button("Build from blueprint", show_blueprints))
-	_pause_box.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
-	_retrieve_box = VBoxContainer.new()
-	_retrieve_box.add_theme_constant_override("separation", 6)
-	_pause_box.add_child(_retrieve_box)
 	_host_info = UITheme.label("", 15, Color(1, 1, 1, 0.75))
 	_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_host_info.custom_minimum_size.x = 560.0
+	_host_info.custom_minimum_size.x = 400.0
 	_pause_box.add_child(_host_info)
 	_crew = UITheme.label("", 15, Color(1, 1, 1, 0.85))
+	_crew.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_crew.custom_minimum_size.x = 400.0
 	_pause_box.add_child(_crew)
 	var save_row := HBoxContainer.new()
-	save_row.add_theme_constant_override("separation", 16)
+	save_row.add_theme_constant_override("separation", 10)
 	_save_button = _button("Save now", func(): save_requested.emit())
 	save_row.add_child(_save_button)
 	_save_as_button = _button("Save as...", func():
@@ -194,34 +202,49 @@ func _ready() -> void:
 	save_row.add_child(_save_as_button)
 	_saves_button = _button("Save games...", func(): show_saves(true))
 	save_row.add_child(_saves_button)
-	_save_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
-	_save_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_save_status.custom_minimum_size.x = 260.0
-	save_row.add_child(_save_status)
 	_pause_box.add_child(save_row)
+	_save_status = UITheme.label("", 15, Color(1, 1, 1, 0.7))
+	_save_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_save_status.custom_minimum_size.x = 400.0
+	_pause_box.add_child(_save_status)
 	_pause_box.add_child(_button("Leave and return to title", func(): _save(); leave_session.emit()))
-	col.add_child(_button("Quit", func(): _save(); quitting.emit(); get_tree().quit()))
+	col.add_child(_button("Exit game", func(): _save(); quitting.emit(); get_tree().quit()))
 	_status = UITheme.label("", 15, Color(1, 0.75, 0.6))
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_status.custom_minimum_size.x = 560.0
+	_status.custom_minimum_size.x = 400.0
 	col.add_child(_status)
 
-	_tabs = TabContainer.new()
-	_tabs.custom_minimum_size = Vector2(760, 600)
-	_tabs.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	row.add_child(_tabs)
-	# The Settings tab scrolls: it's taller than the screen, and the volume sliders used to sit
-	# off the bottom of it.
-	var settings_scroll := ScrollContainer.new()
-	settings_scroll.name = "Settings"
-	settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	settings_scroll.follow_focus = true
-	_tabs.add_child(settings_scroll)
-	var settings := VBoxContainer.new()
-	settings.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	settings.add_theme_constant_override("separation", 10)
-	settings_scroll.add_child(settings)
-	_build_sound_settings(settings)
+	_build_settings()
+	_build_garage()
+	_build_profile()
+	_build_badges()
+	# The Load screen: save games to load, save as, rename and delete (see SaveBrowser).
+	saves = SaveBrowser.new()
+	saves.visible = false
+	row.add_child(saves)
+	saves.load_game.connect(func(id, as_host):
+		_save()
+		load_game.emit(id, as_host))
+	saves.save_now.connect(func(): save_requested.emit())
+	saves.save_as.connect(func(called): save_as.emit(called))
+	saves.save_renamed.connect(func(id, called): save_renamed.emit(id, called))
+	saves.changed.connect(_refresh_save_choice)
+	saves.closed.connect(func(): _show_panel(null))
+	_show_panel(_tabs)
+
+
+## The Settings panel's tabs: Graphics, Sound, Gameplay, Controller (the controls list, key
+## bindings and a controller check) and Debug.
+func _build_settings() -> void:
+	_tabs = _panel_tabs("Settings")
+	# Graphics: presets, display, upscaling, anti-aliasing, quality and the driver (see GraphicsTab).
+	graphics = GraphicsTab.new()
+	_tabs.add_child(graphics)
+	var sound := _scroll_tab("Sound")
+	_build_sound_settings(sound)
+	# Gameplay: riding, the camera, units, placing things, and the time of day and weather.
+	var settings := _scroll_tab("Gameplay")
+	_gameplay = settings.get_parent() as Control
 	_build_riding_settings(settings)
 	_auto = CheckBox.new()
 	_auto.text = "Automatic gearbox"
@@ -256,57 +279,189 @@ func _ready() -> void:
 	_free_rotate.toggled.connect(func(v): Settings.free_rotate = v)
 	settings.add_child(_free_rotate)
 	_build_time_settings(settings)
-	# Graphics: presets, display, upscaling, anti-aliasing, quality and the driver (see GraphicsTab).
-	graphics = GraphicsTab.new()
-	_tabs.add_child(graphics)
-	var controls := VBoxContainer.new()
-	controls.name = "Controls"
-	_tabs.add_child(controls)
-	controls.add_child(UITheme.label(CONTROLS_TEXT, 15))
+	# Controller: the controls list, key bindings and a check that the pad's sticks read true.
+	_controller = TabContainer.new()
+	_controller.name = "Controller"
+	_tabs.add_child(_controller)
+	var controls_scroll := ScrollContainer.new()
+	controls_scroll.name = "Controls"
+	controls_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_controller.add_child(controls_scroll)
+	var controls := UITheme.label(CONTROLS_TEXT, 15)
+	controls.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	controls_scroll.add_child(controls)
 	keybinds = KeybindTab.new()
-	_tabs.add_child(keybinds)
-	blueprints = BlueprintTab.new()
-	_tabs.add_child(blueprints)
+	_controller.add_child(keybinds)
 	var pad := VBoxContainer.new()
 	pad.name = "Controller check"
 	pad.add_theme_constant_override("separation", 10)
-	_tabs.add_child(pad)
+	_controller.add_child(pad)
 	pad.add_child(UITheme.label("Move the sticks and press buttons: the numbers should follow. If a stick shows a value while you're not touching it, let go and press Recalibrate.", 15, Color(1, 1, 1, 0.7)))
 	_pad = UITheme.label("", 16)
 	pad.add_child(_pad)
 	pad.add_child(_button("Recalibrate (hands off the controller)", func(): Controls.recalibrate()))
-	# Your level, tool upgrades, skills tree and goals (see Progress).
-	var character := CharacterTab.new()
-	_tabs.add_child(character)
-	# Your cash, the business's account, sending money, loans and the ledger (see Money).
-	money = MoneyTab.new()
-	_tabs.add_child(money)
-	# The garage's staff and the hiring board (see Staff).
-	staff = StaffTab.new()
-	_tabs.add_child(staff)
-	# Rider gear and shed trinkets bought with your own money (see ShopTab).
-	shop = ShopTab.new()
-	_tabs.add_child(shop)
-	# Testing helpers: reset or max out XP and money.
-	_tabs.add_child(ContractsTab.new())
-	_tabs.add_child(RecoveryTab.new())
+	# Testing helpers: XP, money, contracts, punctures, fixing the bike, the profiler.
 	debug = DebugTab.new()
 	_tabs.add_child(debug)
-	# The Load screen: save games to load, save as, rename and delete (see SaveBrowser).
-	saves = SaveBrowser.new()
-	saves.visible = false
-	row.add_child(saves)
-	saves.load_game.connect(func(id, as_host):
-		_save()
-		load_game.emit(id, as_host))
-	saves.save_now.connect(func(): save_requested.emit())
-	saves.save_as.connect(func(called): save_as.emit(called))
-	saves.save_renamed.connect(func(id, called): save_renamed.emit(id, called))
-	saves.changed.connect(_refresh_save_choice)
-	saves.closed.connect(func(): _tabs.visible = true)
 
 
-## The sound rows at the top of the Settings tab: the effects (tools, the washer, knocks,
+## The garage's panel (its badge, top left): the money, the staff, contracts under way, the
+## recovery truck (with the bikes left out on the road), blueprints, and the Workshop.
+func _build_garage() -> void:
+	_garage_tabs = _panel_tabs("Garage")
+	# The cash, the business's account, sending money, loans and the ledger (see Money).
+	money = MoneyTab.new()
+	_garage_tabs.add_child(money)
+	# The garage's staff and the hiring board (see Staff).
+	staff = StaffTab.new()
+	_garage_tabs.add_child(staff)
+	_garage_tabs.add_child(ContractsTab.new())
+	# The recovery truck: bikes left out on the road to bring back, and its jobs (see Recovery).
+	var truck := VBoxContainer.new()
+	truck.name = "Recovery truck"
+	truck.add_theme_constant_override("separation", 8)
+	_garage_tabs.add_child(truck)
+	_retrieve_box = VBoxContainer.new()
+	_retrieve_box.add_theme_constant_override("separation", 6)
+	truck.add_child(_retrieve_box)
+	var jobs := RecoveryTab.new()
+	jobs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	truck.add_child(jobs)
+	blueprints = BlueprintTab.new()
+	_garage_tabs.add_child(blueprints)
+	# The Workshop: adventure rides, a project bike to order and geometry mode.
+	var shop_floor := _scroll_tab("Workshop", _garage_tabs)
+	shop_floor.add_child(UITheme.label("Adventure rides", 15, UITheme.ACCENT))
+	_adventure = _button("Adventure ride", func():
+		Adventure.menu_action()
+		resume.emit())
+	shop_floor.add_child(_adventure)
+	_continue_adventure = _button("Continue adventure", func():
+		Shed.request({"a": "adventure_resume"})
+		resume.emit())
+	shop_floor.add_child(_continue_adventure)
+	_paper_map = _button("Paper map of the route", func():
+		resume.emit()
+		if AdventureTrip.current:
+			AdventureTrip.current.open_map())
+	shop_floor.add_child(_paper_map)
+	shop_floor.add_child(UITheme.label("Bikes", 15, UITheme.ACCENT))
+	shop_floor.add_child(_button("Order a project bike", func(): order_bike.emit()))
+	shop_floor.add_child(_button("Build from blueprint", show_blueprints))
+	shop_floor.add_child(_button("Geometry mode: fit the parts of the bike you're at ({geometry_mode})", func(): geometry_mode.emit()))
+
+
+## Your panel (the profile picture, top right): who you are, your Character, and the Shop.
+func _build_profile() -> void:
+	_profile_tabs = _panel_tabs("Profile")
+	var me := _scroll_tab("Profile", _profile_tabs)
+	_profile_pic = MenuBadge.new("profile")
+	_profile_pic.disabled = true
+	_profile_pic.custom_minimum_size = Vector2(320, 60)
+	me.add_child(_profile_pic)
+	_profile_info = UITheme.label("", 15, Color(1, 1, 1, 0.85))
+	_profile_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	me.add_child(_profile_info)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 10)
+	buttons.add_child(_button("Character: level, tools and skills", func(): _profile_tabs.current_tab = 1))
+	buttons.add_child(_button("Shop: improve your rider's gear", func(): _profile_tabs.current_tab = 2))
+	me.add_child(buttons)
+	me.add_child(_profile_note())
+	# Your level, tool upgrades, skills tree and goals (see Progress).
+	_profile_tabs.add_child(CharacterTab.new())
+	# Rider gear and shed trinkets bought with your own money (see ShopTab).
+	shop = ShopTab.new()
+	_profile_tabs.add_child(shop)
+
+
+func _profile_note() -> Label:
+	var l := UITheme.label("Your name is set on the title screen. Your gear shows on your figure on foot and on the bike; " +
+		"the Third person setting (Settings, Gameplay) puts your whole figure in view.", 14, Color(1, 1, 1, 0.6))
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return l
+
+
+## The corner badges: the garage's (top left) and your profile picture (top right).
+func _build_badges() -> void:
+	_garage_badge = MenuBadge.new("garage")
+	_garage_badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_garage_badge.position = Vector2(16, 16)
+	_garage_badge.tooltip_text = "The garage: money, staff, contracts, the recovery truck and the workshop"
+	_garage_badge.pressed.connect(func(): toggle_panel(_garage_tabs))
+	add_child(_garage_badge)
+	_profile_badge = MenuBadge.new("profile")
+	_profile_badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_profile_badge.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_profile_badge.offset_left = -16.0 - _profile_badge.custom_minimum_size.x
+	_profile_badge.offset_right = -16.0
+	_profile_badge.offset_top = 16.0
+	_profile_badge.tooltip_text = "Your profile: your character and the shop for your rider's gear"
+	_profile_badge.pressed.connect(func(): toggle_panel(_profile_tabs))
+	add_child(_profile_badge)
+	_garage_badge.visible = false
+	_profile_badge.visible = false
+
+
+## A panel of tabs beside the menu, shown one at a time (see _show_panel).
+func _panel_tabs(panel_name: String) -> TabContainer:
+	var tabs := TabContainer.new()
+	tabs.name = panel_name
+	tabs.custom_minimum_size = Vector2(760, 600)
+	tabs.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	tabs.visible = false
+	_row.add_child(tabs)
+	return tabs
+
+
+## A tab that scrolls (taller than the screen), with its column of rows returned.
+func _scroll_tab(tab_name: String, tabs: TabContainer = null) -> VBoxContainer:
+	var scroll := ScrollContainer.new()
+	scroll.name = tab_name
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.follow_focus = true
+	(tabs if tabs else _tabs).add_child(scroll)
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 10)
+	scroll.add_child(box)
+	return box
+
+
+## The panel open beside the menu (Settings, the garage's or yours), or null.
+func open_panel() -> TabContainer:
+	for p in [_tabs, _garage_tabs, _profile_tabs]:
+		if p.visible:
+			return p
+	return null
+
+
+## Shows `panel` beside the menu (null for none), closing the others and the Load screen.
+func _show_panel(panel: TabContainer) -> void:
+	for p in [_tabs, _garage_tabs, _profile_tabs]:
+		p.visible = p == panel
+	if panel and saves:
+		saves.visible = false
+
+
+## Opens `panel`, or closes it if it's the one open.
+func toggle_panel(panel: TabContainer) -> void:
+	_show_panel(null if panel.visible else panel)
+
+
+## Opens whichever panel holds `tab` with that tab showing (a tab inside the Controller tab too).
+func open_tab(tab: Control) -> void:
+	var c := tab
+	while c and c.get_parent() is TabContainer:
+		var tabs := c.get_parent() as TabContainer
+		tabs.current_tab = tabs.get_tab_idx_from_control(c)
+		if tabs in [_tabs, _garage_tabs, _profile_tabs]:
+			_show_panel(tabs)
+			return
+		c = tabs
+
+
+## The Sound tab's rows: the effects (tools, the washer, knocks,
 ## dings, horns), the engines and the radio each have their own bus and slider (see Sfx).
 func _build_sound_settings(settings: VBoxContainer) -> void:
 	settings.add_child(UITheme.label("Sound effects volume", 15))
@@ -317,7 +472,7 @@ func _build_sound_settings(settings: VBoxContainer) -> void:
 	settings.add_child(_volume_slider("RadioVolume", Settings.radio_volume, func(v): Settings.radio_volume = v; Sfx.apply_volumes()))
 
 
-## The riding rows of the Settings tab: the Riding realism slider (what each end means shows
+## The riding rows at the top of the Gameplay tab: the Riding realism slider (what each end means shows
 ## under it) and the telemetry overlay.
 func _build_riding_settings(settings: VBoxContainer) -> void:
 	settings.add_child(UITheme.label("Riding realism (0 = full sim, 1 = easy)", 15))
@@ -370,11 +525,12 @@ func _process(_delta: float) -> void:
 
 
 func _process_body(_delta: float) -> void:
-	if visible and _tabs.get_current_tab_control() == _pad.get_parent():
+	if visible and _pad.is_visible_in_tree():
 		_pad.text = Controls.diagnostics()
-	if visible and _tabs.current_tab == 0:
+	if visible and _gameplay.is_visible_in_tree():
 		_refresh_time_settings(false)
 	if visible and _pause_box.visible:
+		_refresh_badges()
 		var names := []
 		for peer in Shed.crew:
 			names.append(Shed.crew[peer]["name"] + (" (you)" if peer == Shed.me() else ""))
@@ -391,6 +547,8 @@ func _process_body(_delta: float) -> void:
 func show_title(status := "") -> void:
 	_start_box.visible = true
 	_pause_box.visible = false
+	_garage_badge.visible = false
+	_profile_badge.visible = false
 	_status.text = status
 	SaveGame.migrate(Settings.player_name)
 	_hide_saves()
@@ -404,6 +562,11 @@ func show_pause() -> void:
 	_pause_box.visible = true
 	_status.text = ""
 	_hide_saves()
+	_show_panel(null)
+	_garage_name = garage_name()
+	_garage_badge.visible = true
+	_profile_badge.visible = true
+	_refresh_badges()
 	if Net.is_host():
 		_host_info.text = "Hosting on port %d.\n%s" % [Net.PORT, Net.join_instructions()]
 	elif Net.is_online():
@@ -469,16 +632,17 @@ func refresh_retrieve() -> void:
 		_retrieve_box.add_child(b)
 
 
-## On a pad: B goes back to the shed, LB / RB turn the tabs over.
+## On a pad: B goes back to the shed, LB / RB turn over the tabs of the panel that's open.
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible or not event is InputEventJoypadButton or not event.is_pressed() or not keybinds.listening.is_empty():
 		return
 	if event.is_action_pressed("ui_cancel") and _pause_box.visible:
 		_save()
 		resume.emit()
-	elif event.is_action_pressed("tool_next") or event.is_action_pressed("tool_prev"):
+	elif (event.is_action_pressed("tool_next") or event.is_action_pressed("tool_prev")) and open_panel():
 		var step := 1 if event.is_action_pressed("tool_next") else -1
-		_tabs.current_tab = posmod(_tabs.current_tab + step, _tabs.get_tab_count())
+		var tabs := open_panel()
+		tabs.current_tab = posmod(tabs.current_tab + step, tabs.get_tab_count())
 	else:
 		return
 	get_viewport().set_input_as_handled()
@@ -603,14 +767,13 @@ func ask_new_game() -> void:
 
 ## Opens the Load screen in place of the tabs; `in_game` from the Esc menu.
 func show_saves(in_game: bool) -> void:
-	_tabs.visible = false
+	_show_panel(null)
 	saves.open(in_game)
 
 
 func _hide_saves() -> void:
 	if saves:
 		saves.visible = false
-	_tabs.visible = true
 
 
 func _refresh_save_choice() -> void:
@@ -664,6 +827,32 @@ func _button(text: String, cb: Callable) -> Button:
 	return b
 
 
-## Opens the Blueprints tab, where a blueprint is built in an empty bay.
+## Opens the garage's Blueprints tab, where a blueprint is built in an empty bay.
 func show_blueprints() -> void:
-	_tabs.current_tab = _tabs.get_tab_idx_from_control(blueprints)
+	open_tab(blueprints)
+
+
+## The garage's name for its badge: the save game's, or on a co-op client the host's shed.
+func garage_name() -> String:
+	if Net.is_online() and not Net.is_host():
+		return "%s's shed" % str(Shed.crew.get(1, {}).get("name", "The host"))
+	return str(SaveGame.read_meta(SaveGame.active_slot()).get("name", "Torque Shed"))
+
+
+## The corner badges' lines and the profile picture's colours, and your Profile tab.
+func _refresh_badges() -> void:
+	_garage_badge.set_lines(_garage_name, "Account %s  ·  %d staff" % [TvChannels.money_text(Money.balance()), Staff.workers().size()])
+	var tint: Color = Shed.PAINTS[Net.local_slot() % Shed.PAINTS.size()]
+	var gear := RiderGear.worn_of(Shed.me())
+	var helmet := RiderFigure.color_of(RiderGear.ITEMS.get(str(gear.get("helmet", "")), {}), "base", tint)
+	var jacket := RiderFigure.color_of(RiderGear.ITEMS.get(str(gear.get("jacket", "")), {}), "base", tint)
+	var line := "Level %d  ·  %s" % [Progress.level(), TvChannels.money_text(Progress.money())]
+	for b: MenuBadge in [_profile_badge, _profile_pic]:
+		b.set_rider(helmet, jacket, tint.darkened(0.5))
+		b.set_lines(player_name(), line)
+	if _profile_info.is_visible_in_tree():
+		var worn := []
+		for slot in RiderGear.SLOTS:
+			worn.append(str(RiderGear.ITEMS.get(str(gear.get(slot, "")), {}).get("name", "-")))
+		_profile_info.text = "Playing in: %s\nXP: %d in total\nYour cash: %s\nWearing: %s" % [_garage_name,
+			int(Progress.profile.get("xp", 0)), TvChannels.money_text(Progress.money()), ", ".join(worn)]
