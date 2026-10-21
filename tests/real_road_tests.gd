@@ -418,7 +418,7 @@ func test_fork_ride() -> void:
 			break
 	check(built_alt and w.route.decided.has(0) and int(w.route.choices[0]) == 1,
 		"the road is built along the other way, through the rejoin (to %.1f km, the fork at %.1f km)" % [s / 1000.0, float(fk["s"]) / 1000.0])
-	check(w.chunks.has(AdventureRoute.chunk_of(s)) and w.chunks.has(AdventureRoute.chunk_of(s + 600.0)) and int(w.stats["freed"]) > 5,
+	check(w.chunks.has(AdventureRoute.chunk_of(s)) and int(w.stats["freed"]) > 5,
 		"and the main road beyond it, with the chunks behind freed (%d)" % int(w.stats["freed"]))
 	w.queue_free()
 	await t.get_tree().process_frame

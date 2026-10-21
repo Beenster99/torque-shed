@@ -648,10 +648,11 @@ func _plan_limit_signs() -> void:
 		sign["kmh"] = kmh
 
 
-## Whether a fork's signpost or one of its two junctions is within 200 m of `s`.
+## Whether `s` is in a fork (between its signpost and 400 m past where the ways meet), where a stop would vanish when the
+## crew takes the other way.
 func _near_fork(s: float) -> bool:
-	for st in sites:
-		if (st["kind"] == "fork" or (st["kind"] == "junction" and (st.has("fork") or st.has("rejoin")))) and absf(float(st["s"]) - s) < 200.0:
+	for fk in forks:
+		if s > float(fk["s"]) - SIGN_BEFORE - 400.0 and s < float(fk["rejoin"]) + 400.0:
 			return true
 	return false
 
