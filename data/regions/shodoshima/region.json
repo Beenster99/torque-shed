@@ -1,0 +1,100 @@
+{
+ "format": 1,
+ "kind": "region",
+ "name": "shodoshima",
+ "title": "Shodoshima",
+ "frame": {
+  "lat": 34.5,
+  "lon": 134.24
+ },
+ "bounds": [
+  -11020.8,
+  -6655.9,
+  11020.8,
+  6655.9
+ ],
+ "geo": {
+  "south": 34.44,
+  "west": 134.12,
+  "north": 34.56,
+  "east": 134.36
+ },
+ "levels": [
+  {
+   "name": "fine",
+   "dir": "tiles",
+   "spacing": 4.0,
+   "n": 128,
+   "size_m": 512.0,
+   "min": -256.0,
+   "scale": 0.0625,
+   "cover": true
+  },
+  {
+   "name": "coarse",
+   "dir": "coarse",
+   "spacing": 32.0,
+   "n": 128,
+   "size_m": 4096.0,
+   "min": -256.0,
+   "scale": 0.125,
+   "cover": true
+  },
+  {
+   "name": "ridge",
+   "dir": "ridge",
+   "spacing": 128.0,
+   "n": 256,
+   "size_m": 32768.0,
+   "min": -256.0,
+   "scale": 0.25,
+   "cover": false
+  }
+ ],
+ "tile_counts": {
+  "fine": 737,
+  "coarse": 31,
+  "ridge": 4
+ },
+ "cover": [
+  "grass",
+  "forest",
+  "crop",
+  "shrub",
+  "barren",
+  "urban",
+  "sand",
+  "wetland",
+  "water",
+  "rock"
+ ],
+ "building_kinds": [
+  "house",
+  "shed",
+  "barn",
+  "shop",
+  "block",
+  "industrial",
+  "worship",
+  "civic"
+ ],
+ "counts": {
+  "nodes": 4291,
+  "edges": 5328,
+  "buildings": 8379,
+  "pois": 254,
+  "landmarks": 73
+ },
+ "sea": true,
+ "theme": "coastal",
+ "region": "jp",
+ "sources": {
+  "overture_release": "2026-09-23.1",
+  "elevation": "Mapterhorn, AWS Terrain Tiles fallback"
+ },
+ "credits": [
+  "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
+  "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."
+ ],
+ "hash": "1fe7fb270638e26c"
+}

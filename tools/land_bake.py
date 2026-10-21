@@ -224,8 +224,9 @@ def building_kind(row, w, d):
 DEFAULT_HEIGHT = {"house": 5.5, "shed": 3.0, "barn": 6.0, "shop": 6.5, "block": 14.0, "industrial": 7.5, "worship": 8.0, "civic": 8.5}
 
 
-def make_buildings(rows, frame, knots, reach=BUILDING_REACH, gap=BUILDING_GAP, max_count=BUILDING_MAX):
+def make_buildings(rows, frame, knots, reach=BUILDING_REACH, gap=BUILDING_GAP, max_count=None):
     """Building boxes within `reach` of the road, clear of it: [[x, z, w, d, yaw, h, kind id]], nearest the road first."""
+    max_count = BUILDING_MAX if max_count is None else max_count   # (read now: a region bakes with more)
     cell = 64.0
     grid = {}
     for k in range(0, len(knots), 2):
