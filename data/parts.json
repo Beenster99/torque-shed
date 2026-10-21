@@ -20516,17 +20516,19 @@
 	},
 	"satnav": {
 		"phone_nav_mount": {
-			"name": "Phone mount and nav app",
-			"description": "Your phone in a clamp on the bars, running a free map app. Small screen, and it hates the rain.",
+			"name": "Phone sat nav, handlebar clip",
+			"description": "Your phone in a sprung cradle on a clamp round the bar, running a nav app: the map, the way and the next turn, on any bike. It buzzes a bit with the engine.",
 			"mass": 0.3,
-			"type": "Phone, 4\"",
+			"type": "Phone in a bar clip, 6\"",
 			"style": "phone",
 			"screen": [
-				0.07,
-				0.13
+				0.12,
+				0.075
 			],
 			"features": [
-				"map"
+				"map",
+				"route",
+				"fuel"
 			],
 			"color": [
 				0.06,
@@ -20534,12 +20536,20 @@
 				0.065
 			],
 			"styles": [
-				"naked",
-				"roader",
 				"classic",
+				"cafe",
+				"bobber",
+				"chopper",
+				"cruiser",
 				"scrambler",
 				"adventure",
-				"tourer"
+				"roader",
+				"tourer",
+				"sport",
+				"race",
+				"naked",
+				"supermoto",
+				"mx"
 			],
 			"price": 30
 		},
