@@ -454,6 +454,7 @@ func _run_all() -> void:
 	await _test_planner_ride()
 	_test_planner_rules()
 	_test_planner_via()
+	_test_planner_dales()
 	_test_planner_places()
 	_test_planner_forks()
 	_test_planner_board()
@@ -22061,6 +22062,10 @@ func _test_planner_forks() -> void:
 
 func _test_planner_places() -> void:
 	_planner().test_places()
+
+
+func _test_planner_dales() -> void:
+	_planner().test_dales()
 
 
 func _test_planner_via() -> void:

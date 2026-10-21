@@ -238,7 +238,17 @@ func test_tv() -> void:
 	for i in 6:
 		await t.get_tree().process_frame
 	var board: RouteTv = dash._route
-	check(board != null and board.visible and board.region != null and board.region.id == REGION, "the route TV shows the region's map")
+	check(board != null and board.visible and board.region != null and RealRegion.list().has(board.region.id), "the route TV shows a region's map (%s)" % (board.region.title if board and board.region else "none"))
+	# Each region has a button on the TV: touch the island's.
+	var island: Button = null
+	for c in board._region_row.get_children():
+		if c is Button and (c as Button).text == "Shodoshima":
+			island = c
+	check(island != null and RealRegion.list().size() >= 2, "there is a button for each region (%d)" % board._region_row.get_child_count())
+	dash.tap(island.global_position + island.size * 0.5)
+	for i in 3:
+		await t.get_tree().process_frame
+	check(board.region.id == REGION, "and touching it shows that map")
 	check(dash.kind == "route" and TvChannels.screen_exists("route") and TvChannels.home("route") == "route" and TvChannels.channels_for("f1").has("route"),
 		"it is a built-in screen, and a channel every TV has")
 	var r := board.region
@@ -287,3 +297,19 @@ func test_tv() -> void:
 	Shed.journey = {}
 	dash.queue_free()
 	await t.get_tree().process_frame
+
+
+## The Dales region (Wensleydale, Swaledale): Hawes to Leyburn is a road of 25 km or so, with forks and a real inn or two.
+func test_dales() -> void:
+	var r := RealRegion.get_region("dales")
+	check(r != null and r.country == "uk" and r.places.size() > 30 and RealRegion.list().has("dales"), "the game has the Dales region (%d places)" % (r.places.size() if r else 0))
+	if r == null:
+		return
+	var res := RoutePlanner.plan(r, {"pins": [r.geo_to_xz(54.3037, -2.1990), r.geo_to_xz(54.3103, -1.8296)], "mode": "main", "seed": 2})
+	check(bool(res["ok"]), "Hawes to Leyburn plans (%s)" % str(res["error"]))
+	if not bool(res["ok"]):
+		return
+	var p: RealPack = res["pack"]
+	check(p.max_km() > 20.0 and p.max_km() < 45.0 and p.region == "uk" and p.junctions.size() > 5 and p.pois.size() > 5,
+		"%.1f km, with %d junctions, %d places to stop and %d forks, on UK limits" % [p.max_km(), p.junctions.size(), p.pois.size(), p.forks.size()])
+	check(p.limit_at(10.0) >= 30.0, "with speed limits (%d km/h at the start)" % int(p.limit_at(10.0)))
