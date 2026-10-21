@@ -196,9 +196,15 @@ real heights graded, junctions and roundabouts, buildings, places and speed limi
 (`JourneyMap`, from the magazine) shows the island shaded by height with its roads, pins from anyone in the crew are
 shared (`AdventureJourney`, in the shed's state), and the host's Start makes an adventure carrying the plan; every
 game plans it again (`AdventurePlans`, cached by the plan's key) and the hash says they got the same road
-(`tests/mp_journey.gd` runs two processes through it). Still to do from the list below: place search, suggested
-destinations, forks on a planned road, one-way streets and turn restrictions, and the region download (the region is
-bundled for now).
+(`tests/mp_journey.gd` runs two processes through it). The gaps are now closed too: the baker keeps one-way roads (five
+on Shodoshima) and prohibited turns (none in this area's data) and the planner drives one-way roads their way only
+and never takes a banned turn (its search is over arrivals, with the straight-line distance as a floor); the map has
+a search box over the region's 47 named towns and villages, named places to stop and landmarks, suggested places
+with nothing typed, and the towns named on the map; a planned road has forks (the second-best way between two of its
+junctions, as the baker finds them) the crew votes on; and regions can be downloaded (`RegionStore`: a zip from the
+index's URL, its hash checked against the index's before it is put under `user://regions`, where `RealRegion` finds it
+beside the bundled ones; `tools/region_zip.py` makes the zip and the index entry). Nothing is hosted yet, so the
+bundled Shodoshima is the only region.
 
 **Playable loop.** An issue is now a *region* (the whole of Shodoshima; a 60 by 60 km square of the Dales). Its article
 shows the region's map on the shed screen with a few suggested destinations. The host picks a start, a destination and

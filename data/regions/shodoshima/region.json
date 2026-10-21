@@ -1,23 +1,23 @@
 {
- "format": 1,
+ "format": 2,
  "kind": "region",
  "name": "shodoshima",
  "title": "Shodoshima",
  "frame": {
   "lat": 34.5,
-  "lon": 134.24
+  "lon": 134.25
  },
  "bounds": [
-  -11020.8,
-  -6655.9,
-  11020.8,
-  6655.9
+  -11939.2,
+  -7765.2,
+  11939.2,
+  7765.2
  ],
  "geo": {
-  "south": 34.44,
+  "south": 34.43,
   "west": 134.12,
-  "north": 34.56,
-  "east": 134.36
+  "north": 34.57,
+  "east": 134.38
  },
  "levels": [
   {
@@ -52,8 +52,8 @@
   }
  ],
  "tile_counts": {
-  "fine": 737,
-  "coarse": 31,
+  "fine": 748,
+  "coarse": 29,
   "ridge": 4
  },
  "cover": [
@@ -79,11 +79,14 @@
   "civic"
  ],
  "counts": {
-  "nodes": 4291,
-  "edges": 5328,
-  "buildings": 8379,
+  "nodes": 4326,
+  "edges": 5367,
+  "buildings": 8542,
   "pois": 254,
-  "landmarks": 73
+  "landmarks": 73,
+  "places": 47,
+  "oneway": 5,
+  "bans": 0
  },
  "sea": true,
  "theme": "coastal",
@@ -96,5 +99,5 @@
   "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
   "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."
  ],
- "hash": "1fe7fb270638e26c"
+ "hash": "fda2b661123337c3"
 }
