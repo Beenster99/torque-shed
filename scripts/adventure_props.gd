@@ -344,6 +344,36 @@ static func _roof(a: Dictionary, xf: Transform3D, w: float, d: float, eaves: flo
 		gable(a, xf, w, d, eaves, rise, col, gable_col)
 
 
+## A speed-limit sign on the verge (site `site`'s "kmh" shown in mph on a UK road, `mph`): a white disc with a red ring on a
+## post, facing back along the road at the riders coming. `xf` has its origin at the post's foot and +z towards them.
+static func limit_sign(kmh: float, mph: bool, xf: Transform3D) -> Node3D:
+	var root := Node3D.new()
+	root.name = "LimitSign"
+	root.transform = xf
+	var a := new_arrays()
+	box(a, Transform3D(Basis(), Vector3.ZERO), Vector3(0.1, 2.5, 0.1), Color(0.45, 0.46, 0.48))
+	var sides := 24
+	var centre := Vector3(0.0, 2.55, 0.06)
+	for k in sides:
+		var a0 := TAU * k / sides
+		var a1 := TAU * (k + 1) / sides
+		_tri(a, centre, centre + Vector3(cos(a0), sin(a0), 0.0) * 0.52, centre + Vector3(cos(a1), sin(a1), 0.0) * 0.52, Color(0.8, 0.08, 0.06))
+		_tri(a, centre + Vector3(0, 0, 0.012), centre + Vector3(cos(a0), sin(a0), 0.012) * 0.38,
+			centre + Vector3(cos(a1), sin(a1), 0.012) * 0.38, Color(0.97, 0.97, 0.95))
+	var mi := MeshInstance3D.new()
+	mi.mesh = to_mesh(a)
+	root.add_child(mi)
+	var label := Label3D.new()
+	label.text = str(roundi(kmh / 1.609344)) if mph else str(roundi(kmh))
+	label.font_size = 96
+	label.pixel_size = 0.006
+	label.modulate = Color(0.05, 0.05, 0.05)
+	label.outline_size = 0
+	label.position = Vector3(0.0, 2.55, 0.03)
+	root.add_child(label)
+	return root
+
+
 # ---------------------------------------------------------------------------- sites
 
 ## A fuel station by the road: a forecourt beside the road at `xf` (its origin on the road's

@@ -6,7 +6,7 @@ extends RefCounted
 ## route.json and tiles/. Everything is in the adventure's route frame: metres from the start, +x east, -z north.
 ## Packs are read-only once loaded, so one can be shared by every thread.
 
-const FORMAT := 6
+const FORMAT := 7
 ## What covers the land (RealTerrain.cover), by id: the baker's list (tools/land_bake.py COVER).
 const COVER: Array[String] = ["grass", "forest", "crop", "shrub", "barren", "urban", "sand", "wetland", "water", "rock"]
 ## The kinds of building (tools/land_bake.py BUILDING_KINDS), by id.
@@ -49,6 +49,14 @@ var junctions: Array = []
 ## Real places beside the road to stop at: [{kind ("fuel", "cafe", "pub", "inn", "campsite", "layby", "viewpoint"),
 ## name ("" when it has none we can print), x, z, k (the nearest knot), lat (m to the right of the road), conf}].
 var pois: Array = []
+## Second ways between two junctions of the road, for the crew to vote on: [{i0, i1 (knots of the main road, on chunk
+## boundaries), kinds ("main" then "scenic" or "gravel"), names {kind: name}, way: {n, x, z, e, chunks: [[surface, width,
+## class, name, limit]]}}], in order along the road.
+var forks: Array = []
+var fork_count := 0
+## What the data says about the road: {from, to (the issue's words), roads (the named roads it follows, longest first),
+## climb_m, top_m, low_m}.
+var summary := {}
 ## The country's speed-limit rules the baker used ("uk", "jp" or "world").
 var region := "world"
 
@@ -134,10 +142,15 @@ static func _load(pack_id: String) -> RealPack:
 	var js = _json(dir.path_join("junctions.json"))
 	if js is Array:
 		p.junctions = js
+	var fk = _json(dir.path_join("forks.json"))
+	if fk is Array:
+		p.forks = fk
 	var places = _json(dir.path_join("pois.json"))
 	if places is Array:
 		p.pois = places
 	p.region = str(meta.get("region", "world"))
+	p.summary = meta.get("summary", {})
+	p.fork_count = int(meta.get("fork_count", p.forks.size()))
 	p.terrain = RealTerrain.new(dir, meta)
 	return p
 
@@ -169,6 +182,29 @@ func buildings_in(c: int) -> Array:
 ## The landmarks of `kind` ("" for all) within `reach` metres of route-frame (x, z).
 func landmarks_near(x: float, z: float, reach: float, kind := "") -> Array:
 	return landmarks.filter(func(m): return (kind == "" or m["kind"] == kind) and Vector2(float(m["x"]) - x, float(m["z"]) - z).length() <= reach)
+
+
+## A few lines for the magazine, from the data: how far, along which roads, how much climbing, and what's on the way.
+func summary_text() -> String:
+	var km := floori(max_km())
+	var lines: PackedStringArray = []
+	var from := str(summary.get("from", ""))
+	var to := str(summary.get("to", ""))
+	var head := "%d km" % km if from == "" or to == "" else "%d km from %s to %s" % [km, from, to]
+	var roads: Array = summary.get("roads", [])
+	if not roads.is_empty():
+		head += ", along the " + (", ".join(roads.slice(0, -1)) + " and " + str(roads[-1]) if roads.size() > 1 else str(roads[0]))
+	lines.append(head + ".")
+	if int(summary.get("climb_m", 0)) > 0:
+		lines.append("%d metres of climbing, between %d and %d metres above the sea." % [int(summary["climb_m"]), int(summary["low_m"]), int(summary["top_m"])])
+	var stops: PackedStringArray = []
+	for kind in ["fuel", "cafe", "inn"]:
+		var n := pois_of(kind).size()
+		if n > 0:
+			stops.append("%d %s" % [n, {"fuel": "filling stations", "cafe": "cafes", "inn": "inns and hotels"}[kind]])
+	if not stops.is_empty():
+		lines.append("Real places beside the road: " + ", ".join(stops) + ".")
+	return " ".join(lines)
 
 
 ## The longest ride (km) this pack offers: what is baked less the run-out.

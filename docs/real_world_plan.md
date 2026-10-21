@@ -167,16 +167,23 @@ circuit).
 
 **Size.** About 3 weeks.
 
-**Status.** Part one is built (`claude/real-roads-3a`): the baker writes `pois.json` (filling stations, cafes, pubs, inns,
-campsites, lay-bys, viewpoints within reach of the road), `junctions.json` (side roads, found from the road graph, and
-roundabouts found from the road's shape: the data has no roundabout flag) and a speed limit per chunk (posted where
-the data has one, else the country's default for the class, lower where built up). The game's planned stops move to
-the nearest real place of their sort and take its name, side roads join where the real ones do, and the police and
-traffic keep to the real limits. What the data cannot give us: traffic lights (there are none in it, so the game keeps
-making its own in villages) and, on Shodoshima, fuel (the nearest filling station to the coast road is 3.6 km away).
-Still to do in this stage: real forks (a second-best path offered to the crew), the 100 km UK epic with its night stop
-and the co-op test, the destination set at a real place with the magazine blurb written from the data, one-way and
-turn restrictions in the planner, and speed-limit signs by the road.
+**Status.** Built (`claude/real-roads-3a` and `claude/real-roads-3b`): the baker writes `pois.json` (filling stations, cafes,
+pubs, inns, campsites, lay-bys and viewpoints within reach of the road), `junctions.json` (side roads, found from the
+road graph, and roundabouts found from the road's shape: the data has no roundabout flag), `forks.json` (the second-best
+way between two junctions, a road of its own on chunk boundaries) and a speed limit per chunk (posted where the data
+has one, else the country's default for the class, lower where built up); it takes via points and classes to avoid,
+and the road graph is cut at the connectors part-way along a segment (it was missing most junctions). The game's
+planned stops move to the nearest real place of their sort and take its name, side roads join where the real ones do,
+a real fork is a fork like any other (ways, signpost, vote; the sat nav and the police follow the path taken),
+speed-limit signs stand by the road, and the police and traffic keep to the real limits. The Dales epic (70 km from
+Settle to Leyburn, one fork, real stops, a night at an inn, the Dales rally at the end) is in the magazine, and a co-op
+test rides it end to end: the same copy of the road, the vote, the other way, a night at the inn, and arrival.
+
+What the data cannot give us: traffic lights (there are none in it, so the game keeps making its own in villages) and
+buildings along a fork's other way (the baker only finds them along the main road; the other way has none yet). Still to
+do in this stage: one-way and turn restrictions in the planner, the destination set piece placed at a real place picked
+in the issue file rather than by the theme, and more forks per road (the baker keeps only those whose line a bike can
+ride).
 
 ### Stage 4: choose your own route from a region
 

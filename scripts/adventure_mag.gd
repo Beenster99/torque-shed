@@ -30,6 +30,10 @@ const ISSUES := [
 			+ "Every bend, wood and village is where the island put it."},
 	]},
 	{"n": 2, "name": "Summer issue", "level": 3, "articles": [
+		{"id": "dales_epic", "title": "The Dales Epic: Settle to Leyburn", "theme": "hills", "len": "ride", "seed": 4204, "dest": "dales_rally",
+			"real": "dales", "blurb": "A real road ride across the Yorkshire Dales, from Settle over the tops to Hawes and Reeth and down to Leyburn: "
+			+ "stone walls, moorland and market towns. Real filling stations and cafes, a night at a real inn if you take your time, "
+			+ "and forks where the crew picks the way."},
 		{"id": "glacier_express", "title": "Glacier Express", "theme": "alpine", "len": "ride", "seed": 4201, "dest": "glacier",
 			"blurb": "Hairpins up through the pines, snow by the road near the top, and hot chocolate looking out over the glacier."},
 		{"id": "hollow_farm", "title": "Scramble at Hollow Farm", "theme": "hills", "len": "ride", "seed": 4202, "dest": "farm_track",
@@ -463,6 +467,8 @@ func refresh() -> void:
 	_kicker.text = "%s ADVENTURE  ·  %s" % [str(THEME_NAMES.get(a["theme"], "Varied")).to_upper(), AdventureDest.name_of(dest).to_upper()]
 	_title.text = str(a["title"])
 	_blurb.text = str(a["blurb"])
+	if real_pack(a) != null:
+		_blurb.text += "\n\n" + real_pack(a).summary_text()
 	_what.text = "At the end: %s." % str(AdventureDest.of(dest).get("what", ""))
 	if road_theme(str(a["theme"])) != str(a["theme"]):
 		_what.text += "\n(For now the road there is a varied one.)"

@@ -1,5 +1,5 @@
 {
- "format": 6,
+ "format": 7,
  "name": "shodoshima",
  "title": "Shodoshima",
  "start": {
@@ -73,7 +73,21 @@
  ],
  "building_count": 627,
  "region": "jp",
- "junction_count": 17,
+ "junction_count": 18,
+ "fork_count": 0,
+ "summary": {
+  "from": "",
+  "to": "",
+  "roads": [
+   "Route 246",
+   "National Highway Route 436",
+   "Route 29",
+   "Route 27"
+  ],
+  "climb_m": 416,
+  "top_m": 746,
+  "low_m": 1
+ },
  "poi_count": 6,
  "landmark_count": 13,
  "sea": true,
@@ -87,5 +101,5 @@
   "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
   "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."
  ],
- "hash": "965da3654c9614f0"
+ "hash": "d1956bdf436cb894"
 }

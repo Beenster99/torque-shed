@@ -440,10 +440,12 @@ func _run_all() -> void:
 	_test_adventure_route()
 	_test_real_pack()
 	_test_real_levels()
+	_test_real_forks()
+	await _test_real_fork_ride()
 	_test_real_stops()
 	_test_real_junctions()
 	_test_real_limits()
-	_test_real_ridges()
+	await _test_real_ridges()
 	_test_real_land()
 	_test_real_building_shapes()
 	_test_real_budget()
@@ -21906,6 +21908,14 @@ func _test_real_pack() -> void:
 	_real().test_pack()
 
 
+func _test_real_forks() -> void:
+	_real().test_forks()
+
+
+func _test_real_fork_ride() -> void:
+	await _real().test_fork_ride()
+
+
 func _test_real_stops() -> void:
 	_real().test_stops()
 
@@ -21923,7 +21933,7 @@ func _test_real_levels() -> void:
 
 
 func _test_real_ridges() -> void:
-	_real().test_ridges()
+	await _real().test_ridges()
 
 
 func _test_real_land() -> void:

@@ -267,6 +267,63 @@ class RoadKnotTests(unittest.TestCase):
             self.assertNotEqual(first, rb.pack_hash(d))
 
 
+class Summary(unittest.TestCase):
+    def test_roads_by_length_and_the_climb(self):
+        chunks = [{"name": "Main road"}] * 5 + [{"name": "A65"}] * 3 + [{"name": "B6255"}] * 7 + [{"name": "Minor road"}] * 4
+        got = rb.road_summary(chunks, None, [100.0, 140.0, 120.0, 300.0, 250.0], {"from": "Settle", "to": "Leyburn"})
+        self.assertEqual(got["roads"], ["B6255", "A65"])
+        self.assertEqual((got["climb_m"], got["top_m"], got["low_m"]), (220, 300, 100))
+        self.assertEqual((got["from"], got["to"]), ("Settle", "Leyburn"))
+
+
+class Spurs(unittest.TestCase):
+    def test_out_and_back_is_taken_out(self):
+        steps = [("a", 0, "b"), ("b", 1, "c"), ("c", 2, "d"), ("d", 2, "c"), ("c", 1, "b"), ("b", 3, "e")]
+        self.assertEqual(rb.strip_spurs(steps), [("a", 0, "b"), ("b", 3, "e")])
+        self.assertEqual(rb.strip_spurs([("a", 0, "b"), ("b", 1, "c")]), [("a", 0, "b"), ("b", 1, "c")])
+        self.assertEqual(rb.strip_spurs([]), [])
+
+
+class Connectors(unittest.TestCase):
+    def test_a_segment_is_cut_at_its_middle_connectors(self):
+        pts = [(0.0, 0.0), (1000.0, 0.0)]
+        cons = [{"connector_id": "a", "at": 0.0}, {"connector_id": "m", "at": 0.25}, {"connector_id": "b", "at": 1.0}]
+        parts = rb.cut_at_connectors(pts, cons)
+        self.assertEqual([(a, b) for a, b, _ in parts], [("a", "m"), ("m", "b")])
+        self.assertAlmostEqual(rb.length_of(parts[0][2]), 250.0, places=6)
+        self.assertAlmostEqual(rb.length_of(parts[1][2]), 750.0, places=6)
+        self.assertEqual(parts[1][2][0], parts[0][2][-1])
+
+    def test_a_road_joined_part_way_along_is_reachable_through_the_graph(self):
+        f = rb.Frame(34.5, 134.3)
+
+        def ll(x, z):
+            lat, lon = f.to_geo(x, z)
+            return (float(lon), float(lat))
+        long_road = {"id": "L", "subtype": "road", "class": "primary", "geometry": wkb_line([ll(0, 0), ll(500, 0), ll(1000, 0)]),
+                     "connectors": [{"connector_id": "a", "at": 0.0}, {"connector_id": "m", "at": 0.5}, {"connector_id": "b", "at": 1.0}],
+                     "road_surface": None, "road_flags": None, "names": None, "routes": None}
+        side = {"id": "S", "subtype": "road", "class": "tertiary", "geometry": wkb_line([ll(500, 0), ll(500, -400)]),
+                "connectors": [{"connector_id": "m", "at": 0.0}, {"connector_id": "c", "at": 1.0}],
+                "road_surface": None, "road_flags": None, "names": None, "routes": None}
+        g = rb.Graph([long_road, side], f)
+        self.assertEqual(len(g.edges), 3)
+        cost, length, prev = g.dijkstra("a")
+        self.assertIn("c", prev)                    # a to the side road's end, through the junction in the middle
+        self.assertAlmostEqual(length["c"], 900.0, delta=1.0)
+        self.assertEqual(len(g.adj["m"]), 3)       # a junction, as the fork finder needs
+        self.assertEqual(len(g.component_of("a")), 4)
+        # a stray bit of road is a component of its own, which nothing snaps to unless it is the start's
+        stray = dict(side, id="Z", geometry=wkb_line([ll(3000, 3000), ll(3000, 3400)]),
+                     connectors=[{"connector_id": "y", "at": 0.0}, {"connector_id": "z", "at": 1.0}])
+        g2 = rb.Graph([long_road, side, stray], f)
+        self.assertNotIn("y", g2.component_of("a"))
+        self.assertIsNone(g2.nearest_node((g2.pos["y"][0], g2.pos["y"][1]), 5.0, g2.component_of("a")))
+        self.assertEqual(g2.nearest_node((g2.pos["y"][0], g2.pos["y"][1]), 5.0), "y")
+        # a start point snaps to a real network over a stray bit of road next to it
+        self.assertEqual(g2.nearest_connected((g2.pos["a"][0], g2.pos["a"][1]), 5.0, min_nodes=3), "a")
+
+
 class Levels(unittest.TestCase):
     def field(self, level, value):
         return rb.LevelField(level, {(0, 0): np.full((level.n, level.n), float(value))})

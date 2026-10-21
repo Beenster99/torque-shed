@@ -203,8 +203,8 @@ func limit_here(s: float) -> float:
 ## The speed limit at `s` (m/s): on a real road its own (posted, or the country's for the class); else 30 mph through a
 ## village, 60 mph out of one.
 static func limit_at(route: AdventureRoute, s: float) -> float:
-	if route.real != null and route.real.limit_at(s) > 0.0:
-		return route.real.limit_at(s) / 3.6
+	if route.limit_kmh_at(s) > 0.0:
+		return route.limit_kmh_at(s) / 3.6
 	for kind in ["village", AdventureStops.ROW]:
 		for st in route.sites_of(kind):
 			if absf(float(st["s"]) - s) < VILLAGE_REACH:

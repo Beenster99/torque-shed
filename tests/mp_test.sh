@@ -5,7 +5,8 @@
 # and sleeps on one (tests/mp_needs.gd), a fifth meets the police on one (tests/mp_police.gd),
 # a sixth starts one from the magazine and arrives at its destination together (tests/mp_dest.gd),
 # a seventh keeps the Adventure Diary: the host's shared highlights, both riders' photos in each diary (tests/mp_diary.gd),
-# and an eighth rides with one of the other bikers on an adventure (tests/mp_bikers.gd).
+# an eighth rides with one of the other bikers on an adventure (tests/mp_bikers.gd),
+# and a ninth rides a real road with a fork, taking the other way together (tests/mp_real.gd).
 set -u
 cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
@@ -80,7 +81,16 @@ BCLIENT=$?
 wait $BHOST
 BHOSTRC=$?
 grep -h "MP bikers" /tmp/torque_mp_bikers_host.log /tmp/torque_mp_bikers_client.log
-if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ] || [ $DHOSTRC -ne 0 ] || [ $DCLIENT -ne 0 ] || [ $PHOSTRC -ne 0 ] || [ $PCLIENT -ne 0 ] || [ $YHOSTRC -ne 0 ] || [ $YCLIENT -ne 0 ] || [ $BHOSTRC -ne 0 ] || [ $BCLIENT -ne 0 ]; then
+# A real road with a fork: the host starts it, both have the same copy, vote at the fork, take the other way and arrive.
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_real.tscn -- --role=host > /tmp/torque_mp_real_host.log 2>&1 &
+RHOST=$!
+sleep 4
+"$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_real.tscn -- --role=client > /tmp/torque_mp_real_client.log 2>&1
+RCLIENT=$?
+wait $RHOST
+RHOSTRC=$?
+grep -h "MP real" /tmp/torque_mp_real_host.log /tmp/torque_mp_real_client.log
+if [ $HOSTRC -ne 0 ] || [ $CLIENT -ne 0 ] || [ $AHOSTRC -ne 0 ] || [ $ACLIENT -ne 0 ] || [ $WHOSTRC -ne 0 ] || [ $WCLIENT -ne 0 ] || [ $NHOSTRC -ne 0 ] || [ $NCLIENT -ne 0 ] || [ $DHOSTRC -ne 0 ] || [ $DCLIENT -ne 0 ] || [ $PHOSTRC -ne 0 ] || [ $PCLIENT -ne 0 ] || [ $YHOSTRC -ne 0 ] || [ $YCLIENT -ne 0 ] || [ $BHOSTRC -ne 0 ] || [ $BCLIENT -ne 0 ] || [ $RHOSTRC -ne 0 ] || [ $RCLIENT -ne 0 ]; then
 	echo "Multiplayer test failed"
 	exit 1
 fi
