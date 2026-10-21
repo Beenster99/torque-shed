@@ -269,7 +269,7 @@ def fetch_segments(south, west, north, east, release, log=print):
     f = ((pc.field("bbox", "xmin") < east) & (pc.field("bbox", "xmax") > west)
          & (pc.field("bbox", "ymin") < north) & (pc.field("bbox", "ymax") > south))
     tb = d.to_table(columns=["id", "geometry", "subtype", "class", "connectors", "road_surface", "road_flags",
-                             "names", "routes", "speed_limits"], filter=f)
+                             "names", "routes", "speed_limits", "access_restrictions", "prohibited_transitions"], filter=f)
     log("roads: %d segments in the box" % tb.num_rows)
     return tb.to_pylist()
 
@@ -302,6 +302,28 @@ def segment_kind(seg):
         if rule.get("between") is None and str(rule.get("value")) in UNPAVED:
             surface = "gravel"
     return cls, surface
+
+
+def _general(rule):
+    """Whether an access or transition rule applies to every motor vehicle at every time (not just some)."""
+    when = _as_dict(rule.get("when"))
+    return rule.get("between") is None and not when.get("during") and not when.get("using") and not when.get("recognized") \
+        and not when.get("mode") and not when.get("vehicle")
+
+
+def segment_direction(seg):
+    """Which way a road segment may be driven: 0 both ways, 1 only from its first connector to its last (forward),
+    -1 only the other way, from its access rules (a one-way street denies the backward heading)."""
+    out = 0
+    for rule in seg.get("access_restrictions") or []:
+        if rule.get("access_type") != "denied" or not _general(rule):
+            continue
+        heading = _as_dict(rule.get("when")).get("heading")
+        if heading == "backward":
+            out = 1
+        elif heading == "forward":
+            out = -1
+    return out
 
 
 def parse_wkb(wkb):
@@ -362,9 +384,10 @@ class Graph:
     """The ridden roads as a graph: nodes are Overture connectors, edges are road segments."""
 
     def __init__(self, segments, frame, avoid=()):
-        self.edges = []     # {a, b, pts [(x, z)] from a to b, cls, surface, label, length}
+        self.edges = []     # {a, b, pts [(x, z)] from a to b, cls, surface, label, length, oneway (segment_direction), seg}
         self.pos = {}       # connector id -> (x, z)
         self.adj = {}       # connector id -> [(other id, edge index)]
+        self.bans = set()   # (edge arrived by, connector, edge left by): turns the road rules prohibit
         for s in segments:
             info = segment_kind(s)
             cons = s.get("connectors") or []
@@ -389,10 +412,41 @@ class Graph:
                     self.pos.setdefault(a, sub[0])
                     self.pos.setdefault(b, sub[-1])
                     e = {"a": a, "b": b, "pts": sub, "cls": info[0], "surface": info[1], "label": segment_label(s),
-                         "length": length_of(sub), "limit": road_facts.segment_limit(s.get("speed_limits"))}
+                         "length": length_of(sub), "limit": road_facts.segment_limit(s.get("speed_limits")),
+                         "oneway": segment_direction(s), "seg": s.get("id")}
                     self.adj.setdefault(a, []).append((b, len(self.edges)))
                     self.adj.setdefault(b, []).append((a, len(self.edges)))
                     self.edges.append(e)
+        self._find_bans(segments)
+
+    def _find_bans(self, segments):
+        """The turns the data prohibits (a segment's prohibited_transitions: one step, onto the next segment at a
+        connector), as (edge arrived by, connector, edge left by)."""
+        by_seg = {}
+        for ei, e in enumerate(self.edges):
+            by_seg.setdefault(e["seg"], []).append(ei)
+        for s in segments:
+            for rule in s.get("prohibited_transitions") or []:
+                seq = rule.get("sequence") or []
+                if len(seq) != 1 or not _general(rule):
+                    continue
+                node = seq[0].get("connector_id")
+                heading = _as_dict(rule.get("when")).get("heading")
+                for ef in by_seg.get(s.get("id"), []):
+                    e = self.edges[ef]
+                    if node not in (e["a"], e["b"]):
+                        continue
+                    # Heading forward on the segment means arriving at its b end (the parts run a to b in order).
+                    if (heading == "forward" and node != e["b"]) or (heading == "backward" and node != e["a"]):
+                        continue
+                    for et in by_seg.get(seq[0].get("segment_id"), []):
+                        if node in (self.edges[et]["a"], self.edges[et]["b"]):
+                            self.bans.add((ef, node, et))
+
+    def passable(self, ei, from_node):
+        """Whether edge `ei` may be driven starting from `from_node` (a one-way road only from its open end)."""
+        o = self.edges[ei].get("oneway", 0)
+        return o == 0 or (o == 1 and self.edges[ei]["a"] == from_node) or (o == -1 and self.edges[ei]["b"] == from_node)
 
     def weight(self, ei):
         e = self.edges[ei]
@@ -445,7 +499,10 @@ class Graph:
             if n in done:
                 continue
             done.add(n)
+            came = prev[n][1] if n in prev else None
             for m, ei in self.adj.get(n, []):
+                if not self.passable(ei, n) or (came is not None and (came, n, ei) in self.bans):
+                    continue
                 w = c + self.weight(ei)
                 if m not in cost or w < cost[m] - 1e-9:
                     cost[m] = w
@@ -469,8 +526,9 @@ class Graph:
             if c > max_cost:
                 return None
             done.add(n)
+            came = prev[n][1] if n in prev else None
             for m, ei in self.adj.get(n, []):
-                if ei in banned:
+                if ei in banned or not self.passable(ei, n) or (came is not None and (came, n, ei) in self.bans):
                     continue
                 w = c + self.weight(ei)
                 if m not in cost or w < cost[m] - 1e-9:

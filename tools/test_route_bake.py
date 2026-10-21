@@ -144,6 +144,25 @@ class RouteTests(unittest.TestCase):
         self.assertAlmostEqual(length["D"], 9 * 0.003 * self.f.m_lon, delta=2.0)
         self.assertEqual([s[2] for s in g.path(prev, "A", "D")], ["B", "C", "D"])
 
+    def test_one_way_roads_are_only_driven_their_way(self):
+        segs = list(self.segs)
+        segs[1]["access_restrictions"] = [{"access_type": "denied", "when": {"heading": "backward"}, "between": None}]
+        g = rb.Graph(segs, self.f)
+        self.assertEqual(rb.segment_direction(segs[1]), 1)
+        self.assertIsNotNone(g.shortest("A", "D"))
+        self.assertIsNone(g.shortest("D", "A"))   # B-C can't be driven back, and there's no other way round
+        segs[1]["access_restrictions"] = [{"access_type": "denied", "when": {"heading": "backward", "mode": ["bicycle"]}, "between": None}]
+        self.assertEqual(rb.segment_direction(segs[1]), 0)   # a rule for bicycles only is no rule for us
+
+    def test_a_banned_turn_is_not_taken(self):
+        segs = list(self.segs)
+        # Coming along A-B, turning north onto B-E is prohibited.
+        segs[0]["prohibited_transitions"] = [{"sequence": [{"segment_id": "BE", "connector_id": "B"}], "when": None, "between": None}]
+        g = rb.Graph(segs, self.f)
+        self.assertEqual(len(g.bans), 1)
+        self.assertIsNone(g.shortest("A", "E"))
+        self.assertIsNotNone(g.shortest("C", "E"))
+
     def test_main_roads_cost_less_per_metre(self):
         g = rb.Graph(self.segs, self.f)
         per_m = lambda cls: next(g.weight(i) / g.edges[i]["length"] for i, e in enumerate(g.edges) if e["cls"] == cls)

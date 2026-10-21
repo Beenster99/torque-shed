@@ -10,7 +10,9 @@ Where route_bake.py bakes the land down one chosen road, a region has every road
 (scripts/real_region.gd, scripts/route_planner.gd). A folder the game loads:
 
     region.json      name, credits, hash, the frame, the area, the land's levels, counts
-    roads.json       the road graph: nodes, and edges between them with their class, surface, name, limit and line
+    roads.json       the road graph: nodes, and edges between them with their class, surface, name, limit, line and
+                     which way they may be driven (o: 0 both, 1 a to b, -1 b to a); bans: turns the rules prohibit
+    places.json      the towns, villages and quarters of the area with names we can print, for finding on the map
     tiles/ coarse/ ridge/   the land at three levels (levels.py): .u16z heights, and .covz cover for the first two
     buildings.json   [[x, z, w, d, yaw, h, kind, 0], ...] beside any road (kind: land_bake.BUILDING_KINDS)
     pois.json        places to stop beside any road (road_facts.make_pois)
@@ -34,10 +36,13 @@ import levels  # noqa: E402
 import road_facts  # noqa: E402
 import route_bake as rb  # noqa: E402
 
-FORMAT = 1
+FORMAT = 2
 SIMPLIFY_M = 1.5            # road lines are kept to within this of the mapped ones
 SAMPLE_M = 16.0             # the roads as points this far apart, for working out where the land is needed
 MIN_NETWORK = 20            # road networks smaller than this many junctions are left out
+PLACE_REACH = 1500.0        # a town or village this far from any road is on the map; further is not somewhere to ride to
+PLACE_KINDS = {"locality": "town", "county": "town", "borough": "town", "macrohood": "village", "microhood": "village",
+               "neighborhood": "village"}
 BUILDING_MAX = 60000
 GENERIC = list(rb.CLASSES)
 SURFACES = ["tarmac", "gravel"]
@@ -69,7 +74,8 @@ def simplify(pts, tol):
 
 
 def graph_rows(graph, min_network=MIN_NETWORK):
-    """The road graph as plain rows: {nodes: [[x, z]], edges: [{a, b, c, s, l, n, p}], classes, surfaces, names}.
+    """The road graph as plain rows: {nodes: [[x, z]], edges: [{a, b, c, s, l, n, o, p}], bans: [[from edge, node, to
+    edge]], classes, surfaces, names}.
 
     Networks of fewer than `min_network` junctions are left out (stray bits of road). Nodes and names are numbered in a
     fixed order, so the same data bakes to the same bytes."""
@@ -86,16 +92,47 @@ def graph_rows(graph, min_network=MIN_NETWORK):
     index = {n: i for i, n in enumerate(ids)}
     names = sorted({e["label"] or "" for e in graph.edges})
     edges = []
-    for e in graph.edges:
+    for ei, e in enumerate(graph.edges):
         if e["a"] not in index or e["b"] not in index:
             continue
         mid = simplify(e["pts"], SIMPLIFY_M)[1:-1]
         edges.append({"a": index[e["a"]], "b": index[e["b"]], "c": GENERIC.index(e["cls"]), "s": SURFACES.index(e["surface"]),
-                      "l": int(e.get("limit") or 0), "n": names.index(e["label"] or ""),
-                      "p": [round(v, 1) for p in mid for v in p]})
+                      "l": int(e.get("limit") or 0), "n": names.index(e["label"] or ""), "o": int(e.get("oneway", 0)),
+                      "p": [round(v, 1) for p in mid for v in p], "_ei": ei})
     edges.sort(key=lambda r: (r["a"], r["b"], r["p"][:2]))
+    new_index = {r.pop("_ei"): i for i, r in enumerate(edges)}
+    bans = sorted([new_index[ef], index[node], new_index[et]] for ef, node, et in graph.bans
+                  if ef in new_index and et in new_index and node in index)
     nodes = [[round(graph.pos[n][0], 1), round(graph.pos[n][1], 1)] for n in ids]
-    return {"nodes": nodes, "edges": edges, "classes": GENERIC, "surfaces": SURFACES, "names": names}
+    return {"nodes": nodes, "edges": edges, "bans": bans, "classes": GENERIC, "surfaces": SURFACES, "names": names}
+
+
+def make_places(divisions, frame, pts, bounds, reach=PLACE_REACH):
+    """The area's towns, villages and quarters (Overture divisions) with a name we can print, within `reach` of a
+    road: [{kind, name, x, z, pop}] sorted by name. The same name twice close together is one place."""
+    out = []
+    for row in divisions:
+        kind = PLACE_KINDS.get(str(row.get("subtype")))
+        name = road_facts.english_name(row.get("names"))
+        if kind is None or not name:
+            continue
+        ll = road_facts.parse_point(row["geometry"])
+        if ll is None:
+            continue
+        x, z = frame.to_world(ll[1], ll[0])
+        x, z = float(x), float(z)
+        if not (bounds[0] <= x <= bounds[2] and bounds[1] <= z <= bounds[3]):
+            continue
+        if len(pts) and float(np.min(np.hypot(pts[:, 0] - x, pts[:, 1] - z))) > reach:
+            continue
+        out.append({"kind": kind, "name": name, "x": round(x, 1), "z": round(z, 1), "pop": int(row.get("population") or 0)})
+    out.sort(key=lambda p: (p["name"], -p["pop"], p["kind"], p["x"], p["z"]))
+    kept = []
+    for p in out:
+        if any(q["name"] == p["name"] and math.hypot(q["x"] - p["x"], q["z"] - p["z"]) < 1500.0 for q in kept):
+            continue
+        kept.append(p)
+    return kept
 
 
 def road_points(rows, spacing=SAMPLE_M):
@@ -128,7 +165,8 @@ def bake(args, log=print):
     segments = rb.fetch_segments(args.south, args.west, args.north, args.east, release, log)
     graph = rb.Graph(segments, frame, set(args.avoid or []))
     rows = graph_rows(graph)
-    log("roads: %d junctions, %d roads kept" % (len(rows["nodes"]), len(rows["edges"])))
+    log("roads: %d junctions, %d roads kept, %d one-way, %d banned turns" % (
+        len(rows["nodes"]), len(rows["edges"]), sum(1 for e in rows["edges"] if e["o"]), len(rows["bans"])))
     if not rows["edges"]:
         raise SystemExit("no roads in that area")
     os.makedirs(args.out, exist_ok=True)
@@ -148,14 +186,22 @@ def bake(args, log=print):
         land_bake.BUILDING_MAX = old_max
     x0, z0 = frame.to_world(args.north, args.west)
     x1, z1 = frame.to_world(args.south, args.east)
+    bounds = [round(float(x0), 1), round(float(z0), 1), round(float(x1), 1), round(float(z1), 1)]
+    divisions = land_bake.fetch(rb.OVERTURE_BUCKET, release, "divisions", "division",
+                                (args.south, args.west, args.north, args.east), ["geometry", "subtype", "names", "population"])
+    places = make_places(divisions, frame, pts, bounds)
+    log("places: %d towns and villages with names (%d divisions in the box)" % (len(places), len(divisions)))
+    with open(os.path.join(args.out, "places.json"), "w") as f:
+        json.dump(places, f, separators=(",", ":"))
     meta = {
         "format": FORMAT, "kind": "region", "name": args.name, "title": args.title or args.name,
-        "frame": {"lat": lat0, "lon": lon0}, "bounds": [round(float(x0), 1), round(float(z0), 1), round(float(x1), 1), round(float(z1), 1)],
+        "frame": {"lat": lat0, "lon": lon0}, "bounds": bounds,
         "geo": {"south": args.south, "west": args.west, "north": args.north, "east": args.east},
         "levels": [lv.meta() for lv in levels.LEVELS], "tile_counts": {k: len(v) for k, v in tiles.items()},
         "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
         "counts": {"nodes": len(rows["nodes"]), "edges": len(rows["edges"]), "buildings": len(land["buildings"]),
-                   "pois": len(land["pois"]), "landmarks": len(land["landmarks"])},
+                   "pois": len(land["pois"]), "landmarks": len(land["landmarks"]), "places": len(places),
+                   "oneway": sum(1 for e in rows["edges"] if e["o"]), "bans": len(rows["bans"])},
         "sea": has_sea, "theme": "coastal" if has_sea else "hills", "region": road_facts.region_of(lat0, lon0),
         "sources": {"overture_release": release, "elevation": "Mapterhorn, AWS Terrain Tiles fallback"},
         "credits": rb.CREDITS,
