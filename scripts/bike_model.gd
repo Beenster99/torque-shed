@@ -2326,7 +2326,8 @@ func _draw_rear_master() -> void:
 	_mesh_instance(_cylinder(0.02, 0.04), mat, at + Vector3(0.0, 0.16, 0.08))
 
 
-## The headlight on the fork: round, a café bucket, twin lamps, an enduro plate or an LED projector.
+## The headlight on the fork: round, a café bucket, twin lamps, twin bug-eyes, an old-school
+## square lamp, an enduro plate or an LED projector.
 func _draw_headlight() -> void:
 	_current_slot = "headlight"
 	var p := _part()
@@ -2371,8 +2372,10 @@ func _draw_headlight() -> void:
 				face.rotation.x = PI * 0.5
 			face_r = 0.0
 		"square":
-			_box(at, Vector3(size * 2.1, size * 1.6, size * 1.2), shell, _steer_node)
-			_box(at + Vector3(0.0, 0.0, -size * 0.61), Vector3(size * 1.9, size * 1.4, 0.006), lens, _steer_node)
+			_square_lamp(at, size, shell, lens, lk)
+			face_r = 0.0
+		"bugeye":
+			_bugeye_lamps(at, size, shell, lens, chrome)
 			face_r = 0.0
 		"nacelle":
 			# A round lamp sunk into a cowl that wraps back over the fork tops.
@@ -2424,6 +2427,86 @@ func _draw_headlight() -> void:
 	if lk.get("brackets", false):
 		for side in [-1.0, 1.0]:
 			_tube(at + Vector3(size * 1.05 * side, 0.0, 0.0), Vector3(0.09 * side, -0.02, 0.0), 0.007, chrome, Vector3.ONE, _steer_node)
+
+
+## An old-school rectangular headlight centred on `at` (steering space), `size` setting its scale:
+## a deep pressed-steel bucket tapering to the back, fluted glass with the bulb's hot spot behind
+## it, and a bezel round the glass (look "bezel": chrome or black). On ears to the fork legs.
+func _square_lamp(at: Vector3, size: float, shell: Material, lens: Material, lk: Dictionary) -> void:
+	var w := size * 2.3
+	var h := size * 1.7
+	var front := at.z - size * 0.3
+	var body := _box(at + Vector3(0.0, 0.0, size * 0.12), Vector3(w * 0.96, h * 0.94, size * 0.84), shell, _steer_node)
+	body.name = "LampBody"
+	_box(at + Vector3(0.0, 0.0, size * 0.7), Vector3(w * 0.7, h * 0.64, size * 0.4), shell, _steer_node)
+	var bezel := _look_finish(str(lk.get("bezel", "chrome")), shell)
+	var t := size * 0.13
+	for y in [-1.0, 1.0]:
+		_box(Vector3(at.x, at.y + y * (h - t) * 0.5, front - 0.004), Vector3(w, t, 0.02), bezel, _steer_node).name = "Bezel"
+	for x in [-1.0, 1.0]:
+		_box(Vector3(at.x + x * (w - t) * 0.5, at.y, front - 0.004), Vector3(t, h - t * 2.0 + 0.002, 0.02), bezel, _steer_node).name = "Bezel"
+	var glass := Vector2(w - t * 2.0 + 0.004, h - t * 2.0 + 0.004)
+	_box(Vector3(at.x, at.y, front), Vector3(glass.x, glass.y, 0.008), lens, _steer_node).name = "Lens"
+	# The reflector's hot spot round the bulb, and the glass's flutes and its middle rib over it.
+	var spot := _mesh_instance(_cylinder(size * 0.26, 0.004), _lamp(Color(1.0, 0.97, 0.88), 4.0, "head"), Vector3(at.x, at.y, front - 0.005), _steer_node)
+	spot.rotation.x = PI * 0.5
+	var flute := _lamp(Color(0.78, 0.7, 0.56), 0.9, "head")
+	for i in 7:
+		var x := (i - 3) / 3.0 * glass.x * 0.42
+		_box(Vector3(at.x + x, at.y, front - 0.008), Vector3(0.003, glass.y * 0.96, 0.003), flute, _steer_node)
+	_box(Vector3(at.x, at.y, front - 0.009), Vector3(glass.x * 0.96, 0.003, 0.003), flute, _steer_node)
+	if not lk.get("brackets", false):
+		# Black steel ears back to the fork legs (chrome ones are the "brackets" look's).
+		var ear := _mat(Color(0.05, 0.05, 0.055), 0.6, 0.45)
+		for side in [-1.0, 1.0]:
+			_tube(at + Vector3(w * 0.45 * side, 0.0, size * 0.2), Vector3(0.09 * side, -0.02, 0.0), 0.008, ear, Vector3.ONE, _steer_node)
+
+
+## Twin bug-eye headlamps centred on `at` (steering space): two small oval lamps side by side,
+## close together, each turned out a little and tilted top-outward like a wasp's eyes, with a
+## chrome rim, a reflector ring and the bulb's hot spot in each glass. They sit on a short
+## black bracket to the fork legs, under a little tinted fly-screen when no fairing is fitted.
+func _bugeye_lamps(at: Vector3, size: float, shell: Material, lens: Material, chrome: Material) -> void:
+	var gap := size * 1.04
+	var spot := _lamp(Color(1.0, 0.97, 0.88), 4.0, "head")
+	var black := _mat(Color(0.05, 0.05, 0.055), 0.6, 0.4)
+	for side in [-1.0, 1.0]:
+		var c := at + Vector3(side * gap, 0.0, 0.0)
+		var b := Basis(Vector3.UP, -side * 0.3) * Basis(Vector3.BACK, -side * 0.28)
+		var oval := Basis.from_scale(Vector3(0.88, 1.18, 1.0))
+		var body := _mesh_instance(_sphere(size), shell, c, _steer_node)
+		body.basis = b * Basis.from_scale(Vector3(0.9, 1.2, 1.05))
+		body.name = "BugEye"
+		# A tapered back on each lamp shell, pointing back towards the bracket.
+		var back := _mesh_instance(_cylinder(size * 0.75, size * 1.1, size * 0.35), shell, c + b * Vector3(0.0, 0.0, size * 0.75), _steer_node)
+		back.basis = b * Basis(Vector3.RIGHT, PI * 0.5)
+		var face_at := c + b * Vector3(0.0, 0.0, -size * 1.0)
+		var face := _mesh_instance(_cylinder(size * 0.86, 0.01), lens, face_at, _steer_node)
+		face.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
+		face.name = "Lens"
+		var rim := _mesh_instance(_torus(size * 0.88, 0.005), chrome, face_at + b * Vector3(0.0, 0.0, 0.002), _steer_node)
+		rim.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
+		var ring := _mesh_instance(_torus(size * 0.55, 0.0018), chrome, face_at + b * Vector3(0.0, 0.0, -0.006), _steer_node)
+		ring.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
+		var hot := _mesh_instance(_cylinder(size * 0.3, 0.003), spot, face_at + b * Vector3(0.0, 0.0, -0.006), _steer_node)
+		hot.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
+		# The bracket: a short arm from the lamp's back to the fork leg.
+		_tube(c + b * Vector3(0.0, -size * 0.3, size * 0.9), Vector3(0.09 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
+	var plate := _box(at + Vector3(0.0, -size * 0.55, size * 0.95), Vector3(gap * 2.0, 0.012, size * 0.9), black, _steer_node)
+	plate.name = "LampBracket"
+	if _build and is_fitted("fairing") and str(_build.parts.get("fairing", "none")) != "none":
+		return
+	# A small tinted fly-screen over the pair, raked back.
+	var glass := _mat(Color(0.18, 0.2, 0.24), 0.2, 0.05)
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.albedo_color.a = 0.6
+	var dir := Vector3(0.0, cos(0.55), sin(0.55))
+	var base := at + Vector3(0.0, size * 1.0, -size * 0.2)
+	var secs := []
+	for k in 4:
+		var f := k / 3.0
+		secs.append({"c": base + dir * 0.1 * f, "w": gap * 1.9 * lerpf(1.0, 0.7, f), "up": 0.03, "down": 0.0, "n": 2.0})
+	_shell(secs, glass, true, 0.25, PI - 0.25, _steer_node).name = "FlyScreen"
 
 
 ## The horn under the headstock: a disc, a pair of snail or air trumpets, a klaxon or a bulb.

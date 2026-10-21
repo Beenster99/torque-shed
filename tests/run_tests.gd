@@ -593,6 +593,10 @@ func _run_all() -> void:
 	print("Simon's v0.19.0 round: a petrol pump on the shed's front wall, on the business")
 	await _test_shed_pump_rules()
 	await _test_shed_pump_session()
+	print("Simon's v0.19.0 round: twin bug-eye headlights and big old-school square ones")
+	_test_headlight_catalogue()
+	_test_headlight_builds()
+	await _test_headlight_lit()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22619,3 +22623,21 @@ func _test_shed_pump_rules() -> void:
 
 func _test_shed_pump_session() -> void:
 	await _shed_pump().test_session()
+
+
+# ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)
+
+func _headlights() -> RefCounted:
+	return load("res://tests/headlight_tests.gd").new(self)
+
+
+func _test_headlight_catalogue() -> void:
+	_headlights().test_catalogue()
+
+
+func _test_headlight_builds() -> void:
+	_headlights().test_builds()
+
+
+func _test_headlight_lit() -> void:
+	await _headlights().test_lit()
