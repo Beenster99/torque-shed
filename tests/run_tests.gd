@@ -441,6 +441,11 @@ func _run_all() -> void:
 	_test_region_loads()
 	_test_region_nearest()
 	_test_region_land()
+	_test_planner_plan()
+	_test_planner_deterministic()
+	_test_planner_errors()
+	_test_planner_speed()
+	await _test_planner_ride()
 	_test_real_pack()
 	_test_real_levels()
 	_test_real_forks()
@@ -21921,6 +21926,30 @@ func _test_region_nearest() -> void:
 
 func _test_region_land() -> void:
 	_region().test_land()
+
+
+func _planner() -> RefCounted:
+	return load("res://tests/route_planner_tests.gd").new(self)
+
+
+func _test_planner_plan() -> void:
+	_planner().test_plan()
+
+
+func _test_planner_deterministic() -> void:
+	_planner().test_deterministic()
+
+
+func _test_planner_errors() -> void:
+	_planner().test_errors()
+
+
+func _test_planner_speed() -> void:
+	_planner().test_speed()
+
+
+func _test_planner_ride() -> void:
+	await _planner().test_ride()
 
 
 func _test_real_pack() -> void:

@@ -51,6 +51,9 @@ var buildings: Array = []
 var pois: Array = []
 var landmarks: Array = []
 var counts := {}
+## For each node the connected piece of road it is in (numbered in order of the lowest node), and how many junctions that has.
+var component := PackedInt32Array()
+var component_size := PackedInt32Array()
 var _grid := {}
 
 
@@ -156,6 +159,7 @@ static func _load(region_id: String) -> RealRegion:
 		var at_b := r.adjacent[bn]
 		at_b.append(ei)
 		r.adjacent[bn] = at_b
+	r._find_components()
 	var rows_b = _json(dir.path_join("buildings.json"))
 	if rows_b is Array:
 		r.buildings = rows_b
@@ -167,6 +171,30 @@ static func _load(region_id: String) -> RealRegion:
 		r.landmarks = rows_l
 	r.terrain = RealTerrain.new(dir, meta)
 	return r
+
+
+func _find_components() -> void:
+	component.resize(node_pos.size())
+	component.fill(-1)
+	var sizes: Array[int] = []
+	for n0 in node_pos.size():
+		if component[n0] >= 0:
+			continue
+		var id_ := sizes.size()
+		var stack := PackedInt32Array([n0])
+		component[n0] = id_
+		var count := 0
+		while not stack.is_empty():
+			var n := stack[stack.size() - 1]
+			stack.resize(stack.size() - 1)
+			count += 1
+			for ei in adjacent[n]:
+				var m := other_end(ei, n)
+				if component[m] < 0:
+					component[m] = id_
+					stack.append(m)
+		sizes.append(count)
+	component_size = PackedInt32Array(sizes)
 
 
 func node_count() -> int:
@@ -225,6 +253,33 @@ func nearest_node(x: float, z: float, within := 500.0) -> int:
 					best_d = d
 					best = n
 	return best
+
+
+## The junction nearest (x, z) within `within` metres that is part of a road network of at least `min_nodes` junctions
+## (not a stray bit of road), else just the nearest; -1 when there is none.
+func nearest_connected(x: float, z: float, within := 500.0, min_nodes := 200) -> int:
+	var best := -1
+	var best_d := INF
+	var fallback := -1
+	var fallback_d := INF
+	var span := int(ceil(within / CELL))
+	var cx := floori(x / CELL)
+	var cz := floori(z / CELL)
+	var at := Vector2(x, z)
+	for gz in range(cz - span, cz + span + 1):
+		for gx in range(cx - span, cx + span + 1):
+			var cell: PackedInt32Array = _grid.get(Vector2i(gx, gz), PackedInt32Array())
+			for n in cell:
+				var d := node_pos[n].distance_to(at)
+				if d > within:
+					continue
+				if d < fallback_d or (d == fallback_d and n < fallback):
+					fallback_d = d
+					fallback = n
+				if component_size[component[n]] >= min_nodes and (d < best_d or (d == best_d and n < best)):
+					best_d = d
+					best = n
+	return best if best >= 0 else fallback
 
 
 ## Region-frame (x, z) of a latitude and longitude, as the baker's frame has them (tools/route_bake.py Frame).

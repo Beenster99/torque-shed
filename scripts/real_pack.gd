@@ -89,6 +89,14 @@ static func get_pack(pack_id: String) -> RealPack:
 	return pack
 
 
+## Makes a pack planned in the game (RoutePlanner) available by its id, as a baked one is: the world, the magazine and
+## the co-op check all find a road with get_pack.
+static func register(pack: RealPack) -> void:
+	_cache_lock.lock()
+	_cache[pack.id] = pack
+	_cache_lock.unlock()
+
+
 static func _load(pack_id: String) -> RealPack:
 	var dir := DIR.path_join(pack_id)
 	var meta = _json(dir.path_join("pack.json"))
