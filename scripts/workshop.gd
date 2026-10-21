@@ -59,8 +59,6 @@ const BAY_SCREEN_OUTER := 2.6
 ## either side of the dyno room doorway, nudged off their bays to clear it.
 const BAY_SCREEN_X := [-5.04, -2.32, 2.32, 5.04]
 const CREW_SCREEN := 3.0
-## The route planner's TV, built into the shed beside the crew board: where the crew plans a ride together (RouteTv).
-const ROUTE_SCREEN := 3.4
 ## The bins by the roller door: general waste and the two recycling bins, left to right
 ## from the door, tucked under the end of the whiteboard. x offset from CENTER, lid colour.
 const BINS := {"general": [-2.75, Color(0.1, 0.1, 0.1)], "plastic": [-3.33, Color(0.1, 0.35, 0.85)],
@@ -97,7 +95,6 @@ var _ghost_mat: StandardMaterial3D
 var _ghosts := 0           # holograms drawn, so the flicker only runs while there are some
 var _bay_screens: Array[Dashboard] = []
 var _crew_screen: Dashboard
-var _route_screen: Dashboard
 var _dash_timer := 0.0
 var _dash_dirty := true
 var _mats := {}
@@ -254,11 +251,6 @@ func build() -> void:
 	_crew_screen.rotation.y = PI * 0.5
 	add_child(_crew_screen)
 	_screen_target(_crew_screen, "crew")
-	_route_screen = Dashboard.new("route", ROUTE_SCREEN)
-	_route_screen.position = CENTER + Vector3(-HALF.x + 0.1, 2.35, -3.4)
-	_route_screen.rotation.y = PI * 0.5
-	add_child(_route_screen)
-	_screen_target(_route_screen, "route")
 	upgrades = WorkshopUpgrades.new()
 	add_child(upgrades)
 	upgrades.setup(self)
@@ -507,7 +499,7 @@ func tvs() -> Array:
 
 ## Every screen with channels, by its key (see TvChannels): bought TVs, bay screens, crew board.
 func screens() -> Dictionary:
-	var out := {"crew": _crew_screen, "route": _route_screen}
+	var out := {"crew": _crew_screen}
 	for bay in _bay_screens.size():
 		out["bay%d" % bay] = _bay_screens[bay]
 	for id in furniture_nodes:

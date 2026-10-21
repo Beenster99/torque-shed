@@ -18,7 +18,9 @@ func _ready() -> void:
 	main._start_session()
 	await _frames(30)
 	var c := Workshop.CENTER
-	var tv: Vector3 = main.workshop._route_screen.global_position
+	Shed.screens["crew"] = {"ch": "route", "rider": 0}   # the crew board, tuned to the route planner
+	await _frames(20)
+	var tv: Vector3 = main.workshop._crew_screen.global_position
 	await _look_from(c + Vector3(2.0, 0.0, 4.0), tv, "01_route_tv_from_the_door")
 	await _look_from(c + Vector3(-2.4, 0.0, -3.4), tv, "02_route_tv_close")
 	var r := RealRegion.get_region("shodoshima")
@@ -29,7 +31,7 @@ func _ready() -> void:
 	Shed.request({"a": "adventure_pin", "region": "shodoshima", "x": mid.x, "z": mid.y})
 	Shed.request({"a": "adventure_pin", "region": "shodoshima", "x": b.x, "z": b.y})
 	var end := Time.get_ticks_msec() + 60000
-	var board: RouteTv = main.workshop._route_screen._route
+	var board: RouteTv = main.workshop._crew_screen._route
 	while Time.get_ticks_msec() < end and board.view.route_pts.size() < 2:
 		await _frames(10)
 	await _frames(40)

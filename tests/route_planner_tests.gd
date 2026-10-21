@@ -227,7 +227,7 @@ func test_map() -> void:
 	await t.get_tree().process_frame
 
 
-## The route TV: a Dashboard page of kind "route" holding the planner (RouteTv). Touched like any shed screen (a click into
+## The route planner channel: a Dashboard page of kind "route" holding the planner (RouteTv). Touched like any shed screen (a click into
 ## the page), it takes pins from the map and from the places list, shows the road the game plans, and the host starts it.
 func test_tv() -> void:
 	Shed.adventure = {}
@@ -238,7 +238,7 @@ func test_tv() -> void:
 	for i in 6:
 		await t.get_tree().process_frame
 	var board: RouteTv = dash._route
-	check(board != null and board.visible and board.region != null and RealRegion.list().has(board.region.id), "the route TV shows a region's map (%s)" % (board.region.title if board and board.region else "none"))
+	check(board != null and board.visible and board.region != null and RealRegion.list().has(board.region.id), "the route planner shows a region's map (%s)" % (board.region.title if board and board.region else "none"))
 	# Each region has a button on the TV: touch the island's.
 	var island: Button = null
 	for c in board._region_row.get_children():
@@ -249,8 +249,9 @@ func test_tv() -> void:
 	for i in 3:
 		await t.get_tree().process_frame
 	check(board.region.id == REGION, "and touching it shows that map")
-	check(dash.kind == "route" and TvChannels.screen_exists("route") and TvChannels.home("route") == "route" and TvChannels.channels_for("f1").has("route"),
-		"it is a built-in screen, and a channel every TV has")
+	check(dash.kind == "route" and TvChannels.channels_for("f1").has("route") and TvChannels.channels_for("crew").has("route")
+		and TvChannels.channels_for("bay0").has("route") and not TvChannels.screen_exists("route"),
+		"it is a channel every TV has (the crew board and the bay screens too), not a screen of its own")
 	var r := board.region
 	var a: Vector2 = pins()[0]
 	var b: Vector2 = pins()[1]

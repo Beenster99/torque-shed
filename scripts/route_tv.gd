@@ -1,6 +1,6 @@
 class_name RouteTv
 extends Control
-## The crew's route planner on the shed's wall TV (a Dashboard page of kind "route", see TvChannels): the map of a real
+## The crew's route planner on a shed TV (a Dashboard page of kind "route": the Route planner channel every TV has, see TvChannels): the map of a real
 ## region with everyone's pins on it (Shed.journey, shared by the whole crew), the style of ride, the road the game
 ## plans between the pins, places to pin from a list, and the host's Start. It is drawn in the TV's own 1024 x 576 page
 ## (under the header) and touched with the shed's touch cursor (ScreenTouch): there is no wheel or keyboard, so the map

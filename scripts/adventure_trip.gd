@@ -14,7 +14,7 @@ extends Node
 ## AdventureDest) for the arrival moment: the camera pulls back from the crew to take in what
 ## they came for, a title card, and the group photo (a flash, then the photo; it's kept in this
 ## machine's album and hangs on the shed wall). Then it's theirs to look round until the host
-## picks Ride home. It also holds the full-screen route planner (JourneyMap), a close-up of the shed's route TV.
+## picks Ride home. It also holds the full-screen route planner (JourneyMap), a close-up of the route planner channel TVs have.
 ##
 ## It keeps the trip computer for the whole ride (TripComputer, on the sat nav's trip page and in
 ## the diary's stats) and this player's camera (AdventurePhotos); at the destination, and again at
@@ -959,7 +959,7 @@ func _card_label(text: String, size: int, col: Color) -> Label:
 
 # ---------------------------------------------------------------------------- the route planner
 
-## Unfolds the full-screen route planner (the same board as the shed's route TV) on region `region_id` ("" for the
+## Unfolds the full-screen route planner (the same board as the TVs' Route planner channel) on region `region_id` ("" for the
 ## one the crew's pins are on, else the first the game has).
 func open_journey(region_id := "") -> void:
 	if main == null or not main.in_session:

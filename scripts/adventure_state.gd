@@ -13,7 +13,7 @@ extends RefCounted
 ## carried over in a save: loading one finds everybody back at the shed.
 ##
 ## Actions (Shed.request): adventure_start {seed, km, theme, dest, title, plan} (the host, from the route planner:
-## the shed's route TV, see RouteTv) and adventure_end (the host: "Ride home"
+## any shed TV tuned to the Route planner channel, see RouteTv) and adventure_end (the host: "Ride home"
 ## once everyone's at the destination), adventure_join {bike: the one you'd like} (each player, on
 ## loading it) and adventure_arrive (the first there: everyone's brought to the destination, gets
 ## XP, and the photo goes up on the shed wall); adventure_photo {photo} (the host: a photo from
@@ -255,7 +255,7 @@ static func _bike_for(peer: int, preferred: int, riders: Dictionary) -> int:
 	return 0
 
 
-## The Esc menu's adventure button: opens the route planner (JourneyMap, the same board as the shed's route TV) to plan
+## The Esc menu's adventure button: opens the route planner (JourneyMap, the same board as the TVs' Route planner channel) to plan
 ## one, or the host ends the one on ("Ride home" once everyone's at the destination).
 static func menu_action() -> void:
 	if active():
@@ -288,4 +288,4 @@ static func menu_text() -> Array:
 		return ["Ride home (everyone back to the shed)", "" if host else "The host rides everyone home."]
 	if active():
 		return ["End the adventure (everyone back to the shed)", "" if host else "The host ends the adventure."]
-	return ["Adventure ride: plan one on the route TV in the shed, or here (the host starts it for everyone)", ""]
+	return ["Adventure ride: plan one on any TV's Route planner channel, or here (the host starts it for everyone)", ""]

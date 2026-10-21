@@ -2,7 +2,7 @@ class_name JourneyView
 extends Control
 ## The map of a real region (RealRegion) the crew plans a journey on: the land shaded by height, every road, the towns,
 ## the crew's pins (Shed.journey) and the planned road. A click pins a place (or takes a pin off); the wheel zooms it
-## and the right button drags it, and zoom_by, pan_by and fit do the same for a screen with no wheel (the shed's route TV,
+## and the right button drags it, and zoom_by, pan_by and fit do the same for a screen with no wheel (the TVs' Route planner channel,
 ## RouteTv). Used by the full-screen JourneyMap and by RouteTv.
 
 signal moved
