@@ -137,3 +137,54 @@ func test_ride() -> void:
 	check(w.chunks.has(AdventureRoute.chunk_of(s)), "and streams it from start to finish (%d chunks freed behind)" % int(w.stats["freed"]))
 	w.queue_free()
 	await t.get_tree().process_frame
+
+
+## The crew's pins on the shared board: anyone adds, moves along, removes; the plan comes out; the host starts it.
+func test_board() -> void:
+	var r := RealRegion.get_region(REGION)
+	var saved_adventure = Shed.adventure
+	Shed.adventure = {}
+	Shed.journey = {}
+	var a: Vector2 = pins()[0]
+	var b: Vector2 = pins()[1]
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": a.x + 40.0, "z": a.y - 30.0})
+	check(Shed.journey.has("pins") and (Shed.journey["pins"] as Array).size() == 1, "a pin goes on the board")
+	var first: Dictionary = (Shed.journey["pins"] as Array)[0]
+	check(r.node_pos[r.nearest_node(float(first["x"]), float(first["z"]), 5.0)].distance_to(Vector2(float(first["x"]), float(first["z"]))) < 0.2,
+		"on a road junction (%s)" % str(first))
+	check(AdventureJourney.plan_of(Shed.journey).is_empty(), "one pin is no plan yet")
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": b.x, "z": b.y})
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": b.x, "z": b.y})
+	check((Shed.journey["pins"] as Array).size() == 2, "the same place twice in a row isn't put down again")
+	var plan := AdventureJourney.plan_of(Shed.journey)
+	check(not plan.is_empty() and (plan["pins"] as Array).size() == 2 and plan["region_hash"] == r.hash, "two pins make a plan")
+	var res := AdventurePlans.result(plan, true)
+	check(bool(res["ok"]) and AdventurePlans.result(plan, true)["pack"] == res["pack"], "that is planned once and kept (%.1f km)" % (res["pack"] as RealPack).max_km())
+	Shed.request({"a": "adventure_pin", "region": REGION, "x": 1.0e6, "z": 0.0})
+	check((Shed.journey["pins"] as Array).size() == 2, "a pin far from any road is refused")
+	Shed.request({"a": "adventure_mode", "mode": "scenic"})
+	var scenic := AdventureJourney.plan_of(Shed.journey)
+	check(AdventurePlans.key(scenic) != AdventurePlans.key(plan) and str(Shed.journey["mode"]) == "scenic", "another style of ride is another plan")
+	# Round trip through the sync (the other players get it like this).
+	check(AdventureJourney.sanitize(Shed.journey) == Shed.journey, "the board survives being sent to the crew")
+	# The host starts it.
+	Shed.request({"a": "adventure_mode", "mode": "main"})
+	var go := AdventureJourney.plan_of(Shed.journey)
+	Shed.request({"a": "adventure_start", "plan": go, "seed": 77, "title": "Across the island"})
+	var adv: Dictionary = Shed.adventure
+	check(int(adv.get("id", 0)) != 0 and adv.get("plan") is Dictionary and str(adv["real"]).begins_with("plan_"), "the host starts the adventure along the plan")
+	var pack := RealPack.get_pack(str(adv.get("real", "")))
+	check(pack != null and pack.hash == str(adv["real_hash"]) and absf(float(adv["km"]) - pack.max_km()) < 0.11 and str(adv["theme"]) == "coastal",
+		"it is ridden at the road's own length (%.1f km), dressed for the coast" % float(adv.get("km", 0.0)))
+	check(AdventureTrip.real_mismatch(adv) == "", "and this game agrees it is the host's road")
+	var other := adv.duplicate(true)
+	other["real_hash"] = "0000000000000000"
+	check(AdventureTrip.real_mismatch(other) != "", "while a road that came out differently is refused: \"%s\"" % AdventureTrip.real_mismatch(other))
+	var gone := adv.duplicate(true)
+	(gone["plan"] as Dictionary)["region"] = "nowhere"
+	check(AdventureTrip.real_mismatch(gone) != "", "as is a map this game doesn't have")
+	var kept := Adventure.sanitize(adv)
+	check(kept.get("plan") is Dictionary and kept["real"] == adv["real"] and kept["real_hash"] == adv["real_hash"], "a joiner's copy keeps the plan")
+	Shed.request({"a": "adventure_clear"})
+	check(Shed.journey.is_empty(), "the board is wiped clean")
+	Shed.adventure = saved_adventure

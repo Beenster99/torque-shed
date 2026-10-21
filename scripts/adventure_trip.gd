@@ -189,6 +189,15 @@ func _on_picks_taken() -> void:
 ## Why this game can't ride the real road in adventure `info` ("" if it can, or the road is made up): it
 ## doesn't have the road, or its copy differs from the host's, and the ride would not be the same road.
 static func real_mismatch(info: Dictionary) -> String:
+	if info.get("plan") is Dictionary:
+		# A journey the crew planned on the map: this game plans it too, and must get the host's road.
+		var plan: Dictionary = info["plan"]
+		var res := AdventurePlans.result(plan, true)
+		if not bool(res.get("ok", false)):
+			return str(res.get("error", "This game can't plan that journey."))
+		if str(info.get("real_hash", "")) != (res["pack"] as RealPack).hash:
+			return "Your game planned a different road from the host's: update the game to join."
+		return ""
 	var id := str(info.get("real", ""))
 	if id == "":
 		return ""

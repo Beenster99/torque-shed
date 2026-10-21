@@ -54,6 +54,15 @@ static func sanitize(v) -> Dictionary:
 		else AdventureDest.default_for(str(out["theme"]), int(out["seed"]))
 	out["title"] = str(out.get("title", ""))
 	out["mag"] = str(out.get("mag", ""))
+	if out.get("plan") is Dictionary:
+		# A journey planned on the map: planned here too (the host's road if all is well; if not, what was said is kept,
+		# for AdventureTrip.real_mismatch to turn down).
+		var plan := AdventurePlans.clean(out["plan"])
+		if not plan.is_empty():
+			out["plan"] = plan
+			AdventurePlans.pack_for(plan)
+			return out
+		out.erase("plan")
 	var pack := RealPack.get_pack(str(out.get("real", ""))) if str(out.get("real", "")) != "" else null
 	out["real"] = pack.id if pack != null else ""
 	out["real_hash"] = pack.hash if pack != null else ""
@@ -76,15 +85,22 @@ static func _is_host(peer: int) -> bool:
 
 static func check(peer: int, action: Dictionary) -> String:
 	match str(action.get("a", "")):
+		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_clear":
+			return AdventureJourney.check(peer, action)
 		"adventure_start":
 			if not _is_host(peer):
 				return "Only the host can start an adventure."
 			if active():
 				return "There's an adventure on already."
+			var planned := action.get("plan") is Dictionary
 			var km := float(action.get("km", DEFAULT_KM))
-			if km < MIN_KM or km > MAX_KM:
+			if planned:
+				var why := AdventureJourney.start_check(action)
+				if why != "":
+					return why
+			elif km < MIN_KM or km > MAX_KM:
 				return "Pick between %d and %d km." % [int(MIN_KM), int(MAX_KM)]
-			if not THEMES.has(str(action.get("theme", "varied"))):
+			if not THEMES.has(str(action.get("theme", "varied"))) and not planned:
 				return "There's no adventure like that."
 			if str(action.get("dest", "")) != "" and not AdventureDest.exists(str(action["dest"])):
 				return "There's no destination like that."
@@ -128,10 +144,16 @@ static func check(peer: int, action: Dictionary) -> String:
 static func apply(peer: int, action: Dictionary) -> String:
 	var who := str(Shed.crew.get(peer, {}).get("name", "Someone"))
 	match str(action.get("a", "")):
+		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_clear":
+			return AdventureJourney.apply(peer, action, who)
 		"adventure_start":
 			var km := float(action.get("km", DEFAULT_KM))
 			var seed := int(action.get("seed", randi()))
 			var theme := str(action.get("theme", "varied"))
+			var planned: Dictionary = AdventureJourney.start_info(action) if action.get("plan") is Dictionary else {}
+			if not planned.is_empty():
+				km = float(planned["km"])
+				theme = str(planned["theme"])
 			var dest := str(action.get("dest", ""))
 			if dest == "":
 				dest = AdventureDest.default_for(theme, seed)
@@ -139,6 +161,10 @@ static func apply(peer: int, action: Dictionary) -> String:
 			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": seed, "km": km, "theme": theme, "dest": dest,
 				"title": title if title != "" else "Ride to %s" % AdventureDest.name_of(dest), "mag": str(action.get("mag", "")),
 				"real": str(action.get("real", "")), "real_hash": _real_hash(str(action.get("real", ""))), "by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
+			if not planned.is_empty():
+				Shed.adventure["plan"] = planned["plan"]
+				Shed.adventure["real"] = planned["real"]
+				Shed.adventure["real_hash"] = planned["real_hash"]
 			Shed.adventure_save = {}   # a new adventure: any put away overnight is forgotten
 			AdventureDiary.started(true)
 			return "*%s is off on an adventure ride: %s, %d km to %s. Everyone to the start!" % [who, str(Shed.adventure["title"]),
