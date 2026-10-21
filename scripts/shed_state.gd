@@ -733,6 +733,8 @@ func condition_of(item: Dictionary) -> Dictionary:
 	# What's packed in a toolbox (see PartsDB.TOOLBOX_CONTENTS).
 	if item.get("contents") is Array:
 		cond["contents"] = item["contents"]
+	if item.get("spares") is Array and not (item["spares"] as Array).is_empty():
+		cond["spares_kg"] = ToolboxSpares.spares_kg(int(item.get("id", 0)))   # spare parts in it weigh too (see ToolboxSpares)
 	return cond
 
 
@@ -2481,6 +2483,11 @@ func check(peer: int, action: Dictionary) -> String:
 	var a := str(action.get("a", ""))
 	if a.begins_with("roadside_"):
 		return Roadside.check(peer, action)
+	if a.begins_with("spare_"):
+		return ToolboxSpares.check(peer, action)
+	var roadside_job := ToolboxSpares.roadside_check(peer, action)
+	if roadside_job != "":
+		return roadside_job   # working on a bike at the roadside with its toolbox (see ToolboxSpares)
 	var held := held_by(peer)
 	var bike_id := int(action.get("bike", 0))
 	var engine_id := int(action.get("engine", 0))
@@ -2540,6 +2547,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return BikeCopy.check(peer, action)
 	if a == "retrieve_bike":
 		return retrieve_check(action)
+	if a == "debug_fix_bike":
+		return "" if bikes.has(int(action.get("bike", 0))) else "No such bike."
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
 		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
 	if ShedPump.holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack", "dyno_hose"]:
@@ -2815,7 +2824,7 @@ func check(peer: int, action: Dictionary) -> String:
 					return "It's packed full." if next_kit(box) == "" else "There's nothing like that to pack."
 				if toolbox_contents(box).has(what):
 					return "That's packed already."
-				if toolbox_contents(box).size() >= toolbox_slots(box):
+				if ToolboxSpares.room_left(box) <= 0:
 					return "It's packed full."
 				var cost := int(PartsDB.TOOLBOX_CONTENTS[what]["price"])
 				if cost > garage_money:
@@ -3350,6 +3359,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("roadside_"):
 		_roadside_apply(peer, action)
 		return
+	if str(action.get("a", "")).begins_with("spare_"):
+		_spare_apply(peer, action)
+		return
 	var why := check(peer, action)
 	if why != "":
 		_tell(peer, why, false)
@@ -3426,6 +3438,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		var said := _dyno_apply(peer, action)
 		if said != "":
 			_tell(peer, said, true)
+		_mark_dirty()
+		changed.emit()
+		return
+	if a == "debug_fix_bike":
+		var fixed := debug_fix_bike(int(action.get("bike", 0)))
+		if fixed != "":
+			_tell(peer, fixed, true)
 		_mark_dirty()
 		changed.emit()
 		return
@@ -4607,6 +4626,18 @@ func _roadside_apply(peer: int, action: Dictionary) -> void:
 			_tell(int(p), said.substr(1), true)
 	elif said != "":
 		_tell(peer, said, true)
+	_mark_dirty()
+	changed.emit()
+
+
+## Packing a spare part in a toolbox, or taking one out (see ToolboxSpares), in the shed or at
+## an adventure's roadside.
+func _spare_apply(peer: int, action: Dictionary) -> void:
+	var why := check(peer, action)
+	if why != "":
+		_tell(peer, why, false)
+		return
+	_tell(peer, ToolboxSpares.apply(peer, action), true)
 	_mark_dirty()
 	changed.emit()
 
@@ -6123,7 +6154,7 @@ func toolbox_slots(item_id: int) -> int:
 ## full or has the lot.
 func next_kit(item_id: int) -> String:
 	var packed := toolbox_contents(item_id)
-	if packed.size() >= toolbox_slots(item_id):
+	if ToolboxSpares.room_left(item_id) <= 0:   # (spare parts take places too)
 		return ""
 	for what in PartsDB.TOOLBOX_CONTENTS:
 		if not packed.has(what):
@@ -6145,9 +6176,14 @@ static func kit_list(packed: Array) -> String:
 func toolbox_text(item: Dictionary) -> String:
 	var packed: Array = item.get("contents", []) if item.get("contents") is Array else []
 	var slots := int(PartsDB.get_part(str(item["part"])).get("slots", 0))
-	if packed.is_empty():
+	var spares: Array = item.get("spares", []) if item.get("spares") is Array else []
+	var names := spares.map(func(s): return ToolboxSpares.spare_name(s).to_lower())
+	var spare_text := "" if names.is_empty() else "\nSpare parts: " + ", ".join(names)
+	if packed.is_empty() and spares.is_empty():
 		return "Empty: room for %d things" % slots
-	return "Packed (%d of %d): %s" % [packed.size(), slots, kit_list(packed)]
+	if packed.is_empty():
+		return "No kit packed (%d of %d places used)%s" % [spares.size(), slots, spare_text]
+	return "Packed (%d of %d): %s%s" % [packed.size() + spares.size(), slots, kit_list(packed), spare_text]
 
 
 ## The pump's price for a litre of unleaded, in pounds (the rider pays out of their own money).
@@ -6193,8 +6229,8 @@ func _fill_tanks(bike_id: int, litres: float) -> float:
 ## Why `action` can't be done because the bike it's on is out on the road, or "".
 func road_bike_block(action: Dictionary) -> String:
 	var a := str(action.get("a", ""))
-	if not WORKSHOP_ONLY.has(a):
-		return ""
+	if not WORKSHOP_ONLY.has(a) or ToolboxSpares.roadside_job(action):
+		return ""   # (a bike at an adventure's roadside has its toolbox's own rules: see ToolboxSpares)
 	var on_road := []
 	var bike_id := int(action.get("bike", 0))
 	if bike_id != 0 and int(action.get("engine", 0)) == 0:
@@ -6265,3 +6301,42 @@ func _retrieve(peer: int, action: Dictionary) -> String:
 	_park(bike_id)
 	var who := str(crew.get(peer, {}).get("name", "Someone"))
 	return "%s had %s brought back to the yard by the roller door (%s)." % [who, str(b["name"]), TvChannels.money_text(RETRIEVE_FEE)]
+
+
+## Debug, host: puts a bike right for a long test ride. Every part fitted to it (and in its
+## engine) is made like new, punctures and lost air go, the chain is set and lubed, the stored
+## roadside faults clear, and the tanks, the engine oil and the brake fluid are topped up.
+## Returns what was done ("" when there's no such bike).
+func debug_fix_bike(bike_id: int) -> String:
+	if not bikes.has(bike_id):
+		return ""
+	var fitted := {}   # item id -> the slot it's in
+	var block := item_on(bike_id, "engine")
+	for host in [bikes[bike_id], items.get(block, {})]:
+		var slots: Dictionary = host.get("slots", {})
+		for slot in slots:
+			fitted[int(slots[slot])] = str(slot)
+	var mended := 0
+	for id: int in fitted:
+		if not items.has(id):
+			continue
+		var it: Dictionary = items[id]
+		if float(it["rust"]) > 0.0 or float(it["wear"]) > 0.0 or Puncture.punctured(it) or Puncture.lost(it) > 0.0:
+			mended += 1
+		it["rust"] = 0.0
+		it["wear"] = 0.0
+		it.erase("puncture")
+		it.erase("deflate")
+		it.erase("plug")
+		var f = it.get("fluid")
+		if f is Dictionary and not fitted[id] in ["tank", "aux_tank"]:   # the tanks get fresh fuel below
+			f["litres"] = PartsDB.fluid_capacity(str(it["part"]))
+			f["age"] = 0.0
+	var chain := item_on(bike_id, "chain")
+	if chain != 0:
+		items[chain]["slack"] = CHAIN_SLACK_SET
+		items[chain]["lube"] = 1.0
+	if bikes[bike_id].get("faults") is Dictionary:
+		bikes[bike_id]["faults"].clear()
+	_fill_tanks(bike_id, fuel_space(bike_id))
+	return "Debug: %s fixed up (%d part%s mended, topped up)" % [str(bikes[bike_id]["name"]), mended, "" if mended == 1 else "s"]

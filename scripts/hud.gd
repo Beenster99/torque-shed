@@ -319,7 +319,9 @@ func _draw_toolbox(bike_id: int, slot: String) -> void:
 		return
 	var font := get_theme_default_font()
 	var lines := Roadside.kit_lines(box)
-	var panel := Rect2(24.0, size.y * 0.5 - 40.0 - 13.0 * lines.size(), 330.0, 58.0 + 26.0 * lines.size())
+	var spares := ToolboxSpares.spares_of(box)
+	var extra := 0.0 if spares.is_empty() else 30.0 + 24.0 * spares.size()   # the spare parts, under the kit
+	var panel := Rect2(24.0, size.y * 0.5 - 40.0 - 13.0 * lines.size() - extra * 0.5, 330.0, 58.0 + 26.0 * lines.size() + extra)
 	draw_rect(panel, Color(0.03, 0.03, 0.04, 0.72))
 	draw_string(font, panel.position + Vector2(14, 26), "TOOLBOX  ·  %s" % Shed.item_title(box).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 24.0, 15, UITheme.ACCENT)
 	var y := panel.position.y + 52.0
@@ -338,6 +340,20 @@ func _draw_toolbox(bike_id: int, slot: String) -> void:
 		elif int(k["left"]) > 0:
 			draw_string(font, Vector2(panel.position.x + 44 + w, y), "%d left" % int(k["left"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.55))
 		y += 26.0
+	if spares.is_empty():
+		return
+	# The spare parts in it (see ToolboxSpares): the one the turn keys pick is marked, for the
+	# second button to take out.
+	y += 4.0
+	draw_string(font, Vector2(panel.position.x + 14, y), "SPARE PARTS  ·  %s: pick" % Controls.hint("{rotate_left} / {rotate_right}"),
+		HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 24.0, 13, UITheme.ACCENT)
+	y += 24.0
+	var pick: int = walker.spare_pick if walker != null and slot == "toolbox" else -1
+	for i in spares.size():
+		var text := ToolboxSpares.spare_name(spares[i])
+		draw_string(font, Vector2(panel.position.x + 20, y), ("> " if i == pick else "   ") + text, HORIZONTAL_ALIGNMENT_LEFT,
+			panel.size.x - 30.0, 14, Color(1, 1, 1, 0.95) if i == pick else Color(1, 1, 1, 0.7))
+		y += 24.0
 
 
 ## The puncture plug game: the tread laid out as a strip, the soapy nozzle (then the reamer) on
@@ -541,6 +557,8 @@ func _draw_speedo() -> void:
 		draw_rect(Rect2(r.position + Vector2(12, 74), Vector2(202, 8)), Color(1, 1, 1, 0.12))
 		var col := UITheme.ACCENT if frac < 0.92 else Color(1, 0.2, 0.15)
 		draw_rect(Rect2(r.position + Vector2(12, 74), Vector2(202 * frac, 8)), col)
+		# The revs as a number under the bar, to the nearest 50.
+		draw_string(font, r.position + Vector2(12, 93), "%d rpm" % (roundi(bike.rpm / 50.0) * 50), HORIZONTAL_ALIGNMENT_RIGHT, 202, 11, Color(1, 1, 1, 0.6))
 	if features.has("shift_light") and frac > 0.88:
 		draw_circle(r.position + Vector2(206, 18), 8.0, Color(1, 0.15, 0.1) if frac > 0.94 else Color(1, 0.85, 0.1))
 	# Fuel gauge and how far this ride's petrol has gone.

@@ -87,6 +87,7 @@ var spray_color := 0        # index into Shed.PAINTS loaded in the spray can
 var spray_finish := 0       # index into spray_loads(): the paint finishes, then primer, lacquer and the gun's coats
 var crouched := false
 var alt_plan := {}          # what the second work button would do (drain a fluid), same shape as plan
+var spare_pick := 0         # which of a toolbox's spare parts the second button takes out (the turn keys pick; see ToolboxSpares)
 ## A one-press action shown with the work prompts, as "F: fill the spray gun's cup" (or ""): what a
 ## tap of the interact key does right now that isn't a hold of either work button.
 var tap_prompt := ""
@@ -276,6 +277,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if Shed.moving(Shed.me()) != 0 or Shed.held_by(Shed.me()) != 0:
 			get_viewport().set_input_as_handled()
 			turn_step(1 if event.is_action_pressed("rotate_left") else -1)
+		elif toolbox_target() != 0:
+			# Empty-handed at a toolbox: the turn keys pick which spare part comes out of it.
+			get_viewport().set_input_as_handled()
+			pick_spare(-1 if event.is_action_pressed("rotate_left") else 1)
 	elif event.is_action_pressed("rotate_free"):
 		get_viewport().set_input_as_handled()
 		toggle_free_rotate()
@@ -1495,6 +1500,26 @@ func target_item() -> int:
 	return 0
 
 
+## The toolbox the crosshair is on (fitted to a bike, at the roadside or loose in the shed), or 0.
+func toolbox_target() -> int:
+	var id := target_item()
+	return id if Shed.items.has(id) and str(Shed.items[id]["kind"]) == "toolbox" else 0
+
+
+## How many things the turn keys pick between at a toolbox: its spare parts, and in the shed one
+## more for packing its kit (see ToolboxSpares).
+func spare_choices(box: int) -> int:
+	return ToolboxSpares.spares_of(box).size() + (0 if target.get("roadside", false) else 1)
+
+
+## Picks the next (or the last) spare part in the toolbox being looked at.
+func pick_spare(step: int) -> void:
+	var box := toolbox_target()
+	var n := spare_choices(box)
+	spare_pick = 0 if n <= 0 else posmod(spare_pick + step, n)
+	_plan_key = ""   # (a hold under way starts again, for the new pick)
+
+
 func _make_plan() -> Dictionary:
 	alt_plan = {}
 	tap_prompt = ""
@@ -1565,6 +1590,9 @@ func _make_plan() -> Dictionary:
 		"hands":
 			if held != 0:
 				var held_name := Shed.item_title(held)
+				if toolbox_target() != 0 and toolbox_target() != held:
+					# A part in your hands at a toolbox: in it goes, as a spare (if it's small enough).
+					return _spare_stow_plan(toolbox_target(), held)
 				var bay := Shed.bay_at(target["at"]) if target.has("at") and kind != "part" else -1
 				if bay >= 0 and Shed.items[held]["kind"] == "frame" and Shed.bay_is_free(bay):
 					# A bare frame on an empty bay's paddock stand starts a bike from scratch.
@@ -1695,9 +1723,14 @@ func _make_plan() -> Dictionary:
 			alt_plan["blocked"] = Shed.check(me, alt_plan["action"])
 	if tool == "hands" and held == 0 and alt_plan.is_empty() and item_id != 0 and Shed.items[item_id]["kind"] == "toolbox":
 		# A toolbox: the second button packs the next thing in it (bought from the business's
-		# account), or once it's full, empties it out.
+		# account), or once it's full, empties it out. With spare parts in it, the turn keys pick
+		# one of those for the second button to take out instead (see ToolboxSpares).
 		var next := Shed.next_kit(item_id)
-		if next != "":
+		var spares := ToolboxSpares.spares_of(item_id)
+		spare_pick = clampi(spare_pick, 0, spares.size())
+		if spare_pick < spares.size():
+			alt_plan = _spare_take_plan(item_id, spare_pick)
+		elif next != "":
 			var info: Dictionary = PartsDB.TOOLBOX_CONTENTS[next]
 			alt_plan = {"action": {"a": "toolbox_pack", "item": item_id, "what": next}, "time": 0.8,
 				"verb": "pack the %s (%s)" % [str(info["short"]), TvChannels.money_text(int(info["price"]))]}
@@ -1983,7 +2016,17 @@ func _set_down_plan(key: String) -> Dictionary:
 ## chain (RoadsideGame), pump a tyre up (second button), or open and shut the toolbox.
 func _roadside_plan(held: int) -> Dictionary:
 	if held != 0:
-		return _road_plan(held)
+		if PartsDB.is_fluid(Shed.items[held]["part"]) or tool != "hands":
+			return _road_plan(held)
+		# A part in your hands: into the toolbox as a spare, or fitted where you're looking
+		# (with the toolbox open beside it; see ToolboxSpares).
+		if str(target.get("slot", "")) == "toolbox" and toolbox_target() != 0:
+			return _spare_stow_plan(toolbox_target(), held)
+		var fit := _where()
+		fit["a"] = "install"
+		var fp := {"action": fit, "time": 1.2, "verb": "fit the " + Shed.item_title(held)}
+		fp["blocked"] = Shed.check(Shed.me(), fit)
+		return fp
 	var me := Shed.me()
 	var bike := int(target["bike"])
 	var slot := str(target.get("slot", ""))
@@ -2026,10 +2069,44 @@ func _roadside_plan(held: int) -> Dictionary:
 		var open := bool(Roadside.spot_of(bike).get("open", false))
 		p = {"action": {"a": "roadside_open", "bike": bike, "open": not open}, "time": 0.5,
 			"verb": "shut the toolbox" if open else "open the toolbox and lay the kit out"}
+		# Open, the second button takes out the spare part the turn keys pick.
+		var box := toolbox_target()
+		var spares := ToolboxSpares.spares_of(box)
+		if open and box != 0 and not spares.is_empty():
+			spare_pick = clampi(spare_pick, 0, spares.size() - 1)
+			alt_plan = _spare_take_plan(box, spare_pick)
+	if p.is_empty() and Roadside.at_slot(bike, slot).is_empty() and ToolboxSpares.roadside_slot(slot) and Shed.item_on(bike, slot) != 0:
+		# Nothing wrong here the toolbox's kit fixes: the wrench from its tool roll and your hands
+		# work on the part as in the shed (with the toolbox open; see ToolboxSpares).
+		var a := _where()
+		if tool == "wrench":
+			var bolted := Shed.is_bolted(bike, slot)
+			a["a"] = "unbolt" if bolted else "bolt"
+			p = {"action": a, "time": 1.6, "verb": "unbolt it with the toolbox's spanners" if bolted else "bolt it up"}
+		elif tool == "hands":
+			a["a"] = "remove"
+			p = {"action": a, "time": 1.0, "verb": "take it off"}
 	if p.is_empty():
 		return {}
 	p["blocked"] = Shed.check(me, p["action"])
 	return p
+
+
+## Packing the part in your hands into a toolbox as a spare (see ToolboxSpares).
+func _spare_stow_plan(box: int, held: int) -> Dictionary:
+	var a := {"a": "spare_stow", "item": box}
+	return {"action": a, "time": 0.8, "verb": "pack the %s in the toolbox as a spare" % Shed.item_title(held).to_lower(),
+		"blocked": Shed.check(Shed.me(), a)}
+
+
+## Taking the `pick`th spare part out of a toolbox (see ToolboxSpares).
+func _spare_take_plan(box: int, pick: int) -> Dictionary:
+	var rec: Dictionary = ToolboxSpares.spares_of(box)[pick]
+	var a := {"a": "spare_take", "item": box, "index": pick, "part": str(rec.get("part", ""))}
+	var n := ToolboxSpares.spares_of(box).size()
+	return {"action": a, "time": 0.6, "verb": "take out the spare %s%s" % [ToolboxSpares.spare_name(rec).to_lower(),
+		" (%s: pick another)" % _keys("rotate_left", "rotate_right") if n > 1 or not target.get("roadside", false) else ""],
+		"blocked": Shed.check(Shed.me(), a)}
 
 
 ## What the part info says about a bike stood at the roadside: what's wrong with it and how to
@@ -2059,8 +2136,14 @@ func roadside_lines(bike: int, slot: String) -> Array:
 				gone.append(str(PartsDB.TOOLBOX_CONTENTS[k["what"]]["short"]))
 			else:
 				have.append(str(PartsDB.TOOLBOX_CONTENTS[k["what"]]["short"]) + (" (%d left)" % int(k["left"]) if int(k["left"]) > 0 else ""))
-		lines.append("Toolbox: %s%s" % [", ".join(have) if not have.is_empty() else "empty",
+		var spares := ToolboxSpares.spares_of(box)
+		lines.append("Toolbox: %s%s" % [", ".join(have) if not have.is_empty() else ("no kit" if not spares.is_empty() else "empty"),
 			"  ·  used up: " + ", ".join(gone) if not gone.is_empty() else ""])
+		if not spares.is_empty():
+			lines.append("Spare parts (%s: pick one):" % _keys("rotate_left", "rotate_right"))
+			lines.append_array(ToolboxSpares.lines(box, spare_pick if slot == "toolbox" else -1).map(func(l): return "  " + str(l)))
+		if Roadside.spot_of(bike).get("open", false) and ToolboxSpares.roadside_slot(slot):
+			lines.append("With the toolbox open: the wrench unbolts and bolts it up, hands take it off and fit a spare")
 	var ride_on := Shed.check(Shed.me(), {"a": "mount", "bike": bike})
 	lines.append("{interact}: ride it" if ride_on == "" else ride_on)
 	lines.append("Hold {interact}: wheel it along on foot")

@@ -52,6 +52,7 @@ func _run_all() -> void:
 	await _test_engine_and_effects()
 	print("Models")
 	_test_models()
+	_test_lever_guards()
 	print("The shed")
 	_test_shed_rules()
 	_test_garage_life()
@@ -124,6 +125,8 @@ func _run_all() -> void:
 	print("Key bindings, the pad in menus, whiteboard pictures and posters")
 	await _test_key_bindings()
 	await _test_pad_menus()
+	await _test_menu_layout()
+	await _test_menu_fix_bike()
 	await _test_hints_follow_device()
 	await _test_hints_name_no_keys()
 	await _test_board_posters()
@@ -493,6 +496,10 @@ func _run_all() -> void:
 	_test_adv_wrench_odds()
 	_test_adv_wrench_rules()
 	await _test_adv_wrench_session()
+	print("Toolbox spares: small spare parts packed in a toolbox, and the wrench on the bike at the roadside")
+	_test_toolbox_spares_fits()
+	_test_toolbox_spares_rules()
+	await _test_toolbox_spares_session()
 	_test_adv_routes_graph()
 	await _test_adv_routes_vote()
 	await _test_adv_routes_stream()
@@ -706,6 +713,40 @@ func _test_models() -> void:
 			count += m.get_child_count()
 			m.free()
 	check(count > 0, "whole bikes build with every engine and body variant")
+
+
+## Lever guards: an optional part of their own, sold on the parts computer under Chassis, that
+## bolts to the bars and is drawn there: a hoop in front of the brake lever, or both levers.
+func _test_lever_guards() -> void:
+	var ids: Array = PartsDB.by_kind.get("lever_guards", [])
+	check(PartsDB.KINDS.has("lever_guards") and ids.size() >= 5 and PartsDB.is_optional("lever_guards")
+		and PartsDB.DEFAULT_BUILD["lever_guards"] == "none" and PartsDB.MOUNTS["lever_guards"] == ["handlebars"],
+		"lever guards are parts of their own (%d), on the bars, and a bike rides without them" % ids.size())
+	check(ids.all(func(id): return not PartsDB.styles_of(str(id)).is_empty())
+		and ids.any(func(id): return PartsDB.styles_of(str(id)).has("race")) and ids.any(func(id): return PartsDB.styles_of(str(id)).has("sport")),
+		"each suits some styles, race and sports bikes among them")
+	check(PartsComputer.group_of("lever_guards") == "Chassis" and PartsComputer.section_of("lever_guards") == "bike",
+		"the parts computer sells them in the Bike aisle under Chassis")
+	check(PartsDB.spec_line("lever_guard_billet_black").contains("both levers") and PartsDB.spec_line("lever_guard_carbon_race").contains("brake lever"),
+		"the spec says which levers they guard")
+	var hoops := {}
+	for id in ids:
+		var m := BikeModel.new()
+		m.build_from(BikeBuild.new({"lever_guards": id}))
+		hoops[id] = (m._slot_meshes.get("lever_guards", []) as Array).filter(func(mi): return (mi as Node).name.begins_with("LeverGuard")).size()
+		m.free()
+	check(hoops.get("lever_guard_carbon_race", 0) == 1 and hoops.get("lever_guard_billet_black", 0) == 2,
+		"on the bike: one hoop for the brake lever, two for a pair %s" % str(hoops))
+	Shed.start_new("Tester", 61)
+	var me := Shed.me()
+	var faithful := _bike_named("Old Faithful")
+	var item := Shed._new_item("lever_guard_billet_black", 0.0, 0.0, 0.0)
+	Shed._move(item, "held", me)
+	var why := Shed.check(me, {"a": "install", "bike": faithful, "slot": "lever_guards", "crouched": false})
+	Shed.request({"a": "install", "bike": faithful, "slot": "lever_guards", "crouched": false})
+	Shed.request({"a": "bolt", "bike": faithful, "slot": "lever_guards", "crouched": false})
+	check(Shed.item_on(faithful, "lever_guards") == item and Shed.is_bolted(faithful, "lever_guards") and Shed.build_of(faithful).has_part("lever_guards"),
+		"they fit and bolt on to a bike's bars %s" % why)
 
 
 ## Spawns a bike on flat ground, runs `seconds` of physics calling `drive(bike, t)` each step,
@@ -5101,10 +5142,11 @@ func _test_pad_menus() -> void:
 	main.menu.show_pause()
 	main._capture_mouse(false)
 	await get_tree().process_frame
-	check(get_viewport().gui_get_focus_owner() == main.menu._resume, "the menu opens on Back to the shed")
+	check(get_viewport().gui_get_focus_owner() == main.menu._resume and main.menu._resume.text == "Continue", "the menu opens on Continue")
+	main.menu._settings_button.pressed.emit()
 	var tab: int = main.menu._tabs.current_tab
 	await _pad(JOY_BUTTON_RIGHT_SHOULDER)
-	check(main.menu._tabs.current_tab != tab, "RB turns the menu's tabs")
+	check(main.menu._tabs.visible and main.menu._tabs.current_tab != tab, "Settings opens its tabs, and RB turns them")
 	await _pad(JOY_BUTTON_B)
 	await get_tree().process_frame
 	check(not main.menu.visible, "B goes back to the shed")
@@ -9639,7 +9681,7 @@ func _test_shop_session() -> void:
 	Progress.select("Gear Tester")
 	var w: Walker = main.walker
 	var shop: ShopTab = main.menu.shop
-	check(shop != null and main.menu._tabs.get_tab_idx_from_control(shop) >= 0, "the Esc menu has a Shop tab")
+	check(shop != null and main.menu._profile_tabs.get_tab_idx_from_control(shop) >= 0, "the profile panel has a Shop tab")
 	# Gear from the Shop tab.
 	Progress.set_money(0)
 	shop.show_category("boots")
@@ -11088,11 +11130,23 @@ func _test_recorded_sounds() -> void:
 	es.queue_free()
 	# The phone: a few rings, from the reception and the extension in the shed.
 	var calls := Sfx.phone_calls
+	var heard_at := Sfx.listener_pos
+	Sfx.listener_pos = Workshop.CENTER + Vector3.UP
 	Sfx.ring_phone(SalesOffice.RECEPTION.origin + Vector3.UP, 1)
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var rings := get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(q): return Sfx.recordings("phone_ring").has(q.stream))
 	check(Sfx.phone_calls == calls + 1 and rings.size() >= 2, "the phone rings at reception and in the shed (%d)" % rings.size())
+	# Out on the High Street its bell isn't heard: no shop bells ringing along the street.
+	for q in rings:
+		q.free()
+	Sfx.listener_pos = Vector3(10.0, 1.6, WorldTown.NORTH_WALK)
+	Sfx.ring_phone(SalesOffice.RECEPTION.origin + Vector3.UP, 1)
+	await get_tree().process_frame
+	rings = get_tree().root.find_children("*", "AudioStreamPlayer3D", true, false).filter(func(q): return Sfx.recordings("phone_ring").has(q.stream))
+	check(rings.is_empty(), "out on the High Street the office's bell isn't heard (%d)" % rings.size())
+	Sfx.listener_pos = heard_at
+	calls += 1
 	# A new customer calls ahead; one already waiting doesn't.
 	Shed.start_new("Tester", 41)
 	var amb := SfxAmbience.new()
@@ -17598,7 +17652,7 @@ func _test_shop_buy_in_view() -> void:
 	add_child(menu)
 	await get_tree().process_frame
 	menu.show_pause()
-	menu._tabs.current_tab = menu.shop.get_index()
+	menu.open_tab(menu.shop)
 	var screen := get_viewport().get_visible_rect()
 	var off := []
 	for c in ShopTab.CATEGORIES:
@@ -22171,6 +22225,24 @@ func _test_adv_wrench_session() -> void:
 	await _adv_wrench().test_session()
 
 
+# ---------------------------------------------------------------------------- toolbox spares (tests/toolbox_spares_tests.gd)
+
+func _toolbox_spares() -> RefCounted:
+	return load("res://tests/toolbox_spares_tests.gd").new(self)
+
+
+func _test_toolbox_spares_fits() -> void:
+	_toolbox_spares().test_fits()
+
+
+func _test_toolbox_spares_rules() -> void:
+	_toolbox_spares().test_rules()
+
+
+func _test_toolbox_spares_session() -> void:
+	await _toolbox_spares().test_session()
+
+
 # ---------------------------------------------------------------------------- adventure forks (tests/adventure_routes_tests.gd)
 
 func _adv_routes() -> RefCounted:
@@ -22721,3 +22793,17 @@ func _test_shed_pump_rules() -> void:
 
 func _test_shed_pump_session() -> void:
 	await _shed_pump().test_session()
+
+
+# ---------------------------------------------------------------------------- the Esc menu (tests/menu_tests.gd)
+
+func _menu_suite() -> RefCounted:
+	return load("res://tests/menu_tests.gd").new(self)
+
+
+func _test_menu_layout() -> void:
+	await _menu_suite().test_layout()
+
+
+func _test_menu_fix_bike() -> void:
+	await _menu_suite().test_fix_bike()
