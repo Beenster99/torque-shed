@@ -18,6 +18,14 @@ const LAND_OUT := [0.0, 0.9, 2.5, 6.0, 12.0, 20.0, 30.0, 46.0, 70.0, 110.0, 170.
 ## least this far out past the column before it (m), and this far for each metre it goes down
 ## (as far out as down: steep, but not a wall).
 const FAR_SIDE_DROP := 160.0
+## On a real road the chunk's land runs out only this many of LAND_OUT's columns (to 110 m); the land beyond is RealLand's
+## (the garage map's near, middle and far blocks), the last column here running on down under it.
+const REAL_LAND_COLS := 10
+
+
+## How many columns of land a chunk of `route` has each side of the road.
+static func land_cols(route: AdventureRoute) -> int:
+	return REAL_LAND_COLS if route.real != null else LAND_OUT.size()
 const FAR_SIDE_RUN := 30.0
 const FAR_SIDE_SLOPE := 1.0
 const COLLIDE_COLS := 7
@@ -105,7 +113,7 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 	out["road"] = _grid(road_v, rows, 5, road_uv, road_c)
 	out["road_faces"] = _faces(road_v, rows, 5, 5)
 	# The land either side, out to the skyline: left from its far edge in, right from the verge out.
-	var cols := LAND_OUT.size()
+	var cols := land_cols(route)
 	var land := {}
 	for side: int in [-1, 1]:
 		var v := PackedVector3Array()

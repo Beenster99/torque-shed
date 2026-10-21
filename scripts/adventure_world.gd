@@ -65,6 +65,8 @@ var stats := {"plan_ms": 0.0, "built": 0, "build_ms_total": 0.0, "build_ms_max":
 var horizon: MeshInstance3D
 ## The real hills and mountains beyond the land, on a real road (see RealRidges), or null.
 var ridges: RealRidges
+## The land beyond the road's own chunks, on a real road (see RealLand), or null.
+var land: RealLand
 var _box := _Results.new()
 var _tasks := {}         # chunk -> WorkerThreadPool task id
 var _ready_data := {}    # chunk -> built data waiting to be committed
@@ -142,6 +144,10 @@ func setup(seed: int, km: float, theme := "varied", dest := "", real_id := "") -
 		ridges.setup(self, route.real.terrain)
 		add_child(ridges)
 		ridges.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
+		land = RealLand.new()
+		land.setup(self, route)
+		add_child(land)
+		land.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
 
 
 ## Takes the ways picked at the forks ({fork: way}, see AdventureForks): the road from each newly
@@ -214,6 +220,8 @@ func _take_path() -> void:
 ## Lets the worker threads finish (they read the route, which is about to change) and drops every
 ## chunk from `s` on, built, waiting or building.
 func _drop_from(s: float) -> void:
+	if land != null:
+		land.reset()   # (its workers read the route too, and the land past a fork is about to be another way's)
 	for c in _tasks:
 		WorkerThreadPool.wait_for_task_completion(_tasks[c])
 	_tasks.clear()
@@ -386,6 +394,8 @@ func shift_origin_to(p: Vector3) -> Vector3:
 	_follow_horizon(p - delta)
 	if ridges != null:
 		ridges.place()
+	if land != null:
+		land.place()
 	origin_shifted.emit(delta)
 	var ms := (Time.get_ticks_usec() - t0) / 1000.0
 	stats["shifts"] += 1
@@ -658,5 +668,7 @@ func _follow_horizon(p: Vector3) -> void:
 func follow(p: Vector3) -> void:
 	if ridges != null:
 		ridges.follow(p.x + origin.x, p.z + origin.z)
+	if land != null:
+		land.follow(p.x + origin.x, p.z + origin.z)
 	if horizon and Vector2(horizon.position.x - p.x, horizon.position.z - p.z).length() > 200.0:
 		_follow_horizon(p)

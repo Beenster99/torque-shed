@@ -68,7 +68,7 @@ static func build(route: AdventureRoute, i0: int, i1: int, ax: float, az: float,
 	var faces := PackedVector3Array()
 	var lights := []
 	var boards := []
-	var cols := AdventureChunk.LAND_OUT.size()
+	var cols := AdventureChunk.land_cols(route)
 	var lv: PackedVector3Array = land[-1]["v"]
 	var rv: PackedVector3Array = land[1]["v"]
 	var rings := []   # each row's tube points (local), or [] outside
