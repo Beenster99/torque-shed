@@ -502,6 +502,7 @@ func test_ride() -> void:
 	while s < w.route.total - 100.0 and Time.get_ticks_msec() < end + 180000:
 		s += 100.0
 		spot["p"] = w.transform_at(s).origin
+		w.follow(spot["p"])   # (the trip does, every frame: the skyline and the land blocks follow the rider)
 		var t0 := Time.get_ticks_usec()
 		await t.get_tree().process_frame
 		worst = maxf(worst, (Time.get_ticks_usec() - t0) / 1000.0)
@@ -552,3 +553,79 @@ func test_magazine() -> void:
 	Shed.stop()
 	Progress.path = real_path
 	DirAccess.remove_absolute("user://test_real_progress.json")
+
+
+## The land beyond the road's own chunks (RealLand): blocks round the rider in three levels, the near level always beside
+## the road, heights that meet the chunks' land at their seam, and the ridge eased down under them.
+func test_real_land() -> void:
+	var w := AdventureWorld.new()
+	w.setup(11, 23.0, "coastal", "lighthouse", PACK)
+	var land := w.land
+	check(land != null and w.route.real != null, "a real road's world has its land blocks")
+	if land == null:
+		w.free()
+		return
+	check(AdventureChunk.land_cols(w.route) == AdventureChunk.REAL_LAND_COLS and AdventureChunk.REAL_LAND_COLS < AdventureChunk.LAND_OUT.size(),
+		"the chunks' land runs out to %d m, the blocks take over from there" % int(AdventureChunk.LAND_OUT[AdventureChunk.REAL_LAND_COLS - 1]))
+	# A block by the road: near level, and its seam with the chunks' land (the same heights as the road's own land).
+	var xz := w.route.xz_at(3000.0, 0.0)
+	var key := Vector2i(floori(xz[0] / RealLand.BLOCK), floori(xz[1] / RealLand.BLOCK))
+	check(land._near_road(key), "a block with the road in it counts as beside the road")
+	var near = land._block_arrays(key, 0)
+	var mid = land._block_arrays(key, 1)
+	var far = land._block_arrays(key, 2)
+	check(near != null and mid != null and far != null, "a block lays out at every level")
+	if near == null or mid == null or far == null:
+		w.free()
+		return
+	var nv: PackedVector3Array = near[Mesh.ARRAY_VERTEX]
+	var mv: PackedVector3Array = mid[Mesh.ARRAY_VERTEX]
+	var fv: PackedVector3Array = far[Mesh.ARRAY_VERTEX]
+	check(nv.size() > 4000 and mv.size() < 500 and fv.size() < 200, "the near level is dense and the far levels light (%d, %d and %d vertices)" % [nv.size(), mv.size(), fv.size()])
+	# Heights beyond the seam are the land's: the real heights, and the same wherever a level samples them.
+	var worst := 0.0
+	var checked := 0
+	var n := RealLand.CELLS[0] + 1
+	for j in range(0, n, 3):
+		for i in range(0, n, 3):
+			var x := key.x * RealLand.BLOCK + i * (RealLand.BLOCK / RealLand.CELLS[0])
+			var z := key.y * RealLand.BLOCK + j * (RealLand.BLOCK / RealLand.CELLS[0])
+			var hit := w.route.locate(x, z)
+			if hit.is_empty() or float(hit["d"]) < 130.0 or float(hit["d"]) > 400.0:
+				continue
+			var want := w.route.land_height(int(hit["i"]), float(hit["lat"]), x, z)
+			worst = maxf(worst, absf(nv[j * n + i].y - want))
+			checked += 1
+	check(checked > 30 and worst < 0.5, "away from the road its heights are the land's own, to %.2f m (%d points)" % [worst, checked])
+	# Under the chunks' land the blocks lie hidden.
+	var hidden := 0
+	var under := 0
+	for j in n:
+		for i in n:
+			var x := key.x * RealLand.BLOCK + i * (RealLand.BLOCK / RealLand.CELLS[0])
+			var z := key.y * RealLand.BLOCK + j * (RealLand.BLOCK / RealLand.CELLS[0])
+			var hit := w.route.locate(x, z)
+			if not hit.is_empty() and float(hit["d"]) < 80.0:
+				under += 1
+				if nv[j * n + i].y < w.route.land_height(int(hit["i"]), float(hit["lat"]), x, z) - 1.0:
+					hidden += 1
+	check(under == 0 or hidden * 10 >= under * 9, "and within %d m of it they lie below it (%d of %d)" % [int(RealLand.BAND_NEAR), hidden, under])
+	# Levels by distance, with a margin for the block on the line.
+	check(RealLand._lod_for(100.0, -1) == 0 and RealLand._lod_for(1000.0, -1) == 1 and RealLand._lod_for(3000.0, -1) == 2 and RealLand._lod_for(9000.0, -1) == -1,
+		"blocks are near, middle or far by their distance, and none past the far range")
+	check(RealLand._lod_for(RealLand.RANGES[0] + 20.0, 0) == 0 and RealLand._lod_for(RealLand.RANGES[0] + 20.0, -1) == 1, "a block keeps its level a little past the line")
+	# They stream in as the rider comes.
+	var spot := w.transform_at(3000.0).origin + w.origin
+	t.add_child(w)
+	land.follow(spot.x, spot.z)
+	var end := Time.get_ticks_msec() + 90000
+	while land.busy() and Time.get_ticks_msec() < end:
+		await t.get_tree().process_frame
+	var counts := land.level_counts()
+	check(int(counts.get(0, 0)) >= 3 and int(counts.get(1, 0)) >= 3 and int(counts.get(2, 0)) >= 20, "round the rider they come in at every level (%s)" % str(counts))
+	# The ridge lies under them.
+	check(w.ridges != null and RealRidges.LAND_UNDER > 5.0 and RealRidges.LAND_REACH >= RealLand.RANGES[2], "the skyline is eased down under them, out to their far range")
+	land.reset()
+	check(land.block_count() == 0 and land._at.x == INF, "a new road (a fork's way) clears them to be laid out again")
+	w.queue_free()
+	await t.get_tree().process_frame

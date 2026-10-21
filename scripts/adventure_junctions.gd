@@ -565,7 +565,7 @@ static func _land_y(route: AdventureRoute, land: Dictionary, i0: int, i1: int, a
 		return route.land_height(i, lat, v.x + ax, v.z + az)
 	var side := 1 if lat > 0.0 else -1
 	var rows: PackedVector3Array = land[side]["v"]
-	var cols := AdventureChunk.LAND_OUT.size()
+	var cols := AdventureChunk.land_cols(route)
 	var y0 := _row_y(route, rows, cols, i - i0, i, side, absf(lat), ax, az)
 	var y1 := _row_y(route, rows, cols, i + 1 - i0, i + 1, side, absf(lat), ax, az)
 	return lerpf(y0, y1, clampf(t, 0.0, 1.0))
