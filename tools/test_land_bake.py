@@ -4,6 +4,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import zlib
 
 import numpy as np
 
@@ -170,9 +171,11 @@ class Whole(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as d:
                 knots = np.array([[float(x), 0.0] for x in range(0, 600, 4)])
-                land = lb.bake_land("b", "r", FRAME, knots, [(0, 0), (1, 0)], d, log=lambda *_: None)
+                land = lb.bake_land("b", "r", FRAME, knots, {"fine": [(0, 0), (1, 0)], "coarse": [(0, 0)]}, d, log=lambda *_: None)
                 self.assertEqual(len(land["buildings"]), 1)
-                self.assertEqual(os.path.getsize(os.path.join(d, "tiles", "0_0.cov")), lb.TILE_N * lb.TILE_N)
+                with open(os.path.join(d, "tiles", "0_0.covz"), "rb") as f:
+                    self.assertEqual(len(zlib.decompress(f.read())), lb.TILE_N * lb.TILE_N)
+                self.assertTrue(os.path.exists(os.path.join(d, "coarse", "0_0.covz")))
                 self.assertTrue(os.path.exists(os.path.join(d, "buildings.json")))
                 self.assertTrue(os.path.exists(os.path.join(d, "landmarks.json")))
                 self.assertIn("water", calls)

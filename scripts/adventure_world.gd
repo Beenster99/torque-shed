@@ -63,6 +63,8 @@ var threaded := true
 var stats := {"plan_ms": 0.0, "built": 0, "build_ms_total": 0.0, "build_ms_max": 0.0, "commit_ms_total": 0.0,
 	"commit_ms_max": 0.0, "commits": 0, "shift_ms_max": 0.0, "shifts": 0, "stream_ms_max": 0.0, "freed": 0}
 var horizon: MeshInstance3D
+## The real hills and mountains beyond the land, on a real road (see RealRidges), or null.
+var ridges: RealRidges
 var _box := _Results.new()
 var _tasks := {}         # chunk -> WorkerThreadPool task id
 var _ready_data := {}    # chunk -> built data waiting to be committed
@@ -134,6 +136,11 @@ func setup(seed: int, km: float, theme := "varied", dest := "", real_id := "") -
 	if dest != "":
 		AdventureDest.register(self, dest)
 	_make_horizon()
+	if route.real != null:
+		ridges = RealRidges.new()
+		ridges.setup(self, route.real.terrain)
+		add_child(ridges)
+		ridges.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
 
 
 ## Takes the ways picked at the forks ({fork: way}, see AdventureForks): the road from each newly
@@ -376,6 +383,8 @@ func shift_origin_to(p: Vector3) -> Vector3:
 	for c in chunks:
 		place_chunk(chunks[c])
 	_follow_horizon(p - delta)
+	if ridges != null:
+		ridges.place()
 	origin_shifted.emit(delta)
 	var ms := (Time.get_ticks_usec() - t0) / 1000.0
 	stats["shifts"] += 1
@@ -646,5 +655,7 @@ func _follow_horizon(p: Vector3) -> void:
 
 ## Keeps the far ground under you as you ride (a few times a second is plenty).
 func follow(p: Vector3) -> void:
+	if ridges != null:
+		ridges.follow(p.x + origin.x, p.z + origin.z)
 	if horizon and Vector2(horizon.position.x - p.x, horizon.position.z - p.z).length() > 200.0:
 		_follow_horizon(p)

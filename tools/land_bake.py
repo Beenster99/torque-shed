@@ -2,7 +2,8 @@
 
 Used by route_bake.py (stage 2 of docs/real_world_plan.md). All from Overture Maps (ODbL), nothing from imagery:
 
-    tiles/TX_TZ.cov   per height tile, one byte a sample (same 128 x 128 grid as the heights): COVER's ids
+    <level>/TX_TZ.covz per height tile of the fine and coarse levels (levels.py), one byte a sample on the same grid as
+                      the heights: COVER's ids
     buildings.json    [[x, z, w, d, yaw, h, kind, knot], ...] in the route frame, kinds as BUILDING_KINDS says,
                       knot the nearest road knot (by index), in order along the road
     landmarks.json    [{kind, name, x, z}, ...] peaks, lighthouses and the like
@@ -17,9 +18,11 @@ import struct
 import numpy as np
 from PIL import Image, ImageDraw
 
-STEP = 4.0
-TILE_M = 512.0
-TILE_N = 128
+import levels
+
+STEP = levels.FINE.spacing
+TILE_M = levels.FINE.size_m
+TILE_N = levels.FINE.n
 
 COVER = ["grass", "forest", "crop", "shrub", "barren", "urban", "sand", "wetland", "water", "rock"]
 CID = {name: i for i, name in enumerate(COVER)}
@@ -157,16 +160,16 @@ def polygon_layers(rows, frame, classify):
     return out
 
 
-def rasterise_tile(tx, tz, layers):
-    """One tile's cover bytes (TILE_N x TILE_N, row = z): the layers drawn in order over grass."""
-    img = Image.new("L", (TILE_N, TILE_N), 0)
+def rasterise_tile(tx, tz, layers, level=levels.FINE):
+    """One tile's cover bytes (n x n samples, row = z) at `level`: the layers drawn in order over grass."""
+    img = Image.new("L", (level.n, level.n), 0)
     draw = ImageDraw.Draw(img)
-    x0, z0 = tx * TILE_M, tz * TILE_M
-    x1, z1 = x0 + TILE_M, z0 + TILE_M
+    x0, z0 = tx * level.size_m, tz * level.size_m
+    x1, z1 = x0 + level.size_m, z0 + level.size_m
     for cid, rings, (lx, lz, hx, hz) in layers:
         if hx < x0 or lx > x1 or hz < z0 or lz > z1:
             continue
-        pts = [((p[:, 0] - x0) / STEP, (p[:, 1] - z0) / STEP) for p in rings]
+        pts = [((p[:, 0] - x0) / level.spacing, (p[:, 1] - z0) / level.spacing) for p in rings]
         if len(pts[0][0]) < 3:
             continue
         draw.polygon(list(zip(*pts[0])), fill=cid)
@@ -364,10 +367,12 @@ def make_landmarks(places, peaks, frame, knots):
 # ---------------------------------------------------------------------------- the lot
 
 def bake_land(bucket, release, frame, knots, tiles, out, log=print):
-    """Fetches and writes the cover tiles, buildings and landmarks; returns {buildings, landmarks, layers} for the baker."""
-    reach = max(BUILDING_REACH, 1400.0)
-    lo = knots.min(axis=0) - reach - TILE_M
-    hi = knots.max(axis=0) + reach + TILE_M
+    """Fetches and writes the cover tiles, buildings and landmarks; returns {buildings, landmarks} for the baker.
+
+    `tiles` is {level name: [(tx, tz)]} for the levels that have cover (levels.COVER_LEVELS)."""
+    reach = max(BUILDING_REACH, levels.COARSE.reach)
+    lo = knots.min(axis=0) - reach - levels.COARSE.size_m
+    hi = knots.max(axis=0) + reach + levels.COARSE.size_m
     lat_n, lon_w = frame.to_geo(lo[0], lo[1])
     lat_s, lon_e = frame.to_geo(hi[0], hi[1])
     box = (float(lat_s), float(lon_w), float(lat_n), float(lon_e))
@@ -385,7 +390,9 @@ def bake_land(bucket, release, frame, knots, tiles, out, log=print):
         json.dump(buildings, f, separators=(",", ":"))
     with open(os.path.join(out, "landmarks.json"), "w") as f:
         json.dump(landmarks, f, separators=(",", ":"))
-    os.makedirs(os.path.join(out, "tiles"), exist_ok=True)
-    for tx, tz in tiles:
-        rasterise_tile(tx, tz, layers).tofile(os.path.join(out, "tiles", "%d_%d.cov" % (tx, tz)))
+    for level in levels.COVER_LEVELS:
+        os.makedirs(os.path.join(out, level.folder), exist_ok=True)
+        for tx, tz in tiles.get(level.name, []):
+            with open(os.path.join(out, level.folder, "%d_%d.covz" % (tx, tz)), "wb") as f:
+                f.write(levels.encode_cover(rasterise_tile(tx, tz, layers, level)))
     return {"buildings": buildings, "landmarks": landmarks}

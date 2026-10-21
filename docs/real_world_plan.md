@@ -242,6 +242,29 @@ How each piece grows across the stages, so nothing is built twice:
 | Planning UI | the magazine page | the magazine page | the shed map screen with pins | plus search anywhere and links | shared, with votes and sharing |
 | Co-op | route hash | route hash | region hash plus pins | release pin plus pins | the same |
 
+## Pack size and delivery
+
+**Three levels of land.** A pack's land is held at three levels (`tools/levels.py`, `scripts/real_terrain.gd`): fine
+(4 m samples out to 320 m, where terrain and buildings need detail), coarse (32 m out to 1.7 km, the hillsides the land
+mesh runs up) and ridge (128 m out to 14 km, the skyline, drawn as its own mesh by `RealRidges`). The finer levels'
+outer edges are baked eased into the next coarser level, so there is no step. Tiles are stored as differences,
+zlib-compressed. Shodoshima went from 11 MB to 2 MB with the same visible reach, and a 100 km road comes to
+roughly 8 MB. The ridge level is baked pushed down 90 m near the road so the land mesh always hides it, and meets the
+real height about a kilometre out, where the land mesh's own real heights end.
+
+**Download when the crew agrees the route** (from Stage 4, when the route is chosen in the shed). The crew agrees a
+small recipe (start, end, waypoints, seed, data release, baker version). Packs are content-addressed by their hash,
+the same hash the co-op check uses today. Choosing a route starts a ready-check: each machine that lacks the pack
+fetches it into `user://routes/<id>-<hash>/`, verifies the hash, and shows progress at the shed screen; the ride
+starts when everyone has it. Magazine roads are hosted as release assets or in an object store; from Stage 5 the
+route service bakes them on demand. One bundled road (Shodoshima, 2 MB) stays in the game so it plays offline.
+
+**Keep it afterwards?** Yes, with a size cap. A saved overnight stop resumes into the same road, the diary and photos
+refer to it, and crews re-ride favourites. Keep downloaded packs least-recently-used up to a cap (say 1 GB), never
+evict the road of a saved adventure, and offer "delete downloaded roads" in the settings. Nothing needs the data
+once the adventure is over and ended, so a small cap loses nothing but a re-download. ODbL allows caching and
+redistributing the packs with their credits.
+
 ## Cross-cutting rules
 
 - **One frame.** Everything real lives in the route frame of the adventure mode (doubles, floating origin). The baker

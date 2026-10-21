@@ -6,7 +6,7 @@ extends RefCounted
 ## route.json and tiles/. Everything is in the adventure's route frame: metres from the start, +x east, -z north.
 ## Packs are read-only once loaded, so one can be shared by every thread.
 
-const FORMAT := 4
+const FORMAT := 5
 ## What covers the land (RealTerrain.cover), by id: the baker's list (tools/land_bake.py COVER).
 const COVER: Array[String] = ["grass", "forest", "crop", "shrub", "barren", "urban", "sand", "wetland", "water", "rock"]
 ## The kinds of building (tools/land_bake.py BUILDING_KINDS), by id.
@@ -123,7 +123,7 @@ static func _load(pack_id: String) -> RealPack:
 	var marks = _json(dir.path_join("landmarks.json"))
 	if marks is Array:
 		p.landmarks = marks
-	p.terrain = RealTerrain.new(dir.path_join("tiles"), meta)
+	p.terrain = RealTerrain.new(dir, meta)
 	return p
 
 
