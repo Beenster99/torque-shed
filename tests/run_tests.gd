@@ -441,12 +441,18 @@ func _run_all() -> void:
 	_test_region_loads()
 	_test_region_nearest()
 	_test_region_land()
+	_test_store_hash()
+	_test_store_install()
+	await _test_store_download()
 	_test_planner_plan()
 	_test_planner_deterministic()
 	_test_planner_errors()
 	_test_planner_speed()
 	await _test_planner_ride()
+	_test_planner_rules()
 	_test_planner_via()
+	_test_planner_places()
+	_test_planner_forks()
 	_test_planner_board()
 	await _test_planner_map()
 	_test_real_pack()
@@ -21927,6 +21933,22 @@ func _test_region_nearest() -> void:
 	_region().test_nearest()
 
 
+func _store() -> RefCounted:
+	return load("res://tests/region_store_tests.gd").new(self)
+
+
+func _test_store_hash() -> void:
+	_store().test_hash()
+
+
+func _test_store_install() -> void:
+	_store().test_install()
+
+
+func _test_store_download() -> void:
+	await _store().test_download()
+
+
 func _test_region_land() -> void:
 	_region().test_land()
 
@@ -21949,6 +21971,18 @@ func _test_planner_errors() -> void:
 
 func _test_planner_speed() -> void:
 	_planner().test_speed()
+
+
+func _test_planner_rules() -> void:
+	_planner().test_rules()
+
+
+func _test_planner_forks() -> void:
+	_planner().test_forks()
+
+
+func _test_planner_places() -> void:
+	_planner().test_places()
 
 
 func _test_planner_via() -> void:

@@ -38,6 +38,8 @@ var region: RealRegion
 var article_id := ""
 var _canvas: Control
 var _pin_box: VBoxContainer
+var _search: LineEdit
+var _found: VBoxContainer
 var _facts: Label
 var _note: Label
 var _start: Button
@@ -104,6 +106,14 @@ func _ready() -> void:
 	_pin_box = VBoxContainer.new()
 	_pin_box.add_theme_constant_override("separation", 3)
 	side.add_child(_pin_box)
+	_search = LineEdit.new()
+	_search.placeholder_text = "Find a town, village or place"
+	_search.clear_button_enabled = true
+	_search.text_changed.connect(func(_t): _fill_found())
+	side.add_child(_search)
+	_found = VBoxContainer.new()
+	_found.add_theme_constant_override("separation", 2)
+	side.add_child(_found)
 	var modes := HBoxContainer.new()
 	modes.add_theme_constant_override("separation", 4)
 	side.add_child(modes)
@@ -165,7 +175,84 @@ func open(region_id: String) -> void:
 			_shade_lock.unlock())
 	_fit()
 	_sig = ""
+	_fill_found()
 	refresh()
+
+
+## The places that match what's typed (or, with nothing typed, a few suggested destinations), each a button that pins
+## it: the region's towns and villages, then its named places to stop and landmarks.
+func _fill_found() -> void:
+	for c in _found.get_children():
+		c.queue_free()
+	if region == null:
+		return
+	var hits := find_places(region, _search.text)
+	if hits.is_empty():
+		_found.add_child(UITheme.label("Nothing by that name here." if _search.text.strip_edges() != "" else "", 13, Color(0.7, 0.7, 0.7)))
+		return
+	if _search.text.strip_edges() == "":
+		_found.add_child(UITheme.label("Worth a ride:", 13, Color(0.7, 0.7, 0.7)))
+	for h: Dictionary in hits:
+		var b := Button.new()
+		b.text = "%s  (%s)" % [str(h["name"]), str(h["kind"])]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.tooltip_text = "Pin %s" % str(h["name"])
+		b.pressed.connect(func():
+			Shed.request({"a": "adventure_pin", "region": region.id, "x": float(h["x"]), "z": float(h["z"])})
+			_centre = Vector2(float(h["x"]), float(h["z"]))
+			_scale = maxf(_scale, 0.05)
+			_canvas.queue_redraw())
+		_found.add_child(b)
+
+
+## The region's places whose names contain `text` (any case), up to `limit`: towns and villages first (the bigger
+## first), then places to stop and landmarks with names. With nothing typed: suggested destinations, the biggest towns
+## and villages, then the lighthouses, castles and beaches, spread about the region.
+static func find_places(region: RealRegion, text: String, limit := 8) -> Array:
+	var q := text.strip_edges().to_lower()
+	var out: Array = []
+	var seen := {}
+	var rank := {"town": 0, "village": 1, "lighthouse": 2, "castle": 2, "viewpoint": 3, "beach": 3, "peak": 4, "cafe": 5, "inn": 5, "pub": 5, "fuel": 6, "campsite": 5, "layby": 7, "worship": 4}
+	var rows: Array = []
+	for p: Dictionary in region.places:
+		rows.append({"name": str(p["name"]), "kind": str(p["kind"]), "x": float(p["x"]), "z": float(p["z"]), "pop": int(p.get("pop", 0))})
+	for m: Dictionary in region.landmarks:
+		if str(m.get("name", "")) != "":
+			rows.append({"name": str(m["name"]), "kind": str(m["kind"]), "x": float(m["x"]), "z": float(m["z"]), "pop": 0})
+	for m: Dictionary in region.pois:
+		if str(m.get("name", "")) != "":
+			rows.append({"name": str(m["name"]), "kind": str(m["kind"]), "x": float(m["x"]), "z": float(m["z"]), "pop": 0})
+	for row: Dictionary in rows:
+		if q != "" and not str(row["name"]).to_lower().contains(q):
+			continue
+		if q == "" and int(rank.get(row["kind"], 9)) > 2:
+			continue
+		var key := "%s|%s" % [row["name"], row["kind"]]
+		if seen.has(key):
+			continue
+		seen[key] = true
+		out.append(row)
+	out.sort_custom(func(a, b):
+		var ra := int(rank.get(a["kind"], 9))
+		var rb := int(rank.get(b["kind"], 9))
+		if ra != rb:
+			return ra < rb
+		if int(a["pop"]) != int(b["pop"]):
+			return int(a["pop"]) > int(b["pop"])
+		return str(a["name"]) < str(b["name"]))
+	if q == "":
+		# Spread about: no two suggestions within 3 km of each other.
+		var spread: Array = []
+		for row: Dictionary in out:
+			var near := false
+			for s: Dictionary in spread:
+				if Vector2(float(s["x"]) - float(row["x"]), float(s["z"]) - float(row["z"])).length() < 3000.0:
+					near = true
+					break
+			if not near:
+				spread.append(row)
+		out = spread
+	return out.slice(0, limit)
 
 
 func _process(delta: float) -> void:
@@ -421,6 +508,17 @@ func _draw_map() -> void:
 			pts.append(_to_screen(p))
 		_canvas.draw_polyline(pts, Color(0.1, 0.05, 0.05, 0.6), 7.0, true)
 		_canvas.draw_polyline(pts, ROUTE, 4.5, true)
+	# The towns and villages, named once there is room.
+	if _scale >= 0.012:
+		for p: Dictionary in region.places:
+			var at := _to_screen(Vector2(float(p["x"]), float(p["z"])))
+			if not Rect2(Vector2.ZERO, size).has_point(at):
+				continue
+			if str(p["kind"]) == "village" and _scale < 0.03:
+				continue
+			var fs := 15 if str(p["kind"]) == "town" else 12
+			_canvas.draw_circle(at, 3.0 if str(p["kind"]) == "town" else 2.0, INK)
+			_canvas.draw_string(ThemeDB.fallback_font, at + Vector2(6, 5), str(p["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, INK)
 	# Where the pointer would pin.
 	if _hover >= 0:
 		var hp := _to_screen(region.node_pos[_hover])
