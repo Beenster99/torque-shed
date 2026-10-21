@@ -31,6 +31,8 @@ var colors := PackedColorArray()
 var road_w := PackedFloat32Array()
 var road_d := PackedFloat32Array()
 var road_k := PackedByteArray()
+## The level of each of the crew's house plots (see HomePlots.level_ground).
+var plot_levels := PackedFloat32Array()
 
 var _hills := FastNoiseLite.new()
 var _mid := FastNoiseLite.new()
@@ -183,6 +185,8 @@ func build(roads: WorldRoads) -> void:
 		for gx in range(home.position.x, home.end.x):
 			var i := gz * SIZE + gx
 			heights[i] = lerpf(HOME_LEVEL, heights[i], home_mask(gx * SPACING - HALF, gz * SPACING - HALF))
+	# The crew's house plots: levelled to the road at their gates, before the roads cut in.
+	plot_levels = HomePlots.level_ground(self, roads)
 	var road_h := PackedFloat32Array()
 	road_h.resize(n)
 	for r in roads.roads:
@@ -191,6 +195,7 @@ func build(roads: WorldRoads) -> void:
 		var w := road_w[i]
 		if w > 0.0:
 			heights[i] = lerpf(heights[i], road_h[i], w)
+	HomePlots.level_ground(self, roads, true)
 	_build_normals()
 	_build_colors()
 

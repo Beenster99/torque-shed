@@ -398,6 +398,24 @@ Go up to the office and use the **sales PC** (F). It has four pages:
 
 Everything is kept with the shed, and in co-op the host runs the buyers: everyone sees the same offers and hears the same till.
 
+### Your own bike collection
+
+Every player has a **house** of their own on the riding map, within a kilometre of the shed and set back off a road: a big house in one of four styles (a red brick **Victorian villa**, a white **modern** house with a flat roof and timber cladding, a stone **Georgian** house with a hipped roof, or a whitewashed **farmhouse**), with a block of **four garages** beside it, a low wall along the front with a gate, and a large **pea shingle courtyard** in front (it crunches underfoot and is looser under the tyres than tarmac). The style comes from your name, and each player's house stays put on its plot from one session to the next. A **marker** at the top of the screen says how far it is and points the way; there's no teleport, so ride there (or walk).
+
+- **Buying**: a finished bike of the shed's own (every part fitted and bolted up, not a customer's) can be bought for your collection from **your own money**: look at it, press **O** for its card, then **Buy it for my collection**. It costs its asking price on the showroom stand, or what the sales PC recommends; the money goes to the business, and the bike is packed off to your house, every part as it was.
+- **Slots**: a collection holds **3 bikes** at the start and one more **every two levels**, up to **20** at level 35:
+
+  | Level | 1 | 3 | 5 | 7 | 9 | 11 | 13 | 15 | 17 | 19 | 21 | 23 | 25 | 27 | 29 | 31 | 33 | 35 |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | Bikes | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
+
+- **On show**: the collection is always on display in a ring in the middle of the courtyard, every bike facing in, with an **information stand** in front of each. Anyone can walk up and look. Press **F** at a stand for the bike's card: the bike turning on a turntable, its **power**, **torque**, **top speed**, **0-60 mph** (0-100 km/h in metric), **weight**, **economy**, engine, **condition**, what it's **worth** and what its owner paid, the parts worth a look, and whose it is. From the road the bikes are a few simple shapes; walk into the courtyard and they're drawn as themselves, one at a time.
+- **Riding one**: to use one of your bikes you go and fetch it. At its stand pick **Ride it out**: it's wheeled out in front of the garages, ready to ride. While it's out its place in the ring is empty. Park it back anywhere in your courtyard (get off, or wheel it in and let go) and it goes back on show. Nobody else can ride your bike or wheel it off. Leave it at the shed and it stays there, still yours.
+- **Offers**: at a friend's stand you can **make an offer** for their bike from your own money. The money is held until they answer: the offer comes up for them the next time they're on foot with nothing else open (**Accept**, **Decline** or **Later**). Accepted, the money goes to them and the bike to your collection; declined, or taken back, the money comes back to you (if you've left the shed by then, the next time you come back). An offer can only be accepted with the bike at home.
+- **Selling back**: at your own stand, **Sell it to the garage** for **70%** of what it's worth, paid from the business's account into your own money. The bike goes back to the shed (a free bay, or the yard by the roller door) as the shed's stock, so the business can sell it on at a profit.
+
+The houses and collections are kept with the shed, and in co-op the host runs them: everyone sees the same houses and the same bikes on show, and every purchase, offer and sale is checked by the host.
+
 ### The coffee shop next door
 
 West of the storage room is the **Pit Stop Cafe**: a small brick cafe with a striped awning, a counter with a coffee machine and a cake display, the kitchen through a hatch behind it, four tables inside on a black and white floor, eight more out on the **terrace** under umbrellas, and a marked **car park for twenty bikes** in front. It's **open from 08:00 to 18:00**: the sign, the pendant lights and the festoon bulbs are lit and a barista is behind the counter. The rest of the time it's dark and the **CLOSED** signs are up in the window and on the pylon by the car park.
@@ -508,6 +526,10 @@ Hold weight back (Shift, or the left stick back) to lift and hold a wheelie; the
 **Retrieving a bike**: if you leave a bike out on the road (you got off and walked back, fell off the edge of the map, or a friend left it there), the **Recovery truck** tab of the garage's panel (Esc, then the garage badge in the top left corner) lists it under "Left out on the road". Press **Retrieve** and the recovery truck brings it back to the yard just west of the roller door, for £40 from the garage's account. Anyone in a co-op shed can do it. Ride off the edge of the map and you're put back on the last bit of ground you were on, turned round.
 
 The **yard** has movable kit: small, medium and large ramps with a landing ramp, a tabletop, cones, posts, flags, barrels, a log, hay bales, a tyre stack, an old car, concrete and brick walls and fences. Take hold of any of it with F and push it where you want. Order more from the parts computer's **Yard:** categories; it's dropped in the yard.
+
+### Sat navs, and a phone on the bars
+
+The parts computer's **Luggage and adventure kit** sells sat navs for the bars, from a compact unit up to a rally tablet. The cheapest is a **phone sat nav in a handlebar clip** (£30): your phone in a sprung cradle on a ball joint and a short arm, clamped round the bar itself, for any style of bike. It finds its own spot on whatever bars the bike has (inboard of the lever, clear of the mirrors' stalks and a fairing, without hiding the clocks) and turns to face you. Its screen shows the same live map as the dash units: the roads round you, the way ahead, the next turn and the next fuel, and **M** puts the map on the HUD as with any sat nav. It buzzes a little with the engine, the screen glows after dark, and in co-op everyone else sees it on your bike, lit while the engine runs.
 
 ### The riding map
 
@@ -752,6 +774,7 @@ One player picks **Host a co-op shed**; the others type the host's address into 
 | `scripts/real_region.gd`, `route_planner.gd`, `journey_map.gd`, `adventure_journey.gd`, `adventure_plans.gd`, `tools/region_bake.py` | Planning a journey across a real region: the baked region (road graph and land), the in-game planner that makes a road pack from pins, the shed's map where the crew pins and the host starts, the shared board and plan cache behind it, and `region_store.gd` that downloads a region and checks its hash |
 | `scripts/real_pack.gd`, `real_terrain.gd`, `tools/route_bake.py`, `tools/land_bake.py`, `tests/real_shots.gd` | Real roads: a baked road pack (its line, heights, surfaces, widths and the real land beside it), the land's heights, and the tools that bake a pack from elevation, road, land cover, building and place data, and screenshots of a road without riding it |
 | `scripts/bike_copy.gd`, `bike_copy_view.gd`, `bike_order_panel.gd`, `parked_bike.gd` | Order one of these and Copy its blueprint for any bike looked at: the requests and what's on order, which bike the crosshair's on, the bike's card, and the bikes parked at the adventure cafes |
+| `scripts/collection.gd`, `home_plots.gd`, `home_view.gd`, `home_display.gd`, `home_panel.gd`, `home_offer_panel.gd` | The crew's own bike collections: slots by level, buying from the business, riding out and bringing back, offers between players and selling back (host-run, saved with the shed); the house plots near the shed and the land levelled under them; the houses in their styles with their garages and pea shingle courtyards; the bikes on show in a ring with their information stands; the bike's card; the offer prompt |
 | `scripts/tyre_game.gd` | The tyre-fitting game on the tyre changer |
 | `scripts/blast_game.gd`, `blast_marks.gd`, `blast_hud.gd`, `blast_detail.gd`, `blast_grit.gd` | The sandblasting game in the blast cabinet: the coverage, the satin bare-metal mask and its shader, the live readout and the scan, the close-up engine detail, and the bare metal kept on each part and drawn wherever the engine goes, and the sand particles held inside the cabinet (protective coats, and a fully blasted engine coming out as new, are in `shed_state.gd`) |
 | `scripts/bike.gd` | Rigid-body bike with ray-cast suspension, the tyres on the road, the front end turning about its raked steering axis, the rider (steering by bar torque, riding realism), engine, clutch and gearbox |

@@ -89,7 +89,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	if _model != null and is_instance_valid(_model):
-		_model.set_satnav_texture(null)
+		_model.set_satnav_texture(null, false)
 
 
 ## Whether the bike has a sat nav to show anything on.
@@ -130,7 +130,7 @@ func _tick(delta: float) -> void:
 	var on := fitted() and bike.engine_on
 	if bike != null and is_instance_valid(bike) and bike.model != _model:
 		if _model != null and is_instance_valid(_model):
-			_model.set_satnav_texture(null)
+			_model.set_satnav_texture(null, false)
 		_model = bike.model
 		if _model != null and fitted():
 			_model.set_satnav_texture(viewport.get_texture() if on else null)

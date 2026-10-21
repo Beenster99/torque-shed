@@ -7,6 +7,18 @@ extends RefCounted
 
 ## The sat nav's screen texture size, in pixels (see SatnavScreen).
 const SCREEN_PX := Vector2i(320, 200)
+## How bright the screen's glow on the bars is at night (OmniLight3D energy), and how far it reaches (m).
+const GLOW_ENERGY := 0.35
+const GLOW_RANGE := 0.45
+## A phone sat nav: how far (m) the phone buzzes in its cradle with the engine, at most.
+const BUZZ := 0.0009
+## The slots whose parts a phone on the bars mustn't run into (with the bars themselves).
+const PHONE_CLEAR: Array[String] = ["mirrors", "front_master", "dashboard", "fairing", "headlight", "fog_lights",
+	"indicators", "steering_damper", "tank_bag"]
+
+static var _idle_tex: ImageTexture
+## Where a phone went on the bars for each set of parts (see _phone): a hash of them -> its fit.
+static var _phone_fits := {}
 
 
 ## Draws whichever of the kit is in the build.
@@ -219,27 +231,30 @@ static func _toolbox(m: BikeModel, build: BikeBuild, zr: float) -> void:
 			m._tube(c + Vector3(size.x * 0.5, size.y * 0.4, 0.0), Vector3(-w + 0.02, m._seat_y - 0.1, c.z + 0.05), 0.007, steel)
 
 
-## A sat nav on the bars: a phone in a clamp on the right of the bars, a small unit on a ball
-## mount, a road unit on a RAM arm, an adventure unit on a crossbar over the clocks, or a rally
-## tablet up on a navigation bar. Its screen is lit with the live map while it's ridden (see
-## BikeModel.set_satnav_texture).
+## A sat nav on the bars: a phone in a clip on the bar itself (see _phone), a small unit on a
+## ball mount, a road unit on a RAM arm, an adventure unit on a crossbar over the clocks, or a
+## rally tablet up on a navigation bar. Its screen is lit with the live map while it's ridden
+## (see BikeModel.set_satnav_texture), and glows after dark.
 static func _satnav(m: BikeModel) -> void:
 	m._current_slot = "satnav"
 	var p := m._part()
 	if p.is_empty():
+		return
+	var style := str(p.get("style", "road"))
+	if style == "phone":
+		_phone(m, p)
 		return
 	var housing := m._mat(m._col(), 0.2, 0.45)
 	var dark := m._mat(Color(0.04, 0.04, 0.045), 0.4, 0.4)
 	var size: Array = p.get("screen", [0.1, 0.065])
 	var sw := float(size[0])
 	var sh := float(size[1])
-	var style := str(p.get("style", "road"))
 	var tilt := Basis(Vector3.RIGHT, 0.85)
 	var lift := m._dash_raised
 	var at := Vector3(0.0, 0.22 + lift, -0.03)
 	var mount := Vector3(0.0, 0.12, 0.0)   # where its arm meets the bars or crossbar
 	match style:
-		"phone", "compact":
+		"compact":
 			at = Vector3(0.13, 0.2 + lift * 0.5, 0.02)
 			mount = Vector3(0.12, 0.12, 0.05)
 		"road":
@@ -281,3 +296,278 @@ static func _satnav(m: BikeModel) -> void:
 	# Kept out of the merged meshes: its texture changes as you ride.
 	screen.set_meta("satnav_screen", true)
 	m._satnav_screen = screen
+	_glow(m, m._steer_node, at + tilt.y * 0.05)
+
+
+## The light a lit sat nav screen throws round it after dark (BikeModel._show_satnav sets it).
+static func _glow(m: BikeModel, parent: Node3D, pos: Vector3) -> void:
+	var light := OmniLight3D.new()
+	light.name = "SatnavGlow"
+	light.light_color = Color(0.7, 0.85, 1.0)
+	light.omni_range = GLOW_RANGE
+	light.light_energy = 0.0
+	light.shadow_enabled = false
+	light.light_specular = 0.2
+	light.visible = false
+	light.position = pos
+	parent.add_child(light)
+	m._satnav_glow = light
+
+
+## A phone in a handlebar clip, the cheap way to a sat nav: the phone in a cradle with sprung
+## jaws gripping its ends and two hooks under it, on a ball joint and a short arm down to a
+## clamp round the bar tube itself. It goes on the bar's own line (BikeModel.bar_point, for
+## whatever bars the bike has), turned to face the rider's eye. Of the places it could go (along
+## the right of the bar inboard of the lever, a little up and ahead of it, then up over the
+## clocks from the middle of the bar), the first where it hides none of the clocks from the eye,
+## runs into nothing (the bars and what's on them, the mirrors' stalks, the brake lever, a
+## fairing) and can be seen from the eye wins (see BikeModel.satnav_fit).
+static func _phone(m: BikeModel, p: Dictionary) -> void:
+	var size: Array = p.get("screen", [0.12, 0.075])
+	var sw := float(size[0])
+	var sh := float(size[1])
+	var half := Vector3(sw * 0.5 + 0.008, sh * 0.5 + 0.006, 0.0045)   # the phone, half of each way
+	var keep := half + Vector3(0.012, 0.006, 0.012)                    # with its cradle round it
+	var eye := m._eye - m._head
+	# The same parts always give the same place: worked out once (it takes a few ms).
+	var key := hash(var_to_str([m._build.parts, m.present]))
+	var best: Dictionary = _phone_fits.get(key, {})
+	if best.is_empty():
+		best = _phone_place(m, keep, eye)
+		if _phone_fits.size() > 256:
+			_phone_fits.clear()
+		_phone_fits[key] = best
+	var at: Vector3 = best["centre"]
+	var clamp: Vector3 = best["clamp"]
+	var basis := _facing(at, eye)
+	m.satnav_fit = best.duplicate()
+	var case_mat := m._mat(m._col(), 0.1, 0.55)
+	var phone_mat := m._mat(Color(0.03, 0.03, 0.035), 0.5, 0.25)
+	var rubber := m._mat(Color(0.05, 0.05, 0.05), 0.0, 0.9)
+	var alloy := m._mat(Color(0.55, 0.56, 0.6), 0.9, 0.35)
+	# The cradle: it and everything in it buzz together (see BikeModel._buzz_satnav).
+	var cradle := Node3D.new()
+	cradle.name = "PhoneCradle"
+	cradle.transform = Transform3D(basis, at)
+	m._steer_node.add_child(cradle)
+	m._satnav_cradle = cradle
+	m._satnav_rest = at
+	m._box(Vector3.ZERO, half * 2.0, phone_mat, cradle).name = "Phone"
+	# The camera bump on its back, and the buttons along the top edge.
+	m._box(Vector3(half.x * 0.55, half.y * 0.45, -half.z - 0.0015), Vector3(0.022, 0.022, 0.003), phone_mat, cradle)
+	m._box(Vector3(half.x * 0.3, half.y + 0.0008, 0.0), Vector3(0.018, 0.0016, 0.003), phone_mat, cradle)
+	# The back plate, the jaws gripping each end with a lip over the glass, and the hooks under it.
+	m._box(Vector3(0.0, 0.0, -half.z - 0.004), Vector3(half.x * 1.2, half.y * 1.4, 0.006), case_mat, cradle).name = "CradlePlate"
+	for side in [-1.0, 1.0]:
+		var jaw := m._box(Vector3(side * (half.x + 0.004), 0.0, -0.002), Vector3(0.008, half.y * 1.2, half.z * 2.0 + 0.01), case_mat, cradle)
+		jaw.name = "CradleJaw"
+		m._box(Vector3(side * (half.x - 0.0015), 0.0, half.z + 0.0012), Vector3(0.005, half.y * 0.9, 0.0024), rubber, cradle)
+		m._box(Vector3(side * half.x * 0.45, -half.y - 0.004, -0.002), Vector3(0.016, 0.008, half.z * 2.0 + 0.008), case_mat, cradle).name = "CradleHook"
+		m._box(Vector3(side * half.x * 0.45, -half.y - 0.002, half.z + 0.0012), Vector3(0.016, 0.004, 0.0024), rubber, cradle)
+	# The ball joint on the back of the plate.
+	var ball_local := Vector3(0.0, 0.0, -half.z - 0.016)
+	m._mesh_instance(m._sphere(0.011), alloy, ball_local, cradle)
+	var collar := m._mesh_instance(m._cylinder(0.009, 0.008), case_mat, Vector3(0.0, 0.0, -half.z - 0.009), cradle)
+	collar.rotation.x = PI * 0.5
+	# The arm down to the clamp round the bar, with a thumb wheel to lock it.
+	var ball := at + basis * ball_local
+	var bar_dir: Vector3 = m.bar_point(_back_of(m, clamp))[1]
+	var out := ball - clamp
+	out = (out - bar_dir * out.dot(bar_dir)).normalized()
+	var clamp_top := clamp + out * 0.02
+	m._tube(clamp_top, ball, 0.006, alloy, Vector3.ONE, m._steer_node).name = "PhoneArm"
+	var wheel := m._mesh_instance(m._cylinder(0.013, 0.007), case_mat, clamp_top.lerp(ball, 0.45), m._steer_node)
+	wheel.basis = m._basis_up((ball - clamp_top).normalized())
+	var ring := m._mesh_instance(m._cylinder(0.019, 0.03), case_mat, clamp, m._steer_node)
+	ring.basis = m._basis_up(bar_dir)
+	ring.name = "PhoneClamp"
+	m._mesh_instance(m._cylinder(0.006, 0.014), alloy, clamp - out * 0.02, m._steer_node).basis = m._basis_up(-out)
+	# The screen: a quad on the glass, looking out of it at the rider.
+	var quad := QuadMesh.new()
+	quad.size = Vector2(sw, sh)
+	var screen_mat := StandardMaterial3D.new()
+	screen_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	screen_mat.albedo_color = Color(0.02, 0.03, 0.04)
+	var screen := m._mesh_instance(quad, screen_mat, Vector3(0.0, 0.0, half.z + 0.0005), cradle)
+	screen.name = "SatnavScreen"
+	# Kept out of the merged meshes: its texture changes as you ride.
+	screen.set_meta("satnav_screen", true)
+	m._satnav_screen = screen
+	_glow(m, cradle, Vector3(0.0, 0.0, 0.05))
+
+
+## Where a phone `keep` (half its size with the cradle) goes on `m`'s bars for `eye` (see _phone):
+## the best of the places tried, as _phone_fit gives it, with "spot" (which place it was).
+static func _phone_place(m: BikeModel, keep: Vector3, eye: Vector3) -> Dictionary:
+	var bars := m._bars_mesh()
+	var others := _near_bars(m)
+	var spots := []   # [clamp on the bar, the phone's middle]
+	for back in [0.19, 0.22, 0.16, 0.25, 0.28]:
+		var c: Vector3 = m.bar_point(back)[0]
+		if c.x < 0.05:
+			continue
+		for fwd in [-0.035, -0.07]:
+			for up in [0.07, 0.09, 0.05, 0.11]:
+				for dx in [0.0, -0.03, 0.03]:
+					spots.append([c, c + Vector3(dx, up, fwd)])
+	var mid: Vector3 = m.bar_point(maxf(m.bar_length() - 0.05, 0.0))[0]
+	for up in [0.12, 0.15, 0.18, 0.21]:
+		for fwd in [-0.08, -0.12, -0.04]:
+			spots.append([mid, Vector3(0.0, mid.y + up, mid.z + fwd)])
+	var best := {}
+	for i in spots.size():
+		var o: Vector3 = spots[i][1]
+		var fit := _phone_fit(m, o, _facing(o, eye), keep, spots[i][0], eye, bars, others)
+		fit["spot"] = i
+		if best.is_empty() or int(fit["score"]) < int(best["score"]):
+			best = fit
+		if int(fit["score"]) == 0:
+			break
+	m._bars_tm = null   # as build_from leaves it: the fit checks make it afresh
+	return best
+
+
+## A sat nav's face turned to look at `eye` from `at`: X along the phone (to the rider's right),
+## Y up its face, Z out of the glass.
+static func _facing(at: Vector3, eye: Vector3) -> Basis:
+	var n := (eye - at).normalized()
+	var r := (Vector3.RIGHT - n * n.x).normalized()
+	return Basis(r, n.cross(r), n)
+
+
+## How far in from the bar's end (m, along it) the point of the bar nearest `p` is.
+static func _back_of(m: BikeModel, p: Vector3) -> float:
+	var line := m.bar_line()
+	var back := 0.0
+	var best := INF
+	var at := 0.0
+	for i in range(line.size() - 1, 0, -1):
+		var a := line[i]
+		var b := line[i - 1]
+		var c := Geometry3D.get_closest_point_to_segment(p, a, b)
+		if c.distance_to(p) < best:
+			best = c.distance_to(p)
+			at = back + a.distance_to(c)
+		back += a.distance_to(b)
+	return at
+
+
+## The parts round the bars a phone has to keep clear of (PHONE_CLEAR), as triangles in steering
+## space, or null with none there.
+static func _near_bars(m: BikeModel) -> TriangleMesh:
+	var room := AABB(Vector3(-0.6, -0.3, -0.5), Vector3(1.2, 0.9, 0.9))
+	var to_steer := m._steer_node.transform.affine_inverse()
+	var faces := PackedVector3Array()
+	for slot in PHONE_CLEAR:
+		for mi in m._slot_meshes.get(slot, []):
+			if not (mi is MeshInstance3D) or not is_instance_valid(mi) or (mi as MeshInstance3D).mesh == null:
+				continue
+			var xf := to_steer * m._local_xform(mi)
+			if not (xf * (mi as MeshInstance3D).get_aabb()).intersects(room):
+				continue
+			faces.append_array(xf * (mi as MeshInstance3D).mesh.get_faces())
+	if faces.is_empty():
+		return null
+	var tm := TriangleMesh.new()
+	tm.create_from_faces(faces)
+	return tm
+
+
+## How well a phone fits with its middle at `o` turned `b` (`keep`: half its size with the
+## cradle), on an arm to `clamp`: {score (0 is a clean fit), centre, clamp, dash_hidden (points
+## of the clocks it hides from the eye), hits (what it runs into), blocked (sight lines from the
+## eye to the screen cut)}.
+static func _phone_fit(m: BikeModel, o: Vector3, b: Basis, keep: Vector3, clamp: Vector3, eye: Vector3,
+		bars: TriangleMesh, others: TriangleMesh) -> Dictionary:
+	var hidden := 0
+	for q in m._dash_face:
+		if _seg_box(q, eye, o, b, keep + Vector3(0.004, 0.004, 0.004)):
+			hidden += 1
+	var hits := 0
+	# Lines across the front and back of it and through it: a stalk through it crosses one.
+	var segs := []
+	for z in [-keep.z, keep.z]:
+		for k in 6:
+			var y := lerpf(-keep.y, keep.y, k / 5.0)
+			segs.append([Vector3(-keep.x, y, z), Vector3(keep.x, y, z)])
+		for k in 10:
+			var x := lerpf(-keep.x, keep.x, k / 9.0)
+			segs.append([Vector3(x, -keep.y, z), Vector3(x, keep.y, z)])
+	for i in 4:
+		for j in 3:
+			segs.append([Vector3(lerpf(-keep.x, keep.x, i / 3.0), lerpf(-keep.y, keep.y, j / 2.0), -keep.z),
+				Vector3(lerpf(-keep.x, keep.x, i / 3.0), lerpf(-keep.y, keep.y, j / 2.0), keep.z)])
+	for s in segs:
+		var a: Vector3 = o + b * (s[0] as Vector3)
+		var e: Vector3 = o + b * (s[1] as Vector3)
+		if (bars != null and not bars.intersect_segment(a, e).is_empty()) or (others != null and not others.intersect_segment(a, e).is_empty()):
+			hits += 1
+	# The arm, from just off the bar to the back of the cradle.
+	var ball := o + b * Vector3(0.0, 0.0, -keep.z - 0.006)
+	var off := clamp + (ball - clamp).normalized() * 0.03
+	if others != null and not others.intersect_segment(off, ball).is_empty():
+		hits += 1
+	# Seen from the eye: the middle and the corners of the screen.
+	var blocked := 0
+	for c in [Vector3.ZERO, Vector3(-1, -1, 0), Vector3(1, -1, 0), Vector3(-1, 1, 0), Vector3(1, 1, 0)]:
+		var pt: Vector3 = o + b * ((c as Vector3) * (keep - Vector3(0.02, 0.012, 0.0)) + Vector3(0.0, 0.0, keep.z + 0.002))
+		var from := pt + (eye - pt).normalized() * 0.004
+		if (bars != null and not bars.intersect_segment(from, eye).is_empty()) or (others != null and not others.intersect_segment(from, eye).is_empty()):
+			blocked += 1
+	return {"score": hidden * 3 + hits * 2 + blocked, "centre": o, "clamp": clamp, "dash_hidden": hidden, "hits": hits, "blocked": blocked}
+
+
+## Whether the segment from `a` to `b` passes through the box with its middle at `o`, turned
+## `basis` (orthonormal) and `half` of its size each way.
+static func _seg_box(a: Vector3, b: Vector3, o: Vector3, basis: Basis, half: Vector3) -> bool:
+	var inv := basis.transposed()
+	var la := inv * (a - o)
+	var d := inv * (b - a)
+	var t0 := 0.0
+	var t1 := 1.0
+	for k in 3:
+		if absf(d[k]) < 0.000001:
+			if absf(la[k]) > half[k]:
+				return false
+			continue
+		var u := (-half[k] - la[k]) / d[k]
+		var v := (half[k] - la[k]) / d[k]
+		t0 = maxf(t0, minf(u, v))
+		t1 = minf(t1, maxf(u, v))
+		if t0 > t1:
+			return false
+	return true
+
+
+## The still map a lit sat nav screen shows on a bike whose rider's own sat nav isn't drawing
+## it (everyone else's in co-op): a road with the way picked out up it and the arrow low down,
+## in SatnavScreen's colours. Made once and shared.
+static func idle_screen() -> ImageTexture:
+	if _idle_tex != null:
+		return _idle_tex
+	var w := 80
+	var h := 50
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(SatnavScreen.LAND)
+	var dot := func(c: Vector2, r: float, col: Color) -> void:
+		for y in range(maxi(int(c.y - r), 0), mini(int(c.y + r) + 1, h)):
+			for x in range(maxi(int(c.x - r), 0), mini(int(c.x + r) + 1, w)):
+				if Vector2(x, y).distance_to(c) <= r:
+					img.set_pixel(x, y, col)
+	# A side road across, and the road ahead bending away up the screen with the way on it.
+	for i in 41:
+		dot.call(Vector2(i / 40.0 * w, 30.0 - 10.0 * i / 40.0), 1.6, SatnavScreen.ROAD)
+	for pass_ in [[2.2, SatnavScreen.ROAD], [1.3, SatnavScreen.ROUTE]]:
+		for i in 41:
+			var t := i / 40.0
+			dot.call(Vector2(40.0 + 14.0 * t * t, 37.0 - 34.0 * t), float(pass_[0]), pass_[1])
+	# The bike's arrow, and the strip along the top.
+	for y in range(34, 42):
+		var aw := (y - 34) * 0.5
+		for x in range(int(40.0 - aw), int(40.0 + aw) + 1):
+			img.set_pixel(x, y, Color.WHITE)
+	img.fill_rect(Rect2i(0, 0, w, 7), SatnavScreen.BACK)
+	img.fill_rect(Rect2i(3, 2, 18, 3), SatnavScreen.ROUTE)
+	img.fill_rect(Rect2i(w - 16, 2, 13, 3), Color(1, 1, 1, 0.8))
+	_idle_tex = ImageTexture.create_from_image(img)
+	return _idle_tex

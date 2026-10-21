@@ -433,7 +433,7 @@ func step_surface(pos: Vector3) -> String:
 	match ground:
 		"grass":
 			return "grass"
-		"dirt":
+		"dirt", "gravel":
 			return "gravel"
 	return "tarmac"
 

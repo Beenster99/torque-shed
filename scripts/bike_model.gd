@@ -101,6 +101,16 @@ var _tank_secs: Array = []       # the tank's sections as drawn, for what sits o
 ## shed pump's nozzle goes in (see ShedPump).
 var filler := Vector3.ZERO
 var _satnav_screen: MeshInstance3D   # the sat nav's screen, lit with the live map (see set_satnav_texture)
+var _satnav_cradle: Node3D       # a phone's cradle on its arm, buzzing with the engine (see set_gauges)
+var _satnav_rest := Vector3.ZERO # where the cradle sits still
+var _satnav_glow: OmniLight3D    # the screen's glow on the bars after dark (see _show_satnav)
+var _satnav_live: Texture2D      # the live map from the rider's own sat nav (see set_satnav_texture)
+var _satnav_driven := false      # whether a live sat nav (Satnav) has the screen
+var _satnav_dark := -1.0         # the darkness the glow was last set for
+## Where a phone sat nav went on the bars (KitModel._phone): {clamp, centre (steering space),
+## spot (which of the places tried), dash_hidden, hits, blocked}; empty for any other unit.
+var satnav_fit := {}
+var _bar_line := PackedVector3Array()   # the right half of the bar from the middle out to its end, in steering space
 var _screen_lift: Node3D         # an adjustable screen hangs from this, moved up its rails (see set_screen_raise)
 var _screen_dir := Vector3.UP
 var _covered: Array[AABB] = []   # what a full fairing hides, side on (see _hide_covered)
@@ -178,6 +188,11 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_tank_secs = []
 	filler = Vector3.ZERO
 	_satnav_screen = null
+	_satnav_cradle = null
+	_satnav_glow = null
+	_satnav_dark = -1.0
+	satnav_fit = {}
+	_bar_line = PackedVector3Array()
 	_screen_lift = null
 
 	var zr := _lay_out(build)
@@ -1932,6 +1947,7 @@ func _draw_handlebars() -> void:
 				var b := Vector3(hw * side, rise, 0.13)
 				_tube(a, b, 0.013, mat, Vector3.ONE, _steer_node)
 				ends.append(b)
+			_bar_line = PackedVector3Array([Vector3(0.09, -0.07, 0.0), Vector3(hw, rise, 0.13)])
 		"Ape hanger":
 			for side in [-1.0, 1.0]:
 				var post_top := Vector3(0.12 * side, rise, 0.0)
@@ -1939,6 +1955,7 @@ func _draw_handlebars() -> void:
 				var end := Vector3(hw * side, rise - 0.03, 0.14)
 				_tube(post_top, end, 0.012, mat, Vector3.ONE, _steer_node)
 				ends.append(end)
+			_bar_line = PackedVector3Array([Vector3(0.05, 0.02, 0.0), Vector3(0.12, rise, 0.0), Vector3(hw, rise - 0.03, 0.14)])
 		"MX braced":
 			for side in [-1.0, 1.0]:
 				var mid := Vector3(0.14 * side, rise, 0.0)
@@ -1948,11 +1965,13 @@ func _draw_handlebars() -> void:
 				ends.append(end)
 			_tube(Vector3(-0.14, rise, 0.0), Vector3(0.14, rise, 0.0), 0.014, mat, Vector3.ONE, _steer_node)
 			_tube(Vector3(-0.12, rise + 0.07, 0.01), Vector3(0.12, rise + 0.07, 0.01), 0.01, mat, Vector3.ONE, _steer_node)
+			_bar_line = PackedVector3Array([Vector3(0.0, rise, 0.0), Vector3(0.14, rise, 0.0), Vector3(hw, rise + 0.03, 0.1)])
 		_:
 			_tube(Vector3(-hw, rise, 0.06), Vector3(hw, rise, 0.06), 0.012, mat, Vector3.ONE, _steer_node)
 			for side in [-1.0, 1.0]:
 				_tube(Vector3(0.04 * side, 0.0, 0.0), Vector3(0.04 * side, rise, 0.06), 0.014, mat, Vector3.ONE, _steer_node)
 				ends.append(Vector3(hw * side, rise, 0.06))
+			_bar_line = PackedVector3Array([Vector3(0.0, rise, 0.06), Vector3(hw, rise, 0.06)])
 	_tex(rubber, "knurl", 70.0)
 	for end in ends:
 		var inward := Vector3(-signf(end.x) * 0.1, 0.0, 0.0)
@@ -1999,6 +2018,7 @@ func _bent_bar(lk: Dictionary, hw: float, rise: float, mat: Material) -> Array:
 		path.append(Vector3(-q.x, q.y, q.z))
 	path.append_array(right)
 	_bend(path, thick, mat, _steer_node, 10)
+	_bar_line = PackedVector3Array(right)
 	if bend == "t":
 		_tube(Vector3(0.0, -0.01, 0.0), Vector3(0.0, rh + rise, 0.0), 0.022, mat, Vector3.ONE, _steer_node)
 	elif rh > 0.025:
@@ -2214,8 +2234,23 @@ func set_gauges(speed_frac: float, rpm_frac: float) -> void:
 		var m: StandardMaterial3D = _leds[i]["mat"]
 		m.emission_energy_multiplier = 3.0 if lit else 0.0
 		m.albedo_color = _leds[i]["color"] if lit else Color(0.08, 0.08, 0.08)
+	_buzz_satnav(rpm_frac)
 	if not geometry.is_empty() and not _needles.is_empty():
 		_update_geometry()
+
+
+## A phone in its cradle buzzes a little with the engine (`rpm_frac` 0..1 of full scale, 0 with it
+## stopped): a fraction of a millimetre at tickover, more up the revs.
+func _buzz_satnav(rpm_frac: float) -> void:
+	if _satnav_cradle == null or not is_instance_valid(_satnav_cradle):
+		return
+	if rpm_frac < 0.02:
+		_satnav_cradle.position = _satnav_rest
+		return
+	var amp := KitModel.BUZZ * (0.35 + 0.65 * clampf(rpm_frac, 0.0, 1.0))
+	var t := Time.get_ticks_msec() * 0.001
+	var w := 140.0 + 260.0 * clampf(rpm_frac, 0.0, 1.0)
+	_satnav_cradle.position = _satnav_rest + _satnav_cradle.basis * Vector3(sin(t * w * 0.83) * 0.5, sin(t * w + 1.3), 0.0) * amp
 
 
 ## The bits on the bars round the grips: the clutch lever on its perch, switch gear both sides,
@@ -2327,7 +2362,8 @@ func _draw_rear_master() -> void:
 	_mesh_instance(_cylinder(0.02, 0.04), mat, at + Vector3(0.0, 0.16, 0.08))
 
 
-## The headlight on the fork: round, a café bucket, twin lamps, an enduro plate or an LED projector.
+## The headlight on the fork: round, a café bucket, twin lamps, twin bug-eyes, an old-school
+## square lamp, an enduro plate or an LED projector.
 func _draw_headlight() -> void:
 	_current_slot = "headlight"
 	var p := _part()
@@ -2372,8 +2408,10 @@ func _draw_headlight() -> void:
 				face.rotation.x = PI * 0.5
 			face_r = 0.0
 		"square":
-			_box(at, Vector3(size * 2.1, size * 1.6, size * 1.2), shell, _steer_node)
-			_box(at + Vector3(0.0, 0.0, -size * 0.61), Vector3(size * 1.9, size * 1.4, 0.006), lens, _steer_node)
+			_square_lamp(at, size, shell, lens, lk)
+			face_r = 0.0
+		"bugeye":
+			_bugeye_lamps(at, size, shell, lens, chrome)
 			face_r = 0.0
 		"nacelle":
 			# A round lamp sunk into a cowl that wraps back over the fork tops.
@@ -2425,6 +2463,86 @@ func _draw_headlight() -> void:
 	if lk.get("brackets", false):
 		for side in [-1.0, 1.0]:
 			_tube(at + Vector3(size * 1.05 * side, 0.0, 0.0), Vector3(0.09 * side, -0.02, 0.0), 0.007, chrome, Vector3.ONE, _steer_node)
+
+
+## An old-school rectangular headlight centred on `at` (steering space), `size` setting its scale:
+## a deep pressed-steel bucket tapering to the back, fluted glass with the bulb's hot spot behind
+## it, and a bezel round the glass (look "bezel": chrome or black). On ears to the fork legs.
+func _square_lamp(at: Vector3, size: float, shell: Material, lens: Material, lk: Dictionary) -> void:
+	var w := size * 2.3
+	var h := size * 1.7
+	var front := at.z - size * 0.3
+	var body := _box(at + Vector3(0.0, 0.0, size * 0.12), Vector3(w * 0.96, h * 0.94, size * 0.84), shell, _steer_node)
+	body.name = "LampBody"
+	_box(at + Vector3(0.0, 0.0, size * 0.7), Vector3(w * 0.7, h * 0.64, size * 0.4), shell, _steer_node)
+	var bezel := _look_finish(str(lk.get("bezel", "chrome")), shell)
+	var t := size * 0.13
+	for y in [-1.0, 1.0]:
+		_box(Vector3(at.x, at.y + y * (h - t) * 0.5, front - 0.004), Vector3(w, t, 0.02), bezel, _steer_node).name = "Bezel"
+	for x in [-1.0, 1.0]:
+		_box(Vector3(at.x + x * (w - t) * 0.5, at.y, front - 0.004), Vector3(t, h - t * 2.0 + 0.002, 0.02), bezel, _steer_node).name = "Bezel"
+	var glass := Vector2(w - t * 2.0 + 0.004, h - t * 2.0 + 0.004)
+	_box(Vector3(at.x, at.y, front), Vector3(glass.x, glass.y, 0.008), lens, _steer_node).name = "Lens"
+	# The reflector's hot spot round the bulb, and the glass's flutes and its middle rib over it.
+	var spot := _mesh_instance(_cylinder(size * 0.26, 0.004), _lamp(Color(1.0, 0.97, 0.88), 4.0, "head"), Vector3(at.x, at.y, front - 0.005), _steer_node)
+	spot.rotation.x = PI * 0.5
+	var flute := _lamp(Color(0.78, 0.7, 0.56), 0.9, "head")
+	for i in 7:
+		var x := (i - 3) / 3.0 * glass.x * 0.42
+		_box(Vector3(at.x + x, at.y, front - 0.008), Vector3(0.003, glass.y * 0.96, 0.003), flute, _steer_node)
+	_box(Vector3(at.x, at.y, front - 0.009), Vector3(glass.x * 0.96, 0.003, 0.003), flute, _steer_node)
+	if not lk.get("brackets", false):
+		# Black steel ears back to the fork legs (chrome ones are the "brackets" look's).
+		var ear := _mat(Color(0.05, 0.05, 0.055), 0.6, 0.45)
+		for side in [-1.0, 1.0]:
+			_tube(at + Vector3(w * 0.45 * side, 0.0, size * 0.2), Vector3(0.09 * side, -0.02, 0.0), 0.008, ear, Vector3.ONE, _steer_node)
+
+
+## Twin bug-eye headlamps centred on `at` (steering space): two small oval lamps side by side,
+## close together, each turned out a little and tilted top-outward like a wasp's eyes, with a
+## chrome rim, a reflector ring and the bulb's hot spot in each glass. They sit on a short
+## black bracket to the fork legs, under a little tinted fly-screen when no fairing is fitted.
+func _bugeye_lamps(at: Vector3, size: float, shell: Material, lens: Material, chrome: Material) -> void:
+	var gap := size * 1.04
+	var spot := _lamp(Color(1.0, 0.97, 0.88), 4.0, "head")
+	var black := _mat(Color(0.05, 0.05, 0.055), 0.6, 0.4)
+	for side in [-1.0, 1.0]:
+		var c := at + Vector3(side * gap, 0.0, 0.0)
+		var b := Basis(Vector3.UP, -side * 0.3) * Basis(Vector3.BACK, -side * 0.28)
+		var oval := Basis.from_scale(Vector3(0.88, 1.18, 1.0))
+		var body := _mesh_instance(_sphere(size), shell, c, _steer_node)
+		body.basis = b * Basis.from_scale(Vector3(0.9, 1.2, 1.05))
+		body.name = "BugEye"
+		# A tapered back on each lamp shell, pointing back towards the bracket.
+		var back := _mesh_instance(_cylinder(size * 0.75, size * 1.1, size * 0.35), shell, c + b * Vector3(0.0, 0.0, size * 0.75), _steer_node)
+		back.basis = b * Basis(Vector3.RIGHT, PI * 0.5)
+		var face_at := c + b * Vector3(0.0, 0.0, -size * 1.0)
+		var face := _mesh_instance(_cylinder(size * 0.86, 0.01), lens, face_at, _steer_node)
+		face.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
+		face.name = "Lens"
+		var rim := _mesh_instance(_torus(size * 0.88, 0.005), chrome, face_at + b * Vector3(0.0, 0.0, 0.002), _steer_node)
+		rim.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
+		var ring := _mesh_instance(_torus(size * 0.55, 0.0018), chrome, face_at + b * Vector3(0.0, 0.0, -0.006), _steer_node)
+		ring.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
+		var hot := _mesh_instance(_cylinder(size * 0.3, 0.003), spot, face_at + b * Vector3(0.0, 0.0, -0.006), _steer_node)
+		hot.basis = b * oval * Basis(Vector3.RIGHT, PI * 0.5)
+		# The bracket: a short arm from the lamp's back to the fork leg.
+		_tube(c + b * Vector3(0.0, -size * 0.3, size * 0.9), Vector3(0.09 * side, -0.02, 0.0), 0.008, black, Vector3.ONE, _steer_node)
+	var plate := _box(at + Vector3(0.0, -size * 0.55, size * 0.95), Vector3(gap * 2.0, 0.012, size * 0.9), black, _steer_node)
+	plate.name = "LampBracket"
+	if _build and is_fitted("fairing") and str(_build.parts.get("fairing", "none")) != "none":
+		return
+	# A small tinted fly-screen over the pair, raked back.
+	var glass := _mat(Color(0.18, 0.2, 0.24), 0.2, 0.05)
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.albedo_color.a = 0.6
+	var dir := Vector3(0.0, cos(0.55), sin(0.55))
+	var base := at + Vector3(0.0, size * 1.0, -size * 0.2)
+	var secs := []
+	for k in 4:
+		var f := k / 3.0
+		secs.append({"c": base + dir * 0.1 * f, "w": gap * 1.9 * lerpf(1.0, 0.7, f), "up": 0.03, "down": 0.0, "n": 2.0})
+	_shell(secs, glass, true, 0.25, PI - 0.25, _steer_node).name = "FlyScreen"
 
 
 ## The horn under the headstock: a disc, a pair of snail or air trumpets, a klaxon or a bulb.
@@ -3913,18 +4031,86 @@ func _tank_front() -> float:
 	return float((_tank_secs[0]["c"] as Vector3).z) if not _tank_secs.is_empty() else _head.z + 0.1
 
 
-## Lights the sat nav's screen with `tex` (the live map, see SatnavScreen), or blanks it with null.
-func set_satnav_texture(tex: Texture2D) -> void:
-	if _satnav_screen == null or not is_instance_valid(_satnav_screen):
-		return
-	var mat := _satnav_screen.material_override as StandardMaterial3D
-	mat.albedo_texture = tex
-	mat.albedo_color = Color.WHITE if tex != null else Color(0.02, 0.03, 0.04)
+## Lights the sat nav's screen with `tex` (the live map, see SatnavScreen), or blanks it with
+## null: the rider's own sat nav (Satnav) has the screen from then on. `driven` false hands it
+## back (getting off): then, like everyone else's bikes, it shows a still map while the
+## ignition's on (see set_lights).
+func set_satnav_texture(tex: Texture2D, driven := true) -> void:
+	_satnav_live = tex
+	_satnav_driven = driven
+	_show_satnav()
 
 
 ## The sat nav's screen as drawn, or null with none fitted.
 func satnav_screen() -> MeshInstance3D:
 	return _satnav_screen if _satnav_screen != null and is_instance_valid(_satnav_screen) else null
+
+
+## A phone sat nav's cradle (it holds the phone and its screen), or null for any other unit.
+func satnav_cradle() -> Node3D:
+	return _satnav_cradle if _satnav_cradle != null and is_instance_valid(_satnav_cradle) else null
+
+
+## The light the sat nav's screen casts after dark, or null with none fitted.
+func satnav_glow() -> OmniLight3D:
+	return _satnav_glow if _satnav_glow != null and is_instance_valid(_satnav_glow) else null
+
+
+## What's on the sat nav's screen now: the live map while the rider's own sat nav drives it,
+## else a still map (KitModel.idle_screen) with the ignition on, or dark. After dark it glows,
+## lighting the cradle and the gloves round it a little.
+func _show_satnav() -> void:
+	if _satnav_screen == null or not is_instance_valid(_satnav_screen):
+		return
+	var mat := _satnav_screen.material_override as StandardMaterial3D
+	var tex: Texture2D = _satnav_live if _satnav_driven else (KitModel.idle_screen() if _lit[0] else null)
+	mat.albedo_texture = tex
+	mat.albedo_color = Color.WHITE if tex != null else Color(0.02, 0.03, 0.04)
+	_satnav_dark = Daylight.darkness()
+	if _satnav_glow != null and is_instance_valid(_satnav_glow):
+		var glow := smoothstep(0.2, 0.6, _satnav_dark) if tex != null and _satnav_screen.visible else 0.0
+		_satnav_glow.light_energy = KitModel.GLOW_ENERGY * glow
+		_satnav_glow.visible = glow > 0.01
+
+
+## The bar as drawn, its right half from the middle out to the end (steering space; the left
+## is its mirror image).
+func bar_line() -> PackedVector3Array:
+	return _bar_line
+
+
+## The bar's length from the middle out to one end (m, along it).
+func bar_length() -> float:
+	var n := 0.0
+	for i in range(1, _bar_line.size()):
+		n += _bar_line[i].distance_to(_bar_line[i - 1])
+	return n
+
+
+## The point on the right of the bar `back` metres along it in from the end (steering space),
+## and which way the bar runs there: [point, direction out towards the end].
+func bar_point(back: float) -> Array:
+	if _bar_line.size() < 2:
+		return [_grip_r + Vector3(-0.15, 0.0, 0.0), Vector3.RIGHT]
+	var left := maxf(back, 0.0)
+	for i in range(_bar_line.size() - 1, 0, -1):
+		var a := _bar_line[i - 1]
+		var b := _bar_line[i]
+		var d := a.distance_to(b)
+		if left <= d or i == 1:
+			return [b.lerp(a, clampf(left / maxf(d, 0.0001), 0.0, 1.0)), (b - a).normalized()]
+		left -= d
+	return [_bar_line[0], (_bar_line[1] - _bar_line[0]).normalized()]
+
+
+## How far `p` (steering space) is from the middle of the bar's tube, either side.
+func bar_distance(p: Vector3) -> float:
+	var q := Vector3(absf(p.x), p.y, p.z)
+	var best := INF
+	for i in range(1, _bar_line.size()):
+		var c := Geometry3D.get_closest_point_to_segment(q, _bar_line[i - 1], _bar_line[i])
+		best = minf(best, c.distance_to(q))
+	return best
 
 
 ## Moves an adjustable screen `raise` metres up its rails (0 right down), as the rider sets it.
@@ -6541,9 +6727,12 @@ func _lamp(color: Color, energy: float, group: String) -> StandardMaterial3D:
 func set_lights(ignition: bool, headlight: bool, fog := false) -> void:
 	headlight = headlight and ignition
 	fog = fog and ignition
+	if _satnav_glow != null and absf(Daylight.darkness() - _satnav_dark) > 0.02:
+		_show_satnav()   # dusk coming on (or dawn): the screen's glow follows it
 	if _lit[0] == ignition and _lit[1] == headlight and _lit[2] == fog:
 		return
 	_lit = [ignition, headlight, fog]
+	_show_satnav()
 	for l in _lamps:
 		var on: bool = headlight if l["group"] == "head" else (fog if l["group"] == "fog" else ignition)
 		var m: StandardMaterial3D = l["mat"]

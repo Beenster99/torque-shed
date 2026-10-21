@@ -580,6 +580,17 @@ func _run_all() -> void:
 	await _test_bike_copy_quality_card()
 	_test_bike_copy_built()
 	await _test_bike_copy_project_card()
+	print("Bike collections: your own bikes on show at your house, bought, ridden out, offered for and sold back")
+	_test_collection_slots()
+	_test_collection_plots()
+	_test_collection_ring()
+	_test_collection_buy()
+	_test_collection_take()
+	_test_collection_offers()
+	_test_collection_sell()
+	_test_collection_stats()
+	_test_collection_save()
+	await _test_collection_session()
 	print("Trip computer and the Adventure Diary (v0.16.0): the sat nav's trip page, the crew's highlights, photos without a stutter, the diary book")
 	_test_adv_diary_trip_maths()
 	await _test_adv_diary_trip_page()
@@ -618,6 +629,15 @@ func _run_all() -> void:
 	print("Simon's v0.19.0 round: a petrol pump on the shed's front wall, on the business")
 	await _test_shed_pump_rules()
 	await _test_shed_pump_session()
+	print("Simon's v0.20.0 round: a phone sat nav in a clip on the handlebar")
+	_test_phone_part()
+	_test_phone_mounts()
+	await _test_phone_screen()
+	_test_phone_buy_fit_save()
+	print("Simon's v0.20.0 round: twin bug-eye headlights and big old-school square ones")
+	_test_headlight_catalogue()
+	_test_headlight_builds()
+	await _test_headlight_lit()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -18143,15 +18163,20 @@ func _test_wash_session() -> void:
 	Input.action_release("act")
 	check(not w.wash_mode.is_empty(), "the trigger on a bike brings the wash controls up too")
 	# The job started again part way through (a redrawn bike): a part that's dinged doesn't again.
-	var rings := Sfx.oneshots_alive()
+	# Counted by the sounds that weren't playing before, so an earlier sound ending doesn't skew it.
+	var old_rings := get_tree().get_nodes_in_group(Sfx.ONESHOT_GROUP)
+	var new_rings := func() -> int:
+		return get_tree().get_nodes_in_group(Sfx.ONESHOT_GROUP).filter(
+				func(p): return not p.is_queued_for_deletion() and not old_rings.has(p)).size()
 	if w.wash != null:
 		w.wash.cues.append({"kind": "part", "name": "Tank", "slot": "zz_test"})
 	await get_tree().physics_frame
-	var first := Sfx.oneshots_alive() - rings
+	var first: int = new_rings.call()
 	if w.wash != null:
 		w.wash.cues.append({"kind": "part", "name": "Tank", "slot": "zz_test"})
 	await get_tree().physics_frame
-	check(first == 1 and Sfx.oneshots_alive() - rings == 1, "a part dings once a go, even if the job starts again (%d, then %d)" % [first, Sfx.oneshots_alive() - rings])
+	var second: int = new_rings.call()
+	check(first == 1 and second == 1, "a part dings once a go, even if the job starts again (%d, then %d)" % [first, second])
 	w.set_tool("hands")
 	await get_tree().physics_frame
 	check(w.wash_mode.is_empty(), "putting the washer away steps back")
@@ -22793,6 +22818,92 @@ func _test_shed_pump_rules() -> void:
 
 func _test_shed_pump_session() -> void:
 	await _shed_pump().test_session()
+
+
+# ---------------------------------------------------------------------------- the phone sat nav (tests/phone_satnav_tests.gd)
+
+func _phone_t() -> RefCounted:
+	return load("res://tests/phone_satnav_tests.gd").new(self)
+
+
+func _test_phone_part() -> void:
+	_phone_t().test_part()
+
+
+func _test_phone_mounts() -> void:
+	_phone_t().test_mounts()
+
+
+func _test_phone_screen() -> void:
+	await _phone_t().test_screen()
+
+
+func _test_phone_buy_fit_save() -> void:
+	_phone_t().test_buy_fit_save()
+
+
+# ---------------------------------------------------------------------------- bug-eye and square headlights (tests/headlight_tests.gd)
+
+func _headlights() -> RefCounted:
+	return load("res://tests/headlight_tests.gd").new(self)
+
+
+func _test_headlight_catalogue() -> void:
+	_headlights().test_catalogue()
+
+
+func _test_headlight_builds() -> void:
+	_headlights().test_builds()
+
+
+func _test_headlight_lit() -> void:
+	await _headlights().test_lit()
+
+
+# ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)
+
+func _collection() -> RefCounted:
+	return load("res://tests/collection_tests.gd").new(self)
+
+
+func _test_collection_slots() -> void:
+	_collection().test_slots()
+
+
+func _test_collection_plots() -> void:
+	_collection().test_plots()
+
+
+func _test_collection_ring() -> void:
+	_collection().test_ring()
+
+
+func _test_collection_buy() -> void:
+	_collection().test_buy()
+
+
+func _test_collection_take() -> void:
+	_collection().test_take()
+
+
+func _test_collection_offers() -> void:
+	_collection().test_offers()
+
+
+func _test_collection_sell() -> void:
+	_collection().test_sell()
+
+
+func _test_collection_stats() -> void:
+	_collection().test_stats()
+
+
+func _test_collection_save() -> void:
+	_collection().test_save()
+
+
+func _test_collection_session() -> void:
+	await _collection().test_session()
 
 
 # ---------------------------------------------------------------------------- the Esc menu (tests/menu_tests.gd)

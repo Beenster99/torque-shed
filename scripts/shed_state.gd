@@ -132,6 +132,13 @@ var contracts := {}
 var sales := {}
 ## The coffee shop next door: its bikers and the trays out (see CoffeeShop).
 var coffee := {}
+## The crew's houses and their own bike collections, offers on them and money owed (see
+## Collection). Sent to the crew on its own when it changes (homes_touched), not with every sync.
+var homes := Collection.empty()
+## The crew's houses or collections changed (HomesView redraws).
+signal homes_changed
+var _homes_dirty := false
+var _homes_sent = null   # the hashes of homes as it last went to the crew (see StateDiff)
 ## The garage's own staff, their jobs and the hiring board (see Staff).
 var staff := Staff.empty()
 ## The paint mixing bay off the paint shop: its stock, tins, recipes and bench (see PaintBay).
@@ -278,6 +285,10 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	_rng.seed = seed_value if seed_value != 0 else int(Time.get_unix_time_from_system())
 	active = true
 	_add_crew(me(), player_name)
+	homes = Collection.empty()
+	_homes_sent = null
+	Collection.arrived(me())
+	homes_touched()
 	var cafe := _demo_bikes_before() if demo_bikes else 0
 	var stand := _new_furniture("stand", Transform3D(Basis(), Workshop.CENTER + Vector3(Workshop.HALF.x - 0.9, 0.0, -0.4)))
 	# The shed's own parts washer and repair bench, against the front wall. They can be moved,
@@ -400,6 +411,12 @@ func load_state(state: Dictionary, player_name: String) -> void:
 	_add_crew(me(), player_name)
 	for peer in Net.players:
 		_add_crew(peer, str(Net.players[peer].get("name", "Rider")))
+	# Sheds saved before the crew had houses: everyone gets one now.
+	homes = Collection.sanitize(state.get("homes"))
+	_homes_sent = null
+	for peer in crew:
+		Collection.arrived(int(peer))
+	homes_touched()
 	# Anything keyed by its own id (bikes, items, furniture and whatever comes next) counts.
 	var top := 0
 	for key in state:
@@ -510,6 +527,8 @@ func join_remote() -> void:
 	contracts = Contracts.empty()
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
+	homes = Collection.empty()
+	_homes_sent = null
 	paint_bay = PaintBay.empty()
 	recovery = Recovery.empty()
 	pool = PoolGame.empty()
@@ -545,6 +564,9 @@ func stop() -> void:
 	contracts = Contracts.empty()
 	sales = Sales.empty()
 	coffee = CoffeeShop.empty()
+	homes = Collection.empty()
+	_homes_sent = null
+	homes_changed.emit()
 	paint_bay = PaintBay.empty()
 	recovery = Recovery.empty()
 	pool = PoolGame.empty()
@@ -2545,6 +2567,12 @@ func check(peer: int, action: Dictionary) -> String:
 		return ShedPump.check(peer, action)
 	if a.begins_with("copy_"):
 		return BikeCopy.check(peer, action)
+	if a.begins_with("home_"):
+		return Collection.check(peer, action)
+	if a in ["mount", "grab_bike"] and bikes.has(bike_id) and Collection.is_private(bike_id) \
+			and Collection.owner_of_bike(bike_id) != Collection.name_of(peer):
+		# One of the crew's own bikes, out of their collection: theirs to ride.
+		return "That's %s's own bike: only they can ride it or wheel it off." % Collection.owner_of_bike(bike_id)
 	if a == "retrieve_bike":
 		return retrieve_check(action)
 	if a == "debug_fix_bike":
@@ -3340,6 +3368,9 @@ func _apply(peer: int, action: Dictionary) -> void:
 	if str(action.get("a", "")).begins_with("copy_"):
 		_copy_apply(peer, action)
 		return
+	if str(action.get("a", "")).begins_with("home_"):
+		_home_apply(peer, action)
+		return
 	if str(action.get("a", "")).begins_with("paint_"):
 		Money.note_use(action)
 		_paint_bay_apply(peer, action)
@@ -3923,6 +3954,11 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "No stand fitted, so it falls over. Fit a side stand."
 			elif showroom_spot_of(bike_id) >= 0:
 				text = _on_stand_text(bike_id)
+			var what := str(bikes[bike_id]["name"])
+			if Collection.parked(bike_id):
+				# Left in its owner's courtyard: back on show at the house.
+				text = "%s is back on show." % what
+				homes_touched()
 		"grab_bike":
 			bikes[bike_id]["pusher"] = peer
 			bikes[bike_id]["stand"] = ""
@@ -3941,6 +3977,10 @@ func _apply(peer: int, action: Dictionary) -> void:
 				text = "No stand fitted, so it falls over."
 			elif on_paddock(bike_id):
 				text = "%s is on the paddock stand in bay %d" % [bikes[bike_id]["name"], bikes[bike_id]["bay"] + 1]
+			var wheeled := str(bikes[bike_id]["name"])
+			if Collection.parked(bike_id):
+				text = "%s is back on show." % wheeled
+				homes_touched()
 		"tune":
 			var key := str(action["key"])
 			var home: Array = TUNE_HOME[key]
@@ -5198,6 +5238,8 @@ func _on_player_joined(id: int, info: Dictionary) -> void:
 	if not active or not is_authority():
 		return
 	_add_crew(id, str(info.get("name", "Rider")))
+	if Collection.arrived(id):
+		homes_touched()   # a new house, or money owed them paid out
 	_mark_dirty()
 	_sync.rpc_id(id, _snapshot())
 	_send_blobs_to(id)
@@ -5605,6 +5647,7 @@ func _snapshot(with_board := true) -> Dictionary:
 		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "adventure_save": adventure_save, "journey": journey, "kit_v": KIT_SAVE}
 	if with_board:
 		state["board"] = board
+		state["homes"] = homes
 	return state
 
 
@@ -5691,8 +5734,34 @@ func _sync(state: Dictionary) -> void:
 	if state.get("board", null) is Dictionary:
 		board = state["board"]
 		board_changed.emit()
+	if state.has("homes"):
+		# The whole shed (a save opened, or joining): the crew's houses and collections with it.
+		homes = Collection.sanitize(state["homes"])
+		_homes_sent = null
+		homes_changed.emit()
 	active = true
 	changed.emit()
+
+
+## Host: the crew's houses or collections changed; they go out to the crew with the next sync.
+func homes_touched() -> void:
+	_homes_dirty = true
+	_mark_dirty()
+
+
+## Host: what changed in the crew's houses and collections since they last went out.
+func _send_homes() -> void:
+	var now = StateDiff.tree(homes)
+	var r := StateDiff.diff(_homes_sent, now, homes)
+	_homes_sent = now
+	if r[0] and Net.is_online():
+		_homes_patch.rpc(r[1])
+
+
+@rpc("authority", "call_remote", "reliable")
+func _homes_patch(patch) -> void:
+	homes = Collection.sanitize(StateDiff.apply(homes, patch))
+	homes_changed.emit()
 
 
 func _process(delta: float) -> void:
@@ -5711,6 +5780,8 @@ func _process_body(delta: float) -> void:
 	Contracts.process(delta)
 	Sales.process(delta)
 	CoffeeShop.process(delta)
+	if Collection.process(delta):
+		homes_touched()
 	PaintBay.process(delta)
 	Recovery.process(delta)
 	PoolGame.process(delta)
@@ -5748,6 +5819,10 @@ func _process_body(delta: float) -> void:
 		_dirty = false
 		if Net.is_online():
 			_send_changes()
+		if _homes_dirty:
+			_homes_dirty = false
+			_send_homes()
+			homes_changed.emit()
 		changed.emit()
 
 
@@ -5848,6 +5923,24 @@ func _money_apply(peer: int, action: Dictionary) -> void:
 	var text := Money.apply(peer, action)
 	if text != "":
 		_tell(peer, text, true)
+	_tidy_dyno()
+	_mark_dirty()
+	changed.emit()
+
+
+## A "home_*" request (see Collection): the crew's own bikes at their houses. Money a player paid
+## that the host turns down goes back to them.
+func _home_apply(peer: int, action: Dictionary) -> void:
+	var why := Collection.check(peer, action)
+	if why != "":
+		if int(action.get("paid", 0)) > 0:
+			give_cash(peer, mini(int(action["paid"]), Progress.MAX_MONEY), "Money back")
+		_tell(peer, why, false)
+		return
+	var text := Collection.apply(peer, action)
+	if text != "":
+		_tell(peer, text, true)
+	homes_touched()
 	_tidy_dyno()
 	_mark_dirty()
 	changed.emit()
