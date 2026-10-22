@@ -645,6 +645,11 @@ func _run_all() -> void:
 	await _test_sound_starter_long_crank()
 	await _test_sound_two_stroke_recorded()
 	_test_sound_two_stroke_synth()
+	print("Simon's v0.21.0 round: proper helmets, visors to pick and flick")
+	await _test_helmet_models()
+	await _test_helmet_visors()
+	_test_helmet_choices_save()
+	await _test_helmet_visor_toggle()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22865,6 +22870,28 @@ func _test_headlight_builds() -> void:
 
 func _test_headlight_lit() -> void:
 	await _headlights().test_lit()
+
+
+# ---------------------------------------------------------------------------- helmets (tests/helmet_tests.gd)
+
+func _helmets() -> RefCounted:
+	return load("res://tests/helmet_tests.gd").new(self)
+
+
+func _test_helmet_models() -> void:
+	await _helmets().test_models()
+
+
+func _test_helmet_visors() -> void:
+	await _helmets().test_visors()
+
+
+func _test_helmet_choices_save() -> void:
+	_helmets().test_choices_save()
+
+
+func _test_helmet_visor_toggle() -> void:
+	await _helmets().test_visor_toggle()
 
 
 # ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)

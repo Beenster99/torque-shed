@@ -5332,7 +5332,7 @@ func _build_dressed_rider() -> void:
 	var torso := RiderFigure.limb(_rider, hips, shoulders, 0.15, jm, hidden)
 	torso.basis = torso.basis * Basis.from_scale(Vector3(1.25, 1.0, 0.8))
 	var head_from := _rider.get_child_count()
-	RiderFigure.helmet(_rider, shoulders + Vector3(0.0, 0.2, -0.08), 0.15, str(worn["helmet"]), tint, hidden, true)
+	RiderFigure.helmet(_rider, shoulders + Vector3(0.0, 0.2, -0.08), 0.15, str(worn["helmet"]), tint, hidden, true, worn)
 	_rider_head = _make_pivot(shoulders + NECK, _rider.get_children().slice(head_from), "Head")
 	var back := (shoulders - hips).normalized().cross(Vector3.RIGHT)
 	if jx.has("hump"):

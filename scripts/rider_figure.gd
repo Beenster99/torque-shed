@@ -36,13 +36,16 @@ static func color_of(item: Dictionary, key: String, tint: Color) -> Color:
 
 ## The material for `item_id` in the player's colour `tint`. `part` "trim" gives the plain trim
 ## colour (buckles, cuffs, peaks), "base" the plain base colour, "" the patterned cloth or shell.
-static func material(item_id: String, tint: Color, part := "") -> StandardMaterial3D:
+## `paint`, when not clear, takes the place of the base colour (a helmet's chosen shell colour).
+static func material(item_id: String, tint: Color, part := "", paint := Color(0, 0, 0, 0)) -> StandardMaterial3D:
 	var key := "%s|%s|%s" % [item_id, part, tint.to_html()]
+	if paint.a > 0.0:
+		key += "|" + paint.to_html()
 	if _mats.has(key):
 		return _mats[key]
 	var item := RiderGear.get_item(item_id)
 	var m := StandardMaterial3D.new()
-	var base := color_of(item, "base", tint)
+	var base := color_of(item, "base", tint) if paint.a <= 0.0 else paint
 	var trim := color_of(item, "trim", tint)
 	var accent := color_of(item, "accent", tint)
 	var pattern := str(item.get("pattern", "plain"))
@@ -196,76 +199,23 @@ static func basis_along(dir: Vector3) -> Basis:
 
 # ---------------------------------------------------------------------------- the pieces
 
-## A helmet (or the cap) centred at `c`, `r` its shell radius, facing -Z. Returns its meshes.
-static func helmet(parent: Node3D, c: Vector3, r: float, item_id: String, tint: Color, layers := 1, on_bike := false) -> Array:
+## A helmet (or the cap) centred at `c`, `r` its shell radius, facing -Z, with the face under
+## it (eyes, brows and nose). `on_bike` adds the head and neck too (a seated rider has none of
+## its own), and swaps the cap for a plain lid in its colour: nobody rides in a cap. `worn` is
+## the worn set (see RiderGear), for the helmet's colour, visor and goggles and whose visor it
+## follows. Returns what it added: the helmet's node (see HelmetModel), or the cap's meshes.
+static func helmet(parent: Node3D, c: Vector3, r: float, item_id: String, tint: Color, layers := 1, on_bike := false,
+		worn := {}) -> Array:
 	var item := RiderGear.get_item(item_id)
-	var shape := str(item.get("shape", "full"))
-	var shell := material(item_id, tint)
-	var trim := material(item_id, tint, "trim")
-	var visor_c: Color = item.get("visor", Color(0.02, 0.02, 0.03))
-	var visor := StandardMaterial3D.new()
-	visor.albedo_color = visor_c
-	visor.metallic = 0.9
-	visor.roughness = 0.05
-	var skin := StandardMaterial3D.new()
-	skin.albedo_color = SKIN
-	skin.roughness = 0.6
-	var glass := StandardMaterial3D.new()
-	glass.albedo_color = Color(0.15, 0.2, 0.25)
-	glass.metallic = 0.8
-	glass.roughness = 0.1
-	var out := []
-	if shape == "cap" and on_bike:
-		shape = "full"   # nobody rides in a cap: a plain lid in the same colour
-	match shape:
-		"cap":
-			# The cap sits on the head (drawn with it): a crown and a peak.
-			var crown := mesh(parent, sphere(0.5), shell, c + Vector3(0.0, r * 0.45, r * 0.12), layers)
-			crown.scale = Vector3(r * 1.65, r * 1.0, r * 1.75)
-			out.append(crown)
-			out.append(box(parent, c + Vector3(0.0, r * 0.25, -r * 1.05), Vector3(r * 1.35, r * 0.12, r * 0.85), shell, layers))
-			return out
-		"full", "race":
-			out.append(mesh(parent, sphere(r), shell, c, layers))
-			var v := mesh(parent, sphere(r * 0.67), visor, c + Vector3(0.0, r * 0.02, -r * 0.62), layers)
-			v.scale = Vector3(1.15, 0.6, 0.75)
-			out.append(v)
-			if shape == "race":
-				# The rear spoiler.
-				var fin := box(parent, c + Vector3(0.0, r * 0.62, r * 0.72), Vector3(r * 0.7, r * 0.12, r * 0.45), trim, layers)
-				fin.rotation.x = -0.35
-				out.append(fin)
-		"open", "retro":
-			var top := mesh(parent, sphere(r), shell, c + Vector3(0.0, r * (0.3 if shape == "retro" else 0.12), r * 0.08), layers)
-			top.scale = Vector3(1.0, 0.8 if shape == "retro" else 0.95, 1.0)
-			out.append(top)
-			# The face shows through the front, in front of the shell.
-			var face := mesh(parent, sphere(r * 0.62), skin, c + Vector3(0.0, -r * 0.12, -r * 0.55), layers)
-			face.scale = Vector3(1.0, 1.15, 0.9)
-			out.append(face)
-			if shape == "open":
-				# A short snap-on peak.
-				var peak := box(parent, c + Vector3(0.0, r * 0.42, -r * 0.92), Vector3(r * 1.1, r * 0.06, r * 0.4), trim, layers)
-				peak.rotation.x = -0.2
-				out.append(peak)
-			else:
-				# Round goggles on a strap.
-				for side in [-1.0, 1.0]:
-					out.append(tube(parent, c + Vector3(side * r * 0.32, r * 0.08, -r * 0.88), c + Vector3(side * r * 0.32, r * 0.08, -r * 1.02),
-						r * 0.24, glass, layers))
-				var strap := tube(parent, c + Vector3(0.0, r * 0.04, 0.0), c + Vector3(0.0, r * 0.16, 0.0), r * 0.98, trim, layers)
-				out.append(strap)
-		"mx":
-			var s := mesh(parent, sphere(r), shell, c, layers)
-			s.scale = Vector3(1.0, 1.0, 1.08)
-			out.append(s)
-			var peak := box(parent, c + Vector3(0.0, r * 0.62, -r * 0.85), Vector3(r * 1.2, r * 0.07, r * 0.9), shell, layers)
-			peak.rotation.x = -0.32
-			out.append(peak)
-			out.append(box(parent, c + Vector3(0.0, -r * 0.55, -r * 0.82), Vector3(r * 0.75, r * 0.38, r * 0.55), trim, layers))
-			out.append(box(parent, c + Vector3(0.0, r * 0.12, -r * 0.95), Vector3(r * 1.05, r * 0.32, r * 0.18), glass, layers))
-			out.append(tube(parent, c + Vector3(0.0, r * 0.04, 0.0), c + Vector3(0.0, r * 0.18, 0.0), r * 1.03, trim, layers))
-	return out
+	if str(item.get("shape", "")) == "cap" and not on_bike:
+		# The cap sits on the head (drawn with it): a crown and a peak, and the face under the peak.
+		var shell := material(item_id, tint, "", RiderGear.shell_color(worn, tint))
+		var face := HelmetModel.face(parent, c, r * 1.1, layers)
+		var crown := mesh(parent, sphere(0.5), shell, c + Vector3(0.0, r * 0.45, r * 0.12), layers)
+		crown.scale = Vector3(r * 1.65, r * 1.0, r * 1.75)
+		return [face, crown, box(parent, c + Vector3(0.0, r * 0.25, -r * 1.05), Vector3(r * 1.35, r * 0.12, r * 0.85), shell, layers)]
+	return [HelmetModel.face(parent, c + HelmetModel.HEAD_AT * r, r, layers, on_bike),
+		HelmetModel.build(parent, c, r, item_id, tint, layers, worn)]
 
 
 ## A gloved hand at `at`, the forearm running off towards `elbow`.
@@ -386,9 +336,9 @@ static func standing(body: Node3D, head: Node3D, gear: Dictionary, tint: Color) 
 	var lid := str(worn["helmet"])
 	var shape := str(RiderGear.get_item(lid).get("shape", "full"))
 	if shape == "cap":
-		helmet(head, Vector3(0.0, 0.0, 0.0), 0.15, lid, tint)
+		helmet(head, Vector3(0.0, 0.0, 0.0), 0.15, lid, tint, 1, false, worn)
 	else:
-		helmet(head, Vector3(0.0, 0.03, 0.0), 0.165, lid, tint)
+		helmet(head, Vector3(0.0, 0.03, 0.0), 0.165, lid, tint, 1, false, worn)
 
 
 ## Swings a standing figure's legs (and bobs it a touch) for walking: `phase` is how far
