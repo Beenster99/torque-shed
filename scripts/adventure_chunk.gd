@@ -18,14 +18,14 @@ const LAND_OUT := [0.0, 0.9, 2.5, 6.0, 12.0, 20.0, 30.0, 46.0, 70.0, 110.0, 170.
 ## least this far out past the column before it (m), and this far for each metre it goes down
 ## (as far out as down: steep, but not a wall).
 const FAR_SIDE_DROP := 160.0
-## On a real road the chunk's land runs out only this many of LAND_OUT's columns (to 110 m); the land beyond is RealLand's
-## (the garage map's near, middle and far blocks), the last column here running on down under it.
+## The chunk's land runs out only this many of LAND_OUT's columns (to 110 m); the land beyond is RealLand's (the garage
+## map's near, middle and far blocks), the last column here running on down under it.
 const REAL_LAND_COLS := 10
 
 
 ## How many columns of land a chunk of `route` has each side of the road.
-static func land_cols(route: AdventureRoute) -> int:
-	return REAL_LAND_COLS if route.real != null else LAND_OUT.size()
+static func land_cols(_route: AdventureRoute) -> int:
+	return REAL_LAND_COLS
 const FAR_SIDE_RUN := 30.0
 const FAR_SIDE_SLOPE := 1.0
 const COLLIDE_COLS := 7
@@ -185,9 +185,8 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 		# Solid out to COLLIDE_COLS: the inner columns (the right's first, the left's last).
 		out["land_faces_%d" % side] = _faces(v, rows, cols, COLLIDE_COLS + 1, side < 0)
 	out["lines"] = _lines(route, i0, i1, ax, az, surf)
-	# The side roads and the paint at the junctions, and any tunnel through here.
+	# The side roads and the paint at the junctions.
 	AdventureJunctions.chunk_parts(route, i0, i1, ax, az, land, out)
-	AdventureTunnels.build(route, i0, i1, ax, az, land, out)
 	_scenery(route, c, i0, i1, ax, az, surf, out)
 	out["ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	return out
@@ -207,13 +206,13 @@ static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: fl
 		if other != here:
 			col = col.lerp(lands[other], 0.35)
 			patch = patch.lerp(patches[other], 0.35)
-	var n := route._noise_fine.get_noise_2d(x * 1.7, z * 1.7) * 0.5 + 0.5
+	var n := route.patches.get_noise_2d(x * 1.7, z * 1.7) * 0.5 + 0.5
 	col = col.lerp(patch, smoothstep(0.35, 0.75, n))
 	if k <= 1:
 		col = route.look["verge"][here]
 	elif k == 2:
 		col = col.lerp(route.look["verge"][here], 0.5)
-	if k > 1 and route.real != null:
+	if k > 1:
 		var tint: Array = COVER_TINT.get(route.cover_at(x, z), [])
 		if not tint.is_empty():
 			col = col.lerp(tint[0] as Color, float(tint[1]) * (0.5 if k == 2 else 1.0))
@@ -602,8 +601,6 @@ static func _on_land(route: AdventureRoute, i: int, lat: float, ax: float, az: f
 	var h := route.hd[i]
 	if absf(lat) > route.land_reach(i, int(signf(lat))) * 0.95:
 		return Transform3D()
-	if absf(lat) < route.width[i] * 0.5 + 14.0 and route.in_tunnel(i):
-		return Transform3D()   # nothing by the road in a tunnel, nor on the rock just over it
 	var wx := route.px[i] + cos(h) * lat
 	var wz := route.pz[i] + sin(h) * lat
 	if not close and route.clearance(wx, wz) < keep_clear:
@@ -663,7 +660,6 @@ static func step(job: Dictionary) -> bool:
 			_commit_bodies(data, node)
 		2:
 			_commit_junctions(data, node, scale)
-			AdventureTunnels.commit(data, node)
 		3:
 			_commit_scenery(data, node, scale)
 		4:

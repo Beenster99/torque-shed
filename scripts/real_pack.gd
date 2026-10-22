@@ -1,17 +1,15 @@
 class_name RealPack
 extends RefCounted
-## A real road baked by tools/route_bake.py, ridden as an adventure (see AdventureRoute.plan_real): the road as
-## knots every 4 m with its height, per 128 m chunk its surface, width, class and name, the turn-by-turn
-## instructions, and the land beside it (RealTerrain). A pack is a folder under data/routes/ holding pack.json,
-## route.json and tiles/. Everything is in the adventure's route frame: metres from the start, +x east, -z north.
-## Packs are read-only once loaded, so one can be shared by every thread.
+## A real road planned across a region by RoutePlanner from the crew's pins, ridden as an adventure (see
+## AdventureRoute.plan_real): the road as knots every 4 m with its height, per 128 m chunk its surface, width, class
+## and name, the turn-by-turn instructions, and the land beside it (RealTerrain). Everything is in the adventure's
+## route frame: metres from the start, +x east, -z north. Packs are read-only once planned, so one can be shared by
+## every thread.
 
-const FORMAT := 7
 ## What covers the land (RealTerrain.cover), by id: the baker's list (tools/land_bake.py COVER).
 const COVER: Array[String] = ["grass", "forest", "crop", "shrub", "barren", "urban", "sand", "wetland", "water", "rock"]
 ## The kinds of building (tools/land_bake.py BUILDING_KINDS), by id.
 const BUILDING_KINDS: Array[String] = ["house", "shed", "barn", "shop", "block", "industrial", "worship", "civic"]
-const DIR := "res://data/routes"
 
 static var _cache := {}
 static var _cache_lock := Mutex.new()
@@ -61,112 +59,19 @@ var summary := {}
 var region := "world"
 
 
-## The ids of the packs the game has.
-static func list() -> Array[String]:
-	var out: Array[String] = []
-	var d := DirAccess.open(DIR)
-	if d == null:
-		return out
-	for name in d.get_directories():
-		if FileAccess.file_exists(DIR.path_join(name).path_join("pack.json")):
-			out.append(name)
-	out.sort()
-	return out
-
-
-## The pack `pack_id` (read once, then shared), or null with the reason in the log.
+## The planned pack `pack_id` (see register), or null when this game hasn't planned it.
 static func get_pack(pack_id: String) -> RealPack:
 	_cache_lock.lock()
-	if _cache.has(pack_id):
-		var got: RealPack = _cache[pack_id]
-		_cache_lock.unlock()
-		return got
+	var got: RealPack = _cache.get(pack_id)
 	_cache_lock.unlock()
-	var pack := _load(pack_id)
-	_cache_lock.lock()
-	_cache[pack_id] = pack
-	_cache_lock.unlock()
-	return pack
+	return got
 
 
-## Makes a pack planned in the game (RoutePlanner) available by its id, as a baked one is: the world, the magazine and
-## the co-op check all find a road with get_pack.
+## Makes a pack planned in the game (RoutePlanner) available by its id: get_pack finds it.
 static func register(pack: RealPack) -> void:
 	_cache_lock.lock()
 	_cache[pack.id] = pack
 	_cache_lock.unlock()
-
-
-static func _load(pack_id: String) -> RealPack:
-	var dir := DIR.path_join(pack_id)
-	var meta = _json(dir.path_join("pack.json"))
-	if not meta is Dictionary:
-		if FileAccess.file_exists(dir.path_join("pack.json")):
-			push_error("Real road: no readable pack.json in %s" % dir)
-		return null
-	if int(meta.get("format", 0)) != FORMAT:
-		push_error("Real road: %s is format %s, this game reads %d" % [dir, meta.get("format"), FORMAT])
-		return null
-	var route = _json(dir.path_join("route.json"))
-	if not route is Dictionary or not route.get("x") is Array or (route["x"] as Array).size() < 10:
-		push_error("Real road: no readable route.json in %s" % dir)
-		return null
-	var p := RealPack.new()
-	p.id = pack_id
-	p.title = str(meta.get("title", pack_id))
-	p.hash = str(meta.get("hash", ""))
-	p.credits = meta.get("credits", [])
-	p.theme = str(meta.get("theme", "hills"))
-	p.sea = bool(meta.get("sea", false))
-	p.length_m = float(meta.get("length_m", 0.0))
-	p.run_out_m = float(meta.get("run_out_m", 600.0))
-	p.step = float(route.get("step", 4.0))
-	var n := int(route["n"])
-	p.x.resize(n)
-	p.z.resize(n)
-	p.e.resize(n)
-	var xs: Array = route["x"]
-	var zs: Array = route["z"]
-	var es: Array = route["e"]
-	for i in n:
-		p.x[i] = float(xs[i])
-		p.z[i] = float(zs[i])
-		p.e[i] = float(es[i])
-	p.chunks = route["chunks"]
-	p.names = route["names"]
-	p.turns = route.get("turns", [])
-	var knots_per_chunk := int(128.0 / p.step)
-	var rows = _json(dir.path_join("buildings.json"))
-	if rows is Array:
-		for b: Array in rows:
-			var c := int(b[7]) / knots_per_chunk
-			if not p.buildings.has(c):
-				p.buildings[c] = []
-			(p.buildings[c] as Array).append(b)
-		p.building_count = (rows as Array).size()
-	var marks = _json(dir.path_join("landmarks.json"))
-	if marks is Array:
-		p.landmarks = marks
-	var js = _json(dir.path_join("junctions.json"))
-	if js is Array:
-		p.junctions = js
-	var fk = _json(dir.path_join("forks.json"))
-	if fk is Array:
-		p.forks = fk
-	var places = _json(dir.path_join("pois.json"))
-	if places is Array:
-		p.pois = places
-	p.region = str(meta.get("region", "world"))
-	p.summary = meta.get("summary", {})
-	p.fork_count = int(meta.get("fork_count", p.forks.size()))
-	p.terrain = RealTerrain.new(dir, meta)
-	return p
-
-
-static func _json(path: String) -> Variant:
-	if not FileAccess.file_exists(path):
-		return null
-	return JSON.parse_string(FileAccess.get_file_as_string(path))
 
 
 ## The speed limit (km/h) at `s` metres along the road.

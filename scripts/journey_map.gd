@@ -341,8 +341,7 @@ static func start_journey() -> bool:
 	var title := "Across %s" % (region.title if region != null else "the map")
 	if names.size() >= 2 and str(names[0]) != "" and str(names[names.size() - 1]) != "" and names[0] != names[names.size() - 1]:
 		title = "%s to %s" % [names[0], names[names.size() - 1]]
-	Shed.request({"a": "adventure_start", "plan": plan, "seed": int(("0x" + pack.hash.left(7)).hex_to_int()), "title": title,
-		"dest": AdventureDest.default_for(pack.theme, 1)})
+	Shed.request({"a": "adventure_start", "plan": plan, "seed": int(("0x" + pack.hash.left(7)).hex_to_int()), "title": title})
 	return true
 
 

@@ -173,7 +173,7 @@ func _cover_icon(d: Dictionary) -> Texture2D:
 		if img and not img.is_empty():
 			img.resize(320, 180, Image.INTERPOLATE_BILINEAR)
 			return ImageTexture.create_from_image(img)
-	return AdventureDest.picture(str(d.get("dest", "big_rally")), 0) if AdventureDest.exists(str(d.get("dest", ""))) else null
+	return AdventureDest.picture(AdventureDest.theme_of(d), 0) if str(d.get("dest", "")) != "" else null
 
 
 ## The diary `id` open at its cover. False when there's no such diary here.
@@ -370,9 +370,9 @@ class _Page extends Control:
 		draw_string(font, Vector2(36, 196), "To %s  ·  %d km  ·  %s" % [AdventureDest.name_of(dest), roundi(float(d.get("km", 0.0))), str(d.get("date", ""))],
 			HORIZONTAL_ALIGNMENT_LEFT, size.x - 72.0, 17, FADED)
 		# The destination's picture, as on the shed wall, taped in.
-		if AdventureDest.exists(dest):
+		if dest != "":
 			var crew: Array = d.get("crew", [])
-			var tex := AdventureDest.picture(dest, maxi(1, crew.size()))
+			var tex := AdventureDest.picture(AdventureDest.theme_of(d), maxi(1, crew.size()))
 			_polaroid(Rect2(70, 226, 420, 280), tex, -2.0, "", font, Rect2())
 		var crew_t := ", ".join((d.get("crew", []) as Array).map(func(x): return str(x)))
 		draw_multiline_string(font, Vector2(36, 560), "The crew: %s" % crew_t, HORIZONTAL_ALIGNMENT_LEFT, size.x - 72.0, 17, 2, INK)

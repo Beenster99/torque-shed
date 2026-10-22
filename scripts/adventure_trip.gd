@@ -10,9 +10,9 @@ extends Node
 ## world's floating origin, puts a bike that's left the road back on it, tells the host when you
 ## reach the destination, runs the day faster (Adventure.day_rate) and shows how far you've come.
 ##
-## Once anyone reaches the destination, everyone's brought to it (parked by the set piece, see
-## AdventureDest) for the arrival moment: the camera pulls back from the crew to take in what
-## they came for, a title card, and the group photo (a flash, then the photo; it's kept in this
+## Once anyone reaches the destination, everyone's brought to it (parked together past the finish, see
+## AdventureDest) for the arrival moment: the camera pulls back from the crew to take in where
+## they have come, a title card, and the group photo (a flash, then the photo; it's kept in this
 ## machine's album and hangs on the shed wall). Then it's theirs to look round until the host
 ## picks Ride home. It also holds the full-screen route planner (JourneyMap), a close-up of the route planner channel TVs have.
 ##
@@ -186,26 +186,15 @@ func _on_picks_taken() -> void:
 		_map.refresh()
 
 
-## Why this game can't ride the real road in adventure `info` ("" if it can, or the road is made up): it
-## doesn't have the road, or its copy differs from the host's, and the ride would not be the same road.
+## Why this game can't ride the road of adventure `info` ("" if it can): it can't plan the crew's journey (it doesn't
+## have that part of the world), or it planned a different road from the host's, and the ride would not be the same.
 static func real_mismatch(info: Dictionary) -> String:
-	if info.get("plan") is Dictionary:
-		# A journey the crew planned on the map: this game plans it too, and must get the host's road.
-		var plan: Dictionary = info["plan"]
-		var res := AdventurePlans.result(plan, true)
-		if not bool(res.get("ok", false)):
-			return str(res.get("error", "This game can't plan that journey."))
-		if str(info.get("real_hash", "")) != (res["pack"] as RealPack).hash:
-			return "Your game planned a different road from the host's: update the game to join."
-		return ""
-	var id := str(info.get("real", ""))
-	if id == "":
-		return ""
-	var pack := RealPack.get_pack(id)
-	if pack == null:
-		return "This ride is along a real road your game doesn't have (%s): update the game to join." % id
-	if str(info.get("real_hash", "")) != pack.hash:
-		return "Your copy of the %s road isn't the host's: update the game to join." % pack.title
+	var plan: Dictionary = info.get("plan", {}) if info.get("plan") is Dictionary else {}
+	var res := AdventurePlans.result(AdventurePlans.clean(plan), true)
+	if not bool(res.get("ok", false)):
+		return str(res.get("error", "This game can't plan that journey."))
+	if str(info.get("real_hash", "")) != (res["pack"] as RealPack).hash:
+		return "Your game planned a different road from the host's: update the game to join."
 	return ""
 
 
@@ -232,7 +221,7 @@ func enter() -> void:
 	if main.geometry.active:
 		main.geometry.close()
 	world = AdventureWorld.new()
-	world.setup(int(info["seed"]), float(info["km"]), str(info.get("theme", "varied")), str(info.get("dest", "")), str(info.get("real", "")))
+	world.setup(AdventurePlans.pack_for(AdventurePlans.clean(info["plan"])), int(info["seed"]))
 	world.apply_picks(AdventureForks.picks())   # a ride picked up again: the ways already taken
 	_fork_due = {}
 	world.focus = focus_points
@@ -767,7 +756,7 @@ func home_reason() -> String:
 # ---------------------------------------------------------------------------- arriving
 
 ## Everyone's at the destination (someone got there first): you're brought to it too, parked by
-## the set piece with the rest of the crew, and the moment plays. The photo goes in your album.
+## the finish with the rest of the crew, and the moment plays. The photo goes in your album.
 func arrive_moment() -> void:
 	moment_done = true
 	var photo = Shed.adventure.get("photo", {})
@@ -791,7 +780,7 @@ func _my_name() -> String:
 	return str(Shed.crew.get(Shed.me(), {}).get("name", Settings.player_name))
 
 
-## Puts you at your place by the set piece: on your bike, stopped, or on foot beside the road.
+## Puts you at your place past the finish: on your bike, stopped, or on foot beside the road.
 func park_at_dest() -> void:
 	var ids := Shed.crew.keys()
 	ids.sort()
@@ -824,13 +813,12 @@ func _start_moment() -> void:
 		_moment_cam.far = 6000.0
 		main.world.add_child(_moment_cam)
 	_moment_cam.current = true
-	var dest := AdventureDest.of(str(Shed.adventure.get("dest", "")))
 	var mins := maxi(1, (Time.get_ticks_msec() - _started_at) / 60000)
 	_card_title.text = AdventureDest.name_of(str(Shed.adventure.get("dest", "")))
 	_card_sub.text = "%s  ·  %d km  ·  %s\n%s" % [str(Shed.adventure.get("title", "")), roundi(float(Shed.adventure.get("km", 0.0))),
-		"%d h %02d min in the saddle" % [mins / 60, mins % 60] if mins >= 60 else "%d min in the saddle" % mins, str(dest.get("line", ""))]
+		"%d h %02d min in the saddle" % [mins / 60, mins % 60] if mins >= 60 else "%d min in the saddle" % mins, "You made it."]
 	var photo: Dictionary = Shed.adventure.get("photo", {})
-	_polaroid_pic.texture = AdventureDest.picture(str(Shed.adventure.get("dest", "")), maxi(1, (photo.get("names", []) as Array).size()))
+	_polaroid_pic.texture = AdventureDest.picture(str(Shed.adventure.get("theme", "varied")), maxi(1, (photo.get("names", []) as Array).size()))
 	_polaroid_caption.text = AdventureDest.caption(photo) if not photo.is_empty() else ""
 	_card.visible = true
 	_card.modulate.a = 0.0
@@ -839,7 +827,7 @@ func _start_moment() -> void:
 	Sfx.play_ui("levelup", -4.0)
 
 
-## Runs the moment on: the camera pulling back from the crew to take in the set piece, the
+## Runs the moment on: the camera pulling back from the crew to take in the land ahead, the
 ## title card fading in and out, and the flash and the photo.
 func _tick_moment(delta: float) -> void:
 	moment_t += delta

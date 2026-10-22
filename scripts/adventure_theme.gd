@@ -1,31 +1,15 @@
 class_name AdventureTheme
 extends RefCounted
-## The kinds of adventure ride (Adventure.THEMES): "varied" (a bit of everything, the first
-## build's road), "desert", "alpine", "coastal" and "hills". A theme is plain data read by the
-## planner (AdventureRoute: its bends, widths, climbs, surfaces and the ways at its forks), the
-## chunk builder (AdventureChunk: the land's colours, the scenery, walls and hedges, the far
-## mesas, crags and lighthouses), the stops (AdventureStops: the building style), the far ground
-## or the sea (AdventureWorld) and the trip (AdventureTrip: the sky's tint, the weather's odds
-## and the time of day at the start). Everything it draws is from the route's seed, so every
-## player's game has the same ride; "varied" leaves everything as the first build planned it.
+## The look of an adventure ride's land (each region's, see RealRegion.theme): "varied", "desert",
+## "alpine", "coastal" and "hills". A theme is plain data read by the chunk builder (AdventureChunk:
+## the land's colours, the scenery, walls and hedges, the far mesas, crags and lighthouses), the
+## stops (AdventureStops: the building style), the far ground or the sea (AdventureWorld) and the
+## trip (AdventureTrip: the sky's tint, the weather's odds and the time of day at the start).
+## Everything it draws is from the route's seed, so every player's game has the same ride.
 ##
 ## Each theme's entry (all optional but name; a missing one is "varied"'s):
 ##   name, roads: what the menus and the start's message call it ("Desert", "desert roads").
-##   kinds: weights of AdventureRoute.KINDS; bends: {kind: overrides of AdventureRoute.BENDS[kind]}.
-##   bag, surf_len: the surfaces drawn in turn and how long each lasts (AdventureRoute.SURFACE_BAG).
-##   widths: multipliers on the chances of each road width (narrow lanes in the hills).
-##   heights: {h0 start height, lo, hi (the road turns back down past it), steep (times the grades),
-##       up (the odds a climb rather than a descent), wave ([metres from top to top, the valleys'
-##       height, the tops']: mountain passes, climbing to each top and down the other side)}.
-##   relief: {pitch: [odds a stretch is a short steep pitch, its steepest from, to (%)], rollers: [odds
-##       of a run of dips and rises, their steepest from, to (%)], switchbacks: [odds a section is a
-##       stack of hairpins up a mountainside, legs from, to], tunnels: [the first (m in), then every
-##       from, to (m), each from, to (m) long]} (see AdventureRoute._plan_heights, _plan_tunnels).
-##   hills, lift: times the land's own rise and fall, and the high ground off towards the skyline.
-##   snow: snow on the road over the tops (the highest fifth of the road, and never below this).
-##   track_sand, pass_rise, pass_snow: a fork's gravel track has sand in it at these odds, a scenic
-##       pass climbs this far over its top, and has snow over a high top.
-##   sea: the sea (at SEA_Y) off to the left of the road, with cliffs and beaches down to it.
+##   sea: the region has the sea (at SEA_Y) round it.
 ##   land, patch, verge, road: {surface: Color} over AdventureSurface's LAND_COLOR, LAND_PATCH,
 ##       VERGE_COLOR and ROAD_COLOR.
 ##   scenery: {surface: {kind: how many a chunk}} over AdventureChunk.SCENERY.
@@ -41,18 +25,9 @@ const IDS: Array[String] = ["varied", "desert", "alpine", "coastal", "hills"]
 const SEA_Y := 0.0
 
 const DATA := {
-	"varied": {"name": "Varied", "roads": "varied roads", "style": "mixed", "start_hour": -1.0,
-		"relief": {"pitch": [0.16, 8.0, 13.0], "rollers": [0.12, 3.0, 6.0]}},
+	"varied": {"name": "Varied", "roads": "varied roads", "style": "mixed", "start_hour": -1.0},
 	"desert": {
 		"name": "Desert", "roads": "desert roads: sand, long straights and mesas",
-		"kinds": {"straight": 0.52, "sweeping": 0.33, "curvy": 0.12, "very_curvy": 0.03},
-		"bends": {"straight": {"len": [1400.0, 3600.0], "gap": [400.0, 1200.0]}},
-		"bag": ["tarmac", "tarmac", "tarmac", "sand", "sand", "sand", "gravel"],
-		"surf_len": [2000.0, 5200.0],
-		"widths": {"two_lane": 1.6, "single": 0.4},
-		"heights": {"h0": 320.0, "lo": 180.0, "hi": 760.0, "steep": 0.5, "up": 0.5},
-		"relief": {"pitch": [0.08, 6.0, 10.0], "rollers": [0.4, 3.0, 7.0]},
-		"hills": 0.45, "lift": 0.5, "track_sand": 0.95, "pass_rise": [90.0, 200.0], "pass_snow": false,
 		"land": {"tarmac": Color(0.72, 0.55, 0.38), "gravel": Color(0.66, 0.48, 0.34), "sand": Color(0.84, 0.62, 0.42)},
 		"patch": {"tarmac": Color(0.6, 0.5, 0.32), "gravel": Color(0.58, 0.38, 0.28), "sand": Color(0.76, 0.52, 0.36)},
 		"verge": {"tarmac": Color(0.74, 0.6, 0.44), "gravel": Color(0.7, 0.54, 0.4), "sand": Color(0.8, 0.62, 0.44)},
@@ -67,16 +42,7 @@ const DATA := {
 		"start_hour": 8.0,
 	},
 	"alpine": {
-		"name": "Alpine", "roads": "mountain passes: hairpins, climbs and snow near the top",
-		"kinds": {"straight": 0.04, "sweeping": 0.18, "curvy": 0.3, "very_curvy": 0.48},
-		"bends": {"very_curvy": {"r": [16.0, 34.0], "arc": [100.0, 168.0], "t": [10.0, 18.0], "gap": [20.0, 90.0]}},
-		"bag": ["tarmac", "tarmac", "tarmac", "tarmac", "gravel"],
-		"surf_len": [1500.0, 4000.0],
-		"widths": {"two_lane": 0.5, "single": 0.6},
-		"heights": {"h0": 820.0, "lo": 450.0, "hi": 2500.0, "steep": 1.3, "up": 0.6, "wave": [32000.0, 750.0, 2400.0]},
-		"relief": {"pitch": [0.2, 10.0, 15.0], "rollers": [0.05, 3.0, 5.0], "switchbacks": [0.2, 4, 8],
-			"tunnels": [2500.0, 5000.0, 11000.0, 160.0, 650.0]},
-		"hills": 1.7, "lift": 2.6, "snow": 1500.0, "track_sand": 0.0, "pass_rise": [260.0, 520.0], "pass_snow": true,
+		"name": "Alpine", "roads": "mountain passes, climbs and snow near the top",
 		"land": {"tarmac": Color(0.27, 0.44, 0.19), "gravel": Color(0.33, 0.4, 0.24)},
 		"patch": {"tarmac": Color(0.38, 0.5, 0.22), "gravel": Color(0.46, 0.44, 0.4)},
 		"verge": {"tarmac": Color(0.32, 0.42, 0.22)},
@@ -91,12 +57,6 @@ const DATA := {
 	},
 	"coastal": {
 		"name": "Coastal", "roads": "cliff roads by the sea, beaches and lighthouses",
-		"kinds": {"straight": 0.14, "sweeping": 0.42, "curvy": 0.34, "very_curvy": 0.1},
-		"bag": ["tarmac", "tarmac", "tarmac", "tarmac", "gravel", "sand"],
-		"surf_len": [1800.0, 4600.0],
-		"heights": {"h0": 70.0, "lo": 28.0, "hi": 170.0, "steep": 0.9, "up": 0.5},
-		"relief": {"pitch": [0.32, 9.0, 14.0], "rollers": [0.12, 3.0, 6.0], "tunnels": [7000.0, 16000.0, 30000.0, 110.0, 260.0]},
-		"hills": 0.7, "lift": 0.7, "track_sand": 0.7, "pass_rise": [60.0, 120.0], "pass_snow": false,
 		"sea": true,
 		"land": {"tarmac": Color(0.36, 0.48, 0.22), "gravel": Color(0.4, 0.46, 0.26), "sand": Color(0.86, 0.8, 0.62)},
 		"patch": {"tarmac": Color(0.5, 0.52, 0.26), "gravel": Color(0.48, 0.44, 0.3), "sand": Color(0.72, 0.7, 0.5)},
@@ -113,13 +73,6 @@ const DATA := {
 	},
 	"hills": {
 		"name": "Hills", "roads": "narrow lanes between stone walls and hedges, sheep on the hills",
-		"kinds": {"straight": 0.08, "sweeping": 0.24, "curvy": 0.46, "very_curvy": 0.22},
-		"bag": ["tarmac", "tarmac", "tarmac", "tarmac", "gravel"],
-		"surf_len": [1500.0, 4200.0],
-		"widths": {"two_lane": 0.15, "road": 0.3, "narrow": 1.6, "single": 2.6},
-		"heights": {"h0": 180.0, "lo": 60.0, "hi": 560.0, "steep": 1.2, "up": 0.5},
-		"relief": {"pitch": [0.36, 10.0, 15.0], "rollers": [0.2, 4.0, 7.0]},
-		"hills": 1.1, "lift": 0.85, "track_sand": 0.0, "pass_rise": [70.0, 150.0], "pass_snow": false,
 		"land": {"tarmac": Color(0.25, 0.46, 0.17), "gravel": Color(0.3, 0.42, 0.19)},
 		"patch": {"tarmac": Color(0.34, 0.52, 0.2), "gravel": Color(0.4, 0.32, 0.33)},
 		"verge": {"tarmac": Color(0.3, 0.42, 0.18)},

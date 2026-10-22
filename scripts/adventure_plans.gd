@@ -131,3 +131,55 @@ static func wait_all() -> void:
 	_lock.unlock()
 	for id in ids:
 		WorkerThreadPool.wait_for_task_completion(id)
+
+
+# ---------------------------------------------------------------------------- sample rides
+
+## A tour of each bundled region, pin by pin (region x, z), for the Debug tab's quick start and the tests: round
+## Shodoshima, and across the Dales and back.
+const TOURS := {
+	"shodoshima": [[-5881, 1526], [-306, 1293], [4560, 2074], [7721, -3202], [1792, -4787], [-174, -3502], [-5951, 1062]],
+	"dales": [[-10180, 3993], [-8223, -7330], [7187, -4599], [15264, 4188], [12595, 7398], [2813, 5382], [-11640, 3115]],
+}
+
+
+## The plan of the first `pins` pins (2 or more) of `region`'s tour, each pin named after the town or village it's in.
+static func tour(region_id := "shodoshima", pins := 0) -> Dictionary:
+	var region := RealRegion.get_region(region_id)
+	if region == null or not TOURS.has(region_id):
+		return {}
+	var all: Array = TOURS[region_id]
+	var n := clampi(pins if pins > 0 else all.size(), 2, all.size())
+	var at: Array = []
+	var names: Array = []
+	for p: Array in all.slice(0, n):
+		var want := Vector2(float(p[0]), float(p[1]))
+		var node := region.nearest_connected(want.x, want.y, AdventureJourney.SNAP_M)
+		var pos := region.node_pos[node] if node >= 0 else want
+		at.append([pos.x, pos.y])
+		var town := ""
+		var best := 2000.0
+		for q: Dictionary in region.places:
+			var d := Vector2(float(q["x"]), float(q["z"])).distance_to(want)
+			if d < best:
+				best = d
+				town = str(q["name"])
+		names.append(town)
+	return clean({"region": region.id, "region_hash": region.hash, "pins": at, "names": names, "mode": "main"})
+
+
+## The shortest tour of a bundled region (Shodoshima's first, then the Dales') whose road is at least `km` long, or the
+## longest there is. Planned now (and kept), so it waits the first time.
+static func sample(km: float) -> Dictionary:
+	var best := {}
+	for region_id in TOURS:
+		for n in range(2, (TOURS[region_id] as Array).size() + 1):
+			var plan := tour(region_id, n)
+			var pack := pack_for(plan)
+			if pack == null:
+				continue
+			if best.is_empty() or pack.max_km() > pack_for(best).max_km():
+				best = plan
+			if pack.max_km() >= km:
+				return plan
+	return best

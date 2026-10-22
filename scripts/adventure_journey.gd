@@ -155,8 +155,13 @@ static func start_check(action: Dictionary) -> String:
 	return ""
 
 
-## What a started adventure along `action`'s plan holds: {plan, real, real_hash, km, theme}.
+## What a started adventure along `action`'s plan holds: {plan, real, real_hash, km, theme, dest (the last pin's place)}.
 static func start_info(action: Dictionary) -> Dictionary:
 	var plan := AdventurePlans.clean(action.get("plan"))
 	var pack := AdventurePlans.pack_for(plan)
-	return {"plan": plan, "real": pack.id, "real_hash": pack.hash, "km": floorf(pack.max_km() * 10.0) / 10.0, "theme": pack.theme}
+	var names: Array = plan.get("names", [])
+	var dest := str(names[names.size() - 1]) if not names.is_empty() else ""
+	if dest == "":
+		var region := RealRegion.get_region(str(plan["region"]))
+		dest = "the end of the road" if region == null else region.title
+	return {"plan": plan, "real": pack.id, "real_hash": pack.hash, "km": floorf(pack.max_km() * 10.0) / 10.0, "theme": pack.theme, "dest": dest}
