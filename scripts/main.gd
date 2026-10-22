@@ -712,6 +712,7 @@ func _start_riding(bike_id: int) -> void:
 	bike.skills = Progress.rider_skills()
 	bike.ride_xp = RideXP.new(bike_id)
 	bike.telemetry = RideTelemetry.new(str(data.get("name", "")))
+	bike.beam = Shed.beam_of(bike_id)   # the headlight switch as it was left (setup keeps it to the stops it has)
 	bike.setup(Shed.build_of(bike_id), data["paint"])
 	# Tyres, brakes and engine as cold as the shed, or still warm from a ride a moment ago.
 	BikeHeat.resume(bike_id, bike.heat)
@@ -964,6 +965,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		bike.shift_down()
 	elif event.is_action_pressed("headlight"):
 		hud.flash("Headlight: %s" % bike.cycle_beam(), 1.2)
+		Shed.request({"a": "beam", "bike": riding_id, "beam": bike.beam})   # kept with the bike
 	elif event.is_action_pressed("ride_ping"):
 		PingMarker.ping_from(camera, [bike.get_rid()])
 	elif event.is_action_pressed("stopwatch") and walker and not event is InputEventJoypadButton:

@@ -95,7 +95,8 @@ const BEAD_LEAK := 0.02
 
 ## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered,
 ## stand ("" upright on its wheels or the bay's paddock stand, "side", "centre" or "down" when it has fallen over),
-## pusher (peer wheeling it about, or 0), tune{map, ignition, limiter}, dyno{n, runs: the last two dyno runs}}
+## pusher (peer wheeling it about, or 0), tune{map, ignition, limiter}, dyno{n, runs: the last two dyno runs},
+## beam (where its headlight switch was left: see beam_of)}
 var bikes := {}
 ## item id -> {id, part, kind, rust, dirt, wear, color, finish, boxed, at, ref}, where
 ## at is "bike", "engine", "held", "spot", "floor" (ref is then the Transform3D it was put down at)
@@ -2866,6 +2867,11 @@ func check(peer: int, action: Dictionary) -> String:
 				return "How much?"
 			if fuel_space(ridden) < 0.05:
 				return "The tank's full."
+		"beam":
+			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
+				return "You're not riding that bike."
+			if not (action.get("beam") is float or action.get("beam") is int) or int(action["beam"]) < 0 or int(action["beam"]) > Bike.BEAM_FOG:
+				return "Which way is the switch?"
 		"screen":
 			var ridden := riding(peer) if bike_id == 0 else bike_id
 			if not bikes.has(ridden):
@@ -3832,6 +3838,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 				# What didn't fit goes back in the rider's pocket.
 				give_cash(peer, mini(paid, ceili((float(action["litres"]) - put) * PUMP_PRICE)), "Fuel refund")
 			text = "Filled up with %.1f L of unleaded" % put
+		"beam":
+			bikes[bike_id]["beam"] = int(action["beam"])   # the headlight switch stays where it's left
 		"screen":
 			var ridden := riding(peer) if bike_id == 0 else bike_id
 			var fairing := item_on(ridden, "fairing")
@@ -5272,6 +5280,13 @@ func _on_player_left(id: int) -> void:
 
 
 # ---------------------------------------------------------------------------- geometry and blueprints
+
+## Where bike `bike_id`'s headlight switch was left (see Bike.beam): kept with the bike, saved
+## with it and shared with the crew, so it's as it was when someone next gets on. A bike that's
+## never had it touched has its lights off.
+func beam_of(bike_id: int) -> int:
+	return clampi(int(bikes.get(bike_id, {}).get("beam", 0)), 0, Bike.BEAM_FOG)
+
 
 ## A bike's own fit for its parts (see GeoGizmo): slot -> {p, r, s}. Never shared between bikes.
 func geometry_of(bike_id: int) -> Dictionary:

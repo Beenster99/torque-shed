@@ -4,8 +4,8 @@ extends Control
 ## the bike turning on a turntable and a breakdown of its numbers (power, torque, top speed,
 ## 0-60, weight, economy, condition, what it's worth) with the parts worth a look and whose it is.
 ## Its owner can ride it out from here, or sell it to the garage; anyone else can make the owner
-## an offer for it out of their own money (or take an offer back). All of it goes through the
-## host (see Collection).
+## an offer for it out of their own money (Make an offer opens HomeMakeOffer in its place), or
+## take an offer back. All of it goes through the host (see Collection).
 
 signal closed
 
@@ -20,10 +20,11 @@ var _slots: Label
 var _status: Label
 var _ride: Button
 var _sell: Button
-var _amount: SpinBox
 var _offer: Button
 var _withdraw: Button
-var _offer_row: HBoxContainer
+var _center: CenterContainer
+## Making an offer: its own window, in place of the card while it's up.
+var offer_sheet: HomeMakeOffer
 var _sig := ""
 
 
@@ -32,12 +33,12 @@ func _ready() -> void:
 	add_to_group("bike_order_panel")   # wide like the bike's card: the look-at panel stays out of its way
 	theme = UITheme.make()
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
+	_center = CenterContainer.new()
+	_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(900, 0)
-	center.add_child(panel)
+	_center.add_child(panel)
 	_box = VBoxContainer.new()
 	_box.add_theme_constant_override("separation", 8)
 	panel.add_child(_box)
@@ -77,28 +78,23 @@ func _ready() -> void:
 	_sell = Button.new()
 	_sell.pressed.connect(_press_sell)
 	row.add_child(_sell)
-	_offer_row = HBoxContainer.new()
-	_offer_row.add_theme_constant_override("separation", 8)
-	row.add_child(_offer_row)
-	_offer_row.add_child(UITheme.label("Offer £", 16))
-	_amount = SpinBox.new()
-	_amount.min_value = Collection.MIN_OFFER
-	_amount.max_value = Progress.MAX_MONEY
-	_amount.step = 1
-	_amount.custom_arrow_step = 50
-	_amount.custom_minimum_size.x = 140
-	_amount.value_changed.connect(func(_v): _refresh())
-	_offer_row.add_child(_amount)
 	_offer = Button.new()
-	_offer.pressed.connect(_press_offer)
-	_offer_row.add_child(_offer)
+	_offer.text = "Make an offer"
+	_offer.pressed.connect(open_offer)
+	HomeMakeOffer.primary(_offer)
+	row.add_child(_offer)
 	_withdraw = Button.new()
 	_withdraw.pressed.connect(_press_withdraw)
-	_offer_row.add_child(_withdraw)
+	row.add_child(_withdraw)
 	row.add_child(ContractPanel.button("Close ({back})", close_dialog))
 	_status = UITheme.label("", 15, Color(1, 0.5, 0.4))
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_box.add_child(_status)
+	offer_sheet = HomeMakeOffer.new()
+	offer_sheet.visible = false
+	add_child(offer_sheet)
+	offer_sheet.cancelled.connect(_offer_closed)
+	offer_sheet.done.connect(close_dialog)
 	Shed.homes_changed.connect(func(): if visible: _refresh())
 	Progress.changed.connect(func(): if visible: _refresh())
 
@@ -111,28 +107,45 @@ func open_bike(id: int) -> void:
 	var e := Collection.entry(cid)
 	if e.is_empty():
 		return
-	_amount.set_value_no_signal(maxf(Collection.MIN_OFFER, float(e.get("value", 0))))
+	offer_sheet.visible = false
+	_center.visible = true
 	visible = true
 	_refresh()
 	var l := Collection.look(e.get("pack", {}))
 	_preview.show_bike("home|%d|%s" % [cid, str(hash(e.get("pack", {}).get("bike", {}).get("slots", {})))], l["parts"], l["paint"], l["cond"])
 
 
+## Closes the card ({back}). With the offer window up and nothing offered yet, {back} cancels
+## that and goes back to the card instead.
 func close_dialog() -> void:
+	if visible and offer_sheet.visible and not offer_sheet.sent:
+		offer_sheet.cancel()
+		return
+	offer_sheet.visible = false
+	_center.visible = true
 	visible = false
 	closed.emit()
 
 
+## Make an offer: the card steps aside for the offer's own window.
+func open_offer() -> void:
+	if _offer.disabled:
+		return
+	_center.visible = false
+	offer_sheet.open(cid)
+
+
+func _offer_closed() -> void:
+	if not visible:
+		return
+	_center.visible = true
+	_sig = ""
+	_refresh()
+	_offer.grab_focus.call_deferred()
+
+
 func _mine() -> bool:
 	return str(Collection.entry(cid).get("owner", "")) == Collection.name_of(Shed.me())
-
-
-func amount() -> int:
-	return roundi(_amount.value)
-
-
-func set_amount(v: int) -> void:
-	_amount.value = v
 
 
 func _refresh() -> void:
@@ -147,10 +160,11 @@ func _refresh() -> void:
 	var sell_why := Shed.check(Shed.me(), {"a": "home_sell", "bike": cid}) if mine else ""
 	var offer_why := ""
 	if not mine:
-		offer_why = Shed.check(Shed.me(), {"a": "home_offer", "bike": cid, "amount": amount(), "paid": amount()})
-		if offer_why == "" and Progress.money() < amount():
-			offer_why = "You have %s." % Collection.money(Progress.money())
-	var sig := "%s|%s|%s|%s|%s|%d|%s|%d" % [str(e), ride_why, sell_why, offer_why, str(mine_offer), Progress.money(), str(Collection.level_of(Shed.me())), amount()]
+		var least := Collection.MIN_OFFER
+		offer_why = Shed.check(Shed.me(), {"a": "home_offer", "bike": cid, "amount": least, "paid": least})
+		if offer_why == "" and Progress.money() < least:
+			offer_why = "You've no money of your own to offer."
+	var sig := "%s|%s|%s|%s|%s|%d|%s" % [str(e), ride_why, sell_why, offer_why, str(mine_offer), Progress.money(), str(Collection.level_of(Shed.me()))]
 	if sig == _sig:
 		return
 	_sig = sig
@@ -181,17 +195,14 @@ func _refresh() -> void:
 			if mine_offer.is_empty() else "You've offered %s %s for it. Waiting for an answer." % [str(e["owner"]), Collection.money(int(mine_offer["amount"]))]
 	_ride.visible = mine
 	_sell.visible = mine
-	_offer_row.visible = not mine
 	_ride.disabled = ride_why != ""
 	_ride.tooltip_text = Controls.hint(ride_why)
 	_sell.text = "Sell it to the garage for %s" % Collection.money(Collection.sell_price(cid))
 	_sell.disabled = sell_why != ""
 	_sell.tooltip_text = Controls.hint(sell_why if sell_why != "" else "%d%% of what it's worth, paid into your own money; the shed sells it on." % roundi(Collection.SELL_BACK * 100.0))
-	_offer.text = "Offer %s" % Collection.money(amount())
-	_offer.visible = mine_offer.is_empty()
+	_offer.visible = not mine and mine_offer.is_empty()
 	_offer.disabled = offer_why != ""
-	_amount.editable = mine_offer.is_empty()
-	_withdraw.visible = not mine_offer.is_empty()
+	_withdraw.visible = not mine and not mine_offer.is_empty()
 	_withdraw.text = "Take my offer back" if not mine_offer.is_empty() else ""
 	var why := ride_why if mine else offer_why
 	_status.text = Controls.hint(why if mine_offer.is_empty() else "")
@@ -204,14 +215,6 @@ func _press_ride() -> void:
 
 func _press_sell() -> void:
 	Shed.request({"a": "home_sell", "bike": cid})
-	close_dialog()
-
-
-func _press_offer() -> void:
-	var said := Collection.make_offer(cid, amount())
-	if said != "":
-		_status.text = Controls.hint(said)
-		return
 	close_dialog()
 
 
