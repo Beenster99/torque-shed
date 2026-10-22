@@ -243,6 +243,12 @@ a pin moves takes under a second on a thread. Two machines plan the same route f
 
 ### Stage 5: anywhere on Earth
 
+**Status.** Stages 5 and 6 are redesigned in `docs/ride_anywhere_plan.md` (22 October 2026), now that the magazine
+is gone and every adventure is planned on the shed TV: the whole world on the TV, heights straight from Mapterhorn,
+cells baked by GitHub Actions and served as release assets at no monthly cost, a frame per journey, the crew
+agreeing the route and a ready-check in co-op, and journeys kept and shared. What follows is the earlier design,
+kept for the reasoning.
+
 **Playable loop.** Search for any place, or paste a map link from a phone, and ride there. The first ride somewhere new
 starts after a short wait while the road ahead is made; a route ridden once rides again offline.
 
