@@ -75,8 +75,7 @@ static func _open_stretch(tr: AdventureTraffic, after: float, length: float) -> 
 		if ok:
 			for k in int(length / 50.0) + 1:
 				var i := int((s + k * 50.0) / AdventureRoute.STEP)
-				if r.surface_at_s(s + k * 50.0) != "tarmac" or r.width_at_s(s + k * 50.0) < 5.5 or absf(r.smooth_curv(i, 12)) > 1.0 / 250.0 \
-						or r.limit_kmh_at(s + k * 50.0) != r.limit_kmh_at(s):
+				if r.surface_at_s(s + k * 50.0) != "tarmac" or r.width_at_s(s + k * 50.0) < 5.5 or absf(r.smooth_curv(i, 12)) > 1.0 / 150.0:
 					ok = false
 					s += k * 50.0 + 50.0
 					break
