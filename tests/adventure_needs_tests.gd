@@ -499,7 +499,8 @@ func test_real_stop() -> void:
 	if found.is_empty():
 		return
 	var main := await _start(int(found[0]), 150.0, false)
-	await _go(main, int(found[0]), 150.0)
+	Adventure.start(AdventurePlans.tour(str(found[2])), int(found[0]))   # the tour the inn was found on
+	await _ticks(10)
 	var view: AdventureNeedsView = main.trip.needs
 	var w: AdventureWorld = main.trip.world
 	var s := float(found[1]["s"])
