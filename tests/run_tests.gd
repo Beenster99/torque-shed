@@ -638,6 +638,9 @@ func _run_all() -> void:
 	_test_headlight_catalogue()
 	_test_headlight_builds()
 	await _test_headlight_lit()
+	print("Simon's v0.21 round: no damage to the bike on an adventure, only a tyre can go")
+	_test_advdmg_shed_wear()
+	await _test_advdmg_ride()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22858,6 +22861,20 @@ func _test_headlight_builds() -> void:
 
 func _test_headlight_lit() -> void:
 	await _headlights().test_lit()
+
+
+# ---------------------------------------------------------------------------- no damage on adventures (tests/advdmg_tests.gd)
+
+func _advdmg() -> RefCounted:
+	return load("res://tests/advdmg_tests.gd").new(self)
+
+
+func _test_advdmg_shed_wear() -> void:
+	_advdmg().test_shed_wear()
+
+
+func _test_advdmg_ride() -> void:
+	await _advdmg().test_ride()
 
 
 # ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)

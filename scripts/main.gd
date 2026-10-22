@@ -57,9 +57,6 @@ var _ride_dirt := 0.0      # road muck picked up since getting on, for drawing i
 var _was_bottomed := [false, false]   # each wheel's suspension bottomed last frame (a kerb or pothole hit)
 var _flat_told := [false, false]      # told the rider this tyre has gone flat, this ride
 var _fault_seen := {}      # the ridden bike's faults as last told to the rider (see Roadside)
-var _fault_wait := 0.0     # seconds before the next breakdown roll (one asked for is on its way)
-var _fault_rates := {}     # the ridden bike's chance of each breakdown a km, worked out now and then
-var _rates_timer := 0.0
 var _rattle_timer := 0.0   # the next slap of a slack chain, seconds
 var _rattle: AudioStreamPlayer3D   # a loose part rattling, on the ridden bike (see _rattle_sound)
 var _tow_check := 0.0
@@ -726,9 +723,7 @@ func _start_riding(bike_id: int) -> void:
 	bike.place(xf.origin, xf.basis.get_euler().y)
 	bike.respawn_at = trip.respawn_spot   # a crash off an adventure's road: back on it
 	_safe_xf = Transform3D()
-	bike.crashed.connect(func():
-		hud.flash("Crashed!", 1.5, true)
-		_drop_faults())
+	bike.crashed.connect(func(): hud.flash("Crashed!", 1.5, true))
 	# You get on with the engine off and the box in neutral, as a parked bike is, and start it yourself.
 	bike.engine_on = false
 	bike.rpm = 0.0
@@ -757,8 +752,6 @@ func _start_riding(bike_id: int) -> void:
 	_was_bottomed = [false, false]
 	_flat_told = [false, false]
 	_fault_seen = {}
-	_fault_wait = 2.0
-	_rates_timer = 0.0
 	_sync_faults()
 	_lap_seen = []
 	_laps = 0
@@ -1071,7 +1064,7 @@ func _physics_process_body(delta: float) -> void:
 			_ride_dirt += muck * Shed.ROAD_DIRT * 0.8
 		_puncture_rolls(km)
 		if trip.on_trip():
-			_roadside_step(km, delta)
+			_roadside_step(delta)
 		_rattle_sound()
 		if fuel_stop:
 			var filled := fuel_stop.update(delta, active and Input.is_action_pressed("interact"))
@@ -1165,6 +1158,8 @@ func _send_ride_stats() -> void:
 	hud.trip_fuel += bike.fuel_used
 	var ride := {"a": "ride", "km": _ride_km, "top_kmh": _ride_top, "kmh": absf(bike.speed) * 3.6,
 		"dirt_km": _dirt_km, "fly_km": _fly_km, "fuel": bike.fuel_used, "spin": bike.take_burnout_time()}
+	if trip.on_trip():
+		ride["adv"] = true   # out on an adventure: nothing but the tyres wears (see Shed._ride_apply)
 	ride.merge(_logger_peaks(), true)
 	if _laps > 0:
 		ride["laps"] = _laps
@@ -1205,21 +1200,11 @@ func _puncture_rolls(km: float) -> void:
 				trip.photos.report("breakdown", "", {"what": "Puncture (%s tyre)" % ("front" if i == 0 else "rear")})
 
 
-## Out on an adventure, now and then something goes wrong with the bike as the km go by (see
-## Roadside: more on loose ground, worn parts and skipped maintenance): the shed is told, and
-## the rider hears and sees it (_sync_faults). Also its rattles and chain slap, and the tow strap.
-func _roadside_step(km: float, delta: float) -> void:
+## Out on an adventure: the sound of any fault the bike already had (an adventure never breaks a
+## bike itself: only a tyre can go, see Roadside and _puncture_rolls), the tow strap, and the
+## hint for getting off to fix it.
+func _roadside_step(delta: float) -> void:
 	var pt := Perf.t0()
-	_rates_timer -= delta
-	if _rates_timer <= 0.0:
-		_rates_timer = 1.0
-		_fault_rates = Roadside.rates(Roadside.condition(riding_id), bike.surface)
-	_fault_wait -= delta
-	if _fault_wait <= 0.0 and not bike.is_crashed and not bike.pushing and km > 0.0:
-		var kind := Roadside.roll(_fault_rates, km, randf())
-		if kind != "" and Shed.check(Shed.me(), {"a": "roadside_fault", "kind": kind}) == "":
-			Shed.request({"a": "roadside_fault", "kind": kind})
-			_fault_wait = 3.0
 	_roadside_sounds(delta)
 	_tow_step(delta)
 	if bike.pushing and bike.model:
@@ -1233,15 +1218,6 @@ func _roadside_step(km: float, delta: float) -> void:
 		hint = "{interact}: get off and fix it at the roadside   ·   {tow}: ask a mate for a tow"
 	hud.ride_hint = hint
 	Perf.add("roadside", pt)
-
-
-## A drop on an adventure can snap a lever or knock something loose.
-func _drop_faults() -> void:
-	if not trip.on_trip() or riding_id == 0:
-		return
-	for kind in Roadside.drop_faults(randf(), randf()):
-		if Shed.check(Shed.me(), {"a": "roadside_fault", "kind": kind}) == "":
-			Shed.request({"a": "roadside_fault", "kind": kind})
 
 
 ## The ridden bike's faults onto it (how it rides), and the rider told of a new one: what it is,

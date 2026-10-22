@@ -4,13 +4,14 @@ extends RefCounted
 ## adventure: an ordinary ride out of the shed still has no roadside fixing (a bike out on the
 ## road is just a bike to ride, see Shed.road_bike_block), exactly as before.
 ##
-## What can go wrong (as well as punctures, see Puncture): the chain goes slack or snaps, the
-## oil runs low (the oil light), a bolt works loose and something rattles, a drop snaps the
-## clutch or brake lever, a fuse blows (the lights, or the ignition). The chance rises with the
-## parts' wear, loose ground (gravel and sand most), drops, and maintenance skipped (a dry chain,
-## old oil); tuned so a two-hour adventure (gravel and all) sees about one thing go wrong, a
-## puncture included, on a fairly kept bike: not several.
-## Each has a clear symptom (a sound, a dash light, the way it rides) and a hint.
+## An adventure never breaks a bike: nothing wears or works loose out there and a drop does no
+## harm (Shed._wear_from_ride keeps only the tyres wearing, Main rolls nothing but punctures).
+## The one thing that can go wrong on the way is a tyre: a puncture (see Puncture), or one
+## going soft. The rest here is for faults the bike already had when it set off (a chain left
+## slack, low oil, or one carried over from an older save): the chain slack or snapped, the oil
+## low (the oil light), a bolt loose and something rattling, a snapped clutch or brake lever, a
+## blown fuse (the lights, or the ignition). Each has a clear symptom (a sound, a dash light,
+## the way it rides) and a hint.
 ##
 ## Stopped on an adventure you get off, and the bike stands at the roadside on its stand (drawn
 ## for the whole crew by RoadsideView, with its toolbox open and parts out on a cloth when
@@ -35,12 +36,8 @@ extends RefCounted
 ##   items[box]["left"]     and how many goes are left of the kit that has several (plugs, fuses).
 
 const KINDS: Array[String] = ["chain_slack", "chain_snap", "oil", "rattle", "lever", "fuse"]
-## Chance of each going wrong per km on tarmac, on a well kept bike.
-const PER_KM := {"chain_slack": 0.00025, "chain_snap": 0.00002, "oil": 0.00014, "rattle": 0.0003, "fuse": 0.00011, "lever": 0.0}
-## How much more often things shake loose or go wrong on each surface.
+## How rough each surface is to ride (1 for tarmac): how hard a loose part rattles on it.
 const SURFACE := {"tarmac": 1.0, "concrete": 1.0, "gravel": 2.6, "dirt": 2.2, "sand": 2.2, "snow": 1.4, "grass": 1.8}
-## Chance a drop (a crash) snaps a lever, or knocks something loose.
-const DROP := {"lever": 0.4, "rattle": 0.15}
 ## A chain this slack (mm) is the slack chain fault (the shed's own reading, see BikeBuild).
 const SLACK_FAULT := 50.0
 const SLACK_GONE := 64.0       # how slack a chain goes when it's let go
@@ -77,7 +74,7 @@ const INFO := {
 		"hint": "Fit the spare chain with its split link (crouch at the chain, hands). No spare? Push it, or get a tow.",
 		"needs": ["tools", "spare_chain"]},
 	"oil": {"name": "Low oil", "light": "OIL",
-		"symptom": "The oil light's on: it's low on oil, and the engine wears fast like this.",
+		"symptom": "The oil light's on: it's low on oil. Top it up before the engine suffers for it.",
 		"hint": "Stop and top it up from the toolbox's bottle of oil (hands, at the engine).",
 		"needs": ["oil"]},
 	"rattle": {"name": "Rattling part", "light": "",
@@ -101,80 +98,6 @@ const INFO := {
 		"hint": "Pump it up with the toolbox's mini pump (hands, at the tyre, the second button).",
 		"needs": ["pump"]},
 }
-
-
-# ---------------------------------------------------------------------------- the odds
-
-## The chance per km of each fault for a bike in condition `c`, on `surface`:
-## c = {chain_wear, chain_lube (0..1), chain_slack (mm), oil_age, oil_level (0..1), engine_wear,
-## wear (the bike's parts on average)}. Pure, for the tests.
-static func rates(c: Dictionary, surface: String) -> Dictionary:
-	var ground := float(SURFACE.get(surface, 1.5))
-	var shake := sqrt(ground)
-	var chain_wear := clampf(float(c.get("chain_wear", 0.0)), 0.0, 1.0)
-	var dry := 1.0 - clampf(float(c.get("chain_lube", 1.0)), 0.0, 1.0)
-	var slack := float(c.get("chain_slack", 30.0))
-	var wear := clampf(float(c.get("wear", 0.0)), 0.0, 1.0)
-	var out := {}
-	# A worn, dry chain stretches; one already slack goes on slackening, and loose ground snatches it.
-	out["chain_slack"] = 0.0 if slack >= SLACK_FAULT else float(PER_KM["chain_slack"]) * ground * (1.0 + 4.0 * chain_wear) \
-		* (1.0 + 2.0 * dry) * (2.0 if slack > 40.0 else 1.0)
-	# Snapping takes a worn, dry, slack chain (or very bad luck).
-	out["chain_snap"] = float(PER_KM["chain_snap"]) * ground * (1.0 + 30.0 * chain_wear * chain_wear) * (1.0 + 4.0 * dry) \
-		* (3.0 if slack >= SLACK_FAULT else 1.0)
-	# Old oil and a worn engine burn and weep it; one already low doesn't go low again.
-	out["oil"] = 0.0 if float(c.get("oil_level", 1.0)) < OIL_LIGHT else float(PER_KM["oil"]) * shake \
-		* (1.0 + 3.0 * clampf(float(c.get("engine_wear", 0.0)), 0.0, 1.0)) * (1.0 + clampf(float(c.get("oil_age", 0.0)), 0.0, 3.0))
-	out["rattle"] = float(PER_KM["rattle"]) * ground * (1.0 + 3.0 * wear)
-	out["fuse"] = float(PER_KM["fuse"]) * shake * (1.0 + 2.0 * wear)
-	out["lever"] = 0.0
-	return out
-
-
-## The fault (a KINDS id) `km` of riding at `rates` brings, from a roll 0..1, or "".
-static func roll(rate_of: Dictionary, km: float, roll_value: float) -> String:
-	var acc := 0.0
-	for k in KINDS:
-		acc += float(rate_of.get(k, 0.0)) * km
-		if roll_value < acc:
-			return k
-	return ""
-
-
-## What a drop brings, from two rolls 0..1: the faults it caused (a lever, something loose).
-static func drop_faults(roll_lever: float, roll_rattle: float) -> Array:
-	var out := []
-	if roll_lever < float(DROP["lever"]):
-		out.append("lever")
-	if roll_rattle < float(DROP["rattle"]):
-		out.append("rattle")
-	return out
-
-
-## The condition rates() wants, read from bike `bike_id` in the shed.
-static func condition(bike_id: int) -> Dictionary:
-	var out := {}
-	var chain := Shed.item_on(bike_id, "chain")
-	if chain != 0:
-		var ch: Dictionary = Shed.items[chain]
-		out["chain_wear"] = float(ch.get("wear", 0.0))
-		out["chain_lube"] = float(ch.get("lube", 1.0))
-		out["chain_slack"] = float(ch.get("slack", Shed.CHAIN_SLACK_SET))
-	var engine := Shed.item_on(bike_id, "engine")
-	if engine != 0:
-		var en: Dictionary = Shed.items[engine]
-		out["engine_wear"] = float(en.get("wear", 0.0))
-		out["oil_level"] = oil_level(bike_id)
-		out["oil_age"] = float(en.get("fluid", {}).get("age", 0.0))
-	var total := 0.0
-	var n := 0
-	for slot in PartsDB.SLOTS:
-		var id := Shed.item_on(bike_id, slot)
-		if id != 0:
-			total += float(Shed.items[id].get("wear", 0.0))
-			n += 1
-	out["wear"] = total / maxf(float(n), 1.0)
-	return out
 
 
 ## The share of its oil the engine has, 0..1 (1 with no engine).
@@ -451,6 +374,8 @@ static func check(peer: int, action: Dictionary) -> String:
 	var bike_id := int(action.get("bike", 0))
 	match a:
 		"roadside_fault":
+			# Nothing on a ride asks for one (an adventure breaks nothing but tyres): it's for
+			# setting a fault up by hand, to fix it at the roadside.
 			var ridden := Shed.riding(peer)
 			if not Adventure.active() or ridden == 0:
 				return "Only out on an adventure."
