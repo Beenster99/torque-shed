@@ -154,6 +154,9 @@ var adventure := {}
 var adventure_save := {}
 ## The crew's pins on the map for a journey across a real region (see AdventureJourney), or {}.
 var journey := {}
+## What the Route planner TVs show, the same on every screen and for everyone: {region, x, z, span, tab, cat, page}
+## (see AdventureJourney.sanitize_view), or {} for the first map, all of it.
+var route_tv := {}
 var lights_on := true     # the shed's strip lights
 ## The side rooms' own lights, each with a switch by its door: room name -> on.
 var room_lights := {"paint": true, "storage": true}
@@ -263,6 +266,7 @@ func start_new(player_name: String, seed_value := 0) -> void:
 	adventure = {}
 	adventure_save = {}
 	journey = {}
+	route_tv = {}
 	upgrades = {}
 	lifts = {}
 	looks = {}
@@ -558,6 +562,7 @@ func stop() -> void:
 	adventure = {}
 	adventure_save = {}
 	journey = {}
+	route_tv = {}
 	garage_money = 0
 	bank = Money.defaults()
 	_clock_hours = -1.0
@@ -5644,7 +5649,7 @@ func _snapshot(with_board := true) -> Dictionary:
 	var state := {"bikes": bikes, "items": items, "crew": crew, "furniture": furniture, "radio": radio, "next": _next_id,
 		"door": door_open, "lights": lights_on, "room_lights": room_lights, "screens": screens, "posters": posters, "dyno": dyno, "pump": pump,
 		"blueprints": blueprints, "holograms": holograms, "on_order": on_order, "garage_money": garage_money, "bank": bank, "contracts": contracts, "sales": sales, "coffee": coffee, "paint_bay": paint_bay, "recovery": recovery, "upgrades": upgrades,
-		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "adventure_save": adventure_save, "journey": journey, "kit_v": KIT_SAVE}
+		"lifts": lifts, "looks": looks, "pool": pool, "staff": staff, "adventure": adventure, "adventure_save": adventure_save, "journey": journey, "route_tv": route_tv, "kit_v": KIT_SAVE}
 	if with_board:
 		state["board"] = board
 		state["homes"] = homes
@@ -5697,6 +5702,7 @@ func _sync(state: Dictionary) -> void:
 	# Nor one put away overnight to carry on.
 	adventure_save = AdventureNeeds.sanitize_save(state.get("adventure_save"))
 	journey = AdventureJourney.sanitize(state.get("journey"))
+	route_tv = AdventureJourney.sanitize_view(state.get("route_tv"))
 	# Sheds saved before garage upgrades have none.
 	upgrades = GarageUpgrades.sanitize(state.get("upgrades", {}))
 	# Sheds saved before the bays had working lifts: all down.

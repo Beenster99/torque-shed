@@ -3,7 +3,8 @@ extends Node
 ## RoutePlanner), run by tests/mp_test.sh after the others: the client and the host each put pins on the map and
 ## both must see all of them, and the style of ride the client picks. Each game plans the same journey itself; the host
 ## starts the ride and both must be riding the same planned road (the same hash, checked by AdventureTrip.real_mismatch),
-## each seen by the other at the right spot on it. The host ends it.
+## each seen by the other at the right spot on it. The host ends it. On the way, the Route planner TVs: the client
+## moves the map on the Dyno Room's wall TV and the host turns it to the places, and both must show the same.
 
 const REGION := "shodoshima"
 
@@ -46,6 +47,32 @@ func _ready() -> void:
 	if role == "client":
 		Shed.request({"a": "adventure_mode", "mode": "scenic"})
 	var mode_ok := await _until(func(): return str(Shed.journey.get("mode", "")) == "scenic", 20.0)
+	# The TV: one view for the crew. The client moves the Dyno Room's map, the host turns it to the places.
+	var tv_ok := await _until(func(): return main.workshop.dyno_room.plan_tv._route != null \
+		and main.workshop.dyno_room.plan_tv._route.region != null, 20.0)
+	var board: RouteTv = main.workshop.dyno_room.plan_tv._route if tv_ok else null
+	var at := mid + Vector2(250.0, -120.0)
+	if tv_ok and role == "client":
+		board._ask_view(at, 4000.0)
+	if tv_ok and role == "host":
+		await _until(func(): return Shed.route_tv.has("x"), 20.0)
+		board.ask({"tab": "places", "cat": 1, "page": 0})
+	var view_ok := false
+	if tv_ok:
+		view_ok = await _until(func():
+				return str(Shed.route_tv.get("region", "")) == REGION and str(Shed.route_tv.get("tab", "")) == "places" \
+				and board.region.id == REGION and board.view.view_centre().distance_to(at) < 0.2 \
+				and absf(board.view.view_span() - 4000.0) < 1.0 and board._places_box.visible and board._category() == 1, 20.0)
+	print("MP journey note %s: the TV on %s at %s (asked %s), %.1f m across, the %s tab, places shown %s, kind %d (channel %s)" % [role,
+		board.region.id if board else "?", str(board.view.view_centre()) if board else "?", str(at), board.view.view_span() if board else 0.0,
+		Shed.route_tv.get("tab", "?"), board._places_box.visible if board else false, board._category() if board else -1,
+		str(Shed.screen_channel("dyno").get("ch", "?"))])
+	# The client says its screen has caught up (the next page), and the host waits for that before the ride: out on the
+	# road, the shed and its TVs sleep.
+	if view_ok and role == "client":
+		board.ask({"page": 1})
+	if view_ok:
+		view_ok = await _until(func(): return int(Shed.route_tv.get("page", 0)) == 1, 20.0)
 	# Each plans it: the same road, the same hash.
 	var plan := AdventureJourney.plan_of(Shed.journey)
 	var res := AdventurePlans.result(plan, true)
@@ -85,14 +112,14 @@ func _ready() -> void:
 			asked[0] = true
 			Shed.request({"a": "adventure_end"})
 		return not trip.on_trip() and main.bike == null and not Adventure.active(), 30.0)
-	var ok := first and pinned and by_ok and mode_ok and hash != "" and started and same_road and seen_ok and home
+	var ok := first and pinned and by_ok and mode_ok and view_ok and hash != "" and started and same_road and seen_ok and home
 	var linger := Time.get_ticks_msec() + (15000 if role == "client" else 3000)
 	while Time.get_ticks_msec() < linger:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
-	print("MP journey %s %s: pins shared=%s (by whom=%s), style of ride shared=%s, planned=%s, riding=%s on the same road=%s, each seen by the other=%s, home=%s" % [
-		"PASS" if ok else "FAIL", role, pinned, by_ok, mode_ok, hash != "", started, same_road, seen_ok, home])
+	print("MP journey %s %s: pins shared=%s (by whom=%s), style of ride shared=%s, the TV's view shared=%s, planned=%s, riding=%s on the same road=%s, each seen by the other=%s, home=%s" % [
+		"PASS" if ok else "FAIL", role, pinned, by_ok, mode_ok, view_ok, hash != "", started, same_road, seen_ok, home])
 	get_tree().quit(0 if ok else 1)
 
 

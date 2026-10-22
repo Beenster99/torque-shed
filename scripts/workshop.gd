@@ -497,9 +497,11 @@ func tvs() -> Array:
 	return out
 
 
-## Every screen with channels, by its key (see TvChannels): bought TVs, bay screens, crew board.
+## Every screen with channels, by its key (see TvChannels): bought TVs, bay screens, crew board, the Dyno Room's planning TV.
 func screens() -> Dictionary:
 	var out := {"crew": _crew_screen}
+	if dyno_room != null and dyno_room.plan_tv != null:
+		out["dyno"] = dyno_room.plan_tv
 	for bay in _bay_screens.size():
 		out["bay%d" % bay] = _bay_screens[bay]
 	for id in furniture_nodes:
@@ -1210,7 +1212,7 @@ func _refresh_dashboards() -> void:
 			"crew":
 				dash.show_page("crew", {"players": _crew_rows()})
 			"route":
-				if dash.kind != "route":
+				if dash.kind != "route" or dash._route == null:   # (a screen made on the planner hasn't built it yet)
 					dash.show_page("route", {})
 			"workflow":
 				# A bike's job card (see WorkflowTv): redrawn only when something on it changes.

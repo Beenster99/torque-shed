@@ -210,6 +210,11 @@ cells and tiles a journey used.
 
 **Size.** About three weeks.
 
+**Status.** Started (`claude/world-tv`): the view is the crew's (`Shed.route_tv`, changed through the host by
+`adventure_view`), so every Route planner screen on every player's game shows the same map, place, zoom, tab and page;
+the Dyno Room has a wall-sized planning TV. Next: the basemap and place index, cells fetched for the view, then the
+main-roads sketch, Survey and the paste box.
+
 ### Step 5: consensus, and journeys kept
 
 **Plays.** "I'm in" marks, Start when everyone is in; past journeys to ride again; journey codes.

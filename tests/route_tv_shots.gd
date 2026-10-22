@@ -1,7 +1,8 @@
 extends "res://tests/screenshots.gd"
 ## Pictures of the route planner TV in the shed:
 ##   xvfb-run -a godot --path . res://tests/route_tv_shots.tscn -- --out=/tmp/shots
-## The shed from the doorway, the TV close up empty, with pins and a planned road, and on the places tab.
+## The shed from the doorway, the TV close up empty, with pins and a planned road, and on the places tab; then the
+## Dyno Room's wall TV, which shows the same.
 
 
 func _ready() -> void:
@@ -36,9 +37,13 @@ func _ready() -> void:
 		await _frames(10)
 	await _frames(40)
 	await _look_from(c + Vector3(-2.4, 0.0, -3.4), tv, "03_route_tv_planned")
-	board._tab = "places"
-	board.refresh()
+	board.ask({"tab": "places"})
 	await _frames(40)
 	await _look_from(c + Vector3(-2.4, 0.0, -3.4), tv, "04_route_tv_places")
+	board.ask({"tab": "plan"})
+	var wall: Vector3 = main.workshop.dyno_room.plan_tv.global_position
+	await _frames(40)
+	await _look_from(Vector3(2.8, 0.0, 57.6), wall, "05_dyno_room_planning_tv")
+	await _look_from(Vector3(-1.2, 0.0, 55.6), wall, "06_dyno_room_planning_tv_close")
 	SaveGame.delete_slot("shots")
 	get_tree().quit()
