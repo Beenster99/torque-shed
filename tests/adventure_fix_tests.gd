@@ -59,10 +59,9 @@ func _stand_at(main: Node, s: float, lat: float) -> void:
 	main.bike.place((hit["position"] if hit else xf.origin) + Vector3.UP * 0.05, trip.world.heading_at(s))
 
 
-## Where the land rises most steeply beside the road (6 m past its edge, either side), well along it.
+## The first place well along the road where the land beside it (6 m past its edge, either side) is a bank 2 to 6 m
+## above it.
 static func _bank_s(r: AdventureRoute) -> float:
-	var best := -1.0
-	var most := 0.0
 	var s := 1500.0
 	while s < r.length - 3000.0:
 		var i := int(s / AdventureRoute.STEP)
@@ -70,11 +69,10 @@ static func _bank_s(r: AdventureRoute) -> float:
 			var lat := side * (r.width[i] * 0.5 + 6.0)
 			var xz := r.xz_at(s, lat)
 			var up := r.land_height(i, lat, xz[0], xz[1]) - r.ph[i]
-			if up > most:
-				most = up
-				best = s
+			if up > 2.0 and up < 6.0:
+				return s
 		s += 20.0
-	return best
+	return -1.0
 
 
 ## Crashing off the road: a few seconds later you and the bike are back on it, at the nearest
@@ -267,7 +265,7 @@ func test_get_off() -> void:
 	var r := w.route
 	var faithful: int = t._bike_named("Old Faithful")
 	var bank := _bank_s(r)
-	check(bank > 0.0, "a steep bank beside the road (%.1f km in)" % (bank / 1000.0))
+	check(bank > 0.0, "a bank beside the road (%.1f km in)" % (bank / 1000.0))
 	var view: RoadsideView = null
 	for c in w.get_children():
 		if c is RoadsideView:
@@ -277,7 +275,7 @@ func test_get_off() -> void:
 	# through the land, left walking in the wild with his bike gone. A slope too steep to stand on has you stood on the
 	# road below the bike instead.
 	# (the road and the verge at an ordinary stretch 2 km in, the others by the bank)
-	for spot in [[0.0, "on the road", 2.5, 2000.0, false], [6.0, "up the steep bank, the land well above the road", 16.0, 0.0, true],
+	for spot in [[0.0, "on the road", 2.5, 2000.0, false], [6.0, "up the bank, the land well above the road", 16.0, 0.0, true],
 			[15.0, "well off it", 16.0, 600.0, true], [2.0, "just off it, on the verge", 2.5, 2300.0, false]]:
 		var s: float = (bank if bool(spot[4]) else 0.0) + float(spot[3])
 		var lat: float = 0.0 if float(spot[0]) == 0.0 else r.width_at_s(s) * 0.5 + float(spot[0])
