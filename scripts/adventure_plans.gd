@@ -136,10 +136,10 @@ static func wait_all() -> void:
 # ---------------------------------------------------------------------------- sample rides
 
 ## A tour of each bundled region, pin by pin (region x, z), for the Debug tab's quick start and the tests: round
-## Shodoshima, and across the Dales and back.
+## Shodoshima, and a loop of the Dales (Hawes, over to Swaledale, Reeth, Leyburn, and back up Wensleydale).
 const TOURS := {
 	"shodoshima": [[-5881, 1526], [-306, 1293], [4560, 2074], [7721, -3202], [1792, -4787], [-174, -3502], [-5951, 1062]],
-	"dales": [[-10180, 3993], [-8223, -7330], [7187, -4599], [15264, 4188], [12595, 7398], [2813, 5382], [-11640, 3115]],
+	"dales": [[-10180, 3993], [-2422, -4363], [7187, -4599], [13686, 3361], [2813, 5382], [-4096, 3608], [-11640, 3115]],
 }
 
 

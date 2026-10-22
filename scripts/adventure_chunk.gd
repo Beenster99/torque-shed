@@ -33,6 +33,8 @@ const COLLIDE_COLS := 7
 ## the road along the way: route.land_reach keeps it well short of them.
 const SHARED_COL := 13
 const CROWN := 0.04
+## The most vertices of real buildings a chunk draws (a town's busiest stretch would be several times this).
+const BUILDING_VERTS := 18000
 ## How far each kind of thing is drawn (m, times the draw distance setting).
 const RANGES := {"pine": 650.0, "snow_pine": 650.0, "tree": 650.0, "bush": 260.0, "dry_bush": 260.0, "rock": 320.0,
 	"post": 220.0, "snow_pole": 260.0, "km_post": 200.0, "buildings": 1100.0, "lines": 380.0,
@@ -477,11 +479,21 @@ static func _real_buildings(route: AdventureRoute, c: int, i0: int, ax: float, a
 		return
 	var dk0 := route.eq[mini(i0, route.eq.size() - 1)] if not route.eq.is_empty() else i0
 	var dc := dk0 / AdventureRoute.CHUNK_KNOTS
+	# Nearest the road first: in the middle of a town the ones furthest back are left out (BUILDING_VERTS).
+	var todo := []
 	for b: Array in route.real.buildings_in(dc):
+		var k := clampi(i0 + int(b[7]) - dc * AdventureRoute.CHUNK_KNOTS, 0, route.knot_count() - 1)
+		var lat := (float(b[0]) - route.px[k]) * cos(route.hd[k]) + (float(b[1]) - route.pz[k]) * sin(route.hd[k])
+		todo.append([absf(lat), lat, k, b])
+	todo.sort_custom(func(p, q): return float(p[0]) < float(q[0]))
+	for item: Array in todo:
+		if (buildings["v"] as PackedVector3Array).size() >= BUILDING_VERTS:
+			break
+		var b: Array = item[3]
+		var k: int = item[2]
+		var lat: float = item[1]
 		var bx := float(b[0])
 		var bz := float(b[1])
-		var k := clampi(i0 + int(b[7]) - dc * AdventureRoute.CHUNK_KNOTS, 0, route.knot_count() - 1)
-		var lat := (bx - route.px[k]) * cos(route.hd[k]) + (bz - route.pz[k]) * sin(route.hd[k])
 		if route._site_flat(k, signf(lat), false) > 0.5 or absf(lat) < route.width[k] * 0.5 + 3.0:
 			continue
 		var w := float(b[2])

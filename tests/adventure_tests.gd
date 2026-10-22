@@ -311,11 +311,13 @@ func test_pumps() -> void:
 	await _until(func(): return w.chunks.has(AdventureRoute.chunk_of(s)))
 	var pumps := t.get_tree().get_nodes_in_group(AdventureProps.PUMP_GROUP)
 	var near := 0
+	var seen := []
 	for p in pumps:
 		var hit := w.locate_local((p as Node3D).global_position)
+		seen.append("%.0f/%.1f" % [float(hit.get("s", -1.0)), float(hit.get("lat", 0.0))])
 		if absf(float(hit["s"]) - s) < 30.0 and float(hit["lat"]) * float(fuel["side"]) > 0.0 and absf(float(hit["lat"])) < 25.0:
 			near += 1
-	check(pumps.size() >= 4 and near == 4, "a fuel station %.1f km along with four pumps beside the road on its side (%d found)" % [s / 1000.0, near])
+	check(pumps.size() >= 4 and near == 4, "a fuel station %.1f km along with four pumps beside the road on its side (%d found: %s)" % [s / 1000.0, near, ", ".join(seen)])
 	var forecourt := PhysicsRayQueryParameters3D.create((pumps[0] as Node3D).global_position + Vector3(0, 3, 1.4), (pumps[0] as Node3D).global_position + Vector3(0, -3, 1.4), 1)
 	var hit2 := w.get_world_3d().direct_space_state.intersect_ray(forecourt)
 	check(hit2 and str((hit2["collider"] as Object).get_meta("surface", "")) == "tarmac", "with a forecourt to ride onto")
@@ -382,7 +384,8 @@ func test_trip() -> void:
 	var noted: Dictionary = main.saver._players.values()[0]
 	check(int(noted["riding"]) == 0 and (noted["xf"] as Transform3D).origin.distance_to(Workshop.walker_spawn(Net.local_slot()).origin) < 0.1,
 		"a save out here puts you back at the shed")
-	# To the destination.
+	# To the destination (the host taking the main road at every fork: the road isn't built past one still open).
+	await Rides.take_main_roads(trip)
 	trip.jump(trip.world.route.length - trip.world.distance_of(main.bike.global_position, "own") - 5.0)
 	for i in 30:
 		main.bike.throttle = 0.3

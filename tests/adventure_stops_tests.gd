@@ -156,15 +156,20 @@ func test_groups() -> void:
 		var beds := _in_group(AdventureStops.BED_GROUP, s)
 		var space := w.get_world_3d().direct_space_state
 		var seat_ok := true
+		var why := ""
 		for n: Node3D in seats:
 			var f := -n.global_basis.z
 			var h := float(n.get_meta("height", -1.0))
 			var q := PhysicsRayQueryParameters3D.create(n.global_position + Vector3.UP * 0.3, n.global_position + Vector3.DOWN * (h + 0.6), 1)
 			var ground := space.intersect_ray(q)
 			var hit := w.locate_local(n.global_position)
-			seat_ok = seat_ok and absf(f.length() - 1.0) < 0.01 and absf(f.y) < 0.01 and h > 0.2 and h < 0.8 and not ground.is_empty() \
+			var ok := absf(f.length() - 1.0) < 0.01 and absf(f.y) < 0.01 and h > 0.2 and h < 0.8 and not ground.is_empty() \
 				and str(n.get_meta("seat", "")) != "" and str(n.get_meta("site", "")) != "" and not hit.is_empty() \
 				and absf(float(hit["s"]) - s) < 80.0 and (signf(float(hit["lat"])) == side or kind == "village")   # a high street's both sides
+			if not ok and why == "":
+				why = " (one isn't: height %.2f, ground %s, %.0f m along, %.1f m across, side %d)" % [h, not ground.is_empty(),
+					float(hit.get("s", -1.0)) - s, float(hit.get("lat", 0.0)), int(side)]
+			seat_ok = seat_ok and ok
 		var menu_ok := not counters.is_empty()
 		for n: Node3D in counters:
 			var menu: Array = n.get_meta("menu", [])
@@ -180,7 +185,7 @@ func test_groups() -> void:
 		if kind not in want_beds:
 			beds_ok = beds.is_empty()
 		var food_kinds := ["village", "cafe", "inn", "campsite", "fuel"]
-		check(seats.size() >= int(want_seats[kind]) and seat_ok, "a %s has %d places to sit, each facing a way over solid ground beside the road" % [kind, seats.size()])
+		check(seats.size() >= int(want_seats[kind]) and seat_ok, "a %s has %d places to sit, each facing a way over solid ground beside the road%s" % [kind, seats.size(), why])
 		if kind in food_kinds:
 			check(menu_ok, "a %s has %d counters selling food and drink" % [kind, counters.size()])
 		check(beds_ok, "a %s has %d beds" % [kind, beds.size()])
@@ -198,7 +203,7 @@ func test_groups() -> void:
 				and str(found[1]["name"]).length() > 0 and (sign.text.contains(str(found[1]["name"])) or kind in ["layby", "rest_area"])
 			var faces: bool = sign != null and sign.global_basis.z.dot(w.transform_at(s - AdventureStops.SIGN_BEFORE).basis.z) > 0.9
 			check(sign_ok and faces, "with a sign %d m before it on the left verge facing riders coming (%s)" % [int(AdventureStops.SIGN_BEFORE), sign.text.replace("\n", " / ") if sign else "none"])
-		report.append("%s: %d seats, %d counters, %d beds" % [kind, seats.size(), counters.size(), beds.size()])
+		report.append("%s: %d seats, %d counters, %d beds (%s, %s %.0f m)" % [kind, seats.size(), counters.size(), beds.size(), found[2], found[1].get("name", ""), s])
 		w.queue_free()
 		await _frames(2)
 	print("    STOPS: ", ", ".join(report))
