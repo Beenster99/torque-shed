@@ -320,8 +320,8 @@ func surface_local(p: Vector3) -> String:
 		return "grass"
 	var s: float = hit["s"]
 	var surf := route.surface_at_s(s)
-	if absf(float(hit["lat"])) <= route.width_at_s(s) * 0.5 + 0.1:
-		return surf
+	if absf(float(hit["lat"])) <= AdventureJunctions.edge_at_s(route, s) + 0.1:
+		return surf   # (right up to the edge as its mesh is drawn: a side road starts there)
 	for st in route.sites_of("fuel"):
 		if absf(float(st["s"]) - s) < 22.0 and signf(float(hit["lat"])) == float(st["side"]) and absf(float(hit["lat"])) < route.width_at_s(s) * 0.5 + 24.0:
 			return "tarmac"

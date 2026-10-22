@@ -666,6 +666,10 @@ func _run_all() -> void:
 	await _test_offer_window()
 	_test_offer_beam()
 	await _test_offer_beam_ride()
+	print("Simon's v0.21.0 round: dirt tracks and side roads start at the road's edge")
+	_test_tracks_adventure()
+	_test_tracks_real()
+	await _test_tracks_world()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -23072,3 +23076,21 @@ func _test_offer_beam() -> void:
 
 func _test_offer_beam_ride() -> void:
 	await _offer_suite().test_beam_ride()
+
+
+# ---------------------------------------------------------------------------- tracks start at the road's edge (tests/tracks_tests.gd)
+
+func _tracks() -> RefCounted:
+	return load("res://tests/tracks_tests.gd").new(self)
+
+
+func _test_tracks_adventure() -> void:
+	_tracks().test_adventure()
+
+
+func _test_tracks_real() -> void:
+	_tracks().test_real()
+
+
+func _test_tracks_world() -> void:
+	await _tracks().test_world()
