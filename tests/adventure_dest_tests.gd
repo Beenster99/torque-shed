@@ -1,8 +1,6 @@
 extends RefCounted
-## Adventure destinations and the magazine's checks (AdventureDest: the ride lengths, the set
-## pieces, arriving, the photo on the shed wall and the album; AdventureMag: the issues, the
-## pages, the route's facts and starting one from the workbench), run from tests/run_tests.gd:
-## its _test_adv_dest_* and _test_adv_magazine_* functions hand over to these.
+## Adventure destinations' checks (AdventureDest: the ride lengths, the set pieces, arriving, the photo on the shed wall
+## and the album), run from tests/run_tests.gd: its _test_adv_dest_* functions hand over to these.
 
 const THEMES: Array[String] = ["desert", "alpine", "coastal", "hills", "varied"]
 
@@ -82,7 +80,7 @@ func test_data() -> void:
 		"the set piece is just past the finish, in the road's run-out (%.0f m)" % float(site["s"]))
 	# Old adventures (from before destinations) get one by their theme.
 	var old := Adventure.sanitize({"id": 5, "seed": 9, "km": 30.0, "theme": "varied", "riders": {}})
-	check(AdventureDest.exists(str(old["dest"])) and str(old["title"]) == "" and str(old["mag"]) == "", "an adventure without a destination gets one")
+	check(AdventureDest.exists(str(old["dest"])) and str(old["title"]) == "", "an adventure without a destination gets one")
 
 
 ## Every set piece builds, with something to see and something solid; the race's bikes go round,
@@ -145,9 +143,8 @@ func test_arrive() -> void:
 	Progress.select("Tester")
 	var xp0 := int(Progress.profile["xp"])
 	var photos0 := Shed.furniture.values().filter(func(f): return str(f["model"]) == AdventureDest.PHOTO_MODEL).size()
-	Shed.request({"a": "adventure_start", "seed": 4101, "km": 150.0, "theme": "varied", "dest": "canyon", "title": "The Red Rock Run", "mag": "red_rock"})
-	check(Adventure.active() and str(Shed.adventure["dest"]) == "canyon" and str(Shed.adventure["title"]) == "The Red Rock Run"
-		and str(Shed.adventure["mag"]) == "red_rock", "the adventure knows where it's going and what it's called")
+	Shed.request({"a": "adventure_start", "seed": 4101, "km": 150.0, "theme": "varied", "dest": "canyon", "title": "The Red Rock Run"})
+	check(Adventure.active() and str(Shed.adventure["dest"]) == "canyon" and str(Shed.adventure["title"]) == "The Red Rock Run", "the adventure knows where it's going and what it's called")
 	Shed.request({"a": "adventure_arrive"})
 	var photo: Dictionary = Shed.adventure.get("photo", {})
 	check(not photo.is_empty() and (photo["names"] as Array).has("Tester") and str(photo["dest"]) == "canyon" and int(photo["km"]) == 150,
@@ -239,129 +236,3 @@ func test_photo() -> void:
 		"the photos are kept with the shed")
 	check(not Trinkets.all().has(AdventureDest.PHOTO_MODEL), "the adventure photo isn't for sale in the Shop")
 	Shed.stop()
-
-
-# ---------------------------------------------------------------------------- the magazine
-
-## The issues: every article to a real destination on a theme, its own seed; more issues as the
-## host levels up; a theme the game doesn't have yet is ridden on varied roads.
-func test_magazine_issues() -> void:
-	var all := AdventureMag.all_articles()
-	var seeds := {}
-	var ids := {}
-	var themes := {}
-	for a in all:
-		check(THEMES.has(str(a["theme"])) and AdventureDest.LENGTHS.has(str(a["len"])) and AdventureDest.exists(str(a["dest"]))
-			and str(a["title"]) != "" and str(a["blurb"]) != "", "%s is a whole article" % a["id"])
-		seeds[a["seed"]] = true
-		ids[a["id"]] = true
-		themes[a["theme"]] = true
-	check(seeds.size() == all.size() and ids.size() == all.size(), "every article is its own road (%d)" % all.size())
-	check(themes.size() == THEMES.size(), "every theme's in the magazine")
-	var lens := {}
-	for a in all:
-		lens[a["len"]] = true
-	check(lens.size() == 3, "short, ride and epic adventures")
-	var out_at := func(level: int) -> int: return all.filter(func(a): return AdventureMag.unlocked(a, level)).size()
-	check(out_at.call(1) == 5 and out_at.call(3) == 9 and out_at.call(6) == 12 and out_at.call(50) == all.size(),
-		"new issues come out with level (%d, %d, %d of %d)" % [out_at.call(1), out_at.call(3), out_at.call(6), all.size()])
-	check(AdventureMag.next_issue(1)["n"] == 2 and AdventureMag.next_issue(50).is_empty(), "the next issue's known")
-	check(AdventureMag.road_theme("varied") == "varied" and AdventureMag.road_theme("nowhere") == "varied", "a theme the game lacks rides varied")
-	for th in THEMES:
-		check(Adventure.THEMES.has(AdventureMag.road_theme(th)), "a %s article starts on a road the game has" % th)
-	# Starting one: a locked issue can't be.
-	var real_path := Progress.path
-	Progress.path = "user://profile_dest_test.json"
-	DirAccess.remove_absolute(Progress.path)
-	Shed.start_new("Tester", 5)
-	Progress.select("Tester")
-	Progress.profile["xp"] = 0
-	var locked := AdventureMag.find("coast_canyon")
-	var why := Adventure.check(Shed.me(), {"a": "adventure_start", "seed": 1, "km": 220.0, "theme": "varied", "dest": "canyon", "mag": "coast_canyon"})
-	check(not AdventureMag.unlocked(locked, AdventureMag.level_now()) and why.contains("isn't out"), "a later issue's adventure waits for the level (%s)" % why)
-	AdventureMag.start_article(AdventureMag.find("red_rock"), 100.0)
-	check(Adventure.active() and str(Shed.adventure["dest"]) == "canyon" and float(Shed.adventure["km"]) == 100.0
-		and Adventure.THEMES.has(str(Shed.adventure["theme"])), "the first issue's starts for the crew")
-	Shed.request({"a": "adventure_end"})
-	Shed.stop()
-	Progress.path = real_path
-
-
-## A page's facts: the route planned on a worker thread and counted (surfaces adding up, fuel and
-## food on the way), the same as the road ridden.
-func test_magazine_facts() -> void:
-	var f := AdventureMag.route_facts(4101, 100.0, "varied", "canyon")
-	var total := 0.0
-	for s in f["surfaces"]:
-		total += float(f["surfaces"][s])
-	check(absf(total - 1.0) < 0.01 and int(f["fuel"]) >= 2 and int(f["food"]) >= 2, "a short ride's facts: %s" % str(f))
-	var epic := AdventureMag.route_facts(4101, 220.0, "varied", "canyon")
-	check(int(epic["sleep"]) >= 1 and int(epic["fuel"]) > int(f["fuel"]), "an epic has somewhere to sleep and more fuel stops")
-	AdventureMag._facts_cache.clear()
-	var first := AdventureMag.facts(4102, 100.0, "varied", "dales_rally")
-	check(first.is_empty(), "worked out off the main thread: nothing at first")
-	var got := await _until(func(): return not AdventureMag.facts(4102, 100.0, "varied", "dales_rally").is_empty(), 30.0)
-	check(got and AdventureMag.facts(4102, 100.0, "varied", "dales_rally") == AdventureMag.route_facts(4102, 100.0, "varied", "dales_rally"),
-		"then the same facts as planning it here")
-
-
-## In the shed: the magazine on the workbench, read with {interact}, a page per adventure, the
-## length picked, started for the crew from its page; the Esc menu's button opens it too.
-func test_magazine_ui() -> void:
-	AdventureTrip.instant = true
-	AdventureDest.album_path = ""
-	var main: Node = load("res://scenes/main.tscn").instantiate()
-	t.add_child(main)
-	await t.get_tree().process_frame
-	main._start_session()
-	Shed.start_new("Tester", 7)
-	Progress.profile["xp"] = Progress.xp_for_level(7)
-	await _ticks(2)
-	var prop := main.workshop.find_child("AdventureMagazine", true, false) as Node3D
-	var bench := Shed.surface("bench")
-	var local: Vector3 = (bench["xf"] as Transform3D).affine_inverse() * prop.global_position if prop else Vector3.ZERO
-	var rect: Rect2 = bench["rect"]
-	check(prop != null and rect.grow(0.05).has_point(Vector2(local.x, local.z)) and absf(prop.global_position.y - float(bench["top"])) < 0.05,
-		"the magazine lies on the workbench (%s)" % str(local))
-	var body := prop.find_children("*", "StaticBody3D", true, false)[0] if prop else null
-	check(body != null and body.get_meta("use_node") == prop and str(prop.use_text({})).contains("{interact}"), "with {interact} to read it")
-	# Look at it and press interact.
-	main.walker.place(Transform3D(Basis(Vector3.UP, -PI * 0.5), prop.global_position + Vector3(0.9, -0.6, 0.0)))
-	prop.use({})
-	var mag: AdventureMag = main.trip.magazine
-	check(mag != null and main.trip.magazine_open(), "it opens")
-	check(mag.pages().size() == 13 and str(mag.pages()[12].get("id", "x")) == "", "level 7: three issues out, then the next one's coming (%d pages)" % mag.pages().size())
-	mag.open("red_rock")
-	check(mag._title.text == "The Red Rock Run" and mag._pic.texture != null and mag._kit.text.contains("tank"), "a page: title, picture, kit")
-	await _until(func():
-		mag.refresh()
-		return mag._facts.text.contains("Surfaces"), 30.0)
-	check(mag._facts.text.contains("100 km") and mag._facts.text.contains("Surfaces") and mag._facts.text.contains("fuel"),
-		"its route: %s" % mag._facts.text.replace("\n", " / "))
-	mag.turn(1)
-	check(mag._title.text == "Dales Rally Weekender", "the next page's the next adventure")
-	mag.turn(-1)
-	mag.pick("epic")
-	check(mag.km_of(mag.article()) == 220.0 and mag._facts.text.contains("night") and mag._kit.text.contains("night away"), "epic: 220 km and a night away")
-	mag.pick(123.0)
-	check(mag.km_of(mag.article()) == 123.0 and mag._km.visible, "or any km")
-	mag.pick("short")
-	check(not mag._start.disabled, "the host can start it")
-	mag.start()
-	await _ticks(10)
-	check(not main.trip.magazine_open() and Adventure.active() and main.trip.on_trip() and str(Shed.adventure["mag"]) == "red_rock"
-		and float(Shed.adventure["km"]) == 100.0 and str(Shed.adventure["title"]) == "The Red Rock Run", "Start puts the crew on it")
-	Shed.request({"a": "adventure_end"})
-	await _ticks(10)
-	# The Esc menu's button opens the magazine.
-	main.menu.show_pause()
-	check(main.menu._adventure.text.contains("magazine") and not main.menu._adventure.disabled, "the Esc menu points to the magazine")
-	main.menu._adventure.pressed.emit()
-	await _frames(3)
-	check(main.trip.magazine_open() and not main.menu.visible, "and opens it")
-	main.trip.close_magazine()
-	check(not main.trip.magazine_open(), "put it down again")
-	main.queue_free()
-	AdventureTrip.instant = false
-	Shed.stop()
-	await _frames(3)

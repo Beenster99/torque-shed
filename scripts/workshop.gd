@@ -230,7 +230,6 @@ func build() -> void:
 	_build_delivery_area()
 	_build_bin()
 	_build_radio()
-	add_child(AdventureMag.Prop.new())   # the adventure magazine, on the back end of the workbench
 	_build_wash_bay()
 	_build_drain()
 	_build_booth_room()
@@ -1210,6 +1209,9 @@ func _refresh_dashboards() -> void:
 					dash.show_page("bike", _bay_data(int(key.trim_prefix("bay"))))
 			"crew":
 				dash.show_page("crew", {"players": _crew_rows()})
+			"route":
+				if dash.kind != "route":
+					dash.show_page("route", {})
 			"workflow":
 				# A bike's job card (see WorkflowTv): redrawn only when something on it changes.
 				var card := WorkflowTv.data(key)

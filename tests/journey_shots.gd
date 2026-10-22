@@ -30,12 +30,12 @@ func _ready() -> void:
 	var end := Time.get_ticks_msec() + 30000
 	while Time.get_ticks_msec() < end:
 		await get_tree().process_frame
-		if map._shade != null and map._route_pts.size() > 1:
+		if map._view.shade != null and map._view.route_pts.size() > 1:
 			break
 	for i in 10:
 		await get_tree().process_frame
 	get_viewport().get_texture().get_image().save_png(out_dir.path_join("journey_whole.png"))
-	map._scale = 0.06
+	map._view._scale = 0.06
 	map._centre = Vector2(-1500, -3000)
 	map._canvas.queue_redraw()
 	for i in 6:

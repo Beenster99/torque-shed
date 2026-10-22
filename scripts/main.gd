@@ -1001,7 +1001,7 @@ func _physics_process_body(delta: float) -> void:
 	var active := not menu.visible and not computer.visible and not tuning.visible and not sales_pc.visible and not label_dialog.visible \
 		and not contract_panel.visible and not coffee_panel.visible and not staff_panel.visible and not paint_bench.visible and not geometry.active \
 		and not bike_order_panel.visible and not _home_ui_open() \
-		and not recovery_panel.visible and not trip.map_open() and not trip.magazine_open() and not trip.journey_open() and not trip.diary_open()
+		and not recovery_panel.visible and not trip.map_open() and not trip.journey_open() and not trip.diary_open()
 	# The whiteboard's picture file dialog is up: hands off the controls till it closes.
 	active = active and not get_tree().get_nodes_in_group("whiteboard").any(func(b): return b.picking)
 	_check_offers(delta, active and not emote_bar.visible)

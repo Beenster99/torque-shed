@@ -13,8 +13,8 @@ extends RefCounted
 ## wiring it up later only touches that function.
 
 ## The channels every screen has, in order. A screen's own home channel goes first.
-const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts", "staff", "workflow"]
-const NAMES := {"bay": "Bay", "live": "Live riding", "crew": "Crew board", "xp": "XP goals", "howto": "How to play",
+const CHANNELS: Array[String] = ["live", "crew", "xp", "howto", "money_me", "money_garage", "afford", "sales", "contracts", "staff", "workflow", "route"]
+const NAMES := {"bay": "Bay", "live": "Live riding", "route": "Route planner", "crew": "Crew board", "xp": "XP goals", "howto": "How to play",
 	"money_me": "My money", "money_garage": "Garage money", "afford": "What you can afford", "contracts": "Contracts",
 	"sales": "Sales", "staff": "Staff", "workflow": "Workflow"}
 const BUILT_IN: Array[String] = ["crew", "bay0", "bay1", "bay2", "bay3"]

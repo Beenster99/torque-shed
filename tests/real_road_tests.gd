@@ -521,24 +521,18 @@ func test_ride() -> void:
 	await t.get_tree().process_frame
 
 
-## The magazine's and the crew's side: the Shodoshima page, the real road in the state, and a copy that differs.
+## The crew's side: the real road in the state, a copy that differs, and what the data says of the Dales epic.
 func test_magazine() -> void:
-	var a := AdventureMag.find("shodoshima")
 	var km := floorf(RealPack.get_pack(PACK).max_km())
-	check(not a.is_empty() and str(a.get("real", "")) == PACK and km > 20.0, "the magazine has Shodoshima, ridden the whole road (%.0f km)" % km)
-	var f := AdventureMag.route_facts(4104, km, "coastal", "lighthouse", PACK)
-	check(int(f["fuel"]) >= 1 and int(f["forks"]) == 0, "its facts come from the real road: %s" % str(f))
-	var epic := AdventureMag.find("dales_epic")
+	check(km > 20.0, "the Shodoshima road is ridden whole (%.0f km)" % km)
 	var ep := RealPack.get_pack(EPIC)
-	check(not epic.is_empty() and str(epic.get("real", "")) == EPIC and ep != null and str(epic["dest"]) == "dales_rally",
-		"the magazine has the Dales epic, a real road to the rally")
 	var text := ep.summary_text()
 	check(text.contains("km from Settle to Leyburn") and text.contains("climbing") and text.contains("filling stations") and text.contains("inns"),
-		"its page says what the data does (%s)" % text)
+		"the Dales epic's summary says what the data does (%s)" % text)
 	var real_path := Progress.path
 	Progress.path = "user://test_real_progress.json"
 	Shed.start_new("Tester", 5)
-	AdventureMag.start_article(a, km)
+	Shed.request({"a": "adventure_start", "seed": 4104, "km": km, "theme": "coastal", "dest": "lighthouse", "real": PACK, "title": "Shodoshima"})
 	check(Adventure.active() and str(Shed.adventure["real"]) == PACK and str(Shed.adventure["real_hash"]) == RealPack.get_pack(PACK).hash,
 		"starting it puts the road and its hash in the crew's adventure")
 	check(AdventureTrip.real_mismatch(Shed.adventure) == "", "a game with the same road joins")
