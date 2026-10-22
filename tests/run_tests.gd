@@ -638,6 +638,11 @@ func _run_all() -> void:
 	_test_headlight_catalogue()
 	_test_headlight_builds()
 	await _test_headlight_lit()
+	print("Simon's v0.21.0 round: chopper engines sit inside the frame and under the tank")
+	_test_chop_engines_fit()
+	_test_chop_other_frames()
+	_test_chop_measure()
+	_test_chop_whole_bikes()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22858,6 +22863,28 @@ func _test_headlight_builds() -> void:
 
 func _test_headlight_lit() -> void:
 	await _headlights().test_lit()
+
+
+# ---------------------------------------------------------------------------- chopper engines in their frames (tests/chop_tests.gd)
+
+func _chop() -> RefCounted:
+	return load("res://tests/chop_tests.gd").new(self)
+
+
+func _test_chop_engines_fit() -> void:
+	_chop().test_engines_fit()
+
+
+func _test_chop_other_frames() -> void:
+	_chop().test_other_frames()
+
+
+func _test_chop_measure() -> void:
+	_chop().test_measure()
+
+
+func _test_chop_whole_bikes() -> void:
+	_chop().test_whole_bikes()
 
 
 # ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)
