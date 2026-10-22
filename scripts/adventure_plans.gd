@@ -22,14 +22,16 @@ static var _lock := Mutex.new()
 static func clean(v: Variant) -> Dictionary:
 	if not v is Dictionary:
 		return {}
-	var region := RealRegion.get_region(str(v.get("region", "")))
-	if region == null:
+	# (an area of cells is checked against its box: its cells may not be here yet, they come with the plan: _run)
+	var region_id := str(v.get("region", ""))
+	var extent := RealRegion.extent_of(region_id)
+	if extent.size == Vector2.ZERO:
 		return {}
 	var pins: Array = []
 	var raw = v.get("pins")
 	if not raw is Array or (raw as Array).size() < 2 or (raw as Array).size() > MAX_PINS:
 		return {}
-	var box := region.bounds.grow(MARGIN)
+	var box := extent.grow(MARGIN)
 	for p in raw:
 		if not p is Array or (p as Array).size() < 2:
 			return {}
@@ -45,7 +47,10 @@ static func clean(v: Variant) -> Dictionary:
 	var mode := str(v.get("mode", "main"))
 	if not RoutePlanner.CLASS_COST.has(mode):
 		mode = "main"
-	return {"region": region.id, "region_hash": str(v.get("region_hash", region.hash)), "pins": pins, "names": names, "mode": mode}
+	var region_hash := str(v.get("region_hash", ""))
+	if not v.has("region_hash") and not region_id.begins_with(RealRegion.AREA_PREFIX):
+		region_hash = RealRegion.get_region(region_id).hash
+	return {"region": region_id, "region_hash": region_hash, "pins": pins, "names": names, "mode": mode}
 
 
 ## What identifies a plan: the same plans have the same key.
@@ -62,10 +67,15 @@ static func _request(plan: Dictionary) -> Dictionary:
 
 
 static func _run(plan: Dictionary) -> Dictionary:
+	if str(plan["region"]).begins_with(RealRegion.AREA_PREFIX):
+		# An area of the world's cells: those the game hasn't got are fetched first (on this worker).
+		var why := RealRegion.fetch_area(str(plan["region"]))
+		if why != "":
+			return {"ok": false, "error": why, "pack": null}
 	var region := RealRegion.get_region(str(plan["region"]))
 	if region == null:
 		return {"ok": false, "error": "This game doesn't have that part of the world.", "pack": null}
-	if str(plan.get("region_hash", region.hash)) != region.hash:
+	if str(plan.get("region_hash", "")) != "" and str(plan["region_hash"]) != region.hash:
 		return {"ok": false, "error": "Your copy of the %s map isn't the host's: update the game to join." % region.title, "pack": null}
 	var res := RoutePlanner.plan(region, _request(plan))
 	if bool(res["ok"]):

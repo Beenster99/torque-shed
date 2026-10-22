@@ -19,9 +19,9 @@ const NAME_REACH := 350.0
 static func sanitize(v: Variant) -> Dictionary:
 	if not v is Dictionary:
 		return {}
-	var region := RealRegion.get_region(str(v.get("region", "")))
-	if region == null:
-		return {}
+	var region_id := str(v.get("region", ""))
+	if RealRegion.extent_of(region_id).size == Vector2.ZERO:
+		return {}   # (an area is known by its box: its cells needn't be here yet)
 	var pins: Array = []
 	var raw = v.get("pins")
 	if raw is Array:
@@ -30,7 +30,7 @@ static func sanitize(v: Variant) -> Dictionary:
 				pins.append({"x": snappedf(float(p.get("x", 0.0)), 0.1), "z": snappedf(float(p.get("z", 0.0)), 0.1),
 					"name": str(p.get("name", "")).left(AdventurePlans.MAX_NAME), "by": str(p.get("by", "")).left(24)})
 	var mode := str(v.get("mode", "main"))
-	return {"region": region.id, "pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
+	return {"region": region_id, "pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
 
 
 ## The plan the board makes ({} until it has two pins).

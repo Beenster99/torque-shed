@@ -196,6 +196,7 @@ def bake(args, log=print):
     segments = rb.fetch_segments(args.south, args.west, args.north, args.east, release, log)
     graph = rb.Graph(segments, frame, set(args.avoid or []))
     cell = getattr(args, "cell", None)
+    cover_levels = levels.CELL_COVER_LEVELS if cell else levels.COVER_LEVELS
     # (a cell keeps every bit of road: a stub at its edge is part of a network in the next cell)
     rows = graph_rows(graph, 1, ids=True) if cell else graph_rows(graph)
     log("roads: %d junctions, %d roads kept, %d one-way, %d banned turns" % (
@@ -214,8 +215,9 @@ def bake(args, log=print):
     try:
         tiles, has_sea, land = rb.bake_terrain(
             args.out, frame, pts, dems,
-            lambda cover_tiles: land_bake.bake_land(rb.OVERTURE_BUCKET, release, frame, pts, cover_tiles, args.out, log), log,
-            heights=getattr(args, "heights", "baked") == "baked")
+            lambda cover_tiles: land_bake.bake_land(rb.OVERTURE_BUCKET, release, frame, pts, cover_tiles, args.out, log,
+                                                    cover_levels=cover_levels), log,
+            heights=getattr(args, "heights", "baked") == "baked", cover_levels=cover_levels)
     finally:
         land_bake.BUILDING_MAX = old_max
     x0, z0 = frame.to_world(args.north, args.west)
@@ -233,7 +235,9 @@ def bake(args, log=print):
         "geo": {"south": args.south, "west": args.west, "north": args.north, "east": args.east},
         "heights": getattr(args, "heights", "baked"),
         "cell": list(cell) if cell else None,
-        "levels": [lv.meta() for lv in levels.LEVELS], "tile_counts": {k: len(v) for k, v in tiles.items()},
+        "levels": ([lv.meta(cover=lv in cover_levels) for lv in levels.LEVELS + [c for c in cover_levels if c not in levels.LEVELS]]
+                   if cell else [lv.meta() for lv in levels.LEVELS]),
+        "tile_counts": {k: len(v) for k, v in tiles.items()},
         "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
         "counts": {"nodes": len(rows["nodes"]), "edges": len(rows["edges"]), "buildings": len(land["buildings"]),
                    "pois": len(land["pois"]), "landmarks": len(land["landmarks"]), "places": len(places),

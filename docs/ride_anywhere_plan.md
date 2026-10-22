@@ -88,12 +88,14 @@ the player. Cells come to the game from step 3 on.
 
 ### Cells baked by GitHub Actions, served as release assets
 
-A public **data repository** (`torque-shed-world`) holds the baker's workflow and nothing else of size. A workflow
-takes a list of cells and bakes them in a matrix (20 at a time, a few minutes each; the UK's 530 cells in an
-afternoon), uploads each as a release asset named by grid position and hash, and rewrites `index.json` (cell, hash,
-bytes, release, url). The game fetches cells by URL, checks the hash and keeps them under `user://cells/` with a
-least-recently-used cap (1 GB by default; a saved adventure's cells are never evicted; a settings button clears the
-rest).
+A public **data repository** ([`torque-shed-world`](https://github.com/Beenster99/torque-shed-world)) holds the bake
+workflow and the index, nothing else of size. The workflow (**Bake cells**, run on request) takes points or boxes,
+leaves out the cells the index already has, bakes the rest with the game's own `region_bake.py --cell` 20 at a time
+(about a minute and a half each), uploads each as a release asset (`cROW_COLUMN-HASH.zip`, one release per 5° block,
+so no release holds too many), and adds them to `index.json` (hash, bytes and download for each cell, or that it has no
+roads). Zipped, a Dales cell is 0.4 to 0.6 MB. The game fetches cells by URL (`CellStore`, following the download's
+redirect), checks the hash and keeps them under `user://cells/`; the index is kept there too, so a crew offline still
+has what it fetched before. (A cap on what's kept, and a button to clear it, are still to come.)
 
 Nothing runs between bakes and nothing is metered: Actions are free on a public repository, release assets are free,
 and GitHub's CDN serves them. A new Overture release is a new GitHub release; cells are rebaked by the same workflow
@@ -185,15 +187,17 @@ average (0.6 m at most), and the land beside it the same.
 
 ### Step 3: the world baked and served
 
-**Plays.** A cell the game lacks arrives from GitHub. The host's Start waits until everyone has the journey's cells
-and heights, with progress on the TV.
+**Plays.** A cell the game lacks arrives from GitHub. Riders on the road wait at the start, held there, until the
+whole crew has the road (its cells and land fetched and planned), 90 seconds at most.
 
-**Builds.** The data repository and its bake workflow (matrix, release assets, the index); `CellStore` in the game
-(fetch queue, hash check, progress, the cache cap); the ready-check in the adventure state and on the TV; a
-two-player test where the client lacks a cell and gets it from a local file server standing in for GitHub; the UK
-and Japan baked.
+**Builds.** The data repository, its bake workflow and index; cells' cover at 16 m (a cell about 2 MB, half a megabyte
+zipped); `CellStore` (the index, fetching with the hash checked); planning an area fetches its cells first, on the
+planner's worker; a plan for an area is checked against its box, so a mate without the cells can take the host's
+plan; entering a ride waits for the road a frame at a time instead of holding the game up; the wait at the start
+(`AdventureTrip.crew_waiting`). Tests fetch the Dales cells from a stand-in for GitHub on the machine.
 
-**Size.** About two weeks, plus the afternoons of baking.
+**Status.** Built (`claude/world-served`), and the workflow has baked its first two cells. Still to do: the UK and
+Japan baked; a cap on the cells kept; progress on the TV while an area's cells come.
 
 ### Step 4: the world on the TV
 
