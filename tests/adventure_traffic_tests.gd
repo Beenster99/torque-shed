@@ -63,7 +63,7 @@ static func _with_village(km: float, after := 3000.0) -> Array:
 		for f in r.forks.size():
 			r.choose(f, 0)
 		for st in r.sites_of("village"):
-			if float(st["s"]) > after and float(st["s"]) < r.length - 3000.0 and (r.forks.is_empty() or float(st["s"]) < r.fork_s(0) - 1500.0):
+			if float(st["s"]) > after and float(st["s"]) < r.length - 3000.0 and r.fork_at(float(st["s"])) < 0:
 				return [seed, st]
 	return []
 
@@ -262,7 +262,10 @@ func test_bus() -> void:
 func test_blockers() -> void:
 	var spot := {}
 	var tr := _world(11, 60.0, spot)
+	# A two-way road, clear of junctions and stops, 6 km in or so.
 	var s := 6000.0
+	while s < tr.world.route.length - 2000.0 and (tr.world.route.width_at_s(s) < 5.9 or tr.world.route.sites.any(func(st): return absf(float(st["s"]) - s) < 300.0)):
+		s += 50.0
 	var results := []
 	for case in [[-1.5, 1], [1.5, -1]]:
 		tr.stream.clear()
@@ -332,7 +335,7 @@ func test_forks_origin() -> void:
 		var hit := tr.world.locate_local(p)
 		on_road = not hit.is_empty() and absf(float(hit["s"]) - check_s) < 2.0 and absf(float(hit["lat"])) < 4.0
 	check(on_way > 0 and on_road and tr.busy_at(0.0) >= 0.0 and is_same(tr._sites_ref, r.sites),
-		"once it's decided they drive on along way B, on its road (and the stops along it are known)")
+		"once it's decided they drive on along way B, on its road (and the stops along it are known) (%d seen on it, on the road %s)" % [on_way, on_road])
 	# The origin moves under them.
 	var before := {}
 	for d in tr.stream.vehicles:
@@ -473,6 +476,8 @@ func test_perf() -> void:
 	for i in 10:
 		await t.get_tree().physics_frame
 	var trip: AdventureTrip = main.trip
+	if trip.on_trip():
+		await Rides.take_main_roads(trip)
 	var tr := AdventureTraffic.current
 	check(trip.on_trip() and tr != null and tr.get_parent() == trip.world and tr.host, "the adventure has its traffic")
 	if tr == null:
