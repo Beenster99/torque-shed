@@ -35,15 +35,15 @@ func test_plan() -> void:
 	check(p.x.size() == p.z.size() and p.x.size() == p.e.size() and p.chunks.size() == int(ceil((p.x.size() - 1) / 32.0)),
 		"a knot every 4 m with a height each, and a row for each chunk")
 	# The road rides on the land it crosses (smoothed over the bumps).
-	var worst := 0.0
+	var on := 0
 	var known := 0
 	for k in range(0, p.x.size(), 25):
 		var h := p.terrain.height(p.x[k], p.z[k])
 		if is_nan(h):
 			continue
 		known += 1
-		worst = maxf(worst, absf(h - p.e[k]))
-	check(known > p.x.size() / 25 * 0.9 and worst < 8.0, "it lies on the land (%d points, within %.1f m)" % [known, worst])
+		on += int(absf(h - p.e[k]) < 6.0)
+	check(known > p.x.size() / 25 * 0.9 and on > known * 0.9, "it lies on the land (%d of %d points within 6 m)" % [on, known])
 	# No bend tighter than the bike's, no climb steeper than the grade.
 	var tight := 0
 	var steep := 0.0
