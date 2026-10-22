@@ -260,7 +260,7 @@ func _ready() -> void:
 			gear_ok = RiderGear.worn_of(Shed.me())["helmet"] == "helmet_kestrel"
 		elif main.remotes.size() == 1:
 			var other: RemotePlayer = main.remotes.values()[0]
-			gear_ok = other.gear.get("helmet", "") == "helmet_kestrel" and other._head_look.get_child_count() > 3
+			gear_ok = other.gear.get("helmet", "") == "helmet_kestrel" and other._head_look.find_children("*", "MeshInstance3D", true, false).size() > 3
 		# The other player is drawn whole for this side's first-person eye: on foot, and riding
 		# (only your own rider's helmet and torso are left out of it).
 		if main.remotes.size() == 1 and not avatar_ok and ranger != 0:
