@@ -65,7 +65,7 @@ static func add_to(model: BikeModel) -> int:
 		for cy in model._cyls:
 			var up: Vector3 = cy["up"]
 			var top: Vector3 = cy["base"] + up * 0.13
-			var b := _basis_up(up)
+			var b := model._cyl_basis(up)   # sized with the head, like the model's own
 			# Fins round the head casting on an air-cooled engine.
 			if layout in FINNED:
 				for k in 3:

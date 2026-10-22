@@ -650,6 +650,11 @@ func _run_all() -> void:
 	await _test_helmet_visors()
 	_test_helmet_choices_save()
 	await _test_helmet_visor_toggle()
+	print("Simon's v0.21.0 round: chopper engines sit inside the frame and under the tank")
+	_test_chop_engines_fit()
+	_test_chop_other_frames()
+	_test_chop_measure()
+	_test_chop_whole_bikes()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22892,6 +22897,28 @@ func _test_helmet_choices_save() -> void:
 
 func _test_helmet_visor_toggle() -> void:
 	await _helmets().test_visor_toggle()
+
+
+# ---------------------------------------------------------------------------- chopper engines in their frames (tests/chop_tests.gd)
+
+func _chop() -> RefCounted:
+	return load("res://tests/chop_tests.gd").new(self)
+
+
+func _test_chop_engines_fit() -> void:
+	_chop().test_engines_fit()
+
+
+func _test_chop_other_frames() -> void:
+	_chop().test_other_frames()
+
+
+func _test_chop_measure() -> void:
+	_chop().test_measure()
+
+
+func _test_chop_whole_bikes() -> void:
+	_chop().test_whole_bikes()
 
 
 # ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)
