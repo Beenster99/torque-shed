@@ -523,7 +523,9 @@ static func _stub(route: AdventureRoute, st: Dictionary, arm: Dictionary, pts: P
 		var row := []
 		for q: float in [-1.0, 0.0, 1.0]:
 			var v := p + across * w * q
-			v.y = _land_y(route, land, i0, i1, ax, az, v) + 0.05 + (0.03 if q == 0.0 else 0.0)
+			# (Only its first few rows can reach in over the main road: past them, up off the land as before.)
+			var lift := _stub_lift(route, i0, ax, az, v, q == 0.0) if j <= 2 else 0.05 + (0.03 if q == 0.0 else 0.0)
+			v.y = _land_y(route, land, i0, i1, ax, az, v) + lift
 			row.append(v)
 		var fade := smoothstep(0.6, 1.0, t)
 		rows.append([row, road_col.lerp(land_col, fade * 0.85), fade])
@@ -548,6 +550,21 @@ static func _stub(route: AdventureRoute, st: Dictionary, arm: Dictionary, pts: P
 				_strip(paint, c0, c1, 0.3, Color(0.9, 0.9, 0.86))
 			else:
 				_dashes(paint, c0, c1, 0.15, 0.6, 0.3)
+
+
+## How far a side road's stub sits over the ground at chunk-local `v` (`middle`: its crown): just over the land
+## beside the road, and on the main road's own tarmac (its mouth reaches in over the edge) only as high as its white
+## lines, on the road's crown, then up onto the land over the first metre and a half off it. (It used to sit 5 cm up
+## right to its tip on the road: a kerb to ride over along the road's edge at every side road.)
+static func _stub_lift(route: AdventureRoute, i0: int, ax: float, az: float, v: Vector3, middle: bool) -> float:
+	var lift := 0.05 + (0.03 if middle else 0.0)
+	var hit := route.locate(v.x + ax, v.z + az, clampi(i0 + 16, 0, route.knot_count() - 1))
+	if hit.is_empty():
+		return lift
+	var e := route.width[int(hit["i"])] * 0.5
+	var f := clampf(absf(float(hit["lat"])) / maxf(e, 0.1), 0.0, 1.0)
+	var on_road := AdventureChunk.CROWN * (1.0 - f * f) + 0.012
+	return lerpf(on_road, lift, smoothstep(e, e + 1.5, absf(float(hit["lat"]))))
 
 
 ## The land's height at chunk-local `v` as the chunk draws it: along the knots' rows of its land
