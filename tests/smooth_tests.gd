@@ -216,7 +216,8 @@ func test_surface() -> void:
 		var nm := "a made-up road" if real_id == "" else "the Dales road"
 		check(step < SEAM, "%s: the road runs on from chunk to chunk without a step (%.4f m at the most)" % [nm, step])
 		check(odd == 0, "%s: its collision is the road as drawn, triangle for triangle (overlapping the next chunk's by %.0f cm)" % [nm, AdventureChunk.SEAM_OVERLAP * 100.0])
-		check(mouths > 0 and lip < 0.03, "%s: side roads' mouths lie on its tarmac (%d points on it, %.3f m up at the most)" % [nm, mouths, lip])
+		# Side roads now begin at the road's edge, so few or no points reach over its tarmac; any that do sit on it.
+		check(lip < 0.03, "%s: no side road's mouth stands proud of its tarmac (%d points over it, %.3f m up at the most)" % [nm, mouths, lip])
 
 
 ## Up Shodoshima's stack of hairpins (the legs 20 m apart and 120 m apart along the road): no land from the next leg
