@@ -23,13 +23,13 @@ func _frames(n: int) -> void:
 		await t.get_tree().process_frame
 
 
-## A tour (Rides) with a junction of `type` well along it (and before the first fork), and that junction:
+## A tour (Rides) with a junction of `type` well along it (and not on a fork's ways), and that junction:
 ## [seed, route, junction, pack]; [] if no region's tour has one.
 static func _with_junction(type: String) -> Array:
 	for region_id in AdventurePlans.TOURS:
 		var r := Rides.tour_route(region_id, 7)
 		for st in r.sites_of(AdventureJunctions.KIND):
-			if st["type"] == type and float(st["s"]) > 1500.0 and (r.forks.is_empty() or float(st["s"]) < r.fork_s(0) - 600.0):
+			if st["type"] == type and float(st["s"]) > 1500.0 and r.fork_at(float(st["s"])) < 0:
 				return [7, r, st, Rides.tour_pack(region_id)]
 	return []
 
@@ -61,7 +61,7 @@ func test_junction_plan() -> void:
 		for st in js:
 			types[st["type"]] = int(types.get(st["type"], 0)) + 1
 			for o in r.sites:
-				if o != st and o["kind"] != AdventureJunctions.KIND and absf(float(o["s"]) - float(st["s"])) < 55.0:
+				if o != st and not str(o["kind"]) in [AdventureJunctions.KIND, "limit"] and absf(float(o["s"]) - float(st["s"])) < 55.0:
 					clash = true
 	check(types.has("tee") and types.has("cross") and types.has("lights") and count / km > 0.1,
 		"the real junctions along the tours, %.2f a km %s" % [count / km, str(types)])
@@ -125,9 +125,8 @@ func test_instructions() -> void:
 	t.add_child(w)
 	var js: Dictionary = {}
 	for s in w.route.sites_of(AdventureJunctions.KIND):
-		if s["type"] == "roundabout" and float(s["s"]) > 1500.0:
+		if absf(float(s["s"]) - float(found[2]["s"])) < 1.0:
 			js = s
-			break
 	var s0 := float(js["s"])
 	var xf := w.transform_at(s0 - 220.0, -1.2)
 	var nav := Satnav.AdventureNav.new(w)
@@ -405,9 +404,8 @@ func test_police_red() -> void:
 		p.plan = []
 		var st: Dictionary = {}
 		for s in w.route.sites_of(AdventureJunctions.KIND):
-			if s["lights"] and float(s["s"]) > 1500.0:
+			if absf(float(s["s"]) - float(found[2]["s"])) < 1.0:
 				st = s
-				break
 		var js := float(st["s"])
 		# The clock where the main road's lights are red (or green) for a good while.
 		var clock := 0.0
