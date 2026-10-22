@@ -852,6 +852,7 @@ func _update_target() -> void:
 			if not pc.has_meta("shelf"):
 				break
 			skip.append(past["rid"])
+	hit = past_stand(get_world_3d().direct_space_state, q, hit)
 	var t := {}
 	if hit:
 		var c: Object = hit["collider"]
@@ -960,6 +961,25 @@ func _update_target() -> void:
 		info += "\nSprayed so far: %d%% covered%s" % [roundi(st["covered"] * 100.0),
 			"  ·  overdone in places" if st["over"] > 0.04 else ""]
 	_highlight()
+
+
+## The space over an engine stand's top holds the engine on it: where the crosshair `hit` that
+## space and goes on to a part you service on the engine (its oil filter, low down in it), that
+## comes first (the rest of the block is still the stand's to hand you or push about). `q` is the
+## crosshair's ray. Returns the hit to use.
+static func past_stand(space: PhysicsDirectSpaceState3D, q: PhysicsRayQueryParameters3D, hit: Dictionary) -> Dictionary:
+	if hit.is_empty():
+		return hit
+	var c: Object = hit["collider"]
+	if c.has_meta("slot") or not c.has_meta("spot") or not Shed.is_stand_spot(str(c.get_meta("spot"))):
+		return hit
+	var skip: Array[RID] = q.exclude.duplicate()
+	skip.append(hit["rid"])
+	var past_q := PhysicsRayQueryParameters3D.create(q.from, q.to, q.collision_mask, skip)
+	var past := space.intersect_ray(past_q)
+	if past and (past["collider"] as Object).has_meta("engine") and PartsDB.SERVICE_SLOTS.has(str((past["collider"] as Object).get_meta("slot", ""))):
+		return past
+	return hit
 
 
 # ---------------------------------------------------------------------------- moving furniture

@@ -47,8 +47,9 @@ const KIT_SLOTS: Array[String] = ["tank_bag", "aux_tank", "toolbox", "satnav"]
 ## number boards and a swingarm of its own in place of the frame's). Bikes saved before they
 ## existed get the slots empty.
 const FILLER_SLOTS: Array[String] = ["indicators", "side_panels", "rearsets", "guards", "number_boards", "swingarm"]
-## Parts low down on a bike that you have to crouch to reach while it's in the frame.
-const LOW_SLOTS: Array[String] = ["side_stand", "centre_stand", "oil_filter", "final_drive", "chain", "rearsets", "guards"]
+## Parts low down on a bike that you have to crouch to reach while it's in the frame. (The oil
+## filter is a service part you can change standing or crouched: see SERVICE_SLOTS.)
+const LOW_SLOTS: Array[String] = ["side_stand", "centre_stand", "final_drive", "chain", "rearsets", "guards"]
 ## Slots on an engine block. They travel with the block when it comes out of the frame.
 const ENGINE_SLOTS: Array[String] = ["head", "fuel", "air_filter", "oil_filter", "spark_plugs", "cooling", "gearbox"]
 ## Engine parts you can change with the engine still in the frame. The rest need the engine stand.
