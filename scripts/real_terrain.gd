@@ -28,6 +28,7 @@ class Level:
 	var h_min := -256.0
 	var h_scale := 0.0625
 	var has_cover := false
+	var base := ""   # the folder its tiles are in, when not the terrain's own (a cell's: add_cover_cell)
 	var tiles := {}    # Vector2i -> PackedFloat32Array (empty when there is no such tile)
 	var covers := {}   # Vector2i -> PackedByteArray (empty when there is no such tile)
 
@@ -61,6 +62,9 @@ var _pads: Array = []
 var _pad_grid := {}            # Vector2i -> PackedInt32Array of building indices
 var _pad_level := {}           # building index -> its ground, once worked out (under _lock; each ride its own)
 var _ridge_tiles := {}         # Vector2i -> PackedFloat32Array: the live ridge level as RealRidges reads it
+## A region stitched from cells (RealRegion.stitch) reads its cover from each cell's own tiles, in the cell's own frame:
+## [{levels, lat, lon, m (metres per degree there), south, west, north, east}].
+var _cover_cells: Array = []
 
 
 func _init(pack_dir := "", meta: Dictionary = {}) -> void:
@@ -122,7 +126,19 @@ func _level_height(lv: Level, x: float, z: float) -> float:
 ## What covers the ground at route-frame (x, z): an id into the pack's "cover" list (RealPack.COVER), or -1 where no
 ## level with cover has it. The sample nearest to (x, z), from the finest level that has it.
 func cover(x: float, z: float) -> int:
-	for lv in levels:
+	if not _cover_cells.is_empty():
+		var lat := lat0 - z / _m.x
+		var lon := lon0 + x / _m.y
+		for c: Dictionary in _cover_cells:
+			if lat >= float(c["south"]) and lat < float(c["north"]) and lon >= float(c["west"]) and lon < float(c["east"]):
+				var m: Vector2 = c["m"]
+				return _cover_from(c["levels"], (lon - float(c["lon"])) * m.y, -(lat - float(c["lat"])) * m.x)
+		return -1
+	return _cover_from(levels, x, z)
+
+
+func _cover_from(lvls: Array, x: float, z: float) -> int:
+	for lv: Level in lvls:
 		if not lv.has_cover:
 			continue
 		var ix := roundi(x / lv.spacing)
@@ -176,7 +192,7 @@ func _cover_tile(lv: Level, key: Vector2i) -> PackedByteArray:
 		_lock.unlock()
 		return got
 	var out := PackedByteArray()
-	var path := dir.path_join(lv.folder).path_join("%d_%d.covz" % [key.x, key.y])
+	var path := (lv.base if lv.base != "" else dir).path_join(lv.folder).path_join("%d_%d.covz" % [key.x, key.y])
 	if FileAccess.file_exists(path):
 		var raw := FileAccess.get_file_as_bytes(path).decompress(lv.cells * lv.cells, FileAccess.COMPRESSION_DEFLATE)
 		if raw.size() == lv.cells * lv.cells:
@@ -270,6 +286,7 @@ func for_road(road: PackedVector2Array) -> RealTerrain:
 	t.zooms = zooms
 	t._pads = _pads
 	t._pad_grid = _pad_grid
+	t._cover_cells = _cover_cells
 	for li in zooms.size():
 		var set := {}
 		for k in HeightTiles.keys_near(road, LIVE_REACH[li], zooms[li], lat0, lon0):
@@ -321,6 +338,25 @@ func fetch_area(area: Rect2) -> int:
 	for li in [1, 2]:
 		keys.append_array(HeightTiles.keys_near(pts, 1000.0, zooms[li], lat0, lon0))
 	return HeightTiles.fetch(keys)
+
+
+## Reads cover from cell `cell_dir` too, wherever its box is (its region.json `meta`: frame, geo box, levels).
+func add_cover_cell(cell_dir: String, meta: Dictionary) -> void:
+	var lvls: Array = []
+	for lm: Dictionary in meta.get("levels", []):
+		if not bool(lm.get("cover", false)):
+			continue
+		var lv := Level.new()
+		lv.folder = str(lm["dir"])
+		lv.spacing = float(lm["spacing"])
+		lv.cells = int(lm["n"])
+		lv.has_cover = true
+		lv.base = cell_dir
+		lvls.append(lv)
+	var geo: Dictionary = meta["geo"]
+	var lat := float(meta["frame"]["lat"])
+	_cover_cells.append({"levels": lvls, "lat": lat, "lon": float(meta["frame"]["lon"]), "m": metres_per_degree(lat),
+		"south": float(geo["south"]), "west": float(geo["west"]), "north": float(geo["north"]), "east": float(geo["east"])})
 
 
 ## The buildings whose ground the live heights level (RealRegion.buildings rows: [x, z, w, d, yaw, ...]).

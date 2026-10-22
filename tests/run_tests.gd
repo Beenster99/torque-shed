@@ -484,6 +484,10 @@ func _run_all() -> void:
 	_test_live_pads()
 	_test_live_same()
 	await _test_live_ride()
+	_test_cells_grid()
+	_test_cells_stitch()
+	_test_cells_same_road()
+	_test_cells_ride()
 	await _test_adventure_stream()
 	await _test_adventure_frames()
 	await _test_adventure_origin()
@@ -21996,6 +22000,26 @@ func _test_kit_fuel() -> void:
 
 func _adventure() -> RefCounted:
 	return load("res://tests/adventure_tests.gd").new(self)
+
+
+func _cells() -> RefCounted:
+	return load("res://tests/cells_tests.gd").new(self)
+
+
+func _test_cells_grid() -> void:
+	_cells().test_grid()
+
+
+func _test_cells_stitch() -> void:
+	_cells().test_stitch()
+
+
+func _test_cells_same_road() -> void:
+	_cells().test_same_road()
+
+
+func _test_cells_ride() -> void:
+	_cells().test_ride()
 
 
 func _live() -> RefCounted:
