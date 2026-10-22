@@ -638,6 +638,10 @@ func _run_all() -> void:
 	_test_headlight_catalogue()
 	_test_headlight_builds()
 	await _test_headlight_lit()
+	print("Simon's v0.21.0 round: dirt tracks and side roads start at the road's edge")
+	_test_tracks_adventure()
+	_test_tracks_real()
+	await _test_tracks_world()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22918,3 +22922,21 @@ func _test_menu_layout() -> void:
 
 func _test_menu_fix_bike() -> void:
 	await _menu_suite().test_fix_bike()
+
+
+# ---------------------------------------------------------------------------- tracks start at the road's edge (tests/tracks_tests.gd)
+
+func _tracks() -> RefCounted:
+	return load("res://tests/tracks_tests.gd").new(self)
+
+
+func _test_tracks_adventure() -> void:
+	_tracks().test_adventure()
+
+
+func _test_tracks_real() -> void:
+	_tracks().test_real()
+
+
+func _test_tracks_world() -> void:
+	await _tracks().test_world()

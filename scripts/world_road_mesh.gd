@@ -46,18 +46,38 @@ static func surface(road: Dictionary, from: int, to: int) -> Array:
 	var colors := PackedColorArray()
 	var uvs := PackedVector2Array()
 	var length: float = road["length"]
+	var mouths: Array = road.get("mouths", [])
+	var first := 0           # the rows drawn: from the last lying wholly on the edge of a road it
+	var last := to - from    # starts from, to the first lying wholly on the edge of one it ends on
 	for k in range(from, to + 1):
 		var i := k % n
 		var p := Vector3(xz[i].x, hs[i], xz[i].y) - center
 		var right := Vector3(-dirs[i].y, 0.0, dirs[i].x)
 		var along: float = dist[i] if k < n else length
+		var on_edge := 0
+		var ends := ""
 		for e in w:
-			verts.append(p + right * float(offs[e]) + Vector3.UP * float(drops[e]))
+			var v := p + right * float(offs[e]) + Vector3.UP * float(drops[e])
+			for m: Dictionary in mouths:
+				var at_start: bool = m["end"] == "start"
+				if (i if at_start else n - 1 - i) > mouth_reach(m):
+					continue
+				var cut := to_edge(m, Vector2(v.x + center.x, v.z + center.z), dirs[i] * (1.0 if at_start else -1.0))
+				if not cut.is_empty():
+					v = Vector3(cut[0].x, cut[1], cut[0].y) - center
+					on_edge += 1
+					ends = m["end"]
+			verts.append(v)
 			colors.append(cols[e])
 			uvs.append(Vector2(float(offs[e]) / 4.0, along / 4.0))
+		if on_edge == w:
+			if ends == "start":
+				first = k - from
+			elif last == to - from:
+				last = k - from
 	var idx := PackedInt32Array()
 	var faces := PackedVector3Array()
-	for r in to - from:
+	for r in range(first, last):
 		for e in w - 1:
 			var a := r * w + e
 			var b := a + w
@@ -75,6 +95,65 @@ static func surface(road: Dictionary, from: int, to: int) -> Array:
 		st.add_index(t)
 	st.generate_normals()
 	return [st.commit(), faces, center]
+
+
+## How many samples in from its end a track can still reach over the road at mouth `m` (see
+## WorldRoads._mouths): its own width and shoulders at a slant, past that road's half width.
+static func mouth_reach(m: Dictionary) -> int:
+	return ceili((float(m["hw"]) + 6.0) / WorldRoads.STEP) + 1
+
+
+## Where the road at mouth `m` (a track meets it there) runs, nearest `q`: [distance from its
+## centre line, the point on it, its height there].
+static func mouth_nearest(m: Dictionary, q: Vector2) -> Array:
+	var xz: PackedVector2Array = m["xz"]
+	var hs: PackedFloat32Array = m["h"]
+	var best := [INF, q, 0.0]
+	for i in xz.size() - 1:
+		var seg := xz[i + 1] - xz[i]
+		var u := clampf((q - xz[i]).dot(seg) / maxf(seg.length_squared(), 0.0001), 0.0, 1.0)
+		var c := xz[i] + seg * u
+		var d := q.distance_to(c)
+		if d < float(best[0]):
+			best = [d, c, lerpf(hs[i], hs[i + 1], u)]
+	return best
+
+
+## How far `q` (world x, z) lies in on the road at mouth `m` (a track meets it there): from its
+## sides, and from its end where the road stops there; 0 or less off it.
+static func mouth_depth(m: Dictionary, q: Vector2) -> float:
+	var xz: PackedVector2Array = m["xz"]
+	var depth := float(m["hw"]) - float(mouth_nearest(m, q)[0])
+	var last := xz.size() - 1
+	if m.get("open_start", false):
+		depth = minf(depth, (q - xz[0]).dot((xz[1] - xz[0]).normalized()))
+	if m.get("open_end", false):
+		depth = minf(depth, (q - xz[last]).dot((xz[last - 1] - xz[last]).normalized()))
+	return depth
+
+
+## A track's point `q` (world x, z) slid on along `out` (the way the track runs off the road at
+## mouth `m`) to that road's edge, where it lies on the road: [the point, its height (the road's edge
+## there, lifted JOIN_LIFT)], or [] where it's off the road already. So no track
+## reaches over the tarmac it joins (Simon: "Dirt tracks that join the side of the road should
+## start at the edge and not cross over"), and the tyres feel tarmac right up to the edge.
+static func to_edge(m: Dictionary, q: Vector2, out: Vector2) -> Array:
+	if mouth_depth(m, q) <= 0.0:
+		return []
+	# Out along the track half a metre at a time till it's off the road, then halved down to the edge.
+	var lo := 0.0
+	var hi := 0.5
+	while hi < 20.0 and mouth_depth(m, q + out * hi) > 0.0:
+		lo = hi
+		hi += 0.5
+	for k in 10:
+		var t := (lo + hi) * 0.5
+		if mouth_depth(m, q + out * t) > 0.0:
+			lo = t
+		else:
+			hi = t
+	q += out * hi
+	return [q, float(mouth_nearest(m, q)[2]) + WorldRoads.JOIN_LIFT]
 
 
 ## The painted lines on samples `from`..`to` of a tarmac road, about `center`, or null for a
