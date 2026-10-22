@@ -207,6 +207,9 @@ var pushing := false
 var tow_anchor := Vector3.INF
 var tow_speed := 0.0       # how fast the towing bike's going (m/s): the strap damps against it
 var horn_audio: HornAudio
+## The stop lamp and the indicators (see BikeLamps and indicate), and the relay's tick on the dash.
+var lamps := BikeLamps.new()
+var _relay: AudioStreamPlayer3D
 var _stopped_brake := 0.0  # how long the front brake has been held at a standstill
 var _throttle_eff := 0.0   # the throttle as the rider's wrist actually turns it (smoothed with realism up)
 var _fog: Array = []
@@ -318,6 +321,16 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	horn_audio.setup_from(build)
 	horn_audio.position = model.lamp_position()
 	add_child(horn_audio)
+	if _relay:
+		_relay.free()
+	# The indicators' relay ticking behind the clocks: soft, and only heard close by.
+	_relay = AudioStreamPlayer3D.new()
+	_relay.position = model.lamp_position() + Vector3(0.0, 0.12, 0.2)
+	_relay.volume_db = -14.0
+	_relay.unit_size = 1.0
+	_relay.max_distance = 12.0
+	_relay.bus = "SFX"
+	add_child(_relay)
 	fuel_litres = build.fuel_litres
 	if effects:
 		effects.free()
@@ -509,6 +522,7 @@ func _physics_process_body(delta: float) -> void:
 		model.set_lights(engine_on, beam > 0, fog_on)
 	if effects:
 		effects.beam_mode = beam
+	_step_lamps(delta)
 
 	if heat:
 		heat.step(self, delta)
@@ -1752,7 +1766,8 @@ func _clear_ragdoll() -> void:
 	_ragdoll = null
 
 
-## Snapshot for the network: position, rotation, velocity, steering, wheels, engine.
+## Snapshot for the network: position, rotation, velocity, steering, wheels, engine, then the
+## horn, gear, burnout, headlight switch, and the stop lamp [25] and indicators [26].
 func get_net_state() -> PackedFloat32Array:
 	var q := global_transform.basis.get_rotation_quaternion()
 	var p := global_position
@@ -1762,7 +1777,38 @@ func get_net_state() -> PackedFloat32Array:
 		steer, wheels[0]["spin"], wheels[1]["spin"], wheels[0]["compression"], wheels[1]["compression"],
 		rpm, sound_load(), 1.0 if is_crashed else 0.0, body_shift, 1.0 if engine_on else 0.0, skid,
 		1.0 if (horn_audio and horn_audio.pressed) else 0.0, float(gear), burnout, float(beam),
+		1.0 if lamps.braking else 0.0, float(lamps.side),
 	])
+
+
+## The indicator switch: `which` -1 left or 1 right. The same side again cancels it, the other
+## side switches over (see BikeLamps). Returns why it can't ("" when it did).
+func indicate(which: int) -> String:
+	if model == null or not model.has_indicators():
+		return "No indicators on this bike"
+	if not engine_on:
+		return "The indicators need the engine running"
+	if str(faults.get("fuse", "")) == "lights":
+		return "The lights' fuse has gone: no indicators"
+	lamps.press(which)
+	Sfx.play_at("switch", global_position, -16.0)
+	return ""
+
+
+## The stop lamp from the brakes as the bike uses them (the rider's, a menu's held brake or the
+## police's stop), and the indicators' flash, self-cancel and relay tick. They need the ignition
+## (and the lights' fuse).
+func _step_lamps(delta: float) -> void:
+	var live := engine_on and str(faults.get("fuse", "")) != "lights"
+	lamps.set_brakes(front_brake if live else 0.0, rear_brake if live else 0.0)
+	if not live:
+		lamps.set_side(0)
+	var heard := lamps.step(delta, lean_angle, -angular_velocity.y)
+	if heard != 0 and _relay:
+		_relay.stream = BikeLamps.click(heard > 0)
+		_relay.play()
+	if model:
+		model.set_signals(lamps.braking, lamps.left_lit(), lamps.right_lit())
 
 
 ## How many stops the headlight switch has: off, low, high, and high with the fog lights on a

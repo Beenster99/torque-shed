@@ -15,6 +15,8 @@ var _last := PackedFloat32Array()
 var _effects: BikeEffects
 var _horn: HornAudio
 var _fog: Array = []
+## Their stop lamp and indicators, from their snapshots (see BikeLamps.from_net).
+var lamps := BikeLamps.new()
 var _mark_key := ""         # its tyre's name in the shared skid marks
 var _marking := false        # its back tyre was laying rubber last frame
 ## The rider's gear (slot -> RiderGear item id); set before setup. Empty dresses them as before.
@@ -129,6 +131,10 @@ func _physics_process_body(delta: float) -> void:
 	for l in _fog:
 		l.visible = fog
 	model.set_lights(running, _effects.beam_mode > 0, fog)
+	# Their stop lamp and indicators, flashing here in time from when they switched on.
+	lamps.from_net(sb[25] if sb.size() > 26 else 0.0, sb[26] if sb.size() > 26 else 0.0)
+	lamps.step(delta, 0.0, 0.0)
+	model.set_signals(lamps.braking, lamps.left_lit(), lamps.right_lit())
 
 
 ## Their back tyre's rubber on the road: a burnout's patch or a skid's line, laid from the
