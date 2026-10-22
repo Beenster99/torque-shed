@@ -60,7 +60,7 @@ func test_route() -> void:
 	var c := Rides.route(40.0, 43)
 	check(a.px == b.px and a.pz == b.pz and a.ph == b.ph and a.width == b.width and a.chunk_surface == b.chunk_surface
 		and str(a.sites) == str(b.sites), "the same plan lays out the very same road (%d knots, %.1f km)" % [a.knot_count(), a.total / 1000.0])
-	check(a.px == c.px and a.ph == c.ph, "and another seed the same road")
+	check(a.px == c.px and a.pz == c.pz, "and another seed the same road (levelled through its own stops)")
 	var ca := AdventureChunk.build(a, 150)
 	var cb := AdventureChunk.build(b, 150)
 	check(ca["road"][Mesh.ARRAY_VERTEX] == cb["road"][Mesh.ARRAY_VERTEX] and ca["land_1"][Mesh.ARRAY_VERTEX] == cb["land_1"][Mesh.ARRAY_VERTEX]

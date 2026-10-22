@@ -53,6 +53,8 @@ const SIGN_BEFORE := 300.0
 ## How far out from the road the land is kept flat for each kind (m).
 const FLAT := {"village": 18.0, "village_row": 16.0, "cafe": 32.0, "layby": 13.0, "rest_area": 34.0, "viewpoint": 42.0,
 	"inn": 31.0, "campsite": 44.0}
+## How far along the road either way the solid ground under a stop runs (m, see _ground).
+const GROUND_ALONG := 45.0
 ## The hard ground (its surface) each kind's pad covers: [out from the road edge, half its length].
 const PADS := {"village": [3.6, 24.0], "village_row": [3.6, 24.0], "cafe": [30.0, 22.0], "layby": [6.0, 30.0],
 	"rest_area": [18.0, 26.0], "viewpoint": [16.0, 18.0], "inn": [14.0, 23.0], "campsite": [8.0, 6.0]}
@@ -305,7 +307,26 @@ static func build(route: AdventureRoute, site: Dictionary, xf: Transform3D) -> N
 	if str(site["kind"]) != ROW:
 		_sign(route, k, xf)
 	_finish(k)
+	_ground(k, route)
 	return k.root
+
+
+## Solid ground under the whole stop, level with the land kept flat for it (FLAT out from the verge, GROUND_ALONG either
+## way): a real road's land beside it can be cut short on the inside of a bend, and the seats out at the back of a
+## stop stood over nothing (anyone walking over to them fell through).
+static func _ground(k: Kit, route: AdventureRoute) -> void:
+	var out := float(FLAT.get(str(k.site["kind"]), 20.0))
+	var body := StaticBody3D.new()
+	body.name = "Ground"
+	body.collision_layer = 1
+	body.set_meta("surface", str(AdventureSurface.LAND.get(k.surf, "grass")))
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(out, 0.4, GROUND_ALONG * 2.0)
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	cs.position = Vector3(out * 0.5 + 1.0, -0.32, 0.0)
+	body.add_child(cs)
+	k.root.add_child(body)
 
 
 ## Turns the kit's arrays into its meshes and collision.

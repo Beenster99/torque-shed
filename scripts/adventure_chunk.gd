@@ -28,7 +28,7 @@ static func land_cols(_route: AdventureRoute) -> int:
 	return REAL_LAND_COLS
 const FAR_SIDE_RUN := 30.0
 const FAR_SIDE_SLOPE := 1.0
-const COLLIDE_COLS := 7
+const COLLIDE_COLS := 8
 ## From this column out (past the skyline ridge) the land needn't look for other stretches of
 ## the road along the way: route.land_reach keeps it well short of them.
 const SHARED_COL := 13

@@ -175,7 +175,7 @@ func test_join() -> void:
 	var spot := {}
 	var tr := _world(11, 60.0, spot)
 	var b := tr.bikers
-	var s0 := _open_stretch(tr, 2500.0, 2500.0)
+	var s0 := _open_stretch(tr, 1000.0, 2000.0)
 	check(s0 > 0.0, "an open stretch of road to ride along")
 	if s0 < 0.0:
 		await _free(tr)

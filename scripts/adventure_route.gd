@@ -54,6 +54,10 @@ const FUEL_FIRST := [9000.0, 15000.0]
 const FUEL_EVERY := [22000.0, 32000.0]
 ## Knots either side of a site that are kept straight and level.
 const SITE_KNOTS := 28
+## The most the road may climb by a stop (see _fit_for_stop), and how many knots it eases back onto its own heights
+## either side of the level stretch through one (see _level_stops).
+const STOP_GRADE := 0.05
+const LEVEL_EASE := 40
 ## The grid knots are filed in, to find the road near a point (m).
 const GRID := 64.0
 const FORK_END_GAP := 3000.0
@@ -227,16 +231,7 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 			sections[-1]["s1"] = k1 * STEP
 		else:
 			sections.append({"s0": k0 * STEP, "s1": k1 * STEP, "kind": kind, "width": "road"})
-	# The lie of the land: the road's height over 200 m either way.
-	base.resize(n)
-	var sums := PackedFloat64Array()
-	sums.resize(n + 1)
-	for i in n:
-		sums[i + 1] = sums[i] + ph[i]
-	for i in n:
-		var a := maxi(0, i - 50)
-		var b := mini(n, i + 51)
-		base[i] = (sums[b] - sums[a]) / float(b - a)
+	_lie_of_land()
 	# The forks first (the baker found them in the road: the stops keep clear of them), then fuel and the stops, only
 	# where the road is straight and level enough to pull in.
 	_plan_forks_real(pack.forks)
@@ -244,6 +239,7 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 	AdventureStops.plan(self)
 	_adopt_pois()
 	_fit_stops()
+	_level_stops()
 	add_site("start", 48.0, 1, 0.0, "Start")
 	add_site("finish", length, 1, 0.0, "Destination")
 	for e in extra_sites:
@@ -539,7 +535,56 @@ func _near_fork(s: float) -> bool:
 func _fit_for_stop(i: int) -> bool:
 	var a := clampi(i - 15, 0, px.size() - 1)
 	var b := clampi(i + 15, 0, px.size() - 1)
-	return absf(hd[b] - hd[a]) < deg_to_rad(8.0) and absf(ph[b] - ph[a]) < 0.05 * float(b - a) * STEP
+	return absf(hd[b] - hd[a]) < deg_to_rad(8.0) and absf(ph[b] - ph[a]) < STOP_GRADE * float(b - a) * STEP
+
+
+## The road levelled through every fuel station and stop (a village's rows with it), as a stop is built level: each
+## stretch they keep (SITE_KNOTS either side, run together where they overlap) at its average height, eased back onto
+## the real road's heights over LEVEL_EASE knots either side. A stop only goes where the road climbs no more than
+## STOP_GRADE (see _fit_for_stop), so the road moves a few metres at most.
+func _level_stops() -> void:
+	var spans := []
+	for st in sites:
+		var kind := str(st["kind"])
+		if kind == "fuel" or kind == AdventureStops.ROW or AdventureStops.KINDS.has(kind):
+			var i := int(round(float(st["s"]) / STEP))
+			spans.append([maxi(0, i - SITE_KNOTS), mini(ph.size() - 1, i + SITE_KNOTS)])
+	spans.sort_custom(func(p, q): return int(p[0]) < int(q[0]))
+	var merged := []
+	for sp: Array in spans:
+		if not merged.is_empty() and int(sp[0]) <= int(merged[-1][1]):
+			merged[-1][1] = maxi(int(merged[-1][1]), int(sp[1]))
+		else:
+			merged.append(sp.duplicate())
+	var n := ph.size()
+	for sp: Array in merged:
+		var a: int = sp[0]
+		var b: int = sp[1]
+		var h := 0.0
+		for k in range(a, b + 1):
+			h += ph[k] / float(b - a + 1)
+		for k in range(maxi(0, a - LEVEL_EASE), mini(n, b + LEVEL_EASE + 1)):
+			var t := 1.0
+			if k < a:
+				t = smoothstep(0.0, 1.0, 1.0 - float(a - k) / LEVEL_EASE)
+			elif k > b:
+				t = smoothstep(0.0, 1.0, 1.0 - float(k - b) / LEVEL_EASE)
+			ph[k] = lerpf(ph[k], h, t)
+	_lie_of_land()
+
+
+## The lie of the land: the road's height averaged over 200 m either way.
+func _lie_of_land() -> void:
+	var n := ph.size()
+	base.resize(n)
+	var sums := PackedFloat64Array()
+	sums.resize(n + 1)
+	for i in n:
+		sums[i + 1] = sums[i] + ph[i]
+	for i in n:
+		var a := maxi(0, i - 50)
+		var b := mini(n, i + 51)
+		base[i] = (sums[b] - sums[a]) / float(b - a)
 
 ## Marks a site (a fuel station, a town, a stop, a fork) at `s` metres on `side` (1 the right,
 ## -1 the left): the land there is kept flat at the road's height `flat` metres out past the

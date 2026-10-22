@@ -167,8 +167,13 @@ func test_groups() -> void:
 				and str(n.get_meta("seat", "")) != "" and str(n.get_meta("site", "")) != "" and not hit.is_empty() \
 				and absf(float(hit["s"]) - s) < 80.0 and (signf(float(hit["lat"])) == side or kind == "village")   # a high street's both sides
 			if not ok and why == "":
-				why = " (one isn't: height %.2f, ground %s, %.0f m along, %.1f m across, side %d)" % [h, not ground.is_empty(),
-					float(hit.get("s", -1.0)) - s, float(hit.get("lat", 0.0)), int(side)]
+				var land := NAN
+				if not hit.is_empty():
+					var xz := w.route_xz(n.global_position)
+					land = w.route.land_height(int(hit["i"]), float(hit["lat"]), xz[0], xz[1])
+				why = " (one isn't: height %.2f, ground %s, %.0f m along, %.1f m across, side %d, seat at %.2f, land %.2f, flat %.0f, road %.2f)" % [h,
+					not ground.is_empty(), float(hit.get("s", -1.0)) - s, float(hit.get("lat", 0.0)), int(side), n.global_position.y, land,
+					w.route._site_flat(int(hit.get("i", 0)), signf(float(hit.get("lat", 0.0)))), w.route.ph[int(hit.get("i", 0))]]
 			seat_ok = seat_ok and ok
 		var menu_ok := not counters.is_empty()
 		for n: Node3D in counters:

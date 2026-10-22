@@ -323,7 +323,7 @@ func test_forks_origin() -> void:
 				on_way += 1
 	var check_s := -1.0
 	for d in tr.stream.vehicles:
-		if float(d["s"]) > fork + 20.0 and not d.has("arm"):
+		if float(d["s"]) > fork + 20.0 and not d.has("arm") and not d.has("dwell") and not d.get("kerb", false) and not d.get("bus", false):
 			check_s = float(d["s"])
 	var on_road := false
 	if check_s > 0.0:
