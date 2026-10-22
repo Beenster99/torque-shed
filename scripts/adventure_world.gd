@@ -466,9 +466,14 @@ func stream() -> void:
 			chunks[c].queue_free()
 			chunks.erase(c)
 			stats["freed"] += 1
+	# What the workers have finished (only those whose task has returned: waiting on one that's written its chunk but not
+	# yet got back from the call was a hitch of tens of ms when the machine was busy).
 	_box.mutex.lock()
-	var finished := _box.done.duplicate()
-	_box.done.clear()
+	var finished := {}
+	for c in _box.done.keys():
+		if not _tasks.has(c) or WorkerThreadPool.is_task_completed(_tasks[c]):
+			finished[c] = _box.done[c]
+			_box.done.erase(c)
 	_box.mutex.unlock()
 	for c in finished:
 		if _tasks.has(c):
