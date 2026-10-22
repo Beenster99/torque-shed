@@ -323,7 +323,7 @@ func test_forks_origin() -> void:
 				on_way += 1
 	var check_s := -1.0
 	for d in tr.stream.vehicles:
-		if float(d["s"]) > fork + 20.0:
+		if float(d["s"]) > fork + 20.0 and not d.has("arm"):
 			check_s = float(d["s"])
 	var on_road := false
 	if check_s > 0.0:
@@ -333,7 +333,7 @@ func test_forks_origin() -> void:
 				id = int(d["seed"])
 		var p: Vector3 = tr.stream.slot(id)["pos"]
 		var hit := tr.world.locate_local(p)
-		on_road = not hit.is_empty() and absf(float(hit["s"]) - check_s) < 2.0 and absf(float(hit["lat"])) < 4.0
+		on_road = not hit.is_empty() and absf(float(hit["s"]) - check_s) < 2.0 and absf(float(hit["lat"])) < r.width_at_s(check_s) * 0.5 + 1.0
 	check(on_way > 0 and on_road and tr.busy_at(0.0) >= 0.0 and is_same(tr._sites_ref, r.sites),
 		"once it's decided they drive on along way B, on its road (and the stops along it are known) (%d seen on it, on the road %s)" % [on_way, on_road])
 	# The origin moves under them.

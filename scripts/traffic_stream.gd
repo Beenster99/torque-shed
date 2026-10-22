@@ -58,6 +58,8 @@ const SPAWN_EVERY := 1.2
 ## looks for bends (it rechecks every BEND_EVERY seconds).
 const GAP := 3.0
 const HEADWAY := 1.3
+## How hard a driver brakes for someone stood in the road ahead (m/s^2): seen in time to stop short of them.
+const STOP_BRAKE := 3.0
 const BEND_STEP := 6.0
 const BEND_EVERY := 0.3
 const LANE := 0.45
@@ -428,7 +430,7 @@ func _drive(d: Dictionary, delta: float) -> void:
 			_follow(d, float(o["s"]), TrafficVehicle.half_length_of(str(o["kind"])), half)
 	for b in blockers:
 		if int(b[1]) == 0 or int(b[1]) == dir:
-			_follow(d, float(b[0]), float(b[2]), half)
+			_follow(d, float(b[0]), float(b[2]), half, true)
 	allow = minf(allow, float(d.get("hold", INF)))
 	d.erase("hold")
 	if d.has("dwell"):
@@ -502,11 +504,18 @@ static func _in_lane(o: Dictionary, hw: float) -> bool:
 	return is_nan(lat) or (lat * int(o["dir"]) < 0.0 and absf(lat) < hw + 0.5)
 
 
-func _follow(d: Dictionary, other_s: float, other_half: float, half: float) -> void:
+## Holds vehicle `d` back behind something at `other_s` ahead of it in its lane: a vehicle (kept a headway behind it),
+## or someone in the road (`standing`: seen from far enough off to stop short of them at STOP_BRAKE).
+func _follow(d: Dictionary, other_s: float, other_half: float, half: float, standing := false) -> void:
 	var along := (other_s - float(d["s"])) * int(d["dir"])
 	var clear := along - half - other_half
-	if along > 0.0 and clear < 50.0:
-		d["hold"] = minf(float(d.get("hold", INF)), maxf(0.0, (clear - GAP) / HEADWAY))
+	var v := float(d["v"])
+	var reach := maxf(50.0, v * v / (2.0 * STOP_BRAKE) + GAP + 10.0) if standing else 50.0
+	if along > 0.0 and clear < reach:
+		var hold := maxf(0.0, (clear - GAP) / HEADWAY)
+		if standing:
+			hold = minf(hold, sqrt(2.0 * STOP_BRAKE * maxf(0.0, clear - GAP)))
+		d["hold"] = minf(float(d.get("hold", INF)), hold)
 
 
 # ---------------------------------------------------------------------------- junctions

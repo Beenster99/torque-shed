@@ -163,7 +163,7 @@ func test_groups() -> void:
 			var q := PhysicsRayQueryParameters3D.create(n.global_position + Vector3.UP * 0.3, n.global_position + Vector3.DOWN * (h + 0.6), 1)
 			var ground := space.intersect_ray(q)
 			var hit := w.locate_local(n.global_position)
-			var ok := absf(f.length() - 1.0) < 0.01 and absf(f.y) < 0.01 and h > 0.2 and h < 0.8 and not ground.is_empty() \
+			var ok: bool = absf(f.length() - 1.0) < 0.01 and absf(f.y) < 0.01 and h > 0.2 and h < 0.8 and not ground.is_empty() \
 				and str(n.get_meta("seat", "")) != "" and str(n.get_meta("site", "")) != "" and not hit.is_empty() \
 				and absf(float(hit["s"]) - s) < 80.0 and (signf(float(hit["lat"])) == side or kind == "village")   # a high street's both sides
 			if not ok and why == "":
