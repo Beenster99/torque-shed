@@ -33,7 +33,7 @@
    "size_m": 512.0,
    "min": -256.0,
    "scale": 0.0625,
-   "cover": true
+   "cover": false
   },
   {
    "name": "coarse",
@@ -54,12 +54,23 @@
    "min": -256.0,
    "scale": 0.25,
    "cover": false
+  },
+  {
+   "name": "cover",
+   "dir": "cover",
+   "spacing": 16.0,
+   "n": 128,
+   "size_m": 2048.0,
+   "min": -256.0,
+   "scale": 0.25,
+   "cover": true
   }
  ],
  "tile_counts": {
   "fine": 2049,
   "coarse": 60,
-  "ridge": 4
+  "ridge": 4,
+  "cover": 165
  },
  "cover": [
   "grass",
@@ -104,6 +115,5 @@
   "Elevation: Mapterhorn (mapterhorn.com), built from national and global terrain models; sources and licences are listed at https://download.mapterhorn.com/attribution.json.",
   "Roads, buildings, land cover and places: (c) OpenStreetMap contributors and others, Overture Maps Foundation (ODbL)."
  ],
- "hash": "330551474b0d616b",
- "note": "Test fixture: the cell as baked, its cover tiles cut to the land round Gunnerside to Grinton (tests/cells_tests.gd)."
+ "hash": "011e6905d5a653a3"
 }

@@ -4,8 +4,8 @@ extends RefCounted
 ## over to these). Nothing here touches the network.
 ##
 ## The fixtures: tests/fixtures/cells holds the two cells of the Yorkshire Dales either side of 2 degrees west
-## (c577_711 and c577_712, baked from Overture's 2026-10-21.0 release, the same as the bundled Dales region, their
-## cover cut to the land round Swaledale), and areas.json names the area "swaledale" over them, in the bundled Dales'
+## (c577_711 and c577_712, as tools/region_bake.py --cell bakes them from Overture's 2026-10-21.0 release, the same as
+## the bundled Dales region's), and areas.json names the area "swaledale" over them, in the bundled Dales'
 ## own frame; tests/fixtures/heights holds the map tiles of the land along the road from Gunnerside to Grinton, which
 ## crosses from one cell into the other.
 
@@ -154,7 +154,8 @@ func test_same_road() -> void:
 			if cb >= 0:
 				asked += 1
 				same += 1 if ca == cb else 0
-	check(asked > 100 and same >= asked * 0.9, "and the same cover beside it, either side of the edge (%d of %d)" % [same, asked])
+	# (a cell's cover near the road is at 16 m, the bundled region's at 4: they differ along the edges of woods and fields)
+	check(asked > 100 and same >= asked * 0.8, "and the same cover beside it, either side of the edge, at a cell's 16 m to the region's 4 m (%d of %d)" % [same, asked])
 	_restore()
 
 

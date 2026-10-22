@@ -353,6 +353,7 @@ func add_cover_cell(cell_dir: String, meta: Dictionary) -> void:
 		lv.has_cover = true
 		lv.base = cell_dir
 		lvls.append(lv)
+	lvls.sort_custom(func(a: Level, b: Level): return a.spacing < b.spacing)   # (the finest that has a point answers)
 	var geo: Dictionary = meta["geo"]
 	var lat := float(meta["frame"]["lat"])
 	_cover_cells.append({"levels": lvls, "lat": lat, "lon": float(meta["frame"]["lon"]), "m": metres_per_degree(lat),
