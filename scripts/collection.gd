@@ -25,7 +25,8 @@ extends RefCounted
 ##   home_offer     at a friend's bike, offer them your own money for it. The money's held until
 ##                  they answer (home_answer: accept or decline) or you take the offer back
 ##                  (home_withdraw); on a yes the bike moves into your collection and the money to
-##                  them.
+##                  them. Making it and being offered it are shown in windows (HomeMakeOffer and
+##                  HomeOfferPanel), so neither comes with a message along the top as well.
 ## Money from your own cash is taken on your own machine first (as BikeCopy's orders are), and
 ## whatever the host doesn't take goes back. Money owed to a player who has left (an offer turned
 ## down while they were away) is paid out when they next come back to the shed.
@@ -664,10 +665,10 @@ static func apply(peer: int, action: Dictionary) -> String:
 			var id := _next()
 			var owner := str(e["owner"])
 			offers()[id] = {"id": id, "bike": cid, "from": who, "to": owner, "amount": amount, "level": level_of(peer)}
-			var op := peer_of(owner)
-			if op != 0 and op != peer:
-				Shed._tell(op, "%s offers you %s for %s." % [who, money(amount), str(e["name"])], true)
-			return "Offered %s %s for %s. The money's held till they answer." % [owner, money(amount), str(e["name"])]
+			# Nobody's told along the top: the window says it. The one making the offer sees it
+			# made in theirs (HomeMakeOffer), and the owner gets a window of their own to answer it
+			# (HomeOfferPanel) as soon as they're on foot.
+			return ""
 		"home_withdraw":
 			var o: Dictionary = offers()[int(action["offer"])]
 			offers().erase(int(o["id"]))

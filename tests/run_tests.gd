@@ -660,6 +660,12 @@ func _run_all() -> void:
 	await _test_handle_verge_save()
 	await _test_handle_verge_long()
 	await _test_handle_verge_edges()
+	print("Simon's v0.21 round: a clean make-an-offer window, no doubled messages, headlights kept as left")
+	_test_offer_quiet()
+	_test_offer_default()
+	await _test_offer_window()
+	_test_offer_beam()
+	await _test_offer_beam_ride()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -11522,7 +11528,7 @@ func _test_riding_feedback_session() -> void:
 		"C steps through third person, first person and fly-by (%s)" % str(views))
 	_press("headlight")
 	await get_tree().physics_frame
-	check(main.bike.beam == 2, "L steps the headlight on to high beam")
+	check(main.bike.beam == 1, "L switches the headlight on to low beam (a bike starts with its lights off)")
 	# Ride it out of the shed area and get off.
 	var far := Vector3(150.0, 0.0, 20.0)
 	far.y = main.world.surface_height(far.x, far.z)
@@ -23040,3 +23046,29 @@ func _test_sound_two_stroke_recorded() -> void:
 
 func _test_sound_two_stroke_synth() -> void:
 	_sound_t().test_two_stroke_synth()
+
+
+# ---------------------------------------------------------------------------- offers and kept headlights (tests/offer_tests.gd)
+
+func _offer_suite() -> RefCounted:
+	return load("res://tests/offer_tests.gd").new(self)
+
+
+func _test_offer_quiet() -> void:
+	_offer_suite().test_quiet()
+
+
+func _test_offer_default() -> void:
+	_offer_suite().test_default()
+
+
+func _test_offer_window() -> void:
+	await _offer_suite().test_window()
+
+
+func _test_offer_beam() -> void:
+	_offer_suite().test_beam()
+
+
+func _test_offer_beam_ride() -> void:
+	await _offer_suite().test_beam_ride()
