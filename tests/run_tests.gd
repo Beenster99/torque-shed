@@ -638,6 +638,11 @@ func _run_all() -> void:
 	_test_headlight_catalogue()
 	_test_headlight_builds()
 	await _test_headlight_lit()
+	print("Simon's v0.21.0 round: quicker to lean at speed, and grip that fades off the road's edge")
+	await _test_handle_lean_speed()
+	await _test_handle_verge_save()
+	await _test_handle_verge_long()
+	await _test_handle_verge_edges()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22858,6 +22863,32 @@ func _test_headlight_builds() -> void:
 
 func _test_headlight_lit() -> void:
 	await _headlights().test_lit()
+
+
+# ---------------------------------------------------------------------------- handling at speed, grip off the road's edge (tests/handle_tests.gd)
+
+func _handle() -> RefCounted:
+	return load("res://tests/handle_tests.gd").new(self)
+
+
+func _test_handle_measure() -> void:
+	await _handle().measure()
+
+
+func _test_handle_lean_speed() -> void:
+	await _handle().test_lean_speed()
+
+
+func _test_handle_verge_save() -> void:
+	await _handle().test_verge_save()
+
+
+func _test_handle_verge_long() -> void:
+	await _handle().test_verge_long()
+
+
+func _test_handle_verge_edges() -> void:
+	await _handle().test_verge_edges()
 
 
 # ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)
