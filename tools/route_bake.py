@@ -856,11 +856,14 @@ def ridge_tile(h, tx, tz, knots):
     return np.where(h <= 0.0, np.minimum(lowered, RIDGE_SEA_M), lowered)
 
 
-def bake_terrain(out, frame, knots, dems, land_fn, log=print):
+def bake_terrain(out, frame, knots, dems, land_fn, log=print, heights=True):
     """Bakes every level's height tiles under `out` (see levels.py), coarsest first so each finer level can blend its
     edges into the one above; `dems` is {level name: Dem}; `land_fn({level name: tiles})` bakes the cover and returns
     the land (with its buildings, to level the fine ground under). Returns ({level name: [(tx, tz)]}, whether there is
-    sea, the land)."""
+    sea, the land).
+
+    With `heights` False no height tiles are written (the game reads the heights from the map tiles itself: "live"
+    heights, scripts/height_tiles.gd); only the coarse level's are worked out, to tell whether there is sea."""
     tiles = {lv.name: corridor_tiles(knots, lv.reach, lv.size_m) for lv in levels.LEVELS}
     for name, t in tiles.items():
         log("land: %d %s tiles" % (len(t), name))
@@ -869,13 +872,17 @@ def bake_terrain(out, frame, knots, dems, land_fn, log=print):
     fields = {}
     for k in range(len(levels.LEVELS) - 1, -1, -1):
         lv = levels.LEVELS[k]
+        if not heights and lv is not levels.COARSE:
+            continue
         os.makedirs(os.path.join(out, lv.folder), exist_ok=True)
         present = set(tiles[lv.name])
-        coarser = fields[levels.LEVELS[k + 1].name] if k + 1 < len(levels.LEVELS) else None
+        coarser = fields.get(levels.LEVELS[k + 1].name) if k + 1 < len(levels.LEVELS) else None
         quantised = {}
         for i, (tx, tz) in enumerate(tiles[lv.name]):
             h, sea = level_heights(dems[lv.name], frame, lv, tx, tz)
             has_sea = has_sea or (sea and lv is not levels.RIDGE)
+            if not heights:
+                continue
             if lv is levels.FINE:
                 h = land_bake.level_ground(h, tx, tz, land["buildings"])
             if lv is levels.RIDGE:

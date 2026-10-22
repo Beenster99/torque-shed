@@ -31,6 +31,39 @@ def curvature_at(p):
     return 2.0 * cross / np.maximum(ab * bc * ac, 1e-9)
 
 
+class LiveHeightsTests(unittest.TestCase):
+    """bake_terrain with heights=False: no height tiles, but the sea still found (the game reads heights live)."""
+
+    class FlatDem:
+        def __init__(self, level):
+            self.level = level
+
+        def heights(self, lat, lon):
+            # Sea west of the anchor's meridian, land east of it.
+            return np.where(np.asarray(lon) < 0.0, 0.0, 20.0)
+
+    def bake(self, heights):
+        out = tempfile.mkdtemp()
+        frame = rb.Frame(0.0, 0.0)
+        knots = np.array([[-2000.0 + 50.0 * i, 0.0] for i in range(81)])
+        dems = {lv.name: self.FlatDem(lv) for lv in levels.LEVELS}
+        land = {"buildings": []}
+        tiles, has_sea, _ = rb.bake_terrain(out, frame, knots, dems, lambda cover: land, lambda *a: None, heights=heights)
+        written = [f for _, _, files in os.walk(out) for f in files if f.endswith(".u16z")]
+        return tiles, has_sea, written
+
+    def test_live_writes_no_heights_and_still_finds_the_sea(self):
+        tiles, has_sea, written = self.bake(False)
+        self.assertTrue(has_sea)
+        self.assertEqual(written, [])
+        self.assertTrue(tiles["fine"])
+
+    def test_baked_writes_every_level(self):
+        tiles, has_sea, written = self.bake(True)
+        self.assertTrue(has_sea)
+        self.assertEqual(len(written), sum(len(v) for v in tiles.values()))
+
+
 class GeodesyTests(unittest.TestCase):
     def test_anchor_lands_at_start_and_north_is_negative_z(self):
         f = rb.Frame(34.5, 134.3)

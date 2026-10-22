@@ -13,7 +13,8 @@ Where route_bake.py bakes the land down one chosen road, a region has every road
     roads.json       the road graph: nodes, and edges between them with their class, surface, name, limit, line and
                      which way they may be driven (o: 0 both, 1 a to b, -1 b to a); bans: turns the rules prohibit
     places.json      the towns, villages and quarters of the area with names we can print, for finding on the map
-    tiles/ coarse/ ridge/   the land at three levels (levels.py): .u16z heights, and .covz cover for the first two
+    tiles/ coarse/ ridge/   the land at three levels (levels.py): .u16z heights, and .covz cover for the first two; with
+                     --heights live, the cover only (the game reads the heights from Mapterhorn's map tiles itself)
     buildings.json   [[x, z, w, d, yaw, h, kind, 0], ...] beside any road (kind: land_bake.BUILDING_KINDS)
     pois.json        places to stop beside any road (road_facts.make_pois)
     landmarks.json   named peaks, lighthouses and the like
@@ -181,7 +182,8 @@ def bake(args, log=print):
     try:
         tiles, has_sea, land = rb.bake_terrain(
             args.out, frame, pts, dems,
-            lambda cover_tiles: land_bake.bake_land(rb.OVERTURE_BUCKET, release, frame, pts, cover_tiles, args.out, log), log)
+            lambda cover_tiles: land_bake.bake_land(rb.OVERTURE_BUCKET, release, frame, pts, cover_tiles, args.out, log), log,
+            heights=getattr(args, "heights", "baked") == "baked")
     finally:
         land_bake.BUILDING_MAX = old_max
     x0, z0 = frame.to_world(args.north, args.west)
@@ -197,6 +199,7 @@ def bake(args, log=print):
         "format": FORMAT, "kind": "region", "name": args.name, "title": args.title or args.name,
         "frame": {"lat": lat0, "lon": lon0}, "bounds": bounds,
         "geo": {"south": args.south, "west": args.west, "north": args.north, "east": args.east},
+        "heights": getattr(args, "heights", "baked"),
         "levels": [lv.meta() for lv in levels.LEVELS], "tile_counts": {k: len(v) for k, v in tiles.items()},
         "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
         "counts": {"nodes": len(rows["nodes"]), "edges": len(rows["edges"]), "buildings": len(land["buildings"]),
@@ -224,6 +227,8 @@ def main(argv=None):
     ap.add_argument("--cache", default=os.path.expanduser("~/.cache/torque-shed-bake"), help="download cache")
     ap.add_argument("--release", help="Overture release, default the latest")
     ap.add_argument("--avoid", default="", help="road classes to leave out, comma-separated")
+    ap.add_argument("--heights", choices=["baked", "live"], default="baked",
+                    help="bake the land's heights in (baked), or leave them to the game to read from the map tiles (live)")
     args = ap.parse_args(argv)
     args.avoid = [c for c in args.avoid.split(",") if c]
     args.out = args.out or os.path.join("data", "regions", args.name)

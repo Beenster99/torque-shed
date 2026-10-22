@@ -46,17 +46,21 @@ to month**: no server, no metered hosting.
 
 ### Heights straight from Mapterhorn
 
-`RealTerrain` fetches height tiles itself: fine from z15 (2.8 m a pixel in the Dales), coarse from z12, the skyline
-from z9, each level bilinear in the tile's own pixels, the finer level eased into the coarser in a band near its
-edge, the skyline pushed down near the road as the baker does now. Tiles are fetched on a worker as the planner and
-the chunks ask for ground ahead, kept on disk under `user://heights/` with a size cap, and the bundled areas' tiles
-ship with the game so Shodoshima and the Dales play offline out of the box and the tests never touch the network.
+`RealTerrain` reads height tiles itself (`HeightTiles`): fine from z14 (2.8 m a pixel in the Dales, 3.9 m on
+Shodoshima), middle from z11, the skyline from z9, each level bilinear in the tile's own pixels and eased into the next
+over 48 pixels where the ride's tiles end, the sea given a floor sloping down from the shore, the ground levelled
+under each building, and the skyline pushed down near the road, all as the baker does them. Measured: a tile decodes
+in 9 ms, a height costs a few microseconds (a baked one about 7), and the 68 km Dales tour needs 103 tiles, 9 MB,
+fetched in about 3.5 s, eight at a time. Tiles are fetched on the planner's worker once the road's line is known, kept on
+disk under `user://heights/`, and decoded into memory as they are sampled (the 160 most recently used are kept).
+The bundled regions keep their baked heights, so the game plays offline out of the box and its tests never touch the
+network (they ride on a few megabytes of tiles in `tests/fixtures/heights`).
 
-Mapterhorn updates tiles as national sources arrive, so two machines could in time hold slightly different land. The
-road is what matters: the host's plan carries the planned road's knot heights (about 30 KB for 60 km) and every
-machine lays the road on those, so the ride is identical; the land beside it may differ by centimetres, which only an
-off-road crash would notice. We attribute Mapterhorn in the credits, ask them about the load, back off on 429, and
-fall back to AWS's tiles.
+The same road gets the same heights on every machine: the tiles a ride uses are those within a set reach of its road
+(and of its forks' other ways), fixed by the road alone, never by what else a machine has on disk; and with live
+heights the plan's hash takes in the road's heights to the 10 cm, so a machine that was given a different tile (Mapterhorn
+updates tiles as national sources arrive) is told it planned a different road rather than riding one. We attribute
+Mapterhorn in the credits, ask them about the load, and fall back to AWS's tiles.
 
 ### Cells: the unit nobody sees
 
@@ -147,15 +151,17 @@ Each step is a playable change on its own and lands as one or two pull requests.
 
 ### Step 1: heights from Mapterhorn
 
-**Plays.** The same rides, the regions a third of the size (their height tiles gone), the land a little truer where
-Mapterhorn has improved since the bake.
+**Plays.** Nothing new to see yet: a region baked with `--heights live` (a third of the size, no height tiles) rides
+like a baked one, its land read from Mapterhorn's tiles; the bundled regions stay baked.
 
-**Builds.** `RealTerrain` over mercator tiles at three zooms with the eased edges and the pushed-down skyline; the
-fetch worker, disk cache and cap; the bundled areas' tiles shipped; the road's knot heights in the host's plan and
-laid on by every machine; a two-player test that the client rides the host's heights; the AWS fallback.
+**Builds.** `HeightTiles` (mercator maths, decode, the disk cache, fetching with the AWS fallback); `RealTerrain`'s
+live levels with the eased edges, the sea floor and the building pads; a ride's own view of the land (`for_road`,
+`widen` for forks) and the heights in the plan's hash; the skyline pushed down by the road in `RealRidges`; the map's
+picture of a live region; `region_bake.py --heights live`; tests on fixture tiles checking the live road and land
+against the baked ones.
 
-**Size.** About two weeks. The risk to settle first: frame time with tiles decoded on the fly, and whether the
-skyline from z9 looks as good as the baked ridge level.
+**Status.** Built (`claude/live-heights`). On Shodoshima the live road's heights are 4 cm from the baked road's on
+average (0.6 m at most), and the land beside it the same.
 
 ### Step 2: cells, and a journey across them
 

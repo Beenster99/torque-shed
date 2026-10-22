@@ -186,7 +186,14 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 	for i in n:
 		xs[i] = knots[i].x
 		zs[i] = knots[i].y
-	var elev := _heights(region, xs, zs)
+	# The land under it: a live region's heights are fetched now, the tiles within reach of this road (RealTerrain.for_road).
+	var terrain := region.terrain.for_road(_every(knots, 16)) if region.terrain != null else null
+	if terrain != null and terrain.live:
+		var missing := terrain.fetch()
+		parts["fetch"] = Time.get_ticks_msec() - t0
+		if missing > 0:
+			return _fail("Couldn't get the lie of the land for that journey (%d map tiles): are you online?" % missing)
+	var elev := _heights(terrain, xs, zs)
 	parts["heights"] = Time.get_ticks_msec() - t0
 	# Where the pins' route ends and the run-out begins.
 	var ends_at := _length_of_steps(region, steps, run_start)
@@ -221,7 +228,7 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 	var end_k := n - 1
 	turns.append({"d": snappedf((n - 1) * STEP, 0.1), "x": snappedf(xs[end_k], 0.1), "z": snappedf(zs[end_k], 0.1), "turn": "arrive", "onto": "", "branches": 0})
 	pack.turns = turns
-	pack.terrain = region.terrain
+	pack.terrain = terrain
 	pack.length_m = (n - 1) * STEP
 	pack.run_out_m = clampf(pack.length_m - ends_at * ((n - 1) * STEP) / maxf(_raw_length(raw), 1.0), 0.0, RUN_OUT)
 	for b: Array in buildings:
@@ -234,15 +241,27 @@ static func plan(region: RealRegion, request: Dictionary) -> Dictionary:
 	pack.pois = _pois(region, xs, zs)
 	parts["places"] = Time.get_ticks_msec() - t0
 	pack.junctions = thin_junctions(junctions_along(region, steps, xs, zs))
-	pack.forks = plan_forks(region, steps, xs, zs, elev, chunks_info, costs, int(request.get("seed", 0)))
+	pack.forks = plan_forks(region, steps, xs, zs, elev, chunks_info, costs, int(request.get("seed", 0)), terrain)
+	if terrain != null and terrain.live and terrain.fetch() > 0:
+		return _fail("Couldn't get the lie of the land for that journey: are you online?")
 	pack.fork_count = pack.forks.size()
 	parts["forks"] = Time.get_ticks_msec() - t0
 	pack.summary = _summary(rows, names, elev, request)
-	var hash := _hash(region, request, steps)
+	var hash := _hash(region, request, steps, elev if terrain != null and terrain.live else PackedFloat32Array())
 	pack.hash = hash
 	pack.id = "plan_" + hash
 	parts["junctions"] = Time.get_ticks_msec() - t0
 	return {"ok": true, "error": "", "pack": pack, "km": pack.max_km(), "ms": Time.get_ticks_msec() - t0, "parts": parts}
+
+
+## Every `n`th point of `pts`, and the last.
+static func _every(pts: PackedVector2Array, n: int) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for i in range(0, pts.size(), n):
+		out.append(pts[i])
+	if not pts.is_empty() and (pts.size() - 1) % n != 0:
+		out.append(pts[pts.size() - 1])
+	return out
 
 
 static func _fail(why: String) -> Dictionary:
@@ -250,8 +269,9 @@ static func _fail(why: String) -> Dictionary:
 
 
 ## The hash of a plan: the region's, the style, the pins' junctions and the roads taken (the same on every machine
-## that plans the same journey, and different if any of them planned another).
-static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i]) -> String:
+## that plans the same journey, and different if any of them planned another); and with live heights the road's
+## heights too, to the 10 cm (two machines could have been given different map tiles of the land).
+static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i], elev := PackedFloat32Array()) -> String:
 	var ctx := HashingContext.new()
 	ctx.start(HashingContext.HASH_SHA256)
 	var text := "%d|%s|%s|%s" % [VERSION, region.hash, str(request.get("mode", "main")), str(request.get("seed", 0))]
@@ -261,6 +281,11 @@ static func _hash(region: RealRegion, request: Dictionary, steps: Array[Vector3i
 		path.append(s.y)
 		path.append(s.z)
 	ctx.update(path.to_byte_array())
+	if not elev.is_empty():
+		var tenths := PackedInt32Array()
+		for h in elev:
+			tenths.append(roundi(h * 10.0))
+		ctx.update(tenths.to_byte_array())
 	return ctx.finish().hex_encode().substr(0, 16)
 
 
@@ -684,13 +709,13 @@ static func _relax(px: PackedFloat64Array, pz: PackedFloat64Array, limit: float,
 
 
 ## The ground under the road, averaged over 9 knots (the road rides over bumps), no steeper than MAX_GRADE.
-static func _heights(region: RealRegion, xs: PackedFloat64Array, zs: PackedFloat64Array) -> PackedFloat32Array:
+static func _heights(terrain: RealTerrain, xs: PackedFloat64Array, zs: PackedFloat64Array) -> PackedFloat32Array:
 	var n := xs.size()
 	var ground := PackedFloat64Array()
 	ground.resize(n)
 	var last := 0.0
 	for i in n:
-		var h := region.terrain.height(xs[i], zs[i])
+		var h := terrain.height(xs[i], zs[i]) if terrain != null else NAN
 		if is_nan(h):
 			h = last
 		last = h
@@ -1148,7 +1173,9 @@ static func _rng(seed: int, tag: String) -> float:
 ## second-best way between two junctions of the road (its own stretch left out of the search), a road of its own
 ## with its line, heights and chunks like the main road's (tools/fork_bake.py does the same for a baked road).
 static func plan_forks(region: RealRegion, steps: Array[Vector3i], xs: PackedFloat64Array, zs: PackedFloat64Array,
-		elev: PackedFloat32Array, main_chunks: Array, costs: PackedFloat64Array, seed: int) -> Array:
+		elev: PackedFloat32Array, main_chunks: Array, costs: PackedFloat64Array, seed: int, terrain: RealTerrain = null) -> Array:
+	if terrain == null:
+		terrain = region.terrain
 	var out: Array = []
 	if steps.is_empty():
 		return out
@@ -1236,7 +1263,7 @@ static func plan_forks(region: RealRegion, steps: Array[Vector3i], xs: PackedFlo
 			at += 3000.0
 			continue
 		var fork := {"i0": i0, "i1": i1, "ka": kn[ja], "kb": kn[jb], "alt": found["alt"]}
-		out.append(_fork_row(region, fork, steps, xs, zs, elev, main_chunks, costs))
+		out.append(_fork_row(region, fork, steps, xs, zs, elev, main_chunks, costs, terrain))
 		n_fork += 1
 		at = i1 * STEP + FORK_EVERY.x + (FORK_EVERY.y - FORK_EVERY.x) * _rng(seed, "every%d" % n_fork)
 	return out
@@ -1339,7 +1366,9 @@ static func pin_ends(e: PackedFloat64Array, first: float, last: float, decay := 
 ## The fork as a RealPack.forks row: the way's knots, heights and chunk rows (with the names spelled out), and the
 ## kinds and names of both ways.
 static func _fork_row(region: RealRegion, fork: Dictionary, steps: Array[Vector3i], xs: PackedFloat64Array, zs: PackedFloat64Array,
-		elev: PackedFloat32Array, main_chunks: Array, costs: PackedFloat64Array) -> Dictionary:
+		elev: PackedFloat32Array, main_chunks: Array, costs: PackedFloat64Array, terrain: RealTerrain = null) -> Dictionary:
+	if terrain == null:
+		terrain = region.terrain
 	var i0: int = fork["i0"]
 	var i1: int = fork["i1"]
 	# The main road's edge at each knot, for the shared stretches at either end of the way.
@@ -1363,11 +1392,16 @@ static func _fork_row(region: RealRegion, fork: Dictionary, steps: Array[Vector3
 	for k in n:
 		wx[k] = pts[k].x
 		wz[k] = pts[k].y
+	# A live ride's land takes in the tiles along the way too (beyond reach of the main road, so its heights don't move);
+	# plan() fetches them before the ride is laid out.
+	if terrain != null and terrain.live:
+		terrain.widen(_every(pts, 16))
+		terrain.fetch()
 	var ground := PackedFloat64Array()
 	ground.resize(n)
 	var last := 0.0
 	for k in n:
-		var h := region.terrain.height(wx[k], wz[k])
+		var h := terrain.height(wx[k], wz[k]) if terrain != null else NAN
 		if is_nan(h):
 			h = last
 		last = h
