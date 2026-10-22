@@ -131,3 +131,81 @@ static func wait_all() -> void:
 	_lock.unlock()
 	for id in ids:
 		WorkerThreadPool.wait_for_task_completion(id)
+
+
+# ---------------------------------------------------------------------------- sample rides
+
+## A tour of each bundled region, pin by pin (region x, z), for the Debug tab's quick start and the tests: round
+## Shodoshima, and a loop of the Dales (Hawes, over to Swaledale, Reeth, Leyburn, and back up Wensleydale).
+const TOURS := {
+	"shodoshima": [[-5881, 1526], [-306, 1293], [4560, 2074], [7721, -3202], [1792, -4787], [-174, -3502], [-5951, 1062]],
+	"dales": [[-10180, 3993], [-2422, -4363], [7187, -4599], [13686, 3361], [2813, 5382], [-4096, 3608], [-11640, 3115]],
+}
+
+
+## The plan of the first `pins` pins (2 or more) of `region`'s tour, each pin named after the town or village it's in.
+static func tour(region_id := "shodoshima", pins := 0) -> Dictionary:
+	var region := RealRegion.get_region(region_id)
+	if region == null or not TOURS.has(region_id):
+		return {}
+	var all: Array = TOURS[region_id]
+	var n := clampi(pins if pins > 0 else all.size(), 2, all.size())
+	var at: Array = []
+	var names: Array = []
+	for p: Array in all.slice(0, n):
+		var want := Vector2(float(p[0]), float(p[1]))
+		var node := through_node(region, want)
+		var pos := region.node_pos[node] if node >= 0 else want
+		at.append([pos.x, pos.y])
+		var town := ""
+		var best := 2000.0
+		for q: Dictionary in region.places:
+			var d := Vector2(float(q["x"]), float(q["z"])).distance_to(want)
+			if d < best:
+				best = d
+				town = str(q["name"])
+		names.append(town)
+	return clean({"region": region.id, "region_hash": region.hash, "pins": at, "names": names, "mode": "main"})
+
+
+## The junction near `want` (within 1.2 km) on the biggest road that runs through it, so a ride pinned there carries
+## on through instead of turning round at it; the nearest node on the network when there's none.
+static func through_node(region: RealRegion, want: Vector2) -> int:
+	var best := -1
+	var best_key := Vector2(INF, INF)
+	for n in region.node_count():
+		var d := region.node_pos[n].distance_to(want)
+		if d > 1200.0 or region.adjacent[n].size() < 3 or region.component_size[region.component[n]] < 200:
+			continue
+		# The road through it: the best class that has at least two of its roads here, open both ways.
+		var through := RoutePlanner.ORDER.size()
+		for k in RoutePlanner.ORDER.size():
+			var both := 0
+			for ei in region.adjacent[n]:
+				if region.class_of(ei) == RoutePlanner.ORDER[k] and region.edge_oneway[ei] == 0:
+					both += 1
+			if both >= 2:
+				through = k
+				break
+		var key := Vector2(through, d)
+		if key.x < best_key.x or (key.x == best_key.x and key.y < best_key.y):
+			best_key = key
+			best = n
+	return best if best >= 0 else region.nearest_connected(want.x, want.y, AdventureJourney.SNAP_M)
+
+
+## The shortest tour of a bundled region (Shodoshima's first, then the Dales') whose road is at least `km` long, or the
+## longest there is. Planned now (and kept), so it waits the first time.
+static func sample(km: float) -> Dictionary:
+	var best := {}
+	for region_id in TOURS:
+		for n in range(2, (TOURS[region_id] as Array).size() + 1):
+			var plan := tour(region_id, n)
+			var pack := pack_for(plan)
+			if pack == null:
+				continue
+			if best.is_empty() or pack.max_km() > pack_for(best).max_km():
+				best = plan
+			if pack.max_km() >= km:
+				return plan
+	return best

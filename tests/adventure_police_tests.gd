@@ -2,9 +2,10 @@ extends RefCounted
 ## The police on an adventure's road (AdventurePolice, PoliceDriver, PoliceSiren and the police
 ## car's model), run from tests/run_tests.gd: its _test_adv_police_* functions hand over to these.
 ## The police are ticked by hand here at 60 Hz with stand-in riders (rider_source), so a minute
-## of chasing takes a moment.
+## of chasing takes a moment. The roads are the whole of the tours Rides plans.
 
-const SEEDS := [1, 7, 42, 99, 2024]
+const Rides := preload("res://tests/rides.gd")
+const SEEDS := [1, 7, 42, 99, 2024, 5, 11, 64]
 const DT := 1.0 / 60.0
 ## How hard a rider told to stop brakes (m/s^2): a bike pulled over, off the throttle on the brakes.
 const BRAKE := 5.0
@@ -23,8 +24,7 @@ func check(cond: bool, what: String) -> void:
 ## A world for `seed` (the main way at every fork, so the road goes on) and police on it, ticked
 ## by hand, with the riders in `sim` ({peer: {s, v}}) and nothing planned to turn up by itself.
 func _police(seed: int, sim: Dictionary, km := 60.0) -> AdventurePolice:
-	var w := AdventureWorld.new()
-	w.setup(seed, km)
+	var w := Rides.world(Rides.full(km), seed)
 	for f in w.route.forks.size():
 		w.route.choose(f, 0)
 	var p := AdventurePolice.new()
@@ -66,20 +66,25 @@ func _run(p: AdventurePolice, sim: Dictionary, seconds: float, until := Callable
 	return until.is_valid() and until.call()
 
 
-## Somewhere the road runs near enough straight for `span` metres from `s` (bends wider than a
-## kilometre), past `from`.
+## Somewhere past `from` the road runs near enough straight for `span` metres (bends wider than a kilometre or so), or
+## the straightest such stretch there is.
 static func _straight(route: AdventureRoute, from: float, span := 900.0) -> float:
 	var s := from
+	var best := from
+	var best_bend := INF
 	while s < route.length - span - 400.0:
-		var ok := true
+		var bend := 0.0
 		var k := s - 200.0
-		while k < s + span and ok:
-			ok = absf(route.curv[clampi(int(k / AdventureRoute.STEP), 0, route.curv.size() - 1)]) < 0.0008
+		while k < s + span:
+			bend = maxf(bend, absf(route.smooth_curv(clampi(int(k / AdventureRoute.STEP), 0, route.curv.size() - 1))))
 			k += AdventureRoute.STEP * 2.0
-		if ok:
+		if bend < 0.0008:
 			return s
+		if bend < best_bend:
+			best_bend = bend
+			best = s
 		s += 100.0
-	return from
+	return best
 
 
 func _active() -> void:
@@ -101,9 +106,10 @@ func test_spawn_rate() -> void:
 	var traps := 0
 	var dirs := {}
 	var total := 0
+	var km := 0.0
 	for seed in SEEDS:
-		var r := AdventureRoute.new()
-		r.plan(seed, 200.0)
+		var r := Rides.tour_route("dales", seed)
+		km += r.length / 1000.0
 		var plan := AdventurePolice.plan_for(r)
 		total += plan.size()
 		var prev := 0.0
@@ -116,14 +122,12 @@ func test_spawn_rate() -> void:
 				bad.append("seed %d #%d %.1f km" % [seed, i, gap / 1000.0])
 			traps += 1 if plan[i]["trap"] else 0
 			dirs[int(plan[i]["dir"])] = true
-		if plan.size() < 7 or plan.size() > 13:
-			bad.append("seed %d: %d on 200 km" % [seed, plan.size()])
-	check(bad.is_empty(), "a police car every 15-25 km on every seed (%d over %d km) %s" % [total, 200 * SEEDS.size(), str(bad)])
+		if plan.size() < floori((r.length - AdventurePolice.FIRST[1]) / AdventurePolice.EVERY[1]) or plan.size() > ceili(r.length / AdventurePolice.EVERY[0]) + 1:
+			bad.append("seed %d: %d on %.0f km" % [seed, plan.size(), r.length / 1000.0])
+	check(bad.is_empty(), "a police car every 15-25 km on every seed (%d over %.0f km) %s" % [total, km, str(bad)])
 	check(dirs.size() == 2 and traps > total * 0.2 and traps < total * 0.65, "they come both ways, and %d of %d are speed traps in a lay-by" % [traps, total])
-	var a := AdventureRoute.new()
-	a.plan(42, 80.0)
-	var b := AdventureRoute.new()
-	b.plan(42, 80.0)
+	var a := Rides.tour_route("dales", 42)
+	var b := Rides.tour_route("dales", 42)
 	check(str(AdventurePolice.plan_for(a)) == str(AdventurePolice.plan_for(b)), "the same seed plans the same police")
 	# On the road: riders coming up to the first one.
 	var sim := {1: {"s": 0.0, "v": 25.0}}
@@ -418,8 +422,7 @@ func test_coop() -> void:
 ## traffic for it to get round, its lights and siren in its aux; gone, it's off the road.
 func test_stream() -> void:
 	var sim := {1: {"s": 0.0, "v": 0.0}}
-	var w := AdventureWorld.new()
-	w.setup(7, 60.0)
+	var w := Rides.world(Rides.full(60.0), 7)
 	for f in w.route.forks.size():
 		w.route.choose(f, 0)
 	w.focus = func(): return [w.transform_at(float(sim[1]["s"]), -1.5).origin]

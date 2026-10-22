@@ -59,10 +59,9 @@ const SPOT_FOG := 0.8
 const DUST_DENSITY := 0.03
 const OVERSPRAY_DENSITY := 0.07
 ## Your eyes adjusting: how much brighter the picture is made in a room with the lights on or
-## off (or in an adventure's tunnel), by day and by night, and how fast they adjust to the light and to the dark (per second).
+## off, by day and by night, and how fast they adjust to the light and to the dark (per second).
 const EYE_LIT := Vector2(1.08, 0.92)
 const EYE_DARK := Vector2(1.5, 1.3)
-const EYE_TUNNEL := Vector2(1.3, 1.1)
 const ADAPT_TO_LIGHT := 2.5
 const ADAPT_TO_DARK := 0.55
 
@@ -538,11 +537,9 @@ static func room_lit(room: String) -> bool:
 ## How much your eyes open up (times the time of day's exposure): 1 outdoors; a little more in
 ## a lit room by day, a little less at night (the lamps are bright after the dark); a lot more
 ## in a room with its lights off.
-static func eye_target(room: String, lit: bool, dark: float, shelter := 0.0) -> float:
+static func eye_target(room: String, lit: bool, dark: float) -> float:
 	if room == "":
-		# Out on the road: in a tunnel the eyes open up to its lamps (less so at night, when
-		# they're already brighter than outside).
-		return lerpf(1.0, lerpf(EYE_TUNNEL.x, EYE_TUNNEL.y, dark), shelter)
+		return 1.0
 	var span := EYE_LIT if lit else EYE_DARK
 	return lerpf(span.x, span.y, dark)
 
@@ -552,7 +549,7 @@ func _update_exposure(delta: float) -> void:
 		return
 	var cam := get_viewport().get_camera_3d() if is_inside_tree() and get_viewport() else null
 	var room := Workshop.room_at(cam.global_position) if cam else ""
-	var target := eye_target(room, room_lit(room) if room != "" else false, Daylight.darkness(), Daylight.shelter)
+	var target := eye_target(room, room_lit(room) if room != "" else false, Daylight.darkness())
 	if not _adapted:
 		_adapted = true
 		adapt = target

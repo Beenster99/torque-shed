@@ -1,13 +1,16 @@
 extends Node
-## Two-process co-op check of a ride along a real road with a fork (the Dales epic, see RealPack and
+## Two-process co-op check of a ride along a real road with forks (the tour of the Dales, see AdventurePlans.TOURS and
 ## AdventureRoute.plan_real), run by tests/mp_test.sh after the others: a host and a client start the
-## real game, the host starts the real road for both, and both must be on it with the same copy of
-## it (its hash). At the first fork the client votes for the other way and the host picks it, and both
+## real game, the host starts the ride for both, and both must be on it with the same road planned
+## (its hash). At the first fork the client votes for the other way and the host picks it, and both
 ## must have the road built along it. Past the fork each must see the other at the right spot on the
 ## road to within a few centimetres (the path is the other way's, a different length from the main
-## road's). Then the client rides to the finish: both must arrive at the set piece. The host ends it.
+## road's). The host takes the main road at the other forks; both sleep at an inn along it, then the client rides to
+## the finish: both must arrive at the destination. The host ends it.
 
-const PACK := "dales"
+const Rides := preload("res://tests/rides.gd")
+
+const REGION := "dales"
 const SEED := 4204
 
 var role := "host"
@@ -21,6 +24,9 @@ func _ready() -> void:
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
 	Settings.player_name = "Real %s" % role
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	var plan := AdventurePlans.tour(REGION)
+	var pack := AdventurePlans.pack_for(plan)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
@@ -29,14 +35,11 @@ func _ready() -> void:
 	else:
 		main._join("127.0.0.1")
 	var trip: AdventureTrip = main.trip
-	var pack := RealPack.get_pack(PACK)
-	var km := floorf(pack.max_km())
 	var ok_start := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
-			Shed.request({"a": "adventure_start", "seed": SEED, "km": km, "theme": "hills", "dest": "dales_rally", "real": PACK,
-				"title": "The Dales Epic"})
+			Shed.request({"a": "adventure_start", "plan": plan, "seed": SEED, "title": "Round the Dales"})
 		return trip.on_trip() and main.bike != null and _remote_bike() != null, 60.0)
-	var same_road := ok_start and str(Shed.adventure.get("real", "")) == PACK and str(Shed.adventure.get("real_hash", "")) == pack.hash \
+	var same_road := ok_start and str(Shed.adventure.get("real", "")) == pack.id and str(Shed.adventure.get("real_hash", "")) == pack.hash \
 		and trip.world != null and trip.world.route.real == pack and AdventureTrip.real_mismatch(Shed.adventure) == ""
 	var forks := trip.world.route.forks.size() if trip.world else 0
 	print("MP real note %s: on the road %s, the same copy %s, %d forks, %.1f km" % [role, ok_start, same_road, forks, trip.world.route.length / 1000.0 if trip.world else 0.0])
@@ -81,9 +84,17 @@ func _ready() -> void:
 		await _until(func():
 			_hold(trip, holder_s, -1.5 if role == "host" else 1.0)
 			return Time.get_ticks_msec() > stay, 10.0)
+	# The rest of the forks: the host takes the main road at each, so the road's built on to the end (the inn and the finish
+	# are past them).
+	var decided := false
+	if seen_ok and trip.on_trip():
+		if role == "host":
+			await Rides.take_main_roads(trip)
+		decided = await _until(func(): return trip.world != null and trip.world.route.decided.size() == trip.world.route.forks.size(), 20.0)
+		print("MP real note %s: the other forks decided %s (%s)" % [role, decided, str(trip.world.route.choices) if trip.world else ""])
 	# The night stop: both get off at the real inn's room, the host calls it a night, both wake rested in the morning.
 	var slept := false
-	if seen_ok and trip.on_trip():
+	if decided and trip.on_trip():
 		slept = await _night_stop(trip)
 	# The client rides to the finish; both arrive at the set piece.
 	var arrived := false
@@ -104,7 +115,7 @@ func _ready() -> void:
 			var m := trip.world.distance_of(main.bike.global_position, "check_me")
 			var t := trip.world.distance_of(_remote_bike().global_position, "check_them")
 			return absf(m - ds) < 25.0 and absf(t - ds) < 25.0, 20.0)
-		print("MP real note %s: arrived %s, both at the set piece %s" % [role, arrived, both_there])
+		print("MP real note %s: arrived %s, both at the destination %s" % [role, arrived, both_there])
 	# Home: the host ends it, after the client has had time to check.
 	var asked := [false]
 	var end_at := Time.get_ticks_msec() + 3000
@@ -119,7 +130,7 @@ func _ready() -> void:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
-	print("MP real %s %s: on the real road=%s with the same copy=%s, a fork=%s, the other way taken by both=%s, each seen by the other past it=%s, a night at the inn=%s, arrived=%s, together at the set piece=%s, home=%s" % [
+	print("MP real %s %s: on the real road=%s with the same copy=%s, a fork=%s, the other way taken by both=%s, each seen by the other past it=%s, a night at the inn=%s, arrived=%s, together at the destination=%s, home=%s" % [
 		"PASS" if ok else "FAIL", role, ok_start, same_road, forks > 0, fork_ok, seen_ok, slept, arrived, both_there, home])
 	get_tree().quit(0 if ok else 1)
 
@@ -156,10 +167,10 @@ func _night_stop(trip: AdventureTrip) -> bool:
 		_hold(trip, my_s, -1.0)
 		holder[0] = _beds_near(trip, s)
 		return (holder[0] as Array).size() >= 2, 40.0)
-	var bed := (holder[0] as Array)[0 if role == "host" else 1] as Node3D   # a room each
 	print("MP real note %s: the %s '%s' at %.0f m, its bed found %s" % [role, inn["kind"], inn["name"], s, found])
 	if not found:
 		return false
+	var bed := (holder[0] as Array)[0 if role == "host" else 1] as Node3D   # a room each
 	var view: AdventureNeedsView = trip.needs
 	var bike_id := Shed.riding(Shed.me())
 	await _until(func(): return main.bike != null and Time.get_ticks_msec() - main._mounted_at > 800, 5.0)

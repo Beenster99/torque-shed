@@ -18,21 +18,23 @@ const LAND_OUT := [0.0, 0.9, 2.5, 6.0, 12.0, 20.0, 30.0, 46.0, 70.0, 110.0, 170.
 ## least this far out past the column before it (m), and this far for each metre it goes down
 ## (as far out as down: steep, but not a wall).
 const FAR_SIDE_DROP := 160.0
-## On a real road the chunk's land runs out only this many of LAND_OUT's columns (to 110 m); the land beyond is RealLand's
-## (the garage map's near, middle and far blocks), the last column here running on down under it.
+## The chunk's land runs out only this many of LAND_OUT's columns (to 110 m); the land beyond is RealLand's (the garage
+## map's near, middle and far blocks), the last column here running on down under it.
 const REAL_LAND_COLS := 10
 
 
 ## How many columns of land a chunk of `route` has each side of the road.
-static func land_cols(route: AdventureRoute) -> int:
-	return REAL_LAND_COLS if route.real != null else LAND_OUT.size()
+static func land_cols(_route: AdventureRoute) -> int:
+	return REAL_LAND_COLS
 const FAR_SIDE_RUN := 30.0
 const FAR_SIDE_SLOPE := 1.0
-const COLLIDE_COLS := 7
+const COLLIDE_COLS := 8
 ## From this column out (past the skyline ridge) the land needn't look for other stretches of
 ## the road along the way: route.land_reach keeps it well short of them.
 const SHARED_COL := 13
 const CROWN := 0.04
+## The most vertices of real buildings a chunk draws (a town's busiest stretch would be several times this).
+const BUILDING_VERTS := 18000
 ## How far each kind of thing is drawn (m, times the draw distance setting).
 const RANGES := {"pine": 650.0, "snow_pine": 650.0, "tree": 650.0, "bush": 260.0, "dry_bush": 260.0, "rock": 320.0,
 	"post": 220.0, "snow_pole": 260.0, "km_post": 200.0, "buildings": 1100.0, "lines": 380.0,
@@ -185,9 +187,8 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 		# Solid out to COLLIDE_COLS: the inner columns (the right's first, the left's last).
 		out["land_faces_%d" % side] = _faces(v, rows, cols, COLLIDE_COLS + 1, side < 0)
 	out["lines"] = _lines(route, i0, i1, ax, az, surf)
-	# The side roads and the paint at the junctions, and any tunnel through here.
+	# The side roads and the paint at the junctions.
 	AdventureJunctions.chunk_parts(route, i0, i1, ax, az, land, out)
-	AdventureTunnels.build(route, i0, i1, ax, az, land, out)
 	_scenery(route, c, i0, i1, ax, az, surf, out)
 	out["ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	return out
@@ -207,13 +208,13 @@ static func _land_color(route: AdventureRoute, i: int, k: int, lat: float, x: fl
 		if other != here:
 			col = col.lerp(lands[other], 0.35)
 			patch = patch.lerp(patches[other], 0.35)
-	var n := route._noise_fine.get_noise_2d(x * 1.7, z * 1.7) * 0.5 + 0.5
+	var n := route.patches.get_noise_2d(x * 1.7, z * 1.7) * 0.5 + 0.5
 	col = col.lerp(patch, smoothstep(0.35, 0.75, n))
 	if k <= 1:
 		col = route.look["verge"][here]
 	elif k == 2:
 		col = col.lerp(route.look["verge"][here], 0.5)
-	if k > 1 and route.real != null:
+	if k > 1:
 		var tint: Array = COVER_TINT.get(route.cover_at(x, z), [])
 		if not tint.is_empty():
 			col = col.lerp(tint[0] as Color, float(tint[1]) * (0.5 if k == 2 else 1.0))
@@ -478,11 +479,21 @@ static func _real_buildings(route: AdventureRoute, c: int, i0: int, ax: float, a
 		return
 	var dk0 := route.eq[mini(i0, route.eq.size() - 1)] if not route.eq.is_empty() else i0
 	var dc := dk0 / AdventureRoute.CHUNK_KNOTS
+	# Nearest the road first: in the middle of a town the ones furthest back are left out (BUILDING_VERTS).
+	var todo := []
 	for b: Array in route.real.buildings_in(dc):
+		var k := clampi(i0 + int(b[7]) - dc * AdventureRoute.CHUNK_KNOTS, 0, route.knot_count() - 1)
+		var lat := (float(b[0]) - route.px[k]) * cos(route.hd[k]) + (float(b[1]) - route.pz[k]) * sin(route.hd[k])
+		todo.append([absf(lat), lat, k, b])
+	todo.sort_custom(func(p, q): return float(p[0]) < float(q[0]))
+	for item: Array in todo:
+		if (buildings["v"] as PackedVector3Array).size() >= BUILDING_VERTS:
+			break
+		var b: Array = item[3]
+		var k: int = item[2]
+		var lat: float = item[1]
 		var bx := float(b[0])
 		var bz := float(b[1])
-		var k := clampi(i0 + int(b[7]) - dc * AdventureRoute.CHUNK_KNOTS, 0, route.knot_count() - 1)
-		var lat := (bx - route.px[k]) * cos(route.hd[k]) + (bz - route.pz[k]) * sin(route.hd[k])
 		if route._site_flat(k, signf(lat), false) > 0.5 or absf(lat) < route.width[k] * 0.5 + 3.0:
 			continue
 		var w := float(b[2])
@@ -602,8 +613,6 @@ static func _on_land(route: AdventureRoute, i: int, lat: float, ax: float, az: f
 	var h := route.hd[i]
 	if absf(lat) > route.land_reach(i, int(signf(lat))) * 0.95:
 		return Transform3D()
-	if absf(lat) < route.width[i] * 0.5 + 14.0 and route.in_tunnel(i):
-		return Transform3D()   # nothing by the road in a tunnel, nor on the rock just over it
 	var wx := route.px[i] + cos(h) * lat
 	var wz := route.pz[i] + sin(h) * lat
 	if not close and route.clearance(wx, wz) < keep_clear:
@@ -663,7 +672,6 @@ static func step(job: Dictionary) -> bool:
 			_commit_bodies(data, node)
 		2:
 			_commit_junctions(data, node, scale)
-			AdventureTunnels.commit(data, node)
 		3:
 			_commit_scenery(data, node, scale)
 		4:

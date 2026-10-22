@@ -1,16 +1,16 @@
 class_name AdventureJunctions
 extends RefCounted
 ## The junctions along an adventure road (Simon: "occasional roundabouts, cross roads, side roads
-## joining and traffic lights for the towns"): in and near the villages, and now and then out in
-## the country, a side road joins (a T junction), two cross (crossroads), the road goes round a
-## roundabout (an island with kerbs, chevrons and its signs) or a mini roundabout (a white dome
-## painted on the road), and some of the village junctions have traffic lights cycling red,
-## red and amber, green, amber (the clock is the host's: see AdventureTraffic). The side roads
-## are short stubs of lane that bend off into the scenery; traffic turns off down them and
-## comes out of them (TrafficStream), stops at the lights and gives way at the roundabouts.
+## joining and traffic lights for the towns"), where the real map has them (RealPack.junctions): a
+## side road joins (a T junction), two cross (crossroads), the road goes round a roundabout (an
+## island with kerbs, chevrons and its signs) or a mini roundabout (a white dome painted on the
+## road), and some have traffic lights cycling red, red and amber, green, amber (the clock is the
+## host's: see AdventureTraffic). The side roads are short stubs of lane that bend off into the
+## scenery; traffic turns off down them and comes out of them (TrafficStream), stops at the lights
+## and gives way at the roundabouts.
 ##
-## Each is a site (AdventureRoute.add_site, kind KIND) planned with the road, so it's the same on
-## every player's game from the seed and the road runs straight and level through it. The site
+## Each is a site (AdventureRoute.add_site, kind KIND) laid out with the road, so it's the same on
+## every player's game. The site
 ## carries its "type" (TYPES), "lights", its "arms" ([{side (1 the right, -1 the left), skew
 ## (degrees off square), bend (degrees it turns by its end), len (m), w (m), surf, name}]), for a
 ## roundabout the island's radius "ri", the road's outer radius "ro" and the traffic's circling
@@ -33,12 +33,6 @@ const NAMES := {"tee": "Side road", "cross": "Crossroads", "lights": "Traffic li
 const KEEP := 12
 const KEEP_ROUND := 15
 const FLAT := 24.0
-## Spacing: from a village's middle to a junction in it, and to the roundabout (or lane) out by
-## it (m); out in the country a lane joins every so often, the odd crossroads among them.
-const IN_VILLAGE := [118.0, 150.0]
-const BY_VILLAGE := [250.0, 420.0]
-const OPEN_FIRST := [1500.0, 4000.0]
-const OPEN_EVERY := [2600.0, 6500.0]
 ## How far a junction keeps from other sites (m) by their kind.
 const CLEAR := {"village": 100.0, "village_row": 60.0, "fuel": 170.0, "start": 380.0, "finish": 420.0, "fork": 420.0,
 	"junction": 520.0, "crossing": 230.0}
@@ -78,71 +72,6 @@ static var _lamp_mats := {}
 
 # ---------------------------------------------------------------------------- planning
 
-## Plans the junctions along `route` (called by AdventureRoute.plan once the stops and forks are
-## in, before the road is laid): one in each village and, most of the time, a roundabout or a lane
-## out by it; and out in the country a lane joining every few km, the odd crossroads or roundabout.
-## Their own rng, so the rest of the plan's draws are the same with or without them.
-static func plan(route: AdventureRoute) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([route.seed_value, "junctions", route.theme])
-	for st in route.sites_of("village"):
-		var mid := float(st["s"])
-		var end := 1.0 if rng.randf() < 0.5 else -1.0
-		var pick := rng.randf()
-		var kind := "lights" if pick < 0.42 else ("mini" if pick < 0.7 else "tee")
-		_try(route, rng, kind, mid + end * rng.randf_range(IN_VILLAGE[0], IN_VILLAGE[1]), mid)
-		if rng.randf() < 0.85:
-			_try(route, rng, "roundabout" if rng.randf() < 0.7 else "cross", mid - end * rng.randf_range(BY_VILLAGE[0], BY_VILLAGE[1]), mid)
-	var s := rng.randf_range(OPEN_FIRST[0], OPEN_FIRST[1])
-	while s < route.length - 800.0:
-		var roll := rng.randf()
-		_try(route, rng, "roundabout" if roll < 0.07 else ("cross" if roll < 0.26 else "tee"), s, -1.0)
-		s += rng.randf_range(OPEN_EVERY[0], OPEN_EVERY[1])
-
-
-## A junction of `kind` at about `s` (`village`: the middle of the village it's in or by, or -1),
-## where there's room: on a knot well inside a chunk (its stubs are drawn with its chunk's land)
-## and clear of the other sites.
-static func _try(route: AdventureRoute, rng: RandomNumberGenerator, kind: String, s: float, village: float) -> void:
-	var si := int(round(s / AdventureRoute.STEP))
-	var m := si % AdventureRoute.CHUNK_KNOTS
-	if m < 5:
-		si += 5 - m
-	elif m > 26:
-		si -= m - 26
-	s = si * AdventureRoute.STEP
-	if s < 450.0 or s > route.length - 450.0:
-		return
-	for st in route.sites:
-		var gap := float(CLEAR.get(str(st["kind"]), CLEAR_OTHER))
-		if absf(float(st["s"]) - s) < gap:
-			return
-	var arms := []
-	var sides: Array = [-1, 1]
-	match kind:
-		"tee":
-			sides = [-1 if rng.randf() < 0.5 else 1]
-		"lights", "mini":
-			if rng.randf() < 0.3:
-				sides = [-1 if rng.randf() < 0.5 else 1]
-		"roundabout":
-			if rng.randf() < 0.35:
-				sides = [-1 if rng.randf() < 0.5 else 1]
-	# In a village the side roads bend away from its middle, round behind the shops.
-	var away := 0.0 if village < 0.0 else signf(s - village)
-	var lane := village < 0.0 and kind == "tee" and rng.randf() < 0.35
-	for side in sides:
-		var skew := rng.randf_range(-14.0, 14.0)
-		var bend := rng.randf_range(-35.0, 35.0)
-		if away != 0.0:
-			skew = absf(skew) * away * 0.6
-			bend = absf(bend) * away
-		arms.append({"side": int(side), "skew": skew, "bend": bend, "len": rng.randf_range(ARM_LEN[0], ARM_LEN[1]),
-			"w": 3.3 if lane else rng.randf_range(ARM_W[0], ARM_W[1]), "surf": "gravel" if lane else "tarmac",
-			"name": _place_name(rng), "km": rng.randi_range(2, 14)})
-	_add_site(route, rng, kind, s, arms, village)
-
-
 ## Adds the junction site of `kind` at `s` with its `arms` (see the file's comment for what it carries).
 static func _add_site(route: AdventureRoute, rng: RandomNumberGenerator, kind: String, s: float, arms: Array, village: float) -> void:
 	var round_kind: bool = kind in ["roundabout", "mini"]
@@ -174,9 +103,10 @@ const REAL_BEND := deg_to_rad(18.0)
 
 ## Puts the real road's junctions in (AdventureRoute.plan_real; `rows` are RealPack.junctions): a site at each place
 ## a side road joins, with the real side roads as its arms (their sides, skews, classes and names). A real road bends
-## through a junction where a made-up one runs straight, so a roundabout (the road must go straight on through it)
+## through a junction, so a roundabout (the road must go straight on through it)
 ## stays one only where the road is straight there; elsewhere it's a crossroads or a side road, and one at a corner
-## (the road turns more than REAL_BEND through it) is left out. Their own rng, so the rest of the plan is the same with or without them.
+## (the road turns more than REAL_BEND through it) is left out. The map doesn't say where the traffic lights are: a
+## crossroads in a built-up place (RealPack.COVER "urban") has them. Their own rng, so the rest of the plan is the same with or without them.
 static func plan_real(route: AdventureRoute, rows: Array) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([route.seed_value, "real_junctions", route.theme])
@@ -206,6 +136,9 @@ static func plan_real(route: AdventureRoute, rows: Array) -> void:
 				break
 		if not clear:
 			continue
+		var town := route.cover_at(route.px[si], route.pz[si]) == "urban"
+		if kind == "cross" and town:
+			kind = "lights"
 		var arms := []
 		for a: Dictionary in arms_in:
 			var lane := str(a["surf"]) != "tarmac"
@@ -213,7 +146,7 @@ static func plan_real(route: AdventureRoute, rows: Array) -> void:
 				"len": rng.randf_range(ARM_LEN[0], ARM_LEN[1]), "w": float(a["w"]),
 				"surf": "gravel" if lane else "tarmac",
 				"name": str(a["name"]) if str(a["name"]) != "" else _place_name(rng), "km": rng.randi_range(2, 14)})
-		_add_site(route, rng, kind, s, arms, -1.0)
+		_add_site(route, rng, kind, s, arms, s if town else -1.0)
 		if kind == "roundabout" and jn.has("ri"):
 			var st := route.sites_of(KIND)[-1] as Dictionary
 			st["ri"] = float(jn["ri"])
@@ -250,7 +183,7 @@ static func widen(route: AdventureRoute) -> void:
 
 
 ## Lays out each junction's side roads on the land, once the road and its land are planned (the
-## end of AdventureRoute.plan, the path then the main road at every fork): each arm's centre line
+## end of AdventureRoute.plan_real, the path then the main road at every fork): each arm's centre line
 ## from the main road's edge (or the ring's) out, skewed and bending as planned, at the land's
 ## height there. Off the tarmac the side roads are the main road's own surface (a snowy road's
 ## lanes are snowy too).

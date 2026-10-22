@@ -51,7 +51,11 @@ var _lock := Mutex.new()
 var _material: StandardMaterial3D
 var _at := Vector2(INF, INF)
 var _epoch := 0        # changes when the road does (a way picked at a fork): older work is thrown away
-var _touch := {}       # Vector2i -> whether the road is near the block (kept till the road changes)
+var _touch := {}       # Vector2i -> true for the blocks the road is near (worked out once a road, see _near_road)
+var _touch_done := false
+## No new blocks are started while this is set (a fork's way is being put together, and the road is about to change
+## under them: see AdventureWorld.apply_picks_soon), so the road can be swapped without waiting on any.
+var hold := false
 
 
 func setup(w: AdventureWorld, r: AdventureRoute) -> void:
@@ -86,6 +90,7 @@ func reset() -> void:
 			mi.queue_free()
 	_blocks.clear()
 	_touch.clear()
+	_touch_done = false
 	_at = Vector2(INF, INF)
 
 
@@ -121,13 +126,23 @@ func follow(x: float, z: float) -> void:
 			_blocks.erase(key)
 
 
-## Whether the road is within ROAD_NEAR of the middle of block `key`.
+## Whether the road is within ROAD_NEAR of the middle of block `key`. The blocks it's near are marked in one go along
+## the road (a point every 64 m), the first time it's asked: asking the road for each block in reach on its own was a
+## hitch of tens of ms when they were all asked at once (at the start, and once a fork's way is taken).
 func _near_road(key: Vector2i) -> bool:
-	if not _touch.has(key):
-		var c := _centre(key)
-		var hit := route.locate(c.x, c.y)
-		_touch[key] = not hit.is_empty() and float(hit["d"]) < ROAD_NEAR
-	return _touch[key]
+	if not _touch_done:
+		_touch_done = true
+		var reach := ROAD_NEAR + 32.0
+		var span := int(ceil(reach / BLOCK)) + 1
+		for i in range(0, route.knot_count(), 16):
+			var p := Vector2(route.px[i], route.pz[i])
+			var b := Vector2i(floori(p.x / BLOCK), floori(p.y / BLOCK))
+			for bz in range(b.y - span, b.y + span + 1):
+				for bx in range(b.x - span, b.x + span + 1):
+					var k := Vector2i(bx, bz)
+					if not _touch.has(k) and _centre(k).distance_to(p) < reach:
+						_touch[k] = true
+	return _touch.has(key)
 
 
 ## The level for a block `d` metres from the rider (-1: none), keeping `have` (-1 for none yet) while it is near enough.
@@ -144,7 +159,7 @@ static func _centre(key: Vector2i) -> Vector2:
 
 
 func _process(_delta: float) -> void:
-	while _tasks.size() < AT_ONCE and not _queue.is_empty():
+	while not hold and _tasks.size() < AT_ONCE and not _queue.is_empty():
 		var item: Dictionary = _queue.pop_front()
 		var key: Vector2i = item["key"]
 		var lod: int = item["lod"]
@@ -206,6 +221,11 @@ func level_counts() -> Dictionary:
 ## Whether any block is still waiting or being laid out.
 func busy() -> bool:
 	return not _tasks.is_empty() or not _queue.is_empty()
+
+
+## Whether any block is being laid out on a worker thread right now.
+func working() -> bool:
+	return not _tasks.is_empty()
 
 
 func _place(key: Vector2i, mi: MeshInstance3D) -> void:

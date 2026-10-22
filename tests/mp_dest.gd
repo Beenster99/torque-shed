@@ -1,9 +1,11 @@
 extends Node
 ## Two-process co-op check of an adventure's destination, run by tests/mp_test.sh: a host and a
-## client start the real game; the host starts an adventure for both (a short length, so it loads quickly). The client rides to the finish: both
-## must be brought to the destination together (each parked by the set piece, seeing the other
+## client start the real game; the host starts an adventure for both (a short one, so it loads quickly). The client rides to the finish: both
+## must be brought to the destination together (each parked past the finish, seeing the other
 ## there), both get XP, the photo must hang on the shed wall on both games and be in each
 ## player's own album. Then the host rides everyone home.
+
+const Rides := preload("res://tests/rides.gd")
 
 const KM := 8.0
 
@@ -20,6 +22,8 @@ func _ready() -> void:
 	Settings.player_name = "Dest %s" % role
 	AdventureDest.album_path = "user://zz_mp_album_%s.json" % role
 	DirAccess.remove_absolute(AdventureDest.album_path)
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	Rides.pack(KM)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
@@ -34,11 +38,11 @@ func _ready() -> void:
 	var ok_start := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip() and not started[0]:
 			started[0] = true
-			Adventure.start(4101, KM, "desert", "canyon")
+			Rides.start(KM, 4101)
 		return trip.on_trip() and main.bike != null and _remote_bike() != null, 40.0)
 	var adv := Shed.adventure.duplicate(true)
 	xp0[0] = int(Progress.profile.get("xp", 0))   # your own character by now, whoever's shed it is
-	ok_start = ok_start and str(adv.get("dest", "")) == "canyon" and absf(float(adv.get("km", 0.0)) - KM) < 0.1
+	ok_start = ok_start and str(adv.get("dest", "")) == str(Rides.plan(KM)["names"][-1]) and absf(float(adv.get("km", 0.0)) - Rides.full(KM)) < 0.1
 	print("MP dest note %s: on the adventure %s %s" % [role, ok_start, str(adv)])
 	# The client rides to the finish; both end up at the destination.
 	var arrived_ok := false
@@ -59,7 +63,7 @@ func _ready() -> void:
 			var mine := trip.world.distance_of(main.bike.global_position, "check_me")
 			var theirs := trip.world.distance_of(_remote_bike().global_position, "check_them")
 			return absf(mine - ds) < 25.0 and absf(theirs - ds) < 25.0, 15.0)
-		print("MP dest note %s: arrived %s (by peer %d), both at the set piece %s, me %.0f m along, them %.0f, it's at %.0f" % [role, arrived_ok,
+		print("MP dest note %s: arrived %s (by peer %d), both at the destination %s, me %.0f m along, them %.0f, it's at %.0f" % [role, arrived_ok,
 			int(Shed.adventure.get("arrived", 0)), both_there,
 			trip.world.distance_of(main.bike.global_position, "check_me") if trip.world and main.bike else -1.0,
 			trip.world.distance_of(_remote_bike().global_position, "check_them") if trip.world and _remote_bike() else -1.0, ds])
@@ -93,7 +97,7 @@ func _ready() -> void:
 		if role == "client" and not main.in_session:
 			break
 	DirAccess.remove_absolute(AdventureDest.album_path)
-	print("MP dest %s %s: host started it=%s, arrived=%s, both brought to the set piece=%s, photo on the wall and in the album=%s, XP=%s, stays till Ride home=%s, home with the photo still up=%s" % [
+	print("MP dest %s %s: host started it=%s, arrived=%s, both brought to the destination=%s, photo on the wall and in the album=%s, XP=%s, stays till Ride home=%s, home with the photo still up=%s" % [
 		"PASS" if ok else "FAIL", role, ok_start, arrived_ok, both_there, photo_ok, xp_ok, stays, home_ok and still_hung])
 	get_tree().quit(0 if ok else 1)
 

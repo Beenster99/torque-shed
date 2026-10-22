@@ -41,7 +41,7 @@ func _ready() -> void:
 	add_child(cam)
 	cam.make_current()
 	var w := AdventureWorld.new()
-	w.setup(11, 23.0, "coastal", "lighthouse", pack)
+	w.setup(AdventurePlans.pack_for(AdventurePlans.tour(pack)), 11, 23.0)
 	w.focus = func(): return [cam.global_position]
 	w.origin_shifted.connect(func(d): cam.global_position -= d)
 	add_child(w)

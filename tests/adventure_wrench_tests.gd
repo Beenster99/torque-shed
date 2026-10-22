@@ -4,6 +4,8 @@ extends RefCounted
 ## and normal rides keeping no roadside fixing at all. Run from tests/run_tests.gd: its
 ## _test_adv_wrench_* functions hand over to these.
 
+const Rides := preload("res://tests/rides.gd")
+
 var t: Node   # the test runner: check(), get_tree()
 
 const KEPT := {"chain_wear": 0.05, "chain_lube": 1.0, "chain_slack": 30.0, "oil_age": 0.1, "oil_level": 1.0,
@@ -105,7 +107,7 @@ func test_rules() -> void:
 	Shed.bikes[bike]["rider"] = me
 	Shed.crew[me]["riding"] = bike
 	check(Shed.check(me, {"a": "roadside_fault", "kind": "chain_snap"}) != "", "no breakdowns on a normal ride")
-	Shed.request({"a": "adventure_start", "seed": 5, "km": 20.0})
+	Rides.start(20.0, 5)
 	check(Adventure.active(), "an adventure on")
 	check(Shed.check(me, {"a": "roadside_fault", "kind": "warp_drive"}) != "", "only real faults")
 	check(Shed.check(me, {"a": "roadside_tow", "by": 99}).contains("no tow needed"), "a bike that runs fine can't be put on a tow strap")
@@ -265,7 +267,7 @@ func test_session() -> void:
 	# Now the adventure.
 	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
 	main._left_bike = 0   # (getting back on the bike just left waits a few seconds otherwise)
-	Adventure.start(91, 20.0)
+	Rides.start(20.0, 91)
 	await _ticks(10)
 	var trip: AdventureTrip = main.trip
 	check(trip.on_trip() and main.bike != null and Shed.riding(me) == faithful, "out on an adventure on Old Faithful (%s, %s, %d vs %d)" % [trip.on_trip(), main.bike, Shed.riding(me), faithful])

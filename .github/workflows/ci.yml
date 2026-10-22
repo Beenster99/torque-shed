@@ -49,7 +49,7 @@ jobs:
       - name: Check the build holds the land's tiles
         run: |
           # (an export only takes the files its include filters name: a build once shipped without them, and every real road came out flat)
-          for p in data/routes/shodoshima/tiles/ data/regions/shodoshima/tiles/ data/routes/dales/ridge/; do
+          for p in data/regions/shodoshima/tiles/ data/regions/shodoshima/ridge/ data/regions/dales/tiles/; do
             n=$(grep -a -o "$p" build/windows/TorqueShed.exe | wc -l)
             echo "$p: $n"
             test "$n" -gt 0

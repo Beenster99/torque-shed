@@ -3,6 +3,8 @@ extends Node
 ##   godot --headless --fixed-fps 120 --path . res://tests/test_runner.tscn
 ## Prints a line per check and exits with code 1 if anything failed.
 
+const Rides := preload("res://tests/rides.gd")
+
 var failures := 0
 var checks := 0
 var verbose := OS.get_cmdline_user_args().has("--verbose")
@@ -525,7 +527,6 @@ func _run_all() -> void:
 	await _test_adv_police_trap()
 	await _test_adv_police_coop()
 	await _test_adv_police_stream()
-	_test_adv_themes_plan()
 	_test_adv_themes_scenery()
 	await _test_adv_themes_stream()
 	await _test_adv_themes_sky()
@@ -552,11 +553,6 @@ func _run_all() -> void:
 	await _test_lights_avatar_shadows()
 	await _test_lights_far_terrain()
 	await _test_lights_kit_bike_materials()
-	await _test_lights_adventure_land_edge()
-	await _test_adv_roads_relief()
-	await _test_adv_roads_switchbacks()
-	await _test_adv_roads_tunnels()
-	await _test_adv_roads_shelter()
 	await _test_adv_roads_junction_plan()
 	await _test_adv_roads_instructions()
 	await _test_adv_roads_lights_cycle()
@@ -21871,8 +21867,7 @@ func _test_kit_satnav() -> void:
 	check(pts.size() == 2 and float(pts[0]["distance"]) == 900.0 and pts[1]["kind"] == "destination", "and the next fuel (the nearest) and the destination")
 	check(nav.provider() == nav.town, "cleared, it's the town's again")
 	# On an adventure: its road, the fuel ahead along it and the destination.
-	var adv := AdventureWorld.new()
-	adv.setup(42, 60.0)
+	var adv := Rides.world(60.0, 42)
 	adv.focus = func(): return [adv.transform_at(20.0).origin]
 	add_child(adv)
 	var start := adv.transform_at(200.0)
@@ -21884,7 +21879,7 @@ func _test_kit_satnav() -> void:
 	check(ap.size() == 2 and ap[0]["kind"] == "fuel" and absf(float(ap[0]["distance"]) - (fuel_s - 200.0)) < 2.0
 		and ap[1]["kind"] == "destination" and absf(float(ap[1]["distance"]) - (adv.route.length - 200.0)) < 2.0,
 		"with the next fuel (%.1f km) and the destination along the road %s" % [(fuel_s - 200.0) / 1000.0, str(ap.map(func(q): return "%s %.0f" % [q["kind"], q["distance"]]))])
-	check(str(av["road"]).contains("road"), "and the road it's on (%s)" % str(av["road"]))
+	check(str(av["road"]) != "", "and the road it's on (%s)" % str(av["road"]))
 	var back := Satnav.view_for(nav.provider(), start.origin, start.basis.z, 20.0)
 	var bp: Array = (back["points"] as Array).filter(func(q): return q["kind"] == "fuel")
 	check(bool(back["guide"]["wrong_way"]) and bp.size() == 1 and absf(float(bp[0]["distance"]) - (fuel_s - 200.0)) < 2.0,
@@ -22382,10 +22377,6 @@ func _adv_themes() -> RefCounted:
 	return load("res://tests/adventure_themes_tests.gd").new(self)
 
 
-func _test_adv_themes_plan() -> void:
-	_adv_themes().test_plan()
-
-
 func _test_adv_themes_scenery() -> void:
 	_adv_themes().test_scenery()
 
@@ -22512,29 +22503,8 @@ func _test_lights_kit_bike_materials() -> void:
 	await _lights().test_kit_bike_materials()
 
 
-func _test_lights_adventure_land_edge() -> void:
-	await _lights().test_adventure_land_edge()
-
-# ---------------------------------------------------------------------------- adventure roads: junctions, climbs and tunnels (tests/adventure_roads_tests.gd)
-
 func _adv_roads() -> RefCounted:
 	return load("res://tests/adventure_roads_tests.gd").new(self)
-
-
-func _test_adv_roads_relief() -> void:
-	await _adv_roads().test_relief()
-
-
-func _test_adv_roads_switchbacks() -> void:
-	await _adv_roads().test_switchbacks()
-
-
-func _test_adv_roads_tunnels() -> void:
-	await _adv_roads().test_tunnels()
-
-
-func _test_adv_roads_shelter() -> void:
-	await _adv_roads().test_shelter()
 
 
 func _test_adv_roads_junction_plan() -> void:

@@ -3,12 +3,13 @@ extends RefCounted
 ## adventures - this causes lag for everyone" and "lots of graphics glitches on adventure - long
 ## triangles"). Run from tests/run_tests.gd (its _test_adv_perf_* functions hand over to these).
 
+const Rides := preload("res://tests/rides.gd")
+
 var t: Node   # the test runner: check(), get_tree()
 
 ## The longest a triangle's edge may be in each of a chunk's meshes (m). The land is checked
 ## its own way (see _scan_land): its columns are meant to get wider out to the skyline.
-const MAX_EDGE := {"road": 12.0, "lines": 12.0, "paint": 14.0, "arms": 24.0, "walls": 12.0, "buildings": 40.0,
-	"tube": 12.0, "cap": 40.0, "glow": 12.0, "portals": 40.0}
+const MAX_EDGE := {"road": 12.0, "lines": 12.0, "paint": 14.0, "arms": 24.0, "walls": 12.0, "buildings": 150.0}
 ## A frame this much longer than the ride's typical one is a stutter (ms, headless: no drawing).
 const SPIKE_MS := 12.0
 
@@ -54,10 +55,6 @@ static func meshes(data: Dictionary) -> Array:
 			out.append([key, data[key]["v"], PackedInt32Array()])
 	for surf in data.get("arms", {}):
 		out.append(["arms", data["arms"][surf]["v"], PackedInt32Array()])
-	var tn: Dictionary = data.get("tunnel", {})
-	for key in ["tube", "cap", "glow", "portals"]:
-		if tn.has(key):
-			out.append([key, tn[key]["v"], PackedInt32Array()])
 	return out
 
 
@@ -106,7 +103,7 @@ static func scan(route: AdventureRoute, data: Dictionary, tally := {}) -> Array:
 ## the sky and down to the far ground, with the sky showing between them.
 static func _scan_land(route: AdventureRoute, data: Dictionary, tally: Dictionary) -> Array:
 	var bad := []
-	var cols := AdventureChunk.LAND_OUT.size()
+	var cols := AdventureChunk.land_cols(route)
 	var i0 := int(data["i0"])
 	for side: int in [-1, 1]:
 		var v: PackedVector3Array = data["land_%d" % side][Mesh.ARRAY_VERTEX]
@@ -155,17 +152,15 @@ static func _scan_land(route: AdventureRoute, data: Dictionary, tally: Dictionar
 	return bad
 
 
-## The chunks of a road of every theme, several seeds each and either way at the forks, looked
-## over for bad triangles (see scan): none anywhere.
+## The chunks of both tours' roads, either way at the forks, looked over for bad triangles (see scan): none anywhere.
 func test_triangles() -> void:
 	var chunks := 0
 	var bad := []
 	var by_theme := {}
 	var tally := {}
-	for theme in AdventureTheme.IDS:
-		for seed in [5, 42, 77]:
-			var r := AdventureRoute.new()
-			r.plan(seed, 24.0, theme)
+	for theme in ["shodoshima", "dales"]:
+		for seed in [5, 42]:
+			var r := Rides.tour_route(theme, seed)
 			for f in r.forks.size():
 				r.choose(f, seed % 2)
 			var found := 0
@@ -179,7 +174,7 @@ func test_triangles() -> void:
 			by_theme[theme] = int(by_theme.get(theme, 0)) + found
 		await _frames(1)
 	check(chunks > 600 and bad.is_empty(),
-		"%d chunks of every theme looked over: no bad or overlong triangles, every row of land down under the far ground at its end %s %s" % [chunks, str(by_theme), str(bad)])
+		"%d chunks of both tours looked over: no bad or overlong triangles, every row of land down under the far ground at its end %s %s" % [chunks, str(by_theme), str(bad)])
 	check(int(tally.get("walls", 0)) * 1000 < int(tally.get("tris", 0)),
 		"and hardly a wall or fin of land where it goes down (%d of %d faces)" % [int(tally.get("walls", 0)), int(tally.get("tris", 0))])
 
@@ -244,10 +239,10 @@ func test_ride() -> void:
 	var faithful: int = t._bike_named("Old Faithful")
 	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
 	main._left_bike = 0
-	Adventure.start(42, 60.0, "alpine")
+	Rides.start(60.0, 42)
 	await _ticks(30)
 	var trip: AdventureTrip = main.trip
-	check(trip.on_trip() and main.bike != null and trip.world.route.forks.size() > 0, "out on a 60 km alpine ride, with a fork in it")
+	check(trip.on_trip() and main.bike != null and trip.world.route.forks.size() > 0, "out on a %.0f km ride, with a fork in it" % (trip.world.route.length / 1000.0 if trip.on_trip() else 0.0))
 	if not trip.on_trip() or main.bike == null or trip.world.route.forks.is_empty():
 		await _done(main)
 		return

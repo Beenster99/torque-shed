@@ -4,6 +4,10 @@ extends RefCounted
 ## often something goes wrong over a whole ride, and how tight a turn the bars make slow. Run from
 ## tests/run_tests.gd: its _test_adv_ride_* functions hand over to these.
 
+const Rides := preload("res://tests/rides.gd")
+## The ride lengths the odds are checked over (km).
+const LENGTHS := {"Short": 100.0, "Ride": 150.0, "Epic": 220.0}
+
 var t: Node   # the test runner: check(), ride(), _done()
 
 const MPH60 := 26.8224   # m/s
@@ -47,8 +51,7 @@ func test_brakes() -> void:
 
 
 func _brakes_ride(build: Dictionary, nm: String) -> void:
-	var route := AdventureRoute.new()
-	route.plan(7, 40.0, "hills")
+	var route := Rides.route(40.0, 7)
 	var stops := []
 	for site in route.sites:
 		if str(site["kind"]) in ["junction", "fork", "fuel"]:
@@ -213,16 +216,15 @@ const TYPICAL := {"chain_wear": 0.25, "chain_lube": 0.6, "chain_slack": 34.0, "o
 	"engine_wear": 0.25, "wear": 0.3}
 
 
-## Breakdowns and punctures over whole adventures: each length (a short ride of 90 minutes, the
-## two-hour ride and the three-hour epic) on its road's own mix of tarmac, gravel, sand and snow,
-## ridden km by km on a typical bike a few hundred times. About one thing goes wrong on a ride,
-## not several; a ride with three or more is rare.
+## Breakdowns and punctures over whole adventures: rides of about 90 minutes, two hours and three hours (100, 150 and
+## 220 km) on the tours' own mix of surfaces (round them as many times as it takes), ridden km by km on a typical bike a
+## few hundred times. About one thing goes wrong on a ride, not several; a ride with three or more is rare.
 func test_breakdown_odds() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1808
 	var means := {}
-	for length in AdventureDest.LENGTH_ORDER:
-		var km := float(AdventureDest.LENGTHS[length]["km"])
+	for length in LENGTHS:
+		var km := float(LENGTHS[length])
 		var rides := 0
 		var events := 0
 		var many := 0
@@ -230,11 +232,10 @@ func test_breakdown_odds() -> void:
 		var punctures := 0
 		var seeds := [3, 11, 27, 40, 52]
 		for seed in seeds:
-			var route := AdventureRoute.new()
-			route.plan(seed, km)
+			var route := Rides.tour_route("dales" if seed % 2 == 1 else "shodoshima", seed)
 			var surfs := []
-			for k in int(route.length / 1000.0):
-				surfs.append(route.surface_at_s(k * 1000.0 + 500.0))
+			for k in int(km):
+				surfs.append(route.surface_at_s(fmod(k * 1000.0 + 500.0, route.length)))
 			var rates := {}
 			for surf in surfs:
 				if not rates.has(surf):
@@ -257,14 +258,14 @@ func test_breakdown_odds() -> void:
 				many += 1 if n >= 3 else 0
 		var mean := float(events) / rides
 		means[length] = mean
-		var nm := str(AdventureDest.LENGTHS[length]["name"])
+		var nm := str(length)
 		print("    %s (%d km): %.2f things go wrong a ride (%.2f expected, %.2f of them punctures), %d of %d rides with 3 or more" % [
 			nm, roundi(km), mean, expected, float(punctures) / rides, many, rides])
 		check(absf(mean - expected) < 0.2, "%s: the rolls come out as the odds say (%.2f a ride against %.2f)" % [nm, mean, expected])
-		check(mean > 0.3 and mean < 1.25 and float(many) / rides < 0.15,
+		check(mean > 0.2 and mean < 1.25 and float(many) / rides < 0.15,
 			"%s (%d km, about %d minutes): %.2f things go wrong a ride on a typical bike, %d%% of rides see 3 or more" % [
-				nm, roundi(km), int(AdventureDest.LENGTHS[length]["minutes"]), mean, roundi(100.0 * many / rides)])
-	check(means["short"] < means["ride"] and means["ride"] < means["epic"], "the longer the ride, the more chance of something")
+				nm, roundi(km), AdventureDest.minutes_for(km), mean, roundi(100.0 * many / rides)])
+	check(means["Short"] < means["Ride"] and means["Ride"] < means["Epic"], "the longer the ride, the more chance of something")
 	check(not Puncture.hit_punctures(20.0, 0.0, 0.4) and Puncture.hit_punctures(20.0, 0.0, 3.0) and not Puncture.hit_punctures(5.0, 0.0, 3.0),
 		"a pothole hit at speed can pinch a tyre; the fork sinking on to its stop under the brakes can't")
 

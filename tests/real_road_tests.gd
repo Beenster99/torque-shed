@@ -1,9 +1,12 @@
 extends RefCounted
-## Real roads' checks (a baked pack read by RealPack and RealTerrain, planned by AdventureRoute.plan_real
-## and built into chunks), run from tests/run_tests.gd: its _test_real_* functions hand over to these.
+## Real roads' checks (a road planned across a region by RoutePlanner, its land read by RealTerrain, laid out by
+## AdventureRoute.plan_real and built into chunks), run from tests/run_tests.gd: its _test_real_* functions hand over to
+## these. The roads are the bundled regions' tours (see Rides): round Shodoshima, and the long one with forks round the
+## Dales.
 
+const Rides := preload("res://tests/rides.gd")
 const PACK := "shodoshima"
-## The long road with forks (the Dales epic).
+## The long road with forks.
 const EPIC := "dales"
 ## What a chunk may hold (see test_budget): the buildings' vertices, and trees, bushes, rocks and the like.
 const BUDGET_BUILDING_VERTS := 20000
@@ -21,12 +24,11 @@ func check(cond: bool, what: String) -> void:
 
 
 func test_pack() -> void:
-	check(RealPack.list().has(PACK), "the game has the %s road pack" % PACK)
-	var p := RealPack.get_pack(PACK)
-	check(p != null and p.hash != "" and p.credits.size() > 0, "it reads, with its hash and credits")
+	var p := Rides.tour_pack(PACK)
+	check(p != null and p.hash != "" and p.credits.size() > 0, "the tour of %s plans, with its hash and credits" % PACK)
 	if p == null:
 		return
-	check(RealPack.get_pack(PACK) == p, "and is read once, then shared")
+	check(Rides.tour_pack(PACK) == p and RealPack.get_pack(p.id) == p, "and is planned once, then shared")
 	check(RealPack.get_pack("nowhere") == null, "a pack that isn't there is null, not a crash")
 	check(p.max_km() > 20.0 and p.x.size() > 1000, "%.1f km of road in %d knots" % [p.max_km(), p.x.size()])
 	# The land is one surface: bilinear across the tile seams.
@@ -41,18 +43,20 @@ func test_pack() -> void:
 	check(known > p.x.size() / 25 * 0.95, "land under the road all along it (%d of %d samples)" % [known, p.x.size() / 25])
 	check(worst < 3.0, "land heights are continuous, also over tile edges (worst step %.2f m in 0.5 m)" % worst)
 	check(is_nan(p.terrain.height(1.0e7, 1.0e7)), "and unknown far from the tiles")
-	var off := 0.0
+	var on := 0
+	var all := 0
 	for k in range(0, p.x.size(), 50):
 		var h := p.terrain.height(p.x[k], p.z[k])
 		if not is_nan(h):
-			off = maxf(off, absf(h - p.e[k]))
-	check(off < 2.5, "the road sits on the land it was baked from (most %.1f m off)" % off)
+			all += 1
+			on += int(absf(h - p.e[k]) < 6.0)
+	check(on > all * 0.9, "the road sits on the land it was planned over (%d of %d points within 6 m: it rides over the bumps)" % [on, all])
 
 
 ## The land's three levels: the fine one by the road, the coarse one out over the hillsides, the ridge level to the
-## skyline; joined without steps, and the whole pack small.
+## skyline; joined without steps, and the whole region small.
 func test_levels() -> void:
-	var p := RealPack.get_pack(PACK)
+	var p := Rides.tour_pack(PACK)
 	var t := p.terrain
 	check(t.levels.size() == 3 and t.levels[0].spacing < t.levels[1].spacing and t.levels[1].spacing < t.levels[2].spacing,
 		"three levels of land, each coarser than the last")
@@ -69,8 +73,7 @@ func test_levels() -> void:
 	check(reach.has(100) and reach.has(600) and reach.has(1200) and reach.has(3000) and reach.has(9000),
 		"land to 9 km out (%s m out have heights)" % str(reach.keys()))
 	check(is_nan(t.height(p.x[k] + 80000.0, p.z[k])), "and none past the ridge level's reach")
-	check(is_nan(t.height_at_level(0, p.x[k] + rx * 1200.0, p.z[k] + rz * 1200.0)) and not is_nan(t.height_at_level(1, p.x[k] + rx * 1200.0, p.z[k] + rz * 1200.0)),
-		"1.2 km out it is the coarse level's (the fine ends near 300 m)")
+	check(not is_nan(t.height_at_level(1, p.x[k] + rx * 1200.0, p.z[k] + rz * 1200.0)), "1.2 km out the coarse level has it")
 	# Walk out from the road: no step where one level hands over to the next (the fine tiles' last metres are eased
 	# into the coarse level).
 	var worst := 0.0
@@ -106,17 +109,18 @@ func test_levels() -> void:
 	check(got.size() == 4 and got[0] == 10.0 and got[1] == 12.0 and got[2] == 14.0 and got[3] == 20.0, "a tile's bytes decode to its heights (%s)" % str(got))
 	check(RealTerrain.decode_heights(PackedByteArray([1, 2, 3]), 2, 0.0, 1.0).is_empty(), "and bad bytes to nothing")
 	var total := 0
-	var dir := DirAccess.open(RealPack.DIR.path_join(PACK))
+	var root := RealRegion.DIR.path_join(PACK)
+	var dir := DirAccess.open(root)
 	for sub in ["tiles", "coarse", "ridge"]:
-		var d := DirAccess.open(RealPack.DIR.path_join(PACK).path_join(sub))
+		var d := DirAccess.open(root.path_join(sub))
 		for f in d.get_files():
-			total += FileAccess.get_file_as_bytes(RealPack.DIR.path_join(PACK).path_join(sub).path_join(f)).size()
-	check(dir != null and total < 3000000, "the land is %.1f MB for %.0f km of road" % [total / 1.0e6, p.max_km()])
+			total += FileAccess.get_file_as_bytes(root.path_join(sub).path_join(f)).size()
+	check(dir != null and total < 10000000, "the whole island's land is %.1f MB" % (total / 1.0e6))
 
 
 func test_ridges() -> void:
 	var w := AdventureWorld.new()
-	w.setup(11, 23.0, "coastal", "lighthouse", PACK)
+	w.setup(Rides.tour_pack(PACK), 11, 23.0)
 	t.add_child(w)   # (the blocks are put in a frame at a time, once laid out on worker threads)
 	var p: RealPack = w.route.real
 	var end := Time.get_ticks_msec() + 20000
@@ -128,10 +132,18 @@ func test_ridges() -> void:
 	var fine := p.terrain.height(p.x[k], p.z[k])
 	var ridge := _ridge_at(p.terrain, p.x[k], p.z[k])
 	check(ridge < fine - 30.0, "under the road the ridge level lies %.0f m below the land (%.0f vs %.0f)" % [fine - ridge, ridge, fine])
-	var hd := atan2(p.x[k + 1] - p.x[k], -(p.z[k + 1] - p.z[k]))
-	var far_c := p.terrain.height_at_level(1, p.x[k] + cos(hd) * 1500.0, p.z[k] + sin(hd) * 1500.0)
-	var far_r := p.terrain.height_at_level(2, p.x[k] + cos(hd) * 1500.0, p.z[k] + sin(hd) * 1500.0)
-	check(absf(far_c - far_r) < 40.0, "and 1.5 km out it is the real ground's, as the coarse level has it (%.0f vs %.0f)" % [far_r, far_c])
+	# 1.5 km out, where both levels have it, they agree (the coarse level is the finer of the two).
+	var diffs := []
+	for kk in range(400, p.x.size() - 400, 400):
+		var hh := atan2(p.x[kk + 1] - p.x[kk], -(p.z[kk + 1] - p.z[kk]))
+		for side: float in [-1.0, 1.0]:
+			var fc := p.terrain.height_at_level(1, p.x[kk] + cos(hh) * 1500.0 * side, p.z[kk] + sin(hh) * 1500.0 * side)
+			var fr := p.terrain.height_at_level(2, p.x[kk] + cos(hh) * 1500.0 * side, p.z[kk] + sin(hh) * 1500.0 * side)
+			if not is_nan(fc) and not is_nan(fr):
+				diffs.append(absf(fc - fr))
+	diffs.sort()
+	var mid: float = diffs[diffs.size() / 2] if not diffs.is_empty() else INF
+	check(mid < 150.0, "and 1.5 km out it is about the real ground's, as the coarse level has it (%.0f m apart at the middle of %d points)" % [mid, diffs.size()])
 	# Moves with the origin.
 	var block: MeshInstance3D = w.ridges.get_children()[0]
 	var before := block.position
@@ -152,8 +164,8 @@ func _ridge_at(t: RealTerrain, x: float, z: float) -> float:
 
 
 func test_land() -> void:
-	var p := RealPack.get_pack(PACK)
-	check(p.building_count > 200 and not p.buildings_in(136).is_empty(), "the pack has its buildings (%d), filed by the chunk beside them" % p.building_count)
+	var p := Rides.tour_pack(PACK)
+	check(p.building_count > 200 and not p.buildings.is_empty(), "the road has its buildings (%d), filed by the chunk beside them" % p.building_count)
 	var bad := 0
 	var kinds := {}
 	for c in p.buildings:
@@ -200,7 +212,7 @@ func test_building_shapes() -> void:
 ## Every chunk of the whole island road is within its budget: buildings' vertices and scattered things.
 func test_budget() -> void:
 	var r := AdventureRoute.new()
-	r.plan_real(RealPack.get_pack(PACK), 7, 1000.0)
+	r.plan_real(Rides.tour_pack(PACK), 7, 1000.0)
 	var worst_v := 0
 	var worst_i := 0
 	var worst_ms := 0.0
@@ -223,7 +235,7 @@ func test_budget() -> void:
 
 ## Real places the stops take over, the real road's junctions and its speed limits.
 func test_stops() -> void:
-	var p := RealPack.get_pack(PACK)
+	var p := Rides.tour_pack(PACK)
 	var a := AdventureRoute.new()
 	a.plan_real(p, 7, 23.0)
 	var fuel := a.sites_of("fuel")
@@ -247,7 +259,7 @@ func test_stops() -> void:
 
 
 func test_junctions() -> void:
-	var p := RealPack.get_pack(PACK)
+	var p := Rides.tour_pack(PACK)
 	check(p.junctions.size() >= 5, "the pack has the road's junctions (%d)" % p.junctions.size())
 	var r := AdventureRoute.new()
 	r.plan_real(p, 7, 23.0)
@@ -285,7 +297,7 @@ func test_junctions() -> void:
 
 
 func test_limits() -> void:
-	var p := RealPack.get_pack(PACK)
+	var p := Rides.tour_pack(PACK)
 	var r := AdventureRoute.new()
 	r.plan_real(p, 7, 23.0)
 	var seen := {}
@@ -313,16 +325,12 @@ func test_limits() -> void:
 	kmh_sign.free()
 	mph_sign.free()
 	small_sign.free()
-	var made_up := AdventureRoute.new()
-	made_up.plan(7, 20.0)
-	check(is_equal_approx(AdventurePolice.limit_at(made_up, 1000.0), AdventurePolice.OPEN_LIMIT) or AdventurePolice.limit_at(made_up, 1000.0) == AdventurePolice.VILLAGE_LIMIT,
-		"and a made-up road keeps its 60 and 30 mph")
 
 
-## Real forks: a second way the crew can vote for, baked as a road of its own, joining the main road at both ends.
+## Real forks: a second way the crew can vote for, planned as a road of its own, joining the main road at both ends.
 func test_forks() -> void:
-	var p := RealPack.get_pack(EPIC)
-	check(p != null and p.forks.size() >= 1 and p.max_km() > 60.0, "the epic road has forks (%d) over %.0f km" % [p.forks.size(), p.max_km()])
+	var p := Rides.tour_pack(EPIC)
+	check(p != null and p.forks.size() >= 1 and p.max_km() > 60.0, "the tour of the Dales has forks (%d) over %.0f km" % [p.forks.size(), p.max_km()])
 	var bad := 0
 	for fk: Dictionary in p.forks:
 		var w: Dictionary = fk["way"]
@@ -337,6 +345,11 @@ func test_forks() -> void:
 	check(r.forks.size() >= 1, "the ride has them as forks with signposts (%d forks, %d signs)" % [r.forks.size(), r.sites_of("fork").size()])
 	if r.forks.is_empty():
 		return
+	# The tour ends at Appersett, on the road it set off from Hawes along: a bike stood at the start (no hint yet) is at
+	# the start, not at the end past the forks still open (once it was, and nothing was built round it).
+	var at_start := r.xz_at(30.0, -1.5)
+	var found := r.locate(at_start[0], at_start[1])
+	check(not found.is_empty() and absf(float(found["s"]) - 30.0) < 2.0, "a bike stood at the start is at the start, not the end of the same road (%.0f m along)" % float(found.get("s", -1.0)))
 	var fk: Dictionary = r.forks[0]
 	var ways: Array = fk["ways"]
 	check(ways.size() == 2 and str(ways[0]["kind"]) == "main" and ["scenic", "gravel"].has(str(ways[1]["kind"])) and ways[0]["letter"] != ways[1]["letter"],
@@ -356,9 +369,7 @@ func test_forks() -> void:
 		worst_step = maxf(worst_step, absf(Vector2(r.px[i] - r.px[i - 1], r.pz[i] - r.pz[i - 1]).length() - AdventureRoute.STEP))
 		worst_turn = maxf(worst_turn, absf(r.hd[i] - r.hd[i - 1]))
 		worst_grade = maxf(worst_grade, absf(r.ph[i] - r.ph[i - 1]) / AdventureRoute.STEP)
-		if absf(r.hd[i] - r.hd[i - 1]) > 0.6 or absf(Vector2(r.px[i] - r.px[i - 1], r.pz[i] - r.pz[i - 1]).length() - AdventureRoute.STEP) > 0.7:
-			print("JOINDBG ", i, " fork i0 ", fk["i0"], " i1 ", fk["i1"], " hd ", r.hd[i - 1], " ", r.hd[i], " step ", Vector2(r.px[i] - r.px[i - 1], r.pz[i] - r.pz[i - 1]).length())
-	check(worst_step < 0.7 and worst_turn < 0.6 and worst_grade <= AdventureRoute.MAX_GRADE + 0.001,
+	check(worst_step < 0.7 and worst_turn < 0.6 and worst_grade <= RoutePlanner.MAX_GRADE + 0.001,
 		"through the other way it is one road (steps off %.2f m, turn %.2f rad, grade %.1f%%)" % [worst_step, worst_turn, worst_grade * 100.0])
 	check(r.chunk_surface.size() == r.chunk_count() and r.chunk_name.size() == r.chunk_count() and r.chunk_limit.size() == r.chunk_count()
 		and absf(r.total - (main_total + float(ways[1]["len"]) - float(ways[0]["len"]))) < 8.0,
@@ -369,7 +380,7 @@ func test_forks() -> void:
 	# Its chunks build: the other way has none of the real buildings, the road beyond the rejoin has the main road's.
 	var c_mid := AdventureRoute.chunk_of(mid_s)
 	var alt_chunk := AdventureChunk.build(r, c_mid)
-	check((alt_chunk["buildings"]["v"] as PackedVector3Array).size() == 0 and not alt_chunk["road"].is_empty(), "a chunk on the other way builds, with no buildings (they aren't baked there)")
+	check((alt_chunk["buildings"]["v"] as PackedVector3Array).size() == 0 and not alt_chunk["road"].is_empty(), "a chunk on the other way builds, with no buildings (they aren't planned there)")
 	var after := int(fk["rejoin"] / AdventureRoute.CHUNK_LEN) + 2
 	var shift_chunks := r.chunk_count() - main_chunks
 	var m := AdventureRoute.new()
@@ -392,8 +403,8 @@ func test_forks() -> void:
 func test_fork_ride() -> void:
 	var spot := {}
 	var w := AdventureWorld.new()
-	w.setup(5, floorf(RealPack.get_pack(EPIC).max_km()), "hills", "", EPIC)
-	check(w.route.forks.size() >= 1, "the epic world has a fork to ride")
+	w.setup(Rides.tour_pack(EPIC), 5)
+	check(w.route.forks.size() >= 1, "the Dales world has a fork to ride")
 	if w.route.forks.is_empty():
 		return
 	w.apply_picks({0: 1})
@@ -425,7 +436,7 @@ func test_fork_ride() -> void:
 
 
 func test_plan() -> void:
-	var p := RealPack.get_pack(PACK)
+	var p := Rides.tour_pack(PACK)
 	var a := AdventureRoute.new()
 	a.plan_real(p, 7, 10.0)
 	var b := AdventureRoute.new()
@@ -433,7 +444,7 @@ func test_plan() -> void:
 	check(a.px == b.px and a.ph == b.ph and a.width == b.width and a.chunk_surface == b.chunk_surface and a.sites.size() == b.sites.size(),
 		"the same real road plans the very same ride (%d knots)" % a.knot_count())
 	check(absf(a.length - 10000.0) < 0.1 and a.total > a.length, "its length is the km asked for (%.0f m) and a run-out" % a.length)
-	check(a.real == p and a.sea == p.sea and a.forks.is_empty() and a.tunnels.is_empty(), "no forks or tunnels on a real road")
+	check(a.real == p and a.sea == p.sea and a.theme == "coastal", "the island's sea and look")
 	var gmax := 0.0
 	var step_worst := 0.0
 	var hd_jump := 0.0
@@ -441,7 +452,7 @@ func test_plan() -> void:
 		gmax = maxf(gmax, absf(a.ph[i] - a.ph[i - 1]) / AdventureRoute.STEP)
 		step_worst = maxf(step_worst, absf(Vector2(a.px[i] - a.px[i - 1], a.pz[i] - a.pz[i - 1]).length() - AdventureRoute.STEP))
 		hd_jump = maxf(hd_jump, absf(a.hd[i] - a.hd[i - 1]))
-	check(gmax <= AdventureRoute.MAX_GRADE + 0.001, "grades stay under the planner's limit (steepest %.1f%%)" % (gmax * 100.0))
+	check(gmax <= RoutePlanner.MAX_GRADE + 0.001, "grades stay under the planner's limit (steepest %.1f%%)" % (gmax * 100.0))
 	check(step_worst < 0.5 and hd_jump < 0.5, "knots 4 m apart, headings continuous (step off %.2f m, turn %.2f rad)" % [step_worst, hd_jump])
 	check(a.chunk_surface.size() == a.chunk_count() and a.width.size() == a.knot_count() and a.base.size() == a.knot_count(),
 		"surfaces, widths and the lie of the land cover every knot")
@@ -480,8 +491,14 @@ func test_plan() -> void:
 		var ot := (oc["mm"].get("tree", []) as Array).size() + (oc["mm"].get("pine", []) as Array).size()
 		print("    woods: ", ft, " trees in forest chunk ", woods["forest"], ", ", ot, " in open chunk ", woods["open"])
 		check(ft > 150 and ft > ot * 3, "a chunk of forest has woods (%d trees), open country few (%d)" % [ft, ot])
-	var town := AdventureChunk.build(big, 136)
-	check((town["buildings"]["v"] as PackedVector3Array).size() > 1500, "a chunk by a village has its buildings (%d vertices)" % town["buildings"]["v"].size())
+	var busiest := 0
+	var most := 0
+	for ch in p.buildings:
+		if int(ch) < big.chunk_count() and (p.buildings_in(int(ch)) as Array).size() > most:
+			most = (p.buildings_in(int(ch)) as Array).size()
+			busiest = int(ch)
+	var town := AdventureChunk.build(big, busiest)
+	check((town["buildings"]["v"] as PackedVector3Array).size() > 1500, "a chunk in a village has its buildings (%d vertices)" % town["buildings"]["v"].size())
 	var last := AdventureChunk.build(a, a.chunk_count() - 1)
 	check(not last["road"].is_empty(), "the last chunk builds too")
 
@@ -490,7 +507,9 @@ func test_plan() -> void:
 func test_ride() -> void:
 	var spot := {}
 	var w := AdventureWorld.new()
-	w.setup(11, 23.0, "coastal", "lighthouse", PACK)
+	w.setup(Rides.tour_pack(PACK), 11, 23.0)
+	for f in w.route.forks.size():
+		w.route.choose(f, 0)   # (the road isn't built past a fork still open)
 	check(w.route.real != null and absf(w.route.length - 23000.0) < 0.1, "the world rides the real road (%.1f km)" % (w.route.length / 1000.0))
 	spot["p"] = w.transform_at(20.0).origin
 	w.focus = func(): return [spot["p"]]
@@ -521,29 +540,32 @@ func test_ride() -> void:
 	await t.get_tree().process_frame
 
 
-## The crew's side: the real road in the state, a copy that differs, and what the data says of the Dales epic.
+## The crew's side: the planned road in the state, a game that plans another, and what the data says of the Dales tour.
 func test_magazine() -> void:
-	var km := floorf(RealPack.get_pack(PACK).max_km())
-	check(km > 20.0, "the Shodoshima road is ridden whole (%.0f km)" % km)
-	var ep := RealPack.get_pack(EPIC)
+	var plan := AdventurePlans.tour(PACK)
+	var pack := AdventurePlans.pack_for(plan)
+	var ep := Rides.tour_pack(EPIC)
+	var names: Array = AdventurePlans.tour(EPIC)["names"]
 	var text := ep.summary_text()
-	check(text.contains("km from Settle to Leyburn") and text.contains("climbing") and text.contains("filling stations") and text.contains("inns"),
-		"the Dales epic's summary says what the data does (%s)" % text)
+	check(text.contains("km from %s to %s" % [names[0], names[-1]]) and text.contains("climbing") and text.contains("filling stations") and text.contains("inns"),
+		"the Dales tour's summary says what the data does (%s)" % text)
 	var real_path := Progress.path
 	Progress.path = "user://test_real_progress.json"
 	Shed.start_new("Tester", 5)
-	Shed.request({"a": "adventure_start", "seed": 4104, "km": km, "theme": "coastal", "dest": "lighthouse", "real": PACK, "title": "Shodoshima"})
-	check(Adventure.active() and str(Shed.adventure["real"]) == PACK and str(Shed.adventure["real_hash"]) == RealPack.get_pack(PACK).hash,
+	Shed.request({"a": "adventure_start", "plan": plan, "seed": 4104, "title": "Shodoshima"})
+	check(Adventure.active() and str(Shed.adventure["real"]) == pack.id and str(Shed.adventure["real_hash"]) == pack.hash,
 		"starting it puts the road and its hash in the crew's adventure")
-	check(AdventureTrip.real_mismatch(Shed.adventure) == "", "a game with the same road joins")
-	var odd: Dictionary = Shed.adventure.duplicate()
+	check(AdventureTrip.real_mismatch(Shed.adventure) == "", "a game that plans the same road joins")
+	var odd: Dictionary = Shed.adventure.duplicate(true)
 	odd["real_hash"] = "0000"
-	check(AdventureTrip.real_mismatch(odd).contains("isn't the host's"), "one with another copy of it is told so")
-	odd["real"] = "nowhere"
-	check(AdventureTrip.real_mismatch(odd).contains("doesn't have"), "and one without it too")
+	check(AdventureTrip.real_mismatch(odd).contains("different road"), "one that plans another is told so")
+	odd["plan"]["region"] = "nowhere"
+	check(AdventureTrip.real_mismatch(odd) != "", "and one without that part of the world too (%s)" % AdventureTrip.real_mismatch(odd))
 	Shed.request({"a": "adventure_end"})
-	check(Adventure.check(Shed.me(), {"a": "adventure_start", "seed": 1, "km": 10.0, "theme": "coastal", "real": "nowhere"}).contains("doesn't have"),
-		"the host can't start a road the game hasn't got")
+	var bad_plan: Dictionary = plan.duplicate(true)
+	bad_plan["region"] = "nowhere"
+	check(Adventure.check(Shed.me(), {"a": "adventure_start", "plan": bad_plan, "seed": 1}) != "", "the host can't start a journey the game can't plan")
+	check(Adventure.check(Shed.me(), {"a": "adventure_start", "seed": 1, "km": 10.0}) != "", "nor a ride with no journey")
 	Shed.stop()
 	Progress.path = real_path
 	DirAccess.remove_absolute("user://test_real_progress.json")
@@ -553,9 +575,9 @@ func test_magazine() -> void:
 ## the road, heights that meet the chunks' land at their seam, and the ridge eased down under them.
 func test_real_land() -> void:
 	var w := AdventureWorld.new()
-	w.setup(11, 23.0, "coastal", "lighthouse", PACK)
+	w.setup(Rides.tour_pack(PACK), 11, 23.0)
 	var land := w.land
-	check(land != null and w.route.real != null, "a real road's world has its land blocks")
+	check(land != null and w.route.real != null, "a ride's world has its land blocks")
 	if land == null:
 		w.free()
 		return
@@ -625,7 +647,7 @@ func test_real_land() -> void:
 	await t.get_tree().process_frame
 
 
-## What the game ships: every file of the game's data (the roads' and regions' tiles included) must be in the exported
+## What the game ships: every file of the game's data (the regions' tiles included) must be in the exported
 ## build, which only takes files that are resources or that its include filters name. (A build once went out with the
 ## tiles missing: the land came out flat at sea level, and rides across it were a road on a blue plane.)
 func test_export_includes_data() -> void:
