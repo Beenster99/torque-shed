@@ -3,6 +3,8 @@ extends RefCounted
 ## left sounding round the wash bay and the roller door, and a loose part's rattle. Run from
 ## tests/run_tests.gd (its _test_audio_* functions hand over to these).
 
+const Rides := preload("res://tests/rides.gd")
+
 var t: Node   # the test runner: check(), get_tree(), _bike_named()
 
 
@@ -261,7 +263,7 @@ func test_rattle() -> void:
 	var faithful: int = t._bike_named("Old Faithful")
 	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
 	main._left_bike = 0
-	Adventure.start(91, 20.0)
+	Rides.start(20.0, 91)
 	await _ticks(10)
 	var trip: AdventureTrip = main.trip
 	check(trip.on_trip() and main.bike != null, "out on an adventure")

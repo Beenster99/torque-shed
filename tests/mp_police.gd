@@ -8,6 +8,8 @@ extends Node
 ## host must see the fine paid, nothing for itself and its own money untouched. Then the host
 ## ends the adventure.
 
+const Rides := preload("res://tests/rides.gd")
+
 const SEED := 321
 const KM := 50.0
 const HOST_S := 3000.0
@@ -37,7 +39,7 @@ func _ready() -> void:
 	var trip: AdventureTrip = main.trip
 	var on := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
-			Adventure.start(SEED, KM)
+			Rides.start(KM, SEED)
 		return trip.on_trip() and main.bike != null and _remote_bike() != null and trip.police != null, 40.0)
 	Progress.set_money(MONEY)
 	var me := Shed.me()

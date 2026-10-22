@@ -1,9 +1,11 @@
 extends RefCounted
 ## Out on an adventure with friends (Simon's v0.15.0 rides): a crash off the road puts you back
 ## on it, the sat nav says which way to go (and when you're facing the wrong way), how far ahead
-## or behind the rest of the crew are along the road, getting off on a snowy mountainside leaves
+## or behind the rest of the crew are along the road, getting off on a steep hillside leaves
 ## the bike stood there and you beside it, and a bike stays put with a menu up. Run from
 ## tests/run_tests.gd: its _test_adv_fix_* functions hand over to these.
+
+const Rides := preload("res://tests/rides.gd")
 
 var t: Node   # the test runner: check(), get_tree()
 
@@ -21,8 +23,7 @@ func _ticks(n: int) -> void:
 		await t.get_tree().physics_frame
 
 
-## The game with its session started and you on Old Faithful on an alpine adventure (the Alps:
-## steep, with snow over the tops).
+## The game with its session started and you on Old Faithful out on an adventure (the Dales tour: steep in places).
 func _ride_out(km := 60.0) -> Node:
 	AdventureTrip.instant = true
 	var main: Node = load("res://scenes/main.tscn").instantiate()
@@ -34,7 +35,7 @@ func _ride_out(km := 60.0) -> Node:
 	var faithful: int = t._bike_named("Old Faithful")
 	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
 	main._left_bike = 0
-	Adventure.start(91, km, "alpine")
+	Rides.start(km, 91)
 	await _ticks(10)
 	return main
 
@@ -58,14 +59,22 @@ func _stand_at(main: Node, s: float, lat: float) -> void:
 	main.bike.place((hit["position"] if hit else xf.origin) + Vector3.UP * 0.05, trip.world.heading_at(s))
 
 
-## The first metre of snow on the road.
-static func _snow_s(r: AdventureRoute) -> float:
-	var s := 0.0
-	while s < r.length:
-		if r.surface_at_s(s) == "snow":
-			return s
+## Where the land rises most steeply beside the road (6 m past its edge, either side), well along it.
+static func _bank_s(r: AdventureRoute) -> float:
+	var best := -1.0
+	var most := 0.0
+	var s := 1500.0
+	while s < r.length - 3000.0:
+		var i := int(s / AdventureRoute.STEP)
+		for side: float in [-1.0, 1.0]:
+			var lat := side * (r.width[i] * 0.5 + 6.0)
+			var xz := r.xz_at(s, lat)
+			var up := r.land_height(i, lat, xz[0], xz[1]) - r.ph[i]
+			if up > most:
+				most = up
+				best = s
 		s += 20.0
-	return -1.0
+	return best
 
 
 ## Crashing off the road: a few seconds later you and the bike are back on it, at the nearest
@@ -131,7 +140,7 @@ func test_crash() -> void:
 ## relative to your heading, and facing back the way you came, a warning to turn round.
 func test_satnav() -> void:
 	var adv := AdventureWorld.new()
-	adv.setup(42, 60.0)
+	adv.setup(Rides.pack(60.0), 42, 60.0)
 	adv.focus = func(): return [adv.transform_at(20.0).origin]
 	t.add_child(adv)
 	var nav := Satnav.AdventureNav.new(adv)
@@ -248,33 +257,31 @@ class _Mate:
 		at -= d
 
 
-## Getting off on the snow, on and off the road and across a mountainside: the bike stays stood
-## where it was left, drawn for everyone, you're stood beside it (not dropped through the land
-## below it), and pushing it works up and down the snowy slope at a walking pace.
+## Getting off on and off the road and up a steep bank beside it: the bike stays stood where it was left, drawn for
+## everyone, you're stood beside it (not dropped through the land below it), and pushing it works up and down the
+## steepest hill at a walking pace.
 func test_get_off() -> void:
 	var main: Node = await _ride_out()
 	var trip: AdventureTrip = main.trip
 	var w := trip.world
 	var r := w.route
 	var faithful: int = t._bike_named("Old Faithful")
-	var snow := _snow_s(r)
-	check(snow > 0.0, "snow on the road over the top (%.1f km in)" % (snow / 1000.0))
+	var bank := _bank_s(r)
+	check(bank > 0.0, "a steep bank beside the road (%.1f km in)" % (bank / 1000.0))
 	var view: RoadsideView = null
 	for c in w.get_children():
 		if c is RoadsideView:
 			view = c
 	# [m past the road's edge, what it is, how far from the bike you may end up, where along].
-	# Across the mountainside 250 m into the snow the land where you step off is nearly two metres
-	# above the ground under the bike: that's where Simon dropped through the land, left walking in
-	# the wild with his bike gone. That slope (60 degrees) and a cutting's bank are too steep to
-	# stand on, so you're stood on the road below the bike instead.
-	for spot in [[0.0, "on the road", 2.5, 2400.0], [6.0, "across a steep mountainside, the land beside it well above it", 16.0, 250.0],
-			[6.0, "up a cutting's bank", 16.0, 2550.0], [15.0, "well off it, on a slope you can stand on", 2.5, 2700.0],
-			[2.0, "just off it, on the verge", 2.5, 2850.0]]:
-		var s := snow + float(spot[3])
+	# Up the steep bank the land where you step off is well above the ground under the bike: that's where Simon dropped
+	# through the land, left walking in the wild with his bike gone. A slope too steep to stand on has you stood on the
+	# road below the bike instead.
+	for spot in [[0.0, "on the road", 2.5, 300.0], [6.0, "up the steep bank, the land well above the road", 16.0, 0.0],
+			[15.0, "well off it", 16.0, 600.0], [2.0, "just off it, on the verge", 2.5, 900.0]]:
+		var s := bank + float(spot[3])
 		var lat: float = 0.0 if float(spot[0]) == 0.0 else r.width_at_s(s) * 0.5 + float(spot[0])
 		await _stand_at(main, s, lat)
-		if float(spot[3]) == 250.0:
+		if float(spot[3]) == 0.0:
 			# Come to rest there as it would ridden off the road: dropped onto the hillside.
 			var xf := w.transform_at(s, lat)
 			main.bike.place(xf.origin + Vector3.UP * 2.0, w.heading_at(s))
@@ -297,12 +304,12 @@ func test_get_off() -> void:
 		main._left_bike = 0
 		main._try_mount(faithful)
 		await _ticks(5)
-	# Pushing it up and down the snowy slope, on foot.
-	var steep := Vector2(0.0, snow)
-	var s := snow
-	while s < minf(snow + 4000.0, r.length - 100.0):
+	# Pushing it up and down the steepest hill, on foot.
+	var steep := Vector2(0.0, bank)
+	var s := 1000.0
+	while s < r.length - 500.0:
 		var g := (r.height_at_s(s + 10.0) - r.height_at_s(s - 10.0)) / 20.0
-		if r.surface_at_s(s) == "snow" and absf(g) > absf(steep.x):
+		if absf(g) > absf(steep.x):
 			steep = Vector2(g, s)
 		s += 10.0
 	for dir in [1.0, -1.0]:
@@ -321,7 +328,7 @@ func test_get_off() -> void:
 		Input.action_release("throttle")
 		var went: float = main.bike.global_position.distance_to(from)
 		check(main.bike.pushing and went > 2.5 and absf(main.bike.speed) < Roadside.PUSH_SPEED + 0.4 and not main.bike.is_crashed,
-			"pushed %s a %.0f%% snowy slope: %.1f m in 3 s at %.1f m/s" % ["up" if up else "down", absf(steep.x) * 100.0, went, main.bike.speed])
+			"pushed %s a %.0f%% hill: %.1f m in 3 s at %.1f m/s" % ["up" if up else "down", absf(steep.x) * 100.0, went, main.bike.speed])
 		await _ticks(90)
 		var held: Vector3 = main.bike.global_position
 		await _ticks(240)

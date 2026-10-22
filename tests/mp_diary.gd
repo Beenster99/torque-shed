@@ -8,6 +8,8 @@ extends Node
 ## shared diary"): its own, and the other's sent across (DiaryShare), kept in its own folder and
 ## credited to who took it.
 
+const Rides := preload("res://tests/rides.gd")
+
 const KM := 8.0
 
 var role := "host"
@@ -39,7 +41,7 @@ func _ready() -> void:
 	var trip: AdventureTrip = main.trip
 	var ok_start := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
-			Adventure.start(4102, KM, "hills")
+			Rides.start(KM, 4102)
 		return trip.on_trip() and main.bike != null and _remote_bike() != null, 40.0)
 	var me := str(Shed.crew.get(Shed.me(), {}).get("name", Settings.player_name))
 	var them := "Diary client" if role == "host" else "Diary host"

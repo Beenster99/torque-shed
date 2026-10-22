@@ -250,8 +250,7 @@ func test_sources() -> void:
 	pb2.free()
 	# A stop's cafe has them.
 	var found: Array = load("res://tests/adventure_stops_tests.gd")._find("cafe")
-	var r := AdventureRoute.new()
-	r.plan(int(found[0]), 150.0)
+	var r: AdventureRoute = load("res://tests/rides.gd").tour_route(str(found[2]), int(found[0]))
 	var t0 := Time.get_ticks_usec()
 	var node := AdventureStops.build(r, found[1], Transform3D(Basis(), Vector3(0, 100, 0)))
 	var ms := (Time.get_ticks_usec() - t0) / 1000.0

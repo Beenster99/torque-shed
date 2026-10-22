@@ -1,7 +1,7 @@
 class_name AdventureWorld
 extends Node3D
 ## The world of an adventure ride: the route (AdventureRoute, the same on every player's game
-## from its seed), streamed in as chunks (AdventureChunk) a few kilometres ahead of you and
+## from the planned road and its seed), streamed in as chunks (AdventureChunk) a few kilometres ahead of you and
 ## freed behind, built on worker threads and put into the scene one chunk a frame so riding
 ## never hitches.
 ##

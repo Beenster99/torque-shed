@@ -5,6 +5,8 @@ extends RefCounted
 ## from a save. Run from tests/run_tests.gd: its _test_adv_needs_* functions hand over to these.
 ## A second rider is played on the host's side (peer MATE, with a crew entry of their own).
 
+const Rides := preload("res://tests/rides.gd")
+
 const MATE := 2
 
 var t: Node   # the test runner: check(), get_tree()
@@ -105,7 +107,7 @@ func _fit_bag(bike_id: int) -> int:
 
 
 func _go(main: Node, seed := 91, km := 20.0) -> void:
-	Adventure.start(seed, km)
+	Rides.start(km, seed)
 	await _ticks(10)
 
 
@@ -148,7 +150,7 @@ func _walk_to(main: Node, xf: Transform3D) -> void:
 ## starving makes you tire faster.
 func test_rates() -> void:
 	Shed.start_new("Tester", 7)
-	Adventure.start(5, 30.0)
+	Rides.start(30.0, 5)
 	var me := Shed.me()
 	Shed._apply(me, {"a": "adventure_join", "bike": t._bike_named("Old Faithful")})
 	check(Shed.riding(me) != 0 and AdventureNeeds.of(me).get("food") == 1.0, "joining the adventure starts you full up, on a bike")

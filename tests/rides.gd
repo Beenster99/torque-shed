@@ -13,6 +13,11 @@ static func pack(km := 20.0) -> RealPack:
 	return AdventurePlans.pack_for(plan(km))
 
 
+## The whole length of plan(km) (km): a ride Adventure.start begins is all of it.
+static func full(km := 20.0) -> float:
+	return pack(km).max_km()
+
+
 ## The route of a ride of `km` along pack(km), its stops laid out by `seed`.
 static func route(km := 20.0, seed := 1) -> AdventureRoute:
 	var r := AdventureRoute.new()

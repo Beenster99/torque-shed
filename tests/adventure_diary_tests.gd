@@ -5,6 +5,8 @@ extends RefCounted
 ## the diary put together, saved, read back and opened in its book. Run from tests/run_tests.gd:
 ## its _test_adv_diary_* functions hand over to these.
 
+const Rides := preload("res://tests/rides.gd")
+
 const ROOT := "user://zz_test_diaries"
 
 var t: Node   # the test runner: check(), get_tree()
@@ -58,7 +60,7 @@ static func _frame_image() -> Image:
 
 ## The game with its session started and you on Old Faithful on an adventure, the photos going to
 ## the test's folder and taken of a made-up frame.
-func _ride_out(km := 40.0, seed := 91, theme := "alpine") -> Node:
+func _ride_out(km := 40.0, seed := 91) -> Node:
 	AdventureTrip.instant = true
 	AdventureDiary.root = ROOT
 	_wipe(ROOT)
@@ -73,7 +75,7 @@ func _ride_out(km := 40.0, seed := 91, theme := "alpine") -> Node:
 	var faithful: int = t._bike_named("Old Faithful")
 	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
 	main._left_bike = 0
-	Adventure.start(seed, km, theme)
+	Rides.start(km, seed)
 	await _ticks(10)
 	return main
 
@@ -152,7 +154,7 @@ func test_trip_maths() -> void:
 ## doesn't start it again), while in town each ride is a trip of its own.
 func test_trip_page() -> void:
 	var adv := AdventureWorld.new()
-	adv.setup(42, 60.0)
+	adv.setup(Rides.pack(60.0), 42, 60.0)
 	adv.focus = func(): return [adv.transform_at(20.0).origin]
 	t.add_child(adv)
 	var nav := Satnav.AdventureNav.new(adv)
@@ -233,7 +235,7 @@ func test_trip_page() -> void:
 func test_highlight_log() -> void:
 	Shed.start_new("Tester", 9)
 	Shed.crew[2] = {"name": "Dave"}
-	Adventure.start(77, 30.0, "hills")
+	Rides.start(30.0, 77)
 	var adv := Shed.adventure
 	var diary := str(adv.get("diary", ""))
 	var first := AdventureDiary.log_entries()
@@ -292,7 +294,7 @@ func test_highlight_log() -> void:
 ## Out riding: stood still at a stop, onto a new surface and over the top of a climb make the
 ## rider's highlights, each with its photo in this machine's diary; and the start's photo.
 func test_highlights_ride() -> void:
-	var main: Node = await _ride_out(60.0, 4102, "hills")
+	var main: Node = await _ride_out(60.0, 4102)
 	var trip: AdventureTrip = main.trip
 	var r := trip.world.route
 	var got_start := await _until(func(): return trip.photos.photos.any(func(p): return str(p["kind"]) == "start"), 8.0)
@@ -320,10 +322,9 @@ func test_highlights_ride() -> void:
 	# A peak: ridden over the top (the hills' own, and one put where the test can reach it).
 	var peaks := AdventureDiary.peaks(r)
 	check(not peaks.is_empty(), "the hills have high points (%d, the highest %.0f m)" % [peaks.size(), peaks.map(func(p): return float(p["h"])).max() if not peaks.is_empty() else 0.0])
-	var alps := AdventureRoute.new()
-	alps.plan(91, 60.0, "alpine")
+	var alps := Rides.tour_route("dales", 91)
 	var alp_peaks := AdventureDiary.peaks(alps)
-	check(alp_peaks.size() >= 2 and alp_peaks.size() <= AdventureDiary.PEAKS, "the Alps have their passes (%d), never more than %d" % [alp_peaks.size(), AdventureDiary.PEAKS])
+	check(alp_peaks.size() >= 2 and alp_peaks.size() <= AdventureDiary.PEAKS, "the Dales have their tops (%d), never more than %d" % [alp_peaks.size(), AdventureDiary.PEAKS])
 	var tops_ok := true
 	for p in alp_peaks:
 		for k in range(-30, 31):
@@ -479,12 +480,11 @@ func test_diary_files() -> void:
 	var sheet := Image.create(PhotoCapture.CLIP_W * 4, PhotoCapture.CLIP_H * 3, false, Image.FORMAT_RGB8)
 	sheet.fill(Color(0.3, 0.5, 0.2))
 	sheet.save_jpg(AdventureDiary.folder(id).path_join("c002.jpg"))
-	var r := AdventureRoute.new()
-	r.plan(77, 30.0, "hills")
+	var r := Rides.route(30.0, 77)
 	var tc := TripComputer.new()
 	for i in 200:
 		tc.step(1.0, 20.0, 100.0 + i, 10.0 - i * 0.01, "gravel")
-	var d := {"id": id, "title": "Dales Rally Weekender", "dest": "dales_rally", "theme": "hills", "km": 30.0, "date": "2026-10-19",
+	var d := {"id": id, "title": "Dales Rally Weekender", "dest": "Hawes", "theme": "hills", "km": 30.0, "date": "2026-10-19",
 		"crew": ["Tester", "Dave"], "me": "Tester",
 		"log": [{"n": 1, "kind": "start", "key": "start", "text": "Set off", "who": [], "s": 0.0, "hours": 9.0, "day": 0, "t": 0},
 			{"n": 2, "kind": "stop", "key": "stop_5200", "text": "Stopped at the lay-by", "who": ["Tester", "Dave"], "s": 5210.0, "hours": 9.5, "day": 0, "t": 600},
@@ -541,7 +541,7 @@ func test_diary_files() -> void:
 ## there; Ride home puts it together again and opens it at the shed; the route planner and the photo on
 ## the wall open it again.
 func test_diary_ride() -> void:
-	var main: Node = await _ride_out(8.0, 4101, "desert")
+	var main: Node = await _ride_out(8.0, 4101)
 	var trip: AdventureTrip = main.trip
 	await _until(func(): return trip.photos.photos.size() >= 1, 6.0)
 	var id := trip.photos.diary_id
@@ -747,7 +747,7 @@ func test_movie_ride() -> void:
 	MovieClip.root = CLIPS
 	var frame := _frame_image()
 	MovieClip.fake_source = func(): return frame
-	var main: Node = await _ride_out(8.0, 4103, "hills")
+	var main: Node = await _ride_out(8.0, 4103)
 	var trip: AdventureTrip = main.trip
 	await _ticks(30)
 	var ev := InputEventAction.new()

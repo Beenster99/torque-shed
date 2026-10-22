@@ -8,6 +8,8 @@ extends Node
 ## nods and it nods back (on the client's machine). Then the client stops: the biker stops too, on
 ## both, and the host has it wave and part, which both see. Finally the host ends the adventure.
 
+const Rides := preload("res://tests/rides.gd")
+
 const SEED := 321
 const KM := 50.0
 const CLIENT_S := 6000.0
@@ -36,7 +38,7 @@ func _ready() -> void:
 	var note := [""]
 	var ok_start := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
-			Adventure.start(SEED, KM)
+			Rides.start(KM, SEED)
 		return trip.on_trip() and main.bike != null and AdventureTraffic.current != null and _remote_bike() != null, 40.0)
 	if not ok_start:
 		note[0] = "crew %d, on the trip %s, bike %s, the other's bike %s, traffic %s" % [Shed.crew.size(), trip.on_trip(), main.bike != null,

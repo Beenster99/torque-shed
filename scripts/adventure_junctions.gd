@@ -105,7 +105,8 @@ const REAL_BEND := deg_to_rad(18.0)
 ## a side road joins, with the real side roads as its arms (their sides, skews, classes and names). A real road bends
 ## through a junction, so a roundabout (the road must go straight on through it)
 ## stays one only where the road is straight there; elsewhere it's a crossroads or a side road, and one at a corner
-## (the road turns more than REAL_BEND through it) is left out. Their own rng, so the rest of the plan is the same with or without them.
+## (the road turns more than REAL_BEND through it) is left out. The map doesn't say where the traffic lights are: a
+## crossroads in a built-up place (RealPack.COVER "urban") has them. Their own rng, so the rest of the plan is the same with or without them.
 static func plan_real(route: AdventureRoute, rows: Array) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([route.seed_value, "real_junctions", route.theme])
@@ -135,6 +136,9 @@ static func plan_real(route: AdventureRoute, rows: Array) -> void:
 				break
 		if not clear:
 			continue
+		var town := route.cover_at(route.px[si], route.pz[si]) == "urban"
+		if kind == "cross" and town:
+			kind = "lights"
 		var arms := []
 		for a: Dictionary in arms_in:
 			var lane := str(a["surf"]) != "tarmac"
@@ -142,7 +146,7 @@ static func plan_real(route: AdventureRoute, rows: Array) -> void:
 				"len": rng.randf_range(ARM_LEN[0], ARM_LEN[1]), "w": float(a["w"]),
 				"surf": "gravel" if lane else "tarmac",
 				"name": str(a["name"]) if str(a["name"]) != "" else _place_name(rng), "km": rng.randi_range(2, 14)})
-		_add_site(route, rng, kind, s, arms, -1.0)
+		_add_site(route, rng, kind, s, arms, s if town else -1.0)
 		if kind == "roundabout" and jn.has("ri"):
 			var st := route.sites_of(KIND)[-1] as Dictionary
 			st["ri"] = float(jn["ri"])
@@ -179,7 +183,7 @@ static func widen(route: AdventureRoute) -> void:
 
 
 ## Lays out each junction's side roads on the land, once the road and its land are planned (the
-## end of AdventureRoute.plan, the path then the main road at every fork): each arm's centre line
+## end of AdventureRoute.plan_real, the path then the main road at every fork): each arm's centre line
 ## from the main road's edge (or the ring's) out, skewed and bending as planned, at the land's
 ## height there. Off the tarmac the side roads are the main road's own surface (a snowy road's
 ## lanes are snowy too).

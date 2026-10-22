@@ -112,7 +112,7 @@ const SIGN_GREEN := Color(0.06, 0.32, 0.18)
 
 # ---------------------------------------------------------------------------- planning
 
-## Spaces the stops along `route` (called by AdventureRoute.plan once its fuel stations are in,
+## Spaces the stops along `route` (called by AdventureRoute.plan_real once its fuel stations are in,
 ## before the road is laid). Their own rng, so the stops don't change the rest of the plan's draws.
 static func plan(route: AdventureRoute) -> void:
 	var rng := RandomNumberGenerator.new()

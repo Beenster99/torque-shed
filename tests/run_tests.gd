@@ -553,11 +553,6 @@ func _run_all() -> void:
 	await _test_lights_avatar_shadows()
 	await _test_lights_far_terrain()
 	await _test_lights_kit_bike_materials()
-	await _test_lights_adventure_land_edge()
-	await _test_adv_roads_relief()
-	await _test_adv_roads_switchbacks()
-	await _test_adv_roads_tunnels()
-	await _test_adv_roads_shelter()
 	await _test_adv_roads_junction_plan()
 	await _test_adv_roads_instructions()
 	await _test_adv_roads_lights_cycle()
@@ -22508,29 +22503,8 @@ func _test_lights_kit_bike_materials() -> void:
 	await _lights().test_kit_bike_materials()
 
 
-func _test_lights_adventure_land_edge() -> void:
-	await _lights().test_adventure_land_edge()
-
-# ---------------------------------------------------------------------------- adventure roads: junctions, climbs and tunnels (tests/adventure_roads_tests.gd)
-
 func _adv_roads() -> RefCounted:
 	return load("res://tests/adventure_roads_tests.gd").new(self)
-
-
-func _test_adv_roads_relief() -> void:
-	await _adv_roads().test_relief()
-
-
-func _test_adv_roads_switchbacks() -> void:
-	await _adv_roads().test_switchbacks()
-
-
-func _test_adv_roads_tunnels() -> void:
-	await _adv_roads().test_tunnels()
-
-
-func _test_adv_roads_shelter() -> void:
-	await _adv_roads().test_shelter()
 
 
 func _test_adv_roads_junction_plan() -> void:

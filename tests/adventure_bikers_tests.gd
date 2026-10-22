@@ -2,6 +2,8 @@ extends RefCounted
 ## The other bikers on an adventure's road (AdventureBikers, ridden by AdventureTraffic): run from
 ## tests/run_tests.gd, whose _test_adv_bikers_* functions hand over to these.
 
+const Rides := preload("res://tests/rides.gd")
+
 var t: Node   # the test runner: check(), get_tree()
 
 
@@ -23,7 +25,7 @@ func _frames(n: int) -> void:
 ## member's machine. Times how long the bikers' pool took to build into spot["pool_ms"].
 func _world(seed: int, km: float, spot: Dictionary, host := true) -> AdventureTraffic:
 	var w := AdventureWorld.new()
-	w.setup(seed, km)
+	w.setup(Rides.pack(km), seed, km)
 	for f in w.route.forks.size():
 		w.route.choose(f, 0)
 	spot["ps"] = [w.transform_at(20.0, -1.5).origin]

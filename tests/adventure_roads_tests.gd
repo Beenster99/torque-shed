@@ -1,11 +1,10 @@
 extends RefCounted
-## The adventure road's junctions and its ups and downs (AdventureJunctions, AdventureTunnels and
-## the relief in AdventureRoute): side roads, crossroads, roundabouts and traffic lights in and
-## by the villages, the traffic at them, the police at a red light and the sat nav through them;
-## climbs and descents on every theme, the alpine switchbacks and the tunnels. Run from
-## tests/run_tests.gd: its _test_adv_roads_* functions hand over to these.
+## The adventure road's junctions (AdventureJunctions): the real side roads, crossroads and roundabouts along a planned
+## road, traffic lights at the crossroads in town, the traffic at them, the police at a red light and the sat nav
+## through them. Run from tests/run_tests.gd: its _test_adv_roads_* functions hand over to these.
 
-const SEEDS := [3, 42]
+const Rides := preload("res://tests/rides.gd")
+
 const DT := 1.0 / 60.0
 
 var t: Node   # the test runner: check(), get_tree()
@@ -24,256 +23,54 @@ func _frames(n: int) -> void:
 		await t.get_tree().process_frame
 
 
-## The steepest grade (per knot) on `r`'s main road, and how many crests (a climb of 3% or more
-## turning into a descent of 3% or more) and dips it goes over.
-static func _relief(r: AdventureRoute) -> Dictionary:
-	var gmax := 0.0
-	var crests := 0
-	var dips := 0
-	var last := 0
-	for i in range(1, r.knot_count()):
-		var g := (r.ph[i] - r.ph[i - 1]) / AdventureRoute.STEP
-		gmax = maxf(gmax, absf(g))
-		if g > 0.03:
-			if last < 0:
-				dips += 1
-			last = 1
-		elif g < -0.03:
-			if last > 0:
-				crests += 1
-			last = -1
-	return {"gmax": gmax, "crests": crests, "dips": dips}
-
-
-## A route of `theme` for `seed` with a junction of `type` well along it (and before the first
-## fork), and that junction; [] if none of the first `tries` seeds has one.
-static func _with_junction(theme: String, type: String, tries := 40, km := 60.0) -> Array:
-	for k in range(1, tries + 1):
-		var r := AdventureRoute.new()
-		r.plan(k, km, theme)
+## A tour (Rides) with a junction of `type` well along it (and before the first fork), and that junction:
+## [seed, route, junction, pack]; [] if no region's tour has one.
+static func _with_junction(type: String) -> Array:
+	for region_id in AdventurePlans.TOURS:
+		var r := Rides.tour_route(region_id, 7)
 		for st in r.sites_of(AdventureJunctions.KIND):
 			if st["type"] == type and float(st["s"]) > 1500.0 and (r.forks.is_empty() or float(st["s"]) < r.fork_s(0) - 600.0):
-				return [k, r, st]
+				return [7, r, st, Rides.tour_pack(region_id)]
 	return []
 
 
-# ---------------------------------------------------------------------------- ups and downs
-
-## Every theme climbs and descends, from gentle to steep pitches (12-15% on the hills and in the
-## mountains, never past MAX_GRADE), over crests and down into dips; level through the sites.
-func test_relief() -> void:
-	var want := {"varied": 0.09, "desert": 0.05, "alpine": 0.12, "coastal": 0.11, "hills": 0.12}
-	var lines := []
-	var ok := true
-	var capped := true
-	var level := true
-	for theme in AdventureTheme.IDS:
-		var gmax := 0.0
-		var crests := 0
-		var dips := 0
-		for seed in SEEDS:
-			var r := AdventureRoute.new()
-			r.plan(seed, 80.0, theme)
-			var m := _relief(r)
-			gmax = maxf(gmax, float(m["gmax"]))
-			crests += int(m["crests"])
-			dips += int(m["dips"])
-			capped = capped and float(m["gmax"]) <= AdventureRoute.MAX_GRADE + 1e-4
-			for st in r.sites_of("fuel"):
-				var i := int(st["i"])
-				level = level and absf(r.ph[mini(i + 3, r.knot_count() - 1)] - r.ph[maxi(i - 3, 0)]) < 0.3
-		ok = ok and gmax >= float(want[theme]) and crests >= 8 * SEEDS.size() and dips >= 8 * SEEDS.size()
-		lines.append("%s %.0f%%, %d crests, %d dips" % [theme, gmax * 100.0, crests / SEEDS.size(), dips / SEEDS.size()])
-	check(ok, "every theme climbs and drops, steepest pitches and crests and dips each 80 km: %s" % ", ".join(lines))
-	check(capped, "and never steeper than %.1f%%" % (AdventureRoute.MAX_GRADE * 100.0))
-	check(level, "still level through the fuel stations")
-	var a := AdventureRoute.new()
-	a.plan(42, 80.0, "alpine")
-	var b := AdventureRoute.new()
-	b.plan(42, 80.0, "alpine")
-	check(a.ph == b.ph and str(a.tunnels) == str(b.tunnels) and str(a.slopes) == str(b.slopes) and a.px == b.px,
-		"the same seed has the very same hills, switchbacks and tunnels")
-
-
-## The alpine switchbacks: stacks of tight hairpins up (or down) a mountainside, legs back and forth
-## across it, climbing steadily, the road never crossing itself, the land following the slope.
-func test_switchbacks() -> void:
-	var stacks := 0
-	var hairpins := 0
-	var tight := INF
-	var climb := INF
-	var crossed := false
-	var slope_ok := true
-	for seed in SEEDS:
-		var r := AdventureRoute.new()
-		r.plan(seed, 80.0, "alpine")
-		for sec in r.sections:
-			if sec["kind"] != "switchback":
-				continue
-			stacks += 1
-			var k0 := int(float(sec["s0"]) / AdventureRoute.STEP)
-			var k1 := int(float(sec["s1"]) / AdventureRoute.STEP)
-			var side := 0
-			for k in range(k0, k1):
-				tight = minf(tight, 1.0 / maxf(absf(r.curv[k]), 1e-6))
-				var hs := signi(int(round(rad_to_deg(r.hd[k]) / 50.0)))
-				if hs != 0 and hs != side:
-					if side != 0:
-						hairpins += 1
-					side = hs
-			climb = minf(climb, absf(r.ph[k1] - r.ph[k0]))
-			for j in range(k0, k1, 3):
-				for m in range(j + 40, k1, 3):
-					if Vector2(r.px[m] - r.px[j], r.pz[m] - r.pz[j]).length() < r.width[j] + 4.0:
-						crossed = true
-			# Between two legs the land is the mountainside's, not a wall or a pit.
-			var mid := (k0 + k1) / 2
-			var xz := r.xz_at(mid * AdventureRoute.STEP, 18.0)
-			var hit := r.locate(xz[0], xz[1], mid)
-			var y := r.land_height(int(hit["i"]), float(hit["lat"]), xz[0], xz[1])
-			slope_ok = slope_ok and absf(y - r.ph[mid]) < 25.0
-	check(stacks >= 2 and hairpins >= stacks * 2, "alpine roads climb in switchback stacks: %d stacks, %d hairpins between their legs" % [stacks, hairpins])
-	check(tight < 20.0 and climb > 25.0, "the hairpins are tight (%.0f m) and each stack climbs or drops %.0f m or more" % [tight, climb])
-	check(not crossed and slope_ok, "the legs never cross, and the land between them follows the mountainside")
-	var hills := 0
-	for theme in ["varied", "desert", "coastal", "hills"]:
-		var r := AdventureRoute.new()
-		r.plan(42, 80.0, theme)
-		hills += r.sections.filter(func(s): return s["kind"] == "switchback").size()
-	check(hills == 0, "switchbacks are the mountains' alone")
-
-
-## Tunnels: through ridges in the mountains and the coastal cliffs, near level, the hill over them,
-## rock and tube built with the chunks, lit inside; none on the other themes.
-func test_tunnels() -> void:
-	var counts := {}
-	var gentle := true
-	var covered := true
-	for theme in AdventureTheme.IDS:
-		var n := 0
-		for seed in SEEDS:
-			var r := AdventureRoute.new()
-			r.plan(seed, 80.0, theme)
-			n += r.tunnels.size()
-			for tn in r.tunnels_on:
-				var k0 := int(float(tn["s0"]) / AdventureRoute.STEP)
-				var k1 := int(float(tn["s1"]) / AdventureRoute.STEP)
-				for k in range(k0, k1):
-					gentle = gentle and absf(r.ph[k + 1] - r.ph[k]) / AdventureRoute.STEP <= AdventureRoute.TUNNEL_GRADE + 0.003
-				var mid := (k0 + k1) / 2
-				var xz := r.xz_at(mid * AdventureRoute.STEP, r.width[mid] * 0.5 + 3.0)
-				covered = covered and r.land_height(mid, r.width[mid] * 0.5 + 3.0, xz[0], xz[1]) >= r.ph[mid] + AdventureRoute.TUNNEL_COVER - 0.01
-		counts[theme] = n
-	check(int(counts["alpine"]) >= 2 * SEEDS.size() and int(counts["coastal"]) >= SEEDS.size() and int(counts["varied"]) == 0
-		and int(counts["desert"]) == 0 and int(counts["hills"]) == 0, "tunnels through the mountains and the cliffs, none elsewhere %s" % str(counts))
-	check(gentle and covered, "near level through them, with the hill over them")
-	var r := AdventureRoute.new()
-	r.plan(42, 80.0, "alpine")
-	var tn: Dictionary = r.tunnels_on[0]
-	var mid_s := (float(tn["s0"]) + float(tn["s1"])) * 0.5
-	var data := AdventureChunk.build(r, AdventureRoute.chunk_of(mid_s))
-	var tube: Dictionary = data.get("tunnel", {})
-	check(not tube.is_empty() and (tube["faces"] as PackedVector3Array).size() > 100 and not (tube["lights"] as Array).is_empty()
-		and (tube["glow"]["v"] as PackedVector3Array).size() > 0 and (tube["cap"]["v"] as PackedVector3Array).size() > 0,
-		"its chunk has the tube (solid), the rock over it, lamp strips and %d lamps" % (tube.get("lights", []) as Array).size())
-	check(r.in_tunnel(int(mid_s / AdventureRoute.STEP)) and not r.tunnel_at_s(mid_s).is_empty() and r.tunnel_at_s(float(tn["s0"]) - 60.0).is_empty(),
-		"the road knows where it's under the rock")
-
-
-## In a tunnel the sky's shut out: the sun and the sky's light dimmed, no rain round you, your eyes
-## opening up to the lamps; out again it's all back.
-func test_shelter() -> void:
-	AdventureTrip.instant = true
-	var main: Node = load("res://scenes/main.tscn").instantiate()
-	t.add_child(main)
-	await t.get_tree().process_frame
-	main._start_session()
-	Shed.start_new("Tester", 7)
-	await t.get_tree().physics_frame
-	var held := Settings.weather
-	Adventure.start(42, 60.0, "alpine")
-	for i in 10:
-		await t.get_tree().physics_frame
-	var trip: AdventureTrip = main.trip
-	var w := trip.world
-	Daylight.current.set_time(13.0)
-	Weather.current.change_to("rain", true)
-	var tn: Dictionary = w.route.tunnels_on[0]
-	var mid := (float(tn["s0"]) + float(tn["s1"])) * 0.5
-	var inside := w.transform_at(mid).origin + Vector3(0, 1.5, 0)
-	var outside := w.transform_at(float(tn["s0"]) - 80.0).origin + Vector3(0, 1.5, 0)
-	var cam := Camera3D.new()
-	main.world.add_child(cam)
-	cam.global_position = outside
-	cam.current = true
-	for i in 30:
-		await t.get_tree().process_frame
-	var sun_out: float = Daylight.current._sun.light_energy
-	var amb_out: float = Daylight.current._env.ambient_light_energy
-	cam.global_position = inside
-	for i in 90:
-		await t.get_tree().process_frame
-	var sun_in: float = Daylight.current._sun.light_energy
-	var amb_in: float = Daylight.current._env.ambient_light_energy
-	check(w.shelter_local(inside) > 0.99 and w.shelter_local(outside) == 0.0 and w.shelter_local(w.transform_at(float(tn["s0"]) + 4.0).origin) < 0.4,
-		"under the rock in the middle of the tunnel, out in the open before it, easing in at the portal")
-	check(Daylight.shelter > 0.95 and sun_in < sun_out * 0.2 and amb_in < amb_out * 0.3,
-		"in the tunnel the sun (%.2f -> %.2f) and the sky's light (%.2f -> %.2f) are shut out" % [sun_out, sun_in, amb_out, amb_in])
-	check(Weather.rain_level() > 0.05 and Weather.raining_at(outside) and not Weather.raining_at(inside) and not Weather.current._rain_mesh.visible,
-		"raining outside, but none falls in the tunnel")
-	check(Lighting.eye_target("", false, 0.0, 1.0) > 1.2 and Lighting.eye_target("", false, 0.0, 0.0) == 1.0, "your eyes open up to the tunnel's lamps")
-	cam.global_position = outside
-	for i in 90:
-		await t.get_tree().process_frame
-	check(Daylight.shelter < 0.05 and Weather.current._rain_mesh.visible, "out again, the daylight and the rain are back")
-	Weather.current.change_to("clear", true)
-	Adventure.menu_action()
-	for i in 10:
-		await t.get_tree().physics_frame
-	check(Daylight.shelter == 0.0, "and none of it lingers once the ride's over")
-	Settings.weather = held
-	main.queue_free()
-	AdventureTrip.instant = false
-	Shed.stop()
-	await _frames(3)
+## A world along the road `found` (see _with_junction) came from, the main road at every fork.
+static func _world_for(found: Array) -> AdventureWorld:
+	var w := AdventureWorld.new()
+	var pack: RealPack = found[3]
+	w.setup(pack, int(found[0]), pack.max_km())
+	for f in w.route.forks.size():
+		w.route.choose(f, 0)
+	return w
 
 
 # ---------------------------------------------------------------------------- junctions
 
-## In and by the villages a side road, crossroads, a mini roundabout or traffic lights, a
-## roundabout or crossroads just out of most; out in the country a lane every few km and the odd
-## crossroads or roundabout; all clear of the other sites, the same for the seed.
+## Where the real roads join a planned road: side roads, crossroads, roundabouts, and traffic lights at the crossroads
+## in town; all clear of the other sites, the same for the same plan.
 func test_junction_plan() -> void:
 	var types := {}
-	var villages := 0
-	var with := 0
 	var clash := false
-	var per_km := 0.0
-	for seed in [3, 42, 7, 11]:
-		var r := AdventureRoute.new()
-		r.plan(seed, 80.0)
+	var km := 0.0
+	var count := 0
+	for region_id in AdventurePlans.TOURS:
+		var r := Rides.tour_route(region_id, 42)
 		var js := r.sites_of(AdventureJunctions.KIND)
-		per_km += js.size() / 80.0 / 4.0
+		km += r.length / 1000.0
+		count += js.size()
 		for st in js:
 			types[st["type"]] = int(types.get(st["type"], 0)) + 1
 			for o in r.sites:
 				if o != st and o["kind"] != AdventureJunctions.KIND and absf(float(o["s"]) - float(st["s"])) < 55.0:
 					clash = true
-		for v in r.sites_of("village"):
-			villages += 1
-			if js.any(func(st): return absf(float(st["s"]) - float(v["s"])) < 460.0):
-				with += 1
-	check(types.size() == AdventureJunctions.TYPES.size() and per_km > 0.15 and per_km < 0.6,
-		"all kinds of junction along the road, %.2f a km %s" % [per_km, str(types)])
-	check(villages > 0 and with >= villages * 0.8, "%d of %d villages have a junction in them or by them" % [with, villages])
+	check(types.has("tee") and types.has("cross") and types.has("lights") and count / km > 0.1,
+		"the real junctions along the tours, %.2f a km %s" % [count / km, str(types)])
 	check(not clash, "none on top of a stop, a fuel station or a fork")
-	var a := AdventureRoute.new()
-	a.plan(42, 80.0)
-	var b := AdventureRoute.new()
-	b.plan(42, 80.0)
-	check(str(a.sites_of(AdventureJunctions.KIND)) == str(b.sites_of(AdventureJunctions.KIND)), "the same seed has the same junctions, side roads and all")
+	var a := Rides.tour_route("dales", 42)
+	var b := Rides.tour_route("dales", 42)
+	check(str(a.sites_of(AdventureJunctions.KIND)) == str(b.sites_of(AdventureJunctions.KIND)), "the same plan has the same junctions, side roads and all")
 	# A roundabout: the road widened round its island, its side roads laid on the land.
-	var found := _with_junction("varied", "roundabout")
+	var found := _with_junction("roundabout")
 	check(not found.is_empty(), "a road with a roundabout on it")
 	if found.is_empty():
 		return
@@ -320,14 +117,11 @@ func test_instructions() -> void:
 		and AdventureJunctions.instruction({"type": "lights", "arms": []}) == "Straight on at the lights"
 		and AdventureJunctions.instruction({"type": "cross", "arms": []}) == "Straight on at the crossroads"
 		and AdventureJunctions.instruction({"type": "tee", "arms": []}) == "", "and straight on at the others")
-	var found := _with_junction("varied", "roundabout")
+	var found := _with_junction("roundabout")
 	if found.is_empty():
 		check(false, "a road with a roundabout on it")
 		return
-	var w := AdventureWorld.new()
-	w.setup(int(found[0]), 60.0)
-	for f in w.route.forks.size():
-		w.route.choose(f, 0)
+	var w := _world_for(found)
 	t.add_child(w)
 	var js: Dictionary = {}
 	for s in w.route.sites_of(AdventureJunctions.KIND):
@@ -402,12 +196,11 @@ func test_lights_cycle() -> void:
 	check(AdventureJunctions.light_state(st, 33.3) == AdventureJunctions.light_state(st, 33.3) and AdventureJunctions.light_state(st, 3.0) != AdventureJunctions.light_state(st, 14.0),
 		"the same clock, the same lights")
 	# A signal head's lamps lit for the state, glowing at night.
-	var r := AdventureRoute.new()
-	var found := _with_junction("varied", "lights")
+	var found := _with_junction("lights")
 	if found.is_empty():
 		check(false, "a road with traffic lights")
 		return
-	r = found[1]
+	var r: AdventureRoute = found[1]
 	var js: Dictionary = found[2]
 	var node := AdventureJunctions.build(r, js, Transform3D())
 	t.add_child(node)
@@ -430,8 +223,7 @@ func test_lights_cycle() -> void:
 	# The host's clock rides on the end of the traffic it sends; the crew's lights follow it.
 	AdventureJunctions.clock = 10.0
 	var tr := AdventureTraffic.new()
-	var w := AdventureWorld.new()
-	w.setup(int(found[0]), 60.0)
+	var w := _world_for(found)
 	t.add_child(w)
 	tr.world = w
 	w.add_child(tr)
@@ -595,7 +387,7 @@ func test_traffic_turns() -> void:
 ## for each time that day). Through on green, nothing.
 func test_police_red() -> void:
 	Shed.adventure = {"id": 4242, "seed": 7, "km": 60.0, "theme": "varied", "riders": {}, "arrived": 0, "arrived_name": ""}
-	var found := _with_junction("varied", "lights")
+	var found := _with_junction("lights")
 	if found.is_empty():
 		check(false, "a road with traffic lights")
 		return
@@ -604,10 +396,7 @@ func test_police_red() -> void:
 	Progress.set_money(1000)
 	for want_red in [false, true]:
 		var sim := {me: {"s": 0.0, "v": 0.0}}
-		var w := AdventureWorld.new()
-		w.setup(int(found[0]), 60.0)
-		for f in w.route.forks.size():
-			w.route.choose(f, 0)
+		var w := _world_for(found)
 		var p := AdventurePolice.new()
 		p.world = w
 		p.rider_source = func() -> Array: return [{"peer": me, "s": sim[me]["s"], "v": sim[me]["v"]}]
@@ -663,17 +452,14 @@ func test_police_red() -> void:
 	await _frames(2)
 
 
-## Building a chunk with a junction or a tunnel in it costs about what any other does.
+## Building a chunk with a junction in it costs about what any other does.
 func test_chunk_cost() -> void:
-	var r := AdventureRoute.new()
 	var t0 := Time.get_ticks_usec()
-	r.plan(42, 80.0, "alpine")
+	var r := Rides.tour_route("dales", 42)
 	var plan_ms := (Time.get_ticks_usec() - t0) / 1000.0
 	var special := {}
 	for st in r.sites_of(AdventureJunctions.KIND):
 		special[AdventureRoute.chunk_of(float(st["s"]))] = true
-	for tn in r.tunnels_on:
-		special[AdventureRoute.chunk_of((float(tn["s0"]) + float(tn["s1"])) * 0.5)] = true
 	var plain := []
 	var with := []
 	for c in range(2, 120):
@@ -686,4 +472,4 @@ func test_chunk_cost() -> void:
 	var mp: float = plain[plain.size() / 2]
 	var mw: float = with[with.size() / 2] if not with.is_empty() else 0.0
 	check(not with.is_empty() and mw < mp * 1.6 + 5.0 and plan_ms < 2000.0,
-		"a chunk with a junction or tunnel builds in %.1f ms against %.1f ms for the rest (median; the plan %.0f ms)" % [mw, mp, plan_ms])
+		"a chunk with a junction builds in %.1f ms against %.1f ms for the rest (median; laying out the road %.0f ms)" % [mw, mp, plan_ms])

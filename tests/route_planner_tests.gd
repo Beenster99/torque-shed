@@ -111,15 +111,15 @@ func test_speed() -> void:
 	check(int(res["ms"]) < 4000, "a %.0f km route plans in %d ms %s" % [(res["pack"] as RealPack).max_km(), int(res["ms"]), str(res["parts"])])
 
 
-## The planned road is ridden like a baked one: the world builds it and streams it end to end.
+## The planned road is ridden: the world builds it and streams it end to end.
 func test_ride() -> void:
 	var r := RealRegion.get_region(REGION)
 	var res := RoutePlanner.plan(r, {"pins": pins(), "mode": "main"})
 	var p: RealPack = res["pack"]
 	RealPack.register(p)
-	check(RealPack.get_pack(p.id) == p, "a planned road is found by its id like a baked one")
+	check(RealPack.get_pack(p.id) == p, "a planned road is found by its id")
 	var w := AdventureWorld.new()
-	w.setup(5, 10.0, "coastal", "lighthouse", p.id)
+	w.setup(p, 5, 10.0)
 	check(w.route.real == p and absf(w.route.length - 10000.0) < 0.1, "the world rides the planned road (%.1f km)" % (w.route.length / 1000.0))
 	var spot := {}
 	spot["p"] = w.transform_at(20.0).origin

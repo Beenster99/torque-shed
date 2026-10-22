@@ -11,6 +11,8 @@ extends Node
 ## menus up (the game doesn't pause in co-op) neither bike may move, on either screen.
 ## Finally the host ends the adventure and both must be back at the shed, off their bikes.
 
+const Rides := preload("res://tests/rides.gd")
+
 const SEED := 321
 const KM := 50.0
 const HOST_S := 30000.0
@@ -38,7 +40,7 @@ func _ready() -> void:
 	var trip: AdventureTrip = main.trip
 	var ok_start := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
-			Adventure.start(SEED, KM)
+			Rides.start(KM, SEED)
 		return trip.on_trip() and main.bike != null and _remote_bike() != null, 40.0)
 	var start_seen := false
 	if ok_start:

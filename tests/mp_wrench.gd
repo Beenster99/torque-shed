@@ -9,6 +9,8 @@ extends Node
 ## Then it snaps again and the host tows the client on a strap: the client's bike must
 ## be pulled along the road behind the host's, and the host must see the strap between them.
 
+const Rides := preload("res://tests/rides.gd")
+
 const SEED := 654
 const KM := 20.0
 const KIT: Array[String] = ["tools", "spare_chain", "fuses", "levers"]   # (room left for a spare part and the old one)
@@ -39,7 +41,7 @@ func _ready() -> void:
 			if not packed[0]:
 				packed[0] = true
 				_pack_toolboxes()
-			Adventure.start(SEED, KM)
+			Rides.start(KM, SEED)
 		return trip.on_trip() and main.bike != null and _remote_bike() != null, 40.0)
 	print("MP wrench note %s: on the adventure %s" % [role, ok_start])
 	var seen_parked := false

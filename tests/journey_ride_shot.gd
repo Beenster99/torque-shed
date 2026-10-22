@@ -1,8 +1,8 @@
 extends Node
 ## A planned journey ridden in the real game, screenshots on the way (what the player sees, with the real trip, bike,
 ## weather and sky): pins go down, the host starts it, and a picture is taken at the start and further along.
-##   xvfb-run -a godot --path . res://tests/journey_ride_shot.tscn -- --out=/tmp/shots [--s=0,3000] [--baked]
-## With --baked it rides the baked Shodoshima road instead, for comparing.
+##   xvfb-run -a godot --path . res://tests/journey_ride_shot.tscn -- --out=/tmp/shots [--s=0,3000] [--tour=dales]
+## With --tour it rides that region's whole tour (AdventurePlans.TOURS) instead.
 
 var out_dir := "/tmp/shots"
 var stops := [0.0, 2000.0, 6000.0]
@@ -12,14 +12,14 @@ var main: Node
 func _ready() -> void:
 	Shed.demo_bikes = true
 	AdventureTrip.instant = true
-	var baked := false
+	var tour := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--out="):
 			out_dir = a.trim_prefix("--out=")
 		elif a.begins_with("--s="):
 			stops = Array(a.trim_prefix("--s=").split(",")).map(func(v): return float(v))
-		elif a == "--baked":
-			baked = true
+		elif a.begins_with("--tour="):
+			tour = a.trim_prefix("--tour=")
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	get_window().size = Vector2i(1280, 720)
 	SaveGame.slot_override = "shots"
@@ -30,8 +30,8 @@ func _ready() -> void:
 	main._start_session()
 	await _frames(20)
 	var trip: AdventureTrip = main.trip
-	if baked:
-		Shed.request({"a": "adventure_start", "seed": 4104, "km": 23.0, "theme": "coastal", "dest": "lighthouse", "real": "shodoshima", "title": "Shodoshima"})
+	if tour != "":
+		Adventure.start(AdventurePlans.tour(tour), 4104)
 	else:
 		var r := RealRegion.get_region("shodoshima")
 		var a := r.geo_to_xz(34.518638, 134.269646)

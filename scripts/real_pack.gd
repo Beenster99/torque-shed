@@ -22,7 +22,7 @@ var credits: Array = []
 ## The theme the adventure is dressed as ("coastal" where there is sea, else "hills").
 var theme := "hills"
 var sea := false
-## The baked road's length (m), including the run-out past the longest ride it offers.
+## The planned road's length (m), including the run-out past the last pin.
 var length_m := 0.0
 var run_out_m := 600.0
 var step := 4.0

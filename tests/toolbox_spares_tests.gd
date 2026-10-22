@@ -5,6 +5,8 @@ extends RefCounted
 ## the host, and the walker's plans for all of it. Run from tests/run_tests.gd: its
 ## _test_toolbox_spares_* functions hand over to these.
 
+const Rides := preload("res://tests/rides.gd")
+
 var t: Node   # the test runner: check(), get_tree()
 
 const KIT: Array[String] = ["tools", "plug_kit", "pump"]
@@ -237,7 +239,7 @@ func test_session() -> void:
 	# Out on the adventure.
 	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
 	main._left_bike = 0
-	Adventure.start(92, 20.0)
+	Rides.start(20.0, 92)
 	await _ticks(10)
 	var trip: AdventureTrip = main.trip
 	check(trip.on_trip() and main.bike != null and Shed.riding(me) == faithful, "out on an adventure on Old Faithful")

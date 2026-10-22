@@ -1,6 +1,9 @@
 extends RefCounted
 ## The adventure road's traffic checks (AdventureTraffic on a TrafficStream, and TrafficSounds),
-## run from tests/run_tests.gd: its _test_adv_traffic_* functions hand over to these.
+## run from tests/run_tests.gd: its _test_adv_traffic_* functions hand over to these. The roads are the whole of the
+## tours Rides plans (the ride Adventure.start begins), so a village found on one is on the road ridden.
+
+const Rides := preload("res://tests/rides.gd")
 
 var t: Node   # the test runner: check(), get_tree()
 
@@ -22,8 +25,7 @@ func _frames(n: int) -> void:
 ## whose riders are at the local positions in `spot["ps"]`. Forks left open if `forks_open`, else
 ## the main road at each.
 func _world(seed: int, km: float, spot: Dictionary, forks_open := false) -> AdventureTraffic:
-	var w := AdventureWorld.new()
-	w.setup(seed, km)
+	var w := Rides.world(Rides.full(km), seed)
 	if not forks_open:
 		for f in w.route.forks.size():
 			w.route.choose(f, 0)
@@ -54,11 +56,10 @@ static func _run(tr: AdventureTraffic, seconds: float, dt := 0.1) -> void:
 		tr._physics_process(dt)
 
 
-## A seed whose road (km long) has a village at least `after` m in: [seed, the village's site].
+## A seed whose road (the whole of Rides.plan(km)) has a village at least `after` m in: [seed, the village's site].
 static func _with_village(km: float, after := 3000.0) -> Array:
 	for seed in range(1, 80):
-		var r := AdventureRoute.new()
-		r.plan(seed, km)
+		var r := Rides.route(Rides.full(km), seed)
 		for f in r.forks.size():
 			r.choose(f, 0)
 		for st in r.sites_of("village"):
@@ -144,8 +145,8 @@ func test_density() -> void:
 	await _free(tr)
 
 
-## Lorries (and coaches) crawl up the steep hills while cars keep going: along a made-up road
-## climbing at 9%, and on a real one at its steepest.
+## Lorries (and coaches) crawl up the steep hills while cars keep going: along a test road climbing at 9%, and on a
+## real one at its steepest.
 func test_climb() -> void:
 	var stream := TrafficStream.new()
 	stream.sample = func(s: float) -> Dictionary:
@@ -291,8 +292,7 @@ func test_forks_origin() -> void:
 	var spot := {}
 	var seed := 0
 	for k in range(1, 40):
-		var r := AdventureRoute.new()
-		r.plan(k, 80.0)
+		var r := Rides.route(Rides.full(80.0), k)
 		if not r.forks.is_empty() and r.fork_s(0) < 40000.0:
 			seed = k
 			break
@@ -469,7 +469,7 @@ func test_perf() -> void:
 	await t.get_tree().physics_frame
 	var faithful: int = t._bike_named("Old Faithful")
 	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
-	Adventure.start(int(found[0]), 40.0)
+	Rides.start(40.0, int(found[0]))
 	for i in 10:
 		await t.get_tree().physics_frame
 	var trip: AdventureTrip = main.trip
