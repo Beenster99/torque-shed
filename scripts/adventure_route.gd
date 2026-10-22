@@ -540,8 +540,8 @@ func _fit_for_stop(i: int) -> bool:
 
 ## The road levelled through every fuel station and stop (a village's rows with it), as a stop is built level: each
 ## stretch they keep (SITE_KNOTS either side, run together where they overlap) at its average height, eased back onto
-## the real road's heights over LEVEL_EASE knots either side. A stop only goes where the road climbs no more than
-## STOP_GRADE (see _fit_for_stop), so the road moves a few metres at most.
+## the real road's heights over LEVEL_EASE knots either side, and no steeper than the planner's limit. A stop only goes
+## where the road climbs no more than STOP_GRADE (see _fit_for_stop), so the road moves a few metres at most.
 func _level_stops() -> void:
 	var spans := []
 	for st in sites:
@@ -570,6 +570,8 @@ func _level_stops() -> void:
 			elif k > b:
 				t = smoothstep(0.0, 1.0, 1.0 - float(k - b) / LEVEL_EASE)
 			ph[k] = lerpf(ph[k], h, t)
+	if not merged.is_empty():
+		ph = RoutePlanner.grade_limit(ph)   # (easing onto a steep hill could make it steeper than a road is)
 	_lie_of_land()
 
 
