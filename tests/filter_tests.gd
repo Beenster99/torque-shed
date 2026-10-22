@@ -285,7 +285,7 @@ func test_fairing_caps() -> void:
 		var m := model_of(parts)
 		await t.get_tree().physics_frame
 		for slot in FILTERS:
-			var caps: Array = m._slot_meshes[slot].filter(func(mi): return str((mi as Node).name) == "ServiceCap")
+			var caps: Array = m._slot_meshes[slot].filter(func(mi): return (mi as Node).has_meta("service_cap"))
 			var hidden: bool = m._slot_meshes[slot].any(func(mi): return not (mi as Node3D).is_visible_in_tree())
 			if hidden:
 				check(caps.size() == 1 and (caps[0] as Node3D).is_visible_in_tree(),
@@ -300,7 +300,7 @@ func test_fairing_caps() -> void:
 		var bare := BikeModel.new()
 		t.add_child(bare)
 		bare.build_from(BikeBuild.new(PartsDB.sanitize_build(parts)), Color.RED, off, null, false)
-		check(bare._slot_meshes["air_filter"].any(func(mi): return str((mi as Node).name) == "ServiceCap")
+		check(bare._slot_meshes["air_filter"].any(func(mi): return (mi as Node).has_meta("service_cap"))
 			and bare._slot_meshes["air_filter"].all(func(mi): return not (mi as Node3D).visible),
 			"%s: with the air filter off its cap goes too" % PartsDB.style_name(style))
 		bare.free()

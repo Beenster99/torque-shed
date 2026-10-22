@@ -74,6 +74,34 @@ func _ready() -> void:
 		Shed.bikes.erase(bike)
 		Shed.changed.emit()
 		await _frames(5)
+	if OS.get_cmdline_user_args().has("--stand"):
+		# The engine being built up on the stand, with both filters on it.
+		var spot: String = Shed.stand_spots()[0]
+		var block := Shed.item_at_spot(spot)
+		if Shed.engine_item(block, "air_filter") == 0:
+			Shed._move(Shed._new_item("paper_airbox", 0.0, 0.0, 0.0), "held", Shed.me())
+			Shed.request({"a": "install", "engine": block, "slot": "air_filter"})
+		Shed.changed.emit()
+		await _frames(5)
+		var model: BikeModel = main.workshop._spot_nodes[spot].get_meta("model")
+		var at: Vector3 = Shed.spot_transform(spot).origin
+		var ground := Transform3D(model.global_transform.basis.orthonormalized(), Vector3(at.x, 0.0, at.z))
+		for slot in FT.FILTERS:
+			for pose in FT.EYES:
+				var found: Array = FT.aims(model, slot, float(FT.EYES[pose]), ground, true, [w.get_rid()])
+				if found.is_empty():
+					print("stand %s %s: no clear aim" % [slot, pose])
+					continue
+				w.set_crouched(pose == "crouched")
+				w.place(Transform3D(Basis(), (found[0]["eye"] as Vector3) - Vector3.UP * float(FT.EYES[pose])))
+				await _frames(30)
+				var d: Vector3 = (found[0]["at"] as Vector3) - w.camera.global_position
+				w.rotation.y = atan2(-d.x, -d.z)
+				w._pitch = 0.0
+				w._look(0.0, atan2(d.y, Vector2(d.x, d.z).length()))
+				await _frames(10)
+				print("stand %s %s: %s" % [slot, pose, str(w.target.get("slot", w.target.get("kind", "-")))])
+				await _shot("stand_%s_%s" % [slot, pose])
 	get_tree().quit()
 
 

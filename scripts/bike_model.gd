@@ -4218,12 +4218,19 @@ func _service_caps() -> void:
 				skin.append(xf * v)
 	for slot in SERVICE_CAPS:
 		var meshes: Array = _slot_meshes.get(slot, [])
-		if not meshes.any(func(mi): return (mi as Node).has_meta("under_fairing")):
+		var box := slot_bounds(slot)
+		# Partly behind the panels is behind them: the cap stands in for the lot (an oil filter
+		# hanging out under the belly pan with the engine out of sight would look lost).
+		var behind := meshes.any(func(mi): return (mi as Node).has_meta("under_fairing"))
+		for c in _covered:
+			var inner: AABB = c
+			behind = behind or (box.end.y > inner.position.y and box.position.y < inner.end.y \
+				and box.end.z > inner.position.z and box.position.z < inner.end.z)
+		if meshes.is_empty() or not behind:
 			continue
-		# Mostly under it is all under it: the cap stands in for the lot.
 		for mi in meshes:
 			(mi as Node).set_meta("under_fairing", true)
-		var mid := slot_bounds(slot).get_center()
+		var mid := box.get_center()
 		# The panel straight out to the right of it, or as near that as the panel goes.
 		var at := Vector3.ZERO
 		var normal := Vector3.RIGHT
@@ -4240,9 +4247,9 @@ func _service_caps() -> void:
 			if best > -INF:
 				at = Vector3(best, y, z)
 				break
-		if at == Vector3.ZERO or slot_bounds(slot).get_center().x > at.x:
-			# No panel over it after all (it's in a gap in the bodywork, or mostly out past it): it
-			# shows as it is.
+		if at == Vector3.ZERO or (slot == "air_filter" and mid.x > at.x):
+			# No panel over it after all (it's in a gap in the bodywork), or it stands out past
+			# the panel (a V-twin's round air cleaner): it shows as it is.
 			for mi in meshes:
 				(mi as Node).remove_meta("under_fairing")
 			continue
@@ -4253,6 +4260,7 @@ func _service_caps() -> void:
 		var cap := _mesh_instance(_cylinder(0.045, 0.012), _mat(col, 0.5, 0.4), at + normal * 0.006)
 		cap.basis = _basis_up(normal)
 		cap.name = "ServiceCap"
+		cap.set_meta("service_cap", slot)
 		var rim := _mesh_instance(_cylinder(0.052, 0.006), _mat(Color(0.08, 0.08, 0.09), 0.3, 0.5), at + normal * 0.002)
 		rim.basis = _basis_up(normal)
 		var grip := _box(at + normal * 0.014, Vector3(0.06, 0.008, 0.012), _mat(col.darkened(0.35), 0.5, 0.4))
