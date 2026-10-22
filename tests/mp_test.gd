@@ -211,6 +211,8 @@ func _ready() -> void:
 			xp_ok = str(Progress.summary(main.remotes.keys()[0]).get("name", "")) == "Test client"
 		if role == "client" and ranger != 0 and not asked:
 			Shed.request({"a": "unbolt", "bike": ranger, "slot": "exhaust"})
+			# Standing by the bike, the client gets at the oil filter with the engine in the frame.
+			Shed.request({"a": "unbolt", "bike": ranger, "slot": "oil_filter", "crouched": false})
 			Shed.request({"a": "take", "spot": "bench_0"})
 			Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(0.5, 0.0, 1.5))})
 			Shed.board_request({"a": "board_draw", "id": 4242, "c": 1, "w": 6.0, "from": 0,
@@ -724,7 +726,7 @@ func _ready() -> void:
 			var p_booked: bool = (Shed.bank["ledger"] as Array).any(func(e): return str(e["why"]) == "Petrol for Old Faithful")
 			pump_ok = pump_ok or (ShedPump.holder() == 0 and float(Shed.pump["litres"]) > 1.0 and p_litres > 2.0 and p_booked
 				and (role == "client" or pump_seen))
-		var rest_ok := pump_ok and ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok
+		var rest_ok := pump_ok and ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and not Shed.is_bolted(ranger, "oil_filter") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok
 		rest_ok = rest_ok and visor_ok
 		# Order one of these and copy its blueprint (BikeCopy), once the trolley and the poster are
 		# in (it fills the delivery area): the client orders one of the ranger, used (the card's

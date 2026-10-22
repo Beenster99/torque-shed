@@ -159,6 +159,9 @@ var _geo_anchors := {}           # node -> its rest transform in model space, fo
 ## _bake_static) and the dirt drawn over its merged pieces (see DirtLayer). They move with it.
 var _slot_extras := {}
 var _baked_pieces := {}          # instance id -> true for each mesh _bake_static merged
+## Each bent tube's line and thickness, by its mesh's instance id (see _bend). Kept here rather
+## than as a meta on the mesh, which would stop _bake_static merging it.
+var _bends := {}
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -173,6 +176,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	mirrors.clear()
 	_slot_extras.clear()
 	_baked_pieces.clear()
+	_bends.clear()
 	_covered.clear()
 	_lamps.clear()
 	_lit = [true, true, true]
@@ -270,6 +274,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 		for mi in _slot_meshes.get("headlight", []):
 			(mi as Node).set_meta("under_fairing", true)
 		_hide_covered()
+		_service_caps()
 	_apply_visibility()
 	_current_slot = ""
 	if with_rider:
@@ -1743,35 +1748,64 @@ func _draw_fuel() -> void:
 			_box(at + pt["dir"] * 0.05 + Vector3(0.0, -0.01, 0.0), Vector3(0.055, 0.07, 0.06), mat)
 
 
+## How far out to the right (m) the air filter reaches at least, so its element shows past the
+## frame and the tank's edge and you can get at it with the engine in the frame.
+const AIR_FILTER_OUT := 0.21
+
+
 func _draw_air_filter() -> void:
 	_current_slot = "air_filter"
 	var mat := _mat(_col(), 0.0, 0.8)
 	var points := _intake_points()
+	# Rubber intake boots and hoses from the carbs out to where the filter sits.
+	var boot := _mat(Color(0.06, 0.06, 0.06), 0.0, 0.75)
 	match str(_part().get("style", "airbox")):
-		"pods":
-			for pt in points:
-				var pod := _mesh_instance(_cylinder(0.04, 0.09), mat, pt["port"] + pt["dir"] * 0.13)
-				pod.basis = _basis_up(pt["dir"])
-		"stacks":
+		"pods", "stacks":
+			# One per carb, splayed out sideways from under the tank so the outer ones stand
+			# clear of it, on a short boot where they'd otherwise be buried.
+			var stacks: bool = _part().get("style") == "stacks"
 			var chrome := _mat(_col(), 1.0, 0.15)
 			for pt in points:
-				var stack := _mesh_instance(_cylinder(0.026, 0.05, 0.042), chrome, pt["port"] + pt["dir"] * 0.11)
-				stack.basis = _basis_up(pt["dir"])
+				var port: Vector3 = pt["port"]
+				var side := -1.0 if port.x < -0.01 else 1.0
+				var dir := (pt["dir"] as Vector3 + Vector3(side * 0.9, 0.0, 0.0)).normalized()
+				var half_len := 0.025 if stacks else 0.045
+				var reach := maxf(0.11 if stacks else 0.13, (AIR_FILTER_OUT - absf(port.x)) / absf(dir.x) - half_len)
+				var at := port + dir * reach
+				if reach > 0.14:
+					_tube(port + dir * 0.06, at - dir * half_len, 0.024, boot)
+				var piece := _mesh_instance(_cylinder(0.026, 0.05, 0.042), chrome, at) if stacks else _mesh_instance(_cylinder(0.04, 0.09), mat, at)
+				piece.basis = _basis_up(dir)
+				piece.name = "VelocityStack" if stacks else "PodFilter"
 		"cone":
+			# A cone filter on an elbow out of the right-hand side, its open end clear of the tank.
 			var mid := Vector3.ZERO
 			for pt in points:
 				mid += pt["port"]
 			mid /= points.size()
-			var cone := _mesh_instance(_cylinder(0.065, 0.14, 0.04), mat, mid + Vector3(0.0, 0.02, 0.17))
-			cone.rotation.x = PI * 0.5
+			var dir := Vector3(0.75, 0.05, 0.66).normalized()
+			var at := Vector3(maxf(AIR_FILTER_OUT, mid.x + 0.12) - dir.x * 0.07, mid.y + 0.02, mid.z + 0.16)
+			at.y = minf(at.y, tank_base_y(at.z) - 0.07)
+			_bend([mid + Vector3(0.0, 0.0, 0.07), mid + Vector3(0.0, 0.01, 0.13), at - dir * 0.07], 0.035, boot)
+			var cone := _mesh_instance(_cylinder(0.065, 0.14, 0.04), mat, at)
+			cone.basis = _basis_up(dir)
+			cone.name = "ConeFilter"
 		_:
 			if _build.layout == "vtwin" and not points.is_empty():
 				var pt: Dictionary = points[0]
-				var cleaner := _mesh_instance(_cylinder(0.07, 0.045), _mat(_col().darkened(0.2), 0.75, 0.3), pt["port"] + pt["dir"] * 0.1)
-				cleaner.basis = _basis_up(pt["dir"])
+				var port: Vector3 = pt["port"]
+				var dir: Vector3 = pt["dir"]
+				# Up under the tank: out past the frame's beams and the tank's edge, on a short boot
+				# if it has to be.
+				var edge := maxf(AIR_FILTER_OUT, slot_bounds("tank").end.x if not _slot_meshes["tank"].is_empty() else 0.0)
+				var reach := maxf(0.1, (edge - port.x) / dir.x)
+				if reach > 0.11:
+					_tube(port + dir * 0.06, port + dir * (reach - 0.02), 0.03, boot)
+				var cleaner := _mesh_instance(_cylinder(0.07, 0.045), _mat(_col().darkened(0.2), 0.75, 0.3), port + dir * reach)
+				cleaner.basis = _basis_up(dir)
 				cleaner.name = "AirCleaner"
-				var rim := _mesh_instance(_cylinder(0.095, 0.012), _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15), pt["port"] + pt["dir"] * 0.128)
-				rim.basis = _basis_up(pt["dir"])
+				var rim := _mesh_instance(_cylinder(0.095, 0.012), _mat(Color(0.85, 0.86, 0.88), 1.0, 0.15), port + dir * (reach + 0.028))
+				rim.basis = _basis_up(dir)
 				return
 			var mid := Vector3.ZERO
 			for pt in points:
@@ -1780,13 +1814,49 @@ func _draw_air_filter() -> void:
 			# The airbox lives under the tank, never up through it.
 			var at := mid + Vector3(0.0, 0.04, 0.16)
 			at.y = minf(at.y, tank_base_y(at.z) - 0.08)
-			_box(at, Vector3(maxf(0.2, _block_w * 0.8), 0.15, 0.14), mat)
+			var wide := maxf(0.2, _block_w * 0.8)
+			var box := _box(at, Vector3(wide, 0.15, 0.14), mat)
+			box.name = "Airbox"
+			# The element's housing on the right-hand end, with its lid out past the frame and
+			# the tank's edge, where the filter comes out.
+			var out := maxf(AIR_FILTER_OUT, wide * 0.5 + 0.05)
+			var housing := _mesh_instance(_cylinder(0.06, out - wide * 0.5 + 0.01), mat, Vector3((wide * 0.5 + out) * 0.5, at.y, at.z))
+			housing.rotation.z = PI * 0.5
+			housing.name = "FilterHousing"
+			var lid := _mesh_instance(_cylinder(0.066, 0.012), _mat(_col().lightened(0.15), 0.3, 0.5), Vector3(out, at.y, at.z))
+			lid.rotation.z = PI * 0.5
+			lid.name = "FilterLid"
+
+
+## Where the spin-on oil filter sits: low on the right at the front of the crankcase, under the
+## ignition cover and ahead of the clutch cover and the footrests, standing out sideways so you
+## can see it and get a hand to it with the engine in the frame, standing or crouched. Returns
+## its middle; it points along oil_filter_dir().
+func oil_filter_at() -> Vector3:
+	if _build.layout == "boxer":
+		# Under a boxer's barrels there's no room: it stands out of the front of the cases.
+		return _engine_c + Vector3(0.05 * _eng_s, -0.08 * _eng_s, -0.17 * _eng_s - 0.03)
+	return _engine_c + Vector3(_block_w * 0.5 + OIL_FILTER_LEN * 0.5 - 0.003, -0.1 * _eng_s - 0.015, -0.11 * _eng_s - 0.005)
+
+
+## Which way the oil filter points out of the cases (see oil_filter_at).
+func oil_filter_dir() -> Vector3:
+	return Vector3.FORWARD if _build.layout == "boxer" else Vector3.RIGHT
+
+const OIL_FILTER_LEN := 0.07
 
 
 func _draw_oil_filter() -> void:
 	_current_slot = "oil_filter"
-	var f := _mesh_instance(_cylinder(0.035, 0.07), _mat(_col(), 0.5, 0.4), _engine_c + Vector3(_block_w * 0.25, -0.06, -0.205))
-	f.rotation.x = PI * 0.5
+	var mat := _mat(_col(), 0.5, 0.4)
+	var at := oil_filter_at()
+	var dir := oil_filter_dir()
+	var f := _mesh_instance(_cylinder(0.035, OIL_FILTER_LEN), mat, at)
+	f.basis = _basis_up(dir)
+	f.name = "OilFilter"
+	# The flat end with its spanner flats, facing out.
+	var cap := _mesh_instance(_cylinder(0.016, 0.008, -1.0, 6), _mat(_col().darkened(0.3), 0.6, 0.35), at + dir * (OIL_FILTER_LEN * 0.5 + 0.003))
+	cap.basis = _basis_up(dir)
 
 
 func _draw_cooling() -> void:
@@ -4408,6 +4478,70 @@ func _hide_covered() -> void:
 					break
 
 
+## The filters you change with the engine in the frame. Under a full fairing each has a
+## quick-release cap on the right-hand panel, over where it sits, that it comes out through:
+## the cap goes with the filter, so it's what you see and aim at to get the filter out.
+const SERVICE_CAPS: Array[String] = ["air_filter", "oil_filter"]
+
+func _service_caps() -> void:
+	var skin := []   # the fairing's triangles, in the model's space
+	for mi in _slot_meshes.get("fairing", []):
+		if mi is MeshInstance3D and (mi as MeshInstance3D).mesh != null:
+			var xf := _local_xform(mi)
+			for v in (mi as MeshInstance3D).mesh.get_faces():
+				skin.append(xf * v)
+	for slot in SERVICE_CAPS:
+		var meshes: Array = _slot_meshes.get(slot, [])
+		var box := slot_bounds(slot)
+		# Partly behind the panels is behind them: the cap stands in for the lot (an oil filter
+		# hanging out under the belly pan with the engine out of sight would look lost).
+		var behind := meshes.any(func(mi): return (mi as Node).has_meta("under_fairing"))
+		for c in _covered:
+			var inner: AABB = c
+			behind = behind or (box.end.y > inner.position.y and box.position.y < inner.end.y \
+				and box.end.z > inner.position.z and box.position.z < inner.end.z)
+		if meshes.is_empty() or not behind:
+			continue
+		for mi in meshes:
+			(mi as Node).set_meta("under_fairing", true)
+		var mid := box.get_center()
+		# The panel straight out to the right of it, or as near that as the panel goes.
+		var at := Vector3.ZERO
+		var normal := Vector3.RIGHT
+		for d in [Vector2.ZERO, Vector2(0.0, 0.05), Vector2(0.0, -0.05), Vector2(-0.05, 0.0), Vector2(0.05, 0.0),
+				Vector2(-0.05, 0.08), Vector2(-0.05, -0.08), Vector2(0.0, 0.12), Vector2(0.0, -0.12), Vector2(-0.1, 0.0)]:
+			var y: float = mid.y + d.x
+			var z: float = mid.z + d.y
+			var best := -INF
+			for f in range(0, skin.size() - 2, 3):
+				var hit = Geometry3D.segment_intersects_triangle(Vector3(1.0, y, z), Vector3(0.0, y, z), skin[f], skin[f + 1], skin[f + 2])
+				if hit != null and (hit as Vector3).x > best:
+					best = (hit as Vector3).x
+					normal = (skin[f + 2] - skin[f]).cross(skin[f + 1] - skin[f]).normalized()
+			if best > -INF:
+				at = Vector3(best, y, z)
+				break
+		if at == Vector3.ZERO or (slot == "air_filter" and mid.x > at.x):
+			# No panel over it after all (it's in a gap in the bodywork), or it stands out past
+			# the panel (a V-twin's round air cleaner): it shows as it is.
+			for mi in meshes:
+				(mi as Node).remove_meta("under_fairing")
+			continue
+		if normal.x < 0.0:
+			normal = -normal
+		_current_slot = slot
+		var col := _col()
+		var cap := _mesh_instance(_cylinder(0.045, 0.012), _mat(col, 0.5, 0.4), at + normal * 0.006)
+		cap.basis = _basis_up(normal)
+		cap.name = "ServiceCap"
+		cap.set_meta("service_cap", slot)
+		var rim := _mesh_instance(_cylinder(0.052, 0.006), _mat(Color(0.08, 0.08, 0.09), 0.3, 0.5), at + normal * 0.002)
+		rim.basis = _basis_up(normal)
+		var grip := _box(at + normal * 0.014, Vector3(0.06, 0.008, 0.012), _mat(col.darkened(0.35), 0.5, 0.4))
+		grip.basis = _basis_up(normal)
+	_current_slot = ""
+
+
 ## A drawn mesh's bounds in the model's own space.
 func _model_aabb(vi: VisualInstance3D) -> AABB:
 	var xf := Transform3D.IDENTITY
@@ -6282,6 +6416,14 @@ func surface_points(slot: String, cell: float) -> Array:
 	return [points, normals]
 
 
+## Bodywork whose crosshair shapes follow its surface (see build_pickers).
+const SHELL_PICKS: Array[String] = ["frame", "tank", "fairing", "side_panels", "tail"]
+## Parts round the engine whose bent tubes get a crosshair box along each stretch, so you can aim
+## between them at the filters (see build_pickers). Elsewhere (the bars and the front end) a bent
+## tube keeps one box round the lot, easier to catch from further off.
+const BEND_PICKS: Array[String] = ["frame", "swingarm", "exhaust", "guards", "cooling", "rearsets",
+	"side_stand", "centre_stand", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "gearbox"]
+
 ## Adds a static click target per fitted part, with box shapes fitted to its meshes.
 ## Each body carries metadata "slot", plus everything in `meta`; `slot_meta` replaces `meta`
 ## for particular slots. Rings (tyres, spoked rims) get a hoop of boxes so the ray can still
@@ -6303,6 +6445,25 @@ func build_pickers(meta: Dictionary, slot_meta := {}, layer := PICK_LAYER) -> vo
 			if mi is MultiMeshInstance3D or str(mi.name).begins_with("Spoke"):
 				continue
 			var xf := _local_xform(mi)
+			var exact := layer == PICK_LAYER   # for the crosshair: shapes that follow what's drawn
+			if exact and mi.has_meta("under_fairing") and is_fitted("fairing"):
+				continue   # tucked away out of sight under a full fairing
+			if exact and _bends.has(mi.get_instance_id()) and slot in BEND_PICKS:
+				# A bent tube (a frame rail, a header, crash bars): a box along each stretch of it,
+				# so you can aim past it at what's behind and between its bends.
+				var bend: Dictionary = _bends[mi.get_instance_id()]
+				var line: Array = ShapeKit.smooth(bend["path"], 2)
+				var thick := maxf(float(bend["r"]) * 2.0 + 0.01, 0.03)
+				for i in range(1, line.size()):
+					var a: Vector3 = xf * (line[i - 1] as Vector3)
+					var b: Vector3 = xf * (line[i] as Vector3)
+					if a.distance_to(b) < 0.001:
+						continue
+					var along := (b - a).normalized()
+					var across := along.cross(Vector3.UP if absf(along.y) < 0.9 else Vector3.RIGHT).normalized()
+					var piece := Transform3D(Basis(across, along, across.cross(along)), (a + b) * 0.5)
+					_add_box(body, piece, Vector3(thick, a.distance_to(b) + thick * 0.5, thick))
+				continue
 			if mi.has_meta("hoop"):
 				# A ring (the tyre, a rim barrel): boxes round it, with the middle left open.
 				var hoop: Vector3 = mi.get_meta("hoop")
@@ -6323,6 +6484,19 @@ func build_pickers(meta: Dictionary, slot_meta := {}, layer := PICK_LAYER) -> vo
 					_add_box(body, xf * piece, Vector3(depth, depth, TAU * mid / 12.0))
 				continue
 			var aabb: AABB = (mi as VisualInstance3D).get_aabb()
+			if exact and SHELL_PICKS.has(slot) and (mi as MeshInstance3D).mesh is ArrayMesh and aabb.get_longest_axis_size() > 0.15:
+				# Bodywork is a shell round other parts: its own surface, not the box round it,
+				# so you can see and reach what's under its edges (the filters under a tank).
+				var faces := (mi as MeshInstance3D).mesh.get_faces()
+				for f in faces.size():
+					faces[f] = xf * faces[f]
+				var trimesh := ConcavePolygonShape3D.new()
+				trimesh.set_faces(faces)
+				trimesh.backface_collision = true
+				var cs := CollisionShape3D.new()
+				cs.shape = trimesh
+				body.add_child(cs)
+				continue
 			var size := aabb.size
 			if slot == "chain":
 				# A chain is thin; make it easy to aim at from the side, standing out past the frame.
@@ -7271,9 +7445,16 @@ func _shell(sections: Array, mat: Material, open := false, a0 := 0.0, a1 := TAU,
 
 ## A round tube bent smoothly through `path` (see ShapeKit.sweep): `radius` a float, or one per point.
 func _bend(path: Array, radius, mat: Material, parent: Node3D = self, sides := 12) -> MeshInstance3D:
+	var mi := _mesh_instance(ShapeKit.sweep(path, radius, sides), mat, Vector3.ZERO, parent)
 	if _current_slot == "frame" and parent == self:
 		_rails.append({"pts": ShapeKit.smooth(path, 6), "r": (radius as Array).max() if radius is Array else float(radius)})
-	return _mesh_instance(ShapeKit.sweep(path, radius, sides), mat, Vector3.ZERO, parent)
+	# Its line and thickness, so its click target follows the tube (see build_pickers) rather
+	# than filling the whole box round the bend.
+	var thick := 0.0
+	for r in (radius if radius is Array else [radius]):
+		thick = maxf(thick, float(r))
+	_bends[mi.get_instance_id()] = {"path": path, "r": thick}
+	return mi
 
 
 ## Marks a mesh that joins the part being drawn to another part (a cable, hose or lead): drawn

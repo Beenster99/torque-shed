@@ -670,6 +670,12 @@ func _run_all() -> void:
 	_test_tracks_adventure()
 	_test_tracks_real()
 	await _test_tracks_world()
+	print("Simon's v0.21.0 round: air and oil filters changed with the engine in the frame")
+	_test_filter_rules()
+	await _test_filter_aim()
+	await _test_filter_stand_aim()
+	await _test_filter_fairing_caps()
+	await _test_filter_in_shed()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -23097,3 +23103,29 @@ func _test_tracks_real() -> void:
 
 func _test_tracks_world() -> void:
 	await _tracks().test_world()
+
+
+# ---------------------------------------------------------------------------- air and oil filters in the frame (tests/filter_tests.gd)
+
+func _filters() -> RefCounted:
+	return load("res://tests/filter_tests.gd").new(self)
+
+
+func _test_filter_rules() -> void:
+	_filters().test_rules()
+
+
+func _test_filter_aim() -> void:
+	await _filters().test_aim()
+
+
+func _test_filter_stand_aim() -> void:
+	await _filters().test_stand_aim()
+
+
+func _test_filter_fairing_caps() -> void:
+	await _filters().test_fairing_caps()
+
+
+func _test_filter_in_shed() -> void:
+	await _filters().test_in_shed()
