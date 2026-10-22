@@ -153,6 +153,9 @@ var _geo_anchors := {}           # node -> its rest transform in model space, fo
 ## _bake_static) and the dirt drawn over its merged pieces (see DirtLayer). They move with it.
 var _slot_extras := {}
 var _baked_pieces := {}          # instance id -> true for each mesh _bake_static merged
+## Each bent tube's line and thickness, by its mesh's instance id (see _bend). Kept here rather
+## than as a meta on the mesh, which would stop _bake_static merging it.
+var _bends := {}
 
 
 ## Builds the model. `fitted` maps slot -> bool (all fitted when empty); `part_condition`
@@ -167,6 +170,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	mirrors.clear()
 	_slot_extras.clear()
 	_baked_pieces.clear()
+	_bends.clear()
 	_covered.clear()
 	_lamps.clear()
 	_lit = [true, true, true]
@@ -6138,6 +6142,11 @@ func surface_points(slot: String, cell: float) -> Array:
 
 ## Bodywork whose crosshair shapes follow its surface (see build_pickers).
 const SHELL_PICKS: Array[String] = ["frame", "tank", "fairing", "side_panels", "tail"]
+## Parts round the engine whose bent tubes get a crosshair box along each stretch, so you can aim
+## between them at the filters (see build_pickers). Elsewhere (the bars and the front end) a bent
+## tube keeps one box round the lot, easier to catch from further off.
+const BEND_PICKS: Array[String] = ["frame", "swingarm", "exhaust", "guards", "cooling", "rearsets",
+	"side_stand", "centre_stand", "engine", "head", "fuel", "air_filter", "oil_filter", "spark_plugs", "gearbox"]
 
 ## Adds a static click target per fitted part, with box shapes fitted to its meshes.
 ## Each body carries metadata "slot", plus everything in `meta`; `slot_meta` replaces `meta`
@@ -6163,10 +6172,10 @@ func build_pickers(meta: Dictionary, slot_meta := {}, layer := PICK_LAYER) -> vo
 			var exact := layer == PICK_LAYER   # for the crosshair: shapes that follow what's drawn
 			if exact and mi.has_meta("under_fairing") and is_fitted("fairing"):
 				continue   # tucked away out of sight under a full fairing
-			if exact and mi.has_meta("bend") and slot != "chain":
+			if exact and _bends.has(mi.get_instance_id()) and slot in BEND_PICKS:
 				# A bent tube (a frame rail, a header, crash bars): a box along each stretch of it,
 				# so you can aim past it at what's behind and between its bends.
-				var bend: Dictionary = mi.get_meta("bend")
+				var bend: Dictionary = _bends[mi.get_instance_id()]
 				var line: Array = ShapeKit.smooth(bend["path"], 2)
 				var thick := maxf(float(bend["r"]) * 2.0 + 0.01, 0.03)
 				for i in range(1, line.size()):
@@ -7059,7 +7068,7 @@ func _bend(path: Array, radius, mat: Material, parent: Node3D = self, sides := 1
 	var thick := 0.0
 	for r in (radius if radius is Array else [radius]):
 		thick = maxf(thick, float(r))
-	mi.set_meta("bend", {"path": path, "r": thick})
+	_bends[mi.get_instance_id()] = {"path": path, "r": thick}
 	return mi
 
 
