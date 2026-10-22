@@ -966,6 +966,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		hud.flash("Headlight: %s" % bike.cycle_beam(), 1.2)
 	elif event.is_action_pressed("ride_ping"):
 		PingMarker.ping_from(camera, [bike.get_rid()])
+	elif event.is_action_pressed("visor"):
+		# Up or down for everyone else to see; your own view out of the helmet doesn't change.
+		hud.flash(RiderGear.flick_visor(), 1.2)
 	elif event.is_action_pressed("stopwatch") and walker and not event is InputEventJoypadButton:
 		# On a pad the stopwatch's D-pad left is the horn on the bike: P (or its key) here.
 		walker.stopwatch.start_stop()

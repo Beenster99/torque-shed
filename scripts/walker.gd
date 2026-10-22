@@ -328,6 +328,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("ping"):
 		get_viewport().set_input_as_handled()
 		ping()
+	elif event.is_action_pressed("visor"):
+		get_viewport().set_input_as_handled()
+		Shed.feedback.emit(RiderGear.flick_visor(), true)
 	elif event.is_action_pressed("stopwatch") or (tool == "watch" and event.is_action_pressed("act")):
 		get_viewport().set_input_as_handled()
 		stopwatch.start_stop()

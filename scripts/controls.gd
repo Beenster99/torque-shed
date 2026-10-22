@@ -262,7 +262,7 @@ func _first_label(action: String, pad: bool) -> String:
 
 ## Key names as they read best in a hint: ", / ." to turn, not "Comma / Period".
 const SHORT_NAMES := {"Escape": "Esc", "Comma": ",", "Period": ".", "Slash": "/", "Equal": "=", "Minus": "-",
-	"Kp Add": "Num +", "Kp Subtract": "Num -"}
+	"Kp Add": "Num +", "Kp Subtract": "Num -", "Apostrophe": "'"}
 
 
 ## The controller to read: the last one used, else the first one with a standard layout.

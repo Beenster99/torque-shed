@@ -135,6 +135,9 @@ var coffee := {}
 ## The crew's houses and their own bike collections, offers on them and money owed (see
 ## Collection). Sent to the crew on its own when it changes (homes_touched), not with every sync.
 var homes := Collection.empty()
+## Whose helmet visor is up: peer id -> true when flicked up (see RiderGear.flick_visor). Sent
+## to everyone the moment it changes; a player's summary carries it for anyone joining later.
+var visors := {}
 ## The crew's houses or collections changed (HomesView redraws).
 signal homes_changed
 var _homes_dirty := false
@@ -3353,6 +3356,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		if Net.is_online():
 			_emote.rpc(peer, d)
 		return
+	if str(action.get("a", "")) == "visor":
+		# A visor flicked up or down: nothing in the shed changes, everyone's view of the rider does.
+		var up := bool(action.get("up", false))
+		visors[peer] = up
+		if Net.is_online():
+			_visor.rpc(peer, up)
+		return
 	if str(action.get("a", "")).begins_with("board_"):
 		_board_apply(peer, action)
 		return
@@ -4741,6 +4751,11 @@ func _ping(peer: int, d: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _emote(peer: int, d: Dictionary) -> void:
 	emoted.emit(peer, d)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _visor(peer: int, up: bool) -> void:
+	visors[peer] = up
 
 
 func _bump(c: Dictionary, key: String) -> void:
