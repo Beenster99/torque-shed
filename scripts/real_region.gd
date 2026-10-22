@@ -154,6 +154,8 @@ static func _load(region_id: String) -> RealRegion:
 	if rows_t is Array:
 		r.places = rows_t
 	r.terrain = RealTerrain.new(dir, meta)
+	if r.terrain.live:
+		r.terrain.set_buildings(r.buildings)   # (live heights level the ground under them; baked ones were levelled by the baker)
 	return r
 
 
