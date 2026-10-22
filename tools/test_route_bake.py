@@ -235,6 +235,12 @@ class RoadKnotTests(unittest.TestCase):
         pts, _, _ = rb.resample([(0.0, 0.0), (100.0, 0.0)], 4.0, exact=True)
         self.assertTrue(np.allclose(np.hypot(*np.diff(pts, axis=0).T), 4.0))
 
+    def test_a_road_with_no_length_is_its_one_point(self):
+        # Mapped roads whose ends meet (a dot of a road) turned up in the world's cells.
+        pts, _, total = rb.resample([(5.0, 7.0), (5.0, 7.0)], 4.0)
+        self.assertEqual(total, 0.0)
+        self.assertEqual(pts.tolist(), [[5.0, 7.0]])
+
     def test_a_gentle_road_is_left_as_mapped(self):
         xs = np.arange(0.0, 800.0, 10.0)
         zs = 30.0 * np.sin(xs / 120.0)

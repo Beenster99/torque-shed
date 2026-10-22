@@ -23,12 +23,14 @@ Needs numpy and Pillow; the roads need pyarrow (pip install pyarrow). No API key
 import argparse
 import hashlib
 import heapq
+import http.client
 import io
 import json
 import math
 import os
 import struct
 import sys
+import time
 import urllib.request
 
 import numpy as np
@@ -135,6 +137,9 @@ def mercator_pixels(lat, lon, zoom, size=1):
     return x, y
 
 
+FETCH_TRIES = 5
+
+
 def fetch(url, cache_dir):
     """The bytes at `url`, kept under `cache_dir`; None when the server has no such tile."""
     path = None
@@ -143,15 +148,23 @@ def fetch(url, cache_dir):
         if os.path.exists(path):
             with open(path, "rb") as f:
                 return f.read() or None
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            data = r.read()
-    except urllib.error.HTTPError as e:
-        if e.code in (403, 404):
-            data = b""
-        else:
-            raise
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    for attempt in range(FETCH_TRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = r.read()
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 404):
+                data = b""
+                break
+            if e.code < 500 and e.code != 429 or attempt == FETCH_TRIES - 1:
+                raise
+        except (OSError, http.client.HTTPException):
+            # A dropped connection or a short read: tile servers do that now and then, so try again a little later.
+            if attempt == FETCH_TRIES - 1:
+                raise
+        time.sleep(2.0 * 2 ** attempt)
     if path:
         os.makedirs(cache_dir, exist_ok=True)
         with open(path, "wb") as f:
@@ -665,7 +678,8 @@ def resample(pts, step, exact=False):
     if exact:
         s = s[:-1] if len(s) and total - s[-1] < 1e-6 else s
     else:
-        s = np.append(s, total) if total - s[-1] > step * 0.25 else np.append(s[:-1], total)
+        # A road whose ends meet (no length at all) is its one point.
+        s = np.append(s, total) if len(s) and total - s[-1] > step * 0.25 else np.append(s[:-1], total)
     return np.stack([np.interp(s, cum, pts[:, 0]), np.interp(s, cum, pts[:, 1])], axis=1), cum, total
 
 
