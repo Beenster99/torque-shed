@@ -686,6 +686,14 @@ func _run_all() -> void:
 	await _test_lamps_self_cancel()
 	_test_lamps_bindings()
 	await _test_lamps_remote()
+	print("Simon's v0.21.0 round: smooth roads on adventures")
+	_test_smooth_fair()
+	_test_smooth_real()
+	_test_smooth_fork_joins()
+	_test_smooth_made_up()
+	_test_smooth_surface()
+	_test_smooth_land_under()
+	await _test_smooth_ride()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -23183,3 +23191,37 @@ func _test_filter_fairing_caps() -> void:
 
 func _test_filter_in_shed() -> void:
 	await _filters().test_in_shed()
+
+
+# ---------------------------------------------------------------------------- smooth adventure roads (tests/smooth_tests.gd)
+
+func _smooth() -> RefCounted:
+	return load("res://tests/smooth_tests.gd").new(self)
+
+
+func _test_smooth_fair() -> void:
+	_smooth().test_fair()
+
+
+func _test_smooth_real() -> void:
+	_smooth().test_real()
+
+
+func _test_smooth_fork_joins() -> void:
+	_smooth().test_fork_joins()
+
+
+func _test_smooth_made_up() -> void:
+	_smooth().test_made_up()
+
+
+func _test_smooth_surface() -> void:
+	_smooth().test_surface()
+
+
+func _test_smooth_land_under() -> void:
+	_smooth().test_land_under()
+
+
+func _test_smooth_ride() -> void:
+	await _smooth().test_ride()
