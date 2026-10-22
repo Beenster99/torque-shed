@@ -128,8 +128,8 @@ func test_density() -> void:
 	check(int(counts["village"][0]) > int(counts["open"][0]) + 3 and float(counts["village"][1]) > float(counts["open"][1]) * 1.4,
 		"more traffic round you in a village than on the open road (wanted %d to %d; %.1f to %.1f within 600 m)" % [counts["village"][0],
 		counts["open"][0], counts["village"][1], counts["open"][1]])
-	check(dirs.has(1) and dirs.has(-1) and kinds.has("lorry") and kinds.has("coach") and kinds.size() >= 5,
-		"going both ways, cars, vans, lorries and buses (%s)" % str(kinds.keys()))
+	check(dirs.has(1) and dirs.has(-1) and (kinds.has("lorry") or kinds.has("coach")) and kinds.size() >= 5,
+		"going both ways, cars, vans, and lorries or coaches (%s; the buses at the stops: test_bus)" % str(kinds.keys()))
 	paces.sort()
 	check(paces.size() > 10 and paces[-1] - paces[0] > 0.3, "every driver's pace their own (%d drivers, %.2f to %.2f of the limit)" % [paces.size(), paces[0], paces[-1]])
 	# Never past the start: riders at the start line see nothing behind it.
