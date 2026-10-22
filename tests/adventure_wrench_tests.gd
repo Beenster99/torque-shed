@@ -107,7 +107,7 @@ func test_rules() -> void:
 	Shed.bikes[bike]["rider"] = me
 	Shed.crew[me]["riding"] = bike
 	check(Shed.check(me, {"a": "roadside_fault", "kind": "chain_snap"}) != "", "no breakdowns on a normal ride")
-	Shed.request({"a": "adventure_start", "seed": 5, "km": 20.0})
+	Rides.start(20.0, 5)
 	check(Adventure.active(), "an adventure on")
 	check(Shed.check(me, {"a": "roadside_fault", "kind": "warp_drive"}) != "", "only real faults")
 	check(Shed.check(me, {"a": "roadside_tow", "by": 99}).contains("no tow needed"), "a bike that runs fine can't be put on a tow strap")

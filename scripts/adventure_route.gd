@@ -287,7 +287,7 @@ func _plan_forks_real(rows: Array) -> void:
 		if i1 * STEP > length - FORK_END_GAP or s < 600.0 or i1 >= px.size() - 1 or _junction_clash(s, i1 * STEP):
 			continue
 		if not _way_meets_road(row):
-			continue   # it winds round the other way: its heading wouldn't meet the main road's
+			continue   # it turns off or joins at a corner, or winds round the other way: it wouldn't meet the main road
 		var f := forks.size()
 		forks.append({"s": s, "rejoin": i1 * STEP, "i0": i0, "i1": i1, "kinds": row["kinds"], "names": row["names"], "ways": [],
 			"real": row})
@@ -299,16 +299,29 @@ func _plan_forks_real(rows: Array) -> void:
 		meet["rejoin"] = f
 
 
-## Whether a baked other way arrives at the main road's knot i1 heading the way the main road does (not a turn or
-## more different, as one that loops round would).
+## How sharply (radians) the other way may leave the main road at a fork, and join it again: a bend a bike takes in its
+## stride, not a corner turned in a knot.
+const WAY_JOIN := 0.6
+
+
+## Whether a planned other way leaves the main road at knot i0 and arrives at its knot i1 heading about the way the
+## main road does there (not a corner, nor a turn or more different, as one that loops round would).
 func _way_meets_road(row: Dictionary) -> bool:
 	var wr: Dictionary = row["way"]
 	var n := int(wr["n"])
-	var prev := hd[int(row["i0"])]
+	var i0 := int(row["i0"])
+	var i1 := int(row["i1"])
+	var prev := hd[i0]
+	var first := 0.0
+	var last := 0.0
 	for k in n - 1:
 		var sg := atan2(float(wr["x"][k + 1]) - float(wr["x"][k]), -(float(wr["z"][k + 1]) - float(wr["z"][k])))
 		prev = prev + wrapf(sg - prev, -PI, PI)
-	return absf(prev - hd[int(row["i1"])]) <= PI
+		if k == 0:
+			first = absf(wrapf(sg - hd[i0], -PI, PI))
+		if k == n - 2:
+			last = absf(wrapf(sg - hd[i1], -PI, PI))
+	return absf(prev - hd[i1]) <= PI and first <= WAY_JOIN and last <= WAY_JOIN
 
 
 ## Plans the ways at real fork `f`: the main road (the default path's own), and the other way from the pack as a road
@@ -436,24 +449,28 @@ func _adopt_pois() -> void:
 
 
 ## Moves the fuel stations and stops (a village with its rows) to the nearest straight, level stretch of the
-## road, within FIT_REACH, and drops those with none.
+## road, within FIT_REACH, and drops those with none, or that would end up within AdventureStops.CLEAR of another
+## (the ones at real places are placed first, so they're the ones kept).
 func _fit_stops() -> void:
 	var moved := {}   # a stop's planned s -> metres it moves
 	var keep := []
-	for st in sites:
-		var kind := str(st["kind"])
-		if kind == AdventureStops.ROW or not (kind == "fuel" or AdventureStops.KINDS.has(kind)):
-			continue
-		var at := _fit_near(float(st["s"]), ADOPT_FIT if st.has("real") else FIT_REACH)
+	var placed: Array[float] = []
+	var todo := sites.filter(func(st): return str(st["kind"]) == "fuel" or AdventureStops.KINDS.has(str(st["kind"])))
+	todo.sort_custom(func(a, b): return int(a.has("real")) > int(b.has("real")))
+	for st in todo:
+		var at := _fit_near(float(st["s"]), ADOPT_FIT if st.has("real") else FIT_REACH, placed)
 		if at < 0.0 and st.has("real"):
 			# No straight, level stretch by the real place: back to where it was planned, and its made-up name.
 			st["s"] = st["planned_s"]
 			st["name"] = st["planned_name"]
 			st.erase("real")
-			at = _fit_near(float(st["s"]))
+			at = _fit_near(float(st["s"]), FIT_REACH, placed)
+		if at < 0.0:
+			at = _fit_near(float(st["s"]), FIT_REACH * 2.0, placed)   # (a winding, hilly road: look further)
 		if at >= 0.0:
 			moved[float(st["s"])] = at - float(st["s"])
 			keep.append(st)
+			placed.append(at)
 	var out := []
 	for st in sites:
 		var kind := str(st["kind"])
@@ -477,13 +494,14 @@ func _fit_stops() -> void:
 	sites.sort_custom(func(a, b): return float(a["s"]) < float(b["s"]))
 
 
-## The s nearest `s` (within `reach`) where a stop fits, or -1.
-func _fit_near(s: float, reach := FIT_REACH) -> float:
+## The s nearest `s` (within `reach`) where a stop fits, clear of the stops already `placed` there (their s), or -1.
+func _fit_near(s: float, reach := FIT_REACH, placed: Array[float] = []) -> float:
 	var k := 0
 	while k * 40.0 <= reach:
 		for sign: float in ([1.0] if k == 0 else [1.0, -1.0]):
 			var at := snappedf(s + sign * k * 40.0, STEP)
-			if at > 300.0 and at < length - 300.0 and _fit_for_stop(int(round(at / STEP))) and not _near_fork(at):
+			if at > 300.0 and at < length - 300.0 and _fit_for_stop(int(round(at / STEP))) and not _near_fork(at) \
+					and not placed.any(func(q): return absf(q - at) < AdventureStops.CLEAR):
 				return at
 		k += 1
 	return -1.0

@@ -130,7 +130,7 @@ func test_rules() -> void:
 	check(Shed.check(me, {"a": "spare_take", "item": box, "index": 0}).contains("hands are full"), "one thing at a time")
 	Shed.items.erase(mirrors)
 	# Out on an adventure, at the roadside.
-	Shed.request({"a": "adventure_start", "seed": 6, "km": 20.0})
+	Rides.start(20.0, 6)
 	check(Adventure.active(), "an adventure on")
 	Shed.bikes[bike]["rider"] = me
 	Shed.crew[me]["riding"] = bike

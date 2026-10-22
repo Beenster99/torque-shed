@@ -313,9 +313,9 @@ func test_pumps() -> void:
 	var near := 0
 	for p in pumps:
 		var hit := w.locate_local((p as Node3D).global_position)
-		if absf(float(hit["s"]) - s) < 30.0 and float(hit["lat"]) > 0.0 and float(hit["lat"]) < 25.0:
+		if absf(float(hit["s"]) - s) < 30.0 and float(hit["lat"]) * float(fuel["side"]) > 0.0 and absf(float(hit["lat"])) < 25.0:
 			near += 1
-	check(pumps.size() >= 4 and near == 4, "a fuel station %.1f km along with four pumps beside the road (%d found)" % [s / 1000.0, near])
+	check(pumps.size() >= 4 and near == 4, "a fuel station %.1f km along with four pumps beside the road on its side (%d found)" % [s / 1000.0, near])
 	var forecourt := PhysicsRayQueryParameters3D.create((pumps[0] as Node3D).global_position + Vector3(0, 3, 1.4), (pumps[0] as Node3D).global_position + Vector3(0, -3, 1.4), 1)
 	var hit2 := w.get_world_3d().direct_space_state.intersect_ray(forecourt)
 	check(hit2 and str((hit2["collider"] as Object).get_meta("surface", "")) == "tarmac", "with a forecourt to ride onto")
