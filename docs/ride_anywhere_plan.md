@@ -4,224 +4,214 @@ Written 22 October 2026. Replaces stages 5 and 6 of `docs/real_world_plan.md`, w
 still existed and every adventure was a baked single road. Stages 0 to 4 of that plan are built and the game has
 changed shape since, so the remaining steps are redesigned here.
 
+## The goal
+
+The whole world is on the shed TV. The crew moves about the map together, drops pins anywhere, the game plans the
+road, the crew agrees to it, and they ride. There is no "region" the player has to pick, download or know about: a
+place that nobody has ridden before takes a little while to arrive the first time, and that is all. Everyone on the
+ride has the same bytes, and a place ridden once rides again offline.
+
 ## Where we are
 
-- Every adventure is a journey the crew plans on a shed TV (the Route planner channel, `RouteTv`): pins on a real
-  region's map, a style of ride, forks to vote on, the host's Start. Every machine plans the same road from the same
-  pins (`RoutePlanner`, `AdventurePlans`) and a hash proves it. The made-up roads and the magazine are gone.
-- A region is a baked folder (`tools/region_bake.py`): the roads of an area as a graph, the land at three levels, the
-  buildings, places, stops and landmarks beside any road. Two are bundled (Shodoshima, 9 MB zipped; the Yorkshire
-  Dales, 23 MB). `RegionStore` can download a zipped region and check its hash, but nothing calls it and nothing is
-  hosted; the TV shows the first region the game has and there is no way to choose another.
-- The baker is Python: Overture Maps (GeoParquet on S3, read anonymously with pyarrow) for roads, land cover, water,
-  buildings, places and divisions; Mapterhorn tiles (AWS Terrain Tiles as a fallback) for heights. A bake needs the
-  network and takes minutes per region.
-
-## The goal, restated
-
-The crew stands at the shed TV, finds anywhere on Earth, drops pins, and rides it together. The first ride somewhere
-new may wait a little while the place arrives; a place ridden once rides again offline; everyone on the ride has the
-same bytes.
+- Every adventure is a journey planned on a shed TV (the Route planner channel, `RouteTv`): pins on a real region's
+  map, a style of ride, forks to vote on, the host's Start. Every machine plans the same road from the same pins
+  (`RoutePlanner`, `AdventurePlans`) and a hash proves it. The made-up roads and the magazine are gone.
+- A region is a baked folder (`tools/region_bake.py`): the roads of a box as a graph, the land at three levels, the
+  buildings, places, stops and landmarks beside any road. Two are bundled (Shodoshima, 9 MB zipped; the Dales,
+  23 MB). The TV shows the first region the game has; `RegionStore` can download a zipped region and check its
+  hash, but nothing calls it and nothing is hosted.
+- The baker is Python: Overture Maps (GeoParquet on S3, read anonymously with pyarrow) for roads, land cover,
+  water, buildings, places and divisions; Mapterhorn tiles (AWS Terrain Tiles as a fallback) for heights. A bake
+  needs the network and takes minutes for a region.
 
 ## Facts that shape the design
 
 - **Heights are the bytes.** Of the Dales' 36 MB, 35 MB is height tiles and 1.2 MB is everything else (4,800 roads,
-  12,000 buildings, 331 stops, 208 landmarks, 78 places). Roughly 50 KB per km² with heights, 2.5 KB per km² without.
-- **Mapterhorn is made for fetching.** It serves Terrarium height tiles over HTTP on a CDN
-  (`tiles.mapterhorn.com/{z}/{x}/{y}.webp`, 512 px, z0 to z17), and the web-mercator pyramid is already a
-  fine/coarse/ridge scheme. It states no usage limits; we would ask, cache on disk, back off on 429 and keep the
-  public-domain AWS tiles as the fallback.
+  12,000 buildings, 331 stops, 208 landmarks, 78 places). About 50 KB per km².
+- **A bake is minutes, not seconds.** Each Overture query scans partitioned parquet on S3, and the heights are a
+  few hundred tile fetches. A fresh place cannot arrive in the seconds a ride needs; it has to be made while the
+  crew is still planning, and kept once made.
 - **Overture's own tiles are not for us.** Its PMTiles are "for data inspection only... don't use these tiles in
   production" ([Overture cloud sources](https://docs.overturemaps.org/getting-data/cloud-sources/)). Roads,
-  buildings and places have to come from the parquet, through our baker, or from tiles we cut ourselves.
-- **A bake is minutes, not seconds.** Each Overture query scans partitioned parquet on S3. Nothing we do makes a
-  fresh place arrive in the seconds a ride-along stream needs; it has to be baked ahead, or while the crew plans.
-- **Static files are cheap; services are not free.** Cloudflare R2 costs about $0.015 per GB a month with no egress
-  charge: the whole UK with heights (about 12 GB) is under a pound a month. GitHub release assets are free for a
-  handful of regions. A compute service costs money and attention whenever it runs.
+  buildings and places come from the parquet through our baker.
+- **The planet cannot be baked blind.** At 50 KB per km² the world's roads and land are several terabytes, and most
+  of it would never be ridden. The world has to be baked where people point.
+- **Reads of Overture's bucket are free from `us-west-2`**, where it lives. Anywhere else pays egress for every scan.
 
 ## The design
 
-### Cells, not regions
+### Cells: the unit nobody sees
 
-The world is cut into a fixed grid of **cells**, 0.25° of latitude by 0.25° of longitude (28 km square at the
+Inside the game the world is a fixed grid of **cells**, 0.25° of latitude by 0.25° of longitude (28 km square at the
 equator, 28 by 16 km in the Dales). A cell is what a region is today (`region.json`, `roads.json`, tiles at three
 levels, buildings, places, stops, landmarks), baked by the same baker for the cell's box, with these changes:
 
-- A road that crosses the cell's edge is cut there, with a node on the boundary. The matching node in the next cell
-  has the same geographic position, so cells stitch by position.
-- Everything is stored in geographic coordinates (lat, lon as fixed-point integers), not a frame of the cell's own, so
-  cells can be projected into any frame. Height tiles stay rasters in the cell's local frame, as now.
-- The index names each cell by its grid position, hash, bytes, Overture release and baker version. A country is a few
-  hundred cells (the UK about 530 with roads in them; Shikoku about 50).
+- A road that crosses the cell's edge is cut there with a node on the boundary; the matching node in the next cell has
+  the same geographic position, so cells stitch by position.
+- Everything is stored in geographic coordinates (lat, lon as fixed-point integers), not a frame of the cell's own,
+  so a cell can be projected into any journey's frame. Height tiles stay rasters in the cell's local frame.
+- A cell is named by its grid position and carries its Overture release, baker version and content hash.
 
-The two bundled regions are re-cut into cells so there is one format and one code path, and the tests ride cells.
+The player never meets a cell. The two bundled regions are re-cut into cells so there is one format and one code
+path, and the game plays Shodoshima and the Dales offline out of the box.
+
+### The bake service
+
+A small web service in `us-west-2` runs the Python baker on request: `GET /cell/<lat>/<lon>` returns the cell when it
+is in the cache, else starts a bake and answers "making it, about N minutes" until it is done. Baked cells go to an
+object store keyed by grid position and release, and are served from there (through a CDN) ever after: the second
+crew to ride the Peak District waits for nothing.
+
+The service is stateless apart from its cache and queue; one container does it, scaled out if ever needed. Its
+release is pinned: every cell served between releases is from the same Overture data, so neighbours stitch. When a
+new release is taken up, cells are rebaked as they are next asked for (the old ones stay valid for saved adventures,
+which name their cells by hash).
+
+Pre-baking is only warming the cache: the UK, Japan and wherever else is run through the service before launch so
+the places people go first are instant. It changes nothing in the game.
 
 ### A journey has its own frame
 
 Today the route frame is the region's. From here the planner makes a frame for each journey (metres from the first
-pin's cell centre, +x east, -z north, scaled by the cosine of its latitude: the baker's `Frame`), and projects the
-cells the journey touches into it on load: `RealRegion.stitch(cells, frame)` returns one `RealRegion`, so
-`RoutePlanner`, `RealPack` and everything downstream are unchanged. `RealTerrain` holds each cell's tiles with that
-cell's frame and converts a sample point through it; the conversion is a handful of multiplications, on the worker
-threads that already sample it.
+pin, +x east, -z north, scaled by the cosine of its latitude: the baker's `Frame`), and projects the cells the
+journey touches into it on load: `RealRegion.stitch(cells, frame)` returns one `RealRegion`, so `RoutePlanner`,
+`RealPack` and everything downstream are unchanged. `RealTerrain` holds each cell's tiles with that cell's frame
+and converts a sample point through it.
 
-Which cells a journey needs: those under the pins' bounding box plus a margin of one cell, planned, then any cell the
-planned road enters that was not loaded, then planned again (two rounds settle it). The road's run-out and forks
-stay within the loaded set.
+Which cells a journey needs: those under the pins' bounding box plus a margin of one cell, planned; then any cell the
+planned road enters that was not loaded, and planned again (two rounds settle it). A journey far longer than a cell
+is fine: the Dales to the coast is a dozen cells, fetched before the ride, not during it.
 
-### Cells arrive as static files
+### The TV: the world
 
-Cells are hosted as plain files on an object store (R2 recommended; GitHub release assets for the first few), named
-by grid position and content hash, with one index file per release. There is no service: the game fetches
-`cells/<release>/<lat>_<lon>-<hash>.zip`, checks the hash, and unpacks it into `user://cells/`. `RegionStore` grows
-into `CellStore`: a queue of fetches with progress, a least-recently-used cap (1 GB by default; the cells of a saved
-adventure are never evicted; a settings button clears the rest).
+The Route planner channel becomes a map of the world:
 
-**Pre-baking a country** is a one-off: the baker runs over every cell of a box, in parallel, and uploads. A country
-is a day or two of a single machine's time. The UK, then the areas the crew asks for, then wherever anyone wants, in
-the order people ask. Shodoshima and the Dales stay bundled so the game plays offline out of the box.
+- **The globe down to the county**: a basemap bundled with the game from Natural Earth (public domain: coastlines,
+  countries, rivers, lakes; a few MB simplified), the game's own place index cut from Overture divisions (towns the
+  world over with name, country and position: about 2 MB) for search and labels, and a sketch of the world's main
+  roads (motorways, trunk and primary roads, baked once from Overture: a few hundred MB hosted, fetched as tiles) so
+  the map reads as a map between the county and the cell.
+- **Close in**: the cell view is today's region view, with every road, place and stop, the planned road, pins and
+  forks. As the view closes in on somewhere, the game asks the service for the cells in view; cached ones appear in a
+  second or two, fresh ones show "surveying this area, about 4 minutes" and fill in when done. Pins can be dropped on
+  the sketch of the main roads straight away and snap onto the real roads when the cell arrives.
+- **Moving about together**: the view (centre and zoom) is part of the shared journey state, so the crew looks at the
+  same map; anyone can move it and anyone can pin, as today. Search, zoom and move are buttons for the touch cursor,
+  as now, and a paste box takes a map link's coordinates (a Google Maps share link gives its coordinates only; the
+  road is always ours).
 
-**Streaming** is at the cell level: a long journey downloads its cells before Start (the ready-check below), and the
-ride streams chunks from them as it does today. A ride never waits on the network.
+### Consensus
 
-### Co-op: the ready-check
+Pins are already anyone's, and forks are already voted on the road. Agreeing the route works the same way: each
+rider on the TV has an **"I'm in"** mark beside their name for the journey as it stands; moving a pin clears
+everyone's. Start lights up when everyone is in (the host can start with a majority if someone has wandered off),
+and Start also runs the **ready-check**: every machine fetches any cell of the journey it lacks, the TV shows who is
+ready, and the ride begins when everyone is. The road is planned on every machine from the same cells and pins, and
+the hash check stays as it is. A machine that cannot fetch (offline) says so on the TV.
 
-The adventure state carries the journey's cell list (grid positions, release, hashes). When the host presses Start,
-every machine that lacks a cell fetches it; the TV shows who is ready; the ride begins when everyone is. Everyone
-plans the same road from the same cells and the same pins, and the hash check stays as it is. A machine that cannot
-fetch (offline, or the host's cells are a release it cannot get) says so on the TV and the host decides.
+### Kept and shared
 
-### The TV at world scale
+Cells live under `user://cells/` with a least-recently-used cap (1 GB by default; a saved adventure's cells are never
+evicted; a settings button clears the rest). The Route TV lists the crew's past journeys from the diary to pin again
+with one press, and a journey is a **code** (release, pins, style) the crew can paste to each other.
 
-The Route planner channel gets a world view above the cell view:
+### Heights live from Mapterhorn (kept open)
 
-- A **basemap** from Natural Earth (public domain: coastlines, countries, lakes at 1:10m, a few MB simplified) and a
-  bundled **place index** cut from Overture divisions (towns of some size the world over, name, country and position:
-  about 2 MB), so the crew can search "Settle" or "Takamatsu" with nothing downloaded.
-- Search or step to a place, and the TV shows which cells round it are **available** (in the index), **installed**
-  (on this machine) or **not baked yet**. A "Get this area" button fetches the available ones; pins can only go on
-  installed cells, and snap to the nearest road as now.
-- Zoomed in, the cell view is today's region view: roads, places, the planned road, pins, forks.
-
-A paste box for a map link (a Google Maps share link gives only its coordinates; the road is always ours) is a small
-addition once the world view exists.
-
-### Keeping journeys
-
-With the magazine gone, "the feed" is simply the crew's own journeys: the Route TV lists journeys the crew has
-ridden (from the diary, which already keeps the route and the pins), and any of them can be pinned again with one
-press. A journey is also a **code**: the cell release, the pins and the style packed into a short string the crew
-can paste to each other or post, so a journey someone else planned can be ridden exactly.
-
-### Heights live from Mapterhorn (the step after, if wanted)
-
-If the game fetched heights itself, straight from Mapterhorn's pyramid (fine from z15, coarse from z12, the skyline
-from z9, cached on disk), our cells would shrink to the 2.5 KB per km² of roads and buildings, and the whole world's
-vector cells would be about 400 GB: still too much to pre-bake blind, but a country would be 600 MB and any area the
-crew asked for could be baked in minutes rather than hours. It also makes heights available anywhere on Earth today.
-
-The cost is determinism: Mapterhorn updates tiles as national sources arrive, so two machines can hold different
-heights for the same hill, and the road's own heights come from the land. The fix is that the host's plan carries the
-planned road's knot heights (about 30 KB for a 60 km ride) and every machine lays the road on those; the land beside
-it may differ by centimetres between machines, which only off-road crashes would notice. This step is worth doing
-only once pre-baked countries are not enough; it is designed here so the cell format leaves room for it (cells
-without height tiles are valid), and not scheduled.
+The game could fetch heights itself from Mapterhorn's tile pyramid (fine from z15, coarse from z12, the skyline from
+z9), which would cut a cell to the 2.5 KB per km² of roads and buildings and make a fresh bake much faster. The cost
+is determinism (Mapterhorn updates tiles, so two machines could hold different land; the host would have to send the
+road's knot heights with the plan, about 30 KB). With the service baking heights into cached cells, everyone gets the
+same bytes for free, so this is not built; the cell format leaves room for it (a cell without height tiles is valid).
 
 ## The steps
 
-Each step is a playable change on its own and lands as one or two pull requests.
+Each step is a playable change on its own and lands as one or two pull requests. Sizes are guesses to plan around.
 
-### Step 1: choose a region, download a region
+### Step 1: cells, and a journey across them
 
-**Plays.** The Route TV lists the regions the game knows of; one press downloads one that isn't installed, with
-progress; the crew's ready-check holds Start until everyone has the region. Six to ten regions people would want to
-ride (Snowdonia, the Lake District, the Peak District, Skye, the Cairngorms, Shikoku's coast, the Noto peninsula...)
-are baked with today's baker and hosted as release assets.
-
-**Builds.** A region picker on the TV; `RegionStore` wired to it with progress; the ready-check in the adventure
-state and on the TV; `tools/region_zip.py` writing the hosted index; a `tests/mp_*` scene where the client lacks
-the region and gets it from a local file server before the ride.
-
-**Size.** About a week, plus bake time.
-
-### Step 2: cells
-
-**Plays.** The same, but a journey can cross from one region into the next: the Dales into the Lake District.
+**Plays.** As today, but a journey can cross from one baked area into the next, and the two bundled regions are
+cells like any other.
 
 **Builds.** The baker cuts cells (boundary nodes, geographic coordinates, the cell index); `RealRegion.stitch` and
-the journey frame; `RealTerrain` with per-cell frames; the two bundled regions re-cut into cells; `CellStore` with
-the cache cap; the planner's two rounds of cell loading; the tests on cells. Measure load time: the Dales' 36 MB of
-JSON takes seconds to parse, and a journey may load eight cells, so `roads.json` and `buildings.json` likely move to
-a binary form in this step.
+the journey frame; `RealTerrain` with per-cell frames; the bundled regions re-cut; the planner's two rounds of cell
+loading; the tests on cells. Measure load time: the Dales' 36 MB of JSON takes seconds to parse and a journey may
+load a dozen cells, so `roads.json` and `buildings.json` likely move to a binary form here.
 
 **Size.** About three weeks.
 
-### Step 3: the world on the TV, and a country of cells
+### Step 2: the service, and the ready-check
 
-**Plays.** Search for any town in the UK, get the area, pin, ride.
+**Plays.** A cell the game lacks arrives from the service. The host's Start waits until everyone has the journey's
+cells, with progress on the TV.
 
-**Builds.** The world view (basemap, place index, cell availability, Get this area); the UK pre-baked to R2 with
-`tools/cells_bake.py` driving `region_bake.py` over a box in parallel; the index per release; credits generated from
-the cells a journey used.
+**Builds.** The service (the baker in a container, a queue, the cache bucket, the "making it" reply); `CellStore`
+in the game (fetch queue, hash check, progress, the cache cap); the ready-check in the adventure state and on the TV;
+a two-player test where the client lacks a cell and gets it from a local file server standing in for the service;
+the UK warmed into the cache.
 
-**Size.** About three weeks, plus a day or two of baking.
+**Size.** About three weeks, plus setting up the hosting.
 
-### Step 4: real roads that look right
+### Step 3: the world on the TV
 
-The polish the old plan left in stages 2 and 3, now that there is one renderer to polish:
+**Plays.** Search for Settle or Takamatsu, or move the map there; the crew sees the same view; close in and the
+roads arrive; pin anywhere.
 
-- Bridges and tunnels from the road flags: a river valley gets a bridge, not a cutting (today the road is cut into
-  the land everywhere).
+**Builds.** The basemap and place index bundled; the main-roads sketch baked and hosted; the shared view in the
+journey state; cells fetched for the view with the "surveying" state; the paste box; credits generated from the cells
+a journey used.
+
+**Size.** About three weeks.
+
+### Step 4: consensus, and journeys kept
+
+**Plays.** "I'm in" marks, Start when everyone is in; past journeys to ride again; journey codes.
+
+**Size.** About a week.
+
+### Step 5: real roads that look right
+
+The polish the old plan left in stages 2 and 3, now that there is one renderer to polish, interleaved with the steps
+above as rides turn up the ugliest cases:
+
+- Bridges and tunnels from the road flags: a river valley gets a bridge, not a cutting.
 - Water for rivers and lakes beside the road (the sea exists).
 - The planner's cusp at a pin (queued).
 - Trees: species and height from the cover and canopy data, and a better look.
 
-Interleaved with steps 2 and 3 as rides turn up the ugliest cases. About three weeks in all.
-
-### Step 5: journeys kept and shared
-
-**Plays.** The Route TV lists the crew's past journeys to ride again; a journey can be shared as a code.
-
-**Builds.** The journeys list from the diary; journey codes; a paste box for a code or a map link.
-
-**Size.** About a week.
-
-### Step 6 (optional): the rest of the world
-
-Either more countries pre-baked as people ask (no new code), or heights live from Mapterhorn and vector cells baked
-on request by a small service in `us-west-2` (where Overture's bucket is, so its reads are free). Decide when step 3
-is in people's hands and we know where they want to ride.
+**Size.** About three weeks in all.
 
 ## What is dropped from the old plan
 
-- **The magazine feed** (stage 6): there is no magazine. Journeys kept and shared (step 5) is what remains of it.
-- **The hand-edit overlay and the standalone viewer** (stage 2): hand edits do not scale to anywhere on Earth. In their
-  place the baker's report becomes warnings the TV can show for a cell ("thin height data here", "no fuel for 60 km").
-- **The staged, cached pipeline with budgets** (stage 2): the per-chunk budgets are enforced in the game's tests
-  instead (`test_budget`), and a cell bake is already cached by content hash.
-- **Traffic lights from data**: the data has none; the game keeps giving a town crossroads its lights.
+- **Regions as a thing**: the picker, the index of named regions, "download the Dales". Cells are internal.
+- **The magazine feed**: there is no magazine. Past journeys and journey codes are what remains of it.
+- **The hand-edit overlay and the standalone viewer**: hand edits do not scale to anywhere on Earth. The baker's
+  report becomes warnings the TV can show for a cell ("thin height data here", "no fuel for 60 km").
+- **The staged, cached pipeline with budgets**: per-chunk budgets are enforced in the game's tests (`test_budget`),
+  and the service's cache is the pipeline's cache.
+- **Traffic lights from data**: the data has none; a town crossroads keeps its lights.
 
 ## Decisions
 
 Recommended, and taken unless you say otherwise:
 
-- Cells of 0.25°, hosted as static files; no bake service until step 6 if ever.
-- Heights stay baked in the cells (deterministic, offline, the code we have); heights live from Mapterhorn is kept
-  open as the planet-scale route, not built now.
-- Cloudflare R2 for cells (free egress; a country for pennies a month); GitHub release assets for step 1's regions.
+- Cells of 0.25°, an internal unit only.
+- A bake service in AWS `us-west-2` from step 2 (free reads of Overture's bucket), its cache served through a CDN.
+  One container, a queue, an object store: the smallest thing that works.
+- Heights stay baked in cells; heights live from Mapterhorn stays open for later.
 
 Yours to make:
 
-- **Which regions for step 1**, and **which country first** for step 3 (the plan says the UK).
-- **Hosting account**: an R2 bucket needs a Cloudflare account in your name; I can set out the steps.
+- **Hosting account.** The service needs an AWS account in your name (or another host, paying Overture egress). I can
+  set out the steps and the expected monthly cost once we have measured a cell bake.
+- **Which places to warm first.** The plan says the UK and Japan.
 
 ## Risks
 
 | Risk | Where it is settled |
 | --- | --- |
-| Cell load time and memory with several cells of JSON | step 2, measured first; binary files if needed |
-| Cells baked from different Overture releases don't stitch | the index is per release; a journey's cells are one release |
-| Mapterhorn or GSI terms for redistributing heights (Japan) | before the first hosted Japanese cells, as before |
-| Bake time per cell (minutes) makes a country days | step 3, run in parallel on one machine; measured on the first ten cells |
+| Cell load time and memory with a dozen cells of JSON | step 1, measured first; binary files if needed |
+| A fresh bake takes longer than a crew will wait | step 2, measured on the first ten cells; warm the cache; bake the cells in view while they plan |
+| Service cost at the bake's CPU and memory | step 2, measured; the cache means each cell is baked once per release |
+| Cells from different releases don't stitch | the service pins one release; a journey's cells are one release |
+| Mapterhorn or GSI terms for redistributing heights (Japan) | before Japanese cells are warmed, as before |
 | A thin place (no lidar, few roads) rides badly | the cell's warnings on the TV; the planner avoids it where it can |
