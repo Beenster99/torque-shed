@@ -22,6 +22,8 @@ func _ready() -> void:
 	Settings.player_name = "Dest %s" % role
 	AdventureDest.album_path = "user://zz_mp_album_%s.json" % role
 	DirAccess.remove_absolute(AdventureDest.album_path)
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	Rides.pack(KM)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame

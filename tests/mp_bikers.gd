@@ -11,9 +11,9 @@ extends Node
 const Rides := preload("res://tests/rides.gd")
 
 const SEED := 321
-const KM := 50.0
-const CLIENT_S := 6000.0
-const HOST_S := 5650.0
+const KM := 40.0
+const CLIENT_S := 3000.0   # (Shodoshima from 2.6 to 4.6 km: no bend a biker slows under PACE for)
+const HOST_S := 2650.0
 const PACE := 14.0
 
 var role := "host"
@@ -27,6 +27,8 @@ func _ready() -> void:
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
 	Settings.player_name = "Bikers %s" % role
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	Rides.pack(KM)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame

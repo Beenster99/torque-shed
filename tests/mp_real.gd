@@ -5,7 +5,10 @@ extends Node
 ## (its hash). At the first fork the client votes for the other way and the host picks it, and both
 ## must have the road built along it. Past the fork each must see the other at the right spot on the
 ## road to within a few centimetres (the path is the other way's, a different length from the main
-## road's). Then the client rides to the finish: both must arrive at the destination. The host ends it.
+## road's). The host takes the main road at the other forks; both sleep at an inn along it, then the client rides to
+## the finish: both must arrive at the destination. The host ends it.
+
+const Rides := preload("res://tests/rides.gd")
 
 const REGION := "dales"
 const SEED := 4204
@@ -21,6 +24,9 @@ func _ready() -> void:
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
 	Settings.player_name = "Real %s" % role
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	var plan := AdventurePlans.tour(REGION)
+	var pack := AdventurePlans.pack_for(plan)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
@@ -29,8 +35,6 @@ func _ready() -> void:
 	else:
 		main._join("127.0.0.1")
 	var trip: AdventureTrip = main.trip
-	var plan := AdventurePlans.tour(REGION)
-	var pack := AdventurePlans.pack_for(plan)
 	var ok_start := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
 			Shed.request({"a": "adventure_start", "plan": plan, "seed": SEED, "title": "Round the Dales"})
@@ -80,9 +84,17 @@ func _ready() -> void:
 		await _until(func():
 			_hold(trip, holder_s, -1.5 if role == "host" else 1.0)
 			return Time.get_ticks_msec() > stay, 10.0)
+	# The rest of the forks: the host takes the main road at each, so the road's built on to the end (the inn and the finish
+	# are past them).
+	var decided := false
+	if seen_ok and trip.on_trip():
+		if role == "host":
+			await Rides.take_main_roads(trip)
+		decided = await _until(func(): return trip.world != null and trip.world.route.decided.size() == trip.world.route.forks.size(), 20.0)
+		print("MP real note %s: the other forks decided %s (%s)" % [role, decided, str(trip.world.route.choices) if trip.world else ""])
 	# The night stop: both get off at the real inn's room, the host calls it a night, both wake rested in the morning.
 	var slept := false
-	if seen_ok and trip.on_trip():
+	if decided and trip.on_trip():
 		slept = await _night_stop(trip)
 	# The client rides to the finish; both arrive at the set piece.
 	var arrived := false
@@ -155,10 +167,10 @@ func _night_stop(trip: AdventureTrip) -> bool:
 		_hold(trip, my_s, -1.0)
 		holder[0] = _beds_near(trip, s)
 		return (holder[0] as Array).size() >= 2, 40.0)
-	var bed := (holder[0] as Array)[0 if role == "host" else 1] as Node3D   # a room each
 	print("MP real note %s: the %s '%s' at %.0f m, its bed found %s" % [role, inn["kind"], inn["name"], s, found])
 	if not found:
 		return false
+	var bed := (holder[0] as Array)[0 if role == "host" else 1] as Node3D   # a room each
 	var view: AdventureNeedsView = trip.needs
 	var bike_id := Shed.riding(Shed.me())
 	await _until(func(): return main.bike != null and Time.get_ticks_msec() - main._mounted_at > 800, 5.0)

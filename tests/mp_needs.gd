@@ -25,6 +25,8 @@ func _ready() -> void:
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
 	Settings.player_name = "Needs %s" % role
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	Rides.pack(KM)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame

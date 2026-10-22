@@ -674,12 +674,16 @@ func grade_at_s(s: float) -> float:
 
 ## The nearest point of the road to route-frame (x, z): {i (knot before it), s, lat (+ right of
 ## the centre line), d (distance off the centre line)}. `hint` (a knot index) searches round it
-## first; -1 or a miss falls back to the grid. Empty when there's no road within 600 m.
+## first; -1 or a miss falls back to the grid. Empty when there's no road within 600 m. Never past a fork still open:
+## there's no road there yet (and a tour that ends where it began, on the road it set off along, would otherwise
+## find a bike stood at the start at the end).
 func locate(x: float, z: float, hint := -1) -> Dictionary:
 	var best := -1
 	var best_d := INF
+	var end := stream_end()
+	var n := px.size() if end == INF else mini(px.size(), int(end / STEP) + 2)
 	if hint >= 0:
-		for i in range(maxi(0, hint - 80), mini(px.size(), hint + 80)):
+		for i in range(maxi(0, hint - 80), mini(n, hint + 80)):
 			var d := (px[i] - x) * (px[i] - x) + (pz[i] - z) * (pz[i] - z)
 			if d < best_d:
 				best_d = d
@@ -694,6 +698,8 @@ func locate(x: float, z: float, hint := -1) -> Dictionary:
 					if maxi(absi(gx - cx), absi(gz - cz)) != r:
 						continue
 					for i in _grid.get(Vector2i(gx, gz), PackedInt32Array()):
+						if i >= n:
+							continue
 						var d := (px[i] - x) * (px[i] - x) + (pz[i] - z) * (pz[i] - z)
 						if d < best_d:
 							best_d = d

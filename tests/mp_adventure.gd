@@ -1,23 +1,25 @@
 extends Node
 ## Two-process co-op check of an adventure ride, run by tests/mp_test.sh after the shed's own: a
 ## host and a client start the real game, the host starts an adventure, and both must load it
-## and be on a bike at the start, seeing each other there. Then each skips 30 km and more down
-## the road (the host to 30 km, the client 700 m further on), which moves both worlds' floating
+## and be on a bike at the start, seeing each other there. At the first fork the client votes for the other way and the
+## host picks the main road, and both build it. Then each skips 20 km and more down the road, past the fork (the host to
+## 20 km, the client 700 m further on), which moves both worlds' floating
 ## origins, to different places: each must still see the other at the right spot on the road,
 ## to within a few centimetres, and again after the client rides its origin on once more. Out
 ## there both must see the same traffic (AdventureTraffic: the same vehicles at the same places
 ## along the road, each drawn where it should be in its own frame). Each must say how far along
-## the road the other is (the host "1.6 km ahead", the client "1.6 km behind"), and with both
+## the road the other is (the host "4.0 km ahead", the client "4.0 km behind"), and with both
 ## menus up (the game doesn't pause in co-op) neither bike may move, on either screen.
 ## Finally the host ends the adventure and both must be back at the shed, off their bikes.
 
 const Rides := preload("res://tests/rides.gd")
 
 const SEED := 321
-const KM := 50.0
-const HOST_S := 30000.0
-const CLIENT_S := 30700.0
-const CLIENT_ON := 900.0
+## Shodoshima's tour as far as Obe (42.6 km): its first fork is 8.8 to 12 km in, its second not till 29.8 km.
+const KM := 40.0
+const HOST_S := 20000.0
+const CLIENT_S := 20700.0
+const CLIENT_ON := 3300.0   # (to 24 km: 1.3 km off as the crow flies, so its origin moves)
 
 var role := "host"
 var main: Node
@@ -30,6 +32,8 @@ func _ready() -> void:
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
 	Settings.player_name = "Adv %s" % role
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	Rides.pack(KM)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
@@ -51,7 +55,7 @@ func _ready() -> void:
 			print("MP adv note %s: the other's bike is at %s, %.1f m along; mine at %s" % [role, _remote_bike().global_position,
 				trip.world.distance_of(_remote_bike().global_position, "check"), main.bike.global_position])
 	print("MP adv note %s: on the adventure %s, the other's bike seen at the start %s" % [role, ok_start, start_seen])
-	# Out past 30 km: both origins move, each to its own place.
+	# Out past 20 km: both origins move, each to its own place.
 	var mine := HOST_S if role == "host" else CLIENT_S
 	var theirs := CLIENT_S if role == "host" else HOST_S
 	var my_lat := -1.5 if role == "host" else 1.0
@@ -66,8 +70,8 @@ func _ready() -> void:
 		# Give the other side time to see us at the start too before setting off.
 		var wait_until := Time.get_ticks_msec() + 4000
 		await _until(func(): return Time.get_ticks_msec() > wait_until, 5.0)
-	# The first fork (22 km in): the client votes B, everyone sees it, the host picks C, and both
-	# roads are built along C (the 30 km spots below are on C and just past it).
+	# The first fork: the client votes for the other way, everyone sees it, the host picks the main road, and both
+	# roads are built along it (the 20 km spots below are past it).
 	var fork_ok := false
 	if start_seen and trip.on_trip():
 		var other := 0
@@ -78,11 +82,12 @@ func _ready() -> void:
 			Shed.request({"a": "adventure_vote", "fork": 0, "way": 1})
 		var seen_vote := await _until(func():
 			if role == "host" and int(AdventureForks.votes_of(0).get(other, -1)) == 1 and AdventureForks.pick_of(0) < 0:
-				Shed.request({"a": "adventure_vote", "fork": 0, "way": 2})
-			return int(AdventureForks.votes_of(0).get(1 if role == "client" else other, -1)) >= 1, 15.0)
-		var built := await _until(func(): return trip.world != null and trip.world.route.decided.has(0) and int(trip.world.route.choices[0]) == 2, 15.0)
+				Shed.request({"a": "adventure_vote", "fork": 0, "way": 0})
+			var v := AdventureForks.votes_of(0)
+			return int(v.get(other if role == "host" else Shed.me(), -1)) == 1 and int(v.get(1, -1)) == 0, 15.0)
+		var built := await _until(func(): return trip.world != null and trip.world.route.decided.has(0) and int(trip.world.route.choices[0]) == 0, 15.0)
 		var votes := AdventureForks.votes_of(0)
-		fork_ok = seen_vote and built and int(votes.get(other if role == "host" else Shed.me(), -1)) == 1 and int(votes.get(1, -1)) == 2
+		fork_ok = seen_vote and built and AdventureForks.pick_of(0) == 0
 		print("MP adv note %s: votes at the fork %s, pick %d, my road along way %d" % [role, str(votes), AdventureForks.pick_of(0),
 			int(trip.world.route.choices.get(0, -1)) if trip.world else -1])
 	if start_seen and trip.on_trip():
@@ -113,7 +118,7 @@ func _ready() -> void:
 		print("MP adv note %s: after the client rode on, origin %s; the other seen off by %.3f m along, %.3f m across" % [role, trip.world.origin if trip.world else Vector3.ZERO, err[0].x, err[0].y])
 		if again_ok:
 			friends_ok = await _friends_check(trip, mine, expect, my_lat)
-			menu_ok = await _menu_check(trip)
+			menu_ok = await _menu_check(trip, mine, my_lat)
 	# Home: the host ends it (once the client has had time to check, too).
 	var asked := [false]
 	var end_at := Time.get_ticks_msec() + 3000
@@ -129,16 +134,16 @@ func _ready() -> void:
 		await get_tree().physics_frame
 		if role == "client" and not main.in_session:
 			break
-	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, voted at the fork and both took the host's pick=%s, seen 30 km out after the origins moved=%s, both see the same traffic there=%s, and after another shift=%s, how far ahead or behind the other is along the road=%s, held still with the menu up=%s, back at the shed=%s" % [
+	print("MP adv %s %s: both on the adventure=%s, seen at the start=%s, voted at the fork and both took the host's pick=%s, seen 20 km out after the origins moved=%s, both see the same traffic there=%s, and after another shift=%s, how far ahead or behind the other is along the road=%s, held still with the menu up=%s, back at the shed=%s" % [
 		"PASS" if ok else "FAIL", role, ok_start, start_seen, fork_ok, far_ok, traffic_ok, again_ok, friends_ok, menu_ok, home_ok])
 	get_tree().quit(0 if ok else 1)
 
 
 # ---------------------------------------------------------------------------- the crew, the menu
 
-## How far the other is along the road (AdventureTrip.friends): the client 1.6 km on from the
-## host, so the host's HUD, sat nav and paper map say "Adv client 1.6 km ahead", the client's
-## "Adv host 1.6 km behind".
+## How far the other is along the road (AdventureTrip.friends): the client 4 km on from the
+## host, so the host's HUD, sat nav and paper map say "Adv client 4.0 km ahead", the client's
+## "Adv host 4.0 km behind".
 func _friends_check(trip: AdventureTrip, mine: float, theirs: float, lat: float) -> bool:
 	var want := "%s %.1f km %s" % ["Adv client" if role == "host" else "Adv host", absf(theirs - mine) / 1000.0, "ahead" if theirs > mine else "behind"]
 	var note := [""]
@@ -159,26 +164,24 @@ func _friends_check(trip: AdventureTrip, mine: float, theirs: float, lat: float)
 
 ## The menu up, out on the road: the game doesn't pause in co-op, and the bike mustn't roll. Both
 ## open it at once and stand there with it up: neither bike moves, on either screen.
-func _menu_check(trip: AdventureTrip) -> bool:
+func _menu_check(trip: AdventureTrip, s: float, lat: float) -> bool:
 	if not trip.on_trip() or main.bike == null:
 		return false
-	# Let the bikes settle first, and both get here (the client's on later from its own checks).
+	# Let the bikes settle first, and both get here (the client's on later from its own checks), still held where we
+	# stand: left to itself a bike can roll back down a hill, and the other is still looking for it there.
 	var settle := Time.get_ticks_msec() + 3000
-	await _until(func(): return Time.get_ticks_msec() > settle, 4.0)
+	await _until(func():
+		_hold(trip, s, lat)
+		return Time.get_ticks_msec() > settle, 4.0)
 	main.menu.show()
 	await _until(func(): return main.bike != null and main.bike.freeze, 3.0)
 	var mine: Vector3 = main.bike.global_position
-	# The other opens theirs when they get here: wait till their bike's stopped settling too.
-	var last := [Vector3.INF]
-	var calm_since := [Time.get_ticks_msec()]
-	await _until(func():
-		var b := _remote_bike()
-		if b == null:
-			return false
-		if b.global_position.distance_to(last[0]) > 0.005:
-			calm_since[0] = Time.get_ticks_msec()
-		last[0] = b.global_position
-		return Time.get_ticks_msec() - calm_since[0] > 1000, 10.0)
+	# The other opens theirs when they get here: wait till they say their bike's held, and a moment more for it to
+	# come over the network.
+	_menu_up_from.rpc()
+	await _until(func(): return _other_menu_up, 20.0)
+	var seen_at := Time.get_ticks_msec() + 1000
+	await _until(func(): return Time.get_ticks_msec() > seen_at, 2.0)
 	var rb := _remote_bike()
 	var theirs: Vector3 = rb.global_position if rb else Vector3.INF
 	var until := Time.get_ticks_msec() + 4000
@@ -186,6 +189,9 @@ func _menu_check(trip: AdventureTrip) -> bool:
 	var moved: float = main.bike.global_position.distance_to(mine) if main.bike else INF
 	rb = _remote_bike()
 	var seen: float = rb.global_position.distance_to(theirs) if rb and theirs != Vector3.INF else INF
+	# The menu stays up till the other has looked too (put down, a bike on a hill rolls back, and they'd see it go).
+	_menu_done_from.rpc()
+	await _until(func(): return _other_menu_done, 20.0)
 	main.menu.hide()
 	print("MP adv note %s: 4 s with the menu up, my bike moved %.3f m, the other's %.3f m" % [role, moved, seen])
 	return moved < 0.02 and seen < 0.05
@@ -201,7 +207,7 @@ var _verdict := -1
 var _traffic_note := ""
 
 
-## Both see the same vehicles on the road 30 km out (the host's and the client's origins in
+## Both see the same vehicles on the road 20 km out (the host's and the client's origins in
 ## different places): the host sends what it has, the client compares its own (same vehicles,
 ## same kinds, the same distance along the road, and each drawn in its own frame where its
 ## distance says), and says whether they match.
@@ -217,10 +223,11 @@ func _traffic_check(trip: AdventureTrip, s: float, lat: float) -> bool:
 		if role == "host":
 			if Time.get_ticks_msec() > send_t:
 				send_t = Time.get_ticks_msec() + 500
+				_traffic_note = "the host has %d vehicles out" % tr.stream.vehicles.size()
 				var view := PackedFloat32Array()
 				for d in tr.stream.vehicles:
 					view.append_array([float(d["seed"]), float(d["s"]), float(VehicleModel.KINDS.find(d["kind"])), float(d["v"])])
-				if view.size() >= 12:   # three or more out
+				if view.size() >= 8:   # two or more out (a quiet country road)
 					_host_view_from.rpc(view)
 		elif _host_view_new:
 			_host_view_new = false
@@ -267,6 +274,20 @@ func _compare(tr: AdventureTraffic, trip: AdventureTrip) -> bool:
 		return false
 	_traffic_note = "%d vehicles, the same kinds, within %.1f m along the road of the host's, each drawn within %.2f m of its place" % [count, worst, worst_drawn]
 	return true
+
+
+var _other_menu_up := false
+var _other_menu_done := false
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _menu_up_from() -> void:
+	_other_menu_up = true
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _menu_done_from() -> void:
+	_other_menu_done = true
 
 
 @rpc("any_peer", "call_remote", "reliable")

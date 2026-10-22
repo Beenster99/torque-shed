@@ -345,6 +345,11 @@ func test_forks() -> void:
 	check(r.forks.size() >= 1, "the ride has them as forks with signposts (%d forks, %d signs)" % [r.forks.size(), r.sites_of("fork").size()])
 	if r.forks.is_empty():
 		return
+	# The tour ends at Appersett, on the road it set off from Hawes along: a bike stood at the start (no hint yet) is at
+	# the start, not at the end past the forks still open (once it was, and nothing was built round it).
+	var at_start := r.xz_at(30.0, -1.5)
+	var found := r.locate(at_start[0], at_start[1])
+	check(not found.is_empty() and absf(float(found["s"]) - 30.0) < 2.0, "a bike stood at the start is at the start, not the end of the same road (%.0f m along)" % float(found.get("s", -1.0)))
 	var fk: Dictionary = r.forks[0]
 	var ways: Array = fk["ways"]
 	check(ways.size() == 2 and str(ways[0]["kind"]) == "main" and ["scenic", "gravel"].has(str(ways[1]["kind"])) and ways[0]["letter"] != ways[1]["letter"],
@@ -364,8 +369,6 @@ func test_forks() -> void:
 		worst_step = maxf(worst_step, absf(Vector2(r.px[i] - r.px[i - 1], r.pz[i] - r.pz[i - 1]).length() - AdventureRoute.STEP))
 		worst_turn = maxf(worst_turn, absf(r.hd[i] - r.hd[i - 1]))
 		worst_grade = maxf(worst_grade, absf(r.ph[i] - r.ph[i - 1]) / AdventureRoute.STEP)
-		if absf(r.hd[i] - r.hd[i - 1]) > 0.6 or absf(Vector2(r.px[i] - r.px[i - 1], r.pz[i] - r.pz[i - 1]).length() - AdventureRoute.STEP) > 0.7:
-			print("JOINDBG ", i, " fork i0 ", fk["i0"], " i1 ", fk["i1"], " hd ", r.hd[i - 1], " ", r.hd[i], " step ", Vector2(r.px[i] - r.px[i - 1], r.pz[i] - r.pz[i - 1]).length())
 	check(worst_step < 0.7 and worst_turn < 0.6 and worst_grade <= RoutePlanner.MAX_GRADE + 0.001,
 		"through the other way it is one road (steps off %.2f m, turn %.2f rad, grade %.1f%%)" % [worst_step, worst_turn, worst_grade * 100.0])
 	check(r.chunk_surface.size() == r.chunk_count() and r.chunk_name.size() == r.chunk_count() and r.chunk_limit.size() == r.chunk_count()

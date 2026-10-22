@@ -3,7 +3,7 @@
 # Then a second pair rides an adventure together (tests/mp_adventure.gd), a third breaks down
 # on one and fixes it at the roadside (a mate swapping its pads from the toolbox), then tows (tests/mp_wrench.gd), a fourth eats, sits
 # and sleeps on one (tests/mp_needs.gd), a fifth meets the police on one (tests/mp_police.gd),
-# a sixth starts one from the magazine and arrives at its destination together (tests/mp_dest.gd),
+# a sixth starts one along a planned journey and arrives at its destination together (tests/mp_dest.gd),
 # a seventh keeps the Adventure Diary: the host's shared highlights, both riders' photos in each diary (tests/mp_diary.gd),
 # an eighth rides with one of the other bikers on an adventure (tests/mp_bikers.gd),
 # and a ninth rides a real road with a fork, taking the other way together (tests/mp_real.gd).
@@ -18,7 +18,7 @@ CLIENT=$?
 wait $HOST
 HOSTRC=$?
 grep -h "MP " /tmp/torque_mp_host.log /tmp/torque_mp_client.log
-# The adventure ride: both on it, seen by each other 30 km out after the origins have moved.
+# The adventure ride: both on it, seen by each other 20 km out after the origins have moved.
 "$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_adventure.tscn -- --role=host > /tmp/torque_mp_adv_host.log 2>&1 &
 AHOST=$!
 sleep 4
@@ -54,7 +54,7 @@ PCLIENT=$?
 wait $PHOST
 PHOSTRC=$?
 grep -h "MP police" /tmp/torque_mp_police_host.log /tmp/torque_mp_police_client.log
-# The destination: the host starts one from the magazine, both arrive together, both get the photo.
+# The destination: the host starts one along a planned journey, both arrive together, both get the photo.
 "$GODOT" --headless --fixed-fps 60 --path . res://tests/mp_dest.tscn -- --role=host > /tmp/torque_mp_dest_host.log 2>&1 &
 DHOST=$!
 sleep 4

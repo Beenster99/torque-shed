@@ -31,6 +31,8 @@ func _ready() -> void:
 	var frame := Image.create(640, 360, false, Image.FORMAT_RGBA8)
 	frame.fill(Color(0.9, 0.3, 0.2) if role == "host" else Color(0.2, 0.4, 0.9))
 	PhotoCapture.fake_source = func(): return frame
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	Rides.pack(KM)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
