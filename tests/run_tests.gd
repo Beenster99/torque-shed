@@ -1809,8 +1809,11 @@ func _test_session() -> void:
 	Input.action_release("throttle")
 	check(main.bike.speed < 0.2, "with the engine off the throttle does nothing")
 	_press("ignition")
-	for i in 120:
+	# A tired bike cranks for longer before it fires (Bike.start_time), so give it up to 4 s.
+	for i in 480:
 		await get_tree().physics_frame
+		if i >= 120 and main.bike.engine_on and main.bike.rpm > 500.0:
+			break
 	check(main.bike.engine_on and main.bike.rpm > 500.0, "I starts the engine (%.0f rpm)" % main.bike.rpm)
 	_press("camera")
 	await get_tree().physics_frame
