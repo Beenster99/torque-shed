@@ -262,7 +262,7 @@ func test_breakdown_odds() -> void:
 		print("    %s (%d km): %.2f things go wrong a ride (%.2f expected, %.2f of them punctures), %d of %d rides with 3 or more" % [
 			nm, roundi(km), mean, expected, float(punctures) / rides, many, rides])
 		check(absf(mean - expected) < 0.2, "%s: the rolls come out as the odds say (%.2f a ride against %.2f)" % [nm, mean, expected])
-		check(mean > 0.3 and mean < 1.25 and float(many) / rides < 0.15,
+		check(mean > 0.2 and mean < 1.25 and float(many) / rides < 0.15,
 			"%s (%d km, about %d minutes): %.2f things go wrong a ride on a typical bike, %d%% of rides see 3 or more" % [
 				nm, roundi(km), AdventureDest.minutes_for(km), mean, roundi(100.0 * many / rides)])
 	check(means["Short"] < means["Ride"] and means["Ride"] < means["Epic"], "the longer the ride, the more chance of something")

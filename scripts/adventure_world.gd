@@ -179,6 +179,8 @@ func apply_picks_soon(picks: Dictionary) -> bool:
 		if apply_picks(fresh):
 			picks_taken.emit()
 		return true
+	if land != null:
+		land.hold = true   # (the land's workers read the road: none are started till it's swapped)
 	_path_job = _PathJob.new()
 	_path_job.picks = fresh
 	_path_job.path = route.path_copy(fresh)
@@ -189,7 +191,7 @@ func apply_picks_soon(picks: Dictionary) -> bool:
 ## Takes in the path a pick's job put together, once it's done and nothing's building on the
 ## route: drops what was built past its forks (normally nothing) and swaps the new path in.
 func _take_path() -> void:
-	if not WorkerThreadPool.is_task_completed(_path_job.task) or not _tasks.is_empty():
+	if not WorkerThreadPool.is_task_completed(_path_job.task) or not _tasks.is_empty() or (land != null and land.working()):
 		return
 	WorkerThreadPool.wait_for_task_completion(_path_job.task)
 	var job := _path_job
@@ -198,6 +200,8 @@ func _take_path() -> void:
 	keys.sort()
 	_drop_from(route.fork_s(int(keys[0])))
 	route.take_path(job.path, job.picks)
+	if land != null:
+		land.hold = false
 	picks_taken.emit()
 	var later := _later_picks
 	_later_picks = {}

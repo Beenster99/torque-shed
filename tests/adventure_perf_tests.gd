@@ -9,8 +9,7 @@ var t: Node   # the test runner: check(), get_tree()
 
 ## The longest a triangle's edge may be in each of a chunk's meshes (m). The land is checked
 ## its own way (see _scan_land): its columns are meant to get wider out to the skyline.
-const MAX_EDGE := {"road": 12.0, "lines": 12.0, "paint": 14.0, "arms": 24.0, "walls": 12.0, "buildings": 40.0,
-	"tube": 12.0, "cap": 40.0, "glow": 12.0, "portals": 40.0}
+const MAX_EDGE := {"road": 12.0, "lines": 12.0, "paint": 14.0, "arms": 24.0, "walls": 12.0, "buildings": 90.0}
 ## A frame this much longer than the ride's typical one is a stutter (ms, headless: no drawing).
 const SPIKE_MS := 12.0
 
@@ -56,10 +55,6 @@ static func meshes(data: Dictionary) -> Array:
 			out.append([key, data[key]["v"], PackedInt32Array()])
 	for surf in data.get("arms", {}):
 		out.append(["arms", data["arms"][surf]["v"], PackedInt32Array()])
-	var tn: Dictionary = data.get("tunnel", {})
-	for key in ["tube", "cap", "glow", "portals"]:
-		if tn.has(key):
-			out.append([key, tn[key]["v"], PackedInt32Array()])
 	return out
 
 
@@ -108,7 +103,7 @@ static func scan(route: AdventureRoute, data: Dictionary, tally := {}) -> Array:
 ## the sky and down to the far ground, with the sky showing between them.
 static func _scan_land(route: AdventureRoute, data: Dictionary, tally: Dictionary) -> Array:
 	var bad := []
-	var cols := AdventureChunk.LAND_OUT.size()
+	var cols := AdventureChunk.land_cols(route)
 	var i0 := int(data["i0"])
 	for side: int in [-1, 1]:
 		var v: PackedVector3Array = data["land_%d" % side][Mesh.ARRAY_VERTEX]

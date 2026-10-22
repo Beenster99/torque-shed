@@ -52,6 +52,9 @@ var _material: StandardMaterial3D
 var _at := Vector2(INF, INF)
 var _epoch := 0        # changes when the road does (a way picked at a fork): older work is thrown away
 var _touch := {}       # Vector2i -> whether the road is near the block (kept till the road changes)
+## No new blocks are started while this is set (a fork's way is being put together, and the road is about to change
+## under them: see AdventureWorld.apply_picks_soon), so the road can be swapped without waiting on any.
+var hold := false
 
 
 func setup(w: AdventureWorld, r: AdventureRoute) -> void:
@@ -144,7 +147,7 @@ static func _centre(key: Vector2i) -> Vector2:
 
 
 func _process(_delta: float) -> void:
-	while _tasks.size() < AT_ONCE and not _queue.is_empty():
+	while not hold and _tasks.size() < AT_ONCE and not _queue.is_empty():
 		var item: Dictionary = _queue.pop_front()
 		var key: Vector2i = item["key"]
 		var lod: int = item["lod"]
@@ -206,6 +209,11 @@ func level_counts() -> Dictionary:
 ## Whether any block is still waiting or being laid out.
 func busy() -> bool:
 	return not _tasks.is_empty() or not _queue.is_empty()
+
+
+## Whether any block is being laid out on a worker thread right now.
+func working() -> bool:
+	return not _tasks.is_empty()
 
 
 func _place(key: Vector2i, mi: MeshInstance3D) -> void:
