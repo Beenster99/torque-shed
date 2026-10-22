@@ -679,6 +679,13 @@ func _run_all() -> void:
 	print("Simon's v0.21 round: no damage to the bike on an adventure, only a tyre can go")
 	_test_advdmg_shed_wear()
 	await _test_advdmg_ride()
+	print("Simon's v0.21.0 round: brake lights and indicators")
+	await _test_lamps_brake_light()
+	await _test_lamps_flash()
+	await _test_lamps_cancel()
+	await _test_lamps_self_cancel()
+	_test_lamps_bindings()
+	await _test_lamps_remote()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22986,6 +22993,36 @@ func _test_advdmg_shed_wear() -> void:
 
 func _test_advdmg_ride() -> void:
 	await _advdmg().test_ride()
+
+
+# ---------------------------------------------------------------------------- brake lights and indicators (tests/lamps_tests.gd)
+
+func _lamps_t() -> RefCounted:
+	return load("res://tests/lamps_tests.gd").new(self)
+
+
+func _test_lamps_brake_light() -> void:
+	await _lamps_t().test_brake_light()
+
+
+func _test_lamps_flash() -> void:
+	await _lamps_t().test_flash()
+
+
+func _test_lamps_cancel() -> void:
+	await _lamps_t().test_cancel()
+
+
+func _test_lamps_self_cancel() -> void:
+	await _lamps_t().test_self_cancel()
+
+
+func _test_lamps_bindings() -> void:
+	_lamps_t().test_bindings()
+
+
+func _test_lamps_remote() -> void:
+	await _lamps_t().test_remote()
 
 
 # ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)

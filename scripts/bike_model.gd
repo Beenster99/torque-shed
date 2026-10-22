@@ -146,8 +146,22 @@ const DASH_LIFT_MAX := 0.25   # m: the most the clocks rise to be seen past the 
 const DASH_EYE_SPARE := 0.03  # m: how far under the rider's eye the clocks still clear the bars from
 const GUARD_GAP := 0.015      # m: from the rear tyre, shock fully compressed, to the middle of its mudguard
 const PLATE_GAP := 0.004      # m: kept between the number plate and the rear mudguard
-var _lamps: Array = []           # lit lenses and clocks: {mat, albedo, energy, group ("ign", "head" or "fog")}
+var _lamps: Array = []           # lit lenses and clocks: {mat, albedo, energy, group ("ign", "head", "fog", "tail", "ind_l" or "ind_r")}
 var _lit := [true, true, true]   # [ignition, headlight, fog lights] as last set
+## The rear light's glow: dim as a tail light with the headlight on, bright as the stop lamp
+## (see set_signals), when a small red lamp also lights the guard and the road behind it.
+const TAIL_ENERGY := 0.7
+const STOP_ENERGY := 6.0
+const STOP_GLOW := 2.0        # the red lamp's energy while braking
+const STOP_GLOW_RANGE := 3.0  # m
+## An indicator's lens while it flashes on; between flashes it's dull amber glass.
+const INDICATOR_ENERGY := 12.0
+var _signals := [false, false, false]   # [stop lamp, left indicators, right indicators] as last set
+var _stop_glow: SpotLight3D             # the red lamp shining back from the rear light (see set_signals)
+## The slots whose meshes carry indicators: "indicators" with a set fitted, else the stock pair's
+## "headlight" and "tail" (see _stock_indicators).
+var _indicator_slots: Array[String] = []
+var _stock_pieces := {}   # the stock indicators' meshes (see _stock_indicators) -> true
 ## This bike's own fit for each part, set in geometry mode: slot -> {p, r, s} (see GeoGizmo),
 ## about the part's middle in the model's axes. Set it before build_from, or change it any time
 ## with apply_geometry. Looks only: the physics never see it.
@@ -180,6 +194,10 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_covered.clear()
 	_lamps.clear()
 	_lit = [true, true, true]
+	_signals = [false, false, false]
+	_stop_glow = null
+	_indicator_slots.clear()
+	_stock_pieces.clear()
 	_highlighted = ""
 	for slot in PartsDB.SLOTS:
 		_slot_meshes[slot] = []
@@ -3434,8 +3452,22 @@ func _draw_tail(build: BikeBuild) -> void:
 	_clear_plates(black)
 	if _fit_only:
 		return
-	# The rear light, lit with the ignition.
-	var lens := _lamp(Color(1.0, 0.05, 0.02), 2.0, "ign")
+	# The rear light: a dim tail light with the headlight on, bright as the stop lamp.
+	var lens := _lamp(Color(1.0, 0.05, 0.02), TAIL_ENERGY, "tail")
+	# Its red light shines back and down from the lamp, onto the road behind (not the rider).
+	_stop_glow = SpotLight3D.new()
+	_stop_glow.name = "StopGlow"
+	_stop_glow.light_color = Color(1.0, 0.08, 0.04)
+	_stop_glow.light_energy = STOP_GLOW
+	_stop_glow.spot_range = STOP_GLOW_RANGE
+	_stop_glow.spot_angle = 70.0
+	_stop_glow.spot_attenuation = 1.2
+	_stop_glow.shadow_enabled = false
+	_stop_glow.light_volumetric_fog_energy = 0.0
+	_stop_glow.position = lamp + Vector3(0.0, 0.0, 0.05)
+	_stop_glow.basis = Basis.looking_at(Vector3(0.0, -0.6, 1.0).normalized(), Vector3.UP)
+	_stop_glow.visible = false
+	add_child(_stop_glow)
 	var face: MeshInstance3D
 	match str(lk.get("lamp", p.get("light", "round"))):
 		"tombstone":
@@ -4693,25 +4725,69 @@ func _mirror_aim(at: Vector3, parent: Node3D) -> Basis:
 ## The indicators: a pair either side of the headlight (turning with the bars) and a pair
 ## either side of the rear light, on rubber stalks, as chrome bullets, mini LEDs, LEDs set flush
 ## into the bodywork or big square touring lamps.
+## Each side's lenses share one amber material, so left and right flash on their own (see
+## set_signals), front and back.
 func _draw_indicators() -> void:
 	_current_slot = "indicators"
 	var p := _part()
 	if p.is_empty():
+		_stock_indicators()
 		return
-	var style := str(p.get("style", "stalk"))
+	_indicator_slots.append("indicators")
+	_indicator_set(str(p.get("style", "stalk")), [true, false])
+
+
+## A bike with no indicators fitted still has the little stock pair a road bike leaves the
+## factory with, where it can: small black stalks beside the headlight (not behind a fairing, which
+## would hide them) and beside the rear light, drawn as part of those so they come and go with
+## them. Race and MX bikes have none.
+func _stock_indicators() -> void:
+	if _fit_only:
+		return
+	var frame_styles := PartsDB.styles_of(str(_build.parts.get("frame", "")))
+	if not frame_styles.is_empty() and frame_styles.all(func(st): return st in ["race", "mx"]):
+		return
+	var front := not PartsDB.get_part(str(_build.parts.get("headlight", "none"))).is_empty() \
+			and PartsDB.get_part(str(_build.parts.get("fairing", "none"))).is_empty()
+	for slot in (["headlight"] if front else []) + (["tail"] if tail_light_position() != Vector3.ZERO else []):
+		_current_slot = slot
+		_indicator_slots.append(slot)
+		var had: int = _slot_meshes[slot].size()
+		_indicator_set("stalk", [slot == "headlight"], Color(0.05, 0.05, 0.055))
+		# Left out of the part's size (see slot_bounds): they're not what the part measures.
+		for mi in (_slot_meshes[slot] as Array).slice(had):
+			_stock_pieces[mi] = true
+	_current_slot = "indicators"
+
+
+## Whether the bike has indicators to flash: a fitted set, or the stock ones on parts fitted now.
+func has_indicators() -> bool:
+	return _indicator_slots.any(func(slot): return is_fitted(slot))
+
+
+## The amber lens for one side's indicators (-1 left, 1 right), made the first time.
+func _indicator_lens(side: float) -> StandardMaterial3D:
+	var group := "ind_l" if side < 0.0 else "ind_r"
+	for l in _lamps:
+		if l["group"] == group:
+			return l["mat"]
+	return _lamp(Color(1.0, 0.5, 0.05), INDICATOR_ENERGY, group)
+
+
+## A pair of indicators, one a side, at the front (`ends` has true: on the bars) and/or the back
+## (false), in a style ("stalk", "bullet", "mini", "flush" or "touring"). `colour` is the
+## body's, else the part's own.
+func _indicator_set(style: String, ends: Array, colour := Color(0, 0, 0, 0)) -> void:
 	var chrome := style == "bullet"
-	var body := _mat(_col(), 1.0 if chrome else 0.2, 0.15 if chrome else 0.5)
+	var body := _mat(colour if colour.a > 0.0 else _col(), 1.0 if chrome else 0.2, 0.15 if chrome else 0.5)
 	var black := _mat(Color(0.05, 0.05, 0.055), 0.1, 0.7)
-	var amber := _mat(Color(1.0, 0.5, 0.05), 0.0, 0.25)
-	amber.emission_enabled = true
-	amber.emission = Color(1.0, 0.45, 0.02)
-	amber.emission_energy_multiplier = 0.15
 	var rear := tail_light_position()
 	if rear == Vector3.ZERO:
 		rear = _tail + Vector3(0.0, -0.04, 0.12)
 	var reach: float = {"stalk": 0.09, "bullet": 0.07, "mini": 0.05, "flush": 0.0, "touring": 0.13}.get(style, 0.08)
 	for side in [-1.0, 1.0]:
-		for front in [true, false]:
+		var amber := _indicator_lens(side)
+		for front in ends:
 			var parent: Node3D = _steer_node if front else self
 			var base := Vector3(0.08 * side, -0.05, -0.08) if front else rear + Vector3(0.05 * side, -0.02, -0.04)
 			var face := -1.0 if front else 1.0   # the lens looks forward at the front, back at the rear
@@ -6106,6 +6182,7 @@ func _bake_static() -> int:
 	var gone := 0
 	for slot in _slot_meshes:
 		var groups := {}    # [parent, material, shadows, layers] -> [[mesh, surface, transform], ...]
+		var stock := {}     # the same keys -> whether every piece is a stock indicator's
 		var shadow_groups := {}   # [parent, layers] -> the merged meshes whose shadows go together
 		var keep := []
 		for mi in _slot_meshes[slot]:
@@ -6117,7 +6194,9 @@ func _bake_static() -> int:
 				var key := [m.get_parent(), m.get_active_material(s), m.cast_shadow, m.layers]
 				if not groups.has(key):
 					groups[key] = []
+					stock[key] = true
 				groups[key].append([m.mesh, s, m.transform])
+				stock[key] = stock[key] and _stock_pieces.has(mi)
 			m.get_parent().remove_child(m)
 			m.queue_free()
 			gone += 1
@@ -6137,6 +6216,8 @@ func _bake_static() -> int:
 			(key[0] as Node).add_child(merged)
 			keep.append(merged)
 			_baked_pieces[merged.get_instance_id()] = true
+			if stock[key]:
+				_stock_pieces[merged] = true   # still left out of the part's size
 			gone -= 1
 			if merged.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON and _plain_caster(key[1]):
 				var sk := [key[0], key[3]]
@@ -6370,6 +6451,8 @@ func slot_bounds(slot: String) -> AABB:
 	var box := AABB()
 	var first := true
 	for mi in _slot_meshes.get(slot, []):
+		if _stock_pieces.has(mi):
+			continue   # the stock indicators on a headlight or tail unit
 		var aabb: AABB = _local_xform(mi) * (mi as VisualInstance3D).get_aabb()
 		box = aabb if first else box.merge(aabb)
 		first = false
@@ -7288,13 +7371,58 @@ func set_lights(ignition: bool, headlight: bool, fog := false) -> void:
 		return
 	_lit = [ignition, headlight, fog]
 	_show_satnav()
+	_show_lamps()
+
+
+## The stop lamp and the indicators, on top of set_lights: `brake` lights the rear light bright
+## (and a small red lamp behind it), `left` and `right` each side's indicators (the caller
+## flashes them; see BikeLamps). All need the ignition on.
+func set_signals(brake: bool, left: bool, right: bool) -> void:
+	if _signals[0] == brake and _signals[1] == left and _signals[2] == right:
+		return
+	_signals = [brake, left, right]
+	_show_lamps()
+
+
+## The signals as set (see set_signals): [stop lamp, left indicators, right indicators].
+func signals() -> Array:
+	return _signals.duplicate()
+
+
+## Whether the stop lamp is glowing bright (braking with the ignition on).
+func stop_lit() -> bool:
+	return _signals[0] and _lit[0]
+
+
+## Lights each lens by its group: the clocks and most lenses with the ignition, the headlight's
+## and fog lamps' with their switch, the rear light dim with the headlight and bright braking,
+## and the indicators while they flash on.
+func _show_lamps() -> void:
+	var ign: bool = _lit[0]
 	for l in _lamps:
-		var on: bool = headlight if l["group"] == "head" else (fog if l["group"] == "fog" else ignition)
+		var energy := float(l["energy"])
+		var on := ign
+		match str(l["group"]):
+			"head":
+				on = _lit[1]
+			"fog":
+				on = _lit[2]
+			"tail":
+				on = _lit[1] or (ign and _signals[0])
+				if ign and _signals[0]:
+					energy = STOP_ENERGY
+			"ind_l":
+				on = ign and _signals[1]
+			"ind_r":
+				on = ign and _signals[2]
 		var m: StandardMaterial3D = l["mat"]
 		var c: Color = l["albedo"]
 		m.emission_enabled = on
-		m.emission_energy_multiplier = float(l["energy"]) if on else 0.0
-		m.albedo_color = c if on else c.darkened(0.6)
+		m.emission_energy_multiplier = energy if on else 0.0
+		# Unlit, a lens is dull glass; indicators stay plainly amber.
+		m.albedo_color = c if on else c.darkened(0.3 if str(l["group"]).begins_with("ind") else 0.6)
+	if _stop_glow:
+		_stop_glow.visible = stop_lit() and is_fitted("tail")
 
 
 ## Whether any lens or clock is glowing.

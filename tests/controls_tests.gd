@@ -42,14 +42,14 @@ func test_layout() -> void:
 	Settings.reset_bindings()
 	check(Settings.clashes().is_empty(), "the new layout doesn't clash %s" % str(Settings.clashes().slice(0, 3)))
 	var want := {"interact": JOY_BUTTON_Y, "shift_down": JOY_BUTTON_X, "shift_up": JOY_BUTTON_A, "rear_brake": JOY_BUTTON_B,
-		"nod": JOY_BUTTON_RIGHT_STICK, "ride_ping": JOY_BUTTON_LEFT_STICK, "clutch": JOY_BUTTON_LEFT_SHOULDER,
-		"look_back": JOY_BUTTON_RIGHT_SHOULDER, "headlight": JOY_BUTTON_DPAD_UP, "horn": JOY_BUTTON_DPAD_LEFT,
-		"camera": JOY_BUTTON_DPAD_DOWN}
+		"nod": JOY_BUTTON_RIGHT_STICK, "horn": JOY_BUTTON_LEFT_STICK, "clutch": JOY_BUTTON_LEFT_SHOULDER,
+		"look_back": JOY_BUTTON_RIGHT_SHOULDER, "headlight": JOY_BUTTON_DPAD_UP, "indicate_left": JOY_BUTTON_DPAD_LEFT,
+		"indicate_right": JOY_BUTTON_DPAD_RIGHT, "camera": JOY_BUTTON_DPAD_DOWN}
 	var wrong := []
 	for a in want:
 		if _codes(a, true) != ["joy:%d" % want[a]]:
 			wrong.append("%s %s" % [a, Settings.binding_text(a, true)])
-	check(wrong.is_empty(), "Y on/off, X down, A up, B rear brake, R3 nod, L3 ping, LB clutch, RB look back, D-pad up lights, left horn, down view %s" % str(wrong))
+	check(wrong.is_empty(), "Y on/off, X down, A up, B rear brake, R3 nod, L3 horn, LB clutch, RB look back, D-pad up lights, left and right indicators, down view %s" % str(wrong))
 	check(_codes("ignition", true).is_empty() and Controls.key("ignition", true) == "LB + RB" and Controls.key("ignition", false) == "I",
 		"the engine is LB and RB together on a pad, I on the keys (%s)" % Controls.key("ignition", true))
 	check(_codes("tow", true).is_empty() and Settings.binding_text("tow", false) == "T" and Controls.key("tow", true) == "T",

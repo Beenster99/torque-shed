@@ -623,6 +623,7 @@ func _draw_speedo() -> void:
 		draw_rect(Rect2(Vector2(lx, r.position.y - 30.0), Vector2(lw, 22.0)), Color(0.75, 0.08, 0.05, 0.9))
 		draw_string(font, Vector2(lx + 7.0, r.position.y - 14.0), str(l), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 0.9, 0.85))
 		lx += lw + 6.0
+	_draw_indicator_lamp(r)
 	var hint := ""
 	if fuel_stop and fuel_stop.filling:
 		hint = "Filling up: %.1f L  ·  %s" % [fuel_stop.litres, TvChannels.money_text(ceili(fuel_stop.litres * FuelStop.price_of(fuel_stop.pump)))]
@@ -640,6 +641,23 @@ func _draw_speedo() -> void:
 		hint = Controls.hint("{interact}: get off   ·   {ignition}: engine off   ·   hold {front_brake}: paddle back   ·   {front_brake} + {throttle}: burnout")
 	if hint != "":
 		draw_string(font, Vector2(0, size.y - 40), hint, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color(1, 1, 1, 0.75))
+
+
+## The indicators' green telltale over the speedo's top right corner: an arrow the way the bike
+## is indicating, flashing with the indicators (see BikeLamps), and the other one dark.
+func _draw_indicator_lamp(panel: Rect2) -> void:
+	if bike.lamps.side == 0:
+		return
+	var green := Color(0.3, 1.0, 0.4)
+	var dark := Color(0.3, 1.0, 0.4, 0.15)
+	var mid := Vector2(panel.end.x - 46.0, panel.position.y - 16.0)
+	draw_rect(Rect2(mid - Vector2(40.0, 13.0), Vector2(80.0, 26.0)), Color(0.03, 0.03, 0.04, 0.6))
+	for s in [-1, 1]:
+		var tip := mid + Vector2(28.0 * s, 0.0)
+		var pts := PackedVector2Array([tip, tip + Vector2(-11.0 * s, -9.0), tip + Vector2(-11.0 * s, -3.5),
+			tip + Vector2(-22.0 * s, -3.5), tip + Vector2(-22.0 * s, 3.5), tip + Vector2(-11.0 * s, 3.5), tip + Vector2(-11.0 * s, 9.0)])
+		var on: bool = bike.lamps.side == s and bike.lamps.lit()
+		draw_colored_polygon(pts, green if on else dark)
 
 
 ## Beside the speedo, how warm the tyres and the engine are: cold, warm or hot (see BikeHeat).

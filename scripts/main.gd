@@ -959,13 +959,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("headlight"):
 		hud.flash("Headlight: %s" % bike.cycle_beam(), 1.2)
 		Shed.request({"a": "beam", "bike": riding_id, "beam": bike.beam})   # kept with the bike
+	elif event.is_action_pressed("indicate_left") or event.is_action_pressed("indicate_right"):
+		var why := bike.indicate(-1 if event.is_action_pressed("indicate_left") else 1)
+		if why != "":
+			hud.flash(why, 1.5)
 	elif event.is_action_pressed("ride_ping"):
 		PingMarker.ping_from(camera, [bike.get_rid()])
 	elif event.is_action_pressed("visor"):
 		# Up or down for everyone else to see; your own view out of the helmet doesn't change.
 		hud.flash(RiderGear.flick_visor(), 1.2)
 	elif event.is_action_pressed("stopwatch") and walker and not event is InputEventJoypadButton:
-		# On a pad the stopwatch's D-pad left is the horn on the bike: P (or its key) here.
+		# On a pad the stopwatch's D-pad left indicates left on the bike: P (or its key) here.
 		walker.stopwatch.start_stop()
 		Sfx.play_at("beep", camera.global_position, -6.0)
 	elif event.is_action_pressed("satnav_hud"):
