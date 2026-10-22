@@ -4,7 +4,7 @@ extends RefCounted
 ## whole crew, every player's game loads the same road (from its seed and length, see
 ## AdventureWorld) and puts them on a bike at the start; reaching the destination, or the host
 ## ending it, brings everyone back to the shed with their bikes as they were (the fuel burnt,
-## the wear and the muck all kept, as after any ride).
+## the muck and the tyres' wear kept; nothing else on the bike wears out there, see Roadside).
 ##
 ## Shed.adventure: {} when there's none, else {id, seed, km, theme, dest (where it ends up, see
 ## AdventureDest), title, by (the host's name),

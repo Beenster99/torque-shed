@@ -676,6 +676,9 @@ func _run_all() -> void:
 	await _test_filter_stand_aim()
 	await _test_filter_fairing_caps()
 	await _test_filter_in_shed()
+	print("Simon's v0.21 round: no damage to the bike on an adventure, only a tyre can go")
+	_test_advdmg_shed_wear()
+	await _test_advdmg_ride()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -22969,6 +22972,20 @@ func _test_handle_verge_long() -> void:
 
 func _test_handle_verge_edges() -> void:
 	await _handle().test_verge_edges()
+
+
+# ---------------------------------------------------------------------------- no damage on adventures (tests/advdmg_tests.gd)
+
+func _advdmg() -> RefCounted:
+	return load("res://tests/advdmg_tests.gd").new(self)
+
+
+func _test_advdmg_shed_wear() -> void:
+	_advdmg().test_shed_wear()
+
+
+func _test_advdmg_ride() -> void:
+	await _advdmg().test_ride()
 
 
 # ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)
