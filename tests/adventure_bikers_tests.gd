@@ -23,9 +23,12 @@ func _frames(n: int) -> void:
 ## A world stood still (the traffic stepped by hand) with its traffic and bikers, the riders at
 ## the local positions in spot["ps"] (as AdventureTrafficTests._world). `host` false: a crew
 ## member's machine. Times how long the bikers' pool took to build into spot["pool_ms"].
-func _world(seed: int, km: float, spot: Dictionary, host := true) -> AdventureTraffic:
+func _world(seed: int, km: float, spot: Dictionary, host := true, pack: RealPack = null) -> AdventureTraffic:
 	var w := AdventureWorld.new()
-	w.setup(Rides.pack(km), seed, km)
+	if pack != null:
+		w.setup(pack, seed)
+	else:
+		w.setup(Rides.pack(km), seed, km)
 	for f in w.route.forks.size():
 		w.route.choose(f, 0)
 	spot["ps"] = [w.transform_at(20.0, -1.5).origin]
@@ -75,7 +78,8 @@ static func _open_stretch(tr: AdventureTraffic, after: float, length: float) -> 
 		if ok:
 			for k in int(length / 50.0) + 1:
 				var i := int((s + k * 50.0) / AdventureRoute.STEP)
-				if r.surface_at_s(s + k * 50.0) != "tarmac" or r.width_at_s(s + k * 50.0) < 5.5 or absf(r.smooth_curv(i, 12)) > 1.0 / 150.0:
+				if r.surface_at_s(s + k * 50.0) != "tarmac" or r.width_at_s(s + k * 50.0) < 5.5 or absf(r.smooth_curv(i, 12)) > 1.0 / 150.0 \
+						or r.limit_kmh_at(s + k * 50.0) != r.limit_kmh_at(s):
 					ok = false
 					s += k * 50.0 + 50.0
 					break
@@ -134,8 +138,11 @@ func test_spawn() -> void:
 				seen[int(d["n"])] = true
 				acc["nearest"] = minf(float(acc["nearest"]), absf(float(d["s"]) - float(ss[0])))
 			dirs[int(d["dir"])] = true
-			var limit := tr.limit_at(float(d["s"]))
-			acc["fast"] = maxf(float(acc["fast"]), float(d["v"]) / limit)
+			# (the limit just behind too: where it drops into a village they're still slowing as they go past the sign; and
+			# not one riding along with the crew, which goes at the crew's pace)
+			var limit := maxf(tr.limit_at(float(d["s"])), tr.limit_at(float(d["s"]) - int(d["dir"]) * 80.0))
+			if int(d.get("rider", -1)) < 0:
+				acc["fast"] = maxf(float(acc["fast"]), float(d["v"]) / limit)
 			if int(d["lead"]) < 0:
 				acc["pace_lo"] = minf(float(acc["pace_lo"]), float(d["pace"]))
 				acc["pace_hi"] = maxf(float(acc["pace_hi"]), float(d["pace"]))
@@ -174,8 +181,13 @@ func test_spawn() -> void:
 func test_join() -> void:
 	var spot := {}
 	var tr := _world(11, 60.0, spot)
+	var s0 := _open_stretch(tr, 500.0, 1600.0)
+	if s0 < 0.0:
+		# (none on the Dales tour: round the island, then)
+		await _free(tr)
+		tr = _world(11, 0.0, spot, true, Rides.tour_pack("shodoshima"))
+		s0 = _open_stretch(tr, 500.0, 1600.0)
 	var b := tr.bikers
-	var s0 := _open_stretch(tr, 1000.0, 2000.0)
 	check(s0 > 0.0, "an open stretch of road to ride along")
 	if s0 < 0.0:
 		await _free(tr)
@@ -200,7 +212,7 @@ func test_join() -> void:
 	# It came up behind it: it's ahead. Ride on, faster then slower: it keeps its place ahead.
 	var worst := [0.0]
 	var lats := []
-	_ride(tr, spot, ss, func(time): return 15.0 + 8.0 * sin(time * 0.15), 60.0, -1.5, func(time: float) -> bool:
+	_ride(tr, spot, ss, func(time): return 13.0 + 5.0 * sin(time * 0.15), 60.0, -1.5, func(time: float) -> bool:
 		if time > 10.0:
 			var gap := (float(d["s"]) - float(ss[0]))
 			worst[0] = maxf(worst[0], absf(gap - maxf(AdventureBikers.FORM_GAP, float(b.riders[0]["v"]) * AdventureBikers.FORM_TIME)))

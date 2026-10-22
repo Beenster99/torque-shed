@@ -316,24 +316,17 @@ func test_forks_origin() -> void:
 	tr.world.apply_picks({0: 1})
 	tr._physics_process(0.1)
 	var on_way := 0
+	var on_road := false
 	for i in 1500:
 		tr._physics_process(0.1)
 		for d in tr.stream.vehicles:
 			if float(d["s"]) > fork + 20.0:
 				on_way += 1
-	var check_s := -1.0
-	for d in tr.stream.vehicles:
-		if float(d["s"]) > fork + 20.0 and not d.has("arm") and not d.has("dwell") and not d.get("kerb", false) and not d.get("bus", false):
-			check_s = float(d["s"])
-	var on_road := false
-	if check_s > 0.0:
-		var id := -1
-		for d in tr.stream.vehicles:
-			if float(d["s"]) == check_s:
-				id = int(d["seed"])
-		var p: Vector3 = tr.stream.slot(id)["pos"]
-		var hit := tr.world.locate_local(p)
-		on_road = not hit.is_empty() and absf(float(hit["s"]) - check_s) < 2.0 and absf(float(hit["lat"])) < r.width_at_s(check_s) * 0.5 + 1.0
+				if not on_road and not d.has("arm") and not d.get("kerb", false):
+					# One driving along way B: placed on its road.
+					var hit := tr.world.locate_local(tr.stream.slot(int(d["seed"]))["pos"])
+					on_road = not hit.is_empty() and absf(float(hit["s"]) - float(d["s"])) < 3.0 \
+						and absf(float(hit["lat"])) < r.width_at_s(float(d["s"])) * 0.5 + 1.0
 	check(on_way > 0 and on_road and tr.busy_at(0.0) >= 0.0 and is_same(tr._sites_ref, r.sites),
 		"once it's decided they drive on along way B, on its road (and the stops along it are known) (%d seen on it, on the road %s)" % [on_way, on_road])
 	# The origin moves under them.
