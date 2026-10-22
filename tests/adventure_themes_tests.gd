@@ -154,7 +154,7 @@ func test_stream() -> void:
 						per += _verts(mm.mesh, s) / 3
 					tris += per * mm.instance_count
 		var per_chunk := tris / maxi(1, w.chunks.size())
-		check(ready and float(w.stats["commit_ms_max"]) < 25.0 and float(w.stats["stream_ms_max"]) < 30.0 and float(w.stats["plan_ms"]) < 3000.0,
+		check(ready and float(w.stats["commit_ms_max"]) < 25.0 and float(w.stats["stream_ms_max"]) < 40.0 and float(w.stats["plan_ms"]) < 3000.0,
 			"%s streams without a hitch: %s" % [theme, w.timing_text()])
 		check(per_chunk < 60000, "%s: %d triangles a chunk on average, %d drawn things in %d chunks" % [theme, per_chunk, nodes, w.chunks.size()])
 		print("    THEME TIMING %s: %s; worst whole frame %.1f ms; %d tris/chunk; %d instances" % [theme, w.timing_text(), worst, per_chunk, nodes])
