@@ -157,7 +157,8 @@ const STOP_GLOW_RANGE := 3.0  # m
 ## An indicator's lens while it flashes on; between flashes it's dull amber glass.
 const INDICATOR_ENERGY := 12.0
 var _signals := [false, false, false]   # [stop lamp, left indicators, right indicators] as last set
-var _stop_glow: SpotLight3D             # the red lamp shining back from the rear light (see set_signals)
+var _stop_glow: SpotLight3D             # the red lamp shining back from the rear light (see _make_stop_glow)
+var _stop_at := Vector3.ZERO            # where it goes: just behind the rear light (ZERO with none)
 ## The slots whose meshes carry indicators: "indicators" with a set fitted, else the stock pair's
 ## "headlight" and "tail" (see _stock_indicators).
 var _indicator_slots: Array[String] = []
@@ -196,6 +197,7 @@ func build_from(build: BikeBuild, paint_color := paint, fitted := {}, part_condi
 	_lit = [true, true, true]
 	_signals = [false, false, false]
 	_stop_glow = null
+	_stop_at = Vector3.ZERO
 	_indicator_slots.clear()
 	_stock_pieces.clear()
 	_highlighted = ""
@@ -3454,20 +3456,7 @@ func _draw_tail(build: BikeBuild) -> void:
 		return
 	# The rear light: a dim tail light with the headlight on, bright as the stop lamp.
 	var lens := _lamp(Color(1.0, 0.05, 0.02), TAIL_ENERGY, "tail")
-	# Its red light shines back and down from the lamp, onto the road behind (not the rider).
-	_stop_glow = SpotLight3D.new()
-	_stop_glow.name = "StopGlow"
-	_stop_glow.light_color = Color(1.0, 0.08, 0.04)
-	_stop_glow.light_energy = STOP_GLOW
-	_stop_glow.spot_range = STOP_GLOW_RANGE
-	_stop_glow.spot_angle = 70.0
-	_stop_glow.spot_attenuation = 1.2
-	_stop_glow.shadow_enabled = false
-	_stop_glow.light_volumetric_fog_energy = 0.0
-	_stop_glow.position = lamp + Vector3(0.0, 0.0, 0.05)
-	_stop_glow.basis = Basis.looking_at(Vector3(0.0, -0.6, 1.0).normalized(), Vector3.UP)
-	_stop_glow.visible = false
-	add_child(_stop_glow)
+	_stop_at = lamp + Vector3(0.0, 0.0, 0.05)
 	var face: MeshInstance3D
 	match str(lk.get("lamp", p.get("light", "round"))):
 		"tombstone":
@@ -7421,8 +7410,30 @@ func _show_lamps() -> void:
 		m.emission_energy_multiplier = energy if on else 0.0
 		# Unlit, a lens is dull glass; indicators stay plainly amber.
 		m.albedo_color = c if on else c.darkened(0.3 if str(l["group"]).begins_with("ind") else 0.6)
+	var glow := stop_lit() and is_fitted("tail") and _stop_at != Vector3.ZERO
+	if glow and _stop_glow == null:
+		_make_stop_glow()
 	if _stop_glow:
-		_stop_glow.visible = stop_lit() and is_fitted("tail")
+		_stop_glow.visible = glow
+
+
+## The stop lamp's red light, made the first time the brakes go on: a bike that's only parked,
+## a part on a stand or in someone's hands never has one, so it's no lamp in the shed's rooms
+## (see Lighting) and no part of a model's size. It shines back and down from the rear light,
+## onto the road behind, not the rider.
+func _make_stop_glow() -> void:
+	_stop_glow = SpotLight3D.new()
+	_stop_glow.name = "StopGlow"
+	_stop_glow.light_color = Color(1.0, 0.08, 0.04)
+	_stop_glow.light_energy = STOP_GLOW
+	_stop_glow.spot_range = STOP_GLOW_RANGE
+	_stop_glow.spot_angle = 70.0
+	_stop_glow.spot_attenuation = 1.2
+	_stop_glow.shadow_enabled = false
+	_stop_glow.light_volumetric_fog_energy = 0.0
+	_stop_glow.position = _stop_at
+	_stop_glow.basis = Basis.looking_at(Vector3(0.0, -0.6, 1.0).normalized(), Vector3.UP)
+	add_child(_stop_glow)
 
 
 ## Whether any lens or clock is glowing.
