@@ -1015,6 +1015,11 @@ func _physics_process_body(delta: float) -> void:
 			bike.throttle = maxf(Input.get_action_strength("throttle"), Controls.trigger(true))
 			bike.front_brake = maxf(Input.get_action_strength("front_brake"), Controls.trigger(false))
 			bike.rear_brake = Input.get_action_strength("rear_brake")
+			if trip.crew_hold():
+				# Waiting at the start for the crew to get the road ready (AdventureTrip.crew_waiting): held there.
+				bike.throttle = 0.0
+				bike.front_brake = 1.0
+				bike.rear_brake = 1.0
 			if trip.police_hold():
 				# Pulled over by the police: off the throttle and braking to a stop, still steering.
 				bike.throttle = 0.0

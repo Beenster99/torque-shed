@@ -62,13 +62,14 @@ static func _walk(root: String, rel: String, out: Array[String]) -> void:
 		_walk(root, rel.path_join(sub) if rel != "" else sub, out)
 
 
-## Puts the region in `zip_path` (the baked folder's files at the zip's top level) in place as region `id`, if its
-## hash is `expect` ("" to take it as it is). Returns "" or why not; the zip is left as it was.
-static func install_zip(zip_path: String, id: String, expect: String) -> String:
+## Puts the region in `zip_path` (the baked folder's files at the zip's top level) in place as region `id` under `root`
+## (a cell's under user://cells), if its hash is `expect` ("" to take it as it is). Returns "" or why not; the zip is left
+## as it was.
+static func install_zip(zip_path: String, id: String, expect: String, root := USER_DIR) -> String:
 	var reader := ZIPReader.new()
 	if reader.open(zip_path) != OK:
 		return "The download isn't a region zip."
-	var tmp := USER_DIR.path_join(id + ".part")
+	var tmp := root.path_join(id + ".part")
 	_remove_tree(tmp)
 	DirAccess.make_dir_recursive_absolute(tmp)
 	var any := false
@@ -93,7 +94,7 @@ static func install_zip(zip_path: String, id: String, expect: String) -> String:
 	if expect != "" and got != expect:
 		_remove_tree(tmp)
 		return "The download's data (%s) isn't the region the index names (%s): try again later." % [got, expect]
-	var final := USER_DIR.path_join(id)
+	var final := root.path_join(id)
 	_remove_tree(final)
 	var err := DirAccess.rename_absolute(tmp, final)
 	if err != OK:

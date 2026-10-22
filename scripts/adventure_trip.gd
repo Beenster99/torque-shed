@@ -38,6 +38,11 @@ var main: Node
 var world: AdventureWorld
 var trip_id := 0
 var _busy := false
+## The road isn't ready on this machine yet (its cells and land being fetched, or the plan worked out on a worker):
+## entering waits for it, a frame at a time, instead of holding the game up (see enter).
+var _preparing := false
+## How long (s) the riders already on the road wait at the start for the rest of the crew to get it ready.
+const CREW_WAIT := 90.0
 var _arrive_sent := false
 ## The arrival moment: seconds into it, or -1 while it isn't playing; done once it's begun.
 var moment_t := -1.0
@@ -190,7 +195,11 @@ func _on_picks_taken() -> void:
 ## have that part of the world), or it planned a different road from the host's, and the ride would not be the same.
 static func real_mismatch(info: Dictionary) -> String:
 	var plan: Dictionary = info.get("plan", {}) if info.get("plan") is Dictionary else {}
-	var res := AdventurePlans.result(AdventurePlans.clean(plan), true)
+	return _mismatch_of(info, AdventurePlans.result(AdventurePlans.clean(plan), true))
+
+
+## real_mismatch from a plan's result `res` (AdventurePlans.result).
+static func _mismatch_of(info: Dictionary, res: Dictionary) -> String:
 	if not bool(res.get("ok", false)):
 		return str(res.get("error", "This game can't plan that journey."))
 	if str(info.get("real_hash", "")) != (res["pack"] as RealPack).hash:
@@ -198,11 +207,20 @@ static func real_mismatch(info: Dictionary) -> String:
 	return ""
 
 
-## Into the adventure in Shed.adventure.
+## Into the adventure in Shed.adventure: once this machine has its road (planned on a worker, its part of the world and
+## its land fetched first where it hadn't them: AdventurePlans), checked against the host's.
 func enter() -> void:
 	var info := Shed.adventure.duplicate(true)
 	trip_id = int(info["id"])
-	var why := real_mismatch(info)
+	var plan: Dictionary = info.get("plan", {}) if info.get("plan") is Dictionary else {}
+	var res := AdventurePlans.result(AdventurePlans.clean(plan))
+	if res.is_empty():
+		if not _preparing:
+			_preparing = true
+			Shed.feedback.emit("Getting the road ready: the map and the lie of the land...", true)
+		return   # (_process asks again till it is)
+	_preparing = false
+	var why := _mismatch_of(info, res)
 	if why != "":
 		_busy = false
 		Shed.feedback.emit(why, false)   # (trip_id stays, so this isn't tried again every frame)
@@ -477,7 +495,8 @@ func _physics_process(delta: float) -> void:
 	_hud_timer -= delta
 	if _hud_timer <= 0.0 and not hit.is_empty():
 		_hud_timer = 0.25
-		_hud.text = hud_text(s)
+		var waiting := crew_waiting()
+		_hud.text = hud_text(s) if waiting.is_empty() else "Waiting at the start for %s to get the road ready..." % " and ".join(waiting)
 		_hud.visible = true
 		_crew.text = crew_text()
 		_crew.visible = _crew.text != ""
@@ -877,6 +896,29 @@ func _end_moment() -> void:
 func _process(delta: float) -> void:
 	if moment_t >= 0.0:
 		_tick_moment(delta)
+	if _preparing and not _busy and int(Shed.adventure.get("id", 0)) == trip_id:
+		AdventurePlans.poll()
+		enter()
+	elif _preparing and int(Shed.adventure.get("id", 0)) != trip_id:
+		_preparing = false   # (the ride ended before this machine got to it)
+
+
+## The names of the crew still getting the road ready (not on the ride yet) while the riders on it wait for them at the
+## start: CREW_WAIT seconds at most from setting off. Empty when nobody's waited for.
+func crew_waiting() -> Array[String]:
+	var out: Array[String] = []
+	if world == null or start_s() > 0.0 or computer.moving_time > 0.5 or (Time.get_ticks_msec() - _started_at) / 1000.0 > CREW_WAIT:
+		return out
+	var riders: Dictionary = Shed.adventure.get("riders", {})
+	for peer in Shed.crew:
+		if not riders.has(peer) and not riders.has(int(peer)):
+			out.append(str(Shed.crew[peer].get("name", "a mate")))
+	return out
+
+
+## Whether this rider is held at the start, waiting for the crew (see crew_waiting; Main brakes the bike).
+func crew_hold() -> bool:
+	return not crew_waiting().is_empty()
 
 
 ## The title card (the destination's name, the ride, how long it took) and the photo.

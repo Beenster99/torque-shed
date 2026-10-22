@@ -488,6 +488,8 @@ func _run_all() -> void:
 	_test_cells_stitch()
 	_test_cells_same_road()
 	_test_cells_ride()
+	await _test_cells_fetch()
+	await _test_cells_ready()
 	await _test_adventure_stream()
 	await _test_adventure_frames()
 	await _test_adventure_origin()
@@ -22020,6 +22022,14 @@ func _test_cells_same_road() -> void:
 
 func _test_cells_ride() -> void:
 	_cells().test_ride()
+
+
+func _test_cells_fetch() -> void:
+	await _cells().test_fetch()
+
+
+func _test_cells_ready() -> void:
+	await _cells().test_ready_check()
 
 
 func _live() -> RefCounted:

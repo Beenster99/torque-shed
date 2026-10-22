@@ -207,18 +207,55 @@ static func areas() -> Dictionary:
 	return out
 
 
-## Whether the game has any of area `name`'s cells.
+## Whether the game has any of area `name`'s cells, or can fetch them (the index last fetched has some: CellStore).
 static func has_area(name: String) -> bool:
 	var a: Dictionary = areas().get(name, {})
 	if a.is_empty():
 		return false
+	var baked: Dictionary = CellStore.saved_index().get("cells", {})
 	var lo := cell_of(float(a["south"]), float(a["west"]))
 	var hi := cell_of(float(a["north"]) - 1e-9, float(a["east"]) - 1e-9)
 	for i in range(lo.x, hi.x + 1):
 		for j in range(lo.y, hi.y + 1):
-			if cell_dir(Vector2i(i, j)) != "":
+			var e = baked.get("%d_%d" % [i, j])
+			if cell_dir(Vector2i(i, j)) != "" or (e is Dictionary and not bool(e.get("empty", false))):
 				return true
 	return false
+
+
+## The extent of the region `region_id` in its own frame, without loading it when it's an area ("area:NAME": its box,
+## from areas.json, so a plan for it can be checked before its cells are here); Rect2() when the game doesn't know it.
+static func extent_of(region_id: String) -> Rect2:
+	if not region_id.begins_with(AREA_PREFIX):
+		var r := get_region(region_id)
+		return r.bounds if r != null else Rect2()
+	var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {})
+	if a.is_empty():
+		return Rect2()
+	var lat0 := float(a["frame"]["lat"])
+	var lon0 := float(a["frame"]["lon"])
+	var m := _metres_per_degree(lat0)
+	var p0 := Vector2((float(a["west"]) - lon0) * m.y, -(float(a["north"]) - lat0) * m.x)
+	var p1 := Vector2((float(a["east"]) - lon0) * m.y, -(float(a["south"]) - lat0) * m.x)
+	return Rect2(p0, p1 - p0)
+
+
+## Fetches the cells of area `region_id` ("area:NAME") the game hasn't got (CellStore): "" when it has them all, else why
+## not. Blocks: a worker's job.
+static func fetch_area(region_id: String, progress := Callable()) -> String:
+	var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {})
+	if a.is_empty():
+		return "This game doesn't know that part of the world."
+	return CellStore.fetch_box(float(a["south"]), float(a["west"]), float(a["north"]), float(a["east"]), progress)
+
+
+## Forgets every area stitched so far (new cells came: CellStore), so each is stitched again with them.
+static func forget_areas() -> void:
+	_cache_lock.lock()
+	for k in _cache.keys():
+		if str(k).begins_with(AREA_PREFIX):
+			_cache.erase(k)
+	_cache_lock.unlock()
 
 
 ## The region of the cells the game has between latitudes `south` and `north` and longitudes `west` and `east`, in a
