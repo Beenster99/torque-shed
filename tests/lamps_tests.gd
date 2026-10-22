@@ -26,6 +26,11 @@ static func _lens(m: BikeModel, group: String) -> StandardMaterial3D:
 	return null
 
 
+## Whether the stop lamp's red light is shining (it's only made once the brakes first go on).
+static func _red(m: BikeModel) -> bool:
+	return m._stop_glow != null and m._stop_glow.visible
+
+
 static func _glowing(m: BikeModel, group: String) -> bool:
 	var mat := _lens(m, group)
 	return mat != null and mat.emission_enabled and mat.emission_energy_multiplier > 0.0
@@ -41,15 +46,17 @@ func test_brake_light() -> void:
 	bike.front_brake = 0.0
 	bike.rear_brake = 0.0
 	await _frames(3)
-	check(not m.stop_lit() and not _glowing(m, "tail") and not m._stop_glow.visible, "riding along, lights off and no brakes: the rear light is dark")
+	check(not m.stop_lit() and not _glowing(m, "tail") and not _red(m), "riding along, lights off and no brakes: the rear light is dark")
+	check(m.find_children("*", "Light3D", true, false).is_empty(),
+		"and until the brakes first go on the model has no lamp of its own (a parked bike or a part is no light in the shed)")
 	bike.front_brake = 0.8
 	await _frames(3)
 	check(m.stop_lit() and _glowing(m, "tail") and is_equal_approx(_lens(m, "tail").emission_energy_multiplier, BikeModel.STOP_ENERGY)
-		and m._stop_glow.visible, "the front brake lights the stop lamp bright, with its red glow")
+		and _red(m), "the front brake lights the stop lamp bright, with its red glow")
 	check(bike.get_net_state()[25] > 0.5, "and the snapshot says so")
 	bike.front_brake = 0.0
 	await _frames(3)
-	check(not m.stop_lit() and not m._stop_glow.visible, "let go and it goes out")
+	check(not m.stop_lit() and not _red(m), "let go and it goes out")
 	bike.rear_brake = 0.5
 	await _frames(3)
 	check(m.stop_lit(), "the back brake lights it too")
@@ -63,7 +70,7 @@ func test_brake_light() -> void:
 	check(is_equal_approx(_lens(m, "tail").emission_energy_multiplier, BikeModel.STOP_ENERGY), "and braking it brightens to the stop lamp")
 	bike.engine_on = false
 	await _frames(3)
-	check(not m.stop_lit() and not _glowing(m, "tail") and not m._stop_glow.visible, "with the engine off the brake lights nothing")
+	check(not m.stop_lit() and not _glowing(m, "tail") and not _red(m), "with the engine off the brake lights nothing")
 	await t._done(r)
 
 
@@ -234,7 +241,7 @@ func test_remote() -> void:
 	rb.setup("Crew", BikeBuild.new({}), Color.RED)
 	rb.push_state(state)
 	await _frames(3)
-	check(rb.model.stop_lit() and rb.model._stop_glow.visible, "their stop lamp lights on your screen")
+	check(rb.model.stop_lit() and _red(rb.model), "their stop lamp lights on your screen")
 	check(rb.lamps.side == -1 and _glowing(rb.model, "ind_l") and not _glowing(rb.model, "ind_r"), "their left indicators flash")
 	var off := 0
 	for i in 60:
