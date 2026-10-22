@@ -276,12 +276,13 @@ func test_get_off() -> void:
 	# Up the steep bank the land where you step off is well above the ground under the bike: that's where Simon dropped
 	# through the land, left walking in the wild with his bike gone. A slope too steep to stand on has you stood on the
 	# road below the bike instead.
-	for spot in [[0.0, "on the road", 2.5, 300.0], [6.0, "up the steep bank, the land well above the road", 16.0, 0.0],
-			[15.0, "well off it", 16.0, 600.0], [2.0, "just off it, on the verge", 2.5, 900.0]]:
-		var s := bank + float(spot[3])
+	# (the road and the verge at an ordinary stretch 2 km in, the others by the bank)
+	for spot in [[0.0, "on the road", 2.5, 2000.0, false], [6.0, "up the steep bank, the land well above the road", 16.0, 0.0, true],
+			[15.0, "well off it", 16.0, 600.0, true], [2.0, "just off it, on the verge", 2.5, 2300.0, false]]:
+		var s: float = (bank if bool(spot[4]) else 0.0) + float(spot[3])
 		var lat: float = 0.0 if float(spot[0]) == 0.0 else r.width_at_s(s) * 0.5 + float(spot[0])
 		await _stand_at(main, s, lat)
-		if float(spot[3]) == 0.0:
+		if bool(spot[4]) and float(spot[3]) == 0.0:
 			# Come to rest there as it would ridden off the road: dropped onto the hillside.
 			var xf := w.transform_at(s, lat)
 			main.bike.place(xf.origin + Vector3.UP * 2.0, w.heading_at(s))
