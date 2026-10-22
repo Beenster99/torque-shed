@@ -102,6 +102,25 @@ class Rows(unittest.TestCase):
         self.assertEqual(rows["nodes"][node], [1000.0, 0.0])
         self.assertEqual((rows["edges"][ef]["o"], rows["edges"][et]["o"]), (0, -1))
 
+    def test_cells_keep_every_road_and_carry_ids_for_stitching(self):
+        rows = rg.graph_rows(self.graph(), 1, ids=True)
+        self.assertEqual(len(rows["nodes"]), 6)                     # the stray bit of road is kept: it may go on next door
+        self.assertEqual(len(rows["ids"]), len(rows["nodes"]))
+        self.assertEqual(len(set(rows["ids"])), len(rows["ids"]))
+        self.assertEqual(rows["ids"][0], rg.short_id(sorted(["A", "B", "C", "D", "X", "Y"])[0]))
+        self.assertTrue(all(len(e["g"]) == 12 for e in rows["edges"]))
+        self.assertNotIn("ids", rg.graph_rows(self.graph(), 1))     # a region's rows are as they were
+
+    def test_the_grid_of_cells(self):
+        self.assertEqual(rg.cell_of(54.3, -1.9), (577, 712))
+        self.assertEqual(rg.cell_of(54.3, -2.1), (577, 711))
+        self.assertEqual(rg.cell_of(-0.1, -0.1), (359, 719))
+        s, w, n, e = rg.cell_box(577, 712)
+        self.assertEqual((s, w, n, e), (54.25, -2.0, 54.5, -1.75))
+        self.assertEqual(rg.cell_of(s, w), (577, 712))                # a cell's south-west corner is its own
+        self.assertEqual(rg.cell_of(n, e), (578, 713))                # its north-east corner the next one's
+        self.assertEqual(rg.cell_name(577, 712), "c577_712")
+
     def test_places_come_from_named_divisions_near_a_road(self):
         def div(subtype, x, z, names, pop=None):
             lon, lat = ll(x, z)

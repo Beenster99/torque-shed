@@ -65,16 +65,26 @@ Mapterhorn in the credits, ask them about the load, and fall back to AWS's tiles
 ### Cells: the unit nobody sees
 
 Inside the game the world is a fixed grid of **cells**, 0.25° of latitude by 0.25° of longitude (28 km square at the
-equator, 28 by 16 km in the Dales). A cell is a region without its heights: `roads.json`, buildings, places, stops,
-landmarks and cover at 16 m, baked by today's baker for the cell's box, with these changes:
+equator, 28 by 16 km in the Dales). A cell is a region in today's format, baked by today's baker for the cell's box
+(`region_bake.py --cell LAT LON`) with live heights and its own frame at its middle, with two changes:
 
-- A road that crosses the cell's edge is cut there with a node on the boundary; the matching node in the next cell has
-  the same geographic position, so cells stitch by position.
-- Everything is stored in geographic coordinates (lat, lon as fixed-point integers), so a cell can be projected into
-  any journey's frame.
-- A cell is named by its grid position and carries its Overture release, baker version and content hash.
+- Every bit of road is kept (a stub at the edge is part of a network in the next cell), and each junction and road
+  carries a short id from its Overture connector and segment. A road that crosses the edge is in both cells, whole,
+  with the same ids, so the game joins them up by id: no cutting, no matching positions.
+- Its frame is its own, but every frame is the baker's flat one, so moving a cell into an area's frame is a scale and a
+  shift of x, and of z (`RealRegion.stitch`). Buildings, places and stops on an edge both cells have are kept once.
 
-The player never meets a cell. The two bundled regions are re-cut into cells so there is one format and one code path.
+A region the game plans over is an **area**: the cells a box covers, stitched into one region in a frame of its
+choosing (`RealRegion.area`); a named one (`areas.json` beside the cells) is listed with the regions as `area:<name>`.
+The planner, the plan cache, co-op's hash and everything downstream are unchanged. The player never meets a cell.
+
+Measured on the Dales: a cell bakes in about two minutes and is 9.7 MB, 8 MB of it the land's cover at 4 m (cutting
+that to 16 m, before the world is served, brings a cell to about 2 MB); two cells stitch in about 0.4 s. The road from
+Gunnerside to Grinton over the two cells either side of 2° W is the bundled Dales region's road to 14 cm, its heights
+to 8 cm on average.
+
+The bundled regions stay as they are: re-cutting them into cells would move every road the tests know, for no gain to
+the player. Cells come to the game from step 3 on.
 
 ### Cells baked by GitHub Actions, served as release assets
 
@@ -165,14 +175,13 @@ average (0.6 m at most), and the land beside it the same.
 
 ### Step 2: cells, and a journey across them
 
-**Plays.** A journey can cross from one baked area into the next: the Dales into the Lake District.
+**Plays.** A journey can cross from one cell into the next; an area of cells is a region like any other.
 
-**Builds.** The baker cuts cells (boundary nodes, geographic coordinates, cover at 16 m, the cell index);
-`RealRegion.stitch` and the journey frame; the bundled regions re-cut; the planner's two rounds of cell loading;
-the tests on cells. Measure load time: the Dales' roads and buildings are 1.2 MB of JSON and a journey may load a
-dozen cells, so a binary form may be needed here.
+**Builds.** `region_bake.py --cell`; `RealRegion.stitch` and `area`, named areas; cover read from each cell's own tiles
+(`RealTerrain.add_cover_cell`); tests on two Dales cells against the bundled Dales region.
 
-**Size.** About three weeks.
+**Status.** Built (`claude/cells`). Left for step 3: the cover at 16 m, and loading a dozen cells off the main thread
+(the route planner TV loads its region when it is shown).
 
 ### Step 3: the world baked and served
 
