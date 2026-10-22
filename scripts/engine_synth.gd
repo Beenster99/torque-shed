@@ -10,6 +10,14 @@ extends RefCounted
 ## and the mechanical layer adds valve-train ticks, a dry clutch's rattle and a two-stroke's
 ## ring-ding.
 ##
+## A two-stroke is its own animal: it fires every turn, and its exhaust port stays open for
+## about half of it, so each pulse is a broad, square-shouldered slug of gas whose sound is
+## rich in odd harmonics (the nasal buzz). Each cylinder has an expansion chamber tuned to
+## return its wave in one turn at the powerband, so the note thins below it and comes on hard
+## and shrill as the revs reach it. Off the throttle it misses and crackles as unburnt charge
+## lights in the pipe; at idle it four-strokes, raspy and uneven, the barrel fins and pipe
+## ringing at each firing (the ring-ding).
+##
 ## The sound is baked, not run live: for a ladder of engine speeds ("buckets"), on the throttle
 ## and off it, a short loop is rendered for the exhaust side and one for the engine/intake side.
 ## Each loop is a whole number of engine cycles so it repeats seamlessly. EngineSound then plays
@@ -25,6 +33,15 @@ const BUCKET_STEP := 1.2      # each bucket this much faster than the last
 const SOUND_SPEED_HOT := 520.0   # m/s in the exhaust gas
 const SOUND_SPEED_AIR := 343.0
 const LAYERS := ["ex_on", "ex_off", "in_on", "in_off"]
+## A two-stroke's exhaust port: open for this many crank degrees, its pulse this loud against
+## the blowdown spike at its front.
+const PORT_DEGREES := 180.0
+const PORT_SHARE := 0.5
+## Off the throttle, the chance a two-stroke's cycle has a crackle (unburnt charge lighting
+## in the pipe), at its most from half the powerband up.
+const TWO_STROKE_CRACKLE := 0.3
+## How loud a two-stroke's pipe rings at each firing (the ring-ding).
+const RING_GAIN := 6.0
 
 ## How each layout sounds: header length (m) and the second header group's length relative to it,
 ## how long a firing pulse lasts (crank degrees), how sharp its front is, the exhaust's colour
@@ -141,6 +158,14 @@ static func is_two_stroke(spec: Dictionary) -> bool:
 	return spec["layout"] == "2stroke"
 
 
+## How far a two-stroke is onto its expansion chamber at `rpm`, 0 (off the pipe) to 1 (right
+## in the powerband): it comes on hard from about three quarters of the peak and tails off a
+## little as it over-revs.
+static func pipe_on(spec: Dictionary, rpm: float) -> float:
+	var peak: float = spec["peak"]
+	return smoothstep(peak * 0.7, peak * 0.95, rpm) * (1.0 - 0.5 * smoothstep(peak * 1.12, peak * 1.4, rpm))
+
+
 ## Crank degrees in one engine cycle: two turns for a four-stroke, one for a two-stroke.
 static func cycle_degrees(spec: Dictionary) -> float:
 	return 360.0 if is_two_stroke(spec) else 720.0
@@ -240,12 +265,17 @@ static func _cycle_events(spec: Dictionary, info: Dictionary, on: bool, rng: Ran
 	var rpm: float = info["rpm"]
 	var two := is_two_stroke(spec)
 	var skip := float(spec["misfire"]) * (0.5 if on else 1.0)
+	var crackle := 0.0
 	if not on:
 		skip += 0.08
 		if two:
-			skip += 0.35 * clampf(1.0 - (rpm - spec["idle"]) / (spec["peak"] * 0.5), 0.0, 1.0)
+			# Four-stroking: at idle it only lights every other turn or so.
+			skip += 0.3 * clampf(1.0 - (rpm - spec["idle"]) / (spec["peak"] * 0.5), 0.0, 1.0)
+			crackle = TWO_STROKE_CRACKLE * clampf((rpm - spec["idle"] * 1.5) / (spec["peak"] * 0.5), 0.0, 1.0)
 	elif two:
 		skip += 0.08 * clampf(1.0 - rpm / (spec["peak"] * 0.6), 0.0, 1.0)   # bogging below the powerband
+	# A two-stroke's idle is ragged: each firing comes a little early or late.
+	var jitter := 0.004 + (0.02 * clampf(1.0 - (rpm - spec["idle"]) / 2000.0, 0.0, 1.0) if two else 0.0)
 	var out := []
 	for c in info["cycles"]:
 		for i in fires.size():
@@ -253,8 +283,13 @@ static func _cycle_events(spec: Dictionary, info: Dictionary, on: bool, rng: Ran
 				continue
 			var a := 1.0 + imbalance * (0.9 if i == 0 else (-0.6 if i == 1 else 0.3))
 			a *= (1.0 + rng.randfn(0.0, 0.07)) if on else rng.randf_range(0.35, 1.3)
-			var t: float = (c + float(fires[i][0]) / cycle_degrees(spec)) * cycle_len + rng.randfn(0.0, 0.004) * cycle_len
+			var t: float = (c + float(fires[i][0]) / cycle_degrees(spec)) * cycle_len + rng.randfn(0.0, jitter) * cycle_len
 			out.append([t, a, int(fires[i][1]), i])
+		# A crackle on the overrun: a short, sharp crack somewhere in the cycle (the fifth field
+		# is how much shorter its pulse is).
+		if crackle > 0.0 and rng.randf() < crackle:
+			var t: float = (c + rng.randf()) * cycle_len
+			out.append([t, rng.randf_range(2.0, 4.0), rng.randi_range(0, fires.size() - 1), -1, rng.randf_range(0.08, 0.2)])
 	return out
 
 
@@ -272,12 +307,23 @@ static func _exhaust(spec: Dictionary, rpm: float, load: float, events: Array, n
 	# How hard each pulse hits: bigger cylinders more, closed throttle far less.
 	var amp := pow(per_cyl / 250.0, 0.35) * (1.0 if load > 0.5 else 0.32)
 	var power := 1.0
+	var pipe := 0.0
+	var low := 0.0
 	if two:
 		# Coming on the pipe: below the powerband the note is thin, then it swells and hardens.
-		var x: float = (rpm - spec["peak"]) / (spec["peak"] * 0.22)
-		power = 0.45 + 1.1 * exp(-x * x) if load > 0.5 else 0.6
-		sharp *= lerpf(1.0, 0.6, clampf(power - 0.45, 0.0, 1.0))
+		pipe = pipe_on(spec, rpm) if load > 0.5 else 0.0
+		power = 0.5 + 0.85 * pipe if load > 0.5 else 0.6
+		sharp *= lerpf(1.0, 0.6, pipe)
 		amp *= power
+		low = clampf(1.0 - (rpm - spec["idle"]) / (spec["peak"] * 0.45), 0.0, 1.0)
+	# A two-stroke's pipe and barrel ring at each firing (the ring-ding), most at low revs and
+	# off the throttle.
+	var ring_x := PackedFloat32Array()
+	var ding := 0.0
+	if two:
+		ding = (0.45 if load > 0.5 else 1.0) * low
+		if ding > 0.01:
+			ring_x.resize(n)
 	var groups := 1
 	for e in events:
 		groups = maxi(groups, int(e[2]) + 1)
@@ -299,15 +345,31 @@ static func _exhaust(spec: Dictionary, rpm: float, load: float, events: Array, n
 				continue
 			var t0: float = e[0]
 			var a: float = float(e[1]) * amp
+			var crack: bool = e.size() > 4
+			var wid: float = maxf(tp * float(e[4]), 3.0) if crack else tp
 			var s := ceili(t0)
-			var s_end := ceili(t0 + tp)
+			var s_end := ceili(t0 + wid)
 			while s < s_end:
-				var x := (s - t0) / tp
+				var x := (s - t0) / wid
 				var idx := posmod(s, n)
 				ex[idx] += a * norm * pow(x, att) * pow(1.0 - x, 3.0)
 				s += 1
-			# Blowdown turbulence: a burst of rasp at each pulse's front.
-			var tau := maxf(tp * 0.12, 8.0)
+			if two and not crack:
+				# The port open for half a turn: a broad slug of gas behind the spike, its
+				# square shoulders what make the odd harmonics.
+				var pw := PORT_DEGREES * deg_samples
+				var edge := maxf(20.0 * deg_samples, 3.0)
+				var pa := a * PORT_SHARE
+				s = ceili(t0)
+				while s < ceili(t0 + pw):
+					var u := s - t0
+					var k := clampf(minf(u, pw - u) / edge, 0.0, 1.0)
+					ex[posmod(s, n)] += pa * k * k * (3.0 - 2.0 * k)
+					s += 1
+			if ding > 0.01 and not crack:
+				ring_x[posmod(ceili(t0), n)] += a * ding
+			# Blowdown turbulence: a burst of rasp at each pulse's front (a crackle's is sharper).
+			var tau := maxf(wid * 0.12, 8.0)
 			var k := 1.0
 			s = ceili(t0)
 			var decay := exp(-1.0 / tau)
@@ -317,9 +379,10 @@ static func _exhaust(spec: Dictionary, rpm: float, load: float, events: Array, n
 		var length: float = voice["hdr"] * (float(voice["hdr2"]) if g == 1 else 1.0)
 		var fb := -0.55
 		if two:
-			# Each expansion chamber returns its wave in one turn of the crank at the powerband.
+			# Each expansion chamber returns its wave in one turn of the crank at the powerband,
+			# ringing hardest once the engine's on the pipe.
 			length = SOUND_SPEED_HOT * 60.0 / spec["peak"] * 0.5 * (1.0 + 0.025 * g)
-			fb = 0.72
+			fb = 0.64 + 0.2 * pipe
 		var d := clampi(roundi(2.0 * length / SOUND_SPEED_HOT * RATE), 2, 8000)
 		var line := PackedFloat32Array()
 		line.resize(d)
@@ -344,6 +407,8 @@ static func _exhaust(spec: Dictionary, rpm: float, load: float, events: Array, n
 	var ring: float = -float(style["ring"])
 	var rust: float = spec["rust"]
 	var lp_hz: float = style["lp"] * (1.0 if load > 0.5 else 0.6) * (1.0 + rust * 0.8) * (1.0 + bright)
+	if two:
+		lp_hz *= 1.5 + 0.8 * pipe   # a little can on a long pipe: the buzz comes through, shrill on the pipe
 	var lpa := 1.0 - exp(-TAU * minf(lp_hz, RATE * 0.45) / RATE)
 	var f: Array = voice["formants"]
 	var r1 := _res(f[0][0], f[0][1])
@@ -356,6 +421,16 @@ static func _exhaust(spec: Dictionary, rpm: float, load: float, events: Array, n
 	# Turbulent rasp grows with the gas speed, so with the revs.
 	var gas := clampf(rpm / (float(spec["redline"]) * 0.6), 0.35, 1.3)
 	var rasp_g: float = (style["rasp"] + rust * 0.4) * (1.0 if load > 0.5 else 0.45) * 6.0 * gas * (1.0 + bright)
+	if two:
+		rasp_g *= 1.0 + 2.5 * low   # the raspy idle
+	# The ring-ding's partials: thin steel, inharmonic, higher on a small engine.
+	var ring_hz := lerpf(2300.0, 1500.0, clampf((per_cyl - 50.0) / 450.0, 0.0, 1.0))
+	var ring_r: Array = []
+	for mul in [1.0, 1.71, 2.37]:
+		ring_r.append(_res(ring_hz * mul, 70.0))
+	var ring_s := PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var rx_1 := 0.0
+	var rx_2 := 0.0
 	var noise := PackedFloat32Array()
 	noise.resize(n)
 	for i in n:
@@ -415,6 +490,19 @@ static func _exhaust(spec: Dictionary, rpm: float, load: float, events: Array, n
 		x2 = x1
 		x1 = z
 		var flow := a2 + f1 * g1 + f2 * g2 + bo * body_g
+		if not ring_x.is_empty():
+			# The pipe's shell rings straight to the air, not through the silencer.
+			var rk := ring_x[posmod(i - warm, n)]
+			var rsum := 0.0
+			for q in 3:
+				var c: PackedFloat32Array = ring_r[q]
+				var yq := c[0] * (rk - rx_2) + c[1] * ring_s[q * 2] - c[2] * ring_s[q * 2 + 1]
+				ring_s[q * 2 + 1] = ring_s[q * 2]
+				ring_s[q * 2] = yq
+				rsum += yq * (1.0 if q == 0 else (0.7 if q == 1 else 0.5))
+			rx_2 = rx_1
+			rx_1 = rk
+			flow += rsum * RING_GAIN
 		# What reaches the ear leans towards how fast the flow changes, less its slow drift.
 		var p := flow - prev * 0.8
 		prev = flow
@@ -627,11 +715,13 @@ static func render_pop(spec: Dictionary, strength: float, seed := 1) -> PackedFl
 	var n := int(RATE * (0.3 + 0.12 * strength))
 	var events := []
 	events.append([4.0, 2.2 * strength, 0, 0])
-	# A crackle of smaller pops after the first, more after a big one.
-	var crackles := rng.randi_range(1, 2) + int(strength * 1.5)
+	# A crackle of smaller pops after the first, more after a big one; a two-stroke's pipe
+	# crackles in quicker, sharper bursts.
+	var two := is_two_stroke(spec)
+	var crackles := rng.randi_range(1, 2) + int(strength * 1.5) + (3 if two else 0)
 	var t := 4.0
 	for i in crackles:
-		t += rng.randf_range(0.012, 0.05) * RATE
+		t += rng.randf_range(0.005, 0.028) * RATE if two else rng.randf_range(0.012, 0.05) * RATE
 		if t > n * 0.7:
 			break
 		events.append([t, rng.randf_range(0.4, 1.0) * strength * 1.2 / (1.0 + i * 0.4), 0, 0])

@@ -638,6 +638,13 @@ func _run_all() -> void:
 	_test_headlight_catalogue()
 	_test_headlight_builds()
 	await _test_headlight_lit()
+	print("Simon's v0.21.0 round: his starter motor recordings, healthy and struggling, and his two-stroke")
+	_test_sound_starter_files()
+	_test_sound_starter_choice()
+	await _test_sound_starter_played()
+	await _test_sound_starter_long_crank()
+	await _test_sound_two_stroke_recorded()
+	_test_sound_two_stroke_synth()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -10779,7 +10786,7 @@ func _test_starter_variety() -> void:
 	es.rpm = 0.0
 	es.cranking = true
 	es._process(1.0 / 60.0)
-	check(es.starts == 1 and es.bank.oneshots["starter"].has(es.last_start), "pressing the button plays a starter take")
+	check(es.starts == 1 and Sfx.recordings("starter").has(es.last_start), "pressing the button plays a starter take")
 	for i in 30:
 		es._process(1.0 / 60.0)
 	es.cranking = false
@@ -22918,3 +22925,33 @@ func _test_menu_layout() -> void:
 
 func _test_menu_fix_bike() -> void:
 	await _menu_suite().test_fix_bike()
+
+
+# ---------------------------------------------------------------------------- recorded starters and the two-stroke (tests/sound_tests.gd)
+
+func _sound_t() -> RefCounted:
+	return load("res://tests/sound_tests.gd").new(self)
+
+
+func _test_sound_starter_files() -> void:
+	_sound_t().test_files()
+
+
+func _test_sound_starter_choice() -> void:
+	_sound_t().test_choice()
+
+
+func _test_sound_starter_played() -> void:
+	await _sound_t().test_played()
+
+
+func _test_sound_starter_long_crank() -> void:
+	await _sound_t().test_long_crank()
+
+
+func _test_sound_two_stroke_recorded() -> void:
+	await _sound_t().test_two_stroke_recorded()
+
+
+func _test_sound_two_stroke_synth() -> void:
+	_sound_t().test_two_stroke_synth()

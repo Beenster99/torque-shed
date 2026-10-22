@@ -1053,6 +1053,7 @@ func _physics_process_body(delta: float) -> void:
 		audio.running = bike.engine_on
 		audio.speed = bike.speed
 		audio.cranking = bike.is_starting()
+		audio.struggle = bike.start_struggle()
 		audio.view = "rider" if camera.mode == ChaseCamera.Mode.HELMET else "chase"
 		var km := absf(bike.speed) * delta / 1000.0
 		_ride_km += km

@@ -61,6 +61,7 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 	audio = EngineSound.new()
 	audio.volume_db = -3.0
 	audio.infer_cranking = true
+	audio.struggle = Bike.struggle_for(_build, 20.0)   # their plugs and engine as the shed has them
 	add_child(audio)
 	audio.setup(_build, model)
 	audio.set_distant_filter(true)

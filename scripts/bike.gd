@@ -78,6 +78,10 @@ const AUTO_RESPAWN_TIME := 3.5
 const HOLD_SPEED := 1.0           # m/s: slower than this, a bike with its controls off is held still (see _hold_still)
 var _held := false   # frozen by _hold_still (not by anyone else)
 const START_TIME := 0.7           # seconds on the starter motor before it fires
+## How hard a start has to be (start_struggle) before it's a struggle: the starter labours and
+## it takes up to STRUGGLE_CRANK seconds more to fire.
+const STRUGGLE_FROM := 0.35
+const STRUGGLE_CRANK := 1.8
 const WHEELIE_PITCH := deg_to_rad(28.0)   # where the rider tries to hold a wheelie (weight back: higher)
 const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down (weight forward for one)
 const STOPPIE_SKIM := deg_to_rad(4.0)     # braking hard otherwise, how far they let the back come up
@@ -412,8 +416,32 @@ func start_engine() -> String:
 		return "You're pushing it: get on it first ({interact} to stop)."
 	if str(faults.get("fuse", "")) == "ignition":
 		return "Not even a click, and the dash is dark: a blown fuse. Get off and swap it (under the seat)."
-	_starting = START_TIME
+	_starting = start_time(start_struggle())
 	return ""
+
+
+## Seconds on the starter before it fires, for a start this hard (see start_struggle): a quick
+## crank for a healthy bike, longer the harder it struggles.
+static func start_time(struggle: float) -> float:
+	return START_TIME + (STRUGGLE_CRANK * clampf(struggle, 0.0, 1.0) if struggle >= STRUGGLE_FROM else 0.0)
+
+
+## How hard this bike is to start now, 0 (it spins over and fires) to 1 (a real struggle).
+func start_struggle() -> float:
+	return struggle_for(build, heat.engine if heat else 20.0)
+
+
+## How hard a bike with this build is to start with its engine at `engine_c` °C: worn spark
+## plugs most of all, then a tired engine and fuel system, and a stone cold engine on a frosty
+## day makes it harder still.
+static func struggle_for(b: BikeBuild, engine_c: float) -> float:
+	if b == null:
+		return 0.0
+	var h := b.health
+	var worn := 0.9 * (1.0 - float(h.get("spark_plugs", 1.0))) + 0.6 * (1.0 - float(h.get("engine", 1.0))) \
+		+ 0.4 * (1.0 - float(h.get("fuel", 1.0)))
+	var frost := clampf((5.0 - engine_c) / 15.0, 0.0, 1.0)
+	return clampf(worn + 0.4 * frost, 0.0, 1.0)
 
 
 func stop_engine(reason := "") -> void:
@@ -488,7 +516,8 @@ func _physics_process_body(delta: float) -> void:
 
 	if _starting > 0.0:
 		_starting -= delta
-		rpm = lerpf(rpm, build.idle_rpm * 0.3, 0.2)
+		# Turning over, lurching a little at each compression (so other riders hear it cranking).
+		rpm = lerpf(rpm, build.idle_rpm * 0.3 * (1.0 + 0.1 * sin(_starting * TAU * 5.0)), 0.2)
 		if _starting <= 0.0:
 			_starting = 0.0
 			engine_on = true

@@ -6,8 +6,9 @@ extends Node3D
 ## revs (more from loud pipes) and the backfire's flame; every gear change, up or down, engine
 ## running or not, is the box's own mechanical click or clunk (heavier into first and on a big
 ## bike, lighter up the box and on a small one, a soft click finding neutral) with a recorded
-## gear lever on top, and nothing else; and the starter motor cranking it over (or the kick
-## start), the engine catching and settling to idle. Used by the ridden bike, other players'
+## gear lever on top, and nothing else; and the starter motor cranking it over (Simon's
+## recordings, a labouring take when the start's a struggle; the made one, or the kick start,
+## when there are none), the engine catching and settling to idle. Used by the ridden bike, other players'
 ## bikes, customers' bikes, the truck and the dyno.
 
 signal backfired(strength: float)
@@ -25,6 +26,14 @@ const SHIFT_FEEL := {"slick": [-10.0, 1.12, 1.24], "click": [-6.0, 0.95, 1.06], 
 const STEP_DB := {"first": 0.0, "low": -3.0, "high": -5.0, "down": -2.0, "neutral": -9.0}
 ## Seconds the starter takes to fade once the engine fires (or the button's let go).
 const STARTER_FADE := 0.06
+## The recorded starter (Sfx "starter", or "starter_struggle" for a hard start): a crank longer
+## than a take carries on into another take from STARTER_LOOP_FROM seconds in (past the
+## solenoid's clack), crossfaded over STARTER_XFADE seconds before the take's last
+## STARTER_TAIL seconds (the motor running down) would play. Played STARTER_DB loud.
+const STARTER_LOOP_FROM := 0.4
+const STARTER_TAIL := 0.3
+const STARTER_XFADE := 0.08
+const STARTER_DB := -3.0
 
 var rpm := 0.0
 var throttle := 0.0
@@ -32,6 +41,7 @@ var running := true
 var gear := 1
 var speed := 0.0              # m/s
 var cranking := false         # the starter is turning it over (set by the owner)
+var struggle := 0.0           # how hard it is to start (Bike.start_struggle), set by the owner
 var infer_cranking := false   # other players' bikes: guess cranking from the revs rising with the engine off
 var view := "remote":
 	set(v):
@@ -51,6 +61,8 @@ var gear_sounds := 0          # gear-change clicks and clunks played
 var starts := 0               # starter (or kick) sounds played
 var catches := 0              # the engine catching
 var last_start: AudioStream   # the starter take played last
+var last_start_kind := ""     # what it was: "starter" or "starter_struggle" (recorded), "made" or "kick"
+var starter_takes := 0        # recorded starter takes played, a long crank carrying on into more
 ## Recorded gear-lever sounds played (tests).
 var lever_sounds := 0
 
@@ -74,6 +86,13 @@ var _was_cranking := false
 var _last_rpm := 0.0
 var _starter: AudioStreamPlayer3D   # playing the starter now
 var _starter_stream: AudioStream
+var _starter_players: Array = []   # the recorded starter's two players, crossfading on a long crank
+var _starter_next := 0
+var _starter_old: AudioStreamPlayer3D   # the take before, fading out under the next
+var _starter_t := 0.0         # seconds into the recorded take playing now
+var _starter_len := 0.0
+var _starter_pitch := 1.0
+var _xfade := 1.0             # 0..1 through a crossfade from one take to the next
 var _catch_t := 1.0           # seconds since it caught: the running sound comes in a touch slower
 var _crank_guess := 0.0
 var _bus_t := 0.0
@@ -108,6 +127,8 @@ func setup_spec(engine_spec: Dictionary, model: BikeModel = null) -> void:
 		for i in 2:
 			_oneshot_en.append(_make_player(engine_at, 6.0))
 		_lever = _make_player(engine_at, 4.0)
+		for i in 2:
+			_starter_players.append(_make_player(engine_at, 6.0))
 		flame = ExhaustFlame.new()
 		exhaust_at.add_child(flame)
 	exhaust_at.position = Vector3(0.18, 0.4, 0.75)
@@ -145,7 +166,8 @@ func set_distant_filter(on: bool) -> void:
 
 
 ## Overrun pops a second for this engine at `rpm`, `overrun_s` seconds after the throttle shut:
-## a hot pipe pops most just after you roll off, then it settles to the odd burble.
+## a hot pipe pops most just after you roll off, then it settles to the odd burble. A
+## two-stroke's pipe crackles and pops more readily, fed unburnt charge every turn.
 static func pop_rate(engine_spec: Dictionary, at_rpm: float, overrun_s: float) -> float:
 	var style: Dictionary = EngineSynth.EXHAUSTS[engine_spec["exhaust"]]
 	var lo := maxf(float(engine_spec["idle"]) * 2.2, 3000.0)
@@ -153,7 +175,8 @@ static func pop_rate(engine_spec: Dictionary, at_rpm: float, overrun_s: float) -
 		return 0.0
 	var revs := clampf((at_rpm - lo) / (float(engine_spec["redline"]) * 0.5), 0.0, 1.0)
 	var settle := 0.3 + 0.7 * exp(-overrun_s / 1.2)
-	return float(style["pops"]) * 3.0 * revs * settle * (1.0 + float(engine_spec["rust"]))
+	var two := 1.6 if EngineSynth.is_two_stroke(engine_spec) else 1.0
+	return float(style["pops"]) * 3.0 * revs * settle * (1.0 + float(engine_spec["rust"])) * two
 
 
 func _process(delta: float) -> void:
@@ -193,6 +216,9 @@ func _process_body(delta: float) -> void:
 	var idle: float = spec["idle"]
 	var life := _level * clampf((rpm - idle * 0.25) / (idle * 0.5), 0.0, 1.0)
 	var mix: Array = VIEW_MIX[view]
+	if bank.exhaust_only:
+		# Recordings of the whole bike: the pipe carries all of it, as loud as either side would be.
+		mix = [maxf(mix[0], mix[1]), mix[1]]
 	var weights := bank.mix_weights(rpm, _load) if life > 0.001 else []
 	var wanted := {}
 	for layer in EngineSynth.LAYERS:
@@ -225,7 +251,7 @@ func _drive_layer(layer: String, want: Dictionary) -> void:
 					break
 			if p == null:
 				continue
-			var stream: AudioStreamWAV = bank.streams[layer][b]
+			var stream: AudioStream = bank.streams[layer][b]
 			if stream == null:
 				continue
 			p.stream = stream
@@ -240,14 +266,18 @@ func _drive_layer(layer: String, want: Dictionary) -> void:
 func _events(delta: float) -> void:
 	# The starter (or the kick), fading out once it fires or the button's let go.
 	if cranking and not _was_cranking and not running:
-		_starter = _play(_oneshot_en, "starter", 0.0, _rng.randf_range(0.97, 1.03))
-		_starter_stream = _starter.stream if _starter else null
-		if _starter:
-			starts += 1
-			last_start = _starter_stream
+		_start_starter()
 	_was_cranking = cranking
 	_since_crank = 0.0 if cranking else _since_crank + delta
+	if _starter and cranking and not running and _starter_players.has(_starter):
+		_keep_cranking(delta)
+	if _starter_old and _xfade >= 1.0:
+		_starter_old.stop()
+		_starter_old = null
 	if _starter and (not cranking or running):
+		if _starter_old:
+			_starter_old.stop()
+			_starter_old = null
 		if not _starter.playing or _starter.stream != _starter_stream:
 			_starter = null
 		else:
@@ -280,6 +310,89 @@ func _events(delta: float) -> void:
 				_pop("pop", _rng.randf_range(0.6, 1.1))
 	else:
 		_overrun = 0.0
+
+
+## Which recorded starter a start this hard (Bike.start_struggle) plays: "starter", or
+## "starter_struggle" once it's a struggle (Bike.STRUGGLE_FROM); "" for a kick-started engine.
+static func starter_sound(engine_spec: Dictionary, how_hard: float) -> String:
+	if bool(engine_spec.get("kick", false)):
+		return ""
+	return "starter_struggle" if how_hard >= Bike.STRUGGLE_FROM else "starter"
+
+
+## How a recorded starter is pitched for this engine: a little higher on a small one, lower on
+## a big one.
+static func starter_pitch(engine_spec: Dictionary) -> float:
+	return lerpf(1.06, 0.88, clampf((float(engine_spec["cc"]) - 50.0) / 1300.0, 0.0, 1.0))
+
+
+## A take of the recorded starter `kind` (Sfx picks them, never the same twice running), the
+## healthy one if there's no struggling one (last_start_kind says which); null if there are no
+## recordings at all.
+func _starter_take(kind: String) -> AudioStream:
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx == null or not sfx.has_method("recordings"):
+		return null
+	for k in [kind, "starter"]:
+		if not (sfx.call("recordings", k) as Array).is_empty():
+			last_start_kind = k
+			return sfx.call("pick", k)
+	return null
+
+
+## The button's pressed: the recorded starter motor, or the made one (or the kick).
+func _start_starter() -> void:
+	var kind := starter_sound(spec, struggle)
+	var take: AudioStream = _starter_take(kind) if kind != "" else null
+	if take:
+		_starter_pitch = starter_pitch(spec) * _rng.randf_range(0.97, 1.03)
+		_xfade = 1.0
+		_starter = _starter_play(take, 0.0)
+	else:
+		_starter = _play(_oneshot_en, "starter", 0.0, _rng.randf_range(0.97, 1.03))
+		last_start_kind = "kick" if bool(spec["kick"]) else "made"
+	_starter_stream = _starter.stream if _starter else null
+	if _starter:
+		starts += 1
+		last_start = _starter_stream
+
+
+## Plays a recorded starter take on the next starter player from `from` seconds in.
+func _starter_play(take: AudioStream, from: float) -> AudioStreamPlayer3D:
+	var p: AudioStreamPlayer3D = _starter_players[_starter_next % _starter_players.size()]
+	_starter_next += 1
+	p.stream = take
+	p.pitch_scale = _starter_pitch
+	p.volume_db = STARTER_DB + volume_db
+	p.play(from)
+	_starter_t = from
+	_starter_len = take.get_length()
+	starter_takes += 1
+	return p
+
+
+## Still cranking: a long crank carries on into another take before this one runs down,
+## crossfading (equal power) from the one to the other.
+func _keep_cranking(delta: float) -> void:
+	_starter_t += delta * _starter_pitch
+	if _xfade < 1.0:
+		_xfade = minf(_xfade + delta / STARTER_XFADE, 1.0)
+		_starter.volume_db = STARTER_DB + volume_db + linear_to_db(maxf(sin(_xfade * PI * 0.5), 0.001))
+		if _starter_old:
+			_starter_old.volume_db = STARTER_DB + volume_db + linear_to_db(maxf(cos(_xfade * PI * 0.5), 0.001))
+	if _starter_t < _starter_len - STARTER_TAIL - STARTER_XFADE * _starter_pitch:
+		return
+	var take := _starter_take(last_start_kind)
+	if take == null:
+		return
+	if _starter_old:
+		_starter_old.stop()
+	_starter_old = _starter
+	_starter = _starter_play(take, STARTER_LOOP_FROM)
+	_starter.volume_db = STARTER_DB + volume_db - 60.0
+	_starter_stream = take
+	last_start = take
+	_xfade = 0.0
 
 
 ## A gear change from `from` to `to` (0 is neutral): the box's click or clunk for that step with
