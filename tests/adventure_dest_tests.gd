@@ -60,6 +60,7 @@ func test_build() -> void:
 	check(str(info["dest"]) == str(plan["names"][-1]) and str(info["dest"]) != "", "the destination is the last pin's place (%s)" % info["dest"])
 	var w := AdventureWorld.new()
 	w.setup(AdventurePlans.pack_for(plan), 77)
+	Rides.main_roads(w.route)   # (as by the time anyone arrives: the road's built to the end)
 	var fin: Array = w.route.sites_of("finish")
 	check(fin.size() == 1 and absf(float(fin[0]["s"]) - w.route.length) < 1.0 and absf(w.route.length - float(info["km"]) * 1000.0) < 100.0,
 		"the finish is at the end of the planned road (%.1f km)" % (w.route.length / 1000.0))

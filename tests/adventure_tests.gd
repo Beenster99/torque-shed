@@ -80,7 +80,7 @@ func test_route() -> void:
 	check(fuel.size() >= 1, "fuel stations along it %s" % str(fuel.map(func(f): return roundi(float(f["s"])))))
 	check(a.sites_of("start").size() == 1 and a.sites_of("finish").size() == 1 and float(a.sites_of("finish")[0]["s"]) == 40000.0,
 		"a start banner, and the destination 40 km on")
-	var xz := a.xz_at(20000.0, 2.5)
+	var xz := Rides.main_roads(a).xz_at(20000.0, 2.5)   # (the road past a fork still open isn't there to be found)
 	var hit := a.locate(xz[0], xz[1])
 	check(not hit.is_empty() and absf(float(hit["s"]) - 20000.0) < 1.0 and absf(float(hit["lat"]) - 2.5) < 0.05,
 		"a point is found along the road: %.1f m, %.2f m right" % [float(hit.get("s", -1)), float(hit.get("lat", 0))])
@@ -127,6 +127,7 @@ func test_stream() -> void:
 func test_frames() -> void:
 	var spot := {}
 	var w := _world(9, 50.0, spot)
+	Rides.main_roads(w.route)   # (31 km is past forks: taken, so it's there)
 	var p := w.transform_at(31234.5, 1.25).origin
 	var xz := w.route.xz_at(31234.5, 1.25)
 	check(absf(float(w.route_xz(p)[0]) - xz[0]) < 0.01, "local and route frames agree before a shift")
@@ -138,6 +139,7 @@ func test_frames() -> void:
 	check(fmod(w.origin.x, 1.0) == 0.0 and fmod(w.origin.z, 1.0) == 0.0, "the origin is whole metres (%s)" % str(w.origin))
 	# Another machine, whose origin is somewhere else.
 	var other := Rides.world(50.0, 9)
+	Rides.main_roads(other.route)
 	other.shift_origin_to(other.transform_at(29000.0).origin)
 	var mine := PackedFloat32Array([1.0, 7.0, q.x, q.y, q.z, 0, 0, 0, 1, 3, 0, 0])
 	var theirs := AdventureWorld.untag(w.tag_state(mine), other.origin)

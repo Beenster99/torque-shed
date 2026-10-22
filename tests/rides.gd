@@ -37,6 +37,14 @@ static func start(km := 20.0, seed := 1) -> void:
 	Adventure.start(plan(km), seed)
 
 
+## Takes the main road at every fork of `r` still open, so it's built (and found) all the way to its end; `r` back.
+static func main_roads(r: AdventureRoute) -> AdventureRoute:
+	for f in r.forks.size():
+		if not r.decided.has(f):
+			r.choose(f, 0)
+	return r
+
+
 ## The host takes the main road at every fork of the adventure on (so the road's built all the way: it isn't built past
 ## a fork still open), and waits till `trip`'s road has them all.
 static func take_main_roads(trip: AdventureTrip) -> void:
