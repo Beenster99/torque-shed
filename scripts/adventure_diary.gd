@@ -374,12 +374,21 @@ static func find_by_photo(key: String) -> String:
 static func _trim() -> void:
 	var all := list()
 	for i in range(MAX_DIARIES, all.size()):
-		var dir := folder(str(all[i]["id"]))
-		var d := DirAccess.open(dir)
-		if d:
-			for f in d.get_files():
-				d.remove(f)
-		DirAccess.remove_absolute(dir)
+		delete(str(all[i]["id"]))
+
+
+## Deletes the diary `id` on this machine for good: its diary.json and the photos beside it.
+## Whether it was here.
+static func delete(id: String) -> bool:
+	if id == "" or not FileAccess.file_exists(path_of(id)):
+		return false
+	var dir := folder(id)
+	var d := DirAccess.open(dir)
+	if d:
+		for f in d.get_files():
+			d.remove(f)
+	DirAccess.remove_absolute(dir)
+	return true
 
 
 ## The route as the diary draws it: about `n` points of the road's plan (x, z in metres from the

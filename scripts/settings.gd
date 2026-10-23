@@ -18,6 +18,9 @@ var satnav_hud := true
 var auto_shift := true
 ## The chase camera eases back behind the bike after a moment of not swinging it round.
 var camera_recentre := true
+## Riders look into the corner: the head (and a little the shoulders) turn into the inside of a
+## bend and towards its exit, and so does your view in first person (see RiderStyle.look_yaw).
+var look_into_corner := true
 ## On foot, the view from behind your shoulder with your whole figure in it, instead of from
 ## your eyes (V, or View on a pad, toggles it; see WalkerView).
 var walk_third_person := false
@@ -91,7 +94,7 @@ const ACTIONS := [
 	["rename", "Name a bike", ["foot"]], ["order_bike", "Looking at a bike: order one of these or copy its blueprint", ["foot"]], ["blast_scan", "Sandblaster: scan the engine", ["foot"]],
 	["rotate_left", "Turn what you hold left", ["foot", "board"]], ["rotate_right", "Turn what you hold right", ["foot", "board"]],
 	["rotate_free", "Free rotate on / off (quarter turns or any angle)", ["foot"]],
-	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
+	["scrap", "Scrap equipment or a part, or take down an adventure photo (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot"]],
 	["eat", "Adventure: eat or drink from your packed lunch", ["foot", "ride"]],
 	["visor", "Flick your helmet visor (or goggles) up or down", ["foot", "ride"]],
@@ -173,6 +176,7 @@ func load_settings() -> void:
 		telemetry_overlay = bool(cfg.get_value("riding", "telemetry", telemetry_overlay))
 		satnav_hud = bool(cfg.get_value("riding", "satnav_hud", satnav_hud))
 		camera_recentre = bool(cfg.get_value("riding", "camera_recentre", camera_recentre))
+		look_into_corner = bool(cfg.get_value("riding", "look_into_corner", look_into_corner))
 		walk_third_person = bool(cfg.get_value("walking", "third_person", walk_third_person))
 		high_quality = cfg.get_value("video", "high_quality", high_quality)
 		sfx_volume = cfg.get_value("audio", "sfx", sfx_volume)
@@ -208,6 +212,7 @@ func save_settings() -> void:
 	cfg.set_value("riding", "telemetry", telemetry_overlay)
 	cfg.set_value("riding", "satnav_hud", satnav_hud)
 	cfg.set_value("riding", "camera_recentre", camera_recentre)
+	cfg.set_value("riding", "look_into_corner", look_into_corner)
 	cfg.set_value("walking", "third_person", walk_third_person)
 	cfg.set_value("video", "high_quality", high_quality)
 	cfg.set_value("audio", "sfx", sfx_volume)

@@ -18,8 +18,8 @@ func _frames(n: int) -> void:
 		await t.get_tree().process_frame
 
 
-## The headlight reaches well down the road on both beams and spreads wide enough to light the
-## verges; the wide flood round it no longer stops short of the core (which drew an arc of
+## The headlight spreads wide enough to light the verges and main beam reaches well down the road;
+## on main beam the wide flood round it no longer stops short of the core (which drew an arc of
 ## darkness across the road about 20 m ahead); and the lights reach every layer the scenery's on.
 func test_beams() -> void:
 	var env := Environment.new()
@@ -39,22 +39,21 @@ func test_beams() -> void:
 	fx.beam_mode = 1
 	fx.update(0.016, 10.0, 0.3, true, 1.0, "tarmac", true, 0.0)
 	var low := core.spot_range
-	# Where the middle of the dipped beam lands on the road, from a lamp a metre up.
-	var lands := 1.0 / tan(-core.rotation.x)
-	check(low >= 90.0 and lands > 20.0, "dipped beam reaches %.0f m, its middle landing %.0f m up the road" % [low, lands])
+	# Dipped is aimed down at the near road with a cut-off (see tests/beam_tests.gd for the rest).
+	check(low >= 50.0 and core.light_projector != null, "dipped beam reaches %.0f m, cut off above" % low)
 	check(core.spot_angle >= 30.0 and flood.spot_angle >= 55.0, "and spreads wide: %.0f degrees, the flood %.0f" % [core.spot_angle, flood.spot_angle])
-	check(flood.spot_range >= core.spot_range * 0.85 and flood.spot_range > 60.0,
-		"the flood carries on nearly as far as the core (%.0f of %.0f m): no edge 20 m ahead" % [flood.spot_range, core.spot_range])
 	check(core.spot_attenuation < 1.0, "the core fades slowly with distance, so the road's lit well ahead (%.2f)" % core.spot_attenuation)
 	fx.beam_mode = 2
 	fx.update(0.016, 10.0, 0.3, true, 1.0, "tarmac", true, 0.0)
 	check(core.spot_range >= 180.0 and core.spot_range > low * 1.5 and core.rotation.x > deg_to_rad(-1.0),
 		"main beam reaches %.0f m, aimed nearly level" % core.spot_range)
+	check(flood.spot_range >= core.spot_range * 0.85 and flood.spot_range > 60.0,
+		"on main beam the flood carries on nearly as far as the core (%.0f of %.0f m): no edge 20 m ahead" % [flood.spot_range, core.spot_range])
 	for l: Light3D in [core, flood]:
 		var what := "the flood" if l == flood else "the core"
 		check((l.light_cull_mask & 0xFFFFF) == 0xFFFFF, "%s lights every layer, the scenery's too" % what)
 		check(not l.shadow_enabled, "%s casts no shadows (keeps the cost down)" % what)
-		check(l.light_projector == null, "%s has no projector shrinking its pool to the middle of the cone" % what)
+		check(l.light_projector == null, "on main beam %s has no projector shrinking its pool to the middle of the cone" % what)
 	fx.queue_free()
 	# The fog lamps: low, very wide, reaching well up the road and the verges.
 	var b := BikeBuild.new({"fog_lights": "halogen_spots"})

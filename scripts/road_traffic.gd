@@ -289,7 +289,7 @@ func _watch_bike() -> void:
 
 func _on_bike_hit(body: Node, b: Bike) -> void:
 	if is_instance_valid(b) and body.is_in_group("road_traffic") and float(b.get_meta("traffic_speed", 0.0)) > CRASH_SPEED \
-			and not b.is_crashed:
+			and not b.is_crashed and not b.is_ghost():
 		b.crash()
 
 

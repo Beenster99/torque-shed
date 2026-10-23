@@ -203,6 +203,9 @@ static func clean_worn(w) -> Dictionary:
 		out["visor_up"] = true
 	if w.get("peer") is int:
 		out["peer"] = w["peer"]
+	# How they ride (see RiderStyle), kept with the gear so it's saved and shared the same way.
+	if RiderStyle.STYLES.has(str(w.get("style", ""))):
+		out["style"] = str(w["style"])
 	return out
 
 
@@ -296,16 +299,30 @@ static func status_text(id: String) -> String:
 
 
 ## A short signature of a worn set, to tell when it has to be drawn again: the five slots, then
-## the helmet's colour, visor and goggles when chosen. (Not the visor going up and down: the
-## helmet swings that itself.)
+## the helmet's colour, visor and goggles, and the riding style, when chosen. (Not the visor
+## going up and down: the helmet swings that itself.)
 static func sig(worn: Dictionary) -> String:
 	var bits := []
 	for slot in SLOTS:
 		bits.append(str(worn.get(slot, "")))
-	for k in ["shell", "visor", "goggles"]:
+	for k in ["shell", "visor", "goggles", "style"]:
 		if worn.has(k):
 			bits.append("%s=%s" % [k, str(worn[k])])
 	return "|".join(bits)
+
+
+# ---------------------------------------------------------------------------- riding style
+
+## The riding style (see RiderStyle) of a worn set: the one picked, else the default.
+static func style_of(worn: Dictionary) -> String:
+	return RiderStyle.clean(worn.get("style", RiderStyle.DEFAULT))
+
+
+## Picks the local player's riding style (one of RiderStyle.STYLES), saved in their profile and
+## sent round with their gear. Their own bike's rider changes at once.
+static func set_style(id: String) -> void:
+	mine()["worn"]["style"] = RiderStyle.clean(id)
+	Progress._touch()
 
 
 # ---------------------------------------------------------------------------- the helmet

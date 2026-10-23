@@ -95,6 +95,11 @@ var debug: DebugTab
 var money: MoneyTab
 var staff: StaffTab
 var shop: ShopTab
+## Gameplay: riders look into the corner (Settings.look_into_corner).
+var look_corner: CheckBox
+## Profile: your riding style (see RiderStyle), and what it's like.
+var rider_style: OptionButton
+var _style_desc: Label
 ## Set when the player chose New game: the next solo or hosted start begins a fresh shed (and
 ## character), saved as `new_name`.
 var new_shed := false
@@ -258,6 +263,12 @@ func _build_settings() -> void:
 	recentre.button_pressed = Settings.camera_recentre
 	recentre.toggled.connect(func(v): Settings.camera_recentre = v)
 	settings.add_child(recentre)
+	look_corner = CheckBox.new()
+	look_corner.name = "LookIntoCorner"
+	look_corner.text = "Riders look into the corner: the head turns towards the inside and the exit of a bend, and your view does in first person"
+	look_corner.button_pressed = Settings.look_into_corner
+	look_corner.toggled.connect(func(v): Settings.look_into_corner = v)
+	settings.add_child(look_corner)
 	_third_person = CheckBox.new()
 	_third_person.text = "Third person on foot: the camera behind your shoulder, your whole figure in view (V / View toggles it)"
 	_third_person.button_pressed = Settings.walk_third_person
@@ -369,12 +380,49 @@ func _build_profile() -> void:
 	buttons.add_child(_button("Character: level, tools and skills", func(): _profile_tabs.current_tab = 1))
 	buttons.add_child(_button("Shop: improve your rider's gear", func(): _profile_tabs.current_tab = 2))
 	me.add_child(buttons)
+	_build_style_choice(me)
 	me.add_child(_profile_note())
 	# Your level, tool upgrades, skills tree and goals (see Progress).
 	_profile_tabs.add_child(CharacterTab.new())
 	# Rider gear and shed trinkets bought with your own money (see ShopTab).
 	shop = ShopTab.new()
 	_profile_tabs.add_child(shop)
+
+
+## The Rider style choice on the Profile tab: how you sit on the bike and move on it through a
+## corner (see RiderStyle). It's kept with your gear, so it goes with you and everyone sees it.
+func _build_style_choice(me: VBoxContainer) -> void:
+	me.add_child(UITheme.label("Rider style", 15, UITheme.ACCENT))
+	rider_style = OptionButton.new()
+	rider_style.name = "RiderStyle"
+	for id in RiderStyle.STYLES:
+		rider_style.add_item(RiderStyle.style_name(id))
+	rider_style.item_selected.connect(func(i: int): pick_style(RiderStyle.STYLES[i]))
+	me.add_child(rider_style)
+	_style_desc = UITheme.label("", 14, Color(1, 1, 1, 0.7))
+	_style_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	me.add_child(_style_desc)
+	_show_style(RiderStyle.DEFAULT)   # your own once the profile's up (see _refresh_badges)
+
+
+## Rides in riding style `id` from now on: saved with your gear, your own bike's rider sits that
+## way at once, and the crew's machines redraw you as your summary reaches them.
+func pick_style(id: String) -> void:
+	RiderGear.set_style(id)
+	for b in get_tree().get_nodes_in_group("ridden_bike"):
+		if b is Bike and (b as Bike).model:
+			(b as Bike).rider_gear = RiderGear.worn_of(Shed.me())
+			(b as Bike).model.redress((b as Bike).rider_gear)
+	_show_style(id)
+
+
+func _show_style(id: String) -> void:
+	if rider_style == null:
+		return
+	var i := RiderStyle.STYLES.find(RiderStyle.clean(id))
+	if rider_style.selected != i:
+		rider_style.select(i)
+	_style_desc.text = str(RiderStyle.INFO[RiderStyle.clean(id)]["desc"]) + " Only looks: the bike rides the same."
 
 
 func _profile_note() -> Label:
@@ -860,3 +908,4 @@ func _refresh_badges() -> void:
 			worn.append(str(RiderGear.ITEMS.get(str(gear.get(slot, "")), {}).get("name", "-")))
 		_profile_info.text = "Playing in: %s\nXP: %d in total\nYour cash: %s\nWearing: %s" % [_garage_name,
 			int(Progress.profile.get("xp", 0)), TvChannels.money_text(Progress.money()), ", ".join(worn)]
+		_show_style(RiderGear.style_of(gear))

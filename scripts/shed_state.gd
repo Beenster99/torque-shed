@@ -2586,6 +2586,8 @@ func check(peer: int, action: Dictionary) -> String:
 		return retrieve_check(action)
 	if a == "debug_fix_bike":
 		return "" if bikes.has(int(action.get("bike", 0))) else "No such bike."
+	if a == "diary_delete":
+		return AdventureDest.delete_check(peer, action)
 	if hose_holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack"]:
 		return "You've got the exhaust hose in your hands. Fit it or hang it back up."
 	if ShedPump.holder() == peer and a in ["take", "remove", "install", "grab", "grab_bike", "mount", "unpack", "dyno_hose"]:
@@ -3198,6 +3200,8 @@ func scrap_check(peer: int, action: Dictionary) -> String:
 			return "That has gone."
 		if not scrappable(f):
 			return "The %s is part of the shed: it can't be scrapped." % furniture_name(f).to_lower()
+		if str(f.get("model", "")) == AdventureDest.PHOTO_MODEL:
+			return "Take the adventure's photo down instead (its diary goes with it)."   # diary_delete
 		if int(f["mover"]) != 0 and int(f["mover"]) != peer:
 			return "Someone else is moving that."
 		if blaster_user(int(f["id"])) != 0:
@@ -3506,6 +3510,21 @@ func _apply(peer: int, action: Dictionary) -> void:
 		for p in crew:
 			if back != "":
 				_tell(int(p), back, true)
+		_mark_dirty()
+		changed.emit()
+		return
+	if a == "diary_delete":
+		# An adventure's photo taken down (see AdventureDest.take_down): gone for the whole crew,
+		# and its diary deleted on the machine of whoever took it down.
+		var gone := AdventureDest.take_down(peer, action)
+		for p in crew:
+			if int(p) != peer:
+				_tell(int(p), str(gone["others"]), true)
+		if peer == me():
+			_diary_taken_down(str(gone["key"]))
+		elif Net.is_online() and not Staff.is_staff_peer(peer):
+			_diary_taken_down.rpc_id(peer, str(gone["key"]))
+		_tell(peer, str(gone["mine"]), true)
 		_mark_dirty()
 		changed.emit()
 		return
@@ -4784,6 +4803,12 @@ func _emote(peer: int, d: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _visor(peer: int, up: bool) -> void:
 	visors[peer] = up
+
+
+## From the host: this player took down the adventure photo `key`, so its diary goes from here.
+@rpc("authority", "call_remote", "reliable")
+func _diary_taken_down(key: String) -> void:
+	AdventureDest.forget_here(key)
 
 
 func _bump(c: Dictionary, key: String) -> void:

@@ -43,13 +43,24 @@ const FLOOD_DIP := 4.0
 const CORE_DECAY := 0.55
 const FLOOD_DECAY := 1.0
 ## The headlight's reach (m) on dipped and main beam: a base plus so much per lumen.
-const LOW_REACH := [70.0, 1.0 / 30.0]
+const LOW_REACH := [58.0, 1.0 / 80.0]
 const HIGH_REACH := [150.0, 1.0 / 15.0]
+## Dipped beam (Simon: "The dipped beam needs to be more dipped"): aimed well down, so its hot
+## spot lands on the road a short way ahead, and cut off sharply along a level line LOW_CUTOFF
+## degrees below the horizon, as a real dipped lamp's is: nothing above it is lit, so the signs
+## and trees further up the road (and oncoming drivers' eyes) stay dark. Main beam has no cut-off.
+const LOW_AIM := 5.0
+const LOW_CUTOFF := 1.3
+## How soft the cut-off's edge is (degrees from lit to dark).
+const CUTOFF_SOFT := 0.35
+## How far the dipped beam's flood reaches (m): the near road and verges only.
+const FLOOD_LOW_REACH := 16.0
 ## Cone falloff (SpotLight3D.spot_angle_attenuation): below 1 the light fades from the middle
 ## outwards, so there is next to nothing left at the cone's edge to show as a line.
 const CORE_FALLOFF := 0.7
 const FLOOD_FALLOFF := 0.35
 static var _soft_tex: GradientTexture2D
+static var _cutoff_tex := {}
 var beam_mode := 1      # headlight switch: 0 off, 1 dipped (low), 2 main (high), 3 main with the fog lights
 const BEAM_NAMES := ["off", "low beam", "high beam", "high beam and fog lights"]
 var _lamp_glow: OmniLight3D
@@ -116,7 +127,7 @@ func setup(exhaust: Vector3, rear_contact: Vector3, lamp: Vector3, lumens: float
 	if lumens > 0.0:
 		_beam = SpotLight3D.new()
 		_beam.position = lamp + Vector3(0.0, 0.0, -0.08)
-		_beam.rotation.x = deg_to_rad(-4.0)
+		_beam.rotation.x = deg_to_rad(-LOW_AIM)
 		_beam.spot_range = LOW_REACH[0] + lumens * LOW_REACH[1]
 		_beam.spot_angle = 30.0
 		_beam.spot_attenuation = CORE_DECAY
@@ -126,9 +137,11 @@ func setup(exhaust: Vector3, rear_contact: Vector3, lamp: Vector3, lumens: float
 		_beam.light_color = Color(1.0, 0.92, 0.78) if lumens < 2000.0 else Color(0.92, 0.96, 1.0)
 		_beam.shadow_enabled = false
 		# The cone's own falloff fades the pool on the road to nothing at its edge, so there is no
-		# ring. (No projector: its blurred spot was already under half strength two thirds of the
-		# way out, so the lit pool was much narrower than the cone.)
+		# ring. (No soft round projector: its blurred spot was already under half strength two
+		# thirds of the way out, so the lit pool was much narrower than the cone.) Dipped, its
+		# projector is the cut-off, a level line and nothing else (see cutoff_texture).
 		_beam.spot_angle_attenuation = CORE_FALLOFF
+		_beam.light_projector = cutoff_texture(LOW_AIM - LOW_CUTOFF)
 		add_child(_beam)
 		_flood = SpotLight3D.new()
 		_flood.name = "Flood"
@@ -173,6 +186,26 @@ static func soft_spot_texture() -> GradientTexture2D:
 		_soft_tex.width = 128
 		_soft_tex.height = 128
 	return _soft_tex
+
+
+## The dipped beam's cut-off as a light projector for a spot aimed `below` degrees under the
+## cut-off line: lit beneath the line, dark above it, with a CUTOFF_SOFT edge between. (A spot
+## light's projector is laid over its cone as tan(angle off the middle / 2), whatever the cone's
+## size, so the line sits at the same place in the picture for any spread.)
+static func cutoff_texture(below: float) -> ImageTexture:
+	var key := snappedf(below, 0.01)
+	if _cutoff_tex.has(key):
+		return _cutoff_tex[key]
+	const SIZE := 512
+	var img := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
+	for y in SIZE:
+		# The angle above the middle of the cone this row of the picture shows (row 0 is the top).
+		var up := rad_to_deg(2.0 * atan((0.5 - (y + 0.5) / SIZE) * 2.0))
+		var lit := 1.0 - smoothstep(below - CUTOFF_SOFT * 0.5, below + CUTOFF_SOFT * 0.5, up)
+		img.fill_rect(Rect2i(0, y, SIZE, 1), Color(lit, lit, lit))
+	var tex := ImageTexture.create_from_image(img)
+	_cutoff_tex[key] = tex
+	return tex
 
 
 ## Whether the headlight shows as light scattered in the night air through volumetric fog
@@ -507,12 +540,16 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 		var night := World.darkness()
 		var high := beam_mode >= 2
 		var lumens: float = _beam.get_meta("lumens")
-		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night) * (3.0 if high else 1.4)
+		_beam.light_energy = float(_beam.get_meta("day_energy")) * (1.0 + 3.0 * night) * (3.0 if high else 1.7)
 		_beam.spot_angle = 20.0 if high else lerpf(30.0, 36.0, night)
 		var reach: Array = HIGH_REACH if high else LOW_REACH
 		_beam.spot_range = float(reach[0]) + lumens * float(reach[1])
-		# Dipped, the hot spot lands some 30 m up the road; main beam goes out to the horizon.
-		_beam.rotation.x = deg_to_rad(-0.6 if high else -1.8)
+		# Dipped, the hot spot lands some 10 m up the road and nothing shines above the cut-off;
+		# main beam goes out to the horizon.
+		_beam.rotation.x = deg_to_rad(-0.6 if high else -LOW_AIM)
+		var cut: Texture2D = null if high else cutoff_texture(LOW_AIM - LOW_CUTOFF)
+		if _beam.light_projector != cut:
+			_beam.light_projector = cut
 		_lamp_glow.visible = engine_on and beam_mode > 0
 		_lamp_glow.light_energy = 0.9 if high else 0.5
 		# The core lights only the road; the flood, wide, dim and fading from its middle, fills
@@ -522,7 +559,9 @@ func update(delta: float, speed: float, throttle: float, engine_on: bool, health
 		_flood.light_energy = _beam.light_energy * FLOOD_SHARE
 		# Wide enough to light the hedges, walls, trees and signs either side.
 		_flood.spot_angle = minf(_beam.spot_angle + FLOOD_WIDER, 62.0)
-		_flood.spot_range = _beam.spot_range * FLOOD_REACH
+		# Dipped, it only fills the near road and verges: it stops short (it has no cut-off of its
+		# own), so it never lights the trees and signs further on.
+		_flood.spot_range = _beam.spot_range * FLOOD_REACH if high else FLOOD_LOW_REACH
 		_flood.light_volumetric_fog_energy = night * (BEAM_FOG_HIGH if high else BEAM_FOG_LOW) / maxf(_flood.light_energy, 1.0)
 		if _cone == null and not volumetric_beams() and night > 0.2:
 			# Volumetric fog switched off while riding: the stand-in glow takes over.

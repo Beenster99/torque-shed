@@ -696,13 +696,37 @@ func _run_all() -> void:
 	await _test_lamps_self_cancel()
 	_test_lamps_bindings()
 	await _test_lamps_remote()
+	print("Simon's v0.22.0 round: rider styles, and looking into the corner")
+	await _test_rider_style_styles()
+	await _test_rider_style_corner()
+	await _test_rider_style_leg_out()
+	await _test_rider_style_look()
+	await _test_rider_style_toggle()
+	await _test_rider_style_save_sync()
+	await _test_rider_style_all_bikes()
 	print("Simon's v0.21.0 round: smooth roads on adventures")
 	_test_smooth_fair()
 	_test_smooth_real()
 	_test_smooth_fork_joins()
+	print("Simon's v0.22.0 round: deleting a wall-mounted diary, and a more dipped dipped beam")
+	_test_diary_delete_take_down()
+	await _test_beam_dipped()
+	await _test_beam_ride()
 	_test_smooth_surface()
 	_test_smooth_land_under()
 	await _test_smooth_ride()
+	print("Simon's v0.22.0 round: buses, bigger ramps and a kicker in the yard, and all the yard kit drawn properly")
+	_test_yard_items_catalogue()
+	_test_yard_items_buy_place()
+	await _test_yard_items_fit()
+	await _test_yard_items_smooth()
+	await _test_yard_items_bus_jump()
+	print("Simon's v0.22.0 round: 5 s as a ghost after a respawn, and nobody knocked off by a mate on an adventure")
+	_test_ghost_look()
+	await _test_ghost_respawn()
+	await _test_ghost_pass_through()
+	await _test_ghost_remote()
+	await _test_ghost_adventure()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -7512,8 +7536,8 @@ func _test_soft_beam() -> void:
 		"the flood is much wider (%.0f vs %.0f degrees) and dimmer" % [flood.spot_angle, core.spot_angle])
 	check(core.spot_angle_attenuation < 1.0 and flood.spot_angle_attenuation < 0.5,
 		"both fade from the middle outwards (falloff %.2f / %.2f), nothing left at the edge" % [core.spot_angle_attenuation, flood.spot_angle_attenuation])
-	check(core.light_projector == null and flood.light_projector == null,
-		"no projector narrowing the pool: the cones' own falloff softens its edge")
+	check(core.light_projector == BikeEffects.cutoff_texture(BikeEffects.LOW_AIM - BikeEffects.LOW_CUTOFF) and flood.light_projector == null,
+		"no round projector narrowing the pool (dipped, only the level cut-off): the cones' own falloff softens its edge")
 	check(core.light_volumetric_fog_energy == 0.0 and flood.light_volumetric_fog_energy > 0.0,
 		"only the soft flood lights the night air, never the bright core")
 	check(fx.beam_fog() > 0.5 and fx.beam_fog() <= BikeEffects.BEAM_FOG_LOW + 0.01, "the haze is faint (%.2f)" % fx.beam_fog())
@@ -9728,8 +9752,10 @@ func _test_gear_seen_by_others() -> void:
 	dressed.rider_gear = RiderGear.clean_worn({"helmet": "helmet_kestrel", "jacket": "jacket_kestrel", "boots": "boots_mx", "trousers": "trousers_kestrel"})
 	add_child(dressed)
 	dressed.build_from(BikeBuild.new())
-	check(dressed._rider != null and dressed._rider.get_child_count() > plain._rider.get_child_count(),
-		"a rider in race gear on a bike is drawn with it (%d meshes, plain %d)" % [dressed._rider.get_child_count(), plain._rider.get_child_count()])
+	# (The rider's meshes hang from the pivots of their riding pose, so count them all.)
+	var rider_meshes := func(m: BikeModel) -> int: return m._rider.find_children("*", "MeshInstance3D", true, false).size()
+	check(dressed._rider != null and int(rider_meshes.call(dressed)) > int(rider_meshes.call(plain)),
+		"a rider in race gear on a bike is drawn with it (%d meshes, plain %d)" % [rider_meshes.call(dressed), rider_meshes.call(plain)])
 	var helmeted := 0
 	# The helmet and the left arm sit on pivots of their own (to nod and wave), so look all the way down.
 	for c in dressed._rider.find_children("*", "VisualInstance3D", true, false):
@@ -22970,6 +22996,40 @@ func _test_headlight_lit() -> void:
 	await _headlights().test_lit()
 
 
+# ---------------------------------------------------------------------------- rider styles (tests/rider_style_tests.gd)
+
+func _rider_styles() -> RefCounted:
+	return load("res://tests/rider_style_tests.gd").new(self)
+
+
+func _test_rider_style_styles() -> void:
+	await _rider_styles().test_styles()
+
+
+func _test_rider_style_corner() -> void:
+	await _rider_styles().test_corner_pose()
+
+
+func _test_rider_style_leg_out() -> void:
+	await _rider_styles().test_leg_out()
+
+
+func _test_rider_style_look() -> void:
+	await _rider_styles().test_look()
+
+
+func _test_rider_style_toggle() -> void:
+	await _rider_styles().test_toggle()
+
+
+func _test_rider_style_save_sync() -> void:
+	await _rider_styles().test_save_and_sync()
+
+
+func _test_rider_style_all_bikes() -> void:
+	await _rider_styles().test_all_bikes()
+
+
 # ---------------------------------------------------------------------------- helmets (tests/helmet_tests.gd)
 
 func _helmets() -> RefCounted:
@@ -23268,3 +23328,69 @@ func _test_smooth_land_under() -> void:
 
 func _test_smooth_ride() -> void:
 	await _smooth().test_ride()
+
+
+# ---------------------------------------------------------------------------- deleting a diary, the dipped beam (tests/diary_delete_tests.gd, tests/beam_tests.gd)
+
+func _test_diary_delete_take_down() -> void:
+	load("res://tests/diary_delete_tests.gd").new(self).test_take_down()
+
+
+func _test_beam_dipped() -> void:
+	await load("res://tests/beam_tests.gd").new(self).test_dipped()
+
+
+func _test_beam_ride() -> void:
+	await load("res://tests/beam_tests.gd").new(self).test_ride()
+
+
+# ---------------------------------------------------------------------------- yard kit: buses, big ramps, the kicker (tests/yard_items_tests.gd)
+
+func _yard_items() -> RefCounted:
+	return load("res://tests/yard_items_tests.gd").new(self)
+
+
+func _test_yard_items_catalogue() -> void:
+	_yard_items().test_catalogue()
+
+
+func _test_yard_items_buy_place() -> void:
+	_yard_items().test_buy_place()
+
+
+func _test_yard_items_fit() -> void:
+	await _yard_items().test_fit()
+
+
+func _test_yard_items_smooth() -> void:
+	await _yard_items().test_smooth()
+
+
+func _test_yard_items_bus_jump() -> void:
+	await _yard_items().test_bus_jump()
+
+
+# ---------------------------------------------------------------------------- the respawn ghost (tests/ghost_tests.gd)
+
+func _ghosts() -> RefCounted:
+	return load("res://tests/ghost_tests.gd").new(self)
+
+
+func _test_ghost_look() -> void:
+	_ghosts().test_look()
+
+
+func _test_ghost_respawn() -> void:
+	await _ghosts().test_respawn()
+
+
+func _test_ghost_pass_through() -> void:
+	await _ghosts().test_pass_through()
+
+
+func _test_ghost_remote() -> void:
+	await _ghosts().test_remote()
+
+
+func _test_ghost_adventure() -> void:
+	await _ghosts().test_adventure()

@@ -251,6 +251,15 @@ var _seen := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])   # the lean and lean rate
 var skills := {}
 ## Works out riding XP as the bike is ridden; only the local player's bike has one.
 var ride_xp: RideXP
+## Seconds left of the ghost after a respawn (see BikeGhost): drawn see-through, and nothing
+## knocks the rider off: other bikes and the traffic pass through it.
+var ghost_left := 0.0
+## The crew's bikes this one passes through now (instance id -> RemoteBike): theirs while
+## they're a ghost, everyone's out on an adventure (see _update_passing).
+var _passing := {}
+## Everything the bike's body bumps into, ridden normally: the world, other bikes and the
+## parked bikes in the shed. A ghost bumps into the world alone.
+const SOLID_MASK := 1 | 2 | 4
 
 
 func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
@@ -291,7 +300,7 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	linear_damp = 0.0
 	angular_damp = 0.05
 	collision_layer = 2
-	collision_mask = 1 | 2 | 4   # world, other bikes, parked bikes in the shed
+	collision_mask = 1 if is_ghost() else SOLID_MASK   # world, other bikes, parked bikes in the shed
 
 	for child in get_children():
 		if child is CollisionShape3D or child is BikeModel:
@@ -520,7 +529,10 @@ func _hold_still() -> void:
 	freeze = hold
 
 
+## Picks the rider up after a crash (or a reset) and puts them back on, a ghost for
+## BikeGhost.TIME seconds (see start_ghost).
 func respawn() -> void:
+	start_ghost()
 	var spot = respawn_at.call(global_position) if respawn_at.is_valid() else null
 	if spot is Transform3D:
 		place((spot as Transform3D).origin, (spot as Transform3D).basis.get_euler().y)
@@ -528,6 +540,63 @@ func respawn() -> void:
 	var fwd := -global_transform.basis.z
 	var heading := atan2(-fwd.x, -fwd.z)
 	place(global_position + Vector3.UP * 0.3, heading)
+
+
+## Makes the bike a ghost for `seconds`: see-through, and passing through other bikes, the
+## traffic and the police (it still rides on the ground and stops at walls), and nothing it
+## touches throws the rider off.
+func start_ghost(seconds := BikeGhost.TIME) -> void:
+	ghost_left = seconds
+	collision_mask = 1
+	BikeGhost.apply(model, BikeGhost.look(ghost_left))
+
+
+## Whether the bike is a ghost now (see start_ghost).
+func is_ghost() -> bool:
+	return ghost_left > 0.0
+
+
+## Counts the ghost down, and makes the bike solid again once it's over.
+func _step_ghost(delta: float) -> void:
+	if ghost_left <= 0.0:
+		return
+	ghost_left = maxf(0.0, ghost_left - delta)
+	if ghost_left <= 0.0:
+		collision_mask = SOLID_MASK
+	BikeGhost.apply(model, BikeGhost.look(ghost_left))
+
+
+## Whether riders pass through each other here: out on an adventure nobody knocks anyone off.
+static func riders_pass() -> bool:
+	return AdventureTrip.current != null and AdventureTrip.current.on_trip()
+
+
+## Passes through the crew's bikes that should be (a ghost's, and everyone's on an adventure)
+## and goes back to bumping into them when they shouldn't.
+func _update_passing() -> void:
+	var all := riders_pass()
+	for id in _passing.keys():
+		if not is_instance_valid(_passing[id]):
+			_passing.erase(id)
+	for n in get_tree().get_nodes_in_group("ridden_bike"):
+		var rb := n as RemoteBike
+		if rb == null:
+			continue
+		var want := all or rb.is_ghost()
+		var id := rb.get_instance_id()
+		if want == _passing.has(id):
+			continue
+		if want:
+			add_collision_exception_with(rb)
+			_passing[id] = rb
+		else:
+			remove_collision_exception_with(rb)
+			_passing.erase(id)
+
+
+## Whether this bike passes through `other` now (see _update_passing).
+func passes(other: Node) -> bool:
+	return is_ghost() or (other != null and _passing.has(other.get_instance_id()))
 
 
 func _physics_process(delta: float) -> void:
@@ -539,6 +608,8 @@ func _physics_process(delta: float) -> void:
 func _physics_process_body(delta: float) -> void:
 	if build == null:
 		return
+	_step_ghost(delta)
+	_update_passing()
 	var space := get_world_3d().direct_space_state
 	var b := global_transform.basis
 	var fwd := -b.z
@@ -632,6 +703,8 @@ func _physics_process_body(delta: float) -> void:
 
 	if model:
 		model.update_pose(self)
+		# The rider in their riding style, looking into the corner (see BikeModel.update_rider).
+		model.update_rider(lean_angle, steer, speed, maxf(front_brake, rear_brake * 0.6) if controls_enabled else 0.0, delta)
 		# Coming to rest the rider puts their left foot down (not crashed, airborne or in a burnout).
 		model.update_foot(speed, delta, not is_crashed and burnout <= 0.0 and (wheels[0]["contact"] or wheels[1]["contact"]))
 		if heat:
@@ -1830,9 +1903,9 @@ func _steadiness() -> float:
 	return lerpf(0.45, 1.0, assist) + 0.12 * float(skills.get("balance", 0))
 
 
-func _on_body_shape_entered(_rid: RID, _body: Node, _body_shape: int, local_shape: int) -> void:
-	if is_crashed:
-		return
+func _on_body_shape_entered(_rid: RID, body: Node, _body_shape: int, local_shape: int) -> void:
+	if is_crashed or passes(body):
+		return   # a ghost (or a crew member's bike on an adventure) knocks nobody off
 	var owner_id := shape_find_owner(local_shape)
 	var shape_node := shape_owner_get_owner(owner_id) as Node
 	if shape_node and shape_node.get_index() == _rider_shape_index and linear_velocity.length() > 4.0:
@@ -1845,6 +1918,11 @@ func crash() -> void:
 	is_crashed = true
 	_crash_timer = 0.0
 	throttle = 0.0
+	if is_ghost():
+		# Come off by itself (tipped right over): the ghost's over, the next respawn starts another.
+		ghost_left = 0.0
+		collision_mask = SOLID_MASK
+		BikeGhost.apply(model, 0.0)
 	for w in wheels:
 		w["drive_torque"] = 0.0
 	if model:
@@ -1870,7 +1948,8 @@ func _clear_ragdoll() -> void:
 
 
 ## Snapshot for the network: position, rotation, velocity, steering, wheels, engine, then the
-## horn, gear, burnout, headlight switch, and the stop lamp [25] and indicators [26].
+## horn, gear, burnout, headlight switch, the stop lamp [25] and indicators [26], and the
+## seconds left of a respawn's ghost [27] (see BikeGhost).
 func get_net_state() -> PackedFloat32Array:
 	var q := global_transform.basis.get_rotation_quaternion()
 	var p := global_position
@@ -1880,7 +1959,7 @@ func get_net_state() -> PackedFloat32Array:
 		steer, wheels[0]["spin"], wheels[1]["spin"], wheels[0]["compression"], wheels[1]["compression"],
 		rpm, sound_load(), 1.0 if is_crashed else 0.0, body_shift, 1.0 if engine_on else 0.0, skid,
 		1.0 if (horn_audio and horn_audio.pressed) else 0.0, float(gear), burnout, float(beam),
-		1.0 if lamps.braking else 0.0, float(lamps.side),
+		1.0 if lamps.braking else 0.0, float(lamps.side), ghost_left,
 	])
 
 
