@@ -705,6 +705,12 @@ func _run_all() -> void:
 	_test_smooth_surface()
 	_test_smooth_land_under()
 	await _test_smooth_ride()
+	print("Simon's v0.22.0 round: buses, bigger ramps and a kicker in the yard, and all the yard kit drawn properly")
+	_test_yard_items_catalogue()
+	_test_yard_items_buy_place()
+	await _test_yard_items_fit()
+	await _test_yard_items_smooth()
+	await _test_yard_items_bus_jump()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -23276,3 +23282,29 @@ func _test_beam_dipped() -> void:
 
 func _test_beam_ride() -> void:
 	await load("res://tests/beam_tests.gd").new(self).test_ride()
+
+
+# ---------------------------------------------------------------------------- yard kit: buses, big ramps, the kicker (tests/yard_items_tests.gd)
+
+func _yard_items() -> RefCounted:
+	return load("res://tests/yard_items_tests.gd").new(self)
+
+
+func _test_yard_items_catalogue() -> void:
+	_yard_items().test_catalogue()
+
+
+func _test_yard_items_buy_place() -> void:
+	_yard_items().test_buy_place()
+
+
+func _test_yard_items_fit() -> void:
+	await _yard_items().test_fit()
+
+
+func _test_yard_items_smooth() -> void:
+	await _yard_items().test_smooth()
+
+
+func _test_yard_items_bus_jump() -> void:
+	await _yard_items().test_bus_jump()

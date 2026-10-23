@@ -49,7 +49,7 @@ static func starting_kit() -> Array:
 	var west := Basis(Vector3.UP, PI * 0.5)
 	var north := Basis()
 	var kit := []
-	# The jump line along z = JUMP_Z, ridden east: the big ramp onto a landing.
+	# The jump line along z = JUMP_Z, ridden east: the large ramp onto a landing.
 	kit.append(["ramp", Transform3D(east, Vector3(-20.0, 0.0, JUMP_Z)), "ramp_large"])
 	kit.append(["ramp", Transform3D(west, Vector3(-6.0, 0.0, JUMP_Z)), "ramp_landing"])
 	kit.append(["marker", Transform3D(north, Vector3(-1.0, 0.0, JUMP_Z + 2.4)), "flag_chequered"])
