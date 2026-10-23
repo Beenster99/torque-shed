@@ -106,6 +106,9 @@ static func result(plan: Dictionary, wait := false) -> Dictionary:
 		if not wait:
 			return {}
 		WorkerThreadPool.wait_for_task_completion(task)
+		_lock.lock()
+		_tasks.erase(k)   # (waited for here: poll must not wait for it again)
+		_lock.unlock()
 		return result(plan, true)
 	if wait:
 		var res := _run(plan)

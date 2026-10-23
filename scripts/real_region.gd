@@ -19,6 +19,9 @@ const GENERIC_NAMES := {"motorway": "Motorway", "trunk": "Trunk road", "primary"
 
 static var _cache := {}
 static var _cache_lock := Mutex.new()
+## The areas of listed cells ("area:@...") cached, oldest first: only the last few are kept (each is many cells).
+static var _cell_areas: Array[String] = []
+const CELL_AREAS_KEPT := 4
 
 var id := ""
 var title := ""
@@ -107,6 +110,11 @@ static func get_region(region_id: String) -> RealRegion:
 	var r := _load(region_id)
 	_cache_lock.lock()
 	_cache[region_id] = r
+	if region_id.begins_with(CELLS_PREFIX):
+		_cell_areas.erase(region_id)
+		_cell_areas.append(region_id)
+		while _cell_areas.size() > CELL_AREAS_KEPT:
+			_cache.erase(_cell_areas.pop_front())
 	_cache_lock.unlock()
 	return r
 
@@ -118,6 +126,17 @@ static func _json(path: String) -> Variant:
 
 
 static func _load(region_id: String) -> RealRegion:
+	if region_id.begins_with(CELLS_PREFIX):
+		var cells := cells_of_area(region_id)
+		if cells.is_empty():
+			return null
+		var dirs: Array[String] = []
+		for c in cells:
+			var d := cell_dir(c)
+			if d != "":
+				dirs.append(d)
+		var mid := cell_middle(cells[0])
+		return stitch(region_id, title_of(region_id), dirs, mid.x, mid.y)
 	if region_id.begins_with(AREA_PREFIX):
 		var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {})
 		if a.is_empty():
@@ -179,6 +198,42 @@ static var cell_dirs: Array[String] = ["res://data/cells", "user://cells"]
 ## Named areas made of cells, in an areas.json beside the cells: {name: {title, frame: {lat, lon}, south, west, north,
 ## east}}. An area's region id is "area:" and its name.
 const AREA_PREFIX := "area:"
+## An area of listed cells: "area:@" and the cells as ROW_COLUMN, comma between, its frame at the middle of the first. A
+## journey anywhere in the world is one (AdventureJourney.cells_for), and so is what the Route planner TV shows close in.
+const CELLS_PREFIX := "area:@"
+## The most cells an area of listed cells may have (each is a couple of megabytes to stitch).
+const MAX_AREA_CELLS := 64
+
+
+## The region id of the area of `cells` (the first is where its frame is).
+static func cells_area_id(cells: Array[Vector2i]) -> String:
+	var parts := PackedStringArray()
+	for c in cells:
+		parts.append("%d_%d" % [c.x, c.y])
+	return CELLS_PREFIX + ",".join(parts)
+
+
+## The cells of an area of listed cells, in order; [] when `region_id` isn't one (or lists too many, or junk).
+static func cells_of_area(region_id: String) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	if not region_id.begins_with(CELLS_PREFIX):
+		return out
+	for part in region_id.trim_prefix(CELLS_PREFIX).split(","):
+		var rc := part.split("_")
+		if rc.size() != 2 or not rc[0].is_valid_int() or not rc[1].is_valid_int():
+			return [] as Array[Vector2i]
+		var c := Vector2i(int(rc[0]), int(rc[1]))
+		if c.x < 0 or c.x >= int(180.0 / CELL_DEG) or c.y < 0 or c.y >= int(360.0 / CELL_DEG) or out.has(c):
+			return [] as Array[Vector2i]
+		out.append(c)
+	if out.size() > MAX_AREA_CELLS:
+		return [] as Array[Vector2i]
+	return out
+
+
+## (lat, lon) of the middle of cell `c`.
+static func cell_middle(c: Vector2i) -> Vector2:
+	return Vector2((c.x + 0.5) * CELL_DEG - 90.0, (c.y + 0.5) * CELL_DEG - 180.0)
 
 
 ## The (row, column) of the cell that (lat, lon) is in: rows up from the south pole, columns east from 180 W.
@@ -229,7 +284,7 @@ static func extent_of(region_id: String) -> Rect2:
 	if not region_id.begins_with(AREA_PREFIX):
 		var r := get_region(region_id)
 		return r.bounds if r != null else Rect2()
-	var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {})
+	var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {}) if not region_id.begins_with(CELLS_PREFIX) else _cells_box(region_id)
 	if a.is_empty():
 		return Rect2()
 	var lat0 := float(a["frame"]["lat"])
@@ -243,10 +298,28 @@ static func extent_of(region_id: String) -> Rect2:
 ## Fetches the cells of area `region_id` ("area:NAME") the game hasn't got (CellStore): "" when it has them all, else why
 ## not. Blocks: a worker's job.
 static func fetch_area(region_id: String, progress := Callable()) -> String:
+	if region_id.begins_with(CELLS_PREFIX):
+		var cells := cells_of_area(region_id)
+		return CellStore.fetch_cells(cells, progress) if not cells.is_empty() else "That's not a part of the world."
 	var a: Dictionary = areas().get(region_id.trim_prefix(AREA_PREFIX), {})
 	if a.is_empty():
 		return "This game doesn't know that part of the world."
 	return CellStore.fetch_box(float(a["south"]), float(a["west"]), float(a["north"]), float(a["east"]), progress)
+
+
+## The box and frame of an area of listed cells, as areas.json has a named area's: {frame, south, west, north, east}.
+static func _cells_box(region_id: String) -> Dictionary:
+	var cells := cells_of_area(region_id)
+	if cells.is_empty():
+		return {}
+	var lo := cells[0]
+	var hi := cells[0]
+	for c in cells:
+		lo = Vector2i(mini(lo.x, c.x), mini(lo.y, c.y))
+		hi = Vector2i(maxi(hi.x, c.x), maxi(hi.y, c.y))
+	var mid := cell_middle(cells[0])
+	return {"frame": {"lat": mid.x, "lon": mid.y}, "south": lo.x * CELL_DEG - 90.0, "west": lo.y * CELL_DEG - 180.0,
+		"north": (hi.x + 1) * CELL_DEG - 90.0, "east": (hi.y + 1) * CELL_DEG - 180.0}
 
 
 ## Forgets every area stitched so far (new cells came: CellStore), so each is stitched again with them.
@@ -255,6 +328,7 @@ static func forget_areas() -> void:
 	for k in _cache.keys():
 		if str(k).begins_with(AREA_PREFIX):
 			_cache.erase(k)
+	_cell_areas.clear()
 	_cache_lock.unlock()
 
 
@@ -611,6 +685,43 @@ func geo_to_xz(lat: float, lon: float) -> Vector2:
 func xz_to_geo(x: float, z: float) -> Array[float]:
 	var m := _metres_per_degree(frame_lat)
 	return [frame_lat - z / m.x, frame_lon + x / m.y]
+
+
+## What region `region_id` is called ("the roads round" a town for an area of listed cells, worked out without stitching
+## it); "the map" when the game doesn't know it.
+static func title_of(region_id: String) -> String:
+	if region_id.begins_with(CELLS_PREFIX):
+		var frame := frame_of(region_id)
+		if frame == Vector2.INF:
+			return "the map"
+		WorldMap.load_world()
+		var near := WorldMap.nearest_place(frame.x, frame.y)
+		return "the roads round %s" % near if near != "" else "the roads here"
+	if region_id.begins_with(AREA_PREFIX):
+		return str(areas().get(region_id.trim_prefix(AREA_PREFIX), {}).get("title", "the map"))
+	var r := get_region(region_id)
+	return r.title if r != null else "the map"
+
+
+## (lat, lon) of the frame of region `region_id` (an area's without loading it); Vector2.INF when the game doesn't know it.
+static func frame_of(region_id: String) -> Vector2:
+	if region_id.begins_with(AREA_PREFIX):
+		var a: Dictionary = _cells_box(region_id) if region_id.begins_with(CELLS_PREFIX) else areas().get(region_id.trim_prefix(AREA_PREFIX), {})
+		return Vector2(float(a["frame"]["lat"]), float(a["frame"]["lon"])) if not a.is_empty() else Vector2.INF
+	var r := get_region(region_id)
+	return Vector2(r.frame_lat, r.frame_lon) if r != null else Vector2.INF
+
+
+## (x, z) in a frame at `frame` (lat, lon) of (lat, lon), as geo_to_xz has it.
+static func to_frame(frame: Vector2, lat: float, lon: float) -> Vector2:
+	var m := _metres_per_degree(frame.x)
+	return Vector2((lon - frame.y) * m.y, -(lat - frame.x) * m.x)
+
+
+## (lat, lon) of (x, z) in a frame at `frame` (lat, lon).
+static func from_frame(frame: Vector2, x: float, z: float) -> Vector2:
+	var m := _metres_per_degree(frame.x)
+	return Vector2(frame.x - z / m.x, frame.y + x / m.y)
 
 
 ## (metres per degree of latitude, of longitude) at `lat`, from the WGS84 series.
