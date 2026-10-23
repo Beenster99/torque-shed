@@ -146,7 +146,7 @@ func _ready() -> void:
 		line.add_theme_constant_override("separation", 4)
 		_find_box.add_child(line)
 		for ch in keys:
-			var b := _button("Space" if ch == " " else ch, 40.0, 18)
+			var b := _button("_" if ch == " " else ch, 40.0, 18)   # (a gap between words)
 			b.custom_minimum_size = Vector2(40.0, 34.0)
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			b.pressed.connect(func(): type(ch))

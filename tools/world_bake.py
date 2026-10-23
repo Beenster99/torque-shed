@@ -13,7 +13,8 @@ and the corners (u32 indices into the points, three a triangle); for kind 1 (lin
 u32 count of points and the points. A point is an i32 pair (longitude, latitude) in 1e-5 degrees. Layers: "land_low"
 (the 1:50m coast, for the globe), "land" (1:10m), "lakes", "rivers", "borders".
 
-Needs numpy and mapbox_earcut (pip install mapbox-earcut)."""
+Natural Earth's maps are in the public domain (https://www.naturalearthdata.com). Needs numpy and mapbox_earcut (pip
+install mapbox-earcut)."""
 import argparse
 import json
 import os

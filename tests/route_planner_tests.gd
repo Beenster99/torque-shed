@@ -256,7 +256,8 @@ func test_tv() -> void:
 	t.add_child(dash)
 	dash.show_page("route", {})
 	var board: RouteTv = dash._route
-	await _settle(func(): return board != null and WorldMap.loaded() and not board.view.busy())
+	# (the controls lay themselves out over the first frames: touches wait for that)
+	await _settle(func(): return board != null and WorldMap.loaded() and not board.view.busy() and board._warm >= 8)
 	check(board != null and board.visible and WorldMap.mesh("land") != null and board.view.span > 10000000.0,
 		"the route planner shows the world (%.0f km across)" % (board.view.span / 1000.0 if board else 0.0))
 	check(dash.kind == "route" and TvChannels.channels_for("f1").has("route") and TvChannels.channels_for("crew").has("route")
@@ -273,7 +274,8 @@ func test_tv() -> void:
 	await _settle(func(): return board._results.get_child_count() > 0 and board._results.get_child(0) is Button)
 	var hit: Button = board._results.get_child(0) if board._results.get_child_count() > 0 else null
 	check(str(Shed.route_tv.get("q", "")) == "leeds" and hit is Button and (hit as Button).text.begins_with("Leeds"),
-		"the keyboard types a search for every TV, and it finds Leeds (%s)" % ((hit as Button).text if hit is Button else "nothing"))
+		"the keyboard types a search for every TV, and it finds Leeds (%s; typed %s, %d rows, tab %s)" % [(hit as Button).text if hit is Button else "nothing",
+			str(Shed.route_tv.get("q", "")), board._results.get_child_count(), board._tab()])
 	dash.tap(hit.global_position + hit.size * 0.5)
 	await _settle(func(): return board._plan_box.visible and board.view.span < 100000.0)
 	check(absf(board.view.lat - 53.8) < 0.2 and absf(board.view.lon + 1.55) < 0.2 and board.view.span <= RouteTv.FOUND_SPAN
