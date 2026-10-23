@@ -221,7 +221,7 @@ func _ghost_check(trip: AdventureTrip, s: float, lat: float) -> bool:
 		main.bike.respawn()
 		var t0 := Time.get_ticks_msec()
 		_ghost_from.rpc()
-		var mine_ok := main.bike.is_ghost() and BikeGhost.drawn(main.bike.model) > 0.3
+		var mine_ok: bool = main.bike.is_ghost() and BikeGhost.drawn(main.bike.model) > 0.3
 		await _until(func():
 			_hold(trip, s, lat)
 			return main.bike == null or not main.bike.is_ghost(), 8.0)
