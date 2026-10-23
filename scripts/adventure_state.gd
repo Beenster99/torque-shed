@@ -4,7 +4,8 @@ extends RefCounted
 ## whole crew along the journey they planned on the map (AdventureJourney, AdventurePlans), every
 ## player's game plans the same road from it (AdventureWorld) and puts them on a bike at the start;
 ## reaching the last pin, or the host ending it, brings everyone back to the shed with their bikes
-## as they were (the fuel burnt, the wear and the muck all kept, as after any ride).
+## as they were (the fuel burnt, the muck and the tyres' wear kept; nothing else on the bike wears
+## out there, see Roadside).
 ##
 ## Shed.adventure: {} when there's none, else {id, seed (for the stops along it), km, plan (see
 ## AdventurePlans), real and real_hash (the planned road's id and hash), theme (the look of its

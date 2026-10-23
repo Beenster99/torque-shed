@@ -56,4 +56,4 @@ func dress(gear: Dictionary, tint: Color) -> void:
 	(get_node("Body") as MeshInstance3D).material_override = RiderFigure.material(str(worn["jacket"]), tint)
 	var plain := get_node("Helmet") as MeshInstance3D
 	plain.visible = false
-	RiderFigure.helmet(self, plain.position, 0.15, str(worn["helmet"]), tint, 1, true)
+	RiderFigure.helmet(self, plain.position, 0.15, str(worn["helmet"]), tint, 1, true, worn)

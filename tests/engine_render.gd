@@ -3,7 +3,8 @@ extends Node
 ##   godot --headless --path . res://tests/engine_render.tscn -- --out=DIR [--only=triple]
 ## For each engine: a rev sweep (idle, a pull to the redline, roll off with pops, a blip), its
 ## gear changes (--only=shift) and its start-ups (--only=start). Mixed the way the chase camera
-## hears it: mostly exhaust, some engine.
+## hears it: mostly exhaust, some engine. With --clips, three short clips of each engine instead:
+## idling, revving up through the range and back, and the overrun off the throttle.
 
 const CASES := [
 	["single_450_stock", "single", 1, 450.0, {"idle": 1500.0, "redline": 11000.0, "peak": 8000.0, "exhaust": "stock"}],
@@ -21,6 +22,7 @@ const CASES := [
 	["2stroke_125_straight", "2stroke", 1, 125.0, {"idle": 1450.0, "redline": 14600.0, "peak": 11250.0, "exhaust": "straight", "kick": true}],
 	["2stroke_500_twin_full", "2stroke", 2, 500.0, {"idle": 1150.0, "redline": 11400.0, "peak": 8800.0, "exhaust": "full"}],
 	["2stroke_750_triple_race", "2stroke", 3, 750.0, {"idle": 1050.0, "redline": 10600.0, "peak": 8150.0, "exhaust": "race"}],
+	["2stroke_250_mx_full", "2stroke", 1, 250.0, {"idle": 1400.0, "redline": 12500.0, "peak": 9500.0, "exhaust": "full", "kick": true}],
 ]
 
 
@@ -45,6 +47,18 @@ func _ready() -> void:
 		t1 = Time.get_ticks_usec()
 		EngineSynth.render_starter(sp)
 		print("starter %d ms" % ((Time.get_ticks_usec() - t1) / 1000))
+		get_tree().quit()
+		return
+	if OS.get_cmdline_user_args().has("--clips"):
+		for c in CASES:
+			if only != "" and not str(c[0]).contains(only):
+				continue
+			# --recorded: the game's own bank, with any recordings shipped for the engine.
+			var sp := EngineSynth.make_spec(c[1], c[2], c[3], c[4])
+			var bank := EngineBank.for_spec(sp) if OS.get_cmdline_user_args().has("--recorded") else EngineBank.new(sp)
+			bank.bake_now()
+			for clip in CLIPS:
+				EngineSynth.save_wav(render_plan(bank, CLIPS[clip]), out_dir.path_join("%s_%s.wav" % [c[0], clip]))
 		get_tree().quit()
 		return
 	if OS.get_cmdline_user_args().has("--loops"):
@@ -130,14 +144,57 @@ func _silence(s: float) -> PackedFloat32Array:
 	return p
 
 
+## The --clips plans: [seconds, rpm at the end (a share of the redline, or "idle" times), throttle].
+const CLIPS := {
+	"idle": [[3.0, "i1.0", 0.0]],
+	"rev": [[0.6, "i1.0", 0.0], [2.4, 0.97, 1.0], [0.3, 0.98, 1.0], [1.2, 0.35, 0.6], [0.3, "i1.0", 0.0]],
+	"overrun": [[0.4, 0.9, 1.0], [0.2, 0.92, 1.0], [2.6, "i1.3", 0.0], [0.6, "i1.0", 0.0]],
+}
+
+
 ## A short ride on the spot: idle, pull to the redline, shut off (pops), blip, downshift bang.
 func render_drive(bank: EngineBank) -> PackedFloat32Array:
+	var idle: float = bank.spec["idle"]
+	var red: float = bank.spec["redline"]
+	return render_plan(bank, [[1.2, idle, 0.0], [2.6, red * 0.97, 1.0], [0.25, red * 0.98, 1.0], [1.8, idle * 1.6, 0.0], [0.5, idle, 0.0],
+		[0.25, red * 0.55, 1.0], [0.25, red * 0.6, 1.0], [1.0, idle * 1.4, 0.0], [0.6, idle, 0.0]])
+
+
+var _decoded := {}     # "layer/bucket" -> samples decoded from a recorded loop
+var _loop_rate := {}   # and the rate it was recorded at
+
+
+## A loop's samples: the baked ones, or a recorded loop's decoded from its 16-bit stream.
+func _loop_samples(bank: EngineBank, layer: String, b: int) -> PackedFloat32Array:
+	var baked: PackedFloat32Array = bank.loops[layer][b]
+	if not baked.is_empty():
+		return baked
+	var key := "%s/%d" % [layer, b]
+	if not _decoded.has(key):
+		var st := bank.streams[layer][b] as AudioStreamWAV
+		var out := PackedFloat32Array()
+		if st and st.format == AudioStreamWAV.FORMAT_16_BITS and not st.stereo:
+			out.resize(st.data.size() / 2)
+			for q in out.size():
+				out[q] = st.data.decode_s16(q * 2) / 32768.0
+			_loop_rate[key] = st.mix_rate
+		_decoded[key] = out
+	return _decoded[key]
+
+
+## Plays the bank through `plan` ([seconds, rpm at the end, throttle] steps; an rpm under 1.5
+## is a share of the redline, "iN" is N times idle), with the overrun's pops, normalised.
+func render_plan(bank: EngineBank, steps: Array) -> PackedFloat32Array:
+	_decoded = {}
+	_loop_rate = {}
 	var spec := bank.spec
 	var idle: float = spec["idle"]
 	var red: float = spec["redline"]
-	# [seconds, rpm at the end, throttle]
-	var plan := [[1.2, idle, 0.0], [2.6, red * 0.97, 1.0], [0.25, red * 0.98, 1.0], [1.8, idle * 1.6, 0.0], [0.5, idle, 0.0],
-		[0.25, red * 0.55, 1.0], [0.25, red * 0.6, 1.0], [1.0, idle * 1.4, 0.0], [0.6, idle, 0.0]]
+	var plan := []
+	for p in steps:
+		var to = p[1]
+		var r: float = idle * float(str(to).trim_prefix("i")) if to is String else (float(to) * red if float(to) < 1.5 else float(to))
+		plan.append([p[0], r, p[2]])
 	var rate := EngineSynth.RATE
 	var total := 0
 	for p in plan:
@@ -162,7 +219,7 @@ func render_drive(bank: EngineBank) -> PackedFloat32Array:
 			var s := 0.0
 			for w in mix:
 				var key: String = "%s/%d" % [w[0], w[1]]
-				var loop: PackedFloat32Array = bank.loops[w[0]][w[1]]
+				var loop: PackedFloat32Array = _loop_samples(bank, w[0], w[1])
 				if loop.is_empty():
 					continue
 				var ph: float = pos.get(key, 0.0)
@@ -171,7 +228,7 @@ func render_drive(bank: EngineBank) -> PackedFloat32Array:
 				var a := loop[k % loop.size()]
 				var b := loop[(k + 1) % loop.size()]
 				s += (a + (b - a) * fr) * float(w[2]) * (1.0 if str(w[0]).begins_with("ex") else 0.55)
-				ph += float(w[3])
+				ph += float(w[3]) * float(_loop_rate.get(key, rate)) / rate
 				if ph >= loop.size():
 					ph -= loop.size()
 				pos[key] = ph

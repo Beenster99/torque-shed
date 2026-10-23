@@ -94,6 +94,7 @@ const ACTIONS := [
 	["scrap", "Scrap equipment or a part (hold)", ["foot"]],
 	["interact", "Use / get on / get off", ["foot", "ride"]], ["ping", "Ping", ["foot"]],
 	["eat", "Adventure: eat or drink from your packed lunch", ["foot", "ride"]],
+	["visor", "Flick your helmet visor (or goggles) up or down", ["foot", "ride"]],
 	["emote_menu", "Emotes: open the bar (then 1 to 6)", ["foot"]], ["emote_wave", "Emote: wave", ["foot"]],
 	["emote_thumbs", "Emote: thumbs up", ["foot"]], ["emote_point", "Emote: point", ["foot"]],
 	["emote_shrug", "Emote: shrug", ["foot"]], ["emote_cheer", "Emote: cheer", ["foot"]], ["emote_dance", "Emote: dance", ["foot"]],
@@ -111,6 +112,7 @@ const ACTIONS := [
 	["toggle_auto_shift", "Auto-shift on / off", ["ride"]], ["ignition", "Engine on / off", ["ride"]],
 	["respawn", "Reset after a crash", ["ride"]], ["camera", "Camera: third person, first person, fly-by", ["ride"]],
 	["horn", "Horn", ["ride"]], ["headlight", "Headlights: off, dipped, main beam", ["ride"]],
+	["indicate_left", "Indicate left (again to cancel)", ["ride"]], ["indicate_right", "Indicate right (again to cancel)", ["ride"]],
 	["handbrake", "Truck: handbrake on / off (stays on till let off)", ["ride"]],
 	["look_back", "Look over your shoulder (hold)", ["ride"]],
 	["nod", "Nod to a biker (hold: wave)", ["ride"]], ["ride_ping", "Ping (riding or driving)", ["ride"]],
@@ -134,8 +136,10 @@ const CONTEXT_NAMES := {"foot": "on foot", "ride": "riding or driving", "spray":
 ## Sharing on purpose: with a spray can or gun out, the second button picks the colour.
 ## B on a pad jumps on foot, but with a spray can or gun out it's the finish (the spray comes first).
 ## View on a pad turns what you hold or carry; with nothing in hand it switches the camera.
-## D-pad left is the stopwatch, but riding or driving it's the horn (the stopwatch is P there).
-const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rotate_right", "walk_camera"], ["stopwatch", "horn"]]
+## D-pad left is the stopwatch, but riding it indicates left (the stopwatch is P there).
+## D-pad right indicates right on a bike and is the handbrake in the truck, which has no indicators.
+const SHARED_OK := [["alt_act", "spray_colour"], ["jump", "spray_finish"], ["rotate_right", "walk_camera"], ["stopwatch", "indicate_left"],
+	["handbrake", "indicate_right"]]
 ## The spray context sits on top of on foot: a spray key also clashes with on-foot keys.
 const CONTEXT_ALSO := {"spray": ["foot"]}
 
@@ -330,12 +334,17 @@ func _setup_inputs() -> void:
 	_bind("tow", [KEY_T], [])
 	# On a pad the engine is LB and RB together (see PAD_CHORDS in Controls).
 	_bind("ignition", [KEY_I], [])
-	_bind("horn", [KEY_H], [JOY_BUTTON_DPAD_LEFT])
-	# The truck's handbrake, pulled up and left on.
+	# The horn is a press of the left stick on a pad, as in driving games: the D-pad's left and
+	# right are the indicators.
+	_bind("horn", [KEY_H], [JOY_BUTTON_LEFT_STICK])
+	# The indicators: , and . (the < and > keys) or the D-pad's left and right; again to cancel.
+	_bind("indicate_left", [KEY_COMMA], [JOY_BUTTON_DPAD_LEFT])
+	_bind("indicate_right", [KEY_PERIOD], [JOY_BUTTON_DPAD_RIGHT])
+	# The truck's handbrake, pulled up and left on (the truck has no indicators to work).
 	_bind("handbrake", [KEY_J], [JOY_BUTTON_DPAD_RIGHT])
 	_bind("headlight", [KEY_L], [JOY_BUTTON_DPAD_UP])
-	# Ping while riding or driving: L3 on a pad (on foot that's run, so on foot ping is D-pad right).
-	_bind("ride_ping", [KEY_G], [JOY_BUTTON_LEFT_STICK], [MOUSE_BUTTON_MIDDLE])
+	# Ping while riding or driving (the left stick's press is the horn: no pad button spare).
+	_bind("ride_ping", [KEY_G], [], [MOUSE_BUTTON_MIDDLE])
 	# Drop a camera at the roadside ahead and watch yourself ride past (no pad button spare).
 	_bind("ride_by", [KEY_V], [])
 	_bind("telemetry", [KEY_F3], [])
@@ -422,6 +431,8 @@ func _setup_inputs() -> void:
 	# Both
 	_bind("interact", [KEY_F], [JOY_BUTTON_Y])
 	_bind("eat", [KEY_Y], [JOY_BUTTON_MISC1])
+	# The visor: every letter is taken on foot or on the bike, so the apostrophe key, by Enter.
+	_bind("visor", [KEY_APOSTROPHE], [])
 	_bind("menu", [KEY_ESCAPE], [JOY_BUTTON_START])
 
 

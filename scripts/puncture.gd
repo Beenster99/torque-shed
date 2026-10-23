@@ -17,8 +17,8 @@ extends RefCounted
 const SLOW := 0.12
 const FAST := 1.4
 ## Chance of a puncture per km ridden on each surface (per tyre). The road is mostly clean;
-## tracks and fields have thorns, flints and old fence wire. Together with the breakdowns (see
-## Roadside.PER_KM), a two-hour adventure sees about one thing go wrong, not several.
+## tracks and fields have thorns, flints and old fence wire. On an adventure a tyre is the only
+## thing that can go wrong (see Roadside).
 const PER_KM := {"tarmac": 0.0003, "concrete": 0.0003, "dirt": 0.0012, "gravel": 0.0014, "grass": 0.0008, "sand": 0.0006, "snow": 0.0004}
 ## Chance a hard hit (the suspension bottoming at speed: a kerb, a pothole) pinches a tyre.
 const PER_HIT := 0.04

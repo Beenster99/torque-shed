@@ -38,6 +38,10 @@ const REACH_GRID := 256.0
 const CHUNK_LEN := STEP * CHUNK_KNOTS
 const KINDS: Array[String] = ["straight", "sweeping", "curvy", "very_curvy"]
 const KIND_NAMES := {"straight": "Straight", "sweeping": "Sweeping bends", "curvy": "Curvy", "very_curvy": "Very curvy"}
+## How far past another stretch of road's verge the land is kept under it (m, see _other_road_limit).
+const OTHER_FLAT := 8.0
+## A real road's heights are smoothed along it over this many knots (see fair_heights).
+const FAIR_KNOTS := 19
 ## How far (m) a fuel station or stop may move along a real road to find a straight, level stretch.
 const FIT_REACH := 2500.0
 ## How far along a real road a planned stop may move to take over a real place (m), and how far it may then move to find a
@@ -58,6 +62,9 @@ const SITE_KNOTS := 28
 ## either side of the level stretch through one (see _level_stops).
 const STOP_GRADE := 0.05
 const LEVEL_EASE := 40
+## Knots more the road is levelled past SITE_KNOTS either side of a stop, so that smoothing the road after (see
+## _fair_spans, whose reach is FAIR_KNOTS * 3 / 2) leaves the ground under the whole stop level (AdventureStops.GROUND_ALONG).
+const LEVEL_PAD := 12
 ## The grid knots are filed in, to find the road near a point (m).
 const GRID := 64.0
 const FORK_END_GAP := 3000.0
@@ -167,6 +174,7 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 	ph.resize(n)
 	for i in n:
 		ph[i] = pack.e[i]
+	ph = fair_heights(ph)
 	hd.resize(n)
 	curv.resize(n)
 	for i in n - 1:
@@ -257,6 +265,77 @@ func plan_real(pack: RealPack, seed: int, km: float, extra_sites: Array = []) ->
 	AdventureJunctions.lay_out(self)
 
 
+## A real road's heights smoothed along it, as a road is built (cut into the rises and built up over the dips), so it
+## rides smoothly: three passes of a moving average FAIR_KNOTS long, much like a bell curve some 60 m across. The
+## heights come from the lie of the land under the road every 4 m, and its little kinks (a grade of +15% to -12% in
+## one knot at the worst, a jolt of four g at 90 km/h) threw the bike about and could throw you off. The ends stay put:
+## past them it's taken as running on as it was going (the profile turned about the end).
+static func fair_heights(h: PackedFloat64Array, knots := FAIR_KNOTS) -> PackedFloat64Array:
+	var out := h
+	for _pass in 3:
+		out = _moving_average(out, knots / 2)
+	return out
+
+
+## The average of `h` over `k` knots either way, at each knot.
+static func _moving_average(h: PackedFloat64Array, k: int) -> PackedFloat64Array:
+	var n := h.size()
+	var out := PackedFloat64Array()
+	out.resize(n)
+	if n < 3:
+		return h.duplicate()
+	k = mini(k, n - 1)
+	# A running sum, over the heights with k more either end (each turned about its end: 2 h0 - h[j]).
+	var sum := 0.0
+	for j in range(-k, k + 1):
+		sum += _turned(h, j)
+	for i in n:
+		out[i] = sum / float(2 * k + 1)
+		sum += _turned(h, i + k + 1) - _turned(h, i - k)
+	return out
+
+
+## Height `j` of `h`, and before its start or past its end the profile turned about that end.
+static func _turned(h: PackedFloat64Array, j: int) -> float:
+	var n := h.size()
+	if j < 0:
+		return 2.0 * h[0] - h[mini(-j, n - 1)]
+	if j >= n:
+		return 2.0 * h[n - 1] - h[maxi(2 * (n - 1) - j, 0)]
+	return h[j]
+
+
+## A real fork's way's heights `hs`, smoothed as the road's are (fair_heights), with the road's own (unsmoothed) heights
+## before the fork and after the rejoin either end, so it's smoothed into them as one road; then eased onto the road as
+## it is at both ends, at the same height and grade, so there's no step or kink where it leaves or comes back.
+func _fair_way(hs: PackedFloat64Array, i0: int, i1: int) -> PackedFloat64Array:
+	var n := hs.size()
+	if n < 4 or real == null:
+		return hs
+	var m := FAIR_KNOTS * 3
+	var a := maxi(0, i0 - m)
+	var b := mini(real.e.size() - 1, i1 + m)
+	var ext := PackedFloat64Array()
+	for i in range(a, i0):
+		ext.append(real.e[i])
+	ext.append_array(hs)
+	for i in range(i1 + 1, b + 1):
+		ext.append(real.e[i])
+	var out := fair_heights(ext).slice(i0 - a, i0 - a + n)
+	var last := ph.size() - 1
+	var d0 := ph[i0] - out[0]
+	var g0 := (ph[mini(i0 + 1, last)] - ph[i0]) - (out[1] - out[0])
+	var d1 := ph[i1] - out[n - 1]
+	var g1 := (ph[maxi(i1 - 1, 0)] - ph[i1]) - (out[n - 2] - out[n - 1])
+	var ease := mini(m * 2, n / 2)
+	for k in n:
+		var j := n - 1 - k
+		out[k] += (1.0 - smoothstep(0.0, ease, k)) * (d0 + g0 * k) + (1.0 - smoothstep(0.0, ease, j)) * (d1 + g1 * j)
+	out[0] = ph[i0]
+	out[n - 1] = ph[i1]
+	return out
+
+
 ## The speed limit (km/h) at `s` along the path (0 where the map doesn't say).
 func limit_kmh_at(s: float) -> float:
 	if chunk_limit.is_empty():
@@ -339,6 +418,7 @@ func _plan_ways_real(f: int) -> void:
 		xs[k] = float(wr["x"][k])
 		zs[k] = float(wr["z"][k])
 		hs[k] = float(wr["e"][k])
+	hs = _fair_way(hs, i0, i1)
 	var whd := PackedFloat64Array()
 	whd.resize(n)
 	var wcv := PackedFloat32Array()
@@ -539,16 +619,17 @@ func _fit_for_stop(i: int) -> bool:
 
 
 ## The road levelled through every fuel station and stop (a village's rows with it), as a stop is built level: each
-## stretch they keep (SITE_KNOTS either side, run together where they overlap) at its average height, eased back onto
-## the real road's heights over LEVEL_EASE knots either side, and no steeper than the planner's limit. A stop only goes
-## where the road climbs no more than STOP_GRADE (see _fit_for_stop), so the road moves a few metres at most.
+## stretch they keep (SITE_KNOTS and LEVEL_PAD either side, run together where they overlap) at its average height,
+## eased back onto the real road's heights over LEVEL_EASE knots either side, no steeper than the planner's limit, and
+## smoothed again where it was eased (_fair_spans). A stop only goes where the road climbs no more than STOP_GRADE (see
+## _fit_for_stop), so the road moves a few metres at most.
 func _level_stops() -> void:
 	var spans := []
 	for st in sites:
 		var kind := str(st["kind"])
 		if kind == "fuel" or kind == AdventureStops.ROW or AdventureStops.KINDS.has(kind):
 			var i := int(round(float(st["s"]) / STEP))
-			spans.append([maxi(0, i - SITE_KNOTS), mini(ph.size() - 1, i + SITE_KNOTS)])
+			spans.append([maxi(0, i - SITE_KNOTS - LEVEL_PAD), mini(ph.size() - 1, i + SITE_KNOTS + LEVEL_PAD)])
 	spans.sort_custom(func(p, q): return int(p[0]) < int(q[0]))
 	var merged := []
 	for sp: Array in spans:
@@ -572,7 +653,37 @@ func _level_stops() -> void:
 			ph[k] = lerpf(ph[k], h, t)
 	if not merged.is_empty():
 		ph = RoutePlanner.grade_limit(ph)   # (easing onto a steep hill could make it steeper than a road is)
+		ph = _fair_spans(ph, merged)
 	_lie_of_land()
+
+
+## Heights `h` smoothed again (fair_heights) about the levelled stretches `spans` ([a, b] knots): easing onto a level
+## stretch, then holding to the planner's grade limit, leaves kinks (a crest of 0.025 /m by a layby, a jolt of a g and
+## a half at 90 km/h). The smoothed road is taken over each level stretch, LEVEL_EASE either side and a smoothing's
+## reach past that (FAIR_KNOTS * 3 / 2: all but that reach in from the level stretch's ends stays exactly level), then
+## eased back into the road as it was over LEVEL_EASE more knots. The rest of the road is untouched, and the road is
+## no steeper anywhere (an average of grades is no steeper than the steepest of them).
+static func _fair_spans(h: PackedFloat64Array, spans: Array) -> PackedFloat64Array:
+	var n := h.size()
+	var fair := fair_heights(h)
+	var keep := PackedFloat64Array()
+	keep.resize(n)
+	var pad := LEVEL_EASE + FAIR_KNOTS * 3 / 2
+	for sp: Array in spans:
+		var a := int(sp[0]) - pad
+		var b := int(sp[1]) + pad
+		for k in range(maxi(0, a - LEVEL_EASE), mini(n, b + LEVEL_EASE + 1)):
+			var t := 1.0
+			if k < a:
+				t = smoothstep(0.0, 1.0, 1.0 - float(a - k) / LEVEL_EASE)
+			elif k > b:
+				t = smoothstep(0.0, 1.0, 1.0 - float(k - b) / LEVEL_EASE)
+			keep[k] = maxf(keep[k], t)
+	var out := h.duplicate()
+	for k in n:
+		if keep[k] > 0.0:
+			out[k] = lerpf(h[k], fair[k], keep[k])
+	return out
 
 
 ## The lie of the land: the road's height averaged over 200 m either way.
@@ -752,7 +863,7 @@ func land_height(i: int, lat: float, x: float, z: float) -> float:
 	var widen := clampf(absf(nat - road_h) * 0.9, 0.0, 60.0)
 	var t := smoothstep(e + 1.5 + flat, e + 14.0 + flat * 1.4 + widen, a)
 	var h := lerpf(road_h - 0.12, nat, t)
-	return minf(h, _other_road_limit(i, x, z))
+	return minf(h, _other_road_limit(i, x, z, a))
 
 
 ## What covers the ground at route-frame (x, z) ("forest", "crop", "urban", ... see RealPack.COVER),
@@ -771,22 +882,33 @@ func natural_height(i: int, x: float, z: float, _a := 0.0) -> float:
 
 ## Keeps the land under the road where another stretch of it (a bend that doubles back, more
 ## than SITE_KNOTS... 160 m along) passes close by: at most that road's height just under its
-## verge, rising gently away from it. Every way at every fork counts, taken or not, so the land
-## comes out the same whichever is chosen (see eq).
-func _other_road_limit(i: int, x: float, z: float) -> float:
+## verge and on out a few metres (OTHER_FLAT: the land's triangles are wide out there, and one
+## reaching over the road from either side mustn't stand up through it), rising gently away from
+## it. Every way at every fork counts, taken or not, so the land comes out the same whichever is
+## chosen (see eq). A stretch nearer than 160 m along counts too where the land at (x, z), `a` m
+## out from its own knot, is much nearer it than its own centre line (which only a stretch that has
+## come back round can be): the other leg of a hairpin, or the next in a stack of them or of a
+## switchback (a real road's are often only 90 to 120 m apart along the road and 20 m apart
+## across), whose land otherwise stood up through this road by as much as ten metres.
+func _other_road_limit(i: int, x: float, z: float, a := 0.0) -> float:
 	var limit := INF
 	var cx := int(floor(x / GRID))
 	var cz := int(floor(z / GRID))
 	var e := eq[i] if i < eq.size() else i
+	var m := a * 0.8 - 1.0
 	for gz in range(cz - 1, cz + 2):
 		for gx in range(cx - 1, cx + 2):
 			for j in _sgrid.get(Vector2i(gx, gz), PackedInt32Array()):
-				if absi(_seq[j] - e) < 40:
+				var near := absi(_seq[j] - e) < 40
+				if near and m <= 0.0:
 					continue
-				var d := sqrt((_sx[j] - x) * (_sx[j] - x) + (_sz[j] - z) * (_sz[j] - z))
+				var d2 := (_sx[j] - x) * (_sx[j] - x) + (_sz[j] - z) * (_sz[j] - z)
+				if near and d2 > m * m:
+					continue
+				var d := sqrt(d2)
 				var reach := _sw[j] + 2.0
 				if d < reach + 40.0:
-					limit = minf(limit, _sh[j] - 0.35 + maxf(0.0, d - reach) * 0.7)
+					limit = minf(limit, _sh[j] - 0.35 + maxf(0.0, d - reach - OTHER_FLAT) * 0.7)
 	return limit
 
 
@@ -893,15 +1015,24 @@ func land_reach(i: int, side: int) -> float:
 
 
 ## Whether another stretch of the road (a bend doubling back, not the road beside knot `i`) runs
-## within `r` metres of route-frame (x, z).
-func other_road_near(i: int, x: float, z: float, r: float) -> bool:
+## within `r` metres of route-frame (x, z), `a` metres out from knot `i`. A stretch near along the
+## road (the other leg of a hairpin or a switchback) counts too where it's much nearer (x, z) than
+## knot `i` is (as in _other_road_limit): a row of land run out across it had a triangle from just
+## past it to 70 m out, up the hillside, reaching back over it (a bump of up to two metres on the
+## road, enough to throw the bike up at 90 km/h).
+func other_road_near(i: int, x: float, z: float, r: float, a := 0.0) -> bool:
 	var cx := int(floor(x / GRID))
 	var cz := int(floor(z / GRID))
 	var e := eq[i] if i < eq.size() else i
+	var m := minf(r, a * 0.8 - 1.0)
 	for gz in range(cz - 1, cz + 2):
 		for gx in range(cx - 1, cx + 2):
 			for j in _sgrid.get(Vector2i(gx, gz), PackedInt32Array()):
-				if absi(_seq[j] - e) >= 40 and (_sx[j] - x) * (_sx[j] - x) + (_sz[j] - z) * (_sz[j] - z) < r * r:
+				var d2 := (_sx[j] - x) * (_sx[j] - x) + (_sz[j] - z) * (_sz[j] - z)
+				if absi(_seq[j] - e) >= 40:
+					if d2 < r * r:
+						return true
+				elif m > 0.0 and d2 < m * m:
 					return true
 	return false
 

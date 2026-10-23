@@ -647,6 +647,60 @@ func _run_all() -> void:
 	_test_headlight_catalogue()
 	_test_headlight_builds()
 	await _test_headlight_lit()
+	print("Simon's v0.21.0 round: his starter motor recordings, healthy and struggling, and his two-stroke")
+	_test_sound_starter_files()
+	_test_sound_starter_choice()
+	await _test_sound_starter_played()
+	await _test_sound_starter_long_crank()
+	await _test_sound_two_stroke_recorded()
+	_test_sound_two_stroke_synth()
+	print("Simon's v0.21.0 round: proper helmets, visors to pick and flick")
+	await _test_helmet_models()
+	await _test_helmet_visors()
+	_test_helmet_choices_save()
+	await _test_helmet_visor_toggle()
+	print("Simon's v0.21.0 round: chopper engines sit inside the frame and under the tank")
+	_test_chop_engines_fit()
+	_test_chop_other_frames()
+	_test_chop_measure()
+	_test_chop_whole_bikes()
+	print("Simon's v0.21.0 round: quicker to lean at speed, and grip that fades off the road's edge")
+	await _test_handle_lean_speed()
+	await _test_handle_verge_save()
+	await _test_handle_verge_long()
+	await _test_handle_verge_edges()
+	print("Simon's v0.21 round: a clean make-an-offer window, no doubled messages, headlights kept as left")
+	_test_offer_quiet()
+	_test_offer_default()
+	await _test_offer_window()
+	_test_offer_beam()
+	await _test_offer_beam_ride()
+	print("Simon's v0.21.0 round: dirt tracks and side roads start at the road's edge")
+	_test_tracks_real()
+	await _test_tracks_world()
+	print("Simon's v0.21.0 round: air and oil filters changed with the engine in the frame")
+	_test_filter_rules()
+	await _test_filter_aim()
+	await _test_filter_stand_aim()
+	await _test_filter_fairing_caps()
+	await _test_filter_in_shed()
+	print("Simon's v0.21 round: no damage to the bike on an adventure, only a tyre can go")
+	_test_advdmg_shed_wear()
+	await _test_advdmg_ride()
+	print("Simon's v0.21.0 round: brake lights and indicators")
+	await _test_lamps_brake_light()
+	await _test_lamps_flash()
+	await _test_lamps_cancel()
+	await _test_lamps_self_cancel()
+	_test_lamps_bindings()
+	await _test_lamps_remote()
+	print("Simon's v0.21.0 round: smooth roads on adventures")
+	_test_smooth_fair()
+	_test_smooth_real()
+	_test_smooth_fork_joins()
+	_test_smooth_surface()
+	_test_smooth_land_under()
+	await _test_smooth_ride()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -1786,8 +1840,11 @@ func _test_session() -> void:
 	Input.action_release("throttle")
 	check(main.bike.speed < 0.2, "with the engine off the throttle does nothing")
 	_press("ignition")
-	for i in 120:
+	# A tired bike cranks for longer before it fires (Bike.start_time), so give it up to 4 s.
+	for i in 480:
 		await get_tree().physics_frame
+		if i >= 120 and main.bike.engine_on and main.bike.rpm > 500.0:
+			break
 	check(main.bike.engine_on and main.bike.rpm > 500.0, "I starts the engine (%.0f rpm)" % main.bike.rpm)
 	_press("camera")
 	await get_tree().physics_frame
@@ -10788,7 +10845,7 @@ func _test_starter_variety() -> void:
 	es.rpm = 0.0
 	es.cranking = true
 	es._process(1.0 / 60.0)
-	check(es.starts == 1 and es.bank.oneshots["starter"].has(es.last_start), "pressing the button plays a starter take")
+	check(es.starts == 1 and Sfx.recordings("starter").has(es.last_start), "pressing the button plays a starter take")
 	for i in 30:
 		es._process(1.0 / 60.0)
 	es.cranking = false
@@ -11509,7 +11566,7 @@ func _test_riding_feedback_session() -> void:
 		"C steps through third person, first person and fly-by (%s)" % str(views))
 	_press("headlight")
 	await get_tree().physics_frame
-	check(main.bike.beam == 2, "L steps the headlight on to high beam")
+	check(main.bike.beam == 1, "L switches the headlight on to low beam (a bike starts with its lights off)")
 	# Ride it out of the shed area and get off.
 	var far := Vector3(150.0, 0.0, 20.0)
 	far.y = main.world.surface_height(far.x, far.z)
@@ -22903,6 +22960,120 @@ func _test_headlight_lit() -> void:
 	await _headlights().test_lit()
 
 
+# ---------------------------------------------------------------------------- helmets (tests/helmet_tests.gd)
+
+func _helmets() -> RefCounted:
+	return load("res://tests/helmet_tests.gd").new(self)
+
+
+func _test_helmet_models() -> void:
+	await _helmets().test_models()
+
+
+func _test_helmet_visors() -> void:
+	await _helmets().test_visors()
+
+
+func _test_helmet_choices_save() -> void:
+	_helmets().test_choices_save()
+
+
+func _test_helmet_visor_toggle() -> void:
+	await _helmets().test_visor_toggle()
+
+
+# ---------------------------------------------------------------------------- chopper engines in their frames (tests/chop_tests.gd)
+
+func _chop() -> RefCounted:
+	return load("res://tests/chop_tests.gd").new(self)
+
+
+func _test_chop_engines_fit() -> void:
+	_chop().test_engines_fit()
+
+
+func _test_chop_other_frames() -> void:
+	_chop().test_other_frames()
+
+
+func _test_chop_measure() -> void:
+	_chop().test_measure()
+
+
+func _test_chop_whole_bikes() -> void:
+	_chop().test_whole_bikes()
+
+
+# ---------------------------------------------------------------------------- handling at speed, grip off the road's edge (tests/handle_tests.gd)
+
+func _handle() -> RefCounted:
+	return load("res://tests/handle_tests.gd").new(self)
+
+
+func _test_handle_measure() -> void:
+	await _handle().measure()
+
+
+func _test_handle_lean_speed() -> void:
+	await _handle().test_lean_speed()
+
+
+func _test_handle_verge_save() -> void:
+	await _handle().test_verge_save()
+
+
+func _test_handle_verge_long() -> void:
+	await _handle().test_verge_long()
+
+
+func _test_handle_verge_edges() -> void:
+	await _handle().test_verge_edges()
+
+
+# ---------------------------------------------------------------------------- no damage on adventures (tests/advdmg_tests.gd)
+
+func _advdmg() -> RefCounted:
+	return load("res://tests/advdmg_tests.gd").new(self)
+
+
+func _test_advdmg_shed_wear() -> void:
+	_advdmg().test_shed_wear()
+
+
+func _test_advdmg_ride() -> void:
+	await _advdmg().test_ride()
+
+
+# ---------------------------------------------------------------------------- brake lights and indicators (tests/lamps_tests.gd)
+
+func _lamps_t() -> RefCounted:
+	return load("res://tests/lamps_tests.gd").new(self)
+
+
+func _test_lamps_brake_light() -> void:
+	await _lamps_t().test_brake_light()
+
+
+func _test_lamps_flash() -> void:
+	await _lamps_t().test_flash()
+
+
+func _test_lamps_cancel() -> void:
+	await _lamps_t().test_cancel()
+
+
+func _test_lamps_self_cancel() -> void:
+	await _lamps_t().test_self_cancel()
+
+
+func _test_lamps_bindings() -> void:
+	_lamps_t().test_bindings()
+
+
+func _test_lamps_remote() -> void:
+	await _lamps_t().test_remote()
+
+
 # ---------------------------------------------------------------------------- bike collections at the crew's houses (tests/collection_tests.gd)
 
 func _collection() -> RefCounted:
@@ -22961,3 +23132,129 @@ func _test_menu_layout() -> void:
 
 func _test_menu_fix_bike() -> void:
 	await _menu_suite().test_fix_bike()
+
+
+# ---------------------------------------------------------------------------- recorded starters and the two-stroke (tests/sound_tests.gd)
+
+func _sound_t() -> RefCounted:
+	return load("res://tests/sound_tests.gd").new(self)
+
+
+func _test_sound_starter_files() -> void:
+	_sound_t().test_files()
+
+
+func _test_sound_starter_choice() -> void:
+	_sound_t().test_choice()
+
+
+func _test_sound_starter_played() -> void:
+	await _sound_t().test_played()
+
+
+func _test_sound_starter_long_crank() -> void:
+	await _sound_t().test_long_crank()
+
+
+func _test_sound_two_stroke_recorded() -> void:
+	await _sound_t().test_two_stroke_recorded()
+
+
+func _test_sound_two_stroke_synth() -> void:
+	_sound_t().test_two_stroke_synth()
+
+
+# ---------------------------------------------------------------------------- offers and kept headlights (tests/offer_tests.gd)
+
+func _offer_suite() -> RefCounted:
+	return load("res://tests/offer_tests.gd").new(self)
+
+
+func _test_offer_quiet() -> void:
+	_offer_suite().test_quiet()
+
+
+func _test_offer_default() -> void:
+	_offer_suite().test_default()
+
+
+func _test_offer_window() -> void:
+	await _offer_suite().test_window()
+
+
+func _test_offer_beam() -> void:
+	_offer_suite().test_beam()
+
+
+func _test_offer_beam_ride() -> void:
+	await _offer_suite().test_beam_ride()
+
+
+# ---------------------------------------------------------------------------- tracks start at the road's edge (tests/tracks_tests.gd)
+
+func _tracks() -> RefCounted:
+	return load("res://tests/tracks_tests.gd").new(self)
+
+
+func _test_tracks_real() -> void:
+	_tracks().test_real()
+
+
+func _test_tracks_world() -> void:
+	await _tracks().test_world()
+
+
+# ---------------------------------------------------------------------------- air and oil filters in the frame (tests/filter_tests.gd)
+
+func _filters() -> RefCounted:
+	return load("res://tests/filter_tests.gd").new(self)
+
+
+func _test_filter_rules() -> void:
+	_filters().test_rules()
+
+
+func _test_filter_aim() -> void:
+	await _filters().test_aim()
+
+
+func _test_filter_stand_aim() -> void:
+	await _filters().test_stand_aim()
+
+
+func _test_filter_fairing_caps() -> void:
+	await _filters().test_fairing_caps()
+
+
+func _test_filter_in_shed() -> void:
+	await _filters().test_in_shed()
+
+
+# ---------------------------------------------------------------------------- smooth adventure roads (tests/smooth_tests.gd)
+
+func _smooth() -> RefCounted:
+	return load("res://tests/smooth_tests.gd").new(self)
+
+
+func _test_smooth_fair() -> void:
+	_smooth().test_fair()
+
+
+func _test_smooth_real() -> void:
+	_smooth().test_real()
+
+
+func _test_smooth_fork_joins() -> void:
+	_smooth().test_fork_joins()
+
+
+func _test_smooth_surface() -> void:
+	_smooth().test_surface()
+
+
+func _test_smooth_land_under() -> void:
+	_smooth().test_land_under()
+
+
+func _test_smooth_ride() -> void:
+	await _smooth().test_ride()

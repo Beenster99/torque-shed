@@ -42,6 +42,11 @@ const ARM_LEN := [55.0, 85.0]
 const ARM_W := [4.4, 5.6]
 const LANE_W := 3.2
 const ARM_STEP := 3.0
+## How far the mouth of a side road sits above the main road's edge (m): just proud of it.
+const MOUTH_LIFT := 0.012
+## Where a side road's strip has its points across it (-1 one side, 1 the other): enough that its
+## mouth follows the curve of a roundabout's ring.
+const STUB_ACROSS: Array[float] = [-1.0, -0.6, -0.25, 0.0, 0.25, 0.6, 1.0]
 ## Roundabouts: the island's radius (m), the ring's width round it, and where the traffic circles.
 const ISLAND := [5.0, 7.5]
 const RING := 6.8
@@ -204,11 +209,10 @@ static func lay_out(route: AdventureRoute) -> void:
 			var side := float(arm["side"])
 			var head := h + side * PI * 0.5 + deg_to_rad(float(arm["skew"]))   # the way it runs out, off north
 			var pts := PackedVector3Array()
-			var x := cos(h) * side * (e - 0.4)
-			var z := sin(h) * side * (e - 0.4)
-			if st.has("ro"):
-				x = cos(h) * side * (float(st["ro"]) - 1.2)
-				z = sin(h) * side * (float(st["ro"]) - 1.2)
+			# From the main road's edge (the ring's, at a roundabout, which is widened to it): the
+			# stub is trimmed to the edge where its flared mouth would reach over the tarmac (_stub).
+			var x := cos(h) * side * e
+			var z := sin(h) * side * e
 			var steps := int(float(arm["len"]) / ARM_STEP)
 			for k in steps + 1:
 				var t := float(k) / steps
@@ -436,15 +440,27 @@ static func chunk_parts(route: AdventureRoute, i0: int, i1: int, ax: float, az: 
 
 ## One side road's stub: a strip draped on the chunk's own land (so it never sinks into it or
 ## floats), flared at the mouth, narrowing and fading into the land's colour as it bends off;
-## a tarmac one with its give-way (or stop) line.
+## a tarmac one with its give-way (or stop) line. It starts at the main road's edge and never
+## reaches over it (Simon: "Dirt tracks that join the side of the road should start at the edge
+## and not cross over"): its mouth lies along the edge, level with it, and anything of its flare
+## that would lie on the tarmac is pulled back out to the edge, so the main road's surface (and
+## what the tyres feel on it) is its own right up to the edge.
 static func _stub(route: AdventureRoute, st: Dictionary, arm: Dictionary, pts: PackedVector3Array, centre: Vector3, i0: int,
 		i1: int, ax: float, az: float, land: Dictionary, a: Dictionary, f: PackedVector3Array, paint: Dictionary) -> void:
 	var surf := str(arm["surf"])
 	var road_col: Color = route.look["road"].get(surf, AdventureSurface.ROAD_COLOR[surf])
 	var land_col: Color = route.look["verge"].get(route.surface_at_s(float(st["s"])), Color(0.34, 0.38, 0.2))
+	var side := float(arm["side"])
+	var si: int = st["i"]
 	var hw := float(arm["w"]) * 0.5
 	var n := pts.size()
 	var rows := []
+	var mouth := 0   # the first row drawn: the last that lies wholly on the edge
+	# Near the junction the main road runs straight: how far out its edge is (at its widest, the
+	# middle of a roundabout's ring), to tell cheaply which points can't be on it.
+	var mid := STUB_ACROSS.size() / 2
+	var right := Vector3(cos(route.hd[si]), 0.0, sin(route.hd[si])) * side
+	var reach := edge_at_s(route, float(st["s"])) + 0.5
 	for j in n:
 		var p := pts[j] + Vector3(centre.x, 0.0, centre.z)
 		var dirv := (pts[mini(j + 1, n - 1)] - pts[maxi(j - 1, 0)])
@@ -454,33 +470,112 @@ static func _stub(route: AdventureRoute, st: Dictionary, arm: Dictionary, pts: P
 		var t := float(j) / (n - 1)
 		var w := hw * (1.0 + 1.1 * (1.0 - smoothstep(0.0, 0.12, t))) * lerpf(1.0, 0.7, smoothstep(0.7, 1.0, t))
 		var row := []
-		for q: float in [-1.0, 0.0, 1.0]:
+		var cut := []
+		var on_edge := 0
+		for q: float in STUB_ACROSS:
 			var v := p + across * w * q
-			v.y = _land_y(route, land, i0, i1, ax, az, v) + 0.05 + (0.03 if q == 0.0 else 0.0)
+			var c := []
+			if j == 0 or (v - centre).dot(right) < reach:
+				c = _to_edge(route, v, dirv, side, si, ax, az, j == 0)
+			if not c.is_empty():
+				v = c[0]
+				on_edge += 1
 			row.append(v)
+			cut.append(not c.is_empty())
+		if on_edge == STUB_ACROSS.size():
+			mouth = j
+		# Draped on the land as it always was, by its edges and middle (the land under them), the
+		# points between on the lines joining those, the middle crowned a little.
+		var last := STUB_ACROSS.size() - 1
+		for k: int in [0, mid, last]:
+			if not cut[k]:
+				var v: Vector3 = row[k]
+				v.y = _land_y(route, land, i0, i1, ax, az, v) + 0.05
+				row[k] = v
+		for k in last:
+			if k == 0 or k == mid or cut[k]:
+				continue
+			var k0 := 0 if k < mid else mid
+			var k1 := mid if k < mid else last
+			var u := (STUB_ACROSS[k] - STUB_ACROSS[k0]) / (STUB_ACROSS[k1] - STUB_ACROSS[k0])
+			var v: Vector3 = row[k]
+			v.y = lerpf((row[k0] as Vector3).y, (row[k1] as Vector3).y, u) + 0.03 * (1.0 - STUB_ACROSS[k] * STUB_ACROSS[k])
+			row[k] = v
+		if not cut[mid]:
+			row[mid] = (row[mid] as Vector3) + Vector3.UP * 0.03
 		var fade := smoothstep(0.6, 1.0, t)
 		rows.append([row, road_col.lerp(land_col, fade * 0.85), fade])
-	for j in n - 1:
+	for j in range(mouth, n - 1):
 		var r0: Array = rows[j][0]
 		var r1: Array = rows[j + 1][0]
-		for q in 2:
+		for q in STUB_ACROSS.size() - 1:
 			AdventureProps._quad(a, r0[q], r0[q + 1], r1[q + 1], r1[q], rows[j][1])
 			f.append_array([r0[q], r1[q], r1[q + 1], r0[q], r1[q + 1], r0[q + 1]])
 	# Give way: a double dashed line across the lane coming in (the right of the way out), or
 	# the stop line at the lights.
-	if n > 3 and surf == "tarmac":
-		var r: Array = rows[1][0]
-		var dirv: Vector3 = (rows[2][0][1] - rows[1][0][1])
+	if n > mouth + 3 and surf == "tarmac":
+		var r: Array = rows[mouth + 1][0]
+		var dirv: Vector3 = (rows[mouth + 2][0][mid] - rows[mouth + 1][0][mid])
 		dirv.y = 0.0
 		dirv = dirv.normalized()
 		var lit: bool = st["lights"]
 		for line in ([0.0] if lit else [0.0, 0.5]):
-			var c0: Vector3 = (r[1] as Vector3).lerp(r[2], 0.05) + dirv * (0.4 + line) + Vector3.UP * 0.02
-			var c1: Vector3 = (r[1] as Vector3).lerp(r[2], 0.95) + dirv * (0.4 + line) + Vector3.UP * 0.02
+			var c0: Vector3 = (r[mid] as Vector3).lerp(r[-1], 0.05) + dirv * (0.4 + line) + Vector3.UP * 0.02
+			var c1: Vector3 = (r[mid] as Vector3).lerp(r[-1], 0.95) + dirv * (0.4 + line) + Vector3.UP * 0.02
 			if lit:
 				_strip(paint, c0, c1, 0.3, Color(0.9, 0.9, 0.86))
 			else:
 				_dashes(paint, c0, c1, 0.15, 0.6, 0.3)
+
+
+## The main road's half width (to its edge) at `s`, between the knots as its mesh is drawn.
+static func edge_at_s(route: AdventureRoute, s: float) -> float:
+	var f := clampf(s / AdventureRoute.STEP, 0.0, float(route.width.size() - 1))
+	var i := mini(int(f), route.width.size() - 2)
+	return lerpf(route.width[i], route.width[i + 1], f - i) * 0.5
+
+
+## Chunk-local `v` of a side road's strip running out along `dirv` on `side` of the main road,
+## slid along `dirv` onto the main road's edge (and level with it) where it lies on the tarmac
+## (or, with `mouth`, anywhere: its mouth row lies along the edge): [the point], or [] where it
+## stays put. Where sliding it runs away (a strip running almost along the road, the road bending
+## back on itself near by: once 220 m off, a triangle across the land), it goes straight across to
+## the edge instead.
+static func _to_edge(route: AdventureRoute, v: Vector3, dirv: Vector3, side: float, si: int, ax: float, az: float,
+		mouth: bool) -> Array:
+	var hit := route.locate(v.x + ax, v.z + az, si)
+	if hit.is_empty():
+		return []
+	var s := float(hit["s"])
+	var e := edge_at_s(route, s)
+	var out := float(hit["lat"]) * side   # how far out on the side road's side
+	if out >= e and not mouth:
+		return []
+	# A few goes, as the edge narrows or widens along the way (round a roundabout's ring).
+	var s0 := s
+	var far := absf(e - out) / 0.2 + 1.0   # (as far as one go below can take it: further is running away)
+	var p := v
+	for go in 6:
+		var h := route.heading_at_s(s)
+		var away := (dirv.x * cos(h) + dirv.z * sin(h)) * side   # how fast the strip runs off the road
+		p += dirv * (e - out) / maxf(away, 0.2)
+		var at := route.locate(p.x + ax, p.z + az, si)
+		if at.is_empty():
+			break
+		s = float(at["s"])
+		e = edge_at_s(route, s)
+		out = float(at["lat"]) * side
+		if absf(e - out) < 0.005:
+			break
+	if p.distance_to(v) > far:
+		s = s0
+		e = edge_at_s(route, s)
+		out = -INF
+	if out < e - 0.005:
+		# Still short (running almost along a ring's curve), or run away: straight across the road to its edge.
+		var xz := route.xz_at(s, side * e)
+		p = Vector3(float(xz[0]) - ax, p.y, float(xz[1]) - az)
+	return [Vector3(p.x, route.height_at_s(s) + MOUTH_LIFT, p.z)]
 
 
 ## The land's height at chunk-local `v` as the chunk draws it: along the knots' rows of its land

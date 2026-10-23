@@ -16,10 +16,13 @@ const YARD_LIFT := 0.02
 ## The steepest a tarmac road may be across a crest: how fast its grade may change per metre,
 ## so a bike at speed stays on the ground (a crest of radius R keeps v^2 / R under g).
 const CREST_RATE := 1.0 / 160.0
+## How far either side of a join (samples) the road a track meets is kept, to trim the track to its edge.
+const MOUTH_SPAN := 10
 
 ## Each road: name, label, kind, hw, grade, hard, closed, xz (PackedVector2Array), h
 ## (PackedFloat32Array), dir (unit direction along it), dist (metres from the start), joins
-## (where branches leave it: an Array of sample indices), start_join / end_join ({road, i} or {}).
+## (where branches leave it: an Array of sample indices), start_join / end_join ({road, i} or {}),
+## mouths (where it's trimmed to the edge of a road of another kind it joins: see _mouths).
 var roads: Array[Dictionary] = []
 var by_name := {}
 var _grid := {}   # Vector2i cell -> Array of road * 65536 + sample
@@ -49,7 +52,43 @@ func build(terrain: WorldTerrain) -> void:
 		roads.append(r)
 	for r in roads:
 		_profile(r, terrain)
+	for r in roads:
+		_mouths(r)
 	_index()
+
+
+## For a track (or any road) that joins a road of another kind, what WorldRoadMesh needs to
+## stop it at that road's edge instead of running on over it to the centre line: for each end
+## that joins, {end ("start"/"end"), xz and h (the road it meets, MOUTH_SPAN samples either
+## side of the join), hw, open_start / open_end (whether that road stops at the first / last of them)}. Kept as r["mouths"]; a road meeting its own kind runs on to the middle.
+func _mouths(r: Dictionary) -> void:
+	var out := []
+	for end in ["start", "end"]:
+		var j: Dictionary = r[end + "_join"]
+		if j.is_empty():
+			continue
+		var parent := roads[int(j["road"])]
+		if parent["kind"] == r["kind"]:
+			continue
+		var pxz: PackedVector2Array = parent["xz"]
+		var ph: PackedFloat32Array = parent["h"]
+		var n := pxz.size()
+		var xz := PackedVector2Array()
+		var h := PackedFloat32Array()
+		var ji := int(j["i"])
+		for k in range(-MOUTH_SPAN, MOUTH_SPAN + 1):
+			var i := ji + k
+			if parent["closed"]:
+				i = posmod(i, n)
+			elif i < 0 or i >= n:
+				continue
+			xz.append(pxz[i])
+			h.append(ph[i])
+		# Where the road it meets stops there (a track on from a dead end), it stops square.
+		var open: bool = not parent["closed"]
+		out.append({"end": end, "xz": xz, "h": h, "hw": float(parent["hw"]),
+			"open_start": open and ji - MOUTH_SPAN <= 0, "open_end": open and ji + MOUTH_SPAN >= n - 1})
+	r["mouths"] = out
 
 
 ## The index of `road`'s sample nearest `p`.

@@ -2,7 +2,7 @@ extends Node
 ## Shed sounds, mostly made from scratch (SfxSynth has the synthesis): tools, machines,
 ## footsteps by floor, parts landing by material, the building's ambience. A few are recordings
 ## (RECORDED: the ratchet, sandblaster, dyno fan, roller door, door chime, phone, light switches,
-## gear levers and horns), which play in place of the made ones when their files are there.
+## gear levers, horns and bikes' starter motors, healthy and struggling), which play in place of the made ones when their files are there.
 ## Sets up the buses the Esc menu's volume sliders control, each straight into Master:
 ##   SFX:     every sound effect: tools, the washer, impacts, footsteps, machines, UI dings,
 ##            horns, tyres, the weather and the ambience.
@@ -77,6 +77,8 @@ const RECORDED := {
 	"shift_slick": ["gearshift1a", "gearshift1b", "gearshift1c"],
 	"shift_click": ["gearshift3", "gearshift4a", "gearshift1c"],
 	"shift_clunk": ["gearshift2", "gearshift4b"],
+	"starter": ["starter1", "starter2", "starter3", "starter4"],
+	"starter_struggle": ["starterstruggle1", "starterstruggle2", "starterstruggle3", "starterstruggle4"],
 	"horn_disc": ["horn2", "horn4", "horn7"],
 	"horn_low": ["horn1"],
 	"horn_snail": ["horn3", "horn5"],
@@ -92,7 +94,7 @@ const RECORDED := {
 ## Sounds that are only ever recordings: without their files they borrow a synthesised one
 ## ("" for silence).
 const STAND_INS := {"light_switch": "switch", "phone_ring": "bell_chime", "fan_build": "", "shift_slick": "", "shift_click": "",
-	"shift_clunk": ""}
+	"shift_clunk": "", "starter_struggle": ""}
 ## The phone: how many times it rings, and the seconds from one ring to the next.
 const PHONE_RINGS := 3
 const PHONE_GAP := 2.2

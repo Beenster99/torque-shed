@@ -495,14 +495,20 @@ func test_session() -> void:
 	Collection.entry(cid)["owner"] = "Pal"
 	Progress.set_money(50000)
 	panel.open_bike(cid)
-	panel.set_amount(2500)
 	await _frames(1)
 	text = panel.text()
-	check(panel.visible and text.contains("PAL'S") and text.contains("[Offer £2,500]") and not text.contains("[Ride it out]") and not text.contains("Sell it"),
+	check(panel.visible and text.contains("PAL'S") and text.contains("[Make an offer]") and not text.contains("[Ride it out]") and not text.contains("Sell it"),
 		"a friend's bike: make them an offer, no riding it out (%s)" % text.replace("\n", " / "))
-	panel.press("Offer")
+	panel.press("Make an offer")
 	await _frames(1)
-	check(not panel.visible and Progress.money() == 47500 and not Collection.offer_from(who, cid).is_empty(), "Offer: the money's held and Pal has the offer")
+	panel.offer_sheet.set_amount(2500)
+	panel.offer_sheet.make_offer()
+	await _frames(1)
+	check(panel.visible and panel.offer_sheet.sent and Progress.money() == 47500 and not Collection.offer_from(who, cid).is_empty(),
+		"Make offer: the money's held, Pal has the offer and the window says so")
+	panel.offer_sheet._ok.pressed.emit()
+	await _frames(1)
+	check(not panel.visible, "OK closes it")
 	Shed.request({"a": "home_withdraw", "offer": int(Collection.offer_from(who, cid)["id"])})
 	Collection.entry(cid)["owner"] = who
 	Shed.crew.erase(FRIEND)

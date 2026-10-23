@@ -95,7 +95,8 @@ const BEAD_LEAK := 0.02
 
 ## bike id -> {id, name, paint, slots{bike slot: item id or 0}, bolted{slot: bool}, rider, bay, xf, original, delivered,
 ## stand ("" upright on its wheels or the bay's paddock stand, "side", "centre" or "down" when it has fallen over),
-## pusher (peer wheeling it about, or 0), tune{map, ignition, limiter}, dyno{n, runs: the last two dyno runs}}
+## pusher (peer wheeling it about, or 0), tune{map, ignition, limiter}, dyno{n, runs: the last two dyno runs},
+## beam (where its headlight switch was left: see beam_of)}
 var bikes := {}
 ## item id -> {id, part, kind, rust, dirt, wear, color, finish, boxed, at, ref}, where
 ## at is "bike", "engine", "held", "spot", "floor" (ref is then the Transform3D it was put down at)
@@ -135,6 +136,9 @@ var coffee := {}
 ## The crew's houses and their own bike collections, offers on them and money owed (see
 ## Collection). Sent to the crew on its own when it changes (homes_touched), not with every sync.
 var homes := Collection.empty()
+## Whose helmet visor is up: peer id -> true when flicked up (see RiderGear.flick_visor). Sent
+## to everyone the moment it changes; a player's summary carries it for anyone joining later.
+var visors := {}
 ## The crew's houses or collections changed (HomesView redraws).
 signal homes_changed
 var _homes_dirty := false
@@ -2871,6 +2875,11 @@ func check(peer: int, action: Dictionary) -> String:
 				return "How much?"
 			if fuel_space(ridden) < 0.05:
 				return "The tank's full."
+		"beam":
+			if not bikes.has(bike_id) or int(bikes[bike_id].get("rider", 0)) != peer:
+				return "You're not riding that bike."
+			if not (action.get("beam") is float or action.get("beam") is int) or int(action["beam"]) < 0 or int(action["beam"]) > Bike.BEAM_FOG:
+				return "Which way is the switch?"
 		"screen":
 			var ridden := riding(peer) if bike_id == 0 else bike_id
 			if not bikes.has(ridden):
@@ -3358,6 +3367,13 @@ func _apply(peer: int, action: Dictionary) -> void:
 		if Net.is_online():
 			_emote.rpc(peer, d)
 		return
+	if str(action.get("a", "")) == "visor":
+		# A visor flicked up or down: nothing in the shed changes, everyone's view of the rider does.
+		var up := bool(action.get("up", false))
+		visors[peer] = up
+		if Net.is_online():
+			_visor.rpc(peer, up)
+		return
 	if str(action.get("a", "")).begins_with("board_"):
 		_board_apply(peer, action)
 		return
@@ -3837,6 +3853,8 @@ func _apply(peer: int, action: Dictionary) -> void:
 				# What didn't fit goes back in the rider's pocket.
 				give_cash(peer, mini(paid, ceili((float(action["litres"]) - put) * PUMP_PRICE)), "Fuel refund")
 			text = "Filled up with %.1f L of unleaded" % put
+		"beam":
+			bikes[bike_id]["beam"] = int(action["beam"])   # the headlight switch stays where it's left
 		"screen":
 			var ridden := riding(peer) if bike_id == 0 else bike_id
 			var fairing := item_on(ridden, "fairing")
@@ -4155,12 +4173,12 @@ func _apply(peer: int, action: Dictionary) -> void:
 
 
 ## A rider's ride stats (see Main._send_ride_stats): the wear and muck on their bike, and their
-## distance and speeds.
+## distance and speeds. Out on an adventure only the tyres wear (see adventure_ride).
 func _ride_apply(peer: int, action: Dictionary) -> void:
 	var c: Dictionary = crew.get(peer, {})
 	var bike := int(c.get("riding", 0))
 	if bikes.has(bike):
-		_wear_from_ride(bike, action)
+		_wear_from_ride(bike, action, adventure_ride(peer, action))
 		Contracts.note_ride(bike, action)
 	c["km"] = float(c.get("km", 0.0)) + clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 	c["top_kmh"] = maxf(float(c.get("top_kmh", 0.0)), clampf(float(action.get("top_kmh", 0.0)), 0.0, 400.0))
@@ -4237,10 +4255,21 @@ func front_spray(bike_id: int) -> float:
 	return lerpf(NO_GUARD_SPRAY, 1.0, clampf(cover, 0.0, 1.0))
 
 
+## Whether `peer`'s ride stats are from out on an adventure: they're one of its riders, or
+## their game says so (the last second's stats can arrive just after the host ends it).
+func adventure_ride(peer: int, action: Dictionary) -> bool:
+	if bool(action.get("adv", false)):
+		return true
+	var riders = adventure.get("riders", {})
+	return Adventure.active() and riders is Dictionary and riders.has(peer)
+
+
 ## What a ride does to a bike: road dirt on its parts (where it really goes, see Dirt.accrue,
 ## dead flies on the front at speed), petrol used, oil and brake fluid aging, and engine wear,
-## which climbs steeply when the oil is low or worn out.
-func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
+## which climbs steeply when the oil is low or worn out. On an adventure (`on_adventure`) the
+## bike takes no harm: it gets muddy and burns petrol, and its tyres wear and can go down (a
+## puncture, a badly seated bead), but nothing else wears, rusts, ages or slackens.
+func _wear_from_ride(bike_id: int, action: Dictionary, on_adventure := false) -> void:
 	var km := clampf(float(action.get("km", 0.0)), 0.0, 5.0)
 	var dirty := clampf(float(action.get("dirt_km", 0.0)), 0.0, 5.0)
 	var flies := clampf(float(action.get("fly_km", 0.0)), 0.0, 5.0)
@@ -4255,6 +4284,8 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 			var exposure := float(DIRT_EXPOSURE.get(slot, 0.4)) * (spray if FRONT_SPRAY.has(slot) else 1.0)
 			# A ceramic coat on the paint sheds it too (see Detail).
 			Dirt.accrue(items[id], slot, dirty, flies, exposure, spray, maxf(protect, Detail.dirt_protect(items[id])))
+		if on_adventure:
+			continue
 		if id != 0 and km + dirty > 0.0 and Detail.has(items[id]):
 			Detail.ride_wear(items[id], km + dirty)
 		if id != 0 and blast_cover(items[id]) > 0.0 and km + dirty > 0.0:
@@ -4282,7 +4313,7 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 			if flat > 0.0 and km > 0.0:
 				items[tyre]["wear"] = minf(1.0, float(items[tyre]["wear"]) + km * Puncture.FLAT_TYRE_WEAR * flat)
 				var rim := item_on(bike_id, side + "_wheel")
-				if rim != 0:
+				if rim != 0 and not on_adventure:
 					items[rim]["wear"] = minf(1.0, float(items[rim]["wear"]) + km * Puncture.FLAT_RIM_WEAR * flat)
 			if Puncture.punctured(items[tyre]) and km > 0.0:
 				items[tyre]["deflate"] = minf(build.tune_value("psi_f" if side == "front" else "psi_r"),
@@ -4301,6 +4332,8 @@ func _wear_from_ride(bike_id: int, action: Dictionary) -> void:
 			var take := minf(burnt, float(f["litres"]))
 			f["litres"] = float(f["litres"]) - take
 			burnt -= take
+	if on_adventure:
+		return
 	var block := item_on(bike_id, "engine")
 	if block != 0 and items[block].has("fluid"):
 		var oil: Dictionary = items[block]["fluid"]
@@ -4746,6 +4779,11 @@ func _ping(peer: int, d: Dictionary) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _emote(peer: int, d: Dictionary) -> void:
 	emoted.emit(peer, d)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _visor(peer: int, up: bool) -> void:
+	visors[peer] = up
 
 
 func _bump(c: Dictionary, key: String) -> void:
@@ -5277,6 +5315,13 @@ func _on_player_left(id: int) -> void:
 
 
 # ---------------------------------------------------------------------------- geometry and blueprints
+
+## Where bike `bike_id`'s headlight switch was left (see Bike.beam): kept with the bike, saved
+## with it and shared with the crew, so it's as it was when someone next gets on. A bike that's
+## never had it touched has its lights off.
+func beam_of(bike_id: int) -> int:
+	return clampi(int(bikes.get(bike_id, {}).get("beam", 0)), 0, Bike.BEAM_FOG)
+
 
 ## A bike's own fit for its parts (see GeoGizmo): slot -> {p, r, s}. Never shared between bikes.
 func geometry_of(bike_id: int) -> Dictionary:

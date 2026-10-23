@@ -5,6 +5,10 @@ extends VBoxContainer
 ## then an item: the turntable shows you wearing it (or the trinket), Buy pays for it out of your
 ## cash and puts it on, Wear changes into something you already own. Trinkets are delivered
 ## outside the roller door, then carried and placed like any other shed kit.
+##
+## Under Helmets the turntable comes in close on the head, and the helmet you wear can be had in
+## any shell colour with any visor (and the classic open face with or without goggles), free:
+## see RiderGear.set_helmet_option. A button flicks the visor up and down to see it move.
 
 const CATEGORIES: Array[String] = ["helmet", "jacket", "trousers", "boots", "gloves", "trinket"]
 const PREVIEW_SIZE := Vector2i(300, 280)
@@ -27,6 +31,13 @@ var _preview_sig := ""
 var _due := true
 var _spin := 0.0
 var _swing := false     # a wall trinket swings to and fro rather than showing its bare back
+var _helmet_box: VBoxContainer   # the helmet's options, under Helmets
+var _model: Label
+var _shell: OptionButton
+var _visor: OptionButton
+var _visor_row: HBoxContainer
+var _goggles: CheckBox
+var _flick: Button
 
 
 func _ready() -> void:
@@ -89,6 +100,7 @@ func _ready() -> void:
 	_wear.pressed.connect(wear_selected)
 	buttons.add_child(_wear)
 	detail.add_child(buttons)
+	detail.add_child(_make_helmet_options())
 	_status = UITheme.label("", 14, Color(1, 0.8, 0.6))
 	detail.add_child(_status)
 	_desc = UITheme.label("", 14, Color(1, 1, 1, 0.75))
@@ -96,6 +108,80 @@ func _ready() -> void:
 	Progress.changed.connect(func(): _due = true)
 	visibility_changed.connect(func(): _due = true)
 	show_category("helmet")
+
+
+## The helmet's options: what kind it is, its shell colour, its visor, goggles, and a button to
+## flick the visor.
+func _make_helmet_options() -> Control:
+	_helmet_box = VBoxContainer.new()
+	_helmet_box.add_theme_constant_override("separation", 4)
+	_model = UITheme.label("", 14, Color(1, 1, 1, 0.8))
+	_helmet_box.add_child(_model)
+	_shell = OptionButton.new()
+	for id in RiderGear.SHELL_ORDER:
+		_shell.add_item(str(RiderGear.SHELLS[id]["name"]))
+	_shell.item_selected.connect(func(i: int):
+		RiderGear.set_helmet_option("shell", RiderGear.SHELL_ORDER[i])
+		_option_changed())
+	_helmet_box.add_child(_option_row("Shell colour", _shell))
+	_visor = OptionButton.new()
+	_visor.add_item("As it comes")
+	for id in RiderGear.VISOR_ORDER:
+		_visor.add_item(str(RiderGear.VISORS[id]["name"]))
+	_visor.item_selected.connect(func(i: int):
+		RiderGear.set_helmet_option("visor", "" if i == 0 else RiderGear.VISOR_ORDER[i - 1])
+		_option_changed())
+	_visor_row = _option_row("Visor", _visor)
+	_helmet_box.add_child(_visor_row)
+	_goggles = CheckBox.new()
+	_goggles.text = "Goggles"
+	_goggles.toggled.connect(func(on: bool):
+		RiderGear.set_helmet_option("goggles", on)
+		_option_changed())
+	_helmet_box.add_child(_goggles)
+	_flick = Button.new()
+	_flick.pressed.connect(func():
+		_status.text = RiderGear.flick_visor())
+	Controls.bind_text(_flick, "Flick the visor up / down ({visor})")
+	_helmet_box.add_child(_flick)
+	return _helmet_box
+
+
+func _option_row(title: String, what: Control) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var l := UITheme.label(title, 14, Color(1, 1, 1, 0.7))
+	l.custom_minimum_size.x = 100
+	row.add_child(l)
+	what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(what)
+	return row
+
+
+func _option_changed() -> void:
+	Sfx.play_ui("click", -10.0)
+	_redress_my_bike()
+	_due = true
+
+
+## The helmet options as they stand, for the helmet you wear (they go with any helmet).
+func _show_helmet_options() -> void:
+	_helmet_box.visible = category == "helmet" and selected != ""
+	if not _helmet_box.visible:
+		return
+	var worn: Dictionary = RiderGear.worn_of(Shed.me())
+	var trying := worn.duplicate()
+	trying["helmet"] = selected
+	var model := RiderGear.helmet_model(selected)
+	var cap := str(RiderGear.ITEMS[selected].get("shape", "")) == "cap"
+	_model.text = "%s%s" % [HelmetModel.MODEL_NAMES.get(model, "Helmet"), "  ·  on the bike: a plain lid" if cap else ""]
+	_shell.select(maxi(0, RiderGear.SHELL_ORDER.find(str(worn.get("shell", "")))))
+	_visor.select(RiderGear.VISOR_ORDER.find(str(worn["visor"])) + 1 if worn.has("visor") else 0)
+	_goggles.visible = model == "open_classic"
+	_goggles.set_pressed_no_signal(RiderGear.goggles_on(trying))
+	_visor_row.visible = RiderGear.can_flip(trying) or model == "mx"
+	(_visor_row.get_child(0) as Label).text = "Lenses" if model in ["open_classic", "mx"] else "Visor"
+	_flick.visible = RiderGear.wearing(selected) and RiderGear.can_flip(trying)
 
 
 ## The turntable: your rider (or a trinket) slowly turning in a little 3D view of its own.
@@ -116,6 +202,15 @@ func _make_preview() -> Control:
 	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.environment.ambient_light_color = Color(0.55, 0.57, 0.62)
 	env.environment.ambient_light_energy = 0.8
+	# Shiny things (an iridium visor, chrome) reflect a sky, though the background stays plain.
+	var sky := ProceduralSkyMaterial.new()
+	sky.sky_top_color = Color(0.35, 0.5, 0.75)
+	sky.sky_horizon_color = Color(0.75, 0.78, 0.82)
+	sky.ground_bottom_color = Color(0.12, 0.12, 0.13)
+	sky.ground_horizon_color = Color(0.45, 0.45, 0.47)
+	env.environment.sky = Sky.new()
+	env.environment.sky.sky_material = sky
+	env.environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	_viewport.add_child(env)
 	var sun := DirectionalLight3D.new()
 	sun.rotation = Vector3(deg_to_rad(-35.0), deg_to_rad(30.0), 0.0)
@@ -214,6 +309,7 @@ func _refresh() -> void:
 		_wear.visible = true
 		_wear.disabled = not owned or RiderGear.wearing(selected)
 		_wear.text = "Wearing" if RiderGear.wearing(selected) else "Wear"
+	_show_helmet_options()
 	_update_preview()
 
 
@@ -228,6 +324,11 @@ func _update_preview() -> void:
 	if s == _preview_sig:
 		return
 	_preview_sig = s
+	# Helmets close up on the head, everything else the whole rider.
+	if category == "helmet":
+		_camera.look_at_from_position(Vector3(0.0, 1.72, -1.25), Vector3(0.0, 1.62, 0.0))
+	else:
+		_camera.look_at_from_position(Vector3(0.0, 1.25, -3.6), Vector3(0.0, 0.95, 0.0))
 	for c in _turntable.get_children():
 		c.free()
 	_swing = category == "trinket" and bool(Trinkets.MODELS[selected].get("wall", false))

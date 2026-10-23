@@ -44,8 +44,10 @@ Space / B: rear brake      A D / left stick: lean      Shift / LB: weight back  
 E Q / A X: gear up / down      T: auto-shift      C / R3: chase or first-person camera
 Neutral (N) sits between 1st and 2nd: at a standstill E from 1st or Q from 2nd finds it; Q from N is 1st
 Mouse / right stick: swing the camera round      V: ride-by camera (watch yourself go past)
-L / L3: headlight (off, low, high, high with fog lights)      S + W / LT + RT: burnout (lean to spin round)
-R / View: reset after a crash      F / Y: get off (when stopped)      F3: telemetry overlay"""
+L / D-pad up: headlight (off, low, high, high with fog lights)      S + W / LT + RT: burnout (lean to spin round)
+, . / D-pad left, right: indicators (again to cancel; they cancel themselves after the turn)      H / L3: horn
+R / View: reset after a crash      F / Y: get off (when stopped)      F3: telemetry overlay
+' (apostrophe): flick your helmet visor or goggles up or down (on foot too; the crew see it)"""
 
 var _name: LineEdit
 var _home: Button
@@ -845,6 +847,8 @@ func _refresh_badges() -> void:
 	var tint: Color = Shed.PAINTS[Net.local_slot() % Shed.PAINTS.size()]
 	var gear := RiderGear.worn_of(Shed.me())
 	var helmet := RiderFigure.color_of(RiderGear.ITEMS.get(str(gear.get("helmet", "")), {}), "base", tint)
+	if RiderGear.shell_color(gear, tint).a > 0.0:
+		helmet = RiderGear.shell_color(gear, tint)   # painted another colour in the Shop
 	var jacket := RiderFigure.color_of(RiderGear.ITEMS.get(str(gear.get("jacket", "")), {}), "base", tint)
 	var line := "Level %d  ·  %s" % [Progress.level(), TvChannels.money_text(Progress.money())]
 	for b: MenuBadge in [_profile_badge, _profile_pic]:

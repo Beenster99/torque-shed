@@ -22,6 +22,7 @@ var oneshots := {}            # name -> Array of AudioStreamWAV
 var bake_ms := 0.0            # how long the whole bank took to bake
 var recorded := false         # the loops come from recordings (see load_samples)
 var recorded_shots: Array = []   # one-shot kinds that come from recordings
+var exhaust_only := false     # recorded loops of the whole bike, with no engine-side layers of their own
 var _mutex := Mutex.new()
 var _done: Array = []         # finished work waiting for the main thread: [kind, key, index, samples]
 var _task := -1
@@ -56,10 +57,12 @@ static func for_spec(engine_spec: Dictionary) -> EngineBank:
 
 
 ## A folder of recorded sounds for this engine, if someone has supplied one: the most specific
-## of <layout>_<cylinders>_<exhaust>, <layout>_<exhaust> or <layout>, under user://engine_samples
-## (drop files in, no import needed) or res://audio/engines (shipped with the game).
+## of <layout>_<cylinders>_<exhaust>, <layout>_<cylinders>, <layout>_<exhaust> or <layout>,
+## under user://engine_samples (drop files in, no import needed) or res://audio/engines
+## (shipped with the game: Simon's single-cylinder two-stroke, 2stroke_1).
 static func sample_folder(engine_spec: Dictionary) -> String:
 	var keys := ["%s_%d_%s" % [engine_spec["layout"], engine_spec["cylinders"], engine_spec["exhaust"]],
+		"%s_%d" % [engine_spec["layout"], engine_spec["cylinders"]],
 		"%s_%s" % [engine_spec["layout"], engine_spec["exhaust"]], str(engine_spec["layout"])]
 	for root in SAMPLE_ROOTS:
 		for key in keys:
@@ -73,7 +76,9 @@ static func sample_folder(engine_spec: Dictionary) -> String:
 ## <layer>_<rpm>.wav (ex_on_6000.wav: the exhaust on the throttle, held at 6000 rpm; ex_off,
 ## in_on and in_off likewise), each a seamless loop. One-shots are pop*, bang*, crack*,
 ## shift* (every gear change), neutral*, starter* and catch*.wav (the engine firing up off the
-## starter). Anything not supplied is synthesised as usual.
+## starter). Anything not supplied is synthesised as usual. An rpm with only one of a side's
+## loops plays it both on and off the throttle; with no engine-side (in_) loops at all, the
+## exhaust loops are the whole bike (exhaust_only) and play from the pipe.
 func load_samples(dir: String) -> void:
 	var found := {}   # rpm -> {layer: stream}
 	var shots := {}
@@ -111,6 +116,17 @@ func load_samples(dir: String) -> void:
 	var keys := found.keys()
 	keys.sort()
 	rpms = PackedFloat32Array(keys)
+	exhaust_only = true
+	for r in keys:
+		for side in ["ex", "in"]:
+			var on = found[r].get(side + "_on")
+			var off = found[r].get(side + "_off")
+			if on == null and off != null:
+				found[r][side + "_on"] = off
+			elif off == null and on != null:
+				found[r][side + "_off"] = on
+		if found[r].has("in_on"):
+			exhaust_only = false
 	for layer in EngineSynth.LAYERS:
 		var l := []
 		var st := []

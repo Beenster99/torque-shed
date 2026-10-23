@@ -93,6 +93,7 @@ func _ready() -> void:
 	var trolley_ok := false
 	var emote_sent := false
 	var emote_ok := false
+	var visor_ok := false
 	# The riding nod: heard from the other side ({"heard": true}), and played on a crew mate's rider.
 	var nods := {}
 	Shed.emoted.connect(func(peer: int, d: Dictionary):
@@ -210,6 +211,8 @@ func _ready() -> void:
 			xp_ok = str(Progress.summary(main.remotes.keys()[0]).get("name", "")) == "Test client"
 		if role == "client" and ranger != 0 and not asked:
 			Shed.request({"a": "unbolt", "bike": ranger, "slot": "exhaust"})
+			# Standing by the bike, the client gets at the oil filter with the engine in the frame.
+			Shed.request({"a": "unbolt", "bike": ranger, "slot": "oil_filter", "crouched": false})
 			Shed.request({"a": "take", "spot": "bench_0"})
 			Shed.request({"a": "drop", "xf": Transform3D(Basis(), Workshop.CENTER + Vector3(0.5, 0.0, 1.5))})
 			Shed.board_request({"a": "board_draw", "id": 4242, "c": 1, "w": 6.0, "from": 0,
@@ -250,16 +253,16 @@ func _ready() -> void:
 				Progress.earn(10, "Test")
 				money_sent = Money.send(int(main.remotes.keys()[0]), 5) == ""
 			money_ok = ledger_ok and money_sent
-		# Rider gear: the client puts on an MX helmet, and the host sees it on the client's figure.
+		# Rider gear: the client puts on a race helmet (one with a visor, for the visor step below), and the host sees it on the client's figure.
 		if role == "client" and not gear_asked:
-			Progress.profile["gear"]["owned"].append("helmet_mx")
-			RiderGear.wear("helmet_mx")
+			Progress.profile["gear"]["owned"].append("helmet_kestrel")
+			RiderGear.wear("helmet_kestrel")
 			gear_asked = true
 		if role == "client":
-			gear_ok = RiderGear.worn_of(Shed.me())["helmet"] == "helmet_mx"
+			gear_ok = RiderGear.worn_of(Shed.me())["helmet"] == "helmet_kestrel"
 		elif main.remotes.size() == 1:
 			var other: RemotePlayer = main.remotes.values()[0]
-			gear_ok = other.gear.get("helmet", "") == "helmet_mx" and other._head_look.get_child_count() > 3
+			gear_ok = other.gear.get("helmet", "") == "helmet_kestrel" and other._head_look.find_children("*", "MeshInstance3D", true, false).size() > 3
 		# The other player is drawn whole for this side's first-person eye: on foot, and riding
 		# (only your own rider's helmet and torso are left out of it).
 		if main.remotes.size() == 1 and not avatar_ok and ranger != 0:
@@ -452,6 +455,13 @@ func _ready() -> void:
 			emote_sent = false
 		if role == "client" and not emote_ok and emote_sent and Engine.get_process_frames() % 240 == 0:
 			emote_sent = false
+		# Helmet visors: each player flicks theirs up, and sees the other's go up through the host.
+		if Shed.crew.size() == 2 and main.remotes.size() == 1:
+			if not RiderGear.can_flip(RiderGear.worn_of(Shed.me())):
+				RiderGear.wear("helmet_cap")   # ridden in a lid with a visor
+			if not RiderGear.visor_up(Shed.me()):
+				RiderGear.flick_visor()
+			visor_ok = RiderGear.visor_up(int(main.remotes.keys()[0])) and RiderGear.visor_up(Shed.me())
 		# Hand spraying: the host leaves a bare tank on the floor; the client primes it, paints
 		# it and lacquers it with spray cans, every coat checked by the host, and both see the
 		# three coats on it.
@@ -716,7 +726,8 @@ func _ready() -> void:
 			var p_booked: bool = (Shed.bank["ledger"] as Array).any(func(e): return str(e["why"]) == "Petrol for Old Faithful")
 			pump_ok = pump_ok or (ShedPump.holder() == 0 and float(Shed.pump["litres"]) > 1.0 and p_litres > 2.0 and p_booked
 				and (role == "client" or pump_seen))
-		var rest_ok := pump_ok and ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok
+		var rest_ok := pump_ok and ranger != 0 and not Shed.is_bolted(ranger, "exhaust") and not Shed.is_bolted(ranger, "oil_filter") and dropped and tuned and Shed.crew.size() == 2 and board_ok and tv_ok and xp_ok and prints_ok and lights_ok and geo_ok and scrap_ok and weather_ok and money_ok and customer_ok and bell_ok and upgrade_ok and gear_ok and retrieve_ok and lift_ok and sales_ok and trolley_ok and emote_ok and cafe_ok and staff_ok and spray_ok and paint_ok and traffic_ok and avatar_ok and graph_ok and rec_ok and pass_ok and wash_ok and shine_ok and pool_ok and card_ok
+		rest_ok = rest_ok and visor_ok
 		# Order one of these and copy its blueprint (BikeCopy), once the trolley and the poster are
 		# in (it fills the delivery area): the client orders one of the ranger, used (the card's
 		# quality slider halfway), from its own money and copies a cafe biker's bike; both see the
@@ -779,6 +790,7 @@ func _ready() -> void:
 		Input.action_release("move_back")
 		Input.action_press("move_forward" if fmod(tl, 2.0) < 1.0 else "move_back")
 	var ok := moved and shed_ok
+	print("MP note %s: helmet visors seen up both ways %s" % [role, visor_ok])
 	print("MP note %s: own walk span %s; the other player: remotes %d, first seen %s, span %s" % [
 		role, own.size, main.remotes.size(), start, span.size])
 	print("MP %s %s: saw the other player move=%s, shared shed in step=%s (bikes %d, crew %d, board marks %d, xp %s, picture %s, posters %d, scrapped %s, money %s, customers %d, extension %s, gear %s, retrieved %s, lift %s, sales %s, trolley %s, emotes %s, cafe %s, staff %s, spray coats %s, paint bay %s, traffic %s, avatar whole %s, graphs %s, recovery %s, passenger %s, washing %s, detailing %s, pool shots each way %s/%s, job card %s, order and copy %s, petrol pump %s, collection offer %s)" % [

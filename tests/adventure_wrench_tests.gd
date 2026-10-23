@@ -8,10 +8,6 @@ const Rides := preload("res://tests/rides.gd")
 
 var t: Node   # the test runner: check(), get_tree()
 
-const KEPT := {"chain_wear": 0.05, "chain_lube": 1.0, "chain_slack": 30.0, "oil_age": 0.1, "oil_level": 1.0,
-	"engine_wear": 0.05, "wear": 0.05}
-const NEGLECTED := {"chain_wear": 0.7, "chain_lube": 0.05, "chain_slack": 44.0, "oil_age": 2.5, "oil_level": 0.8,
-	"engine_wear": 0.6, "wear": 0.6}
 const KIT: Array[String] = ["tools", "spare_chain", "oil", "fuses", "levers", "plug_kit", "pump"]
 
 
@@ -46,42 +42,24 @@ func _toolbox(bike: int, kit: Array) -> int:
 	return id
 
 
-## The expected number of breakdowns (and punctures) over `km` at `rates` on tarmac.
-static func _expected(rates: Dictionary, km: float, surface := "tarmac") -> float:
-	var n := 0.0
-	for k in rates:
-		n += float(rates[k]) * km
-	return n + 2.0 * float(Puncture.PER_KM.get(surface, 0.003)) * km
+## The expected number of punctures over `km` on `surface` (two tyres).
+static func _expected(km: float, surface := "tarmac") -> float:
+	return 2.0 * float(Puncture.PER_KM.get(surface, 0.003)) * km
 
 
-## The odds: a couple of hours of tarmac on a well kept bike most likely sees nothing at all;
-## neglect, gravel and sand bring a lot more; a drop can snap a lever or knock something loose.
-## (A whole adventure's odds, gravel and all: test_breakdown_odds in tests/adventure_ride_tests.gd.)
+## The odds: an adventure breaks nothing but tyres (see Roadside), so how worn or neglected a bike
+## is makes no odds out there; a couple of hours of tarmac most likely sees nothing at all, and
+## gravel and sand bring more punctures. (A whole adventure's odds, gravel and all:
+## test_breakdown_odds in tests/adventure_ride_tests.gd.)
 func test_odds() -> void:
-	var kept := Roadside.rates(KEPT, "tarmac")
-	var two_hours := _expected(kept, 140.0)
-	check(two_hours > 0.1 and two_hours < 0.6, "two hours (140 km) on a well kept bike on tarmac: about %.2f small things expected" % two_hours)
-	var gravel := _expected(Roadside.rates(KEPT, "gravel"), 140.0, "gravel")
-	var sand := _expected(Roadside.rates(KEPT, "sand"), 140.0, "sand")
-	check(gravel > two_hours * 1.8 and sand > two_hours * 1.5, "gravel and sand shake more loose (%.2f, %.2f)" % [gravel, sand])
-	var worn := _expected(Roadside.rates(NEGLECTED, "tarmac"), 140.0)
-	check(worn > two_hours * 3.0, "a worn, dry, badly kept bike breaks down far more (%.2f)" % worn)
-	var dry := KEPT.duplicate()
-	dry["chain_lube"] = 0.0
-	check(float(Roadside.rates(dry, "tarmac")["chain_snap"]) > float(kept["chain_snap"]) * 3.0
-		and float(Roadside.rates(dry, "tarmac")["chain_slack"]) > float(kept["chain_slack"]) * 2.0, "skipping the chain lube makes the chain go")
-	var old_oil := KEPT.duplicate()
-	old_oil["oil_age"] = 2.0
-	check(float(Roadside.rates(old_oil, "tarmac")["oil"]) > float(kept["oil"]) * 2.0, "old oil runs low sooner")
-	var low := KEPT.duplicate()
-	low["oil_level"] = 0.3
-	low["chain_slack"] = 60.0
-	var lr := Roadside.rates(low, "tarmac")
-	check(float(lr["oil"]) == 0.0 and float(lr["chain_slack"]) == 0.0, "what's gone already doesn't go again")
-	check(Roadside.roll(kept, 1.0, 0.0) == "chain_slack" and Roadside.roll(kept, 1.0, 0.99) == "", "a roll picks a fault, or nothing")
-	check(Roadside.drop_faults(0.1, 0.9) == ["lever"] and Roadside.drop_faults(0.9, 0.1) == ["rattle"] and Roadside.drop_faults(0.9, 0.9).is_empty(),
-		"a drop can snap a lever or knock something loose")
-	# Ridden out: two hundred two-hour rides on the kept bike, km by km.
+	var two_hours := _expected(140.0)
+	check(two_hours > 0.03 and two_hours < 0.3, "two hours (140 km) on tarmac: about %.2f punctures expected" % two_hours)
+	var gravel := _expected(140.0, "gravel")
+	var sand := _expected(140.0, "sand")
+	check(gravel > two_hours * 1.8 and sand > two_hours * 1.5, "gravel and sand bring more punctures (%.2f, %.2f)" % [gravel, sand])
+	check(not Roadside.new().has_method("rates") and not Roadside.new().has_method("drop_faults"),
+		"nothing left to roll a breakdown or a drop's damage from")
+	# Ridden out: two hundred two-hour rides, km by km.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4242
 	var total := 0
@@ -89,12 +67,13 @@ func test_odds() -> void:
 	for ride in 200:
 		var n := 0
 		for km in 140:
-			if Roadside.roll(kept, 1.0, rng.randf()) != "":
-				n += 1
+			for tyre in 2:
+				if Puncture.ride_punctures("tarmac", 1.0, rng.randf()):
+					n += 1
 		total += n
 		none += 1 if n == 0 else 0
-	check(float(total) / 200.0 > 0.05 and float(total) / 200.0 < 0.5 and none > 120,
-		"over 200 two-hour rides: %.2f breakdowns a ride, %d rides with none at all" % [float(total) / 200.0, none])
+	check(float(total) / 200.0 < 0.3 and none > 150,
+		"over 200 two-hour rides: %.2f punctures a ride, %d rides with nothing at all" % [float(total) / 200.0, none])
 
 
 ## The rules, in the shed's state: faults, the roadside record, fixing with only what's in the

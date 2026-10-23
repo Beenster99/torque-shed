@@ -33,6 +33,8 @@ const COLLIDE_COLS := 8
 ## the road along the way: route.land_reach keeps it well short of them.
 const SHARED_COL := 13
 const CROWN := 0.04
+## How far a chunk's road collision runs on past each end, under the next chunk's (m, see _overlapped).
+const SEAM_OVERLAP := 0.05
 ## The most vertices of real buildings a chunk draws (a town's busiest stretch would be several times this).
 const BUILDING_VERTS := 18000
 ## How far each kind of thing is drawn (m, times the draw distance setting).
@@ -113,7 +115,7 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 			var wear := 1.0 - 0.06 * (1.0 - absf(absf(f) - 0.5) * 2.0) if surf == "tarmac" else 1.0
 			road_c.append(rc * wear)
 	out["road"] = _grid(road_v, rows, 5, road_uv, road_c)
-	out["road_faces"] = _faces(road_v, rows, 5, 5)
+	out["road_faces"] = _faces(_overlapped(road_v, rows, 5), rows, 5, 5)
 	# The land either side, out to the skyline: left from its far edge in, right from the verge out.
 	var cols := land_cols(route)
 	var land := {}
@@ -146,7 +148,7 @@ static func build(route: AdventureRoute, c: int) -> Dictionary:
 					var steps := maxi(1, int((lat - prev) / 40.0))
 					for q in range(1, steps + 1):
 						var at := lerpf(prev, lat, float(q) / steps)
-						if route.other_road_near(i, route.px[i] + rx * at * side, route.pz[i] + rz * at * side, 30.0):
+						if route.other_road_near(i, route.px[i] + rx * at * side, route.pz[i] + rz * at * side, 30.0, at):
 							stopped = true
 							break
 				if stopped:
@@ -259,6 +261,24 @@ static func _grid(v: PackedVector3Array, rows: int, cols: int, uv: PackedVector2
 	arr[Mesh.ARRAY_COLOR] = col
 	arr[Mesh.ARRAY_INDEX] = idx
 	return arr
+
+
+## Grid `v` (`rows` x `cols`) with its first and last rows run on SEAM_OVERLAP further along the road, in the
+## surface's own slope, for the road's collision: the next chunk's road starts where this one ends, but each is placed
+## at its own anchor, and a ray down at the very seam could slip between the two by a hair (the wheel losing the road
+## for a tick). Overlapped, the two lie in one surface across the seam.
+static func _overlapped(v: PackedVector3Array, rows: int, cols: int) -> PackedVector3Array:
+	var out := v.duplicate()
+	if rows < 2:
+		return out
+	for k in cols:
+		var a := v[k]
+		var b := v[cols + k]
+		out[k] = a + (a - b).normalized() * SEAM_OVERLAP
+		var y := v[(rows - 1) * cols + k]
+		var z := v[(rows - 2) * cols + k]
+		out[(rows - 1) * cols + k] = y + (y - z).normalized() * SEAM_OVERLAP
+	return out
 
 
 ## Collision triangles for the first `upto` columns of a grid (the last `upto` with `from_end`).

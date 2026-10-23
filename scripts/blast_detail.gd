@@ -65,7 +65,7 @@ static func add_to(model: BikeModel) -> int:
 		for cy in model._cyls:
 			var up: Vector3 = cy["up"]
 			var top: Vector3 = cy["base"] + up * 0.13
-			var b := _basis_up(up)
+			var b := model._cyl_basis(up)   # sized with the head, like the model's own
 			# Fins round the head casting on an air-cooled engine.
 			if layout in FINNED:
 				for k in 3:
@@ -103,10 +103,11 @@ static func add_to(model: BikeModel) -> int:
 			_box(model, "gearbox", mat, c + Vector3(lerpf(-0.3, 0.3, k / 3.0) * bw, -0.06, 0.302), Vector3(0.007, 0.15, 0.01))
 	if _has(model, "oil_filter"):
 		var mat := _main_mat(model, "oil_filter")
-		var at := c + Vector3(bw * 0.25, -0.06, -0.205)
+		var at := model.oil_filter_at()
+		var dir := model.oil_filter_dir()
 		for k in 3:
-			_disc(model, "oil_filter", mat, at + Vector3(0.0, 0.0, -0.022 + k * 0.022), Vector3.FORWARD, 0.0375, 0.005)
-		_bolt(model, "oil_filter", mat, at + Vector3(0.0, 0.0, -0.038), Vector3.FORWARD, 0.012)
+			_disc(model, "oil_filter", mat, at + dir * (-0.022 + k * 0.022), dir, 0.0375, 0.005)
+		_bolt(model, "oil_filter", mat, at + dir * (BikeModel.OIL_FILTER_LEN * 0.5 + 0.005), dir, 0.012)
 	return _count(model) - before
 
 

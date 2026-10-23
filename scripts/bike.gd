@@ -39,6 +39,16 @@ const ARM_INERTIA := 0.35         # kg m^2: the rider's hands and forearms swing
 const ARM_HOLD := 120.0           # Nm per rad: how firmly the rider's arms hold the bars where they aim them, riding
 const ARM_HOLD_SLOW := 500.0      # and at walking pace, feet down, steering by hand
 const MAX_BAR_TORQUE := 45.0      # Nm: the most a rider pushes through 720 mm bars (wider bars, more leverage)
+## At speed the rider puts their weight into the bars as well as their arms (Simon: "all bikes are
+## very slow to lean at higher speed ... VERY ponderous" on the race bike): the most they push grows
+## by this share of MAX_BAR_TORQUE between these speeds (m/s), and the bars' width counts for less,
+## as the rider is down over them (clip-ons especially).
+const BAR_PUSH_FAST := 1.0
+const BAR_PUSH_FROM := 15.0
+const BAR_PUSH_FULL := 40.0
+## Stability control damps the lean rate's departures from itself smoothed over this long (s): a
+## weave or a tank-slapper, not the rider rolling the bike into a turn.
+const STAB_SETTLE := 0.08
 const DIRECT_BAR_TORQUE := 35.0   # Nm: a full push on the bars in Direct bars mode, 720 mm bars, at DIRECT_PUSH_SPEED
 const DIRECT_PUSH_SPEED := 10.0   # m/s: ... growing as the speed to the power 3/4
 const DIRECT_PUSH_LEAST := 0.7    # ... from no less than this share at a crawl
@@ -64,6 +74,7 @@ const LEAN_RATE_GAIN := 3.0      # per second: how briskly the rider rolls the b
 const LEAN_RATE_MAX := 1.0       # rad/s: the quickest they roll it in or out of a lean
 const LEAN_CATCH := 2.0          # rad/s^2: how hard they reckon they can stop a roll, so they ease off in time
 const STEER_CATCH := 30.0        # rad of bar per rad/s of roll, times speed squared: steering into a fall to catch it
+const STEER_CATCH_FAST := 0.8    # ... and this much more by BAR_PUSH_FULL (see _fast), against the front wheel's spin
 ## The most of the tyres' grip the rider uses for a steady lean, keeping the rest in hand.
 const GRIP_IN_HAND := 0.8
 ## Riding realism below this gets no helping push towards the lean: the bars balance the bike.
@@ -78,11 +89,20 @@ const AUTO_RESPAWN_TIME := 3.5
 const HOLD_SPEED := 1.0           # m/s: slower than this, a bike with its controls off is held still (see _hold_still)
 var _held := false   # frozen by _hold_still (not by anyone else)
 const START_TIME := 0.7           # seconds on the starter motor before it fires
+## How hard a start has to be (start_struggle) before it's a struggle: the starter labours and
+## it takes up to STRUGGLE_CRANK seconds more to fire.
+const STRUGGLE_FROM := 0.35
+const STRUGGLE_CRANK := 1.8
 const WHEELIE_PITCH := deg_to_rad(28.0)   # where the rider tries to hold a wheelie (weight back: higher)
 const STOPPIE_PITCH := deg_to_rad(14.0)   # and a stoppie, nose down (weight forward for one)
 const STOPPIE_SKIM := deg_to_rad(4.0)     # braking hard otherwise, how far they let the back come up
 const RIDER_SPIN_FEEL := 1.5      # how hard the rider rolls off per tyre's-peak of extra wheelspin, at full assist
 const AIR_REV_PITCH := 7.0        # pitch acceleration (rad/s^2) from blipping the rear wheel in the air
+## Grip fading off the road's edge (see _fade_grip): over about this long (s), at least this far
+## (m), and coming back on to the road, this quickly (s).
+const GRIP_FADE_TIME := 0.4
+const GRIP_FADE_DIST := 2.0
+const GRIP_GAIN_TIME := 0.05
 const SKID_SLIP := 0.2            # tyre slip above which it screeches and marks the road
 const BUMP_HEIGHT := {"tarmac": 0.006, "concrete": 0.004, "dirt": 0.035, "grass": 0.025, "gravel": 0.03, "sand": 0.02, "snow": 0.012}
 static var _bumps: FastNoiseLite
@@ -207,6 +227,9 @@ var pushing := false
 var tow_anchor := Vector3.INF
 var tow_speed := 0.0       # how fast the towing bike's going (m/s): the strap damps against it
 var horn_audio: HornAudio
+## The stop lamp and the indicators (see BikeLamps and indicate), and the relay's tick on the dash.
+var lamps := BikeLamps.new()
+var _relay: AudioStreamPlayer3D
 var _stopped_brake := 0.0  # how long the front brake has been held at a standstill
 var _throttle_eff := 0.0   # the throttle as the rider's wrist actually turns it (smoothed with realism up)
 var _fog: Array = []
@@ -218,6 +241,7 @@ var _steer_slow := 0.0              # the bars' angle smoothed, to tell a shake 
 var _lean_i := 0.0                  # the rider's memory of a lean that keeps falling short (rad s)
 var _hang := 0.0                    # how far the rider is hanging off, m (+ to the right)
 var _rate_slow := 0.0               # the lean rate smoothed over half a second
+var _rate_quick := 0.0              # and over STAB_SETTLE, for stability control
 var _trim := 0.0                    # the steady push the rider's arms have settled into, N m
 var _direct_hold := 0.0              # Direct bars: the lean the rider let go of the bars at, rad
 var _prev_w := Vector3.ZERO          # the frame's spin and velocity last tick, for its accelerations
@@ -318,6 +342,16 @@ func setup(new_build: BikeBuild, paint := Color(0.78, 0.09, 0.08)) -> void:
 	horn_audio.setup_from(build)
 	horn_audio.position = model.lamp_position()
 	add_child(horn_audio)
+	if _relay:
+		_relay.free()
+	# The indicators' relay ticking behind the clocks: soft, and only heard close by.
+	_relay = AudioStreamPlayer3D.new()
+	_relay.position = model.lamp_position() + Vector3(0.0, 0.12, 0.2)
+	_relay.volume_db = -14.0
+	_relay.unit_size = 1.0
+	_relay.max_distance = 12.0
+	_relay.bus = "SFX"
+	add_child(_relay)
 	fuel_litres = build.fuel_litres
 	if effects:
 		effects.free()
@@ -395,6 +429,7 @@ func place(pos: Vector3, heading: float) -> void:
 		w["rx"] = 0.0
 		w["ry"] = 0.0
 		w.erase("road_h")
+		w.erase("mu_fade")
 	if model:
 		model.set_rider_visible(true)
 	respawned.emit()
@@ -412,8 +447,32 @@ func start_engine() -> String:
 		return "You're pushing it: get on it first ({interact} to stop)."
 	if str(faults.get("fuse", "")) == "ignition":
 		return "Not even a click, and the dash is dark: a blown fuse. Get off and swap it (under the seat)."
-	_starting = START_TIME
+	_starting = start_time(start_struggle())
 	return ""
+
+
+## Seconds on the starter before it fires, for a start this hard (see start_struggle): a quick
+## crank for a healthy bike, longer the harder it struggles.
+static func start_time(struggle: float) -> float:
+	return START_TIME + (STRUGGLE_CRANK * clampf(struggle, 0.0, 1.0) if struggle >= STRUGGLE_FROM else 0.0)
+
+
+## How hard this bike is to start now, 0 (it spins over and fires) to 1 (a real struggle).
+func start_struggle() -> float:
+	return struggle_for(build, heat.engine if heat else 20.0)
+
+
+## How hard a bike with this build is to start with its engine at `engine_c` °C: worn spark
+## plugs most of all, then a tired engine and fuel system, and a stone cold engine on a frosty
+## day makes it harder still.
+static func struggle_for(b: BikeBuild, engine_c: float) -> float:
+	if b == null:
+		return 0.0
+	var h := b.health
+	var worn := 0.9 * (1.0 - float(h.get("spark_plugs", 1.0))) + 0.6 * (1.0 - float(h.get("engine", 1.0))) \
+		+ 0.4 * (1.0 - float(h.get("fuel", 1.0)))
+	var frost := clampf((5.0 - engine_c) / 15.0, 0.0, 1.0)
+	return clampf(worn + 0.4 * frost, 0.0, 1.0)
 
 
 func stop_engine(reason := "") -> void:
@@ -488,7 +547,8 @@ func _physics_process_body(delta: float) -> void:
 
 	if _starting > 0.0:
 		_starting -= delta
-		rpm = lerpf(rpm, build.idle_rpm * 0.3, 0.2)
+		# Turning over, lurching a little at each compression (so other riders hear it cranking).
+		rpm = lerpf(rpm, build.idle_rpm * 0.3 * (1.0 + 0.1 * sin(_starting * TAU * 5.0)), 0.2)
 		if _starting <= 0.0:
 			_starting = 0.0
 			engine_on = true
@@ -509,6 +569,7 @@ func _physics_process_body(delta: float) -> void:
 		model.set_lights(engine_on, beam > 0, fog_on)
 	if effects:
 		effects.beam_mode = beam
+	_step_lamps(delta)
 
 	if heat:
 		heat.step(self, delta)
@@ -703,6 +764,10 @@ func _tyre_lean() -> float:
 	# them; at 0 they lean as far as warm tyres would hold, and find out.
 	if heat:
 		mu *= lerpf(1.0, minf(heat.tyre_grip(0, surf), heat.tyre_grip(1, surf)), clampf(assist * 2.0, 0.0, 1.0))
+	# Just off the road's edge the tyre still has most of the road's grip (see _fade_grip), and
+	# the rider doesn't stand the bike up before it's gone.
+	if not wheels.is_empty() and wheels[1].has("mu_fade2") and float(wheels[1].get("mu_now", 0.0)) > 0.01:
+		mu *= float(wheels[1]["mu_fade2"]) / float(wheels[1]["mu_now"])
 	return minf(atan(mu * GRIP_IN_HAND), MAX_LEAN)
 
 
@@ -779,7 +844,9 @@ func _update_steering(delta: float) -> void:
 		r_want = clampf(r_want, -stop, stop) * push
 		# Then they steer into the lean as fast as it's going faster than that (out of it to speed
 		# it up): the faster the bike, the less bar it takes.
-		var catch := clampf(STEER_CATCH / (v * v), 0.004, 0.15)
+		# At speed the spinning front wheel fights the bars harder, so they steer a little more
+		# firmly into a roll that's lagging (see STEER_CATCH_FAST).
+		var catch := clampf(STEER_CATCH / (v * v), 0.004, 0.15) * (1.0 + STEER_CATCH_FAST * _fast(v))
 		cmd = steer_eq + catch * (_seen[3] - r_want) - push * gain * 0.25 * _lean_i
 	cmd = clampf(cmd, -_max_steer(), _max_steer())
 	var aim_was := _steer_aim
@@ -802,7 +869,7 @@ func _update_steering(delta: float) -> void:
 	if hands:
 		var lever := float(build.part("handlebars").get("width", 720.0)) / 720.0
 		var hold := lerpf(ARM_HOLD_SLOW, ARM_HOLD, riding) * lever
-		var most := MAX_BAR_TORQUE * lever
+		var most := bar_strength(v)
 		if direct_bars:
 			# The input is the push itself: the right grip forward (steer right) turns the bars
 			# left, which leans the bike right, and the trail then swings the front into the lean.
@@ -850,6 +917,20 @@ func _update_steering(delta: float) -> void:
 	# A shake is the bars moving quickly about where they're pointing on the whole.
 	_steer_slow = lerpf(_steer_slow, steer, 1.0 - exp(-delta / 0.08))
 	wobble = maxf(absf(steer - _steer_slow), wobble * exp(-delta / 0.3))
+
+
+## The most the rider pushes on the bars at `v` m/s, N m: their arms through the bars' leverage at
+## town speeds, and their weight as well at speed (see BAR_PUSH_FAST).
+func bar_strength(v: float) -> float:
+	var lever := float(build.part("handlebars").get("width", 720.0)) / 720.0
+	var fast := _fast(v)
+	return MAX_BAR_TORQUE * lerpf(lever, 1.0, fast) * (1.0 + BAR_PUSH_FAST * fast)
+
+
+## 0 at town speeds (BAR_PUSH_FROM) .. 1 at BAR_PUSH_FULL and faster: how much the rider rides
+## the bike as a fast one (see bar_strength and STEER_CATCH_FAST).
+static func _fast(v: float) -> float:
+	return clampf((v - BAR_PUSH_FROM) / (BAR_PUSH_FULL - BAR_PUSH_FROM), 0.0, 1.0)
 
 
 ## The front end rides on the frame: when the frame swings or is shoved sideways, the front's
@@ -1459,6 +1540,7 @@ func _wheel_forces(w: Dictionary, delta: float, space: PhysicsDirectSpaceState3D
 	# rain grip a little less.
 	var mu_surf := surface_grip(build, is_front, hit_surf, Weather.wetness())
 	mu_surf *= Weather.grip_mult(hit_surf)
+	mu_surf = _fade_grip(w, mu_surf, delta)
 	if heat:
 		mu_surf *= heat.tyre_grip(0 if is_front else 1, hit_surf)   # a cold tyre (or a cooked one) grips less
 	if flat_now > 0.0:
@@ -1604,6 +1686,35 @@ func _brake_care(is_front: bool) -> float:
 	return 0.0
 
 
+## Off the road's edge the grip doesn't go all at once (Simon: "ease the grip levels down so
+## that minor excursions can be gathered"): the tyre carries the road's grip a little way on to
+## the verge, whose edge is firm and swept, so the grip fades from the road's towards the
+## verge's over GRIP_FADE_TIME (at least GRIP_FADE_DIST along it), in two stages so the first
+## moments keep most of it, and a wheel dropping off the edge for a moment can be gathered up.
+## A longer excursion has the verge's grip, and back on the road the tyre grips again almost at
+## once. `w` is the wheel, `mu` the grip of what it's on now; returns the grip it has.
+func _fade_grip(w: Dictionary, mu: float, delta: float) -> float:
+	w["mu_now"] = mu
+	if not w.has("mu_fade"):
+		w["mu_fade"] = mu
+		w["mu_fade2"] = mu
+		return mu
+	var a: float = w["mu_fade"]
+	var c: float = w["mu_fade2"]
+	if mu >= c:
+		var k := 1.0 - exp(-delta / GRIP_GAIN_TIME)
+		a = lerpf(maxf(a, c), mu, k)
+		c = a
+	else:
+		var stage := maxf(GRIP_FADE_TIME, GRIP_FADE_DIST / maxf(absf(speed), 0.1)) * 0.5
+		var k := 1.0 - exp(-delta / stage)
+		a = lerpf(a, mu, k)
+		c = lerpf(c, a, k)
+	w["mu_fade"] = a
+	w["mu_fade2"] = c
+	return c
+
+
 ## The grip (mu) of build `b`'s front or back tyre on surface `surf` (the town's tarmac, dirt
 ## and grass, the adventure roads' gravel, sand and snow) with the ground `wet` 0..1: the one
 ## place the grip numbers come from (TyreGrip, data/tyre_grip.json).
@@ -1676,10 +1787,16 @@ func _apply_rider_balance() -> void:
 		# slowly falls into a turn on its round tyres.
 		tau += clampf((NO_HANDS_LEAN * err - NO_HANDS_RATE * lean_rate) * mass, -NO_HANDS_MAX, NO_HANDS_MAX)
 	var stab := build.aid_strength("stability")
+	_rate_quick = lerpf(_rate_quick, lean_rate, 1.0 - exp(-dt / STAB_SETTLE))
 	if stab > 0.0 and any_contact:
-		# Stability control calms a tank-slapper or a twitchy slide, as firmly as it's set.
-		tau -= lean_rate * mass * 3.0 * stab
-		apply_torque(-b.y * angular_velocity.dot(b.y) * mass * 0.8 * stab)
+		# Stability control calms a tank-slapper or a twitchy slide, as firmly as it's set: a quick
+		# rocking of the bike, and the bike yawing faster or slower than its lean turns it. It
+		# leaves alone the rider rolling the bike into a turn and the turn itself (it used to damp
+		# every roll and every turn, which made the race bike, the one with it, the slowest of all
+		# to lean in at speed).
+		tau -= (lean_rate - _rate_quick) * mass * 3.0 * stab
+		var turning := -G * tan(clampf(lean_angle, -1.0, 1.0)) / maxf(absf(speed), 3.0)
+		apply_torque(-Vector3.UP * (angular_velocity.y - turning) * mass * 0.8 * stab)
 	if not any_contact:
 		tau *= 0.4
 	apply_torque(fwd_flat * tau)
@@ -1752,7 +1869,8 @@ func _clear_ragdoll() -> void:
 	_ragdoll = null
 
 
-## Snapshot for the network: position, rotation, velocity, steering, wheels, engine.
+## Snapshot for the network: position, rotation, velocity, steering, wheels, engine, then the
+## horn, gear, burnout, headlight switch, and the stop lamp [25] and indicators [26].
 func get_net_state() -> PackedFloat32Array:
 	var q := global_transform.basis.get_rotation_quaternion()
 	var p := global_position
@@ -1762,7 +1880,38 @@ func get_net_state() -> PackedFloat32Array:
 		steer, wheels[0]["spin"], wheels[1]["spin"], wheels[0]["compression"], wheels[1]["compression"],
 		rpm, sound_load(), 1.0 if is_crashed else 0.0, body_shift, 1.0 if engine_on else 0.0, skid,
 		1.0 if (horn_audio and horn_audio.pressed) else 0.0, float(gear), burnout, float(beam),
+		1.0 if lamps.braking else 0.0, float(lamps.side),
 	])
+
+
+## The indicator switch: `which` -1 left or 1 right. The same side again cancels it, the other
+## side switches over (see BikeLamps). Returns why it can't ("" when it did).
+func indicate(which: int) -> String:
+	if model == null or not model.has_indicators():
+		return "No indicators on this bike"
+	if not engine_on:
+		return "The indicators need the engine running"
+	if str(faults.get("fuse", "")) == "lights":
+		return "The lights' fuse has gone: no indicators"
+	lamps.press(which)
+	Sfx.play_at("switch", global_position, -16.0)
+	return ""
+
+
+## The stop lamp from the brakes as the bike uses them (the rider's, a menu's held brake or the
+## police's stop), and the indicators' flash, self-cancel and relay tick. They need the ignition
+## (and the lights' fuse).
+func _step_lamps(delta: float) -> void:
+	var live := engine_on and str(faults.get("fuse", "")) != "lights"
+	lamps.set_brakes(front_brake if live else 0.0, rear_brake if live else 0.0)
+	if not live:
+		lamps.set_side(0)
+	var heard := lamps.step(delta, lean_angle, -angular_velocity.y)
+	if heard != 0 and _relay:
+		_relay.stream = BikeLamps.click(heard > 0)
+		_relay.play()
+	if model:
+		model.set_signals(lamps.braking, lamps.left_lit(), lamps.right_lit())
 
 
 ## How many stops the headlight switch has: off, low, high, and high with the fog lights on a

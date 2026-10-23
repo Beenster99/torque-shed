@@ -211,14 +211,12 @@ static func _merge(a: Dictionary, b: Dictionary) -> Dictionary:
 	return out
 
 
-## A bike in the state most ridden ones are in: not new, looked after now and then.
-const TYPICAL := {"chain_wear": 0.25, "chain_lube": 0.6, "chain_slack": 34.0, "oil_age": 0.6, "oil_level": 0.9,
-	"engine_wear": 0.25, "wear": 0.3}
 
 
-## Breakdowns and punctures over whole adventures: rides of about 90 minutes, two hours and three hours (100, 150 and
-## 220 km) on the tours' own mix of surfaces (round them as many times as it takes), ridden km by km on a typical bike a
-## few hundred times. About one thing goes wrong on a ride, not several; a ride with three or more is rare.
+## What goes wrong over whole adventures: only tyres (an adventure breaks nothing else, see
+## Roadside). Rides of about 90 minutes, two hours and three hours (100, 150 and 220 km) on the
+## tours' own mix of surfaces (round them as many times as it takes), ridden km by km a few hundred
+## times: a puncture now and then, more often on the longer rides, and a ride with two or more is rare.
 func test_breakdown_odds() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1808
@@ -229,43 +227,33 @@ func test_breakdown_odds() -> void:
 		var events := 0
 		var many := 0
 		var expected := 0.0
-		var punctures := 0
 		var seeds := [3, 11, 27, 40, 52]
 		for seed in seeds:
 			var route := Rides.tour_route("dales" if seed % 2 == 1 else "shodoshima", seed)
 			var surfs := []
 			for k in int(km):
 				surfs.append(route.surface_at_s(fmod(k * 1000.0 + 500.0, route.length)))
-			var rates := {}
 			for surf in surfs:
-				if not rates.has(surf):
-					rates[surf] = Roadside.rates(TYPICAL, surf)
-			for surf in surfs:
-				for k in rates[surf]:
-					expected += float(rates[surf][k]) / seeds.size()
 				expected += 2.0 * float(Puncture.PER_KM.get(surf, 0.003)) / seeds.size()
 			for ride in 60:
 				var n := 0
 				for surf in surfs:
-					if Roadside.roll(rates[surf], 1.0, rng.randf()) != "":
-						n += 1
 					for tyre in 2:
 						if Puncture.ride_punctures(surf, 1.0, rng.randf()):
 							n += 1
-							punctures += 1
 				rides += 1
 				events += n
-				many += 1 if n >= 3 else 0
+				many += 1 if n >= 2 else 0
 		var mean := float(events) / rides
 		means[length] = mean
 		var nm := str(length)
-		print("    %s (%d km): %.2f things go wrong a ride (%.2f expected, %.2f of them punctures), %d of %d rides with 3 or more" % [
-			nm, roundi(km), mean, expected, float(punctures) / rides, many, rides])
-		check(absf(mean - expected) < 0.2, "%s: the rolls come out as the odds say (%.2f a ride against %.2f)" % [nm, mean, expected])
-		check(mean > 0.2 and mean < 1.25 and float(many) / rides < 0.15,
-			"%s (%d km, about %d minutes): %.2f things go wrong a ride on a typical bike, %d%% of rides see 3 or more" % [
+		print("    %s (%d km): %.2f punctures a ride (%.2f expected), %d of %d rides with 2 or more" % [
+			nm, roundi(km), mean, expected, many, rides])
+		check(absf(mean - expected) < 0.15, "%s: the rolls come out as the odds say (%.2f a ride against %.2f)" % [nm, mean, expected])
+		check(mean > 0.02 and mean < 0.8 and float(many) / rides < 0.2,
+			"%s (%d km, about %d minutes): %.2f punctures a ride and nothing else, %d%% of rides see 2 or more" % [
 				nm, roundi(km), AdventureDest.minutes_for(km), mean, roundi(100.0 * many / rides)])
-	check(means["Short"] < means["Ride"] and means["Ride"] < means["Epic"], "the longer the ride, the more chance of something")
+	check(means["Short"] < means["Ride"] and means["Ride"] < means["Epic"], "the longer the ride, the more chance of a puncture")
 	check(not Puncture.hit_punctures(20.0, 0.0, 0.4) and Puncture.hit_punctures(20.0, 0.0, 3.0) and not Puncture.hit_punctures(5.0, 0.0, 3.0),
 		"a pothole hit at speed can pinch a tyre; the fork sinking on to its stop under the brakes can't")
 
