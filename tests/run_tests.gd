@@ -701,6 +701,12 @@ func _run_all() -> void:
 	_test_smooth_surface()
 	_test_smooth_land_under()
 	await _test_smooth_ride()
+	print("Simon's v0.22.0 round: 5 s as a ghost after a respawn, and nobody knocked off by a mate on an adventure")
+	_test_ghost_look()
+	await _test_ghost_respawn()
+	await _test_ghost_pass_through()
+	await _test_ghost_remote()
+	await _test_ghost_adventure()
 
 
 const SLICK := {"front_tyre": "race_slick", "rear_tyre": "race_slick"}
@@ -23258,3 +23264,29 @@ func _test_smooth_land_under() -> void:
 
 func _test_smooth_ride() -> void:
 	await _smooth().test_ride()
+
+
+# ---------------------------------------------------------------------------- the respawn ghost (tests/ghost_tests.gd)
+
+func _ghosts() -> RefCounted:
+	return load("res://tests/ghost_tests.gd").new(self)
+
+
+func _test_ghost_look() -> void:
+	_ghosts().test_look()
+
+
+func _test_ghost_respawn() -> void:
+	await _ghosts().test_respawn()
+
+
+func _test_ghost_pass_through() -> void:
+	await _ghosts().test_pass_through()
+
+
+func _test_ghost_remote() -> void:
+	await _ghosts().test_remote()
+
+
+func _test_ghost_adventure() -> void:
+	await _ghosts().test_adventure()

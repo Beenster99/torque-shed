@@ -725,6 +725,13 @@ func _start_riding(bike_id: int) -> void:
 	bike.respawn_at = trip.respawn_spot   # a crash off an adventure's road: back on it
 	_safe_xf = Transform3D()
 	bike.crashed.connect(func(): hud.flash("Crashed!", 1.5, true))
+	# Back on after a crash or a reset: a ghost for a moment (see BikeGhost), said with whatever
+	# put it back (an adventure's "Back on the road.").
+	bike.respawned.connect(func():
+		if bike != null and bike.is_ghost():
+			var ghost := "A ghost for %d s: nothing can knock you off" % int(BikeGhost.TIME)
+			var said := str(hud.get("_flash_raw")) if float(hud.get("_message_timer")) > 0.0 else ""
+			hud.flash((said + " " + ghost) if said.begins_with("Back on the road") else ghost, 2.5))
 	# You get on with the engine off and the box in neutral, as a parked bike is, and start it yourself.
 	bike.engine_on = false
 	bike.rpm = 0.0

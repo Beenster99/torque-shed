@@ -342,7 +342,8 @@ func _pull_out() -> void:
 			return
 
 
-## Your bike running into one of them at more than CRASH_SPEED: you come off (as in town).
+## Your bike running into one of them at more than CRASH_SPEED: you come off (as in town), unless
+## you've just respawned (a ghost passes through, see BikeGhost).
 func _watch_bikes() -> void:
 	for b in get_tree().get_nodes_in_group("ridden_bike"):
 		if not b is Bike:
@@ -355,7 +356,7 @@ func _watch_bikes() -> void:
 
 func _on_bike_hit(body: Node, b: Bike) -> void:
 	if is_instance_valid(b) and is_inside_tree() and body.is_in_group("road_traffic") and (body.get_parent() == stream or body.get_parent() == bikers) \
-			and float(b.get_meta("traffic_speed", 0.0)) > CRASH_SPEED and not b.is_crashed:
+			and float(b.get_meta("traffic_speed", 0.0)) > CRASH_SPEED and not b.is_crashed and not b.is_ghost():
 		b.crash()
 
 
