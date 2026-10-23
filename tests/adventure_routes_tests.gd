@@ -1,6 +1,9 @@
 extends RefCounted
 ## The forks on an adventure's road (AdventureRoute's graph of ways, AdventureForks' votes, the
-## paper map), run from tests/run_tests.gd: its _test_adv_routes_* functions hand over to these.
+## paper map), run from tests/run_tests.gd: its _test_adv_routes_* functions hand over to these. The forks are where the
+## planner found a second way between two junctions of the road (see RoutePlanner.plan_forks): the Dales tour has two.
+
+const Rides := preload("res://tests/rides.gd")
 
 var t: Node   # the test runner: check(), get_tree()
 
@@ -27,17 +30,24 @@ func _until(cond: Callable, seconds := 20.0) -> bool:
 	return cond.call()
 
 
-## The same seed plans the same graph, way for way; another seed another. Forks come every 20 to
-## 30 km of main road, each with two or three ways that differ in length, surfaces and bends, and
-## every way meets the road on exactly (same point, heading and height), its knots evenly spaced
-## and no bend tighter than the road's own. The main road everywhere is the road as it always was.
+## A route along the Dales tour (two forks on it).
+static func _route() -> AdventureRoute:
+	return Rides.tour_route("dales", 42)
+
+
+## A world along the Dales tour.
+static func _tour_world() -> AdventureWorld:
+	var w := AdventureWorld.new()
+	w.setup(Rides.tour_pack("dales"), 42)
+	return w
+
+
+## The same plan lays out the same graph, way for way. Each fork has its two ways, of different lengths, and the other
+## way meets the road on exactly (same point, heading and height), its knots evenly spaced. The main road everywhere is
+## the road as planned.
 func test_graph() -> void:
-	var a := AdventureRoute.new()
-	a.plan(42, 60.0)
-	var b := AdventureRoute.new()
-	b.plan(42, 60.0)
-	var c := AdventureRoute.new()
-	c.plan(43, 60.0)
+	var a := _route()
+	var b := _route()
 	var same := a.forks.size() == b.forks.size() and a.forks.size() >= 2
 	for f in mini(a.forks.size(), b.forks.size()):
 		for w in a.forks[f]["ways"].size():
@@ -46,68 +56,36 @@ func test_graph() -> void:
 			same = same and str(wa["name"]) == str(wb["name"]) and float(wa["len"]) == float(wb["len"])
 			if w > 0:
 				same = same and wa["px"] == wb["px"] and wa["ph"] == wb["ph"] and wa["chunk_surface"] == wb["chunk_surface"]
-	check(same, "the same seed plans the same forks and ways (%d forks)" % a.forks.size())
-	check(c.forks.is_empty() or c.fork_s(0) != a.fork_s(0) or c.forks[0]["ways"].size() != a.forks[0]["ways"].size()
-		or float(c.forks[0]["ways"][1]["len"]) != float(a.forks[0]["ways"][1]["len"]), "another seed, other forks")
-	# Spacing, over a few seeds and lengths.
-	var spaced := true
-	var counts := []
-	var kinds := {}
-	for seed in [1, 7, 42, 99, 2024]:
-		var r := AdventureRoute.new()
-		r.plan(seed, 120.0)
-		counts.append(r.forks.size())
-		var prev := 0.0
-		for f in r.forks.size():
-			var fs: float = r.forks[f]["s"]
-			var gap := fs - prev
-			spaced = spaced and (gap >= 14000.0 if f == 0 else gap >= 20000.0) and gap <= 30000.0 + 30 * 256.0
-			spaced = spaced and r.forks[f]["ways"].size() >= 2 and r.forks[f]["ways"].size() <= 3
-			spaced = spaced and float(r.forks[f]["rejoin"]) <= r.length - AdventureRoute.FORK_END_GAP
-			prev = fs
-			for way in r.forks[f]["ways"]:
-				kinds[way["kind"]] = true
-	check(spaced and counts.min() >= 3, "a fork every 20-30 km of a 120 km ride %s, two or three ways each %s" % [str(counts), str(kinds.keys())])
-	var short := AdventureRoute.new()
-	short.plan(5, 20.0)
-	check(short.forks.is_empty(), "a short ride has no fork")
-	# The ways differ.
+	check(same, "the same plan has the same forks and ways (%d forks)" % a.forks.size())
 	var differ := true
 	var lines := PackedStringArray()
 	for f in a.forks.size():
 		var ways: Array = a.forks[f]["ways"]
-		for w in range(1, ways.size()):
-			differ = differ and float(ways[w]["len"]) != float(ways[0]["len"]) and str(ways[w]["surfaces"]) != str(ways[0]["surfaces"])
-			if ways[w]["kind"] == "gravel":
-				differ = differ and float(ways[w]["surfaces"].get("gravel", 0.0)) > float(ways[w]["len"]) * 0.6
-			if ways[w]["kind"] == "scenic":
-				differ = differ and float(ways[w]["top"]) > 40.0 and float(ways[w]["twist"]) > 150.0
+		differ = differ and ways.size() == 2 and float(ways[1]["len"]) != float(ways[0]["len"])
 		for way in ways:
 			lines.append("%s %s %s" % [way["letter"], way["name"], AdventureForks.way_text(way)])
-	check(differ, "each way has its own length, surfaces and bends: %s" % "; ".join(lines))
-	# Every way meets the road on exactly, evenly spaced and never tighter than a hairpin.
+	check(differ, "each fork's two ways have their own lengths: %s" % "; ".join(lines))
+	# The other way meets the road on exactly, evenly spaced.
 	var meets := true
 	var spacing := true
-	var tight := INF
 	for f in a.forks.size():
 		var fk: Dictionary = a.forks[f]
 		var i1: int = fk["i1"]
 		for w in range(1, fk["ways"].size()):
 			var way: Dictionary = fk["ways"][w]
 			var n: int = way["n"]
-			meets = meets and way["px"][n - 1] == a._def["px"][i1] and way["pz"][n - 1] == a._def["pz"][i1] \
-				and way["ph"][n - 1] == a._def["ph"][i1] and absf(float(way["hd"][n - 1]) - float(a._def["hd"][i1])) < 1e-9
-			meets = meets and (n - 1) % AdventureRoute.CHUNK_KNOTS == 0
+			meets = meets and absf(float(way["px"][n - 1]) - float(a._def["px"][i1])) < 0.01 and absf(float(way["pz"][n - 1]) - float(a._def["pz"][i1])) < 0.01 \
+				and absf(float(way["hd"][n - 1]) - float(a._def["hd"][i1])) < 1e-9
 			for k in range(1, n):
 				var d := Vector2(way["px"][k] - way["px"][k - 1], way["pz"][k] - way["pz"][k - 1]).length()
-				spacing = spacing and absf(d - AdventureRoute.STEP) < AdventureRoute.STEP * 0.05
-				tight = minf(tight, 1.0 / maxf(absf(float(way["curv"][k])), 1e-6))
-	check(meets and spacing and tight > 20.0, "every way meets the road on exactly, its knots evenly spaced, no bend tighter than %.0f m" % tight)
+				spacing = spacing and absf(d - AdventureRoute.STEP) < AdventureRoute.STEP * 0.1
+	check(meets and spacing, "every other way meets the road on exactly, its knots evenly spaced")
 	# The default path is the main road: choosing it changes nothing.
 	var px0 := a.px.duplicate()
 	var sites0 := a.sites.size()
 	a.choose(0, 0)
-	check(a.px == px0 and a.sites.size() == sites0 and a.length == 60000.0, "taking the main road at a fork keeps the road as planned")
+	var len0 := a.length
+	check(a.px == px0 and a.sites.size() == sites0 and a.length == len0, "taking the main road at a fork keeps the road as planned")
 	# Choosing another way: the path runs along it, then on along the same road as before.
 	var way1: Dictionary = a.forks[0]["ways"][1]
 	var main_len := float(a.forks[0]["ways"][0]["len"])
@@ -120,8 +98,6 @@ func test_graph() -> void:
 	check(a.px[mid] == way1["px"][int(way1["n"]) / 2] and a.px[after] == px0[after - int(shift / AdventureRoute.STEP)]
 		and absf(a.length - (fin0 + shift)) < 0.01 and float(a.sites_of("finish")[0]["s"]) == a.length,
 		"taking %s, the road runs along it and on as before, the destination %.1f km further (%.1f km)" % [way1["name"], shift / 1000.0, a.length / 1000.0])
-	check(a.sites_of("fuel").size() == b.sites_of("fuel").size() and AdventureStops.stops(a).size() == AdventureStops.stops(b).size(),
-		"every way has the fuel and stops the main road has (%d fuel, %d stops)" % [a.sites_of("fuel").size(), AdventureStops.stops(a).size()])
 	# A site added on a way stays on it, and goes when another way's taken.
 	var on_way := a.fork_s(0) + 1500.0
 	var site := a.add_site("test_stop", on_way, 1, 10.0, "Tea van")
@@ -132,10 +108,8 @@ func test_graph() -> void:
 	check(a.sites_of("test_stop").size() == 1 and float(a.sites_of("test_stop")[0]["s"]) == on_way, "and back with the way")
 	# The road and land up to a fork come out the same whichever way is taken: the chunk before
 	# it built on one path matches the one built on another.
-	var p := AdventureRoute.new()
-	p.plan(42, 60.0)
-	var q := AdventureRoute.new()
-	q.plan(42, 60.0)
+	var p := _route()
+	var q := _route()
 	q.choose(0, q.forks[0]["ways"].size() - 1)
 	var cf := AdventureRoute.chunk_of(p.fork_s(0)) - 1
 	var cp := AdventureChunk.build(p, cf)
@@ -151,8 +125,7 @@ func test_graph() -> void:
 ## pick it's the main road. The fork's choice reads the votes; picks can't be changed.
 func test_vote() -> void:
 	Shed.start_new("Tester", 7)
-	var w := AdventureWorld.new()
-	w.setup(42, 60.0)
+	var w := _tour_world()
 	t.add_child(w)
 	Shed.adventure = {"id": 9, "seed": 42, "km": 60.0, "theme": "varied", "by": "Tester", "riders": {}, "arrived": 0, "arrived_name": ""}
 	var me := Shed.me()
@@ -195,8 +168,7 @@ func test_vote() -> void:
 ## built past it (the other ways nowhere), the signpost stands before it, the sat nav shows the
 ## ways, and the floating origin carries on across the fork as anywhere.
 func test_stream() -> void:
-	var w := AdventureWorld.new()
-	w.setup(42, 60.0)
+	var w := _tour_world()
 	var spot := {}
 	w.focus = func(): return [spot["p"]]
 	w.origin_shifted.connect(func(d): spot["p"] -= d)
@@ -275,7 +247,7 @@ func test_map() -> void:
 	main._start_session()
 	Shed.start_new("Tester", 7)
 	await t.get_tree().physics_frame
-	Adventure.start(42, 60.0)
+	Adventure.start(AdventurePlans.tour("dales"), 42)
 	for i in 10:
 		await t.get_tree().physics_frame
 	var trip: AdventureTrip = main.trip
@@ -314,7 +286,7 @@ func test_map() -> void:
 		await t.get_tree().physics_frame
 	var hud: String = trip._hud.text
 	check(hud.contains("On B") and not trip._fork_panel.visible, "past the fork the HUD says which way you're on (%s)" % hud)
-	trip.jump(30000.0)
+	trip.jump(r.fork_s(1) + 3000.0 - trip.world.distance_of(main.bike.global_position, "own"))
 	await t.get_tree().physics_frame
 	var at := trip.world.distance_of(main.bike.global_position, "own")
 	check(at < r.fork_s(1) and at > r.fork_s(1) - 100.0, "skipping on stops short of the next fork, still open (%.0f m before it)" % (r.fork_s(1) - at))

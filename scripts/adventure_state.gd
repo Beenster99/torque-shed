@@ -1,18 +1,20 @@
 class_name Adventure
 extends RefCounted
 ## An adventure ride in the shed's shared state (Shed.adventure): the host starts one for the
-## whole crew, every player's game loads the same road (from its seed and length, see
-## AdventureWorld) and puts them on a bike at the start; reaching the destination, or the host
-## ending it, brings everyone back to the shed with their bikes as they were (the fuel burnt,
-## the muck and the tyres' wear kept; nothing else on the bike wears out there, see Roadside).
+## whole crew along the journey they planned on the map (AdventureJourney, AdventurePlans), every
+## player's game plans the same road from it (AdventureWorld) and puts them on a bike at the start;
+## reaching the last pin, or the host ending it, brings everyone back to the shed with their bikes
+## as they were (the fuel burnt, the muck and the tyres' wear kept; nothing else on the bike wears
+## out there, see Roadside).
 ##
-## Shed.adventure: {} when there's none, else {id, seed, km, theme, dest (where it ends up, see
-## AdventureDest), title, by (the host's name),
+## Shed.adventure: {} when there's none, else {id, seed (for the stops along it), km, plan (see
+## AdventurePlans), real and real_hash (the planned road's id and hash), theme (the look of its
+## land), dest (the last pin's place, see AdventureDest), title, by (the host's name),
 ## riders {peer: bike id, 0 when there was none for them}, arrived (the first peer to reach the
 ## destination, 0 till then), arrived_name, photo (the crew's photo there, once arrived)}. Never
 ## carried over in a save: loading one finds everybody back at the shed.
 ##
-## Actions (Shed.request): adventure_start {seed, km, theme, dest, title, plan} (the host, from the route planner:
+## Actions (Shed.request): adventure_start {plan, seed, title} (the host, from the route planner:
 ## any shed TV tuned to the Route planner channel, see RouteTv) and adventure_end (the host: "Ride home"
 ## once everyone's at the destination), adventure_join {bike: the one you'd like} (each player, on
 ## loading it) and adventure_arrive (the first there: everyone's brought to the destination, gets
@@ -25,11 +27,8 @@ extends RefCounted
 ## AdventurePolice, which keeps its fines here as "police"); adventure_highlight (see
 ## AdventureDiary, which keeps the crew's highlights here as "log").
 
-const DEFAULT_KM := 60.0
 const MIN_KM := 5.0
 const MAX_KM := 400.0
-## The kinds of ride (see AdventureTheme: each its roads, scenery, buildings, sky and weather).
-const THEMES: Array[String] = ["varied", "desert", "alpine", "coastal", "hills"]
 ## Real minutes for a whole day and night out on an adventure (the shed's own day is the
 ## Settings' length): fast enough to ride through a night in a session.
 const DAY_MINUTES := 75.0
@@ -43,34 +42,26 @@ static func active() -> bool:
 static func sanitize(v) -> Dictionary:
 	if not (v is Dictionary) or int(v.get("id", 0)) == 0:
 		return {}
+	if not (v.get("plan") is Dictionary):
+		return {}
 	var out: Dictionary = v.duplicate(true)
 	out["seed"] = int(out.get("seed", 1))
-	out["km"] = clampf(float(out.get("km", DEFAULT_KM)), MIN_KM, MAX_KM)
+	out["km"] = clampf(float(out.get("km", MIN_KM)), MIN_KM, MAX_KM)
 	out["theme"] = str(out.get("theme", "varied"))
 	if not (out.get("riders") is Dictionary):
 		out["riders"] = {}
 	out["arrived"] = int(out.get("arrived", 0))
-	out["dest"] = str(out.get("dest", "")) if AdventureDest.exists(str(out.get("dest", ""))) \
-		else AdventureDest.default_for(str(out["theme"]), int(out["seed"]))
+	out["dest"] = str(out.get("dest", "")).left(48)
 	out["title"] = str(out.get("title", ""))
-	if out.get("plan") is Dictionary:
-		# A journey planned on the map: planned here too (the host's road if all is well; if not, what was said is kept,
-		# for AdventureTrip.real_mismatch to turn down).
-		var plan := AdventurePlans.clean(out["plan"])
-		if not plan.is_empty():
-			out["plan"] = plan
-			AdventurePlans.pack_for(plan)
-			return out
-		out.erase("plan")
-	var pack := RealPack.get_pack(str(out.get("real", ""))) if str(out.get("real", "")) != "" else null
-	out["real"] = pack.id if pack != null else ""
-	out["real_hash"] = pack.hash if pack != null else ""
+	out["real"] = str(out.get("real", ""))
+	out["real_hash"] = str(out.get("real_hash", ""))
+	# Planned here too (the host's road if all is well; if not, what was said is kept, for AdventureTrip.real_mismatch
+	# to turn down).
+	var plan := AdventurePlans.clean(out["plan"])
+	if not plan.is_empty():
+		out["plan"] = plan
+		AdventurePlans.pack_for(plan)
 	return out
-
-
-static func _real_hash(id: String) -> String:
-	var pack := RealPack.get_pack(id) if id != "" else null
-	return pack.hash if pack != null else ""
 
 
 ## Hours of game time a real second, out on an adventure.
@@ -91,20 +82,7 @@ static func check(peer: int, action: Dictionary) -> String:
 				return "Only the host can start an adventure."
 			if active():
 				return "There's an adventure on already."
-			var planned := action.get("plan") is Dictionary
-			var km := float(action.get("km", DEFAULT_KM))
-			if planned:
-				var why := AdventureJourney.start_check(action)
-				if why != "":
-					return why
-			elif km < MIN_KM or km > MAX_KM:
-				return "Pick between %d and %d km." % [int(MIN_KM), int(MAX_KM)]
-			if not THEMES.has(str(action.get("theme", "varied"))) and not planned:
-				return "There's no adventure like that."
-			if str(action.get("dest", "")) != "" and not AdventureDest.exists(str(action["dest"])):
-				return "There's no destination like that."
-			if str(action.get("real", "")) != "" and RealPack.get_pack(str(action["real"])) == null:
-				return "This game doesn't have that road."
+			return AdventureJourney.start_check(action)
 		"adventure_photo":
 			if not _is_host(peer):
 				return "Only the host hangs photos."
@@ -143,28 +121,18 @@ static func apply(peer: int, action: Dictionary) -> String:
 		"adventure_pin", "adventure_unpin", "adventure_mode", "adventure_clear":
 			return AdventureJourney.apply(peer, action, who)
 		"adventure_start":
-			var km := float(action.get("km", DEFAULT_KM))
-			var seed := int(action.get("seed", randi()))
-			var theme := str(action.get("theme", "varied"))
-			var planned: Dictionary = AdventureJourney.start_info(action) if action.get("plan") is Dictionary else {}
-			if not planned.is_empty():
-				km = float(planned["km"])
-				theme = str(planned["theme"])
-			var dest := str(action.get("dest", ""))
-			if dest == "":
-				dest = AdventureDest.default_for(theme, seed)
+			var planned: Dictionary = AdventureJourney.start_info(action)
+			var km := float(planned["km"])
+			var dest := str(planned["dest"])
 			var title := str(action.get("title", "")).left(48)
-			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": seed, "km": km, "theme": theme, "dest": dest,
-				"title": title if title != "" else "Ride to %s" % AdventureDest.name_of(dest),
-				"real": str(action.get("real", "")), "real_hash": _real_hash(str(action.get("real", ""))), "by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
-			if not planned.is_empty():
-				Shed.adventure["plan"] = planned["plan"]
-				Shed.adventure["real"] = planned["real"]
-				Shed.adventure["real_hash"] = planned["real_hash"]
+			Shed.adventure = {"id": 1 + randi() % 1000000000, "seed": int(action.get("seed", randi())), "km": km,
+				"theme": planned["theme"], "dest": dest, "title": title if title != "" else "Ride to %s" % dest,
+				"plan": planned["plan"], "real": planned["real"], "real_hash": planned["real_hash"],
+				"by": who, "riders": {}, "arrived": 0, "arrived_name": ""}
 			Shed.adventure_save = {}   # a new adventure: any put away overnight is forgotten
 			AdventureDiary.started(true)
 			return "*%s is off on an adventure ride: %s, %d km to %s. Everyone to the start!" % [who, str(Shed.adventure["title"]),
-				roundi(km), AdventureDest.name_of(dest)]
+				roundi(km), dest]
 		"adventure_resume":
 			var save := Shed.adventure_save
 			Shed.adventure = (save["adventure"] as Dictionary).duplicate(true)
@@ -179,7 +147,7 @@ static func apply(peer: int, action: Dictionary) -> String:
 				Daylight.current.set_time(float(save.get("hours", AdventureNeeds.MORNING)))
 			AdventureDiary.started(false)
 			return "*%s carries on the adventure: %.1f of %d km done. Everyone back on the road!" % [who,
-				AdventureNeeds.save_s(save) / 1000.0, roundi(float(Shed.adventure.get("km", DEFAULT_KM)))]
+				AdventureNeeds.save_s(save) / 1000.0, roundi(float(Shed.adventure.get("km", 0.0)))]
 		"adventure_end":
 			Shed.adventure = {}
 			return "*The adventure's over: back to the shed."
@@ -220,8 +188,8 @@ static func apply(peer: int, action: Dictionary) -> String:
 	return ""
 
 
-## Everyone's at the destination: the crew's photo (hung on the shed wall), XP for each of them
-## (more for a longer ride), and the clock to the time of day it's best seen at. What to tell them.
+## Everyone's at the destination: the crew's photo (hung on the shed wall) and XP for each of them
+## (more for a longer ride). What to tell them.
 static func _arrive(who: String) -> String:
 	var ids := Shed.crew.keys()
 	ids.sort()
@@ -229,12 +197,9 @@ static func _arrive(who: String) -> String:
 	var photo := AdventureDest.make_photo(Shed.adventure, names)
 	Shed.adventure["photo"] = photo
 	AdventureDest.hang(photo)
-	var km := float(Shed.adventure.get("km", DEFAULT_KM))
+	var km := float(Shed.adventure.get("km", 0.0))
 	for p in ids:
 		Progress.award(int(p), "adventure_done", km / 100.0, "adventure:%d" % int(Shed.adventure["id"]))
-	var dest := AdventureDest.of(str(Shed.adventure.get("dest", "")))
-	if float(dest.get("hours", -1.0)) >= 0.0 and Daylight.current:
-		Daylight.current.set_time(float(dest["hours"]))
 	return "%s has reached %s! Photo time!" % [
 		who, AdventureDest.name_of(str(Shed.adventure.get("dest", "")))]
 
@@ -264,9 +229,9 @@ static func menu_action() -> void:
 		AdventureTrip.current.open_journey.call_deferred()
 
 
-## Starts a ride on `seed` of `km` to the theme's destination for it (the Debug tab and tests).
-static func start(seed: int, km: float, theme := "varied", dest := "") -> void:
-	Shed.request({"a": "adventure_start", "seed": seed, "km": km, "theme": theme, "dest": dest})
+## Starts a ride along `plan` (see AdventurePlans), its stops laid out by `seed` (the Debug tab and tests).
+static func start(plan: Dictionary, seed := 1, title := "") -> void:
+	Shed.request({"a": "adventure_start", "plan": plan, "seed": seed, "title": title})
 
 
 ## What the Esc menu's button says, and why it can't be pressed ("" when it can).
@@ -276,7 +241,7 @@ static func continue_text() -> Array:
 	var save := Shed.adventure_save
 	if active() or save.is_empty():
 		return []
-	var km := float((save["adventure"] as Dictionary).get("km", DEFAULT_KM))
+	var km := float((save["adventure"] as Dictionary).get("km", 0.0))
 	return ["Continue adventure: %.1f of %d km done, %d %s in (host carries it on for everyone)" % [AdventureNeeds.save_s(save) / 1000.0,
 		roundi(km), maxi(1, int(save.get("nights", 1))), "night" if int(save.get("nights", 1)) <= 1 else "nights"],
 		"" if Shed.is_authority() else "The host carries the adventure on."]

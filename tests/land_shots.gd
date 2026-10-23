@@ -65,9 +65,9 @@ func _ready() -> void:
 		var planned: RealPack = res["pack"]
 		RealPack.register(planned)
 		print("planned ", planned.id, " ", planned.max_km(), " km, theme ", planned.theme, " sea ", planned.sea)
-		w.setup(5, floorf(planned.max_km()), planned.theme, "lighthouse", planned.id)
+		w.setup(planned, 5)
 	else:
-		w.setup(11, 23.0, "coastal", "lighthouse", pack)
+		w.setup(AdventurePlans.pack_for(AdventurePlans.tour(pack)), 11, 23.0)
 	w.focus = func(): return [cam.global_position]
 	w.origin_shifted.connect(func(d): cam.global_position -= d)
 	add_child(w)

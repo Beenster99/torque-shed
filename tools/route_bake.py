@@ -23,12 +23,14 @@ Needs numpy and Pillow; the roads need pyarrow (pip install pyarrow). No API key
 import argparse
 import hashlib
 import heapq
+import http.client
 import io
 import json
 import math
 import os
 import struct
 import sys
+import time
 import urllib.request
 
 import numpy as np
@@ -135,6 +137,9 @@ def mercator_pixels(lat, lon, zoom, size=1):
     return x, y
 
 
+FETCH_TRIES = 5
+
+
 def fetch(url, cache_dir):
     """The bytes at `url`, kept under `cache_dir`; None when the server has no such tile."""
     path = None
@@ -143,15 +148,23 @@ def fetch(url, cache_dir):
         if os.path.exists(path):
             with open(path, "rb") as f:
                 return f.read() or None
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            data = r.read()
-    except urllib.error.HTTPError as e:
-        if e.code in (403, 404):
-            data = b""
-        else:
-            raise
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    for attempt in range(FETCH_TRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = r.read()
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 404):
+                data = b""
+                break
+            if e.code < 500 and e.code != 429 or attempt == FETCH_TRIES - 1:
+                raise
+        except (OSError, http.client.HTTPException):
+            # A dropped connection or a short read: tile servers do that now and then, so try again a little later.
+            if attempt == FETCH_TRIES - 1:
+                raise
+        time.sleep(2.0 * 2 ** attempt)
     if path:
         os.makedirs(cache_dir, exist_ok=True)
         with open(path, "wb") as f:
@@ -665,7 +678,8 @@ def resample(pts, step, exact=False):
     if exact:
         s = s[:-1] if len(s) and total - s[-1] < 1e-6 else s
     else:
-        s = np.append(s, total) if total - s[-1] > step * 0.25 else np.append(s[:-1], total)
+        # A road whose ends meet (no length at all) is its one point.
+        s = np.append(s, total) if len(s) and total - s[-1] > step * 0.25 else np.append(s[:-1], total)
     return np.stack([np.interp(s, cum, pts[:, 0]), np.interp(s, cum, pts[:, 1])], axis=1), cum, total
 
 
@@ -856,26 +870,34 @@ def ridge_tile(h, tx, tz, knots):
     return np.where(h <= 0.0, np.minimum(lowered, RIDGE_SEA_M), lowered)
 
 
-def bake_terrain(out, frame, knots, dems, land_fn, log=print):
+def bake_terrain(out, frame, knots, dems, land_fn, log=print, heights=True, cover_levels=None):
     """Bakes every level's height tiles under `out` (see levels.py), coarsest first so each finer level can blend its
     edges into the one above; `dems` is {level name: Dem}; `land_fn({level name: tiles})` bakes the cover and returns
     the land (with its buildings, to level the fine ground under). Returns ({level name: [(tx, tz)]}, whether there is
-    sea, the land)."""
-    tiles = {lv.name: corridor_tiles(knots, lv.reach, lv.size_m) for lv in levels.LEVELS}
+    sea, the land). `cover_levels` are the levels the cover is baked at (levels.COVER_LEVELS unless a cell's).
+
+    With `heights` False no height tiles are written (the game reads the heights from the map tiles itself: "live"
+    heights, scripts/height_tiles.gd); only the coarse level's are worked out, to tell whether there is sea."""
+    cover_levels = cover_levels or levels.COVER_LEVELS
+    tiles = {lv.name: corridor_tiles(knots, lv.reach, lv.size_m) for lv in levels.LEVELS + [c for c in cover_levels if c not in levels.LEVELS]}
     for name, t in tiles.items():
         log("land: %d %s tiles" % (len(t), name))
-    land = land_fn({lv.name: tiles[lv.name] for lv in levels.COVER_LEVELS})
+    land = land_fn({lv.name: tiles[lv.name] for lv in cover_levels})
     has_sea = False
     fields = {}
     for k in range(len(levels.LEVELS) - 1, -1, -1):
         lv = levels.LEVELS[k]
+        if not heights and lv is not levels.COARSE:
+            continue
         os.makedirs(os.path.join(out, lv.folder), exist_ok=True)
         present = set(tiles[lv.name])
-        coarser = fields[levels.LEVELS[k + 1].name] if k + 1 < len(levels.LEVELS) else None
+        coarser = fields.get(levels.LEVELS[k + 1].name) if k + 1 < len(levels.LEVELS) else None
         quantised = {}
         for i, (tx, tz) in enumerate(tiles[lv.name]):
             h, sea = level_heights(dems[lv.name], frame, lv, tx, tz)
             has_sea = has_sea or (sea and lv is not levels.RIDGE)
+            if not heights:
+                continue
             if lv is levels.FINE:
                 h = land_bake.level_ground(h, tx, tz, land["buildings"])
             if lv is levels.RIDGE:

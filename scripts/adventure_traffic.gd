@@ -147,10 +147,11 @@ func sample(s: float) -> Dictionary:
 		"busy": _busy[b], "limit": _limit[b], "grade": (r.ph[i + 1] - r.ph[i]) / AdventureRoute.STEP}
 
 
-## The road's bend at `s` (1/m, + to the right).
+## The road's bend at `s` (1/m, + to the right), over a few knots either way: a real road's curvature from one knot to
+## the next is noisy, and the traffic slowed for kinks that aren't bends.
 func curve(s: float) -> float:
-	var c := world.route.curv
-	return c[clampi(int(round(s / AdventureRoute.STEP)), 0, c.size() - 1)]
+	var r := world.route
+	return r.smooth_curv(clampi(int(round(s / AdventureRoute.STEP)), 0, r.curv.size() - 1), 3)
 
 
 ## Where junction `jn`'s side road `k` is `t` m out from its mouth (for the stream): {pos (local,

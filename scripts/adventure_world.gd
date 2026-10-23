@@ -1,7 +1,7 @@
 class_name AdventureWorld
 extends Node3D
 ## The world of an adventure ride: the route (AdventureRoute, the same on every player's game
-## from its seed), streamed in as chunks (AdventureChunk) a few kilometres ahead of you and
+## from the planned road and its seed), streamed in as chunks (AdventureChunk) a few kilometres ahead of you and
 ## freed behind, built on worker threads and put into the scene one chunk a frame so riding
 ## never hitches.
 ##
@@ -37,8 +37,6 @@ const COMMIT_BUDGET_MS := 2.0
 const NET_TAG := -77777.0
 ## The sea's colour on a coastal ride (the far ground there: see _follow_horizon).
 const SEA_COLOR := Color(0.09, 0.27, 0.36)
-## Inside a tunnel the sky is shut out this far from a portal (m), easing in from the mouth.
-const SHELTER_IN := 30.0
 
 ## Emitted after the origin moves: everything placed in the local frame moves by -delta.
 signal origin_shifted(delta: Vector3)
@@ -100,7 +98,6 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	Daylight.shelter = 0.0
 	for c in _tasks:
 		WorkerThreadPool.wait_for_task_completion(_tasks[c])
 	_tasks.clear()
@@ -112,19 +109,13 @@ func _exit_tree() -> void:
 		current = null
 
 
-## Plans the route for `seed` and `km` and puts its start at ANCHOR. `dest` (see AdventureDest) is
-## the set piece past the finish, planned with the road ("" for none). `real_id` is a baked real road
-## (see RealPack) to ride instead of a made-up one.
-func setup(seed: int, km: float, theme := "varied", dest := "", real_id := "") -> void:
+## Lays out the ride along the real road `pack` (planned from the crew's pins, see AdventurePlans) and puts its start
+## at ANCHOR: the first `km` of it (all of it for 0), its stops laid out by `seed`.
+func setup(pack: RealPack, seed := 1, km := 0.0) -> void:
 	name = "Adventure"
 	var t0 := Time.get_ticks_usec()
 	route = AdventureRoute.new()
-	var extra: Array = [AdventureDest.site(dest, km)] if dest != "" else []
-	var pack := RealPack.get_pack(real_id) if real_id != "" else null
-	if pack != null:
-		route.plan_real(pack, seed, km, extra)
-	else:
-		route.plan(seed, km, theme, extra)
+	route.plan_real(pack, seed, km if km > 0.0 else pack.max_km())
 	stats["plan_ms"] = (Time.get_ticks_usec() - t0) / 1000.0
 	origin = -ANCHOR
 	site_builders = {
@@ -136,18 +127,15 @@ func setup(seed: int, km: float, theme := "varied", dest := "", real_id := "") -
 		"limit": func(site, xf, _info): return AdventureProps.limit_sign(float(site["kmh"]), route.real != null and route.real.region == "uk", xf),
 	}
 	AdventureStops.register(self)
-	if dest != "":
-		AdventureDest.register(self, dest)
 	_make_horizon()
-	if route.real != null:
-		ridges = RealRidges.new()
-		ridges.setup(self, route.real.terrain)
-		add_child(ridges)
-		ridges.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
-		land = RealLand.new()
-		land.setup(self, route)
-		add_child(land)
-		land.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
+	ridges = RealRidges.new()
+	ridges.setup(self, route.real.terrain)
+	add_child(ridges)
+	ridges.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
+	land = RealLand.new()
+	land.setup(self, route)
+	add_child(land)
+	land.follow(ANCHOR.x + origin.x, ANCHOR.z + origin.z)
 
 
 ## Takes the ways picked at the forks ({fork: way}, see AdventureForks): the road from each newly
@@ -191,6 +179,8 @@ func apply_picks_soon(picks: Dictionary) -> bool:
 		if apply_picks(fresh):
 			picks_taken.emit()
 		return true
+	if land != null:
+		land.hold = true   # (the land's workers read the road: none are started till it's swapped)
 	_path_job = _PathJob.new()
 	_path_job.picks = fresh
 	_path_job.path = route.path_copy(fresh)
@@ -201,7 +191,7 @@ func apply_picks_soon(picks: Dictionary) -> bool:
 ## Takes in the path a pick's job put together, once it's done and nothing's building on the
 ## route: drops what was built past its forks (normally nothing) and swaps the new path in.
 func _take_path() -> void:
-	if not WorkerThreadPool.is_task_completed(_path_job.task) or not _tasks.is_empty():
+	if not WorkerThreadPool.is_task_completed(_path_job.task) or not _tasks.is_empty() or (land != null and land.working()):
 		return
 	WorkerThreadPool.wait_for_task_completion(_path_job.task)
 	var job := _path_job
@@ -210,6 +200,8 @@ func _take_path() -> void:
 	keys.sort()
 	_drop_from(route.fork_s(int(keys[0])))
 	route.take_path(job.path, job.picks)
+	if land != null:
+		land.hold = false
 	picks_taken.emit()
 	var later := _later_picks
 	_later_picks = {}
@@ -335,29 +327,6 @@ func surface_local(p: Vector3) -> String:
 	return str(AdventureSurface.LAND.get(surf, "grass"))
 
 
-## How far local `p` is under a tunnel's roof: 0 out under the sky, 1 well inside (easing in over
-## SHELTER_IN from each portal), for the daylight, the rain and your eyes.
-func shelter_local(p: Vector3) -> float:
-	if route == null or route.tunnels_on.is_empty():
-		return 0.0
-	var hit := locate_local(p, "shelter")
-	if hit.is_empty():
-		return 0.0
-	var s := float(hit["s"])
-	var t := route.tunnel_at_s(s)
-	if t.is_empty() or absf(float(hit["lat"])) > route.width_at_s(s) * 0.5 + AdventureTunnels.SIDE + 1.0 \
-			or p.y > route.height_at_s(s) + AdventureTunnels.WALL + AdventureTunnels.ARCH + 1.0:
-		return 0.0
-	return smoothstep(0.0, SHELTER_IN, minf(s - float(t["s0"]), float(t["s1"]) - s))
-
-
-## shelter_local in the current adventure (0 when there's none).
-static func shelter_at(pos: Vector3) -> float:
-	if current == null or current.route == null:
-		return 0.0
-	return current.shelter_local(pos)
-
-
 ## The surface under `pos` in the current adventure, or "tarmac" when there's none (the town's
 ## own roads carry their surface on their collision, as before).
 static func surface_at(pos: Vector3) -> String:
@@ -445,13 +414,9 @@ static func untag(state: PackedFloat32Array, mine: Vector3) -> PackedFloat32Arra
 
 # ---------------------------------------------------------------------------- streaming
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if route == null:
 		return
-	# The tunnel roof over the camera, eased so the light doesn't snap at a portal.
-	var cam := get_viewport().get_camera_3d() if get_viewport() else null
-	var cover := shelter_local(cam.global_position) if cam else 0.0
-	Daylight.shelter = move_toward(Daylight.shelter, cover, delta * 2.5)
 	var pt := Perf.t0()
 	var t0 := Time.get_ticks_usec()
 	stream()
@@ -501,9 +466,14 @@ func stream() -> void:
 			chunks[c].queue_free()
 			chunks.erase(c)
 			stats["freed"] += 1
+	# What the workers have finished (only those whose task has returned: waiting on one that's written its chunk but not
+	# yet got back from the call was a hitch of tens of ms when the machine was busy).
 	_box.mutex.lock()
-	var finished := _box.done.duplicate()
-	_box.done.clear()
+	var finished := {}
+	for c in _box.done.keys():
+		if not _tasks.has(c) or WorkerThreadPool.is_task_completed(_tasks[c]):
+			finished[c] = _box.done[c]
+			_box.done.erase(c)
 	_box.mutex.unlock()
 	for c in finished:
 		if _tasks.has(c):

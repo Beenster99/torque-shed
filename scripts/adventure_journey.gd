@@ -19,9 +19,9 @@ const NAME_REACH := 350.0
 static func sanitize(v: Variant) -> Dictionary:
 	if not v is Dictionary:
 		return {}
-	var region := RealRegion.get_region(str(v.get("region", "")))
-	if region == null:
-		return {}
+	var region_id := str(v.get("region", ""))
+	if RealRegion.extent_of(region_id).size == Vector2.ZERO:
+		return {}   # (an area is known by its box: its cells needn't be here yet)
 	var pins: Array = []
 	var raw = v.get("pins")
 	if raw is Array:
@@ -30,7 +30,7 @@ static func sanitize(v: Variant) -> Dictionary:
 				pins.append({"x": snappedf(float(p.get("x", 0.0)), 0.1), "z": snappedf(float(p.get("z", 0.0)), 0.1),
 					"name": str(p.get("name", "")).left(AdventurePlans.MAX_NAME), "by": str(p.get("by", "")).left(24)})
 	var mode := str(v.get("mode", "main"))
-	return {"region": region.id, "pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
+	return {"region": region_id, "pins": pins, "mode": mode if RoutePlanner.CLASS_COST.has(mode) else "main"}
 
 
 ## The plan the board makes ({} until it has two pins).
@@ -155,8 +155,13 @@ static func start_check(action: Dictionary) -> String:
 	return ""
 
 
-## What a started adventure along `action`'s plan holds: {plan, real, real_hash, km, theme}.
+## What a started adventure along `action`'s plan holds: {plan, real, real_hash, km, theme, dest (the last pin's place)}.
 static func start_info(action: Dictionary) -> Dictionary:
 	var plan := AdventurePlans.clean(action.get("plan"))
 	var pack := AdventurePlans.pack_for(plan)
-	return {"plan": plan, "real": pack.id, "real_hash": pack.hash, "km": floorf(pack.max_km() * 10.0) / 10.0, "theme": pack.theme}
+	var names: Array = plan.get("names", [])
+	var dest := str(names[names.size() - 1]) if not names.is_empty() else ""
+	if dest == "":
+		var region := RealRegion.get_region(str(plan["region"]))
+		dest = "the end of the road" if region == null else region.title
+	return {"plan": plan, "real": pack.id, "real_hash": pack.hash, "km": floorf(pack.max_km() * 10.0) / 10.0, "theme": pack.theme, "dest": dest}

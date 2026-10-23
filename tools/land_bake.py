@@ -348,10 +348,10 @@ def make_landmarks(places, peaks, frame, knots):
 
 # ---------------------------------------------------------------------------- the lot
 
-def bake_land(bucket, release, frame, knots, tiles, out, log=print, box_knots=None):
+def bake_land(bucket, release, frame, knots, tiles, out, log=print, box_knots=None, cover_levels=None):
     """Fetches and writes the cover tiles, buildings, landmarks and places to stop; returns {buildings, landmarks, pois}.
 
-    `tiles` is {level name: [(tx, tz)]} for the levels that have cover (levels.COVER_LEVELS)."""
+    `tiles` is {level name: [(tx, tz)]} for the levels that have cover (`cover_levels`, by default levels.COVER_LEVELS)."""
     reach = max(BUILDING_REACH, levels.COARSE.reach)
     around = knots if box_knots is None else box_knots   # (the box fetched covers the other ways too)
     lo = around.min(axis=0) - reach - levels.COARSE.size_m
@@ -377,7 +377,7 @@ def bake_land(bucket, release, frame, knots, tiles, out, log=print, box_knots=No
         json.dump(buildings, f, separators=(",", ":"))
     with open(os.path.join(out, "landmarks.json"), "w") as f:
         json.dump(landmarks, f, separators=(",", ":"))
-    for level in levels.COVER_LEVELS:
+    for level in cover_levels or levels.COVER_LEVELS:
         os.makedirs(os.path.join(out, level.folder), exist_ok=True)
         for tx, tz in tiles.get(level.name, []):
             with open(os.path.join(out, level.folder, "%d_%d.covz" % (tx, tz)), "wb") as f:

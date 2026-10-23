@@ -7,6 +7,8 @@ extends Node
 ## host the client's figure sat down. Then both go to bed, the host calls it a night, and both
 ## must see the morning: rested, and the adventure saved to carry on. The host ends it after.
 
+const Rides := preload("res://tests/rides.gd")
+
 const SEED := 654
 const KM := 20.0
 const SITE_S := 60.0
@@ -23,6 +25,8 @@ func _ready() -> void:
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
 	Settings.player_name = "Needs %s" % role
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	Rides.pack(KM)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
@@ -33,7 +37,7 @@ func _ready() -> void:
 	var trip: AdventureTrip = main.trip
 	var on := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
-			Adventure.start(SEED, KM)
+			Rides.start(KM, SEED)
 		return trip.on_trip() and main.bike != null and AdventureNeeds.all().size() == 2, 40.0)
 	var me := Shed.me()
 	var other := _other()

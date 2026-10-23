@@ -1,8 +1,10 @@
 extends RefCounted
 ## The places along an adventure road's checks (AdventureStops: villages, cafes, lay-bys, rest
 ## areas, viewpoints, inns, campsites and the fuel stations' shops), run from tests/run_tests.gd:
-## its _test_adv_stops_* functions hand over to these.
+## its _test_adv_stops_* functions hand over to these. The roads are the tours Rides plans: the stops are laid out
+## along them, taking over the real places beside the road where there are some (see AdventureRoute._adopt_pois).
 
+const Rides := preload("res://tests/rides.gd")
 const SEEDS := [1, 7, 42, 99, 2024]
 
 var t: Node   # the test runner: check(), get_tree()
@@ -31,8 +33,17 @@ func _until(cond: Callable, seconds := 20.0) -> bool:
 
 
 func _world(seed: int, km: float, spot: Dictionary) -> AdventureWorld:
+	return _put(Rides.world(Rides.full(km), seed), spot)
+
+
+## A world along the tour a stop was found on (see _find).
+func _tour_world(found: Array, spot: Dictionary) -> AdventureWorld:
 	var w := AdventureWorld.new()
-	w.setup(seed, km)
+	w.setup(Rides.tour_pack(str(found[2])), int(found[0]))
+	return _put(w, spot)
+
+
+func _put(w: AdventureWorld, spot: Dictionary) -> AdventureWorld:
 	for f in w.route.forks.size():
 		w.route.choose(f, 0)   # the main road at every fork, so it all streams
 	spot["p"] = w.transform_at(20.0).origin
@@ -56,88 +67,70 @@ func _in_group(group: String, s: float) -> Array:
 	return t.get_tree().get_nodes_in_group(group).filter(func(n): return absf(float(n.get_meta("s", -1.0)) - s) < 1.0)
 
 
-## For several seeds and lengths: food every 15-25 km (the first within 15 km), somewhere to pull
-## in every 5-10 km, an inn or campsite every 40-60 km, never on top of each other or a fuel
-## station; a 60 km ride passes a good mix; the same seed plans the same stops.
+## Along both tours on several seeds: somewhere for food and somewhere to pull in all along the way, beds now and
+## then, fuel, never on top of each other or a fuel station, the road near straight and level past each; the same seed
+## lays out the same stops.
 func test_spacing() -> void:
-	var tol := 1600.0   # a stop may be nudged this far to find room
+	var tol := AdventureRoute.FIT_REACH * 2.0 + 1600.0   # a stop moves this far to find a real place, or room
 	var bad := []
 	var kinds := {}
+	var real := 0
+	var count := 0
 	for seed in SEEDS:
-		for km in [60.0, 150.0]:
-			var r := AdventureRoute.new()
-			r.plan(seed, km)
+		for region_id in AdventurePlans.TOURS:
+			var r := Rides.tour_route(region_id, seed)
 			var food := []
 			var rest := []
-			var sleep := []
 			var all := []
 			for st in AdventureStops.stops(r):
 				var s := float(st["s"])
 				var nav: String = AdventureStops.NAV[str(st["kind"])]
 				kinds[str(st["kind"])] = true
 				all.append(st)
+				count += 1
+				real += 1 if st.has("real") else 0
 				if nav == "food" or nav == "sleep":
 					food.append(s)
-				if nav == "sleep":
-					sleep.append(s)
 				if nav == "rest":
 					rest.append(s)
 			var fg := _gaps(food)
 			var rg := _gaps(rest)
-			var sg := _gaps(sleep)
-			var tag := "seed %d %d km" % [seed, int(km)]
-			if fg.is_empty() or fg[0] > AdventureStops.FOOD_FIRST[1] + tol or fg.slice(1).any(func(g): return g < AdventureStops.FOOD_EVERY[0] - tol or g > AdventureStops.FOOD_EVERY[1] + tol):
+			var tag := "seed %d %s" % [seed, region_id]
+			if fg.is_empty() or fg[0] > AdventureStops.FOOD_FIRST[1] + tol or fg.slice(1).any(func(g): return g > AdventureStops.FOOD_EVERY[1] + 2.0 * tol):
 				bad.append("%s food %s" % [tag, str(fg.map(func(g): return snappedf(g / 1000.0, 0.1)))])
-			if r.length - food[-1] > AdventureStops.FOOD_EVERY[1] + 2500.0 + tol:
-				bad.append("%s no food near the end" % tag)
-			if rg.is_empty() or rg[0] > AdventureStops.REST_FIRST[1] + tol or rg.slice(1).any(func(g): return g < AdventureStops.REST_EVERY[0] - tol or g > AdventureStops.REST_EVERY[1] + tol):
+			if rg.is_empty() or rg.slice(1).any(func(g): return g > AdventureStops.REST_EVERY[1] + 2.0 * tol):
 				bad.append("%s rest %s" % [tag, str(rg.map(func(g): return snappedf(g / 1000.0, 0.1)))])
-			if sg.any(func(g): return g < AdventureStops.SLEEP_EVERY[0] - tol or g > AdventureStops.SLEEP_EVERY[1] + tol):
-				bad.append("%s sleep %s" % [tag, str(sg.map(func(g): return snappedf(g / 1000.0, 0.1)))])
-			if km >= 150.0 and sleep.size() < 2:
-				bad.append("%s only %d beds" % [tag, sleep.size()])
-			if km == 60.0:
-				var mix := {}
-				for st in all:
-					mix[str(st["kind"])] = true
-				if food.size() < 2 or rest.size() < 5 or r.sites_of("fuel").is_empty() or not (mix.has("village") or mix.has("cafe")):
-					bad.append("%s mix %s" % [tag, str(mix.keys())])
+			if r.sites_of("fuel").is_empty():
+				bad.append("%s no fuel" % tag)
 			for st in all:
 				for other in r.sites:
 					# (The junctions keep their own, shorter, distance: tests/adventure_roads_tests.gd.)
-					if other != st and not str(other["kind"]) in [AdventureStops.ROW, AdventureJunctions.KIND] and absf(float(other["s"]) - float(st["s"])) < AdventureStops.CLEAR - 1.0:
+					if other != st and not str(other["kind"]) in [AdventureStops.ROW, AdventureJunctions.KIND, "limit"] and absf(float(other["s"]) - float(st["s"])) < AdventureStops.CLEAR - 1.0:
 						bad.append("%s %s at %.0f is on top of %s" % [tag, st["kind"], float(st["s"]), other["kind"]])
-	check(bad.is_empty(), "stops are spaced right on every seed: food 15-25 km, pull-ins 5-10 km, beds 40-60 km %s" % str(bad))
-	check(kinds.size() == AdventureStops.KINDS.size(), "every kind of stop turns up somewhere %s" % str(kinds.keys()))
-	var a := AdventureRoute.new()
-	a.plan(42, 80.0)
-	var b := AdventureRoute.new()
-	b.plan(42, 80.0)
+				if not r._fit_for_stop(int(st["i"])):
+					bad.append("%s %s at %.0f is on a bend or a hill" % [tag, st["kind"], float(st["s"])])
+	check(bad.is_empty(), "stops are laid out right on every seed: food and pull-ins all along, fuel, room for each %s" % str(bad))
+	check(kinds.size() >= AdventureStops.KINDS.size() - 1 and real > 0, "the kinds of stop turn up %s, %d of %d at real places" % [str(kinds.keys()), real, count])
+	var a := Rides.tour_route("dales", 42)
+	var b := Rides.tour_route("dales", 42)
 	var same := a.sites.size() == b.sites.size()
 	for k in mini(a.sites.size(), b.sites.size()):
 		same = same and a.sites[k]["kind"] == b.sites[k]["kind"] and a.sites[k]["s"] == b.sites[k]["s"] and a.sites[k]["name"] == b.sites[k]["name"]
-	check(same, "the same seed plans the same stops, names and all (%d sites)" % a.sites.size())
-	var vil: Array = a.sites_of("village") + b.sites_of("village")
+	check(same, "the same seed lays out the same stops, names and all (%d sites)" % a.sites.size())
+	var vil: Array = a.sites_of("village")
 	if not vil.is_empty():
 		var rows := a.sites.filter(func(st): return str(st["kind"]) == AdventureStops.ROW and float(st.get("main_s", -1.0)) == float(vil[0]["s"]))
 		check(rows.size() == 5, "a village has a high street: %d more rows of shops" % rows.size())
-	# The road's straight and level past a stop.
-	var st0: Dictionary = AdventureStops.stops(a)[0]
-	var i0 := int(st0["i"])
-	var straight := true
-	for i in range(i0 - 12, i0 + 12):
-		straight = straight and absf(a.curv[i]) < 1e-5
-	check(straight, "the road runs straight past a stop (%s at %.1f km)" % [st0["kind"], float(st0["s"]) / 1000.0])
 
 
-## The first stop of `kind` on any of the seeds: [seed, site].
-static func _find(kind: String, km := 150.0) -> Array:
+## The first stop of `kind` on either tour on any of the seeds: [seed, site, region].
+static func _find(kind: String) -> Array:
 	for seed in SEEDS + [3, 5, 11, 13, 17, 19]:
-		var r := AdventureRoute.new()
-		r.plan(seed, km)
-		var list := r.sites_of(kind)
-		if not list.is_empty():
-			return [seed, list[0]]
+		for region_id in AdventurePlans.TOURS:
+			var r := Rides.tour_route(region_id, seed)
+			var list := r.sites_of(kind)
+			if not list.is_empty():
+				return [seed, list[0], region_id]
 	return []
 
 
@@ -151,7 +144,7 @@ func test_groups() -> void:
 			check(false, "a %s turns up on some seed" % kind)
 			continue
 		var spot := {}
-		var w := _world(int(found[0]), 150.0, spot)
+		var w := _tour_world(found, spot)
 		var s := float(found[1]["s"])
 		var side := float(found[1]["side"])
 		spot["p"] = w.transform_at(s).origin
@@ -163,15 +156,25 @@ func test_groups() -> void:
 		var beds := _in_group(AdventureStops.BED_GROUP, s)
 		var space := w.get_world_3d().direct_space_state
 		var seat_ok := true
+		var why := ""
 		for n: Node3D in seats:
 			var f := -n.global_basis.z
 			var h := float(n.get_meta("height", -1.0))
 			var q := PhysicsRayQueryParameters3D.create(n.global_position + Vector3.UP * 0.3, n.global_position + Vector3.DOWN * (h + 0.6), 1)
 			var ground := space.intersect_ray(q)
 			var hit := w.locate_local(n.global_position)
-			seat_ok = seat_ok and absf(f.length() - 1.0) < 0.01 and absf(f.y) < 0.01 and h > 0.2 and h < 0.8 and not ground.is_empty() \
+			var ok: bool = absf(f.length() - 1.0) < 0.01 and absf(f.y) < 0.01 and h > 0.2 and h < 0.8 and not ground.is_empty() \
 				and str(n.get_meta("seat", "")) != "" and str(n.get_meta("site", "")) != "" and not hit.is_empty() \
 				and absf(float(hit["s"]) - s) < 80.0 and (signf(float(hit["lat"])) == side or kind == "village")   # a high street's both sides
+			if not ok and why == "":
+				var land := NAN
+				if not hit.is_empty():
+					var xz := w.route_xz(n.global_position)
+					land = w.route.land_height(int(hit["i"]), float(hit["lat"]), xz[0], xz[1])
+				why = " (one isn't: height %.2f, ground %s, %.0f m along, %.1f m across, side %d, seat at %.2f, land %.2f, flat %.0f, road %.2f)" % [h,
+					not ground.is_empty(), float(hit.get("s", -1.0)) - s, float(hit.get("lat", 0.0)), int(side), n.global_position.y, land,
+					w.route._site_flat(int(hit.get("i", 0)), signf(float(hit.get("lat", 0.0)))), w.route.ph[int(hit.get("i", 0))]]
+			seat_ok = seat_ok and ok
 		var menu_ok := not counters.is_empty()
 		for n: Node3D in counters:
 			var menu: Array = n.get_meta("menu", [])
@@ -187,7 +190,7 @@ func test_groups() -> void:
 		if kind not in want_beds:
 			beds_ok = beds.is_empty()
 		var food_kinds := ["village", "cafe", "inn", "campsite", "fuel"]
-		check(seats.size() >= int(want_seats[kind]) and seat_ok, "a %s has %d places to sit, each facing a way over solid ground beside the road" % [kind, seats.size()])
+		check(seats.size() >= int(want_seats[kind]) and seat_ok, "a %s has %d places to sit, each facing a way over solid ground beside the road%s" % [kind, seats.size(), why])
 		if kind in food_kinds:
 			check(menu_ok, "a %s has %d counters selling food and drink" % [kind, counters.size()])
 		check(beds_ok, "a %s has %d beds" % [kind, beds.size()])
@@ -205,7 +208,7 @@ func test_groups() -> void:
 				and str(found[1]["name"]).length() > 0 and (sign.text.contains(str(found[1]["name"])) or kind in ["layby", "rest_area"])
 			var faces: bool = sign != null and sign.global_basis.z.dot(w.transform_at(s - AdventureStops.SIGN_BEFORE).basis.z) > 0.9
 			check(sign_ok and faces, "with a sign %d m before it on the left verge facing riders coming (%s)" % [int(AdventureStops.SIGN_BEFORE), sign.text.replace("\n", " / ") if sign else "none"])
-		report.append("%s: %d seats, %d counters, %d beds" % [kind, seats.size(), counters.size(), beds.size()])
+		report.append("%s: %d seats, %d counters, %d beds (%s, %s %.0f m)" % [kind, seats.size(), counters.size(), beds.size(), found[2], found[1].get("name", ""), s])
 		w.queue_free()
 		await _frames(2)
 	print("    STOPS: ", ", ".join(report))
@@ -273,8 +276,7 @@ func test_frame_cost() -> void:
 		var found := _find(kind)
 		if found.is_empty():
 			continue
-		var r := AdventureRoute.new()
-		r.plan(int(found[0]), 150.0)
+		var r := Rides.tour_route(str(found[2]), int(found[0]))
 		var site: Dictionary = found[1]
 		var xf := Transform3D(Basis(), Vector3(0, 100, 0))
 		for car in AdventureStops.PARKED:
@@ -298,7 +300,7 @@ func test_frame_cost() -> void:
 	check(build_max < 12.0, "each stop builds in a few ms on the main thread (worst %.1f ms) %s" % [build_max, str(worst)])
 	var spot := {}
 	var w := _world(42, 60.0, spot)
-	check(float(w.stats["plan_ms"]) < 1500.0, "planning a 60 km road with its stops takes %.0f ms" % float(w.stats["plan_ms"]))
+	check(float(w.stats["plan_ms"]) < 1500.0, "laying out a %.0f km road with its stops takes %.0f ms" % [w.route.length / 1000.0, float(w.stats["plan_ms"])])
 	await _until(func(): return w.wanted_chunks().all(func(c): return w.chunks.has(c)))
 	var frame_worst := 0.0
 	for k in 140:

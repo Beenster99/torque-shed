@@ -203,8 +203,17 @@ a search box over the region's 47 named towns and villages, named places to stop
 with nothing typed, and the towns named on the map; a planned road has forks (the second-best way between two of its
 junctions, as the baker finds them) the crew votes on; and regions can be downloaded (`RegionStore`: a zip from the
 index's URL, its hash checked against the index's before it is put under `user://regions`, where `RealRegion` finds it
-beside the bundled ones; `tools/region_zip.py` makes the zip and the index entry). Nothing is hosted yet, so the
-bundled Shodoshima is the only region.
+beside the bundled ones; `tools/region_zip.py` makes the zip and the index entry). Nothing is hosted yet; Shodoshima
+and the Dales are bundled.
+
+Since then the route planner is a channel on every shed TV (`RouteTv`), and the magazine and the made-up roads are
+gone: every adventure is a journey planned over a real region. `Adventure.start` takes a plan, `AdventureWorld.setup`
+lays the ride out along the planned road (`AdventureRoute.plan_real`), and the ride ends at the last pin (the crew
+parked together past the finish for the photo). The procedural road generator (its bends, climbs, switchbacks,
+tunnels and made-up forks and junctions), the themed set pieces at the destination and the baked single routes
+(`data/routes`) were removed; a region's theme still dresses its land (Shodoshima coastal, the Dales hills), and a
+crossroads in a built-up place gets traffic lights, which the map doesn't record. The tests ride the bundled regions'
+tours (`AdventurePlans.TOURS`, `tests/rides.gd`).
 
 **Playable loop.** An issue is now a *region* (the whole of Shodoshima; a 60 by 60 km square of the Dales). Its article
 shows the region's map on the shed screen with a few suggested destinations. The host picks a start, a destination and
@@ -233,6 +242,12 @@ a pin moves takes under a second on a thread. Two machines plan the same route f
 **Size.** About 4 weeks.
 
 ### Stage 5: anywhere on Earth
+
+**Status.** Stages 5 and 6 are redesigned in `docs/ride_anywhere_plan.md` (22 October 2026), now that the magazine
+is gone and every adventure is planned on the shed TV: the whole world on the TV, heights straight from Mapterhorn,
+cells baked by GitHub Actions and served as release assets at no monthly cost, a frame per journey, the crew
+agreeing the route and a ready-check in co-op, and journeys kept and shared. What follows is the earlier design,
+kept for the reasoning.
 
 **Playable loop.** Search for any place, or paste a map link from a phone, and ride there. The first ride somewhere new
 starts after a short wait while the road ahead is made; a route ridden once rides again offline.

@@ -13,7 +13,8 @@ Where route_bake.py bakes the land down one chosen road, a region has every road
     roads.json       the road graph: nodes, and edges between them with their class, surface, name, limit, line and
                      which way they may be driven (o: 0 both, 1 a to b, -1 b to a); bans: turns the rules prohibit
     places.json      the towns, villages and quarters of the area with names we can print, for finding on the map
-    tiles/ coarse/ ridge/   the land at three levels (levels.py): .u16z heights, and .covz cover for the first two
+    tiles/ coarse/ ridge/   the land at three levels (levels.py): .u16z heights, and .covz cover for the first two; with
+                     --heights live, the cover only (the game reads the heights from Mapterhorn's map tiles itself)
     buildings.json   [[x, z, w, d, yaw, h, kind, 0], ...] beside any road (kind: land_bake.BUILDING_KINDS)
     pois.json        places to stop beside any road (road_facts.make_pois)
     landmarks.json   named peaks, lighthouses and the like
@@ -48,6 +49,23 @@ GENERIC = list(rb.CLASSES)
 SURFACES = ["tarmac", "gravel"]
 
 
+CELL_DEG = 0.25             # the world's grid of cells: this many degrees of latitude and of longitude a side
+
+
+def cell_of(lat, lon):
+    """The (row, column) of the cell that (lat, lon) is in: rows up from the south pole, columns east from 180 W."""
+    return int(math.floor((lat + 90.0) / CELL_DEG)), int(math.floor((lon + 180.0) / CELL_DEG))
+
+
+def cell_box(i, j):
+    """Cell (i, j)'s (south, west, north, east) in degrees."""
+    return (i * CELL_DEG - 90.0, j * CELL_DEG - 180.0, (i + 1) * CELL_DEG - 90.0, (j + 1) * CELL_DEG - 180.0)
+
+
+def cell_name(i, j):
+    return "c%d_%d" % (i, j)
+
+
 def simplify(pts, tol):
     """The polyline through `pts` ((x, z) pairs) with points within `tol` metres of the line dropped (Douglas-Peucker),
     both ends kept."""
@@ -73,12 +91,14 @@ def simplify(pts, tol):
     return [tuple(p) for p in a[keep]]
 
 
-def graph_rows(graph, min_network=MIN_NETWORK):
+def graph_rows(graph, min_network=MIN_NETWORK, ids=False):
     """The road graph as plain rows: {nodes: [[x, z]], edges: [{a, b, c, s, l, n, o, p}], bans: [[from edge, node, to
     edge]], classes, surfaces, names}.
 
     Networks of fewer than `min_network` junctions are left out (stray bits of road). Nodes and names are numbered in a
-    fixed order, so the same data bakes to the same bytes."""
+    fixed order, so the same data bakes to the same bytes. With `ids` the rows also carry "ids", each node's short id
+    (short_id of its Overture connector), and each edge a "g", its segment's: a cell's roads that run on into the next
+    cell are the same nodes and edges there, and the game joins the two by these (RealRegion.stitch)."""
     keep = set()
     seen = set()
     for n0 in sorted(graph.pos):
@@ -88,23 +108,34 @@ def graph_rows(graph, min_network=MIN_NETWORK):
         seen |= comp
         if len(comp) >= min_network:
             keep |= comp
-    ids = sorted(keep)
-    index = {n: i for i, n in enumerate(ids)}
+    node_ids = sorted(keep)
+    index = {n: i for i, n in enumerate(node_ids)}
     names = sorted({e["label"] or "" for e in graph.edges})
     edges = []
     for ei, e in enumerate(graph.edges):
         if e["a"] not in index or e["b"] not in index:
             continue
         mid = simplify(e["pts"], SIMPLIFY_M)[1:-1]
-        edges.append({"a": index[e["a"]], "b": index[e["b"]], "c": GENERIC.index(e["cls"]), "s": SURFACES.index(e["surface"]),
-                      "l": int(e.get("limit") or 0), "n": names.index(e["label"] or ""), "o": int(e.get("oneway", 0)),
-                      "p": [round(v, 1) for p in mid for v in p], "_ei": ei})
+        row = {"a": index[e["a"]], "b": index[e["b"]], "c": GENERIC.index(e["cls"]), "s": SURFACES.index(e["surface"]),
+               "l": int(e.get("limit") or 0), "n": names.index(e["label"] or ""), "o": int(e.get("oneway", 0)),
+               "p": [round(v, 1) for p in mid for v in p], "_ei": ei}
+        if ids:
+            row["g"] = short_id(e.get("seg") or "")
+        edges.append(row)
     edges.sort(key=lambda r: (r["a"], r["b"], r["p"][:2]))
     new_index = {r.pop("_ei"): i for i, r in enumerate(edges)}
     bans = sorted([new_index[ef], index[node], new_index[et]] for ef, node, et in graph.bans
                   if ef in new_index and et in new_index and node in index)
-    nodes = [[round(graph.pos[n][0], 1), round(graph.pos[n][1], 1)] for n in ids]
-    return {"nodes": nodes, "edges": edges, "bans": bans, "classes": GENERIC, "surfaces": SURFACES, "names": names}
+    nodes = [[round(graph.pos[n][0], 1), round(graph.pos[n][1], 1)] for n in node_ids]
+    out = {"nodes": nodes, "edges": edges, "bans": bans, "classes": GENERIC, "surfaces": SURFACES, "names": names}
+    if ids:
+        out["ids"] = [short_id(n) for n in node_ids]
+    return out
+
+
+def short_id(overture_id):
+    """An Overture id as 12 hex digits (the first of its SHA-1): unique enough among a few cells' roads, a third of the size."""
+    return hashlib.sha1(str(overture_id).encode()).hexdigest()[:12]
 
 
 def make_places(divisions, frame, pts, bounds, reach=PLACE_REACH):
@@ -164,7 +195,10 @@ def bake(args, log=print):
     frame = rb.Frame(lat0, lon0)
     segments = rb.fetch_segments(args.south, args.west, args.north, args.east, release, log)
     graph = rb.Graph(segments, frame, set(args.avoid or []))
-    rows = graph_rows(graph)
+    cell = getattr(args, "cell", None)
+    cover_levels = levels.CELL_COVER_LEVELS if cell else levels.COVER_LEVELS
+    # (a cell keeps every bit of road: a stub at its edge is part of a network in the next cell)
+    rows = graph_rows(graph, 1, ids=True) if cell else graph_rows(graph)
     log("roads: %d junctions, %d roads kept, %d one-way, %d banned turns" % (
         len(rows["nodes"]), len(rows["edges"]), sum(1 for e in rows["edges"] if e["o"]), len(rows["bans"])))
     if not rows["edges"]:
@@ -181,7 +215,9 @@ def bake(args, log=print):
     try:
         tiles, has_sea, land = rb.bake_terrain(
             args.out, frame, pts, dems,
-            lambda cover_tiles: land_bake.bake_land(rb.OVERTURE_BUCKET, release, frame, pts, cover_tiles, args.out, log), log)
+            lambda cover_tiles: land_bake.bake_land(rb.OVERTURE_BUCKET, release, frame, pts, cover_tiles, args.out, log,
+                                                    cover_levels=cover_levels), log,
+            heights=getattr(args, "heights", "baked") == "baked", cover_levels=cover_levels)
     finally:
         land_bake.BUILDING_MAX = old_max
     x0, z0 = frame.to_world(args.north, args.west)
@@ -194,10 +230,14 @@ def bake(args, log=print):
     with open(os.path.join(args.out, "places.json"), "w") as f:
         json.dump(places, f, separators=(",", ":"))
     meta = {
-        "format": FORMAT, "kind": "region", "name": args.name, "title": args.title or args.name,
+        "format": FORMAT, "kind": "cell" if cell else "region", "name": args.name, "title": args.title or args.name,
         "frame": {"lat": lat0, "lon": lon0}, "bounds": bounds,
         "geo": {"south": args.south, "west": args.west, "north": args.north, "east": args.east},
-        "levels": [lv.meta() for lv in levels.LEVELS], "tile_counts": {k: len(v) for k, v in tiles.items()},
+        "heights": getattr(args, "heights", "baked"),
+        "cell": list(cell) if cell else None,
+        "levels": ([lv.meta(cover=lv in cover_levels) for lv in levels.LEVELS + [c for c in cover_levels if c not in levels.LEVELS]]
+                   if cell else [lv.meta() for lv in levels.LEVELS]),
+        "tile_counts": {k: len(v) for k, v in tiles.items()},
         "cover": land_bake.COVER, "building_kinds": land_bake.BUILDING_KINDS,
         "counts": {"nodes": len(rows["nodes"]), "edges": len(rows["edges"]), "buildings": len(land["buildings"]),
                    "pois": len(land["pois"]), "landmarks": len(land["landmarks"]), "places": len(places),
@@ -214,18 +254,32 @@ def bake(args, log=print):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--name", required=True, help="short id, used as the folder name")
+    ap.add_argument("--name", help="short id, used as the folder name (a cell's is c<row>_<column>)")
     ap.add_argument("--title", default="", help="the region's name for the magazine")
-    ap.add_argument("--south", type=float, required=True)
-    ap.add_argument("--west", type=float, required=True)
-    ap.add_argument("--north", type=float, required=True)
-    ap.add_argument("--east", type=float, required=True)
+    ap.add_argument("--south", type=float)
+    ap.add_argument("--west", type=float)
+    ap.add_argument("--north", type=float)
+    ap.add_argument("--east", type=float)
+    ap.add_argument("--cell", type=float, nargs=2, metavar=("LAT", "LON"),
+                    help="bake the cell (a 0.25 degree square of the world's grid) this point is in, with live heights, into"
+                         " data/cells/c<row>_<column> (see docs/ride_anywhere_plan.md)")
     ap.add_argument("--out", help="folder to write (default data/regions/NAME)")
     ap.add_argument("--cache", default=os.path.expanduser("~/.cache/torque-shed-bake"), help="download cache")
     ap.add_argument("--release", help="Overture release, default the latest")
     ap.add_argument("--avoid", default="", help="road classes to leave out, comma-separated")
+    ap.add_argument("--heights", choices=["baked", "live"], default="baked",
+                    help="bake the land's heights in (baked), or leave them to the game to read from the map tiles (live)")
     args = ap.parse_args(argv)
     args.avoid = [c for c in args.avoid.split(",") if c]
+    if args.cell:
+        i, j = cell_of(*args.cell)
+        args.cell = (i, j)
+        args.south, args.west, args.north, args.east = cell_box(i, j)
+        args.name = args.name or cell_name(i, j)
+        args.heights = "live"
+        args.out = args.out or os.path.join("data", "cells", args.name)
+    elif None in (args.name, args.south, args.west, args.north, args.east):
+        ap.error("give --name and the box (--south --west --north --east), or --cell")
     args.out = args.out or os.path.join("data", "regions", args.name)
     meta = bake(args)
     print("wrote %s: %s, tiles %s, hash %s" % (args.out, meta["counts"], meta["tile_counts"], meta["hash"]))

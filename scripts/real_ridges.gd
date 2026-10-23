@@ -19,6 +19,11 @@ const ROCK_TO := 1400.0
 const LAND_REACH := 5400.0
 const LAND_EASE := 700.0
 const LAND_UNDER := 30.0
+## A live ridge level (RealTerrain.ridge_lowered false) is pushed down here as the baker pushes a baked one down
+## (tools/route_bake.py ridge_tile): LOWER metres within LOWER_NEAR of the road, easing back up by LOWER_FAR.
+const LOWER := 90.0
+const LOWER_NEAR := 700.0
+const LOWER_FAR := 1000.0
 const WOODS := Color(0.09, 0.22, 0.1)
 const ROCK := Color(0.46, 0.44, 0.4)
 const SNOW := Color(0.92, 0.93, 0.96)
@@ -160,6 +165,8 @@ func _block_arrays(key: Vector2i) -> Variant:
 			any = any or (not is_nan(h) and i > 0 and j > 0 and i < m - 1 and j < m - 1)
 	if not any:
 		return null
+	if not terrain.ridge_lowered():
+		_lower_near_road(key, grid, m, sp)
 	# The stretch of road that could be within reach of this block.
 	var size := BLOCK * sp
 	var near_road := PackedVector2Array()
@@ -203,6 +210,29 @@ func _block_arrays(key: Vector2i) -> Variant:
 	arrays[Mesh.ARRAY_COLOR] = cols
 	arrays[Mesh.ARRAY_INDEX] = idx
 	return arrays
+
+
+## Pushes the samples of block `key`'s grid (`m` x `m`, a sample's border round the block) down near the road.
+func _lower_near_road(key: Vector2i, grid: PackedFloat32Array, m: int, sp: float) -> void:
+	var x0 := (key.x * BLOCK - 1) * sp
+	var z0 := (key.y * BLOCK - 1) * sp
+	var span := (m - 1) * sp
+	var near := PackedVector2Array()
+	for p in _road:
+		if p.x >= x0 - LOWER_FAR and p.x <= x0 + span + LOWER_FAR and p.y >= z0 - LOWER_FAR and p.y <= z0 + span + LOWER_FAR:
+			near.append(p)
+	if near.is_empty():
+		return
+	for j in m:
+		for i in m:
+			var g := j * m + i
+			if is_nan(grid[g]):
+				continue
+			var at := Vector2(x0 + i * sp, z0 + j * sp)
+			var d := INF
+			for p in near:
+				d = minf(d, at.distance_squared_to(p))
+			grid[g] -= LOWER * (1.0 - smoothstep(LOWER_NEAR, LOWER_FAR, sqrt(d)))
 
 
 func _make_mesh(key: Vector2i, arrays: Array) -> MeshInstance3D:

@@ -31,6 +31,39 @@ def curvature_at(p):
     return 2.0 * cross / np.maximum(ab * bc * ac, 1e-9)
 
 
+class LiveHeightsTests(unittest.TestCase):
+    """bake_terrain with heights=False: no height tiles, but the sea still found (the game reads heights live)."""
+
+    class FlatDem:
+        def __init__(self, level):
+            self.level = level
+
+        def heights(self, lat, lon):
+            # Sea west of the anchor's meridian, land east of it.
+            return np.where(np.asarray(lon) < 0.0, 0.0, 20.0)
+
+    def bake(self, heights):
+        out = tempfile.mkdtemp()
+        frame = rb.Frame(0.0, 0.0)
+        knots = np.array([[-2000.0 + 50.0 * i, 0.0] for i in range(81)])
+        dems = {lv.name: self.FlatDem(lv) for lv in levels.LEVELS}
+        land = {"buildings": []}
+        tiles, has_sea, _ = rb.bake_terrain(out, frame, knots, dems, lambda cover: land, lambda *a: None, heights=heights)
+        written = [f for _, _, files in os.walk(out) for f in files if f.endswith(".u16z")]
+        return tiles, has_sea, written
+
+    def test_live_writes_no_heights_and_still_finds_the_sea(self):
+        tiles, has_sea, written = self.bake(False)
+        self.assertTrue(has_sea)
+        self.assertEqual(written, [])
+        self.assertTrue(tiles["fine"])
+
+    def test_baked_writes_every_level(self):
+        tiles, has_sea, written = self.bake(True)
+        self.assertTrue(has_sea)
+        self.assertEqual(len(written), sum(len(v) for v in tiles.values()))
+
+
 class GeodesyTests(unittest.TestCase):
     def test_anchor_lands_at_start_and_north_is_negative_z(self):
         f = rb.Frame(34.5, 134.3)
@@ -201,6 +234,12 @@ class RoadKnotTests(unittest.TestCase):
         self.assertEqual(tuple(pts[-1]), (100.0, 60.0))
         pts, _, _ = rb.resample([(0.0, 0.0), (100.0, 0.0)], 4.0, exact=True)
         self.assertTrue(np.allclose(np.hypot(*np.diff(pts, axis=0).T), 4.0))
+
+    def test_a_road_with_no_length_is_its_one_point(self):
+        # Mapped roads whose ends meet (a dot of a road) turned up in the world's cells.
+        pts, _, total = rb.resample([(5.0, 7.0), (5.0, 7.0)], 4.0)
+        self.assertEqual(total, 0.0)
+        self.assertEqual(pts.tolist(), [[5.0, 7.0]])
 
     def test_a_gentle_road_is_left_as_mapped(self):
         xs = np.arange(0.0, 800.0, 10.0)

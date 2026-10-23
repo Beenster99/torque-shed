@@ -153,7 +153,7 @@ func _ready() -> void:
 	for b in staff_row.get_children():
 		_host_only.append(b)
 
-	# Adventure rides (see Adventure): start one on a chosen seed and length, end it, or skip along.
+	# Adventure rides (see Adventure): start a tour of a bundled region about a chosen length, end it, or skip along.
 	box.add_child(UITheme.label("Adventure (host)", 15, UITheme.ACCENT))
 	_adv_seed = SpinBox.new()
 	_adv_seed.min_value = 1
@@ -163,9 +163,9 @@ func _ready() -> void:
 	_adv_km = SpinBox.new()
 	_adv_km.min_value = Adventure.MIN_KM
 	_adv_km.max_value = Adventure.MAX_KM
-	_adv_km.value = Adventure.DEFAULT_KM
+	_adv_km.value = 40.0
 	_adv_km.suffix = "km"
-	var adv_start := _button("Start adventure", func(): Adventure.start(int(_adv_seed.value), _adv_km.value))
+	var adv_start := _button("Start adventure", func(): Adventure.start(AdventurePlans.sample(_adv_km.value), int(_adv_seed.value)))
 	var adv_end := _button("End adventure", func(): Shed.request({"a": "adventure_end"}))
 	box.add_child(_row([_adv_seed, _adv_km, adv_start, adv_end]))
 	_host_only.append(adv_start)

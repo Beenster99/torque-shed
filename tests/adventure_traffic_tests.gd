@@ -1,6 +1,9 @@
 extends RefCounted
 ## The adventure road's traffic checks (AdventureTraffic on a TrafficStream, and TrafficSounds),
-## run from tests/run_tests.gd: its _test_adv_traffic_* functions hand over to these.
+## run from tests/run_tests.gd: its _test_adv_traffic_* functions hand over to these. The roads are the whole of the
+## tours Rides plans (the ride Adventure.start begins), so a village found on one is on the road ridden.
+
+const Rides := preload("res://tests/rides.gd")
 
 var t: Node   # the test runner: check(), get_tree()
 
@@ -22,8 +25,7 @@ func _frames(n: int) -> void:
 ## whose riders are at the local positions in `spot["ps"]`. Forks left open if `forks_open`, else
 ## the main road at each.
 func _world(seed: int, km: float, spot: Dictionary, forks_open := false) -> AdventureTraffic:
-	var w := AdventureWorld.new()
-	w.setup(seed, km)
+	var w := Rides.world(Rides.full(km), seed)
 	if not forks_open:
 		for f in w.route.forks.size():
 			w.route.choose(f, 0)
@@ -54,15 +56,14 @@ static func _run(tr: AdventureTraffic, seconds: float, dt := 0.1) -> void:
 		tr._physics_process(dt)
 
 
-## A seed whose road (km long) has a village at least `after` m in: [seed, the village's site].
+## A seed whose road (the whole of Rides.plan(km)) has a village at least `after` m in: [seed, the village's site].
 static func _with_village(km: float, after := 3000.0) -> Array:
 	for seed in range(1, 80):
-		var r := AdventureRoute.new()
-		r.plan(seed, km)
+		var r := Rides.route(Rides.full(km), seed)
 		for f in r.forks.size():
 			r.choose(f, 0)
 		for st in r.sites_of("village"):
-			if float(st["s"]) > after and float(st["s"]) < r.length - 3000.0 and (r.forks.is_empty() or float(st["s"]) < r.fork_s(0) - 1500.0):
+			if float(st["s"]) > after and float(st["s"]) < r.length - 3000.0 and r.fork_at(float(st["s"])) < 0:
 				return [seed, st]
 	return []
 
@@ -127,8 +128,8 @@ func test_density() -> void:
 	check(int(counts["village"][0]) > int(counts["open"][0]) + 3 and float(counts["village"][1]) > float(counts["open"][1]) * 1.4,
 		"more traffic round you in a village than on the open road (wanted %d to %d; %.1f to %.1f within 600 m)" % [counts["village"][0],
 		counts["open"][0], counts["village"][1], counts["open"][1]])
-	check(dirs.has(1) and dirs.has(-1) and kinds.has("lorry") and kinds.has("coach") and kinds.size() >= 5,
-		"going both ways, cars, vans, lorries and buses (%s)" % str(kinds.keys()))
+	check(dirs.has(1) and dirs.has(-1) and (kinds.has("lorry") or kinds.has("coach")) and kinds.size() >= 5,
+		"going both ways, cars, vans, and lorries or coaches (%s; the buses at the stops: test_bus)" % str(kinds.keys()))
 	paces.sort()
 	check(paces.size() > 10 and paces[-1] - paces[0] > 0.3, "every driver's pace their own (%d drivers, %.2f to %.2f of the limit)" % [paces.size(), paces[0], paces[-1]])
 	# Never past the start: riders at the start line see nothing behind it.
@@ -144,8 +145,8 @@ func test_density() -> void:
 	await _free(tr)
 
 
-## Lorries (and coaches) crawl up the steep hills while cars keep going: along a made-up road
-## climbing at 9%, and on a real one at its steepest.
+## Lorries (and coaches) crawl up the steep hills while cars keep going: along a test road climbing at 9%, and on a
+## real one at its steepest.
 func test_climb() -> void:
 	var stream := TrafficStream.new()
 	stream.sample = func(s: float) -> Dictionary:
@@ -261,7 +262,10 @@ func test_bus() -> void:
 func test_blockers() -> void:
 	var spot := {}
 	var tr := _world(11, 60.0, spot)
+	# A two-way road, clear of junctions and stops, 6 km in or so.
 	var s := 6000.0
+	while s < tr.world.route.length - 2000.0 and (tr.world.route.width_at_s(s) < 5.9 or tr.world.route.sites.any(func(st): return absf(float(st["s"]) - s) < 300.0)):
+		s += 50.0
 	var results := []
 	for case in [[-1.5, 1], [1.5, -1]]:
 		tr.stream.clear()
@@ -291,8 +295,7 @@ func test_forks_origin() -> void:
 	var spot := {}
 	var seed := 0
 	for k in range(1, 40):
-		var r := AdventureRoute.new()
-		r.plan(k, 80.0)
+		var r := Rides.route(Rides.full(80.0), k)
 		if not r.forks.is_empty() and r.fork_s(0) < 40000.0:
 			seed = k
 			break
@@ -313,26 +316,19 @@ func test_forks_origin() -> void:
 	tr.world.apply_picks({0: 1})
 	tr._physics_process(0.1)
 	var on_way := 0
+	var on_road := false
 	for i in 1500:
 		tr._physics_process(0.1)
 		for d in tr.stream.vehicles:
 			if float(d["s"]) > fork + 20.0:
 				on_way += 1
-	var check_s := -1.0
-	for d in tr.stream.vehicles:
-		if float(d["s"]) > fork + 20.0:
-			check_s = float(d["s"])
-	var on_road := false
-	if check_s > 0.0:
-		var id := -1
-		for d in tr.stream.vehicles:
-			if float(d["s"]) == check_s:
-				id = int(d["seed"])
-		var p: Vector3 = tr.stream.slot(id)["pos"]
-		var hit := tr.world.locate_local(p)
-		on_road = not hit.is_empty() and absf(float(hit["s"]) - check_s) < 2.0 and absf(float(hit["lat"])) < 4.0
+				if not on_road and not d.has("arm") and not d.get("kerb", false):
+					# One driving along way B: placed on its road.
+					var hit := tr.world.locate_local(tr.stream.slot(int(d["seed"]))["pos"])
+					on_road = not hit.is_empty() and absf(float(hit["s"]) - float(d["s"])) < 3.0 \
+						and absf(float(hit["lat"])) < r.width_at_s(float(d["s"])) * 0.5 + 1.0
 	check(on_way > 0 and on_road and tr.busy_at(0.0) >= 0.0 and is_same(tr._sites_ref, r.sites),
-		"once it's decided they drive on along way B, on its road (and the stops along it are known)")
+		"once it's decided they drive on along way B, on its road (and the stops along it are known) (%d seen on it, on the road %s)" % [on_way, on_road])
 	# The origin moves under them.
 	var before := {}
 	for d in tr.stream.vehicles:
@@ -469,10 +465,12 @@ func test_perf() -> void:
 	await t.get_tree().physics_frame
 	var faithful: int = t._bike_named("Old Faithful")
 	main.walker.place(Transform3D(Basis(), (Shed.bikes[faithful]["xf"] as Transform3D).origin + Vector3(1.0, 0.0, 0.0)))
-	Adventure.start(int(found[0]), 40.0)
+	Rides.start(40.0, int(found[0]))
 	for i in 10:
 		await t.get_tree().physics_frame
 	var trip: AdventureTrip = main.trip
+	if trip.on_trip():
+		await Rides.take_main_roads(trip)
 	var tr := AdventureTraffic.current
 	check(trip.on_trip() and tr != null and tr.get_parent() == trip.world and tr.host, "the adventure has its traffic")
 	if tr == null:

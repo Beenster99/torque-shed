@@ -263,6 +263,8 @@ func _draw() -> void:
 
 ## The land as a picture: sea, and ground shaded by height and slope (lit from the north-west). Any thread.
 static func shade_image(r: RealRegion) -> Image:
+	if r.terrain != null and r.terrain.live:
+		r.terrain.fetch_area(r.bounds)   # (a live region's land comes from the map tiles: this runs on a worker)
 	var w := maxi(int(r.bounds.size.x / SHADE_CELL), 2)
 	var h := maxi(int(r.bounds.size.y / SHADE_CELL), 2)
 	var heights := PackedFloat32Array()

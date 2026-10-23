@@ -8,6 +8,8 @@ extends Node
 ## shared diary"): its own, and the other's sent across (DiaryShare), kept in its own folder and
 ## credited to who took it.
 
+const Rides := preload("res://tests/rides.gd")
+
 const KM := 8.0
 
 var role := "host"
@@ -29,6 +31,8 @@ func _ready() -> void:
 	var frame := Image.create(640, 360, false, Image.FORMAT_RGBA8)
 	frame.fill(Color(0.9, 0.3, 0.2) if role == "host" else Color(0.2, 0.4, 0.9))
 	PhotoCapture.fake_source = func(): return frame
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	Rides.pack(KM)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
@@ -39,7 +43,7 @@ func _ready() -> void:
 	var trip: AdventureTrip = main.trip
 	var ok_start := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
-			Adventure.start(4102, KM, "hills")
+			Rides.start(KM, 4102)
 		return trip.on_trip() and main.bike != null and _remote_bike() != null, 40.0)
 	var me := str(Shed.crew.get(Shed.me(), {}).get("name", Settings.player_name))
 	var them := "Diary client" if role == "host" else "Diary host"

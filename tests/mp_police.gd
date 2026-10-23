@@ -8,8 +8,10 @@ extends Node
 ## host must see the fine paid, nothing for itself and its own money untouched. Then the host
 ## ends the adventure.
 
+const Rides := preload("res://tests/rides.gd")
+
 const SEED := 321
-const KM := 50.0
+const KM := 40.0
 const HOST_S := 3000.0
 const CLIENT_S := 3100.0
 const POLICE_S := 3220.0
@@ -27,6 +29,8 @@ func _ready() -> void:
 		if a.begins_with("--role="):
 			role = a.trim_prefix("--role=")
 	Settings.player_name = "Cop %s" % role
+	# Planned before connecting: planning a long ride holds the game for seconds, longer than the link waits.
+	Rides.pack(KM)
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame
@@ -37,7 +41,7 @@ func _ready() -> void:
 	var trip: AdventureTrip = main.trip
 	var on := await _until(func():
 		if role == "host" and Shed.crew.size() == 2 and not Adventure.active() and not trip.on_trip():
-			Adventure.start(SEED, KM)
+			Rides.start(KM, SEED)
 		return trip.on_trip() and main.bike != null and _remote_bike() != null and trip.police != null, 40.0)
 	Progress.set_money(MONEY)
 	var me := Shed.me()

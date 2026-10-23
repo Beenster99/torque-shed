@@ -1,8 +1,8 @@
 extends RefCounted
-## Adventure destinations' checks (AdventureDest: the ride lengths, the set pieces, arriving, the photo on the shed wall
-## and the album), run from tests/run_tests.gd: its _test_adv_dest_* functions hand over to these.
+## Adventure destinations' checks (AdventureDest: the last pin, how long a ride takes, arriving, the photo on the shed
+## wall and the album), run from tests/run_tests.gd: its _test_adv_dest_* functions hand over to these.
 
-const THEMES: Array[String] = ["desert", "alpine", "coastal", "hills", "varied"]
+const Rides := preload("res://tests/rides.gd")
 
 var t: Node   # the test runner: check(), get_tree()
 
@@ -34,106 +34,49 @@ func _until(cond: Callable, seconds := 20.0) -> bool:
 	return cond.call()
 
 
-## Every MeshInstance3D under `n`, and how many triangles they hold between them.
-static func _tris(n: Node) -> int:
-	var out := 0
-	for c in n.find_children("*", "MeshInstance3D", true, false):
-		var mesh: Mesh = (c as MeshInstance3D).mesh
-		if mesh is ArrayMesh:
-			for s in mesh.get_surface_count():
-				out += (mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() / 3
-		elif mesh != null:
-			out += 1
-	return out
-
-
 # ---------------------------------------------------------------------------- destinations
 
-## The lengths and every theme's destinations: data that hangs together.
+## How long a ride takes and whether it needs a night's stop; a destination's name (a place, or an old photo's
+## made-up one); an adventure from before rides were planned isn't one.
 func test_data() -> void:
-	check(AdventureDest.LENGTH_ORDER.size() == 3 and float(AdventureDest.LENGTHS["short"]["km"]) == 100.0
-		and float(AdventureDest.LENGTHS["ride"]["km"]) == 150.0 and float(AdventureDest.LENGTHS["epic"]["km"]) == 220.0,
-		"three lengths: short 100 km, ride 150 km, epic 220 km")
 	check(AdventureDest.minutes_for(100.0) == 90 and AdventureDest.minutes_for(150.0) == 120 and AdventureDest.minutes_for(220.0) == 180,
-		"about 90 minutes, 2 hours and 3 hours (%d, %d, %d)" % [AdventureDest.minutes_for(100.0), AdventureDest.minutes_for(150.0),
-		AdventureDest.minutes_for(220.0)])
+		"100 km about 90 minutes, 150 km 2 hours and 220 km 3 hours (%d, %d, %d)" % [AdventureDest.minutes_for(100.0),
+		AdventureDest.minutes_for(150.0), AdventureDest.minutes_for(220.0)])
 	check(AdventureDest.minutes_for(60.0) < AdventureDest.minutes_for(80.0) and AdventureDest.minutes_for(300.0) > 180,
-		"free km in between and beyond take their share of time")
-	check(AdventureDest.length_of(150.0) == "ride" and AdventureDest.length_of(123.0) == "free", "a preset's km is that preset, any other is free")
-	check(AdventureDest.overnight(220.0) and not AdventureDest.overnight(150.0), "only the epic needs a night's stop")
-	var kinds := {}
-	for theme in THEMES:
-		var list := AdventureDest.for_theme(theme)
-		check(not list.is_empty(), "%s has a destination (%s)" % [theme, str(list)])
-		check(list.has(AdventureDest.default_for(theme, 12345)), "a %s ride with none picked goes to one of %s's" % [theme, theme])
-	for id in AdventureDest.DESTS:
-		var d: Dictionary = AdventureDest.DESTS[id]
-		kinds[d["kind"]] = true
-		check(THEMES.has(str(d["theme"])) and str(d["name"]) != "" and str(d["what"]) != "" and str(d["line"]) != "",
-			"%s has a theme, a name and its lines" % id)
-	for k in ["canyon", "glacier", "lighthouse", "rally", "dirt_track", "race"]:
-		check(kinds.has(k), "there's a %s to ride to" % k)
-	check(float(AdventureDest.of("canyon")["hours"]) > 16.5 and float(AdventureDest.of("lighthouse")["hours"]) > 18.0,
-		"the canyon's seen at sunset, the lighthouse at dusk")
-	var site := AdventureDest.site("canyon", 100.0)
-	check(str(site["kind"]) == "dest" and float(site["s"]) > 100000.0 and float(site["s"]) < 100000.0 + AdventureRoute.RUN_OUT - 150.0,
-		"the set piece is just past the finish, in the road's run-out (%.0f m)" % float(site["s"]))
-	# Old adventures (from before destinations) get one by their theme.
-	var old := Adventure.sanitize({"id": 5, "seed": 9, "km": 30.0, "theme": "varied", "riders": {}})
-	check(AdventureDest.exists(str(old["dest"])) and str(old["title"]) == "", "an adventure without a destination gets one")
+		"the further, the longer")
+	check(AdventureDest.time_text(28.0) == "about 25 min" and AdventureDest.time_text(150.0) == "about 2 h", "and it's said in words")
+	check(AdventureDest.overnight(220.0) and not AdventureDest.overnight(150.0), "only a ride of 200 km and more needs a night's stop")
+	check(AdventureDest.name_of("Hawes") == "Hawes" and AdventureDest.name_of("canyon") == "Red Rock Canyon",
+		"a destination is the place itself (an old photo's made-up one keeps its name)")
+	check(Adventure.sanitize({"id": 5, "seed": 9, "km": 30.0, "theme": "varied", "riders": {}}).is_empty(),
+		"an adventure that isn't along a planned journey isn't one")
 
 
-## Every set piece builds, with something to see and something solid; the race's bikes go round,
-## and the road's planned with the land flat beside the set piece.
+## The ride ends at the last pin: the finish banner there, the destination named after its place, the crew parked on
+## the road just past it.
 func test_build() -> void:
-	for id in AdventureDest.DESTS:
-		var d: Dictionary = AdventureDest.DESTS[id]
-		var st := {"kind": "dest", "s": 20110.0, "side": 1, "name": AdventureDest.name_of(id)}
-		var node := AdventureDest.build(id, str(d["theme"]), st, Transform3D())
-		t.add_child(node)
-		var tris := _tris(node)
-		var bodies := node.find_children("*", "StaticBody3D", true, false).size()
-		check(tris > 300 and bodies >= 1, "%s (%s) builds: %d triangles, %d solid bodies" % [id, d["kind"], tris, bodies])
-		if str(d["kind"]) == "race":
-			var racers := node.find_children("*", "MeshInstance3D", true, false).filter(func(m): return m.get_parent().get_class() == "Node3D" and m.get_parent() != node)
-			var before: Array = racers.map(func(m): return (m as Node3D).global_position)
-			await _frames(5)
-			var moved := 0
-			for i in racers.size():
-				if (racers[i] as Node3D).global_position.distance_to(before[i]) > 0.05:
-					moved += 1
-			check(racers.size() >= 4 and moved == racers.size(), "the race's bikes go round (%d of %d moved)" % [moved, racers.size()])
-		if str(d["kind"]) == "dirt_track":
-			var track := node.find_child("Track", true, false)
-			check(track != null and str(track.get_meta("surface", "")) == "gravel", "the dirt track rides as dirt")
-		node.free()
-	# The road with the destination planned in: its site, flat land beside it, and the world builds it.
+	var plan := Rides.plan(20.0)
+	var info := AdventureJourney.start_info({"plan": plan})
+	check(str(info["dest"]) == str(plan["names"][-1]) and str(info["dest"]) != "", "the destination is the last pin's place (%s)" % info["dest"])
 	var w := AdventureWorld.new()
-	w.setup(77, 20.0, "varied", "canyon")
-	var sites := w.route.sites_of("dest")
-	check(sites.size() == 1 and absf(float(sites[0]["s"]) - AdventureDest.dest_s(w)) < 1.0, "the route plans the destination's site")
-	var i := int(AdventureDest.dest_s(w) / AdventureRoute.STEP)
-	var e := w.route.width[i] * 0.5
-	var flat := true
-	for lat: float in [10.0, 30.0, 55.0]:
-		var p := w.route.xz_at(AdventureDest.dest_s(w), e + lat)
-		if absf(w.route.land_height(i, e + lat, p[0], p[1]) - (w.route.ph[i] - 0.12)) > 0.05:
-			flat = false
-	check(flat, "the land's flat beside it for the set piece")
+	w.setup(AdventurePlans.pack_for(plan), 77)
+	Rides.main_roads(w.route)   # (as by the time anyone arrives: the road's built to the end)
+	var fin: Array = w.route.sites_of("finish")
+	check(fin.size() == 1 and absf(float(fin[0]["s"]) - w.route.length) < 1.0 and absf(w.route.length - float(info["km"]) * 1000.0) < 100.0,
+		"the finish is at the end of the planned road (%.1f km)" % (w.route.length / 1000.0))
+	check(AdventureDest.dest_s(w) > w.route.length and AdventureDest.dest_s(w) < w.route.total, "the crew stops just past it, on the road's run-out")
 	t.add_child(w)
 	w.preload_range(AdventureDest.dest_s(w) - 40.0, AdventureDest.dest_s(w) + 40.0)
-	var built := w.find_children("Destination", "Node3D", true, false)
-	check(built.size() == 1 and str(built[0].get_meta("dest", "")) == "canyon", "and the world builds it when the road gets there")
 	var park := AdventureDest.park_xf(w, 0)
 	var hit := w.locate_local(park.origin)
 	check(not hit.is_empty() and absf(float(hit["s"]) - AdventureDest.dest_s(w)) < 20.0 and float(hit["lat"]) > 0.0,
-		"the crew parks on the road beside it")
+		"the crew parks on the road there")
 	w.queue_free()
 	await _frames(2)
 
 
 ## Arriving: the photo (the crew's names), XP for everyone by the length, the photo hung on the
-## shed wall, the clock to sunset, and nothing ends till the host rides everyone home.
+## shed wall, and nothing ends till the host rides everyone home.
 func test_arrive() -> void:
 	var real_path := Progress.path
 	Progress.path = "user://profile_dest_test.json"
@@ -143,22 +86,24 @@ func test_arrive() -> void:
 	Progress.select("Tester")
 	var xp0 := int(Progress.profile["xp"])
 	var photos0 := Shed.furniture.values().filter(func(f): return str(f["model"]) == AdventureDest.PHOTO_MODEL).size()
-	Shed.request({"a": "adventure_start", "seed": 4101, "km": 150.0, "theme": "varied", "dest": "canyon", "title": "The Red Rock Run"})
-	check(Adventure.active() and str(Shed.adventure["dest"]) == "canyon" and str(Shed.adventure["title"]) == "The Red Rock Run", "the adventure knows where it's going and what it's called")
+	var plan := AdventurePlans.tour("dales")
+	var km := AdventurePlans.pack_for(plan).max_km()
+	var dest := str(plan["names"][-1])
+	Shed.request({"a": "adventure_start", "plan": plan, "seed": 4101, "title": "Round the Dales"})
+	check(Adventure.active() and str(Shed.adventure["dest"]) == dest and str(Shed.adventure["title"]) == "Round the Dales" and Shed.adventure["theme"] == "hills",
+		"the adventure knows where it's going (%s) and what it's called" % dest)
 	Shed.request({"a": "adventure_arrive"})
 	var photo: Dictionary = Shed.adventure.get("photo", {})
-	check(not photo.is_empty() and (photo["names"] as Array).has("Tester") and str(photo["dest"]) == "canyon" and int(photo["km"]) == 150,
-		"arriving takes the crew's photo there (%s)" % str(photo))
+	check(not photo.is_empty() and (photo["names"] as Array).has("Tester") and str(photo["dest"]) == dest and int(photo["km"]) == roundi(km)
+		and str(photo["theme"]) == "hills", "arriving takes the crew's photo there (%s)" % str(photo))
 	var gained := int(Progress.profile["xp"]) - xp0
-	check(gained >= 440, "and everyone gets XP for the ride (%d for 150 km)" % gained)
+	check(gained >= floori(3.0 * km) - 5, "and everyone gets XP for the ride (%d for %.0f km)" % [gained, km])
 	var hung := AdventureDest.photo_on_wall(str(photo.get("key", "")))
 	check(not hung.is_empty() and Equipment.is_wall(str(hung["model"])) and str(hung["kind"]) == "trinket",
 		"the photo hangs in the shed, a wall trinket")
 	var wall_z := Workshop.CENTER.z + Workshop.HALF.y
 	check(not hung.is_empty() and absf((hung["xf"] as Transform3D).origin.z - wall_z) < 0.1, "on the shed's front wall")
-	check(Shed.furniture_name(hung).contains("Red Rock Canyon"), "it says where (%s)" % Shed.furniture_name(hung))
-	if Daylight.current:
-		check(absf(Daylight.time_of_day() - 17.4) < 0.2, "the clock goes to sunset for the canyon (%.2f)" % Daylight.time_of_day())
+	check(Shed.furniture_name(hung).contains(dest), "it says where (%s)" % Shed.furniture_name(hung))
 	check(Adventure.active() and Adventure.menu_text()[0].begins_with("Ride home"), "the adventure stays on till the host rides everyone home")
 	# A second arrival can't double anything.
 	Shed.request({"a": "adventure_arrive"})
@@ -167,7 +112,7 @@ func test_arrive() -> void:
 	check(not Adventure.active(), "Ride home ends it")
 	# Ten more: each in its own spot, none on top of another.
 	for k in 10:
-		var p := AdventureDest.make_photo({"seed": k, "dest": "glacier", "km": 100.0}, ["A"])
+		var p := AdventureDest.make_photo({"seed": k, "dest": "Hawes", "theme": "hills", "km": 100.0}, ["A"])
 		p["key"] = "test-%d" % k
 		AdventureDest.hang(p)
 	var spots := []
@@ -183,32 +128,35 @@ func test_arrive() -> void:
 	var view := Node3D.new()
 	AdventureDest.build_photo(view, photo)
 	var cap := view.find_child("Caption", true, false) as Label3D
-	check(view.find_child("Picture", true, false) != null and cap != null and cap.text.contains("Tester") and cap.text.contains("150 km"),
+	check(view.find_child("Picture", true, false) != null and cap != null and cap.text.contains("Tester") and cap.text.contains("%d km" % roundi(km)),
 		"the framed photo shows the picture, and the plate says where, how far and who (%s)" % (cap.text if cap else ""))
 	view.free()
 	Shed.stop()
 	Progress.path = real_path
 
 
-## The pictures and the album: each destination painted its own, the crew in front; an album
+## The pictures and the album: each theme's land painted its own, the crew in front; an album
 ## per player, kept once, and your photos go up in your own shed.
 func test_photo() -> void:
 	var seen := {}
-	for id in AdventureDest.DESTS:
-		var img := AdventureDest.paint(id, 0)
-		seen[img.get_data().hex_encode().sha256_text()] = id
-		check(img.get_width() == AdventureDest.PIC_W and img.get_height() == AdventureDest.PIC_H, "%s's picture is painted" % id)
-	check(seen.size() == AdventureDest.DESTS.size(), "every destination's picture is its own")
-	var a := AdventureDest.paint("canyon", 0)
-	var b := AdventureDest.paint("canyon", 3)
+	for theme in AdventureTheme.IDS:
+		var img := AdventureDest.paint(theme, 0)
+		seen[img.get_data().hex_encode().sha256_text()] = theme
+		check(img.get_width() == AdventureDest.PIC_W and img.get_height() == AdventureDest.PIC_H, "the %s land is painted" % theme)
+	check(seen.size() == AdventureTheme.IDS.size(), "every theme's picture is its own")
+	var a := AdventureDest.paint("hills", 0)
+	var b := AdventureDest.paint("hills", 3)
 	check(a.get_data() != b.get_data(), "the photo has the crew stood in front")
-	check(AdventureDest.picture("glacier", 2) == AdventureDest.picture("glacier", 2), "and it's painted once")
-	check(AdventureDest.sanitize_photo({"key": "", "dest": "canyon"}).is_empty() and AdventureDest.sanitize_photo({"key": "x", "dest": "nowhere"}).is_empty()
-		and not AdventureDest.sanitize_photo({"key": "x", "dest": "canyon", "names": ["A", 3]}).is_empty(), "a photo's record is checked")
+	check(AdventureDest.picture("coastal", 2) == AdventureDest.picture("coastal", 2), "and it's painted once")
+	check(AdventureDest.sanitize_photo({"key": "", "dest": "Hawes"}).is_empty() and AdventureDest.sanitize_photo({"key": "x", "dest": ""}).is_empty()
+		and not AdventureDest.sanitize_photo({"key": "x", "dest": "Hawes", "names": ["A", 3]}).is_empty(), "a photo's record is checked")
+	var old := AdventureDest.sanitize_photo({"key": "o", "dest": "canyon", "names": ["A"], "km": 100})
+	check(str(old["theme"]) == "desert" and AdventureDest.caption(old).begins_with("Red Rock Canyon"),
+		"a photo from before planned rides keeps its destination's name and land (%s)" % AdventureDest.caption(old))
 	AdventureDest.album_path = ""
 	AdventureDest._album_mem = {}
-	var p1 := AdventureDest.sanitize_photo({"key": "k1", "dest": "lighthouse", "names": ["Ann", "Bob"], "km": 150, "date": "2026-10-19"})
-	var p2 := AdventureDest.sanitize_photo({"key": "k2", "dest": "big_rally", "names": ["Ann"], "km": 100, "date": "2026-10-19"})
+	var p1 := AdventureDest.sanitize_photo({"key": "k1", "dest": "Tonosho", "theme": "coastal", "names": ["Ann", "Bob"], "km": 150, "date": "2026-10-19"})
+	var p2 := AdventureDest.sanitize_photo({"key": "k2", "dest": "Hawes", "theme": "hills", "names": ["Ann"], "km": 100, "date": "2026-10-19"})
 	AdventureDest.album_add("Ann", p1)
 	AdventureDest.album_add("Ann", p1)
 	AdventureDest.album_add("Ann", p2)
@@ -232,7 +180,7 @@ func test_photo() -> void:
 	# Saved and loaded with the shed.
 	var snap: Dictionary = bytes_to_var(var_to_bytes(Shed._snapshot()))
 	Shed.load_state(snap, "Ann")
-	check(not AdventureDest.photo_on_wall("k1").is_empty() and str(AdventureDest.photo_on_wall("k1")["photo"]["dest"]) == "lighthouse",
+	check(not AdventureDest.photo_on_wall("k1").is_empty() and str(AdventureDest.photo_on_wall("k1")["photo"]["dest"]) == "Tonosho",
 		"the photos are kept with the shed")
 	check(not Trinkets.all().has(AdventureDest.PHOTO_MODEL), "the adventure photo isn't for sale in the Shop")
 	Shed.stop()
