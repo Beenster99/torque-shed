@@ -312,6 +312,10 @@ func test_tv() -> void:
 	dash.tap(scenic.global_position + scenic.size * 0.5)
 	await t.get_tree().process_frame
 	check(str(Shed.journey["mode"]) == "scenic", "a touch on Scenic changes the style for everyone")
+	# (back to Quick: the land under the scenic way isn't in the test's map tiles, and there's no network)
+	var quick: Button = board._mode_buttons["main"]
+	dash.tap(quick.global_position + quick.size * 0.5)
+	await t.get_tree().process_frame
 	# A pin taken off with a touch, and put back.
 	var first := AdventureJourney.pin_geo(Shed.journey, 0)
 	dash.tap(board.view.global_position + board.view.to_screen(first.x, first.y))
