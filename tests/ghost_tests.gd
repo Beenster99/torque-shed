@@ -150,11 +150,13 @@ func test_pass_through() -> void:
 func test_remote() -> void:
 	var r: Dictionary = await t.ride({}, 0.2, func(_b, _t): pass)
 	var bike: Bike = r["bike"]
-	var rb := RemoteBike.new()
-	r["root"].add_child(rb)
-	rb.setup("Crew", BikeBuild.new({}), Color.RED)
 	var state := bike.get_net_state()
 	state[0] += 3.0
+	var rb := RemoteBike.new()
+	# Stood beside yours from the start: added where yours is, its first move would shove yours over.
+	rb.position = Vector3(state[0], state[1], state[2])
+	r["root"].add_child(rb)
+	rb.setup("Crew", BikeBuild.new({}), Color.RED)
 	rb.push_state(state)
 	await _frames(3)
 	check(not rb.is_ghost() and BikeGhost.drawn(rb.model) == 0.0 and not bike.passes(rb), "not respawned: their bike's solid and yours bumps into it")
@@ -167,7 +169,11 @@ func test_remote() -> void:
 	while Time.get_ticks_msec() - since < 1300:
 		await _frames(1)
 	check(not rb.is_ghost() and BikeGhost.drawn(rb.model) == 0.0 and _drawn(rb.model).x == 0.0, "over on their side: solid again here")
-	check(not bike.passes(rb) and not bike.get_collision_exceptions().has(rb), "and your bike bumps into it again")
+	# Their ghost is timed on the clock, which runs on within a physics tick: on a slow tick your
+	# bike can have looked just before it ran out, so it goes back to bumping the tick after.
+	await _frames(2)
+	check(not bike.passes(rb) and not bike.get_collision_exceptions().has(rb) and not bike.is_crashed,
+		"and your bike bumps into it again (yours stood beside it all along, never knocked off)")
 	var old := state.slice(0, 27)
 	rb.push_state(old)
 	await _frames(3)

@@ -37,7 +37,10 @@ func setup(rider_name: String, build: BikeBuild, paint: Color, rider_color := Co
 	player_name = rider_name
 	_build = build
 	sync_to_physics = false
-	collision_layer = 2
+	# Not solid till its first snapshot puts it where they are: until then it stands wherever it
+	# was added (the world's origin, which out on an adventure is near you) and its first move
+	# there would shove your bike over.
+	collision_layer = 0
 	collision_mask = 0
 	for child in get_children():
 		child.free()
@@ -125,6 +128,8 @@ func _physics_process_body(delta: float) -> void:
 	var pos := Vector3(sa[0], sa[1], sa[2]).lerp(Vector3(sb[0], sb[1], sb[2]), f)
 	var rot := Quaternion(sa[3], sa[4], sa[5], sa[6]).slerp(Quaternion(sb[3], sb[4], sb[5], sb[6]), f)
 	global_transform = Transform3D(Basis(rot), pos)
+	if collision_layer == 0:
+		collision_layer = 2   # where they are: solid now, so bikes can bump into each other
 	_last = sb
 	model.update_pose_from(lerpf(sa[10], sb[10], f), sb[11], sb[12], lerpf(sa[13], sb[13], f),
 		lerpf(sa[14], sb[14], f), sb[18], 0.0)
