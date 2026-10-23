@@ -11,6 +11,8 @@ const HALF := Vector2(6.5, 5.5)           # interior half size in x and z
 const HEIGHT := 4.5
 const DOOR_HALF := 2.3
 const DOOR_HEIGHT := 3.2
+## A screen on the Route planner builds it when the camera comes this close (m): see _refresh_dashboards.
+const PLANNER_REACH := 9.0
 const BAY_COUNT := 4
 const INTERACT_LAYER := 8
 ## A paint booth hook's tip, above the place a part hangs (the hook's 0.55 m above it, see
@@ -1212,7 +1214,9 @@ func _refresh_dashboards() -> void:
 			"crew":
 				dash.show_page("crew", {"players": _crew_rows()})
 			"route":
-				if dash.kind != "route" or dash._route == null:   # (a screen made on the planner hasn't built it yet)
+				# The planner is built when someone comes near the screen: it shades its map's land on a worker, too
+				# much for every screen of every shed to do as it opens.
+				if (dash.kind != "route" or dash._route == null) and _near_camera(dash, PLANNER_REACH):
 					dash.show_page("route", {})
 			"workflow":
 				# A bike's job card (see WorkflowTv): redrawn only when something on it changes.
@@ -1225,6 +1229,12 @@ func _refresh_dashboards() -> void:
 				if not pages.has(ch):
 					pages[ch] = TvChannels.page_data(ch)
 				dash.show_page(TvChannels.page_kind(ch), pages[ch])
+
+
+## Whether the camera is within `reach` metres of `node`.
+func _near_camera(node: Node3D, reach: float) -> bool:
+	var cam := get_viewport().get_camera_3d()
+	return cam != null and cam.global_position.distance_to(node.global_position) < reach
 
 
 ## The crew board's rows: everyone here and what they're up to.

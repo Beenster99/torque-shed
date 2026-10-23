@@ -47,7 +47,9 @@ func _ready() -> void:
 	if role == "client":
 		Shed.request({"a": "adventure_mode", "mode": "scenic"})
 	var mode_ok := await _until(func(): return str(Shed.journey.get("mode", "")) == "scenic", 20.0)
-	# The TV: one view for the crew. The client moves the Dyno Room's map, the host turns it to the places.
+	# The TV: one view for the crew. Both walk into the Dyno Room (its planner comes on as they come near), the client
+	# moves the map, the host turns it to the places.
+	main.walker.place(Transform3D(Basis(Vector3.UP, PI * 0.5), DynoRoom.CENTER + Vector3(1.0 if role == "host" else 2.0, 0.0, 0.5)))
 	var tv_ok := await _until(func(): return main.workshop.dyno_room.plan_tv._route != null \
 		and main.workshop.dyno_room.plan_tv._route.region != null, 20.0)
 	var board: RouteTv = main.workshop.dyno_room.plan_tv._route if tv_ok else null
