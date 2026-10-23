@@ -34,6 +34,9 @@ var _find_box: VBoxContainer
 var _query: Label
 var _results: VBoxContainer
 var _facts: Label
+var _credits: Label
+var _paste_task := -1
+var _pasted := [Vector2.INF]   # where the link pasted points (a worker sets it), see paste_link
 var _note: Label
 var _start: Button
 var _survey: Button
@@ -128,6 +131,8 @@ func _ready() -> void:
 	_facts = _label("", 17, INK)
 	_facts.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_plan_box.add_child(_facts)
+	_credits = _label("", 12, DIM)
+	_plan_box.add_child(_credits)
 	_note = _label("", 16, Color(1.0, 0.82, 0.4))
 	_plan_box.add_child(_note)
 	var row := HBoxContainer.new()
@@ -161,7 +166,8 @@ func _ready() -> void:
 	var edits := HBoxContainer.new()
 	edits.add_theme_constant_override("separation", 4)
 	_find_box.add_child(edits)
-	for spec in [["Back", func(): ask({"q": _q().left(maxi(_q().length() - 1, 0))})], ["Clear", func(): ask({"q": ""})]]:
+	for spec in [["Back", func(): ask({"q": _q().left(maxi(_q().length() - 1, 0))})], ["Clear", func(): ask({"q": ""})],
+			["Paste a map link", func(): paste_link(DisplayServer.clipboard_get())]]:
 		var b := _button(str(spec[0]), 0.0, 18)
 		b.custom_minimum_size = Vector2(0.0, 34.0)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -172,6 +178,12 @@ func _ready() -> void:
 	_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_find_box.add_child(_results)
 	refresh()
+
+
+func _exit_tree() -> void:
+	if _paste_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_paste_task)
+		_paste_task = -1
 
 
 func _label(text: String, size_px: int, col: Color) -> Label:
@@ -254,6 +266,37 @@ func survey() -> void:
 		_timer = 0.0
 
 
+## Takes the crew's view to where map link `text` points (a short link is followed on a worker, see MapLink).
+func paste_link(text: String) -> void:
+	if _paste_task >= 0:
+		return
+	var at := MapLink.parse(text)
+	if at != Vector2.INF or not MapLink.needs_following(text):
+		_go_to_pasted(at)
+		return
+	_pasted[0] = Vector2.INF
+	var got := _pasted
+	_paste_task = WorkerThreadPool.add_task(func(): got[0] = MapLink.resolve(text))
+
+
+func _go_to_pasted(at: Vector2) -> void:
+	if at == Vector2.INF:
+		Shed.feedback.emit("Copy a map link (or a place's lat, lon) first: that one doesn't say where.", false)
+		return
+	ask({"lat": at.x, "lon": at.y, "span": FOUND_SPAN, "tab": "plan", "q": ""})
+
+
+## The data a planned road is drawn from, said short: [credit...] -> one line.
+static func credits_line(credits: Array) -> String:
+	var said := PackedStringArray()
+	var all := " ".join(credits)
+	if all.contains("OpenStreetMap"):
+		said.append("roads © OpenStreetMap contributors and Overture Maps (ODbL)")
+	if all.contains("Mapterhorn"):
+		said.append("heights Mapterhorn")
+	return ("Map data: " + "; ".join(said) + ".") if not said.is_empty() else ""
+
+
 ## Looks closer (factor over 1) or further out, about the middle.
 func zoom(factor: float) -> void:
 	var v := _view()
@@ -284,6 +327,10 @@ func _process(delta: float) -> void:
 	if _warm < 8:
 		_warm += 1   # (the controls lay themselves out over the first frames: the TV is redrawn as they settle)
 		changed.emit()
+	if _paste_task >= 0 and WorkerThreadPool.is_task_completed(_paste_task):
+		WorkerThreadPool.wait_for_task_completion(_paste_task)
+		_paste_task = -1
+		_go_to_pasted(_pasted[0])
 	_timer -= delta
 	if _timer > 0.0:
 		return
@@ -342,6 +389,7 @@ func _refresh_plan() -> void:
 	var plan := AdventureJourney.plan_of(journey)
 	view.route_geo = PackedVector2Array()
 	_note.text = ""
+	_credits.text = ""
 	if pins.size() < 2:
 		_facts.text = "Pin where you start and where you want to get to. More pins in between make it your way."
 	elif plan.is_empty():
@@ -355,6 +403,7 @@ func _refresh_plan() -> void:
 		else:
 			var pack: RealPack = res["pack"]
 			_facts.text = JourneyMap.journey_text(pack)
+			_credits.text = credits_line(pack.credits)
 			var frame := RealRegion.frame_of(str(plan["region"]))
 			if frame != Vector2.INF:
 				for k in range(0, pack.x.size(), 6):
